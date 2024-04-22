@@ -1,7 +1,6 @@
 #pragma once
 
 #include "cjsonbuilder.h"
-#include "core/keyvalue/key_string.h"
 #include "core/payload/payloadiface.h"
 #include "fieldextractor.h"
 #include "jsonbuilder.h"
@@ -21,19 +20,19 @@ public:
 	IEncoderDatasourceWithJoins() = default;
 	virtual ~IEncoderDatasourceWithJoins() = default;
 
-	virtual size_t GetJoinedRowsCount() const = 0;
+	virtual size_t GetJoinedRowsCount() const noexcept = 0;
 	virtual size_t GetJoinedRowItemsCount(size_t rowId) const = 0;
 	virtual ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) = 0;
 	virtual const std::string &GetJoinedItemNamespace(size_t rowid) = 0;
 	virtual const TagsMatcher &GetJoinedItemTagsMatcher(size_t rowid) = 0;
-	virtual const FieldsSet &GetJoinedItemFieldsFilter(size_t rowid) = 0;
+	virtual const FieldsSet &GetJoinedItemFieldsFilter(size_t rowid) noexcept = 0;
 };
 
 template <typename Builder>
 class IAdditionalDatasource {
 public:
 	virtual void PutAdditionalFields(Builder &) const = 0;
-	virtual IEncoderDatasourceWithJoins *GetJoinsDatasource() = 0;
+	virtual IEncoderDatasourceWithJoins *GetJoinsDatasource() noexcept = 0;
 };
 
 template <typename Builder>

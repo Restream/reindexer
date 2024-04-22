@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <map>
 #include <set>
-#include "estl/h_vector.h"
 #include "estl/packed_vector.h"
 #include "sort/pdqsort.hpp"
 #include "usingcontainer.h"

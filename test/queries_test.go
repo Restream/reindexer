@@ -102,9 +102,9 @@ type TestItemIDOnly struct {
 	EndTime       int             `json:"end_time"`
 	StartTime     int             `json:"start_time"`
 	Tmp           string          `reindex:"tmp,-"`
-	Uuid          string          `reindex:"uuid,hash,uuid" json:"uuid"`
-	UuidStore     string          `reindex:"uuid_store,-,uuid" json:"uuid_store"`
-	UuidArray     []string        `reindex:"uuid_array,hash,uuid" json:"uuid_array"`
+	Uuid          string          `json:"uuid"`
+	UuidStore     string          `json:"uuid_store"`
+	UuidArray     []string        `json:"uuid_array"`
 	_             struct{}        `reindex:"id+tmp,,composite,pk"`
 }
 
@@ -2224,12 +2224,6 @@ func TestQueryExplain(t *testing.T) {
 				Comparators: 0,
 				Matched:     5,
 			},
-			{
-				Description: "always true",
-				Keys:        0,
-				Comparators: 0,
-				Matched:     0,
-			},
 		}, "")
 		checkExplainSubqueries(t, explainRes.SubQueriesExplains, []expectedExplainSubQuery{
 			{
@@ -2307,24 +2301,10 @@ func TestQueryExplain(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:       "-scan",
-				Method:      "scan",
-				Keys:        0,
+				Field:       "always_false",
+				Method:      "index",
+				Keys:        1,
 				Comparators: 0,
-				Matched:     1,
-			},
-			{
-				Description: "always false",
-				Keys:        0,
-				Comparators: 0,
-				Matched:     0,
-			},
-			{
-				Field:       "id",
-				FieldType:   "indexed",
-				Method:      "scan",
-				Keys:        0,
-				Comparators: 1,
 				Matched:     0,
 			},
 		}, "")

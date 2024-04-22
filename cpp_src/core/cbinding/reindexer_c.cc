@@ -8,6 +8,7 @@
 
 #include "cgocancelcontextpool.h"
 #include "core/cjson/baseencoder.h"
+#include "debug/crashqueryreporter.h"
 #include "estl/syncpool.h"
 #include "reindexer_version.h"
 #include "resultserializer.h"
@@ -21,8 +22,8 @@ const size_t kCtxArrSize = 1024;
 const size_t kWarnLargeResultsLimit = 0x40000000;
 const size_t kMaxPooledResultsCap = 0x10000;
 
-static Error err_not_init(errNotValid, "Reindexer db has not initialized");
-static Error err_too_many_queries(errLogic, "Too many parallel queries");
+static const Error err_not_init(errNotValid, "Reindexer db has not initialized");
+static const Error err_too_many_queries(errLogic, "Too many parallel queries");
 
 static std::atomic<BindingCapabilities> bindingCaps;
 static_assert(std::atomic<BindingCapabilities>::is_always_lock_free, "Expected lockfree structure here");
@@ -509,7 +510,10 @@ reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int as_json
 			if (!result) {
 				return ret2c(err_too_many_queries, out);
 			}
-			err = rdxKeeper.db().Select(str2cv(query), *result);
+
+			auto querySV = str2cv(query);
+			ActiveQueryScope scope(querySV);
+			err = rdxKeeper.db().Select(querySV, *result);
 			if (err.ok()) {
 				const auto count = result->Count(), len = result->ser.Len(), cap = result->ser.Cap();
 				results2c(std::move(result), &out, as_json, pt_versions, pt_versions_count);
@@ -549,6 +553,8 @@ reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, i
 			if (!result) {
 				return ret2c(err_too_many_queries, out);
 			}
+
+			ActiveQueryScope scope(q, QuerySelect);
 			err = rdxKeeper.db().Select(q, *result);
 			if (q.GetDebugLevel() >= LogError && err.code() != errOK) logPrintf(LogError, "Query error %s", err.what());
 			if (err.ok()) {
@@ -582,6 +588,8 @@ reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in, reindexe
 			if (!result) {
 				return ret2c(err_too_many_queries, out);
 			}
+
+			ActiveQueryScope scope(q, QueryDelete);
 			res = rdxKeeper.db().Delete(q, *result);
 			if (q.GetDebugLevel() >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
 			if (res.ok()) {
@@ -609,6 +617,8 @@ reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in, reindexe
 			if (!result) {
 				return ret2c(err_too_many_queries, out);
 			}
+
+			ActiveQueryScope scope(q, QueryUpdate);
 			res = rdxKeeper.db().Update(q, *result);
 			if (q.GetDebugLevel() >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
 			if (res.ok()) {
@@ -686,6 +696,35 @@ reindexer_buffer reindexer_cptr2cjson(uintptr_t results_ptr, uintptr_t cptr, int
 
 void reindexer_free_cjson(reindexer_buffer b) { delete[] b.data; }
 
+reindexer_ret reindexer_enum_meta(uintptr_t rx, reindexer_string ns, reindexer_ctx_info ctx_info) {
+	reindexer_resbuffer out{0, 0, 0};
+	Error res = err_not_init;
+	if (rx) {
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		auto results{new_results(false)};
+		if (!results) {
+			return ret2c(err_too_many_queries, out);
+		}
+
+		std::vector<std::string> keys;
+		res = rdxKeeper.db().EnumMeta(str2c(ns), keys);
+
+		auto& ser = results->ser;
+		ser.PutVarUint(keys.size());
+		for (const auto &key : keys) {
+			ser.PutVString(key);
+		}
+
+		out.len = ser.Len();
+		out.data = uintptr_t(ser.Buf());
+		out.results_ptr = uintptr_t(results.release());
+		if (const auto count{serializedResultsCount.fetch_add(1, std::memory_order_relaxed)}; count > kMaxConcurentQueries) {
+			logPrintf(LogWarning, "Too many serialized results: count=%d, alloced=%d", count, res_pool.Alloced());
+		}
+	}
+	return ret2c(res, out);
+}
+
 reindexer_error reindexer_put_meta(uintptr_t rx, reindexer_string ns, reindexer_string key, reindexer_string data,
 								   reindexer_ctx_info ctx_info) {
 	Error res = err_not_init;
@@ -717,6 +756,15 @@ reindexer_ret reindexer_get_meta(uintptr_t rx, reindexer_string ns, reindexer_st
 		}
 	}
 	return ret2c(res, out);
+}
+
+reindexer_error reindexer_delete_meta(uintptr_t rx, reindexer_string ns, reindexer_string key, reindexer_ctx_info ctx_info) {
+	Error res = err_not_init;
+	if (rx) {
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		res = rdxKeeper.db().DeleteMeta(str2c(ns), str2c(key));
+	}
+	return error2c(res);
 }
 
 reindexer_error reindexer_commit(uintptr_t rx, reindexer_string nsName) {

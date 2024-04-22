@@ -68,7 +68,7 @@ struct less_composite {
 		assertrx(type_);
 		assertrx(!lhs.IsFree());
 		assertrx(!rhs.IsFree());
-		return (ConstPayload(type_, lhs).Compare<WithString::No>(rhs, fields_) < 0);
+		return (ConstPayload(type_, lhs).Compare<WithString::No, NotComparable::Throw>(rhs, fields_) == ComparationResult::Lt);
 	}
 	PayloadType type_;
 	FieldsSet fields_;
@@ -168,6 +168,12 @@ public:
 		for (auto &item : *this) this->add_ref(item.first);
 	}
 	unordered_payload_map(unordered_payload_map &&) = default;
+	unordered_payload_map &operator=(unordered_payload_map &&other) {
+		for (auto &item : *this) this->release(item.first);
+		base_hash_map::operator=(std::move(other));
+		return *this;
+	}
+	unordered_payload_map &operator=(const unordered_payload_map &) = delete;
 
 	~unordered_payload_map() {
 		for (auto &item : *this) this->release(item.first);

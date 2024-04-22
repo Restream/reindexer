@@ -12,10 +12,10 @@ class PayloadTypeImpl;
 
 class PayloadType : public shared_cow_ptr<PayloadTypeImpl> {
 public:
-	PayloadType() = default;
-	PayloadType(PayloadType &&) = default;
+	PayloadType() noexcept = default;
+	PayloadType(PayloadType &&) noexcept = default;
 	PayloadType(const PayloadType &) = default;
-	PayloadType &operator=(PayloadType &&) = default;
+	PayloadType &operator=(PayloadType &&) noexcept = default;
 	PayloadType &operator=(const PayloadType &) = default;
 	PayloadType(const std::string &name, std::initializer_list<PayloadFieldType> fields = {});
 	explicit PayloadType(const PayloadTypeImpl &impl);

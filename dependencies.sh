@@ -32,14 +32,15 @@ error_msg() {
 
 # declare dependencies arrays for systems
 osx_deps="gperftools leveldb snappy cmake git"
-centos8_debs="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
+centos8_rpms="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
 almalinux9_rpms="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
-fedora_debs=" gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
-centos7_debs="centos-release-scl devtoolset-10-gcc devtoolset-10-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
+fedora_rpms=" gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
+centos7_rpms="centos-release-scl devtoolset-10-gcc devtoolset-10-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
 debian_debs="build-essential g++ libunwind-dev libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git"
 alpine_apks="g++ snappy-dev leveldb-dev libunwind-dev make curl cmake unzip git"
 arch_pkgs="gcc snappy leveldb make curl cmake unzip git"
 redos_rpms="gcc gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip git cmake rpm-build python-srpm-macros"
+altlinux_rpms="gcc gcc-c++ make libsnappy-devel libleveldb-devel gperftools-devel curl unzip git cmake ctest rpm-build rpmdevtools"
 
 cmake_installed () {
     info_msg "Check for installed cmake ..... "
@@ -119,7 +120,7 @@ install_centos8() {
     yum install -y epel-release >/dev/null 2>&1 || true
     yum install -y http://rpms.remirepo.net/enterprise/remi-release-8.rpm >/dev/null 2>&1 || true
     sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/CentOS-Linux-PowerTools.repo || true
-    for pkg in ${centos8_debs}
+    for pkg in ${centos8_rpms}
     do
         if rpm -qa | grep -qw ${pkg} ; then
             info_msg "Package '$pkg' already installed. Skip ....."
@@ -139,7 +140,7 @@ install_centos8() {
 
 install_centos7() {
     yum install -y epel-release >/dev/null 2>&1 || true
-    for pkg in ${centos7_debs}
+    for pkg in ${centos7_rpms}
     do
         if rpm -qa | grep -qw ${pkg} ; then
             info_msg "Package '$pkg' already installed. Skip ....."
@@ -160,7 +161,7 @@ install_centos7() {
 
 install_fedora() {
     yum install -y epel-release >/dev/null 2>&1 || true
-    for pkg in ${fedora_debs}
+    for pkg in ${fedora_rpms}
     do
         if rpm -qa | grep -qw ${pkg} ; then
             info_msg "Package '$pkg' already installed. Skip ....."
@@ -247,15 +248,34 @@ install_alpine() {
 install_redos() {
     for pkg in ${redos_rpms}
     do
-        if yum list --installed | grep -e ^${pkg}\\. > /dev/null ; then
+        if dnf list --installed | grep -e ^${pkg}\\. > /dev/null ; then
             info_msg "Package '$pkg' already installed. Skip ....."
         else
             info_msg "Installing '$pkg' package ....."
-            yum install -y ${pkg} > /dev/null 2>&1
+            dnf install -y ${pkg} > /dev/null 2>&1
             if [ $? -eq 0 ]; then
                 success_msg "Package '$pkg' was installed successfully."
             else
                 error_msg "Could not install '$pkg' package. Try 'dnf update && dnf install $pkg'" && return 1
+            fi
+        fi
+    done
+    return $?
+}
+
+install_altlinux() {
+	apt-get -y update >/dev/null 2>&1
+    for pkg in ${altlinux_rpms}
+    do
+        if rpm -qa | grep -qw ${pkg} ; then
+            info_msg "Package '$pkg' already installed. Skip ....."
+        else
+            info_msg "Installing '$pkg' package ....."
+            apt-get install -y ${pkg} > /dev/null 2>&1
+            if [ $? -eq 0 ]; then
+                success_msg "Package '$pkg' was installed successfully."
+            else
+                error_msg "Could not install '$pkg' package. Try 'apt-get update && apt-get install $pkg'" && return 1
             fi
         fi
     done
@@ -291,6 +311,8 @@ detect_installer() {
             OS_TYPE="arch" && return
         elif [ "$OS" = "redos" ]; then
             OS_TYPE="redos" && return
+        elif [ "$OS" = "altlinux" ]; then
+            OS_TYPE="altlinux" && return
         else
             return 1
         fi

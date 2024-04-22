@@ -2,7 +2,6 @@
 
 #include <string.h>
 #include "dispatcher.h"
-#include "estl/atomic_unique_ptr.h"
 #include "net/connection.h"
 #include "net/iserverconnection.h"
 

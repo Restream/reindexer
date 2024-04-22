@@ -50,7 +50,7 @@ protected:
 		lastSortedColumnValues.resize(query.sortingEntries_.size());
 
 		for (size_t i = 0; i < query.Entries().Size(); ++i) {
-			query.Entries().InvokeAppropriate<void>(
+			query.Entries().Visit(
 				i,
 				reindexer::Skip<reindexer::QueryEntry, reindexer::QueryEntriesBracket, reindexer::BetweenFieldsQueryEntry,
 								reindexer::JoinQueryEntry, reindexer::AlwaysTrue, reindexer::AlwaysFalse>{},
@@ -165,16 +165,18 @@ protected:
 			}
 			EXPECT_TRUE(checkDistincts(itemr, query, distincts, indexesFields)) << "Distinction check failed";
 
-			std::vector<int> cmpRes(query.sortingEntries_.size());
-			std::fill(cmpRes.begin(), cmpRes.end(), -1);
+			std::vector<reindexer::ComparationResult> cmpRes(query.sortingEntries_.size());
+			std::fill(cmpRes.begin(), cmpRes.end(), reindexer::ComparationResult::Lt);
 
 			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
 				const reindexer::SortingEntry& sortingEntry(query.sortingEntries_[j]);
 				const auto sortExpr = reindexer::SortExpression::Parse(sortingEntry.expression, joinedSelectors);
 
 				reindexer::Variant sortedValue;
+				CollateOpts collate;
 				if (sortExpr.ByField()) {
 					sortedValue = itemr[sortingEntry.expression];
+					collate = indexesCollates[sortingEntry.expression];
 				} else if (sortExpr.ByJoinedField()) {
 					auto jItemIt = (qr.begin() + i).GetJoined();
 					EXPECT_EQ(jItemIt.getJoinedFieldsCount(), 1);
@@ -188,7 +190,7 @@ protected:
 				if (!lastSortedColumnValues[j].Type().Is<reindexer::KeyValueType::Null>()) {
 					bool needToVerify = true;
 					for (int k = j - 1; k >= 0; --k) {
-						if (cmpRes[k] != 0) {
+						if (cmpRes[k] != reindexer::ComparationResult::Eq) {
 							needToVerify = false;
 							break;
 						}
@@ -199,19 +201,24 @@ protected:
 							const auto lastValIt =
 								std::find(query.forcedSortOrder_.cbegin(), query.forcedSortOrder_.cend(), lastSortedColumnValues[0]);
 							if (lastValIt < currValIt) {
-								cmpRes[0] = -1;
+								cmpRes[0] = reindexer::ComparationResult::Lt;
 							} else if (lastValIt > currValIt) {
-								cmpRes[0] = 1;
+								cmpRes[0] = reindexer::ComparationResult::Gt;
 							} else if (lastValIt == query.forcedSortOrder_.cend()) {
-								cmpRes[0] = lastSortedColumnValues[0].RelaxCompare<reindexer::WithString::Yes>(sortedValue);
+								cmpRes[0] =
+									lastSortedColumnValues[0].RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return>(
+										sortedValue, collate);
 							} else {
-								cmpRes[0] = 0;
+								cmpRes[0] = reindexer::ComparationResult::Eq;
 							}
 						} else {
-							cmpRes[j] = lastSortedColumnValues[j].RelaxCompare<reindexer::WithString::Yes>(sortedValue);
+							cmpRes[j] =
+								lastSortedColumnValues[j].RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return>(
+									sortedValue, collate);
 						}
-						bool sortOrderSatisfied =
-							(sortingEntry.desc && cmpRes[j] >= 0) || (!sortingEntry.desc && cmpRes[j] <= 0) || (cmpRes[j] == 0);
+						bool sortOrderSatisfied = (sortingEntry.desc && (cmpRes[j] & reindexer::ComparationResult::Ge)) ||
+												  (!sortingEntry.desc && (cmpRes[j] & reindexer::ComparationResult::Le)) ||
+												  (cmpRes[j] == reindexer::ComparationResult::Eq);
 						if (!sortOrderSatisfied) {
 							EXPECT_TRUE(sortOrderSatisfied) << "\nSort order is incorrect for column: " << sortingEntry.expression;
 							TEST_COUT << query.GetSQL() << std::endl;
@@ -322,9 +329,15 @@ private:
 			OpType op = it->operation;
 			if (op != OpOr && !result) return false;
 			bool skip = false;
-			bool const iterationResult = it->InvokeAppropriate<bool>(
-				[](const reindexer::SubQueryEntry&) -> bool { assertrx(0); },
-				[](const reindexer::SubQueryFieldEntry&) -> bool { assertrx(0); },
+			bool const iterationResult = it->Visit(
+				[](const reindexer::SubQueryEntry&) -> bool {
+					assertrx(0);
+					std::abort();
+				},
+				[](const reindexer::SubQueryFieldEntry&) -> bool {
+					assertrx(0);
+					std::abort();
+				},
 				[&](const reindexer::QueryEntriesBracket&) {
 					if (op == OpOr && result && !containsJoins(it.cbegin(), it.cend())) {
 						skip = true;
@@ -538,6 +551,18 @@ private:
 		return it->second;
 	}
 
+	static auto compareCompositeValues(const reindexer::VariantArray& indexesValues, const reindexer::Variant& keyValue,
+									   const CollateOpts& opts) {
+		reindexer::VariantArray compositeValues = keyValue.getCompositeValues();
+		EXPECT_EQ(indexesValues.size(), compositeValues.size());
+		auto cmpRes = reindexer::ComparationResult::Eq;
+		for (size_t i = 0; i < indexesValues.size() && (cmpRes == reindexer::ComparationResult::Eq); ++i) {
+			compositeValues[i].convert(indexesValues[i].Type());
+			cmpRes = indexesValues[i].RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return>(compositeValues[i], opts);
+		}
+		return cmpRes;
+	}
+
 	static bool checkCompositeCondition(const reindexer::Item& item, const reindexer::QueryEntry& qentry, const CollateOpts& opts,
 										const IndexesData& indexesFields) {
 		const auto fields = getCompositeFields(qentry.FieldName(), indexesFields);
@@ -552,29 +577,29 @@ private:
 				return !indexesValues.empty();
 			case CondGe:
 				assert(!keyValues.empty());
-				return compareCompositeValues(indexesValues, keyValues[0], opts) >= 0;
+				return compareCompositeValues(indexesValues, keyValues[0], opts) & reindexer::ComparationResult::Ge;
 			case CondGt:
 				assert(!keyValues.empty());
-				return compareCompositeValues(indexesValues, keyValues[0], opts) > 0;
+				return compareCompositeValues(indexesValues, keyValues[0], opts) == reindexer::ComparationResult::Gt;
 			case CondLt:
 				assert(!keyValues.empty());
-				return compareCompositeValues(indexesValues, keyValues[0], opts) < 0;
+				return compareCompositeValues(indexesValues, keyValues[0], opts) == reindexer::ComparationResult::Lt;
 			case CondLe:
 				assert(!keyValues.empty());
-				return compareCompositeValues(indexesValues, keyValues[0], opts) <= 0;
+				return compareCompositeValues(indexesValues, keyValues[0], opts) & reindexer::ComparationResult::Le;
 			case CondRange:
 				assert(keyValues.size() > 1);
-				return (compareCompositeValues(indexesValues, keyValues[0], opts) >= 0) &&
-					   (compareCompositeValues(indexesValues, keyValues[1], opts) <= 0);
+				return (compareCompositeValues(indexesValues, keyValues[0], opts) & reindexer::ComparationResult::Ge) &&
+					   (compareCompositeValues(indexesValues, keyValues[1], opts) & reindexer::ComparationResult::Le);
 			case CondEq:
 			case CondSet:
 				for (const reindexer::Variant& kv : keyValues) {
-					if (compareCompositeValues(indexesValues, kv, opts) == 0) return true;
+					if (compareCompositeValues(indexesValues, kv, opts) == reindexer::ComparationResult::Eq) return true;
 				}
 				return false;
 			case CondAllSet:
 				for (const reindexer::Variant& kv : keyValues) {
-					if (compareCompositeValues(indexesValues, kv, opts) != 0) return false;
+					if (compareCompositeValues(indexesValues, kv, opts) != reindexer::ComparationResult::Eq) return false;
 				}
 				return !keyValues.empty();
 			case CondLike:
@@ -584,28 +609,17 @@ private:
 		}
 	}
 
-	static int compareCompositeValues(const reindexer::VariantArray& indexesValues, const reindexer::Variant& keyValue,
-									  const CollateOpts& opts) {
-		reindexer::VariantArray compositeValues = keyValue.getCompositeValues();
-		EXPECT_EQ(indexesValues.size(), compositeValues.size());
-		int cmpRes = 0;
-		for (size_t i = 0; i < indexesValues.size() && (cmpRes == 0); ++i) {
-			compositeValues[i].convert(indexesValues[i].Type());
-			cmpRes = indexesValues[i].RelaxCompare<reindexer::WithString::Yes>(compositeValues[i], opts);
-		}
-		return cmpRes;
-	}
-
 	enum class BetweenFields : bool { Yes = true, No = false };
 
 	template <BetweenFields betweenFields>
-	static int compare(const reindexer::Variant& v, const reindexer::Variant& k, const CollateOpts& opts,
-					   reindexer::KeyValueType fieldType) {
+	static auto compare(const reindexer::Variant& v, const reindexer::Variant& k, const CollateOpts& opts,
+						reindexer::KeyValueType fieldType) {
 		if constexpr (betweenFields == BetweenFields::Yes) {
-			return v.RelaxCompare<reindexer::WithString::Yes>(k, opts);
+			return v.RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return>(k, opts);
 		} else {
-			return v.RelaxCompare<reindexer::WithString::Yes>(
-				k.convert(fieldType.Is<reindexer::KeyValueType::Undefined>() ? v.Type() : fieldType), opts);
+			return fieldType.Is<reindexer::KeyValueType::Undefined>()
+					   ? v.RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return>(k, opts)
+					   : v.RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return>(k.convert(fieldType), opts);
 		}
 	}
 
@@ -616,7 +630,7 @@ private:
 			for (const auto& k : keys) {
 				bool found = false;
 				for (const auto& v : values) {
-					if (compare<betweenFields>(v, k, opts, fieldType) == 0) {
+					if (compare<betweenFields>(v, k, opts, fieldType) == reindexer::ComparationResult::Eq) {
 						found = true;
 						break;
 					}
@@ -650,25 +664,25 @@ private:
 						const auto cmp = compare<betweenFields>(value, keys[i], opts, fieldType);
 						switch (condition) {
 							case CondGe:
-								if (cmp >= 0) {
+								if (cmp & reindexer::ComparationResult::Ge) {
 									return true;
 								} else {
 									break;
 								}
 							case CondGt:
-								if (cmp > 0) {
+								if (cmp == reindexer::ComparationResult::Gt) {
 									return true;
 								} else {
 									break;
 								}
 							case CondLt:
-								if (cmp < 0) {
+								if (cmp == reindexer::ComparationResult::Lt) {
 									return true;
 								} else {
 									break;
 								}
 							case CondLe:
-								if (cmp <= 0) {
+								if (cmp & reindexer::ComparationResult::Le) {
 									return true;
 								} else {
 									break;
@@ -688,12 +702,12 @@ private:
 				}
 				case CondRange:
 					assert(keys.size() > 1);
-					return compare<betweenFields>(value, keys[0], opts, fieldType) >= 0 &&
-						   compare<betweenFields>(value, keys[1], opts, fieldType) <= 0;
+					return (compare<betweenFields>(value, keys[0], opts, fieldType) & reindexer::ComparationResult::Ge) &&
+						   (compare<betweenFields>(value, keys[1], opts, fieldType) & reindexer::ComparationResult::Le);
 				case CondEq:
 				case CondSet:
 					for (const reindexer::Variant& kv : keys) {
-						if (compare<betweenFields>(value, kv, opts, fieldType) == 0) return true;
+						if (compare<betweenFields>(value, kv, opts, fieldType) == reindexer::ComparationResult::Eq) return true;
 					}
 					return false;
 				case CondLike:
@@ -811,7 +825,7 @@ private:
 		assertrx(begin != end);
 		assertrx(begin->operation.op == OpPlus);
 		for (auto it = begin; it != end; ++it) {
-			double value = it->InvokeAppropriate<double>(
+			double value = it->Visit(
 				[&it, &item, &qr](const reindexer::SortExpressionBracket&) {
 					return calculateSortExpression(it.cbegin(), it.cend(), item, qr);
 				},
@@ -871,15 +885,14 @@ private:
 
 	static bool containsJoins(reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator end) noexcept {
 		for (; it != end; ++it) {
-			if (it->InvokeAppropriate<bool>(
-					[&it](const reindexer::QueryEntriesBracket&) noexcept { return containsJoins(it.cbegin(), it.cend()); },
-					[](const reindexer::JoinQueryEntry&) noexcept { return true; },
-					[](const reindexer::QueryEntry&) noexcept { return false; },
-					[](const reindexer::BetweenFieldsQueryEntry&) noexcept { return false; },
-					[](const reindexer::AlwaysFalse&) noexcept { return false; },
-					[](const reindexer::AlwaysTrue&) noexcept { return true; },
-					[](const reindexer::SubQueryEntry&) noexcept { return false; },
-					[](const reindexer::SubQueryFieldEntry&) noexcept { return false; })) {
+			if (it->Visit([&it] RX_PRE_LMBD_ALWAYS_INLINE(const reindexer::QueryEntriesBracket&)
+							  RX_POST_LMBD_ALWAYS_INLINE { return containsJoins(it.cbegin(), it.cend()); },
+						  [] RX_PRE_LMBD_ALWAYS_INLINE(const reindexer::JoinQueryEntry&)
+							  RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
+						  [] RX_PRE_LMBD_ALWAYS_INLINE(
+							  reindexer::OneOf<const reindexer::QueryEntry, reindexer::BetweenFieldsQueryEntry, reindexer::AlwaysFalse,
+											   reindexer::AlwaysTrue, reindexer::SubQueryEntry, reindexer::SubQueryFieldEntry>)
+							  RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; })) {
 				return true;
 			}
 		}
@@ -944,19 +957,19 @@ private:
 		TestCout() << "(";
 		for (; it != to; ++it) {
 			TestCout() << (it->operation == OpAnd ? "AND" : (it->operation == OpOr ? "OR" : "NOT"));
-			it->InvokeAppropriate<void>(
-				[&](const reindexer::QueryEntriesBracket&) { printQueryEntries(it.cbegin(), it.cend(), js, subQueries); },
-				[](const reindexer::QueryEntry& qe) { TestCout() << qe.Dump(); },
-				[&js](const reindexer::JoinQueryEntry& jqe) { TestCout() << jqe.Dump(js); },
-				[](const reindexer::BetweenFieldsQueryEntry& qe) { TestCout() << qe.Dump(); },
-				[&subQueries](const reindexer::SubQueryEntry& sqe) {
-					TestCout() << '(' << subQueries.at(sqe.QueryIndex()).GetSQL() << ") " << sqe.Condition();
-				},
-				[&subQueries](const reindexer::SubQueryFieldEntry& sqe) {
-					TestCout() << sqe.FieldName() << ' ' << sqe.Condition() << " (" << subQueries.at(sqe.QueryIndex()).GetSQL() << ')';
-				},
-				[](const reindexer::AlwaysFalse&) { TestCout() << "Always False"; },
-				[](const reindexer::AlwaysTrue&) { TestCout() << "Always True"; });
+			it->Visit([&](const reindexer::QueryEntriesBracket&) { printQueryEntries(it.cbegin(), it.cend(), js, subQueries); },
+					  [](const reindexer::QueryEntry& qe) { TestCout() << qe.Dump(); },
+					  [&js](const reindexer::JoinQueryEntry& jqe) { TestCout() << jqe.Dump(js); },
+					  [](const reindexer::BetweenFieldsQueryEntry& qe) { TestCout() << qe.Dump(); },
+					  [&subQueries](const reindexer::SubQueryEntry& sqe) {
+						  TestCout() << '(' << subQueries.at(sqe.QueryIndex()).GetSQL() << ") " << sqe.Condition();
+					  },
+					  [&subQueries](const reindexer::SubQueryFieldEntry& sqe) {
+						  TestCout() << sqe.FieldName() << ' ' << sqe.Condition() << " (" << subQueries.at(sqe.QueryIndex()).GetSQL()
+									 << ')';
+					  },
+					  [](const reindexer::AlwaysFalse&) { TestCout() << "Always False"; },
+					  [](const reindexer::AlwaysTrue&) { TestCout() << "Always True"; });
 		}
 		TestCout() << ")";
 	}

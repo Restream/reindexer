@@ -1,28 +1,29 @@
 #pragma once
 
+#include "core/ft/limits.h"
+
 namespace reindexer {
 
-const uint32_t kWordIdMaxIdVal = 0x7FFFFFF;
-const uint32_t kWordIdMaxStepVal = 0x7F;
-
 struct WordIdTypeBit {
-	uint32_t step_num : 4;	// index in array IDataHolder::steps
-	uint32_t id : 27;		// index in array DataHolder::words_
-	uint32_t multi_flag : 1;
+	uint32_t step_num : 6;	// index in the array of the index build steps (IDataHolder::steps)
+	uint32_t id : 26;		// index in the array of the unique words (DataHolder::words_)
 };
 
+static_assert(WordIdTypeBit{.step_num = kWordIdMaxStepVal, .id = 0}.step_num == kWordIdMaxStepVal, "Bitfield overflow");
+static_assert(WordIdTypeBit{.step_num = 0, .id = kWordIdMaxIdVal}.id == kWordIdMaxIdVal, "Bitfield overflow");
+static_assert(WordIdTypeBit{.step_num = 0, .id = kWordIdEmptyIdVal}.id == kWordIdEmptyIdVal, "Bitfield overflow");
+
 union WordIdType {
-	WordIdType() noexcept { b.multi_flag = 0; }
 	WordIdTypeBit b;
-	uint32_t data;
+	uint32_t data = 0;
 
-	bool isEmpty() const noexcept { return b.id == kWordIdMaxIdVal; }
-	void setEmpty() noexcept { b.id = kWordIdMaxIdVal; }
-
-	operator uint32_t() const noexcept { return data; }
-	WordIdType operator=(const uint32_t& rhs) {
-		data = rhs;
-		return *this;
+	bool IsEmpty() const noexcept { return b.id == kWordIdEmptyIdVal; }
+	void SetEmpty() noexcept { b.id = kWordIdEmptyIdVal; }
+	int32_t GetID() const noexcept { return b.id; }
+	void SetID(int32_t v) noexcept {
+		assertrx_dbg(v >= 0);
+		assertrx_dbg(uint32_t(v) <= kWordIdMaxIdVal);
+		b.id = v;
 	}
 };
 

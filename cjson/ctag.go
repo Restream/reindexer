@@ -27,23 +27,23 @@ const (
 	TAG_UUID   = 8
 )
 
-func (c ctag) Name() int {
-	return int(c>>typeBits) & nameMask
+func (c ctag) Name() int16 {
+	return int16(c>>typeBits) & nameMask
 }
 
-func (c ctag) Type() int {
-	return (int(c) & typeMask) | (((int(c) >> type2Offset) & typeMask) << typeBits)
+func (c ctag) Type() int16 {
+	return int16(int(c)&typeMask) | int16(((int(c)>>type2Offset)&typeMask)<<typeBits)
 }
 
-func (c ctag) Field() int {
-	return ((int(c) >> (typeBits + nameBits)) & fieldMask) - 1
+func (c ctag) Field() int16 {
+	return int16((int(c)>>(typeBits+nameBits))&fieldMask) - 1
 }
 
 func (c ctag) Dump() string {
 	return fmt.Sprintf("(%s n:%d f:%d)", tagTypeName(c.Type()), c.Name(), c.Field())
 }
 
-func tagTypeName(tagType int) string {
+func tagTypeName(tagType int16) string {
 	switch tagType {
 	case TAG_VARINT:
 		return "<varint>"
@@ -83,8 +83,8 @@ func (t carraytag) Count() int {
 	return int(t) & countMask
 }
 
-func (t carraytag) Tag() int {
-	return int(t) >> countBits
+func (t carraytag) Tag() int16 {
+	return int16(int(t) >> countBits)
 }
 
 func mkcarraytag(count int, tag int) carraytag {

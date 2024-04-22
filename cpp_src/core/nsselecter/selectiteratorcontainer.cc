@@ -4,6 +4,7 @@
 #include <sstream>
 #include "core/namespace/namespaceimpl.h"
 #include "core/rdxcontext.h"
+#include "estl/restricted.h"
 #include "nsselecter.h"
 #include "querypreprocessor.h"
 
@@ -37,21 +38,18 @@ void SelectIteratorContainer::SortByCost(int expectedIterations) {
 void SelectIteratorContainer::sortByCost(span<unsigned> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations) {
 	for (unsigned cur = from, next; cur < to; cur = next) {
 		next = cur + Size(indexes[cur]);
-		if (!IsSelectIterator(indexes[cur])) {
+		if (IsSubTree(indexes[cur])) {
 			sortByCost(indexes, costs, cur + 1, next, expectedIterations);
-			if (next < to && GetOperation(indexes[next]) == OpOr && IsSelectIterator(indexes[next]) &&
-				Get<SelectIterator>(indexes[next]).distinct) {
+			if (next < to && GetOperation(indexes[next]) == OpOr && IsDistinct(indexes[next])) {
 				throw Error(errQueryExec, "OR operator between distinct query and bracket or join");
 			}
 		} else if (next < to && GetOperation(indexes[next]) == OpOr) {
-			if (IsSelectIterator(indexes[next])) {
-				if (Get<SelectIterator>(indexes[cur]).distinct != Get<SelectIterator>(indexes[next]).distinct) {
-					throw Error(errQueryExec, "OR operator between distinct and non distinct queries");
-				}
-			} else {
-				if (Get<SelectIterator>(indexes[cur]).distinct) {
-					throw Error(errQueryExec, "OR operator between distinct query and bracket or join");
-				}
+			const bool curDistinct = IsDistinct(indexes[cur]);
+			if (curDistinct != IsDistinct(indexes[next])) {
+				throw Error(errQueryExec, "OR operator between distinct and non distinct queries");
+			}
+			if (curDistinct && (IsSubTree(indexes[next]) && IsJoinIterator(indexes[next]))) {
+				throw Error(errQueryExec, "OR operator between distinct query and bracket or join");
 			}
 		}
 	}
@@ -69,21 +67,26 @@ void SelectIteratorContainer::sortByCost(span<unsigned> indexes, span<double> co
 bool SelectIteratorContainer::markBracketsHavingJoins(iterator begin, iterator end) noexcept {
 	bool result = false;
 	for (iterator it = begin; it != end; ++it) {
-		result = it->InvokeAppropriate<bool>(
-					 [it](SelectIteratorsBracket &b) noexcept { return (b.haveJoins = markBracketsHavingJoins(it.begin(), it.end())); },
-					 [](SelectIterator &) noexcept { return false; }, [](JoinSelectIterator &) noexcept { return true; },
-					 [](FieldsComparator &) noexcept { return false; }, [](AlwaysFalse &) noexcept { return false; },
-					 [](AlwaysTrue &) noexcept { return false; }) ||
-				 result;
+		result =
+			it->Visit([it] RX_PRE_LMBD_ALWAYS_INLINE(SelectIteratorsBracket & b)
+						  RX_POST_LMBD_ALWAYS_INLINE noexcept { return (b.haveJoins = markBracketsHavingJoins(it.begin(), it.end())); },
+					  [] RX_PRE_LMBD_ALWAYS_INLINE(
+						  OneOf<SelectIterator, FieldsComparator, AlwaysTrue, EqualPositionComparator, ComparatorNotIndexed,
+								Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>)
+						  RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
+					  [] RX_PRE_LMBD_ALWAYS_INLINE(JoinSelectIterator &) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; }) ||
+			result;
 	}
 	return result;
 }
 
 bool SelectIteratorContainer::haveJoins(size_t i) const noexcept {
-	return container_[i].InvokeAppropriate<bool>(
-		[](const SelectIteratorsBracket &b) noexcept { return b.haveJoins; }, [](const SelectIterator &) noexcept { return false; },
-		[](const FieldsComparator &) noexcept { return false; }, [](const JoinSelectIterator &) noexcept { return true; },
-		[](const AlwaysFalse &) noexcept { return false; }, [](const AlwaysTrue &) noexcept { return true; });
+	return container_[i].Visit(
+		[] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket &b) RX_POST_LMBD_ALWAYS_INLINE noexcept { return b.haveJoins; },
+		[] RX_PRE_LMBD_ALWAYS_INLINE(OneOf<SelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed,
+										   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>)
+			RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
+		[] RX_PRE_LMBD_ALWAYS_INLINE(OneOf<JoinSelectIterator, AlwaysTrue>) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; });
 }
 
 void SelectIteratorContainer::moveJoinsToTheBeginingOfORs(span<unsigned> indexes, unsigned from, unsigned to) {
@@ -121,16 +124,20 @@ void SelectIteratorContainer::moveJoinsToTheBeginingOfORs(span<unsigned> indexes
 	}
 }
 
-double SelectIteratorContainer::cost(span<unsigned> indexes, unsigned cur, int expectedIterations) const {
-	return container_[indexes[cur]].InvokeAppropriate<double>(
-		[&](const SelectIteratorsBracket &) { return cost(indexes, cur + 1, cur + Size(indexes[cur]), expectedIterations); },
-		[expectedIterations](const SelectIterator &sit) noexcept { return sit.Cost(expectedIterations); },
-		[](const JoinSelectIterator &jit) noexcept { return jit.Cost(); },
-		[expectedIterations](const FieldsComparator &c) noexcept { return c.Cost(expectedIterations); },
-		[](const AlwaysFalse &) noexcept { return 1.0; }, [expectedIterations](const AlwaysTrue &) noexcept { return expectedIterations; });
+double SelectIteratorContainer::cost(span<unsigned> indexes, unsigned cur, int expectedIterations) const noexcept {
+	return container_[indexes[cur]].Visit(
+		[&] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket &)
+			RX_POST_LMBD_ALWAYS_INLINE noexcept { return cost(indexes, cur + 1, cur + Size(indexes[cur]), expectedIterations); },
+		Restricted<SelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed,
+				   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
+			[expectedIterations] RX_PRE_LMBD_ALWAYS_INLINE(const auto &c)
+				RX_POST_LMBD_ALWAYS_INLINE noexcept { return c.Cost(expectedIterations); }),
+		[] RX_PRE_LMBD_ALWAYS_INLINE(const JoinSelectIterator &jit) RX_POST_LMBD_ALWAYS_INLINE noexcept { return jit.Cost(); },
+		[expectedIterations] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysTrue &)
+			RX_POST_LMBD_ALWAYS_INLINE noexcept -> double { return expectedIterations; });
 }
 
-double SelectIteratorContainer::cost(span<unsigned> indexes, unsigned from, unsigned to, int expectedIterations) const {
+double SelectIteratorContainer::cost(span<unsigned> indexes, unsigned from, unsigned to, int expectedIterations) const noexcept {
 	double result = 0.0;
 	for (unsigned cur = from; cur < to; cur += Size(indexes[cur])) {
 		result += cost(indexes, cur, expectedIterations);
@@ -138,7 +145,8 @@ double SelectIteratorContainer::cost(span<unsigned> indexes, unsigned from, unsi
 	return result;
 }
 
-double SelectIteratorContainer::fullCost(span<unsigned> indexes, unsigned cur, unsigned from, unsigned to, int expectedIterations) const {
+double SelectIteratorContainer::fullCost(span<unsigned> indexes, unsigned cur, unsigned from, unsigned to,
+										 int expectedIterations) const noexcept {
 	double result = 0.0;
 	for (unsigned i = from; i <= cur; i += Size(indexes[i])) {
 		if (GetOperation(indexes[i]) != OpOr) from = i;
@@ -150,9 +158,7 @@ double SelectIteratorContainer::fullCost(span<unsigned> indexes, unsigned cur, u
 }
 
 bool SelectIteratorContainer::isIdset(const_iterator it, const_iterator end) {
-	return it->operation == OpAnd && it->Is<SelectIterator>() &&
-		   it->Value<SelectIterator>().comparators_.empty() &&	// !it->Value().empty() &&
-		   (++it == end || it->operation != OpOr);
+	return it->operation == OpAnd && it->Is<SelectIterator>() && (++it == end || it->operation != OpOr);  // && !it->Value().empty()
 }
 
 bool SelectIteratorContainer::HasIdsets() const {
@@ -191,30 +197,22 @@ void SelectIteratorContainer::SetExpectMaxIterations(int expectedIterations) {
 }
 
 SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe, const NamespaceImpl &ns, StrictMode strictMode) {
-	SelectKeyResults selectResults;
-
 	if (!qe.HaveEmptyField()) {
-		SelectKeyResult comparisonResult;
-		comparisonResult.comparators_.emplace_back(qe.Condition(), KeyValueType::Null{}, qe.Values(), false, qe.Distinct(), ns.payloadType_,
-												   qe.Fields(), nullptr, CollateOpts());
-		selectResults.emplace_back(std::move(comparisonResult));
+		return ComparatorNotIndexed{qe.FieldName(), qe.Condition(), qe.Values(), ns.payloadType_, qe.Fields().getTagsPath(0),
+									qe.Distinct()};
 	} else if (strictMode == StrictModeNone) {
-		SelectKeyResult res;
 		// Ignore non-index/non-existing fields
 		if (qe.Condition() == CondEmpty) {
-			res.emplace_back(SingleSelectKeyResult(IdType(0), IdType(ns.items_.size())));
+			return SelectKeyResult{{SingleSelectKeyResult{IdType(0), IdType(ns.items_.size())}}};
 		} else {
-			res.emplace_back(SingleSelectKeyResult(IdType(0), IdType(0)));
+			return SelectKeyResult{{SingleSelectKeyResult{IdType(0), IdType(0)}}};
 		}
-		selectResults.emplace_back(std::move(res));
 	} else {
 		throw Error(
 			errStrictMode,
 			"Current query strict mode allows filtering by existing fields only. There are no fields with name '%s' in namespace '%s'",
 			qe.FieldName(), ns.name_);
 	}
-
-	return selectResults;
 }
 
 template <bool left>
@@ -248,7 +246,7 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 	isIndexSparse = index->Opts().IsSparse();
 
 	Index::SelectOpts opts;
-	opts.itemsCountInNamespace = ns.items_.size() - ns.free_.size();
+	opts.itemsCountInNamespace = ns.ItemsCount();
 	if (!ns.SortOrdersBuilt()) opts.disableIdSetCache = 1;
 	if (isQueryFt) {
 		opts.forceComparator = 1;
@@ -297,61 +295,69 @@ void SelectIteratorContainer::processJoinEntry(const JoinQueryEntry &jqe, OpType
 	Append(op, JoinSelectIterator{static_cast<size_t>(jqe.joinIndex)});
 }
 
-void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectResults, OpType op, const NamespaceImpl &ns,
+void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &&selectResults, OpType op, const NamespaceImpl &ns,
 													   const QueryEntry &qe, bool isIndexFt, bool isIndexSparse,
 													   std::optional<OpType> nextOp) {
-	if (selectResults.empty()) {
-		if (op == OpAnd) {
-			Append(OpAnd, AlwaysFalse{});
-		}
-		return;
-	}
-	for (SelectKeyResult &res : selectResults) {
-		switch (op) {
-			case OpOr: {
-				const iterator last = lastAppendedOrClosed();
-				if (last == this->end()) {
-					throw Error(errQueryExec, "OR operator in first condition or after left join");
-				}
-				if (last->Is<SelectIterator>() && !last->Value<SelectIterator>().distinct && last->operation != OpNot) {
-					SelectIterator &it = last->Value<SelectIterator>();
-					if (!qe.IsFieldIndexed() || isIndexSparse) {
-						it.Append(res);
-					} else {
-						it.AppendAndBind(res, ns.payloadType_, qe.IndexNo());
+	std::visit(
+		overloaded{
+			[&](SelectKeyResultsVector &selResults) {
+				if (selResults.empty()) {
+					if (op == OpAnd) {
+						SelectKeyResult zeroScan;
+						zeroScan.emplace_back(0, 0);
+						Append(OpAnd, SelectIterator{std::move(zeroScan), false, "always_false", IteratorFieldKind::None, true});
 					}
-					it.name += " or " + qe.FieldName();
-					break;
+					return;
 				}
-			}
-				[[fallthrough]];
-			case OpNot:
-			case OpAnd:
-				// Iterator Field Kind: Query entry results. Field known.
-				Append<SelectIterator>(op, res, qe.Distinct(), qe.FieldName(),
-									   qe.IndexNo() < 0 ? IteratorFieldKind::NonIndexed : IteratorFieldKind::Indexed, isIndexFt);
-				if (qe.IsFieldIndexed() && !isIndexSparse) {
-					// last appended is always a SelectIterator
-					const auto lastAppendedIt = lastAppendedOrClosed();
-					SelectIterator &lastAppended = lastAppendedIt->Value<SelectIterator>();
-					lastAppended.Bind(ns.payloadType_, qe.IndexNo());
-					lastAppended.SetNotOperationFlag(op == OpNot);
-					const auto maxIterations = lastAppended.GetMaxIterations();
-					const int cur = op == OpNot ? ns.items_.size() - maxIterations : maxIterations;
-					if (lastAppended.comparators_.empty() && (!nextOp.has_value() || nextOp.value() != OpOr)) {
-						if (cur && cur < maxIterations_) maxIterations_ = cur;
-						if (!cur) wasZeroIterations_ = true;
+				for (SelectKeyResult &res : selResults) {
+					switch (op) {
+						case OpOr: {
+							const iterator last = lastAppendedOrClosed();
+							if (last == this->end()) {
+								throw Error(errQueryExec, "OR operator in first condition or after left join");
+							}
+							if (last->Is<SelectIterator>() && !last->Value<SelectIterator>().distinct && last->operation != OpNot) {
+								using namespace std::string_view_literals;
+								SelectIterator &it = last->Value<SelectIterator>();
+								it.Append(std::move(res));
+								it.name.append(" or "sv).append(qe.FieldName());
+								break;
+							}
+						}
+							[[fallthrough]];
+						case OpNot:
+						case OpAnd:
+							// Iterator Field Kind: Query entry results. Field known.
+							Append<SelectIterator>(op, std::move(res), qe.Distinct(), std::string(qe.FieldName()),
+												   qe.IndexNo() < 0 ? IteratorFieldKind::NonIndexed : IteratorFieldKind::Indexed,
+												   isIndexFt);
+							if (qe.IsFieldIndexed() && !isIndexSparse) {
+								// last appended is always a SelectIterator
+								SelectIterator &lastAppended = lastAppendedOrClosed()->Value<SelectIterator>();
+								lastAppended.SetNotOperationFlag(op == OpNot);
+								if (!nextOp.has_value() || nextOp.value() != OpOr) {
+									const auto maxIterations = lastAppended.GetMaxIterations();
+									const int cur = op == OpNot ? ns.items_.size() - maxIterations : maxIterations;
+									if (cur && cur < maxIterations_) maxIterations_ = cur;
+									if (!cur) wasZeroIterations_ = true;
+								}
+							}
+							break;
+						default:
+							throw Error(errQueryExec, "Unknown operator (code %d) in condition", op);
+					}
+					if (isIndexFt) {
+						// last appended is always a SelectIterator
+						lastAppendedOrClosed()->Value<SelectIterator>().SetUnsorted();
 					}
 				}
-				break;
-			default:
-				throw Error(errQueryExec, "Unknown operator (code %d) in condition", op);
-		}
-		if (isIndexFt) {
-			// last appended is always a SelectIterator
-			lastAppendedOrClosed()->Value<SelectIterator>().SetUnsorted();
-		}
-	}
+			},
+			Restricted<ComparatorNotIndexed,
+					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}([&](auto &c) {
+				c.SetNotOperationFlag(op == OpNot);
+				Append(op, std::move(c));
+			})},
+		selectResults.AsVariant());
 }
 
 void SelectIteratorContainer::processEqualPositions(const std::vector<EqualPositions> &equalPositions, const NamespaceImpl &ns,
@@ -362,8 +368,7 @@ void SelectIteratorContainer::processEqualPositions(const std::vector<EqualPosit
 			throw Error(errLogic, "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
 		}
 
-		const KeyValueType type = firstQe.Values().size() ? firstQe.Values()[0].Type() : KeyValueType::Null{};
-		Comparator cmp{firstQe.Condition(), type, firstQe.Values(), true, firstQe.Distinct(), ns.payloadType_, firstQe.Fields()};
+		EqualPositionComparator cmp{ns.payloadType_};
 
 		for (size_t i = 0; i < eqPos.queryEntriesPositions.size(); ++i) {
 			const QueryEntry &qe = queries.Get<QueryEntry>(eqPos.queryEntriesPositions[i]);
@@ -372,16 +377,15 @@ void SelectIteratorContainer::processEqualPositions(const std::vector<EqualPosit
 			}
 			assertrx_throw(qe.Fields().size() == 1);
 			if (qe.Fields()[0] == IndexValueType::SetByJsonPath) {
-				cmp.BindEqualPosition(qe.Fields().getFieldsPath(0), qe.Values(), qe.Condition());
+				cmp.BindField(qe.FieldName(), qe.Fields().getFieldsPath(0), qe.Values(), qe.Condition());
 			} else {
-				cmp.BindEqualPosition(qe.Fields()[0], qe.Values(), qe.Condition());
+				const size_t idxNo = qe.Fields()[0];
+				assertrx_throw(idxNo < ns.indexes_.size());
+				cmp.BindField(qe.FieldName(), idxNo, qe.Values(), qe.Condition(), ns.indexes_[idxNo]->Opts().collateOpts_);
 			}
 		}
 
-		SelectIterator selectIt;
-		selectIt.comparators_.emplace_back(std::move(cmp));
-		selectIt.distinct = false;
-		InsertAfter(eqPos.positionToInsertIterator, OpAnd, std::move(selectIt));
+		InsertAfter(eqPos.positionToInsertIterator, OpAnd, std::move(cmp));
 	}
 }
 
@@ -410,7 +414,7 @@ std::vector<SelectIteratorContainer::EqualPositions> SelectIteratorContainer::pr
 		result[i].queryEntriesPositions.reserve(eqPos[i].size());
 		for (size_t j = begin, next; j < end; j = next) {
 			next = queries.Next(j);
-			queries.InvokeAppropriate<void>(
+			queries.Visit(
 				j, Skip<QueryEntriesBracket, JoinQueryEntry, AlwaysFalse, AlwaysTrue>{}, [](const SubQueryEntry &) { assertrx_throw(0); },
 				[](const SubQueryFieldEntry &) { assertrx_throw(0); },
 				[&](const QueryEntry &eq) {
@@ -468,7 +472,7 @@ bool SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor &q
 	for (size_t i = begin, next = begin; i != end; i = next) {
 		next = queries.Next(i);
 		const OpType op = queries.GetOperation(i);
-		containFT = queries.InvokeAppropriate<bool>(
+		containFT = queries.Visit(
 						i,
 						[](const SubQueryEntry &) -> bool {
 							assertrx_throw(0);
@@ -524,7 +528,7 @@ bool SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor &q
 							if (next != end) {
 								nextOp = queries.GetOperation(next);
 							}
-							processQueryEntryResults(selectResults, op, ns, qe, isIndexFt, isIndexSparse, nextOp);
+							processQueryEntryResults(std::move(selectResults), op, ns, qe, isIndexFt, isIndexSparse, nextOp);
 							if (op != OpOr) {
 								for (auto &ep : equalPositions) {
 									const auto lastPosition = ep.queryEntriesPositions.back();
@@ -551,7 +555,9 @@ bool SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor &q
 							return false;
 						},
 						[this, op](const AlwaysFalse &) {
-							Append(op, AlwaysFalse{});
+							SelectKeyResult zeroScan;
+							zeroScan.emplace_back(0, 0);
+							Append(op, SelectIterator{std::move(zeroScan), false, "always_false", IteratorFieldKind::None, true});
 							return false;
 						},
 						[this, op](const AlwaysTrue &) {
@@ -564,23 +570,28 @@ bool SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor &q
 	return containFT;
 }
 
-template <bool reverse, bool hasComparators>
-bool SelectIteratorContainer::checkIfSatisfyCondition(SelectIterator &it, PayloadValue &pv, bool *finish, IdType rowId,
-													  IdType properRowId) {
-	if (!hasComparators || !it.TryCompare(pv, properRowId)) {
-		while (((reverse && it.Val() > rowId) || (!reverse && it.Val() < rowId)) && it.Next(rowId)) {
+template <bool reverse>
+RX_ALWAYS_INLINE bool SelectIteratorContainer::checkIfSatisfyCondition(SelectIterator &it, bool *finish, IdType rowId) {
+	if constexpr (reverse) {
+		while (it.Val() > rowId && it.Next(rowId)) {
 		}
-		if (it.End()) {
-			*finish = true;
-			return false;
-		} else if ((reverse && it.Val() < rowId) || (!reverse && it.Val() > rowId)) {
-			return false;
+	} else {
+		while (it.Val() < rowId && it.Next(rowId)) {
 		}
 	}
-	return true;
+	if (it.End()) {
+		*finish = true;
+		return false;
+	}
+	if constexpr (reverse) {
+		return it.Val() >= rowId;
+	} else {
+		return it.Val() <= rowId;
+	}
 }
 
-bool SelectIteratorContainer::checkIfSatisfyCondition(JoinSelectIterator &it, PayloadValue &pv, IdType properRowId, bool match) {
+RX_ALWAYS_INLINE bool SelectIteratorContainer::checkIfSatisfyCondition(JoinSelectIterator &it, PayloadValue &pv, IdType properRowId,
+																	   bool match) {
 	assertrx(ctx_->joinedSelectors);
 	ConstPayload pl(*pt_, pv);
 	auto &joinedSelector = (*ctx_->joinedSelectors)[it.joinIndex];
@@ -593,35 +604,43 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 	bool result = true;
 	bool currentFinish = false;
 	for (iterator it = begin; it != end; ++it) {
-		if (it->operation == OpOr) {
+		const auto op = it->operation;
+		if (op == OpOr) {
 			// no short-circuit evaluation for TRUE OR JOIN
 			// suggest that all JOINs in chain of OR ... OR ... OR ... OR will be before all not JOINs (see SortByCost)
 			if (result) {
 				// check what it does not holds join
-				if (it->InvokeAppropriate<bool>(
-						[](const SelectIteratorsBracket &b) noexcept { return !b.haveJoins; },
-						[](const SelectIterator &) noexcept { return true; }, [](const JoinSelectIterator &) noexcept { return false; },
-						[](const FieldsComparator &) noexcept { return true; }, [](const AlwaysFalse &) noexcept { return true; },
-						[](const AlwaysTrue &) noexcept { return true; }))
+				if (it->Visit([] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket &b)
+								  RX_POST_LMBD_ALWAYS_INLINE noexcept { return !b.haveJoins; },
+							  [] RX_PRE_LMBD_ALWAYS_INLINE(const JoinSelectIterator &)
+								  RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
+							  [] RX_PRE_LMBD_ALWAYS_INLINE(
+								  OneOf<SelectIterator, FieldsComparator, AlwaysTrue, EqualPositionComparator, ComparatorNotIndexed,
+										Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>)
+								  RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; }))
 					continue;
 			}
 		} else {
 			if (!result) break;
 		}
 		bool lastFinish = false;
-		const bool lastResult = it->InvokeAppropriate<bool>(
-			[&](SelectIteratorsBracket &) {
+		const bool lastResult = it->Visit(
+			[&] RX_PRE_LMBD_ALWAYS_INLINE(SelectIteratorsBracket &) RX_POST_LMBD_ALWAYS_INLINE {
 				return checkIfSatisfyAllConditions<reverse, hasComparators>(it.begin(), it.end(), pv, &lastFinish, rowId, properRowId,
 																			match);
 			},
-			[&](SelectIterator &sit) { return checkIfSatisfyCondition<reverse, hasComparators>(sit, pv, &lastFinish, rowId, properRowId); },
-			[&](JoinSelectIterator &jit) { return checkIfSatisfyCondition(jit, pv, properRowId, match); },
-			[&pv](FieldsComparator &c) { return c.Compare(pv); }, [](AlwaysFalse &) noexcept { return false; },
-			[](AlwaysTrue &) noexcept { return true; });
-		if (it->operation == OpOr) {
+			[&] RX_PRE_LMBD_ALWAYS_INLINE(SelectIterator & sit)
+				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition<reverse>(sit, &lastFinish, rowId); },
+			[&] RX_PRE_LMBD_ALWAYS_INLINE(JoinSelectIterator & jit)
+				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(jit, pv, properRowId, match); },
+			Restricted<FieldsComparator, EqualPositionComparator, ComparatorNotIndexed,
+					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
+				[&pv, properRowId] RX_PRE_LMBD_ALWAYS_INLINE(auto &c) RX_POST_LMBD_ALWAYS_INLINE { return c.Compare(pv, properRowId); }),
+			[] RX_PRE_LMBD_ALWAYS_INLINE(AlwaysTrue &) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; });
+		if (op == OpOr) {
 			result |= lastResult;
 			currentFinish &= (!result && lastFinish);
-		} else if (lastResult == (it->operation == OpNot)) {
+		} else if (lastResult == (op == OpNot)) {
 			result = false;
 			currentFinish = lastFinish;
 		} else {
@@ -634,46 +653,59 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 }
 
 template <bool reverse>
-IdType SelectIteratorContainer::next(const_iterator it, IdType from) {
-	return it->InvokeAppropriate<IdType>(
-		[it, from](const SelectIteratorsBracket &) { return getNextItemId<reverse>(it.cbegin(), it.cend(), from); },
-		[from](const SelectIterator &sit) {
-			if (sit.comparators_.size()) return from;
-			if constexpr (reverse) {
-				if (sit.End()) return std::numeric_limits<IdType>::lowest();
-				if (sit.Val() < from) return sit.Val() + 1;
-			} else {
-				if (sit.End()) return std::numeric_limits<IdType>::max();
-				if (sit.Val() > from) return sit.Val() - 1;
-			}
-			return from;
-		},
-		[from](const JoinSelectIterator &) noexcept { return from; }, [from](const FieldsComparator &) noexcept { return from; },
-		[from](const AlwaysTrue &) noexcept { return from; },
-		[](const AlwaysFalse &) noexcept {
-			if constexpr (reverse) {
-				return std::numeric_limits<IdType>::lowest();
-			} else {
-				return std::numeric_limits<IdType>::max();
-			}
-		});
-}
-
-template <bool reverse>
 IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterator end, IdType from) {
 	IdType result = from;
 	for (const_iterator it = begin; it != end; ++it) {
 		switch (it->operation) {
-			case OpOr:
-				if (reverse) {
-					result = std::max(result, next<reverse>(it, from));
+			case OpOr: {
+				auto next = it->Visit(
+					[it, from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket &)
+						RX_POST_LMBD_ALWAYS_INLINE { return getNextItemId<reverse>(it.cbegin(), it.cend(), from); },
+					[from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIterator &sit) RX_POST_LMBD_ALWAYS_INLINE {
+						if constexpr (reverse) {
+							if (sit.End()) return std::numeric_limits<IdType>::lowest();
+							if (sit.Val() < from) return sit.Val() + 1;
+						} else {
+							if (sit.End()) return std::numeric_limits<IdType>::max();
+							if (sit.Val() > from) return sit.Val() - 1;
+						}
+						return from;
+					},
+					[from] RX_PRE_LMBD_ALWAYS_INLINE(
+						const OneOf<JoinSelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed, AlwaysTrue,
+									Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>)
+						RX_POST_LMBD_ALWAYS_INLINE { return from; },
+					[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse &) RX_POST_LMBD_ALWAYS_INLINE {
+						return reverse ? std::numeric_limits<IdType>::lowest() : std::numeric_limits<IdType>::max();
+					});
+				if constexpr (reverse) {
+					result = std::max(result, next);
 				} else {
-					result = std::min(result, next<reverse>(it, from));
+					result = std::min(result, next);
 				}
-				break;
+			} break;
 			case OpAnd:
 				from = result;
-				result = next<reverse>(it, from);
+				result = it->Visit(
+					[it, from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket &)
+						RX_POST_LMBD_ALWAYS_INLINE { return getNextItemId<reverse>(it.cbegin(), it.cend(), from); },
+					[from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIterator &sit) RX_POST_LMBD_ALWAYS_INLINE {
+						if constexpr (reverse) {
+							if (sit.End()) return std::numeric_limits<IdType>::lowest();
+							if (sit.Val() < from) return sit.Val() + 1;
+						} else {
+							if (sit.End()) return std::numeric_limits<IdType>::max();
+							if (sit.Val() > from) return sit.Val() - 1;
+						}
+						return from;
+					},
+					[from] RX_PRE_LMBD_ALWAYS_INLINE(
+						const OneOf<JoinSelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed, AlwaysTrue,
+									Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>)
+						RX_POST_LMBD_ALWAYS_INLINE { return from; },
+					[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse &) RX_POST_LMBD_ALWAYS_INLINE {
+						return reverse ? std::numeric_limits<IdType>::lowest() : std::numeric_limits<IdType>::max();
+					});
 				break;
 			case OpNot:
 				break;
@@ -684,13 +716,11 @@ IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterat
 
 template <bool reverse, bool hasComparators>
 bool SelectIteratorContainer::Process(PayloadValue &pv, bool *finish, IdType *rowId, IdType properRowId, bool match) {
-	auto it = begin();
-	if (checkIfSatisfyAllConditions<reverse, hasComparators>(++it, end(), pv, finish, *rowId, properRowId, match)) {
+	if (auto it = begin(); checkIfSatisfyAllConditions<reverse, hasComparators>(++it, end(), pv, finish, *rowId, properRowId, match)) {
 		return true;
-	} else {
-		*rowId = getNextItemId<reverse>(cbegin(), cend(), *rowId);
-		return false;
 	}
+	*rowId = getNextItemId<reverse>(cbegin(), cend(), *rowId);
+	return false;
 }
 
 template bool SelectIteratorContainer::Process<false, false>(PayloadValue &, bool *, IdType *, IdType, bool);
@@ -713,7 +743,7 @@ void SelectIteratorContainer::dump(size_t level, const_iterator begin, const_ite
 		if (it != begin || it->operation != OpAnd) {
 			ser << it->operation << ' ';
 		}
-		it->InvokeAppropriate<void>(
+		it->Visit(
 			[&](const SelectIteratorsBracket &) {
 				ser << "(\n";
 				dump(level + 1, it.cbegin(), it.cend(), joinedSelectors, ser);
@@ -722,9 +752,10 @@ void SelectIteratorContainer::dump(size_t level, const_iterator begin, const_ite
 				}
 				ser << ')';
 			},
-			[&ser](const SelectIterator &sit) { ser << sit.Dump(); },
+			Restricted<SelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed,
+					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
+				[&ser](const auto &c) { ser << c.Dump(); }),
 			[&ser, &joinedSelectors](const JoinSelectIterator &jit) { jit.Dump(ser, joinedSelectors); },
-			[&ser](const FieldsComparator &c) { ser << c.Dump(); }, [&ser](const AlwaysFalse &) { ser << "Always False"; },
 			[&ser](const AlwaysTrue &) { ser << "Always True"; });
 		ser << '\n';
 	}

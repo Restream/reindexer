@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cassert>
 #include <condition_variable>
+#include <string_view>
 #include "contexted_locks.h"
 
 namespace reindexer {

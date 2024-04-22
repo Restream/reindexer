@@ -11,6 +11,7 @@
 #include "core/namespace/namespacestat.h"
 #include "core/payload/payloadiface.h"
 #include "core/perfstatcounter.h"
+#include "core/selectfunc/ctx/basefunctionctx.h"
 #include "core/selectkeyresult.h"
 #include "ft_preselect.h"
 #include "indexiterator.h"
@@ -20,6 +21,7 @@ namespace reindexer {
 class RdxContext;
 class StringsHolder;
 class SelectFunction;
+struct NamespaceCacheConfigData;
 
 class Index {
 public:
@@ -80,6 +82,7 @@ public:
 
 	virtual bool IsDestroyPartSupported() const noexcept { return false; }
 	virtual void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue&) {}
+	virtual const void* ColumnData() const noexcept = 0;
 
 	const PayloadType& GetPayloadType() const& { return payloadType_; }
 	const PayloadType& GetPayloadType() const&& = delete;
@@ -88,8 +91,8 @@ public:
 	static std::unique_ptr<Index> New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields_,
 									  const NamespaceCacheConfigData& cacheCfg);
 
-	KeyValueType KeyType() const { return keyType_; }
-	KeyValueType SelectKeyType() const { return selectKeyType_; }
+	KeyValueType KeyType() const noexcept { return keyType_; }
+	KeyValueType SelectKeyType() const noexcept { return selectKeyType_; }
 	const FieldsSet& Fields() const& noexcept { return fields_; }
 	const FieldsSet& Fields() const&& = delete;
 	const std::string& Name() const& noexcept { return name_; }
@@ -122,6 +125,7 @@ public:
 		commitPerfCounter_.Reset();
 	}
 	virtual bool HoldsStrings() const noexcept = 0;
+	virtual void DestroyCache() {}
 	virtual void ClearCache() {}
 	virtual void ClearCache(const std::bitset<kMaxIndexes>&) {}
 	virtual bool IsBuilt() const noexcept { return isBuilt_; }

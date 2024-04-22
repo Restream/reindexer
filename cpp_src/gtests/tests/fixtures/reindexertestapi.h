@@ -34,7 +34,7 @@ public:
 	ReindexerTestApi(const ConfigT &cfg) : reindexer(std::make_shared<DB>(cfg)) {}
 
 	template <typename FieldsT>
-	static void DefineNamespaceDataset(DB &rx, const std::string &ns, const FieldsT &fields) {
+	static void DefineNamespaceDataset(DB &rx, std::string_view ns, const FieldsT &fields) {
 		auto err = reindexer::Error();
 		for (const auto &field : fields) {
 			if (field.indexType != "composite") {
@@ -62,10 +62,10 @@ public:
 		err = rx.Commit(ns);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
-	void DefineNamespaceDataset(const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
+	void DefineNamespaceDataset(std::string_view ns, std::initializer_list<const IndexDeclaration> fields) {
 		DefineNamespaceDataset(*reindexer, ns, fields);
 	}
-	void DefineNamespaceDataset(const std::string &ns, const std::vector<IndexDeclaration> &fields) {
+	void DefineNamespaceDataset(std::string_view ns, const std::vector<IndexDeclaration> &fields) {
 		DefineNamespaceDataset(*reindexer, ns, fields);
 	}
 
@@ -140,7 +140,7 @@ public:
 		return outBuf;
 	}
 	std::string RandString() { return RandString(4, 4); }
-	std::string RandString(unsigned minLen, unsigned maxRandLen) { return RandString(rand() % maxRandLen + minLen); }
+	std::string RandString(unsigned minLen, unsigned maxRandLen) { return RandString(maxRandLen ? (rand() % maxRandLen + minLen) : minLen); }
 	std::string RandString(unsigned len) {
 		std::string res;
 		res.resize(len);

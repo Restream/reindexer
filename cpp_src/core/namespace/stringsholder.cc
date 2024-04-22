@@ -6,7 +6,7 @@ namespace reindexer {
 StringsHolder::~StringsHolder() = default;
 
 void StringsHolder::Add(std::unique_ptr<Index>&& idx) {
-	idx->ClearCache();
+	idx->DestroyCache();
 	indexes_.emplace_back(std::move(idx));
 }
 

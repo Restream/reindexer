@@ -124,6 +124,7 @@ public:
 	Error GetMeta(cproto::Context &ctx, p_string ns, p_string key, std::optional<int> options);
 	Error PutMeta(cproto::Context &ctx, p_string ns, p_string key, p_string data);
 	Error EnumMeta(cproto::Context &ctx, p_string ns);
+	Error DeleteMeta(cproto::Context &ctx, p_string ns, p_string key);
 	Error SubscribeUpdates(cproto::Context &ctx, int subscribe, std::optional<p_string> filterJson, std::optional<int> options);
 
 	Error SuggestLeader(cproto::Context &ctx, p_string suggestion);
@@ -165,7 +166,7 @@ protected:
 
 	IClientsStats *clientsStats_;
 
-	std::chrono::system_clock::time_point startTs_;
+	system_clock_w::time_point startTs_;
 	std::thread qrWatcherThread_;
 	RPCQrWatcher qrWatcher_;
 	std::atomic<bool> terminate_ = {false};

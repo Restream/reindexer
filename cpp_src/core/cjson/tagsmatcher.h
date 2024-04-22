@@ -4,7 +4,6 @@
 #include "core/cjson/tagsmatcherimpl.h"
 #include "core/payload/payloadtype.h"
 #include "estl/cow.h"
-#include "tagspathcache.h"
 #include "tools/randomgenerator.h"
 #include "tools/serializer.h"
 
@@ -93,7 +92,7 @@ public:
 
 	std::string dump() const { return impl_->dumpTags() + "\n" + impl_->dumpNames() + "\n" + impl_->dumpPaths(); }
 
-protected:
+private:
 	TagsMatcher(intrusive_ptr<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>&& impl) : impl_(std::move(impl)), updated_(false) {}
 
 	shared_cow_ptr<TagsMatcherImpl> impl_;

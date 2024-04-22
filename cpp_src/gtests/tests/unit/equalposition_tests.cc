@@ -5,18 +5,18 @@ using Item = ReindexerApi::Item;
 using Reindexer = ReindexerApi::Reindexer;
 
 bool Compare(const Variant& key1, const Variant& key2, CondType condType) {
-	int res = key1.Compare(key2);
+	const auto res = key1.Compare<reindexer::NotComparable::Return>(key2);
 	switch (condType) {
 		case CondEq:
-			return res == 0;
+			return res == reindexer::ComparationResult::Eq;
 		case CondGe:
-			return res >= 0;
+			return res & reindexer::ComparationResult::Ge;
 		case CondGt:
-			return res > 0;
+			return res == reindexer::ComparationResult::Gt;
 		case CondLe:
-			return res <= 0;
+			return res & reindexer::ComparationResult::Le;
 		case CondLt:
-			return res < 0;
+			return res == reindexer::ComparationResult::Lt;
 		case CondAny:
 		case CondRange:
 		case CondSet:

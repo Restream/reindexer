@@ -11,13 +11,13 @@
 #include "core/iclientsstats.h"
 #include "core/index/index.h"
 #include "core/itemimpl.h"
-#include "core/nsselecter/crashqueryreporter.h"
 #include "core/nsselecter/nsselecter.h"
 #include "core/nsselecter/querypreprocessor.h"
 #include "core/query/sql/sqlsuggester.h"
 #include "core/queryresults/joinresults.h"
 #include "core/selectfunc/selectfunc.h"
 #include "core/type_consts_helpers.h"
+#include "debug/crashqueryreporter.h"
 #include "estl/defines.h"
 #include "rx_selector.h"
 #include "server/outputparameters.h"
@@ -163,7 +163,7 @@ Error ReindexerImpl::enableStorage(const std::string& storagePath) {
 	if (!isEmpty) {
 		std::string content;
 		int res = fs::ReadFile(fs::JoinPath(storagePath, kStoragePlaceholderFilename), content);
-		if (res > 0) {
+		if (res >= 0) {
 			auto currentStorageType = StorageType::LevelDB;
 			try {
 				currentStorageType = reindexer::datastorage::StorageTypeFromString(content);
@@ -1010,6 +1010,10 @@ Error ReindexerImpl::PutMeta(std::string_view nsName, const std::string& key, st
 
 Error ReindexerImpl::EnumMeta(std::string_view nsName, std::vector<std::string>& keys, const RdxContext& ctx) {
 	return applyNsFunction<&Namespace::EnumMeta>(nsName, ctx, keys);
+}
+
+Error ReindexerImpl::DeleteMeta(std::string_view nsName, const std::string& key, const RdxContext& ctx) {
+	return applyNsFunction<&Namespace::DeleteMeta>(nsName, ctx, key);
 }
 
 Error ReindexerImpl::Delete(std::string_view nsName, Item& item, const RdxContext& ctx) { APPLY_NS_FUNCTION1(false, Delete, item); }

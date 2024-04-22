@@ -1,7 +1,6 @@
 #pragma once
 
 #include <vector>
-#include "core/indexopts.h"
 #include "core/itemimpl.h"
 #include "estl/fast_hash_map.h"
 #include "itemref.h"
@@ -9,10 +8,8 @@
 
 namespace reindexer {
 
-class QueryResults;
 class PayloadType;
 class TagsMatcher;
-class FieldsSet;
 
 namespace joins {
 

@@ -1,6 +1,8 @@
 #pragma once
-#include <chrono>
+
 #include <string>
+#include "tools/clock.h"
+
 namespace reindexer {
 
 class WrSerializer;
@@ -11,7 +13,7 @@ struct Activity {
 	std::string activityTracer;
 	std::string user;
 	std::string query;
-	std::chrono::system_clock::time_point startTime;
+	system_clock_w::time_point startTime;
 	enum State : unsigned {
 		InProgress = 0,
 		WaitLock,

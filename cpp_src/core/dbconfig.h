@@ -6,7 +6,6 @@
 #include <vector>
 #include "cluster/config.h"
 #include "estl/fast_hash_map.h"
-#include "estl/mutex.h"
 #include "estl/shared_mutex.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"

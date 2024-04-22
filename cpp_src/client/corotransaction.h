@@ -1,7 +1,8 @@
 #pragma once
-#include <chrono>
+
 #include "client/item.h"
 #include "core/query/query.h"
+#include "tools/clock.h"
 #include "tools/lsn.h"
 
 namespace reindexer {
@@ -88,7 +89,7 @@ private:
 		Error status_;
 		std::unique_ptr<TagsMatcher> localTm_;
 		Namespace* ns_ = nullptr;
-		std::chrono::steady_clock::time_point sessionTs_;
+		steady_clock_w::time_point sessionTs_;
 	};
 
 	Impl i_;

@@ -403,30 +403,43 @@ static void CheckSetGetShema(ClusterizationApi::Cluster& cluster, int nodeSet, i
 	ASSERT_TRUE(jsonschema.compare(0, jsonschema.size() - 1, schemaGet, 0, jsonschema.size() - 1) == 0);
 }
 
-static void CheckSetGetEnumMeta(ClusterizationApi::Cluster& cluster, int nodeSet, int nodeRead) {
+static void CheckSetGetEnumDeleteMeta(ClusterizationApi::Cluster& cluster, int nodeSet, int nodeRead) {
 	// checking meta operation
 	// create test ns
 	const std::string kNsName = "nsMeta";
 	CreateTestNs(kNsName, nodeSet, cluster);
 
 	// set meta
-	std::string metaDataVal("testMetaData");
-	Error err = cluster.GetNode(nodeSet)->api.reindexer->PutMeta(kNsName, "testMeta", metaDataVal);
+	const std::string metaKey = "testMeta";
+	const std::string metaData = "testMetaData";
+	Error err = cluster.GetNode(nodeSet)->api.reindexer->PutMeta(kNsName, metaKey, metaData);
 	ASSERT_TRUE(err.ok()) << err.what();
 	// read meta
-	std::string metaData;
-	err = cluster.GetNode(nodeRead)->api.reindexer->GetMeta(kNsName, "testMeta", metaData);
+	std::string readMetaData;
+	err = cluster.GetNode(nodeRead)->api.reindexer->GetMeta(kNsName, metaKey, readMetaData);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_EQ(metaData, "testMetaData");
+	ASSERT_EQ(readMetaData, "testMetaData");
 
 	// get all meta keys
 	std::vector<std::string> keys;
 	err = cluster.GetNode(nodeRead)->api.reindexer->EnumMeta(kNsName, keys);
+	bool found = false;
 	ASSERT_TRUE(err.ok()) << err.what();
 	for (const auto& k : keys) {
-		if (k == "testMeta") return;
+		if (k == metaKey) {
+			found = true;
+			break;
+		}
 	}
-	ASSERT_TRUE(false) << "EnumMeta: key not found.";
+	ASSERT_TRUE(found) << "EnumMeta: key not found.";
+
+	// delete meta key
+	err = cluster.GetNode(nodeRead)->api.reindexer->DeleteMeta(kNsName, metaKey);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = cluster.GetNode(nodeRead)->api.reindexer->EnumMeta(kNsName, keys);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(keys.empty()) << "DeleteMeta: key not deleted";
 }
 
 static void SelectHelper(int node, const std::string& nsName, ClusterizationApi::Cluster& cluster, const std::string& itemJson,
@@ -887,7 +900,7 @@ TEST_F(ClusterizationProxyApi, ApiTest) {
 				   CheckSetGetShema(cluster, followerId, leaderId);
 				   CheckSetGetShema(cluster, followerId, followerId);
 
-				   CheckSetGetEnumMeta(cluster, followerId, leaderId);
+				   CheckSetGetEnumDeleteMeta(cluster, followerId, leaderId);
 			   }),
 			   1024 * 1024);
 
@@ -1151,7 +1164,7 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderAndWrite) {
 			const std::string threadName = "Tx_" + std::to_string(tid);
 			while (!done) {
 				auto txNum = txCounter++;
-				auto txStart = std::chrono::system_clock::now();
+				auto txStart = ItemTracker::ClockT::now();
 				auto tx = client->NewTransaction(nsName);
 				ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
 				std::vector<std::pair<std::string, ItemTracker::ItemInfo>> items;
@@ -1175,10 +1188,10 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderAndWrite) {
 				}
 				BaseApi::QueryResultsType qrTx;
 
-				auto timeBeforeCommit = std::chrono::system_clock::now();
+				auto timeBeforeCommit = ItemTracker::ClockT::now();
 				int64_t txId = tx.GetTransactionId();
 				auto err = client->CommitTransaction(tx, qrTx);
-				ItemTracker::ItemInfo txInfoAfterCommit(txNum, txId, nodeId, txStart, timeBeforeCommit, std::chrono::system_clock::now(),
+				ItemTracker::ItemInfo txInfoAfterCommit(txNum, txId, nodeId, txStart, timeBeforeCommit, ItemTracker::ClockT::now(),
 														threadName);
 				txInfoAfterCommit.txBeforeCommit = timeBeforeCommit;
 				if (err.code() == errTxInvalidLeader || err.code() == errWrongReplicationData || err.code() == errAlreadyProxied) {

@@ -92,14 +92,8 @@ std::optional<std::string> ActivityContainer::QueryForIpConnection(int id) {
 
 RdxActivityContext::RdxActivityContext(std::string_view activityTracer, std::string_view user, std::string_view query,
 									   ActivityContainer& parent, int ipConnectionId, bool clientState)
-	: data_{nextId(),
-			ipConnectionId,
-			std::string(activityTracer),
-			std::string(user),
-			std::string(query),
-			std::chrono::system_clock::now(),
-			Activity::InProgress,
-			""sv},
+	: data_{nextId(),			ipConnectionId,		   std::string(activityTracer), std::string(user),
+			std::string(query), system_clock_w::now(), Activity::InProgress,		""sv},
 	  state_(serializeState(clientState ? Activity::Sending : Activity::InProgress)),
 #ifndef NDEBUG
 	  refCount_(0u),

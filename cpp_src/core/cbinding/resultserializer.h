@@ -1,7 +1,6 @@
 #pragma once
 #include <vector>
 #include "core/queryresults/queryresults.h"
-#include "estl/h_vector.h"
 #include "estl/span.h"
 #include "tools/semversion.h"
 #include "tools/serializer.h"

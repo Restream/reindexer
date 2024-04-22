@@ -42,7 +42,7 @@ void ThrowOnCancel(const Context& ctx, std::string_view errMsg = std::string_vie
 
 class RdxDeadlineContext : public IRdxCancelContext {
 public:
-	using ClockT = std::chrono::steady_clock;
+	using ClockT = steady_clock_w;
 	using time_point = typename ClockT::time_point;
 
 	RdxDeadlineContext(time_point deadline = time_point(), const IRdxCancelContext* parent = nullptr) noexcept
@@ -52,7 +52,7 @@ public:
 
 	CancelType GetCancelType() const noexcept override final {
 		if ((deadline_.time_since_epoch().count() > 0) &&
-			(deadline_.time_since_epoch().count() < ClockT::now().time_since_epoch().count())) {
+			(deadline_.time_since_epoch().count() < ClockT::now_coarse().time_since_epoch().count())) {
 			return CancelType::Timeout;
 		}
 		if (parent_) {
@@ -285,7 +285,7 @@ public:
 	bool IsShardingParallelExecution() const noexcept { return shardingParallelExecution_; }
 	void SetShardingParallelExecution(bool parallel) noexcept { shardingParallelExecution_ = parallel; }
 	void SetTimeout(std::chrono::seconds timeout) noexcept {
-		const auto deadline = std::chrono::steady_clock::now() + timeout;
+		const auto deadline = steady_clock_w::now_coarse() + timeout;
 		const auto curDeadlineCnt = deadlineCtx_.deadline().time_since_epoch().count();
 		if (curDeadlineCnt > 0) {
 			const auto newDeadlineCnt = deadline.time_since_epoch().count();

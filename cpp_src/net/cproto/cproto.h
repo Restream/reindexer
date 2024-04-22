@@ -42,6 +42,7 @@ enum CmdCode : uint16_t {
 
 	kShardingControlRequest = 55,
 
+	kCmdDeleteMeta = 63,
 	kCmdGetMeta = 64,
 	kCmdPutMeta = 65,
 	kCmdEnumMeta = 66,

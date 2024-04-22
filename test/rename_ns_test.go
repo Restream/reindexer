@@ -8,6 +8,7 @@ import (
 
 	"github.com/restream/reindexer/v4"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type TestItem1 struct {
@@ -22,7 +23,7 @@ type TestItem2 struct {
 }
 
 func GetAllDataFromNamespace(t *testing.T, namespace string) (item []interface{}, err error) {
-	q := DB.Query(namespace)
+	q := DB.Query(namespace).Sort("id", false)
 	it := q.Exec(t)
 	defer it.Close()
 	return it.FetchAll()
@@ -74,6 +75,17 @@ func TestRenameNamespace(t *testing.T) {
 	// rename to system namespace
 	err = DB.RenameNamespace(testRenameNamespaceTo, "#rename_namespace")
 	assert.Error(t, err, "rename to system namespace err src = \"%s\" dst = \"%s\"", testRenameNamespaceTo, "#rename_namespace")
+	testRNdataTo, err = GetAllDataFromNamespace(t, testRenameNamespaceTo)
+	assert.NoError(t, err, "Can't get data from namespace")
+	assert.Equal(t, testRNdata, testRNdataTo, "Data in tables not equals\n%s\n%s", testRNdata, testRNdataTo)
+
+	// add more data to the renamed namespace
+	for index := 10; index < 15; index++ {
+		item := TestItem1{index, 2, "nameTest" + strconv.Itoa(index)}
+		err = DB.Upsert(testRenameNamespaceTo, item)
+		require.NoError(t, err, "Can't Upsert data to namespace")
+		testRNdata = append(testRNdata, &item)
+	}
 	testRNdataTo, err = GetAllDataFromNamespace(t, testRenameNamespaceTo)
 	assert.NoError(t, err, "Can't get data from namespace")
 	assert.Equal(t, testRNdata, testRNdataTo, "Data in tables not equals\n%s\n%s", testRNdata, testRNdataTo)

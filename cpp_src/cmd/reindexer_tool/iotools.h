@@ -4,7 +4,6 @@
 #include <iostream>
 
 #include "tools/errors.h"
-#include "tools/serializer.h"
 
 namespace reindexer_tool {
 

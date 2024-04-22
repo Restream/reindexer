@@ -62,7 +62,7 @@ void BaseEncoder<Builder>::Encode(ConstPayload& pl, Builder& builder, const h_ve
 	for (auto ds : dss) {
 		if (ds) {
 			if (const auto joinsDs = ds->GetJoinsDatasource()) {
-				for (size_t i = 0; i < joinsDs->GetJoinedRowsCount(); ++i) {
+				for (size_t i = 0, cnt = joinsDs->GetJoinedRowsCount(); i < cnt; ++i) {
 					encodeJoinedItems(objNode, joinsDs, i);
 				}
 			}
@@ -86,7 +86,7 @@ const TagsLengths& BaseEncoder<Builder>::GetTagsMeasures(ConstPayload& pl, IEnco
 		}
 
 		if (ds && ds->GetJoinedRowsCount() > 0) {
-			for (size_t i = 0; i < ds->GetJoinedRowsCount(); ++i) {
+			for (size_t i = 0, rows = ds->GetJoinedRowsCount(); i < rows; ++i) {
 				collectJoinedItemsTagsSizes(ds, i);
 			}
 		}

@@ -1488,7 +1488,7 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithActualConfigTest) {
 
 	TestCout() << "Comparison of sharding configs on cluster nodes" << std::endl;
 	// NOLINTNEXTLINE
-	auto start = std::chrono::system_clock::now();
+	auto start = system_clock_w::now();
 	for (bool needContinue = true; needContinue; std::this_thread::sleep_for(delay)) {
 		try {
 			for (size_t i = 0; i < svc_.size(); ++i) {
@@ -1501,7 +1501,7 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithActualConfigTest) {
 		} catch (...) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(20));
 		}
-		needContinue = std::chrono::system_clock::now() - start < deadline;
+		needContinue = system_clock_w::now() - start < deadline;
 		ASSERT_TRUE(needContinue) << "Time limit for appliing config by leaders exceeded";
 	}
 
@@ -1768,7 +1768,7 @@ TEST_F(ShardingApi, DISABLED_SelectProxyBench) {
 		// <Start profiling here>
 		std::unique_lock lck(mtx);
 		ready = true;
-		const auto beg = std::chrono::high_resolution_clock::now();
+		const auto beg = steady_clock_w::now();
 		cv.notify_all();
 		lck.unlock();
 		TestCout() << fmt::sprintf("Start with %d threads", thCnt) << std::endl;
@@ -1776,7 +1776,7 @@ TEST_F(ShardingApi, DISABLED_SelectProxyBench) {
 			th.join();
 		}
 		// <Stop profiling here>
-		const auto diff = std::chrono::high_resolution_clock::now() - beg;
+		const auto diff = steady_clock_w::now() - beg;
 		TestCout() << fmt::sprintf("Done with %d threads in %d usec", thCnt, diff.count() / 1000) << std::endl;
 	}
 }
@@ -2369,7 +2369,7 @@ TEST_F(ShardingApi, ConfigYaml) {
           - [4, 5]
           - [100, 150])",
 	   R"(- 143
-          - 12)"}), Error{errParams, "Incorrect segment '[2.300000, 3]'. Type of left value is 'double', right type is 'int64'"}},
+          - 12)"}), Error{errParams, "Incorrect segment '[2.3, 3]'. Type of left value is 'double', right type is 'int64'"}},
 		TestCase{substRangesInTemplate({
 	   R"(- [1.4, "string"]
           - 3
@@ -2379,7 +2379,7 @@ TEST_F(ShardingApi, ConfigYaml) {
           - [4, 5]
           - [100, 150])",
 	   R"(- 143
-          - 12)"}), Error{errParams, "Incorrect segment '[1.400000, string]'. Type of left value is 'double', right type is 'string'"}}};
+          - 12)"}), Error{errParams, "Incorrect segment '[1.4, string]'. Type of left value is 'double', right type is 'string'"}}};
 	// clang-format on
 
 	std::vector<TestCase> testCases{

@@ -2,9 +2,9 @@
 #include <iostream>
 #include <memory>
 #include <vector>
+#include "core/ft/ft_fuzzy/merger/dataset.h"
 #include "core/rdxcontext.h"
 #include "estl/fast_hash_map.h"
-#include "estl/fast_hash_set.h"
 #include "math.h"
 #include "sort/pdqsort.hpp"
 

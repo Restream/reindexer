@@ -4,8 +4,6 @@
 #include <atomic>
 #include "tools/assertrx.h"
 
-#include <functional>
-
 namespace reindexer {
 
 template <typename T>
@@ -16,7 +14,7 @@ private:
 public:
 	typedef T element_type;
 
-	intrusive_ptr() noexcept : px(0) {}
+	intrusive_ptr() noexcept = default;
 
 	intrusive_ptr(T *p, bool add_ref = true) noexcept : px(p) {
 		if (px != 0 && add_ref) intrusive_ptr_add_ref(px);
@@ -91,7 +89,7 @@ public:
 	}
 
 private:
-	T *px;
+	T *px{nullptr};
 };
 
 template <class T, class U>

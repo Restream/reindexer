@@ -1,8 +1,6 @@
 #include "client/rpcclient.h"
-#include <stdio.h>
 #include <functional>
 #include "client/itemimpl.h"
-#include "client/rpcclient.h"
 #include "client/snapshot.h"
 #include "cluster/clustercontrolrequest.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
@@ -14,7 +12,6 @@
 #include "tools/catch_and_return.h"
 #include "tools/cpucheck.h"
 #include "tools/errors.h"
-#include "vendor/gason/gason.h"
 
 namespace reindexer {
 namespace client {
@@ -366,6 +363,10 @@ Error RPCClient::EnumMeta(std::string_view nsName, std::vector<std::string>& key
 	} catch (const Error& err) {
 		return err;
 	}
+}
+
+Error RPCClient::DeleteMeta(std::string_view nsName, const std::string& key, const InternalRdxContext& ctx) {
+	return conn_.Call(mkCommand(cproto::kCmdDeleteMeta, &ctx), nsName, key).Status();
 }
 
 Error RPCClient::Delete(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx) {
@@ -734,7 +735,7 @@ Error RPCClient::ClusterControlRequest(const ClusterControlRequestData& request,
 
 int64_t RPCClient::AddConnectionStateObserver(ConnectionStateHandlerT callback) {
 	do {
-		const auto tm = std::chrono::steady_clock::now().time_since_epoch().count();
+		const auto tm = steady_clock_w::now().time_since_epoch().count();
 		if (observers_.find(tm) == observers_.end()) {
 			observers_.emplace(std::make_pair(tm, std::move(callback)));
 			return tm;

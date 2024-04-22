@@ -9,7 +9,6 @@
 #ifdef REINDEX_CORE_BUILD
 #include "debug/backtrace.h"
 #include "spdlog/fmt/bundled/printf.h"
-#include "spdlog/fmt/fmt.h"
 #endif	// REINDEX_CORE_BUILD
 
 namespace reindexer {

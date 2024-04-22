@@ -74,12 +74,12 @@ TEST_F(ClusterizationApi, TransactionTimeout) {
 		// Nodes startup is checked during cluster initialization
 
 		TestCout() << "Attempting to create new transaction. Attempt timeout: 1 sec" << std::endl;
-		auto start = std::chrono::steady_clock::now();
+		auto start = steady_clock_w::now();
 		auto db = cluster.GetNode(0)->api.reindexer->WithTimeout(std::chrono::seconds(1));
 		auto tx = db.NewTransaction(kNsSome);
 		const auto& err = tx.Status();
 		ASSERT_EQ(err.code(), errTimeout) << err;
-		auto elapsedSec = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start).count();
+		auto elapsedSec = std::chrono::duration_cast<std::chrono::seconds>(steady_clock_w::now() - start).count();
 		auto thresholdSec = std::chrono::seconds(5).count();
 		ASSERT_LE(elapsedSec, thresholdSec);
 

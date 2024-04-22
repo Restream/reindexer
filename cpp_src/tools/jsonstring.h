@@ -3,7 +3,6 @@
 #include <memory>
 #include <string_view>
 #include <vector>
-#include "tools/assertrx.h"
 
 namespace reindexer {
 namespace json_string {

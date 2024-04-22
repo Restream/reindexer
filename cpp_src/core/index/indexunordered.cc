@@ -199,11 +199,7 @@ Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id, bool &clearCach
 
 	addMemStat(keyIt);
 
-	if (this->KeyType().template Is<KeyValueType::String>() && this->opts_.GetCollateMode() != CollateNone) {
-		return Base::Upsert(key, id, clearCache);
-	}
-
-	return Variant(keyIt->first);
+	return this->IsFulltext() ? Variant{keyIt->first} : IndexStore<StoreIndexKeyType<T>>::Upsert(Variant{keyIt->first}, id, clearCache);
 }
 
 template <typename T>
@@ -247,8 +243,8 @@ void IndexUnordered<T>::Delete(const Variant &key, IdType id, StringsHolder &str
 		this->tracker_.markUpdated(this->idx_map, keyIt);
 	}
 
-	if (this->KeyType().template Is<KeyValueType::String>() && this->opts_.GetCollateMode() != CollateNone) {
-		Base::Delete(key, id, strHolder, clearCache);
+	if (!this->IsFulltext()) {
+		IndexStore<StoreIndexKeyType<T>>::Delete(key, id, strHolder, clearCache);
 	}
 }
 
@@ -270,7 +266,11 @@ bool IndexUnordered<T>::tryIdsetCache(const VariantArray &keys, CondType conditi
 		if (!cached.val.ids) {
 			scanWin = selector(res, idsCount);
 			if (!scanWin) {
-				cache_->Put(ckey, res.MergeIdsets(res.deferedExplicitSort, idsCount));
+				// Do not use generic sort, when expecting duplicates in the id sets
+				const bool useGenericSort =
+					res.deferedExplicitSort && !(this->opts_.IsArray() && (condition == CondEq || condition == CondSet));
+				cache_->Put(ckey,
+							res.MergeIdsets(SelectKeyResult::MergeOptions{.genericSort = useGenericSort, .shrinkResult = true}, idsCount));
 			}
 		} else {
 			res.emplace_back(std::move(cached.val.ids));
@@ -306,8 +306,9 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 				Index::SelectOpts opts;
 			} ctx = {&this->idx_map, keys, sortId, opts};
 			bool selectorWasSkipped = false;
+			bool isSparse = this->opts_.IsSparse();
 			// should return true, if fallback to comparator required
-			auto selector = [&ctx, &selectorWasSkipped](SelectKeyResult &res, size_t &idsCount) -> bool {
+			auto selector = [&ctx, &selectorWasSkipped, isSparse](SelectKeyResult &res, size_t &idsCount) -> bool {
 				idsCount = 0;
 				// Skip this index if there are some other indexes with potentially higher selectivity
 				if (!ctx.opts.distinct && ctx.keys.size() > 1 && 8 * ctx.keys.size() > size_t(ctx.opts.maxIterations) &&
@@ -326,7 +327,8 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 
 				res.deferedExplicitSort = SelectKeyResult::IsGenericSortRecommended(res.size(), idsCount, idsCount);
 
-				if (!ctx.opts.itemsCountInNamespace) return false;
+				// avoid comparator for sparse index
+				if (isSparse || !ctx.opts.itemsCountInNamespace) return false;
 				// Check selectivity:
 				// if ids count too much (more than maxSelectivityPercentForIdset() of namespace),
 				// and index not optimized, or we have >4 other conditions
@@ -355,12 +357,12 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 				SelectKeyResult res1;
 				auto keyIt = this->idx_map.find(static_cast<ref_type>(key.convert(this->KeyType())));
 				if (keyIt == this->idx_map.end()) {
-					rslts.clear();
-					rslts.emplace_back(std::move(res1));
+					rslts.Clear();
+					rslts.EmplaceBack(std::move(res1));
 					return rslts;
 				}
 				res1.emplace_back(keyIt->second, sortId);
-				rslts.emplace_back(std::move(res1));
+				rslts.EmplaceBack(std::move(res1));
 			}
 			return rslts;
 		}

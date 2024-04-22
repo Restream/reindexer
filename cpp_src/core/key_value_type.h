@@ -64,7 +64,7 @@ private:
 	public:
 		explicit VisitorWrapper(Visitor& v) noexcept : visitor_{v} {}
 		template <typename... Ts>
-		auto operator()(Ts... vs) const noexcept(noexcept(std::declval<Visitor>()(Ts{}..., T{}))) {
+		RX_ALWAYS_INLINE auto operator()(Ts... vs) const noexcept(noexcept(std::declval<Visitor>()(Ts{}..., T{}))) {
 			return visitor_(vs..., T{});
 		}
 
@@ -116,11 +116,10 @@ public:
 	constexpr KeyValueType(Composite) noexcept : value_{KVT::Composite} {}
 	constexpr KeyValueType(Tuple) noexcept : value_{KVT::Tuple} {}
 	constexpr KeyValueType(Uuid) noexcept : value_{KVT::Uuid} {}
-	constexpr KeyValueType(const KeyValueType& other) noexcept : value_{other.value_} {}
-	constexpr KeyValueType& operator=(const KeyValueType& other) noexcept {
-		value_ = other.value_;
-		return *this;
-	}
+	constexpr KeyValueType(const KeyValueType&) noexcept = default;
+	constexpr KeyValueType& operator=(const KeyValueType&) noexcept = default;
+	constexpr KeyValueType(KeyValueType&&) noexcept = default;
+	constexpr KeyValueType& operator=(KeyValueType&&) noexcept = default;
 	explicit KeyValueType(TagType t) {
 		switch (t) {
 			case TAG_VARINT:
@@ -150,7 +149,8 @@ public:
 	}
 
 	template <typename... Fs>
-	[[nodiscard]] auto EvaluateOneOf(overloaded<Fs...> f) const noexcept(ForAllTypes<IsNoexcept<Fs...>::template Overloaded>) {
+	[[nodiscard]] RX_ALWAYS_INLINE auto EvaluateOneOf(overloaded<Fs...> f) const
+		noexcept(ForAllTypes<IsNoexcept<Fs...>::template Overloaded>) {
 		static_assert(ForAnyType<OneOf<Fs...>::template IsInvocable>);
 		switch (value_) {
 			case KVT::Int64:
@@ -178,15 +178,15 @@ public:
 		std::abort();
 	}
 	template <typename... Fs>
-	[[nodiscard]] auto EvaluateOneOf(Fs... fs) const noexcept(ForAllTypes<IsNoexcept<Fs...>::template Overloaded>) {
+	[[nodiscard]] RX_ALWAYS_INLINE auto EvaluateOneOf(Fs... fs) const noexcept(ForAllTypes<IsNoexcept<Fs...>::template Overloaded>) {
 		return EvaluateOneOf(overloaded<Fs...>{std::move(fs)...});
 	}
 	template <typename Visitor>
-	static auto Visit(Visitor visitor, KeyValueType t) noexcept(ForAllTypes<IsNoexcept<Visitor>::template Overloaded>) {
+	RX_ALWAYS_INLINE static auto Visit(Visitor visitor, KeyValueType t) noexcept(ForAllTypes<IsNoexcept<Visitor>::template Overloaded>) {
 		return t.EvaluateOneOf(std::move(visitor));
 	}
 	template <typename Visitor>
-	static auto Visit(Visitor visitor, KeyValueType t1, KeyValueType t2) noexcept {
+	RX_ALWAYS_INLINE static auto Visit(Visitor visitor, KeyValueType t1, KeyValueType t2) noexcept {
 		switch (t2.value_) {
 			case KVT::Int64:
 				static_assert(ForAllTypes<IsNoexcept<VisitorWrapper<Int64, Visitor>>::template Overloaded>);
@@ -297,6 +297,42 @@ public:
 		assertrx(0);
 		std::abort();
 	}
+
+	template <typename T>
+	static KeyValueType From();
 };
+
+class key_string;
+class Uuid;
+
+template <>
+RX_ALWAYS_INLINE KeyValueType KeyValueType::From<bool>() {
+	return KeyValueType::Bool{};
+}
+
+template <>
+RX_ALWAYS_INLINE KeyValueType KeyValueType::From<int>() {
+	return KeyValueType::Int{};
+}
+
+template <>
+RX_ALWAYS_INLINE KeyValueType KeyValueType::From<int64_t>() {
+	return KeyValueType::Int64{};
+}
+
+template <>
+RX_ALWAYS_INLINE KeyValueType KeyValueType::From<double>() {
+	return KeyValueType::Double{};
+}
+
+template <>
+RX_ALWAYS_INLINE KeyValueType KeyValueType::From<key_string>() {
+	return KeyValueType::String{};
+}
+
+template <>
+RX_ALWAYS_INLINE KeyValueType KeyValueType::From<Uuid>() {
+	return KeyValueType::Uuid{};
+}
 
 }  // namespace reindexer

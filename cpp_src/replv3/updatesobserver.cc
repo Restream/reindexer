@@ -4,7 +4,6 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/indexdef.h"
 #include "core/itemimpl.h"
-#include "core/keyvalue/p_string.h"
 
 using namespace std::string_view_literals;
 

@@ -9,6 +9,7 @@
 #include "core/ft/config/ftfastconfig.h"
 #include "core/ft/usingcontainer.h"
 #include "helpers.h"
+#include "tools/clock.h"
 #include "tools/fsops.h"
 
 // #define ENABLE_TIME_TRACKER
@@ -22,14 +23,17 @@ public:
 	void RegisterAllCases(std::optional<size_t> fastIterationCount, std::optional<size_t> slowIterationCount);
 
 private:
+	enum class FTBuildType { Full, Incremental };
+
 	virtual reindexer::Item MakeItem(benchmark::State&) override;
 
 	template <reindexer::FtFastConfig::Optimization>
 	void UpdateIndex(State&);
 	void Insert(State& state);
-	void BuildInsertSteps(State& state);
+	void BuildInsertIncremental(State& state);
 
-	void BuildAndInsertLowWordsDiversityNs(State& state);
+	void BuildInsertLowDiversityNs(State& state);
+	void BuildInsertLowDiversityNsIncremental(State& state);
 
 	void Fast3PhraseLowDiversity(State& state);
 	void Fast3WordsLowDiversity(State& state);
@@ -84,7 +88,7 @@ private:
 	std::wstring GetRandomUTF16WordByLength(size_t minLen = 4);
 
 	std::vector<std::string> GetRandomCountries(size_t cnt = 5);
-	reindexer::Item MakeSpecialItem();
+	reindexer::Item MakeLowDiversityItem(int id);
 
 	std::vector<std::string> words_;
 	std::vector<std::string> words2_;
@@ -126,16 +130,16 @@ private:
 
 		class TimeMeasure {
 		public:
-			TimeMeasure(TimeTracker& t) : timeTracker_(t), t1_(std::chrono::high_resolution_clock::now()) {}
+			TimeMeasure(TimeTracker& t) : timeTracker_(t), t1_(reindexer::system_clock_w::now()) {}
 			~TimeMeasure() {
-				auto t2 = std::chrono::high_resolution_clock::now();
+				auto t2 = reindexer::system_clock_w::now();
 				int tUs = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1_).count();
 				timeTracker_.timeOfTest_.push_back(tUs);
 			}
 
 		private:
 			TimeTracker& timeTracker_;
-			std::chrono::high_resolution_clock::time_point t1_;
+			reindexer::system_clock_w::time_point t1_;
 		};
 		friend class TimeMeasure;
 		~TimeTracker() {
@@ -198,7 +202,12 @@ private:
 
 	void updateAlternatingNs(reindexer::WrSerializer&, benchmark::State&);
 	reindexer::Error readDictFile(const std::string& fileName, std::vector<std::string>& words);
+	void setIndexConfig(NamespaceDef& nsDef, std::string_view indexName, const reindexer::FtFastConfig& cfg);
+	unsigned int initStepsConfig(int maxStepsCount, NamespaceDef& nsDef, std::string_view indexName, benchmark::IterationCount iters);
+	void dropNamespace(std::string_view name, benchmark::State&);
 	const std::string alternatingNs_ = "FtAlternatingUpdatesAndSelects";
+	const std::string kFastIndexTextName_ = "searchfast";
+	const std::string kLowDiversityIndexName_ = "search_ld";
 
 	size_t raw_data_sz_ = 0;
 	std::mt19937 randomEngine_{1};

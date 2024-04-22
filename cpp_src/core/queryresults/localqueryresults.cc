@@ -131,33 +131,32 @@ int LocalQueryResults::GetJoinedNsCtxIndex(int nsid) const noexcept {
 	return ctxIndex;
 }
 
-class LocalQueryResults::EncoderDatasourceWithJoins : public IEncoderDatasourceWithJoins {
+class LocalQueryResults::EncoderDatasourceWithJoins final : public IEncoderDatasourceWithJoins {
 public:
 	EncoderDatasourceWithJoins(const joins::ItemIterator &joinedItemIt, const ContextsVector &ctxs, int ctxIdx) noexcept
 		: joinedItemIt_(joinedItemIt), ctxs_(ctxs), ctxId_(ctxIdx) {}
-	~EncoderDatasourceWithJoins() override = default;
 
-	size_t GetJoinedRowsCount() const final { return joinedItemIt_.getJoinedFieldsCount(); }
-	size_t GetJoinedRowItemsCount(size_t rowId) const final {
+	size_t GetJoinedRowsCount() const noexcept override { return joinedItemIt_.getJoinedFieldsCount(); }
+	size_t GetJoinedRowItemsCount(size_t rowId) const override {
 		auto fieldIt = joinedItemIt_.at(rowId);
 		return fieldIt.ItemsCount();
 	}
-	ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) final {
+	ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) override {
 		auto fieldIt = joinedItemIt_.at(rowid);
 		const ItemRef &itemRef = fieldIt[plIndex];
 		const Context &ctx = ctxs_[ctxId_ + rowid];
 		return ConstPayload(ctx.type_, itemRef.Value());
 	}
-	const TagsMatcher &GetJoinedItemTagsMatcher(size_t rowid) final {
+	const TagsMatcher &GetJoinedItemTagsMatcher(size_t rowid) override {
 		const Context &ctx = ctxs_[ctxId_ + rowid];
 		return ctx.tagsMatcher_;
 	}
-	virtual const FieldsSet &GetJoinedItemFieldsFilter(size_t rowid) final {
+	virtual const FieldsSet &GetJoinedItemFieldsFilter(size_t rowid) noexcept override {
 		const Context &ctx = ctxs_[ctxId_ + rowid];
 		return ctx.fieldsFilter_;
 	}
 
-	const std::string &GetJoinedItemNamespace(size_t rowid) final {
+	const std::string &GetJoinedItemNamespace(size_t rowid) override {
 		const Context &ctx = ctxs_[ctxId_ + rowid];
 		return ctx.type_->Name();
 	}

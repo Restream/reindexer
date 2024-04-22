@@ -3,6 +3,7 @@
 #include <iterator>
 #include <thread>
 #include "tools/errors.h"
+#include "tools/clock.h"
 
 namespace reindexer {
 namespace coroutine {
@@ -129,7 +130,7 @@ int64_t ordinator::add_completion_callback(ordinator::cmpl_cb_t cb) {
 	int64_t id = 0;
 	uint8_t cnt = 0;
 	for (;;) {
-		id = std::chrono::steady_clock::now().time_since_epoch().count();
+		id = steady_clock_w::now().time_since_epoch().count();
 		auto found =
 			std::find_if(completion_callbacks_.begin(), completion_callbacks_.end(), [id](cmpl_cb_data &data) { return data.id == id; });
 		if (found == completion_callbacks_.end()) {

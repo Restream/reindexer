@@ -1,7 +1,10 @@
 #pragma once
 
 #include <cstdlib>
-#include "estl/chunk_buf.h"
+#include <string_view>
+#include <string>
+#include "estl/chunk.h"
+#include "estl/span.h"
 #include "tools/ssize_t.h"
 
 struct addrinfo;

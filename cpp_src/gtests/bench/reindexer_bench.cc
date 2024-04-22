@@ -6,6 +6,7 @@
 #include "api_tv_composite.h"
 #include "api_tv_simple.h"
 #include "api_tv_simple_comparators.h"
+#include "api_tv_simple_sparse.h"
 #include "geometry.h"
 #include "join_items.h"
 #include "tools/reporter.h"
@@ -42,9 +43,10 @@ int main(int argc, char** argv) {
 	auto err = DB->Connect("builtin://" + kStoragePath);
 	if (!err.ok()) return err.code();
 
-	JoinItems joinItems(DB.get(), 500);
+	JoinItems joinItems(DB.get(), 50'000);
 	ApiTvSimple apiTvSimple(DB.get(), "ApiTvSimple", kItemsInBenchDataset);
 	ApiTvSimpleComparators apiTvSimpleComparators(DB.get(), "ApiTvSimpleComparators", kItemsInComparatorsBenchDataset);
+	ApiTvSimpleSparse apiTvSimpleSparse(DB.get(), "ApiTvSimpleSparse", kItemsInBenchDataset);
 	ApiTvComposite apiTvComposite(DB.get(), "ApiTvComposite", kItemsInBenchDataset);
 	Geometry geometry(DB.get(), "Geometry", kItemsInBenchDataset);
 	Aggregation aggregation(DB.get(), "Aggregation", kItemsInBenchDataset);
@@ -53,6 +55,9 @@ int main(int argc, char** argv) {
 	if (!err.ok()) return err.code();
 
 	err = apiTvSimpleComparators.Initialize();
+	if (!err.ok()) return err.code();
+
+	err = apiTvSimpleSparse.Initialize();
 	if (!err.ok()) return err.code();
 
 	err = joinItems.Initialize();
@@ -73,6 +78,7 @@ int main(int argc, char** argv) {
 	joinItems.RegisterAllCases();
 	apiTvSimple.RegisterAllCases();
 	apiTvSimpleComparators.RegisterAllCases();
+	apiTvSimpleSparse.RegisterAllCases();
 	apiTvComposite.RegisterAllCases();
 	geometry.RegisterAllCases();
 	aggregation.RegisterAllCases();

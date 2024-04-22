@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.10)
 
 project(reindexer_tool)
 
@@ -11,7 +11,6 @@ endif()
 if(MSVC)
   set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -DEBUG")
 endif()
-
 
 if (NOT WITH_STDLIB_DEBUG)
   find_library(ReplXX_LIBRARY NAMES ${ReplXX_NAMES} replxx)
@@ -40,6 +39,9 @@ endif ()
 
 file(GLOB_RECURSE SRCS *.h *.cc)
 add_executable(${TARGET} ${SRCS})
+
+# Enable export to provide readble stacktraces
+set_property(TARGET ${TARGET} PROPERTY ENABLE_EXPORTS 1)
 
 if (NOT WITH_STDLIB_DEBUG)
   if (NOT ReplXX_LIBRARY OR NOT ReplXX_INCLUDE_DIR)

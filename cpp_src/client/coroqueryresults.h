@@ -5,6 +5,7 @@
 #include "client/item.h"
 #include "client/resultserializer.h"
 #include "core/namespace/incarnationtags.h"
+#include "tools/clock.h"
 #include "tools/lsn.h"
 
 namespace reindexer {
@@ -206,7 +207,7 @@ private:
 		bool lazyMode_ = false;
 		bool isBound_ = false;
 		Error status_;
-		std::chrono::steady_clock::time_point sessionTs_;
+		steady_clock_w::time_point sessionTs_;
 		std::optional<QueryData> qData_;
 	};
 

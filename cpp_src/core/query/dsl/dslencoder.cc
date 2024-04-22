@@ -226,7 +226,7 @@ static void toDsl(const Query& query, QueryScope scope, JsonBuilder& builder) {
 			builder.Put("offset", query.Offset());
 			builder.Put("req_total", get(reqtotal_values, query.CalcTotal()));
 			if (scope != QueryScope::Subquery) {
-				builder.Put("explain", query.GetExplain());
+				builder.Put("explain", query.NeedExplain());
 				if (query.IsLocal()) {
 					builder.Put("local", true);
 				}
@@ -252,7 +252,7 @@ static void toDsl(const Query& query, QueryScope scope, JsonBuilder& builder) {
 		}
 		case QueryType::QueryUpdate: {
 			builder.Put("namespace", query.NsName());
-			builder.Put("explain", query.GetExplain());
+			builder.Put("explain", query.NeedExplain());
 			builder.Put("type", "update");
 			encodeFilters(query, builder);
 			bool withDropEntries = false, withUpdateEntries = false;
@@ -274,7 +274,7 @@ static void toDsl(const Query& query, QueryScope scope, JsonBuilder& builder) {
 		}
 		case QueryType::QueryDelete: {
 			builder.Put("namespace", query.NsName());
-			builder.Put("explain", query.GetExplain());
+			builder.Put("explain", query.NeedExplain());
 			builder.Put("type", "delete");
 			encodeFilters(query, builder);
 			break;
@@ -302,7 +302,7 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 	for (; it != to; ++it) {
 		auto node = builder.Object();
 		node.Put("op", dsl::get(dsl::op_map, it->operation));
-		it->InvokeAppropriate<void>(
+		it->Visit(
 			[&node](const AlwaysFalse&) {
 				logPrintf(LogTrace, "Not normalized query to dsl");
 				node.Put("always", false);

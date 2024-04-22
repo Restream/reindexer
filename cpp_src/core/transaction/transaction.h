@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include "tools/clock.h"
 #include "tools/errors.h"
 #include "tools/lsn.h"
 
@@ -35,8 +36,8 @@ class Transaction;
 
 class Transaction {
 public:
-	using ClockT = std::chrono::high_resolution_clock;
-	using TimepointT = std::chrono::time_point<ClockT>;
+	using ClockT = system_clock_w;
+	using TimepointT = ClockT::time_point;
 
 	explicit Transaction(LocalTransaction &&ltx);
 	Transaction(LocalTransaction &&ltx, client::Reindexer &&clusterLeader);

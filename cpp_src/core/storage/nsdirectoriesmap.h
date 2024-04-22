@@ -2,8 +2,6 @@
 
 #include <memory>
 #include <unordered_map>
-#include "estl/shared_mutex.h"
-#include "estl/smart_lock.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {

@@ -67,7 +67,12 @@ Error CoroReindexer::GetMeta(std::string_view nsName, const std::string& key, st
 Error CoroReindexer::PutMeta(std::string_view nsName, const std::string& key, std::string_view data) {
 	return impl_->PutMeta(nsName, key, data, ctx_);
 }
-Error CoroReindexer::EnumMeta(std::string_view nsName, std::vector<std::string>& keys) { return impl_->EnumMeta(nsName, keys, ctx_); }
+Error CoroReindexer::EnumMeta(std::string_view nsName, std::vector<std::string>& keys) {
+	return impl_->EnumMeta(nsName, keys, ctx_);
+}
+Error CoroReindexer::DeleteMeta(std::string_view nsName, const std::string& key) {
+	return impl_->DeleteMeta(nsName, key, ctx_);
+}
 Error CoroReindexer::Delete(const Query& q, CoroQueryResults& result) { return impl_->Delete(q, result, ctx_); }
 Error CoroReindexer::Delete(std::string_view nsName, std::string_view cjson) { return impl_->Delete(nsName, cjson, ctx_); }
 Error CoroReindexer::Select(std::string_view query, CoroQueryResults& result) { return impl_->Select(query, result, ctx_); }

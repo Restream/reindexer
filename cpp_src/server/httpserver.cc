@@ -13,11 +13,13 @@
 #include "core/queryresults/tableviewbuilder.h"
 #include "core/schema.h"
 #include "core/type_consts.h"
+#include "debug/crashqueryreporter.h"
 #include "gason/gason.h"
 #include "itoa/itoa.h"
 #include "loggerwrapper.h"
 #include "net/http/serverconnection.h"
 #include "net/listener.h"
+#include "outputparameters.h"
 #include "reindexer_version.h"
 #include "resources_wrapper.h"
 #include "statscollect/istatswatcher.h"
@@ -26,12 +28,11 @@
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/flagguard.h"
 #include "tools/fsops.h"
+#include "tools/logger.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 #include "vendor/sort/pdqsort.hpp"
 #include "wal/walrecord.h"
-
-#include "outputparameters.h"
 
 using namespace std::string_view_literals;
 
@@ -48,7 +49,7 @@ HTTPServer::HTTPServer(DBManager &dbMgr, LoggerWrapper &logger, const ServerConf
 	  statsWatcher_(statsWatcher),
 	  webRoot_(reindexer::fs::JoinPath(serverConfig.WebRoot, "")),
 	  logger_(logger),
-	  startTs_(std::chrono::system_clock::now()) {}
+	  startTs_(system_clock_w::now()) {}
 
 Error HTTPServer::execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults &res, http::Context &ctx) {
 	const auto q = reindexer::Query::FromSQL(sqlQuery);
@@ -90,6 +91,8 @@ int HTTPServer::GetSQLQuery(http::Context &ctx) {
 	if (sqlQuery.empty()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Missing `q` parameter"));
 	}
+
+	reindexer::ActiveQueryScope scope(sqlQuery);
 	reindexer::QueryResults res;
 	auto ret = execSqlQueryByType(sqlQuery, res, ctx);
 	if (!ret.ok()) {
@@ -152,6 +155,7 @@ int HTTPServer::PostSQLQuery(http::Context &ctx) {
 	if (!sqlQuery.length()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Query is empty"));
 	}
+	reindexer::ActiveQueryScope scope(sqlQuery);
 	auto ret = execSqlQueryByType(sqlQuery, res, ctx);
 	if (!ret.ok()) {
 		return status(ctx, http::HttpStatus(ret));
@@ -170,6 +174,7 @@ int HTTPServer::PostQuery(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(err));
 	}
 
+	reindexer::ActiveQueryScope scope(q, QuerySelect);
 	err = db.Select(q, res);
 	if (!err.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(err));
@@ -187,6 +192,7 @@ int HTTPServer::DeleteQuery(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
 
+	reindexer::ActiveQueryScope scope(q, QueryDelete);
 	reindexer::QueryResults res;
 	status = db.Delete(q, res);
 	if (!status.ok()) {
@@ -210,6 +216,7 @@ int HTTPServer::UpdateQuery(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
 
+	reindexer::ActiveQueryScope scope(q, QueryUpdate);
 	reindexer::QueryResults res;
 	status = db.Update(q, res);
 	if (!status.ok()) {
@@ -239,8 +246,8 @@ int HTTPServer::GetDatabases(http::Context &ctx) {
 
 	if (sortDirection) {
 		boost::sort::pdqsort(dbs.begin(), dbs.end(), [sortDirection](const std::string &lhs, const std::string &rhs) {
-			return (sortDirection > 0) ? (collateCompare<CollateASCII>(lhs, rhs, SortingPrioritiesTable()) < 0)
-									   : (collateCompare<CollateASCII>(lhs, rhs, SortingPrioritiesTable()) > 0);
+			return (sortDirection > 0) ? (collateCompare<CollateASCII>(lhs, rhs, SortingPrioritiesTable()) == ComparationResult::Lt)
+									   : (collateCompare<CollateASCII>(lhs, rhs, SortingPrioritiesTable()) == ComparationResult::Gt);
 		});
 	}
 
@@ -331,8 +338,9 @@ int HTTPServer::GetNamespaces(http::Context &ctx) {
 
 	if (sortDirection) {
 		boost::sort::pdqsort(nsDefs.begin(), nsDefs.end(), [sortDirection](const NamespaceDef &lhs, const NamespaceDef &rhs) {
-			return (sortDirection > 0) ? (collateCompare<CollateASCII>(lhs.name, rhs.name, SortingPrioritiesTable()) < 0)
-									   : (collateCompare<CollateASCII>(lhs.name, rhs.name, SortingPrioritiesTable()) > 0);
+			return (sortDirection > 0)
+					   ? (collateCompare<CollateASCII>(lhs.name, rhs.name, SortingPrioritiesTable()) == ComparationResult::Lt)
+					   : (collateCompare<CollateASCII>(lhs.name, rhs.name, SortingPrioritiesTable()) == ComparationResult::Gt);
 		});
 	}
 
@@ -635,6 +643,21 @@ int HTTPServer::PutMetaByKey(http::Context &ctx) {
 	return jsonStatus(ctx);
 }
 
+int HTTPServer::DeleteMetaByKey(http::Context &ctx) {
+	auto db = getDB<kRoleDataWrite>(ctx);
+	const std::string nsName = urldecode2(ctx.request->urlParams[1]);
+	const std::string key = urldecode2(ctx.request->urlParams[2]);
+	if (!nsName.length()) {
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
+	}
+	const Error err = db.DeleteMeta(nsName, key);
+	if (!err.ok()) {
+		return jsonStatus(ctx, http::HttpStatus(err));
+	}
+
+	return jsonStatus(ctx);
+}
+
 int HTTPServer::GetIndexes(http::Context &ctx) {
 	auto db = getDB<kRoleDataRead>(ctx);
 
@@ -806,7 +829,7 @@ int HTTPServer::Check(http::Context &ctx) {
 		builder.Put("version", REINDEX_VERSION);
 
 		size_t startTs = std::chrono::duration_cast<std::chrono::seconds>(startTs_.time_since_epoch()).count();
-		size_t uptime = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - startTs_).count();
+		size_t uptime = std::chrono::duration_cast<std::chrono::seconds>(system_clock_w::now() - startTs_).count();
 		builder.Put("start_time", startTs);
 		builder.Put("uptime", uptime);
 		builder.Put("rpc_address", serverConfig_.RPCAddr);
@@ -973,6 +996,7 @@ bool HTTPServer::Start(const std::string &addr, ev::dynamic_loop &loop) {
 	router_.GET<HTTPServer, &HTTPServer::GetMetaList>("/api/v1/db/:db/namespaces/:ns/metalist", this);
 	router_.GET<HTTPServer, &HTTPServer::GetMetaByKey>("/api/v1/db/:db/namespaces/:ns/metabykey/:key", this);
 	router_.PUT<HTTPServer, &HTTPServer::PutMetaByKey>("/api/v1/db/:db/namespaces/:ns/metabykey", this);
+	router_.DELETE<HTTPServer, &HTTPServer::DeleteMetaByKey>("/api/v1/db/:db/namespaces/:ns/metabykey/:key", this);
 
 	router_.POST<HTTPServer, &HTTPServer::BeginTx>("/api/v1/db/:db/namespaces/:ns/transactions/begin", this);
 	router_.POST<HTTPServer, &HTTPServer::CommitTx>("/api/v1/db/:db/transactions/:tx/commit", this);
@@ -1811,17 +1835,18 @@ std::shared_ptr<Transaction> HTTPServer::getTx(const std::string &dbName, std::s
 	if (!iequals(found.value().dbName, dbName)) {
 		throw http::HttpStatus(Error(errLogic, "Unexpected database name for this tx"sv));
 	}
-	found.value().txDeadline = TxDeadlineClock::now() + serverConfig_.TxIdleTimeout;
+	found.value().txDeadline = TxDeadlineClock::now_coarse() + serverConfig_.TxIdleTimeout;
 	return found.value().tx;
 }
 
 std::string HTTPServer::addTx(std::string dbName, Transaction &&tx) {
-	auto ts = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch());
+	const auto now = TxDeadlineClock::now_coarse();
+	auto ts = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch());
 	std::string txId = randStringAlph(kTxIdLen) + "_" + std::to_string(ts.count());
 	TxInfo txInfo;
 	txInfo.tx = std::make_shared<Transaction>(std::move(tx));
 	txInfo.dbName = std::move(dbName);
-	txInfo.txDeadline = TxDeadlineClock::now() + serverConfig_.TxIdleTimeout;
+	txInfo.txDeadline = now + serverConfig_.TxIdleTimeout;
 
 	std::lock_guard lck(txMtx_);
 	auto result = txMap_.try_emplace(txId, std::move(txInfo));
@@ -1841,7 +1866,7 @@ void HTTPServer::removeTx(const std::string &dbName, std::string_view txId) {
 }
 
 void HTTPServer::removeExpiredTx() {
-	const auto now = TxDeadlineClock::now();
+	const auto now = TxDeadlineClock::now_coarse();
 
 	std::lock_guard lck(txMtx_);
 	for (auto it = txMap_.begin(); it != txMap_.end();) {

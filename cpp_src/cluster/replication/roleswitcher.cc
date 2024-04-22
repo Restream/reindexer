@@ -176,7 +176,7 @@ void RoleSwitcher::handleInitialSync(RaftInfo::Role newRole) {
 		log_.Info([this] { rtfmt("%d: Leader resync has begun", cfg_.serverId); });
 		statsCollector_.OnSyncStateChanged(ReplicationStatCounter::kLeaderUID, NodeStats::SyncState::InitialLeaderSync);
 		timerIsCanceled_ = false;
-		roleSwitchTm_ = std::chrono::high_resolution_clock::now();
+		roleSwitchTm_ = steady_clock_w::now();
 		leaderSyncFn(leaderResyncTimer_, 0);
 	} else {
 		if (curRole_ == RaftInfo::Role::Leader) {
@@ -264,8 +264,7 @@ void RoleSwitcher::initialLeadersSync() {
 	syncList_.Init(std::move(synchronizedNodes));
 	assert(!sharedSyncState_.IsInitialSyncDone());
 	sharedSyncState_.MarkSynchronized();
-	statsCollector_.OnInitialSyncDone(
-		std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - roleSwitchTm_));
+	statsCollector_.OnInitialSyncDone(std::chrono::duration_cast<std::chrono::microseconds>(steady_clock_w::now() - roleSwitchTm_));
 }
 
 Error RoleSwitcher::awaitRoleSwitchForNamespace(client::CoroReindexer& client, std::string_view nsName, ReplicationStateV2& st) {

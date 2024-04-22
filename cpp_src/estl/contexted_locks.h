@@ -4,7 +4,7 @@
 #include <functional>
 #include <mutex>
 
-#include "tools/errors.h"
+#include "tools/assertrx.h"
 
 using std::chrono::milliseconds;
 using std::try_to_lock_t;
@@ -13,7 +13,7 @@ using std::adopt_lock_t;
 
 namespace reindexer {
 
-constexpr milliseconds kDefaultCondChkTime = milliseconds(20);
+constexpr milliseconds kDefaultCondChkTime = milliseconds(50);
 
 template <typename _Mutex, typename Context>
 class contexted_unique_lock {

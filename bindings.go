@@ -22,7 +22,7 @@ const (
 	modeDelete = bindings.ModeDelete
 )
 
-func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *reindexerNamespace, item interface{}, json []byte, mode int, precepts ...string) (count int, err error) {
+func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *reindexerNamespace, item interface{}, mode int, precepts ...string) (count int, err error) {
 
 	if ns == nil {
 		ns, err = db.getNS(namespace)
@@ -38,11 +38,11 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 		format := 0
 		stateToken := 0
 
-		if format, stateToken, err = packItem(ns, item, json, ser); err != nil {
+		if format, stateToken, err = packItem(ns, item, nil, ser); err != nil {
 			return
 		}
 
-		out, err := db.binding.ModifyItem(ctx, ns.nsHash, ns.name, format, ser.Bytes(), mode, precepts, stateToken)
+		out, err := db.binding.ModifyItem(ctx, ns.name, format, ser.Bytes(), mode, precepts, stateToken)
 
 		if err != nil {
 			rerr, ok := err.(bindings.Error)
@@ -80,7 +80,6 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 }
 
 func packItem(ns *reindexerNamespace, item interface{}, json []byte, ser *cjson.Serializer) (format int, stateToken int, err error) {
-
 	if item != nil {
 		json, _ = item.([]byte)
 	}
@@ -142,6 +141,7 @@ func unpackItem(bin bindings.RawBinding, ns *nsArrayEntry, rqparams *rawResultQu
 		} else {
 			item = reflect.New(ns.rtype).Interface()
 			dec := ns.localCjsonState.NewDecoder(item, bin)
+			defer dec.Finalize()
 			if params.cptr != 0 {
 				err = dec.DecodeCPtr(params.cptr, item)
 			} else if params.data != nil {
@@ -166,6 +166,7 @@ func unpackItem(bin bindings.RawBinding, ns *nsArrayEntry, rqparams *rawResultQu
 			item = reflect.New(ns.rtype).Interface()
 		}
 		dec := ns.localCjsonState.NewDecoder(item, bin)
+		defer dec.Finalize()
 		if params.cptr != 0 {
 			err = dec.DecodeCPtr(params.cptr, item)
 		} else if params.data != nil {
@@ -244,7 +245,7 @@ func (db *reindexerImpl) rawResultToJson(rawResult []byte, jsonName string, tota
 }
 
 func (db *reindexerImpl) prepareQuery(ctx context.Context, q *Query, asJson bool) (result bindings.RawBuffer, err error) {
-
+	// Ordering in q.nsArray is matter ad must correspond to the ordering in C++
 	if ns, err := db.getNS(q.Namespace); err == nil {
 		q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
 	} else {
@@ -252,6 +253,8 @@ func (db *reindexerImpl) prepareQuery(ctx context.Context, q *Query, asJson bool
 	}
 
 	ser := q.ser
+	ser.PutVarCUInt(queryEnd)
+
 	for _, sq := range q.mergedQueries {
 		if ns, err := db.getNS(sq.Namespace); err == nil {
 			q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
@@ -266,20 +269,7 @@ func (db *reindexerImpl) prepareQuery(ctx context.Context, q *Query, asJson bool
 		} else {
 			return nil, err
 		}
-	}
 
-	for _, mq := range q.mergedQueries {
-		for _, sq := range mq.joinQueries {
-			if ns, err := db.getNS(sq.Namespace); err == nil {
-				q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
-			} else {
-				return nil, err
-			}
-		}
-	}
-
-	ser.PutVarCUInt(queryEnd)
-	for _, sq := range q.joinQueries {
 		ser.PutVarCUInt(sq.joinType)
 		ser.Append(sq.ser)
 		ser.PutVarCUInt(queryEnd)
@@ -289,7 +279,14 @@ func (db *reindexerImpl) prepareQuery(ctx context.Context, q *Query, asJson bool
 		ser.PutVarCUInt(merge)
 		ser.Append(mq.ser)
 		ser.PutVarCUInt(queryEnd)
+
 		for _, sq := range mq.joinQueries {
+			if ns, err := db.getNS(sq.Namespace); err == nil {
+				q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
+			} else {
+				return nil, err
+			}
+
 			ser.PutVarCUInt(sq.joinType)
 			ser.Append(sq.ser)
 			ser.PutVarCUInt(queryEnd)
@@ -386,7 +383,7 @@ func (db *reindexerImpl) deleteQuery(ctx context.Context, q *Query) (int, error)
 		return 0, err
 	}
 
-	result, err := db.binding.DeleteQuery(ctx, ns.nsHash, q.ser.Bytes())
+	result, err := db.binding.DeleteQuery(ctx, q.ser.Bytes())
 	if err != nil {
 		return 0, err
 	}
@@ -426,7 +423,7 @@ func (db *reindexerImpl) updateQuery(ctx context.Context, q *Query) *Iterator {
 		return errIterator(err)
 	}
 
-	result, err := db.binding.UpdateQuery(ctx, ns.nsHash, q.ser.Bytes())
+	result, err := db.binding.UpdateQuery(ctx, q.ser.Bytes())
 	if err != nil {
 		return errIterator(err)
 	}

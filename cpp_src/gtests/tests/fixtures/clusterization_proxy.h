@@ -11,24 +11,25 @@ class ClusterizationProxyApi : public ClusterizationApi {
 public:
 	class ItemTracker {
 	public:
+		using ClockT = system_clock_w;
+
 		~ItemTracker() { assert(validated_); }
 		struct ItemInfo {
 			ItemInfo(int _itemCounter, int _serverId, std::string _threadName)
 				: itemCounter(_itemCounter), serverId(_serverId), threadName(std::move(_threadName)) {
-				ItemAdd = std::chrono::system_clock::now();
+				ItemAdd = ClockT::now();
 			}
-			ItemInfo(int _itemCounter, int _txCounter, int _txId, int _serverId,
-					 const std::chrono::time_point<std::chrono::system_clock>& _txStart, std::string _threadName)
+			ItemInfo(int _itemCounter, int _txCounter, int _txId, int _serverId, ClockT::time_point _txStart, std::string _threadName)
 				: itemCounter(_itemCounter),
 				  txCounter(_txCounter),
 				  txId(_txId),
 				  serverId(_serverId),
 				  txStart(_txStart),
 				  threadName(std::move(_threadName)) {
-				ItemAdd = std::chrono::system_clock::now();
+				ItemAdd = ClockT::now();
 			}
-			ItemInfo(int _txCounter, int _txId, int _serverId, const std::chrono::time_point<std::chrono::system_clock>& _txStart,
-					 const std::chrono::time_point<std::chrono::system_clock>& _txBeforeCommit, std::string _threadName)
+			ItemInfo(int _txCounter, int _txId, int _serverId, ClockT::time_point _txStart, ClockT::time_point _txBeforeCommit,
+					 std::string _threadName)
 				: txCounter(_txCounter),
 				  txId(_txId),
 				  serverId(_serverId),
@@ -36,11 +37,10 @@ public:
 				  txBeforeCommit(_txBeforeCommit),
 				  threadName(std::move(_threadName)),
 				  isChecked(true) {
-				ItemAdd = std::chrono::system_clock::now();
+				ItemAdd = ClockT::now();
 			}
-			ItemInfo(int _txCounter, int _txId, int _serverId, const std::chrono::time_point<std::chrono::system_clock>& _txStart,
-					 const std::chrono::time_point<std::chrono::system_clock>& _txBeforeCommit,
-					 const std::chrono::time_point<std::chrono::system_clock>& _txAfterCommit, std::string _threadName)
+			ItemInfo(int _txCounter, int _txId, int _serverId, ClockT::time_point _txStart, ClockT::time_point _txBeforeCommit,
+					 ClockT::time_point _txAfterCommit, std::string _threadName)
 				: txCounter(_txCounter),
 				  txId(_txId),
 				  serverId(_serverId),
@@ -49,7 +49,7 @@ public:
 				  txAfterCommit(_txAfterCommit),
 				  threadName(std::move(_threadName)),
 				  isChecked(true) {
-				ItemAdd = std::chrono::system_clock::now();
+				ItemAdd = ClockT::now();
 			}
 
 			int itemCounter = -1;
@@ -57,10 +57,10 @@ public:
 			int txId = -1;
 			int serverId = -1;
 			int serialCounter = -1;
-			std::chrono::time_point<std::chrono::system_clock> txStart;
-			std::chrono::time_point<std::chrono::system_clock> txBeforeCommit;
-			std::chrono::time_point<std::chrono::system_clock> txAfterCommit;
-			std::chrono::time_point<std::chrono::system_clock> ItemAdd;
+			ClockT::time_point txStart;
+			ClockT::time_point txBeforeCommit;
+			ClockT::time_point txAfterCommit;
+			ClockT::time_point ItemAdd;
 			std::string threadName;
 			bool isChecked = false;
 		};
@@ -147,8 +147,8 @@ public:
 					sort(infoVector.begin(), infoVector.end(),
 						 [](const TrackerRow& a, const TrackerRow& b) { return a.second.serialCounter < b.second.serialCounter; });
 
-					auto timeToString = [](const std::chrono::time_point<std::chrono::system_clock>& tp) {
-						auto tm = std::chrono::system_clock::to_time_t(tp);
+					auto timeToString = [](ClockT::time_point tp) {
+						auto tm = ClockT::to_time_t(tp);
 						std::tm tmTime = reindexer::localtime(tm);
 						auto timeInUs = std::chrono::duration_cast<std::chrono::microseconds>(tp.time_since_epoch()).count();
 						int us = timeInUs % 1000;

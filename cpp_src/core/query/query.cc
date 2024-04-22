@@ -3,6 +3,7 @@
 #include "core/query/dsl/dslparser.h"
 #include "core/query/sql/sqlencoder.h"
 #include "core/query/sql/sqlparser.h"
+#include "core/type_consts_helpers.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -102,11 +103,10 @@ bool Query::operator==(const Query &obj) const {
 		return false;
 	}
 	for (size_t i = 0, s = forcedSortOrder_.size(); i < s; ++i) {
-		if (forcedSortOrder_[i].RelaxCompare<WithString::Yes>(obj.forcedSortOrder_[i]) != 0) {
+		if (forcedSortOrder_[i].RelaxCompare<WithString::Yes, NotComparable::Return>(obj.forcedSortOrder_[i]) != ComparationResult::Eq) {
 			return false;
 		}
 	}
-
 	return true;
 }
 

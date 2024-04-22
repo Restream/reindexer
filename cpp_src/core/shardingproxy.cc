@@ -208,7 +208,7 @@ void ShardingProxy::obtainConfigForResetRouting(std::optional<cluster::ShardingC
 
 int64_t ShardingProxy::generateSourceId() const {
 	using namespace std::chrono;
-	int64_t sourceId = duration_cast<microseconds>(system_clock().now().time_since_epoch()).count();
+	int64_t sourceId = duration_cast<microseconds>(system_clock_w::now().time_since_epoch()).count();
 	sourceId &= ~cluster::ShardingConfig::serverIdMask;
 	int64_t serverId = impl_.GetServerID();
 	if (serverId < 0 || serverId >= 1000) {
@@ -1183,6 +1183,21 @@ Error ShardingProxy::EnumMeta(std::string_view nsName, std::vector<std::string> 
 			return err;
 		}
 		return localEnumMeta(nsName, keys, ShardingKeyType::NotSetShard /*not used*/);
+	} catch (Error &e) {
+		return e;
+	}
+}
+
+Error ShardingProxy::DeleteMeta(std::string_view nsName, const std::string &key, const RdxContext &ctx) {
+	try {
+		auto localDeleteMeta = [this, &ctx](std::string_view nsName, const std::string &key) {
+			return impl_.DeleteMeta(nsName, key, ctx);
+		};
+
+		if (auto lckRouterOpt = isWithSharding(nsName, ctx)) {
+			return delegateToShards(*lckRouterOpt, ctx, &client::Reindexer::DeleteMeta, localDeleteMeta, nsName, key);
+		}
+		return localDeleteMeta(nsName, key);
 	} catch (Error &e) {
 		return e;
 	}

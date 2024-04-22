@@ -9,34 +9,48 @@ type ctagsCacheEntry struct {
 	subCache  ctagsCache
 }
 
-type ctagsCache []ctagsCacheEntry
+type missingTagsCache map[string]struct{}
+
+type ctagsCache struct {
+	entries []ctagsCacheEntry
+	missing missingTagsCache
+}
 
 type structCache map[reflect.Type]*ctagsCache
 
 func (tc *ctagsCache) Reset() {
-	*tc = (*tc)[:0]
+	tc.entries = tc.entries[:0]
+	tc.missing = make(missingTagsCache)
 }
 
-func (tc *ctagsCache) Lookup(cachePath []int, canAdd bool) *[]int {
+func (tc *ctagsCache) Find(cachePath []int16) *[]int {
 	ctag := cachePath[0]
-	if len(*tc) <= ctag {
-		if !canAdd {
-			return nil
+	if len(tc.entries) <= int(ctag) {
+		return nil
+	}
+	if len(cachePath) == 1 {
+		return &tc.entries[ctag].structIdx
+	}
+	return tc.entries[ctag].subCache.Find(cachePath[1:])
+}
+
+func (tc *ctagsCache) FindOrAdd(cachePath []int16) *[]int {
+	ctag := int(cachePath[0])
+	if len(tc.entries) <= ctag {
+		if cap(tc.entries) <= ctag {
+			nc := make([]ctagsCacheEntry, len(tc.entries), ctag+1)
+			copy(nc, tc.entries)
+			tc.entries = nc
 		}
-		if cap(*tc) <= ctag {
-			nc := make([]ctagsCacheEntry, len(*tc), ctag+1)
-			copy(nc, *tc)
-			*tc = nc
-		}
-		for n := len(*tc); n < ctag+1; n++ {
-			*tc = append(*tc, ctagsCacheEntry{})
+		for n := len(tc.entries); n < ctag+1; n++ {
+			tc.entries = append(tc.entries, ctagsCacheEntry{})
 		}
 	}
 	if len(cachePath) == 1 {
-		return &(*tc)[ctag].structIdx
+		return &tc.entries[ctag].structIdx
 	}
 
-	return (*tc)[ctag].subCache.Lookup(cachePath[1:], canAdd)
+	return tc.entries[ctag].subCache.FindOrAdd(cachePath[1:])
 }
 
 type ctagsWCacheEntry struct {

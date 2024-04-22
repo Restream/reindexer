@@ -9,7 +9,6 @@
 #include "core/cjson/protobufbuilder.h"
 #include "core/cjson/protobufdecoder.h"
 #include "core/keyvalue/p_string.h"
-#include "core/namespace/namespace.h"
 
 namespace reindexer {
 

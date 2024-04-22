@@ -204,7 +204,7 @@ void ItemsLoader::insertion() {
 
 void ItemsLoader::clearIndexCache() {
 	for (auto &idx : ns_.indexes_) {
-		idx->ClearCache();
+		idx->DestroyCache();
 		idx->Commit();
 	}
 }

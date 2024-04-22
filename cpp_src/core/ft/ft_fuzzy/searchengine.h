@@ -5,7 +5,6 @@
 #include "baseseacher.h"
 #include "core/ft/config/ftfuzzyconfig.h"
 #include "core/ft/ftdsl.h"
-#include "core/idset.h"
 #include "dataholder/basebuildedholder.h"
 
 namespace reindexer {

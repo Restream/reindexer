@@ -129,6 +129,7 @@ struct UpdateRecord {
 		ResetOldShardingConfig = 35,
 		ResetCandidateConfig = 36,
 		RollbackCandidateConfig = 37,
+		DeleteMeta = 38,
 	};
 
 	UpdateRecord() = default;
@@ -173,6 +174,7 @@ struct UpdateRecord {
 			case Type::ItemInsertTx:
 			case Type::PutMeta:
 			case Type::PutMetaTx:
+			case Type::DeleteMeta:
 			case Type::UpdateQueryTx:
 			case Type::DeleteQueryTx:
 			case Type::Truncate:

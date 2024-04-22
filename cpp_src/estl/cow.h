@@ -12,6 +12,7 @@ class shared_cow_ptr {
 public:
 	explicit shared_cow_ptr(intrusive_ptr<intrusive_atomic_rc_wrapper<T>> &&ptr) noexcept : payload_(std::move(ptr)) {}
 	shared_cow_ptr() noexcept = default;
+	~shared_cow_ptr() = default;
 
 	const T *operator->() const noexcept { return payload_.get(); }
 

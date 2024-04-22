@@ -28,9 +28,9 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 	int lsnIdx = -1;
 	int versionIdx = -1;
 	for (size_t i = 0; i < q.Entries().Size(); ++i) {
-		q.Entries().InvokeAppropriate<void>(
+		q.Entries().Visit(
 			i,
-			[&lsnIdx, &versionIdx, i](const QueryEntry &qe) {
+			[&lsnIdx, &versionIdx, i] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntry &qe) RX_POST_LMBD_ALWAYS_INLINE {
 				if ("#lsn"sv == qe.FieldName()) {
 					lsnIdx = i;
 				} else if ("#slave_version"sv == qe.FieldName()) {
@@ -39,7 +39,8 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 					throw Error(errLogic, "Unexpected index in WAL select query: %s", qe.FieldName());
 				}
 			},
-			[&q](const auto &) { throw Error(errLogic, "Unexpected WAL select query: %s", q.GetSQL()); });
+			[&q] RX_PRE_LMBD_ALWAYS_INLINE(const auto &)
+				RX_POST_LMBD_ALWAYS_INLINE { throw Error(errLogic, "Unexpected WAL select query: %s", q.GetSQL()); });
 	}
 	auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.Entries().Get<QueryEntry>(versionIdx).Values()[0].As<std::string>());
 	auto &lsnEntry = q.Entries().Get<QueryEntry>(lsnIdx);
@@ -112,6 +113,7 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 				case WalIndexDrop:
 				case WalIndexUpdate:
 				case WalPutMeta:
+				case WalDeleteMeta:
 				case WalUpdateQuery:
 				case WalItemModify:
 				case WalSetSchema:

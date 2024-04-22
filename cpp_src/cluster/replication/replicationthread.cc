@@ -1024,6 +1024,10 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const UpdateRecord& r
 				auto& data = std::get<std::unique_ptr<MetaReplicationRecord>>(rec.data);
 				return UpdateApplyStatus(nsData.tx.PutMeta(data->key, data->value, lsn), rec.type);
 			}
+			case UpdateRecord::Type::DeleteMeta: {
+				auto& data = std::get<std::unique_ptr<MetaReplicationRecord>>(rec.data);
+				return UpdateApplyStatus(client.WithLSN(lsn).DeleteMeta(nsName, data->key), rec.type);
+			}
 			case UpdateRecord::Type::UpdateQuery: {
 				auto& data = std::get<std::unique_ptr<QueryReplicationRecord>>(rec.data);
 				client::CoroQueryResults qr;
@@ -1082,6 +1086,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const UpdateRecord& r
 					case UpdateRecord::Type::IndexUpdate:
 					case UpdateRecord::Type::PutMeta:
 					case UpdateRecord::Type::PutMetaTx:
+					case UpdateRecord::Type::DeleteMeta:
 					case UpdateRecord::Type::UpdateQuery:
 					case UpdateRecord::Type::DeleteQuery:
 					case UpdateRecord::Type::UpdateQueryTx:

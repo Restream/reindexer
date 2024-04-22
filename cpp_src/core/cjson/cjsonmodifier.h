@@ -1,8 +1,12 @@
 #pragma once
 
-#include "cjsontools.h"
+#include "core/cjson/tagspath.h"
+#include "core/payload/payloadiface.h"
+#include "core/payload/payloadtype.h"
 
 namespace reindexer {
+
+class TagsMatcher;
 
 class CJsonModifier {
 public:
@@ -28,4 +32,5 @@ private:
 	IndexedTagsPath fieldPath_, tagsPath_;
 	TagsMatcher &tagsMatcher_;
 };
+
 }  // namespace reindexer

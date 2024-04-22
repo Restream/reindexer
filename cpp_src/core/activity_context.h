@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <cassert>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -11,6 +10,7 @@
 #include "activity.h"
 #include "activitylog.h"
 #include "estl/mutex.h"
+#include "tools/clock.h"
 
 namespace reindexer {
 

@@ -140,15 +140,19 @@ public:
 	// Get hash of all document
 	uint64_t GetHash() const noexcept;
 
+	// Compare single field (indexed or non-indexed)
+	template <WithString, NotComparable>
+	ComparationResult CompareField(const T &other, int field, const FieldsSet &fields, size_t &tagPathIdx,
+								   const CollateOpts &collateOpts) const;
 	// Compare 2 objects by field mask
-	template <WithString>
-	int Compare(const T &other, const FieldsSet &fields, const CollateOpts &collateOpts = CollateOpts()) const;
-	template <WithString>
-	int Compare(const T &other, const FieldsSet &fields, size_t &firstDifferentFieldIdx,
-				const h_vector<const CollateOpts *, 1> &collateOpts) const;
-	template <WithString>
-	int Compare(const PayloadIface<const T> &other, std::string_view field, int fieldIdx, const CollateOpts &collateOpts, TagsMatcher &ltm,
-				TagsMatcher &rtm, bool lForceByJsonPath, bool rForceByJsonPath) const;
+	template <WithString, NotComparable>
+	ComparationResult Compare(const T &other, const FieldsSet &fields, const CollateOpts &collateOpts = CollateOpts()) const;
+	template <WithString, NotComparable>
+	ComparationResult Compare(const T &other, const FieldsSet &fields, size_t &firstDifferentFieldIdx,
+							  const h_vector<const CollateOpts *, 1> &collateOpts) const;
+	template <WithString, NotComparable>
+	ComparationResult RelaxCompare(const PayloadIface<const T> &other, std::string_view field, int fieldIdx, const CollateOpts &collateOpts,
+								   TagsMatcher &ltm, TagsMatcher &rtm, bool lForceByJsonPath, bool rForceByJsonPath) const;
 
 	// Get PayloadFieldValue by field index
 	PayloadFieldValue Field(int field) const noexcept { return PayloadFieldValue(t_.Field(field), v_->Ptr() + t_.Field(field).Offset()); }
@@ -217,13 +221,37 @@ extern template PayloadValue PayloadIface<PayloadValue>::CopyTo<PayloadValue, st
 extern template PayloadValue PayloadIface<PayloadValue>::CopyWithNewOrUpdatedFields<PayloadValue, static_cast<void *>(0)>(PayloadType t);
 extern template PayloadValue PayloadIface<PayloadValue>::CopyWithRemovedFields<PayloadValue, static_cast<void *>(0)>(PayloadType t);
 
-extern template int PayloadIface<PayloadValue>::Compare<WithString::Yes>(const PayloadValue &, const FieldsSet &,
-																		 const CollateOpts &) const;
-extern template int PayloadIface<PayloadValue>::Compare<WithString::No>(const PayloadValue &, const FieldsSet &, const CollateOpts &) const;
-extern template int PayloadIface<const PayloadValue>::Compare<WithString::Yes>(const PayloadValue &, const FieldsSet &,
-																			   const CollateOpts &) const;
-extern template int PayloadIface<const PayloadValue>::Compare<WithString::No>(const PayloadValue &, const FieldsSet &,
-																			  const CollateOpts &) const;
+extern template ComparationResult PayloadIface<PayloadValue>::Compare<WithString::Yes, NotComparable::Return>(const PayloadValue &,
+																											  const FieldsSet &,
+																											  const CollateOpts &) const;
+extern template ComparationResult PayloadIface<PayloadValue>::Compare<WithString::No, NotComparable::Return>(const PayloadValue &,
+																											 const FieldsSet &,
+																											 const CollateOpts &) const;
+extern template ComparationResult PayloadIface<const PayloadValue>::Compare<WithString::Yes, NotComparable::Return>(
+	const PayloadValue &, const FieldsSet &, const CollateOpts &) const;
+extern template ComparationResult PayloadIface<const PayloadValue>::Compare<WithString::No, NotComparable::Return>(
+	const PayloadValue &, const FieldsSet &, const CollateOpts &) const;
+extern template ComparationResult PayloadIface<PayloadValue>::Compare<WithString::Yes, NotComparable::Throw>(const PayloadValue &,
+																											 const FieldsSet &,
+																											 const CollateOpts &) const;
+extern template ComparationResult PayloadIface<PayloadValue>::Compare<WithString::No, NotComparable::Throw>(const PayloadValue &,
+																											const FieldsSet &,
+																											const CollateOpts &) const;
+extern template ComparationResult PayloadIface<const PayloadValue>::Compare<WithString::Yes, NotComparable::Throw>(
+	const PayloadValue &, const FieldsSet &, const CollateOpts &) const;
+extern template ComparationResult PayloadIface<const PayloadValue>::Compare<WithString::No, NotComparable::Throw>(
+	const PayloadValue &, const FieldsSet &, const CollateOpts &) const;
+
+extern template ComparationResult PayloadIface<const PayloadValue>::Compare<WithString::No, NotComparable::Throw>(
+	const PayloadValue &, const FieldsSet &, size_t &, const h_vector<const CollateOpts *, 1> &) const;
+
+extern template ComparationResult PayloadIface<const PayloadValue>::CompareField<WithString::No, NotComparable::Throw>(
+	const PayloadValue &, int, const FieldsSet &, size_t &, const CollateOpts &) const;
+
+extern template ComparationResult PayloadIface<const PayloadValue>::RelaxCompare<WithString::Yes, NotComparable::Throw>(
+	const PayloadIface<const PayloadValue> &, std::string_view, int, const CollateOpts &, TagsMatcher &, TagsMatcher &, bool, bool) const;
+extern template ComparationResult PayloadIface<const PayloadValue>::RelaxCompare<WithString::No, NotComparable::Throw>(
+	const PayloadIface<const PayloadValue> &, std::string_view, int, const CollateOpts &, TagsMatcher &, TagsMatcher &, bool, bool) const;
 
 extern template class PayloadIface<PayloadValue>;
 extern template class PayloadIface<const PayloadValue>;

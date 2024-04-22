@@ -329,7 +329,7 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 		} else if (op == OpNot) {
 			ser << "NOT ";
 		}
-		it->InvokeAppropriate<void>(
+		it->Visit(
 			[&ser](const AlwaysTrue &) {
 				logPrintf(LogTrace, "Not normalized query to dsl");
 				ser << "true";

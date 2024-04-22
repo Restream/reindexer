@@ -51,8 +51,8 @@ public:
 	int64_t expireAfter_ = 0;
 };
 
-bool isSortable(IndexType type);
-bool isStore(IndexType type) noexcept;
-bool validateIndexName(std::string_view name, IndexType type) noexcept;
+[[nodiscard]] bool isSortable(IndexType type);
+[[nodiscard]] bool isStore(IndexType type) noexcept;
+[[nodiscard]] bool validateIndexName(std::string_view name, IndexType type) noexcept;
 
 }  // namespace reindexer

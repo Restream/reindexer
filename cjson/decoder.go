@@ -37,7 +37,7 @@ func fieldByTag(t reflect.Type, tag string) (result reflect.StructField, ok bool
 	for i := 0; i < t.NumField(); i++ {
 		result = t.Field(i)
 		if ftag := result.Tag.Get("json"); len(ftag) > 0 {
-			ftag, _, _ = splitStr(ftag, ',')
+			ftag, _ = splitStr(ftag, ',')
 			if tag == ftag {
 				return result, true
 			}
@@ -107,7 +107,7 @@ func (dec *Decoder) skipStruct(pl *payloadIface, rdser *Serializer, fieldsoutcnt
 	}
 	return true
 }
-func skipTag(rdser *Serializer, tagType int) {
+func skipTag(rdser *Serializer, tagType int16) {
 	switch tagType {
 	case TAG_DOUBLE:
 		rdser.GetDouble()
@@ -125,7 +125,7 @@ func skipTag(rdser *Serializer, tagType int) {
 	}
 }
 
-func asInt(rdser *Serializer, tagType int) int64 {
+func asInt(rdser *Serializer, tagType int16) int64 {
 	switch tagType {
 	case TAG_BOOL:
 		return int64(rdser.GetVarUInt())
@@ -138,7 +138,7 @@ func asInt(rdser *Serializer, tagType int) int64 {
 	}
 }
 
-func asFloat(rdser *Serializer, tagType int) float64 {
+func asFloat(rdser *Serializer, tagType int16) float64 {
 	switch tagType {
 	case TAG_VARINT:
 		return float64(rdser.GetVarInt())
@@ -149,7 +149,7 @@ func asFloat(rdser *Serializer, tagType int) float64 {
 	}
 }
 
-func asString(rdser *Serializer, tagType int) string {
+func asString(rdser *Serializer, tagType int16) string {
 	switch tagType {
 	case TAG_STRING:
 		return rdser.GetVString()
@@ -163,7 +163,7 @@ func asString(rdser *Serializer, tagType int) string {
 const maxInt = int(^uint(0) >> 1)
 const minInt = -(maxInt - 1)
 
-func asIface(rdser *Serializer, tagType int) interface{} {
+func asIface(rdser *Serializer, tagType int16) interface{} {
 	switch tagType {
 	case TAG_VARINT:
 		v := rdser.GetVarInt()
@@ -284,7 +284,7 @@ func mkSlice(v *reflect.Value, count int) (offset int) {
 	return
 }
 
-func mkValue(ctagType int) (v reflect.Value) {
+func mkValue(ctagType int16) (v reflect.Value) {
 	switch ctagType {
 	case TAG_STRING, TAG_UUID:
 		v = reflect.New(reflect.TypeOf("")).Elem()
@@ -304,7 +304,7 @@ func mkValue(ctagType int) (v reflect.Value) {
 	return v
 }
 
-func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.Value, fieldsoutcnt []int, cctagsPath []int) {
+func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.Value, fieldsoutcnt []int, cctagsPath []int16) {
 	atag := rdser.GetCArrayTag()
 	count := atag.Count()
 	subtag := atag.Tag()
@@ -543,7 +543,31 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 	}
 }
 
-func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.Value, fieldsoutcnt []int, cctagsPath []int) bool {
+func (dec *Decoder) tryToAddNewTag(cctagsPathStr string, cctagsPath []int16, v reflect.Value, name string, idx **[]int) {
+	dec.state.lock.Lock()
+	defer dec.state.lock.Unlock()
+	if *idx == nil {
+		*idx = dec.ctagsCache.FindOrAdd(cctagsPath)
+	}
+	if len(**idx) == 0 {
+		if sf, ok := fieldByTag(v.Type(), name); ok {
+			**idx = sf.Index
+		} else {
+			// Add tags path to the missing fields cache to avoid unique lock for those fields later
+			dec.ctagsCache.missing[cctagsPathStr] = struct{}{}
+		}
+	}
+}
+
+func (dec *Decoder) ResetSerializer() {
+	if dec.ser == nil {
+		dec.ser = NewPoolSerializer()
+	} else {
+		dec.ser.Reset()
+	}
+}
+
+func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.Value, fieldsoutcnt []int, cctagsPath []int16) bool {
 
 	ctag := rdser.GetCTag()
 	ctagType := ctag.Type()
@@ -586,25 +610,23 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 		} else if k == reflect.Struct {
 
 			// try to find in cache in RO mode
-			idx = dec.ctagsCache.Lookup(cctagsPath, false)
+			idx = dec.ctagsCache.Find(cctagsPath)
 
 			if idx == nil || len(*idx) == 0 {
-				// not found in cache
-				name := dec.state.tagsMatcher.tag2name(ctagName)
-
-				// upgrade rwlock to write
-				dec.state.lock.RUnlock()
-				dec.state.lock.Lock()
-				if idx == nil {
-					idx = dec.ctagsCache.Lookup(cctagsPath, true)
+				dec.ResetSerializer()
+				dec.ser.WriteInts16(cctagsPath)
+				cctagsPathStr := string(dec.ser.Bytes())
+				if _, ok := dec.ctagsCache.missing[cctagsPathStr]; ok {
+					// Tags path does not exists in go struct
+					return dec.skipStruct(pl, rdser, fieldsoutcnt, ctag)
+				} else {
+					//  Tags path was not found in cache
+					name := dec.state.tagsMatcher.tag2name(ctagName)
+					// lock must be upgraded to exclusive here to add tag
+					dec.state.lock.RUnlock()
+					dec.tryToAddNewTag(cctagsPathStr, cctagsPath, v, name, &idx)
+					dec.state.lock.RLock()
 				}
-				if len(*idx) == 0 {
-					if sf, ok := fieldByTag(v.Type(), name); ok {
-						*idx = sf.Index
-					}
-				}
-				dec.state.lock.Unlock()
-				dec.state.lock.RLock()
 			}
 			if len(*idx) != 0 {
 				if len(*idx) > 1 {
@@ -637,10 +659,10 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 		switch ctagType {
 		case TAG_ARRAY:
 			count := int(rdser.GetVarUInt())
-			pl.getArray(ctagField, *cnt, count, v)
+			pl.getArray(int(ctagField), *cnt, count, v)
 			*cnt += count
 		default:
-			pl.getValue(ctagField, *cnt, v)
+			pl.getValue(int(ctagField), *cnt, v)
 			(*cnt)++
 		}
 	} else {
@@ -783,13 +805,20 @@ func (dec *Decoder) DecodeCPtr(cptr uintptr, dest interface{}) (err error) {
 	}()
 
 	fieldsoutcnt := make([]int, MaxIndexes)
-	ctagsPath := make([]int, 0, 8)
+	ctagsPath := make([]int16, 0, 16)
 
 	dec.decodeValue(pl, ser, reflect.ValueOf(dest), fieldsoutcnt, ctagsPath)
 	if !ser.Eof() {
 		panic(fmt.Errorf("internal error - left unparsed data"))
 	}
 	return err
+}
+
+func (dec *Decoder) Finalize() {
+	if dec.ser != nil {
+		dec.ser.Close()
+		dec.ser = nil
+	}
 }
 
 func (dec *Decoder) Decode(cjson []byte, dest interface{}) (err error) {
@@ -827,7 +856,7 @@ func (dec *Decoder) Decode(cjson []byte, dest interface{}) (err error) {
 	}()
 
 	fieldsoutcnt := make([]int, MaxIndexes)
-	ctagsPath := make([]int, 0, 8)
+	ctagsPath := make([]int16, 0, 16)
 
 	dec.decodeValue(nil, ser, reflect.ValueOf(dest), fieldsoutcnt, ctagsPath)
 	// if !ser.Eof() {

@@ -456,7 +456,7 @@ template bool checkIfEndsWith<CaseSensitive::Yes>(std::string_view pattern, std:
 template bool checkIfEndsWith<CaseSensitive::No>(std::string_view pattern, std::string_view src) noexcept;
 
 template <>
-int collateCompare<CollateASCII>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
+ComparationResult collateCompare<CollateASCII>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
 	auto itl = lhs.begin();
 	auto itr = rhs.begin();
 
@@ -464,21 +464,21 @@ int collateCompare<CollateASCII>(std::string_view lhs, std::string_view rhs, con
 		auto chl = tolower(*itl++);
 		auto chr = tolower(*itr++);
 
-		if (chl > chr) return 1;
-		if (chl < chr) return -1;
+		if (chl > chr) return ComparationResult::Gt;
+		if (chl < chr) return ComparationResult::Lt;
 	}
 
 	if (lhs.size() > rhs.size()) {
-		return 1;
+		return ComparationResult::Gt;
 	} else if (lhs.size() < rhs.size()) {
-		return -1;
+		return ComparationResult::Lt;
 	}
 
-	return 0;
+	return ComparationResult::Eq;
 }
 
 template <>
-int collateCompare<CollateUTF8>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
+ComparationResult collateCompare<CollateUTF8>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
 	auto itl = lhs.data();
 	auto itr = rhs.data();
 
@@ -486,20 +486,20 @@ int collateCompare<CollateUTF8>(std::string_view lhs, std::string_view rhs, cons
 		auto chl = ToLower(utf8::unchecked::next(itl));
 		auto chr = ToLower(utf8::unchecked::next(itr));
 
-		if (chl > chr) return 1;
-		if (chl < chr) return -1;
+		if (chl > chr) return ComparationResult::Gt;
+		if (chl < chr) return ComparationResult::Lt;
 	}
 
 	if (lhs.size() > rhs.size()) {
-		return 1;
+		return ComparationResult::Gt;
 	} else if (lhs.size() < rhs.size()) {
-		return -1;
+		return ComparationResult::Lt;
 	}
-	return 0;
+	return ComparationResult::Eq;
 }
 
 template <>
-int collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
+ComparationResult collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
 	char *posl = nullptr;
 	char *posr = nullptr;
 
@@ -510,16 +510,16 @@ int collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, c
 		auto minlen = std::min(lhs.size() - (posl - lhs.data()), rhs.size() - (posr - rhs.data()));
 		auto res = strncmp(posl, posr, minlen);
 
-		if (res != 0) return res;
+		if (res != 0) return res < 0 ? ComparationResult::Lt : ComparationResult::Gt;
 
-		return lhs.size() > rhs.size() ? 1 : (lhs.size() < rhs.size() ? -1 : 0);
+		return lhs.size() > rhs.size() ? ComparationResult::Gt : (lhs.size() < rhs.size() ? ComparationResult::Lt : ComparationResult::Eq);
 	}
 
-	return numl > numr ? 1 : (numl < numr ? -1 : 0);
+	return numl > numr ? ComparationResult::Gt : (numl < numr ? ComparationResult::Lt : ComparationResult::Eq);
 }
 
 template <>
-int collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &sortOrderTable) noexcept {
+ComparationResult collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &sortOrderTable) noexcept {
 	auto itl = lhs.data();
 	auto itr = rhs.data();
 
@@ -530,25 +530,28 @@ int collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs, co
 		int chlPriority = sortOrderTable.GetPriority(chl);
 		int chrPriority = sortOrderTable.GetPriority(chr);
 
-		if (chlPriority > chrPriority) return 1;
-		if (chlPriority < chrPriority) return -1;
+		if (chlPriority > chrPriority) return ComparationResult::Gt;
+		if (chlPriority < chrPriority) return ComparationResult::Lt;
 	}
 
 	if (lhs.size() > rhs.size()) {
-		return 1;
+		return ComparationResult::Gt;
 	} else if (lhs.size() < rhs.size()) {
-		return -1;
+		return ComparationResult::Lt;
 	}
-	return 0;
+	return ComparationResult::Eq;
 }
 
 template <>
-int collateCompare<CollateNone>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
+ComparationResult collateCompare<CollateNone>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
 	size_t l1 = lhs.size();
 	size_t l2 = rhs.size();
 	int res = memcmp(lhs.data(), rhs.data(), std::min(l1, l2));
 
-	return res ? res : ((l1 < l2) ? -1 : (l1 > l2) ? 1 : 0);
+	return res ? (res < 0 ? ComparationResult::Lt : ComparationResult::Gt)
+			   : ((l1 < l2)	  ? ComparationResult::Lt
+				  : (l1 > l2) ? ComparationResult::Gt
+							  : ComparationResult::Eq);
 }
 
 std::string urldecode2(std::string_view str) {

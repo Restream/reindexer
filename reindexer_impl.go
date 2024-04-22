@@ -32,18 +32,42 @@ type reindexerNamespace struct {
 	name          string
 	opts          NamespaceOptions
 	cjsonState    cjson.State
-	nsHash        int
-	opened        bool
+}
+
+func (ns *reindexerNamespace) renamedCopy(newName string) *reindexerNamespace {
+	nsCopy := &reindexerNamespace{
+		cacheItems:    &cacheItems{},
+		joined:        ns.joined,
+		indexes:       ns.indexes,
+		schema:        ns.schema,
+		rtype:         ns.rtype,
+		deepCopyIface: ns.deepCopyIface,
+		name:          newName,
+		opts:          ns.opts,
+		cjsonState:    cjson.NewState(),
+	}
+
+	if !nsCopy.opts.disableObjCache {
+		var err error
+		nsCopy.cacheItems, err = newCacheItems(nsCopy.opts.objCacheItemsCount)
+		if err != nil {
+			nsCopy.cacheItems = &cacheItems{}
+			log.Printf("Unable to copy namespace's cache during rename ('%s'->'%s'). Cache was disabled for '%s'\n", ns.name, newName, newName)
+		}
+	}
+	return nsCopy
 }
 
 // reindexerImpl The reindxer state struct
 type reindexerImpl struct {
-	lock               sync.RWMutex
+	// Fast RW lock to access namespaces list
+	lock sync.RWMutex
+	// Slow separate mutex to provide synchronization between separate namespaces' list modification
+	nsModifySlowLock   sync.Mutex
 	ns                 map[string]*reindexerNamespace
 	storagePath        string
 	binding            bindings.RawBinding
 	debugLevels        map[string]int
-	nsHashCounter      int
 	strictJoinHandlers bool
 	status             error
 
@@ -357,6 +381,9 @@ func (db *reindexerImpl) openNamespace(ctx context.Context, namespace string, op
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("OpenNamespace", namespace)).ObserveDuration()
 	}
 
+	db.nsModifySlowLock.Lock()
+	defer db.nsModifySlowLock.Unlock()
+
 	if err = db.registerNamespaceImpl(namespace, opts, s); err != nil {
 		return err
 	}
@@ -441,6 +468,9 @@ func (db *reindexerImpl) registerNamespace(ctx context.Context, namespace string
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("RegisterNamespace", namespace)).ObserveDuration()
 	}
 
+	db.nsModifySlowLock.Lock()
+	defer db.nsModifySlowLock.Unlock()
+
 	return db.registerNamespaceImpl(namespace, opts, s)
 }
 
@@ -491,8 +521,6 @@ func (db *reindexerImpl) registerNamespaceImpl(namespace string, opts *Namespace
 		opts:          *opts,
 		cjsonState:    cjson.NewState(),
 		deepCopyIface: haveDeepCopy,
-		nsHash:        db.nsHashCounter,
-		opened:        false,
 	}
 
 	validator := cjson.Validator{}
@@ -507,7 +535,6 @@ func (db *reindexerImpl) registerNamespaceImpl(namespace string, opts *Namespace
 		ns.schema = *schema
 	}
 
-	db.nsHashCounter++
 	db.ns[namespace] = ns
 	return nil
 }
@@ -523,6 +550,9 @@ func (db *reindexerImpl) dropNamespace(ctx context.Context, namespace string) er
 	if db.promMetrics != nil {
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("DropNamespace", namespace)).ObserveDuration()
 	}
+
+	db.nsModifySlowLock.Lock()
+	defer db.nsModifySlowLock.Unlock()
 
 	db.lock.Lock()
 	delete(db.ns, namespace)
@@ -559,18 +589,19 @@ func (db *reindexerImpl) renameNamespace(ctx context.Context, srcNsName string, 
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("RenameNamespace", srcNsName)).ObserveDuration()
 	}
 
+	db.nsModifySlowLock.Lock()
+	defer db.nsModifySlowLock.Unlock()
+
 	if err := db.binding.RenameNamespace(ctx, srcNsName, dstNsName); err != nil {
 		return err
 	}
+
 	db.lock.Lock()
 	defer db.lock.Unlock()
-
-	srcNs, ok := db.ns[srcNsName]
-	if ok {
+	if srcNs, ok := db.ns[srcNsName]; ok {
 		delete(db.ns, srcNsName)
-		db.ns[dstNsName] = srcNs
-	} else {
-		delete(db.ns, dstNsName)
+		// create copy via `renamedCopy` to avoid race condition on the non-const namespace's properties
+		db.ns[dstNsName] = srcNs.renamedCopy(dstNsName)
 	}
 	return nil
 }
@@ -586,6 +617,9 @@ func (db *reindexerImpl) closeNamespace(ctx context.Context, namespace string) e
 	if db.promMetrics != nil {
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("CloseNamespace", namespace)).ObserveDuration()
 	}
+
+	db.nsModifySlowLock.Lock()
+	defer db.nsModifySlowLock.Unlock()
 
 	db.lock.Lock()
 	delete(db.ns, namespace)
@@ -607,7 +641,7 @@ func (db *reindexerImpl) upsert(ctx context.Context, namespace string, item inte
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Upsert", namespace)).ObserveDuration()
 	}
 
-	_, err := db.modifyItem(ctx, namespace, nil, item, nil, modeUpsert, precepts...)
+	_, err := db.modifyItem(ctx, namespace, nil, item, modeUpsert, precepts...)
 	return err
 }
 
@@ -625,7 +659,7 @@ func (db *reindexerImpl) insert(ctx context.Context, namespace string, item inte
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Insert", namespace)).ObserveDuration()
 	}
 
-	return db.modifyItem(ctx, namespace, nil, item, nil, modeInsert, precepts...)
+	return db.modifyItem(ctx, namespace, nil, item, modeInsert, precepts...)
 }
 
 // update item to namespace by PK
@@ -642,7 +676,7 @@ func (db *reindexerImpl) update(ctx context.Context, namespace string, item inte
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Update", namespace)).ObserveDuration()
 	}
 
-	return db.modifyItem(ctx, namespace, nil, item, nil, modeUpdate, precepts...)
+	return db.modifyItem(ctx, namespace, nil, item, modeUpdate, precepts...)
 }
 
 // delete - remove single item from namespace by PK
@@ -658,7 +692,7 @@ func (db *reindexerImpl) delete(ctx context.Context, namespace string, item inte
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Delete", namespace)).ObserveDuration()
 	}
 
-	_, err := db.modifyItem(ctx, namespace, nil, item, nil, modeDelete, precepts...)
+	_, err := db.modifyItem(ctx, namespace, nil, item, modeDelete, precepts...)
 	return err
 }
 
@@ -741,6 +775,20 @@ func (db *reindexerImpl) dropIndex(ctx context.Context, namespace, index string)
 	return db.binding.DropIndex(ctx, namespace, index)
 }
 
+func (db *reindexerImpl) enumMeta(ctx context.Context, namespace string) ([]string, error) {
+	namespace = strings.ToLower(namespace)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.EnumMeta", otelattr.String("rx.ns", namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("EnumMeta", namespace)).ObserveDuration()
+	}
+
+	return db.binding.EnumMeta(ctx, namespace)
+}
+
 func (db *reindexerImpl) putMeta(ctx context.Context, namespace, key string, data []byte) error {
 	namespace = strings.ToLower(namespace)
 
@@ -777,6 +825,20 @@ func (db *reindexerImpl) getMeta(ctx context.Context, namespace, key string) ([]
 	copy(ret, out.GetBuf())
 
 	return ret, nil
+}
+
+func (db *reindexerImpl) deleteMeta(ctx context.Context, namespace, key string) error {
+	namespace = strings.ToLower(namespace)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.DeleteMeta", otelattr.String("rx.ns", namespace), otelattr.String("rx.meta.key", key)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("DeleteMeta", namespace)).ObserveDuration()
+	}
+
+	return db.binding.DeleteMeta(ctx, namespace, key)
 }
 
 func loglevelToString(logLevel int) string {

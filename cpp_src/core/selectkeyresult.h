@@ -3,10 +3,10 @@
 #include <climits>
 #include <memory>
 
-#include "core/comparator.h"
 #include "core/idset.h"
 #include "core/index/indexiterator.h"
-#include "index/keyentry.h"
+#include "core/nsselecter/comparator/comparator_indexed.h"
+#include "core/nsselecter/comparator/comparator_not_indexed.h"
 
 namespace reindexer {
 
@@ -143,29 +143,35 @@ protected:
 /// following keys: 10, 11, 12, 13, ... 19).
 class SelectKeyResult : public h_vector<SingleSelectKeyResult, 1> {
 public:
-	std::vector<Comparator> comparators_;
+	constexpr static size_t kMinSetsForHeapSort = 16;
+	constexpr static size_t kSelectionSortIdsCount = 500;
+	constexpr static size_t kMinSetsForGenericSort = 30;
+
+	struct MergeOptions {
+		bool genericSort;
+		bool shrinkResult;
+	};
+
 	bool deferedExplicitSort = false;
 
 	static size_t GetMergeSortCost(size_t idsCount, size_t idsetsCount) noexcept { return idsCount * idsetsCount; }
 	static size_t GetGenericSortCost(size_t idsCount) noexcept { return idsCount * log2(idsCount) + 2 * idsCount; }
 	static bool IsGenericSortRecommended(size_t idsetsCount, size_t idsCount, size_t maxIterations) noexcept {
-		return idsetsCount >= 30 && idsCount && GetGenericSortCost(idsCount) < GetMergeSortCost(maxIterations, idsetsCount);
+		return idsetsCount >= kMinSetsForGenericSort && idsCount &&
+			   GetGenericSortCost(idsCount) < GetMergeSortCost(maxIterations, idsetsCount);
 	}
 	static size_t CostWithDefferedSort(size_t idsetsCount, size_t idsCount, size_t maxIterations) noexcept {
-		const auto genSortCost = GetGenericSortCost(idsCount);
-		if (idsetsCount < 30 || !idsCount) {
-			return genSortCost;
-		}
 		const auto mrgSortCost = GetMergeSortCost(maxIterations, idsetsCount);
+		if (idsetsCount < kMinSetsForGenericSort || !idsCount) {
+			return mrgSortCost;
+		}
+		const auto genSortCost = GetGenericSortCost(idsCount);
 		return std::min(genSortCost, mrgSortCost);
 	}
 
-	void ClearDistinct() {
-		for (Comparator &comp : comparators_) comp.ClearDistinct();
-	}
 	/// Returns total amount of rowIds in all
 	/// the SingleSelectKeyResult objects, i.e.
-	/// maximum amonut of possible iterations.
+	/// maximum amount of possible iterations.
 	/// @return amount of loops.
 	size_t GetMaxIterations(size_t limitIters = std::numeric_limits<size_t>::max()) const noexcept {
 		size_t cnt = 0;
@@ -189,66 +195,19 @@ public:
 	/// SingleSelectKeyResult objects. Such
 	/// representation makes further work with
 	/// the object much easier.
-	/// @param useGenericSort - use generic sort instead of merge sort
+	/// @param opts - merge customization options
 	/// @return Pointer to a sorted IdSet object made
 	/// from all the SingleSelectKeyResult inner objects.
-	IdSet::Ptr MergeIdsets(bool useGenericSort, size_t idsCount) {
+	IdSet::Ptr MergeIdsets(MergeOptions &&opts, size_t idsCount) {
 		IdSet::Ptr mergedIds;
-		if (useGenericSort) {
-			base_idset ids;
-			size_t actualSize = 0;
-			ids.resize(idsCount);
-			auto rit = ids.begin();
-			for (auto it = begin(), endIt = end(); it != endIt; ++it) {
-				if (it->isRange_) {
-					throw Error(errLogic, "Unable to merge 'range' idset ('generic sort mode')");
-				}
-				if (it->useBtree_) {
-					const auto sz = it->set_->size();
-					actualSize += sz;
-					std::copy(it->set_->begin(), it->set_->end(), rit);
-					rit += sz;
-				} else {
-					const auto sz = it->ids_.size();
-					actualSize += sz;
-					std::copy(it->ids_.begin(), it->ids_.end(), rit);
-					rit += sz;
-				}
-			}
-			assertrx(idsCount == actualSize);
-			mergedIds = IdSet::BuildFromUnsorted(std::move(ids));
+		if (opts.genericSort) {
+			mergedIds = mergeGenericSort(idsCount);
+		} else if (idsCount < kSelectionSortIdsCount || size() < kMinSetsForHeapSort) {
+			mergedIds = mergeSelectionSort(idsCount);
 		} else {
-			mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
-			mergedIds->reserve(idsCount);
-			for (auto it = begin(), endIt = end(); it != endIt; ++it) {
-				if (it->isRange_) {
-					throw Error(errLogic, "Unable to merge 'range' idset ('merge sort mode')");
-				}
-				if (it->useBtree_) {
-					it->itset_ = it->set_->begin();
-				} else {
-					it->it_ = it->ids_.begin();
-				}
-			}
-			for (;;) {
-				const int min = mergedIds->size() ? mergedIds->back() : INT_MIN;
-				int curMin = INT_MAX;
-				for (auto it = begin(), endIt = end(); it != endIt; ++it) {
-					if (it->useBtree_) {
-						const auto end = it->set_->end();
-						for (; it->itset_ != end && *it->itset_ <= min; ++it->itset_) {
-						}
-						if (it->itset_ != end && *it->itset_ < curMin) curMin = *it->itset_;
-					} else {
-						const auto end = it->ids_.end();
-						for (; it->it_ != end && *it->it_ <= min; ++it->it_) {
-						}
-						if (it->it_ != end && *it->it_ < curMin) curMin = *it->it_;
-					}
-				}
-				if (curMin == INT_MAX) break;
-				mergedIds->Add(curMin, IdSet::Unordered, 0);
-			}
+			mergedIds = mergeHeapSort(idsCount);
+		}
+		if (opts.shrinkResult) {
 			mergedIds->shrink_to_fit();
 		}
 		clear();
@@ -256,15 +215,229 @@ public:
 		emplace_back(IdSet::Ptr(mergedIds));
 		return mergedIds;
 	}
+
+private:
+	IdSet::Ptr mergeGenericSort(size_t idsCount) {
+		base_idset ids;
+		size_t actualSize = 0;
+		ids.resize(idsCount);
+		auto rit = ids.begin();
+		for (auto it = begin(), endIt = end(); it != endIt; ++it) {
+			if rx_unlikely (it->isRange_) {
+				throw Error(errLogic, "Unable to merge 'range' idset ('generic sort mode')");
+			}
+			if (it->useBtree_) {
+				const auto sz = it->set_->size();
+				actualSize += sz;
+				std::copy(it->set_->begin(), it->set_->end(), rit);
+				rit += sz;
+			} else {
+				const auto sz = it->ids_.size();
+				actualSize += sz;
+				std::copy(it->ids_.begin(), it->ids_.end(), rit);
+				rit += sz;
+			}
+		}
+		assertrx(idsCount == actualSize);
+		return IdSet::BuildFromUnsorted(std::move(ids));
+	}
+
+	IdSet::Ptr mergeSelectionSort(size_t idsCount) {
+		auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
+		mergedIds->reserve(idsCount);
+
+		auto firstSetIt = std::partition(begin(), end(), [](const SingleSelectKeyResult &v) noexcept { return !v.useBtree_; });
+		const auto vecsCnt = firstSetIt - begin();
+
+		h_vector<value_type *, 64> ptrsVec;
+		ptrsVec.reserve(size());
+
+		for (auto &v : *this) {
+			if rx_unlikely (v.isRange_) {
+				throw Error(errLogic, "Unable to merge 'range' idset ('merge sort mode')");
+			}
+			ptrsVec.emplace_back(&v);
+		}
+		span<value_type *> vecSpan(ptrsVec.data(), vecsCnt);
+		span<value_type *> setSpan(ptrsVec.data() + vecsCnt, size() - vecsCnt);
+
+		for (auto &v : vecSpan) {
+			assertrx_dbg(!v->useBtree_);
+			v->it_ = v->ids_.begin();
+			v->end_ = v->ids_.end();
+		}
+		for (auto &v : setSpan) {
+			assertrx_dbg(v->useBtree_);
+			v->itset_ = v->set_->begin();
+			v->setend_ = v->set_->end();
+		}
+
+		int min = INT_MIN;
+		for (;;) {
+			int curMin = INT_MAX;
+			for (auto vsIt = vecSpan.begin(), vsItEnd = vecSpan.end(); vsIt != vsItEnd;) {
+				auto &itvec = (*vsIt)->it_;
+				auto &vecend = (*vsIt)->end_;
+				for (;; ++itvec) {
+					if (itvec == vecend) {
+						std::swap(*vsIt, vecSpan.back());
+						vecSpan = span<value_type *>(vecSpan.data(), vecSpan.size() - 1);
+						--vsItEnd;
+						break;
+					}
+					const auto val = *itvec;
+					if (val > min) {
+						if (val < curMin) {
+							curMin = val;
+						}
+						++vsIt;
+						break;
+					}
+				}
+			}
+			for (auto ssIt = setSpan.begin(), ssItEnd = setSpan.end(); ssIt != ssItEnd;) {
+				auto &itset = (*ssIt)->itset_;
+				auto &setend = (*ssIt)->setend_;
+				for (;; ++itset) {
+					if (itset == setend) {
+						std::swap(*ssIt, setSpan.back());
+						setSpan = span<value_type *>(setSpan.data(), setSpan.size() - 1);
+						--ssItEnd;
+						break;
+					}
+					const auto val = *itset;
+					if (val > min) {
+						if (val < curMin) {
+							curMin = val;
+						}
+						++ssIt;
+						break;
+					}
+				}
+			}
+			if (curMin == INT_MAX) {
+				break;
+			}
+			min = curMin;
+			mergedIds->AddUnordered(min);
+		}
+		return mergedIds;
+	}
+
+	IdSet::Ptr mergeHeapSort(size_t idsCount) {
+		auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
+		mergedIds->reserve(idsCount);
+
+		struct IdSetGreater {
+			bool operator()(const value_type *l, const value_type *r) noexcept {
+				const auto lval = l->useBtree_ ? *(l->itset_) : *(l->it_);
+				const auto rval = r->useBtree_ ? *(r->itset_) : *(r->it_);
+				return lval > rval;
+			}
+		};
+
+		h_vector<value_type *, 64> ptrsVec;
+		ptrsVec.reserve(size());
+		for (auto &v : *this) {
+			if rx_unlikely (v.isRange_) {
+				throw Error(errLogic, "Unable to merge 'range' idset ('merge sort mode')");
+			}
+
+			if (v.useBtree_) {
+				if (!v.set_->empty()) {
+					ptrsVec.emplace_back(&v);
+					v.itset_ = v.set_->begin();
+					v.setend_ = v.set_->end();
+				}
+			} else {
+				if (!v.ids_.empty()) {
+					ptrsVec.emplace_back(&v);
+					v.it_ = v.ids_.begin();
+					v.end_ = v.ids_.end();
+				}
+			}
+		}
+		span<value_type *> idsetsSpan(ptrsVec.data(), ptrsVec.size());
+		std::make_heap(idsetsSpan.begin(), idsetsSpan.end(), IdSetGreater{});
+		int min = INT_MIN;
+		auto handleMinValue = [&mergedIds, &idsetsSpan, &min](auto &it, auto end) noexcept {
+			auto val = *it;
+			if (val > min) {
+				mergedIds->AddUnordered(val);
+				min = val;
+			}
+			do {
+				if (++it == end) {
+					std::swap(idsetsSpan.front(), idsetsSpan.back());
+					idsetsSpan = span<value_type *>(idsetsSpan.begin(), idsetsSpan.size() - 1);
+					return;
+				}
+			} while (*it <= min);
+		};
+
+		while (!idsetsSpan.empty()) {
+			auto &minV = *idsetsSpan.front();
+			if (minV.useBtree_) {
+				handleMinValue(minV.itset_, minV.setend_);
+			} else {
+				handleMinValue(minV.it_, minV.end_);
+			}
+			heapifyRoot<value_type *, IdSetGreater>(idsetsSpan);
+		}
+		return mergedIds;
+	}
+
+	template <typename T, typename CompareT>
+	RX_ALWAYS_INLINE void heapifyRoot(span<T> vec) noexcept {
+		static_assert(std::is_pointer_v<T>, "Expecting T being a pointer for the fast swaps");
+		T *target = vec.begin();
+		T *end = target + vec.size();
+		CompareT c;
+		for (size_t i = 0;;) {
+			T *cur = target;
+			const auto lIdx = (i << 1) + 1;
+			T *left = vec.begin() + lIdx;
+			T *right = left + 1;
+
+			if (left < end && c(*target, *left)) {
+				target = left;
+				i = lIdx;
+			}
+			if (right < end && c(*target, *right)) {
+				target = right;
+				i = lIdx + 1;
+			}
+			if (cur == target) {
+				return;
+			}
+			std::swap(*cur, *target);
+		}
+	}
 };
+
+using SelectKeyResultsVector = h_vector<SelectKeyResult, 1>;
 
 /// Result of selecting data for
 /// each key in a query.
-class SelectKeyResults : public h_vector<SelectKeyResult, 1> {
+class SelectKeyResults : public std::variant<SelectKeyResultsVector, ComparatorNotIndexed, ComparatorIndexed<bool>, ComparatorIndexed<int>,
+											 ComparatorIndexed<int64_t>, ComparatorIndexed<double>, ComparatorIndexed<key_string>,
+											 ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>, ComparatorIndexed<Uuid>> {
+	using Base = std::variant<SelectKeyResultsVector, ComparatorNotIndexed, ComparatorIndexed<bool>, ComparatorIndexed<int>,
+							  ComparatorIndexed<int64_t>, ComparatorIndexed<double>, ComparatorIndexed<key_string>,
+							  ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>, ComparatorIndexed<Uuid>>;
+
 public:
-	SelectKeyResults(std::initializer_list<SelectKeyResult> l) { insert(end(), l.begin(), l.end()); }
-	SelectKeyResults(SelectKeyResult &&res) { push_back(std::move(res)); }
-	SelectKeyResults() = default;
+	SelectKeyResults() noexcept : Base{SelectKeyResultsVector{}} {}
+	SelectKeyResults(SelectKeyResult &&res) noexcept : Base{SelectKeyResultsVector{std::move(res)}} {}
+	template <typename T>
+	SelectKeyResults(ComparatorIndexed<T> &&comp) noexcept : Base{std::move(comp)} {}
+	SelectKeyResults(ComparatorNotIndexed &&comp) noexcept : Base{std::move(comp)} {}
+	void Clear() noexcept { std::get<SelectKeyResultsVector>(*this).clear(); }
+	void EmplaceBack(SelectKeyResult &&sr) { std::get<SelectKeyResultsVector>(*this).emplace_back(std::move(sr)); }
+	SelectKeyResult &&Front() && noexcept { return std::move(std::get<SelectKeyResultsVector>(*this).front()); }
+	const Base &AsVariant() const & noexcept { return *this; }
+	Base &AsVariant() & noexcept { return *this; }
+	auto AsVariant() const && = delete;
 };
 
 }  // namespace reindexer

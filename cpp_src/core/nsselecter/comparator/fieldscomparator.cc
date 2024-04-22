@@ -103,9 +103,10 @@ bool FieldsComparator::compare(const LArr &lhs, const RArr &rhs) {
 				if constexpr (needCompareTypes) {
 					if (!compareTypes(v.Type(), rhs[0].Type()) || !compareTypes(v.Type(), rhs[1].Type())) continue;
 				}
-				if (v.RelaxCompare<WithString::Yes>(rhs[0], collateOpts_) >= 0 &&
-					v.RelaxCompare<WithString::Yes>(rhs[1], collateOpts_) <= 0)
+				if ((v.RelaxCompare<WithString::Yes, NotComparable::Throw>(rhs[0], collateOpts_) & ComparationResult::Ge) &&
+					(v.RelaxCompare<WithString::Yes, NotComparable::Throw>(rhs[1], collateOpts_) & ComparationResult::Le)) {
 					return true;
+				}
 			}
 			return false;
 		case CondLike:
@@ -127,7 +128,7 @@ bool FieldsComparator::compare(const LArr &lhs, const RArr &rhs) {
 					if constexpr (needCompareTypes) {
 						if (!compareTypes(lv.Type(), rv.Type())) continue;
 					}
-					if (lv.RelaxCompare<WithString::Yes>(rv, collateOpts_) == 0) {
+					if (lv.RelaxCompare<WithString::Yes, NotComparable::Throw>(rv, collateOpts_) == ComparationResult::Eq) {
 						found = true;
 						break;
 					}
@@ -152,23 +153,23 @@ bool FieldsComparator::compare(const LArr &lhs, const RArr &rhs) {
 					if constexpr (needCompareTypes) {
 						if (!compareTypes(lv.Type(), rv.Type())) continue;
 					}
-					const int compRes = lv.RelaxCompare<WithString::Yes>(rv, collateOpts_);
+					const auto compRes = lv.RelaxCompare<WithString::Yes, NotComparable::Throw>(rv, collateOpts_);
 					switch (condition_) {
 						case CondEq:
 						case CondSet:
-							if (compRes == 0) return true;
+							if (compRes == ComparationResult::Eq) return true;
 							break;
 						case CondLt:
-							if (compRes < 0) return true;
+							if (compRes == ComparationResult::Lt) return true;
 							break;
 						case CondLe:
-							if (compRes <= 0) return true;
+							if (compRes & ComparationResult::Le) return true;
 							break;
 						case CondGt:
-							if (compRes > 0) return true;
+							if (compRes == ComparationResult::Gt) return true;
 							break;
 						case CondGe:
-							if (compRes >= 0) return true;
+							if (compRes & ComparationResult::Ge) return true;
 							break;
 						case CondAny:
 						case CondEmpty:
@@ -182,17 +183,6 @@ bool FieldsComparator::compare(const LArr &lhs, const RArr &rhs) {
 				}
 			}
 			return false;
-	}
-}
-
-bool FieldsComparator::Compare(const PayloadValue &item) {
-	if (ctx_.size() > 1) {
-		for (const auto &c : ctx_) {
-			if (!compare(item, c)) return false;
-		}
-		return true;
-	} else {
-		return compare(item, ctx_[0]);
 	}
 }
 

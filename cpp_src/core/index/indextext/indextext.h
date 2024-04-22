@@ -47,9 +47,13 @@ public:
 	}
 	void SetSortedIdxCount(int) override final {}
 	bool RequireWarmupOnNsCopy() const noexcept override final { return cfg_ && cfg_->enableWarmupOnNsCopy; }
+	void DestroyCache() override {
+		Base::DestroyCache();
+		cache_ft_.reset();
+	}
 	void ClearCache() override {
 		Base::ClearCache();
-		cache_ft_.reset();
+		if (cache_ft_) cache_ft_->Clear();
 	}
 	void ClearCache(const std::bitset<kMaxIndexes>& s) override { Base::ClearCache(s); }
 	void MarkBuilt() noexcept override { assertrx(0); }

@@ -43,7 +43,7 @@ public:
 
 		for (int i = 0; i < 10; i++) {
 			auto channel = grpc::CreateChannel("127.0.0.1:16534", grpc::InsecureChannelCredentials());
-			if (channel->WaitForConnected(std::chrono::system_clock::now() + std::chrono::seconds(1))) {
+			if (channel->WaitForConnected(reindexer::system_clock_w::now() + std::chrono::seconds(1))) {
 				rx_ = reindexer::grpc::Reindexer::NewStub(channel);
 				break;
 			}

@@ -5,10 +5,11 @@
 
 #include "estl/span.h"
 #include "gason/gason.h"
-#include "tools/serializer.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
+
+class WrSerializer;
 
 const int kJsonShiftWidth = 4;
 

@@ -6,10 +6,12 @@
 
 namespace reindexer {
 
-[[nodiscard]] CondType InvertJoinCondition(CondType cond);
+[[nodiscard]] CondType InvertJoinCondition(CondType);
+[[nodiscard]] CondType InvertNotCondition(CondType);
 [[nodiscard]] std::string_view CondTypeToStr(CondType);
+[[nodiscard]] std::string_view CondTypeToStrShort(CondType);
 [[nodiscard]] std::string_view TagTypeToStr(TagType);
-[[nodiscard]] std::string_view AggTypeToStr(AggType t) noexcept;
+[[nodiscard]] std::string_view AggTypeToStr(AggType) noexcept;
 
 constexpr bool IsComposite(IndexType type) noexcept {
 	return type == IndexCompositeBTree || type == IndexCompositeFastFT || type == IndexCompositeFuzzyFT || type == IndexCompositeHash;
@@ -30,33 +32,7 @@ constexpr bool IsFastFullText(IndexType type) noexcept { return type == IndexFas
 
 template <typename T>
 auto& operator<<(T& os, CondType cond) {
-	switch (cond) {
-		case CondAny:
-			return os << "IS NOT NULL";
-		case CondEq:
-			return os << '=';
-		case CondLt:
-			return os << '<';
-		case CondLe:
-			return os << "<=";
-		case CondGt:
-			return os << '>';
-		case CondGe:
-			return os << ">=";
-		case CondRange:
-			return os << "RANGE";
-		case CondSet:
-			return os << "IN";
-		case CondAllSet:
-			return os << "ALLSET";
-		case CondEmpty:
-			return os << "IS NULL";
-		case CondLike:
-			return os << "LIKE";
-		case CondDWithin:
-			return os << "DWITHIN";
-	}
-	std::abort();
+	return os << reindexer::CondTypeToStrShort(cond);
 }
 
 template <typename T>

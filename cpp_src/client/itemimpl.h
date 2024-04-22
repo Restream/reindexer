@@ -1,8 +1,6 @@
 #pragma once
 #include "client/itemimplbase.h"
 
-#include "debug/backtrace.h"
-
 namespace reindexer {
 namespace client {
 

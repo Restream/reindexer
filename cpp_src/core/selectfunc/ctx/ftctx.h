@@ -1,10 +1,10 @@
 #pragma once
+
 #include <core/type_consts.h>
 #include <memory>
 #include "basefunctionctx.h"
 #include "core/ft/areaholder.h"
 #include "core/ft/usingcontainer.h"
-#include "estl/h_vector.h"
 
 namespace reindexer {
 

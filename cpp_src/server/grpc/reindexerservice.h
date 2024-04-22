@@ -58,6 +58,7 @@ public:
 	::grpc::Status GetMeta(::grpc::ServerContext* context, const GetMetaRequest* request, MetadataResponse* response) override;
 	::grpc::Status PutMeta(::grpc::ServerContext* context, const PutMetaRequest* request, ErrorResponse* response) override;
 	::grpc::Status EnumMeta(::grpc::ServerContext* context, const EnumMetaRequest* request, MetadataKeysResponse* response) override;
+	::grpc::Status DeleteMeta(::grpc::ServerContext* context, const DeleteMetaRequest* request, ErrorResponse* response) override;
 	::grpc::Status BeginTransaction(::grpc::ServerContext* context, const BeginTransactionRequest* request,
 									TransactionIdResponse* response) override;
 	::grpc::Status AddTxItem(::grpc::ServerContext* context, ::grpc::ServerReaderWriter<ErrorResponse, AddTxItemRequest>* stream) override;
@@ -69,7 +70,7 @@ public:
 private:
 	struct TxData {
 		std::shared_ptr<Transaction> tx;
-		std::chrono::time_point<std::chrono::steady_clock> txDeadline;
+		steady_clock_w::time_point txDeadline;
 		std::string dbName, nsName;
 	};
 

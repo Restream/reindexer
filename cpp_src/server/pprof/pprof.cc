@@ -3,7 +3,6 @@
 #include <cstdlib>
 #include <thread>
 #include "debug/resolver.h"
-#include "estl/chunk_buf.h"
 #include "gperf_profiler.h"
 #include "pprof/gperf_profiler.h"
 #include "tools/alloc_ext/je_malloc_extension.h"

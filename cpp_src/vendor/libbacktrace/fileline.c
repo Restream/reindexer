@@ -1,6 +1,6 @@
 #ifdef __linux__
 /* fileline.c -- Get file and line number information in a backtrace.
-   Copyright (C) 2012-2018 Free Software Foundation, Inc.
+   Copyright (C) 2012-2024 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Google.
 
 Redistribution and use in source and binary forms, with or without
@@ -47,6 +47,121 @@ POSSIBILITY OF SUCH DAMAGE.  */
 #define getexecname() NULL
 #endif
 
+#if !defined(HAVE_KERN_PROC_ARGS) && !defined(HAVE_KERN_PROC)
+
+#define sysctl_exec_name1(state, error_callback, data) NULL
+#define sysctl_exec_name2(state, error_callback, data) NULL
+
+#else /* defined (HAVE_KERN_PROC_ARGS) || |defined (HAVE_KERN_PROC) */
+
+static char *sysctl_exec_name(struct backtrace_state *state, int mib0, int mib1, int mib2, int mib3,
+							  backtrace_error_callback error_callback, void *data) {
+	int mib[4];
+	size_t len;
+	char *name;
+	size_t rlen;
+
+	mib[0] = mib0;
+	mib[1] = mib1;
+	mib[2] = mib2;
+	mib[3] = mib3;
+
+	if (sysctl(mib, 4, NULL, &len, NULL, 0) < 0) return NULL;
+	name = (char *)backtrace_alloc(state, len, error_callback, data);
+	if (name == NULL) return NULL;
+	rlen = len;
+	if (sysctl(mib, 4, name, &rlen, NULL, 0) < 0) {
+		backtrace_free(state, name, len, error_callback, data);
+		return NULL;
+	}
+	return name;
+}
+
+#ifdef HAVE_KERN_PROC_ARGS
+
+static char *sysctl_exec_name1(struct backtrace_state *state, backtrace_error_callback error_callback, void *data) {
+	/* This variant is used on NetBSD.  */
+	return sysctl_exec_name(state, CTL_KERN, KERN_PROC_ARGS, -1, KERN_PROC_PATHNAME, error_callback, data);
+}
+
+#else
+
+#define sysctl_exec_name1(state, error_callback, data) NULL
+
+#endif
+
+#ifdef HAVE_KERN_PROC
+
+static char *sysctl_exec_name2(struct backtrace_state *state, backtrace_error_callback error_callback, void *data) {
+	/* This variant is used on FreeBSD.  */
+	return sysctl_exec_name(state, CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1, error_callback, data);
+}
+
+#else
+
+#define sysctl_exec_name2(state, error_callback, data) NULL
+
+#endif
+
+#endif /* defined (HAVE_KERN_PROC_ARGS) || |defined (HAVE_KERN_PROC) */
+
+#ifdef HAVE_MACH_O_DYLD_H
+
+static char *macho_get_executable_path(struct backtrace_state *state, backtrace_error_callback error_callback, void *data) {
+	uint32_t len;
+	char *name;
+
+	len = 0;
+	if (_NSGetExecutablePath(NULL, &len) == 0) return NULL;
+	name = (char *)backtrace_alloc(state, len, error_callback, data);
+	if (name == NULL) return NULL;
+	if (_NSGetExecutablePath(name, &len) != 0) {
+		backtrace_free(state, name, len, error_callback, data);
+		return NULL;
+	}
+	return name;
+}
+
+#else /* !defined (HAVE_MACH_O_DYLD_H) */
+
+#define macho_get_executable_path(state, error_callback, data) NULL
+
+#endif /* !defined (HAVE_MACH_O_DYLD_H) */
+
+#if HAVE_DECL__PGMPTR
+
+#define windows_executable_filename() _pgmptr
+
+#else /* !HAVE_DECL__PGMPTR */
+
+#define windows_executable_filename() NULL
+
+#endif /* !HAVE_DECL__PGMPTR */
+
+#ifdef HAVE_WINDOWS_H
+
+#define FILENAME_BUF_SIZE (MAX_PATH)
+
+static char *windows_get_executable_path(char *buf, backtrace_error_callback error_callback, void *data) {
+	size_t got;
+	int error;
+
+	got = GetModuleFileNameA(NULL, buf, FILENAME_BUF_SIZE - 1);
+	error = GetLastError();
+	if (got == 0 || (got == FILENAME_BUF_SIZE - 1 && error == ERROR_INSUFFICIENT_BUFFER)) {
+		error_callback(data, "could not get the filename of the current executable", error);
+		return NULL;
+	}
+	return buf;
+}
+
+#else /* !defined (HAVE_WINDOWS_H) */
+
+#define windows_get_executable_path(buf, error_callback, data) NULL
+#define FILENAME_BUF_SIZE 64
+
+#endif /* !defined (HAVE_WINDOWS_H) */
+
 /* Initialize the fileline information from the executable.  Returns 1
    on success, 0 on failure.  */
 
@@ -57,7 +172,7 @@ static int fileline_initialize(struct backtrace_state *state, backtrace_error_ca
 	int called_error_callback;
 	int descriptor;
 	const char *filename;
-	char buf[64];
+	char buf[FILENAME_BUF_SIZE];
 
 	if (!state->threaded)
 		failed = state->fileline_initialization_failed;
@@ -79,7 +194,7 @@ static int fileline_initialize(struct backtrace_state *state, backtrace_error_ca
 
 	descriptor = -1;
 	called_error_callback = 0;
-	for (pass = 0; pass < 5; ++pass) {
+	for (pass = 0; pass < 10; ++pass) {
 		int does_not_exist;
 
 		switch (pass) {
@@ -90,14 +205,31 @@ static int fileline_initialize(struct backtrace_state *state, backtrace_error_ca
 				filename = getexecname();
 				break;
 			case 2:
-				filename = "/proc/self/exe";
+				/* Test this before /proc/self/exe, as the latter exists but points
+				   to the wine binary (and thus doesn't work).  */
+				filename = windows_executable_filename();
 				break;
 			case 3:
-				filename = "/proc/curproc/file";
+				filename = "/proc/self/exe";
 				break;
 			case 4:
+				filename = "/proc/curproc/file";
+				break;
+			case 5:
 				snprintf(buf, sizeof(buf), "/proc/%ld/object/a.out", (long)getpid());
 				filename = buf;
+				break;
+			case 6:
+				filename = sysctl_exec_name1(state, error_callback, data);
+				break;
+			case 7:
+				filename = sysctl_exec_name2(state, error_callback, data);
+				break;
+			case 8:
+				filename = macho_get_executable_path(state, error_callback, data);
+				break;
+			case 9:
+				filename = windows_get_executable_path(buf, error_callback, data);
 				break;
 			default:
 				abort();
@@ -169,6 +301,27 @@ int backtrace_syminfo(struct backtrace_state *state, uintptr_t pc, backtrace_sym
 	state->syminfo_fn(state, pc, callback, error_callback, data);
 	return 1;
 }
+
+/* A backtrace_syminfo_callback that can call into a
+   backtrace_full_callback, used when we have a symbol table but no
+   debug info.  */
+
+void backtrace_syminfo_to_full_callback(void *data, uintptr_t pc, const char *symname, uintptr_t symval ATTRIBUTE_UNUSED,
+										uintptr_t symsize ATTRIBUTE_UNUSED) {
+	struct backtrace_call_full *bdata = (struct backtrace_call_full *)data;
+
+	bdata->ret = bdata->full_callback(bdata->full_data, pc, NULL, 0, symname);
+}
+
+/* An error callback that corresponds to
+   backtrace_syminfo_to_full_callback.  */
+
+void backtrace_syminfo_to_full_error_callback(void *data, const char *msg, int errnum) {
+	struct backtrace_call_full *bdata = (struct backtrace_call_full *)data;
+
+	bdata->full_error_callback(bdata->full_data, msg, errnum);
+}
+
 #else
 int ___fileline_c_dummy_suppress_warning;
 #endif

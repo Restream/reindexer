@@ -86,6 +86,7 @@ Error SnapshotHandler::applyShallowRecord(lsn_t lsn, WALRecType type, const Pack
 		case WalIndexAdd:
 		case WalIndexDrop:
 		case WalPutMeta:
+		case WalDeleteMeta:
 		case WalIndexUpdate:
 		case WalItemModify:
 		case WalInitTransaction:
@@ -167,7 +168,10 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 			break;
 		// Metadata updated
 		case WalPutMeta:
-			ns_.putMeta(std::string(rec.putMeta.key), rec.putMeta.value, pendedRepl, ctx);
+			ns_.putMeta(std::string(rec.itemMeta.key), rec.itemMeta.value, pendedRepl, ctx);
+			break;
+		case WalDeleteMeta:
+			ns_.deleteMeta(std::string(rec.itemMeta.key), pendedRepl, ctx);
 			break;
 		// Update query
 		case WalUpdateQuery: {
@@ -299,6 +303,7 @@ void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeader
 			case WalIndexDrop:
 			case WalIndexUpdate:
 			case WalPutMeta:
+			case WalDeleteMeta:
 			case WalNamespaceAdd:
 			case WalNamespaceDrop:
 			case WalNamespaceRename:

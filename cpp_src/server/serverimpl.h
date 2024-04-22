@@ -12,8 +12,6 @@
 #include "pidfile.h"
 #endif
 
-#include "tools/errors.h"
-
 namespace reindexer_server {
 using namespace reindexer::net;
 

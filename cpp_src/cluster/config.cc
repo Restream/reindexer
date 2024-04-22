@@ -806,20 +806,20 @@ void ShardingConfig::Key::GetJSON(JsonBuilder &jb) const {
 	}
 }
 
-int ShardingConfig::Key::RelaxCompare(const std::vector<sharding::Segment<Variant>> &other, const CollateOpts &collateOpts) const {
+ComparationResult ShardingConfig::Key::RelaxCompare(const std::vector<sharding::Segment<Variant>> &other,
+													const CollateOpts &collateOpts) const {
 	auto lhsIt{values.cbegin()}, rhsIt{other.cbegin()};
 	auto const lhsEnd{values.cend()}, rhsEnd{other.cend()};
 	for (; lhsIt != lhsEnd && rhsIt != rhsEnd; ++lhsIt, ++rhsIt) {
-		auto res = lhsIt->left.RelaxCompare<WithString::Yes>(rhsIt->left, collateOpts);
-		if (res != 0) return res;
-		res = lhsIt->right.RelaxCompare<WithString::Yes>(rhsIt->right, collateOpts);
-		if (res != 0) return res;
+		auto res = lhsIt->left.RelaxCompare<WithString::Yes, NotComparable::Throw>(rhsIt->left, collateOpts);
+		if (res != ComparationResult::Eq) return res;
+		res = lhsIt->right.RelaxCompare<WithString::Yes, NotComparable::Throw>(rhsIt->right, collateOpts);
+		if (res != ComparationResult::Eq) return res;
 	}
 	if (lhsIt == lhsEnd) {
-		if (rhsIt == rhsEnd) return 0;
-		return -1;
+		return (rhsIt == rhsEnd) ? ComparationResult::Eq : ComparationResult::Lt;
 	} else {
-		return 1;
+		return ComparationResult::Gt;
 	}
 }
 
@@ -943,7 +943,7 @@ bool operator==(const ShardingConfig &lhs, const ShardingConfig &rhs) {
 		   rhs.sourceId == lhs.sourceId;
 }
 bool operator==(const ShardingConfig::Key &lhs, const ShardingConfig::Key &rhs) {
-	return lhs.shardId == rhs.shardId && lhs.algorithmType == rhs.algorithmType && lhs.RelaxCompare(rhs.values) == 0;
+	return lhs.shardId == rhs.shardId && lhs.algorithmType == rhs.algorithmType && lhs.RelaxCompare(rhs.values) == ComparationResult::Eq;
 }
 bool operator==(const ShardingConfig::Namespace &lhs, const ShardingConfig::Namespace &rhs) {
 	return lhs.ns == rhs.ns && lhs.defaultShard == rhs.defaultShard && lhs.index == rhs.index && lhs.keys == rhs.keys;

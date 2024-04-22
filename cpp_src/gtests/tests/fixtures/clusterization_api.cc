@@ -194,7 +194,7 @@ void ClusterizationApi::Cluster::StopServers(const std::vector<size_t>& ids) {
 }
 
 int ClusterizationApi::Cluster::AwaitLeader(std::chrono::seconds timeout, bool fulltime) {
-	auto beg = std::chrono::high_resolution_clock::now();
+	auto beg = steady_clock_w::now();
 	auto end = beg;
 	int leaderId;
 	do {
@@ -213,7 +213,7 @@ int ClusterizationApi::Cluster::AwaitLeader(std::chrono::seconds timeout, bool f
 			return leaderId;
 		}
 		loop_.sleep(std::chrono::milliseconds(100));
-		end = std::chrono::high_resolution_clock::now();
+		end = steady_clock_w::now();
 	} while (end - beg < timeout);
 	return leaderId;
 }

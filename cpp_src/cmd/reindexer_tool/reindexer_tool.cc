@@ -9,7 +9,6 @@
 #include "repair_tool.h"
 #include "tools/cpucheck.h"
 #include "tools/logger.h"
-#include "tools/stringstools.h"
 
 namespace reindexer_tool {
 

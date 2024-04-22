@@ -23,9 +23,9 @@ public:
 	using Completion = std::function<void(const Error &err)>;
 
 	/// Create Reindexer database object
-	Reindexer(const ReindexerConfig & = ReindexerConfig(), uint32_t connCount = 0, uint32_t threads = 0);
+	explicit Reindexer(const ReindexerConfig & = ReindexerConfig(), uint32_t connCount = 0, uint32_t threads = 0);
 	Reindexer(Reindexer &&rdx) noexcept = default;
-	/// Destrory Reindexer database object
+	/// Destroy Reindexer database object
 	~Reindexer();
 	Reindexer(const Reindexer &) = delete;
 	Reindexer &operator=(const Reindexer &) = delete;
@@ -34,7 +34,7 @@ public:
 	/// Connect - connect to reindexer server
 	/// @param dsn - uri of server and database, like: `cproto://user@password:127.0.0.1:6534/dbname` or
 	/// `ucproto://user@password:/tmp/reindexer.sock:/dbname`
-	/// @param opts - Connect options. May contaion any of <br>
+	/// @param opts - Connect options. May contain any of <br>
 	Error Connect(const std::string &dsn, const client::ConnectOpts &opts = client::ConnectOpts());
 	/// Stop - shutdown connector
 	void Stop();
@@ -51,10 +51,10 @@ public:
 	/// @param nsDef - NamespaceDef with namespace initial parameters
 	/// @param replOpts - Namespace version. Should be left empty for leader reindexer instances
 	Error AddNamespace(const NamespaceDef &nsDef, const NsReplicationOpts &replOpts = NsReplicationOpts());
-	/// Close namespace. Will free all memory resorces, associated with namespace. Forces sync changes to disk
+	/// Close namespace. Will free all memory resources, associated with namespace. Forces sync changes to disk
 	/// @param nsName - Name of namespace
 	Error CloseNamespace(std::string_view nsName);
-	/// Drop namespace. Will free all memory resorces, associated with namespace and erase all files from disk
+	/// Drop namespace. Will free all memory resources, associated with namespace and erase all files from disk
 	/// @param nsName - Name of namespace
 	Error DropNamespace(std::string_view nsName);
 	/// Delete all items in namespace
@@ -86,8 +86,8 @@ public:
 	/// @param schema - text representation of schema
 	Error GetSchema(std::string_view nsName, int format, std::string &schema);
 	/// Get list of all available namespaces
-	/// @param defs - std::vector of NamespaceDef of available namespaves
-	/// @param opts - Enumerartion options
+	/// @param defs - std::vector of NamespaceDef of available namespaces
+	/// @param opts - Enumeration options
 	Error EnumNamespaces(std::vector<NamespaceDef> &defs, EnumNamespacesOpts opts);
 	/// Gets a list of available databases for a certain server.
 	/// @param dbList - list of DB names
@@ -138,7 +138,7 @@ public:
 	/// @param item - Item, obtained by call to NewItem of the same namespace
 	/// @param result - QueryResults with deleted item.
 	Error Delete(std::string_view nsName, Item &item, QueryResults &result);
-	/// Delete all items froms namespace, which matches provided Query
+	/// Delete all items from namespace, which matches provided Query
 	/// @param query - Query with conditions
 	/// @param result - QueryResults with IDs of deleted items
 	Error Delete(const Query &query, QueryResults &result);
@@ -156,35 +156,39 @@ public:
 	Error Commit(std::string_view nsName);
 	/// Allocate new item for namespace
 	/// @param nsName - Name of namespace
-	/// @return Item ready for filling and futher Upsert/Insert/Delete/Update call
+	/// @return Item ready for filling and further Upsert/Insert/Delete/Update call
 	Item NewItem(std::string_view nsName);
-	/// Get meta data from storage by key
+	/// Get metadata from storage by key
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
-	/// @param data - output string with meta data
+	/// @param data - output string with metadata
 	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data);
-	/// Get sharded meta data from storage by key
+	/// Get sharded metadata from storage by key
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
-	/// @param data - output vector with meta data from different shards
+	/// @param data - output vector with metadata from different shards
 	Error GetMeta(std::string_view nsName, const std::string &key, std::vector<ShardedMeta> &data);
-	/// Put meta data to storage by key
+	/// Put metadata to storage by key
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
-	/// @param data - string with meta data
+	/// @param data - string with metadata
 	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data);
-	/// Get list of all meta data keys
+	/// Get list of all metadata keys
 	/// @param nsName - Name of namespace
 	/// @param keys - std::vector filled with meta keys
 	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys);
+	/// Delete metadata from storage by key
+	/// @param nsName - Name of namespace
+	/// @param key - string with meta key
+	Error DeleteMeta(std::string_view nsName, const std::string &key);
 	/// Get possible suggestions for token (set by 'pos') in Sql query.
 	/// @param sqlQuery - sql query.
 	/// @param pos - position in sql query for suggestions.
 	/// @param suggestions - all the suggestions for 'pos' position in query.
 	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions);
-	/// Get curret connection status
+	/// Get current connection status
 	/// WARNING: Status() request may call completion in current thread. Beware of possible deadlocks, using mutexes in this completion
-	/// @param forceCheck - forces to check status immediatlly (otherwise result of periodic check will be returned)
+	/// @param forceCheck - forces to check status immediately (otherwise result of periodic check will be returned)
 	Error Status(bool forceCheck = false);
 	/// Allocate new transaction for namespace
 	/// @param nsName - Name of namespace
@@ -216,19 +220,19 @@ public:
 
 	/// Add cancelable context
 	/// @param cancelCtx - context pointer
-	Reindexer WithContext(const IRdxCancelContext *cancelCtx) { return Reindexer(impl_, ctx_.WithCancelContext(cancelCtx)); }
+	Reindexer WithContext(const IRdxCancelContext *cancelCtx) { return {impl_, ctx_.WithCancelContext(cancelCtx)}; }
 	/// Add async completion. It will be executed from internal connection thread
 	/// (completion for Status() call may be executed from current thread)
 	/// @param cmpl - completion callback
-	Reindexer WithCompletion(Completion cmpl) { return Reindexer(impl_, ctx_.WithCompletion(std::move(cmpl))); }
+	Reindexer WithCompletion(Completion cmpl) { return {impl_, ctx_.WithCompletion(std::move(cmpl))}; }
 
 	/// Add execution timeout to the next query
 	/// @param timeout - Optional server-side execution timeout for each subquery
-	Reindexer WithTimeout(milliseconds timeout) { return Reindexer(impl_, ctx_.WithTimeout(timeout)); }
-	Reindexer WithLSN(lsn_t lsn) { return Reindexer(impl_, ctx_.WithLSN(lsn)); }
-	Reindexer WithEmmiterServerId(int sId) { return Reindexer(impl_, ctx_.WithEmmiterServerId(sId)); }
-	Reindexer WithShardId(int id, bool parallel) { return Reindexer(impl_, ctx_.WithShardId(id, parallel)); }
-	Reindexer WithShardingParallelExecution(bool parallel) { return Reindexer{impl_, ctx_.WithShardingParallelExecution(parallel)}; }
+	Reindexer WithTimeout(milliseconds timeout) { return {impl_, ctx_.WithTimeout(timeout)}; }
+	Reindexer WithLSN(lsn_t lsn) { return {impl_, ctx_.WithLSN(lsn)}; }
+	Reindexer WithEmmiterServerId(int sId) { return {impl_, ctx_.WithEmmiterServerId(sId)}; }
+	Reindexer WithShardId(int id, bool parallel) { return {impl_, ctx_.WithShardId(id, parallel)}; }
+	Reindexer WithShardingParallelExecution(bool parallel) { return {impl_, ctx_.WithShardingParallelExecution(parallel)}; }
 
 	typedef QueryResults QueryResultsT;
 	typedef Item ItemT;

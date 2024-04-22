@@ -1,6 +1,6 @@
 #pragma once
+
 #include "core/ft/areaholder.h"
-#include "core/item.h"
 #include "core/queryresults/queryresults.h"
 
 namespace reindexer {
@@ -58,4 +58,4 @@ private:
 
 class SnippetN : public Snippet {};
 
-} // namespace reindexer
+}  // namespace reindexer

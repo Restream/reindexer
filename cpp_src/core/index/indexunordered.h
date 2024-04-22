@@ -40,7 +40,10 @@ public:
 	size_t Size() const noexcept override final { return idx_map.size(); }
 	void SetSortedIdxCount(int sortedIdxCount) override;
 	bool HoldsStrings() const noexcept override;
-	void ClearCache() override { cache_.reset(); }
+	void DestroyCache() override { cache_.reset(); }
+	void ClearCache() override {
+		if (cache_) cache_->Clear();
+	}
 	void ClearCache(const std::bitset<kMaxIndexes> &s) override {
 		if (cache_) cache_->ClearSorted(s);
 	}
@@ -48,7 +51,6 @@ public:
 	void EnableUpdatesCountingMode(bool val) noexcept override { tracker_.enableCountingMode(val); }
 
 	void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue &) override;
-	bool IsDestroyPartSupported() const noexcept override { return true; }
 	void ReconfigureCache(const NamespaceCacheConfigData &cacheCfg) override;
 
 protected:

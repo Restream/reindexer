@@ -3,7 +3,6 @@
 #include <limits>
 #include <set>
 #include "core/cjson/jsonbuilder.h"
-#include "core/ft/stopwords/stop.h"
 #include "core/ft/typos.h"
 #include "tools/errors.h"
 #include "tools/jsontools.h"
@@ -67,6 +66,8 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 		}
 
 		maxRebuildSteps = root["max_rebuild_steps"].As<>(maxRebuildSteps, 1, 500);
+		// Override value without error to avoid situations, where maxRebuildSteps was set on the older version with incorrect limit
+		maxRebuildSteps = std::min(uint32_t(maxRebuildSteps), kMaxStepsCount);
 		maxStepSize = root["max_step_size"].As<>(maxStepSize, 5);
 		maxAreasInDoc = root["max_areas_in_doc"].As<int>(maxAreasInDoc);
 		maxTotalAreasToCache = root["max_total_areas_to_cache"].As<int>(maxTotalAreasToCache);

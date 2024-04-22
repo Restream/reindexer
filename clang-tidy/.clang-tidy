@@ -1,0 +1,30 @@
+Checks: 'clang-diagnostic-*,
+         clang-analyzer-*,
+         performance-*,
+         bugprone-*,
+         -bugprone-exception-escape,
+         -bugprone-branch-clone,
+         -bugprone-easily-swappable-parameters,
+         -bugprone-macro-parentheses,
+         -bugprone-signed-char-misuse,
+         -bugprone-narrowing-conversions,
+         -bugprone-reserved-identifier,
+         -bugprone-implicit-widening-of-multiplication-result,
+         -bugprone-assignment-in-if-condition,
+         -bugprone-parent-virtual-call,
+         -bugprone-integer-division,
+         -bugprone-unhandled-self-assignment
+         -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+         -performance-no-int-to-ptr,
+         -performance-avoid-endl'
+# clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling - too many unnecessary warning in vendored code
+# performance-no-int-to-ptr - consider how to fix this
+# bugprone-macro-parentheses - consider fixing
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*(?<!\.pb\.h)$'
+AnalyzeTemporaryDtors: false
+FormatStyle:     none
+CheckOptions:
+    - { key: performance-unnecessary-value-param.AllowedTypes, value: 'span;IdType;ReplicationStatsCollector;KeyValueType' }
+    - { key: performance-move-const-arg.CheckTriviallyCopyableMove, value: 0 }
+

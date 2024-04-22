@@ -47,7 +47,7 @@ protected:
 	cproto::Dispatcher dispatcher_;
 	std::unique_ptr<IListener> listener_;
 
-	std::chrono::system_clock::time_point startTs_;
+	system_clock_w::time_point startTs_;
 	RPCServerConfig conf_;
 	std::string dsn_;
 	std::atomic<RPCServerStatus> state_;

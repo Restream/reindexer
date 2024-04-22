@@ -5,9 +5,6 @@
 #include "core/idset.h"
 #include "core/type_consts.h"
 
-#include "core/keyvalue/key_string.h"
-#include "core/payload/payloadvalue.h"
-
 namespace reindexer {
 
 template <class T>

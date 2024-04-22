@@ -55,15 +55,15 @@ public:
 	QueryStatCalculator(std::function<void(bool, std::chrono::microseconds)> hitter, std::chrono::microseconds threshold, bool enable,
 						Logger<T> logger = Logger{})
 		: hitter_(std::move(hitter)), threshold_(threshold), enable_(enable), logger_(std::move(logger)) {
-		if (enable_) tmStart = std::chrono::high_resolution_clock::now();
+		if (enable_) tmStart = system_clock_w::now();
 	}
 
 	QueryStatCalculator(Logger<T> logger, bool enable = true) : enable_(enable), logger_(std::move(logger)) {
-		if (enable_) tmStart = std::chrono::high_resolution_clock::now();
+		if (enable_) tmStart = system_clock_w::now();
 	}
 	~QueryStatCalculator() {
 		if (enable_) {
-			auto time = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - tmStart);
+			auto time = std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - tmStart);
 			if (hitter_ && time >= threshold_) hitter_(false, time);
 
 			if constexpr (Logger<T>::isEnabled) {
@@ -73,7 +73,7 @@ public:
 	}
 	void LockHit() {
 		if (enable_ && hitter_) {
-			auto time = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - tmStart);
+			auto time = std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - tmStart);
 			if (time >= threshold_) hitter_(true, time);
 		}
 	}
@@ -108,15 +108,12 @@ private:
 		if (enable_) {
 			class LogGuard {
 			public:
-				LogGuard(Logger<T>& logger) : logger_{logger}, start_{std::chrono::high_resolution_clock::now()} {}
-				~LogGuard() {
-					logger_.Add(index,
-								std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start_));
-				}
+				LogGuard(Logger<T>& logger) : logger_{logger}, start_{system_clock_w::now()} {}
+				~LogGuard() { logger_.Add(index, std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - start_)); }
 
 			private:
 				Logger<T>& logger_;
-				std::chrono::high_resolution_clock::time_point start_;
+				system_clock_w::time_point start_;
 			} logGuard{logger_};
 			return callable(std::forward<Args>(args)...);
 
@@ -125,7 +122,7 @@ private:
 		}
 	}
 
-	std::chrono::time_point<std::chrono::high_resolution_clock> tmStart;
+	system_clock_w::time_point tmStart;
 	std::function<void(bool, std::chrono::microseconds)> hitter_;
 	std::chrono::microseconds threshold_;
 	bool enable_;

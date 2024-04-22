@@ -1,6 +1,6 @@
 #include "tableviewscroller.h"
-#include "client/cororeindexer.h"
-#include "core/reindexer.h"
+#include "client/coroqueryresults.h"
+#include "core/queryresults/queryresults.h"
 #include "iotools.h"
 #include "tools/oscompat.h"
 

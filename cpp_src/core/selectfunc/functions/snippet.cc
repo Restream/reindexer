@@ -6,6 +6,7 @@
 #include "highlight.h"
 #include "tools/errors.h"
 #include "utf8cpp/utf8.h"
+
 namespace reindexer {
 
 class Utf8CharCalculator {

@@ -68,7 +68,7 @@ private:
 		lsn_t nsVersion_;
 		net::cproto::CoroClientConnection *conn_;
 		std::chrono::milliseconds requestTimeout_;
-		std::chrono::steady_clock::time_point sessionTs_;
+		steady_clock_w::time_point sessionTs_;
 		std::optional<ClusterizationStatus> clusterStatus_;
 	};
 

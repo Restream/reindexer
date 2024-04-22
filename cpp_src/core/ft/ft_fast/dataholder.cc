@@ -10,23 +10,6 @@ void IDataHolder::SetConfig(FtFastConfig* cfg) {
 	steps.reserve(cfg_->maxRebuildSteps + 1);
 }
 
-IDataHolder::CommitStep& IDataHolder::GetStep(WordIdType id) {
-	assertrx(id.b.step_num < steps.size());
-	return steps[id.b.step_num];
-}
-
-const IDataHolder::CommitStep& IDataHolder::GetStep(WordIdType id) const {
-	assertrx(id.b.step_num < steps.size());
-	return steps[id.b.step_num];
-}
-
-bool IDataHolder::NeedRebuild(bool complte_updated) {
-	return steps.empty() || complte_updated || steps.size() >= size_t(cfg_->maxRebuildSteps) ||
-		   (steps.size() == 1 && steps.front().suffixes_.word_size() < size_t(cfg_->maxStepSize));
-}
-
-bool IDataHolder::NeedRecomitLast() { return steps.back().suffixes_.word_size() < size_t(cfg_->maxStepSize); }
-
 size_t IDataHolder::GetMemStat() {
 	size_t res = 0;
 	for (auto& step : steps) {
@@ -35,11 +18,6 @@ size_t IDataHolder::GetMemStat() {
 	res += vdocs_.capacity() * sizeof(VDocEntry);
 	res += rowId2Vdoc_.capacity() * sizeof(rowId2Vdoc_[0]);
 	return res;
-}
-
-void IDataHolder::SetWordsOffset(uint32_t word_offset) {
-	assertrx(!steps.empty());
-	if (status_ == CreateNew) steps.back().wordOffset_ = word_offset;
 }
 
 void IDataHolder::Clear() {
@@ -51,11 +29,6 @@ void IDataHolder::Clear() {
 	vdocsOffset_ = 0;
 	szCnt = 0;
 	rowId2Vdoc_.clear();
-}
-
-bool IDataHolder::NeedClear(bool complte_updated) {
-	if (NeedRebuild(complte_updated) || !NeedRecomitLast()) return true;
-	return false;
 }
 
 std::string IDataHolder::Dump() {
@@ -87,18 +60,18 @@ std::string IDataHolder::Dump() {
 	return ss.str();
 }
 
-uint32_t IDataHolder::GetSuffixWordId(WordIdType id, const CommitStep& step) const noexcept {
-	assertrx(!id.isEmpty());
-	assertrx(id.b.step_num < steps.size());
+void IDataHolder::throwWordIdOverflow(uint32_t id) {
+	throw Error(errLogic, "Too large word ID value (%d). Fulltext index can not contain more than %d unique words", id, kWordIdMaxIdVal);
+}
 
-	assertrx(id.b.id >= step.wordOffset_);
-	assertrx(id.b.id - step.wordOffset_ < step.suffixes_.word_size());
-	return id.b.id - step.wordOffset_;
+void IDataHolder::throwStepsOverflow() const {
+	throw Error(errLogic, "Too large index build step value (%d). Fulltext incremental build can not use more than %d steps",
+				steps.size() - 1, kWordIdMaxStepVal);
 }
 
 WordIdType IDataHolder::findWord(std::string_view word) {
 	WordIdType id;
-	id.setEmpty();
+	id.SetEmpty();
 	if (steps.size() <= 1) return id;
 
 	for (auto step = steps.begin(); step != steps.end() - 1; ++step) {
@@ -111,22 +84,6 @@ WordIdType IDataHolder::findWord(std::string_view word) {
 	return id;
 }
 
-uint32_t IDataHolder::GetWordsOffset() {
-	assertrx(!steps.empty());
-	return steps.back().wordOffset_;
-}
-
-WordIdType IDataHolder::BuildWordId(uint32_t id) {
-	WordIdType wId;
-	assertrx(id < kWordIdMaxIdVal);
-	assertrx(steps.size() - 1 < kWordIdMaxStepVal);
-
-	wId.b.id = id;
-	wId.b.step_num = steps.size() - 1;
-
-	return wId;
-}
-
 template <typename IdCont>
 size_t DataHolder<IdCont>::GetMemStat() {
 	size_t res = IDataHolder::GetMemStat();
@@ -134,20 +91,6 @@ size_t DataHolder<IdCont>::GetMemStat() {
 		res += sizeof(w) + w.vids_.heap_size();
 	}
 	return res;
-}
-
-template <typename IdCont>
-PackedWordEntry<IdCont>& DataHolder<IdCont>::getWordById(WordIdType id) noexcept {
-	assertrx(!id.isEmpty());
-	assertrx(id.b.id < words_.size());
-	return words_[id.b.id];
-}
-
-template <typename IdCont>
-const PackedWordEntry<IdCont>& DataHolder<IdCont>::getWordById(WordIdType id) const noexcept {
-	assertrx(!id.isEmpty());
-	assertrx(id.b.id < words_.size());
-	return words_[id.b.id];
 }
 
 template <typename IdCont>
@@ -186,17 +129,6 @@ void DataHolder<IdCont>::Process(size_t fieldSize, bool multithread) {
 	DataProcessor<IdCont>{*this, fieldSize}.Process(multithread);
 }
 
-template <typename IdCont>
-IDataHolder::MergeData DataHolder<IdCont>::Select(FtDSLQuery&& dsl, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
-												  FtMergeStatuses::Statuses&& mergeStatuses, FtUseExternStatuses useExternSt,
-												  const RdxContext& rdxCtx) {
-	if (useExternSt == FtUseExternStatuses::No) {
-		return Selecter<IdCont>{*this, fieldSize, needArea, maxAreasInDoc}.template Process<FtUseExternStatuses::No>(
-			std::move(dsl), inTransaction, std::move(mergeStatuses), rdxCtx);
-	}
-	return Selecter<IdCont>{*this, fieldSize, needArea, maxAreasInDoc}.template Process<FtUseExternStatuses::Yes>(
-		std::move(dsl), inTransaction, std::move(mergeStatuses), rdxCtx);
-}
 template class DataHolder<PackedIdRelVec>;
 template class DataHolder<IdRelVec>;
 

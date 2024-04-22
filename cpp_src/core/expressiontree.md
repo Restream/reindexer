@@ -21,9 +21,6 @@ class ExpressionTree;
 You can support it manually as it done in `QueryEntries` and `SelectIteratorContainer`, or by enclosing higher priority operators in brackets as it done in `SortExpression`.
 Here is not used the traditional way for constructing trees with inheritance of nodes, allocations of separate nodes and holding  pointers to them.
 `ExpressionTree` holds all nodes by value in a vector (`container_`) sequentially in type `Node` based on `variant`.
-In order to support lazy copying `Node` can hold a reference to payload of another `Node` by using `ExpressionTree::Ref<T>` type. 
-
-**Warning**: The lazy copy node shall not live longer than the original one.
 
 Subtree is stored in `container_` just behind its head (`SubTree`) which holds occupied space. For details see examples.
 This architecture allows to reduce count of allocations and virtual functions calls.
@@ -179,47 +176,29 @@ Default type for `SubTree` template argument. Just holds size of the subtree tha
 It contains operation (value of `OperationType`) and a value of one of the types:
 - `SubTree` (`Bracket` by default) if it is head of subexpression.
 - one of `Ts...` types.
-- `ExpressionTree::Ref<T>`, where `T` is one of `Ts...` types, it means that the `Node` holds reference to payload of another `Node` which holds value of type `T`.
 
 ### 4.1. Methods
 
-- `T& Node::Value<T>()`, `const T& Node::Value<T>() const` return reference to payload value if it holds value of type `T` or `Ref<T>`, fail otherwise.
+- `T& Node::Value<T>()`, `const T& Node::Value<T>() const` return reference to payload value if it holds value of type `T`, fail otherwise.
 - `size_t Node::Size() const` returns `1` if it is not head of subexpression or count of cells occupied by subexpression otherwise.
 - `bool Node::IsSubTree() const`, `bool Node::IsLeaf() const` test is the `Node` head of subexpression or vice versa.
 - `bool Node::Holds<T>() const` returns `true` if it holds value of type `T`.
 - `void Node::Append()` increments size of subexpression if it is head of subexpression, fails otherwise.
 - `void Node::Erase(size_t)` reduces size of subexpression if it is head of subexpression, fails otherwise.
-- ```c++
-  template <typename... Args>
-  void Node::ExecuteAppropriate(const std::function<void(Args&)>&... funcs);
-  template <typename... Args>
-  void Node::ExecuteAppropriate(const std::function<void(const Args&)>&... funcs) const;
+- invokes `visitor` with the payload as argument:
+```c++
+  template <typename Visitor>
+  void Node::Visit(Visitor&& visitor);
+  template <typename Visitor>
+  void Node::Visit(Visitor&& visit) const;
   ```
 
-  invokes appropriate functor if the `Node` holds value of one of `Args...` types or `Ref<T>`, where `T` is one of `Args...` types, no functor will be invoked otherwise.
-
-- ```c++
-  template <typename R>
-  R Node::CalculateAppropriate(const std::function<R(const SubTree&)>& f, const std::function<R(const Ts&)>&... funcs) const;
-  ```
-  invokes appropriate functor depending on type of value is held by `Node` and provides returned value.
-- `Node Node::MakeLazyCopy()&`
-	* returns copy of origin one if it is head of subexpression or holds value of `Ref<T>` type.
-	* returns new `Node` that holds `Ref<T>` which references to payload of origin one if it holds `T` (one of `Ts...`).
-  > **Warning** the copy shall not live longer than the origin.
-- `Node Node::MakeDeepCopy() const &`
-	* returns copy of origin one if it is head of subexpression or holds value of one of `Ts...` types.
-	* returns new `Node` which holds copy of value that `Ref<T>` references to if origin one holds value of `Ref<T>` type.
-- `Node Node::MakeDeepCopy() &&`
-	* returns move-copy of origin one if it is head of subexpression or holds value of one of `Ts...` types.
-	* returns new `Node` which holds copy of value that `Ref<T>` references to if origin one holds value of `Ref<T>` type.
-- `bool Node::IsRef() const` returns `true` if it holds reference to payload of another `Node`.
+- `Node Node::Copy() const &` returns copy of origin one if it is head of subexpression or holds value of one of `Ts...` types.
+- `Node Node::Move() &&` returns move-copy of origin one if it is head of subexpression or holds value of one of `Ts...` types.
 - `void Node::SetValue<T>(T&&)` sets the `Node` to hold new value of type `T`.
+- `void Node::Emplace<T, Args...>(Args&&...)` sets the `Node` to hold new value of type `T`, constucting it with `Args...`.
 
-## 5. `class ExpressionTree::Ref<T>`
-`Ref<T>` is a wrapper on pointer to `T`. It is used for lazy coping of `Node` to do not make copy of its payload but to simply create a reference to it.
-
-## 6. `class ExpressionTree::iterator` and `class ExpressionTree::const_iterator`
+## 5. `class ExpressionTree::iterator` and `class ExpressionTree::const_iterator`
 
 They are forward iterators which iterates over nodes of one level and do not go into subexpressions.
 So if an iterator `it` points not to head of a subexpression after operation `++it` it will point to next cell.
@@ -251,7 +230,7 @@ For example, for expression `A + B - (C - D + (E - F) - G)`
 
 `iterator` can be converted to `const_iterator` but not vice versa.
 
-## 7. Methods
+## 6. Methods
 
 - Copy constructor and copy assignment operator make deep copy for all copying nodes.
 - Get iterators, which point to the first or next after the last cell of the expression:
@@ -276,11 +255,10 @@ void ExpressionTree::AppendFront<T>(OperationType, T&&);
 - Append deep or lazy copy of a part of another expression. !Warning! lazy copy should not live over the original expression:
 ```c++
 void ExpressionTree::Append(const_iterator begin, const_iterator end);
-void ExpressionTree::LazyAppend(iterator begin, iterator end);
 ```
 - Start and finish subexpression. `args...` are forwarded to constructor of `SubTree`:
 ```c++
-void ExpressionTree::OpenBracket<Args...>(OperationType, Args... args);
+void ExpressionTree::OpenBracket<Args...>(OperationType, Args&&... args);
 void ExpressionTree::CloseBracket();
 ```
 - Get or set operation of node in cell number `i`:
@@ -303,11 +281,17 @@ void ExpressionTree::SetOperation(OperationType op, size_t i);
 	-# `Next(2)` returns `9`.
 	-# `Next(3)` returns `4`.
 	-# `Next(5)` returns `8`.
-- Invoke appropriate functor depending on content type for each node, skip if no appropriate functor (invoke `ExecuteAppropriate(funcs)` for each node):
+- Invokes `Visitor` with payload of node number `i` as argument:
 ```c++
-template <typename... Args>
-void ExpressionTree::ExecuteAppropriateForEach(const std::function<void(const Args&)>&... funcs) const;
-template <typename... Args>
-void ExecuteAppropriateForEach(const std::function<void(Args&)>&... funcs);
+template <typename Visitor>
+void ExpressionTree::Visit(size_t i, Visitor&&) const;
+template <typename Visitor>
+void ExpressionTree::Visit(size_t i, Visitor&&);
 ```
-
+- Invokes `Visitor` for each node with its payload as argument:
+```c++
+template <typename Visitor>
+void ExpressionTree::VisitForEach(const Visitor&) const;
+template <typename Visitor>
+void ExpressionTree::VisitForEach(const Visitor&);
+```

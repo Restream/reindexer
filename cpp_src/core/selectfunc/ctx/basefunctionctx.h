@@ -2,7 +2,6 @@
 
 #include <memory>
 #include "core/selectfunc/selectfuncparser.h"
-#include "core/type_consts.h"
 #include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
 

@@ -1,6 +1,5 @@
 #include "client/queryresults.h"
 #include "client/namespace.h"
-#include "client/reindexer.h"
 #include "client/reindexerimpl.h"
 
 namespace reindexer {

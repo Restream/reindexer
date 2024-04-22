@@ -206,6 +206,12 @@ public:
 	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const RdxContext &ctx) {
 		return impl_.EnumMeta(nsName, keys, ctx);
 	}
+	Error DeleteMeta(std::string_view nsName, const std::string &key, const RdxContext &ctx) {
+		using namespace std::placeholders;
+		DefFunctor2(std::string_view, const std::string &, DeleteMeta, baseFollowerAction);
+		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::DeleteMeta", getServerIDRel());
+		return CallProxyFunction(DeleteMeta)(ctx, nsName, action, nsName, key);
+	}
 
 	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions, const RdxContext &ctx) {
 		return impl_.GetSqlSuggestions(sqlQuery, pos, suggestions, ctx);

@@ -20,7 +20,6 @@
 #include "core/rollback.h"
 #include "core/schema.h"
 #include "core/selectkeyresult.h"
-#include "core/storage/idatastorage.h"
 #include "core/storage/storagetype.h"
 #include "core/transaction/localtransaction.h"
 #include "estl/contexted_locks.h"
@@ -40,15 +39,14 @@ namespace reindexer {
 using reindexer::datastorage::StorageType;
 
 class Index;
-struct SelectCtx;
+template <typename>
+struct SelectCtxWithJoinPreSelect;
 struct JoinPreResult;
 class DBConfigProvider;
 class SelectLockUpgrader;
 class QueryPreprocessor;
-class SelectIteratorContainer;
 class RdxContext;
 class RdxActivityContext;
-class ItemComparator;
 class SortExpression;
 class ProxiedSortExpression;
 class ProtobufSchema;
@@ -367,7 +365,8 @@ public:
 	void Truncate(const RdxContext &);
 	void Refill(std::vector<Item> &, const RdxContext &);
 
-	void Select(LocalQueryResults &result, SelectCtx &params, const RdxContext &);
+	template <typename JoinPreResultCtx>
+	void Select(LocalQueryResults &result, SelectCtxWithJoinPreSelect<JoinPreResultCtx> &params, const RdxContext &);
 	NamespaceDef GetDefinition(const RdxContext &ctx);
 	NamespaceMemStat GetMemStat(const RdxContext &);
 	NamespacePerfStat GetPerfStat(const RdxContext &);
@@ -384,10 +383,12 @@ public:
 
 	Item NewItem(const RdxContext &ctx);
 	void ToPool(ItemImpl *item);
-	// Get meta data from storage by key
+	// Get metadata from storage by key
 	std::string GetMeta(const std::string &key, const RdxContext &ctx);
-	// Put meta data to storage by key
-	void PutMeta(const std::string &key, std::string_view data, const RdxContext &);
+	// Put metadata to storage by key
+	void PutMeta(const std::string &key, std::string_view data, const RdxContext &ctx);
+	// Delete metadata from storage by key
+	void DeleteMeta(const std::string &key, const RdxContext &ctx);
 	int64_t GetSerial(const std::string &field, UpdatesContainer &replUpdates, const NsContext &ctx);
 
 	int getIndexByName(std::string_view index) const;
@@ -446,6 +447,7 @@ private:
 	void saveReplStateToStorage(bool direct = true);
 	void saveTagsMatcherToStorage(bool clearUpdate);
 	void loadReplStateFromStorage();
+	void loadMetaFromStorage();
 
 	void initWAL(int64_t minLSN, int64_t maxLSN);
 
@@ -494,11 +496,13 @@ private:
 	[[nodiscard]] RollBack_recreateCompositeIndexes<needRollBack> recreateCompositeIndexes(size_t startIdx, size_t endIdx);
 	NamespaceDef getDefinition() const;
 	IndexDef getIndexDefinition(const std::string &indexName) const;
-	IndexDef getIndexDefinition(size_t) const;
+	IndexDef getIndexDefinition(size_t i) const;
 
 	std::string getMeta(const std::string &key) const;
 	void putMeta(const std::string &key, std::string_view data, UpdatesContainer &pendedRepl, const NsContext &ctx);
-	std::pair<IdType, bool> findByPK(ItemImpl *ritem, bool inTransaction, const RdxContext &);
+	void deleteMeta(const std::string &key, UpdatesContainer &pendedRepl, const NsContext &ctx);
+
+	std::pair<IdType, bool> findByPK(ItemImpl *ritem, bool inTransaction, const RdxContext &ctx);
 
 	RX_ALWAYS_INLINE SelectKeyResult getPkDocs(const ConstPayload &cpl, bool inTransaction, const RdxContext &ctx);
 	RX_ALWAYS_INLINE VariantArray getPkKeys(const ConstPayload &cpl, Index *pkIndex, int fieldNum);
@@ -508,7 +512,7 @@ private:
 	void updateSortedIdxCount();
 	void setFieldsBasedOnPrecepts(ItemImpl *ritem, UpdatesContainer &replUpdates, const NsContext &ctx);
 
-	void putToJoinCache(JoinCacheRes &res, std::shared_ptr<JoinPreResult> preResult) const;
+	void putToJoinCache(JoinCacheRes &res, std::shared_ptr<const JoinPreResult> preResult) const;
 	void putToJoinCache(JoinCacheRes &res, JoinCacheVal &&val) const;
 	void getFromJoinCache(const Query &, const JoinedQuery &, JoinCacheRes &out) const;
 	void getFromJoinCache(const Query &, JoinCacheRes &out) const;
@@ -521,7 +525,10 @@ private:
 	std::vector<std::string> enumMeta() const;
 
 	void warmupFtIndexes();
-	void updateSelectTime();
+	void updateSelectTime() noexcept {
+		using namespace std::chrono;
+		lastSelectTime_ = duration_cast<seconds>(system_clock_w::now().time_since_epoch()).count();
+	}
 	void markReadOnly() noexcept { locker_.MarkReadOnly(); }
 	void markOverwrittenByUser() noexcept { locker_.MarkOverwrittenByUser(); }
 	void markOverwrittenByForceSync() noexcept { locker_.MarkOverwrittenByForceSync(); }
@@ -621,6 +628,7 @@ private:
 		}
 	}
 	size_t getWalSize(const NamespaceConfigData &cfg) const noexcept { return isSystem() ? int64_t(1) : std::max(cfg.walSize, int64_t(1)); }
+	void clearNamespaceCaches();
 
 	PerfStatCounterMT updatePerfCounter_, selectPerfCounter_;
 	std::atomic<bool> enablePerfCounters_;
@@ -648,7 +656,7 @@ private:
 	std::atomic<int> optimizationState_{OptimizationState::NotOptimized};
 	StringsHolderPtr strHolder_;
 	std::deque<StringsHolderPtr> strHoldersWaitingToBeDeleted_;
-	std::chrono::seconds lastExpirationCheckTs_;
+	std::chrono::seconds lastExpirationCheckTs_{0};
 	mutable std::atomic<int64_t> nsUpdateSortedContextMemory_ = {0};
 	cluster::INsDataReplicator &clusterizator_;
 	std::atomic<bool> dbDestroyed_{false};

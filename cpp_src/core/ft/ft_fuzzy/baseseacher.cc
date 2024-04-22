@@ -2,12 +2,9 @@
 #include <chrono>
 #include <iostream>
 #include <thread>
-#include "core/ft/filters/kblayout.h"
-#include "core/ft/filters/translit.h"
 #include "core/ft/ft_fuzzy/advacedpackedvec.h"
 #include "core/ft/ftdsl.h"
 #include "core/rdxcontext.h"
-#include "tools/customhash.h"
 #include "tools/stringstools.h"
 namespace search_engine {
 

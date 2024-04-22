@@ -4,6 +4,18 @@
 #include "core/queryresults/queryresults.h"
 #include "estl/overloaded.h"
 
+namespace {
+
+[[nodiscard]] static int toSigned(reindexer::ComparationResult compRes) noexcept {
+	using UnderlyingType = std::underlying_type_t<reindexer::ComparationResult>;
+	const auto res = static_cast<UnderlyingType>(compRes);
+	return static_cast<int>(res & (static_cast<UnderlyingType>(reindexer::ComparationResult::Lt) |
+								   static_cast<UnderlyingType>(reindexer::ComparationResult::Gt))) *
+		   (static_cast<int>(res & static_cast<UnderlyingType>(reindexer::ComparationResult::Gt)) - 1);
+}
+
+}  // namespace
+
 namespace reindexer {
 
 template <typename It>
@@ -78,7 +90,9 @@ class Aggregator::SinglefieldComparator {
 public:
 	SinglefieldComparator(const h_vector<SortingEntry, 1> &);
 	bool HaveCompareByCount() const { return haveCompareByCount; }
-	bool operator()(const Variant &lhs, const Variant &rhs) const { return lhs.Compare(rhs) * valueCompareDirection_ < 0; }
+	bool operator()(const Variant &lhs, const Variant &rhs) const {
+		return toSigned(lhs.Compare<NotComparable::Throw>(rhs)) * valueCompareDirection_ < 0;
+	}
 	bool operator()(const std::pair<Variant, int> &lhs, const std::pair<Variant, int> &rhs) const;
 
 private:
@@ -134,9 +148,9 @@ bool Aggregator::MultifieldComparator::operator()(const PayloadValue &lhs, const
 		assertrx(type_);
 		assertrx(!lhs.IsFree());
 		assertrx(!rhs.IsFree());
-		int less = ConstPayload(type_, lhs).Compare<WithString::No>(rhs, opt.fields);
-		if (less == 0) continue;
-		return less * opt.direction < 0;
+		const auto less = ConstPayload(type_, lhs).Compare<WithString::No, NotComparable::Throw>(rhs, opt.fields);
+		if (less == ComparationResult::Eq) continue;
+		return toSigned(less) * opt.direction < 0;
 	}
 	return false;
 }
@@ -150,9 +164,9 @@ bool Aggregator::MultifieldComparator::operator()(const std::pair<PayloadValue, 
 		assertrx(type_);
 		assertrx(!lhs.first.IsFree());
 		assertrx(!rhs.first.IsFree());
-		int less = ConstPayload(type_, lhs.first).Compare<WithString::No>(rhs.first, opt.fields);
-		if (less == 0) continue;
-		return less * opt.direction < 0;
+		const auto less = ConstPayload(type_, lhs.first).Compare<WithString::No, NotComparable::Throw>(rhs.first, opt.fields);
+		if (less == ComparationResult::Eq) continue;
+		return toSigned(less) * opt.direction < 0;
 	}
 	return false;
 }
@@ -194,7 +208,7 @@ bool Aggregator::SinglefieldComparator::operator()(const std::pair<Variant, int>
 	for (const CompOpts &opt : compOpts_) {
 		int less;
 		if (opt.compareBy == ByValue) {
-			less = lhs.first.Compare(rhs.first);
+			less = toSigned(lhs.first.Compare<NotComparable::Throw>(rhs.first));
 		} else {
 			less = lhs.second - rhs.second;
 		}
@@ -203,7 +217,6 @@ bool Aggregator::SinglefieldComparator::operator()(const std::pair<Variant, int>
 	return false;
 }
 
-Aggregator::Aggregator() = default;
 Aggregator::Aggregator(Aggregator &&) noexcept = default;
 Aggregator::~Aggregator() = default;
 
@@ -215,6 +228,7 @@ Aggregator::Aggregator(const PayloadType &payloadType, const FieldsSet &fields, 
 	  names_(names),
 	  limit_(limit),
 	  offset_(offset),
+	  distinctChecker_(*this),
 	  compositeIndexFields_(compositeIndexFields) {
 	switch (aggType_) {
 		case AggFacet:

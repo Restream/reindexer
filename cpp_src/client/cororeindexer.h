@@ -28,8 +28,8 @@ class Snapshot;
 
 /// The main Reindexer interface. Holds database object<br>
 /// *Thread safety*: None of the methods are threadsafe <br>
-/// CoroReindexer should be used via multiple coroutins in single thread, while ev-loop is running.
-/// *Resources lifetime*: All resources aquired from Reindexer, e.g Item or QueryResults are uses Copy-On-Write
+/// CoroReindexer should be used via multiple coroutines in single thread, while ev-loop is running.
+/// *Resources lifetime*: All resources acquired from Reindexer, e.g Item or QueryResults are uses Copy-On-Write
 /// semantics, and have independent lifetime<br>
 class CoroReindexer {
 public:
@@ -37,7 +37,7 @@ public:
 
 	/// Create Reindexer database object
 	CoroReindexer(const ReindexerConfig & = ReindexerConfig());
-	/// Destrory Reindexer database object
+	/// Destroy Reindexer database object
 	~CoroReindexer();
 	CoroReindexer(const CoroReindexer &) = delete;
 	CoroReindexer(CoroReindexer &&) noexcept;
@@ -48,7 +48,7 @@ public:
 	/// @param dsn - uri of server and database, like: `cproto://user@password:127.0.0.1:6534/dbname` or
 	/// `ucproto://user@password:/tmp/reindexer.sock:/dbname`
 	/// @param loop - event loop for connections and coroutines handling
-	/// @param opts - Connect options. May contaion any of <br>
+	/// @param opts - Connect options. May contain any of <br>
 	Error Connect(const std::string &dsn, net::ev::dynamic_loop &loop, const client::ConnectOpts &opts = client::ConnectOpts());
 	/// Stop - shutdown connector
 	void Stop();
@@ -64,10 +64,10 @@ public:
 	/// @param nsDef - NamespaceDef with namespace initial parameters
 	/// @param replOpts - Namespace replication options (for replication purposes, should not be user elsewhere)
 	Error AddNamespace(const NamespaceDef &nsDef, const NsReplicationOpts &replOpts = NsReplicationOpts());
-	/// Close namespace. Will free all memory resorces, associated with namespace. Forces sync changes to disk
+	/// Close namespace. Will free all memory resources, associated with namespace. Forces sync changes to disk
 	/// @param nsName - Name of namespace
 	Error CloseNamespace(std::string_view nsName);
-	/// Drop namespace. Will free all memory resorces, associated with namespace and erase all files from disk
+	/// Drop namespace. Will free all memory resources, associated with namespace and erase all files from disk
 	/// @param nsName - Name of namespace
 	Error DropNamespace(std::string_view nsName);
 	/// Create new temporary namespace with randomized name
@@ -103,8 +103,8 @@ public:
 	/// @param schema - JSON in JsonSchema format
 	Error SetSchema(std::string_view nsName, std::string_view schema);
 	/// Get list of all available namespaces
-	/// @param defs - std::vector of NamespaceDef of available namespaves
-	/// @param opts - Enumerartion options
+	/// @param defs - std::vector of NamespaceDef of available namespaces
+	/// @param opts - Enumeration options
 	Error EnumNamespaces(std::vector<NamespaceDef> &defs, EnumNamespacesOpts opts);
 	/// Gets a list of available databases for a certain server.
 	/// @param dbList - list of DB names
@@ -146,7 +146,7 @@ public:
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
 	Error Delete(std::string_view nsName, Item &item);
-	/// Delete all items froms namespace, which matches provided Query
+	/// Delete all items from namespace, which matches provided Query
 	/// @param query - Query with conditions
 	/// @param result - QueryResults with IDs of deleted items
 	Error Delete(const Query &query, CoroQueryResults &result);
@@ -168,23 +168,27 @@ public:
 	Error Commit(std::string_view nsName);
 	/// Allocate new item for namespace
 	/// @param nsName - Name of namespace
-	/// @return Item ready for filling and futher Upsert/Insert/Delete/Update call
+	/// @return Item ready for filling and further Upsert/Insert/Delete/Update call
 	Item NewItem(std::string_view nsName);
-	/// Get meta data from storage by key
+	/// Get metadata from storage by key
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
-	/// @param data - output string with meta data
+	/// @param data - output string with metadata
 	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data);
-	/// Get sharded meta data from storage by key
+	/// Get sharded metadata from storage by key
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
-	/// @param data - output vector with meta data from different shards
+	/// @param data - output vector with metadata from different shards
 	Error GetMeta(std::string_view nsName, const std::string &key, std::vector<ShardedMeta> &data);
 	/// Put meta data to storage by key
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
-	/// @param data - string with meta data
+	/// @param data - string with metadata
 	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data);
+	/// Delete metadata from storage by key
+	/// @param nsName - Name of namespace
+	/// @param key - string with meta key
+	Error DeleteMeta(std::string_view nsName, const std::string &key);
 	/// Get list of all meta data keys
 	/// @param nsName - Name of namespace
 	/// @param keys - std::vector filled with meta keys
@@ -194,8 +198,8 @@ public:
 	/// @param pos - position in sql query for suggestions.
 	/// @param suggestions - all the suggestions for 'pos' position in query.
 	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions);
-	/// Get curret connection status
-	/// @param forceCheck - forces to check status immediatlly (otherwise result of periodic check will be returned)
+	/// Get current connection status
+	/// @param forceCheck - forces to check status immediately (otherwise result of periodic check will be returned)
 	Error Status(bool forceCheck = false);
 	/// Allocate new transaction for namespace
 	/// @param nsName - Name of namespace
@@ -234,7 +238,7 @@ public:
 
 	/// Add observer for client's connection state. This callback will be called on each connect and disconnect
 	/// @param callback - callback functor
-	/// @return callback's ID. This id shoul be used to remove callback
+	/// @return callback's ID. This id should be used to remove callback
 	int64_t AddConnectionStateObserver(ConnectionStateHandlerT callback);
 	/// Remove observer by it's ID
 	/// @param id - observer's ID
@@ -246,25 +250,25 @@ public:
 
 	/// Add cancelable context
 	/// @param cancelCtx - context pointer
-	CoroReindexer WithContext(const IRdxCancelContext *cancelCtx) { return CoroReindexer(impl_, ctx_.WithCancelContext(cancelCtx)); }
+	CoroReindexer WithContext(const IRdxCancelContext *cancelCtx) { return {impl_, ctx_.WithCancelContext(cancelCtx)}; }
 	/// Add execution timeout to the next query
 	/// @param timeout - Optional server-side execution timeout for each subquery
-	CoroReindexer WithTimeout(milliseconds timeout) { return CoroReindexer(impl_, ctx_.WithTimeout(timeout)); }
+	CoroReindexer WithTimeout(milliseconds timeout) { return {impl_, ctx_.WithTimeout(timeout)}; }
 	/// Add lsn info
 	/// @param lsn - next operation lsn
-	CoroReindexer WithLSN(lsn_t lsn) { return CoroReindexer(impl_, ctx_.WithLSN(lsn)); }
+	CoroReindexer WithLSN(lsn_t lsn) { return {impl_, ctx_.WithLSN(lsn)}; }
 	/// Add shard info
 	/// @param id - shard id
-	CoroReindexer WithShardId(int id, bool parallel) { return CoroReindexer(impl_, ctx_.WithShardId(id, parallel)); }
+	CoroReindexer WithShardId(int id, bool parallel) { return {impl_, ctx_.WithShardId(id, parallel)}; }
 
 	typedef CoroQueryResults QueryResultsT;
 	typedef Item ItemT;
 	typedef ReindexerConfig ConfigT;
 
 private:
-	CoroReindexer(RPCClient *impl, InternalRdxContext &&ctx) : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}
-	RPCClient *impl_;
-	bool owner_;
+	CoroReindexer(RPCClient *impl, InternalRdxContext &&ctx) : impl_(impl), ctx_(std::move(ctx)) {}
+	RPCClient *impl_ = nullptr;
+	bool owner_ = false;
 	InternalRdxContext ctx_;
 };
 

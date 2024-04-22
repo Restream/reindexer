@@ -9,14 +9,12 @@
 #include "client/reindexerconfig.h"
 #include "client/rpcformat.h"
 #include "cluster/config.h"
-#include "core/keyvalue/p_string.h"
 #include "core/namespacedef.h"
 #include "core/query/query.h"
 #include "core/shardedmeta.h"
 #include "coroutine/mutex.h"
 #include "coroutine/waitgroup.h"
 #include "net/cproto/coroclientconnection.h"
-#include "urlparser/urlparser.h"
 
 namespace reindexer {
 
@@ -142,6 +140,7 @@ public:
 	Error GetMeta(std::string_view nsName, const std::string &key, std::vector<ShardedMeta> &data, const InternalRdxContext &ctx);
 	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data, const InternalRdxContext &ctx);
 	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const InternalRdxContext &ctx);
+	Error DeleteMeta(std::string_view nsName, const std::string &key, const InternalRdxContext &ctx);
 	Error GetSqlSuggestions(std::string_view query, int pos, std::vector<std::string> &suggests);
 	Error Status(bool forceCheck, const InternalRdxContext &ctx);
 	bool RequiresStatusCheck() const noexcept { return conn_.IsRunning() && conn_.RequiresStatusCheck(); }

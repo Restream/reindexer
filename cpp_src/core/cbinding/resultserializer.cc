@@ -35,7 +35,7 @@ void WrResultSerializer::putQueryParams(const BindingCapabilities& caps, QueryRe
 		assertrx(opts_.ptVersions.data());
 		const auto mergedNsCount = results->GetMergedNSCount();
 		if (int(opts_.ptVersions.size()) != mergedNsCount) {
-			logPrintf(LogWarning, "ptVersionsCount != results->GetMergedNSCount: %d != %d. Client's meta data can become incosistent.",
+			logPrintf(LogWarning, "ptVersionsCount != results->GetMergedNSCount: %d != %d. Client's metadata can become inconsistent.",
 					  opts_.ptVersions.size(), mergedNsCount);
 		}
 		auto cntP = getPtUpdatesCount(results);
@@ -257,7 +257,7 @@ bool WrResultSerializer::PutResults(QueryResults* result, const BindingCapabilit
 	}
 
 	auto rowIt = result->begin() + opts_.fetchOffset;
-	for (unsigned i = 0; i < opts_.fetchLimit; ++i, ++rowIt) {
+	for (unsigned i = 0, limit = opts_.fetchLimit; i < limit; ++i, ++rowIt) {
 		// Put Item ID and version
 		putItemParams(rowIt, rowIt.GetShardId(), storage, result);
 		if (opts_.flags & kResultsWithJoined) {
@@ -265,7 +265,7 @@ bool WrResultSerializer::PutResults(QueryResults* result, const BindingCapabilit
 			PutVarUint(jIt.getJoinedItemsCount() > 0 ? jIt.getJoinedFieldsCount() : 0);
 			if (jIt.getJoinedItemsCount() > 0) {
 				size_t joinedField = rowIt.qr_->GetJoinedField(rowIt.GetNsID());
-				for (auto it = jIt.begin(); it != jIt.end(); ++it, ++joinedField) {
+				for (auto it = jIt.begin(), end = jIt.end(); it != end; ++it, ++joinedField) {
 					PutVarUint(it.ItemsCount());
 					if (it.ItemsCount() == 0) continue;
 					LocalQueryResults qr = it.ToQueryResults();

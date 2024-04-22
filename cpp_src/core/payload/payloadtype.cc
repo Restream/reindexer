@@ -2,7 +2,6 @@
 #include <sstream>
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/variant.h"
-#include "core/type_consts_helpers.h"
 #include "payloadtypeimpl.h"
 #include "tools/serializer.h"
 

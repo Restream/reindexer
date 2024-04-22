@@ -85,22 +85,24 @@ extern template void VerifyQueryEntryValues<VerifyQueryEntryFlags::ignoreEmptyVa
 
 class QueryEntry : private QueryField {
 public:
+	enum : size_t { NotInjected = std::numeric_limits<size_t>::max(), InjectedFromMain = NotInjected - 1 };
 	struct DistinctTag {};
 	struct IgnoreEmptyValues {};
 	static constexpr unsigned kDefaultLimit = UINT_MAX;
 	static constexpr unsigned kDefaultOffset = 0;
 
-	template <typename Str>
-	QueryEntry(Str &&fieldName, CondType cond, VariantArray &&v)
-		: QueryField(std::forward<Str>(fieldName)), values_(std::move(v)), condition_(cond) {
+	template <typename Str, typename VA,
+			  std::enable_if_t<std::is_constructible_v<std::string, Str> && std::is_constructible_v<VariantArray, VA>> * = nullptr>
+	QueryEntry(Str &&fieldName, CondType cond, VA &&v, size_t injectedFrom = NotInjected)
+		: QueryField{std::forward<Str>(fieldName)}, values_{std::forward<VA>(v)}, condition_{cond}, injectedFrom_{injectedFrom} {
 		Verify();
 	}
 	template <typename Str>
 	QueryEntry(Str &&fieldName, DistinctTag) : QueryField(std::forward<Str>(fieldName)), condition_(CondAny), distinct_(true) {
 		Verify();
 	}
-	QueryEntry(QueryField &&field, CondType cond, VariantArray &&v)
-		: QueryField(std::move(field)), values_(std::move(v)), condition_(cond) {
+	template <typename VA, std::enable_if_t<std::is_constructible_v<VariantArray, VA>> * = nullptr>
+	QueryEntry(QueryField &&field, CondType cond, VA &&v) : QueryField{std::move(field)}, values_{std::forward<VA>(v)}, condition_{cond} {
 		Verify();
 	}
 	QueryEntry(QueryField &&field, CondType cond, IgnoreEmptyValues) : QueryField(std::move(field)), condition_(cond) {
@@ -111,6 +113,9 @@ public:
 	[[nodiscard]] VariantArray &&Values() && noexcept { return std::move(values_); }
 	[[nodiscard]] auto UpdatableValues(IgnoreEmptyValues) & noexcept {
 		return VerifyingUpdater<QueryEntry, VariantArray, &QueryEntry::values_, &QueryEntry::verifyIgnoringEmptyValues>{*this};
+	}
+	[[nodiscard]] auto UpdatableValues() & noexcept {
+		return VerifyingUpdater<QueryEntry, VariantArray, &QueryEntry::values_, &QueryEntry::verifyNotIgnoringEmptyValues>{*this};
 	}
 	[[nodiscard]] bool Distinct() const noexcept { return distinct_; }
 	void Distinct(bool d) noexcept { distinct_ = d; }
@@ -153,16 +158,21 @@ public:
 
 	[[nodiscard]] std::string Dump() const;
 	[[nodiscard]] std::string DumpBrief() const;
+	[[nodiscard]] bool IsInjectedFromMain() const noexcept { return injectedFrom_ == InjectedFromMain; }
+	[[nodiscard]] bool IsInjectedFrom(size_t joinedQueryNo) const noexcept { return injectedFrom_ == joinedQueryNo; }
+	void InjectedFrom(size_t joinedQueryNo) noexcept { injectedFrom_ = joinedQueryNo; }
 
 	auto Values() const && = delete;
 	auto FieldData() const && = delete;
 
 private:
 	void verifyIgnoringEmptyValues() const { VerifyQueryEntryValues<VerifyQueryEntryFlags::ignoreEmptyValues>(condition_, values_); }
+	void verifyNotIgnoringEmptyValues() const { VerifyQueryEntryValues(condition_, values_); }
 
 	VariantArray values_;
 	CondType condition_;
 	bool distinct_ = false;
+	size_t injectedFrom_ = NotInjected;
 };
 
 class BetweenFieldsQueryEntry {
@@ -283,49 +293,6 @@ private:
 	size_t queryIndex_;
 };
 
-class QueryEntries : public ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse,
-										   AlwaysTrue, SubQueryEntry, SubQueryFieldEntry> {
-	using Base = ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse,
-								AlwaysTrue, SubQueryEntry, SubQueryFieldEntry>;
-	QueryEntries(Base &&b) : Base{std::move(b)} {}
-
-public:
-	QueryEntries() = default;
-	QueryEntries(QueryEntries &&) = default;
-	QueryEntries(const QueryEntries &) = default;
-	QueryEntries &operator=(QueryEntries &&) = default;
-
-	void ToDsl(const Query &parentQuery, JsonBuilder &builder) const { return toDsl(cbegin(), cend(), parentQuery, builder); }
-	void WriteSQLWhere(const Query &parentQuery, WrSerializer &, bool stripArgs) const;
-	void Serialize(WrSerializer &ser, const std::vector<Query> &subQueries) const { serialize(cbegin(), cend(), ser, subQueries); }
-	bool CheckIfSatisfyConditions(const ConstPayload &pl) const { return checkIfSatisfyConditions(cbegin(), cend(), pl); }
-	static bool CheckIfSatisfyCondition(const VariantArray &lValues, CondType, const VariantArray &rValues);
-	template <typename JS>
-	std::string Dump(const std::vector<JS> &joinedSelectors, const std::vector<Query> &subQueries) const {
-		WrSerializer ser;
-		dump(0, cbegin(), cend(), joinedSelectors, subQueries, ser);
-		dumpEqualPositions(0, ser, equalPositions);
-		return std::string{ser.Slice()};
-	}
-
-	EqualPositions_t equalPositions;
-
-private:
-	static void toDsl(const_iterator it, const_iterator to, const Query &parentQuery, JsonBuilder &);
-	static void writeSQL(const Query &parentQuery, const_iterator from, const_iterator to, WrSerializer &, bool stripArgs);
-	static void serialize(const_iterator it, const_iterator to, WrSerializer &, const std::vector<Query> &subQueries);
-	static void serialize(CondType, const VariantArray &values, WrSerializer &);
-	static bool checkIfSatisfyConditions(const_iterator begin, const_iterator end, const ConstPayload &);
-	static bool checkIfSatisfyCondition(const QueryEntry &, const ConstPayload &);
-	static bool checkIfSatisfyCondition(const BetweenFieldsQueryEntry &, const ConstPayload &);
-
-protected:
-	static void dumpEqualPositions(size_t level, WrSerializer &, const EqualPositions_t &);
-	template <typename JS>
-	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS> &joinedSelectors,
-					 const std::vector<Query> &subQueries, WrSerializer &);
-};
-
 class UpdateEntry {
 public:
 	template <typename Str>
@@ -412,6 +379,64 @@ private:
 										 ///< false: mainNs.index Condition joinNs.joinIndex
 										 ///< true:  joinNs.joinIndex Invert(Condition) mainNs.index
 };
+
+enum class InjectionDirection : bool { IntoMain, FromMain };
+class Index;
+
+class QueryEntries : public ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse,
+										   AlwaysTrue, SubQueryEntry, SubQueryFieldEntry> {
+	using Base = ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse,
+								AlwaysTrue, SubQueryEntry, SubQueryFieldEntry>;
+	QueryEntries(Base &&b) : Base{std::move(b)} {}
+
+public:
+	QueryEntries() = default;
+	QueryEntries(QueryEntries &&) = default;
+	QueryEntries(const QueryEntries &) = default;
+	QueryEntries &operator=(QueryEntries &&) = default;
+
+	void ToDsl(const Query &parentQuery, JsonBuilder &builder) const { return toDsl(cbegin(), cend(), parentQuery, builder); }
+	void WriteSQLWhere(const Query &parentQuery, WrSerializer &, bool stripArgs) const;
+	void Serialize(WrSerializer &ser, const std::vector<Query> &subQueries) const { serialize(cbegin(), cend(), ser, subQueries); }
+	bool CheckIfSatisfyConditions(const ConstPayload &pl) const { return checkIfSatisfyConditions(cbegin(), cend(), pl); }
+	static bool CheckIfSatisfyCondition(const VariantArray &lValues, CondType, const VariantArray &rValues);
+	template <InjectionDirection>
+	[[nodiscard]] size_t InjectConditionsFromOnConditions(size_t position, const h_vector<QueryJoinEntry, 1> &joinEntries,
+														  const QueryEntries &joinedQueryEntries, size_t joinedQueryNo,
+														  const std::vector<std::unique_ptr<Index>> *indexesFrom);
+	template <typename JS>
+	std::string Dump(const std::vector<JS> &joinedSelectors, const std::vector<Query> &subQueries) const {
+		WrSerializer ser;
+		dump(0, cbegin(), cend(), joinedSelectors, subQueries, ser);
+		dumpEqualPositions(0, ser, equalPositions);
+		return std::string{ser.Slice()};
+	}
+
+	EqualPositions_t equalPositions;
+
+private:
+	static void toDsl(const_iterator it, const_iterator to, const Query &parentQuery, JsonBuilder &);
+	static void writeSQL(const Query &parentQuery, const_iterator from, const_iterator to, WrSerializer &, bool stripArgs);
+	static void serialize(const_iterator it, const_iterator to, WrSerializer &, const std::vector<Query> &subQueries);
+	static void serialize(CondType, const VariantArray &values, WrSerializer &);
+	static bool checkIfSatisfyConditions(const_iterator begin, const_iterator end, const ConstPayload &);
+	static bool checkIfSatisfyCondition(const QueryEntry &, const ConstPayload &);
+	static bool checkIfSatisfyCondition(const BetweenFieldsQueryEntry &, const ConstPayload &);
+	[[nodiscard]] size_t injectConditionsFromOnCondition(size_t position, const std::string &fieldName, const std::string &joinedFieldName,
+														 CondType, const QueryEntries &joinedQueryEntries, size_t injectedFrom,
+														 size_t injectingInto, const std::vector<std::unique_ptr<Index>> *indexesFrom);
+
+protected:
+	static void dumpEqualPositions(size_t level, WrSerializer &, const EqualPositions_t &);
+	template <typename JS>
+	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS> &joinedSelectors,
+					 const std::vector<Query> &subQueries, WrSerializer &);
+};
+
+extern template size_t QueryEntries::InjectConditionsFromOnConditions<InjectionDirection::FromMain>(
+	size_t, const h_vector<QueryJoinEntry, 1> &, const QueryEntries &, size_t, const std::vector<std::unique_ptr<Index>> *);
+extern template size_t QueryEntries::InjectConditionsFromOnConditions<InjectionDirection::IntoMain>(
+	size_t, const h_vector<QueryJoinEntry, 1> &, const QueryEntries &, size_t, const std::vector<std::unique_ptr<Index>> *);
 
 struct SortingEntry {
 	SortingEntry() noexcept = default;

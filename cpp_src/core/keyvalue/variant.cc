@@ -5,35 +5,14 @@
 #include "core/payload/payloadiface.h"
 #include "estl/overloaded.h"
 #include "estl/tuple_utils.h"
-#include "geometry.h"
-#include "key_string.h"
-#include "p_string.h"
 #include "tools/compare.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
-#include "utf8cpp/utf8.h"
 #include "uuid.h"
 #include "vendor/double-conversion/double-conversion.h"
+#include "vendor/utf8cpp/utf8/core.h"
 
 namespace reindexer {
-
-Variant::Variant(const PayloadValue &v) noexcept : variant_{0, 1, KeyValueType::Composite{}} { new (cast<void>()) PayloadValue(v); }
-
-Variant::Variant(PayloadValue &&v) noexcept : variant_{0, 1, KeyValueType::Composite{}} { new (cast<void>()) PayloadValue(std::move(v)); }
-
-Variant::Variant(const std::string &v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(make_key_string(v)); }
-
-Variant::Variant(std::string &&v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(make_key_string(std::move(v))); }
-
-Variant::Variant(std::string_view v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(make_key_string(v)); }
-
-Variant::Variant(const key_string &v) noexcept : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(v); }
-
-Variant::Variant(key_string &&v) noexcept : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(std::move(v)); }
-
-Variant::Variant(const char *v) noexcept : Variant(p_string(v), Variant::no_hold_t{}) {}
-
-Variant::Variant(p_string v, no_hold_t) noexcept : variant_{0, 0, KeyValueType::String{}} { *cast<p_string>() = v; }
 
 Variant::Variant(p_string v, hold_t) : variant_{0, 0, KeyValueType::String{}} {
 	if (v.type() == p_string::tagKeyString) {
@@ -43,8 +22,6 @@ Variant::Variant(p_string v, hold_t) : variant_{0, 0, KeyValueType::String{}} {
 		*cast<p_string>() = v;
 	}
 }
-Variant::Variant(p_string v) noexcept : Variant(v, no_hold_t{}) {}
-
 Variant::Variant(const VariantArray &values) : variant_{0, 1, KeyValueType::Tuple{}} {
 	WrSerializer ser;
 	ser.PutVarUint(values.size());
@@ -53,9 +30,6 @@ Variant::Variant(const VariantArray &values) : variant_{0, 1, KeyValueType::Tupl
 	}
 	new (cast<void>()) key_string(make_key_string(ser.Slice()));
 }
-
-Variant::Variant(Point p) noexcept : Variant{VariantArray{p}} {}
-
 Variant::Variant(Uuid uuid) noexcept : uuid_() {
 	if (uuid.data_[0] == 0 && uuid.data_[1] == 0) {
 		uuid_.~UUID();
@@ -179,7 +153,7 @@ std::string Variant::As<std::string>() const {
 			[&](KeyValueType::Int) { return std::to_string(variant_.value_int); },
 			[&](KeyValueType::Bool) { return variant_.value_bool ? "true"s : "false"s; },
 			[&](KeyValueType::Int64) { return std::to_string(variant_.value_int64); },
-			[&](KeyValueType::Double) { return std::to_string(variant_.value_double); },
+			[&](KeyValueType::Double) { return double_to_str(variant_.value_double); },
 			[&](KeyValueType::String) {
 				const auto pstr = this->operator p_string();
 				if (pstr.type() == p_string::tagCxxstr || pstr.type() == p_string::tagKeyString) {
@@ -200,11 +174,8 @@ std::string Variant::As<std::string>() const {
 
 template <>
 p_string Variant::As<p_string>() const {
-	if (!isUuid() && variant_.type.Is<KeyValueType::String>()) {
-		return this->operator p_string();
-	} else {
-		return p_string{make_key_string(As<std::string>())};
-	}
+	assertrx_throw(!isUuid() && variant_.type.Is<KeyValueType::String>());
+	return this->operator p_string();
 }
 
 template <>
@@ -299,8 +270,30 @@ int Variant::As<int>() const {
 		[](OneOf<KeyValueType::Undefined, KeyValueType::Null>) noexcept -> int { abort(); });
 }
 
+static std::optional<bool> tryConvertToBool(const p_string &str) {
+	using namespace std::string_view_literals;
+	if (iequals(str, "true"sv)) {
+		return true;
+	} else if (iequals(str, "false"sv)) {
+		return false;
+	} else {
+		const auto v = tryParseAs<int64_t>(str);
+		if (v) {
+			return v != 0;
+		} else {
+			const auto v = tryParseAs<double>(str);
+			if (v) {
+				return v != 0.0;
+			} else {
+				return std::nullopt;
+			}
+		}
+	}
+}
+
 template <>
 bool Variant::As<bool>() const {
+	using namespace std::string_view_literals;
 	if (isUuid()) {
 		throw Error(errParams, "Can't convert '%s' to bool", std::string{Uuid{*this}}.data());
 	}
@@ -309,7 +302,15 @@ bool Variant::As<bool>() const {
 		[&](KeyValueType::Int) noexcept -> bool { return variant_.value_int; },
 		[&](KeyValueType::Int64) noexcept -> bool { return variant_.value_int64; },
 		[&](KeyValueType::Double) noexcept -> bool { return variant_.value_double; },
-		[&](KeyValueType::String) noexcept { return std::string_view(this->operator p_string()) == "true"; },
+		[&](KeyValueType::String) {
+			const auto p_str = operator p_string();
+			const auto res = tryConvertToBool(p_str);
+			if (res.has_value()) {
+				return *res;
+			} else {
+				throw Error(errParams, "Can't convert '%s' to bool", std::string_view(p_str));
+			}
+		},
 		[](OneOf<KeyValueType::Composite, KeyValueType::Tuple>) noexcept { return false; },
 		[&](KeyValueType::Uuid) -> bool { throw Error(errParams, "Can't convert '%s' to bool", std::string{Uuid{*this}}.data()); },
 		[](OneOf<KeyValueType::Undefined, KeyValueType::Null>) noexcept -> bool { abort(); });
@@ -347,7 +348,8 @@ double Variant::As<double>() const {
 		[](OneOf<KeyValueType::Undefined, KeyValueType::Null>) noexcept -> double { abort(); });
 }
 
-int Variant::Compare(const Variant &other, const CollateOpts &collateOpts) const {
+template <NotComparable notComparable>
+ComparationResult Variant::Compare(const Variant &other, const CollateOpts &collateOpts) const {
 	if (isUuid()) {
 		assertrx(other.Type().Is<KeyValueType::Uuid>());
 		return Uuid{*this}.Compare(Uuid{other});
@@ -355,37 +357,54 @@ int Variant::Compare(const Variant &other, const CollateOpts &collateOpts) const
 		assertrx(Type().IsSame(other.Type()));
 		return variant_.type.EvaluateOneOf(
 			[&](KeyValueType::Int) noexcept {
-				return (variant_.value_int == other.variant_.value_int) ? 0 : (variant_.value_int > other.variant_.value_int) ? 1 : -1;
+				return (variant_.value_int == other.variant_.value_int)	 ? ComparationResult::Eq
+					   : (variant_.value_int > other.variant_.value_int) ? ComparationResult::Gt
+																		 : ComparationResult::Lt;
 			},
 			[&](KeyValueType::Bool) noexcept {
-				return (variant_.value_bool == other.variant_.value_bool) ? 0 : (variant_.value_bool > other.variant_.value_bool) ? 1 : -1;
+				return (variant_.value_bool == other.variant_.value_bool)  ? ComparationResult::Eq
+					   : (variant_.value_bool > other.variant_.value_bool) ? ComparationResult::Gt
+																		   : ComparationResult::Lt;
 			},
 			[&](KeyValueType::Int64) noexcept {
-				return (variant_.value_int64 == other.variant_.value_int64)	 ? 0
-					   : (variant_.value_int64 > other.variant_.value_int64) ? 1
-																			 : -1;
+				return (variant_.value_int64 == other.variant_.value_int64)	 ? ComparationResult::Eq
+					   : (variant_.value_int64 > other.variant_.value_int64) ? ComparationResult::Gt
+																			 : ComparationResult::Lt;
 			},
 			[&](KeyValueType::Double) noexcept {
-				return (variant_.value_double == other.variant_.value_double)  ? 0
-					   : (variant_.value_double > other.variant_.value_double) ? 1
-																			   : -1;
+				return (variant_.value_double == other.variant_.value_double)  ? ComparationResult::Eq
+					   : (variant_.value_double > other.variant_.value_double) ? ComparationResult::Gt
+																			   : ComparationResult::Lt;
 			},
-			[&](KeyValueType::Tuple) -> int { throw Error(errParams, "KeyValueType::Tuple comparison is not implemented"); },
+			[&](KeyValueType::Tuple) -> ComparationResult {
+				if constexpr (notComparable == NotComparable::Return) {
+					return ComparationResult::NotComparable;
+				} else {
+					throw Error(errParams, "KeyValueType::Tuple comparison is not implemented");
+				}
+			},
 			[&](KeyValueType::String) { return collateCompare(this->operator p_string(), other.operator p_string(), collateOpts); },
 			[&](KeyValueType::Uuid) { return Uuid{*this}.Compare(Uuid{other}); },
-			[](KeyValueType::Null) -> int {
-				throw Error{errParams, "Cannot compare empty values"};
+			[](KeyValueType::Null) -> ComparationResult {
+				if constexpr (notComparable == NotComparable::Return) {
+					return ComparationResult::NotComparable;
+				} else {
+					throw Error{errParams, "Cannot compare empty values"};
+				}
 			},
-			[](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) noexcept -> int { abort(); });
+			[](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) noexcept -> ComparationResult { abort(); });
 	}
 }
+template ComparationResult Variant::Compare<NotComparable::Return>(const Variant &, const CollateOpts &) const;
+template ComparationResult Variant::Compare<NotComparable::Throw>(const Variant &, const CollateOpts &) const;
 
-int Variant::relaxCompareWithString(std::string_view str) const {
+template <NotComparable notComparable>
+ComparationResult Variant::relaxCompareWithString(std::string_view str) const noexcept(notComparable == NotComparable::Return) {
 	thread_local char uuidStrBuf[Uuid::kStrFormLen];
 	thread_local const std::string_view uuidStrBufView{uuidStrBuf, Uuid::kStrFormLen};
 	if (isUuid()) {
 		Uuid{*this}.PutToStr(uuidStrBuf);
-		return uuidStrBufView == str ? 0 : (uuidStrBufView < str ? -1 : 1);
+		return uuidStrBufView == str ? ComparationResult::Eq : (uuidStrBufView < str ? ComparationResult::Lt : ComparationResult::Gt);
 	} else {
 		return variant_.type.EvaluateOneOf(
 			[&](KeyValueType::Int) {
@@ -393,8 +412,17 @@ int Variant::relaxCompareWithString(std::string_view str) const {
 				if (value) {
 					return compare(variant_.value_int, *value);
 				} else {
-					const double v = parseAs<double>(str);
-					return compare(variant_.value_int, v);
+					if constexpr (notComparable == NotComparable::Return) {
+						const auto v = tryParseAs<double>(str);
+						if (v) {
+							return compare(variant_.value_int, *v);
+						} else {
+							return ComparationResult::NotComparable;
+						}
+					} else {
+						const double v = parseAs<double>(str);
+						return compare(variant_.value_int, v);
+					}
 				}
 			},
 			[&](KeyValueType::Int64) {
@@ -402,21 +430,69 @@ int Variant::relaxCompareWithString(std::string_view str) const {
 				if (value) {
 					return compare(variant_.value_int64, *value);
 				} else {
-					const double v = parseAs<double>(str);
-					return compare(variant_.value_int64, v);
+					if constexpr (notComparable == NotComparable::Return) {
+						const auto v = tryParseAs<double>(str);
+						if (v) {
+							return compare(variant_.value_int64, *v);
+						} else {
+							return ComparationResult::NotComparable;
+						}
+					} else {
+						const double v = parseAs<double>(str);
+						return compare(variant_.value_int64, v);
+					}
 				}
 			},
 			[&](KeyValueType::Double) {
-				const double value = parseAs<double>(str);
-				return compare(variant_.value_double, value);
+				if constexpr (notComparable == NotComparable::Return) {
+					const auto v = tryParseAs<double>(str);
+					if (v) {
+						return compare(variant_.value_double, *v);
+					} else {
+						return ComparationResult::NotComparable;
+					}
+				} else {
+					const double v = parseAs<double>(str);
+					return compare(variant_.value_double, v);
+				}
 			},
 			[&](KeyValueType::Uuid) {
 				Uuid{*this}.PutToStr(uuidStrBuf);
-				return uuidStrBufView == str ? 0 : (uuidStrBufView < str ? -1 : 1);
+				return uuidStrBufView == str ? ComparationResult::Eq
+											 : (uuidStrBufView < str ? ComparationResult::Lt : ComparationResult::Gt);
 			},
-			[&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined,
-					  KeyValueType::Null>) -> int {
-				throw Error(errParams, "Not comparable types: %s and %s", KeyValueType{KeyValueType::String{}}.Name(), Type().Name());
+			[&](KeyValueType::Bool) {
+				using namespace std::string_view_literals;
+				if (iequals(str, "true"sv)) {
+					return compare(int(variant_.value_bool), 1);
+				} else if (iequals(str, "false"sv)) {
+					return compare(int(variant_.value_bool), 0);
+				} else {
+					const auto value = tryParseAs<int64_t>(str);
+					if (value) {
+						return compare(int64_t(variant_.value_bool), *value);
+					} else {
+						if constexpr (notComparable == NotComparable::Return) {
+							const auto v = tryParseAs<double>(str);
+							if (v) {
+								return compare(int(variant_.value_bool), *v);
+							} else {
+								return ComparationResult::NotComparable;
+							}
+						} else {
+							const double v = parseAs<double>(str);
+							return compare(int(variant_.value_bool), v);
+						}
+					}
+				}
+			},
+			[&](OneOf<KeyValueType::String, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null>)
+				-> ComparationResult {
+				if constexpr (notComparable == NotComparable::Return) {
+					return ComparationResult::NotComparable;
+				} else {
+					throw Error(errParams, "Not comparable types: %s and %s", KeyValueType{KeyValueType::String{}}.Name(), Type().Name());
+				}
 			});
 	}
 }
@@ -424,38 +500,71 @@ int Variant::relaxCompareWithString(std::string_view str) const {
 class Comparator {
 public:
 	explicit Comparator(const Variant &v1, const Variant &v2) noexcept : v1_{v1}, v2_{v2} {}
-	int operator()(KeyValueType::Bool, KeyValueType::Bool) const noexcept { return compare(v1_.As<bool>(), v2_.As<bool>()); }
-	int operator()(KeyValueType::Bool, KeyValueType::Int) const noexcept { return compare(v1_.As<bool>(), v2_.As<int>()); }
-	int operator()(KeyValueType::Bool, KeyValueType::Int64) const noexcept { return compare(v1_.As<bool>(), v2_.As<int64_t>()); }
-	int operator()(KeyValueType::Bool, KeyValueType::Double) const noexcept { return compare(v1_.As<bool>(), v2_.As<double>()); }
-	int operator()(KeyValueType::Int, KeyValueType::Bool) const noexcept { return compare(v1_.As<int>(), v2_.As<bool>()); }
-	int operator()(KeyValueType::Int, KeyValueType::Int) const noexcept { return compare(v1_.As<int>(), v2_.As<int>()); }
-	int operator()(KeyValueType::Int, KeyValueType::Int64) const noexcept { return compare(v1_.As<int>(), v2_.As<int64_t>()); }
-	int operator()(KeyValueType::Int, KeyValueType::Double) const noexcept { return compare(v1_.As<int>(), v2_.As<double>()); }
-	int operator()(KeyValueType::Int64, KeyValueType::Bool) const noexcept { return compare(v1_.As<int64_t>(), v2_.As<bool>()); }
-	int operator()(KeyValueType::Int64, KeyValueType::Int) const noexcept { return compare(v1_.As<int64_t>(), v2_.As<int>()); }
-	int operator()(KeyValueType::Int64, KeyValueType::Int64) const noexcept { return compare(v1_.As<int64_t>(), v2_.As<int64_t>()); }
-	int operator()(KeyValueType::Int64, KeyValueType::Double) const noexcept { return compare(v1_.As<int64_t>(), v2_.As<double>()); }
-	int operator()(KeyValueType::Double, KeyValueType::Bool) const noexcept { return compare(v1_.As<double>(), v2_.As<bool>()); }
-	int operator()(KeyValueType::Double, KeyValueType::Int) const noexcept { return compare(v1_.As<double>(), v2_.As<int>()); }
-	int operator()(KeyValueType::Double, KeyValueType::Int64) const noexcept { return compare(v1_.As<double>(), v2_.As<int64_t>()); }
-	int operator()(KeyValueType::Double, KeyValueType::Double) const noexcept { return compare(v1_.As<double>(), v2_.As<double>()); }
-	int operator()(OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
-						 KeyValueType::Uuid>,
-				   OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
-						 KeyValueType::Uuid>) const noexcept {
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Bool, KeyValueType::Bool) const noexcept {
+		return compare(v1_.As<bool>(), v2_.As<bool>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Bool, KeyValueType::Int) const noexcept {
+		return compare(v1_.As<bool>(), v2_.As<int>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Bool, KeyValueType::Int64) const noexcept {
+		return compare(v1_.As<bool>(), v2_.As<int64_t>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Bool, KeyValueType::Double) const noexcept {
+		return compare(v1_.As<bool>(), v2_.As<double>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int, KeyValueType::Bool) const noexcept {
+		return compare(v1_.As<int>(), v2_.As<bool>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int, KeyValueType::Int) const noexcept {
+		return compare(v1_.As<int>(), v2_.As<int>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int, KeyValueType::Int64) const noexcept {
+		return compare(v1_.As<int>(), v2_.As<int64_t>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int, KeyValueType::Double) const noexcept {
+		return compare(v1_.As<int>(), v2_.As<double>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int64, KeyValueType::Bool) const noexcept {
+		return compare(v1_.As<int64_t>(), v2_.As<bool>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int64, KeyValueType::Int) const noexcept {
+		return compare(v1_.As<int64_t>(), v2_.As<int>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int64, KeyValueType::Int64) const noexcept {
+		return compare(v1_.As<int64_t>(), v2_.As<int64_t>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int64, KeyValueType::Double) const noexcept {
+		return compare(v1_.As<int64_t>(), v2_.As<double>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Double, KeyValueType::Bool) const noexcept {
+		return compare(v1_.As<double>(), v2_.As<bool>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Double, KeyValueType::Int) const noexcept {
+		return compare(v1_.As<double>(), v2_.As<int>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Double, KeyValueType::Int64) const noexcept {
+		return compare(v1_.As<double>(), v2_.As<int64_t>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Double, KeyValueType::Double) const noexcept {
+		return compare(v1_.As<double>(), v2_.As<double>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined,
+														KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Uuid>,
+												  OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined,
+														KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Uuid>) const noexcept {
 		assertrx(0);
 		abort();
 	}
-	int operator()(OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>,
-				   OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
-						 KeyValueType::Uuid>) const noexcept {
+	RX_ALWAYS_INLINE ComparationResult operator()(OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>,
+												  OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined,
+														KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Uuid>) const noexcept {
 		assertrx(0);
 		abort();
 	}
-	int operator()(OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
-						 KeyValueType::Uuid>,
-				   OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) const noexcept {
+	RX_ALWAYS_INLINE ComparationResult
+	operator()(OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
+					 KeyValueType::Uuid>,
+			   OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) const noexcept {
 		assertrx(0);
 		abort();
 	}
@@ -465,8 +574,8 @@ private:
 	const Variant &v2_;
 };
 
-template <WithString withString>
-int Variant::RelaxCompare(const Variant &other, const CollateOpts &collateOpts) const {
+template <WithString withString, NotComparable notComparable>
+ComparationResult Variant::RelaxCompare(const Variant &other, const CollateOpts &collateOpts) const {
 	thread_local char uuidStrBuf[Uuid::kStrFormLen];
 	thread_local const std::string_view uuidStrBufView{uuidStrBuf, Uuid::kStrFormLen};
 	thread_local const p_string uuidStrBufPString{&uuidStrBufView};
@@ -479,13 +588,17 @@ int Variant::RelaxCompare(const Variant &other, const CollateOpts &collateOpts) 
 				return Uuid{*this}.Compare(*otherUuid);
 			} else {
 				Uuid{*this}.PutToStr(uuidStrBuf);
-				return -other.Compare(Variant{uuidStrBufPString});
+				return -other.Compare<notComparable>(Variant{uuidStrBufPString, no_hold_t{}});
 			}
 		} else if constexpr (withString == WithString::Yes) {
 			Uuid{*this}.PutToStr(uuidStrBuf);
-			return -other.relaxCompareWithString(uuidStrBufView);
+			return -other.relaxCompareWithString<notComparable>(uuidStrBufView);
 		} else {
-			throw Error(errParams, "Not comparable types: %s and %s", Type().Name(), other.Type().Name());
+			if constexpr (notComparable == NotComparable::Return) {
+				return ComparationResult::NotComparable;
+			} else {
+				throw Error(errParams, "Not comparable types: %s and %s", Type().Name(), other.Type().Name());
+			}
 		}
 	} else if (other.isUuid() || other.variant_.type.Is<KeyValueType::Uuid>()) {
 		if (variant_.type.Is<KeyValueType::String>()) {
@@ -494,38 +607,48 @@ int Variant::RelaxCompare(const Variant &other, const CollateOpts &collateOpts) 
 				return uuid->Compare(Uuid{other});
 			} else {
 				Uuid{other}.PutToStr(uuidStrBuf);
-				return Compare(Variant{uuidStrBufPString});
+				return Compare<notComparable>(Variant{uuidStrBufPString, no_hold_t{}});
 			}
 		} else if constexpr (withString == WithString::Yes) {
 			Uuid{other}.PutToStr(uuidStrBuf);
-			return relaxCompareWithString(uuidStrBufView);
+			return relaxCompareWithString<notComparable>(uuidStrBufView);
 		} else {
-			throw Error(errParams, "Not comparable types: %s and %s", Type().Name(), other.Type().Name());
+			if constexpr (notComparable == NotComparable::Return) {
+				return ComparationResult::NotComparable;
+			} else {
+				throw Error(errParams, "Not comparable types: %s and %s", Type().Name(), other.Type().Name());
+			}
 		}
 	} else {
 		if (variant_.type.IsSame(other.variant_.type)) {
 			if (variant_.type.Is<KeyValueType::Tuple>()) {
-				return getCompositeValues().RelaxCompare<withString>(other.getCompositeValues(), collateOpts);
+				return getCompositeValues().RelaxCompare<withString, notComparable>(other.getCompositeValues(), collateOpts);
 			} else {
-				return Compare(other, collateOpts);
+				return Compare<notComparable>(other, collateOpts);
 			}
 		} else if (variant_.type.IsNumeric() && other.variant_.type.IsNumeric()) {
 			return KeyValueType::Visit(Comparator{*this, other}, variant_.type, other.variant_.type);
 		} else {
 			if constexpr (withString == WithString::Yes) {
 				if (other.Type().Is<KeyValueType::String>()) {
-					return relaxCompareWithString(other.operator p_string());
+					return relaxCompareWithString<notComparable>(other.operator p_string());
 				} else if (Type().Is<KeyValueType::String>()) {
-					return -other.relaxCompareWithString(this->operator p_string());
+					return -other.relaxCompareWithString<notComparable>(this->operator p_string());
 				}
 			}
-			throw Error(errParams, "Not comparable types: %s and %s", Type().Name(), other.Type().Name());
+			if constexpr (notComparable == NotComparable::Return) {
+				return ComparationResult::NotComparable;
+			} else {
+				throw Error(errParams, "Not comparable types: %s and %s", Type().Name(), other.Type().Name());
+			}
 		}
 	}
 }
 
-template int Variant::RelaxCompare<WithString::Yes>(const Variant &, const CollateOpts &) const;
-template int Variant::RelaxCompare<WithString::No>(const Variant &, const CollateOpts &) const;
+template ComparationResult Variant::RelaxCompare<WithString::Yes, NotComparable::Return>(const Variant &, const CollateOpts &) const;
+template ComparationResult Variant::RelaxCompare<WithString::No, NotComparable::Return>(const Variant &, const CollateOpts &) const;
+template ComparationResult Variant::RelaxCompare<WithString::Yes, NotComparable::Throw>(const Variant &, const CollateOpts &) const;
+template ComparationResult Variant::RelaxCompare<WithString::No, NotComparable::Throw>(const Variant &, const CollateOpts &) const;
 
 size_t Variant::Hash() const noexcept {
 	if (isUuid()) {
@@ -538,7 +661,8 @@ size_t Variant::Hash() const noexcept {
 			[&](KeyValueType::Double) noexcept { return std::hash<double>()(variant_.value_double); },
 			[&](KeyValueType::String) noexcept { return std::hash<p_string>()(this->operator p_string()); },
 			[&](KeyValueType::Uuid) noexcept { return std::hash<Uuid>()(Uuid{*this}); },
-			[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null>) noexcept -> size_t {
+			[](KeyValueType::Null) noexcept { return std::hash<int>()(0); },
+			[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined>) noexcept -> size_t {
 #ifdef NDEBUG
 				abort();
 #else
@@ -610,6 +734,234 @@ Variant &Variant::convert(KeyValueType type, const PayloadType *payloadType, con
 			throw Error(errParams, "Can't convert Variant from type '%s' to type '%s'", variant_.type.Name(), type.Name());
 		});
 	return *this;
+}
+
+std::optional<Variant> Variant::tryConvert(KeyValueType type, const PayloadType *payloadType, const FieldsSet *fields) const & {
+	if (Type().IsSame(type)) {
+		return *this;
+	} else {
+		Variant tmp = *this;
+		if (tmp.tryConvert(type, payloadType, fields)) {
+			return std::optional<Variant>{std::move(tmp)};
+		} else {
+			return std::nullopt;
+		}
+	}
+}
+
+bool Variant::tryConvert(KeyValueType type, const PayloadType *payloadType, const FieldsSet *fields) & {
+	using namespace std::string_view_literals;
+	if (isUuid()) {
+		return type.EvaluateOneOf([&](KeyValueType::Uuid) noexcept { return true; },
+								  [&](KeyValueType::String) {
+									  *this = Variant{std::string{Uuid{*this}}};
+									  return true;
+								  },
+								  [&](KeyValueType::Composite) {
+									  assertrx_throw(payloadType && fields);
+									  try {
+										  Variant tmp{VariantArray{std::move(*this)}};
+										  tmp.convertToComposite(*payloadType, *fields);
+										  *this = std::move(tmp);
+										  return true;
+									  } catch (...) {
+										  return false;
+									  }
+								  },
+								  [](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Double,
+										   KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) { return false; });
+	}
+	if (type.IsSame(variant_.type) || type.Is<KeyValueType::Null>() || variant_.type.Is<KeyValueType::Null>()) {
+		return true;
+	}
+	const bool res = type.EvaluateOneOf(
+		[&](KeyValueType::Int) {
+			return variant_.type.EvaluateOneOf(
+				[&](KeyValueType::Bool) noexcept {
+					variant_.value_int = variant_.value_bool;
+					return true;
+				},
+				[](KeyValueType::Int) noexcept { return true; },
+				[&](KeyValueType::Int64) noexcept {
+					if (variant_.value_int64 < std::numeric_limits<int>::min() || variant_.value_int64 > std::numeric_limits<int>::max()) {
+						return false;
+					} else {
+						variant_.value_int = variant_.value_int64;
+						return true;
+					}
+				},
+				[&](KeyValueType::Double) noexcept {
+					if (variant_.value_double < std::numeric_limits<int>::min() ||
+						variant_.value_double > std::numeric_limits<int>::max()) {
+						return false;
+					} else {
+						variant_.value_int = variant_.value_double;
+						return true;
+					}
+				},
+				[&](KeyValueType::String) noexcept {
+					const auto res = tryParseAs<int>(operator p_string());
+					if (res) {
+						*this = Variant{*res};
+						return true;
+					} else {
+						return false;
+					}
+				},
+				[&](KeyValueType::Null) noexcept {
+					variant_.value_int = 0;
+					return true;
+				},
+				[](OneOf<KeyValueType::Uuid, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) noexcept {
+					return false;
+				});
+		},
+		[&](KeyValueType::Bool) {
+			return variant_.type.EvaluateOneOf(
+				[](KeyValueType::Bool) noexcept { return true; },
+				[&](KeyValueType::Int) noexcept {
+					variant_.value_bool = bool(variant_.value_int);
+					return true;
+				},
+				[&](KeyValueType::Int64) noexcept {
+					variant_.value_bool = bool(variant_.value_int64);
+					return true;
+				},
+				[&](KeyValueType::Double) noexcept {
+					variant_.value_bool = bool(variant_.value_double);
+					return true;
+				},
+				[&](KeyValueType::String) noexcept {
+					const auto res = tryConvertToBool(operator p_string());
+					if (res.has_value()) {
+						*this = Variant{*res};
+						return true;
+					} else {
+						return false;
+					}
+				},
+				[&](KeyValueType::Null) noexcept {
+					variant_.value_bool = false;
+					return true;
+				},
+				[](OneOf<KeyValueType::Uuid, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) noexcept {
+					return false;
+				});
+		},
+		[&](KeyValueType::Int64) {
+			return variant_.type.EvaluateOneOf(
+				[&](KeyValueType::Bool) noexcept {
+					variant_.value_int64 = variant_.value_bool;
+					return true;
+				},
+				[&](KeyValueType::Int) noexcept {
+					variant_.value_int64 = variant_.value_int;
+					return true;
+				},
+				[](KeyValueType::Int64) noexcept { return true; },
+				[&](KeyValueType::Double) noexcept {
+					variant_.value_int64 = variant_.value_double;
+					return true;
+				},
+				[&](KeyValueType::String) noexcept {
+					const auto res = tryParseAs<int64_t>(operator p_string());
+					if (res) {
+						*this = Variant{*res};
+						return true;
+					} else {
+						return false;
+					}
+				},
+				[&](KeyValueType::Null) noexcept {
+					variant_.value_int64 = 0;
+					return true;
+				},
+				[](OneOf<KeyValueType::Uuid, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) noexcept {
+					return false;
+				});
+		},
+		[&](KeyValueType::Double) {
+			return variant_.type.EvaluateOneOf(
+				[&](KeyValueType::Bool) noexcept {
+					variant_.value_double = variant_.value_bool;
+					return true;
+				},
+				[&](KeyValueType::Int) noexcept {
+					variant_.value_double = variant_.value_int;
+					return true;
+				},
+				[&](KeyValueType::Int64) noexcept {
+					variant_.value_double = variant_.value_int64;
+					return true;
+				},
+				[](KeyValueType::Double) noexcept { return true; },
+				[&](KeyValueType::String) noexcept {
+					const auto res = tryParseAs<double>(operator p_string());
+					if (res) {
+						*this = Variant{*res};
+						return true;
+					} else {
+						return false;
+					}
+				},
+				[&](KeyValueType::Null) noexcept {
+					variant_.value_double = 0.0;
+					return true;
+				},
+				[](OneOf<KeyValueType::Uuid, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) noexcept {
+					return false;
+				});
+		},
+		[&](KeyValueType::String) {
+			*this = Variant{As<std::string>()};
+			return true;
+		},
+		[&](KeyValueType::Composite) {
+			return variant_.type.EvaluateOneOf(
+				[&](KeyValueType::Tuple) {
+					assertrx_throw(payloadType && fields);
+					try {
+						convertToComposite(*payloadType, *fields);
+						return true;
+					} catch (...) {
+						return false;
+					}
+				},
+				[](KeyValueType::Composite) noexcept { return true; },
+				[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::String,
+						  KeyValueType::Uuid>) {
+					assertrx_throw(payloadType && fields);
+					try {
+						Variant tmp{VariantArray{std::move(*this)}};
+						tmp.convertToComposite(*payloadType, *fields);
+						*this = std::move(tmp);
+						return true;
+					} catch (...) {
+						return false;
+					}
+				},
+				[&](OneOf<KeyValueType::Undefined, KeyValueType::Null>) { return false; });
+		},
+		[&](KeyValueType::Uuid) {
+			return variant_.type.EvaluateOneOf(
+				[](KeyValueType::Uuid) noexcept { return true; },
+				[&](KeyValueType::String) noexcept {
+					const auto res = Uuid::TryParse(operator p_string());
+					if (res) {
+						*this = Variant{*res};
+						return true;
+					} else {
+						return false;
+					}
+				},
+				[](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Tuple,
+						 KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null>) noexcept { return false; });
+		},
+		[&](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) { return false; });
+	if (res && !isUuid()) {
+		variant_.type = type;
+	}
+	return res;
 }
 
 void Variant::convertToComposite(const PayloadType &payloadType, const FieldsSet &fields) {
@@ -732,11 +1084,6 @@ template void VariantArray::Dump(WrSerializer &, CheckIsStringPrintable) const;
 template void VariantArray::Dump(std::ostream &, CheckIsStringPrintable) const;
 template void VariantArray::Dump(std::stringstream &, CheckIsStringPrintable) const;
 
-VariantArray::VariantArray(Point p) noexcept {
-	emplace_back(p.X());
-	emplace_back(p.Y());
-}
-
 VariantArray::operator Point() const {
 	if (size() != 2) {
 		throw Error(errParams, "Can't convert array of %d elements to Point", size());
@@ -744,23 +1091,29 @@ VariantArray::operator Point() const {
 	return Point{(*this)[0].As<double>(), (*this)[1].As<double>()};
 }
 
-template <WithString withString>
-int VariantArray::RelaxCompare(const VariantArray &other, const CollateOpts &collateOpts) const {
+template <WithString withString, NotComparable notComparable>
+ComparationResult VariantArray::RelaxCompare(const VariantArray &other, const CollateOpts &collateOpts) const {
 	auto lhsIt{cbegin()}, rhsIt{other.cbegin()};
 	auto const lhsEnd{cend()}, rhsEnd{other.cend()};
 	for (; lhsIt != lhsEnd && rhsIt != rhsEnd; ++lhsIt, ++rhsIt) {
-		const auto res = lhsIt->RelaxCompare<withString>(*rhsIt, collateOpts);
-		if (res != 0) return res;
+		const auto res = lhsIt->RelaxCompare<withString, notComparable>(*rhsIt, collateOpts);
+		if (res != ComparationResult::Eq) return res;
 	}
 	if (lhsIt == lhsEnd) {
-		if (rhsIt == rhsEnd) return 0;
-		return -1;
+		if (rhsIt == rhsEnd) return ComparationResult::Eq;
+		return ComparationResult::Lt;
 	} else {
-		return 1;
+		return ComparationResult::Gt;
 	}
 }
 
-template int VariantArray::RelaxCompare<WithString::Yes>(const VariantArray &, const CollateOpts &) const;
-template int VariantArray::RelaxCompare<WithString::No>(const VariantArray &, const CollateOpts &) const;
+template ComparationResult VariantArray::RelaxCompare<WithString::Yes, NotComparable::Return>(const VariantArray &,
+																							  const CollateOpts &) const;
+template ComparationResult VariantArray::RelaxCompare<WithString::No, NotComparable::Return>(const VariantArray &,
+																							 const CollateOpts &) const;
+template ComparationResult VariantArray::RelaxCompare<WithString::Yes, NotComparable::Throw>(const VariantArray &,
+																							 const CollateOpts &) const;
+template ComparationResult VariantArray::RelaxCompare<WithString::No, NotComparable::Throw>(const VariantArray &,
+																							const CollateOpts &) const;
 
 }  // namespace reindexer

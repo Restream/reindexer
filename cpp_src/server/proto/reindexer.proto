@@ -25,6 +25,7 @@ service Reindexer {
 	rpc GetMeta(GetMetaRequest) returns(MetadataResponse) {}
 	rpc PutMeta(PutMetaRequest) returns(ErrorResponse) {}
 	rpc EnumMeta(EnumMetaRequest) returns(MetadataKeysResponse) {}
+	rpc DeleteMeta(DeleteMetaRequest) returns(ErrorResponse) {}
 	rpc GetProtobufSchema(GetProtobufSchemaRequest) returns(ProtobufSchemaResponse) {}
 
 	rpc BeginTransaction(BeginTransactionRequest) returns(TransactionIdResponse) {}
@@ -163,7 +164,7 @@ message ModifyItemRequest {
 // as a binary serialized buffer.
 message Query {
 	// Query can be encoded as following:
-	// 1. JSON # Using DSL-queyr format, described here: https://github.com/Restream/reindexer/blob/v3.11.0/cpp_src/server/contrib/server.yml#L2310
+	// 1. JSON # Using DSL-query format, described here: https://github.com/Restream/reindexer/blob/v3.23.0/cpp_src/server/contrib/server.yml#L2420
 	// 2. MSGPACK # Not supported yet
 	EncodingType encdoingType = 1;
 	bytes data = 2;
@@ -345,7 +346,7 @@ message Metadata {
 	string nsName = 1;
 	// metadata key
 	string key = 2;
-	// metadata, for Get operation this field is supposed to be empty
+	// metadata, for Get and Delete operations this field is supposed to be empty
 	string value = 3;
 }
 
@@ -367,6 +368,12 @@ message PutMetaRequest {
 message EnumMetaRequest {
 	string dbName = 1;
 	string nsName = 2;
+}
+
+// Delete metadata by key
+message DeleteMetaRequest {
+	string dbName = 1;
+	Metadata metadata = 2;
 }
 
 // Metadata keys

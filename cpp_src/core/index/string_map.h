@@ -13,9 +13,15 @@ struct less_key_string {
 	using is_transparent = void;
 
 	less_key_string(const CollateOpts& collateOpts = CollateOpts()) : collateOpts_(collateOpts) {}
-	bool operator()(const key_string& lhs, const key_string& rhs) const { return collateCompare(*lhs, *rhs, collateOpts_) < 0; }
-	bool operator()(std::string_view lhs, const key_string& rhs) const { return collateCompare(lhs, *rhs, collateOpts_) < 0; }
-	bool operator()(const key_string& lhs, std::string_view rhs) const { return collateCompare(*lhs, rhs, collateOpts_) < 0; }
+	bool operator()(const key_string& lhs, const key_string& rhs) const noexcept {
+		return collateCompare(*lhs, *rhs, collateOpts_) == ComparationResult::Lt;
+	}
+	bool operator()(std::string_view lhs, const key_string& rhs) const noexcept {
+		return collateCompare(lhs, *rhs, collateOpts_) == ComparationResult::Lt;
+	}
+	bool operator()(const key_string& lhs, std::string_view rhs) const noexcept {
+		return collateCompare(*lhs, rhs, collateOpts_) == ComparationResult::Lt;
+	}
 	CollateOpts collateOpts_;
 };
 
@@ -40,9 +46,15 @@ struct equal_key_string {
 	using is_transparent = void;
 
 	equal_key_string(const CollateOpts& collateOpts = CollateOpts()) : collateOpts_(collateOpts) {}
-	bool operator()(const key_string& lhs, const key_string& rhs) const { return collateCompare(*lhs, *rhs, collateOpts_) == 0; }
-	bool operator()(std::string_view lhs, const key_string& rhs) const { return collateCompare(lhs, *rhs, collateOpts_) == 0; }
-	bool operator()(const key_string& lhs, std::string_view rhs) const { return collateCompare(*lhs, rhs, collateOpts_) == 0; }
+	bool operator()(const key_string& lhs, const key_string& rhs) const noexcept {
+		return collateCompare(*lhs, *rhs, collateOpts_) == ComparationResult::Eq;
+	}
+	bool operator()(std::string_view lhs, const key_string& rhs) const noexcept {
+		return collateCompare(lhs, *rhs, collateOpts_) == ComparationResult::Eq;
+	}
+	bool operator()(const key_string& lhs, std::string_view rhs) const noexcept {
+		return collateCompare(*lhs, rhs, collateOpts_) == ComparationResult::Eq;
+	}
 
 private:
 	CollateOpts collateOpts_;
@@ -51,10 +63,10 @@ private:
 struct hash_key_string {
 	using is_transparent = void;
 
-	hash_key_string(CollateMode collateMode = CollateNone) : collateMode_(collateMode) {}
-	size_t operator()(const key_string& s) const { return collateHash(*s, collateMode_); }
-	size_t operator()(std::string_view s) const { return collateHash(s, collateMode_); }
-	size_t operator()(const key_string_with_hash& s) const { return s.GetHash(); }
+	hash_key_string(CollateMode collateMode = CollateNone) noexcept : collateMode_(collateMode) {}
+	size_t operator()(const key_string& s) const noexcept { return collateHash(*s, collateMode_); }
+	size_t operator()(std::string_view s) const noexcept { return collateHash(s, collateMode_); }
+	size_t operator()(const key_string_with_hash& s) const noexcept { return s.GetHash(); }
 
 private:
 	CollateMode collateMode_;

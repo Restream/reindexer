@@ -35,7 +35,7 @@ void Activity::GetJSON(WrSerializer& ser) const {
 	if (!user.empty()) builder.Put("user", user);
 	builder.Put("query", query);
 	builder.Put("query_id", id);
-	std::time_t t = system_clock::to_time_t(startTime);
+	std::time_t t = system_clock_w::to_time_t(startTime);
 	char buffer[80];
 	std::tm tm = reindexer::localtime(t);
 	std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &tm);

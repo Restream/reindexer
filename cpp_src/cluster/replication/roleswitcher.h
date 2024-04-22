@@ -84,7 +84,7 @@ private:
 	SharedSyncState<> &sharedSyncState_;
 	ReindexerImpl &thisNode_;
 	ReplicationStatsCollector statsCollector_;
-	std::chrono::time_point<std::chrono::high_resolution_clock> roleSwitchTm_;
+	steady_clock_w::time_point roleSwitchTm_;
 	coroutine::channel<bool> awaitCh_;
 	RaftInfo::Role curRole_ = RaftInfo::Role::None;
 	net::ev::timer leaderResyncTimer_;

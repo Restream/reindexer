@@ -4,7 +4,32 @@
 #include <mutex>
 #include <sstream>
 #include "tools/fsops.h"
-#ifndef WIN32
+
+namespace reindexer {
+namespace debug {
+
+static std::recursive_mutex g_mutex;
+static crash_query_reporter_t g_crash_query_reporter = [](std::ostream &sout) { sout << "<Empty crash query reporter>" << std::endl; };
+static backtrace_writer_t g_writer = [](std::string_view sv) { std::cerr << sv; };
+static std::string g_assertion_message("<empty>");
+
+void backtrace_set_assertion_message(std::string &&msg) noexcept {
+	std::lock_guard lck(g_mutex);
+	g_assertion_message = std::move(msg);
+}
+
+static void print_assertion_message(std::ostream &sout) {
+	std::string msg("<empty>");
+	{
+		std::lock_guard lck(g_mutex);
+		std::swap(msg, g_assertion_message);
+	}
+	sout << "Assertion message: " << msg << std::endl;
+}
+}  // namespace debug
+}  // namespace reindexer
+
+#ifndef _WIN32
 #include <signal.h>
 #include <unistd.h>
 #include <limits>
@@ -51,10 +76,6 @@ extern "C" void __assert_fail(const char *expr, const char *file, int line, cons
 
 namespace reindexer {
 namespace debug {
-
-static std::recursive_mutex g_mutex;
-static crash_query_reporter_t g_crash_query_reporter = [](std::ostream &sout) { sout << "<Empty crash query reporter>" << std::endl; };
-static backtrace_writer_t g_writer = [](std::string_view sv) { std::cerr << sv; };
 
 #if REINDEX_WITH_UNWIND
 class Unwinder {
@@ -178,6 +199,10 @@ static void sighandler(int sig, siginfo_t *, void *ctx) {
 	writer(sout.str());
 	sout.str(std::string());
 	sout.clear();
+	print_assertion_message(sout);
+	writer(sout.str());
+	sout.str(std::string());
+	sout.clear();
 	print_backtrace(sout, ctx, sig);
 	writer(sout.str());
 
@@ -216,20 +241,19 @@ crash_query_reporter_t backtrace_get_crash_query_reporter() {
 }  // namespace debug
 }  // namespace reindexer
 
-#elif defined(WIN32) && defined(REINDEX_WITH_CPPTRACE)
+#elif defined(_WIN32) && defined(REINDEX_WITH_CPPTRACE)
+
 #include <windows.h>
+// Headers order matters: windows.h must be included before dbghelp.h
 #include <dbghelp.h>
-#include <chrono>
 #undef min
 #undef max
 #include <csignal>
 #include "cpptrace/cpptrace.hpp"
+#include "tools/clock.h"
 
 namespace reindexer {
 namespace debug {
-static std::recursive_mutex g_mutex;
-static crash_query_reporter_t g_crash_query_reporter = [](std::ostream &) {};
-static backtrace_writer_t g_writer = [](std::string_view sv) { std::cerr << sv; };
 static std::string g_pathMiniDump;
 
 void outputDebugInfo(const backtrace_writer_t &writer, EXCEPTION_POINTERS *ExceptionInfo) {
@@ -238,10 +262,14 @@ void outputDebugInfo(const backtrace_writer_t &writer, EXCEPTION_POINTERS *Excep
 	writer(sout.str());
 	sout.str(std::string());
 	sout.clear();
+	print_assertion_message(sout);
+	writer(sout.str());
+	sout.str(std::string());
+	sout.clear();
 	print_backtrace(sout, nullptr, 0);
 	writer(sout.str());
 
-	const auto tm = std::chrono::system_clock::now();
+	const auto tm = system_clock_w::now();
 	const auto duration = tm.time_since_epoch();
 	int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 

@@ -158,7 +158,6 @@ func (dbw *ReindexerWrapper) Query(namespace string) *queryTest {
 
 func (dbw *ReindexerWrapper) GetBaseQuery(namespace string) *reindexer.Query {
 	return dbw.Reindexer.Query(namespace)
-
 }
 
 func (dbw *ReindexerWrapper) execQuery(t *testing.T, qt *queryTest) *reindexer.Iterator {
@@ -231,7 +230,7 @@ func (dbw *ReindexerWrapper) execQueryCtx(t *testing.T, ctx context.Context, qt 
 				panic(fmt.Errorf("Slave answer not equal to master"))
 			}
 		}
-		//TODO NOT GOOD - can be not equal do somthing
+		//TODO NOT GOOD - can be not equal do something
 		//reflect.DeepEqual(rm, rs)
 	}
 
@@ -359,6 +358,36 @@ func (dbw *ReindexerWrapper) Update(namespace string, item interface{}, precepts
 
 func (dbw *ReindexerWrapper) Delete(namespace string, item interface{}, precepts ...string) (err error) {
 	err = dbw.Reindexer.Delete(namespace, item, precepts...)
+	dbw.SetSyncRequired()
+	return
+}
+
+func (dbw *ReindexerWrapper) EnumMeta(t *testing.T, namespace string) ([]string, error) {
+	if len(dbw.slaveList) != 0 {
+		sdb := dbw.slaveList[rand.Intn(len(dbw.slaveList))]
+		dbw.waitSyncWithSingleDb(t, sdb)
+		return sdb.Reindexer.EnumMeta(namespace)
+	}
+	return dbw.Reindexer.EnumMeta(namespace)
+}
+
+func (dbw *ReindexerWrapper) PutMeta(namespace string, key string, data []byte) (err error) {
+	err = dbw.Reindexer.PutMeta(namespace, key, data)
+	dbw.SetSyncRequired()
+	return
+}
+
+func (dbw *ReindexerWrapper) GetMeta(t *testing.T, namespace string, key string) ([]byte, error) {
+	if len(dbw.slaveList) != 0 {
+		sdb := dbw.slaveList[rand.Intn(len(dbw.slaveList))]
+		dbw.waitSyncWithSingleDb(t, sdb)
+		return sdb.Reindexer.GetMeta(namespace, key)
+	}
+	return dbw.Reindexer.GetMeta(namespace, key)
+}
+
+func (dbw *ReindexerWrapper) DeleteMeta(namespace string, key string) (err error) {
+	err = dbw.Reindexer.DeleteMeta(namespace, key)
 	dbw.SetSyncRequired()
 	return
 }

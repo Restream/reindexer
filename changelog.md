@@ -1,3 +1,46 @@
+# Version 4.15.0 *beta* (22.04.2024)
+
+## Core
+- [fea] Optimized comparators execution logic to avoid excessive runtime checks
+- [fea] Rewritten comparators for the composite indexes. New version does not extracts fields from the tuple in the each iteration. Overall performance boost for queries with composite conditions is up to ~40%
+- [fea] Added extra column subindex for the `hash`/`tree`-indexes. It requires extra memory, but gives ~20-50%% overall speedup (depending on the indexes selectivity). The column subindex may be disabled with the `dense` index option
+- [fea] Optimized general sorting logic for the `hash`/`store`-indexes: now it uses column subindexes if possible for the cache efficiency. In some cases this approach provides up to 45% performance gain for the low-selectivity indexes
+- [fea] Added extra column subindex for the `string` `store(-)` indexes. Previosly `store(-)` indexes have used the column for `int`, `int64`, `double`, `uuid` and `bool` types only. The column subindex may be disabled with the `dense` index option
+- [fix] Fixed types conversions for non-index fields in the select quieries
+
+## Go connector
+- [fix] Fixed `WhereUUID`-method. Now it works for non-index fields too
+
+## Ported
+- [fea/fix] Ported all the fixes and features from [v3.23.0](https://github.com/Restream/reindexer/releases/tag/v3.23.0), [v3.23.1](https://github.com/Restream/reindexer/releases/tag/v3.23.1) and [v3.24.0](https://github.com/Restream/reindexer/releases/tag/v3.24.0)
+
+## Deploy
+- [fea] Added [APT-repo](cpp_src/readme.md#altlinux) for `AltLinux P10`
+
+## Face
+- [fea] Changed the fonts
+- [fea] Added the ability to delete NS Meta data 
+- [fea] Added the Cache settings to the NS config
+- [fea] Made the new UI component for the pagination
+- [fea] Added redirect to the created NS
+- [fea] Added the new settings to the Full text config
+- [fea] Moved field descriptions to the tooltips on the DB Config page
+- [fea] Added Git documentation link for the Bm25 config
+- [fea] Improved the layout of the Stop words and Synonyms lists
+- [fea] Changed empty data to the null value in the Grid view
+- [fix] Fixed the Pin NS button
+- [fix] Fixed the search panel layout on the NS page
+- [fix] Fixed the incorrect message about the empty result of the Explain operation
+- [fix] Fixed caching of the NS config 
+- [fix] Fixed the inform window that appeared on the Cancel button on the NS Config page
+- [fix] Removed ESlint popup
+- [fix] Fixed the layout issues on the Index form
+- [fix] Fixed "see & edit" link on the Queries Perfstats page
+- [fix] Fixed the concole issue appeared on the SQL -> Explain query
+- [fix] Fixed extra data uploading on the Performace page
+- [fix] Fixed the console issues on the add/edit indexes
+- [fix] Fixed the mergeLimit variable
+
 # Version 4.14.0 *beta* (22.02.2024)
 
 ## Core

@@ -331,7 +331,10 @@ static reindexer::Variant createRandValue(int id, reindexer::KeyValueType fieldT
 		[id](KeyValueType::Double) { return Variant{(id - 50 + rand() % 100) / 3000.0}; },
 		[id](KeyValueType::String) { return Variant{std::to_string(id - 50 + rand() % 100)}; },
 		[](KeyValueType::Uuid) { return (rand() % 2) ? Variant{randUuid()} : Variant{randStrUuid()}; },
-		[](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite>) -> Variant { assert(0); }});
+		[](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite>) -> Variant {
+			assert(0);
+			std::abort();
+		}});
 }
 
 static constexpr size_t kMaxArraySize = 20;

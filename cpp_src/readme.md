@@ -76,6 +76,18 @@ dnf install reindexer-server
 
 Available distros: `redos-7`.
 
+### AltLinux
+
+Packages `ca-certificates` and `apt-https` must be preinstalled to be able to use https repository.
+
+```bash
+echo "rpm https://repo.reindexer.io/altlinux <distro>/x86_64 reindexer" > /etc/apt/sources.list.d/reindexer.list
+apt-get update
+apt-get install reindexer-server
+```
+
+Available distros: `p10`.
+
 To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
 
 ## OSX brew
@@ -420,5 +432,5 @@ where both `self.namespaceName` and `it.WhichOneof('item')` represent a name of 
 # Optional dependencies
 
 - `Doxygen` package is also required for building a documentation of the project.
-- `gtest`,`gbenchmark` for run C++ tests and benchmarks
+- `gtest`,`gbenchmark` for run C++ tests and benchmarks (works for gbenchmark versions 1.7.x)
 - `gperftools` for memory and performance profiling

@@ -2,6 +2,7 @@
 
 #include "core/cancelcontextpool.h"
 #include "core/cbinding/reindexer_ctypes.h"
+#include "core/reindexer.h"
 
 namespace reindexer {
 

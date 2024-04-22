@@ -63,7 +63,7 @@ private:
 	net::ev::async roleSwitchAsync_;
 	ReplThread<ClusterThreadParam> base_;
 	SharedSyncState<> &sharedSyncState_;
-	std::chrono::time_point<std::chrono::high_resolution_clock> roleSwitchTm_;
+	steady_clock_w::time_point roleSwitchTm_;
 };
 
 }  // namespace cluster

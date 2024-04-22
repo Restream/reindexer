@@ -22,7 +22,6 @@ public:
 	Aggregator(const PayloadType &, const FieldsSet &, AggType aggType, const h_vector<std::string, 1> &names,
 			   const h_vector<SortingEntry, 1> &sort = {}, size_t limit = QueryEntry::kDefaultLimit,
 			   size_t offset = QueryEntry::kDefaultOffset, bool compositeIndexFields = false);
-	Aggregator();
 	Aggregator(Aggregator &&) noexcept;
 	~Aggregator();
 
@@ -35,6 +34,8 @@ public:
 
 	AggType Type() const noexcept { return aggType_; }
 	const h_vector<std::string, 1> &Names() const noexcept { return names_; }
+
+	bool DistinctChanged() noexcept { return distinctChecker_(); }
 
 private:
 	enum Direction { Desc = -1, Asc = 1 };
@@ -66,7 +67,7 @@ private:
 			if (!v1.Type().IsSame(v2.Type())) return false;
 			return v1.Type().EvaluateOneOf(
 				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int,
-						  KeyValueType::Uuid>) { return v1.Compare(v2) == 0; },
+						  KeyValueType::Uuid>) { return v1.Compare<NotComparable::Return>(v2) == ComparationResult::Eq; },
 				[&](KeyValueType::Composite) {
 					return ConstPayload(type_, static_cast<const PayloadValue &>(v1)).IsEQ(static_cast<const PayloadValue &>(v2), fields_);
 				},
@@ -93,6 +94,23 @@ private:
 		PayloadType type_;
 		FieldsSet fields_;
 	};
+
+	class DistinctChangeChecker {
+	public:
+		DistinctChangeChecker(const Aggregator &aggregator) noexcept : aggregator_(aggregator) {}
+		bool operator()() noexcept {
+			assertrx_throw(aggregator_.Type() == AggType::AggDistinct);
+			assertrx_dbg(aggregator_.distincts_);
+
+			size_t prev = lastCheckSize_;
+			lastCheckSize_ = aggregator_.distincts_->size();
+			return aggregator_.distincts_->size() > prev;
+		}
+
+	private:
+		const Aggregator &aggregator_;
+		size_t lastCheckSize_ = 0;
+	} distinctChecker_;
 
 	typedef std::unordered_set<Variant, DistinctHasher, RelaxVariantCompare> HashSetVariantRelax;
 	std::unique_ptr<HashSetVariantRelax> distincts_;

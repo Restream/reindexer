@@ -5,6 +5,7 @@
 #include "core/nsselecter/joinedselector.h"
 #include "core/nsselecter/joinedselectormock.h"
 #include "core/payload/payloadiface.h"
+#include "core/type_consts.h"
 #include "query.h"
 #include "tools/serializer.h"
 #include "tools/string_regexp_functions.h"
@@ -107,7 +108,7 @@ bool QueryField::HaveEmptyField() const noexcept {
 
 bool QueryEntry::operator==(const QueryEntry &other) const noexcept {
 	return QueryField::operator==(other) && condition_ == other.condition_ && distinct_ == other.distinct_ &&
-		   values_.RelaxCompare<WithString::Yes>(other.values_) == 0;
+		   values_.RelaxCompare<WithString::Yes, NotComparable::Return>(other.values_) == ComparationResult::Eq;
 }
 
 template <VerifyQueryEntryFlags flags>
@@ -160,17 +161,16 @@ template void VerifyQueryEntryValues<VerifyQueryEntryFlags::ignoreEmptyValues>(C
 std::string QueryEntry::Dump() const {
 	WrSerializer ser;
 	if (Distinct()) {
-		ser << "Distinct index: " << FieldName();
-	} else {
-		ser << FieldName() << ' ' << condition_ << ' ';
-		const bool severalValues = (Values().size() > 1);
-		if (severalValues) ser << '(';
-		for (auto &v : Values()) {
-			if (&v != &*Values().begin()) ser << ',';
-			ser << '\'' << v.As<std::string>() << '\'';
-		}
-		if (severalValues) ser << ')';
+		ser << "Distinct index: ";
 	}
+	ser << FieldName() << ' ' << condition_ << ' ';
+	const bool severalValues = (Values().size() > 1);
+	if (severalValues) ser << '(';
+	for (auto &v : Values()) {
+		if (&v != &*Values().begin()) ser << ',';
+		ser << '\'' << v.As<std::string>() << '\'';
+	}
+	if (severalValues) ser << ')';
 	return std::string{ser.Slice()};
 }
 
@@ -292,7 +292,7 @@ void QueryEntries::serialize(CondType cond, const VariantArray &values, WrSerial
 void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer &ser, const std::vector<Query> &subQueries) {
 	for (; it != to; ++it) {
 		const OpType op = it->operation;
-		it->InvokeAppropriate<void>(
+		it->Visit(
 			[&ser, op, &subQueries](const SubQueryEntry &sqe) {
 				ser.PutVarUint(QuerySubQueryCondition);
 				ser.PutVarUint(op);
@@ -369,7 +369,7 @@ bool SortingEntry::operator==(const SortingEntry &obj) const noexcept {
 }
 
 bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator end, const ConstPayload &pl) {
-	assertrx(begin != end && begin->operation != OpOr);
+	assertrx_dbg(begin != end && begin->operation != OpOr);
 	bool result = true;
 	for (auto it = begin; it != end; ++it) {
 		if (it->operation == OpOr) {
@@ -377,20 +377,26 @@ bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator
 		} else if (!result) {
 			break;
 		}
-		const bool lastResult = it->InvokeAppropriate<bool>(
-			[](const SubQueryEntry &) -> bool {
+		const bool lastResult = it->Visit(
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const SubQueryEntry &) RX_POST_LMBD_ALWAYS_INLINE -> bool {
 				assertrx_throw(0);
 				abort();
 			},
-			[](const SubQueryFieldEntry &) -> bool {
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const SubQueryFieldEntry &) RX_POST_LMBD_ALWAYS_INLINE -> bool {
 				assertrx_throw(0);
 				abort();
 			},
-			[&it, &pl](const QueryEntriesBracket &) { return checkIfSatisfyConditions(it.cbegin(), it.cend(), pl); },
-			[&pl](const QueryEntry &qe) { return checkIfSatisfyCondition(qe, pl); },
-			[&pl](const BetweenFieldsQueryEntry &qe) { return checkIfSatisfyCondition(qe, pl); },
-			[](const JoinQueryEntry &) -> bool { abort(); }, [](const AlwaysFalse &) noexcept { return false; },
-			[](const AlwaysTrue &) noexcept { return true; });
+			[&it, &pl] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntriesBracket &)
+				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyConditions(it.cbegin(), it.cend(), pl); },
+			[&pl] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntry &qe) RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(qe, pl); },
+			[&pl] RX_PRE_LMBD_ALWAYS_INLINE(const BetweenFieldsQueryEntry &qe)
+				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(qe, pl); },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const JoinQueryEntry &) RX_POST_LMBD_ALWAYS_INLINE -> bool {
+				assertrx_throw(0);
+				abort();
+			},
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse &) RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysTrue &) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; });
 		result = (lastResult != (it->operation == OpNot));
 	}
 	return result;
@@ -420,7 +426,7 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray &lValues, CondType
 		case CondType::CondSet:
 			for (const auto &lhs : lValues) {
 				for (const auto &rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes>(rhs) == 0) return true;
+					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) == ComparationResult::Eq) return true;
 				}
 			}
 			return false;
@@ -429,7 +435,7 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray &lValues, CondType
 			for (const auto &v : rValues) {
 				auto it = lValues.cbegin();
 				for (; it != lValues.cend(); ++it) {
-					if (it->RelaxCompare<WithString::Yes>(v) == 0) break;
+					if (it->RelaxCompare<WithString::Yes, NotComparable::Return>(v) == ComparationResult::Eq) break;
 				}
 				if (it == lValues.cend()) return false;
 			}
@@ -437,34 +443,36 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray &lValues, CondType
 		case CondType::CondLt:
 			for (const auto &lhs : lValues) {
 				for (const auto &rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes>(rhs) < 0) return true;
+					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) == ComparationResult::Lt) return true;
 				}
 			}
 			return false;
 		case CondType::CondLe:
 			for (const auto &lhs : lValues) {
 				for (const auto &rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes>(rhs) <= 0) return true;
+					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) & ComparationResult::Le) return true;
 				}
 			}
 			return false;
 		case CondType::CondGt:
 			for (const auto &lhs : lValues) {
 				for (const auto &rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes>(rhs) > 0) return true;
+					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) == ComparationResult::Gt) return true;
 				}
 			}
 			return false;
 		case CondType::CondGe:
 			for (const auto &lhs : lValues) {
 				for (const auto &rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes>(rhs) >= 0) return true;
+					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) & ComparationResult::Ge) return true;
 				}
 			}
 			return false;
 		case CondType::CondRange:
 			for (const auto &v : lValues) {
-				if (v.RelaxCompare<WithString::Yes>(rValues[0]) < 0 || v.RelaxCompare<WithString::Yes>(rValues[1]) > 0) return false;
+				if (v.RelaxCompare<WithString::Yes, NotComparable::Return>(rValues[0]) == ComparationResult::Lt ||
+					v.RelaxCompare<WithString::Yes, NotComparable::Return>(rValues[1]) == ComparationResult::Gt)
+					return false;
 			}
 			return true;
 		case CondType::CondLike:
@@ -491,6 +499,329 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray &lValues, CondType
 			assertrx(0);
 	}
 	return false;
+}
+
+template <InjectionDirection injectionDirection>
+size_t QueryEntries::InjectConditionsFromOnConditions(size_t position, const h_vector<QueryJoinEntry, 1> &joinEntries,
+													  const QueryEntries &joinedQueryEntries, size_t joinedQueryNo,
+													  const std::vector<std::unique_ptr<Index>> *indexesFrom) {
+	size_t injectedCount = 0;
+	for (size_t i = 0, s = joinEntries.size(); i < s; ++i) {
+		const QueryJoinEntry &jEntry = joinEntries[i];
+		if (i + 1 < s && joinEntries[i + 1].Operation() == OpOr) {
+			continue;
+		}
+		CondType condition = jEntry.Condition();
+		switch (jEntry.Operation()) {
+			case OpAnd:
+				break;
+			case OpOr:
+				continue;
+			case OpNot:
+				switch (condition) {
+					case CondLt:
+					case CondLe:
+					case CondGt:
+					case CondGe:
+						condition = InvertNotCondition(condition);
+						break;
+					case CondEq:
+					case CondSet:
+					case CondAllSet:
+					case CondRange:
+					case CondAny:
+					case CondEmpty:
+					case CondDWithin:
+					case CondLike:
+						continue;
+				}
+				break;
+		}
+		if constexpr (injectionDirection == InjectionDirection::FromMain) {
+			injectedCount +=
+				injectConditionsFromOnCondition(position + injectedCount, jEntry.RightFieldName(), jEntry.LeftFieldName(), condition,
+												joinedQueryEntries, QueryEntry::InjectedFromMain, joinedQueryNo, indexesFrom);
+		} else {
+			injectedCount +=
+				injectConditionsFromOnCondition(position + injectedCount, jEntry.LeftFieldName(), jEntry.RightFieldName(), condition,
+												joinedQueryEntries, joinedQueryNo, QueryEntry::InjectedFromMain, indexesFrom);
+		}
+	}
+	return injectedCount;
+}
+template size_t QueryEntries::InjectConditionsFromOnConditions<InjectionDirection::FromMain>(size_t, const h_vector<QueryJoinEntry, 1> &,
+																							 const QueryEntries &, size_t,
+																							 const std::vector<std::unique_ptr<Index>> *);
+template size_t QueryEntries::InjectConditionsFromOnConditions<InjectionDirection::IntoMain>(size_t, const h_vector<QueryJoinEntry, 1> &,
+																							 const QueryEntries &, size_t,
+																							 const std::vector<std::unique_ptr<Index>> *);
+
+size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std::string &fieldName, const std::string &joinedFieldName,
+													 CondType condition, const QueryEntries &joinedQueryEntries, size_t injectedFrom,
+													 size_t injectingInto, const std::vector<std::unique_ptr<Index>> *indexesFrom) {
+	switch (condition) {
+		case CondEq:
+		case CondSet:
+		case CondAllSet:
+		case CondLt:
+		case CondLe:
+		case CondGt:
+		case CondGe:
+			break;
+		case CondRange:
+		case CondAny:
+		case CondEmpty:
+		case CondDWithin:
+		case CondLike:
+			return 0;
+	}
+	size_t injectedCount = 0;
+	for (size_t j = 0, next, size = joinedQueryEntries.Size(); j < size; j = next) {
+		next = joinedQueryEntries.Next(j);
+		if (next < size && joinedQueryEntries.GetOperation(next) == OpOr) {
+			continue;
+		}
+		if (!joinedQueryEntries.Is<QueryEntry>(j)) {
+			continue;
+		}
+		const QueryEntry &qe = joinedQueryEntries.Get<QueryEntry>(j);
+		if (qe.IsInjectedFrom(injectingInto)) {
+			continue;
+		}
+		CondType entryCondition = qe.Condition();
+		switch (joinedQueryEntries.GetOperation(j)) {
+			case OpOr:
+				continue;
+			case OpAnd:
+				break;
+			case OpNot:
+				switch (entryCondition) {
+					case CondLt:
+					case CondLe:
+					case CondGt:
+					case CondGe:
+						entryCondition = InvertNotCondition(entryCondition);
+						break;
+					case CondEq:
+					case CondSet:
+					case CondAllSet:
+					case CondRange:
+					case CondAny:
+					case CondEmpty:
+					case CondDWithin:
+					case CondLike:
+						continue;
+				}
+				break;
+		}
+		if (qe.FieldName() != joinedFieldName) {
+			continue;
+		}
+		switch (condition) {
+			case CondEq:
+			case CondSet:
+				switch (entryCondition) {
+					case CondEq:
+					case CondSet:
+					case CondAllSet:
+						Emplace<QueryEntry>(position, OpAnd, fieldName, CondSet, qe.Values(), injectedFrom);
+						++injectedCount;
+						++position;
+						break;
+					case CondLt:
+					case CondLe:
+					case CondGt:
+					case CondGe:
+						Emplace<QueryEntry>(position, OpAnd, fieldName, entryCondition, qe.Values(), injectedFrom);
+						++injectedCount;
+						++position;
+						break;
+					case CondRange:
+					case CondAny:
+					case CondEmpty:
+					case CondDWithin:
+					case CondLike:
+						break;
+				}
+				break;
+			case CondAllSet:
+				switch (entryCondition) {
+					case CondEq:
+					case CondSet:
+					case CondAllSet:
+					case CondLt:
+					case CondLe:
+					case CondGt:
+					case CondGe:
+						Emplace<QueryEntry>(position, OpAnd, fieldName, entryCondition, qe.Values(), injectedFrom);
+						++injectedCount;
+						++position;
+						break;
+					case CondRange:
+					case CondAny:
+					case CondEmpty:
+					case CondDWithin:
+					case CondLike:
+						break;
+				}
+				break;
+			case CondLt:
+				switch (entryCondition) {
+					case CondEq:
+					case CondSet:
+					case CondAllSet: {
+						if (!qe.IsFieldIndexed() || !indexesFrom) {	 // TODO relax compare for not indexed after !1438 merge
+							break;
+						}
+						const CollateOpts &collate = (*indexesFrom)[qe.IndexNo()]->Opts().collateOpts_;
+						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt,
+											VariantArray{*std::max_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})},
+											injectedFrom);
+						++injectedCount;
+						++position;
+					} break;
+					case CondLt:
+					case CondLe:
+						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, qe.Values(), injectedFrom);
+						++injectedCount;
+						++position;
+						break;
+					case CondRange:
+						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, VariantArray{qe.Values()[1]}, injectedFrom);
+						++injectedCount;
+						++position;
+						break;
+					case CondGt:
+					case CondGe:
+					case CondAny:
+					case CondEmpty:
+					case CondDWithin:
+					case CondLike:
+						break;
+				}
+				break;
+			case CondLe:
+				switch (entryCondition) {
+					case CondEq:
+					case CondSet:
+					case CondAllSet: {
+						if (!qe.IsFieldIndexed() || !indexesFrom) {	 // TODO relax compare for not indexed after !1438 merge
+							break;
+						}
+						const CollateOpts &collate = (*indexesFrom)[qe.IndexNo()]->Opts().collateOpts_;
+						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLe,
+											VariantArray{*std::max_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})},
+											injectedFrom);
+						++injectedCount;
+						++position;
+					} break;
+					case CondLt:
+						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, qe.Values(), injectedFrom);
+						++injectedCount;
+						++position;
+						break;
+					case CondLe:
+						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLe, qe.Values(), injectedFrom);
+						++injectedCount;
+						++position;
+						break;
+					case CondRange:
+						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLe, VariantArray{qe.Values()[1]}, injectedFrom);
+						++injectedCount;
+						++position;
+						break;
+					case CondGt:
+					case CondGe:
+					case CondAny:
+					case CondEmpty:
+					case CondDWithin:
+					case CondLike:
+						break;
+				}
+				break;
+			case CondGt:
+				switch (entryCondition) {
+					case CondEq:
+					case CondSet:
+					case CondAllSet: {
+						if (!qe.IsFieldIndexed() || !indexesFrom) {	 // TODO relax compare for not indexed after !1438 merge
+							break;
+						}
+						const CollateOpts &collate = (*indexesFrom)[qe.IndexNo()]->Opts().collateOpts_;
+						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt,
+											VariantArray{*std::min_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})},
+											injectedFrom);
+						++injectedCount;
+						++position;
+					} break;
+					case CondGt:
+					case CondGe:
+						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, qe.Values(), injectedFrom);
+						++injectedCount;
+						++position;
+						break;
+					case CondRange:
+						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, VariantArray{qe.Values()[0]}, injectedFrom);
+						++injectedCount;
+						++position;
+						break;
+					case CondLt:
+					case CondLe:
+					case CondAny:
+					case CondEmpty:
+					case CondDWithin:
+					case CondLike:
+						break;
+				}
+				break;
+			case CondGe:
+				switch (entryCondition) {
+					case CondEq:
+					case CondSet:
+					case CondAllSet: {
+						if (!qe.IsFieldIndexed() || !indexesFrom) {	 // TODO relax compare for not indexed after !1438 merge
+							break;
+						}
+						const CollateOpts &collate = (*indexesFrom)[qe.IndexNo()]->Opts().collateOpts_;
+						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGe,
+											VariantArray{*std::min_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})},
+											injectedFrom);
+						++injectedCount;
+						++position;
+					} break;
+					case CondGt:
+						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, qe.Values(), injectedFrom);
+						++injectedCount;
+						++position;
+						break;
+					case CondGe:
+						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGe, qe.Values(), injectedFrom);
+						++injectedCount;
+						++position;
+						break;
+					case CondRange:
+						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGe, VariantArray{qe.Values()[0]}, injectedFrom);
+						++injectedCount;
+						++position;
+						break;
+					case CondLt:
+					case CondLe:
+					case CondAny:
+					case CondEmpty:
+					case CondDWithin:
+					case CondLike:
+						break;
+				}
+				break;
+			case CondRange:
+			case CondAny:
+			case CondEmpty:
+			case CondDWithin:
+			case CondLike:
+				break;
+		}
+	}
+	return injectedCount;
 }
 
 template <typename JS>
@@ -547,23 +878,26 @@ void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, 
 		if (it != begin || it->operation != OpAnd) {
 			ser << it->operation << ' ';
 		}
-		it->InvokeAppropriate<void>([&ser, subQueries](const SubQueryEntry &sqe) { ser << sqe.Dump(subQueries); },
-									[&ser, subQueries](const SubQueryFieldEntry &sqe) { ser << sqe.Dump(subQueries); },
-									[&](const QueryEntriesBracket &b) {
-										ser << "(\n";
-										dump(level + 1, it.cbegin(), it.cend(), joinedSelectors, ser);
-										dumpEqualPositions(level + 1, ser, b.equalPositions);
-										for (size_t i = 0; i < level; ++i) {
-											ser << "   ";
-										}
-										ser << ")\n";
-									},
-									[&ser](const QueryEntry &qe) { ser << qe.Dump() << '\n'; },
-									[&joinedSelectors, &ser](const JoinQueryEntry &jqe) { ser << jqe.Dump(joinedSelectors) << '\n'; },
-									[&ser](const BetweenFieldsQueryEntry &qe) { ser << qe.Dump() << '\n'; },
-									[&ser](const AlwaysFalse &) { ser << "AlwaysFalse" << 'n'; },
-									[&ser](const AlwaysTrue &) { ser << "AlwaysTrue" << 'n'; });
+		it->Visit([&ser, subQueries](const SubQueryEntry &sqe) { ser << sqe.Dump(subQueries); },
+				  [&ser, subQueries](const SubQueryFieldEntry &sqe) { ser << sqe.Dump(subQueries); },
+				  [&](const QueryEntriesBracket &b) {
+					  ser << "(\n";
+					  dump(level + 1, it.cbegin(), it.cend(), joinedSelectors, subQueries, ser);
+					  dumpEqualPositions(level + 1, ser, b.equalPositions);
+					  for (size_t i = 0; i < level; ++i) {
+						  ser << "   ";
+					  }
+					  ser << ")\n";
+				  },
+				  [&ser](const QueryEntry &qe) { ser << qe.Dump() << '\n'; },
+				  [&joinedSelectors, &ser](const JoinQueryEntry &jqe) { ser << jqe.Dump(joinedSelectors) << '\n'; },
+				  [&ser](const BetweenFieldsQueryEntry &qe) { ser << qe.Dump() << '\n'; },
+				  [&ser](const AlwaysFalse &) { ser << "AlwaysFalse\n"; }, [&ser](const AlwaysTrue &) { ser << "AlwaysTrue\n"; });
 	}
 }
+template void QueryEntries::dump(size_t, const_iterator, const_iterator, const std::vector<JoinedSelector> &, const std::vector<Query> &,
+								 WrSerializer &);
+template void QueryEntries::dump(size_t, const_iterator, const_iterator, const std::vector<JoinedSelectorMock> &,
+								 const std::vector<Query> &, WrSerializer &);
 
 }  // namespace reindexer

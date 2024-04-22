@@ -8,7 +8,6 @@
 #include "cluster/config.h"
 #include "core/dbconfig.h"
 #include "core/namespace/namespace.h"
-#include "core/querystat.h"
 #include "core/rdxcontext.h"
 #include "core/reindexerconfig.h"
 #include "core/transaction/transaction.h"
@@ -119,6 +118,7 @@ public:
 	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data, const RdxContext &ctx);
 	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data, const RdxContext &ctx);
 	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const RdxContext &ctx);
+	Error DeleteMeta(std::string_view nsName, const std::string &key, const RdxContext &ctx);
 	Error InitSystemNamespaces();
 	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions, const RdxContext &ctx);
 	Error GetProtobufSchema(WrSerializer &ser, std::vector<std::string> &namespaces);

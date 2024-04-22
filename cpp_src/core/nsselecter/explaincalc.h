@@ -1,11 +1,11 @@
 #pragma once
 
-#include <chrono>
 #include <string_view>
 #include <variant>
 #include <vector>
 
 #include "core/type_consts.h"
+#include "tools/clock.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -38,7 +38,7 @@ private:
 
 class ExplainCalc {
 public:
-	typedef std::chrono::high_resolution_clock Clock;
+	typedef system_clock_w Clock;
 	typedef Clock::duration Duration;
 
 private:
@@ -96,7 +96,7 @@ public:
 	size_t Iterations() const noexcept { return iters_; }
 	bool IsEnabled() const noexcept { return enabled_; }
 
-	static int To_us(const Duration &d) noexcept;
+	static int To_us(const Duration& d) noexcept;
 
 private:
 	Duration lap() noexcept {

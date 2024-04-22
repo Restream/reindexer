@@ -1,6 +1,5 @@
 #pragma once
 
-#include "cjsonbuilder.h"
 #include "core/payload/payloadiface.h"
 
 namespace reindexer {

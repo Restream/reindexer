@@ -5,6 +5,18 @@
 
 namespace reindexer {
 
+struct MergeInfo {
+	IdType id;	   // Virtual id of merged document (index in vdocs)
+	int32_t proc;  // Rank of document
+	uint32_t areaIndex = std::numeric_limits<uint32_t>::max();
+	int8_t field;  // Field index, where was match
+};
+
+struct MergeData : public std::vector<MergeInfo> {
+	int maxRank = 0;
+	std::vector<AreaHolder> vectorAreas;
+};
+
 template <typename IdCont>
 class Selecter {
 	typedef fast_hash_map<WordIdType, std::pair<size_t, size_t>, WordIdTypeHash, WordIdTypeEqual, WordIdTypeLess> FoundWordsType;
@@ -13,8 +25,35 @@ public:
 	Selecter(DataHolder<IdCont>& holder, size_t fieldSize, bool needArea, int maxAreasInDoc)
 		: holder_(holder), fieldSize_(fieldSize), needArea_(needArea), maxAreasInDoc_(maxAreasInDoc) {}
 
+	// Intermediate information about found document in current merge step. Used only for queries with 2 or more terms
+	struct MergedIdRel {
+		explicit MergedIdRel(IdRelType&& c, int r, int q) : next(std::move(c)), rank(r), qpos(q) {}
+		explicit MergedIdRel(int r, int q) : rank(r), qpos(q) {}
+		MergedIdRel(MergedIdRel&&) = default;
+		IdRelType cur;	 // Ids & pos of matched document of current step
+		IdRelType next;	 // Ids & pos of matched document of next step
+		int32_t rank;	 // Rank of curent matched document
+		int32_t qpos;	 // Position in query
+	};
+
+	struct MergedIdRelEx : public MergedIdRel {
+		explicit MergedIdRelEx(IdRelType&& c, int r, int q) : MergedIdRel(r, q), posTmp(std::move(c)) {}
+		MergedIdRelEx(MergedIdRelEx&&) = default;
+		IdRelType posTmp;  // For group only. Collect all positions for subpatterns and the index in the vector with which we merged
+	};
+
+	struct MergedIdRelExArea : public MergedIdRel {
+		MergedIdRelExArea(IdRelType&& c, int r, int q, RVector<std::pair<IdRelType::PosType, int>, 4>&& p)
+			: MergedIdRel(std::move(c), r, q), posTmp(std::move(p)) {}
+		MergedIdRelExArea(MergedIdRelExArea&&) = default;
+
+		RVector<std::pair<IdRelType::PosType, int>, 4>
+			posTmp;	 // For group only. Collect all positions for subpatterns and the index in the vector with which we merged
+		h_vector<RVector<std::pair<IdRelType::PosType, int>, 4>, 2> wordPosForChain;
+	};
+
 	template <FtUseExternStatuses>
-	IDataHolder::MergeData Process(FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext&);
+	MergeData Process(FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext&);
 
 private:
 	struct TextSearchResult {
@@ -52,7 +91,7 @@ private:
 			foundWords = foundWordsPersonal_.get();
 		}
 
-		int idsCnt_ = 0;
+		uint32_t idsCnt_ = 0;
 		FtDSLEntry term;
 		std::vector<size_t> synonyms;
 		std::vector<size_t> synonymsGroups;
@@ -137,38 +176,35 @@ private:
 		std::wstring foundWordUTF16_;
 	};
 
-	template <typename Bm25Type>
-	IDataHolder::MergeData mergeResults(std::vector<TextSearchResults>&& rawResults, size_t totalORVids,
-										const std::vector<size_t>& synonymsBounds, bool inTransaction,
-										FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext&);
+	template <typename Bm25Type, typename MergedOffsetT>
+	MergeData mergeResults(std::vector<TextSearchResults>&& rawResults, size_t maxMergedSize, const std::vector<size_t>& synonymsBounds,
+						   bool inTransaction, FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext&);
 
-	template<typename Bm25Type>
-	void mergeIteration(TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses,
-						IDataHolder::MergeData& merged, std::vector<IDataHolder::MergedIdRel>& merged_rd,
-						std::vector<IDataHolder::MergedOffsetT>& idoffsets, std::vector<bool>& curExists, const bool hasBeenAnd,
-						const bool inTransaction, const RdxContext&);
+	template <typename Bm25Type, typename MergedOffsetT>
+	void mergeIteration(TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses, MergeData& merged,
+						std::vector<MergedIdRel>& merged_rd, std::vector<MergedOffsetT>& idoffsets, std::vector<bool>& curExists,
+						const bool hasBeenAnd, const bool inTransaction, const RdxContext&);
 
-	template <typename P, typename Bm25Type>
-	void mergeIterationGroup(TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses,
-							 IDataHolder::MergeData& merged, std::vector<P>& merged_rd, std::vector<IDataHolder::MergedOffsetT>& idoffsets,
-							 std::vector<bool>& present, const bool firstTerm, const bool inTransaction, const RdxContext& rdxCtx);
+	template <typename P, typename Bm25Type, typename MergedOffsetT>
+	void mergeIterationGroup(TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses, MergeData& merged,
+							 std::vector<P>& merged_rd, std::vector<MergedOffsetT>& idoffsets, std::vector<bool>& present,
+							 const bool firstTerm, const bool inTransaction, const RdxContext& rdxCtx);
 
-	template <typename PosType, typename Bm25T>
+	template <typename PosType, typename Bm25T, typename MergedOffsetT>
 	void mergeGroupResult(std::vector<TextSearchResults>& rawResults, size_t from, size_t to, FtMergeStatuses::Statuses& mergeStatuses,
-						  IDataHolder::MergeData& merged, std::vector<IDataHolder::MergedIdRel>& merged_rd, OpType op,
-						  const bool hasBeenAnd, std::vector<IDataHolder::MergedOffsetT>& idoffsets, const bool inTransaction,
-						  const RdxContext& rdxCtx);
+						  MergeData& merged, std::vector<MergedIdRel>& merged_rd, OpType op, const bool hasBeenAnd,
+						  std::vector<MergedOffsetT>& idoffsets, const bool inTransaction, const RdxContext& rdxCtx);
 
-	template <typename PosType, typename Bm25Type>
-	void mergeResultsPart(std::vector<TextSearchResults>& rawResults, size_t from, size_t to, IDataHolder::MergeData& merged,
+	template <typename PosType, typename Bm25Type, typename MergedOffsetT>
+	void mergeResultsPart(std::vector<TextSearchResults>& rawResults, size_t from, size_t to, MergeData& merged,
 						  std::vector<PosType>& mergedPos, const bool inTransaction, const RdxContext& rdxCtx);
-	AreaHolder createAreaFromSubMerge(const IDataHolder::MergedIdRelExArea& posInfo);
+	AreaHolder createAreaFromSubMerge(const MergedIdRelExArea& posInfo);
 	void copyAreas(AreaHolder& subMerged, AreaHolder& merged, int32_t rank);
 
-	template <typename PosType>
-	void subMergeLoop(std::vector<IDataHolder::MergeInfo>& subMerged, std::vector<PosType>& subMergedPos, IDataHolder::MergeData& merged,
-					  std::vector<IDataHolder::MergedIdRel>& merged_rd, FtMergeStatuses::Statuses& mergeStatuses,
-					  std::vector<IDataHolder::MergedOffsetT>& idoffsets, std::vector<bool>* checkAndOpMerge, const bool hasBeenAnd);
+	template <typename PosType, typename MergedOffsetT>
+	void subMergeLoop(std::vector<MergeInfo>& subMerged, std::vector<PosType>& subMergedPos, MergeData& merged,
+					  std::vector<MergedIdRel>& merged_rd, FtMergeStatuses::Statuses& mergeStatuses, std::vector<MergedOffsetT>& idoffsets,
+					  std::vector<bool>* checkAndOpMerge, const bool hasBeenAnd);
 
 	template <typename Calculator>
 	void calcFieldBoost(const Calculator& bm25Calc, unsigned long long f, const IdRelType& relid, const FtDslOpts& opts, int termProc,
@@ -176,35 +212,39 @@ private:
 	template <typename Calculator>
 	std::pair<double, int> calcTermRank(const TextSearchResults& rawRes, Calculator c, const IdRelType& relid, int proc);
 
-	void addNewTerm(FtMergeStatuses::Statuses& mergeStatuses, IDataHolder::MergeData& merged,
-					std::vector<IDataHolder::MergedOffsetT>& idoffsets, std::vector<bool>& curExists, const IdRelType& relid,
-					index_t rawResIndex, int32_t termRank, int field);
+	template <typename MergedOffsetT>
+	void addNewTerm(FtMergeStatuses::Statuses& mergeStatuses, MergeData& merged, std::vector<MergedOffsetT>& idoffsets,
+					std::vector<bool>& curExists, const IdRelType& relid, index_t rawResIndex, int32_t termRank, int field);
 
-	void addAreas(IDataHolder::MergeData& merged, int32_t areaIndex, const IdRelType& relid, int32_t termRank);
+	void addAreas(MergeData& merged, int32_t areaIndex, const IdRelType& relid, int32_t termRank);
 
 	template <typename PosType>
 	static constexpr bool isSingleTermMerge() noexcept {
-		static_assert(std::is_same_v<PosType, IDataHolder::MergedIdRelEx> || std::is_same_v<PosType, IDataHolder::MergedIdRelExArea> ||
-						  std::is_same_v<PosType, IDataHolder::MergedIdRel>,
-					  "unsupported type for mergeIteration");
-		return std::is_same_v<PosType, IDataHolder::MergedIdRel>;
+		static_assert(
+			std::is_same_v<PosType, MergedIdRelEx> || std::is_same_v<PosType, MergedIdRelExArea> || std::is_same_v<PosType, MergedIdRel>,
+			"unsupported type for mergeIteration");
+		return std::is_same_v<PosType, MergedIdRel>;
 	}
 
 	template <typename PosType>
 	static constexpr bool isGroupMerge() noexcept {
-		static_assert(std::is_same_v<PosType, IDataHolder::MergedIdRelEx> || std::is_same_v<PosType, IDataHolder::MergedIdRelExArea> ||
-						  std::is_same_v<PosType, IDataHolder::MergedIdRel>,
-					  "unsupported type for mergeIteration");
-		return std::is_same_v<PosType, IDataHolder::MergedIdRelEx>;
+		static_assert(
+			std::is_same_v<PosType, MergedIdRelEx> || std::is_same_v<PosType, MergedIdRelExArea> || std::is_same_v<PosType, MergedIdRel>,
+			"unsupported type for mergeIteration");
+		return std::is_same_v<PosType, MergedIdRelEx>;
 	}
 
 	template <typename PosType>
 	static constexpr bool isGroupMergeWithAreas() noexcept {
-		static_assert(std::is_same_v<PosType, IDataHolder::MergedIdRelEx> || std::is_same_v<PosType, IDataHolder::MergedIdRelExArea> ||
-						  std::is_same_v<PosType, IDataHolder::MergedIdRel>,
-					  "unsupported type for mergeIteration");
-		return std::is_same_v<PosType, IDataHolder::MergedIdRelExArea>;
+		static_assert(
+			std::is_same_v<PosType, MergedIdRelEx> || std::is_same_v<PosType, MergedIdRelExArea> || std::is_same_v<PosType, MergedIdRel>,
+			"unsupported type for mergeIteration");
+		return std::is_same_v<PosType, MergedIdRelExArea>;
 	}
+
+	template <typename MergedOffsetT>
+	MergeData mergeResultsBmType(std::vector<TextSearchResults>&& results, size_t totalORVids, const std::vector<size_t>& synonymsBounds,
+								 bool inTransaction, FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext& rdxCtx);
 
 	void debugMergeStep(const char* msg, int vid, float normBm25, float normDist, int finalRank, int prevRank);
 	template <FtUseExternStatuses>

@@ -6,7 +6,6 @@
 
 #include <vector>
 
-#include "args/args.hpp"
 #include "clientsstats.h"
 #include "dbmanager.h"
 #include "debug/allocdebug.h"
@@ -21,6 +20,7 @@
 #include "tools/alloc_ext/je_malloc_extension.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/fsops.h"
+#include "tools/logger.h"
 #include "tools/stringstools.h"
 #include "tools/tcmallocheapwathcher.h"
 #include "yaml-cpp/yaml.h"
@@ -202,9 +202,7 @@ void ServerImpl::ReopenLogFiles() {
 #endif
 }
 
-std::string ServerImpl::GetCoreLogPath() const {
-	return GetDirPath(config_.CoreLog); 
-}
+std::string ServerImpl::GetCoreLogPath() const { return GetDirPath(config_.CoreLog); }
 
 int ServerImpl::run() {
 	loggerConfigure();
@@ -216,7 +214,7 @@ int ServerImpl::run() {
 			logger->info("{}", out);
 			logger->flush();
 		} else {
-			std::cerr << std::endl << out;
+			std::cerr << out << std::endl;
 		}
 	});
 	if (running_) {

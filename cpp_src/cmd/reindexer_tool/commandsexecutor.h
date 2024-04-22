@@ -8,6 +8,7 @@
 #include "dumpoptions.h"
 #include "iotools.h"
 #include "net/ev/ev.h"
+#include "tools/clock.h"
 #include "vendor/urlparser/urlparser.h"
 
 namespace reindexer_tool {
@@ -100,7 +101,7 @@ protected:
 	Error commandProcessDatabases(const std::string& command);
 
 	Error seedBenchItems();
-	std::function<void(std::chrono::system_clock::time_point)> getBenchWorkerFn(std::atomic<int>& count, std::atomic<int>& errCount);
+	std::function<void(reindexer::system_clock_w::time_point)> getBenchWorkerFn(std::atomic<int>& count, std::atomic<int>& errCount);
 
 	DBInterface db() { return db_.WithContext(&cancelCtx_); }
 	DBInterface parametrizedDb() {
@@ -178,6 +179,9 @@ protected:
 	Syntax:
 		\meta put <namespace> <key> <value>
 		Put metadata key value
+
+		\meta delete <namespace> <key>
+		Delete metadata key value
 
 		\meta list
 		List all metadata in name

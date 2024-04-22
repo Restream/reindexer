@@ -1,4 +1,5 @@
 #include "cjsontools.h"
+#include "cjsonbuilder.h"
 #include "core/type_consts_helpers.h"
 
 namespace reindexer {

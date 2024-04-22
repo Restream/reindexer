@@ -202,7 +202,7 @@ TEST(SyncCoroRx, DISABLED_TestSyncCoroRxNThread) {
 		}
 	};
 
-	std::chrono::system_clock::time_point t1 = std::chrono::system_clock::now();
+	system_clock_w::time_point t1 = system_clock_w::now();
 	std::vector<std::thread> poolThread;
 	poolThread.reserve(10);
 	for (int i = 0; i < 10; i++) {
@@ -211,7 +211,7 @@ TEST(SyncCoroRx, DISABLED_TestSyncCoroRxNThread) {
 	for (auto& th : poolThread) {
 		th.join();
 	}
-	std::chrono::system_clock::time_point t2 = std::chrono::system_clock::now();
+	system_clock_w::time_point t2 = system_clock_w::now();
 	int dt_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
 	std::cout << "dt_ms = " << dt_ms << std::endl;
 }
@@ -223,7 +223,7 @@ TEST(SyncCoroRx, DISABLED_TestCoroRxNCoroutine) {
 
 	ServerControl server;
 	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
-	std::chrono::system_clock::time_point t1 = std::chrono::system_clock::now();
+	system_clock_w::time_point t1 = system_clock_w::now();
 
 	reindexer::net::ev::dynamic_loop loop;
 	auto insert = [&loop]() noexcept {
@@ -253,7 +253,7 @@ TEST(SyncCoroRx, DISABLED_TestCoroRxNCoroutine) {
 
 	loop.spawn(insert);
 	loop.run();
-	std::chrono::system_clock::time_point t2 = std::chrono::system_clock::now();
+	system_clock_w::time_point t2 = system_clock_w::now();
 	int dt_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
 	std::cout << "dt_ms = " << dt_ms << std::endl;
 }

@@ -34,11 +34,7 @@ Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id, bool &clearCache)
 	this->tracker_.markUpdated(this->idx_map, keyIt);
 	this->addMemStat(keyIt);
 
-	if (this->KeyType().template Is<KeyValueType::String>() && this->opts_.GetCollateMode() != CollateNone) {
-		return IndexStore<StoreIndexKeyType<T>>::Upsert(key, id, clearCache);
-	}
-
-	return Variant(keyIt->first);
+	return IndexStore<StoreIndexKeyType<T>>::Upsert(Variant{keyIt->first}, id, clearCache);
 }
 
 template <typename T>
@@ -145,7 +141,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 			};
 
 			if (count > 1 && !opts.distinct && !opts.disableIdSetCache) {
-				// Using btree node pointers instead of the real values from the filter and range instead all of the contidions
+				// Using btree node pointers instead of the real values from the filter and range instead all of the conditions
 				// to increase cache hits count
 				VariantArray cacheKeys = {Variant{startIt == this->idx_map.end() ? int64_t(0) : int64_t(&(*startIt))},
 										  Variant{endIt == this->idx_map.end() ? int64_t(0) : int64_t(&(*endIt))}};

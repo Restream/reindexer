@@ -4,10 +4,8 @@
 #include <vector>
 #include "core/cjson/tagsmatcher.h"
 #include "estl/h_vector.h"
-#include "estl/span.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
-#include "vendor/hopscotch/hopscotch_map.h"
 
 namespace gason {
 struct JsonNode;

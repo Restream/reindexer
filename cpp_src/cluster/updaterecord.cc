@@ -27,6 +27,7 @@ UpdateRecord::UpdateRecord(UpdateRecord::Type _type, std::string _nsName, int _e
 		case Type::IndexUpdate:
 		case Type::PutMeta:
 		case Type::PutMetaTx:
+		case Type::DeleteMeta:
 		case Type::UpdateQuery:
 		case Type::DeleteQuery:
 		case Type::UpdateQueryTx:
@@ -79,6 +80,7 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _n
 		case Type::IndexUpdate:
 		case Type::PutMeta:
 		case Type::PutMetaTx:
+		case Type::DeleteMeta:
 		case Type::UpdateQuery:
 		case Type::DeleteQuery:
 		case Type::UpdateQueryTx:
@@ -129,6 +131,7 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _n
 		case Type::IndexUpdate:
 		case Type::PutMeta:
 		case Type::PutMetaTx:
+		case Type::DeleteMeta:
 		case Type::Truncate:
 		case Type::BeginTx:
 		case Type::CommitTx:
@@ -171,6 +174,7 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _n
 		case Type::IndexUpdate:
 		case Type::PutMeta:
 		case Type::PutMetaTx:
+		case Type::DeleteMeta:
 		case Type::UpdateQuery:
 		case Type::DeleteQuery:
 		case Type::UpdateQueryTx:
@@ -228,6 +232,7 @@ UpdateRecord::UpdateRecord(UpdateRecord::Type _type, std::string _nsName, lsn_t 
 		case Type::IndexUpdate:
 		case Type::PutMeta:
 		case Type::PutMetaTx:
+		case Type::DeleteMeta:
 		case Type::UpdateQuery:
 		case Type::DeleteQuery:
 		case Type::UpdateQueryTx:
@@ -276,6 +281,7 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _n
 		case Type::ItemInsertTx:
 		case Type::PutMeta:
 		case Type::PutMetaTx:
+		case Type::DeleteMeta:
 		case Type::UpdateQuery:
 		case Type::DeleteQuery:
 		case Type::UpdateQueryTx:
@@ -324,6 +330,7 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _nsVersion, in
 		case Type::ItemInsertTx:
 		case Type::PutMeta:
 		case Type::PutMetaTx:
+		case Type::DeleteMeta:
 		case Type::UpdateQuery:
 		case Type::DeleteQuery:
 		case Type::UpdateQueryTx:
@@ -357,6 +364,7 @@ UpdateRecord::UpdateRecord(UpdateRecord::Type _type, std::string _nsName, lsn_t 
 	switch (type) {
 		case Type::PutMeta:
 		case Type::PutMetaTx:
+		case Type::DeleteMeta:
 			data.emplace<std::unique_ptr<MetaReplicationRecord>>(new MetaReplicationRecord{std::move(_k), std::move(_v)});
 			break;
 		case Type::IndexAdd:
@@ -407,6 +415,7 @@ UpdateRecord::UpdateRecord(Type _type, int _emmiterServerId, std::string _data, 
 			break;
 		case Type::PutMeta:
 		case Type::PutMetaTx:
+		case Type::DeleteMeta:
 		case Type::IndexAdd:
 		case Type::IndexDrop:
 		case Type::IndexUpdate:
@@ -458,6 +467,7 @@ UpdateRecord::UpdateRecord(Type _type, int _emmiterServerId, int64_t sourceId) :
 			break;
 		case Type::PutMeta:
 		case Type::PutMetaTx:
+		case Type::DeleteMeta:
 		case Type::IndexAdd:
 		case Type::IndexDrop:
 		case Type::IndexUpdate:
@@ -511,6 +521,7 @@ size_t UpdateRecord::DataSize() const noexcept {
 			return std::get<std::unique_ptr<IndexReplicationRecord>>(data)->Size();
 		case Type::PutMeta:
 		case Type::PutMetaTx:
+		case Type::DeleteMeta:
 			return std::get<std::unique_ptr<MetaReplicationRecord>>(data)->Size();
 		case Type::UpdateQuery:
 		case Type::DeleteQuery:

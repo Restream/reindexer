@@ -9,7 +9,6 @@
 #include "net/http/router.h"
 #include "net/listener.h"
 #include "pprof/pprof.h"
-#include "tools/logger.h"
 
 namespace reindexer_server {
 
@@ -62,6 +61,7 @@ public:
 	int GetMetaList(http::Context &ctx);
 	int GetMetaByKey(http::Context &ctx);
 	int PutMetaByKey(http::Context &ctx);
+	int DeleteMetaByKey(http::Context &ctx);
 	int DeleteIndex(http::Context &ctx);
 	int CheckAuth(http::Context &ctx);
 	int BeginTx(http::Context &ctx);
@@ -131,12 +131,12 @@ protected:
 
 	LoggerWrapper logger_;
 
-	std::chrono::system_clock::time_point startTs_;
+	system_clock_w::time_point startTs_;
 
-	using TxDeadlineClock = std::chrono::steady_clock;
+	using TxDeadlineClock = steady_clock_w;
 	struct TxInfo {
 		std::shared_ptr<Transaction> tx;
-		std::chrono::time_point<TxDeadlineClock> txDeadline;
+		TxDeadlineClock::time_point txDeadline;
 		std::string dbName;
 	};
 	fast_hash_map<std::string, TxInfo, nocase_hash_str, nocase_equal_str, nocase_less_str> txMap_;

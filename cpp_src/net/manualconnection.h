@@ -5,8 +5,6 @@
 #include "connectinstatscollector.h"
 #include "coroutine/coroutine.h"
 #include "estl/cbuf.h"
-#include "estl/chunk_buf.h"
-#include "estl/mutex.h"
 #include "net/socket.h"
 #include "tools/ssize_t.h"
 

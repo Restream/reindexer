@@ -1,7 +1,6 @@
 #include "indextext.h"
 #include <memory>
 #include "core/rdxcontext.h"
-#include "estl/overloaded.h"
 #include "estl/smart_lock.h"
 #include "tools/errors.h"
 #include "tools/logger.h"
@@ -128,13 +127,9 @@ SelectKeyResults IndexText<T>::resultFromCache(const VariantArray &keys, FtIdSet
 		logPrintf(LogInfo, "Get search results for '%s' in '%s' from cache", keys[0].As<std::string>(),
 				  this->payloadType_ ? this->payloadType_->Name() : "");
 	}
-	SelectKeyResults r;
-	auto &res = r.emplace_back();
-	res.emplace_back(std::move(it.val.ids));
-
 	assertrx(it.val.ctx);
 	ftctx->SetData(std::move(it.val.ctx));
-	return r;
+	return SelectKeyResult{{SingleSelectKeyResult{std::move(it.val.ids)}}};
 }
 
 template <typename T>

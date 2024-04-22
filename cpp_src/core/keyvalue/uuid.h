@@ -5,6 +5,7 @@
 #include <string>
 #include "tools/assertrx.h"
 #include "variant.h"
+#include "estl/comparation_result.h"
 
 namespace reindexer {
 class Uuid;
@@ -59,11 +60,11 @@ public:
 	template <typename... Ts>
 	explicit Uuid(Ts...) = delete;
 	[[nodiscard]] explicit operator std::string() const;
-	[[nodiscard]] int Compare(const Uuid& other) const noexcept {
+	[[nodiscard]] ComparationResult Compare(const Uuid& other) const noexcept {
 		if (data_[0] == other.data_[0]) {
-			return data_[1] == other.data_[1] ? 0 : (data_[1] < other.data_[1] ? -1 : 1);
+			return data_[1] == other.data_[1] ? ComparationResult::Eq : (data_[1] < other.data_[1] ? ComparationResult::Lt : ComparationResult::Gt);
 		} else {
-			return data_[0] < other.data_[0] ? -1 : 1;
+			return data_[0] < other.data_[0] ? ComparationResult::Lt : ComparationResult::Gt;
 		}
 	}
 	[[nodiscard]] bool operator==(Uuid other) const noexcept { return data_[0] == other.data_[0] && data_[1] == other.data_[1]; }

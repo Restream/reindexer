@@ -68,11 +68,10 @@ public:
 	enum class Type { ForceSync, WalSync, InitialForceSync, InitialWalSync };
 
 	SyncTimeCounter(Type type, ReplicationStatsCollector& statsCollector) noexcept
-		: tmStart_(std::chrono::high_resolution_clock::now()), statsCollector_(statsCollector), type_(type) {}
+		: tmStart_(steady_clock_w::now()), statsCollector_(statsCollector), type_(type) {}
 	void SetType(Type type) noexcept { type_ = type; }
 	~SyncTimeCounter() {
-		std::chrono::microseconds time =
-			std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - tmStart_);
+		std::chrono::microseconds time = std::chrono::duration_cast<std::chrono::microseconds>(steady_clock_w::now() - tmStart_);
 		switch (type_) {
 			case Type::ForceSync:
 				statsCollector_.OnForceSync(time);
@@ -90,7 +89,7 @@ public:
 	}
 
 private:
-	const std::chrono::time_point<std::chrono::high_resolution_clock> tmStart_;
+	const steady_clock_w::time_point tmStart_;
 	ReplicationStatsCollector& statsCollector_;
 	Type type_;
 };

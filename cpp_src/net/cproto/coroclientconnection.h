@@ -6,11 +6,10 @@
 #include <thread>
 #include <vector>
 #include "args.h"
+#include "core/keyvalue/p_string.h"
 #include "coroutine/channel.h"
 #include "coroutine/waitgroup.h"
 #include "cproto.h"
-#include "estl/atomic_unique_ptr.h"
-#include "estl/h_vector.h"
 #include "net/manualconnection.h"
 #include "tools/lsn.h"
 #include "urlparser/urlparser.h"
@@ -67,7 +66,7 @@ class CoroClientConnection {
 public:
 	using UpdatesHandlerT = std::function<void(const CoroRPCAnswer &ans)>;
 	using FatalErrorHandlerT = std::function<void(Error err)>;
-	using ClockT = std::chrono::steady_clock;
+	using ClockT = steady_clock_w;
 	using TimePointT = ClockT::time_point;
 	using ConnectionStateHandlerT = std::function<void(const Error &)>;
 

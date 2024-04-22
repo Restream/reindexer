@@ -52,7 +52,9 @@ public:
 		std::uninitialized_fill(p, p + size, v);
 		size_ = size;
 	}
-	h_vector(std::initializer_list<T> l) : e_{0, 0}, size_(0), is_hdata_(1) { insert(begin(), l.begin(), l.end()); }
+	h_vector(std::initializer_list<T> l) : e_{0, 0}, size_(0), is_hdata_(1) {
+		insert(begin(), std::make_move_iterator(l.begin()), std::make_move_iterator(l.end()));
+	}
 	template <typename InputIt>
 	h_vector(InputIt first, InputIt last) : e_{0, 0}, size_(0), is_hdata_(1) {
 		insert(begin(), first, last);

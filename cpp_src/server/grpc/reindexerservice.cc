@@ -752,6 +752,18 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 	return ::grpc::Status::OK;
 }
 
+::grpc::Status ReindexerService::DeleteMeta(::grpc::ServerContext*, const DeleteMetaRequest* request, ErrorResponse* response) {
+	reindexer::Reindexer* rx = nullptr;
+	Error status = getDB(request->dbname(), reindexer_server::kRoleDataWrite, &rx);
+	if (status.ok()) {
+		assertrx(rx);
+		status = rx->DeleteMeta(request->metadata().nsname(), request->metadata().key());
+	}
+	response->set_code(ErrorResponse::ErrorCode(status.code()));
+	response->set_what(status.what());
+	return ::grpc::Status::OK;
+}
+
 ::grpc::Status ReindexerService::BeginTransaction(::grpc::ServerContext*, const BeginTransactionRequest* request,
 												  TransactionIdResponse* response) {
 	reindexer::Reindexer* rx = nullptr;
@@ -767,7 +779,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 			txData.dbName = request->dbname();
 			txData.nsName = request->nsname();
 			txData.tx = std::make_shared<Transaction>(std::move(tr));
-			txData.txDeadline = std::chrono::steady_clock::now() + txIdleTimeout_;
+			txData.txDeadline = steady_clock_w::now_coarse() + txIdleTimeout_;
 			std::lock_guard<std::mutex> lck(m_);
 			transactions_.emplace(txID, std::move(txData));
 		}
@@ -780,7 +792,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 }
 
 void ReindexerService::removeExpiredTxCb(reindexer::net::ev::periodic&, int) {
-	auto now = std::chrono::steady_clock::now();
+	auto now = steady_clock_w::now_coarse();
 	std::lock_guard<std::mutex> lck(m_);
 	for (auto it = transactions_.begin(); it != transactions_.end();) {
 		if (it->second.txDeadline <= now) {

@@ -3,8 +3,6 @@
 #include <limits.h>
 #include <bitset>
 #include <fstream>
-#include <string>
-#include <string_view>
 
 #include "cjson/jsonbuilder.h"
 #include "estl/smart_lock.h"
@@ -15,7 +13,7 @@
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 #include "type_consts.h"
-#include "yaml-cpp/yaml.h"
+#include "vendor/yaml-cpp/yaml.h"
 
 namespace reindexer {
 

@@ -1,5 +1,6 @@
 #include "csv2jsonconverter.h"
 #include "core/cjson/jsonbuilder.h"
+#include "vendor/gason/gason.h"
 
 namespace reindexer {
 

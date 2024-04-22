@@ -46,14 +46,23 @@ type TestItemCompositesLimit struct {
 	_      struct{} `reindex:"first+second+fourth,,composite"`
 }
 
+type TestItemCompositeUpsert struct {
+	Id             int      `reindex:"id,hash,pk"`
+	First          int      `reindex:"first,-"`
+	Second         int      `reindex:"second,-"`
+	NamedComposite struct{} `reindex:"first+second,,composite"` // The name is assigned for testing. Don't give composite fields names!
+}
+
 const testCompositeIndexesSubstitutionNs = "test_composite_indexes_substitution"
 const testMultipleCompositeSubindexes = "test_composite_indexes_multiple_subindexes"
 const testCompositesLimit = "test_composites_limit"
+const testCompositeUpsert = "test_composites_upsert"
 
 func init() {
 	tnamespaces[testCompositeIndexesSubstitutionNs] = TestCompositeSubstitutionStruct{}
 	tnamespaces[testMultipleCompositeSubindexes] = TestItemMultipleCompositeSubindexes{}
 	tnamespaces[testCompositesLimit] = TestItemCompositesLimit{}
+	tnamespaces[testCompositeUpsert] = TestItemCompositeUpsert{}
 }
 
 func printExplainRes(res *reindexer.ExplainResults) {
@@ -487,11 +496,18 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 				Matched: 1,
 			},
 			{
-				Field:       "first2 or first1",
+				Field:       "first2",
 				FieldType:   "indexed",
 				Method:      "scan",
-				Comparators: 2,
+				Comparators: 1,
 				Matched:     1,
+			},
+			{
+				Field:       "or first1",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     0,
 			},
 		}, "")
 	})
@@ -662,18 +678,25 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 				Matched:     1,
 			},
 			{
-				Field:       "first2 or second2",
-				FieldType:   "indexed",
-				Method:      "scan",
-				Comparators: 2,
-				Matched:     1,
-			},
-			{
 				Field:       "second1",
 				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 1,
 				Matched:     1,
+			},
+			{
+				Field:       "first2",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     1,
+			},
+			{
+				Field:       "or second2",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     0,
 			},
 		}, "")
 	})
@@ -703,11 +726,18 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 				Matched:   1,
 			},
 			{
-				Field:       "second2 or second1",
+				Field:       "second2",
 				FieldType:   "indexed",
 				Method:      "scan",
-				Comparators: 2,
+				Comparators: 1,
 				Matched:     1,
+			},
+			{
+				Field:       "or second1",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     0,
 			},
 		}, "")
 	})
@@ -739,11 +769,18 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 				Matched:   1,
 			},
 			{
-				Field:       "second2 or second1",
+				Field:       "second2",
 				FieldType:   "indexed",
 				Method:      "scan",
-				Comparators: 2,
+				Comparators: 1,
 				Matched:     1,
+			},
+			{
+				Field:       "or second1",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     0,
 			},
 		}, "")
 	})
@@ -965,11 +1002,18 @@ func TestCompositeIndexesBestSubstitution(t *testing.T) {
 				Matched:   1,
 			},
 			{
-				Field:       "fourth or id",
+				Field:       "fourth",
 				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 1,
 				Matched:     1,
+			},
+			{
+				Field:       "or id",
+				FieldType:   "indexed",
+				Method:      "index",
+				Comparators: 0,
+				Matched:     0,
 				Keys:        1,
 			},
 		}, "")
@@ -1000,11 +1044,18 @@ func TestCompositeIndexesBestSubstitution(t *testing.T) {
 				Matched:   1,
 			},
 			{
-				Field:       "fourth or third",
+				Field:       "fourth",
 				FieldType:   "indexed",
 				Method:      "scan",
-				Comparators: 2,
+				Comparators: 1,
 				Matched:     1,
+			},
+			{
+				Field:       "or third",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     0,
 			},
 		}, "")
 	})
@@ -1034,11 +1085,18 @@ func TestCompositeIndexesBestSubstitution(t *testing.T) {
 				Matched:   1,
 			},
 			{
-				Field:       "fourth or third",
+				Field:       "fourth",
 				FieldType:   "indexed",
 				Method:      "scan",
-				Comparators: 2,
+				Comparators: 1,
 				Matched:     1,
+			},
+			{
+				Field:       "or third",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     0,
 			},
 		}, "")
 	})
@@ -1073,18 +1131,25 @@ func TestCompositeIndexesBestSubstitution(t *testing.T) {
 				Matched:     1,
 			},
 			{
-				Field:       "second or third",
-				FieldType:   "indexed",
-				Method:      "scan",
-				Comparators: 2,
-				Matched:     1,
-			},
-			{
 				Field:       "first",
 				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 1,
 				Matched:     1,
+			},
+			{
+				Field:       "second",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     1,
+			},
+			{
+				Field:       "or third",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     0,
 			},
 		}, "")
 	})
@@ -1266,4 +1331,22 @@ func TestCompositeSubstitutionLimit(t *testing.T) {
 			},
 		}, "")
 	})
+}
+
+func TestCompositeUpsert(t *testing.T) {
+	t.Parallel()
+
+	const ns = testCompositeUpsert
+	item := TestItemCompositeUpsert{
+		Id:     rand.Intn(100),
+		First:  rand.Intn(1000),
+		Second: rand.Intn(1000),
+	}
+	err := DB.Upsert(ns, item)
+	require.NoError(t, err)
+
+	j, err := DB.Query(ns).ExecToJson().FetchAll()
+	require.NoError(t, err)
+	require.Greater(t, len(j), 0)
+	require.NotContains(t, string(j), "NamedComposite")
 }

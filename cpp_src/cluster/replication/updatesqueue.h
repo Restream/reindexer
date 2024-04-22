@@ -91,7 +91,7 @@ public:
 			}
 
 			U data_;
-			// std::chrono::high_resolution_clock::time_point deadline;  // TODO: Implement deadline logic
+			// steady_clock_w::time_point deadline;  // TODO: Implement deadline logic
 			std::atomic<Counters> replication_ = Counters{0, 0, 0, 1, 0};
 			std::function<void(Error &&)> *onResult_ = nullptr;
 

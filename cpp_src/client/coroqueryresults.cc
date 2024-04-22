@@ -5,9 +5,7 @@
 #include "core/keyvalue/p_string.h"
 #include "core/queryresults/additionaldatasource.h"
 #include "net/cproto/coroclientconnection.h"
-#include "server/rpcqrwatcher.h"
 #include "tools/catch_and_return.h"
-#include "tools/logger.h"
 
 namespace reindexer {
 namespace client {
@@ -193,18 +191,18 @@ const std::string &CoroQueryResults::GetNsName(int nsid) const noexcept {
 	return i_.nsArray_[nsid]->payloadType.Name();
 }
 
-class EncoderDatasourceWithJoins : public IEncoderDatasourceWithJoins {
+class EncoderDatasourceWithJoins final : public IEncoderDatasourceWithJoins {
 public:
 	EncoderDatasourceWithJoins(const CoroQueryResults::Iterator::JoinedData &joinedData, const CoroQueryResults &qr)
 		: joinedData_(joinedData), qr_(qr), tm_(TagsMatcher::unsafe_empty_t()) {}
 	~EncoderDatasourceWithJoins() override = default;
 
-	size_t GetJoinedRowsCount() const final { return joinedData_.size(); }
-	size_t GetJoinedRowItemsCount(size_t rowId) const final {
+	size_t GetJoinedRowsCount() const noexcept override { return joinedData_.size(); }
+	size_t GetJoinedRowItemsCount(size_t rowId) const override {
 		const auto &fieldIt = joinedData_.at(rowId);
 		return fieldIt.size();
 	}
-	ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) override final {
+	ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) override {
 		auto &fieldIt = joinedData_.at(rowid);
 		auto &dataIt = fieldIt.at(plIndex);
 		itemimpl_ = ItemImpl<RPCClient>(qr_.GetPayloadType(getJoinedNsID(dataIt.nsid)), qr_.GetTagsMatcher(getJoinedNsID(dataIt.nsid)),
@@ -213,7 +211,7 @@ public:
 		itemimpl_.FromCJSON(dataIt.data);
 		return itemimpl_.GetConstPayload();
 	}
-	const TagsMatcher &GetJoinedItemTagsMatcher(size_t rowid) final {
+	const TagsMatcher &GetJoinedItemTagsMatcher(size_t rowid) override {
 		auto &fieldIt = joinedData_.at(rowid);
 		if (fieldIt.empty()) {
 			static const TagsMatcher kEmptyTm;
@@ -222,11 +220,11 @@ public:
 		tm_ = qr_.GetTagsMatcher(getJoinedNsID(fieldIt[0].nsid));
 		return tm_;
 	}
-	virtual const FieldsSet &GetJoinedItemFieldsFilter(size_t /*rowid*/) final {
+	virtual const FieldsSet &GetJoinedItemFieldsFilter(size_t /*rowid*/) noexcept override {
 		static const FieldsSet empty;
 		return empty;
 	}
-	const std::string &GetJoinedItemNamespace(size_t rowid) final {
+	const std::string &GetJoinedItemNamespace(size_t rowid) override {
 		auto &fieldIt = joinedData_.at(rowid);
 		if (fieldIt.empty()) {
 			static const std::string empty;

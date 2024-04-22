@@ -5,15 +5,12 @@
 #include <mutex>
 #include <set>
 #include <unordered_map>
-#include "core/ft/config/ftfastconfig.h"
 #include "core/ft/config/ftfuzzyconfig.h"
 #include "core/ft/ft_fuzzy/advacedpackedvec.h"
 #include "core/ft/idrelset.h"
-#include "core/idset.h"
 #include "datastruct.h"
 #include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
-#include "smardeque.h"
 #include "tools/customhash.h"
 namespace search_engine {
 

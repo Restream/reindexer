@@ -10,6 +10,7 @@
 #include "core/indexopts.h"
 #include "core/keyvalue/variant.h"
 #include "core/type_consts.h"
+#include "estl/comparation_result.h"
 #include "tools/customhash.h"
 #include "tools/customlocal.h"
 #include "tools/errors.h"
@@ -108,18 +109,18 @@ template <typename Pos>
 [[nodiscard]] Pos wordToByteAndCharPos(std::string_view str, int wordPosition, const std::string& extraWordSymbols);
 
 template <CollateMode collateMode>
-[[nodiscard]] int collateCompare(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable& sortOrderTable) noexcept;
+[[nodiscard]] ComparationResult collateCompare(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable& sortOrderTable) noexcept;
 template <>
-[[nodiscard]] int collateCompare<CollateASCII>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
+[[nodiscard]] ComparationResult collateCompare<CollateASCII>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
 template <>
-[[nodiscard]] int collateCompare<CollateUTF8>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
+[[nodiscard]] ComparationResult collateCompare<CollateUTF8>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
 template <>
-[[nodiscard]] int collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
+[[nodiscard]] ComparationResult collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
 template <>
-[[nodiscard]] int collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
+[[nodiscard]] ComparationResult collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
 template <>
-[[nodiscard]] int collateCompare<CollateNone>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
-[[nodiscard]] inline int collateCompare(std::string_view lhs, std::string_view rhs, const CollateOpts& collateOpts) noexcept {
+[[nodiscard]] ComparationResult collateCompare<CollateNone>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
+[[nodiscard]] inline ComparationResult collateCompare(std::string_view lhs, std::string_view rhs, const CollateOpts& collateOpts) noexcept {
 	switch (collateOpts.mode) {
 		case CollateASCII:
 			return collateCompare<CollateASCII>(lhs, rhs, collateOpts.sortOrderTable);

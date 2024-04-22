@@ -20,6 +20,7 @@
   * [Rename namespace](#rename-namespace)
   * [Get list of namespace's meta info](#get-list-of-namespaces-meta-info)
   * [Get namespace's meta info by key](#get-namespaces-meta-info-by-key)
+  * [Remove namespace's meta info for key](#remove-namespaces-meta-info-for-key)
   * [Put namespace's meta info with specified key and value](#put-namespaces-meta-info-with-specified-key-and-value)
   * [Get documents from namespace](#get-documents-from-namespace)
   * [Update documents in namespace](#update-documents-in-namespace)
@@ -136,7 +137,7 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 
 
 ### Version information
-*Version* : 4.14.0
+*Version* : 4.15.0
 
 
 ### License information
@@ -563,6 +564,43 @@ This operation will return value of namespace's meta with specified key
 |HTTP Code|Description|Schema|
 |---|---|---|
 |**200**|Successful operation|[MetaByKeyResponse](#metabykeyresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* namespaces
+
+
+
+### Remove namespace's meta info for key
+```
+DELETE /db/{database}/namespaces/{name}/metabykey/{key}
+```
+
+
+#### Description
+This operation will remove meta with specified key from namespace
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Path**|**key**  <br>*required*|Meta key|string|
+|**Path**|**name**  <br>*required*|Namespace name|string|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
@@ -2285,6 +2323,7 @@ Query execution explainings
 |Name|Description|Schema|
 |---|---|---|
 |**comparators**  <br>*optional*|Count of comparators used, for this selector|integer|
+|**condition**  <br>*optional*|Condition on the field|string|
 |**cost**  <br>*optional*|Cost expectation of this selector|integer|
 |**description**  <br>*optional*|Description of the selector|string|
 |**explain_preselect**  <br>*optional*|Preselect in joined namespace execution explainings|[ExplainDef](#explaindef)|
@@ -2295,7 +2334,7 @@ Query execution explainings
 |**keys**  <br>*optional*|Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching|integer|
 |**matched**  <br>*optional*|Count of processed documents, matched this selector|integer|
 |**method**  <br>*optional*|Method, used to process condition|enum (scan, index, inner_join, left_join)|
-|**type**  <br>*optional*|Type of the selector|string|
+|**type**  <br>*optional*|Select iterator type|enum (Comparator, TwoFieldsComparison, Skipped, Forward, Reverse, SingleRange, SingleIdset, SingleIdSetWithDeferedSort, RevSingleRange, RevSingleIdset, RevSingleIdSetWithDeferedSort, OnlyComparator, Unsorted, UnbuiltSortOrdersIndex)|
 
 
 **subqueries**
@@ -2365,7 +2404,7 @@ Fulltext Index configuration
 |**max_total_areas_to_cache**  <br>*optional*|Max total number of highlighted areas in ft result, when result still remains cacheable. '-1' means unlimited  <br>**Maximum value** : `1000000000`|number|
 |**max_typo_len**  <br>*optional*|Maximum word length for building and matching variants with typos.  <br>**Minimum value** : `0`  <br>**Maximum value** : `100`|integer|
 |**max_typos**  <br>*optional*|Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 2 possible typo -It will seriously increase RAM usage, and decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `4`|integer|
-|**merge_limit**  <br>*optional*|Maximum documents count which will be processed in merge query results. Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `65000`|integer|
+|**merge_limit**  <br>*optional*|Maximum documents count which will be processed in merge query results. Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed  <br>**Minimum value** : `1`  <br>**Maximum value** : `33554431`|integer|
 |**min_relevancy**  <br>*optional*|Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned  <br>**Default** : `0.05`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**optimization**  <br>*optional*|Optimize the index by memory or by cpu  <br>**Default** : `"Memory"`|enum (Memory, CPU)|
 |**partial_match_decrease**  <br>*optional*|Decrease of relevancy in case of partial match by value: partial_match_decrease * (non matched symbols) / (matched symbols)  <br>**Minimum value** : `0`  <br>**Maximum value** : `100`|integer|

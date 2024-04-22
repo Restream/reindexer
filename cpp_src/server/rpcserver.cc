@@ -8,11 +8,11 @@
 #include "core/iclientsstats.h"
 #include "core/namespace/namespacestat.h"
 #include "core/namespace/snapshot/snapshot.h"
+#include "debug/crashqueryreporter.h"
 #include "net/cproto/cproto.h"
 #include "net/cproto/serverconnection.h"
 #include "reindexer_version.h"
 #include "tools/catch_and_return.h"
-#include "vendor/msgpack/msgpack.h"
 
 namespace reindexer_server {
 using namespace std::string_view_literals;
@@ -37,7 +37,7 @@ RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper &logger, IClientsStats *cli
 	  logger_(logger),
 	  statsWatcher_(statsCollector),
 	  clientsStats_(clientsStats),
-	  startTs_(std::chrono::system_clock::now()),
+	  startTs_(system_clock_w::now()),
 	  qrWatcher_(serverConfig_.RPCQrIdleTimeout) {}
 
 RPCServer::~RPCServer() {
@@ -491,7 +491,7 @@ Error RPCServer::SetTagsMatcherTx(cproto::Context &ctx, int64_t statetoken, int6
 		Transaction &tr = getTx(ctx, txID);
 		TagsMatcher tm;
 		Serializer ser(data);
-		tm.deserialize(ser, (int)version, (int)statetoken);
+		tm.deserialize(ser, int(version), int(statetoken));
 		return tr.SetTagsMatcher(std::move(tm), ctx.call->lsn);
 	}
 	CATCH_AND_RETURN;
@@ -546,16 +546,15 @@ Error RPCServer::RollbackTx(cproto::Context &ctx, int64_t txId) {
 
 Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_string itemData, int mode, p_string perceptsPack,
 							int stateToken, int /*txID*/) {
-	using std::chrono::steady_clock;
 	using std::chrono::milliseconds;
 	using std::chrono::duration_cast;
 
 	auto db = getDB(ctx, kRoleDataWrite);
 	auto execTimeout = ctx.call->execTimeout;
-	auto beginT = steady_clock::now();
+	auto beginT = steady_clock_w::now_coarse();
 	auto item = Item(db.NewItem(ns));
 	if (execTimeout.count() > 0) {
-		execTimeout -= duration_cast<milliseconds>(beginT - steady_clock::now());
+		execTimeout -= duration_cast<milliseconds>(beginT - steady_clock_w::now_coarse());
 		if (execTimeout.count() <= 0) {
 			return errCanceled;
 		}
@@ -682,6 +681,7 @@ Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin, std::optio
 		Query query = Query::Deserialize(ser);
 		query.type_ = QueryDelete;
 
+		ActiveQueryScope scope(query, QueryDelete);
 		const int flags = flagsOpts ? flagsOpts.value() : kResultsWithItemID;
 		QueryResults qres(flags);
 		auto err = getDB(ctx, kRoleDataWrite).Delete(query, qres);
@@ -702,6 +702,7 @@ Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin, std::optio
 		Query query = Query::Deserialize(ser);
 		query.type_ = QueryUpdate;
 
+		ActiveQueryScope scope(query, QueryUpdate);
 		const int flags = flagsOpts ? flagsOpts.value() : (kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
 		QueryResults qres(flags);
 		auto err = getDB(ctx, kRoleDataWrite).Update(query, qres);
@@ -999,6 +1000,7 @@ Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int 
 		return err;
 	}
 
+	ActiveQueryScope scope(query, QuerySelect);
 	const auto data = getClientDataSafe(ctx);
 	if (query.IsWALQuery()) {
 		query.Where(std::string("#slave_version"sv), CondEq, data->rxVersion.StrippedString());
@@ -1039,6 +1041,8 @@ Error RPCServer::SelectSQL(cproto::Context &ctx, p_string querySql, int flags, i
 		}
 		throw;
 	}
+
+	ActiveQueryScope scope(querySql);
 	auto ret = execSqlQueryByType(querySql, *qres, limit, ctx);
 	if (!ret.ok()) {
 		freeQueryResults(ctx, id);
@@ -1197,6 +1201,10 @@ Error RPCServer::EnumMeta(cproto::Context &ctx, p_string ns) {
 	return Error();
 }
 
+Error RPCServer::DeleteMeta(cproto::Context &ctx, p_string ns, p_string key) {
+	return getDB(ctx, kRoleDataWrite).DeleteMeta(ns, key.toString());
+}
+
 Error RPCServer::SubscribeUpdates([[maybe_unused]] cproto::Context &ctx, [[maybe_unused]] int flag,
 								  [[maybe_unused]] std::optional<p_string> filterJson, [[maybe_unused]] std::optional<int> options) {
 #ifdef REINDEX_WITH_V3_FOLLOWERS
@@ -1291,7 +1299,7 @@ Error RPCServer::SetTagsMatcher(cproto::Context &ctx, p_string ns, int64_t state
 	TagsMatcher tm;
 	Serializer ser(data);
 	try {
-		tm.deserialize(ser, (int)version, (int)statetoken);
+		tm.deserialize(ser, int(version), int(statetoken));
 	} catch (Error &err) {
 		return err;
 	}
@@ -1334,6 +1342,7 @@ bool RPCServer::Start(const std::string &addr, ev::dynamic_loop &loop, RPCSocket
 	dispatcher_.Register(cproto::kCmdGetMeta, this, &RPCServer::GetMeta);
 	dispatcher_.Register(cproto::kCmdPutMeta, this, &RPCServer::PutMeta);
 	dispatcher_.Register(cproto::kCmdEnumMeta, this, &RPCServer::EnumMeta);
+	dispatcher_.Register(cproto::kCmdDeleteMeta, this, &RPCServer::DeleteMeta);
 	dispatcher_.Register(cproto::kCmdSubscribeUpdates, this, &RPCServer::SubscribeUpdates);
 	dispatcher_.Register(cproto::kCmdGetReplState, this, &RPCServer::GetReplState);
 	dispatcher_.Register(cproto::kCmdCreateTmpNamespace, this, &RPCServer::CreateTemporaryNamespace);

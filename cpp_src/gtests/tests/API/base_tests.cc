@@ -33,7 +33,7 @@ TEST(ReindexerTest, DeleteTemporaryNamespaceOnConnect) {
 		err = rt.CreateTemporaryNamespace("tmp_ns", temporaryNamespaceOnFSName, StorageOpts().Enabled());
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		// Check temporary namespace on Filesysten
+		// Check temporary namespace on filesystem
 		temporaryNamespacePath = reindexer::fs::JoinPath(kStoragePath, temporaryNamespaceOnFSName);
 		ASSERT_TRUE(reindexer::fs::Stat(temporaryNamespacePath) == reindexer::fs::StatDir);
 	}
@@ -824,7 +824,7 @@ TEST_F(ReindexerApi, WithTimeoutInterface) {
 template <CollateMode collateMode>
 struct CollateComparer {
 	bool operator()(const std::string& lhs, const std::string& rhs) const {
-		return reindexer::collateCompare<collateMode>(lhs, rhs, reindexer::SortingPrioritiesTable()) < 0;
+		return reindexer::collateCompare<collateMode>(lhs, rhs, reindexer::SortingPrioritiesTable()) == reindexer::ComparationResult::Lt;
 	}
 };
 
@@ -887,26 +887,27 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 	for (auto& it : qr) {
 		Item item = it.GetItem(false);
 
-		std::vector<int> cmpRes(query.sortingEntries_.size());
-		std::fill(cmpRes.begin(), cmpRes.end(), -1);
+		std::vector<reindexer::ComparationResult> cmpRes(query.sortingEntries_.size());
+		std::fill(cmpRes.begin(), cmpRes.end(), reindexer::ComparationResult::Lt);
 
 		for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
 			const reindexer::SortingEntry& sortingEntry(query.sortingEntries_[j]);
 			Variant sortedValue = item[sortingEntry.expression];
 			if (!lastValues[j].Type().Is<reindexer::KeyValueType::Null>()) {
-				cmpRes[j] = lastValues[j].Compare(sortedValue);
+				cmpRes[j] = lastValues[j].Compare<reindexer::NotComparable::Return>(sortedValue);
 				bool needToVerify = true;
 				if (j != 0) {
 					for (int k = j - 1; k >= 0; --k)
-						if (cmpRes[k] != 0) {
+						if (cmpRes[k] != reindexer::ComparationResult::Eq) {
 							needToVerify = false;
 							break;
 						}
 				}
 				needToVerify = (j == 0) || needToVerify;
 				if (needToVerify) {
-					bool sortOrderSatisfied =
-						(sortingEntry.desc && cmpRes[j] >= 0) || (!sortingEntry.desc && cmpRes[j] <= 0) || (cmpRes[j] == 0);
+					bool sortOrderSatisfied = (sortingEntry.desc && (cmpRes[j] & reindexer::ComparationResult::Ge)) ||
+											  (!sortingEntry.desc && (cmpRes[j] & reindexer::ComparationResult::Le)) ||
+											  (cmpRes[j] == reindexer::ComparationResult::Eq);
 					EXPECT_TRUE(sortOrderSatisfied)
 						<< "\nSort order is incorrect for column: " << sortingEntry.expression << "; rowID: " << item[1].As<int>();
 				}
@@ -1527,7 +1528,11 @@ TEST_F(ReindexerApi, EqualPositionsSqlParserTest) {
 		"SELECT * FROM ns WHERE (f1 = 1 AND f2 = 2 OR f3 = 3 equal_position(f1, f2) equal_position(f1, f3)) OR (f4 = 4 AND f5 > 5 "
 		"equal_position(f4, f5))";
 
+// GCC 12 False positive warning in the expression tree
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#pragma GCC diagnostic push
 	Query query = Query::FromSQL(sql);
+#pragma GCC diagnostic pop
 	EXPECT_EQ(query.GetSQL(), sql);
 	EXPECT_TRUE(query.Entries().equalPositions.empty());
 	ASSERT_EQ(query.Entries().Size(), 7);
@@ -1998,6 +2003,7 @@ TEST_F(ReindexerApi, UpdateDoublesItemByPKIndex) {
 		}
 	}
 }
+
 TEST_F(ReindexerApi, IntFieldConvertToStringIndexTest) {
 	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -2071,40 +2077,124 @@ TEST_F(ReindexerApi, IntFieldConvertToStringIndexTest) {
 	testImpl(Order::AddIndexThenUpdate);
 }
 
-TEST_F(ReindexerApi, Meta) {
-	const std::string kMetaKey = "key";
-	const std::string kMetaVal = "value";
-	auto& rx = *rt.reindexer;
-	std::vector<std::string> meta;
-
-	Error err = rx.OpenNamespace(default_namespace);
+TEST_F(ReindexerApi, MetaIndexTest) {
+	const std::string kBaseTestsStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/api_meta_storage/");
+	auto rx = std::make_unique<Reindexer>();
+	auto err = rx->Connect("builtin://" + kBaseTestsStoragePath);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	err = rx.EnumMeta(default_namespace, meta);
-	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_EQ(meta.size(), 0);
-
-	err = rx.PutMeta(default_namespace, kMetaKey, kMetaVal);
+	err = rx->OpenNamespace(default_namespace, StorageOpts().Enabled().CreateIfMissing());
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	err = rx.EnumMeta(default_namespace, meta);
-	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_EQ(meta.size(), 1);
-	ASSERT_EQ(meta[0], kMetaKey);
+	std::string readMeta;
+	std::vector<std::string> readKeys;
+	const std::string emptyValue;
+	const std::string unsettedKey = "unexpected#meta#key##name";
+	const std::vector<std::pair<std::string, std::string>> meta = {
+		{ "key1", "data1" },
+		{ "key2", "data2" }
+	};
 
-	{
-		std::string data;
-		err = rx.GetMeta(default_namespace, kMetaKey, data);
+	// prepare state - clear meta in ns
+	err = rx->EnumMeta(default_namespace, readKeys);
+	ASSERT_TRUE(err.ok()) << err.what();
+	for (const auto& key : readKeys) {
+		err = rx->DeleteMeta(default_namespace, key);
 		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_EQ(data, kMetaVal);
 	}
 
-	{
-		std::vector<reindexer::ShardedMeta> data;
-		err = rx.GetMeta(default_namespace, kMetaKey, data);
+	// empty key to operations
+	err = rx->GetMeta(default_namespace, emptyValue, readMeta);
+	ASSERT_FALSE(err.ok()) << err.what();
+
+	err = rx->PutMeta(default_namespace, emptyValue, emptyValue);
+	ASSERT_FALSE(err.ok()) << err.what();
+
+	err = rx->DeleteMeta(default_namespace, emptyValue);
+	ASSERT_FALSE(err.ok()) << err.what();
+
+	// before initialization - read\enum\delete on empty Meta
+	readMeta = "DEFAULT";
+	err = rx->GetMeta(default_namespace, meta.front().first, readMeta);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(readMeta, emptyValue);
+
+	readKeys.clear();
+	err = rx->EnumMeta(default_namespace, readKeys);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(readKeys, std::vector<std::string>{});
+
+	err = rx->DeleteMeta(default_namespace, unsettedKey);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// initialization - store meta (overwrite first item)
+	for (const auto& item : meta) {
+		err = rx->PutMeta(default_namespace, item.first, item.second);
 		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_EQ(data.size(), 1);
-		ASSERT_EQ(data[0].data, kMetaVal);
-		ASSERT_EQ(data[0].shardId, ShardingKeyType::NotSetShard);
 	}
+
+	// reload ns, check store\load meta from storage
+	err = rx->CloseNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rx->OpenNamespace(default_namespace, StorageOpts().Enabled().CreateIfMissing());
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// check values - enumerate all data
+	readKeys.clear();
+	err = rx->EnumMeta(default_namespace, readKeys);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(readKeys.size(), meta.size());
+
+	// get shard meta
+	std::vector<reindexer::ShardedMeta> data;
+	err = rx->GetMeta(default_namespace, "key1", data);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(data.size(), 1);
+	ASSERT_EQ(data[0].data, "data1");
+	ASSERT_EQ(data[0].shardId, ShardingKeyType::NotSetShard);
+
+	for (const auto& key : readKeys) {
+		err = rx->GetMeta(default_namespace, key, readMeta);
+		ASSERT_TRUE(err.ok()) << err.what();
+		auto it = std::find_if(meta.begin(), meta.end(),
+							   [&key](const std::pair<std::string, std::string>& elem) {
+								   return elem.first == key;
+							   });
+		ASSERT_TRUE(it != meta.end());
+		ASSERT_EQ(readMeta, it != meta.end()? it->second : unsettedKey);
+	}
+
+	// deleting
+	err = rx->DeleteMeta(default_namespace, unsettedKey);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	for (const auto& item : meta) {
+		// first delete
+		err = rx->DeleteMeta(default_namespace, item.first);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		// read just removed
+		err = rx->GetMeta(default_namespace, item.first, readMeta);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(readMeta, emptyValue);
+
+		// write back just removed
+		err = rx->PutMeta(default_namespace, item.first, item.second);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		// real delete
+		err = rx->DeleteMeta(default_namespace, item.first);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
+	// enum again
+	readKeys.push_back(unsettedKey);
+	err = rx->EnumMeta(default_namespace, readKeys);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(readKeys, std::vector<std::string>{});
+
+	// remove storage
+	err = rx->DropNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
 }

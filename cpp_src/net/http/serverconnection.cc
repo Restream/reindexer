@@ -320,7 +320,7 @@ ssize_t ServerConnection::ResponseWriter::Write(chunk &&chunk, Writer::WriteMode
 		}
 
 		std::tm tm;
-		std::time_t t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+		std::time_t t = system_clock_w::to_time_t(system_clock_w::now_coarse());
 		fast_gmtime_r(&t, &tm);				   // gmtime_r(&t, &tm);
 		size_t l = fast_strftime(dtBuf, &tm);  // strftime(tmpBuf, sizeof(tmpBuf), "%a %c", &tm);
 		SetHeader(Header{"Date"sv, {dtBuf, l}});

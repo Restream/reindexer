@@ -1,6 +1,7 @@
 #include <gtest/gtest-param-test.h>
 #include <unordered_map>
 #include "core/cjson/jsonbuilder.h"
+#include "core/ft/limits.h"
 #include "ft_api.h"
 #include "tools/logger.h"
 #include "yaml-cpp/yaml.h"
@@ -358,6 +359,137 @@ TEST_P(FTGenericApi, SelectWithDistance2) {
 			CheckAllPermutations("", {R"s(-"one two")s", "+empty"}, "",
 								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
 		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!one!", ""},
+																				  {"!two!", ""},
+																				  {"!one two!", ""},
+																				  {"empty !one two!", ""},
+																				  {"empty !one two! word", ""},
+																				  {"!one! empty !two!", ""},
+																				  {"word !one! empty !two!", ""},
+																				  {"word !one! empty empty !two! word", ""},
+																				  {"word !one! empty empty empty !two! word", ""},
+																				  {"!one ецщ!", ""},
+																				  {"word !one! empty empty empty !two two! word", ""},
+																				  {"word !one one! empty empty empty !two! word", ""}};
+			CheckAllPermutations("", {R"s("one")s", R"s("two")s"}, "",
+								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!one!", ""},
+																				  {"!two!", ""},
+																				  {"!one two!", ""},
+																				  {"empty !one two!", ""},
+																				  {"empty !one two! word", ""},
+																				  {"!one! empty !two!", ""},
+																				  {"word !one! empty !two!", ""},
+																				  {"word !one! empty empty !two! word", ""},
+																				  {"word !one! empty empty empty !two! word", ""},
+																				  {"!one ецщ!", ""},
+																				  {"word !one! empty empty empty !two two! word", ""},
+																				  {"word !one one! empty empty empty !two! word", ""}};
+			CheckAllPermutations("", {R"s("one")s", R"s("")s", R"s("two")s"}, "",
+								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!one!", ""},
+																				  {"!two!", ""},
+																				  {"!one two!", ""},
+																				  {"empty !one two!", ""},
+																				  {"empty !one two! word", ""},
+																				  {"!one! empty !two!", ""},
+																				  {"word !one! empty !two!", ""},
+																				  {"word !one! empty empty !two! word", ""},
+																				  {"word !one! empty empty empty !two! word", ""},
+																				  {"!one ецщ!", ""},
+																				  {"word !one! empty empty empty !two two! word", ""},
+																				  {"word !one one! empty empty empty !two! word", ""}};
+			CheckAllPermutations("", {R"s("one"~3)s", R"s(""~4)s", R"s("two"~5)s"}, "",
+								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!one!", ""},
+																				  {"!two!", ""},
+																				  {"!empty!", ""},
+																				  {"!one two!", ""},
+																				  {"!empty one two!", ""},
+																				  {"!empty one two! word", ""},
+																				  {"!one empty two!", ""},
+																				  {"word !one empty two!", ""},
+																				  {"word !one empty empty two! word", ""},
+																				  {"word !one empty empty empty two! word", ""},
+																				  {"!one ецщ!", ""},
+																				  {"word !one empty empty empty two two! word", ""},
+																				  {"word !one one empty empty empty two! word", ""}};
+			CheckAllPermutations("", {R"s("one")s", R"s("two")s", R"s("empty")s"}, "",
+								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!one!", ""},
+																				  {"!two!", ""},
+																				  {"!empty!", ""},
+																				  {"!one two!", ""},
+																				  {"!empty one two!", ""},
+																				  {"!empty one two! word", ""},
+																				  {"!one empty two!", ""},
+																				  {"word !one empty two!", ""},
+																				  {"word !one empty empty two! word", ""},
+																				  {"word !one empty empty empty two! word", ""},
+																				  {"!one ецщ!", ""},
+																				  {"word !one empty empty empty two two! word", ""},
+																				  {"word !one one empty empty empty two! word", ""}};
+			CheckAllPermutations("", {R"s("one")s", R"s("two")s", "empty"}, "",
+								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!one!", ""},
+																				  {"!two!", ""},
+																				  {"!empty!", ""},
+																				  {"!one two!", ""},
+																				  {"!empty one two!", ""},
+																				  {"!empty one two! word", ""},
+																				  {"!one empty two!", ""},
+																				  {"word !one empty two!", ""},
+																				  {"word !one empty empty two! word", ""},
+																				  {"word !one empty empty empty two! word", ""},
+																				  {"!one ецщ!", ""},
+																				  {"word !one empty empty empty two two! word", ""},
+																				  {"word !one one empty empty empty two! word", ""}};
+			CheckAllPermutations("", {R"s("one")s", R"s("")s", R"s("two")s", "empty"}, "",
+								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!one!", ""},
+																				  {"!two!", ""},
+																				  {"!empty!", ""},
+																				  {"!one two!", ""},
+																				  {"!empty one two!", ""},
+																				  {"!empty one two! word", ""},
+																				  {"!one empty two!", ""},
+																				  {"word !one empty two!", ""},
+																				  {"word !one empty empty two! word", ""},
+																				  {"word !one empty empty empty two! word", ""},
+																				  {"!one ецщ!", ""},
+																				  {"word !one empty empty empty two two! word", ""},
+																				  {"word !one one empty empty empty two! word", ""}};
+			CheckAllPermutations("", {R"s("one"~2)s", R"s("two"~3)s", "empty"}, "",
+								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!empty!", ""},
+																				  {"!one two!", ""},
+																				  {"!one ецщ!", ""},
+																				  {"!empty one two!", ""},
+																				  {"!empty one two! word", ""},
+																				  {"one !empty! two", ""},
+																				  {"word one !empty empty! two word", ""},
+																				  {"word one !empty empty empty! two word", ""},
+																				  {"word one !empty! two", ""},
+																				  {"word one !empty empty empty! two two word", ""},
+																				  {"word one one !empty empty empty! two word", ""}};
+			CheckAllPermutations("", {R"s("empty")s", R"s("one two")s"}, "",
+								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
+		}
 	};
 
 	Init(GetDefaultConfig());
@@ -548,7 +680,8 @@ TEST_P(FTGenericApi, HugeNumberToWordsSelect2) {
 	// Execute FT query, where search words are set as strings
 	reindexer::QueryResults qr;
 	const std::string searchWord =
-		"+один +октиллион +сто +двадцать +семь +септиллионов +триста +сорок +три +секстиллиона +сто +двадцать +один +квинтиллион +пятьсот "
+		"+один +октиллион +сто +двадцать +семь +септиллионов +триста +сорок +три +секстиллиона +сто +двадцать +один +квинтиллион "
+		"+пятьсот "
 		"+двадцать +один +квадриллион +девятьсот +шесть +триллионов +пятьсот +двадцать +два +миллиарда +сто +восемьдесят +миллионов "
 		"+четыреста +восемь +тысяч +четыреста +сорок";
 	auto q{reindexer::Query("nm1").Where("ft3", CondEq, searchWord)};
@@ -1015,16 +1148,16 @@ TEST_P(FTGenericApi, SetFtFieldsCfgErrors) {
 TEST_P(FTGenericApi, MergeLimitConstraints) {
 	auto cfg = GetDefaultConfig();
 	Init(cfg);
-	cfg.mergeLimit = kMinMergeLimitValue - 1;
-	auto err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	cfg.mergeLimit = reindexer::kMinMergeLimitValue - 1;
+	reindexer::Error err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_EQ(err.code(), errParseJson);
-	cfg.mergeLimit = kMaxMergeLimitValue + 1;
+	cfg.mergeLimit = reindexer::kMaxMergeLimitValue + 1;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_EQ(err.code(), errParseJson);
-	cfg.mergeLimit = kMinMergeLimitValue;
+	cfg.mergeLimit = reindexer::kMinMergeLimitValue;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_TRUE(err.ok()) << err.what();
-	cfg.mergeLimit = kMaxMergeLimitValue;
+	cfg.mergeLimit = reindexer::kMaxMergeLimitValue;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_TRUE(err.ok()) << err.what();
 }
@@ -1361,8 +1494,8 @@ TEST_P(FTGenericApi, ExplainWithFtPreselect) {
 		auto selectors = root["selectors"];
 		ASSERT_TRUE(selectors.IsSequence()) << qr.GetExplainResults();
 		ASSERT_EQ(selectors.size(), 2) << qr.GetExplainResults();
-		ASSERT_EQ(selectors[0]["field"].as<std::string>(), "(-scan and (id and inner_join ns_for_joins) or id)") << qr.GetExplainResults();
-		ASSERT_EQ(selectors[1]["field"].as<std::string>(), "ft3") << qr.GetExplainResults();
+		EXPECT_EQ(selectors[0]["field"].as<std::string>(), "(-scan and (id and inner_join ns_for_joins) or id)") << qr.GetExplainResults();
+		EXPECT_EQ(selectors[1]["field"].as<std::string>(), "ft3") << qr.GetExplainResults();
 	}
 	{
 		// Check the same query with extra brackets over ft condition. Make sure, that ft-index was still move to the end of the query
@@ -1385,8 +1518,8 @@ TEST_P(FTGenericApi, ExplainWithFtPreselect) {
 		auto selectors = root["selectors"];
 		ASSERT_TRUE(selectors.IsSequence()) << qr.GetExplainResults();
 		ASSERT_EQ(selectors.size(), 2) << qr.GetExplainResults();
-		ASSERT_EQ(selectors[0]["field"].as<std::string>(), "(-scan and (id and inner_join ns_for_joins) or id)") << qr.GetExplainResults();
-		ASSERT_EQ(selectors[1]["field"].as<std::string>(), "ft3") << qr.GetExplainResults();
+		EXPECT_EQ(selectors[0]["field"].as<std::string>(), "(-scan and (id and inner_join ns_for_joins) or id)") << qr.GetExplainResults();
+		EXPECT_EQ(selectors[1]["field"].as<std::string>(), "ft3") << qr.GetExplainResults();
 	}
 }
 

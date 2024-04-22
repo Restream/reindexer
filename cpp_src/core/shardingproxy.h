@@ -58,6 +58,7 @@ public:
 	Error GetMeta(std::string_view nsName, const std::string &key, std::vector<ShardedMeta> &data, const RdxContext &ctx);
 	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data, const RdxContext &ctx);
 	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const RdxContext &ctx);
+	Error DeleteMeta(std::string_view nsName, const std::string &key, const RdxContext &ctx);
 
 	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions, const RdxContext &ctx) {
 		return impl_.GetSqlSuggestions(sqlQuery, pos, suggestions, ctx);

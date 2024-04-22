@@ -4,12 +4,12 @@
 #include "cluster/updaterecord.h"
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
-#include "core/query/query.h"
 
 namespace reindexer {
 
 class NsContext;
 class NamespaceImpl;
+class UpdateEntry;
 
 class ItemModifier {
 public:
@@ -35,7 +35,7 @@ private:
 		int arrayIndex() const noexcept { return arrayIndex_; }
 		int index() const noexcept { return fieldIndex_; }
 		bool isIndex() const noexcept { return isIndex_; }
-		const std::string &name() const noexcept { return entry_.Column(); }
+		const std::string &name() const noexcept;
 
 	private:
 		const UpdateEntry &entry_;
@@ -68,6 +68,10 @@ private:
 	void modifyCJSON(IdType itemId, FieldData &field, VariantArray &values, h_vector<cluster::UpdateRecord, 2> &pendedRepl,
 					 const NsContext &);
 	void modifyIndexValues(IdType itemId, const FieldData &field, VariantArray &values, Payload &pl);
+
+	void deleteDataFromComposite(IdType itemId, FieldData &field, h_vector<bool, 32> &needUpdateCompIndexes);
+	void insertItemIntoCompositeIndexes(IdType itemId, int firstCompositePos, int totalIndexes,
+										const h_vector<bool, 32> &needUpdateCompIndexes);
 
 	NamespaceImpl &ns_;
 	const std::vector<UpdateEntry> &updateEntries_;

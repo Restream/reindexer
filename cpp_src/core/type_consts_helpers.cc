@@ -29,6 +29,29 @@ namespace reindexer {
 	throw Error(errForbidden, "Not invertible conditional operator '%s(%d)' in query", CondTypeToStr(cond), cond);
 }
 
+[[nodiscard]] CondType InvertNotCondition(CondType cond) {
+	switch (cond) {
+		case CondGt:
+			return CondLe;
+		case CondLt:
+			return CondGe;
+		case CondGe:
+			return CondLt;
+		case CondLe:
+			return CondGt;
+		case CondSet:
+		case CondEq:
+		case CondAny:
+		case CondRange:
+		case CondAllSet:
+		case CondEmpty:
+		case CondLike:
+		case CondDWithin:
+			break;
+	}
+	throw Error(errForbidden, "Not invertible conditional operator '%s(%d)' in query", CondTypeToStr(cond), cond);
+}
+
 [[nodiscard]] std::string_view CondTypeToStr(CondType t) {
 	using namespace std::string_view_literals;
 	switch (t) {
@@ -58,6 +81,37 @@ namespace reindexer {
 			return "CondDWithin"sv;
 	}
 	throw Error{errNotValid, "Invalid condition type: %d", t};
+}
+
+[[nodiscard]] std::string_view CondTypeToStrShort(CondType cond) {
+	using namespace std::string_view_literals;
+	switch (cond) {
+		case CondAny:
+			return "IS NOT NULL"sv;
+		case CondEq:
+			return "="sv;
+		case CondLt:
+			return "<"sv;
+		case CondLe:
+			return "<="sv;
+		case CondGt:
+			return ">"sv;
+		case CondGe:
+			return ">="sv;
+		case CondRange:
+			return "RANGE"sv;
+		case CondSet:
+			return "IN"sv;
+		case CondAllSet:
+			return "ALLSET"sv;
+		case CondEmpty:
+			return "IS NULL"sv;
+		case CondLike:
+			return "LIKE"sv;
+		case CondDWithin:
+			return "DWITHIN"sv;
+	}
+	throw Error{errNotValid, "Invalid condition type: %d", cond};
 }
 
 [[nodiscard]] std::string_view TagTypeToStr(TagType t) {

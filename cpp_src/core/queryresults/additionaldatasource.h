@@ -4,14 +4,14 @@
 
 namespace reindexer {
 
-class AdditionalDatasource : public IAdditionalDatasource<JsonBuilder> {
+class AdditionalDatasource final : public IAdditionalDatasource<JsonBuilder> {
 public:
-	AdditionalDatasource(double r, IEncoderDatasourceWithJoins *jds) : joinsDs_(jds), withRank_(true), rank_(r) {}
-	AdditionalDatasource(IEncoderDatasourceWithJoins *jds) : joinsDs_(jds), withRank_(false), rank_(0.0) {}
-	void PutAdditionalFields(JsonBuilder &builder) const final {
+	AdditionalDatasource(double r, IEncoderDatasourceWithJoins *jds) noexcept : joinsDs_(jds), withRank_(true), rank_(r) {}
+	AdditionalDatasource(IEncoderDatasourceWithJoins *jds) noexcept : joinsDs_(jds) {}
+	void PutAdditionalFields(JsonBuilder &builder) const override {
 		if (withRank_) builder.Put("rank()", rank_);
 	}
-	IEncoderDatasourceWithJoins *GetJoinsDatasource() final { return joinsDs_; }
+	IEncoderDatasourceWithJoins *GetJoinsDatasource() noexcept override { return joinsDs_; }
 
 private:
 	IEncoderDatasourceWithJoins *joinsDs_ = nullptr;
@@ -19,21 +19,21 @@ private:
 	double rank_ = 0.0;
 };
 
-class AdditionalDatasourceShardId : public IAdditionalDatasource<JsonBuilder> {
+class AdditionalDatasourceShardId final : public IAdditionalDatasource<JsonBuilder> {
 public:
-	AdditionalDatasourceShardId(int shardId) : shardId_(shardId) {}
-	void PutAdditionalFields(JsonBuilder &builder) const final { builder.Put("#shard_id", shardId_); }
-	IEncoderDatasourceWithJoins *GetJoinsDatasource() final { return nullptr; }
+	AdditionalDatasourceShardId(int shardId) noexcept : shardId_(shardId) {}
+	void PutAdditionalFields(JsonBuilder &builder) const override { builder.Put("#shard_id", shardId_); }
+	IEncoderDatasourceWithJoins *GetJoinsDatasource() noexcept override { return nullptr; }
 
 private:
 	int shardId_;
 };
 
-class AdditionalDatasourceCSV : public IAdditionalDatasource<CsvBuilder> {
+class AdditionalDatasourceCSV final : public IAdditionalDatasource<CsvBuilder> {
 public:
-	AdditionalDatasourceCSV(IEncoderDatasourceWithJoins *jds) : joinsDs_(jds) {}
-	void PutAdditionalFields(CsvBuilder &) const final {}
-	IEncoderDatasourceWithJoins *GetJoinsDatasource() final { return joinsDs_; }
+	AdditionalDatasourceCSV(IEncoderDatasourceWithJoins *jds) noexcept : joinsDs_(jds) {}
+	void PutAdditionalFields(CsvBuilder &) const override {}
+	IEncoderDatasourceWithJoins *GetJoinsDatasource() noexcept override { return joinsDs_; }
 
 private:
 	IEncoderDatasourceWithJoins *joinsDs_;

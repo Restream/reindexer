@@ -4,7 +4,6 @@
 #include "core/cjson/objtype.h"
 #include "core/cjson/tagsmatcher.h"
 #include "tools/flagguard.h"
-#include "vendor/msgpack/msgpack.h"
 
 namespace reindexer {
 

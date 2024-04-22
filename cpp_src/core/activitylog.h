@@ -35,11 +35,11 @@ public:
 
 	struct ActivityOperation {
 		ActivityOperation(Activity::State st, bool start) {
-			tp = std::chrono::system_clock::now();
+			tp = system_clock_w::now();
 			isStart = start;
 			state = st;
 		}
-		std::chrono::time_point<std::chrono::system_clock> tp;
+		system_clock_w::time_point tp;
 		bool isStart;
 		Activity::State state;
 	};

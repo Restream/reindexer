@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.10)
 
 # Configure cmake options
 if (MSVC)
@@ -21,7 +21,7 @@ option (WITH_GCOV "Enable instrumented code coverage build" OFF)
 option (WITH_STDLIB_DEBUG "Enable compiler's debug flags for stdlib behaviour validation (gcc/clang)" OFF)
 
 if (WIN32)
-    option (WITH_CPPTRACE "Enable CppTrace" ON)
+  option (WITH_CPPTRACE "Enable CppTrace" ON)
 endif()
 
 option (ENABLE_LIBUNWIND "Enable libunwind" ON)
@@ -44,7 +44,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "4.14.0")
+set (REINDEXER_VERSION_DEFAULT "4.15.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -399,6 +399,14 @@ if (ENABLE_ROCKSDB)
         message (STATUS "zlib: not found")
       endif()
 
+      find_library(ZSTD_LIBRARY zstd)
+      if (ZSTD_LIBRARY)
+        message (STATUS "Found zstdlib: ${ZSTD_LIBRARY}")
+        list(APPEND REINDEXER_LIBRARIES ${ZSTD_LIBRARY})
+      else()
+        message (STATUS "zstdlib: not found")
+      endif()
+
       include_directories(SYSTEM ${RocksDB_INCLUDE_DIR})
       list(INSERT REINDEXER_LIBRARIES 1 ${RocksDB_LIBRARY})
       add_definitions(-DREINDEX_WITH_ROCKSDB)
@@ -468,16 +476,13 @@ if (WITH_CPPTRACE)
   add_definitions(-DREINDEX_WITH_CPPTRACE)
   add_dependencies(reindexer cpptrace_lib)
   list(APPEND REINDEXER_LIBRARIES cpptrace ${REINDEXER_LIBRARIES})
-
 endif()
-
 
 # librt
 find_library(LIBRT rt)
 if(LIBRT)
   list (APPEND REINDEXER_LIBRARIES ${LIBRT})
 endif()
-
 
 if (NOT WIN32)
   # libdl
@@ -573,269 +578,11 @@ if (CMAKE_MATCH_1)
   set (REINDEXER_VERSION ${REINDEXER_VERSION}.${REINDEXER_RELEASE})
 endif()
 
-# Packaging and install stuff
-if(CMAKE_SYSTEM_NAME MATCHES "Linux" AND EXISTS "/etc/issue")
-  file(READ "/etc/issue" LINUX_ISSUE)
-endif ()
-if(CMAKE_SYSTEM_NAME MATCHES "Linux" AND EXISTS "/etc/os-release")
-  file(READ "/etc/os-release" LINUX_ISSUE)
-endif ()
+# Packing and installation
+include (RxPrepareCpackDeps)
+include (RxPrepareInstallFiles)
 
-set(CPACK_GENERATOR "TGZ")
-
-if (WIN32) 
-  set (CPACK_GENERATOR "NSIS")
-elseif (LINUX_ISSUE MATCHES "Fedora" OR LINUX_ISSUE MATCHES "CentOS" OR LINUX_ISSUE MATCHES "Mandriva" OR LINUX_ISSUE MATCHES "RED OS")
-  set(CPACK_GENERATOR "RPM")
-  set(CPACK_PACKAGE_RELOCATABLE OFF)
-elseif (LINUX_ISSUE MATCHES "Ubuntu" OR LINUX_ISSUE MATCHES "Debian" OR LINUX_ISSUE MATCHES "Mint")
-  set(CPACK_GENERATOR "DEB")
-endif()
-
-SET(CPACK_PACKAGE_NAME "reindexer-4")
-SET(CPACK_PACKAGE_DESCRIPTION_SUMMARY "ReindexerDB server package")
-SET(CPACK_PACKAGE_VENDOR "Reindexer")
-SET(CPACK_PACKAGE_CONTACT "Oleg Gerasimov <ogerasimov@gmail.com>")
-SET(CPACK_PACKAGE_VERSION ${REINDEXER_VERSION})
-
-set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
-set(CPACK_RPM_COMPONENT_INSTALL ON)
-set(CPACK_DEB_COMPONENT_INSTALL ON)
-if (WIN32)
-  set(CPACK_SET_DESTDIR OFF)
-else ()
-  set(CPACK_SET_DESTDIR ON)
-endif()
-
-
-set(CPACK_RESOURCE_FILE_LICENSE ${REINDEXER_SOURCE_PATH}/../LICENSE)
-
-# Dependencies
-set (CPACK_DEBIAN_PACKAGE_DEPENDS "")
-set (CPACK_RPM_PACKAGE_REQUIRES "")
-
-if (LevelDB_LIBRARY)
-  SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},libleveldb-dev")
-  SET(CPACK_RPM_PACKAGE_REQUIRES "${CPACK_RPM_PACKAGE_REQUIRES},leveldb")
-endif ()
-
-if (RocksDB_LIBRARY)
-  SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},librocksdb-dev")
-  SET(CPACK_RPM_PACKAGE_REQUIRES "${CPACK_RPM_PACKAGE_REQUIRES},rocksdb")
-endif ()
-
-if (Z_LIBRARY)
-  SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},zlib1g-dev")
-  SET(CPACK_RPM_PACKAGE_REQUIRES "${CPACK_RPM_PACKAGE_REQUIRES},zlib")
-endif()
-
-if (BZ2_LIBRARY)
-  SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},libbz2-dev")
-  SET(CPACK_RPM_PACKAGE_REQUIRES "${CPACK_RPM_PACKAGE_REQUIRES},bzip2")
-endif()
-
-if (LZ4_LIBRARY)
-  SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},liblz4-dev")
-  SET(CPACK_RPM_PACKAGE_REQUIRES "${CPACK_RPM_PACKAGE_REQUIRES},lz4")
-endif()
-
-if (SNAPPY_FOUND)
-  SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},libsnappy-dev")
-  SET(CPACK_RPM_PACKAGE_REQUIRES "${CPACK_RPM_PACKAGE_REQUIRES},snappy")
-endif ()
-
-if (LIBUNWIND)
-  SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},libunwind-dev")
-endif()
-
-if (GPERFTOOLS_TCMALLOC)
-  SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},libgoogle-perftools4")
-  SET(CPACK_RPM_PACKAGE_REQUIRES "${CPACK_RPM_PACKAGE_REQUIRES},gperftools-libs")
-endif ()
-
-# Remove first ',' from list of dependencies
-if (CPACK_DEBIAN_PACKAGE_DEPENDS STREQUAL "")
-  set (CPACK_DEBIAN_DEV_PACKAGE_DEPENDS "libleveldb-dev")
-else ()
-  string (SUBSTRING "${CPACK_DEBIAN_PACKAGE_DEPENDS}" 1 -1 CPACK_DEBIAN_PACKAGE_DEPENDS)
-  set (CPACK_DEBIAN_DEV_PACKAGE_DEPENDS "libleveldb-dev,${CPACK_DEBIAN_PACKAGE_DEPENDS}")
-endif ()
-
-if (CPACK_RPM_PACKAGE_REQUIRES STREQUAL "")
-  set (CPACK_RPM_DEV_PACKAGE_REQUIRES "leveldb-devel")
-else()
-  string (SUBSTRING "${CPACK_RPM_PACKAGE_REQUIRES}" 1 -1 CPACK_RPM_PACKAGE_REQUIRES)
-  set (CPACK_RPM_DEV_PACKAGE_REQUIRES "")
-  string(REPLACE "," ";" CPACK_RPM_PACKAGE_REQUIRES_LIST "${CPACK_RPM_PACKAGE_REQUIRES}")
-  foreach (DEP ${CPACK_RPM_PACKAGE_REQUIRES_LIST})
-    if (NOT "${lib}" STREQUAL "snappy" OR SNAPPY_FOUND)
-      if (NOT "${DEP}" STREQUAL "gperftools-libs")
-        list(APPEND CPACK_RPM_DEV_PACKAGE_REQUIRES "${DEP}-devel")
-      else ()
-        list(APPEND CPACK_RPM_DEV_PACKAGE_REQUIRES "${DEP}")
-      endif ()
-    endif ()
-  endforeach (DEP)
-  string(REPLACE ";" "," CPACK_RPM_DEV_PACKAGE_REQUIRES "${CPACK_RPM_DEV_PACKAGE_REQUIRES}")
-endif ()
-
-set (CPACK_DEBIAN_SERVER_FILE_NAME "DEB-DEFAULT")
-set (CPACK_DEBIAN_DEV_FILE_NAME "DEB-DEFAULT")
-set (CPACK_RPM_SERVER_FILE_NAME "RPM-DEFAULT")
-set (CPACK_RPM_DEV_FILE_NAME "RPM-DEFAULT")
-
-if (NOT GO_BUILTIN_EXPORT_PKG_PATH)
-  set (GO_BUILTIN_EXPORT_PKG_PATH "${PROJECT_SOURCE_DIR}/../bindings/builtin")
-endif ()
-
-if (NOT GO_BUILTIN_SERVER_EXPORT_PKG_PATH)
-  set (GO_BUILTIN_SERVER_EXPORT_PKG_PATH "${PROJECT_SOURCE_DIR}/../bindings/builtinserver")
-endif ()
-
-if (GO_BUILTIN_EXPORT_PKG_PATH AND NOT IS_ABSOLUTE ${GO_BUILTIN_EXPORT_PKG_PATH})
-  set (GO_BUILTIN_EXPORT_PKG_PATH "${CMAKE_CURRENT_SOURCE_DIR}/${GO_BUILTIN_EXPORT_PKG_PATH}")
-endif ()
-
-  function(generate_libs_list INPUT_LIBS OUTPUT_LIST_NAME)
-    set (flibs ${${OUTPUT_LIST_NAME}})
-    foreach(lib ${INPUT_LIBS})
-      if (${lib} MATCHES "jemalloc" OR ${lib} MATCHES "tcmalloc")
-      elseif (${lib} STREQUAL "-pthread")
-        list(APPEND flibs " -lpthread")
-      elseif ("${lib}" MATCHES "^\\-.*")
-        list(APPEND flibs " ${lib}")
-      else ()
-        if (NOT "${lib}" STREQUAL "snappy" OR SNAPPY_FOUND)
-          get_filename_component(lib ${lib} NAME_WE)
-          string(REGEX REPLACE "^lib" "" lib ${lib})
-          list(APPEND flibs " -l${lib}")
-        else ()
-          list(APPEND flibs " -l${lib}")
-        endif()
-      endif ()
-    endforeach(lib)
-    list(APPEND flibs " -lstdc++")
-    set (${OUTPUT_LIST_NAME} ${flibs} PARENT_SCOPE)
-  endfunction (generate_libs_list)
-
-
-if (NOT WIN32)
-  if (GO_BUILTIN_EXPORT_PKG_PATH AND EXISTS "${GO_BUILTIN_EXPORT_PKG_PATH}/posix_config.go.in")
-    ProcessorCount (cgo_proc_count)
-    set (cgo_cxx_flags "-I../../cpp_src ${EXTRA_FLAGS}")
-    set (cgo_c_flags "-I../../cpp_src ${EXTRA_FLAGS}")
-    set (cgo_ld_flags "-L\${SRCDIR}/../../build/cpp_src/ ${EXTRA_FLAGS}")
-    generate_libs_list("${REINDEXER_LIBRARIES}" cgo_ld_flags)
-    string(REPLACE ";" "" cgo_ld_flags "${cgo_ld_flags}")
-    configure_file (
-      "${GO_BUILTIN_EXPORT_PKG_PATH}/posix_config.go.in"
-      "${GO_BUILTIN_EXPORT_PKG_PATH}/builtin_posix.go"
-      @ONLY
-    )
-    unset (cgo_cxx_flags)
-    unset (cgo_c_flags)
-    unset (cgo_ld_flags)
-  endif ()
-
-  SET(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "server")
-  SET(DIST_INCLUDE_FILES
-    "tools/errors.h" "tools/serializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h" "tools/assertrx.h" "tools/jsonstring.h"
-    "tools/verifying_updater.h" "tools/customlocal.h"
-    "core/reindexer.h" "core/type_consts.h" "core/item.h" "core/payload/payloadvalue.h" "core/payload/payloadiface.h" "core/indexopts.h"
-    "core/namespacedef.h" "core/keyvalue/variant.h" "core/keyvalue/geometry.h" "core/sortingprioritiestable.h"
-    "core/rdxcontext.h" "core/activity_context.h" "core/activity.h" "core/activitylog.h" "core/type_consts_helpers.h" "core/payload/fieldsset.h" "core/payload/payloadtype.h"
-    "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" "core/transaction/transaction.h" "core/payload/payloadfieldtype.h" "core/reindexerconfig.h"
-    "core/query/query.h" "core/query/queryentry.h" "core/queryresults/queryresults.h" "core/indexdef.h" "core/queryresults/aggregationresult.h"
-    "core/queryresults/itemref.h" "core/namespace/stringsholder.h" "core/keyvalue/key_string.h" "core/keyvalue/uuid.h" "core/key_value_type.h"
-    "core/namespace/incarnationtags.h"
-    "core/itemimplrawdata.h" "core/expressiontree.h" "tools/lsn.h" "core/cjson/tagspath.h" "core/cjson/ctag.h"
-    "estl/cow.h" "core/shardedmeta.h" "estl/overloaded.h" "estl/one_of.h"
-    "core/queryresults/localqueryresults.h"
-    "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/span.h" "estl/chunk.h"
-    "estl/fast_hash_traits.h" "estl/debug_macros.h" "estl/defines.h"
-    "client/item.h" "client/resultserializer.h"
-    "client/internalrdxcontext.h" "client/reindexer.h" "client/reindexerconfig.h"
-    "client/cororeindexer.h" "client/coroqueryresults.h" "client/corotransaction.h" "client/connectopts.h"
-    "client/queryresults.h" "client/transaction.h"
-    "net/ev/ev.h" "vendor/koishi/include/koishi.h" "coroutine/coroutine.h" "coroutine/channel.h" "coroutine/waitgroup.h"
-    "debug/backtrace.h" "debug/allocdebug.h" "debug/resolver.h" "vendor/gason/gason.h"
-  )
-
-  foreach ( file ${DIST_INCLUDE_FILES} )
-      get_filename_component( dir ${file} DIRECTORY )
-      install( FILES ${PROJECT_SOURCE_DIR}/${file} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/reindexer/${dir} COMPONENT dev )
-  endforeach()
-
-  set (VERSION ${REINDEXER_VERSION})
-  set (prefix ${CMAKE_INSTALL_PREFIX})
-  set (exec_prefix ${CMAKE_INSTALL_FULL_BINDIR})
-  set (libdir ${CMAKE_INSTALL_FULL_LIBDIR})
-  set (includedir ${CMAKE_INSTALL_FULL_INCLUDEDIR}/reindexer)
-  set (libs "")
-
-  generate_libs_list("${REINDEXER_LIBRARIES}" libs)
-  string(REPLACE ";" "" libs "${libs}")
-
-  set(linkdirs "")
-  foreach (lib ${REINDEXER_LIBRARIES})
-    get_filename_component(lib ${lib} DIRECTORY)
-    if (NOT ${lib} STREQUAL "")
-      list(FIND linkdirs ${lib} index)
-      if (NOT ${index} GREATER -1)
-        list(APPEND linkdirs ${lib})
-      endif()
-    endif()
-  endforeach(lib)
-
-  configure_file (
-    "${PROJECT_SOURCE_DIR}/libreindexer.pc.in"
-    "${PROJECT_BINARY_DIR}/pkgconfig/libreindexer.pc"
-    @ONLY
-  )
-
-  configure_file (
-    "${PROJECT_SOURCE_DIR}/reindexer-config.cmake.in"
-    "${PROJECT_BINARY_DIR}/pkgconfig/reindexer-config.cmake"
-    @ONLY
-  )
-
-  configure_file (
-    "${PROJECT_SOURCE_DIR}/reindexer-config-version.cmake.in"
-    "${PROJECT_BINARY_DIR}/pkgconfig/reindexer-config-version.cmake"
-    @ONLY
-  )
-
-  unset (VERSION)
-  unset (prefix)
-  unset (exec_prefix)
-  unset (libdir)
-  unset (includedir)
-  unset (libs)
-  unset (linkdirs)
-
-  install(TARGETS ${TARGET}
-      RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-      COMPONENT dev
-  )
-  install(DIRECTORY ${PROJECT_BINARY_DIR}/pkgconfig DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT dev)
-  install(FILES ${PROJECT_BINARY_DIR}/pkgconfig/reindexer-config.cmake DESTINATION ${CMAKE_INSTALL_LIBDIR}/reindexer COMPONENT dev)
-  install(FILES ${PROJECT_BINARY_DIR}/pkgconfig/reindexer-config-version.cmake DESTINATION ${CMAKE_INSTALL_LIBDIR}/reindexer COMPONENT dev)
-else()
-  if (GO_BUILTIN_EXPORT_PKG_PATH AND EXISTS "${GO_BUILTIN_EXPORT_PKG_PATH}/windows_config.go.in")
-    set (cgo_ld_flags "-L\${SRCDIR}/../../build/cpp_src/ ${EXTRA_FLAGS}")
-    generate_libs_list("${REINDEXER_LIBRARIES}" cgo_ld_flags)
-    string(REPLACE ";" "" cgo_ld_flags "${cgo_ld_flags}")
-    configure_file (
-      "${GO_BUILTIN_EXPORT_PKG_PATH}/windows_config.go.in"
-      "${GO_BUILTIN_EXPORT_PKG_PATH}/builtin_windows.go"
-      @ONLY
-    )
-    unset (cgo_ld_flags)
-  endif ()
-endif ()
-
+# Build subdirectories
 add_subdirectory(server)
 add_subdirectory(cmd/reindexer_tool)
 add_subdirectory(cmd/reindexer_server)
@@ -849,10 +596,17 @@ if (GTEST_FOUND)
     add_subdirectory(gtests/tests)
 endif()
 
-find_package(GBenchmark)
-if (GBENCHMARK_FOUND)
-    include_directories(SYSTEM ${GBENCHMARK_INCLUDE_DIR})
-    add_subdirectory(gtests/bench)
+find_package(benchmark)
+if (benchmark_FOUND)
+  if (${benchmark_VERSION_MAJOR} EQUAL "1" AND ${benchmark_VERSION_MINOR} GREATER_EQUAL "5" AND ${benchmark_VERSION_MINOR} LESS_EQUAL "7")
+    find_package(GBenchmark)
+    if (GBENCHMARK_FOUND)
+      include_directories(SYSTEM ${GBENCHMARK_INCLUDE_DIR})
+      add_subdirectory(gtests/bench)
+    endif()
+  else()
+    message (STATUS "Unsupported Google benchmark version: ${benchmark_VERSION}. Only versions 1.5.x-1.7.x are supported")
+  endif()
 endif()
 
 add_custom_target(collect_coverage

@@ -3,12 +3,10 @@
 #include <functional>
 #include <string>
 #include <string_view>
+#include "core/ft/limits.h"
 #include "tools/errors.h"
 
 namespace reindexer {
-
-constexpr int kMaxTyposInWord = 2;
-constexpr int kMaxTypoLenLimit = 100;
 
 struct typos_context {
 	class TyposVec {

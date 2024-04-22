@@ -19,7 +19,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query &q, int &hostId) const {
 	std::string_view ns = q.NsName();
 	for (auto it = q.Entries().cbegin(), next = it, end = q.Entries().cend(); it != end; ++it) {
 		++next;
-		it->InvokeAppropriate<void>(
+		it->Visit(
 			Skip<AlwaysTrue, AlwaysFalse, JoinQueryEntry, SubQueryEntry>{},
 			[&](const QueryEntry &qe) {
 				if (containsKey) {
@@ -60,7 +60,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query &q, int &hostId) const {
 			},
 			[&](const Bracket &) {
 				for (auto i = it.cbegin().PlainIterator(), end = it.cend().PlainIterator(); i != end; ++i) {
-					i->InvokeAppropriate<void>(
+					i->Visit(
 						Skip<AlwaysFalse, AlwaysTrue, JoinQueryEntry, Bracket, SubQueryEntry>{},
 						[&](const QueryEntry &qe) {
 							if (keys_.IsShardIndex(ns, qe.FieldName())) {
@@ -183,7 +183,7 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::Connect(int shardId, Error &
 		logPrintf(LogInfo, "[sharding proxy] Performing reconnect...");
 		auto conn = doReconnect(shardId, reconnectStatus);
 		connections_.status = reconnectStatus;
-		connections_.reconnectTs = std::chrono::steady_clock::now();
+		connections_.reconnectTs = steady_clock_w::now();
 		const auto reconnectTs = connections_.reconnectTs;
 		logPrintf(LogInfo, "[sharding proxy] Reconnect result: %s", reconnectStatus.ok() ? "OK" : reconnectStatus.what());
 

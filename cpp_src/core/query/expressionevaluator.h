@@ -20,7 +20,7 @@ public:
 
 private:
 	struct PrimaryToken {
-		enum class Type { Scalar, Array, Null };
+		enum class Type { Scalar, Array, Command, Null };
 
 		std::optional<double> value;
 		Type type;
@@ -31,6 +31,7 @@ private:
 	[[nodiscard]] double performSumAndSubtracting(tokenizer& parser, const PayloadValue& v, const NsContext& ctx);
 	[[nodiscard]] double performMultiplicationAndDivision(tokenizer& parser, const PayloadValue& v, token& lastTok, const NsContext& ctx);
 	[[nodiscard]] double performArrayConcatenation(tokenizer& parser, const PayloadValue& v, token& lastTok, const NsContext& ctx);
+	void handleCommand(tokenizer& parser, const PayloadValue& v, std::optional<double> flag, const NsContext& ctx);
 
 	void captureArrayContent(tokenizer& parser);
 	[[noreturn]] void throwUnexpectedTokenError(tokenizer& parser, const token& outTok);

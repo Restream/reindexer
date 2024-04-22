@@ -1,7 +1,7 @@
 #pragma once
 
 #include <optional>
-#include "core/ft/ftsetcashe.h"
+#include <vector>
 
 namespace reindexer {
 

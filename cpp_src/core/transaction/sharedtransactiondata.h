@@ -11,7 +11,7 @@ class ItemImpl;
 
 class SharedTransactionData {
 public:
-	SharedTransactionData(std::string _nsName, lsn_t _lsn, std::chrono::time_point<Transaction::ClockT> _startTime, const PayloadType &pt,
+	SharedTransactionData(std::string _nsName, lsn_t _lsn, Transaction::ClockT::time_point _startTime, const PayloadType &pt,
 						  const TagsMatcher &tm, const FieldsSet &pf, std::shared_ptr<const Schema> schema)
 		: nsName(std::move(_nsName)),
 		  lsn(_lsn),
@@ -30,7 +30,7 @@ public:
 
 	const std::string nsName;
 	const lsn_t lsn;
-	const std::chrono::time_point<Transaction::ClockT> startTime;
+	const Transaction::TimepointT startTime;
 
 private:
 	PayloadType payloadType_;

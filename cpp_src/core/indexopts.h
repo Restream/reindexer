@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/type_consts.h"
 #include "sortingprioritiestable.h"
 
 struct CollateOpts {
@@ -23,21 +24,35 @@ struct IndexOpts {
 	explicit IndexOpts(uint8_t flags = 0, CollateMode mode = CollateNone, RTreeIndexType = RStar);
 	explicit IndexOpts(const std::string& sortOrderUTF8, uint8_t flags = 0, RTreeIndexType = RStar);
 
-	bool IsPK() const noexcept;
-	bool IsArray() const noexcept;
-	bool IsDense() const noexcept;
-	bool IsSparse() const noexcept;
+	bool IsPK() const noexcept { return options & kIndexOptPK; }
+	bool IsArray() const noexcept { return options & kIndexOptArray; }
+	bool IsDense() const noexcept { return options & kIndexOptDense; }
+	bool IsSparse() const noexcept { return options & kIndexOptSparse; }
 	RTreeIndexType RTreeType() const noexcept { return rtreeType_; }
-	bool hasConfig() const noexcept;
+	bool HasConfig() const noexcept { return !config.empty(); }
 
-	IndexOpts& PK(bool value = true) noexcept;
-	IndexOpts& Array(bool value = true) noexcept;
-	IndexOpts& Dense(bool value = true) noexcept;
-	IndexOpts& Sparse(bool value = true) noexcept;
-	IndexOpts& RTreeType(RTreeIndexType) noexcept;
-	IndexOpts& SetCollateMode(CollateMode mode) noexcept;
-	IndexOpts& SetConfig(const std::string& config);
-	CollateMode GetCollateMode() const noexcept;
+	IndexOpts& PK(bool value = true) & noexcept;
+	[[nodiscard]] IndexOpts&& PK(bool value = true) && noexcept { return std::move(PK(value)); }
+	IndexOpts& Array(bool value = true) & noexcept;
+	[[nodiscard]] IndexOpts&& Array(bool value = true) && noexcept { return std::move(Array(value)); }
+	IndexOpts& Dense(bool value = true) & noexcept;
+	[[nodiscard]] IndexOpts&& Dense(bool value = true) && noexcept { return std::move(Dense(value)); }
+	IndexOpts& Sparse(bool value = true) & noexcept;
+	[[nodiscard]] IndexOpts&& Sparse(bool value = true) && noexcept { return std::move(Sparse(value)); }
+	IndexOpts& RTreeType(RTreeIndexType) & noexcept;
+	[[nodiscard]] IndexOpts&& RTreeType(RTreeIndexType type) && noexcept { return std::move(RTreeType(type)); }
+	IndexOpts& SetCollateMode(CollateMode mode) & noexcept;
+	[[nodiscard]] IndexOpts&& SetCollateMode(CollateMode mode) && noexcept { return std::move(SetCollateMode(mode)); }
+	template <typename Str, std::enable_if_t<std::is_assignable_v<std::string, Str>>* = nullptr>
+	IndexOpts& SetConfig(Str&& conf) & {
+		config = std::forward<Str>(conf);
+		return *this;
+	}
+	template <typename Str, std::enable_if_t<std::is_assignable_v<std::string, Str>>* = nullptr>
+	[[nodiscard]] IndexOpts&& SetConfig(Str&& config) && {
+		return std::move(SetConfig(std::forward<Str>(config)));
+	}
+	CollateMode GetCollateMode() const noexcept { return static_cast<CollateMode>(collateOpts_.mode); }
 
 	bool IsEqual(const IndexOpts& other, IndexComparison cmpType) const noexcept;
 

@@ -207,7 +207,8 @@ struct ShardingConfig {
 
 		sharding::Segment<Variant> SegmentFromYAML(const YAML::Node& yaml);
 		sharding::Segment<Variant> SegmentFromJSON(const gason::JsonNode& json);
-		int RelaxCompare(const std::vector<sharding::Segment<Variant>>&, const CollateOpts& collateOpts = CollateOpts()) const;
+		ComparationResult RelaxCompare(const std::vector<sharding::Segment<Variant>>&,
+									   const CollateOpts& collateOpts = CollateOpts()) const;
 		std::vector<sharding::Segment<Variant>> values{};
 
 	private:

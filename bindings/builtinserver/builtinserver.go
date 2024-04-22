@@ -176,6 +176,10 @@ func (server *BuiltinServer) DropIndex(ctx context.Context, namespace, index str
 	return server.builtin.DropIndex(ctx, namespace, index)
 }
 
+func (server *BuiltinServer) EnumMeta(ctx context.Context, namespace string) ([]string, error) {
+	return server.builtin.EnumMeta(ctx, namespace)
+}
+
 func (server *BuiltinServer) PutMeta(ctx context.Context, namespace, key, data string) error {
 	return server.builtin.PutMeta(ctx, namespace, key, data)
 }
@@ -184,8 +188,12 @@ func (server *BuiltinServer) GetMeta(ctx context.Context, namespace, key string)
 	return server.builtin.GetMeta(ctx, namespace, key)
 }
 
-func (server *BuiltinServer) ModifyItem(ctx context.Context, nsHash int, namespace string, format int, data []byte, mode int, percepts []string, stateToken int) (bindings.RawBuffer, error) {
-	return server.builtin.ModifyItem(ctx, nsHash, namespace, format, data, mode, percepts, stateToken)
+func (server *BuiltinServer) DeleteMeta(ctx context.Context, namespace, key string) error {
+	return server.builtin.DeleteMeta(ctx, namespace, key)
+}
+
+func (server *BuiltinServer) ModifyItem(ctx context.Context, namespace string, format int, data []byte, mode int, percepts []string, stateToken int) (bindings.RawBuffer, error) {
+	return server.builtin.ModifyItem(ctx, namespace, format, data, mode, percepts, stateToken)
 }
 
 func (server *BuiltinServer) BeginTx(ctx context.Context, namespace string) (bindings.TxCtx, error) {
@@ -225,12 +233,12 @@ func (server *BuiltinServer) SelectQuery(ctx context.Context, rawQuery []byte, a
 	return server.builtin.SelectQuery(ctx, rawQuery, asJson, ptVersions, fetchCount)
 }
 
-func (server *BuiltinServer) DeleteQuery(ctx context.Context, nsHash int, rawQuery []byte) (bindings.RawBuffer, error) {
-	return server.builtin.DeleteQuery(ctx, nsHash, rawQuery)
+func (server *BuiltinServer) DeleteQuery(ctx context.Context, rawQuery []byte) (bindings.RawBuffer, error) {
+	return server.builtin.DeleteQuery(ctx, rawQuery)
 }
 
-func (server *BuiltinServer) UpdateQuery(ctx context.Context, nsHash int, rawQuery []byte) (bindings.RawBuffer, error) {
-	return server.builtin.UpdateQuery(ctx, nsHash, rawQuery)
+func (server *BuiltinServer) UpdateQuery(ctx context.Context, rawQuery []byte) (bindings.RawBuffer, error) {
+	return server.builtin.UpdateQuery(ctx, rawQuery)
 }
 
 func (server *BuiltinServer) Commit(ctx context.Context, namespace string) error {

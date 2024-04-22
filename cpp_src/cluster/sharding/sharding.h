@@ -65,7 +65,7 @@ public:
 	}
 	shared_timed_mutex m;
 	std::optional<size_t> actualIndex;
-	std::chrono::steady_clock::time_point reconnectTs;
+	steady_clock_w::time_point reconnectTs;
 	Error status;
 	bool shutdown = false;
 };

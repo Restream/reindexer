@@ -14,10 +14,17 @@ jobs:
       - name: Build Reindexer
         run: |
           mkdir build && cd build
-          cmake -G "${{matrix.compiler}}" ..
+          cmake -G "${{matrix.compiler}}" .. -Ax64
           cmake --build . --config Release
           cmake --build . --config Release --target face
           cmake --build . --config Release --target swagger
+          cpack
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-latest
+          path: build/*.exe
+          if-no-files-found: error
 
   build-windows-2019:
     runs-on: windows-2019
@@ -35,6 +42,7 @@ jobs:
           cmake --build . --config Release
           cmake --build . --config Release --target face
           cmake --build . --config Release --target swagger
+          cpack
 
   build:
     strategy:
@@ -47,8 +55,8 @@ jobs:
             cxx: g++-10
           - os: ubuntu-latest
             sanitizer: TSAN
-            cc: gcc-10
-            cxx: g++-10
+            cc: gcc-12
+            cxx: g++-12
       fail-fast: false
     runs-on: ${{matrix.os}}
     env:
@@ -116,8 +124,8 @@ jobs:
             test: 'GO'
 #         - os: ubuntu-latest
 #           sanitizer: TSAN
-#           cc: gcc-10
-#           cxx: g++-10
+#           cc: gcc-12
+#           cxx: g++-12
 #           test: 'C++'
           - os: ubuntu-latest
             sanitizer: TSAN
@@ -230,3 +238,4 @@ jobs:
         run: |
           cd pyreindexer
           ../.github/workflows/test.sh
+

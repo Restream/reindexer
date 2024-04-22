@@ -1,6 +1,5 @@
 #pragma once
 
-#include "core/keyvalue/p_string.h"
 #include "core/keyvalue/variant.h"
 #include "tools/serializer.h"
 namespace reindexer {

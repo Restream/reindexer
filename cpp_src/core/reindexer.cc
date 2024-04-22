@@ -161,6 +161,11 @@ Error Reindexer::EnumMeta(std::string_view nsName, std::vector<std::string>& key
 	const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "SELECT META FROM "sv << nsName; });
 	return impl_->EnumMeta(nsName, keys, rdxCtx);
 }
+Error Reindexer::DeleteMeta(std::string_view nsName, const std::string& key) {
+	const auto rdxCtx = impl_->CreateRdxContext(
+		ctx_, [&](WrSerializer& s) { s << "DELETE META FROM "sv << nsName << " WHERE KEY = '"sv << key << '\''; });
+	return impl_->DeleteMeta(nsName, key, rdxCtx);
+}
 Error Reindexer::Delete(const Query& q, QueryResults& result) {
 	const auto rdxCtx = impl_->CreateRdxContext(
 		ctx_, [&](WrSerializer& s) { q.GetSQL(s); }, result);

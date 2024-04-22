@@ -1,11 +1,12 @@
 #include "rpcserver_fake.h"
 #include <thread>
+#include "core/keyvalue/p_string.h"
 #include "net/cproto/cproto.h"
 #include "net/cproto/serverconnection.h"
 #include "net/listener.h"
 #include "reindexer_version.h"
 
-RPCServerFake::RPCServerFake(const RPCServerConfig &conf) : startTs_(std::chrono::system_clock::now()), conf_(conf), state_(Init) {}
+RPCServerFake::RPCServerFake(const RPCServerConfig &conf) : startTs_(system_clock_w::now()), conf_(conf), state_(Init) {}
 
 Error RPCServerFake::Ping(cproto::Context &) {
 	//

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.10)
 
 project(benchmarking)
 
@@ -25,6 +25,9 @@ add_executable(${FT_TARGET} ${FT_FIXT_SRCS} ${TOOLS_SRCS} ft_bench.cc)
 target_link_libraries(${FT_TARGET} ${REINDEXER_LIBRARIES} ${GBENCHMARK_LIBRARY})
 target_compile_definitions(${FT_TARGET} PRIVATE RX_BENCH_DICT_PATH="${BENCH_DICT_PATH}")
 
+# Enable export to provide readble stacktraces
+set_property(TARGET ${TARGET} PROPERTY ENABLE_EXPORTS 1)
+set_property(TARGET ${FT_TARGET} PROPERTY ENABLE_EXPORTS 1)
 
 if(BENCH_REPORT)
     message("Benchmark report flag is activated")

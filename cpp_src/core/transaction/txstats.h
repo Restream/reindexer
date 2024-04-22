@@ -14,7 +14,6 @@ public:
 	void Count(const LocalTransaction& tx) {
 		using std::chrono::duration_cast;
 		using std::chrono::microseconds;
-		using std::chrono::high_resolution_clock;
 		std::unique_lock<std::mutex> lck(mtx_);
 		prepCounter_.Count(duration_cast<microseconds>(Transaction::ClockT::now() - tx.GetStartTime()).count());
 		stepsCounter_.Count(tx.GetSteps().size());

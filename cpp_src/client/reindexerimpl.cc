@@ -173,6 +173,9 @@ Error ReindexerImpl::PutMeta(std::string_view nsName, const std::string &key, st
 Error ReindexerImpl::EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdEnumMeta, ctx, std::move(nsName), keys);
 }
+Error ReindexerImpl::DeleteMeta(std::string_view nsName, const std::string &key, const InternalRdxContext &ctx) {
+	return sendCommand<Error>(DbCmdDeleteMeta, ctx, std::move(nsName), key);
+}
 Error ReindexerImpl::GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions) {
 	return sendCommand<Error>(DbCmdGetSqlSuggestions, InternalRdxContext(), std::move(sqlQuery), std::move(pos), suggestions);
 }
@@ -550,6 +553,12 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, Connectio
 			case DbCmdEnumMeta: {
 				execCommand(cmd, [&conn, &cmd](std::string_view nsName, std::vector<std::string> &keys) {
 					return conn.rx.EnumMeta(nsName, keys, cmd->ctx);
+				});
+				break;
+			}
+			case DbCmdDeleteMeta: {
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName, const std::string &key) {
+					return conn.rx.DeleteMeta(nsName, key, cmd->ctx);
 				});
 				break;
 			}

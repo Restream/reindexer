@@ -19,7 +19,7 @@ public:
 	}
 	/// Await coroutines
 	void wait() {
-		assert(waiter_ == 0);
+		assertrx(waiter_ == 0);
 		waiter_ = current();
 		while (wait_cnt_) {
 			assertrx(waiter_);
@@ -29,10 +29,10 @@ public:
 	}
 	/// Await next coroutine
 	void wait_next() {
-		assert(waiter_ == 0);
+		assertrx(waiter_ == 0);
 		waiter_ = current();
 		if (wait_cnt_) {
-			assert(waiter_);
+			assertrx(waiter_);
 			suspend();
 		}
 		waiter_ = 0;

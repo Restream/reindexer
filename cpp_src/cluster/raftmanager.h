@@ -17,7 +17,7 @@ class Logger;
 
 class RaftManager {
 public:
-	using ClockT = std::chrono::steady_clock;
+	using ClockT = steady_clock_w;
 
 	RaftManager(net::ev::dynamic_loop &loop, ReplicationStatsCollector statsCollector, const Logger &l,
 				std::function<void(uint32_t, bool)> onNodeNetworkStatusChangedCb);
@@ -44,15 +44,12 @@ private:
 		void SetNextServerId(int id) {
 			std::lock_guard lock(mtx);
 			nextServerId_ = id;
-			startPoint_ = std::chrono::high_resolution_clock::now();
+			startPoint_ = ClockT::now();
 		}
 		int GetNextServerId() {
 			std::lock_guard lock(mtx);
-			if (nextServerId_ != -1) {
-				const auto current = std::chrono::high_resolution_clock::now();
-				if (current - startPoint_ > kDesiredLeaderTimeout) {
-					nextServerId_ = -1;
-				}
+			if (nextServerId_ != -1 && ClockT::now() - startPoint_ > kDesiredLeaderTimeout) {
+				nextServerId_ = -1;
 			}
 			return nextServerId_;
 		}
@@ -60,7 +57,7 @@ private:
 	private:
 		std::mutex mtx;
 		int nextServerId_ = -1;
-		std::chrono::time_point<std::chrono::high_resolution_clock> startPoint_;
+		ClockT::time_point startPoint_;
 	};
 
 	struct RaftNode {

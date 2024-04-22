@@ -1,6 +1,5 @@
 #include "queryresults.h"
 #include "core/index/index.h"
-#include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/joinedselector.h"
 #include "core/query/query.h"
 #include "core/sorting/sortexpression.h"
@@ -670,14 +669,16 @@ class SortExpressionComparator {
 public:
 	SortExpressionComparator(SortExpression&& se, const NamespaceImpl& ns)
 		: localExpression_{std::move(se)}, proxiedExpression_{localExpression_, ns} {}
-	int Compare(const ItemRef& litem, const ItemRef& ritem, const PayloadType& lpt, const PayloadType& rpt, TagsMatcher& ltm,
-				TagsMatcher& rtm, bool lLocal, bool rLocal) const {
+	ComparationResult Compare(const ItemRef& litem, const ItemRef& ritem, const PayloadType& lpt, const PayloadType& rpt, TagsMatcher& ltm,
+							  TagsMatcher& rtm, bool lLocal, bool rLocal) const {
 		const auto lhv = lLocal ? localExpression_.Calculate(litem.Id(), {lpt, litem.Value()}, {}, {}, litem.Proc(), ltm)
 								: proxiedExpression_.Calculate(litem.Id(), {lpt, litem.Value()}, litem.Proc(), ltm);
 		const auto rhv = rLocal ? localExpression_.Calculate(ritem.Id(), {rpt, ritem.Value()}, {}, {}, ritem.Proc(), rtm)
 								: proxiedExpression_.Calculate(ritem.Id(), {rpt, ritem.Value()}, ritem.Proc(), rtm);
-		if (lhv == rhv) return 0;
-		return lhv < rhv ? 1 : -1;
+		if (lhv == rhv) {
+			return ComparationResult::Eq;
+		}
+		return lhv < rhv ? ComparationResult::Gt : ComparationResult::Lt;
 	}
 
 private:
@@ -687,7 +688,9 @@ private:
 
 class FieldComparator {
 	struct RelaxedCompare {
-		bool operator()(const Variant& lhs, const Variant& rhs) const { return lhs.RelaxCompare<WithString::No>(rhs) == 0; }
+		bool operator()(const Variant& lhs, const Variant& rhs) const {
+			return lhs.RelaxCompare<WithString::No, NotComparable::Throw>(rhs) == ComparationResult::Eq;
+		}
 	};
 
 public:
@@ -706,8 +709,8 @@ public:
 			forcedValues_.emplace(forcedValues[i], i);
 		}
 	}
-	int Compare(const ItemRef& litem, const ItemRef& ritem, const PayloadType& lpt, const PayloadType& rpt, TagsMatcher& ltm,
-				TagsMatcher& rtm, bool lLocal, bool rLocal) const {
+	ComparationResult Compare(const ItemRef& litem, const ItemRef& ritem, const PayloadType& lpt, const PayloadType& rpt, TagsMatcher& ltm,
+							  TagsMatcher& rtm, bool lLocal, bool rLocal) const {
 		ConstPayload lpv{lpt, litem.Value()};
 		ConstPayload rpv{rpt, ritem.Value()};
 		if (!forcedValues_.empty()) {
@@ -731,15 +734,17 @@ public:
 			const auto end = forcedValues_.end();
 			if (lIt != end) {
 				if (rIt != end) {
-					return lIt->second == rIt->second ? 0 : (lIt->second < rIt->second ? 1 : -1);
+					return lIt->second == rIt->second ? ComparationResult::Eq
+													  : (lIt->second < rIt->second ? ComparationResult::Gt : ComparationResult::Lt);
 				} else {
-					return 1;
+					return ComparationResult::Gt;
 				}
 			} else if (rIt != end) {
-				return -1;
+				return ComparationResult::Lt;
 			}
 		}
-		return -lpv.Compare<WithString::No>(rpv, fieldName_, fieldIdx_, collateOpts_, ltm, rtm, !lLocal, !rLocal);
+		return -lpv.RelaxCompare<WithString::No, NotComparable::Throw>(rpv, fieldName_, fieldIdx_, collateOpts_, ltm, rtm, !lLocal,
+																	   !rLocal);
 	}
 
 private:
@@ -751,7 +756,9 @@ private:
 
 class QueryResults::CompositeFieldForceComparator {
 	struct RelaxedCompare {
-		bool operator()(const Variant& lhs, const Variant& rhs) const { return lhs.RelaxCompare<WithString::No>(rhs) == 0; }
+		bool operator()(const Variant& lhs, const Variant& rhs) const {
+			return lhs.RelaxCompare<WithString::No, NotComparable::Throw>(rhs) == ComparationResult::Eq;
+		}
 	};
 
 public:
@@ -777,8 +784,8 @@ public:
 			}
 		}
 	}
-	int Compare(const ItemRef& litem, const ItemRef& ritem, const PayloadType& lpt, const PayloadType& rpt, TagsMatcher& ltm,
-				TagsMatcher& rtm, bool lLocal, bool rLocal) const {
+	ComparationResult Compare(const ItemRef& litem, const ItemRef& ritem, const PayloadType& lpt, const PayloadType& rpt, TagsMatcher& ltm,
+							  TagsMatcher& rtm, bool lLocal, bool rLocal) const {
 		ConstPayload lpv{lpt, litem.Value()};
 		ConstPayload rpv{rpt, ritem.Value()};
 		h_vector<size_t, 4> positions1, positions2;
@@ -867,20 +874,14 @@ public:
 			throw Error(errLogic, "Several forced sort values are equal");
 		}
 		if (lPos == static_cast<size_t>(-1)) {
-			if (positions->empty()) {
-				return 0;
-			} else {
-				return -1;
-			}
-		} else {
-			if (positions->empty()) {
-				return 1;
-			} else if ((*positions)[0] == lPos) {
-				return 0;
-			} else {
-				return lPos < (*positions)[0] ? 1 : -1;
-			}
+			return (positions->empty()) ? ComparationResult::Eq : ComparationResult::Lt;
 		}
+		if (positions->empty()) {
+			return ComparationResult::Gt;
+		} else if ((*positions)[0] == lPos) {
+			return ComparationResult::Eq;
+		}
+		return lPos < (*positions)[0] ? ComparationResult::Gt : ComparationResult::Lt;
 	}
 
 private:
@@ -977,8 +978,8 @@ public:
 		for (const auto& comp : comparators_) {
 			const auto res =
 				std::visit([&](const auto& c) { return c.Compare(liref, riref, lpt, rpt, ltm, rtm, lhs < 0, rhs < 0); }, comp.first);
-			if (res != 0) {
-				return comp.second ? res < 0 : res > 0;
+			if (res != ComparationResult::Eq) {
+				return comp.second ? res == ComparationResult::Lt : res == ComparationResult::Gt;
 			}
 		}
 		return lShardId < rShardId;
