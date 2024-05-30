@@ -338,8 +338,6 @@ static int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAlloca
 	return JSON_BREAKING_BAD;
 }
 
-static const uint8_t JSON_EMPTY = 0xFF;
-
 JsonNode *JsonNode::toNode() const {
 	if (empty() || value.getTag() == JSON_NULL) return nullptr;
 	if (value.getTag() != JSON_OBJECT && value.getTag() != JSON_ARRAY)
@@ -356,8 +354,6 @@ const JsonNode &JsonNode::operator[](std::string_view key) const {
 	static JsonNode empty_node{{JsonTag(JSON_EMPTY)}, nullptr, {}};
 	return empty_node;
 }
-
-bool JsonNode::empty() const { return this->value.u.tag == JsonTag(JSON_EMPTY); }
 
 JsonNode JsonParser::Parse(span<char> str, size_t *length) {
 	largeStrings_->clear();

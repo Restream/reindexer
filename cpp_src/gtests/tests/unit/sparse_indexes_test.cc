@@ -6,7 +6,7 @@ TEST_F(SparseIndexesApi, SelectByHashSparseIndex) { CheckSelectByHashIndex(); }
 
 TEST_F(SparseIndexesApi, SparseIndexConsistencyWithRuntimeIndexes) {
 	const char* rtIndexName = "rt1";
-	Error err = rt.reindexer->AddIndex(default_namespace, {rtIndexName, "hash", "int64", IndexOpts()});
+	Error err = rt.reindexer->AddIndex(default_namespace, {rtIndexName, "tree", "int64", IndexOpts().Sparse()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->Commit(default_namespace);
@@ -14,25 +14,33 @@ TEST_F(SparseIndexesApi, SparseIndexConsistencyWithRuntimeIndexes) {
 
 	CheckSelectAll();
 
-	// Not possible to test until appropriate implementation of Upsert()
-	// for Sparse indexes: need SetByJsonValue() to set such fields.
-	//    for (int64_t i = 0; i < 10; ++i) {
-	//        Item item = NewItem(default_namespace);
-	//        EXPECT_TRUE(item.Status().ok()) << item.Status().what();
-	//        item[rtIndexName] = i;
+	constexpr int64_t kCount = 10;
+	const Query q = Query(default_namespace).Where(rtIndexName, CondLt, Variant(kCount));
+	QueryResults qr;
+	err = rt.reindexer->Select(q, qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 0);
+	for (int64_t i = 0; i < kCount; ++i) {
+		Item item = NewItem(default_namespace);
+		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
+		FillItem(item, i + 5);
+		item[rtIndexName] = i;
 
-	//        Upsert(default_namespace, item);
-	//        Commit(default_namespace);
-	//    }
-
-	//    QueryResults qr;
-	//    err = rt.reindexer->Select(Query(default_namespace).Where(rtIndexName, CondLt, Variant(static_cast<int64_t>(10))), qr);
-	//    EXPECT_TRUE(err.ok()) << err.what();
-	//    EXPECT_TRUE(qr.size() == 10);
+		Upsert(default_namespace, item);
+	}
+	qr.Clear();
+	err = rt.reindexer->Select(q, qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), kCount);
 
 	reindexer::IndexDef idef(rtIndexName);
 	err = rt.reindexer->DropIndex(default_namespace, idef);
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	qr.Clear();
+	err = rt.reindexer->Select(q, qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), kCount);
 
 	CheckSelectAll();
 	CheckSelectByHashIndex();

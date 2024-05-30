@@ -29,13 +29,6 @@ bool IndexOpts::IsEqual(const IndexOpts& other, IndexComparison cmpType) const n
 		   rtreeType_ == other.rtreeType_;
 }
 
-bool IndexOpts::IsPK() const noexcept { return options & kIndexOptPK; }
-bool IndexOpts::IsArray() const noexcept { return options & kIndexOptArray; }
-bool IndexOpts::IsDense() const noexcept { return options & kIndexOptDense; }
-bool IndexOpts::IsSparse() const noexcept { return options & kIndexOptSparse; }
-bool IndexOpts::hasConfig() const noexcept { return !config.empty(); }
-CollateMode IndexOpts::GetCollateMode() const noexcept { return static_cast<CollateMode>(collateOpts_.mode); }
-
 IndexOpts& IndexOpts::PK(bool value) & noexcept {
 	options = value ? options | kIndexOptPK : options & ~(kIndexOptPK);
 	return *this;
@@ -91,7 +84,7 @@ void IndexOpts::Dump(T& os) const {
 	}
 	if (needComma) os << ", ";
 	os << RTreeType();
-	if (hasConfig()) {
+	if (HasConfig()) {
 		os << ", config: " << config;
 	}
 	os << ", collate: ";

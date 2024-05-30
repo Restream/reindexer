@@ -64,7 +64,7 @@ Error SyncCoroReindexerImpl::DropIndex(std::string_view nsName, const IndexDef &
 	return sendCommand<Error>(DbCmdDropIndex, std::forward<std::string_view>(nsName), index, ctx);
 }
 Error SyncCoroReindexerImpl::SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdSetSchema, std::forward<std::string_view>(nsName), schema, ctx);
+	return sendCommand<Error>(DbCmdSetSchema, std::forward<std::string_view>(nsName), std::forward<std::string_view>(schema), ctx);
 }
 Error SyncCoroReindexerImpl::EnumNamespaces(std::vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdEnumNamespaces, defs, std::forward<EnumNamespacesOpts>(opts), ctx);
@@ -103,20 +103,17 @@ Item SyncCoroReindexerImpl::NewItem(std::string_view nsName) {
 	return sendCommand<Item>(DbCmdNewItem, std::forward<std::string_view>(nsName));
 }
 
-Error SyncCoroReindexerImpl::GetMeta(std::string_view nsName, const std::string &key, std::string &data,
-									 const InternalRdxContext &ctx) {
+Error SyncCoroReindexerImpl::GetMeta(std::string_view nsName, const std::string &key, std::string &data, const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdGetMeta, std::forward<std::string_view>(nsName), key, data, ctx);
 }
 Error SyncCoroReindexerImpl::PutMeta(std::string_view nsName, const std::string &key, std::string_view data,
 									 const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdPutMeta, std::forward<std::string_view>(nsName), key, std::forward<std::string_view>(data), ctx);
 }
-Error SyncCoroReindexerImpl::EnumMeta(std::string_view nsName, std::vector<std::string> &keys,
-									  const InternalRdxContext &ctx) {
+Error SyncCoroReindexerImpl::EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdEnumMeta, std::forward<std::string_view>(nsName), keys, ctx);
 }
-Error SyncCoroReindexerImpl::DeleteMeta(std::string_view nsName, const std::string &key,
-										const InternalRdxContext &ctx) {
+Error SyncCoroReindexerImpl::DeleteMeta(std::string_view nsName, const std::string &key, const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdDeleteMeta, std::forward<std::string_view>(nsName), key, ctx);
 }
 Error SyncCoroReindexerImpl::GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions) {

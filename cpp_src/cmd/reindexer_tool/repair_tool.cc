@@ -78,7 +78,7 @@ Error RepairTool::repairNamespace(IDataStorage* storage, const std::string& stor
 			if (input == "y" || input == "yes") {
 				auto res = reindexer::fs::RmDirAll(nsPath);
 				if (res < 0) {
-					std::cerr << "Namespace rm error[" << nsPath << "]: %s" << strerror(errno) << std::endl;
+					std::cerr << "Namespace rm error[" << nsPath << "]: " << strerror(errno) << std::endl;
 				}
 				break;
 			} else if (input == "n" || input == "no" || input.empty()) {

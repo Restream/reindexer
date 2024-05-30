@@ -2,7 +2,6 @@
 #include "core/type_consts_helpers.h"
 #include "tools/serializer.h"
 #include "vendor/gason/gason.h"
-#include "vendor/msgpack/msgpack.h"
 
 namespace reindexer {
 

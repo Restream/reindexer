@@ -1,4 +1,5 @@
 #include "cjsonmodifier.h"
+#include "cjsontools.h"
 #include "core/type_consts_helpers.h"
 #include "jsondecoder.h"
 #include "tagsmatcher.h"

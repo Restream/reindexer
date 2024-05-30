@@ -152,7 +152,10 @@ void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, 
 				assertrx(dstMtx);
 				dstMtx->unlock();
 			}
-			srcNs.storage_.Open(storageType, srcNs.name_, srcDbpath, srcNs.storageOpts_);
+			auto err = srcNs.storage_.Open(storageType, srcNs.name_, srcDbpath, srcNs.storageOpts_);
+			if (!err.ok()) {
+				logPrintf(LogError, "Unable to reopen storage after unsuccesfull renaming: %s", err.what());
+			}
 			throw Error(errParams, "Unable to rename '%s' to '%s'", srcDbpath, dbpath);
 		}
 	}
@@ -167,6 +170,9 @@ void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, 
 		srcNs.name_ = newName;
 	}
 	srcNs.payloadType_.SetName(srcNs.name_);
+	srcNs.tagsMatcher_.UpdatePayloadType(srcNs.payloadType_);
+	logPrintf(LogInfo, "[tm:%s]:%d: Rename done. TagsMatcher: { state_token: %08X, version: %d }", srcNs.name_, srcNs.serverId_,
+			  srcNs.tagsMatcher_.stateToken(), srcNs.tagsMatcher_.version());
 
 	if (hadStorage) {
 		logPrintf(LogTrace, "Storage was moved from %s to %s", srcDbpath, dbpath);

@@ -85,7 +85,7 @@ private:
 	void removeExpiredTxCb(reindexer::net::ev::periodic&, int);
 
 	static Error packCJSONItem(WrSerializer& wrser, reindexer::QueryResults::Iterator& it, const OutputFlags& opts);
-	static Error packPayloadTypes(WrSerializer& wrser, const reindexer::QueryResults& qr);
+	static void packPayloadTypes(WrSerializer& wrser, const reindexer::QueryResults& qr);
 
 	Error executeQuery(const std::string& dbName, const Query& q, QueryType type, reindexer::QueryResults& qr);
 	Error getTx(uint64_t id, TxData& txData);

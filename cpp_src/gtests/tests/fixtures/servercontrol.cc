@@ -294,8 +294,7 @@ void ServerControl::Interface::setNamespaceConfigItem(std::string_view nsName, s
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	api.Upsert(kConfigNs, item);
-	err = api.Commit(kConfigNs);
-	ASSERT_TRUE(err.ok()) << err.what();
+	api.Commit(kConfigNs);
 }
 
 void ServerControl::Interface::setReplicationConfig(const ReplicationConfigTest& config) {
@@ -322,8 +321,7 @@ void ServerControl::Interface::setReplicationConfig(const ReplicationConfigTest&
 	auto err = item.FromJSON(ser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what();
 	api.Upsert(kConfigNs, item);
-	err = api.Commit(kConfigNs);
-	ASSERT_TRUE(err.ok()) << err.what();
+	api.Commit(kConfigNs);
 }
 
 bool ServerControl::IsRunning() { return !stopped_->load(); }

@@ -3,7 +3,6 @@
 #include <iostream>
 #include <set>
 #include <vector>
-#include "estl/fast_hash_map.h"
 #include "estl/h_vector.h"
 #include "sort/pdqsort.hpp"
 #include "usingcontainer.h"
@@ -92,8 +91,8 @@ public:
 			area.Commit();
 		}
 	}
-	[[nodiscard]] bool AddWord(int pos, int filed, int32_t rank, int maxAreasInDoc) {
-		return InsertArea(Area{pos, pos + 1}, filed, rank, maxAreasInDoc);
+	[[nodiscard]] bool AddWord(int pos, int field, int32_t rank, int maxAreasInDoc) {
+		return InsertArea(Area{pos, pos + 1}, field, rank, maxAreasInDoc);
 	}
 	void UpdateRank(int32_t rank) noexcept {
 		if (rank > maxTermRank_) {

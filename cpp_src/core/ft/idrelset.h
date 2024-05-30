@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <map>
 #include <set>
-#include "estl/h_vector.h"
 #include "estl/packed_vector.h"
 #include "sort/pdqsort.hpp"
 #include "usingcontainer.h"
@@ -144,7 +143,14 @@ private:
 
 class IdRelSet : public std::vector<IdRelType> {
 public:
-	int Add(VDocIdType id, int pos, int field);
+	int Add(VDocIdType id, int pos, int field) {
+		if (id > max_id_) max_id_ = id;
+		if (id < min_id_) min_id_ = id;
+
+		auto& last = (empty() || back().Id() != id) ? emplace_back(id) : back();
+		last.Add(pos, field);
+		return last.size();
+	}
 	void SimpleCommit() noexcept {
 		for (auto& val : *this) val.SimpleCommit();
 	}

@@ -68,7 +68,10 @@ public:
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 		return item;
 	}
-	reindexer::Error Commit(std::string_view ns) { return reindexer->Commit(ns); }
+	void Commit(std::string_view ns) {
+		auto err = reindexer->Commit(ns);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
 	void Upsert(std::string_view ns, ItemType &item) {
 		assertrx(!!item);
 		auto err = reindexer->Upsert(ns, item);

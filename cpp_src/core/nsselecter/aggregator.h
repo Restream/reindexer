@@ -67,7 +67,7 @@ private:
 			if (!v1.Type().IsSame(v2.Type())) return false;
 			return v1.Type().EvaluateOneOf(
 				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int,
-						  KeyValueType::Uuid>) { return v1.Compare(v2) == 0; },
+						  KeyValueType::Uuid>) { return v1.Compare<NotComparable::Return>(v2) == ComparationResult::Eq; },
 				[&](KeyValueType::Composite) {
 					return ConstPayload(type_, static_cast<const PayloadValue &>(v1)).IsEQ(static_cast<const PayloadValue &>(v2), fields_);
 				},

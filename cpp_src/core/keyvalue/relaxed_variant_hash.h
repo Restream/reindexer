@@ -1,0 +1,196 @@
+#pragma once
+
+#include "estl/one_of.h"
+#include "variant.h"
+
+namespace reindexer {
+
+template <NotComparable notComparable>
+struct RelaxedComparator {
+	static bool equal(const Variant &lhs, const Variant &rhs) {
+		return lhs.RelaxCompare<WithString::Yes, notComparable>(rhs) == ComparationResult::Eq;
+	}
+};
+
+template <NotComparable notComparable>
+struct RelaxedHasher {
+	constexpr static size_t indexesCount = notComparable == NotComparable::Return ? 7 : 6;
+	static std::pair<size_t, size_t> hash(const Variant &v) noexcept(notComparable == NotComparable::Return) {
+		return v.Type().EvaluateOneOf(
+			overloaded{[&v](KeyValueType::Bool) noexcept {
+						   return std::pair<size_t, size_t>{0, v.Hash()};
+					   },
+					   [&v](KeyValueType::Int) noexcept {
+						   return std::pair<size_t, size_t>{1, v.Hash()};
+					   },
+					   [&v](KeyValueType::Int64) noexcept {
+						   return std::pair<size_t, size_t>{2, v.Hash()};
+					   },
+					   [&v](KeyValueType::Double) noexcept {
+						   return std::pair<size_t, size_t>{3, v.Hash()};
+					   },
+					   [&v](KeyValueType::String) noexcept {
+						   return std::pair<size_t, size_t>{4, v.Hash()};
+					   },
+					   [&v](KeyValueType::Uuid) noexcept {
+						   return std::pair<size_t, size_t>{5, v.Hash()};
+					   },
+					   [&v](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) noexcept(
+						   notComparable == NotComparable::Return) -> std::pair<size_t, size_t> {
+						   if constexpr (notComparable == NotComparable::Return) {
+							   return {indexesCount - 1, v.Hash()};
+						   } else {
+							   throw Error{errQueryExec, "Cannot compare value of '%s' type with number, string or uuid", v.Type().Name()};
+						   }
+					   }});
+	}
+	static size_t hash(size_t i, const Variant &v) {
+		switch (i) {
+			case 0:
+				return v.Type().EvaluateOneOf(
+					overloaded{[&v](KeyValueType::Bool) noexcept { return v.Hash(); },
+							   [v](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::String>) {
+								   if constexpr (notComparable == NotComparable::Return) {
+									   const auto var = v.tryConvert(KeyValueType::Bool{});
+									   if (var) {
+										   return var->Hash();
+									   } else {
+										   return v.Hash();
+									   }
+								   } else {
+									   return v.convert(KeyValueType::Bool{}).Hash();
+								   }
+							   },
+							   [&v](OneOf<KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+										  KeyValueType::Null>) -> size_t {
+								   if constexpr (notComparable == NotComparable::Return) {
+									   return v.Hash();
+								   } else {
+									   throw Error{errQueryExec, "Cannot compare value of '%s' type with bool", v.Type().Name()};
+								   }
+							   }});
+			case 1:
+				return v.Type().EvaluateOneOf(
+					overloaded{[&v](KeyValueType::Int) noexcept { return v.Hash(); },
+							   [v](OneOf<KeyValueType::Bool, KeyValueType::Int64, KeyValueType::Double, KeyValueType::String>) {
+								   if constexpr (notComparable == NotComparable::Return) {
+									   const auto var = v.tryConvert(KeyValueType::Int{});
+									   if (var) {
+										   return var->Hash();
+									   } else {
+										   return v.Hash();
+									   }
+								   } else {
+									   return v.convert(KeyValueType::Int{}).Hash();
+								   }
+							   },
+							   [&v](OneOf<KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+										  KeyValueType::Null>) -> size_t {
+								   if constexpr (notComparable == NotComparable::Return) {
+									   return v.Hash();
+								   } else {
+									   throw Error{errQueryExec, "Cannot compare value of '%s' type with number", v.Type().Name()};
+								   }
+							   }});
+			case 2:
+				return v.Type().EvaluateOneOf(
+					overloaded{[&v](KeyValueType::Int64) noexcept { return v.Hash(); },
+							   [v](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Double, KeyValueType::String>) {
+								   if constexpr (notComparable == NotComparable::Return) {
+									   const auto var = v.tryConvert(KeyValueType::Int64{});
+									   if (var) {
+										   return var->Hash();
+									   } else {
+										   return v.Hash();
+									   }
+								   } else {
+									   return v.convert(KeyValueType::Int64{}).Hash();
+								   }
+							   },
+							   [&v](OneOf<KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+										  KeyValueType::Null>) -> size_t {
+								   if constexpr (notComparable == NotComparable::Return) {
+									   return v.Hash();
+								   } else {
+									   throw Error{errQueryExec, "Cannot compare value of '%s' type with number", v.Type().Name()};
+								   }
+							   }});
+			case 3:
+				return v.Type().EvaluateOneOf(
+					overloaded{[&v](KeyValueType::Double) noexcept { return v.Hash(); },
+							   [v](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::String>) {
+								   if constexpr (notComparable == NotComparable::Return) {
+									   const auto var = v.tryConvert(KeyValueType::Double{});
+									   if (var) {
+										   return var->Hash();
+									   } else {
+										   return v.Hash();
+									   }
+								   } else {
+									   return v.convert(KeyValueType::Double{}).Hash();
+								   }
+							   },
+							   [&v](OneOf<KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+										  KeyValueType::Null>) -> size_t {
+								   if constexpr (notComparable == NotComparable::Return) {
+									   return v.Hash();
+								   } else {
+									   throw Error{errQueryExec, "Cannot compare value of '%s' type with number", v.Type().Name()};
+								   }
+							   }});
+			case 4:
+				return v.Type().EvaluateOneOf(overloaded{
+					[&v](KeyValueType::String) noexcept { return v.Hash(); },
+					[v](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Uuid>) {
+						if constexpr (notComparable == NotComparable::Return) {
+							const auto var = v.tryConvert(KeyValueType::String{});
+							if (var) {
+								return var->Hash();
+							} else {
+								return v.Hash();
+							}
+						} else {
+							return v.convert(KeyValueType::String{}).Hash();
+						}
+					},
+					[&v](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) -> size_t {
+						if constexpr (notComparable == NotComparable::Return) {
+							return v.Hash();
+						} else {
+							throw Error{errQueryExec, "Cannot compare value of '%s' type with string", v.Type().Name()};
+						}
+					}});
+			case 5:
+				return v.Type().EvaluateOneOf(overloaded{
+					[&v](KeyValueType::Uuid) noexcept { return v.Hash(); },
+					[v](KeyValueType::String) noexcept {
+						if constexpr (notComparable == NotComparable::Return) {
+							const auto var = v.tryConvert(KeyValueType::String{});
+							if (var) {
+								return var->Hash();
+							} else {
+								return v.Hash();
+							}
+						} else {
+							return v.convert(KeyValueType::Uuid{}).Hash();
+						}
+					},
+					[v](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Tuple,
+							  KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) -> size_t {
+						if constexpr (notComparable == NotComparable::Return) {
+							return v.Hash();
+						} else {
+							throw Error{errQueryExec, "Cannot compare value of '%s' type with uuid", v.Type().Name()};
+						}
+					}});
+			default:
+				if constexpr (notComparable == NotComparable::Return) {
+					return v.Hash();
+				} else {
+					assertrx_throw(i < indexesCount);
+				}
+		}
+	}
+};
+
+}  // namespace reindexer

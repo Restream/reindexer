@@ -1,7 +1,6 @@
 #include "client/cororeindexer.h"
 #include "client/cororpcclient.h"
 #include "tools/cpucheck.h"
-#include "tools/logger.h"
 
 namespace reindexer {
 namespace client {

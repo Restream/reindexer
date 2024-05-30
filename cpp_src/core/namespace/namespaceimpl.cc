@@ -51,6 +51,7 @@ constexpr int64_t kStorageSerialInitial = 1;
 constexpr uint8_t kSysRecordsBackupCount = 8;
 constexpr uint8_t kSysRecordsFirstWriteCopies = 3;
 constexpr size_t kMaxMemorySizeOfStringsHolder = 1ull << 24;
+constexpr size_t kMaxSchemaCharsToPrint = 128;
 
 NamespaceImpl::IndexesStorage::IndexesStorage(const NamespaceImpl& ns) : ns_(ns) {}
 
@@ -74,6 +75,7 @@ NamespaceImpl::NamespaceImpl(const NamespaceImpl& src, AsyncStorage::FullLockT& 
 	  krefs{src.krefs},
 	  skrefs{src.skrefs},
 	  sysRecordsVersions_{src.sysRecordsVersions_},
+	  schema_{src.schema_},
 	  enablePerfCounters_{src.enablePerfCounters_.load()},
 	  config_{src.config_},
 	  queryCountCache_{
@@ -147,7 +149,7 @@ NamespaceImpl::~NamespaceImpl() {
 		static constexpr double kDeleteNs = 0.25;
 
 		const double k = dbDestroyed_.load(std::memory_order_relaxed) ? kDeleteRxDestroy : kDeleteNs;
-		threadsCount = k * std::thread::hardware_concurrency();
+		threadsCount = static_cast<unsigned int>(k * std::thread::hardware_concurrency());
 		if (threadsCount > indexes_.size() + 1) {
 			threadsCount = indexes_.size() + 1;
 		}
@@ -234,6 +236,7 @@ void NamespaceImpl::OnConfigUpdated(DBConfigProvider& configProvider, const RdxC
 
 	auto wlck = wLock(ctx);
 
+	configData.maxIterationsIdSetPreResult = correctMaxIterationsIdSetPreResult(configData.maxIterationsIdSetPreResult);
 	const bool needReoptimizeIndexes = (config_.optimizationSortWorkers == 0) != (configData.optimizationSortWorkers == 0);
 	if (config_.optimizationSortWorkers != configData.optimizationSortWorkers ||
 		config_.optimizationTimeout != configData.optimizationTimeout) {
@@ -245,12 +248,12 @@ void NamespaceImpl::OnConfigUpdated(DBConfigProvider& configProvider, const RdxC
 	const bool needReconfigureJoinCache = !config_.cacheConfig.IsJoinCacheEqual(configData.cacheConfig);
 	const bool needReconfigureQueryCountCache = !config_.cacheConfig.IsQueryCountCacheEqual(configData.cacheConfig);
 	config_ = configData;
-	storageOpts_.LazyLoad(configData.lazyLoad);
-	storageOpts_.noQueryIdleThresholdSec = configData.noQueryIdleThreshold;
+	storageOpts_.LazyLoad(config_.lazyLoad);
+	storageOpts_.noQueryIdleThresholdSec = config_.noQueryIdleThreshold;
 	storage_.SetForceFlushLimit(config_.syncStorageFlushLimit);
 
 	for (auto& idx : indexes_) {
-		idx->EnableUpdatesCountingMode(configData.idxUpdatesCountingMode);
+		idx->EnableUpdatesCountingMode(config_.idxUpdatesCountingMode);
 	}
 	if (needReconfigureIdxCache) {
 		for (auto& idx : indexes_) {
@@ -336,13 +339,13 @@ void NamespaceImpl::OnConfigUpdated(DBConfigProvider& configProvider, const RdxC
 }
 
 template <NeedRollBack needRollBack>
-class NamespaceImpl::RollBack_recreateCompositeIndexes : private RollBackBase {
+class NamespaceImpl::RollBack_recreateCompositeIndexes final : private RollBackBase {
 public:
 	RollBack_recreateCompositeIndexes(NamespaceImpl& ns, size_t startIdx, size_t count) : ns_{ns}, startIdx_{startIdx} {
 		indexes_.reserve(count);
 		std::swap(ns_.indexesToComposites_, indexesToComposites_);
 	}
-	~RollBack_recreateCompositeIndexes() {
+	~RollBack_recreateCompositeIndexes() override {
 		RollBack();
 		for (auto& idx : indexes_) {
 			try {
@@ -420,14 +423,14 @@ NamespaceImpl::RollBack_recreateCompositeIndexes<needRollBack> NamespaceImpl::re
 }
 
 template <NeedRollBack needRollBack>
-class NamespaceImpl::RollBack_updateItems : private RollBackBase {
+class NamespaceImpl::RollBack_updateItems final : private RollBackBase {
 public:
 	RollBack_updateItems(NamespaceImpl& ns, RollBack_recreateCompositeIndexes<needRollBack>&& rb, uint64_t dh, size_t ds) noexcept
 		: ns_{ns}, rollbacker_recreateCompositeIndexes_{std::move(rb)}, dataHash_{dh}, itemsDataSize_{ds} {
 		items_.reserve(ns_.items_.size());
 	}
-	~RollBack_updateItems() { RollBack(); }
-	void Disable() noexcept {
+	~RollBack_updateItems() override { RollBack(); }
+	void Disable() noexcept override {
 		rollbacker_recreateCompositeIndexes_.Disable();
 		RollBackBase::Disable();
 	}
@@ -493,7 +496,7 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 	const int compositeStartIdx =
 		(deltaFields >= 0) ? indexes_.firstCompositePos() : indexes_.firstCompositePos(oldPlType, sparseIndexesCount_);
 	const int compositeEndIdx = indexes_.totalSize();
-	// All the composite indexes must be recreated, beacuse those indexes are holding pointers to the old Payloads
+	// All the composite indexes must be recreated, because those indexes are holding pointers to the old Payloads
 	RollBack_updateItems<needRollBack> rollbacker{*this, recreateCompositeIndexes<needRollBack>(compositeStartIdx, compositeEndIdx),
 												  repl_.dataHash, itemsDataSize_};
 
@@ -650,6 +653,10 @@ void NamespaceImpl::SetSchema(std::string_view schema, const RdxContext& ctx) {
 		}
 	}
 
+	std::string_view schemaPrint(schema.data(), std::min(schema.size(), kMaxSchemaCharsToPrint));
+	logPrintf(LogInfo, "[%s]:%d Setting new schema %s. First %d symbols are: '%s'", name_, serverId_,
+			  ctx.fromReplication_ ? "from replication" : "from user", schemaPrint.size(), schemaPrint);
+
 	const auto initTmVer = tagsMatcher_.version();
 	schema_ = std::make_shared<Schema>(schema);
 	auto fields = schema_->GetPaths();
@@ -657,11 +664,17 @@ void NamespaceImpl::SetSchema(std::string_view schema, const RdxContext& ctx) {
 		tagsMatcher_.path2tag(field, true);
 	}
 
-	schema_->BuildProtobufSchema(tagsMatcher_, payloadType_);
+	auto err = schema_->BuildProtobufSchema(tagsMatcher_, payloadType_);
+	if (!err.ok()) {
+		logPrintf(LogInfo, "Unable to build protobuf schema for the '%s' namespace: %s", name_, err.what());
+	}
 
 	saveSchemaToStorage();
-	addToWAL(schema, WalSetSchema, ctx);
 	if (initTmVer != tagsMatcher_.version()) {
+		logPrintf(LogInfo,
+				  "[tm:%s]:%d: TagsMatcher was updated from schema. Old tm: { state_token: 0x%08X, version: %d }, new tm: { state_token: "
+				  "0x%08X, version: %d }",
+				  name_, serverId_, tagsMatcher_.stateToken(), initTmVer, tagsMatcher_.stateToken(), tagsMatcher_.version());
 		const lsn_t lsn(wal_.Add(WALRecord(WalEmpty), lsn_t()), serverId_);
 		if (!ctx.fromReplication_) repl_.lastSelfLSN = lsn;
 		if (!repl_.temporary) {
@@ -674,6 +687,7 @@ void NamespaceImpl::SetSchema(std::string_view schema, const RdxContext& ctx) {
 									WALRecord(WalTagsMatcher, wser.Slice()));
 		}
 	}
+	addToWAL(schema, WalSetSchema, ctx);
 }
 
 std::string NamespaceImpl::GetSchema(int format, const RdxContext& ctx) {
@@ -923,14 +937,14 @@ void NamespaceImpl::verifyUpdateIndex(const IndexDef& indexDef) const {
 	}
 }
 
-class NamespaceImpl::RollBack_insertIndex : private RollBackBase {
+class NamespaceImpl::RollBack_insertIndex final : private RollBackBase {
 	using IndexesNamesIt = decltype(NamespaceImpl::indexesNames_)::iterator;
 
 public:
 	RollBack_insertIndex(NamespaceImpl& ns, NamespaceImpl::IndexesStorage::iterator idxIt, int idxNo) noexcept
 		: ns_{ns}, insertedIndex_{idxIt}, insertedIdxNo_{idxNo} {}
 	RollBack_insertIndex(RollBack_insertIndex&&) noexcept = default;
-	~RollBack_insertIndex() { RollBack(); }
+	~RollBack_insertIndex() override { RollBack(); }
 	void RollBack() noexcept {
 		if (IsDisabled()) return;
 		if (insertedIdxName_) {
@@ -974,7 +988,7 @@ private:
 	NamespaceImpl& ns_;
 	NamespaceImpl::IndexesStorage::iterator insertedIndex_;
 	std::optional<IndexesNamesIt> insertedIdxName_;
-	int insertedIdxNo_;
+	int insertedIdxNo_{0};
 	bool pkIndexNameInserted_{false};
 };
 
@@ -1001,11 +1015,11 @@ NamespaceImpl::RollBack_insertIndex NamespaceImpl::insertIndex(std::unique_ptr<I
 	return rollbacker;
 }
 
-class NamespaceImpl::RollBack_addIndex : private RollBackBase {
+class NamespaceImpl::RollBack_addIndex final : private RollBackBase {
 public:
-	RollBack_addIndex(NamespaceImpl& ns) : ns_{ns} {}
+	explicit RollBack_addIndex(NamespaceImpl& ns) : ns_{ns} {}
 	RollBack_addIndex(const RollBack_addIndex&) = delete;
-	~RollBack_addIndex() { RollBack(); }
+	~RollBack_addIndex() override { RollBack(); }
 	void RollBack() noexcept {
 		if (IsDisabled()) return;
 		if (oldPayloadType_) ns_.payloadType_ = std::move(*oldPayloadType_);
@@ -1017,7 +1031,7 @@ public:
 	}
 	void RollBacker_insertIndex(RollBack_insertIndex&& rb) noexcept { rollbacker_insertIndex_.emplace(std::move(rb)); }
 	void RollBacker_updateItems(RollBack_updateItems<NeedRollBack::Yes>&& rb) noexcept { rollbacker_updateItems_.emplace(std::move(rb)); }
-	void Disable() noexcept {
+	void Disable() noexcept override {
 		if (rollbacker_insertIndex_) rollbacker_insertIndex_->Disable();
 		if (rollbacker_updateItems_) rollbacker_updateItems_->Disable();
 		RollBackBase::Disable();
@@ -1122,7 +1136,7 @@ void NamespaceImpl::fillSparseIndex(Index& index, std::string_view jsonPath) {
 		Payload{payloadType_, items_[rowId]}.GetByJsonPath(jsonPath, tagsMatcher_, skrefs, index.KeyType());
 		krefs.resize(0);
 		bool needClearCache{false};
-		index.Upsert(krefs, skrefs, rowId, needClearCache);
+		index.Upsert(krefs, skrefs, int(rowId), needClearCache);
 		if (needClearCache && index.IsOrdered()) indexesCacheCleaner.Add(index.SortId());
 	}
 	markUpdated(false);
@@ -1485,7 +1499,7 @@ void NamespaceImpl::doDelete(IdType id) {
 	VariantArray tupleHolder;
 	pl.Get(0, tupleHolder);
 
-	// Deleteing fields from dense and sparse indexes:
+	// Deleting fields from dense and sparse indexes:
 	// we start with 1st index (not index 0) because
 	// changing cjson of sparse index changes entire
 	// payload value (and not only 0 item).
@@ -1642,6 +1656,61 @@ void NamespaceImpl::SetReplLSNs(LSNPair LSNs, const RdxContext& ctx) {
 	setReplLSNs(LSNs);
 }
 
+Error NamespaceImpl::rebuildIndexesTagsPaths(const TagsMatcher& newTm) {
+	assertrx(!items_.size());
+	assertrx(repl_.replicatorEnabled);
+	assertrx(repl_.temporary);
+
+	bool hasChangedTags = false;
+	for (auto& index : indexes_) {
+		const auto& fields = index->Fields();
+		const auto tagsPathsCount = fields.getTagsPathsLength();
+		for (size_t i = 0; i < tagsPathsCount && !hasChangedTags; ++i) {
+			const auto& path = fields.getFieldsPath(i);
+			if (auto fpath = std::get_if<TagsPath>(&path); fpath) {
+				for (auto f : *fpath) {
+					const auto& newName = newTm.tag2name(f);
+					const auto& oldName = tagsMatcher_.tag2name(f);
+					if (newName != oldName) {
+						hasChangedTags = true;
+						break;
+					}
+				}
+			}
+		}
+	}
+	if (!hasChangedTags) {
+		return {};
+	}
+
+	std::vector<FieldsSet> newFieldSets;
+	newFieldSets.reserve(indexes_.size());
+	for (auto& index : indexes_) {
+		const auto& fields = index->Fields();
+		auto& newFields = newFieldSets.emplace_back();
+		int jsonPathIdx = 0;
+		for (auto field : fields) {
+			if (field == IndexValueType::SetByJsonPath) {
+				const auto& jsonPath = fields.getJsonPath(jsonPathIdx);
+				auto tagsPath = newTm.path2tag(jsonPath);
+				if (tagsPath.empty()) {
+					return Error(errParams, "Unable to rebuild tags path for the jsonpath '%s' of the index '%s'", jsonPath, index->Name());
+				}
+				newFields.push_back(jsonPath);
+				newFields.push_back(std::move(tagsPath));
+				++jsonPathIdx;
+			} else {
+				newFields.push_back(field);
+			}
+		}
+	}
+	for (size_t i = 1; i < indexes_.size(); ++i) {
+		indexes_[i]->SetFields(std::move(newFieldSets[i]));
+	}
+	logPrintf(LogInfo, "[tm:%s]:%d Namespace index tags were rebuilt according to the new tagsmatcher", name_, serverId_);
+	return {};
+}
+
 void NamespaceImpl::setReplLSNs(LSNPair LSNs) {
 	repl_.originLSN = LSNs.originLSN_;
 	repl_.lastUpstreamLSN = LSNs.upstreamLSN_;
@@ -1662,7 +1731,7 @@ void NamespaceImpl::setSlaveMode(const RdxContext& ctx) {
 
 ReplicationState NamespaceImpl::getReplState() const {
 	ReplicationState ret = repl_;
-	ret.dataCount = ItemsCount();
+	ret.dataCount = int(itemsCount());
 	ret.lastLsn = lsn_t(wal_.LSNCounter() - 1, serverId_);
 	return ret;
 }
@@ -1754,8 +1823,7 @@ void NamespaceImpl::CommitTransaction(Transaction& tx, QueryResults& result, NsC
 			}
 			case TransactionStep::Type::SetTM: {
 				auto& data = std::get<TransactionTmStep>(step.data_);
-				auto tmCopy = data.tm;
-				setTagsMatcher(std::move(tmCopy), ctx);
+				mergeTagsMatcher(data.tm, ctx);
 				break;
 			}
 			default:
@@ -1836,7 +1904,9 @@ void NamespaceImpl::doUpsert(ItemImpl* ritem, IdType id, bool doUpdate) {
 			assertrx(index.Fields().getTagsPathsLength() > 0);
 			try {
 				plNew.GetByJsonPath(index.Fields().getTagsPath(0), skrefs, index.KeyType());
-			} catch (const Error&) {
+			} catch (const Error& e) {
+				logPrintf(LogInfo, "[%s]:%d Unable to index sparse value (index name: '%s'): '%s'", name_, serverId_, index.Name(),
+						  e.what());
 				skrefs.resize(0);
 			}
 		} else {
@@ -1852,7 +1922,9 @@ void NamespaceImpl::doUpsert(ItemImpl* ritem, IdType id, bool doUpdate) {
 			if (isIndexSparse) {
 				try {
 					pl.GetByJsonPath(index.Fields().getTagsPath(0), krefs, index.KeyType());
-				} catch (const Error&) {
+				} catch (const Error& e) {
+					logPrintf(LogInfo, "[%s]:%d Unable to remove sparse value from the index (index name: '%s'): '%s'", name_, serverId_,
+							  index.Name(), e.what());
 					krefs.resize(0);
 				}
 			} else if (index.Opts().IsArray()) {
@@ -1898,14 +1970,27 @@ Error NamespaceImpl::ReplaceTagsMatcher(const TagsMatcher& tm, const RdxContext&
 	TagsMatcher oldTm;
 
 	auto wlck = wLock(ctx);
+
 	cg.Reset();
 	if (items_.size() || !repl_.replicatorEnabled) {
 		return Error(errParams, "Unable to replace tags matcher for %s. Items count: %d, replication flag: %d", name_, items_.size(),
 					 repl_.replicatorEnabled);
 	}
+	if (!repl_.temporary) {
+		return Error(errParams, "Unable to replace tags matcher for %s. Expecting temporary namespace in the force sync context", name_);
+	}
+	auto newTm = tm;
+	newTm.UpdatePayloadType(payloadType_, false);
+	auto err = rebuildIndexesTagsPaths(newTm);
+	if (!err.ok()) {
+		return err;
+	}
+
 	oldTm = tagsMatcher_;
 	tagsMatcher_ = tm;
-	tagsMatcher_.UpdatePayloadType(payloadType_);
+	tagsMatcher_.UpdatePayloadType(payloadType_, false);
+	tagsMatcher_.setUpdated();
+	saveTagsMatcherToStorage(true);
 
 	logPrintf(
 		LogInfo,
@@ -2041,7 +2126,7 @@ RX_ALWAYS_INLINE SelectKeyResult NamespaceImpl::getPkDocs(const ConstPayload& cp
 	assertf(keys.size() == 1, "Pkey field must contain 1 key, but there '%d' in '%s.%s'", keys.size(), name_, pkIndex->Name());
 	Index::SelectOpts selectOpts;
 	selectOpts.inTransaction = inTransaction;
-	return pkIndex->SelectKey(keys, CondEq, 0, selectOpts, nullptr, ctx)[0];
+	return pkIndex->SelectKey(keys, CondEq, 0, selectOpts, nullptr, ctx).Front();
 }
 
 // find id by PK. NOT THREAD SAFE!
@@ -2154,7 +2239,7 @@ void NamespaceImpl::optimizeIndexes(const NsContext& ctx) {
 	if (cancelCommitCnt_.load(std::memory_order_relaxed)) {
 		logPrintf(LogTrace, "Namespace::optimizeIndexes(%s) done", name_);
 	} else {
-		logPrintf(LogTrace, "Namespace::optimizeIndexes(%s) was cancelled by concurent update", name_);
+		logPrintf(LogTrace, "Namespace::optimizeIndexes(%s) was cancelled by concurrent update", name_);
 	}
 }
 
@@ -2244,7 +2329,7 @@ NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext& ctx) {
 	ret.joinCache = joinCache_->GetMemStat();
 	ret.queryCache = queryCountCache_->GetMemStat();
 
-	ret.itemsCount = ItemsCount();
+	ret.itemsCount = itemsCount();
 	*(static_cast<ReplicationState*>(&ret.replication)) = getReplState();
 	ret.replication.walCount = size_t(wal_.size());
 	ret.replication.walSize = wal_.heap_size();
@@ -2405,8 +2490,10 @@ bool NamespaceImpl::loadIndexesFromStorage() {
 		if (!status.ok()) {
 			throw status;
 		}
-		logPrintf(LogTrace, "Loaded schema(version: %lld) of namespace %s",
-				  sysRecordsVersions_.schemaVersion ? sysRecordsVersions_.schemaVersion - 1 : 0, name_);
+		std::string_view schemaStr = schema_->GetJSON();
+		schemaStr = std::string_view(schemaStr.data(), std::min(schemaStr.size(), kMaxSchemaCharsToPrint));
+		logPrintf(LogInfo, "Loaded schema(version: %lld) of the namespace '%s'. First %d symbols of the schema are: '%s'",
+				  sysRecordsVersions_.schemaVersion ? sysRecordsVersions_.schemaVersion - 1 : 0, name_, schemaStr.size(), schemaStr);
 	}
 
 	def.clear();
@@ -2428,7 +2515,7 @@ bool NamespaceImpl::loadIndexesFromStorage() {
 			return false;
 		}
 
-		int count = ser.GetVarUint();
+		int count = int(ser.GetVarUint());
 		while (count--) {
 			IndexDef indexDef;
 			std::string_view indexData = ser.GetVString();
@@ -2447,7 +2534,12 @@ bool NamespaceImpl::loadIndexesFromStorage() {
 		}
 	}
 
-	if (schema_) schema_->BuildProtobufSchema(tagsMatcher_, payloadType_);
+	if (schema_) {
+		auto err = schema_->BuildProtobufSchema(tagsMatcher_, payloadType_);
+		if (!err.ok()) {
+			logPrintf(LogInfo, "Unable to build protobuf schema for the '%s' namespace: %s", name_, err.what());
+		}
+	}
 
 	logPrintf(LogTrace, "Loaded index structure(version %lld) of namespace '%s'\n%s",
 			  sysRecordsVersions_.idxVersion ? sysRecordsVersions_.idxVersion - 1 : 0, name_, payloadType_->ToString());
@@ -2633,9 +2725,9 @@ std::shared_ptr<const Schema> NamespaceImpl::GetSchemaPtr(const RdxContext& ctx)
 	return schema_;
 }
 
-void NamespaceImpl::SetTagsMatcher(TagsMatcher&& tm, const RdxContext& ctx) {
+void NamespaceImpl::MergeTagsMatcher(const TagsMatcher& tm, const RdxContext& ctx) {
 	auto wlck = wLock(ctx);
-	setTagsMatcher(std::move(tm), ctx);
+	mergeTagsMatcher(tm, ctx);
 }
 
 void NamespaceImpl::LoadFromStorage(unsigned threadsCount, const RdxContext& ctx) {
@@ -2690,12 +2782,12 @@ void NamespaceImpl::removeExpiredItems(RdxActivityContext* ctx) {
 	lastExpirationCheckTs_ = now;
 	for (const std::unique_ptr<Index>& index : indexes_) {
 		if ((index->Type() != IndexTtl) || (index->Size() == 0)) continue;
-		const int64_t expirationthreshold =
+		const int64_t expirationThreshold =
 			std::chrono::duration_cast<std::chrono::seconds>(system_clock_w::now_coarse().time_since_epoch()).count() -
 			index->GetTTLValue();
 		QueryResults qr;
 		qr.AddNamespace(this, true);
-		auto q = Query(name_).Where(index->Name(), CondLt, expirationthreshold);
+		auto q = Query(name_).Where(index->Name(), CondLt, expirationThreshold);
 		doDelete(q, qr, rdxCtx);
 	}
 	tryForceFlush(std::move(wlck));
@@ -2719,26 +2811,32 @@ void NamespaceImpl::removeExpiredStrings(RdxActivityContext* ctx) {
 	}
 }
 
-void NamespaceImpl::setTagsMatcher(TagsMatcher&& tm, const NsContext& ctx) {
-	// NOTE: In v4 tm tokens here are always the same, but in v3 those tokens are not synchronized. Probably it should workd anyway
-	//	if (tm.stateToken() != tagsMatcher_.stateToken()) {
-	//		throw Error(errParams, "Tagsmatcher have different statetokens: %08X vs %08X", tagsMatcher_.stateToken(), tm.stateToken());
-	//	}
+void NamespaceImpl::mergeTagsMatcher(const TagsMatcher& tm, const NsContext& ctx) {
 	if (!ctx.rdxContext.fromReplication_) {
-		throw Error(errParams, "Tagsmatcher can be set from replication only");
+		throw Error(errParams, "TagsMatcher can be set from replication only");
 	}
-	tagsMatcher_ = tm;
-	tagsMatcher_.UpdatePayloadType(payloadType_, false);
-	tagsMatcher_.setUpdated();
+	auto version = tagsMatcher_.version();
+	if (!tagsMatcher_.try_merge(tm)) {
+		throw Error(errParams, "Unable to merge incompatible TagsMatchers:\nCurrent:\n%s;\nNew:\n%s", tagsMatcher_.dump(), tm.dump());
+	}
 
-	const lsn_t lsn(wal_.Add(WALRecord(WalEmpty, 0, ctx.inTransaction)), serverId_);
-	if (!repl_.temporary) {
-		WrSerializer ser;
-		ser.PutVarint(tagsMatcher_.version());
-		ser.PutVarint(tagsMatcher_.stateToken());
-		tagsMatcher_.serialize(ser);
-		observers_->OnWALUpdate(LSNPair(lsn, ctx.rdxContext.LSNs_.originLSN_), name_,
-								WALRecord(WalTagsMatcher, ser.Slice(), ctx.inTransaction));
+	if (version != tagsMatcher_.version()) {
+		logPrintf(
+			LogInfo,
+			"[tm:%s]:%d Merged new TagsMatcher (replicated): { state_token: %08X, version: %d } -> { state_token: %08X, version: %d }",
+			name_, serverId_, tagsMatcher_.stateToken(), version, tagsMatcher_.stateToken(), tagsMatcher_.version());
+	}
+
+	if (tagsMatcher_.isUpdated()) {
+		const lsn_t lsn(wal_.Add(WALRecord(WalEmpty, 0, ctx.inTransaction)), serverId_);
+		if (!repl_.temporary) {
+			WrSerializer ser;
+			ser.PutVarint(tagsMatcher_.version());
+			ser.PutVarint(tagsMatcher_.stateToken());
+			tagsMatcher_.serialize(ser);
+			observers_->OnWALUpdate(LSNPair(lsn, ctx.rdxContext.LSNs_.originLSN_), name_,
+									WALRecord(WalTagsMatcher, ser.Slice(), ctx.inTransaction));
+		}
 	}
 
 	saveTagsMatcherToStorage(true);
@@ -3033,7 +3131,7 @@ void NamespaceImpl::getFromJoinCacheImpl(JoinCacheRes& ctx) const {
 	}
 }
 
-void NamespaceImpl::getIndsideFromJoinCache(JoinCacheRes& ctx) const {
+void NamespaceImpl::getInsideFromJoinCache(JoinCacheRes& ctx) const {
 	if (config_.cacheMode != CacheModeAggressive || optimizationState_ != OptimizationCompleted) return;
 	getFromJoinCacheImpl(ctx);
 }
@@ -3070,6 +3168,21 @@ void NamespaceImpl::processWalRecord(const WALRecord& wrec, const RdxContext& ct
 
 NamespaceImpl::IndexesCacheCleaner::~IndexesCacheCleaner() {
 	for (auto& idx : ns_.indexes_) idx->ClearCache(sorts_);
+}
+
+int64_t NamespaceImpl::correctMaxIterationsIdSetPreResult(int64_t maxIterationsIdSetPreResult) const {
+	auto res = maxIterationsIdSetPreResult;
+	static constexpr int64_t minBound = JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization() + 1;
+	static constexpr int64_t maxBound = std::numeric_limits<int>::max();
+	if ((maxIterationsIdSetPreResult < minBound) || (maxBound < maxIterationsIdSetPreResult)) {
+		res = std::min<int64_t>(std::max<int64_t>(minBound, maxIterationsIdSetPreResult), maxBound);
+		if (!isSystem()) {
+			logPrintf(LogWarning,
+					  "Namespace (%s): 'max_iterations_idset_preresult' variable is forced to be adjusted. Inputted: %d, adjusted: %d",
+					  name_, maxIterationsIdSetPreResult, res);
+		}
+	}
+	return res;
 }
 
 }  // namespace reindexer

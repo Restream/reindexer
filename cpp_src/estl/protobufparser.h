@@ -1,9 +1,7 @@
 #pragma once
 
 #include <unordered_map>
-#include "core/cjson/objtype.h"
-#include "core/cjson/tagsmatcherimpl.h"
-#include "core/keyvalue/p_string.h"
+#include "core/cjson/tagspath.h"
 #include "core/keyvalue/variant.h"
 #include "tools/serializer.h"
 

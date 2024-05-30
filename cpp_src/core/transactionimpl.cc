@@ -94,15 +94,13 @@ void TransactionImpl::PutMeta(std::string_view key, std::string_view value) {
 	steps_.emplace_back(key, value);
 }
 
-void TransactionImpl::SetTagsMatcher(TagsMatcher &&tm) {
+void TransactionImpl::MergeTagsMatcher(TagsMatcher &&tm) {
 	std::lock_guard lock(mtx_);
-	// NOTE: In v4 tm tokens here are always the same, but in v3 those tokens are not synchronized. Probably it should workd anyway
-	//	if (tm.stateToken() != tagsMatcher_.stateToken()) {
-	//		throw Error(errParams, "Tx tm statetoken missmatch: %08X vs %08X", tagsMatcher_.stateToken(), tm.stateToken());
-	//	}
-	tagsMatcher_ = tm;
-	tagsMatcher_.UpdatePayloadType(payloadType_, false);
-	tagsUpdated_ = true;
+	if (!tagsMatcher_.try_merge(tm)) {
+		throw Error(errParams, "Unable to merge incompatible TagsMatchers in transaction:\nCurrent:\n%s;\nNew:\n%s", tagsMatcher_.dump(),
+					tm.dump());
+	}
+	tagsUpdated_ = tagsMatcher_.isUpdated();
 	steps_.emplace_back(std::move(tm));
 }
 

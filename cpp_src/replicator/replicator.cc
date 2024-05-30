@@ -117,9 +117,15 @@ void Replicator::run() {
 		state_.store(StateInit, std::memory_order_release);
 	}
 
-	resync_.set([this](ev::async &) { syncDatabase(); });
+	resync_.set([this](ev::async &) {
+		auto err = syncDatabase();
+		(void)err;	// ignore
+	});
 	resync_.start();
-	resyncTimer_.set([this](ev::timer &, int) { syncDatabase(); });
+	resyncTimer_.set([this](ev::timer &, int) {
+		auto err = syncDatabase();
+		(void)err;	// ignore
+	});
 	walSyncAsync_.set([this](ev::async &) {
 		// check status of namespace
 		NamespaceDef nsDef;
@@ -138,9 +144,14 @@ void Replicator::run() {
 		}
 	});
 	walSyncAsync_.start();
-	resyncUpdatesLostAsync_.set([this](ev::async &) { syncDatabase(); });
+	resyncUpdatesLostAsync_.set([this](ev::async &) {
+		auto err = syncDatabase();
+		(void)err;	// ignore
+	});
 	resyncUpdatesLostAsync_.start();
-	syncDatabase();
+	if (auto err = syncDatabase(); !err.ok()) {
+		logPrintf(LogError, "[repl] syncDatabase error: %s", err.what());
+	}
 
 	while (!terminate_) {
 		loop_.run();
@@ -151,8 +162,7 @@ void Replicator::run() {
 	resyncTimer_.stop();
 	walSyncAsync_.stop();
 	resyncUpdatesLostAsync_.stop();
-	const auto err = master_->UnsubscribeUpdates(this);
-	if (!err.ok()) {
+	if (auto err = master_->UnsubscribeUpdates(this); !err.ok()) {
 		logPrintf(LogError, "[repl] UnsubscribeUpdates error: %s", err.what());
 	}
 	logPrintf(LogInfo, "[repl] Replicator with %s stopped", config_.masterDSN);
@@ -479,7 +489,7 @@ Error Replicator::syncNamespaceByWAL(const NamespaceDef &nsDef) {
 			return syncNamespaceForced(nsDef, err.what());
 		case errOK:
 			err = applyWAL(slaveNs, qr);
-			if (err.ok()) slave_->syncDownstream(nsDef.name, false);
+			if (err.ok()) err = slave_->syncDownstream(nsDef.name, false);
 			return err;
 		case errNoWAL:
 			terminate_ = true;
@@ -576,9 +586,13 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, std::string_view r
 	//  Make query to complete master's namespace data
 	client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 	if (err.ok()) err = master_->Select(Query(ns.name).Where("#lsn", CondAny, VariantArray{}), qr);
-	if (err.ok()) err = tmpNs->ReplaceTagsMatcher(qr.getTagsMatcher(0), dummyCtx_);
 	if (err.ok()) {
-		err = applyWAL(tmpNs, qr, &ns);
+		ForceSyncContext fsyncCtx{.nsDef = ns, .replaceTagsMatcher = [&] {
+									  if (auto err = tmpNs->ReplaceTagsMatcher(qr.getTagsMatcher(0), dummyCtx_); !err.ok()) {
+										  throw err;
+									  }
+								  }};
+		err = applyWAL(tmpNs, qr, &fsyncCtx);
 		if (err.code() == errDataHashMismatch) {
 			logPrintf(LogError, "[repl:%s] Internal error. dataHash mismatch while fullSync!", ns.name, err.what());
 			err = errOK;
@@ -595,7 +609,7 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, std::string_view r
 	return err;
 }
 
-Error Replicator::applyWAL(Namespace::Ptr &slaveNs, client::QueryResults &qr, const NamespaceDef *nsDef) {
+Error Replicator::applyWAL(Namespace::Ptr &slaveNs, client::QueryResults &qr, const ForceSyncContext *fsyncCtx) {
 	Error err;
 	SyncStat stat;
 	WrSerializer ser;
@@ -604,42 +618,63 @@ Error Replicator::applyWAL(Namespace::Ptr &slaveNs, client::QueryResults &qr, co
 	auto replSt = slaveNs->GetReplState(dummyCtx_);
 	logPrintf(LogTrace, "[repl:%s:%s]:%d applyWAL  lastUpstreamLSN = %s walRecordCount = %d", nsName, slave_->storagePath_,
 			  config_.serverId, replSt.lastUpstreamLSN, qr.Count());
-	for (auto it : qr) {
-		if (terminate_) break;
-		if (qr.Status().ok()) {
-			try {
-				if (it.IsRaw()) {
-					err = applyWALRecord(LSNPair(), nsName, slaveNs, WALRecord(it.GetRaw()), stat, nsDef);
-				} else {
-					// Simple item updated
-					ser.Reset();
-					err = it.GetCJSON(ser, false);
-					if (err.ok()) {
-						std::unique_lock lck(syncMtx_);
-						if (auto txIt = transactions_.find(slaveNs.get()); txIt == transactions_.end() || txIt->second.IsFree()) {
-							lck.unlock();
-							err = modifyItem(LSNPair(), slaveNs, ser.Slice(), ModeUpsert, qr.getTagsMatcher(0), stat);
-						} else {
-							err = modifyItemTx(LSNPair(), txIt->second, ser.Slice(), ModeUpsert, qr.getTagsMatcher(0), stat);
+	if (fsyncCtx) {
+		assertrx(fsyncCtx->replaceTagsMatcher);
+		bool hasRawIndexes = qr.Count() && qr.begin().IsRaw() && WALRecord(qr.begin().GetRaw()).type == WalIndexAdd;
+		if (!hasRawIndexes) {
+			err = syncIndexesForced(slaveNs, *fsyncCtx);
+			if (!err.ok()) {
+				logPrintf(LogInfo, "[repl:%s]:%d Sync indexes error '%s'", nsName, config_.serverId, err.what());
+			}
+			fsyncCtx = nullptr;
+		}
+	}
+	if (err.ok()) {
+		for (auto it : qr) {
+			if (terminate_) break;
+			if (qr.Status().ok()) {
+				try {
+					if (it.IsRaw()) {
+						WALRecord wrec(it.GetRaw());
+						if (fsyncCtx && wrec.type != WalIndexAdd) {
+							fsyncCtx->replaceTagsMatcher();
+							fsyncCtx = nullptr;
+						}
+						err = applyWALRecord(LSNPair(), nsName, slaveNs, wrec, stat);
+					} else {
+						// Simple item updated
+						if (fsyncCtx) {
+							fsyncCtx->replaceTagsMatcher();
+							fsyncCtx = nullptr;
+						}
+						ser.Reset();
+						err = it.GetCJSON(ser, false);
+						if (err.ok()) {
+							std::unique_lock lck(syncMtx_);
+							if (auto txIt = transactions_.find(slaveNs.get()); txIt == transactions_.end() || txIt->second.IsFree()) {
+								lck.unlock();
+								err = modifyItem(LSNPair(), slaveNs, ser.Slice(), ModeUpsert, qr.getTagsMatcher(0), stat);
+							} else {
+								err = modifyItemTx(LSNPair(), txIt->second, ser.Slice(), ModeUpsert, qr.getTagsMatcher(0), stat);
+							}
 						}
 					}
+				} catch (const Error &e) {
+					err = e;
 				}
-			} catch (const Error &e) {
-				err = e;
+				if (!err.ok()) {
+					logPrintf(LogTrace, "[repl:%s]:%d Error process WAL record with LSN #%s : %s", nsName, config_.serverId,
+							  lsn_t(it.GetLSN()), err.what());
+					stat.lastError = err;
+					stat.errors++;
+				}
+				stat.processed++;
+			} else {
+				stat.lastError = qr.Status();
+				logPrintf(LogInfo, "[repl:%s]:%d Error executing WAL query: %s", nsName, config_.serverId, stat.lastError.what());
+				break;
 			}
-			if (!err.ok()) {
-				logPrintf(LogTrace, "[repl:%s]:%d Error process WAL record with LSN #%s : %s", nsName, config_.serverId, lsn_t(it.GetLSN()),
-						  err.what());
-				stat.lastError = err;
-				stat.errors++;
-			}
-			stat.processed++;
-		} else {
-			stat.lastError = qr.Status();
-			logPrintf(LogInfo, "[repl:%s]:%d Error executing WAL query: %s", nsName, config_.serverId, stat.lastError.what());
-			break;
 		}
-		nsDef = nullptr;
 	}
 
 	ReplicationState slaveState = slaveNs->GetReplState(dummyCtx_);
@@ -679,7 +714,11 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 			Item item = tx.NewItem();
 			Error err = unpackItem(item, LSNs.upstreamLSN_, rec.itemModify.itemCJson, master_->NewItem(nsName).impl_->tagsMatcher());
 			if (!err.ok()) return err;
-			tx.Modify(std::move(item), static_cast<ItemModifyMode>(rec.itemModify.modifyMode));
+			try {
+				tx.Modify(std::move(item), static_cast<ItemModifyMode>(rec.itemModify.modifyMode));
+			} catch (Error &e) {
+				return e;
+			}
 		} break;
 		// Update query
 		case WalUpdateQuery: {
@@ -688,7 +727,11 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 			std::lock_guard lck(syncMtx_);
 			Transaction &tx = transactions_[slaveNs.get()];
 			if (tx.IsFree()) return Error(errLogic, "[repl:%s]:%d Transaction was not initiated.", nsName, config_.serverId);
-			tx.Modify(std::move(q));
+			try {
+				tx.Modify(std::move(q));
+			} catch (Error &e) {
+				return e;
+			}
 		} break;
 		case WalInitTransaction: {
 			std::lock_guard lck(syncMtx_);
@@ -696,6 +739,9 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 			if (!tx.IsFree()) logPrintf(LogError, "[repl:%s]:%d Init transaction befor commit of previous one.", nsName, config_.serverId);
 			RdxContext rdxContext(true, LSNs);
 			tx = slaveNs->NewTransaction(rdxContext);
+			if (!tx.Status().ok()) {
+				return tx.Status();
+			}
 		} break;
 		case WalCommitTransaction: {
 			QueryResults res;
@@ -718,15 +764,22 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 			std::lock_guard lck(syncMtx_);
 			Transaction &tx = transactions_[slaveNs.get()];
 			if (tx.IsFree()) return Error(errLogic, "[repl:%s]:%d Transaction was not initiated.", nsName, config_.serverId);
-
-			tx.SetTagsMatcher(std::move(tm));
+			try {
+				tx.MergeTagsMatcher(std::move(tm));
+			} catch (Error &e) {
+				return e;
+			}
 		} break;
 		case WalPutMeta: {
 			std::lock_guard lck(syncMtx_);
 			Transaction &tx = transactions_[slaveNs.get()];
 			if (tx.IsFree()) return Error(errLogic, "[repl:%s]:%d Transaction was not initiated.", nsName, config_.serverId);
 
-			tx.PutMeta(std::string(rec.itemMeta.key), rec.itemMeta.value);
+			try {
+				tx.PutMeta(std::string(rec.itemMeta.key), rec.itemMeta.value);
+			} catch (Error &e) {
+				return e;
+			}
 		} break;
 		case WalEmpty:
 		case WalReplState:
@@ -758,8 +811,7 @@ void Replicator::checkNoOpenedTransaction(std::string_view nsName, Namespace::Pt
 	}
 }
 
-Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr &slaveNs, const WALRecord &rec, SyncStat &stat,
-								 const NamespaceDef *firstRec) {
+Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr &slaveNs, const WALRecord &rec, SyncStat &stat) {
 	Error err;
 	IndexDef iDef;
 
@@ -771,18 +823,15 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 		return applyTxWALRecord(LSNs, nsName, slaveNs, rec);
 	}
 
-	if (firstRec && rec.type != WalIndexAdd) {	// compatibility with old version
-		err = syncIndexesForced(slaveNs, *firstRec);
-		logPrintf(LogInfo, "[repl:%s]:%d Sync indexes error '%s'", nsName, config_.serverId, err.what());
-		return err;
-	}
 	checkNoOpenedTransaction(nsName, slaveNs);
 
 	auto sendSyncAsync = [this](const WALRecord &rec, bool forced) {
 		NamespaceDef nsDef;
-		nsDef.FromJSON(giftStr(rec.data));
+		Error err = nsDef.FromJSON(giftStr(rec.data));
+		if (!err.ok()) return err;
 		syncQueue_.Push(nsDef.name, std::move(nsDef), forced);
 		walSyncAsync_.send();
+		return err;
 	};
 	RdxContext rdxContext(true, LSNs);
 	switch (rec.type) {
@@ -812,6 +861,11 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 		// Metadata updated
 		case WalPutMeta:
 			slaveNs->PutMeta(std::string(rec.itemMeta.key), rec.itemMeta.value, dummyCtx_);
+			stat.updatedMeta++;
+			break;
+		// Metadata deleted
+		case WalDeleteMeta:
+			slaveNs->DeleteMeta(std::string(rec.itemMeta.key), dummyCtx_);
 			stat.updatedMeta++;
 			break;
 		// Update query
@@ -850,11 +904,11 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 		// force sync namespace
 		case WalForceSync:
 			logPrintf(LogTrace, "[repl:%s]:%d WalForceSync: Scheduling force-sync for the namepsace", nsName, config_.serverId);
-			sendSyncAsync(rec, true);
+			return sendSyncAsync(rec, true);
 			break;
 		case WalWALSync:
 			logPrintf(LogTrace, "[repl:%s]:%d WalWALSync: Scheduling WAL-sync for the namespace", nsName, config_.serverId);
-			sendSyncAsync(rec, false);
+			return sendSyncAsync(rec, false);
 			break;
 
 		// Replication state
@@ -881,7 +935,7 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 			tm.deserialize(ser, version, stateToken);
 			logPrintf(LogInfo, "[repl:%s]:%d Got new tagsmatcher replicated via single record: { state_token: %08X, version: %d }", nsName,
 					  config_.serverId, stateToken, version);
-			slaveNs->SetTagsMatcher(std::move(tm), rdxContext);
+			slaveNs->MergeTagsMatcher(tm, rdxContext);
 		} break;
 		case WalEmpty:
 		case WalItemUpdate:
@@ -890,7 +944,7 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 		case WalResetLocalWal:
 		case WalRawItem:
 		case WalShallowItem:
-		case WalDeleteMeta:
+		default:
 			return Error(errLogic, "Unexpected WAL rec type %d\n", int(rec.type));
 	}
 	return err;
@@ -995,11 +1049,11 @@ WrSerializer &Replicator::SyncStat::Dump(WrSerializer &ser) {
 	return ser;
 }
 
-Error Replicator::syncIndexesForced(Namespace::Ptr &slaveNs, const NamespaceDef &masterNsDef) {
-	const std::string &nsName = masterNsDef.name;
+Error Replicator::syncIndexesForced(Namespace::Ptr &slaveNs, const ForceSyncContext &fsyncCtx) {
+	const std::string &nsName = fsyncCtx.nsDef.name;
 
-	Error err = errOK;
-	for (auto &idx : masterNsDef.indexes) {
+	Error err;
+	for (auto &idx : fsyncCtx.nsDef.indexes) {
 		logPrintf(LogTrace, "[repl:%s] Updating index '%s'", nsName, idx.name_);
 		try {
 			slaveNs->AddIndex(idx, dummyCtx_);
@@ -1007,6 +1061,13 @@ Error Replicator::syncIndexesForced(Namespace::Ptr &slaveNs, const NamespaceDef 
 			logPrintf(LogError, "[repl:%s] Error add index '%s': %s", nsName, idx.name_, err.what());
 			err = e;
 		}
+	}
+	try {
+		assertrx(fsyncCtx.replaceTagsMatcher);
+		fsyncCtx.replaceTagsMatcher();
+	} catch (const Error &e) {
+		logPrintf(LogError, "[repl:%s] Error on TagsMatcher replace call: %s", nsName, err.what());
+		err = e;
 	}
 
 	return err;

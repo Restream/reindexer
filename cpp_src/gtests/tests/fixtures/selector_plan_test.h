@@ -29,8 +29,7 @@ public:
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 			Upsert(ns, item);
 		}
-		Error err = rt.Commit(ns);
-		ASSERT_TRUE(err.ok()) << err.what();
+		Commit(ns);
 	}
 
 	template <typename T>
@@ -162,8 +161,7 @@ private:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		rt.Upsert(config_ns_, item);
-		err = rt.Commit(config_ns_);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Commit(config_ns_);
 	}
 	static constexpr const char* config_ns_ = "#config";
 };

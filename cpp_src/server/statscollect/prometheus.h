@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string_view>
-#include "core/namespacedef.h"
 #include "net/http/router.h"
 #include "prometheus/registry.h"
 #include "prometheus/text_serializer.h"

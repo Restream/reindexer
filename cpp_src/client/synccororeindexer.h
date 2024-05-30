@@ -5,7 +5,6 @@
 #include "core/indexdef.h"
 #include "core/namespacedef.h"
 #include "internalrdxcontext.h"
-#include "net/ev/ev.h"
 #include "reindexerconfig.h"
 
 namespace reindexer {

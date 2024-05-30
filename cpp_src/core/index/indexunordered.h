@@ -51,7 +51,6 @@ public:
 	void EnableUpdatesCountingMode(bool val) noexcept override { tracker_.enableCountingMode(val); }
 
 	void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue &) override;
-	bool IsDestroyPartSupported() const noexcept override { return true; }
 	void ReconfigureCache(const NamespaceCacheConfigData &cacheCfg) override;
 
 protected:

@@ -47,6 +47,10 @@ list(REMOVE_ITEM SRCS ${FUZZING_SRCS})
 add_executable(${TARGET} ${SRCS})
 add_executable(${FUZZING_TARGET} ${FUZZING_SRCS})
 
+# Enable export to provide readble stacktraces
+set_property(TARGET ${TARGET} PROPERTY ENABLE_EXPORTS 1)
+set_property(TARGET ${FUZZING_TARGET} PROPERTY ENABLE_EXPORTS 1)
+
 target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES} ${GTEST_LIBRARIES})
 target_link_libraries(${FUZZING_TARGET} ${REINDEXER_LIBRARIES} ${GTEST_LIBRARIES})
 if (ENABLE_GRPC)

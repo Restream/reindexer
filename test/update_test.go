@@ -1080,4 +1080,14 @@ func TestUpdateWithExpressions(t *testing.T) {
 		require.EqualValues(t, expected, res.Array)
 	})
 
+	t.Run("update with array_remove delete by single value (scalar) from array", func(t *testing.T) {
+		res_slice, err := DB.Query(ns).SetExpression("array_idx", "array_remove(array_idx, 4)").
+			Update().FetchAll()
+		require.NoError(t, err)
+		require.Len(t, res_slice, 1)
+		res := res_slice[0].(*ItemWithSparseArray)
+		expected := []int64{5, 50}
+		require.EqualValues(t, expected, res.Array)
+	})
+
 }

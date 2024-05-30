@@ -26,52 +26,98 @@ private:
 	uint32_t hash_ = 0;
 };
 
-struct equal_composite {
+class equal_composite {
+public:
 	using is_transparent = void;
 
 	template <typename PT, typename FS>
-	equal_composite(PT &&type, FS &&fields) : type_(std::forward<PT>(type)), fields_(std::forward<FS>(fields)) {}
-	bool operator()(const PayloadValue &lhs, const PayloadValue &rhs) const {
-		assertrx(type_);
-		return ConstPayload(type_, lhs).IsEQ(rhs, fields_);
+	equal_composite(PT &&type, FS &&fields) : type_(std::forward<PT>(type)), fields_(std::forward<FS>(fields)) {
+		assertrx_dbg(type_);
 	}
+	bool operator()(const PayloadValue &lhs, const PayloadValue &rhs) const { return ConstPayload(type_, lhs).IsEQ(rhs, fields_); }
 	bool operator()(const PayloadValueWithHash &lhs, const PayloadValueWithHash &rhs) const {
-		assertrx(type_);
 		return ConstPayload(type_, lhs).IsEQ(rhs, fields_);
 	}
-	bool operator()(const PayloadValueWithHash &lhs, const PayloadValue &rhs) const {
-		assertrx(type_);
-		return ConstPayload(type_, lhs).IsEQ(rhs, fields_);
-	}
-	bool operator()(const PayloadValue &lhs, const PayloadValueWithHash &rhs) const {
-		assertrx(type_);
-		return ConstPayload(type_, lhs).IsEQ(rhs, fields_);
-	}
-	PayloadType type_;
-	FieldsSet fields_;
-};
-struct hash_composite {
-	template <typename PT, typename FS>
-	hash_composite(PT &&type, FS &&fields) : type_(std::forward<PT>(type)), fields_(std::forward<FS>(fields)) {}
-	size_t operator()(const PayloadValueWithHash &s) const { return s.GetHash(); }
-	size_t operator()(const PayloadValue &s) const {
-		assertrx(type_);
-		return ConstPayload(type_, s).GetHash(fields_);
-	}
+	bool operator()(const PayloadValueWithHash &lhs, const PayloadValue &rhs) const { return ConstPayload(type_, lhs).IsEQ(rhs, fields_); }
+	bool operator()(const PayloadValue &lhs, const PayloadValueWithHash &rhs) const { return ConstPayload(type_, lhs).IsEQ(rhs, fields_); }
+
+private:
 	PayloadType type_;
 	FieldsSet fields_;
 };
 
-struct less_composite {
-	less_composite(PayloadType &&type, FieldsSet &&fields) : type_(std::move(type)), fields_(std::move(fields)) {}
-	bool operator()(const PayloadValue &lhs, const PayloadValue &rhs) const {
-		assertrx(type_);
-		assertrx(!lhs.IsFree());
-		assertrx(!rhs.IsFree());
-		return (ConstPayload(type_, lhs).Compare<WithString::No>(rhs, fields_) < 0);
+class equal_composite_ref {
+public:
+	equal_composite_ref(const PayloadType &type, const FieldsSet &fields) noexcept : type_(type), fields_(fields) {
+		assertrx_dbg(type_.get());
 	}
+	bool operator()(const PayloadValue &lhs, const PayloadValue &rhs) const {
+		assertrx_dbg(!lhs.IsFree());
+		assertrx_dbg(!rhs.IsFree());
+		return ConstPayload(type_, lhs).IsEQ(rhs, fields_);
+	}
+
+private:
+	std::reference_wrapper<const PayloadType> type_;
+	std::reference_wrapper<const FieldsSet> fields_;
+};
+
+class hash_composite {
+public:
+	template <typename PT, typename FS>
+	hash_composite(PT &&type, FS &&fields) : type_(std::forward<PT>(type)), fields_(std::forward<FS>(fields)) {
+		assertrx_dbg(type_);
+	}
+	size_t operator()(const PayloadValueWithHash &s) const noexcept { return s.GetHash(); }
+	size_t operator()(const PayloadValue &s) const { return ConstPayload(type_, s).GetHash(fields_); }
+
+private:
 	PayloadType type_;
 	FieldsSet fields_;
+};
+
+class hash_composite_ref {
+public:
+	hash_composite_ref(const PayloadType &type, const FieldsSet &fields) noexcept : type_(type), fields_(fields) {
+		assertrx_dbg(type_.get());
+	}
+	size_t operator()(const PayloadValue &s) const { return ConstPayload(type_, s).GetHash(fields_); }
+
+private:
+	std::reference_wrapper<const PayloadType> type_;
+	std::reference_wrapper<const FieldsSet> fields_;
+};
+
+class less_composite {
+public:
+	less_composite(PayloadType &&type, FieldsSet &&fields) noexcept : type_(std::move(type)), fields_(std::move(fields)) {
+		assertrx_dbg(type_);
+	}
+	bool operator()(const PayloadValue &lhs, const PayloadValue &rhs) const {
+		assertrx_dbg(!lhs.IsFree());
+		assertrx_dbg(!rhs.IsFree());
+		return (ConstPayload(type_, lhs).Compare<WithString::No, NotComparable::Throw>(rhs, fields_) == ComparationResult::Lt);
+	}
+
+private:
+	PayloadType type_;
+	FieldsSet fields_;
+};
+
+class less_composite_ref {
+public:
+	less_composite_ref(const PayloadType &type, const FieldsSet &fields) noexcept : type_(type), fields_(fields) {
+		assertrx_dbg(type_.get());
+	}
+	bool operator()(const PayloadValue &lhs, const PayloadValue &rhs) const {
+		assertrx_dbg(!lhs.IsFree());
+		assertrx_dbg(!rhs.IsFree());
+		return (ConstPayload(type_, lhs).Compare<WithString::No, NotComparable::Throw>(rhs, fields_) == ComparationResult::Lt);
+	}
+
+private:
+	std::reference_wrapper<const PayloadType> type_;
+	std::reference_wrapper<const FieldsSet> fields_;
 };
 
 template <bool hold>
@@ -168,6 +214,12 @@ public:
 		for (auto &item : *this) this->add_ref(item.first);
 	}
 	unordered_payload_map(unordered_payload_map &&) = default;
+	unordered_payload_map &operator=(unordered_payload_map &&other) {
+		for (auto &item : *this) this->release(item.first);
+		base_hash_map::operator=(std::move(other));
+		return *this;
+	}
+	unordered_payload_map &operator=(const unordered_payload_map &) = delete;
 
 	~unordered_payload_map() {
 		for (auto &item : *this) this->release(item.first);
@@ -276,7 +328,8 @@ public:
 	}
 };
 
-using unordered_payload_set = tsl::hopscotch_set<PayloadValue, hash_composite, equal_composite, std::allocator<PayloadValue>, 30, true>;
+using unordered_payload_ref_set =
+	tsl::hopscotch_set<PayloadValue, hash_composite_ref, equal_composite_ref, std::allocator<PayloadValue>, 30, true>;
 
 template <typename>
 constexpr bool is_payload_map_v = false;

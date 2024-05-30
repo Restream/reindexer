@@ -6,7 +6,6 @@
 #include "core/ft/ft_fuzzy/dataholder/basebuildedholder.h"
 #include "core/ft/ftdsl.h"
 #include "core/ft/idrelset.h"
-#include "dataset.h"
 
 namespace reindexer {
 class RdxContext;

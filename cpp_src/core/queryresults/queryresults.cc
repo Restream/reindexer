@@ -6,9 +6,9 @@
 #include "core/cjson/protobufbuilder.h"
 #include "core/itemimpl.h"
 #include "core/namespace/namespace.h"
+#include "core/namespace/namespaceimpl.h"
 #include "joinresults.h"
 #include "tools/catch_and_return.h"
-#include "tools/logger.h"
 
 namespace reindexer {
 
@@ -338,7 +338,7 @@ CsvOrdering QueryResults::MakeCSVTagOrdering(unsigned limit, unsigned offset) co
 	return ordering;
 }
 
-[[nodiscard]] Error QueryResults::Iterator::GetCSV(WrSerializer &ser, CsvOrdering &ordering) noexcept {
+Error QueryResults::Iterator::GetCSV(WrSerializer &ser, CsvOrdering &ordering) noexcept {
 	try {
 		auto &itemRef = qr_->items_[idx_];
 		assertrx(qr_->ctxs.size() > itemRef.Nsid());

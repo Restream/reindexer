@@ -4,7 +4,6 @@
 #include <iostream>
 #include "debug/backtrace.h"
 #include "spdlog/fmt/bundled/printf.h"
-#include "spdlog/fmt/fmt.h"
 #include "tools/errors.h"
 
 namespace reindexer {

@@ -3,13 +3,13 @@
 #include <wchar.h>
 #include <iomanip>
 
-#include "client/cororeindexer.h"
-#include "core/cjson/jsonbuilder.h"
-#include "core/reindexer.h"
+#include "client/coroqueryresults.h"
+#include "core/queryresults/queryresults.h"
 #include "tools/jsontools.h"
+#include "tools/serializer.h"
 #include "tools/terminalutils.h"
-#include "utf8cpp/utf8.h"
 #include "vendor/gason/gason.h"
+#include "vendor/utf8cpp/utf8.h"
 #include "vendor/wcwidth/wcwidth.h"
 
 namespace reindexer {

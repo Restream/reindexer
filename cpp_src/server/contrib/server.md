@@ -133,7 +133,7 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 
 
 ### Version information
-*Version* : 3.24.0
+*Version* : 3.25.0
 
 
 ### License information
@@ -217,7 +217,7 @@ This operation will create new database. If database is already exists, then err
 
 |Type|Name|Description|Schema|
 |---|---|---|---|
-|**Body**|**body**  <br>*required*|Database definintion|[Database](#database)|
+|**Body**|**body**  <br>*required*|Database definition|[Database](#database)|
 
 
 #### Responses
@@ -282,7 +282,7 @@ GET /db/{database}/namespaces
 
 
 #### Description
-This operation will list all availavle namespaces in specified database.
+This operation will list all available namespaces in specified database.
 If database is not exists, then error will be returned.
 
 
@@ -328,7 +328,7 @@ If namespace is already exists, then operation do not nothing.
 |Type|Name|Description|Schema|
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
-|**Body**|**body**  <br>*required*|Namespace definintion|[Namespace](#namespace)|
+|**Body**|**body**  <br>*required*|Namespace definition|[Namespace](#namespace)|
 
 
 #### Responses
@@ -913,7 +913,7 @@ PUT /db/{database}/namespaces/{name}/indexes
 
 #### Description
 This operation will update index parameters. E.g. type of field or type of index.
-Operation  is synchronious, so it can take long time, if namespace contains bunch of documents
+Operation synchronous, so it can take long time, if namespace contains bunch of documents
 
 
 #### Parameters
@@ -951,7 +951,7 @@ POST /db/{database}/namespaces/{name}/indexes
 
 #### Description
 This operation will create new index. If index is already exists with the different parameters, then error will be returned.
-Operation is synchronious, so it can take long time, if namespace contains bunch of documents.
+Operation synchronous, so it can take long time, if namespace contains bunch of documents.
 
 
 #### Parameters
@@ -989,7 +989,7 @@ DELETE /db/{database}/namespaces/{name}/indexes/{indexname}
 
 #### Description
 This operation will remove index from namespace. No data will be erased.
-Operation  is synchronious, so it can take long time, if namespace contains bunch of documents.
+Operation synchronous, so it can take long time, if namespace contains bunch of documents.
 
 
 #### Parameters
@@ -1140,7 +1140,7 @@ GET /db/{database}/query
 
 
 #### Description
-This operation queries documents from namespace by SQL query. Query can be preced by `EXPLAIN` statement, then query execution plan will be returned with query results. 
+This operation queries documents from namespace by SQL query. Query can be preceded by `EXPLAIN` statement, then query execution plan will be returned with query results. 
 Two level paging is supported. At first, applied normal SQL `LIMIT` and `OFFSET`,
 then `limit` and `offset` from http request.
 
@@ -1691,7 +1691,7 @@ POST /db/{database}/sqlquery
 
 
 #### Description
-This operation queries documents from namespace by SQL query. Query can be preced by `EXPLAIN` statement, then query execution plan will be returned with query results.
+This operation queries documents from namespace by SQL query. Query can be preceded by `EXPLAIN` statement, then query execution plan will be returned with query results.
 
 
 #### Parameters
@@ -1730,7 +1730,7 @@ GET /check
 
 
 #### Description
-This operation will return system informatiom about server version, uptime, and resources consumtion
+This operation will return system information about server version, uptime, and resources consumption
 
 
 #### Responses
@@ -1761,6 +1761,14 @@ POST /allocator/drop_cache
 Try to release free memory back to the operating system for reuse. Only for tcmalloc allocator.
 
 
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+
+
 #### Tags
 
 * system
@@ -1774,7 +1782,7 @@ GET /allocator/info
 
 
 #### Description
-This operation will return memory usage informatiom from tcmalloc allocator.
+This operation will return memory usage information from tcmalloc allocator.
 
 
 #### Responses
@@ -1802,7 +1810,7 @@ GET /db/{database}/namespaces/%23activitystats/items
 
 
 #### Description
-This operation will return detailed informatiom about current activity of all connected to the database clients
+This operation will return detailed information about current activity of all connected to the database clients
 
 
 #### Parameters
@@ -1837,7 +1845,7 @@ GET /db/{database}/namespaces/%23clientsstats/items
 
 
 #### Description
-This operation will return detailed informatiom about all connections on the server
+This operation will return detailed information about all connections on the server
 
 
 #### Parameters
@@ -1872,7 +1880,7 @@ GET /db/{database}/namespaces/%23memstats/items
 
 
 #### Description
-This operation will return detailed informatiom about database memory consumption
+This operation will return detailed information about database memory consumption
 
 
 #### Parameters
@@ -1907,7 +1915,7 @@ GET /db/{database}/namespaces/%23perfstats/items
 
 
 #### Description
-This operation will return detailed informatiom about database performance timings. By default performance stats is turned off.
+This operation will return detailed information about database performance timings. By default performance stats is turned off.
 
 
 #### Parameters
@@ -1942,7 +1950,7 @@ GET /db/{database}/namespaces/%23queriesperfstats/items
 
 
 #### Description
-This operation will return detailed informatiom about database memory consumption. By default qureis performance stat is turned off.
+This operation will return detailed information about database memory consumption. By default quires performance stat is turned off.
 
 
 #### Parameters
@@ -1978,8 +1986,8 @@ PUT /db/{database}/namespaces/%23config/items
 
 #### Description
 This operation will update system configuration:
-- profiling configuration. It is used to enable recording of queries and overal performance;
-- log queries configurating.
+- profiling configuration. It is used to enable recording of queries and overall performance;
+- log queries configuration.
 
 
 #### Parameters
@@ -2058,7 +2066,7 @@ This operation will update system configuration:
 
 |Name|Description|Schema|
 |---|---|---|
-|**count**  <br>*required*|Count of elemens these fields values|integer|
+|**count**  <br>*required*|Count of elements these fields values|integer|
 |**values**  <br>*required*|Facet fields values|< string > array|
 
 
@@ -2117,7 +2125,7 @@ Specifies facet aggregations results sorting order
 
 |Name|Description|Schema|
 |---|---|---|
-|**app_name**  <br>*required*|Client's aplication name|string|
+|**app_name**  <br>*required*|Client's application name|string|
 |**client_version**  <br>*required*|Client version string|string|
 |**connection_id**  <br>*required*|Connection identifier|integer|
 |**current_activity**  <br>*required*|Current activity|string|
@@ -2230,7 +2238,7 @@ Query execution explainings
 |**postprocess_us**  <br>*optional*|Query post process time|integer|
 |**prepare_us**  <br>*optional*|Query prepare and optimize time|integer|
 |**preselect_us**  <br>*optional*|Query preselect processing time|integer|
-|**selectors**  <br>*optional*|Filter selectors, used to proccess query conditions|< [selectors](#explaindef-selectors) > array|
+|**selectors**  <br>*optional*|Filter selectors, used to process query conditions|< [selectors](#explaindef-selectors) > array|
 |**sort_by_uncommitted_index**  <br>*optional*|Optimization of sort by uncompleted index has been performed|boolean|
 |**sort_index**  <br>*optional*|Index, which used for sort results|string|
 |**subqueries**  <br>*optional*|Explain of subqueries preselect|< [subqueries](#explaindef-subqueries) > array|
@@ -2247,6 +2255,7 @@ Query execution explainings
 |**on_condition**  <br>*optional*|Original ON-conditions clause. SQL-like string|string|
 |**reason**  <br>*optional*|Optional{succeed==false}. Explains condition injection failure|string|
 |**success**  <br>*optional*|Result of injection attempt|boolean|
+|**total_time_us**  <br>*optional*|Total amount of time spent on checking and substituting all conditions|integer|
 |**type**  <br>*optional*|Values source: preselect values(by_value) or additional select(select)|string|
 
 
@@ -2269,6 +2278,7 @@ Query execution explainings
 |Name|Description|Schema|
 |---|---|---|
 |**comparators**  <br>*optional*|Count of comparators used, for this selector|integer|
+|**condition**  <br>*optional*|Condition on the field|string|
 |**cost**  <br>*optional*|Cost expectation of this selector|integer|
 |**description**  <br>*optional*|Description of the selector|string|
 |**explain_preselect**  <br>*optional*|Preselect in joined namespace execution explainings|[ExplainDef](#explaindef)|
@@ -2279,7 +2289,7 @@ Query execution explainings
 |**keys**  <br>*optional*|Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching|integer|
 |**matched**  <br>*optional*|Count of processed documents, matched this selector|integer|
 |**method**  <br>*optional*|Method, used to process condition|enum (scan, index, inner_join, left_join)|
-|**type**  <br>*optional*|Type of the selector|string|
+|**type**  <br>*optional*|Select iterator type|enum (Comparator, TwoFieldsComparison, Skipped, Forward, Reverse, SingleRange, SingleIdset, SingleIdSetWithDeferedSort, RevSingleRange, RevSingleIdset, RevSingleIdSetWithDeferedSort, OnlyComparator, Unsorted, UnbuiltSortOrdersIndex)|
 
 
 **subqueries**
@@ -2331,7 +2341,7 @@ Fulltext Index configuration
 |**base_ranking**  <br>*optional*|Config for subterm proc rank.|[base_ranking](#fulltextconfig-base_ranking)|
 |**bm25_boost**  <br>*optional*|Boost of bm25 ranking  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**bm25_config**  <br>*optional*|Config for document ranking function|[bm25_config](#fulltextconfig-bm25_config)|
-|**bm25_weight**  <br>*optional*|Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to finl rank in 0 - 100% range  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
+|**bm25_weight**  <br>*optional*|Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to final rank in 0 - 100% range  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**distance_boost**  <br>*optional*|Boost of search query term distance in found document  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**distance_weight**  <br>*optional*|Weight of search query terms distance in found document in final rank 0: distance will not change final rank. 1: distance will affect to final rank in 0 - 100% range  <br>**Default** : `0.5`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**enable_kb_layout**  <br>*optional*|Enable wrong keyboard layout variants processing. e.g. term 'keynbr' will match word 'лунтик'  <br>**Default** : `true`|boolean|
@@ -2339,8 +2349,8 @@ Fulltext Index configuration
 |**enable_preselect_before_ft**  <br>*optional*|Enable to execute others queries before the ft query  <br>**Default** : `false`|boolean|
 |**enable_translit**  <br>*optional*|Enable russian translit variants processing. e.g. term 'luntik' will match word 'лунтик'  <br>**Default** : `true`|boolean|
 |**enable_warmup_on_ns_copy**  <br>*optional*|Enable auto index warmup after atomic namespace copy on transaction  <br>**Default** : `false`|boolean|
-|**extra_word_symbols**  <br>*optional*|List of symbols, which will be threated as word part, all other symbols will be thrated as wors separators  <br>**Default** : `"-/+"`|string|
-|**fields**  <br>*optional*|Configuration for certian field if it differ from whole index configuration|< [FulltextFieldConfig](#fulltextfieldconfig) > array|
+|**extra_word_symbols**  <br>*optional*|List of symbols, which will be treated as word part, all other symbols will be treated as word separators  <br>**Default** : `"-/+"`|string|
+|**fields**  <br>*optional*|Configuration for certain field if it differ from whole index configuration|< [FulltextFieldConfig](#fulltextfieldconfig) > array|
 |**full_match_boost**  <br>*optional*|Boost of full match of search phrase with doc  <br>**Default** : `1.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**log_level**  <br>*optional*|Log level of full text search engine  <br>**Minimum value** : `0`  <br>**Maximum value** : `4`|integer|
 |**max_areas_in_doc**  <br>*optional*|Max number of highlighted areas for each field in each document (for snippet() and highlight()). '-1' means unlimited  <br>**Maximum value** : `1000000000`|number|
@@ -2371,9 +2381,9 @@ Fulltext Index configuration
 |**base_typo_proc**  <br>*optional*|Base relevancy of typo match  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
 |**full_match_proc**  <br>*optional*|Relevancy of full word match  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
 |**kblayout_proc**  <br>*optional*|Relevancy of the match in incorrect kblayout  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
-|**prefix_min_proc**  <br>*optional*|Mininum relevancy of prefix word match  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**prefix_min_proc**  <br>*optional*|Minimum relevancy of prefix word match  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
 |**stemmer_proc_penalty**  <br>*optional*|Penalty for the variants, created by stemming  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
-|**suffix_min_proc**  <br>*optional*|Mininum relevancy of suffix word match  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**suffix_min_proc**  <br>*optional*|Minimum relevancy of suffix word match  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
 |**synonyms_proc**  <br>*optional*|Relevancy of the synonym match  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
 |**translit_proc**  <br>*optional*|Relevancy of the match in translit  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
 |**typo_proc_penalty**  <br>*optional*|Extra penalty for each word's permutation (addition/deletion of the symbol) in typo algorithm  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
@@ -2384,7 +2394,7 @@ Fulltext Index configuration
 |Name|Description|Schema|
 |---|---|---|
 |**bm25_b**  <br>*optional*|Coefficient b in the formula for calculating bm25. If b is bigger, the effects of the length of the document compared to the average length are more amplified.  <br>**Default** : `0.75`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
-|**bm25_k1**  <br>*optional*|Coefficient k1 in the formula for calculating bm25. Сoefficient that sets the saturation threshold for the frequency of the term. The higher the coefficient, the higher the threshold and the lower the saturation rate.  <br>**Default** : `2.0`  <br>**Minimum value** : `0`|number (float)|
+|**bm25_k1**  <br>*optional*|Coefficient k1 in the formula for calculating bm25. Coefficient that sets the saturation threshold for the frequency of the term. The higher the coefficient, the higher the threshold and the lower the saturation rate.  <br>**Default** : `2.0`  <br>**Minimum value** : `0`|number (float)|
 |**bm25_type**  <br>*optional*|Formula for calculating document relevance (rx_bm25, bm25, word_count)  <br>**Default** : `"rx_bm25"`|enum (rx_bm25, bm25, word_count)|
 
 
@@ -2394,19 +2404,19 @@ Fulltext Index configuration
 |---|---|---|
 |**max_extra_letters**  <br>*optional*|Maximum number of symbols, which may be added to the initial term to transform it into the result word  <br>**Minimum value** : `-1`  <br>**Maximum value** : `2`|integer|
 |**max_missing_letters**  <br>*optional*|Maximum number of symbols, which may be removed from the initial term to transform it into the result word  <br>**Minimum value** : `-1`  <br>**Maximum value** : `2`|integer|
-|**max_symbol_permutation_distance**  <br>*optional*|Maximum distance between same symbols in initial and target words to perform substitution (to handle cases, when two symbolws were switched with each other)  <br>**Minimum value** : `-1`  <br>**Maximum value** : `100`|integer|
+|**max_symbol_permutation_distance**  <br>*optional*|Maximum distance between same symbols in initial and target words to perform substitution (to handle cases, when two symbols were switched with each other)  <br>**Minimum value** : `-1`  <br>**Maximum value** : `100`|integer|
 |**max_typo_distance**  <br>*optional*|Maximum distance between symbols in initial and target words to perform substitution  <br>**Minimum value** : `-1`  <br>**Maximum value** : `100`|integer|
 
 
 
 ### FulltextFieldConfig
-Configuration for certian field if it differ from whole index configuration
+Configuration for certain field if it differ from whole index configuration
 
 
 |Name|Description|Schema|
 |---|---|---|
 |**bm25_boost**  <br>*optional*|Boost of bm25 ranking  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
-|**bm25_weight**  <br>*optional*|Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to finl rank in 0 - 100% range  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
+|**bm25_weight**  <br>*optional*|Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to final rank in 0 - 100% range  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**field_name**  <br>*optional*|Field name|string|
 |**position_boost**  <br>*optional*|Boost of search query term position  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**position_weight**  <br>*optional*|Weight of search query term position in final rank. 0: term position will not change final rank. 1: term position will affect to final rank in 0 - 100% range  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
@@ -2439,7 +2449,7 @@ Fulltext synonym definition
 |**is_dense**  <br>*optional*|Reduces the index size. For hash and tree it will save ~8 bytes per unique key value. Useful for indexes with high selectivity, but for tree and hash indexes with low selectivity can seriously decrease update performance;  <br>**Default** : `false`|boolean|
 |**is_pk**  <br>*optional*|Specifies, that index is primary key. The update operations will checks, that PK field is unique. The namespace MUST have only 1 PK index|boolean|
 |**is_simple_tag**  <br>*optional*|Use simple tag instead of actual index, which will notice rx about possible field name for strict policies  <br>**Default** : `false`|boolean|
-|**is_sparse**  <br>*optional*|Value of index may not present in the document, and threfore, reduce data size but decreases speed operations on index  <br>**Default** : `false`|boolean|
+|**is_sparse**  <br>*optional*|Value of index may not present in the document, and therefore, reduce data size but decreases speed operations on index  <br>**Default** : `false`|boolean|
 |**json_paths**  <br>*required*|Fields path in json object, e.g 'id' or 'subobject.field'. If index is 'composite' or 'is_array', than multiple json_paths can be specified, and index will get values from all specified fields.|< string > array|
 |**name**  <br>*required*|Name of index, can contains letters, digits and underscores  <br>**Default** : `"id"`  <br>**Pattern** : `"^[A-Za-z0-9_\\-]*$"`|string|
 |**rtree_type**  <br>*optional*|Algorithm to construct RTree index  <br>**Default** : `"rstar"`|enum (linear, quadratic, greene, rstar)|
@@ -2466,13 +2476,13 @@ Idset cache stats. Stores merged reverse index results of SELECT field IN(...) b
 
 |Name|Description|Schema|
 |---|---|---|
-|**data_size**  <br>*optional*|Total memory consumption of documents's data, holded by index|integer|
+|**data_size**  <br>*optional*|Total memory consumption of documents's data, held by index|integer|
 |**fulltext_size**  <br>*optional*|Total memory consumption of fulltext search structures|integer|
 |**idset_btree_size**  <br>*optional*|Total memory consumption of reverse index b-tree structures. For `dense` and `store` indexes always 0|integer|
 |**idset_cache**  <br>*optional*||[IndexCacheMemStats](#indexcachememstats)|
-|**idset_plain_size**  <br>*optional*|Total memory consumption of reverse index vectors. For `store` ndexes always 0|integer|
-|**name**  <br>*optional*|Name of index. There are special index with name `-tuple`. It's stores original document's json structure with non indexe fields|string|
-|**sort_orders_size**  <br>*optional*|Total memory consumption of SORT statement and `GT`, `LT` conditions optimized structures. Applicabe only to `tree` indexes|integer|
+|**idset_plain_size**  <br>*optional*|Total memory consumption of reverse index vectors. For `store` indexes always 0|integer|
+|**name**  <br>*optional*|Name of index. There are special index with name `-tuple`. It's stores original document's json structure with non indexed fields|string|
+|**sort_orders_size**  <br>*optional*|Total memory consumption of SORT statement and `GT`, `LT` conditions optimized structures. Applicable only to `tree` indexes|integer|
 |**tracked_updates_buckets**  <br>*optional*|Buckets count in index updates tracker map|integer|
 |**tracked_updates_count**  <br>*optional*|Updates count, pending in index updates tracker|integer|
 |**tracked_updates_overflow**  <br>*optional*|Updates tracker map overflow (number of elements, stored outside of the main buckets)|integer|
@@ -2639,13 +2649,13 @@ List of meta info of the specified namespace
 |**optimization_completed**  <br>*optional*|Background indexes optimization has been completed|boolean|
 |**query_cache**  <br>*optional*||[QueryCacheMemStats](#querycachememstats)|
 |**replication**  <br>*optional*||[ReplicationStats](#replicationstats)|
-|**storage_enabled**  <br>*optional*|Shows if storage is enabled (hovewer it may still be unavailable)|boolean|
+|**storage_enabled**  <br>*optional*|Shows if storage is enabled (however it may still be unavailable)|boolean|
 |**storage_ok**  <br>*optional*|Status of disk storage (true, if storage is enabled and writable)|boolean|
 |**storage_path**  <br>*optional*|Filesystem path to namespace storage|string|
-|**storage_status**  <br>*optional*|More detailed info about storage status. May contain 'OK', 'DISABLED', 'NO SPACE LEFT' or last error descrition|string|
+|**storage_status**  <br>*optional*|More detailed info about storage status. May contain 'OK', 'DISABLED', 'NO SPACE LEFT' or last error description|string|
 |**strings_waiting_to_be_deleted_size**  <br>*optional*|Size of strings deleted from namespace, but still used in queryResults|integer|
 |**total**  <br>*optional*|Summary of total namespace memory consumption|[total](#namespacememstats-total)|
-|**updated_unix_nano**  <br>*optional*|[[deperecated]]. do not use|integer|
+|**updated_unix_nano**  <br>*optional*|[[deprecated]]. do not use|integer|
 
 
 **total**
@@ -2654,7 +2664,7 @@ List of meta info of the specified namespace
 |---|---|---|
 |**cache_size**  <br>*optional*|Total memory consumption of namespace's caches. e.g. idset and join caches|integer|
 |**data_size**  <br>*optional*|Total memory size of stored documents, including system structures|integer|
-|**index_optimizer_memory**  <br>*optional*|Total memory size, occupated by index optimizer (in bytes)|integer|
+|**index_optimizer_memory**  <br>*optional*|Total memory size, occupation by index optimizer (in bytes)|integer|
 |**indexes_size**  <br>*optional*|Total memory consumption of namespace's indexes|integer|
 
 
@@ -2704,8 +2714,9 @@ List of meta info of the specified namespace
 |**copy_policy_multiplier**  <br>*optional*|Disables copy policy if namespace size is greater than copy_policy_multiplier * start_copy_policy_tx_size|integer|
 |**index_updates_counting_mode**  <br>*optional*|Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time|boolean|
 |**join_cache_mode**  <br>*optional*|Join cache mode|enum (aggressive)|
-|**lazyload**  <br>*optional*|Enable namespace lazy load (namespace shoud be loaded from disk on first call, not at reindexer startup)|boolean|
+|**lazyload**  <br>*optional*|Enable namespace lazy load (namespace should be loaded from disk on first call, not at reindexer startup)|boolean|
 |**log_level**  <br>*optional*|Log level of queries core logger|enum (none, error, warning, info, trace)|
+|**max_iterations_idset_preresult**  <br>*optional*|Maximum number of IdSet iterations of namespace preliminary result size for optimization  <br>**Minimum value** : `201`  <br>**Maximum value** : `2147483647`|integer|
 |**max_preselect_part**  <br>*optional*|Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only mmax_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**max_preselect_size**  <br>*optional*|Maximum preselect size for optimization of inner join by injection of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied  <br>**Minimum value** : `0`|integer|
 |**min_preselect_size**  <br>*optional*|Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value  <br>**Minimum value** : `0`|integer|
@@ -2713,7 +2724,7 @@ List of meta info of the specified namespace
 |**optimization_sort_workers**  <br>*optional*|Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations|integer|
 |**optimization_timeout_ms**  <br>*optional*|Timeout before background indexes optimization start after last update. 0 - disable optimizations|integer|
 |**start_copy_policy_tx_size**  <br>*optional*|Enable namespace copying for transaction with steps count greater than this value (if copy_politics_multiplier also allows this)|integer|
-|**sync_storage_flush_limit**  <br>*optional*|Enables synchronous storage flush inside write-calls, if async updates count is more than sync_storage_flush_limit. 0 - disables synchronous storage flush, in this case storage will be flushed in background thread only|integer|
+|**sync_storage_flush_limit**  <br>*optional*|Enables synchronous storage flush inside write-calls, if async updates count is more than sync_storage_flush_limit. 0 - disables synchronous storage flush, in this case storage will be flushed in background thread only  <br>**Minimum value** : `0`|integer|
 |**tx_size_to_always_copy**  <br>*optional*|Force namespace copying for transaction with steps count greater than this value|integer|
 |**unload_idle_threshold**  <br>*optional*|Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded|integer|
 |**wal_size**  <br>*optional*|Maximum WAL size for this namespace (maximum count of WAL records)|integer|
@@ -2723,14 +2734,14 @@ List of meta info of the specified namespace
 
 |Name|Description|Schema|
 |---|---|---|
-|**ft_index_cache_size**  <br>*optional*|Max size of the fulltext indexes IdSets cache in bytes (per index). Each fulltext index has it's own independant cache. This cache is used in any selections to store resulting sets of internal document IDs, FT ranks and highlighted areas (it does not stores documents' content itself)|integer|
-|**ft_index_hits_to_cache**  <br>*optional*|Default 'hits to cache' for fulltext index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast|integer|
-|**index_idset_cache_size**  <br>*optional*|Max size of the index IdSets cache in bytes (per index). Each index has it's own independant cache. This cache is used in any selections to store resulting sets of internal document IDs (it does not stores documents' content itself)|integer|
-|**index_idset_hits_to_cache**  <br>*optional*|Default 'hits to cache' for index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast|integer|
-|**joins_preselect_cache_size**  <br>*optional*|Max size of the index IdSets cache in bytes for each namespace. This cache will be enabled only if 'join_cache_mode' property is not 'off'. It stores resulting IDs, serialized JOINed queries and any other 'preselect' information for the JOIN queries (when target namespace is right namespace of the JOIN)|integer|
-|**joins_preselect_hit_to_cache**  <br>*optional*|Default 'hits to cache' for joins preselect cache of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast|integer|
-|**query_count_cache_size**  <br>*optional*|Max size of the cache for COUNT_CACHED() aggregation in bytes for each namespace. This cache stores resulting COUNTs and serialized queries for the COUNT_CACHED() aggregations|integer|
-|**query_count_hit_to_cache**  <br>*optional*|Default 'hits to cache' for COUNT_CACHED() aggregation of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast|integer|
+|**ft_index_cache_size**  <br>*optional*|Max size of the fulltext indexes IdSets cache in bytes (per index). Each fulltext index has it's own independent cache. This cache is used in any selections to store resulting sets of internal document IDs, FT ranks and highlighted areas (it does not stores documents' content itself)  <br>**Minimum value** : `0`|integer|
+|**ft_index_hits_to_cache**  <br>*optional*|Default 'hits to cache' for fulltext index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast  <br>**Minimum value** : `0`|integer|
+|**index_idset_cache_size**  <br>*optional*|Max size of the index IdSets cache in bytes (per index). Each index has it's own independent cache. This cache is used in any selections to store resulting sets of internal document IDs (it does not stores documents' content itself)  <br>**Minimum value** : `0`|integer|
+|**index_idset_hits_to_cache**  <br>*optional*|Default 'hits to cache' for index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast  <br>**Minimum value** : `0`|integer|
+|**joins_preselect_cache_size**  <br>*optional*|Max size of the index IdSets cache in bytes for each namespace. This cache will be enabled only if 'join_cache_mode' property is not 'off'. It stores resulting IDs, serialized JOINed queries and any other 'preselect' information for the JOIN queries (when target namespace is right namespace of the JOIN)  <br>**Minimum value** : `0`|integer|
+|**joins_preselect_hit_to_cache**  <br>*optional*|Default 'hits to cache' for joins preselect cache of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast  <br>**Minimum value** : `0`|integer|
+|**query_count_cache_size**  <br>*optional*|Max size of the cache for COUNT_CACHED() aggregation in bytes for each namespace. This cache stores resulting COUNTs and serialized queries for the COUNT_CACHED() aggregations  <br>**Minimum value** : `0`|integer|
+|**query_count_hit_to_cache**  <br>*optional*|Default 'hits to cache' for COUNT_CACHED() aggregation of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast  <br>**Minimum value** : `0`|integer|
 
 
 
@@ -2752,9 +2763,9 @@ List of meta info of the specified namespace
 |**activitystats**  <br>*optional*|Enables tracking activity statistics  <br>**Default** : `false`|boolean|
 |**long_queries_logging**  <br>*optional*||[LongQueriesLogging](#longquerieslogging)|
 |**memstats**  <br>*optional*|Enables tracking memory statistics  <br>**Default** : `true`|boolean|
-|**perfstats**  <br>*optional*|Enables tracking overal perofrmance statistics  <br>**Default** : `false`|boolean|
-|**queries_threshold_us**  <br>*optional*|Minimum query execution time to be recoreded in #queriesperfstats namespace|integer|
-|**queriesperfstats**  <br>*optional*|Enables record queries perofrmance statistics  <br>**Default** : `false`|boolean|
+|**perfstats**  <br>*optional*|Enables tracking overall performance statistics  <br>**Default** : `false`|boolean|
+|**queries_threshold_us**  <br>*optional*|Minimum query execution time to be recorded in #queriesperfstats namespace|integer|
+|**queriesperfstats**  <br>*optional*|Enables record queries performance statistics  <br>**Default** : `false`|boolean|
 
 
 
@@ -2860,14 +2871,14 @@ Performance statistics per each query
 |Name|Description|Schema|
 |---|---|---|
 |**app_name**  <br>*optional*|Application name, used by replicator as a login tag|string|
-|**cluster_id**  <br>*optional*|Cluser ID - must be same for client and for master|integer|
+|**cluster_id**  <br>*optional*|Cluster ID - must be same for client and for master|integer|
 |**enable_compression**  <br>*optional*|Enable network traffic compression|boolean|
 |**force_sync_on_logic_error**  <br>*optional*|force resync on logic error conditions|boolean|
 |**force_sync_on_wrong_data_hash**  <br>*optional*|force resync on wrong data hash conditions|boolean|
 |**master_dsn**  <br>*optional*|DSN to master. Only cproto schema is supported|string|
-|**namespaces**  <br>*optional*|List of namespaces for replication. If emply, all namespaces. All replicated namespaces will become read only for slave|< string > array|
+|**namespaces**  <br>*optional*|List of namespaces for replication. If empty, all namespaces. All replicated namespaces will become read only for slave|< string > array|
 |**role**  <br>*optional*|Replication role|enum (none, slave, master)|
-|**server_id**  <br>*optional*|Node identifier. Should be unique for each node in the replicated cluster (non-unique IDs are also allowed, but may lead to the inconsistency in some cases  <br>**Maximum value** : `999`|integer|
+|**server_id**  <br>*optional*|Node identifier. Should be unique for each node in the replicated cluster (non-unique IDs are also allowed, but may lead to the inconsistency in some cases  <br>**Minimum value** : `0`  <br>**Maximum value** : `999`|integer|
 |**timeout_sec**  <br>*optional*|Network timeout for communication with master, in seconds|integer|
 
 
@@ -2976,7 +2987,7 @@ Specifies results sorting order
 
 
 ### SubQuery
-Subquery object. It must contain either 'select_filters' for the single field, single aggregation or must be matched againts 'is null'/'is not null conditions'
+Subquery object. It must contain either 'select_filters' for the single field, single aggregation or must be matched against 'is null'/'is not null conditions'
 
 
 |Name|Description|Schema|

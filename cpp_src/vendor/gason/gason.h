@@ -15,7 +15,18 @@ namespace gason {
 
 using reindexer::span;
 
-enum JsonTag : int { JSON_STRING = 0, JSON_NUMBER, JSON_DOUBLE, JSON_ARRAY, JSON_OBJECT, JSON_TRUE, JSON_FALSE, JSON_NULL = 0xF };
+enum JsonTag : uint8_t {
+	JSON_STRING = 0,
+	JSON_NUMBER,
+	JSON_DOUBLE,
+	JSON_ARRAY,
+	JSON_OBJECT,
+	JSON_TRUE,
+	JSON_FALSE,
+	JSON_NULL = 0xF,
+};
+
+constexpr uint8_t JSON_EMPTY = 0xFF;
 
 struct JsonNode;
 
@@ -144,7 +155,8 @@ struct JsonNode {
 	}
 
 	const JsonNode &operator[](std::string_view sv) const;
-	bool empty() const;
+	bool empty() const noexcept { return value.getTag() == JsonTag(JSON_EMPTY); }
+	bool isObject() const noexcept { return value.getTag() == JSON_OBJECT; }
 	JsonNode *toNode() const;
 };
 

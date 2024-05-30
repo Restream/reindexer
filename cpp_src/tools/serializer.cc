@@ -1,5 +1,4 @@
 #include "serializer.h"
-#include "core/keyvalue/key_string.h"
 #include "core/keyvalue/p_string.h"
 #include "estl/span.h"
 #include "tools/errors.h"

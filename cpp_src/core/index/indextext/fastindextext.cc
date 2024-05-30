@@ -64,11 +64,7 @@ Variant FastIndexText<T>::Upsert(const Variant &key, IdType id, bool &clearCache
 	}
 	this->addMemStat(keyIt);
 
-	if (this->KeyType().template Is<KeyValueType::String>() && this->opts_.GetCollateMode() != CollateNone) {
-		return IndexStore<StoreIndexKeyType<T>>::Upsert(key, id, clearCache);
-	}
-
-	return Variant(keyIt->first);
+	return Variant{keyIt->first};
 }
 
 template <typename T>

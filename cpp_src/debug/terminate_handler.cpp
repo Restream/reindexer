@@ -5,7 +5,6 @@
 #include <cxxabi.h>
 #endif
 #include "debug/backtrace.h"
-#include "debug/resolver.h"
 #include "tools/errors.h"
 
 namespace reindexer {

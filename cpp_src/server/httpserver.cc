@@ -28,6 +28,7 @@
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/flagguard.h"
 #include "tools/fsops.h"
+#include "tools/logger.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 #include "vendor/sort/pdqsort.hpp"
@@ -231,8 +232,8 @@ int HTTPServer::GetDatabases(http::Context &ctx) {
 
 	if (sortDirection) {
 		boost::sort::pdqsort(dbs.begin(), dbs.end(), [sortDirection](const std::string &lhs, const std::string &rhs) {
-			return (sortDirection > 0) ? (collateCompare<CollateASCII>(lhs, rhs, SortingPrioritiesTable()) < 0)
-									   : (collateCompare<CollateASCII>(lhs, rhs, SortingPrioritiesTable()) > 0);
+			return (sortDirection > 0) ? (collateCompare<CollateASCII>(lhs, rhs, SortingPrioritiesTable()) == ComparationResult::Lt)
+									   : (collateCompare<CollateASCII>(lhs, rhs, SortingPrioritiesTable()) == ComparationResult::Gt);
 		});
 	}
 
@@ -323,8 +324,9 @@ int HTTPServer::GetNamespaces(http::Context &ctx) {
 
 	if (sortDirection) {
 		boost::sort::pdqsort(nsDefs.begin(), nsDefs.end(), [sortDirection](const NamespaceDef &lhs, const NamespaceDef &rhs) {
-			return (sortDirection > 0) ? (collateCompare<CollateASCII>(lhs.name, rhs.name, SortingPrioritiesTable()) < 0)
-									   : (collateCompare<CollateASCII>(lhs.name, rhs.name, SortingPrioritiesTable()) > 0);
+			return (sortDirection > 0)
+					   ? (collateCompare<CollateASCII>(lhs.name, rhs.name, SortingPrioritiesTable()) == ComparationResult::Lt)
+					   : (collateCompare<CollateASCII>(lhs.name, rhs.name, SortingPrioritiesTable()) == ComparationResult::Gt);
 		});
 	}
 

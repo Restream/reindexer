@@ -433,7 +433,7 @@ static IndexDef toIndexDef(const Index& src) {
 	}
 }
 
-Error ReindexerService::packPayloadTypes(WrSerializer& wrser, const reindexer::QueryResults& qr) {
+void ReindexerService::packPayloadTypes(WrSerializer& wrser, const reindexer::QueryResults& qr) {
 	wrser.PutVarUint(qr.getMergedNSCount());
 	for (int i = 0; i < qr.getMergedNSCount(); ++i) {
 		wrser.PutVarUint(i);
@@ -447,7 +447,6 @@ Error ReindexerService::packPayloadTypes(WrSerializer& wrser, const reindexer::Q
 		m.serialize(wrser);
 		t->serialize(wrser);
 	}
-	return errOK;
 }
 
 Error ReindexerService::packCJSONItem(WrSerializer& wrser, reindexer::QueryResults::Iterator& it, const OutputFlags& opts) {
@@ -475,11 +474,12 @@ Error ReindexerService::buildItems(WrSerializer& wrser, const reindexer::QueryRe
 				for (auto& item : qr) {
 					array.Raw(nullptr, "");
 					status = item.GetJSON(wrser, false);
-					if (!status.ok()) break;
+					if (!status.ok()) return status;
 				}
 			}
 			if (qr.GetAggregationResults().size() > 0) {
-				buildAggregation(builder, wrser, qr, opts);
+				status = buildAggregation(builder, wrser, qr, opts);
+				if (!status.ok()) return status;
 			}
 			break;
 		}
@@ -494,11 +494,12 @@ Error ReindexerService::buildItems(WrSerializer& wrser, const reindexer::QueryRe
 				MsgPackBuilder array = builder.Array("items", qr.Count());
 				for (auto& item : qr) {
 					status = item.GetMsgPack(wrser, false);
-					if (!status.ok()) break;
+					if (!status.ok()) return status;
 				}
 			}
 			if (withAggregation) {
-				buildAggregation(builder, wrser, qr, opts);
+				status = buildAggregation(builder, wrser, qr, opts);
+				if (!status.ok()) return status;
 			}
 			break;
 		}
@@ -507,7 +508,7 @@ Error ReindexerService::buildItems(WrSerializer& wrser, const reindexer::QueryRe
 			ProtobufBuilder array = builder.Array("items");
 			for (auto& it : qr) {
 				status = it.GetProtobuf(wrser, false);
-				if (!status.ok()) break;
+				if (!status.ok()) return status;
 			}
 			break;
 		}
@@ -517,7 +518,7 @@ Error ReindexerService::buildItems(WrSerializer& wrser, const reindexer::QueryRe
 			}
 			for (auto& item : qr) {
 				status = packCJSONItem(wrser, item, opts);
-				if (!status.ok()) break;
+				if (!status.ok()) return status;
 
 				auto jIt = item.GetJoined();
 				if (opts.withjoineditems() && jIt.getJoinedItemsCount() > 0) {
@@ -534,7 +535,10 @@ Error ReindexerService::buildItems(WrSerializer& wrser, const reindexer::QueryRe
 						QueryResults jqr = it.ToQueryResults();
 						jqr.addNSContext(qr.getPayloadType(joinedField), qr.getTagsMatcher(joinedField), qr.getFieldsFilter(joinedField),
 										 qr.getSchema(joinedField));
-						for (size_t i = 0; i < jqr.Count(); i++) packCJSONItem(wrser, jqr.begin() + i, opts);
+						for (size_t i = 0; i < jqr.Count(); i++) {
+							status = packCJSONItem(wrser, jqr.begin() + i, opts);
+							if (!status.ok()) return status;
+						}
 					}
 				}
 			}
@@ -809,7 +813,10 @@ void ReindexerService::removeExpiredTxCb(reindexer::net::ev::periodic&, int) {
 			if (status.ok()) {
 				reindexer::Reindexer* db = nullptr;
 				status = ctx.GetDB(reindexer_server::kRoleSystem, &db);
-				if (db) db->RollBackTransaction(*it->second.tx);
+				if (db && status.ok()) {
+					status = db->RollBackTransaction(*it->second.tx);
+					(void)status;  // ignore
+				}
 			}
 			it = transactions_.erase(it);
 		} else {

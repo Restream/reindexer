@@ -44,8 +44,8 @@ void Transaction::PutMeta(std::string_view key, std::string_view value) {
 	if (impl_) impl_->PutMeta(key, value);
 }
 
-void Transaction::SetTagsMatcher(TagsMatcher &&tm) {
-	if (impl_) impl_->SetTagsMatcher(std::move(tm));
+void Transaction::MergeTagsMatcher(TagsMatcher &&tm) {
+	if (impl_) impl_->MergeTagsMatcher(std::move(tm));
 }
 
 Item Transaction::NewItem() { return impl_->NewItem(); }

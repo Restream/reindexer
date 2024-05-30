@@ -705,10 +705,11 @@ public:
 
 	hopscotch_hash(const hopscotch_hash&) = default;
 
-	hopscotch_hash(hopscotch_hash&& other) noexcept(
-		std::is_nothrow_move_constructible<buckets_container_type>::value&&
-			std::is_nothrow_move_constructible<overflow_container_type>::value&& std::is_nothrow_move_constructible<Hash>::value&&
-				std::is_nothrow_move_constructible<KeyEqual>::value&& std::is_nothrow_move_constructible<GrowthPolicy>::value)
+	hopscotch_hash(hopscotch_hash&& other) noexcept(std::is_nothrow_move_constructible<buckets_container_type>::value &&
+													std::is_nothrow_move_constructible<overflow_container_type>::value &&
+													std::is_nothrow_move_constructible<Hash>::value &&
+													std::is_nothrow_move_constructible<KeyEqual>::value &&
+													std::is_nothrow_move_constructible<GrowthPolicy>::value)
 		: Hash(std::move(static_cast<Hash&>(other))),
 		  KeyEqual(std::move(static_cast<KeyEqual&>(other))),
 		  GrowthPolicy(std::move(static_cast<GrowthPolicy&>(other))),
@@ -872,6 +873,11 @@ public:
 	template <class... Args>
 	std::pair<iterator, bool> try_emplace(key_type&& k, Args&&... args) {
 		return try_emplace_internal(std::move(k), std::forward<Args>(args)...);
+	}
+
+	template <typename K, class... Args>
+	std::pair<iterator, bool> try_emplace_prehashed(std::size_t hash, K&& k, Args&&... args) {
+		return try_emplace_internal_prehashed(hash, std::forward<K>(k), std::forward<Args>(args)...);
 	}
 
 	template <class... Args>
@@ -1303,6 +1309,21 @@ private:
 	template <typename P, class... Args>
 	std::pair<iterator, bool> try_emplace_internal(P&& key, Args&&... args_value) {
 		const std::size_t hash = hash_key(key);
+		const std::size_t ibucket_for_hash = bucket_for_hash(hash);
+
+		// Check if already presents
+		auto it_find = find_internal(key, hash, m_buckets.begin() + ibucket_for_hash);
+		if (it_find != end()) {
+			return std::make_pair(it_find, false);
+		}
+
+		return insert_internal(value_type(std::piecewise_construct, std::forward_as_tuple(std::forward<P>(key)),
+										  std::forward_as_tuple(std::forward<Args>(args_value)...)),
+							   hash, ibucket_for_hash);
+	}
+
+	template <typename P, class... Args>
+	std::pair<iterator, bool> try_emplace_internal_prehashed(std::size_t hash, P&& key, Args&&... args_value) {
 		const std::size_t ibucket_for_hash = bucket_for_hash(hash);
 
 		// Check if already presents

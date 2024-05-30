@@ -3,8 +3,6 @@
 #include "core/cjson/baseencoder.h"
 #include "core/keyvalue/p_string.h"
 #include "net/cproto/coroclientconnection.h"
-#include "server/rpcqrwatcher.h"
-#include "tools/logger.h"
 
 namespace reindexer {
 namespace client {

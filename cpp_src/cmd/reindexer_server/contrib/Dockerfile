@@ -3,7 +3,7 @@ FROM alpine:3.19 AS build
 RUN cd /tmp && apk update && \
     apk add git curl autoconf automake libtool linux-headers g++ make libunwind-dev grpc-dev protobuf-dev c-ares-dev patch && \
     git clone https://github.com/gperftools/gperftools.git && \
-    cd gperftools && \
+    cd gperftools && git checkout gperftools-2.15 && \
     sed -i s/_sigev_un\._tid/sigev_notify_thread_id/ src/profile-handler.cc && \
     ./autogen.sh && ./configure --disable-dependency-tracking && make -j8 && make install
 

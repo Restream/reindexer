@@ -14,23 +14,31 @@ IndexStore<Point>::IndexStore(const IndexDef &idef, PayloadType &&payloadType, F
 }
 
 template <>
-void IndexStore<key_string>::Delete(const Variant &key, IdType id, StringsHolder &strHolder, bool & /*clearCache*/) {
-	if (key.Type().Is<KeyValueType::Null>()) return;
+void IndexStore<key_string>::Delete(const Variant &key, IdType /*id*/, StringsHolder &strHolder, bool & /*clearCache*/) {
+	assertrx_dbg(!IsFulltext());
+	if (key.Type().Is<KeyValueType::Null>()) {
+		return;
+	}
+	if (!shouldHoldValueInStrMap()) {
+		return;
+	}
 	auto keyIt = str_map.find(std::string_view(key));
 	// assertf(keyIt != str_map.end(), "Delete unexists key from index '%s' id=%d", name_, id);
-	if (keyIt == str_map.end()) return;
-	if (keyIt->second) --(keyIt->second);
-	if (!keyIt->second) {
+	if (keyIt == str_map.end()) {
+		return;
+	}
+	assertrx_dbg(keyIt->second > 0);
+	if ((keyIt->second--) == 1) {
 		const auto strSize = sizeof(*keyIt->first.get()) + keyIt->first->heap_size();
 		memStat_.dataSize -= sizeof(unordered_str_map<int>::value_type) + strSize;
 		strHolder.Add(std::move(keyIt->first), strSize);
 		str_map.template erase<no_deep_clean>(keyIt);
 	}
-
-	(void)id;
 }
 template <typename T>
-void IndexStore<T>::Delete(const Variant & /*key*/, IdType /* id */, StringsHolder &, bool & /*clearCache*/) {}
+void IndexStore<T>::Delete(const Variant & /*key*/, IdType /* id */, StringsHolder &, bool & /*clearCache*/) {
+	assertrx_dbg(!IsFulltext());
+}
 
 template <typename T>
 void IndexStore<T>::Delete(const VariantArray &keys, IdType id, StringsHolder &strHolder, bool &clearCache) {
@@ -47,23 +55,38 @@ void IndexStore<Point>::Delete(const VariantArray & /*keys*/, IdType /*id*/, Str
 }
 
 template <>
-Variant IndexStore<key_string>::Upsert(const Variant &key, IdType /*id*/, bool & /*clearCache*/) {
-	if (key.Type().Is<KeyValueType::Null>()) return Variant();
-
-	auto keyIt = str_map.find(std::string_view(key));
-	if (keyIt == str_map.end()) {
-		keyIt = str_map.emplace(static_cast<key_string>(key), 0).first;
-		// sizeof(key_string) + heap of string
-		memStat_.dataSize += sizeof(unordered_str_map<int>::value_type) + sizeof(*keyIt->first.get()) + keyIt->first->heap_size();
+Variant IndexStore<key_string>::Upsert(const Variant &key, IdType id, bool & /*clearCache*/) {
+	assertrx_dbg(!IsFulltext());
+	if (key.Type().Is<KeyValueType::Null>()) {
+		return Variant();
 	}
-	++(keyIt->second);
 
-	return Variant(keyIt->first);
+	std::string_view val;
+	const bool holdValueInStrMap = shouldHoldValueInStrMap();
+	auto keyIt = str_map.end();
+	if (holdValueInStrMap) {
+		keyIt = str_map.find(std::string_view(key));
+		if (keyIt == str_map.end()) {
+			keyIt = str_map.emplace(static_cast<key_string>(key), 0).first;
+			// sizeof(key_string) + heap of string
+			memStat_.dataSize += sizeof(unordered_str_map<int>::value_type) + sizeof(*keyIt->first.get()) + keyIt->first->heap_size();
+		}
+		++(keyIt->second);
+		val = (*keyIt->first);
+	} else {
+		val = std::string_view(key);
+	}
+	if (!opts_.IsArray() && !opts_.IsDense() && !opts_.IsSparse() && !IsFulltext()) {
+		idx_data.resize(std::max(id + 1, IdType(idx_data.size())));
+		idx_data[id] = val;
+	}
+
+	return holdValueInStrMap ? Variant(keyIt->first) : key;
 }
 
 template <>
 Variant IndexStore<PayloadValue>::Upsert(const Variant &key, IdType /*id*/, bool & /*clearCache*/) {
-	return Variant(key);
+	return key;
 }
 
 template <typename T>
@@ -99,16 +122,17 @@ template <typename T>
 SelectKeyResults IndexStore<T>::SelectKey(const VariantArray &keys, CondType condition, SortType /*sortId*/, Index::SelectOpts sopts,
 										  const BaseFunctionCtx::Ptr & /*ctx*/, const RdxContext &rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
-	SelectKeyResult res;
-	if (condition == CondEmpty && !this->opts_.IsArray() && !this->opts_.IsSparse())
+	if (condition == CondEmpty && !this->opts_.IsArray() && !this->opts_.IsSparse()) {
 		throw Error(errParams, "The 'is NULL' condition is suported only by 'sparse' or 'array' indexes");
+	}
 
-	if (condition == CondAny && !this->opts_.IsArray() && !this->opts_.IsSparse() && !sopts.distinct)
+	if (condition == CondAny && !this->opts_.IsArray() && !this->opts_.IsSparse() && !sopts.distinct) {
 		throw Error(errParams, "The 'NOT NULL' condition is suported only by 'sparse' or 'array' indexes");
+	}
 
-	res.comparators_.emplace_back(condition, KeyType(), keys, opts_.IsArray(), bool(sopts.distinct), payloadType_, Fields(),
-								  idx_data.size() ? idx_data.data() : nullptr, opts_.collateOpts_);
-	return SelectKeyResults(std::move(res));
+	return ComparatorIndexed<T>{
+		Name(),	  condition,		 keys, idx_data.size() ? idx_data.data() : nullptr, opts_.IsArray(), bool(sopts.distinct), payloadType_,
+		Fields(), opts_.collateOpts_};
 }
 
 template <typename T>
@@ -146,6 +170,11 @@ void IndexStore<T>::AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue &q) 
 		str_map.add_destroy_task(&q);
 	}
 	(void)q;
+}
+
+template <typename T>
+bool IndexStore<T>::shouldHoldValueInStrMap() const noexcept {
+	return this->opts_.GetCollateMode() != CollateNone || Type() == IndexStrStore;
 }
 
 std::unique_ptr<Index> IndexStore_New(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields) {

@@ -1,6 +1,5 @@
 #include "client/reindexer.h"
 #include "client/rpcclient.h"
-#include "tools/logger.h"
 
 namespace reindexer {
 namespace client {

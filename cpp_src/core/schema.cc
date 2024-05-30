@@ -235,7 +235,9 @@ Error PrefixTree::buildProtobufSchema(ProtobufSchemaBuilder& builder, const Pref
 				}
 				bool buildTypesOnly = fieldsTypes_.NeedToEmbedType(node->props.xGoType);
 				ProtobufSchemaBuilder object = builder.Object(fieldNumber, node->props.xGoType, buildTypesOnly);
-				buildProtobufSchema(object, *node, path, tm);
+				if (auto err = buildProtobufSchema(object, *node, path, tm); !err.ok()) {
+					return err;
+				}
 			}
 			builder.Field(name, fieldNumber, node->props);
 		}
@@ -328,7 +330,9 @@ void Schema::parseJsonNode(const gason::JsonNode& node, PrefixTree::PathT& split
 	}
 	field.isRequired = isRequired;
 	if (!splittedPath.empty()) {
-		paths_.AddPath(std::move(field), splittedPath);
+		if (auto err = paths_.AddPath(std::move(field), splittedPath); !err.ok()) {
+			throw err;
+		}
 	} else {
 		paths_.root_.props = std::move(field);
 		paths_.SetXGoType(node["x-go-type"].As<std::string_view>());

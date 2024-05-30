@@ -6,6 +6,7 @@ extern "C" {
 
 #include <stdint.h>
 #include "reindexer_ctypes.h"
+#include "core/type_consts.h"
 
 uintptr_t init_reindexer();
 uintptr_t init_reindexer_with_config(reindexer_config config);

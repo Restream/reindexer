@@ -3,7 +3,6 @@
 #include "core/cjson/baseencoder.h"
 #include "core/keyvalue/p_string.h"
 #include "net/cproto/clientconnection.h"
-#include "tools/logger.h"
 
 namespace reindexer {
 namespace client {

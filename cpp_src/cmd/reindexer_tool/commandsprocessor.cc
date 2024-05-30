@@ -16,7 +16,9 @@ Error CommandsProcessor<DBInterface>::Connect(const std::string& dsn, const Args
 
 template <typename DBInterface>
 CommandsProcessor<DBInterface>::~CommandsProcessor() {
-	stop();
+	if (auto err = stop(); !err.ok()) {
+		std::cerr << "Error during CommandsProcessor's termination: " << err.what() << std::endl;
+	}
 }
 
 template <typename DBInterface>
@@ -147,7 +149,7 @@ bool CommandsProcessor<DBInterface>::Run(const std::string& command) {
 	if (!inFileName_.empty()) {
 		std::ifstream infile(inFileName_);
 		if (!infile) {
-			std::cerr << "ERROR: Can't open " << inFileName_ << std::endl;
+			std::cerr << "ERROR: Can't open " << inFileName_ << ", " << strerror(errno) << std::endl;
 			return false;
 		}
 		return fromFile(infile);

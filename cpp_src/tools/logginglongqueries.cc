@@ -1,5 +1,7 @@
 #include "logginglongqueries.h"
+#include <sstream>
 #include "core/nsselecter/explaincalc.h"
+#include "core/query/query.h"
 #include "core/transactionimpl.h"
 #include "logger.h"
 

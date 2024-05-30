@@ -4,8 +4,6 @@
 #include <atomic>
 #include "tools/assertrx.h"
 
-#include <functional>
-
 namespace reindexer {
 
 template <typename T>
@@ -16,7 +14,8 @@ private:
 public:
 	typedef T element_type;
 
-	intrusive_ptr() noexcept : px(0) {}
+	intrusive_ptr() noexcept = default;
+	intrusive_ptr(std::nullptr_t) noexcept {}
 
 	intrusive_ptr(T *p, bool add_ref = true) noexcept : px(p) {
 		if (px != 0 && add_ref) intrusive_ptr_add_ref(px);
@@ -91,7 +90,7 @@ public:
 	}
 
 private:
-	T *px;
+	T *px{nullptr};
 };
 
 template <class T, class U>
@@ -190,6 +189,43 @@ protected:
 	friend void intrusive_ptr_add_ref<>(intrusive_atomic_rc_wrapper<T> *x) noexcept;
 	friend void intrusive_ptr_release<>(intrusive_atomic_rc_wrapper<T> *x) noexcept;
 	friend bool intrusive_ptr_is_unique<>(intrusive_atomic_rc_wrapper<T> *x) noexcept;
+};
+
+template <typename T>
+class intrusive_rc_wrapper;
+
+template <typename T>
+inline void intrusive_ptr_add_ref(intrusive_rc_wrapper<T> *x) noexcept {
+	if (x) {
+		++x->refcount;
+	}
+}
+
+template <typename T>
+inline void intrusive_ptr_release(intrusive_rc_wrapper<T> *x) noexcept {
+	if (x && --x->refcount == 0) {
+		delete x;
+	}
+}
+
+template <typename T>
+inline bool intrusive_ptr_is_unique(intrusive_rc_wrapper<T> *x) noexcept {
+	return !x || (x->refcount == 1);
+}
+
+template <typename T>
+class intrusive_rc_wrapper : public T {
+public:
+	template <typename... Args>
+	intrusive_rc_wrapper(Args &&...args) : T(std::forward<Args>(args)...), refcount(0) {}
+	intrusive_rc_wrapper &operator=(const intrusive_rc_wrapper &) = delete;
+
+protected:
+	int refcount;
+
+	friend void intrusive_ptr_add_ref<>(intrusive_rc_wrapper<T> *x) noexcept;
+	friend void intrusive_ptr_release<>(intrusive_rc_wrapper<T> *x) noexcept;
+	friend bool intrusive_ptr_is_unique<>(intrusive_rc_wrapper<T> *x) noexcept;
 };
 
 class intrusive_atomic_rc_base {

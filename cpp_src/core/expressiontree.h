@@ -1,8 +1,8 @@
 #pragma once
 
-#include <functional>
 #include <variant>
 #include "estl/h_vector.h"
+#include "estl/overloaded.h"
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -13,137 +13,43 @@ namespace reindexer {
 class Bracket {
 public:
 	Bracket(size_t s) noexcept : size_(s) {}
-	size_t Size() const noexcept { return size_; }
+	RX_ALWAYS_INLINE size_t Size() const noexcept { return size_; }
 	/// Increase space occupied by children
-	void Append() noexcept { ++size_; }
+	RX_ALWAYS_INLINE void Append() noexcept { ++size_; }
 	/// Decrease space occupied by children
-	void Erase(size_t length) noexcept {
-		assertrx_throw(size_ > length);
+	RX_ALWAYS_INLINE void Erase(size_t length) noexcept {
+		assertrx_dbg(size_ > length);
 		size_ -= length;
 	}
-	void CopyPayloadFrom(const Bracket&) const noexcept {}
-	bool operator==(const Bracket& other) const noexcept { return size_ == other.size_; }
+	RX_ALWAYS_INLINE void CopyPayloadFrom(const Bracket&) const noexcept {}
+	RX_ALWAYS_INLINE bool operator==(const Bracket& other) const noexcept { return size_ == other.size_; }
 
 private:
 	/// size of all children + 1
 	size_t size_ = 1;
 };
 
-template <typename, typename...>
-struct Skip {};
+template <typename T, typename... Ts>
+class Skip : private Skip<Ts...> {
+public:
+	using Skip<Ts...>::operator();
+	RX_ALWAYS_INLINE void operator()(const T&) const noexcept {}
+};
+
+template <typename T>
+class Skip<T> {
+public:
+	RX_ALWAYS_INLINE void operator()(const T&) const noexcept {}
+};
+
+template <template <typename> typename Templ, typename... Ts>
+using SkipTemplate = Skip<Templ<Ts>...>;
 
 /// @class ExpressionTree
 /// A tree contained in vector
 /// For detailed documentation see expressiontree.md
 template <typename OperationType, typename SubTree, int holdSize, typename... Ts>
 class ExpressionTree {
-	template <typename R, typename T, typename... TT>
-	struct OverloadResolutionHelper : private OverloadResolutionHelper<R, TT...> {
-		constexpr static T resolve(std::function<R(T&)>) noexcept;
-		using OverloadResolutionHelper<R, TT...>::resolve;
-	};
-	template <typename R, typename T>
-	struct OverloadResolutionHelper<R, T> {
-		constexpr static T resolve(std::function<R(T&)>) noexcept;
-	};
-	template <typename R>
-	struct OverloadResolver : private OverloadResolutionHelper<R, SubTree, Ts...> {
-		using OverloadResolutionHelper<R, SubTree, Ts...>::resolve;
-	};
-
-	struct TemplateTestStruct {};
-	template <typename R, typename F, bool = std::is_invocable_v<F, TemplateTestStruct&>>
-	class VisitorHelperImpl;
-	template <typename R, typename F>
-	class VisitorHelperImpl<R, F, false> {
-		using Arg = decltype(OverloadResolver<R>::resolve(std::declval<F>()));
-
-	public:
-		VisitorHelperImpl(F&& f) noexcept(noexcept(F{std::forward<F>(f)})) : functor_{std::forward<F>(f)} {}
-		R operator()(const Arg& arg) const noexcept(noexcept(std::declval<F>()(arg))) { return functor_(arg); }
-		R operator()(Arg& arg) const noexcept(noexcept(std::declval<F>()(arg))) { return functor_(arg); }
-		R operator()(Arg&& arg) const noexcept(noexcept(std::declval<F>()(std::forward<Arg>(arg)))) {
-			return functor_(std::forward<Arg>(arg));
-		}
-
-	private:
-		F functor_;
-	};
-	template <typename R, typename F>
-	class VisitorHelperImpl<R, F, true> {
-	public:
-		VisitorHelperImpl(F&& f) noexcept(noexcept(F{std::forward<F>(f)})) : functor_{std::forward<F>(f)} {}
-		template <typename Arg>
-		R operator()(const Arg& arg) const noexcept(noexcept(std::declval<F>()(arg))) {
-			return functor_(arg);
-		}
-		template <typename Arg>
-		R operator()(Arg& arg) const noexcept(noexcept(std::declval<F>()(arg))) {
-			return functor_(arg);
-		}
-		template <typename Arg>
-		R operator()(Arg&& arg) const noexcept(noexcept(std::declval<F>()(std::forward<Arg>(arg)))) {
-			return functor_(std::forward<Arg>(arg));
-		}
-
-	private:
-		F functor_;
-	};
-
-	template <typename R, typename F, typename... Fs>
-	class VisitorHelper : private VisitorHelperImpl<R, F>, private VisitorHelper<R, Fs...> {
-	public:
-		VisitorHelper(F&& f, Fs&&... fs) noexcept(noexcept(VisitorHelperImpl<R, F>{std::forward<F>(f)}) && noexcept(VisitorHelper<R, Fs...>{
-			std::forward<Fs>(fs)...}))
-			: VisitorHelperImpl<R, F>{std::forward<F>(f)}, VisitorHelper<R, Fs...>{std::forward<Fs>(fs)...} {}
-		using VisitorHelperImpl<R, F>::operator();
-		using VisitorHelper<R, Fs...>::operator();
-	};
-	template <typename R, typename F>
-	class VisitorHelper<R, F> : private VisitorHelperImpl<R, F> {
-	public:
-		VisitorHelper(F&& f) noexcept(noexcept(VisitorHelperImpl<R, F>{std::forward<F>(f)}))
-			: VisitorHelperImpl<R, F>{std::forward<F>(f)} {}
-		using VisitorHelperImpl<R, F>::operator();
-	};
-	template <typename T, typename... TT>
-	class SkipHelper : private SkipHelper<TT...> {
-	public:
-		using SkipHelper<TT...>::operator();
-		void operator()(const T&) const noexcept {}
-		void operator()(T&) const noexcept {}
-		void operator()(T&&) const noexcept {}
-	};
-	template <typename T>
-	class SkipHelper<T> {
-	public:
-		void operator()(const T&) const noexcept {}
-		void operator()(T&) const noexcept {}
-		void operator()(T&&) const noexcept {}
-	};
-	template <typename... TT, typename... Fs>
-	class VisitorHelper<void, Skip<TT...>, Fs...> : private SkipHelper<TT...>, private VisitorHelper<void, Fs...> {
-	public:
-		VisitorHelper(Skip<TT...>, Fs&&... fs) noexcept(noexcept(VisitorHelper<void, Fs...>{std::forward<Fs>(fs)...}))
-			: VisitorHelper<void, Fs...>{std::forward<Fs>(fs)...} {}
-		using SkipHelper<TT...>::operator();
-		using VisitorHelper<void, Fs...>::operator();
-	};
-	template <typename... TT>
-	class VisitorHelper<void, Skip<TT...>> : private SkipHelper<TT...> {
-	public:
-		VisitorHelper(Skip<TT...>) noexcept {}
-		using SkipHelper<TT...>::operator();
-	};
-
-	template <typename R, typename... Fs>
-	class Visitor : private VisitorHelper<R, Fs...> {
-	public:
-		Visitor(Fs&&... fs) noexcept(noexcept(VisitorHelper<R, Fs...>{std::forward<Fs>(fs)...}))
-			: VisitorHelper<R, Fs...>{std::forward<Fs>(fs)...} {}
-		using VisitorHelper<R, Fs...>::operator();
-	};
-
 	template <typename T, typename...>
 	struct Head_t {
 		using type = T;
@@ -159,51 +65,51 @@ class ExpressionTree {
 
 		struct SizeVisitor {
 			template <typename T>
-			size_t operator()(const T&) const noexcept {
+			RX_ALWAYS_INLINE size_t operator()(const T&) const noexcept {
 				return 1;
 			}
-			size_t operator()(const SubTree& subTree) const noexcept { return subTree.Size(); }
+			RX_ALWAYS_INLINE size_t operator()(const SubTree& subTree) const noexcept { return subTree.Size(); }
 		};
 
 		template <typename T>
 		struct GetVisitor {
-			T& operator()(T& v) const noexcept { return v; }
+			RX_ALWAYS_INLINE T& operator()(T& v) const noexcept { return v; }
 			template <typename U>
-			T& operator()(U&) const noexcept {
-				assertrx_throw(0);
+			RX_ALWAYS_INLINE T& operator()(U&) const noexcept {
+				assertrx_dbg(0);
 				abort();
 			}
 		};
 		template <typename T>
 		struct GetVisitor<T const> {
-			const T& operator()(const T& v) const noexcept { return v; }
+			RX_ALWAYS_INLINE const T& operator()(const T& v) const noexcept { return v; }
 			template <typename U>
-			const T& operator()(const U&) const noexcept {
-				assertrx_throw(0);
+			RX_ALWAYS_INLINE const T& operator()(const U&) const noexcept {
+				assertrx_dbg(0);
 				abort();
 			}
 		};
 		struct EqVisitor {
 			template <typename T>
-			bool operator()(const T& lhs, const T& rhs) const noexcept(noexcept(lhs == rhs)) {
+			RX_ALWAYS_INLINE bool operator()(const T& lhs, const T& rhs) const noexcept(noexcept(lhs == rhs)) {
 				return lhs == rhs;
 			}
 			template <typename T, typename U>
-			bool operator()(const T&, const U&) const noexcept {
+			RX_ALWAYS_INLINE bool operator()(const T&, const U&) const noexcept {
 				return false;
 			}
 		};
 		struct CopyVisitor {
-			Storage operator()(const SubTree& st) const noexcept { return st; }
+			RX_ALWAYS_INLINE Storage operator()(const SubTree& st) const noexcept { return st; }
 			template <typename T>
-			Storage operator()(const T& v) const {
+			RX_ALWAYS_INLINE Storage operator()(const T& v) const {
 				return v;
 			}
 		};
 		struct MoveVisitor {
-			Storage operator()(SubTree&& st) const noexcept { return std::move(st); }
+			RX_ALWAYS_INLINE Storage operator()(SubTree&& st) const noexcept { return std::move(st); }
 			template <typename T>
-			Storage operator()(T&& v) const {
+			RX_ALWAYS_INLINE Storage operator()(T&& v) const {
 				return std::forward<T>(v);
 			}
 		};
@@ -218,72 +124,427 @@ class ExpressionTree {
 		Node(const Node& other) : storage_{other.storage_}, operation{other.operation} {}
 		Node(Node&& other) : storage_{std::move(other.storage_)}, operation{std::move(other.operation)} {}
 		~Node() = default;
-		Node& operator=(const Node& other) {
+		RX_ALWAYS_INLINE Node& operator=(const Node& other) {
 			storage_ = other.storage_;
 			operation = other.operation;
 			return *this;
 		}
-		Node& operator=(Node&& other) {
+		RX_ALWAYS_INLINE Node& operator=(Node&& other) {
 			storage_ = std::move(other.storage_);
 			operation = std::move(other.operation);
 			return *this;
 		}
-		bool operator==(const Node& other) const {
+		RX_ALWAYS_INLINE bool operator==(const Node& other) const {
 			static const EqVisitor visitor;
 			return operation == other.operation && std::visit(visitor, storage_, other.storage_);
 		}
-		bool operator!=(const Node& other) const { return !operator==(other); }
+		RX_ALWAYS_INLINE bool operator!=(const Node& other) const { return !operator==(other); }
 
 		template <typename T>
-		T& Value() {
+		RX_ALWAYS_INLINE T& Value() {
 			const static GetVisitor<T> visitor;
-			return std::visit(visitor, storage_);
+			return visit(visitor);
 		}
 		template <typename T>
-		const T& Value() const {
+		RX_ALWAYS_INLINE const T& Value() const {
 			const static GetVisitor<const T> visitor;
-			return std::visit(visitor, storage_);
+			return visit(visitor);
 		}
-		size_t Size() const noexcept {
+		RX_ALWAYS_INLINE size_t Size() const noexcept {
 			static constexpr SizeVisitor sizeVisitor;
-			return std::visit(sizeVisitor, storage_);
+			return visit(sizeVisitor);
 		}
-		bool IsSubTree() const noexcept { return storage_.index() == 0; }
-		bool IsLeaf() const noexcept { return !IsSubTree(); }
+		RX_ALWAYS_INLINE bool IsSubTree() const noexcept { return storage_.index() == 0; }
+		RX_ALWAYS_INLINE bool IsLeaf() const noexcept { return !IsSubTree(); }
 		template <typename T>
-		bool Is() const noexcept {
+		RX_ALWAYS_INLINE bool Is() const noexcept {
 			return std::holds_alternative<T>(storage_);
 		}
-		void Append() { std::get<SubTree>(storage_).Append(); }
-		void Erase(size_t length) { std::get<SubTree>(storage_).Erase(length); }
+		RX_ALWAYS_INLINE void Append() { std::get<SubTree>(storage_).Append(); }
+		RX_ALWAYS_INLINE void Erase(size_t length) { std::get<SubTree>(storage_).Erase(length); }
 		/// Execute appropriate functor depending on content type
-		template <typename R, typename... Fs>
-		R InvokeAppropriate(Fs&&... funcs) {
-			return std::visit(Visitor<R, Fs...>{std::forward<Fs>(funcs)...}, storage_);
+		template <typename Visitor>
+		RX_ALWAYS_INLINE decltype(auto) Visit(Visitor&& visitor) {
+			return visit(std::forward<Visitor>(visitor));
 		}
-		template <typename R, typename... Fs>
-		R InvokeAppropriate(Fs&&... funcs) const {
-			return std::visit(Visitor<R, Fs...>{std::forward<Fs>(funcs)...}, storage_);
+		template <typename Visitor>
+		RX_ALWAYS_INLINE decltype(auto) Visit(Visitor&& visitor) const {
+			return visit(std::forward<Visitor>(visitor));
+		}
+		template <typename... Fs>
+		RX_ALWAYS_INLINE decltype(auto) Visit(Fs&&... fs) {
+			return visit(overloaded{std::forward<Fs>(fs)...});
+		}
+		template <typename... Fs>
+		RX_ALWAYS_INLINE decltype(auto) Visit(Fs&&... fs) const {
+			return visit(overloaded{std::forward<Fs>(fs)...});
 		}
 
-		Node Copy() const& {
+		RX_ALWAYS_INLINE Node Copy() const& {
 			static const CopyVisitor visitor;
-			return {operation, std::visit(visitor, storage_)};
+			return {operation, visit(visitor)};
 		}
-		Node Move() && {
+		RX_ALWAYS_INLINE Node Move() && {
 			static const MoveVisitor visitor;
-			return {operation, std::visit(visitor, std::move(storage_))};
+			return {operation, std::move(*this).visit(visitor)};
 		}
 		template <typename T>
-		void SetValue(T&& v) {
+		RX_ALWAYS_INLINE void SetValue(T&& v) {
 			storage_ = std::forward<T>(v);
 		}
 		template <typename T, typename... Args>
-		void Emplace(Args&&... args) {
+		RX_ALWAYS_INLINE void Emplace(Args&&... args) {
 			storage_.template emplace<T>(std::forward<Args>(args)...);
 		}
 
 	private:
+		constexpr static size_t VarSize = std::variant_size_v<Storage>;
+		template <typename Visitor>
+		RX_ALWAYS_INLINE decltype(auto) visit(Visitor&& visitor) const& {
+			static_assert(VarSize <= 30);
+			switch (storage_.index()) {
+				case 0:
+					return std::forward<Visitor>(visitor)(*std::get_if<0>(&storage_));
+				case 1:
+					return std::forward<Visitor>(visitor)(*std::get_if<1>(&storage_));
+				case 2:
+					return std::forward<Visitor>(visitor)(*std::get_if<2>(&storage_));
+				case 3:
+					return std::forward<Visitor>(visitor)(*std::get_if<3>(&storage_));
+				case 4:
+					return std::forward<Visitor>(visitor)(*std::get_if<4>(&storage_));
+				case 5:
+					if constexpr (VarSize > 5) {
+						return std::forward<Visitor>(visitor)(*std::get_if<5>(&storage_));
+					}
+				case 6:
+					if constexpr (VarSize > 6) {
+						return std::forward<Visitor>(visitor)(*std::get_if<6>(&storage_));
+					}
+				case 7:
+					if constexpr (VarSize > 7) {
+						return std::forward<Visitor>(visitor)(*std::get_if<7>(&storage_));
+					}
+				case 8:
+					if constexpr (VarSize > 8) {
+						return std::forward<Visitor>(visitor)(*std::get_if<8>(&storage_));
+					}
+				case 9:
+					if constexpr (VarSize > 9) {
+						return std::forward<Visitor>(visitor)(*std::get_if<9>(&storage_));
+					}
+				case 10:
+					if constexpr (VarSize > 10) {
+						return std::forward<Visitor>(visitor)(*std::get_if<10>(&storage_));
+					}
+				case 11:
+					if constexpr (VarSize > 11) {
+						return std::forward<Visitor>(visitor)(*std::get_if<11>(&storage_));
+					}
+				case 12:
+					if constexpr (VarSize > 12) {
+						return std::forward<Visitor>(visitor)(*std::get_if<12>(&storage_));
+					}
+				case 13:
+					if constexpr (VarSize > 13) {
+						return std::forward<Visitor>(visitor)(*std::get_if<13>(&storage_));
+					}
+				case 14:
+					if constexpr (VarSize > 14) {
+						return std::forward<Visitor>(visitor)(*std::get_if<14>(&storage_));
+					}
+				case 15:
+					if constexpr (VarSize > 15) {
+						return std::forward<Visitor>(visitor)(*std::get_if<15>(&storage_));
+					}
+				case 16:
+					if constexpr (VarSize > 16) {
+						return std::forward<Visitor>(visitor)(*std::get_if<16>(&storage_));
+					}
+				case 17:
+					if constexpr (VarSize > 17) {
+						return std::forward<Visitor>(visitor)(*std::get_if<17>(&storage_));
+					}
+				case 18:
+					if constexpr (VarSize > 18) {
+						return std::forward<Visitor>(visitor)(*std::get_if<18>(&storage_));
+					}
+				case 19:
+					if constexpr (VarSize > 19) {
+						return std::forward<Visitor>(visitor)(*std::get_if<19>(&storage_));
+					}
+				case 20:
+					if constexpr (VarSize > 20) {
+						return std::forward<Visitor>(visitor)(*std::get_if<20>(&storage_));
+					}
+				case 21:
+					if constexpr (VarSize > 21) {
+						return std::forward<Visitor>(visitor)(*std::get_if<21>(&storage_));
+					}
+				case 22:
+					if constexpr (VarSize > 22) {
+						return std::forward<Visitor>(visitor)(*std::get_if<22>(&storage_));
+					}
+				case 23:
+					if constexpr (VarSize > 23) {
+						return std::forward<Visitor>(visitor)(*std::get_if<23>(&storage_));
+					}
+				case 24:
+					if constexpr (VarSize > 24) {
+						return std::forward<Visitor>(visitor)(*std::get_if<24>(&storage_));
+					}
+				case 25:
+					if constexpr (VarSize > 25) {
+						return std::forward<Visitor>(visitor)(*std::get_if<25>(&storage_));
+					}
+				case 26:
+					if constexpr (VarSize > 26) {
+						return std::forward<Visitor>(visitor)(*std::get_if<26>(&storage_));
+					}
+				case 27:
+					if constexpr (VarSize > 27) {
+						return std::forward<Visitor>(visitor)(*std::get_if<27>(&storage_));
+					}
+				case 28:
+					if constexpr (VarSize > 28) {
+						return std::forward<Visitor>(visitor)(*std::get_if<28>(&storage_));
+					}
+				case 29:
+					if constexpr (VarSize > 29) {
+						return std::forward<Visitor>(visitor)(*std::get_if<29>(&storage_));
+					}
+				default:
+					abort();
+			}
+		}
+		template <typename Visitor>
+		RX_ALWAYS_INLINE decltype(auto) visit(Visitor&& visitor) & {
+			static_assert(VarSize <= 30);
+			switch (storage_.index()) {
+				case 0:
+					return std::forward<Visitor>(visitor)(*std::get_if<0>(&storage_));
+				case 1:
+					return std::forward<Visitor>(visitor)(*std::get_if<1>(&storage_));
+				case 2:
+					return std::forward<Visitor>(visitor)(*std::get_if<2>(&storage_));
+				case 3:
+					return std::forward<Visitor>(visitor)(*std::get_if<3>(&storage_));
+				case 4:
+					return std::forward<Visitor>(visitor)(*std::get_if<4>(&storage_));
+				case 5:
+					if constexpr (VarSize > 5) {
+						return std::forward<Visitor>(visitor)(*std::get_if<5>(&storage_));
+					}
+				case 6:
+					if constexpr (VarSize > 6) {
+						return std::forward<Visitor>(visitor)(*std::get_if<6>(&storage_));
+					}
+				case 7:
+					if constexpr (VarSize > 7) {
+						return std::forward<Visitor>(visitor)(*std::get_if<7>(&storage_));
+					}
+				case 8:
+					if constexpr (VarSize > 8) {
+						return std::forward<Visitor>(visitor)(*std::get_if<8>(&storage_));
+					}
+				case 9:
+					if constexpr (VarSize > 9) {
+						return std::forward<Visitor>(visitor)(*std::get_if<9>(&storage_));
+					}
+				case 10:
+					if constexpr (VarSize > 10) {
+						return std::forward<Visitor>(visitor)(*std::get_if<10>(&storage_));
+					}
+				case 11:
+					if constexpr (VarSize > 11) {
+						return std::forward<Visitor>(visitor)(*std::get_if<11>(&storage_));
+					}
+				case 12:
+					if constexpr (VarSize > 12) {
+						return std::forward<Visitor>(visitor)(*std::get_if<12>(&storage_));
+					}
+				case 13:
+					if constexpr (VarSize > 13) {
+						return std::forward<Visitor>(visitor)(*std::get_if<13>(&storage_));
+					}
+				case 14:
+					if constexpr (VarSize > 14) {
+						return std::forward<Visitor>(visitor)(*std::get_if<14>(&storage_));
+					}
+				case 15:
+					if constexpr (VarSize > 15) {
+						return std::forward<Visitor>(visitor)(*std::get_if<15>(&storage_));
+					}
+				case 16:
+					if constexpr (VarSize > 16) {
+						return std::forward<Visitor>(visitor)(*std::get_if<16>(&storage_));
+					}
+				case 17:
+					if constexpr (VarSize > 17) {
+						return std::forward<Visitor>(visitor)(*std::get_if<17>(&storage_));
+					}
+				case 18:
+					if constexpr (VarSize > 18) {
+						return std::forward<Visitor>(visitor)(*std::get_if<18>(&storage_));
+					}
+				case 19:
+					if constexpr (VarSize > 19) {
+						return std::forward<Visitor>(visitor)(*std::get_if<19>(&storage_));
+					}
+				case 20:
+					if constexpr (VarSize > 20) {
+						return std::forward<Visitor>(visitor)(*std::get_if<20>(&storage_));
+					}
+				case 21:
+					if constexpr (VarSize > 21) {
+						return std::forward<Visitor>(visitor)(*std::get_if<21>(&storage_));
+					}
+				case 22:
+					if constexpr (VarSize > 22) {
+						return std::forward<Visitor>(visitor)(*std::get_if<22>(&storage_));
+					}
+				case 23:
+					if constexpr (VarSize > 23) {
+						return std::forward<Visitor>(visitor)(*std::get_if<23>(&storage_));
+					}
+				case 24:
+					if constexpr (VarSize > 24) {
+						return std::forward<Visitor>(visitor)(*std::get_if<24>(&storage_));
+					}
+				case 25:
+					if constexpr (VarSize > 25) {
+						return std::forward<Visitor>(visitor)(*std::get_if<25>(&storage_));
+					}
+				case 26:
+					if constexpr (VarSize > 26) {
+						return std::forward<Visitor>(visitor)(*std::get_if<26>(&storage_));
+					}
+				case 27:
+					if constexpr (VarSize > 27) {
+						return std::forward<Visitor>(visitor)(*std::get_if<27>(&storage_));
+					}
+				case 28:
+					if constexpr (VarSize > 28) {
+						return std::forward<Visitor>(visitor)(*std::get_if<28>(&storage_));
+					}
+				case 29:
+					if constexpr (VarSize > 29) {
+						return std::forward<Visitor>(visitor)(*std::get_if<29>(&storage_));
+					}
+				default:
+					abort();
+			}
+		}
+		template <typename Visitor>
+		RX_ALWAYS_INLINE decltype(auto) visit(Visitor&& visitor) && {
+			static_assert(VarSize <= 30);
+			switch (storage_.index()) {
+				case 0:
+					return std::forward<Visitor>(visitor)(std::move(*std::get_if<0>(&storage_)));
+				case 1:
+					return std::forward<Visitor>(visitor)(std::move(*std::get_if<1>(&storage_)));
+				case 2:
+					return std::forward<Visitor>(visitor)(std::move(*std::get_if<2>(&storage_)));
+				case 3:
+					return std::forward<Visitor>(visitor)(std::move(*std::get_if<3>(&storage_)));
+				case 4:
+					return std::forward<Visitor>(visitor)(std::move(*std::get_if<4>(&storage_)));
+				case 5:
+					return std::forward<Visitor>(visitor)(std::move(*std::get_if<5>(&storage_)));
+				case 6:
+					return std::forward<Visitor>(visitor)(std::move(*std::get_if<6>(&storage_)));
+				case 7:
+					return std::forward<Visitor>(visitor)(std::move(*std::get_if<7>(&storage_)));
+				case 8:
+					return std::forward<Visitor>(visitor)(std::move(*std::get_if<8>(&storage_)));
+				case 9:
+					if constexpr (VarSize > 9) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<9>(&storage_)));
+					}
+				case 10:
+					if constexpr (VarSize > 10) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<10>(&storage_)));
+					}
+				case 11:
+					if constexpr (VarSize > 11) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<11>(&storage_)));
+					}
+				case 12:
+					if constexpr (VarSize > 12) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<12>(&storage_)));
+					}
+				case 13:
+					if constexpr (VarSize > 13) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<13>(&storage_)));
+					}
+				case 14:
+					if constexpr (VarSize > 14) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<14>(&storage_)));
+					}
+				case 15:
+					if constexpr (VarSize > 15) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<15>(&storage_)));
+					}
+				case 16:
+					if constexpr (VarSize > 16) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<16>(&storage_)));
+					}
+				case 17:
+					if constexpr (VarSize > 17) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<17>(&storage_)));
+					}
+				case 18:
+					if constexpr (VarSize > 18) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<18>(&storage_)));
+					}
+				case 19:
+					if constexpr (VarSize > 19) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<19>(&storage_)));
+					}
+				case 20:
+					if constexpr (VarSize > 20) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<20>(&storage_)));
+					}
+				case 21:
+					if constexpr (VarSize > 21) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<21>(&storage_)));
+					}
+				case 22:
+					if constexpr (VarSize > 22) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<22>(&storage_)));
+					}
+				case 23:
+					if constexpr (VarSize > 23) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<23>(&storage_)));
+					}
+				case 24:
+					if constexpr (VarSize > 24) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<24>(&storage_)));
+					}
+				case 25:
+					if constexpr (VarSize > 25) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<25>(&storage_)));
+					}
+				case 26:
+					if constexpr (VarSize > 26) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<26>(&storage_)));
+					}
+				case 27:
+					if constexpr (VarSize > 27) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<27>(&storage_)));
+					}
+				case 28:
+					if constexpr (VarSize > 28) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<28>(&storage_)));
+					}
+				case 29:
+					if constexpr (VarSize > 29) {
+						return std::forward<Visitor>(visitor)(std::move(*std::get_if<29>(&storage_)));
+					}
+				default:
+					abort();
+			}
+		}
 		Storage storage_;
 
 	public:
@@ -302,21 +563,21 @@ public:
 		for (const Node& n : other.container_) container_.emplace_back(n.Copy());
 	}
 	ExpressionTree& operator=(const ExpressionTree& other) {
-		if (this == &other) return *this;
+		if rx_unlikely (this == &other) return *this;
 		container_.clear();
 		container_.reserve(other.container_.size());
 		for (const Node& n : other.container_) container_.emplace_back(n.Copy());
 		activeBrackets_ = other.activeBrackets_;
 		return *this;
 	}
-	bool operator==(const ExpressionTree& other) const noexcept {
+	RX_ALWAYS_INLINE bool operator==(const ExpressionTree& other) const noexcept {
 		if (container_.size() != other.container_.size()) return false;
 		for (size_t i = 0; i < container_.size(); ++i) {
 			if (container_[i] != other.container_[i]) return false;
 		}
 		return true;
 	}
-	bool operator!=(const ExpressionTree& other) const noexcept { return !operator==(other); }
+	RX_ALWAYS_INLINE bool operator!=(const ExpressionTree& other) const noexcept { return !operator==(other); }
 
 	/// Insert value at the position
 	template <typename T>
@@ -325,9 +586,9 @@ public:
 			Append(op, std::forward<T>(v));
 			return;
 		}
-		assertrx_throw(pos < container_.size());
+		assertrx_dbg(pos < container_.size());
 		for (unsigned& b : activeBrackets_) {
-			assertrx_throw(b < container_.size());
+			assertrx_dbg(b < container_.size());
 			if (b >= pos) ++b;
 		}
 		for (size_t i = 0; i < pos; ++i) {
@@ -354,9 +615,9 @@ public:
 	/// Insert value after the position
 	template <typename T>
 	void InsertAfter(size_t pos, OperationType op, T&& v) {
-		assertrx_throw(pos < container_.size());
+		assertrx_dbg(pos < container_.size());
 		for (unsigned& b : activeBrackets_) {
-			assertrx_throw(b < container_.size());
+			assertrx_dbg(b < container_.size());
 			if (b > pos) ++b;
 		}
 		for (size_t i = 0; i < pos; ++i) {
@@ -368,7 +629,7 @@ public:
 	template <typename T>
 	void Append(OperationType op, T&& v) {
 		for (unsigned i : activeBrackets_) {
-			assertrx_throw(i < container_.size());
+			assertrx_dbg(i < container_.size());
 			container_[i].Append();
 		}
 		container_.emplace_back(op, std::forward<T>(v));
@@ -377,7 +638,7 @@ public:
 	template <typename T>
 	void Append(OperationType op, const T& v) {
 		for (unsigned i : activeBrackets_) {
-			assertrx_throw(i < container_.size());
+			assertrx_dbg(i < container_.size());
 			container_[i].Append();
 		}
 		container_.emplace_back(op, v);
@@ -386,28 +647,33 @@ public:
 	template <typename T, typename... Args>
 	void Append(OperationType op, Args&&... args) {
 		for (unsigned i : activeBrackets_) {
-			assertrx_throw(i < container_.size());
+			assertrx_dbg(i < container_.size());
 			container_[i].Append();
 		}
 		container_.emplace_back(op, T{std::forward<Args>(args)...});
 	}
 	class const_iterator;
 	/// Appends all nodes from the interval to the last openned subtree
-	void Append(const_iterator begin, const_iterator end) {
+	RX_ALWAYS_INLINE void Append(const_iterator begin, const_iterator end) {
 		container_.reserve(container_.size() + (end.PlainIterator() - begin.PlainIterator()));
 		append(begin, end);
 	}
 
 	/// Appends value as first child of the root
 	template <typename T>
-	void AppendFront(OperationType op, T&& v) {
+	RX_ALWAYS_INLINE void AppendFront(OperationType op, T&& v) {
 		for (unsigned& i : activeBrackets_) ++i;
 		container_.emplace(container_.begin(), op, std::forward<T>(v));
 	}
+	template <typename T, typename... Args>
+	RX_ALWAYS_INLINE void AppendFront(OperationType op, Args&&... args) {
+		for (unsigned& i : activeBrackets_) ++i;
+		container_.emplace(container_.begin(), op, T{std::forward<Args>(args)...});
+	}
 	void PopBack() {
-		assertrx_throw(!container_.empty());
+		assertrx_dbg(!container_.empty());
 		for (unsigned i : activeBrackets_) {
-			assertrx_throw(i < container_.size());
+			assertrx_dbg(i < container_.size());
 			container_[i].Erase(1);
 		}
 		if (container_.back().IsSubTree() && !activeBrackets_.empty() && activeBrackets_.back() == container_.size() - 1) {
@@ -418,10 +684,10 @@ public:
 	/// Enclose area in brackets
 	template <typename... Args>
 	void EncloseInBracket(size_t from, size_t to, OperationType op, Args&&... args) {
-		assertrx_throw(to > from);
-		assertrx_throw(to <= container_.size());
+		assertrx_dbg(to > from);
+		assertrx_dbg(to <= container_.size());
 		for (unsigned& b : activeBrackets_) {
-			assertrx_throw(b < container_.size());
+			assertrx_dbg(b < container_.size());
 			if (b >= from) ++b;
 		}
 		for (size_t i = 0; i < from; ++i) {
@@ -430,14 +696,14 @@ public:
 				if (bracketEnd >= to) {
 					container_[i].Append();
 				} else {
-					assertrx_throw(bracketEnd <= from);
+					assertrx_dbg(bracketEnd <= from);
 				}
 			}
 		}
-#ifndef NDEBUG
+#ifdef RX_WITH_STDLIB_DEBUG
 		for (size_t i = from; i < to; ++i) {
 			if (container_[i].IsSubTree()) {
-				assertrx_throw(Next(i) <= to);
+				assertrx_dbg(Next(i) <= to);
 			}
 		}
 #endif
@@ -447,7 +713,7 @@ public:
 	template <typename... Args>
 	void OpenBracket(OperationType op, Args&&... args) {
 		for (unsigned i : activeBrackets_) {
-			assertrx_throw(i < container_.size());
+			assertrx_dbg(i < container_.size());
 			container_[i].Append();
 		}
 		activeBrackets_.push_back(container_.size());
@@ -455,65 +721,67 @@ public:
 	}
 	/// Closes last openned subtree for appendment
 	void CloseBracket() {
-		if (activeBrackets_.empty()) throw Error(errLogic, "Close bracket before open");
+		if rx_unlikely (activeBrackets_.empty()) {
+			throw Error(errLogic, "Close bracket before open");
+		}
 		activeBrackets_.pop_back();
 	}
 	/// Sets operation to last appended leaf or last closed subtree or last openned subtree if it is empty
-	void SetLastOperation(OperationType op) { container_[LastAppendedElement()].operation = op; }
-	bool Empty() const noexcept { return container_.empty(); }
-	size_t Size() const noexcept { return container_.size(); }
-	void Reserve(size_t s) { container_.reserve(s); }
+	RX_ALWAYS_INLINE void SetLastOperation(OperationType op) { container_[LastAppendedElement()].operation = op; }
+	RX_ALWAYS_INLINE bool Empty() const noexcept { return container_.empty(); }
+	RX_ALWAYS_INLINE size_t Size() const noexcept { return container_.size(); }
+	RX_ALWAYS_INLINE void Reserve(size_t s) { container_.reserve(s); }
 	/// @return size of leaf of subtree beginning from i
-	size_t Size(size_t i) const noexcept {
-		assertrx_throw(i < Size());
+	RX_ALWAYS_INLINE size_t Size(size_t i) const noexcept {
+		assertrx_dbg(i < Size());
 		return container_[i].Size();
 	}
 	/// @return beginning of next children of the same parent
-	size_t Next(size_t i) const noexcept {
-		assertrx_throw(i < Size());
+	RX_ALWAYS_INLINE size_t Next(size_t i) const noexcept {
+		assertrx_dbg(i < Size());
 		return i + Size(i);
 	}
 	template <typename T>
-	bool Is(size_t i) const noexcept {
-		assertrx_throw(i < Size());
+	RX_ALWAYS_INLINE bool Is(size_t i) const noexcept {
+		assertrx_dbg(i < Size());
 		return container_[i].template Is<T>();
 	}
-	bool IsSubTree(size_t i) const noexcept {
-		assertrx_throw(i < Size());
+	RX_ALWAYS_INLINE bool IsSubTree(size_t i) const noexcept {
+		assertrx_dbg(i < Size());
 		return container_[i].IsSubTree();
 	}
-	OperationType GetOperation(size_t i) const noexcept {
-		assertrx_throw(i < Size());
+	RX_ALWAYS_INLINE OperationType GetOperation(size_t i) const noexcept {
+		assertrx_dbg(i < Size());
 		return container_[i].operation;
 	}
-	void SetOperation(OperationType op, size_t i) noexcept {
-		assertrx_throw(i < Size());
+	RX_ALWAYS_INLINE void SetOperation(OperationType op, size_t i) noexcept {
+		assertrx_dbg(i < Size());
 		container_[i].operation = op;
 	}
 	template <typename T>
-	T& Get(size_t i) {
-		assertrx_throw(i < Size());
+	RX_ALWAYS_INLINE T& Get(size_t i) {
+		assertrx_dbg(i < Size());
 		return container_[i].template Value<T>();
 	}
 	template <typename T>
-	const T& Get(size_t i) const {
-		assertrx_throw(i < Size());
+	RX_ALWAYS_INLINE const T& Get(size_t i) const {
+		assertrx_dbg(i < Size());
 		return container_[i].template Value<T>();
 	}
 	template <typename T>
-	void SetValue(size_t i, T&& v) {
-		assertrx_throw(i < Size());
+	RX_ALWAYS_INLINE void SetValue(size_t i, T&& v) {
+		assertrx_dbg(i < Size());
 		return container_[i].template SetValue<T>(std::forward<T>(v));
 	}
 	void Erase(size_t from, size_t to) {
-		assertrx_throw(to >= from);
+		assertrx_dbg(to >= from);
 		const size_t count = to - from;
 		for (size_t i = 0; i < from; ++i) {
 			if (container_[i].IsSubTree()) {
 				if (Next(i) >= to) {
 					container_[i].Erase(count);
 				} else {
-					assertrx_throw(Next(i) <= from);
+					assertrx_dbg(Next(i) <= from);
 				}
 			}
 		}
@@ -525,28 +793,43 @@ public:
 			if (b >= to) b -= count;
 		}
 	}
-	/// Execute appropriate functor depending on content type
-	template <typename R, typename... Fs>
-	R InvokeAppropriate(size_t i, Fs&&... funcs) {
-		assertrx_throw(i < container_.size());
-		return container_[i].template InvokeAppropriate<R, Fs...>(std::forward<Fs>(funcs)...);
+	template <typename Visitor>
+	RX_ALWAYS_INLINE decltype(auto) Visit(size_t i, Visitor&& visitor) {
+		assertrx_dbg(i < container_.size());
+		return container_[i].visit(std::forward<Visitor>(visitor));
 	}
-	template <typename R, typename... Fs>
-	R InvokeAppropriate(size_t i, Fs&&... funcs) const {
-		assertrx_throw(i < container_.size());
-		return container_[i].template InvokeAppropriate<R, Fs...>(std::forward<Fs>(funcs)...);
+	template <typename Visitor>
+	RX_ALWAYS_INLINE decltype(auto) Visit(size_t i, Visitor&& visitor) const {
+		assertrx_dbg(i < container_.size());
+		return container_[i].visit(std::forward<Visitor>(visitor));
 	}
-	/// Execute appropriate functor depending on content type for each node, skip if no appropriate functor
 	template <typename... Fs>
-	void ExecuteAppropriateForEach(Fs&&... funcs) const {
-		const Visitor<void, Fs...> visitor{std::forward<Fs>(funcs)...};
-		for (const Node& node : container_) std::visit(visitor, node.storage_);
+	RX_ALWAYS_INLINE decltype(auto) Visit(size_t i, Fs&&... fs) {
+		assertrx_dbg(i < container_.size());
+		return container_[i].visit(overloaded{std::forward<Fs>(fs)...});
 	}
-	/// Execute appropriate functor depending on content type for each node, skip if no appropriate functor
 	template <typename... Fs>
-	void ExecuteAppropriateForEach(Fs&&... funcs) {
-		const Visitor<void, Fs...> visitor{std::forward<Fs>(funcs)...};
-		for (Node& node : container_) std::visit(visitor, node.storage_);
+	RX_ALWAYS_INLINE decltype(auto) Visit(size_t i, Fs&&... fs) const {
+		assertrx_dbg(i < container_.size());
+		return container_[i].visit(overloaded{std::forward<Fs>(fs)...});
+	}
+	template <typename Visitor>
+	RX_ALWAYS_INLINE void VisitForEach(const Visitor& visitor) const {
+		for (const Node& node : container_) node.visit(visitor);
+	}
+	template <typename Visitor>
+	RX_ALWAYS_INLINE void VisitForEach(const Visitor& visitor) {
+		for (Node& node : container_) node.visit(visitor);
+	}
+	template <typename... Fs>
+	RX_ALWAYS_INLINE void VisitForEach(Fs&&... fs) const {
+		overloaded visitor{std::forward<Fs>(fs)...};
+		for (const Node& node : container_) node.visit(visitor);
+	}
+	template <typename... Fs>
+	RX_ALWAYS_INLINE void VisitForEach(Fs&&... fs) {
+		overloaded visitor{std::forward<Fs>(fs)...};
+		for (Node& node : container_) node.visit(visitor);
 	}
 
 	/// @class const_iterator
@@ -554,25 +837,26 @@ public:
 	class const_iterator {
 	public:
 		const_iterator(typename Container::const_iterator it) noexcept : it_(it) {}
-		bool operator==(const const_iterator& other) const noexcept { return it_ == other.it_; }
-		bool operator!=(const const_iterator& other) const noexcept { return !operator==(other); }
-		const Node& operator*() const noexcept { return *it_; }
-		const Node* operator->() const noexcept { return &*it_; }
-		const_iterator& operator++() noexcept {
+		RX_ALWAYS_INLINE bool operator==(const const_iterator& other) const noexcept { return it_ == other.it_; }
+		RX_ALWAYS_INLINE bool operator!=(const const_iterator& other) const noexcept { return !operator==(other); }
+		RX_ALWAYS_INLINE const Node& operator*() const noexcept { return *it_; }
+		RX_ALWAYS_INLINE const Node* operator->() const noexcept { return &*it_; }
+		RX_ALWAYS_INLINE const_iterator& operator++() noexcept {
 			it_ += it_->Size();
 			return *this;
 		}
-		const_iterator cbegin() const noexcept {
-			assertrx_throw(it_->IsSubTree());
+		RX_ALWAYS_INLINE const_iterator cbegin() const noexcept {
+			assertrx_dbg(it_->IsSubTree());
+			assertrx_dbg(it_->IsSubTree());
 			return it_ + 1;
 		}
-		const_iterator begin() const noexcept { return cbegin(); }
-		const_iterator cend() const noexcept {
-			assertrx_throw(it_->IsSubTree());
+		RX_ALWAYS_INLINE const_iterator begin() const noexcept { return cbegin(); }
+		RX_ALWAYS_INLINE const_iterator cend() const noexcept {
+			assertrx_dbg(it_->IsSubTree());
 			return it_ + it_->Size();
 		}
-		const_iterator end() const noexcept { return cend(); }
-		typename Container::const_iterator PlainIterator() const noexcept { return it_; }
+		RX_ALWAYS_INLINE const_iterator end() const noexcept { return cend(); }
+		RX_ALWAYS_INLINE typename Container::const_iterator PlainIterator() const noexcept { return it_; }
 
 	private:
 		typename Container::const_iterator it_;
@@ -583,60 +867,60 @@ public:
 	class iterator {
 	public:
 		iterator(typename Container::iterator it) noexcept : it_(it) {}
-		bool operator==(const iterator& other) const noexcept { return it_ == other.it_; }
-		bool operator!=(const iterator& other) const noexcept { return !operator==(other); }
-		Node& operator*() const noexcept { return *it_; }
-		Node* operator->() const noexcept { return &*it_; }
-		iterator& operator++() noexcept {
+		RX_ALWAYS_INLINE bool operator==(const iterator& other) const noexcept { return it_ == other.it_; }
+		RX_ALWAYS_INLINE bool operator!=(const iterator& other) const noexcept { return !operator==(other); }
+		RX_ALWAYS_INLINE Node& operator*() const noexcept { return *it_; }
+		RX_ALWAYS_INLINE Node* operator->() const noexcept { return &*it_; }
+		RX_ALWAYS_INLINE iterator& operator++() noexcept {
 			it_ += it_->Size();
 			return *this;
 		}
-		operator const_iterator() const noexcept { return const_iterator(it_); }
-		iterator begin() const noexcept {
-			assertrx_throw(it_->IsSubTree());
+		RX_ALWAYS_INLINE operator const_iterator() const noexcept { return const_iterator(it_); }
+		RX_ALWAYS_INLINE iterator begin() const noexcept {
+			assertrx_dbg(it_->IsSubTree());
 			return it_ + 1;
 		}
-		const_iterator cbegin() const noexcept { return begin(); }
-		iterator end() const noexcept {
-			assertrx_throw(it_->IsSubTree());
+		RX_ALWAYS_INLINE const_iterator cbegin() const noexcept { return begin(); }
+		RX_ALWAYS_INLINE iterator end() const noexcept {
+			assertrx_dbg(it_->IsSubTree());
 			return it_ + it_->Size();
 		}
-		const_iterator cend() const noexcept { return end(); }
-		typename Container::iterator PlainIterator() const noexcept { return it_; }
+		RX_ALWAYS_INLINE const_iterator cend() const noexcept { return end(); }
+		RX_ALWAYS_INLINE typename Container::iterator PlainIterator() const noexcept { return it_; }
 
 	private:
 		typename Container::iterator it_;
 	};
 
 	/// @return iterator points to the first child of root
-	iterator begin() noexcept { return {container_.begin()}; }
+	RX_ALWAYS_INLINE iterator begin() noexcept { return {container_.begin()}; }
 	/// @return iterator points to the first child of root
-	const_iterator begin() const noexcept { return {container_.begin()}; }
+	RX_ALWAYS_INLINE const_iterator begin() const noexcept { return {container_.begin()}; }
 	/// @return iterator points to the first child of root
-	const_iterator cbegin() const noexcept { return {container_.begin()}; }
+	RX_ALWAYS_INLINE const_iterator cbegin() const noexcept { return {container_.begin()}; }
 	/// @return iterator points to the node after the last child of root
-	iterator end() noexcept { return {container_.end()}; }
+	RX_ALWAYS_INLINE iterator end() noexcept { return {container_.end()}; }
 	/// @return iterator points to the node after the last child of root
-	const_iterator end() const noexcept { return {container_.end()}; }
+	RX_ALWAYS_INLINE const_iterator end() const noexcept { return {container_.end()}; }
 	/// @return iterator points to the node after the last child of root
-	const_iterator cend() const noexcept { return {container_.end()}; }
+	RX_ALWAYS_INLINE const_iterator cend() const noexcept { return {container_.end()}; }
 	/// @return iterator to first entry of current bracket
-	const_iterator begin_of_current_bracket() const noexcept {
+	RX_ALWAYS_INLINE const_iterator begin_of_current_bracket() const noexcept {
 		if (activeBrackets_.empty()) return container_.cbegin();
 		return container_.cbegin() + activeBrackets_.back() + 1;
 	}
 
-	const SubTree* LastOpenBracket() const {
+	RX_ALWAYS_INLINE const SubTree* LastOpenBracket() const {
 		if (activeBrackets_.empty()) return nullptr;
 		return &container_[activeBrackets_.back()].template Value<SubTree>();
 	}
-	SubTree* LastOpenBracket() {
+	RX_ALWAYS_INLINE SubTree* LastOpenBracket() {
 		if (activeBrackets_.empty()) return nullptr;
 		return &container_[activeBrackets_.back()].template Value<SubTree>();
 	}
 	/// @return the last appended leaf or last closed subtree or last openned subtree if it is empty
 	size_t LastAppendedElement() const noexcept {
-		assertrx_throw(!container_.empty());
+		assertrx_dbg(!container_.empty());
 		size_t start = 0;  // start of last openned subtree;
 		if (!activeBrackets_.empty()) {
 			start = activeBrackets_.back() + 1;
@@ -658,7 +942,7 @@ protected:
 	void append(const_iterator begin, const_iterator end) {
 		for (; begin != end; ++begin) {
 			const OpType op = begin->operation;
-			begin->template InvokeAppropriate<void>(
+			begin->Visit(
 				[this, &begin, op](const SubTree& b) {
 					OpenBracket(op);
 					std::get<SubTree>(container_.back().storage_).CopyPayloadFrom(b);

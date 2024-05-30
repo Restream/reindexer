@@ -102,9 +102,9 @@ type TestItemIDOnly struct {
 	EndTime       int             `json:"end_time"`
 	StartTime     int             `json:"start_time"`
 	Tmp           string          `reindex:"tmp,-"`
-	Uuid          string          `reindex:"uuid,hash,uuid" json:"uuid"`
-	UuidStore     string          `reindex:"uuid_store,-,uuid" json:"uuid_store"`
-	UuidArray     []string        `reindex:"uuid_array,hash,uuid" json:"uuid_array"`
+	Uuid          string          `json:"uuid"`
+	UuidStore     string          `json:"uuid_store"`
+	UuidArray     []string        `json:"uuid_array"`
 	_             struct{}        `reindex:"id+tmp,,composite,pk"`
 }
 

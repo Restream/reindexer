@@ -291,7 +291,7 @@ TEST_F(JoinSelectsApi, JoinTestSorting) {
 		for (auto rowIt : joinQueryRes) {
 			Item item = rowIt.GetItem(false);
 			if (!prevField.Type().Is<reindexer::KeyValueType::Null>()) {
-				ASSERT_LE(prevField.Compare(item[age]), 0);
+				ASSERT_NE(prevField.Compare<reindexer::NotComparable::Return>(item[age]) & reindexer::ComparationResult::Le, 0);
 			}
 
 			Variant key = item[authorid];
@@ -303,11 +303,13 @@ TEST_F(JoinSelectsApi, JoinTestSorting) {
 			for (int i = 0; i < joinedFieldIt.ItemsCount(); ++i) {
 				reindexer::ItemImpl joinItem(joinedFieldIt.GetItem(i, joinQueryRes.getPayloadType(1), joinQueryRes.getTagsMatcher(1)));
 				Variant fkey = joinItem.GetField(joinQueryRes.getPayloadType(1).FieldByName(authorid_fk));
-				ASSERT_EQ(key.Compare(fkey), 0) << key.As<std::string>() << " " << fkey.As<std::string>();
+				ASSERT_EQ(key.Compare<reindexer::NotComparable::Return>(fkey), reindexer::ComparationResult::Eq)
+					<< key.As<std::string>() << " " << fkey.As<std::string>();
 				Variant recentJoinedValue = joinItem.GetField(joinQueryRes.getPayloadType(1).FieldByName(price));
 				ASSERT_GE(recentJoinedValue.As<int>(), 200);
 				if (!prevJoinedValue.Type().Is<reindexer::KeyValueType::Null>()) {
-					ASSERT_GE(prevJoinedValue.Compare(recentJoinedValue), 0);
+					ASSERT_NE(
+						prevJoinedValue.Compare<reindexer::NotComparable::Return>(recentJoinedValue) & reindexer::ComparationResult::Ge, 0);
 				}
 				Variant pagesValue = joinItem.GetField(joinQueryRes.getPayloadType(1).FieldByName(pages));
 				ASSERT_GE(pagesValue.As<int>(), 100);
@@ -349,7 +351,8 @@ TEST_F(JoinSelectsApi, TestSortingByJoinedNs) {
 		const Variant recentValue = joinItem.GetField(joinQueryRes2.getPayloadType(1).FieldByName(age));
 		if (!prevValue.Type().Is<reindexer::KeyValueType::Null>()) {
 			reindexer::WrSerializer ser;
-			ASSERT_LE(prevValue.Compare(recentValue), 0) << (prevValue.Dump(ser), ser << ' ', recentValue.Dump(ser), ser.Slice());
+			ASSERT_NE(prevValue.Compare<reindexer::NotComparable::Return>(recentValue) & reindexer::ComparationResult::Le, 0)
+				<< (prevValue.Dump(ser), ser << ' ', recentValue.Dump(ser), ser.Slice());
 		}
 		prevValue = recentValue;
 	}
@@ -474,8 +477,7 @@ TEST_F(JoinSelectsApi, JoinPreResultStoreValuesOptimizationStressTest) {
 			item[data] = rand() % maxDataValue;
 			Upsert(ns, item);
 		}
-		const auto err = Commit(ns);
-		ASSERT_TRUE(err.ok()) << err.what();
+		Commit(ns);
 	};
 
 	createNs(rightNs);
@@ -564,7 +566,8 @@ TEST_F(JoinSelectsApi, TestMergeWithJoins) {
 	QueryResults qr;
 	Error err = rt.reindexer->Select(queryBooks, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
-	VerifyResJSON(qr);
+	err = VerifyResJSON(qr);
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	// Make sure results are correct:
 	// values of main and joined namespaces match

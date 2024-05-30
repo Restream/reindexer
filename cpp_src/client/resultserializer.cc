@@ -1,6 +1,5 @@
 #include "resultserializer.h"
 #include "core/payload/payloadtypeimpl.h"
-#include "vendor/msgpack/msgpack.h"
 
 namespace reindexer {
 namespace client {
@@ -39,14 +38,18 @@ void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, con
 		}
 		std::string_view data = GetSlice();
 		switch (tag) {
-			case QueryResultAggregation:
-				ret.aggResults.push_back({});
+			case QueryResultAggregation: {
+				auto& aggRes = ret.aggResults.emplace_back();
+				Error err;
 				if ((ret.flags & kResultsFormatMask) == kResultsMsgPack) {
-					ret.aggResults.back().FromMsgPack(giftStr(data));
+					err = aggRes.FromMsgPack(giftStr(data));
 				} else {
-					ret.aggResults.back().FromJSON(giftStr(data));
+					err = aggRes.FromJSON(giftStr(data));
 				}
-				break;
+				if (!err.ok()) {
+					throw err;
+				}
+			} break;
 			case QueryResultExplain:
 				ret.explainResults = std::string(data);
 				break;

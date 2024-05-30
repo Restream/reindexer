@@ -1,7 +1,6 @@
 #pragma once
 
 #include "cjsonbuilder.h"
-#include "core/keyvalue/key_string.h"
 #include "core/payload/payloadiface.h"
 #include "fieldextractor.h"
 #include "jsonbuilder.h"

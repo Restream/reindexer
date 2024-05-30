@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/cjson/tagsmatcher.h"
 #include "gtests/tools.h"
 #include "replication_api.h"
 #include "replicator/updatesobserver.h"
@@ -143,6 +144,49 @@ public:
 		}
 		auto curConfig = srv->GetServerConfig(ServerControl::ConfigType::Namespace);
 		EXPECT_TRUE(config == curConfig) << "config:\n" << config.GetJSON() << "\ncurConfig:\n" << curConfig.GetJSON();
+	}
+	int32_t ValidateTagsmatchersVersions(std::string_view ns, std::optional<int32_t> minVersion = std::optional<int32_t>()) {
+		std::vector<int32_t> versions;
+		versions.reserve(GetServersCount());
+		for (size_t i = 0; i < GetServersCount(); i++) {
+			auto srv = GetSrv(i);
+			auto &api = srv->api;
+			BaseApi::QueryResultsType res(api.reindexer.get());
+			auto err = api.reindexer->Select(Query(ns), res);
+			EXPECT_TRUE(err.ok()) << err.what();
+			versions.emplace_back(res.getTagsMatcher(0).version());
+		}
+		for (size_t i = 1; i < versions.size(); ++i) {
+			if (versions[i] != versions[i - 1]) {
+				TestCout() << fmt::sprintf("TagsMatcher versions are different for the '%s':\n", ns);
+				for (size_t j = 0; j < versions.size(); ++j) {
+					TestCout() << fmt::sprintf("%d: %d\n", j, versions[j]);
+				}
+				TestCout() << std::endl;
+				EXPECT_TRUE(false);
+			}
+		}
+		assertrx(versions.size());
+		if (minVersion.has_value()) {
+			EXPECT_GT(versions[0], minVersion.value());
+		}
+		return versions[0];
+	}
+	void SetSchema(size_t num, std::string_view ns, std::string_view schema) {
+		auto srv = GetSrv(num);
+		auto err = srv->api.reindexer->SetSchema(ns, schema);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+	void ValidateSchemas(std::string_view ns, std::string_view expected) {
+		for (size_t i = 0; i < GetServersCount(); i++) {
+			auto srv = GetSrv(i);
+			std::vector<NamespaceDef> nsDefs;
+			auto err = srv->api.reindexer->EnumNamespaces(nsDefs, EnumNamespacesOpts().WithFilter(ns));
+			EXPECT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(nsDefs.size(), 1) << "Namespace does not exist: " << ns;
+			EXPECT_EQ(nsDefs[0].name, ns);
+			EXPECT_EQ(nsDefs[0].schemaJson, expected);
+		}
 	}
 	std::atomic_bool stop;
 

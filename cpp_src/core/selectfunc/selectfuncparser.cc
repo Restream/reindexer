@@ -3,7 +3,6 @@
 #include <set>
 #include <string>
 #include "tools/errors.h"
-#include "tools/logger.h"
 
 namespace reindexer {
 

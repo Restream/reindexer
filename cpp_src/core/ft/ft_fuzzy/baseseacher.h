@@ -3,7 +3,6 @@
 #include <string>
 #include <vector>
 
-#include "core/ft/config/ftfastconfig.h"
 #include "core/ft/filters/itokenfilter.h"
 #include "core/ft/ft_fuzzy/dataholder/basebuildedholder.h"
 #include "core/ft/ft_fuzzy/merger/basemerger.h"

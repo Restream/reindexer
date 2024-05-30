@@ -1,6 +1,5 @@
 #include "sortexpression.h"
 #include <set>
-#include "core/index/index.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/queryresults/joinresults.h"
 #include "estl/fast_hash_set.h"
@@ -65,14 +64,14 @@ VariantArray SortExpression::GetJoinedFieldValues(IdType rowId, const joins::Nam
 		overloaded{
 			[](const JoinPreResult::Values& values) noexcept { return std::cref(values.payloadType); },
 			Restricted<IdSet, SelectIteratorContainer>{}([&js](const auto&) noexcept { return std::cref(js.rightNs_->payloadType_); })},
-		js.PreResult().preselectedPayload);
+		js.PreResult().payload);
 	const ConstPayload pv{pt, getJoinedValue(rowId, joinResults, joinedSelectors, nsIdx)};
 	VariantArray values;
 	if (index == IndexValueType::SetByJsonPath) {
 		TagsMatcher tm = std::visit(overloaded{[](const JoinPreResult::Values& values) noexcept { return std::cref(values.tagsMatcher); },
 											   Restricted<IdSet, SelectIteratorContainer>{}(
 												   [&js](const auto&) noexcept { return std::cref(js.rightNs_->tagsMatcher_); })},
-									js.PreResult().preselectedPayload);
+									js.PreResult().payload);
 		pv.GetByJsonPath(column, tm, values, KeyValueType::Undefined{});
 	} else {
 		pv.Get(index, values);
@@ -153,12 +152,12 @@ double DistanceBetweenJoinedIndexesSameNs::GetValue(IdType rowId, const joins::N
 		overloaded{
 			[](const JoinPreResult::Values& values) noexcept { return std::cref(values.payloadType); },
 			Restricted<IdSet, SelectIteratorContainer>{}([&js](const auto&) noexcept { return std::cref(js.rightNs_->payloadType_); })},
-		js.PreResult().preselectedPayload);
+		js.PreResult().payload);
 	const ConstPayload pv{pt, SortExpression::getJoinedValue(rowId, joinResults, joinedSelectors, nsIdx)};
 	TagsMatcher tm = std::visit(overloaded{[](const JoinPreResult::Values& values) noexcept { return std::cref(values.tagsMatcher); },
 										   Restricted<IdSet, SelectIteratorContainer>{}(
 											   [&js](const auto&) noexcept { return std::cref(js.rightNs_->tagsMatcher_); })},
-								js.PreResult().preselectedPayload);
+								js.PreResult().payload);
 	VariantArray values1;
 	if (index1 == IndexValueType::SetByJsonPath) {
 		pv.GetByJsonPath(column1, tm, values1, KeyValueType::Undefined{});
@@ -513,33 +512,37 @@ double SortExpression::calculate(const_iterator it, const_iterator end, IdType r
 	assertrx(it->operation.op == OpPlus);
 	double result = 0.0;
 	for (; it != end; ++it) {
-		double value = it->InvokeAppropriate<double>(
-			[&pv, &tagsMatcher, it, proc, rowId, joinedResults, &js](const SortExpressionBracket& b) {
-				const double res = calculate(it.cbegin(), it.cend(), rowId, pv, joinedResults, js, proc, tagsMatcher);
-				return (b.IsAbs() && res < 0) ? -res : res;
-			},
-			[](const Value& v) { return v.value; },
-			[&pv, &tagsMatcher](const SortExprFuncs::Index& i) { return i.GetValue(pv, tagsMatcher); },
-			[rowId, joinedResults, &js](const JoinedIndex& i) {
+		double value = it->Visit(
+			[&pv, &tagsMatcher, it, proc, rowId, joinedResults, &js] RX_PRE_LMBD_ALWAYS_INLINE(const SortExpressionBracket& b)
+				RX_POST_LMBD_ALWAYS_INLINE {
+					const double res = calculate(it.cbegin(), it.cend(), rowId, pv, joinedResults, js, proc, tagsMatcher);
+					return (b.IsAbs() && res < 0) ? -res : res;
+				},
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const Value& v) RX_POST_LMBD_ALWAYS_INLINE { return v.value; },
+			[&pv, &tagsMatcher] RX_PRE_LMBD_ALWAYS_INLINE(const SortExprFuncs::Index& i)
+				RX_POST_LMBD_ALWAYS_INLINE { return i.GetValue(pv, tagsMatcher); },
+			[rowId, joinedResults, &js] RX_PRE_LMBD_ALWAYS_INLINE(const JoinedIndex& i) RX_POST_LMBD_ALWAYS_INLINE {
 				assertrx_throw(joinedResults);
 				return i.GetValue(rowId, *joinedResults, js);
 			},
-			[proc](const Rank&) -> double { return proc; },
-			[&pv, &tagsMatcher](const DistanceFromPoint& i) { return i.GetValue(pv, tagsMatcher); },
-			[rowId, joinedResults, &js](const DistanceJoinedIndexFromPoint& i) {
+			[proc] RX_PRE_LMBD_ALWAYS_INLINE(const Rank&) RX_POST_LMBD_ALWAYS_INLINE -> double { return proc; },
+			[&pv, &tagsMatcher] RX_PRE_LMBD_ALWAYS_INLINE(const DistanceFromPoint& i)
+				RX_POST_LMBD_ALWAYS_INLINE { return i.GetValue(pv, tagsMatcher); },
+			[rowId, joinedResults, &js] RX_PRE_LMBD_ALWAYS_INLINE(const DistanceJoinedIndexFromPoint& i) RX_POST_LMBD_ALWAYS_INLINE {
 				assertrx_throw(joinedResults);
 				return i.GetValue(rowId, *joinedResults, js);
 			},
-			[&pv, &tagsMatcher](const DistanceBetweenIndexes& i) { return i.GetValue(pv, tagsMatcher); },
-			[&](const DistanceBetweenIndexAndJoinedIndex& i) {
+			[&pv, &tagsMatcher] RX_PRE_LMBD_ALWAYS_INLINE(const DistanceBetweenIndexes& i)
+				RX_POST_LMBD_ALWAYS_INLINE { return i.GetValue(pv, tagsMatcher); },
+			[&] RX_PRE_LMBD_ALWAYS_INLINE(const DistanceBetweenIndexAndJoinedIndex& i) RX_POST_LMBD_ALWAYS_INLINE {
 				assertrx_throw(joinedResults);
 				return i.GetValue(pv, tagsMatcher, rowId, *joinedResults, js);
 			},
-			[&](const DistanceBetweenJoinedIndexes& i) {
+			[&] RX_PRE_LMBD_ALWAYS_INLINE(const DistanceBetweenJoinedIndexes& i) RX_POST_LMBD_ALWAYS_INLINE {
 				assertrx_throw(joinedResults);
 				return i.GetValue(rowId, *joinedResults, js);
 			},
-			[&](const DistanceBetweenJoinedIndexesSameNs& i) {
+			[&] RX_PRE_LMBD_ALWAYS_INLINE(const DistanceBetweenJoinedIndexesSameNs& i) RX_POST_LMBD_ALWAYS_INLINE {
 				assertrx_throw(joinedResults);
 				return i.GetValue(rowId, *joinedResults, js);
 			});
@@ -591,7 +594,7 @@ void SortExpression::dump(const_iterator begin, const_iterator end, WrSerializer
 			ser << ' ';
 		}
 		if (it->operation.negative) ser << "(-";
-		it->InvokeAppropriate<void>(
+		it->Visit(
 			[&it, &ser](const SortExpressionBracket& b) {
 				ser << (b.IsAbs() ? "ABS(" : "(");
 				dump(it.cbegin(), it.cend(), ser);

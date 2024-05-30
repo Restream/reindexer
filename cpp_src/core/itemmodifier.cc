@@ -7,11 +7,13 @@
 
 namespace reindexer {
 
-class ItemModifier::RollBack_ModifiedPayload : private RollBackBase {
+const std::string &ItemModifier::FieldData::name() const noexcept { return entry_.Column(); }
+
+class ItemModifier::RollBack_ModifiedPayload final : private RollBackBase {
 public:
 	RollBack_ModifiedPayload(ItemModifier &modifier, IdType id) noexcept : modifier_{modifier}, itemId_{id} {}
 	RollBack_ModifiedPayload(RollBack_ModifiedPayload &&) noexcept = default;
-	~RollBack_ModifiedPayload() { RollBack(); }
+	~RollBack_ModifiedPayload() override { RollBack(); }
 
 	void RollBack() {
 		if (IsDisabled()) return;
@@ -444,33 +446,31 @@ void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, Var
 	auto strHolder = ns_.strHolder();
 	auto indexesCacheCleaner{ns_.GetIndexesCacheCleaner()};
 
+	if (field.isIndex()) {
+		modifyIndexValues(itemId, field, values, pl);
+	}
 
-		if (field.isIndex()) {
-			modifyIndexValues(itemId, field, values, pl);
+	if (index.Opts().IsSparse() || index.Opts().IsArray() || index.KeyType().Is<KeyValueType::Uuid>()) {
+		ItemImpl item(ns_.payloadType_, *(pl.Value()), ns_.tagsMatcher_);
+		Variant oldTupleValue = item.GetField(0);
+		oldTupleValue.EnsureHold();
+		bool needClearCache{false};
+		auto &tupleIdx = ns_.indexes_[0];
+		tupleIdx->Delete(oldTupleValue, itemId, *strHolder, needClearCache);
+		Variant tupleValue;
+		std::exception_ptr exception;
+		try {
+			item.ModifyField(field.tagspathWithLastIndex(), values, field.details().Mode());
+		} catch (...) {
+			exception = std::current_exception();
 		}
-
-		if (index.Opts().IsSparse() || index.Opts().IsArray() || index.KeyType().Is<KeyValueType::Uuid>()) {
-			ItemImpl item(ns_.payloadType_, *(pl.Value()), ns_.tagsMatcher_);
-			Variant oldTupleValue = item.GetField(0);
-			oldTupleValue.EnsureHold();
-			bool needClearCache{false};
-			auto &tupleIdx = ns_.indexes_[0];
-			tupleIdx->Delete(oldTupleValue, itemId, *strHolder, needClearCache);
-			Variant tupleValue;
-			std::exception_ptr exception;
-			try {
-				item.ModifyField(field.tagspathWithLastIndex(), values, field.details().Mode());
-			} catch (...) {
-				exception = std::current_exception();
-			}
-			tupleValue = tupleIdx->Upsert(item.GetField(0), itemId, needClearCache);
-			if (needClearCache && tupleIdx->IsOrdered()) indexesCacheCleaner.Add(tupleIdx->SortId());
-			pl.Set(0, std::move(tupleValue));
-			if (exception) {
-				std::rethrow_exception(exception);
-			}
+		tupleValue = tupleIdx->Upsert(item.GetField(0), itemId, needClearCache);
+		if (needClearCache && tupleIdx->IsOrdered()) indexesCacheCleaner.Add(tupleIdx->SortId());
+		pl.Set(0, std::move(tupleValue));
+		if (exception) {
+			std::rethrow_exception(exception);
 		}
-
+	}
 }
 
 void ItemModifier::modifyIndexValues(IdType itemId, const FieldData &field, VariantArray &values, Payload &pl) {

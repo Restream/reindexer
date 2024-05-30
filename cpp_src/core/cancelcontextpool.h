@@ -1,7 +1,6 @@
 #pragma once
 
 #include "core/rdxcontext.h"
-#include "core/reindexer.h"
 #include "estl/atomic_unique_ptr.h"
 
 #include <atomic>

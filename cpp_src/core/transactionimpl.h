@@ -69,7 +69,7 @@ public:
 	void Modify(Item &&item, ItemModifyMode mode);
 	void Modify(Query &&item);
 	void PutMeta(std::string_view key, std::string_view value);
-	void SetTagsMatcher(TagsMatcher &&tm);
+	void MergeTagsMatcher(TagsMatcher&& tm);
 
 	Item NewItem();
 	Item GetItem(TransactionStep &&st);

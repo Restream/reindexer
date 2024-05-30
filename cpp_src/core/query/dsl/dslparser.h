@@ -9,7 +9,7 @@ class Query;
 
 namespace dsl {
 
-[[nodiscard]] Error Parse(std::string_view dsl, Query& q);
+Error Parse(std::string_view dsl, Query& q);
 
 }  // namespace dsl
 }  // namespace reindexer

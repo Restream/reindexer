@@ -19,7 +19,6 @@
 #include "core/rollback.h"
 #include "core/schema.h"
 #include "core/selectkeyresult.h"
-#include "core/storage/idatastorage.h"
 #include "core/storage/storagetype.h"
 #include "core/transaction.h"
 #include "estl/contexted_locks.h"
@@ -45,12 +44,10 @@ struct SelectCtxWithJoinPreSelect;
 struct JoinPreResult;
 class QueryResults;
 class DBConfigProvider;
-class SelectLockUpgrader;
 class QueryPreprocessor;
 class RdxContext;
 class RdxActivityContext;
 class SortExpression;
-class ProtobufSchema;
 class QueryResults;
 
 namespace long_actions {
@@ -63,9 +60,6 @@ struct QueryEnum2Type;
 
 template <typename T, template <typename> class>
 class QueryStatCalculator;
-
-template <QueryType queryType>
-using QueryStatCalculatorUpdDel = QueryStatCalculator<long_actions::QueryEnum2Type<queryType>, long_actions::Logger>;
 
 namespace SortExprFuncs {
 struct DistanceBetweenJoinedIndexesSameNs;
@@ -90,6 +84,13 @@ struct NsContext {
 namespace composite_substitution_helpers {
 class CompositeSearcher;
 }
+
+enum class StoredValuesOptimizationStatus : int8_t {
+	DisabledByCompositeIndex,
+	DisabledByFullTextIndex,
+	DisabledByJoinedFieldSort,
+	Enabled
+};
 
 class NamespaceImpl : public intrusive_atomic_rc_base {	 // NOLINT(*performance.Padding) Padding does not matter for this class
 	class RollBack_insertIndex;
@@ -287,7 +288,7 @@ public:
 	IndexesCacheCleaner GetIndexesCacheCleaner() { return IndexesCacheCleaner{*this}; }
 	// Separate method for the v3/v4 replication compatibility.
 	// It should not be used outside of this scenario
-	void SetTagsMatcher(TagsMatcher &&tm, const RdxContext &ctx);
+	void MergeTagsMatcher(const TagsMatcher &tm, const RdxContext &ctx);
 	void SetDestroyFlag() noexcept { dbDestroyed_ = true; }
 	Error FlushStorage(const RdxContext &ctx) {
 		const auto flushOpts = StorageFlushOpts().WithImmediateReopen();
@@ -323,7 +324,6 @@ private:
 
 	private:
 		mutable Mutex mtx_;
-		mutable std::mutex storage_mtx_;
 		std::atomic<bool> readonly_ = {false};
 	};
 
@@ -333,6 +333,7 @@ private:
 		lsn_t lsn;
 	};
 
+	Error rebuildIndexesTagsPaths(const TagsMatcher &newTm);
 	ReplicationState getReplState() const;
 	std::string sysRecordName(std::string_view sysTag, uint64_t version);
 	void writeSysRecToStorage(std::string_view data, std::string_view sysTag, uint64_t &version, bool direct);
@@ -380,7 +381,7 @@ private:
 					   std::optional<PKModifyRevertData> &&modifyData);
 	void removeExpiredItems(RdxActivityContext *);
 	void removeExpiredStrings(RdxActivityContext *);
-	void setTagsMatcher(TagsMatcher &&tm, const NsContext &ctx);
+	void mergeTagsMatcher(const TagsMatcher &tm, const NsContext &ctx);
 	Item newItem();
 
 	template <NeedRollBack needRollBack>
@@ -408,7 +409,7 @@ private:
 	void getFromJoinCache(const Query &, const JoinedQuery &, JoinCacheRes &out) const;
 	void getFromJoinCache(const Query &, JoinCacheRes &out) const;
 	void getFromJoinCacheImpl(JoinCacheRes &out) const;
-	void getIndsideFromJoinCache(JoinCacheRes &ctx) const;
+	void getInsideFromJoinCache(JoinCacheRes &ctx) const;
 	int64_t lastUpdateTimeNano() const noexcept { return repl_.updatedUnixNano; }
 
 	const FieldsSet &pkFields();
@@ -426,6 +427,8 @@ private:
 
 	bool SortOrdersBuilt() const noexcept { return optimizationState_.load(std::memory_order_acquire) == OptimizationCompleted; }
 
+	int64_t correctMaxIterationsIdSetPreResult(int64_t maxIterationsIdSetPreResult) const;
+
 	IndexesStorage indexes_;
 	fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str, nocase_less_str> indexesNames_;
 	fast_hash_map<int, std::vector<int>> indexesToComposites_;	// Maps index fields to corresponding composite indexes
@@ -441,7 +444,7 @@ private:
 	TagsMatcher tagsMatcher_;
 
 	AsyncStorage storage_;
-	std::atomic<unsigned> replStateUpdates_ = {0};
+	std::atomic<unsigned> replStateUpdates_{0};
 
 	std::unordered_map<std::string, std::string> meta_;
 
@@ -454,8 +457,8 @@ private:
 	std::shared_ptr<Schema> schema_;
 
 	StringsHolderPtr strHolder() const noexcept { return strHolder_; }
-	size_t ItemsCount() const noexcept { return items_.size() - free_.size(); }
-	const NamespaceConfigData &Config() const noexcept { return config_; }
+	size_t itemsCount() const noexcept { return items_.size() - free_.size(); }
+	const NamespaceConfigData &config() const noexcept { return config_; }
 
 	void DumpIndex(std::ostream &os, std::string_view index, const RdxContext &ctx) const;
 
@@ -483,7 +486,7 @@ private:
 	void clearNamespaceCaches();
 
 	PerfStatCounterMT updatePerfCounter_, selectPerfCounter_;
-	std::atomic<bool> enablePerfCounters_;
+	std::atomic<bool> enablePerfCounters_{false};
 
 	NamespaceConfigData config_;
 	std::unique_ptr<QueryCountCache> queryCountCache_;
@@ -494,25 +497,25 @@ private:
 	UpdatesObservers *observers_;
 
 	StorageOpts storageOpts_;
-	std::atomic<int64_t> lastSelectTime_;
+	std::atomic<int64_t> lastSelectTime_{0};
 
 	sync_pool<ItemImpl, 1024> pool_;
 	std::atomic<int32_t> cancelCommitCnt_{0};
-	std::atomic<int64_t> lastUpdateTime_;
+	std::atomic<int64_t> lastUpdateTime_{0};
 
 	std::atomic<uint32_t> itemsCount_ = {0};
 	std::atomic<uint32_t> itemsCapacity_ = {0};
-	bool nsIsLoading_;
+	bool nsIsLoading_ = false;
 
 	int serverId_ = 0;
-	std::atomic<bool> serverIdChanged_;
+	std::atomic<bool> serverIdChanged_{false};
 	size_t itemsDataSize_ = 0;
 
 	std::atomic<int> optimizationState_{OptimizationState::NotOptimized};
 	StringsHolderPtr strHolder_;
 	std::deque<StringsHolderPtr> strHoldersWaitingToBeDeleted_;
-	std::chrono::seconds lastExpirationCheckTs_;
-	mutable std::atomic<int64_t> nsUpdateSortedContextMemory_ = {0};
+	std::chrono::seconds lastExpirationCheckTs_{0};
+	mutable std::atomic<int64_t> nsUpdateSortedContextMemory_{0};
 	std::atomic<bool> dbDestroyed_{false};
 };
 }  // namespace reindexer

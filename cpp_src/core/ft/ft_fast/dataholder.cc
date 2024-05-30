@@ -88,7 +88,7 @@ template <typename IdCont>
 size_t DataHolder<IdCont>::GetMemStat() {
 	size_t res = IDataHolder::GetMemStat();
 	for (auto& w : words_) {
-		res += sizeof(w) + w.vids_.heap_size();
+		res += sizeof(w) + w.vids.heap_size();
 	}
 	return res;
 }
@@ -110,13 +110,13 @@ void DataHolder<IdCont>::StartCommit(bool complte_updated) {
 		words_.erase(words_.begin() + steps.back().wordOffset_, words_.end());
 
 		for (auto& word : words_) {
-			word.vids_.erase_back(word.cur_step_pos_);
+			word.vids.erase_back(word.cur_step_pos);
 		}
 
 		steps.back().clear();
 	} else {  // if the last step is full, then create a new
 		for (auto& word : words_) {
-			word.cur_step_pos_ = word.vids_.pos(word.vids_.end());
+			word.cur_step_pos = word.vids.pos(word.vids.end());
 		}
 		status_ = CreateNew;
 		steps.emplace_back(CommitStep{});

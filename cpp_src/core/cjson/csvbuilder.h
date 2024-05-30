@@ -5,7 +5,6 @@
 #include "objtype.h"
 #include "tagslengths.h"
 #include "tagsmatcher.h"
-#include "vendor/gason/gason.h"
 
 namespace reindexer {
 

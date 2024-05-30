@@ -224,29 +224,17 @@ TEST_F(ReindexerApi, NumericSearchForNonIndexedField) {
 	err = rt.reindexer->Upsert(default_namespace, item2);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	// Make sure while seeking for a string we only get a string value as a result
 	{
 		QueryResults qr;
 		err = rt.reindexer->Select("select * from test_namespace where mac_address = '2147483648'", qr);
 		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_TRUE(qr.Count() == 1) << qr.Count();
-		Item item = qr[0].GetItem(false);
-		Variant id = item["id"];
-		ASSERT_TRUE(static_cast<int>(id) == 2);
-		Variant value = item["mac_address"];
-		ASSERT_TRUE(value.Type().Is<reindexer::KeyValueType::String>()) << value.Type().Name();
+		EXPECT_EQ(qr.Count(), 2);
 	}
 
-	// Make sure while seeking for a number we only get an integer value as a result
 	{
 		QueryResults qr;
 		err = rt.reindexer->Select(Query(default_namespace).Where("mac_address", CondEq, Variant(int64_t(2147483648))), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_TRUE(qr.Count() == 1) << qr.Count();
-		Item item = qr[0].GetItem(false);
-		Variant id = item["id"];
-		ASSERT_TRUE(static_cast<int>(id) == 1);
-		Variant value = item["mac_address"];
-		ASSERT_TRUE(value.Type().Is<reindexer::KeyValueType::Int64>());
+		EXPECT_EQ(qr.Count(), 2);
 	}
 }

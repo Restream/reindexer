@@ -5,9 +5,9 @@
 #include <thread>
 #include <vector>
 #include "args.h"
+#include "core/keyvalue/p_string.h"
 #include "cproto.h"
 #include "estl/atomic_unique_ptr.h"
-#include "estl/h_vector.h"
 #include "net/connection.h"
 #include "tools/flagguard.h"
 #include "urlparser/urlparser.h"

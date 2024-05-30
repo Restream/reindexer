@@ -3,7 +3,6 @@
 #include <limits>
 #include <set>
 #include "core/cjson/jsonbuilder.h"
-#include "core/ft/stopwords/stop.h"
 #include "core/ft/typos.h"
 #include "tools/errors.h"
 #include "tools/jsontools.h"

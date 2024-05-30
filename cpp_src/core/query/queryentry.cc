@@ -108,7 +108,7 @@ bool QueryField::HaveEmptyField() const noexcept {
 
 bool QueryEntry::operator==(const QueryEntry &other) const noexcept {
 	return QueryField::operator==(other) && condition_ == other.condition_ && distinct_ == other.distinct_ &&
-		   values_.RelaxCompare<WithString::Yes>(other.values_) == 0;
+		   values_.RelaxCompare<WithString::Yes, NotComparable::Return>(other.values_) == ComparationResult::Eq;
 }
 
 template <VerifyQueryEntryFlags flags>
@@ -292,7 +292,7 @@ void QueryEntries::serialize(CondType cond, const VariantArray &values, WrSerial
 void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer &ser, const std::vector<Query> &subQueries) {
 	for (; it != to; ++it) {
 		const OpType op = it->operation;
-		it->InvokeAppropriate<void>(
+		it->Visit(
 			[&ser, op, &subQueries](const SubQueryEntry &sqe) {
 				ser.PutVarUint(QuerySubQueryCondition);
 				ser.PutVarUint(op);
@@ -377,20 +377,26 @@ bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator
 		} else if (!result) {
 			break;
 		}
-		const bool lastResult = it->InvokeAppropriate<bool>(
-			[](const SubQueryEntry &) -> bool {
+		const bool lastResult = it->Visit(
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const SubQueryEntry &) RX_POST_LMBD_ALWAYS_INLINE -> bool {
 				assertrx_throw(0);
 				abort();
 			},
-			[](const SubQueryFieldEntry &) -> bool {
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const SubQueryFieldEntry &) RX_POST_LMBD_ALWAYS_INLINE -> bool {
 				assertrx_throw(0);
 				abort();
 			},
-			[&it, &pl](const QueryEntriesBracket &) { return checkIfSatisfyConditions(it.cbegin(), it.cend(), pl); },
-			[&pl](const QueryEntry &qe) { return checkIfSatisfyCondition(qe, pl); },
-			[&pl](const BetweenFieldsQueryEntry &qe) { return checkIfSatisfyCondition(qe, pl); },
-			[](const JoinQueryEntry &) -> bool { abort(); }, [](const AlwaysFalse &) noexcept { return false; },
-			[](const AlwaysTrue &) noexcept { return true; });
+			[&it, &pl] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntriesBracket &)
+				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyConditions(it.cbegin(), it.cend(), pl); },
+			[&pl] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntry &qe) RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(qe, pl); },
+			[&pl] RX_PRE_LMBD_ALWAYS_INLINE(const BetweenFieldsQueryEntry &qe)
+				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(qe, pl); },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const JoinQueryEntry &) RX_POST_LMBD_ALWAYS_INLINE -> bool {
+				assertrx_throw(0);
+				abort();
+			},
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse &) RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysTrue &) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; });
 		result = (lastResult != (it->operation == OpNot));
 	}
 	return result;
@@ -420,7 +426,7 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray &lValues, CondType
 		case CondType::CondSet:
 			for (const auto &lhs : lValues) {
 				for (const auto &rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes>(rhs) == 0) return true;
+					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) == ComparationResult::Eq) return true;
 				}
 			}
 			return false;
@@ -429,7 +435,7 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray &lValues, CondType
 			for (const auto &v : rValues) {
 				auto it = lValues.cbegin();
 				for (; it != lValues.cend(); ++it) {
-					if (it->RelaxCompare<WithString::Yes>(v) == 0) break;
+					if (it->RelaxCompare<WithString::Yes, NotComparable::Return>(v) == ComparationResult::Eq) break;
 				}
 				if (it == lValues.cend()) return false;
 			}
@@ -437,34 +443,36 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray &lValues, CondType
 		case CondType::CondLt:
 			for (const auto &lhs : lValues) {
 				for (const auto &rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes>(rhs) < 0) return true;
+					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) == ComparationResult::Lt) return true;
 				}
 			}
 			return false;
 		case CondType::CondLe:
 			for (const auto &lhs : lValues) {
 				for (const auto &rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes>(rhs) <= 0) return true;
+					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) & ComparationResult::Le) return true;
 				}
 			}
 			return false;
 		case CondType::CondGt:
 			for (const auto &lhs : lValues) {
 				for (const auto &rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes>(rhs) > 0) return true;
+					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) == ComparationResult::Gt) return true;
 				}
 			}
 			return false;
 		case CondType::CondGe:
 			for (const auto &lhs : lValues) {
 				for (const auto &rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes>(rhs) >= 0) return true;
+					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) & ComparationResult::Ge) return true;
 				}
 			}
 			return false;
 		case CondType::CondRange:
 			for (const auto &v : lValues) {
-				if (v.RelaxCompare<WithString::Yes>(rValues[0]) < 0 || v.RelaxCompare<WithString::Yes>(rValues[1]) > 0) return false;
+				if (v.RelaxCompare<WithString::Yes, NotComparable::Return>(rValues[0]) == ComparationResult::Lt ||
+					v.RelaxCompare<WithString::Yes, NotComparable::Return>(rValues[1]) == ComparationResult::Gt)
+					return false;
 			}
 			return true;
 		case CondType::CondLike:
@@ -870,22 +878,21 @@ void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, 
 		if (it != begin || it->operation != OpAnd) {
 			ser << it->operation << ' ';
 		}
-		it->InvokeAppropriate<void>([&ser, subQueries](const SubQueryEntry &sqe) { ser << sqe.Dump(subQueries); },
-									[&ser, subQueries](const SubQueryFieldEntry &sqe) { ser << sqe.Dump(subQueries); },
-									[&](const QueryEntriesBracket &b) {
-										ser << "(\n";
-										dump(level + 1, it.cbegin(), it.cend(), joinedSelectors, subQueries, ser);
-										dumpEqualPositions(level + 1, ser, b.equalPositions);
-										for (size_t i = 0; i < level; ++i) {
-											ser << "   ";
-										}
-										ser << ")\n";
-									},
-									[&ser](const QueryEntry &qe) { ser << qe.Dump() << '\n'; },
-									[&joinedSelectors, &ser](const JoinQueryEntry &jqe) { ser << jqe.Dump(joinedSelectors) << '\n'; },
-									[&ser](const BetweenFieldsQueryEntry &qe) { ser << qe.Dump() << '\n'; },
-									[&ser](const AlwaysFalse &) { ser << "AlwaysFalse\n"; },
-									[&ser](const AlwaysTrue &) { ser << "AlwaysTrue\n"; });
+		it->Visit([&ser, subQueries](const SubQueryEntry &sqe) { ser << sqe.Dump(subQueries); },
+				  [&ser, subQueries](const SubQueryFieldEntry &sqe) { ser << sqe.Dump(subQueries); },
+				  [&](const QueryEntriesBracket &b) {
+					  ser << "(\n";
+					  dump(level + 1, it.cbegin(), it.cend(), joinedSelectors, subQueries, ser);
+					  dumpEqualPositions(level + 1, ser, b.equalPositions);
+					  for (size_t i = 0; i < level; ++i) {
+						  ser << "   ";
+					  }
+					  ser << ")\n";
+				  },
+				  [&ser](const QueryEntry &qe) { ser << qe.Dump() << '\n'; },
+				  [&joinedSelectors, &ser](const JoinQueryEntry &jqe) { ser << jqe.Dump(joinedSelectors) << '\n'; },
+				  [&ser](const BetweenFieldsQueryEntry &qe) { ser << qe.Dump() << '\n'; },
+				  [&ser](const AlwaysFalse &) { ser << "AlwaysFalse\n"; }, [&ser](const AlwaysTrue &) { ser << "AlwaysTrue\n"; });
 	}
 }
 template void QueryEntries::dump(size_t, const_iterator, const_iterator, const std::vector<JoinedSelector> &, const std::vector<Query> &,

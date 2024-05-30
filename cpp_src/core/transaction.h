@@ -30,7 +30,7 @@ public:
 	void Modify(Item &&item, ItemModifyMode mode);
 	void Modify(Query &&query);
 	void PutMeta(std::string_view key, std::string_view value);
-	void SetTagsMatcher(TagsMatcher &&tm);
+	void MergeTagsMatcher(TagsMatcher &&tm);
 	bool IsFree() { return impl_ == nullptr; }
 	Item NewItem();
 	Item GetItem(TransactionStep &&st);

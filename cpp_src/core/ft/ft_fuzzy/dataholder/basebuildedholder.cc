@@ -15,7 +15,7 @@ void BaseHolder::AddDada(const wchar_t *key, VDocIdType id, int pos, int field) 
 	std::wstring wkey(key, cfg_.bufferSize);
 	auto it = tmp_data_.find(wkey);
 	if (it == tmp_data_.end()) {
-		auto res = tmp_data_.emplace(wkey, IdRelSet());
+		auto res = tmp_data_.try_emplace(wkey);
 		it = res.first;
 	}
 

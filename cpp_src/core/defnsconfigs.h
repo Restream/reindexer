@@ -55,6 +55,7 @@ const std::vector<std::string> kDefDBConfig = {
 				"min_preselect_size":1000,
 				"max_preselect_size":1000,
 				"max_preselect_part":0.1,
+				"max_iterations_idset_preresult":20000,
 				"index_updates_counting_mode":false,
 				"sync_storage_flush_limit":20000,
 				"cache":{

@@ -5,15 +5,12 @@
 #include <mutex>
 #include <set>
 #include <unordered_map>
-#include "core/ft/config/ftfastconfig.h"
 #include "core/ft/config/ftfuzzyconfig.h"
 #include "core/ft/ft_fuzzy/advacedpackedvec.h"
 #include "core/ft/idrelset.h"
-#include "core/idset.h"
 #include "datastruct.h"
 #include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
-#include "smardeque.h"
 #include "tools/customhash.h"
 namespace search_engine {
 
@@ -30,7 +27,7 @@ struct DataStructLess {
 	inline bool operator()(const std::wstring &ent, const std::wstring &ent1) const noexcept { return ent < ent1; }
 };
 template <typename T1>
-using data_map = fast_hash_map<std::wstring, T1, DataStructHash, DataStructEQ, DataStructLess>;
+using data_map = tsl::hopscotch_map<std::wstring, T1, DataStructHash, DataStructEQ>;
 typedef fast_hash_set<std::wstring, DataStructHash, DataStructEQ> data_set;
 
 #else

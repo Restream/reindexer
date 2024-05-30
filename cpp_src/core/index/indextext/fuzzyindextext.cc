@@ -1,8 +1,6 @@
 #include "fuzzyindextext.h"
 #include <stdio.h>
 #include "core/rdxcontext.h"
-#include "tools/customlocal.h"
-#include "tools/errors.h"
 
 namespace reindexer {
 

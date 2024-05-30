@@ -4,7 +4,6 @@
 #include <string>
 #include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
-#include "estl/mutex.h"
 #include "estl/shared_mutex.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
@@ -102,17 +101,18 @@ struct NamespaceConfigData {
 	LogLevel logLevel = LogNone;
 	CacheMode cacheMode = CacheModeOff;
 	StrictMode strictMode = StrictModeNames;
-	int startCopyPolicyTxSize = 10000;
+	int startCopyPolicyTxSize = 10'000;
 	int copyPolicyMultiplier = 5;
-	int txSizeToAlwaysCopy = 100000;
+	int txSizeToAlwaysCopy = 100'000;
 	int optimizationTimeout = 800;
 	int optimizationSortWorkers = 4;
-	int64_t walSize = 4000000;
-	int64_t minPreselectSize = 1000;
-	int64_t maxPreselectSize = 1000;
+	int64_t walSize = 4'000'000;
+	int64_t minPreselectSize = 1'000;
+	int64_t maxPreselectSize = 1'000;
 	double maxPreselectPart = 0.1;
+	int64_t maxIterationsIdSetPreResult = 20'000;
 	bool idxUpdatesCountingMode = false;
-	int syncStorageFlushLimit = 20000;
+	int syncStorageFlushLimit = 20'000;
 	NamespaceCacheConfigData cacheConfig;
 };
 

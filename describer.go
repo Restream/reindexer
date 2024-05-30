@@ -458,6 +458,9 @@ type DBNamespacesConfig struct {
 	MaxPreselectSize int64 `json:"max_preselect_size"`
 	// Maximum preselect part of namespace's items for optimization of inner join by injection of filters
 	MaxPreselectPart float64 `json:"max_preselect_part"`
+	// Maximum number of IdSet iterations of namespace preliminary result size for optimization
+	// expected values [201..2.147.483.647], default value 20.000
+	MaxIterationsIdSetPreResult int64 `json:"max_iterations_idset_preresult"`
 	// Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time
 	IndexUpdatesCountingMode bool `json:"index_updates_counting_mode"`
 	// Enables synchronous storage flush inside write-calls, if async updates count is more than SyncStorageFlushLimit

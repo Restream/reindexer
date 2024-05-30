@@ -1,12 +1,9 @@
 #include "core/indexdef.h"
 #include <unordered_map>
 #include "cjson/jsonbuilder.h"
-#include "string.h"
 #include "tools/errors.h"
 #include "tools/jsontools.h"
-#include "tools/logger.h"
 #include "tools/serializer.h"
-#include "tools/stringstools.h"
 #include "type_consts_helpers.h"
 
 namespace {
@@ -256,7 +253,7 @@ void IndexDef::GetJSON(WrSerializer &ser, int formatFlags) const {
 	builder.Put("collate_mode", getCollateMode())
 		.Put("sort_order_letters", opts_.collateOpts_.sortOrderTable.GetSortOrderCharacters())
 		.Put("expire_after", expireAfter_)
-		.Raw("config", opts_.hasConfig() ? opts_.config : "{}");
+		.Raw("config", opts_.HasConfig() ? opts_.config : "{}");
 
 	if (formatFlags & kIndexJSONWithDescribe) {
 		// extra data for support describe.

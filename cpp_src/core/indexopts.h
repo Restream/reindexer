@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/type_consts.h"
 #include "sortingprioritiestable.h"
 
 struct CollateOpts {
@@ -23,12 +24,12 @@ struct IndexOpts {
 	explicit IndexOpts(uint8_t flags = 0, CollateMode mode = CollateNone, RTreeIndexType = RStar);
 	explicit IndexOpts(const std::string& sortOrderUTF8, uint8_t flags = 0, RTreeIndexType = RStar);
 
-	bool IsPK() const noexcept;
-	bool IsArray() const noexcept;
-	bool IsDense() const noexcept;
-	bool IsSparse() const noexcept;
+	bool IsPK() const noexcept { return options & kIndexOptPK; }
+	bool IsArray() const noexcept { return options & kIndexOptArray; }
+	bool IsDense() const noexcept { return options & kIndexOptDense; }
+	bool IsSparse() const noexcept { return options & kIndexOptSparse; }
 	RTreeIndexType RTreeType() const noexcept { return rtreeType_; }
-	bool hasConfig() const noexcept;
+	bool HasConfig() const noexcept { return !config.empty(); }
 
 	IndexOpts& PK(bool value = true) & noexcept;
 	[[nodiscard]] IndexOpts&& PK(bool value = true) && noexcept { return std::move(PK(value)); }
@@ -51,7 +52,7 @@ struct IndexOpts {
 	[[nodiscard]] IndexOpts&& SetConfig(Str&& config) && {
 		return std::move(SetConfig(std::forward<Str>(config)));
 	}
-	CollateMode GetCollateMode() const noexcept;
+	CollateMode GetCollateMode() const noexcept { return static_cast<CollateMode>(collateOpts_.mode); }
 
 	bool IsEqual(const IndexOpts& other, IndexComparison cmpType) const noexcept;
 

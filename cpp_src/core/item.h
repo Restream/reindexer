@@ -122,32 +122,32 @@ public:
 	/// @param slice - data slice with Json.
 	/// @param endp - pointer to end of parsed part of slice
 	/// @param pkOnly - if TRUE, that mean a JSON string will be parse only primary key fields
-	[[nodiscard]] Error FromJSON(std::string_view slice, char **endp = nullptr, bool pkOnly = false) &noexcept;
+	Error FromJSON(std::string_view slice, char **endp = nullptr, bool pkOnly = false) &noexcept;
 
 	/// Build item from JSON<br>
 	/// If Item is in *Unsafe Mode*, then Item will not store slice, but just keep pointer to data in slice,
 	/// application *MUST* hold slice until end of life of Item
 	/// @param slice - data slice with CJson
 	/// @param pkOnly - if TRUE, that mean a JSON string will be parse only primary key fields
-	[[nodiscard]] Error FromCJSON(std::string_view slice, bool pkOnly = false) &noexcept;
+	Error FromCJSON(std::string_view slice, bool pkOnly = false) &noexcept;
 	void FromCJSONImpl(std::string_view slice, bool pkOnly = false) &;
 
 	/// Builds item from msgpack::object.
 	/// @param buf - msgpack encoded data buffer.
 	/// @param offset - position to start from.
-	[[nodiscard]] Error FromMsgPack(std::string_view buf, size_t &offset) &noexcept;
+	Error FromMsgPack(std::string_view buf, size_t &offset) &noexcept;
 
 	/// Builds item from Protobuf
 	/// @param sbuf - Protobuf encoded data
-	[[nodiscard]] Error FromProtobuf(std::string_view sbuf) &noexcept;
+	Error FromProtobuf(std::string_view sbuf) &noexcept;
 
 	/// Packs data in msgpack format
 	/// @param wrser - buffer to serialize data to
-	[[nodiscard]] Error GetMsgPack(WrSerializer &wrser) &noexcept;
+	Error GetMsgPack(WrSerializer &wrser) &noexcept;
 
 	/// Packs item data to Protobuf
 	/// @param wrser - buffer to serialize data to
-	[[nodiscard]] Error GetProtobuf(WrSerializer &wrser) &noexcept;
+	Error GetProtobuf(WrSerializer &wrser) &noexcept;
 
 	/// Serialize item to CJSON.<br>
 	/// If Item is in *Unsafe Mode*, then returned slice is allocated in temporary buffer, and can be invalidated by any next operation
@@ -161,7 +161,7 @@ public:
 	/// Get status of item
 	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next
 	/// operation with Item
-	[[nodiscard]] Error Status() const noexcept { return status_; }
+	Error Status() const noexcept { return status_; }
 	/// Get internal ID of item
 	/// @return ID of item
 	[[nodiscard]] int GetID() const noexcept { return id_; }

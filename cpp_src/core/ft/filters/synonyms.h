@@ -1,10 +1,7 @@
 #pragma once
 
 #include "core/ft/usingcontainer.h"
-#include "estl/fast_hash_map.h"
-#include "estl/h_vector.h"
 #include "itokenfilter.h"
-#include "tools/stringstools.h"
 
 namespace reindexer {
 

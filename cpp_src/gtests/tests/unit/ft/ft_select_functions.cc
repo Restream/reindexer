@@ -1,4 +1,5 @@
 #include <gtest/gtest-param-test.h>
+#include <algorithm>
 #include "ft_api.h"
 
 using namespace std::string_view_literals;
@@ -6,6 +7,20 @@ using namespace std::string_view_literals;
 class FTSelectFunctionsApi : public FTApi {
 protected:
 	std::string_view GetDefaultNamespace() noexcept override { return "ft_select_fn_default_namespace"; }
+};
+
+class FTSelectFunctionsApiF : public FTSelectFunctionsApi {
+public:
+	reindexer::FtFastConfig GetDefaultConfig(size_t fieldsCount = 2) override {
+		reindexer::FtFastConfig cfg(fieldsCount);
+		cfg.enableNumbersSearch = true;
+		cfg.enableWarmupOnNsCopy = true;
+		cfg.logLevel = 5;
+		cfg.mergeLimit = 20000;
+		cfg.maxStepSize = 100;
+		cfg.optimization = reindexer::FtFastConfig::Optimization::Memory;
+		return cfg;
+	}
 };
 
 TEST_P(FTSelectFunctionsApi, SnippetN) {
@@ -476,6 +491,79 @@ TEST_P(FTSelectFunctionsApi, SnippetNBounds) {
 	check(id3, "one", R"S(ft1=snippet_n('','',2,4,with_area=1,left_bound='!'))S", R"S({"ft1":"[3,12]d one g!h "})S");
 	check(id3, "one", R"S(ft1=snippet_n('','',5,5,with_area=1,left_bound='!',right_bound='|'))S", R"S({"ft1":"[0,13]as|d one g!hj "})S");
 }
+
+#if !defined(REINDEX_WITH_TSAN)
+TEST_F(FTSelectFunctionsApiF, TotalOrVids) {
+	const unsigned int kItemCount = 140'000;
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.mergeLimit = 1'000'000;
+	ftCfg.maxAreasInDoc = 100000;
+	Init(ftCfg);
+	const std::vector<std::string_view> words = {"zero",	 "one",		"two",	   "three",		"four",		"five",	   "six",
+												 "seven",	 "eight",	"nine",	   "ten",		"eleven",	"twelve",  "thirteen",
+												 "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"};
+	const std::vector<std::string_view> testWord = {"test", "mest", "nest", "sest", "vest", "best"};
+
+	auto generateStr = [&](int num, unsigned int posW, unsigned int posT, bool adding) {
+		std::string res = fmt::sprintf("%d ", num), resSnippet = res;
+		for (unsigned int i = 0; i < words.size(); i++) {
+			if (i == posW) {
+				res += fmt::sprintf("%s empty ", testWord[posT]);
+				resSnippet += fmt::sprintf("!%s! empty ", testWord[posT]);
+			} else {
+				res.append(words[i]).append(" ");
+				resSnippet.append(words[i]).append(" ");
+			}
+		}
+		if (adding) {
+			const unsigned addWord = std::rand() % 100;
+			for (unsigned i = 0, pos = 0; i < addWord; i++, pos++) {
+				pos %= words.size();
+				res.append(words[pos]).append(" ");
+				resSnippet.append(words[pos]).append(" ");
+			}
+		}
+		const auto& w = testWord[std::rand() % testWord.size()];
+		res += fmt::sprintf("empty %s ", w);
+		resSnippet += fmt::sprintf("empty !%s! ", w);
+		return std::make_pair(res, resSnippet);
+	};
+
+	unsigned posW = 0;
+	unsigned posT = 0;
+	std::set<std::string> resSet, resSelect;
+	for (unsigned m = 0; m < kItemCount; m++, posW++, posT++) {
+		posT %= testWord.size();
+		posW %= words.size();
+
+		auto [str, strSnippet] = generateStr(m, posW, posT, m % 2);
+		resSet.insert(std::move(strSnippet));
+		Add(str);
+	}
+
+	{
+		reindexer::Query q("nm1");
+		q.Select({"ft1"}).Where("ft3", CondEq, "test~").AddFunction(R"(ft1=snippet(!,!,1000000,1000000,,))");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(res.Count(), kItemCount);
+		for (auto& r : res) {
+			auto item = r.GetItem();
+			resSelect.insert(item["ft1"].As<std::string>());
+		}
+		if (resSelect != resSet) {
+			EXPECT_TRUE(false) << "items are not equal";
+			std::vector<std::string> diff;
+			std::set_difference(resSelect.begin(), resSelect.end(), resSet.begin(), resSet.end(), std::back_inserter(diff));
+			TestCout() << "diff count = " << diff.size() << std::endl;
+			for (const auto& s : diff) {
+				TestCout() << s << std::endl;
+			}
+		}
+	}
+}
+#endif
 
 INSTANTIATE_TEST_SUITE_P(, FTSelectFunctionsApi,
 						 ::testing::Values(reindexer::FtFastConfig::Optimization::Memory, reindexer::FtFastConfig::Optimization::CPU),

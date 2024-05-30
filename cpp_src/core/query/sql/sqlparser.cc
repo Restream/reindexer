@@ -440,7 +440,7 @@ static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry 
 			updateField.Values().push_back(Variant());
 		} else if (currTok.text() == "{"sv) {
 			try {
-				size_t jsonPos = parser.getPos() - 1;
+				size_t jsonPos = parser.getPrevPos();
 				std::string json(parser.begin() + jsonPos, parser.length() - jsonPos);
 				size_t jsonLength = 0;
 				gason::JsonParser jsonParser;
@@ -536,7 +536,7 @@ void SQLParser::parseCommand(tokenizer &parser) const {
 	}
 
 	// parse of possible concatenation
-	tok = parser.peek_token(false);
+	tok = parser.peek_token(tokenizer::flags::no_flags);
 	while (tok.text() == "|"sv) {
 		parser.next_token();
 		tok = parser.next_token();
@@ -580,7 +580,7 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
 		addUpdateValue(tok, parser, updateField);
 	}
 
-	tok = parser.peek_token(false);
+	tok = parser.peek_token(tokenizer::flags::no_flags);
 	while (tok.text() == "|"sv) {
 		parser.next_token();
 		tok = parser.next_token();
@@ -733,7 +733,7 @@ void SQLParser::parseWhereCondition(tokenizer &parser, T &&firstArg, OpType op) 
 			throw Error(errParseSQL, "Expected NULL, but found '%s' in query, %s", tok.text(), parser.where());
 		}
 		query_.NextOp(op).Where(std::forward<T>(firstArg), CondAny, VariantArray{});
-		tok = parser.next_token(false);
+		tok = parser.next_token(tokenizer::flags::no_flags);
 	} else if (tok.text() == "("sv) {
 		if constexpr (!std::is_same_v<T, Query>) {
 			if (iequals(peekSqlToken(parser, WhereFieldValueOrSubquerySqlToken, false).text(), "select"sv) &&
@@ -781,7 +781,7 @@ int SQLParser::parseWhere(tokenizer &parser) {
 	int openBracketsCount = 0;
 	while (!parser.end()) {
 		tok = peekSqlToken(parser, nested == Nested::Yes ? NestedWhereFieldSqlToken : WhereFieldSqlToken, false);
-		parser.next_token(false);
+		parser.next_token(tokenizer::flags::no_flags);
 		if (tok.text() == "("sv) {
 			tok = peekSqlToken(parser, nested == Nested::Yes ? NestedWhereFieldSqlToken : WhereFieldOrSubquerySqlToken, false);
 			if (nested == Nested::Yes || !iequals(tok.text(), "select"sv) || isCondition(parser.peek_second_token().text())) {

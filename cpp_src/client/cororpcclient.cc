@@ -422,7 +422,9 @@ Error CoroRPCClient::SubscribeUpdates(IUpdatesObserver* observer, const UpdatesF
 }
 
 Error CoroRPCClient::UnsubscribeUpdates(IUpdatesObserver* observer) {
-	observers_.Delete(observer);
+	if (auto err = observers_.Delete(observer); !err.ok()) {
+		return err;
+	}
 	return subscribeImpl(!observers_.Empty());
 }
 
@@ -546,11 +548,17 @@ void CoroRPCClient::resubRoutine() {
 		loop_->granular_sleep(kSubscriptionCheckInterval, kCoroSleepGranularity, [this] { return terminate_; });
 		if (subscribed_) {
 			if (observers_.Empty()) {
-				subscribeImpl(false);
+				auto err = subscribeImpl(false);
+				if (!err.ok()) {
+					logPrintf(LogError, "[RPC-client]: Unsub error (observers array is empty): %s", err.what());
+				}
 			}
 		} else {
 			if (!observers_.Empty()) {
-				subscribeImpl(true);
+				auto err = subscribeImpl(true);
+				if (!err.ok()) {
+					logPrintf(LogError, "[RPC-client]: Resub error (observers array is empty): %s", err.what());
+				}
 			}
 		}
 	}

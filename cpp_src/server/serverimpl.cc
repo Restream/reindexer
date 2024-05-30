@@ -6,7 +6,6 @@
 
 #include <vector>
 
-#include "args/args.hpp"
 #include "clientsstats.h"
 #include "dbmanager.h"
 #include "debug/allocdebug.h"
@@ -21,6 +20,7 @@
 #include "tools/alloc_ext/je_malloc_extension.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/fsops.h"
+#include "tools/logger.h"
 #include "tools/stringstools.h"
 #include "tools/tcmallocheapwathcher.h"
 #include "yaml-cpp/yaml.h"
@@ -205,7 +205,8 @@ void ServerImpl::ReopenLogFiles() {
 std::string ServerImpl::GetCoreLogPath() const { return GetDirPath(config_.CoreLog); }
 
 int ServerImpl::run() {
-	loggerConfigure();
+	auto err = loggerConfigure();
+	(void)err;	// ingore; In case of the multiple builtin servers, we will get errors here
 
 	reindexer::debug::backtrace_set_writer([](std::string_view out) {
 		auto logger = spdlog::get("server");

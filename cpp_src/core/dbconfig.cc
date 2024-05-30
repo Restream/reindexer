@@ -4,10 +4,9 @@
 #include "cjson/jsonbuilder.h"
 #include "estl/smart_lock.h"
 #include "gason/gason.h"
-#include "tools/jsontools.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
-#include "yaml-cpp/yaml.h"
+#include "vendor/yaml-cpp/yaml.h"
 
 namespace reindexer {
 
@@ -32,18 +31,19 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 			profilingData_.perfStats = profilingNode["perfstats"].As<bool>();
 			profilingData_.memStats = profilingNode["memstats"].As<bool>();
 			profilingData_.activityStats = profilingNode["activitystats"].As<bool>();
-			if (!profilingNode["long_queries_logging"].empty()) {
-				profilingData_.longSelectLoggingParams.store(
-					LongQueriesLoggingParams{profilingNode["long_queries_logging"]["select"]["threshold_us"].As<int32_t>(),
-											 profilingNode["long_queries_logging"]["select"]["normalized"].As<bool>()});
-
-				profilingData_.longUpdDelLoggingParams.store(
-					LongQueriesLoggingParams{profilingNode["long_queries_logging"]["update_delete"]["threshold_us"].As<int32_t>(),
-											 profilingNode["long_queries_logging"]["update_delete"]["normalized"].As<bool>()});
-
-				profilingData_.longTxLoggingParams.store(
-					LongTxLoggingParams{profilingNode["long_queries_logging"]["transaction"]["threshold_us"].As<int32_t>(),
-										profilingNode["long_queries_logging"]["transaction"]["avg_step_threshold_us"].As<int32_t>()});
+			if (auto longQueriesNode = profilingNode["long_queries_logging"]; longQueriesNode.isObject()) {
+				if (auto selectNode = longQueriesNode["select"]; selectNode.isObject()) {
+					profilingData_.longSelectLoggingParams.store(
+						LongQueriesLoggingParams{selectNode["threshold_us"].As<int32_t>(), selectNode["normalized"].As<bool>()});
+				}
+				if (auto udNode = longQueriesNode["update_delete"]; udNode.isObject()) {
+					profilingData_.longUpdDelLoggingParams.store(
+						LongQueriesLoggingParams{udNode["threshold_us"].As<int32_t>(), udNode["normalized"].As<bool>()});
+				}
+				if (auto transactionNode = longQueriesNode["transaction"]; transactionNode.isObject()) {
+					profilingData_.longTxLoggingParams.store(LongTxLoggingParams{transactionNode["threshold_us"].As<int32_t>(),
+																				 transactionNode["avg_step_threshold_us"].As<int32_t>()});
+				}
 			}
 			if (handlers_[ProfilingConf]) (handlers_[ProfilingConf])();
 		}
@@ -70,6 +70,8 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 				data.minPreselectSize = nsNode["min_preselect_size"].As<int64_t>(data.minPreselectSize, 0);
 				data.maxPreselectSize = nsNode["max_preselect_size"].As<int64_t>(data.maxPreselectSize, 0);
 				data.maxPreselectPart = nsNode["max_preselect_part"].As<double>(data.maxPreselectPart, 0.0, 1.0);
+				data.maxIterationsIdSetPreResult =
+					nsNode["max_iterations_idset_preresult"].As<int64_t>(data.maxIterationsIdSetPreResult, 0);
 				data.idxUpdatesCountingMode = nsNode["index_updates_counting_mode"].As<bool>(data.idxUpdatesCountingMode);
 				data.syncStorageFlushLimit = nsNode["sync_storage_flush_limit"].As<int>(data.syncStorageFlushLimit, 0);
 

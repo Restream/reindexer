@@ -1,7 +1,6 @@
 #pragma once
 
 #include <vector>
-#include "core/indexopts.h"
 #include "core/itemimpl.h"
 #include "estl/fast_hash_map.h"
 #include "itemref.h"

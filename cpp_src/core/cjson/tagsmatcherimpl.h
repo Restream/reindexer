@@ -18,8 +18,11 @@ namespace reindexer {
 class TagsMatcherImpl {
 public:
 	TagsMatcherImpl() : version_(0), stateToken_(tools::RandomGenerator::gets32()) {}
-	TagsMatcherImpl(PayloadType &&payloadType)
-		: payloadType_(std::move(payloadType)), version_(0), stateToken_(tools::RandomGenerator::gets32()) {}
+	TagsMatcherImpl(PayloadType &&payloadType) : version_(0), stateToken_(tools::RandomGenerator::gets32()) {
+		bool updated = false;
+		updatePayloadType(std::move(payloadType), updated, false);
+		(void)updated;	// No update check required
+	}
 
 	TagsPath path2tag(std::string_view jsonPath) const {
 		bool updated = false;
@@ -165,10 +168,25 @@ public:
 		}
 	}
 	void updatePayloadType(PayloadType payloadType, bool &updated, bool incVersion) {
-		updated = true;
-		payloadType_ = std::move(payloadType);
-		if (incVersion) version_++;
-		buildTagsCache(updated);
+		if (!payloadType && !payloadType_) {
+			return;
+		}
+		std::swap(payloadType_, payloadType);
+		bool newType = false;
+		buildTagsCache(newType);
+		newType = newType || bool(payloadType) != bool(payloadType_) || (payloadType_.NumFields() != payloadType.NumFields());
+		if (!newType) {
+			for (int field = 1, fields = payloadType_.NumFields(); field < fields; ++field) {
+				auto &lf = payloadType_.Field(field);
+				auto &rf = payloadType.Field(field);
+				if (!lf.Type().IsSame(rf.Type()) || lf.IsArray() != rf.IsArray() || lf.JsonPaths() != rf.JsonPaths()) {
+					newType = true;
+					break;
+				}
+			}
+		}
+		updated = updated || newType;
+		version_ += int(newType && incVersion);
 	}
 
 	void serialize(WrSerializer &ser) const {
@@ -194,33 +212,33 @@ public:
 		stateToken_ = stateToken;
 	}
 
-	bool merge(const TagsMatcherImpl &tm) {
-		auto sz = tm.names2tags_.size();
-		auto oldSz = size();
-
-		if (tags2names_.size() < sz) {
-			validateTagSize(sz);
-			tags2names_.resize(sz);
-		}
-		auto it = tm.names2tags_.begin();
-		auto end = tm.names2tags_.end();
-		for (; it != end; ++it) {
-			auto r = names2tags_.emplace(it->first, it->second);
-			if (!r.second && r.first->second != it->second) {
-				// name conflict
-				return false;
+	bool merge(const TagsMatcherImpl &tm, bool &updated) {
+		if (tm.contains(*this)) {
+			auto oldSz = size();
+			auto newSz = tm.names2tags_.size();
+			tags2names_.resize(newSz);
+			for (size_t i = oldSz; i < newSz; ++i) {
+				tags2names_[i] = tm.tags2names_[i];
+				const auto r = names2tags_.emplace(tags2names_[i], i);
+				if (!r.second) {
+					// unexpected names conflict (this should never happen)
+					return false;
+				}
 			}
-			if (r.second && it->second < int(oldSz)) {
-				// tag conflict
-				return false;
+			if (oldSz != newSz) {
+				updated = true;
+				if (version_ >= tm.version_) {
+					++version_;
+				} else {
+					version_ = tm.version_;
+				}
 			}
-
-			tags2names_[it->second] = it->first;
+			return true;
 		}
-
-		version_ = std::max(version_, tm.version_) + 1;
-
-		return true;
+		return contains(tm);
+	}
+	bool contains(const TagsMatcherImpl &tm) const noexcept {
+		return tags2names_.size() >= tm.tags2names_.size() && std::equal(tm.tags2names_.begin(), tm.tags2names_.end(), tags2names_.begin());
 	}
 
 	size_t size() const noexcept { return tags2names_.size(); }

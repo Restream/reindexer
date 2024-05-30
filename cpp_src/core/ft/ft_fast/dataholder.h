@@ -11,7 +11,6 @@
 #include "core/ft/usingcontainer.h"
 #include "core/index/ft_preselect.h"
 #include "core/index/indextext/ftkeyentry.h"
-#include "estl/fast_hash_map.h"
 #include "estl/flat_str_map.h"
 #include "estl/suffix_map.h"
 #include "indextexttypes.h"
@@ -35,14 +34,30 @@ struct VDocEntry {
 template <typename IdCont>
 class PackedWordEntry {
 public:
-	IdCont vids_;  // IdCont - std::vector or packed_vector
+	PackedWordEntry() noexcept = default;
+	PackedWordEntry(const PackedWordEntry&) = delete;
+	PackedWordEntry(PackedWordEntry&&) noexcept = default;
+	PackedWordEntry& operator=(const PackedWordEntry&) = delete;
+	PackedWordEntry& operator=(PackedWordEntry&&) noexcept = default;
+
+	IdCont vids;  // IdCont - std::vector or packed_vector
 	// document offset, for the last step.
 	// Necessary for correct rebuilding of the last step
-	size_t cur_step_pos_ = 0;
+	size_t cur_step_pos = 0;
 };
 class WordEntry {
 public:
-	IdRelSet vids_;
+	WordEntry() noexcept = default;
+	WordEntry(const IdRelSet& _vids, bool _virtualWord) : vids(_vids), virtualWord(_virtualWord) {}
+	WordEntry(const WordEntry&) = delete;
+	WordEntry(WordEntry&&) noexcept = default;
+	WordEntry& operator=(const WordEntry&) = delete;
+	WordEntry& operator=(WordEntry&&) noexcept = default;
+
+	// Explicit copy
+	WordEntry MakeCopy() const { return WordEntry(this->vids, this->virtualWord); }
+
+	IdRelSet vids;
 	bool virtualWord = false;
 };
 enum ProcessStatus { FullRebuild, RecommitLast, CreateNew };
@@ -185,6 +200,7 @@ public:
 	void StartCommit(bool complte_updated) override final;
 	void Clear() override final;
 	std::vector<PackedWordEntry<IdCont>>& GetWords() noexcept { return words_; }
+	const std::vector<PackedWordEntry<IdCont>>& GetWords() const noexcept { return words_; }
 	PackedWordEntry<IdCont>& GetWordById(WordIdType id) noexcept {
 		assertrx(!id.IsEmpty());
 		assertrx(id.b.id < words_.size());

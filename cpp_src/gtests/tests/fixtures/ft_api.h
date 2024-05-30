@@ -10,7 +10,7 @@ public:
 	enum { NS1 = 1, NS2 = 2, NS3 = 4 };
 	void Init(const reindexer::FtFastConfig& ftCfg, unsigned nses = NS1, const std::string& storage = std::string());
 
-	reindexer::FtFastConfig GetDefaultConfig(size_t fieldsCount = 2);
+	virtual reindexer::FtFastConfig GetDefaultConfig(size_t fieldsCount = 2);
 
 	void SetFTConfig(const reindexer::FtFastConfig& ftCfg);
 
@@ -109,7 +109,7 @@ protected:
 	};
 	struct FTDSLQueryParams {
 		reindexer::RHashMap<std::string, int> fields;
-		reindexer::fast_hash_set<reindexer::StopWord, reindexer::hash_str, reindexer::equal_str, reindexer::less_str> stopWords;
+		reindexer::StopWordsSetT stopWords;
 		std::string extraWordSymbols = "-/+";
 	};
 	int counter_ = 0;

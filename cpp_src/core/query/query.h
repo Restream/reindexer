@@ -66,7 +66,7 @@ public:
 	/// Parses JSON dsl set.
 	/// @param dsl - dsl set.
 	/// @return always returns errOk or throws an exception.
-	[[nodiscard]] Error FromJSON(std::string_view dsl);
+	Error FromJSON(std::string_view dsl);
 
 	/// returns structure of a query in JSON dsl format
 	[[nodiscard]] std::string GetJSON() const;

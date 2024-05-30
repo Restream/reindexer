@@ -496,11 +496,18 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 				Matched: 1,
 			},
 			{
-				Field:       "first2 or first1",
+				Field:       "first2",
 				FieldType:   "indexed",
 				Method:      "scan",
-				Comparators: 2,
+				Comparators: 1,
 				Matched:     1,
+			},
+			{
+				Field:       "or first1",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     0,
 			},
 		}, "")
 	})
@@ -671,18 +678,25 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 				Matched:     1,
 			},
 			{
-				Field:       "first2 or second2",
-				FieldType:   "indexed",
-				Method:      "scan",
-				Comparators: 2,
-				Matched:     1,
-			},
-			{
 				Field:       "second1",
 				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 1,
 				Matched:     1,
+			},
+			{
+				Field:       "first2",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     1,
+			},
+			{
+				Field:       "or second2",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     0,
 			},
 		}, "")
 	})
@@ -712,11 +726,18 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 				Matched:   1,
 			},
 			{
-				Field:       "second2 or second1",
+				Field:       "second2",
 				FieldType:   "indexed",
 				Method:      "scan",
-				Comparators: 2,
+				Comparators: 1,
 				Matched:     1,
+			},
+			{
+				Field:       "or second1",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     0,
 			},
 		}, "")
 	})
@@ -748,11 +769,18 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 				Matched:   1,
 			},
 			{
-				Field:       "second2 or second1",
+				Field:       "second2",
 				FieldType:   "indexed",
 				Method:      "scan",
-				Comparators: 2,
+				Comparators: 1,
 				Matched:     1,
+			},
+			{
+				Field:       "or second1",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     0,
 			},
 		}, "")
 	})
@@ -974,11 +1002,18 @@ func TestCompositeIndexesBestSubstitution(t *testing.T) {
 				Matched:   1,
 			},
 			{
-				Field:       "fourth or id",
+				Field:       "fourth",
 				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 1,
 				Matched:     1,
+			},
+			{
+				Field:       "or id",
+				FieldType:   "indexed",
+				Method:      "index",
+				Comparators: 0,
+				Matched:     0,
 				Keys:        1,
 			},
 		}, "")
@@ -1009,11 +1044,18 @@ func TestCompositeIndexesBestSubstitution(t *testing.T) {
 				Matched:   1,
 			},
 			{
-				Field:       "fourth or third",
+				Field:       "fourth",
 				FieldType:   "indexed",
 				Method:      "scan",
-				Comparators: 2,
+				Comparators: 1,
 				Matched:     1,
+			},
+			{
+				Field:       "or third",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     0,
 			},
 		}, "")
 	})
@@ -1043,11 +1085,18 @@ func TestCompositeIndexesBestSubstitution(t *testing.T) {
 				Matched:   1,
 			},
 			{
-				Field:       "fourth or third",
+				Field:       "fourth",
 				FieldType:   "indexed",
 				Method:      "scan",
-				Comparators: 2,
+				Comparators: 1,
 				Matched:     1,
+			},
+			{
+				Field:       "or third",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     0,
 			},
 		}, "")
 	})
@@ -1082,18 +1131,25 @@ func TestCompositeIndexesBestSubstitution(t *testing.T) {
 				Matched:     1,
 			},
 			{
-				Field:       "second or third",
-				FieldType:   "indexed",
-				Method:      "scan",
-				Comparators: 2,
-				Matched:     1,
-			},
-			{
 				Field:       "first",
 				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 1,
 				Matched:     1,
+			},
+			{
+				Field:       "second",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     1,
+			},
+			{
+				Field:       "or third",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     0,
 			},
 		}, "")
 	})

@@ -2,7 +2,7 @@
 
 #include <string>
 #include <vector>
-#include "net/connection.h"
+#include "net/connectinstatscollector.h"
 #include "replicator/updatesobserver.h"
 
 namespace reindexer {

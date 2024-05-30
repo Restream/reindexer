@@ -1,7 +1,6 @@
 #include "ftfuzzyconfig.h"
 #include <string.h>
 #include "core/cjson/jsonbuilder.h"
-#include "core/ft/stopwords/stop.h"
 #include "tools/errors.h"
 #include "tools/jsontools.h"
 

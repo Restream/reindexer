@@ -7,9 +7,10 @@ using reindexer::Query;
 int main() {
 	// Initialize database
 	Reindexer db;
-	db.Connect("cproto://127.0.0.1:6534/reindex", reindexer::client::ConnectOpts().CreateDBIfMissing());
+	Error err = db.Connect("cproto://127.0.0.1:6534/reindex", reindexer::client::ConnectOpts().CreateDBIfMissing());
+	if (!err.ok()) return -1;
 	// Create namespace and add index
-	Error err = db.OpenNamespace("mytable");
+	err = db.OpenNamespace("mytable");
 	if (!err.ok()) return -1;
 	err = db.AddIndex("mytable", {"id", "hash", "int", IndexOpts().PK()});
 	if (!err.ok()) return -2;

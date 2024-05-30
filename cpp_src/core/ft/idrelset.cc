@@ -72,15 +72,6 @@ int IdRelType::MinPositionInField(int field) const noexcept {
 	return res;
 }
 
-int IdRelSet::Add(VDocIdType id, int pos, int field) {
-	if (id > max_id_) max_id_ = id;
-	if (id < min_id_) min_id_ = id;
 
-	if (!size() || back().Id() != id) {
-		emplace_back(id);
-	}
-	back().Add(pos, field);
-	return back().Size();
-}
 
 }  // namespace reindexer

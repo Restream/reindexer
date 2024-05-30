@@ -8,7 +8,6 @@
 #include "client/item.h"
 #include "client/namespace.h"
 #include "client/reindexerconfig.h"
-#include "core/keyvalue/p_string.h"
 #include "core/namespacedef.h"
 #include "core/query/query.h"
 #include "coroutine/waitgroup.h"
@@ -16,7 +15,6 @@
 #include "net/cproto/coroclientconnection.h"
 #include "replicator/updatesobserver.h"
 #include "tools/errors.h"
-#include "urlparser/urlparser.h"
 
 namespace reindexer {
 

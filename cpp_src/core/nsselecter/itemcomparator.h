@@ -26,6 +26,7 @@ public:
 private:
 	template <typename Inserter>
 	void bindOne(const SortingContext::Entry &sortingCtx, Inserter insert, bool multiSort);
+	ComparationResult compareFields(IdType lId, IdType rId, size_t &firstDifferentFieldIdx) const;
 
 	class BackInserter;
 	class FrontInserter;
@@ -49,6 +50,7 @@ private:
 	const SelectCtx &ctx_;
 	const joins::NamespaceResults *joinResults_;
 	FieldsSet fields_;
+	h_vector<SortingContext::RawDataParams> rawData_;
 	Joined joined_;
 	h_vector<const CollateOpts *, 1> collateOpts_;
 	h_vector<std::variant<CompareByField, CompareByJoinedField, CompareByExpression>, 4> comparators_;

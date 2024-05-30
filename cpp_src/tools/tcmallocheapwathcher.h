@@ -2,7 +2,7 @@
 
 #if REINDEX_WITH_GPERFTOOLS
 
-#include "spdlog/spdlog.h"
+#include "spdlog/logger.h"
 #include "tools/clock.h"
 
 #include <chrono>

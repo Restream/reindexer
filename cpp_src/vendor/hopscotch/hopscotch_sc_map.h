@@ -251,6 +251,11 @@ public:
 		return m_ht.try_emplace(std::move(k), std::forward<Args>(args)...);
 	}
 
+	template <typename K, class... Args>
+	std::pair<iterator, bool> try_emplace_prehashed(std::size_t hash, K&& k, Args&&... args) {
+		return m_ht.try_emplace_prehashed(hash, std::forward<K>(k), std::forward<Args>(args)...);
+	}
+
 	template <class... Args>
 	iterator try_emplace(const_iterator hint, const key_type& k, Args&&... args) {
 		return m_ht.try_emplace(hint, k, std::forward<Args>(args)...);

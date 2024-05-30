@@ -12,7 +12,6 @@ if(MSVC)
   set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -DEBUG")
 endif()
 
-
 if (NOT WITH_STDLIB_DEBUG)
   find_library(ReplXX_LIBRARY NAMES ${ReplXX_NAMES} replxx)
   find_path(ReplXX_INCLUDE_DIR NAMES replxx.hxx HINTS /opt/local/include /usr/local/include /usr/include)
@@ -40,6 +39,9 @@ endif ()
 
 file(GLOB_RECURSE SRCS *.h *.cc)
 add_executable(${TARGET} ${SRCS})
+
+# Enable export to provide readble stacktraces
+set_property(TARGET ${TARGET} PROPERTY ENABLE_EXPORTS 1)
 
 if (NOT WITH_STDLIB_DEBUG)
   if (NOT ReplXX_LIBRARY OR NOT ReplXX_INCLUDE_DIR)

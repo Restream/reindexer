@@ -766,10 +766,13 @@ update ns set integer_array = array_remove_once(integer_array, [5,6,7,8])
 ```
 
 The first one removes all occurrences of the listed values in `integer_array`, the second one deletes only the first occurrence found. To make this code work in Golang `SetExpression()` should be used instead of `Set()`.
-If you need to remove one value, you still need to use square brackets `[5]`.
+If you need to remove one value, you can use square brackets `[5]` or simple value `5`.
 
 ```sql
 update ns set integer_array = array_remove(integer_array, [5])
+```
+```sql
+update ns set integer_array = array_remove(integer_array, 5)
 ```
 
 Remove command can be combined with array concatenate:
@@ -784,7 +787,8 @@ also like this
 db.Query("main_ns").SetExpression("integer_array", "array_remove(integer_array, [5,6,7,8]) || [1,2,3]").Update()
 ```
 
-It is possible to remove the values of the second field from the values of the first field. And also add new values and etc
+It is possible to remove the values of the second field from the values of the first field. And also add new values etc.
+Note: The first parameter in commands is expected to be an array/field-array, the second parameter can be an array/scalar/field-array/field-scalar. For values compatibility/convertibility required
 
 ```sql
 update ns set integer_array = [3] || array_remove(integer_array, integer_array2) || integer_array3 || array_remove_once(integer_array, [8,1]) || [2,4]
@@ -1147,14 +1151,14 @@ Example code for aggregate `items` by `price` and `name`
 	if err := iterator.Error(); err != nil {
 		panic(err)
 	}
-	defere iterator.Close()
+	defer iterator.Close()
 
 	aggMaxRes := iterator.AggResults()[0]
 
 	if aggMaxRes.Value != nil {
 		fmt.Printf ("max price = %d\n", *aggMaxRes.Value)
 	} else {
-		fmt.Prinln ("no data to aggregate")
+		fmt.Println ("no data to aggregate")
 	}
 
 	aggFacetRes := iterator.AggResults()[1]
@@ -1175,9 +1179,9 @@ Example code for aggregate `items` by `price` and `name`
 	if err := iterator.Error(); err != nil {
 		panic(err)
 	}
-	defere iterator.Close()
+	defer iterator.Close()
 
-	aggResults := iterator.aggResults()
+	aggResults := iterator.AggResults()
 
 	distNames := aggResults[0]
 	fmt.Println ("names:")

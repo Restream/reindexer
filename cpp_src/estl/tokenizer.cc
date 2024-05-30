@@ -5,7 +5,7 @@ namespace reindexer {
 
 void tokenizer::skip_space() noexcept {
 	for (;;) {
-		while (cur_ != q_.end() && (*cur_ == ' ' || *cur_ == '\t' || *cur_ == '\n')) {
+		while (cur_ != q_.end() && std::isspace(*cur_)) {
 			cur_++;
 			pos_++;
 		}
@@ -130,6 +130,30 @@ token tokenizer::next_token(flags flgs) {
 	*(res.text_.begin() + res.text_.size()) = 0;
 	skip_space();
 	return res;
+}
+
+size_t tokenizer::getPrevPos() const noexcept {
+	assertrx_throw(pos_ > 0);
+
+	// undo skip space
+	auto pos = pos_ - 1;
+	auto cur = cur_ - 1;
+	for (;;) {
+		while (cur != q_.begin() && std::isspace(*cur)) {
+			--pos;
+			--cur;
+		}
+		if (cur != q_.begin() && *cur == '-' && cur - 1 != q_.begin() && *(cur + 1) == '-') {
+			cur -= 2;
+			pos -= 2;
+			while (cur != q_.begin() && *cur != '\n') {
+				--cur;
+				--pos;
+			}
+		} else {
+			return pos;
+		}
+	}
 }
 
 std::string tokenizer::where() const {

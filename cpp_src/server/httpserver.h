@@ -9,7 +9,6 @@
 #include "net/http/router.h"
 #include "net/listener.h"
 #include "pprof/pprof.h"
-#include "tools/logger.h"
 
 namespace reindexer_server {
 

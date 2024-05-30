@@ -1,8 +1,7 @@
-
-
 #include "clientconnection.h"
 #include <errno.h>
 #include <snappy.h>
+#include "core/keyvalue/p_string.h"
 #include "core/rdxcontext.h"
 #include "reindexer_version.h"
 #include "tools/serializer.h"

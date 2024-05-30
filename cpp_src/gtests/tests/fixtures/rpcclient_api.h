@@ -18,7 +18,10 @@ constexpr uint16_t kDefaultHttpPort = 33333;
 class RPCClientTestApi : public ::testing::Test {
 public:
 	RPCClientTestApi() {}
-	virtual ~RPCClientTestApi() { StopAllServers(); }
+	virtual ~RPCClientTestApi() {
+		[[maybe_unused]] auto err = StopAllServers();
+		assertf(err.ok(), "%s", err.what());
+	}
 
 protected:
 	class CancelRdxContext : public reindexer::IRdxCancelContext {

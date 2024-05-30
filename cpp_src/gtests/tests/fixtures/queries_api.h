@@ -312,8 +312,7 @@ protected:
 			item[this->kFieldNameName] = kFieldNameName + RandString();
 
 			Upsert(compositeIndexesNs, item);
-			const auto err = Commit(compositeIndexesNs);
-			ASSERT_TRUE(err.ok()) << err.what();
+			Commit(compositeIndexesNs);
 
 			saveItem(std::move(item), compositeIndexesNs);
 		}
@@ -326,8 +325,7 @@ protected:
 		lastItem[this->kFieldNamePrice] = 77777;
 		lastItem[this->kFieldNameName] = "test book1 name";
 		Upsert(compositeIndexesNs, lastItem);
-		const auto err = Commit(compositeIndexesNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		Commit(compositeIndexesNs);
 
 		saveItem(std::move(lastItem), compositeIndexesNs);
 	}
@@ -344,8 +342,7 @@ protected:
 			Upsert(forcedSortOffsetNs, item);
 			saveItem(std::move(item), forcedSortOffsetNs);
 		}
-		const auto err = Commit(forcedSortOffsetNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		Commit(forcedSortOffsetNs);
 	}
 
 	void FillTestJoinNamespace() {
@@ -363,8 +360,7 @@ protected:
 			Upsert(joinNs, item);
 			saveItem(std::move(item), joinNs);
 		}
-		const auto err = Commit(testSimpleNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		Commit(testSimpleNs);
 	}
 
 	void FillTestSimpleNamespace() {
@@ -384,8 +380,7 @@ protected:
 
 		saveItem(std::move(item2), testSimpleNs);
 
-		const auto err = Commit(testSimpleNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		Commit(testSimpleNs);
 	}
 
 	void FillGeomNamespace() {
@@ -430,8 +425,7 @@ protected:
 
 			saveItem(std::move(item), geomNs);
 		}
-		const auto err = Commit(geomNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		Commit(geomNs);
 		lastId += geomNsSize;
 	}
 
@@ -444,8 +438,7 @@ protected:
 
 		saveItem(std::move(item), btreeIdxOptNs);
 
-		Error err = Commit(btreeIdxOptNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		Commit(btreeIdxOptNs);
 	}
 
 	enum Column { First, Second };
@@ -552,8 +545,7 @@ protected:
 			saveItem(std::move(item), comparatorsNs);
 		}
 
-		const auto err = Commit(comparatorsNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		Commit(comparatorsNs);
 	}
 
 	void FillDefaultNamespace(int start, int count, int packagesCount) {
@@ -563,8 +555,7 @@ protected:
 
 			saveItem(std::move(item), default_namespace);
 		}
-		const auto err = Commit(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
+		Commit(default_namespace);
 	}
 
 	void AddToDefaultNamespace(int start, int count, int packagesCount) {
@@ -572,8 +563,7 @@ protected:
 			Item item(GenerateDefaultNsItem(start + i, static_cast<size_t>(packagesCount)));
 			Upsert(default_namespace, item);
 		}
-		const auto err = Commit(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
+		Commit(default_namespace);
 	}
 
 	void FillDefaultNamespaceTransaction(int start, int count, int packagesCount) {
@@ -586,8 +576,7 @@ protected:
 		QueryResults res;
 		auto err = rt.reindexer->CommitTransaction(tr, res);
 		ASSERT_TRUE(err.ok()) << err.what();
-		err = Commit(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
+		Commit(default_namespace);
 	}
 
 	int GetcurrBtreeIdsetsValue(int id) {
@@ -880,8 +869,7 @@ protected:
 			ASSERT_TRUE(err.ok()) << err.what();
 			Upsert(nsWithObject, item);
 		}
-		err = Commit(nsWithObject);
-		ASSERT_TRUE(err.ok()) << err.what();
+		Commit(nsWithObject);
 	}
 
 	void CheckAggregationQueries() {
@@ -1011,7 +999,7 @@ protected:
 						EXPECT_EQ(v1.size(), v2.size());
 						if (v1.size() == v2.size()) {
 							for (size_t j = 0; j < v1.size(); ++j) {
-								EXPECT_EQ(v1[j].Compare(v2[j]), 0);
+								EXPECT_EQ(v1[j].Compare<reindexer::NotComparable::Return>(v2[j]), reindexer::ComparationResult::Eq);
 							}
 						}
 					}

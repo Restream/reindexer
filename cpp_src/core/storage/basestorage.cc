@@ -33,7 +33,9 @@ Error BaseStorage::Open(const std::string& path, const StorageOpts& opts) {
 		info_->repaired = true;
 		lck.unlock();
 		logPrintf(LogWarning, "Calling repair for '%s'", path);
-		Repair(path);
+		if (auto err = Repair(path); !err.ok()) {
+			logPrintf(LogError, "Rapir error: %s", err.what());
+		}
 	} else {
 		lck.unlock();
 	}

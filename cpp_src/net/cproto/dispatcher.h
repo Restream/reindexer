@@ -9,9 +9,8 @@
 #include <type_traits>
 #include <vector>
 #include "args.h"
-#include "core/keyvalue/p_string.h"
 #include "cproto.h"
-#include "net/connection.h"
+#include "net/connectinstatscollector.h"
 #include "net/stat.h"
 #include "tools/errors.h"
 

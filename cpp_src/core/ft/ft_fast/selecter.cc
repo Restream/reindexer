@@ -5,6 +5,7 @@
 #include "estl/defines.h"
 #include "sort/pdqsort.hpp"
 #include "tools/logger.h"
+#include "tools/serializer.h"
 
 namespace {
 RX_ALWAYS_INLINE double pos2rank(int pos) {
@@ -165,7 +166,10 @@ RX_NO_INLINE MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransa
 		if (res.term.opts.typos) {
 			// Lookup typos from typos_ map and fill results
 			TyposHandler h(*holder_.cfg_);
-			h(ctx.rawResults, holder_, res.term);
+			size_t vidsCount = h.Process(ctx.rawResults, holder_, res.term);
+			if (res.term.opts.op == OpOr) {
+				ctx.totalORVids += vidsCount;
+			}
 		}
 	}
 
@@ -281,7 +285,7 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 
 		if constexpr (useExternSt == FtUseExternStatuses::Yes) {
 			bool excluded = true;
-			for (const auto& id : hword.vids_) {
+			for (const auto& id : hword.vids) {
 				if (mergeStatuses[id.Id()] != FtMergeStatuses::kExcluded) {
 					excluded = false;
 					break;
@@ -310,8 +314,8 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 
 		const auto it = res.foundWords->find(glbwordId);
 		if (it == res.foundWords->end() || it->second.first != curRawResultIdx) {
-			res.push_back({&hword.vids_, keyIt->first, proc, suffixes.virtual_word_len(suffixWordId)});
-			const auto vidsSize = hword.vids_.size();
+			res.push_back({&hword.vids, keyIt->first, proc, suffixes.virtual_word_len(suffixWordId)});
+			const auto vidsSize = hword.vids.size();
 			res.idsCnt_ += vidsSize;
 			if (variant.opts.op == OpOr) {
 				ctx.totalORVids += vidsSize;
@@ -319,13 +323,13 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 			(*res.foundWords)[glbwordId] = std::make_pair(curRawResultIdx, res.size() - 1);
 			if rx_unlikely (holder_.cfg_->logLevel >= LogTrace) {
 				logPrintf(LogInfo, " matched %s '%s' of word '%s' (variant '%s'), %d vids, %d%%", suffixLen ? "suffix" : "prefix",
-						  keyIt->first, word, variant.pattern, holder_.GetWordById(glbwordId).vids_.size(), proc);
+						  keyIt->first, word, variant.pattern, holder_.GetWordById(glbwordId).vids.size(), proc);
 			}
 			++matched;
 			vids += vidsSize;
 		} else {
-			if (ctx.rawResults[it->second.first][it->second.second].proc_ < proc)
-				ctx.rawResults[it->second.first][it->second.second].proc_ = proc;
+			if (ctx.rawResults[it->second.first][it->second.second].proc < proc)
+				ctx.rawResults[it->second.first][it->second.second].proc = proc;
 			++skipped;
 		}
 	} while ((keyIt++).lcp() >= int(tmpstr.length()));
@@ -714,11 +718,11 @@ void Selecter<IdCont>::mergeIteration(TextSearchResults& rawRes, index_t rawResI
 	// loop on subterm (word, translit, stemmmer,...)
 	for (auto& r : rawRes) {
 		if (!inTransaction) ThrowOnCancel(rdxCtx);
-		Bm25Calculator<Bm25Type> bm25{double(totalDocsCount), double(r.vids_->size()), holder_.cfg_->bm25Config.bm25k1,
+		Bm25Calculator<Bm25Type> bm25{double(totalDocsCount), double(r.vids->size()), holder_.cfg_->bm25Config.bm25k1,
 									  holder_.cfg_->bm25Config.bm25b};
 		static_assert(sizeof(bm25) <= 32, "Bm25Calculator<Bm25Type> size is greater than 32 bytes");
 		// cycle through the documents for the given subterm
-		for (auto&& relid : *r.vids_) {
+		for (auto&& relid : *r.vids) {
 			static_assert((std::is_same_v<IdCont, IdRelVec> && std::is_same_v<decltype(relid), const IdRelType&>) ||
 							  (std::is_same_v<IdCont, PackedIdRelVec> && std::is_same_v<decltype(relid), IdRelType&>),
 						  "Expecting relid is movable for packed vector and not movable for simple vector");
@@ -744,7 +748,7 @@ void Selecter<IdCont>::mergeIteration(TextSearchResults& rawRes, index_t rawResI
 			}
 
 			// Find field with max rank
-			auto [termRank, field] = calcTermRank(rawRes, bm25, relid, r.proc_);
+			auto [termRank, field] = calcTermRank(rawRes, bm25, relid, r.proc);
 			if (!termRank) {
 				continue;
 			}
@@ -851,11 +855,11 @@ void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 	// loop on subterm (word, translit, stemmmer,...)
 	for (auto& r : rawRes) {
 		if (!inTransaction) ThrowOnCancel(rdxCtx);
-		Bm25Calculator<Bm25Type> bm25(totalDocsCount, r.vids_->size(), holder_.cfg_->bm25Config.bm25k1, holder_.cfg_->bm25Config.bm25b);
+		Bm25Calculator<Bm25Type> bm25(totalDocsCount, r.vids->size(), holder_.cfg_->bm25Config.bm25k1, holder_.cfg_->bm25Config.bm25b);
 		static_assert(sizeof(bm25) <= 32, "Bm25Calculator<Bm25Type> size is greater than 32 bytes");
 		int vid = -1;
 		// cycle through the documents for the given subterm
-		for (auto&& relid : *r.vids_) {
+		for (auto&& relid : *r.vids) {
 			static_assert((std::is_same_v<IdCont, IdRelVec> && std::is_same_v<decltype(relid), const IdRelType&>) ||
 							  (std::is_same_v<IdCont, PackedIdRelVec> && std::is_same_v<decltype(relid), IdRelType&>),
 						  "Expecting relid is movable for packed vector and not movable for simple vector");
@@ -871,7 +875,7 @@ void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 			if (!vdocs[vid].keyEntry) continue;
 
 			// Find field with max rank
-			auto [termRank, field] = calcTermRank(rawRes, bm25, relid, r.proc_);
+			auto [termRank, field] = calcTermRank(rawRes, bm25, relid, r.proc);
 			if (!termRank) continue;
 
 			if rx_unlikely (holder_.cfg_->logLevel >= LogTrace) {
@@ -1020,12 +1024,12 @@ void Selecter<IdCont>::mergeResultsPart(std::vector<TextSearchResults>& rawResul
 }
 
 template <typename IdCont>
-void Selecter<IdCont>::TyposHandler::operator()(std::vector<TextSearchResults>& rawResults, const DataHolder<IdCont>& holder,
-												const FtDSLEntry& term) {
+size_t Selecter<IdCont>::TyposHandler::Process(std::vector<TextSearchResults>& rawResults, const DataHolder<IdCont>& holder,
+											   const FtDSLEntry& term) {
 	TextSearchResults& res = rawResults.back();
 	const unsigned curRawResultIdx = rawResults.size() - 1;
 	const size_t patternSize = utf16_to_utf8(term.pattern).size();
-
+	size_t totalVids = 0;
 	for (auto& step : holder.steps) {
 		typos_context tctx[kMaxTyposInWord];
 		const decltype(step.typosHalf_)* typoses[2]{&step.typosHalf_, &step.typosMax_};
@@ -1074,14 +1078,15 @@ void Selecter<IdCont>::TyposHandler::operator()(std::vector<TextSearchResults>& 
 						const auto it = res.foundWords->find(wordTypo.word);
 						if (it == res.foundWords->end() || it->second.first != curRawResultIdx) {
 							const auto& hword = holder.GetWordById(wordTypo.word);
-							res.push_back({&hword.vids_, typoIt->first, proc, step.suffixes_.virtual_word_len(wordIdSfx)});
-							res.idsCnt_ += hword.vids_.size();
+							res.push_back({&hword.vids, typoIt->first, proc, step.suffixes_.virtual_word_len(wordIdSfx)});
+							res.idsCnt_ += hword.vids.size();
 							res.foundWords->emplace(wordTypo.word, std::make_pair(curRawResultIdx, res.size() - 1));
 
 							logTraceF(LogInfo, " matched typo '%s' of word '%s', %d ids, %d%%", typoIt->first,
-									  step.suffixes_.word_at(wordIdSfx), hword.vids_.size(), proc);
+									  step.suffixes_.word_at(wordIdSfx), hword.vids.size(), proc);
 							++matched;
-							vids += hword.vids_.size();
+							vids += hword.vids.size();
+							totalVids += hword.vids.size();
 						} else {
 							++skiped;
 						}
@@ -1093,6 +1098,7 @@ void Selecter<IdCont>::TyposHandler::operator()(std::vector<TextSearchResults>& 
 			logPrintf(LogInfo, "Lookup typos, matched %d typos, with %d vids, skiped %d", matched, vids, skiped);
 		}
 	}
+	return totalVids;
 }
 
 RX_ALWAYS_INLINE unsigned uabs(int a) { return unsigned(std::abs(a)); }
@@ -1278,7 +1284,7 @@ MergeData Selecter<IdCont>::mergeResults(std::vector<TextSearchResults>&& rawRes
 	for (auto& rawRes : rawResults) {
 		boost::sort::pdqsort_branchless(
 			rawRes.begin(), rawRes.end(),
-			[](const TextSearchResult& lhs, const TextSearchResult& rhs) noexcept { return lhs.proc_ > rhs.proc_; });
+			[](const TextSearchResult& lhs, const TextSearchResult& rhs) noexcept { return lhs.proc > rhs.proc; });
 	}
 	merged.reserve(maxMergedSize);
 

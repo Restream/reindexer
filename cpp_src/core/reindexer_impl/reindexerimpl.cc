@@ -135,7 +135,7 @@ Error ReindexerImpl::EnableStorage(const std::string& storagePath, bool skipPlac
 	if (!isEmpty && !skipPlaceholderCheck) {
 		std::string content;
 		int res = fs::ReadFile(fs::JoinPath(storagePath, kStoragePlaceholderFilename), content);
-		if (res > 0) {
+		if (res >= 0) {
 			auto currentStorageType = StorageType::LevelDB;
 			try {
 				currentStorageType = reindexer::datastorage::StorageTypeFromString(content);
@@ -894,12 +894,12 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 		}
 		// Lookup and lock namespaces_
 		mainNs->updateSelectTime();
-		locks.Add(mainNs);
+		locks.Add(std::move(mainNs));
 		q.WalkNested(false, true, true, [this, &locks, &rdxCtx](const Query& q) {
 			auto nsWrp = getNamespace(q.NsName(), rdxCtx);
 			auto ns = q.IsWALQuery() ? nsWrp->awaitMainNs(rdxCtx) : nsWrp->getMainNs();
 			ns->updateSelectTime();
-			locks.Add(ns);
+			locks.Add(std::move(ns));
 		});
 
 		locks.Lock();
@@ -1075,7 +1075,8 @@ void ReindexerImpl::backgroundRoutine(net::ev::dynamic_loop& loop) {
 			// Retry to read error config once
 			// This logic adds delay between write and read, which allows writer to finish all his writes
 			hasReplConfigLoadError_ = false;
-			tryLoadReplicatorConfFromFile();
+			auto err = tryLoadReplicatorConfFromFile();
+			(void)err;	// ignore
 		}
 	};
 
@@ -1174,7 +1175,10 @@ void ReindexerImpl::storageFlushingRoutine(net::ev::dynamic_loop& loop) {
 void ReindexerImpl::createSystemNamespaces() {
 	const RdxContext dummyCtx;
 	for (const auto& nsDef : kSystemNsDefs) {
-		addNamespace(nsDef, dummyCtx);
+		auto err = addNamespace(nsDef, dummyCtx);
+		if (!err.ok()) {
+			logPrintf(LogWarning, "Unable to create system namespace '%s': %s", nsDef.name, err.what());
+		}
 	}
 }
 
@@ -1222,7 +1226,8 @@ Error ReindexerImpl::InitSystemNamespaces() {
 	}
 
 	if (!hasReplicatorConfig) {
-		tryLoadReplicatorConfFromFile();
+		auto err = tryLoadReplicatorConfFromFile();
+		(void)err;	// ignore
 	}
 
 	return errOK;
@@ -1526,13 +1531,15 @@ ReindexerImpl::FilterNsNamesT ReindexerImpl::detectFilterNsNames(const Query& q)
 
 void ReindexerImpl::onProfiligConfigLoad() {
 	QueryResults qr1, qr2, qr3;
-	Delete(Query(kMemStatsNamespace), qr2);
-	Delete(Query(kQueriesPerfStatsNamespace), qr3);
-	Delete(Query(kPerfStatsNamespace), qr1);
+	auto err = Delete(Query(kMemStatsNamespace), qr2);
+	err = Delete(Query(kQueriesPerfStatsNamespace), qr3);
+	err = Delete(Query(kPerfStatsNamespace), qr1);
+	(void)err;	// ignore
 }
 
 Error ReindexerImpl::SubscribeUpdates(IUpdatesObserver* observer, const UpdatesFilters& filters, SubscriptionOpts opts) {
-	return observers_.Add(observer, filters, opts);
+	observers_.Add(observer, filters, opts);
+	return {};
 }
 
 Error ReindexerImpl::UnsubscribeUpdates(IUpdatesObserver* observer) { return observers_.Delete(observer); }
@@ -1544,7 +1551,8 @@ Error ReindexerImpl::GetSqlSuggestions(const std::string_view sqlQuery, int pos,
 	suggestions = SQLSuggester::GetSuggestions(
 		sqlQuery, pos,
 		[&, this](EnumNamespacesOpts opts) {
-			EnumNamespaces(nses, opts, ctx);
+			auto err = EnumNamespaces(nses, opts, ctx);
+			(void)err;	// ignore
 			return nses;
 		},
 		[&ctx, this](std::string_view ns) {

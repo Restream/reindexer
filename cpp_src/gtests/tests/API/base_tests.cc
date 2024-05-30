@@ -81,11 +81,12 @@ TEST_F(ReindexerApi, RenameNamespace) {
 		}
 	};
 
-	auto getRowsInJSON = [&](std::string_view namespaceName, std::vector<std::string>& resStrings) {
+	auto getRowsInJSON = [&](std::string_view namespaceName, std::vector<std::string>& resStrings, reindexer::TagsMatcher& tm) {
 		QueryResults result;
 		auto err = rt.reindexer->Select(Query(namespaceName), result);
 		ASSERT_TRUE(err.ok()) << err.what();
 		resStrings.clear();
+		tm = result.getTagsMatcher(0);
 		for (auto it = result.begin(); it != result.end(); ++it) {
 			ASSERT_TRUE(it.Status().ok()) << it.Status().what();
 			reindexer::WrSerializer sr;
@@ -96,46 +97,56 @@ TEST_F(ReindexerApi, RenameNamespace) {
 		}
 	};
 
-	std::vector<std::string> resStrings;
-	std::vector<std::string> resStringsBeforeTest;
-	getRowsInJSON(default_namespace, resStringsBeforeTest);
+	std::vector<std::string> resStrings, resStringsBeforeTest;
+	reindexer::TagsMatcher tm, tmBeforeTest;  // Expecting the same tagsmatchers before and after rename
+	getRowsInJSON(default_namespace, resStringsBeforeTest, tmBeforeTest);
 
 	// ok
 	err = rt.reindexer->RenameNamespace(default_namespace, renameNamespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 	testInList(renameNamespace, true);
 	testInList(default_namespace, false);
-	getRowsInJSON(renameNamespace, resStrings);
+	getRowsInJSON(renameNamespace, resStrings, tm);
 	ASSERT_TRUE(resStrings == resStringsBeforeTest) << "Data in namespace changed";
+	ASSERT_EQ(tm.stateToken(), tmBeforeTest.stateToken());
+	ASSERT_EQ(tm.version(), tmBeforeTest.version());
 
 	// rename to equal name
 	err = rt.reindexer->RenameNamespace(renameNamespace, renameNamespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 	testInList(renameNamespace, true);
-	getRowsInJSON(renameNamespace, resStrings);
+	getRowsInJSON(renameNamespace, resStrings, tm);
 	ASSERT_TRUE(resStrings == resStringsBeforeTest) << "Data in namespace changed";
+	ASSERT_EQ(tm.stateToken(), tmBeforeTest.stateToken());
+	ASSERT_EQ(tm.version(), tmBeforeTest.version());
 
 	// rename to empty namespace
 	err = rt.reindexer->RenameNamespace(renameNamespace, "");
 	ASSERT_FALSE(err.ok()) << err.what();
 	testInList(renameNamespace, true);
-	getRowsInJSON(renameNamespace, resStrings);
+	getRowsInJSON(renameNamespace, resStrings, tm);
 	ASSERT_TRUE(resStrings == resStringsBeforeTest) << "Data in namespace changed";
+	ASSERT_EQ(tm.stateToken(), tmBeforeTest.stateToken());
+	ASSERT_EQ(tm.version(), tmBeforeTest.version());
 
 	// rename to system namespace
 	err = rt.reindexer->RenameNamespace(renameNamespace, "#rename_namespace");
 	ASSERT_FALSE(err.ok()) << err.what();
 	testInList(renameNamespace, true);
-	getRowsInJSON(renameNamespace, resStrings);
+	getRowsInJSON(renameNamespace, resStrings, tm);
 	ASSERT_TRUE(resStrings == resStringsBeforeTest) << "Data in namespace changed";
+	ASSERT_EQ(tm.stateToken(), tmBeforeTest.stateToken());
+	ASSERT_EQ(tm.version(), tmBeforeTest.version());
 
 	// rename to existing namespace
 	err = rt.reindexer->RenameNamespace(renameNamespace, existingNamespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 	testInList(renameNamespace, false);
 	testInList(existingNamespace, true);
-	getRowsInJSON(existingNamespace, resStrings);
+	getRowsInJSON(existingNamespace, resStrings, tm);
 	ASSERT_TRUE(resStrings == resStringsBeforeTest) << "Data in namespace changed";
+	ASSERT_EQ(tm.stateToken(), tmBeforeTest.stateToken());
+	ASSERT_EQ(tm.version(), tmBeforeTest.version());
 }
 
 TEST_F(ReindexerApi, AddIndex) {
@@ -773,7 +784,7 @@ TEST_F(ReindexerApi, WithTimeoutInterface) {
 template <CollateMode collateMode>
 struct CollateComparer {
 	bool operator()(const std::string& lhs, const std::string& rhs) const {
-		return reindexer::collateCompare<collateMode>(lhs, rhs, reindexer::SortingPrioritiesTable()) < 0;
+		return reindexer::collateCompare<collateMode>(lhs, rhs, reindexer::SortingPrioritiesTable()) == reindexer::ComparationResult::Lt;
 	}
 };
 
@@ -836,26 +847,27 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 	for (size_t i = 0; i < qr.Count(); ++i) {
 		Item item = qr[i].GetItem(false);
 
-		std::vector<int> cmpRes(query.sortingEntries_.size());
-		std::fill(cmpRes.begin(), cmpRes.end(), -1);
+		std::vector<reindexer::ComparationResult> cmpRes(query.sortingEntries_.size());
+		std::fill(cmpRes.begin(), cmpRes.end(), reindexer::ComparationResult::Lt);
 
 		for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
 			const reindexer::SortingEntry& sortingEntry(query.sortingEntries_[j]);
 			Variant sortedValue = item[sortingEntry.expression];
 			if (!lastValues[j].Type().Is<reindexer::KeyValueType::Null>()) {
-				cmpRes[j] = lastValues[j].Compare(sortedValue);
+				cmpRes[j] = lastValues[j].Compare<reindexer::NotComparable::Return>(sortedValue);
 				bool needToVerify = true;
 				if (j != 0) {
 					for (int k = j - 1; k >= 0; --k)
-						if (cmpRes[k] != 0) {
+						if (cmpRes[k] != reindexer::ComparationResult::Eq) {
 							needToVerify = false;
 							break;
 						}
 				}
 				needToVerify = (j == 0) || needToVerify;
 				if (needToVerify) {
-					bool sortOrderSatisfied =
-						(sortingEntry.desc && cmpRes[j] >= 0) || (!sortingEntry.desc && cmpRes[j] <= 0) || (cmpRes[j] == 0);
+					bool sortOrderSatisfied = (sortingEntry.desc && (cmpRes[j] & reindexer::ComparationResult::Ge)) ||
+											  (!sortingEntry.desc && (cmpRes[j] & reindexer::ComparationResult::Le)) ||
+											  (cmpRes[j] == reindexer::ComparationResult::Eq);
 					EXPECT_TRUE(sortOrderSatisfied)
 						<< "\nSort order is incorrect for column: " << sortingEntry.expression << "; rowID: " << item[1].As<int>();
 				}
@@ -2028,10 +2040,7 @@ TEST_F(ReindexerApi, MetaIndexTest) {
 	err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled().CreateIfMissing());
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	const std::vector<std::pair<std::string, std::string>> meta = {
-		{ "key1", "data1" },
-		{ "key2", "data2" }
-	};
+	const std::vector<std::pair<std::string, std::string>> meta = {{"key1", "data1"}, {"key2", "data2"}};
 
 	const std::string emptyValue;
 	const std::string unsettedKey = "WrongKey";
@@ -2093,12 +2102,10 @@ TEST_F(ReindexerApi, MetaIndexTest) {
 	for (const auto& key : readKeys) {
 		err = rt.reindexer->GetMeta(default_namespace, key, readMetaData);
 		ASSERT_TRUE(err.ok()) << err.what();
-		auto it = std::find_if(meta.begin(), meta.end(),
-							   [&key](const std::pair<std::string, std::string>& elem) {
-								   return elem.first == key;
-							   });
+		auto it =
+			std::find_if(meta.begin(), meta.end(), [&key](const std::pair<std::string, std::string>& elem) { return elem.first == key; });
 		ASSERT_TRUE(it != meta.end());
-		ASSERT_EQ(readMetaData, it != meta.end()? it->second : unsettedKey);
+		ASSERT_EQ(readMetaData, it != meta.end() ? it->second : unsettedKey);
 	}
 
 	// deleting

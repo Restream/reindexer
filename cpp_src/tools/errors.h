@@ -9,7 +9,6 @@
 #ifdef REINDEX_CORE_BUILD
 #include "debug/backtrace.h"
 #include "spdlog/fmt/bundled/printf.h"
-#include "spdlog/fmt/fmt.h"
 #endif	// REINDEX_CORE_BUILD
 
 namespace reindexer {
@@ -46,7 +45,11 @@ void assertf_fmt(const char *fmt, const Args &...args) {
 
 #endif	// REINDEX_CORE_BUILD
 
-class Error {
+#if defined(REINDEX_CORE_BUILD)
+class [[nodiscard]] Error {
+#else	// !defined(REINDEX_CORE_BUILD)
+class Error {  // TODO: Enable nodiscard once python binding will be updated
+#endif	// defined(REINDEX_CORE_BUILD)
 	using WhatT = intrusive_atomic_rc_wrapper<std::string>;
 	using WhatPtr = intrusive_ptr<WhatT>;
 	const static WhatPtr defaultErrorText_;

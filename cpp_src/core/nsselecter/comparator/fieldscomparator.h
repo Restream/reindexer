@@ -1,5 +1,6 @@
 #pragma once
 
+#include "const.h"
 #include "core/indexopts.h"
 #include "core/payload/fieldsset.h"
 #include "core/payload/payloadtype.h"
@@ -12,11 +13,34 @@ namespace reindexer {
 class FieldsComparator {
 public:
 	FieldsComparator(std::string_view lField, CondType cond, std::string_view rField, PayloadType plType);
-	bool Compare(const PayloadValue& item);
-	double Cost(int expectedIterations) const noexcept { return double(expectedIterations) + 1; }
+	bool Compare(const PayloadValue& item, IdType /*rowId*/) {
+		if (ctx_.size() > 1) {
+			for (const auto& c : ctx_) {
+				if (!compare(item, c)) return false;
+			}
+			return true;
+		}
+		return compare(item, ctx_[0]);
+	}
+	double Cost(int expectedIterations) const noexcept {
+		double cost = 1.0;
+		bool hasNonIdxFields = true;
+		if (ctx_.size()) {
+			if (ctx_[0].lCtx_.fields_.getTagsPathsLength() > 0) {
+				cost += double(expectedIterations) * comparators::kNonIdxFieldComparatorCostMultiplier;
+				hasNonIdxFields = false;
+			}
+			if (ctx_[0].rCtx_.fields_.getTagsPathsLength() > 0) {
+				cost += double(expectedIterations) * comparators::kNonIdxFieldComparatorCostMultiplier;
+				hasNonIdxFields = false;
+			}
+		}
+		return hasNonIdxFields ? cost : (double(expectedIterations) + cost);
+	}
 	const std::string& Name() const& noexcept { return name_; }
 	const std::string& Name() const&& = delete;
-	std::string Dump() const { return Name(); }
+	const std::string& Dump() const& noexcept { return Name(); }
+	const std::string& Dump() const&& = delete;
 	int GetMatchedCount() const noexcept { return matchedCount_; }
 	void SetLeftField(const FieldsSet& fields) {
 		setField(fields, ctx_[0].lCtx_);

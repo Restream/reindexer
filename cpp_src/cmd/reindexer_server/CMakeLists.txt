@@ -6,10 +6,11 @@ set(TARGET reindexer_server)
 
 file (GLOB_RECURSE SRCS "main.cc")
 add_executable(${TARGET} ${SRCS})
-if (ENABLE_GRPC)
-  # Enable exports to be able to use dlopen() with reindexer_grpc shared library (it depends on the symbols from libreindexer.a). Probably we could avoid this in the future somehow
-  set_property(TARGET ${TARGET} PROPERTY ENABLE_EXPORTS 1)
-endif ()
+
+# Enable exports to be able to use dlopen() with reindexer_grpc shared library (it depends on the symbols from libreindexer.a). Probably we could avoid this in the future somehow
+# This is also required for the readble stacktraces
+set_property(TARGET ${TARGET} PROPERTY ENABLE_EXPORTS 1)
+
 list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer ${REINDEXER_LIBRARIES})
 
 if (WITH_CPPTRACE)

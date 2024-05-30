@@ -12,7 +12,6 @@
 #include "client/queryresults.h"
 #include "client/reindexerconfig.h"
 #include "client/transaction.h"
-#include "core/keyvalue/p_string.h"
 #include "core/namespacedef.h"
 #include "core/query/query.h"
 #include "estl/fast_hash_map.h"
@@ -20,7 +19,6 @@
 #include "net/cproto/clientconnection.h"
 #include "replicator/updatesobserver.h"
 #include "tools/errors.h"
-#include "urlparser/urlparser.h"
 
 namespace reindexer {
 

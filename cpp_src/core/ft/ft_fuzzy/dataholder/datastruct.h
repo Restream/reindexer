@@ -3,7 +3,7 @@
 #include <map>
 #include <memory>
 #include <set>
-#include "core/idset.h"
+#include "core/type_consts.h"
 #include "smardeque.h"
 
 namespace search_engine {

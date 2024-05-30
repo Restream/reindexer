@@ -3,9 +3,9 @@
 #include <cstdlib>
 #include <thread>
 #include "core/type_consts.h"
-#include "net/http/serverconnection.h"
 #include "server/pprof/gperf_profiler.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
+#include "tools/errors.h"
 #include "tools/logger.h"
 
 namespace reindexer {

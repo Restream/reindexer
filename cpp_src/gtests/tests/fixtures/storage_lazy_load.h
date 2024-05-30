@@ -33,9 +33,7 @@ public:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		Upsert(kConfigNamespace, item);
-
-		err = Commit(kConfigNamespace);
-		ASSERT_TRUE(err.ok()) << err.what();
+		Commit(kConfigNamespace);
 	}
 
 	void SelectAll() {
@@ -77,8 +75,7 @@ protected:
 			Upsert(default_namespace, item);
 			++inserted_;
 		}
-		auto err = Commit(default_namespace);
-		EXPECT_TRUE(err.ok()) << err.what();
+		Commit(default_namespace);
 	}
 
 	void closeNs() {

@@ -7,7 +7,7 @@ std::string SelectorPlanTest::readFieldValue<std::string>(const std::string& str
 	assertrx(str[pos] == '"');
 	++pos;
 	assertrx(pos < str.size());
-	const std::string::size_type end = str.find('"', pos);
+	const std::string::size_type end = str.find_first_of("\" ", pos);
 	assertrx(end != std::string::npos);
 	return str.substr(pos, end - pos);
 }
@@ -64,7 +64,7 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 					ASSERT_EQ(1, matched.size());
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {searchField}));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
-					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0}));
+					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index"}));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {matched[0] == 0 ? "OnlyComparator" : "SingleRange"}));
 				} else {
@@ -73,7 +73,7 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "items", {kNsSize}));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"scan", "scan"}));
-					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleRange", "OnlyComparator"}));
+					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleRange", "Comparator"}));
 				}
 			}
 
@@ -88,20 +88,19 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 					// std::cout << query.GetSQL() << '\n' << explain << std::endl;
 
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {false}));
-					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
 					const auto cost = GetJsonFieldValues<int64_t>(explain, "cost");
 					if (additionalSearchField != searchField) {
 						ASSERT_EQ(2, cost.size());
 						ASSERT_LE(cost[0], cost[1]);
 						if (searchByBtreeField) {
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {searchField}));
-							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 0}));
+							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "index"}));
 						} else {
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {"-"}));
-							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 1}));
+							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "scan"}));
-							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleIdset", "OnlyComparator"}));
+							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleIdset", "Comparator"}));
 						}
 					}
 				}
@@ -124,7 +123,7 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 							if (searchByBtreeField) {
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {searchField}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
-								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0}));
+								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index"}));
 							} else {
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {"-scan", searchField}));
@@ -132,21 +131,21 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"scan", "scan"}));
 								ASSERT_NO_FATAL_FAILURE(
-									AssertJsonFieldEqualTo(explain, "type", {desc ? "RevSingleRange" : "SingleRange", "OnlyComparator"}));
+									AssertJsonFieldEqualTo(explain, "type", {desc ? "RevSingleRange" : "SingleRange", "Comparator"}));
 							}
 						} else {
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {"-"}));
 							if (searchByBtreeField) {
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {searchField}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
-								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0}));
+								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index"}));
 							} else {
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {"-scan", searchField}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "items", {kNsSize}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"scan", "scan"}));
-								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleRange", "OnlyComparator"}));
+								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleRange", "Comparator"}));
 							}
 						}
 					}
@@ -169,23 +168,22 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 							// std::cout << query.GetSQL() << '\n' << explain << std::endl;
 
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {false}));
-							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {sortByBtreeField ? sortField : "-"}));
 							const auto cost = GetJsonFieldValues<int64_t>(explain, "cost");
 							if (additionalSearchField != searchField) {
 								ASSERT_EQ(2, cost.size());
 								ASSERT_LE(cost[0], cost[1]);
 								if (searchByBtreeField) {
-									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 0}));
+									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
 									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "index"}));
 								} else {
-									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 1}));
+									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
 									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "scan"}));
 									if (sortByBtreeField) {
 										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(
-											explain, "type", {desc ? "RevSingleIdset" : "SingleIdset", "OnlyComparator"}));
+											explain, "type", {desc ? "RevSingleIdset" : "SingleIdset", "Comparator"}));
 									} else {
-										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleIdset", "OnlyComparator"}));
+										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleIdset", "Comparator"}));
 									}
 								}
 							}
@@ -218,7 +216,7 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 					ASSERT_EQ(1, matched.size());
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {searchField}));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
-					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0}));
+					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index"}));
 					ASSERT_NO_FATAL_FAILURE(
 						AssertJsonFieldEqualTo(explain, "type", {matched[0] == 0 ? "OnlyComparator" : "UnbuiltSortOrdersIndex"}));
@@ -228,7 +226,7 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "items", {kNsSize}));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"scan", "scan"}));
-					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleRange", "OnlyComparator"}));
+					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleRange", "Comparator"}));
 				}
 			}
 
@@ -248,28 +246,27 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 
 					const auto cost = GetJsonFieldValues<int64_t>(explain, "cost");
 					ASSERT_EQ(2, cost.size());
-					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
 					if (searchByBtreeField) {
 						const auto sortByUnbuiltIndex = GetJsonFieldValues<bool>(explain, "sort_by_uncommitted_index");
 						ASSERT_EQ(1, sortByUnbuiltIndex.size());
 						if (sortByUnbuiltIndex[0]) {
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {searchField, additionalSearchField}));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {searchField}));
-							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 1}));
+							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "scan"}));
 						} else {
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {additionalSearchField, searchField}));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {"-"}));
-							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 0}));
+							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "index"}));
 						}
 					} else {
 						ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {additionalSearchField, searchField}));
 						ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {"-"}));
 						ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {false}));
-						ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 1}));
+						ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
 						ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "scan"}));
-						ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleIdset", "OnlyComparator"}));
+						ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleIdset", "Comparator"}));
 					}
 				}
 			}
@@ -289,7 +286,7 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 						if (sortByBtreeField) {
 							if (searchByBtreeField && (sortField == searchField || (matched.size() == 1))) {
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {searchField}));
-								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0}));
+								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index"}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
 								if (matched[0] == 0) {
@@ -318,8 +315,7 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {sortField}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"scan", "scan"}));
-								ASSERT_NO_FATAL_FAILURE(
-									AssertJsonFieldEqualTo(explain, "type", {"UnbuiltSortOrdersIndex", "OnlyComparator"}));
+								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"UnbuiltSortOrdersIndex", "Comparator"}));
 							}
 						} else {
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {false}));
@@ -327,14 +323,14 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 							if (searchByBtreeField) {
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {searchField}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
-								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0}));
+								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index"}));
 							} else {
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {"-scan", searchField}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "items", {kNsSize}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"scan", "scan"}));
-								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleRange", "OnlyComparator"}));
+								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleRange", "Comparator"}));
 							}
 						}
 					}
@@ -359,13 +355,12 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 
 							const auto cost = GetJsonFieldValues<int64_t>(explain, "cost");
 							ASSERT_EQ(2, cost.size());
-							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
 							if (sortByBtreeField) {
 								const auto sortByUnbuiltIndex = GetJsonFieldValues<bool>(explain, "sort_by_uncommitted_index");
 								ASSERT_EQ(1, sortByUnbuiltIndex.size());
 								if (sortByUnbuiltIndex[0]) {
 									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {sortField}));
-									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 1}));
+									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
 									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "scan"}));
 									if (sortField == additionalSearchField) {
 										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {sortField, searchField}));
@@ -377,10 +372,10 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 									ASSERT_LE(cost[0], cost[1]);
 									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {"-"}));
 									if (searchByBtreeField) {
-										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 0}));
+										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
 										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "index"}));
 									} else {
-										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 1}));
+										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
 										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "scan"}));
 									}
 								}
@@ -389,12 +384,12 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {"-"}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {false}));
 								if (searchByBtreeField) {
-									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 0}));
+									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
 									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "index"}));
 								} else {
-									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 1}));
+									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
 									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "scan"}));
-									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleIdset", "OnlyComparator"}));
+									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleIdset", "Comparator"}));
 								}
 							}
 						}

@@ -1,8 +1,7 @@
 #include "jsontools.h"
 #include <string.h>
 #include <cmath>
-#include "core/cjson/jsonbuilder.h"
-#include "stringstools.h"
+#include "tools/serializer.h"
 
 namespace reindexer {
 

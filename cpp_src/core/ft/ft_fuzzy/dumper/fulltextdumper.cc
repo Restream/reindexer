@@ -3,7 +3,6 @@
 #include <fstream>
 #include <memory>
 #include <thread>
-#include "tools/stringstools.h"
 
 namespace search_engine {
 using std::chrono::seconds;

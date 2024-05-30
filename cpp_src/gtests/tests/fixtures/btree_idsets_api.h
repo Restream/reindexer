@@ -51,8 +51,7 @@ protected:
 
 		lastStrValue = currStrValue;
 
-		Error err = Commit(default_namespace);
-		EXPECT_TRUE(err.ok()) << err.what();
+		Commit(default_namespace);
 	}
 
 	void FillJoinedNs() {
@@ -70,8 +69,7 @@ protected:
 
 			if (i % 300) currValue = rand() % 10000;
 		}
-		Error err = Commit(joinedNsName);
-		EXPECT_TRUE(err.ok()) << err.what();
+		Commit(joinedNsName);
 	}
 
 	const char* kFieldId = "id";

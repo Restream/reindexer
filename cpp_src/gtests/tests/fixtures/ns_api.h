@@ -35,8 +35,7 @@ protected:
 
 			Upsert(default_namespace, item);
 
-			Error err = Commit(default_namespace);
-			EXPECT_TRUE(err.ok()) << err.what();
+			Commit(default_namespace);
 		}
 	}
 
@@ -76,8 +75,7 @@ protected:
 			EXPECT_TRUE(err.ok()) << err.what();
 			Upsert(default_namespace, item);
 
-			err = Commit(default_namespace);
-			EXPECT_TRUE(err.ok()) << err.what();
+			Commit(default_namespace);
 		}
 	}
 
@@ -108,8 +106,7 @@ protected:
 			EXPECT_TRUE(err.ok()) << err.what();
 			Upsert(default_namespace, item);
 
-			err = Commit(default_namespace);
-			EXPECT_TRUE(err.ok()) << err.what();
+			Commit(default_namespace);
 		}
 	}
 

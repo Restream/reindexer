@@ -513,8 +513,7 @@ void QueriesApi::FillUUIDNs() {
 		Upsert(uuidNs, item);
 		saveItem(std::move(item), uuidNs);
 	}
-	const auto err = Commit(uuidNs);
-	ASSERT_TRUE(err.ok()) << err.what();
+	Commit(uuidNs);
 	lastId += uuidNsSize;
 }
 

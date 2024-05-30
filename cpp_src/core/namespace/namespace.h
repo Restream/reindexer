@@ -212,9 +212,7 @@ public:
 	}
 	StorageOpts GetStorageOpts(const RdxContext &ctx) { return nsFuncWrapper<&NamespaceImpl::GetStorageOpts>(ctx); }
 	void Refill(std::vector<Item> &items, const RdxContext &ctx) { nsFuncWrapper<&NamespaceImpl::Refill>(items, ctx); }
-	void SetTagsMatcher(TagsMatcher &&tm, const RdxContext &ctx) {
-		return nsFuncWrapper<&NamespaceImpl::SetTagsMatcher>(std::move(tm), ctx);
-	}
+	void MergeTagsMatcher(const TagsMatcher &tm, const RdxContext &ctx) { return nsFuncWrapper<&NamespaceImpl::MergeTagsMatcher>(tm, ctx); }
 
 	void DumpIndex(std::ostream &os, std::string_view index, const RdxContext &ctx) {
 		return nsFuncWrapper<&NamespaceImpl::DumpIndex>(os, index, ctx);

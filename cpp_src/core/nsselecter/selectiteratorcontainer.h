@@ -2,10 +2,14 @@
 #include <limits>
 #include "core/expressiontree.h"
 #include "core/index/index.h"
-#include "core/nsselecter/fieldscomparator.h"
+#include "core/nsselecter/comparator/comparator_indexed.h"
+#include "core/nsselecter/comparator/comparator_not_indexed.h"
+#include "core/nsselecter/comparator/equalposition_comparator.h"
+#include "core/nsselecter/comparator/fieldscomparator.h"
 #include "core/nsselecter/selectiterator.h"
 #include "core/selectfunc/ctx/ftctx.h"
 #include "core/selectfunc/selectfunc.h"
+#include "estl/restricted.h"
 
 namespace reindexer {
 
@@ -29,8 +33,14 @@ struct SelectIteratorsBracket : private Bracket {
 };
 
 class SelectIteratorContainer
-	: public ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysTrue> {
-	using Base = ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysTrue>;
+	: public ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator,
+							AlwaysTrue, ComparatorIndexed<bool>, ComparatorIndexed<int>, ComparatorIndexed<int64_t>,
+							ComparatorIndexed<double>, ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>,
+							ComparatorIndexed<Point>, ComparatorIndexed<Uuid>, EqualPositionComparator, ComparatorNotIndexed> {
+	using Base = ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator,
+								AlwaysTrue, ComparatorIndexed<bool>, ComparatorIndexed<int>, ComparatorIndexed<int64_t>,
+								ComparatorIndexed<double>, ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>,
+								ComparatorIndexed<Point>, ComparatorIndexed<Uuid>, EqualPositionComparator, ComparatorNotIndexed>;
 
 public:
 	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx *ctx = nullptr)
@@ -55,6 +65,17 @@ public:
 		assertrx(i < container_.size());
 		return container_[i].Is<JoinSelectIterator>();
 	}
+	bool IsDistinct(size_t i) const noexcept {
+		return Visit(
+			i,
+			[] RX_PRE_LMBD_ALWAYS_INLINE(
+				OneOf<SelectIteratorsBracket, JoinSelectIterator, FieldsComparator, AlwaysFalse, AlwaysTrue, EqualPositionComparator>)
+				RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIterator &sit) RX_POST_LMBD_ALWAYS_INLINE noexcept { return sit.distinct; },
+			Restricted<ComparatorNotIndexed,
+					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
+				[] RX_PRE_LMBD_ALWAYS_INLINE(const auto &comp) RX_POST_LMBD_ALWAYS_INLINE noexcept { return comp.IsDistinct(); }));
+	}
 	void ExplainJSON(int iters, JsonBuilder &builder, const std::vector<JoinedSelector> *js) const {
 		explainJSON(cbegin(), cend(), iters, builder, js);
 	}
@@ -74,22 +95,20 @@ private:
 	bool prepareIteratorsForSelectLoop(QueryPreprocessor &, size_t begin, size_t end, unsigned sortId, bool isFt, const NamespaceImpl &,
 									   SelectFunction::Ptr &, FtCtx::Ptr &, const RdxContext &);
 	void sortByCost(span<unsigned> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations);
-	double fullCost(span<unsigned> indexes, unsigned i, unsigned from, unsigned to, int expectedIterations) const;
-	double cost(span<unsigned> indexes, unsigned cur, int expectedIterations) const;
-	double cost(span<unsigned> indexes, unsigned from, unsigned to, int expectedIterations) const;
+	double fullCost(span<unsigned> indexes, unsigned i, unsigned from, unsigned to, int expectedIterations) const noexcept;
+	double cost(span<unsigned> indexes, unsigned cur, int expectedIterations) const noexcept;
+	double cost(span<unsigned> indexes, unsigned from, unsigned to, int expectedIterations) const noexcept;
 	void moveJoinsToTheBeginingOfORs(span<unsigned> indexes, unsigned from, unsigned to);
 	// Check idset must be 1st
 	static void checkFirstQuery(Container &);
-	template <bool reverse, bool hasComparators>
-	bool checkIfSatisfyCondition(SelectIterator &, PayloadValue &, bool *finish, IdType rowId, IdType properRowId);
+	template <bool reverse>
+	bool checkIfSatisfyCondition(SelectIterator &, bool *finish, IdType rowId);
 	bool checkIfSatisfyCondition(JoinSelectIterator &, PayloadValue &, IdType properRowId, bool match);
 	template <bool reverse, bool hasComparators>
 	bool checkIfSatisfyAllConditions(iterator begin, iterator end, PayloadValue &, bool *finish, IdType rowId, IdType properRowId,
 									 bool match);
 	static std::string explainJSON(const_iterator it, const_iterator to, int iters, JsonBuilder &builder,
 								   const std::vector<JoinedSelector> *);
-	template <bool reverse>
-	static IdType next(const_iterator, IdType from);
 	template <bool reverse>
 	static IdType getNextItemId(const_iterator begin, const_iterator end, IdType from);
 	static bool isIdset(const_iterator it, const_iterator end);
@@ -103,7 +122,7 @@ private:
 	template <bool left>
 	void processField(FieldsComparator &, const QueryField &, const NamespaceImpl &) const;
 	void processJoinEntry(const JoinQueryEntry &, OpType);
-	void processQueryEntryResults(SelectKeyResults &selectResults, OpType, const NamespaceImpl &ns, const QueryEntry &qe, bool isIndexFt,
+	void processQueryEntryResults(SelectKeyResults &&, OpType, const NamespaceImpl &, const QueryEntry &, bool isIndexFt,
 								  bool isIndexSparse, std::optional<OpType> nextOp);
 	struct EqualPositions {
 		h_vector<size_t, 4> queryEntriesPositions;

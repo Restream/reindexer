@@ -6,7 +6,6 @@
 #include "estl/h_vector.h"
 #include "gason/gason.h"
 #include "tools/errors.h"
-#include "tools/stringstools.h"
 
 namespace reindexer {
 

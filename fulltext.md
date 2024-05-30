@@ -109,7 +109,7 @@ The format of query is:
 `query := [@[+]field[^boost][,field2[^boost]]]    [=][*]term1[*][~][^boost] [+|-][*]term2[*][~][@][^boost] ...`
 
 ### Patterns
-- `*` - match any symbols. For example, `termina*` matches words `terminator` and `terminal`. `*` Can be at word start or at word end, but can not be at word middle. Minimum prefix len is 2 symbols.
+- `*` - match any symbols. For example, `termina*` matches words `terminator` and `terminal`. `*` Can be at word start or at word end, but can not be at word middle.
 - `~` - fuzzy match misspelled word by typos dictionary. For example, `black~` watches words `block`, `blck`, or `blask`. `~`. The typos dictionary is contains all words in index with 1 possible mistake. If `~` combined with `*`, then it means mistake match or prefix match, but not prefix with mistake. For example, `turmin*~` is matches `turminals`, `termin`, but not `terminal`
 - `^x` - boost matches term by x. default boost value is 1.
 

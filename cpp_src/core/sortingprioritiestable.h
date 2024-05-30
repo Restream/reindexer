@@ -5,7 +5,6 @@
 #include <string>
 #include "estl/intrusive_ptr.h"
 #include "tools/assertrx.h"
-#include "type_consts.h"
 
 namespace reindexer {
 

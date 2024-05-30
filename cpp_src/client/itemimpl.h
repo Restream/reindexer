@@ -3,10 +3,8 @@
 #include <deque>
 #include <vector>
 #include "core/cjson/tagsmatcher.h"
-#include "core/keyvalue/key_string.h"
 #include "core/keyvalue/variant.h"
 #include "core/payload/payloadiface.h"
-#include "gason/gason.h"
 #include "tools/serializer.h"
 
 namespace reindexer {

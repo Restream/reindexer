@@ -291,11 +291,14 @@ Error RPCClient::modifyItemAsync(std::string_view nsName, Item* item, int mode, 
 					// Rebuild item with new state
 					auto newItem = NewItem(ns);
 					Error err = newItem.FromJSON(item->impl_->GetJSON());
+					if (err.ok()) return ctx.cmpl()(err);
 					newItem.SetPrecepts(item->impl_->GetPrecepts());
 					*item = std::move(newItem);
-					modifyItemAsync(ns, item, mode, conn, timeout, ctx);
+					err = modifyItemAsync(ns, item, mode, conn, timeout, ctx);
+					if (err.ok()) return ctx.cmpl()(err);
 				});
-				selectImpl(Query(ns).Limit(0), *qr, conn, netTimeout, ctxCmpl);
+				auto err = selectImpl(Query(ns).Limit(0), *qr, conn, netTimeout, ctxCmpl);
+				if (err.ok()) return ctx.cmpl()(err);
 			} else
 				try {
 					auto args = ret.GetArgs(2);
@@ -593,7 +596,9 @@ Error RPCClient::SubscribeUpdates(IUpdatesObserver* observer, const UpdatesFilte
 }
 
 Error RPCClient::UnsubscribeUpdates(IUpdatesObserver* observer) {
-	observers_.Delete(observer);
+	if (auto err = observers_.Delete(observer); !err.ok()) {
+		return err;
+	}
 	return subscribeImpl(!observers_.Empty());
 }
 
@@ -729,34 +734,41 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 			delayedUpdates_.emplace_back(std::move(ans));
 
 			QueryResults* qr = new QueryResults;
-			Select(Query(std::string(nsName)).Limit(0), *qr,
-				   InternalRdxContext(
-					   nullptr,
-					   [this, qr, conn](const Error& err) {
-						   delete qr;
-						   // If there are delayed updates then send them to client
-						   auto uq = std::move(delayedUpdates_);
-						   delayedUpdates_.clear();
+			auto err = Select(
+				Query(std::string(nsName)).Limit(0), *qr,
+				InternalRdxContext(
+					nullptr,
+					[this, qr, conn](const Error& err) {
+						delete qr;
+						// If there are delayed updates then send them to client
+						auto uq = std::move(delayedUpdates_);
+						delayedUpdates_.clear();
 
-						   if (!err.ok() || serialDelays_ > 1) {
-							   // This update was already dealyed, but was not able to synchronize tagsmatcher.
-							   // Such situation usually means, that master's namespace was recreated and must be synchronized via force
-							   // sync.
-							   // Current fix is suboptimal and in some cases even incorrect (but still better, than previous
-							   // implementation) - proper fix requires some versioning info about namespaces, which exists
-							   // in v4 only
-							   std::string_view nsName(std::string_view(uq.front().GetArgs(1)[1]));
-							   logPrintf(
-								   LogWarning,
-								   "[repl:%s] Unable to sync tags matcher via online-replication (err: '%s'). Calling UpdatesLost fallback",
-								   nsName, err.what());
-							   serialDelays_ = 0;
-							   observers_.OnUpdatesLost(nsName);
-						   } else {
-							   for (auto& a1 : uq) onUpdates(a1, conn);
-						   }
-					   }),
-				   conn);
+						if (!err.ok() || serialDelays_ > 1) {
+							// This update was already delayed, but was not able to synchronize tagsmatcher.
+							// Such situation usually means, that master's namespace was recreated and must be synchronized via force
+							// sync.
+							// Current fix is suboptimal and in some cases even incorrect (but still better, than previous
+							// implementation) - proper fix requires some versioning info about namespaces, which exists
+							// in v4 only
+							std::string_view nsName(std::string_view(uq.front().GetArgs(1)[1]));
+							logPrintf(
+								LogWarning,
+								"[repl:%s] Unable to sync tags matcher via online-replication (err: '%s'). Calling UpdatesLost fallback",
+								nsName, err.what());
+							serialDelays_ = 0;
+							observers_.OnUpdatesLost(nsName);
+						} else {
+							for (auto& a1 : uq) onUpdates(a1, conn);
+						}
+					}),
+				conn);
+			if (!err.ok()) {
+				logPrintf(LogWarning,
+						  "[repl:%s] Unable to sync tags matcher via online-replication (select err: '%s'). Calling UpdatesLost fallback",
+						  err.what());
+				observers_.OnUpdatesLost(nsName);
+			}
 			return;
 		} else {
 			// We have bundled tagsMatcher

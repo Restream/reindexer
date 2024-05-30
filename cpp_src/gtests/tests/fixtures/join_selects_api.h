@@ -94,8 +94,7 @@ protected:
 			item[locationid_fk] = int(rand() % locations.size());
 
 			Upsert(authors_namespace, item);
-			const auto err = Commit(authors_namespace);
-			ASSERT_TRUE(err.ok()) << err.what();
+			Commit(authors_namespace);
 
 			{
 				std::unique_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
@@ -108,8 +107,7 @@ protected:
 		bestItem[name] = "Fedor Dostoevsky";
 		bestItem[age] = 60;
 		Upsert(authors_namespace, bestItem);
-		const auto err = Commit(authors_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
+		Commit(authors_namespace);
 
 		{
 			std::unique_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
@@ -152,8 +150,7 @@ protected:
 
 			item[genreId_fk] = genres[rand() % genres.size()].id;
 			Upsert(books_namespace, item);
-			const auto err = Commit(books_namespace);
-			ASSERT_TRUE(err.ok()) << err.what();
+			Commit(books_namespace);
 
 			{
 				reindexer::shared_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
@@ -199,8 +196,7 @@ protected:
 		Item item = NewItem(genres_namespace);
 		item[genreid] = id;
 		Delete(genres_namespace, item);
-		const auto err = Commit(genres_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
+		Commit(genres_namespace);
 		genres.erase(std::remove_if(genres.begin(), genres.end(), [id](const Genre& g) { return g.id == id; }), genres.end());
 	}
 
@@ -322,8 +318,7 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		rt.Upsert(config_namespace, item);
-		err = rt.Commit(config_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Commit(config_namespace);
 	}
 
 	void TurnOnJoinCache(const std::string& nsName) {
@@ -351,8 +346,7 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		rt.Upsert(config_namespace, item);
-		err = rt.Commit(config_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Commit(config_namespace);
 	}
 
 	void CheckJoinsInComplexWhereCondition(const QueryResults& qr) {

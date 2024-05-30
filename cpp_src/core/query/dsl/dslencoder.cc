@@ -301,7 +301,7 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 	for (; it != to; ++it) {
 		auto node = builder.Object();
 		node.Put("op", dsl::get(dsl::op_map, it->operation));
-		it->InvokeAppropriate<void>(
+		it->Visit(
 			[&node](const AlwaysFalse&) {
 				logPrintf(LogTrace, "Not normalized query to dsl");
 				node.Put("always", false);

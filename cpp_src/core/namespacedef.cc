@@ -1,9 +1,8 @@
 #include "namespacedef.h"
 #include <unordered_map>
 #include "cjson/jsonbuilder.h"
-#include "string.h"
 #include "tools/errors.h"
-#include "tools/jsontools.h"
+#include "vendor/gason/gason.h"
 
 namespace reindexer {
 

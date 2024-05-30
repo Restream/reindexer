@@ -1,3 +1,45 @@
+# Version 3.25.0 (30.05.2024)
+
+## Core
+- [fea] Added field `max_iterations_idset_preresult` into `#config`-namespace. This field allows to configure `preselect` limit for the `JOIN`-queries
+- [fea] Added `WHERE`-values deduplication for the composite indexes in `SELECT`-queries
+- [fea] Added scalar fields support for the `array_remove` and `array_remove_once` update-functions
+- [fix] Fixed whitespaces handling in the `UPDATE` SQL-queries with JSON-objects
+
+## Fulltext
+- [fea] Optimized fulltext index building (index rebuild works ~30% faster than in `v3.24.0`)
+- [fea] Added gujarati UTF-8 subset to the internal locale
+- [fix] Fixed snippet and highlight on the queries with large `merge_limit` (>65k) and typos
+
+## Replication
+- [fix] Fixed replicated `TagsMatcher`'s behavior on the follower-nodes after leader's `schema` modification
+- [fix] Fixed online replication for `DeleteMeta`-calls
+
+## Reindexer server
+- [fix] Fixed errors in [swagger.yml](https://github.com/Restream/reindexer/blob/master/cpp_src/server/contrib/server.yml)
+
+## CPP-client
+- [fix] Fixed `SetSchema`-call
+
+## Ported
+- [fea] Ported the comparators improvements/optimizations from [v4.15.0](https://github.com/Restream/reindexer/releases/tag/v4.15.0)
+
+## Face
+- [fea] Added UUID to the PK options
+- [fea] Added the "Minimum preselect size for optimization of inner join by injection of filters" field to the NS config 
+- [fea] Increased the max of the position_boost field
+- [fea] Changed the fonts to the system defaults
+- [fea] Moved the field descriptions to the tooltips on the DB Config page
+- [fix] Fixed the pagination issue after item insertion
+- [fix] Fixed the issue related to the Aggregation result displaying
+- [fix] Fixed icons and tabs layout on the NS page
+- [fix] Fixed Explain tab layout on the SQL result page
+- [fix] Fixed "Tags" input layout in the Index config modal 
+- [fix] Fixed placeholder layout for the "Forced sort values" field and filer condition on the Query Builder page
+- [fix] Fixed console issue that appeared on the SQL -> Explain query
+- [fix] Fixed incorrect message about the empty result of the Explain operation
+- [fix] Fixed Pin NS button
+
 # Version 3.24.0 (12.04.2024)
 
 ## Core

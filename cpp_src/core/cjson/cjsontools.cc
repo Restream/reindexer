@@ -1,4 +1,5 @@
 #include "cjsontools.h"
+#include "cjsonbuilder.h"
 #include "core/type_consts_helpers.h"
 
 namespace reindexer {
@@ -13,7 +14,7 @@ TagType kvType2Tag(KeyValueType kvType) noexcept {
 								[](OneOf<KeyValueType::Composite, KeyValueType::Tuple>) noexcept -> TagType { std::abort(); });
 }
 
-void copyCJsonValue(TagType tagType, Variant value, WrSerializer &wrser) {
+void copyCJsonValue(TagType tagType, const Variant &value, WrSerializer &wrser) {
 	if (value.Type().Is<KeyValueType::Null>()) return;
 	switch (tagType) {
 		case TAG_DOUBLE:

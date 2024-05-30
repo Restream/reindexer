@@ -2,16 +2,13 @@
 #include <mutex>
 
 #include <thread>
-#include "client/reindexerconfig.h"
 #include "dbmanager.h"
 #include "estl/smart_lock.h"
 #include "gason/gason.h"
 #include "tools/fsops.h"
-#include "tools/jsontools.h"
 #include "tools/logger.h"
 #include "tools/md5crypt.h"
 #include "tools/stringstools.h"
-#include "vendor/hash/md5.h"
 #include "vendor/yaml-cpp/yaml.h"
 
 namespace reindexer_server {

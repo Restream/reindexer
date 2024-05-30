@@ -57,10 +57,10 @@ public:
 
 private:
 	struct TextSearchResult {
-		const IdCont* vids_;	   // indexes of documents (vdoc) containing the given word + position + field
+		const IdCont* vids;	   // indexes of documents (vdoc) containing the given word + position + field
 		std::string_view pattern;  // word,translit,.....
-		int proc_;
-		int16_t wordLen_;
+		int proc;
+		int16_t wordLen;
 	};
 
 	struct FtVariantEntry {
@@ -155,7 +155,7 @@ private:
 				useMaxLettPermDist_ = maxLettPermDist.second;
 			}
 		}
-		void operator()(std::vector<TextSearchResults>&, const DataHolder<IdCont>&, const FtDSLEntry&);
+		size_t Process(std::vector<TextSearchResults>&, const DataHolder<IdCont>&, const FtDSLEntry&);
 
 	private:
 		template <typename... Args>

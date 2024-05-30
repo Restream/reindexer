@@ -141,7 +141,8 @@ TEST_F(RPCClientTestApi, SeveralDsnReconnect) {
 
 	Query queryConfingNs = Query("#config");
 	for (size_t i = 0; i < uris.size() - 1; ++i) {
-		StopServer(uris[i]);
+		res = StopServer(uris[i]);
+		(void)res;	// ingore; Error is fine here
 		for (size_t j = 0; j < 10; ++j) {
 			client::QueryResults qr;
 			res = rx.Select(queryConfingNs, qr);
@@ -150,7 +151,8 @@ TEST_F(RPCClientTestApi, SeveralDsnReconnect) {
 		}
 		ASSERT_TRUE(res.ok()) << res.what();
 	}
-	StopAllServers();
+	res = StopAllServers();
+	(void)res;	// ingore; Error is fine here
 }
 
 TEST_F(RPCClientTestApi, SelectFromClosedNamespace) {
@@ -260,11 +262,13 @@ TEST_F(RPCClientTestApi, RenameNamespace) {
 
 		auto getRowsInJSON = [&rx](const std::string& namespaceName, std::vector<std::string>& resStrings) {
 			client::CoroQueryResults result;
-			rx.Select(Query(namespaceName), result);
+			auto err = rx.Select(Query(namespaceName), result);
+			ASSERT_TRUE(err.ok()) << err.what();
 			resStrings.clear();
 			for (auto it = result.begin(); it != result.end(); ++it) {
 				reindexer::WrSerializer sr;
-				it.GetJSON(sr, false);
+				err = it.GetJSON(sr, false);
+				ASSERT_TRUE(err.ok()) << err.what();
 				std::string_view sv = sr.Slice();
 				resStrings.emplace_back(sv.data(), sv.size());
 			}

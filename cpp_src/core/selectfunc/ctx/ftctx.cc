@@ -1,6 +1,7 @@
 #include "ftctx.h"
-#include "estl/span.h"
+
 namespace reindexer {
+
 FtCtx::FtCtx() {
 	data_ = std::make_shared<Data>();
 	this->type = BaseFunctionCtx::kFtCtx;

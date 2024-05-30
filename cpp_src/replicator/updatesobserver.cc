@@ -3,7 +3,6 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/indexdef.h"
 #include "core/itemimpl.h"
-#include "core/keyvalue/p_string.h"
 
 using namespace std::string_view_literals;
 
@@ -128,7 +127,7 @@ bool UpdatesFilters::operator==(const UpdatesFilters &rhs) const {
 	return true;
 }
 
-Error UpdatesObservers::Add(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts) {
+void UpdatesObservers::Add(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts) {
 	std::unique_lock<shared_timed_mutex> lck(mtx_);
 	auto it = std::find_if(observers_.begin(), observers_.end(), [observer](const ObserverInfo &info) { return info.ptr == observer; });
 	if (it != observers_.end()) {
@@ -140,7 +139,6 @@ Error UpdatesObservers::Add(IUpdatesObserver *observer, const UpdatesFilters &fi
 	} else {
 		observers_.emplace_back(ObserverInfo{observer, filters});
 	}
-	return errOK;
 }
 
 Error UpdatesObservers::Delete(IUpdatesObserver *observer) {

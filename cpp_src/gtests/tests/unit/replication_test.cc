@@ -3,6 +3,51 @@
 #include "replication_load_api.h"
 #include "replicator/walrecord.h"
 
+// clang-format off
+constexpr std::string_view kReplTestSchema1 = R"xxx(
+	{
+	  "required": [
+		"id"
+	  ],
+	  "properties": {
+		"id": {
+		  "type": "number"
+		},
+		"Field": {
+		  "type": "number"
+		}
+	  },
+	  "additionalProperties": false,
+	  "type": "object",
+	  "x-protobuf-ns-number": 99998
+	})xxx";
+
+
+constexpr std::string_view kReplTestSchema2 = R"xxx(
+	{
+	  "required": [
+		"id"
+	  ],
+	  "properties": {
+		"id": {
+		  "type": "number"
+		},
+		"data": {
+		  "type": "number"
+		},
+		"data123": {
+		  "type": "string"
+		},
+		"f": {
+		  "type": "bolean"
+		}
+	  },
+	  "additionalProperties": false,
+	  "type": "object",
+	  "x-protobuf-ns-number": 99999
+	})xxx";
+// clang-format on
+
 TEST_F(ReplicationLoadApi, Base) {
 	InitNs();
 	stop = false;
@@ -37,6 +82,32 @@ TEST_F(ReplicationLoadApi, Base) {
 	ForceSync();  // restart_replicator call syncDatabase (syncByWal or forceSync)
 	WaitSync("some");
 	WaitSync("some1");
+}
+
+TEST_F(ReplicationLoadApi, BaseTagsMatcher) {
+	StopServer(1);
+	StopServer(2);
+
+	InitNs();
+	SetSchema(masterId_, "some1", kReplTestSchema2);
+	FillData(1000);
+	for (size_t i = 0; i < 2; ++i) {
+		if (i == 1) DeleteFromMaster();
+		FillData(1000);
+	}
+	StartServer(1);
+	StartServer(2);
+
+	ForceSync();  // restart_replicator call syncDatabase (syncByWal or forceSync)
+	WaitSync("some");
+	auto version = ValidateTagsmatchersVersions("some");
+	WaitSync("some1");
+	ValidateTagsmatchersVersions("some1");
+	SetSchema(masterId_, "some", kReplTestSchema1);
+	WaitSync("some");
+	ValidateTagsmatchersVersions("some", version);
+	ValidateSchemas("some", kReplTestSchema1);
+	ValidateSchemas("some1", kReplTestSchema2);
 }
 
 TEST_F(ReplicationLoadApi, WALResizeStaticData) {

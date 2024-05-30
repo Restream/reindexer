@@ -203,7 +203,7 @@ func (dbw *ReindexerWrapper) execQueryCtx(t *testing.T, ctx context.Context, qt 
 func (dbw *ReindexerWrapper) setSlaveConfig(slaveDb *ReindexerWrapper) {
 	err := dbw.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
 		Type:        "replication",
-		Replication: &reindexer.DBReplicationConfig{Namespaces: []string{}, Role: "master", ClusterID: 1, ForceSyncOnLogicError: true, ForceSyncOnWrongDataHash: true},
+		Replication: &reindexer.DBReplicationConfig{Namespaces: []string{}, Role: "master", ClusterID: 1, ForceSyncOnLogicError: false, ForceSyncOnWrongDataHash: true},
 	})
 	if err != nil {
 		panic(err)
@@ -211,7 +211,7 @@ func (dbw *ReindexerWrapper) setSlaveConfig(slaveDb *ReindexerWrapper) {
 
 	err = slaveDb.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
 		Type:        "replication",
-		Replication: &reindexer.DBReplicationConfig{Namespaces: []string{}, Role: "slave", MasterDSN: *dsn, ClusterID: 1, ForceSyncOnLogicError: true, ForceSyncOnWrongDataHash: true},
+		Replication: &reindexer.DBReplicationConfig{Namespaces: []string{}, Role: "slave", MasterDSN: *dsn, ClusterID: 1, ForceSyncOnLogicError: false, ForceSyncOnWrongDataHash: true},
 	})
 	if err != nil {
 		panic(err)

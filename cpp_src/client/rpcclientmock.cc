@@ -2,10 +2,7 @@
 #include <functional>
 #include "client/itemimpl.h"
 #include "core/namespacedef.h"
-#include "gason/gason.h"
 #include "tools/errors.h"
-#include "tools/logger.h"
-#include "vendor/gason/gason.h"
 
 namespace reindexer {
 
@@ -218,11 +215,14 @@ Error RPCClientMock::modifyItemAsync(std::string_view nsName, Item* item, int mo
 					// Rebuild item with new state
 					auto newItem = NewItem(ns);
 					Error err = newItem.FromJSON(item->impl_->GetJSON());
+					if (!err.ok()) return ctx.cmpl()(ret);
 					newItem.SetPrecepts(item->impl_->GetPrecepts());
 					*item = std::move(newItem);
-					modifyItemAsync(ns, item, mode, conn, timeout, ctx, format);
+					err = modifyItemAsync(ns, item, mode, conn, timeout, ctx, format);
+					if (!err.ok()) return ctx.cmpl()(ret);
 				});
-				selectImpl(Query(ns).Limit(0), *qr, conn, netTimeout, ctxCmpl, format);
+				auto err = selectImpl(Query(ns).Limit(0), *qr, conn, netTimeout, ctxCmpl, format);
+				if (err.ok()) return ctx.cmpl()(err);
 			} else
 				try {
 					auto args = ret.GetArgs(2);

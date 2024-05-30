@@ -9,7 +9,6 @@
 #include "net/cproto/serverconnection.h"
 #include "reindexer_version.h"
 #include "tools/catch_and_return.h"
-#include "vendor/msgpack/msgpack.h"
 
 namespace reindexer_server {
 using namespace std::string_view_literals;
@@ -255,7 +254,9 @@ void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Arg
 Error RPCServer::OpenNamespace(cproto::Context &ctx, p_string nsDefJson) {
 	NamespaceDef nsDef;
 
-	nsDef.FromJSON(giftStr(nsDefJson));
+	if (auto err = nsDef.FromJSON(giftStr(nsDefJson)); !err.ok()) {
+		return err;
+	}
 	if (!nsDef.indexes.empty()) {
 		return getDB(ctx, kRoleDataRead).AddNamespace(nsDef);
 	}
@@ -950,7 +951,7 @@ Error RPCServer::SubscribeUpdates(cproto::Context &ctx, int flag, std::optional<
 	UpdatesFilters filters;
 	Error ret;
 	if (filterJson) {
-		filters.FromJSON(giftStr(*filterJson));
+		ret = filters.FromJSON(giftStr(*filterJson));
 		if (!ret.ok()) {
 			return ret;
 		}
@@ -1050,9 +1051,10 @@ bool RPCServer::Start(const std::string &addr, ev::dynamic_loop &loop, RPCSocket
 
 RPCClientData::~RPCClientData() {
 	Reindexer *db = nullptr;
-	auth.GetDB(kRoleNone, &db);
-	if (subscribed && db) {
-		db->UnsubscribeUpdates(&pusher);
+	auto err = auth.GetDB(kRoleNone, &db);
+	if (subscribed && db && err.ok()) {
+		err = db->UnsubscribeUpdates(&pusher);
+		(void)err;	// ignore
 	}
 }
 

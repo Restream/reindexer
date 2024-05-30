@@ -1,5 +1,4 @@
 #include "core/idset.h"
-#include "tools/errors.h"
 
 namespace reindexer {
 

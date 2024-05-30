@@ -3,12 +3,12 @@
 #include <optional>
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
-#include "core/query/query.h"
 
 namespace reindexer {
 
 struct NsContext;
 class NamespaceImpl;
+class UpdateEntry;
 
 class ItemModifier {
 public:
@@ -33,7 +33,7 @@ private:
 		int arrayIndex() const noexcept { return arrayIndex_; }
 		int index() const noexcept { return fieldIndex_; }
 		bool isIndex() const noexcept { return isIndex_; }
-		const std::string &name() const noexcept { return entry_.Column(); }
+		const std::string &name() const noexcept;
 
 	private:
 		const UpdateEntry &entry_;

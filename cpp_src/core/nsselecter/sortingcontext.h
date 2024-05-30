@@ -11,9 +11,19 @@ class Index;
 struct SortingEntry;
 
 struct SortingContext {
+	struct RawDataParams {
+		RawDataParams() = default;
+		RawDataParams(const void *p, const PayloadType &pt, int field) noexcept
+			: ptr(p), type(ptr ? pt.Field(field).Type() : KeyValueType::Undefined{}) {}
+
+		const void *ptr = nullptr;
+		KeyValueType type = KeyValueType::Undefined{};
+	};
+
 	struct FieldEntry {
-		Index *index = nullptr;
 		const SortingEntry &data;
+		Index *index = nullptr;
+		RawDataParams rawData = {};
 		const CollateOpts *opts = nullptr;
 	};
 	struct JoinedFieldEntry {

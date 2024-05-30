@@ -2,9 +2,10 @@
 
 #include <string>
 #include "gason/gason.h"
-#include "tools/serializer.h"
 
 namespace reindexer {
+
+class WrSerializer;
 
 const int kJsonShiftWidth = 4;
 

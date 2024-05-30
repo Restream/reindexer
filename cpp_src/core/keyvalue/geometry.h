@@ -4,8 +4,8 @@
 #include <cmath>
 #include <functional>
 #include <limits>
+#include <string_view>
 #include "tools/assertrx.h"
-#include "tools/errors.h"
 
 namespace reindexer {
 

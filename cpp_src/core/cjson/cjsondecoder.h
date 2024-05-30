@@ -1,7 +1,10 @@
 #pragma once
 
+#include "core/cjson/tagspath.h"
+#include "core/payload/fieldsset.h"
 #include <deque>
 #include "core/payload/payloadiface.h"
+#include "core/type_consts.h"
 
 namespace reindexer {
 

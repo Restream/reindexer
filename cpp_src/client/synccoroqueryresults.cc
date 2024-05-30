@@ -14,7 +14,10 @@ void SyncCoroQueryResults::Bind(std::string_view rawResult, RPCQrId id) { result
 
 void SyncCoroQueryResults::fetchNextResults() {
 	int flags = results_.fetchFlags_ ? (results_.fetchFlags_ & ~kResultsWithPayloadTypes) : kResultsCJson;
-	rx_->impl_->fetchResults(flags, *this);
+	auto err = rx_->impl_->fetchResults(flags, *this);
+	if (!err.ok()) {
+		throw err;
+	}
 }
 
 h_vector<std::string_view, 1> SyncCoroQueryResults::GetNamespaces() const { return results_.GetNamespaces(); }

@@ -16,7 +16,7 @@ void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, const Query &que
 	JoinCacheRes joinResLong;
 	rightNs_->getFromJoinCache(query, joinQuery_, joinResLong);
 
-	rightNs_->getIndsideFromJoinCache(joinRes_);
+	rightNs_->getInsideFromJoinCache(joinRes_);
 	if (joinRes_.needPut) {
 		rightNs_->putToJoinCache(joinRes_, preSelectCtx_.ResultPtr());
 	}
@@ -53,7 +53,7 @@ void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, const Query &que
 void JoinedSelector::selectFromPreResultValues(QueryResults &joinItemR, const Query &query, bool &found, bool &matchedAtLeastOnce) const {
 	size_t matched = 0;
 	const auto &entries = query.Entries();
-	const JoinPreResult::Values &values = std::get<JoinPreResult::Values>(PreResult().preselectedPayload);
+	const JoinPreResult::Values &values = std::get<JoinPreResult::Values>(PreResult().payload);
 	const auto &pt = values.payloadType;
 	for (const ItemRef &item : values) {
 		auto &v = item.Value();
@@ -104,7 +104,7 @@ bool JoinedSelector::Process(IdType rowId, int nsId, ConstPayload payload, bool 
 		overloaded{[&](const JoinPreResult::Values &) { selectFromPreResultValues(joinItemR, *itemQueryPtr, found, matchedAtLeastOnce); },
 				   Restricted<IdSet, SelectIteratorContainer>{}(
 					   [&](const auto &) { selectFromRightNs(joinItemR, *itemQueryPtr, found, matchedAtLeastOnce); })},
-		PreResult().preselectedPayload);
+		PreResult().payload);
 	if (match && found) {
 		assertrx_throw(nsId < static_cast<int>(result_.joined_.size()));
 		joins::NamespaceResults &nsJoinRes = result_.joined_[nsId];
@@ -123,7 +123,8 @@ VariantArray JoinedSelector::readValuesOfRightNsFrom(const Cont &data, const Fn 
 	const auto leftFieldType = entry.LeftFieldType();
 	VariantArray res;
 	if (rightFieldType.Is<KeyValueType::Composite>()) {
-		unordered_payload_set set(data.size(), hash_composite(pt, entry.RightFields()), equal_composite(pt, entry.RightFields()));
+		unordered_payload_ref_set set(data.size(), hash_composite_ref(pt, entry.RightFields()),
+									  equal_composite_ref(pt, entry.RightFields()));
 		for (const auto &v : data) {
 			const auto pl = createPayload(v);
 			if (!pl.Value()->IsFree()) {
@@ -136,8 +137,8 @@ VariantArray JoinedSelector::readValuesOfRightNsFrom(const Cont &data, const Fn 
 		}
 	} else {
 		tsl::sparse_set<Variant> set(data.size());
-		for (const auto &v : data) {
-			const auto pl = createPayload(v);
+		for (const auto &val : data) {
+			const auto pl = createPayload(val);
 			if (pl.Value()->IsFree()) {
 				continue;
 			}
@@ -157,7 +158,7 @@ VariantArray JoinedSelector::readValuesOfRightNsFrom(const Cont &data, const Fn 
 }
 
 VariantArray JoinedSelector::readValuesFromPreResult(const QueryJoinEntry &entry) const {
-	const JoinPreResult::Values &values = std::get<JoinPreResult::Values>(PreResult().preselectedPayload);
+	const JoinPreResult::Values &values = std::get<JoinPreResult::Values>(PreResult().payload);
 	return readValuesOfRightNsFrom(
 		values,
 		[&values](const ItemRef &item) noexcept {
@@ -173,11 +174,11 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 							  Restricted<IdSet, JoinPreResult::Values>{}([maxIterations](const auto &v) noexcept {
 								  return v.size() > *maxIterations * kMaxIterationsScaleForInnerJoinOptimization;
 							  })},
-				   PreResult().preselectedPayload)) {
+				   PreResult().payload)) {
 		return;
 	}
 	unsigned optimized = 0;
-	assertrx_throw(!std::holds_alternative<JoinPreResult::Values>(PreResult().preselectedPayload) ||
+	assertrx_throw(!std::holds_alternative<JoinPreResult::Values>(PreResult().payload) ||
 				   itemQuery_.Entries().Size() == joinQuery_.joinEntries_.size());
 	for (size_t i = 0; i < joinQuery_.joinEntries_.size(); ++i) {
 		const QueryJoinEntry &joinEntry = joinQuery_.joinEntries_[i];
@@ -203,7 +204,7 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 															  assertrx_throw(0);
 															  abort();
 														  }},
-											   PreResult().preselectedPayload);
+											   PreResult().payload);
 		auto ctx = selectFnc ? selectFnc->CreateCtx(joinEntry.LeftIdxNo()) : BaseFunctionCtx::Ptr{};
 		assertrx(!ctx || ctx->type != BaseFunctionCtx::kFtCtx);
 
@@ -215,18 +216,19 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 		opts.indexesNotOptimized = !leftNs_->SortOrdersBuilt();
 		opts.inTransaction = inTransaction_;
 
-		bool was = false;
-		for (SelectKeyResult &res : leftIndex->SelectKey(values, CondSet, sortId, opts, ctx, rdxCtx)) {
-			if (!res.comparators_.empty()) continue;
-			SelectIterator selIter{res, false, joinEntry.LeftFieldName(),
-								   (joinEntry.LeftIdxNo() < 0 ? IteratorFieldKind::NonIndexed : IteratorFieldKind::Indexed), false};
-			selIter.Bind(leftNs_->payloadType_, joinEntry.LeftIdxNo());
-			const int curIterations = selIter.GetMaxIterations();
-			if (curIterations && curIterations < *maxIterations) *maxIterations = curIterations;
-			iterators.Append(OpAnd, std::move(selIter));
-			was = true;
+		auto selectResults = leftIndex->SelectKey(values, CondSet, sortId, opts, ctx, rdxCtx);
+		if (auto *selRes = std::get_if<SelectKeyResultsVector>(&selectResults)) {
+			bool wasAppended = false;
+			for (SelectKeyResult &res : *selRes) {
+				SelectIterator selIter{std::move(res), false, std::string(joinEntry.LeftFieldName()),
+									   (joinEntry.LeftIdxNo() < 0 ? IteratorFieldKind::NonIndexed : IteratorFieldKind::Indexed), false};
+				const int curIterations = selIter.GetMaxIterations();
+				if (curIterations && curIterations < *maxIterations) *maxIterations = curIterations;
+				iterators.Append(OpAnd, std::move(selIter));
+				wasAppended = true;
+			}
+			if (wasAppended) ++optimized;
 		}
-		if (was) ++optimized;
 	}
 	optimized_ = optimized == joinQuery_.joinEntries_.size();
 }

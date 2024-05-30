@@ -1,6 +1,7 @@
 #pragma once
 
-#include "core/cjson/tagsmatcherimpl.h"
+#include <string_view>
+#include "core/key_value_type.h"
 #include "objtype.h"
 
 namespace reindexer {

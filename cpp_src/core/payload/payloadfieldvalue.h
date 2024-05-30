@@ -101,7 +101,7 @@ public:
 			[&](KeyValueType::Double) noexcept { return *reinterpret_cast<const double *>(p_) == *reinterpret_cast<const double *>(o.p_); },
 			[&](KeyValueType::String) {
 				return collateCompare<CollateNone>(*reinterpret_cast<const p_string *>(p_), *reinterpret_cast<const p_string *>(o.p_),
-												   SortingPrioritiesTable()) == 0;
+												   SortingPrioritiesTable()) == ComparationResult::Eq;
 			},
 			[&](KeyValueType::Uuid) noexcept { return *reinterpret_cast<const Uuid *>(p_) == *reinterpret_cast<const Uuid *>(o.p_); },
 			[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) noexcept -> bool {

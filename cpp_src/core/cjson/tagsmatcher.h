@@ -56,12 +56,16 @@ public:
 	void setUpdated() noexcept { updated_ = true; }
 
 	bool try_merge(const TagsMatcher& tm) {
+		if (impl_->contains(*tm.impl_)) {
+			return true;
+		}
 		auto tmp = impl_;
-		if (!tmp.clone()->merge(*tm.impl_.get())) {
+		bool updated = false;
+		if (!tmp.clone()->merge(*tm.impl_, updated)) {
 			return false;
 		}
 		impl_ = tmp;
-		updated_ = true;
+		updated_ = updated_ || updated;
 		return true;
 	}
 

@@ -83,6 +83,37 @@ namespace reindexer {
 	throw Error{errNotValid, "Invalid condition type: %d", t};
 }
 
+[[nodiscard]] std::string_view CondTypeToStrShort(CondType cond) {
+	using namespace std::string_view_literals;
+	switch (cond) {
+		case CondAny:
+			return "IS NOT NULL"sv;
+		case CondEq:
+			return "="sv;
+		case CondLt:
+			return "<"sv;
+		case CondLe:
+			return "<="sv;
+		case CondGt:
+			return ">"sv;
+		case CondGe:
+			return ">="sv;
+		case CondRange:
+			return "RANGE"sv;
+		case CondSet:
+			return "IN"sv;
+		case CondAllSet:
+			return "ALLSET"sv;
+		case CondEmpty:
+			return "IS NULL"sv;
+		case CondLike:
+			return "LIKE"sv;
+		case CondDWithin:
+			return "DWITHIN"sv;
+	}
+	throw Error{errNotValid, "Invalid condition type: %d", cond};
+}
+
 [[nodiscard]] std::string_view TagTypeToStr(TagType t) {
 	using namespace std::string_view_literals;
 	switch (t) {

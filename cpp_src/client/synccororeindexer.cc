@@ -1,6 +1,4 @@
 #include "synccororeindexer.h"
-#include "client/cororeindexer.h"
-#include "client/cororpcclient.h"
 #include "synccororeindexerimpl.h"
 
 namespace reindexer {

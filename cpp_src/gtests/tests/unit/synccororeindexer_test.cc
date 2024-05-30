@@ -105,7 +105,8 @@ TEST(SyncCoroRx, TestSyncCoroRx) {
 	}
 
 	reindexer::client::SyncCoroQueryResults qResults(&client, 3);
-	client.Select("select * from ns_test", qResults);
+	err = client.Select("select * from ns_test", qResults);
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	for (auto i = qResults.begin(); i != qResults.end(); ++i) {
 		reindexer::WrSerializer wrser;
@@ -123,13 +124,17 @@ TEST(SyncCoroRx, TestSyncCoroRxNThread) {
 	ReplicationConfigTest config("master");
 	server.Get()->MakeMaster(config);
 	reindexer::client::SyncCoroReindexer client;
-	client.Connect("cproto://127.0.0.1:8999/db");
-	client.OpenNamespace("ns_test");
+	auto err = client.Connect("cproto://127.0.0.1:8999/db");
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = client.OpenNamespace("ns_test");
+	ASSERT_TRUE(err.ok()) << err.what();
 	reindexer::IndexDef indDef("id", "hash", "int", IndexOpts().PK());
-	client.AddIndex("ns_test", indDef);
+	err = client.AddIndex("ns_test", indDef);
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	reindexer::IndexDef indDef2("index2", "hash", "int", IndexOpts());
-	client.AddIndex("ns_test", indDef2);
+	err = client.AddIndex("ns_test", indDef2);
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	std::atomic<int> counter(kmaxIndex);
 	auto insertThreadFun = [&client, &counter]() {
@@ -140,7 +145,8 @@ TEST(SyncCoroRx, TestSyncCoroRxNThread) {
 				std::string json = R"#({"id":)#" + std::to_string(c) + R"#(, "val":)#" + "\"aaaaaaaaaaaaaaa \"" + R"#(})#";
 				reindexer::Error err = item.FromJSON(json);
 				ASSERT_TRUE(err.ok()) << err.what();
-				client.Upsert("ns_test", item);
+				err = client.Upsert("ns_test", item);
+				ASSERT_TRUE(err.ok()) << err.what();
 			} else {
 				break;
 			}
@@ -173,11 +179,14 @@ TEST(SyncCoroRx, DISABLED_TestCoroRxNCoroutine) {
 		reindexer::client::CoroReindexer rx;
 		auto err = rx.Connect("cproto://127.0.0.1:8999/db", loop);
 		ASSERT_TRUE(err.ok()) << err.what();
-		rx.OpenNamespace("ns_c");
+		err = rx.OpenNamespace("ns_c");
+		ASSERT_TRUE(err.ok()) << err.what();
 		reindexer::IndexDef indDef("id", "hash", "int", IndexOpts().PK());
-		rx.AddIndex("ns_c", indDef);
+		err = rx.AddIndex("ns_c", indDef);
+		ASSERT_TRUE(err.ok()) << err.what();
 		reindexer::IndexDef indDef2("index2", "hash", "int", IndexOpts());
-		rx.AddIndex("ns_c", indDef2);
+		err = rx.AddIndex("ns_c", indDef2);
+		ASSERT_TRUE(err.ok()) << err.what();
 		reindexer::coroutine::wait_group wg;
 
 		auto insblok = [&rx, &wg](int from, int count) {
@@ -187,7 +196,8 @@ TEST(SyncCoroRx, DISABLED_TestCoroRxNCoroutine) {
 				std::string json = R"#({"id":)#" + std::to_string(i) + R"#(, "val":)#" + "\"aaaaaaaaaaaaaaa \"" + R"#(})#";
 				auto err = item.FromJSON(json);
 				ASSERT_TRUE(err.ok()) << err.what();
-				rx.Upsert("ns_c", item);
+				err = rx.Upsert("ns_c", item);
+				ASSERT_TRUE(err.ok()) << err.what();
 			}
 		};
 

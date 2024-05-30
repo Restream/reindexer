@@ -30,6 +30,8 @@ type ExplainSelector struct {
 	Matched int `json:"matched"`
 	// Count of scanned documents by this selector
 	Items int `json:"items"`
+	Condition string `json:"condition"`
+	// Select iterator type
 	Type string `json:"type,omitempty"`
 	Description string `json:"description,omitempty"`
 	// Preselect in joined namespace execution explainings

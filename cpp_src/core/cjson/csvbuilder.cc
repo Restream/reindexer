@@ -1,5 +1,4 @@
 #include "csvbuilder.h"
-#include "tools/json2kv.h"
 
 namespace reindexer {
 

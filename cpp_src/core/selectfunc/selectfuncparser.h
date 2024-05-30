@@ -5,7 +5,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include "core/cjson/tagsmatcher.h"
 #include "estl/tokenizer.h"
 #include "functions/highlight.h"
 #include "functions/snippet.h"

@@ -1,8 +1,6 @@
 
 #include "core/ft/ftsetcashe.h"
-#include "core/idset.h"
 #include "core/idsetcache.h"
-#include "core/keyvalue/variant.h"
 #include "core/querycache.h"
 #include "joincache.h"
 #include "tools/logger.h"

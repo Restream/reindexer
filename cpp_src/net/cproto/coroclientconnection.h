@@ -5,11 +5,10 @@
 #include <thread>
 #include <vector>
 #include "args.h"
+#include "core/keyvalue/p_string.h"
 #include "coroutine/channel.h"
 #include "coroutine/waitgroup.h"
 #include "cproto.h"
-#include "estl/atomic_unique_ptr.h"
-#include "estl/h_vector.h"
 #include "net/manualconnection.h"
 #include "urlparser/urlparser.h"
 

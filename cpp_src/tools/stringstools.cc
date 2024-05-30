@@ -29,23 +29,24 @@ static int double_to_str(double v, char *buf, int capacity, int flags) {
 	return builder.position();
 }
 
-static std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPos, const std::string &extraWordSymbols) {
+static std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPos, std::string_view extraWordSymbols) {
 	auto wordStartIt = str.begin();
 	auto wordEndIt = str.begin();
 	auto it = str.begin();
+	auto endIt = str.end();
 	assertrx(endPos > wordPos);
 	int numWords = endPos - (wordPos + 1);
-	for (; it != str.end();) {
+	for (; it != endIt;) {
 		auto ch = utf8::unchecked::next(it);
 
-		while (it != str.end() && extraWordSymbols.find(ch) == std::string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
+		while (it != endIt && extraWordSymbols.find(ch) == std::string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
 			wordStartIt = it;
 			ch = utf8::unchecked::next(it);
 		}
 
 		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
 			wordEndIt = it;
-			if (it == str.end()) break;
+			if (it == endIt) break;
 			ch = utf8::unchecked::next(it);
 		}
 
@@ -59,16 +60,16 @@ static std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPo
 		}
 	}
 
-	for (; numWords != 0 && it != str.end(); numWords--) {
+	for (; numWords != 0 && it != endIt; numWords--) {
 		auto ch = utf8::unchecked::next(it);
 
-		while (it != str.end() && !IsAlpha(ch) && !IsDigit(ch)) {
+		while (it != endIt && !IsAlpha(ch) && !IsDigit(ch)) {
 			ch = utf8::unchecked::next(it);
 		}
 
 		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
 			wordEndIt = it;
-			if (it == str.end()) break;
+			if (it == endIt) break;
 			ch = utf8::unchecked::next(it);
 		}
 	}
@@ -235,41 +236,38 @@ std::pair<size_t, size_t> calcUtf8BeforeDelims(const char *str, int pos, size_t 
 	return std::make_pair(str + pos - ptr, charCounter);
 }
 
-void split(std::string_view str, std::string &buf, std::vector<const char *> &words, const std::string &extraWordSymbols) {
+void split(std::string_view str, std::string &buf, std::vector<std::string_view> &words, std::string_view extraWordSymbols) {
 	// assuming that the 'ToLower' function and the 'check for replacement' function should not change the character size in bytes
 	buf.resize(str.length());
 	words.resize(0);
 	auto bufIt = buf.begin();
 
-	for (auto it = str.begin(); it != str.end();) {
+	for (auto it = str.begin(), endIt = str.end(); it != endIt;) {
 		auto ch = utf8::unchecked::next(it);
 
-		while (it != str.end() && extraWordSymbols.find(ch) == std::string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
+		while (!IsAlpha(ch) && !IsDigit(ch) && extraWordSymbols.find(ch) == std::string::npos && it != endIt) {
 			ch = utf8::unchecked::next(it);
 		}
 
-		auto begIt = bufIt;
-		while (it != str.end() && (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos)) {
+		const auto begIt = bufIt;
+		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
 			ch = ToLower(ch);
 			check_for_replacement(ch);
 			bufIt = utf8::unchecked::append(ch, bufIt);
-			ch = utf8::unchecked::next(it);
-		}
-		if ((IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos)) {
-			ch = ToLower(ch);
-			check_for_replacement(ch);
-
-			bufIt = utf8::unchecked::append(ch, bufIt);
+			if (it != endIt) {
+				ch = utf8::unchecked::next(it);
+			} else {
+				break;
+			}
 		}
 
 		if (begIt != bufIt) {
-			if (bufIt != buf.end()) *bufIt++ = 0;
-			words.emplace_back(&*begIt);
+			words.emplace_back(&(*begIt), bufIt - begIt);
 		}
 	}
 }
 template <typename Pos>
-Pos wordToByteAndCharPos(std::string_view str, int wordPosition, const std::string &extraWordSymbols) {
+Pos wordToByteAndCharPos(std::string_view str, int wordPosition, std::string_view extraWordSymbols) {
 	auto wordStartIt = str.begin();
 	auto wordEndIt = str.begin();
 	auto it = str.begin();
@@ -323,8 +321,8 @@ Pos wordToByteAndCharPos(std::string_view str, int wordPosition, const std::stri
 	wp.SetBytePosition(wordStartIt - str.begin(), wordEndIt - str.begin());
 	return wp;
 }
-template WordPositionEx wordToByteAndCharPos<WordPositionEx>(std::string_view str, int wordPosition, const std::string &extraWordSymbols);
-template WordPosition wordToByteAndCharPos<WordPosition>(std::string_view str, int wordPosition, const std::string &extraWordSymbols);
+template WordPositionEx wordToByteAndCharPos<WordPositionEx>(std::string_view str, int wordPosition, std::string_view extraWordSymbols);
+template WordPosition wordToByteAndCharPos<WordPosition>(std::string_view str, int wordPosition, std::string_view extraWordSymbols);
 
 std::pair<int, int> Word2PosHelper::convert(int wordPos, int endPos) {
 	if (wordPos < lastWordPos_) {
@@ -340,7 +338,7 @@ std::pair<int, int> Word2PosHelper::convert(int wordPos, int endPos) {
 	return ret;
 }
 
-void split(std::string_view utf8Str, std::wstring &utf16str, std::vector<std::wstring> &words, const std::string &extraWordSymbols) {
+void split(std::string_view utf8Str, std::wstring &utf16str, std::vector<std::wstring> &words, std::string_view extraWordSymbols) {
 	utf8_to_utf16(utf8Str, utf16str);
 	words.resize(0);
 	for (auto it = utf16str.begin(); it != utf16str.end();) {
@@ -396,7 +394,7 @@ template bool checkIfEndsWith<CaseSensitive::Yes>(std::string_view pattern, std:
 template bool checkIfEndsWith<CaseSensitive::No>(std::string_view pattern, std::string_view src) noexcept;
 
 template <>
-int collateCompare<CollateASCII>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
+ComparationResult collateCompare<CollateASCII>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
 	auto itl = lhs.begin();
 	auto itr = rhs.begin();
 
@@ -404,21 +402,21 @@ int collateCompare<CollateASCII>(std::string_view lhs, std::string_view rhs, con
 		auto chl = tolower(*itl++);
 		auto chr = tolower(*itr++);
 
-		if (chl > chr) return 1;
-		if (chl < chr) return -1;
+		if (chl > chr) return ComparationResult::Gt;
+		if (chl < chr) return ComparationResult::Lt;
 	}
 
 	if (lhs.size() > rhs.size()) {
-		return 1;
+		return ComparationResult::Gt;
 	} else if (lhs.size() < rhs.size()) {
-		return -1;
+		return ComparationResult::Lt;
 	}
 
-	return 0;
+	return ComparationResult::Eq;
 }
 
 template <>
-int collateCompare<CollateUTF8>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
+ComparationResult collateCompare<CollateUTF8>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
 	auto itl = lhs.data();
 	auto itr = rhs.data();
 
@@ -426,20 +424,20 @@ int collateCompare<CollateUTF8>(std::string_view lhs, std::string_view rhs, cons
 		auto chl = ToLower(utf8::unchecked::next(itl));
 		auto chr = ToLower(utf8::unchecked::next(itr));
 
-		if (chl > chr) return 1;
-		if (chl < chr) return -1;
+		if (chl > chr) return ComparationResult::Gt;
+		if (chl < chr) return ComparationResult::Lt;
 	}
 
 	if (lhs.size() > rhs.size()) {
-		return 1;
+		return ComparationResult::Gt;
 	} else if (lhs.size() < rhs.size()) {
-		return -1;
+		return ComparationResult::Lt;
 	}
-	return 0;
+	return ComparationResult::Eq;
 }
 
 template <>
-int collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
+ComparationResult collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
 	char *posl = nullptr;
 	char *posr = nullptr;
 
@@ -450,16 +448,17 @@ int collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, c
 		auto minlen = std::min(lhs.size() - (posl - lhs.data()), rhs.size() - (posr - rhs.data()));
 		auto res = strncmp(posl, posr, minlen);
 
-		if (res != 0) return res;
+		if (res != 0) return res < 0 ? ComparationResult::Lt : ComparationResult::Gt;
 
-		return lhs.size() > rhs.size() ? 1 : (lhs.size() < rhs.size() ? -1 : 0);
+		return lhs.size() > rhs.size() ? ComparationResult::Gt : (lhs.size() < rhs.size() ? ComparationResult::Lt : ComparationResult::Eq);
 	}
 
-	return numl > numr ? 1 : (numl < numr ? -1 : 0);
+	return numl > numr ? ComparationResult::Gt : (numl < numr ? ComparationResult::Lt : ComparationResult::Eq);
 }
 
 template <>
-int collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &sortOrderTable) noexcept {
+ComparationResult collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs,
+												const SortingPrioritiesTable &sortOrderTable) noexcept {
 	auto itl = lhs.data();
 	auto itr = rhs.data();
 
@@ -470,25 +469,28 @@ int collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs, co
 		int chlPriority = sortOrderTable.GetPriority(chl);
 		int chrPriority = sortOrderTable.GetPriority(chr);
 
-		if (chlPriority > chrPriority) return 1;
-		if (chlPriority < chrPriority) return -1;
+		if (chlPriority > chrPriority) return ComparationResult::Gt;
+		if (chlPriority < chrPriority) return ComparationResult::Lt;
 	}
 
 	if (lhs.size() > rhs.size()) {
-		return 1;
+		return ComparationResult::Gt;
 	} else if (lhs.size() < rhs.size()) {
-		return -1;
+		return ComparationResult::Lt;
 	}
-	return 0;
+	return ComparationResult::Eq;
 }
 
 template <>
-int collateCompare<CollateNone>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
+ComparationResult collateCompare<CollateNone>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
 	size_t l1 = lhs.size();
 	size_t l2 = rhs.size();
 	int res = memcmp(lhs.data(), rhs.data(), std::min(l1, l2));
 
-	return res ? res : ((l1 < l2) ? -1 : (l1 > l2) ? 1 : 0);
+	return res ? (res < 0 ? ComparationResult::Lt : ComparationResult::Gt)
+			   : ((l1 < l2)	  ? ComparationResult::Lt
+				  : (l1 > l2) ? ComparationResult::Gt
+							  : ComparationResult::Eq);
 }
 
 std::string urldecode2(std::string_view str) {

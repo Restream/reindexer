@@ -71,7 +71,7 @@ public:
 		UpdatesFilters filters;
 	};
 
-	Error Add(IUpdatesObserver *observer, const UpdatesFilters &filter, SubscriptionOpts opts);
+	void Add(IUpdatesObserver *observer, const UpdatesFilters &filter, SubscriptionOpts opts);
 	Error Delete(IUpdatesObserver *observer);
 	std::vector<ObserverInfo> Get() const;
 

@@ -11,6 +11,7 @@
 #include "core/namespace/namespacestat.h"
 #include "core/payload/payloadiface.h"
 #include "core/perfstatcounter.h"
+#include "core/selectfunc/ctx/basefunctionctx.h"
 #include "core/selectkeyresult.h"
 #include "ft_preselect.h"
 #include "indexiterator.h"
@@ -20,6 +21,7 @@ namespace reindexer {
 class RdxContext;
 class StringsHolder;
 class SelectFunction;
+struct NamespaceCacheConfigData;
 
 class Index {
 public:
@@ -80,6 +82,7 @@ public:
 
 	virtual bool IsDestroyPartSupported() const noexcept { return false; }
 	virtual void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue&) {}
+	virtual const void* ColumnData() const noexcept = 0;
 
 	const PayloadType& GetPayloadType() const& { return payloadType_; }
 	const PayloadType& GetPayloadType() const&& = delete;

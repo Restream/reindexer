@@ -9,7 +9,6 @@
 
 #include "errors.h"
 #include "tools/oscompat.h"
-#include "tools/stringstools.h"
 
 namespace reindexer {
 namespace fs {

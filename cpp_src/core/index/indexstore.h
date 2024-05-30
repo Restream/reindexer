@@ -27,9 +27,10 @@ public:
 	bool HoldsStrings() const noexcept override { return std::is_same_v<T, key_string> || std::is_same_v<T, key_string_with_hash>; }
 	void Dump(std::ostream &os, std::string_view step = "  ", std::string_view offset = "") const override { dump(os, step, offset); }
 	virtual void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue &) override;
-	virtual bool IsDestroyPartSupported() const noexcept override { return true; }
+	virtual bool IsDestroyPartSupported() const noexcept override final { return true; }
 	virtual bool IsUuid() const noexcept override final { return std::is_same_v<T, Uuid>; }
 	virtual void ReconfigureCache(const NamespaceCacheConfigData &) override {}
+	const void *ColumnData() const noexcept override final { return idx_data.size() ? idx_data.data() : nullptr; }
 
 	template <typename, typename = void>
 	struct HasAddTask : std::false_type {};
@@ -38,11 +39,15 @@ public:
 
 protected:
 	unordered_str_map<int> str_map;
-	h_vector<T> idx_data;
+
+	using IdxDataT = std::conditional_t<std::is_same_v<T, key_string>, std::string_view, T>;
+	h_vector<IdxDataT> idx_data;
 
 	IndexMemStat memStat_;
 
 private:
+	bool shouldHoldValueInStrMap() const noexcept;
+
 	template <typename S>
 	void dump(S &os, std::string_view step, std::string_view offset) const;
 };

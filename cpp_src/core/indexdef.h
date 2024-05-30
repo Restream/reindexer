@@ -31,7 +31,7 @@ struct IndexDef {
 	std::string getCollateMode() const;
 	const std::vector<std::string> &Conditions() const;
 	void FromType(IndexType type);
-	[[nodiscard]] Error FromJSON(span<char> json);
+	Error FromJSON(span<char> json);
 	void FromJSON(const gason::JsonNode &jvalue);
 	void GetJSON(WrSerializer &ser, int formatFlags = 0) const;
 

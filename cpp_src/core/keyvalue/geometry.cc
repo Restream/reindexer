@@ -1,4 +1,5 @@
 #include "geometry.h"
+#include "tools/errors.h"
 
 namespace reindexer {
 

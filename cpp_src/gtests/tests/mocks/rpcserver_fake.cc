@@ -1,5 +1,6 @@
 #include "rpcserver_fake.h"
 #include <thread>
+#include "core/keyvalue/p_string.h"
 #include "net/cproto/cproto.h"
 #include "net/cproto/serverconnection.h"
 #include "net/listener.h"

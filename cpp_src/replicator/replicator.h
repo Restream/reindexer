@@ -55,6 +55,11 @@ protected:
 		const std::mutex &replicatorMtx_;
 	};
 
+	struct ForceSyncContext {
+		const NamespaceDef &nsDef;
+		std::function<void()> replaceTagsMatcher;
+	};
+
 	void run();
 	void stop();
 	// Sync single namespace
@@ -64,9 +69,9 @@ protected:
 	// Read and apply WAL from master
 	Error syncNamespaceByWAL(const NamespaceDef &ns);
 	// Apply WAL from master to namespace
-	Error applyWAL(Namespace::Ptr &slaveNs, client::QueryResults &qr, const NamespaceDef *nsDef = nullptr);
+	Error applyWAL(Namespace::Ptr &slaveNs, client::QueryResults &qr, const ForceSyncContext *fsyncCtx = nullptr);
 	// Sync indexes of namespace
-	Error syncIndexesForced(Namespace::Ptr &slaveNs, const NamespaceDef &masterNsDef);
+	Error syncIndexesForced(Namespace::Ptr &slaveNs, const ForceSyncContext &fsyncCtx);
 	// Sync namespace schema
 	Error syncSchemaForced(Namespace::Ptr &slaveNs, const NamespaceDef &masterNsDef);
 	// Forced sync of namespace
@@ -74,8 +79,7 @@ protected:
 	// Sync metadata
 	Error syncMetaForced(Namespace::Ptr &slaveNs, std::string_view nsName);
 	// Apply single WAL record
-	Error applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr &ns, const WALRecord &wrec, SyncStat &stat,
-						 const NamespaceDef * = nullptr);
+	Error applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr &ns, const WALRecord &wrec, SyncStat &stat);
 	// Apply single transaction WAL record
 	Error applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr &ns, const WALRecord &wrec);
 	void checkNoOpenedTransaction(std::string_view nsName, Namespace::Ptr &slaveNs);

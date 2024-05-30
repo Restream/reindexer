@@ -5,7 +5,6 @@
 #include <functional>
 #include <memory>
 #include "estl/h_vector.h"
-#include "tools/errors.h"
 
 namespace reindexer {
 

@@ -47,7 +47,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-20.04, ubuntu-22.04, macos-latest]
+        os: [ubuntu-20.04, ubuntu-22.04, macos-13]
         include:
           - os: ubuntu-latest
             sanitizer: ASAN
@@ -91,7 +91,7 @@ jobs:
           make -j4
           STRIP=/bin/true cpack
       - name: 'C++ tests'
-        if: ${{ matrix.os == 'macos-latest' }}
+        if: ${{ matrix.os == 'macos-13' }}
         run: |
           echo "Running C++ directly in this job due to Action's problem with artifacts transition for macos-11 and macos-12 runners"
           cd build
@@ -111,7 +111,7 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-20.04, ubuntu-22.04, macos-latest]
+        os: [ubuntu-20.04, ubuntu-22.04, macos-13]
         test: ['C++', 'GO']
         include:
           - os: ubuntu-latest
@@ -140,18 +140,24 @@ jobs:
       TEST: ${{matrix.test}}
     steps:
       - name: Checkout repository
-        if: ${{ matrix.os != 'macos-latest' || matrix.test == 'GO' }}
+        if: ${{ matrix.os != 'macos-13' || matrix.test == 'GO' }}
         uses: actions/checkout@v4
+      - name: Install Go
+        uses: actions/setup-go@v5
+        if: ${{ matrix.os == 'macos-13' && matrix.test == 'GO' }}
+        with:
+          go-version: '1.22.x'
+          check-latest: true
       - name: Download ${{matrix.os}}${{matrix.sanitizer}} Artifacts
-        if: ${{ matrix.os != 'macos-latest' || matrix.test == 'GO' }}
+        if: ${{ matrix.os != 'macos-13' || matrix.test == 'GO' }}
         uses: actions/download-artifact@v4
         with:
           name: ${{matrix.os}}${{matrix.sanitizer}}
       - name: 'Untar Artifacts'
-        if: ${{ matrix.os != 'macos-latest' || matrix.test == 'GO' }}
+        if: ${{ matrix.os != 'macos-13' || matrix.test == 'GO' }}
         run: tar -xvf artifacts.tar
       - name: Prepare Environment
-        if: ${{ matrix.os != 'macos-latest' || matrix.test == 'GO' }}
+        if: ${{ matrix.os != 'macos-13' || matrix.test == 'GO' }}
         env:
           OS: ${{matrix.os}}
         run: |
@@ -166,7 +172,7 @@ jobs:
             ./.github/workflows/install_gtest_parallel.sh
           fi
       - name: Tests
-        if: ${{ matrix.os != 'macos-latest' || matrix.test == 'GO' }}
+        if: ${{ matrix.os != 'macos-13' || matrix.test == 'GO' }}
         run: |
           if [[ $TEST == 'GO' ]]; then
             if [[ -z "${{matrix.sanitizer}}" ]]; then

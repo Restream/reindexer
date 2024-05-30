@@ -1076,7 +1076,8 @@ TEST_F(ReplicationSlaveSlaveApi, ConcurrentForceSync) {
 	}
 	for (size_t i = 0; i < nodes.size(); ++i) {
 		std::vector<NamespaceDef> nsDefs;
-		nodes[i].Get()->api.reindexer->EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideSystem().WithClosed());
+		auto err = nodes[i].Get()->api.reindexer->EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideSystem().WithClosed());
+		ASSERT_TRUE(err.ok()) << err.what();
 		if (i == 0) {
 			EXPECT_EQ(nsDefs.size(), kNsList.size());
 		} else {

@@ -35,7 +35,6 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 	} else {
 		err = client->OpenNamespace(kNsName);
 	}
-
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	if constexpr (isMockClient) {
@@ -57,16 +56,13 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 		auto item = client->NewItem(kNsName);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		auto err = item.FromJSON(wrser.Slice(), &endp);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		if constexpr (isMockClient) {
-			client->Upsert(kNsName, item, ctx);
+			err = client->Upsert(kNsName, item, ctx);
 		} else {
-			client->Upsert(kNsName, item);
+			err = client->Upsert(kNsName, item);
 		}
-
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 

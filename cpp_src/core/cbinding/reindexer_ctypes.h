@@ -5,7 +5,6 @@ extern "C" {
 #endif
 
 #include <stdint.h>
-#include "core/type_consts.h"
 
 typedef struct reindexer_config {
 	int64_t allocator_cache_limit;
