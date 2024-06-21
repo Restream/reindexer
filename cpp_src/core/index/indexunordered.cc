@@ -204,10 +204,8 @@ Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id, bool &clearCach
 
 template <typename T>
 void IndexUnordered<T>::Delete(const Variant &key, IdType id, StringsHolder &strHolder, bool &clearCache) {
-	int delcnt = 0;
 	if (key.Type().Is<KeyValueType::Null>()) {
-		delcnt = this->empty_ids_.Unsorted().Erase(id);
-		assertrx(delcnt);
+		this->empty_ids_.Unsorted().Erase(id); // ignore result
 		this->isBuilt_ = false;
 		cache_.reset();
 		clearCache = true;
@@ -218,7 +216,7 @@ void IndexUnordered<T>::Delete(const Variant &key, IdType id, StringsHolder &str
 	if (keyIt == idx_map.end()) return;
 
 	delMemStat(keyIt);
-	delcnt = keyIt->second.Unsorted().Erase(id);
+	int delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
 	this->isBuilt_ = false;
 	cache_.reset();

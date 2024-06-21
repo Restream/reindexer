@@ -27,7 +27,7 @@ public:
 	}
 
 	bool Next() noexcept final override {
-		assertrx(impl_);
+		assertrx_dbg(impl_);
 		if (impl_->isOver()) {
 			return impl_->finishIteration();
 		}
@@ -42,12 +42,12 @@ public:
 	}
 
 	void ExcludeLastSet() noexcept override {
-		assertrx(impl_);
+		assertrx_dbg(impl_);
 		impl_->shiftToNextIdset();
 	}
 
 	IdType Value() const noexcept override final {
-		assertrx(impl_);
+		assertrx_dbg(impl_);
 		return impl_->getValue();
 	}
 	size_t GetMaxIterations(size_t limitIters) noexcept final {

@@ -1,8 +1,6 @@
 #pragma once
 
-#include <string>
 #include <unordered_map>
-#include <vector>
 
 #include "base_fixture.h"
 
@@ -124,10 +122,6 @@ private:
 	void Query4CondRange(State& state);
 	void Query4CondRangeTotal(State& state);
 	void Query4CondRangeCachedTotal(State& state);
-	void FromCJSON(State&);
-	void FromCJSONPKOnly(State&);
-	void GetCJSON(State&);
-	void ExtractField(State&);
 	void Query4CondRangeDropCache(State& state);
 	void Query4CondRangeDropCacheTotal(State& state);
 	void Query4CondRangeDropCacheCachedTotal(State& state);
@@ -136,7 +130,6 @@ private:
 	void SubQueryAggregate(State&);
 
 	void query2CondIdSet(State& state, const std::vector<std::vector<int>>& idsets);
-	reindexer::Error prepareCJsonBench();
 
 	std::vector<std::string> countries_;
 	std::vector<std::string> countryLikePatterns_;
@@ -160,9 +153,4 @@ private:
 	std::string stringSelectNs_{"string_select_ns"};
 	std::string mainNs_{"main_ns"};
 	std::string rightNs_{"right_ns"};
-	std::string cjsonNsName_{"cjson_ns_name"};
-	std::unique_ptr<reindexer::Item> itemForCjsonBench_;
-	std::vector<std::string> fieldsToExtract_;
-	constexpr static int kCjsonBenchItemID = 9973;
-	std::string cjsonOfItem_;
 };

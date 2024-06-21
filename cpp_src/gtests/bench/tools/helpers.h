@@ -8,6 +8,7 @@
 
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/variant.h"
+#include "estl/span.h"
 
 using reindexer::Variant;
 using reindexer::VariantArray;
@@ -36,6 +37,58 @@ struct to_array_helper<std::string> {
 };
 
 }  // namespace internal
+
+static inline std::string randString(size_t size) {
+	constexpr static std::string_view ch{"qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"};
+	std::string ret(size, ' ');
+	for (size_t i = 0; i < size; ++i) ret[i] = ch[rand() % ch.size()];
+	return ret;
+}
+
+template <size_t L>
+reindexer::span<bool> randBoolArray() {
+	static bool ret[L];
+	for (size_t i = 0; i < L; ++i) {
+		ret[i] = rand() % 2;
+	}
+	return ret;
+}
+
+template <size_t L>
+reindexer::span<int> randIntArray() {
+	static int ret[L];
+	for (size_t i = 0; i < L; ++i) {
+		ret[i] = rand();
+	}
+	return ret;
+}
+
+template <size_t L>
+reindexer::span<int64_t> randInt64Array() {
+	static int64_t ret[L];
+	for (size_t i = 0; i < L; ++i) {
+		ret[i] = rand();
+	}
+	return ret;
+}
+
+template <size_t L>
+reindexer::span<double> randDoubleArray() {
+	static double ret[L];
+	for (size_t i = 0; i < L; ++i) {
+		ret[i] = double(rand()) / (rand() + 1);
+	}
+	return ret;
+}
+
+template <size_t L>
+reindexer::span<std::string> randStringArray() {
+	static std::string ret[L];
+	for (size_t i = 0; i < L; ++i) {
+		ret[i] = randString(L);
+	}
+	return ret;
+}
 
 template <typename T>
 VariantArray toArray(const std::vector<T>& vec) {

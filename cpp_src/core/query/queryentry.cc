@@ -841,7 +841,7 @@ void QueryEntries::dumpEqualPositions(size_t level, WrSerializer &ser, const Equ
 		for (size_t i = 0; i < level; ++i) {
 			ser << "   ";
 		}
-		ser << "equal_poisition(";
+		ser << "equal_positions(";
 		for (size_t i = 0, s = eq.size(); i < s; ++i) {
 			if (i != 0) ser << ", ";
 			ser << eq[i];

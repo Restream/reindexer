@@ -1,44 +1,47 @@
 #include "dslencoder.h"
 
-#include <unordered_map>
 #include "core/cjson/jsonbuilder.h"
 #include "core/keyvalue/p_string.h"
 #include "core/query/query.h"
 #include "core/queryresults/aggregationresult.h"
 #include "dslparser.h"
 #include "tools/logger.h"
-
-struct EnumClassHash {
-	template <typename T>
-	size_t operator()(T t) const {
-		return static_cast<size_t>(t);
-	}
-};
+#include "vendor/frozen/unordered_map.h"
 
 namespace reindexer {
 namespace dsl {
 
-static const std::unordered_map<JoinType, std::string, EnumClassHash> join_types = {
-	{InnerJoin, "inner"}, {LeftJoin, "left"}, {OrInnerJoin, "orinner"}};
+constexpr static auto kJoinTypes =
+	frozen::make_unordered_map<JoinType, std::string_view>({{InnerJoin, "inner"}, {LeftJoin, "left"}, {OrInnerJoin, "orinner"}});
 
-static const std::unordered_map<CondType, std::string, EnumClassHash> cond_map = {
-	{CondAny, "any"},	  {CondEq, "eq"},	{CondLt, "lt"},			{CondLe, "le"},		  {CondGt, "gt"},	  {CondGe, "ge"},
-	{CondRange, "range"}, {CondSet, "set"}, {CondAllSet, "allset"}, {CondEmpty, "empty"}, {CondLike, "like"}, {CondDWithin, "dwithin"},
-};
+constexpr static auto kCondMap = frozen::make_unordered_map<CondType, std::string_view>({
+	{CondAny, "any"},
+	{CondEq, "eq"},
+	{CondLt, "lt"},
+	{CondLe, "le"},
+	{CondGt, "gt"},
+	{CondGe, "ge"},
+	{CondRange, "range"},
+	{CondSet, "set"},
+	{CondAllSet, "allset"},
+	{CondEmpty, "empty"},
+	{CondLike, "like"},
+	{CondDWithin, "dwithin"},
+});
 
-static const std::unordered_map<OpType, std::string, EnumClassHash> op_map = {{OpOr, "or"}, {OpAnd, "and"}, {OpNot, "not"}};
+constexpr static auto kOpMap = frozen::make_unordered_map<OpType, std::string_view>({{OpOr, "or"}, {OpAnd, "and"}, {OpNot, "not"}});
 
-static const std::unordered_map<CalcTotalMode, std::string, EnumClassHash> reqtotal_values = {
-	{ModeNoTotal, "disabled"}, {ModeAccurateTotal, "enabled"}, {ModeCachedTotal, "cached"}};
+constexpr static auto kReqTotalValues = frozen::make_unordered_map<CalcTotalMode, std::string_view>(
+	{{ModeNoTotal, "disabled"}, {ModeAccurateTotal, "enabled"}, {ModeCachedTotal, "cached"}});
 
 enum class QueryScope { Main, Subquery };
 
-template <typename T>
-std::string get(std::unordered_map<T, std::string, EnumClassHash> const& m, const T& key) {
+template <typename T, size_t N>
+std::string_view get(frozen::unordered_map<T, std::string_view, N> const& m, const T& key) {
 	auto it = m.find(key);
 	if (it != m.end()) return it->second;
 	assertrx(it != m.end());
-	return std::string();
+	return std::string_view();
 }
 
 static void encodeSorting(const SortingEntries& sortingEntries, JsonBuilder& builder) {
@@ -132,15 +135,15 @@ static void encodeAggregationFunctions(const Query& query, JsonBuilder& builder)
 static void encodeJoinEntry(const QueryJoinEntry& joinEntry, JsonBuilder& builder) {
 	builder.Put("left_field", joinEntry.LeftFieldName());
 	builder.Put("right_field", joinEntry.RightFieldName());
-	builder.Put("cond", get(cond_map, joinEntry.Condition()));
-	builder.Put("op", get(op_map, joinEntry.Operation()));
+	builder.Put("cond", get(kCondMap, joinEntry.Condition()));
+	builder.Put("op", get(kOpMap, joinEntry.Operation()));
 }
 
 void encodeSingleJoinQuery(const JoinedQuery& joinQuery, JsonBuilder& builder) {
 	using namespace std::string_view_literals;
 	auto node = builder.Object("join_query"sv);
 
-	node.Put("type", get(join_types, joinQuery.joinType));
+	node.Put("type", get(kJoinTypes, joinQuery.joinType));
 	node.Put("namespace", joinQuery.NsName());
 	node.Put("limit", joinQuery.Limit());
 	node.Put("offset", joinQuery.Offset());
@@ -177,7 +180,7 @@ static void putValues(JsonBuilder& builder, const VariantArray& values) {
 
 static void encodeFilter(const QueryEntry& qentry, JsonBuilder& builder) {
 	if (qentry.Distinct()) return;
-	builder.Put("cond", get(cond_map, CondType(qentry.Condition())));
+	builder.Put("cond", get(kCondMap, CondType(qentry.Condition())));
 	builder.Put("field", qentry.FieldName());
 	putValues(builder, qentry.Values());
 }
@@ -224,7 +227,7 @@ void toDsl(const Query& query, QueryScope scope, JsonBuilder& builder) {
 			builder.Put("namespace", query.NsName());
 			builder.Put("limit", query.Limit());
 			builder.Put("offset", query.Offset());
-			builder.Put("req_total", get(reqtotal_values, query.CalcTotal()));
+			builder.Put("req_total", get(kReqTotalValues, query.CalcTotal()));
 			if (scope != QueryScope::Subquery) {
 				builder.Put("explain", query.NeedExplain());
 				builder.Put("type", "select");
@@ -300,7 +303,7 @@ std::string toDsl(const Query& query) {
 void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& parentQuery, JsonBuilder& builder) {
 	for (; it != to; ++it) {
 		auto node = builder.Object();
-		node.Put("op", dsl::get(dsl::op_map, it->operation));
+		node.Put("op", dsl::get(dsl::kOpMap, it->operation));
 		it->Visit(
 			[&node](const AlwaysFalse&) {
 				logPrintf(LogTrace, "Not normalized query to dsl");
@@ -311,7 +314,7 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 				node.Put("always", true);
 			},
 			[&node, &parentQuery](const SubQueryEntry& sqe) {
-				node.Put("cond", dsl::get(dsl::cond_map, CondType(sqe.Condition())));
+				node.Put("cond", dsl::get(dsl::kCondMap, CondType(sqe.Condition())));
 				{
 					auto subquery = node.Object("subquery");
 					dsl::toDsl(parentQuery.GetSubQuery(sqe.QueryIndex()), dsl::QueryScope::Subquery, subquery);
@@ -319,7 +322,7 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 				dsl::putValues(node, sqe.Values());
 			},
 			[&node, &parentQuery](const SubQueryFieldEntry& sqe) {
-				node.Put("cond", dsl::get(dsl::cond_map, CondType(sqe.Condition())));
+				node.Put("cond", dsl::get(dsl::kCondMap, CondType(sqe.Condition())));
 				node.Put("field", sqe.FieldName());
 				auto subquery = node.Object("subquery");
 				dsl::toDsl(parentQuery.GetSubQuery(sqe.QueryIndex()), dsl::QueryScope::Subquery, subquery);
@@ -338,7 +341,7 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 				dsl::encodeSingleJoinQuery(parentQuery.GetJoinQueries()[jqe.joinIndex], node);
 			},
 			[&node](const BetweenFieldsQueryEntry& qe) {
-				node.Put("cond", dsl::get(dsl::cond_map, CondType(qe.Condition())));
+				node.Put("cond", dsl::get(dsl::kCondMap, CondType(qe.Condition())));
 				node.Put("first_field", qe.LeftFieldName());
 				node.Put("second_field", qe.RightFieldName());
 			});

@@ -88,6 +88,7 @@ public:
 	Error FromMsgPack(std::string_view sbuf, size_t &offset);
 	Error FromProtobuf(std::string_view sbuf);
 	Error GetMsgPack(WrSerializer &wrser);
+	std::string_view GetMsgPack();
 	Error GetProtobuf(WrSerializer &wrser);
 
 	const PayloadType &Type() const noexcept { return payloadType_; }
@@ -127,8 +128,9 @@ public:
 	}
 	void SetNamespace(std::shared_ptr<Namespace> ns) noexcept { ns_ = std::move(ns); }
 	std::shared_ptr<Namespace> GetNamespace() const noexcept { return ns_; }
+	static void validateModifyArray(const VariantArray &values);
 
-protected:
+private:
 	// Index fields payload data
 	PayloadType payloadType_;
 	PayloadValue realValue_;

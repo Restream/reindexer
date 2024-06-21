@@ -4,14 +4,33 @@
 
 namespace reindexer {
 
-TagType kvType2Tag(KeyValueType kvType) noexcept {
+TagType kvType2Tag(KeyValueType kvType) {
 	return kvType.EvaluateOneOf([](OneOf<KeyValueType::Int, KeyValueType::Int64>) noexcept { return TAG_VARINT; },
 								[](KeyValueType::Bool) noexcept { return TAG_BOOL; },
 								[](KeyValueType::Double) noexcept { return TAG_DOUBLE; },
 								[](KeyValueType::String) noexcept { return TAG_STRING; },
 								[](OneOf<KeyValueType::Undefined, KeyValueType::Null>) noexcept { return TAG_NULL; },
 								[](KeyValueType::Uuid) noexcept { return TAG_UUID; },
-								[](OneOf<KeyValueType::Composite, KeyValueType::Tuple>) noexcept -> TagType { std::abort(); });
+								[kvType](OneOf<KeyValueType::Composite, KeyValueType::Tuple>) -> TagType {
+									throw Error(errLogic, "Unexpected value type: '%s'", kvType.Name());
+								});
+}
+
+TagType arrayKvType2Tag(const VariantArray &values) {
+	if (values.empty()) {
+		return TAG_NULL;
+	}
+
+	auto it = values.begin();
+	const auto type = kvType2Tag(it->Type());
+
+	++it;
+	for (auto end = values.end(); it != end; ++it) {
+		if (type != kvType2Tag(it->Type())) {
+			return TAG_OBJECT;	// heterogeneously array detected
+		}
+	}
+	return type;
 }
 
 void copyCJsonValue(TagType tagType, const Variant &value, WrSerializer &wrser) {
@@ -39,9 +58,11 @@ void copyCJsonValue(TagType tagType, const Variant &value, WrSerializer &wrser) 
 			break;
 		case TAG_NULL:
 			break;
+		case TAG_OBJECT:
+			wrser.PutVariant(value);
+			break;
 		case TAG_ARRAY:
 		case TAG_END:
-		case TAG_OBJECT:
 			throw Error(errParseJson, "Unexpected cjson typeTag '%s' while parsing value", TagTypeToStr(tagType));
 	}
 }
@@ -57,13 +78,23 @@ void putCJsonRef(TagType tagType, int tagName, int tagField, const VariantArray 
 
 void putCJsonValue(TagType tagType, int tagName, const VariantArray &values, WrSerializer &wrser) {
 	if (values.IsArrayValue()) {
-		const TagType elemType = kvType2Tag(values.ArrayType());
+		const TagType elemType = arrayKvType2Tag(values);
 		wrser.PutCTag(ctag{TAG_ARRAY, tagName});
 		wrser.PutCArrayTag(carraytag{values.size(), elemType});
-		for (const Variant &value : values) copyCJsonValue(elemType, value, wrser);
+		if (elemType == TAG_OBJECT) {
+			for (const Variant &value : values) {
+				auto itemType = kvType2Tag(value.Type());
+				wrser.PutCTag(ctag{itemType});
+				copyCJsonValue(itemType, value, wrser);
+			}
+		} else {
+			for (const Variant &value : values) copyCJsonValue(elemType, value, wrser);
+		}
 	} else if (values.size() == 1) {
 		wrser.PutCTag(ctag{tagType, tagName});
 		copyCJsonValue(tagType, values.front(), wrser);
+	} else {
+		throw Error(errParams, "Unexpected value to update json value");
 	}
 }
 
@@ -86,10 +117,13 @@ void copyCJsonValue(TagType tagType, Serializer &rdser, WrSerializer &wrser) {
 		case TAG_UUID:
 			wrser.PutUuid(rdser.GetUuid());
 			break;
-		case TAG_END:
 		case TAG_OBJECT:
+			wrser.PutVariant(rdser.GetVariant());
+			break;
+		case TAG_END:
 		case TAG_ARRAY:
-			throw Error(errParseJson, "Unexpected cjson typeTag '%s' while parsing value", TagTypeToStr(tagType));
+		default:
+			throw Error(errParseJson, "Unexpected cjson typeTag '%d' while parsing value", int(tagType));
 	}
 }
 
@@ -136,7 +170,9 @@ void skipCjsonTag(ctag tag, Serializer &rdser, std::array<unsigned, kMaxIndexes>
 			} else if (fieldsArrayOffsets) {
 				(*fieldsArrayOffsets)[field] += 1;
 			}
-		}
+		} break;
+		default:
+			throw Error(errParseJson, "skipCjsonTag: unexpected ctag type value: %d", int(tag.Type()));
 	}
 }
 
@@ -155,7 +191,7 @@ void buildPayloadTuple(const PayloadIface<T> &pl, const TagsMatcher *tagsMatcher
 			continue;
 		}
 
-		int tagName = tagsMatcher->name2tag(fieldType.JsonPaths()[0]);
+		const int tagName = tagsMatcher->name2tag(fieldType.JsonPaths()[0]);
 		assertf(tagName != 0, "ns=%s, field=%s", pl.Type().Name(), fieldType.JsonPaths()[0]);
 
 		if (fieldType.IsArray()) {

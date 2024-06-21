@@ -1,15 +1,8 @@
 ﻿#pragma once
 
 #include <mutex>
-#include "debug/backtrace.h"
-#include "estl/fast_hash_set.h"
-#include "reindexer_api.h"
-#include "reindexertestapi.h"
-#include "server/dbmanager.h"
-#include "server/server.h"
-#include "thread"
-#include "tools/logger.h"
-#include "tools/serializer.h"
+#include "estl/shared_mutex.h"
+#include "servercontrol.h"
 
 using namespace reindexer_server;
 
@@ -50,7 +43,7 @@ public:
 	void SetOptmizationSortWorkers(size_t id, size_t cnt, std::string_view nsName);
 
 	size_t masterId_ = 0;
-	shared_timed_mutex restartMutex_;
+	reindexer::shared_timed_mutex restartMutex_;
 
 private:
 	const std::string kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex_repl_test/");

@@ -124,7 +124,6 @@ std::string Escape(Stream& in) {
 		default:;
 	}
 
-	std::stringstream msg;
 	throw ParserException(in.mark(), std::string(ErrorMsg::INVALID_ESCAPE) + ch);
 }
 }  // namespace Exp

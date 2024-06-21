@@ -7,9 +7,9 @@
 
 class ReplicationLoadApi : public ReplicationApi {
 public:
-	class UpdatesReciever : public IUpdatesObserver {
+	class UpdatesReciever : public reindexer::IUpdatesObserver {
 	public:
-		void OnWALUpdate(LSNPair, std::string_view nsName, const WALRecord &) override final {
+		void OnWALUpdate(reindexer::LSNPair, std::string_view nsName, const reindexer::WALRecord &) override final {
 			std::lock_guard<std::mutex> lck(mtx_);
 			auto found = updatesCounters_.find(nsName);
 			if (found != updatesCounters_.end()) {
@@ -21,7 +21,7 @@ public:
 		void OnConnectionState(const Error &) override final {}
 		void OnUpdatesLost(std::string_view) override final {}
 
-		using map = tsl::hopscotch_map<std::string, size_t, nocase_hash_str, nocase_equal_str>;
+		using map = tsl::hopscotch_map<std::string, size_t, reindexer::nocase_hash_str, reindexer::nocase_equal_str>;
 
 		map Counters() const {
 			std::lock_guard<std::mutex> lck(mtx_);
@@ -77,7 +77,7 @@ public:
 		auto srv = GetSrv(masterId_);
 		auto &api = srv->api;
 
-		shared_lock<shared_timed_mutex> lk(restartMutex_);
+		reindexer::shared_lock<reindexer::shared_timed_mutex> lk(restartMutex_);
 
 		for (size_t i = 0; i < count; ++i) {
 			BaseApi::ItemType item = api.NewItem("some");
@@ -96,7 +96,7 @@ public:
 		}
 	}
 	BaseApi::QueryResultsType SimpleSelect(size_t num) {
-		Query qr = Query("some");
+		reindexer::Query qr("some");
 		auto srv = GetSrv(num);
 		auto &api = srv->api;
 		BaseApi::QueryResultsType res(api.reindexer.get());
@@ -109,7 +109,7 @@ public:
 		auto srv = GetSrv(masterId_);
 		auto &api = srv->api;
 		BaseApi::QueryResultsType res(api.reindexer.get());
-		auto err = api.reindexer->Delete(Query("some"), res);
+		auto err = api.reindexer->Delete(reindexer::Query("some"), res);
 		EXPECT_TRUE(err.ok()) << err.what();
 		return res;
 	}
@@ -152,7 +152,7 @@ public:
 			auto srv = GetSrv(i);
 			auto &api = srv->api;
 			BaseApi::QueryResultsType res(api.reindexer.get());
-			auto err = api.reindexer->Select(Query(ns), res);
+			auto err = api.reindexer->Select(reindexer::Query(ns), res);
 			EXPECT_TRUE(err.ok()) << err.what();
 			versions.emplace_back(res.getTagsMatcher(0).version());
 		}
@@ -180,8 +180,8 @@ public:
 	void ValidateSchemas(std::string_view ns, std::string_view expected) {
 		for (size_t i = 0; i < GetServersCount(); i++) {
 			auto srv = GetSrv(i);
-			std::vector<NamespaceDef> nsDefs;
-			auto err = srv->api.reindexer->EnumNamespaces(nsDefs, EnumNamespacesOpts().WithFilter(ns));
+			std::vector<reindexer::NamespaceDef> nsDefs;
+			auto err = srv->api.reindexer->EnumNamespaces(nsDefs, reindexer::EnumNamespacesOpts().WithFilter(ns));
 			EXPECT_TRUE(err.ok()) << err.what();
 			ASSERT_EQ(nsDefs.size(), 1) << "Namespace does not exist: " << ns;
 			EXPECT_EQ(nsDefs[0].name, ns);

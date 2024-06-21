@@ -58,7 +58,7 @@ void ReplicationApi::RestartServer(size_t id) {
 void ReplicationApi::WaitSync(const std::string& ns) {
 	auto now = std::chrono::milliseconds(0);
 	const auto pause = std::chrono::milliseconds(10);
-	ReplicationStateApi state{lsn_t(), lsn_t(), 0, 0, false};
+	ReplicationStateApi state{reindexer::lsn_t(), reindexer::lsn_t(), 0, 0, false};
 	while (state.lsn.isEmpty()) {
 		now += pause;
 		ASSERT_TRUE(now < kMaxSyncTime);
@@ -67,7 +67,7 @@ void ReplicationApi::WaitSync(const std::string& ns) {
 			if (i != masterId_) {
 				state = GetSrv(i)->GetState(ns);
 				if (xstate.lsn != state.lsn) {
-					state.lsn = lsn_t();
+					state.lsn = reindexer::lsn_t();
 					break;
 				} else if (!state.lsn.isEmpty()) {
 					ASSERT_EQ(state.dataHash, xstate.dataHash) << "name: " << ns << ", lsns: " << int64_t(state.lsn) << " "

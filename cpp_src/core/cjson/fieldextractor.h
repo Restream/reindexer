@@ -93,16 +93,17 @@ public:
 				params_->length = count;
 			}
 		}
+		const KeyValueType kvt{tagType};
 		if (ptype == PathType::WithIndex) {
 			for (int i = 0; i < count; ++i) {
-				auto value = ser.GetRawVariant(KeyValueType(tagType));
+				auto value = ser.GetRawVariant(kvt);
 				if (i == pathNode.Index()) {
 					put(0, std::move(value));
 				}
 			}
 		} else {
 			for (int i = 0; i < count; ++i) {
-				put(0, ser.GetRawVariant(KeyValueType(tagType)));
+				put(0, ser.GetRawVariant(kvt));
 			}
 		}
 		if (expectedPathDepth_ <= 0) {

@@ -28,7 +28,7 @@ void EqualPositionComparator::bindField(const std::string &name, F field, const 
 	ctx.cmpString.SetValues(cond, values);
 	ctx.cmpDouble.SetValues(cond, values);
 	ctx.cmpUuid.SetValues(cond, values);
-	assertrx(ctx_.size() == fields_.size());
+	assertrx_throw(ctx_.size() == fields_.size());
 
 	name_ += ' ' + name;
 }
@@ -46,7 +46,7 @@ bool EqualPositionComparator::Compare(const PayloadValue &pv, IdType /*rowId*/) 
 		if (isRegularIndex) {
 			pl.Get(fields_[j], v);
 		} else {
-			assertrx(tagsPathIdx < fields_.getTagsPathsLength());
+			assertrx_throw(tagsPathIdx < fields_.getTagsPathsLength());
 			pl.GetByJsonPath(fields_.getTagsPath(tagsPathIdx++), v, KeyValueType::Undefined{});
 		}
 		if (v.size() < len) len = vals.back().size();
@@ -55,7 +55,7 @@ bool EqualPositionComparator::Compare(const PayloadValue &pv, IdType /*rowId*/) 
 	for (size_t i = 0; i < len; ++i) {
 		bool cmpRes = true;
 		for (size_t j = 0; j < fields_.size(); ++j) {
-			assertrx(i < vals[j].size());
+			assertrx_throw(i < vals[j].size());
 			cmpRes &= !vals[j][i].Type().Is<KeyValueType::Null>() && compareField(j, vals[j][i]);
 			if (!cmpRes) break;
 		}

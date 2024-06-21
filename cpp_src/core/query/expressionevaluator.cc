@@ -237,7 +237,7 @@ void ExpressionEvaluator::handleCommand(tokenizer& parser, const PayloadValue& v
 		if (cmd == Command::ArrayRemoveOnce) {
 			// remove elements from array once
 			auto it = std::find_if(values.begin(), values.end(), [&item](const auto& elem) {
-				return item.RelaxCompare<WithString::Yes, NotComparable::Throw>(elem) == ComparationResult::Eq;
+				return item.RelaxCompare<WithString::Yes, NotComparable::Return>(elem) == ComparationResult::Eq;
 			});
 			if (it != values.end()) {
 				values.erase(it);
@@ -246,7 +246,7 @@ void ExpressionEvaluator::handleCommand(tokenizer& parser, const PayloadValue& v
 			// remove elements from array
 			values.erase(std::remove_if(values.begin(), values.end(),
 										[&item](const auto& elem) {
-											return item.RelaxCompare<WithString::Yes, NotComparable::Throw>(elem) == ComparationResult::Eq;
+											return item.RelaxCompare<WithString::Yes, NotComparable::Return>(elem) == ComparationResult::Eq;
 										}),
 						 values.end());
 		}

@@ -62,7 +62,7 @@ private:
 	template <typename T, typename Visitor>
 	class VisitorWrapper {
 	public:
-		explicit VisitorWrapper(Visitor& v) noexcept : visitor_{v} {}
+		explicit RX_ALWAYS_INLINE VisitorWrapper(Visitor& v) noexcept : visitor_{v} {}
 		template <typename... Ts>
 		RX_ALWAYS_INLINE auto operator()(Ts... vs) const noexcept(noexcept(std::declval<Visitor>()(Ts{}..., T{}))) {
 			return visitor_(vs..., T{});
@@ -84,9 +84,9 @@ private:
 		Tuple,
 		Uuid
 	} value_{KVT::Undefined};
-	constexpr explicit KeyValueType(KVT v) noexcept : value_{v} {}
+	RX_ALWAYS_INLINE constexpr explicit KeyValueType(KVT v) noexcept : value_{v} {}
 
-	[[nodiscard]] static KeyValueType fromNumber(int n) {
+	[[nodiscard]] RX_ALWAYS_INLINE static KeyValueType fromNumber(int n) {
 		switch (n) {
 			case static_cast<int>(KVT::Int64):
 			case static_cast<int>(KVT::Double):
@@ -103,24 +103,24 @@ private:
 				throw Error(errParams, "Invalid int value for KeyValueType: " + std::to_string(n));
 		}
 	}
-	[[nodiscard]] int toNumber() const noexcept { return static_cast<int>(value_); }
+	[[nodiscard]] RX_ALWAYS_INLINE int toNumber() const noexcept { return static_cast<int>(value_); }
 
 public:
-	constexpr KeyValueType(Int64) noexcept : value_{KVT::Int64} {}
-	constexpr KeyValueType(Double) noexcept : value_{KVT::Double} {}
-	constexpr KeyValueType(String) noexcept : value_{KVT::String} {}
-	constexpr KeyValueType(Bool) noexcept : value_{KVT::Bool} {}
-	constexpr KeyValueType(Null) noexcept : value_{KVT::Null} {}
-	constexpr KeyValueType(Int) noexcept : value_{KVT::Int} {}
-	constexpr KeyValueType(Undefined) noexcept : value_{KVT::Undefined} {}
-	constexpr KeyValueType(Composite) noexcept : value_{KVT::Composite} {}
-	constexpr KeyValueType(Tuple) noexcept : value_{KVT::Tuple} {}
-	constexpr KeyValueType(Uuid) noexcept : value_{KVT::Uuid} {}
-	constexpr KeyValueType(const KeyValueType&) noexcept = default;
-	constexpr KeyValueType& operator=(const KeyValueType&) noexcept = default;
-	constexpr KeyValueType(KeyValueType&&) noexcept = default;
-	constexpr KeyValueType& operator=(KeyValueType&&) noexcept = default;
-	explicit KeyValueType(TagType t) {
+	RX_ALWAYS_INLINE constexpr KeyValueType(Int64) noexcept : value_{KVT::Int64} {}
+	RX_ALWAYS_INLINE constexpr KeyValueType(Double) noexcept : value_{KVT::Double} {}
+	RX_ALWAYS_INLINE constexpr KeyValueType(String) noexcept : value_{KVT::String} {}
+	RX_ALWAYS_INLINE constexpr KeyValueType(Bool) noexcept : value_{KVT::Bool} {}
+	RX_ALWAYS_INLINE constexpr KeyValueType(Null) noexcept : value_{KVT::Null} {}
+	RX_ALWAYS_INLINE constexpr KeyValueType(Int) noexcept : value_{KVT::Int} {}
+	RX_ALWAYS_INLINE constexpr KeyValueType(Undefined) noexcept : value_{KVT::Undefined} {}
+	RX_ALWAYS_INLINE constexpr KeyValueType(Composite) noexcept : value_{KVT::Composite} {}
+	RX_ALWAYS_INLINE constexpr KeyValueType(Tuple) noexcept : value_{KVT::Tuple} {}
+	RX_ALWAYS_INLINE constexpr KeyValueType(Uuid) noexcept : value_{KVT::Uuid} {}
+	RX_ALWAYS_INLINE constexpr KeyValueType(const KeyValueType&) noexcept = default;
+	RX_ALWAYS_INLINE constexpr KeyValueType& operator=(const KeyValueType&) noexcept = default;
+	RX_ALWAYS_INLINE constexpr KeyValueType(KeyValueType&&) noexcept = default;
+	RX_ALWAYS_INLINE constexpr KeyValueType& operator=(KeyValueType&&) noexcept = default;
+	RX_ALWAYS_INLINE explicit KeyValueType(TagType t) {
 		switch (t) {
 			case TAG_VARINT:
 				value_ = KVT::Int64;
@@ -224,12 +224,12 @@ public:
 	}
 
 	template <typename T>
-	[[nodiscard]] bool Is() const noexcept {
+	[[nodiscard]] RX_ALWAYS_INLINE bool Is() const noexcept {
 		static constexpr KeyValueType v{T{}};
 		return v.value_ == value_;
 	}
-	[[nodiscard]] bool IsSame(KeyValueType other) const noexcept { return value_ == other.value_; }
-	[[nodiscard]] TagType ToTagType() const noexcept {
+	[[nodiscard]] RX_ALWAYS_INLINE bool IsSame(KeyValueType other) const noexcept { return value_ == other.value_; }
+	[[nodiscard]] RX_ALWAYS_INLINE TagType ToTagType() const noexcept {
 		switch (value_) {
 			case KVT::Int64:
 			case KVT::Int:
@@ -252,7 +252,7 @@ public:
 		assertrx(0);
 		std::abort();
 	}
-	[[nodiscard]] bool IsNumeric() const noexcept {
+	[[nodiscard]] RX_ALWAYS_INLINE bool IsNumeric() const noexcept {
 		switch (value_) {
 			case KVT::Int64:
 			case KVT::Double:

@@ -37,7 +37,7 @@ using std::chrono::microseconds;
 #define kStorageMetaPrefix "meta"
 #define kTupleName "-tuple"
 
-static const std::string kPKIndexName = "#pk";
+constexpr static std::string_view kPKIndexName = "#pk";
 constexpr int kWALStatementItemsThreshold = 5;
 
 #define kStorageMagic 0x1234FEDC
@@ -1004,12 +1004,12 @@ NamespaceImpl::RollBack_insertIndex NamespaceImpl::insertIndex(std::unique_ptr<I
 	}
 
 	if (isPK) {
-		if (const auto [it2, ok] = indexesNames_.insert({kPKIndexName, idxNo}); ok) {
+		if (const auto [it2, ok] = indexesNames_.emplace(kPKIndexName, idxNo); ok) {
 			(void)it2;
 			rollbacker.PkIndexNameInserted();
 		}
 	}
-	if (const auto [it2, ok] = indexesNames_.insert({realName, idxNo}); ok) {
+	if (const auto [it2, ok] = indexesNames_.emplace(realName, idxNo); ok) {
 		rollbacker.InsertedIndexName(it2);
 	}
 	return rollbacker;

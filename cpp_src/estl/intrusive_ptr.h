@@ -14,8 +14,8 @@ private:
 public:
 	typedef T element_type;
 
-	intrusive_ptr() noexcept = default;
-	intrusive_ptr(std::nullptr_t) noexcept {}
+	constexpr intrusive_ptr() noexcept = default;
+	constexpr intrusive_ptr(std::nullptr_t) noexcept {}
 
 	intrusive_ptr(T *p, bool add_ref = true) noexcept : px(p) {
 		if (px != 0 && add_ref) intrusive_ptr_add_ref(px);

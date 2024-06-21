@@ -6,13 +6,14 @@
 #include <vector>
 
 #include "atoi/atoi.h"
-#include "estl/fast_hash_map.h"
+#include "frozen_str_tools.h"
 #include "itoa/itoa.h"
 #include "tools/assertrx.h"
 #include "tools/randomgenerator.h"
 #include "tools/stringstools.h"
 #include "utf8cpp/utf8.h"
 #include "vendor/double-conversion/double-conversion.h"
+#include "vendor/frozen/unordered_map.h"
 
 namespace reindexer {
 
@@ -118,8 +119,9 @@ inline static char *strappend(char *dst, const char *src) noexcept {
 	return dst;
 }
 
-static fast_hash_map<std::string_view, StrictMode> kStrictModes = {
-	{"", StrictModeNotSet}, {"none", StrictModeNone}, {"names", StrictModeNames}, {"indexes", StrictModeIndexes}};
+constexpr static auto kStrictModes = frozen::make_unordered_map<std::string_view, StrictMode>(
+	{{"", StrictModeNotSet}, {"none", StrictModeNone}, {"names", StrictModeNames}, {"indexes", StrictModeIndexes}},
+	frozen::nocase_hash_str{}, frozen::nocase_equal_str{});
 
 }  // namespace stringtools_impl
 
@@ -548,8 +550,9 @@ bool validateUserNsName(std::string_view name) noexcept {
 }
 
 LogLevel logLevelFromString(std::string_view strLogLevel) {
-	static fast_hash_map<std::string_view, LogLevel> levels = {
-		{"none", LogNone}, {"warning", LogWarning}, {"error", LogError}, {"info", LogInfo}, {"trace", LogTrace}};
+	constexpr static auto levels = frozen::make_unordered_map<std::string_view, LogLevel>(
+		{{"none", LogNone}, {"warning", LogWarning}, {"error", LogError}, {"info", LogInfo}, {"trace", LogTrace}},
+		frozen::nocase_hash_str{}, frozen::nocase_equal_str{});
 
 	auto configLevelIt = levels.find(strLogLevel);
 	if (configLevelIt != levels.end()) {

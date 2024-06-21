@@ -144,7 +144,7 @@ void ItemComparator::bindOne(const SortingContext::Entry &sortingEntry, Inserter
 							  } else {
 								  assertrx_dbg(&(*ctx_.joinedSelectors)[e.nsIdx] == jns.joinedSelector);
 							  }
-							  assertrx_throw(!std::holds_alternative<JoinPreResult::Values>(jns.joinedSelector->PreResult().payload));
+							  assertrx_dbg(!std::holds_alternative<JoinPreResult::Values>(jns.joinedSelector->PreResult().payload));
 							  const auto &ns = *jns.joinedSelector->RightNs();
 							  const int fieldIdx = e.index;
 							  if (fieldIdx == IndexValueType::SetByJsonPath || ns.indexes_[fieldIdx]->Opts().IsSparse()) {
@@ -177,7 +177,7 @@ void ItemComparator::bindOne(const SortingContext::Entry &sortingEntry, Inserter
 													  e.field);
 									  }
 									  jns.fields = idx.Fields();
-									  assertrx_throw(comparators_.empty());
+									  assertrx_dbg(comparators_.empty());
 									  comparators_.reserve(jns.fields.size());
 									  for (size_t i = 0, s = jns.fields.size(); i < s; ++i) {
 										  comparators_.emplace_back(CompareByJoinedField{e.nsIdx, e.data.desc});
@@ -218,7 +218,7 @@ void ItemComparator::bindOne(const SortingContext::Entry &sortingEntry, Inserter
 													  e.data.expression);
 									  }
 									  fields_ = ns_.indexes_[fieldIdx]->Fields();
-									  assertrx_throw(comparators_.empty());
+									  assertrx_dbg(comparators_.empty());
 									  comparators_.reserve(fields_.size());
 									  for (size_t i = 0, s = fields_.size(); i < s; ++i) {
 										  const auto field(fields_[i]);
@@ -306,11 +306,8 @@ ComparationResult ItemComparator::compareFields(IdType lId, IdType rId, size_t &
 					return std::make_pair(Variant(*(static_cast<const Uuid *>(rawData) + lId)),
 										  Variant(*(static_cast<const Uuid *>(rawData) + rId)));
 				},
-				[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) noexcept
-				-> std::pair<Variant, Variant> {
-					assertrx(0);
-					abort();
-				});
+				[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>)
+					-> std::pair<Variant, Variant> { throw_as_assert; });
 			cmpRes = values.first.template Compare<NotComparable::Throw>(values.second, opts ? *opts : CollateOpts());
 		} else {
 			cmpRes = ConstPayload(ns_.payloadType_, ns_.items_[lId])

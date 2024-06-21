@@ -31,8 +31,9 @@ While using docker, you may pass reindexer server config options via envinronmen
 - `RX_PPROF` - if RX_PPROF is not empty, enables pprof api. Disabled by default.
 - `RX_SECURITY` - if RX_SECURITY is not empty, enables authorization. Disabled by default.
 - `RX_PROMETHEUS` - if RX_PROMETHEUS is not empty, enables prometheus metrics. Disabled by default.
-- `RX_RPC_QR_IDLE_TIMEOUT` - RPC query results idle timeout (in seconds). Default value is 0 (timeout disabled).
-- `RX_DISABLE_NS_LEAK` - Disables namespaces memory leak on database destruction (will slow down server's termination) 
+- `RX_RPC_QR_IDLE_TIMEOUT` - RPC query results idle timeout (in seconds). Default value is `0` (timeout disabled).
+- `RX_DISABLE_NS_LEAK` - Disables namespaces memory leak on database destruction (will slow down server's termination).
+- `RX_MAX_HTTP_REQ` - allows to configure max HTTP request size (in bytes). Default value is `2097152` (= 2 MB). `0` means 'unlimited'.
 
 ## Linux
 

@@ -1919,7 +1919,6 @@ TEST_F(ReindexerApi, UpdateDoublesItemByPKIndex) {
 	};
 	constexpr size_t kItemsCount = 4;
 	std::vector<ItemData> data;
-	std::string checkUuid;
 	for (unsigned i = 0; i < kItemsCount; i++) {
 		Item item(rt.reindexer->NewItem(default_namespace));
 		ASSERT_TRUE(!!item);

@@ -47,7 +47,7 @@ public:
 		leftFieldSet = true;
 	}
 	void SetRightField(const FieldsSet& fields) {
-		assertrx(leftFieldSet);
+		assertrx_dbg(leftFieldSet);
 		setField(fields, ctx_[0].rCtx_);
 	}
 	void SetLeftField(const FieldsSet& fset, KeyValueType type, bool isArray) {
@@ -61,7 +61,7 @@ public:
 		leftFieldSet = true;
 	}
 	void SetRightField(const FieldsSet& fset, KeyValueType type, bool isArray) {
-		assertrx(leftFieldSet);
+		assertrx_dbg(leftFieldSet);
 		if ((ctx_.size() > 1) != type.Is<KeyValueType::Composite>()) {
 			throw Error{errQueryExec, "A composite index cannot be compared with a non-composite one: %s", name_};
 		}
@@ -92,8 +92,8 @@ private:
 
 	void setField(const TagsPath& tpath, FieldContext& fctx) { fctx.fields_.push_back(tpath); }
 	void setField(const FieldsSet& fields, FieldContext& fctx) {
-		assertrx_throw(fields.size() == 1);
-		assertrx_throw(fields[0] == IndexValueType::SetByJsonPath);
+		assertrx_dbg(fields.size() == 1);
+		assertrx_dbg(fields[0] == IndexValueType::SetByJsonPath);
 		setField(fields.getTagsPath(0), fctx);
 	}
 	void setField(FieldContext& fctx, FieldsSet fset, KeyValueType type, bool isArray) {
@@ -120,7 +120,7 @@ private:
 					validateTypes(ctx_[i].lCtx_.type_, ctx_[i].rCtx_.type_);
 				}
 			} else {
-				assertrx(tagsPathIdx < fields.getTagsPathsLength());
+				assertrx_dbg(tagsPathIdx < fields.getTagsPathsLength());
 				setField(fields.getTagsPath(tagsPathIdx++), left ? ctx_[i].lCtx_ : ctx_[i].rCtx_);
 			}
 		}

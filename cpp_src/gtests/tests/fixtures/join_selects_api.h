@@ -305,7 +305,6 @@ protected:
 		ns.Put("unload_idle_threshold", 0);
 		ns.Put("join_cache_mode", "off");
 		ns.Put("start_copy_policy_tx_size", 10000);
-		ns.Put("merge_limit_count", 20000);
 		ns.Put("optimization_timeout_ms", optimizationTimeout);
 		ns.End();
 		nsArray.End();
@@ -334,7 +333,6 @@ protected:
 		ns.Put("unload_idle_threshold", 0);
 		ns.Put("join_cache_mode", "on");
 		ns.Put("start_copy_policy_tx_size", 10000);
-		ns.Put("merge_limit_count", 20000);
 		ns.End();
 		nsArray.End();
 		jb.End();

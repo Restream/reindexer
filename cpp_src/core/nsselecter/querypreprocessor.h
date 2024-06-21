@@ -74,11 +74,11 @@ public:
 	bool IsFtExcluded() const noexcept { return ftEntry_.has_value(); }
 	void ExcludeFtQuery(const RdxContext &);
 	FtMergeStatuses &GetFtMergeStatuses() noexcept {
-		assertrx(ftPreselect_);
+		assertrx_throw(ftPreselect_);
 		return *ftPreselect_;
 	}
 	FtPreselectT &&MoveFtPreselect() noexcept {
-		assertrx(ftPreselect_);
+		assertrx_throw(ftPreselect_);
 		return std::move(*ftPreselect_);
 	}
 	bool IsFtPreselected() const noexcept { return ftPreselect_ && !ftEntry_; }

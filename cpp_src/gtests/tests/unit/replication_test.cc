@@ -3,6 +3,8 @@
 #include "replication_load_api.h"
 #include "replicator/walrecord.h"
 
+using reindexer::Query;
+
 // clang-format off
 constexpr std::string_view kReplTestSchema1 = R"xxx(
 	{
@@ -208,11 +210,11 @@ TEST_F(ReplicationLoadApi, WALResizeStaticData) {
 
 	auto qrToSet = [](const BaseApi::QueryResultsType& qr) {
 		std::unordered_set<std::string> items;
-		WrSerializer ser;
+		reindexer::WrSerializer ser;
 		for (auto& item : qr) {
 			if (item.IsRaw()) {
 				reindexer::WALRecord rec(item.GetRaw());
-				EXPECT_EQ(rec.type, WalReplState);
+				EXPECT_EQ(rec.type, reindexer::WalReplState);
 			} else {
 				ser.Reset();
 				auto err = item.GetCJSON(ser, false);
@@ -394,7 +396,7 @@ TEST_F(ReplicationLoadApi, DuplicatePKSlaveTest) {
 			ASSERT_TRUE(err.ok());
 			ASSERT_EQ(qr.Count(), items.size());
 			for (auto i : qr) {
-				WrSerializer ser;
+				reindexer::WrSerializer ser;
 				err = i.GetJSON(ser, false);
 				gason::JsonParser parser;
 				auto root = parser.Parse(ser.Slice());

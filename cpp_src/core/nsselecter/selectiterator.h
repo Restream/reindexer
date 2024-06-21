@@ -23,7 +23,6 @@ public:
 		UnbuiltSortOrdersIndex,
 	};
 
-	SelectIterator() = default;
 	SelectIterator(SelectKeyResult &&res, bool dist, std::string &&n, IteratorFieldKind fKind, bool forcedFirst = false) noexcept
 		: SelectKeyResult(std::move(res)),
 		  distinct(dist),
@@ -156,7 +155,7 @@ public:
 	/// Current rowId index since the beginning
 	/// of current SingleKeyValue object.
 	int Pos() const noexcept {
-		assertrx(!lastIt_->useBtree_ && (type_ != UnbuiltSortOrdersIndex));
+		assertrx_throw(!lastIt_->useBtree_ && (type_ != UnbuiltSortOrdersIndex));
 		return lastIt_->it_ - lastIt_->begin_ - 1;
 	}
 
@@ -172,7 +171,7 @@ public:
 				fwdIter->ExcludeLastSet();
 			}
 		} else if (!End() && lastIt_ != end() && lastVal_ == rowId) {
-			assertrx(!lastIt_->isRange_);
+			assertrx_throw(!lastIt_->isRange_);
 			if (lastIt_->useBtree_) {
 				lastIt_->itset_ = lastIt_->setend_;
 				lastIt_->ritset_ = lastIt_->setrend_;
@@ -233,7 +232,7 @@ public:
 
 	bool distinct = false;
 	std::string name;
-	IteratorFieldKind fieldKind;
+	IteratorFieldKind fieldKind = IteratorFieldKind::None;
 
 protected:
 	// Iterates to a next item of result

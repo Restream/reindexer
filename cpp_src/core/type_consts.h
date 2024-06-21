@@ -14,6 +14,8 @@ typedef enum TagType {
 	TAG_UUID = 8,
 } TagType;
 
+static const uint8_t kMaxTagType = TAG_UUID;
+
 typedef enum IndexType {
 	IndexStrHash = 0,
 	IndexStrBTree = 1,

@@ -152,7 +152,7 @@ void MsgPackBuilder::appendJsonObject(std::string_view name, const gason::JsonNo
 			break;
 		}
 		default:
-			throw(Error(errLogic, "Unexpected json tag: %d", obj.value.getTag()));
+			throw(Error(errLogic, "Unexpected json tag: %d", int(obj.value.getTag())));
 	}
 }
 

@@ -4,7 +4,7 @@ info:
     **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
     Reindexer's goal is to provide fast search with complex queries.
     Reindexer is compact, fast and it does not have heavy dependencies.
-  version: "3.25.0"
+  version: "3.26.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -4090,7 +4090,7 @@ definitions:
         default: 0.1
         minimum: 0.0
         maximum: 1.0
-        description: "Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only mmax_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied"
+        description: "Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied"
       min_preselect_size:
         type: integer
         default: 1000

@@ -19,7 +19,7 @@ about reindexer server and HTTP API refer to
 There are two LTS-versions of reindexer available: v3.x.x and v4.x.x.
 
 3.x.x is currently our mainstream branch and 4.x.x (release/4 branch) is beta-version with experimental RAFT-cluster and sharding support.
-Storages are compatible between those versions, however, replication configs are totally different. Versions 3 and 4 are geting all the same bugfixes and features (except replication-related ones).
+Storages are compatible between those versions, however, replication configs are totally different. Versions 3 and 4 are getting all the same bugfixes and features (except replication-related ones).
 
 # Table of contents:
 
@@ -273,24 +273,24 @@ String literals should be enclosed in single quotes.
 
 Composite indexes should be enclosed in double quotes.
 ```sql
-	SELECT * FROM items WHERE "field1+field2" = 'Vasya'
+SELECT * FROM items WHERE "field1+field2" = 'Vasya'
 ```
 
 If the field name does not start with alpha, '_' or '#' it must be enclosed in double quotes, examples:
 ```sql
-	UPDATE items DROP "123"
+UPDATE items DROP "123"
 ```
 
 ```sql
-	SELECT * FROM ns WHERE "123" = 'some_value'
+SELECT * FROM ns WHERE "123" = 'some_value'
 ```
 
 ```sql
-	SELECT * FROM ns WHERE "123abc" = 123
+SELECT * FROM ns WHERE "123abc" = 123
 ```
 
 ```sql
-	DELETE FROM ns WHERE "123abc123" = 111
+DELETE FROM ns WHERE "123abc123" = 111
 ```
 
 Simple Joins may be done via default SQL syntax:
@@ -588,7 +588,7 @@ Go example:
 ```
 SQL example:
 ```sql
-	SELECT * FROM items WHERE fields LIKE 'pattern'
+SELECT * FROM items WHERE fields LIKE 'pattern'
 ```
 
 'me_t' corresponds to 'meet', 'meat', 'melt' and so on
@@ -622,13 +622,13 @@ including functions like `now()`, `sec()` and `serial()`. To use expressions fro
 To make an array-field empty
 
 ```sql
-UPDATE NS SET arrayfield = [] where id = 100
+UPDATE NS SET arrayfield = [] WHERE id = 100
 ```
 
 and set it to null
 
 ```sql
-UPDATE NS SET field = null where id > 100
+UPDATE NS SET field = NULL WHERE id > 100
 ```
 
 In case of non-indexed fields, setting its value to a value of a different type will replace it completely; in case of indexed fields, it is only possible to convert it from adjacent type (integral types and bool), numeric strings (like "123456") to integral types and back. Setting indexed field to null resets it to a default value.
@@ -636,13 +636,13 @@ In case of non-indexed fields, setting its value to a value of a different type 
 It is possible to add new fields to existing items
 
 ```sql
-UPDATE Ns set newField = 'Brand new!' where id > 100
+UPDATE NS SET newField = 'Brand new!' WHERE id > 100
 ```
 
 and even add a new field by a complex nested path like this
 
 ```sql
-UPDATE Ns set nested.nested2.nested3.nested4.newField = 'new nested field!' where id > 100
+UPDATE NS SET nested.nested2.nested3.nested4.newField = 'new nested field!' WHERE id > 100
 ```
 
 will create the following nested objects: nested, nested2, nested3, nested4 and newField as a member of object nested4.
@@ -680,7 +680,7 @@ In this case, `Map` in golang can only work with string as a key. `map[string]in
 Updating of object field by Sql statement:
 
 ```sql
-UPDATE clients SET client_data = {"Name":"John Doe","Age":40,"Address":"Fifth Avenue, Manhattan","Occupation":"Bank Manager","TaxYear":1999,"TaxConsultant":"Jane Smith"} where id = 100;
+UPDATE clients SET client_data = {"Name":"John Doe","Age":40,"Address":"Fifth Avenue, Manhattan","Occupation":"Bank Manager","TaxYear":1999,"TaxConsultant":"Jane Smith"} WHERE id = 100;
 ```
 
 #### Remove field via update-query
@@ -704,7 +704,7 @@ Reindexer update mechanism enables to modify array fields: to modify a certain i
 To update an item subscription operator syntax is used:
 
 ```sql
-update ns set array[*].prices[0] = 9999 where id = 5
+UPDATE NS SET array[*].prices[0] = 9999 WHERE id = 5
 ```
 
 where `*` means all items.
@@ -712,7 +712,7 @@ where `*` means all items.
 To update entire array the following is used:
 
 ```sql
-update ns set prices = [999, 1999, 2999] where id = 9
+UPDATE NS SET prices = [999, 1999, 2999] WHERE id = 9
 ```
 
 any non-indexed field can be easily converted to array using this syntax.
@@ -720,7 +720,7 @@ any non-indexed field can be easily converted to array using this syntax.
 Reindexer also allows to update items of object arrays:
 
 ```sql
-update ns set extra.objects[0] = {"Id":0,"Description":"Updated!"} where id = 9
+UPDATE NS SET extra.objects[0] = {"Id":0,"Description":"Updated!"} WHERE id = 9
 ```
 
 also like this
@@ -729,10 +729,27 @@ also like this
 db.Query("clients").Where("id", reindexer.EQ, 100).SetObject("extra.objects[0]", updatedValue).Update()
 ```
 
+Reindexer supports heterogeneous arrays:
+
+```sql
+UPDATE NS SET info = ["hi", "bro", 111, 2.71] WHERE id = 9
+```
+
+```golang
+	q := DB.Query(ns).Where("id", reindexer.EQ, 1).Set("array", []interface{}{"whatsup", 777, "bro"})
+	res, err := q.Update().FetchAll()
+```
+
+Index array-fields support values that can be converted to an index type only. When saved, such values may change precision due to conversion.
+
+```sql
+UPDATE NS SET prices_idx = [11, '2', 3]
+```
+
 To remove item by index you should do the following:
 
 ```sql
-update ns drop array[5]
+UPDATE NS DROP array[5]
 ```
 
 #### Concatenate arrays
@@ -740,13 +757,13 @@ update ns drop array[5]
 To add items to an existing array the following syntax is supported:
 
 ```sql
-update ns set integer_array = integer_array || [5,6,7,8]
+UPDATE NS SET integer_array = integer_array || [5,6,7,8]
 ```
 
 and
 
 ```sql
-update ns set integer_array = [1,2,3,4,5] || integer_array
+UPDATE NS SET integer_array = [1,2,3,4,5] || integer_array
 ```
 
 The first one adds elements to the end of `integer_array`, the second one adds 5 items to the front of it. To make this code work in Golang `SetExpression()` should be used instead of `Set()`.
@@ -756,20 +773,20 @@ The first one adds elements to the end of `integer_array`, the second one adds 5
 To remove items by value into an existing array the following syntax is supported:
 
 ```sql
-update ns set integer_array = array_remove(integer_array, [5,6,7,8])
+UPDATE NS SET integer_array = array_remove(integer_array, [5,6,7,8])
 ```
 
 and
 
 ```sql
-update ns set integer_array = array_remove_once(integer_array, [5,6,7,8])
+UPDATE NS SET integer_array = array_remove_once(integer_array, [5,6,7,8,6])
 ```
 
 The first one removes all occurrences of the listed values in `integer_array`, the second one deletes only the first occurrence found. To make this code work in Golang `SetExpression()` should be used instead of `Set()`.
 If you need to remove one value, you can use square brackets `[5]` or simple value `5`.
 
 ```sql
-update ns set integer_array = array_remove(integer_array, [5])
+UPDATE NS SET integer_array = array_remove(integer_array, [5])
 ```
 ```sql
 update ns set integer_array = array_remove(integer_array, 5)
@@ -778,7 +795,7 @@ update ns set integer_array = array_remove(integer_array, 5)
 Remove command can be combined with array concatenate:
 
 ```sql
-update ns set integer_array = array_remove_once(integer_array, [5,6,7,8]) || [1,2,3]
+UPDATE NS SET integer_array = array_remove_once(integer_array, [5,6,7,8]) || [1,2,3]
 ```
 
 also like this
@@ -791,10 +808,10 @@ It is possible to remove the values of the second field from the values of the f
 Note: The first parameter in commands is expected to be an array/field-array, the second parameter can be an array/scalar/field-array/field-scalar. For values compatibility/convertibility required
 
 ```sql
-update ns set integer_array = [3] || array_remove(integer_array, integer_array2) || integer_array3 || array_remove_once(integer_array, [8,1]) || [2,4]
+UPDATE NS SET integer_array = [3] || array_remove(integer_array, integer_array2) || integer_array3 || array_remove_once(integer_array, [8,1]) || [2,4]
 ```
 ```sql
-update ns set integer_array = array_remove(integer_array, integer_array2) || array_remove(integer_array, integer_array3) || array_remove_once(integer_array, [33,777])
+UPDATE NS SET integer_array = array_remove(integer_array, integer_array2) || array_remove(integer_array, integer_array3) || array_remove_once(integer_array, [33,777])
 ```
 
 ```golang
@@ -809,7 +826,6 @@ For RPC clients there is transactions count limitation - each connection can't h
 #### Synchronous mode
 
 ```go
-
 	// Create new transaction object
 	tx, err := db.BeginTx("items");
 	if err != nil {
@@ -823,7 +839,6 @@ For RPC clients there is transactions count limitation - each connection can't h
 	if err := tx.Commit(); err != nil {
 		panic(err)
 	}
-
 ```
 
 #### Async batch mode
@@ -831,7 +846,6 @@ For RPC clients there is transactions count limitation - each connection can't h
 For speed up insertion of bulk records async mode can be used.
 
 ```go
-
 	// Create new transaction object
 	tx, err := db.BeginTx("items");
 	if err != nil {
@@ -1068,7 +1082,6 @@ type Item struct {
 	// Composite index
 	_ struct{} `reindex:"id+sub_id+sub_sub_id,,composite,pk"`
 }
-
 ```
 
 Also composite indexes are useful for sorting results by multiple fields:
@@ -1142,7 +1155,6 @@ of results.
 Example code for aggregate `items` by `price` and `name`
 
 ```go
-
 	query := db.Query("items")
 	query.AggregateMax("price")
 	query.AggregateFacet("name", "price").Sort("name", true).Sort("count", false).Offset(10).Limit(100)
@@ -1167,11 +1179,9 @@ Example code for aggregate `items` by `price` and `name`
 	for _, facet := range aggFacetRes.Facets {
 		fmt.Printf ("'%s' '%s' -> %d", facet.Values[0], facet.Values[1], facet.Count)
 	}
-
 ```
 
 ```go
-
 	query := db.Query("items")
 	query.Distinct("name").Distinct("price")
 	iterator := query.Exec()
@@ -1203,12 +1213,12 @@ For instance, we've got an array of structures:
 
 ```go
 type Elem struct {
-   F1 int `reindex:"f1"`
-   F2 int `reindex:"f2"`
+	F1 int `reindex:"f1"`
+	F2 int `reindex:"f2"`
 }
 
 type A struct {
-   Elems []Elem
+	Elems []Elem
 }
 ```
 
@@ -1257,15 +1267,14 @@ These functions can be passed to Upsert/Insert/Update in 3-rd and next arguments
 If these functions are provided, the passed by reference item will be changed to updated value
 
 ```go
-   // set ID field from serial generator
-   db.Insert ("items",&item,"id=serial()")
+	// set ID field from serial generator
+	db.Insert ("items",&item,"id=serial()")
 
-   // set current timestamp in nanoseconds to updated_at field
-   db.Update ("items",&item,"updated_at=now(NSEC)")
+	// set current timestamp in nanoseconds to updated_at field
+	db.Update ("items",&item,"updated_at=now(NSEC)")
 
-   // set current timestamp and ID
-   db.Upsert ("items",&item,"updated_at=now(NSEC)","id=serial()")
-
+	// set current timestamp and ID
+	db.Upsert ("items",&item,"updated_at=now(NSEC)","id=serial()")
 ```
 
 ### Expire Data from Namespace by Setting TTL
@@ -1277,12 +1286,12 @@ Reindexer makes it possible to set TTL (time to live) for Namespace items. Addin
 Ttl indexes work only with int64 fields and store UNIX timestamp data. Items containing ttl index expire after `expire_after` seconds. Example of declaring TtlIndex in Golang:
 
 ```go
-            type NamespaceExample struct {
-                ID   int    `reindex:"id,,pk" json:"id"`
-                Date int64  `reindex:"date,ttl,,expire_after=3600" json:"date"`
-            }
-            ...
-            ns.Date = time.Now().Unix()
+type NamespaceExample struct {
+	ID   int    `reindex:"id,,pk" json:"id"`
+	Date int64  `reindex:"date,ttl,,expire_after=3600" json:"date"`
+}
+...
+	ns.Date = time.Now().Unix()
 ```
 
 In this case items of namespace NamespaceExample expire in 3600 seconds after NamespaceExample.Date field value (which is UNIX timestamp).
@@ -1602,9 +1611,9 @@ Python version >=3.6 is required.
 
 ### Reindexer for Java
 
-- *Support modes*: standalone, builtin, builtinserver
+- *Support modes*: standalone, builtin, builtin-server
 - *API Used*: binary ABI, cproto
-- *Dependency on reindexer library (reindexer-dev package):* yes, for builtin & builtinserver
+- *Dependency on reindexer library (reindexer-dev package):* yes, for builtin & builtin-server
 
 Reindexer for java is official connector, and maintained by Reindexer's team. It supports both builtin and standalone modes.
 For enable builtin mode support reindexer-dev (version >= 3.1.0) should be installed. See [installation instructions](cpp_src/readme.md#Installation) for details.
@@ -1612,9 +1621,9 @@ For enable builtin mode support reindexer-dev (version >= 3.1.0) should be insta
 For install reindexer to Java or Kotlin project add the following lines to maven project file
 ```
 <dependency>
-    <groupId>com.github.restream</groupId>
-    <artifactId>rx-connector</artifactId>
-    <version>[LATEST_VERSION]</version>
+	<groupId>com.github.restream</groupId>
+	<artifactId>rx-connector</artifactId>
+	<version>[LATEST_VERSION]</version>
 </dependency>
 ```
 URL: https://github.com/Restream/reindexer-java

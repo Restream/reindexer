@@ -13,6 +13,7 @@
 namespace reindexer {
 
 void ItemImpl::SetField(int field, const VariantArray &krs) {
+	validateModifyArray(krs);
 	cjson_ = std::string_view();
 	payloadValue_.Clone();
 	if (!unsafe_ && !krs.empty() && krs[0].Type().Is<KeyValueType::String>() &&
@@ -24,9 +25,7 @@ void ItemImpl::SetField(int field, const VariantArray &krs) {
 			holder_->push_back(kr.As<std::string>());
 			krsCopy.emplace_back(p_string{&holder_->back()});
 		}
-
 		GetPayload().Set(field, krsCopy, false);
-
 	} else {
 		GetPayload().Set(field, krs, false);
 	}
@@ -37,6 +36,8 @@ void ItemImpl::ModifyField(std::string_view jsonPath, const VariantArray &keys, 
 }
 
 void ItemImpl::ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &keys, FieldModifyMode mode) {
+	validateModifyArray(keys);
+	payloadValue_.Clone();
 	Payload pl = GetPayload();
 
 	ser_.Reset();
@@ -83,11 +84,13 @@ Variant ItemImpl::GetField(int field) { return GetPayload().Get(field, 0); }
 void ItemImpl::GetField(int field, VariantArray &values) { GetPayload().Get(field, values); }
 
 Error ItemImpl::FromMsgPack(std::string_view buf, size_t &offset) {
+	payloadValue_.Clone();
 	Payload pl = GetPayload();
 	if (!msgPackDecoder_) {
 		msgPackDecoder_.reset(new MsgPackDecoder(tagsMatcher_));
 	}
 
+	pl.Reset();
 	ser_.Reset();
 	ser_.PutUInt32(0);
 	Error err = msgPackDecoder_->Decode(buf, pl, ser_, offset);
@@ -100,9 +103,11 @@ Error ItemImpl::FromMsgPack(std::string_view buf, size_t &offset) {
 
 Error ItemImpl::FromProtobuf(std::string_view buf) {
 	assertrx(ns_);
+	payloadValue_.Clone();
 	Payload pl = GetPayload();
 	ProtobufDecoder decoder(tagsMatcher_, schema_);
 
+	pl.Reset();
 	ser_.Reset();
 	ser_.PutUInt32(0);
 	Error err = decoder.Decode(buf, pl, ser_);
@@ -125,6 +130,15 @@ Error ItemImpl::GetMsgPack(WrSerializer &wrser) {
 	return Error();
 }
 
+std::string_view ItemImpl::GetMsgPack() {
+	ser_.Reset();
+	auto err = GetMsgPack(ser_);
+	if (!err.ok()) {
+		throw err;
+	}
+	return ser_.Slice();
+}
+
 Error ItemImpl::GetProtobuf(WrSerializer &wrser) {
 	assertrx(ns_);
 	ConstPayload pl = GetConstPayload();
@@ -136,7 +150,7 @@ Error ItemImpl::GetProtobuf(WrSerializer &wrser) {
 
 // Construct item from compressed json
 void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder *recoder) {
-	GetPayload().Reset();
+	payloadValue_.Clone();
 	std::string_view data = slice;
 	if (!unsafe_) {
 		sourceData_.reset(new char[slice.size()]);
@@ -157,6 +171,7 @@ void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder *recoder) 
 	Serializer rdser(data);
 
 	Payload pl = GetPayload();
+	pl.Reset();
 	if (!holder_) holder_ = std::make_unique<std::deque<std::string>>();
 	CJsonDecoder decoder(tagsMatcher_, *holder_);
 
@@ -182,6 +197,7 @@ void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder *recoder) 
 }
 
 Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
+	payloadValue_.Clone();
 	std::string_view data = slice;
 	cjson_ = std::string_view();
 
@@ -205,7 +221,6 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
 		}
 	}
 
-	payloadValue_.Clone();
 	size_t len;
 	gason::JsonNode node;
 	gason::JsonParser parser(&largeJSONStrings_);
@@ -222,6 +237,7 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
 	// Split parsed json into indexes and tuple
 	JsonDecoder decoder(tagsMatcher_, pkOnly && !pkFields_.empty() ? &pkFields_ : nullptr);
 	Payload pl = GetPayload();
+	pl.Reset();
 
 	ser_.Reset();
 	ser_.PutUInt32(0);
@@ -291,6 +307,20 @@ VariantArray ItemImpl::GetValueByJSONPath(std::string_view jsonPath) {
 	VariantArray krefs;
 	pl.GetByJsonPath(jsonPath, tagsMatcher_, krefs, KeyValueType::Undefined{});
 	return krefs;
+}
+
+void ItemImpl::validateModifyArray(const VariantArray &values) {
+	for (const auto &v : values) {
+		v.Type().EvaluateOneOf([](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Bool,
+										KeyValueType::String, KeyValueType::Uuid, KeyValueType::Null, KeyValueType::Undefined>) {},
+							   [](KeyValueType::Tuple) {
+								   throw Error(errParams,
+											   "Unable to use 'tuple'-value (array of arrays, array of points, etc) to modify item");
+							   },
+							   [](KeyValueType::Composite) {
+								   throw Error(errParams, "Unable to use 'composite'-value (object, array of objects, etc) to modify item");
+							   });
+	}
 }
 
 }  // namespace reindexer

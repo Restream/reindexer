@@ -170,13 +170,7 @@ typedef __int64 intmax_t;
 #endif
 
 // Use the compiler's attribute noreturn
-#if defined(__MINGW32__) || defined(__MINGW64__)
-#define FMT_NORETURN __attribute__((noreturn))
-#elif FMT_HAS_CPP_ATTRIBUTE(noreturn) && __cplusplus >= 201103L
 #define FMT_NORETURN [[noreturn]]
-#else
-#define FMT_NORETURN
-#endif
 
 #ifndef FMT_USE_VARIADIC_TEMPLATES
 // Variadic templates are available in GCC since version 4.4
@@ -646,7 +640,7 @@ class FormatError : public std::runtime_error {
 public:
 	explicit FormatError(CStringRef message) : std::runtime_error(message.c_str()) {}
 	FormatError(const FormatError &ferr) : std::runtime_error(ferr) {}
-	FMT_API ~FormatError() FMT_DTOR_NOEXCEPT FMT_OVERRIDE;
+	~FormatError() FMT_DTOR_NOEXCEPT FMT_OVERRIDE {}
 };
 
 namespace internal {
@@ -951,7 +945,7 @@ struct IntTraits {
 	typedef typename TypeSelector<std::numeric_limits<T>::digits <= 32>::Type MainType;
 };
 
-FMT_API FMT_NORETURN void report_unknown_type(char code, const char *type);
+FMT_NORETURN static void report_unknown_type(char code, const char *type);
 
 // Static data is placed in this class template to allow header-only
 // configuration.
@@ -3885,6 +3879,20 @@ void format_arg(fmt::BasicFormatter<Char, ArgFormatter> &f, const Char *&format_
 	}
 	format_str = end + 1;
 }
+
+namespace internal {
+
+// This function was moved to the h-file to avoid GCC 12 LTO build error
+FMT_NORETURN static void report_unknown_type(char code, const char *type) {
+	(void)type;
+	if (std::isprint(static_cast<unsigned char>(code))) {
+		FMT_THROW(FormatError(format("unknown format code '{}' for {}", code, type)));
+	}
+	FMT_THROW(FormatError(format("unknown format code '\\x{:02x}' for {}", static_cast<unsigned>(code), type)));
+}
+
+}  // namespace internal
+
 }  // namespace fmt
 
 #if FMT_USE_USER_DEFINED_LITERALS
@@ -3926,7 +3934,7 @@ inline namespace literals {
   \endrst
  */
 inline internal::UdlFormat<char> operator"" _format(const char *s, std::size_t) { return {s}; }
-inline internal::UdlFormat<wchar_t> operator"" _format(const wchar_t *s, std::size_t) { return {s}; }
+inline internal::UdlFormat<wchar_t> operator"" _format(const wchar_t * s, std::size_t) { return {s}; }
 
 /**
   \rst
@@ -3939,7 +3947,7 @@ inline internal::UdlFormat<wchar_t> operator"" _format(const wchar_t *s, std::si
   \endrst
  */
 inline internal::UdlArg<char> operator"" _a(const char *s, std::size_t) { return {s}; }
-inline internal::UdlArg<wchar_t> operator"" _a(const wchar_t *s, std::size_t) { return {s}; }
+inline internal::UdlArg<wchar_t> operator"" _a(const wchar_t * s, std::size_t) { return {s}; }
 
 }  // namespace literals
 }  // namespace fmt

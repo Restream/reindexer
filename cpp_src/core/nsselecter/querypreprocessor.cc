@@ -171,14 +171,7 @@ int QueryPreprocessor::calculateMaxIterations(const size_t from, const size_t to
 				},
 				[maxMaxIters](const BetweenFieldsQueryEntry &) noexcept { return maxMaxIters; },
 				[maxMaxIters](const JoinQueryEntry &) noexcept { return maxMaxIters; },
-				[](const SubQueryEntry &) -> int {
-					assertrx_throw(0);
-					abort();
-				},
-				[](const SubQueryFieldEntry &) -> int {
-					assertrx_throw(0);
-					abort();
-				},
+				[](const SubQueryEntry &) -> int { throw_as_assert; }, [](const SubQueryFieldEntry &) -> int { throw_as_assert; },
 				[maxMaxIters](const AlwaysTrue &) noexcept { return maxMaxIters; }, [&](const AlwaysFalse &) noexcept { return 0; }));
 		switch (GetOperation(cur)) {
 			case OpAnd:
@@ -215,7 +208,7 @@ void QueryPreprocessor::InjectConditionsFromJoins(JoinedSelectors &js, OnConditi
 		injectConditionsFromJoins<JoinOnExplainDisabled>(0, Size(), js, expalainOnInjections, maxIters, maxIterations, inTransaction,
 														 enableSortOrders, rdxCtx);
 	}
-	assertrx_throw(maxIterations.size() == Size());
+	assertrx_dbg(maxIterations.size() == Size());
 }
 
 bool QueryPreprocessor::removeAlwaysFalse() {
@@ -412,14 +405,8 @@ size_t QueryPreprocessor::lookupQueryIndexes(uint16_t dst, uint16_t srcBegin, ui
 	for (size_t src = srcBegin, nextSrc; src < srcEnd; src = nextSrc) {
 		nextSrc = Next(src);
 		const auto mergeResult = container_[src].Visit(
-			[](const SubQueryEntry &) -> MergeResult {
-				assertrx_throw(0);
-				abort();
-			},
-			[](const SubQueryFieldEntry &) -> MergeResult {
-				assertrx_throw(0);
-				abort();
-			},
+			[](const SubQueryEntry &) -> MergeResult { throw_as_assert; },
+			[](const SubQueryFieldEntry &) -> MergeResult { throw_as_assert; },
 			[&](const QueryEntriesBracket &) {
 				if (dst != src) container_[dst] = std::move(container_[src]);
 				const size_t mergedInBracket = lookupQueryIndexes(dst + 1, src + 1, nextSrc);
@@ -498,7 +485,7 @@ void QueryPreprocessor::CheckUniqueFtQuery() const {
 	bool found = false;
 	VisitForEach(
 		Skip<QueryEntriesBracket, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue>{},
-		[](const SubQueryEntry &) { assertrx_throw(0); }, [](const SubQueryFieldEntry &) { assertrx_throw(0); },
+		[](const SubQueryEntry &) { throw_as_assert; }, [](const SubQueryFieldEntry &) { throw_as_assert; },
 		[&](const QueryEntry &qe) {
 			if (qe.IsFieldIndexed() && IsFullText(ns_.indexes_[qe.IndexNo()]->Type())) {
 				if (found) {
@@ -629,7 +616,7 @@ size_t QueryPreprocessor::substituteCompositeIndexes(const size_t from, const si
 			setQueryIndex(fld, res.idx, ns_);
 			container_[first].Emplace<QueryEntry>(std::move(fld), qValues.size() == 1 ? CondEq : CondSet, std::move(qValues));
 		}
-		deleteRanges.Add(span(res.entries.data() + 1, res.entries.size() - 1));
+		deleteRanges.Add(span<uint16_t>(res.entries.data() + 1, res.entries.size() - 1));
 		resIdx = searcher.RemoveUsedAndGetNext(resIdx);
 	}
 	for (auto rit = deleteRanges.rbegin(); rit != deleteRanges.rend(); ++rit) {
@@ -642,8 +629,8 @@ size_t QueryPreprocessor::substituteCompositeIndexes(const size_t from, const si
 void QueryPreprocessor::initIndexedQueries(size_t begin, size_t end) {
 	for (auto cur = begin; cur != end; cur = Next(cur)) {
 		Visit(
-			cur, Skip<JoinQueryEntry, AlwaysFalse, AlwaysTrue>{}, [](const SubQueryEntry &) { assertrx_throw(0); },
-			[](const SubQueryFieldEntry &) { assertrx_throw(0); },
+			cur, Skip<JoinQueryEntry, AlwaysFalse, AlwaysTrue>{}, [](const SubQueryEntry &) { throw_as_assert; },
+			[](const SubQueryFieldEntry &) { throw_as_assert; },
 			[this, cur](const QueryEntriesBracket &) { initIndexedQueries(cur + 1, Next(cur)); },
 			[this](BetweenFieldsQueryEntry &entry) {
 				if (!entry.FieldsHaveBeenSet()) {
@@ -695,35 +682,29 @@ const Index *QueryPreprocessor::findMaxIndex(QueryEntries::const_iterator begin,
 void QueryPreprocessor::findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end,
 									 h_vector<FoundIndexInfo, 32> &foundIndexes) const {
 	for (auto it = begin; it != end; ++it) {
-		const auto foundIdx = it->Visit(
-			[](const SubQueryEntry &) -> FoundIndexInfo {
-				assertrx_throw(0);
-				abort();
-			},
-			[](const SubQueryFieldEntry &) -> FoundIndexInfo {
-				assertrx_throw(0);
-				abort();
-			},
-			[this, &it, &foundIndexes](const QueryEntriesBracket &) {
-				findMaxIndex(it.cbegin(), it.cend(), foundIndexes);
-				return FoundIndexInfo();
-			},
-			[this](const QueryEntry &entry) -> FoundIndexInfo {
-				if (entry.IsFieldIndexed() && !entry.Distinct()) {
-					const auto idxPtr = ns_.indexes_[entry.IndexNo()].get();
-					if (idxPtr->IsOrdered() && !idxPtr->Opts().IsArray()) {
-						if (IsOrderedCondition(entry.Condition())) {
-							return FoundIndexInfo{idxPtr, FoundIndexInfo::ConditionType::Compatible};
-						} else if (entry.Condition() == CondAny || entry.Values().size() > 1) {
-							return FoundIndexInfo{idxPtr, FoundIndexInfo::ConditionType::Incompatible};
-						}
-					}
-				}
-				return {};
-			},
-			[](const JoinQueryEntry &) noexcept { return FoundIndexInfo(); },
-			[](const BetweenFieldsQueryEntry &) noexcept { return FoundIndexInfo(); },
-			[](const AlwaysFalse &) noexcept { return FoundIndexInfo(); }, [](const AlwaysTrue &) noexcept { return FoundIndexInfo(); });
+		const auto foundIdx = it->Visit([](const SubQueryEntry &) -> FoundIndexInfo { throw_as_assert; },
+										[](const SubQueryFieldEntry &) -> FoundIndexInfo { throw_as_assert; },
+										[this, &it, &foundIndexes](const QueryEntriesBracket &) {
+											findMaxIndex(it.cbegin(), it.cend(), foundIndexes);
+											return FoundIndexInfo();
+										},
+										[this](const QueryEntry &entry) -> FoundIndexInfo {
+											if (entry.IsFieldIndexed() && !entry.Distinct()) {
+												const auto idxPtr = ns_.indexes_[entry.IndexNo()].get();
+												if (idxPtr->IsOrdered() && !idxPtr->Opts().IsArray()) {
+													if (IsOrderedCondition(entry.Condition())) {
+														return FoundIndexInfo{idxPtr, FoundIndexInfo::ConditionType::Compatible};
+													} else if (entry.Condition() == CondAny || entry.Values().size() > 1) {
+														return FoundIndexInfo{idxPtr, FoundIndexInfo::ConditionType::Incompatible};
+													}
+												}
+											}
+											return {};
+										},
+										[](const JoinQueryEntry &) noexcept { return FoundIndexInfo(); },
+										[](const BetweenFieldsQueryEntry &) noexcept { return FoundIndexInfo(); },
+										[](const AlwaysFalse &) noexcept { return FoundIndexInfo(); },
+										[](const AlwaysTrue &) noexcept { return FoundIndexInfo(); });
 		if (foundIdx.index) {
 			auto found = std::find_if(foundIndexes.begin(), foundIndexes.end(),
 									  [foundIdx](const FoundIndexInfo &i) { return i.index == foundIdx.index; });
@@ -1608,7 +1589,7 @@ void QueryPreprocessor::briefDump(size_t from, size_t to, const std::vector<JS> 
 			if (it != from || container_[it].operation != OpAnd) {
 				ser << container_[it].operation << ' ';
 			}
-			container_[it].Visit([](const SubQueryEntry &) { assertrx_throw(0); }, [](const SubQueryFieldEntry &) { assertrx_throw(0); },
+			container_[it].Visit([](const SubQueryEntry &) { throw_as_assert; }, [](const SubQueryFieldEntry &) { throw_as_assert; },
 								 [&](const QueryEntriesBracket &b) {
 									 ser << "(";
 									 briefDump(it + 1, Next(it), joinedSelectors, ser);
@@ -1634,7 +1615,7 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 	size_t injectedCount = 0;
 	for (size_t cur = from; cur < to; cur = Next(cur)) {
 		container_[cur].Visit(
-			[](const SubQueryEntry &) { assertrx_throw(0); }, [](const SubQueryFieldEntry &) { assertrx_throw(0); },
+			[](const SubQueryEntry &) { throw_as_assert; }, [](const SubQueryFieldEntry &) { throw_as_assert; },
 			Skip<QueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue>{},
 			[&](const QueryEntriesBracket &) {
 				const size_t injCount =
@@ -1966,7 +1947,7 @@ public:
 	void FailOnEntriesAsOrChain(size_t orChainLength) {
 		using namespace std::string_view_literals;
 		auto &conditions = explainJoinOn_.conditions;
-		assertrx(conditions.size() >= orChainLength);
+		assertrx_throw(conditions.size() >= orChainLength);
 		// Marking On-injections as fail for removed entries.
 		for (size_t jsz = conditions.size(), j = jsz - orChainLength; j < jsz; ++j) {
 			conditions[j].succeed = false;

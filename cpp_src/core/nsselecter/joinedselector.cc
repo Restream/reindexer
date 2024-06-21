@@ -11,7 +11,7 @@ constexpr size_t kMaxIterationsScaleForInnerJoinOptimization = 100;
 namespace reindexer {
 
 void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, const Query &query, bool &found, bool &matchedAtLeastOnce) {
-	assertrx(rightNs_);
+	assertrx_dbg(rightNs_);
 
 	JoinCacheRes joinResLong;
 	rightNs_->getFromJoinCache(query, joinQuery_, joinResLong);
@@ -57,7 +57,7 @@ void JoinedSelector::selectFromPreResultValues(QueryResults &joinItemR, const Qu
 	const auto &pt = values.payloadType;
 	for (const ItemRef &item : values) {
 		auto &v = item.Value();
-		assertrx(!v.IsFree());
+		assertrx_throw(!v.IsFree());
 		if (entries.CheckIfSatisfyConditions({pt, v})) {
 			if (++matched > query.Limit()) break;
 			found = true;
@@ -188,7 +188,7 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 			continue;
 		}
 		const auto &leftIndex = leftNs_->indexes_[joinEntry.LeftIdxNo()];
-		assertrx(!IsFullText(leftIndex->Type()));
+		assertrx_throw(!IsFullText(leftIndex->Type()));
 		if (leftIndex->Opts().IsSparse()) continue;
 
 		const VariantArray values = std::visit(overloaded{[&](const IdSet &preselected) {
@@ -200,13 +200,10 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 																  joinEntry, rightNs_->payloadType_);
 														  },
 														  [&](const JoinPreResult::Values &) { return readValuesFromPreResult(joinEntry); },
-														  [](const SelectIteratorContainer &) -> VariantArray {
-															  assertrx_throw(0);
-															  abort();
-														  }},
+														  [](const SelectIteratorContainer &) -> VariantArray { throw_as_assert; }},
 											   PreResult().payload);
 		auto ctx = selectFnc ? selectFnc->CreateCtx(joinEntry.LeftIdxNo()) : BaseFunctionCtx::Ptr{};
-		assertrx(!ctx || ctx->type != BaseFunctionCtx::kFtCtx);
+		assertrx_throw(!ctx || ctx->type != BaseFunctionCtx::kFtCtx);
 
 		if (leftIndex->Opts().GetCollateMode() == CollateUTF8) {
 			for (auto &key : values) key.EnsureUTF8();

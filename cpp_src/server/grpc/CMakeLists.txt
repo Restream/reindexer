@@ -62,9 +62,9 @@ file(GLOB GRPC_SRCS ./*.cc ${GENERATED_PROTO_DIR}/*.cc)
 
 if (APPLE)
    set (CMAKE_SHARED_LIBRARY_CREATE_CXX_FLAGS "${CMAKE_SHARED_LIBRARY_CREATE_CXX_FLAGS} -undefined dynamic_lookup")
-elseif (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo") 
+elseif(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
    set (CMAKE_SHARED_LIBRARY_CREATE_CXX_FLAGS "${CMAKE_SHARED_LIBRARY_CREATE_CXX_FLAGS} -gz")
-endif ()
+endif()
 
 add_library(${TARGET} SHARED ${GRPC_SRCS})
 include_directories(${GENERATED_PROTO_DIR})

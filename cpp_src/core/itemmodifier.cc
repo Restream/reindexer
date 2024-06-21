@@ -220,6 +220,21 @@ void ItemModifier::FieldData::updateTagsPath(TagsMatcher &tm, const IndexExpress
 ItemModifier::ItemModifier(const std::vector<UpdateEntry> &updateEntries, NamespaceImpl &ns)
 	: ns_(ns), updateEntries_(updateEntries), rollBackIndexData_(ns_.indexes_.totalSize()) {
 	for (const UpdateEntry &updateField : updateEntries_) {
+		for (const auto &v : updateField.Values()) {
+			v.Type().EvaluateOneOf([](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Bool,
+											KeyValueType::String, KeyValueType::Uuid, KeyValueType::Null, KeyValueType::Undefined>) {},
+								   [](KeyValueType::Tuple) {
+									   throw Error(
+										   errParams,
+										   "Unable to use 'tuple'-value (array of arrays, array of points, etc) in UPDATE-query. Only "
+										   "single dimensional arrays and arrays of objects are supported");
+								   },
+								   [](KeyValueType::Composite) {
+									   throw Error(errParams,
+												   "Unable to use 'composite'-value (object, array of objects, etc) in UPDATE-query. "
+												   "Probably 'object'/'json' type was not explicitly set in the query");
+								   });
+		}
 		fieldsToModify_.emplace_back(updateField, ns_);
 	}
 }
@@ -296,7 +311,7 @@ void ItemModifier::modifyCJSON(IdType id, FieldData &field, VariantArray &values
 	itemimpl.ModifyField(field.tagspath(), values, field.details().Mode());
 
 	Item item = ns_.newItem();
-	Error err = item.FromCJSON(itemimpl.GetCJSON(true));
+	Error err = item.Unsafe().FromCJSON(itemimpl.GetCJSON(true));
 	if (!err.ok()) {
 		pl.Set(0, cjsonKref);
 		throw err;
@@ -505,7 +520,7 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData &field, Vari
 			throw Error(errParams, "Cannot update array item with an empty value");	 // TODO #1218 maybe delete this
 		}
 		int offset = -1, length = -1;
-		bool isForAllItems = false;
+		isForAllItems = false;
 		for (const auto &tag : field.tagspath()) {	// TODO: Move to FieldEntry?
 			if (tag.IsForAllItems()) {
 				isForAllItems = true;

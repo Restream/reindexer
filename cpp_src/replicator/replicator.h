@@ -24,7 +24,8 @@ protected:
 	struct SyncStat {
 		ReplicationState masterState;
 		Error lastError;
-		int updated = 0, deleted = 0, errors = 0, updatedIndexes = 0, deletedIndexes = 0, updatedMeta = 0, processed = 0, schemasSet = 0;
+		int updated = 0, deleted = 0, errors = 0, updatedIndexes = 0, deletedIndexes = 0, updatedMeta = 0, processed = 0, schemasSet = 0,
+			txStarts = 0, txEnds = 0;
 		WrSerializer &Dump(WrSerializer &ser);
 	};
 	struct NsErrorMsg {
@@ -62,10 +63,16 @@ protected:
 
 	void run();
 	void stop();
+
+	struct [[nodiscard]] SyncNsResult {
+		Error error;
+		std::string_view forceSyncReason;
+	};
 	// Sync single namespace
-	Error syncNamespace(const NamespaceDef &ns, std::string_view forceSyncReason, SyncQueue *sourceQueue);
+	SyncNsResult syncNamespace(const NamespaceDef &ns, std::string_view forceSyncReason, SyncQueue *sourceQueue,
+							   std::string_view initiator);
 	// Sync database
-	Error syncDatabase();
+	Error syncDatabase(std::string_view initiator);
 	// Read and apply WAL from master
 	Error syncNamespaceByWAL(const NamespaceDef &ns);
 	// Apply WAL from master to namespace
@@ -81,7 +88,7 @@ protected:
 	// Apply single WAL record
 	Error applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr &ns, const WALRecord &wrec, SyncStat &stat);
 	// Apply single transaction WAL record
-	Error applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr &ns, const WALRecord &wrec);
+	Error applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr &ns, const WALRecord &wrec, SyncStat &stat);
 	void checkNoOpenedTransaction(std::string_view nsName, Namespace::Ptr &slaveNs);
 	// Apply single cjson item
 	Error modifyItem(LSNPair LSNs, Namespace::Ptr &ns, std::string_view cjson, int modifyMode, const TagsMatcher &tm, SyncStat &stat);

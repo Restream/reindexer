@@ -118,12 +118,12 @@ void Replicator::run() {
 	}
 
 	resync_.set([this](ev::async &) {
-		auto err = syncDatabase();
+		auto err = syncDatabase("Resync");
 		(void)err;	// ignore
 	});
 	resync_.start();
 	resyncTimer_.set([this](ev::timer &, int) {
-		auto err = syncDatabase();
+		auto err = syncDatabase("Reconnect");
 		(void)err;	// ignore
 	});
 	walSyncAsync_.set([this](ev::async &) {
@@ -132,7 +132,8 @@ void Replicator::run() {
 		bool forced;
 		while (syncQueue_.Get(nsDef, forced)) {
 			subscribeUpdatesIfRequired(nsDef.name);
-			auto err = syncNamespace(nsDef, forced ? "Upstream node call force sync" : std::string_view(), &syncQueue_);
+			auto [err, _] = syncNamespace(nsDef, forced ? "Upstream node call force sync" : std::string_view(), &syncQueue_, "WAL");
+			(void)_;
 			if (!err.ok()) {
 				if (!terminate_) {
 					resync_.send();
@@ -145,11 +146,11 @@ void Replicator::run() {
 	});
 	walSyncAsync_.start();
 	resyncUpdatesLostAsync_.set([this](ev::async &) {
-		auto err = syncDatabase();
+		auto err = syncDatabase("UpdateLost");
 		(void)err;	// ignore
 	});
 	resyncUpdatesLostAsync_.start();
-	if (auto err = syncDatabase(); !err.ok()) {
+	if (auto err = syncDatabase("None"); !err.ok()) {
 		logPrintf(LogError, "[repl] syncDatabase error: %s", err.what());
 	}
 
@@ -241,9 +242,10 @@ static bool shouldUpdateLsn(const WALRecord &wrec) {
 	return wrec.type != WalNamespaceDrop && (!wrec.inTransaction || wrec.type == WalCommitTransaction);
 }
 
-Error Replicator::syncNamespace(const NamespaceDef &ns, std::string_view forceSyncReason, SyncQueue *sourceQueue) {
+Replicator::SyncNsResult Replicator::syncNamespace(const NamespaceDef &ns, std::string_view forceSyncReason, SyncQueue *sourceQueue,
+												   std::string_view initiator) {
 	Error err = errOK;
-	logPrintf(LogInfo, "[repl:%s:%s] ===Starting WAL synchronization.====", ns.name, slave_->storagePath_);
+	logPrintf(LogInfo, "[repl:%s:%s] ===Starting WAL synchronization. (initiated by %s)====", ns.name, slave_->storagePath_, initiator);
 	auto onPendedUpdatesApplied = [this, sourceQueue](std::string_view nsName, const std::unique_lock<std::mutex> &lck) noexcept {
 		pendedUpdates_.erase(nsName);
 		if (sourceQueue) {
@@ -345,13 +347,13 @@ Error Replicator::syncNamespace(const NamespaceDef &ns, std::string_view forceSy
 
 	logPrintf(LogInfo, "[repl:%s:%s] ===End %s synchronization.====", ns.name, slave_->storagePath_,
 			  forceSyncReason.empty() ? "WAL" : "FORCE");
-	return err;
+	return {err, forceSyncReason};
 }
 
-Error Replicator::syncDatabase() {
+Error Replicator::syncDatabase(std::string_view initiator) {
 	std::vector<NamespaceDef> nses;
-	logPrintf(LogInfo, "[repl:%s]:%d Starting sync from '%s' state=%d", slave_->storagePath_, config_.serverId, config_.masterDSN,
-			  state_.load());
+	logPrintf(LogInfo, "[repl:%s]:%d Starting sync from '%s' state=%d, initiated by %s", slave_->storagePath_, config_.serverId,
+			  config_.masterDSN, state_.load(), initiator);
 
 	{
 		std::lock_guard lck(syncMtx_);
@@ -444,7 +446,8 @@ Error Replicator::syncDatabase() {
 		}
 
 		do {
-			err = syncNamespace(ns, forceSyncReason, nullptr);
+			auto syncNsRes = syncNamespace(ns, forceSyncReason, nullptr, initiator);
+			std::tie(err, forceSyncReason) = {syncNsRes.error, syncNsRes.forceSyncReason};
 		} while (err.code() == errUpdatesLost);
 
 		if (!err.ok()) {
@@ -687,6 +690,12 @@ Error Replicator::applyWAL(Namespace::Ptr &slaveNs, client::QueryResults &qr, co
 			config_.serverId, stat.masterState.dataHash, slaveState.dataHash, stat.masterState.dataCount, slaveState.dataCount);
 	}
 
+	if (stat.txStarts != stat.txEnds) {
+		logPrintf(LogWarning,
+				  "[repl:%s]:%d The discrepancy between the number of started transactions and the number of completed transactions(%d:%d)",
+				  nsName, config_.serverId, stat.txStarts, stat.txEnds);
+	}
+
 	if (stat.lastError.ok() && !terminate_) {
 		logPrintf(LogTrace, "[repl:%s]:%d applyWal SetReplLSNs upstreamLsn = %s originLsn = %s", nsName, config_.serverId,
 				  stat.masterState.lastLsn, stat.masterState.originLSN);
@@ -704,7 +713,7 @@ Error Replicator::applyWAL(Namespace::Ptr &slaveNs, client::QueryResults &qr, co
 	return stat.lastError;
 }
 
-Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr &slaveNs, const WALRecord &rec) {
+Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr &slaveNs, const WALRecord &rec, SyncStat &stat) {
 	switch (rec.type) {
 		// Modify item
 		case WalItemModify: {
@@ -742,6 +751,7 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 			if (!tx.Status().ok()) {
 				return tx.Status();
 			}
+			stat.txStarts++;
 		} break;
 		case WalCommitTransaction: {
 			QueryResults res;
@@ -750,6 +760,7 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 			if (tx.IsFree()) return Error(errLogic, "[repl:%s]:%d Commit of transaction befor initiate it.", nsName, config_.serverId);
 			RdxContext rdxContext(true, LSNs);
 			slaveNs->CommitTransaction(tx, res, rdxContext);
+			stat.txEnds++;
 			tx = Transaction{};
 		} break;
 		case WalTagsMatcher: {
@@ -820,7 +831,7 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 	}
 
 	if (rec.inTransaction) {
-		return applyTxWALRecord(LSNs, nsName, slaveNs, rec);
+		return applyTxWALRecord(LSNs, nsName, slaveNs, rec, stat);
 	}
 
 	checkNoOpenedTransaction(nsName, slaveNs);
@@ -1043,6 +1054,7 @@ WrSerializer &Replicator::SyncStat::Dump(WrSerializer &ser) {
 	if (deletedIndexes) ser << deletedIndexes << " indexes deleted; ";
 	if (updatedMeta) ser << updatedMeta << " meta updated; ";
 	if (schemasSet) ser << "New schema was set; ";
+	if (txStarts || txEnds) ser << " started " << txStarts << ", completed " << txEnds << " transactions; ";
 	if (errors || !lastError.ok()) ser << errors << " errors (" << lastError.what() << ") ";
 	if (!ser.Len()) ser << "Up to date; ";
 	if (processed) ser << "processed " << processed << " WAL records ";

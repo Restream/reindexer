@@ -79,7 +79,7 @@ protected:
 		}
 	}
 
-	void AddHeterogeniousNestedData() {
+	void AddHeterogeneousNestedData() {
 		char sourceJson[4096];
 		const char jsonPattern[] =
 			R"json({

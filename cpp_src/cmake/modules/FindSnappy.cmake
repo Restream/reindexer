@@ -60,20 +60,20 @@ find_library(
 if (SNAPPY_INCLUDE_DIR AND SNAPPY_LIBRARY)
   set(SNAPPY_FOUND TRUE)
   set( SNAPPY_LIBRARIES ${SNAPPY_LIBRARY} )
-else ()
+else()
   set(SNAPPY_FOUND FALSE)
   set( SNAPPY_LIBRARIES )
-endif ()
+endif()
 
 if (SNAPPY_FOUND)
   message(STATUS "Found Snappy: ${SNAPPY_LIBRARY}")
-else ()
+else()
   message(STATUS "Not Found Snappy: ${SNAPPY_LIBRARY}")
   if (SNAPPY_FIND_REQUIRED)
     message(STATUS "Looked for Snappy libraries named ${SNAPPY_NAMES}.")
     message(FATAL_ERROR "Could NOT find Snappy library")
-  endif ()
-endif ()
+  endif()
+endif()
 
 mark_as_advanced(
   SNAPPY_LIBRARY

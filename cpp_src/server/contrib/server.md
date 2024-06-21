@@ -133,7 +133,7 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 
 
 ### Version information
-*Version* : 3.25.0
+*Version* : 3.26.0
 
 
 ### License information
@@ -2717,7 +2717,7 @@ List of meta info of the specified namespace
 |**lazyload**  <br>*optional*|Enable namespace lazy load (namespace should be loaded from disk on first call, not at reindexer startup)|boolean|
 |**log_level**  <br>*optional*|Log level of queries core logger|enum (none, error, warning, info, trace)|
 |**max_iterations_idset_preresult**  <br>*optional*|Maximum number of IdSet iterations of namespace preliminary result size for optimization  <br>**Minimum value** : `201`  <br>**Maximum value** : `2147483647`|integer|
-|**max_preselect_part**  <br>*optional*|Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only mmax_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
+|**max_preselect_part**  <br>*optional*|Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**max_preselect_size**  <br>*optional*|Maximum preselect size for optimization of inner join by injection of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied  <br>**Minimum value** : `0`|integer|
 |**min_preselect_size**  <br>*optional*|Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value  <br>**Minimum value** : `0`|integer|
 |**namespace**  <br>*optional*|Name of namespace, or `*` for setting to all namespaces|string|

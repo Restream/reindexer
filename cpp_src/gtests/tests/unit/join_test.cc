@@ -896,3 +896,138 @@ TEST_F(JoinOnConditionsApi, TestInvalidConditions) {
 	err = rt.reindexer->Select(Query(books_namespace).InnerJoin(authorid_fk, authorid, CondLike, Query(authors_namespace)), qr);
 	EXPECT_FALSE(err.ok());
 }
+
+void CheckJoinIds(std::map<int, std::vector<std::set<int>>> ids, const QueryResults& qr) {
+	ASSERT_EQ(ids.size(), qr.Count());
+	for (auto it : qr) {
+		{
+			const auto item = it.GetItem();
+			const int id = item["id"].Get<int>();
+			const auto idIt = ids.find(id);
+			ASSERT_NE(idIt, ids.end()) << id;
+
+			const auto joined = it.GetJoined();
+			const auto& joinedIds = idIt->second;
+			ASSERT_EQ(joinedIds.size(), joined.getJoinedFieldsCount());
+			for (size_t i = 0; i < joinedIds.size(); ++i) {
+				const auto& joinedItems = joined.at(i);
+				const auto& joinedIdsSet = joinedIds[i];
+				ASSERT_EQ(joinedIds[i].size(), joinedItems.ItemsCount());
+				for (size_t j = 0; j < joinedIdsSet.size(); ++j) {
+					const auto nsId = joinedItems[j].Nsid();
+					auto itemImpl = joined.at(i).GetItem(j, qr.getPayloadType(nsId), qr.getTagsMatcher(nsId));
+					const int joinedId = Item::FieldRefByName("id", itemImpl).Get<int>();
+					EXPECT_NE(joinedIdsSet.find(joinedId), joinedIdsSet.end()) << joinedId;
+				}
+			}
+		}
+
+		{
+			reindexer::WrSerializer ser;
+			const auto err = it.GetJSON(ser, false);
+			ASSERT_TRUE(err.ok()) << err.what();
+			gason::JsonParser parser;
+			const auto mainNode = parser.Parse(ser.Slice());
+			const int id = mainNode["id"].As<int>();
+			const auto idIt = ids.find(id);
+			ASSERT_NE(idIt, ids.end()) << id;
+
+			for (size_t i = 0, s = idIt->second.size(); i < s; ++i) {
+				auto& joinedIds = idIt->second[i];
+				const std::string joinedFieldName = "joined_" + (idIt->second.size() == 1 ? "" : std::to_string(i + 1) + '_') + "join_ns";
+				size_t found = 0;
+				for (const auto joinedNode : mainNode[joinedFieldName]) {
+					const int joinedId = joinedNode["id"].As<int>();
+					const auto joinedIdIt = joinedIds.find(joinedId);
+					EXPECT_NE(joinedIdIt, joinedIds.end()) << joinedFieldName << ' ' << joinedId;
+					found += (joinedIdIt != joinedIds.end());
+				}
+				EXPECT_EQ(joinedIds.size(), found) << joinedFieldName;
+			}
+		}
+	}
+}
+
+TEST_F(JoinSelectsApi, SeveralJoinsByTheSameNs) {
+	const std::string_view mainNs = "main_ns";
+	const std::string_view joinNs = "join_ns";
+	Error err = rt.reindexer->OpenNamespace(mainNs);
+	ASSERT_TRUE(err.ok()) << err.what();
+	DefineNamespaceDataset(mainNs, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}});
+
+	{
+		Item mainItem = NewItem(mainNs);
+		err = mainItem.FromJSON(R"({"id": 0, "join_id": 2})");
+		ASSERT_TRUE(err.ok()) << err.what();
+		Upsert(mainNs, mainItem);
+	}
+
+	{
+		Item mainItem = NewItem(mainNs);
+		err = mainItem.FromJSON(R"({"id": 1, "join_id": 3})");
+		ASSERT_TRUE(err.ok()) << err.what();
+		Upsert(mainNs, mainItem);
+	}
+
+	err = rt.reindexer->OpenNamespace(joinNs);
+	ASSERT_TRUE(err.ok()) << err.what();
+	DefineNamespaceDataset(joinNs, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}});
+
+	{
+		Item joinItem = NewItem(joinNs);
+		joinItem["id"] = 0;
+		Upsert(joinNs, joinItem);
+	}
+
+	{
+		Item joinItem = NewItem(joinNs);
+		joinItem["id"] = 1;
+		Upsert(joinNs, joinItem);
+	}
+
+	{
+		Item joinItem = NewItem(joinNs);
+		joinItem["id"] = 2;
+		Upsert(joinNs, joinItem);
+	}
+
+	{
+		Item joinItem = NewItem(joinNs);
+		joinItem["id"] = 3;
+		Upsert(joinNs, joinItem);
+	}
+
+	{
+		QueryResults qr;
+		err = rt.reindexer->Select(Query(mainNs).InnerJoin("id", "id", CondEq, Query(joinNs)), qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		CheckJoinIds({{0, {{0}}}, {1, {{1}}}}, qr);
+	}
+
+	{
+		QueryResults qr;
+		err = rt.reindexer->Select(
+			Query(mainNs).InnerJoin("id", "id", CondEq, Query(joinNs)).LeftJoin("join_id", "id", CondEq, Query(joinNs)), qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		CheckJoinIds({{0, {{0}, {2}}}, {1, {{1}, {3}}}}, qr);
+	}
+
+	{
+		QueryResults qr;
+		err = rt.reindexer->Select(
+			Query(mainNs).InnerJoin("id", "id", CondEq, Query(joinNs)).LeftJoin("join_id", "id", CondGe, Query(joinNs)), qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		CheckJoinIds({{0, {{0}, {0, 1, 2}}}, {1, {{1}, {0, 1, 2, 3}}}}, qr);
+	}
+
+	{
+		QueryResults qr;
+		err = rt.reindexer->Select(Query(mainNs)
+									   .InnerJoin("id", "id", CondEq, Query(joinNs))
+									   .LeftJoin("join_id", "id", CondGe, Query(joinNs))
+									   .LeftJoin("join_id", "id", CondEq, Query(joinNs)),
+								   qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		CheckJoinIds({{0, {{0}, {0, 1, 2}, {2}}}, {1, {{1}, {0, 1, 2, 3}, {3}}}}, qr);
+	}
+}

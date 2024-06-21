@@ -74,6 +74,8 @@ void JsonDecoder::decodeJsonObject(Payload &pl, CJsonBuilder &builder, const gas
 					builder.Ref(tagName, v, field);
 					pl.Set(field, std::move(v), true);
 				} break;
+				default:
+					throw Error(errLogic, "Unexpected '%d' tag", elem.value.getTag());
 			}
 		} else {
 			// objectScalarIndexes_.set(field); - do not change objectScalarIndexes_ value for the filtered out fields
@@ -132,6 +134,8 @@ void JsonDecoder::decodeJson(Payload *pl, CJsonBuilder &builder, const gason::Js
 			}
 			break;
 		}
+		default:
+			throw Error(errLogic, "Unexpected '%d' tag", jsonTag);
 	}
 }
 

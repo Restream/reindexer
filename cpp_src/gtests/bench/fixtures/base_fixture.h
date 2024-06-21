@@ -6,7 +6,6 @@
 #include <iostream>
 #include <memory>
 #include <random>
-#include <string>
 
 #include "allocs_tracker.h"
 #include "core/namespacedef.h"

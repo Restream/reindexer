@@ -101,11 +101,13 @@ public:
 		const QueryResults *qr_;
 		int idx_;
 		Error err_;
+		using NsNamesCache = h_vector<h_vector<std::string, 1>, 1>;
+		NsNamesCache nsNamesCache;
 	};
 
-	Iterator begin() const noexcept { return Iterator{this, 0, errOK}; }
-	Iterator end() const noexcept { return Iterator{this, int(items_.size()), errOK}; }
-	Iterator operator[](int idx) const noexcept { return Iterator{this, idx, errOK}; }
+	Iterator begin() const noexcept { return Iterator{this, 0, errOK, {}}; }
+	Iterator end() const noexcept { return Iterator{this, int(items_.size()), errOK, {}}; }
+	Iterator operator[](int idx) const noexcept { return Iterator{this, idx, errOK, {}}; }
 
 	std::vector<joins::NamespaceResults> joined_;
 	std::vector<AggregationResult> aggregationResults;
@@ -154,12 +156,12 @@ public:
 
 	std::string explainResults;
 
-protected:
+private:
 	class EncoderDatasourceWithJoins;
 	class EncoderAdditionalDatasource;
+	void encodeJSON(int idx, WrSerializer &ser, Iterator::NsNamesCache &) const;
 
 public:
-	void encodeJSON(int idx, WrSerializer &ser) const;
 	ItemRefVector items_;
 	std::optional<RdxActivityContext> activityCtx_;
 	friend InternalRdxContext;

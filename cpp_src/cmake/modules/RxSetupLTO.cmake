@@ -1,0 +1,20 @@
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT IPO_IS_SUPPORTED OUTPUT IPO_SUPPORT_OUT)
+  if(IPO_IS_SUPPORTED)
+    message("Building with LTO...")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+      # CMAKE unable to set threads count by himself
+      set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -flto=4 -fno-fat-lto-objects -flto-odr-type-merging")
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto=4 -fno-fat-lto-objects -flto-odr-type-merging")
+    else()
+      # Sets -flto-thin for Clang
+      set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+    endif()
+  else()
+    message(WARNING "LTO was requested, but not supported: ${IPO_SUPPORT_OUT}")
+  endif()
+else()
+  message(WARNING "LTO was disabled for the 'Debug' build")
+endif()
+

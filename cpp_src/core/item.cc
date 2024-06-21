@@ -34,6 +34,15 @@ KeyValueType Item::GetIndexType(int field) const noexcept {
 
 std::string_view Item::FieldRef::Name() const { return field_ >= 0 ? itemImpl_->Type().Field(field_).Name() : jsonPath_; }
 
+template <>
+Point Item::FieldRef::As<Point>() const {
+	auto va = (operator VariantArray());
+	if (va.size() != 2) {
+		throw Error(errParams, "Unable to convert field with %d scalar values to 2D Point", va.size());
+	}
+	return Point(va[0].As<double>(), va[1].As<double>());
+}
+
 Item::FieldRef::operator Variant() const {
 	VariantArray kr;
 	if (field_ >= 0)
@@ -73,7 +82,7 @@ Item::FieldRef &Item::FieldRef::operator=(const VariantArray &krs) {
 	if (field_ >= 0) {
 		itemImpl_->SetField(field_, krs);
 	} else {
-		throw Error(errConflict, "Item::FieldRef::SetValue by json path not implemented yet");
+		itemImpl_->SetField(jsonPath_, krs, nullptr);
 	}
 	return *this;
 }
@@ -83,7 +92,12 @@ Item::FieldRef &Item::FieldRef::operator=(span<T> arr) {
 	constexpr static bool kIsStr = std::is_same_v<T, std::string> || std::is_same_v<T, key_string> || std::is_same_v<T, p_string> ||
 								   std::is_same_v<T, std::string_view> || std::is_same_v<T, const char *>;
 	if (field_ < 0) {
-		throw Error(errConflict, "Item::FieldRef::SetValue by json path not implemented yet");
+		VariantArray krs;
+		krs.MarkArray();
+		krs.reserve(arr.size());
+		std::transform(arr.begin(), arr.end(), std::back_inserter(krs), [](const T &t) { return Variant(t); });
+		itemImpl_->SetField(jsonPath_, krs, nullptr);
+		return *this;
 	}
 
 	auto pl(itemImpl_->GetPayload());
@@ -124,11 +138,11 @@ Item::~Item() {
 	}
 }
 
-Error Item::FromJSON(std::string_view slice, char **endp, bool pkOnly) &noexcept {
+Error Item::FromJSON(std::string_view slice, char **endp, bool pkOnly) & noexcept {
 	RETURN_RESULT_NOEXCEPT(impl_->FromJSON(slice, endp, pkOnly));
 }
 
-Error Item::FromCJSON(std::string_view slice, bool pkOnly) &noexcept {
+Error Item::FromCJSON(std::string_view slice, bool pkOnly) & noexcept {
 	try {
 		impl_->FromCJSON(slice, pkOnly);
 	}
@@ -140,13 +154,15 @@ void Item::FromCJSONImpl(std::string_view slice, bool pkOnly) & { impl_->FromCJS
 std::string_view Item::GetCJSON() { return impl_->GetCJSON(); }
 std::string_view Item::GetJSON() { return impl_->GetJSON(); }
 
-Error Item::FromMsgPack(std::string_view buf, size_t &offset) &noexcept { RETURN_RESULT_NOEXCEPT(impl_->FromMsgPack(buf, offset)); }
+Error Item::FromMsgPack(std::string_view buf, size_t &offset) & noexcept { RETURN_RESULT_NOEXCEPT(impl_->FromMsgPack(buf, offset)); }
 
-Error Item::FromProtobuf(std::string_view sbuf) &noexcept { RETURN_RESULT_NOEXCEPT(impl_->FromProtobuf(sbuf)); }
+Error Item::FromProtobuf(std::string_view sbuf) & noexcept { RETURN_RESULT_NOEXCEPT(impl_->FromProtobuf(sbuf)); }
 
-Error Item::GetMsgPack(WrSerializer &wrser) &noexcept { RETURN_RESULT_NOEXCEPT(impl_->GetMsgPack(wrser)); }
+Error Item::GetMsgPack(WrSerializer &wrser) & noexcept { RETURN_RESULT_NOEXCEPT(impl_->GetMsgPack(wrser)); }
 
-Error Item::GetProtobuf(WrSerializer &wrser) &noexcept { RETURN_RESULT_NOEXCEPT(impl_->GetProtobuf(wrser)); }
+std::string_view Item::GetMsgPack() & { return impl_->GetMsgPack(); }
+
+Error Item::GetProtobuf(WrSerializer &wrser) & noexcept { RETURN_RESULT_NOEXCEPT(impl_->GetProtobuf(wrser)); }
 
 int Item::NumFields() const { return impl_->Type().NumFields(); }
 
@@ -157,9 +173,9 @@ Item::FieldRef Item::operator[](int field) const {
 	return FieldRef(field, impl_);
 }
 
-Item::FieldRef Item::operator[](std::string_view name) const {
+Item::FieldRef Item::FieldRefByName(std::string_view name, ItemImpl &impl) {
 	int field = 0;
-	return (impl_->Type().FieldByName(name, field)) ? FieldRef(field, impl_) : FieldRef(name, impl_);
+	return (impl.Type().FieldByName(name, field)) ? FieldRef(field, &impl) : FieldRef(name, &impl);
 }
 
 int Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name); }
@@ -168,7 +184,7 @@ void Item::SetPrecepts(const std::vector<std::string> &precepts) & { impl_->SetP
 bool Item::IsTagsUpdated() const noexcept { return impl_->tagsMatcher().isUpdated(); }
 int Item::GetStateToken() const noexcept { return impl_->tagsMatcher().stateToken(); }
 
-Item &Item::Unsafe(bool enable) &noexcept {
+Item &Item::Unsafe(bool enable) & noexcept {
 	impl_->Unsafe(enable);
 	return *this;
 }
@@ -183,4 +199,3 @@ template Item::FieldRef &Item::FieldRef::operator=(span<double>);
 template Item::FieldRef &Item::FieldRef::operator=(span<Uuid>);
 
 }  // namespace reindexer
-   // namespace reindexer

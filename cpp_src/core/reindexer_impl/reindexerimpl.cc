@@ -1265,7 +1265,7 @@ Error ReindexerImpl::tryLoadReplicatorConfFromYAML(const std::string& yamlReplCo
 		if (!item.Status().ok()) {
 			return item.Status();
 		}
-		err = item.FromJSON(ser.Slice());
+		err = item.Unsafe().FromJSON(ser.Slice());
 		if (!err.ok()) {
 			return err;
 		}

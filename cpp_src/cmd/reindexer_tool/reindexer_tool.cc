@@ -72,8 +72,8 @@ int main(int argc, char* argv[]) {
 	args::ValueFlag<std::string> outFileName(progOptions, "FILENAME", "send query results to file", {'o', "output"}, "",
 											 Options::Single | Options::Global);
 
-	args::ValueFlag<int> connThreads(progOptions, "INT", "Number of threads(connections) used by db connector", {'t', "threads"}, 1,
-									 Options::Single | Options::Global);
+	args::ValueFlag<unsigned> connThreads(progOptions, "INT=1..65535", "Number of threads(connections) used by db connector",
+										  {'t', "threads"}, 1, Options::Single | Options::Global);
 
 	args::Flag createDBF(progOptions, "", "Enable created database if missed", {"createdb"});
 
@@ -163,7 +163,6 @@ int main(int argc, char* argv[]) {
 		err = commandsProcessor.Connect(dsn, reindexer::client::ConnectOpts().CreateDBIfMissing(createDBF && args::get(createDBF)));
 		if (err.ok()) ok = commandsProcessor.Run(args::get(command));
 	} else if (checkIfStartsWithCS("builtin://"sv, dsn)) {
-		reindexer::Reindexer db;
 		CommandsProcessor<reindexer::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName), args::get(connThreads));
 		err = commandsProcessor.Connect(dsn, ConnectOpts().DisableReplication());
 		if (err.ok()) ok = commandsProcessor.Run(args::get(command));

@@ -110,6 +110,7 @@ private:
 Aggregator::MultifieldComparator::MultifieldComparator(const h_vector<SortingEntry, 1> &sortingEntries, const FieldsSet &fields,
 													   const PayloadType &type)
 	: compOpts_{}, type_{type}, haveCompareByCount{false} {
+	assertrx_throw(type_);
 	if (sortingEntries.empty()) {
 		compOpts_.emplace_back(fields, Asc);
 		return;
@@ -143,11 +144,10 @@ Aggregator::MultifieldComparator::MultifieldComparator(const h_vector<SortingEnt
 }
 
 bool Aggregator::MultifieldComparator::operator()(const PayloadValue &lhs, const PayloadValue &rhs) const {
+	assertrx_throw(!lhs.IsFree());
+	assertrx_throw(!rhs.IsFree());
 	for (const auto &opt : compOpts_) {
 		if (opt.fields.empty()) continue;
-		assertrx(type_);
-		assertrx(!lhs.IsFree());
-		assertrx(!rhs.IsFree());
 		const auto less = ConstPayload(type_, lhs).Compare<WithString::No, NotComparable::Throw>(rhs, opt.fields);
 		if (less == ComparationResult::Eq) continue;
 		return toSigned(less) * opt.direction < 0;
@@ -156,14 +156,13 @@ bool Aggregator::MultifieldComparator::operator()(const PayloadValue &lhs, const
 }
 
 bool Aggregator::MultifieldComparator::operator()(const std::pair<PayloadValue, int> &lhs, const std::pair<PayloadValue, int> &rhs) const {
+	assertrx_throw(!lhs.first.IsFree());
+	assertrx_throw(!rhs.first.IsFree());
 	for (const auto &opt : compOpts_) {
 		if (opt.fields.empty()) {
 			if (lhs.second == rhs.second) continue;
 			return opt.direction * (lhs.second - rhs.second) < 0;
 		}
-		assertrx(type_);
-		assertrx(!lhs.first.IsFree());
-		assertrx(!rhs.first.IsFree());
 		const auto less = ConstPayload(type_, lhs.first).Compare<WithString::No, NotComparable::Throw>(rhs.first, opt.fields);
 		if (less == ComparationResult::Eq) continue;
 		return toSigned(less) * opt.direction < 0;
@@ -320,7 +319,7 @@ AggregationResult Aggregator::GetResult() const {
 					   *facets_);
 			break;
 		case AggDistinct:
-			assertrx(distincts_);
+			assertrx_dbg(distincts_);
 			ret.payloadType = payloadType_;
 			ret.distinctsFields = fields_;
 			ret.distincts.reserve(distincts_->size());
@@ -331,7 +330,7 @@ AggregationResult Aggregator::GetResult() const {
 		case AggCount:
 		case AggCountCached:
 		case AggUnknown:
-			abort();
+			throw_as_assert;
 	}
 	return ret;
 }
@@ -356,7 +355,7 @@ void Aggregator::Aggregate(const PayloadValue &data) {
 		return;
 	}
 
-	assertrx(fields_.size() == 1);
+	assertrx_dbg(fields_.size() == 1);
 	if (fields_[0] == IndexValueType::SetByJsonPath) {
 		ConstPayload pl(payloadType_, data);
 		VariantArray va;
@@ -396,11 +395,11 @@ void Aggregator::aggregate(const Variant &v) {
 			break;
 		case AggFacet:
 			std::visit(overloaded{[&v](SinglefieldUnorderedMap &fm) { ++fm[v]; }, [&v](SinglefieldOrderedMap &fm) { ++fm[v]; },
-								  [](MultifieldUnorderedMap &) { assertrx(0); }, [](MultifieldOrderedMap &) { assertrx(0); }},
+								  [](MultifieldUnorderedMap &) { throw_as_assert; }, [](MultifieldOrderedMap &) { throw_as_assert; }},
 					   *facets_);
 			break;
 		case AggDistinct:
-			assertrx(distincts_);
+			assertrx_dbg(distincts_);
 			distincts_->insert(v);
 			break;
 		case AggUnknown:

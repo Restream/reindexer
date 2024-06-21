@@ -19,9 +19,9 @@ namespace reindexer {
 std::string escapeString(std::string_view str);
 std::string unescapeString(std::string_view str);
 
-[[nodiscard]] RX_ALWAYS_INLINE bool isalpha(char c) noexcept { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
-[[nodiscard]] RX_ALWAYS_INLINE bool isdigit(char c) noexcept { return (c >= '0' && c <= '9'); }
-[[nodiscard]] RX_ALWAYS_INLINE char tolower(char c) noexcept { return (c >= 'A' && c <= 'Z') ? c + 'a' - 'A' : c; }
+[[nodiscard]] RX_ALWAYS_INLINE constexpr bool isalpha(char c) noexcept { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
+[[nodiscard]] RX_ALWAYS_INLINE constexpr bool isdigit(char c) noexcept { return (c >= '0' && c <= '9'); }
+[[nodiscard]] RX_ALWAYS_INLINE constexpr char tolower(char c) noexcept { return (c >= 'A' && c <= 'Z') ? c + 'a' - 'A' : c; }
 std::string toLower(std::string_view src);
 inline std::string_view skipSpace(std::string_view str) {
 	size_t i = 0;
@@ -134,9 +134,9 @@ template <>
 		case CollateCustom:
 			return collateCompare<CollateCustom>(lhs, rhs, collateOpts.sortOrderTable);
 		case CollateNone:
+		default:
 			return collateCompare<CollateNone>(lhs, rhs, collateOpts.sortOrderTable);
 	}
-	return collateCompare<CollateNone>(lhs, rhs, collateOpts.sortOrderTable);
 }
 
 std::wstring utf8_to_utf16(std::string_view src);
@@ -174,14 +174,14 @@ LogLevel logLevelFromString(std::string_view strLogLevel);
 StrictMode strictModeFromString(std::string_view strStrictMode);
 std::string_view strictModeToString(StrictMode mode);
 
-inline bool iequals(std::string_view lhs, std::string_view rhs) noexcept {
+inline constexpr bool iequals(std::string_view lhs, std::string_view rhs) noexcept {
 	if (lhs.size() != rhs.size()) return false;
 	for (auto itl = lhs.begin(), itr = rhs.begin(); itl != lhs.end() && itr != rhs.end();) {
 		if (tolower(*itl++) != tolower(*itr++)) return false;
 	}
 	return true;
 }
-inline bool iless(std::string_view lhs, std::string_view rhs) noexcept {
+inline constexpr bool iless(std::string_view lhs, std::string_view rhs) noexcept {
 	const auto len = std::min(lhs.size(), rhs.size());
 	for (size_t i = 0; i < len; ++i) {
 		if (const auto l = tolower(lhs[i]), r = tolower(rhs[i]); l != r) {

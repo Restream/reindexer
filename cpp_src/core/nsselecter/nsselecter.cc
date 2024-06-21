@@ -142,7 +142,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtxWithJoinPreSelect<Joi
 			// then preResult query also MUST have disabled flag
 			// If assert fails, then possible query has unlock ns
 			// or ns->sortOrdersFlag_ was reset under read lock!
-			if (!ctx.sortingContext.enableSortOrders) assertrx_throw(!ctx.preSelect.Result().enableSortOrders);
+			assertrx_throw(ctx.sortingContext.enableSortOrders || !ctx.preSelect.Result().enableSortOrders);
 			ctx.sortingContext.enableSortOrders = ctx.preSelect.Result().enableSortOrders;
 		}
 
@@ -187,7 +187,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtxWithJoinPreSelect<Joi
 										  qres.Append(iterators.begin(), iterators.end());
 									  }
 								  },
-								  [](const JoinPreResult::Values &) { assertrx_throw(0); }},
+								  [](const JoinPreResult::Values &) { throw_as_assert; }},
 					   ctx.preSelect.Result().payload);
 		}
 
@@ -291,12 +291,11 @@ void NsSelecter::operator()(QueryResults &result, SelectCtxWithJoinPreSelect<Joi
 		qres.CheckFirstQuery();
 
 		// Rewind all results iterators
-		qres.VisitForEach(
-			Skip<JoinSelectIterator, SelectIteratorsBracket, FieldsComparator, AlwaysTrue, EqualPositionComparator>{},
-			Restricted<ComparatorNotIndexed,
-					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
-				[](auto &comp) { comp.ClearDistinctValues(); }),
-			[reverse, maxIterations](SelectIterator &it) { it.Start(reverse, maxIterations); });
+		qres.VisitForEach(Skip<JoinSelectIterator, SelectIteratorsBracket, FieldsComparator, AlwaysTrue, EqualPositionComparator>{},
+						  Restricted<ComparatorNotIndexed,
+									 Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
+							  [](auto &comp) { comp.ClearDistinctValues(); }),
+						  [reverse, maxIterations](SelectIterator &it) { it.Start(reverse, maxIterations); });
 
 		// Let iterators choose most efficient algorithm
 		assertrx_throw(qres.Size());
@@ -384,9 +383,9 @@ void NsSelecter::operator()(QueryResults &result, SelectCtxWithJoinPreSelect<Joi
 		ret.fields = {"*"};
 		ret.type = (aggregationQueryRef.CalcTotal() == ModeAccurateTotal || containAggCount) ? AggCount : AggCountCached;
 		if (ctx.isMergeQuerySubQuery()) {
-			assertrx_throw(!result.aggregationResults.empty());
+			assertrx_dbg(!result.aggregationResults.empty());
 			auto &agg = result.aggregationResults.back();
-			assertrx_throw(agg.type == ret.type);
+			assertrx_dbg(agg.type == ret.type);
 			agg.SetValue(result.totalCount);
 		} else {
 			ret.SetValue(result.totalCount);
@@ -401,10 +400,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtxWithJoinPreSelect<Joi
 	if constexpr (std::is_same_v<JoinPreResultCtx, JoinPreResultBuildCtx>) {
 		explain.PutCount(std::visit(overloaded{[](const IdSet &ids) noexcept -> size_t { return ids.size(); },
 											   [](const JoinPreResult::Values &values) noexcept { return values.size(); },
-											   [](const SelectIteratorContainer &) -> size_t {
-												   assertrx_throw(0);
-												   abort();
-											   }},
+											   [](const SelectIteratorContainer &) -> size_t { throw_as_assert; }},
 									ctx.preSelect.Result().payload));
 	} else {
 		explain.PutCount(result.Count());
@@ -443,7 +439,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtxWithJoinPreSelect<Joi
 									  logPrintf(LogInfo, "Built values preResult (expected %d iterations) with %d values, q = '%s'",
 												explain.Iterations(), values.size(), ctx.query.GetSQL());
 								  },
-								  [](const SelectIteratorContainer &) { assertrx_throw(0); }},
+								  [](const SelectIteratorContainer &) { throw_as_assert; }},
 					   ctx.preSelect.Result().payload);
 		}
 	}
@@ -1108,10 +1104,8 @@ void NsSelecter::getSortIndexValue(const SortingContext &sortCtx, IdType rowId, 
 							return Variant(p_string(static_cast<const std::string_view *>(e.rawData.ptr) + rowId), Variant::no_hold_t{});
 						},
 						[&e, rowId](KeyValueType::Uuid) noexcept { return Variant(*(static_cast<const Uuid *>(e.rawData.ptr) + rowId)); },
-						[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) noexcept
-						-> Variant {
-							assertrx(0);
-							abort();
+						[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) -> Variant {
+							throw_as_assert;
 						})};
 				} else {
 					ConstPayload pv(ns_->payloadType_, ns_->items_[rowId]);
@@ -1157,7 +1151,7 @@ void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId,
 									  values.emplace_back(properRowId, ns_->items_[properRowId], proc, sctx.nsid);
 								  }
 							  },
-							  [](const SelectIteratorContainer &) { assertrx_throw(0); }},
+							  [](const SelectIteratorContainer &) { throw_as_assert; }},
 				   sctx.preSelect.Result().payload);
 	} else {
 		if (!sctx.sortingContext.expressions.empty()) {
@@ -1533,8 +1527,8 @@ size_t NsSelecter::calculateNormalCost(const QueryEntries &qentries, SelectCtx &
 		next = qentries.Next(i);
 		const bool calculateEntry = costCalculator.OnNewEntry(qentries, i, next);
 		qentries.Visit(
-			i, [] RX_PRE_LMBD_ALWAYS_INLINE(const SubQueryEntry &) RX_POST_LMBD_ALWAYS_INLINE { assertrx_throw(0); },
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const SubQueryFieldEntry &) RX_POST_LMBD_ALWAYS_INLINE { assertrx_throw(0); },
+			i, [] RX_PRE_LMBD_ALWAYS_INLINE(const SubQueryEntry &) RX_POST_LMBD_ALWAYS_INLINE { throw_as_assert; },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const SubQueryFieldEntry &) RX_POST_LMBD_ALWAYS_INLINE { throw_as_assert; },
 			Skip<AlwaysFalse, AlwaysTrue>{},
 			[&costCalculator] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntriesBracket &)
 				RX_POST_LMBD_ALWAYS_INLINE noexcept { costCalculator.MarkInapposite(); },
@@ -1607,8 +1601,8 @@ size_t NsSelecter::calculateOptimizedCost(size_t costNormal, const QueryEntries 
 		}
 		qentries.Visit(
 			i, Skip<AlwaysFalse, AlwaysTrue>{},
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const SubQueryEntry &) RX_POST_LMBD_ALWAYS_INLINE { assertrx_throw(0); },
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const SubQueryFieldEntry &) RX_POST_LMBD_ALWAYS_INLINE { assertrx_throw(0); },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const SubQueryEntry &) RX_POST_LMBD_ALWAYS_INLINE { throw_as_assert; },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const SubQueryFieldEntry &) RX_POST_LMBD_ALWAYS_INLINE { throw_as_assert; },
 			[&costCalculator] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntriesBracket &)
 				RX_POST_LMBD_ALWAYS_INLINE noexcept { costCalculator.MarkInapposite(); },
 			[&costCalculator] RX_PRE_LMBD_ALWAYS_INLINE(const JoinQueryEntry &)
@@ -1741,7 +1735,7 @@ void NsSelecter::writeAggregationResultMergeSubQuery(QueryResults &result, h_vec
 			case AggCount:
 			case AggCountCached:
 			case AggUnknown:
-				assertrx_throw(false);
+				throw_as_assert;
 		}
 	}
 }

@@ -157,7 +157,7 @@ public:
 	/// @param l - list of values to be compared according to the order
 	/// of indexes in composite index name.
 	/// There can be maximum 2 VariantArray objects in l: in case of CondRange condition,
-	/// in all other cases amount of elements in l would be striclty equal to 1.
+	/// in all other cases amount of elements in l would be strictly equal to 1.
 	/// For example, composite index name is "bookid+price", so l[0][0] (and l[1][0]
 	/// in case of CondRange) belongs to "bookid" and l[0][1] (and l[1][1] in case of CondRange)
 	/// belongs to "price" indexes.
@@ -222,7 +222,7 @@ public:
 		} else {
 			q.checkSubQueryWithData();
 			if (!q.selectFilter_.empty() && !q.HasLimit() && !q.HasOffset()) {
-				// Transforms main query condition into subquerie's condition
+				// Converts main query condition to subquery condition
 				q.sortingEntries_.clear();
 				q.Where(q.selectFilter_[0], cond, std::move(values));
 				q.selectFilter_.clear();
@@ -288,7 +288,7 @@ public:
 	/// Sets a new value for a field.
 	/// @param field - field name.
 	/// @param value - new value.
-	/// @param hasExpressions - true: value has expresions in it
+	/// @param hasExpressions - true: value has expressions in it
 	template <typename Str, typename ValueType, std::enable_if_t<std::is_constructible_v<std::string, Str>> * = nullptr>
 	Query &Set(Str &&field, ValueType value, bool hasExpressions = false) & {
 		return Set(std::forward<Str>(field), {value}, hasExpressions);
@@ -300,7 +300,7 @@ public:
 	/// Sets a new value for a field.
 	/// @param field - field name.
 	/// @param l - new value.
-	/// @param hasExpressions - true: value has expresions in it
+	/// @param hasExpressions - true: value has expressions in it
 	template <typename Str, typename ValueType, std::enable_if_t<std::is_constructible_v<std::string, Str>> * = nullptr>
 	Query &Set(Str &&field, std::initializer_list<ValueType> l, bool hasExpressions = false) & {
 		VariantArray value;
@@ -315,7 +315,7 @@ public:
 	/// Sets a new value for a field.
 	/// @param field - field name.
 	/// @param l - new value.
-	/// @param hasExpressions - true: value has expresions in it
+	/// @param hasExpressions - true: value has expressions in it
 	template <typename Str, typename T, std::enable_if_t<std::is_constructible_v<std::string, Str>> * = nullptr>
 	Query &Set(Str &&field, const std::vector<T> &l, bool hasExpressions = false) & {
 		VariantArray value;
@@ -330,7 +330,7 @@ public:
 	/// Sets a new value for a field.
 	/// @param field - field name.
 	/// @param value - new value.
-	/// @param hasExpressions - true: value has expresions in it
+	/// @param hasExpressions - true: value has expressions in it
 	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>> * = nullptr>
 	Query &Set(Str &&field, VariantArray value, bool hasExpressions = false) & {
 		updateFields_.emplace_back(std::forward<Str>(field), std::move(value), FieldModeSet, hasExpressions);
@@ -343,7 +343,7 @@ public:
 	/// Sets a value for a field as an object.
 	/// @param field - field name.
 	/// @param value - new value.
-	/// @param hasExpressions - true: value has expresions in it
+	/// @param hasExpressions - true: value has expressions in it
 	template <typename Str, typename ValueType, std::enable_if_t<std::is_constructible_v<std::string, Str>> * = nullptr>
 	Query &SetObject(Str &&field, ValueType value, bool hasExpressions = false) & {
 		return SetObject(std::forward<Str>(field), {value}, hasExpressions);
@@ -355,7 +355,7 @@ public:
 	/// Sets a new value for a field as an object.
 	/// @param field - field name.
 	/// @param l - new value.
-	/// @param hasExpressions - true: value has expresions in it
+	/// @param hasExpressions - true: value has expressions in it
 	template <typename Str, typename ValueType, std::enable_if_t<std::is_constructible_v<std::string, Str>> * = nullptr>
 	Query &SetObject(Str &&field, std::initializer_list<ValueType> l, bool hasExpressions = false) & {
 		VariantArray value;
@@ -370,7 +370,7 @@ public:
 	/// Sets a new value for a field as an object.
 	/// @param field - field name.
 	/// @param l - new value.
-	/// @param hasExpressions - true: value has expresions in it
+	/// @param hasExpressions - true: value has expressions in it
 	template <typename Str, typename T, std::enable_if_t<std::is_constructible_v<std::string, Str>> * = nullptr>
 	Query &SetObject(Str &&field, const std::vector<T> &l, bool hasExpressions = false) & {
 		VariantArray value;
@@ -385,7 +385,7 @@ public:
 	/// Sets a value for a field as an object.
 	/// @param field - field name.
 	/// @param value - new value.
-	/// @param hasExpressions - true: value has expresions in it
+	/// @param hasExpressions - true: value has expressions in it
 	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>> * = nullptr>
 	Query &SetObject(Str &&field, VariantArray value, bool hasExpressions = false) & {
 		for (auto &it : value) {
@@ -636,7 +636,7 @@ public:
 	}
 
 	/// Performs distinct for a certain index.
-	/// @param indexName - name of index for distict operation.
+	/// @param indexName - name of index for distinct operation.
 	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>> * = nullptr>
 	Query &Distinct(Str &&indexName) & {
 		if (!strEmpty(indexName)) {
@@ -980,7 +980,7 @@ public:
 	[[nodiscard]] bool operator==(const JoinedQuery &obj) const;
 
 	JoinType joinType{JoinType::LeftJoin};	   /// Default join type.
-	h_vector<QueryJoinEntry, 1> joinEntries_;  /// Condition for join. Filled in each subqueries, empty in  root query
+	h_vector<QueryJoinEntry, 1> joinEntries_;  /// Condition for join. Filled in each subqueries, empty in root query
 };
 
 template <typename Q>

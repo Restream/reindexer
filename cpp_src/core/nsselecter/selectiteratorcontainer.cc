@@ -26,7 +26,7 @@ void SelectIteratorContainer::SortByCost(int expectedIterations) {
 			for (; positionOfTmp < indexes.size(); ++positionOfTmp) {
 				if (indexes[positionOfTmp] == i) break;
 			}
-			assertrx(positionOfTmp < indexes.size());
+			assertrx_throw(positionOfTmp < indexes.size());
 			Container::value_type tmp = std::move(container_[i]);
 			container_[i] = std::move(container_[indexes[i]]);
 			container_[indexes[i]] = std::move(tmp);
@@ -182,13 +182,13 @@ void SelectIteratorContainer::CheckFirstQuery() {
 			return;
 		}
 	}
-	assertrx(0);
+	throw_as_assert;
 }
 
 // Let iterators choose most effective algorithm
 void SelectIteratorContainer::SetExpectMaxIterations(int expectedIterations) {
-	assertrx(!Empty());
-	assertrx(Is<SelectIterator>(0));
+	assertrx_throw(!Empty());
+	assertrx_throw(Is<SelectIterator>(0));
 	for (Container::iterator it = container_.begin() + 1; it != container_.end(); ++it) {
 		if (it->Is<SelectIterator>()) {
 			it->Value<SelectIterator>().SetExpectMaxIterations(expectedIterations);
@@ -363,15 +363,9 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &&select
 void SelectIteratorContainer::processEqualPositions(const std::vector<EqualPositions> &equalPositions, const NamespaceImpl &ns,
 													const QueryEntries &queries) {
 	for (const auto &eqPos : equalPositions) {
-		const QueryEntry &firstQe{queries.Get<QueryEntry>(eqPos.queryEntriesPositions[0])};
-		if (firstQe.Condition() == CondEmpty || (firstQe.Condition() == CondSet && firstQe.Values().empty())) {
-			throw Error(errLogic, "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
-		}
-
 		EqualPositionComparator cmp{ns.payloadType_};
-
-		for (size_t i = 0; i < eqPos.queryEntriesPositions.size(); ++i) {
-			const QueryEntry &qe = queries.Get<QueryEntry>(eqPos.queryEntriesPositions[i]);
+		for (size_t i = 0, s = eqPos.size(); i < s; ++i) {
+			const QueryEntry &qe = queries.Get<QueryEntry>(eqPos[i]);
 			if (qe.Condition() == CondEmpty || (qe.Condition() == CondSet && qe.Values().empty())) {
 				throw Error(errLogic, "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
 			}
@@ -384,8 +378,7 @@ void SelectIteratorContainer::processEqualPositions(const std::vector<EqualPosit
 				cmp.BindField(qe.FieldName(), idxNo, qe.Values(), qe.Condition(), ns.indexes_[idxNo]->Opts().collateOpts_);
 			}
 		}
-
-		InsertAfter(eqPos.positionToInsertIterator, OpAnd, std::move(cmp));
+		Append(OpAnd, std::move(cmp));
 	}
 }
 
@@ -411,12 +404,12 @@ std::vector<SelectIteratorContainer::EqualPositions> SelectIteratorContainer::pr
 			throw Error(errParams, "equal positions fields should be unique: [%s]", getEpFieldsStr());
 		}
 		std::unordered_set<std::string_view> foundFields;
-		result[i].queryEntriesPositions.reserve(eqPos[i].size());
+		result[i].reserve(eqPos[i].size());
 		for (size_t j = begin, next; j < end; j = next) {
 			next = queries.Next(j);
 			queries.Visit(
-				j, Skip<QueryEntriesBracket, JoinQueryEntry, AlwaysFalse, AlwaysTrue>{}, [](const SubQueryEntry &) { assertrx_throw(0); },
-				[](const SubQueryFieldEntry &) { assertrx_throw(0); },
+				j, Skip<QueryEntriesBracket, JoinQueryEntry, AlwaysFalse, AlwaysTrue>{}, [](const SubQueryEntry &) { throw_as_assert; },
+				[](const SubQueryFieldEntry &) { throw_as_assert; },
 				[&](const QueryEntry &eq) {
 					if (foundFields.find(eq.FieldName()) != foundFields.end()) {
 						throw Error(errParams, "Equal position field '%s' found twice in enclosing bracket; equal position fields: [%s]",
@@ -430,7 +423,7 @@ std::vector<SelectIteratorContainer::EqualPositions> SelectIteratorContainer::pr
 									"equal position fields: [%s]",
 									eq.FieldName(), getEpFieldsStr());
 					}
-					result[i].queryEntriesPositions.push_back(j);
+					result[i].push_back(j);
 					foundFields.insert(epFields.extract(it));
 				},
 				[&](const BetweenFieldsQueryEntry &eq) {  // TODO equal positions for BetweenFieldsQueryEntry #1092
@@ -472,99 +465,80 @@ bool SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor &q
 	for (size_t i = begin, next = begin; i != end; i = next) {
 		next = queries.Next(i);
 		const OpType op = queries.GetOperation(i);
-		containFT = queries.Visit(
-						i,
-						[](const SubQueryEntry &) -> bool {
-							assertrx_throw(0);
-							abort();
-						},
-						[](const SubQueryFieldEntry &) -> bool {
-							assertrx_throw(0);
-							abort();
-						},
-						[&](const QueryEntriesBracket &) {
-							OpenBracket(op);
-							const bool contFT =
-								prepareIteratorsForSelectLoop(qPreproc, i + 1, next, sortId, isQueryFt, ns, selectFnc, ftCtx, rdxCtx);
-							if (contFT && (op == OpOr || (next < end && queries.GetOperation(next) == OpOr))) {
-								throw Error(errLogic, "OR operation is not allowed with bracket containing fulltext index");
-							}
-							CloseBracket();
-							return contFT;
-						},
-						[&](const QueryEntry &qe) {
-							const bool isFT = qe.IsFieldIndexed() && IsFullText(ns.indexes_[qe.IndexNo()]->Type());
-							if (isFT && (op == OpOr || (next < end && queries.GetOperation(next) == OpOr))) {
-								throw Error(errLogic, "OR operation is not allowed with fulltext index");
-							}
-							SelectKeyResults selectResults;
+		containFT =
+			queries.Visit(
+				i, [](const SubQueryEntry &) -> bool { throw_as_assert; }, [](const SubQueryFieldEntry &) -> bool { throw_as_assert; },
+				[&](const QueryEntriesBracket &) {
+					OpenBracket(op);
+					const bool contFT =
+						prepareIteratorsForSelectLoop(qPreproc, i + 1, next, sortId, isQueryFt, ns, selectFnc, ftCtx, rdxCtx);
+					if (contFT && (op == OpOr || (next < end && queries.GetOperation(next) == OpOr))) {
+						throw Error(errLogic, "OR operation is not allowed with bracket containing fulltext index");
+					}
+					CloseBracket();
+					return contFT;
+				},
+				[&](const QueryEntry &qe) {
+					const bool isFT = qe.IsFieldIndexed() && IsFullText(ns.indexes_[qe.IndexNo()]->Type());
+					if (isFT && (op == OpOr || (next < end && queries.GetOperation(next) == OpOr))) {
+						throw Error(errLogic, "OR operation is not allowed with fulltext index");
+					}
+					SelectKeyResults selectResults;
 
-							bool isIndexFt = false, isIndexSparse = false;
-							if (qe.IsFieldIndexed()) {
-								bool enableSortIndexOptimize = (ctx_->sortingContext.uncommitedIndex == qe.IndexNo()) && !sortIndexFound &&
-															   (op == OpAnd) && !qe.Distinct() && (begin == 0) &&
-															   (next == end || queries.GetOperation(next) != OpOr);
-								if (enableSortIndexOptimize) {
-									if (!IsExpectingOrderedResults(qe)) {
-										// Disable sorting index optimization if it somehow has incompatible conditions
-										enableSortIndexOptimize = false;
-									}
-									sortIndexFound = true;
-								}
-								selectResults = processQueryEntry(qe, enableSortIndexOptimize, ns, sortId, isQueryFt, selectFnc, isIndexFt,
-																  isIndexSparse, ftCtx, qPreproc, rdxCtx);
-							} else {
-								auto strictMode = ns.config_.strictMode;
-								if (ctx_) {
-									if (ctx_->inTransaction) {
-										strictMode = StrictModeNone;
-									} else if (ctx_->query.GetStrictMode() != StrictModeNotSet) {
-										strictMode = ctx_->query.GetStrictMode();
-									}
-								}
-								selectResults = processQueryEntry(qe, ns, strictMode);
+					bool isIndexFt = false, isIndexSparse = false;
+					if (qe.IsFieldIndexed()) {
+						bool enableSortIndexOptimize = (ctx_->sortingContext.uncommitedIndex == qe.IndexNo()) && !sortIndexFound &&
+													   (op == OpAnd) && !qe.Distinct() && (begin == 0) &&
+													   (next == end || queries.GetOperation(next) != OpOr);
+						if (enableSortIndexOptimize) {
+							if (!IsExpectingOrderedResults(qe)) {
+								// Disable sorting index optimization if it somehow has incompatible conditions
+								enableSortIndexOptimize = false;
 							}
-							std::optional<OpType> nextOp;
-							if (next != end) {
-								nextOp = queries.GetOperation(next);
+							sortIndexFound = true;
+						}
+						selectResults = processQueryEntry(qe, enableSortIndexOptimize, ns, sortId, isQueryFt, selectFnc, isIndexFt,
+														  isIndexSparse, ftCtx, qPreproc, rdxCtx);
+					} else {
+						auto strictMode = ns.config_.strictMode;
+						if (ctx_) {
+							if (ctx_->inTransaction) {
+								strictMode = StrictModeNone;
+							} else if (ctx_->query.GetStrictMode() != StrictModeNotSet) {
+								strictMode = ctx_->query.GetStrictMode();
 							}
-							processQueryEntryResults(std::move(selectResults), op, ns, qe, isIndexFt, isIndexSparse, nextOp);
-							if (op != OpOr) {
-								for (auto &ep : equalPositions) {
-									const auto lastPosition = ep.queryEntriesPositions.back();
-									if (i == lastPosition || (i > lastPosition && !ep.foundOr)) {
-										ep.positionToInsertIterator = Size() - 1;
-									}
-								}
-							} else {
-								for (auto &ep : equalPositions) {
-									if (i > ep.queryEntriesPositions.back()) ep.foundOr = true;
-								}
-							}
-							return isFT;
-						},
-						[this, op](const JoinQueryEntry &jqe) {
-							processJoinEntry(jqe, op);
-							return false;
-						},
-						[&](const BetweenFieldsQueryEntry &qe) {
-							FieldsComparator fc{qe.LeftFieldName(), qe.Condition(), qe.RightFieldName(), ns.payloadType_};
-							processField<true>(fc, qe.LeftFieldData(), ns);
-							processField<false>(fc, qe.RightFieldData(), ns);
-							Append(op, std::move(fc));
-							return false;
-						},
-						[this, op](const AlwaysFalse &) {
-							SelectKeyResult zeroScan;
-							zeroScan.emplace_back(0, 0);
-							Append(op, SelectIterator{std::move(zeroScan), false, "always_false", IteratorFieldKind::None, true});
-							return false;
-						},
-						[this, op](const AlwaysTrue &) {
-							Append(op, AlwaysTrue{});
-							return false;
-						}) ||
-					containFT;
+						}
+						selectResults = processQueryEntry(qe, ns, strictMode);
+					}
+					std::optional<OpType> nextOp;
+					if (next != end) {
+						nextOp = queries.GetOperation(next);
+					}
+					processQueryEntryResults(std::move(selectResults), op, ns, qe, isIndexFt, isIndexSparse, nextOp);
+					return isFT;
+				},
+				[this, op](const JoinQueryEntry &jqe) {
+					processJoinEntry(jqe, op);
+					return false;
+				},
+				[&](const BetweenFieldsQueryEntry &qe) {
+					FieldsComparator fc{qe.LeftFieldName(), qe.Condition(), qe.RightFieldName(), ns.payloadType_};
+					processField<true>(fc, qe.LeftFieldData(), ns);
+					processField<false>(fc, qe.RightFieldData(), ns);
+					Append(op, std::move(fc));
+					return false;
+				},
+				[this, op](const AlwaysFalse &) {
+					SelectKeyResult zeroScan;
+					zeroScan.emplace_back(0, 0);
+					Append(op, SelectIterator{std::move(zeroScan), false, "always_false", IteratorFieldKind::None, true});
+					return false;
+				},
+				[this, op](const AlwaysTrue &) {
+					Append(op, AlwaysTrue{});
+					return false;
+				}) ||
+			containFT;
 	}
 	processEqualPositions(equalPositions, ns, queries);
 	return containFT;
@@ -592,7 +566,7 @@ RX_ALWAYS_INLINE bool SelectIteratorContainer::checkIfSatisfyCondition(SelectIte
 
 RX_ALWAYS_INLINE bool SelectIteratorContainer::checkIfSatisfyCondition(JoinSelectIterator &it, PayloadValue &pv, IdType properRowId,
 																	   bool match) {
-	assertrx(ctx_->joinedSelectors);
+	assertrx_throw(ctx_->joinedSelectors);
 	ConstPayload pl(*pt_, pv);
 	auto &joinedSelector = (*ctx_->joinedSelectors)[it.joinIndex];
 	return joinedSelector.Process(properRowId, ctx_->nsid, pl, match);
@@ -770,7 +744,7 @@ void JoinSelectIterator::Dump(WrSerializer &ser, const std::vector<JoinedSelecto
 		if (&jqe != &q.joinEntries_.front()) {
 			ser << ' ' << jqe.Operation() << ' ';
 		} else {
-			assertrx(jqe.Operation() == OpAnd);
+			assertrx_throw(jqe.Operation() == OpAnd);
 		}
 		ser << q.NsName() << '.' << jqe.RightFieldName() << ' ' << jqe.Condition() << ' ' << jqe.LeftFieldName();
 	}

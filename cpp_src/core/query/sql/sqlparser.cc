@@ -432,7 +432,6 @@ int SQLParser::deleteParse(tokenizer &parser) {
 }
 
 static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry &updateField) {
-	updateField.SetMode(FieldModeSet);
 	if (currTok.type == TokenString) {
 		updateField.Values().push_back(token2kv(currTok, parser, false));
 	} else {
@@ -504,6 +503,16 @@ void SQLParser::parseArray(tokenizer &parser, std::string_view tokText, UpdateEn
 			throw Error(errParseSQL, "Expected ']' or ',', but found '%s' in query, %s", tok.text(), parser.where());
 		}
 	}
+
+	if (updateField && (updateField->Mode() == FieldModeSetJson)) {
+		for (const auto &it : updateField->Values()) {
+			if ((!it.Type().Is<KeyValueType::String>()) ||
+				std::string_view(it).front() != '{') {
+				throw Error(errLogic, "Unexpected variant type in Array: %s. Expecting KeyValueType::String with JSON-content",
+							it.Type().Name());
+			}
+		}
+	}
 }
 
 void SQLParser::parseCommand(tokenizer &parser) const {
@@ -571,6 +580,7 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
 	if (tok.text() == "["sv) {
 		updateField.Values().MarkArray();
 		parseArray(parser, tok.text(), &updateField);
+		updateField.SetIsExpression(false);
 	} else if (tok.text() == "array_remove"sv || tok.text() == "array_remove_once"sv) {
 		parseCommand(parser);
 

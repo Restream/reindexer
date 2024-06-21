@@ -22,7 +22,7 @@ type QueryStrictMode int
 
 const (
 	queryStrictModeNotSet  QueryStrictMode = bindings.QueryStrictModeNotSet
-	QueryStrictModeNone                    = bindings.QueryStrictModeNone    // Allows any fields in coditions, but doesn't check actual values for non-existing names
+	QueryStrictModeNone                    = bindings.QueryStrictModeNone    // Allows any fields in conditions, but doesn't check actual values for non-existing names
 	QueryStrictModeNames                   = bindings.QueryStrictModeNames   // Allows only valid fields and indexes in conditions. Otherwise query will return error
 	QueryStrictModeIndexes                 = bindings.QueryStrictModeIndexes // Allows only indexes in conditions. Otherwise query will return error
 )
@@ -227,7 +227,7 @@ func (q *Query) makeCopy(db *reindexerImpl, root *Query) *Query {
 
 	qC.joinToFields = append(q.joinToFields[:0:0], q.joinToFields...)
 	qC.joinHandlers = append(q.joinHandlers[:0:0], q.joinHandlers...)
-	//TODO not realycopy
+	//TODO not real copy
 	qC.context = q.context
 	qC.joinType = q.joinType
 	qC.nsArray = append(q.nsArray[:0:0], q.nsArray...)
@@ -632,7 +632,7 @@ func (q *Query) Sort(sortIndex string, desc bool, values ...interface{}) *Query 
 	return q
 }
 
-// SortStDistance - wrapper for geometry sorting by shortes distance between geometry field and point (ST_Distance)
+// SortStDistance - wrapper for geometry sorting by shortest distance between geometry field and point (ST_Distance)
 func (q *Query) SortStPointDistance(field string, p Point, desc bool) *Query {
 	var sb strings.Builder
 	sb.Grow(256)
@@ -646,7 +646,7 @@ func (q *Query) SortStPointDistance(field string, p Point, desc bool) *Query {
 	return q.Sort(sb.String(), desc)
 }
 
-// SortStDistance - wrapper for geometry sorting by shortes distance between 2 geometry fields (ST_Distance)
+// SortStDistance - wrapper for geometry sorting by shortest distance between 2 geometry fields (ST_Distance)
 func (q *Query) SortStFieldDistance(field1 string, field2 string, desc bool) *Query {
 	var sb strings.Builder
 	sb.Grow(256)
@@ -659,7 +659,7 @@ func (q *Query) SortStFieldDistance(field1 string, field2 string, desc bool) *Qu
 }
 
 // AND - next condition will added with AND
-// This is the default operation for WHERE statement. Do not have to be called explicitly in user's code. Used in DSL convertion
+// This is the default operation for WHERE statement. Do not have to be called explicitly in user's code. Used in DSL conversion
 func (q *Query) And() *Query {
 	q.nextOp = opAND
 	return q
@@ -851,13 +851,13 @@ func (q *Query) panicTrace(msg string) {
 }
 
 // Delete will execute query, and delete items, matches query
-// On sucess return number of deleted elements
+// On success return number of deleted elements
 func (q *Query) Delete() (int, error) {
 	return q.DeleteCtx(context.Background())
 }
 
 // DeleteCtx will execute query, and delete items, matches query
-// On sucess return number of deleted elements
+// On success return number of deleted elements
 func (q *Query) DeleteCtx(ctx context.Context) (int, error) {
 	if q.root != nil || len(q.joinQueries) != 0 {
 		return 0, errors.New("Delete does not support joined queries")
@@ -1002,19 +1002,19 @@ func (q *Query) SetExpression(field string, value string) *Query {
 }
 
 // Update will execute query, and update fields in items, which matches query
-// On sucess return number of update elements
+// On success return number of update elements
 func (q *Query) Update() *Iterator {
 	return q.UpdateCtx(context.Background())
 }
 
 // UpdateCtx will execute query, and update fields in items, which matches query
-// On sucess return number of update elements
+// On success return number of update elements
 func (q *Query) UpdateCtx(ctx context.Context) *Iterator {
 	if q.root != nil || len(q.joinQueries) != 0 {
 		return errIterator(errors.New("Update does not support joined queries"))
 	}
 	if q.closed {
-		q.panicTrace("Update call on already closed query. You shoud create new Query")
+		q.panicTrace("Update call on already closed query. You should create new Query")
 	}
 
 	q.executed = true
@@ -1132,7 +1132,7 @@ func (q *Query) LeftJoin(q2 *Query, field string) *Query {
 // Handler will be always set to the main query
 func (q *Query) JoinHandler(field string, handler JoinHandler) *Query {
 	if q.root != nil {
-		// Joined queries can not have JoinHandlers themselfs. Routing this call to the root query if current query is joined
+		// Joined queries can not have JoinHandlers themselves. Routing this call to the root query if current query is joined
 		for _, jq := range q.root.joinQueries {
 			if q == jq {
 				q.root.JoinHandler(field, handler)

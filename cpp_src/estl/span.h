@@ -1,6 +1,7 @@
 #pragma once
 
-#include <stdint.h>
+#include <cstdint>
+#include <string>
 #include <string_view>
 #include "tools/assertrx.h"
 #include "trivial_reverse_iterator.h"
@@ -36,11 +37,16 @@ public:
 		return *this;
 	}
 
-	// FIXME: const override
+	// FIXME: const override (implicit const cast should not be possible for any type)
+	// Requires explicit giftStr for the 'string' types, which could be COW
+	template <typename Container,
+			  std::enable_if_t<!std::is_same_v<Container, std::string> && !std::is_same_v<Container, std::string_view>, void>* = nullptr>
+	constexpr span(const Container& other) noexcept : data_(const_cast<Container&>(other).data()), size_(other.size()) {}
 	template <typename Container>
-	constexpr span(const Container& other) noexcept : data_(const_cast<T*>(other.data())), size_(other.size()) {}
+	constexpr span(Container& other) noexcept : data_(other.data()), size_(other.size()) {}
 
-	explicit constexpr span(const T* str, size_type len) noexcept : data_(const_cast<T*>(str)), size_(len) {}
+	template <typename U, std::enable_if_t<std::is_same_v<T, U> && !std::is_same_v<U, char>, void>* = nullptr>
+	explicit constexpr span(const U* str, size_type len) noexcept : data_(const_cast<T*>(str)), size_(len) {}
 	constexpr span(T* str, size_type len) noexcept : data_(str), size_(len) {}
 	template <size_type L>
 	constexpr span(T (&arr)[L]) noexcept : data_(arr), size_(L) {}
@@ -86,5 +92,7 @@ protected:
 };
 
 inline span<char> giftStr(std::string_view sv) noexcept { return span<char>(const_cast<char*>(sv.data()), sv.size()); }
+// Explicit std::string overload to avoid COW-related problems
+inline span<char> giftStr(const std::string& s) noexcept { return span<char>(const_cast<std::string&>(s).data(), s.size()); }
 
 }  // namespace reindexer

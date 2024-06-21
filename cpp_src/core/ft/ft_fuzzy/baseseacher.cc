@@ -75,7 +75,6 @@ SearchResult BaseSearcher::Compare(const BaseHolder::Ptr &holder, const FtDSLQue
 	std::pair<PosType, ProcType> pos;
 	pos.first = 0;
 
-	SmartDeque<IdContext, 100> result;
 	std::vector<FirstResult> rusults;
 	int max_id = 0;
 	int min_id = INT32_MAX;
@@ -126,8 +125,6 @@ void BaseSearcher::AddIndex(BaseHolder::Ptr &holder, std::string_view src_data, 
 	if (!src_data.length()) return;
 	std::pair<PosType, ProcType> pos;
 	pos.first = 0;
-	std::vector<std::pair<HashType, ProcType>> res;
-	std::string word, str;
 	std::wstring utf16str;
 	std::vector<std::wstring> wrds;
 	split(src_data, utf16str, wrds, extraWordSymbols);

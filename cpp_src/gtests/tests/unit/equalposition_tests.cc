@@ -232,8 +232,6 @@ TEST_F(EqualPositionApi, EmptyCompOpErr) {
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 		char json[1024];
-		std::string pk("pk" + std::to_string(i));
-
 		snprintf(json, sizeof(json) - 1, jsonPattern, i);
 
 		err = item.FromJSON(json);

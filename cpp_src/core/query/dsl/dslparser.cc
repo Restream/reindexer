@@ -1,12 +1,13 @@
 #include "dslparser.h"
 #include "core/cjson/jschemachecker.h"
 #include "core/query/query.h"
-#include "estl/fast_hash_map.h"
 #include "gason/gason.h"
 #include "tools/errors.h"
+#include "tools/frozen_str_tools.h"
 #include "tools/json2kv.h"
 #include "tools/jsontools.h"
 #include "tools/stringstools.h"
+#include "vendor/frozen/unordered_map.h"
 
 namespace reindexer {
 using namespace gason;
@@ -43,11 +44,13 @@ enum class EqualPosition { Positions };
 enum class UpdateField { Name, Type, Values, IsArray };
 enum class UpdateFieldType { Object, Expression, Value };
 
-// additional for parse root DSL fields
-template <typename T>
-using fast_str_map = fast_hash_map<std::string, T, nocase_hash_str, nocase_equal_str, nocase_less_str>;
+template <typename T, std::size_t N>
+constexpr auto MakeFastStrMap(std::pair<std::string_view, T> const (&items)[N]) {
+	return frozen::make_unordered_map<std::string_view, T>(items, frozen::nocase_hash_str{}, frozen::nocase_equal_str{});
+}
 
-static const fast_str_map<Root> root_map = {
+// additional for parse root DSL fields
+constexpr static auto kRootMap = MakeFastStrMap<Root>({
 	{"namespace", Root::Namespace},
 	{"limit", Root::Limit},
 	{"offset", Root::Offset},
@@ -65,90 +68,105 @@ static const fast_str_map<Root> root_map = {
 	{"type", Root::QueryType},
 	{"drop_fields", Root::DropFields},
 	{"update_fields", Root::UpdateFields},
-};
+});
 
 // additional for parse field 'sort'
-
-static const fast_str_map<Sort> sort_map = {{"desc", Sort::Desc}, {"field", Sort::Field}, {"values", Sort::Values}};
+constexpr static auto kSortMap = MakeFastStrMap<Sort>({{"desc", Sort::Desc}, {"field", Sort::Field}, {"values", Sort::Values}});
 
 // additional for parse field 'joined'
+constexpr static auto joins_map = MakeFastStrMap<JoinRoot>({{"type", JoinRoot::Type},
+															{"namespace", JoinRoot::Namespace},
+															{"filters", JoinRoot::Filters},
+															{"sort", JoinRoot::Sort},
+															{"limit", JoinRoot::Limit},
+															{"offset", JoinRoot::Offset},
+															{"on", JoinRoot::On},
+															{"select_filter", JoinRoot::SelectFilter}});
 
-static const fast_str_map<JoinRoot> joins_map = {{"type", JoinRoot::Type},		 {"namespace", JoinRoot::Namespace},
-												 {"filters", JoinRoot::Filters}, {"sort", JoinRoot::Sort},
-												 {"limit", JoinRoot::Limit},	 {"offset", JoinRoot::Offset},
-												 {"on", JoinRoot::On},			 {"select_filter", JoinRoot::SelectFilter}};
+constexpr static auto joined_entry_map = MakeFastStrMap<JoinEntry>(
+	{{"left_field", JoinEntry::LeftField}, {"right_field", JoinEntry::RightField}, {"cond", JoinEntry::Cond}, {"op", JoinEntry::Op}});
 
-static const fast_str_map<JoinEntry> joined_entry_map = {
-	{"left_field", JoinEntry::LeftField}, {"right_field", JoinEntry::RightField}, {"cond", JoinEntry::Cond}, {"op", JoinEntry::Op}};
-
-static const fast_str_map<JoinType> join_types = {{"inner", InnerJoin}, {"left", LeftJoin}, {"orinner", OrInnerJoin}};
+constexpr static auto join_types = MakeFastStrMap<JoinType>({{"inner", InnerJoin}, {"left", LeftJoin}, {"orinner", OrInnerJoin}});
 
 // additionalfor parse field 'filters'
-
-static const fast_str_map<Filter> filter_map = {{"cond", Filter::Cond},
-												{"op", Filter::Op},
-												{"field", Filter::Field},
-												{"value", Filter::Value},
-												{"filters", Filter::Filters},
-												{"join_query", Filter::JoinQuery},
-												{"first_field", Filter::FirstField},
-												{"second_field", Filter::SecondField},
-												{"equal_positions", Filter::EqualPositions},
-												{"subquery", Filter::SubQuery},
-												{"always", Filter::Always}};
+constexpr static auto filter_map = MakeFastStrMap<Filter>({{"cond", Filter::Cond},
+														   {"op", Filter::Op},
+														   {"field", Filter::Field},
+														   {"value", Filter::Value},
+														   {"filters", Filter::Filters},
+														   {"join_query", Filter::JoinQuery},
+														   {"first_field", Filter::FirstField},
+														   {"second_field", Filter::SecondField},
+														   {"equal_positions", Filter::EqualPositions},
+														   {"subquery", Filter::SubQuery},
+														   {"always", Filter::Always}});
 
 // additional for 'filter::cond' field
+constexpr static auto cond_map = MakeFastStrMap<CondType>({
+	{"any", CondAny},
+	{"eq", CondEq},
+	{"lt", CondLt},
+	{"le", CondLe},
+	{"gt", CondGt},
+	{"ge", CondGe},
+	{"range", CondRange},
+	{"set", CondSet},
+	{"allset", CondAllSet},
+	{"empty", CondEmpty},
+	{"match", CondEq},
+	{"like", CondLike},
+	{"dwithin", CondDWithin},
+});
 
-static const fast_str_map<CondType> cond_map = {
-	{"any", CondAny},  {"eq", CondEq},		 {"lt", CondLt},		   {"le", CondLe},		   {"gt", CondGt},
-	{"ge", CondGe},	   {"range", CondRange}, {"set", CondSet},		   {"allset", CondAllSet}, {"empty", CondEmpty},
-	{"match", CondEq}, {"like", CondLike},	 {"dwithin", CondDWithin},
-};
-
-static const fast_str_map<OpType> op_map = {{"or", OpOr}, {"and", OpAnd}, {"not", OpNot}};
+constexpr static auto kOpMap = MakeFastStrMap<OpType>({{"or", OpOr}, {"and", OpAnd}, {"not", OpNot}});
 
 // additional for 'Root::ReqTotal' field
 
-static const fast_str_map<CalcTotalMode> reqtotal_values = {
-	{"disabled", ModeNoTotal}, {"enabled", ModeAccurateTotal}, {"cached", ModeCachedTotal}};
+constexpr static auto kReqTotalValues =
+	MakeFastStrMap<CalcTotalMode>({{"disabled", ModeNoTotal}, {"enabled", ModeAccurateTotal}, {"cached", ModeCachedTotal}});
 
 // additional for 'Root::Aggregations' field
-
-static const fast_str_map<Aggregation> aggregation_map = {{"fields", Aggregation::Fields},
-														  {"type", Aggregation::Type},
-														  {"sort", Aggregation::Sort},
-														  {"limit", Aggregation::Limit},
-														  {"offset", Aggregation::Offset}};
-static const fast_str_map<AggType> aggregation_types = {
-	{"sum", AggSum},	 {"avg", AggAvg},			{"max", AggMax},	 {"min", AggMin},
-	{"facet", AggFacet}, {"distinct", AggDistinct}, {"count", AggCount}, {"count_cached", AggCountCached},
-};
+constexpr static auto kAggregationMap = MakeFastStrMap<Aggregation>({{"fields", Aggregation::Fields},
+																	 {"type", Aggregation::Type},
+																	 {"sort", Aggregation::Sort},
+																	 {"limit", Aggregation::Limit},
+																	 {"offset", Aggregation::Offset}});
+constexpr static auto kAggregationTypes = MakeFastStrMap<AggType>({
+	{"sum", AggSum},
+	{"avg", AggAvg},
+	{"max", AggMax},
+	{"min", AggMin},
+	{"facet", AggFacet},
+	{"distinct", AggDistinct},
+	{"count", AggCount},
+	{"count_cached", AggCountCached},
+});
 
 // additionalfor parse field 'equation_positions'
-static const fast_str_map<EqualPosition> equationPosition_map = {{"positions", EqualPosition::Positions}};
+constexpr static auto kEquationPositionMap = MakeFastStrMap<EqualPosition>({{"positions", EqualPosition::Positions}});
 
 // additional for 'Root::QueryType' field
-static const fast_str_map<QueryType> query_types = {
+constexpr static auto kQueryTypes = MakeFastStrMap<QueryType>({
 	{"select", QuerySelect},
 	{"update", QueryUpdate},
 	{"delete", QueryDelete},
 	{"truncate", QueryTruncate},
-};
+});
 
 // additional for 'Root::UpdateField' field
-static const fast_str_map<UpdateField> update_field_map = {
+constexpr static auto kUpdateFieldMap = MakeFastStrMap<UpdateField>({
 	{"name", UpdateField::Name},
 	{"type", UpdateField::Type},
 	{"values", UpdateField::Values},
 	{"is_array", UpdateField::IsArray},
-};
+});
 
 // additional for 'Root::UpdateFieldType' field
-static const fast_str_map<UpdateFieldType> update_field_type_map = {
+constexpr static auto kUpdateFieldTypeMap = MakeFastStrMap<UpdateFieldType>({
 	{"object", UpdateFieldType::Object},
 	{"expression", UpdateFieldType::Expression},
 	{"value", UpdateFieldType::Value},
-};
+});
 
 static bool checkTag(const JsonValue& val, JsonTag tag) noexcept { return val.getTag() == tag; }
 
@@ -162,8 +180,9 @@ void checkJsonValueType(const JsonValue& val, std::string_view name, JsonTags...
 	if (!checkTag(val, possibleTags...)) throw Error(errParseJson, "Wrong type of field '%s'", name);
 }
 
-template <typename T>
-T get(fast_str_map<T> const& m, std::string_view name, std::string_view mapName) {
+template <typename T, size_t N>
+T get(frozen::unordered_map<std::string_view, T, N, frozen::nocase_hash_str, frozen::nocase_equal_str> const& m, std::string_view name,
+	  std::string_view mapName) {
 	auto it = m.find(name);
 	if (it == m.end()) {
 		throw Error(errParseDSL, "Element [%s] not allowed in object of type [%s]", name, mapName);
@@ -181,30 +200,26 @@ void parseStringArray(const JsonValue& stringArray, Arr& array) {
 }
 
 template <typename Array>
-void parseValues(const JsonValue& values, Array& kvs) {
+void parseValues(const JsonValue& values, Array& kvs, std::string_view fieldName) {
 	if (values.getTag() == JSON_ARRAY) {
+		uint32_t objectsCount = 0;
 		for (const auto& elem : values) {
 			Variant kv;
 			if (elem.value.getTag() == JSON_OBJECT) {
 				kv = Variant(stringifyJson(elem));
+				++objectsCount;
 			} else if (elem.value.getTag() != JSON_NULL) {
-				kv = jsonValue2Variant(elem.value, KeyValueType::Undefined{});
+				kv = jsonValue2Variant(elem.value, KeyValueType::Undefined{}, fieldName);
 				kv.EnsureHold();
-			}
-			if (!kvs.empty() && !kvs.back().Type().IsSame(kv.Type())) {
-				if (kvs.size() != 1 || !((kvs[0].Type().template Is<KeyValueType::Tuple>() &&
-										  (kv.Type().Is<KeyValueType::Double>() || kv.Type().Is<KeyValueType::Int>() ||
-										   kv.Type().Is<KeyValueType::Int64>())) ||
-										 (kv.Type().Is<KeyValueType::Tuple>() && (kvs[0].Type().template Is<KeyValueType::Double>() ||
-																				  kvs[0].Type().template Is<KeyValueType::Int>() ||
-																				  kvs[0].Type().template Is<KeyValueType::Int64>())))) {
-					throw Error(errParseJson, "Array of filter values must be homogeneous.");
-				}
 			}
 			kvs.emplace_back(std::move(kv));
 		}
+
+		if ((0 < objectsCount) && (objectsCount < kvs.size())) {
+			throw Error(errParseJson, "Array with objects must be homogeneous");
+		}
 	} else if (values.getTag() != JSON_NULL) {
-		Variant kv(jsonValue2Variant(values, KeyValueType::Undefined{}));
+		Variant kv(jsonValue2Variant(values, KeyValueType::Undefined{}, fieldName));
 		kv.EnsureHold();
 		kvs.emplace_back(std::move(kv));
 	}
@@ -218,7 +233,7 @@ static void parseSortEntry(const JsonValue& entry, SortingEntries& sortingEntrie
 	for (const auto& subelement : entry) {
 		auto& v = subelement.value;
 		std::string_view name = subelement.key;
-		switch (get<Sort>(sort_map, name, "sort"sv)) {
+		switch (get<Sort>(kSortMap, name, "sort"sv)) {
 			case Sort::Desc:
 				if ((v.getTag() != JSON_TRUE) && (v.getTag() != JSON_FALSE)) throw Error(errParseJson, "Wrong type of field '%s'", name);
 				sortingEntry.desc = (v.getTag() == JSON_TRUE);
@@ -233,7 +248,7 @@ static void parseSortEntry(const JsonValue& entry, SortingEntries& sortingEntrie
 				if (!sortingEntries.empty()) {
 					throw Error(errParseJson, "Forced sort order is allowed for the first sorting entry only");
 				}
-				parseValues(v, forcedSortOrder);
+				parseValues(v, forcedSortOrder, name);
 				break;
 		}
 	}
@@ -277,11 +292,11 @@ static void parseFilter(const JsonValue& filter, Query& q, std::vector<std::pair
 
 			case Filter::Op:
 				checkJsonValueType(v, name, JSON_STRING);
-				op = get<OpType>(op_map, v.toString(), "operation enum"sv);
+				op = get<OpType>(kOpMap, v.toString(), "operation enum"sv);
 				break;
 
 			case Filter::Value:
-				parseValues(v, values);
+				parseValues(v, values, name);
 				break;
 
 			case Filter::JoinQuery:
@@ -407,7 +422,7 @@ static void parseJoinedEntries(const JsonValue& joinEntries, JoinedQuery& qjoin)
 					break;
 				case JoinEntry::Op:
 					checkJsonValueType(value, name, JSON_STRING);
-					op = get<OpType>(op_map, value.toString(), "operation enum"sv);
+					op = get<OpType>(kOpMap, value.toString(), "operation enum"sv);
 					break;
 			}
 		}
@@ -491,7 +506,7 @@ static void parseAggregation(const JsonValue& aggregation, Query& query) {
 	for (const auto& element : aggregation) {
 		auto& value = element.value;
 		std::string_view name = element.key;
-		switch (get<Aggregation>(aggregation_map, name, "aggregations"sv)) {
+		switch (get<Aggregation>(kAggregationMap, name, "aggregations"sv)) {
 			case Aggregation::Fields:
 				checkJsonValueType(value, name, JSON_ARRAY);
 				for (const auto& subElem : value) {
@@ -501,7 +516,7 @@ static void parseAggregation(const JsonValue& aggregation, Query& query) {
 				break;
 			case Aggregation::Type:
 				checkJsonValueType(value, name, JSON_STRING);
-				type = get<AggType>(aggregation_types, value.toString(), "aggregation type enum"sv);
+				type = get<AggType>(kAggregationTypes, value.toString(), "aggregation type enum"sv);
 				if (!query.CanAddAggregation(type)) {
 					throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 				}
@@ -534,7 +549,7 @@ void parseEqualPositions(const JsonValue& dsl, std::vector<std::pair<size_t, Equ
 		for (const auto& element : subArray) {
 			auto& value = element.value;
 			std::string_view name = element.key;
-			switch (get<EqualPosition>(equationPosition_map, name, "equal_positions"sv)) {
+			switch (get<EqualPosition>(kEquationPositionMap, name, "equal_positions"sv)) {
 				case EqualPosition::Positions: {
 					EqualPosition_t ep;
 					for (const auto& f : value) {
@@ -562,14 +577,14 @@ static void parseUpdateFields(const JsonValue& updateFields, Query& query) {
 		for (const auto& v : field) {
 			auto& value = v.value;
 			std::string_view name = v.key;
-			switch (get<UpdateField>(update_field_map, name, "update_fields"sv)) {
+			switch (get<UpdateField>(kUpdateFieldMap, name, "update_fields"sv)) {
 				case UpdateField::Name:
 					checkJsonValueType(value, name, JSON_STRING);
 					fieldName.assign(value.sval.data(), value.sval.size());
 					break;
 				case UpdateField::Type: {
 					checkJsonValueType(value, name, JSON_STRING);
-					switch (get<UpdateFieldType>(update_field_type_map, value.toString(), "update_fields_type"sv)) {
+					switch (get<UpdateFieldType>(kUpdateFieldTypeMap, value.toString(), "update_fields_type"sv)) {
 						case UpdateFieldType::Object:
 							isObject = true;
 							break;
@@ -588,12 +603,12 @@ static void parseUpdateFields(const JsonValue& updateFields, Query& query) {
 					break;
 				case UpdateField::Values:
 					checkJsonValueType(value, name, JSON_ARRAY);
-					parseValues(value, values);
+					parseValues(value, values, name);
 					break;
 			}
 		}
 		if (isExpression && (values.size() != 1 || !values.front().Type().template Is<KeyValueType::String>()))
-			throw Error(errParseDSL, "The array \"values\" must contain only a string type value for the type \"expression\"");
+			throw Error(errParseDSL, R"(The array "values" must contain only a string type value for the type "expression")");
 
 		if (isObject) {
 			query.SetObject(fieldName, std::move(values));
@@ -612,7 +627,7 @@ void parse(const JsonValue& root, Query& q) {
 	for (const auto& elem : root) {
 		auto& v = elem.value;
 		auto name = elem.key;
-		switch (get<Root>(root_map, name, "root"sv)) {
+		switch (get<Root>(kRootMap, name, "root"sv)) {
 			case Root::Namespace:
 				checkJsonValueType(v, name, JSON_STRING);
 				q.SetNsName(v.toString());
@@ -656,7 +671,7 @@ void parse(const JsonValue& root, Query& q) {
 				break;
 			case Root::ReqTotal:
 				checkJsonValueType(v, name, JSON_STRING);
-				q.CalcTotal(get<CalcTotalMode>(reqtotal_values, v.toString(), "req_total enum"sv));
+				q.CalcTotal(get<CalcTotalMode>(kReqTotalValues, v.toString(), "req_total enum"sv));
 				break;
 			case Root::Aggregations:
 				checkJsonValueType(v, name, JSON_ARRAY);
@@ -681,7 +696,7 @@ void parse(const JsonValue& root, Query& q) {
 				throw Error(errParseDSL, "Unsupported old DSL format. Equal positions should be in filters.");
 			case Root::QueryType:
 				checkJsonValueType(v, name, JSON_STRING);
-				q.type_ = get<QueryType>(query_types, v.toString(), "query_type"sv);
+				q.type_ = get<QueryType>(kQueryTypes, v.toString(), "query_type"sv);
 				break;
 			case Root::DropFields:
 				checkJsonValueType(v, name, JSON_ARRAY);

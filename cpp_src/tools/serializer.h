@@ -20,12 +20,15 @@ struct p_string;
 struct v_string_hdr;
 class chunk;
 
+constexpr auto kTrueSV = std::string_view("true");
+constexpr auto kFalseSV = std::string_view("false");
+
 class Serializer {
 public:
 	Serializer(const void *buf, size_t len) noexcept : buf_(static_cast<const uint8_t *>(buf)), len_(len), pos_(0) {}
-	Serializer(std::string_view buf) noexcept : buf_(reinterpret_cast<const uint8_t *>(buf.data())), len_(buf.length()), pos_(0) {}
+	explicit Serializer(std::string_view buf) noexcept : buf_(reinterpret_cast<const uint8_t *>(buf.data())), len_(buf.length()), pos_(0) {}
 	bool Eof() const noexcept { return pos_ >= len_; }
-	[[nodiscard]] KeyValueType GetKeyValueType() { return KeyValueType::fromNumber(GetVarUint()); }
+	[[nodiscard]] RX_ALWAYS_INLINE KeyValueType GetKeyValueType() { return KeyValueType::fromNumber(GetVarUint()); }
 	[[nodiscard]] Variant GetVariant() {
 		const KeyValueType type = GetKeyValueType();
 		if (type.Is<KeyValueType::Tuple>()) {
@@ -48,7 +51,7 @@ public:
 			[this](KeyValueType::Double) { return Variant(GetDouble()); }, [this](KeyValueType::String) { return getPVStringVariant(); },
 			[](KeyValueType::Null) noexcept { return Variant(); }, [this](KeyValueType::Uuid) { return Variant{GetUuid()}; },
 			[this, &type](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined>) -> Variant {
-				throwUnknowTypeError(type.Name());
+				throwUnknownTypeError(type.Name());
 			});
 	}
 	void SkipRawVariant(KeyValueType type) {
@@ -57,31 +60,31 @@ public:
 						   [this](KeyValueType::String) { getPVStringPtr(); }, [](KeyValueType::Null) noexcept {},
 						   [this](KeyValueType::Uuid) { GetUuid(); },
 						   [this, &type](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined>) {
-							   throwUnknowTypeError(type.Name());
+							   throwUnknownTypeError(type.Name());
 						   });
 	}
-	std::string_view GetSlice() {
+	RX_ALWAYS_INLINE std::string_view GetSlice() {
 		auto l = GetUInt32();
 		std::string_view b(reinterpret_cast<const char *>(buf_ + pos_), l);
 		checkbound(pos_, b.size(), len_);
 		pos_ += b.size();
 		return b;
 	}
-	uint32_t GetUInt32() {
+	RX_ALWAYS_INLINE uint32_t GetUInt32() {
 		uint32_t ret;
 		checkbound(pos_, sizeof(ret), len_);
 		memcpy(&ret, buf_ + pos_, sizeof(ret));
 		pos_ += sizeof(ret);
 		return ret;
 	}
-	uint64_t GetUInt64() {
+	RX_ALWAYS_INLINE uint64_t GetUInt64() {
 		uint64_t ret;
 		checkbound(pos_, sizeof(ret), len_);
 		memcpy(&ret, buf_ + pos_, sizeof(ret));
 		pos_ += sizeof(ret);
 		return ret;
 	}
-	double GetDouble() {
+	RX_ALWAYS_INLINE double GetDouble() {
 		double ret;
 		checkbound(pos_, sizeof(ret), len_);
 		memcpy(&ret, buf_ + pos_, sizeof(ret));
@@ -93,7 +96,7 @@ public:
 		const uint64_t v2 = GetUInt64();
 		return Uuid{v1, v2};
 	}
-	int64_t GetVarint() {
+	RX_ALWAYS_INLINE int64_t GetVarint() {
 		auto l = scan_varint(len_ - pos_, buf_ + pos_);
 		if (l == 0) {
 			using namespace std::string_view_literals;
@@ -104,7 +107,7 @@ public:
 		pos_ += l;
 		return unzigzag64(parse_uint64(l, buf_ + pos_ - l));
 	}
-	uint64_t GetVarUint() {	 // -V1071
+	RX_ALWAYS_INLINE uint64_t GetVarUint() {  // -V1071
 		auto l = scan_varint(len_ - pos_, buf_ + pos_);
 		if (l == 0) {
 			using namespace std::string_view_literals;
@@ -114,18 +117,18 @@ public:
 		pos_ += l;
 		return parse_uint64(l, buf_ + pos_ - l);
 	}
-	[[nodiscard]] ctag GetCTag() { return ctag{GetVarUint()}; }
-	[[nodiscard]] carraytag GetCArrayTag() { return carraytag{GetUInt32()}; }
-	std::string_view GetVString() {
+	[[nodiscard]] RX_ALWAYS_INLINE ctag GetCTag() { return ctag{GetVarUint()}; }
+	[[nodiscard]] RX_ALWAYS_INLINE carraytag GetCArrayTag() { return carraytag{GetUInt32()}; }
+	RX_ALWAYS_INLINE std::string_view GetVString() {
 		auto l = GetVarUint();
 		checkbound(pos_, l, len_);
 		pos_ += l;
-		return std::string_view(reinterpret_cast<const char *>(buf_ + pos_ - l), l);
+		return {reinterpret_cast<const char *>(buf_ + pos_ - l), std::string_view::size_type(l)};
 	}
 	p_string GetPVString();
 	p_string GetPSlice();
 	[[nodiscard]] Uuid GetStrUuid() { return Uuid{GetVString()}; }
-	bool GetBool() { return bool(GetVarUint()); }
+	RX_ALWAYS_INLINE bool GetBool() { return bool(GetVarUint()); }
 	size_t Pos() const noexcept { return pos_; }
 	void SetPos(size_t p) noexcept { pos_ = p; }
 	const uint8_t *Buf() const noexcept { return buf_; }
@@ -133,14 +136,14 @@ public:
 	void Reset() noexcept { pos_ = 0; }
 
 private:
-	void checkbound(uint64_t pos, uint64_t need, uint64_t len) {
+	RX_ALWAYS_INLINE void checkbound(uint64_t pos, uint64_t need, uint64_t len) {
 		if (pos + need > len) {
 			throwUnderflowError(pos, need, len);
 		}
 	}
 	[[noreturn]] void throwUnderflowError(uint64_t pos, uint64_t need, uint64_t len);
 	[[noreturn]] void throwScanIntError(std::string_view type);
-	[[noreturn]] void throwUnknowTypeError(std::string_view type);
+	[[noreturn]] void throwUnknownTypeError(std::string_view type);
 	Variant getPVStringVariant();
 	const v_string_hdr *getPVStringPtr();
 
@@ -153,8 +156,8 @@ class WrSerializer {
 public:
 	WrSerializer() noexcept : buf_(inBuf_), len_(0), cap_(sizeof(inBuf_)) {}
 	template <unsigned N>
-	WrSerializer(uint8_t (&buf)[N]) noexcept : buf_(buf), len_(0), cap_(N), hasExternalBuf_(true) {}
-	WrSerializer(chunk &&ch) noexcept : buf_(ch.release()), len_(ch.len()), cap_(ch.capacity()) {
+	explicit WrSerializer(uint8_t (&buf)[N]) noexcept : buf_(buf), len_(0), cap_(N), hasExternalBuf_(true) {}
+	explicit WrSerializer(chunk &&ch) noexcept : buf_(ch.release()), len_(ch.len()), cap_(ch.capacity()) {
 		if (!buf_) {
 			buf_ = inBuf_;
 			cap_ = sizeof(inBuf_);
@@ -205,7 +208,7 @@ public:
 	}
 	bool HasAllocatedBuffer() const noexcept { return buf_ != inBuf_ && !hasExternalBuf_; }
 
-	void PutKeyValueType(KeyValueType t) { PutVarUint(t.toNumber()); }
+	RX_ALWAYS_INLINE void PutKeyValueType(KeyValueType t) { PutVarUint(t.toNumber()); }
 	void PutVariant(const Variant &kv) {
 		PutKeyValueType(kv.Type());
 		kv.Type().EvaluateOneOf(
@@ -216,22 +219,18 @@ public:
 					PutVariant(v);
 				}
 			},
-			[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Double, KeyValueType::String,
-					  KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Uuid>) {
-				kv.Type().EvaluateOneOf(
-					[&](KeyValueType::Bool) { PutBool(bool(kv)); }, [&](KeyValueType::Int64) { PutVarint(int64_t(kv)); },
-					[&](KeyValueType::Int) { PutVarint(int(kv)); }, [&](KeyValueType::Double) { PutDouble(double(kv)); },
-					[&](KeyValueType::String) { PutVString(std::string_view(kv)); }, [&](KeyValueType::Null) noexcept {},
-					[&](KeyValueType::Uuid) { PutUuid(Uuid{kv}); },
-					[&](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) {
-						fprintf(stderr, "Unknown keyType %s\n", kv.Type().Name().data());
-						abort();
-					});
+			[&](KeyValueType::Bool) { PutBool(bool(kv)); }, [&](KeyValueType::Int64) { PutVarint(int64_t(kv)); },
+			[&](KeyValueType::Int) { PutVarint(int(kv)); }, [&](KeyValueType::Double) { PutDouble(double(kv)); },
+			[&](KeyValueType::String) { PutVString(std::string_view(kv)); }, [&](KeyValueType::Null) noexcept {},
+			[&](KeyValueType::Uuid) { PutUuid(Uuid{kv}); },
+			[&](OneOf<KeyValueType::Composite, /*KeyValueType::Tuple,*/ KeyValueType::Undefined>) {
+				fprintf(stderr, "Unknown keyType %s\n", kv.Type().Name().data());
+				abort();
 			});
 	}
 
 	// Put slice with 4 bytes len header
-	void PutSlice(std::string_view slice) {
+	RX_ALWAYS_INLINE void PutSlice(std::string_view slice) {
 		PutUInt32(slice.size());
 		grow(slice.size());
 		memcpy(&buf_[len_], slice.data(), slice.size());
@@ -291,28 +290,25 @@ public:
 	};
 
 	SliceHelper StartSlice() {
-		size_t savePos = len_;
+		const size_t savePos = len_;
 		PutUInt32(0);
-		return SliceHelper(this, savePos);
+		return {this, savePos};
 	}
-	VStringHelper StartVString() {
-		size_t savePos = len_;
-		return VStringHelper(this, savePos);
-	}
+	VStringHelper StartVString() noexcept { return {this, len_}; }
 
 	// Put raw data
-	void PutUInt32(uint32_t v) {
+	RX_ALWAYS_INLINE void PutUInt32(uint32_t v) {
 		grow(sizeof(v));
 		memcpy(&buf_[len_], &v, sizeof(v));
 		len_ += sizeof(v);
 	}
-	void PutCArrayTag(carraytag atag) { PutUInt32(atag.asNumber()); }
-	void PutUInt64(uint64_t v) {
+	RX_ALWAYS_INLINE void PutCArrayTag(carraytag atag) { PutUInt32(atag.asNumber()); }
+	RX_ALWAYS_INLINE void PutUInt64(uint64_t v) {
 		grow(sizeof(v));
 		memcpy(&buf_[len_], &v, sizeof(v));
 		len_ += sizeof(v);
 	}
-	void PutDouble(double v) {
+	RX_ALWAYS_INLINE void PutDouble(double v) {
 		grow(sizeof(v));
 		memcpy(&buf_[len_], &v, sizeof(v));
 		len_ += sizeof(v);
@@ -352,7 +348,7 @@ public:
 	}
 	WrSerializer &operator<<(bool v) {
 		using namespace std::string_view_literals;
-		Write(v ? "true"sv : "false"sv);
+		Write(v ? kTrueSV : kFalseSV);
 		return *this;
 	}
 	WrSerializer &operator<<(double v) {
@@ -382,37 +378,37 @@ public:
 		len_ += count;
 	}
 	template <typename T, typename std::enable_if_t<sizeof(T) == 8 && std::is_integral_v<T>> * = nullptr>
-	void PutVarint(T v) {
+	RX_ALWAYS_INLINE void PutVarint(T v) {
 		grow(10);
 		len_ += sint64_pack(v, buf_ + len_);
 	}
 	template <typename T, typename std::enable_if_t<sizeof(T) == 8 && std::is_integral_v<T>> * = nullptr>
-	void PutVarUint(T v) {
+	RX_ALWAYS_INLINE void PutVarUint(T v) {
 		grow(10);
 		len_ += uint64_pack(v, buf_ + len_);
 	}
 	template <typename T, typename std::enable_if_t<sizeof(T) <= 4 && std::is_integral_v<T>> * = nullptr>
-	void PutVarint(T v) {
+	RX_ALWAYS_INLINE void PutVarint(T v) {
 		grow(10);
 		len_ += sint32_pack(v, buf_ + len_);
 	}
 	template <typename T, typename std::enable_if_t<sizeof(T) <= 4 && std::is_integral_v<T>> * = nullptr>
-	void PutVarUint(T v) {
+	RX_ALWAYS_INLINE void PutVarUint(T v) {
 		grow(10);
 		len_ += uint32_pack(v, buf_ + len_);
 	}
 	template <typename T, typename std::enable_if_t<std::is_enum_v<T>> * = nullptr>
-	void PutVarUint(T v) {
+	RX_ALWAYS_INLINE void PutVarUint(T v) {
 		assertrx(v >= 0 && v < 128);
 		grow(1);
 		buf_[len_++] = v;
 	}
-	void PutCTag(ctag tag) { PutVarUint(tag.asNumber()); }
-	void PutBool(bool v) {
+	RX_ALWAYS_INLINE void PutCTag(ctag tag) { PutVarUint(tag.asNumber()); }
+	RX_ALWAYS_INLINE void PutBool(bool v) {
 		grow(1);
 		len_ += boolean_pack(v, buf_ + len_);
 	}
-	void PutVString(std::string_view str) {
+	RX_ALWAYS_INLINE void PutVString(std::string_view str) {
 		grow(str.size() + 10);
 		len_ += string_pack(str.data(), str.size(), buf_ + len_);
 	}
@@ -423,12 +419,12 @@ public:
 	}
 
 	// Buffer manipulation functions
-	void Write(std::string_view slice) {
+	RX_ALWAYS_INLINE void Write(std::string_view slice) {
 		grow(slice.size());
 		memcpy(&buf_[len_], slice.data(), slice.size());
 		len_ += slice.size();
 	}
-	uint8_t *Buf() const noexcept { return buf_; }
+	RX_ALWAYS_INLINE uint8_t *Buf() const noexcept { return buf_; }
 	std::unique_ptr<uint8_t[]> DetachBuf() {
 		std::unique_ptr<uint8_t[]> ret;
 
@@ -471,7 +467,7 @@ public:
 			hasExternalBuf_ = false;
 		}
 	}
-	std::string_view Slice() const noexcept { return std::string_view(reinterpret_cast<const char *>(buf_), len_); }
+	RX_ALWAYS_INLINE std::string_view Slice() const noexcept { return {reinterpret_cast<const char *>(buf_), len_}; }
 	const char *c_str() noexcept {
 		if (!len_ || buf_[len_] != 0) {
 			grow(1);
@@ -481,17 +477,17 @@ public:
 	}
 
 protected:
-	void grow(size_t sz) {
+	RX_ALWAYS_INLINE void grow(size_t sz) {
 		if (len_ + sz > cap_) {
-			constexpr size_t kPageMask = ~size_t(0xFFF);
+			constexpr static size_t kPageMask = ~size_t(0xFFF);
 			const auto newCap = ((cap_ * 2) + sz);
 			const auto newCapAligned = newCap & kPageMask;
 			Reserve((newCap == newCapAligned) ? newCap : (newCapAligned + 0x1000));
 		}
 	}
-	uint8_t *buf_;
-	size_t len_;
-	size_t cap_;
+	uint8_t *buf_ = nullptr;
+	size_t len_ = 0;
+	size_t cap_ = 0;
 	uint8_t inBuf_[0x100];
 	bool hasExternalBuf_ = false;
 };

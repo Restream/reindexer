@@ -71,9 +71,9 @@ enum class JoinPreSelectMode { Empty, Build, Execute, ForInjection, InjectionRej
 class JoinPreResultBuildCtx {
 public:
 	explicit JoinPreResultBuildCtx(JoinPreResult::Ptr r) noexcept : result_{std::move(r)} {}
-	JoinPreResult &Result() &noexcept { return *result_; }
+	JoinPreResult &Result() & noexcept { return *result_; }
 	JoinPreSelectMode Mode() const noexcept { return JoinPreSelectMode::Build; }
-	const JoinPreResult::Ptr &ResultPtr() const &noexcept { return result_; }
+	const JoinPreResult::Ptr &ResultPtr() const & noexcept { return result_; }
 	auto ResultPtr() const && = delete;
 
 private:
@@ -85,15 +85,15 @@ public:
 	explicit JoinPreResultExecuteCtx(JoinPreResult::CPtr r) noexcept : result_{std::move(r)}, mode_{JoinPreSelectMode::Execute} {}
 	explicit JoinPreResultExecuteCtx(JoinPreResult::CPtr r, int maxIters) noexcept
 		: result_{std::move(r)}, mode_{JoinPreSelectMode::ForInjection}, mainQueryMaxIterations_{maxIters} {}
-	const JoinPreResult &Result() const &noexcept { return *result_; }
+	const JoinPreResult &Result() const & noexcept { return *result_; }
 	JoinPreSelectMode Mode() const noexcept { return mode_; }
 	int MainQueryMaxIterations() const {
-		assertrx_throw(mode_ == JoinPreSelectMode::ForInjection);
+		assertrx_dbg(mode_ == JoinPreSelectMode::ForInjection);
 		return mainQueryMaxIterations_;
 	}
-	const JoinPreResult::CPtr &ResultPtr() const &noexcept { return result_; }
+	const JoinPreResult::CPtr &ResultPtr() const & noexcept { return result_; }
 	void Reject() {
-		assertrx_throw(mode_ == JoinPreSelectMode::ForInjection);
+		assertrx_dbg(mode_ == JoinPreSelectMode::ForInjection);
 		mode_ = JoinPreSelectMode::InjectionRejected;
 	}
 
@@ -162,12 +162,12 @@ public:
 	void AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer &, int *maxIterations, unsigned sortId, const SelectFunction::Ptr &,
 											 const RdxContext &);
 	static constexpr int MaxIterationsForPreResultStoreValuesOptimization() noexcept { return 200; }
-	const JoinPreResult &PreResult() const &noexcept { return preSelectCtx_.Result(); }
-	const JoinPreResult::CPtr &PreResultPtr() const &noexcept { return preSelectCtx_.ResultPtr(); }
+	const JoinPreResult &PreResult() const & noexcept { return preSelectCtx_.Result(); }
+	const JoinPreResult::CPtr &PreResultPtr() const & noexcept { return preSelectCtx_.ResultPtr(); }
 	JoinPreSelectMode PreSelectMode() const noexcept { return preSelectCtx_.Mode(); }
 	const NamespaceImpl::Ptr &RightNs() const noexcept { return rightNs_; }
 	ExplainCalc::Duration SelectTime() const noexcept { return selectTime_; }
-	const std::string &ExplainOneSelect() const &noexcept { return explainOneSelect_; }
+	const std::string &ExplainOneSelect() const & noexcept { return explainOneSelect_; }
 
 	auto ExplainOneSelect() const && = delete;
 	auto PreResult() const && = delete;

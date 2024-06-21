@@ -2,6 +2,7 @@
 #include "core/nsselecter/nsselecter.h"
 #include "core/nsselecter/querypreprocessor.h"
 #include "core/queryresults/joinresults.h"
+#include "estl/charset.h"
 #include "estl/restricted.h"
 #include "tools/logger.h"
 
@@ -191,10 +192,10 @@ void RxSelector::DoSelect(const Query& q, QueryResults& result, NsLocker<T>& loc
 }
 
 [[nodiscard]] static bool byJoinedField(std::string_view sortExpr, std::string_view joinedNs) {
-	static const fast_hash_set<char> allowedSymbolsInIndexName{
-		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
-		'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
-		'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '.', '+'};
+	constexpr static estl::Charset kJoinedIndexNameSyms{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+														'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+														'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y',
+														'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '.', '+'};
 	std::string_view::size_type i = 0;
 	const auto s = sortExpr.size();
 	while (i < s && isspace(sortExpr[i])) ++i;
@@ -210,7 +211,7 @@ void RxSelector::DoSelect(const Query& q, QueryResults& result, NsLocker<T>& loc
 	}
 	if (i >= s || sortExpr[i] != '.') return false;
 	for (++i; i < s; ++i) {
-		if (allowedSymbolsInIndexName.find(sortExpr[i]) == allowedSymbolsInIndexName.end()) {
+		if (!kJoinedIndexNameSyms.test(sortExpr[i])) {
 			if (isspace(sortExpr[i])) break;
 			if (inQuotes && sortExpr[i] == '"') {
 				inQuotes = false;

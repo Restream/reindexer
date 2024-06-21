@@ -136,7 +136,6 @@ private:
 		ns1.Put("unload_idle_threshold", 0);
 		ns1.Put("join_cache_mode", "off");
 		ns1.Put("start_copy_policy_tx_size", 10000);
-		ns1.Put("merge_limit_count", 20000);
 		ns1.Put("optimization_timeout_ms", 0);
 		ns1.End();
 
@@ -147,7 +146,6 @@ private:
 		ns2.Put("unload_idle_threshold", 0);
 		ns2.Put("join_cache_mode", "off");
 		ns2.Put("start_copy_policy_tx_size", 10000);
-		ns2.Put("merge_limit_count", 20000);
 		ns2.Put("optimization_timeout_ms", 800);
 		ns2.End();
 

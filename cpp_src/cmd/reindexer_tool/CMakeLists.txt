@@ -8,34 +8,34 @@ if (WITH_CPPTRACE)
   list(APPEND REINDEXER_LIBRARIES cpptrace ${REINDEXER_LIBRARIES})
 endif()
 
-if(MSVC)
+if (MSVC)
   set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -DEBUG")
 endif()
 
-if (NOT WITH_STDLIB_DEBUG)
+if (NOT MSVC AND NOT WITH_STDLIB_DEBUG)
   find_library(ReplXX_LIBRARY NAMES ${ReplXX_NAMES} replxx)
   find_path(ReplXX_INCLUDE_DIR NAMES replxx.hxx HINTS /opt/local/include /usr/local/include /usr/include)
 
   if (NOT ReplXX_LIBRARY OR NOT ReplXX_INCLUDE_DIR)
-  # replxx not found. Download it
-    message (STATUS "ReplXX not found. Will download it")
+    # replxx not found. Download it
+    message(STATUS "ReplXX not found. Will download it")
     ExternalProject_Add(
       replxx_lib
       GIT_REPOSITORY "https://github.com/Restream/replxx"
       GIT_TAG "b50b7b7a8c2835b45607cffabc18e4742072e9e6"
       CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
     )
-    include_directories (${CMAKE_CURRENT_BINARY_DIR}/include)
+    include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
     link_directories(${CMAKE_CURRENT_BINARY_DIR}/lib)
     list(APPEND REINDEXER_LIBRARIES replxx)
     add_definitions(-DREINDEX_WITH_REPLXX)
-  else ()
-    message (STATUS "Found ReplXX: ${ReplXX_LIBRARY}")
+  else()
+    message(STATUS "Found ReplXX: ${ReplXX_LIBRARY}")
     include_directories(${ReplXX_INCLUDE_DIR})
     list(APPEND REINDEXER_LIBRARIES ${ReplXX_LIBRARY})
     add_definitions(-DREINDEX_WITH_REPLXX)
-  endif ()
-endif ()
+  endif()
+endif()
 
 file(GLOB_RECURSE SRCS *.h *.cc)
 add_executable(${TARGET} ${SRCS})
@@ -43,11 +43,11 @@ add_executable(${TARGET} ${SRCS})
 # Enable export to provide readble stacktraces
 set_property(TARGET ${TARGET} PROPERTY ENABLE_EXPORTS 1)
 
-if (NOT WITH_STDLIB_DEBUG)
+if (NOT MSVC AND NOT WITH_STDLIB_DEBUG)
   if (NOT ReplXX_LIBRARY OR NOT ReplXX_INCLUDE_DIR)
     add_dependencies(${TARGET} replxx_lib)
-  endif ()
-endif ()
+  endif()
+endif()
 
 target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES} )
 
@@ -57,7 +57,7 @@ install(TARGETS ${TARGET}
   ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
 )
 
-if(MSVC)
+if (MSVC)
   install(FILES $<TARGET_PDB_FILE:${PROJECT_NAME}> DESTINATION ${CMAKE_INSTALL_BINDIR} OPTIONAL)
 endif()
 

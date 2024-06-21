@@ -13,7 +13,7 @@ protected:
 	RollBackBase &operator=(const RollBackBase &) = delete;
 	RollBackBase &operator=(RollBackBase &&) = delete;
 	virtual void Disable() noexcept { disabled_ = true; }
-	bool IsDisabled() const noexcept { return disabled_; }
+	[[nodiscard]] bool IsDisabled() const noexcept { return disabled_; }
 
 private:
 	bool disabled_{false};

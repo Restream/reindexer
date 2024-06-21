@@ -69,10 +69,8 @@ Variant FastIndexText<T>::Upsert(const Variant &key, IdType id, bool &clearCache
 
 template <typename T>
 void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strHolder, bool &clearCache) {
-	int delcnt = 0;
 	if rx_unlikely (key.Type().Is<KeyValueType::Null>()) {
-		delcnt = this->empty_ids_.Unsorted().Erase(id);
-		assertrx(delcnt);
+		this->empty_ids_.Unsorted().Erase(id); // ignore result
 		this->isBuilt_ = false;
 		return;
 	}
@@ -82,7 +80,7 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strH
 	this->isBuilt_ = false;
 
 	this->delMemStat(keyIt);
-	delcnt = keyIt->second.Unsorted().Erase(id);
+	int delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
 	assertf(this->opts_.IsArray() || this->Opts().IsSparse() || delcnt, "Delete unexists id from index '%s' id=%d,key=%s", this->name_, id,

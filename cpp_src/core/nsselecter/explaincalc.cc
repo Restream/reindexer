@@ -122,8 +122,7 @@ RX_NO_INLINE static std::string buildPreselectDescription(const JoinPreResult &r
 							props.qresMaxIteratios, props.maxIterationsIdSetPreResult,
 							JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization());
 					default:
-						assertrx_throw(false);
-						std::abort();
+						throw_as_assert;
 				}
 			},
 			[&](const SelectIteratorContainer &) -> std::string {
@@ -337,7 +336,7 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 				name << opName(it->operation, it == begin) << siter.name;
 			},
 			[&](const JoinSelectIterator &jiter) {
-				assertrx(jiter.joinIndex < jselectors->size());
+				assertrx_throw(jiter.joinIndex < jselectors->size());
 				const std::string jName{addToJSON(builder, (*jselectors)[jiter.joinIndex], it->operation)};
 				name << opName(it->operation, it == begin) << jName;
 			},

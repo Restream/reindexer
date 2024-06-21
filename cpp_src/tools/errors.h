@@ -55,8 +55,8 @@ class Error {  // TODO: Enable nodiscard once python binding will be updated
 	const static WhatPtr defaultErrorText_;
 
 public:
-	Error() noexcept = default;
-	Error(ErrorCode code) noexcept : code_{code} {}
+	constexpr Error() noexcept = default;
+	constexpr Error(ErrorCode code) noexcept : code_{code} {}
 	Error(ErrorCode code, std::string what) noexcept : code_{code} {
 		if (code_ != errOK) {
 			try {

@@ -12,7 +12,7 @@ DocumentStatus web::fsStatus(const std::string& target) {
 	status.fstatus = reindexer::fs::Stat(webRoot_ + target);
 	if (status.fstatus == reindexer::fs::StatError) {
 		using reindexer::net::http::kGzSuffix;
-		status.fstatus = reindexer::fs::Stat(webRoot_ + target + kGzSuffix);
+		status.fstatus = reindexer::fs::Stat(std::string(webRoot_).append(target).append(kGzSuffix));
 		if (status.fstatus == reindexer::fs::StatFile) {
 			status.isGzip = true;
 		}
@@ -29,7 +29,7 @@ DocumentStatus web::stat(const std::string& target) {
 
 		if (table.find(target) != table.end()) {
 			return reindexer::fs::StatFile;
-		} else if (table.find(target + kGzSuffix) != table.end()) {
+		} else if (table.find(std::string(target).append(kGzSuffix)) != table.end()) {
 			return {reindexer::fs::StatFile, true};
 		}
 
@@ -50,13 +50,13 @@ int web::file(Context& ctx, HttpStatusCode code, const std::string& target, bool
 		using reindexer::net::http::kGzSuffix;
 
 		const auto& table = cmrc::detail::table_instance();
-		auto it = table.find(isGzip ? target + kGzSuffix : target);
+		auto it = table.find(isGzip ? std::string(target).append(kGzSuffix) : target);
 
 		if (it == table.end()) {
 			return ctx.String(reindexer::net::http::StatusNotFound, "File not found");
 		}
 
-		auto file_entry = cmrc::open(isGzip ? target + kGzSuffix : target);
+		auto file_entry = cmrc::open(isGzip ? std::string(target).append(kGzSuffix) : target);
 		std::string_view slice(file_entry.begin(), std::distance(file_entry.begin(), file_entry.end()));
 		return ctx.File(code, target, slice, isGzip, withCache);
 	}

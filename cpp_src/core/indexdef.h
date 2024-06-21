@@ -28,8 +28,7 @@ struct IndexDef {
 	IndexDef(std::string name, JsonPaths jsonPaths, IndexType type, IndexOpts opts);
 	bool IsEqual(const IndexDef &other, IndexComparison cmpType) const;
 	IndexType Type() const;
-	std::string getCollateMode() const;
-	const std::vector<std::string> &Conditions() const;
+	const std::vector<std::string_view> &Conditions() const noexcept;
 	void FromType(IndexType type);
 	Error FromJSON(span<char> json);
 	void FromJSON(const gason::JsonNode &jvalue);

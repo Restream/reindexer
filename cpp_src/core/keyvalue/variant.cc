@@ -148,26 +148,28 @@ std::string Variant::As<std::string>() const {
 	if (isUuid()) {
 		return std::string{Uuid{*this}};
 	} else {
-		return variant_.type.EvaluateOneOf(
-			[&](KeyValueType::Int) { return std::to_string(variant_.value_int); },
-			[&](KeyValueType::Bool) { return variant_.value_bool ? "true"s : "false"s; },
-			[&](KeyValueType::Int64) { return std::to_string(variant_.value_int64); },
-			[&](KeyValueType::Double) { return double_to_str(variant_.value_double); },
-			[&](KeyValueType::String) {
-				const auto pstr = this->operator p_string();
-				if (pstr.type() == p_string::tagCxxstr || pstr.type() == p_string::tagKeyString) {
-					return *(pstr.getCxxstr());
-				}
-				return pstr.toString();
-			},
-			[&](KeyValueType::Null) { return "null"s; }, [&](KeyValueType::Composite) { return std::string(); },
-			[&](KeyValueType::Tuple) {
-				auto va = getCompositeValues();
-				WrSerializer wrser;
-				va.Dump(wrser);
-				return std::string(wrser.Slice());
-			},
-			[&](KeyValueType::Uuid) { return std::string{Uuid{*this}}; }, [](KeyValueType::Undefined) -> std::string { abort(); });
+		return variant_.type.EvaluateOneOf([&](KeyValueType::Int) { return std::to_string(variant_.value_int); },
+										   [&](KeyValueType::Bool) { return variant_.value_bool ? "true"s : "false"s; },
+										   [&](KeyValueType::Int64) { return std::to_string(variant_.value_int64); },
+										   [&](KeyValueType::Double) { return double_to_str(variant_.value_double); },
+										   [&](KeyValueType::String) {
+											   const auto pstr = this->operator p_string();
+											   if (pstr.type() == p_string::tagCxxstr || pstr.type() == p_string::tagKeyString) {
+												   return *(pstr.getCxxstr());
+											   }
+											   return pstr.toString();
+										   },
+										   [&](KeyValueType::Null) { return "null"s; },
+										   [this](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) -> std::string {
+											   throw Error(errParams, "Can't convert '%s'-value to string", variant_.type.Name());
+										   },
+										   [&](KeyValueType::Tuple) {
+											   auto va = getCompositeValues();
+											   WrSerializer wrser;
+											   va.Dump(wrser);
+											   return std::string(wrser.Slice());
+										   },
+										   [&](KeyValueType::Uuid) { return std::string{Uuid{*this}}; });
 	}
 }
 
@@ -264,9 +266,10 @@ int Variant::As<int>() const {
 		[&](KeyValueType::Int64) noexcept -> int { return variant_.value_int64; },
 		[&](KeyValueType::Double) noexcept -> int { return variant_.value_double; },
 		[&](KeyValueType::String) { return parseAs<int>(this->operator p_string()); },
-		[](OneOf<KeyValueType::Composite, KeyValueType::Tuple>) noexcept { return 0; },
-		[&](KeyValueType::Uuid) -> int { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}.data()); },
-		[](OneOf<KeyValueType::Undefined, KeyValueType::Null>) noexcept -> int { abort(); });
+		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) -> int {
+			throw Error(errParams, "Can't convert '%s'-value to number", Type().Name());
+		},
+		[&](KeyValueType::Uuid) -> int { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}.data()); });
 }
 
 static std::optional<bool> tryConvertToBool(const p_string &str) {
@@ -310,9 +313,10 @@ bool Variant::As<bool>() const {
 				throw Error(errParams, "Can't convert '%s' to bool", std::string_view(p_str));
 			}
 		},
-		[](OneOf<KeyValueType::Composite, KeyValueType::Tuple>) noexcept { return false; },
-		[&](KeyValueType::Uuid) -> bool { throw Error(errParams, "Can't convert '%s' to bool", std::string{Uuid{*this}}.data()); },
-		[](OneOf<KeyValueType::Undefined, KeyValueType::Null>) noexcept -> bool { abort(); });
+		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) -> bool {
+			throw Error(errParams, "Can't convert '%s'-value to bool", Type().Name());
+		},
+		[&](KeyValueType::Uuid) -> bool { throw Error(errParams, "Can't convert '%s' to bool", std::string{Uuid{*this}}.data()); });
 }
 
 template <>
@@ -326,9 +330,10 @@ int64_t Variant::As<int64_t>() const {
 		[&](KeyValueType::Int64) noexcept { return variant_.value_int64; },
 		[&](KeyValueType::Double) noexcept -> int64_t { return variant_.value_double; },
 		[&](KeyValueType::String) { return parseAs<int64_t>(this->operator p_string()); },
-		[](OneOf<KeyValueType::Composite, KeyValueType::Tuple>) noexcept -> int64_t { return 0; },
-		[&](KeyValueType::Uuid) -> int64_t { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}.data()); },
-		[](OneOf<KeyValueType::Undefined, KeyValueType::Null>) noexcept -> int64_t { abort(); });
+		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) -> int64_t {
+			throw Error(errParams, "Can't convert '%s'-value to number", Type().Name());
+		},
+		[&](KeyValueType::Uuid) -> int64_t { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}.data()); });
 }
 
 template <>
@@ -342,9 +347,10 @@ double Variant::As<double>() const {
 		[&](KeyValueType::Int64) noexcept -> double { return variant_.value_int64; },
 		[&](KeyValueType::Double) noexcept { return variant_.value_double; },
 		[&](KeyValueType::String) { return parseAs<double>(this->operator p_string()); },
-		[](OneOf<KeyValueType::Composite, KeyValueType::Tuple>) noexcept { return 0.0; },
-		[&](KeyValueType::Uuid) -> double { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}.data()); },
-		[](OneOf<KeyValueType::Undefined, KeyValueType::Null>) noexcept -> double { abort(); });
+		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) -> double {
+			throw Error(errParams, "Can't convert '%s'-value to number", Type().Name());
+		},
+		[&](KeyValueType::Uuid) -> double { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}.data()); });
 }
 
 template <NotComparable notComparable>

@@ -26,6 +26,8 @@ enum JsonTag : uint8_t {
 	JSON_NULL = 0xF,
 };
 
+// TODO: Move this to the JsonTag-enum, when pyreindexer deploy will be fixed. Currently this would break old pyrx builds
+// Issue #1736
 constexpr uint8_t JSON_EMPTY = 0xFF;
 
 struct JsonNode;
@@ -75,7 +77,8 @@ union JsonValue {
 		u.tag = tag;
 		ival = uintptr_t(payload);
 	}
-	JsonTag getTag() const noexcept { return JsonTag(u.tag); }
+	// TODO: Remove NOLINT after pyreindexer update. Issue #1736
+	JsonTag getTag() const noexcept { return JsonTag(u.tag); }	// NOLINT(*EnumCastOutOfRange)
 
 	int64_t toNumber() const {
 		assertrx(getTag() == JSON_NUMBER || getTag() == JSON_DOUBLE);
@@ -155,7 +158,7 @@ struct JsonNode {
 	}
 
 	const JsonNode &operator[](std::string_view sv) const;
-	bool empty() const noexcept { return value.getTag() == JsonTag(JSON_EMPTY); }
+	bool empty() const noexcept { return uint8_t(value.getTag()) == JSON_EMPTY; }
 	bool isObject() const noexcept { return value.getTag() == JSON_OBJECT; }
 	JsonNode *toNode() const;
 };

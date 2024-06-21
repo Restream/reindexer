@@ -40,7 +40,7 @@ public:
 	};
 
 	template <typename... Args>
-	CommandsExecutor(const std::string& outFileName, int numThreads, Args... args)
+	CommandsExecutor(const std::string& outFileName, unsigned numThreads, Args... args)
 		: db_(std::move(args)...), output_(outFileName), numThreads_(numThreads) {}
 	CommandsExecutor(const CommandsExecutor&) = delete;
 	CommandsExecutor(CommandsExecutor&&) = delete;
@@ -220,7 +220,7 @@ protected:
 	CancelContext cancelCtx_;
 	DBInterface db_;
 	Output output_;
-	int numThreads_;
+	unsigned numThreads_ = 1;
 	std::unordered_map<std::string, std::string> variables_;
 	httpparser::UrlParser uri_;
 	reindexer::net::ev::async cmdAsync_;

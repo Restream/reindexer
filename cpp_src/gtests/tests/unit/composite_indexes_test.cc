@@ -220,7 +220,6 @@ TEST_F(CompositeIndexesApi, SelectsBySubIndexes) {
 		err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << c.name;
 		DefineNamespaceDataset(default_namespace, c.idxs);
-		std::string compositeIndexName(getCompositeIndexName({kFieldNamePrice, kFieldNamePages}));
 		addCompositeIndex({kFieldNamePrice, kFieldNamePages}, CompositeIndexHash, IndexOpts());
 
 		int priceValue = 77777, pagesValue = 88888, bookid = 300;

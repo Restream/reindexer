@@ -2,7 +2,6 @@
 
 #include "core/reindexer.h"
 #include "reindexertestapi.h"
-#include "servercontrol.h"
 
 using reindexer::Error;
 using reindexer::Item;
@@ -25,12 +24,10 @@ protected:
 public:
 	ReindexerApi() = default;
 
-	void DefineNamespaceDataset(const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
+	void DefineNamespaceDataset(std::string_view ns, std::initializer_list<const IndexDeclaration> fields) {
 		rt.DefineNamespaceDataset(ns, fields);
 	}
-	void DefineNamespaceDataset(const std::string &ns, const std::vector<IndexDeclaration> &fields) {
-		rt.DefineNamespaceDataset(ns, fields);
-	}
+	void DefineNamespaceDataset(std::string_view ns, const std::vector<IndexDeclaration> &fields) { rt.DefineNamespaceDataset(ns, fields); }
 	void DefineNamespaceDataset(Reindexer &rx, const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
 		rt.DefineNamespaceDataset(rx, ns, fields);
 	}
