@@ -25,8 +25,7 @@ std::string unescapeString(std::string_view str);
 std::string toLower(std::string_view src);
 inline std::string_view skipSpace(std::string_view str) {
 	size_t i = 0;
-	for (; i < str.size() && std::isspace(str[i]); ++i)
-		;
+	for (; i < str.size() && std::isspace(str[i]); ++i);
 	return str.substr(i);
 }
 
@@ -141,6 +140,7 @@ template <>
 
 std::wstring utf8_to_utf16(std::string_view src);
 std::string utf16_to_utf8(const std::wstring& src);
+size_t utf16_to_utf8_size(const std::wstring& src);
 std::wstring& utf8_to_utf16(std::string_view src, std::wstring& dst);
 std::string& utf16_to_utf8(const std::wstring& src, std::string& dst);
 
@@ -152,8 +152,7 @@ inline void check_for_replacement(uint32_t& ch) noexcept {
 }
 inline bool is_number(std::string_view str) noexcept {
 	uint16_t i = 0;
-	for (; (i < str.length() && IsDigit(str[i])); ++i)
-		;
+	for (; (i < str.length() && IsDigit(str[i])); ++i);
 	return (i && i == str.length());
 }
 

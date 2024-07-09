@@ -47,6 +47,8 @@ public:
 	void Dump(std::ostream &, std::string_view step, std::string_view offset) const;
 
 private:
+	void checkNewJsonPathBeforeAdd(const PayloadFieldType &f, const std::string &jsonPath) const;
+
 	std::vector<PayloadFieldType> fields_;
 	FieldMap fieldsByName_;
 	JsonPathMap fieldsByJsonPath_;

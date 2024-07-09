@@ -205,7 +205,7 @@ Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id, bool &clearCach
 template <typename T>
 void IndexUnordered<T>::Delete(const Variant &key, IdType id, StringsHolder &strHolder, bool &clearCache) {
 	if (key.Type().Is<KeyValueType::Null>()) {
-		this->empty_ids_.Unsorted().Erase(id); // ignore result
+		this->empty_ids_.Unsorted().Erase(id);	// ignore result
 		this->isBuilt_ = false;
 		cache_.reset();
 		clearCache = true;
@@ -213,18 +213,20 @@ void IndexUnordered<T>::Delete(const Variant &key, IdType id, StringsHolder &str
 	}
 
 	typename T::iterator keyIt = this->idx_map.find(static_cast<ref_type>(key));
-	if (keyIt == idx_map.end()) return;
-
-	delMemStat(keyIt);
-	int delcnt = keyIt->second.Unsorted().Erase(id);
-	(void)delcnt;
-	this->isBuilt_ = false;
-	cache_.reset();
-	clearCache = true;
-	// TODO: we have to implement removal of composite indexes (doesn't work right now)
-	assertf(this->opts_.IsArray() || this->Opts().IsSparse() || delcnt, "Delete unexists id from index '%s' id=%d,key=%s (%s)", this->name_,
-			id, key.As<std::string>(this->payloadType_, this->Fields()),
+	[[maybe_unused]] int delcnt = 0;
+	if (keyIt != idx_map.end()) {
+		delMemStat(keyIt);
+		delcnt = keyIt->second.Unsorted().Erase(id);
+		this->isBuilt_ = false;
+		cache_.reset();
+		clearCache = true;
+	}
+	assertf(delcnt || this->opts_.IsArray() || this->Opts().IsSparse(), "Delete non-existing id from index '%s' id=%d,key=%s (%s)",
+			this->name_, id, key.As<std::string>(this->payloadType_, this->Fields()),
 			Variant(keyIt->first).As<std::string>(this->payloadType_, this->Fields()));
+	if (keyIt == idx_map.end()) {
+		return;
+	}
 
 	if (keyIt->second.Unsorted().IsEmpty()) {
 		this->tracker_.markDeleted(keyIt);
@@ -302,11 +304,11 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 				const VariantArray &keys;
 				SortType sortId;
 				Index::SelectOpts opts;
-			} ctx = {&this->idx_map, keys, sortId, opts};
+				bool isSparse;
+			} ctx = {&this->idx_map, keys, sortId, opts, this->opts_.IsSparse()};
 			bool selectorWasSkipped = false;
-			bool isSparse = this->opts_.IsSparse();
 			// should return true, if fallback to comparator required
-			auto selector = [&ctx, &selectorWasSkipped, isSparse](SelectKeyResult &res, size_t &idsCount) -> bool {
+			auto selector = [&ctx, &selectorWasSkipped](SelectKeyResult &res, size_t &idsCount) -> bool {
 				idsCount = 0;
 				// Skip this index if there are some other indexes with potentially higher selectivity
 				if (!ctx.opts.distinct && ctx.keys.size() > 1 && 8 * ctx.keys.size() > size_t(ctx.opts.maxIterations) &&
@@ -326,7 +328,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 				res.deferedExplicitSort = SelectKeyResult::IsGenericSortRecommended(res.size(), idsCount, idsCount);
 
 				// avoid comparator for sparse index
-				if (isSparse || !ctx.opts.itemsCountInNamespace) return false;
+				if (ctx.isSparse || !ctx.opts.itemsCountInNamespace) return false;
 				// Check selectivity:
 				// if ids count too much (more than maxSelectivityPercentForIdset() of namespace),
 				// and index not optimized, or we have >4 other conditions

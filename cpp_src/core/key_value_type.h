@@ -100,7 +100,7 @@ private:
 			case static_cast<int>(KVT::Uuid):
 				return KeyValueType{static_cast<KVT>(n)};
 			default:
-				throw Error(errParams, "Invalid int value for KeyValueType: " + std::to_string(n));
+				throwKVTException("Invalid int value for KeyValueType", n);
 		}
 	}
 	[[nodiscard]] RX_ALWAYS_INLINE int toNumber() const noexcept { return static_cast<int>(value_); }
@@ -145,7 +145,7 @@ public:
 			case TAG_END:
 				break;
 		}
-		throw Error(errParams, "Invalid tag type value for KeyValueType: " + std::string{TagTypeToStr(t)});
+		throwKVTException("Invalid tag type value for KeyValueType", t);
 	}
 
 	template <typename... Fs>
@@ -229,7 +229,7 @@ public:
 		return v.value_ == value_;
 	}
 	[[nodiscard]] RX_ALWAYS_INLINE bool IsSame(KeyValueType other) const noexcept { return value_ == other.value_; }
-	[[nodiscard]] RX_ALWAYS_INLINE TagType ToTagType() const noexcept {
+	[[nodiscard]] RX_ALWAYS_INLINE TagType ToTagType() const {
 		switch (value_) {
 			case KVT::Int64:
 			case KVT::Int:
@@ -241,16 +241,15 @@ public:
 			case KVT::Bool:
 				return TAG_BOOL;
 			case KVT::Null:
+			case KVT::Undefined:
 				return TAG_NULL;
 			case KVT::Uuid:
 				return TAG_UUID;
-			case KVT::Undefined:
 			case KVT::Composite:
 			case KVT::Tuple:
 				break;
 		}
-		assertrx(0);
-		std::abort();
+		throwKVTException("Unexpected value type", Name());
 	}
 	[[nodiscard]] RX_ALWAYS_INLINE bool IsNumeric() const noexcept {
 		switch (value_) {
@@ -270,36 +269,15 @@ public:
 		assertrx(0);
 		std::abort();
 	}
-	[[nodiscard]] std::string_view Name() const noexcept {
-		using namespace std::string_view_literals;
-		switch (value_) {
-			case KVT::Int64:
-				return "int64"sv;
-			case KVT::Double:
-				return "double"sv;
-			case KVT::String:
-				return "string"sv;
-			case KVT::Bool:
-				return "bool"sv;
-			case KVT::Null:
-				return "null"sv;
-			case KVT::Int:
-				return "int"sv;
-			case KVT::Undefined:
-				return "undefined"sv;
-			case KVT::Composite:
-				return "composite"sv;
-			case KVT::Tuple:
-				return "tuple"sv;
-			case KVT::Uuid:
-				return "uuid"sv;
-		}
-		assertrx(0);
-		std::abort();
-	}
+	[[nodiscard]] std::string_view Name() const noexcept;
 
 	template <typename T>
 	static KeyValueType From();
+
+private:
+	[[noreturn]] static void throwKVTException(std::string_view msg, std::string_view param);
+	[[noreturn]] static void throwKVTException(std::string_view msg, TagType);
+	[[noreturn]] static void throwKVTException(std::string_view msg, int);
 };
 
 class key_string;

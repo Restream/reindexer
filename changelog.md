@@ -1,3 +1,31 @@
+# Version 3.27.0 (09.07.2024)
+## Core
+- [fea] Decreased heap allocations count in general selection pipeline
+- [fea] Optimized allocations in fulltext query preparation phase
+- [fea] Added heuristic for [copying transactions](readme.md#transactions-commit-strategies), which allows to avoid extra namespace copying if there are no select queries expected. May be disabled via `REINDEXER_NOTXHEURISTIC` env variable
+- [fea] Added automatic default values setting on new index creation (except UUID and rtree indexes)
+- [fea] Improved comparators performance for `IN()`-conditions
+- [fix] Fixed potential deadlock on data reading at server startup
+- [fix] Fixed double fulltext index building after copying transactions
+- [fix] Fixed incorrect composite indexes detection in some of `UPDATE`-queries (it could lead to random crashes during updates)
+- [ref] Deprecated fulltext index option `warmup_on_ns_copy`. In current implementation reindexer will always build fulltext index after copying transaction
+- [ref] Removed some of the [default RU stop-words](https://github.com/Restream/reindexer/blob/v3.27.0/cpp_src/core/ft/stopwords/stop_ru.cc)
+
+## Replication
+- [fix] Fixed `updated_unix_nano` in `#memstats` table
+- [fix] Disabled `statement-based update replication` - in some cases it could lead to crashes and data loss due to logic conflicts in WAL
+
+## Reindexer server
+- [fea] Added `SO_LINGER`-option in cases when client drops connection first. This allows to prevent `TIME_WAIT` socket state on the client's side
+
+## Deploy
+- [fea] Added build for Ubuntu 24.04
+- [ref] CentOS 7 reindexer repo is no longer supported due to CentOS 7 EOL
+
+## Face
+- [fea] Added RU language in UI
+- [fix] Fixed input width in settings section
+
 # Version 3.26.0 (21.06.2024)
 
 ## Core

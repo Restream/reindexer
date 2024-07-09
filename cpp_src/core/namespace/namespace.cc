@@ -23,7 +23,9 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 		auto lck = statCalculator.CreateLock<contexted_unique_lock>(clonerMtx_, ctx);
 
 		nsl = ns_;
-		if (needNamespaceCopy(nsl, tx)) {
+		if (needNamespaceCopy(nsl, tx) &&
+			(tx.GetSteps().size() >= static_cast<uint32_t>(txSizeToAlwaysCopy_.load(std::memory_order_relaxed)) ||
+			 isExpectingSelectsOnNamespace(nsl, ctx))) {
 			PerfStatCalculatorMT nsCopyCalc(copyStatsCounter_, enablePerfCounters);
 			calc.SetCounter(nsl->updatePerfCounter_);
 			calc.LockHit();
@@ -99,6 +101,22 @@ bool Namespace::needNamespaceCopy(const NamespaceImpl::Ptr& ns, const Transactio
 	auto txSizeToAlwaysCopy = static_cast<uint32_t>(txSizeToAlwaysCopy_.load(std::memory_order_relaxed));
 	return ((stepsCount >= startCopyPolicyTxSize) && (ns->GetItemsCapacity() <= copyPolicyMultiplier * stepsCount)) ||
 		   (stepsCount >= txSizeToAlwaysCopy);
+}
+
+bool Namespace::isExpectingSelectsOnNamespace(const NamespaceImpl::Ptr& ns, const RdxContext& ctx) {
+	// Some kind of heuristic: if there were no selects on this namespace yet and no one awaits read lock for it, probably we do not have to
+	// copy it. Improves scenarios, when user wants to fill namespace before any selections.
+	// It would be more optimal to acquire lock here and pass it further to the transaction, but this case is rare, so trying to not make it
+	// complicated.
+	if (ns->hadSelects() || !ns->isNotLocked(ctx)) {
+		return true;
+	}
+	std::this_thread::yield();
+	if (!ns->hadSelects()) {
+		const bool enableTxHeuristic = !std::getenv("REINDEXER_NOTXHEURISTIC");
+		return enableTxHeuristic;
+	}
+	return false;
 }
 
 void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, const std::string& storagePath, const RdxContext& ctx) {

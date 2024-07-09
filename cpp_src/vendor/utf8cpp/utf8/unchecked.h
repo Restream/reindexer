@@ -164,6 +164,26 @@ namespace utf8
 
             return result;
         }
+        template <typename u32bit_iterator>
+        size_t utf32to8_size (u32bit_iterator start, u32bit_iterator end)
+        {
+            size_t res = 0;
+            for (auto it = start; it != end; ++it) {
+                const auto cp = *it;
+                if (cp < 0x80)                        // one octet
+                    res += 1;
+                else if (cp < 0x800) {                // two octets
+                    res += 2;
+                }
+                else if (cp < 0x10000) {              // three octets
+                    res += 3;
+                }
+                else {                                // four octets
+                    res += 4;
+                }
+            }
+            return res;
+        }
 
         template <typename octet_iterator, typename u32bit_iterator>
         u32bit_iterator utf8to32 (octet_iterator start, octet_iterator end, u32bit_iterator result)

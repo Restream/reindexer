@@ -65,24 +65,64 @@ public:
 
 	ItemType NewItem(std::string_view ns) {
 		ItemType item = reindexer->NewItem(ns);
-		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
+		EXPECT_TRUE(item.Status().ok()) << item.Status().what() << "; namespace: " << ns;
 		return item;
 	}
 	void Commit(std::string_view ns) {
 		auto err = reindexer->Commit(ns);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
+	void OpenNamespace(std::string_view ns) {
+		auto err = reindexer->OpenNamespace(ns);
+		ASSERT_TRUE(err.ok()) << err.what() << "; namespace: " << ns;
+	}
+	void AddIndex(std::string_view ns, const reindexer::IndexDef &idef) {
+		auto err = reindexer->AddIndex(ns, idef);
+		if (!err.ok()) {
+			reindexer::WrSerializer ser;
+			idef.GetJSON(ser);
+			ASSERT_TRUE(err.ok()) << err.what() << "; namespace: " << ns << "; def: " << ser.Slice();
+		}
+	}
+	void DropIndex(std::string_view ns, std::string_view name) {
+		auto err = reindexer->DropIndex(ns, reindexer::IndexDef(std::string(name)));
+		ASSERT_TRUE(err.ok()) << err.what() << "; namespace: " << ns << "; name: " << name;
+	}
 	void Upsert(std::string_view ns, ItemType &item) {
 		assertrx(!!item);
 		auto err = reindexer->Upsert(ns, item);
 		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	}
+	void UpsertJSON(std::string_view ns, std::string_view json) {
+		auto item = NewItem(ns);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what() << "; " << json;
+		auto err = item.FromJSON(json);
+		ASSERT_TRUE(err.ok()) << err.what() << "; " << json;
+		err = reindexer->Upsert(ns, item);
+		ASSERT_TRUE(err.ok()) << err.what() << "; " << json;
+	}
+	void Update(const reindexer::Query &q, QueryResultsType &qr) {
+		auto err = reindexer->Update(q, qr);
+		ASSERT_TRUE(err.ok()) << err.what() << "; " << q.GetSQL(QueryUpdate);
 	}
 	size_t Update(const reindexer::Query &q) {
 		QueryResultsType qr;
-		auto err = reindexer->Update(q, qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		Update(q, qr);
 		return qr.Count();
+	}
+	QueryResultsType UpdateQR(const reindexer::Query &q) {
+		QueryResultsType qr;
+		Update(q, qr);
+		return qr;
+	}
+	void Select(const reindexer::Query &q, QueryResultsType &qr) {
+		auto err = reindexer->Select(q, qr);
+		ASSERT_TRUE(err.ok()) << err.what() << "; " << q.GetSQL();
+	}
+	QueryResultsType Select(const reindexer::Query &q) {
+		QueryResultsType qr;
+		Select(q, qr);
+		return qr;
 	}
 	void Delete(std::string_view ns, ItemType &item) {
 		assertrx(!!item);
@@ -92,7 +132,7 @@ public:
 	size_t Delete(const reindexer::Query &q) {
 		QueryResultsType qr;
 		auto err = reindexer->Delete(q, qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_TRUE(err.ok()) << err.what() << "; " << q.GetSQL(QueryDelete);
 		return qr.Count();
 	}
 	reindexer::Error DumpIndex(std::ostream &os, std::string_view ns, std::string_view index) {

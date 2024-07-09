@@ -324,7 +324,7 @@ VariantArray RxSelector::selectSubQuery(const Query& subQuery, const Query& main
 				}
 			} else {
 				const auto fields = ns->indexes_[idxNo]->Fields();
-				std::vector<KeyValueType> fieldsTypes;
+				QueryField::CompositeTypesVecT fieldsTypes;
 #ifndef NDEBUG
 				const bool ftIdx = IsFullText(ns->indexes_[idxNo]->Type());
 #endif
@@ -332,10 +332,10 @@ VariantArray RxSelector::selectSubQuery(const Query& subQuery, const Query& main
 					if (f == IndexValueType::SetByJsonPath) {
 						// not indexed fields allowed only in ft composite indexes
 						assertrx_throw(ftIdx);
-						fieldsTypes.push_back(KeyValueType::String{});
+						fieldsTypes.emplace_back(KeyValueType::String{});
 					} else {
 						assertrx_throw(f <= ns->indexes_.firstCompositePos());
-						fieldsTypes.push_back(ns->indexes_[f]->SelectKeyType());
+						fieldsTypes.emplace_back(ns->indexes_[f]->SelectKeyType());
 					}
 				}
 				for (const auto& it : qr) {

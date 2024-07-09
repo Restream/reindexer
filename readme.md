@@ -873,6 +873,9 @@ Depending on amount of changes in transaction there are 2 possible Commit strate
 
 The amount of data for selecting a Commit strategy can be selected in the namespace configuration. Check fields `StartCopyPolicyTxSize`, `CopyPolicyMultiplier` and `TxSizeToAlwaysCopy` in `struct DBNamespacesConfig`([describer.go](describer.go))
 
+If transaction size is less than `TxSizeToAlwaysCopy`, reindexer uses extra heuristic and trying to avoid namespace copying, if there were no selecting queries seen for this namespace.
+In some cases this heuristic may increase selects latency, so it may be disabled by setting `REINDEXER_NOTXHEURISTIC` env variable to any non-empty value.
+
 #### Implementation notes
 
 1. Transaction object is not thread safe and can't be used from different goroutines;
@@ -1670,3 +1673,4 @@ Landing: https://reindexer.io/
 Packages repo: https://repo.reindexer.io/
 
 More documentation (RU): https://reindexer.io/reindexer-docs/
+

@@ -75,29 +75,29 @@ SearchResult BaseSearcher::Compare(const BaseHolder::Ptr &holder, const FtDSLQue
 	std::pair<PosType, ProcType> pos;
 	pos.first = 0;
 
-	std::vector<FirstResult> rusults;
+	std::vector<FirstResult> results;
 	int max_id = 0;
 	int min_id = INT32_MAX;
 
 	if (!inTransaction) ThrowOnCancel(rdxCtx);
 	for (auto &term : dsl) {
-		data_size += ParseData(holder, term.pattern, max_id, min_id, rusults, term.opts, 1);
+		data_size += ParseData(holder, term.pattern, max_id, min_id, results, term.opts, 1);
 
 		if (holder->cfg_.enableTranslit) {
 			searchers_[0]->GetVariants(term.pattern, data, holder->cfg_.rankingConfig.translit);
 
-			ParseData(holder, data[0].pattern, max_id, min_id, rusults, term.opts, holder->cfg_.startDefaultDecreese);
+			ParseData(holder, data[0].pattern, max_id, min_id, results, term.opts, holder->cfg_.startDefaultDecreese);
 		}
 		if (holder->cfg_.enableKbLayout) {
 			data.clear();
 			searchers_[1]->GetVariants(term.pattern, data, holder->cfg_.rankingConfig.kblayout);
-			ParseData(holder, data[0].pattern, max_id, min_id, rusults, term.opts, holder->cfg_.startDefaultDecreese);
+			ParseData(holder, data[0].pattern, max_id, min_id, results, term.opts, holder->cfg_.startDefaultDecreese);
 		}
 	}
 
 	BaseMerger mrg(max_id, min_id);
 
-	MergeCtx ctx{&rusults, &holder->cfg_, data_size, &holder->words_};
+	MergeCtx ctx{&results, &holder->cfg_, data_size, &holder->words_};
 
 	auto res = mrg.Merge(ctx, inTransaction, rdxCtx);
 #ifdef FULL_LOG_FT

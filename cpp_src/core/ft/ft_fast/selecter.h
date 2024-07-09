@@ -57,7 +57,7 @@ public:
 
 private:
 	struct TextSearchResult {
-		const IdCont* vids;	   // indexes of documents (vdoc) containing the given word + position + field
+		const IdCont* vids;		   // indexes of documents (vdoc) containing the given word + position + field
 		std::string_view pattern;  // word,translit,.....
 		int proc;
 		int16_t wordLen;
@@ -256,6 +256,7 @@ private:
 	template <FtUseExternStatuses>
 	void processStepVariants(FtSelectContext& ctx, typename DataHolder<IdCont>::CommitStep& step, const FtVariantEntry& variant,
 							 unsigned curRawResultIdx, const FtMergeStatuses::Statuses& mergeStatuses, int vidsLimit);
+	RX_NO_INLINE void printVariants(const FtSelectContext& ctx, const TextSearchResults& res);
 
 	DataHolder<IdCont>& holder_;
 	size_t fieldSize_;

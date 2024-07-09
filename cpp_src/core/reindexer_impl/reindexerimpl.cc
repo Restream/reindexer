@@ -452,15 +452,13 @@ Error ReindexerImpl::closeNamespace(std::string_view nsName, const RdxContext& c
 
 		if (dropStorage) {
 			ns->DeleteStorage(ctx);
-		} else {
-			ns->CloseStorage(ctx);
-		}
-		if (dropStorage) {
+
 			if (!nsIt->second->GetDefinition(ctx).isTemporary) {
 				observers_.OnWALUpdate(LSNPair(), nsName, WALRecord(WalNamespaceDrop));
 			}
+		} else {
+			ns->CloseStorage(ctx);
 		}
-
 	} catch (const Error& e) {
 		err = e;
 	}
@@ -873,13 +871,12 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 		const QueriesStatTracer::QuerySQL sql{normalizedSQL.Slice(), nonNormalizedSQL.Slice()};
 
 		auto hitter = queriesPerfStatsEnabled
-		? [&sql, &tracker](bool lockHit, std::chrono::microseconds time) {
-			if (lockHit)
-				tracker.LockHit(sql, time);
-			else
-				tracker.Hit(sql, time);
-		}
-		: std::function<void(bool, std::chrono::microseconds)>{};
+			? [&sql, &tracker](bool lockHit, std::chrono::microseconds time) {
+				if (lockHit)
+					tracker.LockHit(sql, time);
+				else
+					tracker.Hit(sql, time);
+			} : std::function<void(bool, std::chrono::microseconds)>{};
 
 		const bool isSystemNsRequest = isSystemNamespaceNameFast(q.NsName());
 		QueryStatCalculator statCalculator(
@@ -895,11 +892,15 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 		// Lookup and lock namespaces_
 		mainNs->updateSelectTime();
 		locks.Add(std::move(mainNs));
-		q.WalkNested(false, true, true, [this, &locks, &rdxCtx](const Query& q) {
-			auto nsWrp = getNamespace(q.NsName(), rdxCtx);
-			auto ns = q.IsWALQuery() ? nsWrp->awaitMainNs(rdxCtx) : nsWrp->getMainNs();
+		struct {
+			RxSelector::NsLocker<const RdxContext>& locks;
+			const RdxContext& ctx;
+		} refs{locks, rdxCtx};
+		q.WalkNested(false, true, true, [this, &refs](const Query& q) {
+			auto nsWrp = getNamespace(q.NsName(), refs.ctx);
+			auto ns = q.IsWALQuery() ? nsWrp->awaitMainNs(refs.ctx) : nsWrp->getMainNs();
 			ns->updateSelectTime();
-			locks.Add(std::move(ns));
+			refs.locks.Add(std::move(ns));
 		});
 
 		locks.Lock();
@@ -1226,8 +1227,7 @@ Error ReindexerImpl::InitSystemNamespaces() {
 	}
 
 	if (!hasReplicatorConfig) {
-		auto err = tryLoadReplicatorConfFromFile();
-		(void)err;	// ignore
+		err = tryLoadReplicatorConfFromFile();
 	}
 
 	return errOK;

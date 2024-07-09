@@ -21,7 +21,7 @@ static bool is_dslbegin(int ch, const std::string &extraWordSymbols) noexcept {
 		   ch == '\\';
 }
 
-void FtDSLQuery::parse(const std::string &q) {
+void FtDSLQuery::parse(std::string_view q) {
 	std::wstring utf16str;
 	utf8_to_utf16(q, utf16str);
 	parse(utf16str);

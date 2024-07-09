@@ -38,7 +38,6 @@ void FTApi::Init(const reindexer::FtFastConfig& ftCfg, unsigned nses, const std:
 reindexer::FtFastConfig FTApi::GetDefaultConfig(size_t fieldsCount) {
 	reindexer::FtFastConfig cfg(fieldsCount);
 	cfg.enableNumbersSearch = true;
-	cfg.enableWarmupOnNsCopy = true;
 	cfg.logLevel = 5;
 	cfg.mergeLimit = 20000;
 	cfg.maxStepSize = 100;

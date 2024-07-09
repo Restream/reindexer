@@ -1,7 +1,6 @@
 #include "payloadtype.h"
 #include <sstream>
 #include "core/keyvalue/key_string.h"
-#include "core/keyvalue/variant.h"
 #include "payloadtypeimpl.h"
 #include "tools/serializer.h"
 
@@ -61,6 +60,8 @@ void PayloadTypeImpl::Add(PayloadFieldType f) {
 				throw Error(errLogic, "Cannot add field with name '%s' to namespace '%s'. Json path '%s' already used in field '%s'",
 							f.Name(), Name(), jp, Field(res.first->second).Name());
 			}
+
+			checkNewJsonPathBeforeAdd(f, jp);
 		}
 		fieldsByName_.emplace(f.Name(), int(fields_.size()));
 		if (f.Type().Is<KeyValueType::String>()) {
@@ -71,10 +72,10 @@ void PayloadTypeImpl::Add(PayloadFieldType f) {
 }
 
 bool PayloadTypeImpl::Drop(std::string_view field) {
-	auto it = fieldsByName_.find(field);
-	if (it == fieldsByName_.end()) return false;
+	auto itField = fieldsByName_.find(field);
+	if (itField == fieldsByName_.end()) return false;
 
-	int fieldIdx = it->second;
+	const auto fieldIdx = itField->second;
 	for (auto &f : fieldsByName_) {
 		if (f.second > fieldIdx) --f.second;
 	}
@@ -153,16 +154,16 @@ void PayloadTypeImpl::deserialize(Serializer &ser) {
 
 	ser.GetVarUint();
 
-	int count = ser.GetVarUint();
+	auto count = ser.GetVarUint();
 
-	for (int i = 0; i < count; i++) {
+	for (uint64_t i = 0; i < count; i++) {
 		const auto t = ser.GetKeyValueType();
 		std::string name(ser.GetVString());
 		std::vector<std::string> jsonPaths;
-		int offset = ser.GetVarUint();
-		int elemSizeof = ser.GetVarUint();
+		uint64_t offset = ser.GetVarUint();
+		uint64_t elemSizeof = ser.GetVarUint();
 		bool isArray = ser.GetVarUint();
-		int jsonPathsCount = ser.GetVarUint();
+		uint64_t jsonPathsCount = ser.GetVarUint();
 
 		while (jsonPathsCount--) jsonPaths.push_back(std::string(ser.GetVString()));
 
@@ -203,6 +204,23 @@ void PayloadType::Dump(std::ostream &os, std::string_view step, std::string_view
 	os << "{\n" << newOffset << "name: " << Name() << ",\n" << newOffset;
 	get()->Dump(os, step, newOffset);
 	os << '\n' << offset << '}';
+}
+
+void PayloadTypeImpl::checkNewJsonPathBeforeAdd(const PayloadFieldType &f, const std::string &jsonPath) const {
+	const auto pos = jsonPath.find('.');
+	if (pos < jsonPath.length() - 1) {
+		for (auto &fld : fields_) {
+			for (auto &jpfld : fld.JsonPaths()) {
+				// new field total overwrites existing one
+				if ((jsonPath.rfind(jpfld, 0) == 0) && (jsonPath[jpfld.length()] == '.')) {
+					throw Error(errLogic,
+								"Cannot add field with name '%s' (jsonpath '%s') and type '%s' to namespace '%s'."
+								" Already exists json path '%s' with type '%s' in field '%s'. Rewriting is impossible",
+								f.Name(), jsonPath, f.Type().Name(), Name(), jpfld, fld.Type().Name(), fld.Name());
+				}
+			}
+		}
+	}
 }
 
 }  // namespace reindexer

@@ -56,12 +56,9 @@ bool QueryField::operator==(const QueryField &other) const noexcept {
 		compositeFieldsTypes_.size() != other.compositeFieldsTypes_.size()) {
 		return false;
 	}
-	for (size_t i = 0, s = compositeFieldsTypes_.size(); i < s; ++i) {
-		if (!compositeFieldsTypes_[i].IsSame(other.compositeFieldsTypes_[i])) {
-			return false;
-		}
-	}
-	return true;
+	return std::equal(
+		compositeFieldsTypes_.begin(), compositeFieldsTypes_.end(), other.compositeFieldsTypes_.begin(),
+		[](const CompositeTypesVecT::value_type &l, const CompositeTypesVecT::value_type &r) noexcept { return l.IsSame(r); });
 }
 
 void QueryField::SetField(FieldsSet &&fields) & {
@@ -73,7 +70,7 @@ void QueryField::SetField(FieldsSet &&fields) & {
 }
 
 static void checkIndexData([[maybe_unused]] int idxNo, [[maybe_unused]] const FieldsSet &fields, KeyValueType fieldType,
-						   [[maybe_unused]] const std::vector<KeyValueType> &compositeFieldsTypes) {
+						   [[maybe_unused]] const QueryField::CompositeTypesVecT &compositeFieldsTypes) {
 	assertrx_throw(idxNo >= 0);
 	if (fieldType.Is<KeyValueType::Composite>()) {
 		assertrx_throw(fields.size() == compositeFieldsTypes.size());
@@ -84,7 +81,7 @@ static void checkIndexData([[maybe_unused]] int idxNo, [[maybe_unused]] const Fi
 }
 
 void QueryField::SetIndexData(int idxNo, FieldsSet &&fields, KeyValueType fieldType, KeyValueType selectType,
-							  std::vector<KeyValueType> &&compositeFieldsTypes) & {
+							  QueryField::CompositeTypesVecT &&compositeFieldsTypes) & {
 	checkIndexData(idxNo, fields, fieldType, compositeFieldsTypes);
 	idxNo_ = idxNo;
 	fieldsSet_ = std::move(fields);

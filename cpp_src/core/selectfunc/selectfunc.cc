@@ -33,19 +33,18 @@ SelectFunction::Ptr SelectFunctionsHolder::AddNamespace(const Query &q, const Na
 	if (queries_.size() <= nsid) {
 		queries_.resize(nsid + 1);
 	}
-	queries_[nsid] = std::make_shared<SelectFunction>(q, NsSelectFuncInterface(nm));
+	queries_[nsid] = make_intrusive<SelectFunction>(q, NsSelectFuncInterface(nm));
 	return queries_[nsid];
 }
 
 SelectFunction::SelectFunction(const Query &q, NsSelectFuncInterface &&nm) : nm_(std::move(nm)), currCjsonFieldIdx_(nm_.getIndexesCount()) {
-	functions_.reserve(q.selectFunctions_.size());
 	for (auto &func : q.selectFunctions_) {
 		SelectFuncParser parser;
 		SelectFuncStruct &result = parser.Parse(func);
 		if (!result.isFunction) continue;
 		createFunc(result);
 	}
-};
+}
 
 void SelectFunction::createFunc(SelectFuncStruct &data) {
 	int indexNo = IndexValueType::NotSet;
@@ -60,8 +59,6 @@ void SelectFunction::createFunc(SelectFuncStruct &data) {
 
 	// if index is composite then create function for inner use only
 	if (IsComposite(nm_.getIndexType(indexNo))) {
-		std::vector<std::string> subIndexes;
-
 		int fieldNo = 0;
 		const FieldsSet &fields = nm_.getIndexFields(indexNo);
 
@@ -205,12 +202,12 @@ bool SelectFunction::ProcessItem(ItemRef &res, PayloadType &pl_type, std::vector
 BaseFunctionCtx::Ptr SelectFunction::createCtx(SelectFuncStruct &data, BaseFunctionCtx::Ptr ctx, IndexType index_type) {
 	if (IsFullText(index_type)) {
 		if (!ctx) {
-			data.ctx = std::make_shared<FtCtx>();
+			data.ctx = make_intrusive<FtCtx>();
 		} else {
 			data.ctx = std::move(ctx);
 		}
 		const std::string &indexName = (data.indexNo >= nm_.getIndexesCount()) ? data.field : nm_.getIndexName(data.indexNo);
-		data.ctx->AddFunction(indexName, SelectFuncStruct::SelectFuncType(data.func.index()));
+		data.ctx->AddFunction(indexName, SelectFuncType(data.func.index()));
 	}
 	return data.ctx;
 }

@@ -70,9 +70,9 @@ void JsonDecoder::decodeJsonObject(Payload &pl, CJsonBuilder &builder, const gas
 				case gason::JSON_FALSE: {
 					validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, field, isInArray(), "json");
 					objectScalarIndexes_.set(field);
-					Variant v = jsonValue2Variant(elem.value, f.Type(), f.Name());
-					builder.Ref(tagName, v, field);
-					pl.Set(field, std::move(v), true);
+					Variant value = jsonValue2Variant(elem.value, f.Type(), f.Name());
+					builder.Ref(tagName, value, field);
+					pl.Set(field, std::move(value), true);
 				} break;
 				default:
 					throw Error(errLogic, "Unexpected '%d' tag", elem.value.getTag());

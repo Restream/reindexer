@@ -60,7 +60,34 @@ void SelectIteratorContainer::sortByCost(span<unsigned> indexes, span<double> co
 			costs[indexes[j]] = cst;
 		}
 	}
-	std::stable_sort(indexes.begin() + from, indexes.begin() + to, [&costs](unsigned i1, unsigned i2) { return costs[i1] < costs[i2]; });
+	// GCC's std::stable_sort performs allocations even in the simpliest scenarios, so handling some of them explicitly
+	switch (to - from) {
+		case 0:
+		case 1:
+			break;
+		case 2: {
+			auto it = indexes.begin() + from;
+			auto &a = *(it++);
+			auto &b = *(it);
+			if (costs[a] > costs[b]) {
+				std::swap(a, b);
+			}
+			break;
+		}
+		case 3: {
+			auto it = indexes.begin() + from;
+			auto &a = *(it++);
+			auto &b = *(it++);
+			auto &c = *(it);
+			if (costs[a] > costs[b]) std::swap(a, b);
+			if (costs[b] > costs[c]) std::swap(b, c);
+			if (costs[a] > costs[b]) std::swap(a, b);
+			break;
+		}
+		default:
+			std::stable_sort(indexes.begin() + from, indexes.begin() + to,
+							 [&costs](unsigned i1, unsigned i2) { return costs[i1] < costs[i2]; });
+	}
 	moveJoinsToTheBeginingOfORs(indexes, from, to);
 }
 
@@ -266,7 +293,7 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 	opts.inTransaction = ctx_->inTransaction;
 
 	auto ctx = selectFnc ? selectFnc->CreateCtx(qe.IndexNo()) : BaseFunctionCtx::Ptr{};
-	if (ctx && ctx->type == BaseFunctionCtx::kFtCtx) ftCtx = reindexer::reinterpret_pointer_cast<FtCtx>(ctx);
+	if (ctx && ctx->type == BaseFunctionCtx::kFtCtx) ftCtx = reindexer::static_ctx_pointer_cast<FtCtx>(ctx);
 
 	if (index->Opts().GetCollateMode() == CollateUTF8 || isIndexFt) {
 		for (auto &key : qe.Values()) key.EnsureUTF8();

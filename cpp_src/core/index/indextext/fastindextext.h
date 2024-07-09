@@ -19,14 +19,16 @@ public:
 	FastIndexText(const FastIndexText& other) : Base(other) {
 		initConfig(other.getConfig());
 		for (auto& idx : this->idx_map) idx.second.SetVDocID(FtKeyEntryData::ndoc);
-		this->CommitFulltext();
 	}
 
 	FastIndexText(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg)
 		: Base(idef, std::move(payloadType), std::move(fields), cacheCfg) {
 		initConfig();
 	}
-	std::unique_ptr<Index> Clone() const override { return std::make_unique<FastIndexText<T>>(*this); }
+	std::unique_ptr<Index> Clone() const override {
+		// Creates uncommited copy
+		return std::make_unique<FastIndexText<T>>(*this);
+	}
 	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&, FtUseExternStatuses,
 					  const RdxContext&) override final;
 	IndexMemStat GetMemStat(const RdxContext&) override final;

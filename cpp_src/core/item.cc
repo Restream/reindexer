@@ -69,7 +69,7 @@ Item::FieldRef &Item::FieldRef::operator=(Variant kr) {
 	if (field_ >= 0) {
 		itemImpl_->SetField(field_, VariantArray{std::move(kr)});
 	} else {
-		itemImpl_->SetField(jsonPath_, VariantArray{std::move(kr)}, nullptr);
+		itemImpl_->SetField(jsonPath_, VariantArray{std::move(kr)});
 	}
 
 	return *this;
@@ -82,13 +82,13 @@ Item::FieldRef &Item::FieldRef::operator=(const VariantArray &krs) {
 	if (field_ >= 0) {
 		itemImpl_->SetField(field_, krs);
 	} else {
-		itemImpl_->SetField(jsonPath_, krs, nullptr);
+		itemImpl_->SetField(jsonPath_, krs);
 	}
 	return *this;
 }
 
 template <typename T>
-Item::FieldRef &Item::FieldRef::operator=(span<T> arr) {
+Item::FieldRef &Item::FieldRef::operator=(span<const T> arr) {
 	constexpr static bool kIsStr = std::is_same_v<T, std::string> || std::is_same_v<T, key_string> || std::is_same_v<T, p_string> ||
 								   std::is_same_v<T, std::string_view> || std::is_same_v<T, const char *>;
 	if (field_ < 0) {
@@ -96,7 +96,7 @@ Item::FieldRef &Item::FieldRef::operator=(span<T> arr) {
 		krs.MarkArray();
 		krs.reserve(arr.size());
 		std::transform(arr.begin(), arr.end(), std::back_inserter(krs), [](const T &t) { return Variant(t); });
-		itemImpl_->SetField(jsonPath_, krs, nullptr);
+		itemImpl_->SetField(jsonPath_, krs);
 		return *this;
 	}
 
@@ -192,10 +192,10 @@ Item &Item::Unsafe(bool enable) & noexcept {
 int64_t Item::GetLSN() { return impl_->Value().GetLSN(); }
 void Item::setLSN(int64_t lsn) { impl_->Value().SetLSN(lsn); }
 
-template Item::FieldRef &Item::FieldRef::operator=(span<int> arr);
-template Item::FieldRef &Item::FieldRef::operator=(span<int64_t> arr);
-template Item::FieldRef &Item::FieldRef::operator=(span<std::string> arr);
-template Item::FieldRef &Item::FieldRef::operator=(span<double>);
-template Item::FieldRef &Item::FieldRef::operator=(span<Uuid>);
+template Item::FieldRef &Item::FieldRef::operator=(span<const int> arr);
+template Item::FieldRef &Item::FieldRef::operator=(span<const int64_t> arr);
+template Item::FieldRef &Item::FieldRef::operator=(span<const std::string> arr);
+template Item::FieldRef &Item::FieldRef::operator=(span<const double>);
+template Item::FieldRef &Item::FieldRef::operator=(span<const Uuid>);
 
 }  // namespace reindexer

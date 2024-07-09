@@ -22,20 +22,23 @@ public:
 	PayloadValue &GetPayloadValueBackup() { return rollBackIndexData_.GetPayloadValueBackup(); }
 
 private:
-	struct FieldData {
-		FieldData(const UpdateEntry &entry, NamespaceImpl &ns);
-		void updateTagsPath(TagsMatcher &tm, const IndexExpressionEvaluator &ev);
-		const UpdateEntry &details() const noexcept { return entry_; }
-		const IndexedTagsPath &tagspath() const noexcept { return tagsPath_; }
-		const IndexedTagsPath &tagspathWithLastIndex() const noexcept {
+	using CompositeFlags = h_vector<bool, 32>;
+	class FieldData {
+	public:
+		FieldData(const UpdateEntry &entry, NamespaceImpl &ns, CompositeFlags &affectedComposites);
+		const UpdateEntry &Details() const noexcept { return entry_; }
+		const IndexedTagsPath &Tagspath() const noexcept { return tagsPath_; }
+		const IndexedTagsPath &TagspathWithLastIndex() const noexcept {
 			return tagsPathWithLastIndex_ ? *tagsPathWithLastIndex_ : tagsPath_;
 		}
-		int arrayIndex() const noexcept { return arrayIndex_; }
-		int index() const noexcept { return fieldIndex_; }
-		bool isIndex() const noexcept { return isIndex_; }
-		const std::string &name() const noexcept;
+		int ArrayIndex() const noexcept { return arrayIndex_; }
+		int Index() const noexcept { return fieldIndex_; }
+		bool IsIndex() const noexcept { return isIndex_; }
+		std::string_view Name() const noexcept;
 
 	private:
+		void appendAffectedIndexes(const NamespaceImpl &ns, CompositeFlags &affectedComposites) const;
+
 		const UpdateEntry &entry_;
 		IndexedTagsPath tagsPath_;
 		std::optional<IndexedTagsPath> tagsPathWithLastIndex_;
@@ -66,9 +69,8 @@ private:
 	void modifyCJSON(IdType itemId, FieldData &field, VariantArray &values);
 	void modifyIndexValues(IdType itemId, const FieldData &field, VariantArray &values, Payload &pl);
 
-	void deleteDataFromComposite(IdType itemId, FieldData &field, h_vector<bool, 32> &needUpdateCompIndexes);
-	void insertItemIntoCompositeIndexes(IdType itemId, int firstCompositePos, int totalIndexes,
-										const h_vector<bool, 32> &needUpdateCompIndexes);
+	void deleteItemFromComposite(IdType itemId);
+	void insertItemIntoComposite(IdType itemId);
 
 	NamespaceImpl &ns_;
 	const std::vector<UpdateEntry> &updateEntries_;
@@ -110,6 +112,7 @@ private:
 	};
 
 	IndexRollBack rollBackIndexData_;
+	CompositeFlags affectedComposites_;
 };
 
 }  // namespace reindexer

@@ -18,12 +18,10 @@ public:
 		}
 	};
 
-	void WaitSync(ServerControl& s1, ServerControl& s2, const std::string& nsName) {
+	void WaitSync(ServerControl& s1, ServerControl& s2, std::string_view nsName) {
 		auto now = std::chrono::milliseconds(0);
 		const auto pause = std::chrono::milliseconds(100);
-		ReplicationStateApi state1{};
-		ReplicationStateApi state2{};
-
+		ReplicationTestState state1, state2;
 		while (true) {
 			now += pause;
 			ASSERT_TRUE(now < kMaxSyncTime) << "Wait sync is too long. s1 lsn: " << state1.lsn << "; s2 lsn: " << state2.lsn
@@ -108,6 +106,7 @@ public:
 		auto master = masterControl.Get();
 		auto opt = StorageOpts().Enabled(true);
 		Error err = master->api.reindexer->OpenNamespace(nsName_, opt);
+		EXPECT_TRUE(err.ok()) << err.what();
 		master->api.DefineNamespaceDataset(nsName_, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}});
 	}
 
@@ -993,6 +992,43 @@ TEST_F(ReplicationSlaveSlaveApi, RestrictUpdates) {
 
 	insertThread.join();
 	WaitSync(master, slave, "ns1");
+}
+
+TEST_F(ReplicationSlaveSlaveApi, LSNConflictWithSQLUpdate) {
+	//  1. create leader/follower nodes,
+	//  2. sync empty namespace
+	//  3. shutdown follower
+	//  4. add 20 rows
+	//  5. perform full namespace update # here statement based replication could break the leader
+	//  6. restart follower
+	//  7. wait sync
+	const std::string kBaseStoragePath = reindexer::fs::JoinPath(kBaseTestsetDbPath, "RestrictUpdatesWithSQLUpdate");
+	const std::string upDsn = "cproto://127.0.0.1:7770/db";
+	const std::string kNsName = "ns1";
+	constexpr size_t kDataCount = 20;
+	ServerControl leader;
+	leader.InitServer(0, 7770, 7880, reindexer::fs::JoinPath(kBaseStoragePath, "leader"), "db", true, 1024 * 1024 * 1024);
+
+	leader.Get()->MakeMaster(ReplicationConfigTest("master", "appLeader"));
+	TestNamespace1 testns1(leader, kNsName);
+
+	ServerControl follower;
+	follower.InitServer(0, 7771, 7881, reindexer::fs::JoinPath(kBaseStoragePath, "follower"), "db", true);
+	ReplicationConfigTest configFollower("slave", false, true, 0, upDsn, "follower");
+	follower.Get()->MakeSlave(configFollower);
+	WaitSync(leader, follower, kNsName);
+
+	follower.Stop();
+	follower.Drop();
+	testns1.AddRows(leader, 0, kDataCount);
+	auto leaderRx = leader.Get()->api.reindexer;
+	client::SyncCoroQueryResults qr(leaderRx.get());
+	auto err = leaderRx->Update(Query(kNsName).Set("new_data", "some string value"), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), kDataCount);
+
+	follower.InitServer(0, 7771, 7881, reindexer::fs::JoinPath(kBaseStoragePath, "follower"), "db", true);
+	WaitSync(leader, follower, kNsName);
 }
 
 #if !defined(REINDEX_WITH_TSAN)

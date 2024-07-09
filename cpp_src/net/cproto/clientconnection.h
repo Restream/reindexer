@@ -59,7 +59,7 @@ public:
 protected:
 	RPCAnswer() {}
 	Error status_;
-	span<uint8_t> data_;
+	span<const uint8_t> data_;
 	bool hold_ = false;
 	friend class ClientConnection;
 };
@@ -173,8 +173,7 @@ public:
 	void SetUpdatesHandler(Completion handler) {
 		auto cur = updatesHandler_.get(std::memory_order_acquire);
 		auto handlerPtr = new Completion(std::move(handler));
-		while (!updatesHandler_.compare_exchange_strong(cur, handlerPtr, std::memory_order_acq_rel))
-			;
+		while (!updatesHandler_.compare_exchange_strong(cur, handlerPtr, std::memory_order_acq_rel));
 		delete cur;
 	}
 	seconds Now() const { return seconds(now_); }

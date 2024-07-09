@@ -14,7 +14,7 @@ namespace reindexer {
 
 struct ItemImplRawData {
 	ItemImplRawData() = default;
-	ItemImplRawData(PayloadValue v) : payloadValue_(std::move(v)) {}
+	explicit ItemImplRawData(PayloadValue v) : payloadValue_(std::move(v)) {}
 	ItemImplRawData(const ItemImplRawData &) = delete;
 	ItemImplRawData(ItemImplRawData &&) = default;
 	ItemImplRawData &operator=(const ItemImplRawData &) = delete;
@@ -39,7 +39,7 @@ public:
 
 	// Construct empty item
 	ItemImpl(PayloadType type, const TagsMatcher &tagsMatcher, const FieldsSet &pkFields = {}, std::shared_ptr<const Schema> schema = {})
-		: ItemImplRawData(PayloadValue(type.TotalSize(), 0, type.TotalSize() + 0x100)),
+		: ItemImplRawData(PayloadValue(type.TotalSize(), nullptr, type.TotalSize() + 0x100)),
 		  payloadType_(std::move(type)),
 		  tagsMatcher_(tagsMatcher),
 		  pkFields_(pkFields),
@@ -66,11 +66,11 @@ public:
 	ItemImpl &operator=(ItemImpl &&) = default;
 	ItemImpl &operator=(const ItemImpl &) = delete;
 
-	void ModifyField(std::string_view jsonPath, const VariantArray &keys, const IndexExpressionEvaluator &ev, FieldModifyMode mode);
+	void ModifyField(std::string_view jsonPath, const VariantArray &keys, FieldModifyMode mode);
 	void ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &keys, FieldModifyMode mode);
 	void SetField(int field, const VariantArray &krs);
-	void SetField(std::string_view jsonPath, const VariantArray &keys, const IndexExpressionEvaluator &ev);
-	void DropField(std::string_view jsonPath, const IndexExpressionEvaluator &ev);
+	void SetField(std::string_view jsonPath, const VariantArray &keys);
+	void DropField(std::string_view jsonPath);
 	Variant GetField(int field);
 	void GetField(int field, VariantArray &);
 	FieldsSet PkFields() const { return pkFields_; }
@@ -80,7 +80,7 @@ public:
 
 	std::string_view GetJSON();
 	Error FromJSON(std::string_view slice, char **endp = nullptr, bool pkOnly = false);
-	void FromCJSON(ItemImpl *other, Recoder *);
+	void FromCJSON(ItemImpl &other, Recoder *);
 
 	std::string_view GetCJSON(bool withTagsMatcher = false);
 	std::string_view GetCJSON(WrSerializer &ser, bool withTagsMatcher = false);

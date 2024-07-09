@@ -49,12 +49,12 @@ public:
 		return fieldTags;
 	}
 
-	IndexedTagsPath path2indexedtag(std::string_view jsonPath, const IndexExpressionEvaluator &ev) const {
+	IndexedTagsPath path2indexedtag(std::string_view jsonPath) const {
 		bool updated = false;
-		return const_cast<TagsMatcherImpl *>(this)->path2indexedtag(jsonPath, ev, false, updated);
+		return const_cast<TagsMatcherImpl *>(this)->path2indexedtag(jsonPath, false, updated);
 	}
 
-	IndexedTagsPath path2indexedtag(std::string_view jsonPath, const IndexExpressionEvaluator &ev, bool canAdd, bool &updated) {
+	IndexedTagsPath path2indexedtag(std::string_view jsonPath, bool canAdd, bool &updated) {
 		using namespace std::string_view_literals;
 		IndexedTagsPath fieldTags;
 		for (size_t pos = 0, lastPos = 0; pos != jsonPath.length(); lastPos = pos + 1) {
@@ -80,22 +80,7 @@ public:
 					} else {
 						auto index = try_stoi(content);
 						if (!index) {
-							if (ev) {
-								VariantArray values = ev(content);
-								if (values.size() != 1) {
-									throw Error(errParams, "Index expression_ has wrong syntax: '%s'", content);
-								}
-								values.front().Type().EvaluateOneOf(
-									[](OneOf<KeyValueType::Double, KeyValueType::Int, KeyValueType::Int64>) noexcept {},
-									[&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Tuple, KeyValueType::Composite,
-											  KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Uuid>) {
-										throw Error(errParams, "Wrong type of index: '%s'", content);
-									});
-								node.SetExpression(content);
-								index = values.front().As<int>();
-							} else {
-								throw Error(errParams, "Can't convert '%s' to number", content);
-							}
+							throw Error(errParams, "Can't convert '%s' to number", content);
 						}
 						if (index < 0) {
 							throw Error(errLogic, "Array index value cannot be negative");

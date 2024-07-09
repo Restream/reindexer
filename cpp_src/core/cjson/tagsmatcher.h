@@ -28,15 +28,15 @@ public:
 		auto res = path2tag(jsonPath);
 		return res.empty() && canAdd ? impl_.clone()->path2tag(jsonPath, canAdd, updated_) : res;
 	}
-	IndexedTagsPath path2indexedtag(std::string_view jsonPath, const IndexExpressionEvaluator& ev) const {
-		IndexedTagsPath tagsPath = impl_->path2indexedtag(jsonPath, ev);
+	IndexedTagsPath path2indexedtag(std::string_view jsonPath) const {
+		IndexedTagsPath tagsPath = impl_->path2indexedtag(jsonPath);
 		assertrx(!updated_);
 		return tagsPath;
 	}
-	IndexedTagsPath path2indexedtag(std::string_view jsonPath, const IndexExpressionEvaluator& ev, bool canAdd) {
+	IndexedTagsPath path2indexedtag(std::string_view jsonPath, bool canAdd) {
 		if (jsonPath.empty()) return IndexedTagsPath();
-		auto res = impl_->path2indexedtag(jsonPath, ev);
-		return res.empty() && canAdd ? impl_.clone()->path2indexedtag(jsonPath, ev, canAdd, updated_) : res;
+		auto res = impl_->path2indexedtag(jsonPath);
+		return res.empty() && canAdd ? impl_.clone()->path2indexedtag(jsonPath, canAdd, updated_) : res;
 	}
 	int version() const noexcept { return impl_->version(); }
 	size_t size() const noexcept { return impl_->size(); }

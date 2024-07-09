@@ -109,7 +109,7 @@ private:
 	static constexpr bool is_power_of_two(std::size_t value) noexcept { return value != 0 && (value & (value - 1)) == 0; }
 
 private:
-	static const std::size_t MIN_BUCKETS_SIZE = 2;
+	static const std::size_t MIN_BUCKETS_SIZE = 16;
 
 	std::size_t m_mask;
 };

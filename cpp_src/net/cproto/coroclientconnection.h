@@ -43,14 +43,14 @@ public:
 	CoroRPCAnswer &operator=(const CoroRPCAnswer &other) = delete;
 
 	void EnsureHold(chunk &&ch) {
-		ch.append(std::string_view(reinterpret_cast<char *>(data_.data()), data_.size()));
+		ch.append(std::string_view(reinterpret_cast<const char *>(data_.data()), data_.size()));
 		storage_ = std::move(ch);
 		data_ = {storage_.data(), storage_.size()};
 	}
 
 protected:
 	Error status_;
-	span<uint8_t> data_;
+	span<const uint8_t> data_;
 	chunk storage_;
 	friend class CoroClientConnection;
 };

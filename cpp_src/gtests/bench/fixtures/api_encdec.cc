@@ -153,7 +153,7 @@ reindexer::Error ApiEncDec::prepareBenchData() {
 	itemCJSON_ = itemForCjsonBench_->GetCJSON();
 	itemJSON_ = itemForCjsonBench_->GetJSON();
 	wser.Reset();
-	reindexer::prettyPrintJSON(reindexer::giftStr(std::string(itemJSON_)), wser);
+	reindexer::prettyPrintJSON(std::string(itemJSON_), wser);
 	itemPrettyJSON_ = wser.Slice();
 	itemMsgPack_ = itemForCjsonBench_->GetMsgPack();
 	return {};

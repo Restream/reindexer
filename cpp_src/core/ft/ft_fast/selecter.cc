@@ -33,6 +33,7 @@ void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, RV
 	variants.clear();
 
 	std::vector<FtDSLVariant> variantsUtf16{{term.pattern, holder_.cfg_->rankingConfig.fullMatch}};
+	variantsUtf16.reserve(256);
 
 	if (synonymsDsl && (!holder_.cfg_->enableNumbersSearch || !term.opts.number)) {
 		// Make translit and kblayout variants
@@ -132,34 +133,7 @@ RX_NO_INLINE MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransa
 		}
 
 		if rx_unlikely (holder_.cfg_->logLevel >= LogInfo) {
-			WrSerializer wrSer;
-			wrSer << "variants: [";
-			for (auto& variant : ctx.variants) {
-				if (&variant != &*ctx.variants.begin()) wrSer << ", ";
-				wrSer << variant.pattern;
-			}
-			wrSer << "], variants_with_low_relevancy: [";
-			for (auto& variant : ctx.lowRelVariants) {
-				if (&variant != &*ctx.lowRelVariants.begin()) wrSer << ", ";
-				wrSer << variant.pattern;
-			}
-			wrSer << "], typos: [";
-			if (res.term.opts.typos) {
-				typos_context tctx[kMaxTyposInWord];
-				mktypos(tctx, res.term.pattern, holder_.cfg_->MaxTyposInWord(), holder_.cfg_->maxTypoLen,
-						[&wrSer](std::string_view typo, int, const typos_context::TyposVec& positions) {
-							wrSer << typo;
-							wrSer << ":(";
-							for (unsigned j = 0, sz = positions.size(); j < sz; ++j) {
-								if (j) {
-									wrSer << ',';
-								}
-								wrSer << positions[j];
-							}
-							wrSer << "), ";
-						});
-			}
-			logPrintf(LogInfo, "Variants: [%s]", wrSer.Slice());
+			printVariants(ctx, res);
 		}
 
 		processVariants<useExternSt>(ctx, mergeStatuses);
@@ -1028,7 +1002,7 @@ size_t Selecter<IdCont>::TyposHandler::Process(std::vector<TextSearchResults>& r
 											   const FtDSLEntry& term) {
 	TextSearchResults& res = rawResults.back();
 	const unsigned curRawResultIdx = rawResults.size() - 1;
-	const size_t patternSize = utf16_to_utf8(term.pattern).size();
+	const size_t patternSize = utf16_to_utf8_size(term.pattern);
 	size_t totalVids = 0;
 	for (auto& step : holder.steps) {
 		typos_context tctx[kMaxTyposInWord];
@@ -1373,6 +1347,38 @@ MergeData Selecter<IdCont>::mergeResults(std::vector<TextSearchResults>&& rawRes
 	boost::sort::pdqsort_branchless(merged.begin(), merged.end(),
 									[](const MergeInfo& lhs, const MergeInfo& rhs) noexcept { return lhs.proc > rhs.proc; });
 	return merged;
+}
+
+template <typename IdCont>
+void Selecter<IdCont>::printVariants(const FtSelectContext& ctx, const TextSearchResults& res) {
+	WrSerializer wrSer;
+	wrSer << "variants: [";
+	for (auto& variant : ctx.variants) {
+		if (&variant != &*ctx.variants.begin()) wrSer << ", ";
+		wrSer << variant.pattern;
+	}
+	wrSer << "], variants_with_low_relevancy: [";
+	for (auto& variant : ctx.lowRelVariants) {
+		if (&variant != &*ctx.lowRelVariants.begin()) wrSer << ", ";
+		wrSer << variant.pattern;
+	}
+	wrSer << "], typos: [";
+	if (res.term.opts.typos) {
+		typos_context tctx[kMaxTyposInWord];
+		mktypos(tctx, res.term.pattern, holder_.cfg_->MaxTyposInWord(), holder_.cfg_->maxTypoLen,
+				[&wrSer](std::string_view typo, int, const typos_context::TyposVec& positions) {
+					wrSer << typo;
+					wrSer << ":(";
+					for (unsigned j = 0, sz = positions.size(); j < sz; ++j) {
+						if (j) {
+							wrSer << ',';
+						}
+						wrSer << positions[j];
+					}
+					wrSer << "), ";
+				});
+	}
+	logPrintf(LogInfo, "Variants: [%s]", wrSer.Slice());
 }
 
 template class Selecter<PackedIdRelVec>;

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <cstdlib>
-#include <string_view>
 #include <string>
+#include <string_view>
 #include "estl/chunk.h"
 #include "estl/span.h"
 #include "tools/ssize_t.h"
@@ -41,6 +41,7 @@ public:
 	ssize_t recv(span<char> buf);
 	ssize_t send(const span<char> buf);
 	ssize_t send(span<chunk> chunks);
+	int setLinger0();
 	int close();
 	std::string addr() const;
 

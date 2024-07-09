@@ -45,8 +45,9 @@ static inline std::string randString(size_t size) {
 	return ret;
 }
 
+// FIXME: !!!!!!!!!!!!!!Non-const to const span cats
 template <size_t L>
-reindexer::span<bool> randBoolArray() {
+reindexer::span<const bool> randBoolArray() {
 	static bool ret[L];
 	for (size_t i = 0; i < L; ++i) {
 		ret[i] = rand() % 2;
@@ -55,7 +56,7 @@ reindexer::span<bool> randBoolArray() {
 }
 
 template <size_t L>
-reindexer::span<int> randIntArray() {
+reindexer::span<const int> randIntArray() {
 	static int ret[L];
 	for (size_t i = 0; i < L; ++i) {
 		ret[i] = rand();
@@ -64,7 +65,7 @@ reindexer::span<int> randIntArray() {
 }
 
 template <size_t L>
-reindexer::span<int64_t> randInt64Array() {
+reindexer::span<const int64_t> randInt64Array() {
 	static int64_t ret[L];
 	for (size_t i = 0; i < L; ++i) {
 		ret[i] = rand();
@@ -73,7 +74,7 @@ reindexer::span<int64_t> randInt64Array() {
 }
 
 template <size_t L>
-reindexer::span<double> randDoubleArray() {
+reindexer::span<const double> randDoubleArray() {
 	static double ret[L];
 	for (size_t i = 0; i < L; ++i) {
 		ret[i] = double(rand()) / (rand() + 1);
@@ -82,7 +83,7 @@ reindexer::span<double> randDoubleArray() {
 }
 
 template <size_t L>
-reindexer::span<std::string> randStringArray() {
+reindexer::span<const std::string> randStringArray() {
 	static std::string ret[L];
 	for (size_t i = 0; i < L; ++i) {
 		ret[i] = randString(L);

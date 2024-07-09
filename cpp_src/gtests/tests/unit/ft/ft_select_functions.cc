@@ -14,7 +14,6 @@ public:
 	reindexer::FtFastConfig GetDefaultConfig(size_t fieldsCount = 2) override {
 		reindexer::FtFastConfig cfg(fieldsCount);
 		cfg.enableNumbersSearch = true;
-		cfg.enableWarmupOnNsCopy = true;
 		cfg.logLevel = 5;
 		cfg.mergeLimit = 20000;
 		cfg.maxStepSize = 100;

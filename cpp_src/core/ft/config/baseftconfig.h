@@ -33,7 +33,6 @@ public:
 	bool enableTranslit = true;
 	bool enableKbLayout = true;
 	bool enableNumbersSearch = false;
-	bool enableWarmupOnNsCopy = false;
 
 	StopWordsSetT stopWords;
 	std::vector<Synonym> synonyms;

@@ -31,12 +31,12 @@ public:
 	JsonBuilder Array(int tagName, int size = KUnknownFieldSize) { return Array(getNameByTag(tagName), size); }
 
 	template <typename T>
-	void Array(int tagName, span<T> data, int /*offset*/ = 0) {
+	void Array(int tagName, span<const T> data, int /*offset*/ = 0) {
 		JsonBuilder node = Array(tagName);
 		for (const auto &d : data) node.Put({}, d);
 	}
 	template <typename T>
-	void Array(std::string_view n, span<T> data, int /*offset*/ = 0) {
+	void Array(std::string_view n, span<const T> data, int /*offset*/ = 0) {
 		JsonBuilder node = Array(n);
 		for (const auto &d : data) node.Put({}, d);
 	}

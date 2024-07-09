@@ -1,8 +1,8 @@
 #pragma once
 
+#include <deque>
 #include "core/cjson/tagspath.h"
 #include "core/payload/fieldsset.h"
-#include <deque>
 #include "core/payload/payloadiface.h"
 #include "core/type_consts.h"
 
@@ -17,8 +17,10 @@ public:
 	[[nodiscard]] virtual TagType Type(TagType oldTagType) = 0;
 	virtual void Recode(Serializer &, WrSerializer &) const = 0;
 	virtual void Recode(Serializer &, Payload &, int tagName, WrSerializer &) = 0;
-	[[nodiscard]] virtual bool Match(int field) const noexcept = 0;
-	[[nodiscard]] virtual bool Match(const TagsPath &) const noexcept = 0;
+	[[nodiscard]] virtual bool Match(int field) noexcept = 0;
+	[[nodiscard]] virtual bool Match(TagType, const TagsPath &) = 0;
+	virtual void Serialize(WrSerializer &wrser) = 0;
+	virtual bool Reset() = 0;
 	virtual ~Recoder() = default;
 };
 
@@ -91,9 +93,10 @@ public:
 	public:
 		RX_ALWAYS_INLINE DummyRecoder MakeCleanCopy() const noexcept { return DummyRecoder(); }
 		RX_ALWAYS_INLINE bool Recode(Serializer &, WrSerializer &) const noexcept { return false; }
-		RX_ALWAYS_INLINE bool Recode(Serializer &, Payload &, [[maybe_unused]] int tagName, WrSerializer &) const noexcept { return false; }
-		RX_ALWAYS_INLINE TagType RegisterTagType(TagType oldTagType, [[maybe_unused]] int field) const noexcept { return oldTagType; }
-		RX_ALWAYS_INLINE TagType RegisterTagType(TagType oldTagType, const TagsPath &) const noexcept { return oldTagType; }
+		RX_ALWAYS_INLINE bool Recode(Serializer &, Payload &, int, WrSerializer &) const noexcept { return false; }
+		RX_ALWAYS_INLINE TagType RegisterTagType(TagType tagType, int) const noexcept { return tagType; }
+		RX_ALWAYS_INLINE TagType RegisterTagType(TagType tagType, const TagsPath &) const noexcept { return tagType; }
+		RX_ALWAYS_INLINE void Serialize(WrSerializer &) const {}
 	};
 	class DefaultRecoder {
 	public:
@@ -107,20 +110,21 @@ public:
 			}
 			return needToRecode_;
 		}
-		RX_ALWAYS_INLINE bool Recode(Serializer &s, Payload &p, int tagName, WrSerializer &wser) const {
+		RX_ALWAYS_INLINE bool Recode(Serializer &ser, Payload &pl, int tagName, WrSerializer &wser) const {
 			if (needToRecode_) {
-				r_->Recode(s, p, tagName, wser);
+				r_->Recode(ser, pl, tagName, wser);
 			}
 			return needToRecode_;
 		}
-		RX_ALWAYS_INLINE TagType RegisterTagType(TagType oldTagType, int field) {
+		RX_ALWAYS_INLINE TagType RegisterTagType(TagType tagType, int field) {
 			needToRecode_ = r_->Match(field);
-			return needToRecode_ ? r_->Type(oldTagType) : oldTagType;
+			return needToRecode_ ? r_->Type(tagType) : tagType;
 		}
-		RX_ALWAYS_INLINE TagType RegisterTagType(TagType oldTagType, const TagsPath &tagsPath) {
-			needToRecode_ = r_->Match(tagsPath);
-			return needToRecode_ ? r_->Type(oldTagType) : oldTagType;
+		RX_ALWAYS_INLINE TagType RegisterTagType(TagType tagType, const TagsPath &tagsPath) {
+			needToRecode_ = r_->Match(tagType, tagsPath);
+			return needToRecode_ ? r_->Type(tagType) : tagType;
 		}
+		RX_ALWAYS_INLINE void Serialize(WrSerializer &wser) const { r_->Serialize(wser); }
 
 	private:
 		Recoder *r_;
@@ -143,9 +147,9 @@ public:
 #ifdef RX_WITH_STDLIB_DEBUG
 		std::abort();
 #else
-		// Search of the indexed fields inside the object arrays is not imlpemented
-		// Possible implementation has noticable negative effect on 'FromCJSONPKOnly' benchmark.
-		// Currently we are using filter for PKs only, and PKs can not be arrays, so this code actually will never be called at the
+		// Search of the indexed fields inside the object arrays is not implemented
+		// Possible implementation has noticeable negative impact on 'FromCJSONPKOnly' benchmark.
+		// Currently, we are using filter for PKs only, and PKs can not be arrays, so this code actually will never be called at the
 		// current moment
 		decodeCJson(pl, rdSer, wrSer, DummyFilter(), recoder, NamelessTagOpt{});
 #endif	// RX_WITH_STDLIB_DEBUG

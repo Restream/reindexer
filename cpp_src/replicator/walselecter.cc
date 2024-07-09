@@ -59,8 +59,8 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 						start--;
 					} else if (count) {
 						// Put as usual ItemRef
-						assertf(lsn_t(ns_->items_[rec.id].GetLSN()).Counter() == (lsn_t(it.GetLSN()).Counter()), "lsn %ld != %ld, ns=%s",
-								ns_->items_[rec.id].GetLSN(), it.GetLSN(), ns_->name_);
+						[[maybe_unused]] const auto iLSN = lsn_t(ns_->items_[rec.id].GetLSN());
+						assertf(iLSN.Counter() == (lsn_t(it.GetLSN()).Counter()), "lsn %ld != %ld, ns=%s", iLSN, it.GetLSN(), ns_->name_);
 						result.Add(ItemRef(rec.id, ns_->items_[rec.id]));
 						count--;
 					}

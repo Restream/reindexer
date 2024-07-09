@@ -1,17 +1,17 @@
 #pragma once
 #include "core/query/query.h"
 #include "core/queryresults/queryresults.h"
-#include "ctx/basefunctionctx.h"
 #include "nsselectfuncinterface.h"
+#include "selectfuncparser.h"
 
 namespace reindexer {
 class NamespaceImpl;
 
 /// Represents sql function in a query
 /// (like avg(x) or sum(x)).
-class SelectFunction {
+class SelectFunction : public intrusive_atomic_rc_base {
 public:
-	typedef std::shared_ptr<SelectFunction> Ptr;
+	typedef intrusive_ptr<SelectFunction> Ptr;
 	SelectFunction(const Query& q, NsSelectFuncInterface&& nm);
 
 	/// Processes selected item to apply sql function.

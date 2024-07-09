@@ -30,9 +30,9 @@ void VerifyQueryResult(const QueryResults& qr, const std::vector<std::string>& f
 	EXPECT_TRUE(fields.size() == keys.size());
 	EXPECT_TRUE(keys.size() == condTypes.size());
 	size_t totalFound = 0;
-	for (size_t i = 0; i < qr.Count(); ++i) {
+	for (auto &item : qr) {
 		size_t len = INT_MAX;
-		Item it = qr[i].GetItem(false);
+		Item it = item.GetItem(false);
 
 		std::vector<VariantArray> vals(keys.size());
 		for (size_t j = 0; j < fields.size(); ++j) {

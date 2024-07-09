@@ -86,6 +86,24 @@ TEST_F(ReplicationLoadApi, Base) {
 	WaitSync("some1");
 }
 
+TEST_F(ReplicationLoadApi, UpdateTimeAfterRestart) {
+	InitNs();
+
+	constexpr std::string_view kNs = "some";
+	constexpr int kTargetSrv = 1;
+	SetOptmizationSortWorkers(kTargetSrv, 0, kNs);
+
+	FillData(10);
+	WaitSync(kNs);
+
+	const auto state0 = GetSrv(kTargetSrv)->GetState(kNs);
+	EXPECT_GT(state0.updateUnixNano, 0);
+
+	RestartServer(kTargetSrv);
+	const auto state1 = GetSrv(kTargetSrv)->GetState(kNs);
+	ASSERT_EQ(state0.updateUnixNano, state1.updateUnixNano);
+}
+
 TEST_F(ReplicationLoadApi, BaseTagsMatcher) {
 	StopServer(1);
 	StopServer(2);

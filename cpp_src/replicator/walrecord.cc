@@ -62,7 +62,7 @@ void WALRecord::Pack(WrSerializer &ser) const {
 	std::abort();
 }
 
-WALRecord::WALRecord(span<uint8_t> packed) {
+WALRecord::WALRecord(span<const uint8_t> packed) {
 	if (!packed.size()) {
 		type = WalEmpty;
 		return;
@@ -270,7 +270,7 @@ void WALRecord::GetJSON(JsonBuilder &jb, const std::function<std::string(std::st
 	std::abort();
 }
 
-WALRecord::WALRecord(std::string_view data) : WALRecord(span<uint8_t>(reinterpret_cast<const uint8_t *>(data.data()), data.size())) {}
+WALRecord::WALRecord(std::string_view data) : WALRecord(span<const uint8_t>(reinterpret_cast<const uint8_t *>(data.data()), data.size())) {}
 
 SharedWALRecord WALRecord::GetShared(int64_t lsn, int64_t upstreamLSN, std::string_view nsName) const {
 	if (!shared_.packed_) {

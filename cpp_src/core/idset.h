@@ -227,5 +227,6 @@ protected:
 };
 
 using IdSetRef = span<IdType>;
+using IdSetCRef = span<const IdType>;
 
 }  // namespace reindexer

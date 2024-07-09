@@ -55,9 +55,9 @@ public:
 			assertf(idx_ % wt_->walSize_ < int(wt_->records_.size()), "idx=%d,wt_->records_.size()=%d,lsnCounter=%d", idx_,
 					wt_->records_.size(), wt_->lsnCounter_);
 
-			return WALRecord(span<uint8_t>(wt_->records_[idx_ % wt_->walSize_]));
+			return WALRecord(span<const uint8_t>(wt_->records_[idx_ % wt_->walSize_]));
 		}
-		span<uint8_t> GetRaw() const noexcept { return wt_->records_[idx_ % wt_->walSize_]; }
+		span<const uint8_t> GetRaw() const noexcept { return wt_->records_[idx_ % wt_->walSize_]; }
 		int64_t GetLSN() const noexcept { return idx_; }
 		int64_t idx_;
 		const WALTracker *wt_;

@@ -53,7 +53,7 @@ public:
 	FtDSLQuery(const RHashMap<std::string, int> &fields, const StopWordsSetT &stopWords, const std::string &extraWordSymbols) noexcept
 		: fields_(fields), stopWords_(stopWords), extraWordSymbols_(extraWordSymbols) {}
 	void parse(std::wstring &utf16str);
-	void parse(const std::string &q);
+	void parse(std::string_view q);
 	FtDSLQuery CopyCtx() const noexcept { return {fields_, stopWords_, extraWordSymbols_}; }
 
 protected:

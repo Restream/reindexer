@@ -32,11 +32,10 @@ if (ENABLE_GRPC)
             set_source_files_properties(${GENERATED_PROTO_DIR}/${CUR_FILE_OUT}.h ${GENERATED_PROTO_DIR}/${CUR_FILE_OUT}.cc PROPERTIES COMPILE_FLAGS "-Wno-all -Wno-extra -Wno-error -Wno-old-style-cast")
         endforeach (CUR_PROTO_FILE)
         add_definitions(-DWITH_PROTOBUF=1)
-	include_directories(${REINDEXER_BINARY_PATH}/server/grpc ${GENERATED_PROTO_DIR})
+        include_directories(${REINDEXER_BINARY_PATH}/server/grpc ${GENERATED_PROTO_DIR})
     else()
         message("Protobuf not found")
     endif()
-    
 endif()
 
 
@@ -47,7 +46,7 @@ list(REMOVE_ITEM SRCS ${FUZZING_SRCS})
 add_executable(${TARGET} ${SRCS})
 add_executable(${FUZZING_TARGET} ${FUZZING_SRCS})
 
-# Enable export to provide readble stacktraces
+# Enable export to provide readable stacktraces
 set_property(TARGET ${TARGET} PROPERTY ENABLE_EXPORTS 1)
 set_property(TARGET ${FUZZING_TARGET} PROPERTY ENABLE_EXPORTS 1)
 

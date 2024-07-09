@@ -4,29 +4,17 @@
 
 namespace reindexer {
 
-TagType kvType2Tag(KeyValueType kvType) {
-	return kvType.EvaluateOneOf([](OneOf<KeyValueType::Int, KeyValueType::Int64>) noexcept { return TAG_VARINT; },
-								[](KeyValueType::Bool) noexcept { return TAG_BOOL; },
-								[](KeyValueType::Double) noexcept { return TAG_DOUBLE; },
-								[](KeyValueType::String) noexcept { return TAG_STRING; },
-								[](OneOf<KeyValueType::Undefined, KeyValueType::Null>) noexcept { return TAG_NULL; },
-								[](KeyValueType::Uuid) noexcept { return TAG_UUID; },
-								[kvType](OneOf<KeyValueType::Composite, KeyValueType::Tuple>) -> TagType {
-									throw Error(errLogic, "Unexpected value type: '%s'", kvType.Name());
-								});
-}
-
 TagType arrayKvType2Tag(const VariantArray &values) {
 	if (values.empty()) {
 		return TAG_NULL;
 	}
 
 	auto it = values.begin();
-	const auto type = kvType2Tag(it->Type());
+	const auto type = it->Type().ToTagType();
 
 	++it;
 	for (auto end = values.end(); it != end; ++it) {
-		if (type != kvType2Tag(it->Type())) {
+		if (type != it->Type().ToTagType()) {
 			return TAG_OBJECT;	// heterogeneously array detected
 		}
 	}
@@ -83,7 +71,7 @@ void putCJsonValue(TagType tagType, int tagName, const VariantArray &values, WrS
 		wrser.PutCArrayTag(carraytag{values.size(), elemType});
 		if (elemType == TAG_OBJECT) {
 			for (const Variant &value : values) {
-				auto itemType = kvType2Tag(value.Type());
+				auto itemType = value.Type().ToTagType();
 				wrser.PutCTag(ctag{itemType});
 				copyCJsonValue(itemType, value, wrser);
 			}

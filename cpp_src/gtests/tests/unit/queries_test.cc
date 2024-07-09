@@ -634,7 +634,7 @@ TEST_F(QueriesApi, DslGenerateParse) {
 			const Query& q = std::get<Query>(expected);
 			if (direction & GEN) {
 				reindexer::WrSerializer ser;
-				reindexer::prettyPrintJSON(reindexer::giftStr(q.GetJSON()), ser, 3);
+				reindexer::prettyPrintJSON(q.GetJSON(), ser, 3);
 				EXPECT_EQ(ser.Slice(), dsl);
 			}
 			if (direction & PARSE) {

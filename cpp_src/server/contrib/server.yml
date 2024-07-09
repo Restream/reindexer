@@ -4,7 +4,7 @@ info:
     **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
     Reindexer's goal is to provide fast search with complex queries.
     Reindexer is compact, fast and it does not have heavy dependencies.
-  version: "3.26.0"
+  version: "3.27.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -2842,10 +2842,6 @@ definitions:
         type: boolean
         default: false
         description: "Enable number variants processing. e.g. term '100' will match words one hundred"
-      enable_warmup_on_ns_copy:
-        type: boolean
-        default: false
-        description: "Enable auto index warmup after atomic namespace copy on transaction"
       enable_kb_layout:
         type: boolean
         default: true

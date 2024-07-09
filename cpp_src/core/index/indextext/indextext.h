@@ -46,7 +46,6 @@ public:
 		this->isBuilt_ = true;
 	}
 	void SetSortedIdxCount(int) override final {}
-	bool RequireWarmupOnNsCopy() const noexcept override final { return cfg_ && cfg_->enableWarmupOnNsCopy; }
 	void DestroyCache() override {
 		Base::DestroyCache();
 		cache_ft_.reset();

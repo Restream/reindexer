@@ -7,7 +7,7 @@ namespace reindexer {
 template <bool Array>
 class RecoderUuidToString : public Recoder {
 public:
-	RecoderUuidToString(TagsPath tp) noexcept : tagsPath_{std::move(tp)} {}
+	explicit RecoderUuidToString(TagsPath tp) noexcept : tagsPath_{std::move(tp)} {}
 	[[nodiscard]] TagType Type([[maybe_unused]] TagType oldTagType) noexcept override final {
 		if constexpr (Array) {
 			assertrx(oldTagType == TAG_ARRAY);
@@ -18,9 +18,11 @@ public:
 		}
 	}
 	void Recode(Serializer &, WrSerializer &) const override final;
-	void Recode(Serializer &, Payload &, int /*tagName*/, WrSerializer &) override final { assertrx(0); }
-	[[nodiscard]] bool Match(int) const noexcept override final { return false; }
-	[[nodiscard]] bool Match(const TagsPath &tp) const noexcept override final { return tagsPath_ == tp; }
+	void Recode(Serializer &, Payload &, int, WrSerializer &) override final { assertrx(false); }
+	[[nodiscard]] bool Match(int) noexcept override final { return false; }
+	[[nodiscard]] bool Match(TagType, const TagsPath &tp) noexcept override final { return tagsPath_ == tp; }
+	void Serialize(WrSerializer &) override final {}
+	bool Reset() override final { return false; }
 
 private:
 	TagsPath tagsPath_;
@@ -44,7 +46,7 @@ inline void RecoderUuidToString<true>::Recode(Serializer &rdser, WrSerializer &w
 
 class RecoderStringToUuidArray : public Recoder {
 public:
-	RecoderStringToUuidArray(int f) noexcept : field_{f} {}
+	explicit RecoderStringToUuidArray(int f) noexcept : field_{f} {}
 	[[nodiscard]] TagType Type(TagType oldTagType) override final {
 		fromNotArrayField_ = oldTagType != TAG_ARRAY;
 		if (fromNotArrayField_ && oldTagType != TAG_STRING) {
@@ -52,9 +54,9 @@ public:
 		}
 		return TAG_ARRAY;
 	}
-	[[nodiscard]] bool Match(int f) const noexcept override final { return f == field_; }
-	[[nodiscard]] bool Match(const TagsPath &) const noexcept override final { return false; }
-	void Recode(Serializer &, WrSerializer &) const override final { assertrx(0); }
+	[[nodiscard]] bool Match(int f) noexcept override final { return f == field_; }
+	[[nodiscard]] bool Match(TagType, const TagsPath &) noexcept override final { return false; }
+	void Recode(Serializer &, WrSerializer &) const override final { assertrx(false); }
 	void Recode(Serializer &rdser, Payload &pl, int tagName, WrSerializer &wrser) override final {
 		if (fromNotArrayField_) {
 			pl.Set(field_, Variant{rdser.GetStrUuid()}, true);
@@ -76,16 +78,18 @@ public:
 			wrser.PutVarUint(count);
 		}
 	}
+	void Serialize(WrSerializer &) override final {}
+	bool Reset() override final { return false; }
 
 private:
+	const int field_{std::numeric_limits<int>::max()};
 	VariantArray varBuf_;
-	int field_;
 	bool fromNotArrayField_{false};
 };
 
 class RecoderStringToUuid : public Recoder {
 public:
-	RecoderStringToUuid(int f) noexcept : field_{f} {}
+	explicit RecoderStringToUuid(int f) noexcept : field_{f} {}
 	[[nodiscard]] TagType Type(TagType oldTagType) override final {
 		if (oldTagType == TAG_ARRAY) {
 			throw Error(errLogic, "Cannot convert array field to not array UUID");
@@ -94,16 +98,18 @@ public:
 		}
 		return TAG_UUID;
 	}
-	[[nodiscard]] bool Match(int f) const noexcept override final { return f == field_; }
-	[[nodiscard]] bool Match(const TagsPath &) const noexcept override final { return false; }
-	void Recode(Serializer &, WrSerializer &) const override final { assertrx(0); }
+	[[nodiscard]] bool Match(int f) noexcept override final { return f == field_; }
+	[[nodiscard]] bool Match(TagType, const TagsPath &) noexcept override final { return false; }
+	void Recode(Serializer &, WrSerializer &) const override final { assertrx(false); }
 	void Recode(Serializer &rdser, Payload &pl, int tagName, WrSerializer &wrser) override final {
 		pl.Set(field_, Variant{rdser.GetStrUuid()}, true);
 		wrser.PutCTag(ctag{TAG_UUID, tagName, field_});
 	}
+	void Serialize(WrSerializer &) override final {}
+	bool Reset() override final { return false; }
 
 private:
-	int field_;
+	const int field_{std::numeric_limits<int>::max()};
 };
 
 }  // namespace reindexer

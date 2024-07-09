@@ -2,83 +2,79 @@
 
 namespace reindexer {
 
-FtCtx::FtCtx() {
-	data_ = std::make_shared<Data>();
-	this->type = BaseFunctionCtx::kFtCtx;
-}
-
-int16_t FtCtx::Proc(size_t pos) {
-	if (pos >= data_->proc_.size()) return 0;
-	return data_->proc_[pos];
-}
-void FtCtx::Reserve(size_t size) { data_->proc_.reserve(size); }
-
-size_t FtCtx::Size() const noexcept { return data_->proc_.size(); }
-
-bool FtCtx::NeedArea() const noexcept { return data_->need_area_; }
-
 bool FtCtx::PrepareAreas(const RHashMap<std::string, int> &fields, const std::string &name) {
-	if (!fields.empty()) data_->is_composite_ = true;
+	assertrx_dbg(!NeedArea());
+	auto &data = *data_;
+	if (!fields.empty()) {
+		data.isComposite_ = true;
+	}
 
-	if (data_->is_composite_) {
+	bool needArea = false;
+	if (data.isComposite_) {
 		for (auto &field : fields) {
-			data_->need_area_ =
-				CheckFunction(field.first, {SelectFuncStruct::SelectFuncType::Snippet, SelectFuncStruct::SelectFuncType::SnippetN,
-											SelectFuncStruct::SelectFuncType::Highlight});
-			if (data_->need_area_) return true;
+			needArea = CheckFunction(field.first, {SelectFuncType::Snippet, SelectFuncType::SnippetN, SelectFuncType::Highlight});
+			if (needArea) {
+				break;
+			}
 		}
 	}
-	data_->need_area_ = CheckFunction(name, {SelectFuncStruct::SelectFuncType::Snippet, SelectFuncStruct::SelectFuncType::SnippetN,
-											 SelectFuncStruct::SelectFuncType::Highlight});
-	return data_->need_area_;
+	needArea = needArea || CheckFunction(name, {SelectFuncType::Snippet, SelectFuncType::SnippetN, SelectFuncType::Highlight});
+	if (needArea) {
+		data.InitHolders();
+	}
+	return needArea;
 }
 
 template <typename InputIterator>
 void FtCtx::Add(InputIterator begin, InputIterator end, int16_t proc, AreaHolder &&holder) {
-	data_->area_.emplace_back(std::move(holder));
+	auto &data = *data_;
+	data.area_.emplace_back(std::move(holder));
 	for (; begin != end; ++begin) {
-		data_->proc_.push_back(proc);
-		if (data_->need_area_) {
-			data_->holders_.emplace(*begin, data_->area_.size() - 1);
+		data.proc_.emplace_back(proc);
+		if (data.holders_.has_value()) {
+			data.holders_->emplace(*begin, data_->area_.size() - 1);
 		}
 	}
 }
 
 template <typename InputIterator>
 void FtCtx::Add(InputIterator begin, InputIterator end, int16_t proc) {
+	auto &data = *data_;
 	for (; begin != end; ++begin) {
-		data_->proc_.push_back(proc);
+		data.proc_.emplace_back(proc);
 	}
 }
 
 template <typename InputIterator>
 void FtCtx::Add(InputIterator begin, InputIterator end, int16_t proc, const std::vector<bool> &mask, AreaHolder &&holder) {
-	data_->area_.emplace_back(std::move(holder));
+	auto &data = *data_;
+	data.area_.emplace_back(std::move(holder));
 	for (; begin != end; ++begin) {
 		assertrx(static_cast<size_t>(*begin) < mask.size());
 		if (!mask[*begin]) continue;
-		data_->proc_.push_back(proc);
-		if (data_->need_area_) {
-			data_->holders_.emplace(*begin, data_->area_.size() - 1);
+		data.proc_.emplace_back(proc);
+		if (data.holders_.has_value()) {
+			data.holders_->emplace(*begin, data.area_.size() - 1);
 		}
 	}
 }
 
 template <typename InputIterator>
 void FtCtx::Add(InputIterator begin, InputIterator end, int16_t proc, const std::vector<bool> &mask) {
+	auto &data = *data_;
 	for (; begin != end; ++begin) {
 		assertrx(static_cast<size_t>(*begin) < mask.size());
 		if (!mask[*begin]) continue;
-		data_->proc_.push_back(proc);
+		data.proc_.emplace_back(proc);
 	}
 }
 
-template void FtCtx::Add<span<IdType>::iterator>(span<IdType>::iterator begin, span<IdType>::iterator end, int16_t proc,
-												 AreaHolder &&holder);
-template void FtCtx::Add<span<IdType>::iterator>(span<IdType>::iterator begin, span<IdType>::iterator end, int16_t proc,
-												 const std::vector<bool> &, AreaHolder &&holder);
-template void FtCtx::Add<span<IdType>::iterator>(span<IdType>::iterator begin, span<IdType>::iterator end, int16_t proc);
-template void FtCtx::Add<span<IdType>::iterator>(span<IdType>::iterator begin, span<IdType>::iterator end, int16_t proc,
-												 const std::vector<bool> &);
+template void FtCtx::Add<span<const IdType>::iterator>(span<const IdType>::iterator begin, span<const IdType>::iterator end, int16_t proc,
+													   AreaHolder &&holder);
+template void FtCtx::Add<span<const IdType>::iterator>(span<const IdType>::iterator begin, span<const IdType>::iterator end, int16_t proc,
+													   const std::vector<bool> &, AreaHolder &&holder);
+template void FtCtx::Add<span<const IdType>::iterator>(span<const IdType>::iterator begin, span<const IdType>::iterator end, int16_t proc);
+template void FtCtx::Add<span<const IdType>::iterator>(span<const IdType>::iterator begin, span<const IdType>::iterator end, int16_t proc,
+													   const std::vector<bool> &);
 
 }  // namespace reindexer

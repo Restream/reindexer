@@ -25,8 +25,7 @@ public:
 				throw Error(errParams, "Array item should not be an empty value");
 			}
 		}
-
-		std::fill(fieldsArrayOffsets.begin(), fieldsArrayOffsets.end(), 0);
+		fieldsArrayOffsets.fill(0);
 	}
 	[[nodiscard]] bool IsForAllItems() const noexcept { return isForAllItems_; }
 
@@ -187,7 +186,7 @@ void CJsonModifier::setArray(Context &ctx) const {
 	const bool isObjsArr = (type == TAG_OBJECT);
 	for (const auto &item : ctx.value) {
 		if (isObjsArr) {
-			type = kvType2Tag(item.Type());
+			type = item.Type().ToTagType();
 			ctx.wrser.PutCTag(ctag{type});
 		}
 		copyCJsonValue(type, item, ctx.wrser);
@@ -243,7 +242,7 @@ void CJsonModifier::writeCTag(const ctag &tag, Context &ctx) {
 }
 
 void CJsonModifier::updateArray(TagType atagType, uint32_t count, int tagName, Context &ctx) {
-	assertrx_throw(!ctx.value.IsArrayValue()); // Unable to update array's element with array-value
+	assertrx_throw(!ctx.value.IsArrayValue());	// Unable to update array's element with array-value
 
 	Variant value;
 	if (!ctx.value.empty()) {
@@ -252,7 +251,7 @@ void CJsonModifier::updateArray(TagType atagType, uint32_t count, int tagName, C
 
 	// situation is possible when array was homogeneous, and new element of different type is added
 	// in this case array must change type and become heterogeneous
-	const auto valueType = kvType2Tag(value.Type());
+	const auto valueType = value.Type().ToTagType();
 	assertrx((atagType != valueType) || (atagType != TAG_OBJECT));
 
 	ctx.wrser.PutCArrayTag(carraytag{count, TAG_OBJECT});
@@ -318,7 +317,7 @@ void CJsonModifier::copyArray(int tagName, Context &ctx) {
 				value = ctx.value.front();
 			}
 			// situation is possible when array was homogeneous, and new element of different type is added
-			const auto valueType = kvType2Tag(value.Type());
+			const auto valueType = value.Type().ToTagType();
 			if ((atagType != valueType) && (atagType != TAG_OBJECT)) {
 				// back to beginning of array and rewrite as an array of objects
 				ctx.rdser.SetPos(rdserPos);
@@ -396,7 +395,7 @@ bool CJsonModifier::updateFieldInTuple(Context &ctx) {
 				throw Error(errLogic, "Update value for field [%s] cannot be empty", tagsMatcher_.tag2name(tagName));
 			} else if (ctx.value.size() == 1) {
 				const auto item = ctx.value.front();
-				copyCJsonValue(kvType2Tag(item.Type()), item, ctx.wrser);
+				copyCJsonValue(item.Type().ToTagType(), item, ctx.wrser);
 			} else {
 				throw Error(errParams, "Unexpected value to update");
 			}
@@ -540,7 +539,7 @@ bool CJsonModifier::buildCJSON(Context &ctx) {
 	}
 
 	if (tagType == TAG_ARRAY) {
-		const carraytag atag{isIndexed(field) ? carraytag(ctx.rdser.GetVarUint(), kvType2Tag(pt_.Field(tag.Field()).Type()))
+		const carraytag atag{isIndexed(field) ? carraytag(ctx.rdser.GetVarUint(), pt_.Field(tag.Field()).Type().ToTagType())
 											  : ctx.rdser.GetCArrayTag()};
 		ctx.wrser.PutCArrayTag(atag);
 		const auto arrSize = atag.Count();

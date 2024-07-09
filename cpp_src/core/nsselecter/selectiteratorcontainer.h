@@ -94,7 +94,7 @@ public:
 private:
 	bool prepareIteratorsForSelectLoop(QueryPreprocessor &, size_t begin, size_t end, unsigned sortId, bool isFt, const NamespaceImpl &,
 									   SelectFunction::Ptr &, FtCtx::Ptr &, const RdxContext &);
-	void sortByCost(span<unsigned> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations);
+	void sortByCost(span<unsigned int> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations);
 	double fullCost(span<unsigned> indexes, unsigned i, unsigned from, unsigned to, int expectedIterations) const noexcept;
 	double cost(span<unsigned> indexes, unsigned cur, int expectedIterations) const noexcept;
 	double cost(span<unsigned> indexes, unsigned from, unsigned to, int expectedIterations) const noexcept;

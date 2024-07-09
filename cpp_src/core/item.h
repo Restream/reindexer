@@ -67,20 +67,20 @@ public:
 		/// @param p - point value, which will be setted to field
 		FieldRef &operator=(Point p) {
 			double arr[]{p.X(), p.Y()};
-			return operator=(span<double>(arr, 2));
+			return operator=(span<const double>(arr, 2));
 		}
 
 		/// Set array of values to field
 		/// @tparam T - type. Must be one of: int, int64_t, double
 		/// @param arr - std::vector of T values, which will be setted to field
 		template <typename T>
-		FieldRef &operator=(span<T> arr);
+		FieldRef &operator=(span<const T> arr);
 		/// Set array of values to field
 		/// @tparam T - type. Must be one of: int, int64_t, double
 		/// @param arr - std::vector of T values, which will be setted to field
 		template <typename T>
 		FieldRef &operator=(const std::vector<T> &arr) {
-			return operator=(span<T>(arr));
+			return operator=(span<const std::remove_const_t<T>>(arr));
 		}
 		/// Set string value to field
 		/// If Item is in Unsafe Mode, then Item will not store str, but just keep pointer to str,

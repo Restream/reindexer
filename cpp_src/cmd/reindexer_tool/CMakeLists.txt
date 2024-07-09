@@ -40,7 +40,7 @@ endif()
 file(GLOB_RECURSE SRCS *.h *.cc)
 add_executable(${TARGET} ${SRCS})
 
-# Enable export to provide readble stacktraces
+# Enable export to provide readable stacktraces
 set_property(TARGET ${TARGET} PROPERTY ENABLE_EXPORTS 1)
 
 if (NOT MSVC AND NOT WITH_STDLIB_DEBUG)

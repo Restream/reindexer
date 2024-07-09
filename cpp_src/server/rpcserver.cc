@@ -309,7 +309,8 @@ Error RPCServer::EnumDatabases(cproto::Context &ctx) {
 
 	WrSerializer ser;
 	JsonBuilder jb(ser);
-	span<std::string> array(&dbList[0], dbList.size());
+	// FIXME: !!!!!!!!!!!!!!Non-const to const span cats
+	span<const std::string> array(&dbList[0], dbList.size());
 	jb.Array("databases"sv, array);
 	jb.End();
 

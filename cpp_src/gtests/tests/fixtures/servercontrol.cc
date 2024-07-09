@@ -355,12 +355,12 @@ void ServerControl::Drop() {
 	interface.reset();
 }
 
-ReplicationStateApi ServerControl::Interface::GetState(const std::string& ns) {
-	Query qr = Query("#memstats").Where("name", CondEq, ns);
+ReplicationTestState ServerControl::Interface::GetState(std::string_view ns) {
+	Query qr = Query("#memstats").Where("name", CondEq, p_string(&ns));
 	BaseApi::QueryResultsType res(api.reindexer.get());
 	auto err = api.reindexer->Select(qr, res);
 	EXPECT_TRUE(err.ok()) << err.what();
-	ReplicationStateApi state{lsn_t(), lsn_t(), 0, 0, false};
+	ReplicationTestState state;
 	for (auto it : res) {
 		WrSerializer ser;
 		err = it.GetJSON(ser, false);
@@ -377,6 +377,7 @@ ReplicationStateApi ServerControl::Interface::GetState(const std::string& ns) {
 		state.dataCount = root["replication"]["data_count"].As<int64_t>();
 		state.dataHash = root["replication"]["data_hash"].As<uint64_t>();
 		state.slaveMode = root["replication"]["slave_mode"].As<bool>();
+		state.updateUnixNano = root["replication"]["updated_unix_nano"].As<uint64_t>();
 
 		/*		std::cout << "\n"
 					  << std::hex << "lsn = " << int64_t(state.lsn) << std::dec << " dataCount = " << state.dataCount

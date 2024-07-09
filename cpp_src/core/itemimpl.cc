@@ -31,8 +31,8 @@ void ItemImpl::SetField(int field, const VariantArray &krs) {
 	}
 }
 
-void ItemImpl::ModifyField(std::string_view jsonPath, const VariantArray &keys, const IndexExpressionEvaluator &ev, FieldModifyMode mode) {
-	ModifyField(tagsMatcher_.path2indexedtag(jsonPath, ev, mode != FieldModeDrop), keys, mode);
+void ItemImpl::ModifyField(std::string_view jsonPath, const VariantArray &keys, FieldModifyMode mode) {
+	ModifyField(tagsMatcher_.path2indexedtag(jsonPath, mode != FieldModeDrop), keys, mode);
 }
 
 void ItemImpl::ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &keys, FieldModifyMode mode) {
@@ -76,10 +76,8 @@ void ItemImpl::ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &
 	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())), Variant::no_hold_t{}));
 }
 
-void ItemImpl::SetField(std::string_view jsonPath, const VariantArray &keys, const IndexExpressionEvaluator &ev) {
-	ModifyField(jsonPath, keys, ev, FieldModeSet);
-}
-void ItemImpl::DropField(std::string_view jsonPath, const IndexExpressionEvaluator &ev) { ModifyField(jsonPath, {}, ev, FieldModeDrop); }
+void ItemImpl::SetField(std::string_view jsonPath, const VariantArray &keys) { ModifyField(jsonPath, keys, FieldModeSet); }
+void ItemImpl::DropField(std::string_view jsonPath) { ModifyField(jsonPath, {}, FieldModeDrop); }
 Variant ItemImpl::GetField(int field) { return GetPayload().Get(field, 0); }
 void ItemImpl::GetField(int field, VariantArray &values) { GetPayload().Get(field, values); }
 
@@ -221,7 +219,7 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
 		}
 	}
 
-	size_t len;
+	size_t len = 0;
 	gason::JsonNode node;
 	gason::JsonParser parser(&largeJSONStrings_);
 	try {
@@ -249,9 +247,9 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
 	return err;
 }
 
-void ItemImpl::FromCJSON(ItemImpl *other, Recoder *recoder) {
-	FromCJSON(other->GetCJSON(), false, recoder);
-	cjson_ = std::string_view();
+void ItemImpl::FromCJSON(ItemImpl &other, Recoder *recoder) {
+	FromCJSON(other.GetCJSON(), false, recoder);
+	cjson_ = {};
 }
 
 std::string_view ItemImpl::GetJSON() {

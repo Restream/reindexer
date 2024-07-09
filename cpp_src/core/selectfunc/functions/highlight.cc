@@ -3,6 +3,8 @@
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
 #include "core/selectfunc/ctx/ftctx.h"
+#include "core/selectfunc/selectfuncparser.h"
+
 namespace reindexer {
 
 bool Highlight::Process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct &func, std::vector<key_string> &stringsHolder) {
@@ -10,10 +12,13 @@ bool Highlight::Process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 
 	if (!func.ctx || func.ctx->type != BaseFunctionCtx::kFtCtx) return false;
 
-	FtCtx::Ptr ftctx = reindexer::reinterpret_pointer_cast<FtCtx>(func.ctx);
-	auto dataFtCtx = ftctx->GetData();
-	auto it = dataFtCtx->holders_.find(res.Id());
-	if (it == dataFtCtx->holders_.end()) {
+	FtCtx::Ptr ftctx = reindexer::static_ctx_pointer_cast<FtCtx>(func.ctx);
+	auto &dataFtCtx = *ftctx->GetData();
+	if (!dataFtCtx.holders_.has_value()) {
+		return false;
+	}
+	auto it = dataFtCtx.holders_->find(res.Id());
+	if (it == dataFtCtx.holders_->end()) {
 		return false;
 	}
 
@@ -31,7 +36,7 @@ bool Highlight::Process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 	}
 
 	const std::string *data = p_string(kr[0]).getCxxstr();
-	auto pva = dataFtCtx->area_[it->second].GetAreas(func.fieldNo);
+	auto pva = dataFtCtx.area_[it->second].GetAreas(func.fieldNo);
 	if (!pva || pva->Empty()) return false;
 	auto &va = *pva;
 

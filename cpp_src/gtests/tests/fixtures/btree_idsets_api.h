@@ -21,12 +21,6 @@ public:
 
 		FillDefaultNs();
 		FillJoinedNs();
-
-		//		reindexer::logInstallWriter([](int level, char* buf) {
-		//			if (level <= LogTrace) {
-		//				std::cout << buf << std::endl;
-		//			}
-		//		});
 	}
 
 protected:

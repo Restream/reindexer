@@ -395,28 +395,19 @@ protected:
 				bld.Put(kFieldNameId, id);
 
 				reindexer::Point point{reindexer::randPoint(10)};
-				double arr[]{point.X(), point.Y()};
-				bld.Array(kFieldNamePointQuadraticRTree, reindexer::span<double>{arr, 2});
+				bld.Array(kFieldNamePointQuadraticRTree, {point.X(), point.Y()});
 
 				point = reindexer::randPoint(10);
-				arr[0] = point.X();
-				arr[1] = point.Y();
-				bld.Array(kFieldNamePointLinearRTree, reindexer::span<double>{arr, 2});
+				bld.Array(kFieldNamePointLinearRTree, {point.X(), point.Y()});
 
 				point = reindexer::randPoint(10);
-				arr[0] = point.X();
-				arr[1] = point.Y();
-				bld.Array(kFieldNamePointGreeneRTree, reindexer::span<double>{arr, 2});
+				bld.Array(kFieldNamePointGreeneRTree, {point.X(), point.Y()});
 
 				point = reindexer::randPoint(10);
-				arr[0] = point.X();
-				arr[1] = point.Y();
-				bld.Array(kFieldNamePointRStarRTree, reindexer::span<double>{arr, 2});
+				bld.Array(kFieldNamePointRStarRTree, {point.X(), point.Y()});
 
 				point = reindexer::randPoint(10);
-				arr[0] = point.X();
-				arr[1] = point.Y();
-				bld.Array(kFieldNamePointNonIndex, reindexer::span<double>{arr, 2});
+				bld.Array(kFieldNamePointNonIndex, {point.X(), point.Y()});
 			}
 			auto item = NewItem(geomNs);
 			const auto err = item.FromJSON(ser.Slice());
@@ -451,8 +442,7 @@ protected:
 		std::transform(
 			forcedSortOffsetValues.cbegin(), forcedSortOffsetValues.cend(), res.begin(),
 			column == First ? [](const std::pair<int, int>& v) { return v.first; } : [](const std::pair<int, int>& v) { return v.second; });
-		std::sort(
-			res.begin(), res.end(), desc ? [](int lhs, int rhs) { return lhs > rhs; } : [](int lhs, int rhs) { return lhs < rhs; });
+		std::sort(res.begin(), res.end(), desc ? [](int lhs, int rhs) { return lhs > rhs; } : [](int lhs, int rhs) { return lhs < rhs; });
 		const auto boundary = std::stable_partition(res.begin(), res.end(), [&forcedSortOrder, desc](int v) {
 			return desc == (std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), v) == forcedSortOrder.cend());
 		});

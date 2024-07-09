@@ -184,6 +184,7 @@ std::string utf16_to_utf8(const std::wstring &src) {
 	std::string dst;
 	return utf16_to_utf8(src, dst);
 }
+size_t utf16_to_utf8_size(const std::wstring &src) { return utf8::unchecked::utf32to8_size(src.begin(), src.end()); }
 
 // This functions calculate how many bytes takes limit symbols in UTF8 forward
 size_t calcUtf8After(std::string_view str, size_t limit) noexcept {

@@ -235,6 +235,7 @@ protected:
 
 private:
 	bool needNamespaceCopy(const NamespaceImpl::Ptr &ns, const Transaction &tx) const noexcept;
+	bool isExpectingSelectsOnNamespace(const NamespaceImpl::Ptr &ns, const RdxContext &ctx);
 	void doRename(const Namespace::Ptr &dst, const std::string &newName, const std::string &storagePath, const RdxContext &ctx);
 	NamespaceImpl::Ptr atomicLoadMainNs() const {
 		std::lock_guard<spinlock> lck(nsPtrSpinlock_);

@@ -258,7 +258,7 @@ T parseAs(std::string_view str) {
 template <>
 int Variant::As<int>() const {
 	if (isUuid()) {
-		throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}.data());
+		throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}});
 	}
 	return variant_.type.EvaluateOneOf(
 		[&](KeyValueType::Bool) noexcept -> int { return variant_.value_bool; },
@@ -269,7 +269,7 @@ int Variant::As<int>() const {
 		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) -> int {
 			throw Error(errParams, "Can't convert '%s'-value to number", Type().Name());
 		},
-		[&](KeyValueType::Uuid) -> int { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}.data()); });
+		[&](KeyValueType::Uuid) -> int { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}); });
 }
 
 static std::optional<bool> tryConvertToBool(const p_string &str) {
@@ -297,7 +297,7 @@ template <>
 bool Variant::As<bool>() const {
 	using namespace std::string_view_literals;
 	if (isUuid()) {
-		throw Error(errParams, "Can't convert '%s' to bool", std::string{Uuid{*this}}.data());
+		throw Error(errParams, "Can't convert '%s' to bool", std::string{Uuid{*this}});
 	}
 	return variant_.type.EvaluateOneOf(
 		[&](KeyValueType::Bool) noexcept { return variant_.value_bool; },
@@ -316,13 +316,13 @@ bool Variant::As<bool>() const {
 		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) -> bool {
 			throw Error(errParams, "Can't convert '%s'-value to bool", Type().Name());
 		},
-		[&](KeyValueType::Uuid) -> bool { throw Error(errParams, "Can't convert '%s' to bool", std::string{Uuid{*this}}.data()); });
+		[&](KeyValueType::Uuid) -> bool { throw Error(errParams, "Can't convert '%s' to bool", std::string{Uuid{*this}}); });
 }
 
 template <>
 int64_t Variant::As<int64_t>() const {
 	if (isUuid()) {
-		throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}.data());
+		throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}});
 	}
 	return variant_.type.EvaluateOneOf(
 		[&](KeyValueType::Bool) noexcept -> int64_t { return variant_.value_bool; },
@@ -333,13 +333,13 @@ int64_t Variant::As<int64_t>() const {
 		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) -> int64_t {
 			throw Error(errParams, "Can't convert '%s'-value to number", Type().Name());
 		},
-		[&](KeyValueType::Uuid) -> int64_t { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}.data()); });
+		[&](KeyValueType::Uuid) -> int64_t { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}); });
 }
 
 template <>
 double Variant::As<double>() const {
 	if (isUuid()) {
-		throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}.data());
+		throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}});
 	}
 	return variant_.type.EvaluateOneOf(
 		[&](KeyValueType::Bool) noexcept -> double { return variant_.value_bool; },
@@ -350,7 +350,7 @@ double Variant::As<double>() const {
 		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) -> double {
 			throw Error(errParams, "Can't convert '%s'-value to number", Type().Name());
 		},
-		[&](KeyValueType::Uuid) -> double { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}.data()); });
+		[&](KeyValueType::Uuid) -> double { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}); });
 }
 
 template <NotComparable notComparable>

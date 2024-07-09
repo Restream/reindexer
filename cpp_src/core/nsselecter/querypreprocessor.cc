@@ -514,7 +514,7 @@ const std::vector<int> *QueryPreprocessor::getCompositeIndex(int field) const no
 	return nullptr;
 }
 
-static void createCompositeKeyValues(const span<std::pair<int, VariantArray>> &values, Payload &pl, VariantArray &ret,
+static void createCompositeKeyValues(span<const std::pair<int, VariantArray>> values, Payload &pl, VariantArray &ret,
 									 uint32_t resultSetSize, uint32_t n) {
 	const auto &v = values[n];
 	for (auto it = v.second.cbegin(), end = v.second.cend(); it != end; ++it) {
@@ -531,7 +531,7 @@ static void createCompositeKeyValues(const span<std::pair<int, VariantArray>> &v
 	}
 }
 
-static VariantArray createCompositeKeyValues(const span<std::pair<int, VariantArray>> &values, const PayloadType &plType,
+static VariantArray createCompositeKeyValues(span<const std::pair<int, VariantArray>> values, const PayloadType &plType,
 											 uint32_t resultSetSize) {
 	PayloadValue d(plType.TotalSize());
 	Payload pl(plType, d);
@@ -616,7 +616,7 @@ size_t QueryPreprocessor::substituteCompositeIndexes(const size_t from, const si
 			setQueryIndex(fld, res.idx, ns_);
 			container_[first].Emplace<QueryEntry>(std::move(fld), qValues.size() == 1 ? CondEq : CondSet, std::move(qValues));
 		}
-		deleteRanges.Add(span<uint16_t>(res.entries.data() + 1, res.entries.size() - 1));
+		deleteRanges.Add(span<const uint16_t>(res.entries.data() + 1, res.entries.size() - 1));
 		resIdx = searcher.RemoveUsedAndGetNext(resIdx);
 	}
 	for (auto rit = deleteRanges.rbegin(); rit != deleteRanges.rend(); ++rit) {
@@ -1962,7 +1962,7 @@ private:
 
 void QueryPreprocessor::setQueryIndex(QueryField &qField, int idxNo, const NamespaceImpl &ns) {
 	const auto &idx = *ns.indexes_[idxNo];
-	std::vector<KeyValueType> compositeFieldsTypes;
+	QueryField::CompositeTypesVecT compositeFieldsTypes;
 	if (idxNo >= ns.indexes_.firstCompositePos()) {
 #ifndef NDEBUG
 		const bool ftIdx = IsFullText(idx.Type());

@@ -172,7 +172,7 @@ public:
 	Base::const_reverse_iterator rbegin() const noexcept { return Base::rbegin(); }
 	Base::const_reverse_iterator rend() const noexcept { return Base::rend(); }
 
-	void Add(span<uint16_t> entries) {
+	void Add(span<const uint16_t> entries) {
 		for (auto entry : entries) {
 			auto insertionPos = Base::end();
 			bool wasMerged = false;

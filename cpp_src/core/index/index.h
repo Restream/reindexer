@@ -78,7 +78,6 @@ public:
 	virtual IndexMemStat GetMemStat(const RdxContext&) = 0;
 	virtual int64_t GetTTLValue() const noexcept { return 0; }
 	virtual IndexIterator::Ptr CreateIterator() const { return nullptr; }
-	virtual bool RequireWarmupOnNsCopy() const noexcept { return false; }
 
 	virtual bool IsDestroyPartSupported() const noexcept { return false; }
 	virtual void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue&) {}

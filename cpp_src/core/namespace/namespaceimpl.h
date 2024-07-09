@@ -48,14 +48,10 @@ class QueryPreprocessor;
 class RdxContext;
 class RdxActivityContext;
 class SortExpression;
-class QueryResults;
 
 namespace long_actions {
 template <typename T>
 struct Logger;
-
-template <QueryType queryType>
-struct QueryEnum2Type;
 }  // namespace long_actions
 
 template <typename T, template <typename> class>
@@ -77,8 +73,8 @@ struct NsContext {
 	}
 
 	const RdxContext &rdxContext;
-	bool isCopiedNsRequest = false;
-	bool inTransaction = false;
+	bool isCopiedNsRequest{false};
+	bool inTransaction{false};
 };
 
 namespace composite_substitution_helpers {
@@ -92,7 +88,10 @@ enum class StoredValuesOptimizationStatus : int8_t {
 	Enabled
 };
 
-class NamespaceImpl : public intrusive_atomic_rc_base {	 // NOLINT(*performance.Padding) Padding does not matter for this class
+enum class IndexOptimization : int8_t { Partial, Full };
+
+class NamespaceImpl final : public intrusive_atomic_rc_base {  // NOLINT(*performance.Padding) Padding does not
+	// matter for this class
 	class RollBack_insertIndex;
 	class RollBack_addIndex;
 	template <NeedRollBack needRollBack>
@@ -117,7 +116,7 @@ class NamespaceImpl : public intrusive_atomic_rc_base {	 // NOLINT(*performance.
 		~IndexesCacheCleaner();
 
 	private:
-		NamespaceImpl &ns_;
+		const NamespaceImpl &ns_;
 		std::bitset<kMaxIndexes> sorts_;
 	};
 
@@ -157,17 +156,17 @@ class NamespaceImpl : public intrusive_atomic_rc_base {	 // NOLINT(*performance.
 
 	private:
 		const NamespaceImpl &ns_;
-		const int sorted_indexes_;
-		const IdType curSortId_;
+		const int sorted_indexes_{0};
+		const IdType curSortId_{-1};
 		std::vector<SortType> ids2Sorts_;
-		int64_t ids2SortsMemSize_ = 0;
+		int64_t ids2SortsMemSize_{0};
 	};
 
-	class IndexesStorage : public std::vector<std::unique_ptr<Index>> {
+	class IndexesStorage final : public std::vector<std::unique_ptr<Index>> {
 	public:
 		using Base = std::vector<std::unique_ptr<Index>>;
 
-		IndexesStorage(const NamespaceImpl &ns);
+		explicit IndexesStorage(const NamespaceImpl &ns);
 
 		IndexesStorage(const IndexesStorage &src) = delete;
 		IndexesStorage &operator=(const IndexesStorage &src) = delete;
@@ -189,20 +188,20 @@ class NamespaceImpl : public intrusive_atomic_rc_base {	 // NOLINT(*performance.
 		const NamespaceImpl &ns_;
 	};
 
-	class Items : public std::vector<PayloadValue> {
+	class Items final : public std::vector<PayloadValue> {
 	public:
 		bool exists(IdType id) const { return id < IdType(size()) && !at(id).IsFree(); }
 	};
 
 public:
 	enum OptimizationState : int { NotOptimized, OptimizedPartially, OptimizationCompleted };
-
+	enum class FieldChangeType { Add = 1, Delete = -1 };
 	using Ptr = intrusive_ptr<NamespaceImpl>;
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Namespace>;
 
 	NamespaceImpl(const std::string &_name, UpdatesObservers &observers);
 	NamespaceImpl &operator=(const NamespaceImpl &) = delete;
-	~NamespaceImpl();
+	~NamespaceImpl() override;
 
 	std::string GetName(const RdxContext &ctx) const {
 		auto rlck = rLock(ctx);
@@ -319,12 +318,13 @@ private:
 			}
 			return lck;
 		}
+		bool IsNotLocked(const RdxContext &ctx) const { return WLockT(mtx_, std::try_to_lock_t{}, ctx).owns_lock(); }
 		void MarkReadOnly() { readonly_.store(true, std::memory_order_release); }
 		std::atomic_bool &IsReadOnly() { return readonly_; }
 
 	private:
 		mutable Mutex mtx_;
-		std::atomic<bool> readonly_ = {false};
+		std::atomic_bool readonly_{false};
 	};
 
 	struct PKModifyRevertData {
@@ -348,7 +348,8 @@ private:
 
 	void initWAL(int64_t minLSN, int64_t maxLSN);
 
-	void markUpdated(bool forceOptimizeAllIndexes);
+	void markUpdated(IndexOptimization requestedOptimization);
+	void scheduleIndexOptimization(IndexOptimization requestedOptimization);
 	void doUpdate(const Query &query, QueryResults &result, const NsContext &);
 	void doDelete(const Query &query, QueryResults &result, const NsContext &);
 	void doTruncate(const NsContext &ctx);
@@ -357,9 +358,8 @@ private:
 	void doModifyItem(Item &item, ItemModifyMode mode, const NsContext &ctx);
 	void deleteItem(Item &item, const NsContext &ctx);
 	void updateTagsMatcherFromItem(ItemImpl *ritem);
-	template <NeedRollBack needRollBack>
-	[[nodiscard]] RollBack_updateItems<needRollBack> updateItems(const PayloadType &oldPlType, const FieldsSet &changedFields,
-																 int deltaFields);
+	template <NeedRollBack needRollBack, FieldChangeType fieldChangeType>
+	[[nodiscard]] RollBack_updateItems<needRollBack> updateItems(const PayloadType &oldPlType, int changedField);
 	void fillSparseIndex(Index &, std::string_view jsonPath);
 	void doDelete(IdType id);
 	void optimizeIndexes(const NsContext &);
@@ -421,8 +421,10 @@ private:
 		using namespace std::chrono;
 		lastSelectTime_ = duration_cast<seconds>(system_clock_w::now().time_since_epoch()).count();
 	}
+	bool hadSelects() const noexcept { return lastSelectTime_.load(std::memory_order_relaxed) != 0; }
 	void markReadOnly() { locker_.MarkReadOnly(); }
 	Locker::WLockT wLock(const RdxContext &ctx) const { return locker_.WLock(ctx); }
+	bool isNotLocked(const RdxContext &ctx) const { return locker_.IsNotLocked(ctx); }
 	Locker::RLockT rLock(const RdxContext &ctx) const { return locker_.RLock(ctx); }
 
 	bool SortOrdersBuilt() const noexcept { return optimizationState_.load(std::memory_order_acquire) == OptimizationCompleted; }
@@ -448,7 +450,7 @@ private:
 
 	std::unordered_map<std::string, std::string> meta_;
 
-	int sparseIndexesCount_ = 0;
+	int sparseIndexesCount_{0};
 	VariantArray krefs, skrefs;
 
 	SysRecordsVersions sysRecordsVersions_;
@@ -484,9 +486,10 @@ private:
 	}
 	size_t getWalSize(const NamespaceConfigData &cfg) const noexcept { return isSystem() ? int64_t(1) : std::max(cfg.walSize, int64_t(1)); }
 	void clearNamespaceCaches();
+	std::vector<TagsPath> pickJsonPath(const PayloadFieldType &fld);
 
 	PerfStatCounterMT updatePerfCounter_, selectPerfCounter_;
-	std::atomic<bool> enablePerfCounters_{false};
+	std::atomic_bool enablePerfCounters_{false};
 
 	NamespaceConfigData config_;
 	std::unique_ptr<QueryCountCache> queryCountCache_;
@@ -497,25 +500,25 @@ private:
 	UpdatesObservers *observers_;
 
 	StorageOpts storageOpts_;
-	std::atomic<int64_t> lastSelectTime_{0};
+	std::atomic_int64_t lastSelectTime_{0};
 
 	sync_pool<ItemImpl, 1024> pool_;
-	std::atomic<int32_t> cancelCommitCnt_{0};
-	std::atomic<int64_t> lastUpdateTime_{0};
+	std::atomic_int32_t cancelCommitCnt_{0};
+	std::atomic_int64_t lastUpdateTime_{0};
 
-	std::atomic<uint32_t> itemsCount_ = {0};
-	std::atomic<uint32_t> itemsCapacity_ = {0};
-	bool nsIsLoading_ = false;
+	std::atomic_uint32_t itemsCount_{0};
+	std::atomic_uint32_t itemsCapacity_{0};
+	bool nsIsLoading_{false};
 
-	int serverId_ = 0;
-	std::atomic<bool> serverIdChanged_{false};
-	size_t itemsDataSize_ = 0;
+	int serverId_{0};
+	std::atomic_bool serverIdChanged_{false};
+	size_t itemsDataSize_{0};
 
-	std::atomic<int> optimizationState_{OptimizationState::NotOptimized};
+	std::atomic_int optimizationState_{OptimizationState::NotOptimized};
 	StringsHolderPtr strHolder_;
 	std::deque<StringsHolderPtr> strHoldersWaitingToBeDeleted_;
 	std::chrono::seconds lastExpirationCheckTs_{0};
-	mutable std::atomic<int64_t> nsUpdateSortedContextMemory_{0};
-	std::atomic<bool> dbDestroyed_{false};
+	mutable std::atomic_int64_t nsUpdateSortedContextMemory_{0};
+	std::atomic_bool dbDestroyed_{false};
 };
 }  // namespace reindexer

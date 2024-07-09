@@ -55,14 +55,14 @@ void ReplicationApi::RestartServer(size_t id) {
 	}
 }
 
-void ReplicationApi::WaitSync(const std::string& ns) {
+void ReplicationApi::WaitSync(std::string_view ns) {
 	auto now = std::chrono::milliseconds(0);
 	const auto pause = std::chrono::milliseconds(10);
-	ReplicationStateApi state{reindexer::lsn_t(), reindexer::lsn_t(), 0, 0, false};
+	ReplicationTestState state;
 	while (state.lsn.isEmpty()) {
 		now += pause;
 		ASSERT_TRUE(now < kMaxSyncTime);
-		ReplicationStateApi xstate = GetSrv(masterId_)->GetState(ns);  // get an reference state and then compare all with it
+		ReplicationTestState xstate = GetSrv(masterId_)->GetState(ns);	// get an reference state and then compare all with it
 		for (size_t i = 0; i < svc_.size(); i++) {
 			if (i != masterId_) {
 				state = GetSrv(i)->GetState(ns);

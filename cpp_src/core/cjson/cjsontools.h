@@ -12,7 +12,6 @@ void copyCJsonValue(TagType tagType, const Variant &value, WrSerializer &wrser);
 void putCJsonRef(TagType tagType, int tagName, int tagField, const VariantArray &values, WrSerializer &wrser);
 void putCJsonValue(TagType tagType, int tagName, const VariantArray &values, WrSerializer &wrser);
 
-[[nodiscard]] TagType kvType2Tag(KeyValueType kvType);
 [[nodiscard]] TagType arrayKvType2Tag(const VariantArray &values);
 void skipCjsonTag(ctag tag, Serializer &rdser, std::array<unsigned, kMaxIndexes> *fieldsArrayOffsets = nullptr);
 [[nodiscard]] Variant cjsonValueToVariant(TagType tag, Serializer &rdser, KeyValueType dstType);

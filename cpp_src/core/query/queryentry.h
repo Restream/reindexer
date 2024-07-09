@@ -34,6 +34,8 @@ struct JoinQueryEntry {
 
 class QueryField {
 public:
+	using CompositeTypesVecT = h_vector<KeyValueType, 4>;
+
 	template <typename Str>
 	explicit QueryField(Str &&fieldName) noexcept : fieldName_{std::forward<Str>(fieldName)} {}
 	QueryField(std::string &&fieldName, int idxNo, FieldsSet fields, KeyValueType fieldType,
@@ -52,11 +54,11 @@ public:
 	[[nodiscard]] const std::string &FieldName() const & noexcept { return fieldName_; }
 	[[nodiscard]] KeyValueType FieldType() const noexcept { return fieldType_; }
 	[[nodiscard]] KeyValueType SelectType() const noexcept { return selectType_; }
-	[[nodiscard]] const std::vector<KeyValueType> &CompositeFieldsTypes() const & noexcept { return compositeFieldsTypes_; }
+	[[nodiscard]] const CompositeTypesVecT &CompositeFieldsTypes() const & noexcept { return compositeFieldsTypes_; }
 	[[nodiscard]] bool HaveEmptyField() const noexcept;
 	void SetField(FieldsSet &&fields) &;
 	void SetIndexData(int idxNo, FieldsSet &&fields, KeyValueType fieldType, KeyValueType selectType,
-					  std::vector<KeyValueType> &&compositeFieldsTypes) &;
+					  CompositeTypesVecT &&compositeFieldsTypes) &;
 
 	QueryField &operator=(const QueryField &) = delete;
 	auto Fields() const && = delete;
@@ -69,7 +71,7 @@ private:
 	FieldsSet fieldsSet_;
 	KeyValueType fieldType_{KeyValueType::Undefined{}};
 	KeyValueType selectType_{KeyValueType::Undefined{}};
-	std::vector<KeyValueType> compositeFieldsTypes_;
+	CompositeTypesVecT compositeFieldsTypes_;
 };
 
 enum class VerifyQueryEntryFlags : unsigned { null = 0u, ignoreEmptyValues = 1u };
@@ -181,7 +183,7 @@ public:
 	BetweenFieldsQueryEntry(StrL &&fstIdx, CondType cond, StrR &&sndIdx)
 		: leftField_{std::forward<StrL>(fstIdx)}, rightField_{std::forward<StrR>(sndIdx)}, condition_{cond} {
 		if (condition_ == CondAny || condition_ == CondEmpty || condition_ == CondDWithin) {
-			throw Error{errLogic, "Condition '%s' is inapplicable between two fields", std::string{CondTypeToStr(condition_)}};
+			throw Error{errLogic, "Condition '%s' is inapplicable between two fields", CondTypeToStr(condition_)};
 		}
 	}
 
@@ -197,8 +199,10 @@ public:
 	[[nodiscard]] const FieldsSet &RightFields() const & noexcept { return rightField_.Fields(); }
 	[[nodiscard]] KeyValueType LeftFieldType() const noexcept { return leftField_.FieldType(); }
 	[[nodiscard]] KeyValueType RightFieldType() const noexcept { return rightField_.FieldType(); }
-	[[nodiscard]] const std::vector<KeyValueType> &LeftCompositeFieldsTypes() const & noexcept { return leftField_.CompositeFieldsTypes(); }
-	[[nodiscard]] const std::vector<KeyValueType> &RightCompositeFieldsTypes() const & noexcept {
+	[[nodiscard]] const QueryField::CompositeTypesVecT &LeftCompositeFieldsTypes() const & noexcept {
+		return leftField_.CompositeFieldsTypes();
+	}
+	[[nodiscard]] const QueryField::CompositeTypesVecT &RightCompositeFieldsTypes() const & noexcept {
 		return rightField_.CompositeFieldsTypes();
 	}
 	[[nodiscard]] const QueryField &LeftFieldData() const & noexcept { return leftField_; }
@@ -304,7 +308,7 @@ public:
 	}
 	bool operator==(const UpdateEntry &) const noexcept;
 	bool operator!=(const UpdateEntry &obj) const noexcept { return !operator==(obj); }
-	std::string const &Column() const noexcept { return column_; }
+	std::string_view Column() const noexcept { return column_; }
 	VariantArray const &Values() const noexcept { return values_; }
 	VariantArray &Values() noexcept { return values_; }
 	FieldModifyMode Mode() const noexcept { return mode_; }
@@ -333,8 +337,10 @@ public:
 	[[nodiscard]] const FieldsSet &RightFields() const & noexcept { return rightField_.Fields(); }
 	[[nodiscard]] KeyValueType LeftFieldType() const noexcept { return leftField_.FieldType(); }
 	[[nodiscard]] KeyValueType RightFieldType() const noexcept { return rightField_.FieldType(); }
-	[[nodiscard]] const std::vector<KeyValueType> &LeftCompositeFieldsTypes() const & noexcept { return leftField_.CompositeFieldsTypes(); }
-	[[nodiscard]] const std::vector<KeyValueType> &RightCompositeFieldsTypes() const & noexcept {
+	[[nodiscard]] const QueryField::CompositeTypesVecT &LeftCompositeFieldsTypes() const & noexcept {
+		return leftField_.CompositeFieldsTypes();
+	}
+	[[nodiscard]] const QueryField::CompositeTypesVecT &RightCompositeFieldsTypes() const & noexcept {
 		return rightField_.CompositeFieldsTypes();
 	}
 	[[nodiscard]] OpType Operation() const noexcept { return op_; }
@@ -347,11 +353,11 @@ public:
 	[[nodiscard]] const QueryField &RightFieldData() const & noexcept { return rightField_; }
 	[[nodiscard]] QueryField &RightFieldData() & noexcept { return rightField_; }
 	void SetLeftIndexData(int idxNo, FieldsSet &&fields, KeyValueType fieldType, KeyValueType selectType,
-						  std::vector<KeyValueType> &&compositeFieldsTypes) & {
+						  QueryField::CompositeTypesVecT &&compositeFieldsTypes) & {
 		leftField_.SetIndexData(idxNo, std::move(fields), fieldType, selectType, std::move(compositeFieldsTypes));
 	}
 	void SetRightIndexData(int idxNo, FieldsSet &&fields, KeyValueType fieldType, KeyValueType selectType,
-						   std::vector<KeyValueType> &&compositeFieldsTypes) & {
+						   QueryField::CompositeTypesVecT &&compositeFieldsTypes) & {
 		rightField_.SetIndexData(idxNo, std::move(fields), fieldType, selectType, std::move(compositeFieldsTypes));
 	}
 	void SetLeftField(FieldsSet &&fields) & { leftField_.SetField(std::move(fields)); }

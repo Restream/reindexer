@@ -58,7 +58,7 @@ apt update
 apt install reindexer-server
 ```
 
-Available distros: `debian-bookworm`, `debian-bullseye`, `ubuntu-focal`, `ubuntu-jammy`
+Available distros: `debian-bookworm`, `debian-bullseye`, `ubuntu-focal`, `ubuntu-jammy`, `ubuntu-noble`
 
 ### Redos
 

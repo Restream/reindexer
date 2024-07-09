@@ -1,6 +1,7 @@
 #include "translit.h"
 #include <assert.h>
 #include <memory.h>
+#include "estl/span.h"
 
 namespace reindexer {
 
@@ -12,6 +13,11 @@ Translit::Translit() {
 void Translit::GetVariants(const std::wstring &data, std::vector<FtDSLVariant> &result, int proc) {
 	std::wstring strings[maxTranslitVariants];
 	Context ctx;
+	if (data.length()) {
+		for (int j = 0; j < maxTranslitVariants; ++j) {
+			strings[j].reserve(data.length());
+		}
+	}
 
 	for (size_t i = 0; i < data.length(); ++i) {
 		wchar_t symbol = data[i];
@@ -43,18 +49,18 @@ void Translit::GetVariants(const std::wstring &data, std::vector<FtDSLVariant> &
 			ctx.Clear();
 		}
 	}
-
-	std::wstring result_string;
-
+	int64_t lastResultIdx = -1;
 	for (int i = 0; i < maxTranslitVariants; ++i) {
-		auto &curent = strings[i];
-		bool skip = false;
+		auto &current = strings[i];
 		for (int j = i + 1; j < maxTranslitVariants; ++j) {
-			if (curent == strings[j]) skip = true;
+			if (current == strings[j]) {
+				current.clear();
+				break;
+			}
 		}
-		if (!skip && curent != result_string && curent.length()) {
-			result_string = curent;
-			result.emplace_back(std::move(curent), proc);
+		if (current.length() && (lastResultIdx < 0 || current != result[lastResultIdx].pattern)) {
+			lastResultIdx = result.size();
+			result.emplace_back(std::move(current), proc);
 		}
 	}
 }

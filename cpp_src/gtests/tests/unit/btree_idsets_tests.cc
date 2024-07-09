@@ -10,8 +10,8 @@ TEST_F(BtreeIdsetsApi, SelectByStringField) {
 	std::string strValueToCheck = lastStrValue;
 	Error err = rt.reindexer->Select(Query(default_namespace).Not().Where(kFieldOne, CondEq, strValueToCheck), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
-	for (size_t i = 0; i < qr.Count(); ++i) {
-		Item item = qr[i].GetItem(false);
+	for (auto &it : qr) {
+		Item item = it.GetItem(false);
 		Variant kr = item[kFieldOne];
 		EXPECT_TRUE(kr.Type().Is<reindexer::KeyValueType::String>());
 		EXPECT_TRUE(kr.As<std::string>() != strValueToCheck);
@@ -24,8 +24,8 @@ TEST_F(BtreeIdsetsApi, SelectByIntField) {
 	QueryResults qr;
 	Error err = rt.reindexer->Select(Query(default_namespace).Where(kFieldTwo, CondGe, Variant(static_cast<int>(boundaryValue))), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
-	for (size_t i = 0; i < qr.Count(); i++) {
-		Item item = qr[i].GetItem(false);
+	for (auto &it : qr) {
+		Item item = it.GetItem(false);
 		Variant kr = item[kFieldTwo];
 		EXPECT_TRUE(kr.Type().Is<reindexer::KeyValueType::Int>());
 		EXPECT_TRUE(static_cast<int>(kr) >= boundaryValue);
@@ -44,8 +44,8 @@ TEST_F(BtreeIdsetsApi, SelectByBothFields) {
 										 .Where(kFieldTwo, CondGe, Variant(static_cast<int>(boundaryValue))),
 									 qr);
 	EXPECT_TRUE(err.ok()) << err.what();
-	for (size_t i = 0; i < qr.Count(); ++i) {
-		Item item = qr[i].GetItem(false);
+	for (auto &it : qr) {
+		Item item = it.GetItem(false);
 		Variant krOne = item[kFieldOne];
 		EXPECT_TRUE(krOne.Type().Is<reindexer::KeyValueType::String>());
 		EXPECT_TRUE(strValueToCheck2.compare(krOne.As<std::string>()) > 0);
