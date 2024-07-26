@@ -1,14 +1,14 @@
 #include "rpcserver.h"
 #include <sys/stat.h>
-#include <sstream>
 #include "cluster/clustercontrolrequest.h"
-#include "cluster/raftmanager.h"
+#include "cluster/config.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/iclientsstats.h"
 #include "core/namespace/namespacestat.h"
 #include "core/namespace/snapshot/snapshot.h"
 #include "debug/crashqueryreporter.h"
+#include "events/subscriber_config.h"
 #include "net/cproto/cproto.h"
 #include "net/cproto/serverconnection.h"
 #include "reindexer_version.h"
@@ -18,16 +18,20 @@ namespace reindexer_server {
 using namespace std::string_view_literals;
 
 const size_t kMaxTxCount = 1024;
-static const reindexer::SemVersion kMinSubscriptionRxVersion("3.21.0");
+static const reindexer::SemVersion kMinSubscriptionV3RxVersion("3.21.0");
+static const reindexer::SemVersion kMinSubscriptionV4RxVersion("4.15.0");
 
 RPCClientData::~RPCClientData() {
-#ifdef REINDEX_WITH_V3_FOLLOWERS
 	Reindexer *db = nullptr;
-	auth.GetDB(kRoleNone, &db);
-	if (subscribed && db) {
-		db->UnsubscribeUpdates(&pusher);
+	auto err = auth.GetDB(kRoleNone, &db);
+	if (subscribed && db && err.ok()) {
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+		err = db->UnsubscribeUpdates(&pusherV3);
+		(void)err;	// ignore
+#endif				// REINDEX_WITH_V3_FOLLOWERS
+		err = db->UnsubscribeUpdates(pusher);
+		(void)err;	// ignore
 	}
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 }
 
 RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper &logger, IClientsStats *clientsStats, const ServerConfig &scfg,
@@ -80,13 +84,14 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 	}
 
 	clientData->rxVersion = clientRxVersion ? SemVersion(std::string_view(clientRxVersion.value())) : SemVersion();
+	clientData->pusher.SetWriter(ctx.writer);
 
 #ifdef REINDEX_WITH_V3_FOLLOWERS
 	static const reindexer::SemVersion kMinUnknownReplSupportRxVersion("2.6.0");
-	clientData->pusher.SetWriter(ctx.writer);
+	clientData->pusherV3.SetWriter(ctx.writer);
 	clientData->subscribed = false;
 	if (clientData->rxVersion < kMinUnknownReplSupportRxVersion) {
-		clientData->pusher.SetFilter([](WALRecord &rec) {
+		clientData->pusherV3.SetFilter([](WALRecord &rec) {
 			if (rec.type == WalCommitTransaction || rec.type == WalInitTransaction || rec.type == WalSetSchema) {
 				return true;
 			}
@@ -308,9 +313,12 @@ Error RPCServer::RenameNamespace(cproto::Context &ctx, p_string srcNsName, p_str
 
 Error RPCServer::CreateTemporaryNamespace(cproto::Context &ctx, p_string nsDefJson, int64_t v) {
 	NamespaceDef nsDef;
-	nsDef.FromJSON(giftStr(nsDefJson));
+	auto err = nsDef.FromJSON(giftStr(nsDefJson));
+	if (!err.ok()) {
+		return err;
+	}
 	std::string resultName;
-	auto err = getDB(ctx, kRoleDataRead).CreateTemporaryNamespace(nsDef.name, resultName, nsDef.storage, lsn_t(v));
+	err = getDB(ctx, kRoleDataRead).CreateTemporaryNamespace(nsDef.name, resultName, nsDef.storage, lsn_t(v));
 	if (err.ok()) {
 		auto clientData = getClientDataSafe(ctx);
 		clientData->tmpNss.emplace(resultName);
@@ -319,11 +327,11 @@ Error RPCServer::CreateTemporaryNamespace(cproto::Context &ctx, p_string nsDefJs
 	return err;
 }
 
-Error RPCServer::CloseNamespace(cproto::Context &ctx, p_string ns) {
+Error RPCServer::CloseNamespace(cproto::Context &, p_string /*ns*/) {
 	// Do not close.
 	// TODO: add reference counters
 	// return getDB(ctx, kRoleDataRead)->CloseNamespace(ns);
-	return getDB(ctx, kRoleDataRead).Commit(ns);
+	return {};
 }
 
 Error RPCServer::EnumNamespaces(cproto::Context &ctx, std::optional<int> opts, std::optional<p_string> filter) {
@@ -354,7 +362,8 @@ Error RPCServer::EnumDatabases(cproto::Context &ctx) {
 
 	WrSerializer ser;
 	JsonBuilder jb(ser);
-	span<std::string> array(&dbList[0], dbList.size());
+	// FIXME: !!!!!!!!!!!!!!Non-const to const span cats
+	span<const std::string> array(&dbList[0], dbList.size());
 	jb.Array("databases"sv, array);
 	jb.End();
 
@@ -448,28 +457,22 @@ Error RPCServer::AddTxItem(cproto::Context &ctx, int format, p_string itemData, 
 
 Error RPCServer::DeleteQueryTx(cproto::Context &ctx, p_string queryBin, int64_t txID) noexcept {
 	try {
-		auto db = getDB(ctx, kRoleDataWrite);
-
 		Transaction &tr = getTx(ctx, txID);
 		Serializer ser(queryBin.data(), queryBin.size());
 		Query query = Query::Deserialize(ser);
 		query.type_ = QueryDelete;
-		tr.Modify(std::move(query), ctx.call->lsn);
-		return {};
+		return tr.Modify(std::move(query), ctx.call->lsn);
 	}
 	CATCH_AND_RETURN;
 }
 
 Error RPCServer::UpdateQueryTx(cproto::Context &ctx, p_string queryBin, int64_t txID) noexcept {
 	try {
-		auto db = getDB(ctx, kRoleDataWrite);
-
 		Transaction &tr = getTx(ctx, txID);
 		Serializer ser(queryBin.data(), queryBin.size());
 		Query query = Query::Deserialize(ser);
 		query.type_ = QueryUpdate;
-		tr.Modify(std::move(query), ctx.call->lsn);
-		return {};
+		return tr.Modify(std::move(query), ctx.call->lsn);
 	}
 	CATCH_AND_RETURN;
 }
@@ -1154,7 +1157,10 @@ Error RPCServer::ApplySnapshotChunk(cproto::Context &ctx, p_string ns, p_string 
 	return getDB(ctx, kRoleDataWrite).ApplySnapshotChunk(ns, ch);
 }
 
-Error RPCServer::Commit(cproto::Context &ctx, p_string ns) { return getDB(ctx, kRoleDataWrite).Commit(ns); }
+Error RPCServer::Commit(cproto::Context &, p_string /*ns*/) {
+	// This method does nothing and remain for the backward compatibility
+	return {};
+}
 
 Error RPCServer::GetMeta(cproto::Context &ctx, p_string ns, p_string key, std::optional<int> options) {
 	if (options && options.value() == 1) {
@@ -1206,36 +1212,65 @@ Error RPCServer::DeleteMeta(cproto::Context &ctx, p_string ns, p_string key) {
 }
 
 Error RPCServer::SubscribeUpdates([[maybe_unused]] cproto::Context &ctx, [[maybe_unused]] int flag,
-								  [[maybe_unused]] std::optional<p_string> filterJson, [[maybe_unused]] std::optional<int> options) {
-#ifdef REINDEX_WITH_V3_FOLLOWERS
+								  [[maybe_unused]] std::optional<p_string> filterV3Json, [[maybe_unused]] std::optional<int> options,
+								  std::optional<p_string> subscriptionOpts) {
 	auto clientData = getClientDataSafe(ctx);
-	if (clientData->rxVersion < kMinSubscriptionRxVersion || clientData->rxVersion.Major() != 3) {
-		return Error(errForbidden, "Transition subscription version is available for v3.21.0+");
-	}
-	UpdatesFilters filters;
-	Error ret;
-	if (filterJson) {
-		filters.FromJSON(giftStr(*filterJson));
-		if (!ret.ok()) {
-			return ret;
+	if (subscriptionOpts.has_value()) {
+		if (clientData->rxVersion <= kMinSubscriptionV4RxVersion) {
+			return Error(errForbidden, "Events subscription is available for v4.16.0+");
 		}
-	}
-	SubscriptionOpts opts;
-	if (options) {
-		opts.options = *options;
-	}
-
-	auto db = getDB(ctx, kRoleDataRead);
-	if (flag) {
-		ret = db.SubscribeUpdates(&clientData->pusher, filters, opts);
+		if (filterV3Json.has_value() && !std::string_view(filterV3Json.value()).empty()) {
+			return Error(errParams, "Unable to mix v3 and v4 subscription filters");
+		}
+		if (options.has_value() && options.value() != 0) {
+			return Error(errParams, "Unable to mix v3 and v4 subscription options");
+		}
+		EventSubscriberConfig cfg;
+		auto err = cfg.FromJSON(giftStr(*subscriptionOpts));
+		if (!err.ok()) {
+			return err;
+		}
+		const auto streamsCnt = cfg.ActiveStreams();
+		auto db = getDB(ctx, kRoleDataRead);
+		if (flag) {
+			err = db.SubscribeUpdates(clientData->pusher, std::move(cfg));
+		} else {
+			err = db.UnsubscribeUpdates(clientData->pusher);
+		}
+		if (err.ok()) {
+			clientData->subscribed = flag && streamsCnt;
+		}
+		return err;
 	} else {
-		ret = db.UnsubscribeUpdates(&clientData->pusher);
-	}
-	if (ret.ok()) clientData->subscribed = bool(flag);
-	return ret;
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+		if (clientData->rxVersion < kMinSubscriptionV3RxVersion || clientData->rxVersion.Major() != 3) {
+			return Error(errForbidden, "Transition subscription version is available for v3.21.0+");
+		}
+		UpdatesFilters filters;
+		Error ret;
+		if (filterV3Json) {
+			ret = filters.FromJSON(giftStr(*filterV3Json));
+			if (!ret.ok()) {
+				return ret;
+			}
+		}
+		SubscriptionOpts opts;
+		if (options) {
+			opts.options = *options;
+		}
+
+		auto db = getDB(ctx, kRoleDataRead);
+		if (flag) {
+			ret = db.SubscribeUpdates(&clientData->pusherV3, filters, opts);
+		} else {
+			ret = db.UnsubscribeUpdates(&clientData->pusherV3);
+		}
+		if (ret.ok()) clientData->subscribed = bool(flag);
+		return ret;
 #else	// REINDEX_WITH_V3_FOLLOWERS
-	return Error(errForbidden, "Updates subscription is no longer supported");
+		return Error(errForbidden, "Updates subscription is no longer supported");
 #endif	// REINDEX_WITH_V3_FOLLOWERS
+	}
 }
 
 Error RPCServer::SuggestLeader(cproto::Context &ctx, p_string suggestion) {

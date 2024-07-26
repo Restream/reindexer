@@ -10,7 +10,7 @@ namespace reindexer {
 
 struct ItemImplRawData {
 	ItemImplRawData() = default;
-	ItemImplRawData(PayloadValue v) : payloadValue_(std::move(v)) {}
+	explicit ItemImplRawData(PayloadValue v) : payloadValue_(std::move(v)) {}
 	ItemImplRawData(const ItemImplRawData &) = delete;
 	ItemImplRawData(ItemImplRawData &&) = default;
 	ItemImplRawData &operator=(const ItemImplRawData &) = delete;

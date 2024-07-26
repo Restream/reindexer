@@ -106,17 +106,18 @@ struct NamespaceConfigData {
 	LogLevel logLevel = LogNone;
 	CacheMode cacheMode = CacheModeOff;
 	StrictMode strictMode = StrictModeNames;
-	int startCopyPolicyTxSize = 10000;
+	int startCopyPolicyTxSize = 10'000;
 	int copyPolicyMultiplier = 5;
-	int txSizeToAlwaysCopy = 100000;
+	int txSizeToAlwaysCopy = 100'000;
 	int optimizationTimeout = 800;
 	int optimizationSortWorkers = 4;
-	int64_t walSize = 4000000;
-	int64_t minPreselectSize = 1000;
-	int64_t maxPreselectSize = 1000;
+	int64_t walSize = 4'000'000;
+	int64_t minPreselectSize = 1'000;
+	int64_t maxPreselectSize = 1'000;
 	double maxPreselectPart = 0.1;
+	int64_t maxIterationsIdSetPreResult = 20'000;
 	bool idxUpdatesCountingMode = false;
-	int syncStorageFlushLimit = 20000;
+	int syncStorageFlushLimit = 20'000;
 	NamespaceCacheConfigData cacheConfig;
 
 	Error FromJSON(const gason::JsonNode &v);
@@ -173,7 +174,7 @@ public:
 	Error GetConfigParseErrors() const;
 
 	void setHandler(ConfigType cfgType, std::function<void()> handler);
-	int setHandler(std::function<void(ReplicationConfigData)> handler);
+	int setHandler(std::function<void(const ReplicationConfigData &)> handler);
 	void unsetHandler(int id);
 
 	cluster::AsyncReplConfigData GetAsyncReplicationConfig();
@@ -202,7 +203,7 @@ private:
 	Error replicationDataLoadResult_;
 	fast_hash_map<std::string, NamespaceConfigData, hash_str, equal_str, less_str> namespacesData_;
 	std::array<std::function<void()>, kConfigTypesTotalCount> handlers_;
-	fast_hash_map<int, std::function<void(ReplicationConfigData)>> replicationConfigDataHandlers_;
+	fast_hash_map<int, std::function<void(const ReplicationConfigData &)>> replicationConfigDataHandlers_;
 	int handlersCounter_ = 0;
 	mutable shared_timed_mutex mtx_;
 };

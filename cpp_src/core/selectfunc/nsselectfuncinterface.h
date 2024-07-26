@@ -10,7 +10,6 @@ class FieldsSet;
 class NsSelectFuncInterface {
 public:
 	explicit NsSelectFuncInterface(const NamespaceImpl& nm) noexcept : nm_(nm) {}
-	const std::string& GetName() const noexcept;
 	int getIndexByName(std::string_view index) const noexcept;
 	bool getIndexByName(std::string_view name, int& index) const noexcept;
 	int getIndexesCount() const noexcept;

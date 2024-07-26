@@ -5,7 +5,7 @@
 #include "systemhelpers.h"
 #include "tools/fsops.h"
 #include "vendor/gason/gason.h"
-#include "yaml-cpp/yaml.h"
+#include "vendor/yaml-cpp/yaml.h"
 
 #ifndef REINDEXER_SERVER_PATH
 #define REINDEXER_SERVER_PATH ""
@@ -120,7 +120,7 @@ AsyncReplicationConfigTest ServerControl::Interface::GetServerConfig(ConfigType 
 
 	AsyncReplicationConfigTest::NsSet namespaces;
 	for (auto& ns : asyncReplConf.namespaces->data) {
-		namespaces.insert(ns);
+		namespaces.insert(std::string(ns));
 	}
 	std::vector<AsyncReplicationConfigTest::Node> followers;
 	for (auto& node : asyncReplConf.nodes) {
@@ -195,7 +195,7 @@ cluster::ReplicationStats ServerControl::Interface::GetReplicationStats(std::str
 	err = res.begin().GetJSON(wser, false);
 	EXPECT_TRUE(err.ok()) << err.what();
 	cluster::ReplicationStats stats;
-	err = stats.FromJSON(wser.Slice());
+	err = stats.FromJSON(reindexer::giftStr(wser.Slice()));
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_EQ(stats.type, type);
 	return stats;
@@ -320,7 +320,7 @@ void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfig
 	cluster::AsyncReplConfigData asyncReplConf;
 	asyncReplConf.appName = config.appName;
 	asyncReplConf.role = cluster::AsyncReplConfigData::Str2role(config.role);
-	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> nss;
+	NsNamesHashSetT nss;
 	for (auto& ns : config.namespaces) {
 		nss.emplace(ns);
 	}
@@ -336,7 +336,7 @@ void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfig
 	for (auto& node : config.nodes) {
 		asyncReplConf.nodes.emplace_back(cluster::AsyncReplNodeConfig{node.dsn});
 		if (node.nsList.has_value()) {
-			fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> nss;
+			NsNamesHashSetT nss;
 			for (auto& ns : node.nsList.value()) {
 				nss.emplace(ns);
 			}
@@ -350,8 +350,6 @@ void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfig
 
 	upsertConfigItemFromObject("replication", replConf);
 	upsertConfigItemFromObject("async_replication", asyncReplConf);
-	auto err = api.Commit(kConfigNs);
-	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 void ServerControl::Interface::AddFollower(const std::string& dsn, std::optional<std::vector<std::string>>&& nsList,
@@ -362,7 +360,8 @@ void ServerControl::Interface::AddFollower(const std::string& dsn, std::optional
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qr.Count(), 1);
 		WrSerializer ser;
-		qr.begin().GetJSON(ser, false);
+		err = qr.begin().GetJSON(ser, false);
+		ASSERT_TRUE(err.ok()) << err.what();
 		curConf = cluster::AsyncReplConfigData();
 		err = curConf.FromJSON(gason::JsonParser().Parse(ser.Slice())["async_replication"]);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -383,7 +382,7 @@ void ServerControl::Interface::AddFollower(const std::string& dsn, std::optional
 	ASSERT_TRUE(found == curConf.nodes.end());
 	curConf.nodes.emplace_back(std::move(newNode));
 	if (nsList.has_value()) {
-		fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> nss;
+		NsNamesHashSetT nss;
 		for (auto&& ns : nsList.value()) {
 			nss.emplace(std::move(ns));
 		}
@@ -397,9 +396,6 @@ void ServerControl::Interface::AddFollower(const std::string& dsn, std::optional
 	curConf.mode = cluster::AsyncReplicationMode::Default;
 
 	upsertConfigItemFromObject("async_replication", curConf);
-
-	auto err = api.Commit(kConfigNs);
-	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 template <typename ValueT>
@@ -424,8 +420,6 @@ void ServerControl::Interface::setNamespaceConfigItem(std::string_view nsName, s
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	api.Upsert(kConfigNs, item);
-	err = api.Commit(kConfigNs);
-	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 bool ServerControl::IsRunning() { return !stopped_->load(); }
@@ -511,7 +505,7 @@ void ServerControl::WaitSync(const ServerControl::Interface::Ptr& s1, const Serv
 	}
 }
 
-ReplicationStateApi ServerControl::Interface::GetState(const std::string& ns) {
+ReplicationStateApi ServerControl::Interface::GetState(std::string_view ns) {
 	ReplicationStateApi state;
 	{
 		Query qr = Query("#memstats").Where("name", CondEq, ns);
@@ -529,6 +523,7 @@ ReplicationStateApi ServerControl::Interface::GetState(const std::string& ns) {
 			state.dataCount = root["replication"]["data_count"].As<int64_t>();
 			state.dataHash = root["replication"]["data_hash"].As<uint64_t>();
 			state.nsVersion.FromJSON(root["replication"]["ns_version"]);
+			state.updateUnixNano = root["replication"]["updated_unix_nano"].As<uint64_t>();
 			try {
 				reindexer::ClusterizationStatus clStatus;
 				clStatus.FromJSON(root["replication"]["clusterization_status"]);

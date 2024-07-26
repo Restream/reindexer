@@ -1,9 +1,8 @@
 #pragma once
 
-#include "client/cororeindexer.h"
 #include "cluster/config.h"
 #include "core/dbconfig.h"
-#include "insdatareplicator.h"
+#include "idatareplicator.h"
 #include "net/ev/ev.h"
 #include "replication/asyncdatareplicator.h"
 #include "replication/clusterdatareplicator.h"
@@ -14,7 +13,7 @@ class ReindexerImpl;
 
 namespace cluster {
 
-class Clusterizator : public INsDataReplicator {
+class Clusterizator : public IDataReplicator, public IDataSyncer {
 public:
 	Clusterizator(ReindexerImpl &thisNode, size_t maxUpdatesSize);
 
@@ -37,11 +36,9 @@ public:
 	bool NamespaceIsInClusterConfig(std::string_view nsName);
 	bool NamesapceIsInReplicationConfig(std::string_view nsName);
 
-	Error Replicate(UpdateRecord &&rec, std::function<void()> beforeWaitF, const RdxContext &ctx) override final;
 	Error Replicate(UpdatesContainer &&recs, std::function<void()> beforeWaitF, const RdxContext &ctx) override final;
-	Error ReplicateAsync(UpdateRecord &&rec, const RdxContext &ctx) override final;
 	Error ReplicateAsync(UpdatesContainer &&recs, const RdxContext &ctx) override final;
-	void AwaitInitialSync(std::string_view nsName, const RdxContext &ctx) const override final {
+	void AwaitInitialSync(const NamespaceName &nsName, const RdxContext &ctx) const override final {
 		if (enabled_.load(std::memory_order_acquire)) {
 			sharedSyncState_.AwaitInitialSync(nsName, ctx);
 		}
@@ -51,7 +48,7 @@ public:
 			sharedSyncState_.AwaitInitialSync(ctx);
 		}
 	}
-	bool IsInitialSyncDone(std::string_view name) const override final {
+	bool IsInitialSyncDone(const NamespaceName &name) const override final {
 		return !enabled_.load(std::memory_order_acquire) || sharedSyncState_.IsInitialSyncDone(name);
 	}
 	bool IsInitialSyncDone() const override final {
@@ -67,7 +64,7 @@ private:
 	void validateConfig() const;
 
 	mutable std::mutex mtx_;
-	UpdatesQueuePair<UpdateRecord> updatesQueue_;
+	UpdatesQueuePair<updates::UpdateRecord> updatesQueue_;
 	SharedSyncState<> sharedSyncState_;
 	ClusterDataReplicator clusterReplicator_;
 	AsyncDataReplicator asyncReplicator_;

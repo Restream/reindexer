@@ -24,7 +24,8 @@ protected:
 		StartServer();
 	}
 	void TearDown() {
-		RPCClientTestApi::StopAllServers();
+		[[maybe_unused]] auto err = RPCClientTestApi::StopAllServers();
+		assertf(err.ok(), "%s", err.what());
 		fs::RmDirAll(kBaseTestsetDbPath);
 	}
 
@@ -113,9 +114,11 @@ protected:
 			// clang-format on
 			ASSERT_TRUE(err.ok()) << err.what();
 			if (i % 2) {
-				tx.Upsert(std::move(item));
+				err = tx.Upsert(std::move(item));
+				ASSERT_TRUE(err.ok()) << err.what();
 			} else {
-				tx.Delete(std::move(item));
+				err = tx.Delete(std::move(item));
+				ASSERT_TRUE(err.ok()) << err.what();
 			}
 		}
 		commitTx(rx, tx);
@@ -224,8 +227,7 @@ protected:
 		auto err = item.FromJSON(ser.Slice());
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		rxClient.Upsert(kConfigNsName, item);
-		err = rxClient.Commit(kConfigNsName);
+		err = rxClient.Upsert(kConfigNsName, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 

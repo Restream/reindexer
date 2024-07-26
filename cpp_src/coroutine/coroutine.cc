@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <iterator>
 #include <thread>
+#include <algorithm>
 #include "tools/errors.h"
 #include "tools/clock.h"
 

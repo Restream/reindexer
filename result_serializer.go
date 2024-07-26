@@ -47,7 +47,7 @@ func (s *resultSerializer) readRawtItemParams(shardId int) (v rawResultItemParam
 
 	if (s.flags & bindings.ResultsWithItemID) != 0 {
 		v.id = int(s.GetVarUInt())
-		v.version = CreateLSNFromInt64(int64(s.GetVarUInt()))
+		v.version = bindings.CreateLSNFromInt64(int64(s.GetVarUInt()))
 	}
 
 	if (s.flags & bindings.ResultsWithNsID) != 0 {

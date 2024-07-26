@@ -113,9 +113,9 @@ private:
 
 	size_t calculateNormalCost(const QueryEntries &qe, SelectCtx &ctx, const RdxContext &rdxCtx);
 	size_t calculateOptimizedCost(size_t costNormal, const QueryEntries &qe, SelectCtx &ctx, const RdxContext &rdxCtx);
-	bool isSortOptimizatonEffective(const QueryEntries &qe, SelectCtx &ctx, const RdxContext &rdxCtx);
-	static bool validateField(StrictMode strictMode, std::string_view name, std::string_view nsName, const TagsMatcher &tagsMatcher);
-	void checkStrictModeAgg(StrictMode strictMode, const std::string &name, const std::string &nsName,
+	bool isSortOptimizationEffective(const QueryEntries &qe, SelectCtx &ctx, const RdxContext &rdxCtx);
+	static bool validateField(StrictMode strictMode, std::string_view name, const NamespaceName& nsName, const TagsMatcher &tagsMatcher);
+	void checkStrictModeAgg(StrictMode strictMode, std::string_view name, const NamespaceName& nsName,
 							const TagsMatcher &tagsMatcher) const;
 
 	void writeAggregationResultMergeSubQuery(LocalQueryResults &result, h_vector<Aggregator, 4> &aggregators, SelectCtx &ctx);

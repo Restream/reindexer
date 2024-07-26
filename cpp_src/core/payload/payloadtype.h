@@ -17,14 +17,14 @@ public:
 	PayloadType(const PayloadType &) = default;
 	PayloadType &operator=(PayloadType &&) noexcept = default;
 	PayloadType &operator=(const PayloadType &) = default;
-	PayloadType(const std::string &name, std::initializer_list<PayloadFieldType> fields = {});
+	explicit PayloadType(const std::string &name, std::initializer_list<PayloadFieldType> fields = {});
 	explicit PayloadType(const PayloadTypeImpl &impl);
 	~PayloadType();
 	const PayloadFieldType &Field(int field) const;
 
 	const std::string &Name() const;
-	void SetName(const std::string &name);
-	int NumFields() const;
+	void SetName(std::string_view name);
+	int NumFields() const noexcept;
 	void Add(PayloadFieldType);
 	bool Drop(std::string_view field);
 	int FieldByName(std::string_view field) const;

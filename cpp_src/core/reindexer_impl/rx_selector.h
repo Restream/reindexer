@@ -9,7 +9,7 @@ class SelectFunctionsHolder;
 
 class RxSelector {
 	struct NsLockerItem {
-		NsLockerItem(NamespaceImpl::Ptr ins = {}) noexcept : ns(std::move(ins)), count(1) {}
+		explicit NsLockerItem(NamespaceImpl::Ptr ins = {}) noexcept : ns(std::move(ins)), count(1) {}
 		NamespaceImpl::Ptr ns;
 		NamespaceImpl::Locker::RLockT nsLck;
 		unsigned count = 1;
@@ -19,23 +19,23 @@ public:
 	template <typename Context>
 	class NsLocker : private h_vector<NsLockerItem, 4> {
 	public:
-		NsLocker(const Context &context) : context_(context) {}
+		explicit NsLocker(const Context &context) noexcept : context_(context) {}
 		~NsLocker() {
 			// Unlock first
-			for (auto it = rbegin(); it != rend(); ++it) {
-				// Some of the namespaces may be in unlocked statet in case of the exception during Lock() call
+			for (auto it = rbegin(), re = rend(); it != re; ++it) {
+				// Some namespaces may be in unlocked state in case of the exception during Lock() call
 				if (it->nsLck.owns_lock()) {
 					it->nsLck.unlock();
 				} else {
 					assertrx(!locked_);
 				}
 			}
-			// Clean (ns may releases, if locker holds last ref)
+			// Clean (ns may will release, if locker holds last ref)
 		}
 
-		void Add(NamespaceImpl::Ptr ns) {
+		void Add(NamespaceImpl::Ptr &&ns) {
 			assertrx(!locked_);
-			for (auto it = begin(); it != end(); ++it) {
+			for (auto it = begin(), e = end(); it != e; ++it) {
 				if (it->ns.get() == ns.get()) {
 					++(it->count);
 					return;
@@ -43,10 +43,9 @@ public:
 			}
 
 			emplace_back(std::move(ns));
-			return;
 		}
-		void Delete(const NamespaceImpl::Ptr &ns) {
-			for (auto it = begin(); it != end(); ++it) {
+		void Delete(const NamespaceImpl::Ptr &ns) noexcept {
+			for (auto it = begin(), e = end(); it != e; ++it) {
 				if (it->ns.get() == ns.get()) {
 					if (!--(it->count)) erase(it);
 					return;
@@ -63,11 +62,11 @@ public:
 			locked_ = true;
 		}
 
-		NamespaceImpl::Ptr Get(const std::string &name) {
-			for (auto it = begin(); it != end(); it++) {
+		NamespaceImpl::Ptr Get(const std::string &name) noexcept {
+			for (auto it = begin(), e = end(); it != e; ++it) {
 				if (iequals(it->ns->name_, name)) return it->ns;
 			}
-			return nullptr;
+			return NamespaceImpl::Ptr();
 		}
 
 	protected:
@@ -94,7 +93,8 @@ private:
 	[[nodiscard]] static VariantArray selectSubQuery(const Query &subQuery, const Query &mainQuery, NsLocker<T> &, LocalQueryResults &,
 													 SelectFunctionsHolder &, std::variant<std::string, size_t> fieldOrKeys,
 													 std::vector<SubQueryExplain> &, const RdxContext &);
-	static bool isPreResultValuesModeOptimizationAvailable(const Query &jItemQ, const NamespaceImpl::Ptr &jns, const Query &mainQ);
+	static StoredValuesOptimizationStatus isPreResultValuesModeOptimizationAvailable(const Query &jItemQ, const NamespaceImpl::Ptr &jns,
+																					 const Query &mainQ);
 };
 
 }  // namespace reindexer

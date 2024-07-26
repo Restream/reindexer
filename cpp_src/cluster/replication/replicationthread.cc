@@ -1,14 +1,12 @@
 #include "asyncreplthread.h"
-#include "client/snapshot.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
 #include "clusterreplthread.h"
 #include "core/defnsconfigs.h"
 #include "core/namespace/snapshot/snapshot.h"
 #include "core/reindexer_impl/reindexerimpl.h"
 #include "tools/catch_and_return.h"
-#include "tools/flagguard.h"
+#include "updates/updatesqueue.h"
 #include "updatesbatcher.h"
-#include "updatesqueue.h"
 #include "vendor/spdlog/common.h"
 
 namespace reindexer {
@@ -17,15 +15,28 @@ namespace cluster {
 constexpr auto kAwaitNsCopyInterval = std::chrono::milliseconds(2000);
 constexpr auto kCoro32KStackSize = 32 * 1024;
 
+using updates::ItemReplicationRecord;
+using updates::TagsMatcherReplicationRecord;
+using updates::IndexReplicationRecord;
+using updates::MetaReplicationRecord;
+using updates::QueryReplicationRecord;
+using updates::SchemaReplicationRecord;
+using updates::AddNamespaceReplicationRecord;
+using updates::RenameNamespaceReplicationRecord;
+using updates::NodeNetworkCheckRecord;
+using updates::SaveNewShardingCfgRecord;
+using updates::ApplyNewShardingCfgRecord;
+using updates::ResetShardingCfgRecord;
+
 template <typename BehaviourParamT>
 bool UpdateApplyStatus::IsHaveToResync() const noexcept {
 	static_assert(std::is_same_v<BehaviourParamT, AsyncThreadParam> || std::is_same_v<BehaviourParamT, ClusterThreadParam>,
 				  "Unexpected param type");
 	if constexpr (std::is_same_v<BehaviourParamT, ClusterThreadParam>) {
-		return type == UpdateRecord::Type::ResyncNamespaceGeneric || type == UpdateRecord::Type::ResyncOnUpdatesDrop;
+		return type == updates::URType::ResyncNamespaceGeneric || type == updates::URType::ResyncOnUpdatesDrop;
 	} else {
-		return type == UpdateRecord::Type::ResyncNamespaceGeneric || type == UpdateRecord::Type::ResyncNamespaceLeaderInit ||
-			   type == UpdateRecord::Type::ResyncOnUpdatesDrop;
+		return type == updates::URType::ResyncNamespaceGeneric || type == updates::URType::ResyncNamespaceLeaderInit ||
+			   type == updates::URType::ResyncOnUpdatesDrop;
 	}
 }
 
@@ -206,8 +217,8 @@ void ReplThread<BehaviourParamT>::nodeReplicationRoutine(Node& node) {
 				node.connObserverId = node.client.AddConnectionStateObserver([this, &node](const Error& err) noexcept {
 					if (!err.ok() && updates_ && !terminate_) {
 						logInfo("%d:%d Connection error: %s", serverId_, node.uid, err.what());
-						UpdatesContainer recs(1);
-						recs[0] = UpdateRecord{UpdateRecord::Type::NodeNetworkCheck, node.uid, false};
+						UpdatesContainer recs;
+						recs.emplace_back(updates::URType::NodeNetworkCheck, node.uid, false);
 						node.requireResync = true;
 						updates_->template PushAsync<true>(std::move(recs));
 					}
@@ -249,7 +260,8 @@ void ReplThread<BehaviourParamT>::nodeReplicationRoutine(Node& node) {
 		logTrace("%d:%d Node replication routine was terminated", serverId_, node.uid);
 	}
 	if (node.connObserverId.has_value()) {
-		node.client.RemoveConnectionStateObserver(*node.connObserverId);
+		auto err = node.client.RemoveConnectionStateObserver(*node.connObserverId);
+		(void)err;	// ignore; Error does not matter here
 		node.connObserverId.reset();
 	}
 	node.client.Stop();
@@ -396,15 +408,16 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 					if (!nsExists) {
 						replState = ReplicationStateV2();
 					}
-					err = syncNamespace(node, ns.name, replState);
+					const NamespaceName nsName(ns.name);
+					err = syncNamespace(node, nsName, replState);
 					if (!err.ok()) {
 						logWarn("%d:%d Namespace sync error: %s", serverId_, node.uid, err.what());
 						if (err.code() == errNotFound) {
 							err = Error();
-							logWarn("%d:%d Expecting drop namespace record for '%s'", serverId_, node.uid, ns.name);
+							logWarn("%d:%d Expecting drop namespace record for '%s'", serverId_, node.uid, nsName);
 						} else if (err.code() == errDataHashMismatch) {
 							replState = ReplicationStateV2();
-							err = syncNamespace(node, ns.name, replState);
+							err = syncNamespace(node, nsName, replState);
 							if (!err.ok()) {
 								logWarn("%d:%d Namespace sync error (resync due to datahash missmatch): %s", serverId_, node.uid,
 										err.what());
@@ -460,33 +473,37 @@ void ReplThread<BehaviourParamT>::terminateNotifier() noexcept {
 template <typename BehaviourParamT>
 std::tuple<bool, UpdateApplyStatus> ReplThread<BehaviourParamT>::handleNetworkCheckRecord(Node& node, UpdatesQueueT::UpdatePtr& updPtr,
 																						  uint16_t offset, bool currentlyOnline,
-																						  const UpdateRecord& rec) noexcept {
+																						  const updates::UpdateRecord& rec) noexcept {
 	bool hadActualNetworkCheck = false;
-	auto& data = std::get<std::unique_ptr<NodeNetworkCheckRecord>>(rec.data);
-	if (node.uid == data->nodeUid) {
+	auto& data = std::get<NodeNetworkCheckRecord>(*rec.Data());
+	if (node.uid == data.nodeUid) {
 		Error err;
-		if (data->online != currentlyOnline) {
+		if (data.online != currentlyOnline) {
 			logTrace("%d:%d: Checking network...", serverId_, node.uid);
 			err = node.client.WithTimeout(kStatusCmdTimeout).Status(true);
 			hadActualNetworkCheck = true;
 		}
-		updPtr->OnUpdateReplicated(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
-		return std::make_tuple(hadActualNetworkCheck, UpdateApplyStatus(std::move(err), UpdateRecord::Type::NodeNetworkCheck));
+		updPtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
+		return std::make_tuple(hadActualNetworkCheck, UpdateApplyStatus(std::move(err), updates::URType::NodeNetworkCheck));
 	}
-	updPtr->OnUpdateReplicated(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
-	return std::make_tuple(hadActualNetworkCheck, UpdateApplyStatus(Error(), UpdateRecord::Type::NodeNetworkCheck));
+	updPtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
+	return std::make_tuple(hadActualNetworkCheck, UpdateApplyStatus(Error(), updates::URType::NodeNetworkCheck));
 }
 
 template <typename BehaviourParamT>
-Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const std::string& nsName, const ReplicationStateV2& followerState) {
+Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName& nsName, const ReplicationStateV2& followerState) {
 	try {
 		class TmpNsGuard {
 		public:
 			TmpNsGuard(client::CoroReindexer& client, int serverId, const Logger& log) : client_(client), serverId_(serverId), log_(log) {}
 			~TmpNsGuard() {
 				if (tmpNsName.size()) {
-					logWarn("%d: Removing tmp ns on error: %s", serverId_, tmpNsName);
-					client_.WithLSN(lsn_t(0, serverId_)).DropNamespace(tmpNsName);
+					logWarn("%d: Dropping tmp ns on error: '%s'", serverId_, tmpNsName);
+					if (auto err = client_.WithLSN(lsn_t(0, serverId_)).DropNamespace(tmpNsName); err.ok()) {
+						logWarn("%d: '%s' was dropped", serverId_, tmpNsName);
+					} else {
+						logWarn("%d: '%s' drop error: %s", serverId_, tmpNsName, err.what());
+					}
 				}
 			}
 
@@ -659,12 +676,12 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 	auto applyUpdateF = [this, &node](const UpdatesQueueT::UpdateT::Value& upd, Context& ctx) {
 		auto& it = upd.Data();
 		log_.Trace([&] {
-			auto& nsName = it.GetNsName();
+			auto& nsName = it.NsName();
 			auto& nsData = *ctx.nsData;
 			rtfmt(
 				"%d:%d:%s Applying update with type %d (batched), id: %d, ns version: %d, lsn: %d, last synced ns "
 				"version: %d, last synced lsn: %d",
-				serverId_, node.uid, nsName, int(it.type), ctx.updPtr->ID() + ctx.offset, it.extLsn.NsVersion(), it.extLsn.LSN(),
+				serverId_, node.uid, nsName, int(it.Type()), ctx.updPtr->ID() + ctx.offset, it.ExtLSN().NsVersion(), it.ExtLSN().LSN(),
 				nsData.latestLsn.NsVersion(), nsData.latestLsn.LSN());
 		});
 		return applyUpdate(it, node, *ctx.nsData);
@@ -675,18 +692,18 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 		ctx.nsData->UpdateLsnOnRecord(it);
 		log_.Trace([&] {
 			const auto counters = upd.GetCounters();
-			rtfmt("%d:%d:%s Apply update (lsn: %d, id: %d) result: %s. Replicas: %d", serverId_, node.uid, it.GetNsName(), it.extLsn.LSN(),
+			rtfmt("%d:%d:%s Apply update (lsn: %d, id: %d) result: %s. Replicas: %d", serverId_, node.uid, it.NsName(), it.ExtLSN().LSN(),
 				  ctx.updPtr->ID() + ctx.offset, (res.err.ok() ? "OK" : "ERROR:" + res.err.what()), counters.replicas + 1);
 		});
-		const auto replRes = ctx.updPtr->OnUpdateReplicated(node.uid, consensusCnt_, requiredReplicas_, ctx.offset,
-															it.emmiterServerId == node.serverId, res.err);
+		const auto replRes = ctx.updPtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, ctx.offset,
+														 it.EmmiterServerID() == node.serverId, res.err);
 		if (res.err.ok()) {
 			bhvParam_.OnUpdateSucceed(node.uid, ctx.updPtr->ID() + ctx.offset);
 		}
-		requireReelections = requireReelections || (replRes == ReplicationResult::Error);
+		requireReelections = requireReelections || (replRes == updates::ReplicationResult::Error);
 	};
 	auto convertResF = [](Error&& err, const UpdatesQueueT::UpdateT::Value& upd) {
-		return UpdateApplyStatus(std::move(err), upd.Data().type);
+		return UpdateApplyStatus(std::move(err), upd.Data().Type());
 	};
 	UpdatesBatcher<UpdatesQueueT::UpdateT::Value, Context, decltype(applyUpdateF), decltype(onUpdateResF), decltype(convertResF)> batcher(
 		loop, config_.BatchingRoutinesCount, std::move(applyUpdateF), std::move(onUpdateResF), std::move(convertResF));
@@ -713,7 +730,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 						nextUpdateID);
 				node.nextUpdateId = nextUpdateID;
 				statsCollector_.OnUpdateApplied(node.uid, updatePtr->ID());
-				return UpdateApplyStatus(Error(), UpdateRecord::Type::ResyncOnUpdatesDrop);
+				return UpdateApplyStatus(Error(), updates::URType::ResyncOnUpdatesDrop);
 			}
 			logTrace("%d:%d Got new update. Next update id: %d. Queue block id: %d, block count: %d", serverId_, node.uid,
 					 node.nextUpdateId, updatePtr->ID(), updatePtr->Count());
@@ -734,34 +751,34 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 					}
 					continue;
 				}
-				const std::string& nsName = it.GetNsName();
+				const auto& nsName = it.NsName();
 				if constexpr (!isClusterReplThread()) {
 					if (!bhvParam_.IsNamespaceInConfig(node.uid, nsName)) {
-						updatePtr->OnUpdateReplicated(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
+						updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
 						bhvParam_.OnUpdateSucceed(node.uid, updatePtr->ID() + offset);
 						continue;
 					}
 				}
 
-				if (it.type == UpdateRecord::Type::AddNamespace) {
+				if (it.Type() == updates::URType::AddNamespace) {
 					bhvParam_.OnNewNsAppearance(nsName);
 				}
 
 				auto& nsData = node.namespaceData[nsName];
-				const bool isOutdatedRecord = !it.extLsn.HasNewerCounterThan(nsData.latestLsn) || nsData.latestLsn.IsEmpty();
+				const bool isOutdatedRecord = !it.ExtLSN().HasNewerCounterThan(nsData.latestLsn) || nsData.latestLsn.IsEmpty();
 				if ((!it.IsDbRecord() && isOutdatedRecord) || it.IsEmptyRecord()) {
 					logTrace(
 						"%d:%d:%s Skipping update with type %d, id: %d, ns version: %d, lsn: %d, last synced ns "
 						"version: %d, last synced lsn: %d",
-						serverId_, node.uid, nsName, int(it.type), updatePtr->ID() + offset, it.extLsn.NsVersion(), it.extLsn.LSN(),
+						serverId_, node.uid, nsName, int(it.Type()), updatePtr->ID() + offset, it.ExtLSN().NsVersion(), it.ExtLSN().LSN(),
 						nsData.latestLsn.NsVersion(), nsData.latestLsn.LSN());
-					updatePtr->OnUpdateReplicated(node.uid, consensusCnt_, requiredReplicas_, offset, it.emmiterServerId == node.serverId,
-												  Error());
+					updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, it.EmmiterServerID() == node.serverId,
+											   Error());
 					continue;
 				}
 				if (nsData.tx.IsFree() && it.IsRequiringTx()) {
 					res = UpdateApplyStatus(Error(errTxDoesNotExist, "Update requires tx. ID: %d, lsn: %d, type: %d",
-												  updatePtr->ID() + offset, it.extLsn.LSN(), int(it.type)));
+												  updatePtr->ID() + offset, it.ExtLSN().LSN(), int(it.Type())));
 					--node.nextUpdateId;  // Have to read this update again
 					break;
 				}
@@ -795,21 +812,21 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 						"%d:%d:%s Applying update with type %d (no batching), id: %d, ns version: %d, lsn: %d, "
 						"last synced ns "
 						"version: %d, last synced lsn: %d",
-						serverId_, node.uid, nsName, int(it.type), updatePtr->ID() + offset, it.extLsn.NsVersion(), it.extLsn.LSN(),
+						serverId_, node.uid, nsName, int(it.Type()), updatePtr->ID() + offset, it.ExtLSN().NsVersion(), it.ExtLSN().LSN(),
 						nsData.latestLsn.NsVersion(), nsData.latestLsn.LSN());
 					res = applyUpdate(it, node, nsData);
 					logTrace("%d:%d:%s Apply update result (id: %d, ns version: %d, lsn: %d): %s. Replicas: %d", serverId_, node.uid,
-							 nsName, updatePtr->ID() + offset, it.extLsn.NsVersion(), it.extLsn.LSN(),
+							 nsName, updatePtr->ID() + offset, it.ExtLSN().NsVersion(), it.ExtLSN().LSN(),
 							 (res.err.ok() ? "OK" : "ERROR:" + res.err.what()), upd.GetCounters().replicas + 1);
 
-					const auto replRes = updatePtr->OnUpdateReplicated(node.uid, consensusCnt_, requiredReplicas_, offset,
-																	   it.emmiterServerId == node.serverId, res.err);
+					const auto replRes = updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset,
+																	it.EmmiterServerID() == node.serverId, res.err);
 					if (res.err.ok()) {
 						nsData.UpdateLsnOnRecord(it);
 						bhvParam_.OnUpdateSucceed(node.uid, updatePtr->ID() + offset);
 						nsData.requiresTmUpdate = it.IsRequiringTmUpdate();
 					} else {
-						requireReelections = requireReelections || (replRes == ReplicationResult::Error);
+						requireReelections = requireReelections || (replRes == updates::ReplicationResult::Error);
 					}
 				}
 
@@ -881,13 +898,13 @@ bool ReplThread<BehaviourParamT>::handleUpdatesWithError(Node& node, const Error
 				}
 				continue;
 			}
-			const std::string& nsName = it.GetNsName();
+			const auto& nsName = it.NsName();
 			if (!bhvParam_.IsNamespaceInConfig(node.uid, nsName)) continue;
 
-			if (it.type == UpdateRecord::Type::AddNamespace || it.type == UpdateRecord::Type::DropNamespace) {
+			if (it.Type() == updates::URType::AddNamespace || it.Type() == updates::URType::DropNamespace) {
 				node.namespaceData[nsName].isClosed = false;
 				bhvParam_.OnNewNsAppearance(nsName);
-			} else if (it.type == UpdateRecord::Type::CloseNamespace) {
+			} else if (it.Type() == updates::URType::CloseNamespace) {
 				node.namespaceData[nsName].isClosed = true;
 			}
 
@@ -896,17 +913,17 @@ bool ReplThread<BehaviourParamT>::handleUpdatesWithError(Node& node, const Error
 				break;
 			}
 
-			assert(it.emmiterServerId != serverId_);
-			const bool isEmmiter = it.emmiterServerId == node.serverId;
+			assert(it.EmmiterServerID() != serverId_);
+			const bool isEmmiter = it.EmmiterServerID() == node.serverId;
 			if (isEmmiter) {
 				--node.nextUpdateId;
 				return true;  // Retry sync after receiving update from offline node
 			}
-			const auto replRes = updatePtr->OnUpdateReplicated(
+			const auto replRes = updatePtr->OnUpdateHandled(
 				node.uid, consensusCnt_, requiredReplicas_, offset, isEmmiter,
 				Error(errUpdateReplication, "Unable to send update to enough amount of replicas. Last error: %s", err.what()));
 
-			if (replRes == ReplicationResult::Error && !hadErrorOnLastUpdate) {
+			if (replRes == updates::ReplicationResult::Error && !hadErrorOnLastUpdate) {
 				hadErrorOnLastUpdate = true;
 				logWarn("%d:%d Requesting leader reelection on error: %s", serverId_, node.uid, err.what());
 				bhvParam_.OnUpdateReplicationFailure();
@@ -919,8 +936,8 @@ bool ReplThread<BehaviourParamT>::handleUpdatesWithError(Node& node, const Error
 					"Required: "
 					"%d, succeed: "
 					"%d, failed: %d, replicas: %d",
-					serverId_, node.uid, nsName, err.what(), int(it.type), it.extLsn.NsVersion(), it.extLsn.LSN(),
-					(isEmmiter ? node.serverId : it.emmiterServerId), consensusCnt_, counters.approves, counters.errors,
+					serverId_, node.uid, nsName, err.what(), int(it.Type()), it.ExtLSN().NsVersion(), it.ExtLSN().LSN(),
+					(isEmmiter ? node.serverId : it.EmmiterServerID()), consensusCnt_, counters.approves, counters.errors,
 					counters.replicas + 1);
 			});
 		}
@@ -949,7 +966,7 @@ Error ReplThread<BehaviourParamT>::checkIfReplicationAllowed(Node& node, LogLeve
 			if (!err.ok()) return err;
 
 			ReplicationStats stats;
-			err = stats.FromJSON(wser.Slice());
+			err = stats.FromJSON(giftStr(wser.Slice()));
 			if (!err.ok()) return err;
 
 			if (stats.nodeStats.size()) {
@@ -978,168 +995,168 @@ Error ReplThread<BehaviourParamT>::checkIfReplicationAllowed(Node& node, LogLeve
 }
 
 template <typename BehaviourParamT>
-UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const UpdateRecord& rec, ReplThread::Node& node,
+UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const updates::UpdateRecord& rec, ReplThread::Node& node,
 														   ReplThread::NamespaceData& nsData) noexcept {
-	auto lsn = rec.extLsn.LSN();
-	std::string_view nsName = rec.GetNsName();
+	auto lsn = rec.ExtLSN().LSN();
+	std::string_view nsName = rec.NsName();
 	auto& client = node.client;
 	try {
-		switch (rec.type) {
-			case UpdateRecord::Type::ItemUpdate: {
-				auto& data = std::get<std::unique_ptr<ItemReplicationRecord>>(rec.data);
-				return UpdateApplyStatus(client.WithLSN(lsn).Update(nsName, data->cjson.Slice()), rec.type);
+		switch (rec.Type()) {
+			case updates::URType::ItemUpdate: {
+				auto& data = std::get<ItemReplicationRecord>(*rec.Data());
+				return UpdateApplyStatus(client.WithLSN(lsn).Update(nsName, data.cjson.Slice()), rec.Type());
 			}
-			case UpdateRecord::Type::ItemUpsert: {
-				auto& data = std::get<std::unique_ptr<ItemReplicationRecord>>(rec.data);
-				return UpdateApplyStatus(client.WithLSN(lsn).Upsert(nsName, data->cjson.Slice()), rec.type);
+			case updates::URType::ItemUpsert: {
+				auto& data = std::get<ItemReplicationRecord>(*rec.Data());
+				return UpdateApplyStatus(client.WithLSN(lsn).Upsert(nsName, data.cjson.Slice()), rec.Type());
 			}
-			case UpdateRecord::Type::ItemDelete: {
-				auto& data = std::get<std::unique_ptr<ItemReplicationRecord>>(rec.data);
-				return UpdateApplyStatus(client.WithLSN(lsn).Delete(nsName, data->cjson.Slice()), rec.type);
+			case updates::URType::ItemDelete: {
+				auto& data = std::get<ItemReplicationRecord>(*rec.Data());
+				return UpdateApplyStatus(client.WithLSN(lsn).Delete(nsName, data.cjson.Slice()), rec.Type());
 			}
-			case UpdateRecord::Type::ItemInsert: {
-				auto& data = std::get<std::unique_ptr<ItemReplicationRecord>>(rec.data);
-				return UpdateApplyStatus(client.WithLSN(lsn).Insert(nsName, data->cjson.Slice()), rec.type);
+			case updates::URType::ItemInsert: {
+				auto& data = std::get<ItemReplicationRecord>(*rec.Data());
+				return UpdateApplyStatus(client.WithLSN(lsn).Insert(nsName, data.cjson.Slice()), rec.Type());
 			}
-			case UpdateRecord::Type::IndexAdd: {
-				auto& data = std::get<std::unique_ptr<IndexReplicationRecord>>(rec.data);
-				return UpdateApplyStatus(client.WithLSN(lsn).AddIndex(nsName, data->idef), rec.type);
+			case updates::URType::IndexAdd: {
+				auto& data = std::get<IndexReplicationRecord>(*rec.Data());
+				return UpdateApplyStatus(client.WithLSN(lsn).AddIndex(nsName, data.idef), rec.Type());
 			}
-			case UpdateRecord::Type::IndexDrop: {
-				auto& data = std::get<std::unique_ptr<IndexReplicationRecord>>(rec.data);
-				return UpdateApplyStatus(client.WithLSN(lsn).DropIndex(nsName, data->idef), rec.type);
+			case updates::URType::IndexDrop: {
+				auto& data = std::get<IndexReplicationRecord>(*rec.Data());
+				return UpdateApplyStatus(client.WithLSN(lsn).DropIndex(nsName, data.idef), rec.Type());
 			}
-			case UpdateRecord::Type::IndexUpdate: {
-				auto& data = std::get<std::unique_ptr<IndexReplicationRecord>>(rec.data);
-				return UpdateApplyStatus(client.WithLSN(lsn).UpdateIndex(nsName, data->idef), rec.type);
+			case updates::URType::IndexUpdate: {
+				auto& data = std::get<IndexReplicationRecord>(*rec.Data());
+				return UpdateApplyStatus(client.WithLSN(lsn).UpdateIndex(nsName, data.idef), rec.Type());
 			}
-			case UpdateRecord::Type::PutMeta: {
-				auto& data = std::get<std::unique_ptr<MetaReplicationRecord>>(rec.data);
-				return UpdateApplyStatus(client.WithLSN(lsn).PutMeta(nsName, data->key, data->value), rec.type);
+			case updates::URType::PutMeta: {
+				auto& data = std::get<MetaReplicationRecord>(*rec.Data());
+				return UpdateApplyStatus(client.WithLSN(lsn).PutMeta(nsName, data.key, data.value), rec.Type());
 			}
-			case UpdateRecord::Type::PutMetaTx: {
+			case updates::URType::PutMetaTx: {
 				if (nsData.tx.IsFree()) {
-					return UpdateApplyStatus(Error(errLogic, "Tx is empty"), rec.type);
+					return UpdateApplyStatus(Error(errLogic, "Tx is empty"), rec.Type());
 				}
-				auto& data = std::get<std::unique_ptr<MetaReplicationRecord>>(rec.data);
-				return UpdateApplyStatus(nsData.tx.PutMeta(data->key, data->value, lsn), rec.type);
+				auto& data = std::get<MetaReplicationRecord>(*rec.Data());
+				return UpdateApplyStatus(nsData.tx.PutMeta(data.key, data.value, lsn), rec.Type());
 			}
-			case UpdateRecord::Type::DeleteMeta: {
-				auto& data = std::get<std::unique_ptr<MetaReplicationRecord>>(rec.data);
-				return UpdateApplyStatus(client.WithLSN(lsn).DeleteMeta(nsName, data->key), rec.type);
+			case updates::URType::DeleteMeta: {
+				auto& data = std::get<MetaReplicationRecord>(*rec.Data());
+				return UpdateApplyStatus(client.WithLSN(lsn).DeleteMeta(nsName, data.key), rec.Type());
 			}
-			case UpdateRecord::Type::UpdateQuery: {
-				auto& data = std::get<std::unique_ptr<QueryReplicationRecord>>(rec.data);
+			case updates::URType::UpdateQuery: {
+				auto& data = std::get<QueryReplicationRecord>(*rec.Data());
 				client::CoroQueryResults qr;
-				return UpdateApplyStatus(client.WithLSN(lsn).Update(Query::FromSQL(data->sql), qr), rec.type);
+				return UpdateApplyStatus(client.WithLSN(lsn).Update(Query::FromSQL(data.sql), qr), rec.Type());
 			}
-			case UpdateRecord::Type::DeleteQuery: {
-				auto& data = std::get<std::unique_ptr<QueryReplicationRecord>>(rec.data);
+			case updates::URType::DeleteQuery: {
+				auto& data = std::get<QueryReplicationRecord>(*rec.Data());
 				client::CoroQueryResults qr;
-				return UpdateApplyStatus(client.WithLSN(lsn).Delete(Query::FromSQL(data->sql), qr), rec.type);
+				return UpdateApplyStatus(client.WithLSN(lsn).Delete(Query::FromSQL(data.sql), qr), rec.Type());
 			}
-			case UpdateRecord::Type::SetSchema: {
-				auto& data = std::get<std::unique_ptr<SchemaReplicationRecord>>(rec.data);
-				return UpdateApplyStatus(client.WithLSN(lsn).SetSchema(nsName, data->schema), rec.type);
+			case updates::URType::SetSchema: {
+				auto& data = std::get<SchemaReplicationRecord>(*rec.Data());
+				return UpdateApplyStatus(client.WithLSN(lsn).SetSchema(nsName, data.schema), rec.Type());
 			}
-			case UpdateRecord::Type::Truncate: {
-				return UpdateApplyStatus(client.WithLSN(lsn).TruncateNamespace(nsName), rec.type);
+			case updates::URType::Truncate: {
+				return UpdateApplyStatus(client.WithLSN(lsn).TruncateNamespace(nsName), rec.Type());
 			}
-			case UpdateRecord::Type::BeginTx: {
+			case updates::URType::BeginTx: {
 				if (!nsData.tx.IsFree()) {
-					return UpdateApplyStatus(Error(errLogic, "Tx is not empty"), rec.type);
+					return UpdateApplyStatus(Error(errLogic, "Tx is not empty"), rec.Type());
 				}
 				nsData.tx = node.client.WithLSN(lsn).NewTransaction(nsName);
-				return UpdateApplyStatus(Error(nsData.tx.Status()), rec.type);
+				return UpdateApplyStatus(Error(nsData.tx.Status()), rec.Type());
 			}
-			case UpdateRecord::Type::CommitTx: {
+			case updates::URType::CommitTx: {
 				if (nsData.tx.IsFree()) {
-					return UpdateApplyStatus(Error(errLogic, "Tx is empty"), rec.type);
+					return UpdateApplyStatus(Error(errLogic, "Tx is empty"), rec.Type());
 				}
 				client::CoroQueryResults qr;
-				return UpdateApplyStatus(node.client.WithLSN(lsn).CommitTransaction(nsData.tx, qr), rec.type);
+				return UpdateApplyStatus(node.client.WithLSN(lsn).CommitTransaction(nsData.tx, qr), rec.Type());
 			}
-			case UpdateRecord::Type::ItemUpdateTx:
-			case UpdateRecord::Type::ItemUpsertTx:
-			case UpdateRecord::Type::ItemDeleteTx:
-			case UpdateRecord::Type::ItemInsertTx: {
+			case updates::URType::ItemUpdateTx:
+			case updates::URType::ItemUpsertTx:
+			case updates::URType::ItemDeleteTx:
+			case updates::URType::ItemInsertTx: {
 				if (nsData.tx.IsFree()) {
-					return UpdateApplyStatus(Error(errLogic, "Tx is empty"), rec.type);
+					return UpdateApplyStatus(Error(errLogic, "Tx is empty"), rec.Type());
 				}
-				auto& data = std::get<std::unique_ptr<ItemReplicationRecord>>(rec.data);
-				switch (rec.type) {
-					case UpdateRecord::Type::ItemUpdateTx:
-						return UpdateApplyStatus(nsData.tx.Update(data->cjson.Slice(), lsn), rec.type);
-					case UpdateRecord::Type::ItemUpsertTx:
-						return UpdateApplyStatus(nsData.tx.Upsert(data->cjson.Slice(), lsn), rec.type);
-					case UpdateRecord::Type::ItemDeleteTx:
-						return UpdateApplyStatus(nsData.tx.Delete(data->cjson.Slice(), lsn), rec.type);
-					case UpdateRecord::Type::ItemInsertTx:
-						return UpdateApplyStatus(nsData.tx.Insert(data->cjson.Slice(), lsn), rec.type);
-					case UpdateRecord::Type::None:
-					case UpdateRecord::Type::ItemUpdate:
-					case UpdateRecord::Type::ItemUpsert:
-					case UpdateRecord::Type::ItemDelete:
-					case UpdateRecord::Type::ItemInsert:
-					case UpdateRecord::Type::IndexAdd:
-					case UpdateRecord::Type::IndexDrop:
-					case UpdateRecord::Type::IndexUpdate:
-					case UpdateRecord::Type::PutMeta:
-					case UpdateRecord::Type::PutMetaTx:
-					case UpdateRecord::Type::DeleteMeta:
-					case UpdateRecord::Type::UpdateQuery:
-					case UpdateRecord::Type::DeleteQuery:
-					case UpdateRecord::Type::UpdateQueryTx:
-					case UpdateRecord::Type::DeleteQueryTx:
-					case UpdateRecord::Type::SetSchema:
-					case UpdateRecord::Type::Truncate:
-					case UpdateRecord::Type::BeginTx:
-					case UpdateRecord::Type::CommitTx:
-					case UpdateRecord::Type::AddNamespace:
-					case UpdateRecord::Type::DropNamespace:
-					case UpdateRecord::Type::CloseNamespace:
-					case UpdateRecord::Type::RenameNamespace:
-					case UpdateRecord::Type::ResyncNamespaceGeneric:
-					case UpdateRecord::Type::ResyncNamespaceLeaderInit:
-					case UpdateRecord::Type::ResyncOnUpdatesDrop:
-					case UpdateRecord::Type::EmptyUpdate:
-					case UpdateRecord::Type::NodeNetworkCheck:
-					case UpdateRecord::Type::SetTagsMatcher:
-					case UpdateRecord::Type::SetTagsMatcherTx:
-					case UpdateRecord::Type::SaveShardingConfig:
-					case UpdateRecord::Type::ApplyShardingConfig:
-					case UpdateRecord::Type::ResetOldShardingConfig:
-					case UpdateRecord::Type::ResetCandidateConfig:
-					case UpdateRecord::Type::RollbackCandidateConfig:
+				auto& data = std::get<ItemReplicationRecord>(*rec.Data());
+				switch (rec.Type()) {
+					case updates::URType::ItemUpdateTx:
+						return UpdateApplyStatus(nsData.tx.Update(data.cjson.Slice(), lsn), rec.Type());
+					case updates::URType::ItemUpsertTx:
+						return UpdateApplyStatus(nsData.tx.Upsert(data.cjson.Slice(), lsn), rec.Type());
+					case updates::URType::ItemDeleteTx:
+						return UpdateApplyStatus(nsData.tx.Delete(data.cjson.Slice(), lsn), rec.Type());
+					case updates::URType::ItemInsertTx:
+						return UpdateApplyStatus(nsData.tx.Insert(data.cjson.Slice(), lsn), rec.Type());
+					case updates::URType::None:
+					case updates::URType::ItemUpdate:
+					case updates::URType::ItemUpsert:
+					case updates::URType::ItemDelete:
+					case updates::URType::ItemInsert:
+					case updates::URType::IndexAdd:
+					case updates::URType::IndexDrop:
+					case updates::URType::IndexUpdate:
+					case updates::URType::PutMeta:
+					case updates::URType::PutMetaTx:
+					case updates::URType::DeleteMeta:
+					case updates::URType::UpdateQuery:
+					case updates::URType::DeleteQuery:
+					case updates::URType::UpdateQueryTx:
+					case updates::URType::DeleteQueryTx:
+					case updates::URType::SetSchema:
+					case updates::URType::Truncate:
+					case updates::URType::BeginTx:
+					case updates::URType::CommitTx:
+					case updates::URType::AddNamespace:
+					case updates::URType::DropNamespace:
+					case updates::URType::CloseNamespace:
+					case updates::URType::RenameNamespace:
+					case updates::URType::ResyncNamespaceGeneric:
+					case updates::URType::ResyncNamespaceLeaderInit:
+					case updates::URType::ResyncOnUpdatesDrop:
+					case updates::URType::EmptyUpdate:
+					case updates::URType::NodeNetworkCheck:
+					case updates::URType::SetTagsMatcher:
+					case updates::URType::SetTagsMatcherTx:
+					case updates::URType::SaveShardingConfig:
+					case updates::URType::ApplyShardingConfig:
+					case updates::URType::ResetOldShardingConfig:
+					case updates::URType::ResetCandidateConfig:
+					case updates::URType::RollbackCandidateConfig:
 						break;
 				}
 				std::abort();
 			}
-			case UpdateRecord::Type::UpdateQueryTx:
-			case UpdateRecord::Type::DeleteQueryTx: {
+			case updates::URType::UpdateQueryTx:
+			case updates::URType::DeleteQueryTx: {
 				if (nsData.tx.IsFree()) {
-					return UpdateApplyStatus(Error(errLogic, "Tx is empty"), rec.type);
+					return UpdateApplyStatus(Error(errLogic, "Tx is empty"), rec.Type());
 				}
-				auto& data = std::get<std::unique_ptr<QueryReplicationRecord>>(rec.data);
-				return UpdateApplyStatus(nsData.tx.Modify(Query::FromSQL(data->sql), lsn), rec.type);
+				auto& data = std::get<QueryReplicationRecord>(*rec.Data());
+				return UpdateApplyStatus(nsData.tx.Modify(Query::FromSQL(data.sql), lsn), rec.Type());
 			}
-			case UpdateRecord::Type::SetTagsMatcherTx: {
+			case updates::URType::SetTagsMatcherTx: {
 				if (nsData.tx.IsFree()) {
-					return UpdateApplyStatus(Error(errLogic, "Tx is empty"), rec.type);
+					return UpdateApplyStatus(Error(errLogic, "Tx is empty"), rec.Type());
 				}
-				auto& data = std::get<std::unique_ptr<TagsMatcherReplicationRecord>>(rec.data);
-				TagsMatcher tm = data->tm;
-				return UpdateApplyStatus(nsData.tx.SetTagsMatcher(std::move(tm), lsn), rec.type);
+				auto& data = std::get<TagsMatcherReplicationRecord>(*rec.Data());
+				TagsMatcher tm = data.tm;
+				return UpdateApplyStatus(nsData.tx.SetTagsMatcher(std::move(tm), lsn), rec.Type());
 			}
-			case UpdateRecord::Type::AddNamespace: {
-				auto& data = std::get<std::unique_ptr<AddNamespaceReplicationRecord>>(rec.data);
-				const auto sid = rec.extLsn.NsVersion().Server();
+			case updates::URType::AddNamespace: {
+				auto& data = std::get<AddNamespaceReplicationRecord>(*rec.Data());
+				const auto sid = rec.ExtLSN().NsVersion().Server();
 				auto err =
-					client.WithLSN(lsn_t(0, sid)).AddNamespace(data->def, NsReplicationOpts{{data->stateToken}, rec.extLsn.NsVersion()});
+					client.WithLSN(lsn_t(0, sid)).AddNamespace(data.def, NsReplicationOpts{{data.stateToken}, rec.ExtLSN().NsVersion()});
 				if (err.ok() && nsData.isClosed) {
 					nsData.isClosed = false;
 					logTrace("%d:%d:%s Namespace is closed on leader. Scheduling resync for followers", serverId_, node.uid, nsName);
-					return UpdateApplyStatus(Error(), UpdateRecord::Type::ResyncNamespaceGeneric);	// Perform resync on ns reopen
+					return UpdateApplyStatus(Error(), updates::URType::ResyncNamespaceGeneric);	 // Perform resync on ns reopen
 				}
 				nsData.isClosed = false;
 				if constexpr (!isClusterReplThread()) {
@@ -1148,79 +1165,78 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const UpdateRecord& r
 															 ClusterizationStatus{serverId_, ClusterizationStatus::Role::SimpleReplica});
 					}
 				}
-				return UpdateApplyStatus(std::move(err), rec.type);
+				return UpdateApplyStatus(std::move(err), rec.Type());
 			}
-			case UpdateRecord::Type::DropNamespace: {
+			case updates::URType::DropNamespace: {
 				lsn.SetServer(serverId_);
 				auto err = client.WithLSN(lsn).DropNamespace(nsName);
 				nsData.isClosed = false;
 				if (!err.ok() && err.code() == errNotFound) {
-					return UpdateApplyStatus(Error(), rec.type);
+					return UpdateApplyStatus(Error(), rec.Type());
 				}
-				return UpdateApplyStatus(std::move(err), rec.type);
+				return UpdateApplyStatus(std::move(err), rec.Type());
 			}
-			case UpdateRecord::Type::CloseNamespace: {
+			case updates::URType::CloseNamespace: {
 				nsData.isClosed = true;
 				logTrace("%d:%d:%s Namespace was closed on leader", serverId_, node.uid, nsName);
-				return UpdateApplyStatus(Error(), rec.type);
+				return UpdateApplyStatus(Error(), rec.Type());
 			}
-			case UpdateRecord::Type::RenameNamespace: {
+			case updates::URType::RenameNamespace: {
 				assert(false);	// TODO: Rename is not supported yet
-				//				auto& data = std::get<std::unique_ptr<RenameNamespaceReplicationRecord>>(rec.data);
+				//				auto& data = std::get<RenameNamespaceReplicationRecord>(*rec.data);
 				//				lsn.SetServer(serverId);
 				//				return client.WithLSN(lsn).RenameNamespace(nsName, data->dstNsName);
-				return UpdateApplyStatus(Error(), rec.type);
+				return UpdateApplyStatus(Error(), rec.Type());
 			}
-			case UpdateRecord::Type::ResyncNamespaceGeneric:
-			case UpdateRecord::Type::ResyncNamespaceLeaderInit:
-				return UpdateApplyStatus(Error(), rec.type);
-			case UpdateRecord::Type::SetTagsMatcher: {
-				auto& data = std::get<std::unique_ptr<TagsMatcherReplicationRecord>>(rec.data);
-				TagsMatcher tm = data->tm;
-				return UpdateApplyStatus(client.WithLSN(lsn).SetTagsMatcher(nsName, std::move(tm)), rec.type);
+			case updates::URType::ResyncNamespaceGeneric:
+			case updates::URType::ResyncNamespaceLeaderInit:
+				return UpdateApplyStatus(Error(), rec.Type());
+			case updates::URType::SetTagsMatcher: {
+				auto& data = std::get<TagsMatcherReplicationRecord>(*rec.Data());
+				TagsMatcher tm = data.tm;
+				return UpdateApplyStatus(client.WithLSN(lsn).SetTagsMatcher(nsName, std::move(tm)), rec.Type());
 			}
-			case UpdateRecord::Type::SaveShardingConfig: {
-				auto& data = std::get<std::unique_ptr<SaveNewShardingCfgRecord>>(rec.data);
+			case updates::URType::SaveShardingConfig: {
+				auto& data = std::get<SaveNewShardingCfgRecord>(*rec.Data());
 				auto err = client.WithLSN(lsn_t(0, serverId_))
 							   .ShardingControlRequest(sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::SaveCandidate>(
-								   data->config, data->sourceId));
-				return UpdateApplyStatus(std::move(err), rec.type);
+								   data.config, data.sourceId));
+				return UpdateApplyStatus(std::move(err), rec.Type());
 			}
 
-			case UpdateRecord::Type::ApplyShardingConfig: {
-				auto& data = std::get<std::unique_ptr<ApplyNewShardingCfgRecord>>(rec.data);
+			case updates::URType::ApplyShardingConfig: {
+				auto& data = std::get<ApplyNewShardingCfgRecord>(*rec.Data());
 				auto err = client.WithLSN(lsn_t(0, serverId_))
 							   .ShardingControlRequest(
-								   sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ApplyNew>(data->sourceId));
-				return UpdateApplyStatus(std::move(err), rec.type);
+								   sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ApplyNew>(data.sourceId));
+				return UpdateApplyStatus(std::move(err), rec.Type());
 			}
-			case UpdateRecord::Type::ResetOldShardingConfig: {
-				auto& data = std::get<std::unique_ptr<ResetShardingCfgRecord>>(rec.data);
+			case updates::URType::ResetOldShardingConfig: {
+				auto& data = std::get<ResetShardingCfgRecord>(*rec.Data());
 				auto err = client.WithLSN(lsn_t(0, serverId_))
 							   .ShardingControlRequest(
-								   sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ResetOldSharding>(data->sourceId));
-				return UpdateApplyStatus(std::move(err), rec.type);
+								   sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ResetOldSharding>(data.sourceId));
+				return UpdateApplyStatus(std::move(err), rec.Type());
 			}
-			case UpdateRecord::Type::ResetCandidateConfig: {
-				auto& data = std::get<std::unique_ptr<ResetShardingCfgRecord>>(rec.data);
+			case updates::URType::ResetCandidateConfig: {
+				auto& data = std::get<ResetShardingCfgRecord>(*rec.Data());
 				auto err = client.WithLSN(lsn_t(0, serverId_))
 							   .ShardingControlRequest(
-								   sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ResetCandidate>(data->sourceId));
-				return UpdateApplyStatus(std::move(err), rec.type);
+								   sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ResetCandidate>(data.sourceId));
+				return UpdateApplyStatus(std::move(err), rec.Type());
 			}
-			case UpdateRecord::Type::RollbackCandidateConfig: {
-				auto& data = std::get<std::unique_ptr<ResetShardingCfgRecord>>(rec.data);
-				auto err =
-					client.WithLSN(lsn_t(0, serverId_))
-						.ShardingControlRequest(
-							sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::RollbackCandidate>(data->sourceId));
-				return UpdateApplyStatus(std::move(err), rec.type);
+			case updates::URType::RollbackCandidateConfig: {
+				auto& data = std::get<ResetShardingCfgRecord>(*rec.Data());
+				auto err = client.WithLSN(lsn_t(0, serverId_))
+							   .ShardingControlRequest(
+								   sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::RollbackCandidate>(data.sourceId));
+				return UpdateApplyStatus(std::move(err), rec.Type());
 			}
 
-			case UpdateRecord::Type::None:
-			case UpdateRecord::Type::EmptyUpdate:
-			case UpdateRecord::Type::ResyncOnUpdatesDrop:
-			case UpdateRecord::Type::NodeNetworkCheck:
+			case updates::URType::None:
+			case updates::URType::EmptyUpdate:
+			case updates::URType::ResyncOnUpdatesDrop:
+			case updates::URType::NodeNetworkCheck:
 				std::abort();
 		}
 	} catch (std::bad_variant_access& e) {

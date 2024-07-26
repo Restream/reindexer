@@ -38,7 +38,6 @@ void FTApi::Init(const reindexer::FtFastConfig& ftCfg, unsigned nses, const std:
 reindexer::FtFastConfig FTApi::GetDefaultConfig(size_t fieldsCount) {
 	reindexer::FtFastConfig cfg(fieldsCount);
 	cfg.enableNumbersSearch = true;
-	cfg.enableWarmupOnNsCopy = true;
 	cfg.logLevel = 5;
 	cfg.mergeLimit = 20000;
 	cfg.maxStepSize = 100;
@@ -79,7 +78,6 @@ void FTApi::FillData(int64_t count) {
 		counter_++;
 		item["ft1"] = ft1;
 		rt.Upsert(GetDefaultNamespace(), item);
-		rt.Commit(GetDefaultNamespace());
 	}
 }
 
@@ -100,7 +98,6 @@ std::pair<std::string_view, int> FTApi::Add(std::string_view ft1) {
 	item["ft1"] = std::string{ft1};
 
 	rt.Upsert("nm1", item);
-	rt.Commit("nm1");
 	return make_pair(ft1, counter_ - 1);
 }
 
@@ -112,7 +109,6 @@ void FTApi::Add(std::string_view ns, std::string_view ft1, std::string_view ft2)
 	item["ft2"] = std::string{ft2};
 
 	rt.Upsert(ns, item);
-	rt.Commit(ns);
 }
 
 void FTApi::Add(std::string_view ns, std::string_view ft1, std::string_view ft2, std::string_view ft3) {
@@ -124,7 +120,6 @@ void FTApi::Add(std::string_view ns, std::string_view ft1, std::string_view ft2,
 	item["ft3"] = std::string{ft3};
 
 	rt.Upsert(ns, item);
-	rt.Commit(ns);
 }
 
 void FTApi::AddInBothFields(std::string_view w1, std::string_view w2, unsigned nses) {
@@ -151,8 +146,6 @@ void FTApi::AddInBothFields(std::string_view ns, std::string_view w1, std::strin
 	item["ft1"] = std::string{w2};
 	item["ft2"] = std::string{w2};
 	rt.Upsert(ns, item);
-
-	rt.Commit(ns);
 }
 
 reindexer::QueryResults FTApi::SimpleSelect(std::string word, bool withHighlight) {

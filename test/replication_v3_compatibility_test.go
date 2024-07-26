@@ -97,12 +97,13 @@ func updateAddNewFieldsTx(t *testing.T, db *reindexer.Reindexer, ns string) {
 	tx, err := db.BeginTx(ns)
 	assert.NoError(t, err)
 	for i := 0; i < 2; i++ {
-		tx.Query().Set(trueRandWord(20), 999).
+		err = tx.Query().Set(trueRandWord(20), 999).
 			Limit(5).
-			Update()
-		tx.Query().Set(trueRandWord(20), 1212).
+			Update().Error()
+		assert.NoError(t, err)
+		err = tx.Query().Set(trueRandWord(20), 1212).
 			Limit(2).
-			Update()
+			Update().Error()
 		assert.NoError(t, err)
 	}
 	_, err = tx.CommitWithCount()

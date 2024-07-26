@@ -60,7 +60,7 @@ public:
 	Error Status() const noexcept;
 	int GetShardID() const noexcept;
 
-	const std::string &GetNsName() const noexcept;
+	std::string_view GetNsName() const noexcept;
 	bool IsTagsUpdated() const noexcept;
 	TimepointT GetStartTime() const noexcept;
 

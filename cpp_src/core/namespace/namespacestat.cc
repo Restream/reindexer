@@ -2,8 +2,6 @@
 
 #include "core/cjson/jsonbuilder.h"
 #include "gason/gason.h"
-#include "tools/jsontools.h"
-#include "tools/logger.h"
 
 namespace reindexer {
 
@@ -12,7 +10,7 @@ using namespace std::string_view_literals;
 void NamespaceMemStat::GetJSON(WrSerializer &ser) {
 	JsonBuilder builder(ser);
 
-	builder.Put("name", name);
+	builder.Put("name", name.OriginalName());
 	builder.Put("items_count", itemsCount);
 
 	if (emptyItemsCount) builder.Put("empty_items_count", emptyItemsCount);
@@ -96,7 +94,7 @@ void PerfStat::GetJSON(JsonBuilder &builder) {
 void NamespacePerfStat::GetJSON(WrSerializer &ser) {
 	JsonBuilder builder(ser);
 
-	builder.Put("name", name);
+	builder.Put("name", name.OriginalName());
 	{
 		auto obj = builder.Object("updates");
 		updates.GetJSON(obj);

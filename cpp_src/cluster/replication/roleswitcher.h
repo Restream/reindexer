@@ -18,7 +18,6 @@ class Logger;
 
 class RoleSwitcher {
 public:
-	using NsNamesHashSetT = fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str>;
 	struct Config {
 		bool enableCompression = false;
 		int clusterId = 0;
@@ -69,11 +68,11 @@ private:
 	void switchNamespaces(const RaftInfo &state, const ContainerT &namespaces);
 	void handleInitialSync(RaftInfo::Role newRole);
 	void initialLeadersSync();
-	Error awaitRoleSwitchForNamespace(client::CoroReindexer &client, std::string_view nsName, ReplicationStateV2 &st);
-	Error getNodesListForNs(std::string_view nsName, std::list<reindexer::cluster::LeaderSyncQueue::Entry> &syncQueue);
+	Error awaitRoleSwitchForNamespace(client::CoroReindexer &client, const NamespaceName& nsName, ReplicationStateV2 &st);
+	Error getNodesListForNs(const NamespaceName &nsName, std::list<reindexer::cluster::LeaderSyncQueue::Entry> &syncQueue);
 	NsNamesHashSetT collectNsNames();
 	template <typename RxT>
-	Error appendNsNamesFrom(RxT &rx, RoleSwitcher::NsNamesHashSetT &set);
+	Error appendNsNamesFrom(RxT &rx, NsNamesHashSetT &set);
 	void connectNodes();
 	void disconnectNodes();
 	size_t getConsensusCnt() const noexcept { return GetConsensusForN(nodes_.size() + 1); }

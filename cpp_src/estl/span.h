@@ -1,6 +1,6 @@
 #pragma once
 
-#include <stdint.h>
+#include <cstdint>
 #include <string_view>
 #include "tools/assertrx.h"
 #include "trivial_reverse_iterator.h"
@@ -36,11 +36,27 @@ public:
 		return *this;
 	}
 
-	// FIXME: const override
-	template <typename Container>
-	constexpr span(const Container& other) noexcept : data_(const_cast<T*>(other.data())), size_(other.size()) {}
-
-	explicit constexpr span(const T* str, size_type len) noexcept : data_(const_cast<T*>(str)), size_(len) {}
+	template <template <typename> class Container, typename U,
+			  std::enable_if_t<std::is_same_v<std::remove_const_t<T>, std::remove_const_t<U>> && std::is_const_v<T>, int>* = nullptr>
+	constexpr span(const Container<U>& other) noexcept : data_(static_cast<T*>(other.data())), size_(other.size()) {}
+	template <template <typename> class Container, typename U,
+			  std::enable_if_t<!std::is_const_v<std::remove_reference_t<Container<U>>> &&
+								   std::is_same_v<std::remove_const_t<T>, std::remove_const_t<U>>,
+							   int>* = nullptr>
+	constexpr span(Container<U>&& other) noexcept : data_(static_cast<T*>(other.data())), size_(other.size()) {}
+	template <
+		typename Container,
+		std::enable_if_t<std::is_same_v<std::remove_const_t<T>, std::remove_const_t<typename Container::value_type>> && std::is_const_v<T>,
+						 int>* = nullptr>
+	constexpr span(const Container& other) noexcept : data_(other.data()), size_(other.size()) {}
+	template <typename Container,
+			  std::enable_if_t<
+				  !std::is_const_v<std::remove_reference_t<Container>> &&
+					  std::is_same_v<std::remove_const_t<T>, std::remove_const_t<typename std::remove_reference_t<Container>::value_type>>,
+				  int>* = nullptr>
+	constexpr span(Container&& other) noexcept : data_(other.data()), size_(other.size()) {}
+	template <typename U, std::enable_if_t<std::is_const<T>::value == std::is_const<U>::value, void>* = nullptr>
+	explicit constexpr span(U* str, size_type len) noexcept : data_(static_cast<T*>(str)), size_(len) {}
 	constexpr span(T* str, size_type len) noexcept : data_(str), size_(len) {}
 	template <size_type L>
 	constexpr span(T (&arr)[L]) noexcept : data_(arr), size_(L) {}
@@ -85,6 +101,11 @@ protected:
 	size_type size_;
 };
 
+template <typename StrT, std::void_t<decltype(std::declval<StrT>().data())>* = nullptr>
+inline span<char> giftStr(const StrT& s) noexcept {
+	// Explicit const_cast for (s) to force COW-string copy
+	return span<char>(const_cast<StrT&>(s).data(), s.size());
+}
 inline span<char> giftStr(std::string_view sv) noexcept { return span<char>(const_cast<char*>(sv.data()), sv.size()); }
 
 }  // namespace reindexer

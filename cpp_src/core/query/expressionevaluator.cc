@@ -47,8 +47,8 @@ void ExpressionEvaluator::throwUnexpectedTokenError(tokenizer& parser, const tok
 	throw Error(errParams, kWrongFieldTypeError, outTok.text());
 }
 
-ExpressionEvaluator::PrimaryToken ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValue& v, token& outTok,
-																	   const NsContext& ctx) {
+ExpressionEvaluator::PrimaryToken ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValue& v, StringAllowed strAllowed,
+																	   token& outTok, const NsContext& ctx) {
 	outTok = parser.next_token();
 	if (outTok.text() == "("sv) {
 		const double val = performSumAndSubtracting(parser, v, ctx);
@@ -75,7 +75,13 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::getPrimaryToken(tokenizer
 		case TokenName:
 			return handleTokenName(parser, v, outTok, ctx);
 		case TokenString:
-			throwUnexpectedTokenError(parser, outTok);
+			if (strAllowed == StringAllowed::Yes) {
+				arrayValues_.MarkArray();
+				arrayValues_.emplace_back(token2kv(outTok, parser, false));
+				return {.value = std::nullopt, .type = PrimaryToken::Type::Array};
+			} else {
+				throwUnexpectedTokenError(parser, outTok);
+			}
 		case TokenEnd:
 		case TokenOp:
 		case TokenSymbol:
@@ -195,7 +201,7 @@ void ExpressionEvaluator::handleCommand(tokenizer& parser, const PayloadValue& v
 	VariantArray resultArr;
 
 	token valueToken;
-	auto trr = getPrimaryToken(parser, v, valueToken, ctx);
+	auto trr = getPrimaryToken(parser, v, StringAllowed::No, valueToken, ctx);
 	if rx_unlikely (trr.type != PrimaryToken::Type::Null) {
 		if rx_unlikely (trr.type != PrimaryToken::Type::Array) {
 			throw Error(errParams, "Only an array field is expected as first parameter of command 'array_remove_once/array_remove'");
@@ -212,10 +218,12 @@ void ExpressionEvaluator::handleCommand(tokenizer& parser, const PayloadValue& v
 	}
 
 	// parse list of delete items
-	auto array = getPrimaryToken(parser, v, valueToken, ctx);
-	if rx_unlikely (array.type != PrimaryToken::Type::Null) {
-		if rx_unlikely (array.type != PrimaryToken::Type::Array) {
-			throw Error(errParams, "Expecting array as command parameter: '%s'", valueToken.text());
+	auto val = getPrimaryToken(parser, v, StringAllowed::Yes, valueToken, ctx);
+	if rx_unlikely (val.type != PrimaryToken::Type::Null) {
+		if ((val.type != PrimaryToken::Type::Array) && (val.type != PrimaryToken::Type::Scalar)) {
+			throw Error(errParams, "Expecting array or scalar as command parameter: '%s'", valueToken.text());
+		} else if ((val.type == PrimaryToken::Type::Scalar) && val.value.has_value()) {
+			arrayValues_.emplace_back(Variant(val.value.value()));
 		}
 	}
 
@@ -230,7 +238,7 @@ void ExpressionEvaluator::handleCommand(tokenizer& parser, const PayloadValue& v
 		if (cmd == Command::ArrayRemoveOnce) {
 			// remove elements from array once
 			auto it = std::find_if(values.begin(), values.end(), [&item](const auto& elem) {
-				return item.RelaxCompare<WithString::Yes, NotComparable::Throw>(elem) == ComparationResult::Eq;
+				return item.RelaxCompare<WithString::Yes, NotComparable::Return>(elem) == ComparationResult::Eq;
 			});
 			if (it != values.end()) {
 				values.erase(it);
@@ -239,7 +247,7 @@ void ExpressionEvaluator::handleCommand(tokenizer& parser, const PayloadValue& v
 			// remove elements from array
 			values.erase(std::remove_if(values.begin(), values.end(),
 										[&item](const auto& elem) {
-											return item.RelaxCompare<WithString::Yes, NotComparable::Throw>(elem) == ComparationResult::Eq;
+											return item.RelaxCompare<WithString::Yes, NotComparable::Return>(elem) == ComparationResult::Eq;
 										}),
 						 values.end());
 		}
@@ -250,7 +258,7 @@ void ExpressionEvaluator::handleCommand(tokenizer& parser, const PayloadValue& v
 
 double ExpressionEvaluator::performArrayConcatenation(tokenizer& parser, const PayloadValue& v, token& tok, const NsContext& ctx) {
 	token valueToken;
-	auto left = getPrimaryToken(parser, v, valueToken, ctx);
+	auto left = getPrimaryToken(parser, v, StringAllowed::No, valueToken, ctx);
 	tok = parser.peek_token();
 	switch (left.type) {
 		case PrimaryToken::Type::Scalar:
@@ -284,7 +292,7 @@ double ExpressionEvaluator::performArrayConcatenation(tokenizer& parser, const P
 			throw Error(errParams, "Unable to mix arrays concatenation and arithmetic operations. Got token: '%s'", tok.text());
 		}
 		state_ = StateArrayConcat;
-		auto right = getPrimaryToken(parser, v, valueToken, ctx);
+		auto right = getPrimaryToken(parser, v, StringAllowed::No, valueToken, ctx);
 		if rx_unlikely (right.type == PrimaryToken::Type::Scalar) {
 			throw Error(errParams, kScalarsInConcatenationError, valueToken.text());
 		}

@@ -83,6 +83,7 @@ type NetCProto struct {
 	dedicatedThreads   bindings.OptionDedicatedThreads
 	caps               bindings.BindingCapabilities
 	appName            string
+	eventsHandler      bindings.EventsHandler
 	termCh             chan struct{}
 	lock               sync.RWMutex
 	logger             bindings.Logger
@@ -267,7 +268,7 @@ func (binding *NetCProto) GetDSNs() []url.URL {
 	return binding.dsn.urls
 }
 
-func (binding *NetCProto) Init(u []url.URL, options ...interface{}) (err error) {
+func (binding *NetCProto) Init(u []url.URL, eh bindings.EventsHandler, options ...interface{}) (err error) {
 	connPoolSize := defConnPoolSize
 	connPoolLBAlgorithm := defConnPoolLBAlgorithm
 	binding.appName = defAppName
@@ -326,6 +327,7 @@ func (binding *NetCProto) Init(u []url.URL, options ...interface{}) (err error) 
 		binding.retryAttempts.Write = 0
 	}
 
+	binding.eventsHandler = eh
 	binding.dsn.connFactory = &connFactoryImpl{}
 	binding.dsn.urls = u
 	for i := 0; i < len(binding.dsn.urls); i++ {
@@ -346,53 +348,73 @@ func (binding *NetCProto) Init(u []url.URL, options ...interface{}) (err error) 
 
 func (binding *NetCProto) newPool(ctx context.Context, connPoolSize int, connPoolLBAlgorithm bindings.LoadBalancingAlgorithm) error {
 	var wg sync.WaitGroup
-	for _, conn := range binding.pool.conns {
+	for _, conn := range binding.pool.sharedConns {
 		conn.finalize()
+	}
+	if binding.pool.eventsConn != nil {
+		binding.pool.eventsConn.finalize()
 	}
 
 	binding.pool = pool{
-		conns:       make([]connection, connPoolSize),
+		sharedConns: make([]connection, connPoolSize),
 		lbAlgorithm: connPoolLBAlgorithm,
 	}
+
+	connParams := binding.createConnParams()
 
 	wg.Add(connPoolSize)
 	for i := 0; i < connPoolSize; i++ {
 		go func(binding *NetCProto, wg *sync.WaitGroup, i int) {
 			defer wg.Done()
 
-			conn, serverStartTS, _ := binding.dsn.connFactory.newConnection(
-				ctx,
-				newConnParams{
-					dsn:                    binding.getActiveDSN(),
-					loginTimeout:           binding.timeouts.LoginTimeout,
-					requestTimeout:         binding.timeouts.RequestTimeout,
-					createDBIfMissing:      binding.connectOpts.CreateDBIfMissing,
-					appName:                binding.appName,
-					enableCompression:      binding.compression.EnableCompression,
-					requestDedicatedThread: binding.dedicatedThreads.DedicatedThreads,
-					caps:                   binding.caps,
-				},
-				binding,
-			)
-
+			conn, serverStartTS, _ := binding.dsn.connFactory.newConnection(ctx, connParams, binding, nil)
 			if serverStartTS > 0 {
 				old := atomic.SwapInt64(&binding.serverStartTime, serverStartTS)
 				if old != 0 && old != serverStartTS {
 					atomic.StoreInt32(&binding.isServerChanged, 1)
 				}
 			}
-
-			binding.pool.conns[i] = conn
+			binding.pool.sharedConns[i] = conn
 		}(binding, &wg, i)
 	}
 	wg.Wait()
 
-	for _, conn := range binding.pool.conns {
+	for _, conn := range binding.pool.sharedConns {
 		if conn.hasError() {
 			return conn.curError()
 		}
 	}
 
+	return nil
+}
+
+func (binding *NetCProto) createConnParams() newConnParams {
+	return newConnParams{dsn: binding.getActiveDSN(),
+		loginTimeout:           binding.timeouts.LoginTimeout,
+		requestTimeout:         binding.timeouts.RequestTimeout,
+		createDBIfMissing:      binding.connectOpts.CreateDBIfMissing,
+		appName:                binding.appName,
+		enableCompression:      binding.compression.EnableCompression,
+		requestDedicatedThread: binding.dedicatedThreads.DedicatedThreads,
+		caps:                   binding.caps}
+}
+
+func (binding *NetCProto) createEventConn(ctx context.Context, connParams newConnParams, eventsSubOptsJSON []byte) error {
+	conn, serverStartTS, err := binding.dsn.connFactory.newConnection(ctx, connParams, binding, binding.eventsHandler)
+	if serverStartTS > 0 {
+		old := atomic.SwapInt64(&binding.serverStartTime, serverStartTS)
+		if old != 0 && old != serverStartTS {
+			atomic.StoreInt32(&binding.isServerChanged, 1)
+		}
+	}
+	if err != nil {
+		return err
+	}
+	err = conn.rpcCallNoResults(ctx, cmdSubscribe, uint32(binding.timeouts.RequestTimeout/time.Second), 1, []byte{}, 0, eventsSubOptsJSON)
+	if err != nil {
+		return err
+	}
+	binding.pool.eventsConn = conn
 	return nil
 }
 
@@ -637,10 +659,6 @@ func (binding *NetCProto) UpdateQuery(ctx context.Context, data []byte) (binding
 	return binding.rpcCall(ctx, opWr, cmdUpdateQuery, data)
 }
 
-func (binding *NetCProto) Commit(ctx context.Context, namespace string) error {
-	return binding.rpcCallNoResults(ctx, opWr, cmdCommit, namespace)
-}
-
 func (binding *NetCProto) OnChangeCallback(f func()) {
 	binding.onChangeCallback = f
 }
@@ -723,10 +741,67 @@ func (binding *NetCProto) Finalize() error {
 	return nil
 }
 
+func (binding *NetCProto) callSubscribe(ctx context.Context, eventsSubOptsJSON []byte) error {
+	return binding.pool.eventsConn.rpcCallNoResults(ctx, cmdSubscribe, uint32(binding.timeouts.RequestTimeout/time.Second), 1, []byte{}, 0, eventsSubOptsJSON)
+}
+
+func (binding *NetCProto) tryReuseSubConn(ctx context.Context, eventsSubOptsJSON []byte) (bool, error) {
+	binding.lock.RLock()
+	defer binding.lock.RUnlock()
+	if binding.pool.eventsConn != nil && !binding.pool.eventsConn.hasError() {
+		return true, binding.callSubscribe(ctx, eventsSubOptsJSON)
+	}
+	return false, nil
+}
+
+func (binding *NetCProto) Subscribe(ctx context.Context, opts *bindings.SubscriptionOptions) error {
+	eventsSubOptsJSON, err := json.Marshal(opts)
+	if err != nil {
+		return err
+	}
+
+	reused, err := binding.tryReuseSubConn(ctx, eventsSubOptsJSON)
+	if err != nil {
+		return err
+	}
+	if reused {
+		return nil
+	}
+
+	binding.lock.Lock()
+	defer binding.lock.Unlock()
+	if binding.pool.eventsConn != nil {
+		if !binding.pool.eventsConn.hasError() {
+			return binding.callSubscribe(ctx, eventsSubOptsJSON)
+		}
+		binding.pool.eventsConn.finalize()
+	}
+	return binding.createEventConn(ctx, binding.createConnParams(), eventsSubOptsJSON)
+}
+
+func (binding *NetCProto) unsubscribeImpl(context.Context) (connection, error) {
+	binding.lock.Lock()
+	defer binding.lock.Unlock()
+	if binding.pool.eventsConn == nil {
+		return nil, errors.New("not subscribed")
+	}
+	conn := binding.pool.eventsConn
+	binding.pool.eventsConn = nil
+	return conn, nil
+}
+
+func (binding *NetCProto) Unsubscribe(ctx context.Context) error {
+	if conn, err := binding.unsubscribeImpl(ctx); err != nil {
+		return err
+	} else {
+		return conn.finalize()
+	}
+}
+
 func (binding *NetCProto) getAllConns() []connection {
 	binding.lock.RLock()
 	defer binding.lock.RUnlock()
-	return binding.pool.conns
+	return binding.pool.sharedConns
 }
 
 func (binding *NetCProto) logMsg(level int, fmt string, msg ...interface{}) {
@@ -770,7 +845,7 @@ func (binding *NetCProto) getConnection(ctx context.Context) (conn connection, e
 					}
 					binding.lock.Lock()
 					if currVersion+1 == binding.dsn.connVersion {
-						for _, conn := range binding.pool.conns {
+						for _, conn := range binding.pool.sharedConns {
 							conn.finalize()
 						}
 						binding.logMsg(3, "rq: reconnecting with strategy: %s \n", binding.dsn.reconnectionStrategy)
@@ -834,7 +909,7 @@ func (binding *NetCProto) reconnect(ctx context.Context) (conn connection, err e
 	if binding.dsn.connTry < 100 {
 		binding.dsn.connTry++
 	}
-	err = binding.connectDSN(ctx, len(binding.pool.conns), binding.pool.lbAlgorithm)
+	err = binding.connectDSN(ctx, len(binding.pool.sharedConns), binding.pool.lbAlgorithm)
 	if err != nil {
 		time.Sleep(time.Duration(binding.dsn.connTry) * time.Millisecond)
 	} else {

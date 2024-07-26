@@ -1,12 +1,11 @@
 #pragma once
 
 #include <stdlib.h>
-#include <chrono>
-#include <mutex>
 #include <string>
 #include <vector>
 #include "estl/span.h"
 #include "gason/gason.h"
+#include "namespacename.h"
 #include "tools/errors.h"
 #include "tools/lsn.h"
 
@@ -126,7 +125,7 @@ struct ReplicationStat : public ReplicationState {
 struct NamespaceMemStat {
 	void GetJSON(WrSerializer &ser);
 
-	std::string name;
+	NamespaceName name;
 	std::string storagePath;
 	bool storageOK = false;
 	bool storageEnabled = false;
@@ -195,7 +194,7 @@ struct IndexPerfStat {
 struct NamespacePerfStat {
 	void GetJSON(WrSerializer &ser);
 
-	std::string name;
+	NamespaceName name;
 	PerfStat updates;
 	PerfStat selects;
 	TxPerfStat transactions;

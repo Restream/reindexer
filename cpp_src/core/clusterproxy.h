@@ -173,7 +173,6 @@ public:
 		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Select query proxied", getServerIDRel());
 		return proxyCall<LocalQueryActionFT, &ReindexerImpl::Select, Error>(rdxDeadlineCtx, q.NsName(), action, q, qr);
 	}
-	Error Commit(std::string_view nsName) { return impl_.Commit(nsName); }
 	Item NewItem(std::string_view nsName, const RdxContext &ctx) { return impl_.NewItem(nsName, ctx); }
 
 	Transaction NewTransaction(std::string_view nsName, const RdxContext &ctx) {
@@ -291,10 +290,16 @@ public:
 	[[nodiscard]] Error ResetShardingConfigCandidate(int64_t sourceId, const RdxContext &ctx) noexcept;
 	[[nodiscard]] Error RollbackShardingConfigCandidate(int64_t sourceId, const RdxContext &ctx) noexcept;
 
-	Error SubscribeUpdates(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts) {
+	Error SubscribeUpdates(IEventsObserver &observer, EventSubscriberConfig &&cfg) {
+		return impl_.SubscribeUpdates(observer, std::move(cfg));
+	}
+	Error UnsubscribeUpdates(IEventsObserver &observer) { return impl_.UnsubscribeUpdates(observer); }
+
+	// REINDEX_WITH_V3_FOLLOWERS
+	Error SubscribeUpdates(IUpdatesObserverV3 *observer, const UpdatesFilters &filters, SubscriptionOpts opts) {
 		return impl_.SubscribeUpdates(observer, filters, opts);
 	}
-	Error UnsubscribeUpdates(IUpdatesObserver *observer) { return impl_.UnsubscribeUpdates(observer); }
+	Error UnsubscribeUpdates(IUpdatesObserverV3 *observer) { return impl_.UnsubscribeUpdates(observer); }
 	// REINDEX_WITH_V3_FOLLOWERS
 	int GetServerID() const noexcept { return sId_.load(std::memory_order_acquire); }
 
@@ -379,7 +384,7 @@ private:
 	std::shared_ptr<client::Reindexer> leader_;
 	ConnectionsMap clusterConns_;
 	std::atomic<unsigned short> sId_;
-	int configHandlerId_;
+	std::optional<int> replCfgHandlerID_;
 
 	std::condition_variable processPingEvent_;
 	std::mutex processPingEventMutex_;

@@ -145,7 +145,7 @@ void ItemComparator::bindOne(const SortingContext::Entry &sortingEntry, Inserter
 					   } else {
 						   assertrx_dbg(&(*ctx_.joinedSelectors)[e.nsIdx] == jns.joinedSelector);
 					   }
-					   assertrx_throw(!std::holds_alternative<JoinPreResult::Values>(jns.joinedSelector->PreResult().preselectedPayload));
+					   assertrx_dbg(!std::holds_alternative<JoinPreResult::Values>(jns.joinedSelector->PreResult().payload));
 					   const auto &ns = *jns.joinedSelector->RightNs();
 					   const int fieldIdx = e.index;
 					   if (fieldIdx == IndexValueType::SetByJsonPath || ns.indexes_[fieldIdx]->Opts().IsSparse()) {
@@ -309,11 +309,8 @@ ComparationResult ItemComparator::compareFields(IdType lId, IdType rId, size_t &
 					return std::make_pair(Variant(*(static_cast<const Uuid *>(rawData) + lId)),
 										  Variant(*(static_cast<const Uuid *>(rawData) + rId)));
 				},
-				[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) noexcept
-				-> std::pair<Variant, Variant> {
-					assertrx(0);
-					abort();
-				});
+				[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>)
+					-> std::pair<Variant, Variant> { throw_as_assert; });
 			cmpRes = values.first.template Compare<NotComparable::Throw>(values.second, opts ? *opts : CollateOpts());
 		} else {
 			cmpRes = ConstPayload(ns_.payloadType_, ns_.items_[lId])

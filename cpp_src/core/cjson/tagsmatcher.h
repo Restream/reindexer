@@ -32,15 +32,15 @@ public:
 		auto res = path2tag(jsonPath);
 		return res.empty() && canAdd ? impl_.clone()->path2tag(jsonPath, canAdd, updated_) : res;
 	}
-	IndexedTagsPath path2indexedtag(std::string_view jsonPath, const IndexExpressionEvaluator& ev) const {
-		IndexedTagsPath tagsPath = impl_->path2indexedtag(jsonPath, ev);
+	IndexedTagsPath path2indexedtag(std::string_view jsonPath) const {
+		IndexedTagsPath tagsPath = impl_->path2indexedtag(jsonPath);
 		assertrx(!updated_);
 		return tagsPath;
 	}
-	IndexedTagsPath path2indexedtag(std::string_view jsonPath, const IndexExpressionEvaluator& ev, bool canAdd) {
+	IndexedTagsPath path2indexedtag(std::string_view jsonPath, bool canAdd) {
 		if (jsonPath.empty()) return IndexedTagsPath();
-		auto res = impl_->path2indexedtag(jsonPath, ev);
-		return res.empty() && canAdd ? impl_.clone()->path2indexedtag(jsonPath, ev, canAdd, updated_) : res;
+		auto res = impl_->path2indexedtag(jsonPath);
+		return res.empty() && canAdd ? impl_.clone()->path2indexedtag(jsonPath, canAdd, updated_) : res;
 	}
 	int version() const noexcept { return impl_->version(); }
 	size_t size() const noexcept { return impl_->size(); }
@@ -60,12 +60,16 @@ public:
 	void setUpdated() noexcept { updated_ = true; }
 
 	bool try_merge(const TagsMatcher& tm) {
+		if (impl_->contains(*tm.impl_)) {
+			return true;
+		}
 		auto tmp = impl_;
-		if (!tmp.clone()->merge(*tm.impl_.get())) {
+		bool updated = false;
+		if (!tmp.clone()->merge(*tm.impl_, updated)) {
 			return false;
 		}
 		impl_ = tmp;
-		updated_ = true;
+		updated_ = updated_ || updated;
 		return true;
 	}
 	void add_names_from(const TagsMatcher& tm) {
@@ -79,13 +83,13 @@ public:
 	void UpdatePayloadType(PayloadType payloadType, NeedChangeTmVersion changeVersion) {
 		impl_.clone()->updatePayloadType(std::move(payloadType), updated_, changeVersion);
 	}
-	static TagsMatcher CreateMergedTagsMatcher(PayloadType payloadType, const std::vector<TagsMatcher>& tmList) {
+	static TagsMatcher CreateMergedTagsMatcher(const std::vector<TagsMatcher>& tmList) {
 		TagsMatcherImpl::TmListT implList;
 		implList.reserve(tmList.size());
 		for (const auto& tm : tmList) {
 			implList.emplace_back(tm.impl_.get());
 		}
-		TagsMatcher tm(make_intrusive<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>(std::move(payloadType), implList));
+		TagsMatcher tm(make_intrusive<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>(implList));
 		return tm;
 	}
 	bool IsSubsetOf(const TagsMatcher& otm) const { return impl_->isSubsetOf(*otm.impl_); }

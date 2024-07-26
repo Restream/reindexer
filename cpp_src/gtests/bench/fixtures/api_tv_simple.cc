@@ -5,67 +5,14 @@
 #include "core/nsselecter/joinedselector.h"
 #include "core/reindexer.h"
 #include "gtests/tools.h"
-#include "tools/string_regexp_functions.h"
-
 #include "helpers.h"
+#include "tools/string_regexp_functions.h"
 
 using benchmark::AllocsTracker;
 using reindexer::Query;
 using reindexer::QueryResults;
 
 constexpr char kJoinNamespace[] = "JoinItems";
-
-static std::string randString(size_t size) {
-	constexpr static std::string_view ch{"qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"};
-	std::string ret(size, ' ');
-	for (size_t i = 0; i < size; ++i) ret[i] = ch[rand() % ch.size()];
-	return ret;
-}
-
-template <size_t L>
-reindexer::span<bool> randBoolArray() {
-	static bool ret[L];
-	for (size_t i = 0; i < L; ++i) {
-		ret[i] = rand() % 2;
-	}
-	return ret;
-}
-
-template <size_t L>
-reindexer::span<int> randIntArray() {
-	static int ret[L];
-	for (size_t i = 0; i < L; ++i) {
-		ret[i] = rand();
-	}
-	return ret;
-}
-
-template <size_t L>
-reindexer::span<int64_t> randInt64Array() {
-	static int64_t ret[L];
-	for (size_t i = 0; i < L; ++i) {
-		ret[i] = rand();
-	}
-	return ret;
-}
-
-template <size_t L>
-reindexer::span<double> randDoubleArray() {
-	static double ret[L];
-	for (size_t i = 0; i < L; ++i) {
-		ret[i] = double(rand()) / (rand() + 1);
-	}
-	return ret;
-}
-
-template <size_t L>
-reindexer::span<std::string> randStringArray() {
-	static std::string ret[L];
-	for (size_t i = 0; i < L; ++i) {
-		ret[i] = randString(L);
-	}
-	return ret;
-}
 
 #if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN) || defined(RX_WITH_STDLIB_DEBUG)
 constexpr benchmark::IterationCount k0CondJoinIters = 8;
@@ -143,10 +90,6 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("Query2CondIdSet2000", &ApiTvSimple::Query2CondIdSet2000, this);
 	Register("Query2CondIdSet20000", &ApiTvSimple::Query2CondIdSet20000, this);
 #endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
-	Register("FromCJSON", &ApiTvSimple::FromCJSON, this);
-	Register("FromCJSONPKOnly", &ApiTvSimple::FromCJSONPKOnly, this);
-	Register("GetCJSON", &ApiTvSimple::GetCJSON, this);
-	Register("ExtractField", &ApiTvSimple::ExtractField, this);
 	Register("SubQueryEq", &ApiTvSimple::SubQueryEq, this);
 	Register("SubQuerySet", &ApiTvSimple::SubQuerySet, this);
 	Register("SubQueryAggregate", &ApiTvSimple::SubQueryAggregate, this);
@@ -240,8 +183,6 @@ reindexer::Error ApiTvSimple::Initialize() {
 		err = db_->Insert(stringSelectNs_, item);
 		if (!err.ok()) return err;
 	}
-	err = db_->Commit(stringSelectNs_);
-	if (!err.ok()) return err;
 
 	NamespaceDef mainNsDef{mainNs_};
 	mainNsDef.AddIndex("id", "hash", "int", IndexOpts().PK()).AddIndex("field", "hash", "int", IndexOpts());
@@ -282,132 +223,7 @@ reindexer::Error ApiTvSimple::Initialize() {
 		err = db_->Insert(rightNsDef.name, rItem);
 		if (!err.ok()) return err;
 	}
-
-	err = prepareCJsonBench();
-	if (!err.ok()) return err;
-
-	return err;
-}
-
-reindexer::Error ApiTvSimple::prepareCJsonBench() {
-	NamespaceDef cjsonNsDef{cjsonNsName_};
-	cjsonNsDef.AddIndex("id", "hash", "int", IndexOpts().PK())
-		.AddIndex("bool_-_index", "-", "bool", IndexOpts())
-		.AddIndex("int_-_index", "-", "int", IndexOpts())
-		.AddIndex("int_hash_index", "hash", "int", IndexOpts())
-		.AddIndex("int_tree_index", "tree", "int", IndexOpts())
-		.AddIndex("int64_-_index", "-", "int64", IndexOpts())
-		.AddIndex("int64_hash_index", "hash", "int64", IndexOpts())
-		.AddIndex("int64_tree_index", "tree", "int64", IndexOpts())
-		.AddIndex("double_-_index", "-", "double", IndexOpts())
-		.AddIndex("double_tree_index", "tree", "double", IndexOpts())
-		.AddIndex("string_-_index", "-", "string", IndexOpts())
-		.AddIndex("string_hash_index", "hash", "string", IndexOpts())
-		.AddIndex("string_tree_index", "tree", "string", IndexOpts())
-		.AddIndex("string_text_index", "text", "string", IndexOpts())
-		.AddIndex("bool_-_array_index", "-", "bool", IndexOpts().Array())
-		.AddIndex("int_-_array_index", "-", "int", IndexOpts().Array())
-		.AddIndex("int_hash_array_index", "hash", "int", IndexOpts().Array())
-		.AddIndex("int_tree_array_index", "tree", "int", IndexOpts().Array())
-		.AddIndex("int64_-_array_index", "-", "int64", IndexOpts().Array())
-		.AddIndex("int64_hash_array_index", "hash", "int64", IndexOpts().Array())
-		.AddIndex("int64_tree_array_index", "tree", "int64", IndexOpts().Array())
-		.AddIndex("double_-_array_index", "-", "double", IndexOpts().Array())
-		.AddIndex("double_tree_array_index", "tree", "double", IndexOpts().Array())
-		.AddIndex("string_-_array_index", "-", "string", IndexOpts().Array())
-		.AddIndex("string_hash_array_index", "hash", "string", IndexOpts().Array())
-		.AddIndex("string_tree_array_index", "tree", "string", IndexOpts().Array());
-	auto err = db_->AddNamespace(cjsonNsDef);
-	if (!err.ok()) return err;
-
-	fieldsToExtract_.clear();
-	itemForCjsonBench_ = std::make_unique<reindexer::Item>(db_->NewItem(cjsonNsName_));
-	if (!itemForCjsonBench_->Status().ok()) return itemForCjsonBench_->Status();
-	wrSer_.Reset();
-	reindexer::JsonBuilder bld(wrSer_);
-	constexpr size_t len = 10;
-	bld.Put("id", kCjsonBenchItemID);
-	bld.Put("bool_-_index", rand() % 2);
-	bld.Put("int_-_index", rand());
-	bld.Put("int_hash_index", rand());
-	bld.Put("int_tree_index", rand());
-	bld.Put("int64_-_index", rand());
-	bld.Put("int64_hash_index", rand());
-	bld.Put("int64_tree_index", rand());
-	bld.Put("double_-_index", rand() / double(rand() + 1));
-	bld.Put("double_tree_index", rand() / double(rand() + 1));
-	bld.Put("string_-_index", randString(len));
-	bld.Put("string_hash_index", randString(len));
-	bld.Put("string_tree_index", randString(len));
-	bld.Put("string_text_index", randString(len));
-	bld.Array("bool_-_array_index", randBoolArray<len>());
-	bld.Array("int_-_array_index", randIntArray<len>());
-	bld.Array("int_hash_array_index", randIntArray<len>());
-	bld.Array("int_tree_array_index", randIntArray<len>());
-	bld.Array("int64_-_array_index", randInt64Array<len>());
-	bld.Array("int64_hash_array_index", randInt64Array<len>());
-	bld.Array("int64_tree_array_index", randInt64Array<len>());
-	bld.Array("double_-_array_index", randDoubleArray<len>());
-	bld.Array("double_tree_array_index", randDoubleArray<len>());
-	bld.Array("string_-_array_index", randStringArray<len>());
-	bld.Array("string_hash_array_index", randStringArray<len>());
-	bld.Array("string_tree_array_index", randStringArray<len>());
-	for (size_t i = 0; i < 10; ++i) {
-		const std::string i_str = std::to_string(i);
-		fieldsToExtract_.emplace_back("bool_field_" + i_str);
-		bld.Put("bool_field_" + i_str, rand() % 2);
-		fieldsToExtract_.emplace_back("int_field_" + i_str);
-		bld.Put("int_field_" + i_str, rand());
-		fieldsToExtract_.emplace_back("double_field_" + i_str);
-		bld.Put("double_field_" + i_str, rand() / double(rand() + 1));
-		fieldsToExtract_.emplace_back("string_field_" + i_str);
-		bld.Put("string_field_" + i_str, randString(len));
-		bld.Array("bool_array_field_" + i_str, randBoolArray<len>());
-		bld.Array("int_array_field_" + i_str, randIntArray<len>());
-		bld.Array("double_array_field_" + i_str, randDoubleArray<len>());
-		bld.Array("string_array_field_" + i_str, randStringArray<len>());
-		{
-			const std::string nestedBase("nested_obj_" + i_str);
-			auto obj = bld.Object(nestedBase);
-			obj.Put("bool_field", rand() % 2);
-			fieldsToExtract_.emplace_back(nestedBase + ".bool_field");
-			obj.Put("int_field", rand());
-			fieldsToExtract_.emplace_back(nestedBase + ".int_field");
-			obj.Put("double_field", rand() / double(rand() + 1));
-			fieldsToExtract_.emplace_back(nestedBase + ".double_field");
-			obj.Put("string_field", randString(len));
-			fieldsToExtract_.emplace_back(nestedBase + ".string_field");
-			obj.Array("bool_array_field", randBoolArray<len>());
-			obj.Array("int_array_field", randIntArray<len>());
-			obj.Array("double_array_field", randDoubleArray<len>());
-			obj.Array("string_array_field", randStringArray<len>());
-		}
-		{
-			auto arr = bld.Array("nested_arr_" + i_str);
-			for (size_t j = 0; j < len; ++j) {
-				auto obj = arr.Object();
-				obj.Put("bool_field", rand() % 2);
-				obj.Put("int_field", rand());
-				obj.Put("double_field", rand() / double(rand() + 1));
-				obj.Put("string_field", randString(len));
-				obj.Array("bool_array_field", randBoolArray<len>());
-				obj.Array("int_array_field", randIntArray<len>());
-				obj.Array("double_array_field", randDoubleArray<len>());
-				obj.Array("string_array_field", randStringArray<len>());
-			}
-		}
-	}
-	bld.End();
-	err = itemForCjsonBench_->FromJSON(wrSer_.Slice());
-	if (!err.ok()) return err;
-	if (!itemForCjsonBench_->Status().ok()) return itemForCjsonBench_->Status();
-	err = db_->Insert(cjsonNsName_, *itemForCjsonBench_);
-	if (!err.ok()) return err;
-	cjsonOfItem_ = itemForCjsonBench_->GetCJSON();
-	err = db_->Commit(cjsonNsName_);
-	if (!err.ok()) return err;
-
-	return err;
+	return {};
 }
 
 reindexer::Item ApiTvSimple::MakeStrItem() {
@@ -499,48 +315,6 @@ void ApiTvSimple::WarmUpIndexes(State& state) {
 			err = db_->Select(q, qres);
 			if (!err.ok()) state.SkipWithError(err.what().c_str());
 		}
-	}
-}
-
-void ApiTvSimple::GetCJSON(benchmark::State& state) {
-	assertrx(itemForCjsonBench_);
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		[[maybe_unused]] const auto ret = itemForCjsonBench_->GetCJSON();
-	}
-}
-
-void ApiTvSimple::FromCJSON(benchmark::State& state) {
-	reindexer::Item item = db_->NewItem(cjsonNsName_);
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		const auto err = item.FromCJSON(cjsonOfItem_);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
-	}
-}
-
-void ApiTvSimple::FromCJSONPKOnly(benchmark::State& state) {
-	reindexer::Item item = db_->NewItem(cjsonNsName_);
-	{
-		AllocsTracker allocsTracker(state);
-		for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-			const auto err = item.FromCJSON(cjsonOfItem_, true);
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
-			if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
-		}
-	}
-	assertrx(item["id"].Get<int>() == kCjsonBenchItemID);
-}
-
-void ApiTvSimple::ExtractField(benchmark::State& state) {
-	assertrx(itemForCjsonBench_);
-	assertrx(fieldsToExtract_.size());
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		const auto& fieldName = fieldsToExtract_[rand() % fieldsToExtract_.size()];
-		const auto va = VariantArray((*itemForCjsonBench_)[fieldName]);
-		if (va.size() != 1) state.SkipWithError(fmt::sprintf("Unexpected result size: %d", va.size()).c_str());
 	}
 }
 
@@ -1085,8 +859,6 @@ void ApiTvSimple::Query0CondInnerJoinPreResultStoreValues(benchmark::State& stat
 			err = db_->Upsert(ns, item);
 			if (!err.ok()) state.SkipWithError(err.what().c_str());
 		}
-		err = db_->Commit(ns);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
 	};
 
 	createNs(rightNs);

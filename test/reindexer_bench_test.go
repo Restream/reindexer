@@ -1,6 +1,8 @@
 package reindexer
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"math/rand"
 	"sync"
@@ -68,8 +70,8 @@ func init() {
 
 	cjenc := cjsonState.NewEncoder()
 
-	//buf := &bytes.Buffer{}
-	//gobenc := gob.NewEncoder(buf)
+	buf := &bytes.Buffer{}
+	gobenc := gob.NewEncoder(buf)
 
 	for i := 0; i < 100000; i++ {
 		testItemsSeed = append(testItemsSeed, newTestItem(i, 20).(*TestItem))
@@ -81,13 +83,12 @@ func init() {
 		cjenc.EncodeRaw(newTestItem(i, 20), ser)
 		testItemsCJsonSeed = append(testItemsCJsonSeed, ser.Bytes())
 
-		// gobenc.Encode(*newTestItem(i, 20))
-		// gobData := make([]byte, len(buf.Bytes()), len(buf.Bytes()))
-		// copy(gobData, buf.Bytes())
+		gobenc.Encode(newTestItem(i, 20))
+		gobData := make([]byte, len(buf.Bytes()), len(buf.Bytes()))
+		copy(gobData, buf.Bytes())
 
-		// testItemsGobSeed = append(testItemsGobSeed, gobData)
-		// buf.Reset()
-
+		testItemsGobSeed = append(testItemsGobSeed, gobData)
+		buf.Reset()
 	}
 
 	tnamespaces["test_items_bench"] = TestItemBench{}
@@ -188,49 +189,49 @@ func BenchmarkCJsonDecode(b *testing.B) {
 	}
 }
 
-// func BenchmarkGobEncode(b *testing.B) {
+func BenchmarkGobEncode(b *testing.B) {
+	// Just for the reference timings
+	buf := &bytes.Buffer{}
+	enc := gob.NewEncoder(buf)
 
-// 	buf := &bytes.Buffer{}
-// 	enc := gob.NewEncoder(buf)
+	for i := 0; i < b.N; i++ {
+		enc.Encode(testItemsSeed[i%len(testItemsSeed)])
+		buf.Reset()
+	}
+}
 
-// 	for i := 0; i < b.N; i++ {
-// 		enc.Encode(testItemsSeed[i%len(testItemsSeed)])
-// 		buf.Reset()
-// 	}
-// }
+func BenchmarkGobDecode(b *testing.B) {
+	// Just for the reference timings
+	buf := &bytes.Buffer{}
+	dec := gob.NewDecoder(buf)
+	buf.Write(testItemsGobSeed[0])
+	for i := 0; i < b.N; i++ {
+		ti := TestItem{}
+		if err := dec.Decode(&ti); err != nil {
+			panic(err)
+		}
+		buf.Reset()
+		buf.Write(testItemsGobSeed[(i%(len(testItemsGobSeed)-1))+1])
+	}
+}
 
-// func BenchmarkGobDecode(b *testing.B) {
-// 	buf := &bytes.Buffer{}
-// 	dec := gob.NewDecoder(buf)
+func BenchmarkJsonEncode(b *testing.B) {
+	// Just for the reference timings
+	for i := 0; i < b.N; i++ {
+		ser := cjson.NewPoolSerializer()
+		enc := json.NewEncoder(ser)
+		enc.Encode(testItemsSeed[i%len(testItemsSeed)])
+		ser.Close()
+	}
+}
 
-// 	buf.Write(testItemsGobSeed[0])
-// 	for i := 0; i < b.N; i++ {
-// 		ti := TestItem{}
-// 		if err := dec.Decode(&ti); err != nil {
-// 			panic(err)
-// 		}
-// 		buf.Reset()
-// 		buf.Write(testItemsGobSeed[(i%(len(testItemsGobSeed)-1))+1])
-// 	}
-// }
-
-// func BenchmarkJsonEncode(b *testing.B) {
-
-// 	for i := 0; i < b.N; i++ {
-// 		ser := cjson.NewPoolSerializer()
-// 		enc := json.NewEncoder(ser)
-// 		enc.Encode(testItemsSeed[i%len(testItemsSeed)])
-// 		ser.Close()
-// 	}
-// }
-
-// func BenchmarkJsonDecode(b *testing.B) {
-
-// 	for i := 0; i < b.N; i++ {
-// 		ti := TestItem{}
-// 		json.Unmarshal(testItemsJsonSeed[i%len(testItemsJsonSeed)], &ti)
-// 	}
-// }
+func BenchmarkJsonDecode(b *testing.B) {
+	// Just for the reference timings
+	for i := 0; i < b.N; i++ {
+		ti := TestItem{}
+		json.Unmarshal(testItemsJsonSeed[i%len(testItemsJsonSeed)], &ti)
+	}
+}
 
 func BenchmarkInsertJson(b *testing.B) {
 	tx := DBD.MustBeginTx("test_items_insert_json")

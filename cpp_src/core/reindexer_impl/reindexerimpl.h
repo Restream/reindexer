@@ -14,23 +14,19 @@
 #include "estl/atomic_unique_ptr.h"
 #include "estl/fast_hash_map.h"
 #include "estl/h_vector.h"
+#include "events/observer.h"
 #include "net/ev/ev.h"
 #include "tools/errors.h"
 #include "tools/filecontentwatcher.h"
 #include "tools/nsversioncounter.h"
 #include "tools/tcmallocheapwathcher.h"
 
-#include "replv3/updatesobserver.h"
-
 namespace reindexer {
 
 class IClientsStats;
 struct ClusterControlRequestData;
-
-// REINDEX_WITH_V3_FOLLOWERS
-class IUpdatesObserver;
+class IUpdatesObserverV3;
 class UpdatesFilters;
-// REINDEX_WITH_V3_FOLLOWERS
 
 namespace cluster {
 struct NodeData;
@@ -109,7 +105,6 @@ public:
 	Error Delete(std::string_view nsName, Item &item, LocalQueryResults &, const RdxContext &ctx);
 	Error Delete(const Query &query, LocalQueryResults &result, const RdxContext &ctx);
 	Error Select(const Query &query, LocalQueryResults &result, const RdxContext &ctx);
-	Error Commit(std::string_view nsName);
 	Item NewItem(std::string_view nsName, const RdxContext &ctx);
 
 	LocalTransaction NewTransaction(std::string_view nsName, const RdxContext &ctx);
@@ -122,10 +117,10 @@ public:
 	Error InitSystemNamespaces();
 	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions, const RdxContext &ctx);
 	Error GetProtobufSchema(WrSerializer &ser, std::vector<std::string> &namespaces);
-	Error GetReplState(std::string_view nsName, ReplicationStateV2 &state, const RdxContext &ctx);
-	Error SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus &status, const RdxContext &ctx);
-	Error GetSnapshot(std::string_view nsName, const SnapshotOpts &opts, Snapshot &snapshot, const RdxContext &ctx);
-	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk &ch, const RdxContext &ctx);
+	Error GetReplState(std::string_view nsName, ReplicationStateV2 &state, const RdxContext &ctx) noexcept;
+	Error SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus &status, const RdxContext &ctx) noexcept;
+	Error GetSnapshot(std::string_view nsName, const SnapshotOpts &opts, Snapshot &snapshot, const RdxContext &ctx) noexcept;
+	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk &ch, const RdxContext &ctx) noexcept;
 	Error Status() noexcept {
 		if rx_likely (connected_.load(std::memory_order_acquire)) {
 			return {};
@@ -145,13 +140,17 @@ public:
 	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index, const RdxContext &ctx);
 	bool NamespaceIsInClusterConfig(std::string_view nsName);
 
+	Error SubscribeUpdates(IEventsObserver &observer, EventSubscriberConfig &&cfg);
+	Error UnsubscribeUpdates(IEventsObserver &observer);
+
 	// REINDEX_WITH_V3_FOLLOWERS
-	Error SubscribeUpdates(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts);
-	Error UnsubscribeUpdates(IUpdatesObserver *observer);
+	Error SubscribeUpdates(IUpdatesObserverV3 *observer, const UpdatesFilters &filters, SubscriptionOpts opts);
+	Error UnsubscribeUpdates(IUpdatesObserverV3 *observer);
 	// REINDEX_WITH_V3_FOLLOWERS
 
 private:
 	using FilterNsNamesT = std::optional<h_vector<std::string, 6>>;
+	using ShardinConfigPtr = intrusive_ptr<intrusive_atomic_rc_wrapper<const cluster::ShardingConfig>>;
 
 	class BackgroundThread {
 	public:
@@ -207,7 +206,7 @@ private:
 		typedef contexted_shared_lock<Mutex, const RdxContext> RLockT;
 		typedef NsWLock WLockT;
 
-		Locker(cluster::INsDataReplicator &clusterizator, ReindexerImpl &owner) noexcept : clusterizator_(clusterizator), owner_(owner) {}
+		Locker(const cluster::IDataSyncer &clusterizator, ReindexerImpl &owner) noexcept : syncer_(clusterizator), owner_(owner) {}
 
 		RLockT RLock(const RdxContext &ctx) const { return RLockT(mtx_, ctx); }
 		WLockT DataWLock(const RdxContext &ctx) const {
@@ -216,12 +215,12 @@ private:
 			auto clusterStatus = owner_.clusterStatus_;
 			const bool isFollowerDB = clusterStatus.role == ClusterizationStatus::Role::SimpleReplica ||
 									  clusterStatus.role == ClusterizationStatus::Role::ClusterReplica;
-			bool synchronized = isFollowerDB || !requireSync || clusterizator_.IsInitialSyncDone();
+			bool synchronized = isFollowerDB || !requireSync || syncer_.IsInitialSyncDone();
 			while (!synchronized) {
 				lck.unlock();
-				clusterizator_.AwaitInitialSync(ctx);
+				syncer_.AwaitInitialSync(ctx);
 				lck.lock();
-				synchronized = clusterizator_.IsInitialSyncDone();
+				synchronized = syncer_.IsInitialSyncDone();
 			}
 			return lck;
 		}
@@ -229,7 +228,7 @@ private:
 
 	private:
 		mutable Mutex mtx_;
-		cluster::INsDataReplicator &clusterizator_;
+		const cluster::IDataSyncer &syncer_;
 		ReindexerImpl &owner_;
 	};
 
@@ -286,7 +285,7 @@ private:
 	[[nodiscard]] Error shardingConfigReplAction(const RdxContext &ctx, PreReplFunc func, Args &&...args) noexcept;
 
 	template <typename... Args>
-	[[nodiscard]] Error shardingConfigReplAction(const RdxContext &ctx, cluster::UpdateRecord::Type type, Args &&...args) noexcept;
+	[[nodiscard]] Error shardingConfigReplAction(const RdxContext &ctx, updates::URType type, Args &&...args) noexcept;
 
 	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str, nocase_less_str> namespaces_;
 
@@ -305,23 +304,32 @@ private:
 	atomic_unique_ptr<cluster::ClusterConfigData> clusterConfig_;
 	struct {
 		auto Get() const noexcept {
-			std::lock_guard lk(m);
-			return config;
+			std::lock_guard lk(m_);
+			return config_;
 		}
 
 		void Set(std::optional<cluster::ShardingConfig> &&other) noexcept {
-			std::lock_guard lk(m);
-			config.reset(other ? new intrusive_atomic_rc_wrapper<const cluster::ShardingConfig>(std::move(*other)) : nullptr);
+			std::lock_guard lk(m_);
+			config_.reset(other ? new intrusive_atomic_rc_wrapper<const cluster::ShardingConfig>(std::move(*other)) : nullptr);
+			if (handler_) {
+				handler_(config_);
+			}
 		}
 
 		operator bool() const noexcept {
-			std::lock_guard lk(m);
-			return config;
+			std::lock_guard lk(m_);
+			return config_;
+		}
+		void setHandled(std::function<void(const ShardinConfigPtr &)> &&handler) {
+			std::lock_guard lk(m_);
+			assertrx_dbg(!handler_);
+			handler_ = std::move(handler);
 		}
 
 	private:
-		mutable spinlock m;
-		intrusive_ptr<intrusive_atomic_rc_wrapper<const cluster::ShardingConfig>> config = nullptr;
+		mutable spinlock m_;
+		ShardinConfigPtr config_ = nullptr;
+		std::function<void(ShardinConfigPtr)> handler_;
 	} shardingConfig_;
 
 	std::deque<FileContetWatcher> configWatchers_;
@@ -344,12 +352,9 @@ private:
 	NsVersionCounter nsVersion_;
 
 	const CallbackMap proxyCallbacks_;
-
-#ifdef REINDEX_WITH_V3_FOLLOWERS
 	UpdatesObservers observers_;
-#endif	// REINDEX_WITH_V3_FOLLOWERS
+	std::optional<int> replCfgHandlerID_;
 
-	friend class Replicator;
 	friend class cluster::DataReplicator;
 	friend class cluster::ReplThread<cluster::ClusterThreadParam>;
 	friend class ClusterProxy;

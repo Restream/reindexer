@@ -1,62 +1,13 @@
 #include "customhash.h"
-#include <string.h>
 #include <string_view>
 #include "customlocal.h"
-#include "estl/defines.h"
 #include "utf8cpp/utf8.h"
 
 namespace reindexer {
 
-static const uint32_t seed = 3339675911UL;
-
-RX_ALWAYS_INLINE uint32_t unaligned_load(const char* p) noexcept {
-	uint32_t result;
-	memcpy(&result, p, sizeof(result));
-	return result;
-}
-
-// Implementation of Murmur hash for 32-bit size_t.
-uint32_t _Hash_bytes(const void* ptr, uint32_t len) noexcept {
-	const uint32_t m = 0x5bd1e995;
-	uint32_t hash = seed ^ len;
-	const char* buf = static_cast<const char*>(ptr);
-
-	// Mix 4 bytes at a time into the hash.
-	while (len >= 4) {
-		uint32_t k = unaligned_load(buf);
-		k *= m;
-		k ^= k >> 24;
-		k *= m;
-		hash *= m;
-		hash ^= k;
-		buf += 4;
-		len -= 4;
-	}
-
-	// Handle the last few bytes of the input array.
-	if (len >= 3) {
-		hash ^= static_cast<unsigned char>(buf[2]) << 16;
-	}
-	if (len >= 2) {
-		hash ^= static_cast<unsigned char>(buf[1]) << 8;
-	}
-	if (len >= 1) {
-		hash ^= static_cast<unsigned char>(buf[0]);
-		hash *= m;
-	}
-
-	// Do a few final mixes of the hash.
-	hash ^= hash >> 13;
-
-	hash *= m;
-
-	hash ^= hash >> 15;
-
-	return hash;
-}
-
 static uint32_t _Hash_bytes_collate_ascii(const void* ptr, uint32_t len) noexcept {
-	const uint32_t m = 0x5bd1e995;
+	constexpr static uint32_t seed = 3339675911UL;
+	constexpr static uint32_t m = 0x5bd1e995;
 	uint32_t hash = seed ^ len;
 	const char* buf = static_cast<const char*>(ptr);
 
@@ -97,7 +48,8 @@ static uint32_t _Hash_bytes_collate_ascii(const void* ptr, uint32_t len) noexcep
 }
 
 static uint32_t _Hash_bytes_collate_utf8(const void* ptr, uint32_t len) noexcept {
-	const uint32_t m = 0x5bd1e995;
+	constexpr static uint32_t seed = 3339675911UL;
+	constexpr static uint32_t m = 0x5bd1e995;
 	uint32_t hash = seed ^ len;
 	const char* buf = static_cast<const char*>(ptr);
 	const char* begin = buf;
@@ -136,10 +88,6 @@ uint32_t collateHash<CollateUTF8>(std::string_view s) noexcept {
 template <>
 uint32_t collateHash<CollateCustom>(std::string_view s) noexcept {
 	return _Hash_bytes_collate_utf8(s.data(), s.length());
-}
-template <>
-uint32_t collateHash<CollateNone>(std::string_view s) noexcept {
-	return _Hash_bytes(s.data(), s.length());
 }
 template <>
 uint32_t collateHash<CollateNumeric>(std::string_view s) noexcept {

@@ -8,7 +8,8 @@ import (
 )
 
 type pool struct {
-	conns            []connection
+	sharedConns      []connection
+	eventsConn       connection
 	lbAlgorithm      bindings.LoadBalancingAlgorithm
 	roundRobinParams struct {
 		next uint64
@@ -32,7 +33,7 @@ func (p *pool) lbRoundRobin() connection {
 	nextP := &p.roundRobinParams.next
 	id := atomic.AddUint64(nextP, 1)
 
-	for id >= uint64(len(p.conns)) {
+	for id >= uint64(len(p.sharedConns)) {
 		if atomic.CompareAndSwapUint64(nextP, id, 0) {
 			id = 0
 		} else {
@@ -40,26 +41,26 @@ func (p *pool) lbRoundRobin() connection {
 		}
 	}
 
-	return p.conns[id]
+	return p.sharedConns[id]
 }
 
 // Load balance connections randomly
 func (p *pool) lbRandom() connection {
-	id := rand.Intn(len(p.conns))
+	id := rand.Intn(len(p.sharedConns))
 
-	return p.conns[id]
+	return p.sharedConns[id]
 }
 
 // Load balance connections using "Power of Two Choices" algorithm.
 // See also: https://www.nginx.com/blog/nginx-power-of-two-choices-load-balancing-algorithm/
 func (p *pool) lbPowerOfTwoChoices() connection {
-	id1 := rand.Intn(len(p.conns))
-	conn1 := p.conns[id1]
+	id1 := rand.Intn(len(p.sharedConns))
+	conn1 := p.sharedConns[id1]
 	conn1Seqs := conn1.getSeqs()
 	conn1QueueUsage := cap(conn1Seqs) - len(conn1Seqs)
 
-	id2 := rand.Intn(len(p.conns))
-	conn2 := p.conns[id2]
+	id2 := rand.Intn(len(p.sharedConns))
+	conn2 := p.sharedConns[id2]
 	conn2Seqs := conn2.getSeqs()
 	conn2QueueUsage := cap(conn2Seqs) - len(conn2Seqs)
 

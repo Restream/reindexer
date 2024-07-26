@@ -4,14 +4,14 @@
 #include "core/nsselecter/joinedselector.h"
 #include "core/nsselecter/joinedselectormock.h"
 #include "core/queryresults/joinresults.h"
-#include "estl/fast_hash_set.h"
+#include "estl/charset.h"
 #include "estl/restricted.h"
 #include "tools/stringstools.h"
 #include "vendor/double-conversion/double-conversion.h"
 
 namespace {
 
-static void throwParseError(std::string_view sortExpr, char const* const pos, std::string_view message) {
+static RX_NO_INLINE void throwParseError(std::string_view sortExpr, char const* const pos, std::string_view message) {
 	throw reindexer::Error(errParams, "'%s' is not valid sort expression. Parser failed at position %d.%s%s", sortExpr,
 						   pos - sortExpr.data(), message.empty() ? "" : " ", message);
 }
@@ -55,7 +55,7 @@ using SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
 
 const PayloadValue& SortExpression::getJoinedValue(IdType rowId, const joins::NamespaceResults& joinResults,
 												   const std::vector<JoinedSelector>& joinedSelectors, size_t nsIdx) {
-	assertrx(joinedSelectors.size() > nsIdx);
+	assertrx_throw(joinedSelectors.size() > nsIdx);
 	const auto& js = joinedSelectors[nsIdx];
 	const joins::ItemIterator jIt{&joinResults, rowId};
 	const auto jfIt = jIt.at(nsIdx);
@@ -72,14 +72,14 @@ VariantArray SortExpression::GetJoinedFieldValues(IdType rowId, const joins::Nam
 		overloaded{
 			[](const JoinPreResult::Values& values) noexcept { return std::cref(values.payloadType); },
 			Restricted<IdSet, SelectIteratorContainer>{}([&js](const auto&) noexcept { return std::cref(js.rightNs_->payloadType_); })},
-		js.PreResult().preselectedPayload);
+		js.PreResult().payload);
 	const ConstPayload pv{pt, getJoinedValue(rowId, joinResults, joinedSelectors, nsIdx)};
 	VariantArray values;
 	if (index == IndexValueType::SetByJsonPath) {
 		TagsMatcher tm = std::visit(overloaded{[](const JoinPreResult::Values& values) noexcept { return std::cref(values.tagsMatcher); },
 											   Restricted<IdSet, SelectIteratorContainer>{}(
 												   [&js](const auto&) noexcept { return std::cref(js.rightNs_->tagsMatcher_); })},
-									js.PreResult().preselectedPayload);
+									js.PreResult().payload);
 		pv.GetByJsonPath(column, tm, values, KeyValueType::Undefined{});
 	} else {
 		pv.Get(index, values);
@@ -98,7 +98,7 @@ bool SortExpression::ByJoinedField() const noexcept {
 }
 
 SortExprFuncs::JoinedIndex& SortExpression::GetJoinedIndex() noexcept {
-	assertrx(Size() == 1);
+	assertrx_throw(Size() == 1);
 	return container_[0].Value<JoinedIndex>();
 }
 
@@ -186,12 +186,12 @@ double DistanceBetweenJoinedIndexesSameNs::GetValue(IdType rowId, const joins::N
 		overloaded{
 			[](const JoinPreResult::Values& values) noexcept { return std::cref(values.payloadType); },
 			Restricted<IdSet, SelectIteratorContainer>{}([&js](const auto&) noexcept { return std::cref(js.rightNs_->payloadType_); })},
-		js.PreResult().preselectedPayload);
+		js.PreResult().payload);
 	const ConstPayload pv{pt, SortExpression::getJoinedValue(rowId, joinResults, joinedSelectors, nsIdx)};
 	TagsMatcher tm = std::visit(overloaded{[](const JoinPreResult::Values& values) noexcept { return std::cref(values.tagsMatcher); },
 										   Restricted<IdSet, SelectIteratorContainer>{}(
 											   [&js](const auto&) noexcept { return std::cref(js.rightNs_->tagsMatcher_); })},
-								js.PreResult().preselectedPayload);
+								js.PreResult().payload);
 	VariantArray values1;
 	if (index1 == IndexValueType::SetByJsonPath) {
 		pv.GetByJsonPath(column1, tm, values1, KeyValueType::Undefined{});
@@ -209,9 +209,9 @@ double DistanceBetweenJoinedIndexesSameNs::GetValue(IdType rowId, const joins::N
 
 void SortExpression::openBracketBeforeLastAppended() {
 	const size_t pos = LastAppendedElement();
-	assertrx(activeBrackets_.empty() || activeBrackets_.back() < pos);
+	assertrx_throw(activeBrackets_.empty() || activeBrackets_.back() < pos);
 	for (unsigned i : activeBrackets_) {
-		assertrx(i < container_.size());
+		assertrx_throw(i < container_.size());
 		container_[i].Append();
 	}
 	const ArithmeticOpType op = container_[pos].operation.op;
@@ -226,18 +226,18 @@ struct ParseIndexNameResult {
 	std::string name;
 };
 
+constexpr static estl::Charset kIndexNameSyms{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+											  'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+											  'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y',
+											  'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '.', '+', '"'};
+
 template <typename T>
 static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std::vector<T>& joinedSelectors, std::string_view fullExpr) {
-	static const fast_hash_set<char> allowedSymbolsInIndexName{
-		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
-		'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
-		'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '.', '+', '"'};
-
 	auto pos = expr.data();
 	const auto end = expr.data() + expr.size();
 	auto joinedSelectorIt = joinedSelectors.cend();
 	bool joinedFieldInQuotes = false;
-	while (pos != end && *pos != '.' && allowedSymbolsInIndexName.find(*pos) != allowedSymbolsInIndexName.end()) ++pos;
+	while (pos != end && *pos != '.' && kIndexNameSyms.test(*pos)) ++pos;
 	if (pos != end && *pos == '.') {
 		std::string_view namespaceName = {expr.data(), static_cast<size_t>(pos - expr.data())};
 
@@ -261,7 +261,7 @@ static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std:
 			joinedFieldInQuotes = false;
 		}
 	}
-	while (pos != end && allowedSymbolsInIndexName.find(*pos) != allowedSymbolsInIndexName.end()) ++pos;
+	while (pos != end && kIndexNameSyms.test(*pos)) ++pos;
 	std::string_view name{expr.data(), static_cast<size_t>(pos - expr.data())};
 	if (name.empty()) {
 		throwParseError(fullExpr, pos, "Expected index or function name.");
@@ -544,8 +544,8 @@ template SortExpression SortExpression::Parse(std::string_view, const std::vecto
 double SortExpression::calculate(const_iterator it, const_iterator end, IdType rowId, ConstPayload pv,
 								 const joins::NamespaceResults* joinedResults, const std::vector<JoinedSelector>& js, uint8_t proc,
 								 TagsMatcher& tagsMatcher) {
-	assertrx(it != end);
-	assertrx(it->operation.op == OpPlus);
+	assertrx_throw(it != end);
+	assertrx_throw(it->operation.op == OpPlus);
 	double result = 0.0;
 	for (; it != end; ++it) {
 		double value = it->Visit(
@@ -700,7 +700,7 @@ std::string SortExpression::Dump() const {
 }
 
 void SortExpression::dump(const_iterator begin, const_iterator end, WrSerializer& ser) {
-	assertrx(begin->operation.op == OpPlus);
+	assertrx_throw(begin->operation.op == OpPlus);
 	for (const_iterator it = begin; it != end; ++it) {
 		if (it != begin) {
 			ser << ' ';

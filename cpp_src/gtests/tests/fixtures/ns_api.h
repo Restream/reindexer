@@ -7,23 +7,22 @@
 class NsApi : public ReindexerApi {
 protected:
 	void DefineDefaultNamespace() {
-		Error err = rt.reindexer->OpenNamespace(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK(), 0},
-												   IndexDeclaration{stringField.c_str(), "hash", "string", IndexOpts(), 0},
-												   IndexDeclaration{intField.c_str(), "hash", "int", IndexOpts(), 0},
-												   IndexDeclaration{sparseField.c_str(), "hash", "int", IndexOpts().Sparse(), 0},
-												   IndexDeclaration{indexedArrayField.c_str(), "hash", "int", IndexOpts().Array(), 0},
-												   IndexDeclaration{doubleField.c_str(), "tree", "double", IndexOpts(), 0},
-												   IndexDeclaration{boolField.c_str(), "-", "bool", IndexOpts(), 0},
-												   IndexDeclaration{emptyField.c_str(), "hash", "string", IndexOpts(), 0}});
+		rt.OpenNamespace(default_namespace);
+		// clang-format off
+		DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName, "hash", "int", IndexOpts().PK(), 0},
+												   IndexDeclaration{stringField, "hash", "string", IndexOpts(), 0},
+												   IndexDeclaration{intField, "hash", "int", IndexOpts(), 0},
+												   IndexDeclaration{sparseField, "hash", "int", IndexOpts().Sparse(), 0},
+												   IndexDeclaration{indexedArrayField, "hash", "int", IndexOpts().Array(), 0},
+												   IndexDeclaration{doubleField, "tree", "double", IndexOpts(), 0},
+												   IndexDeclaration{boolField, "-", "bool", IndexOpts(), 0},
+												   IndexDeclaration{emptyField, "hash", "string", IndexOpts(), 0}});
+		// clang-format on
 	}
 
 	void FillDefaultNamespace(int count = 1000) {
 		for (int i = 0; i < count; ++i) {
 			Item item = NewItem(default_namespace);
-			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 			item[idIdxName] = i;
 			item[intField] = i;
@@ -34,9 +33,6 @@ protected:
 			item[sparseField] = i * 3;
 
 			Upsert(default_namespace, item);
-
-			Error err = Commit(default_namespace);
-			EXPECT_TRUE(err.ok()) << err.what();
 		}
 	}
 
@@ -75,13 +71,10 @@ protected:
 			Error err = item.FromJSON(sourceJson);
 			EXPECT_TRUE(err.ok()) << err.what();
 			Upsert(default_namespace, item);
-
-			err = Commit(default_namespace);
-			EXPECT_TRUE(err.ok()) << err.what();
 		}
 	}
 
-	void AddHeterogeniousNestedData() {
+	void AddHeterogeneousNestedData() {
 		char sourceJson[4096];
 		const char jsonPattern[] =
 			R"json({
@@ -107,31 +100,15 @@ protected:
 			Error err = item.FromJSON(sourceJson);
 			EXPECT_TRUE(err.ok()) << err.what();
 			Upsert(default_namespace, item);
-
-			err = Commit(default_namespace);
-			EXPECT_TRUE(err.ok()) << err.what();
 		}
 	}
 
-	void CreateEmptyArraysNamespace(const std::string& nsName) {
-		Error err = rt.reindexer->OpenNamespace(nsName);
-		ASSERT_TRUE(err.ok()) << err.what();
-
+	void CreateEmptyArraysNamespace(std::string_view nsName) {
+		rt.OpenNamespace(nsName);
 		DefineNamespaceDataset(nsName, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK(), 0},
 										IndexDeclaration{indexedArrayField.c_str(), "hash", "int", IndexOpts().Array(), 0}});
-
-		char sourceJson[1024];
-		const char jsonPattern[] = R"json({"id": %s, "indexed_array_field": [], "non_indexed_array_field": []})json";
 		for (size_t i = 100; i < 200; ++i) {
-			Item item = NewItem(nsName);
-			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
-
-			std::string serial = std::to_string(i);
-			snprintf(sourceJson, sizeof(sourceJson) - 1, jsonPattern, serial.c_str());
-
-			err = item.FromJSON(sourceJson);
-			EXPECT_TRUE(err.ok()) << err.what();
-			Upsert(nsName, item);
+			rt.UpsertJSON(nsName, fmt::sprintf(R"json({"id": %d, "indexed_array_field": [], "non_indexed_array_field": []})json", i));
 		}
 	}
 
@@ -152,19 +129,15 @@ protected:
 	}
 
 	void TruncateNamespace(const std::function<Error(const std::string&)>& truncate) {
-		Error err = rt.reindexer->OpenNamespace(truncate_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
-
+		rt.OpenNamespace(truncate_namespace);
 		DefineNamespaceDataset(
 			truncate_namespace,
-			{IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"date", "", "int64", IndexOpts(), 0},
+			{IndexDeclaration{idIdxName, "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"date", "", "int64", IndexOpts(), 0},
 			 IndexDeclaration{"price", "", "int64", IndexOpts(), 0}, IndexDeclaration{"serialNumber", "", "int64", IndexOpts(), 0},
 			 IndexDeclaration{"fileName", "", "string", IndexOpts(), 0}});
-
 		DefineNamespaceDataset(truncate_namespace, {IndexDeclaration{"ft11", "text", "string", IndexOpts(), 0},
 													IndexDeclaration{"ft12", "text", "string", IndexOpts(), 0},
 													IndexDeclaration{"ft11+ft12=ft13", "text", "composite", IndexOpts(), 0}});
-
 		DefineNamespaceDataset(truncate_namespace, {IndexDeclaration{"ft21", "text", "string", IndexOpts(), 0},
 													IndexDeclaration{"ft22", "text", "string", IndexOpts(), 0},
 													IndexDeclaration{"ft23", "text", "string", IndexOpts(), 0},
@@ -175,7 +148,7 @@ protected:
 
 		const static Query q{truncate_namespace};
 		QueryResults qr1;
-		err = rt.reindexer->Select(q, qr1);
+		auto err = rt.reindexer->Select(q, qr1);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(itemsCount, qr1.Count());
 
@@ -200,15 +173,6 @@ protected:
 			auto field = lhs[idx].Name();
 			ASSERT_TRUE(lhs[field].operator Variant() == rhs[field].operator Variant());
 		}
-	}
-
-	void AddItemFromJSON(std::string_view ns, std::string_view json) {
-		Item item = NewItem(ns);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-		auto err = item.FromJSON(json);
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->Insert(ns, item);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	const std::string truncate_namespace = "truncate_namespace";

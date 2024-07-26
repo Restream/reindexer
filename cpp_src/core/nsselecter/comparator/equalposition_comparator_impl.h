@@ -78,7 +78,7 @@ public:
 	}
 
 	void ClearAllSetValues() {
-		assertrx(allSetValuesS_);
+		assertrx_throw(allSetValuesS_);
 		allSetValuesS_->clear();
 	}
 
@@ -181,7 +181,7 @@ public:
 		std::abort();
 	}
 	void ClearAllSetValues() {
-		assertrx(allSetValuesS_);
+		assertrx_throw(allSetValuesS_);
 		allSetValuesS_->clear();
 	}
 

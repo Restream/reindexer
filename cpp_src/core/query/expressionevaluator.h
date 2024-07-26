@@ -26,7 +26,9 @@ private:
 		Type type;
 	};
 
-	[[nodiscard]] PrimaryToken getPrimaryToken(tokenizer& parser, const PayloadValue& v, token& outTok, const NsContext& ctx);
+	enum class StringAllowed : bool { No = false, Yes = true };
+	[[nodiscard]] PrimaryToken getPrimaryToken(tokenizer& parser, const PayloadValue& v, StringAllowed strAllowed, token& outTok,
+											   const NsContext& ctx);
 	[[nodiscard]] PrimaryToken handleTokenName(tokenizer& parser, const PayloadValue& v, token& outTok, const NsContext& ctx);
 	[[nodiscard]] double performSumAndSubtracting(tokenizer& parser, const PayloadValue& v, const NsContext& ctx);
 	[[nodiscard]] double performMultiplicationAndDivision(tokenizer& parser, const PayloadValue& v, token& lastTok, const NsContext& ctx);

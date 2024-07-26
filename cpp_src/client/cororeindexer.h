@@ -85,7 +85,7 @@ public:
 	/// Rename namespace. If namespace with dstNsName exists, then it is replaced.
 	/// @param srcNsName  - Name of namespace
 	/// @param dstNsName  - desired name of namespace
-	Error RenameNamespace(std::string_view srcNsName, const std::string &dstNsName);
+	Error RenameNamespace(std::string_view srcNsName, std::string_view dstNsName);
 	/// Add index to namespace
 	/// @param nsName - Name of namespace
 	/// @param index - IndexDef with index name and parameters
@@ -163,8 +163,8 @@ public:
 	/// @param query - Query object with query attributes
 	/// @param result - QueryResults with found items
 	Error Select(const Query &query, CoroQueryResults &result);
-	/// Flush changes to storage
-	/// @param nsName - Name of namespace
+	/// *DEPRECATED* This method does nothing
+	/// TODO: Must be removed after python-binding update #1800
 	Error Commit(std::string_view nsName);
 	/// Allocate new item for namespace
 	/// @param nsName - Name of namespace

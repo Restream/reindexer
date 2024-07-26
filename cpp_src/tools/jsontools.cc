@@ -67,6 +67,11 @@ void jsonValueToString(gason::JsonValue o, WrSerializer &ser, int shift, int ind
 		case gason::JSON_NULL:
 			ser << "null"sv;
 			break;
+		default:
+			// Do nothing for JSON_EMPTY
+			if (uint8_t(o.getTag()) != gason::JSON_EMPTY) {
+				throw Error(errLogic, "Unexpected json tag: %d", int(o.getTag()));
+			}
 	}
 }
 

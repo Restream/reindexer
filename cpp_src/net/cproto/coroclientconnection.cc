@@ -450,7 +450,7 @@ void CoroClientConnection::readerRoutine() {
 			if (errCode != errOK) {
 				ans.status_ = Error(static_cast<ErrorCode>(errCode), std::string{errMsg});
 			}
-			ans.data_ = span<uint8_t>(ser.Buf() + ser.Pos(), ser.Len() - ser.Pos());
+			ans.data_ = span<const uint8_t>(ser.Buf() + ser.Pos(), ser.Len() - ser.Pos());
 		} catch (const Error &err) {
 			// disconnect
 			handleFatalErrorFromReader(err);
@@ -503,14 +503,18 @@ void CoroClientConnection::sendCloseResults(CProtoHeader const &hdr, CoroRPCAnsw
 			Args args;
 			args.Unpack(ser);
 			if (args.size() > 1) {
+				Error err;
 				if (args.size() > 2) {
-					callNoReply({kCmdCloseResults, connectData_.opts.keepAliveTimeout, milliseconds(0), lsn_t(), -1,
-								 ShardingKeyType::NotSetShard, nullptr, false},
-								hdr.seq, {Arg{args[1].As<int>()}, Arg{args[2].As<int64_t>()}, Arg{true}});
+					err = callNoReply({kCmdCloseResults, connectData_.opts.keepAliveTimeout, milliseconds(0), lsn_t(), -1,
+									   ShardingKeyType::NotSetShard, nullptr, false},
+									  hdr.seq, {Arg{args[1].As<int>()}, Arg{args[2].As<int64_t>()}, Arg{true}});
 				} else {
-					callNoReply({kCmdCloseResults, connectData_.opts.keepAliveTimeout, milliseconds(0), lsn_t(), -1,
-								 ShardingKeyType::NotSetShard, nullptr, false},
-								hdr.seq, {Arg{args[1].As<int>()}, Arg{reindexer_server::RPCQrWatcher::kDisabled}, Arg{true}});
+					err = callNoReply({kCmdCloseResults, connectData_.opts.keepAliveTimeout, milliseconds(0), lsn_t(), -1,
+									   ShardingKeyType::NotSetShard, nullptr, false},
+									  hdr.seq, {Arg{args[1].As<int>()}, Arg{reindexer_server::RPCQrWatcher::kDisabled}, Arg{true}});
+				}
+				if (!err.ok()) {
+					fprintf(stderr, "Unable to send 'CloseResults' command: %s\n", err.what().c_str());
 				}
 			} else {
 				auto cmdSv = CmdName(hdr.cmd);

@@ -10,8 +10,8 @@ ClusterDataReplicator::ClusterDataReplicator(ClusterDataReplicator::UpdatesQueue
 	: statsCollector_(std::string(kClusterReplStatsType)),
 	  raftManager_(loop_, statsCollector_, log_,
 				   [this](uint32_t uid, bool online) {
-					   UpdatesContainer recs(1);
-					   recs[0] = UpdateRecord{UpdateRecord::Type::NodeNetworkCheck, uid, online};
+					   UpdatesContainer recs;
+					   recs.emplace_back(updates::URType::NodeNetworkCheck, uid, online);
 					   updatesQueue_.PushNowait(std::move(recs));
 				   }),
 	  updatesQueue_(q),
@@ -58,6 +58,9 @@ void ClusterDataReplicator::Run() {
 	bool serverIsInCluster = config_->nodes.empty();
 	if (config_->nodes.size() && config_->nodes.size() < 3) {
 		throw Error(errParams, "Minimal cluster size is 3, but only %d nodes were in config", config_->nodes.size());
+	}
+	if (config_->nodes.size() > UpdatesQueueT::kMaxReplicas) {
+		throw Error(errParams, "Sync cluster nodes limit was reached: %d", UpdatesQueueT::kMaxReplicas);
 	}
 	for (auto& node : config_->nodes) {
 		if (ids.count(node.serverId)) {

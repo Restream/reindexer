@@ -11,6 +11,7 @@ bool CJsonDecoder::decodeCJson(Payload &pl, Serializer &rdser, WrSerializer &wrs
 	const ctag tag = rdser.GetCTag();
 	TagType tagType = tag.Type();
 	if (tag == kCTagEnd) {
+		recoder.Serialize(wrser);
 		wrser.PutCTag(kCTagEnd);
 		return false;
 	}
@@ -70,7 +71,7 @@ bool CJsonDecoder::decodeCJson(Payload &pl, Serializer &rdser, WrSerializer &wrs
 						[&](OneOf<KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Null, KeyValueType::Uuid>) {
 							wrser.PutCTag(ctag{fieldType.ToTagType(), tagName, field});
 						},
-						[&](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite>) { assertrx(0); });
+						[&](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite>) { assertrx(false); });
 				}
 			}
 		} else {

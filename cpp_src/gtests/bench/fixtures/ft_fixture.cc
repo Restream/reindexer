@@ -303,9 +303,6 @@ void FullText::Insert(State& state) {
 		auto err = db_->Insert(nsdef_.name, item);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 	}
-
-	auto err = db_->Commit(nsdef_.name);
-	if (!err.ok()) state.SkipWithError(err.what().c_str());
 }
 
 void FullText::BuildCommonIndexes(benchmark::State& state) {
@@ -941,9 +938,6 @@ void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
 		}
 	}
 
-	auto err = db_->Commit(alternatingNs_);
-	if (!err.ok()) state.SkipWithError(err.what().c_str());
-
 	// Init index build
 	assert(!values_.empty());
 	const Query q1 =
@@ -952,7 +946,7 @@ void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
 				   values_[randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)})]
 					   .search1);
 	QueryResults qres;
-	err = db_->Select(q1, qres);
+	auto err = db_->Select(q1, qres);
 	if (!err.ok()) state.SkipWithError(err.what().c_str());
 
 	size_t index = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)});

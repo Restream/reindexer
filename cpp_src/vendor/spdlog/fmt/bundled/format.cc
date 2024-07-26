@@ -80,7 +80,6 @@ static inline fmt::internal::Null<> strerror_s(char *, std::size_t, ...) { retur
 namespace fmt {
 
 FMT_FUNC internal::RuntimeError::~RuntimeError() FMT_DTOR_NOEXCEPT {}
-FMT_FUNC FormatError::~FormatError() FMT_DTOR_NOEXCEPT {}
 FMT_FUNC SystemError::~SystemError() FMT_DTOR_NOEXCEPT {}
 
 namespace {
@@ -252,14 +251,6 @@ const uint64_t internal::BasicData<T>::POWERS_OF_10_64[] = {0, FMT_POWERS_OF_10(
 															// Multiply several constants instead of using a single long long constant
 															// to avoid warnings about C++98 not supporting long long.
 															ULongLong(1000000000) * ULongLong(1000000000) * 10};
-
-FMT_FUNC void internal::report_unknown_type(char code, const char *type) {
-	(void)type;
-	if (std::isprint(static_cast<unsigned char>(code))) {
-		FMT_THROW(FormatError(format("unknown format code '{}' for {}", code, type)));
-	}
-	FMT_THROW(FormatError(format("unknown format code '\\x{:02x}' for {}", static_cast<unsigned>(code), type)));
-}
 
 #if FMT_USE_WINDOWS_H
 

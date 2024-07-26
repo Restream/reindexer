@@ -1,8 +1,7 @@
 #include "customlocal.h"
-#include <array>
-#include <cstdint>
 
-namespace reindexer {
+namespace reindexer::custom_locale_impl {
+
 // {lower, upper}
 constexpr std::pair<uint16_t, uint16_t> kAlphabet[] = {
 	// clang-format off
@@ -134,6 +133,20 @@ constexpr std::pair<uint16_t, uint16_t> kAlphabet[] = {
 	{0x0962, 0x0962}, {0x0963, 0x0963}, {0x0971, 0x0971}, {0x0972, 0x0972}, {0x0973, 0x0973}, {0x0974, 0x0974}, {0x0975, 0x0975},
 	{0x0976, 0x0976}, {0x0977, 0x0977}, {0x0978, 0x0978}, {0x0979, 0x0979}, {0x097A, 0x097A}, {0x097B, 0x097B}, {0x097C, 0x097C},
 	{0x097D, 0x097D}, {0x097E, 0x097E}, {0x097F, 0x097F},
+	// Gujarati (no 'reserved' characters)
+	{0x0A81, 0x0A81}, {0x0A82, 0x0A82}, {0x0A83, 0x0A83}, {0x0A85, 0x0A85}, {0x0A86, 0x0A86}, {0x0A87, 0x0A87}, {0x0A88, 0x0A88},
+	{0x0A89, 0x0A89}, {0x0A8A, 0x0A8A}, {0x0A8B, 0x0A8B}, {0x0A8C, 0x0A8C}, {0x0A8D, 0x0A8D}, {0x0A8F, 0x0A8F}, {0x0A90, 0x0A90},
+	{0x0A91, 0x0A91}, {0x0A93, 0x0A93}, {0x0A94, 0x0A94}, {0x0A95, 0x0A95}, {0x0A96, 0x0A96}, {0x0A97, 0x0A97}, {0x0A98, 0x0A98},
+	{0x0A99, 0x0A99}, {0x0A9A, 0x0A9A}, {0x0A9B, 0x0A9B}, {0x0A9C, 0x0A9C}, {0x0A9D, 0x0A9D}, {0x0A9E, 0x0A9E}, {0x0A9F, 0x0A9F},
+	{0x0AA0, 0x0AA0}, {0x0AA1, 0x0AA1}, {0x0AA2, 0x0AA2}, {0x0AA3, 0x0AA3}, {0x0AA4, 0x0AA4}, {0x0AA5, 0x0AA5}, {0x0AA6, 0x0AA6},
+	{0x0AA7, 0x0AA7}, {0x0AA8, 0x0AA8}, {0x0AAA, 0x0AAA}, {0x0AAB, 0x0AAB}, {0x0AAC, 0x0AAC}, {0x0AAD, 0x0AAD}, {0x0AAE, 0x0AAE},
+	{0x0AAF, 0x0AAF}, {0x0AB0, 0x0AB0}, {0x0AB2, 0x0AB2}, {0x0AB3, 0x0AB3}, {0x0AB5, 0x0AB5}, {0x0AB6, 0x0AB6}, {0x0AB7, 0x0AB7},
+	{0x0AB8, 0x0AB8}, {0x0AB9, 0x0AB9}, {0x0ABC, 0x0ABC}, {0x0ABD, 0x0ABD}, {0x0ABE, 0x0ABE}, {0x0ABF, 0x0ABF}, {0x0AC0, 0x0AC0},
+	{0x0AC1, 0x0AC1}, {0x0AC2, 0x0AC2}, {0x0AC3, 0x0AC3}, {0x0AC4, 0x0AC4}, {0x0AC5, 0x0AC5}, {0x0AC7, 0x0AC7}, {0x0AC8, 0x0AC8},
+	{0x0AC9, 0x0AC9}, {0x0ACB, 0x0ACB}, {0x0ACC, 0x0ACC}, {0x0ACD, 0x0ACD}, {0x0AD0, 0x0AD0}, {0x0AE0, 0x0AE0}, {0x0AE1, 0x0AE1},
+	{0x0AE2, 0x0AE2}, {0x0AE3, 0x0AE3}, {0x0AE6, 0x0AE6}, {0x0AE7, 0x0AE7}, {0x0AE8, 0x0AE8}, {0x0AE9, 0x0AE9}, {0x0AEA, 0x0AEA},
+	{0x0AEB, 0x0AEB}, {0x0AEC, 0x0AEC}, {0x0AED, 0x0AED}, {0x0AEE, 0x0AEE}, {0x0AEF, 0x0AEF}, {0x0AF0, 0x0AF0}, {0x0AF1, 0x0AF1},
+	{0x0AF9, 0x0AF9}, {0x0AFA, 0x0AFA}, {0x0AFB, 0x0AFB}, {0x0AFC, 0x0AFC}, {0x0AFD, 0x0AFD}, {0x0AFE, 0x0AFE}, {0x0AFF, 0x0AFF},
 	// Georgian
 	{0x10D0, 0x10A0}, {0x10D1, 0x10A1}, {0x10D2, 0x10A2}, {0x10D3, 0x10A3}, {0x10D4, 0x10A4}, {0x10D5, 0x10A5}, {0x10D6, 0x10A6},
 	{0x10D7, 0x10A7}, {0x10D8, 0x10A8}, {0x10D9, 0x10A9}, {0x10DA, 0x10AA}, {0x10DB, 0x10AB}, {0x10DC, 0x10AC}, {0x10DD, 0x10AD},
@@ -212,69 +225,21 @@ constexpr bool checkAlphabetLowUpperUtf8SizeEquals() {
 static_assert(checkAlphabetSorted() == -1, "Alphabet must be sorted");
 static_assert(checkAlphabetLowUpperUtf8SizeEquals(), "The length of utf8 capital and small letters must be the same");
 
-class CustomLocale {
-public:
-#ifndef _WIN32
-	constexpr
-#endif	// _WIN32
-		CustomLocale() noexcept {
-		for (uint32_t i = 0; i < UINT16_MAX; ++i) {
-			customLocale_[i].isAlpha = false;
-			customLocale_[i].lower = uint16_t(i);
-		}
-		for (const auto& a : kAlphabet) {
-			customLocale_[a.first].isAlpha = true;
-			customLocale_[a.first].lower = a.first;
-			if (!customLocale_[a.second].isAlpha) {
-				customLocale_[a.second].isAlpha = true;
-				customLocale_[a.second].lower = a.first;
-			}
+CustomLocale::CustomLocale() noexcept {
+	for (uint32_t i = 0; i < UINT16_MAX; ++i) {
+		customLocale_[i].isAlpha = false;
+		customLocale_[i].lower = uint16_t(i);
+	}
+	for (const auto& a : kAlphabet) {
+		customLocale_[a.first].isAlpha = true;
+		customLocale_[a.first].lower = a.first;
+		if (!customLocale_[a.second].isAlpha) {
+			customLocale_[a.second].isAlpha = true;
+			customLocale_[a.second].lower = a.first;
 		}
 	}
-	void ToLower(std::wstring& data) const noexcept {
-		for (auto& d : data) {
-			if (d < UINT16_MAX && d > 0) {
-				d = customLocale_[d].lower;
-			}
-		}
-	}
+}
 
-	wchar_t ToLower(wchar_t ch) const noexcept {
-		uint32_t ofs = ch;
-		if (ofs < UINT16_MAX) {
-			ch = customLocale_[ofs].lower;
-		}
-		return ch;
-	}
+const CustomLocale kCustomLocale;
 
-	bool IsAlpha(wchar_t ch) const noexcept {
-		uint32_t ofs = ch;
-		if (ofs >= UINT16_MAX) {
-			return false;
-		}
-		return customLocale_[ofs].isAlpha;
-	}
-
-private:
-	CustomLocale(const CustomLocale&) = delete;
-	CustomLocale& operator=(const CustomLocale&) = delete;
-	struct LocalCtx {
-		constexpr LocalCtx() noexcept : lower(0), isAlpha(false) {}
-
-		uint16_t lower;
-		bool isAlpha;
-	};
-	std::array<LocalCtx, UINT16_MAX> customLocale_;
-};
-
-#ifdef _WIN32
-static const CustomLocale kCustomLocale;
-#else	// _WIN32
-constexpr CustomLocale kCustomLocale;
-#endif	// _WIN32
-
-void ToLower(std::wstring& data) noexcept { kCustomLocale.ToLower(data); }
-wchar_t ToLower(wchar_t ch) noexcept { return kCustomLocale.ToLower(ch); }
-
-bool IsAlpha(wchar_t ch) noexcept { return kCustomLocale.IsAlpha(ch); }
-}  // namespace reindexer
+}  // namespace reindexer::custom_locale_impl

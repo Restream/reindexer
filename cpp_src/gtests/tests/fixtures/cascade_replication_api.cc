@@ -98,9 +98,10 @@ void CascadeReplicationApi::CheckTxCopyEventsCount(const ServerPtr& sc, int expe
 	ASSERT_EQ(resJS["transactions"]["total_copy_count"].As<int>(-1), expectedCount) << ser.Slice();
 }
 
-CascadeReplicationApi::TestNamespace1::TestNamespace1(const ServerPtr& srv, std::string nsName) : nsName_(std::move(nsName)) {
+CascadeReplicationApi::TestNamespace1::TestNamespace1(const ServerPtr& srv, std::string_view nsName) : nsName_(nsName) {
 	auto opt = StorageOpts().Enabled(true);
 	auto err = srv->api.reindexer->OpenNamespace(nsName_, opt);
+	EXPECT_TRUE(err.ok()) << err.what();
 	srv->api.DefineNamespaceDataset(nsName_, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}});
 }
 

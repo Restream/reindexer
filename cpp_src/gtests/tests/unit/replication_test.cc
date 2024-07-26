@@ -4,6 +4,53 @@
 #include "replication_load_api.h"
 #include "wal/walrecord.h"
 
+using reindexer::Query;
+
+// clang-format off
+constexpr std::string_view kReplTestSchema1 = R"xxx(
+	{
+	  "required": [
+		"id"
+	  ],
+	  "properties": {
+		"id": {
+		  "type": "number"
+		},
+		"Field": {
+		  "type": "number"
+		}
+	  },
+	  "additionalProperties": false,
+	  "type": "object",
+	  "x-protobuf-ns-number": 99998
+	})xxx";
+
+
+constexpr std::string_view kReplTestSchema2 = R"xxx(
+	{
+	  "required": [
+		"id"
+	  ],
+	  "properties": {
+		"id": {
+		  "type": "number"
+		},
+		"data": {
+		  "type": "number"
+		},
+		"data123": {
+		  "type": "string"
+		},
+		"f": {
+		  "type": "bolean"
+		}
+	  },
+	  "additionalProperties": false,
+	  "type": "object",
+	  "x-protobuf-ns-number": 99999
+	})xxx";
+// clang-format on
+
 TEST_F(ReplicationLoadApi, Base) {
 	// Check replication in multithread mode with data writes and server restarts
 	std::atomic<bool> leaderWasRestarted = false;
@@ -90,14 +137,59 @@ TEST_F(ReplicationLoadApi, Base) {
 	auto replConf = GetSrv(masterId_)->GetServerConfig(ServerControl::ConfigType::Namespace);
 	ASSERT_EQ(replConf.nodes.size(), stats.nodeStats.size());
 	for (auto& nodeStat : stats.nodeStats) {
+		using namespace reindexer::cluster;
 		auto dsnIt = std::find_if(replConf.nodes.begin(), replConf.nodes.end(),
 								  [&nodeStat](const AsyncReplicationConfigTest::Node& node) { return nodeStat.dsn == node.dsn; });
 		ASSERT_NE(dsnIt, replConf.nodes.end()) << "Unexpected dsn value: " << nodeStat.dsn;
-		ASSERT_EQ(nodeStat.status, cluster::NodeStats::Status::Online);
-		ASSERT_EQ(nodeStat.syncState, cluster::NodeStats::SyncState::OnlineReplication);
-		ASSERT_EQ(nodeStat.role, cluster::RaftInfo::Role::Follower);
+		ASSERT_EQ(nodeStat.status, NodeStats::Status::Online);
+		ASSERT_EQ(nodeStat.syncState, NodeStats::SyncState::OnlineReplication);
+		ASSERT_EQ(nodeStat.role, RaftInfo::Role::Follower);
 		ASSERT_TRUE(nodeStat.namespaces.empty());
 	}
+}
+
+TEST_F(ReplicationLoadApi, UpdateTimeAfterRestart) {
+	InitNs();
+
+	constexpr std::string_view kNs = "some";
+	constexpr int kTargetSrv = 1;
+	SetOptmizationSortWorkers(kTargetSrv, 0, kNs);
+
+	FillData(10);
+	WaitSync(kNs);
+
+	const auto state0 = GetSrv(kTargetSrv)->GetState(kNs);
+	EXPECT_GT(state0.updateUnixNano, 0);
+
+	RestartServer(kTargetSrv);
+	const auto state1 = GetSrv(kTargetSrv)->GetState(kNs);
+	ASSERT_EQ(state0.updateUnixNano, state1.updateUnixNano);
+}
+
+TEST_F(ReplicationLoadApi, BaseTagsMatcher) {
+	StopServer(1);
+	StopServer(2);
+
+	InitNs();
+	SetSchema(masterId_, "some1", kReplTestSchema2);
+	FillData(1000);
+	for (size_t i = 0; i < 2; ++i) {
+		if (i == 1) DeleteFromMaster();
+		FillData(1000);
+	}
+	StartServer(1);
+	StartServer(2);
+
+	ForceSync();  // restart_replicator call syncDatabase (syncByWal or forceSync)
+	WaitSync("some");
+	auto version = ValidateTagsmatchersVersions("some");
+	WaitSync("some1");
+	ValidateTagsmatchersVersions("some1");
+	SetSchema(masterId_, "some", kReplTestSchema1);
+	WaitSync("some");
+	ValidateTagsmatchersVersions("some", version);
+	ValidateSchemas("some", kReplTestSchema1);
+	ValidateSchemas("some1", kReplTestSchema2);
 }
 
 #if !defined(REINDEX_WITH_TSAN)
@@ -244,11 +336,11 @@ TEST_F(ReplicationLoadApi, WALResizeStaticData) {
 
 	auto qrToSet = [](const BaseApi::QueryResultsType& qr) {
 		std::unordered_set<std::string> items;
-		WrSerializer ser;
+		reindexer::WrSerializer ser;
 		for (auto& item : qr) {
 			if (item.IsRaw()) {
 				reindexer::WALRecord rec(item.GetRaw());
-				EXPECT_EQ(rec.type, WalReplState);
+				EXPECT_EQ(rec.type, reindexer::WalReplState);
 			} else {
 				ser.Reset();
 				auto err = item.GetCJSON(ser, false);
@@ -402,7 +494,7 @@ TEST_F(ReplicationLoadApi, DuplicatePKFollowerTest) {
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_EQ(qr.Count(), items.size());
 			for (auto i : qr) {
-				WrSerializer ser;
+				reindexer::WrSerializer ser;
 				err = i.GetJSON(ser, false);
 				gason::JsonParser parser;
 				auto root = parser.Parse(ser.Slice());
@@ -534,8 +626,8 @@ TEST_F(ReplicationLoadApi, DynamicRoleSwitch) {
 	for (size_t i = 1; i < 8; i++) {
 		FillData(kPortionSize);
 		expectedLsnCounter += kPortionSize;
-		WaitSync("some", lsn_t(expectedLsnCounter, masterId_));
-		WaitSync("some1", lsn_t(expectedLsnCounter, masterId_));
+		WaitSync("some", reindexer::lsn_t(expectedLsnCounter, masterId_));
+		WaitSync("some1", reindexer::lsn_t(expectedLsnCounter, masterId_));
 		SwitchMaster(i % kDefaultServerCount, {"some", "some1"}, (i % 2 == 0) ? "default" : "from_sync_leader");
 	}
 
@@ -549,17 +641,17 @@ TEST_F(ReplicationLoadApi, DynamicRoleSwitch) {
 TEST_F(ReplicationLoadApi, NodeOfflineLastError) {
 	InitNs();
 
-	ServerControl::Interface::Ptr leader = GetSrv(0);
+	auto leader = GetSrv(0);
 	StopServer(1);
 	for (std::size_t i = 0; i < 10; i++) {
-		reindexer::cluster::ReplicationStats stats = leader->GetReplicationStats(cluster::kAsyncReplStatsType);
+		auto stats = leader->GetReplicationStats(reindexer::cluster::kAsyncReplStatsType);
 		if (!stats.nodeStats.empty() && stats.nodeStats[0].lastError.code() == errNetwork) {
 			break;
 		}
 		std::this_thread::sleep_for(std::chrono::seconds(1));
 	}
 
-	reindexer::cluster::ReplicationStats stats = leader->GetReplicationStats(cluster::kAsyncReplStatsType);
+	auto stats = leader->GetReplicationStats(reindexer::cluster::kAsyncReplStatsType);
 	ASSERT_EQ(stats.nodeStats.size(), std::size_t(3));
 	ASSERT_EQ(stats.nodeStats[0].lastError.code(), errNetwork);
 	ASSERT_FALSE(stats.nodeStats[0].lastError.what().empty());

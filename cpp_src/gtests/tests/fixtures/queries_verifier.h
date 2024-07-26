@@ -148,7 +148,7 @@ protected:
 			if (!conditionsSatisfied) {
 				std::stringstream ss;
 				ss << "Item doesn't match conditions: " << itemr.GetJSON() << std::endl;
-				const auto& jit = qr[i].GetJoined();
+				const auto jit = qr[i].GetJoined();
 				if (jit.getJoinedItemsCount() > 0) {
 					ss << "Joined:" << std::endl;
 					for (int fIdx = 0, fCount = jit.getJoinedFieldsCount(); fIdx < fCount; ++fIdx) {

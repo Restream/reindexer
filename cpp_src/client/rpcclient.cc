@@ -115,7 +115,7 @@ Error RPCClient::TruncateNamespace(std::string_view nsName, const InternalRdxCon
 	return conn_.Call(mkCommand(cproto::kCmdTruncateNamespace, &ctx), nsName).Status();
 }
 
-Error RPCClient::RenameNamespace(std::string_view srcNsName, const std::string& dstNsName, const InternalRdxContext& ctx) {
+Error RPCClient::RenameNamespace(std::string_view srcNsName, std::string_view dstNsName, const InternalRdxContext& ctx) {
 	auto status = conn_.Call(mkCommand(cproto::kCmdRenameNamespace, &ctx), srcNsName, dstNsName).Status();
 	if (!status.ok() && status.code() != errTimeout) return status;
 	if (srcNsName != dstNsName) {
@@ -474,10 +474,6 @@ Error RPCClient::selectImpl(const Query& query, CoroQueryResults& result, millis
 	return ret.Status();
 }
 
-Error RPCClient::Commit(std::string_view nsName, const InternalRdxContext& ctx) {
-	return conn_.Call(mkCommand(cproto::kCmdCommit, &ctx), nsName).Status();
-}
-
 Error RPCClient::AddIndex(std::string_view nsName, const IndexDef& iDef, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	iDef.GetJSON(ser);
@@ -719,7 +715,7 @@ Error RPCClient::SuggestLeader(const NodeData& suggestion, NodeData& response, c
 			gason::JsonParser parser;
 			auto json = ret.GetArgs(1)[0].As<std::string>();
 			auto root = parser.Parse(giftStr(json));
-			response.FromJSON(root);
+			return response.FromJSON(root);
 		} catch (Error& err) {
 			return err;
 		}
@@ -760,7 +756,7 @@ Error RPCClient::GetRaftInfo(RaftInfo& info, const InternalRdxContext& ctx) {
 			gason::JsonParser parser;
 			auto json = ret.GetArgs(1)[0].As<std::string>();
 			auto root = parser.Parse(giftStr(json));
-			info.FromJSON(root);
+			return info.FromJSON(root);
 		} catch (Error& err) {
 			return err;
 		}

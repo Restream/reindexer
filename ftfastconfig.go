@@ -92,7 +92,6 @@ type Bm25ConfigType struct {
 	Bm25b float64 `json:"bm25_b"`
 	// Formula for calculating document relevance (rx, classic, word_count)
 	Bm25Type string `json:"bm25_type"`
-
 }
 
 // FtFastConfig configurarion of FullText search index
@@ -168,6 +167,7 @@ type FtFastConfig struct {
 	LogLevel int `json:"log_level"`
 	// Enable search by numbers as words and backwards
 	EnableNumbersSearch bool `json:"enable_numbers_search"`
+	// *DEPREEACTED* - all of the fulltex indexes will perform commit/warmup after copying transatcion
 	// Enable auto index warmup after atomic namespace copy on transaction
 	EnableWarmupOnNsCopy bool `json:"enable_warmup_on_ns_copy"`
 	// Extra symbols, which will be threated as parts of word to addition to letters and digits
@@ -220,7 +220,7 @@ func DefaultFtFastConfig() FtFastConfig {
 		Optimization:            "Memory",
 		EnablePreselectBeforeFt: false,
 		FtBaseRankingConfig:     &FtBaseRanking{FullMatch: 100, PrefixMin: 50, SuffixMin: 10, Typo: 85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit: 90, Synonyms: 95},
-		Bm25Config: &Bm25ConfigType{Bm25k1: 2.0, Bm25b: 0.75, Bm25Type: "rx_bm25"},
+		Bm25Config:              &Bm25ConfigType{Bm25k1: 2.0, Bm25b: 0.75, Bm25Type: "rx_bm25"},
 	}
 }
 

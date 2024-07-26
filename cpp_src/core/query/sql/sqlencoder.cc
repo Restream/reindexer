@@ -262,7 +262,7 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 	return ser;
 }
 
-static const char *opNames[] = {"-", "OR", "AND", "AND NOT"};
+constexpr static std::string_view kOpNames[] = {"-", "OR", "AND", "AND NOT"};
 
 template <NeedQuote needQuote>
 static void dumpCondWithValues(WrSerializer &ser, std::string_view fieldName, CondType cond, const VariantArray &values, bool stripArgs) {
@@ -340,14 +340,14 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 			},
 			[&](const SubQueryEntry &sqe) {
 				if (encodedEntries) {
-					ser << opNames[op] << ' ';
+					ser << kOpNames[op] << ' ';
 				}
 				dumpCondWithValues<NeedQuote::No>(ser, '(' + query_.GetSubQuery(sqe.QueryIndex()).GetSQL(stripArgs) + ')', sqe.Condition(),
 												  sqe.Values(), stripArgs);
 			},
 			[&](const SubQueryFieldEntry &sqe) {
 				if (encodedEntries) {
-					ser << opNames[op] << ' ';
+					ser << kOpNames[op] << ' ';
 				}
 				ser << sqe.FieldName() << ' ' << sqe.Condition() << " (";
 				SQLEncoder{query_.GetSubQuery(sqe.QueryIndex())}.GetSQL(ser, stripArgs);
@@ -355,7 +355,7 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 			},
 			[&](const QueryEntriesBracket &bracket) {
 				if (encodedEntries) {
-					ser << opNames[op] << ' ';
+					ser << kOpNames[op] << ' ';
 				}
 				ser << '(';
 				dumpWhereEntries(it.cbegin(), it.cend(), ser, stripArgs);
@@ -364,19 +364,19 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 			},
 			[&](const QueryEntry &entry) {
 				if (encodedEntries) {
-					ser << opNames[op] << ' ';
+					ser << kOpNames[op] << ' ';
 				}
 				dumpCondWithValues<NeedQuote::Yes>(ser, entry.FieldName(), entry.Condition(), entry.Values(), stripArgs);
 			},
 			[&](const JoinQueryEntry &jqe) {
 				if (encodedEntries && query_.GetJoinQueries()[jqe.joinIndex].joinType != JoinType::OrInnerJoin) {
-					ser << opNames[op] << ' ';
+					ser << kOpNames[op] << ' ';
 				}
 				SQLEncoder(query_).DumpSingleJoinQuery(jqe.joinIndex, ser, stripArgs);
 			},
 			[&](const BetweenFieldsQueryEntry &entry) {
 				if (encodedEntries) {
-					ser << opNames[op] << ' ';
+					ser << kOpNames[op] << ' ';
 				}
 				indexToSql<NeedQuote::Yes>(entry.LeftFieldName(), ser);
 				ser << ' ' << entry.Condition() << ' ';

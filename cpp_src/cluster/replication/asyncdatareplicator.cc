@@ -36,7 +36,6 @@ bool AsyncDataReplicator::IsExpectingStartup() const noexcept {
 
 void AsyncDataReplicator::Run() {
 	auto localNamespaces = getLocalNamespaces();
-	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> namespaces;
 	{
 		std::lock_guard lck(mtx_);
 		if (!isExpectingStartup()) {
@@ -45,6 +44,9 @@ void AsyncDataReplicator::Run() {
 		}
 
 		// NOLINTBEGIN (bugprone-unchecked-optional-access) Optionals were checked in isExpectingStartup()
+		if (config_->nodes.size() > UpdatesQueueT::kMaxReplicas) {
+			throw Error(errParams, "Async replication nodes limit was reached: %d", UpdatesQueueT::kMaxReplicas);
+		}
 		statsCollector_.Init(config_->nodes);
 		log_.SetLevel(config_->logLevel);
 		updatesQueue_.ReinitAsyncQueue(statsCollector_, std::optional<NsNamesHashSetT>(getMergedNsConfig(config_.value())), log_);
@@ -67,8 +69,11 @@ void AsyncDataReplicator::Run() {
 	if (config_->role == AsyncReplConfigData::Role::Leader) {
 		for (auto& ns : localNamespaces) {
 			if (!clusterizator_.NamespaceIsInClusterConfig(ns)) {
-				thisNode_.SetClusterizationStatus(ns, ClusterizationStatus{baseConfig_->serverID, ClusterizationStatus::Role::None},
-												  RdxContext());
+				auto err = thisNode_.SetClusterizationStatus(
+					ns, ClusterizationStatus{baseConfig_->serverID, ClusterizationStatus::Role::None}, RdxContext());
+				if (!err.ok()) {
+					logWarn("SetClusterizationStatus for the local '%s' namespace error: %s", ns, err.what());
+				}
 			}
 		}
 	}
@@ -122,7 +127,7 @@ void AsyncDataReplicator::stop() {
 	}
 }
 
-AsyncDataReplicator::NsNamesHashSetT AsyncDataReplicator::getLocalNamespaces() {
+NsNamesHashSetT AsyncDataReplicator::getLocalNamespaces() {
 	std::vector<NamespaceDef> nsDefs;
 	NsNamesHashSetT namespaces;
 	auto err = thisNode_.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideSystem().HideTemporary().WithClosed(), RdxContext());
@@ -135,7 +140,7 @@ AsyncDataReplicator::NsNamesHashSetT AsyncDataReplicator::getLocalNamespaces() {
 	return namespaces;
 }
 
-AsyncDataReplicator::NsNamesHashSetT AsyncDataReplicator::getMergedNsConfig(const AsyncReplConfigData& config) {
+NsNamesHashSetT AsyncDataReplicator::getMergedNsConfig(const AsyncReplConfigData& config) {
 	assert(config.nodes.size());
 	bool hasNodesWithDefaultConfig = false;
 	for (auto& node : config.nodes) {

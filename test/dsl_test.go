@@ -19,7 +19,7 @@ type TestDSLItem struct {
 
 type TestDSLFtItem struct {
 	ID          int    `reindex:"id,,pk"`
-	Description string `reindex:"description,text"`
+	Description string `reindex:"description,text,dense"`
 }
 
 type TestDSLJoinItem struct {

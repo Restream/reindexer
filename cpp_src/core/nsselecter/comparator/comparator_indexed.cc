@@ -83,22 +83,6 @@ typename reindexer::comparators::ValuesHolder<reindexer::key_string, Cond>::Type
 	}
 }
 
-template <CondType Cond>
-typename reindexer::comparators::ValuesHolder<reindexer::PayloadValue, Cond>::Type getInitCompositeValues(
-	const reindexer::VariantArray& values, const reindexer::PayloadType& payloadType, const reindexer::FieldsSet& fields) {
-	if constexpr (Cond == CondRange) {
-		return {reindexer::comparators::GetValue<reindexer::PayloadValue>(Cond, values, 0),
-				reindexer::comparators::GetValue<reindexer::PayloadValue>(Cond, values, 1)};
-	} else if constexpr (Cond == CondSet) {
-		return reindexer::unordered_payload_set{values.size(), reindexer::hash_composite{payloadType, fields},
-												reindexer::equal_composite{payloadType, fields}};
-	} else if constexpr (Cond == CondAllSet) {
-		return {{reindexer::PayloadType{payloadType}, reindexer::FieldsSet{fields}}, {}};
-	} else if constexpr (Cond == CondEq || Cond == CondLt || Cond == CondLe || Cond == CondGt || Cond == CondGe || Cond == CondLike) {
-		return reindexer::comparators::GetValue<reindexer::PayloadValue>(Cond, values, 0);
-	}
-}
-
 template <typename T, CondType Cond>
 void initComparator(const reindexer::VariantArray& from, typename reindexer::comparators::ValuesHolder<T, Cond>::Type& to) {
 	if constexpr (Cond == CondSet) {
@@ -512,8 +496,8 @@ ComparatorIndexedComposite::ComparatorIndexedComposite(const VariantArray& value
 			break;
 		case CondSet:
 			value_.~PayloadValue();
-			new (&setPtr_) SetPtrType{make_intrusive<SetWrpType>(
-				SetType{values.size(), reindexer::hash_composite{payloadType, fields}, reindexer::equal_composite{payloadType, fields}})};
+			new (&setPtr_) SetPtrType{make_intrusive<SetWrpType>(SetType{values.size(), reindexer::hash_composite_ref{payloadType, fields},
+																		 reindexer::equal_composite_ref{payloadType, fields}})};
 			initComparator<PayloadValue, CondSet>(values, *setPtr_);
 			break;
 		case CondAllSet:

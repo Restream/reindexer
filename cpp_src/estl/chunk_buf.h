@@ -7,6 +7,7 @@
 #include <vector>
 #include "chunk.h"
 #include "span.h"
+#include "tools/assertrx.h"
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -25,6 +26,8 @@ public:
 			data_size_ += ch.size();
 			ring_[head_] = std::move(ch);
 			head_ = new_head;
+			size_.fetch_add(1, std::memory_order_acq_rel);
+			assertrx_dbg(size_atomic() == size_impl());
 		}
 	}
 	void write(std::string_view sv) {
@@ -32,7 +35,7 @@ public:
 		chunk.append(sv);
 		write(std::move(chunk));
 	}
-	span<chunk> tail() {
+	span<chunk> tail() noexcept {
 		std::lock_guard lck(mtx_);
 		size_t cnt = ((tail_ > head_) ? ring_.size() : head_) - tail_;
 		return span<chunk>(ring_.data() + tail_, cnt);
@@ -48,18 +51,29 @@ public:
 				cur.shift(nread);
 				break;
 			}
+			size_.fetch_sub(1, std::memory_order_acq_rel);
 			nread -= cur.size();
-			cur.clear();
-			if (free_.size() < ring_.size() && cur.capacity() < 0x10000)
-				free_.push_back(std::move(cur));
-			else
-				cur = chunk();
+			recycle(std::move(cur));
 			tail_ = (tail_ + 1) % ring_.size();
 		}
+		assertrx_dbg(size_atomic() == size_impl());
 	}
-	chunk get_chunk() {
+	void erase_chunks(size_t count) {
 		std::lock_guard lck(mtx_);
+		const auto erase_count = std::min(count, size_impl());
+		for (count = erase_count; count > 0; --count) {
+			assertrx(head_ != tail_);
+			chunk &cur = ring_[tail_];
+			data_size_ -= cur.size();
+			recycle(std::move(cur));
+			tail_ = (tail_ + 1) % ring_.size();
+		}
+		size_.fetch_sub(erase_count, std::memory_order_acq_rel);
+		assertrx_dbg(size_atomic() == size_impl());
+	}
+	chunk get_chunk() noexcept {
 		chunk ret;
+		std::lock_guard lck(mtx_);
 		if (free_.size()) {
 			ret = std::move(free_.back());
 			free_.pop_back();
@@ -67,29 +81,44 @@ public:
 		return ret;
 	}
 
-	size_t size() {
+	size_t size() const noexcept {
 		std::lock_guard lck(mtx_);
-		return (head_ - tail_ + ring_.size()) % ring_.size();
+		return size_impl();
 	}
 
-	size_t data_size() {
+	size_t size_atomic() const noexcept { return size_.load(std::memory_order_acquire); }
+
+	size_t data_size() const noexcept {
 		std::lock_guard lck(mtx_);
 		return data_size_;
 	}
 
-	size_t capacity() {
+	size_t capacity() const noexcept {
 		std::lock_guard lck(mtx_);
 		return ring_.size() - 1;
 	}
-	void clear() {
+	void clear() noexcept {
 		std::lock_guard lck(mtx_);
 		head_ = tail_ = data_size_ = 0;
+		size_.store(0, std::memory_order_release);
+		assertrx_dbg(size_atomic() == size_impl());
 	}
 
-protected:
+private:
+	size_t size_impl() const noexcept { return (head_ - tail_ + ring_.size()) % ring_.size(); }
+	void recycle(chunk &&ch) {
+		if (free_.size() < ring_.size() && ch.capacity() < 0x10000) {
+			ch.clear();
+			free_.emplace_back(std::move(ch));
+		} else {
+			ch = chunk();
+		}
+	}
+
 	size_t head_ = 0, tail_ = 0, data_size_ = 0;
+	std::atomic<size_t> size_ = {0};
 	std::vector<chunk> ring_, free_;
-	Mutex mtx_;
+	mutable Mutex mtx_;
 };
 
 }  // namespace reindexer

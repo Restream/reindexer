@@ -3,6 +3,8 @@
 #include "coroutine.h"
 #include "estl/h_vector.h"
 
+#include <algorithm>
+
 namespace reindexer {
 namespace coroutine {
 
@@ -29,7 +31,7 @@ public:
 	/// @param obj - Object to push
 	template <typename U>
 	void push(U &&obj) {
-		assertrx(current());	// For now channels should not be used from main routine dew to current resume/suspend logic
+		assertrx(current());  // For now channels should not be used from main routine dew to current resume/suspend logic
 		bool await = false;
 		while (full() || closed_) {
 			if (closed_) {
@@ -62,7 +64,7 @@ public:
 	/// writers.
 	/// @return Pair of value and flag. Flag shows if it's actual value from channel (true) or default constructed one (false)
 	std::pair<T, bool> pop() {
-		assertrx(current());	// For now channels should not be used from main routine dew to current resume/suspend logic
+		assertrx(current());  // For now channels should not be used from main routine dew to current resume/suspend logic
 		bool await = false;
 		while (empty() && !closed_) {
 			if (!await) {

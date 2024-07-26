@@ -71,7 +71,7 @@ private:
 				[&](KeyValueType::Composite) {
 					return ConstPayload(type_, static_cast<const PayloadValue &>(v1)).IsEQ(static_cast<const PayloadValue &>(v2), fields_);
 				},
-				[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined>) noexcept -> bool { abort(); });
+				[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined>) -> bool { throw_as_assert; });
 		}
 
 	private:
@@ -85,9 +85,7 @@ private:
 				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int,
 						  KeyValueType::Uuid>) noexcept { return v.Hash(); },
 				[&](KeyValueType::Composite) { return ConstPayload(type_, static_cast<const PayloadValue &>(v)).GetHash(fields_); },
-				[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined>) noexcept -> size_t { abort(); });
-			assertrx(type_);
-			return 0;
+				[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined>) -> size_t { throw_as_assert; });
 		}
 
 	private:
@@ -98,10 +96,9 @@ private:
 	class DistinctChangeChecker {
 	public:
 		DistinctChangeChecker(const Aggregator &aggregator) noexcept : aggregator_(aggregator) {}
-		bool operator()() noexcept {
-			assertrx_throw(aggregator_.Type() == AggType::AggDistinct);
+		[[nodiscard]] bool operator()() noexcept {
+			assertrx_dbg(aggregator_.Type() == AggType::AggDistinct);
 			assertrx_dbg(aggregator_.distincts_);
-
 			size_t prev = lastCheckSize_;
 			lastCheckSize_ = aggregator_.distincts_->size();
 			return aggregator_.distincts_->size() > prev;

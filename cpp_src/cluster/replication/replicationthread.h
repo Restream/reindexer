@@ -3,13 +3,14 @@
 #include <numeric>
 #include "client/cororeindexer.h"
 #include "cluster/config.h"
+#include "cluster/logger.h"
 #include "cluster/stats/relicationstatscollector.h"
-#include "cluster/updaterecord.h"
 #include "core/dbconfig.h"
 #include "coroutine/tokens_pool.h"
 #include "net/ev/ev.h"
 #include "sharedsyncstate.h"
-#include "updatesqueue.h"
+#include "updates/updaterecord.h"
+#include "updates/updatesqueue.h"
 
 namespace reindexer {
 
@@ -65,31 +66,31 @@ struct ReplThreadConfig {
 };
 
 struct UpdateApplyStatus {
-	UpdateApplyStatus(Error &&_err = Error(), UpdateRecord::Type _type = UpdateRecord::Type::None) : err(std::move(_err)), type(_type) {}
+	UpdateApplyStatus(Error &&_err = Error(), updates::URType _type = updates::URType::None) noexcept : err(std::move(_err)), type(_type) {}
 	template <typename BehaviourParamT>
 	bool IsHaveToResync() const noexcept;
 
 	Error err;
-	UpdateRecord::Type type;
+	updates::URType type;
 };
 
 template <typename BehaviourParamT>
 class ReplThread {
 public:
-	using UpdatesQueueT = UpdatesQueue<UpdateRecord>;
+	using UpdatesQueueT = updates::UpdatesQueue<updates::UpdateRecord, ReplicationStatsCollector, Logger>;
 	using UpdatesChT = coroutine::channel<bool>;
 
 	class NamespaceData {
 	public:
-		void UpdateLsnOnRecord(const UpdateRecord &rec) {
+		void UpdateLsnOnRecord(const updates::UpdateRecord &rec) {
 			if (!rec.IsDbRecord()) {
 				// Updates with *Namespace types have fake lsn. Those updates should not be count in latestLsn
-				latestLsn = rec.extLsn;
-			} else if (rec.type == UpdateRecord::Type::AddNamespace) {
-				if (latestLsn.NsVersion().isEmpty() || latestLsn.NsVersion().Counter() < rec.extLsn.NsVersion().Counter()) {
-					latestLsn = ExtendedLsn(rec.extLsn.NsVersion(), lsn_t());
+				latestLsn = rec.ExtLSN();
+			} else if (rec.Type() == updates::URType::AddNamespace) {
+				if (latestLsn.NsVersion().isEmpty() || latestLsn.NsVersion().Counter() < rec.ExtLSN().NsVersion().Counter()) {
+					latestLsn = ExtendedLsn(rec.ExtLSN().NsVersion(), lsn_t());
 				}
-			} else if (rec.type == UpdateRecord::Type::DropNamespace) {
+			} else if (rec.Type() == updates::URType::DropNamespace) {
 				latestLsn = ExtendedLsn();
 			}
 		}
@@ -105,13 +106,15 @@ public:
 			: serverId(_serverId), uid(_uid), client(config) {}
 		void Reconnect(net::ev::dynamic_loop &loop, const ReplThreadConfig &config) {
 			if (connObserverId.has_value()) {
-				client.RemoveConnectionStateObserver(*connObserverId);
+				auto err = client.RemoveConnectionStateObserver(*connObserverId);
+				(void)err;	// ignored
 				connObserverId.reset();
 			}
 			client.Stop();
 			client::ConnectOpts opts;
 			opts.CreateDBIfMissing().WithExpectedClusterID(config.ClusterID);
-			client.Connect(dsn, loop, opts);
+			auto err = client.Connect(dsn, loop, opts);
+			(void)err;	// ignored; Error will be checked during the further requests
 		}
 
 		int serverId;
@@ -119,7 +122,7 @@ public:
 		std::string dsn;
 		client::CoroReindexer client;
 		std::unique_ptr<UpdatesChT> updateNotifier = std::make_unique<UpdatesChT>();
-		std::unordered_map<std::string, NamespaceData, nocase_hash_str, nocase_equal_str>
+		std::unordered_map<NamespaceName, NamespaceData, NamespaceNameHash, NamespaceNameEqual>
 			namespaceData;	// This map should not invalidate references
 		uint64_t nextUpdateId = 0;
 		bool requireResync = false;
@@ -141,7 +144,8 @@ public:
 				swg,
 				[&node]() noexcept {
 					if (node.connObserverId.has_value()) {
-						node.client.RemoveConnectionStateObserver(*node.connObserverId);
+						auto err = node.client.RemoveConnectionStateObserver(*node.connObserverId);
+						(void)err;	// ignore
 						node.connObserverId.reset();
 					}
 					node.client.Stop();
@@ -170,15 +174,15 @@ private:
 	void updatesNotifier() noexcept;
 	void terminateNotifier() noexcept;
 	std::tuple<bool, UpdateApplyStatus> handleNetworkCheckRecord(Node &node, UpdatesQueueT::UpdatePtr &updPtr, uint16_t offset,
-																 bool currentlyOnline, const UpdateRecord &rec) noexcept;
+																 bool currentlyOnline, const updates::UpdateRecord &rec) noexcept;
 
-	Error syncNamespace(Node &node, const std::string &nsName, const ReplicationStateV2 &followerState);
+	Error syncNamespace(Node &, const NamespaceName &, const ReplicationStateV2 &followerState);
 	[[nodiscard]] Error syncShardingConfig(Node &node) noexcept;
 	UpdateApplyStatus nodeUpdatesHandlingLoop(Node &node) noexcept;
 	bool handleUpdatesWithError(Node &node, const Error &err);
 	Error checkIfReplicationAllowed(Node &node, LogLevel &logLevel);
 
-	UpdateApplyStatus applyUpdate(const UpdateRecord &rec, Node &node, NamespaceData &nsData) noexcept;
+	UpdateApplyStatus applyUpdate(const updates::UpdateRecord &rec, Node &node, NamespaceData &nsData) noexcept;
 	static bool isNetworkError(const Error &err) noexcept { return err.code() == errNetwork; }
 	static bool isTimeoutError(const Error &err) noexcept { return err.code() == errTimeout || err.code() == errCanceled; }
 	static bool isLeaderChangedError(const Error &err) noexcept { return err.code() == errWrongReplicationData; }

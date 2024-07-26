@@ -119,7 +119,7 @@ Error DBManager::loadOrCreateDatabase(const std::string &dbName, bool allowDBErr
 
 	logPrintf(LogInfo, "Loading database %s", dbName);
 	auto db = std::make_unique<reindexer::Reindexer>(
-		reindexer::ReindexerConfig().WithClientStats(clientsStats_).WithUpdatesSize(config_.MaxUpdatesSize));
+		reindexer::ReindexerConfig().WithClientStats(clientsStats_).WithUpdatesSize(config_.MaxUpdatesSize).WithDBName(dbName));
 	StorageTypeOpt storageType = kStorageTypeOptLevelDB;
 	switch (storageType_) {
 		case datastorage::StorageType::LevelDB:

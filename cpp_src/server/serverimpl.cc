@@ -205,7 +205,8 @@ void ServerImpl::ReopenLogFiles() {
 std::string ServerImpl::GetCoreLogPath() const { return GetDirPath(config_.CoreLog); }
 
 int ServerImpl::run() {
-	loggerConfigure();
+	auto err = loggerConfigure();
+	(void)err;	// ingore; In case of the multiple builtin servers, we will get errors here
 
 	reindexer::debug::backtrace_set_writer([](std::string_view out) {
 		auto logger = spdlog::get("server");

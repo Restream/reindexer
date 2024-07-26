@@ -70,7 +70,7 @@ public:
 
 	template <typename T, typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value ||
 												  std::is_same<T, bool>::value>::type* = nullptr>
-	void Array(int fieldIdx, span<T> data, int /*offset*/ = 0) {
+	void Array(int fieldIdx, span<const T> data, int /*offset*/ = 0) {
 		auto array = ArrayPacked(fieldIdx);
 		for (const T& item : data) {
 			array.put(0, item);
@@ -78,13 +78,13 @@ public:
 	}
 
 	template <typename T, typename std::enable_if<std::is_same<reindexer::p_string, T>::value>::type* = nullptr>
-	void Array(int fieldIdx, span<T> data, int /*offset*/ = 0) {
+	void Array(int fieldIdx, span<const T> data, int /*offset*/ = 0) {
 		auto array = ArrayNotPacked(fieldIdx);
 		for (const T& item : data) {
 			array.put(fieldIdx, std::string_view(item));
 		}
 	}
-	void Array(int fieldIdx, span<Uuid> data, int /*offset*/ = 0) {
+	void Array(int fieldIdx, span<const Uuid> data, int /*offset*/ = 0) {
 		auto array = ArrayNotPacked(fieldIdx);
 		for (Uuid item : data) {
 			array.put(fieldIdx, item);

@@ -245,7 +245,6 @@ TEST_F(ClusterizationExtrasApi, RestrictUpdates) {
 
 		const int count = 396;	// 4 additioonal updates for AddNamespace and indexes
 		const int from = 1000000;
-		const std::string nsName("ns1");
 		std::string dataString;
 		for (size_t i = 0; i < 10000; ++i) {
 			dataString.append("xxx");

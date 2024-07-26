@@ -477,7 +477,6 @@ func FillTestItemsWithFunc(ns string, start int, count int, pkgsCount int, fn te
 }
 
 func TestQueries(t *testing.T) {
-
 	t.Run("Common indexed queries", func(t *testing.T) {
 		t.Parallel()
 
@@ -906,6 +905,14 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 	newTestQuery(DB, namespace).Where("name", reindexer.EQ, randString()).Distinct(distinct).Sort("postal_code", true).Sort(sort, desc).ExecAndVerify(t)
 	newTestQuery(DB, namespace).Where("name", reindexer.EQ, randString()).Distinct(distinct).Sort("age_limit", false).Sort(sort, desc).ExecAndVerify(t)
 	newTestQuery(DB, namespace).Where("packages", reindexer.GE, 5).Where("price_id", reindexer.GE, 100).EqualPosition("packages", "price_id").ExecAndVerify(t)
+	newTestQuery(DB, namespace).
+		Where("packages", reindexer.GE, 5).
+		Where("price_id", reindexer.GE, 100).
+		EqualPosition("packages", "price_id").
+		Where("isdeleted", reindexer.EQ, true).
+		Or().
+		Where("year", reindexer.GT, 2001).
+		ExecAndVerify(t)
 
 	newTestQuery(DB, namespace).Where("name", reindexer.EQ, randString()).Distinct(distinct).
 		Sort("year", true).

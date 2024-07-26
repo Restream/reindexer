@@ -27,8 +27,7 @@ AsyncStorage::AsyncStorage(const AsyncStorage& o, AsyncStorage::FullLockT& stora
 	// Do not copying lastFlushError_ and reopenTs_, because copied storage does not performs actual writes
 }
 
-Error AsyncStorage::Open(datastorage::StorageType storageType, const std::string& nsName, const std::string& path,
-						 const StorageOpts& opts) {
+Error AsyncStorage::Open(datastorage::StorageType storageType, std::string_view nsName, const std::string& path, const StorageOpts& opts) {
 	auto lck = FullLock();
 
 	throwOnStorageCopy();

@@ -95,11 +95,7 @@ RdxActivityContext::RdxActivityContext(std::string_view activityTracer, std::str
 	: data_{nextId(),			ipConnectionId,		   std::string(activityTracer), std::string(user),
 			std::string(query), system_clock_w::now(), Activity::InProgress,		""sv},
 	  state_(serializeState(clientState ? Activity::Sending : Activity::InProgress)),
-#ifndef NDEBUG
-	  refCount_(0u),
-#endif
 	  parent_(&parent)
-
 {
 	parent_->Register(this);
 }
@@ -108,10 +104,8 @@ RdxActivityContext::RdxActivityContext(std::string_view activityTracer, std::str
 RdxActivityContext::RdxActivityContext(RdxActivityContext&& other)
 	: data_(other.data_),
 	  state_(other.state_.load(std::memory_order_relaxed)),
-#ifndef NDEBUG
-	  refCount_(0u),
-#endif
-	  parent_(other.parent_) {
+	  parent_(other.parent_)
+{
 	if (parent_) parent_->Reregister(&other, this);
 	other.parent_ = nullptr;
 }

@@ -375,9 +375,9 @@ func WaitForSyncV4V3(t *testing.T, rxV4 *reindexer.Reindexer, rxV3 *reindexer.Re
 			}
 		}
 		if complete {
-			for nsName, _ := range checkNsMap {
-				slaveNsData, _ := slaveMemStatMap[nsName]
-				masterNsData, _ := masterMemStatMap[nsName]
+			for nsName := range checkNsMap {
+				slaveNsData := slaveMemStatMap[nsName]
+				masterNsData := masterMemStatMap[nsName]
 				if slaveNsData.Replication.DataHash != masterNsData.Replication.DataHash {
 					t.Fatalf("Can't sync slave ns with master: ns \"%s\" slave dataHash: %d , master dataHash %d", nsName, slaveNsData.Replication.DataHash, masterNsData.Replication.DataHash)
 				}

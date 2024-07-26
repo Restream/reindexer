@@ -210,9 +210,6 @@ static void init(reindexer::Reindexer& rx, std::vector<Values<T, T>>& values, bo
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	}
-
-	err = rx.Commit(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 template <typename T>
@@ -234,9 +231,6 @@ static void initWithoutIndexes(reindexer::Reindexer& rx, std::vector<Values<T, T
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	}
-
-	err = rx.Commit(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 template <typename>
@@ -330,9 +324,6 @@ TEST(UUID, UpdateItem) {
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		}
-
-		const auto err = rx.Commit(nsName);
-		ASSERT_TRUE(err.ok()) << err.what();
 
 		test(rx, values);
 	} catch (const reindexer::Error& e) {

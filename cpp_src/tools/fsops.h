@@ -46,8 +46,8 @@ Error TryCreateDirectory(const std::string &dir);
 Error ChangeUser(const char *userName);
 Error ChownDir(const std::string &path, const std::string &user);
 
-inline std::string JoinPath(const std::string &base, const std::string &name) {
-	return base + ((!base.empty() && base.back() != '/') ? "/" : "") + name;
+inline std::string JoinPath(std::string_view base, const std::string_view name) {
+	return std::string(base).append((!base.empty() && base.back() != '/') ? "/" : "").append(name);
 }
 }  // namespace fs
 }  // namespace reindexer

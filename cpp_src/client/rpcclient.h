@@ -92,7 +92,7 @@ public:
 	Error CreateTemporaryNamespace(std::string_view baseName, std::string &resultName, const InternalRdxContext &ctx,
 								   const StorageOpts &opts = StorageOpts().Enabled(), lsn_t version = lsn_t());
 	Error TruncateNamespace(std::string_view nsName, const InternalRdxContext &ctx);
-	Error RenameNamespace(std::string_view srcNsName, const std::string &dstNsName, const InternalRdxContext &ctx);
+	Error RenameNamespace(std::string_view srcNsName, std::string_view dstNsName, const InternalRdxContext &ctx);
 	Error AddIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error UpdateIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error DropIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
@@ -126,7 +126,6 @@ public:
 	Error Select(const Query &query, CoroQueryResults &result, const InternalRdxContext &ctx) {
 		return selectImpl(query, result, config_.NetTimeout, ctx);
 	}
-	Error Commit(std::string_view nsName, const InternalRdxContext &ctx);
 	Item NewItem(std::string_view nsName);
 	template <typename C>
 	Item NewItem(std::string_view nsName, C &client, std::chrono::milliseconds execTimeout) {

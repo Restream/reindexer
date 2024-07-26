@@ -24,7 +24,7 @@ p_string Serializer::GetPSlice() {
 	throw Error(errParseBin, "Binary buffer broken - %s failed: pos=%d,len=%d", type, pos_, len_);
 }
 
-[[noreturn]] void Serializer::throwUnknowTypeError(std::string_view type) {
+[[noreturn]] void Serializer::throwUnknownTypeError(std::string_view type) {
 	throw Error(errParseBin, "Unknown type %s while parsing binary buffer", type);
 }
 
@@ -62,7 +62,7 @@ void WrSerializer::VStringHelper::End() {
 	if (ser_) {
 		int size = ser_->len_ - pos_;
 		if (size < 0) {
-			throw Error(errParseBin, "Size of object is unexpedetly negative: %d", size);
+			throw Error(errParseBin, "Size of object is unexpectedly negative: %d", size);
 		}
 		if (size == 0) {
 			ser_->grow(1);

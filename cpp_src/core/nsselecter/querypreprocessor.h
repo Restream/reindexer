@@ -15,6 +15,8 @@ struct SelectCtxWithJoinPreSelect;
 
 class QueryPreprocessor : private QueryEntries {
 public:
+	enum class ValuesType : bool { Scalar, Composite };
+
 	QueryPreprocessor(QueryEntries &&, NamespaceImpl *, const SelectCtx &);
 	const QueryEntries &GetQueryEntries() const noexcept { return *this; }
 	bool LookupQueryIndexes() {
@@ -72,11 +74,11 @@ public:
 	bool IsFtExcluded() const noexcept { return ftEntry_.has_value(); }
 	void ExcludeFtQuery(const RdxContext &);
 	FtMergeStatuses &GetFtMergeStatuses() noexcept {
-		assertrx(ftPreselect_);
+		assertrx_throw(ftPreselect_);
 		return *ftPreselect_;
 	}
 	FtPreselectT &&MoveFtPreselect() noexcept {
-		assertrx(ftPreselect_);
+		assertrx_throw(ftPreselect_);
 		return std::move(*ftPreselect_);
 	}
 	bool IsFtPreselected() const noexcept { return ftPreselect_ && !ftEntry_; }
@@ -84,7 +86,7 @@ public:
 
 private:
 	enum class NeedSwitch : bool { Yes = true, No = false };
-	enum class MergeResult { NotMerged, Merged, Annihilated };
+	enum class [[nodiscard]] MergeResult { NotMerged, Merged, Annihilated };
 	enum class MergeOrdered : bool { Yes = true, No = false };
 	struct FoundIndexInfo {
 		enum class ConditionType { Incompatible = 0, Compatible = 1 };
@@ -102,42 +104,41 @@ private:
 	[[nodiscard]] bool forcedStage() const noexcept { return evaluationsCount_ == (desc_ ? 1 : 0); }
 	[[nodiscard]] size_t lookupQueryIndexes(uint16_t dst, uint16_t srcBegin, uint16_t srcEnd);
 	[[nodiscard]] size_t substituteCompositeIndexes(size_t from, size_t to);
-	[[nodiscard]] MergeResult mergeQueryEntries(size_t lhs, size_t rhs, MergeOrdered, const CollateOpts &);
-	[[nodiscard]] MergeResult mergeQueryEntriesSetSet(QueryEntry &lqe, QueryEntry &rqe, bool distinct, size_t position,
-													  const CollateOpts &);
-	template <NeedSwitch>
-	[[nodiscard]] MergeResult mergeQueryEntriesAllSetSet(QueryEntry &lqe, QueryEntry &rqe, bool distinct, size_t position,
-														 const CollateOpts &);
-	[[nodiscard]] MergeResult mergeQueryEntriesAllSetAllSet(QueryEntry &lqe, QueryEntry &rqe, bool distinct, size_t position,
-															const CollateOpts &);
-	template <NeedSwitch>
-	[[nodiscard]] MergeResult mergeQueryEntriesAny(QueryEntry &lqe, QueryEntry &rqe, bool distinct, size_t position);
-	template <NeedSwitch, typename F>
-	[[nodiscard]] MergeResult mergeQueryEntriesSetNotSet(QueryEntry &lqe, QueryEntry &rqe, F filter, bool distinct, size_t position,
-														 MergeOrdered);
-	template <NeedSwitch, typename F>
-	[[nodiscard]] MergeResult mergeQueryEntriesAllSetNotSet(QueryEntry &lqe, QueryEntry &rqe, F filter, bool distinct, size_t position,
-															const CollateOpts &);
-	[[nodiscard]] MergeResult mergeQueryEntriesDWithin(QueryEntry &lqe, QueryEntry &rqe, bool distinct, size_t position);
-	[[nodiscard]] MergeResult mergeQueryEntriesLt(QueryEntry &lqe, QueryEntry &rqe, bool distinct, const CollateOpts &);
-	[[nodiscard]] MergeResult mergeQueryEntriesGt(QueryEntry &lqe, QueryEntry &rqe, bool distinct, const CollateOpts &);
-	[[nodiscard]] MergeResult mergeQueryEntriesLtGt(QueryEntry &lqe, QueryEntry &rqe, size_t position, const CollateOpts &);
-	template <NeedSwitch>
-	[[nodiscard]] MergeResult mergeQueryEntriesLeGe(QueryEntry &lqe, QueryEntry &rqe, bool distinct, size_t position, const CollateOpts &);
-	template <NeedSwitch>
-	[[nodiscard]] MergeResult mergeQueryEntriesRangeLt(QueryEntry &range, QueryEntry &ge, bool distinct, size_t position,
-													   const CollateOpts &);
-	template <NeedSwitch>
-	[[nodiscard]] MergeResult mergeQueryEntriesRangeLe(QueryEntry &range, QueryEntry &ge, bool distinct, size_t position,
-													   const CollateOpts &);
-	template <NeedSwitch>
-	[[nodiscard]] MergeResult mergeQueryEntriesRangeGt(QueryEntry &range, QueryEntry &ge, bool distinct, size_t position,
-													   const CollateOpts &);
-	template <NeedSwitch>
-	[[nodiscard]] MergeResult mergeQueryEntriesRangeGe(QueryEntry &range, QueryEntry &ge, bool distinct, size_t position,
-													   const CollateOpts &);
-	[[nodiscard]] MergeResult mergeQueryEntriesRange(QueryEntry &range, QueryEntry &ge, bool distinct, size_t position,
-													 const CollateOpts &);
+	template <QueryPreprocessor::ValuesType vt, typename... CmpArgs>
+	MergeResult mergeQueryEntries(size_t lhs, size_t rhs, MergeOrdered, const CmpArgs &...);
+	template <ValuesType, typename... CmpArgs>
+	MergeResult mergeQueryEntriesSetSet(QueryEntry &lqe, QueryEntry &rqe, bool distinct, size_t position, const CmpArgs &...);
+	template <ValuesType, typename... CmpArgs>
+	MergeResult mergeQueryEntriesAllSetSet(NeedSwitch, QueryEntry &lqe, QueryEntry &rqe, bool distinct, size_t position,
+										   const CmpArgs &...);
+	template <ValuesType, typename... CmpArgs>
+	MergeResult mergeQueryEntriesAllSetAllSet(QueryEntry &lqe, QueryEntry &rqe, bool distinct, size_t position, const CmpArgs &...);
+	MergeResult mergeQueryEntriesAny(NeedSwitch, QueryEntry &lqe, QueryEntry &rqe, bool distinct, size_t position);
+	template <ValuesType, typename F>
+	MergeResult mergeQueryEntriesSetNotSet(NeedSwitch, QueryEntry &lqe, QueryEntry &rqe, F filter, bool distinct, size_t position,
+										   MergeOrdered);
+	template <ValuesType, typename F, typename... CmpArgs>
+	MergeResult mergeQueryEntriesAllSetNotSet(NeedSwitch, QueryEntry &lqe, QueryEntry &rqe, F filter, bool distinct, size_t position,
+											  const CmpArgs &...);
+	MergeResult mergeQueryEntriesDWithin(QueryEntry &lqe, QueryEntry &rqe, bool distinct, size_t position);
+	template <ValuesType, typename... CmpArgs>
+	MergeResult mergeQueryEntriesLt(QueryEntry &lqe, QueryEntry &rqe, bool distinct, const CmpArgs &...);
+	template <ValuesType, typename... CmpArgs>
+	MergeResult mergeQueryEntriesGt(QueryEntry &lqe, QueryEntry &rqe, bool distinct, const CmpArgs &...);
+	template <ValuesType, typename... CmpArgs>
+	MergeResult mergeQueryEntriesLtGt(QueryEntry &lqe, QueryEntry &rqe, size_t position, const CmpArgs &...);
+	template <ValuesType, typename... CmpArgs>
+	MergeResult mergeQueryEntriesLeGe(NeedSwitch, QueryEntry &lqe, QueryEntry &rqe, bool distinct, size_t position, const CmpArgs &...);
+	template <ValuesType, typename... CmpArgs>
+	MergeResult mergeQueryEntriesRangeLt(NeedSwitch, QueryEntry &range, QueryEntry &ge, bool distinct, size_t position, const CmpArgs &...);
+	template <ValuesType, typename... CmpArgs>
+	MergeResult mergeQueryEntriesRangeLe(NeedSwitch, QueryEntry &range, QueryEntry &ge, bool distinct, size_t position, const CmpArgs &...);
+	template <ValuesType, typename... CmpArgs>
+	MergeResult mergeQueryEntriesRangeGt(NeedSwitch, QueryEntry &range, QueryEntry &ge, bool distinct, size_t position, const CmpArgs &...);
+	template <ValuesType, typename... CmpArgs>
+	MergeResult mergeQueryEntriesRangeGe(NeedSwitch, QueryEntry &range, QueryEntry &ge, bool distinct, size_t position, const CmpArgs &...);
+	template <ValuesType, typename... CmpArgs>
+	MergeResult mergeQueryEntriesRange(QueryEntry &range, QueryEntry &ge, bool distinct, size_t position, const CmpArgs &...);
 	[[nodiscard]] const std::vector<int> *getCompositeIndex(int field) const noexcept;
 	void initIndexedQueries(size_t begin, size_t end);
 	[[nodiscard]] const Index *findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end) const;

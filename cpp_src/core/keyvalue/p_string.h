@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include "estl/span.h"
 #include "key_string.h"
 #include "tools/customhash.h"
 #include "tools/jsonstring.h"
@@ -175,6 +176,17 @@ protected:
 
 	uint64_t v = 0;
 };
+
+inline span<char> giftStr(p_string s) noexcept {
+#ifndef _GLIBCXX_USE_CXX11_ABI
+	if (s.type() == p_string::tagCxxstr) {
+		// Trying to avoid COW-string problems
+		auto strPtr = s.getCxxstr();
+		return span<char>(const_cast<std::string *>(strPtr)->data(), strPtr->size());
+	}
+#endif	// _GLIBCXX_USE_CXX11_ABI
+	return span<char>(const_cast<char *>(s.data()), s.size());
+}
 
 }  // namespace reindexer
 namespace std {

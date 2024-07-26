@@ -13,9 +13,8 @@ namespace cluster {
 
 class ClusterDataReplicator {
 public:
-	using UpdatesQueueT = UpdatesQueuePair<UpdateRecord>;
+	using UpdatesQueueT = UpdatesQueuePair<updates::UpdateRecord>;
 	using UpdatesQueueShardT = UpdatesQueueT::QueueT;
-	using NsNamesHashSetT = fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str>;
 
 	ClusterDataReplicator(UpdatesQueueT &, SharedSyncState<> &, ReindexerImpl &);
 

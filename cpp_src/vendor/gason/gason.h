@@ -15,7 +15,20 @@ namespace gason {
 
 using reindexer::span;
 
-enum JsonTag : int { JSON_STRING = 0, JSON_NUMBER, JSON_DOUBLE, JSON_ARRAY, JSON_OBJECT, JSON_TRUE, JSON_FALSE, JSON_NULL = 0xF };
+enum JsonTag : uint8_t {
+	JSON_STRING = 0,
+	JSON_NUMBER,
+	JSON_DOUBLE,
+	JSON_ARRAY,
+	JSON_OBJECT,
+	JSON_TRUE,
+	JSON_FALSE,
+	JSON_NULL = 0xF,
+};
+
+// TODO: Move this to the JsonTag-enum, when pyreindexer deploy will be fixed. Currently this would break old pyrx builds
+// Issue #1736
+constexpr uint8_t JSON_EMPTY = 0xFF;
 
 struct JsonNode;
 
@@ -61,7 +74,8 @@ union JsonValue {
 		u.tag = tag;
 		ival = uintptr_t(payload);
 	}
-	JsonTag getTag() const noexcept { return JsonTag(u.tag); }
+	// TODO: Remove NOLINT after pyreindexer update. Issue #1736
+	JsonTag getTag() const noexcept { return JsonTag(u.tag); }	// NOLINT(*EnumCastOutOfRange)
 
 	int64_t toNumber() const noexcept {
 		assertrx(getTag() == JSON_NUMBER || getTag() == JSON_DOUBLE);
@@ -141,7 +155,8 @@ struct JsonNode {
 	}
 
 	const JsonNode &operator[](std::string_view sv) const;
-	bool empty() const noexcept;
+	bool empty() const noexcept { return uint8_t(value.getTag()) == JSON_EMPTY; }
+	bool isObject() const noexcept { return value.getTag() == JSON_OBJECT; }
 	JsonNode *toNode() const;
 	static JsonNode EmptyNode() noexcept;
 };
@@ -174,6 +189,7 @@ struct JsonNodeIterator {
 
 	void operator++() noexcept { p = p->next; }
 	bool operator!=(const JsonNodeIterator &x) const noexcept { return p != x.p; }
+	bool operator==(const JsonNodeIterator &x) const noexcept { return p == x.p; }
 	const JsonNode &operator*() const noexcept { return *p; }
 	const JsonNode *operator->() const noexcept { return p; }
 };

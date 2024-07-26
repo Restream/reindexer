@@ -179,8 +179,9 @@ TEST_F(ClusterizationAsyncApi, AsyncReplicationBetweenClustersDefaultMode) {
 		}
 
 		client::Item it = cluster2.GetNode(kReplicatedNodeId)->api.reindexer->NewItem(kNs2);
-		it.FromJSON(R"json({"id":1})json");
-		auto err = cluster2.GetNode(kReplicatedNodeId)->api.reindexer->Upsert(kNs2, it);
+		auto err = it.FromJSON(R"json({"id":1})json");
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = cluster2.GetNode(kReplicatedNodeId)->api.reindexer->Upsert(kNs2, it);
 		ASSERT_EQ(err.code(), errWrongReplicationData);
 	});
 
@@ -253,8 +254,9 @@ TEST_F(ClusterizationAsyncApi, AsyncReplicationBetweenClustersLeaderMode) {
 
 		for (unsigned i = 0; i < kClusterSize; ++i) {
 			client::Item it = cluster2.GetNode(i)->api.reindexer->NewItem(kNs2);
-			it.FromJSON(R"json({"id":1})json");
-			auto err = cluster2.GetNode(i)->api.reindexer->Upsert(kNs2, it);
+			auto err = it.FromJSON(R"json({"id":1})json");
+			ASSERT_TRUE(err.ok()) << err.what();
+			err = cluster2.GetNode(i)->api.reindexer->Upsert(kNs2, it);
 			ASSERT_EQ(err.code(), errWrongReplicationData);
 		}
 	});

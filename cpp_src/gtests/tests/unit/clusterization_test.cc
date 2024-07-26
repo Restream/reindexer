@@ -557,7 +557,8 @@ TEST_F(ClusterizationApi, MultithreadSyncTest) {
 						auto idx = rand() % kMaxDataId;
 						auto item = tx.NewItem();
 						cluster.FillItem(node->api, item, idx);
-						tx.Upsert(std::move(item));
+						auto err = tx.Upsert(std::move(item));
+						ASSERT_TRUE(err.ok()) << err.what();
 					}
 					for (size_t i = 0; i < 2; ++i) {
 						int minIdx = rand() % kMaxDataId;
@@ -565,14 +566,16 @@ TEST_F(ClusterizationApi, MultithreadSyncTest) {
 						Query q =
 							Query(ns).Where(kIdField, CondGe, minIdx).Where(kIdField, CondLe, maxIdx).Set(kStringField, randStringAlph(25));
 						q.type_ = QueryUpdate;
-						tx.Modify(std::move(q));
+						auto err = tx.Modify(std::move(q));
+						ASSERT_TRUE(err.ok()) << err.what();
 					}
 					for (size_t i = 0; i < 2; ++i) {
 						int minIdx = rand() % kMaxDataId;
 						int maxIdx = minIdx + 100;
 						Query q = Query(ns).Where(kIdField, CondGe, minIdx).Where(kIdField, CondLe, maxIdx);
 						q.type_ = QueryDelete;
-						tx.Modify(std::move(q));
+						auto err = tx.Modify(std::move(q));
+						ASSERT_TRUE(err.ok()) << err.what();
 					}
 					BaseApi::QueryResultsType qrTx;
 					auto err = node->api.reindexer->CommitTransaction(tx, qrTx);
@@ -600,7 +603,8 @@ TEST_F(ClusterizationApi, MultithreadSyncTest) {
 					auto node = cluster.GetNode(id);
 					if (node) {
 						BaseApi::QueryResultsType qr;
-						node->api.reindexer->Select(Query(ns), qr);
+						auto err = node->api.reindexer->Select(Query(ns), qr);
+						(void)err;	// errors are acceptable here
 					}
 				}
 				std::this_thread::sleep_for(std::chrono::milliseconds(30));

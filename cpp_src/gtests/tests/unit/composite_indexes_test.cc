@@ -40,8 +40,6 @@ TEST_F(CompositeIndexesApi, AddIndexWithExistingCompositeIndex) {
 		item[this->kFieldNameName] = names[i];
 		item[this->kFieldNameTitle] = kFieldNameTitle;
 		Upsert(namespaceName, item);
-		err = Commit(namespaceName);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 	err = rt.reindexer->AddIndex(namespaceName, {kFieldNameName, {kFieldNameName}, "text", "string", IndexOpts()});
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -79,16 +77,10 @@ TEST_F(CompositeIndexesApi, DropTest2) {
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
-	err = rt.reindexer->Commit(test_ns);
-	EXPECT_TRUE(err.ok()) << err.what();
-
 	selectAll(rt.reindexer.get(), test_ns);
 
 	reindexer::IndexDef idef("id");
 	err = rt.reindexer->DropIndex(test_ns, idef);
-	EXPECT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->Commit(test_ns);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	selectAll(rt.reindexer.get(), test_ns);
@@ -225,7 +217,6 @@ TEST_F(CompositeIndexesApi, SelectsBySubIndexes) {
 		err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << c.name;
 		DefineNamespaceDataset(default_namespace, c.idxs);
-		std::string compositeIndexName(getCompositeIndexName({kFieldNamePrice, kFieldNamePages}));
 		addCompositeIndex({kFieldNamePrice, kFieldNamePages}, CompositeIndexHash, IndexOpts());
 
 		int priceValue = 77777, pagesValue = 88888, bookid = 300;

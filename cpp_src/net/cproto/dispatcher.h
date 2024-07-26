@@ -56,6 +56,8 @@ struct IRPCCall {
 class Writer {
 public:
 	virtual ~Writer() = default;
+	virtual size_t AvailableEventsSpace() noexcept = 0;
+	virtual void SendEvent(chunk &&ch) = 0;
 	virtual void WriteRPCReturn(Context &ctx, const Args &args, const Error &status) = 0;
 	virtual void CallRPC(const IRPCCall &call) = 0;
 	virtual void SetClientData(std::unique_ptr<ClientData> &&data) noexcept = 0;

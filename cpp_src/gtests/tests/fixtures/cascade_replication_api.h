@@ -12,7 +12,7 @@ public:
 
 	class TestNamespace1 {
 	public:
-		TestNamespace1(const ServerPtr& srv, std::string nsName = std::string("ns1"));
+		TestNamespace1(const ServerPtr& srv, std::string_view nsName = "ns1");
 
 		void AddRows(const ServerPtr& srv, int from, unsigned int count, size_t dataLen = 0);
 		void AddRowsTx(const ServerPtr& srv, int from, unsigned int count, size_t dataLen = 8);

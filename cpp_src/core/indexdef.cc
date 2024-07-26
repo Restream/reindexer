@@ -5,84 +5,82 @@
 #include "tools/jsontools.h"
 #include "tools/serializer.h"
 #include "type_consts_helpers.h"
+#include "vendor/frozen/unordered_map.h"
 
 namespace {
 
-static const std::vector<std::string> &condsUsual() {
-	using namespace std::string_literals;
-	static const std::vector data{"SET"s, "EQ"s, "ANY"s, "EMPTY"s, "LT"s, "LE"s, "GT"s, "GE"s, "RANGE"s};
+using namespace std::string_view_literals;
+
+static const std::vector<std::string_view> &condsUsual() {
+	static const std::vector data{"SET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv, "LT"sv, "LE"sv, "GT"sv, "GE"sv, "RANGE"sv};
 	return data;
 }
 
-static const std::vector<std::string> &condsText() {
-	using namespace std::string_literals;
-	static const std::vector data{"MATCH"s};
+static const std::vector<std::string_view> &condsText() {
+	static const std::vector data{"MATCH"sv};
 	return data;
 }
 
-static const std::vector<std::string> &condsBool() {
-	using namespace std::string_literals;
-	static const std::vector data{"SET"s, "EQ"s, "ANY"s, "EMPTY"s};
+static const std::vector<std::string_view> &condsBool() {
+	static const std::vector data{"SET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv};
 	return data;
 }
 
-static const std::vector<std::string> &condsGeom() {
-	using namespace std::string_literals;
-	static const std::vector data{"DWITHIN"s};
+static const std::vector<std::string_view> &condsGeom() {
+	static const std::vector data{"DWITHIN"sv};
 	return data;
 }
 
 enum Caps { CapComposite = 0x1, CapSortable = 0x2, CapFullText = 0x4 };
 
 struct IndexInfo {
-	const std::string fieldType, indexType;
-	const std::vector<std::string> &conditions;
+	const std::string_view fieldType, indexType;
+	const std::vector<std::string_view> &conditions;
 	int caps;
 };
 
 static const std::unordered_map<IndexType, IndexInfo, std::hash<int>, std::equal_to<int>> &availableIndexes() {
-	using namespace std::string_literals;
 	// clang-format off
 	static const std::unordered_map<IndexType, IndexInfo, std::hash<int>, std::equal_to<int>> data {
-		{IndexIntHash,			{"int"s, "hash"s,				condsUsual(),	CapSortable}},
-		{IndexInt64Hash,		{"int64"s, "hash"s,				condsUsual(),	CapSortable}},
-		{IndexStrHash,			{"string"s, "hash"s,			condsUsual(),	CapSortable}},
-		{IndexCompositeHash,	{"composite"s, "hash"s,			condsUsual(),	CapSortable | CapComposite}},
-		{IndexIntBTree,			{"int"s, "tree"s,				condsUsual(),	CapSortable}},
-		{IndexInt64BTree,		{"int64"s, "tree"s,				condsUsual(),	CapSortable}},
-		{IndexDoubleBTree,		{"double"s, "tree"s,			condsUsual(),	CapSortable}},
-		{IndexCompositeBTree,	{"composite"s, "tree"s,			condsUsual(),	CapComposite | CapSortable}},
-		{IndexStrBTree,			{"string"s, "tree"s,			condsUsual(),	CapSortable}},
-		{IndexIntStore,			{"int"s, "-"s,					condsUsual(),	CapSortable}},
-		{IndexBool,				{"bool"s, "-"s,					condsBool(),	0}},
-		{IndexInt64Store,		{"int64"s, "-"s,				condsUsual(),	CapSortable}},
-		{IndexStrStore,			{"string"s, "-"s,				condsUsual(),	CapSortable}},
-		{IndexDoubleStore,		{"double"s, "-"s,				condsUsual(),	CapSortable}},
-		{IndexTtl,				{"int64"s, "ttl"s,				condsUsual(),	CapSortable}},
-		{IndexCompositeFastFT,	{"composite"s, "text"s,			condsText(),	CapComposite | CapFullText}},
-		{IndexCompositeFuzzyFT,	{"composite"s, "fuzzytext"s,	condsText(),	CapComposite | CapFullText}},
-		{IndexFastFT,			{"string"s, "text"s,			condsText(),	CapFullText}},
-		{IndexFuzzyFT,			{"string"s, "fuzzytext"s,		condsText(),	CapFullText}},
-		{IndexRTree,			{"point"s, "rtree"s,			condsGeom(),	0}},
-		{IndexUuidHash,			{"uuid"s, "hash"s,				condsUsual(),	CapSortable}},
-		{IndexUuidStore,		{"uuid"s, "-"s,					condsUsual(),	CapSortable}},
+		{IndexIntHash,			{"int"sv, "hash"sv,				condsUsual(),	CapSortable}},
+		{IndexInt64Hash,		{"int64"sv, "hash"sv,			condsUsual(),	CapSortable}},
+		{IndexStrHash,			{"string"sv, "hash"sv,			condsUsual(),	CapSortable}},
+		{IndexCompositeHash,	{"composite"sv, "hash"sv,		condsUsual(),	CapSortable | CapComposite}},
+		{IndexIntBTree,			{"int"sv, "tree"sv,				condsUsual(),	CapSortable}},
+		{IndexInt64BTree,		{"int64"sv, "tree"sv,			condsUsual(),	CapSortable}},
+		{IndexDoubleBTree,		{"double"sv, "tree"sv,			condsUsual(),	CapSortable}},
+		{IndexCompositeBTree,	{"composite"sv, "tree"sv,		condsUsual(),	CapComposite | CapSortable}},
+		{IndexStrBTree,			{"string"sv, "tree"sv,			condsUsual(),	CapSortable}},
+		{IndexIntStore,			{"int"sv, "-"sv,				condsUsual(),	CapSortable}},
+		{IndexBool,				{"bool"sv, "-"sv,				condsBool(),	0}},
+		{IndexInt64Store,		{"int64"sv, "-"sv,				condsUsual(),	CapSortable}},
+		{IndexStrStore,			{"string"sv, "-"sv,				condsUsual(),	CapSortable}},
+		{IndexDoubleStore,		{"double"sv, "-"sv,				condsUsual(),	CapSortable}},
+		{IndexTtl,				{"int64"sv, "ttl"sv,			condsUsual(),	CapSortable}},
+		{IndexCompositeFastFT,	{"composite"sv, "text"sv,		condsText(),	CapComposite | CapFullText}},
+		{IndexCompositeFuzzyFT,	{"composite"sv, "fuzzytext"sv,	condsText(),	CapComposite | CapFullText}},
+		{IndexFastFT,			{"string"sv, "text"sv,			condsText(),	CapFullText}},
+		{IndexFuzzyFT,			{"string"sv, "fuzzytext"sv,		condsText(),	CapFullText}},
+		{IndexRTree,			{"point"sv, "rtree"sv,			condsGeom(),	0}},
+		{IndexUuidHash,			{"uuid"sv, "hash"sv,			condsUsual(),	CapSortable}},
+		{IndexUuidStore,		{"uuid"sv, "-"sv,				condsUsual(),	CapSortable}},
 	};
 	// clang-format on
 	return data;
 }
 
-static const std::unordered_map<CollateMode, const std::string, std::hash<int>, std::equal_to<int>> &availableCollates() {
-	using namespace std::string_literals;
-	static const std::unordered_map<CollateMode, const std::string, std::hash<int>, std::equal_to<int>> data{
-		{CollateASCII, "ascii"s}, {CollateUTF8, "utf8"s}, {CollateNumeric, "numeric"s}, {CollateCustom, "custom"s}, {CollateNone, "none"s},
-	};
-	return data;
-}
+constexpr static auto kAvailableCollates = frozen::make_unordered_map<CollateMode, std::string_view>({
+	{CollateASCII, "ascii"sv},
+	{CollateUTF8, "utf8"sv},
+	{CollateNumeric, "numeric"sv},
+	{CollateCustom, "custom"sv},
+	{CollateNone, "none"sv},
+});
 
-constexpr char const *kRTreeLinear = "linear";
-constexpr char const *kRTreeQuadratic = "quadratic";
-constexpr char const *kRTreeGreene = "greene";
-constexpr char const *kRTreeRStar = "rstar";
+constexpr auto kRTreeLinear = "linear"sv;
+constexpr auto kRTreeQuadratic = "quadratic"sv;
+constexpr auto kRTreeGreene = "greene"sv;
+constexpr auto kRTreeRStar = "rstar"sv;
 
 }  // namespace
 
@@ -114,7 +112,6 @@ bool IndexDef::IsEqual(const IndexDef &other, IndexComparison cmpType) const {
 }
 
 IndexType IndexDef::Type() const {
-	using namespace std::string_view_literals;
 	std::string_view iType = indexType_;
 	if (iType == "") {
 		if (fieldType_ == "double"sv) {
@@ -140,7 +137,7 @@ void IndexDef::FromType(IndexType type) {
 	indexType_ = it.indexType;
 }
 
-const std::vector<std::string> &IndexDef::Conditions() const {
+const std::vector<std::string_view> &IndexDef::Conditions() const noexcept {
 	const auto it{availableIndexes().find(Type())};
 	assertrx(it != availableIndexes().cend());
 	return it->second.conditions;
@@ -152,8 +149,6 @@ bool isStore(IndexType type) noexcept {
 	return type == IndexIntStore || type == IndexInt64Store || type == IndexStrStore || type == IndexDoubleStore || type == IndexBool ||
 		   type == IndexUuidStore;
 }
-
-std::string IndexDef::getCollateMode() const { return availableCollates().at(opts_.GetCollateMode()); }
 
 Error IndexDef::FromJSON(span<char> json) {
 	try {
@@ -204,9 +199,9 @@ void IndexDef::FromJSON(const gason::JsonNode &root) {
 
 	auto collateStr = root["collate_mode"].As<std::string_view>();
 	if (!collateStr.empty()) {
-		auto collateIt = find_if(begin(availableCollates()), end(availableCollates()),
-								 [&collateStr](const std::pair<CollateMode, std::string> &p) { return collateStr == p.second; });
-		if (collateIt == end(availableCollates())) throw Error(errParams, "Unknown collate mode %s", collateStr);
+		auto collateIt = find_if(begin(kAvailableCollates), end(kAvailableCollates),
+								 [&collateStr](const std::pair<CollateMode, std::string_view> &p) { return collateStr == p.second; });
+		if (collateIt == end(kAvailableCollates)) throw Error(errParams, "Unknown collate mode %s", collateStr);
 		CollateMode collateValue = collateIt->first;
 		opts_.SetCollateMode(collateValue);
 		if (collateValue == CollateCustom) {
@@ -244,7 +239,7 @@ void IndexDef::GetJSON(WrSerializer &ser, int formatFlags) const {
 				abort();
 		}
 	}
-	builder.Put("collate_mode", getCollateMode())
+	builder.Put("collate_mode", kAvailableCollates.at(opts_.GetCollateMode()))
 		.Put("sort_order_letters", opts_.collateOpts_.sortOrderTable.GetSortOrderCharacters())
 		.Put("expire_after", expireAfter_)
 		.Raw("config", opts_.HasConfig() ? opts_.config : "{}");

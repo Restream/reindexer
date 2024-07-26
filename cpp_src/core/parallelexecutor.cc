@@ -3,7 +3,7 @@
 
 namespace reindexer {
 
-Error ParallelExecutor::createIntegralError(h_vector<std::pair<Error, int>, 8> &errors, size_t clientCount) {
+Error ParallelExecutor::createIntegralError(std::vector<std::pair<Error, int>> &errors, size_t clientCount) {
 	if (errors.empty()) {
 		return {};
 	}
@@ -37,9 +37,9 @@ Error ParallelExecutor::ExecSelect(const Query &query, QueryResults &result, con
 	std::mutex mtx;
 
 	size_t clientCompl = 0;
-	std::string errStringCompl;
 
-	h_vector<std::pair<Error, int>, 8> clientErrors;
+	std::vector<std::pair<Error, int>> clientErrors;
+	clientErrors.reserve(connections.size());
 	bool isLocalCall = false;
 	std::deque<ConnectionData<client::QueryResults>> clientResults;
 
@@ -107,7 +107,7 @@ Error ParallelExecutor::ExecSelect(const Query &query, QueryResults &result, con
 	return createIntegralError(clientErrors, isLocalCall ? clientCount + 1 : clientCount);
 }
 
-void ParallelExecutor::completionFunction(size_t clientCount, size_t &clientCompl, h_vector<std::pair<Error, int>, 8> &clientErrors,
+void ParallelExecutor::completionFunction(size_t clientCount, size_t &clientCompl, std::vector<std::pair<Error, int>> &clientErrors,
 										  int shardId, std::mutex &mtx, std::condition_variable &cv, const Error &err) {
 	std::lock_guard lck(mtx);
 	clientCompl++;
@@ -117,7 +117,7 @@ void ParallelExecutor::completionFunction(size_t clientCount, size_t &clientComp
 	if (clientCompl == clientCount) {
 		cv.notify_one();
 	}
-};
+}
 
 size_t ParallelExecutor::countClientConnection(const sharding::ConnectionsVector &connections) {
 	size_t count = 0;

@@ -63,7 +63,7 @@ const (
 	cmdStartTransaction  = 29
 	cmdDeleteQueryTx     = 30
 	cmdUpdateQueryTx     = 31
-	cmdCommit            = 32
+	cmdCommit            = 32 // DEPRECATED
 	cmdModifyItem        = 33
 	cmdDeleteQuery       = 34
 	cmdUpdateQuery       = 35
@@ -76,17 +76,19 @@ const (
 	cmdPutMeta           = 65
 	cmdEnumMeta          = 66
 	cmdSetSchema         = 67
+	cmdSubscribe         = 90
+	cmdEvent             = 91
 	cmdCodeMax           = 128
 )
 
 type connFactory interface {
-	newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner) (connection, int64, error)
+	newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (connection, int64, error)
 }
 
 type connFactoryImpl struct{}
 
-func (cf *connFactoryImpl) newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner) (connection, int64, error) {
-	return newConnection(ctx, params, loggerOwner)
+func (cf *connFactoryImpl) newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (connection, int64, error) {
+	return newConnection(ctx, params, loggerOwner, eventsHandler)
 }
 
 type requestInfo struct {
@@ -139,6 +141,7 @@ type connectionImpl struct {
 	enableCompression      bool
 	requestDedicatedThread bool
 	loggerOwner            LoggerOwner
+	eventsHandler          bindings.EventsHandler
 }
 
 type newConnParams struct {
@@ -150,11 +153,12 @@ type newConnParams struct {
 	enableCompression      bool
 	requestDedicatedThread bool
 	caps                   bindings.BindingCapabilities
+	envetsHandler          bindings.EventsHandler
 }
 
 func newConnection(
 	ctx context.Context,
-	params newConnParams, loggerOwner LoggerOwner) (
+	params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (
 	connection,
 	int64,
 	error,
@@ -170,6 +174,7 @@ func newConnection(
 		enableCompression:      params.enableCompression,
 		requestDedicatedThread: params.requestDedicatedThread,
 		loggerOwner:            loggerOwner,
+		eventsHandler:          eventsHandler,
 	}
 	for i := 0; i < queueSize; i++ {
 		c.seqs <- uint32(i)
@@ -198,10 +203,7 @@ func newConnection(
 }
 
 func seqNumIsValid(seqNum uint32) bool {
-	if seqNum < maxSeqNum {
-		return true
-	}
-	return false
+	return seqNum < maxSeqNum
 }
 
 func (c *connectionImpl) logMsg(level int, fmt string, msg ...interface{}) {
@@ -317,6 +319,7 @@ func (c *connectionImpl) readReply(hdr []byte) (err error) {
 	if _, err = io.ReadFull(c.rdBuf, hdr); err != nil {
 		return
 	}
+
 	ser := cjson.NewSerializer(hdr)
 	magic := ser.GetUInt32()
 
@@ -344,6 +347,28 @@ func (c *connectionImpl) readReply(hdr []byte) (err error) {
 	if !seqNumIsValid(rseq) {
 		return fmt.Errorf("invalid seq num: %d", rseq)
 	}
+
+	if cmd == cmdEvent {
+		answ := newNetBuffer(size, c)
+		if _, err = io.ReadFull(c.rdBuf, answ.buf); err != nil {
+			return
+		}
+		if compressed {
+			answ.decompress()
+		}
+		if c.eventsHandler != nil {
+			if err = answ.parseArgs(); err != nil {
+				return
+			}
+			if err = c.eventsHandler.OnEvent(answ); err != nil {
+				return
+			}
+		} else {
+			c.logMsg(1, "rq: got event message on the connection, which should be not subscribed to the events. Seq number: %v\n", rseq)
+		}
+		return
+	}
+
 	reqID := rseq % queueSize
 	if atomic.LoadUint32(&c.requests[reqID].seqNum) != rseq {
 		if needCancelAnswer(cmd) {
@@ -663,6 +688,10 @@ func (c *connectionImpl) onError(err error) {
 					c.requests[i].cmplLock.Unlock()
 				}
 			}
+		}
+
+		if c.eventsHandler != nil {
+			c.eventsHandler.OnError(err)
 		}
 	}
 	c.lock.Unlock()

@@ -162,6 +162,7 @@ public:
 
 	template <typename T>
 	void Dump(T &os, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
+	std::string Dump(CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
 
 	class Less {
 	public:
@@ -305,6 +306,7 @@ public:
 	KeyValueType ArrayType() const noexcept { return empty() ? KeyValueType::Null{} : front().Type(); }
 	template <typename T>
 	void Dump(T &os, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
+	std::string Dump(CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
 	template <WithString, NotComparable>
 	ComparationResult RelaxCompare(const VariantArray &other, const CollateOpts & = CollateOpts{}) const;
 	void EnsureHold() {

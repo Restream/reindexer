@@ -327,10 +327,13 @@ TEST_F(CascadeReplicationApi, TransactionTest) {
 	for (unsigned int i = 0; i < kRows; i++) {
 		reindexer::client::Item item = tr.NewItem();
 		auto err = item.FromJSON("{\"id\":" + std::to_string(i + kRows * 10) + "}");
-		tr.Upsert(std::move(item));
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = tr.Upsert(std::move(item));
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 	BaseApi::QueryResultsType qr;
-	master->api.reindexer->CommitTransaction(tr, qr);
+	auto err = master->api.reindexer->CommitTransaction(tr, qr);
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	for (size_t i = 1; i < cluster.Size(); i++) {
 		WaitSync(master, cluster.Get(i), ns1.nsName_);
@@ -728,9 +731,9 @@ TEST_F(CascadeReplicationApi, DISABLED_RenameSlaveNs) {
 	TestNamespace1 testns3(slave, "ns3");
 	unsigned int n3 = 1234;
 	testns3.AddRows(slave, 5015, n3);
-	TestNamespace1 testns4(slave, "ns1");
-	std::string upDsn = "cproto://127.0.0.1:7770/db";
-	AsyncReplicationConfigTest::NsSet nsSet = {"ns1"};
+	// TestNamespace1 testns4(slave, "ns1");
+	// std::string upDsn = "cproto://127.0.0.1:7770/db";
+	// AsyncReplicationConfigTest::NsSet nsSet = {"ns1"};
 	// ReplicationConfigTest configSlave("slave", false, true, 0, upDsn, "slave", nsSet);
 	// slave->MakeFollower(0, configSlave);
 
@@ -859,7 +862,6 @@ TEST_F(CascadeReplicationApi, RestrictUpdates) {
 	// 4. start slave node
 	// 5. insert more (updates will be pended in queue due to force sync)
 	// 6. wait sync
-	const std::string upDsn = "cproto://127.0.0.1:7770/db";
 	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "RestrictUpdates"));
 	ServerControl masterSc;
 	masterSc.InitServer(ServerControlConfig(0, 7770, 7880, kBaseDbPath + "/master", "db", true, 1024 * 5));
@@ -906,6 +908,46 @@ TEST_F(CascadeReplicationApi, RestrictUpdates) {
 		// Mark test as skipped, because we didn't got any updates drops
 		GTEST_SKIP();
 	}
+}
+
+TEST_F(CascadeReplicationApi, LSNConflictWithSQLUpdate) {
+	//  1. create leader/follower nodes,
+	//  2. sync empty namespace
+	//  3. shutdown follower
+	//  4. add 20 rows
+	//  5. perform full namespace update # here statement based replication could break the leader
+	//  6. restart follower
+	//  7. wait sync
+	const std::string kBaseStoragePath = reindexer::fs::JoinPath(kBaseTestsetDbPath, "LSNConflictWithSQLUpdate");
+	const std::string kNsName = "ns1";
+	constexpr size_t kDataCount = 20;
+	ServerControl leaderSc;
+	leaderSc.InitServer(
+		ServerControlConfig(0, 7770, 7880, reindexer::fs::JoinPath(kBaseStoragePath, "leader"), "db", true, 1024 * 1024 * 1024));
+	auto leader = leaderSc.Get();
+
+	leader->MakeLeader();
+	TestNamespace1 testns1(leader, kNsName);
+
+	ServerControl followerSc;
+	followerSc.InitServer(ServerControlConfig(0, 7771, 7881, reindexer::fs::JoinPath(kBaseStoragePath, "follower"), "db", true));
+	auto follower = followerSc.Get();
+	follower->MakeFollower();
+	leader->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", follower->RpcPort()));
+	WaitSync(leader, follower, kNsName);
+
+	follower.reset();
+	followerSc.Stop();
+	followerSc.Drop();
+	testns1.AddRows(leader, 0, kDataCount);
+	auto leaderRx = leader->api.reindexer;
+	client::QueryResults qr;
+	auto err = leaderRx->Update(Query(kNsName).Set("new_data", "some string value"), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), kDataCount);
+
+	followerSc.InitServer(ServerControlConfig(0, 7771, 7881, reindexer::fs::JoinPath(kBaseStoragePath, "follower"), "db", true));
+	WaitSync(leader, followerSc.Get(), kNsName);
 }
 
 #if !defined(REINDEX_WITH_TSAN)

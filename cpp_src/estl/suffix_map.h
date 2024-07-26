@@ -13,18 +13,19 @@ class suffix_map {
 
 	class value_type : public std::pair<const CharT *, V> {
 	public:
-		value_type(const std::pair<const CharT *, V> v) : std::pair<const CharT *, V>(v) {}
-		const value_type *operator->() const { return this; }
+		value_type(std::pair<const CharT *, V> &&v) noexcept : std::pair<const CharT *, V>(std::move(v)) {}
+		value_type(const std::pair<const CharT *, V> &v) : std::pair<const CharT *, V>(v) {}
+		const value_type *operator->() const noexcept { return this; }
 	};
 
 	class iterator {
 		friend class suffix_map;
 
 	public:
-		iterator(size_type idx, const suffix_map *m) : idx_(idx), m_(m) {}
-		iterator(const iterator &other) : idx_(other.idx_), m_(other.m_) {}
+		iterator(size_type idx, const suffix_map *m) noexcept : idx_(idx), m_(m) {}
+		iterator(const iterator &other) noexcept : idx_(other.idx_), m_(other.m_) {}
 		// NOLINTNEXTLINE(bugprone-unhandled-self-assignment)
-		iterator &operator=(const iterator &other) {
+		iterator &operator=(const iterator &other) noexcept {
 			idx_ = other.idx;
 			m_ = other.m_;
 			return *this;
@@ -39,27 +40,27 @@ class suffix_map {
 			return value_type(std::make_pair(p, m_->mapped_[m_->sa_[idx_]]));
 		}
 
-		iterator &operator++() {
+		iterator &operator++() noexcept {
 			++idx_;
 			return *this;
 		}
-		iterator &operator--() {
+		iterator &operator--() noexcept {
 			--idx_;
 			return *this;
 		}
-		iterator operator++(int) {
+		iterator operator++(int) noexcept {
 			iterator ret = *this;
 			idx_++;
 			return ret;
 		}
-		iterator operator--(int) {
+		iterator operator--(int) noexcept {
 			iterator ret = *this;
 			idx_--;
 			return ret;
 		}
-		int lcp() { return m_->lcp_[idx_]; }
-		bool operator!=(const iterator &rhs) const { return idx_ != rhs.idx_; }
-		bool operator==(const iterator &rhs) const { return idx_ == rhs.idx_; }
+		int lcp() noexcept { return m_->lcp_[idx_]; }
+		bool operator!=(const iterator &rhs) const noexcept { return idx_ != rhs.idx_; }
+		bool operator==(const iterator &rhs) const noexcept { return idx_ == rhs.idx_; }
 
 	protected:
 		size_type idx_;
@@ -67,13 +68,13 @@ class suffix_map {
 	};
 
 public:
-	suffix_map() {}
+	suffix_map() = default;
 	suffix_map(const suffix_map & /*other*/) = delete;
 	suffix_map &operator=(const suffix_map & /*other*/) = default;
 	suffix_map(suffix_map && /*rhs*/) noexcept = default;
 
-	iterator begin() const { return iterator(0, this); }
-	iterator end() const { return iterator(sa_.size(), this); }
+	iterator begin() const noexcept { return iterator(0, this); }
+	iterator end() const noexcept { return iterator(sa_.size(), this); }
 
 	std::pair<iterator, iterator> match_range(std::string_view str) const {
 		iterator start = lower_bound(str);
@@ -139,10 +140,10 @@ public:
 		return wpos;
 	}
 
-	const CharT *word_at(int idx) const { return &text_[words_[idx]]; }
+	const CharT *word_at(int idx) const noexcept { return &text_[words_[idx]]; }
 
-	int16_t word_len_at(int idx) const { return words_len_[idx].first; }
-	int16_t virtual_word_len(int idx) const { return words_len_[idx].second; }
+	int16_t word_len_at(int idx) const noexcept { return words_len_[idx].first; }
+	int16_t virtual_word_len(int idx) const noexcept { return words_len_[idx].second; }
 
 	void build() {
 		if (built_) return;
@@ -159,7 +160,7 @@ public:
 		words_.reserve(sz_words);
 		words_len_.reserve(sz_words);
 	}
-	void clear() {
+	void clear() noexcept {
 		sa_.clear();
 		lcp_.clear();
 		mapped_.clear();
@@ -168,11 +169,11 @@ public:
 		text_.clear();
 		built_ = false;
 	}
-	size_type size() const { return sa_.size(); }
-	size_type word_size() const { return words_.size(); }
+	size_type size() const noexcept { return sa_.size(); }
+	size_type word_size() const noexcept { return words_.size(); }
 
-	const std::vector<CharT> &text() const { return text_; }
-	size_t heap_size() {
+	const std::vector<CharT> &text() const noexcept { return text_; }
+	size_t heap_size() noexcept {
 		return (sa_.capacity() + words_.capacity()) * sizeof(int) +			  //
 			   (lcp_.capacity() + words_len_.capacity()) * sizeof(int16_t) +  //
 			   mapped_.capacity() * sizeof(V) + text_.capacity();
@@ -187,13 +188,14 @@ protected:
 
 		for (int i = 0; i < n; i++) rank_[sa_[i]] = i;
 		for (int i = 0; i < n; i++, k ? k-- : 0) {
-			if (rank_[i] == n - 1) {
+			auto r = rank_[i];
+			if (r == n - 1) {
 				k = 0;
 				continue;
 			}
-			int j = sa_[rank_[i] + 1];
+			int j = sa_[r + 1];
 			while (i + k < n && j + k < n && text_[i + k] == text_[j + k]) k++;
-			lcp_[rank_[i]] = k;
+			lcp_[r] = k;
 		}
 	}
 

@@ -114,7 +114,8 @@ public:
 			reindexer::WrSerializer ser;
 			for (auto& it : qr) {
 				ser.Reset();
-				it.GetJSON(ser, false);
+				auto err = it.GetJSON(ser, false);
+				ASSERT_TRUE(err.ok()) << err.what();
 				std::string json(ser.Slice());
 				auto itf = commitedItems_.find(json);
 				if (itf != commitedItems_.end()) {

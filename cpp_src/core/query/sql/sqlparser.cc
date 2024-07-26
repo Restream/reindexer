@@ -448,7 +448,6 @@ int SQLParser::deleteParse(tokenizer &parser) {
 }
 
 static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry &updateField) {
-	updateField.SetMode(FieldModeSet);
 	if (currTok.type == TokenString) {
 		updateField.Values().push_back(token2kv(currTok, parser, false));
 	} else {
@@ -456,7 +455,7 @@ static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry 
 			updateField.Values().push_back(Variant());
 		} else if (currTok.text() == "{"sv) {
 			try {
-				size_t jsonPos = parser.getPos() - 1;
+				size_t jsonPos = parser.getPrevPos();
 				std::string json(parser.begin() + jsonPos, parser.length() - jsonPos);
 				size_t jsonLength = 0;
 				gason::JsonParser jsonParser;
@@ -520,6 +519,16 @@ void SQLParser::parseArray(tokenizer &parser, std::string_view tokText, UpdateEn
 			throw Error(errParseSQL, "Expected ']' or ',', but found '%s' in query, %s", tok.text(), parser.where());
 		}
 	}
+
+	if (updateField && (updateField->Mode() == FieldModeSetJson)) {
+		for (const auto &it : updateField->Values()) {
+			if ((!it.Type().Is<KeyValueType::String>()) ||
+				std::string_view(it).front() != '{') {
+				throw Error(errLogic, "Unexpected variant type in Array: %s. Expecting KeyValueType::String with JSON-content",
+							it.Type().Name());
+			}
+		}
+	}
 }
 
 void SQLParser::parseCommand(tokenizer &parser) const {
@@ -552,7 +561,7 @@ void SQLParser::parseCommand(tokenizer &parser) const {
 	}
 
 	// parse of possible concatenation
-	tok = parser.peek_token(false);
+	tok = parser.peek_token(tokenizer::flags::no_flags);
 	while (tok.text() == "|"sv) {
 		parser.next_token();
 		tok = parser.next_token();
@@ -587,6 +596,7 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
 	if (tok.text() == "["sv) {
 		updateField.Values().MarkArray();
 		parseArray(parser, tok.text(), &updateField);
+		updateField.SetIsExpression(false);
 	} else if (tok.text() == "array_remove"sv || tok.text() == "array_remove_once"sv) {
 		parseCommand(parser);
 
@@ -596,7 +606,7 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
 		addUpdateValue(tok, parser, updateField);
 	}
 
-	tok = parser.peek_token(false);
+	tok = parser.peek_token(tokenizer::flags::no_flags);
 	while (tok.text() == "|"sv) {
 		parser.next_token();
 		tok = parser.next_token();
@@ -749,7 +759,7 @@ void SQLParser::parseWhereCondition(tokenizer &parser, T &&firstArg, OpType op) 
 			throw Error(errParseSQL, "Expected NULL, but found '%s' in query, %s", tok.text(), parser.where());
 		}
 		query_.NextOp(op).Where(std::forward<T>(firstArg), CondAny, VariantArray{});
-		tok = parser.next_token(false);
+		tok = parser.next_token(tokenizer::flags::no_flags);
 	} else if (tok.text() == "("sv) {
 		if constexpr (!std::is_same_v<T, Query>) {
 			if (iequals(peekSqlToken(parser, WhereFieldValueOrSubquerySqlToken, false).text(), "select"sv) &&
@@ -797,7 +807,7 @@ int SQLParser::parseWhere(tokenizer &parser) {
 	int openBracketsCount = 0;
 	while (!parser.end()) {
 		tok = peekSqlToken(parser, nested == Nested::Yes ? NestedWhereFieldSqlToken : WhereFieldSqlToken, false);
-		parser.next_token(false);
+		parser.next_token(tokenizer::flags::no_flags);
 		if (tok.text() == "("sv) {
 			tok = peekSqlToken(parser, nested == Nested::Yes ? NestedWhereFieldSqlToken : WhereFieldOrSubquerySqlToken, false);
 			if (nested == Nested::Yes || !iequals(tok.text(), "select"sv) || isCondition(parser.peek_second_token().text())) {

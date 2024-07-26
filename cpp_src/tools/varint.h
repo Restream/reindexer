@@ -11,6 +11,8 @@
 #include <cstdint>
 #include <cstring>
 
+#include "estl/defines.h"
+
 /**
  * Return the ZigZag-encoded 32-bit unsigned integer form of a 32-bit signed
  * integer.
@@ -20,12 +22,7 @@
  * \return
  *      ZigZag encoded integer.
  */
-inline uint32_t zigzag32(int32_t v) noexcept {
-	if (v < 0)
-		return (-(uint32_t)v) * 2 - 1;
-	else
-		return (uint32_t)(v)*2;
-}
+RX_ALWAYS_INLINE uint32_t zigzag32(int32_t v) noexcept { return (v < 0) ? (((-(uint32_t)v) << 1) - 1) : ((uint32_t)(v) << 1); }
 
 /**
  * Return the ZigZag-encoded 64-bit unsigned integer form of a 64-bit signed
@@ -36,12 +33,7 @@ inline uint32_t zigzag32(int32_t v) noexcept {
  * \return
  *      ZigZag encoded integer.
  */
-inline uint64_t zigzag64(int64_t v) noexcept {
-	if (v < 0)
-		return (-(uint64_t)v) * 2 - 1;
-	else
-		return (uint64_t)(v)*2;
-}
+RX_ALWAYS_INLINE uint64_t zigzag64(int64_t v) noexcept { return (v < 0) ? (((-(uint64_t)v) << 1) - 1) : ((uint64_t)(v) << 1); }
 
 /**
  * Pack an unsigned 32-bit integer in base-128 varint encoding and return the
@@ -212,12 +204,7 @@ inline uint32_t parse_uint32(unsigned len, const uint8_t *data) noexcept {
 
 inline uint32_t parse_int32(unsigned len, const uint8_t *data) noexcept { return parse_uint32(len, data); }
 
-inline int32_t unzigzag32(uint32_t v) noexcept {
-	if (v & 1)
-		return -(v >> 1) - 1;
-	else
-		return v >> 1;
-}
+RX_ALWAYS_INLINE int32_t unzigzag32(uint32_t v) noexcept { return (v & 1) ? (-(v >> 1) - 1) : (v >> 1); }
 
 inline uint32_t parse_fixed_uint32(const uint8_t *data) noexcept {
 	uint32_t t;
@@ -240,12 +227,7 @@ inline uint64_t parse_uint64(unsigned len, const uint8_t *data) noexcept {
 	return rv;
 }
 
-inline int64_t unzigzag64(uint64_t v) noexcept {
-	if (v & 1)
-		return -(v >> 1) - 1;
-	else
-		return v >> 1;
-}
+RX_ALWAYS_INLINE int64_t unzigzag64(uint64_t v) noexcept { return (v & 1) ? (-(v >> 1) - 1) : (v >> 1); }
 
 inline uint64_t parse_fixed_uint64(const uint8_t *data) noexcept {
 	uint64_t t;

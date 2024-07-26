@@ -58,7 +58,7 @@ struct SharedWALRecord {
 #endif	// REINDEX_WITH_V3_FOLLOWERS
 
 struct WALRecord {
-	explicit WALRecord(span<uint8_t>);
+	explicit WALRecord(span<const uint8_t>);
 	explicit WALRecord(std::string_view sv);
 	explicit WALRecord(WALRecType _type = WalEmpty, IdType _id = 0, bool inTx = false) : type(_type), id(_id), inTransaction(inTx) {}
 	explicit WALRecord(WALRecType _type, std::string_view _data, bool inTx = false) : type(_type), data(_data), inTransaction(inTx) {}

@@ -27,7 +27,7 @@ static WrSerializer& printPkFields(const Item& item, WrSerializer& ser) {
 	return ser;
 }
 
-Reindexer::Reindexer(ReindexerConfig cfg) : impl_(new ShardingProxy(cfg)), owner_(true) {
+Reindexer::Reindexer(ReindexerConfig cfg) : impl_(new ShardingProxy(std::move(cfg))), owner_(true) {
 	//
 	reindexer::CheckRequiredSSESupport();
 }
@@ -162,33 +162,29 @@ Error Reindexer::EnumMeta(std::string_view nsName, std::vector<std::string>& key
 	return impl_->EnumMeta(nsName, keys, rdxCtx);
 }
 Error Reindexer::DeleteMeta(std::string_view nsName, const std::string& key) {
-	const auto rdxCtx = impl_->CreateRdxContext(
-		ctx_, [&](WrSerializer& s) { s << "DELETE META FROM "sv << nsName << " WHERE KEY = '"sv << key << '\''; });
+	const auto rdxCtx =
+		impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "DELETE META FROM "sv << nsName << " WHERE KEY = '"sv << key << '\''; });
 	return impl_->DeleteMeta(nsName, key, rdxCtx);
 }
 Error Reindexer::Delete(const Query& q, QueryResults& result) {
-	const auto rdxCtx = impl_->CreateRdxContext(
-		ctx_, [&](WrSerializer& s) { q.GetSQL(s); }, result);
+	const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { q.GetSQL(s); }, result);
 	return impl_->Delete(q, result, rdxCtx);
 }
 Error Reindexer::Select(std::string_view query, QueryResults& result, unsigned proxyFetchLimit) {
-	const auto rdxCtx = impl_->CreateRdxContext(
-		ctx_, [&](WrSerializer& s) { s << query; }, result);
+	const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << query; }, result);
 	return impl_->Select(query, result, proxyFetchLimit, rdxCtx);
 }
 Error Reindexer::Select(const Query& q, QueryResults& result, unsigned proxyFetchLimit) {
-	const auto rdxCtx = impl_->CreateRdxContext(
-		ctx_, [&](WrSerializer& s) { q.GetSQL(s); }, result);
+	const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { q.GetSQL(s); }, result);
 	return impl_->Select(q, result, proxyFetchLimit, rdxCtx);
 }
-Error Reindexer::Update(const Query& q, QueryResults& result) {
-	const auto rdxCtx = impl_->CreateRdxContext(
-		ctx_, [&](WrSerializer& s) { q.GetSQL(s); }, result);
-	return impl_->Update(q, result, rdxCtx);
+Error Reindexer::Commit(std::string_view) {
+	// Empty
+	return {};
 }
-Error Reindexer::Commit(std::string_view nsName) {
-	const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "COMMIT TRANSACTION "sv << nsName; });
-	return impl_->Commit(nsName, rdxCtx);
+Error Reindexer::Update(const Query& q, QueryResults& result) {
+	const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { q.GetSQL(s); }, result);
+	return impl_->Update(q, result, rdxCtx);
 }
 Error Reindexer::AddIndex(std::string_view nsName, const IndexDef& idx) {
 	const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "CREATE INDEX "sv << idx.name_ << " ON "sv << nsName; });
@@ -262,15 +258,20 @@ Error Reindexer::DumpIndex(std::ostream& os, std::string_view nsName, std::strin
 	return impl_->DumpIndex(os, nsName, index, rdxCtx);
 }
 
+Error Reindexer::SubscribeUpdates(IEventsObserver& observer, EventSubscriberConfig&& cfg) {
+	return impl_->SubscribeUpdates(observer, std::move(cfg));
+}
+Error Reindexer::UnsubscribeUpdates(IEventsObserver& observer) { return impl_->UnsubscribeUpdates(observer); }
+
 [[nodiscard]] Error Reindexer::ShardingControlRequest(const sharding::ShardingControlRequestData& request) noexcept {
 	return impl_->ShardingControlRequest(request, impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "SHARDING CONTROL REQUEST"; }));
 }
 
 // REINDEX_WITH_V3_FOLLOWERS
-Error Reindexer::SubscribeUpdates(IUpdatesObserver* observer, const UpdatesFilters& filters, SubscriptionOpts opts) {
+Error Reindexer::SubscribeUpdates(IUpdatesObserverV3* observer, const UpdatesFilters& filters, SubscriptionOpts opts) {
 	return impl_->SubscribeUpdates(observer, filters, opts);
 }
-Error Reindexer::UnsubscribeUpdates(IUpdatesObserver* observer) { return impl_->UnsubscribeUpdates(observer); }
+Error Reindexer::UnsubscribeUpdates(IUpdatesObserverV3* observer) { return impl_->UnsubscribeUpdates(observer); }
 // REINDEX_WITH_V3_FOLLOWERS
 
 }  // namespace reindexer

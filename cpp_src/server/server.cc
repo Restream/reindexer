@@ -15,6 +15,6 @@ DBManager &Server::GetDBManager() noexcept { return impl_->GetDBManager(); }
 bool Server::IsReady() const noexcept { return impl_->IsReady(); }
 bool Server::IsRunning() const noexcept { return impl_->IsRunning(); }
 void Server::ReopenLogFiles() { impl_->ReopenLogFiles(); }
-std::string Server::GetCoreLogPath() const { return impl_->GetCoreLogPath(); };
+std::string Server::GetCoreLogPath() const { return impl_->GetCoreLogPath(); }
 
 }  // namespace reindexer_server

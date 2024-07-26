@@ -46,7 +46,7 @@ private:
 
 public:
 	ExplainCalc() = default;
-	ExplainCalc(bool enable) noexcept : enabled_(enable) {}
+	explicit ExplainCalc(bool enable) noexcept : enabled_(enable) {}
 
 	void StartTiming() noexcept {
 		if (enabled_) lap();
@@ -76,12 +76,12 @@ public:
 
 	void PutCount(int cnt) noexcept { count_ = cnt; }
 	void PutSortIndex(std::string_view index) noexcept { sortIndex_ = index; }
-	void PutSelectors(const SelectIteratorContainer* qres) noexcept { selectors_ = qres; }
-	void PutJoinedSelectors(const JoinedSelectors* jselectors) noexcept { jselectors_ = jselectors; }
+	void PutSelectors(const SelectIteratorContainer *qres) noexcept { selectors_ = qres; }
+	void PutJoinedSelectors(const JoinedSelectors *jselectors) noexcept { jselectors_ = jselectors; }
 	void SetPreselectTime(Duration preselectTime) noexcept { preselect_ = preselectTime; }
-	void PutOnConditionInjections(const OnConditionInjections* onCondInjections) noexcept { onInjections_ = onCondInjections; }
+	void PutOnConditionInjections(const OnConditionInjections *onCondInjections) noexcept { onInjections_ = onCondInjections; }
 	void SetSortOptimization(bool enable) noexcept { sortOptimization_ = enable; }
-	void SetSubQueriesExplains(std::vector<SubQueryExplain>&& subQueriesExpl) noexcept { subqueries_ = std::move(subQueriesExpl); }
+	void SetSubQueriesExplains(std::vector<SubQueryExplain> &&subQueriesExpl) noexcept { subqueries_ = std::move(subQueriesExpl); }
 
 	void LogDump(int logLevel);
 	std::string GetJSON();
@@ -149,7 +149,7 @@ struct ConditionInjection {
 	std::string initCond;  ///< single condition from Join ON section. SQL-like string
 	ExplainCalc::Duration totalTime_ =
 		ExplainCalc::Duration::zero();		///< total time elapsed from injection attempt start till the end of substitution or rejection
-	std::string explain;					///< optoinal{JoinOnInjection.type == Select}. Explain raw string from Select subquery.
+	std::string explain;					///< optional{JoinOnInjection.type == Select}. Explain raw string from Select subquery.
 	AggType aggType = AggType::AggUnknown;	///< aggregation type used in subquery
 	bool succeed = false;					///< result of injection attempt
 	std::string_view reason;				///< optional{succeed==false}. Explains condition injection failure

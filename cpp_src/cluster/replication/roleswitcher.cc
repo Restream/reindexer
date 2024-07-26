@@ -138,7 +138,9 @@ void RoleSwitcher::switchNamespaces(const RaftInfo& newState, const ContainerT& 
 			status.leaderId = newState.leaderId;
 			logInfo("%d: Setting new role '%s' and leader id %d for '%s'", cfg_.serverId, RaftInfo::RoleToStr(newState.role),
 					status.leaderId, nsName);
-			nsPtr->SetClusterizationStatus(std::move(status), ctx_);
+			if (auto err = nsPtr->SetClusterizationStatus(std::move(status), ctx_); !err.ok()) {
+				logWarn("SetClusterizationStatus for the '%s' namespace error: %s", nsName, err.what());
+			}
 		}
 	}
 }
@@ -267,7 +269,7 @@ void RoleSwitcher::initialLeadersSync() {
 	statsCollector_.OnInitialSyncDone(std::chrono::duration_cast<std::chrono::microseconds>(steady_clock_w::now() - roleSwitchTm_));
 }
 
-Error RoleSwitcher::awaitRoleSwitchForNamespace(client::CoroReindexer& client, std::string_view nsName, ReplicationStateV2& st) {
+Error RoleSwitcher::awaitRoleSwitchForNamespace(client::CoroReindexer& client, const NamespaceName& nsName, ReplicationStateV2& st) {
 	uint32_t step = 0;
 	const bool isDbStatus = nsName.empty();
 	do {
@@ -280,10 +282,10 @@ Error RoleSwitcher::awaitRoleSwitchForNamespace(client::CoroReindexer& client, s
 		}
 		if (step++ >= kMaxRetriesOnRoleSwitchAwait) {
 			return Error(errTimeout, "Gave up on the remote node role switch awaiting for the '%s'",
-						 isDbStatus ? "whole database" : nsName);
+						 isDbStatus ? "whole database" : std::string_view(nsName));
 		}
 		logInfo("%d: Awaiting role switch on the remote node for the '%s'. Current status is { role: %s; leader: %d }", cfg_.serverId,
-				isDbStatus ? "whole database" : nsName, st.clusterStatus.RoleStr(), st.clusterStatus.leaderId);
+				isDbStatus ? "whole database" : std::string_view(nsName), st.clusterStatus.RoleStr(), st.clusterStatus.leaderId);
 		loop_.sleep(kRoleSwitchStepTime);
 		auto [cur, next] = sharedSyncState_.GetRolesPair();
 		if (cur != next) {
@@ -296,19 +298,19 @@ Error RoleSwitcher::awaitRoleSwitchForNamespace(client::CoroReindexer& client, s
 	} while (true);
 }
 
-Error RoleSwitcher::getNodesListForNs(std::string_view nsName, std::list<LeaderSyncQueue::Entry>& syncQueue) {
+Error RoleSwitcher::getNodesListForNs(const NamespaceName& nsName, std::list<LeaderSyncQueue::Entry>& syncQueue) {
 	// 1) Find most recent data among all the followers
 	LeaderSyncQueue::Entry nsEntry;
 	nsEntry.nsName = nsName;
 	{
 		ReplicationStateV2 state;
-		auto err = thisNode_.GetReplState(nsName, state, RdxContext());
+		auto err = thisNode_.GetReplState(nsEntry.nsName, state, RdxContext());
 		if (err.ok()) {
 			nsEntry.localLsn = nsEntry.latestLsn = ExtendedLsn(state.nsVersion, state.lastLsn);
 			nsEntry.localData.hash = state.dataHash;
 			nsEntry.localData.count = state.dataCount;
 		}
-		logInfo("%d: Begin leader's sync for '%s'. Ns version: %d, lsn: %d", cfg_.serverId, nsName, nsEntry.localLsn.NsVersion(),
+		logInfo("%d: Begin leader's sync for '%s'. Ns version: %d, lsn: %d", cfg_.serverId, nsEntry.nsName, nsEntry.localLsn.NsVersion(),
 				nsEntry.localLsn.LSN());
 	}
 	size_t responses = 1;
@@ -318,22 +320,22 @@ Error RoleSwitcher::getNodesListForNs(std::string_view nsName, std::list<LeaderS
 	for (int id = 0; size_t(id) < nodes_.size(); ++id) {
 		loop_.spawn(lwg, [this, id, &nodesStates]() noexcept {
 			ReplicationStateV2 st;
-			nodesStates[id].first = awaitRoleSwitchForNamespace(nodes_[id].client, std::string_view(), st);
+			nodesStates[id].first = awaitRoleSwitchForNamespace(nodes_[id].client, NamespaceName(), st);
 		});
 	}
 	lwg.wait();
 
 	for (int id = 0; size_t(id) < nodes_.size(); ++id) {
-		loop_.spawn(lwg, [this, id, &nsName, &nsEntry, &responses, &nodesStates]() noexcept {
+		loop_.spawn(lwg, [this, id, &nsEntry, &responses, &nodesStates]() noexcept {
 			Error err = nodesStates[id].first;
 			if (err.ok()) {
-				err = awaitRoleSwitchForNamespace(nodes_[id].client, nsName, nodesStates[id].second);
+				err = awaitRoleSwitchForNamespace(nodes_[id].client, nsEntry.nsName, nodesStates[id].second);
 			}
 			if (err.ok()) {
 				const auto& state = nodesStates[id].second;
 				++responses;
 				logInfo("%d: Got ns version %d and lsn %d from node %d for '%s'", cfg_.serverId, state.nsVersion, state.lastLsn, id,
-						nsName);
+						nsEntry.nsName);
 				const ExtendedLsn remoteLsn(state.nsVersion, state.lastLsn);
 				if (nsEntry.latestLsn.IsEmpty() ||
 					(nsEntry.latestLsn.IsCompatibleByNsVersion(remoteLsn) && !remoteLsn.LSN().isEmpty() &&
@@ -369,9 +371,9 @@ Error RoleSwitcher::getNodesListForNs(std::string_view nsName, std::list<LeaderS
 	}
 	if (nsEntry.IsLocal()) {
 		SyncTimeCounter timeCounter(SyncTimeCounter::Type::InitialWalSync, statsCollector_);
-		logInfo("%d: Local namespace '%s' is up-to-date (ns version: %d, lsn: %d)", cfg_.serverId, nsName, nsEntry.localLsn.NsVersion(),
-				nsEntry.localLsn.LSN());
-		sharedSyncState_.MarkSynchronized(std::string(nsName));
+		logInfo("%d: Local namespace '%s' is up-to-date (ns version: %d, lsn: %d)", cfg_.serverId, nsEntry.nsName,
+				nsEntry.localLsn.NsVersion(), nsEntry.localLsn.LSN());
+		sharedSyncState_.MarkSynchronized(std::move(nsEntry.nsName));
 	} else {
 		logInfo("%d: '%s'. Local ns version: %d, local lsn: %d, latest ns version: %d, latest lsn: %d", cfg_.serverId, nsName,
 				nsEntry.localLsn.NsVersion(), nsEntry.localLsn.LSN(), nsEntry.latestLsn.NsVersion(), nsEntry.latestLsn.LSN());
@@ -380,7 +382,7 @@ Error RoleSwitcher::getNodesListForNs(std::string_view nsName, std::list<LeaderS
 	return Error();
 }
 
-RoleSwitcher::NsNamesHashSetT RoleSwitcher::collectNsNames() {
+NsNamesHashSetT RoleSwitcher::collectNsNames() {
 	NsNamesHashSetT set;
 	coroutine::wait_group lwg;
 	size_t responses = 1;
@@ -412,7 +414,7 @@ RoleSwitcher::NsNamesHashSetT RoleSwitcher::collectNsNames() {
 }
 
 template <typename RxT>
-Error RoleSwitcher::appendNsNamesFrom(RxT& rx, RoleSwitcher::NsNamesHashSetT& set) {
+Error RoleSwitcher::appendNsNamesFrom(RxT& rx, NsNamesHashSetT& set) {
 	std::vector<NamespaceDef> nsDefs;
 	Error err;
 	if constexpr (std::is_same_v<RxT, ReindexerImpl>) {
@@ -432,7 +434,8 @@ void RoleSwitcher::connectNodes() {
 	client::ConnectOpts opts;
 	opts.CreateDBIfMissing().WithExpectedClusterID(cfg_.clusterId);
 	for (auto& node : nodes_) {
-		node.client.Connect(node.dsn, loop_, opts);
+		auto err = node.client.Connect(node.dsn, loop_, opts);
+		(void)err;	// ignore. Error will be handled during the further requests
 	}
 }
 

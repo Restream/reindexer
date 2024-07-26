@@ -73,7 +73,7 @@ void IndexText<T>::ReconfigureCache(const NamespaceCacheConfigData &cacheCfg) {
 
 template <typename T>
 FtCtx::Ptr IndexText<T>::prepareFtCtx(const BaseFunctionCtx::Ptr &ctx) {
-	FtCtx::Ptr ftctx = reindexer::reinterpret_pointer_cast<FtCtx>(ctx);
+	FtCtx::Ptr ftctx = reindexer::static_ctx_pointer_cast<FtCtx>(ctx);
 	if rx_unlikely (!ftctx) {
 		throw Error(errParams, "Full text index (%s) may not be used without context", Index::Name());
 	}
@@ -111,7 +111,7 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 	if (cache_ft.valid) {
 		if (!cache_ft.val.ids) {
 			needPutCache = true;
-		} else if (ftctx->NeedArea() && (!cache_ft.val.ctx || !cache_ft.val.ctx->need_area_)) {
+		} else if (ftctx->NeedArea() && (!cache_ft.val.ctx || !cache_ft.val.ctx->NeedArea())) {
 			needPutCache = true;
 		} else {
 			return resultFromCache(keys, std::move(cache_ft), ftctx);
@@ -143,7 +143,7 @@ SelectKeyResults IndexText<T>::doSelectKey(const VariantArray &keys, const std::
 
 	// STEP 1: Parse search query dsl
 	FtDSLQuery dsl(this->ftFields_, this->cfg_->stopWords, this->cfg_->extraWordSymbols);
-	dsl.parse(keys[0].As<std::string>());
+	dsl.parse(keys[0].As<p_string>());
 
 	IdSet::Ptr mergedIds = Select(ftctx, std::move(dsl), inTransaction, std::move(mergeStatuses), useExternSt, rdxCtx);
 	SelectKeyResult res;
@@ -152,10 +152,11 @@ SelectKeyResults IndexText<T>::doSelectKey(const VariantArray &keys, const std::
 		if (ftctx->NeedArea() && need_put && mergedIds->size()) {
 			auto config = dynamic_cast<FtFastConfig *>(cfg_.get());
 			if (config && config->maxTotalAreasToCache >= 0) {
-				auto d = ftctx->GetData();
+				auto &d = *ftctx->GetData();
 				size_t totalAreas = 0;
-				for (auto &area : d->holders_) {
-					totalAreas += d->area_[area.second].GetAreasCount();
+				assertrx_throw(d.holders_.has_value());
+				for (auto &area : d.holders_.value()) {
+					totalAreas += d.area_[area.second].GetAreasCount();
 				}
 				if (totalAreas > unsigned(config->maxTotalAreasToCache)) {
 					need_put = false;
@@ -164,13 +165,16 @@ SelectKeyResults IndexText<T>::doSelectKey(const VariantArray &keys, const std::
 		}
 		if (need_put && mergedIds->size()) {
 			// This areas will be shared via cache, so lazy commit may race
-			auto d = ftctx->GetData();
-			for (auto &area : d->holders_) {
-				if (!d->area_[area.second].IsCommited()) {
-					d->area_[area.second].Commit();
+			auto dPtr = ftctx->GetData();
+			auto &d = *dPtr;
+			if (d.holders_.has_value()) {
+				for (auto &area : d.holders_.value()) {
+					if (auto &aData = d.area_[area.second]; !aData.IsCommited()) {
+						aData.Commit();
+					}
 				}
 			}
-			cache_ft_->Put(*ckey, FtIdSetCacheVal{IdSet::Ptr(mergedIds), std::move(d)});
+			cache_ft_->Put(*ckey, FtIdSetCacheVal{IdSet::Ptr(mergedIds), std::move(dPtr)});
 		}
 
 		res.emplace_back(std::move(mergedIds));

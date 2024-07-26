@@ -48,7 +48,8 @@ public:
 		if (!item.empty()) {
 			ASSERT_EQ(res.Count(), 1);
 			reindexer::WrSerializer ser;
-			res.begin().GetJSON(ser, false);
+			auto err = res.begin().GetJSON(ser, false);
+			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_EQ(std::string(ser.c_str()), item);
 		} else {
 			ASSERT_EQ(res.Count(), 0);

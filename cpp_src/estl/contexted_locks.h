@@ -16,7 +16,7 @@ namespace reindexer {
 constexpr milliseconds kDefaultCondChkTime = milliseconds(50);
 
 template <typename _Mutex, typename Context>
-class contexted_unique_lock {
+class [[nodiscard]] contexted_unique_lock {
 public:
 	using MutexType = _Mutex;
 
@@ -109,7 +109,7 @@ private:
 };
 
 template <typename _Mutex, typename Context>
-class contexted_shared_lock {
+class [[nodiscard]] contexted_shared_lock {
 public:
 	using MutexType = _Mutex;
 

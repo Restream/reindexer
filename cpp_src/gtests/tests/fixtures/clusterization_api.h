@@ -4,6 +4,7 @@
 #include "cluster/config.h"
 #include "net/ev/ev.h"
 #include "reindexer_api.h"
+#include "servercontrol.h"
 #include "tools/fsops.h"
 
 using namespace reindexer;

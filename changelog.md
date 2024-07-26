@@ -1,3 +1,36 @@
+# Version 4.16.0 *beta* (26.07.2024)
+
+## Reindexer server
+- [fea] Added RPC API for updates subcription
+
+## Go connector
+- [fea] Added database [events subscription](readme.md#events-subscription)
+
+## Sharding
+- [fea] Improved errors handling in proxied transactions
+
+## Ported
+- [fea/fix] Ported all the fixes and features from [v3.25.0](https://github.com/Restream/reindexer/releases/tag/v3.25.0), [v3.26.0](https://github.com/Restream/reindexer/releases/tag/v3.26.0) and [v3.27.0](https://github.com/Restream/reindexer/releases/tag/v3.27.0)
+
+## Deploy
+- [fea] Added build for Ubuntu 24.04
+- [ref] CentOS 7 reindexer repo is no longer supported due to CentOS 7 EOL
+
+## Face
+- [fea] Increased max allowed value of the `position_boost` field
+- [fea] Added "Minimum preselect size for optimization of inner join by injection of filters" field to NS config 
+- [fea] Added `UUID` index type to PK options
+- [fix] Fixed the issue related to Aggregation result displaying
+- [fix] Fixed the pagination issue
+- [fix] Fixed the console issue in Meta section
+- [fix] Fixed Explain tab layout on SQL result page
+- [fix] Fixed placeholder layout for "Forced sort values" field and filer condition on Query Builder page
+- [fix] Fixed icons and tabs layout on NS page
+- [fix] Fixed "Tags" input layout in Index config modal 
+- [fix] Fixed default value for array fields
+- [fix] Fixed tabs layout on NS page after Explain request
+- [fix] Fixed input width in the settings
+
 # Version 4.15.0 *beta* (22.04.2024)
 
 ## Core
@@ -492,7 +525,7 @@ Storages for v3 and v4 are compatible in both ways.
 - [fix] Fixed indexes for client stats
 - [fix] Fixed optimization cancelling for concurrent queries
 - [fix] Do not rebuild composite indexes after update
-- [fix] Removed TSAN suppressions for tests
+- [fix] Removed TSAN suppression for tests
 
 ## Face
 - [fea] Added tooltips to Grid columns
@@ -505,7 +538,7 @@ Storages for v3 and v4 are compatible in both ways.
 - [fix] Fixed the issue with losing a namespace focus during tabs changing
 - [fix] Performed yarn upgrade
 - [fix] Fixed the issue with the sorting params keeping 
-- [fix] Fixed the issue with case sensitive field names during the grid building
+- [fix] Fixed the issue with case-sensitive field names during the grid building
 - [fix] Fixed the issue with slow 3g in the Namespace list
 - [fix] Fixed the "Default stop words" option on the "Add index" form
 - [fix] Fixed the issue with the full-text config and full-text synonyms definition config areas on the "Add index" form
@@ -517,7 +550,7 @@ Storages for v3 and v4 are compatible in both ways.
 # Version 3.2.2 (16.07.2021)
 ## Core
 - [fea] Optimize string refs counting for wide-range queries
-- [fix] Fix merge limit handling for deleted values in fultext index
+- [fix] Fix merge limit handling for deleted values in fulltext index
 - [fix] Fix cascade replication for nodes without storage
 - [fix] Fix sorted indexes update
 
@@ -582,7 +615,7 @@ Storages for v3 and v4 are compatible in both ways.
 
 ## Core
 - [fix] Fixed segfault in fulltext query with brackets
-- [fix] Fixed deadlock in selecter in case of concurrent namespace removing
+- [fix] Fixed deadlock in selector in case of concurrent namespace removing
 - [fix] Fixed true/false tokens parsing inside query to composite index
 
 ## Reindexer server
@@ -614,11 +647,11 @@ Storages for v3 and v4 are compatible in both ways.
 # Version 3.1.1 (29.03.2021)
 ## Core
 - [fix] Bug in full text query with single mandatory word fixed
-- [fix] Bug in query with condition ALLSET by nonindexed field fixed
+- [fix] Bug in query with condition ALLSET by non indexed field fixed
 - [fix] Bug in query with merge and join by the same namespace fixed
 - [fix] Simultaneous update of field and whole object fixed
 - [fix] Build on aarch64 architecture fixed
-- [fix] Fixed replication updates limit trackig, and possible inifity full namespace sync
+- [fix] Fixed replication updates limit tracking, and possible infinity full namespace sync
 - [fix] Fixed web face page corruption on Windows builds
 
 ## Reindexer server
@@ -639,7 +672,7 @@ Storages for v3 and v4 are compatible in both ways.
 - [fix] Mandatory terms with multiword synonyms in fulltext queries fixed
 - [fea] Verification of EQUAL_POSITION by the same field added
 - [fea] Added new syntax for update of array's elements
-- [fea] Impoved verification of fulltext index configuration
+- [fea] Improved verification of fulltext index configuration
 
 ## Reindexer server
 - [fea] api/v1/check returns more information
@@ -673,7 +706,7 @@ Storages for v3 and v4 are compatible in both ways.
 - [fix] Build builtin/builtinserver on mingw
 
 ## Face
-- [fea] Added tooltips to longest query
+- [fea] Added tooltips to the longest query
 - [fix] Fixed the query view on the Query -> SQL page
 - [fix] Added checking for unsaved data during the window closing 
 - [fix] Bug with the pagination in the List mode
@@ -698,7 +731,7 @@ Storages for v3 and v4 are compatible in both ways.
 # Version 3.0.1 (31.12.2020)
 
 ## Core
-- [fix] Search by multi word synonyms is fixed
+- [fix] Search by multi-word synonyms is fixed
 - [fix] Comparator performance issue of condition IN (many strings) 
 
 ## Face
@@ -746,7 +779,7 @@ Storages for v3 and v4 are compatible in both ways.
 - [fix] Fix outdated namespace removing from prometheus stats
 
 ## Reindexer tool
-- [fix] Fix command execution iterrupts on SIGINT
+- [fix] Fix command execution interrupts on SIGINT
 - [fix] Disable replicator for reindexer_tool
 
 ## Go connector
@@ -759,8 +792,8 @@ Storages for v3 and v4 are compatible in both ways.
 - [fea] Added extra parameter to clients stats
 - [fea] Added update, delete, truncate statement in DSL
 - [fix] Added support for equal_positions in sql suggester
-- [fix] Crash on distinct whith composite index
-- [fix] Crash on query whith incorrect index type after index conversion
+- [fix] Crash on distinct with composite index
+- [fix] Crash on query with incorrect index type after index conversion
 
 ## Reindexer tool 
 - [fix] Crash on upsert array object as first json tag
@@ -932,7 +965,7 @@ Storages for v3 and v4 are compatible in both ways.
 - [fea] Improved behavior while input is redirected
 
 # Go connector
-- [fix] Enable to create multiple instances of builtinserver
+- [fix] Enable to create multiple instances of built-in server
 - [fea] Multiple dsn support in cproto
 
 # Face
@@ -1016,7 +1049,7 @@ Storages for v3 and v4 are compatible in both ways.
 - [fix] Select fields filter fix for right namespace
 
 # Reindexer server
-- [fea] web static resources are embeded to server binary by default
+- [fea] web static resources are embedded to server binary by default
 
 # Version 2.5.5 (07.02.2020)
 
@@ -1075,7 +1108,7 @@ Storages for v3 and v4 are compatible in both ways.
 - [fix] Fix assert in sort by composite indexes
 - [fea] Add composite values parsing for SQL select
 - [fix] Make circular accumulator for stddev performance statistic
-- [fix] Fix unhandled exception while caclulating perf stat
+- [fix] Fix unhandled exception while calculating perf stat
 
 ## go connector
 - [fix] RawBuffer leak due to unclosed iterators in transactions
@@ -1108,7 +1141,7 @@ Storages for v3 and v4 are compatible in both ways.
 
 ## Core
 - [fea] Sort by expressions
-- [fea] Optimized lock time for joins with small preresult set
+- [fea] Optimized lock time for joins with small pre-result set
 - [fea] Added more info about replication state to #memstat namespace
 - [fix] LSN on row-based query replication (possible assert on server startup)
 - [fix] Replication clusterID for namespaces without storage
@@ -1146,13 +1179,13 @@ Storages for v3 and v4 are compatible in both ways.
 - [fea] Cancelling queries execution by Ctrl+C
 
 ## go connector
-- [fea] Iterator.NextObj() unmarshals data to any user provided struct
+- [fea] Iterator.NextObj() unmarshal data to any user provided struct
 
 # Version 2.3.2 (25.10.2019)
 
 # Core
 - [fix] wrong WAL ring buffer size calculation on load from storage
-- [fix] Make storage autorepair optional
+- [fix] Make storage auto-repair optional
 - [fix] firstSortIndex assert on sort by hash indexes
 
 # Version 2.3.0 (11.10.2019)
@@ -1189,7 +1222,7 @@ Storages for v3 and v4 are compatible in both ways.
 
 - [fix] Idset cache invalidation on upsert/delete null values to indexes
 - [fix] Possible crash if sort orders disabled
-- [fix] Wrong lowercasing field name on SQL UPDATE query
+- [fix] Wrong lowercase field name on SQL UPDATE query
 - [fea] Delete & Update queries in transactions
 
 ## Reindexer tool
@@ -1208,7 +1241,7 @@ Storages for v3 and v4 are compatible in both ways.
 
 - [fix] Fulltext queries sort by another field
 - [fea] Number of background threads for sort optimization can be changed from #config namespace
-- [fix] Sort optimization choose logic is improoved
+- [fix] Sort optimization choose logic is improved
 
 ## go connector
 
@@ -1220,14 +1253,14 @@ Storages for v3 and v4 are compatible in both ways.
 
 ## Core 
 
-- [fea] More effective usage of btree index for GT/LT and sort in concurent read write operations
+- [fea] More effective usage of btree index for GT/LT and sort in concurrent read write operations
 - [fix] Potential crash on index update or deletion
 - [fea] Timeout of background indexes optimization can be changed from #config namespace
 
 ## Reindexer server
 
 - [fea] User list moved from users.json to users.yml
-- [fea] Hash is used insead of plain password in users.yml file
+- [fea] Hash is used instead of plain password in users.yml file
 - [fix] Pass operation timeout from cproto client to core
 
 # Version 2.2.1 (07.09.2019)
@@ -1236,7 +1269,7 @@ Storages for v3 and v4 are compatible in both ways.
 
 - [fea] Updated behaviour of Or InnerJoin statement
 - [fea] Store backups of system records in storage
-- [fix] Replicator can start before db initalization completed
+- [fix] Replicator can start before db initialization completed
 - [fix] Search prefixes if enabled only postfixes
 
 ## Reindexer server
@@ -1256,7 +1289,7 @@ Storages for v3 and v4 are compatible in both ways.
 - [fea] Facets by array fields 
 - [fea] JOIN now can be used in expression with another query conditions 
 - [fea] Support rocksdb as storage engine
-- [fix] Race on concurent read from system namespaces
+- [fix] Race on concurrent read from system namespaces
 - [fix] Replication config sync fixed
 
 ## Reindexer tool
@@ -1278,33 +1311,33 @@ Storages for v3 and v4 are compatible in both ways.
 
 ## Core
 
-- [fea] Added two way sync of replication config and namespace
+- [fea] Added two-way sync of replication config and namespace
 - [fea] Memory usage of indexes decreased (tsl::sparesmap has been added)
 - [fea] Added non-normalized query in queries stats
 - [fea] Add truncate namespace function
-- [fix] Fixed unexpected hang and huge memory alloc on select by uncommited indexes
+- [fix] Fixed unexpected hang and huge memory alloc on select by uncommitted indexes
 - [fix] Correct usage of '*' entry as default in namespaces config
-- [fix] Memory statistics calculation are improoved
+- [fix] Memory statistics calculation are improved
 - [fix] Slave will not try to clear expired by ttl records
 
 # Version 2.1.2 (04.08.2019)
 
 ## Core
 
-- [fea] Added requests execution timeouts and cancelation contexts
+- [fea] Added requests execution timeouts and cancellation contexts
 - [fea] Join memory consumption optimization
 - [fea] Current database activity statistics
 - [fea] Use composite indexes for IN condition to index's fields
-- [fea] Reset perfomance and queries statistics by write to corresponding namespace
+- [fea] Reset performance and queries statistics by write to corresponding namespace
 - [fix] Crashes on index removal
 - [fix] Do not lock namespace on tx operations
-- [fix] SQL dumper will not add exceeded bracets
+- [fix] SQL dumper will not add exceeded brackets
 - [fea] Added `updated_at` field to namespace attributes
 
 
 # go connector
 
-- [fea] Added requests execution timeouts and cancelation contexts
+- [fea] Added requests execution timeouts and cancellation contexts
 - [fea] Added async tx support
 - [fea] Removed (moved to core) `updated_at` legacy code
 
@@ -1331,10 +1364,10 @@ Storages for v3 and v4 are compatible in both ways.
 
 ## Core
 
-- [fea] Bracets in DSL & SQL queries
+- [fea] Brackets in DSL & SQL queries
 - [fix] Crash on LRUCache fast invalidation
 - [fix] Relaxed JSON validation. Symbols with codes < 0x20 now are valid
-- [fix] '\0' symbol in JSON will not broke parser
+- [fix] The '\0' character in JSON will not break the parser
 - [fea] Backtrace with line numbers for debug builds
 - [fix] Replication fixes
 - [fea] Support for jemalloc pprof features
@@ -1358,22 +1391,22 @@ Storages for v3 and v4 are compatible in both ways.
 # Version 2.0.3 (04.04.2019)
 
 ## Core
-- [fea] Facets API improoved. Multiply fields and SORT features
+- [fea] Facets API improved. Multiply fields and SORT features
 - [fea] TTL added
 - [fea] `LIKE` condition added 
 - [fea] Add expressions support in SQL `UPDATE` statement
 - [fix] Invalid JSON generation with empty object name
-- [fix] Unneccessary updating of tagsmatcher on transactions
+- [fix] Unnecessary updating of tagsmatcher on transactions
 - [fix] LRUCache invalidation crash fix
 
 # Reindexer server
 
-- [fea] Added metadata maniplulation methods
+- [fea] Added metadata manipulation methods
 
 ## Face
 
-- [fea] Added metadata maniplulation GUI
-- [fix] Performance statistics GUI improovements
+- [fea] Added metadata manipulation GUI
+- [fix] Performance statistics GUI improvements
 
 # Version 2.0.2 (08.03.2019)
 
@@ -1381,13 +1414,13 @@ Storages for v3 and v4 are compatible in both ways.
 - [fea] Update fields of documents, with SQL `UPDATE` statement support
 - [fea] Add SQL query suggestions
 - [fea] Add `DISTINCT` support to SQL query
-- [fea] Queries to non nullable indexes with NULL condition will return error
+- [fea] Queries to non-nullable indexes with NULL condition will return error
 - [fix] Fixes of full text search, raised on incremental index build
 - [fix] Queries with forced sort order can return wrong sequences
 - [fix] RPC client&replicator multithread races
 - [fix] DISTINCT condition to store indexes
 - [fix] Caches crash on too fast data invalidation
-- [fix] Disable execiton of delete query from namespace in slave mode
+- [fix] Disable execution of delete query from namespace in slave mode
 - [fix] Rebuild fulltext index if configuration changed
 - [fix] Fixed handling SQL numeric conditions values with extra leading 0
 
@@ -1434,7 +1467,7 @@ Storages for v3 and v4 are compatible in both ways.
 
 ## Go connector
 
-- [fix] Struct verificator incorrect validation of composite `reindex` tags
+- [fix] Struct verifier incorrect validation of composite `reindex` tags
 - [fea] Pool usage statistics added to `DB.Status()` method
 
 ## Reindexer server
@@ -1445,7 +1478,7 @@ Storages for v3 and v4 are compatible in both ways.
 
 - [fea] Query builder added
 - [fea] `Delete all` button added to items page
-- [fea] Aggregations results view
+- [fea] Aggregation results view
 - [fea] Edit/Delete function of query results added
 - [fea] JSON index configuration editor
 - [fea] Memory usage statistics round precision
@@ -1462,7 +1495,7 @@ Storages for v3 and v4 are compatible in both ways.
 - [fix] Invalid http redirects, if compiled with -DLINK_RESOURCES
 
 ## Reindexer tool
-- [fix] Unhandled exception in case trying of create output file in unexisting directory
+- [fix] Unhandled exception in case trying of create output file in non-existing directory
 - [fix] RPC client optimizations and races fixes
 - [fea] \bench command added
 
@@ -1471,7 +1504,7 @@ Storages for v3 and v4 are compatible in both ways.
 
 ## Core
 
-- [fea] Indexes rebuilding now is non blocking background task, concurrent R-W queries performance increased
+- [fea] Indexes rebuilding now is non-blocking background task, concurrent R-W queries performance increased
 - [fix] Fulltext index incremental rebuild memory grow fixed
 
 ## Reindexer server
@@ -1496,12 +1529,12 @@ Storages for v3 and v4 are compatible in both ways.
 
 ## Reindexer server
 
-- [fea] REST API documentation improoved
+- [fea] REST API documentation improved
 - [fea] Optimized performance
 
 ## Reindexer tool
 
-- [fea] Operation speed is improoved
+- [fea] Operation speed is improved
 
 
 # Version 1.10.0 (29.10.2018)
@@ -1522,7 +1555,7 @@ Storages for v3 and v4 are compatible in both ways.
 ## Go connector
 
 - [fea] reindexer.Status method added, to check connector status after initialization
-- [fea] OpenNamespace now register namespace <-> struct mapping without server connection requiriment
+- [fea] OpenNamespace now register namespace <-> struct mapping without server connection requirement
 - [fix] int type is now converted to int32/int64 depends on architecture
 
 ## Python connector
@@ -1531,7 +1564,7 @@ Storages for v3 and v4 are compatible in both ways.
 
 ## Reindexer server
 
-- [fea] Added fields filter to method GET /api/v1/:db/:namespace:/items mathed
+- [fea] Added fields filter to method GET /api/v1/:db/:namespace:/items matched
 - [fea] Added method DELETE /api/v1/:db/query
 - [fea] Added poll loop backend (osx,bsd)
 - [ref] `json_path` renamed to `json_paths`, and now array
@@ -1548,7 +1581,7 @@ Storages for v3 and v4 are compatible in both ways.
 
 ## Core
 - [fea] Storing index configuration in storage
-- [fea] Concurent R-W queries performance optimization
+- [fea] Concurrent R-W queries performance optimization
 - [fea] Added indexes runtime performance statistics
 - [fix] Incorrect NOT behaviour on queries with only comparators
 - [fix] Race condition on shutdown
@@ -1561,31 +1594,31 @@ Storages for v3 and v4 are compatible in both ways.
 - [fix] Multiple database support in `embeded` mode.
 
 ## Reindexer tool
-- [fix] Fixed restoring namespaces with index names non equal to json paths
+- [fix] Fixed restoring namespaces with index names non-equal to json paths
 
 # Version 1.9.6 (03.09.2018)
 
 ## Core
 - [fea] Merge with Join queries support
 - [fea] Sort by multiple columns/indexes
-- [fix] Case insensivity for index/namespaces names
+- [fix] Case insensitivity for index/namespaces names
 - [fix] Sparse indexes behavior fixed
-- [fix] Full text index - correct calculatuon of distance between words
-- [fix] Race condition on concurent ConfigureIndex requests
+- [fix] Full text index - correct calculation of distance between words
+- [fix] Race condition on concurrent ConfigureIndex requests
 
 ## Reindexer server
 - [fea] Added modify index method
 
 ## Go connector
-- [fea] New builtinserver binding: builtin mode for go application + bundled server for external clients
-- [fea] Improoved validation of go struct `reindex` tags
+- [fea] New built-in server binding: builtin mode for go application + bundled server for external clients
+- [fea] Improved validation of go struct `reindex` tags
 
 # Version 1.9.5 (04.08.2018)
 
 ## Core
 
 - [fea] Sparse indexes
-- [fix] Fixed errors on conditions to unindexed fields
+- [fix] Fixed errors in conditions for non-indexed fields
 - [fix] Fulltext terms relevancy, then query contains 2 terms included to single word
 - [fea] Customizable symbols set of "words" symbols for fulltext
 - [fix] Incorrect behavior on addition index with duplicated json path of another index
@@ -1603,7 +1636,7 @@ Storages for v3 and v4 are compatible in both ways.
 
 ## Face
 
-- [fix] Incorrect urlencode for document update API url
+- [fix] Incorrect urlencoded for document update API url
 - [fix] Namespace view layout updated, jsonPath added to table
 
 ## Go connector
@@ -1617,12 +1650,12 @@ Storages for v3 and v4 are compatible in both ways.
 
 - [fea] Conditions to any fields, even not indexed
 - [fea] cproto network client added 
-- [fix] Query execution plan optimizator fixes. 
+- [fix] Query execution plan optimizator fixes.
 
 ## Reindexer tool
 
 - [fea] Command line editor. tool has been mostly rewritten at all
-- [fea] Interopertion with standalone server
+- [fea] Interoperation with standalone server
 
 ## Reindexer server
 
@@ -1639,7 +1672,7 @@ Storages for v3 and v4 are compatible in both ways.
 
 ## Core
 
-- [fea] Added system namespaces #memstats #profstats #queriesstats #namespaces with executuin and profiling statistics
+- [fea] Added system namespaces #memstats #profstats #queriesstats #namespaces with execution and profiling statistics
 - [fea] Added system namespace #config with runtime profiling configuration
 - [fix] Join cache memory limitation
 - [fix] Fixed bug with cjson parsing in nested objects on delete
@@ -1651,7 +1684,7 @@ Storages for v3 and v4 are compatible in both ways.
 ## Reindexer Server
 
 - [fea] Load data in multiple threads on startup
-- [fea] Auto rebalance connection between worker threads
+- [fea] Auto re-balance connection between worker threads
 - [fix] "Authorization" http header case insensitivity lookup
 - [fix] Unexpected exit on SIGPIPE
 - [fix] Namespaces names are now url decoded
@@ -1757,7 +1790,7 @@ Storages for v3 and v4 are compatible in both ways.
 
 ## C++ core
 
-- [fea] Support join, marge, aggregations in json DSL & SQL queris
+- [fea] Support join, marge, aggregations in json DSL & SQL queries
 - [fea] Added multiline form and comments in SQL query
 - [fix] Last symbol of documents was not used by fulltext indexer
 - [fix] Potential data corruption after removing index
@@ -1793,7 +1826,7 @@ Storages for v3 and v4 are compatible in both ways.
 
 ## Reindexer server beta released:
 - [fea] Added cmake package target for RPM & DEB based systems
-- [fea] sysv5 initscript added
+- [fea] sysv5 init script added
 - [fea] Binary cproto RPC protocol introduced
 - [fea] Graceful server shutdown on SIGTERM and SIGINT
 - [fea] Multiply databases support was implemented

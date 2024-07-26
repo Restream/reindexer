@@ -337,7 +337,8 @@ void ReconnectTest(RxT& rx, RPCClientTestApi& api, size_t dataCount, const std::
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.Count(), dataCount);
 
-	api.StopServer();
+	err = api.StopServer();
+	ASSERT_TRUE(err.ok()) << err.what();
 	api.StartServer();
 	qr = typename RxT::QueryResultsT();
 	err = rx.Select(reindexer::Query(nsName), qr);
@@ -645,7 +646,8 @@ TEST_F(RPCClientTestApi, FirstSelectWithFetch) {
 			auto err = rxs.Connect(dsn, loop, opts);
 			ASSERT_TRUE(err.ok()) << err.what();
 			client::CoroQueryResults res;
-			rxs.Select("Select * from " + kNsName + " order by id", res);
+			err = rxs.Select("Select * from " + kNsName + " order by id", res);
+			ASSERT_TRUE(err.ok()) << err.what();
 			size_t idCounter = 0;
 			for (auto i : res) {
 				ASSERT_TRUE(i.Status().ok());

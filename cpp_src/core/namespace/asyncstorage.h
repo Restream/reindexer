@@ -99,7 +99,7 @@ public:
 	AsyncStorage() = default;
 	AsyncStorage(const AsyncStorage& o, AsyncStorage::FullLockT& storageLock);
 
-	Error Open(datastorage::StorageType storageType, const std::string& nsName, const std::string& path, const StorageOpts& opts);
+	Error Open(datastorage::StorageType storageType, std::string_view nsName, const std::string& path, const StorageOpts& opts);
 	void Destroy();
 	Cursor GetCursor(StorageOpts& opts);
 	ConstCursor GetCursor(StorageOpts& opts) const;

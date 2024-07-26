@@ -430,21 +430,20 @@ static IndexDef toIndexDef(const Index& src) {
 	}
 }
 
-Error ReindexerService::packPayloadTypes(WrSerializer& wrser, const reindexer::QueryResults& qr) {
-	wrser.PutVarUint(qr.GetMergedNSCount());
-	for (int i = 0; i < qr.GetMergedNSCount(); ++i) {
+void ReindexerService::packPayloadTypes(WrSerializer& wrser, const reindexer::QueryResults& qr) {
+	const auto merged = qr.GetMergedNSCount();
+	wrser.PutVarUint(merged);
+	for (int i = 0; i < merged; ++i) {
 		wrser.PutVarUint(i);
-		wrser.PutVString(qr.GetPayloadType(i).Name());
-
-		const PayloadType& t = qr.GetPayloadType(i);
-		const TagsMatcher& m = qr.GetTagsMatcher(i);
+		const auto t = qr.GetPayloadType(i);
+		const auto m = qr.GetTagsMatcher(i);
+		wrser.PutVString(t.Name());
 
 		wrser.PutVarUint(m.stateToken());
 		wrser.PutVarUint(m.version());
 		m.serialize(wrser);
 		t->serialize(wrser);
 	}
-	return errOK;
 }
 
 template <typename ItT>
@@ -473,11 +472,12 @@ Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults&
 				for (auto& item : qr) {
 					array.Raw(nullptr, "");
 					status = item.GetJSON(wrser, false);
-					if (!status.ok()) break;
+					if (!status.ok()) return status;
 				}
 			}
 			if (qr.GetAggregationResults().size() > 0) {
-				buildAggregation(builder, wrser, qr, opts);
+				status = buildAggregation(builder, wrser, qr, opts);
+				if (!status.ok()) return status;
 			}
 			break;
 		}
@@ -492,11 +492,12 @@ Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults&
 				MsgPackBuilder array = builder.Array("items", qr.Count());
 				for (auto& item : qr) {
 					status = item.GetMsgPack(wrser, false);
-					if (!status.ok()) break;
+					if (!status.ok()) return status;
 				}
 			}
 			if (withAggregation) {
-				buildAggregation(builder, wrser, qr, opts);
+				status = buildAggregation(builder, wrser, qr, opts);
+				if (!status.ok()) return status;
 			}
 			break;
 		}
@@ -505,7 +506,7 @@ Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults&
 			ProtobufBuilder array = builder.Array("items");
 			for (auto& it : qr) {
 				status = it.GetProtobuf(wrser, false);
-				if (!status.ok()) break;
+				if (!status.ok()) return status;
 			}
 			break;
 		}
@@ -515,7 +516,7 @@ Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults&
 			}
 			for (auto& item : qr) {
 				status = packCJSONItem(wrser, item, opts);
-				if (!status.ok()) break;
+				if (!status.ok()) return status;
 
 				auto jIt = item.GetJoined();
 				if (opts.withjoineditems() && jIt.getJoinedItemsCount() > 0) {
@@ -523,12 +524,16 @@ Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults&
 					if (jIt.getJoinedItemsCount() == 0) continue;
 
 					size_t joinedField = item.qr_->GetJoinedField(item.GetNsID());
-					for (auto it = jIt.begin(); it != jIt.end(); ++it, ++joinedField) {
-						wrser.PutVarUint(it.ItemsCount());
-						if (it.ItemsCount() == 0) continue;
+					for (auto it = jIt.begin(), end = jIt.end(); it != end; ++it, ++joinedField) {
+						const auto itemsCnt = it.ItemsCount();
+						wrser.PutVarUint(itemsCnt);
+						if (itemsCnt == 0) continue;
 						LocalQueryResults jqr = it.ToQueryResults();
 						jqr.addNSContext(qr, joinedField, lsn_t());
-						for (size_t i = 0; i < jqr.Count(); i++) packCJSONItem(wrser, jqr.begin() + i, opts);
+						for (size_t i = 0, cnt = jqr.Count(); i < cnt; i++) {
+							status = packCJSONItem(wrser, jqr.begin() + i, opts);
+							if (!status.ok()) return status;
+						}
 					}
 				}
 			}
@@ -547,7 +552,7 @@ Error ReindexerService::buildAggregation(Builder& builder, WrSerializer& wrser, 
 	switch (opts.encodingtype()) {
 		case EncodingType::JSON: {
 			auto array = builder.Array("aggregations");
-			for (size_t i = 0; i < qr.GetAggregationResults().size(); ++i) {
+			for (size_t i = 0, size = qr.GetAggregationResults().size(); i < size; ++i) {
 				array.Raw(nullptr, "");
 				(qr.GetAggregationResults())[i].GetJSON(wrser);
 			}
@@ -555,7 +560,7 @@ Error ReindexerService::buildAggregation(Builder& builder, WrSerializer& wrser, 
 		}
 		case EncodingType::MSGPACK: {
 			auto array = builder.Array("aggregations", qr.Count());
-			for (size_t i = 0; i < qr.GetAggregationResults().size(); ++i) {
+			for (size_t i = 0, size = qr.GetAggregationResults().size(); i < size; ++i) {
 				(qr.GetAggregationResults())[i].GetMsgPack(wrser);
 			}
 			break;
@@ -567,7 +572,7 @@ Error ReindexerService::buildAggregation(Builder& builder, WrSerializer& wrser, 
 		default:
 			return Error(errParams, "Unsupported encoding type");
 	}
-	return errOK;
+	return {};
 }
 
 ::grpc::Status ReindexerService::buildQueryResults(reindexer::QueryResults& qr, ::grpc::ServerWriter<QueryResultsResponse>* writer,
@@ -801,7 +806,10 @@ void ReindexerService::removeExpiredTxCb(reindexer::net::ev::periodic&, int) {
 			if (status.ok()) {
 				reindexer::Reindexer* db = nullptr;
 				status = ctx.GetDB(reindexer_server::kRoleSystem, &db);
-				if (db) db->RollBackTransaction(*it->second.tx);
+				if (db && status.ok()) {
+					status = db->RollBackTransaction(*it->second.tx);
+					(void)status;  // ignore
+				}
 			}
 			it = transactions_.erase(it);
 		} else {
@@ -872,21 +880,24 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 		}
 		switch (request.mode()) {
 			case ModifyMode::UPDATE:
-				txData.tx->Update(std::move(item));
+				status = txData.tx->Update(std::move(item));
 				break;
 			case ModifyMode::INSERT:
-				txData.tx->Insert(std::move(item));
+				status = txData.tx->Insert(std::move(item));
 				break;
 			case ModifyMode::UPSERT:
-				txData.tx->Upsert(std::move(item));
+				status = txData.tx->Upsert(std::move(item));
 				break;
 			case ModifyMode::DELETE:
-				txData.tx->Delete(std::move(item));
+				status = txData.tx->Delete(std::move(item));
 				break;
 			case ModifyMode_INT_MAX_SENTINEL_DO_NOT_USE_:
 			case ModifyMode_INT_MIN_SENTINEL_DO_NOT_USE_:
 			default:
 				break;
+		}
+		if (!status.ok()) {
+			break;
 		}
 		response.set_code(ErrorResponse::ErrorCode(status.code()));
 		response.set_what(status.what());

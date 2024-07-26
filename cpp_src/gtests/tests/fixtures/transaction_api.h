@@ -41,7 +41,8 @@ public:
 	void AddDataToNsTx(Reindexer& reindexer, int from, int count, const std::string& data) {
 		auto tx = reindexer.NewTransaction(default_namespace);
 		for (int i = from; i < from + count; ++i) {
-			tx.Insert(MakeItem(reindexer, i, data));
+			auto err = tx.Insert(MakeItem(reindexer, i, data));
+			ASSERT_TRUE(err.ok()) << err.what();
 		}
 		QueryResults result;
 		Error err = reindexer.CommitTransaction(tx, result);

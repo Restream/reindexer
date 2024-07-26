@@ -34,9 +34,9 @@ void VerifyQueryResult(const QueryResults& qr, const std::vector<std::string>& f
 	EXPECT_TRUE(fields.size() == keys.size());
 	EXPECT_TRUE(keys.size() == condTypes.size());
 	size_t totalFound = 0;
-	for (auto& iter : qr) {
+	for (auto& item : qr) {
 		size_t len = INT_MAX;
-		Item it = iter.GetItem(false);
+		Item it = item.GetItem(false);
 
 		std::vector<VariantArray> vals(keys.size());
 		for (size_t j = 0; j < fields.size(); ++j) {
@@ -145,9 +145,6 @@ TEST_F(EqualPositionApi, SelectNonIndexedArrays) {
 	err = rt.reindexer->AddIndex(ns, {"id", "hash", "string", IndexOpts().PK()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = rt.reindexer->Commit(ns);
-	EXPECT_TRUE(err.ok()) << err.what();
-
 	const char jsonPattern[] = R"xxx({"id": "%s", "nested": {"a1": [%d, %d, %d], "a2": [%d, %d, %d], "a3": [%d, %d, %d]}})xxx";
 
 	for (int i = 0; i < 100; ++i) {
@@ -163,9 +160,6 @@ TEST_F(EqualPositionApi, SelectNonIndexedArrays) {
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		err = rt.reindexer->Upsert(ns, item);
-		EXPECT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->Commit(ns);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
@@ -190,9 +184,6 @@ TEST_F(EqualPositionApi, SelectMixedArrays) {
 	err = rt.reindexer->AddIndex(ns, {"a1", "hash", "int64", IndexOpts().Array()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = rt.reindexer->Commit(ns);
-	EXPECT_TRUE(err.ok()) << err.what();
-
 	const char jsonPattern[] = R"xxx({"id": "%s", "a1": [%d, %d, %d], "nested": {"a2": [%d, %d, %d], "a3": [%d, %d, %d]}})xxx";
 
 	for (int i = 0; i < 100; ++i) {
@@ -208,9 +199,6 @@ TEST_F(EqualPositionApi, SelectMixedArrays) {
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		err = rt.reindexer->Upsert(ns, item);
-		EXPECT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->Commit(ns);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
@@ -236,8 +224,6 @@ TEST_F(EqualPositionApi, EmptyCompOpErr) {
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 		char json[1024];
-		std::string pk("pk" + std::to_string(i));
-
 		snprintf(json, sizeof(json) - 1, jsonPattern, i);
 
 		err = item.FromJSON(json);

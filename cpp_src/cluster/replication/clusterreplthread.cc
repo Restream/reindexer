@@ -1,14 +1,11 @@
 #include "clusterreplthread.h"
-#include "client/snapshot.h"
-#include "core/namespace/namespacestat.h"
 #include "core/reindexer_impl/reindexerimpl.h"
-#include "net/cproto/cproto.h"
 
 namespace reindexer {
 namespace cluster {
 
 ClusterReplThread::ClusterReplThread(int serverId, ReindexerImpl& thisNode, const NsNamesHashSetT* namespaces,
-									 std::shared_ptr<UpdatesQueue<UpdateRecord>> q, SharedSyncState<>& syncState,
+									 std::shared_ptr<updates::UpdatesQueue<updates::UpdateRecord, ReplicationStatsCollector, Logger> > q, SharedSyncState<>& syncState,
 									 SynchronizationList& syncList, std::function<void()> requestElectionsRestartCb,
 									 ReplicationStatsCollector statsCollector, const Logger& l)
 	: base_(serverId, thisNode, std::move(q),

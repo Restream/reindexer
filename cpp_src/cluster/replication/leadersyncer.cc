@@ -139,7 +139,7 @@ void LeaderSyncThread::actualizeShardingConfig() {
 	if (updated) {
 		using CallbackT = ReindexerImpl::CallbackT;
 		gason::JsonParser parser;
-		this->thisNode_.proxyCallbacks_.at({"leader_config_process", CallbackT::Type::System})(parser.Parse(span<char>(config.GetJSON())),
+		this->thisNode_.proxyCallbacks_.at({"leader_config_process", CallbackT::Type::System})(parser.Parse(giftStr(config.GetJSON())),
 																							   CallbackT::SourceIdT{config.sourceId}, {});
 	}
 }
@@ -165,8 +165,11 @@ void LeaderSyncThread::sync() {
 			auto tryDropTmpNamespace = [this, &tmpNsName] {
 				if (!tmpNsName.empty()) {
 					logError("%d: Dropping '%s'...", cfg_.serverId, tmpNsName);
-					thisNode_.DropNamespace(tmpNsName, RdxContext());
-					logError("%d: '%s' was dropped", cfg_.serverId, tmpNsName);
+					if (auto err = thisNode_.DropNamespace(tmpNsName, RdxContext()); err.ok()) {
+						logError("%d: '%s' was dropped", cfg_.serverId, tmpNsName);
+					} else {
+						logError("%d: '%s' drop error: %s", cfg_.serverId, tmpNsName, err.what());
+					}
 				}
 			};
 			try {
@@ -179,7 +182,7 @@ void LeaderSyncThread::sync() {
 					const bool fullResync = retry > 0;
 					syncNamespaceImpl(fullResync, entry, tmpNsName);
 					ReplicationStateV2 state;
-					err = thisNode_.GetReplState(tmpNsName.empty() ? entry.nsName : tmpNsName, state, RdxContext());
+					err = thisNode_.GetReplState(tmpNsName.empty() ? std::string_view(entry.nsName) : tmpNsName, state, RdxContext());
 					if (!err.ok()) {
 						throw err;
 					}
@@ -208,7 +211,7 @@ void LeaderSyncThread::sync() {
 						cfg_.serverId, entry.nsName, expectedDataHash, expectedDataCount, state.dataHash, state.dataCount);
 					tryDropTmpNamespace();
 				}
-				sharedSyncState_.MarkSynchronized(std::string(entry.nsName));
+				sharedSyncState_.MarkSynchronized(entry.nsName);
 			} catch (const Error& err) {
 				lastError_ = err;
 				logError("%d: Unable to sync local namespace '%s': %s", cfg_.serverId, entry.nsName, lastError_.what());

@@ -11,7 +11,8 @@ void ClusterizationApi::Cluster::initCluster(size_t count, size_t initialServerI
 		svc_.emplace_back();
 		InitServer(i, clusterConf, replConf, initialServerId);
 
-		clients_.emplace_back().Connect(svc_.back().Get(false)->kRPCDsn, loop_);
+		[[maybe_unused]] auto err = clients_.emplace_back().Connect(svc_.back().Get(false)->kRPCDsn, loop_);
+		assertf(err.ok(), "%s", err.what());
 	}
 }
 
@@ -79,7 +80,6 @@ void ClusterizationApi::Cluster::FillData(size_t id, std::string_view nsName, si
 		FillItem(api, item, i);
 		api.Upsert(nsName, item);
 	}
-	api.Commit(nsName);
 }
 
 void ClusterizationApi::Cluster::FillDataTx(size_t id, std::string_view nsName, size_t from, size_t count) {
@@ -93,7 +93,8 @@ void ClusterizationApi::Cluster::FillDataTx(size_t id, std::string_view nsName, 
 	for (size_t i = from; i < from + count; ++i) {
 		auto item = tx.NewItem();
 		FillItem(api, item, i);
-		tx.Upsert(std::move(item));
+		auto err = tx.Upsert(std::move(item));
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 	BaseApi::QueryResultsType results;
 	auto err = api.reindexer->CommitTransaction(tx, results);
@@ -231,7 +232,7 @@ void ClusterizationApi::Cluster::doWaitSync(std::string_view ns, std::vector<Ser
 		}
 		ASSERT_TRUE(now < syncTime);
 		bool empty = true;
-		ReplicationStateApi state{lsn_t(), lsn_t(), 0, 0, {}, {}};
+		ReplicationStateApi state;
 		syncedCnt = 0;
 		for (auto& node : svc) {
 			if (node.IsRunning()) {
@@ -289,7 +290,10 @@ void ClusterizationApi::Cluster::PrintClusterNsList(const std::vector<Clusteriza
 		if (node.IsRunning()) {
 			std::cerr << " up\n";
 			std::vector<NamespaceDef> nsDefs;
-			node.Get(false)->api.reindexer->EnumNamespaces(nsDefs, EnumNamespacesOpts().HideSystem().WithClosed().OnlyNames());
+			auto err = node.Get(false)->api.reindexer->EnumNamespaces(nsDefs, EnumNamespacesOpts().HideSystem().WithClosed().OnlyNames());
+			if (!err.ok()) {
+				std::cerr << "EnumNamespaces error: " << err.what() << "\n";
+			}
 			std::cerr << "Expected namespaces:\n";
 			for (auto& ns : expected) {
 				std::cerr << ns.name << "\n";
@@ -347,7 +351,9 @@ void ClusterizationApi::Cluster::ValidateNamespaceList(const std::vector<Cluster
 		for (auto& node : svc_) {
 			if (node.IsRunning()) {
 				nsDefs.clear();
-				node.Get(false)->api.reindexer->EnumNamespaces(nsDefs, EnumNamespacesOpts().HideSystem().WithClosed().OnlyNames());
+				auto err =
+					node.Get(false)->api.reindexer->EnumNamespaces(nsDefs, EnumNamespacesOpts().HideSystem().WithClosed().OnlyNames());
+				ASSERT_TRUE(err.ok()) << err.what();
 				if (namespaces.size() != nsDefs.size()) {
 					continue;
 				}

@@ -8,8 +8,6 @@ namespace cluster {
 
 class ClusterThreadParam {
 public:
-	using NsNamesHashSetT = fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str>;
-
 	ClusterThreadParam(const NsNamesHashSetT *namespaces, coroutine::channel<bool> &ch, SharedSyncState<> &st,
 					   SynchronizationList &syncList, std::function<void()> cb)
 		: namespaces_(namespaces),
@@ -22,11 +20,14 @@ public:
 
 	bool IsLeader() const noexcept { return !leadershipAwaitCh_.opened(); }
 	void AwaitReplPermission() { leadershipAwaitCh_.pop(); }
-	void OnNewNsAppearance(const std::string &ns) { sharedSyncState_.MarkSynchronized(ns); }
+	void OnNewNsAppearance(const NamespaceName &ns) { sharedSyncState_.MarkSynchronized(ns); }
 	void OnUpdateReplicationFailure() {
 		if (sharedSyncState_.GetRolesPair().second.role == RaftInfo::Role::Leader) {
 			requestElectionsRestartCb_();
 		}
+	}
+	bool IsNamespaceInConfig(size_t, const NamespaceName &ns) const noexcept {
+		return namespaces_->empty() || (namespaces_->find(ns) != namespaces_->end());
 	}
 	bool IsNamespaceInConfig(size_t, std::string_view ns) const noexcept {
 		return namespaces_->empty() || (namespaces_->find(ns) != namespaces_->end());
@@ -46,11 +47,9 @@ private:
 
 class ClusterReplThread {
 public:
-	using NsNamesHashSetT = fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str>;
-
-	ClusterReplThread(int serverId, ReindexerImpl &thisNode, const NsNamesHashSetT *, std::shared_ptr<UpdatesQueue<UpdateRecord>>,
-					  SharedSyncState<> &, SynchronizationList &, std::function<void()> requestElectionsRestartCb,
-					  ReplicationStatsCollector, const Logger &);
+	ClusterReplThread(int serverId, ReindexerImpl &thisNode, const NsNamesHashSetT *,
+					  std::shared_ptr<updates::UpdatesQueue<updates::UpdateRecord, ReplicationStatsCollector, Logger>>, SharedSyncState<> &,
+					  SynchronizationList &, std::function<void()> requestElectionsRestartCb, ReplicationStatsCollector, const Logger &);
 	~ClusterReplThread();
 	void Run(ReplThreadConfig config, std::vector<std::pair<uint32_t, ClusterNodeConfig>> &&nodesList, size_t totalNodesCount);
 	void SendTerminate() noexcept;

@@ -4,7 +4,7 @@ info:
     **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
     Reindexer's goal is to provide fast search with complex queries.
     Reindexer is compact, fast and it does not have heavy dependencies.
-  version: "4.15.0"
+  version: "4.16.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -40,7 +40,7 @@ paths:
       parameters:
       - in: body
         name: "body"
-        description: "Database definintion"
+        description: "Database definition"
         required: true
         schema:
           $ref: "#/definitions/Database"
@@ -131,7 +131,7 @@ paths:
       parameters:
       - in: body
         name: "body"
-        description: "Namespace definintion"
+        description: "Namespace definition"
         required: true
         schema:
           $ref: "#/definitions/Namespace"
@@ -158,7 +158,7 @@ paths:
       - "namespaces"
       summary: "List available namespaces"
       description: |
-        This operation will list all availavle namespaces in specified database.
+        This operation will list all available namespaces in specified database.
         If database is not exists, then error will be returned.
       operationId: "describeNamespaces"
       parameters:
@@ -873,7 +873,7 @@ paths:
       operationId: "postIndex"
       description: |
         This operation will create new index. If index is already exists with the different parameters, then error will be returned.
-        Operation is synchronious, so it can take long time, if namespace contains bunch of documents.
+        Operation synchronous, so it can take long time, if namespace contains bunch of documents.
       parameters:
       - in: body
         name: "body"
@@ -911,7 +911,7 @@ paths:
       operationId: "putIndex"
       description: |
         This operation will update index parameters. E.g. type of field or type of index.
-        Operation  is synchronious, so it can take long time, if namespace contains bunch of documents
+        Operation synchronous, so it can take long time, if namespace contains bunch of documents
       parameters:
       - in: body
         name: "body"
@@ -951,7 +951,7 @@ paths:
       operationId: "deleteIndex"
       description: |
         This operation will remove index from namespace. No data will be erased.
-        Operation  is synchronious, so it can take long time, if namespace contains bunch of documents.
+        Operation synchronous, so it can take long time, if namespace contains bunch of documents.
       parameters:
       - name: "database"
         in: path
@@ -1098,7 +1098,7 @@ paths:
       summary: "Query documents from namespace"
       operationId: "getQuery"
       description: |
-        This operation queries documents from namespace by SQL query. Query can be preced by `EXPLAIN` statement, then query execution plan will be returned with query results. 
+        This operation queries documents from namespace by SQL query. Query can be preceded by `EXPLAIN` statement, then query execution plan will be returned with query results. 
         Two level paging is supported. At first, applied normal SQL `LIMIT` and `OFFSET`,
         then `limit` and `offset` from http request.
       parameters:
@@ -1768,7 +1768,7 @@ paths:
       summary: "Query documents from namespace"
       operationId: "postSQLQuery"
       description: |
-        This operation queries documents from namespace by SQL query. Query can be preced by `EXPLAIN` statement, then query execution plan will be returned with query results. 
+        This operation queries documents from namespace by SQL query. Query can be preceded by `EXPLAIN` statement, then query execution plan will be returned with query results.
       parameters:
       - name: "database"
         in: path
@@ -1822,7 +1822,7 @@ paths:
       tags:
       - "system"
       summary: "Get system information"
-      description: "This operation will return system informatiom about server version, uptime, and resources consumtion "
+      description: "This operation will return system information about server version, uptime, and resources consumption"
       operationId: "getSysInfo"
       responses:
         200:
@@ -1847,13 +1847,18 @@ paths:
       summary: "Try to release free memory back to the operating system for reuse by other applications."
       operationId: "postAllocatorDropCache"
       description: "Try to release free memory back to the operating system for reuse. Only for tcmalloc allocator."
+      responses:
+        200:
+          $ref: "#/responses/OK"
+        403:
+          $ref: "#/responses/Forbidden"
 
   /allocator/info:
     get:
       tags:
         - "system"
       summary: "Get memory usage information"
-      description: "This operation will return memory usage informatiom from tcmalloc allocator."
+      description: "This operation will return memory usage information from tcmalloc allocator."
       operationId: "getAllocatorInfo"
       responses:
         200:
@@ -1875,7 +1880,7 @@ paths:
       tags:
       - "system"
       summary: "Get activity stats information"
-      description: "This operation will return detailed informatiom about current activity of all connected to the database clients"
+      description: "This operation will return detailed information about current activity of all connected to the database clients"
       operationId: "getActivityStats"
       parameters:
       - name: "database"
@@ -1904,7 +1909,7 @@ paths:
       tags:
       - "system"
       summary: "Get client connection information"
-      description: "This operation will return detailed informatiom about all connections on the server"
+      description: "This operation will return detailed information about all connections on the server"
       operationId: "getClientsStats"
       parameters:
       - name: "database"
@@ -1965,7 +1970,7 @@ paths:
       tags:
       - "system"
       summary: "Get memory stats information"
-      description: "This operation will return detailed informatiom about database memory consumption"
+      description: "This operation will return detailed information about database memory consumption"
       operationId: "getMemStats"
       parameters:
       - name: "database"
@@ -1994,7 +1999,7 @@ paths:
       tags:
       - "system"
       summary: "Get performance stats information"
-      description: "This operation will return detailed informatiom about database performance timings. By default performance stats is turned off."
+      description: "This operation will return detailed information about database performance timings. By default performance stats is turned off."
       operationId: "getPerfStats"
       parameters:
       - name: "database"
@@ -2023,7 +2028,7 @@ paths:
       tags:
       - "system"
       summary: "Get SELECT queries performance stats information"
-      description: "This operation will return detailed informatiom about database memory consumption. By default qureis performance stat is turned off."
+      description: "This operation will return detailed information about database memory consumption. By default quires performance stat is turned off."
       operationId: "getQueriesPerfStats"
       parameters:
       - name: "database"
@@ -2055,8 +2060,8 @@ paths:
       operationId: "putSystemConfig"
       description: |
         This operation will update system configuration:
-        - profiling configuration. It is used to enable recording of queries and overal performance;
-        - log queries configurating.
+        - profiling configuration. It is used to enable recording of queries and overall performance;
+        - log queries configuration.
       parameters:
       - in: body
         name: "body"
@@ -2262,7 +2267,7 @@ definitions:
               description: "Client version string"
             app_name:
               type: string
-              description: "Client's aplication name"
+              description: "Client's application name"
             tx_count:
               type: integer
               description: "Count of currently opened transactions for this client"
@@ -2510,7 +2515,7 @@ definitions:
         type: boolean
         default: false
       is_sparse:
-        description: "Value of index may not present in the document, and threfore, reduce data size but decreases speed operations on index"
+        description: "Value of index may not present in the document, and therefore, reduce data size but decreases speed operations on index"
         type: boolean
         default: false
       rtree_type:
@@ -2694,7 +2699,7 @@ definitions:
     type: object
     required:
       - namespace
-    description: "Subquery object. It must contain either 'select_filters' for the single field, single aggregation or must be matched againts 'is null'/'is not null conditions'"
+    description: "Subquery object. It must contain either 'select_filters' for the single field, single aggregation or must be matched against 'is null'/'is not null conditions'"
     properties:
       namespace:
         type: string
@@ -2986,10 +2991,6 @@ definitions:
         type: boolean
         default: false
         description: "Enable number variants processing. e.g. term '100' will match words one hundred"
-      enable_warmup_on_ns_copy:
-        type: boolean
-        default: false
-        description: "Enable auto index warmup after atomic namespace copy on transaction"
       enable_kb_layout:
         type: boolean
         default: true
@@ -3009,7 +3010,7 @@ definitions:
       extra_word_symbols:
         type: string
         default: "-/+"
-        description: "List of symbols, which will be threated as word part, all other symbols will be thrated as wors separators"
+        description: "List of symbols, which will be treated as word part, all other symbols will be treated as word separators"
       stop_words:
         type: array
         description: "List of objects of stop words. Words from this list will be ignored when building indexes"
@@ -3039,7 +3040,7 @@ definitions:
         default: 0.1
         minimum: 0.0
         maximum: 1.0
-        description: "Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to finl rank in 0 - 100% range"
+        description: "Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to final rank in 0 - 100% range"
       distance_boost:
         type: number
         format: "float"
@@ -3126,7 +3127,7 @@ definitions:
             maximum: 100
           max_symbol_permutation_distance:
             type: integer
-            description: "Maximum distance between same symbols in initial and target words to perform substitution (to handle cases, when two symbolws were switched with each other)"
+            description: "Maximum distance between same symbols in initial and target words to perform substitution (to handle cases, when two symbols were switched with each other)"
             default: 1
             minimum: -1
             maximum: 100
@@ -3189,7 +3190,7 @@ definitions:
           bm25_k1:
             type: number
             format: "float"
-            description: "Coefficient k1 in the formula for calculating bm25. Сoefficient that sets the saturation threshold for the frequency of the term. The higher the coefficient, the higher the threshold and the lower the saturation rate."
+            description: "Coefficient k1 in the formula for calculating bm25. Coefficient that sets the saturation threshold for the frequency of the term. The higher the coefficient, the higher the threshold and the lower the saturation rate."
             default: 2.0
             minimum: 0.0
           bm25_b:
@@ -3209,7 +3210,7 @@ definitions:
             default: "rx_bm25"
       fields:
         type: array
-        description: "Configuration for certian field if it differ from whole index configuration"
+        description: "Configuration for certain field if it differ from whole index configuration"
         items:
           $ref: "#/definitions/FulltextFieldConfig"
       base_ranking:
@@ -3224,13 +3225,13 @@ definitions:
             maximum: 500
           prefix_min_proc:
             type: integer
-            description: "Mininum relevancy of prefix word match"
+            description: "Minimum relevancy of prefix word match"
             default: 50
             minimum: 0
             maximum: 500
           suffix_min_proc:
             type: integer
-            description: "Mininum relevancy of suffix word match"
+            description: "Minimum relevancy of suffix word match"
             default: 10
             minimum: 0
             maximum: 500
@@ -3273,7 +3274,7 @@ definitions:
 
   FulltextFieldConfig:
     type: object
-    description: "Configuration for certian field if it differ from whole index configuration"
+    description: "Configuration for certain field if it differ from whole index configuration"
     properties:
       field_name:
         type: string
@@ -3291,7 +3292,7 @@ definitions:
         default: 0.1
         minimum: 0.0
         maximum: 1.0
-        description: "Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to finl rank in 0 - 100% range"
+        description: "Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to final rank in 0 - 100% range"
       term_len_boost:
         type: number
         format: "float"
@@ -3483,7 +3484,7 @@ definitions:
         description: "Optimization of sort by uncompleted index has been performed"
       selectors:
         type: array
-        description: "Filter selectors, used to proccess query conditions"
+        description: "Filter selectors, used to process query conditions"
         items:
           type: object
           properties:
@@ -3521,7 +3522,6 @@ definitions:
               description: "Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching"
             condition:
               type: string
-              required: false
               description: "Condition on the field"
             type:
               type: string
@@ -3563,7 +3563,7 @@ definitions:
               type: string
               description: "Original ON-conditions clause. SQL-like string"
             total_time_us:
-              type: int
+              type: integer
               description: "Total amount of time spent on checking and substituting all conditions"
             success:
               type: boolean
@@ -3671,7 +3671,7 @@ definitions:
                 type: string
             count: 
               type: integer
-              description: "Count of elemens these fields values"
+              description: "Count of elements these fields values"
       distincts:
         type: array
         description: "List of distinct values of the field"
@@ -3752,16 +3752,16 @@ definitions:
         description: "Size of strings deleted from namespace, but still used in queryResults"
       updated_unix_nano:
         type: integer
-        description: "[[deperecated]]. do not use"
+        description: "[[deprecated]]. do not use"
       storage_ok:
         type: boolean
         description: "Status of disk storage (true, if storage is enabled and writable)"
       storage_enabled:
         type: boolean
-        description: "Shows if storage is enabled (hovewer it may still be unavailable)"
+        description: "Shows if storage is enabled (however it may still be unavailable)"
       storage_status:
         type: string
-        description: "More detailed info about storage status. May contain 'OK', 'DISABLED', 'NO SPACE LEFT' or last error descrition"
+        description: "More detailed info about storage status. May contain 'OK', 'DISABLED', 'NO SPACE LEFT' or last error description"
       storage_path:
         type: string
         description: "Filesystem path to namespace storage"
@@ -3783,7 +3783,7 @@ definitions:
             description: "Total memory consumption of namespace's caches. e.g. idset and join caches"
           index_optimizer_memory:
             type: integer
-            description: "Total memory size, occupated by index optimizer (in bytes)"
+            description: "Total memory size, occupation by index optimizer (in bytes)"
       join_cache:
         $ref: "#/definitions/JoinCacheMemStats"
       query_cache:
@@ -3801,7 +3801,7 @@ definitions:
     properties:
       name:
         type: string
-        description: "Name of index. There are special index with name `-tuple`. It's stores original document's json structure with non indexe fields"
+        description: "Name of index. There are special index with name `-tuple`. It's stores original document's json structure with non indexed fields"
       unique_keys_count:
         type: integer
         description: "Count of unique keys values stored in index"
@@ -3810,10 +3810,10 @@ definitions:
         description: "Total memory consumption of reverse index b-tree structures. For `dense` and `store` indexes always 0"
       idset_plain_size:
         type: integer
-        description: "Total memory consumption of reverse index vectors. For `store` ndexes always 0"
+        description: "Total memory consumption of reverse index vectors. For `store` indexes always 0"
       sort_orders_size:
         type: integer
-        description: "Total memory consumption of SORT statement and `GT`, `LT` conditions optimized structures. Applicabe only to `tree` indexes"
+        description: "Total memory consumption of SORT statement and `GT`, `LT` conditions optimized structures. Applicable only to `tree` indexes"
       idset_cache:
         $ref: "#/definitions/IndexCacheMemStats"
       fulltext_size:
@@ -3821,7 +3821,7 @@ definitions:
         description: "Total memory consumption of fulltext search structures"
       data_size:
         type: integer
-        description: "Total memory consumption of documents's data, holded by index"
+        description: "Total memory consumption of documents's data, held by index"
       tracked_updates_count:
         type: integer
         description: "Updates count, pending in index updates tracker"
@@ -4120,15 +4120,15 @@ definitions:
         default: true
       perfstats:
         type: boolean
-        description: "Enables tracking overal perofrmance statistics"
+        description: "Enables tracking overall performance statistics"
         default: false
       queriesperfstats:
         type: boolean
-        description: "Enables record queries perofrmance statistics"
+        description: "Enables record queries performance statistics"
         default: false
       queries_threshold_us:
         type: integer
-        description: "Minimum query execution time to be recoreded in #queriesperfstats namespace"
+        description: "Minimum query execution time to be recorded in #queriesperfstats namespace"
         default: 10
       long_queries_logging:
         $ref: "#/definitions/LongQueriesLogging"
@@ -4204,7 +4204,7 @@ definitions:
           - aggressive
       lazyload:
         type: boolean
-        description: "Enable namespace lazy load (namespace shoud be loaded from disk on first call, not at reindexer startup)" 
+        description: "Enable namespace lazy load (namespace should be loaded from disk on first call, not at reindexer startup)"
       unload_idle_threshold:
         type: integer
         description: "Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded"
@@ -4237,19 +4237,25 @@ definitions:
         default: 0.1
         minimum: 0.0
         maximum: 1.0
-        description: "Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only mmax_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied"
+        description: "Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied"
       min_preselect_size:
         type: integer
         default: 1000
         minimum: 0
         description: "Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value"
+      max_iterations_idset_preresult:
+        type: integer
+        default: 20000
+        minimum: 201
+        maximum: 2147483647
+        description: "Maximum number of IdSet iterations of namespace preliminary result size for optimization"
       index_updates_counting_mode:
         type: boolean
         description: "Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time"
       sync_storage_flush_limit:
         type: integer
         default: 20000
-        minimun: 0
+        minimum: 0
         description: "Enables synchronous storage flush inside write-calls, if async updates count is more than sync_storage_flush_limit. 0 - disables synchronous storage flush, in this case storage will be flushed in background thread only"
       cache:
         type: object
@@ -4257,42 +4263,42 @@ definitions:
           index_idset_cache_size:
             type: integer
             default: 134217728
-            minimun: 0
-            description: "Max size of the index IdSets cache in bytes (per index). Each index has it's own independant cache. This cache is used in any selections to store resulting sets of internal document IDs (it does not stores documents' content itself)"
+            minimum: 0
+            description: "Max size of the index IdSets cache in bytes (per index). Each index has it's own independent cache. This cache is used in any selections to store resulting sets of internal document IDs (it does not stores documents' content itself)"
           index_idset_hits_to_cache:
             type: integer
             default: 2
-            minimun: 0
+            minimum: 0
             description: "Default 'hits to cache' for index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast"
           ft_index_cache_size:
             type: integer
             default: 134217728
-            minimun: 0
-            description: "Max size of the fulltext indexes IdSets cache in bytes (per index). Each fulltext index has it's own independant cache. This cache is used in any selections to store resulting sets of internal document IDs, FT ranks and highlighted areas (it does not stores documents' content itself)"
+            minimum: 0
+            description: "Max size of the fulltext indexes IdSets cache in bytes (per index). Each fulltext index has it's own independent cache. This cache is used in any selections to store resulting sets of internal document IDs, FT ranks and highlighted areas (it does not stores documents' content itself)"
           ft_index_hits_to_cache:
             type: integer
             default: 2
-            minimun: 0
+            minimum: 0
             description: "Default 'hits to cache' for fulltext index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast"
           joins_preselect_cache_size:
             type: integer
             default: 268435456
-            minimun: 0
+            minimum: 0
             description: "Max size of the index IdSets cache in bytes for each namespace. This cache will be enabled only if 'join_cache_mode' property is not 'off'. It stores resulting IDs, serialized JOINed queries and any other 'preselect' information for the JOIN queries (when target namespace is right namespace of the JOIN)"
           joins_preselect_hit_to_cache:
             type: integer
             default: 2
-            minimun: 0
+            minimum: 0
             description: "Default 'hits to cache' for joins preselect cache of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast"
           query_count_cache_size:
             type: integer
             default: 134217728
-            minimun: 0
+            minimum: 0
             description: "Max size of the cache for COUNT_CACHED() aggregation in bytes for each namespace. This cache stores resulting COUNTs and serialized queries for the COUNT_CACHED() aggregations"
           query_count_hit_to_cache:
             type: integer
             default: 2
-            minimun: 0
+            minimum: 0
             description: "Default 'hits to cache' for COUNT_CACHED() aggregation of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast"
 
 
@@ -4359,6 +4365,12 @@ definitions:
       max_wal_depth_on_force_sync:
         type: integer
         description: "Maximum number of WAL records, which will be copied after force-sync"
+      force_sync_on_logic_error:
+        type: boolean
+        description: "force resync on logic error conditions"
+      force_sync_on_wrong_data_hash:
+        type: boolean
+        description: "force resync on wrong data hash conditions"
       log_level:
         type: string
         description: "Replication log level on replicator's startup"

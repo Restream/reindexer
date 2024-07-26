@@ -499,6 +499,10 @@ func (db *reindexerImpl) resetCaches() {
 	db.resetCachesCtx(context.Background())
 }
 
+func WithMaxUpdatesSize(maxUpdatesSizeBytes uint) interface{} {
+	return bindings.OptionBuiltinMaxUpdatesSize{MaxUpdatesSizeBytes: maxUpdatesSizeBytes}
+}
+
 func WithCgoLimit(cgoLimit int) interface{} {
 	return bindings.OptionCgoLimit{CgoLimit: cgoLimit}
 }

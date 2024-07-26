@@ -158,24 +158,24 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 			throw Error(errParams, "Non-array field '%s' [%d] from '%s' can only be encoded once.", f.Name(), tagField, pl->Type().Name());
 		}
 		assertrx(tagField < pl->NumFields());
-		int* cnt = &fieldsoutcnt_[tagField];
+		int& cnt = fieldsoutcnt_[tagField];
 		switch (tagType) {
 			case TAG_ARRAY: {
 				const auto count = rdser.GetVarUint();
 				if (visible) {
 					pl->Type().Field(tagField).Type().EvaluateOneOf(
-						[&](KeyValueType::Bool) { builder.Array(tagName, pl->GetArray<bool>(tagField).subspan(*cnt, count), *cnt); },
-						[&](KeyValueType::Int) { builder.Array(tagName, pl->GetArray<int>(tagField).subspan(*cnt, count), *cnt); },
-						[&](KeyValueType::Int64) { builder.Array(tagName, pl->GetArray<int64_t>(tagField).subspan(*cnt, count), *cnt); },
-						[&](KeyValueType::Double) { builder.Array(tagName, pl->GetArray<double>(tagField).subspan(*cnt, count), *cnt); },
-						[&](KeyValueType::String) { builder.Array(tagName, pl->GetArray<p_string>(tagField).subspan(*cnt, count), *cnt); },
-						[&](KeyValueType::Uuid) { builder.Array(tagName, pl->GetArray<Uuid>(tagField).subspan(*cnt, count), *cnt); },
+						[&](KeyValueType::Bool) { builder.Array(tagName, pl->GetArray<bool>(tagField).subspan(cnt, count), cnt); },
+						[&](KeyValueType::Int) { builder.Array(tagName, pl->GetArray<int>(tagField).subspan(cnt, count), cnt); },
+						[&](KeyValueType::Int64) { builder.Array(tagName, pl->GetArray<int64_t>(tagField).subspan(cnt, count), cnt); },
+						[&](KeyValueType::Double) { builder.Array(tagName, pl->GetArray<double>(tagField).subspan(cnt, count), cnt); },
+						[&](KeyValueType::String) { builder.Array(tagName, pl->GetArray<p_string>(tagField).subspan(cnt, count), cnt); },
+						[&](KeyValueType::Uuid) { builder.Array(tagName, pl->GetArray<Uuid>(tagField).subspan(cnt, count), cnt); },
 						[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite>) noexcept {
 							assertrx(0);
 							abort();
 						});
 				}
-				(*cnt) += count;
+				cnt += count;
 				break;
 			}
 			case TAG_NULL:
@@ -190,8 +190,8 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 			case TAG_OBJECT:
 			case TAG_UUID:
 				objectScalarIndexes_.set(tagField);
-				if (visible) builder.Put(tagName, pl->Get(tagField, (*cnt)), *cnt);
-				++(*cnt);
+				if (visible) builder.Put(tagName, pl->Get(tagField, cnt), cnt);
+				++cnt;
 				break;
 		}
 	} else {
@@ -217,7 +217,8 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 				} else if (visible) {
 					builder.Array(tagName, rdser, atagType, atagCount);
 				} else {
-					for (size_t i = 0; i < atagCount; ++i) rdser.SkipRawVariant(KeyValueType{atagType});
+					const KeyValueType kvt{atagType};
+					for (size_t i = 0; i < atagCount; ++i) rdser.SkipRawVariant(kvt);
 				}
 				break;
 			}
@@ -239,13 +240,15 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 			case TAG_STRING:
 			case TAG_NULL:
 			case TAG_END:
-			case TAG_UUID:
+			case TAG_UUID: {
+				const KeyValueType kvt{tagType};
 				if (visible) {
-					Variant value = rdser.GetRawVariant(KeyValueType{tagType});
+					Variant value = rdser.GetRawVariant(kvt);
 					builder.Put(tagName, std::move(value), 0);
 				} else {
-					rdser.SkipRawVariant(KeyValueType{tagType});
+					rdser.SkipRawVariant(kvt);
 				}
+			}
 		}
 	}
 
@@ -302,8 +305,9 @@ bool BaseEncoder<Builder>::collectTagsSizes(ConstPayload& pl, Serializer& rdser)
 						tagsLengths_.push_back(EndArrayItem);
 					}
 				} else {
+					const KeyValueType kvt{atagType};
 					for (size_t i = 0; i < atagCount; i++) {
-						rdser.SkipRawVariant(KeyValueType{atagType});
+						rdser.SkipRawVariant(kvt);
 					}
 				}
 				break;
@@ -334,15 +338,15 @@ std::string_view BaseEncoder<Builder>::getPlTuple(ConstPayload& pl) {
 	VariantArray kref;
 	pl.Get(0, kref);
 
-	p_string tuple(kref[0]);
+	std::string_view tuple(kref[0]);
 
-	if (tagsMatcher_ && tuple.size() == 0) {
+	if (tagsMatcher_ && tuple.empty()) {
 		tmpPlTuple_.Reset();
 		buildPayloadTuple(pl, tagsMatcher_, tmpPlTuple_);
 		return tmpPlTuple_.Slice();
 	}
 
-	return std::string_view(tuple);
+	return tuple;
 }
 
 template class BaseEncoder<JsonBuilder>;

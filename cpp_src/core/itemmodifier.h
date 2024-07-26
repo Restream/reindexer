@@ -1,7 +1,7 @@
 #pragma once
 
 #include <optional>
-#include "cluster/updaterecord.h"
+#include "updates/updaterecord.h"
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
 
@@ -13,31 +13,34 @@ class UpdateEntry;
 
 class ItemModifier {
 public:
-	ItemModifier(const std::vector<UpdateEntry> &, NamespaceImpl &ns, h_vector<cluster::UpdateRecord, 2> &replUpdates,
+	ItemModifier(const std::vector<UpdateEntry> &, NamespaceImpl &ns, h_vector<updates::UpdateRecord, 2> &replUpdates,
 				 const NsContext &ctx);
 	ItemModifier(const ItemModifier &) = delete;
 	ItemModifier &operator=(const ItemModifier &) = delete;
 	ItemModifier(ItemModifier &&) = delete;
 	ItemModifier &operator=(ItemModifier &&) = delete;
 
-	[[nodiscard]] bool Modify(IdType itemId, const NsContext &ctx, h_vector<cluster::UpdateRecord, 2> &pendedRepl);
+	[[nodiscard]] bool Modify(IdType itemId, const NsContext &ctx, h_vector<updates::UpdateRecord, 2> &pendedRepl);
 	PayloadValue &GetPayloadValueBackup() { return rollBackIndexData_.GetPayloadValueBackup(); }
 
 private:
-	struct FieldData {
-		FieldData(const UpdateEntry &entry, NamespaceImpl &ns);
-		void updateTagsPath(TagsMatcher &tm, const IndexExpressionEvaluator &ev);
-		const UpdateEntry &details() const noexcept { return entry_; }
-		const IndexedTagsPath &tagspath() const noexcept { return tagsPath_; }
-		const IndexedTagsPath &tagspathWithLastIndex() const noexcept {
+	using CompositeFlags = h_vector<bool, 32>;
+	class FieldData {
+	public:
+		FieldData(const UpdateEntry &entry, NamespaceImpl &ns, CompositeFlags &affectedComposites);
+		const UpdateEntry &Details() const noexcept { return entry_; }
+		const IndexedTagsPath &Tagspath() const noexcept { return tagsPath_; }
+		const IndexedTagsPath &TagspathWithLastIndex() const noexcept {
 			return tagsPathWithLastIndex_ ? *tagsPathWithLastIndex_ : tagsPath_;
 		}
-		int arrayIndex() const noexcept { return arrayIndex_; }
-		int index() const noexcept { return fieldIndex_; }
-		bool isIndex() const noexcept { return isIndex_; }
-		const std::string &name() const noexcept;
+		int ArrayIndex() const noexcept { return arrayIndex_; }
+		int Index() const noexcept { return fieldIndex_; }
+		bool IsIndex() const noexcept { return isIndex_; }
+		std::string_view Name() const noexcept;
 
 	private:
+		void appendAffectedIndexes(const NamespaceImpl &ns, CompositeFlags &affectedComposites) const;
+
 		const UpdateEntry &entry_;
 		IndexedTagsPath tagsPath_;
 		std::optional<IndexedTagsPath> tagsPathWithLastIndex_;
@@ -65,13 +68,12 @@ private:
 	};
 
 	void modifyField(IdType itemId, FieldData &field, Payload &pl, VariantArray &values);
-	void modifyCJSON(IdType itemId, FieldData &field, VariantArray &values, h_vector<cluster::UpdateRecord, 2> &pendedRepl,
+	void modifyCJSON(IdType itemId, FieldData &field, VariantArray &values, h_vector<updates::UpdateRecord, 2> &pendedRepl,
 					 const NsContext &);
 	void modifyIndexValues(IdType itemId, const FieldData &field, VariantArray &values, Payload &pl);
 
-	void deleteDataFromComposite(IdType itemId, FieldData &field, h_vector<bool, 32> &needUpdateCompIndexes);
-	void insertItemIntoCompositeIndexes(IdType itemId, int firstCompositePos, int totalIndexes,
-										const h_vector<bool, 32> &needUpdateCompIndexes);
+	void deleteItemFromComposite(IdType itemId);
+	void insertItemIntoComposite(IdType itemId);
 
 	NamespaceImpl &ns_;
 	const std::vector<UpdateEntry> &updateEntries_;
@@ -113,6 +115,7 @@ private:
 	};
 
 	IndexRollBack rollBackIndexData_;
+	CompositeFlags affectedComposites_;
 };
 
 }  // namespace reindexer

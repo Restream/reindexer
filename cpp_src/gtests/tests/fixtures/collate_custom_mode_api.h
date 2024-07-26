@@ -15,9 +15,6 @@ protected:
 		err = reindexer->AddIndex(nsName, {kFieldName, "hash", "string", IndexOpts(sortOrder).SetCollateMode(CollateCustom)});
 		EXPECT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->Commit(nsName);
-		EXPECT_TRUE(err.ok()) << err.what();
-
 		for (size_t i = 0; i < sourceTable.size(); ++i) {
 			Item item(reindexer->NewItem(nsName));
 			EXPECT_TRUE(!!item);
@@ -29,9 +26,6 @@ protected:
 			err = rt.reindexer->Upsert(nsName, item);
 			EXPECT_TRUE(err.ok()) << err.what();
 		}
-
-		err = reindexer->Commit(nsName);
-		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
 	void SortByName(QueryResults& qr) {

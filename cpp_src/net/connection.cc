@@ -158,6 +158,8 @@ typename Connection<Mutex>::ReadResT Connection<Mutex>::read_cb() {
 		if (nread < 0 && err == EINTR) continue;
 
 		if ((nread < 0 && !socket::would_block(err)) || nread == 0) {
+			// Setting SO_LINGER with 0 timeout to avoid TIME_WAIT state on client
+			sock_.setLinger0();
 			closeConn();
 			return ReadResT::Default;
 		} else if (nread > 0) {

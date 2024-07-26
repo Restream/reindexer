@@ -30,7 +30,7 @@ enum CmdCode : uint16_t {
 	kCmdDeleteQueryTx = 30,
 	kCmdUpdateQueryTx = 31,
 
-	kCmdCommit = 32,
+	kCmdCommit = 32,  // Deprecated
 	kCmdModifyItem = 33,
 	kCmdDeleteQuery = 34,
 	kCmdUpdateQuery = 35,

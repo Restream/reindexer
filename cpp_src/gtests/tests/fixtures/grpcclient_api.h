@@ -9,6 +9,7 @@
 #include "core/cjson/cjsondecoder.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/payload/payloadiface.h"
+#include "server/server.h"
 #include "reindexer_api.h"
 #include "tools/fsops.h"
 #include "yaml-cpp/yaml.h"

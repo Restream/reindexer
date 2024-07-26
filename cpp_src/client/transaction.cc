@@ -19,7 +19,8 @@ Item Transaction::NewItem() {
 
 Transaction::~Transaction() {
 	if (!IsFree()) {
-		rx_->RollBackTransaction(*this, InternalRdxContext());
+		auto err = rx_->RollBackTransaction(*this, InternalRdxContext());
+		(void)err;	// ignore
 	}
 	tr_.clear();
 }

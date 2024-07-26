@@ -58,7 +58,8 @@ public:
 		}
 	}
 
-	void clear() { entries_.clear(); }
+	void clear() noexcept { entries_.clear(); }
+	bool empty() const noexcept { return entries_.empty(); }
 
 protected:
 	struct CacheEntry {

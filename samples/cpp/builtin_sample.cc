@@ -5,8 +5,11 @@ using namespace reindexer;
 int main() {
 	// Initialize database
 	Reindexer db;
+	// Create DB's storage in '/tmp/reindex'
+	Error err = db.Connect("builtin:///tmp/reindex");
+	if (!err.ok()) return -1;
 	// Create namespace and add index
-	Error err = db.OpenNamespace("mytable");
+	err = db.OpenNamespace("mytable");
 	if (!err.ok()) return -1;
 	err = db.AddIndex("mytable", {"id", "hash", "int", IndexOpts().PK()});
 	if (!err.ok()) return -2;

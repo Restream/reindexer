@@ -94,7 +94,6 @@ reindexer::Error ApiTvSimpleComparators::Initialize() {
 		err = db_->Insert(stringSelectNs_, item);
 		if (!err.ok()) return err;
 	}
-	err = db_->Commit(stringSelectNs_);
 	return err;
 }
 

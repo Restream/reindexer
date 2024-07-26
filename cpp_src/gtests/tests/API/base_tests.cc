@@ -111,11 +111,12 @@ TEST_F(ReindexerApi, RenameNamespace) {
 		}
 	};
 
-	auto getRowsInJSON = [&](std::string_view namespaceName, std::vector<std::string>& resStrings) {
+	auto getRowsInJSON = [&](std::string_view namespaceName, std::vector<std::string>& resStrings, reindexer::TagsMatcher& tm) {
 		QueryResults result;
 		auto err = rt.reindexer->Select(Query(namespaceName), result);
 		ASSERT_TRUE(err.ok()) << err.what();
 		resStrings.clear();
+		tm = result.GetTagsMatcher(0);
 		for (auto it = result.begin(); it != result.end(); ++it) {
 			ASSERT_TRUE(it.Status().ok()) << it.Status().what();
 			reindexer::WrSerializer sr;
@@ -126,46 +127,56 @@ TEST_F(ReindexerApi, RenameNamespace) {
 		}
 	};
 
-	std::vector<std::string> resStrings;
-	std::vector<std::string> resStringsBeforeTest;
-	getRowsInJSON(default_namespace, resStringsBeforeTest);
+	std::vector<std::string> resStrings, resStringsBeforeTest;
+	reindexer::TagsMatcher tm, tmBeforeTest;  // Expecting the same tagsmatchers before and after rename
+	getRowsInJSON(default_namespace, resStringsBeforeTest, tmBeforeTest);
 
 	// ok
 	err = rt.reindexer->RenameNamespace(default_namespace, renameNamespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 	testInList(renameNamespace, true);
 	testInList(default_namespace, false);
-	getRowsInJSON(renameNamespace, resStrings);
+	getRowsInJSON(renameNamespace, resStrings, tm);
 	ASSERT_TRUE(resStrings == resStringsBeforeTest) << "Data in namespace changed";
+	ASSERT_EQ(tm.stateToken(), tmBeforeTest.stateToken());
+	ASSERT_EQ(tm.version(), tmBeforeTest.version());
 
 	// rename to equal name
 	err = rt.reindexer->RenameNamespace(renameNamespace, renameNamespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 	testInList(renameNamespace, true);
-	getRowsInJSON(renameNamespace, resStrings);
+	getRowsInJSON(renameNamespace, resStrings, tm);
 	ASSERT_TRUE(resStrings == resStringsBeforeTest) << "Data in namespace changed";
+	ASSERT_EQ(tm.stateToken(), tmBeforeTest.stateToken());
+	ASSERT_EQ(tm.version(), tmBeforeTest.version());
 
 	// rename to empty namespace
 	err = rt.reindexer->RenameNamespace(renameNamespace, "");
 	ASSERT_FALSE(err.ok()) << err.what();
 	testInList(renameNamespace, true);
-	getRowsInJSON(renameNamespace, resStrings);
+	getRowsInJSON(renameNamespace, resStrings, tm);
 	ASSERT_TRUE(resStrings == resStringsBeforeTest) << "Data in namespace changed";
+	ASSERT_EQ(tm.stateToken(), tmBeforeTest.stateToken());
+	ASSERT_EQ(tm.version(), tmBeforeTest.version());
 
 	// rename to system namespace
 	err = rt.reindexer->RenameNamespace(renameNamespace, "#rename_namespace");
 	ASSERT_FALSE(err.ok()) << err.what();
 	testInList(renameNamespace, true);
-	getRowsInJSON(renameNamespace, resStrings);
+	getRowsInJSON(renameNamespace, resStrings, tm);
 	ASSERT_TRUE(resStrings == resStringsBeforeTest) << "Data in namespace changed";
+	ASSERT_EQ(tm.stateToken(), tmBeforeTest.stateToken());
+	ASSERT_EQ(tm.version(), tmBeforeTest.version());
 
 	// rename to existing namespace
 	err = rt.reindexer->RenameNamespace(renameNamespace, existingNamespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 	testInList(renameNamespace, false);
 	testInList(existingNamespace, true);
-	getRowsInJSON(existingNamespace, resStrings);
+	getRowsInJSON(existingNamespace, resStrings, tm);
 	ASSERT_TRUE(resStrings == resStringsBeforeTest) << "Data in namespace changed";
+	ASSERT_EQ(tm.stateToken(), tmBeforeTest.stateToken());
+	ASSERT_EQ(tm.version(), tmBeforeTest.version());
 }
 
 TEST_F(ReindexerApi, AddIndex) {
@@ -717,9 +728,6 @@ TEST_F(ReindexerApi, NewItem_CaseInsensitiveCheck) {
 	err = rt.reindexer->AddIndex(default_namespace, {"value", "text", "string", IndexOpts()});
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	err = rt.reindexer->Commit(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-
 	auto item = rt.reindexer->NewItem(default_namespace);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	ASSERT_NO_THROW(item["ID"] = 1000);
@@ -745,9 +753,6 @@ TEST_F(ReindexerApi, Insert) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->Insert(default_namespace, item);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->Commit(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	QueryResults qr;
@@ -801,9 +806,6 @@ TEST_F(ReindexerApi, WithTimeoutInterface) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->WithTimeout(milliseconds(1000)).Insert(default_namespace, item);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->WithTimeout(milliseconds(100)).Commit(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	QueryResults qr;
@@ -868,9 +870,6 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 		if (i % 3 == 0) ++stringValuedIdx;
 		stringValuedIdx %= possibleValues.size();
 	}
-
-	err = rt.reindexer->Commit(default_namespace);
-	EXPECT_TRUE(err.ok()) << err.what();
 
 	const size_t offset = 23;
 	const size_t limit = 61;
@@ -952,10 +951,6 @@ TEST_F(ReindexerApi, SortByMultipleColumnsWithLimits) {
 		err = rt.reindexer->Upsert(default_namespace, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
-
-	err = rt.reindexer->Commit(default_namespace);
-	EXPECT_TRUE(err.ok()) << err.what();
-
 	const size_t offset = 4;
 	const size_t limit = 3;
 
@@ -1030,9 +1025,6 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 		err = rt.reindexer->Upsert(default_namespace, item);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
-
-	err = rt.reindexer->Commit(default_namespace);
-	EXPECT_TRUE(err.ok()) << err.what();
 
 	bool descending = true;
 	const unsigned offset = 5;
@@ -1141,9 +1133,6 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 			err = rt.reindexer->Upsert(secondNamespace, item);
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
-
-		err = rt.reindexer->Commit(secondNamespace);
-		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
 	for (int i = 0; i < 100; ++i) {
@@ -1159,10 +1148,6 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 		err = rt.reindexer->Upsert(default_namespace, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
-
-	err = rt.reindexer->Commit(default_namespace);
-	EXPECT_TRUE(err.ok()) << err.what();
-
 	bool descending = true;
 	const unsigned offset = 10;
 	const unsigned limit = 40;
@@ -1414,9 +1399,6 @@ TEST_F(ReindexerApi, ContextCancelingTest) {
 	CanceledRdxContext canceledCtx;
 	err = rt.reindexer->WithContext(&canceledCtx).Insert(default_namespace, item);
 	ASSERT_TRUE(err.code() == errCanceled);
-
-	err = rt.reindexer->Commit(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
 
 	// Canceled delete
 	std::vector<reindexer::NamespaceDef> namespaces;
@@ -1965,7 +1947,6 @@ TEST_F(ReindexerApi, UpdateDoublesItemByPKIndex) {
 	};
 	constexpr size_t kItemsCount = 4;
 	std::vector<ItemData> data;
-	std::string checkUuid;
 	for (unsigned i = 0; i < kItemsCount; i++) {
 		Item item(rt.reindexer->NewItem(default_namespace));
 		ASSERT_TRUE(!!item);
@@ -2090,10 +2071,7 @@ TEST_F(ReindexerApi, MetaIndexTest) {
 	std::vector<std::string> readKeys;
 	const std::string emptyValue;
 	const std::string unsettedKey = "unexpected#meta#key##name";
-	const std::vector<std::pair<std::string, std::string>> meta = {
-		{ "key1", "data1" },
-		{ "key2", "data2" }
-	};
+	const std::vector<std::pair<std::string, std::string>> meta = {{"key1", "data1"}, {"key2", "data2"}};
 
 	// prepare state - clear meta in ns
 	err = rx->EnumMeta(default_namespace, readKeys);
@@ -2157,12 +2135,10 @@ TEST_F(ReindexerApi, MetaIndexTest) {
 	for (const auto& key : readKeys) {
 		err = rx->GetMeta(default_namespace, key, readMeta);
 		ASSERT_TRUE(err.ok()) << err.what();
-		auto it = std::find_if(meta.begin(), meta.end(),
-							   [&key](const std::pair<std::string, std::string>& elem) {
-								   return elem.first == key;
-							   });
+		auto it =
+			std::find_if(meta.begin(), meta.end(), [&key](const std::pair<std::string, std::string>& elem) { return elem.first == key; });
 		ASSERT_TRUE(it != meta.end());
-		ASSERT_EQ(readMeta, it != meta.end()? it->second : unsettedKey);
+		ASSERT_EQ(readMeta, it != meta.end() ? it->second : unsettedKey);
 	}
 
 	// deleting
@@ -2193,8 +2169,4 @@ TEST_F(ReindexerApi, MetaIndexTest) {
 	err = rx->EnumMeta(default_namespace, readKeys);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(readKeys, std::vector<std::string>{});
-
-	// remove storage
-	err = rx->DropNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
 }

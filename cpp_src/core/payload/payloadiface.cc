@@ -88,7 +88,7 @@ void PayloadIface<T>::GetByJsonPath(std::string_view jsonPath, TagsMatcher &tags
 			return;
 		}
 		if (t_.Field(fieldIdx).IsArray()) {
-			IndexedTagsPath tagsPath = tagsMatcher.path2indexedtag(jsonPath, nullptr, false);
+			IndexedTagsPath tagsPath = tagsMatcher.path2indexedtag(jsonPath, false);
 			if (tagsPath.back().IsWithIndex()) {
 				kvs.clear<false>();
 				kvs.emplace_back(Get(fieldIdx, tagsPath.back().Index()));
@@ -97,7 +97,7 @@ void PayloadIface<T>::GetByJsonPath(std::string_view jsonPath, TagsMatcher &tags
 		}
 		return Get(fieldIdx, kvs);
 	}
-	GetByJsonPath(tagsMatcher.path2indexedtag(jsonPath, nullptr, false), kvs, expectedType);
+	GetByJsonPath(tagsMatcher.path2indexedtag(jsonPath, false), kvs, expectedType);
 }
 
 template <typename T>
@@ -126,7 +126,7 @@ void PayloadIface<T>::GetByJsonPath(const IndexedTagsPath &tagsPath, VariantArra
 
 template <typename T>
 void PayloadIface<T>::GetByFieldsSet(const FieldsSet &fields, VariantArray &kvs, KeyValueType expectedType,
-									 const std::vector<KeyValueType> &expectedCompositeTypes) const {
+									 const h_vector<KeyValueType, 4> &expectedCompositeTypes) const {
 	if (expectedType.Is<KeyValueType::Composite>()) {
 		kvs.Clear();
 		kvs.emplace_back(GetComposite(fields, expectedCompositeTypes));
@@ -146,7 +146,7 @@ void PayloadIface<T>::GetByFieldsSet(const FieldsSet &fields, VariantArray &kvs,
 }
 
 template <typename T>
-Variant PayloadIface<T>::GetComposite(const FieldsSet &fields, const std::vector<KeyValueType> &expectedTypes) const {
+Variant PayloadIface<T>::GetComposite(const FieldsSet &fields, const h_vector<KeyValueType, 4> &expectedTypes) const {
 	thread_local VariantArray buffer;
 	buffer.clear<false>();
 	assertrx_throw(fields.size() == expectedTypes.size());

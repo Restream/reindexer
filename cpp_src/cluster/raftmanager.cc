@@ -63,7 +63,8 @@ RaftInfo::Role RaftManager::Elections() {
 			loop_.spawn(wg, [this, &electionsStat, nodeId, term, &succeedRoutines, isDesiredLeader] {
 				auto& node = nodes_[nodeId];
 				if (!node.client.Status().ok()) {
-					node.client.Connect(node.dsn, loop_, createConnectionOpts());
+					auto err = node.client.Connect(node.dsn, loop_, createConnectionOpts());
+					(void)err;	// Error will be handled during the further requests
 				}
 				NodeData suggestion, result;
 				suggestion.serverId = serverId_;
@@ -244,14 +245,15 @@ void RaftManager::startPingRoutines() {
 		nodes_[nodeId].hasNetworkError = false;
 		loop_.spawn(pingWg_, [this, nodeId]() noexcept {
 			auto& node = nodes_[nodeId];
-			node.client.Connect(node.dsn, loop_);
+			auto err = node.client.Connect(node.dsn, loop_);
+			(void)err;	// Error will be handled duering the further requests
 			auto voteData = voteData_.load();
 			bool isFirstPing = true;
 			while (!terminate_.load() && getRole(voteData) == RaftInfo::Role::Leader) {
 				NodeData leader;
 				leader.serverId = serverId_;
 				leader.electionsTerm = getTerm(voteData);
-				const auto err = node.client.LeadersPing(leader);
+				err = node.client.LeadersPing(leader);
 				const bool isNetworkError = (err.code() == errTimeout) || (err.code() == errNetwork);
 				if (node.isOk != err.ok() || isNetworkError != node.hasNetworkError || isFirstPing) {
 					node.isOk = err.ok();

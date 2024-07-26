@@ -58,7 +58,7 @@ func NewMockConnection(t *testing.T) *MockConnection {
 	return mock
 }
 
-func (mcf *MockConnFactory) newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner) (connection, int64, error) {
+func (mcf *MockConnFactory) newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eh bindings.EventsHandler) (connection, int64, error) {
 	c, ok := mcf.expCalls["newConnection"]
 	if !ok {
 		mcf.t.Fatalf("unexpected call newConnection")

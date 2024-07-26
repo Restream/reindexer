@@ -30,11 +30,9 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 	const std::string kNonExistentField = "nonExistentField";
 
 	auto err = client->OpenNamespace(kNsName, StorageOpts().CreateIfMissing());
-
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = client->AddIndex(kNsName, reindexer::IndexDef(kFieldId, "hash", "int", IndexOpts().PK()));
-
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	for (size_t i = 0; i < 1000; ++i) {
@@ -48,16 +46,13 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 		auto item = client->NewItem(kNsName);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		auto err = item.FromJSON(wrser.Slice(), &endp);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		if constexpr (std::is_same_v<Client, reindexer::client::RPCTestClient>) {
-			client->Upsert(kNsName, item, reindexer::client::RPCDataFormat::MsgPack);
+			err = client->Upsert(kNsName, item, reindexer::client::RPCDataFormat::MsgPack);
 		} else {
-			client->Upsert(kNsName, item);
+			err = client->Upsert(kNsName, item);
 		}
-
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 

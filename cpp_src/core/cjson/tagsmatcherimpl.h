@@ -22,12 +22,13 @@ public:
 	using TmListT = h_vector<const TagsMatcherImpl *, 10>;
 
 	TagsMatcherImpl() : version_(0), stateToken_(tools::RandomGenerator::gets32()) {}
-	TagsMatcherImpl(PayloadType payloadType, int32_t stateToken = tools::RandomGenerator::gets32())
-		: payloadType_(payloadType), version_(0), stateToken_(stateToken) {}
-	TagsMatcherImpl(PayloadType payloadType, const TmListT &tmList)
-		: payloadType_(payloadType), version_(0), stateToken_(tools::RandomGenerator::gets32()) {
-		createMergedTagsMatcher(tmList);
+	TagsMatcherImpl(PayloadType &&payloadType, int32_t stateToken = tools::RandomGenerator::gets32())
+		: version_(0), stateToken_(stateToken) {
+		bool updated = false;
+		updatePayloadType(std::move(payloadType), updated, NeedChangeTmVersion::No);
+		(void)updated;	// No update check required
 	}
+	TagsMatcherImpl(const TmListT &tmList) : version_(0), stateToken_(tools::RandomGenerator::gets32()) { createMergedTagsMatcher(tmList); }
 	~TagsMatcherImpl() = default;
 
 	TagsPath path2tag(std::string_view jsonPath) const {
@@ -55,12 +56,12 @@ public:
 		return fieldTags;
 	}
 
-	IndexedTagsPath path2indexedtag(std::string_view jsonPath, const IndexExpressionEvaluator &ev) const {
+	IndexedTagsPath path2indexedtag(std::string_view jsonPath) const {
 		bool updated = false;
-		return const_cast<TagsMatcherImpl *>(this)->path2indexedtag(jsonPath, ev, false, updated);
+		return const_cast<TagsMatcherImpl *>(this)->path2indexedtag(jsonPath, false, updated);
 	}
 
-	IndexedTagsPath path2indexedtag(std::string_view jsonPath, const IndexExpressionEvaluator &ev, bool canAdd, bool &updated) {
+	IndexedTagsPath path2indexedtag(std::string_view jsonPath, bool canAdd, bool &updated) {
 		using namespace std::string_view_literals;
 		IndexedTagsPath fieldTags;
 		for (size_t pos = 0, lastPos = 0; pos != jsonPath.length(); lastPos = pos + 1) {
@@ -86,22 +87,7 @@ public:
 					} else {
 						auto index = try_stoi(content);
 						if (!index) {
-							if (ev) {
-								VariantArray values = ev(content);
-								if (values.size() != 1) {
-									throw Error(errParams, "Index expression_ has wrong syntax: '%s'", content);
-								}
-								values.front().Type().EvaluateOneOf(
-									[](OneOf<KeyValueType::Double, KeyValueType::Int, KeyValueType::Int64>) noexcept {},
-									[&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Tuple, KeyValueType::Composite,
-											  KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Uuid>) {
-										throw Error(errParams, "Wrong type of index: '%s'", content);
-									});
-								node.SetExpression(content);
-								index = values.front().As<int>();
-							} else {
-								throw Error(errParams, "Can't convert '%s' to number", content);
-							}
+							throw Error(errParams, "Can't convert '%s' to number", content);
 						}
 						if (index < 0) {
 							throw Error(errLogic, "Array index value cannot be negative");
@@ -174,8 +160,24 @@ public:
 		}
 	}
 	void updatePayloadType(PayloadType payloadType, bool &updated, NeedChangeTmVersion changeVersion) {
-		updated = true;
-		payloadType_ = std::move(payloadType);
+		if (!payloadType && !payloadType_) {
+			return;
+		}
+		std::swap(payloadType_, payloadType);
+		bool newType = false;
+		buildTagsCache(newType);
+		newType = newType || bool(payloadType) != bool(payloadType_) || (payloadType_.NumFields() != payloadType.NumFields());
+		if (!newType) {
+			for (int field = 1, fields = payloadType_.NumFields(); field < fields; ++field) {
+				auto &lf = payloadType_.Field(field);
+				auto &rf = payloadType.Field(field);
+				if (!lf.Type().IsSame(rf.Type()) || lf.IsArray() != rf.IsArray() || lf.JsonPaths() != rf.JsonPaths()) {
+					newType = true;
+					break;
+				}
+			}
+		}
+		updated = updated || newType;
 		switch (changeVersion) {
 			case NeedChangeTmVersion::Increment:
 				++version_;
@@ -186,7 +188,6 @@ public:
 			case NeedChangeTmVersion::No:
 				break;
 		}
-		buildTagsCache(updated);
 	}
 
 	void serialize(WrSerializer &ser) const {
@@ -212,33 +213,37 @@ public:
 		stateToken_ = stateToken;
 	}
 
-	bool merge(const TagsMatcherImpl &tm) {
-		auto sz = tm.names2tags_.size();
-		auto oldSz = size();
-
-		if (tags2names_.size() < sz) {
-			validateTagSize(sz);
-			tags2names_.resize(sz);
-		}
-
-		for (auto it = tm.names2tags_.begin(), end = tm.names2tags_.end(); it != end; ++it) {
-			auto r = names2tags_.emplace(it->first, it->second);
-			if (!r.second && r.first->second != it->second) {
-				// name conflict
-				return false;
+	bool merge(const TagsMatcherImpl &tm, bool &updated) {
+		if (tm.contains(*this)) {
+			auto oldSz = size();
+			auto newSz = tm.names2tags_.size();
+			tags2names_.resize(newSz);
+			for (size_t i = oldSz; i < newSz; ++i) {
+				tags2names_[i] = tm.tags2names_[i];
+				const auto r = names2tags_.emplace(tags2names_[i], i);
+				if (!r.second) {
+					// unexpected names conflict (this should never happen)
+					return false;
+				}
 			}
-			if (r.second && it->second < int(oldSz)) {
-				// tag conflict
-				return false;
+			if (oldSz != newSz) {
+				updated = true;
+				if (version_ >= tm.version_) {
+					++version_;
+				} else {
+					version_ = tm.version_;
+				}
 			}
-
-			tags2names_[it->second] = it->first;
+			return true;
 		}
-
-		version_ = std::max(version_, tm.version_) + 1;
-
-		return true;
+		return contains(tm);
 	}
+	// Check if this tagsmatcher includes all of the tags from the other tagsmatcher
+	bool contains(const TagsMatcherImpl &tm) const noexcept {
+		return tags2names_.size() >= tm.tags2names_.size() && std::equal(tm.tags2names_.begin(), tm.tags2names_.end(), tags2names_.begin());
+	}
+	// Check if other tagsmatcher includes all of the tags from this tagsmatcher
+	bool isSubsetOf(const TagsMatcherImpl &tm) const noexcept { return tm.contains(*this); }
 	bool add_names_from(const TagsMatcherImpl &tm) {
 		bool modified = false;
 		for (auto it = tm.names2tags_.begin(), end = tm.names2tags_.end(); it != end; ++it) {
@@ -294,16 +299,6 @@ public:
 		});
 
 		return res + "]";
-	}
-	// Check if other tagsmatcher includes all of the tags from this tagsmatcher
-	bool isSubsetOf(const TagsMatcherImpl &otm) const {
-		for (auto &pathP : names2tags_) {
-			const auto found = otm.names2tags_.find(pathP.first);
-			if (found == otm.names2tags_.end() || found->second != pathP.second) {
-				return false;
-			}
-		}
-		return true;
 	}
 
 protected:

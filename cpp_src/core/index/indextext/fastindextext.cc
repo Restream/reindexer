@@ -69,10 +69,8 @@ Variant FastIndexText<T>::Upsert(const Variant &key, IdType id, bool &clearCache
 
 template <typename T>
 void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strHolder, bool &clearCache) {
-	int delcnt = 0;
 	if rx_unlikely (key.Type().Is<KeyValueType::Null>()) {
-		delcnt = this->empty_ids_.Unsorted().Erase(id);
-		assertrx(delcnt);
+		this->empty_ids_.Unsorted().Erase(id);	// ignore result
 		this->isBuilt_ = false;
 		return;
 	}
@@ -82,7 +80,7 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strH
 	this->isBuilt_ = false;
 
 	this->delMemStat(keyIt);
-	delcnt = keyIt->second.Unsorted().Erase(id);
+	int delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
 	assertf(this->opts_.IsArray() || this->Opts().IsSparse() || delcnt, "Delete unexists id from index '%s' id=%d,key=%s", this->name_, id,
@@ -184,13 +182,13 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &&dsl, bool inTr
 	if (!fctx->NeedArea()) {
 		if (useExternSt == FtUseExternStatuses::No) {
 			appendMergedIds(mergeData, releventDocs,
-							[&fctx, &mergedIds](IdSetRef::iterator ebegin, IdSetRef::iterator eend, const MergeInfo &vid) {
+							[&fctx, &mergedIds](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfo &vid) {
 								fctx->Add(ebegin, eend, vid.proc);
 								mergedIds->Append(ebegin, eend, IdSet::Unordered);
 							});
 		} else {
 			appendMergedIds(mergeData, releventDocs,
-							[&fctx, &mergedIds, &statuses](IdSetRef::iterator ebegin, IdSetRef::iterator eend, const MergeInfo &vid) {
+							[&fctx, &mergedIds, &statuses](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfo &vid) {
 								fctx->Add(ebegin, eend, vid.proc, statuses.rowIds);
 								mergedIds->Append(ebegin, eend, statuses.rowIds, IdSet::Unordered);
 							});
@@ -198,7 +196,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &&dsl, bool inTr
 	} else {
 		if (useExternSt == FtUseExternStatuses::No) {
 			appendMergedIds(mergeData, releventDocs,
-							[&fctx, &mergedIds, &mergeData](IdSetRef::iterator ebegin, IdSetRef::iterator eend, const MergeInfo &vid) {
+							[&fctx, &mergedIds, &mergeData](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfo &vid) {
 								assertrx_throw(vid.areaIndex != std::numeric_limits<uint32_t>::max());
 								fctx->Add(ebegin, eend, vid.proc, std::move(mergeData.vectorAreas[vid.areaIndex]));
 								mergedIds->Append(ebegin, eend, IdSet::Unordered);
@@ -206,7 +204,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &&dsl, bool inTr
 		} else {
 			appendMergedIds(
 				mergeData, releventDocs,
-				[&fctx, &mergedIds, &mergeData, &statuses](IdSetRef::iterator ebegin, IdSetRef::iterator eend, const MergeInfo &vid) {
+				[&fctx, &mergedIds, &mergeData, &statuses](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfo &vid) {
 					assertrx_throw(vid.areaIndex != std::numeric_limits<uint32_t>::max());
 					fctx->Add(ebegin, eend, vid.proc, statuses.rowIds, std::move(mergeData.vectorAreas[vid.areaIndex]));
 					mergedIds->Append(ebegin, eend, statuses.rowIds, IdSet::Unordered);
@@ -217,10 +215,9 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &&dsl, bool inTr
 		logPrintf(LogInfo, "Total merge out: %d ids", mergedIds->size());
 
 		std::string str;
-		for (size_t i = 0; i < fctx->GetSize();) {
+		for (size_t i = 0; i < fctx->Size();) {
 			size_t j = i;
-			for (; j < fctx->GetSize() && fctx->Proc(i) == fctx->Proc(j); j++)
-				;
+			for (; j < fctx->Size() && fctx->Proc(i) == fctx->Proc(j); j++);
 			str += std::to_string(fctx->Proc(i)) + "%";
 			if (j - i > 1) {
 				str += "(";
@@ -230,9 +227,9 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &&dsl, bool inTr
 			str += " ";
 			i = j;
 		}
-		logPrintf(LogInfo, "Relevancy(%d): %s", fctx->GetSize(), str);
+		logPrintf(LogInfo, "Relevancy(%d): %s", fctx->Size(), str);
 	}
-	assertrx_throw(mergedIds->size() == fctx->GetSize());
+	assertrx_throw(mergedIds->size() == fctx->Size());
 	return mergedIds;
 }
 template <typename T>

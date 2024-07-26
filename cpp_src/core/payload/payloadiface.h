@@ -35,11 +35,11 @@ public:
 
 	// Get array as span of typed elements
 	template <typename Elem>
-	span<Elem> GetArray(int field) & {
+	span<const Elem> GetArray(int field) const & {
 		assertrx(field < Type().NumFields());
 		assertrx(Type().Field(field).IsArray());
 		auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
-		return span<Elem>(reinterpret_cast<Elem *>(v_->Ptr() + arr->offset), arr->len);
+		return span<const Elem>(reinterpret_cast<const Elem *>(v_->Ptr() + arr->offset), arr->len);
 	}
 	// Get array len
 	int GetArrayLen(int field) const {
@@ -116,8 +116,8 @@ public:
 	void GetByJsonPath(const TagsPath &jsonPath, VariantArray &, KeyValueType expectedType) const;
 	void GetByJsonPath(const IndexedTagsPath &jsonPath, VariantArray &, KeyValueType expectedType) const;
 	void GetByFieldsSet(const FieldsSet &, VariantArray &, KeyValueType expectedType,
-						const std::vector<KeyValueType> &expectedCompositeTypes) const;
-	[[nodiscard]] Variant GetComposite(const FieldsSet &, const std::vector<KeyValueType> &expectedTypes) const;
+						const h_vector<KeyValueType, 4> &expectedCompositeTypes) const;
+	[[nodiscard]] Variant GetComposite(const FieldsSet &, const h_vector<KeyValueType, 4> &expectedTypes) const;
 	VariantArray GetIndexedArrayData(const IndexedTagsPath &jsonPath, int field, int &offset, int &size) const;
 
 	// Get fields count

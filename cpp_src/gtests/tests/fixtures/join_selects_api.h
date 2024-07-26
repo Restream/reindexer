@@ -94,8 +94,6 @@ protected:
 			item[locationid_fk] = int(rand() % locations.size());
 
 			Upsert(authors_namespace, item);
-			const auto err = Commit(authors_namespace);
-			ASSERT_TRUE(err.ok()) << err.what();
 
 			{
 				std::unique_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
@@ -108,8 +106,6 @@ protected:
 		bestItem[name] = "Fedor Dostoevsky";
 		bestItem[age] = 60;
 		Upsert(authors_namespace, bestItem);
-		const auto err = Commit(authors_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
 
 		{
 			std::unique_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
@@ -152,8 +148,6 @@ protected:
 
 			item[genreId_fk] = genres[rand() % genres.size()].id;
 			Upsert(books_namespace, item);
-			const auto err = Commit(books_namespace);
-			ASSERT_TRUE(err.ok()) << err.what();
 
 			{
 				reindexer::shared_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
@@ -172,9 +166,6 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		err = rt.reindexer->Upsert(books_namespace, bestItem);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->Commit(books_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
@@ -199,8 +190,6 @@ protected:
 		Item item = NewItem(genres_namespace);
 		item[genreid] = id;
 		Delete(genres_namespace, item);
-		const auto err = Commit(genres_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
 		genres.erase(std::remove_if(genres.begin(), genres.end(), [id](const Genre& g) { return g.id == id; }), genres.end());
 	}
 
@@ -310,7 +299,6 @@ protected:
 		ns.Put("unload_idle_threshold", 0);
 		ns.Put("join_cache_mode", "off");
 		ns.Put("start_copy_policy_tx_size", 10000);
-		ns.Put("merge_limit_count", 20000);
 		ns.Put("optimization_timeout_ms", optimizationTimeout);
 		ns.End();
 		nsArray.End();
@@ -323,8 +311,6 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		rt.Upsert(config_namespace, item);
-		err = rt.Commit(config_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	void TurnOnJoinCache(const std::string& nsName) {
@@ -340,7 +326,6 @@ protected:
 		ns.Put("unload_idle_threshold", 0);
 		ns.Put("join_cache_mode", "on");
 		ns.Put("start_copy_policy_tx_size", 10000);
-		ns.Put("merge_limit_count", 20000);
 		ns.End();
 		nsArray.End();
 		jb.End();
@@ -352,8 +337,6 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		rt.Upsert(config_namespace, item);
-		err = rt.Commit(config_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	void CheckJoinsInComplexWhereCondition(const QueryResults& qr) {

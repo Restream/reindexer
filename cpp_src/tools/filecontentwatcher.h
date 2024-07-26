@@ -38,7 +38,8 @@ public:
 			// Retry to read error config once
 			// This logic adds delay between write and read, which allows writer to finish all his writes
 			hadErrorOnLastTry_ = false;
-			loadFromFile_(filename_);
+			auto err = loadFromFile_(filename_);
+			(void)err;	// ignore. Error does not matter here (a lot of 'NotFound' errors are expected)
 		}
 	}
 

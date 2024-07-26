@@ -318,8 +318,6 @@ protected:
 			item[this->kFieldNameName] = kFieldNameName + RandString();
 
 			Upsert(compositeIndexesNs, item);
-			const auto err = Commit(compositeIndexesNs);
-			ASSERT_TRUE(err.ok()) << err.what();
 
 			saveItem(std::move(item), compositeIndexesNs);
 		}
@@ -332,8 +330,6 @@ protected:
 		lastItem[this->kFieldNamePrice] = 77777;
 		lastItem[this->kFieldNameName] = "test book1 name";
 		Upsert(compositeIndexesNs, lastItem);
-		const auto err = Commit(compositeIndexesNs);
-		ASSERT_TRUE(err.ok()) << err.what();
 
 		saveItem(std::move(lastItem), compositeIndexesNs);
 	}
@@ -350,8 +346,6 @@ protected:
 			Upsert(forcedSortOffsetNs, item);
 			saveItem(std::move(item), forcedSortOffsetNs);
 		}
-		const auto err = Commit(forcedSortOffsetNs);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	void FillTestJoinNamespace() {
@@ -369,8 +363,6 @@ protected:
 			Upsert(joinNs, item);
 			saveItem(std::move(item), joinNs);
 		}
-		const auto err = Commit(testSimpleNs);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	void FillTestSimpleNamespace() {
@@ -389,9 +381,6 @@ protected:
 		Upsert(testSimpleNs, item2);
 
 		saveItem(std::move(item2), testSimpleNs);
-
-		const auto err = Commit(testSimpleNs);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	void FillGeomNamespace() {
@@ -406,28 +395,19 @@ protected:
 				bld.Put(kFieldNameId, id);
 
 				reindexer::Point point{reindexer::randPoint(10)};
-				double arr[]{point.X(), point.Y()};
-				bld.Array(kFieldNamePointQuadraticRTree, reindexer::span<double>{arr, 2});
+				bld.Array(kFieldNamePointQuadraticRTree, {point.X(), point.Y()});
 
 				point = reindexer::randPoint(10);
-				arr[0] = point.X();
-				arr[1] = point.Y();
-				bld.Array(kFieldNamePointLinearRTree, reindexer::span<double>{arr, 2});
+				bld.Array(kFieldNamePointLinearRTree, {point.X(), point.Y()});
 
 				point = reindexer::randPoint(10);
-				arr[0] = point.X();
-				arr[1] = point.Y();
-				bld.Array(kFieldNamePointGreeneRTree, reindexer::span<double>{arr, 2});
+				bld.Array(kFieldNamePointGreeneRTree, {point.X(), point.Y()});
 
 				point = reindexer::randPoint(10);
-				arr[0] = point.X();
-				arr[1] = point.Y();
-				bld.Array(kFieldNamePointRStarRTree, reindexer::span<double>{arr, 2});
+				bld.Array(kFieldNamePointRStarRTree, {point.X(), point.Y()});
 
 				point = reindexer::randPoint(10);
-				arr[0] = point.X();
-				arr[1] = point.Y();
-				bld.Array(kFieldNamePointNonIndex, reindexer::span<double>{arr, 2});
+				bld.Array(kFieldNamePointNonIndex, {point.X(), point.Y()});
 			}
 			auto item = NewItem(geomNs);
 			const auto err = item.FromJSON(ser.Slice());
@@ -436,8 +416,6 @@ protected:
 
 			saveItem(std::move(item), geomNs);
 		}
-		const auto err = Commit(geomNs);
-		ASSERT_TRUE(err.ok()) << err.what();
 		lastId += geomNsSize;
 	}
 
@@ -449,9 +427,6 @@ protected:
 		Upsert(btreeIdxOptNs, item);
 
 		saveItem(std::move(item), btreeIdxOptNs);
-
-		Error err = Commit(btreeIdxOptNs);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	enum Column { First, Second };
@@ -464,8 +439,7 @@ protected:
 		std::transform(
 			forcedSortOffsetValues.cbegin(), forcedSortOffsetValues.cend(), res.begin(),
 			column == First ? [](const std::pair<int, int>& v) { return v.first; } : [](const std::pair<int, int>& v) { return v.second; });
-		std::sort(
-			res.begin(), res.end(), desc ? [](int lhs, int rhs) { return lhs > rhs; } : [](int lhs, int rhs) { return lhs < rhs; });
+		std::sort(res.begin(), res.end(), desc ? [](int lhs, int rhs) { return lhs > rhs; } : [](int lhs, int rhs) { return lhs < rhs; });
 		const auto boundary = std::stable_partition(res.begin(), res.end(), [&forcedSortOrder, desc](int v) {
 			return desc == (std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), v) == forcedSortOrder.cend());
 		});
@@ -557,9 +531,6 @@ protected:
 
 			saveItem(std::move(item), comparatorsNs);
 		}
-
-		const auto err = Commit(comparatorsNs);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	void FillDefaultNamespace(int start, int count, int packagesCount) {
@@ -569,8 +540,6 @@ protected:
 
 			saveItem(std::move(item), default_namespace);
 		}
-		const auto err = Commit(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	void AddToDefaultNamespace(int start, int count, int packagesCount) {
@@ -578,8 +547,6 @@ protected:
 			Item item(GenerateDefaultNsItem(start + i, static_cast<size_t>(packagesCount)));
 			Upsert(default_namespace, item);
 		}
-		const auto err = Commit(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	void FillDefaultNamespaceTransaction(int start, int count, int packagesCount) {
@@ -587,12 +554,11 @@ protected:
 
 		for (int i = 0; i < count; ++i) {
 			Item item(GenerateDefaultNsItem(start + i, static_cast<size_t>(packagesCount)));
-			tr.Insert(std::move(item));
+			auto err = tr.Insert(std::move(item));
+			ASSERT_TRUE(err.ok()) << err.what();
 		}
 		QueryResults res;
 		auto err = rt.reindexer->CommitTransaction(tr, res);
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = Commit(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
@@ -886,8 +852,6 @@ protected:
 			ASSERT_TRUE(err.ok()) << err.what();
 			Upsert(nsWithObject, item);
 		}
-		err = Commit(nsWithObject);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	void CheckAggregationQueries() {

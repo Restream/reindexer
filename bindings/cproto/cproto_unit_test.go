@@ -301,7 +301,7 @@ func (fx *fixture) addDSNs(t *testing.T, dsns []url.URL) {
 	for _, u := range dsns {
 		fx.dsn.urls = append(fx.dsn.urls, u)
 		mock := NewMockConnection(t)
-		fx.pool.conns = append(fx.pool.conns, mock)
+		fx.pool.sharedConns = append(fx.pool.sharedConns, mock)
 		fx.mockConns = append(fx.mockConns, mock)
 	}
 }

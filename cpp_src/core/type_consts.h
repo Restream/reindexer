@@ -14,6 +14,8 @@ typedef enum TagType {
 	TAG_UUID = 8,
 } TagType;
 
+static const uint8_t kMaxTagType = TAG_UUID;
+
 typedef enum IndexType {
 	IndexStrHash = 0,
 	IndexStrBTree = 1,
@@ -396,6 +398,11 @@ enum SourceId { NotSet = -1 };
 #endif
 
 static const char kSerialPrefix[] = "_SERIAL_";
+
+static const uint32_t kMaxStreamsPerSub = 32;
+static const int kSubscribersConfigFormatVersion = 1;
+static const int kMinSubscribersConfigFormatVersion = 1;
+static const int kEventSerializationFormatVersion = 1;
 
 // REINDEX_WITH_V3_FOLLOWERS
 enum SubscriptionOpt {

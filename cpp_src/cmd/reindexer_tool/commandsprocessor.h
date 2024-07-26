@@ -17,7 +17,7 @@ template <typename DBInterface>
 class CommandsProcessor {
 public:
 	template <typename... Args>
-	CommandsProcessor(const std::string& outFileName, const std::string& inFileName, int numThreads, Args... args)
+	CommandsProcessor(const std::string& outFileName, const std::string& inFileName, unsigned numThreads, Args... args)
 		: inFileName_(inFileName), executor_(outFileName, numThreads, std::move(args)...) {}
 	CommandsProcessor(const CommandsProcessor&) = delete;
 	CommandsProcessor(CommandsProcessor&&) = delete;

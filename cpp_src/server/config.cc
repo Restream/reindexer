@@ -54,9 +54,6 @@ void ServerConfig::Reset() {
 	AllocatorCachePart = -1;
 }
 
-const std::string ServerConfig::kDedicatedThreading = "dedicated";
-const std::string ServerConfig::kSharedThreading = "shared";
-
 reindexer::Error ServerConfig::ParseYaml(const std::string &yaml) {
 	Error err;
 	try {

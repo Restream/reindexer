@@ -14,9 +14,6 @@ void Aggregation::Insert(State& state) {
 			if (!err.ok()) state.SkipWithError(err.what().c_str());
 		}
 	}
-
-	auto err = db_->Commit(nsdef_.name);
-	if (!err.ok()) state.SkipWithError(err.what().c_str());
 }
 
 void Aggregation::RegisterAllCases() {

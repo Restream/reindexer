@@ -144,7 +144,7 @@ int Context::File(int code, std::string_view path, std::string_view data, bool i
 	std::string content;
 
 	if (data.length() == 0) {
-		if (fs::ReadFile(isGzip ? std::string(path) + kGzSuffix : std::string(path), content) < 0) {
+		if (fs::ReadFile(isGzip ? std::string(path).append(kGzSuffix) : std::string(path), content) < 0) {
 			return String(http::StatusNotFound, "File not found");
 		}
 	} else {
@@ -169,7 +169,7 @@ std::vector<std::string_view> methodNames = {"GET"sv, "POST"sv, "OPTIONS"sv, "HE
 HttpMethod lookupMethod(std::string_view method) {
 	for (auto &cm : methodNames)
 		if (method == cm) return HttpMethod(&cm - &methodNames[0]);
-	return HttpMethod(-1);
+	return HttpMethod(kMethodUnknown);
 }
 
 int Router::handle(Context &ctx) {

@@ -16,7 +16,7 @@ struct QueryResults::MergedData {
 
 	std::string nsName;
 	PayloadType pt;
-	TagsMatcher tm;
+	TagsMatcher tm;	 // Merged tagsmatcher currently does not have PayloadType and can not convert tags to indexes
 	std::vector<AggregationResult> aggregationResults;
 	bool haveRank = false;
 	bool needOutputRank = false;
@@ -77,7 +77,7 @@ QueryResults& QueryResults::operator=(QueryResults&& qr) noexcept {
 
 void QueryResults::AddQr(LocalQueryResults&& local, int shardID, bool buildMergedData) {
 	if (local_) {
-		throw Error(errLogic, "Query results already have incapsulated local query results");
+		throw Error(errLogic, "Query results already have encapsulated local query results");
 	}
 	if (lastSeenIdx_ > 0) {
 		throw Error(
@@ -174,7 +174,6 @@ void QueryResults::RebuildMergedData() {
 			const auto& agg = qrp.qr.GetAggregationResults();
 			if (mergedData_) {
 				if (!iequals(mergedData_->pt.Name(), nss[0])) {
-					auto mrName = mergedData_->pt.Name();
 					throw Error(errLogic, "Query results in distributed query have different ns names: '%s' vs '%s'",
 								mergedData_->pt.Name(), nss[0]);
 				}
@@ -240,7 +239,7 @@ void QueryResults::RebuildMergedData() {
 		for (auto& qrp : remote_) {
 			tmList.emplace_back(qrp.qr.GetTagsMatcher(0));
 		}
-		mergedData_->tm = TagsMatcher::CreateMergedTagsMatcher(mergedData_->pt, tmList);
+		mergedData_->tm = TagsMatcher::CreateMergedTagsMatcher(tmList);
 
 		if (local_) {
 			local_->hasCompatibleTm = local_->qr.getTagsMatcher(0).IsSubsetOf(mergedData_->tm);
@@ -1199,7 +1198,7 @@ Error QueryResults::fillItemImpl(QrItT& it, ItemImpl& itemImpl, bool convertViaJ
 		itemImpl.FromCJSON(wrser.Slice());
 	} else {
 		err = it.GetJSON(wrser, false);
-		itemImpl.FromJSON(wrser.Slice());
+		if (err.ok()) err = itemImpl.FromJSON(wrser.Slice());
 	}
 	if (err.ok()) itemImpl.Value().SetLSN(it.GetLSN());
 	return err;

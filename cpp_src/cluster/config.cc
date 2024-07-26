@@ -28,13 +28,13 @@ static void ValidateDSN(std::string_view dsn) {
 
 Error NodeData::FromJSON(span<char> json) {
 	try {
-		FromJSON(gason::JsonParser().Parse(json));
+		return FromJSON(gason::JsonParser().Parse(json));
 	} catch (const gason::Exception &ex) {
 		return Error(errParseJson, "NodeData: %s", ex.what());
 	} catch (const Error &err) {
 		return err;
 	}
-	return errOK;
+	return {};
 }
 
 Error NodeData::FromJSON(const gason::JsonNode &root) {
@@ -47,7 +47,7 @@ Error NodeData::FromJSON(const gason::JsonNode &root) {
 	} catch (const gason::Exception &ex) {
 		return Error(errParseJson, "NodeData: %s", ex.what());
 	}
-	return errOK;
+	return {};
 }
 
 void NodeData::GetJSON(JsonBuilder &jb) const {
@@ -63,13 +63,13 @@ void NodeData::GetJSON(WrSerializer &ser) const {
 
 Error RaftInfo::FromJSON(span<char> json) {
 	try {
-		FromJSON(gason::JsonParser().Parse(json));
+		return FromJSON(gason::JsonParser().Parse(json));
 	} catch (const gason::Exception &ex) {
 		return Error(errParseJson, "RaftInfo: %s", ex.what());
 	} catch (const Error &err) {
 		return err;
 	}
-	return errOK;
+	return {};
 }
 
 Error RaftInfo::FromJSON(const gason::JsonNode &root) {
@@ -81,7 +81,7 @@ Error RaftInfo::FromJSON(const gason::JsonNode &root) {
 	} catch (const gason::Exception &ex) {
 		return Error(errParseJson, "RaftInfo: %s", ex.what());
 	}
-	return errOK;
+	return {};
 }
 
 void RaftInfo::GetJSON(JsonBuilder &jb) const {
@@ -135,7 +135,7 @@ void AsyncReplNodeConfig::FromYAML(const YAML::Node &root) {
 	auto node = root["namespaces"];
 	namespaces_.reset();
 	if (node.IsSequence()) {
-		fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> nss;
+		NsNamesHashSetT nss;
 		for (const auto &ns : node) {
 			nss.emplace(ns.as<std::string>());
 		}
@@ -154,7 +154,7 @@ void AsyncReplNodeConfig::FromJSON(const gason::JsonNode &root) {
 	{
 		auto &node = root["namespaces"];
 		if (!node.empty()) {
-			fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> nss;
+			NsNamesHashSetT nss;
 			for (auto &objNode : node) {
 				nss.emplace(objNode.As<std::string>());
 			}
@@ -185,7 +185,7 @@ void AsyncReplNodeConfig::GetYAML(YAML::Node &yaml) const {
 		yaml["namespaces"] = YAML::Node(YAML::NodeType::Sequence);
 		if (namespaces_ && !namespaces_->Empty()) {
 			for (auto &ns : namespaces_->data) {
-				yaml["namespaces"].push_back(ns);
+				yaml["namespaces"].push_back(std::string_view(ns));
 			}
 		}
 	}
@@ -223,7 +223,7 @@ Error ClusterConfigData::FromYAML(const std::string &yaml) {
 			auto node = root["namespaces"];
 			namespaces.clear();
 			for (const auto &ns : node) {
-				namespaces.insert(ns.as<std::string>());
+				namespaces.insert(NamespaceName(ns.as<std::string>()));
 			}
 		}
 		{
@@ -263,7 +263,7 @@ Error AsyncReplConfigData::FromYAML(const std::string &yaml) {
 		logLevel = logLevelFromString(root["log_level"].as<std::string>("info"));
 		{
 			auto node = root["namespaces"];
-			fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> nss;
+			NsNamesHashSetT nss;
 			for (const auto &n : node) {
 				nss.emplace(n.as<std::string>());
 			}
@@ -316,19 +316,20 @@ Error AsyncReplConfigData::FromJSON(const gason::JsonNode &root) {
 			}
 		}
 
-		tryReadOptionalJsonValue(&errorString, root, "app_name"sv, appName);
+		auto err = tryReadOptionalJsonValue(&errorString, root, "app_name"sv, appName);
 
-		tryReadOptionalJsonValue(&errorString, root, "sync_threads"sv, replThreadsCount);
-		tryReadOptionalJsonValue(&errorString, root, "syncs_per_thread"sv, parallelSyncsPerThreadCount);
-		tryReadOptionalJsonValue(&errorString, root, "online_updates_timeout_sec"sv, onlineUpdatesTimeoutSec);
-		tryReadOptionalJsonValue(&errorString, root, "sync_timeout_sec"sv, syncTimeoutSec);
-		tryReadOptionalJsonValue(&errorString, root, "force_sync_on_logic_error"sv, forceSyncOnLogicError);
-		tryReadOptionalJsonValue(&errorString, root, "force_sync_on_wrong_data_hash"sv, forceSyncOnWrongDataHash);
-		tryReadOptionalJsonValue(&errorString, root, "retry_sync_interval_msec"sv, retrySyncIntervalMSec);
-		tryReadOptionalJsonValue(&errorString, root, "enable_compression"sv, enableCompression);
-		tryReadOptionalJsonValue(&errorString, root, "batching_routines_count"sv, batchingRoutinesCount);
-		tryReadOptionalJsonValue(&errorString, root, "max_wal_depth_on_force_sync"sv, maxWALDepthOnForceSync);
-		tryReadOptionalJsonValue(&errorString, root, "online_updates_delay_msec"sv, onlineUpdatesDelayMSec);
+		err = tryReadOptionalJsonValue(&errorString, root, "sync_threads"sv, replThreadsCount);
+		err = tryReadOptionalJsonValue(&errorString, root, "syncs_per_thread"sv, parallelSyncsPerThreadCount);
+		err = tryReadOptionalJsonValue(&errorString, root, "online_updates_timeout_sec"sv, onlineUpdatesTimeoutSec);
+		err = tryReadOptionalJsonValue(&errorString, root, "sync_timeout_sec"sv, syncTimeoutSec);
+		err = tryReadOptionalJsonValue(&errorString, root, "force_sync_on_logic_error"sv, forceSyncOnLogicError);
+		err = tryReadOptionalJsonValue(&errorString, root, "force_sync_on_wrong_data_hash"sv, forceSyncOnWrongDataHash);
+		err = tryReadOptionalJsonValue(&errorString, root, "retry_sync_interval_msec"sv, retrySyncIntervalMSec);
+		err = tryReadOptionalJsonValue(&errorString, root, "enable_compression"sv, enableCompression);
+		err = tryReadOptionalJsonValue(&errorString, root, "batching_routines_count"sv, batchingRoutinesCount);
+		err = tryReadOptionalJsonValue(&errorString, root, "max_wal_depth_on_force_sync"sv, maxWALDepthOnForceSync);
+		err = tryReadOptionalJsonValue(&errorString, root, "online_updates_delay_msec"sv, onlineUpdatesDelayMSec);
+		(void)err;	// Read errors do not matter here
 
 		if (std::string_view levelStr = logLevelToString(logLevel);
 			tryReadOptionalJsonValue(&errorString, root, "log_level"sv, levelStr).ok()) {
@@ -337,7 +338,7 @@ Error AsyncReplConfigData::FromJSON(const gason::JsonNode &root) {
 	}
 
 	try {
-		fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> nss;
+		NsNamesHashSetT nss;
 		for (auto &objNode : root["namespaces"]) {
 			nss.emplace(objNode.As<std::string>());
 		}
@@ -366,8 +367,8 @@ Error AsyncReplConfigData::FromJSON(const gason::JsonNode &root) {
 
 	if (!errorString.empty()) {
 		return Error(errParseJson, "AsyncReplConfigData: JSON parsing error: '%s'", errorString);
-	} else
-		return Error();
+	}
+	return Error();
 }
 
 void AsyncReplConfigData::GetJSON(JsonBuilder &jb) const {
@@ -400,12 +401,11 @@ void AsyncReplConfigData::GetJSON(JsonBuilder &jb) const {
 }
 
 void AsyncReplConfigData::GetYAML(WrSerializer &ser) const {
-	std::string namespacesStr, nodesStr;
 	YAML::Node nss;
 	nss["namespaces"] = YAML::Node(YAML::NodeType::Sequence);
 	if (namespaces && !namespaces->Empty()) {
 		for (auto &ns : namespaces->data) {
-			nss["namespaces"].push_back(ns);
+			nss["namespaces"].push_back(std::string_view(ns));
 		}
 	}
 	YAML::Node nds;
@@ -672,7 +672,7 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromJSON(const gason::Jso
 		case gason::JsonTag::JSON_ARRAY:
 		case gason::JsonTag::JSON_NULL:
 		default:
-			throw Error(errParams, "Incorrect JsonTag for sharding key");
+			throw Error(errParams, "Incorrect JsonTag for sharding key: %d", int(jsonValue.getTag()));
 	}
 }
 

@@ -19,14 +19,14 @@ size_t IdRelType::pack(uint8_t* buf) const {
 
 size_t IdRelType::unpack(const uint8_t* buf, unsigned len) {
 	auto p = buf;
-	assertrx(len != 0);
+	assertrx_dbg(len != 0);
 	auto l = scan_varint(len, p);
-	assertrx(l != 0);
+	assertrx_dbg(l != 0);
 	id_ = parse_uint32(l, p);
 	p += l, len -= l;
 
 	l = scan_varint(len, p);
-	assertrx(l != 0);
+	assertrx_dbg(l != 0);
 	int sz = parse_uint32(l, p);
 	p += l, len -= l;
 
@@ -35,7 +35,7 @@ size_t IdRelType::unpack(const uint8_t* buf, unsigned len) {
 	uint32_t last = 0;
 	for (int i = 0; i < sz; i++) {
 		l = scan_varint(len, p);
-		assertrx(l != 0);
+		assertrx_dbg(l != 0);
 		pos_[i].fpos = parse_uint32(l, p) + last;
 		last = pos_[i].fpos;
 		addField(pos_[i].field());
@@ -70,17 +70,6 @@ int IdRelType::MinPositionInField(int field) const noexcept {
 		if (lower->pos() < res) res = lower->pos();
 	}
 	return res;
-}
-
-int IdRelSet::Add(VDocIdType id, int pos, int field) {
-	if (id > max_id_) max_id_ = id;
-	if (id < min_id_) min_id_ = id;
-
-	if (!size() || back().Id() != id) {
-		emplace_back(id);
-	}
-	back().Add(pos, field);
-	return back().Size();
 }
 
 }  // namespace reindexer

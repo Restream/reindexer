@@ -190,7 +190,7 @@ public:
 		lastErasedUpdateId_.store(updateId, std::memory_order_relaxed);
 		allocatedUpdatesSizeBytes_.fetch_sub(size, std::memory_order_relaxed);
 	}
-	void OnUpdateReplicated(int64_t updateId) noexcept { lastReplicatedUpdateId_.store(updateId, std::memory_order_relaxed); }
+	void OnUpdateHandled(int64_t updateId) noexcept { lastReplicatedUpdateId_.store(updateId, std::memory_order_relaxed); }
 	void OnUpdateErased(int64_t updateId, size_t size) noexcept {
 		lastErasedUpdateId_.store(updateId, std::memory_order_relaxed);
 		allocatedUpdatesSizeBytes_.fetch_sub(size, std::memory_order_relaxed);
@@ -257,6 +257,6 @@ private:
 	std::optional<NodeStatsCounter> thisNode_;
 	mutable read_write_spinlock mtx_;
 };
-};	// namespace cluster
 
+}  // namespace cluster
 }  // namespace reindexer

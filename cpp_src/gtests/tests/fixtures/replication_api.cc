@@ -54,7 +54,7 @@ void ReplicationApi::RestartServer(size_t id) {
 	}
 }
 
-void ReplicationApi::WaitSync(const std::string& ns, lsn_t expectedLsn) {
+void ReplicationApi::WaitSync(std::string_view ns, reindexer::lsn_t expectedLsn) {
 	auto now = std::chrono::milliseconds(0);
 	const auto pause = std::chrono::milliseconds(10);
 	ReplicationStateApi state;
@@ -67,7 +67,7 @@ void ReplicationApi::WaitSync(const std::string& ns, lsn_t expectedLsn) {
 				state = GetSrv(i)->GetState(ns);
 				if (xstate.lsn != state.lsn || xstate.nsVersion != state.nsVersion || xstate.tmVersion != state.tmVersion ||
 					xstate.tmStatetoken != state.tmStatetoken) {
-					state.lsn = lsn_t();
+					state.lsn = reindexer::lsn_t();
 					break;
 				} else if (!state.lsn.isEmpty()) {
 					if (!expectedLsn.isEmpty()) {

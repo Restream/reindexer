@@ -11,6 +11,7 @@ class chunk {
 public:
 	chunk() noexcept : data_(nullptr), len_(0), offset_(0), cap_(0) {}
 	chunk(uint8_t *data, size_t len, size_t cap, size_t offset = 0) noexcept : data_(data), len_(len), offset_(offset), cap_(cap) {}
+	explicit chunk(size_t cap) : chunk(new uint8_t[cap], 0, cap, 0) {}
 	~chunk() { delete[] data_; }
 	chunk(const chunk &) = delete;
 	chunk &operator=(const chunk &) = delete;
@@ -73,6 +74,7 @@ public:
 		delete[] data_;
 		data_ = newdata;
 	}
+	explicit operator std::string_view() const noexcept { return std::string_view(reinterpret_cast<char *>(data()), size()); }
 
 private:
 	void append_impl(std::string_view data, size_t newCapacity) {

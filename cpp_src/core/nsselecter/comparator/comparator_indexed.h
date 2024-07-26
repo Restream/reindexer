@@ -11,8 +11,11 @@
 #include "core/payload/payloadfieldvalue.h"
 #include "core/payload/payloadtype.h"
 #include "core/payload/payloadvalue.h"
+#include "estl/fast_hash_map.h"
+#include "estl/fast_hash_set.h"
 #include "helpers.h"
 #include "tools/string_regexp_functions.h"
+#include "vendor/sparse-map/sparse_set.h"
 
 namespace reindexer {
 
@@ -48,6 +51,15 @@ struct ValuesHolder<key_string, Cond> {
 	};
 };
 
+// TODO: fast_hash_map here somehow causes crashes in the centos 7 asan CI builds
+template <typename T, typename U, typename HashT>
+using LowSparsityMap = tsl::sparse_map<T, U, HashT, std::equal_to<T>, std::allocator<std::pair<T, U>>,
+									   tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>;
+
+template <typename T, typename HashT>
+using LowSparsitySet = tsl::sparse_set<T, HashT, std::equal_to<T>, std::allocator<T>, tsl::sh::power_of_two_growth_policy<2>,
+									   tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>;
+
 template <typename T>
 struct ValuesHolder<T, CondRange> {
 	using Type = std::pair<T, T>;
@@ -61,9 +73,19 @@ struct ValuesHolder<key_string, CondRange> {
 	};
 };
 
+template <>
+struct ValuesHolder<int, CondSet> {
+	using Type = LowSparsitySet<int, hash_int<int>>;
+};
+
+template <>
+struct ValuesHolder<int64_t, CondSet> {
+	using Type = LowSparsitySet<int64_t, hash_int<int64_t>>;
+};
+
 template <typename T>
 struct ValuesHolder<T, CondSet> {
-	using Type = std::unordered_set<T>;
+	using Type = LowSparsitySet<T, std::hash<T>>;
 };
 
 template <>
@@ -73,14 +95,30 @@ struct ValuesHolder<key_string, CondSet> {
 
 template <>
 struct ValuesHolder<PayloadValue, CondSet> {
-	using Type = unordered_payload_set;
+	using Type = unordered_payload_ref_set;
+};
+
+template <>
+struct ValuesHolder<int, CondAllSet> {
+	struct Type {
+		LowSparsityMap<int, int, hash_int<int>> values_;
+		fast_hash_set<int> allSetValues_;
+	};
+};
+
+template <>
+struct ValuesHolder<int64_t, CondAllSet> {
+	struct Type {
+		LowSparsityMap<int64_t, int, hash_int<int64_t>> values_;
+		fast_hash_set<int> allSetValues_;
+	};
 };
 
 template <typename T>
 struct ValuesHolder<T, CondAllSet> {
 	struct Type {
-		std::unordered_map<T, int> values_;
-		std::unordered_set<int> allSetValues_;
+		LowSparsityMap<T, int, std::hash<T>> values_;
+		fast_hash_set<int> allSetValues_;
 	};
 };
 
@@ -88,7 +126,7 @@ template <>
 struct ValuesHolder<key_string, CondAllSet> {
 	struct Type {
 		key_string_map<int> values_;
-		std::unordered_set<int> allSetValues_;
+		fast_hash_set<int> allSetValues_;
 	};
 };
 
@@ -96,7 +134,7 @@ template <>
 struct ValuesHolder<PayloadValue, CondAllSet> {
 	struct Type {
 		unordered_payload_map<int, false> values_;
-		std::unordered_set<int> allSetValues_;
+		fast_hash_set<int> allSetValues_;
 	};
 };
 
@@ -1729,57 +1767,71 @@ public:
 		switch (impl_.index()) {
 			case 0:
 				res = std::get_if<0>(&impl_)->Compare(item, rowId);
-				break;
+				matchedCount_ += res;
+				return res;
 			case 1:
 				res = std::get_if<1>(&impl_)->Compare(item, rowId);
-				break;
+				matchedCount_ += res;
+				return res;
 			case 2:
 				res = std::get_if<2>(&impl_)->Compare(item, rowId);
-				break;
+				matchedCount_ += res;
+				return res;
 			case 3:
 				res = std::get_if<3>(&impl_)->Compare(item, rowId);
-				break;
+				matchedCount_ += res;
+				return res;
 			case 4:
 				res = std::get_if<4>(&impl_)->Compare(item, rowId);
-				break;
+				matchedCount_ += res;
+				return res;
 			case 5:
 				res = std::get_if<5>(&impl_)->Compare(item, rowId);
-				break;
+				matchedCount_ += res;
+				return res;
 			case 6:
 				res = std::get_if<6>(&impl_)->Compare(item, rowId);
-				break;
+				matchedCount_ += res;
+				return res;
 			case 7:
 				res = std::get_if<7>(&impl_)->Compare(item, rowId);
-				break;
+				matchedCount_ += res;
+				return res;
 			case 8:
 				res = std::get_if<8>(&impl_)->Compare(item, rowId);
-				break;
+				matchedCount_ += res;
+				return res;
 			case 9:
 				res = std::get_if<9>(&impl_)->Compare(item, rowId);
-				break;
+				matchedCount_ += res;
+				return res;
 			case 10:
 				res = std::get_if<10>(&impl_)->Compare(item, rowId);
-				break;
+				matchedCount_ += res;
+				return res;
 			case 11:
 				res = std::get_if<11>(&impl_)->Compare(item, rowId);
-				break;
+				matchedCount_ += res;
+				return res;
 			case 12:
 				res = std::get_if<12>(&impl_)->Compare(item, rowId);
-				break;
+				matchedCount_ += res;
+				return res;
 			case 13:
 				res = std::get_if<13>(&impl_)->Compare(item, rowId);
-				break;
+				matchedCount_ += res;
+				return res;
 			case 14:
 				res = std::get_if<14>(&impl_)->Compare(item, rowId);
-				break;
+				matchedCount_ += res;
+				return res;
 			case 15:
 				res = std::get_if<15>(&impl_)->Compare(item, rowId);
-				break;
+				matchedCount_ += res;
+				return res;
 			default:
 				abort();
 		}
-		matchedCount_ += res;
-		return res;
 	}
 	void ClearDistinctValues() noexcept {
 		std::visit([](auto& impl) { impl.ClearDistinctValues(); }, impl_);
@@ -1809,54 +1861,67 @@ template <>
 	switch (impl_.index()) {
 		case 0:
 			res = std::get_if<0>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		case 1:
 			res = std::get_if<1>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		case 2:
 			res = std::get_if<2>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		case 3:
 			res = std::get_if<3>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		case 4:
 			res = std::get_if<4>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		case 5:
 			res = std::get_if<5>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		case 6:
 			res = std::get_if<6>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		case 7:
 			res = std::get_if<7>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		case 8:
 			res = std::get_if<8>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		case 9:
 			res = std::get_if<9>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		case 10:
 			res = std::get_if<10>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		case 11:
 			res = std::get_if<11>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		case 12:
 			res = std::get_if<12>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		case 13:
 			res = std::get_if<13>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		case 14:
 			res = std::get_if<14>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		default:
 			abort();
 	}
-	matchedCount_ += res;
-	return res;
 }
 
 template <>
@@ -1874,24 +1939,27 @@ template <>
 	switch (impl_.index()) {
 		case 0:
 			res = std::get_if<0>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		case 1:
 			res = std::get_if<1>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		case 2:
 			res = std::get_if<2>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		case 3:
 			res = std::get_if<3>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		case 4:
 			res = std::get_if<4>(&impl_)->Compare(item, rowId);
-			break;
+			matchedCount_ += res;
+			return res;
 		default:
 			abort();
 	}
-	matchedCount_ += res;
-	return res;
 }
 
 extern template std::string ComparatorIndexed<int>::ConditionStr() const;

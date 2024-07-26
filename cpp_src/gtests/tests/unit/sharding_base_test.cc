@@ -767,6 +767,60 @@ void ShardingApi::fillShards(const std::map<int, std::set<T>> &shardDataDistrib,
 	fillShard(0, data, kNsName, kFieldId);
 }
 
+TEST_F(ShardingApi, ShardingInvalidTxTest) {
+	const std::string kNsName = "invalid_tx_ns";
+	const std::string kSharingIdx = "sharding_key";
+
+	InitShardingConfig cfg;
+	cfg.nodesInCluster = 1;	 // Only one node in the cluster is needed for the test
+	cfg.additionalNss.emplace_back(kNsName);
+	cfg.additionalNss[0].indexName = kSharingIdx;
+	const char *kShardKeyTmplt = "Shard%dKey%d";
+	cfg.additionalNss[0].keyValuesNodeCreation = [kShardKeyTmplt](int shard) {
+		ShardingConfig::Key key;
+		for (int i = 0; i < 3; ++i) key.values.emplace_back(Variant(fmt::sprintf(kShardKeyTmplt, shard, i)));
+		key.shardId = shard;
+		return key;
+	};
+
+	Init(std::move(cfg));
+
+	NamespaceDef nsDef{kNsName};
+	nsDef.AddIndex(kFieldId, "hash", "int", IndexOpts().PK());
+	nsDef.AddIndex(kSharingIdx, "hash", "string", IndexOpts());
+
+	std::shared_ptr<client::Reindexer> rx = svc_[0][0].Get()->api.reindexer;
+
+	Error err = rx->AddNamespace(nsDef);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	reindexer::client::Transaction tr = rx->NewTransaction(kNsName);
+	ASSERT_TRUE(tr.Status().ok()) << tr.Status().what();
+
+	auto itemTmplt = fmt::sprintf("{\"%s\": %s, \"%s\": \"%s\"}", kFieldId, "%s", kSharingIdx, kShardKeyTmplt);
+	auto makeItem = [&tr](std::string_view rawItem) {
+		client::Item item = tr.NewItem();
+		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
+
+		auto err = item.FromJSON(rawItem);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
+
+		return item;
+	};
+
+	for (const auto &rawItem : {fmt::sprintf(itemTmplt, 0, 2, 0), fmt::sprintf(itemTmplt, 1, 2, 1), fmt::sprintf(itemTmplt, 2, 2, 2)}) {
+		err = tr.Upsert(makeItem(rawItem));
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
+	err = tr.Upsert(makeItem(fmt::sprintf(itemTmplt, 3, 1, 1)));
+	ASSERT_FALSE(err.ok()) << err.what();
+	ASSERT_EQ(err.what(),
+			  "Transaction query to a different shard: 1 (2 is expected); First tx shard key - 'Shard2Key0', current tx shard key - "
+			  "'Shard1Key1'");
+}
+
 TEST_F(ShardingApi, BaseApiTestsetForRanges) {
 	const std::map<int, std::set<int>> shardDataDistrib{
 		{0, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 20, 26, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39}},
@@ -1328,7 +1382,6 @@ TEST_F(ShardingApi, RuntimeUpdateShardingCfgWithClusterTest) {
 
 TEST_F(ShardingApi, RuntimeUpdateShardingWithDisabledNodesTest) {
 	const std::string kNsName = "ns";
-	const std::string kNonShardedNs = "nonShardedNs";
 	const int shardsCount = 3;
 	const int nodesInCluster = 3;
 	std::map<int, std::set<int>> shardDataDistrib;
@@ -1763,8 +1816,6 @@ TEST_F(ShardingApi, DISABLED_SelectProxyBench) {
 			});
 		}
 
-		const std::string filePath = fs::JoinPath(fs::GetTempDir(), "profile.cpu_" + std::to_string(thCnt));
-
 		// <Start profiling here>
 		std::unique_lock lck(mtx);
 		ready = true;
@@ -2151,7 +2202,6 @@ TEST_F(ShardingApi, EnumLocalNamespaces) {
 	{
 		size_t shard = 0;
 		auto rx = svc_[shard][0].Get()->api.reindexer;
-		const auto kDroppendNs = kExpectedNss[shard][1];
 		auto err = rx->DropNamespace(kExpectedNss[shard][1]);
 		ASSERT_TRUE(err.ok()) << err.what();
 		std::vector<NamespaceDef> nss;
@@ -2821,7 +2871,7 @@ TEST_F(ShardingApi, ConfigJson) {
 		const auto generatedJson = cfg.GetJSON();
 		EXPECT_EQ(generatedJson, json4cmp ? json4cmp.value() : json);
 
-		const Error err = config.FromJSON(json);
+		const Error err = config.FromJSON(std::string(json));
 		EXPECT_TRUE(err.ok()) << err.what();
 		if (err.ok()) {
 			EXPECT_EQ(config, cfg) << json << "\nexpected:\n" << cfg.GetJSON();

@@ -8,9 +8,9 @@ namespace reindexer {
 
 class LocalTransaction {
 public:
-	LocalTransaction(const std::string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
+	LocalTransaction(NamespaceName nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
 					 std::shared_ptr<const Schema> schema, lsn_t lsn)
-		: data_(std::make_unique<SharedTransactionData>(nsName, lsn, Transaction::ClockT::now(), pt, tm, pf, std::move(schema))),
+		: data_(std::make_unique<SharedTransactionData>(std::move(nsName), lsn, Transaction::ClockT::now(), pt, tm, pf, std::move(schema))),
 		  tx_(std::make_unique<TransactionSteps>()) {}
 	LocalTransaction(Error err) : err_(std::move(err)) {}
 
@@ -38,7 +38,7 @@ public:
 		assertrx(data_);
 		return data_->lsn;
 	}
-	const std::string &GetNsName() const noexcept {
+	std::string_view GetNsName() const noexcept {
 		assertrx(data_);
 		return data_->nsName;
 	}

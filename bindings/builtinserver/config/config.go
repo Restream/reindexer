@@ -27,6 +27,7 @@ type NetConf struct {
 	Security            bool   `yaml:"security"`
 	HttpReadTimeoutSec  int    `yaml:"http_read_timeout,omitempty"`
 	HttpWriteTimeoutSec int    `yaml:"http_write_timeout,omitempty"`
+	MaxUpdatesSizeBytes uint   `yaml:"maxupdatessize,omitempty"`
 }
 
 type LoggerConf struct {

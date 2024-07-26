@@ -7,11 +7,13 @@ import "C"
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"reflect"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -49,6 +51,7 @@ type Builtin struct {
 	cgoLimiterStat *cgoLimiterStat
 	rx             C.uintptr_t
 	ctxWatcher     *CtxWatcher
+	eventsHandler  *CGOEventsHandler
 }
 
 type RawCBuffer struct {
@@ -170,7 +173,7 @@ func bool2cint(v bool) C.int {
 	return 0
 }
 
-func (binding *Builtin) Init(u []url.URL, options ...interface{}) error {
+func (binding *Builtin) Init(u []url.URL, eh bindings.EventsHandler, options ...interface{}) error {
 	if binding.rx != 0 {
 		return bindings.NewError("already initialized", bindings.ErrConflict)
 	}
@@ -178,6 +181,7 @@ func (binding *Builtin) Init(u []url.URL, options ...interface{}) error {
 	ctxWatchDelay := defCtxWatchDelay
 	ctxWatchersPoolSize := defWatchersPoolSize
 	cgoLimit := defCgoLimit
+	var maxUpdatesSize uint
 	var rx uintptr
 	var builtinAllocatorConfig *bindings.OptionBuiltinAllocatorConfig
 	connectOptions := *bindings.DefaultConnectOptions()
@@ -205,16 +209,21 @@ func (binding *Builtin) Init(u []url.URL, options ...interface{}) error {
 			builtinAllocatorConfig = &v
 		case bindings.ConnectOptions:
 			connectOptions = v
+		case bindings.OptionBuiltinMaxUpdatesSize:
+			maxUpdatesSize = v.MaxUpdatesSizeBytes
 		default:
 			fmt.Printf("Unknown builtin option: %#v\n", option)
 		}
 	}
 
 	if rx == 0 {
+		subDBName := u[0].Path[strings.LastIndex(u[0].Path, "/")+1:]
 		if builtinAllocatorConfig != nil {
 			rxConfig := C.reindexer_config{
 				allocator_cache_limit:    C.int64_t(builtinAllocatorConfig.AllocatorCacheLimit),
 				allocator_max_cache_part: C.float(builtinAllocatorConfig.AllocatorMaxCachePart),
+				max_updates_size:         C.uint64_t(maxUpdatesSize),
+				sub_db_name:              str2c(subDBName),
 			}
 			binding.rx = C.init_reindexer_with_config(rxConfig)
 		} else {
@@ -231,6 +240,7 @@ func (binding *Builtin) Init(u []url.URL, options ...interface{}) error {
 	}
 
 	binding.ctxWatcher = NewCtxWatcher(ctxWatchersPoolSize, ctxWatchDelay)
+	binding.eventsHandler = NewCGOEventsHandler(eh)
 
 	opts := C.ConnectOpts{
 		storage: C.uint16_t(connectOptions.Storage),
@@ -618,10 +628,6 @@ func (binding *Builtin) UpdateQuery(ctx context.Context, data []byte) (bindings.
 	return ret2go(C.reindexer_update_query(binding.rx, buf2c(data), ctxInfo.cCtx))
 }
 
-func (binding *Builtin) Commit(ctx context.Context, namespace string) error {
-	return err2go(C.reindexer_commit(binding.rx, str2c(namespace)))
-}
-
 // CGoLogger logger function for C
 //
 //export CGoLogger
@@ -668,6 +674,9 @@ func (binding *Builtin) ReopenLogFiles() error {
 }
 
 func (binding *Builtin) Finalize() error {
+	if binding.eventsHandler != nil && binding.rx != 0 {
+		binding.eventsHandler.Unsubscribe(binding.rx)
+	}
 	C.destroy_reindexer(binding.rx)
 	binding.rx = 0
 	if binding.cgoLimiterStat != nil {
@@ -691,6 +700,20 @@ func (binding *Builtin) Status(ctx context.Context) (status bindings.Status) {
 
 func (binding *Builtin) GetDSNs() []url.URL {
 	return nil
+}
+
+func (binding *Builtin) Subscribe(ctx context.Context, opts *bindings.SubscriptionOptions) error {
+	if binding.eventsHandler == nil {
+		return errors.New("Builtin events handler is not initialized")
+	}
+	return binding.eventsHandler.Subscribe(binding.rx, opts)
+}
+
+func (binding *Builtin) Unsubscribe(ctx context.Context) error {
+	if binding.eventsHandler == nil {
+		return errors.New("Builtin events handler is not initialized")
+	}
+	return binding.eventsHandler.Unsubscribe(binding.rx)
 }
 
 func newBufFreeBatcher() (bf *bufFreeBatcher) {

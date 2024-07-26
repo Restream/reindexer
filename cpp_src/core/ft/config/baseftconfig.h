@@ -1,12 +1,10 @@
 #pragma once
 
-#include <string>
 #include <string_view>
 #include <vector>
+#include "core/ft/stopwords/types.h"
 #include "core/ft/usingcontainer.h"
 #include "estl/fast_hash_map.h"
-#include "estl/fast_hash_set.h"
-#include "tools/stringstools.h"
 
 namespace gason {
 struct JsonNode;
@@ -15,12 +13,6 @@ struct JsonNode;
 namespace reindexer {
 
 class JsonBuilder;
-
-struct StopWord : std::string {
-	enum class Type { Stop, Morpheme };
-	StopWord(std::string base, Type type = Type::Stop) noexcept : std::string(std::move(base)), type(type) {}
-	Type type;
-};
 
 class BaseFTConfig {
 public:
@@ -41,9 +33,8 @@ public:
 	bool enableTranslit = true;
 	bool enableKbLayout = true;
 	bool enableNumbersSearch = false;
-	bool enableWarmupOnNsCopy = false;
 
-	fast_hash_set<StopWord, hash_str, equal_str, less_str> stopWords;
+	StopWordsSetT stopWords;
 	std::vector<Synonym> synonyms;
 	int logLevel = 0;
 	std::string extraWordSymbols = "-/+";  // word contains symbols (IsAlpa | IsDigit) {IsAlpa | IsDigit | IsExtra}

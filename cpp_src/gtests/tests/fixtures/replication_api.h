@@ -1,15 +1,8 @@
 ﻿#pragma once
 
 #include <mutex>
-#include "debug/backtrace.h"
-#include "estl/fast_hash_set.h"
-#include "reindexer_api.h"
-#include "reindexertestapi.h"
-#include "server/dbmanager.h"
-#include "server/server.h"
-#include "thread"
-#include "tools/logger.h"
-#include "tools/serializer.h"
+#include "estl/shared_mutex.h"
+#include "servercontrol.h"
 
 using namespace reindexer_server;
 
@@ -37,12 +30,13 @@ public:
 	// get server
 	ServerControl::Interface::Ptr GetSrv(size_t id);
 	// wait sync for ns
-	void WaitSync(const std::string &ns, lsn_t expectedLsn = lsn_t());
+	void WaitSync(std::string_view ns, reindexer::lsn_t expectedLsn = reindexer::lsn_t());
 	// force resync
 	void ForceSync();
 	// Switch master
-	void SwitchMaster(size_t id, const AsyncReplicationConfigTest::NsSet& namespaces,
-					  std::string replMode = cluster::AsyncReplConfigData::Mode2str(cluster::AsyncReplicationMode::Default));
+	void SwitchMaster(
+		size_t id, const AsyncReplicationConfigTest::NsSet& namespaces,
+		std::string replMode = reindexer::cluster::AsyncReplConfigData::Mode2str(reindexer::cluster::AsyncReplicationMode::Default));
 	// Set WAL size
 	void SetWALSize(size_t id, int64_t size, std::string_view nsName);
 	// Get servers count
@@ -51,7 +45,7 @@ public:
 	void SetOptmizationSortWorkers(size_t id, size_t cnt, std::string_view nsName);
 
 	size_t masterId_ = 0;
-	shared_timed_mutex restartMutex_;
+	reindexer::shared_timed_mutex restartMutex_;
 
 private:
 	const std::string kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex_repl_test/");

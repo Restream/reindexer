@@ -50,7 +50,7 @@ public:
 	/// If Item is in *Unsafe Mode*, then Item will not store slice, but just keep pointer to data in slice,
 	/// application *MUST* hold slice until end of life of Item
 	/// @param slice - data slice with CJson
-	[[nodiscard]] Error FromCJSON(std::string_view slice) &noexcept;
+	Error FromCJSON(std::string_view slice) &noexcept;
 	void FromCJSONImpl(std::string_view slice) &;
 	/// Serialize item to CJSON.<br>
 	/// If Item is in *Unfafe Mode*, then returned slice is allocated in temporary buffer, and can be invalidated by any next operation with

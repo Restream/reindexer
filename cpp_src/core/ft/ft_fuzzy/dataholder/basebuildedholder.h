@@ -27,7 +27,7 @@ struct DataStructLess {
 	inline bool operator()(const std::wstring &ent, const std::wstring &ent1) const noexcept { return ent < ent1; }
 };
 template <typename T1>
-using data_map = fast_hash_map<std::wstring, T1, DataStructHash, DataStructEQ, DataStructLess>;
+using data_map = tsl::hopscotch_map<std::wstring, T1, DataStructHash, DataStructEQ>;
 typedef fast_hash_set<std::wstring, DataStructHash, DataStructEQ> data_set;
 
 #else

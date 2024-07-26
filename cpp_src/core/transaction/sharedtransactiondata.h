@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/cjson/tagsmatcher.h"
+#include "core/namespace/namespacename.h"
 #include "core/payload/fieldsset.h"
 #include "core/schema.h"
 #include "transaction.h"
@@ -11,8 +12,8 @@ class ItemImpl;
 
 class SharedTransactionData {
 public:
-	SharedTransactionData(std::string _nsName, lsn_t _lsn, Transaction::ClockT::time_point _startTime, const PayloadType &pt,
-						  const TagsMatcher &tm, const FieldsSet &pf, std::shared_ptr<const Schema> schema)
+	SharedTransactionData(NamespaceName &&_nsName, lsn_t _lsn, Transaction::ClockT::time_point _startTime,
+						  const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf, std::shared_ptr<const Schema> schema)
 		: nsName(std::move(_nsName)),
 		  lsn(_lsn),
 		  startTime(_startTime),
@@ -28,7 +29,7 @@ public:
 	const FieldsSet &GetPKFileds() const noexcept { return pkFields_; }
 	std::shared_ptr<const Schema> GetSchema() const noexcept { return schema_; }
 
-	const std::string nsName;
+	const NamespaceName nsName;
 	const lsn_t lsn;
 	const Transaction::TimepointT startTime;
 

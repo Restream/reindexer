@@ -75,7 +75,7 @@ struct SortingContext {
 		return false;
 	}
 	[[nodiscard]] const Entry &getFirstColumnEntry() const noexcept {
-		assertrx(!entries.empty());
+		assertrx_throw(!entries.empty());
 		return entries[0];
 	}
 	void resetOptimization() noexcept {

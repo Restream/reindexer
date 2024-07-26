@@ -50,7 +50,8 @@ enum HttpStatusCode {
 };
 
 enum HttpMethod : int {
-	kMethodGET,
+	kMethodUnknown = -1,
+	kMethodGET = 0,
 	kMethodPOST,
 	kMethodOPTIONS,
 	kMethodHEAD,
@@ -146,7 +147,7 @@ struct ClientData {
 	virtual ~ClientData() = default;
 };
 
-static const std::string kGzSuffix(".gz");
+static constexpr std::string_view kGzSuffix(".gz");
 
 struct Context {
 	int JSON(int code, std::string_view slice);

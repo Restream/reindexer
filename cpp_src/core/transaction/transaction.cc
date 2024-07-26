@@ -13,7 +13,7 @@ Transaction::~Transaction() = default;
 Transaction::Transaction(Transaction &&) noexcept = default;
 Transaction &Transaction::operator=(Transaction &&) noexcept = default;
 
-const std::string &Transaction::GetNsName() const noexcept {
+std::string_view Transaction::GetNsName() const noexcept {
 	static const std::string empty;
 	if (impl_) {
 		return impl_->GetNsName();

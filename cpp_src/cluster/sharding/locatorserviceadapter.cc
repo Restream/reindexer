@@ -10,8 +10,12 @@ int LocatorServiceAdapter::ActualShardId() const noexcept { return locator_->Act
 
 int64_t LocatorServiceAdapter::SourceId() const noexcept { return locator_->SourceId(); }
 
-int LocatorServiceAdapter::GetShardId(std::string_view ns, const Item &item) const { return locator_->GetShardId(ns, item); }
+std::pair<int, Variant> LocatorServiceAdapter::GetShardIdKeyPair(std::string_view ns, const Item &item) const {
+	return locator_->GetShardIdKeyPair(ns, item);
+}
 
-ShardIDsContainer LocatorServiceAdapter::GetShardId(const Query &q) const { return locator_->GetShardId(q); }
+std::pair<ShardIDsContainer, Variant> LocatorServiceAdapter::GetShardIdKeyPair(const Query &q) const {
+	return locator_->GetShardIdKeyPair(q);
+}
 
 }  // namespace reindexer::sharding

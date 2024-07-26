@@ -43,9 +43,6 @@ void BaseFixture::Insert(State& state) {
 			state.SetItemsProcessed(state.items_processed() + 1);
 		}
 	}
-
-	auto err = db_->Commit(nsdef_.name);
-	if (!err.ok()) state.SkipWithError(err.what().c_str());
 }
 
 void BaseFixture::Update(benchmark::State& state) {
@@ -64,8 +61,6 @@ void BaseFixture::Update(benchmark::State& state) {
 		}
 		state.SetItemsProcessed(state.items_processed() + 1);
 	}
-	auto err = db_->Commit(nsdef_.name);
-	if (!err.ok()) state.SkipWithError(err.what().c_str());
 }
 
 void BaseFixture::WaitForOptimization() {

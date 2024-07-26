@@ -21,9 +21,11 @@ class SnapshotChunk;
 class Snapshot;
 struct SnapshotOpts;
 struct ClusterControlRequestData;
+class IEventsObserver;		  // TODO: Make this class accessible to the external user #1714
+class EventSubscriberConfig;  // TODO: Make this class accessible to the external user #1714
 
 // REINDEX_WITH_V3_FOLLOWERS
-class IUpdatesObserver;
+class IUpdatesObserverV3;
 class UpdatesFilters;
 
 namespace cluster {
@@ -197,9 +199,8 @@ public:
 	/// @param result - QueryResults with found items
 	/// @param proxyFetchLimit - Fetch limit for proxied query
 	Error Select(const Query &query, QueryResults &result, unsigned proxyFetchLimit = 10000);
-	/// Flush changes to storage
-	/// Cancellation context doesn't affect this call
-	/// @param nsName - Name of namespace
+	/// *DEPRECATED* This method does nothing
+	/// TODO: Must be removed after python-binding update #1800
 	Error Commit(std::string_view nsName);
 	/// Allocate new item for namespace
 	/// @param nsName - Name of namespace
@@ -350,8 +351,8 @@ public:
 	/// @param connectionId - unique identifier for the connection
 	Reindexer WithContextParams(milliseconds timeout, lsn_t lsn, int emitterServerId, int shardId, bool distributed,
 								std::string_view activityTracer, std::string user, int connectionId) const {
-		return {impl_, ctx_.WithContextParams(timeout, lsn, emitterServerId, shardId, distributed, activityTracer, std::move(user),
-											  connectionId)};
+		return {impl_,
+				ctx_.WithContextParams(timeout, lsn, emitterServerId, shardId, distributed, activityTracer, std::move(user), connectionId)};
 	}
 	/// Allows to set multiple context params at once
 	/// @param timeout - Execution timeout
@@ -381,18 +382,30 @@ public:
 
 	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index);
 
+	/// Subscribe to updates of database
+	/// Cancelation context doesn't affect this call
+	/// @param observer - Observer interface, which will receive updates
+	/// @param cfg - Subscription config
+	/// Each subscriber may have multiple event streams. Reindexer will create streamsMask for each event to route it to the proper stream.
+	Error SubscribeUpdates(IEventsObserver &observer, EventSubscriberConfig &&cfg);
+	/// Unsubscribe from updates of database
+	/// Cancelation context doesn't affect this call
+	/// @param observer - Observer interface, which will be unsubscribed updates
+	Error UnsubscribeUpdates(IEventsObserver &observer);
+
+	/// ***Deprecated*** V3 methods
 	/// REINDEX_WITH_V3_FOLLOWERS
 	/// THIS METHOD IS TEMPORARY AND WILL BE REMOVED
 	/// Subscribe to updates of database
 	/// @param observer - Observer interface, which will receive updates
 	/// @param filters - Subscription filters set
 	/// @param opts - Subscription options (allows to either add new filters or reset them)
-	Error SubscribeUpdates(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts = SubscriptionOpts());
+	Error SubscribeUpdates(IUpdatesObserverV3 *observer, const UpdatesFilters &filters, SubscriptionOpts opts = SubscriptionOpts());
 	/// THIS METHOD IS TEMPORARY AND WILL BE REMOVED
 	/// Unsubscribe from updates of database
 	/// Cancellation context doesn't affect this call
 	/// @param observer - Observer interface, which will be unsubscribed updates
-	Error UnsubscribeUpdates(IUpdatesObserver *observer);
+	Error UnsubscribeUpdates(IUpdatesObserverV3 *observer);
 
 private:
 	Reindexer(ShardingProxy *impl, InternalRdxContext &&ctx) noexcept : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}

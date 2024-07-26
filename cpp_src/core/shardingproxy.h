@@ -45,7 +45,6 @@ public:
 	Error Delete(const Query &query, QueryResults &result, const RdxContext &ctx);
 	Error Select(std::string_view sql, QueryResults &result, unsigned proxyFetchLimit, const RdxContext &ctx);
 	Error Select(const Query &query, QueryResults &result, unsigned proxyFetchLimit, const RdxContext &ctx);
-	Error Commit(std::string_view nsName, const RdxContext &ctx);
 	Item NewItem(std::string_view nsName, const RdxContext &ctx) { return impl_.NewItem(nsName, ctx); }
 
 	Transaction NewTransaction(std::string_view nsName, const RdxContext &ctx);
@@ -134,11 +133,16 @@ public:
 
 	[[nodiscard]] Error ShardingControlRequest(const sharding::ShardingControlRequestData &request, const RdxContext &ctx) noexcept;
 
+	Error SubscribeUpdates(IEventsObserver &observer, EventSubscriberConfig &&cfg) {
+		return impl_.SubscribeUpdates(observer, std::move(cfg));
+	}
+	Error UnsubscribeUpdates(IEventsObserver &observer) { return impl_.UnsubscribeUpdates(observer); }
+
 	// REINDEX_WITH_V3_FOLLOWERS
-	Error SubscribeUpdates(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts) {
+	Error SubscribeUpdates(IUpdatesObserverV3 *observer, const UpdatesFilters &filters, SubscriptionOpts opts) {
 		return impl_.SubscribeUpdates(observer, filters, opts);
 	}
-	Error UnsubscribeUpdates(IUpdatesObserver *observer) { return impl_.UnsubscribeUpdates(observer); }
+	Error UnsubscribeUpdates(IUpdatesObserverV3 *observer) { return impl_.UnsubscribeUpdates(observer); }
 	// REINDEX_WITH_V3_FOLLOWERS
 
 private:
@@ -183,12 +187,12 @@ private:
 	Error executeQueryOnClient(client::Reindexer &connection, const Query &q, client::QueryResults &qrClient,
 							   const CalucalteFT &limitOffsetCalc);
 
-	[[nodiscard]] Error handleNewShardingConfig(const gason::JsonNode &config, const RdxContext &ctx) noexcept;
-	[[nodiscard]] Error handleNewShardingConfigLocally(const gason::JsonNode &config, std::optional<int64_t> externalSourceId,
-													   const RdxContext &ctx) noexcept;
+	Error handleNewShardingConfig(const gason::JsonNode &config, const RdxContext &ctx) noexcept;
+	Error handleNewShardingConfigLocally(const gason::JsonNode &config, std::optional<int64_t> externalSourceId,
+										 const RdxContext &ctx) noexcept;
 	template <typename ConfigType>
-	[[nodiscard]] Error handleNewShardingConfigLocally(const ConfigType &rawConfig, std::optional<int64_t> externalSourceId,
-													   const RdxContext &ctx) noexcept;
+	Error handleNewShardingConfigLocally(const ConfigType &rawConfig, std::optional<int64_t> externalSourceId,
+										 const RdxContext &ctx) noexcept;
 
 	void saveShardingCfgCandidate(const sharding::SaveConfigCommand &requestData, const RdxContext &ctx);
 	void saveShardingCfgCandidateImpl(cluster::ShardingConfig config, int64_t sourceId, const RdxContext &ctx);
@@ -206,7 +210,7 @@ private:
 	template <ConfigResetFlag resetFlag>
 	void resetOrRollbackShardingConfig(const sharding::ResetConfigCommand &data, const RdxContext &ctx);
 	template <ConfigResetFlag resetFlag>
-	[[nodiscard]] Error resetShardingConfigs(int64_t sourceId, const RdxContext &ctx) noexcept;
+	Error resetShardingConfigs(int64_t sourceId, const RdxContext &ctx) noexcept;
 	void obtainConfigForResetRouting(std::optional<cluster::ShardingConfig> &config, ConfigResetFlag resetFlag,
 									 const RdxContext &ctx) const;
 

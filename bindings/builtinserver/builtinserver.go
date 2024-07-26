@@ -67,7 +67,7 @@ func (server *BuiltinServer) stopServer(timeout time.Duration) error {
 	}
 }
 
-func (server *BuiltinServer) Init(u []url.URL, options ...interface{}) error {
+func (server *BuiltinServer) Init(u []url.URL, eh bindings.EventsHandler, options ...interface{}) error {
 	if server.builtin != nil {
 		return bindings.NewError("already initialized", bindings.ErrConflict)
 	}
@@ -133,7 +133,7 @@ func (server *BuiltinServer) Init(u []url.URL, options ...interface{}) error {
 	builtinURL[0].Path = ""
 
 	options = append(options, bindings.OptionReindexerInstance{Instance: uintptr(rx)})
-	return server.builtin.Init(builtinURL, options...)
+	return server.builtin.Init(builtinURL, eh, options...)
 }
 
 func (server *BuiltinServer) Clone() bindings.RawBinding {
@@ -241,10 +241,6 @@ func (server *BuiltinServer) UpdateQuery(ctx context.Context, rawQuery []byte) (
 	return server.builtin.UpdateQuery(ctx, rawQuery)
 }
 
-func (server *BuiltinServer) Commit(ctx context.Context, namespace string) error {
-	return server.builtin.Commit(ctx, namespace)
-}
-
 func (server *BuiltinServer) EnableLogger(logger bindings.Logger) {
 	server.builtin.EnableLogger(logger)
 }
@@ -279,6 +275,14 @@ func (server *BuiltinServer) Ping(ctx context.Context) error {
 	return server.builtin.Ping(ctx)
 }
 
-func (binding *BuiltinServer) GetDSNs() []url.URL {
+func (server *BuiltinServer) GetDSNs() []url.URL {
 	return nil
+}
+
+func (server *BuiltinServer) Subscribe(ctx context.Context, opts *bindings.SubscriptionOptions) error {
+	return server.builtin.Subscribe(ctx, opts)
+}
+
+func (server *BuiltinServer) Unsubscribe(ctx context.Context) error {
+	return server.builtin.Unsubscribe(ctx)
 }

@@ -29,8 +29,6 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 		err = rt.reindexer->AddIndex(default_namespace, {"authorid_fk", "hash", "int", IndexOpts()});
 		ASSERT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->Commit(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	void prepareItems() {
@@ -53,8 +51,6 @@ protected:
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_NO_THROW(gason::JsonParser().Parse(item.GetJSON()));
 		}
-		const auto err = rt.reindexer->Commit(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	Item getItemById(int id) {

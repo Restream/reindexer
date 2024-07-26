@@ -53,7 +53,10 @@ Error ProxiedTransaction::Modify(Item &&item, ItemModifyMode mode, lsn_t lsn) {
 
 	if (clientItem.impl_->tagsMatcher().isUpdated()) {
 		// Disable async logic for tm updates - next items may depend on this
-		asyncData_.AwaitAsyncRequests();
+		auto err = asyncData_.AwaitAsyncRequests();
+		if (!err.ok()) {
+			return err;
+		}
 
 		std::unique_lock lck(mtx_);
 		itemCache_.isValid = false;
@@ -109,11 +112,12 @@ Error ProxiedTransaction::SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn) {
 }
 
 void ProxiedTransaction::Rollback(int serverId, const RdxContext &ctx) {
-	asyncData_.AwaitAsyncRequests();
+	auto err = asyncData_.AwaitAsyncRequests();
+	(void)err;	// ignore; Error does not matter here
 	if (tx_.rx_) {
-		client::QueryResults clientResults;
 		const auto _ctx = client::InternalRdxContext().WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(serverId);
-		tx_.rx_->RollBackTransaction(tx_, _ctx);
+		err = tx_.rx_->RollBackTransaction(tx_, _ctx);
+		(void)err;	// ignore; Error does not matter here
 	}
 }
 

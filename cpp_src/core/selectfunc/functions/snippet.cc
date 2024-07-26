@@ -3,6 +3,7 @@
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
 #include "core/selectfunc/ctx/ftctx.h"
+#include "core/selectfunc/selectfuncparser.h"
 #include "highlight.h"
 #include "tools/errors.h"
 #include "utf8cpp/utf8.h"
@@ -256,16 +257,19 @@ bool Snippet::Process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 	if (!func.ctx) return false;
 	init(func);
 
-	FtCtx::Ptr ftctx = reindexer::reinterpret_pointer_cast<FtCtx>(func.ctx);
-	auto dataFtCtx = ftctx->GetData();
-	if (!dataFtCtx->isWordPositions_) {
+	FtCtx::Ptr ftctx = reindexer::static_ctx_pointer_cast<FtCtx>(func.ctx);
+	auto &dataFtCtx = *ftctx->GetData();
+	if (!dataFtCtx.isWordPositions_) {
 		throw Error(errParams, "Snippet function does not work with ft_fuzzy index.");
 	}
 	if (!func.tagsPath.empty()) {
 		throw Error(errConflict, "SetByJsonPath is not implemented yet!");
 	}
-	auto it = dataFtCtx->holders_.find(res.Id());
-	if (it == dataFtCtx->holders_.end()) {
+	if (!dataFtCtx.holders_.has_value()) {
+		return false;
+	}
+	auto it = dataFtCtx.holders_->find(res.Id());
+	if (it == dataFtCtx.holders_->end()) {
 		return false;
 	}
 	Payload pl(pl_type, res.Value());
@@ -277,7 +281,7 @@ bool Snippet::Process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 	}
 
 	const std::string *data = p_string(kr[0]).getCxxstr();
-	auto pva = dataFtCtx->area_[it->second].GetAreas(func.fieldNo);
+	auto pva = dataFtCtx.area_[it->second].GetAreas(func.fieldNo);
 	if (!pva || pva->Empty()) return false;
 
 	std::string resultString;

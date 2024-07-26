@@ -2,6 +2,7 @@
 #include "core/nsselecter/nsselecter.h"
 #include "core/nsselecter/querypreprocessor.h"
 #include "core/queryresults/joinresults.h"
+#include "estl/charset.h"
 #include "estl/restricted.h"
 #include "tools/logger.h"
 
@@ -199,10 +200,10 @@ void RxSelector::DoSelect(const Query& q, LocalQueryResults& result, NsLocker<T>
 }
 
 [[nodiscard]] static bool byJoinedField(std::string_view sortExpr, std::string_view joinedNs) {
-	static const fast_hash_set<char> allowedSymbolsInIndexName{
-		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
-		'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
-		'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '.', '+'};
+	constexpr static estl::Charset kJoinedIndexNameSyms{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+														'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+														'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y',
+														'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '.', '+'};
 	std::string_view::size_type i = 0;
 	const auto s = sortExpr.size();
 	while (i < s && isspace(sortExpr[i])) ++i;
@@ -218,7 +219,7 @@ void RxSelector::DoSelect(const Query& q, LocalQueryResults& result, NsLocker<T>
 	}
 	if (i >= s || sortExpr[i] != '.') return false;
 	for (++i; i < s; ++i) {
-		if (allowedSymbolsInIndexName.find(sortExpr[i]) == allowedSymbolsInIndexName.end()) {
+		if (!kJoinedIndexNameSyms.test(sortExpr[i])) {
 			if (isspace(sortExpr[i])) break;
 			if (inQuotes && sortExpr[i] == '"') {
 				inQuotes = false;
@@ -234,33 +235,47 @@ void RxSelector::DoSelect(const Query& q, LocalQueryResults& result, NsLocker<T>
 	return i == s;
 }
 
-bool RxSelector::isPreResultValuesModeOptimizationAvailable(const Query& jItemQ, const NamespaceImpl::Ptr& jns, const Query& mainQ) {
-	bool result = true;
+StoredValuesOptimizationStatus RxSelector::isPreResultValuesModeOptimizationAvailable(const Query& jItemQ, const NamespaceImpl::Ptr& jns,
+																					  const Query& mainQ) {
+	auto status = StoredValuesOptimizationStatus::Enabled;
 	jItemQ.Entries().VisitForEach([](const SubQueryEntry&) { assertrx_throw(0); }, [](const SubQueryFieldEntry&) { assertrx_throw(0); },
 								  Skip<JoinQueryEntry, QueryEntriesBracket, AlwaysFalse, AlwaysTrue>{},
-								  [&jns, &result](const QueryEntry& qe) {
+								  [&jns, &status](const QueryEntry& qe) {
 									  if (qe.IsFieldIndexed()) {
 										  assertrx_throw(jns->indexes_.size() > static_cast<size_t>(qe.IndexNo()));
 										  const IndexType indexType = jns->indexes_[qe.IndexNo()]->Type();
-										  if (IsComposite(indexType) || IsFullText(indexType)) result = false;
+										  if (IsComposite(indexType)) {
+											  status = StoredValuesOptimizationStatus::DisabledByCompositeIndex;
+										  } else if (IsFullText(indexType)) {
+											  status = StoredValuesOptimizationStatus::DisabledByFullTextIndex;
+										  }
 									  }
 								  },
-								  [&jns, &result](const BetweenFieldsQueryEntry& qe) {
+								  [&jns, &status](const BetweenFieldsQueryEntry& qe) {
 									  if (qe.IsLeftFieldIndexed()) {
 										  assertrx_throw(jns->indexes_.size() > static_cast<size_t>(qe.LeftIdxNo()));
 										  const IndexType indexType = jns->indexes_[qe.LeftIdxNo()]->Type();
-										  if (IsComposite(indexType) || IsFullText(indexType)) result = false;
+										  if (IsComposite(indexType)) {
+											  status = StoredValuesOptimizationStatus::DisabledByCompositeIndex;
+										  } else if (IsFullText(indexType)) {
+											  status = StoredValuesOptimizationStatus::DisabledByFullTextIndex;
+										  }
 									  }
 									  if (qe.IsRightFieldIndexed()) {
 										  assertrx_throw(jns->indexes_.size() > static_cast<size_t>(qe.RightIdxNo()));
-										  if (IsComposite(jns->indexes_[qe.RightIdxNo()]->Type())) result = false;
+										  if (IsComposite(jns->indexes_[qe.RightIdxNo()]->Type())) {
+											  status = StoredValuesOptimizationStatus::DisabledByCompositeIndex;
+										  }
 									  }
 								  });
-	if (!result) return false;
-	for (const auto& se : mainQ.sortingEntries_) {
-		if (byJoinedField(se.expression, jItemQ.NsName())) return false;  // TODO maybe allow #1410
+	if (status == StoredValuesOptimizationStatus::Enabled) {
+		for (const auto& se : mainQ.sortingEntries_) {
+			if (byJoinedField(se.expression, jItemQ.NsName())) {
+				return StoredValuesOptimizationStatus::DisabledByJoinedFieldSort;  // TODO maybe allow #1410
+			}
+		}
 	}
-	return true;
+	return status;
 }
 
 template <typename T>
@@ -317,7 +332,7 @@ VariantArray RxSelector::selectSubQuery(const Query& subQuery, const Query& main
 				}
 			} else {
 				const auto fields = ns->indexes_[idxNo]->Fields();
-				std::vector<KeyValueType> fieldsTypes;
+				QueryField::CompositeTypesVecT fieldsTypes;
 #ifndef NDEBUG
 				const bool ftIdx = IsFullText(ns->indexes_[idxNo]->Type());
 #endif
@@ -325,10 +340,10 @@ VariantArray RxSelector::selectSubQuery(const Query& subQuery, const Query& main
 					if (f == IndexValueType::SetByJsonPath) {
 						// not indexed fields allowed only in ft composite indexes
 						assertrx_throw(ftIdx);
-						fieldsTypes.push_back(KeyValueType::String{});
+						fieldsTypes.emplace_back(KeyValueType::String{});
 					} else {
 						assertrx_throw(f <= ns->indexes_.firstCompositePos());
-						fieldsTypes.push_back(ns->indexes_[f]->SelectKeyType());
+						fieldsTypes.emplace_back(ns->indexes_[f]->SelectKeyType());
 					}
 				}
 				for (const auto& it : qr) {
@@ -394,8 +409,7 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, LocalQueryRes
 	assertrx_throw(ns);
 
 	// For each joined queries
-	uint32_t joinedSelectorsCount = uint32_t(q.GetJoinQueries().size());
-	for (size_t i = 0; i < q.GetJoinQueries().size(); ++i) {
+	for (size_t i = 0, jqCount = q.GetJoinQueries().size(); i < jqCount; ++i) {
 		const auto& jq = q.GetJoinQueries()[i];
 		if rx_unlikely (isSystemNamespaceNameFast(jq.NsName())) {
 			throw Error(errParams, "Queries to system namespaces ('%s') are not supported inside JOIN statement", jq.NsName());
@@ -425,8 +439,8 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, LocalQueryRes
 		jItemQ.Explain(q.NeedExplain());
 		jItemQ.Debug(jq.GetDebugLevel()).Limit(jq.Limit());
 		jItemQ.Strict(q.GetStrictMode());
-		for (size_t i = 0; i < jq.sortingEntries_.size(); ++i) {
-			jItemQ.Sort(jq.sortingEntries_[i].expression, jq.sortingEntries_[i].desc);
+		for (const auto& jse : jq.sortingEntries_) {
+			jItemQ.Sort(jse.expression, jse.desc);
 		}
 
 		jItemQ.ReserveQueryEntries(jq.joinEntries_.size());
@@ -453,20 +467,20 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, LocalQueryRes
 		}
 		JoinPreResult::CPtr preResult;
 		if (joinRes.haveData) {
-			preResult = joinRes.it.val.preResult;
+			preResult = std::move(joinRes.it.val.preResult);
 		} else {
 			SelectCtxWithJoinPreSelect ctx(jjq, &q, JoinPreResultBuildCtx{std::make_shared<JoinPreResult>()});
-			ctx.preSelect.Result().enableStoredValues = isPreResultValuesModeOptimizationAvailable(jItemQ, jns, q);
+			ctx.preSelect.Result().storedValuesOptStatus = isPreResultValuesModeOptimizationAvailable(jItemQ, jns, q);
 			ctx.functions = &func;
 			ctx.requiresCrashTracking = true;
 			LocalQueryResults jr;
 			jns->Select(jr, ctx, rdxCtx);
 			std::visit(overloaded{[&](JoinPreResult::Values& values) {
-									  values.PreselectAllowed(static_cast<size_t>(jns->Config().maxPreselectSize) >= values.size());
+									  values.PreselectAllowed(static_cast<size_t>(jns->config().maxPreselectSize) >= values.size());
 									  values.Lock();
 								  },
 								  Restricted<IdSet, SelectIteratorContainer>{}([](const auto&) {})},
-					   ctx.preSelect.Result().preselectedPayload);
+					   ctx.preSelect.Result().payload);
 			preResult = ctx.preSelect.ResultPtr();
 			if (joinRes.needPut) {
 				jns->putToJoinCache(joinRes, preResult);
@@ -483,10 +497,9 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, LocalQueryRes
 								  jns.reset();
 							  },
 							  Restricted<IdSet, SelectIteratorContainer>{}([](const auto&) {})},
-				   preResult->preselectedPayload);
+				   preResult->payload);
 		joinedSelectors.emplace_back(jq.joinType, ns, std::move(jns), std::move(joinRes), std::move(jItemQ), result, jq,
-									 JoinPreResultExecuteCtx{preResult}, joinedFieldIdx, func, joinedSelectorsCount, false, nsUpdateTime,
-									 rdxCtx);
+									 JoinPreResultExecuteCtx{preResult}, joinedFieldIdx, func, false, nsUpdateTime, rdxCtx);
 		ThrowOnCancel(rdxCtx);
 	}
 	return joinedSelectors;

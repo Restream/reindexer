@@ -16,8 +16,9 @@ public:
 
 	bool IsLeader() const noexcept { return true; }
 	void AwaitReplPermission() const noexcept {}
-	void OnNewNsAppearance(const std::string &) const noexcept {}
+	void OnNewNsAppearance(const NamespaceName &) const noexcept {}
 	void OnUpdateReplicationFailure() const noexcept {}
+	bool IsNamespaceInConfig(size_t nodeId, const NamespaceName &ns) const noexcept { return (*nodes_)[nodeId].Namespaces()->IsInList(ns); }
 	bool IsNamespaceInConfig(size_t nodeId, std::string_view ns) const noexcept { return (*nodes_)[nodeId].Namespaces()->IsInList(ns); }
 	void OnNodeBecameUnsynchonized(uint32_t) const noexcept {}
 	void OnAllUpdatesReplicated(uint32_t, int64_t) const noexcept {}

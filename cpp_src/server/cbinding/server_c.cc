@@ -1,16 +1,14 @@
 #include "server_c.h"
-#include <stdlib.h>
-#include <string.h>
-#include <locale>
-#include <string>
 #include "core/cbinding/reindexer_c.h"
+#include "core/cbinding/reindexer_wrapper.h"
 #include "server/dbmanager.h"
 #include "server/server.h"
 
 using namespace reindexer_server;
 using reindexer::Error;
 
-static Error err_not_init(errNotValid, "Reindexer server has not initialized");
+const static Error err_not_init(errNotValid, "Reindexer server has not initialized");
+static reindexer::WrapersMap wrappersMap_;
 
 int check_server_ready(uintptr_t psvc) {
 	auto svc = reinterpret_cast<Server*>(psvc);
@@ -34,6 +32,7 @@ uintptr_t init_reindexer_server() {
 
 void destroy_reindexer_server(uintptr_t psvc) {
 	auto svc = reinterpret_cast<Server*>(psvc);
+	wrappersMap_.erase(svc);
 	delete svc;
 }
 
@@ -62,7 +61,14 @@ reindexer_error get_reindexer_instance(uintptr_t psvc, reindexer_string dbname, 
 		}
 	}
 
-	*rx = err.ok() ? reinterpret_cast<uintptr_t>(target_db) : 0;
+	if (err.ok()) {
+		// Creating non-owning reindexer copy
+		auto [ptr, emplaced] = wrappersMap_.try_emplace(svc, target_db);
+		(void)emplaced;
+		*rx = reinterpret_cast<uintptr_t>(ptr);
+	} else {
+		*rx = 0;
+	}
 	return error2c(err);
 }
 
@@ -73,6 +79,7 @@ reindexer_error stop_reindexer_server(uintptr_t psvc) {
 		svc->Stop();
 		err = Error(errOK);
 	}
+	wrappersMap_.erase(svc);
 	return error2c(err);
 }
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include "client/reindexer.h"
 #include "cluster/sharding/locatorserviceadapter.h"
 #include "localtransaction.h"
@@ -32,7 +31,7 @@ public:
 	Error Status() const noexcept;
 	int GetShardID() const noexcept;
 
-	const std::string &GetNsName() const noexcept { return data_->nsName; }
+	std::string_view GetNsName() const noexcept { return data_->nsName; }
 	bool IsTagsUpdated() const noexcept;
 	Transaction::TimepointT GetStartTime() const noexcept { return data_->startTime; }
 	void SetShardingRouter(sharding::LocatorServiceAdapter shardingRouter);
@@ -47,7 +46,7 @@ private:
 	using TxStepsPtr = std::unique_ptr<TransactionSteps>;
 	using RxClientT = client::Reindexer;
 
-	void updateShardIdIfNecessary(int shardId);
+	void updateShardIdIfNecessary(int shardId, const Variant &curShardKey);
 	void lazyInit(const Item &item);
 	void lazyInit(const Query &q);
 	void lazyInit();
@@ -61,6 +60,7 @@ private:
 	std::variant<Empty, TxStepsPtr, ProxiedTxPtr, RxClientT> tx_;
 	int shardId_ = ShardingKeyType::NotSetShard;
 	Error status_;
+	Variant firstShardKey_;
 };
 
 }  // namespace reindexer

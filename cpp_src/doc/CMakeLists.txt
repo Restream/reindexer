@@ -14,12 +14,12 @@ if(DOXYGEN_FOUND)
       COMMAND ${python3} ${Dox2html} ${PROJECT_SOURCE_DIR}/Doxyfile-mcss
       COMMENT "Generating Reindexer documentation with Doxygen and Dox2html"
     )
-  else ()
+  else()
     set(doxyfile ${PROJECT_SOURCE_DIR}/Doxyfile)
     add_custom_target(doc
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
         COMMAND sh -c "DOXYGEN_OUTPUT_DIRECTORY=${PROJECT_BINARY_DIR} ${DOXYGEN_EXECUTABLE} ${doxyfile}"
         COMMENT "Generating Reindexer documentation with Doxygen"
     )
-  endif ()
+  endif()
 endif()

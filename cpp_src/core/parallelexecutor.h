@@ -29,9 +29,11 @@ public:
 		std::mutex mtx;
 
 		size_t clientCompl = 0;
-		h_vector<std::pair<Error, int>, 8> clientErrors;
+		std::vector<std::pair<Error, int>> clientErrors;
+		clientErrors.reserve(connections->size());
 		int isLocalCall = 0;
-		h_vector<ConnectionDataBase, 8> results;
+		std::vector<ConnectionDataBase> results;
+		results.reserve(connections->size());
 
 		auto ward = rdxCtx.BeforeShardingProxy();
 
@@ -80,9 +82,9 @@ public:
 					  std::vector<T> &result, const Predicate &predicated, std::string_view nsName, Args &&...args) {
 		std::condition_variable cv;
 		std::mutex mtx;
-		h_vector<std::pair<Error, int>, 8> clientErrors;
+		std::vector<std::pair<Error, int>> clientErrors;
+		clientErrors.reserve(connections->size());
 		size_t clientCompl = 0;
-		std::string errString;
 		std::deque<ConnectionData<std::vector<T>>> results;
 		int isLocalCall = 0;
 		auto ward = rdxCtx.BeforeShardingProxy();
@@ -133,8 +135,8 @@ public:
 					 std::function<Error(const Query &, LocalQueryResults &, const RdxContext &)> &&localAction);
 
 private:
-	Error createIntegralError(h_vector<std::pair<Error, int>, 8> &errors, size_t clientCount);
-	void completionFunction(size_t clientCount, size_t &clientCompl, h_vector<std::pair<Error, int>, 8> &clientErrors, int shardId,
+	Error createIntegralError(std::vector<std::pair<Error, int>> &errors, size_t clientCount);
+	void completionFunction(size_t clientCount, size_t &clientCompl, std::vector<std::pair<Error, int>> &clientErrors, int shardId,
 							std::mutex &mtx, std::condition_variable &cv, const Error &err);
 
 	size_t countClientConnection(const sharding::ConnectionsVector &connections);

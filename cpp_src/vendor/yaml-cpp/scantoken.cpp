@@ -18,9 +18,6 @@ namespace YAML {
 // Directive
 // . Note: no semantic checking is done here (that's for the parser to do)
 void Scanner::ScanDirective() {
-	std::string name;
-	std::vector<std::string> params;
-
 	// pop indents and simple keys
 	PopAllIndents();
 	PopAllSimpleKeys();

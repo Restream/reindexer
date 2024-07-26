@@ -12,8 +12,7 @@ class Clusterizator;
 
 class AsyncDataReplicator {
 public:
-	using NsNamesHashSetT = fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str>;
-	using UpdatesQueueT = UpdatesQueuePair<UpdateRecord>;
+	using UpdatesQueueT = UpdatesQueuePair<updates::UpdateRecord>;
 
 	AsyncDataReplicator(UpdatesQueueT &, SharedSyncState<> &, ReindexerImpl &, Clusterizator &);
 

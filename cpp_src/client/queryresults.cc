@@ -55,7 +55,8 @@ Error QueryResults::setClient(ReindexerImpl* rx) {
 
 QueryResults::~QueryResults() {
 	if (rx_ && results_.holdsRemoteData()) {
-		rx_->closeResults(*this);
+		auto err = rx_->closeResults(*this);
+		(void)err;	// ignore
 	}
 	results_.setClosed();
 }

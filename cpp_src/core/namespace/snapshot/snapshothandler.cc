@@ -21,7 +21,7 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 		selCtx.contextCollectingMode = true;
 		WALSelecter selecter(&ns_, false);
 		selecter(walQr, selCtx, true);
-		return Snapshot(ns_.payloadType_, ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.wal_.LastLSN(), ns_.repl_.dataHash, ns_.ItemsCount(),
+		return Snapshot(ns_.payloadType_, ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.wal_.LastLSN(), ns_.repl_.dataHash, ns_.itemsCount(),
 						ns_.repl_.clusterStatus, std::move(walQr));
 	} catch (Error& err) {
 		if (err.code() != errOutdatedWAL) {
@@ -29,7 +29,7 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 		}
 		const auto minLsn = ns_.wal_.LSNByOffset(opts.maxWalDepthOnForceSync);
 		if (minLsn.isEmpty()) {
-			return Snapshot(ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.repl_.dataHash, ns_.ItemsCount(), ns_.repl_.clusterStatus);
+			return Snapshot(ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.repl_.dataHash, ns_.itemsCount(), ns_.repl_.clusterStatus);
 		}
 		{
 			Query q = Query(ns_.name_).Where("#lsn", CondGe, int64_t(minLsn));
@@ -52,12 +52,12 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 			selecter(fullQr, selCtx, true);
 		}
 
-		return Snapshot(ns_.payloadType_, ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.wal_.LastLSN(), ns_.repl_.dataHash, ns_.ItemsCount(),
+		return Snapshot(ns_.payloadType_, ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.wal_.LastLSN(), ns_.repl_.dataHash, ns_.itemsCount(),
 						ns_.repl_.clusterStatus, std::move(walQr), std::move(fullQr));
 	}
 }
 
-void SnapshotHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, h_vector<cluster::UpdateRecord, 2>& repl) {
+void SnapshotHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, h_vector<updates::UpdateRecord, 2>& repl) {
 	ChunkContext ctx;
 	ctx.wal = ch.IsWAL();
 	ctx.shallow = ch.IsShallow();
@@ -67,7 +67,7 @@ void SnapshotHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeaderSy
 	}
 }
 
-void SnapshotHandler::applyRecord(const SnapshotRecord& snRec, const ChunkContext& ctx, h_vector<cluster::UpdateRecord, 2>& pendedRepl) {
+void SnapshotHandler::applyRecord(const SnapshotRecord& snRec, const ChunkContext& ctx, h_vector<updates::UpdateRecord, 2>& pendedRepl) {
 	Error err;
 	if (ctx.shallow) {
 		auto unpacked = snRec.Unpack();
@@ -119,7 +119,7 @@ Error SnapshotHandler::applyShallowRecord(lsn_t lsn, WALRecType type, const Pack
 }
 
 Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, const ChunkContext& chCtx,
-									   h_vector<cluster::UpdateRecord, 2>& pendedRepl) {
+									   h_vector<updates::UpdateRecord, 2>& pendedRepl) {
 	Error err;
 	IndexDef iDef;
 	Item item;

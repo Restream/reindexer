@@ -36,7 +36,7 @@ public:
 		}
 	}
 	explicit SingleSelectKeyResult(IdSet::Ptr &&ids) noexcept : tempIds_(std::move(ids)), ids_(*tempIds_) {}
-	explicit SingleSelectKeyResult(const IdSetRef &ids) noexcept : ids_(ids) {}
+	explicit SingleSelectKeyResult(IdSetCRef ids) noexcept : ids_(ids) {}
 	explicit SingleSelectKeyResult(IdType rBegin, IdType rEnd) noexcept : rBegin_(rBegin), rEnd_(rEnd), isRange_(true) {}
 	SingleSelectKeyResult(const SingleSelectKeyResult &other) noexcept
 		: tempIds_(other.tempIds_),
@@ -97,14 +97,14 @@ public:
 	}
 
 	IdSet::Ptr tempIds_;
-	IdSetRef ids_;
+	IdSetCRef ids_;
 
 protected:
 	const base_idsetset *set_ = nullptr;
 
 	union {
-		IdSetRef::const_iterator begin_;
-		IdSetRef::const_reverse_iterator rbegin_;
+		IdSetCRef::const_iterator begin_;
+		IdSetCRef::const_reverse_iterator rbegin_;
 		base_idsetset::const_iterator setbegin_;
 		base_idsetset::const_reverse_iterator setrbegin_;
 		int rBegin_ = 0;
@@ -112,8 +112,8 @@ protected:
 	};
 
 	union {
-		IdSetRef::const_iterator end_;
-		IdSetRef::const_reverse_iterator rend_;
+		IdSetCRef::const_iterator end_;
+		IdSetCRef::const_reverse_iterator rend_;
 		base_idsetset::const_iterator setend_;
 		base_idsetset::const_reverse_iterator setrend_;
 		int rEnd_ = 0;
@@ -121,8 +121,8 @@ protected:
 	};
 
 	union {
-		IdSetRef::const_iterator it_;
-		IdSetRef::const_reverse_iterator rit_;
+		IdSetCRef::const_iterator it_;
+		IdSetCRef::const_reverse_iterator rit_;
 		base_idsetset::const_iterator itset_;
 		base_idsetset::const_reverse_iterator ritset_;
 		int rIt_ = 0;

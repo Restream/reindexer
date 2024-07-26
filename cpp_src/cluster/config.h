@@ -2,13 +2,11 @@
 
 #include <chrono>
 #include <optional>
-#include <variant>
 #include "core/keyvalue/variant.h"
-#include "estl/fast_hash_set.h"
+#include "core/namespace/namespacenamesets.h"
 #include "estl/span.h"
 #include "sharding/ranges.h"
 #include "tools/errors.h"
-#include "tools/stringstools.h"
 
 namespace gason {
 struct JsonNode;
@@ -77,13 +75,13 @@ public:
 	class NamespaceListImpl {
 	public:
 		NamespaceListImpl() {}
-		NamespaceListImpl(fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str>&& n) : data(std::move(n)) {}
-		bool IsInList(std::string_view ns, size_t hash) const noexcept { return data.empty() || (data.find(ns, hash) != data.end()); }
+		NamespaceListImpl(NsNamesHashSetT&& n) : data(std::move(n)) {}
+		bool IsInList(const NamespaceName& ns) const noexcept { return data.empty() || (data.find(ns) != data.end()); }
 		bool IsInList(std::string_view ns) const noexcept { return data.empty() || (data.find(ns) != data.end()); }
 		bool Empty() const noexcept { return data.empty(); }
 		bool operator==(const NamespaceListImpl& r) const noexcept { return data == r.data; }
 
-		const fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> data;
+		const NsNamesHashSetT data;
 	};
 	using NamespaceList = intrusive_atomic_rc_wrapper<NamespaceListImpl>;
 
@@ -98,7 +96,7 @@ public:
 	void GetYAML(YAML::Node& yaml) const;
 
 	bool HasOwnNsList() const noexcept { return hasOwnNsList_; }
-	void SetOwnNamespaceList(fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> nss) {
+	void SetOwnNamespaceList(NsNamesHashSetT nss) {
 		namespaces_ = make_intrusive<NamespaceList>(std::move(nss));
 		hasOwnNsList_ = true;
 	}
@@ -168,7 +166,7 @@ struct ClusterConfigData {
 	}
 
 	std::vector<ClusterNodeConfig> nodes;
-	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> namespaces;
+	NsNamesHashSetT namespaces;
 	std::string appName = "rx_cluster_node";
 	int onlineUpdatesTimeoutSec = 20;
 	int syncTimeoutSec = 60;

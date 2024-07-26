@@ -93,6 +93,58 @@ constexpr std::string_view fieldKind(IteratorFieldKind fk) {
 	}
 }
 
+RX_NO_INLINE static std::string buildPreselectDescription(const JoinPreResult &result) {
+	assertrx_throw(result.properties);
+	return std::visit(
+		overloaded{
+			[&](const IdSet &) -> std::string {
+				const PreselectProperties &props = *result.properties;
+				switch (result.storedValuesOptStatus) {
+					case StoredValuesOptimizationStatus::DisabledByCompositeIndex:
+						return fmt::sprintf(
+							"using preselected_rows, because joined query contains composite index condition in the ON-clause and "
+							"joined query's expected max iterations count of %d is less than max_iterations_idset_preresult limit of %d",
+							props.qresMaxIteratios, props.maxIterationsIdSetPreResult);
+					case StoredValuesOptimizationStatus::DisabledByFullTextIndex:
+						return fmt::sprintf(
+							"using preselected_rows, because joined query contains fulltext index condition in the ON-clause and joined "
+							"query's expected max iterations count of %d is less than max_iterations_idset_preresult limit of %d",
+							props.qresMaxIteratios, props.maxIterationsIdSetPreResult);
+					case StoredValuesOptimizationStatus::DisabledByJoinedFieldSort:
+						return fmt::sprintf(
+							"using preselected_rows, because sort by joined field was requested and joined query's "
+							"expected max iterations count of %d is less than max_iterations_idset_preresult limit of %d",
+							props.qresMaxIteratios, props.maxIterationsIdSetPreResult);
+					case StoredValuesOptimizationStatus::Enabled:
+						return fmt::sprintf(
+							"using preselected_rows, because joined query's expected max iterations count of %d is less than "
+							"max_iterations_idset_preresult limit of %d and larger then max copied values count of %d",
+							props.qresMaxIteratios, props.maxIterationsIdSetPreResult,
+							JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization());
+					default:
+						throw_as_assert;
+				}
+			},
+			[&](const SelectIteratorContainer &) -> std::string {
+				const PreselectProperties &props = *result.properties;
+				if (props.isLimitExceeded) {
+					return fmt::sprintf(
+						"using no_preselect, because joined query's expected max iterations count of %d is larger than "
+						"max_iterations_idset_preresult limit of %d",
+						props.qresMaxIteratios, props.maxIterationsIdSetPreResult);
+				} else if (props.isUnorderedIndexSort) {
+					return "using no_preselect, because there is a sorted query on an unordered index";
+				}
+				return "using no_preselect, because joined query expects a sort a btree index that is not yet committed "
+					   "(optimization of indexes for the target namespace is not complete)";
+			},
+			[&](const JoinPreResult::Values &) {
+				return fmt::sprintf("using preselected_values, because the namespace's max iterations count is very small of %d",
+									result.properties->qresMaxIteratios);
+			}},
+		result.payload);
+}
+
 static std::string addToJSON(JsonBuilder &builder, const JoinedSelector &js, OpType op = OpAnd) {
 	using namespace std::string_view_literals;
 	auto jsonSel = builder.Object();
@@ -117,9 +169,12 @@ static std::string addToJSON(JsonBuilder &builder, const JoinedSelector &js, OpT
 									  jsonSel.Put("method"sv, "no_preselect"sv);
 									  jsonSel.Put("keys"sv, iterators.Size());
 								  }},
-					   js.PreResult().preselectedPayload);
+					   js.PreResult().payload);
 			if (!js.PreResult().explainPreSelect.empty()) {
 				jsonSel.Raw("explain_preselect"sv, js.PreResult().explainPreSelect);
+			}
+			if (js.PreResult().properties) {
+				jsonSel.Put("description"sv, buildPreselectDescription(js.PreResult()));
 			}
 			if (!js.ExplainOneSelect().empty()) {
 				jsonSel.Raw("explain_select"sv, js.ExplainOneSelect());
@@ -204,9 +259,9 @@ std::string ExplainCalc::GetJSON() {
 			json.Put("loop_us"sv, To_us(loop_));
 			json.Put("general_sort_us"sv, To_us(sort_));
 			if (!subqueries_.empty()) {
-				auto subQuries = json.Array("subqueries");
+				auto subQueries = json.Array("subqueries");
 				for (const auto &sq : subqueries_) {
-					auto s = subQuries.Object();
+					auto s = subQueries.Object();
 					s.Put("namespace", sq.NsName());
 					s.Raw("explain", sq.Explain());
 					std::visit(overloaded{[&](size_t k) { s.Put("keys", k); }, [&](const std::string &f) { s.Put("field", f); }},
@@ -281,7 +336,7 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 				name << opName(it->operation, it == begin) << siter.name;
 			},
 			[&](const JoinSelectIterator &jiter) {
-				assertrx(jiter.joinIndex < jselectors->size());
+				assertrx_throw(jiter.joinIndex < jselectors->size());
 				const std::string jName{addToJSON(builder, (*jselectors)[jiter.joinIndex], it->operation)};
 				name << opName(it->operation, it == begin) << jName;
 			},
@@ -316,9 +371,9 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 					name << opName(it->operation, it == begin) << c.Name();
 				}),
 			[&](const AlwaysTrue &) {
-				auto jsonSkiped = builder.Object();
-				jsonSkiped.Put("type"sv, "Skipped"sv);
-				jsonSkiped.Put("description"sv, "always "s + (it->operation == OpNot ? "false" : "true"));
+				auto jsonSkipped = builder.Object();
+				jsonSkipped.Put("type"sv, "Skipped"sv);
+				jsonSkipped.Put("description"sv, "always "s + (it->operation == OpNot ? "false" : "true"));
 				name << opName(it->operation == OpNot ? OpAnd : it->operation, it == begin) << "Always"sv
 					 << (it->operation == OpNot ? "False"sv : "True"sv);
 			});

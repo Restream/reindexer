@@ -89,7 +89,7 @@ std::string LocalQueryResults::Dump() const {
 		if (&items_[i] != &*items_.begin()) buf += ",";
 		buf += std::to_string(items_[i].Id());
 		if (joined_.empty()) continue;
-		Iterator itemIt{this, int(i), errOK};
+		Iterator itemIt{this, int(i), Error(), {}};
 		auto joinIt = itemIt.GetJoined();
 		if (joinIt.getJoinedItemsCount() > 0) {
 			buf += "[";
@@ -133,11 +133,42 @@ int LocalQueryResults::GetJoinedNsCtxIndex(int nsid) const noexcept {
 
 class LocalQueryResults::EncoderDatasourceWithJoins final : public IEncoderDatasourceWithJoins {
 public:
-	EncoderDatasourceWithJoins(const joins::ItemIterator &joinedItemIt, const ContextsVector &ctxs, int ctxIdx) noexcept
-		: joinedItemIt_(joinedItemIt), ctxs_(ctxs), ctxId_(ctxIdx) {}
+	EncoderDatasourceWithJoins(const joins::ItemIterator &joinedItemIt, const ContextsVector &ctxs, Iterator::NsNamesCache &nsNamesCache,
+							   int ctxIdx, size_t nsid, size_t joinedCount) noexcept
+		: joinedItemIt_(joinedItemIt), ctxs_(ctxs), nsNamesCache_(nsNamesCache), ctxId_(ctxIdx), nsid_{nsid} {
+		if (nsNamesCache.size() <= nsid_) {
+			nsNamesCache.resize(nsid_ + 1);
+		}
+		if (nsNamesCache[nsid_].size() < joinedCount) {
+			nsNamesCache[nsid_].clear();
+			nsNamesCache[nsid_].reserve(joinedCount);
+			fast_hash_map<std::string_view, int> namesCounters;
+			assertrx_dbg(ctxs_.size() >= ctxId_ + joinedCount);
+			for (size_t i = ctxId_, end = ctxId_ + joinedCount; i < end; ++i) {
+				const std::string &n = ctxs_[i].type_.Name();
+				if (auto [it, emplaced] = namesCounters.emplace(n, -1); !emplaced) {
+					--it->second;
+				}
+			}
+			for (size_t i = ctxId_, end = ctxId_ + joinedCount; i < end; ++i) {
+				const std::string &n = ctxs_[i].type_.Name();
+				int &count = namesCounters[n];
+				if (count < 0) {
+					if (count == -1) {
+						nsNamesCache[nsid_].emplace_back(n);
+					} else {
+						count = 1;
+						nsNamesCache[nsid_].emplace_back("1_" + n);
+					}
+				} else {
+					nsNamesCache[nsid_].emplace_back(std::to_string(++count) + '_' + n);
+				}
+			}
+		}
+	}
 
 	size_t GetJoinedRowsCount() const noexcept override { return joinedItemIt_.getJoinedFieldsCount(); }
-	size_t GetJoinedRowItemsCount(size_t rowId) const override {
+	size_t GetJoinedRowItemsCount(size_t rowId) const override final {
 		auto fieldIt = joinedItemIt_.at(rowId);
 		return fieldIt.ItemsCount();
 	}
@@ -147,27 +178,25 @@ public:
 		const Context &ctx = ctxs_[ctxId_ + rowid];
 		return ConstPayload(ctx.type_, itemRef.Value());
 	}
-	const TagsMatcher &GetJoinedItemTagsMatcher(size_t rowid) override {
+	const TagsMatcher &GetJoinedItemTagsMatcher(size_t rowid) noexcept override {
 		const Context &ctx = ctxs_[ctxId_ + rowid];
 		return ctx.tagsMatcher_;
 	}
-	virtual const FieldsSet &GetJoinedItemFieldsFilter(size_t rowid) noexcept override {
+	const FieldsSet &GetJoinedItemFieldsFilter(size_t rowid) noexcept override {
 		const Context &ctx = ctxs_[ctxId_ + rowid];
 		return ctx.fieldsFilter_;
 	}
-
-	const std::string &GetJoinedItemNamespace(size_t rowid) override {
-		const Context &ctx = ctxs_[ctxId_ + rowid];
-		return ctx.type_->Name();
-	}
+	const std::string &GetJoinedItemNamespace(size_t rowid) noexcept override { return nsNamesCache_[nsid_][rowid]; }
 
 private:
 	const joins::ItemIterator &joinedItemIt_;
 	const ContextsVector &ctxs_;
+	const Iterator::NsNamesCache &nsNamesCache_;
 	const int ctxId_;
+	const size_t nsid_;
 };
 
-void LocalQueryResults::encodeJSON(int idx, WrSerializer &ser) const {
+void LocalQueryResults::encodeJSON(int idx, WrSerializer &ser, Iterator::NsNamesCache &nsNamesCache) const {
 	auto &itemRef = items_[idx];
 	assertrx(ctxs.size() > itemRef.Nsid());
 	auto &ctx = ctxs[itemRef.Nsid()];
@@ -182,7 +211,8 @@ void LocalQueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 	if (!joined_.empty()) {
 		joins::ItemIterator itemIt = (begin() + idx).GetJoined();
 		if (itemIt.getJoinedItemsCount() > 0) {
-			EncoderDatasourceWithJoins joinsDs(itemIt, ctxs, GetJoinedNsCtxIndex(itemRef.Nsid()));
+			EncoderDatasourceWithJoins joinsDs(itemIt, ctxs, nsNamesCache, GetJoinedNsCtxIndex(itemRef.Nsid()), itemRef.Nsid(),
+											   joined_[itemRef.Nsid()].GetJoinedSelectorsCount());
 			h_vector<IAdditionalDatasource<JsonBuilder> *, 2> dss;
 			AdditionalDatasource ds = needOutputRank ? AdditionalDatasource(itemRef.Proc(), &joinsDs) : AdditionalDatasource(&joinsDs);
 			dss.push_back(&ds);
@@ -261,9 +291,9 @@ Error LocalQueryResults::Iterator::GetJSON(WrSerializer &ser, bool withHdrLen) {
 	try {
 		if (withHdrLen) {
 			auto slicePosSaver = ser.StartSlice();
-			qr_->encodeJSON(idx_, ser);
+			qr_->encodeJSON(idx_, ser, nsNamesCache);
 		} else {
-			qr_->encodeJSON(idx_, ser);
+			qr_->encodeJSON(idx_, ser, nsNamesCache);
 		}
 	} catch (const Error &err) {
 		err_ = err;
@@ -287,9 +317,10 @@ CsvOrdering LocalQueryResults::MakeCSVTagOrdering(unsigned limit, unsigned offse
 	fast_hash_set<int> fieldsTmIds;
 	WrSerializer ser;
 	const auto &tm = getTagsMatcher(0);
+	Iterator::NsNamesCache nsNamesCache;
 	for (size_t i = offset; i < items_.size() && i < offset + limit; ++i) {
 		ser.Reset();
-		encodeJSON(i, ser);
+		encodeJSON(i, ser, nsNamesCache);
 
 		gason::JsonParser parser;
 		auto jsonNode = parser.Parse(giftStr(ser.Slice()));
@@ -321,7 +352,8 @@ CsvOrdering LocalQueryResults::MakeCSVTagOrdering(unsigned limit, unsigned offse
 		if (!qr_->joined_.empty()) {
 			joins::ItemIterator itemIt = (qr_->begin() + idx_).GetJoined();
 			if (itemIt.getJoinedItemsCount() > 0) {
-				EncoderDatasourceWithJoins joinsDs(itemIt, qr_->ctxs, qr_->GetJoinedNsCtxIndex(itemRef.Nsid()));
+				EncoderDatasourceWithJoins joinsDs(itemIt, qr_->ctxs, nsNamesCache, qr_->GetJoinedNsCtxIndex(itemRef.Nsid()),
+												   itemRef.Nsid(), qr_->joined_[itemRef.Nsid()].GetJoinedSelectorsCount());
 				h_vector<IAdditionalDatasource<CsvBuilder> *, 2> dss;
 				AdditionalDatasourceCSV ds(&joinsDs);
 				dss.push_back(&ds);

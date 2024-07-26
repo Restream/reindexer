@@ -58,11 +58,10 @@ Error ReindexerImpl::Connect(const std::string &dsn, const client::ConnectOpts &
 	return ret;
 }
 
-Error ReindexerImpl::Stop() {
+void ReindexerImpl::Stop() {
 	std::lock_guard lock(workersMtx_);
 	requiresStatusCheck_.store(true, std::memory_order_relaxed);
 	stop();
-	return Error();
 }
 Error ReindexerImpl::OpenNamespace(std::string_view nsName, const InternalRdxContext &ctx, const StorageOpts &opts,
 								   const NsReplicationOpts &replOpts) {
@@ -151,9 +150,6 @@ Error ReindexerImpl::Select(const Query &query, QueryResults &result, const Inte
 	Error err = result.setClient(this);
 	if (!err.ok()) return err;
 	return sendCommand<Error>(DbCmdSelectQ, ctx, query, result.results_);
-}
-Error ReindexerImpl::Commit(std::string_view nsName, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdCommit, ctx, std::move(nsName));
 }
 
 Item ReindexerImpl::NewItem(std::string_view nsName, const InternalRdxContext &ctx) {
@@ -325,7 +321,8 @@ void ReindexerImpl::threadLoopFun(uint32_t tid, std::promise<Error> &isRunning, 
 			const auto obsID = conn.rx.AddConnectionStateObserver(
 				[this](const Error &e) noexcept { requiresStatusCheck_.store(!e.ok(), std::memory_order_relaxed); });
 			wg.wait();
-			conn.rx.RemoveConnectionStateObserver(obsID);
+			err = conn.rx.RemoveConnectionStateObserver(obsID);
+			(void)err;	// ignore
 
 			th.commandAsync.stop();
 			th.closeAsync.stop();
@@ -526,10 +523,6 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, Connectio
 			case DbCmdSelectQ: {
 				execCommand(
 					cmd, [&conn, &cmd](const Query &query, CoroQueryResults &result) { return conn.rx.Select(query, result, cmd->ctx); });
-				break;
-			}
-			case DbCmdCommit: {
-				execCommand(cmd, [&conn, &cmd](std::string_view nsName) { return conn.rx.Commit(nsName, cmd->ctx); });
 				break;
 			}
 			case DbCmdGetMeta: {

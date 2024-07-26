@@ -3,6 +3,8 @@ package reindexer
 import (
 	"context"
 	"strings"
+
+	"github.com/restream/reindexer/v4/bindings"
 )
 
 const (
@@ -100,38 +102,14 @@ type CacheMemStat struct {
 }
 
 // Operation counter and server id
-type LsnT struct {
-	// Operation counter
-	Counter int64 `json:"counter"`
-	// Node identifier
-	ServerId int `json:"server_id"`
-}
-
-const kLSNCounterBitsCount = 48
-const kLSNCounterMask int64 = (int64(1) << kLSNCounterBitsCount) - int64(1)
-const kLSNDigitCountMult int64 = 1000000000000000
-
-func (lsn *LsnT) IsCompatibleWith(o LsnT) bool {
-	return lsn.ServerId == o.ServerId
-}
-
-func (lsn *LsnT) IsNewerThen(o LsnT) bool {
-	return lsn.Counter > o.Counter
-}
-
-func (lsn *LsnT) IsEmpty() bool { return lsn.Counter == kLSNDigitCountMult-1 }
+type LsnT = bindings.LsnT
 
 func CreateLSNFromInt64(v int64) LsnT {
-	if (v & kLSNCounterMask) == kLSNCounterMask {
-		return LsnT{Counter: kLSNDigitCountMult - 1, ServerId: -1}
-	}
-
-	server := v / kLSNDigitCountMult
-	return LsnT{Counter: v - server*kLSNDigitCountMult, ServerId: int(server)}
+	return bindings.CreateLSNFromInt64(v)
 }
 
 func CreateInt64FromLSN(v LsnT) int64 {
-	return int64(v.ServerId)*kLSNDigitCountMult + v.Counter
+	return bindings.CreateInt64FromLSN(v)
 }
 
 // NamespaceMemStat information about reindexer's namespace memory statisctics
@@ -518,6 +496,9 @@ type DBNamespacesConfig struct {
 	MaxPreselectSize int64 `json:"max_preselect_size"`
 	// Maximum preselect part of namespace's items for optimization of inner join by injection of filters
 	MaxPreselectPart float64 `json:"max_preselect_part"`
+	// Maximum number of IdSet iterations of namespace preliminary result size for optimization
+	// expected values [201..2.147.483.647], default value 20.000
+	MaxIterationsIdSetPreResult int64 `json:"max_iterations_idset_preresult"`
 	// Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time
 	IndexUpdatesCountingMode bool `json:"index_updates_counting_mode"`
 	// Enables synchronous storage flush inside write-calls, if async updates count is more than SyncStorageFlushLimit

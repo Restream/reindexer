@@ -151,9 +151,6 @@ public:
 	/// @param result - QueryResults with found items
 	Error Select(const Query &query, QueryResults &result);
 
-	/// Flush changes to storage
-	/// @param nsName - Name of namespace
-	Error Commit(std::string_view nsName);
 	/// Allocate new item for namespace
 	/// @param nsName - Name of namespace
 	/// @return Item ready for filling and further Upsert/Insert/Delete/Update call

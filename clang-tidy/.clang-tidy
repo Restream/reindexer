@@ -13,16 +13,17 @@ Checks: 'clang-diagnostic-*,
          -bugprone-assignment-in-if-condition,
          -bugprone-parent-virtual-call,
          -bugprone-integer-division,
-         -bugprone-unhandled-self-assignment
+         -bugprone-unhandled-self-assignment,
+         -bugprone-inc-dec-in-conditions,
          -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
          -performance-no-int-to-ptr,
+         -performance-enum-size,
          -performance-avoid-endl'
 # clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling - too many unnecessary warning in vendored code
 # performance-no-int-to-ptr - consider how to fix this
 # bugprone-macro-parentheses - consider fixing
 WarningsAsErrors: '*'
 HeaderFilterRegex: '.*(?<!\.pb\.h)$'
-AnalyzeTemporaryDtors: false
 FormatStyle:     none
 CheckOptions:
     - { key: performance-unnecessary-value-param.AllowedTypes, value: 'span;IdType;ReplicationStatsCollector;KeyValueType' }

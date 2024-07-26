@@ -26,8 +26,8 @@ public:
 	explicit RoutingStrategy(const cluster::ShardingConfig &config);
 	~RoutingStrategy() = default;
 
-	ShardIDsContainer GetHostsIds(const Query &) const;
-	int GetHostId(std::string_view ns, const Item &) const;
+	std::pair<ShardIDsContainer, Variant> GetHostsIdsKeyPair(const Query &) const;
+	std::pair<int, Variant> GetHostIdKeyPair(std::string_view ns, const Item &) const;
 	ShardIDsContainer GetHostsIds(std::string_view ns) const { return keys_.GetShardsIds(ns); }
 	ShardIDsContainer GetHostsIds() const { return keys_.GetShardsIds(); }
 	bool IsShardingKey(std::string_view ns, std::string_view index) const { return keys_.IsShardIndex(ns, index); }
@@ -35,7 +35,7 @@ public:
 	int GetDefaultHost(std::string_view ns) const { return keys_.GetDefaultHost(ns); }
 
 private:
-	bool getHostIdForQuery(const Query &, int &currentId) const;
+	bool getHostIdForQuery(const Query &, int &currentId, Variant &shardKey) const;
 	ShardingKeys keys_;
 };
 
@@ -129,8 +129,10 @@ public:
 	Error Start();
 	Error AwaitShards(const RdxContext &ctx) { return networkMonitor_.AwaitShards(ctx); }
 	bool IsSharded(std::string_view ns) const noexcept { return routingStrategy_.IsSharded(ns); }
-	int GetShardId(std::string_view ns, const Item &item) const { return routingStrategy_.GetHostId(ns, item); }
-	ShardIDsContainer GetShardId(const Query &q) const { return routingStrategy_.GetHostsIds(q); }
+	std::pair<int, Variant> GetShardIdKeyPair(std::string_view ns, const Item &item) const {
+		return routingStrategy_.GetHostIdKeyPair(ns, item);
+	}
+	std::pair<ShardIDsContainer, Variant> GetShardIdKeyPair(const Query &q) const { return routingStrategy_.GetHostsIdsKeyPair(q); }
 	std::shared_ptr<client::Reindexer> GetShardConnection(std::string_view ns, int shardId, Error &status);
 
 	ConnectionsPtr GetShardsConnections(std::string_view ns, int shardId, Error &status);
@@ -138,7 +140,7 @@ public:
 	ConnectionsPtr GetShardsConnections(Error &status) { return GetShardsConnections("", -1, status); }
 	ConnectionsPtr GetAllShardsConnections(Error &status);
 	ShardConnection GetShardConnectionWithId(std::string_view ns, const Item &item, Error &status) {
-		int shardId = routingStrategy_.GetHostId(ns, item);
+		int shardId = routingStrategy_.GetHostIdKeyPair(ns, item).first;
 		return ShardConnection(GetShardConnection(ns, shardId, status), shardId);
 	}
 

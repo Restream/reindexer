@@ -52,12 +52,7 @@ public:
 		return err;
 	}
 
-	Error UpsertAndCommit(const std::string& ns, Item& item) {
-		Error err = db_->Upsert(ns, item);
-		if (!err.ok()) return err;
-
-		return db_->Commit(ns);
-	}
+	Error Upsert(const std::string& ns, Item& item) { return db_->Upsert(ns, item); }
 
 	std::tuple<Error, Item, Data> NewItem(const std::string& ns, const std::string& jsonPattern, Data* d = nullptr) {
 		typedef std::tuple<Error, Item, Data> ResultType;

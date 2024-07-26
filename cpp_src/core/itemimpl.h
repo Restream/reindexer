@@ -22,7 +22,7 @@ public:
 
 	// Construct empty item
 	ItemImpl(PayloadType type, const TagsMatcher &tagsMatcher, const FieldsSet &pkFields = {}, std::shared_ptr<const Schema> schema = {})
-		: ItemImplRawData(PayloadValue(type.TotalSize(), 0, type.TotalSize() + 0x100)),
+		: ItemImplRawData(PayloadValue(type.TotalSize(), nullptr, type.TotalSize() + 0x100)),
 		  payloadType_(std::move(type)),
 		  tagsMatcher_(tagsMatcher),
 		  pkFields_(pkFields),
@@ -49,11 +49,11 @@ public:
 	ItemImpl &operator=(ItemImpl &&) = default;
 	ItemImpl &operator=(const ItemImpl &) = delete;
 
-	void ModifyField(std::string_view jsonPath, const VariantArray &keys, const IndexExpressionEvaluator &ev, FieldModifyMode mode);
+	void ModifyField(std::string_view jsonPath, const VariantArray &keys, FieldModifyMode mode);
 	void ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &keys, FieldModifyMode mode);
 	void SetField(int field, const VariantArray &krs);
-	void SetField(std::string_view jsonPath, const VariantArray &keys, const IndexExpressionEvaluator &ev);
-	void DropField(std::string_view jsonPath, const IndexExpressionEvaluator &ev);
+	void SetField(std::string_view jsonPath, const VariantArray &keys);
+	void DropField(std::string_view jsonPath);
 	Variant GetField(int field);
 	void GetField(int field, VariantArray &);
 	FieldsSet PkFields() const { return pkFields_; }
@@ -68,7 +68,7 @@ public:
 
 	std::string_view GetJSON();
 	Error FromJSON(std::string_view slice, char **endp = nullptr, bool pkOnly = false);
-	void FromCJSON(ItemImpl *other, Recoder *);
+	void FromCJSON(ItemImpl &other, Recoder *);
 
 	std::string_view GetCJSON(bool withTagsMatcher = false);
 	std::string_view GetCJSON(WrSerializer &ser, bool withTagsMatcher = false);
@@ -78,6 +78,7 @@ public:
 	Error FromMsgPack(std::string_view sbuf, size_t &offset);
 	Error FromProtobuf(std::string_view sbuf);
 	Error GetMsgPack(WrSerializer &wrser);
+	std::string_view GetMsgPack();
 	Error GetProtobuf(WrSerializer &wrser);
 
 	const PayloadType &Type() const noexcept { return payloadType_; }
@@ -117,8 +118,9 @@ public:
 	}
 	void SetNamespace(std::shared_ptr<Namespace> ns) noexcept { ns_ = std::move(ns); }
 	std::shared_ptr<Namespace> GetNamespace() const noexcept { return ns_; }
+	static void validateModifyArray(const VariantArray &values);
 
-protected:
+private:
 	// Index fields payload data
 	PayloadType payloadType_;
 	PayloadValue realValue_;

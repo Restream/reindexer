@@ -1,4 +1,3 @@
-
 #include "selectiterator.h"
 
 #include <algorithm>

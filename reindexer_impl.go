@@ -19,6 +19,7 @@ import (
 	"github.com/restream/reindexer/v4/bindings"
 	"github.com/restream/reindexer/v4/cjson"
 	"github.com/restream/reindexer/v4/dsl"
+	"github.com/restream/reindexer/v4/events"
 )
 
 type reindexerNamespace struct {
@@ -75,6 +76,8 @@ type reindexerImpl struct {
 
 	otelTracer           oteltrace.Tracer
 	otelCommonTraceAttrs []otelattr.KeyValue
+
+	events *events.EventsHandler
 }
 
 type cacheItems struct {
@@ -173,6 +176,7 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 	rx := &reindexerImpl{
 		ns:      make(map[string]*reindexerNamespace, 100),
 		binding: binding,
+		events:  events.NewEventsHandler(binding),
 	}
 
 	for _, opt := range options {
@@ -196,7 +200,7 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 		}
 	}
 
-	if err := binding.Init(dsnParsed, options...); err != nil {
+	if err := binding.Init(dsnParsed, rx.events, options...); err != nil {
 		rx.status = err
 	}
 
@@ -1361,6 +1365,10 @@ func dsnString(dsnParsed []url.URL) string {
 	}
 
 	return strings.Join(dsnLabelParts, ",")
+}
+
+func (db *reindexerImpl) subscribe(ctx context.Context, opts *events.EventsStreamOptions) *events.EventsStream {
+	return db.events.CreateStream(ctx, opts)
 }
 
 // GetStats Get local thread reindexer usage stats

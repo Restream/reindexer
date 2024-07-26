@@ -2,12 +2,9 @@
 #include <cctype>
 #include "core/namespace/namespaceimpl.h"
 #include "core/storage/storagefactory.h"
+#include "events/observer.h"
 #include "iotools.h"
 #include "tools/fsops.h"
-
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-#include "replv3/updatesobserver.h"
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 
 namespace reindexer_tool {
 
@@ -65,30 +62,21 @@ Error RepairTool::repairNamespace(IDataStorage *storage, const std::string &stor
 		if (!reindexer::validateObjectName(name, true)) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
 		}
-		class DummyClusterizator final : public reindexer::cluster::INsDataReplicator {
-			Error Replicate(reindexer::cluster::UpdateRecord &&, std::function<void()> f, const reindexer::RdxContext &) override {
-				f();
-				return {};
-			}
+		class DummyClusterizator final : public reindexer::cluster::IDataReplicator, public reindexer::cluster::IDataSyncer {
 			Error Replicate(reindexer::cluster::UpdatesContainer &&, std::function<void()> f, const reindexer::RdxContext &) override {
 				f();
 				return {};
 			}
-			Error ReplicateAsync(reindexer::cluster::UpdateRecord &&, const reindexer::RdxContext &) override { return {}; }
 			Error ReplicateAsync(reindexer::cluster::UpdatesContainer &&, const reindexer::RdxContext &) override { return {}; }
-			void AwaitInitialSync(std::string_view, const reindexer::RdxContext &) const override {}
+			void AwaitInitialSync(const reindexer::NamespaceName &, const reindexer::RdxContext &) const override {}
 			void AwaitInitialSync(const reindexer::RdxContext &) const override {}
-			bool IsInitialSyncDone(std::string_view) const override { return true; }
+			bool IsInitialSyncDone(const reindexer::NamespaceName &) const override { return true; }
 			bool IsInitialSyncDone() const override { return true; }
 		};
 		DummyClusterizator dummyClusterizator;
 
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-		reindexer::UpdatesObservers observers;
+		reindexer::UpdatesObservers observers("repair_db", dummyClusterizator, 0);
 		reindexer::NamespaceImpl ns(name, {}, dummyClusterizator, observers);
-#else	// REINDEX_WITH_V3_FOLLOWERS
-		reindexer::NamespaceImpl ns(name, {}, dummyClusterizator);
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 		StorageOpts storageOpts;
 		reindexer::RdxContext dummyCtx;
 		std::cout << "Loading " << name << std::endl;
@@ -103,7 +91,7 @@ Error RepairTool::repairNamespace(IDataStorage *storage, const std::string &stor
 			if (input == "y" || input == "yes") {
 				auto res = reindexer::fs::RmDirAll(nsPath);
 				if (res < 0) {
-					std::cerr << "Namespace rm error[" << nsPath << "]: %s" << strerror(errno) << std::endl;
+					std::cerr << "Namespace rm error[" << nsPath << "]: " << strerror(errno) << std::endl;
 				}
 				break;
 			} else if (input == "n" || input == "no" || input.empty()) {

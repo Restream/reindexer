@@ -106,16 +106,27 @@ public:
 		return true;
 	}
 	bool Compare(const TagsPath &obj) const noexcept {
-		if (obj.size() != this->size()) return false;
-		for (size_t i = 0; i < this->size(); ++i) {
-			if (this->operator[](i).NameTag() != obj[i]) return false;
+		const auto sz = this->size();
+		if (obj.size() != sz) {
+			return false;
+		}
+		for (size_t i = 0; i < sz; ++i) {
+			if ((*this)[i].NameTag() != obj[i]) return false;
+		}
+		return true;
+	}
+	bool IsNestedOrEqualTo(const TagsPath &obj) const noexcept {
+		const auto sz = this->size();
+		if (sz > obj.size()) {
+			return false;
+		}
+		for (size_t i = 0; i < sz; ++i) {
+			if ((*this)[i].NameTag() != obj[i]) return false;
 		}
 		return true;
 	}
 };
 using IndexedTagsPath = IndexedTagsPathImpl<6>;
-
-using IndexExpressionEvaluator = std::function<VariantArray(std::string_view)>;
 
 template <typename TagsPath>
 class TagsPathScope {

@@ -211,7 +211,7 @@ public:
 		itemimpl_.FromCJSON(dataIt.data);
 		return itemimpl_.GetConstPayload();
 	}
-	const TagsMatcher &GetJoinedItemTagsMatcher(size_t rowid) override {
+	const TagsMatcher &GetJoinedItemTagsMatcher(size_t rowid) noexcept override {
 		auto &fieldIt = joinedData_.at(rowid);
 		if (fieldIt.empty()) {
 			static const TagsMatcher kEmptyTm;
@@ -224,17 +224,20 @@ public:
 		static const FieldsSet empty;
 		return empty;
 	}
-	const std::string &GetJoinedItemNamespace(size_t rowid) override {
+	const std::string &GetJoinedItemNamespace(size_t rowid) noexcept override {
+		static const std::string empty;
+		if (joinedData_.size() <= rowid) {
+			return empty;
+		}
 		auto &fieldIt = joinedData_.at(rowid);
 		if (fieldIt.empty()) {
-			static const std::string empty;
 			return empty;
 		}
 		return qr_.GetNsName(getJoinedNsID(rowid));
 	}
 
 private:
-	uint32_t getJoinedNsID(int parentNsId) {
+	uint32_t getJoinedNsID(int parentNsId) noexcept {
 		if (cachedParentNsId_ == int64_t(parentNsId)) {
 			return cachedJoinedNsId_;
 		}
@@ -271,7 +274,6 @@ void CoroQueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSeri
 	JsonBuilder builder(wrser, ObjType::TypePlain);
 	h_vector<IAdditionalDatasource<JsonBuilder> *, 2> dss;
 	int shardId = (const_cast<Iterator *>(this))->GetShardID();
-	//	std::cout << "getJSONFromCJSON shardId=" << shardId << std::endl;
 	AdditionalDatasourceShardId dsShardId(shardId);
 	if (qr_->NeedOutputShardId() && shardId >= 0) {
 		dss.push_back(&dsShardId);

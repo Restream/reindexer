@@ -100,9 +100,10 @@ TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 
 	std::vector<RxWithStatus> rxClients(kValidThreadsCount);
 	for (auto &rx : rxClients) {
-		rx.client->Connect(kDSN);
-		auto status = rx.client->Status();
-		ASSERT_TRUE(status.ok()) << status.what();
+		auto err = rx.client->Connect(kDSN);
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rx.client->Status();
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	for (size_t shard = 1; shard < kShards; ++shard) {
@@ -115,18 +116,21 @@ TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 		for (size_t i = 0; i < 3; ++i) {
 			anyResultThreads.emplace_back(std::thread([&, index = i]() {
 				client::Reindexer rx;
-				rx.Connect(kDSN);
+				auto err = rx.Connect(kDSN);
+				ASSERT_TRUE(err.ok()) << err.what();
 				while (!stop) {
-					upsertItemF(index, rx);
+					err = upsertItemF(index, rx);
+					(void)err;	// ignore; Errors are expected
 					std::this_thread::sleep_for(std::chrono::milliseconds(10));
 				}
 			}));
 			anyResultThreads.emplace_back(std::thread([&]() {
 				client::Reindexer rx;
-				rx.Connect(kDSN);
+				auto err = rx.Connect(kDSN);
+				ASSERT_TRUE(err.ok()) << err.what();
 				while (!stop) {
 					client::QueryResults qr;
-					Error err = rx.Select(Query(default_namespace).Where(kFieldLocation, CondEq, key), qr);
+					err = rx.Select(Query(default_namespace).Where(kFieldLocation, CondEq, key), qr);
 					if (err.ok()) {
 						ASSERT_TRUE(qr.Count() == 40) << qr.Count();
 					}
@@ -206,7 +210,8 @@ TEST_F(ShardingSystemApi, Shutdown) {
 
 	auto addItemFn = [this, &counter, &done, kSleepTime](size_t shardId, size_t node) noexcept {
 		while (!done) {
-			AddRow(default_namespace, shardId, node, counter++);
+			auto err = AddRow(default_namespace, shardId, node, counter++);
+			(void)err;	// ignored; Errors are expected here
 			std::this_thread::sleep_for(kSleepTime);
 		}
 	};

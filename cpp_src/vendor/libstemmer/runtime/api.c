@@ -49,7 +49,7 @@ extern void SN_close_env(struct SN_env * z, int S_size)
         {
             lose_s(z->S[i]);
         }
-        free(z->S);
+        free(z->S); // NOLINT(bugprone-multi-level-implicit-pointer-conversion)
     }
     free(z->I);
     free(z->B);

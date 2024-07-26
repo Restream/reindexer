@@ -185,7 +185,7 @@ void DBConfigProvider::setHandler(ConfigType cfgType, std::function<void()> hand
 	handlers_[cfgType] = std::move(handler);
 }
 
-int DBConfigProvider::setHandler(std::function<void(ReplicationConfigData)> handler) {
+int DBConfigProvider::setHandler(std::function<void(const ReplicationConfigData &)> handler) {
 	smart_lock<shared_timed_mutex> lk(mtx_, true);
 	replicationConfigDataHandlers_[++handlersCounter_] = std::move(handler);
 	return handlersCounter_;
@@ -223,50 +223,54 @@ bool DBConfigProvider::GetNamespaceConfig(std::string_view nsName, NamespaceConf
 Error ProfilingConfigData::FromJSON(const gason::JsonNode &v) {
 	using namespace std::string_view_literals;
 	std::string errorString;
-	tryReadOptionalJsonValue(&errorString, v, "queriesperfstats"sv, queriesPerfStats);
-	tryReadOptionalJsonValue(&errorString, v, "queries_threshold_us"sv, queriesThresholdUS);
-	tryReadOptionalJsonValue(&errorString, v, "perfstats"sv, perfStats);
-	tryReadOptionalJsonValue(&errorString, v, "memstats"sv, memStats);
-	tryReadOptionalJsonValue(&errorString, v, "activitystats"sv, activityStats);
+	auto err = tryReadOptionalJsonValue(&errorString, v, "queriesperfstats"sv, queriesPerfStats);
+	err = tryReadOptionalJsonValue(&errorString, v, "queries_threshold_us"sv, queriesThresholdUS);
+	err = tryReadOptionalJsonValue(&errorString, v, "perfstats"sv, perfStats);
+	err = tryReadOptionalJsonValue(&errorString, v, "memstats"sv, memStats);
+	err = tryReadOptionalJsonValue(&errorString, v, "activitystats"sv, activityStats);
+	(void)err;	// ignored; Errors will be handled with errorString
 
 	auto &longQueriesLogging = v["long_queries_logging"sv];
-	if (!longQueriesLogging.empty()) {
+	if (longQueriesLogging.isObject()) {
 		auto &select = longQueriesLogging["select"sv];
-		if (!select.empty()) {
+		if (select.isObject()) {
 			const auto p = longSelectLoggingParams.load(std::memory_order_relaxed);
 			int32_t thresholdUs = p.thresholdUs;
 			bool normalized = p.normalized;
-			tryReadOptionalJsonValue(&errorString, select, "threshold_us"sv, thresholdUs);
-			tryReadOptionalJsonValue(&errorString, select, "normalized"sv, normalized);
+			err = tryReadOptionalJsonValue(&errorString, select, "threshold_us"sv, thresholdUs);
+			err = tryReadOptionalJsonValue(&errorString, select, "normalized"sv, normalized);
+			(void)err;	// ignored; Errors will be handled with errorString
 			longSelectLoggingParams.store(LongQueriesLoggingParams(thresholdUs, normalized), std::memory_order_relaxed);
 		}
 
 		auto &updateDelete = longQueriesLogging["update_delete"sv];
-		if (!updateDelete.empty()) {
+		if (updateDelete.isObject()) {
 			const auto p = longUpdDelLoggingParams.load(std::memory_order_relaxed);
 			int32_t thresholdUs = p.thresholdUs;
 			bool normalized = p.normalized;
-			tryReadOptionalJsonValue(&errorString, updateDelete, "threshold_us"sv, thresholdUs);
-			tryReadOptionalJsonValue(&errorString, updateDelete, "normalized"sv, normalized);
+			err = tryReadOptionalJsonValue(&errorString, updateDelete, "threshold_us"sv, thresholdUs);
+			err = tryReadOptionalJsonValue(&errorString, updateDelete, "normalized"sv, normalized);
+			(void)err;	// ignored; Errors will be handled with errorString
 			longUpdDelLoggingParams.store(LongQueriesLoggingParams(thresholdUs, normalized), std::memory_order_relaxed);
 		}
 
 		auto &transaction = longQueriesLogging["transaction"sv];
-		if (!transaction.empty()) {
+		if (transaction.isObject()) {
 			const auto p = longTxLoggingParams.load(std::memory_order_relaxed);
 			int32_t thresholdUs = p.thresholdUs;
-			tryReadOptionalJsonValue(&errorString, transaction, "threshold_us"sv, thresholdUs);
+			err = tryReadOptionalJsonValue(&errorString, transaction, "threshold_us"sv, thresholdUs);
 
 			int32_t avgTxStepThresholdUs = p.avgTxStepThresholdUs;
-			tryReadOptionalJsonValue(&errorString, transaction, "avg_step_threshold_us"sv, avgTxStepThresholdUs);
+			err = tryReadOptionalJsonValue(&errorString, transaction, "avg_step_threshold_us"sv, avgTxStepThresholdUs);
+			(void)err;	// ignored; Errors will be handled with errorString
 			longTxLoggingParams.store(LongTxLoggingParams(thresholdUs, avgTxStepThresholdUs), std::memory_order_relaxed);
 		}
 	}
 
 	if (!errorString.empty()) {
 		return Error(errParseJson, "ProfilingConfigData: JSON parsing error: '%s'", errorString);
-	} else
-		return Error();
+	}
+	return {};
 }
 
 Error ReplicationConfigData::FromYAML(const std::string &yaml) {
@@ -274,7 +278,7 @@ Error ReplicationConfigData::FromYAML(const std::string &yaml) {
 		YAML::Node root = YAML::Load(yaml);
 		clusterID = root["cluster_id"].as<int>(clusterID);
 		serverID = root["server_id"].as<int>(serverID);
-		if (auto err = Validate()) {
+		if (auto err = Validate(); !err.ok()) {
 			return Error(errParams, "ReplicationConfigData: YAML parsing error: '%s'", err.what());
 		}
 	} catch (const YAML::Exception &ex) {
@@ -298,8 +302,9 @@ Error ReplicationConfigData::FromJSON(std::string_view json) {
 Error ReplicationConfigData::FromJSON(const gason::JsonNode &root) {
 	using namespace std::string_view_literals;
 	std::string errorString;
-	tryReadOptionalJsonValue(&errorString, root, "cluster_id"sv, clusterID);
-	tryReadOptionalJsonValue(&errorString, root, "server_id"sv, serverID);
+	auto err = tryReadOptionalJsonValue(&errorString, root, "cluster_id"sv, clusterID);
+	err = tryReadOptionalJsonValue(&errorString, root, "server_id"sv, serverID);
+	(void)err;	// ignored; Errors will be handled with errorString
 
 	if (errorString.empty()) {
 		if (auto err = Validate()) {
@@ -364,8 +369,9 @@ std::ostream &operator<<(std::ostream &os, const ReplicationConfigData &data) {
 Error NamespaceConfigData::FromJSON(const gason::JsonNode &v) {
 	using namespace std::string_view_literals;
 	std::string errorString;
-	tryReadOptionalJsonValue(&errorString, v, "lazyload"sv, lazyLoad);
-	tryReadOptionalJsonValue(&errorString, v, "unload_idle_threshold"sv, noQueryIdleThreshold);
+	auto err = tryReadOptionalJsonValue(&errorString, v, "lazyload"sv, lazyLoad);
+	err = tryReadOptionalJsonValue(&errorString, v, "unload_idle_threshold"sv, noQueryIdleThreshold);
+	(void)err;	// ignored; Errors will be handled with errorString
 
 	std::string stringVal(logLevelToString(logLevel));
 	if (tryReadOptionalJsonValue(&errorString, v, "log_level"sv, stringVal).ok()) {
@@ -386,41 +392,45 @@ Error NamespaceConfigData::FromJSON(const gason::JsonNode &v) {
 		}
 	}
 
-	tryReadOptionalJsonValue(&errorString, v, "start_copy_policy_tx_size"sv, startCopyPolicyTxSize);
-	tryReadOptionalJsonValue(&errorString, v, "copy_policy_multiplier"sv, copyPolicyMultiplier);
-	tryReadOptionalJsonValue(&errorString, v, "tx_size_to_always_copy"sv, txSizeToAlwaysCopy);
-	tryReadOptionalJsonValue(&errorString, v, "optimization_timeout_ms"sv, optimizationTimeout);
-	tryReadOptionalJsonValue(&errorString, v, "optimization_sort_workers"sv, optimizationSortWorkers);
+	err = tryReadOptionalJsonValue(&errorString, v, "start_copy_policy_tx_size"sv, startCopyPolicyTxSize);
+	err = tryReadOptionalJsonValue(&errorString, v, "copy_policy_multiplier"sv, copyPolicyMultiplier);
+	err = tryReadOptionalJsonValue(&errorString, v, "tx_size_to_always_copy"sv, txSizeToAlwaysCopy);
+	err = tryReadOptionalJsonValue(&errorString, v, "optimization_timeout_ms"sv, optimizationTimeout);
+	err = tryReadOptionalJsonValue(&errorString, v, "optimization_sort_workers"sv, optimizationSortWorkers);
+	(void)err;	// ignored; Errors will be handled with errorString
 
 	if (int64_t walSizeV = walSize; tryReadOptionalJsonValue(&errorString, v, "wal_size"sv, walSizeV, 0).ok()) {
 		if (walSizeV > 0) {
 			walSize = walSizeV;
 		}
 	}
-	tryReadOptionalJsonValue(&errorString, v, "min_preselect_size"sv, minPreselectSize, 0);
-	tryReadOptionalJsonValue(&errorString, v, "max_preselect_size"sv, maxPreselectSize, 0);
-	tryReadOptionalJsonValue(&errorString, v, "max_preselect_part"sv, maxPreselectPart, 0.0, 1.0);
-	tryReadOptionalJsonValue(&errorString, v, "index_updates_counting_mode"sv, idxUpdatesCountingMode);
-	tryReadOptionalJsonValue(&errorString, v, "sync_storage_flush_limit"sv, syncStorageFlushLimit, 0);
+	err = tryReadOptionalJsonValue(&errorString, v, "min_preselect_size"sv, minPreselectSize, 0);
+	err = tryReadOptionalJsonValue(&errorString, v, "max_preselect_size"sv, maxPreselectSize, 0);
+	err = tryReadOptionalJsonValue(&errorString, v, "max_preselect_part"sv, maxPreselectPart, 0.0, 1.0);
+	err = tryReadOptionalJsonValue(&errorString, v, "max_iterations_idset_preresult"sv, maxIterationsIdSetPreResult, 0);
+	err = tryReadOptionalJsonValue(&errorString, v, "index_updates_counting_mode"sv, idxUpdatesCountingMode);
+	err = tryReadOptionalJsonValue(&errorString, v, "sync_storage_flush_limit"sv, syncStorageFlushLimit, 0);
+	(void)err;	// ignored; Errors will be handled with errorString
 
 	auto cacheNode = v["cache"];
 	if (!cacheNode.empty()) {
-		tryReadOptionalJsonValue(&errorString, cacheNode, "index_idset_cache_size"sv, cacheConfig.idxIdsetCacheSize, 0);
-		tryReadOptionalJsonValue(&errorString, cacheNode, "index_idset_hits_to_cache"sv, cacheConfig.idxIdsetHitsToCache, 0);
-		tryReadOptionalJsonValue(&errorString, cacheNode, "ft_index_cache_size"sv, cacheConfig.ftIdxCacheSize, 0);
-		tryReadOptionalJsonValue(&errorString, cacheNode, "ft_index_hits_to_cache"sv, cacheConfig.ftIdxHitsToCache, 0);
-		tryReadOptionalJsonValue(&errorString, cacheNode, "joins_preselect_cache_size"sv, cacheConfig.joinCacheSize, 0);
-		tryReadOptionalJsonValue(&errorString, cacheNode, "joins_preselect_hit_to_cache"sv, cacheConfig.joinHitsToCache, 0);
-		tryReadOptionalJsonValue(&errorString, cacheNode, "query_count_cache_size"sv, cacheConfig.queryCountCacheSize, 0);
-		tryReadOptionalJsonValue(&errorString, cacheNode, "query_count_hit_to_cache"sv, cacheConfig.queryCountHitsToCache, 0);
-		tryReadOptionalJsonValue(&errorString, cacheNode, "index_idset_cache_size"sv, cacheConfig.idxIdsetCacheSize, 0);
-		tryReadOptionalJsonValue(&errorString, cacheNode, "index_idset_cache_size"sv, cacheConfig.idxIdsetCacheSize, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "index_idset_cache_size"sv, cacheConfig.idxIdsetCacheSize, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "index_idset_hits_to_cache"sv, cacheConfig.idxIdsetHitsToCache, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "ft_index_cache_size"sv, cacheConfig.ftIdxCacheSize, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "ft_index_hits_to_cache"sv, cacheConfig.ftIdxHitsToCache, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "joins_preselect_cache_size"sv, cacheConfig.joinCacheSize, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "joins_preselect_hit_to_cache"sv, cacheConfig.joinHitsToCache, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "query_count_cache_size"sv, cacheConfig.queryCountCacheSize, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "query_count_hit_to_cache"sv, cacheConfig.queryCountHitsToCache, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "index_idset_cache_size"sv, cacheConfig.idxIdsetCacheSize, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "index_idset_cache_size"sv, cacheConfig.idxIdsetCacheSize, 0);
+		(void)err;	// ignored; Errors will be handled with errorString
 	}
 
 	if (!errorString.empty()) {
 		return Error(errParseJson, "NamespaceConfigData: JSON parsing error: '%s'", errorString);
 	}
-	return Error();
+	return {};
 }
 
 }  // namespace reindexer

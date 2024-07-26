@@ -6,11 +6,6 @@ extern "C" {
 
 #include <stdint.h>
 
-typedef struct reindexer_config {
-	int64_t allocator_cache_limit;
-	float allocator_max_cache_part;
-} reindexer_config;
-
 typedef struct reindexer_buffer {
 	uint8_t *data;
 	int len;
@@ -20,7 +15,6 @@ typedef struct reindexer_resbuffer {
 	uintptr_t results_ptr;
 	uintptr_t data;
 	int len;
-
 } reindexer_resbuffer;
 
 typedef struct reindexer_error {
@@ -34,10 +28,24 @@ typedef struct reindexer_string {
 	int8_t reserved[4];
 } reindexer_string;
 
+typedef struct reindexer_config {
+	int64_t allocator_cache_limit;
+	float allocator_max_cache_part;
+	uint64_t max_updates_size;
+	reindexer_string sub_db_name;
+} reindexer_config;
+
 typedef struct reindexer_ret {
 	reindexer_resbuffer out;
 	int err_code;
 } reindexer_ret;
+
+typedef struct reindexer_array_ret {
+	reindexer_buffer *out_buffers;
+	uint32_t out_size;
+	uintptr_t data;
+	int err_code;
+} reindexer_array_ret;
 
 typedef struct reindexer_tx_ret {
 	uintptr_t tx_id;
@@ -50,6 +58,11 @@ typedef struct reindexer_ctx_info {
 } reindexer_ctx_info;
 
 typedef enum { cancel_expilicitly, cancel_on_timeout } ctx_cancel_type;
+
+typedef struct reindexer_subscription_opts {
+	int stream_id;
+	// TODO: More opts
+} reindexer_subscription_opts;
 
 #ifdef __cplusplus
 }

@@ -338,8 +338,6 @@ static int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAlloca
 	return JSON_BREAKING_BAD;
 }
 
-static const uint8_t JSON_EMPTY = 0xFF;
-
 JsonNode *JsonNode::toNode() const {
 	if (empty() || value.getTag() == JSON_NULL) return nullptr;
 	if (value.getTag() != JSON_OBJECT && value.getTag() != JSON_ARRAY)
@@ -354,13 +352,13 @@ const JsonNode &JsonNode::operator[](std::string_view key) const {
 	for (auto &v : (*this)) {
 		if (std::string_view(v.key) == key) return v;
 	}
-	static JsonNode empty_node{{JsonTag(JSON_EMPTY)}, nullptr, {}};
+	// TODO: Remove NOLINT after pyreindexer update. Issue #1736
+	static JsonNode empty_node{{JsonTag(JSON_EMPTY)}, nullptr, {}};	 // NOLINT(*EnumCastOutOfRange)
 	return empty_node;
 }
 
-JsonNode JsonNode::EmptyNode() noexcept { return {{JsonTag(JSON_EMPTY)}, nullptr, {}}; }
-
-bool JsonNode::empty() const noexcept { return this->value.u.tag == JsonTag(JSON_EMPTY); }
+// TODO: Remove NOLINT after pyreindexer update. Issue #1736
+JsonNode JsonNode::EmptyNode() noexcept { return {{JsonTag(JSON_EMPTY)}, nullptr, {}}; } // NOLINT(*EnumCastOutOfRange)
 
 JsonNode JsonParser::Parse(span<char> str, size_t *length) {
 	largeStrings_->clear();

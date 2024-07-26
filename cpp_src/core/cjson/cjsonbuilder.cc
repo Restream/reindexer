@@ -31,7 +31,7 @@ CJsonBuilder CJsonBuilder::Array(int tagName, ObjType type) {
 	return CJsonBuilder(*ser_, type, tm_, tagName);
 }
 
-void CJsonBuilder::Array(int tagName, span<Uuid> data, int /*offset*/) {
+void CJsonBuilder::Array(int tagName, span<const Uuid> data, int /*offset*/) {
 	ser_->PutCTag(ctag{TAG_ARRAY, tagName});
 	ser_->PutCArrayTag(carraytag(data.size(), TAG_UUID));
 	for (auto d : data) {

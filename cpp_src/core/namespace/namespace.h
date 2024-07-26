@@ -87,18 +87,12 @@ class Namespace {
 public:
 	using Ptr = shared_ptr<Namespace>;
 
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	Namespace(const std::string &name, std::optional<int32_t> stateToken, cluster::INsDataReplicator &clusterizator,
+	Namespace(const std::string &name, std::optional<int32_t> stateToken, cluster::IDataSyncer &clusterizator,
 			  BackgroundNamespaceDeleter &bgDeleter, UpdatesObservers &observers)
 		: ns_(make_intrusive<NamespaceImpl>(name, std::move(stateToken), clusterizator, observers)), bgDeleter_(bgDeleter) {}
-#else	// REINDEX_WITH_V3_FOLLOWERS
-	Namespace(const std::string &name, std::optional<int32_t> stateToken, cluster::INsDataReplicator &clusterizator,
-			  BackgroundNamespaceDeleter &bgDeleter)
-		: ns_(make_intrusive<NamespaceImpl>(name, std::move(stateToken), clusterizator)), bgDeleter_(bgDeleter) {}
-#endif	//  REINDEX_WITH_V3_FOLLOWERS
 
 	void CommitTransaction(LocalTransaction &tx, LocalQueryResults &result, const NsContext &ctx);
-	std::string GetName(const RdxContext &ctx) const { return nsFuncWrapper<&NamespaceImpl::GetName>(ctx); }
+	NamespaceName GetName(const RdxContext &ctx) const { return nsFuncWrapper<&NamespaceImpl::GetName>(ctx); }
 	bool IsSystem(const RdxContext &ctx) const { return nsFuncWrapper<&NamespaceImpl::IsSystem>(ctx); }
 	bool IsTemporary(const RdxContext &ctx) const { return nsFuncWrapper<&NamespaceImpl::IsTemporary>(ctx); }
 	void SetNsVersion(lsn_t version, const RdxContext &ctx) { nsFuncWrapper<&NamespaceImpl::SetNsVersion>(version, ctx); }
@@ -252,7 +246,8 @@ protected:
 
 private:
 	bool needNamespaceCopy(const NamespaceImpl::Ptr &ns, const LocalTransaction &tx) const noexcept;
-	void doRename(const Namespace::Ptr &dst, const std::string &newName, const std::string &storagePath,
+	bool isExpectingSelectsOnNamespace(const NamespaceImpl::Ptr &ns, const NsContext& ctx);
+	void doRename(const Namespace::Ptr &dst, std::string_view newName, const std::string &storagePath,
 				  const std::function<void(std::function<void()>)> &replicateCb, const RdxContext &ctx);
 	NamespaceImpl::Ptr atomicLoadMainNs() const {
 		std::lock_guard<spinlock> lck(nsPtrSpinlock_);
@@ -265,10 +260,10 @@ private:
 
 	NamespaceImpl::Ptr ns_;
 	std::unique_ptr<NamespaceImpl> nsCopy_;
-	std::atomic<bool> hasCopy_ = {false};
 	using Mutex = MarkedMutex<std::timed_mutex, MutexMark::CloneNs>;
 	mutable Mutex clonerMtx_;
 	mutable spinlock nsPtrSpinlock_;
+	std::atomic<bool> hasCopy_ = {false};
 	std::atomic<int> startCopyPolicyTxSize_;
 	std::atomic<int> copyPolicyMultiplier_;
 	std::atomic<int> txSizeToAlwaysCopy_;

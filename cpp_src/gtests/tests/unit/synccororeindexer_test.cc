@@ -163,7 +163,8 @@ TEST(SyncCoroRx, TestSyncCoroRx) {
 
 	SyncCoroRxHelpers::FillData(client, "ns_test", kSyncCoroRxTestMaxIndex);
 	reindexer::client::QueryResults qResults(3);
-	client.Select("select * from ns_test", qResults);
+	err = client.Select("select * from ns_test", qResults);
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	for (auto i = qResults.begin(); i != qResults.end(); ++i) {
 		reindexer::WrSerializer wrser;
@@ -178,13 +179,17 @@ TEST(SyncCoroRx, DISABLED_TestSyncCoroRxNThread) {
 	ServerControl server;
 	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
 	reindexer::client::Reindexer client;
-	client.Connect("cproto://127.0.0.1:" + std::to_string(kSyncCoroRxTestDefaultRpcPort) + "/db");
-	client.OpenNamespace("ns_test");
+	auto err = client.Connect("cproto://127.0.0.1:" + std::to_string(kSyncCoroRxTestDefaultRpcPort) + "/db");
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = client.OpenNamespace("ns_test");
+	ASSERT_TRUE(err.ok()) << err.what();
 	reindexer::IndexDef indDef("id", "hash", "int", IndexOpts().PK());
-	client.AddIndex("ns_test", indDef);
+	err = client.AddIndex("ns_test", indDef);
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	reindexer::IndexDef indDef2("index2", "hash", "int", IndexOpts());
-	client.AddIndex("ns_test", indDef2);
+	err = client.AddIndex("ns_test", indDef2);
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	std::atomic<int> counter(kSyncCoroRxTestMaxIndex);
 	auto insertThreadFun = [&client, &counter]() {
@@ -195,7 +200,8 @@ TEST(SyncCoroRx, DISABLED_TestSyncCoroRxNThread) {
 				std::string json = R"#({"id":)#" + std::to_string(c) + R"#(, "val":)#" + "\"aaaaaaaaaaaaaaa \"" + R"#(})#";
 				reindexer::Error err = item.FromJSON(json);
 				ASSERT_TRUE(err.ok()) << err.what();
-				client.Upsert("ns_test", item);
+				err = client.Upsert("ns_test", item);
+				ASSERT_TRUE(err.ok()) << err.what();
 			} else {
 				break;
 			}
@@ -230,11 +236,14 @@ TEST(SyncCoroRx, DISABLED_TestCoroRxNCoroutine) {
 		reindexer::client::CoroReindexer rx;
 		auto err = rx.Connect("cproto://127.0.0.1:" + std::to_string(kSyncCoroRxTestDefaultRpcPort) + "/db", loop);
 		ASSERT_TRUE(err.ok()) << err.what();
-		rx.OpenNamespace("ns_c");
+		err = rx.OpenNamespace("ns_c");
+		ASSERT_TRUE(err.ok()) << err.what();
 		reindexer::IndexDef indDef("id", "hash", "int", IndexOpts().PK());
-		rx.AddIndex("ns_c", indDef);
+		err = rx.AddIndex("ns_c", indDef);
+		ASSERT_TRUE(err.ok()) << err.what();
 		reindexer::IndexDef indDef2("index2", "hash", "int", IndexOpts());
-		rx.AddIndex("ns_c", indDef2);
+		err = rx.AddIndex("ns_c", indDef2);
+		ASSERT_TRUE(err.ok()) << err.what();
 		reindexer::coroutine::wait_group wg;
 
 		auto insblok = [&rx, &wg](int from, int count) {
@@ -289,11 +298,12 @@ TEST(SyncCoroRx, RxClientNThread) {
 		while (true) {
 			const int c = counter.fetch_add(1);
 			if (c < kSyncCoroRxTestMaxIndex * 2) {
-				reindexer::client::Item item = client.NewItem(kNsName);
+				auto item = client.NewItem(kNsName);
 				const std::string json = R"#({"id":)#" + std::to_string(c) + R"#(, "val":)#" + "\"aaaaaaaaaaaaaaa \"" + R"#(})#";
-				reindexer::Error err = item.Unsafe(true).FromJSON(json);
+				auto err = item.Unsafe(true).FromJSON(json);
 				ASSERT_TRUE(err.ok()) << err.what();
-				client.Upsert(kNsName, item);
+				err = client.Upsert(kNsName, item);
+				ASSERT_TRUE(err.ok()) << err.what();
 				std::this_thread::yield();
 			} else {
 				break;
@@ -529,7 +539,9 @@ TEST(SyncCoroRx, TxInvalidation) {
 	auto movedTx = std::move(originalTx);
 	{
 		auto item = client->NewItem(kNsNames);
-		item.FromJSON(kItemContent);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		err = item.FromJSON(kItemContent);
+		ASSERT_TRUE(err.ok()) << err.what();
 		// Special test case. Use after move is expected
 		// NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
 		err = originalTx.Insert(std::move(item));
@@ -540,7 +552,9 @@ TEST(SyncCoroRx, TxInvalidation) {
 	}
 	{
 		auto item = client->NewItem(kNsNames);
-		item.FromJSON(kItemContent);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		err = item.FromJSON(kItemContent);
+		ASSERT_TRUE(err.ok()) << err.what();
 		err = movedTx.Insert(std::move(item));
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
@@ -552,7 +566,9 @@ TEST(SyncCoroRx, TxInvalidation) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	auto item = client->NewItem(kNsNames);
-	item.FromJSON(kItemContent);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	err = item.FromJSON(kItemContent);
+	ASSERT_TRUE(err.ok()) << err.what();
 	err = movedTx.Insert(std::move(item));
 	EXPECT_EQ(err.code(), errNetwork);
 	if (err.what() != kExpectedErrorText1 && err.what() != kExpectedErrorText2) {

@@ -25,6 +25,7 @@ void assertf_fmt(const char *fmt, const Args &...args) {
 #define assertf(e, fmt, ...)                                                                                \
 	if rx_unlikely (!(e)) {                                                                                 \
 		reindexer::assertf_fmt("%s:%d: failed assertion '%s':\n" fmt, __FILE__, __LINE__, #e, __VA_ARGS__); \
+		reindexer::debug::print_backtrace(std::cerr, nullptr, -1);                                          \
 		reindexer::debug::print_crash_query(std::cerr);                                                     \
 		abort();                                                                                            \
 	}                                                                                                       \
@@ -35,6 +36,7 @@ void assertf_fmt(const char *fmt, const Args &...args) {
 #define assertf_dbg(e, fmt, ...)                                                                            \
 	if rx_unlikely (!(e)) {                                                                                 \
 		reindexer::assertf_fmt("%s:%d: failed assertion '%s':\n" fmt, __FILE__, __LINE__, #e, __VA_ARGS__); \
+		reindexer::debug::print_backtrace(std::cerr, nullptr, -1);                                          \
 		reindexer::debug::print_crash_query(std::cerr);                                                     \
 		abort();                                                                                            \
 	}                                                                                                       \
@@ -45,14 +47,18 @@ void assertf_fmt(const char *fmt, const Args &...args) {
 
 #endif	// REINDEX_CORE_BUILD
 
-class Error {
+#if defined(REINDEX_CORE_BUILD)
+class [[nodiscard]] Error {
+#else	// !defined(REINDEX_CORE_BUILD)
+class Error {  // TODO: Enable nodiscard once python binding will be updated
+#endif	// defined(REINDEX_CORE_BUILD)
 	using WhatT = intrusive_atomic_rc_wrapper<std::string>;
 	using WhatPtr = intrusive_ptr<WhatT>;
 	const static WhatPtr defaultErrorText_;
 
 public:
-	Error() noexcept = default;
-	Error(ErrorCode code) noexcept : code_{code} {}
+	constexpr Error() noexcept = default;
+	constexpr Error(ErrorCode code) noexcept : code_{code} {}
 	Error(ErrorCode code, std::string what) noexcept : code_{code} {
 		if (code_ != errOK) {
 			try {

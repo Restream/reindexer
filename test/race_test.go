@@ -3,8 +3,8 @@ package reindexer
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"math/rand"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +14,7 @@ import (
 
 	"github.com/restream/reindexer/v4"
 	"github.com/restream/reindexer/v4/bindings/builtin"
+	"github.com/restream/reindexer/v4/events"
 )
 
 func init() {
@@ -62,6 +63,42 @@ func newTestItemWithExtraFields2(id int, pkgsCount int) interface{} {
 				SomeNestedInt:      rand.Int()%50 + 2000,
 				RandomNestedString: randString(),
 				NestedArray:        randIntArr(10, 1000, 1000)}},
+	}
+}
+
+func subscriberRaceRoutine(t *testing.T, subsWg *sync.WaitGroup, subsDone chan (bool), opts *events.EventsStreamOptions) {
+	defer subsWg.Done()
+	stream := DBD.Subscribe(opts)
+	defer stream.Close(context.Background())
+	require.NoError(t, stream.Error())
+	events := 0
+	for {
+		select {
+		case <-subsDone:
+			require.Greater(t, events, 0)
+			require.NoError(t, stream.Error())
+			return
+		case <-stream.Chan():
+			require.NoError(t, stream.Error())
+			events += 1
+		}
+	}
+}
+
+func subUnsubRaceRoutine(t *testing.T, subsWg *sync.WaitGroup, subsDone chan (bool), opts *events.EventsStreamOptions) {
+	defer subsWg.Done()
+	for {
+		select {
+		case <-subsDone:
+			return
+		default:
+			stream := DBD.Subscribe(opts)
+			require.NoError(t, stream.Error())
+			time.Sleep(100 * time.Millisecond)
+			err := stream.Close(context.Background())
+			require.NoError(t, err)
+			time.Sleep(20 * time.Millisecond)
+		}
 	}
 }
 
@@ -176,10 +213,22 @@ func TestRaceConditions(t *testing.T) {
 		wg.Add(1)
 		go openCloser()
 	}
+	subsWg := sync.WaitGroup{}
+	subsDone := make(chan bool)
+	subsWg.Add(3)
+	go subUnsubRaceRoutine(t, &subsWg, subsDone, events.DefaultEventsStreamOptions().WithDocModifyEvents())
+	go subscriberRaceRoutine(t, &subsWg, subsDone, events.DefaultEventsStreamOptions().WithConfigNamespace())
+	if strings.HasPrefix(DB.dsn, "builtin://") {
+		go subscriberRaceRoutine(t, &subsWg, subsDone, events.DefaultEventsStreamOptions().WithIndexModifyEvents().WithNamespaceOperationEvents())
+	} else {
+		go subscriberRaceRoutine(t, &subsWg, subsDone, events.DefaultEventsStreamOptions().WithDocModifyEvents())
+	}
 
 	time.Sleep(time.Millisecond * 15000)
 	close(done)
 	wg.Wait()
+	close(subsDone)
+	subsWg.Wait()
 }
 
 func setNsCopyConfigs(t *testing.T, namespace string) {
@@ -204,12 +253,6 @@ func TestRaceConditionsTx(t *testing.T) {
 	done := make(chan bool)
 	wg := sync.WaitGroup{}
 	writer := func() {
-		defer func() {
-			if p := recover(); p != nil {
-				fmt.Println("Panic silenced:", p)
-				wg.Done()
-			}
-		}()
 		for {
 			select {
 			case <-done:
@@ -223,12 +266,6 @@ func TestRaceConditionsTx(t *testing.T) {
 		}
 	}
 	reader := func() {
-		defer func() {
-			if p := recover(); p != nil {
-				fmt.Println("Panic silenced:", p)
-				wg.Done()
-			}
-		}()
 		for {
 			select {
 			case <-done:
@@ -268,46 +305,39 @@ func TestRaceConditionsTx(t *testing.T) {
 		}
 	}
 	txWriter := func() {
-		defer func() {
-			if p := recover(); p != nil {
-				fmt.Println("Panic silenced:", p)
-				wg.Done()
-			}
-		}()
+		defer wg.Done()
+		txs := 0
 		for {
 			select {
 			case <-done:
-				wg.Done()
+				require.Greater(t, txs, 0)
 				return
 			case <-time.After(time.Millisecond * 10):
-				tx, _ := DB.BeginTx("test_join_items_race_tx")
-				bigTx := rand.Intn(2) > 0
-				txItemsCount := 1000
-				if bigTx {
-					txItemsCount = 20000
+				tx, err := DB.BeginTx("test_join_items_race_tx")
+				if err == nil {
+					txs += 1
+					bigTx := rand.Intn(2) > 0
+					txItemsCount := 1000
+					if bigTx {
+						txItemsCount = 20000
+					}
+					for i := 0; i < txItemsCount; i++ {
+						tx.UpsertAsync(TestJoinItem{ID: i}, func(err error) {
+							if err != nil {
+								panic(err)
+							}
+						})
+					}
+					tx.Commit()
 				}
-				for i := 0; i < txItemsCount; i++ {
-					tx.UpsertAsync(TestJoinItem{ID: i}, func(err error) {
-						if err != nil {
-							panic(err)
-						}
-					})
-				}
-				tx.Commit()
 			}
 		}
 	}
 	deleter := func() {
-		defer func() {
-			if p := recover(); p != nil {
-				fmt.Println("Panic silenced:", p)
-				wg.Done()
-			}
-		}()
+		defer wg.Done()
 		for {
 			select {
 			case <-done:
-				wg.Done()
 				return
 			case <-time.After(time.Millisecond * 10):
 				startID := rand.Intn(20000)
@@ -327,10 +357,19 @@ func TestRaceConditionsTx(t *testing.T) {
 		wg.Add(1)
 		go deleter()
 	}
+	subsWg := sync.WaitGroup{}
+	subsDone := make(chan bool)
+	subsWg.Add(4)
+	go subUnsubRaceRoutine(t, &subsWg, subsDone, events.DefaultEventsStreamOptions().WithAllTransactionEvents())
+	go subscriberRaceRoutine(t, &subsWg, subsDone, events.DefaultEventsStreamOptions().WithConfigNamespace())
+	go subscriberRaceRoutine(t, &subsWg, subsDone, events.DefaultEventsStreamOptions().WithTransactionCommitEvents())
+	go subscriberRaceRoutine(t, &subsWg, subsDone, events.DefaultEventsStreamOptions().WithAllTransactionEvents())
 
 	time.Sleep(time.Millisecond * 15000)
 	close(done)
 	wg.Wait()
+	close(subsDone)
+	subsWg.Wait()
 }
 
 func TestCtxWatcherRace(t *testing.T) {

@@ -46,7 +46,7 @@ Error CoroReindexer::CreateTemporaryNamespace(std::string_view baseName, std::st
 	return impl_->CreateTemporaryNamespace(baseName, resultName, ctx_, opts, version);
 }
 Error CoroReindexer::TruncateNamespace(std::string_view nsName) { return impl_->TruncateNamespace(nsName, ctx_); }
-Error CoroReindexer::RenameNamespace(std::string_view srcNsName, const std::string& dstNsName) {
+Error CoroReindexer::RenameNamespace(std::string_view srcNsName, std::string_view dstNsName) {
 	return impl_->RenameNamespace(srcNsName, dstNsName, ctx_);
 }
 Error CoroReindexer::Insert(std::string_view nsName, Item& item) { return impl_->Insert(nsName, item, RPCDataFormat::CJSON, ctx_); }
@@ -67,17 +67,16 @@ Error CoroReindexer::GetMeta(std::string_view nsName, const std::string& key, st
 Error CoroReindexer::PutMeta(std::string_view nsName, const std::string& key, std::string_view data) {
 	return impl_->PutMeta(nsName, key, data, ctx_);
 }
-Error CoroReindexer::EnumMeta(std::string_view nsName, std::vector<std::string>& keys) {
-	return impl_->EnumMeta(nsName, keys, ctx_);
-}
-Error CoroReindexer::DeleteMeta(std::string_view nsName, const std::string& key) {
-	return impl_->DeleteMeta(nsName, key, ctx_);
-}
+Error CoroReindexer::EnumMeta(std::string_view nsName, std::vector<std::string>& keys) { return impl_->EnumMeta(nsName, keys, ctx_); }
+Error CoroReindexer::DeleteMeta(std::string_view nsName, const std::string& key) { return impl_->DeleteMeta(nsName, key, ctx_); }
 Error CoroReindexer::Delete(const Query& q, CoroQueryResults& result) { return impl_->Delete(q, result, ctx_); }
 Error CoroReindexer::Delete(std::string_view nsName, std::string_view cjson) { return impl_->Delete(nsName, cjson, ctx_); }
 Error CoroReindexer::Select(std::string_view query, CoroQueryResults& result) { return impl_->Select(query, result, ctx_); }
 Error CoroReindexer::Select(const Query& q, CoroQueryResults& result) { return impl_->Select(q, result, ctx_); }
-Error CoroReindexer::Commit(std::string_view nsName) { return impl_->Commit(nsName, ctx_); }
+Error CoroReindexer::Commit(std::string_view) {
+	// Empty
+	return {};
+}
 Error CoroReindexer::AddIndex(std::string_view nsName, const IndexDef& idx) { return impl_->AddIndex(nsName, idx, ctx_); }
 Error CoroReindexer::UpdateIndex(std::string_view nsName, const IndexDef& idx) { return impl_->UpdateIndex(nsName, idx, ctx_); }
 Error CoroReindexer::DropIndex(std::string_view nsName, const IndexDef& index) { return impl_->DropIndex(nsName, index, ctx_); }

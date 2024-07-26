@@ -16,8 +16,10 @@ const (
 	fieldsUpdateNs              = "test_items_fields_update"
 	truncateNs                  = "test_truncate"
 	removeItemsNs               = "test_remove_items"
-	sparseArrItemNs             = "sparse_array_updates"
-	TestUpdateWithExpressionsNs = "test_update_with_expressions_ns"
+	sparseArrItemNs             = "test_sparse_array_update"
+	TestUpdateWithExpressionsNs = "test_expressions_updates"
+	TestUpdateHeteroArraysNs    = "test_heterogeneous_array_updates"
+	TestUpdateHeteroArraysObjNs = "test_heterogeneous_objects_array_updates"
 )
 
 type ItemWithSparseArray struct {
@@ -25,10 +27,28 @@ type ItemWithSparseArray struct {
 	Array []int64 `json:"array_idx" reindex:"array_idx,hash,sparse"`
 }
 
+type ItemWithHeteroArrays struct {
+	ID       int64         `json:"id" reindex:"id,hash,pk"`
+	ArrayIdx []int64       `json:"array_idx" reindex:"array_idx,hash,sparse"`
+	ArrayNon []interface{} `json:"array_hetero"`
+}
+
+type Nested struct {
+	Field int `json:"field" reindex:"array_idx,-"`
+}
+
+type ItemWithHeteroArraysObj struct {
+	ID       int64         `json:"id" reindex:"id,hash,pk"`
+	Nested   []Nested      `json:"nested"`
+	ArrayNon []interface{} `json:"array_nonidx"`
+}
+
 func init() {
 	tnamespaces["test_items_insert_update"] = TestItemSimple{}
 	tnamespaces[sparseArrItemNs] = ItemWithSparseArray{}
 	tnamespaces[TestUpdateWithExpressionsNs] = ItemWithSparseArray{}
+	tnamespaces[TestUpdateHeteroArraysNs] = ItemWithHeteroArrays{}
+	tnamespaces[TestUpdateHeteroArraysObjNs] = ItemWithHeteroArraysObj{}
 }
 
 var checkInsertUpdateExistsData = []*TestItemSimple{
@@ -420,7 +440,7 @@ func CheckUpdateArrayObject(t *testing.T) {
 		Fourth: fourth,
 	}
 
-	// Update objects[0].nested[0] witn new value (set as JSON)
+	// Update objects[0].nested[0] with new value (set as JSON)
 	objJson, err := json.Marshal(obj)
 	require.NoError(t, err)
 	results := UpdateObjectJSON(t, "objects[0].nested[0]", objJson)
@@ -445,7 +465,7 @@ func CheckUpdateArrayObject(t *testing.T) {
 }
 
 // Check of simultaneous update of 2 fields: object field + indexed field
-func CheckSimultaniousUpdateOfFields(t *testing.T) {
+func CheckSimultaneousUpdateOfFields(t *testing.T) {
 	// Generate new value for the object field
 	obj := randTestItemObject()
 	objJson, err := json.Marshal(obj)
@@ -725,7 +745,7 @@ func CheckNonIndexedArrayItemUpdate2(t *testing.T) {
 		array := results[i].(*TestItemComplexObject).Objects
 		for j := 0; j < len(array); j++ {
 			for k := 0; k < len(array[j].Nested); k++ {
-				// Make sure it's size is correect
+				// Make sure it's size is correct
 				equal := (len(array[j].Nested[k].Fourth) == 10)
 				if equal {
 					for l := 0; l < len(array[j].Nested[k].Fourth); l++ {
@@ -1052,7 +1072,7 @@ func TestUpdateSparseArrayIndex(t *testing.T) {
 	checkResultItem(t, results, emptyItem)
 }
 
-func TestUpdateWithExpressions(t *testing.T) {
+func TestUpdateExpressionWithArrayRemove(t *testing.T) {
 	t.Parallel()
 
 	const ns = TestUpdateWithExpressionsNs
@@ -1080,4 +1100,69 @@ func TestUpdateWithExpressions(t *testing.T) {
 		require.EqualValues(t, expected, res.Array)
 	})
 
+	t.Run("update with array_remove delete by single value (scalar) from array", func(t *testing.T) {
+		res_slice, err := DB.Query(ns).SetExpression("array_idx", "array_remove(array_idx, 4)").
+			Update().FetchAll()
+		require.NoError(t, err)
+		require.Len(t, res_slice, 1)
+		res := res_slice[0].(*ItemWithSparseArray)
+		expected := []int64{5, 50}
+		require.EqualValues(t, expected, res.Array)
+	})
+
+}
+
+func TestUpdateSetHeterogeneousArray(t *testing.T) {
+	t.Parallel()
+
+	t.Run("update with heterogeneous array", func(t *testing.T) {
+		ns := TestUpdateHeteroArraysNs
+		item := &ItemWithHeteroArrays{ID: 1, ArrayIdx: []int64{1, 2, 3}, ArrayNon: []interface{}{3.14, "hi", "bro", 111}}
+		require.NoError(t, DB.Upsert(ns, item))
+
+		updateArr := []interface{}{"777", 333, "555"}
+		q := DB.Query(ns).Where("id", reindexer.EQ, 1).Set("array_idx", updateArr)
+		_, err := q.Update().FetchAll()
+		require.NoError(t, err)
+
+		updateArrNon := []interface{}{"whatsup", 111, "bro"}
+		q = DB.Query(ns).Where("id", reindexer.EQ, 1).Set("array_hetero", updateArrNon)
+		_, err = q.Update().FetchAll()
+		require.NoError(t, err)
+
+		selectText := "SELECT * FROM " + ns + " WHERE id = 1"
+		arrayIdxExpected := []int64{777, 333, 555}
+		expected := &ItemWithHeteroArrays{ID: 1, ArrayIdx: arrayIdxExpected, ArrayNon: updateArrNon}
+		checkResultItem(t, DB.ExecSQL(selectText), expected)
+	})
+
+	t.Run("update with heterogeneous objects array", func(t *testing.T) {
+		ns := TestUpdateHeteroArraysObjNs
+		item := &ItemWithHeteroArraysObj{
+			ID:       1,
+			Nested:   []Nested{{Field: 1}, {Field: 2}},
+			ArrayNon: []interface{}{"a", map[string]int{"field": 1}, 3},
+		}
+		require.NoError(t, DB.Upsert(ns, item))
+
+		// indexed arr
+		updateIdxArr := []interface{}{map[string]int{"field": 10}, map[string]string{"field": "20"}}
+		q := DB.Query(ns).Where("id", reindexer.EQ, 1).SetObject("nested", updateIdxArr)
+		_, err := q.Update().FetchAll()
+		require.NoError(t, err)
+
+		// nonidx arr
+		updateNonidxArr := []interface{}{map[string]int{"field": 111}, map[string]string{"field": "abc"}}
+		q = DB.Query(ns).Where("id", reindexer.EQ, 1).SetObject("array_nonidx", updateNonidxArr)
+		_, err = q.Update().FetchAll()
+		require.NoError(t, err)
+
+		selectText := "SELECT * FROM " + ns + " WHERE id = 1"
+		expected := &ItemWithHeteroArraysObj{
+			ID:       1,
+			Nested:   []Nested{{Field: 10}, {Field: 20}},
+			ArrayNon: []interface{}{map[string]interface{}{"field": 111}, map[string]interface{}{"field": "abc"}},
+		}
+		checkResultItem(t, DB.ExecSQL(selectText), expected)
+	})
 }

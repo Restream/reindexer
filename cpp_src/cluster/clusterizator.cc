@@ -1,6 +1,4 @@
 #include "clusterizator.h"
-#include <assert.h>
-#include <unordered_set>
 #include "core/reindexer_impl/reindexerimpl.h"
 
 namespace reindexer {
@@ -113,14 +111,10 @@ bool Clusterizator::NamesapceIsInReplicationConfig(std::string_view nsName) {
 	return clusterReplicator_.NamespaceIsInClusterConfig(nsName) || asyncReplicator_.NamespaceIsInAsyncConfig(nsName);
 }
 
-Error Clusterizator::Replicate(UpdateRecord&& rec, std::function<void()> beforeWaitF, const RdxContext& ctx) {
-	UpdatesContainer recs(1);
-	recs[0] = std::move(rec);
-	return Clusterizator::Replicate(std::move(recs), std::move(beforeWaitF), ctx);
-}
-
 Error Clusterizator::Replicate(UpdatesContainer&& recs, std::function<void()> beforeWaitF, const RdxContext& ctx) {
-	if (replicationIsNotRequired(recs)) return errOK;
+	if (replicationIsNotRequired(recs)) {
+		return {};
+	}
 
 	std::pair<Error, bool> res;
 	if (ctx.GetOriginLSN().isEmpty()) {
@@ -132,17 +126,13 @@ Error Clusterizator::Replicate(UpdatesContainer&& recs, std::function<void()> be
 	if (res.second) {
 		return res.first;
 	}
-	return Error();	 // This namespace is not taking part in any replication
-}
-
-Error Clusterizator::ReplicateAsync(UpdateRecord&& rec, const RdxContext& ctx) {
-	UpdatesContainer recs(1);
-	recs[0] = std::move(rec);
-	return Clusterizator::ReplicateAsync(std::move(recs), ctx);
+	return {};	// This namespace is not taking part in any replication
 }
 
 Error Clusterizator::ReplicateAsync(UpdatesContainer&& recs, const RdxContext& ctx) {
-	if (replicationIsNotRequired(recs)) return errOK;
+	if (replicationIsNotRequired(recs)) {
+		return {};
+	}
 
 	std::pair<Error, bool> res;
 	if (ctx.GetOriginLSN().isEmpty()) {
@@ -151,13 +141,11 @@ Error Clusterizator::ReplicateAsync(UpdatesContainer&& recs, const RdxContext& c
 		// Update can't be replicated to cluster from another node, so may only be replicated to async replicas
 		res = updatesQueue_.PushAsync(std::move(recs));
 	}
-	return Error();	 // This namespace is not taking part in any replication
+	return {};	// This namespace is not taking part in any replication
 }
 
 bool Clusterizator::replicationIsNotRequired(const UpdatesContainer& recs) noexcept {
-	if (recs.empty()) return true;
-	std::string_view name = recs[0].GetNsName();
-	return name.size() && name[0] == '#';
+	return recs.empty() || isSystemNamespaceNameFast(recs[0].NsName());
 }
 
 void Clusterizator::validateConfig() const {

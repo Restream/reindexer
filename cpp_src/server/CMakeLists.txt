@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.10)
 project(reindexer_server_library)
 
 set (SWAGGER_VERSION "2.x")
-set (GH_FACE_VERSION "4.15.0")
+set (GH_FACE_VERSION "4.16.1")
 set (GH_FACE_TAG "v${GH_FACE_VERSION}")
 set (TARGET reindexer_server_library)
 set (SERVER_LIB_DIR ${PROJECT_BINARY_DIR} PARENT_SCOPE)
@@ -72,7 +72,7 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
 
 if (LINK_RESOURCES)
   include(CMakeRC)
-  message ("-- Downloading swagger html assets...") 
+  message("-- Downloading swagger html assets...")
 	execute_process(
 	    COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_BINARY_DIR}/make_swagger.cmake"
 	    RESULT_VARIABLE ret
@@ -81,7 +81,7 @@ if (LINK_RESOURCES)
 	if (NOT "${ret}" STREQUAL "0")
             message(FATAL_ERROR "Could not prepare 'swagger' files. Reason: ${err}")
 	endif()
-  message ("-- Downloading face html assets...") 
+  message("-- Downloading face html assets...")
 	execute_process(
 	    COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_BINARY_DIR}/make_face.cmake"
 	    RESULT_VARIABLE ret
@@ -112,11 +112,16 @@ file(GLOB SRCS
   pprof/*
   statscollect/*
   cbinding/*
-  replv3/*
+  events/*
+)
+
+file(GLOB_RECURSE VNDR_SRCS
+  vendor/*
 )
 list(APPEND REINDEXER_LIBRARIES m)
-add_library(${TARGET} STATIC ${SRCS})
+add_library(${TARGET} STATIC ${SRCS} ${VNDR_SRCS})
 include_directories(${PROJECT_SOURCE_DIR})
+include_directories(${PROJECT_SOURCE_DIR}/vendor)
 
 if (LINK_RESOURCES)
     add_dependencies(${TARGET} reindexer_server_resources)
@@ -135,13 +140,13 @@ add_custom_target(swagger COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_BINARY_DIR}/m
 if (NOT WIN32)
   if (GO_BUILTIN_SERVER_EXPORT_PKG_PATH AND NOT IS_ABSOLUTE ${GO_BUILTIN_SERVER_EXPORT_PKG_PATH})
     set (GO_BUILTIN_SERVER_EXPORT_PKG_PATH "${CMAKE_CURRENT_SOURCE_DIR}/${GO_BUILTIN_SERVER_EXPORT_PKG_PATH}")
-  endif ()
+  endif()
 
   if (GO_BUILTIN_SERVER_EXPORT_PKG_PATH AND EXISTS "${GO_BUILTIN_SERVER_EXPORT_PKG_PATH}/posix_config.go.in")
     ProcessorCount (cgo_proc_count)
     set (cgo_cxx_flags "-I../../cpp_src ${EXTRA_FLAGS}")
     set (cgo_c_flags "-I../../cpp_src ${EXTRA_FLAGS}")
-    set (cgo_ld_flags "-L\${SRCDIR}/../../build/cpp_src/ -L\${SRCDIR}/../../build/cpp_src/server/ -lreindexer_server_library ${EXTRA_FLAGS}")
+    set (cgo_ld_flags "-L\${SRCDIR}/../../build/cpp_src/ -L\${SRCDIR}/../../build/cpp_src/server/ -L\${SRCDIR}/../../build/cpp_src/server/vendor/ -lreindexer_server_library ${EXTRA_FLAGS}")
     generate_libs_list("${REINDEXER_LIBRARIES}" cgo_ld_flags)
     string(REPLACE ";" "" cgo_ld_flags "${cgo_ld_flags}")
     configure_file (
@@ -152,7 +157,7 @@ if (NOT WIN32)
     unset (cgo_cxx_flags)
     unset (cgo_c_flags)
     unset (cgo_ld_flags)
-  endif ()
+  endif()
 
   install(FILES
   "${PROJECT_SOURCE_DIR}/server.h"
@@ -202,5 +207,5 @@ else()
         @ONLY
       )
       unset (cgo_ld_flags)
-    endif ()
-endif ()
+    endif()
+endif()

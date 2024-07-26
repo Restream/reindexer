@@ -2,12 +2,10 @@
 
 #include <climits>
 #include <functional>
-#include <string>
 #include <vector>
 #include "core/type_consts.h"
-#include "estl/fast_hash_set.h"
 #include "estl/h_vector.h"
-#include "tools/stringstools.h"
+#include "stopwords/types.h"
 #include "usingcontainer.h"
 
 namespace reindexer {
@@ -52,11 +50,10 @@ struct StopWord;
 
 class FtDSLQuery : public RVector<FtDSLEntry> {
 public:
-	FtDSLQuery(const RHashMap<std::string, int> &fields, const fast_hash_set<StopWord, hash_str, equal_str, less_str> &stopWords,
-			   const std::string &extraWordSymbols) noexcept
+	FtDSLQuery(const RHashMap<std::string, int> &fields, const StopWordsSetT &stopWords, const std::string &extraWordSymbols) noexcept
 		: fields_(fields), stopWords_(stopWords), extraWordSymbols_(extraWordSymbols) {}
 	void parse(std::wstring &utf16str);
-	void parse(const std::string &q);
+	void parse(std::string_view q);
 	FtDSLQuery CopyCtx() const noexcept { return {fields_, stopWords_, extraWordSymbols_}; }
 
 protected:
@@ -65,7 +62,7 @@ protected:
 	std::function<int(const std::string &)> resolver_;
 
 	const RHashMap<std::string, int> &fields_;
-	const fast_hash_set<StopWord, hash_str, equal_str, less_str> &stopWords_;
+	const StopWordsSetT &stopWords_;
 	const std::string &extraWordSymbols_;
 };
 

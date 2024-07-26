@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cluster/updaterecord.h"
+#include "updates/updaterecord.h"
 #include "snapshot.h"
 
 namespace reindexer {
@@ -13,7 +13,7 @@ public:
 	SnapshotHandler(NamespaceImpl& ns) : ns_(ns) {}
 
 	Snapshot CreateSnapshot(const SnapshotOpts& opts) const;
-	void ApplyChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, h_vector<cluster::UpdateRecord, 2>& repl);
+	void ApplyChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, h_vector<updates::UpdateRecord, 2>& repl);
 
 private:
 	struct ChunkContext {
@@ -23,9 +23,9 @@ private:
 		bool initialLeaderSync = false;
 	};
 
-	void applyRecord(const SnapshotRecord& rec, const ChunkContext& ctx, h_vector<cluster::UpdateRecord, 2>& repl);
+	void applyRecord(const SnapshotRecord& rec, const ChunkContext& ctx, h_vector<updates::UpdateRecord, 2>& repl);
 	Error applyShallowRecord(lsn_t lsn, WALRecType type, const PackedWALRecord& wrec, const ChunkContext& chCtx);
-	Error applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, const ChunkContext& chCtx, h_vector<cluster::UpdateRecord, 2>& repl);
+	Error applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, const ChunkContext& chCtx, h_vector<updates::UpdateRecord, 2>& repl);
 
 	NamespaceImpl& ns_;
 	RdxContext dummyCtx_;

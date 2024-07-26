@@ -46,14 +46,16 @@ TEST_F(ClusterizationProxyApi, Transaction) {
 				ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 				err = item.FromJSON(itemData(iIn, "valuedata", ""));
 				ASSERT_TRUE(err.ok()) << err.what();
-				tx.Insert(std::move(item));
+				err = tx.Insert(std::move(item));
+				ASSERT_TRUE(err.ok()) << err.what();
 			}
 			for (iIn = 10; iIn < 20; iIn++) {
 				client::Item item = tx.NewItem();
 				ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 				err = item.FromJSON(itemData(iIn, "valuedata", ""));
 				ASSERT_TRUE(err.ok()) << err.what();
-				tx.Upsert(std::move(item));
+				err = tx.Upsert(std::move(item));
+				ASSERT_TRUE(err.ok()) << err.what();
 			}
 
 			// commit transaction
@@ -82,16 +84,19 @@ TEST_F(ClusterizationProxyApi, Transaction) {
 				client::Item item = tx.NewItem();
 				err = item.FromJSON(itemData(iIn, "valuedata", "modifydata" + std::to_string(iIn)));
 				ASSERT_TRUE(err.ok()) << err.what();
-				tx.Update(std::move(item));
+				auto err = tx.Update(std::move(item));
+				ASSERT_TRUE(err.ok()) << err.what();
 			}
 			for (; iIn < 15; iIn++) {
 				client::Item item = tx.NewItem();
 				err = item.FromJSON(itemData(iIn, "valuedata", ""));
 				ASSERT_TRUE(err.ok()) << err.what();
-				tx.Delete(std::move(item));
+				auto err = tx.Delete(std::move(item));
+				ASSERT_TRUE(err.ok()) << err.what();
 			}
 			// remove items using SQL query
-			tx.Modify(Query::FromSQL("delete from " + kNsName + " where id>=10"));
+			err = tx.Modify(Query::FromSQL("delete from " + kNsName + " where id>=10"));
+			ASSERT_TRUE(err.ok()) << err.what();
 
 			// commit transaction
 			BaseApi::QueryResultsType qrTx;
@@ -144,7 +149,8 @@ TEST_F(ClusterizationProxyApi, RollbackFollowerTransaction) {
 				client::Item item = tx.NewItem();
 				err = item.FromJSON(itemData(iIn, "valuedata", ""));
 				ASSERT_TRUE(err.ok()) << err.what();
-				tx.Insert(std::move(item));
+				err = tx.Insert(std::move(item));
+				ASSERT_TRUE(err.ok()) << err.what();
 			}
 
 			// rollback transaction
@@ -201,7 +207,8 @@ TEST_F(ClusterizationProxyApi, ParallelTransaction) {
 				client::Item item = tx.NewItem();
 				err = item.FromJSON(itemData(iIn, "valuedata" + std::to_string(n), ""));
 				ASSERT_TRUE(err.ok()) << err.what();
-				tx.Upsert(std::move(item));
+				err = tx.Upsert(std::move(item));
+				ASSERT_TRUE(err.ok()) << err.what();
 			}
 			txs.push_back(std::move(tx));
 		}
@@ -332,7 +339,7 @@ static void CheckAddUpdateDropIndex(ClusterizationApi::Cluster& cluster, int nod
 	IndexDef newDef{indxName, "tree", "int", IndexOpts()};
 	err = cluster.GetNode(node)->api.reindexer->UpdateIndex(kNsName, newDef);
 
-	auto getIndexDefBuName = [&cluster](const std::string& nsName, int node, std::string& indxName) -> IndexDef {
+	auto getIndexDefByName = [&cluster](const std::string& nsName, int node, std::string& indxName) -> IndexDef {
 		std::vector<NamespaceDef> defs;
 		Error err = cluster.GetNode(node)->api.reindexer->EnumNamespaces(defs, EnumNamespacesOpts().HideSystem().HideTemporary());
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -349,10 +356,10 @@ static void CheckAddUpdateDropIndex(ClusterizationApi::Cluster& cluster, int nod
 
 	{
 		// check index is correct on leader and follower node
-		IndexDef def = getIndexDefBuName(kNsName, node, indxName);
+		IndexDef def = getIndexDefByName(kNsName, node, indxName);
 		ASSERT_TRUE(!def.name_.empty()) << "index not found";
 		ASSERT_EQ(def.indexType_, "tree");
-		IndexDef defL = getIndexDefBuName(kNsName, leaderId, indxName);
+		IndexDef defL = getIndexDefByName(kNsName, leaderId, indxName);
 		ASSERT_TRUE(!defL.name_.empty()) << "index not found";
 		ASSERT_EQ(defL.indexType_, "tree");
 	}
@@ -360,9 +367,9 @@ static void CheckAddUpdateDropIndex(ClusterizationApi::Cluster& cluster, int nod
 		// drop index and check on leader and follower
 		err = cluster.GetNode(node)->api.reindexer->DropIndex(kNsName, newDef);
 		ASSERT_TRUE(err.ok()) << err.what();
-		IndexDef def = getIndexDefBuName(kNsName, node, indxName);
+		IndexDef def = getIndexDefByName(kNsName, node, indxName);
 		ASSERT_TRUE(def.name_.empty()) << "index found";
-		IndexDef defL = getIndexDefBuName(kNsName, leaderId, indxName);
+		IndexDef defL = getIndexDefByName(kNsName, leaderId, indxName);
 		ASSERT_TRUE(defL.name_.empty()) << "index found";
 	}
 }
@@ -506,8 +513,10 @@ static void CheckInsertUpsertUpdateDelete(ClusterizationApi::Cluster& cluster, i
 		auto itsel = qres.begin().GetItem();
 		ASSERT_FALSE(itsel.GetLSN().isEmpty());
 		std::string itemJson = itemData(pk, "string_update" + std::to_string(pk), "");
-		itsel.FromJSON(itemJson);
-		cluster.GetNode(followerId)->api.reindexer->Update(kNsName, itsel);
+		err = itsel.FromJSON(itemJson);
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = cluster.GetNode(followerId)->api.reindexer->Update(kNsName, itsel);
+		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(itsel.GetLSN().isEmpty());
 		// check the correctness of the update
 		SelectHelper(followerId, kNsName, cluster, itemJson);
@@ -523,7 +532,8 @@ static void CheckInsertUpsertUpdateDelete(ClusterizationApi::Cluster& cluster, i
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
 		ASSERT_FALSE(itsel.GetLSN().isEmpty());
-		cluster.GetNode(followerId)->api.reindexer->Delete(kNsName, itsel);
+		err = cluster.GetNode(followerId)->api.reindexer->Delete(kNsName, itsel);
+		ASSERT_TRUE(err.ok()) << err.what();
 		// check the correctness of the delete
 		Select0Helper(followerId, kNsName, cluster);
 		Select0Helper(leaderId, kNsName, cluster);
@@ -586,7 +596,8 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterizationApi::Cluster& clus
 		auto itsel = qres.begin().GetItem();
 		ASSERT_FALSE(itsel.GetLSN().isEmpty());
 		std::string itemJson = itemData(pk, "string_update" + std::to_string(pk), "");
-		itsel.FromJSON(itemJson);
+		err = itsel.FromJSON(itemJson);
+		ASSERT_TRUE(err.ok()) << err.what();
 		client::QueryResults qrUpdate;
 		err = cluster.GetNode(followerId)->api.reindexer->Update(kNsName, itsel, qrUpdate);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -730,7 +741,8 @@ static void CheckInsertUpsertUpdateItemQRSerial(ClusterizationApi::Cluster& clus
 			jb.End();
 			itemJson = ser.Slice();
 		}
-		itsel.FromJSON(itemJson);
+		err = itsel.FromJSON(itemJson);
+		ASSERT_TRUE(err.ok()) << err.what();
 		itsel.SetPrecepts({"int=SERIAL()"});
 		client::QueryResults qrUpdate;
 		err = cluster.GetNode(followerId)->api.reindexer->Update(kNsName, itsel, qrUpdate);
@@ -874,7 +886,6 @@ TEST_F(ClusterizationProxyApi, ApiTest) {
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
 	loop.spawn(ExceptionWrapper([&loop, &ports] {
-				   const std::string kNsName = "ns";
 				   Cluster cluster(loop, 0, kClusterSize, ports);
 				   // waiting cluster synchonization, get leader and foollower id
 				   auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
@@ -928,8 +939,9 @@ TEST_F(ClusterizationProxyApi, DeleteSelect) {
 		{
 			// check correctness of the data
 			BaseApi::QueryResultsType qr;
-			cluster.GetNode(leaderId)->api.reindexer->Select(Query(kNsName), qr);
-			ASSERT_EQ(qr.Count(), 10) << "must 10 records current " << qr.Count();
+			auto err = cluster.GetNode(leaderId)->api.reindexer->Select(Query(kNsName), qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), 10);
 		}
 
 		cluster.WaitSync(kNsName);
@@ -1098,7 +1110,8 @@ TEST_F(ClusterizationProxyApi, Shutdown) {
 
 		auto addItemFn = [&counter, &cluster, &done, kSleepTime](int nodeId, std::string_view nsName) noexcept {
 			while (!done) {
-				cluster.AddRowWithErr(nodeId, nsName, counter++);
+				auto err = cluster.AddRowWithErr(nodeId, nsName, counter++);
+				(void)err;	// ignored; Error are expected)
 				std::this_thread::sleep_for(kSleepTime);
 			}
 		};
@@ -1239,7 +1252,8 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderAndWrite) {
 			leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 			auto leaderClient = cluster.GetNode(leaderId)->api.reindexer;
 			reindexer::client::QueryResults qr;
-			leaderClient->Select("select * from ns1 order by id", qr);
+			auto err = leaderClient->Select("select * from ns1 order by id", qr);
+			ASSERT_TRUE(err.ok()) << err.what();
 			itemTracker.Validate(qr);
 		}
 	}));
@@ -1344,7 +1358,6 @@ TEST_F(ClusterizationProxyApi, SelectFromStatsTimeout) {
 	auto ports = GetDefaults();
 	loop.spawn(ExceptionWrapper([&loop, &ports] {
 		constexpr size_t kClusterSize = 3;
-		const std::string kNsSome = "some";
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		cluster.StopServers({0, 1});
 		client::QueryResults qr;

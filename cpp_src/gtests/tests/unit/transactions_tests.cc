@@ -151,12 +151,17 @@ TEST_F(TransactionApi, ConcurrencyTest) {
 }
 
 TEST_F(TransactionApi, IndexesOptimizeTest) {
+	// Perform select to trick ns copy heuristic - it expecting at least one select query
+	reindexer::QueryResults qr;
+	Error err = rt.reindexer->Select(Query(default_namespace), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(0, qr.Count());
 	// Add 15000 items to ns. With default settings this should call
 	// transaction with ns copy & atomic change
 	AddDataToNsTx(*rt.reindexer, 0, 15000, "data");
 	// Fetch optimization state
-	reindexer::QueryResults qr;
-	Error err = rt.reindexer->Select(Query("#memstats").Where("name", CondEq, default_namespace), qr);
+	qr.Clear();
+	err = rt.reindexer->Select(Query("#memstats").Where("name", CondEq, default_namespace), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(1, qr.Count());
 

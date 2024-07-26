@@ -1167,7 +1167,7 @@ int HTTPServer::modifyItemsMsgPack(http::Context &ctx, std::string &nsName, std:
 	msgpackBuilder.Put(kParamSuccess, true);
 	if (!precepts.empty()) {
 		auto itemsArray = msgpackBuilder.Array(kParamItems, qr.Count());
-		for (auto it : qr) {
+		for (auto &it : qr) {
 			const auto err = it.GetMsgPack(wrSer, false);
 			if (!err.ok()) {
 				return msgpackStatus(ctx, http::HttpStatus(err));

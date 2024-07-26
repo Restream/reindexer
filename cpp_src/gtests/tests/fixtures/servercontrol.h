@@ -124,6 +124,7 @@ struct ReplicationStateApi {
 	size_t dataCount = 0;
 	std::optional<int> tmVersion;
 	std::optional<int> tmStatetoken;
+	uint64_t updateUnixNano = 0;
 	reindexer::ClusterizationStatus::Role role = reindexer::ClusterizationStatus::Role::None;
 };
 
@@ -196,7 +197,7 @@ public:
 						 std::optional<std::vector<std::string>>&& nsList = std::optional<std::vector<std::string>>(),
 						 reindexer::cluster::AsyncReplicationMode replMode = reindexer::cluster::AsyncReplicationMode::Default);
 		// check with master or slave that sync complete
-		ReplicationStateApi GetState(const std::string& ns);
+		ReplicationStateApi GetState(std::string_view ns);
 		// Force sync (restart leader's replicator)
 		void ForceSync();
 		// Reset replication role for the node

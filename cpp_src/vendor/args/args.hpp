@@ -535,14 +535,14 @@ namespace args
         Hidden = HiddenFromUsage | HiddenFromDescription,
     };
 
-    inline Options operator | (Options lhs, Options rhs)
+    inline int operator | (Options lhs, Options rhs)
     {
-        return static_cast<Options>(static_cast<int>(lhs) | static_cast<int>(rhs));
+        return static_cast<int>(lhs) | static_cast<int>(rhs);
     }
 
-    inline Options operator & (Options lhs, Options rhs)
+    inline int operator & (Options lhs, Options rhs)
     {
-        return static_cast<Options>(static_cast<int>(lhs) & static_cast<int>(rhs));
+        return static_cast<int>(lhs) & static_cast<int>(rhs);
     }
 
     class FlagBase;
@@ -710,7 +710,7 @@ namespace args
     class Base
     {
         private:
-            Options options = {};
+            int options = static_cast<int>(Options::None);
 
         protected:
             bool matched = false;
@@ -721,17 +721,18 @@ namespace args
 #endif
 
         public:
-            Base(const std::string &help_, Options options_ = {}) : options(options_), help(help_) {}
+            Base(const std::string &help_, Options options_ = {}) : Base(help_, static_cast<int>(options_)) {}
+            Base(const std::string &help_, int options_) : options(options_), help(help_) {}
             virtual ~Base() {}
 
-            Options GetOptions() const noexcept
+            int GetOptions() const noexcept
             {
                 return options;
             }
 
             bool IsRequired() const noexcept
             {
-                return (GetOptions() & Options::Required) != Options::None;
+                return (GetOptions() & static_cast<int>(Options::Required));
             }
 
             virtual bool Matched() const noexcept
@@ -801,18 +802,18 @@ namespace args
             {
                 if (kickout_)
                 {
-                    options = options | Options::KickOut;
+                    options = options | static_cast<int>(Options::KickOut);
                 }
                 else
                 {
-                    options = static_cast<Options>(static_cast<int>(options) & ~static_cast<int>(Options::KickOut));
+                    options = options & ~static_cast<int>(Options::KickOut);
                 }
             }
 
             /// Gets the kick-out value for building subparsers
             bool KickOut() const noexcept
             {
-                return (options & Options::KickOut) != Options::None;
+                    return (options & static_cast<int>(Options::KickOut));
             }
 
             virtual void Reset() noexcept
@@ -865,7 +866,8 @@ namespace args
             }
 
         public:
-            NamedBase(const std::string &name_, const std::string &help_, Options options_ = {}) : Base(help_, options_), name(name_) {}
+            NamedBase(const std::string &name_, const std::string &help_, Options options_ = {}) : NamedBase(name_, help_, static_cast<int>(options_)) {}
+            NamedBase(const std::string &name_, const std::string &help_, int options_) : Base(help_, options_), name(name_) {}
             virtual ~NamedBase() {}
 
             /** Sets default value string that will be added to argument description.
@@ -1041,7 +1043,8 @@ namespace args
         public:
             FlagBase(const std::string &name_, const std::string &help_, Matcher &&matcher_, const bool extraError_ = false) : NamedBase(name_, help_, extraError_ ? Options::Single : Options()), matcher(std::move(matcher_)) {}
 
-            FlagBase(const std::string &name_, const std::string &help_, Matcher &&matcher_, Options options_) : NamedBase(name_, help_, options_), matcher(std::move(matcher_)) {}
+            FlagBase(const std::string &name_, const std::string &help_, Matcher &&matcher_, Options options_) : FlagBase(name_, help_, std::move(matcher_), static_cast<int>(options_)) {}
+            FlagBase(const std::string &name_, const std::string &help_, Matcher &&matcher_, int options_) : NamedBase(name_, help_, options_), matcher(std::move(matcher_)) {}
 
             virtual ~FlagBase() {}
 
@@ -1049,7 +1052,7 @@ namespace args
             {
                 if (matcher.Match(flag))
                 {
-                    if ((GetOptions() & Options::Single) != Options::None && matched)
+                    if ((GetOptions() & static_cast<int>(Options::Single)) && matched)
                     {
 #ifdef ARGS_NOEXCEPT
                         error = Error::Extra;
@@ -1144,7 +1147,8 @@ namespace args
     {
         public:
             ValueFlagBase(const std::string &name_, const std::string &help_, Matcher &&matcher_, const bool extraError_ = false) : FlagBase(name_, help_, std::move(matcher_), extraError_) {}
-            ValueFlagBase(const std::string &name_, const std::string &help_, Matcher &&matcher_, Options options_) : FlagBase(name_, help_, std::move(matcher_), options_) {}
+            ValueFlagBase(const std::string &name_, const std::string &help_, Matcher &&matcher_, Options options_) : ValueFlagBase(name_, help_, std::move(matcher_), static_cast<int>(options_)) {}
+            ValueFlagBase(const std::string &name_, const std::string &help_, Matcher &&matcher_, int options_) : FlagBase(name_, help_, std::move(matcher_), options_) {}
             virtual ~ValueFlagBase() {}
 
             virtual Nargs NumberOfArguments() const noexcept override
@@ -1399,7 +1403,7 @@ namespace args
 
                 for (Base *child: Children())
                 {
-                    if ((child->GetOptions() & Options::HiddenFromDescription) != Options::None)
+                    if (child->GetOptions() & static_cast<int>(Options::HiddenFromDescription))
                     {
                         continue;
                     }
@@ -1420,7 +1424,7 @@ namespace args
                 std::vector <std::string> names;
                 for (Base *child: Children())
                 {
-                    if ((child->GetOptions() & Options::HiddenFromUsage) != Options::None)
+                    if (child->GetOptions() & static_cast<int>(Options::HiddenFromUsage))
                     {
                         continue;
                     }
@@ -1752,7 +1756,7 @@ namespace args
 
                     for (auto *child: Children())
                     {
-                        if ((child->GetOptions() & Options::Global) != Options::None)
+                        if (child->GetOptions() & static_cast<int>(Options::Global))
                         {
                             if (auto *res = child->Match(flag))
                             {
@@ -1783,7 +1787,7 @@ namespace args
 
                     for (auto *child: Children())
                     {
-                        if ((child->GetOptions() & Options::Global) != Options::None)
+                        if (child->GetOptions() & static_cast<int>(Options::Global))
                         {
                             if (auto *res = child->GetNextPositional())
                             {
@@ -1949,7 +1953,7 @@ namespace args
 
                 for (Base *child: Children())
                 {
-                    if ((child->GetOptions() & Options::HiddenFromDescription) != Options::None)
+                    if (child->GetOptions() & static_cast<int>(Options::HiddenFromDescription))
                     {
                         continue;
                     }
@@ -2828,12 +2832,20 @@ namespace args
 
         public:
             ActionFlag(Group &group_, const std::string &name_, const std::string &help_, Matcher &&matcher_, Nargs nargs_, std::function<void(const std::vector<std::string> &)> action_, Options options_ = {}):
+                ActionFlag(group_, name_, help_, std::move(matcher_), nargs_, std::move(action_), static_cast<int>(options_))
+            {
+            }
+            ActionFlag(Group &group_, const std::string &name_, const std::string &help_, Matcher &&matcher_, Nargs nargs_, std::function<void(const std::vector<std::string> &)> action_, int options_):
                 FlagBase(name_, help_, std::move(matcher_), options_), action(std::move(action_)), nargs(nargs_)
             {
                 group_.Add(*this);
             }
 
             ActionFlag(Group &group_, const std::string &name_, const std::string &help_, Matcher &&matcher_, std::function<void(const std::string &)> action_, Options options_ = {}):
+                ActionFlag(group_, name_, help_, std::move(matcher_), std::move(action_), static_cast<int>(options_))
+            {
+            }
+			ActionFlag(Group &group_, const std::string &name_, const std::string &help_, Matcher &&matcher_, std::function<void(const std::string &)> action_, int options_):
                 FlagBase(name_, help_, std::move(matcher_), options_), nargs(1)
             {
                 group_.Add(*this);
@@ -2841,6 +2853,10 @@ namespace args
             }
 
             ActionFlag(Group &group_, const std::string &name_, const std::string &help_, Matcher &&matcher_, std::function<void()> action_, Options options_ = {}):
+                ActionFlag(group_, name_, help_, std::move(matcher_), std::move(action_), static_cast<int>(options_))
+            {
+            }
+			ActionFlag(Group &group_, const std::string &name_, const std::string &help_, Matcher &&matcher_, std::function<void()> action_, int options_):
                 FlagBase(name_, help_, std::move(matcher_), options_), nargs(0)
             {
                 group_.Add(*this);
@@ -2916,16 +2932,22 @@ namespace args
 
         public:
 
-            ValueFlag(Group &group_, const std::string &name_, const std::string &help_, Matcher &&matcher_, const T &defaultValue_, Options options_): ValueFlagBase(name_, help_, std::move(matcher_), options_), value(defaultValue_), defaultValue(defaultValue_)
+            ValueFlag(Group &group_, const std::string &name_, const std::string &help_, Matcher &&matcher_, const T &defaultValue_, Options options_): ValueFlag(group_, name_, help_, std::move(matcher_), defaultValue_, static_cast<int>(options_))
+            {
+            }
+            ValueFlag(Group &group_, const std::string &name_, const std::string &help_, Matcher &&matcher_, const T &defaultValue_, int options_): ValueFlagBase(name_, help_, std::move(matcher_), options_), value(defaultValue_), defaultValue(defaultValue_)
             {
                 group_.Add(*this);
-            }
+			}
 
             ValueFlag(Group &group_, const std::string &name_, const std::string &help_, Matcher &&matcher_, const T &defaultValue_ = T(), const bool extraError_ = false): ValueFlag(group_, name_, help_, std::move(matcher_), defaultValue_, extraError_ ? Options::Single : Options::None)
             {
             }
 
-            ValueFlag(Group &group_, const std::string &name_, const std::string &help_, Matcher &&matcher_, Options options_): ValueFlag(group_, name_, help_, std::move(matcher_), T(), options_)
+            ValueFlag(Group &group_, const std::string &name_, const std::string &help_, Matcher &&matcher_, Options options_): ValueFlag(group_, name_, help_, std::move(matcher_), static_cast<int>(options_))
+            {
+            }
+            ValueFlag(Group &group_, const std::string &name_, const std::string &help_, Matcher &&matcher_, int options_): ValueFlag(group_, name_, help_, std::move(matcher_), T(), options_)
             {
             }
 

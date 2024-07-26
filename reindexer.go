@@ -5,6 +5,7 @@ import (
 
 	"github.com/restream/reindexer/v4/bindings"
 	"github.com/restream/reindexer/v4/dsl"
+	"github.com/restream/reindexer/v4/events"
 )
 
 // Condition types
@@ -405,6 +406,11 @@ func (db *Reindexer) GetMeta(namespace, key string) ([]byte, error) {
 // DeleteMeta - delete metadata from storage by key
 func (db *Reindexer) DeleteMeta(namespace, key string) error {
 	return db.impl.deleteMeta(db.ctx, namespace, key)
+}
+
+// Subscribe to the database's events stream
+func (db *Reindexer) Subscribe(opts *events.EventsStreamOptions) *events.EventsStream {
+	return db.impl.subscribe(db.ctx, opts)
 }
 
 // WithContext Add context to next method call

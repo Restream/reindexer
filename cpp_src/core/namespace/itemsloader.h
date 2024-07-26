@@ -125,32 +125,33 @@ private:
 		span<ItemsLoader::ItemData> newItems;
 		span<PayloadValue> nsItems;
 		unsigned startId = 0;
-		h_vector<unsigned, 8> threadsWithNewData;
 		bool terminate = false;
 		bool composite = false;
 	};
 
 	void insertionLoop(unsigned threadId) noexcept;
 	void onItemsHandled() noexcept {
-		if ((readyThreads_.fetch_add(1, std::memory_order_acq_rel) + 1) == threads_.size()) {
-			std::lock_guard lck(mtx_);
-			cv_.notify_all();
+		std::lock_guard lck(mtx_);
+		if (++readyThreads_ == threads_.size()) {
+			cvDone_.notify_one();
 		}
 	}
 	void onException(Error e) {
 		std::lock_guard lck(mtx_);
 		status_ = std::move(e);
-		if ((readyThreads_.fetch_add(1, std::memory_order_acq_rel) + 1) == threads_.size()) {
-			cv_.notify_all();
+		if (++readyThreads_ == threads_.size()) {
+			cvDone_.notify_one();
 		}
 	}
 
 	std::mutex mtx_;
-	std::condition_variable cv_;
+	std::condition_variable cvReady_;
+	std::condition_variable cvDone_;
+	unsigned iteration_{0};
 	NamespaceImpl::IndexesStorage& indexes_;
 	const PayloadType pt_;
 	SharedData shared_;
-	std::atomic<unsigned> readyThreads_ = {0};
+	unsigned readyThreads_ = {0};
 	std::vector<std::thread> threads_;
 	Error status_;
 	bool hasArrayIndexes_ = false;

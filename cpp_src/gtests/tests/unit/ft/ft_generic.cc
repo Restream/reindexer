@@ -712,17 +712,10 @@ TEST_P(FTGenericApi, DeleteTest) {
 	data.insert(Add("Food prices soared in the aftermath of the drought"sv));
 	data.insert(Add("In the aftermath of the war ..."sv));
 
-	//  Delete(data[1].first);
-	// Delete(data[1].first);
-
 	const auto err = Delete(data.find("In law, a legal entity is an entity that is capable of bearing legal rights")->second);
 	ASSERT_TRUE(err.ok()) << err.what();
 	res = SimpleSelect("entity");
 
-	// for (auto it : res) {
-	// 	Item ritem(it.GetItem());
-	// 	std::cout << ritem["ft1"].as<std::string>() << std::endl;
-	// }
 	// TODO: add validation
 }
 

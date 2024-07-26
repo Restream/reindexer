@@ -36,7 +36,7 @@ public:
 	ReindexerImpl &operator=(const ReindexerImpl &) = delete;
 
 	Error Connect(const std::string &dsn, const client::ConnectOpts &opts = client::ConnectOpts());
-	Error Stop();
+	void Stop();
 	Error OpenNamespace(std::string_view nsName, const InternalRdxContext &ctx, const StorageOpts &opts, const NsReplicationOpts &replOpts);
 	Error AddNamespace(const NamespaceDef &nsDef, const InternalRdxContext &ctx, const NsReplicationOpts &replOpts);
 	Error CloseNamespace(std::string_view nsName, const InternalRdxContext &ctx);
@@ -62,7 +62,6 @@ public:
 	Error Delete(const Query &query, QueryResults &result, const InternalRdxContext &ctx);
 	Error Select(std::string_view query, QueryResults &result, const InternalRdxContext &ctx);
 	Error Select(const Query &query, QueryResults &result, const InternalRdxContext &ctx);
-	Error Commit(std::string_view nsName, const InternalRdxContext &ctx);
 	Item NewItem(std::string_view nsName, const InternalRdxContext &ctx);
 	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data, const InternalRdxContext &ctx);
 	Error GetMeta(std::string_view nsName, const std::string &key, std::vector<ShardedMeta> &data, const InternalRdxContext &ctx);
@@ -124,7 +123,6 @@ private:
 		DbCmdNewItem,
 		DbCmdSelectS,
 		DbCmdSelectQ,
-		DbCmdCommit,
 		DbCmdGetMeta,
 		DbCmdGetShardedMeta,
 		DbCmdPutMeta,

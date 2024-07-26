@@ -116,7 +116,6 @@ void ItemsLoader::reading() {
 			lck.lock();
 			const bool wasEmpty = items_.HasNoWrittenItems();
 			items_.WritePlaced();
-			lck.unlock();
 
 			if (wasEmpty) {
 				cv_.notify_all();
@@ -272,7 +271,7 @@ void IndexInserters::Stop() {
 	if (threads_.size()) {
 		std::lock_guard lck(mtx_);
 		shared_.terminate = true;
-		cv_.notify_all();
+		cvReady_.notify_all();
 	}
 	for (auto &th : threads_) {
 		th.join();
@@ -281,62 +280,47 @@ void IndexInserters::Stop() {
 }
 
 void IndexInserters::AwaitIndexesBuild() {
-	if (readyThreads_.load(std::memory_order_acquire) != threads_.size()) {
-		std::unique_lock lck(mtx_);
-		cv_.wait(lck, [this] { return readyThreads_.load(std::memory_order_acquire) == threads_.size(); });
-		if (!status_.ok()) {
-			throw status_;
-		}
-		assertrx(shared_.threadsWithNewData.empty());
+	std::unique_lock lck(mtx_);
+	cvDone_.wait(lck, [this] { return readyThreads_ == threads_.size(); });
+	if (!status_.ok()) {
+		throw status_;
 	}
 }
 
 void IndexInserters::BuildSimpleIndexesAsync(unsigned startId, span<ItemsLoader::ItemData> newItems, span<PayloadValue> nsItems) {
-	{
-		std::lock_guard lck(mtx_);
-		shared_.newItems = newItems;
-		shared_.nsItems = nsItems;
-		shared_.startId = startId;
-		assertrx(shared_.threadsWithNewData.empty());
-		for (unsigned tid = 0; tid < threads_.size(); ++tid) {
-			shared_.threadsWithNewData.emplace_back(tid + kTIDOffset);
-		}
-		shared_.composite = false;
-		readyThreads_.store(0, std::memory_order_relaxed);
-	}
-	cv_.notify_all();
+	std::lock_guard lck(mtx_);
+	shared_.newItems = newItems;
+	shared_.nsItems = nsItems;
+	shared_.startId = startId;
+	shared_.composite = false;
+	readyThreads_ = 0;
+	++iteration_;
+	cvReady_.notify_all();
 }
 
 void IndexInserters::BuildCompositeIndexesAsync() {
-	{
-		std::lock_guard lck(mtx_);
-		assertrx(shared_.threadsWithNewData.empty());
-		for (unsigned tid = 0; tid < threads_.size(); ++tid) {
-			shared_.threadsWithNewData.emplace_back(tid + kTIDOffset);
-		}
-		shared_.composite = true;
-		readyThreads_.store(0, std::memory_order_relaxed);
-	}
-	cv_.notify_all();
+	std::lock_guard lck(mtx_);
+	shared_.composite = true;
+	readyThreads_ = 0;
+	++iteration_;
+	cvReady_.notify_all();
 }
 
 void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 	VariantArray krefs, skrefs;
 	const unsigned firstCompositeIndex = indexes_.firstCompositePos();
 	const unsigned totalIndexes = indexes_.totalSize();
+	unsigned thisLoopIteration{0};
 
 	while (true) {
 		try {
 			std::unique_lock lck(mtx_);
-			cv_.wait(lck, [this, threadId] {
-				return shared_.terminate || std::find(shared_.threadsWithNewData.begin(), shared_.threadsWithNewData.end(), threadId) !=
-												shared_.threadsWithNewData.end();
-			});
+			cvReady_.wait(lck, [this, thisLoopIteration] { return shared_.terminate || iteration_ > thisLoopIteration; });
 			if (shared_.terminate) {
 				return;
 			}
-			shared_.threadsWithNewData.erase(std::find(shared_.threadsWithNewData.begin(), shared_.threadsWithNewData.end(), threadId));
 			lck.unlock();
+			++thisLoopIteration;
 
 			const unsigned startId = shared_.startId;
 			const unsigned threadsCnt = threads_.size();
@@ -344,7 +328,7 @@ void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 			if (shared_.composite) {
 				for (unsigned i = 0; i < shared_.newItems.size(); ++i) {
 					const auto id = startId + i;
-					auto &plData = shared_.nsItems[i];
+					const auto &plData = shared_.nsItems[i];
 					for (unsigned field = firstCompositeIndex + threadId - kTIDOffset; field < totalIndexes; field += threadsCnt) {
 						bool needClearCache{false};
 						indexes_[field]->Upsert(Variant{plData}, id, needClearCache);
@@ -358,7 +342,7 @@ void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 						auto &plData = shared_.nsItems[i];
 						Payload pl(pt_, plData);
 						Payload plNew = item.GetPayload();
-						for (unsigned field = threadId; field < firstCompositeIndex; field += threadsCnt) {
+						for (unsigned field = threadId - kTIDOffset + 1; field < firstCompositeIndex; field += threadsCnt) {
 							ItemsLoader::doInsertField(indexes_, field, id, pl, plNew, krefs, skrefs,
 													   plArrayMtxs_[id % plArrayMtxs_.size()]);
 						}
@@ -371,7 +355,7 @@ void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 						auto &plData = shared_.nsItems[i];
 						Payload pl(pt_, plData);
 						Payload plNew = item.GetPayload();
-						for (unsigned field = threadId; field < firstCompositeIndex; field += threadsCnt) {
+						for (unsigned field = threadId - kTIDOffset + 1; field < firstCompositeIndex; field += threadsCnt) {
 							ItemsLoader::doInsertField(indexes_, field, id, pl, plNew, krefs, skrefs, dummyMtx);
 						}
 					}

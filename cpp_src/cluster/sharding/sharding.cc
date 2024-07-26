@@ -14,7 +14,7 @@ constexpr size_t kMaxShardingProxyConnConcurrency = 1024;
 
 RoutingStrategy::RoutingStrategy(const cluster::ShardingConfig &config) : keys_(config) {}
 
-bool RoutingStrategy::getHostIdForQuery(const Query &q, int &hostId) const {
+bool RoutingStrategy::getHostIdForQuery(const Query &q, int &hostId, Variant &shardKey) const {
 	bool containsKey = false;
 	std::string_view ns = q.NsName();
 	for (auto it = q.Entries().cbegin(), next = it, end = q.Entries().cend(); it != end; ++it) {
@@ -36,6 +36,8 @@ bool RoutingStrategy::getHostIdForQuery(const Query &q, int &hostId) const {
 						}
 						if (hostId == ShardingKeyType::ProxyOff) {
 							hostId = id;
+							shardKey = qe.Values()[0];
+							shardKey.EnsureHold();
 						} else if (hostId != id) {
 							throw Error(errLogic, "Shard key from other node");
 						}
@@ -88,16 +90,17 @@ bool RoutingStrategy::getHostIdForQuery(const Query &q, int &hostId) const {
 	return containsKey;
 }
 
-ShardIDsContainer RoutingStrategy::GetHostsIds(const Query &q) const {
+std::pair<ShardIDsContainer, Variant> RoutingStrategy::GetHostsIdsKeyPair(const Query &q) const {
 	int hostId = ShardingKeyType::ProxyOff;
+	Variant shardKey;
 	const std::string_view mainNs = q.NsName();
 	const bool mainNsIsSharded = keys_.IsSharded(mainNs);
-	bool hasShardingKeys = mainNsIsSharded && getHostIdForQuery(q, hostId);
+	bool hasShardingKeys = mainNsIsSharded && getHostIdForQuery(q, hostId, shardKey);
 	const bool mainQueryToAllShards = mainNsIsSharded && !hasShardingKeys;
 
 	for (const auto &jq : q.GetJoinQueries()) {
 		if (!keys_.IsSharded(jq.NsName())) continue;
-		if (getHostIdForQuery(jq, hostId)) {
+		if (getHostIdForQuery(jq, hostId, shardKey)) {
 			hasShardingKeys = true;
 		} else {
 			if (hasShardingKeys) {
@@ -107,7 +110,7 @@ ShardIDsContainer RoutingStrategy::GetHostsIds(const Query &q) const {
 	}
 	for (const auto &mq : q.GetMergeQueries()) {
 		if (!keys_.IsSharded(mq.NsName())) continue;
-		if (getHostIdForQuery(mq, hostId)) {
+		if (getHostIdForQuery(mq, hostId, shardKey)) {
 			hasShardingKeys = true;
 		} else {
 			if (hasShardingKeys) {
@@ -117,7 +120,7 @@ ShardIDsContainer RoutingStrategy::GetHostsIds(const Query &q) const {
 	}
 	for (const auto &sq : q.GetSubQueries()) {
 		if (!keys_.IsSharded(sq.NsName())) continue;
-		if (getHostIdForQuery(sq, hostId)) {
+		if (getHostIdForQuery(sq, hostId, shardKey)) {
 			hasShardingKeys = true;
 		} else {
 			if (hasShardingKeys) {
@@ -134,12 +137,12 @@ ShardIDsContainer RoutingStrategy::GetHostsIds(const Query &q) const {
 				throw Error(errLogic, "Query to all shard can't contain aggregations AVG, Facet or Distinct");
 			}
 		}
-		return keys_.GetShardsIds(mainNs);
+		return {{keys_.GetShardsIds(mainNs)}, shardKey};
 	}
-	return {hostId};
+	return {{hostId}, shardKey};
 }
 
-int RoutingStrategy::GetHostId(std::string_view ns, const Item &item) const {
+std::pair<int, Variant> RoutingStrategy::GetHostIdKeyPair(std::string_view ns, const Item &item) const {
 	const auto nsIndex = keys_.GetIndex(ns);
 	const VariantArray v = item[nsIndex.name];
 	if (!v.IsNullValue() && !v.empty()) {
@@ -148,7 +151,7 @@ int RoutingStrategy::GetHostId(std::string_view ns, const Item &item) const {
 		}
 		assert(nsIndex.values);
 
-		return keys_.GetShardId(ns, v[0]);
+		return {keys_.GetShardId(ns, v[0]), Variant(v[0]).EnsureHold()};
 	}
 	throw Error(errLogic, "Item does not contain proper sharding key for '%s' (key with name '%s' is expected)", ns, nsIndex.name);
 }
@@ -213,7 +216,8 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 	const size_t size = connections_.size();
 
 	for (size_t i = 0; i < size; ++i) {
-		connections_[i]->Connect(dsns[i]);
+		auto err = connections_[i]->Connect(dsns[i]);
+		(void)err;	// ignore; Errors will be checked during the further requests
 	}
 
 	std::shared_ptr<SharedStatusData> stData = std::make_shared<SharedStatusData>(size);
@@ -253,9 +257,11 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 		conn.Stop();
 
 		logPrintf(LogTrace, "[sharding proxy] Shard %d reconnects to shard %d via %s", thisShard_, shardID, dsns[idx]);
-		conn.Connect(dsns[idx]);
+		err = conn.Connect(dsns[idx]);
 		qr = client::QueryResults();
-		err = conn.WithTimeout(config_.reconnectTimeout).Select(q, qr);
+		if (err.ok()) {
+			err = conn.WithTimeout(config_.reconnectTimeout).Select(q, qr);
+		}
 	}
 	reconnectStatus = std::move(err);
 	if (!reconnectStatus.ok()) return {};
@@ -267,7 +273,7 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 			if (!reconnectStatus.ok()) return {};
 
 			cluster::ReplicationStats stats;
-			reconnectStatus = stats.FromJSON(wser.Slice());
+			reconnectStatus = stats.FromJSON(giftStr(wser.Slice()));
 			if (!reconnectStatus.ok()) return {};
 
 			if (stats.nodeStats.size()) {
@@ -345,9 +351,7 @@ Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vec
 			}
 			return Error();
 		},
-		[](OneOf<KeyValueType::Composite, KeyValueType::Tuple>) {
-			return Error{errLogic, "Sharding by composite index is unsupported"};
-		},
+		[](OneOf<KeyValueType::Composite, KeyValueType::Tuple>) { return Error{errLogic, "Sharding by composite index is unsupported"}; },
 		[fieldType](OneOf<KeyValueType::Undefined, KeyValueType::Null>) {
 			return Error{errLogic, "Unsupported field type: %s", fieldType.Name()};
 		});
@@ -469,7 +473,7 @@ ConnectionsPtr LocatorService::GetAllShardsConnections(Error &status) {
 }
 
 ConnectionsPtr LocatorService::GetShardsConnectionsWithId(const Query &q, Error &status) {
-	ShardIDsContainer ids = routingStrategy_.GetHostsIds(q);
+	ShardIDsContainer ids = routingStrategy_.GetHostsIdsKeyPair(q).first;
 	assert(ids.size() > 0);
 	if (ids.size() > 1) {
 		return GetShardsConnections(q.NsName(), ShardingKeyType::NotSetShard, status);

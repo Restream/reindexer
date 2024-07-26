@@ -15,7 +15,7 @@
 #include "statscollect/istatswatcher.h"
 #include "tools/semversion.h"
 
-#include "replv3/rpcupdatespusher.h"
+#include "events/rpcupdatespusher.h"
 
 namespace reindexer {
 struct TxStats;
@@ -40,10 +40,11 @@ struct RPCClientData final : public cproto::ClientData {
 	int connID;
 	SemVersion rxVersion;
 	BindingCapabilities caps;
+	cproto::RPCEventsPusher pusher;
+	bool subscribed;
 
 #ifdef REINDEX_WITH_V3_FOLLOWERS
-	cproto::RPCUpdatesPusher pusher;
-	bool subscribed;
+	cproto::RPCUpdatesPusherV3 pusherV3;
 #endif	// REINDEX_WITH_V3_FOLLOWERS
 };
 
@@ -125,7 +126,8 @@ public:
 	Error PutMeta(cproto::Context &ctx, p_string ns, p_string key, p_string data);
 	Error EnumMeta(cproto::Context &ctx, p_string ns);
 	Error DeleteMeta(cproto::Context &ctx, p_string ns, p_string key);
-	Error SubscribeUpdates(cproto::Context &ctx, int subscribe, std::optional<p_string> filterJson, std::optional<int> options);
+	Error SubscribeUpdates(cproto::Context &ctx, int subscribe, std::optional<p_string> filterV3Json, std::optional<int> options,
+						   std::optional<p_string> subscriptionOpts);
 
 	Error SuggestLeader(cproto::Context &ctx, p_string suggestion);
 	Error LeadersPing(cproto::Context &ctx, p_string leader);

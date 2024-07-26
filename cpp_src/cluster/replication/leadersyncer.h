@@ -38,7 +38,7 @@ public:
 
 		std::vector<uint32_t> nodes;
 		std::vector<NodeData> data;
-		std::string_view nsName;
+		NamespaceName nsName;
 		ExtendedLsn latestLsn;
 		ExtendedLsn localLsn;
 		NodeData localData;

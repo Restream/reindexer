@@ -77,8 +77,8 @@ struct ServerConfig {
 	int64_t AllocatorCacheLimit;
 	float AllocatorCachePart;
 
-	static const std::string kDedicatedThreading;
-	static const std::string kSharedThreading;
+	constexpr static std::string_view kDedicatedThreading = "dedicated";
+	constexpr static std::string_view kSharedThreading = "shared";
 
 	void SetHttpWriteTimeout(std::chrono::seconds val) noexcept;
 	std::chrono::seconds HttpWriteTimeout() const noexcept {

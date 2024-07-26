@@ -839,7 +839,7 @@ Then follower-role should be set for `follower2`:
 }
 ```
 
-Note, that there were no specific namepspaces' list for the followers, so there is no sucn field in `nodes` config (field `namespaces` from top level is used instead).
+Note, that there were no specific namespaces' list for the followers, so there is no sucn field in `nodes` config (field `namespaces` from top level is used instead).
 
 When followers configuration is done, remove deprecated fields from `leader`'s replication config:
 

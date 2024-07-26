@@ -1,46 +1,53 @@
 
 
 
-`CJSON` (Compact JSON) is internal reindexer binary format for transparing represent JSON data.
+`CJSON` (Compact JSON) is binary internal reindexer format for transparently representing JSON data.
 Each field of CJSON is encoded to `ctag` - varuint, which encodes type and name of field, and `data` binary representation of field data in format dependent of type.
+
 
 ## Ctag format
 
-| Bits | Field | Description |
-|------|-------------|-------------------------------------------------------------------------|
-| 3 | TypeTag | Type of field. One of TAG_XXX  |
-| 12 | NameIndex | Index of field's name in names dictionary. 0 - empty name |
-| 6 | FieldIndex | Field index reference in internal reindexer payload. 0 - no reference.  |
+| Bits | Field      | Description                                                                                              |
+|------|------------|----------------------------------------------------------------------------------------------------------|
+| 3    | TypeTag0   | Type of field. One of TAG_XXX                                                                            |
+| 12   | NameIndex  | Index of field's name in names dictionary. 0 - empty name                                                |
+| 10   | FieldIndex | Field index reference in internal reindexer payload. 0 - no reference.                                   |
+| 4    | Reserved   | Reserved for future use.                                                                                 |
+| 3    | TypeTag1   | Additional high-order bits for the field type. Together with TypeTag0 they define the actual data type.  |
+
 
 ## Ctag type tag
 
-| Name | Value | Description |
-|------------|-------|---------------------------------|
-| TAG_VARINT | 0 | Data is number in varint format |
-| TAG_DOUBLE | 1 | Data is number in double format |
-| TAG_STRING | 2 | Data is string with varint length |
-| TAG_ARRAY | 3 | Data is array of elements |
-| TAG_BOOL | 4 | Data is bool |
-| TAG_NULL | 5 | Null |
-| TAG_OBJECT | 6 | Data is object |
-| TAG_END | 7 | End of object |
+| Name       | Value | Description                                      |
+|------------|-------|--------------------------------------------------|
+| TAG_VARINT | 0     | Data is number in varint format                  |
+| TAG_DOUBLE | 1     | Data is number in double format                  |
+| TAG_STRING | 2     | Data is string with varint length                |
+| TAG_BOOL   | 3     | Data is bool                                     |
+| TAG_NULL   | 4     | Null                                             |
+| TAG_ARRAY  | 5     | Data is array of elements                        |
+| TAG_OBJECT | 6     | Data is object                                   |
+| TAG_END    | 7     | End of object                                    |
+| TAG_UUID   | 8     | Data in UUID format. High bit stored in TypeTag1 |
 
 
 ## Arrays
 
 Arrays can be stored in 2 different ways:
 
-- homogeneous array, with all elements of same type
-- mixed array, with elements of various types
+- homogeneous array, with all elements of same type (Format: TAG_ARRAY + Atag(TAG_{item} + COUNT), every item write in item format)
+- heterogeneous array, with elements of various types (Format: TAG_ARRAY + Atag(TAG_OBJECT + COUNT), every item write in item format with Ctag(TAG_{item} + NameIndex=0 + FieldIndex=0))
+
 
 ### Atag - array tag format
 
-Atag is 4 byte int, which encodes type and count elements in array
+Atag is 4 byte int, which encodes type and count elements in array (TTTTTTTTNNNNNNNNNNNNNNNNNNNNNNNN)
 
-| Bits | Field | Description |
-|------|-------------|-------------------------------------------------------------------------|
-| 24 | Count | Count of elements in array  |
-| 3 | TypeTag | Type of array's elements. If TAG_OBJECT, than array is mixed, and each element contains individual ctag|
+| Bits | Field   | Description                                                                                             |
+|------|---------|---------------------------------------------------------------------------------------------------------|
+| 6    | TypeTag | Type of array's elements. If TAG_OBJECT, than array is mixed, and each element contains individual ctag |
+| 24   | Count   | Count of elements in array                                                                              |
+
 
 ## Record format
 
@@ -67,11 +74,11 @@ record :=
 
 ## CJSON pack format
 
-| # | Field                      | Description                                                                |
-|---|----------------------------|----------------------------------------------------------------------------|
+| # | Field                | Description                                                                |
+|---|----------------------|----------------------------------------------------------------------------|
 | 1 | Offset to names dict | Offset to names dictionary. 0 if there are no new names dictionary in pack |
-| 2 | Records                    | Tree of records. Begins with TAG_OBJECT, end TAG_END                       |
-| 3 | Names dictionary           | Dictionary of field names                                                  |
+| 2 | Records              | Tree of records. Begins with TAG_OBJECT, end TAG_END                       |
+| 3 | Names dictionary     | Dictionary of field names                                                  |
 ```
 names_dictionary := 
   <varint(start_index)>
@@ -81,6 +88,7 @@ names_dictionary :=
    ...
   ]
 ```
+
 
 ## Example of CJSON
 
@@ -104,3 +112,48 @@ names_dictionary :=
   (TAG_END)                                     07
 (TAG_END)                                       07
 ```
+
+
+### Array representations
+
+Thus, a heterogeneous array with two elements: the first string is "hello", the second boolean value is "true", can be encoded as follows:
+```json
+{
+    "test": ["hi",true]
+}
+```
+```
+(TAG_ARRAY, field index) (TAG_OBJECT, array len) (TAG_STRING, string len, char array) (TAG_BOOL, value)
+```
+```
+\065\002\000\000\006\002\002hi\003\001\a
+```
+| Value            | Descripton                     |
+------------------|--------------------------------|
+| \065             | Ctag(TAG_ARRAY)                |
+| \002\000\000\006 | Atag(2 item TAG_OBJECT)        |
+| \002             | Ctag(TAG_STRING)               |
+| \002hi           | Item string, 2 character, "hi" |
+| \003             | Ctag(TAG_BOOL)                 |
+| \001             | Item boolean, 'true'           |
+
+
+Homogeneous array
+
+```json
+{
+    "test": ["hi","bro"]
+}
+```
+```
+(TAG_ARRAY, field index) (TAG_STRING, array len) (string len, char array) (string len, char array)
+```
+```
+\065\002\000\000\002\002hi\003bro\a
+```
+| Value            | Descripton                      |
+-------------------|---------------------------------|
+| \065             | Ctag(TAG_ARRAY)                 |
+| \002\000\000\002 | Atag(2 item TAG_STRING)         |
+| \002hi           | Item string, 2 character, "hi"  |
+| \003bro          | Item string, 3 character, "bro" |

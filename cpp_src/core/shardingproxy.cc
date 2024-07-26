@@ -229,16 +229,16 @@ Error ShardingProxy::handleNewShardingConfig(const gason::JsonNode &configJSON, 
 
 		checkSyncCluster(config);
 
-		auto router = sharding::LocatorService(impl_, config);
-		err = router.Start();
+		auto router = std::make_unique<sharding::LocatorService>(impl_, config);
+		err = router->Start();
 		if (!err.ok()) return err;
 
-		auto connections = router.GetAllShardsConnections(err);
+		auto connections = router->GetAllShardsConnections(err);
 		if (!err.ok()) return err;
 
 		auto sourceId = generateSourceId();
 
-		ParallelExecutor execNodes(router.ActualShardId());
+		ParallelExecutor execNodes(router->ActualShardId());
 
 		std::unordered_map<int, std::string> cfgsStorage;
 
@@ -422,7 +422,7 @@ Error ShardingProxy::ShardingControlRequest(const sharding::ShardingControlReque
 				assertrx(!ctx.GetOriginLSN().isEmpty());
 				const auto &data = std::get<sharding::ApplyLeaderConfigCommand>(request.data);
 				return data.config.empty() ? handleNewShardingConfigLocally(gason::JsonNode::EmptyNode(), std::optional<int64_t>(), ctx)
-										   : handleNewShardingConfigLocally<>(data.config, data.sourceId, ctx);
+										   : handleNewShardingConfigLocally<span<char>>(std::string(data.config), data.sourceId, ctx);
 			}
 			default:
 				throw Error(errLogic, "Unsupported sharding request command: %d", int(request.type));
@@ -434,7 +434,7 @@ Error ShardingProxy::ShardingControlRequest(const sharding::ShardingControlReque
 
 void ShardingProxy::saveShardingCfgCandidate(const sharding::SaveConfigCommand &data, const RdxContext &ctx) {
 	cluster::ShardingConfig config;
-	auto err = config.FromJSON(data.config);
+	auto err = config.FromJSON(std::string(data.config));
 	if (!err.ok()) throw err;
 
 	saveShardingCfgCandidateImpl(std::move(config), data.sourceId, ctx);
@@ -607,7 +607,7 @@ void ShardingProxy::checkSyncCluster(const cluster::ShardingConfig &shardingConf
 		if (!err.ok()) throw err;
 
 		cluster::ReplicationStats stats;
-		err = stats.FromJSON(wser.Slice());
+		err = stats.FromJSON(giftStr(wser.Slice()));
 		if (!err.ok()) throw err;
 
 		if (!stats.nodeStats.empty() && stats.nodeStats.size() != hosts.size()) {
@@ -652,12 +652,12 @@ void ShardingProxy::applyNewShardingConfig(const sharding::ApplyConfigCommand &d
 
 	impl_.SaveNewShardingConfigFile(*config);
 
-	auto err = impl_.ResetShardingConfig(std::move(*config));
+	auto err = impl_.ResetShardingConfig(std::move(config));
 	// TODO: after allowing actions to upsert #config namespace, make ApplyNewShardingConfig returned void, allow except here
 	// if (!err.ok()) return err;
 
-	lockedShardingRouter = std::make_shared<sharding::LocatorService>(impl_, *impl_.GetShardingConfig());
 	config = std::nullopt;
+	lockedShardingRouter = std::make_shared<sharding::LocatorService>(impl_, *impl_.GetShardingConfig());
 
 	err = lockedShardingRouter->Start();
 	if (err.ok()) {
@@ -1087,20 +1087,6 @@ Error ShardingProxy::Select(const Query &query, QueryResults &result, unsigned p
 	}
 }
 
-Error ShardingProxy::Commit(std::string_view nsName, const RdxContext &ctx) {
-	try {
-		auto localCommit = [this](std::string_view nsName) { return impl_.Commit(nsName); };
-		if (auto lckRouterOpt = isWithSharding(nsName, ctx)) {
-			Error err = (*lckRouterOpt)->AwaitShards(ctx);
-			if (!err.ok()) return err;
-			return delegateToShardsByNs(*lckRouterOpt, ctx, &client::Reindexer::Commit, localCommit, nsName);
-		}
-		return localCommit(nsName);
-	} catch (Error &e) {
-		return e;
-	}
-}
-
 auto ShardingProxy::ShardingRouter::SharedPtr(const RdxContext &ctx) const {
 	auto lk = SharedLock(ctx);
 	return locatorService_;
@@ -1190,9 +1176,7 @@ Error ShardingProxy::EnumMeta(std::string_view nsName, std::vector<std::string> 
 
 Error ShardingProxy::DeleteMeta(std::string_view nsName, const std::string &key, const RdxContext &ctx) {
 	try {
-		auto localDeleteMeta = [this, &ctx](std::string_view nsName, const std::string &key) {
-			return impl_.DeleteMeta(nsName, key, ctx);
-		};
+		auto localDeleteMeta = [this, &ctx](std::string_view nsName, const std::string &key) { return impl_.DeleteMeta(nsName, key, ctx); };
 
 		if (auto lckRouterOpt = isWithSharding(nsName, ctx)) {
 			return delegateToShards(*lckRouterOpt, ctx, &client::Reindexer::DeleteMeta, localDeleteMeta, nsName, key);

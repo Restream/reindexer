@@ -98,6 +98,16 @@ ssize_t socket::send(span<chunk> chunks) {
 }
 #endif	// _WIN32
 
+int socket::setLinger0() {
+	if (fd() >= 0) {
+		struct linger sl;
+		sl.l_onoff = 1;	 /* enable linger */
+		sl.l_linger = 0; /* with 0 seconds timeout */
+		return setsockopt(fd(), SOL_SOCKET, SO_LINGER, reinterpret_cast<const char *>(&sl), sizeof(sl));
+	}
+	return -1;
+}
+
 int socket::create(std::string_view addr, struct addrinfo **presults) {
 	assertrx(!valid());
 

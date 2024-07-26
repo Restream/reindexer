@@ -5,8 +5,8 @@
 #include "atoi/atoi.h"
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/uuid.h"
-#include "estl/fast_hash_map.h"
 #include "estl/one_of.h"
+#include "frozen_str_tools.h"
 #include "itoa/itoa.h"
 #include "stringstools.h"
 #include "tools/assertrx.h"
@@ -14,6 +14,7 @@
 #include "tools/stringstools.h"
 #include "utf8cpp/utf8.h"
 #include "vendor/double-conversion/double-conversion.h"
+#include "vendor/frozen/unordered_map.h"
 
 namespace reindexer {
 
@@ -30,23 +31,24 @@ static int double_to_str(double v, char *buf, int capacity, int flags) {
 	return builder.position();
 }
 
-static std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPos, const std::string &extraWordSymbols) {
+static std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPos, std::string_view extraWordSymbols) {
 	auto wordStartIt = str.begin();
 	auto wordEndIt = str.begin();
 	auto it = str.begin();
+	auto endIt = str.end();
 	assertrx(endPos > wordPos);
 	int numWords = endPos - (wordPos + 1);
-	for (; it != str.end();) {
+	for (; it != endIt;) {
 		auto ch = utf8::unchecked::next(it);
 
-		while (it != str.end() && extraWordSymbols.find(ch) == std::string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
+		while (it != endIt && extraWordSymbols.find(ch) == std::string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
 			wordStartIt = it;
 			ch = utf8::unchecked::next(it);
 		}
 
 		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
 			wordEndIt = it;
-			if (it == str.end()) break;
+			if (it == endIt) break;
 			ch = utf8::unchecked::next(it);
 		}
 
@@ -60,16 +62,16 @@ static std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPo
 		}
 	}
 
-	for (; numWords != 0 && it != str.end(); numWords--) {
+	for (; numWords != 0 && it != endIt; numWords--) {
 		auto ch = utf8::unchecked::next(it);
 
-		while (it != str.end() && !IsAlpha(ch) && !IsDigit(ch)) {
+		while (it != endIt && !IsAlpha(ch) && !IsDigit(ch)) {
 			ch = utf8::unchecked::next(it);
 		}
 
 		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
 			wordEndIt = it;
-			if (it == str.end()) break;
+			if (it == endIt) break;
 			ch = utf8::unchecked::next(it);
 		}
 	}
@@ -118,11 +120,13 @@ inline static char *strappend(char *dst, const char *src) noexcept {
 	return dst;
 }
 
-const static fast_hash_map<std::string_view, LogLevel, nocase_hash_str, nocase_equal_str, nocase_less_str> kLogLevels = {
-	{"none", LogNone}, {"warning", LogWarning}, {"error", LogError}, {"info", LogInfo}, {"trace", LogTrace}};
+constexpr static auto kLogLevels = frozen::make_unordered_map<std::string_view, LogLevel>(
+	{{"none", LogNone}, {"warning", LogWarning}, {"error", LogError}, {"info", LogInfo}, {"trace", LogTrace}}, frozen::nocase_hash_str{},
+	frozen::nocase_equal_str{});
 
-const static fast_hash_map<std::string_view, StrictMode, nocase_hash_str, nocase_equal_str, nocase_less_str> kStrictModes = {
-	{"", StrictModeNotSet}, {"none", StrictModeNone}, {"names", StrictModeNames}, {"indexes", StrictModeIndexes}};
+constexpr static auto kStrictModes = frozen::make_unordered_map<std::string_view, StrictMode>(
+	{{"", StrictModeNotSet}, {"none", StrictModeNone}, {"names", StrictModeNames}, {"indexes", StrictModeIndexes}},
+	frozen::nocase_hash_str{}, frozen::nocase_equal_str{});
 
 }  // namespace stringtools_impl
 
@@ -241,6 +245,7 @@ std::string utf16_to_utf8(const std::wstring &src) {
 	std::string dst;
 	return utf16_to_utf8(src, dst);
 }
+size_t utf16_to_utf8_size(const std::wstring &src) { return utf8::unchecked::utf32to8_size(src.begin(), src.end()); }
 
 // This functions calculate how many bytes takes limit symbols in UTF8 forward
 size_t calcUtf8After(std::string_view str, size_t limit) noexcept {
@@ -295,41 +300,38 @@ std::pair<size_t, size_t> calcUtf8BeforeDelims(const char *str, int pos, size_t 
 	return std::make_pair(str + pos - ptr, charCounter);
 }
 
-void split(std::string_view str, std::string &buf, std::vector<const char *> &words, const std::string &extraWordSymbols) {
+void split(std::string_view str, std::string &buf, std::vector<std::string_view> &words, std::string_view extraWordSymbols) {
 	// assuming that the 'ToLower' function and the 'check for replacement' function should not change the character size in bytes
 	buf.resize(str.length());
 	words.resize(0);
 	auto bufIt = buf.begin();
 
-	for (auto it = str.begin(); it != str.end();) {
+	for (auto it = str.begin(), endIt = str.end(); it != endIt;) {
 		auto ch = utf8::unchecked::next(it);
 
-		while (it != str.end() && extraWordSymbols.find(ch) == std::string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
+		while (!IsAlpha(ch) && !IsDigit(ch) && extraWordSymbols.find(ch) == std::string::npos && it != endIt) {
 			ch = utf8::unchecked::next(it);
 		}
 
-		auto begIt = bufIt;
-		while (it != str.end() && (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos)) {
+		const auto begIt = bufIt;
+		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
 			ch = ToLower(ch);
 			check_for_replacement(ch);
 			bufIt = utf8::unchecked::append(ch, bufIt);
-			ch = utf8::unchecked::next(it);
-		}
-		if ((IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos)) {
-			ch = ToLower(ch);
-			check_for_replacement(ch);
-
-			bufIt = utf8::unchecked::append(ch, bufIt);
+			if (it != endIt) {
+				ch = utf8::unchecked::next(it);
+			} else {
+				break;
+			}
 		}
 
 		if (begIt != bufIt) {
-			if (bufIt != buf.end()) *bufIt++ = 0;
-			words.emplace_back(&*begIt);
+			words.emplace_back(&(*begIt), bufIt - begIt);
 		}
 	}
 }
 template <typename Pos>
-Pos wordToByteAndCharPos(std::string_view str, int wordPosition, const std::string &extraWordSymbols) {
+Pos wordToByteAndCharPos(std::string_view str, int wordPosition, std::string_view extraWordSymbols) {
 	auto wordStartIt = str.begin();
 	auto wordEndIt = str.begin();
 	auto it = str.begin();
@@ -383,8 +385,8 @@ Pos wordToByteAndCharPos(std::string_view str, int wordPosition, const std::stri
 	wp.SetBytePosition(wordStartIt - str.begin(), wordEndIt - str.begin());
 	return wp;
 }
-template WordPositionEx wordToByteAndCharPos<WordPositionEx>(std::string_view str, int wordPosition, const std::string &extraWordSymbols);
-template WordPosition wordToByteAndCharPos<WordPosition>(std::string_view str, int wordPosition, const std::string &extraWordSymbols);
+template WordPositionEx wordToByteAndCharPos<WordPositionEx>(std::string_view str, int wordPosition, std::string_view extraWordSymbols);
+template WordPosition wordToByteAndCharPos<WordPosition>(std::string_view str, int wordPosition, std::string_view extraWordSymbols);
 
 std::pair<int, int> Word2PosHelper::convert(int wordPos, int endPos) {
 	if (wordPos < lastWordPos_) {
@@ -400,7 +402,7 @@ std::pair<int, int> Word2PosHelper::convert(int wordPos, int endPos) {
 	return ret;
 }
 
-void split(std::string_view utf8Str, std::wstring &utf16str, std::vector<std::wstring> &words, const std::string &extraWordSymbols) {
+void split(std::string_view utf8Str, std::wstring &utf16str, std::vector<std::wstring> &words, std::string_view extraWordSymbols) {
 	utf8_to_utf16(utf8Str, utf16str);
 	words.resize(0);
 	for (auto it = utf16str.begin(); it != utf16str.end();) {
@@ -519,7 +521,8 @@ ComparationResult collateCompare<CollateNumeric>(std::string_view lhs, std::stri
 }
 
 template <>
-ComparationResult collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &sortOrderTable) noexcept {
+ComparationResult collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs,
+												const SortingPrioritiesTable &sortOrderTable) noexcept {
 	auto itl = lhs.data();
 	auto itr = rhs.data();
 
@@ -609,7 +612,7 @@ int fast_strftime(char *buf, const tm *tm) {
 }
 
 LogLevel logLevelFromString(std::string_view strLogLevel) noexcept {
-	const auto configLevelIt = stringtools_impl::kLogLevels.find(strLogLevel);
+	auto configLevelIt = stringtools_impl::kLogLevels.find(strLogLevel);
 	if (configLevelIt != stringtools_impl::kLogLevels.end()) {
 		return configLevelIt->second;
 	}

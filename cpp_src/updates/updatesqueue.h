@@ -3,29 +3,31 @@
 #include <deque>
 #include <optional>
 #include <unordered_map>
-#include "cluster/logger.h"
-#include "cluster/stats/relicationstatscollector.h"
 #include "core/rdxcontext.h"
 #include "estl/contexted_cond_var.h"
 #include "estl/fast_hash_set.h"
 #include "estl/h_vector.h"
-#include "estl/mutex.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
-namespace cluster {
+namespace updates {
 
 enum class ReplicationResult { None, Approved, Error };
 
-template <typename T>
+#define uq_rtfmt(f, ...) return fmt::sprintf("[updates:%s] " f, logModuleName(), __VA_ARGS__)
+
+template <typename T, typename StatsCollectorT, typename LoggerT>
 class UpdatesQueue {
 public:
 	using HashT = nocase_hash_str;
 	using CompareT = nocase_equal_str;
 	using LessT = nocase_less_str;
 	using UpdatesContainerT = h_vector<T, 2>;
-	static constexpr auto kBatchSize = 500;
+	constexpr static auto kBatchSize = 500;
+	constexpr static uint64_t kMaxReplicas = 0xFFFF;
+	constexpr static uint64_t kMaxApproves = kMaxReplicas;
+	constexpr static uint64_t kMaxErrors = kMaxReplicas;
 	template <typename U, uint16_t kBatch>
 	class QueueEntry {
 	public:
@@ -39,11 +41,11 @@ public:
 
 		struct Value {
 			struct Counters {
-				uint32_t replicatedToEmmiter : 1;
-				uint32_t requireResult : 1;
-				uint32_t replicas : 10;
-				uint32_t approves : 10;
-				uint32_t errors : 10;
+				uint64_t replicatedToEmmiter : 1;
+				uint64_t requireResult : 1;
+				uint64_t replicas : 16;
+				uint64_t approves : 16;
+				uint64_t errors : 16;
 			};
 			static_assert(std::atomic<Counters>().is_always_lock_free, "Expecting this struct to be lock-free");
 
@@ -61,6 +63,9 @@ public:
 					status = UpdatesStatus();
 					repl = expected;
 					repl.replicatedToEmmiter = repl.replicatedToEmmiter || isEmmiter;
+					assertrx_dbg(repl.approves < kMaxApproves);
+					assertrx_dbg(repl.errors < kMaxErrors);
+					assertrx_dbg(repl.replicas < kMaxReplicas);
 					if (err.ok()) {
 						++repl.approves;
 						if (repl.requireResult) {
@@ -89,6 +94,23 @@ public:
 				status.result = error ? std::move(err) : Error();
 				return status;
 			}
+			// Simplified version to just count replicas and check erasure condition
+			UpdatesStatus handledNoResult(uint32_t requiredReplicas) noexcept {
+				auto expected = replication_.load(std::memory_order_acquire);
+				Counters repl;
+				UpdatesStatus status;
+				do {
+					status = UpdatesStatus();
+					repl = expected;
+					assertrx_dbg(!repl.requireResult);
+					assertrx_dbg(repl.replicatedToEmmiter);
+					assertrx_dbg(repl.replicas < kMaxReplicas);
+					if (++repl.replicas == requiredReplicas) {
+						status.requireErasure = true;
+					}
+				} while (!replication_.compare_exchange_strong(expected, repl, std::memory_order_acquire));
+				return status;
+			}
 
 			U data_;
 			// steady_clock_w::time_point deadline;  // TODO: Implement deadline logic
@@ -99,14 +121,16 @@ public:
 		};
 
 		QueueEntry() = default;
-		QueueEntry(uint64_t id, UpdatesQueue &owner, ReplicationStatsCollector stats) : id_(id), owner_(owner), stats_(stats) {}
+		QueueEntry(uint64_t id, UpdatesQueue &owner, StatsCollectorT stats) : id_(id), owner_(owner), stats_(std::move(stats)) {}
 		QueueEntry(uint64_t id, UpdatesQueue &owner, DroppedUpdatesT) : IsUpdatesDropBlock(true), id_(id), owner_(owner) {}
 		QueueEntry(QueueEntry &&) = default;
 
-		ReplicationResult OnUpdateReplicated(uint32_t nodeId, uint32_t consensusCnt, uint32_t requiredReplicas, uint16_t offset,
-											 bool isEmmiter, Error err) {
+		ReplicationResult OnUpdateHandled(uint32_t nodeId, uint32_t consensusCnt, uint32_t requiredReplicas, uint16_t offset,
+										  bool isEmmiter, Error err) {
 			ReplicationResult res = ReplicationResult::None;
-			if (offset >= count_.load(std::memory_order_acquire)) throw Error(errParams, "Unexpected offset: %d", offset);
+			if (offset >= count_.load(std::memory_order_acquire)) {
+				throw Error(errParams, "Unexpected offset: %d", offset);
+			}
 			auto status = data_[offset].replicated(consensusCnt, requiredReplicas, isEmmiter, std::move(err));
 			stats_.OnUpdateApplied(nodeId, id_ + offset);
 			if (status.requireResult) {
@@ -114,7 +138,7 @@ public:
 			}
 			if (status.requireErasure) {
 				erased_.fetch_add(1, std::memory_order_release);
-				stats_.OnUpdateReplicated(id_ + offset);
+				stats_.OnUpdateHandled(id_ + offset);
 				if (IsFullyErased()) {
 					owner_.eraseReplicated();
 				}
@@ -124,11 +148,26 @@ public:
 			}
 			return res;
 		}
+		void OnUpdateHandledSimple(uint32_t nodeId, uint32_t requiredReplicas, uint16_t offset) {
+			if (offset >= count_.load(std::memory_order_acquire)) {
+				throw Error(errParams, "Unexpected offset: %d", offset);
+			}
+			auto status = data_[offset].handledNoResult(requiredReplicas);
+			stats_.OnUpdateApplied(nodeId, id_ + offset);
+			if (status.requireErasure) {
+				erased_.fetch_add(1, std::memory_order_release);
+				stats_.OnUpdateHandled(id_ + offset);
+				if (IsFullyErased()) {
+					owner_.eraseReplicated();
+				}
+			}
+		}
 		const Value &GetUpdate(uint16_t offset) const {
 			if (offset >= count_.load(std::memory_order_acquire)) throw Error(errParams, "Unexpected offset: %d", offset);
 			return data_[offset];
 		}
 		uint64_t ID() const noexcept { return id_; }
+		uint64_t NextUpdateID() const noexcept { return id_ + Count(); }
 		uint16_t Count() const noexcept { return count_.load(std::memory_order_acquire); }
 		bool HasID(uint64_t id) const noexcept { return id >= ID() && id < ID() + Count(); }
 		uint64_t TotalSizeBytes() const noexcept { return totalSizeBytes_; }
@@ -143,10 +182,11 @@ public:
 			assert(offset < count_.load(std::memory_order_relaxed));
 			return data_[offset];
 		}
-		bool hasSpace() const noexcept { return count_.load(std::memory_order_relaxed) < kBatch; }
+		bool isFull() const noexcept { return count_.load(std::memory_order_relaxed) == kBatch; }
+
 		template <bool skipResultCounting>
 		uint64_t append(U &&val, size_t sizeBytes, std::function<void(Error &&)> *onRes) noexcept {
-			assert(hasSpace());
+			assertrx(!isFull());
 			auto count = count_.load(std::memory_order_relaxed);
 			totalSizeBytes_ += sizeBytes;
 			data_[count].data_ = std::move(val);
@@ -173,15 +213,15 @@ public:
 
 		Value data_[kBatch];
 		uint64_t totalSizeBytes_ = sizeof(QueueEntry);
-		uint64_t id_ = 0;
-		UpdatesQueue<U> &owner_;
+		const uint64_t id_ = 0;
+		UpdatesQueue<U, StatsCollectorT, LoggerT> &owner_;
 		std::atomic<uint16_t> count_ = {0};
 		std::atomic<uint16_t> erased_ = {0};
 		uint16_t resultsSent_ = 0;
 		std::atomic<bool> isInvalidated_ = {false};
-		ReplicationStatsCollector stats_;
+		StatsCollectorT stats_;
 
-		friend UpdatesQueue<U>;
+		friend UpdatesQueue<U, StatsCollectorT, LoggerT>;
 	};
 
 	using UpdateT = QueueEntry<T, kBatchSize>;
@@ -190,8 +230,9 @@ public:
 
 	static constexpr uint64_t kMinUpdatesBound = 1024 * 1024;
 
-	UpdatesQueue(uint64_t maxDataSize, ReplicationStatsCollector statsCollector = ReplicationStatsCollector()) noexcept
-		: MaxDataSize((maxDataSize && (maxDataSize < kMinUpdatesBound)) ? kMinUpdatesBound : maxDataSize), stats_(statsCollector) {}
+	UpdatesQueue(uint64_t maxDataSize, StatsCollectorT statsCollector = StatsCollectorT()) noexcept
+		: MaxDataSize((maxDataSize && (maxDataSize < kMinUpdatesBound)) ? kMinUpdatesBound : maxDataSize),
+		  stats_(std::move(statsCollector)) {}
 
 	void AddDataNotifier(std::thread::id id, std::function<void()> n) {
 		std::unique_lock<std::mutex> lck(mtx_);
@@ -201,13 +242,19 @@ public:
 		std::unique_lock<std::mutex> lck(mtx_);
 		newDataNotifiers_.erase(id);
 	}
-	UpdatePtr Read(uint64_t id, std::thread::id notifier) {
-		std::unique_lock<std::mutex> lck(mtx_);
+	uint64_t GetNextUpdateID() const noexcept {
+		std::lock_guard lck(mtx_);
+		return getNextUpdateID();
+	}
+	UpdatePtr Read(uint64_t id, std::optional<std::thread::id> notifier) {
+		std::lock_guard lck(mtx_);
 		if (updatedDropRecord_ && id <= updatedDropRecord_->ID()) {
 			return updatedDropRecord_;
 		}
 		if (queue_.empty()) {
-			setAwaitDataFlag(notifier);
+			if (notifier.has_value()) {
+				setAwaitDataFlag(*notifier);
+			}
 			return UpdatePtr();
 		}
 		auto firstId = queue_.front()->ID();
@@ -216,7 +263,9 @@ public:
 		}
 		auto idx = (id - firstId) / kBatchSize;
 		if (idx >= queue_.size() || !queue_[idx]->HasID(id)) {
-			setAwaitDataFlag(notifier);
+			if (notifier.has_value()) {
+				setAwaitDataFlag(*notifier);
+			}
 			return UpdatePtr();
 		}
 		return queue_[idx];
@@ -271,7 +320,7 @@ public:
 			return std::make_pair(invalidationErr_, false);
 		}
 		try {
-			logTraceW([&] { rtfmt("Push new sync updates (%d) for %s", localData.dataSize, data[0].GetNsName()); });
+			logTraceW([&] { uq_rtfmt("Push new sync updates (%d) for %s", localData.dataSize, data[0].NsName()); });
 
 			entriesRange = addDataToQueue(std::move(data), &onResult, dropped);
 
@@ -309,7 +358,7 @@ public:
 				return std::make_pair(invalidationErr_, false);
 			}
 
-			logTraceW([&] { rtfmt("Push new async updates (%d) for %s", data.size(), data[0].GetNsName()); });
+			logTraceW([&] { uq_rtfmt("Push new async updates (%d) for %s", data.size(), data[0].NsName()); });
 
 			addDataToQueue<skipResultCounting>(std::move(data), dropped);
 		}
@@ -319,23 +368,23 @@ public:
 	}
 	bool TokenIsInWhiteList(std::string_view token, std::size_t hash) const noexcept {
 		if (allowList_.has_value()) {
-			const auto found = allowList_->find(token, hash);
-			if (found != allowList_->end() || allowList_->empty()) {
+			if (allowList_->empty() || allowList_->find(token, hash) != allowList_->end()) {
 				return true;
 			}
 		}
 		return false;
 	}
 	template <typename ContainerT>
-	void Init(std::optional<ContainerT> &&allowList, const Logger &l) {
-		log_ = &l;
-		allowList_.reset();
+	void Init(std::optional<ContainerT> &&allowList, const LoggerT *l) {
+		log_ = l;
 		if (allowList.has_value()) {
-			allowList_.emplace();
+			allowList_ = TokensHashSetT();
 			for (auto &&token : *allowList) {
 				allowList_->emplace(std::move(token));
 			}
 			allowList.reset();
+		} else {
+			allowList_.reset();
 		}
 	}
 
@@ -388,7 +437,7 @@ private:
 	template <bool skipResultCounting>
 	uint64_t addDataImpl(T &&d, std::function<void(Error &&)> *onResult) {
 		uint64_t storageSize = 0;
-		if (!queue_.size() || !queue_.back()->hasSpace()) {
+		if (!queue_.size() || queue_.back()->isFull()) {
 			queue_.emplace_back(make_intrusive<intrusive_atomic_rc_wrapper<UpdateT>>(nextChunkID_, *this, stats_));
 			nextChunkID_ += kBatchSize;
 			storageSize = queue_.back()->TotalSizeBytes();
@@ -401,7 +450,7 @@ private:
 		return id;
 	}
 	void onResult(uint64_t id, Error &&err) {
-		std::unique_lock<std::mutex> lck(mtx_);
+		std::unique_lock lck(mtx_);
 		const auto idx = tryGetIdx(id);
 		if (idx < 0) {
 			return;
@@ -412,9 +461,9 @@ private:
 		updPtr->addSentResult();
 		logTraceW([&] {
 			if (entry.onResult_) {
-				rtfmt("Sending result for update with ID %d", id);
+				uq_rtfmt("Sending result for update with ID %d", id);
 			} else {
-				rtfmt("Trying to send result for update with ID %d, but it doesn't have result handler", id);
+				uq_rtfmt("Trying to send result for update with ID %d, but it doesn't have result handler", id);
 			}
 		});
 		onResult(entry, std::move(err));
@@ -426,11 +475,11 @@ private:
 			v.onResult_ = nullptr;
 		}
 	}
-	void eraseReplicated() {
+	void eraseReplicated() noexcept {
 		std::unique_lock lck(mtx_);
 		eraseReplicated(lck);
 	}
-	void eraseReplicated(std::unique_lock<std::mutex> &lck) {
+	void eraseReplicated(std::unique_lock<std::mutex> &lck) noexcept {
 		while (queue_.size() && queue_.front()->isAllResultsSent() && queue_.front()->IsFullyErased()) {
 			auto updPtr = queue_.front();
 			queue_.pop_front();
@@ -460,7 +509,7 @@ private:
 			uint64_t firstUnskipableIdx = 0;
 			for (; firstUnskipableIdx < dropped.size(); ++firstUnskipableIdx) {
 				auto &upd = dropped[firstUnskipableIdx];
-				if (!upd->isAllResultsSent() || upd->hasSpace()) {
+				if (!upd->isAllResultsSent() || !upd->isFull()) {
 					break;
 				}
 				upd->markInvalidated();
@@ -474,7 +523,7 @@ private:
 
 			if (lastChunckId >= 0) {
 				const auto updateId = lastChunckId + kBatchSize - 1;
-				logWarnW([&] { rtfmt("Dropping updates: %d-%d. %d bytes", dropped.front()->ID(), updateId, droppedUpdatesSize); });
+				logWarnW([&] { uq_rtfmt("Dropping updates: %d-%d. %d bytes", dropped.front()->ID(), updateId, droppedUpdatesSize); });
 				updatedDropRecord_ =
 					make_intrusive<intrusive_atomic_rc_wrapper<UpdateT>>(updateId, *this, typename UpdateT::DroppedUpdatesT{});
 				stats_.OnUpdatesDrop(updateId, droppedUpdatesSize);
@@ -482,6 +531,7 @@ private:
 			}
 		}
 	}
+	uint64_t getNextUpdateID() const noexcept { return queue_.size() ? queue_.back()->NextUpdateID() : nextChunkID_; }
 	template <typename F>
 	void logWarnW(F &&f) const {
 		if (log_) {
@@ -510,10 +560,10 @@ private:
 	std::deque<UpdatePtr> queue_;
 	std::optional<TokensHashSetT> allowList_;
 	uint64_t nextChunkID_ = 0;
-	ReplicationStatsCollector stats_;
+	StatsCollectorT stats_;
 	uint64_t dataSize_ = 0;
-	const Logger *log_ = nullptr;
+	const LoggerT *log_ = nullptr;
 };
 
-}  // namespace cluster
+}  // namespace updates
 }  // namespace reindexer

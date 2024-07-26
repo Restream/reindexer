@@ -1447,3 +1447,27 @@ TEST_F(QueriesApi, DistinctWithDuplicatesWhereCondTest) {
 	check(0, 0, 1, 1, 2, 1, 2, 1);
 	check(1, 2, 0, 2, 0, 1, 2, 2, 1, 0);
 }
+
+TEST_F(QueriesApi, ExtraSpacesUpdateSQL) {
+	{
+		Query updateQuery = Query::FromSQL(
+			R"(update #config set "profiling.long_queries_logging.update_delete" = {"threshold_us":11, "normalized":false} where "type"='profiling')");
+		QueryResults qrUpdate;
+		Error err = rt.reindexer->Update(updateQuery, qrUpdate);
+		ASSERT_TRUE(err.ok()) << err.what() << "ExtraSpacesUpdateSQL Step 1";
+	}
+	{
+		Query updateQuery = Query::FromSQL(
+			R"(update #config set "profiling.long_queries_logging.update_delete"={ "threshold_us" : 11, "normalized":false } where "type"='profiling')");
+		QueryResults qrUpdate;
+		Error err = rt.reindexer->Update(updateQuery, qrUpdate);
+		ASSERT_TRUE(err.ok()) << err.what() << "ExtraSpacesUpdateSQL Step 2";
+	}
+	{
+		Query updateQuery = Query::FromSQL(
+			R"(update #config set "profiling.long_queries_logging.update_delete"={  "threshold_us" : 11,  "normalized": false } where "type" = 'profiling')");
+		QueryResults qrUpdate;
+		Error err = rt.reindexer->Update(updateQuery, qrUpdate);
+		ASSERT_TRUE(err.ok()) << err.what() << "ExtraSpacesUpdateSQL Step 3";
+	}
+}

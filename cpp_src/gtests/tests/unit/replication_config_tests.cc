@@ -178,16 +178,12 @@ public:
 	void SetReplicationConfigNS(reindexer::Reindexer& rx, const ReplicationConfigData& config) {
 		GTEST_TRACE_FUNCTION();
 		upsertConfigItemFromObject<decltype(config), ExpectErrorOnUpsert>(rx, "replication", config);
-		auto err = rx.Commit(kConfigNs);
-		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
 	template <bool ExpectErrorOnUpsert = false>
 	void SetJSONtoConfigNS(reindexer::Reindexer& rx, std::string_view stringJSON) {
 		GTEST_TRACE_FUNCTION();
 		upsertConfigItemFromJSON<ExpectErrorOnUpsert>(rx, stringJSON);
-		auto err = rx.Commit(kConfigNs);
-		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
 protected:

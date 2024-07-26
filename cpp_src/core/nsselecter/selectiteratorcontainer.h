@@ -33,14 +33,14 @@ struct SelectIteratorsBracket : private Bracket {
 };
 
 class SelectIteratorContainer
-	: public ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator,
-							AlwaysTrue, ComparatorIndexed<bool>, ComparatorIndexed<int>, ComparatorIndexed<int64_t>,
-							ComparatorIndexed<double>, ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>,
-							ComparatorIndexed<Point>, ComparatorIndexed<Uuid>, EqualPositionComparator, ComparatorNotIndexed> {
-	using Base = ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator,
-								AlwaysTrue, ComparatorIndexed<bool>, ComparatorIndexed<int>, ComparatorIndexed<int64_t>,
-								ComparatorIndexed<double>, ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>,
-								ComparatorIndexed<Point>, ComparatorIndexed<Uuid>, EqualPositionComparator, ComparatorNotIndexed>;
+	: public ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysTrue,
+							ComparatorIndexed<bool>, ComparatorIndexed<int>, ComparatorIndexed<int64_t>, ComparatorIndexed<double>,
+							ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>,
+							ComparatorIndexed<Uuid>, EqualPositionComparator, ComparatorNotIndexed> {
+	using Base = ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysTrue,
+								ComparatorIndexed<bool>, ComparatorIndexed<int>, ComparatorIndexed<int64_t>, ComparatorIndexed<double>,
+								ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>,
+								ComparatorIndexed<Uuid>, EqualPositionComparator, ComparatorNotIndexed>;
 
 public:
 	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx *ctx = nullptr)
@@ -58,11 +58,11 @@ public:
 	bool Process(PayloadValue &, bool *finish, IdType *rowId, IdType, bool match);
 
 	bool IsSelectIterator(size_t i) const noexcept {
-		assertrx(i < Size());
+		assertrx_throw(i < Size());
 		return container_[i].Is<SelectIterator>();
 	}
 	bool IsJoinIterator(size_t i) const noexcept {
-		assertrx(i < container_.size());
+		assertrx_throw(i < container_.size());
 		return container_[i].Is<JoinSelectIterator>();
 	}
 	bool IsDistinct(size_t i) const noexcept {
@@ -94,7 +94,7 @@ public:
 private:
 	bool prepareIteratorsForSelectLoop(QueryPreprocessor &, size_t begin, size_t end, unsigned sortId, bool isFt, const NamespaceImpl &,
 									   SelectFunction::Ptr &, FtCtx::Ptr &, const RdxContext &);
-	void sortByCost(span<unsigned> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations);
+	void sortByCost(span<unsigned int> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations);
 	double fullCost(span<unsigned> indexes, unsigned i, unsigned from, unsigned to, int expectedIterations) const noexcept;
 	double cost(span<unsigned> indexes, unsigned cur, int expectedIterations) const noexcept;
 	double cost(span<unsigned> indexes, unsigned from, unsigned to, int expectedIterations) const noexcept;
@@ -124,11 +124,7 @@ private:
 	void processJoinEntry(const JoinQueryEntry &, OpType);
 	void processQueryEntryResults(SelectKeyResults &&, OpType, const NamespaceImpl &, const QueryEntry &, bool isIndexFt,
 								  bool isIndexSparse, std::optional<OpType> nextOp);
-	struct EqualPositions {
-		h_vector<size_t, 4> queryEntriesPositions;
-		size_t positionToInsertIterator = 0;
-		bool foundOr = false;
-	};
+	using EqualPositions = h_vector<size_t, 4>;
 	void processEqualPositions(const std::vector<EqualPositions> &equalPositions, const NamespaceImpl &ns, const QueryEntries &queries);
 	static std::vector<EqualPositions> prepareEqualPositions(const QueryEntries &queries, size_t begin, size_t end);
 

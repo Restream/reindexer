@@ -1,8 +1,6 @@
 #include "transactionimpl.h"
-#include "client/reindexerimpl.h"
 #include "cluster/sharding/sharding.h"
 #include "core/reindexer_impl/reindexerimpl.h"
-#include "tools/clusterproxyloghelper.h"
 
 namespace reindexer {
 
@@ -239,9 +237,11 @@ LocalTransaction TransactionImpl::Transform(TransactionImpl &tx) {
 	return LocalTransaction(Error(errNotValid, "Non-local transaction"));
 }
 
-void TransactionImpl::updateShardIdIfNecessary(int shardId) {
+void TransactionImpl::updateShardIdIfNecessary(int shardId, const Variant &curShardKey) {
 	if ((shardId_ != ShardingKeyType::NotSetShard) && (shardId != shardId_)) {
-		throw Error(errLogic, "Transaction query to a different shard: %d (%d is expected)", shardId, shardId_);
+		throw Error(errLogic,
+					"Transaction query to a different shard: %d (%d is expected); First tx shard key - %s, current tx shard key - %s",
+					shardId, shardId_, firstShardKey_.Dump(), curShardKey.Dump());
 	}
 	if (shardId_ == ShardingKeyType::NotSetShard) {
 		shardId_ = shardId;
@@ -267,13 +267,16 @@ void TransactionImpl::updateShardIdIfNecessary(int shardId) {
 
 void TransactionImpl::lazyInit(const Query &q) {
 	if (shardingRouter_) {
-		const auto ids = shardingRouter_.GetShardId(q);
+		const auto [ids, shardKey] = shardingRouter_.GetShardIdKeyPair(q);
+		if (firstShardKey_.IsNullValue()) {
+			firstShardKey_ = shardKey;
+		}
 		if (ids.size() != 1) {
 			Error status(errLogic, "Transaction query must correspond to exactly one shard (%d corresponding shards found)", ids.size());
 			status_ = status;
 			throw status;
 		}
-		updateShardIdIfNecessary(ids.front());
+		updateShardIdIfNecessary(ids.front(), shardKey);
 	} else {
 		initProxiedTxIfRequired();
 	}
@@ -301,7 +304,11 @@ void TransactionImpl::initProxiedTxIfRequired() {
 
 void TransactionImpl::lazyInit(const Item &item) {
 	if (shardingRouter_) {
-		updateShardIdIfNecessary(shardingRouter_.GetShardId(data_->nsName, item));
+		const auto [id, shardKey] = shardingRouter_.GetShardIdKeyPair(data_->nsName, item);
+		if (firstShardKey_.IsNullValue()) {
+			firstShardKey_ = shardKey;
+		}
+		updateShardIdIfNecessary(id, shardKey);
 	} else {
 		initProxiedTxIfRequired();
 	}

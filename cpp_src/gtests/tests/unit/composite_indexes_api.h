@@ -36,8 +36,6 @@ public:
 		item[this->kFieldNamePrice] = price;
 		item[this->kFieldNameName] = name;
 		Upsert(default_namespace, item);
-		const auto err = Commit(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	Error tryAddCompositeIndex(std::initializer_list<std::string> indexes, CompositeIndexType type, const IndexOpts& opts) {
@@ -58,8 +56,6 @@ public:
 	void dropIndex(const std::string& name) {
 		reindexer::IndexDef idef(name);
 		Error err = rt.reindexer->DropIndex(default_namespace, idef);
-		EXPECT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 

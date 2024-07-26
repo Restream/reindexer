@@ -32,7 +32,7 @@ func BenchmarkGetConn(b *testing.B) {
 	binding := NetCProto{}
 	u, _ := url.Parse(fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv1.RpcPort, srv1.DbName, srv1.RpcPort))
 	dsn := []url.URL{*u}
-	err := binding.Init(dsn, bindings.OptionConnect{CreateDBIfMissing: true})
+	err := binding.Init(dsn, nil, bindings.OptionConnect{CreateDBIfMissing: true})
 	if err != nil {
 		panic(err)
 	}
@@ -60,7 +60,7 @@ func TestCprotoPool(t *testing.T) {
 		defer serv.Close()
 
 		c := new(NetCProto)
-		err = c.Init([]url.URL{*addr})
+		err = c.Init([]url.URL{*addr}, nil)
 		require.NoError(t, err)
 
 		assert.Equal(t, defConnPoolSize, len(serv.conns))
@@ -77,7 +77,7 @@ func TestCprotoPool(t *testing.T) {
 		u, err := url.Parse(dsn)
 		require.NoError(t, err)
 		c := new(NetCProto)
-		err = c.Init([]url.URL{*u}, reindexer.WithConnPoolLoadBalancing(bindings.LBRoundRobin))
+		err = c.Init([]url.URL{*u}, nil, reindexer.WithConnPoolLoadBalancing(bindings.LBRoundRobin))
 		require.NoError(t, err)
 
 		conns := make(map[connection]bool)
@@ -111,7 +111,7 @@ func TestCprotoStatus(t *testing.T) {
 		u, err := url.Parse(dsn)
 		assert.NoError(t, err)
 		c := new(NetCProto)
-		err = c.Init([]url.URL{*u})
+		err = c.Init([]url.URL{*u}, nil)
 		assert.NoError(t, err)
 
 		status := c.Status(context.Background())

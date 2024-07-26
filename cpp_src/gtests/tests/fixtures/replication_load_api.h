@@ -40,7 +40,7 @@ public:
 		auto srv = GetSrv(masterId_);
 		auto &api = srv->api;
 
-		shared_lock<shared_timed_mutex> lk(restartMutex_);
+		reindexer::shared_lock<reindexer::shared_timed_mutex> lk(restartMutex_);
 
 		for (size_t i = 0; i < count; ++i) {
 			BaseApi::ItemType item = api.NewItem("some");
@@ -60,7 +60,7 @@ public:
 	}
 	BaseApi::QueryResultsType SimpleSelect(size_t num) {
 		SCOPED_TRACE("Selecting some");
-		Query qr = Query("some");
+		reindexer::Query qr("some");
 		auto srv = GetSrv(num);
 		auto &api = srv->api;
 		BaseApi::QueryResultsType res;
@@ -74,11 +74,11 @@ public:
 		auto srv = GetSrv(masterId_);
 		auto &api = srv->api;
 		BaseApi::QueryResultsType res;
-		auto err = api.reindexer->Delete(Query("some"), res);
+		auto err = api.reindexer->Delete(reindexer::Query("some"), res);
 		EXPECT_TRUE(err.ok()) << err.what();
 		return res;
 	}
-	cluster::ReplicationStats GetReplicationStats(size_t num) { return GetSrv(num)->GetReplicationStats(cluster::kAsyncReplStatsType); }
+	auto GetReplicationStats(size_t num) { return GetSrv(num)->GetReplicationStats(reindexer::cluster::kAsyncReplStatsType); }
 	void SetReplicationLogLevel(size_t num, LogLevel level) {
 		SCOPED_TRACE("SetReplicationLogLevel");
 		GetSrv(num)->SetReplicationLogLevel(level, "async_replication");
@@ -121,6 +121,49 @@ public:
 	void CheckReplicationConfigNamespace(size_t num, const AsyncReplicationConfigTest &expConfig) {
 		SCOPED_TRACE("Checking config from namespace");
 		EXPECT_EQ(expConfig, GetSrv(num)->GetServerConfig(ServerControl::ConfigType::Namespace));
+	}
+	int32_t ValidateTagsmatchersVersions(std::string_view ns, std::optional<int32_t> minVersion = std::optional<int32_t>()) {
+		std::vector<int32_t> versions;
+		versions.reserve(GetServersCount());
+		for (size_t i = 0; i < GetServersCount(); i++) {
+			auto srv = GetSrv(i);
+			auto &api = srv->api;
+			BaseApi::QueryResultsType res;
+			auto err = api.reindexer->Select(reindexer::Query(ns), res);
+			EXPECT_TRUE(err.ok()) << err.what();
+			versions.emplace_back(res.GetTagsMatcher(0).version());
+		}
+		for (size_t i = 1; i < versions.size(); ++i) {
+			if (versions[i] != versions[i - 1]) {
+				TestCout() << fmt::sprintf("TagsMatcher versions are different for the '%s':\n", ns);
+				for (size_t j = 0; j < versions.size(); ++j) {
+					TestCout() << fmt::sprintf("%d: %d\n", j, versions[j]);
+				}
+				TestCout() << std::endl;
+				EXPECT_TRUE(false);
+			}
+		}
+		assertrx(versions.size());
+		if (minVersion.has_value()) {
+			EXPECT_GT(versions[0], minVersion.value());
+		}
+		return versions[0];
+	}
+	void SetSchema(size_t num, std::string_view ns, std::string_view schema) {
+		auto srv = GetSrv(num);
+		auto err = srv->api.reindexer->SetSchema(ns, schema);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+	void ValidateSchemas(std::string_view ns, std::string_view expected) {
+		for (size_t i = 0; i < GetServersCount(); i++) {
+			auto srv = GetSrv(i);
+			std::vector<reindexer::NamespaceDef> nsDefs;
+			auto err = srv->api.reindexer->EnumNamespaces(nsDefs, reindexer::EnumNamespacesOpts().WithFilter(ns));
+			EXPECT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(nsDefs.size(), 1) << "Namespace does not exist: " << ns;
+			EXPECT_EQ(nsDefs[0].name, ns);
+			EXPECT_EQ(nsDefs[0].schemaJson, expected);
+		}
 	}
 	std::atomic_bool stop;
 

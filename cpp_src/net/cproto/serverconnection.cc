@@ -21,24 +21,34 @@ ServerConnection::ServerConnection(socket &&s, ev::dynamic_loop &loop, Dispatche
 								   bool enableCustomBalancing)
 	: net::ConnectionST(std::move(s), loop, enableStat, kConnReadbufSize, kConnWriteBufSize, kCProtoTimeoutSec),
 	  maxUpdatesSize_(maxUpdatesSize),
+	  maxPendingUpdates_(kConnWriteBufSize * 0.8),
 	  dispatcher_(dispatcher),
 	  balancingType_(enableCustomBalancing ? BalancingType::NotSet : BalancingType::None) {
+	assertrx(maxPendingUpdates_ > 0);
+	assertrx(size_t(maxPendingUpdates_) < BaseConnT::wrBuf_.capacity());
 	callback(io_, ev::READ);
 
-	updates_async_.set<ServerConnection, &ServerConnection::async_cb>(this);
+	updatesAsync_.set<ServerConnection, &ServerConnection::async_cb>(this);
 	updates_timeout_.set<ServerConnection, &ServerConnection::timeout_cb>(this);
-	updates_async_.set(loop);
+	updatesAsync_.set(loop);
 	updates_timeout_.set(loop);
 
 	updates_timeout_.start(kUpdatesResendTimeout, kUpdatesResendTimeout);
-	updates_async_.start();
+	updatesAsync_.start();
 }
 #else	// REINDEX_WITH_V3_FOLLOWERS
 ServerConnection::ServerConnection(socket &&s, ev::dynamic_loop &loop, Dispatcher &dispatcher, bool enableStat, bool enableCustomBalancing)
 	: net::ConnectionST(std::move(s), loop, enableStat, kConnReadbufSize, kConnWriteBufSize, kCProtoTimeoutSec),
+	  maxPendingUpdates_(kConnWriteBufSize * 0.8),
 	  dispatcher_(dispatcher),
 	  balancingType_(enableCustomBalancing ? BalancingType::NotSet : BalancingType::None) {
+	assertrx(maxPendingUpdates_ > 0);
+	assertrx(size_t(maxPendingUpdates_) < BaseConnT::wrBuf_.capacity());
 	callback(io_, ev::READ);
+
+	updatesAsync_.set<ServerConnection, &ServerConnection::async_cb>(this);
+	updatesAsync_.set(loop);
+	updatesAsync_.start();
 }
 #endif	// REINDEX_WITH_V3_FOLLOWERS
 
@@ -46,9 +56,7 @@ ServerConnection::~ServerConnection() { BaseConnT::closeConn(); }
 
 bool ServerConnection::Restart(socket &&s) {
 	BaseConnT::restart(std::move(s));
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	updates_async_.start();
-#endif	// REINDEX_WITH_V3_FOLLOWERS
+	updatesAsync_.start();
 	callback(io_, ev::READ);
 	return true;
 }
@@ -56,9 +64,10 @@ bool ServerConnection::Restart(socket &&s) {
 void ServerConnection::Attach(ev::dynamic_loop &loop) {
 	if (!BaseConnT::attached_) {
 		BaseConnT::attach(loop);
+		updatesAsync_.set(loop);
+		updatesAsync_.start();
+		io_.set<ServerConnection, &ServerConnection::callback>(this);  // Override io-callback
 #ifdef REINDEX_WITH_V3_FOLLOWERS
-		updates_async_.set(loop);
-		updates_async_.start();
 		updates_timeout_.set(loop);
 		updates_timeout_.start(kUpdatesResendTimeout, kUpdatesResendTimeout);
 #endif	// REINDEX_WITH_V3_FOLLOWERS
@@ -67,12 +76,12 @@ void ServerConnection::Attach(ev::dynamic_loop &loop) {
 
 void ServerConnection::CallRPC(const IRPCCall &call) {
 #ifdef REINDEX_WITH_V3_FOLLOWERS
-	std::lock_guard lck(updates_mtx_);
-	updates_.emplace_back(call);
+	std::lock_guard lck(updatesMtx_);
+	updatesV3_.emplace_back(call);
 	updatesSize_ += call.data_->size();
 
 	if (updatesSize_ > maxUpdatesSize_) {
-		updates_.clear();
+		updatesV3_.clear();
 		Args args;
 		IRPCCall curCall = call;
 		CmdCode cmd;
@@ -91,7 +100,7 @@ void ServerConnection::CallRPC(const IRPCCall &call) {
 		logPrintf(LogWarning, "Call updates lost clientAddr = %s updatesSize = %d", clientAddr_, updatesSize_);
 
 		updatesSize_ = callLost.data_->size();
-		updates_.emplace_back(std::move(callLost));
+		updatesV3_.emplace_back(std::move(callLost));
 		updateLostFlag_ = true;
 
 		// No legacy replication stats in this version
@@ -113,12 +122,25 @@ void ServerConnection::CallRPC(const IRPCCall &call) {
 #endif	// REINDEX_WITH_V3_FOLLOWERS
 }
 
+void ServerConnection::SendEvent(chunk &&ch) {
+	bool notify = false;
+	{
+		std::lock_guard lck(updatesMtx_);
+		notify = updates_.empty();
+		updates_.emplace_back(std::move(ch));
+		currentUpdatesCnt_.fetch_add(1, std::memory_order_acq_rel);
+	}
+	if (notify) {
+		updatesAsync_.send();
+	}
+}
+
 void ServerConnection::Detach() {
 	if (BaseConnT::attached_) {
 		BaseConnT::detach();
+		updatesAsync_.stop();
+		updatesAsync_.reset();
 #ifdef REINDEX_WITH_V3_FOLLOWERS
-		updates_async_.stop();
-		updates_async_.reset();
 		updates_timeout_.stop();
 		updates_timeout_.reset();
 #endif	// REINDEX_WITH_V3_FOLLOWERS
@@ -373,7 +395,7 @@ void ServerConnection::handleException(Context &ctx, const Error &err) noexcept 
 
 #ifdef REINDEX_WITH_V3_FOLLOWERS
 
-void ServerConnection::sendUpdates() {
+void ServerConnection::sendUpdatesV3() {
 	constexpr auto kMaxUpdatesBufSize = 1024 * 1024 * 8;
 	if (BaseConnT::wrBuf_.size() + 10 > BaseConnT::wrBuf_.capacity() || BaseConnT::wrBuf_.data_size() > kMaxUpdatesBufSize / 2) {
 		return;
@@ -382,8 +404,8 @@ void ServerConnection::sendUpdates() {
 	std::vector<IRPCCall> updates;
 	size_t updatesSizeCopy;
 	{
-		std::lock_guard lck(updates_mtx_);
-		updates.swap(updates_);
+		std::lock_guard lck(updatesMtx_);
+		updates.swap(updatesV3_);
 		updatesSizeCopy = updatesSize_;
 		updatesSize_ = 0;
 		updateLostFlag_ = false;
@@ -417,8 +439,8 @@ void ServerConnection::sendUpdates() {
 		RPCCall callLost{kCmdUpdates, 0, {}, milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, false};
 		cproto::Context ctxLost{"", &callLost, this, {{}, {}}, false};
 		{
-			std::lock_guard lck(updates_mtx_);
-			updates_.clear();
+			std::lock_guard lck(updatesMtx_);
+			updatesV3_.clear();
 			updatesSize_ = 0;
 			updateLostFlag_ = false;
 
@@ -431,7 +453,7 @@ void ServerConnection::sendUpdates() {
 			if (BaseConnT::stats_) {
 				BaseConnT::stats_->update_send_buf_size(wrBuf_.data_size());
 				// No legacy replication stats in this version
-				// BaseConnT::stats_->update_pended_updates(0);
+				// BaseConnT::stats_->update_pending_updates(0);
 			}
 		}
 
@@ -445,13 +467,13 @@ void ServerConnection::sendUpdates() {
 	}
 
 	if (cnt != updates.size()) {
-		std::lock_guard lck(updates_mtx_);
+		std::lock_guard lck(updatesMtx_);
 		if (!updateLostFlag_) {
-			updates_.insert(updates_.begin(), updates.begin() + cnt, updates.end());
+			updatesV3_.insert(updatesV3_.begin(), updates.begin() + cnt, updates.end());
 			updatesSize_ += updatesSizeCopy - updatesSizeBuffered;
 		}
 		// No legacy replication stats in this version
-		// if (BaseConnT::stats_) stats_->update_pended_updates(updates.size());
+		// if (BaseConnT::stats_) stats_->update_pending_updates(updates.size());
 	}
 	// No legacy replication stats in this version
 	//	else if (BaseConnT::stats_) {
@@ -470,10 +492,72 @@ void ServerConnection::sendUpdates() {
 		dispatcher_.OnResponseRef()(ctx);
 	}
 
-	BaseConnT::callback(BaseConnT::io_, ev::WRITE);
+	callback(BaseConnT::io_, ev::WRITE);
 }
 
 #endif	// REINDEX_WITH_V3_FOLLOWERS
+
+void ServerConnection::sendUpdates() {
+	assertrx_dbg(maxPendingUpdates_ >= BaseConnT::wrBuf_.size_atomic() + pendingUpdates());
+	std::vector<chunk> updates;
+	{
+		std::lock_guard lck(updatesMtx_);
+		updates.swap(updates_);
+	}
+
+	if (updates.empty()) {
+		return;
+	}
+
+	RPCCall callUpdate{kCmdUpdates, 0, {}, milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, false};
+	cproto::Context ctx{"", &callUpdate, this, {{}, {}}, false};
+
+	Args args;
+	size_t cnt = 0;
+	size_t len = 0;
+
+	assertrx_dbg(BaseConnT::wrBuf_.capacity() >= BaseConnT::wrBuf_.size_atomic() + updates.size());
+	WrSerializer ser(BaseConnT::wrBuf_.get_chunk());
+	for (cnt = 0; cnt < updates.size(); ++cnt) {
+		args.clear<false>();
+		auto &upd = updates[cnt];
+		std::string_view updateData(upd);
+		args.emplace_back(p_string(&updateData), Variant::no_hold_t{});
+		packRPC(ser, ctx, Error(), args, enableSnappy_);
+
+		len += ser.Len();
+		BaseConnT::wrBuf_.write(ser.DetachChunk());
+
+		if (BaseConnT::wrBuf_.size() + 2 >= BaseConnT::wrBuf_.capacity()) {
+			break;
+		}
+
+		upd.clear();
+		ser = WrSerializer(std::move(upd));
+	}
+
+	// Single OnResponse call for multiple updates seems fine
+	if (dispatcher_.OnResponseRef()) {
+		ctx.stat.sizeStat.respSizeBytes = len;
+		dispatcher_.OnResponseRef()(ctx);
+	}
+
+	if (cnt == updates.size()) {
+		[[maybe_unused]] auto res = currentUpdatesCnt_.fetch_sub(cnt, std::memory_order_acq_rel);
+		assertrx_dbg(res >= int64_t(cnt));
+	} else {
+		std::lock_guard lck(updatesMtx_);
+		updates_.insert(updates_.begin(), std::make_move_iterator(updates.begin() + cnt), std::make_move_iterator(updates.end()));
+		currentUpdatesCnt_.store(updates_.size(), std::memory_order_release);
+	}
+	// Max updates count is very limited on this stage, so we do not collect separate pending updates stats here
+
+	if (BaseConnT::stats_) {
+		BaseConnT::stats_->update_send_buf_size(BaseConnT::wrBuf_.data_size());
+	}
+
+	callback(BaseConnT::io_, ev::WRITE);
+}
 
 }  // namespace cproto
 }  // namespace net

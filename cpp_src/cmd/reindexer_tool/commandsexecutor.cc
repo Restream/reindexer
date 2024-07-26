@@ -523,7 +523,7 @@ Error CommandsExecutor<DBInterface>::processImpl(const std::string& command) noe
 	if (!token.length()) return Error();
 	if (fromFile_ && reindexer::checkIfStartsWith<reindexer::CaseSensitive::Yes>(kDumpModePrefix, command)) {
 		DumpOptions opts;
-		auto err = opts.FromJSON(command.substr(kDumpModePrefix.size()));
+		auto err = opts.FromJSON(reindexer::giftStr(command.substr(kDumpModePrefix.size())));
 		if (!err.ok()) return Error(errParams, "Unable to parse dump mode from cmd: %s", err.what());
 		dumpMode_ = opts.mode;
 	}
@@ -918,7 +918,7 @@ Error CommandsExecutor<DBInterface>::commandNamespaces(const std::string& comman
 	std::string_view subCommand = parser.NextToken();
 
 	if (iequals(subCommand, "add")) {
-		auto nsName = reindexer::unescapeString(parser.NextToken());
+		parser.NextToken();	 // nsName
 
 		NamespaceDef def("");
 		Error err = def.FromJSON(reindexer::giftStr(parser.CurPtr()));
@@ -1087,9 +1087,10 @@ Error CommandsExecutor<DBInterface>::commandBench(const std::string& command) {
 	std::atomic<int> count(0), errCount(0);
 
 	auto worker = std::bind(getBenchWorkerFn(count, errCount), deadline);
-	auto threads = std::unique_ptr<std::thread[]>(new std::thread[numThreads_]);
-	for (int i = 0; i < numThreads_; i++) threads[i] = std::thread(worker);
-	for (int i = 0; i < numThreads_; i++) threads[i].join();
+	const auto numThreads = std::min(std::max(numThreads_, 1u), 65535u);
+	auto threads = std::unique_ptr<std::thread[]>(new std::thread[numThreads]);
+	for (unsigned i = 0; i < numThreads; i++) threads[i] = std::thread(worker);
+	for (unsigned i = 0; i < numThreads; i++) threads[i].join();
 
 	output_() << "Done. Got " << count / benchTime << " QPS, " << errCount << " errors" << std::endl;
 	return err;

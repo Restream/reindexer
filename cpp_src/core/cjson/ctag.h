@@ -33,8 +33,8 @@ public:
 	static constexpr uint32_t kNameMask = (uint32_t(1) << kNameBits) - uint32_t(1);
 	static constexpr int kNameMax = (1 << kNameBits) - 1;
 
-	constexpr explicit ctag(TagType tagType) noexcept : ctag{tagType, 0} {}
-	constexpr ctag(TagType tagType, int tagName, int tagField = -1) noexcept
+	RX_ALWAYS_INLINE constexpr explicit ctag(TagType tagType) noexcept : ctag{tagType, 0} {}
+	RX_ALWAYS_INLINE constexpr ctag(TagType tagType, int tagName, int tagField = -1) noexcept
 		: tag_{(uint32_t(tagType) & kTypeMask) | (uint32_t(tagName) << kTypeBits) | (uint32_t(tagField + 1) << kFieldOffset) |
 			   ((uint32_t(tagType) & kInvertedTypeMask) << kType1Offset)} {
 		assertrx(tagName >= 0);
@@ -43,22 +43,28 @@ public:
 		assertrx(tagField + 1 < (1 << kFieldBits));
 	}
 
-	[[nodiscard]] constexpr TagType Type() const noexcept { return typeImpl(tag_); }
-	[[nodiscard]] constexpr int Name() const noexcept { return nameImpl(tag_); }
-	[[nodiscard]] constexpr int Field() const noexcept { return fieldImpl(tag_); }
+	[[nodiscard]] RX_ALWAYS_INLINE constexpr TagType Type() const noexcept { return typeImpl(tag_); }
+	[[nodiscard]] RX_ALWAYS_INLINE constexpr int Name() const noexcept { return nameImpl(tag_); }
+	[[nodiscard]] RX_ALWAYS_INLINE constexpr int Field() const noexcept { return fieldImpl(tag_); }
 
-	[[nodiscard]] constexpr bool operator==(ctag other) const noexcept { return tag_ == other.tag_; }
-	[[nodiscard]] constexpr bool operator!=(ctag other) const noexcept { return !operator==(other); }
+	[[nodiscard]] RX_ALWAYS_INLINE constexpr bool operator==(ctag other) const noexcept { return tag_ == other.tag_; }
+	[[nodiscard]] RX_ALWAYS_INLINE constexpr bool operator!=(ctag other) const noexcept { return !operator==(other); }
 
 private:
-	explicit constexpr ctag(uint32_t tag) noexcept : ctag{typeImpl(tag), nameImpl(tag), fieldImpl(tag)} { assertrx_dbg(tag == tag_); }
-	explicit constexpr ctag(uint64_t tag) noexcept : ctag{typeImpl(tag), nameImpl(tag), fieldImpl(tag)} { assertrx_dbg(tag == tag_); }
-	[[nodiscard]] constexpr static TagType typeImpl(uint32_t tag) noexcept {
+	RX_ALWAYS_INLINE explicit constexpr ctag(uint32_t tag) noexcept : ctag{typeImpl(tag), nameImpl(tag), fieldImpl(tag)} {
+		assertrx_dbg(tag == tag_);
+	}
+	RX_ALWAYS_INLINE explicit constexpr ctag(uint64_t tag) noexcept : ctag{typeImpl(tag), nameImpl(tag), fieldImpl(tag)} {
+		assertrx_dbg(tag == tag_);
+	}
+	[[nodiscard]] RX_ALWAYS_INLINE constexpr static TagType typeImpl(uint32_t tag) noexcept {
 		return static_cast<TagType>((tag & kTypeMask) | ((tag >> kType1Offset) & kInvertedTypeMask));
 	}
-	[[nodiscard]] constexpr static int nameImpl(uint32_t tag) noexcept { return (tag >> kTypeBits) & kNameMask; }
-	[[nodiscard]] constexpr static int fieldImpl(uint32_t tag) noexcept { return int((tag >> kFieldOffset) & kFieldMask) - 1; }
-	[[nodiscard]] constexpr uint32_t asNumber() const noexcept { return tag_; }
+	[[nodiscard]] RX_ALWAYS_INLINE constexpr static int nameImpl(uint32_t tag) noexcept { return (tag >> kTypeBits) & kNameMask; }
+	[[nodiscard]] RX_ALWAYS_INLINE constexpr static int fieldImpl(uint32_t tag) noexcept {
+		return int((tag >> kFieldOffset) & kFieldMask) - 1;
+	}
+	[[nodiscard]] RX_ALWAYS_INLINE constexpr uint32_t asNumber() const noexcept { return tag_; }
 
 	uint32_t tag_;
 };
@@ -79,22 +85,23 @@ class carraytag {
 	static constexpr uint32_t kTypeMask = (uint32_t(1) << kTypeBits) - uint32_t(1);
 
 public:
-	constexpr carraytag(uint32_t count, TagType tag) noexcept : atag_(count | (uint32_t(tag) << kCountBits)) {
+	RX_ALWAYS_INLINE constexpr carraytag(uint32_t count, TagType tag) noexcept : atag_(count | (uint32_t(tag) << kCountBits)) {
 		assertrx(count < (uint32_t(1) << kCountBits));
 	}
-	[[nodiscard]] constexpr TagType Type() const noexcept { return typeImpl(atag_); }
-	[[nodiscard]] constexpr uint32_t Count() const noexcept { return countImpl(atag_); }
+	[[nodiscard]] RX_ALWAYS_INLINE constexpr TagType Type() const noexcept { return typeImpl(atag_); }
+	[[nodiscard]] RX_ALWAYS_INLINE constexpr uint32_t Count() const noexcept { return countImpl(atag_); }
 
-	[[nodiscard]] constexpr bool operator==(carraytag other) const noexcept { return atag_ == other.atag_; }
-	[[nodiscard]] constexpr bool operator!=(carraytag other) const noexcept { return !operator==(other); }
+	[[nodiscard]] RX_ALWAYS_INLINE constexpr bool operator==(carraytag other) const noexcept { return atag_ == other.atag_; }
+	[[nodiscard]] RX_ALWAYS_INLINE constexpr bool operator!=(carraytag other) const noexcept { return !operator==(other); }
 
 private:
-	explicit constexpr carraytag(uint32_t atag) noexcept : carraytag{countImpl(atag), typeImpl(atag)} { assertrx_dbg(atag == atag_); }
-	[[nodiscard]] constexpr uint32_t asNumber() const noexcept { return atag_; }
-	[[nodiscard]] static constexpr TagType typeImpl(uint32_t atag) noexcept {
-		return static_cast<TagType>((atag >> kCountBits) & kTypeMask);
+	RX_ALWAYS_INLINE explicit constexpr carraytag(uint32_t atag) noexcept : carraytag{countImpl(atag), typeImpl(atag)} { assertrx_dbg(atag == atag_); }
+	[[nodiscard]] RX_ALWAYS_INLINE constexpr uint32_t asNumber() const noexcept { return atag_; }
+	[[nodiscard]] RX_ALWAYS_INLINE static constexpr TagType typeImpl(uint32_t atag) noexcept {
+		assertrx_dbg(((atag >> kCountBits) & kTypeMask) <= kMaxTagType);
+		return static_cast<TagType>((atag >> kCountBits) & kTypeMask); // NOLINT(*EnumCastOutOfRange)
 	}
-	[[nodiscard]] static constexpr uint32_t countImpl(uint32_t atag) noexcept { return atag & kCountMask; }
+	[[nodiscard]] RX_ALWAYS_INLINE static constexpr uint32_t countImpl(uint32_t atag) noexcept { return atag & kCountMask; }
 
 	uint32_t atag_;
 };

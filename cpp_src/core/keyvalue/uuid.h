@@ -85,7 +85,7 @@ private:
 		assertrx(i < 2);
 		return data_[i];
 	}
-	[[nodiscard]] static Error tryParse(std::string_view, uint64_t (&)[2]) noexcept;
+	static Error tryParse(std::string_view, uint64_t (&)[2]) noexcept;
 
 	uint64_t data_[2];
 };

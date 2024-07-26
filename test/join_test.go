@@ -640,6 +640,7 @@ func TestExplainJoin(t *testing.T) {
 					Field:       "inner_join test_explain_joined",
 					Method:      "preselected_values",
 					Keys:        3,
+					Description: "using preselected_values, because the namespace's max iterations count is very small of 3",
 					Comparators: 0,
 					Matched:     2,
 					Preselect: []expectedExplain{
@@ -671,6 +672,7 @@ func TestExplainJoin(t *testing.T) {
 					Field:       "inner_join test_explain_joined",
 					Method:      "preselected_values",
 					Keys:        3,
+					Description: "using preselected_values, because the namespace's max iterations count is very small of 3",
 					Comparators: 0,
 					Matched:     2,
 					Preselect: []expectedExplain{
@@ -699,6 +701,7 @@ func TestExplainJoin(t *testing.T) {
 			Field:       "left_join test_explain_joined",
 			Method:      "preselected_values",
 			Keys:        1,
+			Description: "using preselected_values, because the namespace's max iterations count is very small of 1",
 			Comparators: 0,
 			Matched:     1,
 			Preselect: []expectedExplain{

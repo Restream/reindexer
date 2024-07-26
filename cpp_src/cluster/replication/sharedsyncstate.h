@@ -1,12 +1,10 @@
 #pragma once
 
-#include <string_view>
 #include "cluster/config.h"
+#include "core/namespace/namespacename.h"
 #include "estl/contexted_cond_var.h"
 #include "estl/fast_hash_set.h"
-#include "estl/mutex.h"
 #include "estl/shared_mutex.h"
-#include "tools/stringstools.h"
 
 namespace reindexer {
 namespace cluster {
@@ -17,10 +15,11 @@ template <typename MtxT = shared_timed_mutex>
 class SharedSyncState {
 public:
 	using GetNameF = std::function<std::string()>;
-	using ContainerT = fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str>;
+	using ContainerT = NsNamesHashSetT;
 
-	void MarkSynchronized(std::string name) {
+	void MarkSynchronized(NamespaceName name) {
 		std::unique_lock<MtxT> lck(mtx_);
+		assertrx_dbg(!name.empty());
 		if (current_.role == RaftInfo::Role::Leader) {
 			auto res = synchronized_.emplace(std::move(name));
 			lck.unlock();
@@ -49,11 +48,10 @@ public:
 		assert(ReplThreadsCnt_);
 	}
 	template <typename ContextT>
-	void AwaitInitialSync(std::string_view name, const ContextT& ctx) const {
-		nocase_hash_str h;
-		std::size_t hash = h(name);
+	void AwaitInitialSync(const NamespaceName& name, const ContextT& ctx) const {
 		shared_lock<MtxT> lck(mtx_);
-		while (!isInitialSyncDone(name, hash)) {
+		assertrx_dbg(!name.empty());
+		while (!isInitialSyncDone(name)) {
 			if (terminated_) {
 				throw Error(errTerminated, "Cluster was terminated");
 			}
@@ -61,10 +59,7 @@ public:
 				throw Error(errWrongReplicationData, "Node role was changed to follower");
 			}
 			cond_.wait(
-				lck,
-				[this, hash, name]() noexcept {
-					return isInitialSyncDone(name, hash) || terminated_ || next_.role == RaftInfo::Role::Follower;
-				},
+				lck, [this, &name]() noexcept { return isInitialSyncDone(name) || terminated_ || next_.role == RaftInfo::Role::Follower; },
 				ctx);
 		}
 	}
@@ -82,11 +77,9 @@ public:
 				lck, [this]() noexcept { return isInitialSyncDone() || terminated_ || next_.role == RaftInfo::Role::Follower; }, ctx);
 		}
 	}
-	bool IsInitialSyncDone(std::string_view name) const {
-		nocase_hash_str h;
-		std::size_t hash = h(name);
+	bool IsInitialSyncDone(const NamespaceName& name) const {
 		shared_lock<MtxT> lck(mtx_);
-		return isInitialSyncDone(name, hash);
+		return isInitialSyncDone(name);
 	}
 	bool IsInitialSyncDone() const {
 		shared_lock<MtxT> lck(mtx_);
@@ -145,14 +138,16 @@ public:
 	}
 
 private:
-	bool isInitialSyncDone(std::string_view name, std::size_t hash) const {
-		return !isRequireSync(name, hash) || (current_.role == RaftInfo::Role::Leader && synchronized_.count(name, hash));
+	bool isInitialSyncDone(const NamespaceName& name) const {
+		assertrx_dbg(!name.empty());
+		return !isRequireSync(name) || (current_.role == RaftInfo::Role::Leader && synchronized_.count(name));
 	}
 	bool isInitialSyncDone() const noexcept {
 		return !enabled_ || (next_.role == RaftInfo::Role::Leader && initialSyncDoneCnt_ == ReplThreadsCnt_);
 	}
-	bool isRequireSync(std::string_view name, size_t hash) const noexcept {
-		return enabled_ && (requireSynchronization_.empty() || requireSynchronization_.count(name, hash));
+	bool isRequireSync(const NamespaceName& name) const noexcept {
+		assertrx_dbg(!name.empty());
+		return enabled_ && (requireSynchronization_.empty() || requireSynchronization_.count(name));
 	}
 	bool isRunning() const noexcept { return enabled_ && !terminated_; }
 

@@ -211,7 +211,7 @@ type Stats struct {
 
 // Raw binding to reindexer
 type RawBinding interface {
-	Init(u []url.URL, options ...interface{}) error
+	Init(u []url.URL, eh EventsHandler, options ...interface{}) error
 	Clone() RawBinding
 	OpenNamespace(ctx context.Context, namespace string, enableStorage, dropOnFileFormatError bool) error
 	CloseNamespace(ctx context.Context, namespace string) error
@@ -239,7 +239,6 @@ type RawBinding interface {
 	SelectQuery(ctx context.Context, rawQuery []byte, asJson bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
 	DeleteQuery(ctx context.Context, rawQuery []byte) (RawBuffer, error)
 	UpdateQuery(ctx context.Context, rawQuery []byte) (RawBuffer, error)
-	Commit(ctx context.Context, namespace string) error
 	EnableLogger(logger Logger)
 	DisableLogger()
 	GetLogger() Logger
@@ -248,6 +247,8 @@ type RawBinding interface {
 	Finalize() error
 	Status(ctx context.Context) Status
 	GetDSNs() []url.URL
+	Subscribe(ctx context.Context, opts *SubscriptionOptions) error
+	Unsubscribe(ctx context.Context) error
 }
 
 type RawBindingChanging interface {
@@ -279,6 +280,11 @@ type OptionReindexerInstance struct {
 type OptionBuiltinAllocatorConfig struct {
 	AllocatorCacheLimit   int64
 	AllocatorMaxCachePart float32
+}
+
+// MaxUpdatesSizeBytes for the internal replication/events queues
+type OptionBuiltinMaxUpdatesSize struct {
+	MaxUpdatesSizeBytes uint
 }
 
 type OptionCgoLimit struct {

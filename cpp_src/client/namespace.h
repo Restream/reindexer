@@ -1,6 +1,5 @@
 #pragma once
 
-#include <mutex>
 #include "client/item.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/payload/payloadtype.h"

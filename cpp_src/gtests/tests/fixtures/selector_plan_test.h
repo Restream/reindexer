@@ -29,8 +29,6 @@ public:
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 			Upsert(ns, item);
 		}
-		Error err = rt.Commit(ns);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	template <typename T>
@@ -137,7 +135,6 @@ private:
 		ns1.Put("unload_idle_threshold", 0);
 		ns1.Put("join_cache_mode", "off");
 		ns1.Put("start_copy_policy_tx_size", 10000);
-		ns1.Put("merge_limit_count", 20000);
 		ns1.Put("optimization_timeout_ms", 0);
 		ns1.End();
 
@@ -148,7 +145,6 @@ private:
 		ns2.Put("unload_idle_threshold", 0);
 		ns2.Put("join_cache_mode", "off");
 		ns2.Put("start_copy_policy_tx_size", 10000);
-		ns2.Put("merge_limit_count", 20000);
 		ns2.Put("optimization_timeout_ms", 800);
 		ns2.End();
 
@@ -162,8 +158,6 @@ private:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		rt.Upsert(config_ns_, item);
-		err = rt.Commit(config_ns_);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 	static constexpr const char* config_ns_ = "#config";
 };

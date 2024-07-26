@@ -28,6 +28,10 @@ if [ -n "$RX_DISABLE_NS_LEAK" ]; then
     RX_ARGS="$RX_ARGS --disable-ns-leak"
 fi
 
+if [ -n "$RX_MAX_HTTP_REQ" ]; then
+    RX_ARGS="$RX_ARGS --max-http-req $RX_MAX_HTTP_REQ"
+fi
+
 if [ -n "$RX_HTTP_READ_TIMEOUT" ]; then
     RX_ARGS="$RX_ARGS --http-read-timeout $RX_HTTP_READ_TIMEOUT"
 fi

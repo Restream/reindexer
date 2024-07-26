@@ -25,7 +25,9 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 		auto clonerLck = statCalculator.CreateLock<contexted_unique_lock>(clonerMtx_, ctx.rdxContext);
 
 		nsl = ns_;
-		if (needNamespaceCopy(nsl, tx)) {
+		if (needNamespaceCopy(nsl, tx) &&
+			(tx.GetSteps().size() >= static_cast<uint32_t>(txSizeToAlwaysCopy_.load(std::memory_order_relaxed)) ||
+			 isExpectingSelectsOnNamespace(nsl, ctx))) {
 			PerfStatCalculatorMT nsCopyCalc(copyStatsCounter_, enablePerfCounters);
 			calc.SetCounter(nsl->updatePerfCounter_);
 			calc.LockHit();
@@ -61,8 +63,8 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 				hasCopy_.store(false, std::memory_order_release);
 				if (!nsl->repl_.temporary && !nsCtx.inSnapshot) {
 					// If commit happens in ns copy, than the copier have to handle replication
-					auto err = ns_->clusterizator_.Replicate(
-						cluster::UpdateRecord{cluster::UpdateRecord::Type::CommitTx, ns_->name_, ns_->wal_.LastLSN(), ns_->repl_.nsVersion,
+					auto err = ns_->observers_.SendUpdate(
+						updates::UpdateRecord{updates::URType::CommitTx, ns_->name_, ns_->wal_.LastLSN(), ns_->repl_.nsVersion,
 											  ctx.rdxContext.EmmiterServerId()},
 						[&clonerLck, &storageLock, &nsRlck]() {
 							storageLock.unlock();
@@ -136,7 +138,23 @@ bool Namespace::needNamespaceCopy(const NamespaceImpl::Ptr& ns, const LocalTrans
 		   (stepsCount >= txSizeToAlwaysCopy);
 }
 
-void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, const std::string& storagePath,
+bool Namespace::isExpectingSelectsOnNamespace(const NamespaceImpl::Ptr& ns, const NsContext& ctx) {
+	// Some kind of heuristic: if there were no selects on this namespace yet and no one awaits read lock for it, probably we do not have to
+	// copy it. Improves scenarios, when user wants to fill namespace before any selections.
+	// It would be more optimal to acquire lock here and pass it further to the transaction, but this case is rare, so trying to not make it
+	// complicated.
+	if (ns->hadSelects() || !ns->isNotLocked(ctx.rdxContext)) {
+		return true;
+	}
+	std::this_thread::yield();
+	if (!ns->hadSelects()) {
+		const bool enableTxHeuristic = !std::getenv("REINDEXER_NOTXHEURISTIC");
+		return enableTxHeuristic;
+	}
+	return false;
+}
+
+void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, const std::string& storagePath,
 						 const std::function<void(std::function<void()>)>& replicateCb, const RdxContext& ctx) {
 	logPrintf(LogTrace, "[rename] Trying to rename namespace '%s'...", GetName(ctx));
 	std::string dbpath;
@@ -167,7 +185,7 @@ void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, 
 		}
 		dstNs->checkClusterRole(ctx);
 		dbpath = dstNs->storage_.GetPath();
-	} else if (newName == srcNs.name_) {
+	} else if (newName == srcNs.name_.OriginalName()) {
 		return;
 	}
 	srcNs.checkClusterRole(ctx);
@@ -191,7 +209,10 @@ void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, 
 				assertrx(dstLck.owns_lock());
 				dstLck.unlock();
 			}
-			srcNs.storage_.Open(storageType, srcNs.name_, srcDbpath, srcNs.storageOpts_);
+			auto err = srcNs.storage_.Open(storageType, srcNs.name_, srcDbpath, srcNs.storageOpts_);
+			if (!err.ok()) {
+				logPrintf(LogError, "Unable to reopen storage after unsuccesfull renaming: %s", err.what());
+			}
 			throw Error(errParams, "Unable to rename '%s' to '%s'", srcDbpath, dbpath);
 		}
 	}
@@ -208,9 +229,12 @@ void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, 
 		dstLck.unlock();
 	} else {
 		logPrintf(LogInfo, "[rename] Rename namespace '%s' to '%s'", srcNs.name_, newName);
-		srcNs.name_ = newName;
+		srcNs.name_ = NamespaceName(newName);
 	}
-	srcNs.payloadType_.SetName(srcNs.name_);
+	srcNs.payloadType_.SetName(srcNs.name_.OriginalName());
+	srcNs.tagsMatcher_.UpdatePayloadType(srcNs.payloadType_, NeedChangeTmVersion::No);
+	logPrintf(LogInfo, "[tm:%s]:%d: Rename done. TagsMatcher: { state_token: %08X, version: %d }", srcNs.name_, srcNs.wal_.GetServer(),
+			  srcNs.tagsMatcher_.stateToken(), srcNs.tagsMatcher_.version());
 
 	if (hadStorage) {
 		logPrintf(LogTrace, "[rename] Storage was moved from %s to %s", srcDbpath, dbpath);

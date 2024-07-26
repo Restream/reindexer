@@ -32,7 +32,10 @@ private:
 		void AddNewAsyncRequest();
 		void OnAsyncRequestDone(const Error &e) noexcept;
 		Error AwaitAsyncRequests() noexcept;
-		~AsyncData() { AwaitAsyncRequests(); }
+		~AsyncData() {
+			auto err = AwaitAsyncRequests();
+			(void)err;	// ignore
+		}
 
 	private:
 		std::mutex &mtx_;

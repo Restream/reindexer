@@ -35,21 +35,51 @@ public:
 		if (counter_) counter_->Init(thisNode, nodes, namespaces);
 	}
 
-	void OnWalSync(std::chrono::microseconds time) noexcept { counter_->OnWalSync(time); }
-	void OnForceSync(std::chrono::microseconds time) noexcept { counter_->OnForceSync(time); }
-	void OnInitialWalSync(std::chrono::microseconds time) noexcept { counter_->OnInitialWalSync(time); }
-	void OnInitialForceSync(std::chrono::microseconds time) noexcept { counter_->OnInitialForceSync(time); }
-	void OnInitialSyncDone(std::chrono::microseconds time) noexcept { counter_->OnInitialSyncDone(time); }
-	void OnUpdatePushed(int64_t updateId, size_t size) noexcept { counter_->OnUpdatePushed(updateId, size); }
-	void OnUpdateApplied(size_t nodeId, int64_t updateId) noexcept { counter_->OnUpdateApplied(nodeId, updateId); }
-	void OnUpdatesDrop(int64_t updateId, size_t size) noexcept { counter_->OnUpdatesDrop(updateId, size); }
-	void OnUpdateReplicated(int64_t updateId) noexcept { counter_->OnUpdateReplicated(updateId); }
-	void OnUpdateErased(int64_t updateId, size_t size) noexcept { counter_->OnUpdateErased(updateId, size); }
-	void OnStatusChanged(size_t nodeId, NodeStats::Status status) { counter_->OnStatusChanged(nodeId, status); }
-	void OnSyncStateChanged(size_t nodeId, NodeStats::SyncState state) { counter_->OnSyncStateChanged(nodeId, state); }
-	void OnServerIdChanged(size_t nodeId, int serverId) noexcept { counter_->OnServerIdChanged(nodeId, serverId); }
-	void SaveNodeError(size_t nodeId, const Error& err) { counter_->SaveNodeError(nodeId, err); }
-	void Reset() { counter_->Reset(); }
+	void OnWalSync(std::chrono::microseconds time) noexcept {
+		if (counter_) counter_->OnWalSync(time);
+	}
+	void OnForceSync(std::chrono::microseconds time) noexcept {
+		if (counter_) counter_->OnForceSync(time);
+	}
+	void OnInitialWalSync(std::chrono::microseconds time) noexcept {
+		if (counter_) counter_->OnInitialWalSync(time);
+	}
+	void OnInitialForceSync(std::chrono::microseconds time) noexcept {
+		if (counter_) counter_->OnInitialForceSync(time);
+	}
+	void OnInitialSyncDone(std::chrono::microseconds time) noexcept {
+		if (counter_) counter_->OnInitialSyncDone(time);
+	}
+	void OnUpdatePushed(int64_t updateId, size_t size) noexcept {
+		if (counter_) counter_->OnUpdatePushed(updateId, size);
+	}
+	void OnUpdateApplied(size_t nodeId, int64_t updateId) noexcept {
+		if (counter_) counter_->OnUpdateApplied(nodeId, updateId);
+	}
+	void OnUpdatesDrop(int64_t updateId, size_t size) noexcept {
+		if (counter_) counter_->OnUpdatesDrop(updateId, size);
+	}
+	void OnUpdateHandled(int64_t updateId) noexcept {
+		if (counter_) counter_->OnUpdateHandled(updateId);
+	}
+	void OnUpdateErased(int64_t updateId, size_t size) noexcept {
+		if (counter_) counter_->OnUpdateErased(updateId, size);
+	}
+	void OnStatusChanged(size_t nodeId, NodeStats::Status status) {
+		if (counter_) counter_->OnStatusChanged(nodeId, status);
+	}
+	void OnSyncStateChanged(size_t nodeId, NodeStats::SyncState state) {
+		if (counter_) counter_->OnSyncStateChanged(nodeId, state);
+	}
+	void OnServerIdChanged(size_t nodeId, int serverId) noexcept {
+		if (counter_) counter_->OnServerIdChanged(nodeId, serverId);
+	}
+	void SaveNodeError(size_t nodeId, const Error& err) {
+		if (counter_) counter_->SaveNodeError(nodeId, err);
+	}
+	void Reset() {
+		if (counter_) counter_->Reset();
+	}
 	ReplicationStats Get() const {
 		if (counter_) {
 			return counter_->Get();

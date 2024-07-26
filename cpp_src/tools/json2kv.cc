@@ -67,16 +67,18 @@ Variant jsonValue2Variant(const gason::JsonValue &v, KeyValueType t, std::string
 					throw Error(errLogic, "Error parsing json field '%s' - got null, expected %s", fieldName, t.Name());
 				});
 		case gason::JSON_OBJECT:
-			throw Error(errLogic, "Error parsing json field '%s' - got object, expected %s", fieldName, t.Name());
+			throw Error(errLogic, "Error parsing json field '%s' - unable to use object in this context", fieldName);
 		case gason::JSON_ARRAY: {
 			VariantArray variants;
 			for (const auto &elem : v) {
 				if (elem.value.getTag() != gason::JSON_NULL) {
-					variants.emplace_back(jsonValue2Variant(elem.value, KeyValueType::Undefined{}));
+					variants.emplace_back(jsonValue2Variant(elem.value, KeyValueType::Undefined{}, fieldName));
 				}
 			}
 			return Variant(variants);
 		}
+		default:
+			throw Error(errLogic, "Error parsing json field '%s' - got unexpected tag: %d", fieldName, v.getTag());
 	}
 	return Variant();
 }
