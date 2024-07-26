@@ -31,7 +31,7 @@ public:
 			ser_.PutVarint(opts.ServerID());
 		}
 		if (opts.IsWithTimestamp()) {
-			ser_.PutVarint(rec.Timestamp().time_since_epoch().count());
+			ser_.PutVarint(std::chrono::duration_cast<std::chrono::nanoseconds>(rec.Timestamp().time_since_epoch()).count());
 		}
 
 		// WrSerializer tmpSer;
