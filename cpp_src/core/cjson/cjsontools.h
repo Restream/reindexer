@@ -30,4 +30,23 @@ RX_ALWAYS_INLINE void validateNonArrayFieldRestrictions(const ScalarIndexesSetT 
 	}
 }
 
+void DumpCjson(Serializer &cjson, std::ostream &dump, const ConstPayload *, const TagsMatcher * = nullptr, std::string_view tab = "  ");
+inline void DumpCjson(Serializer &&cjson, std::ostream &dump, const ConstPayload *pl, const TagsMatcher *tm = nullptr,
+					  std::string_view tab = "  ") {
+	DumpCjson(cjson, dump, pl, tm, tab);
+}
+
+void DumpCjson(Serializer &cjson, std::ostream &dump, const Payload *, const TagsMatcher * = nullptr, std::string_view tab = "  ");
+inline void DumpCjson(Serializer &&cjson, std::ostream &dump, const Payload *pl, const TagsMatcher *tm = nullptr,
+					  std::string_view tab = "  ") {
+	DumpCjson(cjson, dump, pl, tm, tab);
+}
+
+inline void DumpCjson(Serializer &cjson, std::ostream &dump, const TagsMatcher *tm = nullptr, std::string_view tab = "  ") {
+	DumpCjson(cjson, dump, static_cast<ConstPayload *>(nullptr), tm, tab);
+}
+inline void DumpCjson(Serializer &&cjson, std::ostream &dump, const TagsMatcher *tm = nullptr, std::string_view tab = "  ") {
+	DumpCjson(cjson, dump, tm, tab);
+}
+
 }  // namespace reindexer

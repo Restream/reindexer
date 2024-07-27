@@ -1209,6 +1209,11 @@ Example code for aggregate `items` by `price` and `name`
 	}
 ```
 
+Sorting by aggregated`FACET`'s fields has distinct syntax in it's SQL version:
+```sql
+SELECT FACET(name, price ORDER BY "name" ASC, "count" DESC) FROM items
+```
+
 ### Search in array fields with matching array indexes
 
 Reindexer allows to search data in array fields when matching values have same indexes positions.

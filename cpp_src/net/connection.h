@@ -58,8 +58,6 @@ protected:
 	void detach();
 	void restart(socket &&s);
 
-	ssize_t async_read();
-
 	socket sock_;
 	ev::io io_;
 	ev::async async_;

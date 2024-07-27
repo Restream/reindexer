@@ -298,6 +298,11 @@ If reindexer library was built with rocksdb, it requires Go build tag `rocksdb` 
 
 Reindexer supports the following data formats to communicate with other applications (mainly via HTTP REST API): JSON, MSGPACK and Protobuf.
 
+## Log rotation
+
+There are no builtin mechanis for automatic log rotation, however `reindexer server` is able to reopen logfiles on `SIGHUP`.
+So, your external log manager (it may be even a simple `cron` script) have to move existing log files somewhere and then send `SIGHUP`-signal to the `reindexer server` process to recreate log files.
+
 #### Protobuf
 
 Protocol buffers are language-neutral, platform-neutral, extensible mechanism for serializing structured data. You define how you want your data to be structured once, then you can use special generated source code to easily write and read your structured data to and from a variety of data streams and using a variety of languages (https://developers.google.com/protocol-buffers).
