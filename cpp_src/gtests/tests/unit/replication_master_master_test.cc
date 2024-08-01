@@ -14,7 +14,9 @@ public:
 	class ServerControlVec : public std::vector<ServerControl> {
 	public:
 		~ServerControlVec() {
-			for (auto& node : *this) node.Stop();
+			for (auto& node : *this) {
+				node.Stop();
+			}
 		}
 	};
 
@@ -714,8 +716,12 @@ TEST_F(ReplicationSlaveSlaveApi, NodeWithMasterAndSlaveNs1) {
 	}
 	{
 		std::vector<int> results_data;
-		for (unsigned int i = 0; i < n; i++) results_data.push_back(c1 + i);
-		for (unsigned int i = 0; i < n; i++) results_data.push_back(c2 + i);
+		for (unsigned int i = 0; i < n; i++) {
+			results_data.push_back(c1 + i);
+		}
+		for (unsigned int i = 0; i < n; i++) {
+			results_data.push_back(c2 + i);
+		}
 
 		std::vector<int> results_3;
 		testns3.GetData(slave, results_3);
@@ -771,8 +777,12 @@ TEST_F(ReplicationSlaveSlaveApi, NodeWithMasterAndSlaveNs2) {
 	}
 	{
 		std::vector<int> results_data;
-		for (unsigned int i = 0; i < n; i++) results_data.push_back(c1 + i);
-		for (unsigned int i = 0; i < n; i++) results_data.push_back(c2 + i);
+		for (unsigned int i = 0; i < n; i++) {
+			results_data.push_back(c1 + i);
+		}
+		for (unsigned int i = 0; i < n; i++) {
+			results_data.push_back(c2 + i);
+		}
 
 		std::vector<int> results_3;
 		testns3.GetData(slave, results_3);
@@ -979,7 +989,9 @@ TEST_F(ReplicationSlaveSlaveApi, RestrictUpdates) {
 			ASSERT_TRUE(err.ok()) << err.what();
 			master.Get()->api.Upsert(nsName, item);
 			ASSERT_TRUE(err.ok()) << err.what();
-			if (i % 100 == 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			if (i % 100 == 0) {
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			}
 		}
 	};
 
@@ -1258,7 +1270,7 @@ public:
 			ASSERT_TRUE(err.ok()) << err.what();
 			master.Get()->api.Upsert("ns1", item);
 		}
-	};
+	}
 
 	void ChangeServerId(bool isMaster, ServerControl& node, int newServerId, int port) {
 		if (isMaster) {

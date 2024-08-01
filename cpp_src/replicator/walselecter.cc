@@ -9,11 +9,11 @@ namespace reindexer {
 
 const SemVersion kMinUnknownReplSupportRxVersion("2.6.0");
 
-WALSelecter::WALSelecter(const NamespaceImpl *ns) : ns_(ns) {}
+WALSelecter::WALSelecter(const NamespaceImpl* ns) : ns_(ns) {}
 
-void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
+void WALSelecter::operator()(QueryResults& result, SelectCtx& params) {
 	using namespace std::string_view_literals;
-	const Query &q = params.query;
+	const Query& q = params.query;
 	int count = q.Limit();
 	int start = q.Offset();
 	result.totalCount = 0;
@@ -29,7 +29,7 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 	for (size_t i = 0; i < q.Entries().Size(); ++i) {
 		q.Entries().Visit(
 			i,
-			[&lsnIdx, &versionIdx, i] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntry &qe) RX_POST_LMBD_ALWAYS_INLINE {
+			[&lsnIdx, &versionIdx, i] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntry& qe) RX_POST_LMBD_ALWAYS_INLINE {
 				if ("#lsn"sv == qe.FieldName()) {
 					lsnIdx = i;
 				} else if ("#slave_version"sv == qe.FieldName()) {
@@ -38,23 +38,26 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 					throw Error(errLogic, "Unexpected index in WAL select query: %s", qe.FieldName());
 				}
 			},
-			[&q] RX_PRE_LMBD_ALWAYS_INLINE(const auto &)
+			[&q] RX_PRE_LMBD_ALWAYS_INLINE(const auto&)
 				RX_POST_LMBD_ALWAYS_INLINE { throw Error(errLogic, "Unexpected WAL select query: %s", q.GetSQL()); });
 	}
 	auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.Entries().Get<QueryEntry>(versionIdx).Values()[0].As<std::string>());
-	auto &lsnEntry = q.Entries().Get<QueryEntry>(lsnIdx);
+	auto& lsnEntry = q.Entries().Get<QueryEntry>(lsnIdx);
 	if (lsnEntry.Values().size() == 1 && lsnEntry.Condition() == CondGt) {
 		lsn_t fromLSN = lsn_t(std::min(lsnEntry.Values()[0].As<int64_t>(), std::numeric_limits<int64_t>::max() - 1));
-		if (ns_->wal_.LSNCounter() != (fromLSN.Counter() + 1) && ns_->wal_.is_outdated(fromLSN.Counter() + 1) && count)
+		if (ns_->wal_.LSNCounter() != (fromLSN.Counter() + 1) && ns_->wal_.is_outdated(fromLSN.Counter() + 1) && count) {
 			throw Error(errOutdatedWAL, "Query to WAL with outdated LSN %ld, LSN counter %ld walSize = %d count = %d",
 						int64_t(fromLSN.Counter()), ns_->wal_.LSNCounter(), ns_->wal_.size(), count);
+		}
 
 		const auto walEnd = ns_->wal_.end();
 		for (auto it = ns_->wal_.upper_bound(fromLSN.Counter()); count && it != walEnd; ++it) {
 			WALRecord rec = *it;
 			switch (rec.type) {
 				case WalItemUpdate:
-					if (ns_->items_[rec.id].IsFree()) break;
+					if (ns_->items_[rec.id].IsFree()) {
+						break;
+					}
 					if (start) {
 						start--;
 					} else if (count) {
@@ -115,7 +118,7 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 		}
 	} else if (lsnEntry.Condition() == CondAny) {
 		if (start == 0 && !(slaveVersion < kMinUnknownReplSupportRxVersion)) {
-			auto addSpRecord = [&result](const WALRecord &wrec) {
+			auto addSpRecord = [&result](const WALRecord& wrec) {
 				PackedWALRecord wr;
 				wr.Pack(wrec);
 				PayloadValue val(wr.size(), wr.data());
@@ -130,7 +133,7 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 				addSpRecord(wrec);
 			}
 			std::vector<std::string> metaKeys = ns_->enumMeta();
-			for (const auto &key : metaKeys) {
+			for (const auto& key : metaKeys) {
 				auto metaVal = ns_->getMeta(key);
 				WALRecord wrec(WalPutMeta, key, metaVal);
 				addSpRecord(wrec);
@@ -143,7 +146,9 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 			}
 		}
 		for (size_t id = 0; count && id < ns_->items_.size(); ++id) {
-			if (ns_->items_[id].IsFree()) continue;
+			if (ns_->items_[id].IsFree()) {
+				continue;
+			}
 			if (start) {
 				start--;
 			} else if (count) {
@@ -158,7 +163,7 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 	putReplState(result);
 }
 
-void WALSelecter::putReplState(QueryResults &result) {
+void WALSelecter::putReplState(QueryResults& result) {
 	WrSerializer ser;
 	JsonBuilder jb(ser);
 	// prepare json with replication state

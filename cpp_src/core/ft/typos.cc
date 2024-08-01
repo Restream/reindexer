@@ -5,8 +5,8 @@
 namespace reindexer {
 
 template <unsigned level>
-static void mktyposInternal(typos_context *ctx, const std::wstring &word, int maxTyposLen, const typos_context::CallBack &callback,
-							typos_context::TyposVec &positions) {
+static void mktyposInternal(typos_context* ctx, const std::wstring& word, int maxTyposLen, const typos_context::CallBack& callback,
+							typos_context::TyposVec& positions) {
 	static_assert(level <= typos_context::TyposVec::capacity(), "Positions array must be able to store all the typos");
 	if constexpr (level == 0) {
 		return;
@@ -45,7 +45,7 @@ static void mktyposInternal(typos_context *ctx, const std::wstring &word, int ma
 	}
 }
 
-void mktypos(typos_context *ctx, const std::wstring &word, int level, int maxTyposLen, const typos_context::CallBack &callback) {
+void mktypos(typos_context* ctx, const std::wstring& word, int level, int maxTyposLen, const typos_context::CallBack& callback) {
 	utf16_to_utf8(word, ctx->typo);
 	typos_context::TyposVec positions;
 	callback(ctx->typo, level, positions);
@@ -64,7 +64,7 @@ void mktypos(typos_context *ctx, const std::wstring &word, int level, int maxTyp
 	}
 }
 
-void mktypos(typos_context *ctx, std::string_view word, int level, int maxTyposLen, const typos_context::CallBack &callback) {
+void mktypos(typos_context* ctx, std::string_view word, int level, int maxTyposLen, const typos_context::CallBack& callback) {
 	ctx->typo.assign(word.begin(), word.end());
 	utf8_to_utf16(ctx->typo, ctx->utf16Word);
 	typos_context::TyposVec positions;

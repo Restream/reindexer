@@ -6,8 +6,10 @@
 
 namespace reindexer {
 
-void FtFuzzyConfig::parse(std::string_view json, const RHashMap<std::string, int> &) {
-	if (json.empty()) return;
+void FtFuzzyConfig::parse(std::string_view json, const RHashMap<std::string, int>&) {
+	if (json.empty()) {
+		return;
+	}
 
 	try {
 		gason::JsonParser parser;
@@ -26,12 +28,12 @@ void FtFuzzyConfig::parse(std::string_view json, const RHashMap<std::string, int
 
 		parseBase(root);
 
-	} catch (const gason::Exception &ex) {
+	} catch (const gason::Exception& ex) {
 		throw Error(errParseJson, ex.what());
 	}
 }
 
-std::string FtFuzzyConfig::GetJson(const fast_hash_map<std::string, int> &) const {
+std::string FtFuzzyConfig::GetJson(const fast_hash_map<std::string, int>&) const {
 	WrSerializer wrser;
 	JsonBuilder jsonBuilder(wrser);
 	BaseFTConfig::getJson(jsonBuilder);

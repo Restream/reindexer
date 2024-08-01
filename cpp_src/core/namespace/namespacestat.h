@@ -16,7 +16,7 @@ class WrSerializer;
 class JsonBuilder;
 
 struct LRUCacheMemStat {
-	void GetJSON(JsonBuilder &builder);
+	void GetJSON(JsonBuilder& builder);
 
 	size_t totalSize = 0;
 	size_t itemsCount = 0;
@@ -25,7 +25,7 @@ struct LRUCacheMemStat {
 };
 
 struct IndexMemStat {
-	void GetJSON(JsonBuilder &builder);
+	void GetJSON(JsonBuilder& builder);
 	std::string name;
 	size_t uniqKeysCount = 0;
 	size_t dataSize = 0;
@@ -45,9 +45,9 @@ struct IndexMemStat {
 };
 
 struct MasterState {
-	void GetJSON(JsonBuilder &builder);
+	void GetJSON(JsonBuilder& builder);
 	void FromJSON(span<char>);
-	void FromJSON(const gason::JsonNode &root);
+	void FromJSON(const gason::JsonNode& root);
 
 	// LSN of last change
 	lsn_t lastUpstreamLSNm;
@@ -62,7 +62,7 @@ struct MasterState {
 struct ReplicationState {
 	enum class Status { None, Idle, Error, Fatal, Syncing };
 
-	void GetJSON(JsonBuilder &builder);
+	void GetJSON(JsonBuilder& builder);
 	void FromJSON(span<char>);
 
 	// LSN of last change
@@ -95,13 +95,13 @@ struct ReplicationState {
 };
 
 struct ReplicationStat : public ReplicationState {
-	void GetJSON(JsonBuilder &builder);
+	void GetJSON(JsonBuilder& builder);
 	size_t walCount = 0;
 	size_t walSize = 0;
 };
 
 struct NamespaceMemStat {
-	void GetJSON(WrSerializer &ser);
+	void GetJSON(WrSerializer& ser);
 
 	std::string name;
 	std::string storagePath;
@@ -126,7 +126,7 @@ struct NamespaceMemStat {
 };
 
 struct PerfStat {
-	void GetJSON(JsonBuilder &builder);
+	void GetJSON(JsonBuilder& builder);
 
 	size_t totalHitCount;
 	size_t totalTimeUs;
@@ -140,7 +140,7 @@ struct PerfStat {
 };
 
 struct TxPerfStat {
-	void GetJSON(JsonBuilder &builder);
+	void GetJSON(JsonBuilder& builder);
 
 	size_t totalCount;
 	size_t totalCopyCount;
@@ -160,9 +160,9 @@ struct TxPerfStat {
 
 struct IndexPerfStat {
 	IndexPerfStat() = default;
-	IndexPerfStat(const std::string &n, const PerfStat &s, const PerfStat &c) : name(n), selects(s), commits(c) {}
+	IndexPerfStat(const std::string& n, const PerfStat& s, const PerfStat& c) : name(n), selects(s), commits(c) {}
 
-	void GetJSON(JsonBuilder &builder);
+	void GetJSON(JsonBuilder& builder);
 
 	std::string name;
 	PerfStat selects;
@@ -170,7 +170,7 @@ struct IndexPerfStat {
 };
 
 struct NamespacePerfStat {
-	void GetJSON(WrSerializer &ser);
+	void GetJSON(WrSerializer& ser);
 
 	std::string name;
 	PerfStat updates;

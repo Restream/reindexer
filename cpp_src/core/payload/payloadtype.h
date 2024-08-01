@@ -13,28 +13,28 @@ class PayloadTypeImpl;
 class PayloadType : public shared_cow_ptr<PayloadTypeImpl> {
 public:
 	PayloadType() noexcept = default;
-	PayloadType(PayloadType &&) noexcept = default;
-	PayloadType(const PayloadType &) = default;
-	PayloadType &operator=(PayloadType &&) noexcept = default;
-	PayloadType &operator=(const PayloadType &) = default;
-	explicit PayloadType(const std::string &name, std::initializer_list<PayloadFieldType> fields = {});
-	explicit PayloadType(const PayloadTypeImpl &impl);
+	PayloadType(PayloadType&&) noexcept = default;
+	PayloadType(const PayloadType&) = default;
+	PayloadType& operator=(PayloadType&&) noexcept = default;
+	PayloadType& operator=(const PayloadType&) = default;
+	explicit PayloadType(const std::string& name, std::initializer_list<PayloadFieldType> fields = {});
+	explicit PayloadType(const PayloadTypeImpl& impl);
 	~PayloadType();
-	const PayloadFieldType &Field(int field) const;
+	const PayloadFieldType& Field(int field) const;
 
-	const std::string &Name() const;
-	void SetName(const std::string &name);
+	const std::string& Name() const;
+	void SetName(const std::string& name);
 	int NumFields() const;
 	void Add(PayloadFieldType);
 	bool Drop(std::string_view field);
 	int FieldByName(std::string_view field) const;
-	bool FieldByName(std::string_view name, int &field) const;
+	bool FieldByName(std::string_view name, int& field) const;
 	bool Contains(std::string_view field) const;
 	int FieldByJsonPath(std::string_view jsonPath) const;
-	const std::vector<int> &StrFields() const;
+	const std::vector<int>& StrFields() const;
 	size_t TotalSize() const;
 	std::string ToString() const;
-	void Dump(std::ostream &, std::string_view step = "  ", std::string_view offset = "") const;
+	void Dump(std::ostream&, std::string_view step = "  ", std::string_view offset = "") const;
 };
 
 }  // namespace reindexer

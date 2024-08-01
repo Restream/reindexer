@@ -6,15 +6,23 @@ namespace reindexer {
 namespace joins {
 
 bool JoinedFieldIterator::operator==(const JoinedFieldIterator& other) const {
-	if (joinRes_ != other.joinRes_) throw Error(errLogic, "Comparising joined fields of different namespaces!");
-	if (offsets_ != other.offsets_) throw Error(errLogic, "Comparising joined fields of different items!");
-	if (order_ != other.order_) return false;
+	if (joinRes_ != other.joinRes_) {
+		throw Error(errLogic, "Comparising joined fields of different namespaces!");
+	}
+	if (offsets_ != other.offsets_) {
+		throw Error(errLogic, "Comparising joined fields of different items!");
+	}
+	if (order_ != other.order_) {
+		return false;
+	}
 	return true;
 }
 
 void JoinedFieldIterator::updateOffset() noexcept {
 	currField_ = -1;
-	if (order_ == joinRes_->GetJoinedSelectorsCount()) return;
+	if (order_ == joinRes_->GetJoinedSelectorsCount()) {
+		return;
+	}
 
 	size_t i = 0;
 	for (; i < offsets_->size(); ++i) {
@@ -34,7 +42,9 @@ ItemImpl JoinedFieldIterator::GetItem(int itemIdx, const PayloadType& pt, const 
 }
 
 QueryResults JoinedFieldIterator::ToQueryResults() const {
-	if (ItemsCount() == 0) return QueryResults();
+	if (ItemsCount() == 0) {
+		return QueryResults();
+	}
 	ItemRefVector::const_iterator begin = joinRes_->items_.begin() + currOffset_;
 	ItemRefVector::const_iterator end = begin + ItemsCount();
 	return QueryResults(begin, end);
@@ -96,7 +106,9 @@ ItemIterator ItemIterator::CreateFrom(const QueryResults::Iterator& it) noexcept
 	static NamespaceResults empty;
 	static ItemIterator ret(&empty, 0);
 	auto& itemRef = it.qr_->Items()[it.idx_];
-	if ((itemRef.Nsid() >= it.qr_->joined_.size())) return ret;
+	if ((itemRef.Nsid() >= it.qr_->joined_.size())) {
+		return ret;
+	}
 	return ItemIterator(&(it.qr_->joined_[itemRef.Nsid()]), itemRef.Id());
 }
 

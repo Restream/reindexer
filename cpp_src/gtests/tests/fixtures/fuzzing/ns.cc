@@ -8,7 +8,9 @@ struct FieldPathHash {
 	size_t operator()(const fuzzing::FieldPath& fp) const noexcept {
 		constexpr static std::hash<size_t> hasher;
 		size_t ret = fp.size();
-		for (const size_t f : fp) ret = ((ret * 127) ^ (ret >> 3)) ^ hasher(f);
+		for (const size_t f : fp) {
+			ret = ((ret * 127) ^ (ret >> 3)) ^ hasher(f);
+		}
 		return ret;
 	}
 };
@@ -84,7 +86,9 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 					}
 				}
 				if (!uniqueName) {
-					if (!name.empty()) name += '+';
+					if (!name.empty()) {
+						name += '+';
+					}
 					name += scheme_.GetJsonPath(fieldData.fieldPath);
 				}
 				containsUuid |= fieldData.type == FieldType::Uuid;
@@ -107,10 +111,14 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 			do {
 				fldPath = rndGen_.RndField(scheme_);
 			} while (!withErr && ++tryCounts < kMaxTries && usedPaths.find(fldPath) != usedPaths.end());
-			if (tryCounts >= kMaxTries) continue;
+			if (tryCounts >= kMaxTries) {
+				continue;
+			}
 			usedPaths.insert(fldPath);
 			if (scheme_.IsStruct(fldPath)) {
-				if (!rndGen_.RndErr()) continue;
+				if (!rndGen_.RndErr()) {
+					continue;
+				}
 				const auto fldType = rndGen_.RndFieldType();
 				indexes_.emplace_back(rndGen_.IndexName(usedIndexNames), rndGen_.RndIndexType({fldType}),
 									  rndGen_.RndBool(0.5) ? IsArrayT::Yes : IsArrayT::No,
@@ -185,7 +193,9 @@ void Ns::Dump(std::ostream& os) const {
 	os << "{\n";
 	scheme_.Dump(os, 1);
 	os << "  indexes: [\n";
-	for (const auto& i : indexes_) i.Dump(os, scheme_, 2);
+	for (const auto& i : indexes_) {
+		i.Dump(os, scheme_, 2);
+	}
 	os << "  ]\n}" << std::endl;
 }
 

@@ -13,12 +13,20 @@ ProtobufSchemaBuilder::ProtobufSchemaBuilder(WrSerializer* ser, SchemaFieldsType
 	: ser_(ser), fieldsTypes_(fieldsTypes), pt_(pt), tm_(tm), type_(type) {
 	switch (type_) {
 		case ObjType::TypePlain:
-			if (ser_) ser_->Write("syntax = \"proto3\";\n\n");
+			if (ser_) {
+				ser_->Write("syntax = \"proto3\";\n\n");
+			}
 			break;
 		case ObjType::TypeObject:
-			if (ser_) ser_->Write("message ");
-			if (ser_) ser_->Write(name);
-			if (ser_) ser_->Write(" {\n");
+			if (ser_) {
+				ser_->Write("message ");
+			}
+			if (ser_) {
+				ser_->Write(name);
+			}
+			if (ser_) {
+				ser_->Write(" {\n");
+			}
 			break;
 		case ObjType::TypeObjectArray:
 		case ObjType::TypeArray:
@@ -62,7 +70,9 @@ void ProtobufSchemaBuilder::End() {
 		if (fieldsTypes_->tagsPath_.size() > 0) {
 			fieldsTypes_->tagsPath_.pop_back();
 		}
-		if (ser_) ser_->Write("}\n");
+		if (ser_) {
+			ser_->Write("}\n");
+		}
 	}
 	type_ = ObjType::TypePlain;
 }
@@ -75,11 +85,15 @@ void ProtobufSchemaBuilder::Field(std::string_view name, int tagName, const Fiel
 	}
 	if (props.isArray) {
 		assertrx(type_ != ObjType::TypeArray && type_ != ObjType::TypeObjectArray);
-		if (ser_) ser_->Write("repeated ");
+		if (ser_) {
+			ser_->Write("repeated ");
+		}
 		writeField(name, typeName, tagName);
 		type.EvaluateOneOf(
 			[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) {
-				if (ser_) ser_->Write(" [packed=true]");
+				if (ser_) {
+					ser_->Write(" [packed=true]");
+				}
 			},
 			[](OneOf<KeyValueType::String, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null,
 					 KeyValueType::Uuid>) noexcept {});
@@ -87,7 +101,9 @@ void ProtobufSchemaBuilder::Field(std::string_view name, int tagName, const Fiel
 		writeField(name, typeName, tagName);
 	}
 	fieldsTypes_->AddField(type, props.isArray);
-	if (ser_) ser_->Write(";\n");
+	if (ser_) {
+		ser_->Write(";\n");
+	}
 }
 
 ProtobufSchemaBuilder ProtobufSchemaBuilder::Object(int tagName, std::string_view name, bool buildTypesOnly,

@@ -395,7 +395,9 @@ TEST_F(ReindexerApi, ProtobufSchemaFromNsSchema) {
 		}
 	}
 	auto collection = jsonBuilder.Array("Collection");
-	for (int i = 0; i < 10; ++i) collection.Put(0, i);
+	for (int i = 0; i < 10; ++i) {
+		collection.Put(0, i);
+	}
 	collection.End();
 	jsonBuilder.End();
 

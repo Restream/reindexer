@@ -19,14 +19,14 @@ using namespace std::string_view_literals;
 static const std::string_view kStrEOL = "\r\n"sv;
 extern std::unordered_map<int, std::string_view> kHTTPCodes;
 
-ServerConnection::ServerConnection(socket &&s, ev::dynamic_loop &loop, Router &router, size_t maxRequestSize)
+ServerConnection::ServerConnection(socket&& s, ev::dynamic_loop& loop, Router& router, size_t maxRequestSize)
 	: ConnectionST(std::move(s), loop, false, maxRequestSize < kConnReadbufSize ? maxRequestSize : kConnReadbufSize),
 	  router_(router),
 	  maxRequestSize_(maxRequestSize) {
 	callback(io_, ev::READ);
 }
 
-bool ServerConnection::Restart(socket &&s) {
+bool ServerConnection::Restart(socket&& s) {
 	restart(std::move(s));
 	bodyLeft_ = 0;
 	formData_ = false;
@@ -36,24 +36,28 @@ bool ServerConnection::Restart(socket &&s) {
 	return true;
 }
 
-void ServerConnection::Attach(ev::dynamic_loop &loop) {
-	if (!attached_) attach(loop);
+void ServerConnection::Attach(ev::dynamic_loop& loop) {
+	if (!attached_) {
+		attach(loop);
+	}
 }
 void ServerConnection::Detach() {
-	if (attached_) detach();
+	if (attached_) {
+		detach();
+	}
 }
 
 void ServerConnection::onClose() {}
 
-void ServerConnection::handleException(Context &ctx, const Error &status) {
-	auto writer = dynamic_cast<ResponseWriter *>(ctx.writer);
+void ServerConnection::handleException(Context& ctx, const Error& status) {
+	auto writer = dynamic_cast<ResponseWriter*>(ctx.writer);
 	if (writer && !writer->IsRespSent()) {
 		HttpStatus httpStatus(status);
 		setJsonStatus(ctx, false, httpStatus.code, httpStatus.what);
 	}
 }
 
-void ServerConnection::setJsonStatus(Context &ctx, bool success, int responseCode, const std::string &status) {
+void ServerConnection::setJsonStatus(Context& ctx, bool success, int responseCode, const std::string& status) {
 	WrSerializer ser;
 	JsonBuilder builder(ser);
 	builder.Put("success", success);
@@ -63,7 +67,7 @@ void ServerConnection::setJsonStatus(Context &ctx, bool success, int responseCod
 	ctx.JSON(responseCode, ser.Slice());
 }
 
-void ServerConnection::handleRequest(Request &req) {
+void ServerConnection::handleRequest(Request& req) {
 	ResponseWriter writer(this);
 	BodyReader reader(this);
 	Context ctx;
@@ -74,13 +78,13 @@ void ServerConnection::handleRequest(Request &req) {
 
 	try {
 		router_.handle(ctx);
-	} catch (const HttpStatus &status) {
+	} catch (const HttpStatus& status) {
 		if (!writer.IsRespSent()) {
 			setJsonStatus(ctx, false, status.code, status.what);
 		}
-	} catch (const Error &status) {
+	} catch (const Error& status) {
 		handleException(ctx, status);
-	} catch (const std::exception &e) {
+	} catch (const std::exception& e) {
 		handleException(ctx, Error(errLogic, e.what()));
 	} catch (...) {
 		handleException(ctx, Error(errLogic, "Unknown exception"));
@@ -94,7 +98,7 @@ void ServerConnection::handleRequest(Request &req) {
 	}
 }
 
-void ServerConnection::badRequest(int code, const char *msg) {
+void ServerConnection::badRequest(int code, const char* msg) {
 	ResponseWriter writer(this);
 	HandlerStat stat;
 	Context ctx;
@@ -113,15 +117,19 @@ void ServerConnection::badRequest(int code, const char *msg) {
 }
 
 void ServerConnection::parseParams(std::string_view str) {
-	const char *p = str.data();
+	const char* p = str.data();
 
 	const char *name = nullptr, *value = nullptr;
 	size_t namelen = 0;
 	for (size_t l = 0; l < str.length(); l++) {
-		if (!name) name = p;
+		if (!name) {
+			name = p;
+		}
 		switch (*p) {
 			case '&':
-				if (!value) namelen = p - name;
+				if (!value) {
+					namelen = p - name;
+				}
 				if (name) {
 					request_.params.emplace_back(std::string_view(name, namelen), std::string_view(value, value ? p - value : 0));
 					name = value = nullptr;
@@ -140,7 +148,9 @@ void ServerConnection::parseParams(std::string_view str) {
 		p++;
 	}
 	if (name) {
-		if (!value) namelen = p - name;
+		if (!value) {
+			namelen = p - name;
+		}
 		request_.params.emplace_back(std::string_view(name, namelen), std::string_view(value, value ? p - value : 0));
 	}
 }
@@ -151,7 +161,9 @@ void ServerConnection::writeHttpResponse(int code) {
 	ser << "HTTP/1.1 "sv << code << ' ';
 
 	auto it = kHTTPCodes.find(code);
-	if (it != kHTTPCodes.end()) ser << it->second;
+	if (it != kHTTPCodes.end()) {
+		ser << it->second;
+	}
 	ser << kStrEOL;
 	wrBuf_.write(ser.DetachChunk());
 }
@@ -279,32 +291,40 @@ ServerConnection::ReadResT ServerConnection::onRead() {
 				break;
 			}
 		}
-		if (!rdBuf_.size() && !bodyLeft_) rdBuf_.clear();
-	} catch (const Error &e) {
+		if (!rdBuf_.size() && !bodyLeft_) {
+			rdBuf_.clear();
+		}
+	} catch (const Error& e) {
 		fprintf(stderr, "Dropping HTTP-connection. Reason: %s\n", e.what().c_str());
 		closeConn_ = true;
 	}
 	return ReadResT::Default;
 }
 
-bool ServerConnection::ResponseWriter::SetHeader(const Header &hdr) {
-	if (respSend_) return false;
+bool ServerConnection::ResponseWriter::SetHeader(const Header& hdr) {
+	if (respSend_) {
+		return false;
+	}
 	headers_ << hdr.name << ": "sv << hdr.val << kStrEOL;
 	return true;
 }
 bool ServerConnection::ResponseWriter::SetRespCode(int code) {
-	if (respSend_) return false;
+	if (respSend_) {
+		return false;
+	}
 	code_ = code;
 	return true;
 }
 
 bool ServerConnection::ResponseWriter::SetContentLength(size_t length) {
-	if (respSend_) return false;
+	if (respSend_) {
+		return false;
+	}
 	contentLength_ = length;
 	return true;
 }
 
-ssize_t ServerConnection::ResponseWriter::Write(chunk &&chunk, Writer::WriteMode mode) {
+ssize_t ServerConnection::ResponseWriter::Write(chunk&& chunk, Writer::WriteMode mode) {
 	char szBuf[64], dtBuf[128];
 	if (!respSend_) {
 		conn_->writeHttpResponse(code_);
@@ -361,9 +381,9 @@ bool ServerConnection::ResponseWriter::SetConnectionClose() {
 	return true;
 }
 
-ssize_t ServerConnection::BodyReader::Read(void *buf, size_t size) {
+ssize_t ServerConnection::BodyReader::Read(void* buf, size_t size) {
 	if (conn_->bodyLeft_ > 0) {
-		size_t readed = conn_->rdBuf_.read(reinterpret_cast<char *>(buf), std::min(ssize_t(size), conn_->bodyLeft_));
+		size_t readed = conn_->rdBuf_.read(reinterpret_cast<char*>(buf), std::min(ssize_t(size), conn_->bodyLeft_));
 		conn_->bodyLeft_ -= readed;
 		return readed;
 	}

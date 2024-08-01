@@ -155,7 +155,9 @@ static void fillItemThroughJson(reindexer::Item& item, int id, Values<T1, T2>& v
 
 template <typename T1, typename T2>
 static void fillItem(reindexer::Item& item, int id, Values<T1, T2>& value) {
-	if (rand() % 3 == 0) return fillItemThroughJson(item, id, value);
+	if (rand() % 3 == 0) {
+		return fillItemThroughJson(item, id, value);
+	}
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	fillRndValue(value);
 	item["id"] = id;
@@ -359,7 +361,9 @@ TEST(UUID, DropIndex) {
 
 		std::vector<Values<std::string, reindexer::Uuid>> testValues1;
 		testValues1.reserve(uuidValues.size());
-		for (const auto& value : uuidValues) testValues1.emplace_back(value.scalar, value.array);
+		for (const auto& value : uuidValues) {
+			testValues1.emplace_back(value.scalar, value.array);
+		}
 		test(rx, testValues1, EmptyValues::CouldBeEmpty);
 
 		err = rx.DropIndex(nsName, {"uuid_a"});
@@ -371,7 +375,9 @@ TEST(UUID, DropIndex) {
 			if (value.array) {
 				std::vector<std::string> strUuidArray;
 				strUuidArray.reserve(value.array->size());
-				for (auto uuid : *value.array) strUuidArray.emplace_back(uuid);
+				for (auto uuid : *value.array) {
+					strUuidArray.emplace_back(uuid);
+				}
 				testValues2.emplace_back(value.scalar, std::move(strUuidArray));
 			} else {
 				testValues2.emplace_back(value.scalar, std::nullopt);
@@ -400,7 +406,9 @@ TEST(UUID, AddIndex) {
 			if (value.array) {
 				std::vector<std::string> strValues;
 				strValues.reserve(value.array->size());
-				for (auto uuid : *value.array) strValues.emplace_back(uuid);
+				for (auto uuid : *value.array) {
+					strValues.emplace_back(uuid);
+				}
 				testValues1.emplace_back(value.scalar, std::move(strValues));
 			} else {
 				testValues1.emplace_back(value.scalar, std::nullopt);
@@ -446,7 +454,9 @@ TEST(UUID, UpdateIndexUuidToString) {
 
 		std::vector<Values<std::string, reindexer::Uuid>> testValues1;
 		testValues1.reserve(uuidValues.size());
-		for (const auto& value : uuidValues) testValues1.emplace_back(value.scalar, value.array);
+		for (const auto& value : uuidValues) {
+			testValues1.emplace_back(value.scalar, value.array);
+		}
 		test(rx, testValues1);
 
 		err = rx.UpdateIndex(nsName, reindexer::IndexDef{"uuid_a", "hash", "string", IndexOpts().Array()});
@@ -458,7 +468,9 @@ TEST(UUID, UpdateIndexUuidToString) {
 			if (value.array) {
 				std::vector<std::string> strUuidArray;
 				strUuidArray.reserve(value.array->size());
-				for (auto uuid : *value.array) strUuidArray.emplace_back(uuid);
+				for (auto uuid : *value.array) {
+					strUuidArray.emplace_back(uuid);
+				}
 				testValues2.emplace_back(value.scalar, std::move(strUuidArray));
 			} else {
 				testValues2.emplace_back(value.scalar, std::nullopt);
@@ -487,7 +499,9 @@ TEST(UUID, UpdateIndexStringToUuid) {
 
 		std::vector<Values<reindexer::Uuid, std::string>> testValues1;
 		testValues1.reserve(strUuidValues.size());
-		for (const auto& value : strUuidValues) testValues1.emplace_back(value.scalar, value.array);
+		for (const auto& value : strUuidValues) {
+			testValues1.emplace_back(value.scalar, value.array);
+		}
 		test(rx, testValues1);
 
 		err = rx.UpdateIndex(nsName, reindexer::IndexDef{"uuid_a", "hash", "uuid", IndexOpts().Array()});
@@ -499,7 +513,9 @@ TEST(UUID, UpdateIndexStringToUuid) {
 			if (value.array) {
 				std::vector<reindexer::Uuid> uuidArray;
 				uuidArray.reserve(value.array->size());
-				for (const auto& uuid : *value.array) uuidArray.emplace_back(uuid);
+				for (const auto& uuid : *value.array) {
+					uuidArray.emplace_back(uuid);
+				}
 				testValues2.emplace_back(value.scalar, std::move(uuidArray));
 			} else {
 				testValues2.emplace_back(value.scalar, std::nullopt);
@@ -528,7 +544,9 @@ TEST(UUID, AddArrayUuidIndexOnNotArrayField) {
 
 		std::vector<Values<reindexer::Uuid, std::string>> testValues;
 		testValues.reserve(strUuidValues.size());
-		for (const auto& value : strUuidValues) testValues.emplace_back(value.scalar, value.array);
+		for (const auto& value : strUuidValues) {
+			testValues.emplace_back(value.scalar, value.array);
+		}
 		test(rx, testValues);
 	} catch (const reindexer::Error& e) {
 		ASSERT_TRUE(false) << e.what() << std::endl;

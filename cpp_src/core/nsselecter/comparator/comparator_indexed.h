@@ -485,33 +485,49 @@ public:
 		for (const auto* const end = ptr + arr.len; ptr != end; ++ptr) {
 			switch (this->cond_) {
 				case CondEq:
-					if (*ptr == this->value_) return true;
+					if (*ptr == this->value_) {
+						return true;
+					}
 					continue;
 				case CondLt:
-					if (*ptr < this->value_) return true;
+					if (*ptr < this->value_) {
+						return true;
+					}
 					continue;
 				case CondLe:
-					if (*ptr <= this->value_) return true;
+					if (*ptr <= this->value_) {
+						return true;
+					}
 					continue;
 				case CondGt:
-					if (*ptr > this->value_) return true;
+					if (*ptr > this->value_) {
+						return true;
+					}
 					continue;
 				case CondGe:
-					if (*ptr >= this->value_) return true;
+					if (*ptr >= this->value_) {
+						return true;
+					}
 					continue;
 				case CondRange:
-					if (this->range_.first <= *ptr && *ptr <= this->range_.second) return true;
+					if (this->range_.first <= *ptr && *ptr <= this->range_.second) {
+						return true;
+					}
 					continue;
 				case CondSet:
 					assertrx_dbg(this->setPtr_);
-					if (this->setPtr_->find(*ptr) != this->setPtr_->cend()) return true;
+					if (this->setPtr_->find(*ptr) != this->setPtr_->cend()) {
+						return true;
+					}
 					continue;
 				case CondAllSet: {
 					assertrx_dbg(this->allSetPtr_);
 					const auto it = this->allSetPtr_->values_.find(*ptr);
 					if (it != this->allSetPtr_->values_.cend()) {
 						this->allSetPtr_->allSetValues_.insert(it->second);
-						if (this->allSetPtr_->allSetValues_.size() == this->allSetPtr_->values_.size()) return true;
+						if (this->allSetPtr_->allSetValues_.size() == this->allSetPtr_->values_.size()) {
+							return true;
+						}
 					}
 				}
 					continue;
@@ -548,26 +564,40 @@ public:
 		for (const auto* const end = ptr + arr.len; ptr != end; ++ptr) {
 			switch (this->cond_) {
 				case CondEq:
-					if (*ptr == this->value_ && distinct_.Compare(*ptr)) return true;
+					if (*ptr == this->value_ && distinct_.Compare(*ptr)) {
+						return true;
+					}
 					continue;
 				case CondLt:
-					if (*ptr < this->value_ && distinct_.Compare(*ptr)) return true;
+					if (*ptr < this->value_ && distinct_.Compare(*ptr)) {
+						return true;
+					}
 					continue;
 				case CondLe:
-					if (*ptr <= this->value_ && distinct_.Compare(*ptr)) return true;
+					if (*ptr <= this->value_ && distinct_.Compare(*ptr)) {
+						return true;
+					}
 					continue;
 				case CondGt:
-					if (*ptr > this->value_ && distinct_.Compare(*ptr)) return true;
+					if (*ptr > this->value_ && distinct_.Compare(*ptr)) {
+						return true;
+					}
 					continue;
 				case CondGe:
-					if (*ptr >= this->value_ && distinct_.Compare(*ptr)) return true;
+					if (*ptr >= this->value_ && distinct_.Compare(*ptr)) {
+						return true;
+					}
 					continue;
 				case CondRange:
-					if (this->range_.first <= *ptr && *ptr <= this->range_.second && distinct_.Compare(*ptr)) return true;
+					if (this->range_.first <= *ptr && *ptr <= this->range_.second && distinct_.Compare(*ptr)) {
+						return true;
+					}
 					continue;
 				case CondSet:
 					assertrx_dbg(this->setPtr_);
-					if (this->setPtr_->find(*ptr) != this->setPtr_->cend() && distinct_.Compare(*ptr)) return true;
+					if (this->setPtr_->find(*ptr) != this->setPtr_->cend() && distinct_.Compare(*ptr)) {
+						return true;
+					}
 					continue;
 				case CondAllSet: {
 					assertrx_dbg(this->allSetPtr_);
@@ -576,7 +606,9 @@ public:
 					if (it != this->allSetPtr_->values_.cend()) {
 						haveDistinct |= distinct_.Compare(*ptr);
 						this->allSetPtr_->allSetValues_.insert(it->second);
-						if (haveDistinct && this->allSetPtr_->allSetValues_.size() == this->allSetPtr_->values_.size()) return true;
+						if (haveDistinct && this->allSetPtr_->allSetValues_.size() == this->allSetPtr_->values_.size()) {
+							return true;
+						}
 					}
 				}
 					continue;
@@ -621,38 +653,56 @@ public:
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::From<T>());
 		for (Variant& value : buffer_) {
-			if rx_unlikely (value.IsNullValue()) continue;
+			if rx_unlikely (value.IsNullValue()) {
+				continue;
+			}
 			switch (this->cond_) {
 				case CondEq:
-					if (value.As<T>() == this->value_) return true;
+					if (value.As<T>() == this->value_) {
+						return true;
+					}
 					continue;
 				case CondLt:
-					if (value.As<T>() < this->value_) return true;
+					if (value.As<T>() < this->value_) {
+						return true;
+					}
 					continue;
 				case CondLe:
-					if (value.As<T>() <= this->value_) return true;
+					if (value.As<T>() <= this->value_) {
+						return true;
+					}
 					continue;
 				case CondGt:
-					if (value.As<T>() > this->value_) return true;
+					if (value.As<T>() > this->value_) {
+						return true;
+					}
 					continue;
 				case CondGe:
-					if (value.As<T>() >= this->value_) return true;
+					if (value.As<T>() >= this->value_) {
+						return true;
+					}
 					continue;
 				case CondRange: {
 					const auto v = value.As<T>();
-					if (this->range_.first <= v && v <= this->range_.second) return true;
+					if (this->range_.first <= v && v <= this->range_.second) {
+						return true;
+					}
 				}
 					continue;
 				case CondSet:
 					assertrx_dbg(this->setPtr_);
-					if (this->setPtr_->find(value.As<T>()) != this->setPtr_->cend()) return true;
+					if (this->setPtr_->find(value.As<T>()) != this->setPtr_->cend()) {
+						return true;
+					}
 					continue;
 				case CondAllSet: {
 					assertrx_dbg(this->allSetPtr_);
 					const auto it = this->allSetPtr_->values_.find(value.As<T>());
 					if (it != this->allSetPtr_->values_.cend()) {
 						this->allSetPtr_->allSetValues_.insert(it->second);
-						if (this->allSetPtr_->allSetValues_.size() == this->allSetPtr_->values_.size()) return true;
+						if (this->allSetPtr_->allSetValues_.size() == this->allSetPtr_->values_.size()) {
+							return true;
+						}
 					}
 				}
 					continue;
@@ -692,32 +742,48 @@ public:
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::From<T>());
 		for (Variant& v : buffer_) {
-			if rx_unlikely (v.IsNullValue()) continue;
+			if rx_unlikely (v.IsNullValue()) {
+				continue;
+			}
 			const auto value = v.As<T>();
 			switch (this->cond_) {
 				case CondEq:
-					if (value == this->value_ && distinct_.Compare(value)) return true;
+					if (value == this->value_ && distinct_.Compare(value)) {
+						return true;
+					}
 					continue;
 				case CondLt:
-					if (value < this->value_ && distinct_.Compare(value)) return true;
+					if (value < this->value_ && distinct_.Compare(value)) {
+						return true;
+					}
 					continue;
 				case CondLe:
-					if (value <= this->value_ && distinct_.Compare(value)) return true;
+					if (value <= this->value_ && distinct_.Compare(value)) {
+						return true;
+					}
 					continue;
 				case CondGt:
-					if (value > this->value_ && distinct_.Compare(value)) return true;
+					if (value > this->value_ && distinct_.Compare(value)) {
+						return true;
+					}
 					continue;
 				case CondGe:
-					if (value >= this->value_ && distinct_.Compare(value)) return true;
+					if (value >= this->value_ && distinct_.Compare(value)) {
+						return true;
+					}
 					continue;
 				case CondRange: {
 					const auto v = value;
-					if (this->range_.first <= v && v <= this->range_.second && distinct_.Compare(value)) return true;
+					if (this->range_.first <= v && v <= this->range_.second && distinct_.Compare(value)) {
+						return true;
+					}
 				}
 					continue;
 				case CondSet:
 					assertrx_dbg(this->setPtr_);
-					if (this->setPtr_->find(value) != this->setPtr_->cend() && distinct_.Compare(value)) return true;
+					if (this->setPtr_->find(value) != this->setPtr_->cend() && distinct_.Compare(value)) {
+						return true;
+					}
 					continue;
 				case CondAllSet: {
 					assertrx_dbg(this->allSetPtr_);
@@ -726,7 +792,9 @@ public:
 					if (it != this->allSetPtr_->values_.cend()) {
 						haveDistinct |= distinct_.Compare(value);
 						this->allSetPtr_->allSetValues_.insert(it->second);
-						if (haveDistinct && this->allSetPtr_->allSetValues_.size() == this->allSetPtr_->values_.size()) return true;
+						if (haveDistinct && this->allSetPtr_->allSetValues_.size() == this->allSetPtr_->values_.size()) {
+							return true;
+						}
 					}
 				}
 					continue;
@@ -746,7 +814,9 @@ public:
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::From<T>());
 		for (Variant& v : buffer_) {
-			if rx_unlikely (v.IsNullValue()) continue;
+			if rx_unlikely (v.IsNullValue()) {
+				continue;
+			}
 			distinct_.ExcludeValues(v.As<T>());
 		}
 	}
@@ -958,7 +1028,9 @@ public:
 			const std::string_view value = *ptr;
 			switch (cond_) {
 				case CondSet:
-					if (setPtr_->find(value) != setPtr_->cend()) return true;
+					if (setPtr_->find(value) != setPtr_->cend()) {
+						return true;
+					}
 					continue;
 				case CondRange:
 					if ((collateCompare(value, range_.value1_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
@@ -971,27 +1043,41 @@ public:
 					const auto it = allSetPtr_->values_.find(value);
 					if (it != allSetPtr_->values_.cend()) {
 						allSetPtr_->allSetValues_.insert(it->second);
-						if (allSetPtr_->allSetValues_.size() == allSetPtr_->values_.size()) return true;
+						if (allSetPtr_->allSetValues_.size() == allSetPtr_->values_.size()) {
+							return true;
+						}
 					}
 				}
 					continue;
 				case CondLike:
-					if (matchLikePattern(value, value_.valueView_)) return true;
+					if (matchLikePattern(value, value_.valueView_)) {
+						return true;
+					}
 					continue;
 				case CondEq:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Eq) return true;
+					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Eq) {
+						return true;
+					}
 					continue;
 				case CondLt:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Lt) return true;
+					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Lt) {
+						return true;
+					}
 					continue;
 				case CondLe:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Le) return true;
+					if (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Le) {
+						return true;
+					}
 					continue;
 				case CondGt:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Gt) return true;
+					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Gt) {
+						return true;
+					}
 					continue;
 				case CondGe:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Ge) return true;
+					if (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Ge) {
+						return true;
+					}
 					continue;
 				case CondAny:
 				case CondEmpty:
@@ -1027,7 +1113,9 @@ public:
 			switch (cond_) {
 				case CondSet:
 					assertrx_dbg(this->setPtr_);
-					if (setPtr_->find(value) != setPtr_->cend() && distinct_.Compare(value)) return true;
+					if (setPtr_->find(value) != setPtr_->cend() && distinct_.Compare(value)) {
+						return true;
+					}
 					continue;
 				case CondRange:
 					if ((collateCompare(value, range_.value1_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
@@ -1043,32 +1131,41 @@ public:
 					if (it != allSetPtr_->values_.cend()) {
 						haveDistinct |= distinct_.Compare(value);
 						allSetPtr_->allSetValues_.insert(it->second);
-						if (haveDistinct && allSetPtr_->allSetValues_.size() == allSetPtr_->values_.size()) return true;
+						if (haveDistinct && allSetPtr_->allSetValues_.size() == allSetPtr_->values_.size()) {
+							return true;
+						}
 					}
 				}
 					continue;
 				case CondLike:
-					if (matchLikePattern(value, value_.valueView_) && distinct_.Compare(value)) return true;
+					if (matchLikePattern(value, value_.valueView_) && distinct_.Compare(value)) {
+						return true;
+					}
 					continue;
 				case CondEq:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Eq && distinct_.Compare(value))
+					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Eq && distinct_.Compare(value)) {
 						return true;
+					}
 					continue;
 				case CondLt:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Lt && distinct_.Compare(value))
+					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Lt && distinct_.Compare(value)) {
 						return true;
+					}
 					continue;
 				case CondLe:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Le && distinct_.Compare(value))
+					if (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Le && distinct_.Compare(value)) {
 						return true;
+					}
 					continue;
 				case CondGt:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Gt && distinct_.Compare(value))
+					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Gt && distinct_.Compare(value)) {
 						return true;
+					}
 					continue;
 				case CondGe:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Ge && distinct_.Compare(value))
+					if (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Ge && distinct_.Compare(value)) {
 						return true;
+					}
 					continue;
 				case CondAny:
 				case CondEmpty:
@@ -1113,7 +1210,9 @@ public:
 			switch (cond_) {
 				case CondSet:
 					assertrx_dbg(this->setPtr_);
-					if (setPtr_->find(value) != setPtr_->cend()) return true;
+					if (setPtr_->find(value) != setPtr_->cend()) {
+						return true;
+					}
 					break;
 				case CondRange:
 					if ((collateCompare(value, range_.value1_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
@@ -1126,26 +1225,40 @@ public:
 					const auto it = allSetPtr_->values_.find(value);
 					if (it != allSetPtr_->values_.cend()) {
 						allSetPtr_->allSetValues_.insert(it->second);
-						if (allSetPtr_->allSetValues_.size() == allSetPtr_->values_.size()) return true;
+						if (allSetPtr_->allSetValues_.size() == allSetPtr_->values_.size()) {
+							return true;
+						}
 					}
 				} break;
 				case CondLike:
-					if (matchLikePattern(value, value_.valueView_)) return true;
+					if (matchLikePattern(value, value_.valueView_)) {
+						return true;
+					}
 					break;
 				case CondEq:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Eq) return true;
+					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Eq) {
+						return true;
+					}
 					break;
 				case CondLt:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Lt) return true;
+					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Lt) {
+						return true;
+					}
 					break;
 				case CondLe:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Le) return true;
+					if (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Le) {
+						return true;
+					}
 					break;
 				case CondGt:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Gt) return true;
+					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Gt) {
+						return true;
+					}
 					break;
 				case CondGe:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Ge) return true;
+					if (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Ge) {
+						return true;
+					}
 					break;
 				case CondEmpty:
 				case CondAny:
@@ -1185,7 +1298,9 @@ public:
 			switch (cond_) {
 				case CondSet:
 					assertrx_dbg(this->setPtr_);
-					if (setPtr_->find(value) != setPtr_->cend() && distinct_.Compare(value)) return true;
+					if (setPtr_->find(value) != setPtr_->cend() && distinct_.Compare(value)) {
+						return true;
+					}
 					break;
 				case CondRange:
 					if ((collateCompare(value, range_.value1_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
@@ -1201,31 +1316,40 @@ public:
 					if (it != allSetPtr_->values_.cend()) {
 						haveDistinct |= distinct_.Compare(value);
 						allSetPtr_->allSetValues_.insert(it->second);
-						if (haveDistinct && allSetPtr_->allSetValues_.size() == allSetPtr_->values_.size()) return true;
+						if (haveDistinct && allSetPtr_->allSetValues_.size() == allSetPtr_->values_.size()) {
+							return true;
+						}
 					}
 				} break;
 				case CondLike:
-					if (matchLikePattern(value, value_.valueView_) && distinct_.Compare(value)) return true;
+					if (matchLikePattern(value, value_.valueView_) && distinct_.Compare(value)) {
+						return true;
+					}
 					break;
 				case CondEq:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Eq && distinct_.Compare(value))
+					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Eq && distinct_.Compare(value)) {
 						return true;
+					}
 					break;
 				case CondLt:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Lt && distinct_.Compare(value))
+					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Lt && distinct_.Compare(value)) {
 						return true;
+					}
 					break;
 				case CondLe:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Le && distinct_.Compare(value))
+					if (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Le && distinct_.Compare(value)) {
 						return true;
+					}
 					break;
 				case CondGt:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Gt && distinct_.Compare(value))
+					if (collateCompare(value, value_.valueView_, *collateOpts_) == ComparationResult::Gt && distinct_.Compare(value)) {
 						return true;
+					}
 					break;
 				case CondGe:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Ge && distinct_.Compare(value))
+					if (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Ge && distinct_.Compare(value)) {
 						return true;
+					}
 					break;
 				case CondEmpty:
 				case CondAny:
@@ -1496,7 +1620,9 @@ public:
 		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
 		const auto* ptr = reinterpret_cast<const T*>(item.Ptr() + arr.offset);
 		for (const auto* const end = ptr + arr.len; ptr != end; ++ptr) {
-			if (distinct_.Compare(*ptr)) return true;
+			if (distinct_.Compare(*ptr)) {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -1524,7 +1650,9 @@ public:
 		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
 		const p_string* ptr = reinterpret_cast<const p_string*>(item.Ptr() + arr.offset);
 		for (const auto* const end = ptr + arr.len; ptr != end; ++ptr) {
-			if (distinct_.Compare(*ptr)) return true;
+			if (distinct_.Compare(*ptr)) {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -1552,7 +1680,9 @@ public:
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::Undefined{});
 		for (Variant& value : buffer_) {
-			if (!value.IsNullValue()) return true;
+			if (!value.IsNullValue()) {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -1576,7 +1706,9 @@ public:
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::From<T>());
 		for (Variant& value : buffer_) {
-			if (!value.IsNullValue() && distinct_.Compare(value.As<T>())) return true;
+			if (!value.IsNullValue() && distinct_.Compare(value.As<T>())) {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -1608,7 +1740,9 @@ public:
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::String{});
 		for (Variant& value : buffer_) {
-			if (!value.IsNullValue() && distinct_.Compare(std::string_view{value})) return true;
+			if (!value.IsNullValue() && distinct_.Compare(std::string_view{value})) {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -1656,7 +1790,9 @@ public:
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::Undefined{});
 		for (Variant& value : buffer_) {
-			if (!value.IsNullValue()) return false;
+			if (!value.IsNullValue()) {
+				return false;
+			}
 		}
 		return true;
 	}

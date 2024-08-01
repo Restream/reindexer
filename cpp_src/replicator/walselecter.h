@@ -8,12 +8,12 @@ class RdxContext;
 struct SelectCtx;
 class WALSelecter {
 public:
-	WALSelecter(const NamespaceImpl *ns);
-	void operator()(QueryResults &result, SelectCtx &params);
+	WALSelecter(const NamespaceImpl* ns);
+	void operator()(QueryResults& result, SelectCtx& params);
 
 protected:
-	void putReplState(QueryResults &result);
-	const NamespaceImpl *ns_;
+	void putReplState(QueryResults& result);
+	const NamespaceImpl* ns_;
 };
 
 }  // namespace reindexer

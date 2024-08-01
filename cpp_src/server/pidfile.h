@@ -16,16 +16,22 @@ namespace reindexer_server {
 class PidFile {
 public:
 	PidFile(const std::string& name = std::string(), pid_t pid = -1) : file_(-1) {
-		if (!name.empty()) Open(name, pid);
+		if (!name.empty()) {
+			Open(name, pid);
+		}
 	}
 	~PidFile() {
-		if (IsOpen()) Close();
+		if (IsOpen()) {
+			Close();
+		}
 	}
 
 	bool IsOpen() const { return file_ != -1; }
 
 	bool Open(const std::string& name, pid_t pid = -1) {
-		if (IsOpen() || name.empty()) return false;
+		if (IsOpen() || name.empty()) {
+			return false;
+		}
 		// open file
 		int fd = ::open(name.c_str(), O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP);
 		if (fd == -1) {
@@ -38,7 +44,9 @@ public:
 			return false;
 		}
 		// get PID value and convert it to string
-		if (pid == -1) pid = ::getpid();
+		if (pid == -1) {
+			pid = ::getpid();
+		}
 		std::string buf = fmt::sprintf("%d\n", pid);
 		// write PID to file
 		size_t rc = static_cast<size_t>(::write(fd, buf.c_str(), buf.size()));
@@ -68,8 +76,8 @@ public:
 	reindexer::Error Status() { return error_; }
 
 private:
-	PidFile(PidFile const&);
-	PidFile& operator=(PidFile const&);
+	PidFile(const PidFile&);
+	PidFile& operator=(const PidFile&);
 
 private:
 	int file_;

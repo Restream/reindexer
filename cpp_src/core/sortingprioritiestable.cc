@@ -22,21 +22,26 @@ SortingPrioritiesTable::SortingPrioritiesTable(const std::string& sortOrderUTF8)
 	for (int i = 0; i <= lastCharIdx; ++i) {
 		auto ch(orderUtf16[i]);
 		if (ch == '-') {
-			if ((i == 0) || (i == lastCharIdx))
+			if ((i == 0) || (i == lastCharIdx)) {
 				throw Error(errLogic, "Incorrect format of sort order string: '-' cannot be the first or the last character");
+			}
 		} else {
 			if ((i != 0) && (orderUtf16[i - 1] == '-')) {
-				if (ch <= prevCh) throw Error(errLogic, "Incorrect format of sort order string: range should be ascending");
+				if (ch <= prevCh) {
+					throw Error(errLogic, "Incorrect format of sort order string: range should be ascending");
+				}
 				for (auto it = prevCh; it <= ch; ++it) {
-					if (checkForRangeIntersection(ranges, it))
+					if (checkForRangeIntersection(ranges, it)) {
 						throw Error(errLogic, "There can't be 2 same formating characters in format string!");
+					}
 					sortOrder_->operator[](it) = priority++;
 				}
 				ranges.insert({prevCh, ch - prevCh + 1});
 				maxPriority = priority;
 			} else if (((i + 1 <= lastCharIdx) && (orderUtf16[i + 1] != '-')) || (i == lastCharIdx)) {
-				if (checkForRangeIntersection(ranges, ch))
+				if (checkForRangeIntersection(ranges, ch)) {
 					throw Error(errLogic, "There can't be 2 same formating characters in format string!");
+				}
 				sortOrder_->operator[](ch) = priority++;
 				ranges.insert({ch, 1});
 				maxPriority = priority;
@@ -60,12 +65,18 @@ SortingPrioritiesTable::SortingPrioritiesTable(const std::string& sortOrderUTF8)
 }
 
 bool SortingPrioritiesTable::checkForRangeIntersection(std::map<uint16_t, uint16_t>& ranges, wchar_t ch) {
-	if (ranges.empty()) return false;
+	if (ranges.empty()) {
+		return false;
+	}
 	auto itLow = ranges.lower_bound(ch);
-	if (itLow == ranges.end()) itLow = ranges.begin();
+	if (itLow == ranges.end()) {
+		itLow = ranges.begin();
+	}
 	auto itUp = ranges.upper_bound(ch);
 	for (auto it = itLow; it != itUp; ++it) {
-		if ((ch >= it->first) && (ch < it->first + it->second)) return true;
+		if ((ch >= it->first) && (ch < it->first + it->second)) {
+			return true;
+		}
 	}
 	return false;
 }

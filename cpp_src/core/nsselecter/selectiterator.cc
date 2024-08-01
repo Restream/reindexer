@@ -39,10 +39,16 @@ std::string_view SelectIterator::TypeName() const noexcept {
 std::string SelectIterator::Dump() const {
 	std::string ret = name + ' ' + std::string(TypeName()) + "(";
 
-	for (auto &it : *this) {
-		if (it.useBtree_) ret += "btree;";
-		if (it.isRange_) ret += "range;";
-		if (it.bsearch_) ret += "bsearch;";
+	for (auto& it : *this) {
+		if (it.useBtree_) {
+			ret += "btree;";
+		}
+		if (it.isRange_) {
+			ret += "range;";
+		}
+		if (it.bsearch_) {
+			ret += "bsearch;";
+		}
 		ret += ",";
 		if (ret.length() > 256) {
 			ret += "...";

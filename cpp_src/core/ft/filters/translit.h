@@ -8,7 +8,7 @@ class Translit : public ITokenFilter {
 public:
 	Translit();
 
-	virtual void GetVariants(const std::wstring &data, std::vector<FtDSLVariant> &result, int proc) override final;
+	virtual void GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& result, int proc) override final;
 
 private:
 	void PrepareRussian();
@@ -29,7 +29,7 @@ private:
 		size_t total_count_;
 		unsigned short num_[2];
 	};
-	std::pair<uint8_t, wchar_t> GetEnglish(wchar_t, size_t, Context &ctx);
+	std::pair<uint8_t, wchar_t> GetEnglish(wchar_t, size_t, Context& ctx);
 	bool CheckIsEn(wchar_t symbol);
 
 	static const int ruLettersStartUTF16 = 1072;

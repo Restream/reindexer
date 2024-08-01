@@ -77,7 +77,9 @@ protected:
 	ComparatorNotIndexedImplBase(const VariantArray&);
 	[[nodiscard]] std::string ConditionStr() const;
 	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const Variant& v) const {
-		if (!v.Type().Is<KeyValueType::String>()) return false;
+		if (!v.Type().Is<KeyValueType::String>()) {
+			return false;
+		}
 		return matchLikePattern(static_cast<p_string>(v), valueView_);
 	}
 
@@ -99,7 +101,9 @@ public:
 	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer_, KeyValueType::Undefined{});
 		for (const Variant& v : buffer_) {
-			if (Base::Compare(v)) return true;
+			if (Base::Compare(v)) {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -124,7 +128,9 @@ public:
 	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer_, KeyValueType::Undefined{});
 		for (const Variant& v : buffer_) {
-			if (Base::Compare(v) == 0 && distinct_.Compare(v)) return true;
+			if (Base::Compare(v) == 0 && distinct_.Compare(v)) {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -154,7 +160,9 @@ public:
 	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer_, KeyValueType::Undefined{});
 		for (const Variant& v : buffer_) {
-			if (!v.IsNullValue()) return true;
+			if (!v.IsNullValue()) {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -177,7 +185,9 @@ public:
 	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer_, KeyValueType::Undefined{});
 		for (const Variant& v : buffer_) {
-			if (!v.IsNullValue() && distinct_.Compare(v)) return true;
+			if (!v.IsNullValue() && distinct_.Compare(v)) {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -206,7 +216,9 @@ public:
 	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer_, KeyValueType::Undefined{});
 		for (const Variant& v : buffer_) {
-			if rx_unlikely (!v.IsNullValue()) return false;
+			if rx_unlikely (!v.IsNullValue()) {
+				return false;
+			}
 		}
 		return true;
 	}
@@ -266,8 +278,9 @@ public:
 		: Base{values, payloadType, fieldPath} {}
 	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer_, KeyValueType::Undefined{});
-		if (buffer_.size() != 2 || !buffer_[0].Type().Is<KeyValueType::Double>() || !buffer_[0].Type().Is<KeyValueType::Double>())
+		if (buffer_.size() != 2 || !buffer_[0].Type().Is<KeyValueType::Double>() || !buffer_[0].Type().Is<KeyValueType::Double>()) {
 			return false;
+		}
 		const Point p{buffer_[0].As<double>(), buffer_[1].As<double>()};
 		return DWithin(p, point_, distance_) && distinct_.Compare(Variant{p});
 	}
@@ -275,7 +288,9 @@ public:
 	void ClearDistinctValues() noexcept { distinct_.ClearValues(); }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer_, KeyValueType::Undefined{});
-		if (buffer_.size() != 2 || !buffer_[0].Type().Is<KeyValueType::Double>() || !buffer_[0].Type().Is<KeyValueType::Double>()) return;
+		if (buffer_.size() != 2 || !buffer_[0].Type().Is<KeyValueType::Double>() || !buffer_[0].Type().Is<KeyValueType::Double>()) {
+			return;
+		}
 		const Point p{buffer_[0].As<double>(), buffer_[1].As<double>()};
 		distinct_.ExcludeValues(Variant{p});
 	}
@@ -304,7 +319,9 @@ public:
 			const auto it = values_.find(v);
 			if (it != values_.cend()) {
 				allSetValues_.emplace(it->second);
-				if (allSetValues_.size() == values_.size()) return true;
+				if (allSetValues_.size() == values_.size()) {
+					return true;
+				}
 			}
 		}
 		return false;
@@ -341,7 +358,9 @@ public:
 				if (distinct_.Compare(it->first)) {
 					haveNotDistinct = true;
 				}
-				if (haveNotDistinct && allSetValues_.size() == values_.size()) return true;
+				if (haveNotDistinct && allSetValues_.size() == values_.size()) {
+					return true;
+				}
 			}
 		}
 		return false;

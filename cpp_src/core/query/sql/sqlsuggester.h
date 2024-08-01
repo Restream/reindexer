@@ -26,20 +26,20 @@ public:
 private:
 	/// Finds suggestions for token
 	/// @param ctx - suggestion context.
-	void getSuggestionsForToken(SqlParsingCtx::SuggestionData &ctx);
+	void getSuggestionsForToken(SqlParsingCtx::SuggestionData& ctx);
 
 	/// Checks if token suggestion is required
-	void checkForTokenSuggestions(SqlParsingCtx::SuggestionData &data);
+	void checkForTokenSuggestions(SqlParsingCtx::SuggestionData& data);
 
 	/// Tries to find token value among accepted tokens.
-	[[nodiscard]] bool findInPossibleTokens(int type, const std::string &v);
+	[[nodiscard]] bool findInPossibleTokens(int type, const std::string& v);
 	/// Tries to find token value among indexes.
-	[[nodiscard]] bool findInPossibleFields(const std::string &tok);
+	[[nodiscard]] bool findInPossibleFields(const std::string& tok);
 	/// Tries to find among possible namespaces.
-	[[nodiscard]] bool findInPossibleNamespaces(const std::string &tok);
+	[[nodiscard]] bool findInPossibleNamespaces(const std::string& tok);
 	/// Gets names of indexes that start with 'token'.
-	void getMatchingFieldsNames(const std::string &token, std::unordered_set<std::string> &variants);
-	void getMatchingNamespacesNames(const std::string &token, std::unordered_set<std::string> &variants);
+	void getMatchingFieldsNames(const std::string& token, std::unordered_set<std::string>& variants);
+	void getMatchingNamespacesNames(const std::string& token, std::unordered_set<std::string>& variants);
 	EnumNamespacesF enumNamespaces_;
 	GetSchemaF getSchema_;
 };

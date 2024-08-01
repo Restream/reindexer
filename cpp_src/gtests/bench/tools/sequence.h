@@ -37,7 +37,9 @@ public:
 
 	value_type Next() {
 		value_type val;
-		if ((val = counter_++) >= end_) return end_;
+		if ((val = counter_++) >= end_) {
+			return end_;
+		}
 
 		return val;
 	}

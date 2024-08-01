@@ -29,4 +29,4 @@ private:
 	std::list<NamespaceImpl::Ptr> namespaces_;
 };
 
-}
+}  // namespace reindexer

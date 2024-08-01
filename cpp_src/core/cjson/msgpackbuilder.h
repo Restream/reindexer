@@ -16,22 +16,22 @@ namespace reindexer {
 
 class MsgPackBuilder {
 public:
-	MsgPackBuilder(WrSerializer &wrser, ObjType type, size_t size);
-	MsgPackBuilder(msgpack_packer &packer, ObjType type, size_t size);
-	MsgPackBuilder(WrSerializer &wrser, const TagsLengths *tagsLengths, int *startTag, ObjType = ObjType::TypeObject,
-				   const TagsMatcher *tm = nullptr);
-	MsgPackBuilder(msgpack_packer &packer, const TagsLengths *tagsLengths, int *startTag, ObjType = ObjType::TypeObject,
-				   const TagsMatcher *tm = nullptr);
+	MsgPackBuilder(WrSerializer& wrser, ObjType type, size_t size);
+	MsgPackBuilder(msgpack_packer& packer, ObjType type, size_t size);
+	MsgPackBuilder(WrSerializer& wrser, const TagsLengths* tagsLengths, int* startTag, ObjType = ObjType::TypeObject,
+				   const TagsMatcher* tm = nullptr);
+	MsgPackBuilder(msgpack_packer& packer, const TagsLengths* tagsLengths, int* startTag, ObjType = ObjType::TypeObject,
+				   const TagsMatcher* tm = nullptr);
 	MsgPackBuilder() noexcept : tm_(nullptr), packer_(), tagsLengths_(nullptr), type_(ObjType::TypePlain), tagIndex_(nullptr) {}
 	~MsgPackBuilder() { End(); }
-	MsgPackBuilder(MsgPackBuilder &&other) noexcept
+	MsgPackBuilder(MsgPackBuilder&& other) noexcept
 		: tm_(other.tm_), packer_(other.packer_), tagsLengths_(other.tagsLengths_), type_(other.type_), tagIndex_(other.tagIndex_) {}
 
-	MsgPackBuilder(const MsgPackBuilder &) = delete;
-	MsgPackBuilder &operator=(const MsgPackBuilder &) = delete;
-	MsgPackBuilder &operator=(MsgPackBuilder &&) = delete;
+	MsgPackBuilder(const MsgPackBuilder&) = delete;
+	MsgPackBuilder& operator=(const MsgPackBuilder&) = delete;
+	MsgPackBuilder& operator=(MsgPackBuilder&&) = delete;
 
-	void SetTagsMatcher(const TagsMatcher *tm) noexcept { tm_ = tm; }
+	void SetTagsMatcher(const TagsMatcher* tm) noexcept { tm_ = tm; }
 	MsgPackBuilder Raw(std::string_view, std::string_view) noexcept { return MsgPackBuilder(); }
 	MsgPackBuilder Raw(std::nullptr_t, std::string_view arg) { return Raw(std::string_view{}, arg); }
 
@@ -41,7 +41,9 @@ public:
 		skipTag();
 		packKeyName(tagName);
 		packArray(data.size());
-		for (const T &v : data) packValue(v);
+		for (const T& v : data) {
+			packValue(v);
+		}
 	}
 	template <typename N>
 	void Array(N tagName, span<Uuid> data, int /*offset*/ = 0) {
@@ -49,7 +51,9 @@ public:
 		skipTag();
 		packKeyName(tagName);
 		packArray(data.size());
-		for (Uuid v : data) packValue(v);
+		for (Uuid v : data) {
+			packValue(v);
+		}
 	}
 
 	template <typename T>
@@ -58,7 +62,9 @@ public:
 		skipTag();
 		packKeyName(tagName);
 		packArray(data.size());
-		for (const p_string &v : data) packValue(std::string_view(v));
+		for (const p_string& v : data) {
+			packValue(std::string_view(v));
+		}
 	}
 
 	template <typename T>
@@ -72,12 +78,14 @@ public:
 			return MsgPackBuilder(packer_, ObjType::TypeObjectArray, size);
 		}
 	}
-	void Array(int tagName, Serializer &ser, TagType, int count);
+	void Array(int tagName, Serializer& ser, TagType, int count);
 
 	template <typename T>
 	MsgPackBuilder Object(T tagName, int size = KUnknownFieldSize) {
 		packKeyName(tagName);
-		if (isArray()) skipTag();
+		if (isArray()) {
+			skipTag();
+		}
 		if (size == KUnknownFieldSize) {
 			assertrx(tagsLengths_ && tagIndex_);
 			return MsgPackBuilder(packer_, tagsLengths_, tagIndex_, ObjType::TypeObject, tm_);
@@ -87,7 +95,7 @@ public:
 	}
 
 	template <typename T>
-	MsgPackBuilder &Null(T tagName) {
+	MsgPackBuilder& Null(T tagName) {
 		skipTag();
 		packKeyName(tagName);
 		packNil();
@@ -95,28 +103,38 @@ public:
 	}
 
 	template <typename T, typename N>
-	MsgPackBuilder &Put(N tagName, const T &arg, int /*offset*/ = 0) {
-		if (isArray()) skipTag();
+	MsgPackBuilder& Put(N tagName, const T& arg, int /*offset*/ = 0) {
+		if (isArray()) {
+			skipTag();
+		}
 		skipTag();
 		packKeyName(tagName);
 		packValue(arg);
-		if (isArray()) skipTag();
+		if (isArray()) {
+			skipTag();
+		}
 		return *this;
 	}
 
 	template <typename N>
-	MsgPackBuilder &Put(N tagName, Uuid arg) {
-		if (isArray()) skipTag();
+	MsgPackBuilder& Put(N tagName, Uuid arg) {
+		if (isArray()) {
+			skipTag();
+		}
 		skipTag();
 		packKeyName(tagName);
 		packValue(arg);
-		if (isArray()) skipTag();
+		if (isArray()) {
+			skipTag();
+		}
 		return *this;
 	}
 
 	template <typename T>
-	MsgPackBuilder &Put(T tagName, const Variant &kv, int offset = 0) {
-		if (isArray()) skipTag();
+	MsgPackBuilder& Put(T tagName, const Variant& kv, int offset = 0) {
+		if (isArray()) {
+			skipTag();
+		}
 		skipTag();
 		packKeyName(tagName);
 		kv.Type().EvaluateOneOf(
@@ -125,22 +143,24 @@ public:
 			[&](KeyValueType::Null) { packNil(); }, [&](KeyValueType::Bool) { packValue(bool(kv)); },
 			[&](KeyValueType::Tuple) {
 				auto arrNode = Array(tagName);
-				for (auto &val : kv.getCompositeValues()) {
+				for (auto& val : kv.getCompositeValues()) {
 					arrNode.Put(0, val, offset);
 				}
 			},
 			[&](KeyValueType::Uuid) { packValue(Uuid{kv}); }, [](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) noexcept {});
-		if (isArray()) skipTag();
+		if (isArray()) {
+			skipTag();
+		}
 		return *this;
 	}
 
-	MsgPackBuilder &Json(std::string_view name, std::string_view arg);
+	MsgPackBuilder& Json(std::string_view name, std::string_view arg);
 
-	MsgPackBuilder &End();
+	MsgPackBuilder& End();
 
 private:
 	void init(int size);
-	void packCJsonValue(TagType, Serializer &);
+	void packCJsonValue(TagType, Serializer&);
 
 	void packNil() { msgpack_pack_nil(&packer_); }
 	void packMap(size_t size) { msgpack_pack_map(&packer_, size); }
@@ -171,15 +191,21 @@ private:
 	void checkIfCorrectArray(std::string_view) const {}
 
 	void checkIfCorrectArray(int tagName) const {
-		if (tagName == 0) throw Error(errLogic, "Arrays of arrays are not supported in cjson");
+		if (tagName == 0) {
+			throw Error(errLogic, "Arrays of arrays are not supported in cjson");
+		}
 	}
 
 	void packKeyName(std::nullptr_t) {}
 	void packKeyName(std::string_view name) {
-		if (!name.empty() && !isArray()) packValue(name);
+		if (!name.empty() && !isArray()) {
+			packValue(name);
+		}
 	}
 	void packKeyName(int tagName) {
-		if (tagName != 0 && !isArray()) packValue(tm_->tag2name(tagName));
+		if (tagName != 0 && !isArray()) {
+			packValue(tm_->tag2name(tagName));
+		}
 	}
 
 	int getTagSize() {
@@ -190,7 +216,9 @@ private:
 	}
 
 	void skipTag() {
-		if (tagsLengths_) ++(*tagIndex_);
+		if (tagsLengths_) {
+			++(*tagIndex_);
+		}
 	}
 
 	void skipTagIfEqual(TagValues tagVal) {
@@ -199,13 +227,13 @@ private:
 		}
 	}
 
-	void appendJsonObject(std::string_view name, const gason::JsonNode &obj);
+	void appendJsonObject(std::string_view name, const gason::JsonNode& obj);
 
-	const TagsMatcher *tm_;
+	const TagsMatcher* tm_;
 	msgpack_packer packer_;
-	const TagsLengths *tagsLengths_;
+	const TagsLengths* tagsLengths_;
 	ObjType type_;
-	int *tagIndex_;
+	int* tagIndex_;
 };
 
 }  // namespace reindexer

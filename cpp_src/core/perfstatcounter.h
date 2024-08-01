@@ -64,15 +64,21 @@ using PerfStatCounterST = PerfStatCounter<dummy_mutex>;
 template <typename Mutex>
 class PerfStatCalculator {
 public:
-	PerfStatCalculator(PerfStatCounter<Mutex> &counter, bool enable) noexcept : counter_(&counter), enable_(enable) {
-		if (enable_) tmStart = system_clock_w::now();
+	PerfStatCalculator(PerfStatCounter<Mutex>& counter, bool enable) noexcept : counter_(&counter), enable_(enable) {
+		if (enable_) {
+			tmStart = system_clock_w::now();
+		}
 	}
 	~PerfStatCalculator() {
-		if (enable_) counter_->Hit(std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - tmStart));
+		if (enable_) {
+			counter_->Hit(std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - tmStart));
+		}
 	}
-	void SetCounter(PerfStatCounter<Mutex> &counter) { counter_ = &counter; }
+	void SetCounter(PerfStatCounter<Mutex>& counter) { counter_ = &counter; }
 	void LockHit() {
-		if (enable_) counter_->LockHit(std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - tmStart));
+		if (enable_) {
+			counter_->LockHit(std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - tmStart));
+		}
 	}
 	void HitManualy() {
 		if (enable_) {
@@ -82,7 +88,7 @@ public:
 	}
 
 	system_clock_w::time_point tmStart;
-	PerfStatCounter<Mutex> *counter_;
+	PerfStatCounter<Mutex>* counter_;
 	bool enable_;
 };
 using PerfStatCalculatorMT = PerfStatCalculator<std::mutex>;

@@ -60,7 +60,9 @@ pid_t StartProcess(const std::string& program, const std::vector<std::string>& p
 Error EndProcess(pid_t PID) {
 #ifdef __linux__
 	int r = kill(PID, SIGTERM);
-	if (r != 0) return Error(errLogic, "errno=%d (%s)", errno, strerror(errno));
+	if (r != 0) {
+		return Error(errLogic, "errno=%d (%s)", errno, strerror(errno));
+	}
 #else
 	(void)PID;
 	assertrx(false);
@@ -78,7 +80,9 @@ Error WaitEndProcess(pid_t PID) {
 	if (WEXITSTATUS(status)) {
 		return Error(errLogic, "WEXITSTATUS(status) != 0. status: %d", WEXITSTATUS(status));
 	}
-	if (waitres != PID) return Error(errLogic, "waitres != PID. errno=%d (%s)", errno, strerror(errno));
+	if (waitres != PID) {
+		return Error(errLogic, "waitres != PID. errno=%d (%s)", errno, strerror(errno));
+	}
 #else
 	(void)PID;
 	assertrx(false);

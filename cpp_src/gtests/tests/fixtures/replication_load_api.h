@@ -9,7 +9,7 @@ class ReplicationLoadApi : public ReplicationApi {
 public:
 	class UpdatesReciever : public reindexer::IUpdatesObserver {
 	public:
-		void OnWALUpdate(reindexer::LSNPair, std::string_view nsName, const reindexer::WALRecord &) override final {
+		void OnWALUpdate(reindexer::LSNPair, std::string_view nsName, const reindexer::WALRecord&) override final {
 			std::lock_guard<std::mutex> lck(mtx_);
 			auto found = updatesCounters_.find(nsName);
 			if (found != updatesCounters_.end()) {
@@ -18,7 +18,7 @@ public:
 				updatesCounters_.emplace(std::string(nsName), 1);
 			}
 		}
-		void OnConnectionState(const Error &) override final {}
+		void OnConnectionState(const Error&) override final {}
 		void OnUpdatesLost(std::string_view) override final {}
 
 		using map = tsl::hopscotch_map<std::string, size_t, reindexer::nocase_hash_str, reindexer::nocase_equal_str>;
@@ -34,7 +34,7 @@ public:
 		void Dump() const {
 			std::cerr << "Reciever dump: " << std::endl;
 			auto counters = Counters();
-			for (auto &it : counters) {
+			for (auto& it : counters) {
 				std::cerr << it.first << ": " << it.second << std::endl;
 			}
 		}
@@ -51,7 +51,7 @@ public:
 
 		// untill we use shared ptr it will be not destroyed
 		auto srv = GetSrv(masterId_);
-		auto &api = srv->api;
+		auto& api = srv->api;
 
 		Error err = api.reindexer->OpenNamespace("some", opt);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -75,7 +75,7 @@ public:
 	void FillData(size_t count) {
 		// untill we use shared ptr it will be not destroyed
 		auto srv = GetSrv(masterId_);
-		auto &api = srv->api;
+		auto& api = srv->api;
 
 		reindexer::shared_lock<reindexer::shared_timed_mutex> lk(restartMutex_);
 
@@ -98,7 +98,7 @@ public:
 	BaseApi::QueryResultsType SimpleSelect(size_t num) {
 		reindexer::Query qr("some");
 		auto srv = GetSrv(num);
-		auto &api = srv->api;
+		auto& api = srv->api;
 		BaseApi::QueryResultsType res(api.reindexer.get());
 		auto err = api.reindexer->Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -107,18 +107,18 @@ public:
 	}
 	BaseApi::QueryResultsType DeleteFromMaster() {
 		auto srv = GetSrv(masterId_);
-		auto &api = srv->api;
+		auto& api = srv->api;
 		BaseApi::QueryResultsType res(api.reindexer.get());
 		auto err = api.reindexer->Delete(reindexer::Query("some"), res);
 		EXPECT_TRUE(err.ok()) << err.what();
 		return res;
 	}
-	void RestartWithConfigFile(size_t num, const std::string &configYaml) {
+	void RestartWithConfigFile(size_t num, const std::string& configYaml) {
 		GetSrv(num)->WriteServerConfig(configYaml);
 		StopServer(num);
 		StartServer(num);
 	}
-	void SetServerConfig(size_t num, const ReplicationConfigTest &config) {
+	void SetServerConfig(size_t num, const ReplicationConfigTest& config) {
 		auto srv = GetSrv(num);
 		if (num) {
 			srv->MakeSlave(config);
@@ -126,13 +126,13 @@ public:
 			srv->MakeMaster(config);
 		}
 	}
-	void CheckSlaveConfigFile(size_t num, const ReplicationConfigTest &config) {
+	void CheckSlaveConfigFile(size_t num, const ReplicationConfigTest& config) {
 		assertrx(num);
 		auto srv = GetSrv(num);
 		auto curConfig = srv->GetServerConfig(ServerControl::ConfigType::File);
 		EXPECT_TRUE(config == curConfig) << "config:\n" << config.GetJSON() << "\ncurConfig:\n" << curConfig.GetJSON();
 	}
-	void CheckSlaveConfigNamespace(size_t num, const ReplicationConfigTest &config, std::chrono::seconds awaitTime) {
+	void CheckSlaveConfigNamespace(size_t num, const ReplicationConfigTest& config, std::chrono::seconds awaitTime) {
 		assertrx(num);
 		auto srv = GetSrv(num);
 		for (int i = 0; i < awaitTime.count(); ++i) {
@@ -150,7 +150,7 @@ public:
 		versions.reserve(GetServersCount());
 		for (size_t i = 0; i < GetServersCount(); i++) {
 			auto srv = GetSrv(i);
-			auto &api = srv->api;
+			auto& api = srv->api;
 			BaseApi::QueryResultsType res(api.reindexer.get());
 			auto err = api.reindexer->Select(reindexer::Query(ns), res);
 			EXPECT_TRUE(err.ok()) << err.what();

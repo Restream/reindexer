@@ -75,7 +75,9 @@ void Index::dump(S& os, std::string_view step, std::string_view offset) const {
 	   << newOffset << "selectKeyType: " << selectKeyType_.Name() << ",\n"
 	   << newOffset << "sortOrders: [";
 	for (size_t i = 0; i < sortOrders_.size(); ++i) {
-		if (i != 0) os << ", ";
+		if (i != 0) {
+			os << ", ";
+		}
 		os << sortOrders_[i];
 	}
 	os << "],\n" << newOffset << "sortId: " << sortId_ << ",\n" << newOffset << "opts: ";

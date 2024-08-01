@@ -7,7 +7,9 @@ std::string HumanReadableNumber(size_t number, bool si, const std::string& unitL
 	const std::string prefix = "KMGTPE";
 
 	size_t unit = si ? 1000 : 1024;
-	if (number < unit) return std::to_string(number) + " " + unitLabel;
+	if (number < unit) {
+		return std::to_string(number) + " " + unitLabel;
+	}
 	int exp = static_cast<int>(std::log(number) / std::log(unit));
 	std::string pre;
 
@@ -38,11 +40,11 @@ std::string FormatString(const char* msg, va_list args) {
 
 	va_end(args_cp);
 
-	if (ret == 0)  // handle empty expansion
+	if (ret == 0) {	 // handle empty expansion
 		return {};
-	else if (static_cast<size_t>(ret) < size)
+	} else if (static_cast<size_t>(ret) < size) {
 		return local_buff;
-	else {
+	} else {
 		// we did not provide a long enough buffer on our first attempt.
 		size = static_cast<size_t>(ret) + 1;  // + 1 for the null byte
 		std::unique_ptr<char[]> buff(new char[size]);

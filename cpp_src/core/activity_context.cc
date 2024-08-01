@@ -28,7 +28,9 @@ void ActivityContainer::Unregister(const RdxActivityContext* context) {
 }
 
 void ActivityContainer::Reregister(const RdxActivityContext* oldCtx, const RdxActivityContext* newCtx) {
-	if (oldCtx == newCtx) return;
+	if (oldCtx == newCtx) {
+		return;
+	}
 
 	std::unique_lock lck(mtx_);
 	const auto eraseCount = cont_.erase(oldCtx);
@@ -46,7 +48,9 @@ std::vector<Activity> ActivityContainer::List() {
 	{
 		std::lock_guard lck(mtx_);
 		ret.reserve(cont_.size());
-		for (const RdxActivityContext* ctx : cont_) ret.emplace_back(*ctx);
+		for (const RdxActivityContext* ctx : cont_) {
+			ret.emplace_back(*ctx);
+		}
 	}
 	return ret;
 }
@@ -86,7 +90,9 @@ void Activity::GetJSON(WrSerializer& ser) const {
 	using namespace std::chrono;
 	JsonBuilder builder(ser);
 	builder.Put("client", activityTracer);
-	if (!user.empty()) builder.Put("user", user);
+	if (!user.empty()) {
+		builder.Put("user", user);
+	}
 	builder.Put("query", query);
 	builder.Put("query_id", id);
 	std::time_t t = system_clock_w::to_time_t(startTime);
@@ -96,7 +102,9 @@ void Activity::GetJSON(WrSerializer& ser) const {
 	ss << buffer << '.' << std::setw(3) << std::setfill('0') << (duration_cast<milliseconds>(startTime.time_since_epoch()).count() % 1000);
 	builder.Put("query_start", ss.str());
 	builder.Put("state", DescribeState(state));
-	if (state == WaitLock) builder.Put("lock_description", "Wait lock for " + std::string(description));
+	if (state == WaitLock) {
+		builder.Put("lock_description", "Wait lock for " + std::string(description));
+	}
 	builder.End();
 }
 
@@ -105,18 +113,16 @@ RdxActivityContext::RdxActivityContext(std::string_view activityTracer, std::str
 	: data_{nextId(),		std::string(activityTracer), std::string(user),		std::string(query),
 			ipConnectionId, Activity::InProgress,		 system_clock_w::now(), ""sv},
 	  state_(serializeState(clientState ? Activity::Sending : Activity::InProgress)),
-	  parent_(&parent)
-{
+	  parent_(&parent) {
 	parent_->Register(this);
 }
 
 // NOLINTNEXTLINE (performance-noexcept-move-constructor)
 RdxActivityContext::RdxActivityContext(RdxActivityContext&& other)
-	: data_(other.data_),
-	  state_(other.state_.load(std::memory_order_relaxed)),
-	  parent_(other.parent_)
-{
-	if (parent_) parent_->Reregister(&other, this);
+	: data_(other.data_), state_(other.state_.load(std::memory_order_relaxed)), parent_(other.parent_) {
+	if (parent_) {
+		parent_->Reregister(&other, this);
+	}
 	other.parent_ = nullptr;
 }
 

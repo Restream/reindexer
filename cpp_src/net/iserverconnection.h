@@ -23,7 +23,7 @@ public:
 	virtual BalancingType GetBalancingType() const noexcept = 0;
 
 	/// Set callback, which move this connection into separate thread
-	virtual void SetRebalanceCallback(std::function<void(IServerConnection *, BalancingType)> cb) = 0;
+	virtual void SetRebalanceCallback(std::function<void(IServerConnection*, BalancingType)> cb) = 0;
 
 	/// @return true if this connection has pending data
 	virtual bool HasPendingData() const noexcept = 0;
@@ -33,10 +33,10 @@ public:
 	/// Restart connection
 	/// @param s - socket of the accepted connection.
 	/// @return true - if successfuly restarted, false - if connection can't be restarted.
-	virtual bool Restart(socket &&s) = 0;
+	virtual bool Restart(socket&& s) = 0;
 	/// Attach connection to another listener loop. Must be called from thread of loop
 	/// @param loop - another loop to bind
-	virtual void Attach(ev::dynamic_loop &loop) = 0;
+	virtual void Attach(ev::dynamic_loop& loop) = 0;
 	/// Detach connection from listener loop. Must  be called from thread of current loop
 	virtual void Detach() = 0;
 };
@@ -45,7 +45,7 @@ public:
 /// @param loop - Current loop of Listener's thread.
 /// @param s - Socket of the accepted connection.
 /// @param allowCustomBalancing - true, if caller supports custom balancing hints
-typedef std::function<IServerConnection *(ev::dynamic_loop &loop, socket &&s, bool allowCustomBalancing)> ConnectionFactory;
+typedef std::function<IServerConnection*(ev::dynamic_loop& loop, socket&& s, bool allowCustomBalancing)> ConnectionFactory;
 
 }  // namespace net
 }  // namespace reindexer

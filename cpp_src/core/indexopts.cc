@@ -68,21 +68,29 @@ void IndexOpts::Dump(T& os) const {
 		needComma = true;
 	}
 	if (IsArray()) {
-		if (needComma) os << ", ";
+		if (needComma) {
+			os << ", ";
+		}
 		os << "Array";
 		needComma = true;
 	}
 	if (IsDense()) {
-		if (needComma) os << ", ";
+		if (needComma) {
+			os << ", ";
+		}
 		os << "Dense";
 		needComma = true;
 	}
 	if (IsSparse()) {
-		if (needComma) os << ", ";
+		if (needComma) {
+			os << ", ";
+		}
 		os << "Sparse";
 		needComma = true;
 	}
-	if (needComma) os << ", ";
+	if (needComma) {
+		os << ", ";
+	}
 	os << RTreeType();
 	if (HasConfig()) {
 		os << ", config: " << config;

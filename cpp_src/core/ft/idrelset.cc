@@ -52,7 +52,9 @@ int IdRelType::Distance(const IdRelType& other, int max) const {
 		int cur = sign ? i->fpos - j->fpos : j->fpos - i->fpos;
 		if (cur < max && cur < (1 << PosType::posBits)) {
 			max = cur;
-			if (max <= 1) break;
+			if (max <= 1) {
+				break;
+			}
 		}
 		(sign) ? j++ : i++;
 	}
@@ -67,7 +69,9 @@ int IdRelType::MinPositionInField(int field) const noexcept {
 	assertrx(lower != pos_.cend() && lower->field() == field);
 	int res = lower->pos();
 	while (++lower != pos_.cend() && lower->field() == field) {
-		if (lower->pos() < res) res = lower->pos();
+		if (lower->pos() < res) {
+			res = lower->pos();
+		}
 	}
 	return res;
 }

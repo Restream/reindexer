@@ -48,7 +48,7 @@ struct SharedWALRecord {
 		p_string nsName, pwalRec;
 	};
 	SharedWALRecord(intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> packed = nullptr) : packed_(std::move(packed)) {}
-	SharedWALRecord(int64_t upstreamLSN, int64_t originLSN, std::string_view nsName, const WALRecord &rec);
+	SharedWALRecord(int64_t upstreamLSN, int64_t originLSN, std::string_view nsName, const WALRecord& rec);
 	Unpacked Unpack();
 
 	intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> packed_;
@@ -62,9 +62,9 @@ struct WALRecord {
 	explicit WALRecord(WALRecType _type, std::string_view key, std::string_view value) : type(_type), itemMeta{key, value} {}
 	explicit WALRecord(WALRecType _type, std::string_view cjson, int tmVersion, int modifyMode, bool inTx = false)
 		: type(_type), itemModify{cjson, tmVersion, modifyMode}, inTransaction(inTx) {}
-	WrSerializer &Dump(WrSerializer &ser, const std::function<std::string(std::string_view)> &cjsonViewer) const;
-	void GetJSON(JsonBuilder &jb, const std::function<std::string(std::string_view)> &cjsonViewer) const;
-	void Pack(WrSerializer &ser) const;
+	WrSerializer& Dump(WrSerializer& ser, const std::function<std::string(std::string_view)>& cjsonViewer) const;
+	void GetJSON(JsonBuilder& jb, const std::function<std::string(std::string_view)>& cjsonViewer) const;
+	void Pack(WrSerializer& ser) const;
 	SharedWALRecord GetShared(int64_t lsn, int64_t upstreamLSN, std::string_view nsName) const;
 
 	WALRecType type;
@@ -91,6 +91,6 @@ struct WALRecord {
 
 struct PackedWALRecord : public h_vector<uint8_t, 12> {
 	using h_vector<uint8_t, 12>::h_vector;
-	void Pack(const WALRecord &rec);
+	void Pack(const WALRecord& rec);
 };
 }  // namespace reindexer

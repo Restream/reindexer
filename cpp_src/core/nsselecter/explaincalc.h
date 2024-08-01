@@ -49,39 +49,55 @@ public:
 	explicit ExplainCalc(bool enable) noexcept : enabled_(enable) {}
 
 	void StartTiming() noexcept {
-		if (enabled_) lap();
+		if (enabled_) {
+			lap();
+		}
 	}
 	void StopTiming() noexcept {
-		if (enabled_) total_ = preselect_ + prepare_ + select_ + postprocess_ + loop_;
+		if (enabled_) {
+			total_ = preselect_ + prepare_ + select_ + postprocess_ + loop_;
+		}
 	}
 	void AddPrepareTime() noexcept {
-		if (enabled_) prepare_ += lap();
+		if (enabled_) {
+			prepare_ += lap();
+		}
 	}
 	void AddSelectTime() noexcept {
-		if (enabled_) select_ += lap();
+		if (enabled_) {
+			select_ += lap();
+		}
 	}
 	void AddPostprocessTime() noexcept {
-		if (enabled_) postprocess_ += lap();
+		if (enabled_) {
+			postprocess_ += lap();
+		}
 	}
 	void AddLoopTime() noexcept {
-		if (enabled_) loop_ += lap();
+		if (enabled_) {
+			loop_ += lap();
+		}
 	}
 	void AddIterations(int iters) noexcept { iters_ += iters; }
 	void StartSort() noexcept {
-		if (enabled_) sort_start_point_ = Clock::now();
+		if (enabled_) {
+			sort_start_point_ = Clock::now();
+		}
 	}
 	void StopSort() noexcept {
-		if (enabled_) sort_ = Clock::now() - sort_start_point_;
+		if (enabled_) {
+			sort_ = Clock::now() - sort_start_point_;
+		}
 	}
 
 	void PutCount(int cnt) noexcept { count_ = cnt; }
 	void PutSortIndex(std::string_view index) noexcept { sortIndex_ = index; }
-	void PutSelectors(const SelectIteratorContainer *qres) noexcept { selectors_ = qres; }
-	void PutJoinedSelectors(const JoinedSelectors *jselectors) noexcept { jselectors_ = jselectors; }
+	void PutSelectors(const SelectIteratorContainer* qres) noexcept { selectors_ = qres; }
+	void PutJoinedSelectors(const JoinedSelectors* jselectors) noexcept { jselectors_ = jselectors; }
 	void SetPreselectTime(Duration preselectTime) noexcept { preselect_ = preselectTime; }
-	void PutOnConditionInjections(const OnConditionInjections *onCondInjections) noexcept { onInjections_ = onCondInjections; }
+	void PutOnConditionInjections(const OnConditionInjections* onCondInjections) noexcept { onInjections_ = onCondInjections; }
 	void SetSortOptimization(bool enable) noexcept { sortOptimization_ = enable; }
-	void SetSubQueriesExplains(std::vector<SubQueryExplain> &&subQueriesExpl) noexcept { subqueries_ = std::move(subQueriesExpl); }
+	void SetSubQueriesExplains(std::vector<SubQueryExplain>&& subQueriesExpl) noexcept { subqueries_ = std::move(subQueriesExpl); }
 
 	void LogDump(int logLevel);
 	std::string GetJSON();

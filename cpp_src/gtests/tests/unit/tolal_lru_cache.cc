@@ -145,7 +145,7 @@ TEST(LruCache, StressTest) {
 		threads.emplace_back([&]() {
 			for (auto i = 0; i < iterCount; i++) {
 				auto idx = rand() % qs.size();
-				auto const& qce = qs.at(idx);
+				const auto& qce = qs.at(idx);
 				QueryCacheKey ckey{qce, kCountCachedKeyMode, static_cast<const CacheJoinedSelectorsMock*>(nullptr)};
 				auto cached = cache.Get(ckey);
 

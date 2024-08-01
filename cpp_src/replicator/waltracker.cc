@@ -10,7 +10,7 @@ namespace reindexer {
 
 WALTracker::WALTracker(int64_t sz) : walSize_(sz) { logPrintf(LogTrace, "[WALTracker] Create LSN=%ld", lsnCounter_); }
 
-WALTracker::WALTracker(const WALTracker &wal, AsyncStorage &storage)
+WALTracker::WALTracker(const WALTracker& wal, AsyncStorage& storage)
 	: records_(wal.records_),
 	  lsnCounter_(wal.lsnCounter_),
 	  walSize_(wal.walSize_),
@@ -18,7 +18,7 @@ WALTracker::WALTracker(const WALTracker &wal, AsyncStorage &storage)
 	  heapSize_(wal.heapSize_),
 	  storage_(&storage) {}
 
-int64_t WALTracker::Add(const WALRecord &rec, lsn_t oldLsn) {
+int64_t WALTracker::Add(const WALRecord& rec, lsn_t oldLsn) {
 	int64_t lsn = lsnCounter_++;
 	if (lsnCounter_ > 1 && walOffset_ == (lsnCounter_ - 1) % walSize_) {
 		walOffset_ = lsnCounter_ % walSize_;
@@ -34,7 +34,7 @@ int64_t WALTracker::Add(const WALRecord &rec, lsn_t oldLsn) {
 	return lsn;
 }
 
-bool WALTracker::Set(const WALRecord &rec, int64_t lsn) {
+bool WALTracker::Set(const WALRecord& rec, int64_t lsn) {
 	if (!available(lsn)) {
 		return false;
 	}
@@ -71,7 +71,7 @@ bool WALTracker::Resize(int64_t sz) {
 	return true;
 }
 
-void WALTracker::Init(int64_t sz, int64_t minLSN, int64_t maxLSN, AsyncStorage &storage) {
+void WALTracker::Init(int64_t sz, int64_t minLSN, int64_t maxLSN, AsyncStorage& storage) {
 	logPrintf(LogTrace, "WALTracker::Init minLSN=%ld, maxLSN=%ld, size=%ld", minLSN, maxLSN, sz);
 	storage_ = &storage;
 
@@ -80,12 +80,12 @@ void WALTracker::Init(int64_t sz, int64_t minLSN, int64_t maxLSN, AsyncStorage &
 										  // new table
 	initPositions(sz, minLSN, maxLSN);
 	// Fill records from storage
-	for (auto &rec : data) {
+	for (auto& rec : data) {
 		Set(WALRecord(std::string_view(rec.second)), rec.first);
 	}
 }
 
-void WALTracker::put(int64_t lsn, const WALRecord &rec) {
+void WALTracker::put(int64_t lsn, const WALRecord& rec) {
 	int64_t pos = lsn % walSize_;
 	if (pos >= int64_t(records_.size())) {
 		records_.resize(uint64_t(pos + 1));
@@ -103,17 +103,21 @@ void WALTracker::writeToStorage(int64_t lsn) {
 	key << kStorageWALPrefix;
 	key.PutUInt32(pos);
 	data.PutUInt64(lsn);
-	data.Write(std::string_view(reinterpret_cast<char *>(records_[pos].data()), records_[pos].size()));
-	if (storage_ && storage_->IsValid()) storage_->WriteSync(StorageOpts(), key.Slice(), data.Slice());
+	data.Write(std::string_view(reinterpret_cast<char*>(records_[pos].data()), records_[pos].size()));
+	if (storage_ && storage_->IsValid()) {
+		storage_->WriteSync(StorageOpts(), key.Slice(), data.Slice());
+	}
 }
 
-std::vector<std::pair<int64_t, std::string>> WALTracker::readFromStorage(int64_t &maxLSN) {
+std::vector<std::pair<int64_t, std::string>> WALTracker::readFromStorage(int64_t& maxLSN) {
 	std::vector<std::pair<int64_t, std::string>> data;
 
 	StorageOpts opts;
 	opts.FillCache(false);
 
-	if (!storage_ || !storage_->IsValid()) return data;
+	if (!storage_ || !storage_->IsValid()) {
+		return data;
+	}
 
 	auto dbIter = storage_->GetCursor(opts);
 	for (dbIter->Seek(kStorageWALPrefix);
@@ -122,7 +126,7 @@ std::vector<std::pair<int64_t, std::string>> WALTracker::readFromStorage(int64_t
 		std::string_view dataSlice = dbIter->Value();
 		if (dataSlice.size() >= sizeof(int64_t)) {
 			// Read LSN
-			const int64_t lsn = *reinterpret_cast<const int64_t *>(dataSlice.data());
+			const int64_t lsn = *reinterpret_cast<const int64_t*>(dataSlice.data());
 			assertrx(lsn >= 0);
 			maxLSN = std::max(maxLSN, lsn);
 			dataSlice = dataSlice.substr(sizeof(lsn));

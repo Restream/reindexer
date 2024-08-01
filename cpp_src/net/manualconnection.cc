@@ -7,14 +7,18 @@ namespace net {
 manual_connection::manual_connection(size_t rd_buf_size, bool enable_stat)
 	: buffered_data_(rd_buf_size), stats_(enable_stat ? new connection_stats_collector : nullptr) {}
 
-void manual_connection::attach(ev::dynamic_loop &loop) noexcept {
+void manual_connection::attach(ev::dynamic_loop& loop) noexcept {
 	assertrx(!attached_);
 	io_.set<manual_connection, &manual_connection::io_callback>(this);
 	io_.set(loop);
 	connect_timer_.set<manual_connection, &manual_connection::connect_timer_cb>(this);
 	connect_timer_.set(loop);
-	if (stats_) stats_->attach(loop);
-	if (cur_events_) io_.start(sock_.fd(), cur_events_);
+	if (stats_) {
+		stats_->attach(loop);
+	}
+	if (cur_events_) {
+		io_.start(sock_.fd(), cur_events_);
+	}
 	attached_ = true;
 }
 
@@ -24,7 +28,9 @@ void manual_connection::detach() noexcept {
 	io_.reset();
 	connect_timer_.stop();
 	connect_timer_.reset();
-	if (stats_) stats_->detach();
+	if (stats_) {
+		stats_->detach();
+	}
 	attached_ = false;
 }
 
@@ -51,13 +57,17 @@ void manual_connection::close_conn(int err) {
 	if (hadWData) {
 		on_async_op_done(w_data_, err);
 	}
-	if (stats_) stats_->stop();
+	if (stats_) {
+		stats_->stop();
+	}
 }
 
-void manual_connection::restart(socket &&s) {
+void manual_connection::restart(socket&& s) {
 	assertrx(!sock_.valid());
 	sock_ = std::move(s);
-	if (stats_) stats_->restart();
+	if (stats_) {
+		stats_->restart();
+	}
 }
 
 int manual_connection::async_connect(std::string_view addr, socket_domain type) noexcept {
@@ -83,7 +93,7 @@ int manual_connection::async_connect(std::string_view addr, socket_domain type) 
 	return 0;
 }
 
-ssize_t manual_connection::write(span<char> wr_buf, transfer_data &transfer, int &err_ref) {
+ssize_t manual_connection::write(span<char> wr_buf, transfer_data& transfer, int& err_ref) {
 	err_ref = 0;
 	ssize_t written = -1;
 	auto cur_buf = wr_buf.subspan(transfer.transfered_size());
@@ -109,7 +119,9 @@ ssize_t manual_connection::write(span<char> wr_buf, transfer_data &transfer, int
 
 	assertrx(wr_buf.size() >= transfer.transfered_size());
 	auto remaining = wr_buf.size() - transfer.transfered_size();
-	if (stats_) stats_->update_write_stats(written, remaining);
+	if (stats_) {
+		stats_->update_write_stats(written, remaining);
+	}
 
 	if (remaining == 0) {
 		on_async_op_done(w_data_, 0);
@@ -117,7 +129,7 @@ ssize_t manual_connection::write(span<char> wr_buf, transfer_data &transfer, int
 	return written;
 }
 
-ssize_t manual_connection::read(span<char> rd_buf, transfer_data &transfer, int &err_ref) {
+ssize_t manual_connection::read(span<char> rd_buf, transfer_data& transfer, int& err_ref) {
 	bool need_read = !transfer.expected_size();
 	ssize_t nread = 0;
 	ssize_t read_this_time = 0;
@@ -133,10 +145,14 @@ ssize_t manual_connection::read(span<char> rd_buf, transfer_data &transfer, int 
 		nread = sock_.recv(it);
 		int err = sock_.last_error();
 
-		if (nread < 0 && err == EINTR) continue;
+		if (nread < 0 && err == EINTR) {
+			continue;
+		}
 
 		if ((nread < 0 && !socket::would_block(err)) || nread == 0) {
-			if (nread == 0) err = k_sock_closed_err;
+			if (nread == 0) {
+				err = k_sock_closed_err;
+			}
 			err_ref = err;
 			close_conn(err);
 			return -1;
@@ -144,7 +160,9 @@ ssize_t manual_connection::read(span<char> rd_buf, transfer_data &transfer, int 
 			need_read = false;
 			read_this_time += nread;
 			buffered_data_.advance_head(nread);
-			if (stats_) stats_->update_read_stats(nread);
+			if (stats_) {
+				stats_->update_read_stats(nread);
+			}
 			if (read_from_buf(rd_buf, transfer, true)) {
 				on_async_op_done(r_data_, 0);
 				return remain_to_transfer;
@@ -158,20 +176,26 @@ ssize_t manual_connection::read(span<char> rd_buf, transfer_data &transfer, int 
 	return read_this_time;
 }
 
-void manual_connection::read_to_buf(int &err_ref) {
+void manual_connection::read_to_buf(int& err_ref) {
 	auto it = buffered_data_.head();
 	ssize_t nread = sock_.recv(it);
 	int err = sock_.last_error();
 
-	if (nread < 0 && err == EINTR) return;
+	if (nread < 0 && err == EINTR) {
+		return;
+	}
 
 	if ((nread < 0 && !socket::would_block(err)) || nread == 0) {
-		if (nread == 0) err = k_sock_closed_err;
+		if (nread == 0) {
+			err = k_sock_closed_err;
+		}
 		err_ref = err;
 		close_conn(err);
 	} else if (nread > 0) {
 		buffered_data_.advance_head(nread);
-		if (stats_) stats_->update_read_stats(nread);
+		if (stats_) {
+			stats_->update_read_stats(nread);
+		}
 	} else {
 		err_ref = err;
 	}
@@ -200,8 +224,10 @@ void manual_connection::set_io_events(int events) noexcept {
 	}
 }
 
-void manual_connection::io_callback(ev::io &, int revents) {
-	if (ev::ERROR & revents) return;
+void manual_connection::io_callback(ev::io&, int revents) {
+	if (ev::ERROR & revents) {
+		return;
+	}
 
 	const auto conn_id = conn_id_;
 	if (revents & ev::READ) {
@@ -219,12 +245,14 @@ void manual_connection::io_callback(ev::io &, int revents) {
 
 	if (sock_.valid()) {
 		int nevents = (r_data_.buf.size() || buffered_data_.available()) ? ev::READ : 0;
-		if (hadWData || w_data_.buf.size()) nevents |= ev::WRITE;
+		if (hadWData || w_data_.buf.size()) {
+			nevents |= ev::WRITE;
+		}
 		set_io_events(nevents);
 	}
 }
 
-void manual_connection::connect_timer_cb(ev::timer &, int) { close_conn(k_connect_timeout_err); }
+void manual_connection::connect_timer_cb(ev::timer&, int) { close_conn(k_connect_timeout_err); }
 
 void manual_connection::write_cb() {
 	if (state_ == conn_state::connecting && sock_.valid()) {
@@ -248,7 +276,7 @@ int manual_connection::read_cb() {
 	return err;
 }
 
-bool manual_connection::read_from_buf(span<char> rd_buf, transfer_data &transfer, bool read_full) noexcept {
+bool manual_connection::read_from_buf(span<char> rd_buf, transfer_data& transfer, bool read_full) noexcept {
 	auto cur_buf = rd_buf.subspan(transfer.transfered_size());
 	const bool will_read_full = read_full && buffered_data_.size() >= cur_buf.size();
 	const bool will_read_any = !read_full && buffered_data_.size();

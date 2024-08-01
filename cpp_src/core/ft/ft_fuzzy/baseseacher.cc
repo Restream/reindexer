@@ -10,9 +10,9 @@ namespace search_engine {
 
 using namespace reindexer;
 
-void BaseSearcher::AddSeacher(ITokenFilter::Ptr &&seacher) { searchers_.push_back(std::move(seacher)); }
+void BaseSearcher::AddSeacher(ITokenFilter::Ptr&& seacher) { searchers_.push_back(std::move(seacher)); }
 
-std::pair<bool, size_t> BaseSearcher::GetData(const BaseHolder::Ptr &holder, unsigned int i, wchar_t *buf, const wchar_t *src_data,
+std::pair<bool, size_t> BaseSearcher::GetData(const BaseHolder::Ptr& holder, unsigned int i, wchar_t* buf, const wchar_t* src_data,
 											  size_t data_size) {
 	size_t counter = 0;
 	size_t final_counter = 0;
@@ -43,8 +43,8 @@ std::pair<bool, size_t> BaseSearcher::GetData(const BaseHolder::Ptr &holder, uns
 	return std::make_pair(cont, counter + final_counter);
 }
 
-size_t BaseSearcher::ParseData(const BaseHolder::Ptr &holder, const std::wstring &src_data, int &max_id, int &min_id,
-							   std::vector<FirstResult> &rusults, const FtDslOpts &opts, double proc) {
+size_t BaseSearcher::ParseData(const BaseHolder::Ptr& holder, const std::wstring& src_data, int& max_id, int& min_id,
+							   std::vector<FirstResult>& rusults, const FtDslOpts& opts, double proc) {
 	wchar_t res_buf[maxFuzzyFTBufferSize];
 	size_t total_size = 0;
 	size_t size = src_data.size();
@@ -56,8 +56,12 @@ size_t BaseSearcher::ParseData(const BaseHolder::Ptr &holder, const std::wstring
 		auto it = holder->GetData(res_buf);
 
 		if (it != holder->end()) {
-			if (it->second.max_id_ > max_id) max_id = it->second.max_id_;
-			if (it->second.min_id_ < min_id) min_id = it->second.min_id_;
+			if (it->second.max_id_ > max_id) {
+				max_id = it->second.max_id_;
+			}
+			if (it->second.min_id_ < min_id) {
+				min_id = it->second.min_id_;
+			}
 			double final_proc = double(holder->cfg_.bufferSize * holder->cfg_.startDecreeseBoost - cont.second) /
 								double(holder->cfg_.bufferSize * holder->cfg_.startDecreeseBoost);
 			rusults.push_back(FirstResult{&it->second, &opts, static_cast<int>(i), proc * final_proc});
@@ -67,8 +71,8 @@ size_t BaseSearcher::ParseData(const BaseHolder::Ptr &holder, const std::wstring
 	return total_size;
 }
 
-SearchResult BaseSearcher::Compare(const BaseHolder::Ptr &holder, const FtDSLQuery &dsl, bool inTransaction,
-								   const reindexer::RdxContext &rdxCtx) {
+SearchResult BaseSearcher::Compare(const BaseHolder::Ptr& holder, const FtDSLQuery& dsl, bool inTransaction,
+								   const reindexer::RdxContext& rdxCtx) {
 	size_t data_size = 0;
 
 	std::vector<FtDSLVariant> data;
@@ -79,8 +83,10 @@ SearchResult BaseSearcher::Compare(const BaseHolder::Ptr &holder, const FtDSLQue
 	int max_id = 0;
 	int min_id = INT32_MAX;
 
-	if (!inTransaction) ThrowOnCancel(rdxCtx);
-	for (auto &term : dsl) {
+	if (!inTransaction) {
+		ThrowOnCancel(rdxCtx);
+	}
+	for (auto& term : dsl) {
 		data_size += ParseData(holder, term.pattern, max_id, min_id, results, term.opts, 1);
 
 		if (holder->cfg_.enableTranslit) {
@@ -117,12 +123,14 @@ SearchResult BaseSearcher::Compare(const BaseHolder::Ptr &holder, const FtDSLQue
 	return res;
 }
 
-void BaseSearcher::AddIndex(BaseHolder::Ptr &holder, std::string_view src_data, const IdType id, int field,
-							const std::string &extraWordSymbols) {
+void BaseSearcher::AddIndex(BaseHolder::Ptr& holder, std::string_view src_data, const IdType id, int field,
+							const std::string& extraWordSymbols) {
 #ifdef FULL_LOG_FT
 	words.push_back(std::make_pair(id, *src_data));
 #endif
-	if (!src_data.length()) return;
+	if (!src_data.length()) {
+		return;
+	}
 	std::pair<PosType, ProcType> pos;
 	pos.first = 0;
 	std::wstring utf16str;
@@ -130,7 +138,7 @@ void BaseSearcher::AddIndex(BaseHolder::Ptr &holder, std::string_view src_data, 
 	split(src_data, utf16str, wrds, extraWordSymbols);
 	wchar_t res_buf[maxFuzzyFTBufferSize];
 	size_t total_size = 0;
-	for (auto &term : wrds) {
+	for (auto& term : wrds) {
 		unsigned int i = 0;
 		std::pair<bool, size_t> cont;
 		do {
@@ -144,5 +152,5 @@ void BaseSearcher::AddIndex(BaseHolder::Ptr &holder, std::string_view src_data, 
 	holder->SetSize(total_size, id, field);
 }
 
-void BaseSearcher::Commit(BaseHolder::Ptr &holder) { holder->Commit(); }
+void BaseSearcher::Commit(BaseHolder::Ptr& holder) { holder->Commit(); }
 }  // namespace search_engine

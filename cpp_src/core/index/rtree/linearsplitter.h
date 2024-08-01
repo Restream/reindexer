@@ -53,7 +53,9 @@ class LinearSplitter : public GuttmanSplitter<Entry, Node, Traits, Iterator, Max
 				newMaxX = appendingRect.Right();
 			}
 			for (size_t i = 0; i <= MaxEntries; ++i) {
-				if (i == minXIdx) continue;
+				if (i == minXIdx) {
+					continue;
+				}
 				const auto currRect = ((i == MaxEntries) ? appendingRect : Base::getBoundRect(src[i]));
 				if (currRect.Left() > newMinX) {
 					newMinX = currRect.Left();
@@ -86,7 +88,9 @@ class LinearSplitter : public GuttmanSplitter<Entry, Node, Traits, Iterator, Max
 				newMaxY = appendingRect.Top();
 			}
 			for (size_t i = 0; i <= MaxEntries; ++i) {
-				if (i == minYIdx) continue;
+				if (i == minYIdx) {
+					continue;
+				}
 				const auto currRect = ((i == MaxEntries) ? appendingRect : Base::getBoundRect(src[i]));
 				if (currRect.Bottom() > newMinY) {
 					newMinY = currRect.Bottom();

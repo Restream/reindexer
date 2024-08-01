@@ -18,7 +18,7 @@ bool ClientConnection::ConnectData::ThereAreReconnectOptions() const { return en
 bool ClientConnection::ConnectData::CurrDsnFailed(int failedDsnIdx) const { return failedDsnIdx == validEntryIdx; }
 int ClientConnection::ConnectData::GetNextDsnIndex() const { return (validEntryIdx.load(std::memory_order_acquire) + 1) % entries.size(); }
 
-ClientConnection::ClientConnection(ev::dynamic_loop &loop, ConnectData *connectData, ConnectionFailCallback connectionFailCallback)
+ClientConnection::ClientConnection(ev::dynamic_loop& loop, ConnectData* connectData, ConnectionFailCallback connectionFailCallback)
 	: ConnectionMT(socket(), loop, false),
 	  state_(ConnInit),
 	  completions_(kMaxCompletions),
@@ -38,7 +38,7 @@ ClientConnection::ClientConnection(ev::dynamic_loop &loop, ConnectData *connectD
 	deadlineTimer_.set<ClientConnection, &ClientConnection::deadline_check_cb>(this);
 	deadlineTimer_.set(loop);
 	reconnect_.set(loop);
-	reconnect_.set([this](ev::async &sig) {
+	reconnect_.set([this](ev::async& sig) {
 		disconnect();
 		sig.loop.break_loop();
 	});
@@ -65,15 +65,17 @@ void ClientConnection::connectInternal() noexcept {
 	mtx_.unlock();
 
 	assertrx(connectData_->validEntryIdx < int(connectData_->entries.size()));
-	ConnectData::Entry &connectEntry = connectData_->entries[actualDsnIdx_];
+	ConnectData::Entry& connectEntry = connectData_->entries[actualDsnIdx_];
 	std::string port = connectEntry.uri.port().length() ? connectEntry.uri.port() : std::string("6534");
 	std::string dbName = connectEntry.uri.path();
 	std::string userName = connectEntry.uri.username();
 	std::string password = connectEntry.uri.password();
-	if (dbName[0] == '/') dbName = dbName.substr(1);
+	if (dbName[0] == '/') {
+		dbName = dbName.substr(1);
+	}
 	enableCompression_ = connectEntry.opts.enableCompression;
 
-	auto completion = [this](const RPCAnswer &ans, ClientConnection *) {
+	auto completion = [this](const RPCAnswer& ans, ClientConnection*) {
 		std::unique_lock<std::mutex> lck(mtx_);
 		lastError_ = ans.Status();
 		state_ = ans.Status().ok() ? ConnConnected : ConnFailed;
@@ -106,16 +108,18 @@ void ClientConnection::connectInternal() noexcept {
 	}
 }
 
-void ClientConnection::failInternal(const Error &error) {
+void ClientConnection::failInternal(const Error& error) {
 	std::unique_lock<std::mutex> lck(mtx_);
-	if (lastError_.ok()) lastError_ = error;
+	if (lastError_.ok()) {
+		lastError_ = error;
+	}
 	closeConn_ = true;
 }
 
 int ClientConnection::PendingCompletions() {
 	int ret = 0;
-	for (auto &c : completions_) {
-		for (RPCCompletion *cc = &c; cc; cc = cc->next.get()) {
+	for (auto& c : completions_) {
+		for (RPCCompletion* cc = &c; cc; cc = cc->next.get()) {
 			if (cc->used) {
 				ret++;
 			}
@@ -148,10 +152,12 @@ Error ClientConnection::CheckConnection() {
 	return lastError_;
 }
 
-void ClientConnection::keep_alive_cb(ev::periodic &, int) {
-	if (terminate_.load(std::memory_order_acquire)) return;
+void ClientConnection::keep_alive_cb(ev::periodic&, int) {
+	if (terminate_.load(std::memory_order_acquire)) {
+		return;
+	}
 	call(
-		[this](RPCAnswer &&ans, ClientConnection *) {
+		[this](RPCAnswer&& ans, ClientConnection*) {
 			if (!ans.Status().ok()) {
 				failInternal(ans.Status());
 				closeConn();
@@ -161,11 +167,13 @@ void ClientConnection::keep_alive_cb(ev::periodic &, int) {
 	callback(io_, ev::WRITE);
 }
 
-void ClientConnection::deadline_check_cb(ev::timer &, int) {
+void ClientConnection::deadline_check_cb(ev::timer&, int) {
 	now_ += kDeadlineCheckInterval;
-	for (auto &c : completions_) {
-		for (RPCCompletion *cc = &c; cc; cc = cc->next.get()) {
-			if (!cc->used) continue;
+	for (auto& c : completions_) {
+		for (RPCCompletion* cc = &c; cc; cc = cc->next.get()) {
+			if (!cc->used) {
+				continue;
+			}
 			bool expired = (cc->deadline.count() && cc->deadline.count() <= now_);
 			if (expired || (cc->cancelCtx && cc->cancelCtx->IsCancelable() && (cc->cancelCtx->GetCancelType() == CancelType::Explicit))) {
 				Error err(expired ? errTimeout : errCanceled, expired ? "Request deadline exceeded" : "Canceled");
@@ -216,11 +224,12 @@ void ClientConnection::onClose() {
 
 		std::unique_lock lck(mtx_);
 		wrBuf_.clear();
-		if (lastError_.ok())
+		if (lastError_.ok()) {
 			lastError_ = Error(errNetwork, "Socket connection to %s closed",
 							   connectData_ && actualDsnIdx_ < int(connectData_->entries.size())
 								   ? connectData_->entries[actualDsnIdx_].uri.hostname()
 								   : "");
+		}
 		closeConn_ = false;
 		State prevState = state_;
 		state_ = ConnClosing;
@@ -230,16 +239,19 @@ void ClientConnection::onClose() {
 		keep_alive_.stop();
 		deadlineTimer_.stop();
 
-		for (auto &c : tmpCompletions) {
-			for (RPCCompletion *cc = &c; cc; cc = cc->next.get())
+		for (auto& c : tmpCompletions) {
+			for (RPCCompletion* cc = &c; cc; cc = cc->next.get()) {
 				if (cc->used && cc->cmd != kCmdLogin && cc->cmd != kCmdPing) {
 					cc->cmpl(RPCAnswer(lastError_), this);
 				}
+			}
 		}
 
 		std::unique_ptr<Completion> tmpUpdatesHandler(updatesHandler_.release(std::memory_order_acq_rel));
 
-		if (tmpUpdatesHandler) (*tmpUpdatesHandler)(RPCAnswer(lastError_), this);
+		if (tmpUpdatesHandler) {
+			(*tmpUpdatesHandler)(RPCAnswer(lastError_), this);
+		}
 		lck.lock();
 		bufCond_.notify_all();
 		lck.unlock();
@@ -264,8 +276,10 @@ ClientConnection::ReadResT ClientConnection::onRead() {
 	std::string uncompressed;
 
 	while (!closeConn_) {
-		auto len = rdBuf_.peek(reinterpret_cast<char *>(&hdr), sizeof(hdr));
-		if (len < sizeof(hdr)) return ReadResT::Default;
+		auto len = rdBuf_.peek(reinterpret_cast<char*>(&hdr), sizeof(hdr));
+		if (len < sizeof(hdr)) {
+			return ReadResT::Default;
+		}
 
 		if (hdr.magic != kCprotoMagic) {
 			failInternal(Error(errNetwork, "Invalid cproto magic=%08x", hdr.magic));
@@ -283,7 +297,9 @@ ClientConnection::ReadResT ClientConnection::onRead() {
 			rdBuf_.reserve(size_t(hdr.len) + sizeof(hdr) + 0x1000);
 		}
 
-		if ((rdBuf_.size() - sizeof(hdr)) < size_t(hdr.len)) return ReadResT::Default;
+		if ((rdBuf_.size() - sizeof(hdr)) < size_t(hdr.len)) {
+			return ReadResT::Default;
+		}
 
 		rdBuf_.erase(sizeof(hdr));
 
@@ -311,7 +327,7 @@ ClientConnection::ReadResT ClientConnection::onRead() {
 				ans.status_ = Error(static_cast<ErrorCode>(errCode), std::string{errMsg});
 			}
 			ans.data_ = span<const uint8_t>(ser.Buf() + ser.Pos(), ser.Len() - ser.Pos());
-		} catch (const Error &err) {
+		} catch (const Error& err) {
 			failInternal(err);
 			return ReadResT::Default;
 		}
@@ -320,14 +336,14 @@ ClientConnection::ReadResT ClientConnection::onRead() {
 			auto handler = updatesHandler_.release(std::memory_order_acq_rel);
 			if (handler) {
 				(*handler)(std::move(ans), this);
-				Completion *expected = nullptr;
+				Completion* expected = nullptr;
 				if (!updatesHandler_.compare_exchange_strong(expected, handler, std::memory_order_acq_rel)) {
 					delete handler;
 				}
 			}
 		} else {
 			auto complPtr = completions_.data();
-			RPCCompletion *completion = &completions_[hdr.seq % completions_.size()];
+			RPCCompletion* completion = &completions_[hdr.seq % completions_.size()];
 
 			for (; completion; completion = completion->next.get()) {
 				if (!completion->used || completion->seq != hdr.seq) {
@@ -380,7 +396,7 @@ Args RPCAnswer::GetArgs(int minArgs) const {
 
 Error RPCAnswer::Status() const { return status_; }
 
-chunk ClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args, const Args &ctxArgs) {
+chunk ClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args& args, const Args& ctxArgs) {
 	CProtoHeader hdr;
 	hdr.len = 0;
 	hdr.magic = kCprotoMagic;
@@ -392,7 +408,7 @@ chunk ClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args, con
 
 	WrSerializer ser(wrBuf_.get_chunk());
 
-	ser.Write(std::string_view(reinterpret_cast<char *>(&hdr), sizeof(hdr)));
+	ser.Write(std::string_view(reinterpret_cast<char*>(&hdr), sizeof(hdr)));
 	args.Pack(ser);
 	ctxArgs.Pack(ser);
 	if (hdr.compressed) {
@@ -403,12 +419,12 @@ chunk ClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args, con
 		ser.Write(compressed);
 	}
 	assertrx(ser.Len() < size_t(std::numeric_limits<int32_t>::max()));
-	reinterpret_cast<CProtoHeader *>(ser.Buf())->len = ser.Len() - sizeof(hdr);
+	reinterpret_cast<CProtoHeader*>(ser.Buf())->len = ser.Len() - sizeof(hdr);
 
 	return ser.DetachChunk();
 }
 
-ClientConnection::CallReturn ClientConnection::call(const Completion &cmpl, const CommandParams &opts, const Args &args) {
+ClientConnection::CallReturn ClientConnection::call(const Completion& cmpl, const CommandParams& opts, const Args& args) {
 	if (opts.cancelCtx) {
 		switch (opts.cancelCtx->GetCancelType()) {
 			case CancelType::Explicit:
@@ -481,7 +497,7 @@ ClientConnection::CallReturn ClientConnection::call(const Completion &cmpl, cons
 				CounterGuardIR32 cg(bufWait_);
 				struct {
 					uint32_t seq;
-					RPCCompletion *cmpl;
+					RPCCompletion* cmpl;
 				} arg = {seq, completion};
 
 				bufCond_.wait(lck, [this, &arg]() {
@@ -504,7 +520,9 @@ ClientConnection::CallReturn ClientConnection::call(const Completion &cmpl, cons
 			completion = &completions_[seq % completions_.size()];
 		}
 		while (completion->used) {
-			if (!completion->next) completion->next.reset(new RPCCompletion);
+			if (!completion->next) {
+				completion->next.reset(new RPCCompletion);
+			}
 			completion = completion->next.get();
 		}
 	}
@@ -518,7 +536,7 @@ ClientConnection::CallReturn ClientConnection::call(const Completion &cmpl, cons
 
 	try {
 		wrBuf_.write(std::move(data));
-	} catch (Error &e) {
+	} catch (Error& e) {
 		fprintf(stderr, "RxClientConnection::wrBuf_.write exception: '%s'\n", e.what().c_str());
 		completion->used = false;
 		lck.unlock();

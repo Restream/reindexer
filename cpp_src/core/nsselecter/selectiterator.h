@@ -23,7 +23,7 @@ public:
 		UnbuiltSortOrdersIndex,
 	};
 
-	SelectIterator(SelectKeyResult &&res, bool dist, std::string &&n, IteratorFieldKind fKind, bool forcedFirst = false) noexcept
+	SelectIterator(SelectKeyResult&& res, bool dist, std::string&& n, IteratorFieldKind fKind, bool forcedFirst = false) noexcept
 		: SelectKeyResult(std::move(res)),
 		  distinct(dist),
 		  name(std::move(n)),
@@ -140,7 +140,9 @@ public:
 				res = nextUnbuiltSortOrders();
 				break;
 		}
-		if (res) ++matchedCount_;
+		if (res) {
+			++matchedCount_;
+		}
 		return res;
 	}
 
@@ -184,9 +186,11 @@ public:
 
 	/// Appends result to an existing set.
 	/// @param other - results to add.
-	void Append(SelectKeyResult &&other) {
+	void Append(SelectKeyResult&& other) {
 		reserve(size() + other.size());
-		for (auto &r : other) emplace_back(std::move(r));
+		for (auto& r : other) {
+			emplace_back(std::move(r));
+		}
 		other.clear();
 	}
 	/// Cost value used for sorting: object with a smaller
@@ -216,7 +220,7 @@ public:
 	/// mode if it's more efficient than just comparing
 	/// each object in sequence.
 	void SetExpectMaxIterations(int expectedIterations) noexcept {
-		for (SingleSelectKeyResult &r : *this) {
+		for (SingleSelectKeyResult& r : *this) {
 			if (!r.isRange_ && r.ids_.size() > 1) {
 				int itersloop = r.ids_.size();
 				int itersbsearch = int((std::log2(r.ids_.size()) - 1) * expectedIterations);
@@ -240,7 +244,9 @@ protected:
 	// from minHint which is the least rowId.
 	// Generic next implementation
 	bool nextFwd(IdType minHint) noexcept {
-		if (minHint > lastVal_) lastVal_ = minHint - 1;
+		if (minHint > lastVal_) {
+			lastVal_ = minHint - 1;
+		}
 		int minVal = INT_MAX;
 		for (auto it = begin(), endIt = end(); it != endIt; ++it) {
 			if (it->useBtree_) {
@@ -274,7 +280,9 @@ protected:
 		return lastVal_ != INT_MAX;
 	}
 	bool nextRev(IdType maxHint) noexcept {
-		if (maxHint < lastVal_) lastVal_ = maxHint + 1;
+		if (maxHint < lastVal_) {
+			lastVal_ = maxHint + 1;
+		}
 
 		int maxVal = INT_MIN;
 		for (auto it = begin(), endIt = end(); it != endIt; ++it) {
@@ -306,18 +314,26 @@ protected:
 	}
 	// Single range next implementation
 	bool nextFwdSingleRange(IdType minHint) noexcept {
-		if (minHint > lastVal_) lastVal_ = minHint - 1;
+		if (minHint > lastVal_) {
+			lastVal_ = minHint - 1;
+		}
 
 		const auto begIt = begin();
-		if (lastVal_ < begIt->rBegin_) lastVal_ = begIt->rBegin_ - 1;
+		if (lastVal_ < begIt->rBegin_) {
+			lastVal_ = begIt->rBegin_ - 1;
+		}
 
 		lastVal_ = (lastVal_ < begIt->rEnd_) ? lastVal_ + 1 : begIt->rEnd_;
-		if (lastVal_ == begIt->rEnd_) lastVal_ = INT_MAX;
+		if (lastVal_ == begIt->rEnd_) {
+			lastVal_ = INT_MAX;
+		}
 		return (lastVal_ != INT_MAX);
 	}
 	// Single idset next implementation
 	bool nextFwdSingleIdset(IdType minHint) noexcept {
-		if (minHint > lastVal_) lastVal_ = minHint - 1;
+		if (minHint > lastVal_) {
+			lastVal_ = minHint - 1;
+		}
 		auto it = begin();
 		if (it->useBtree_) {
 			if (it->itset_ != it->setend_ && *it->itset_ <= lastVal_) {
@@ -338,17 +354,25 @@ protected:
 		return !(lastVal_ == INT_MAX);
 	}
 	bool nextRevSingleRange(IdType maxHint) noexcept {
-		if (maxHint < lastVal_) lastVal_ = maxHint + 1;
+		if (maxHint < lastVal_) {
+			lastVal_ = maxHint + 1;
+		}
 
 		const auto begIt = begin();
-		if (lastVal_ > begIt->rrBegin_) lastVal_ = begIt->rrBegin_ + 1;
+		if (lastVal_ > begIt->rrBegin_) {
+			lastVal_ = begIt->rrBegin_ + 1;
+		}
 
 		lastVal_ = (lastVal_ > begIt->rrEnd_) ? lastVal_ - 1 : begIt->rrEnd_;
-		if (lastVal_ == begIt->rrEnd_) lastVal_ = INT_MIN;
+		if (lastVal_ == begIt->rrEnd_) {
+			lastVal_ = INT_MIN;
+		}
 		return (lastVal_ != INT_MIN);
 	}
 	bool nextRevSingleIdset(IdType maxHint) noexcept {
-		if (maxHint < lastVal_) lastVal_ = maxHint + 1;
+		if (maxHint < lastVal_) {
+			lastVal_ = maxHint + 1;
+		}
 
 		auto it = begin();
 

@@ -50,7 +50,9 @@ std::vector<int> Prefilter::findMin(const std::wstring& data) {
 		for (size_t i = 0; i < data.size() - 1; ++i) {
 			uint32_t hash[2];
 			MurmurHash3_x64_128(data.substr(i, 2).c_str(), data.size() * sizeof(wchar_t), seeds_[g], &hash);
-			if (hash[0] < min_hash) min_hash = hash[0];
+			if (hash[0] < min_hash) {
+				min_hash = hash[0];
+			}
 		}
 		sig[g] = min_hash;
 	}
@@ -64,7 +66,9 @@ double Prefilter::CalcMinDistance(const std::wstring& first, const std::wstring&
 double Prefilter::GetMinDistance(const std::vector<int>& first, const std::vector<int>& second) {
 	size_t dist = 0;
 	for (size_t i = 0; i < first.size(); ++i) {
-		if (first[i] == second[i]) dist++;
+		if (first[i] == second[i]) {
+			dist++;
+		}
 	}
 	return dist / static_cast<double>(seeds_.size());
 }

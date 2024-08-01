@@ -26,36 +26,40 @@ public:
 															typename T::key_type>::type>::type>::type;
 	using key_type = StoreIndexKeyType<T>;
 
-	IndexUnordered(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields, const NamespaceCacheConfigData &cacheCfg);
-	IndexUnordered(const IndexUnordered &other);
+	IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg);
+	IndexUnordered(const IndexUnordered& other);
 
-	Variant Upsert(const Variant &key, IdType id, bool &chearCache) override;
-	void Delete(const Variant &key, IdType id, StringsHolder &, bool &chearCache) override;
-	SelectKeyResults SelectKey(const VariantArray &keys, CondType cond, SortType stype, Index::SelectOpts opts,
-							   const BaseFunctionCtx::Ptr &ctx, const RdxContext &) override;
+	Variant Upsert(const Variant& key, IdType id, bool& chearCache) override;
+	void Delete(const Variant& key, IdType id, StringsHolder&, bool& chearCache) override;
+	SelectKeyResults SelectKey(const VariantArray& keys, CondType cond, SortType stype, Index::SelectOpts opts,
+							   const BaseFunctionCtx::Ptr& ctx, const RdxContext&) override;
 	void Commit() override;
-	void UpdateSortedIds(const UpdateSortedContext &) override;
+	void UpdateSortedIds(const UpdateSortedContext&) override;
 	std::unique_ptr<Index> Clone() const override { return std::make_unique<IndexUnordered<T>>(*this); }
-	IndexMemStat GetMemStat(const RdxContext &) override;
+	IndexMemStat GetMemStat(const RdxContext&) override;
 	size_t Size() const noexcept override final { return idx_map.size(); }
 	void SetSortedIdxCount(int sortedIdxCount) override;
 	bool HoldsStrings() const noexcept override;
 	void DestroyCache() override { cache_.reset(); }
 	void ClearCache() override {
-		if (cache_) cache_->Clear();
+		if (cache_) {
+			cache_->Clear();
+		}
 	}
-	void ClearCache(const std::bitset<kMaxIndexes> &s) override {
-		if (cache_) cache_->ClearSorted(s);
+	void ClearCache(const std::bitset<kMaxIndexes>& s) override {
+		if (cache_) {
+			cache_->ClearSorted(s);
+		}
 	}
-	void Dump(std::ostream &os, std::string_view step = "  ", std::string_view offset = "") const override { dump(os, step, offset); }
+	void Dump(std::ostream& os, std::string_view step = "  ", std::string_view offset = "") const override { dump(os, step, offset); }
 	void EnableUpdatesCountingMode(bool val) noexcept override { tracker_.enableCountingMode(val); }
 
-	void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue &) override;
-	void ReconfigureCache(const NamespaceCacheConfigData &cacheCfg) override;
+	void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue&) override;
+	void ReconfigureCache(const NamespaceCacheConfigData& cacheCfg) override;
 
 protected:
-	bool tryIdsetCache(const VariantArray &keys, CondType condition, SortType sortId,
-					   const std::function<bool(SelectKeyResult &, size_t &)> &selector, SelectKeyResult &res);
+	bool tryIdsetCache(const VariantArray& keys, CondType condition, SortType sortId,
+					   const std::function<bool(SelectKeyResult&, size_t&)>& selector, SelectKeyResult& res);
 	void addMemStat(typename T::iterator it);
 	void delMemStat(typename T::iterator it);
 
@@ -72,12 +76,12 @@ protected:
 
 private:
 	template <typename S>
-	void dump(S &os, std::string_view step, std::string_view offset) const;
+	void dump(S& os, std::string_view step, std::string_view offset) const;
 };
 
 constexpr unsigned maxSelectivityPercentForIdset() noexcept { return 30u; }
 
-std::unique_ptr<Index> IndexUnordered_New(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
-										  const NamespaceCacheConfigData &cacheCfg);
+std::unique_ptr<Index> IndexUnordered_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+										  const NamespaceCacheConfigData& cacheCfg);
 
 }  // namespace reindexer

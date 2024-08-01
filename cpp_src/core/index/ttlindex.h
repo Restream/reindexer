@@ -10,9 +10,9 @@ namespace reindexer {
 template <typename T>
 class TtlIndex : public IndexOrdered<T> {
 public:
-	TtlIndex(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields, const NamespaceCacheConfigData &cacheCfg)
+	TtlIndex(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg)
 		: IndexOrdered<T>(idef, std::move(payloadType), std::move(fields), cacheCfg), expireAfter_(idef.expireAfter_) {}
-	TtlIndex(const TtlIndex<T> &other) : IndexOrdered<T>(other), expireAfter_(other.expireAfter_) {}
+	TtlIndex(const TtlIndex<T>& other) : IndexOrdered<T>(other), expireAfter_(other.expireAfter_) {}
 	int64_t GetTTLValue() const noexcept override { return expireAfter_; }
 	std::unique_ptr<Index> Clone() const override { return std::make_unique<TtlIndex<T>>(*this); }
 	void UpdateExpireAfter(int64_t v) noexcept { expireAfter_ = v; }
@@ -22,8 +22,8 @@ private:
 	int64_t expireAfter_ = 0;
 };
 
-std::unique_ptr<Index> TtlIndex_New(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
-									const NamespaceCacheConfigData &cacheCfg);
-void UpdateExpireAfter(Index *i, int64_t v);
+std::unique_ptr<Index> TtlIndex_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+									const NamespaceCacheConfigData& cacheCfg);
+void UpdateExpireAfter(Index* i, int64_t v);
 
 }  // namespace reindexer

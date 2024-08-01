@@ -7,7 +7,9 @@
 namespace reindexer_server {
 
 DocumentStatus web::fsStatus(const std::string& target) {
-	if (webRoot_.empty()) return DocumentStatus{};
+	if (webRoot_.empty()) {
+		return DocumentStatus{};
+	}
 	DocumentStatus status;
 	status.fstatus = reindexer::fs::Stat(webRoot_ + target);
 	if (status.fstatus == reindexer::fs::StatError) {

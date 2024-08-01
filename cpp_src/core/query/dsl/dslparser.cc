@@ -45,7 +45,7 @@ enum class UpdateField { Name, Type, Values, IsArray };
 enum class UpdateFieldType { Object, Expression, Value };
 
 template <typename T, std::size_t N>
-constexpr auto MakeFastStrMap(std::pair<std::string_view, T> const (&items)[N]) {
+constexpr auto MakeFastStrMap(const std::pair<std::string_view, T> (&items)[N]) {
 	return frozen::make_unordered_map<std::string_view, T>(items, frozen::nocase_hash_str{}, frozen::nocase_equal_str{});
 }
 
@@ -177,11 +177,13 @@ bool checkTag(const JsonValue& val, JsonTag tag, Tags... tags) noexcept {
 
 template <typename... JsonTags>
 void checkJsonValueType(const JsonValue& val, std::string_view name, JsonTags... possibleTags) {
-	if (!checkTag(val, possibleTags...)) throw Error(errParseJson, "Wrong type of field '%s'", name);
+	if (!checkTag(val, possibleTags...)) {
+		throw Error(errParseJson, "Wrong type of field '%s'", name);
+	}
 }
 
 template <typename T, size_t N>
-T get(frozen::unordered_map<std::string_view, T, N, frozen::nocase_hash_str, frozen::nocase_equal_str> const& m, std::string_view name,
+T get(const frozen::unordered_map<std::string_view, T, N, frozen::nocase_hash_str, frozen::nocase_equal_str>& m, std::string_view name,
 	  std::string_view mapName) {
 	auto it = m.find(name);
 	if (it == m.end()) {
@@ -235,7 +237,9 @@ static void parseSortEntry(const JsonValue& entry, SortingEntries& sortingEntrie
 		std::string_view name = subelement.key;
 		switch (get<Sort>(kSortMap, name, "sort"sv)) {
 			case Sort::Desc:
-				if ((v.getTag() != JSON_TRUE) && (v.getTag() != JSON_FALSE)) throw Error(errParseJson, "Wrong type of field '%s'", name);
+				if ((v.getTag() != JSON_TRUE) && (v.getTag() != JSON_FALSE)) {
+					throw Error(errParseJson, "Wrong type of field '%s'", name);
+				}
 				sortingEntry.desc = (v.getTag() == JSON_TRUE);
 				break;
 
@@ -259,7 +263,9 @@ static void parseSortEntry(const JsonValue& entry, SortingEntries& sortingEntrie
 
 static void parseSort(const JsonValue& v, SortingEntries& sortingEntries, std::vector<Variant>& forcedSortOrder) {
 	if (v.getTag() == JSON_ARRAY) {
-		for (auto entry : v) parseSort(entry.value, sortingEntries, forcedSortOrder);
+		for (auto entry : v) {
+			parseSort(entry.value, sortingEntries, forcedSortOrder);
+		}
 	} else if (v.getTag() == JSON_OBJECT) {
 		parseSortEntry(v, sortingEntries, forcedSortOrder);
 	} else {
@@ -326,7 +332,9 @@ static void parseFilter(const JsonValue& filter, Query& q, std::vector<std::pair
 				checkJsonValueType(v, name, JSON_ARRAY);
 				q.NextOp(op).OpenBracket();
 				const auto bracketPosition = q.Entries().Size();
-				for (const auto& f : v) parseFilter(f.value, q, equalPositions, bracketPosition);
+				for (const auto& f : v) {
+					parseFilter(f.value, q, equalPositions, bracketPosition);
+				}
 				q.CloseBracket();
 				entryType = BRACKET;
 				break;
@@ -353,7 +361,9 @@ static void parseFilter(const JsonValue& filter, Query& q, std::vector<std::pair
 		}
 		++elemsParsed;
 	}
-	if (elemsParsed == 0) return;
+	if (elemsParsed == 0) {
+		return;
+	}
 
 	switch (entryType) {
 		case ENTRY:
@@ -447,7 +457,9 @@ void parseSingleJoinQuery(const JsonValue& join, Query& query) {
 				break;
 			case JoinRoot::Filters:
 				checkJsonValueType(value, name, JSON_ARRAY);
-				for (const auto& filter : value) parseFilter(filter.value, qjoin, equalPositions, 0);
+				for (const auto& filter : value) {
+					parseFilter(filter.value, qjoin, equalPositions, 0);
+				}
 				break;
 			case JoinRoot::Sort:
 				parseSort(value, qjoin.sortingEntries_, qjoin.forcedSortOrder_);
@@ -510,7 +522,9 @@ static void parseAggregation(const JsonValue& aggregation, Query& query) {
 			case Aggregation::Fields:
 				checkJsonValueType(value, name, JSON_ARRAY);
 				for (const auto& subElem : value) {
-					if (subElem.value.getTag() != JSON_STRING) throw Error(errParseJson, "Expected string in array 'fields'");
+					if (subElem.value.getTag() != JSON_STRING) {
+						throw Error(errParseJson, "Expected string in array 'fields'");
+					}
 					fields.emplace_back(subElem.value.toString());
 				}
 				break;
@@ -607,8 +621,9 @@ static void parseUpdateFields(const JsonValue& updateFields, Query& query) {
 					break;
 			}
 		}
-		if (isExpression && (values.size() != 1 || !values.front().Type().template Is<KeyValueType::String>()))
+		if (isExpression && (values.size() != 1 || !values.front().Type().template Is<KeyValueType::String>())) {
 			throw Error(errParseDSL, R"(The array "values" must contain only a string type value for the type "expression")");
+		}
 
 		if (isObject) {
 			query.SetObject(fieldName, std::move(values));
@@ -645,7 +660,9 @@ void parse(const JsonValue& root, Query& q) {
 
 			case Root::Filters:
 				checkJsonValueType(v, name, JSON_ARRAY);
-				for (const auto& filter : v) parseFilter(filter.value, q, equalPositions, 0);
+				for (const auto& filter : v) {
+					parseFilter(filter.value, q, equalPositions, 0);
+				}
 				break;
 
 			case Root::Sort:
@@ -675,7 +692,9 @@ void parse(const JsonValue& root, Query& q) {
 				break;
 			case Root::Aggregations:
 				checkJsonValueType(v, name, JSON_ARRAY);
-				for (const auto& aggregation : v) parseAggregation(aggregation.value, q);
+				for (const auto& aggregation : v) {
+					parseAggregation(aggregation.value, q);
+				}
 				break;
 			case Root::Explain:
 				checkJsonValueType(v, name, JSON_FALSE, JSON_TRUE);
@@ -683,7 +702,9 @@ void parse(const JsonValue& root, Query& q) {
 				break;
 			case Root::WithRank:
 				checkJsonValueType(v, name, JSON_FALSE, JSON_TRUE);
-				if (v.getTag() == JSON_TRUE) q.WithRank();
+				if (v.getTag() == JSON_TRUE) {
+					q.WithRank();
+				}
 				break;
 			case Root::StrictMode:
 				checkJsonValueType(v, name, JSON_STRING);
@@ -729,7 +750,9 @@ Error Parse(std::string_view str, Query& q) {
 		gason::JsonParser parser;
 		auto root = parser.Parse(str);
 		Error err = schemaChecker.Check(root);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 		dsl::parse(root.value, q);
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "Query: %s", ex.what());

@@ -7,14 +7,14 @@
 namespace reindexer {
 
 template <>
-IndexStore<Point>::IndexStore(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields)
+IndexStore<Point>::IndexStore(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields)
 	: Index(idef, std::move(payloadType), std::move(fields)) {
 	keyType_ = selectKeyType_ = KeyValueType::Double{};
 	opts_.Array(true);
 }
 
 template <>
-void IndexStore<key_string>::Delete(const Variant &key, IdType /*id*/, StringsHolder &strHolder, bool & /*clearCache*/) {
+void IndexStore<key_string>::Delete(const Variant& key, IdType /*id*/, StringsHolder& strHolder, bool& /*clearCache*/) {
 	assertrx_dbg(!IsFulltext());
 	if (key.Type().Is<KeyValueType::Null>()) {
 		return;
@@ -36,26 +36,28 @@ void IndexStore<key_string>::Delete(const Variant &key, IdType /*id*/, StringsHo
 	}
 }
 template <typename T>
-void IndexStore<T>::Delete(const Variant & /*key*/, IdType /* id */, StringsHolder &, bool & /*clearCache*/) {
+void IndexStore<T>::Delete(const Variant& /*key*/, IdType /* id */, StringsHolder&, bool& /*clearCache*/) {
 	assertrx_dbg(!IsFulltext());
 }
 
 template <typename T>
-void IndexStore<T>::Delete(const VariantArray &keys, IdType id, StringsHolder &strHolder, bool &clearCache) {
+void IndexStore<T>::Delete(const VariantArray& keys, IdType id, StringsHolder& strHolder, bool& clearCache) {
 	if (keys.empty()) {
 		Delete(Variant{}, id, strHolder, clearCache);
 	} else {
-		for (const auto &key : keys) Delete(key, id, strHolder, clearCache);
+		for (const auto& key : keys) {
+			Delete(key, id, strHolder, clearCache);
+		}
 	}
 }
 
 template <>
-void IndexStore<Point>::Delete(const VariantArray & /*keys*/, IdType /*id*/, StringsHolder &, bool & /*clearCache*/) {
+void IndexStore<Point>::Delete(const VariantArray& /*keys*/, IdType /*id*/, StringsHolder&, bool& /*clearCache*/) {
 	assertrx(0);
 }
 
 template <>
-Variant IndexStore<key_string>::Upsert(const Variant &key, IdType id, bool & /*clearCache*/) {
+Variant IndexStore<key_string>::Upsert(const Variant& key, IdType id, bool& /*clearCache*/) {
 	assertrx_dbg(!IsFulltext());
 	if (key.Type().Is<KeyValueType::Null>()) {
 		return Variant();
@@ -85,12 +87,12 @@ Variant IndexStore<key_string>::Upsert(const Variant &key, IdType id, bool & /*c
 }
 
 template <>
-Variant IndexStore<PayloadValue>::Upsert(const Variant &key, IdType /*id*/, bool & /*clearCache*/) {
+Variant IndexStore<PayloadValue>::Upsert(const Variant& key, IdType /*id*/, bool& /*clearCache*/) {
 	return key;
 }
 
 template <typename T>
-Variant IndexStore<T>::Upsert(const Variant &key, IdType id, bool & /*clearCache*/) {
+Variant IndexStore<T>::Upsert(const Variant& key, IdType id, bool& /*clearCache*/) {
 	if (!opts_.IsArray() && !opts_.IsDense() && !opts_.IsSparse() && !key.Type().Is<KeyValueType::Null>()) {
 		idx_data.resize(std::max(id + 1, IdType(idx_data.size())));
 		idx_data[id] = static_cast<T>(key);
@@ -99,17 +101,19 @@ Variant IndexStore<T>::Upsert(const Variant &key, IdType id, bool & /*clearCache
 }
 
 template <typename T>
-void IndexStore<T>::Upsert(VariantArray &result, const VariantArray &keys, IdType id, bool &clearCache) {
+void IndexStore<T>::Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) {
 	if (keys.empty()) {
 		Upsert(Variant{}, id, clearCache);
 	} else {
 		result.reserve(keys.size());
-		for (const auto &key : keys) result.emplace_back(Upsert(key, id, clearCache));
+		for (const auto& key : keys) {
+			result.emplace_back(Upsert(key, id, clearCache));
+		}
 	}
 }
 
 template <>
-void IndexStore<Point>::Upsert(VariantArray & /*result*/, const VariantArray & /*keys*/, IdType /*id*/, bool & /*clearCache*/) {
+void IndexStore<Point>::Upsert(VariantArray& /*result*/, const VariantArray& /*keys*/, IdType /*id*/, bool& /*clearCache*/) {
 	assertrx(0);
 }
 
@@ -119,8 +123,8 @@ void IndexStore<T>::Commit() {
 }
 
 template <typename T>
-SelectKeyResults IndexStore<T>::SelectKey(const VariantArray &keys, CondType condition, SortType /*sortId*/, Index::SelectOpts sopts,
-										  const BaseFunctionCtx::Ptr & /*ctx*/, const RdxContext &rdxCtx) {
+SelectKeyResults IndexStore<T>::SelectKey(const VariantArray& keys, CondType condition, SortType /*sortId*/, Index::SelectOpts sopts,
+										  const BaseFunctionCtx::Ptr& /*ctx*/, const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 	if (condition == CondEmpty && !this->opts_.IsArray() && !this->opts_.IsSparse()) {
 		throw Error(errParams, "The 'is NULL' condition is suported only by 'sparse' or 'array' indexes");
@@ -136,7 +140,7 @@ SelectKeyResults IndexStore<T>::SelectKey(const VariantArray &keys, CondType con
 }
 
 template <typename T>
-IndexMemStat IndexStore<T>::GetMemStat(const RdxContext &) {
+IndexMemStat IndexStore<T>::GetMemStat(const RdxContext&) {
 	IndexMemStat ret = memStat_;
 	ret.name = name_;
 	ret.uniqKeysCount = str_map.size();
@@ -146,26 +150,30 @@ IndexMemStat IndexStore<T>::GetMemStat(const RdxContext &) {
 
 template <typename T>
 template <typename S>
-void IndexStore<T>::dump(S &os, std::string_view step, std::string_view offset) const {
+void IndexStore<T>::dump(S& os, std::string_view step, std::string_view offset) const {
 	std::string newOffset{offset};
 	newOffset += step;
 	os << "{\n" << newOffset << "<Index>: ";
 	Index::Dump(os, step, newOffset);
 	os << ",\n" << newOffset << "str_map: {";
 	for (auto b = str_map.begin(), it = b, e = str_map.end(); it != e; ++it) {
-		if (it != b) os << ", ";
+		if (it != b) {
+			os << ", ";
+		}
 		os << '{' << (*it).first << ": " << (*it).second << '}';
 	}
 	os << "},\n" << newOffset << "idx_data: [";
 	for (auto b = idx_data.cbegin(), it = b, e = idx_data.cend(); it != e; ++it) {
-		if (it != b) os << ", ";
+		if (it != b) {
+			os << ", ";
+		}
 		os << *it;
 	}
 	os << "]\n" << offset << '}';
 }
 
 template <typename T>
-void IndexStore<T>::AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue &q) {
+void IndexStore<T>::AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue& q) {
 	if constexpr (HasAddTask<decltype(str_map)>::value) {
 		str_map.add_destroy_task(&q);
 	}
@@ -177,7 +185,7 @@ bool IndexStore<T>::shouldHoldValueInStrMap() const noexcept {
 	return this->opts_.GetCollateMode() != CollateNone || Type() == IndexStrStore;
 }
 
-std::unique_ptr<Index> IndexStore_New(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields) {
+std::unique_ptr<Index> IndexStore_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields) {
 	switch (idef.Type()) {
 		case IndexBool:
 			return std::make_unique<IndexStore<bool>>(idef, std::move(payloadType), std::move(fields));

@@ -66,14 +66,18 @@ public:
 	// Assign operator overloading from const std::reverse_iterator<U>
 	template <typename U>
 	trivial_reverse_iterator& operator=(const std::reverse_iterator<U>& u) noexcept {
-		if (current_ != u.base()) current_ = u.base();
+		if (current_ != u.base()) {
+			current_ = u.base();
+		}
 		return *this;
 	}
 
 	// Assign operator overloading from non-const std::reverse_iterator<U>
 	template <typename U>
 	trivial_reverse_iterator& operator=(std::reverse_iterator<U>& u) noexcept {
-		if (current_ != u.base()) current_ = u.base();
+		if (current_ != u.base()) {
+			current_ = u.base();
+		}
 		return *this;
 	}
 

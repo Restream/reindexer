@@ -320,7 +320,9 @@ double ExpressionEvaluator::performMultiplicationAndDivision(tokenizer& parser, 
 			// tok.text() == "/"sv
 			parser.next_token(tokenizer::flags::treat_sign_as_token);
 			const double val = performMultiplicationAndDivision(parser, v, tok);
-			if (val == 0) throw Error(errLogic, "Division by zero!");
+			if (val == 0) {
+				throw Error(errLogic, "Division by zero!");
+			}
 			left /= val;
 		}
 	}

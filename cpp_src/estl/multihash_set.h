@@ -79,7 +79,9 @@ public:
 			}
 		}
 		for (size_t i = 0; i < N; ++i) {
-			if (i == firstIdx) continue;
+			if (i == firstIdx) {
+				continue;
+			}
 			size_t hash;
 			try {
 				hash = H::hash(i, k) % capacity_;

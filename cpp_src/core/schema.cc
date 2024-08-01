@@ -38,13 +38,17 @@ void SchemaFieldsTypes::AddField(KeyValueType type, bool isArray) { types_[tagsP
 
 bool SchemaFieldsTypes::NeedToEmbedType(const std::string& objectType) const noexcept {
 	auto it = objectTypes_.find(objectType);
-	if (it == objectTypes_.end()) return false;
+	if (it == objectTypes_.end()) {
+		return false;
+	}
 	return it->second < int(tagsPath_.size());
 }
 
 KeyValueType SchemaFieldsTypes::GetField(const TagsPath& fieldPath, bool& isArray) const {
 	auto it = types_.find(fieldPath);
-	if (it == types_.end()) return KeyValueType::Undefined{};
+	if (it == types_.end()) {
+		return KeyValueType::Undefined{};
+	}
 	isArray = it->second.isArray_;
 	return it->second.type_;
 }
@@ -222,7 +226,9 @@ Error PrefixTree::buildProtobufSchema(ProtobufSchemaBuilder& builder, const Pref
 			const std::unique_ptr<PrefixTreeNode>& node = child.second;
 
 			std::string path = basePath;
-			if (path.size() > 0) path += ".";
+			if (path.size() > 0) {
+				path += ".";
+			}
 			path += name;
 
 			int fieldNumber = tm.name2tag(name, true);

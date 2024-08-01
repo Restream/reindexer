@@ -5,46 +5,48 @@
 
 namespace reindexer {
 
-MsgPackBuilder::MsgPackBuilder(WrSerializer &wrser, ObjType type, size_t size)
+MsgPackBuilder::MsgPackBuilder(WrSerializer& wrser, ObjType type, size_t size)
 	: tm_(nullptr), tagsLengths_(nullptr), type_(type), tagIndex_(nullptr) {
-	msgpack_packer_init(&packer_, reinterpret_cast<void *>(&wrser), msgpack_wrserializer_write);
+	msgpack_packer_init(&packer_, reinterpret_cast<void*>(&wrser), msgpack_wrserializer_write);
 	init(size);
 }
 
-MsgPackBuilder::MsgPackBuilder(msgpack_packer &packer, ObjType type, size_t size)
+MsgPackBuilder::MsgPackBuilder(msgpack_packer& packer, ObjType type, size_t size)
 	: tm_(nullptr), packer_(packer), tagsLengths_(nullptr), type_(type), tagIndex_(nullptr) {
 	init(size);
 }
 
-MsgPackBuilder::MsgPackBuilder(WrSerializer &wrser, const TagsLengths *tagsLengths, int *startTag, ObjType type, const TagsMatcher *tm)
+MsgPackBuilder::MsgPackBuilder(WrSerializer& wrser, const TagsLengths* tagsLengths, int* startTag, ObjType type, const TagsMatcher* tm)
 	: tm_(tm), tagsLengths_(tagsLengths), type_(type), tagIndex_(startTag) {
 	assertrx(startTag);
-	msgpack_packer_init(&packer_, reinterpret_cast<void *>(&wrser), msgpack_wrserializer_write);
+	msgpack_packer_init(&packer_, reinterpret_cast<void*>(&wrser), msgpack_wrserializer_write);
 	init(KUnknownFieldSize);
 }
 
-MsgPackBuilder::MsgPackBuilder(msgpack_packer &packer, const TagsLengths *tagsLengths, int *startTag, ObjType type, const TagsMatcher *tm)
+MsgPackBuilder::MsgPackBuilder(msgpack_packer& packer, const TagsLengths* tagsLengths, int* startTag, ObjType type, const TagsMatcher* tm)
 	: tm_(tm), packer_(packer), tagsLengths_(tagsLengths), type_(type), tagIndex_(startTag) {
 	assertrx(startTag);
 	init(KUnknownFieldSize);
 }
 
-void MsgPackBuilder::Array(int tagName, Serializer &ser, TagType tagType, int count) {
+void MsgPackBuilder::Array(int tagName, Serializer& ser, TagType tagType, int count) {
 	checkIfCorrectArray(tagName);
 	skipTag();
 	packKeyName(tagName);
 	packArray(count);
-	while (count--) packCJsonValue(tagType, ser);
+	while (count--) {
+		packCJsonValue(tagType, ser);
+	}
 }
 
-MsgPackBuilder &MsgPackBuilder::Json(std::string_view name, std::string_view arg) {
+MsgPackBuilder& MsgPackBuilder::Json(std::string_view name, std::string_view arg) {
 	gason::JsonParser parser;
 	auto root = parser.Parse(arg);
 	appendJsonObject(name, root);
 	return *this;
 }
 
-MsgPackBuilder &MsgPackBuilder::End() {
+MsgPackBuilder& MsgPackBuilder::End() {
 	switch (type_) {
 		case ObjType::TypeObjectArray:
 		case ObjType::TypeArray:
@@ -77,7 +79,7 @@ void MsgPackBuilder::init(int size) {
 	}
 }
 
-void MsgPackBuilder::packCJsonValue(TagType tagType, Serializer &rdser) {
+void MsgPackBuilder::packCJsonValue(TagType tagType, Serializer& rdser) {
 	switch (tagType) {
 		case TAG_DOUBLE:
 			packValue(rdser.GetDouble());
@@ -104,7 +106,7 @@ void MsgPackBuilder::packCJsonValue(TagType tagType, Serializer &rdser) {
 	}
 }
 
-void MsgPackBuilder::appendJsonObject(std::string_view name, const gason::JsonNode &obj) {
+void MsgPackBuilder::appendJsonObject(std::string_view name, const gason::JsonNode& obj) {
 	auto type = obj.value.getTag();
 	switch (type) {
 		case gason::JSON_STRING: {
@@ -122,18 +124,18 @@ void MsgPackBuilder::appendJsonObject(std::string_view name, const gason::JsonNo
 		case gason::JSON_OBJECT:
 		case gason::JSON_ARRAY: {
 			int size = 0;
-			for (const auto &node : obj) {
+			for (const auto& node : obj) {
 				(void)node;
 				++size;
 			}
 			if (type == gason::JSON_OBJECT) {
 				auto pack = Object(name, size);
-				for (const auto &node : obj) {
+				for (const auto& node : obj) {
 					pack.appendJsonObject(std::string_view(node.key), node);
 				}
 			} else {
 				auto pack = Array(name, size);
-				for (const auto &node : obj) {
+				for (const auto& node : obj) {
 					pack.appendJsonObject(std::string_view(), node);
 				}
 			}

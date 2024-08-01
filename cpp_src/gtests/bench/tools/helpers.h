@@ -21,7 +21,9 @@ struct to_array_helper {
 	static VariantArray to_array(const std::vector<T>& vec) {
 		VariantArray krs;
 		krs.reserve(vec.size());
-		for (auto& value : vec) krs.push_back(Variant{value});
+		for (auto& value : vec) {
+			krs.push_back(Variant{value});
+		}
 		return krs;
 	}
 };
@@ -31,7 +33,9 @@ struct to_array_helper<std::string> {
 	static VariantArray to_array(const std::vector<std::string>& vec) {
 		VariantArray krs;
 		krs.reserve(vec.size());
-		for (auto& value : vec) krs.push_back(Variant{p_string(value.c_str())});
+		for (auto& value : vec) {
+			krs.push_back(Variant{p_string(value.c_str())});
+		}
 		return krs;
 	}
 };
@@ -41,7 +45,9 @@ struct to_array_helper<std::string> {
 static inline std::string randString(size_t size) {
 	constexpr static std::string_view ch{"qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"};
 	std::string ret(size, ' ');
-	for (size_t i = 0; i < size; ++i) ret[i] = ch[rand() % ch.size()];
+	for (size_t i = 0; i < size; ++i) {
+		ret[i] = ch[rand() % ch.size()];
+	}
 	return ret;
 }
 
@@ -112,7 +118,9 @@ template <typename T>
 std::vector<T> randomNumArray(int count, int start, int region) {
 	std::vector<T> result;
 	result.reserve(count);
-	for (int i = 0; i < count; i++) result.emplace_back(random<T>(start, start + region));
+	for (int i = 0; i < count; i++) {
+		result.emplace_back(random<T>(start, start + region));
+	}
 	return result;
 }
 

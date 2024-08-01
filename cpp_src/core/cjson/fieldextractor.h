@@ -10,21 +10,21 @@ class FieldsExtractor {
 public:
 	class FieldParams {
 	public:
-		int &index;
-		int &length;
+		int& index;
+		int& length;
 		int field;
 	};
 
 	FieldsExtractor() = default;
-	FieldsExtractor(VariantArray *va, KeyValueType expectedType, int expectedPathDepth, const FieldsSet *filter,
-					FieldParams *params = nullptr) noexcept
+	FieldsExtractor(VariantArray* va, KeyValueType expectedType, int expectedPathDepth, const FieldsSet* filter,
+					FieldParams* params = nullptr) noexcept
 		: values_(va), expectedType_(expectedType), expectedPathDepth_(expectedPathDepth), filter_(filter), params_(params) {}
-	FieldsExtractor(FieldsExtractor &&other) = default;
-	FieldsExtractor(const FieldsExtractor &) = delete;
-	FieldsExtractor &operator=(const FieldsExtractor &) = delete;
-	FieldsExtractor &operator=(FieldsExtractor &&) = delete;
+	FieldsExtractor(FieldsExtractor&& other) = default;
+	FieldsExtractor(const FieldsExtractor&) = delete;
+	FieldsExtractor& operator=(const FieldsExtractor&) = delete;
+	FieldsExtractor& operator=(FieldsExtractor&&) = delete;
 
-	void SetTagsMatcher(const TagsMatcher *) noexcept {}
+	void SetTagsMatcher(const TagsMatcher*) noexcept {}
 
 	FieldsExtractor Object(int) noexcept { return FieldsExtractor(values_, expectedType_, expectedPathDepth_ - 1, filter_, params_); }
 	FieldsExtractor Array(int) noexcept {
@@ -41,7 +41,7 @@ public:
 
 	template <typename T>
 	void Array(int, span<T> data, int offset) {
-		const IndexedPathNode &pathNode = getArrayPathNode();
+		const IndexedPathNode& pathNode = getArrayPathNode();
 		const PathType ptype = pathNotToType(pathNode);
 		if (ptype == PathType::Other) {
 			throw Error(errLogic, "Unable to extract array value without index value");
@@ -60,13 +60,13 @@ public:
 
 		if (ptype == PathType::WithIndex) {
 			int i = 0;
-			for (const auto &d : data) {
+			for (const auto& d : data) {
 				if (i++ == pathNode.Index()) {
 					put(0, Variant(d));
 				}
 			}
 		} else {
-			for (const auto &d : data) {
+			for (const auto& d : data) {
 				put(0, Variant(d));
 			}
 		}
@@ -76,8 +76,8 @@ public:
 		}
 	}
 
-	void Array(int, Serializer &ser, TagType tagType, int count) {
-		const IndexedPathNode &pathNode = getArrayPathNode();
+	void Array(int, Serializer& ser, TagType tagType, int count) {
+		const IndexedPathNode& pathNode = getArrayPathNode();
 		const PathType ptype = pathNotToType(pathNode);
 		if (ptype == PathType::Other) {
 			throw Error(errLogic, "Unable to extract array value without index value");
@@ -112,8 +112,10 @@ public:
 		}
 	}
 
-	FieldsExtractor &Put(int t, Variant arg, int offset) {
-		if (expectedPathDepth_ > 0) return *this;
+	FieldsExtractor& Put(int t, Variant arg, int offset) {
+		if (expectedPathDepth_ > 0) {
+			return *this;
+		}
 		if (params_) {
 			if (params_->index >= 0 && params_->length > 0 && offset == params_->index + params_->length) {
 				// Concatenate fields from objects, nested in arrays
@@ -127,11 +129,11 @@ public:
 	}
 
 	template <typename T>
-	FieldsExtractor &Put(int tag, const T &arg, int offset) {
+	FieldsExtractor& Put(int tag, const T& arg, int offset) {
 		return Put(tag, Variant{arg}, offset);
 	}
 
-	FieldsExtractor &Null(int) noexcept { return *this; }
+	FieldsExtractor& Null(int) noexcept { return *this; }
 	int TargetField() { return params_ ? params_->field : IndexValueType::NotSet; }
 	bool IsHavingOffset() const noexcept { return params_ && (params_->length >= 0 || params_->index >= 0); }
 	void OnScopeEnd(int offset) noexcept {
@@ -144,41 +146,47 @@ public:
 
 private:
 	enum class PathType { AllItems, WithIndex, Other };
-	PathType pathNotToType(const IndexedPathNode &pathNode) noexcept {
+	PathType pathNotToType(const IndexedPathNode& pathNode) noexcept {
 		return pathNode.IsForAllItems()						  ? PathType::AllItems
 			   : (pathNode.Index() == IndexValueType::NotSet) ? PathType::Other
 															  : PathType::WithIndex;
 	}
-	FieldsExtractor &put(int, Variant arg) {
-		if (expectedPathDepth_ > 0) return *this;
+	FieldsExtractor& put(int, Variant arg) {
+		if (expectedPathDepth_ > 0) {
+			return *this;
+		}
 		expectedType_.EvaluateOneOf(
 			[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::String,
 					  KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Uuid>) { arg.convert(expectedType_); },
 			[](OneOf<KeyValueType::Undefined, KeyValueType::Composite>) noexcept {});
 		assertrx_throw(values_);
 		values_->emplace_back(std::move(arg));
-		if (expectedPathDepth_ < 0) values_->MarkObject();
+		if (expectedPathDepth_ < 0) {
+			values_->MarkObject();
+		}
 		return *this;
 	}
 
-	const IndexedPathNode &getArrayPathNode() const {
+	const IndexedPathNode& getArrayPathNode() const {
 		if (filter_ && filter_->getTagsPathsLength() > 0) {
 			size_t lastItemIndex = filter_->getTagsPathsLength() - 1;
 			if (filter_->isTagsPathIndexed(lastItemIndex)) {
-				const IndexedTagsPath &path = filter_->getIndexedTagsPath(lastItemIndex);
+				const IndexedTagsPath& path = filter_->getIndexedTagsPath(lastItemIndex);
 				assertrx(path.size() > 0);
-				if (path.back().IsArrayNode()) return path.back();
+				if (path.back().IsArrayNode()) {
+					return path.back();
+				}
 			}
 		}
 		static const IndexedPathNode commonNode{IndexedPathNode::AllItems};
 		return commonNode;
 	}
 
-	VariantArray *values_ = nullptr;
+	VariantArray* values_ = nullptr;
 	KeyValueType expectedType_{KeyValueType::Undefined{}};
 	int expectedPathDepth_ = 0;
-	const FieldsSet *filter_;
-	FieldParams *params_;
+	const FieldsSet* filter_;
+	FieldParams* params_;
 };
 
 }  // namespace reindexer

@@ -21,12 +21,12 @@ COPY --from=build /usr/local /usr/local
 COPY --from=build /entrypoint.sh /entrypoint.sh
 RUN apt update -y && apt install -y libleveldb1d libunwind8 libjemalloc2 libgrpc++1.51 && rm -rf /var/lib/apt
 
-ENV RX_DATABASE /db
-ENV RX_CORELOG stdout
-ENV RX_HTTPLOG stdout
-ENV RX_RPCLOG stdout
-ENV RX_SERVERLOG stdout
-ENV RX_LOGLEVEL info
+ENV RX_DATABASE=/db
+ENV RX_CORELOG=stdout
+ENV RX_HTTPLOG=stdout
+ENV RX_RPCLOG=stdout
+ENV RX_SERVERLOG=stdout
+ENV RX_LOGLEVEL=info
 
 RUN chmod +x /entrypoint.sh
 

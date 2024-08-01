@@ -50,7 +50,9 @@ std::string IDataHolder::Dump() {
 	size_t counter = 0;
 	for (auto& step : steps) {
 		ss << "Step : " << std::to_string(counter);
-		if (!step.suffixes_.word_size()) ss << " - empty step";
+		if (!step.suffixes_.word_size()) {
+			ss << " - empty step";
+		}
 		ss << std::endl;
 		for (size_t i = 0; i < step.suffixes_.word_size(); i++) {
 			ss << step.suffixes_.word_at(i) << std::endl;
@@ -72,7 +74,9 @@ void IDataHolder::throwStepsOverflow() const {
 WordIdType IDataHolder::findWord(std::string_view word) {
 	WordIdType id;
 	id.SetEmpty();
-	if (steps.size() <= 1) return id;
+	if (steps.size() <= 1) {
+		return id;
+	}
 
 	for (auto step = steps.begin(); step != steps.end() - 1; ++step) {
 		auto it = step->suffixes_.lower_bound(word);

@@ -62,7 +62,9 @@ TableViewScroller<QueryResultsT>::TableViewScroller(const QueryResultsT& r, rein
 
 template <typename QueryResultsT>
 void TableViewScroller<QueryResultsT>::Scroll(Output& output, const std::function<bool(void)>& isCanceled) {
-	if (isCanceled()) return;
+	if (isCanceled()) {
+		return;
+	}
 
 	reindexer::TerminalSize terminalSize = reindexer::getTerminalSize();
 	reindexer::TableCalculator<QueryResultsT> tableCalculator(r_, terminalSize.width);
@@ -71,7 +73,9 @@ void TableViewScroller<QueryResultsT>::Scroll(Output& output, const std::functio
 
 #ifndef WIN32
 	FILE* pfile = nullptr;
-	if (viaMoreCmd) pfile = popen("more", "w");
+	if (viaMoreCmd) {
+		pfile = popen("more", "w");
+	}
 #else
 	viaMoreCmd = false;
 #endif
@@ -96,7 +100,9 @@ void TableViewScroller<QueryResultsT>::Scroll(Output& output, const std::functio
 	}
 
 #ifndef WIN32
-	if (pfile) pclose(pfile);
+	if (pfile) {
+		pclose(pfile);
+	}
 #endif
 }
 

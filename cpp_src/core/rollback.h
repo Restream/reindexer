@@ -8,10 +8,10 @@ class RollBackBase {
 protected:
 	RollBackBase() noexcept = default;
 	virtual ~RollBackBase() = default;
-	RollBackBase(RollBackBase &&other) noexcept : disabled_{other.disabled_} { other.Disable(); }
-	RollBackBase(const RollBackBase &) = delete;
-	RollBackBase &operator=(const RollBackBase &) = delete;
-	RollBackBase &operator=(RollBackBase &&) = delete;
+	RollBackBase(RollBackBase&& other) noexcept : disabled_{other.disabled_} { other.Disable(); }
+	RollBackBase(const RollBackBase&) = delete;
+	RollBackBase& operator=(const RollBackBase&) = delete;
+	RollBackBase& operator=(RollBackBase&&) = delete;
 	virtual void Disable() noexcept { disabled_ = true; }
 	[[nodiscard]] bool IsDisabled() const noexcept { return disabled_; }
 

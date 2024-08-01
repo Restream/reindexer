@@ -9,8 +9,8 @@
 namespace reindexer_tool {
 
 #if REINDEX_WITH_REPLXX
-typedef std::function<replxx::Replxx::completions_t(std::string const&, int, void*)> old_v_callback_t;
-typedef std::function<replxx::Replxx::completions_t(std::string const& input, int& contextLen)> new_v_callback_t;
+typedef std::function<replxx::Replxx::completions_t(const std::string&, int, void*)> old_v_callback_t;
+typedef std::function<replxx::Replxx::completions_t(const std::string& input, int& contextLen)> new_v_callback_t;
 #endif	// REINDEX_WITH_REPLXX
 
 template <typename DBInterface>
@@ -35,9 +35,9 @@ protected:
 
 #if REINDEX_WITH_REPLXX
 	template <typename T>
-	void setCompletionCallback(T& rx, void (T::*set_completion_callback)(new_v_callback_t const&));
+	void setCompletionCallback(T& rx, void (T::*set_completion_callback)(const new_v_callback_t&));
 	template <typename T>
-	void setCompletionCallback(T& rx, void (T::*set_completion_callback)(old_v_callback_t const&, void*));
+	void setCompletionCallback(T& rx, void (T::*set_completion_callback)(const old_v_callback_t&, void*));
 #endif	// REINDEX_WITH_REPLXX
 
 	Error process(const std::string& command);

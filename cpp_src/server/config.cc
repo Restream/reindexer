@@ -54,29 +54,29 @@ void ServerConfig::Reset() {
 	AllocatorCachePart = -1;
 }
 
-reindexer::Error ServerConfig::ParseYaml(const std::string &yaml) {
+reindexer::Error ServerConfig::ParseYaml(const std::string& yaml) {
 	Error err;
 	try {
 		YAML::Node root = YAML::Load(yaml);
 		err = fromYaml(root);
-	} catch (const YAML::Exception &ex) {
+	} catch (const YAML::Exception& ex) {
 		err = Error(errParams, "Error with config string. Reason: '%s'", ex.what());
 	}
 	return err;
 }
 
-Error ServerConfig::ParseFile(const std::string &filePath) {
+Error ServerConfig::ParseFile(const std::string& filePath) {
 	Error err;
 	try {
 		YAML::Node root = YAML::LoadFile(filePath);
 		err = fromYaml(root);
-	} catch (const YAML::Exception &ex) {
+	} catch (const YAML::Exception& ex) {
 		err = Error(errParams, "Error with config file '%s'. Reason: %s", filePath, ex.what());
 	}
 	return err;
 }
 
-Error ServerConfig::ParseCmd(int argc, char *argv[]) {
+Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	using reindexer::fs::GetDirPath;
 #ifndef LINK_RESOURCES
 	WebRoot = GetDirPath(argv[0]);
@@ -93,7 +93,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::ValueFlag<std::string> storageF(dbGroup, "PATH", "path to 'reindexer' storage", {'s', "db"}, StoragePath, args::Options::Single);
 	auto availableStorageTypes = reindexer::datastorage::StorageFactory::getAvailableTypes();
 	std::string availabledStorages;
-	for (const auto &type : availableStorageTypes) {
+	for (const auto& type : availableStorageTypes) {
 		if (!availabledStorages.empty()) {
 			availabledStorages.append(", ");
 		}
@@ -192,72 +192,152 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 
 	try {
 		parser.ParseCLI(argc, argv);
-	} catch (const args::Help &) {
+	} catch (const args::Help&) {
 		return Error(errLogic, parser.Help());
-	} catch (const args::Error &e) {
+	} catch (const args::Error& e) {
 		return Error(errParams, "%s\n%s", e.what(), parser.Help());
 	}
 
 	if (configF) {
 		auto err = ParseFile(args::get(configF));
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 	}
 
-	if (storageF) StoragePath = args::get(storageF);
-	if (storageEngineF) StorageEngine = args::get(storageEngineF);
-	if (startWithErrorsF) StartWithErrors = args::get(startWithErrorsF);
-	if (autorepairF) Autorepair = args::get(autorepairF);
-	if (disableNamespaceLeakF) AllowNamespaceLeak = !args::get(disableNamespaceLeakF);
-	if (logLevelF) LogLevel = args::get(logLevelF);
-	if (httpAddrF) HTTPAddr = args::get(httpAddrF);
-	if (rpcAddrF) RPCAddr = args::get(rpcAddrF);
+	if (storageF) {
+		StoragePath = args::get(storageF);
+	}
+	if (storageEngineF) {
+		StorageEngine = args::get(storageEngineF);
+	}
+	if (startWithErrorsF) {
+		StartWithErrors = args::get(startWithErrorsF);
+	}
+	if (autorepairF) {
+		Autorepair = args::get(autorepairF);
+	}
+	if (disableNamespaceLeakF) {
+		AllowNamespaceLeak = !args::get(disableNamespaceLeakF);
+	}
+	if (logLevelF) {
+		LogLevel = args::get(logLevelF);
+	}
+	if (httpAddrF) {
+		HTTPAddr = args::get(httpAddrF);
+	}
+	if (rpcAddrF) {
+		RPCAddr = args::get(rpcAddrF);
+	}
 
-	if (rpcThreadingModeF) RPCThreadingMode = args::get(rpcThreadingModeF);
-	if (httpThreadingModeF) HttpThreadingMode = args::get(httpThreadingModeF);
-	if (webRootF) WebRoot = args::get(webRootF);
-	if (MaxHttpReqSizeF) MaxHttpReqSize = args::get(MaxHttpReqSizeF);
+	if (rpcThreadingModeF) {
+		RPCThreadingMode = args::get(rpcThreadingModeF);
+	}
+	if (httpThreadingModeF) {
+		HttpThreadingMode = args::get(httpThreadingModeF);
+	}
+	if (webRootF) {
+		WebRoot = args::get(webRootF);
+	}
+	if (MaxHttpReqSizeF) {
+		MaxHttpReqSize = args::get(MaxHttpReqSizeF);
+	}
 #ifndef _WIN32
-	if (rpcUnixAddrF) RPCUnixAddr = args::get(rpcUnixAddrF);
-	if (rpcUnixThreadingModeF) RPCUnixThreadingMode = args::get(rpcUnixThreadingModeF);
-	if (userF) UserName = args::get(userF);
-	if (daemonizeF) Daemonize = args::get(daemonizeF);
-	if (daemonPidFileF) DaemonPidFile = args::get(daemonPidFileF);
+	if (rpcUnixAddrF) {
+		RPCUnixAddr = args::get(rpcUnixAddrF);
+	}
+	if (rpcUnixThreadingModeF) {
+		RPCUnixThreadingMode = args::get(rpcUnixThreadingModeF);
+	}
+	if (userF) {
+		UserName = args::get(userF);
+	}
+	if (daemonizeF) {
+		Daemonize = args::get(daemonizeF);
+	}
+	if (daemonPidFileF) {
+		DaemonPidFile = args::get(daemonPidFileF);
+	}
 #else
-	if (installF) InstallSvc = args::get(installF);
-	if (removeF) RemoveSvc = args::get(removeF);
-	if (serviceF) SvcMode = args::get(serviceF);
+	if (installF) {
+		InstallSvc = args::get(installF);
+	}
+	if (removeF) {
+		RemoveSvc = args::get(removeF);
+	}
+	if (serviceF) {
+		SvcMode = args::get(serviceF);
+	}
 
 #endif
 
 #if REINDEX_WITH_GPERFTOOLS
-	if (allocatorCacheLimit) AllocatorCacheLimit = args::get(allocatorCacheLimit);
-	if (allocatorCachePart) AllocatorCachePart = args::get(allocatorCachePart);
+	if (allocatorCacheLimit) {
+		AllocatorCacheLimit = args::get(allocatorCacheLimit);
+	}
+	if (allocatorCachePart) {
+		AllocatorCachePart = args::get(allocatorCachePart);
+	}
 #endif
 
-	if (securityF) EnableSecurity = args::get(securityF);
+	if (securityF) {
+		EnableSecurity = args::get(securityF);
+	}
 #if defined(WITH_GRPC)
-	if (grpcF) EnableGRPC = args::get(grpcF);
-	if (grpcAddrF) GRPCAddr = args::get(grpcAddrF);
+	if (grpcF) {
+		EnableGRPC = args::get(grpcF);
+	}
+	if (grpcAddrF) {
+		GRPCAddr = args::get(grpcAddrF);
+	}
 #endif
-	if (serverLogF) ServerLog = args::get(serverLogF);
-	if (coreLogF) CoreLog = args::get(coreLogF);
-	if (httpLogF) HttpLog = args::get(httpLogF);
-	if (rpcLogF) RpcLog = args::get(rpcLogF);
-	if (pprofF) DebugPprof = args::get(pprofF);
-	if (prometheusF) EnablePrometheus = args::get(prometheusF);
-	if (prometheusPeriodF) PrometheusCollectPeriod = std::chrono::milliseconds(args::get(prometheusPeriodF));
-	if (clientsConnectionsStatF) EnableConnectionsStats = args::get(clientsConnectionsStatF);
-	if (httpReadTimeoutF) HttpReadTimeout = std::chrono::seconds(args::get(httpReadTimeoutF));
-	if (httpWriteTimeoutF) HttpWriteTimeout = std::chrono::seconds(args::get(httpWriteTimeoutF));
-	if (logAllocsF) DebugAllocs = args::get(logAllocsF);
-	if (txIdleTimeoutF) TxIdleTimeout = std::chrono::seconds(args::get(txIdleTimeoutF));
-	if (rpcQrIdleTimeoutF) RPCQrIdleTimeout = std::chrono::seconds(args::get(rpcQrIdleTimeoutF));
-	if (maxUpdatesSizeF) MaxUpdatesSize = args::get(maxUpdatesSizeF);
+	if (serverLogF) {
+		ServerLog = args::get(serverLogF);
+	}
+	if (coreLogF) {
+		CoreLog = args::get(coreLogF);
+	}
+	if (httpLogF) {
+		HttpLog = args::get(httpLogF);
+	}
+	if (rpcLogF) {
+		RpcLog = args::get(rpcLogF);
+	}
+	if (pprofF) {
+		DebugPprof = args::get(pprofF);
+	}
+	if (prometheusF) {
+		EnablePrometheus = args::get(prometheusF);
+	}
+	if (prometheusPeriodF) {
+		PrometheusCollectPeriod = std::chrono::milliseconds(args::get(prometheusPeriodF));
+	}
+	if (clientsConnectionsStatF) {
+		EnableConnectionsStats = args::get(clientsConnectionsStatF);
+	}
+	if (httpReadTimeoutF) {
+		HttpReadTimeout = std::chrono::seconds(args::get(httpReadTimeoutF));
+	}
+	if (httpWriteTimeoutF) {
+		HttpWriteTimeout = std::chrono::seconds(args::get(httpWriteTimeoutF));
+	}
+	if (logAllocsF) {
+		DebugAllocs = args::get(logAllocsF);
+	}
+	if (txIdleTimeoutF) {
+		TxIdleTimeout = std::chrono::seconds(args::get(txIdleTimeoutF));
+	}
+	if (rpcQrIdleTimeoutF) {
+		RPCQrIdleTimeout = std::chrono::seconds(args::get(rpcQrIdleTimeoutF));
+	}
+	if (maxUpdatesSizeF) {
+		MaxUpdatesSize = args::get(maxUpdatesSizeF);
+	}
 
 	return {};
 }
 
-reindexer::Error ServerConfig::fromYaml(YAML::Node &root) {
+reindexer::Error ServerConfig::fromYaml(YAML::Node& root) {
 	try {
 		AllowNamespaceLeak = root["db"]["ns_leak"].as<bool>(AllowNamespaceLeak);
 		StoragePath = root["storage"]["path"].as<std::string>(StoragePath);
@@ -298,7 +378,7 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node &root) {
 
 		DebugAllocs = root["debug"]["allocs"].as<bool>(DebugAllocs);
 		DebugPprof = root["debug"]["pprof"].as<bool>(DebugPprof);
-	} catch (const YAML::Exception &ex) {
+	} catch (const YAML::Exception& ex) {
 		return Error(errParams, "Unable to parse YML server config: %s", ex.what());
 	}
 	return {};

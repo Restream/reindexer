@@ -55,7 +55,9 @@ TerminalSize getTerminalSize() {
 	const int fds[] = {STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO};
 	for (const int fd : fds) {
 		err = getTerminalSize(fd, size.width, size.height);
-		if (err.ok()) break;
+		if (err.ok()) {
+			break;
+		}
 	}
 #endif
 	if (!err.ok()) {

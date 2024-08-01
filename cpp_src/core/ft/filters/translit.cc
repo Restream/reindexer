@@ -10,7 +10,7 @@ Translit::Translit() {
 	PrepareEnglish();
 }
 
-void Translit::GetVariants(const std::wstring &data, std::vector<FtDSLVariant> &result, int proc) {
+void Translit::GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& result, int proc) {
 	std::wstring strings[maxTranslitVariants];
 	Context ctx;
 	if (data.length()) {
@@ -33,7 +33,7 @@ void Translit::GetVariants(const std::wstring &data, std::vector<FtDSLVariant> &
 			for (int j = 0; j < maxTranslitVariants; ++j) {
 				auto sym = GetEnglish(symbol, j, ctx);
 				if (sym.second) {
-					auto &str = strings[j];
+					auto& str = strings[j];
 					if (sym.first) {
 						str.erase(str.end() - sym.first, str.end());
 					}
@@ -51,7 +51,7 @@ void Translit::GetVariants(const std::wstring &data, std::vector<FtDSLVariant> &
 	}
 	int64_t lastResultIdx = -1;
 	for (int i = 0; i < maxTranslitVariants; ++i) {
-		auto &current = strings[i];
+		auto& current = strings[i];
 		for (int j = i + 1; j < maxTranslitVariants; ++j) {
 			if (current == strings[j]) {
 				current.clear();
@@ -65,16 +65,20 @@ void Translit::GetVariants(const std::wstring &data, std::vector<FtDSLVariant> &
 	}
 }
 
-std::pair<uint8_t, wchar_t> Translit::GetEnglish(wchar_t symbol, size_t variant, Context &ctx) {
+std::pair<uint8_t, wchar_t> Translit::GetEnglish(wchar_t symbol, size_t variant, Context& ctx) {
 	assertrx(symbol != 0 && symbol >= enLettersStartUTF16 && symbol - enLettersStartUTF16 < enAlfavitSize);
 
 	if (variant == 1 && ctx.GetCount() > 0) {
 		auto sym = en_d_buf_[ctx.GetLast()][symbol - enLettersStartUTF16];
-		if (sym) return {1, sym};
+		if (sym) {
+			return {1, sym};
+		}
 	} else if (variant == 2 && ctx.GetCount() > 1) {
 		auto sym = en_t_buf_[ctx.GetPrevios()][ctx.GetLast()][symbol - enLettersStartUTF16];
 		ctx.Set(symbol - enLettersStartUTF16);
-		if (sym) return {2, sym};
+		if (sym) {
+			return {2, sym};
+		}
 	}
 
 	if (variant == 2) {

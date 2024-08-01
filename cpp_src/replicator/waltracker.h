@@ -14,24 +14,24 @@ class AsyncStorage;
 class WALTracker {
 public:
 	explicit WALTracker(int64_t sz);
-	WALTracker(const WALTracker &) = delete;
-	WALTracker(const WALTracker &wal, AsyncStorage &storage);
+	WALTracker(const WALTracker&) = delete;
+	WALTracker(const WALTracker& wal, AsyncStorage& storage);
 	/// Initialize WAL tracker.
 	/// @param sz - Max WAL size
 	/// @param minLSN - Min available LSN number
 	/// @param maxLSN - Current LSN counter value
 	/// @param storage - Storage object for store WAL records
-	void Init(int64_t sz, int64_t minLSN, int64_t maxLSN, AsyncStorage &storage);
+	void Init(int64_t sz, int64_t minLSN, int64_t maxLSN, AsyncStorage& storage);
 	/// Add new record to WAL tracker
 	/// @param rec - Record to be added
 	/// @param oldLsn - Optional, previous LSN value of changed object
 	/// @return LSN value of record
-	int64_t Add(const WALRecord &rec, lsn_t oldLsn = lsn_t());
+	int64_t Add(const WALRecord& rec, lsn_t oldLsn = lsn_t());
 	/// Set record in WAL tracker
 	/// @param rec - Record to be added
 	/// @param lsn - LSN value
 	/// @return true if set successful, false, if lsn is outdated
-	bool Set(const WALRecord &rec, int64_t lsn);
+	bool Set(const WALRecord& rec, int64_t lsn);
 	/// Get current LSN counter value
 	/// @return current LSN counter value
 	int64_t LSNCounter() const { return lsnCounter_; }
@@ -46,11 +46,11 @@ public:
 	/// Iterator for WAL records
 	class iterator {
 	public:
-		iterator &operator++() noexcept {
+		iterator& operator++() noexcept {
 			++idx_;
 			return *this;
 		}
-		bool operator!=(const iterator &other) const noexcept { return idx_ != other.idx_; }
+		bool operator!=(const iterator& other) const noexcept { return idx_ != other.idx_; }
 		WALRecord operator*() const {
 			assertf(idx_ % wt_->walSize_ < int(wt_->records_.size()), "idx=%d,wt_->records_.size()=%d,lsnCounter=%d", idx_,
 					wt_->records_.size(), wt_->lsnCounter_);
@@ -60,7 +60,7 @@ public:
 		span<const uint8_t> GetRaw() const noexcept { return wt_->records_[idx_ % wt_->walSize_]; }
 		int64_t GetLSN() const noexcept { return idx_; }
 		int64_t idx_;
-		const WALTracker *wt_;
+		const WALTracker* wt_;
 	};
 
 	/// Get end iterator
@@ -96,13 +96,13 @@ protected:
 	/// put WAL record into lsn position, grow ring buffer, if neccessary
 	/// @param lsn LSN value
 	/// @param rec - Record to be added
-	void put(int64_t lsn, const WALRecord &rec);
+	void put(int64_t lsn, const WALRecord& rec);
 	/// check if lsn is available. e.g. in range of ring buffer
 	bool available(int64_t lsn) const { return lsn < lsnCounter_ && lsnCounter_ - lsn <= size(); }
 	/// flushes lsn value to storage
 	/// @param lsn - lsn value
 	void writeToStorage(int64_t lsn);
-	std::vector<std::pair<int64_t, std::string>> readFromStorage(int64_t &maxLsn);
+	std::vector<std::pair<int64_t, std::string>> readFromStorage(int64_t& maxLsn);
 	void initPositions(int64_t sz, int64_t minLSN, int64_t maxLSN);
 
 	/// Ring buffer of WAL records
@@ -116,7 +116,7 @@ protected:
 	/// Cached heap size of WAL object
 	size_t heapSize_ = 0;
 
-	AsyncStorage *storage_ = nullptr;
+	AsyncStorage* storage_ = nullptr;
 };
 
 }  // namespace reindexer

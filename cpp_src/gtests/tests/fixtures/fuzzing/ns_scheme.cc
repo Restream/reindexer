@@ -29,14 +29,18 @@ void NsScheme::NewItem(reindexer::WrSerializer& ser, RandomGenerator& rnd, const
 }
 
 bool NsScheme::IsStruct(const FieldPath& path) const noexcept {
-	if (path.empty()) return true;
+	if (path.empty()) {
+		return true;
+	}
 	const Node::Children& ref = findLastContainer(path);
 	assertrx(ref.size() > path.back());
 	return std::holds_alternative<Node::Children>(ref[path.back()].content);
 }
 
 bool NsScheme::IsPoint(const FieldPath& path) const noexcept {
-	if (path.empty()) return false;
+	if (path.empty()) {
+		return false;
+	}
 	const Node::Children& ref = findLastContainer(path);
 	assertrx(ref.size() > path.back());
 	return !std::holds_alternative<Node::Children>(ref[path.back()].content) &&
@@ -54,7 +58,9 @@ bool NsScheme::isTtl(const std::vector<size_t>& idxNumbers, const std::vector<In
 }
 
 bool NsScheme::IsTtl(const FieldPath& path, const std::vector<Index>& indexes) const noexcept {
-	if (path.empty()) return false;
+	if (path.empty()) {
+		return false;
+	}
 	const Node::Children& ref = findLastContainer(path);
 	assertrx(ref.size() > path.back());
 	if (std::holds_alternative<Node::Children>(ref[path.back()].content)) {
@@ -78,12 +84,16 @@ size_t NsScheme::FieldsCount(const FieldPath& path) const noexcept {
 }
 
 IsArrayT NsScheme::IsArray(const FieldPath& path) const noexcept {
-	if (path.empty()) return ns_.array;
+	if (path.empty()) {
+		return ns_.array;
+	}
 	const Node::Children* ptr = &std::get<Node::Children>(ns_.content);
 	for (size_t i = 0, s = path.size() - 1; i < s; ++i) {
 		assertrx(ptr->size() > path[i]);
 		const auto& idx = (*ptr)[path[i]];
-		if (idx.array == IsArrayT::Yes) return IsArrayT::Yes;
+		if (idx.array == IsArrayT::Yes) {
+			return IsArrayT::Yes;
+		}
 		std::visit(
 			reindexer::overloaded{[&ptr](const Node::Children& c) noexcept { ptr = &c; }, [](const Node::Child&) noexcept { assertrx(0); }},
 			idx.content);
@@ -110,7 +120,9 @@ void NsScheme::SetFieldType(const FieldPath& path, FieldType ft) noexcept {
 }
 
 std::string NsScheme::GetJsonPath(const FieldPath& path) const noexcept {
-	if (path.empty()) return {};
+	if (path.empty()) {
+		return {};
+	}
 	std::string res;
 	const Node::Children* ptr = &std::get<Node::Children>(ns_.content);
 	for (size_t i = 0, s = path.size() - 1; i < s; ++i) {
@@ -255,7 +267,9 @@ void NsScheme::rndValueToJson(reindexer::JsonBuilder& builder, FieldType ft, std
 void NsScheme::toJson(reindexer::JsonBuilder& builder, const Node::Children& children, RandomGenerator& rnd,
 					  const std::vector<Index>& indexes) {
 	for (const Node& n : children) {
-		if (!rnd.NeedThisNode(n.sparse)) continue;
+		if (!rnd.NeedThisNode(n.sparse)) {
+			continue;
+		}
 		if (rnd.RndArrayField(n.array) == IsArrayT::Yes) {
 			auto arr = builder.Array(n.name);
 			const size_t arrSize = rnd.ArraySize();
@@ -289,27 +303,45 @@ void NsScheme::toJson(reindexer::JsonBuilder& builder, const Node::Children& chi
 }
 
 void NsScheme::Node::Dump(std::ostream& os, size_t offset) const {
-	for (size_t i = 0; i < offset; ++i) os << "  ";
+	for (size_t i = 0; i < offset; ++i) {
+		os << "  ";
+	}
 	os << "{\n";
-	for (size_t i = 0; i <= offset; ++i) os << "  ";
+	for (size_t i = 0; i <= offset; ++i) {
+		os << "  ";
+	}
 	os << "name: " << name << '\n';
-	for (size_t i = 0; i <= offset; ++i) os << "  ";
+	for (size_t i = 0; i <= offset; ++i) {
+		os << "  ";
+	}
 	os << "sparse: " << std::boolalpha << (sparse == IsSparseT::Yes) << '\n';
-	for (size_t i = 0; i <= offset; ++i) os << "  ";
+	for (size_t i = 0; i <= offset; ++i) {
+		os << "  ";
+	}
 	os << "array: " << std::boolalpha << (array == IsArrayT::Yes) << '\n';
 	std::visit(reindexer::overloaded{[&](const Child& child) {
-										 for (size_t i = 0; i <= offset; ++i) os << "  ";
+										 for (size_t i = 0; i <= offset; ++i) {
+											 os << "  ";
+										 }
 										 os << "type: " << child.type << '\n';
 									 },
 									 [&](const Children& children) {
-										 for (size_t i = 0; i <= offset; ++i) os << "  ";
+										 for (size_t i = 0; i <= offset; ++i) {
+											 os << "  ";
+										 }
 										 os << "fields: [\n";
-										 for (const Node& n : children) n.Dump(os, offset + 2);
-										 for (size_t i = 0; i <= offset; ++i) os << "  ";
+										 for (const Node& n : children) {
+											 n.Dump(os, offset + 2);
+										 }
+										 for (size_t i = 0; i <= offset; ++i) {
+											 os << "  ";
+										 }
 										 os << "]\n";
 									 }},
 			   content);
-	for (size_t i = 0; i < offset; ++i) os << "  ";
+	for (size_t i = 0; i < offset; ++i) {
+		os << "  ";
+	}
 	os << "}\n";
 }
 

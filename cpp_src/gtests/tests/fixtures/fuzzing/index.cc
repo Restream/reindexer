@@ -47,45 +47,79 @@ reindexer::IndexDef Index::IndexDef(RandomGenerator& rnd, const NsScheme& scheme
 }
 
 void Index::Dump(std::ostream& os, const NsScheme& scheme, size_t offset) const {
-	for (size_t i = 0; i < offset; ++i) os << "  ";
+	for (size_t i = 0; i < offset; ++i) {
+		os << "  ";
+	}
 	os << "{\n";
-	for (size_t i = 0; i <= offset; ++i) os << "  ";
+	for (size_t i = 0; i <= offset; ++i) {
+		os << "  ";
+	}
 	os << "name: " << name_ << '\n';
-	for (size_t i = 0; i <= offset; ++i) os << "  ";
+	for (size_t i = 0; i <= offset; ++i) {
+		os << "  ";
+	}
 	os << "type: " << type_ << '\n';
-	for (size_t i = 0; i <= offset; ++i) os << "  ";
+	for (size_t i = 0; i <= offset; ++i) {
+		os << "  ";
+	}
 	os << "pk: " << std::boolalpha << isPk_ << '\n';
-	for (size_t i = 0; i <= offset; ++i) os << "  ";
+	for (size_t i = 0; i <= offset; ++i) {
+		os << "  ";
+	}
 	os << "array: " << std::boolalpha << IsArray() << '\n';
-	for (size_t i = 0; i <= offset; ++i) os << "  ";
+	for (size_t i = 0; i <= offset; ++i) {
+		os << "  ";
+	}
 	os << "sparse: " << std::boolalpha << (IsSparse() == IsSparseT::Yes) << '\n';
-	for (size_t i = 0; i <= offset; ++i) os << "  ";
+	for (size_t i = 0; i <= offset; ++i) {
+		os << "  ";
+	}
 	std::visit(reindexer::overloaded{[&](const Child& child) {
 										 os << "composite: false\n";
-										 for (size_t i = 0; i <= offset; ++i) os << "  ";
+										 for (size_t i = 0; i <= offset; ++i) {
+											 os << "  ";
+										 }
 										 os << "field: {\n";
-										 for (size_t i = 0; i < offset + 2; ++i) os << "  ";
+										 for (size_t i = 0; i < offset + 2; ++i) {
+											 os << "  ";
+										 }
 										 os << "type: " << child.type << '\n';
-										 for (size_t i = 0; i < offset + 2; ++i) os << "  ";
+										 for (size_t i = 0; i < offset + 2; ++i) {
+											 os << "  ";
+										 }
 										 os << "json: " << scheme.GetJsonPath(child.fieldPath) << '\n';
-										 for (size_t i = 0; i <= offset; ++i) os << "  ";
+										 for (size_t i = 0; i <= offset; ++i) {
+											 os << "  ";
+										 }
 										 os << "}\n";
 									 },
 									 [&](const Children& children) {
 										 os << "composite: true\n";
-										 for (size_t i = 0; i <= offset; ++i) os << "  ";
+										 for (size_t i = 0; i <= offset; ++i) {
+											 os << "  ";
+										 }
 										 os << "fields: [\n";
 										 for (const auto& c : children) {
-											 for (size_t i = 0; i < offset + 2; ++i) os << "  ";
+											 for (size_t i = 0; i < offset + 2; ++i) {
+												 os << "  ";
+											 }
 											 os << "{\n";
-											 for (size_t i = 0; i <= offset + 2; ++i) os << "  ";
+											 for (size_t i = 0; i <= offset + 2; ++i) {
+												 os << "  ";
+											 }
 											 os << "type: " << c.type << '\n';
-											 for (size_t i = 0; i <= offset + 2; ++i) os << "  ";
+											 for (size_t i = 0; i <= offset + 2; ++i) {
+												 os << "  ";
+											 }
 											 os << "json: " << scheme.GetJsonPath(c.fieldPath) << '\n';
-											 for (size_t i = 0; i < offset + 2; ++i) os << "  ";
+											 for (size_t i = 0; i < offset + 2; ++i) {
+												 os << "  ";
+											 }
 											 os << "}\n";
 										 }
-										 for (size_t i = 0; i <= offset; ++i) os << "  ";
+										 for (size_t i = 0; i <= offset; ++i) {
+											 os << "  ";
+										 }
 										 os << "]\n";
 									 }},
 			   content_);

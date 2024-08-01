@@ -21,7 +21,9 @@ public:
 	InternalRdxContext WithCancelContext(const IRdxCancelContext* cancelCtx) noexcept {
 		return InternalRdxContext(cancelCtx, cmpl_, execTimeout_);
 	}
-	InternalRdxContext WithCompletion(Completion cmpl, InternalRdxContext&) noexcept { return InternalRdxContext(std::move(cmpl), execTimeout_); }
+	InternalRdxContext WithCompletion(Completion cmpl, InternalRdxContext&) noexcept {
+		return InternalRdxContext(std::move(cmpl), execTimeout_);
+	}
 	InternalRdxContext WithCompletion(Completion cmpl) const noexcept { return InternalRdxContext(std::move(cmpl), execTimeout_); }
 	InternalRdxContext WithTimeout(milliseconds execTimeout) const noexcept { return InternalRdxContext(cmpl_, execTimeout); }
 

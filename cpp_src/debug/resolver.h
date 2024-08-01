@@ -15,11 +15,11 @@ public:
 	TraceEntry(uintptr_t addr);
 	TraceEntry() = default;
 	~TraceEntry();
-	TraceEntry(TraceEntry &&other) noexcept;
-	TraceEntry &operator=(TraceEntry &&) noexcept;
-	TraceEntry(const TraceEntry &) = delete;
-	TraceEntry &operator=(const TraceEntry &) = delete;
-	std::ostream &Dump(std::ostream &os) const;
+	TraceEntry(TraceEntry&& other) noexcept;
+	TraceEntry& operator=(TraceEntry&&) noexcept;
+	TraceEntry(const TraceEntry&) = delete;
+	TraceEntry& operator=(const TraceEntry&) = delete;
+	std::ostream& Dump(std::ostream& os) const;
 	std::string_view FuncName() { return funcName_; }
 
 	// protected:
@@ -38,16 +38,16 @@ public:
 	/// Base address of object
 	uintptr_t baseAddr_ = 0;
 	/// Holder of temporary data
-	char *holder_ = nullptr;
+	char* holder_ = nullptr;
 };
 
-static inline std::ostream &operator<<(std::ostream &os, const TraceEntry &e) { return e.Dump(os); }
+static inline std::ostream& operator<<(std::ostream& os, const TraceEntry& e) { return e.Dump(os); }
 
 class TraceResolver {
 public:
 	static std::unique_ptr<TraceResolver> New();
 	virtual ~TraceResolver() = default;
-	virtual bool Resolve(TraceEntry &) { return false; }
+	virtual bool Resolve(TraceEntry&) { return false; }
 };
 
 }  // namespace debug

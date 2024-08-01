@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-[[noreturn]] void fail_throwrx (const char *assertion, const char *file, unsigned line, const char *function) noexcept(false);
+[[noreturn]] void fail_throwrx(const char* assertion, const char* file, unsigned line, const char* function) noexcept(false);
 
 #define throw_assert(expr) reindexer::fail_throwrx(#expr, __FILE__, __LINE__, __FUNCTION__)
 #define throw_as_assert throw_assert(false)
@@ -17,7 +17,7 @@ namespace reindexer {
 
 // fail_assertrx can actually throw, but this exception can not be handled properly,
 // so it was marked as 'noexcept' for the optimization purposes
-[[noreturn]] void fail_assertrx(const char *assertion, const char *file, unsigned line, const char *function) noexcept;
+[[noreturn]] void fail_assertrx(const char* assertion, const char* file, unsigned line, const char* function) noexcept;
 
 #ifdef __cplusplus
 #define assertrx(expr) (rx_likely(static_cast<bool>(expr)) ? void(0) : reindexer::fail_assertrx(#expr, __FILE__, __LINE__, __FUNCTION__))

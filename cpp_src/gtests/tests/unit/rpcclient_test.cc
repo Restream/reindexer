@@ -130,12 +130,16 @@ TEST_F(RPCClientTestApi, SeveralDsnReconnect) {
 	ASSERT_TRUE(res.ok()) << res.what();
 
 	for (size_t i = 0; i < 100; ++i) {
-		if (CheckIfFakeServerConnected(uris[0])) break;
+		if (CheckIfFakeServerConnected(uris[0])) {
+			break;
+		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
 
 	for (size_t i = 0; i < 100; ++i) {
-		if (rx.Status().ok()) break;
+		if (rx.Status().ok()) {
+			break;
+		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
 
@@ -146,7 +150,9 @@ TEST_F(RPCClientTestApi, SeveralDsnReconnect) {
 		for (size_t j = 0; j < 10; ++j) {
 			client::QueryResults qr;
 			res = rx.Select(queryConfingNs, qr);
-			if (res.ok()) break;
+			if (res.ok()) {
+				break;
+			}
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		}
 		ASSERT_TRUE(res.ok()) << res.what();
@@ -404,7 +410,7 @@ TEST_F(RPCClientTestApi, CoroSelectTimeout) {
 	for (size_t i = 0; i < kCorCount; ++i) {
 		ASSERT_TRUE(finished[i]);
 	}
-	Error const err = StopServer();
+	const Error err = StopServer();
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 

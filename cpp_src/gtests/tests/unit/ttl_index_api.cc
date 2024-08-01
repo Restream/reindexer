@@ -27,7 +27,9 @@ TEST_F(TtlIndexApi, ItemsVanishingAfterInsertRemove) {
 	threads.emplace_back(std::thread(&TtlIndexApi::RemoveItemsSlowly, this));
 	threads.emplace_back(std::thread(&TtlIndexApi::SelectData, this));
 
-	for (size_t i = 0; i < threads.size(); ++i) threads[i].join();
+	for (size_t i = 0; i < threads.size(); ++i) {
+		threads[i].join();
+	}
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 	count = WaitForVanishing();

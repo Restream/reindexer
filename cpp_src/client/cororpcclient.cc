@@ -66,7 +66,9 @@ Error CoroRPCClient::AddNamespace(const NamespaceDef& nsDef, const InternalRdxCo
 	nsDef.GetJSON(ser);
 	auto status = conn_.Call(mkCommand(cproto::kCmdOpenNamespace, &ctx), ser.Slice()).Status();
 
-	if (!status.ok()) return status;
+	if (!status.ok()) {
+		return status;
+	}
 
 	namespaces_.emplace(nsDef.name, Namespace::Ptr(new Namespace(nsDef.name)));
 	return errOK;
@@ -92,7 +94,9 @@ Error CoroRPCClient::TruncateNamespace(std::string_view nsName, const InternalRd
 Error CoroRPCClient::RenameNamespace(std::string_view srcNsName, const std::string& dstNsName, const InternalRdxContext& ctx) {
 	auto status = conn_.Call(mkCommand(cproto::kCmdRenameNamespace, &ctx), srcNsName, dstNsName).Status();
 
-	if (!status.ok()) return status;
+	if (!status.ok()) {
+		return status;
+	}
 
 	if (srcNsName != dstNsName) {
 		auto namespacePtr = namespaces_.find(srcNsName);
@@ -152,7 +156,9 @@ Error CoroRPCClient::modifyItem(std::string_view nsName, Item& item, int mode, s
 				return err;
 			}
 		} else {
-			if (ret.Status().code() != errStateInvalidated || tryCount > 2) return ret.Status();
+			if (ret.Status().code() != errStateInvalidated || tryCount > 2) {
+				return ret.Status();
+			}
 			if (withNetTimeout) {
 				netTimeout = netDeadline - conn_.Now();
 			}
@@ -168,7 +174,9 @@ Error CoroRPCClient::modifyItem(std::string_view nsName, Item& item, int mode, s
 			auto newItem = NewItem(nsName);
 			char* endp = nullptr;
 			Error err = newItem.FromJSON(item.impl_->GetJSON(), &endp);
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 
 			item = std::move(newItem);
 		}
@@ -288,7 +296,9 @@ void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
 	// Get array of payload Type Versions
 
 	ser.PutVarUint(vec.size());
-	for (auto v : vec) ser.PutVarUint(v);
+	for (auto v : vec) {
+		ser.PutVarUint(v);
+	}
 	return;
 }
 
@@ -436,7 +446,9 @@ Error CoroRPCClient::GetSqlSuggestions(std::string_view query, int pos, std::vec
 			suggests.clear();
 			suggests.reserve(rargs.size());
 
-			for (auto& rarg : rargs) suggests.push_back(rarg.As<std::string>());
+			for (auto& rarg : rargs) {
+				suggests.push_back(rarg.As<std::string>());
+			}
 		}
 		return ret.Status();
 	} catch (const Error& err) {
@@ -488,7 +500,9 @@ void CoroRPCClient::onUpdates(const cproto::CoroRPCAnswer& ans) {
 	std::string_view nsName(args[1]);
 	std::string_view pwalRec(args[2]);
 	lsn_t originLSN;
-	if (args.size() >= 4) originLSN = lsn_t(args[3].As<int64_t>());
+	if (args.size() >= 4) {
+		originLSN = lsn_t(args[3].As<int64_t>());
+	}
 	WALRecord wrec(pwalRec);
 
 	if (wrec.type == WalItemModify) {
@@ -508,7 +522,9 @@ void CoroRPCClient::onUpdates(const cproto::CoroRPCAnswer& ans) {
 			InternalRdxContext ctx(nullptr);
 			CoroQueryResults qr;
 			auto err = Select(Query(std::string(nsName)).Limit(0), qr, ctx);
-			if (!err.ok()) return;
+			if (!err.ok()) {
+				return;
+			}
 		} else {
 			// We have bundled tagsMatcher
 			if (bundledTagsMatcher) {

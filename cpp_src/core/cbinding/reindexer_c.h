@@ -5,8 +5,8 @@ extern "C" {
 #endif
 
 #include <stdint.h>
-#include "reindexer_ctypes.h"
 #include "core/type_consts.h"
+#include "reindexer_ctypes.h"
 
 uintptr_t init_reindexer();
 uintptr_t init_reindexer_with_config(reindexer_config config);
@@ -41,10 +41,10 @@ reindexer_ret reindexer_commit_transaction(uintptr_t rx, uintptr_t tr, reindexer
 reindexer_error reindexer_rollback_transaction(uintptr_t rx, uintptr_t tr);
 
 reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, reindexer_buffer data, reindexer_ctx_info ctx_info);
-reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int as_json, int32_t *pt_versions, int pt_versions_count,
+reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int as_json, int32_t* pt_versions, int pt_versions_count,
 							   reindexer_ctx_info ctx_info);
 
-reindexer_ret reindexer_select_query(uintptr_t rx, reindexer_buffer in, int as_json, int32_t *pt_versions, int pt_versions_count,
+reindexer_ret reindexer_select_query(uintptr_t rx, reindexer_buffer in, int as_json, int32_t* pt_versions, int pt_versions_count,
 									 reindexer_ctx_info ctx_info);
 reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in, reindexer_ctx_info ctx_info);
 reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in, reindexer_ctx_info ctx_info);
@@ -53,7 +53,7 @@ reindexer_buffer reindexer_cptr2cjson(uintptr_t results_ptr, uintptr_t cptr, int
 void reindexer_free_cjson(reindexer_buffer b);
 
 reindexer_error reindexer_free_buffer(reindexer_resbuffer in);
-reindexer_error reindexer_free_buffers(reindexer_resbuffer *in, int count);
+reindexer_error reindexer_free_buffers(reindexer_resbuffer* in, int count);
 
 reindexer_error reindexer_commit(uintptr_t rx, reindexer_string nsName);
 
@@ -65,7 +65,7 @@ reindexer_error reindexer_delete_meta(uintptr_t rx, reindexer_string ns, reindex
 
 reindexer_error reindexer_cancel_context(reindexer_ctx_info ctx_info, ctx_cancel_type how);
 
-void reindexer_enable_logger(void (*logWriter)(int level, char *msg));
+void reindexer_enable_logger(void (*logWriter)(int level, char* msg));
 void reindexer_disable_logger();
 
 void reindexer_init_locale();

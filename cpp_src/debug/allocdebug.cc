@@ -32,20 +32,28 @@ static bool ismt;
 
 #include "tools/alloc_ext/tc_malloc_extension.h"
 
-static void traced_new_mt(const void *ptr, size_t size) {
-	if (ptr && size) tracer_mt.traced_new(reindexer::alloc_ext::instance()->GetAllocatedSize(const_cast<void *>(ptr)));
+static void traced_new_mt(const void* ptr, size_t size) {
+	if (ptr && size) {
+		tracer_mt.traced_new(reindexer::alloc_ext::instance()->GetAllocatedSize(const_cast<void*>(ptr)));
+	}
 }
 
-static void traced_delete_mt(const void *ptr) {
-	if (ptr) tracer_mt.traced_delete(reindexer::alloc_ext::instance()->GetAllocatedSize(const_cast<void *>(ptr)));
+static void traced_delete_mt(const void* ptr) {
+	if (ptr) {
+		tracer_mt.traced_delete(reindexer::alloc_ext::instance()->GetAllocatedSize(const_cast<void*>(ptr)));
+	}
 }
 
-static void traced_new(const void *ptr, size_t size) {
-	if (ptr && size) tracer.traced_new(reindexer::alloc_ext::instance()->GetAllocatedSize(const_cast<void *>(ptr)));
+static void traced_new(const void* ptr, size_t size) {
+	if (ptr && size) {
+		tracer.traced_new(reindexer::alloc_ext::instance()->GetAllocatedSize(const_cast<void*>(ptr)));
+	}
 }
 
-static void traced_delete(const void *ptr) {
-	if (ptr) tracer.traced_delete(reindexer::alloc_ext::instance()->GetAllocatedSize(const_cast<void *>(ptr)));
+static void traced_delete(const void* ptr) {
+	if (ptr) {
+		tracer.traced_delete(reindexer::alloc_ext::instance()->GetAllocatedSize(const_cast<void*>(ptr)));
+	}
 }
 
 void allocdebug_init() {

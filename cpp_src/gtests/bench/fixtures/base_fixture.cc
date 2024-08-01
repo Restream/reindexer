@@ -36,16 +36,22 @@ void BaseFixture::Insert(State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		for (int i = 0; i < id_seq_->Count(); ++i) {
 			auto item = MakeItem(state);
-			if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+			if (!item.Status().ok()) {
+				state.SkipWithError(item.Status().what().c_str());
+			}
 
 			auto err = db_->Insert(nsdef_.name, item);
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
+			if (!err.ok()) {
+				state.SkipWithError(err.what().c_str());
+			}
 			state.SetItemsProcessed(state.items_processed() + 1);
 		}
 	}
 
 	auto err = db_->Commit(nsdef_.name);
-	if (!err.ok()) state.SkipWithError(err.what().c_str());
+	if (!err.ok()) {
+		state.SkipWithError(err.what().c_str());
+	}
 }
 
 void BaseFixture::Update(benchmark::State& state) {
@@ -53,10 +59,14 @@ void BaseFixture::Update(benchmark::State& state) {
 	id_seq_->Reset();
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto item = MakeItem(state);
-		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+		if (!item.Status().ok()) {
+			state.SkipWithError(item.Status().what().c_str());
+		}
 
 		auto err = db_->Update(nsdef_.name, item);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 
 		if (item.GetID() < 0) {
 			auto e = reindexer::Error(errConflict, "Item not exists [id = '%d']", item["id"].As<int>());
@@ -65,7 +75,9 @@ void BaseFixture::Update(benchmark::State& state) {
 		state.SetItemsProcessed(state.items_processed() + 1);
 	}
 	auto err = db_->Commit(nsdef_.name);
-	if (!err.ok()) state.SkipWithError(err.what().c_str());
+	if (!err.ok()) {
+		state.SkipWithError(err.what().c_str());
+	}
 }
 
 void BaseFixture::WaitForOptimization() {

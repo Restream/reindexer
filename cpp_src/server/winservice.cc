@@ -13,11 +13,13 @@ namespace reindexer_server {
 #define SERVER_STOP_WAIT 5000
 #define SERVER_START_WAIT 5000
 
-WinService *g_Service;
+WinService* g_Service;
 static std::string GetLastErrorAsString() {
 	// Get the error message, if any.
 	DWORD errorMessageID = ::GetLastError();
-	if (errorMessageID == 0) return std::string();	// No error message has been recorded
+	if (errorMessageID == 0) {
+		return std::string();  // No error message has been recorded
+	}
 
 	LPSTR messageBuffer = nullptr;
 	size_t size = FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
@@ -30,7 +32,7 @@ static std::string GetLastErrorAsString() {
 
 	return message;
 }
-WinService::WinService(const std::string &name, const std::string &displayName, std::function<void(void)> run,
+WinService::WinService(const std::string& name, const std::string& displayName, std::function<void(void)> run,
 					   std::function<void(void)> terminate, std::function<bool(void)> status)
 	: name_(name), displayName_(displayName), run_(run), terminate_(terminate), status_(status) {
 	g_Service = this;
@@ -39,7 +41,7 @@ WinService::WinService(const std::string &name, const std::string &displayName, 
 
 WinService::~WinService() { g_Service = 0; }
 
-void WinService::Message(bool bError, const char *fmt, ...) {
+void WinService::Message(bool bError, const char* fmt, ...) {
 	va_list va;
 	va_start(va, fmt);
 	char tempBuf[4096];
@@ -95,24 +97,26 @@ void WinService::MainInternal(DWORD dwArgc, LPTSTR lpszArgv[]) {
 bool WinService::ReportStatusToSCMgr(DWORD dwCurrentState, DWORD dwWin32ExitCode, DWORD dwWaitHint) {
 	static DWORD dwCheckPoint = 1;
 
-	if (dwCurrentState == SERVICE_START_PENDING)
+	if (dwCurrentState == SERVICE_START_PENDING) {
 		ssStatus_.dwControlsAccepted = 0;
-	else
+	} else {
 		ssStatus_.dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN;
+	}
 
 	ssStatus_.dwCurrentState = dwCurrentState;
 	ssStatus_.dwWin32ExitCode = dwWin32ExitCode;
 	ssStatus_.dwWaitHint = dwWaitHint;
 
-	if ((dwCurrentState == SERVICE_RUNNING) || (dwCurrentState == SERVICE_STOPPED))
+	if ((dwCurrentState == SERVICE_RUNNING) || (dwCurrentState == SERVICE_STOPPED)) {
 		ssStatus_.dwCheckPoint = 0;
-	else
+	} else {
 		ssStatus_.dwCheckPoint = dwCheckPoint++;
+	}
 
 	return SetServiceStatus(sshStatusHandle_, &ssStatus_);
 }
 
-bool WinService::Install(const char *cmdline) {
+bool WinService::Install(const char* cmdline) {
 	SC_HANDLE schService = NULL, schSCManager = NULL;
 
 	Remove(true);
@@ -136,8 +140,9 @@ bool WinService::Install(const char *cmdline) {
 			CloseServiceHandle(schSCManager);
 
 			return true;
-		} else
+		} else {
 			Message(false, "CreateService failed:\n%s\n", GetLastErrorAsString().c_str());
+		}
 
 		CloseServiceHandle(schSCManager);
 	} else {
@@ -147,7 +152,7 @@ bool WinService::Install(const char *cmdline) {
 }
 
 int WinService::Start() {
-	SERVICE_TABLE_ENTRY DispTable[] = {{const_cast<char *>(name_.c_str()), ServiceMain}, {NULL, NULL}};
+	SERVICE_TABLE_ENTRY DispTable[] = {{const_cast<char*>(name_.c_str()), ServiceMain}, {NULL, NULL}};
 	StartServiceCtrlDispatcher(DispTable);
 	return 0;
 }
@@ -165,8 +170,9 @@ bool WinService::Remove(bool silent) {
 				while (QueryServiceStatus(schService, &ssStatus_)) {
 					if (ssStatus_.dwCurrentState == SERVICE_STOP_PENDING) {
 						Sleep(1000);
-					} else
+					} else {
 						break;
+					}
 				}
 			}
 
@@ -175,16 +181,19 @@ bool WinService::Remove(bool silent) {
 				CloseServiceHandle(schSCManager);
 
 				return true;
-			} else if (!silent)
+			} else if (!silent) {
 				Message(true, "DeleteService failed:\n%s\n", GetLastErrorAsString().c_str());
+			}
 
 			CloseServiceHandle(schService);
-		} else if (!silent)
+		} else if (!silent) {
 			Message(true, "OpenService failed:\n%s\n", GetLastErrorAsString().c_str());
+		}
 
 		CloseServiceHandle(schSCManager);
-	} else if (!silent)
+	} else if (!silent) {
 		Message(true, "OpenSCManager failed:\n%s\n", GetLastErrorAsString().c_str());
+	}
 
 	return false;
 }

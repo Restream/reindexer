@@ -28,20 +28,20 @@ class TransactionStep {
 public:
 	enum class Type : uint8_t { Nop, ModifyItem, Query, PutMeta, DeleteMeta, SetTM };
 
-	TransactionStep(Item &&item, ItemModifyMode modifyMode)
+	TransactionStep(Item&& item, ItemModifyMode modifyMode)
 		: data_(TransactionItemStep{modifyMode, item.IsTagsUpdated(), std::move(*item.impl_)}), type_(Type::ModifyItem) {
 		delete item.impl_;
 		item.impl_ = nullptr;
 	}
-	TransactionStep(TagsMatcher &&tm) : data_(TransactionTmStep{std::move(tm)}), type_(Type::SetTM) {}
-	TransactionStep(Query &&query) : data_(TransactionQueryStep{std::make_unique<Query>(std::move(query))}), type_(Type::Query) {}
+	TransactionStep(TagsMatcher&& tm) : data_(TransactionTmStep{std::move(tm)}), type_(Type::SetTM) {}
+	TransactionStep(Query&& query) : data_(TransactionQueryStep{std::make_unique<Query>(std::move(query))}), type_(Type::Query) {}
 	TransactionStep(std::string_view key, std::string_view value)
 		: data_(TransactionMetaStep{std::string(key), std::string(value)}), type_(Type::PutMeta) {}
 
-	TransactionStep(const TransactionStep &) = delete;
-	TransactionStep &operator=(const TransactionStep &) = delete;
-	TransactionStep(TransactionStep && /*rhs*/) = default;
-	TransactionStep &operator=(TransactionStep && /*rhs*/) = delete;
+	TransactionStep(const TransactionStep&) = delete;
+	TransactionStep& operator=(const TransactionStep&) = delete;
+	TransactionStep(TransactionStep&& /*rhs*/) = default;
+	TransactionStep& operator=(TransactionStep&& /*rhs*/) = delete;
 
 	std::variant<TransactionItemStep, TransactionQueryStep, TransactionMetaStep, TransactionTmStep> data_;
 	Type type_;
@@ -49,7 +49,7 @@ public:
 
 class TransactionImpl {
 public:
-	TransactionImpl(const std::string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
+	TransactionImpl(const std::string& nsName, const PayloadType& pt, const TagsMatcher& tm, const FieldsSet& pf,
 					std::shared_ptr<const Schema> schema)
 		: payloadType_(pt),
 		  tagsMatcher_(tm),
@@ -62,22 +62,22 @@ public:
 		tagsMatcher_.clearUpdated();
 	}
 
-	void Insert(Item &&item);
-	void Update(Item &&item);
-	void Upsert(Item &&item);
-	void Delete(Item &&item);
-	void Modify(Item &&item, ItemModifyMode mode);
-	void Modify(Query &&item);
+	void Insert(Item&& item);
+	void Update(Item&& item);
+	void Upsert(Item&& item);
+	void Delete(Item&& item);
+	void Modify(Item&& item, ItemModifyMode mode);
+	void Modify(Query&& item);
 	void PutMeta(std::string_view key, std::string_view value);
 	void MergeTagsMatcher(TagsMatcher&& tm);
 
 	Item NewItem();
-	Item GetItem(TransactionStep &&st);
-	void ValidatePK(const FieldsSet &pkFields);
+	Item GetItem(TransactionStep&& st);
+	void ValidatePK(const FieldsSet& pkFields);
 
-	const std::string &GetName() { return nsName_; }
+	const std::string& GetName() { return nsName_; }
 
-	void checkTagsMatcher(Item &item);
+	void checkTagsMatcher(Item& item);
 
 	PayloadType payloadType_;
 	TagsMatcher tagsMatcher_;

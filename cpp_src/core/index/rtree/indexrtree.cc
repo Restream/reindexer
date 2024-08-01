@@ -10,10 +10,10 @@ namespace reindexer {
 
 template <typename KeyEntryT, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
 		  size_t MinEntries>
-SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::SelectKey(const VariantArray &keys, CondType condition,
+SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::SelectKey(const VariantArray& keys, CondType condition,
 																					SortType sortId, Index::SelectOpts opts,
-																					const BaseFunctionCtx::Ptr &funcCtx,
-																					const RdxContext &rdxCtx) {
+																					const BaseFunctionCtx::Ptr& funcCtx,
+																					const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 	if (opts.forceComparator) {
 		return IndexStore<typename Map::key_type>::SelectKey(keys, condition, sortId, opts, funcCtx, rdxCtx);
@@ -21,8 +21,12 @@ SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Select
 
 	SelectKeyResult res;
 
-	if (condition != CondDWithin) throw Error(errQueryExec, "Only CondDWithin available for RTree index");
-	if (keys.size() != 2) throw Error(errQueryExec, "CondDWithin expects two arguments");
+	if (condition != CondDWithin) {
+		throw Error(errQueryExec, "Only CondDWithin available for RTree index");
+	}
+	if (keys.size() != 2) {
+		throw Error(errQueryExec, "CondDWithin expects two arguments");
+	}
 	Point point;
 	double distance;
 	if (keys[0].Type().Is<KeyValueType::Tuple>()) {
@@ -34,9 +38,9 @@ SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Select
 	}
 	class Visitor : public Map::Visitor {
 	public:
-		Visitor(SortType sId, unsigned distinct, unsigned iCountInNs, SelectKeyResult &r)
+		Visitor(SortType sId, unsigned distinct, unsigned iCountInNs, SelectKeyResult& r)
 			: sortId_{sId}, itemsCountInNs_{distinct ? 0u : iCountInNs}, res_{r} {}
-		bool operator()(const typename Map::value_type &v) override {
+		bool operator()(const typename Map::value_type& v) override {
 			idsCount_ += v.second.Unsorted().size();
 			res_.emplace_back(v.second, sortId_);
 			return ScanWin();
@@ -48,7 +52,7 @@ SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Select
 	private:
 		SortType sortId_;
 		unsigned itemsCountInNs_;
-		SelectKeyResult &res_;
+		SelectKeyResult& res_;
 		size_t idsCount_ = 0;
 	} visitor{sortId, opts.distinct, opts.itemsCountInNamespace, res};
 	this->idx_map.DWithin(point, distance, visitor);
@@ -61,8 +65,8 @@ SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Select
 
 template <typename KeyEntryT, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
 		  size_t MinEntries>
-void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArray &result, const VariantArray &keys, IdType id,
-																	 bool &clearCache) {
+void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArray& result, const VariantArray& keys, IdType id,
+																	 bool& clearCache) {
 	if (keys.empty() || keys.IsNullValue()) {
 		Upsert(Variant{}, id, clearCache);
 		return;
@@ -90,15 +94,17 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArra
 
 template <typename KeyEntryT, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
 		  size_t MinEntries>
-void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const VariantArray &keys, IdType id, StringsHolder &strHolder,
-																	 bool &clearCache) {
+void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const VariantArray& keys, IdType id, StringsHolder& strHolder,
+																	 bool& clearCache) {
 	if (keys.empty() || keys.IsNullValue()) {
 		return Delete(Variant{}, id, strHolder, clearCache);
 	}
 	int delcnt = 0;
 	const Point point = static_cast<Point>(keys);
 	typename Map::iterator keyIt = this->idx_map.find(point);
-	if (keyIt == this->idx_map.end()) return;
+	if (keyIt == this->idx_map.end()) {
+		return;
+	}
 	this->cache_.reset();
 	clearCache = true;
 	this->isBuilt_ = false;
@@ -120,8 +126,8 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const Varia
 	}
 }
 
-std::unique_ptr<Index> IndexRTree_New(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
-									  const NamespaceCacheConfigData &cacheCfg) {
+std::unique_ptr<Index> IndexRTree_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+									  const NamespaceCacheConfigData& cacheCfg) {
 	switch (idef.opts_.RTreeType()) {
 		case IndexOpts::Linear:
 			if (idef.opts_.IsPK() || idef.opts_.IsDense()) {

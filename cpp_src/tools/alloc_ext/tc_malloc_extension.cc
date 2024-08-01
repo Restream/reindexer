@@ -4,7 +4,7 @@
 #include <dlfcn.h>
 #include <stdlib.h>
 #include <mutex>
-#endif  // REINDEX_WITH_GPERFTOOLS && !defined(_WIN32)
+#endif	// REINDEX_WITH_GPERFTOOLS && !defined(_WIN32)
 
 namespace reindexer {
 namespace alloc_ext {
@@ -33,7 +33,7 @@ MallocExtension* instance() {
 
 bool TCMallocIsAvailable() { return (getGetInstanceFn() != nullptr); }
 
-#endif  // REINDEX_WITH_GPERFTOOLS
+#endif	// REINDEX_WITH_GPERFTOOLS
 
 }  // namespace alloc_ext
 }  // namespace reindexer

@@ -61,7 +61,7 @@ ServerImpl::ServerImpl(ServerMode mode)
 	async_.set(loop_);
 }
 
-Error ServerImpl::InitFromCLI(int argc, char *argv[]) {
+Error ServerImpl::InitFromCLI(int argc, char* argv[]) {
 	Error err = config_.ParseCmd(argc, argv);
 	if (!err.ok()) {
 		if (err.code() == errParams) {
@@ -75,7 +75,7 @@ Error ServerImpl::InitFromCLI(int argc, char *argv[]) {
 	return init();
 }
 
-Error ServerImpl::InitFromFile(const char *filePath) {
+Error ServerImpl::InitFromFile(const char* filePath) {
 	Error err = config_.ParseFile(filePath);
 	if (!err.ok()) {
 		if (err.code() == errParams) {
@@ -89,7 +89,7 @@ Error ServerImpl::InitFromFile(const char *filePath) {
 	return init();
 }
 
-Error ServerImpl::InitFromYAML(const std::string &yaml) {
+Error ServerImpl::InitFromYAML(const std::string& yaml) {
 	Error err = config_.ParseYaml(yaml);
 	if (!err.ok()) {
 		if (err.code() == errParams) {
@@ -118,19 +118,25 @@ Error ServerImpl::init() {
 		GetDirPath(config_.CoreLog),	   GetDirPath(config_.HttpLog), GetDirPath(config_.RpcLog),
 		GetDirPath(config_.ServerLog),	   config_.StoragePath};
 
-	for (const std::string &dir : dirs) {
+	for (const std::string& dir : dirs) {
 		err = TryCreateDirectory(dir);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 #ifndef _WIN32
 		err = ChownDir(dir, config_.UserName);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 #endif
 	}
 
 #ifndef _WIN32
 	if (!config_.UserName.empty()) {
 		err = ChangeUser(config_.UserName.c_str());
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 	}
 	signal(SIGPIPE, SIG_IGN);
 #endif
@@ -166,7 +172,7 @@ int ServerImpl::Start() {
 		});
 
 	if (config_.InstallSvc) {
-		auto &args = config_.Args();
+		auto& args = config_.Args();
 		std::string cmdline = args.front();
 		for (size_t i = 1; i < args.size(); i++) {
 			cmdline += " ";
@@ -196,7 +202,7 @@ void ServerImpl::Stop() {
 
 void ServerImpl::ReopenLogFiles() {
 #ifndef _WIN32
-	for (auto &sync : sinks_) {
+	for (auto& sync : sinks_) {
 		sync.second->reopen();
 	}
 #endif
@@ -273,7 +279,7 @@ int ServerImpl::run() {
 		heapWatcher =
 			TCMallocHeapWathcher(alloc_ext::instance(), config_.AllocatorCacheLimit, config_.AllocatorCachePart, spdlog::get("server"));
 		tcmallocHeapWatchDog.set(loop_);
-		tcmallocHeapWatchDog.set([&heapWatcher](ev::timer &, int) { heapWatcher.CheckHeapUsagePeriodic(); });
+		tcmallocHeapWatchDog.set([&heapWatcher](ev::timer&, int) { heapWatcher.CheckHeapUsagePeriodic(); });
 
 		if (config_.AllocatorCacheLimit > 0 || config_.AllocatorCachePart > 0) {
 			using fpSeconds = std::chrono::duration<double, std::chrono::seconds::period>;
@@ -342,7 +348,7 @@ int ServerImpl::run() {
 			return EXIT_FAILURE;
 		}
 #if defined(WITH_GRPC)
-		void *hGRPCService = nullptr;
+		void* hGRPCService = nullptr;
 #if REINDEX_WITH_LIBDL
 #ifdef __APPLE__
 		auto hGRPCServiceLib = dlopen("libreindexer_grpc_library.dylib", RTLD_NOW);
@@ -366,7 +372,7 @@ int ServerImpl::run() {
 
 #endif
 #endif
-		auto sigCallback = [&](ev::sig &sig) {
+		auto sigCallback = [&](ev::sig& sig) {
 			logger_.info("Signal received. Terminating...");
 #ifndef REINDEX_WITH_ASAN
 			if (config_.AllowNamespaceLeak && mode_ == ServerMode::Standalone) {
@@ -377,7 +383,9 @@ int ServerImpl::run() {
 			sig.loop.break_loop();
 		};
 
-		if (statsCollector) statsCollector->Start();
+		if (statsCollector) {
+			statsCollector->Start();
+		}
 
 		ev::sig sterm, sint, shup;
 
@@ -389,7 +397,7 @@ int ServerImpl::run() {
 			sint.set(sigCallback);
 			sint.start(SIGINT);
 #ifndef _WIN32
-			auto sigHupCallback = [&](ev::sig &sig) {
+			auto sigHupCallback = [&](ev::sig& sig) {
 				(void)sig;
 				ReopenLogFiles();
 			};
@@ -399,7 +407,7 @@ int ServerImpl::run() {
 #endif
 		}
 
-		async_.set([](ev::async &a) { a.loop.break_loop(); });
+		async_.set([](ev::async& a) { a.loop.break_loop(); });
 		async_.start();
 
 		running_ = true;
@@ -408,7 +416,9 @@ int ServerImpl::run() {
 		}
 		logger_.info("Reindexer server terminating...");
 
-		if (statsCollector) statsCollector->Stop();
+		if (statsCollector) {
+			statsCollector->Stop();
+		}
 		logger_.info("Stats collector shutdown completed.");
 		if (rpcServerUnix) {
 			rpcServerUnix->Stop();
@@ -433,7 +443,7 @@ int ServerImpl::run() {
 
 #endif
 #endif
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		logger_.error("Unhandled exception occurred: {0}", err.what());
 	}
 	logger_.info("Reindexer server shutdown completed.");
@@ -452,7 +462,9 @@ Error ServerImpl::daemonize() {
 	switch (pid) {
 		// child process
 		case 0:
-			if (!pid_.Open(config_.DaemonPidFile.c_str())) return pid_.Status();
+			if (!pid_.Open(config_.DaemonPidFile.c_str())) {
+				return pid_.Status();
+			}
 			umask(0);
 			setsid();
 			if (chdir("/")) {
@@ -488,8 +500,8 @@ Error ServerImpl::loggerConfigure() {
 	std::vector<std::pair<std::string, std::string>> loggers = {
 		{"server", config_.ServerLog}, {"core", config_.CoreLog}, {"http", config_.HttpLog}, {"rpc", config_.RpcLog}};
 
-	for (auto &logger : loggers) {
-		auto &fileName = logger.second;
+	for (auto& logger : loggers) {
+		auto& fileName = logger.second;
 		try {
 			if (fileName == "stdout" || fileName == "-") {
 				spdlog::stdout_color_mt(logger.first);
@@ -500,7 +512,7 @@ Error ServerImpl::loggerConfigure() {
 				}
 				spdlog::create(logger.first, sink->second);
 			}
-		} catch (const spdlog::spdlog_ex &e) {
+		} catch (const spdlog::spdlog_ex& e) {
 			return Error(errLogic, "Can't create logger for '%s' to file '%s': %s\n", logger.first, logger.second, e.what());
 		}
 	}
@@ -511,7 +523,7 @@ Error ServerImpl::loggerConfigure() {
 void ServerImpl::initCoreLogger() {
 	std::weak_ptr<spdlog::logger> logger = spdlog::get("core");
 
-	auto callback = [this, logger](int level, char *buf) {
+	auto callback = [this, logger](int level, char* buf) {
 		auto slogger = logger.lock();
 		if (slogger && level <= coreLogLevel_) {
 			switch (level) {

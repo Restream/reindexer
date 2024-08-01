@@ -6,7 +6,7 @@ namespace reindexer {
 namespace net {
 namespace cproto {
 
-void Args::Unpack(Serializer &ser) {
+void Args::Unpack(Serializer& ser) {
 	resize(0);
 	unsigned count = ser.GetVarUint();
 
@@ -15,16 +15,16 @@ void Args::Unpack(Serializer &ser) {
 	}
 }
 
-void Args::Pack(WrSerializer &ser) const {
+void Args::Pack(WrSerializer& ser) const {
 	ser.PutVarUint(size());
-	for (auto &arg : *this) {
+	for (auto& arg : *this) {
 		ser.PutVariant(arg);
 	}
 }
-void Args::Dump(WrSerializer &wrser) const {
+void Args::Dump(WrSerializer& wrser) const {
 	wrser << '{';
 
-	for (const auto &arg : *this) {
+	for (const auto& arg : *this) {
 		if (&arg != &at(0)) {
 			wrser << ", ";
 		}

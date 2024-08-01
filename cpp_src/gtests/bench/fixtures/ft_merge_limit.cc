@@ -110,7 +110,9 @@ void FullTextMergeLimit::Insert(State& state) {
 			item["id"] = h;
 			item[kFastIndexTextName_] = phrase;
 			auto err = db_->Upsert(nsdef_.name, item);
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
+			if (!err.ok()) {
+				state.SkipWithError(err.what().c_str());
+			}
 		}
 	}
 	state.SetLabel("inserted " + std::to_string(id_seq_->Count()) + " documents");
@@ -124,7 +126,9 @@ void FullTextMergeLimit::BuildFastTextIndex(benchmark::State& state) {
 
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -137,6 +141,8 @@ void FullTextMergeLimit::FastTextIndexSelect(benchmark::State& state, const std:
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);
 		state.SetLabel("select " + std::to_string(qres.Count()) + " documents");
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }

@@ -27,25 +27,25 @@ public:
 	void DefineNamespaceDataset(std::string_view ns, std::initializer_list<const IndexDeclaration> fields) {
 		rt.DefineNamespaceDataset(ns, fields);
 	}
-	void DefineNamespaceDataset(std::string_view ns, const std::vector<IndexDeclaration> &fields) { rt.DefineNamespaceDataset(ns, fields); }
-	void DefineNamespaceDataset(Reindexer &rx, const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
+	void DefineNamespaceDataset(std::string_view ns, const std::vector<IndexDeclaration>& fields) { rt.DefineNamespaceDataset(ns, fields); }
+	void DefineNamespaceDataset(Reindexer& rx, const std::string& ns, std::initializer_list<const IndexDeclaration> fields) {
 		rt.DefineNamespaceDataset(rx, ns, fields);
 	}
 	Item NewItem(std::string_view ns) { return rt.NewItem(ns); }
 
 	void Commit(std::string_view ns) { rt.Commit(ns); }
-	void Upsert(std::string_view ns, Item &item) { rt.Upsert(ns, item); }
-	size_t Update(const Query &q) { return rt.Update(q); }
-	void Delete(std::string_view ns, Item &item) { rt.Delete(ns, item); }
-	size_t Delete(const Query &q) { return rt.Delete(q); }
+	void Upsert(std::string_view ns, Item& item) { rt.Upsert(ns, item); }
+	size_t Update(const Query& q) { return rt.Update(q); }
+	void Delete(std::string_view ns, Item& item) { rt.Delete(ns, item); }
+	size_t Delete(const Query& q) { return rt.Delete(q); }
 
-	void PrintQueryResults(const std::string &ns, const QueryResults &res) { rt.PrintQueryResults(ns, res); }
+	void PrintQueryResults(const std::string& ns, const QueryResults& res) { rt.PrintQueryResults(ns, res); }
 
 	std::string RandString() { return rt.RandString(); }
 	std::string RandLikePattern() { return rt.RandLikePattern(); }
 	std::string RuRandString() { return rt.RuRandString(); }
 	std::vector<int> RandIntVector(size_t size, int start, int range) { return rt.RandIntVector(size, start, range); }
-	void AwaitIndexOptimization(const std::string &nsName) {
+	void AwaitIndexOptimization(const std::string& nsName) {
 		bool optimization_completed = false;
 		unsigned waitForIndexOptimizationCompleteIterations = 0;
 		while (!optimization_completed) {
@@ -73,7 +73,7 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	static Item getMemStat(Reindexer &rx, const std::string &ns) {
+	static Item getMemStat(Reindexer& rx, const std::string& ns) {
 		QueryResults qr;
 		auto err = rx.Select(Query("#memstats").Where("name", CondEq, ns), qr);
 		EXPECT_TRUE(err.ok()) << err.what();

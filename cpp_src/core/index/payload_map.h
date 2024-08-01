@@ -12,13 +12,13 @@ namespace reindexer {
 class PayloadValueWithHash : public PayloadValue {
 public:
 	PayloadValueWithHash() noexcept : PayloadValue() {}
-	PayloadValueWithHash(PayloadValue &&pv, const PayloadType &pt, const FieldsSet &fields)
-		: PayloadValue(std::move(pv)), hash_(ConstPayload(pt, *static_cast<PayloadValue *>(this)).GetHash(fields)) {}
-	PayloadValueWithHash(const PayloadValueWithHash &o) noexcept : PayloadValue(o), hash_(o.hash_) {}
-	PayloadValueWithHash(PayloadValueWithHash &&o) noexcept : PayloadValue(std::move(o)), hash_(o.hash_) {}
-	PayloadValueWithHash &operator=(PayloadValueWithHash &&o) noexcept {
+	PayloadValueWithHash(PayloadValue&& pv, const PayloadType& pt, const FieldsSet& fields)
+		: PayloadValue(std::move(pv)), hash_(ConstPayload(pt, *static_cast<PayloadValue*>(this)).GetHash(fields)) {}
+	PayloadValueWithHash(const PayloadValueWithHash& o) noexcept : PayloadValue(o), hash_(o.hash_) {}
+	PayloadValueWithHash(PayloadValueWithHash&& o) noexcept : PayloadValue(std::move(o)), hash_(o.hash_) {}
+	PayloadValueWithHash& operator=(PayloadValueWithHash&& o) noexcept {
 		hash_ = o.hash_;
-		return static_cast<PayloadValueWithHash &>(PayloadValue::operator=(std::move(o)));
+		return static_cast<PayloadValueWithHash&>(PayloadValue::operator=(std::move(o)));
 	}
 	uint32_t GetHash() const noexcept { return hash_; }
 
@@ -31,15 +31,15 @@ public:
 	using is_transparent = void;
 
 	template <typename PT, typename FS>
-	equal_composite(PT &&type, FS &&fields) : type_(std::forward<PT>(type)), fields_(std::forward<FS>(fields)) {
+	equal_composite(PT&& type, FS&& fields) : type_(std::forward<PT>(type)), fields_(std::forward<FS>(fields)) {
 		assertrx_dbg(type_);
 	}
-	bool operator()(const PayloadValue &lhs, const PayloadValue &rhs) const { return ConstPayload(type_, lhs).IsEQ(rhs, fields_); }
-	bool operator()(const PayloadValueWithHash &lhs, const PayloadValueWithHash &rhs) const {
+	bool operator()(const PayloadValue& lhs, const PayloadValue& rhs) const { return ConstPayload(type_, lhs).IsEQ(rhs, fields_); }
+	bool operator()(const PayloadValueWithHash& lhs, const PayloadValueWithHash& rhs) const {
 		return ConstPayload(type_, lhs).IsEQ(rhs, fields_);
 	}
-	bool operator()(const PayloadValueWithHash &lhs, const PayloadValue &rhs) const { return ConstPayload(type_, lhs).IsEQ(rhs, fields_); }
-	bool operator()(const PayloadValue &lhs, const PayloadValueWithHash &rhs) const { return ConstPayload(type_, lhs).IsEQ(rhs, fields_); }
+	bool operator()(const PayloadValueWithHash& lhs, const PayloadValue& rhs) const { return ConstPayload(type_, lhs).IsEQ(rhs, fields_); }
+	bool operator()(const PayloadValue& lhs, const PayloadValueWithHash& rhs) const { return ConstPayload(type_, lhs).IsEQ(rhs, fields_); }
 
 private:
 	PayloadType type_;
@@ -48,10 +48,10 @@ private:
 
 class equal_composite_ref {
 public:
-	equal_composite_ref(const PayloadType &type, const FieldsSet &fields) noexcept : type_(type), fields_(fields) {
+	equal_composite_ref(const PayloadType& type, const FieldsSet& fields) noexcept : type_(type), fields_(fields) {
 		assertrx_dbg(type_.get());
 	}
-	bool operator()(const PayloadValue &lhs, const PayloadValue &rhs) const {
+	bool operator()(const PayloadValue& lhs, const PayloadValue& rhs) const {
 		assertrx_dbg(!lhs.IsFree());
 		assertrx_dbg(!rhs.IsFree());
 		return ConstPayload(type_, lhs).IsEQ(rhs, fields_);
@@ -65,11 +65,11 @@ private:
 class hash_composite {
 public:
 	template <typename PT, typename FS>
-	hash_composite(PT &&type, FS &&fields) : type_(std::forward<PT>(type)), fields_(std::forward<FS>(fields)) {
+	hash_composite(PT&& type, FS&& fields) : type_(std::forward<PT>(type)), fields_(std::forward<FS>(fields)) {
 		assertrx_dbg(type_);
 	}
-	size_t operator()(const PayloadValueWithHash &s) const noexcept { return s.GetHash(); }
-	size_t operator()(const PayloadValue &s) const { return ConstPayload(type_, s).GetHash(fields_); }
+	size_t operator()(const PayloadValueWithHash& s) const noexcept { return s.GetHash(); }
+	size_t operator()(const PayloadValue& s) const { return ConstPayload(type_, s).GetHash(fields_); }
 
 private:
 	PayloadType type_;
@@ -78,10 +78,10 @@ private:
 
 class hash_composite_ref {
 public:
-	hash_composite_ref(const PayloadType &type, const FieldsSet &fields) noexcept : type_(type), fields_(fields) {
+	hash_composite_ref(const PayloadType& type, const FieldsSet& fields) noexcept : type_(type), fields_(fields) {
 		assertrx_dbg(type_.get());
 	}
-	size_t operator()(const PayloadValue &s) const { return ConstPayload(type_, s).GetHash(fields_); }
+	size_t operator()(const PayloadValue& s) const { return ConstPayload(type_, s).GetHash(fields_); }
 
 private:
 	std::reference_wrapper<const PayloadType> type_;
@@ -90,10 +90,10 @@ private:
 
 class less_composite {
 public:
-	less_composite(PayloadType &&type, FieldsSet &&fields) noexcept : type_(std::move(type)), fields_(std::move(fields)) {
+	less_composite(PayloadType&& type, FieldsSet&& fields) noexcept : type_(std::move(type)), fields_(std::move(fields)) {
 		assertrx_dbg(type_);
 	}
-	bool operator()(const PayloadValue &lhs, const PayloadValue &rhs) const {
+	bool operator()(const PayloadValue& lhs, const PayloadValue& rhs) const {
 		assertrx_dbg(!lhs.IsFree());
 		assertrx_dbg(!rhs.IsFree());
 		return (ConstPayload(type_, lhs).Compare<WithString::No, NotComparable::Throw>(rhs, fields_) == ComparationResult::Lt);
@@ -106,10 +106,10 @@ private:
 
 class less_composite_ref {
 public:
-	less_composite_ref(const PayloadType &type, const FieldsSet &fields) noexcept : type_(type), fields_(fields) {
+	less_composite_ref(const PayloadType& type, const FieldsSet& fields) noexcept : type_(type), fields_(fields) {
 		assertrx_dbg(type_.get());
 	}
-	bool operator()(const PayloadValue &lhs, const PayloadValue &rhs) const {
+	bool operator()(const PayloadValue& lhs, const PayloadValue& rhs) const {
 		assertrx_dbg(!lhs.IsFree());
 		assertrx_dbg(!rhs.IsFree());
 		return (ConstPayload(type_, lhs).Compare<WithString::No, NotComparable::Throw>(rhs, fields_) == ComparationResult::Lt);
@@ -126,30 +126,38 @@ class payload_str_fields_helper;
 template <>
 class payload_str_fields_helper<true> {
 protected:
-	payload_str_fields_helper(PayloadType &&payloadType, const FieldsSet &fields) : payload_type_(std::move(payloadType)) {
+	payload_str_fields_helper(PayloadType&& payloadType, const FieldsSet& fields) : payload_type_(std::move(payloadType)) {
 		if (fields.getTagsPathsLength() || fields.getJsonPathsLength()) {
 			str_fields_.push_back(0);
 		}
 		for (int f : payload_type_.StrFields()) {
-			if (fields.contains(f)) str_fields_.push_back(f);
+			if (fields.contains(f)) {
+				str_fields_.push_back(f);
+			}
 		}
 	}
-	payload_str_fields_helper(const payload_str_fields_helper &) = default;
-	payload_str_fields_helper(payload_str_fields_helper &&) = default;
+	payload_str_fields_helper(const payload_str_fields_helper&) = default;
+	payload_str_fields_helper(payload_str_fields_helper&&) = default;
 
-	inline void add_ref(PayloadValue &pv) const {
+	inline void add_ref(PayloadValue& pv) const {
 		Payload pl(payload_type_, pv);
-		for (int f : str_fields_) pl.AddRefStrings(f);
+		for (int f : str_fields_) {
+			pl.AddRefStrings(f);
+		}
 	}
 
-	inline void release(PayloadValue &pv) const {
+	inline void release(PayloadValue& pv) const {
 		Payload pl(payload_type_, pv);
-		for (int f : str_fields_) pl.ReleaseStrings(f);
+		for (int f : str_fields_) {
+			pl.ReleaseStrings(f);
+		}
 	}
 
-	inline void move_strings_to_holder(PayloadValue &pv, StringsHolder &strHolder) const {
+	inline void move_strings_to_holder(PayloadValue& pv, StringsHolder& strHolder) const {
 		Payload pl(payload_type_, pv);
-		for (int f : str_fields_) pl.MoveStrings(f, strHolder);
+		for (int f : str_fields_) {
+			pl.MoveStrings(f, strHolder);
+		}
 	}
 
 	inline bool have_str_fields() const noexcept { return !str_fields_.empty(); }
@@ -162,17 +170,17 @@ private:
 template <>
 class payload_str_fields_helper<false> {
 protected:
-	payload_str_fields_helper(const PayloadType &, const FieldsSet &) noexcept {}
+	payload_str_fields_helper(const PayloadType&, const FieldsSet&) noexcept {}
 
-	inline void add_ref(PayloadValue &) const noexcept {}
-	inline void release(PayloadValue &) const noexcept {}
-	inline void move_strings_to_holder(PayloadValue &, StringsHolder &) const noexcept {}
+	inline void add_ref(PayloadValue&) const noexcept {}
+	inline void release(PayloadValue&) const noexcept {}
+	inline void move_strings_to_holder(PayloadValue&, StringsHolder&) const noexcept {}
 	inline bool have_str_fields() const noexcept { return false; }
 };
 
 struct no_deep_clean {
 	template <typename T>
-	void operator()(const T &) const noexcept {}
+	void operator()(const T&) const noexcept {}
 };
 
 template <typename T1, bool hold>
@@ -201,70 +209,86 @@ public:
 
 	static_assert(std::is_nothrow_move_constructible<std::pair<PayloadValueWithHash, T1>>::value,
 				  "Nothrow movebale key and value required");
-	unordered_payload_map(size_t size, PayloadType &&pt, FieldsSet &&f)
+	unordered_payload_map(size_t size, PayloadType&& pt, FieldsSet&& f)
 		: base_hash_map(size, hash_composite(PayloadType{pt}, FieldsSet{f}), equal_composite(PayloadType{pt}, FieldsSet{f})),
 		  payload_str_fields_helper<hold>(PayloadType{pt}, f),
 		  payloadType_(std::move(pt)),
 		  fields_(std::move(f)) {}
 
-	unordered_payload_map(PayloadType &&pt, FieldsSet &&f) : unordered_payload_map(1000, std::move(pt), std::move(f)) {}
+	unordered_payload_map(PayloadType&& pt, FieldsSet&& f) : unordered_payload_map(1000, std::move(pt), std::move(f)) {}
 
-	unordered_payload_map(const unordered_payload_map &other)
+	unordered_payload_map(const unordered_payload_map& other)
 		: base_hash_map(other), payload_str_fields_helper<hold>(other), payloadType_(other.payloadType_), fields_(other.fields_) {
-		for (auto &item : *this) this->add_ref(item.first);
+		for (auto& item : *this) {
+			this->add_ref(item.first);
+		}
 	}
-	unordered_payload_map(unordered_payload_map &&) = default;
-	unordered_payload_map &operator=(unordered_payload_map &&other) {
-		for (auto &item : *this) this->release(item.first);
+	unordered_payload_map(unordered_payload_map&&) = default;
+	unordered_payload_map& operator=(unordered_payload_map&& other) {
+		for (auto& item : *this) {
+			this->release(item.first);
+		}
 		base_hash_map::operator=(std::move(other));
 		return *this;
 	}
-	unordered_payload_map &operator=(const unordered_payload_map &) = delete;
+	unordered_payload_map& operator=(const unordered_payload_map&) = delete;
 
 	~unordered_payload_map() {
-		for (auto &item : *this) this->release(item.first);
+		for (auto& item : *this) {
+			this->release(item.first);
+		}
 	}
 
-	std::pair<iterator, bool> insert(const std::pair<PayloadValue, T1> &v) {
+	std::pair<iterator, bool> insert(const std::pair<PayloadValue, T1>& v) {
 		PayloadValueWithHash key(v.first, payloadType_, fields_);
 		auto res = base_hash_map::emplate(std::move(key), v.second);
-		if (res.second) add_ref(res.first->first);
+		if (res.second) {
+			add_ref(res.first->first);
+		}
 		return res;
 	}
-	std::pair<iterator, bool> insert(std::pair<PayloadValue, T1> &&v) {
+	std::pair<iterator, bool> insert(std::pair<PayloadValue, T1>&& v) {
 		PayloadValueWithHash key(std::move(v.first), payloadType_, fields_);
 		auto res = base_hash_map::emplace(std::move(key), std::move(v.second));
-		if (res.second) this->add_ref(res.first->first);
+		if (res.second) {
+			this->add_ref(res.first->first);
+		}
 		return res;
 	}
 	template <typename V>
-	std::pair<iterator, bool> emplace(const PayloadValue &pl, V &&v) {
+	std::pair<iterator, bool> emplace(const PayloadValue& pl, V&& v) {
 		PayloadValueWithHash key(PayloadValue{pl}, payloadType_, fields_);
 		auto res = base_hash_map::emplace(std::move(key), std::forward<V>(v));
-		if (res.second) this->add_ref(res.first->first);
+		if (res.second) {
+			this->add_ref(res.first->first);
+		}
 		return res;
 	}
 	template <typename V>
-	std::pair<iterator, bool> emplace(PayloadValue &&pl, V &&v) {
+	std::pair<iterator, bool> emplace(PayloadValue&& pl, V&& v) {
 		PayloadValueWithHash key(std::move(pl), payloadType_, fields_);
 		auto res = base_hash_map::emplace(std::move(key), std::forward<V>(v));
-		if (res.second) this->add_ref(res.first->first);
+		if (res.second) {
+			this->add_ref(res.first->first);
+		}
 		return res;
 	}
 
 	template <typename deep_cleaner>
-	iterator erase(iterator pos, StringsHolder &strHolder) {
+	iterator erase(iterator pos, StringsHolder& strHolder) {
 		static const deep_cleaner deep_clean;
-		if (pos != end()) this->move_strings_to_holder(pos->first, strHolder);
+		if (pos != end()) {
+			this->move_strings_to_holder(pos->first, strHolder);
+		}
 		deep_clean(*pos);
 		return base_hash_map::erase(pos);
 	}
 
-	T1 &operator[](const PayloadValue &k) {
+	T1& operator[](const PayloadValue& k) {
 		PayloadValueWithHash key(PayloadValue{k}, payloadType_, fields_);
 		return base_hash_map::operator[](std::move(key));
 	}
-	T1 &operator[](PayloadValue &&k) {
+	T1& operator[](PayloadValue&& k) {
 		PayloadValueWithHash key(std::move(k), payloadType_, fields_);
 		return base_hash_map::operator[](std::move(key));
 	}
@@ -300,29 +324,37 @@ public:
 	using base_tree_map::find;
 	using payload_str_fields_helper<hold>::have_str_fields;
 
-	payload_map(PayloadType payloadType, const FieldsSet &fields)
+	payload_map(PayloadType payloadType, const FieldsSet& fields)
 		: base_tree_map(less_composite(PayloadType{payloadType}, FieldsSet{fields})),
 		  payload_str_fields_helper<hold>(std::move(payloadType), fields) {}
-	payload_map(const payload_map &other) : base_tree_map(other), payload_str_fields_helper<hold>(other) {
-		for (auto &item : *this) this->add_ref(const_cast<PayloadValue &>(item.first));
+	payload_map(const payload_map& other) : base_tree_map(other), payload_str_fields_helper<hold>(other) {
+		for (auto& item : *this) {
+			this->add_ref(const_cast<PayloadValue&>(item.first));
+		}
 	}
-	payload_map(payload_map &&) = default;
+	payload_map(payload_map&&) = default;
 
 	~payload_map() {
-		for (auto &item : *this) this->release(const_cast<PayloadValue &>(item.first));
+		for (auto& item : *this) {
+			this->release(const_cast<PayloadValue&>(item.first));
+		}
 	}
 
-	std::pair<iterator, bool> insert(const value_type &v) {
+	std::pair<iterator, bool> insert(const value_type& v) {
 		auto res = base_tree_map::insert(v);
-		if (res.second) this->add_ref(const_cast<PayloadValue &>(res.first->first));
+		if (res.second) {
+			this->add_ref(const_cast<PayloadValue&>(res.first->first));
+		}
 		return res;
 	}
-	iterator insert(iterator, const value_type &v) { return insert(v).first; }
+	iterator insert(iterator, const value_type& v) { return insert(v).first; }
 
 	template <typename deep_cleaner>
-	iterator erase(const iterator &pos, StringsHolder &strHolder) {
+	iterator erase(const iterator& pos, StringsHolder& strHolder) {
 		static const deep_cleaner deep_clean;
-		if (pos != end()) this->move_strings_to_holder(const_cast<PayloadValue &>(pos->first), strHolder);
+		if (pos != end()) {
+			this->move_strings_to_holder(const_cast<PayloadValue&>(pos->first), strHolder);
+		}
 		deep_clean(*pos);
 		return base_tree_map::erase(pos);
 	}

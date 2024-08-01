@@ -7,11 +7,15 @@
 namespace reindexer {
 
 BaseFTConfig::BaseFTConfig() {
-	for (const char **p = stop_words_en; *p != nullptr; p++) stopWords.insert({*p, StopWord::Type::Morpheme});
-	for (const char **p = stop_words_ru; *p != nullptr; p++) stopWords.insert({*p, StopWord::Type::Morpheme});
+	for (const char** p = stop_words_en; *p != nullptr; p++) {
+		stopWords.insert({*p, StopWord::Type::Morpheme});
+	}
+	for (const char** p = stop_words_ru; *p != nullptr; p++) {
+		stopWords.insert({*p, StopWord::Type::Morpheme});
+	}
 }
 
-void BaseFTConfig::parseBase(const gason::JsonNode &root) {
+void BaseFTConfig::parseBase(const gason::JsonNode& root) {
 	enableTranslit = root["enable_translit"].As<>(enableTranslit);
 	enableNumbersSearch = root["enable_numbers_search"].As<>(enableNumbersSearch);
 	enableKbLayout = root["enable_kb_layout"].As<>(enableKbLayout);
@@ -19,10 +23,10 @@ void BaseFTConfig::parseBase(const gason::JsonNode &root) {
 	logLevel = root["log_level"].As<>(logLevel, 0, 5);
 	extraWordSymbols = root["extra_word_symbols"].As<>(extraWordSymbols);
 
-	auto &stopWordsNode = root["stop_words"];
+	auto& stopWordsNode = root["stop_words"];
 	if (!stopWordsNode.empty()) {
 		stopWords.clear();
-		for (auto &sw : stopWordsNode) {
+		for (auto& sw : stopWordsNode) {
 			std::string word;
 			StopWord::Type type = StopWord::Type::Stop;
 			if (sw.value.getTag() == gason::JsonTag::JSON_STRING) {
@@ -32,7 +36,7 @@ void BaseFTConfig::parseBase(const gason::JsonNode &root) {
 				type = sw["is_morpheme"].As<bool>() ? StopWord::Type::Morpheme : StopWord::Type::Stop;
 			}
 
-			if (std::find_if(word.begin(), word.end(), [](const auto &symbol) { return std::isspace(symbol); }) != word.end()) {
+			if (std::find_if(word.begin(), word.end(), [](const auto& symbol) { return std::isspace(symbol); }) != word.end()) {
 				throw Error(errParams, "Stop words can't contain spaces: %s", word);
 			}
 
@@ -43,19 +47,25 @@ void BaseFTConfig::parseBase(const gason::JsonNode &root) {
 		}
 	}
 
-	auto &stemmersNode = root["stemmers"];
+	auto& stemmersNode = root["stemmers"];
 	if (!stemmersNode.empty()) {
 		stemmers.clear();
-		for (auto &st : stemmersNode) stemmers.emplace_back(st.As<std::string>());
+		for (auto& st : stemmersNode) {
+			stemmers.emplace_back(st.As<std::string>());
+		}
 	}
 	synonyms.clear();
-	for (auto &se : root["synonyms"]) {
+	for (auto& se : root["synonyms"]) {
 		Synonym synonym;
-		for (auto &ae : se["alternatives"]) synonym.alternatives.emplace_back(ae.As<std::string>());
-		for (auto &te : se["tokens"]) synonym.tokens.emplace_back(te.As<std::string>());
+		for (auto& ae : se["alternatives"]) {
+			synonym.alternatives.emplace_back(ae.As<std::string>());
+		}
+		for (auto& te : se["tokens"]) {
+			synonym.tokens.emplace_back(te.As<std::string>());
+		}
 		synonyms.emplace_back(std::move(synonym));
 	}
-	const auto &baseRankingConfigNode = root["base_ranking"];
+	const auto& baseRankingConfigNode = root["base_ranking"];
 	if (!baseRankingConfigNode.empty()) {
 		rankingConfig.fullMatch = baseRankingConfigNode["full_match_proc"].As<>(rankingConfig.fullMatch, 0, 500);
 		rankingConfig.prefixMin = baseRankingConfigNode["prefix_min_proc"].As<>(rankingConfig.prefixMin, 0, 500);
@@ -69,7 +79,7 @@ void BaseFTConfig::parseBase(const gason::JsonNode &root) {
 	}
 }
 
-void BaseFTConfig::getJson(JsonBuilder &jsonBuilder) const {
+void BaseFTConfig::getJson(JsonBuilder& jsonBuilder) const {
 	jsonBuilder.Put("enable_translit", enableTranslit);
 	jsonBuilder.Put("enable_numbers_search", enableNumbersSearch);
 	jsonBuilder.Put("enable_kb_layout", enableKbLayout);
@@ -79,21 +89,25 @@ void BaseFTConfig::getJson(JsonBuilder &jsonBuilder) const {
 	jsonBuilder.Array<std::string>("stemmers", stemmers);
 	{
 		auto synonymsNode = jsonBuilder.Array("synonyms");
-		for (const auto &synonym : synonyms) {
+		for (const auto& synonym : synonyms) {
 			auto synonymObj = synonymsNode.Object();
 			{
 				auto tokensNode = synonymObj.Array("tokens");
-				for (const auto &token : synonym.tokens) tokensNode.Put(nullptr, token);
+				for (const auto& token : synonym.tokens) {
+					tokensNode.Put(nullptr, token);
+				}
 			}
 			{
 				auto alternativesNode = synonymObj.Array("alternatives");
-				for (const auto &token : synonym.alternatives) alternativesNode.Put(nullptr, token);
+				for (const auto& token : synonym.alternatives) {
+					alternativesNode.Put(nullptr, token);
+				}
 			}
 		}
 	}
 	{
 		auto stopWordsNode = jsonBuilder.Array("stop_words");
-		for (const auto &sw : stopWords) {
+		for (const auto& sw : stopWords) {
 			auto wordNode = stopWordsNode.Object(nullptr);
 			wordNode.Put("word", sw);
 			wordNode.Put("is_morpheme", sw.type == StopWord::Type::Morpheme);

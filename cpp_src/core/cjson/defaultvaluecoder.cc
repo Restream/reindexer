@@ -2,7 +2,7 @@
 
 namespace reindexer {
 
-DefaultValueCoder::DefaultValueCoder(std::string_view ns, const PayloadFieldType &fld, std::vector<TagsPath> &&tps, int16_t fieldIdx)
+DefaultValueCoder::DefaultValueCoder(std::string_view ns, const PayloadFieldType& fld, std::vector<TagsPath>&& tps, int16_t fieldIdx)
 	: ns_(ns),
 	  field_(fld.Name()),
 	  tags_(std::move(tps)),
@@ -19,7 +19,7 @@ bool DefaultValueCoder::Match(int field) noexcept {
 	return false;  // returned result is always same
 }
 
-bool DefaultValueCoder::Match(TagType tt, const TagsPath &tp) {
+bool DefaultValueCoder::Match(TagType tt, const TagsPath& tp) {
 	static const bool result = false;  // returned result is always same
 
 	// nothing to look for (start tuple global object)
@@ -73,7 +73,7 @@ bool DefaultValueCoder::Match(TagType tt, const TagsPath &tp) {
 	return result;
 }
 
-void DefaultValueCoder::Serialize(WrSerializer &wrser) {
+void DefaultValueCoder::Serialize(WrSerializer& wrser) {
 	if (blocked()) {
 		return;	 // skip processing
 	}
@@ -101,10 +101,10 @@ bool DefaultValueCoder::Reset() noexcept {
 	return (state_ == State::write);
 }
 
-void DefaultValueCoder::match(const TagsPath &tp) {
+void DefaultValueCoder::match(const TagsPath& tp) {
 	++nestingLevel_;
 
-	for (auto &path : tags_) {
+	for (auto& path : tags_) {
 		if (path.front() != tp.front()) {
 			continue;
 		}
@@ -131,7 +131,7 @@ void DefaultValueCoder::match(const TagsPath &tp) {
 	}
 }
 
-void DefaultValueCoder::write(WrSerializer &wrser) const {
+void DefaultValueCoder::write(WrSerializer& wrser) const {
 	int32_t nestedObjects = 0;
 	for (size_t idx = copyPos_, sz = basePath_->size(); idx < sz; ++idx) {
 		auto tagName = (*basePath_)[idx];

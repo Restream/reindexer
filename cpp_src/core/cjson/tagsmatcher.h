@@ -16,7 +16,9 @@ public:
 
 	int name2tag(std::string_view name) const { return impl_->name2tag(name); }
 	int name2tag(std::string_view name, bool canAdd) {
-		if (!name.data()) return 0;	 // -V547
+		if (!name.data()) {
+			return 0;  // -V547
+		}
 		int res = impl_->name2tag(name);
 		return res ? res : impl_.clone()->name2tag(name, canAdd, updated_);
 	}
@@ -24,7 +26,9 @@ public:
 	const std::string& tag2name(int tag) const { return impl_->tag2name(tag); }
 	TagsPath path2tag(std::string_view jsonPath) const { return impl_->path2tag(jsonPath); }
 	TagsPath path2tag(std::string_view jsonPath, bool canAdd) {
-		if (jsonPath.empty()) return TagsPath();
+		if (jsonPath.empty()) {
+			return TagsPath();
+		}
 		auto res = path2tag(jsonPath);
 		return res.empty() && canAdd ? impl_.clone()->path2tag(jsonPath, canAdd, updated_) : res;
 	}
@@ -34,7 +38,9 @@ public:
 		return tagsPath;
 	}
 	IndexedTagsPath path2indexedtag(std::string_view jsonPath, bool canAdd) {
-		if (jsonPath.empty()) return IndexedTagsPath();
+		if (jsonPath.empty()) {
+			return IndexedTagsPath();
+		}
 		auto res = impl_->path2indexedtag(jsonPath);
 		return res.empty() && canAdd ? impl_.clone()->path2indexedtag(jsonPath, canAdd, updated_) : res;
 	}

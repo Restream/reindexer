@@ -52,7 +52,9 @@ public:
 	}
 	void ClearCache() override {
 		Base::ClearCache();
-		if (cache_ft_) cache_ft_->Clear();
+		if (cache_ft_) {
+			cache_ft_->Clear();
+		}
 	}
 	void ClearCache(const std::bitset<kMaxIndexes>& s) override { Base::ClearCache(s); }
 	void MarkBuilt() noexcept override { assertrx(0); }

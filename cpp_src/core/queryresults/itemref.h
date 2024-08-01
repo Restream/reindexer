@@ -21,7 +21,9 @@ public:
 		  valueInitialized_(other.valueInitialized_),
 		  nsid_(other.nsid_),
 		  sortExprResultsIdx_(other.sortExprResultsIdx_) {
-		if (valueInitialized_) new (&value_) PayloadValue(std::move(other.value_));
+		if (valueInitialized_) {
+			new (&value_) PayloadValue(std::move(other.value_));
+		}
 	}
 	ItemRef(const ItemRef& other)
 		: id_(other.id_),
@@ -30,10 +32,14 @@ public:
 		  valueInitialized_(other.valueInitialized_),
 		  nsid_(other.nsid_),
 		  sortExprResultsIdx_(other.sortExprResultsIdx_) {
-		if (valueInitialized_) new (&value_) PayloadValue(other.value_);
+		if (valueInitialized_) {
+			new (&value_) PayloadValue(other.value_);
+		}
 	}
 	ItemRef& operator=(ItemRef&& other) {
-		if (&other == this) return *this;
+		if (&other == this) {
+			return *this;
+		}
 		id_ = other.id_;
 		proc_ = other.proc_;
 		raw_ = other.raw_;
@@ -56,7 +62,9 @@ public:
 		return *this;
 	}
 	ItemRef& operator=(const ItemRef& other) {
-		if (&other == this) return *this;
+		if (&other == this) {
+			return *this;
+		}
 		id_ = other.id_;
 		proc_ = other.proc_;
 		raw_ = other.raw_;
@@ -79,7 +87,9 @@ public:
 		return *this;
 	}
 	~ItemRef() {
-		if (valueInitialized_) value_.~PayloadValue();
+		if (valueInitialized_) {
+			value_.~PayloadValue();
+		}
 	}
 
 	IdType Id() const noexcept { return id_; }

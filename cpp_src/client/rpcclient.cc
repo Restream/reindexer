@@ -30,7 +30,9 @@ Error RPCClient::startWorkers() {
 	connections_.resize(config_.ConnPoolSize);
 	for (size_t i = 0; i < workers_.size(); i++) {
 		workers_[i].thread_ = std::thread([this](size_t id) { this->run(id); }, i);
-		while (!workers_[i].running) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		while (!workers_[i].running) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
 	}
 	return errOK;
 }
@@ -57,7 +59,9 @@ Error RPCClient::Connect(const std::string& dsn, const client::ConnectOpts& opts
 	std::vector<cproto::ClientConnection::ConnectData::Entry> tmpConnectData(1);
 	connectData_.entries.swap(tmpConnectData);
 	Error err = addConnectEntry(dsn, opts, 0);
-	if (err.ok()) return startWorkers();
+	if (err.ok()) {
+		return startWorkers();
+	}
 	return err;
 }
 
@@ -72,13 +76,17 @@ Error RPCClient::Connect(const std::vector<std::pair<std::string, client::Connec
 	connectData_.entries.swap(tmpConnectData);
 	for (size_t i = 0; i < connectData.size(); ++i) {
 		Error err = addConnectEntry(connectData[i].first, connectData[i].second, i);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 	}
 	return startWorkers();
 }
 
 void RPCClient::Stop() {
-	if (!connections_.size()) return;
+	if (!connections_.size()) {
+		return;
+	}
 	for (auto& worker : workers_) {
 		worker.stop_.send();
 		if (worker.thread_.joinable()) {
@@ -125,7 +133,9 @@ void RPCClient::run(size_t thIdx) {
 				}
 			}
 		}
-		if (doTerminate) break;
+		if (doTerminate) {
+			break;
+		}
 	}
 	for (size_t i = thIdx; int(i) < config_.ConnPoolSize; i += config_.WorkerThreads) {
 		connections_[i].reset();
@@ -138,7 +148,9 @@ Error RPCClient::AddNamespace(const NamespaceDef& nsDef, const InternalRdxContex
 	nsDef.GetJSON(ser);
 	auto status = getConn()->Call(mkCommand(cproto::kCmdOpenNamespace, &ctx), ser.Slice()).Status();
 
-	if (!status.ok()) return status;
+	if (!status.ok()) {
+		return status;
+	}
 
 	std::unique_lock<shared_timed_mutex> lock(nsMutex_);
 	namespaces_.emplace(nsDef.name, Namespace::Ptr(new Namespace(nsDef.name)));
@@ -166,7 +178,9 @@ Error RPCClient::TruncateNamespace(std::string_view nsName, const InternalRdxCon
 Error RPCClient::RenameNamespace(std::string_view srcNsName, const std::string& dstNsName, const InternalRdxContext& ctx) {
 	auto status = getConn()->Call(mkCommand(cproto::kCmdRenameNamespace, &ctx), srcNsName, dstNsName).Status();
 
-	if (!status.ok()) return status;
+	if (!status.ok()) {
+		return status;
+	}
 
 	if (srcNsName != dstNsName) {
 		std::unique_lock<shared_timed_mutex> lock(nsMutex_);
@@ -223,7 +237,9 @@ Error RPCClient::modifyItem(std::string_view nsName, Item& item, int mode, secon
 		auto ret = conn->Call(mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), nsName, int(FormatCJson), item.GetCJSON(), mode,
 							  ser.Slice(), item.GetStateToken(), 0);
 		if (!ret.Status().ok()) {
-			if (ret.Status().code() != errStateInvalidated || tryCount > 2) return ret.Status();
+			if (ret.Status().code() != errStateInvalidated || tryCount > 2) {
+				return ret.Status();
+			}
 			if (withNetTimeout) {
 				netTimeout = netDeadline - conn->Now();
 			}
@@ -239,7 +255,9 @@ Error RPCClient::modifyItem(std::string_view nsName, Item& item, int mode, secon
 			auto newItem = NewItem(nsName);
 			char* endp = nullptr;
 			Error err = newItem.FromJSON(item.impl_->GetJSON(), &endp);
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 
 			item = std::move(newItem);
 			continue;
@@ -265,14 +283,18 @@ Error RPCClient::modifyItemAsync(std::string_view nsName, Item* item, int mode, 
 			ser.PutVString(p);
 		}
 	}
-	if (!conn) conn = getConn();
+	if (!conn) {
+		conn = getConn();
+	}
 
 	std::string ns(nsName);
 	auto deadline = netTimeout.count() ? conn->Now() + netTimeout : seconds(0);
 	conn->Call(
 		[this, ns, mode, item, deadline, ctx](const net::cproto::RPCAnswer& ret, cproto::ClientConnection* conn) -> void {
 			if (!ret.Status().ok()) {
-				if (ret.Status().code() != errStateInvalidated) return ctx.cmpl()(ret.Status());
+				if (ret.Status().code() != errStateInvalidated) {
+					return ctx.cmpl()(ret.Status());
+				}
 				seconds netTimeout(0);
 				if (deadline.count()) {
 					netTimeout = deadline - conn->Now();
@@ -281,7 +303,9 @@ Error RPCClient::modifyItemAsync(std::string_view nsName, Item* item, int mode, 
 				QueryResults* qr = new QueryResults;
 				InternalRdxContext ctxCmpl = ctx.WithCompletion([=](const Error& ret) {
 					delete qr;
-					if (!ret.ok()) return ctx.cmpl()(ret);
+					if (!ret.ok()) {
+						return ctx.cmpl()(ret);
+					}
 
 					seconds timeout(0);
 					if (deadline.count()) {
@@ -291,15 +315,21 @@ Error RPCClient::modifyItemAsync(std::string_view nsName, Item* item, int mode, 
 					// Rebuild item with new state
 					auto newItem = NewItem(ns);
 					Error err = newItem.FromJSON(item->impl_->GetJSON());
-					if (err.ok()) return ctx.cmpl()(err);
+					if (err.ok()) {
+						return ctx.cmpl()(err);
+					}
 					newItem.SetPrecepts(item->impl_->GetPrecepts());
 					*item = std::move(newItem);
 					err = modifyItemAsync(ns, item, mode, conn, timeout, ctx);
-					if (err.ok()) return ctx.cmpl()(err);
+					if (err.ok()) {
+						return ctx.cmpl()(err);
+					}
 				});
 				auto err = selectImpl(Query(ns).Limit(0), *qr, conn, netTimeout, ctxCmpl);
-				if (err.ok()) return ctx.cmpl()(err);
-			} else
+				if (err.ok()) {
+					return ctx.cmpl()(err);
+				}
+			} else {
 				try {
 					auto args = ret.GetArgs(2);
 					ctx.cmpl()(QueryResults(conn, {getNamespace(ns)}, nullptr, p_string(args[0]), int(args[1]), 0, config_.FetchAmount,
@@ -308,6 +338,7 @@ Error RPCClient::modifyItemAsync(std::string_view nsName, Item* item, int mode, 
 				} catch (const Error& err) {
 					ctx.cmpl()(err);
 				}
+			}
 		},
 		mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), ns, int(FormatCJson), item->GetCJSON(), mode, ser.Slice(),
 		item->GetStateToken(), 0);
@@ -447,7 +478,9 @@ Error RPCClient::selectImpl(std::string_view query, QueryResults& result, cproto
 	h_vector<int32_t, 4> vers;
 	vec2pack(vers, pser);
 
-	if (!conn) conn = getConn();
+	if (!conn) {
+		conn = getConn();
+	}
 
 	result = QueryResults(conn, {}, ctx.cmpl(), result.fetchFlags_, config_.FetchAmount, config_.RequestTimeout);
 
@@ -501,7 +534,9 @@ Error RPCClient::selectImpl(const Query& query, QueryResults& result, cproto::Cl
 	}
 	vec2pack(vers, pser);
 
-	if (!conn) conn = getConn();
+	if (!conn) {
+		conn = getConn();
+	}
 
 	result = QueryResults(conn, std::move(nsArray), ctx.cmpl(), result.fetchFlags_, config_.FetchAmount, config_.RequestTimeout);
 
@@ -610,7 +645,9 @@ Error RPCClient::GetSqlSuggestions(std::string_view query, int pos, std::vector<
 			suggests.clear();
 			suggests.reserve(rargs.size());
 
-			for (auto& rarg : rargs) suggests.push_back(rarg.As<std::string>());
+			for (auto& rarg : rargs) {
+				suggests.push_back(rarg.As<std::string>());
+			}
 		}
 		return ret.Status();
 	} catch (const Error& err) {
@@ -709,7 +746,9 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 	std::string_view nsName(args[1]);
 	std::string_view pwalRec(args[2]);
 	lsn_t originLSN;
-	if (args.size() >= 4) originLSN = lsn_t(args[3].As<int64_t>());
+	if (args.size() >= 4) {
+		originLSN = lsn_t(args[3].As<int64_t>());
+	}
 	WALRecord wrec(pwalRec);
 
 	if (wrec.type == WalItemModify) {
@@ -759,7 +798,9 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 							serialDelays_ = 0;
 							observers_.OnUpdatesLost(nsName);
 						} else {
-							for (auto& a1 : uq) onUpdates(a1, conn);
+							for (auto& a1 : uq) {
+								onUpdates(a1, conn);
+							}
 						}
 					}),
 				conn);
@@ -799,8 +840,12 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 }
 
 bool RPCClient::onConnectionFail(int failedDsnIndex) {
-	if (!connectData_.ThereAreReconnectOptions()) return false;
-	if (!connectData_.CurrDsnFailed(failedDsnIndex)) return false;
+	if (!connectData_.ThereAreReconnectOptions()) {
+		return false;
+	}
+	if (!connectData_.CurrDsnFailed(failedDsnIndex)) {
+		return false;
+	}
 
 	connectData_.lastFailedEntryIdx = failedDsnIndex;
 	connectData_.validEntryIdx.store(connectData_.GetNextDsnIndex(), std::memory_order_release);

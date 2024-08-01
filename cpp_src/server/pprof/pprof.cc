@@ -16,7 +16,7 @@ static const std::string kProfileNamePrefix = "reindexer_server";
 namespace reindexer_server {
 using namespace reindexer;
 
-void Pprof::Attach(http::Router &router) {
+void Pprof::Attach(http::Router& router) {
 	router.GET<Pprof, &Pprof::Profile>("/debug/pprof/profile", this);
 	router.GET<Pprof, &Pprof::Profile>("/pprof/profile", this);
 
@@ -36,18 +36,24 @@ void Pprof::Attach(http::Router &router) {
 	router.POST<Pprof, &Pprof::Symbol>("/symbolz", this);
 }
 
-int Pprof::Profile(http::Context &ctx) {
+int Pprof::Profile(http::Context& ctx) {
 #if REINDEX_WITH_GPERFTOOLS
 	long long seconds = 30;
 	std::string_view secondsParam;
 	std::string filePath = fs::JoinPath(fs::GetTempDir(), kProfileNamePrefix + ".profile");
 
 	for (auto p : ctx.request->params) {
-		if (p.name == "seconds") secondsParam = p.val;
+		if (p.name == "seconds") {
+			secondsParam = p.val;
+		}
 	}
 
-	if (secondsParam.length()) seconds = stoi(secondsParam);
-	if (seconds < 1) seconds = 30;
+	if (secondsParam.length()) {
+		seconds = stoi(secondsParam);
+	}
+	if (seconds < 1) {
+		seconds = 30;
+	}
 
 	if (alloc_ext::TCMallocIsAvailable()) {
 		pprof::ProfilerStart(filePath.c_str());
@@ -66,11 +72,11 @@ int Pprof::Profile(http::Context &ctx) {
 #endif
 }
 
-int Pprof::ProfileHeap(http::Context &ctx) {
+int Pprof::ProfileHeap(http::Context& ctx) {
 #if REINDEX_WITH_GPERFTOOLS
 	if (pprof::GperfProfilerIsAvailable()) {
 		if (std::getenv("HEAPPROFILE")) {
-			char *profile = pprof::GetHeapProfile();
+			char* profile = pprof::GetHeapProfile();
 			int res = ctx.String(http::StatusOK, profile);
 			free(profile);
 			return res;
@@ -84,7 +90,7 @@ int Pprof::ProfileHeap(http::Context &ctx) {
 #elif REINDEX_WITH_JEMALLOC
 	std::string content;
 	std::string filePath = fs::JoinPath(fs::GetTempDir(), kProfileNamePrefix + ".heapprofile");
-	const char *pfp = &filePath[0];
+	const char* pfp = &filePath[0];
 
 	alloc_ext::mallctl("prof.dump", NULL, NULL, &pfp, sizeof(pfp));
 	if (fs::ReadFile(filePath, content) < 0) {
@@ -97,7 +103,7 @@ int Pprof::ProfileHeap(http::Context &ctx) {
 #endif
 }
 
-int Pprof::Growth(http::Context &ctx) {
+int Pprof::Growth(http::Context& ctx) {
 #if REINDEX_WITH_GPERFTOOLS
 	if (alloc_ext::TCMallocIsAvailable()) {
 		std::string output;
@@ -111,9 +117,9 @@ int Pprof::Growth(http::Context &ctx) {
 #endif
 }
 
-int Pprof::CmdLine(http::Context &ctx) { return ctx.String(http::StatusOK, "reindexer_server"); }
+int Pprof::CmdLine(http::Context& ctx) { return ctx.String(http::StatusOK, "reindexer_server"); }
 
-int Pprof::Symbol(http::Context &ctx) {
+int Pprof::Symbol(http::Context& ctx) {
 	using namespace std::string_view_literals;
 	WrSerializer ser;
 
@@ -130,10 +136,12 @@ int Pprof::Symbol(http::Context &ctx) {
 		return ctx.String(http::StatusOK, ser.DetachChunk());
 	}
 
-	char *endp;
+	char* endp;
 	for (size_t pos = 0; pos != std::string::npos; pos = req.find_first_of(" +", pos)) {
 		pos = req.find_first_not_of(" +", pos);
-		if (pos == std::string::npos) break;
+		if (pos == std::string::npos) {
+			break;
+		}
 		uintptr_t addr = strtoull(&req[pos], &endp, 16);
 		ser << std::string_view(&req[pos], endp - &req[pos]) << '\t';
 		resolveSymbol(addr, ser);
@@ -143,7 +151,7 @@ int Pprof::Symbol(http::Context &ctx) {
 	return ctx.String(http::StatusOK, ser.DetachChunk());
 }
 
-void Pprof::resolveSymbol(uintptr_t ptr, WrSerializer &out) {
+void Pprof::resolveSymbol(uintptr_t ptr, WrSerializer& out) {
 	auto te = debug::TraceEntry(ptr);
 	std::string_view symbol = te.FuncName();
 
@@ -169,7 +177,9 @@ void Pprof::resolveSymbol(uintptr_t ptr, WrSerializer &out) {
 					tmpl--;
 					break;
 				default:
-					if (tmpl == 0) out << symbol[p];
+					if (tmpl == 0) {
+						out << symbol[p];
+					}
 			}
 			p++;
 		}

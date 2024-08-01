@@ -13,31 +13,35 @@
 namespace reindexer {
 namespace fs {
 
-[[nodiscard]] int MkDirAll(const std::string &path) noexcept {
+[[nodiscard]] int MkDirAll(const std::string& path) noexcept {
 	try {
 		std::string tmpStr = path;
 		char *p = nullptr, *tmp = tmpStr.data();
 		int err;
 		const auto len = tmpStr.size();
-		if (tmp[len - 1] == '/' || tmp[len - 1] == '\\') tmp[len - 1] = 0;
+		if (tmp[len - 1] == '/' || tmp[len - 1] == '\\') {
+			tmp[len - 1] = 0;
+		}
 		for (p = tmp + 1; *p; p++) {
 			if (*p == '/' || *p == '\\') {
 				*p = 0;
 				err = mkdir(tmp, S_IRWXU);
-				if ((err < 0) && (errno != EEXIST)) return err;
+				if ((err < 0) && (errno != EEXIST)) {
+					return err;
+				}
 				*p = '/';
 			}
 		}
 		return ((mkdir(tmp, S_IRWXU) < 0) && errno != EEXIST) ? -1 : 0;
-	} catch (std::exception &) {
+	} catch (std::exception&) {
 		return -1;
 	}
 }
 
-int RmDirAll(const std::string &path) noexcept {
+int RmDirAll(const std::string& path) noexcept {
 #ifndef _WIN32
 	return nftw(
-		path.c_str(), [](const char *fpath, const struct stat *, int, struct FTW *) { return ::remove(fpath); }, 64, FTW_DEPTH | FTW_PHYS);
+		path.c_str(), [](const char* fpath, const struct stat*, int, struct FTW*) { return ::remove(fpath); }, 64, FTW_DEPTH | FTW_PHYS);
 #else
 	WIN32_FIND_DATA entry;
 	if (HANDLE hFind = FindFirstFile((path + "/*.*").c_str(), &entry); hFind != INVALID_HANDLE_VALUE) {
@@ -73,9 +77,9 @@ int RmDirAll(const std::string &path) noexcept {
 #endif
 }
 
-[[nodiscard]] int ReadFile(const std::string &path, std::string &content) noexcept {
+[[nodiscard]] int ReadFile(const std::string& path, std::string& content) noexcept {
 	try {
-		FILE *f = fopen(path.c_str(), "rb");
+		FILE* f = fopen(path.c_str(), "rb");
 		if (!f) {
 			return -1;
 		}
@@ -86,13 +90,13 @@ int RmDirAll(const std::string &path) noexcept {
 		auto nread = fread(&content[0], 1, sz, f);
 		fclose(f);
 		return nread;
-	} catch (std::exception &) {
+	} catch (std::exception&) {
 		return -1;
 	}
 }
 
-[[nodiscard]] int64_t WriteFile(const std::string &path, std::string_view content) noexcept {
-	FILE *f = fopen(path.c_str(), "w");
+[[nodiscard]] int64_t WriteFile(const std::string& path, std::string_view content) noexcept {
+	FILE* f = fopen(path.c_str(), "w");
 	if (!f) {
 		return -1;
 	}
@@ -102,9 +106,9 @@ int RmDirAll(const std::string &path) noexcept {
 	return static_cast<int64_t>((written > 0) ? content.size() : written);
 }
 
-[[nodiscard]] int ReadDir(const std::string &path, std::vector<DirEntry> &content) noexcept {
+[[nodiscard]] int ReadDir(const std::string& path, std::vector<DirEntry>& content) noexcept {
 #ifndef _WIN32
-	struct dirent *entry;
+	struct dirent* entry;
 	auto dir = opendir(path.c_str());
 
 	if (!dir) {
@@ -193,36 +197,44 @@ std::string GetTempDir() {
 	::GetTempPathA(sizeof(tmpBuf), tmpBuf);
 	return tmpBuf;
 #else
-	const char *tmpDir = getenv("TMPDIR");
-	if (tmpDir && *tmpDir) return tmpDir;
+	const char* tmpDir = getenv("TMPDIR");
+	if (tmpDir && *tmpDir) {
+		return tmpDir;
+	}
 	return "/tmp";
 #endif
 }
 
-void SetTempDir(std::string &&dir) noexcept {
+void SetTempDir(std::string&& dir) noexcept {
 	std::lock_guard lck(tmpDirMtx);
 	tmpDir = std::move(dir);
 }
 
 std::string GetHomeDir() {
-	const char *homeDir = getenv("HOME");
-	if (homeDir && *homeDir) return homeDir;
+	const char* homeDir = getenv("HOME");
+	if (homeDir && *homeDir) {
+		return homeDir;
+	}
 	return ".";
 }
 
-FileStatus Stat(const std::string &path) {
+FileStatus Stat(const std::string& path) {
 #ifdef _WIN32
 	struct _stat state;
-	if (_stat(path.c_str(), &state) < 0) return StatError;
+	if (_stat(path.c_str(), &state) < 0) {
+		return StatError;
+	}
 	return (state.st_mode & _S_IFDIR) ? StatDir : StatFile;
 #else
 	struct stat state;
-	if (stat(path.c_str(), &state) < 0) return StatError;
+	if (stat(path.c_str(), &state) < 0) {
+		return StatError;
+	}
 	return S_ISDIR(state.st_mode) ? StatDir : StatFile;
 #endif
 }
 
-TimeStats StatTime(const std::string &path) {
+TimeStats StatTime(const std::string& path) {
 #ifdef _WIN32
 	FILETIME ftCreate, ftAccess, ftWrite;
 	HANDLE hFile = CreateFile(path.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
@@ -256,32 +268,38 @@ TimeStats StatTime(const std::string &path) {
 	return {-1, -1, -1};
 }
 
-[[nodiscard]] bool DirectoryExists(const std::string &directory) noexcept {
+[[nodiscard]] bool DirectoryExists(const std::string& directory) noexcept {
 	if (!directory.empty()) {
 #ifdef _WIN32
 		if (_access(directory.c_str(), 0) == 0) {
 			struct _stat status;
 			_stat(directory.c_str(), &status);
-			if (status.st_mode & _S_IFDIR) return true;
+			if (status.st_mode & _S_IFDIR) {
+				return true;
+			}
 		}
 #else
 		if (access(directory.c_str(), F_OK) == 0) {
 			struct stat status;
 			stat(directory.c_str(), &status);
-			if (status.st_mode & S_IFDIR) return true;
+			if (status.st_mode & S_IFDIR) {
+				return true;
+			}
 		}
 #endif
 	}
 	return false;
 }
 
-Error TryCreateDirectory(const std::string &dir) {
+Error TryCreateDirectory(const std::string& dir) {
 	using reindexer::fs::MkDirAll;
 	using reindexer::fs::DirectoryExists;
 	using reindexer::fs::GetTempDir;
 	if (!dir.empty()) {
 		if (!DirectoryExists(dir) && dir != GetTempDir()) {
-			if (MkDirAll(dir) < 0) return Error(errLogic, "Could not create '%s'. Reason: %s\n", dir.c_str(), strerror(errno));
+			if (MkDirAll(dir) < 0) {
+				return Error(errLogic, "Could not create '%s'. Reason: %s\n", dir.c_str(), strerror(errno));
+			}
 #ifdef _WIN32
 		} else if (_access(dir.c_str(), 6) < 0) {
 #else
@@ -293,12 +311,12 @@ Error TryCreateDirectory(const std::string &dir) {
 	return {};
 }
 
-std::string GetDirPath(const std::string &path) {
+std::string GetDirPath(const std::string& path) {
 	size_t lastSlashPos = path.find_last_of("/\\");
 	return lastSlashPos == std::string::npos ? std::string() : path.substr(0, lastSlashPos + 1);
 }
 
-Error ChownDir(const std::string &path, const std::string &user) {
+Error ChownDir(const std::string& path, const std::string& user) {
 #ifndef _WIN32
 	if (!user.empty() && !path.empty()) {
 		struct passwd pwd, *usr;
@@ -327,7 +345,7 @@ Error ChownDir(const std::string &path, const std::string &user) {
 	return {};
 }
 
-Error ChangeUser(const char *userName) {
+Error ChangeUser(const char* userName) {
 #ifndef _WIN32
 	struct passwd pwd, *result;
 	char buf[0x4000];
@@ -342,30 +360,42 @@ Error ChangeUser(const char *userName) {
 		}
 	}
 
-	if (setgid(pwd.pw_gid) != 0) return Error(errLogic, "Could not change user to `%s`. Reason: %s", userName, strerror(errno));
-	if (setuid(pwd.pw_uid) != 0) return Error(errLogic, "Could not change user to `%s`. Reason: %s", userName, strerror(errno));
+	if (setgid(pwd.pw_gid) != 0) {
+		return Error(errLogic, "Could not change user to `%s`. Reason: %s", userName, strerror(errno));
+	}
+	if (setuid(pwd.pw_uid) != 0) {
+		return Error(errLogic, "Could not change user to `%s`. Reason: %s", userName, strerror(errno));
+	}
 #else
 	(void)userName;
 #endif
 	return {};
 }
 
-std::string GetRelativePath(const std::string &path, unsigned maxUp) {
+std::string GetRelativePath(const std::string& path, unsigned maxUp) {
 	std::string cwd = GetCwd();
 
 	unsigned same = 0, slashes = 0;
 	for (; same < std::min(cwd.size(), path.size()) && cwd[same] == path[same]; ++same) {
 	}
 	for (unsigned i = same; i < cwd.size(); ++i) {
-		if (cwd[i] == '/' || i == same) slashes++;
+		if (cwd[i] == '/' || i == same) {
+			slashes++;
+		}
 	}
-	if (!slashes && same < path.size()) same++;
+	if (!slashes && same < path.size()) {
+		same++;
+	}
 
-	if (same < 2 || (slashes > maxUp)) return path;
+	if (same < 2 || (slashes > maxUp)) {
+		return path;
+	}
 
 	std::string rpath;
 	rpath.reserve(slashes * 3 + path.size() - same + 1);
-	while (slashes--) rpath += "../";
+	while (slashes--) {
+		rpath += "../";
+	}
 	rpath.append(path.begin() + same, path.end());
 	return rpath;
 }

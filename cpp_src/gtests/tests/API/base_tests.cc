@@ -824,8 +824,12 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 		err = rt.reindexer->Upsert(default_namespace, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		if (i % 5 == 0) sameOldValue += 5;
-		if (i % 3 == 0) ++stringValuedIdx;
+		if (i % 5 == 0) {
+			sameOldValue += 5;
+		}
+		if (i % 3 == 0) {
+			++stringValuedIdx;
+		}
 		stringValuedIdx %= possibleValues.size();
 	}
 
@@ -857,11 +861,12 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 				cmpRes[j] = lastValues[j].Compare<reindexer::NotComparable::Return>(sortedValue);
 				bool needToVerify = true;
 				if (j != 0) {
-					for (int k = j - 1; k >= 0; --k)
+					for (int k = j - 1; k >= 0; --k) {
 						if (cmpRes[k] != reindexer::ComparationResult::Eq) {
 							needToVerify = false;
 							break;
 						}
+					}
 				}
 				needToVerify = (j == 0) || needToVerify;
 				if (needToVerify) {

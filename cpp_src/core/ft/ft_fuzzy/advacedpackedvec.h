@@ -7,7 +7,7 @@ class IdRelType;
 
 class AdvacedPackedVec : public packed_vector<IdRelType> {
 public:
-	AdvacedPackedVec(IdRelSet &&data);
+	AdvacedPackedVec(IdRelSet&& data);
 
 	int max_id_;
 	int min_id_;

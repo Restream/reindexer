@@ -69,15 +69,15 @@ public:
 	bool IsEmpty() const noexcept { return empty(); }
 	size_t Size() const noexcept { return size(); }
 	size_t BTreeSize() const noexcept { return 0; }
-	const base_idsetset *BTree() const noexcept { return nullptr; }
+	const base_idsetset* BTree() const noexcept { return nullptr; }
 	void ReserveForSorted(int sortedIdxCount) { reserve(size() * (sortedIdxCount + 1)); }
 	std::string Dump() const;
 
 protected:
-	IdSetPlain(base_idset &&idset) noexcept : base_idset(std::move(idset)) {}
+	IdSetPlain(base_idset&& idset) noexcept : base_idset(std::move(idset)) {}
 };
 
-std::ostream &operator<<(std::ostream &, const IdSetPlain &);
+std::ostream& operator<<(std::ostream&, const IdSetPlain&);
 
 // maxmimum size of idset without building btree
 const int kMaxPlainIdsetSize = 16;
@@ -88,10 +88,10 @@ class IdSet : public IdSetPlain {
 public:
 	using Ptr = intrusive_ptr<intrusive_atomic_rc_wrapper<IdSet>>;
 	IdSet() noexcept : usingBtree_(false) {}
-	IdSet(const IdSet &other)
+	IdSet(const IdSet& other)
 		: IdSetPlain(other), set_(!other.set_ ? nullptr : new base_idsetset(*other.set_)), usingBtree_(other.usingBtree_.load()) {}
-	IdSet(IdSet &&other) noexcept : IdSetPlain(std::move(other)), set_(std::move(other.set_)), usingBtree_(other.usingBtree_.load()) {}
-	IdSet &operator=(IdSet &&other) noexcept {
+	IdSet(IdSet&& other) noexcept : IdSetPlain(std::move(other)), set_(std::move(other.set_)), usingBtree_(other.usingBtree_.load()) {}
+	IdSet& operator=(IdSet&& other) noexcept {
 		if (&other != this) {
 			IdSetPlain::operator=(std::move(other));
 			set_ = std::move(other.set_);
@@ -99,7 +99,7 @@ public:
 		}
 		return *this;
 	}
-	IdSet &operator=(const IdSet &other) {
+	IdSet& operator=(const IdSet& other) {
 		if (&other != this) {
 			IdSetPlain::operator=(other);
 			set_.reset(!other.set_ ? nullptr : new base_idsetset(*other.set_));
@@ -107,7 +107,7 @@ public:
 		}
 		return *this;
 	}
-	static Ptr BuildFromUnsorted(base_idset &&ids) {
+	static Ptr BuildFromUnsorted(base_idset&& ids) {
 		boost::sort::pdqsort_branchless(ids.begin(), ids.end());
 		ids.erase(std::unique(ids.begin(), ids.end()), ids.end());	// TODO: It would be better to integrate unique into sort
 		return make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>(std::move(ids));
@@ -166,11 +166,13 @@ public:
 	}
 
 	template <typename InputIt>
-	void Append(InputIt first, InputIt last, const std::vector<bool> &mask, EditMode editMode = Auto) {
+	void Append(InputIt first, InputIt last, const std::vector<bool>& mask, EditMode editMode = Auto) {
 		if (editMode == Unordered) {
 			assertrx(!set_);
 			for (; first != last; ++first) {
-				if (mask[*first]) push_back(*first);
+				if (mask[*first]) {
+					push_back(*first);
+				}
 			}
 		} else if (editMode == Auto) {
 			if (!set_) {
@@ -180,7 +182,9 @@ public:
 			}
 			assertrx(!size());
 			for (; first != last; ++first) {
-				if (mask[*first]) set_->insert(*first);
+				if (mask[*first]) {
+					set_->insert(*first);
+				}
 			}
 			usingBtree_.store(true, std::memory_order_release);
 		} else {
@@ -202,7 +206,9 @@ public:
 	void Commit() {
 		if (!size() && set_) {
 			reserve(set_->size());
-			for (auto id : *set_) push_back(id);
+			for (auto id : *set_) {
+				push_back(id);
+			}
 		}
 
 		usingBtree_.store(false, std::memory_order_release);
@@ -211,7 +217,7 @@ public:
 	bool IsEmpty() const noexcept { return empty() && (!set_ || set_->empty()); }
 	size_t Size() const noexcept { return usingBtree_.load(std::memory_order_acquire) ? set_->size() : size(); }
 	size_t BTreeSize() const noexcept { return set_ ? sizeof(*set_.get()) + set_->size() * sizeof(int) : 0; }
-	const base_idsetset *BTree() const noexcept { return set_.get(); }
+	const base_idsetset* BTree() const noexcept { return set_.get(); }
 	void ReserveForSorted(int sortedIdxCount) { reserve(((set_ ? set_->size() : size())) * (sortedIdxCount + 1)); }
 
 protected:
@@ -220,7 +226,7 @@ protected:
 	template <typename>
 	friend class BtreeIndexReverseIteratorImpl;
 
-	IdSet(base_idset &&idset) noexcept : IdSetPlain(std::move(idset)), usingBtree_(false) {}
+	IdSet(base_idset&& idset) noexcept : IdSetPlain(std::move(idset)), usingBtree_(false) {}
 
 	std::unique_ptr<base_idsetset> set_;
 	std::atomic<bool> usingBtree_;

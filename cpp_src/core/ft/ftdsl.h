@@ -32,8 +32,8 @@ struct FtDslOpts {
 
 struct FtDSLEntry {
 	FtDSLEntry() = default;
-	FtDSLEntry(std::wstring &&p, FtDslOpts &&o) : pattern{std::move(p)}, opts{std::move(o)} {}
-	FtDSLEntry(const std::wstring &p, const FtDslOpts &o) : pattern{p}, opts{o} {}
+	FtDSLEntry(std::wstring&& p, FtDslOpts&& o) : pattern{std::move(p)}, opts{std::move(o)} {}
+	FtDSLEntry(const std::wstring& p, const FtDslOpts& o) : pattern{p}, opts{o} {}
 	std::wstring pattern;
 	FtDslOpts opts;
 };
@@ -50,20 +50,20 @@ struct StopWord;
 
 class FtDSLQuery : public RVector<FtDSLEntry> {
 public:
-	FtDSLQuery(const RHashMap<std::string, int> &fields, const StopWordsSetT &stopWords, const std::string &extraWordSymbols) noexcept
+	FtDSLQuery(const RHashMap<std::string, int>& fields, const StopWordsSetT& stopWords, const std::string& extraWordSymbols) noexcept
 		: fields_(fields), stopWords_(stopWords), extraWordSymbols_(extraWordSymbols) {}
-	void parse(std::wstring &utf16str);
+	void parse(std::wstring& utf16str);
 	void parse(std::string_view q);
 	FtDSLQuery CopyCtx() const noexcept { return {fields_, stopWords_, extraWordSymbols_}; }
 
 protected:
-	void parseFields(std::wstring &utf16str, std::wstring::iterator &it, h_vector<FtDslFieldOpts, 8> &fieldsOpts);
+	void parseFields(std::wstring& utf16str, std::wstring::iterator& it, h_vector<FtDslFieldOpts, 8>& fieldsOpts);
 
-	std::function<int(const std::string &)> resolver_;
+	std::function<int(const std::string&)> resolver_;
 
-	const RHashMap<std::string, int> &fields_;
-	const StopWordsSetT &stopWords_;
-	const std::string &extraWordSymbols_;
+	const RHashMap<std::string, int>& fields_;
+	const StopWordsSetT& stopWords_;
+	const std::string& extraWordSymbols_;
 };
 
 }  // namespace reindexer

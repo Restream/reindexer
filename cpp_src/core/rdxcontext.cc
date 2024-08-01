@@ -93,7 +93,9 @@ RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, Activity
 
 RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, ActivityContainer& activityContainer,
 												QueryResults& qresults) const {
-	if (activityTracer_.empty() || query.empty()) return {(deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
+	if (activityTracer_.empty() || query.empty()) {
+		return {(deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
+	}
 	assertrx(!qresults.activityCtx_);
 	qresults.activityCtx_.emplace(activityTracer_, user_, query, activityContainer, connectionId_, true);
 	return RdxContext{&*(qresults.activityCtx_), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};

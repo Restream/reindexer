@@ -188,7 +188,9 @@ void RxSelector::DoSelect(const Query& q, QueryResults& result, NsLocker<T>& loc
 		}
 	}
 	// Adding context to QueryResults
-	for (const auto& jctx : joinQueryResultsContexts) result.addNSContext(jctx.type_, jctx.tagsMatcher_, jctx.fieldsFilter_, jctx.schema_);
+	for (const auto& jctx : joinQueryResultsContexts) {
+		result.addNSContext(jctx.type_, jctx.tagsMatcher_, jctx.fieldsFilter_, jctx.schema_);
+	}
 }
 
 [[nodiscard]] static bool byJoinedField(std::string_view sortExpr, std::string_view joinedNs) {
@@ -198,21 +200,31 @@ void RxSelector::DoSelect(const Query& q, QueryResults& result, NsLocker<T>& loc
 														'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '.', '+'};
 	std::string_view::size_type i = 0;
 	const auto s = sortExpr.size();
-	while (i < s && isspace(sortExpr[i])) ++i;
+	while (i < s && isspace(sortExpr[i])) {
+		++i;
+	}
 	bool inQuotes = false;
 	if (i < s && sortExpr[i] == '"') {
 		++i;
 		inQuotes = true;
 	}
-	while (i < s && isspace(sortExpr[i])) ++i;
+	while (i < s && isspace(sortExpr[i])) {
+		++i;
+	}
 	std::string_view::size_type j = 0, s2 = joinedNs.size();
 	for (; j < s2 && i < s; ++i, ++j) {
-		if (sortExpr[i] != joinedNs[j]) return false;
+		if (sortExpr[i] != joinedNs[j]) {
+			return false;
+		}
 	}
-	if (i >= s || sortExpr[i] != '.') return false;
+	if (i >= s || sortExpr[i] != '.') {
+		return false;
+	}
 	for (++i; i < s; ++i) {
 		if (!kJoinedIndexNameSyms.test(sortExpr[i])) {
-			if (isspace(sortExpr[i])) break;
+			if (isspace(sortExpr[i])) {
+				break;
+			}
 			if (inQuotes && sortExpr[i] == '"') {
 				inQuotes = false;
 				++i;
@@ -221,9 +233,15 @@ void RxSelector::DoSelect(const Query& q, QueryResults& result, NsLocker<T>& loc
 			return false;
 		}
 	}
-	while (i < s && isspace(sortExpr[i])) ++i;
-	if (inQuotes && i < s && sortExpr[i] == '"') ++i;
-	while (i < s && isspace(sortExpr[i])) ++i;
+	while (i < s && isspace(sortExpr[i])) {
+		++i;
+	}
+	if (inQuotes && i < s && sortExpr[i] == '"') {
+		++i;
+	}
+	while (i < s && isspace(sortExpr[i])) {
+		++i;
+	}
 	return i == s;
 }
 
@@ -395,7 +413,9 @@ template <typename T>
 JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, QueryResults& result, NsLocker<T>& locks, SelectFunctionsHolder& func,
 												   std::vector<QueryResultsContext>& queryResultsContexts, const RdxContext& rdxCtx) {
 	JoinedSelectors joinedSelectors;
-	if (q.GetJoinQueries().empty()) return joinedSelectors;
+	if (q.GetJoinQueries().empty()) {
+		return joinedSelectors;
+	}
 	auto ns = locks.Get(q.NsName());
 	assertrx_throw(ns);
 

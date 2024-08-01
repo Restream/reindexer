@@ -66,7 +66,9 @@ TEST_P(FTGenericApi, CompositeSelect) {
 			auto ritem(it.GetItem(false));
 			for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 				auto field = ritem[idx].Name();
-				if (field == "id") continue;
+				if (field == "id") {
+					continue;
+				}
 				auto it = data.find(ritem[field].As<std::string>());
 				ASSERT_TRUE(it != data.end());
 				data.erase(it);
@@ -103,7 +105,9 @@ TEST_P(FTGenericApi, CompositeSelectWithFields) {
 				auto ritem(it.GetItem(false));
 				for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 					auto curField = ritem[idx].Name();
-					if (curField != field) continue;
+					if (curField != field) {
+						continue;
+					}
 					auto it = data.find(ritem[curField].As<std::string>());
 					ASSERT_TRUE(it != data.end());
 					data.erase(it);
@@ -151,7 +155,9 @@ TEST_P(FTGenericApi, MergeWithSameNSAndSelectFunctions) {
 				auto ritem(it.GetItem(false));
 				for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 					auto curField = ritem[idx].Name();
-					if (curField != field) continue;
+					if (curField != field) {
+						continue;
+					}
 					auto it = data.find(ritem[curField].As<std::string>());
 					ASSERT_TRUE(it != data.end());
 					data.erase(it);

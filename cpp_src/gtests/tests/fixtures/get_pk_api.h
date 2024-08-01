@@ -42,11 +42,15 @@ public:
 public:
 	Error CreateNamespace(const NamespaceDef& nsDef) {
 		Error err = db_->OpenNamespace(nsDef.name);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 
 		for (const auto& index : nsDef.indexes) {
 			err = db_->AddIndex(nsDef.name, index);
-			if (!err.ok()) break;
+			if (!err.ok()) {
+				break;
+			}
 		}
 
 		return err;
@@ -54,7 +58,9 @@ public:
 
 	Error UpsertAndCommit(const string& ns, Item& item) {
 		Error err = db_->Upsert(ns, item);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 
 		return db_->Commit(ns);
 	}
@@ -63,7 +69,9 @@ public:
 		typedef std::tuple<Error, Item, Data> ResultType;
 
 		Item item = db_->NewItem(ns);
-		if (!item.Status().ok()) return ResultType(item.Status(), std::move(item), Data{0, 0, nullptr, nullptr, 0, 0});
+		if (!item.Status().ok()) {
+			return ResultType(item.Status(), std::move(item), Data{0, 0, nullptr, nullptr, 0, 0});
+		}
 
 		Data data = (d == nullptr) ? randomItemData() : *d;
 		std::string json = StringFormat(jsonPattern, data.id, data.name, data.color, data.weight, data.height, data.fk_id);
@@ -88,9 +96,13 @@ public:
 
 		QueryResults qres;
 		Error err = db_->Select(query, qres);
-		if (!err.ok()) return ResultType(err, QueryResults{});
+		if (!err.ok()) {
+			return ResultType(err, QueryResults{});
+		}
 
-		if (print) printQueryResults(query.NsName(), qres);
+		if (print) {
+			printQueryResults(query.NsName(), qres);
+		}
 		return ResultType(err, std::move(qres));
 	}
 

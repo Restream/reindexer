@@ -12,7 +12,7 @@
 
 namespace reindexer {
 
-void ItemImpl::SetField(int field, const VariantArray &krs) {
+void ItemImpl::SetField(int field, const VariantArray& krs) {
 	validateModifyArray(krs);
 	cjson_ = std::string_view();
 	payloadValue_.Clone();
@@ -20,8 +20,10 @@ void ItemImpl::SetField(int field, const VariantArray &krs) {
 		!payloadType_.Field(field).Type().Is<KeyValueType::Uuid>()) {
 		VariantArray krsCopy;
 		krsCopy.reserve(krs.size());
-		if (!holder_) holder_ = std::make_unique<std::deque<std::string>>();
-		for (auto &kr : krs) {
+		if (!holder_) {
+			holder_ = std::make_unique<std::deque<std::string>>();
+		}
+		for (auto& kr : krs) {
 			holder_->push_back(kr.As<std::string>());
 			krsCopy.emplace_back(p_string{&holder_->back()});
 		}
@@ -31,11 +33,11 @@ void ItemImpl::SetField(int field, const VariantArray &krs) {
 	}
 }
 
-void ItemImpl::ModifyField(std::string_view jsonPath, const VariantArray &keys, FieldModifyMode mode) {
+void ItemImpl::ModifyField(std::string_view jsonPath, const VariantArray& keys, FieldModifyMode mode) {
 	ModifyField(tagsMatcher_.path2indexedtag(jsonPath, mode != FieldModeDrop), keys, mode);
 }
 
-void ItemImpl::ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &keys, FieldModifyMode mode) {
+void ItemImpl::ModifyField(const IndexedTagsPath& tagsPath, const VariantArray& keys, FieldModifyMode mode) {
 	validateModifyArray(keys);
 	payloadValue_.Clone();
 	Payload pl = GetPayload();
@@ -66,22 +68,22 @@ void ItemImpl::ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &
 			case FieldModeArrayPushFront:
 				throw Error(errLogic, "Update mode is not supported: %d", mode);
 		}
-	} catch (const Error &e) {
+	} catch (const Error& e) {
 		throw Error(e.code(), "Error modifying field value: '%s'", e.what());
-	} catch (std::exception &e) {
+	} catch (std::exception& e) {
 		throw Error(errLogic, "Error modifying field value: '%s'", e.what());
 	}
 
 	tupleData_ = ser_.DetachLStr();
-	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())), Variant::no_hold_t{}));
+	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr*>(tupleData_.get())), Variant::no_hold_t{}));
 }
 
-void ItemImpl::SetField(std::string_view jsonPath, const VariantArray &keys) { ModifyField(jsonPath, keys, FieldModeSet); }
+void ItemImpl::SetField(std::string_view jsonPath, const VariantArray& keys) { ModifyField(jsonPath, keys, FieldModeSet); }
 void ItemImpl::DropField(std::string_view jsonPath) { ModifyField(jsonPath, {}, FieldModeDrop); }
 Variant ItemImpl::GetField(int field) { return GetPayload().Get(field, 0); }
-void ItemImpl::GetField(int field, VariantArray &values) { GetPayload().Get(field, values); }
+void ItemImpl::GetField(int field, VariantArray& values) { GetPayload().Get(field, values); }
 
-Error ItemImpl::FromMsgPack(std::string_view buf, size_t &offset) {
+Error ItemImpl::FromMsgPack(std::string_view buf, size_t& offset) {
 	payloadValue_.Clone();
 	Payload pl = GetPayload();
 	if (!msgPackDecoder_) {
@@ -94,7 +96,7 @@ Error ItemImpl::FromMsgPack(std::string_view buf, size_t &offset) {
 	Error err = msgPackDecoder_->Decode(buf, pl, ser_, offset);
 	if (err.ok()) {
 		tupleData_ = ser_.DetachLStr();
-		pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())), Variant::no_hold_t{}));
+		pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr*>(tupleData_.get())), Variant::no_hold_t{}));
 	}
 	return err;
 }
@@ -111,17 +113,17 @@ Error ItemImpl::FromProtobuf(std::string_view buf) {
 	Error err = decoder.Decode(buf, pl, ser_);
 	if (err.ok()) {
 		tupleData_ = ser_.DetachLStr();
-		pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())), Variant::no_hold_t{}));
+		pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr*>(tupleData_.get())), Variant::no_hold_t{}));
 	}
 	return err;
 }
 
-Error ItemImpl::GetMsgPack(WrSerializer &wrser) {
+Error ItemImpl::GetMsgPack(WrSerializer& wrser) {
 	int startTag = 0;
 	ConstPayload pl = GetConstPayload();
 
 	MsgPackEncoder msgpackEncoder(&tagsMatcher_);
-	const TagsLengths &tagsLengths = msgpackEncoder.GetTagsMeasures(pl);
+	const TagsLengths& tagsLengths = msgpackEncoder.GetTagsMeasures(pl);
 
 	MsgPackBuilder msgpackBuilder(wrser, &tagsLengths, &startTag, ObjType::TypePlain, &tagsMatcher_);
 	msgpackEncoder.Encode(pl, msgpackBuilder);
@@ -137,7 +139,7 @@ std::string_view ItemImpl::GetMsgPack() {
 	return ser_.Slice();
 }
 
-Error ItemImpl::GetProtobuf(WrSerializer &wrser) {
+Error ItemImpl::GetProtobuf(WrSerializer& wrser) {
 	assertrx(ns_);
 	ConstPayload pl = GetConstPayload();
 	ProtobufBuilder protobufBuilder(&wrser, ObjType::TypePlain, schema_.get(), &tagsMatcher_);
@@ -147,7 +149,7 @@ Error ItemImpl::GetProtobuf(WrSerializer &wrser) {
 }
 
 // Construct item from compressed json
-void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder *recoder) {
+void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder* recoder) {
 	payloadValue_.Clone();
 	std::string_view data = slice;
 	if (!unsafe_) {
@@ -170,7 +172,9 @@ void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder *recoder) 
 
 	Payload pl = GetPayload();
 	pl.Reset();
-	if (!holder_) holder_ = std::make_unique<std::deque<std::string>>();
+	if (!holder_) {
+		holder_ = std::make_unique<std::deque<std::string>>();
+	}
 	CJsonDecoder decoder(tagsMatcher_, *holder_);
 
 	ser_.Reset();
@@ -188,13 +192,15 @@ void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder *recoder) 
 		}
 	}
 
-	if (!rdser.Eof()) throw Error(errParseJson, "Internal error - left unparsed data %d", rdser.Pos());
+	if (!rdser.Eof()) {
+		throw Error(errParseJson, "Internal error - left unparsed data %d", rdser.Pos());
+	}
 
 	tupleData_ = ser_.DetachLStr();
-	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())), Variant::no_hold_t{}));
+	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr*>(tupleData_.get())), Variant::no_hold_t{}));
 }
 
-Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
+Error ItemImpl::FromJSON(std::string_view slice, char** endp, bool pkOnly) {
 	payloadValue_.Clone();
 	std::string_view data = slice;
 	cjson_ = std::string_view();
@@ -205,11 +211,11 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
 			try {
 				gason::JsonParser parser(nullptr);
 				parser.Parse(data, &len);
-				*endp = const_cast<char *>(data.data()) + len;
+				*endp = const_cast<char*>(data.data()) + len;
 				sourceData_.reset(new char[len]);
 				std::copy(data.begin(), data.begin() + len, sourceData_.get());
 				data = std::string_view(sourceData_.get(), len);
-			} catch (const gason::Exception &e) {
+			} catch (const gason::Exception& e) {
 				return Error(errParseJson, "Error parsing json: '%s'", e.what());
 			}
 		} else {
@@ -224,11 +230,13 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
 	gason::JsonParser parser(&largeJSONStrings_);
 	try {
 		node = parser.Parse(giftStr(data), &len);
-		if (node.value.getTag() != gason::JSON_OBJECT) return Error(errParseJson, "Expected json object");
-		if (unsafe_ && endp) {
-			*endp = const_cast<char *>(data.data()) + len;
+		if (node.value.getTag() != gason::JSON_OBJECT) {
+			return Error(errParseJson, "Expected json object");
 		}
-	} catch (gason::Exception &e) {
+		if (unsafe_ && endp) {
+			*endp = const_cast<char*>(data.data()) + len;
+		}
+	} catch (gason::Exception& e) {
 		return Error(errParseJson, "Error parsing json: '%s', pos: %d", e.what(), len);
 	}
 
@@ -243,11 +251,11 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
 
 	// Put tuple to field[0]
 	tupleData_ = ser_.DetachLStr();
-	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())), Variant::no_hold_t{}));
+	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr*>(tupleData_.get())), Variant::no_hold_t{}));
 	return err;
 }
 
-void ItemImpl::FromCJSON(ItemImpl &other, Recoder *recoder) {
+void ItemImpl::FromCJSON(ItemImpl& other, Recoder* recoder) {
 	FromCJSON(other.GetCJSON(), false, recoder);
 	cjson_ = {};
 }
@@ -267,12 +275,14 @@ std::string_view ItemImpl::GetJSON() {
 std::string_view ItemImpl::GetCJSON(bool withTagsMatcher) {
 	withTagsMatcher = withTagsMatcher && tagsMatcher_.isUpdated();
 
-	if (cjson_.size() && !withTagsMatcher) return cjson_;
+	if (cjson_.size() && !withTagsMatcher) {
+		return cjson_;
+	}
 	ser_.Reset();
 	return GetCJSON(ser_, withTagsMatcher);
 }
 
-std::string_view ItemImpl::GetCJSON(WrSerializer &ser, bool withTagsMatcher) {
+std::string_view ItemImpl::GetCJSON(WrSerializer& ser, bool withTagsMatcher) {
 	withTagsMatcher = withTagsMatcher && tagsMatcher_.isUpdated();
 
 	if (cjson_.size() && !withTagsMatcher) {
@@ -307,8 +317,8 @@ VariantArray ItemImpl::GetValueByJSONPath(std::string_view jsonPath) {
 	return krefs;
 }
 
-void ItemImpl::validateModifyArray(const VariantArray &values) {
-	for (const auto &v : values) {
+void ItemImpl::validateModifyArray(const VariantArray& values) {
+	for (const auto& v : values) {
 		v.Type().EvaluateOneOf([](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Bool,
 										KeyValueType::String, KeyValueType::Uuid, KeyValueType::Null, KeyValueType::Undefined>) {},
 							   [](KeyValueType::Tuple) {

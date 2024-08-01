@@ -137,7 +137,9 @@ std::string RandomGenerator::FieldName(std::unordered_set<std::string>& generate
 					case Printable:
 						for (size_t i = 0; i < len;) {
 							res[i] = rndChar_(gen_);
-							if (true) ++i;	// TODO
+							if (true) {
+								++i;  // TODO
+							}
 						}
 						break;
 					case Available:
@@ -199,7 +201,9 @@ FieldPath RandomGenerator::RndField(const NsScheme& nsScheme) {
 			}
 		}
 		const auto size = nsScheme.FieldsCount(res);
-		if (size == 0) return res;
+		if (size == 0) {
+			return res;
+		}
 		const int idx = RndInt(0, size - 1);
 		res.push_back(idx);
 	} while (nsScheme.IsStruct(res));
@@ -222,16 +226,22 @@ FieldPath RandomGenerator::RndScalarField(const NsScheme& nsScheme) {
 			}
 		}
 		const auto size = nsScheme.FieldsCount(res);
-		if (size == 0) return res;
+		if (size == 0) {
+			return res;
+		}
 		int idx = RndInt(0, size - 1);
 		res.push_back(idx);
 		const int end = idx + size;
 		while (idx < end) {
 			res.back() = idx % size;
-			if (nsScheme.IsArray(res) == IsArrayT::No && !nsScheme.IsPoint(res)) break;
+			if (nsScheme.IsArray(res) == IsArrayT::No && !nsScheme.IsPoint(res)) {
+				break;
+			}
 			++idx;
 		}
-		if (idx == end) return {};
+		if (idx == end) {
+			return {};
+		}
 	} while (nsScheme.IsStruct(res));
 	return res;
 }
@@ -311,7 +321,9 @@ IndexType RandomGenerator::RndPkIndexType(const std::vector<FieldType>& fieldTyp
 }
 
 size_t RandomGenerator::ArraySize() {
-	if (RndErr()) return RndInt(0, 100'000);
+	if (RndErr()) {
+		return RndInt(0, 100'000);
+	}
 	enum Size : uint8_t { Short, Normal, Long, VeryLong, END = VeryLong };
 	switch (RndWhich<Size, 10'000, 100'000, 10, 1>()) {
 		case Short:

@@ -36,16 +36,20 @@ private:
 	unsigned long charCounter_ = 0;
 };
 
-void Snippet::init(const SelectFuncStruct &func) {
-	if (isInit_) return;
-	if (func.funcArgs.size() < 4) throw Error(errParams, "Invalid snippet params need minimum 4 - have %d", func.funcArgs.size());
+void Snippet::init(const SelectFuncStruct& func) {
+	if (isInit_) {
+		return;
+	}
+	if (func.funcArgs.size() < 4) {
+		throw Error(errParams, "Invalid snippet params need minimum 4 - have %d", func.funcArgs.size());
+	}
 	try {
 		std::size_t pos;
 		before_ = stoul(func.funcArgs[2], &pos);
 		if (pos != func.funcArgs[2].size()) {
 			throw Error(errParams, "Invalid snippet param before - %s is not a number", func.funcArgs[2]);
 		}
-	} catch (std::exception &) {
+	} catch (std::exception&) {
 		throw Error(errParams, "Invalid snippet param before - %s is not a number", func.funcArgs[2]);
 	}
 
@@ -55,7 +59,7 @@ void Snippet::init(const SelectFuncStruct &func) {
 		if (pos != func.funcArgs[3].size()) {
 			throw Error(errParams, "Invalid snippet param after - %s is not a number", func.funcArgs[3]);
 		}
-	} catch (std::exception &) {
+	} catch (std::exception&) {
 		throw Error(errParams, "Invalid snippet param after - %s is not a number", func.funcArgs[3]);
 	}
 	if (std::holds_alternative<Snippet>(func.func)) {
@@ -95,8 +99,8 @@ void Snippet::init(const SelectFuncStruct &func) {
 	isInit_ = true;
 }
 
-void Snippet::addSnippet(std::string &resultString, const std::string &data, const Area &snippetAreaPrev,
-						 const Area &snippetAreaPrevChar) const {
+void Snippet::addSnippet(std::string& resultString, const std::string& data, const Area& snippetAreaPrev,
+						 const Area& snippetAreaPrevChar) const {
 	resultString.append(preDelim_);
 
 	resultString += '[';
@@ -119,7 +123,7 @@ void Snippet::addSnippet(std::string &resultString, const std::string &data, con
 	}
 	resultString.append(data.begin() + zonesList_[z - 1].end, data.begin() + snippetAreaPrev.end);
 	resultString.append(postDelim_);
-};
+}
 
 struct Areas {
 	Area zoneArea;
@@ -131,7 +135,7 @@ struct AreasEx : public Areas {
 };
 
 template <typename A>
-A Snippet::RecalcZoneHelper::RecalcZoneToOffset(const Area &area) {
+A Snippet::RecalcZoneHelper::RecalcZoneToOffset(const Area& area) {
 	using PointType = std::conditional_t<std::is_same_v<Areas, A>, WordPosition, WordPositionEx>;
 	constexpr bool needChar = std::is_same_v<AreasEx, A>;
 	A outAreas;
@@ -181,13 +185,13 @@ A Snippet::RecalcZoneHelper::RecalcZoneToOffset(const Area &area) {
 	return outAreas;
 }
 
-void Snippet::buildResult(RecalcZoneHelper &recalcZoneHelper, const AreaBuffer &pva, const std::string &data, std::string &resultString) {
+void Snippet::buildResult(RecalcZoneHelper& recalcZoneHelper, const AreaBuffer& pva, const std::string& data, std::string& resultString) {
 	// resultString =preDelim_+with_area_str+data_str_before+marker_before+zone_str+marker_after+data_strAfter+postDelim_
 	Area snippetAreaPrev;
 	Area snippetAreaPrevChar;
 	zonesList_.clear<false>();
 
-	for (const auto &area : pva.GetData()) {
+	for (const auto& area : pva.GetData()) {
 		Areas a = recalcZoneHelper.RecalcZoneToOffset<Areas>(area);
 
 		if (snippetAreaPrev.start == 0 && snippetAreaPrev.end == 0) {
@@ -224,14 +228,14 @@ void Snippet::buildResult(RecalcZoneHelper &recalcZoneHelper, const AreaBuffer &
 	resultString.append(postDelim_);
 }
 
-void Snippet::buildResultWithPrefix(RecalcZoneHelper &recalcZoneHelper, const AreaBuffer &pva, const std::string &data,
-									std::string &resultString) {
+void Snippet::buildResultWithPrefix(RecalcZoneHelper& recalcZoneHelper, const AreaBuffer& pva, const std::string& data,
+									std::string& resultString) {
 	// resultString =preDelim_+with_area_str+data_str_before+marker_before+zone_str+marker_after+data_strAfter+postDelim_
 	Area snippetAreaPrev;
 	Area snippetAreaPrevChar;
 	zonesList_.clear<false>();
 
-	for (const auto &area : pva.GetData()) {
+	for (const auto& area : pva.GetData()) {
 		AreasEx a = recalcZoneHelper.RecalcZoneToOffset<AreasEx>(area);
 		if (snippetAreaPrev.start == 0 && snippetAreaPrev.end == 0) {
 			snippetAreaPrev = a.snippetArea;
@@ -253,12 +257,14 @@ void Snippet::buildResultWithPrefix(RecalcZoneHelper &recalcZoneHelper, const Ar
 	addSnippet(resultString, data, snippetAreaPrev, snippetAreaPrevChar);
 }
 
-bool Snippet::Process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct &func, std::vector<key_string> &stringsHolder) {
-	if (!func.ctx) return false;
+bool Snippet::Process(ItemRef& res, PayloadType& pl_type, const SelectFuncStruct& func, std::vector<key_string>& stringsHolder) {
+	if (!func.ctx) {
+		return false;
+	}
 	init(func);
 
 	FtCtx::Ptr ftctx = reindexer::static_ctx_pointer_cast<FtCtx>(func.ctx);
-	auto &dataFtCtx = *ftctx->GetData();
+	auto& dataFtCtx = *ftctx->GetData();
 	if (!dataFtCtx.isWordPositions_) {
 		throw Error(errParams, "Snippet function does not work with ft_fuzzy index.");
 	}
@@ -280,9 +286,11 @@ bool Snippet::Process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 		throw Error(errLogic, "Unable to apply snippet function to the non-string field '%s'", func.field);
 	}
 
-	const std::string *data = p_string(kr[0]).getCxxstr();
+	const std::string* data = p_string(kr[0]).getCxxstr();
 	auto pva = dataFtCtx.area_[it->second].GetAreas(func.fieldNo);
-	if (!pva || pva->Empty()) return false;
+	if (!pva || pva->Empty()) {
+		return false;
+	}
 
 	std::string resultString;
 	resultString.reserve(data->size());

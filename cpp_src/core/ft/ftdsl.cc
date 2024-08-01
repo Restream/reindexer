@@ -9,14 +9,14 @@
 namespace reindexer {
 
 // Format: see fulltext.md
-static bool is_term(int ch, const std::string &extraWordSymbols) noexcept {
+static bool is_term(int ch, const std::string& extraWordSymbols) noexcept {
 	return IsAlpha(ch) || IsDigit(ch) ||
 		   extraWordSymbols.find(ch) != std::string::npos
 		   // wrong kb layout
 		   || ch == '[' || ch == ';' || ch == ',' || ch == '.';
 }
 
-static bool is_dslbegin(int ch, const std::string &extraWordSymbols) noexcept {
+static bool is_dslbegin(int ch, const std::string& extraWordSymbols) noexcept {
 	return is_term(ch, extraWordSymbols) || ch == '+' || ch == '-' || ch == '*' || ch == '\'' || ch == '\"' || ch == '@' || ch == '=' ||
 		   ch == '\\';
 }
@@ -26,7 +26,7 @@ void FtDSLQuery::parse(std::string_view q) {
 	utf8_to_utf16(q, utf16str);
 	parse(utf16str);
 }
-void FtDSLQuery::parse(std::wstring &utf16str) {
+void FtDSLQuery::parse(std::wstring& utf16str) {
 	int groupTermCounter = 0;
 	bool inGroup = false;
 	bool hasAnythingExceptNot = false;
@@ -157,7 +157,9 @@ void FtDSLQuery::parse(std::wstring &utf16str) {
 
 			maxPatternLen = (fte.pattern.length() > maxPatternLen) ? fte.pattern.length() : maxPatternLen;
 			emplace_back(std::move(fte));
-			if (inGroup) ++groupTermCounter;
+			if (inGroup) {
+				++groupTermCounter;
+			}
 		}
 	}
 	if (inGroup) {
@@ -168,19 +170,25 @@ void FtDSLQuery::parse(std::wstring &utf16str) {
 	}
 
 	int cnt = 0;
-	for (auto &e : *this) {
+	for (auto& e : *this) {
 		e.opts.termLenBoost = float(e.pattern.length()) / maxPatternLen;
 		e.opts.qpos = cnt++;
 	}
 }
 
-void FtDSLQuery::parseFields(std::wstring &utf16str, std::wstring::iterator &it, h_vector<FtDslFieldOpts, 8> &fieldsOpts) {
+void FtDSLQuery::parseFields(std::wstring& utf16str, std::wstring::iterator& it, h_vector<FtDslFieldOpts, 8>& fieldsOpts) {
 	FtDslFieldOpts defFieldOpts{0.0, false};
-	for (auto &fo : fieldsOpts) fo = defFieldOpts;
+	for (auto& fo : fieldsOpts) {
+		fo = defFieldOpts;
+	}
 
 	while (it != utf16str.end()) {
-		while (it != utf16str.end() && !(IsAlpha(*it) || IsDigit(*it) || *it == '*' || *it == '_' || *it == '+')) ++it;
-		if (it == utf16str.end()) break;
+		while (it != utf16str.end() && !(IsAlpha(*it) || IsDigit(*it) || *it == '*' || *it == '_' || *it == '+')) {
+			++it;
+		}
+		if (it == utf16str.end()) {
+			break;
+		}
 
 		bool needSumRank = false;
 		if (*it == '+') {
@@ -190,7 +198,9 @@ void FtDSLQuery::parseFields(std::wstring &utf16str, std::wstring::iterator &it,
 			}
 		}
 		auto begIt = it;
-		while (it != utf16str.end() && (IsAlpha(*it) || IsDigit(*it) || *it == '*' || *it == '_' || *it == '+' || *it == '.')) ++it;
+		while (it != utf16str.end() && (IsAlpha(*it) || IsDigit(*it) || *it == '*' || *it == '_' || *it == '+' || *it == '.')) {
+			++it;
+		}
 		auto endIt = it;
 
 		float boost = 1.0;
@@ -218,10 +228,15 @@ void FtDSLQuery::parseFields(std::wstring &utf16str, std::wstring::iterator &it,
 			assertf(f->second < int(fieldsOpts.size()), "f=%d,fieldsOpts.size()=%d", f->second, fieldsOpts.size());
 			fieldsOpts[f->second] = {boost, needSumRank};
 		}
-		if (it == utf16str.end() || *it++ != ',') break;
+		if (it == utf16str.end() || *it++ != ',') {
+			break;
+		}
 	}
-	for (auto &fo : fieldsOpts)
-		if (fo.boost == 0.0) fo = defFieldOpts;
+	for (auto& fo : fieldsOpts) {
+		if (fo.boost == 0.0) {
+			fo = defFieldOpts;
+		}
+	}
 }
 
 }  // namespace reindexer

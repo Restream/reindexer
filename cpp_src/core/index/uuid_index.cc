@@ -2,7 +2,7 @@
 
 namespace reindexer {
 
-void UuidIndex::Upsert(VariantArray &result, const VariantArray &keys, IdType id, bool &clearCache) {
+void UuidIndex::Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) {
 	if (keys.empty() && !Opts().IsArray()) {
 		result = {Upsert(Variant{Uuid{}}, id, clearCache)};
 	} else {
@@ -10,8 +10,8 @@ void UuidIndex::Upsert(VariantArray &result, const VariantArray &keys, IdType id
 	}
 }
 
-std::unique_ptr<Index> IndexUuid_New(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
-									 const NamespaceCacheConfigData &cacheCfg) {
+std::unique_ptr<Index> IndexUuid_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+									 const NamespaceCacheConfigData& cacheCfg) {
 	return std::make_unique<UuidIndex>(idef, std::move(payloadType), std::move(fields), cacheCfg);
 }
 

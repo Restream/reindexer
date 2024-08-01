@@ -91,7 +91,9 @@ TEST_F(ReindexerApi, SelectByJsonPath) {
 		std::string dumpField = "str_" + pk;
 		snprintf(json, sizeof(json) - 1, jsonPattern, pk.c_str(), dumpField.c_str(), i);
 
-		if (i >= 5) properIntValues.push_back(i);
+		if (i >= 5) {
+			properIntValues.push_back(i);
+		}
 
 		err = item.FromJSON(json);
 		ASSERT_TRUE(err.ok()) << err.what();

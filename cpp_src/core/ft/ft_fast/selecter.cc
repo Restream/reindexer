@@ -9,11 +9,21 @@
 
 namespace {
 RX_ALWAYS_INLINE double pos2rank(int pos) {
-	if (pos <= 10) return 1.0 - (pos / 100.0);
-	if (pos <= 100) return 0.9 - (pos / 1000.0);
-	if (pos <= 1000) return 0.8 - (pos / 10000.0);
-	if (pos <= 10000) return 0.7 - (pos / 100000.0);
-	if (pos <= 100000) return 0.6 - (pos / 1000000.0);
+	if (pos <= 10) {
+		return 1.0 - (pos / 100.0);
+	}
+	if (pos <= 100) {
+		return 0.9 - (pos / 1000.0);
+	}
+	if (pos <= 1000) {
+		return 0.8 - (pos / 10000.0);
+	}
+	if (pos <= 10000) {
+		return 0.7 - (pos / 100000.0);
+	}
+	if (pos <= 100000) {
+		return 0.6 - (pos / 1000000.0);
+	}
 	return 0.5;
 }
 }  // namespace
@@ -85,7 +95,9 @@ void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, RV
 					FtDslOpts opts = term.opts;
 					opts.pref = true;
 
-					if (&v != &variantsUtf16[0]) opts.suff = false;
+					if (&v != &variantsUtf16[0]) {
+						opts.suff = false;
+					}
 
 					const auto charCount = getUTF8StringCharactersCount(stemstr);
 					if (charCount >= kMinStemRellevantLen || !lowRelVariants) {
@@ -115,7 +127,9 @@ RX_NO_INLINE MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransa
 	// STEP 2: Search dsl terms for each variant
 	std::vector<SynonymsDsl> synonymsDsl;
 	holder_.synonyms_->PreProcess(dsl, synonymsDsl, holder_.cfg_->rankingConfig.synonyms);
-	if (!inTransaction) ThrowOnCancel(rdxCtx);
+	if (!inTransaction) {
+		ThrowOnCancel(rdxCtx);
+	}
 	for (size_t i = 0; i < dsl.size(); ++i) {
 		const auto irrVariantsCount = ctx.lowRelVariants.size();
 
@@ -149,11 +163,15 @@ RX_NO_INLINE MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransa
 
 	std::vector<TextSearchResults> results;
 	size_t reserveSize = ctx.rawResults.size();
-	for (const SynonymsDsl& synDsl : synonymsDsl) reserveSize += synDsl.dsl.size();
+	for (const SynonymsDsl& synDsl : synonymsDsl) {
+		reserveSize += synDsl.dsl.size();
+	}
 	results.reserve(reserveSize);
 	std::vector<size_t> synonymsBounds;
 	synonymsBounds.reserve(synonymsDsl.size());
-	if (!inTransaction) ThrowOnCancel(rdxCtx);
+	if (!inTransaction) {
+		ThrowOnCancel(rdxCtx);
+	}
 	for (SynonymsDsl& synDsl : synonymsDsl) {
 		FtSelectContext synCtx;
 		synCtx.rawResults.reserve(synDsl.dsl.size());
@@ -162,7 +180,9 @@ RX_NO_INLINE MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransa
 			if rx_unlikely (holder_.cfg_->logLevel >= LogInfo) {
 				WrSerializer wrSer;
 				for (auto& variant : synCtx.variants) {
-					if (&variant != &*synCtx.variants.begin()) wrSer << ", ";
+					if (&variant != &*synCtx.variants.begin()) {
+						wrSer << ", ";
+					}
 					wrSer << variant.pattern;
 				}
 				logPrintf(LogInfo, "Multiword synonyms variants: [%s]", wrSer.Slice());
@@ -245,7 +265,9 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 
 	// Walk current variant in suffixes array and fill results
 	do {
-		if (keyIt == suffixes.end()) break;
+		if (keyIt == suffixes.end()) {
+			break;
+		}
 		if (vidsLimit <= vids) {
 			if rx_unlikely (holder_.cfg_->logLevel >= LogInfo) {
 				logPrintf(LogInfo, "Terminating suffix loop on limit (%d). Current variant is '%s%s%s'", initialLimit,
@@ -279,8 +301,12 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 		const ptrdiff_t suffixLen = keyIt->first - word;
 		const int matchLen = tmpstr.length();
 
-		if (!withSuffixes && suffixLen) continue;
-		if (!withPrefixes && wordLength != matchLen + suffixLen) break;
+		if (!withSuffixes && suffixLen) {
+			continue;
+		}
+		if (!withPrefixes && wordLength != matchLen + suffixLen) {
+			break;
+		}
 
 		const int matchDif = std::abs(long(wordLength - matchLen + suffixLen));
 		const int proc = std::max(variant.proc - holder_.cfg_->partialMatchDecrease * matchDif / std::max(matchLen, 3),
@@ -302,8 +328,9 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 			++matched;
 			vids += vidsSize;
 		} else {
-			if (ctx.rawResults[it->second.first][it->second.second].proc < proc)
+			if (ctx.rawResults[it->second.first][it->second.second].proc < proc) {
 				ctx.rawResults[it->second.first][it->second.second].proc = proc;
+			}
 			++skipped;
 		}
 	} while ((keyIt++).lcp() >= int(tmpstr.length()));
@@ -404,7 +431,9 @@ template <typename IdCont>
 RX_ALWAYS_INLINE void Selecter<IdCont>::debugMergeStep(const char* msg, int vid, float normBm25, float normDist, int finalRank,
 													   int prevRank) {
 #ifdef REINDEX_FT_EXTRA_DEBUG
-	if (holder_.cfg_->logLevel < LogTrace) return;
+	if (holder_.cfg_->logLevel < LogTrace) {
+		return;
+	}
 
 	logPrintf(LogInfo, "%s - '%s' (vid %d), bm25 %f, dist %f, rank %d (prev rank %d)", msg, holder_.vdocs_[vid].keyDoc, vid, normBm25,
 			  normDist, finalRank, prevRank);
@@ -633,7 +662,7 @@ void Selecter<IdCont>::addNewTerm(FtMergeStatuses::Statuses& mergeStatuses, Merg
 		curExists[vid] = true;
 		idoffsets[vid] = merged.size() - 1;
 	}
-};
+}
 
 template <typename IdCont>
 void Selecter<IdCont>::addAreas(MergeData& merged, int32_t areaIndex, const IdRelType& relid, int32_t termRank) {
@@ -646,7 +675,7 @@ void Selecter<IdCont>::addAreas(MergeData& merged, int32_t areaIndex, const IdRe
 		}
 		area.UpdateRank(termRank);
 	}
-};
+}
 
 // idf=max(0.2, log((N-M+1)/M)/log(1+N))
 // N - document count
@@ -691,7 +720,9 @@ void Selecter<IdCont>::mergeIteration(TextSearchResults& rawRes, index_t rawResI
 
 	// loop on subterm (word, translit, stemmmer,...)
 	for (auto& r : rawRes) {
-		if (!inTransaction) ThrowOnCancel(rdxCtx);
+		if (!inTransaction) {
+			ThrowOnCancel(rdxCtx);
+		}
 		Bm25Calculator<Bm25Type> bm25{double(totalDocsCount), double(r.vids->size()), holder_.cfg_->bm25Config.bm25k1,
 									  holder_.cfg_->bm25Config.bm25b};
 		static_assert(sizeof(bm25) <= 32, "Bm25Calculator<Bm25Type> size is greater than 32 bytes");
@@ -800,7 +831,9 @@ std::pair<double, int> Selecter<IdCont>::calcTermRank(const TextSearchResults& r
 		}
 	}
 
-	if (!termRank) return std::make_pair(termRank, field);
+	if (!termRank) {
+		return std::make_pair(termRank, field);
+	}
 
 	if (holder_.cfg_->summationRanksByFieldsRatio > 0) {
 		boost::sort::pdqsort_branchless(ranksInFields.begin(), ranksInFields.end());
@@ -828,7 +861,9 @@ void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 
 	// loop on subterm (word, translit, stemmmer,...)
 	for (auto& r : rawRes) {
-		if (!inTransaction) ThrowOnCancel(rdxCtx);
+		if (!inTransaction) {
+			ThrowOnCancel(rdxCtx);
+		}
 		Bm25Calculator<Bm25Type> bm25(totalDocsCount, r.vids->size(), holder_.cfg_->bm25Config.bm25k1, holder_.cfg_->bm25Config.bm25b);
 		static_assert(sizeof(bm25) <= 32, "Bm25Calculator<Bm25Type> size is greater than 32 bytes");
 		int vid = -1;
@@ -846,11 +881,15 @@ void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 				continue;
 			}
 			// keyEntry can be assigned nullptr when removed
-			if (!vdocs[vid].keyEntry) continue;
+			if (!vdocs[vid].keyEntry) {
+				continue;
+			}
 
 			// Find field with max rank
 			auto [termRank, field] = calcTermRank(rawRes, bm25, relid, r.proc);
-			if (!termRank) continue;
+			if (!termRank) {
+				continue;
+			}
 
 			if rx_unlikely (holder_.cfg_->logLevel >= LogTrace) {
 				logPrintf(LogInfo, "Pattern %s, idf %f, termLenBoost %f", r.pattern, bm25.GetIDF(), rawRes.term.opts.termLenBoost);
@@ -1065,7 +1104,9 @@ size_t Selecter<IdCont>::TyposHandler::Process(std::vector<TextSearchResults>& r
 							++skiped;
 						}
 					}
-					if (dontUseMaxTyposForBoth_ && level == 1 && typo.size() != patternSize) return;
+					if (dontUseMaxTyposForBoth_ && level == 1 && typo.size() != patternSize) {
+						return;
+					}
 				}
 			});
 		if rx_unlikely (holder.cfg_->logLevel >= LogInfo) {
@@ -1248,7 +1289,9 @@ MergeData Selecter<IdCont>::mergeResults(std::vector<TextSearchResults>&& rawRes
 	const auto& vdocs = holder_.vdocs_;
 	MergeData merged;
 
-	if (!rawResults.size() || !vdocs.size()) return merged;
+	if (!rawResults.size() || !vdocs.size()) {
+		return merged;
+	}
 
 	assertrx_throw(FtMergeStatuses::kExcluded > rawResults.size());
 	assertrx_throw(mergeStatuses.size() == vdocs.size());
@@ -1323,7 +1366,9 @@ MergeData Selecter<IdCont>::mergeResults(std::vector<TextSearchResults>&& rawRes
 						break;
 					}
 				}
-				if (matchSyn) continue;
+				if (matchSyn) {
+					continue;
+				}
 				info.proc = 0;
 				mergeStatuses[vid] = 0;
 			}
@@ -1354,12 +1399,16 @@ void Selecter<IdCont>::printVariants(const FtSelectContext& ctx, const TextSearc
 	WrSerializer wrSer;
 	wrSer << "variants: [";
 	for (auto& variant : ctx.variants) {
-		if (&variant != &*ctx.variants.begin()) wrSer << ", ";
+		if (&variant != &*ctx.variants.begin()) {
+			wrSer << ", ";
+		}
 		wrSer << variant.pattern;
 	}
 	wrSer << "], variants_with_low_relevancy: [";
 	for (auto& variant : ctx.lowRelVariants) {
-		if (&variant != &*ctx.lowRelVariants.begin()) wrSer << ", ";
+		if (&variant != &*ctx.lowRelVariants.begin()) {
+			wrSer << ", ";
+		}
 		wrSer << variant.pattern;
 	}
 	wrSer << "], typos: [";

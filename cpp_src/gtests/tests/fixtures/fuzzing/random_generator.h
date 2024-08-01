@@ -83,7 +83,9 @@ public:
 	std::vector<size_t> RndFieldsForCompositeIndex(const std::vector<size_t>& scalarIndexes);
 	std::string FieldName(std::unordered_set<std::string>& generatedNames);
 	std::string FieldName(const std::string& fieldName, std::unordered_set<std::string>& generatedNames) {
-		if (RndErr()) return FieldName(generatedNames);
+		if (RndErr()) {
+			return FieldName(generatedNames);
+		}
 		return fieldName;
 	}
 	FieldPath RndField(const NsScheme&);
@@ -94,7 +96,9 @@ public:
 		return FieldName(generatedNames);
 	}
 	std::string NsName(const std::string& nsName) {
-		if (RndErr()) return GenerateNsName();
+		if (RndErr()) {
+			return GenerateNsName();
+		}
 		return nsName;
 	}
 	int RndInt(int min, int max) { return rndInt_(gen_, IntRndParams(min, max)); }
@@ -198,7 +202,9 @@ public:
 				assertrx(false);
 				std::abort();
 		}
-		for (char& ch : res) ch = availableChars[rndInt(availableRndParams)];  // TODO
+		for (char& ch : res) {
+			ch = availableChars[rndInt(availableRndParams)];  // TODO
+		}
 		return res;
 	}
 	std::string RndStrUuidValue() { return rndStrUuidValue(false); }

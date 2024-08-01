@@ -201,7 +201,9 @@ constexpr std::pair<uint16_t, uint16_t> kAlphabet[] = {
 
 constexpr int checkAlphabetSorted() {
 	for (int i = 1; i < std::end(kAlphabet) - std::begin(kAlphabet); i++) {
-		if (kAlphabet[i - 1] >= kAlphabet[i]) return i;
+		if (kAlphabet[i - 1] >= kAlphabet[i]) {
+			return i;
+		}
 	}
 	return -1;
 }

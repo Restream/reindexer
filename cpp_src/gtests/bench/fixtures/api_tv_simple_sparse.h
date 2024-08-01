@@ -20,7 +20,7 @@ public:
 			.AddIndex("location", "hash", "string", IndexOpts().Sparse())
 			.AddIndex("end_time", "hash", "int", IndexOpts().Sparse())
 			.AddIndex("start_time", "tree", "int", IndexOpts().Sparse())
-			.AddIndex("uuid", "hash", "uuid", IndexOpts()) // can't be sparse
+			.AddIndex("uuid", "hash", "uuid", IndexOpts())	// can't be sparse
 			.AddIndex("uuid_str", "hash", "string", IndexOpts().Sparse())
 			.AddIndex("data10", "hash", "int", IndexOpts().Sparse())
 			.AddIndex("data33", "hash", "int", IndexOpts().Sparse())

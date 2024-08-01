@@ -65,11 +65,15 @@ public:
 		if (ids_.size() != 0) {
 			unsigned sortId = 0;
 			while (ids_.capacity() >= ids_.size() * (sortId + 1)) {
-				if (sortId != 0) os << ", ";
+				if (sortId != 0) {
+					os << ", ";
+				}
 				os << '[';
 				const auto sorted = Sorted(sortId);
 				for (auto b = sorted.begin(), it = b, e = sorted.end(); it != e; ++it) {
-					if (it != b) os << ", ";
+					if (it != b) {
+						os << ", ";
+					}
 					os << *it;
 				}
 				os << ']';
@@ -77,7 +81,9 @@ public:
 			}
 		}
 		os << ']';
-		if (!newOffset.empty()) os << '\n' << offset;
+		if (!newOffset.empty()) {
+			os << '\n' << offset;
+		}
 		os << '}';
 	}
 

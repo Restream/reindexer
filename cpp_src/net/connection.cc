@@ -5,7 +5,7 @@ namespace reindexer {
 namespace net {
 
 template <typename Mutex>
-Connection<Mutex>::Connection(socket &&s, ev::dynamic_loop &loop, bool enableStat, size_t readBufSize, size_t writeBufSize, int idleTimeout)
+Connection<Mutex>::Connection(socket&& s, ev::dynamic_loop& loop, bool enableStat, size_t readBufSize, size_t writeBufSize, int idleTimeout)
 	: sock_(std::move(s)),
 	  curEvents_(0),
 	  wrBuf_(writeBufSize),
@@ -22,7 +22,7 @@ Connection<Mutex>::~Connection() {
 }
 
 template <typename Mutex>
-void Connection<Mutex>::restart(socket &&s) {
+void Connection<Mutex>::restart(socket&& s) {
 	assertrx(!sock_.valid());
 	sock_ = std::move(s);
 	wrBuf_.clear();
@@ -36,12 +36,14 @@ void Connection<Mutex>::restart(socket &&s) {
 }
 
 template <typename Mutex>
-void Connection<Mutex>::attach(ev::dynamic_loop &loop) {
+void Connection<Mutex>::attach(ev::dynamic_loop& loop) {
 	assertrx(!attached_);
 	io_.set<Connection, &Connection::callback>(this);
 	io_.set(loop);
 	if (sock_.valid()) {
-		if (curEvents_) io_.start(sock_.fd(), curEvents_);
+		if (curEvents_) {
+			io_.start(sock_.fd(), curEvents_);
+		}
 		clientAddr_ = sock_.addr();
 	}
 	timeout_.set<Connection, &Connection::timeout_cb>(this);
@@ -81,15 +83,19 @@ void Connection<Mutex>::closeConn() {
 	}
 	timeout_.stop();
 	async_.stop();
-	if (stats_) stats_->stop();
+	if (stats_) {
+		stats_->stop();
+	}
 	onClose();
 	closeConn_ = false;
 }
 
 // Generic callback
 template <typename Mutex>
-void Connection<Mutex>::callback(ev::io & /*watcher*/, int revents) {
-	if (ev::ERROR & revents) return;
+void Connection<Mutex>::callback(ev::io& /*watcher*/, int revents) {
+	if (ev::ERROR & revents) {
+		return;
+	}
 	++rwCounter_;
 
 	if (revents & ev::READ) {
@@ -124,7 +130,9 @@ void Connection<Mutex>::write_cb() {
 		ssize_t written = sock_.send(chunks);
 		int err = sock_.last_error();
 
-		if (written < 0 && err == EINTR) continue;
+		if (written < 0 && err == EINTR) {
+			continue;
+		}
 
 		if (written < 0) {
 			if (!socket::would_block(err)) {
@@ -135,12 +143,18 @@ void Connection<Mutex>::write_cb() {
 		}
 
 		ssize_t toWrite = 0;
-		for (auto &chunk : chunks) toWrite += chunk.size();
+		for (auto& chunk : chunks) {
+			toWrite += chunk.size();
+		}
 		wrBuf_.erase(written);
 
-		if (stats_) stats_->update_write_stats(written, wrBuf_.data_size());
+		if (stats_) {
+			stats_->update_write_stats(written, wrBuf_.data_size());
+		}
 
-		if (written < toWrite) return;
+		if (written < toWrite) {
+			return;
+		}
 	}
 	if (closeConn_) {
 		closeConn();
@@ -155,7 +169,9 @@ typename Connection<Mutex>::ReadResT Connection<Mutex>::read_cb() {
 		ssize_t nread = sock_.recv(it);
 		int err = sock_.last_error();
 
-		if (nread < 0 && err == EINTR) continue;
+		if (nread < 0 && err == EINTR) {
+			continue;
+		}
 
 		if ((nread < 0 && !socket::would_block(err)) || nread == 0) {
 			// Setting SO_LINGER with 0 timeout to avoid TIME_WAIT state on client
@@ -173,12 +189,14 @@ typename Connection<Mutex>::ReadResT Connection<Mutex>::read_cb() {
 				}
 			}
 		}
-		if (nread < ssize_t(it.size()) || !rdBuf_.available()) return ReadResT::Default;
+		if (nread < ssize_t(it.size()) || !rdBuf_.available()) {
+			return ReadResT::Default;
+		}
 	}
 	return ReadResT::Default;
 }
 template <typename Mutex>
-void Connection<Mutex>::timeout_cb(ev::periodic & /*watcher*/, int /*time*/) {
+void Connection<Mutex>::timeout_cb(ev::periodic& /*watcher*/, int /*time*/) {
 	const bool isActive = lastCheckRWCounter_ != rwCounter_;
 	lastCheckRWCounter_ = rwCounter_;
 	if (isActive) {
@@ -196,7 +214,7 @@ void Connection<Mutex>::timeout_cb(ev::periodic & /*watcher*/, int /*time*/) {
 	closeConn();
 }
 template <typename Mutex>
-void Connection<Mutex>::async_cb(ev::async &) {
+void Connection<Mutex>::async_cb(ev::async&) {
 	callback(io_, ev::WRITE);
 }
 

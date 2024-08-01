@@ -126,7 +126,9 @@ public:
 	bool NeedRecomitLast() const noexcept { return steps.back().suffixes_.word_size() < size_t(cfg_->maxStepSize); }
 	void SetWordsOffset(uint32_t word_offset) noexcept {
 		assertrx(!steps.empty());
-		if (status_ == CreateNew) steps.back().wordOffset_ = word_offset;
+		if (status_ == CreateNew) {
+			steps.back().wordOffset_ = word_offset;
+		}
 	}
 	bool NeedClear(bool complte_updated) const noexcept { return NeedRebuild(complte_updated) || !NeedRecomitLast(); }
 	suffix_map<char, WordIdType>& GetSuffix() noexcept { return steps.back().suffixes_; }

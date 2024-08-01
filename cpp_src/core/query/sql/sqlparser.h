@@ -27,7 +27,7 @@ public:
 	[[nodiscard]] static Query Parse(std::string_view sql);
 
 protected:
-	explicit SQLParser(Query &q) noexcept : query_(q) {}
+	explicit SQLParser(Query& q) noexcept : query_(q) {}
 	/// Sql parser context
 	struct SqlParsingCtx {
 		struct SuggestionData {
@@ -36,7 +36,7 @@ protected:
 			SqlTokenType tokenType = Start;
 			std::unordered_set<std::string> variants;
 		};
-		void updateLinkedNs(const std::string &ns) {
+		void updateLinkedNs(const std::string& ns) {
 			if (autocompleteMode && (!foundPossibleSuggestions || possibleSuggestionDetectedInThisClause)) {
 				suggestionLinkedNs = ns;
 			}
@@ -54,79 +54,79 @@ protected:
 	/// Parses query.
 	/// @param tok - tokenizer object instance.
 	/// @return always returns zero.
-	int Parse(tokenizer &tok);
+	int Parse(tokenizer& tok);
 
 	/// Peeks next sql token.
 	/// @param parser - tokenizer object instance.
 	/// @param tokenType - token type.
 	/// @param toLower - transform to lower representation.
 	/// @return sql token object.
-	token peekSqlToken(tokenizer &parser, SqlTokenType tokenType, bool toLower = true);
+	token peekSqlToken(tokenizer& parser, SqlTokenType tokenType, bool toLower = true);
 
 	/// Is current token last in autocomplete mode?
-	bool reachedAutocompleteToken(tokenizer &parser, const token &tok) const;
+	bool reachedAutocompleteToken(tokenizer& parser, const token& tok) const;
 
 	/// Parses filter part of sql query.
 	/// @param parser - tokenizer object instance.
 	/// @return always returns zero.
 	template <Nested>
-	int selectParse(tokenizer &parser);
+	int selectParse(tokenizer& parser);
 
 	/// Parses filter part of sql delete query.
 	/// @param parser - tokenizer object instance.
 	/// @return always returns zero.
-	int deleteParse(tokenizer &parser);
+	int deleteParse(tokenizer& parser);
 
 	/// Parses filter part of sql update query.
 	/// @param parser - tokenizer object instance.
 	/// @return always returns zero.
-	int updateParse(tokenizer &parser);
+	int updateParse(tokenizer& parser);
 
 	/// Parses filter part of sql truncate query.
 	/// @param parser - tokenizer object instance.
 	/// @return always returns zero.
-	int truncateParse(tokenizer &parser);
+	int truncateParse(tokenizer& parser);
 
 	/// Parse where entries
 	template <Nested>
-	int parseWhere(tokenizer &parser);
+	int parseWhere(tokenizer& parser);
 	template <typename T>
-	void parseWhereCondition(tokenizer &, T &&firstArg, OpType);
+	void parseWhereCondition(tokenizer&, T&& firstArg, OpType);
 
 	/// Parse order by
-	int parseOrderBy(tokenizer &parser, SortingEntries &sortingEntries, std::vector<Variant> &forcedSortOrder);
+	int parseOrderBy(tokenizer& parser, SortingEntries& sortingEntries, std::vector<Variant>& forcedSortOrder);
 
 	/// Parse join entries
-	void parseJoin(JoinType type, tokenizer &tok);
+	void parseJoin(JoinType type, tokenizer& tok);
 
 	/// Parse join entries
-	void parseJoinEntries(tokenizer &parser, const std::string &mainNs, JoinedQuery &jquery);
+	void parseJoinEntries(tokenizer& parser, const std::string& mainNs, JoinedQuery& jquery);
 
 	/// Parse equal_positions
-	void parseEqualPositions(tokenizer &parser, std::vector<std::pair<size_t, EqualPosition_t>> &equalPositions, size_t openBracketsCount);
+	void parseEqualPositions(tokenizer& parser, std::vector<std::pair<size_t, EqualPosition_t>>& equalPositions, size_t openBracketsCount);
 
-	Point parseGeomFromText(tokenizer &parser) const;
-	void parseDWithin(tokenizer &parser, OpType nextOp);
+	Point parseGeomFromText(tokenizer& parser) const;
+	void parseDWithin(tokenizer& parser, OpType nextOp);
 
 	/// Parse update field entries
-	UpdateEntry parseUpdateField(tokenizer &parser);
+	UpdateEntry parseUpdateField(tokenizer& parser);
 
 	/// Parse joined Ns name: [Namespace.field]
-	std::string parseJoinedFieldName(tokenizer &parser, std::string &name);
+	std::string parseJoinedFieldName(tokenizer& parser, std::string& name);
 
 	/// Parse merge entries
-	void parseMerge(tokenizer &parser);
+	void parseMerge(tokenizer& parser);
 
-	void parseModifyConditions(tokenizer &parser);
+	void parseModifyConditions(tokenizer& parser);
 
-	Query parseSubQuery(tokenizer &parser);
+	Query parseSubQuery(tokenizer& parser);
 
-	void parseArray(tokenizer &parser, std::string_view tokText, UpdateEntry *updateField) const;
-	void parseCommand(tokenizer &parser) const;
+	void parseArray(tokenizer& parser, std::string_view tokText, UpdateEntry* updateField) const;
+	void parseCommand(tokenizer& parser) const;
 
 	static CondType getCondType(std::string_view cond);
 	SqlParsingCtx ctx_;
-	Query &query_;
+	Query& query_;
 };
 
 }  // namespace reindexer

@@ -20,11 +20,15 @@ public:
 	virtual void next() noexcept = 0;
 
 	bool shiftToNextIdset() noexcept {
-		if (isOver()) return false;
+		if (isOver()) {
+			return false;
+		}
 		for (next(); !isOver() && getCurrentIdsetSize() == 0;) {
 			next();
 		}
-		if (isOver()) return false;
+		if (isOver()) {
+			return false;
+		}
 		shiftIdsetToBegin();
 		updateCurrentValue();
 		return true;

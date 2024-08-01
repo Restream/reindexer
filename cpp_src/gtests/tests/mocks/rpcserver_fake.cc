@@ -6,14 +6,14 @@
 #include "net/listener.h"
 #include "reindexer_version.h"
 
-RPCServerFake::RPCServerFake(const RPCServerConfig &conf) : startTs_(system_clock_w::now()), conf_(conf), state_(Init) {}
+RPCServerFake::RPCServerFake(const RPCServerConfig& conf) : startTs_(system_clock_w::now()), conf_(conf), state_(Init) {}
 
-Error RPCServerFake::Ping(cproto::Context &) {
+Error RPCServerFake::Ping(cproto::Context&) {
 	//
 	return {};
 }
 
-Error RPCServerFake::Login(cproto::Context &ctx, p_string /*login*/, p_string /*password*/, p_string /*db*/) {
+Error RPCServerFake::Login(cproto::Context& ctx, p_string /*login*/, p_string /*password*/, p_string /*db*/) {
 	if (loginError_.ok()) {
 		std::this_thread::sleep_for(conf_.loginDelay);
 	}
@@ -31,8 +31,8 @@ Error RPCServerFake::Login(cproto::Context &ctx, p_string /*login*/, p_string /*
 	return loginError_.code();
 }
 
-Error RPCServerFake::CheckAuth(cproto::Context &ctx) {
-	auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData());
+Error RPCServerFake::CheckAuth(cproto::Context& ctx) {
+	auto clientData = dynamic_cast<RPCClientData*>(ctx.GetClientData());
 
 	if (ctx.call->cmd == cproto::kCmdLogin || ctx.call->cmd == cproto::kCmdPing) {
 		return {};
@@ -45,24 +45,24 @@ Error RPCServerFake::CheckAuth(cproto::Context &ctx) {
 	return {};
 }
 
-Error RPCServerFake::OpenNamespace(cproto::Context &, p_string) {
+Error RPCServerFake::OpenNamespace(cproto::Context&, p_string) {
 	std::this_thread::sleep_for(conf_.openNsDelay);
 	return {};
 }
 
-Error RPCServerFake::DropNamespace(cproto::Context &, p_string) { return Error(errOK); }
+Error RPCServerFake::DropNamespace(cproto::Context&, p_string) { return Error(errOK); }
 
 Error RPCServerFake::Stop() {
 	listener_->Stop();
 	state_ = Stopped;
-	if (int const openedQR = OpenedQRCount(); openedQR == 0) {
+	if (const int openedQR = OpenedQRCount(); openedQR == 0) {
 		return errOK;
 	} else {
 		return Error{errLogic, "There are %d opened QueryResults", openedQR};
 	}
 }
 
-Error RPCServerFake::Select(cproto::Context &ctx, p_string /*query*/, int /*flags*/, int /*limit*/, p_string /*ptVersions*/) {
+Error RPCServerFake::Select(cproto::Context& ctx, p_string /*query*/, int /*flags*/, int /*limit*/, p_string /*ptVersions*/) {
 	static constexpr size_t kQueryResultsPoolSize = 1024;
 	std::this_thread::sleep_for(conf_.selectDelay);
 	int qrId;
@@ -87,7 +87,7 @@ Error RPCServerFake::Select(cproto::Context &ctx, p_string /*query*/, int /*flag
 	return errOK;
 }
 
-Error RPCServerFake::CloseResults(cproto::Context &ctx, int reqId, std::optional<int64_t> /*qrUID*/, std::optional<bool> doNotReply) {
+Error RPCServerFake::CloseResults(cproto::Context& ctx, int reqId, std::optional<int64_t> /*qrUID*/, std::optional<bool> doNotReply) {
 	if (doNotReply && *doNotReply) {
 		ctx.respSent = true;
 	}
@@ -109,7 +109,7 @@ size_t RPCServerFake::OpenedQRCount() {
 	return usedQrIds_.size();
 }
 
-bool RPCServerFake::Start(const std::string &addr, ev::dynamic_loop &loop, Error loginError) {
+bool RPCServerFake::Start(const std::string& addr, ev::dynamic_loop& loop, Error loginError) {
 #ifndef _WIN32
 	signal(SIGPIPE, SIG_IGN);
 #endif

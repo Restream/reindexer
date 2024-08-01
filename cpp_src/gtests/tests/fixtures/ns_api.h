@@ -144,7 +144,9 @@ protected:
 													IndexDeclaration{"ft21+ft22+ft23=ft24", "text", "composite", IndexOpts(), 0}});
 
 		static constexpr int itemsCount = 1000;
-		for (int i = 0; i < itemsCount; ++i) InsertNewTruncateItem(i);
+		for (int i = 0; i < itemsCount; ++i) {
+			InsertNewTruncateItem(i);
+		}
 
 		const static Query q{truncate_namespace};
 		QueryResults qr1;

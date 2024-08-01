@@ -15,7 +15,7 @@ template <typename Mutex>
 class chain_buf {
 public:
 	chain_buf(size_t cap) : ring_(cap) {}
-	void write(chunk &&ch) {
+	void write(chunk&& ch) {
 		if (ch.size()) {
 			std::lock_guard lck(mtx_);
 			const auto new_head = (head_ + 1) % ring_.size();
@@ -43,17 +43,18 @@ public:
 		data_size_ -= nread;
 		while (nread) {
 			assertrx(head_ != tail_);
-			chunk &cur = ring_[tail_];
+			chunk& cur = ring_[tail_];
 			if (cur.size() > nread) {
 				cur.shift(nread);
 				break;
 			}
 			nread -= cur.size();
 			cur.clear();
-			if (free_.size() < ring_.size() && cur.capacity() < 0x10000)
+			if (free_.size() < ring_.size() && cur.capacity() < 0x10000) {
 				free_.push_back(std::move(cur));
-			else
+			} else {
 				cur = chunk();
+			}
 			tail_ = (tail_ + 1) % ring_.size();
 		}
 	}

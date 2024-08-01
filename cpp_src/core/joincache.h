@@ -10,17 +10,17 @@ namespace reindexer {
 
 struct JoinCacheKey {
 	JoinCacheKey() = default;
-	JoinCacheKey(JoinCacheKey &&other) = default;
-	JoinCacheKey(const JoinCacheKey &other) = default;
-	JoinCacheKey &operator=(JoinCacheKey &&other) = default;
-	JoinCacheKey &operator=(const JoinCacheKey &other) = delete;
-	void SetData(const Query &q) {
+	JoinCacheKey(JoinCacheKey&& other) = default;
+	JoinCacheKey(const JoinCacheKey& other) = default;
+	JoinCacheKey& operator=(JoinCacheKey&& other) = default;
+	JoinCacheKey& operator=(const JoinCacheKey& other) = delete;
+	void SetData(const Query& q) {
 		WrSerializer ser;
 		q.Serialize(ser, (SkipJoinQueries | SkipMergeQueries));
 		buf_.reserve(buf_.size() + ser.Len());
 		buf_.insert(buf_.end(), ser.Buf(), ser.Buf() + ser.Len());
 	}
-	void SetData(const Query &q1, const Query &q2) {
+	void SetData(const Query& q1, const Query& q2) {
 		WrSerializer ser;
 		q1.Serialize(ser, (SkipJoinQueries | SkipMergeQueries));
 		q2.Serialize(ser, (SkipJoinQueries | SkipMergeQueries));
@@ -32,12 +32,12 @@ struct JoinCacheKey {
 	h_vector<uint8_t, 256> buf_;
 };
 struct equal_join_cache_key {
-	bool operator()(const JoinCacheKey &lhs, const JoinCacheKey &rhs) const {
+	bool operator()(const JoinCacheKey& lhs, const JoinCacheKey& rhs) const {
 		return (lhs.buf_.size() == rhs.buf_.size() && memcmp(lhs.buf_.data(), rhs.buf_.data(), lhs.buf_.size()) == 0);
 	}
 };
 struct hash_join_cache_key {
-	size_t operator()(const JoinCacheKey &cache) const {
+	size_t operator()(const JoinCacheKey& cache) const {
 		uint64_t hash[2];
 		MurmurHash3_x64_128(cache.buf_.data(), cache.buf_.size(), 0, &hash);
 		return hash[0];

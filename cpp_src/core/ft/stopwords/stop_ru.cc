@@ -1,5 +1,5 @@
 namespace reindexer {
-const char *stop_words_ru[] = {
+const char* stop_words_ru[] = {
 	// clang-format off
 	"а",
 	"е",

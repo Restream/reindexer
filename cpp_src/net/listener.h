@@ -28,9 +28,9 @@ public:
 struct ConnPtrEqual {
 	using is_transparent = void;
 
-	bool operator()(const IServerConnection *lhs, const std::unique_ptr<IServerConnection> &rhs) const noexcept { return lhs == rhs.get(); }
-	bool operator()(const std::unique_ptr<IServerConnection> &lhs, const IServerConnection *rhs) const noexcept { return lhs.get() == rhs; }
-	bool operator()(const std::unique_ptr<IServerConnection> &lhs, const std::unique_ptr<IServerConnection> &rhs) const noexcept {
+	bool operator()(const IServerConnection* lhs, const std::unique_ptr<IServerConnection>& rhs) const noexcept { return lhs == rhs.get(); }
+	bool operator()(const std::unique_ptr<IServerConnection>& lhs, const IServerConnection* rhs) const noexcept { return lhs.get() == rhs; }
+	bool operator()(const std::unique_ptr<IServerConnection>& lhs, const std::unique_ptr<IServerConnection>& rhs) const noexcept {
 		return lhs == rhs;
 	}
 };
@@ -38,8 +38,8 @@ struct ConnPtrEqual {
 struct ConnPtrHash {
 	using transparent_key_equal = ConnPtrEqual;
 
-	size_t operator()(const IServerConnection *ptr) const noexcept { return std::hash<uintptr_t>()(uintptr_t(ptr)); }
-	size_t operator()(const std::unique_ptr<IServerConnection> &ptr) const noexcept { return std::hash<uintptr_t>()(uintptr_t(ptr.get())); }
+	size_t operator()(const IServerConnection* ptr) const noexcept { return std::hash<uintptr_t>()(uintptr_t(ptr)); }
+	size_t operator()(const std::unique_ptr<IServerConnection>& ptr) const noexcept { return std::hash<uintptr_t>()(uintptr_t(ptr.get())); }
 };
 
 enum class ListenerType {
@@ -65,7 +65,7 @@ public:
 	/// @param loop - ev::loop of caller's thread, listener's socket will be binded to that loop.
 	/// @param connFactory - Connection factory, will create objects with IServerConnection interface implementation.
 	/// @param maxListeners - Maximum number of threads, which listener will utilize. std::thread::hardware_concurrency() by default
-	Listener(ev::dynamic_loop &loop, ConnectionFactory &&connFactory, int maxListeners = 0);
+	Listener(ev::dynamic_loop& loop, ConnectionFactory&& connFactory, int maxListeners = 0);
 	~Listener() override;
 	/// Bind listener to specified host:port
 	/// @param addr - tcp host:port for bind or file path for the unix domain socket
@@ -77,22 +77,22 @@ public:
 
 protected:
 	void reserve_stack();
-	void io_accept(ev::io &watcher, int revents);
-	void timeout_cb(ev::periodic &watcher, int);
-	void async_cb(ev::async &watcher);
+	void io_accept(ev::io& watcher, int revents);
+	void timeout_cb(ev::periodic& watcher, int);
+	void async_cb(ev::async& watcher);
 	void rebalance();
 	void rebalance_from_acceptor();
 	// Locks shared_->mtx_. Should not be calles under external lock.
-	void rebalance_conn(IServerConnection *, IServerConnection::BalancingType type);
-	void run_dedicated_thread(std::unique_ptr<IServerConnection> &&conn);
+	void rebalance_conn(IServerConnection*, IServerConnection::BalancingType type);
+	void run_dedicated_thread(std::unique_ptr<IServerConnection>&& conn);
 	// May lock shared_->mtx_. Should not be calles under external lock.
 	void startup_shared_thread();
 
 	struct Shared {
 		struct Worker {
-			Worker(std::unique_ptr<IServerConnection> &&_conn, ev::async &_async) : conn(std::move(_conn)), async(&_async) {}
-			Worker(Worker &&other) noexcept : conn(std::move(other.conn)), async(other.async) {}
-			Worker &operator=(Worker &&other) noexcept {
+			Worker(std::unique_ptr<IServerConnection>&& _conn, ev::async& _async) : conn(std::move(_conn)), async(&_async) {}
+			Worker(Worker&& other) noexcept : conn(std::move(other.conn)), async(other.async) {}
+			Worker& operator=(Worker&& other) noexcept {
 				if (&other != this) {
 					conn = std::move(other.conn);
 					async = other.async;
@@ -101,16 +101,16 @@ protected:
 			}
 
 			std::unique_ptr<IServerConnection> conn;
-			ev::async *async;
+			ev::async* async;
 		};
 
-		Shared(ConnectionFactory &&connFactory, int maxListeners);
+		Shared(ConnectionFactory&& connFactory, int maxListeners);
 		~Shared();
 		lst_socket sock_;
 		const int maxListeners_;
 		std::atomic<int> listenersCount_ = {0};
 		std::atomic<int> connCount_ = {0};
-		std::vector<Listener *> listeners_;
+		std::vector<Listener*> listeners_;
 		std::mutex mtx_;
 		ConnectionFactory connFactory_;
 		std::atomic<bool> terminating_;
@@ -131,8 +131,8 @@ protected:
 				loop_.run();
 			}
 		}
-		const Listener &GetListener() const noexcept { return listener_; }
-		Shared &GetShared() noexcept { return *shared_; }
+		const Listener& GetListener() const noexcept { return listener_; }
+		Shared& GetShared() noexcept { return *shared_; }
 
 	private:
 		ev::dynamic_loop loop_;
@@ -140,12 +140,12 @@ protected:
 		std::shared_ptr<Shared> shared_;
 	};
 	// Locks shared_->mtx_. Should not be calles under external lock.
-	Listener(ev::dynamic_loop &loop, std::shared_ptr<Shared> shared);
+	Listener(ev::dynamic_loop& loop, std::shared_ptr<Shared> shared);
 	static void clone(std::unique_ptr<ListeningThreadData> d) noexcept;
 
 	ev::io io_;
 	ev::periodic timer_;
-	ev::dynamic_loop &loop_;
+	ev::dynamic_loop& loop_;
 	ev::async async_;
 	std::shared_ptr<Shared> shared_;
 	std::vector<std::unique_ptr<IServerConnection>> connections_;
@@ -159,7 +159,7 @@ public:
 	/// Constructs new listner object.
 	/// @param loop - ev::loop of caller's thread, listener's socket will be binded to that loop.
 	/// @param connFactory - Connection factory, will create objects with IServerConnection interface implementation.
-	ForkedListener(ev::dynamic_loop &loop, ConnectionFactory &&connFactory);
+	ForkedListener(ev::dynamic_loop& loop, ConnectionFactory&& connFactory);
 	~ForkedListener() override;
 	/// Bind listener to specified host:port
 	/// @param addr - tcp host:port for bind or file path for the unix domain socket
@@ -170,13 +170,13 @@ public:
 	void Stop() override;
 
 protected:
-	void io_accept(ev::io &watcher, int revents);
-	void async_cb(ev::async &watcher);
+	void io_accept(ev::io& watcher, int revents);
+	void async_cb(ev::async& watcher);
 
 	struct Worker {
-		Worker(std::unique_ptr<IServerConnection> &&conn, ev::async &async) : conn(std::move(conn)), async(&async) {}
-		Worker(Worker &&other) noexcept : conn(std::move(other.conn)), async(other.async) {}
-		Worker &operator=(Worker &&other) noexcept {
+		Worker(std::unique_ptr<IServerConnection>&& conn, ev::async& async) : conn(std::move(conn)), async(&async) {}
+		Worker(Worker&& other) noexcept : conn(std::move(other.conn)), async(other.async) {}
+		Worker& operator=(Worker&& other) noexcept {
 			if (&other != this) {
 				conn = std::move(other.conn);
 				async = other.async;
@@ -185,7 +185,7 @@ protected:
 		}
 
 		std::unique_ptr<IServerConnection> conn;
-		ev::async *async;
+		ev::async* async;
 	};
 
 	lst_socket sock_;
@@ -195,7 +195,7 @@ protected:
 	std::string addr_;
 
 	ev::io io_;
-	ev::dynamic_loop &loop_;
+	ev::dynamic_loop& loop_;
 	ev::async async_;
 	std::vector<Worker> workers_;
 	std::atomic<int> runningThreadsCount_ = {0};

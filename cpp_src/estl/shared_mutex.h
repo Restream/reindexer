@@ -63,7 +63,9 @@ public:
 
 	bool try_lock() noexcept {
 		int __ret = pthread_rwlock_trywrlock(&_M_rwlock);
-		if (__ret == EBUSY) return false;
+		if (__ret == EBUSY) {
+			return false;
+		}
 		assertrx(__ret == 0);
 		return true;
 	}
@@ -76,14 +78,17 @@ public:
 
 	void lock_shared() noexcept {
 		int __ret;
-		do __ret = pthread_rwlock_rdlock(&_M_rwlock);
-		while (__ret == EAGAIN || __ret == EBUSY);
+		do {
+			__ret = pthread_rwlock_rdlock(&_M_rwlock);
+		} while (__ret == EAGAIN || __ret == EBUSY);
 		assertrx(__ret == 0);
 	}
 
 	bool try_lock_shared() noexcept {
 		int __ret = pthread_rwlock_tryrdlock(&_M_rwlock);
-		if (__ret == EBUSY || __ret == EAGAIN) return false;
+		if (__ret == EBUSY || __ret == EAGAIN) {
+			return false;
+		}
 		assertrx(__ret == 0);
 		return true;
 	}
@@ -103,11 +108,13 @@ public:
 	explicit shared_lock(mutex_type& __m) noexcept : _M_pm(&__m), _M_owns(true) { __m.lock_shared(); }
 
 	~shared_lock() {
-		if (_M_owns) _M_pm->unlock_shared();
+		if (_M_owns) {
+			_M_pm->unlock_shared();
+		}
 	}
 
-	shared_lock(shared_lock const&) = delete;
-	shared_lock& operator=(shared_lock const&) = delete;
+	shared_lock(const shared_lock&) = delete;
+	shared_lock& operator=(const shared_lock&) = delete;
 
 	shared_lock(shared_lock&& __sl) noexcept : shared_lock() { swap(__sl); }
 

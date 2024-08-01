@@ -12,10 +12,11 @@ public:
 	smart_lock() noexcept : mtx_(nullptr), unique_(false), locked_(false) {}
 
 	smart_lock(Mutex& mtx, bool unique = false) : mtx_(&mtx), unique_(unique), locked_(true) {
-		if (unique_)
+		if (unique_) {
 			mtx_->lock();
-		else
+		} else {
 			mtx_->lock_shared();
+		}
 	}
 	template <typename Context>
 	smart_lock(Mutex& mtx, Context& context, bool unique = false, milliseconds chkTimeout = kDefaultCondChkTime)

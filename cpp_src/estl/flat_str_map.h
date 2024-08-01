@@ -17,15 +17,15 @@ protected:
 	class holder_t : public base_holder_t {
 	public:
 		string_view_t get(size_t pos) const {
-			auto ptr = reinterpret_cast<const uint8_t *>(base_holder_t::data() + pos);
+			auto ptr = reinterpret_cast<const uint8_t*>(base_holder_t::data() + pos);
 			auto l = scan_varint(10, ptr);
 			size_t len = parse_uint32(l, ptr);
-			return std::string_view(reinterpret_cast<const char *>(ptr + l), len);
+			return std::string_view(reinterpret_cast<const char*>(ptr + l), len);
 		}
 		size_t put(string_view_t str) {
 			size_t pos = base_holder_t::size();
 			base_holder_t::resize(str.size() + 8 + pos);
-			size_t l = string_pack(str.data(), str.size(), reinterpret_cast<uint8_t *>(base_holder_t::data()) + pos);
+			size_t l = string_pack(str.data(), str.size(), reinterpret_cast<uint8_t*>(base_holder_t::data()) + pos);
 			base_holder_t::resize(pos + l);
 			return pos;
 		}
@@ -33,23 +33,23 @@ protected:
 
 	struct equal_flat_str_map {
 		using is_transparent = void;
-		equal_flat_str_map(const holder_t *buf) noexcept : buf_(buf) {}
+		equal_flat_str_map(const holder_t* buf) noexcept : buf_(buf) {}
 		bool operator()(size_t lhs, size_t rhs) const { return buf_->get(lhs) == buf_->get(rhs); }
 		bool operator()(string_view_t lhs, size_t rhs) const { return lhs == buf_->get(rhs); }
 		bool operator()(size_t lhs, string_view_t rhs) const { return rhs == buf_->get(lhs); }
 
 	private:
-		const holder_t *buf_;
+		const holder_t* buf_;
 	};
 
 	struct hash_flat_str_map {
 		using is_transparent = void;
-		hash_flat_str_map(const holder_t *buf) noexcept : buf_(buf) {}
+		hash_flat_str_map(const holder_t* buf) noexcept : buf_(buf) {}
 		size_t operator()(string_view_t hs) const noexcept { return _Hash_bytes(hs.data(), hs.length()); }
 		size_t operator()(size_t hs) const { return operator()(buf_->get(hs)); }
 
 	private:
-		const holder_t *buf_;
+		const holder_t* buf_;
 	};
 
 	using hash_map = tsl::hopscotch_map<size_t, V, hash_flat_str_map, equal_flat_str_map, std::allocator<std::pair<size_t, V>>, 30, false,
@@ -59,17 +59,17 @@ public:
 	flat_str_map()
 		: holder_(std::make_unique<holder_t>()),
 		  map_(std::make_unique<hash_map>(16, hash_flat_str_map(holder_.get()), equal_flat_str_map(holder_.get()))) {}
-	flat_str_map(const flat_str_map &other) = delete;
-	flat_str_map &operator=(const flat_str_map &other) = delete;
-	flat_str_map(flat_str_map &&rhs) noexcept = default;
-	flat_str_map &operator=(flat_str_map &&rhs) noexcept = default;
+	flat_str_map(const flat_str_map& other) = delete;
+	flat_str_map& operator=(const flat_str_map& other) = delete;
+	flat_str_map(flat_str_map&& rhs) noexcept = default;
+	flat_str_map& operator=(flat_str_map&& rhs) noexcept = default;
 
 	template <typename VV>
 	class value_type : public std::pair<string_view_t, VV> {
 	public:
 		value_type(string_view_t k, VV v) : std::pair<string_view_t, VV>(k, v) {}
-		const value_type *operator->() const { return this; }
-		value_type *operator->() { return this; }
+		const value_type* operator->() const { return this; }
+		value_type* operator->() { return this; }
 	};
 
 	template <typename map_type, typename map_iterator, typename value_type>
@@ -77,12 +77,12 @@ public:
 		friend class flat_str_map;
 
 	public:
-		base_iterator(map_iterator it, map_type *m, int multi_idx) noexcept : it_(it), m_(m), multi_idx_(multi_idx) {}
-		base_iterator(map_iterator it, map_type *m) noexcept
+		base_iterator(map_iterator it, map_type* m, int multi_idx) noexcept : it_(it), m_(m), multi_idx_(multi_idx) {}
+		base_iterator(map_iterator it, map_type* m) noexcept
 			: it_(it), m_(m), multi_idx_((Multi && it_ != m_->map_->end() && it_->second.IsMultiValue()) ? it_->second.GetWordID() : -1) {}
-		base_iterator(const base_iterator &other) : it_(other.it_), m_(other.m_), multi_idx_(other.multi_idx_) {}
+		base_iterator(const base_iterator& other) : it_(other.it_), m_(other.m_), multi_idx_(other.multi_idx_) {}
 		// NOLINTNEXTLINE(bugprone-unhandled-self-assignment)
-		base_iterator &operator=(const base_iterator &other) noexcept {
+		base_iterator& operator=(const base_iterator& other) noexcept {
 			it_ = other.it_;
 			m_ = other.m_;
 			multi_idx_ = other.multi_idx_;
@@ -109,11 +109,13 @@ public:
 			return value_type(m_->holder_->get(it_->first), it_->second);
 		}
 
-		base_iterator &operator++() noexcept {
+		base_iterator& operator++() noexcept {
 			if constexpr (Multi) {
 				if (multi_idx_ != -1) {
 					multi_idx_ = m_->multi_[multi_idx_].next;
-					if (multi_idx_ != -1) return *this;
+					if (multi_idx_ != -1) {
+						return *this;
+					}
 				}
 			}
 			++it_;
@@ -124,7 +126,7 @@ public:
 			}
 			return *this;
 		}
-		base_iterator &operator--() noexcept {
+		base_iterator& operator--() noexcept {
 			static_assert(Multi, "Sorry, flat_std_multimap::iterator::operator-- () is not implemented");
 			--it_;
 			return *this;
@@ -140,22 +142,22 @@ public:
 			return ret;
 		}
 		template <typename it2>
-		bool operator!=(const it2 &rhs) const noexcept {
+		bool operator!=(const it2& rhs) const noexcept {
 			return it_ != rhs.it_ || multi_idx_ != rhs.multi_idx_;
 		}
 		template <typename it2>
-		bool operator==(const it2 &rhs) const noexcept {
+		bool operator==(const it2& rhs) const noexcept {
 			return it_ == rhs.it_ && multi_idx_ == rhs.multi_idx_;
 		}
 
 	protected:
 		map_iterator it_;
-		map_type *m_;
+		map_type* m_;
 		int multi_idx_;
 	};
 
-	using iterator = base_iterator<flat_str_map, typename hash_map::iterator, value_type<V &>>;
-	using const_iterator = base_iterator<const flat_str_map, typename hash_map::const_iterator, value_type<const V &>>;
+	using iterator = base_iterator<flat_str_map, typename hash_map::iterator, value_type<V&>>;
+	using const_iterator = base_iterator<const flat_str_map, typename hash_map::const_iterator, value_type<const V&>>;
 
 	iterator begin() noexcept { return iterator(map_->begin(), this); }
 	iterator end() noexcept { return iterator(map_->end(), this); }
@@ -168,18 +170,22 @@ public:
 	std::pair<iterator, iterator> equal_range(string_view_t str) noexcept {
 		auto it = map_->find(str);
 		auto it2 = it;
-		if (it2 != map_->end()) ++it2;
+		if (it2 != map_->end()) {
+			++it2;
+		}
 		return {iterator(it, this), iterator(it2, this)};
 	}
 
 	std::pair<const_iterator, const_iterator> equal_range(string_view_t str) const noexcept {
 		auto it = map_->find(str);
 		auto it2 = it;
-		if (it2 != map_->end()) ++it2;
+		if (it2 != map_->end()) {
+			++it2;
+		}
 		return {const_iterator(it, this), const_iterator(it2, this)};
 	}
 
-	std::pair<iterator, bool> insert(string_view_t str, const V &v) {
+	std::pair<iterator, bool> insert(string_view_t str, const V& v) {
 		size_t pos = holder_->put(str);
 		const auto h = hash_flat_str_map(holder_.get())(str);
 		auto res = map_->try_emplace_prehashed(h, pos, v);
@@ -209,7 +215,7 @@ public:
 		}
 	}
 
-	std::pair<iterator, bool> emplace(string_view_t str, const V &v) { return insert(str, v); }
+	std::pair<iterator, bool> emplace(string_view_t str, const V& v) { return insert(str, v); }
 
 	void reserve(size_t map_sz, size_t str_sz) {
 		map_->reserve(map_sz);
@@ -237,8 +243,8 @@ protected:
 	// Underlying map container
 	std::unique_ptr<hash_map> map_;
 	struct multi_node {
-		multi_node(const V &v, int n) : val(v), next(n) {}
-		multi_node(V &&v, int n) noexcept : val(std::move(v)), next(n) {}
+		multi_node(const V& v, int n) : val(v), next(n) {}
+		multi_node(V&& v, int n) noexcept : val(std::move(v)), next(n) {}
 
 		V val;
 		int next;

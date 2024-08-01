@@ -231,7 +231,9 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 			}
 
 			for (const char* additionalSearchField : {kFieldId, kFieldTree1, kFieldTree2, kFieldHash}) {
-				if (additionalSearchField == searchField) continue;
+				if (additionalSearchField == searchField) {
+					continue;
+				}
 				for (const Query& query :
 					 {Query(unbuiltBtreeNs).Explain().Where(additionalSearchField, CondEq, RandInt()).Where(searchField, cond, RandInt()),
 					  Query(unbuiltBtreeNs)
@@ -336,7 +338,9 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 					}
 
 					for (const char* additionalSearchField : {kFieldId, kFieldTree1, kFieldTree2, kFieldHash}) {
-						if (additionalSearchField == searchField) continue;
+						if (additionalSearchField == searchField) {
+							continue;
+						}
 						for (const Query& query : {Query(unbuiltBtreeNs)
 													   .Explain()
 													   .Where(additionalSearchField, CondEq, RandInt())

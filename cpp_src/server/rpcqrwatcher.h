@@ -48,7 +48,9 @@ public:
 			}
 		}
 		QueryResults& operator*() {
-			if (!d_.qr) throw Error(errLogic, "Query results' pointer is nullptr");
+			if (!d_.qr) {
+				throw Error(errLogic, "Query results' pointer is nullptr");
+			}
 			return *d_.qr;
 		}
 		uint32_t ID() const noexcept { return d_.id; }
@@ -149,8 +151,7 @@ private:
 		};
 
 		UID() noexcept : freed(0), state(Uninitialized), refs(0), val(0) {}
-		UID(int64_t uid, bool addRef)
-		noexcept
+		UID(int64_t uid, bool addRef) noexcept
 			: freed(0), state(uid >= 0 ? InitializedUIDEnabled : InitializedUIDDisabled), refs(addRef ? 1 : 0), val(uid >= 0 ? uid : 0) {
 			assertf(uid == kDisabled || val == (uid & kUIDValueBitmask), "UID: %d, val: %d", uid, val);
 		}

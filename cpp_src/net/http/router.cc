@@ -67,7 +67,7 @@ int Context::JSON(int code, std::string_view slice) {
 	return 0;
 }
 
-int Context::JSON(int code, chunk &&chunk) {
+int Context::JSON(int code, chunk&& chunk) {
 	writer->SetContentLength(chunk.len());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/json; charset=utf-8"sv});
@@ -75,7 +75,7 @@ int Context::JSON(int code, chunk &&chunk) {
 	return 0;
 }
 
-int Context::CSV(int code, chunk &&chunk) {
+int Context::CSV(int code, chunk&& chunk) {
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/csv; charset=utf-8"sv});
 	if (auto filename = request->headers.Get("Save-Csv-To"sv); !filename.empty()) {
@@ -85,7 +85,7 @@ int Context::CSV(int code, chunk &&chunk) {
 	return 0;
 }
 
-int Context::MSGPACK(int code, chunk &&chunk) {
+int Context::MSGPACK(int code, chunk&& chunk) {
 	writer->SetContentLength(chunk.len());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/x-msgpack; charset=utf-8"sv});
@@ -93,7 +93,7 @@ int Context::MSGPACK(int code, chunk &&chunk) {
 	return 0;
 }
 
-int Context::Protobuf(int code, chunk &&chunk) {
+int Context::Protobuf(int code, chunk&& chunk) {
 	writer->SetContentLength(chunk.len());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/protobuf; charset=utf-8"sv});
@@ -109,7 +109,7 @@ int Context::String(int code, std::string_view slice) {
 	return 0;
 }
 
-int Context::String(int code, chunk &&chunk) {
+int Context::String(int code, chunk&& chunk) {
 	writer->SetContentLength(chunk.len());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "text/plain; charset=utf-8"sv});
@@ -128,13 +128,27 @@ static std::string_view lookupContentType(std::string_view path) {
 		return "application/octet-stream"sv;
 	}
 	p++;
-	if (path.substr(p, 4) == "html"sv) return "text/html; charset=utf-8"sv;
-	if (path.substr(p, 4) == "json"sv) return "application/json; charset=utf-8"sv;
-	if (path.substr(p, 3) == "yml"sv) return "application/yml; charset=utf-8"sv;
-	if (path.substr(p, 3) == "css"sv) return "text/css; charset=utf-8"sv;
-	if (path.substr(p, 2) == "js"sv) return "application/javascript; charset=utf-8"sv;
-	if (path.substr(p, 4) == "woff"sv) return "font/woff"sv;
-	if (path.substr(p, 5) == "woff2"sv) return "font/woff2"sv;
+	if (path.substr(p, 4) == "html"sv) {
+		return "text/html; charset=utf-8"sv;
+	}
+	if (path.substr(p, 4) == "json"sv) {
+		return "application/json; charset=utf-8"sv;
+	}
+	if (path.substr(p, 3) == "yml"sv) {
+		return "application/yml; charset=utf-8"sv;
+	}
+	if (path.substr(p, 3) == "css"sv) {
+		return "text/css; charset=utf-8"sv;
+	}
+	if (path.substr(p, 2) == "js"sv) {
+		return "application/javascript; charset=utf-8"sv;
+	}
+	if (path.substr(p, 4) == "woff"sv) {
+		return "font/woff"sv;
+	}
+	if (path.substr(p, 5) == "woff2"sv) {
+		return "font/woff2"sv;
+	}
 
 	return "application/octet-stream"sv;
 }
@@ -166,19 +180,22 @@ int Context::File(int code, std::string_view path, std::string_view data, bool i
 std::vector<std::string_view> methodNames = {"GET"sv, "POST"sv, "OPTIONS"sv, "HEAD"sv, "PUT"sv, "DELETE"sv, "PATCH"sv};
 
 HttpMethod lookupMethod(std::string_view method) {
-	for (auto &cm : methodNames)
-		if (method == cm) return HttpMethod(&cm - &methodNames[0]);
+	for (auto& cm : methodNames) {
+		if (method == cm) {
+			return HttpMethod(&cm - &methodNames[0]);
+		}
+	}
 	return HttpMethod(kMethodUnknown);
 }
 
-int Router::handle(Context &ctx) {
+int Router::handle(Context& ctx) {
 	auto method = lookupMethod(ctx.request->method);
 	if (method < 0) {
 		return ctx.String(StatusBadRequest, "Invalid method"sv);
 	}
 	int res = 0;
 
-	for (auto &r : routes_[method]) {
+	for (auto& r : routes_[method]) {
 		std::string_view url = ctx.request->path;
 		std::string_view route = r.path;
 		ctx.request->urlParams.clear();
@@ -187,9 +204,11 @@ int Router::handle(Context &ctx) {
 			auto patternPos = route.find(':');
 			auto asteriskPos = route.find('*');
 			if (patternPos == std::string_view::npos || asteriskPos != std::string_view::npos) {
-				if (url.substr(0, asteriskPos) != route.substr(0, asteriskPos)) break;
+				if (url.substr(0, asteriskPos) != route.substr(0, asteriskPos)) {
+					break;
+				}
 
-				for (auto &mw : middlewares_) {
+				for (auto& mw : middlewares_) {
 					res = mw.func(mw.object, ctx);
 					if (res != 0) {
 						return res;
@@ -198,7 +217,9 @@ int Router::handle(Context &ctx) {
 				return r.h.func(r.h.object, ctx);
 			}
 
-			if (url.substr(0, patternPos) != route.substr(0, patternPos)) break;
+			if (url.substr(0, patternPos) != route.substr(0, patternPos)) {
+				break;
+			}
 
 			url = url.substr(patternPos);
 			route = route.substr(patternPos);

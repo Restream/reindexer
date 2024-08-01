@@ -53,14 +53,20 @@ TEST_F(Fuzzing, BaseTest) {
 				auto item = rx_.NewItem(ns.GetName());
 				err = item.Status();
 				EXPECT_TRUE(err.ok()) << err.what();
-				if (!err.ok()) continue;
+				if (!err.ok()) {
+					continue;
+				}
 				ns.NewItem(ser);  // TODO not json
 				err = item.FromJSON(ser.Slice());
 				EXPECT_TRUE(err.ok()) << err.what() << std::endl << "size: " << ser.Slice().size() << std::endl << ser.Slice();
-				if (!err.ok()) continue;
+				if (!err.ok()) {
+					continue;
+				}
 				err = item.Status();
 				EXPECT_TRUE(err.ok()) << err.what();
-				if (!err.ok()) continue;
+				if (!err.ok()) {
+					continue;
+				}
 				enum Op : uint8_t { Insert, Upsert, Update, Delete, END = Delete };
 				switch (rnd.RndWhich<Op, 10, 100, 1, 1>()) {
 					case Insert:

@@ -20,7 +20,9 @@ reindexer::Query QueryGenerator::operator()() {
 												 [&](const Index::Children& c) {
 													 std::vector<FieldType> types;
 													 types.reserve(c.size());
-													 for (const auto& child : c) types.push_back(child.type);
+													 for (const auto& child : c) {
+														 types.push_back(child.type);
+													 }
 													 rndGen_.RndWhereComposite(query, idx.Name(), std::move(types), idx.Type());
 												 }},
 						   idx.Content());

@@ -7,7 +7,7 @@ namespace reindexer {
 
 template <NotComparable notComparable>
 struct RelaxedComparator {
-	static bool equal(const Variant &lhs, const Variant &rhs) {
+	static bool equal(const Variant& lhs, const Variant& rhs) {
 		return lhs.RelaxCompare<WithString::Yes, notComparable>(rhs) == ComparationResult::Eq;
 	}
 };
@@ -15,26 +15,14 @@ struct RelaxedComparator {
 template <NotComparable notComparable>
 struct RelaxedHasher {
 	constexpr static size_t indexesCount = notComparable == NotComparable::Return ? 7 : 6;
-	static std::pair<size_t, size_t> hash(const Variant &v) noexcept(notComparable == NotComparable::Return) {
+	static std::pair<size_t, size_t> hash(const Variant& v) noexcept(notComparable == NotComparable::Return) {
 		return v.Type().EvaluateOneOf(
-			overloaded{[&v](KeyValueType::Bool) noexcept {
-						   return std::pair<size_t, size_t>{0, v.Hash()};
-					   },
-					   [&v](KeyValueType::Int) noexcept {
-						   return std::pair<size_t, size_t>{1, v.Hash()};
-					   },
-					   [&v](KeyValueType::Int64) noexcept {
-						   return std::pair<size_t, size_t>{2, v.Hash()};
-					   },
-					   [&v](KeyValueType::Double) noexcept {
-						   return std::pair<size_t, size_t>{3, v.Hash()};
-					   },
-					   [&v](KeyValueType::String) noexcept {
-						   return std::pair<size_t, size_t>{4, v.Hash()};
-					   },
-					   [&v](KeyValueType::Uuid) noexcept {
-						   return std::pair<size_t, size_t>{5, v.Hash()};
-					   },
+			overloaded{[&v](KeyValueType::Bool) noexcept { return std::pair<size_t, size_t>{0, v.Hash()}; },
+					   [&v](KeyValueType::Int) noexcept { return std::pair<size_t, size_t>{1, v.Hash()}; },
+					   [&v](KeyValueType::Int64) noexcept { return std::pair<size_t, size_t>{2, v.Hash()}; },
+					   [&v](KeyValueType::Double) noexcept { return std::pair<size_t, size_t>{3, v.Hash()}; },
+					   [&v](KeyValueType::String) noexcept { return std::pair<size_t, size_t>{4, v.Hash()}; },
+					   [&v](KeyValueType::Uuid) noexcept { return std::pair<size_t, size_t>{5, v.Hash()}; },
 					   [&v](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) noexcept(
 						   notComparable == NotComparable::Return) -> std::pair<size_t, size_t> {
 						   if constexpr (notComparable == NotComparable::Return) {
@@ -44,7 +32,7 @@ struct RelaxedHasher {
 						   }
 					   }});
 	}
-	static size_t hash(size_t i, const Variant &v) {
+	static size_t hash(size_t i, const Variant& v) {
 		switch (i) {
 			case 0:
 				return v.Type().EvaluateOneOf(

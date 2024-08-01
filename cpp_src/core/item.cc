@@ -7,7 +7,7 @@
 
 namespace reindexer {
 
-Item &Item::operator=(Item &&other) noexcept {
+Item& Item::operator=(Item&& other) noexcept {
 	if (&other != this) {
 		if (impl_) {
 			auto ns = impl_->GetNamespace();
@@ -45,10 +45,11 @@ Point Item::FieldRef::As<Point>() const {
 
 Item::FieldRef::operator Variant() const {
 	VariantArray kr;
-	if (field_ >= 0)
+	if (field_ >= 0) {
 		itemImpl_->GetPayload().Get(field_, kr);
-	else
+	} else {
 		kr = itemImpl_->GetValueByJSONPath(jsonPath_);
+	}
 
 	if (kr.size() != 1) {
 		throw Error(errParams, "Invalid array access");
@@ -65,7 +66,7 @@ Item::FieldRef::operator VariantArray() const {
 	return itemImpl_->GetValueByJSONPath(jsonPath_);
 }
 
-Item::FieldRef &Item::FieldRef::operator=(Variant kr) {
+Item::FieldRef& Item::FieldRef::operator=(Variant kr) {
 	if (field_ >= 0) {
 		itemImpl_->SetField(field_, VariantArray{std::move(kr)});
 	} else {
@@ -75,10 +76,10 @@ Item::FieldRef &Item::FieldRef::operator=(Variant kr) {
 	return *this;
 }
 
-Item::FieldRef &Item::FieldRef::operator=(const char *str) { return operator=(p_string(str)); }
-Item::FieldRef &Item::FieldRef::operator=(const std::string &str) { return operator=(p_string(&str)); }
+Item::FieldRef& Item::FieldRef::operator=(const char* str) { return operator=(p_string(str)); }
+Item::FieldRef& Item::FieldRef::operator=(const std::string& str) { return operator=(p_string(&str)); }
 
-Item::FieldRef &Item::FieldRef::operator=(const VariantArray &krs) {
+Item::FieldRef& Item::FieldRef::operator=(const VariantArray& krs) {
 	if (field_ >= 0) {
 		itemImpl_->SetField(field_, krs);
 	} else {
@@ -88,14 +89,14 @@ Item::FieldRef &Item::FieldRef::operator=(const VariantArray &krs) {
 }
 
 template <typename T>
-Item::FieldRef &Item::FieldRef::operator=(span<const T> arr) {
+Item::FieldRef& Item::FieldRef::operator=(span<const T> arr) {
 	constexpr static bool kIsStr = std::is_same_v<T, std::string> || std::is_same_v<T, key_string> || std::is_same_v<T, p_string> ||
-								   std::is_same_v<T, std::string_view> || std::is_same_v<T, const char *>;
+								   std::is_same_v<T, std::string_view> || std::is_same_v<T, const char*>;
 	if (field_ < 0) {
 		VariantArray krs;
 		krs.MarkArray();
 		krs.reserve(arr.size());
-		std::transform(arr.begin(), arr.end(), std::back_inserter(krs), [](const T &t) { return Variant(t); });
+		std::transform(arr.begin(), arr.end(), std::back_inserter(krs), [](const T& t) { return Variant(t); });
 		itemImpl_->SetField(jsonPath_, krs);
 		return *this;
 	}
@@ -105,12 +106,14 @@ Item::FieldRef &Item::FieldRef::operator=(span<const T> arr) {
 
 	if constexpr (kIsStr) {
 		if (itemImpl_->IsUnsafe() || itemImpl_->Type()->Field(field_).Type().Is<KeyValueType::Uuid>()) {
-			for (auto &elem : arr) {
+			for (auto& elem : arr) {
 				pl.Set(field_, pos++, Variant(elem));
 			}
 		} else {
-			if (!itemImpl_->holder_) itemImpl_->holder_ = std::make_unique<std::deque<std::string>>();
-			for (auto &elem : arr) {
+			if (!itemImpl_->holder_) {
+				itemImpl_->holder_ = std::make_unique<std::deque<std::string>>();
+			}
+			for (auto& elem : arr) {
 				if constexpr (std::is_same_v<T, p_string>) {
 					itemImpl_->holder_->push_back(elem.toString());
 				} else {
@@ -120,7 +123,7 @@ Item::FieldRef &Item::FieldRef::operator=(span<const T> arr) {
 			}
 		}
 	} else {
-		for (auto &elem : arr) {
+		for (auto& elem : arr) {
 			pl.Set(field_, pos++, Variant(elem));
 		}
 	}
@@ -138,7 +141,7 @@ Item::~Item() {
 	}
 }
 
-Error Item::FromJSON(std::string_view slice, char **endp, bool pkOnly) & noexcept {
+Error Item::FromJSON(std::string_view slice, char** endp, bool pkOnly) & noexcept {
 	RETURN_RESULT_NOEXCEPT(impl_->FromJSON(slice, endp, pkOnly));
 }
 
@@ -154,15 +157,15 @@ void Item::FromCJSONImpl(std::string_view slice, bool pkOnly) & { impl_->FromCJS
 std::string_view Item::GetCJSON() { return impl_->GetCJSON(); }
 std::string_view Item::GetJSON() { return impl_->GetJSON(); }
 
-Error Item::FromMsgPack(std::string_view buf, size_t &offset) & noexcept { RETURN_RESULT_NOEXCEPT(impl_->FromMsgPack(buf, offset)); }
+Error Item::FromMsgPack(std::string_view buf, size_t& offset) & noexcept { RETURN_RESULT_NOEXCEPT(impl_->FromMsgPack(buf, offset)); }
 
 Error Item::FromProtobuf(std::string_view sbuf) & noexcept { RETURN_RESULT_NOEXCEPT(impl_->FromProtobuf(sbuf)); }
 
-Error Item::GetMsgPack(WrSerializer &wrser) & noexcept { RETURN_RESULT_NOEXCEPT(impl_->GetMsgPack(wrser)); }
+Error Item::GetMsgPack(WrSerializer& wrser) & noexcept { RETURN_RESULT_NOEXCEPT(impl_->GetMsgPack(wrser)); }
 
 std::string_view Item::GetMsgPack() & { return impl_->GetMsgPack(); }
 
-Error Item::GetProtobuf(WrSerializer &wrser) & noexcept { RETURN_RESULT_NOEXCEPT(impl_->GetProtobuf(wrser)); }
+Error Item::GetProtobuf(WrSerializer& wrser) & noexcept { RETURN_RESULT_NOEXCEPT(impl_->GetProtobuf(wrser)); }
 
 int Item::NumFields() const { return impl_->Type().NumFields(); }
 
@@ -173,18 +176,18 @@ Item::FieldRef Item::operator[](int field) const {
 	return FieldRef(field, impl_);
 }
 
-Item::FieldRef Item::FieldRefByName(std::string_view name, ItemImpl &impl) {
+Item::FieldRef Item::FieldRefByName(std::string_view name, ItemImpl& impl) {
 	int field = 0;
 	return (impl.Type().FieldByName(name, field)) ? FieldRef(field, &impl) : FieldRef(name, &impl);
 }
 
 int Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name); }
 FieldsSet Item::PkFields() const { return impl_->PkFields(); }
-void Item::SetPrecepts(const std::vector<std::string> &precepts) & { impl_->SetPrecepts(precepts); }
+void Item::SetPrecepts(const std::vector<std::string>& precepts) & { impl_->SetPrecepts(precepts); }
 bool Item::IsTagsUpdated() const noexcept { return impl_->tagsMatcher().isUpdated(); }
 int Item::GetStateToken() const noexcept { return impl_->tagsMatcher().stateToken(); }
 
-Item &Item::Unsafe(bool enable) & noexcept {
+Item& Item::Unsafe(bool enable) & noexcept {
 	impl_->Unsafe(enable);
 	return *this;
 }
@@ -192,10 +195,10 @@ Item &Item::Unsafe(bool enable) & noexcept {
 int64_t Item::GetLSN() { return impl_->Value().GetLSN(); }
 void Item::setLSN(int64_t lsn) { impl_->Value().SetLSN(lsn); }
 
-template Item::FieldRef &Item::FieldRef::operator=(span<const int> arr);
-template Item::FieldRef &Item::FieldRef::operator=(span<const int64_t> arr);
-template Item::FieldRef &Item::FieldRef::operator=(span<const std::string> arr);
-template Item::FieldRef &Item::FieldRef::operator=(span<const double>);
-template Item::FieldRef &Item::FieldRef::operator=(span<const Uuid>);
+template Item::FieldRef& Item::FieldRef::operator=(span<const int> arr);
+template Item::FieldRef& Item::FieldRef::operator=(span<const int64_t> arr);
+template Item::FieldRef& Item::FieldRef::operator=(span<const std::string> arr);
+template Item::FieldRef& Item::FieldRef::operator=(span<const double>);
+template Item::FieldRef& Item::FieldRef::operator=(span<const Uuid>);
 
 }  // namespace reindexer

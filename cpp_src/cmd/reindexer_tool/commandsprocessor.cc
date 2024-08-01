@@ -29,8 +29,8 @@ Error CommandsProcessor<DBInterface>::process(const std::string& command) {
 #if REINDEX_WITH_REPLXX
 template <typename DBInterface>
 template <typename T>
-void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_completion_callback)(new_v_callback_t const&)) {
-	(rx.*set_completion_callback)([this](std::string const& input, int) -> replxx::Replxx::completions_t {
+void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_completion_callback)(const new_v_callback_t&)) {
+	(rx.*set_completion_callback)([this](const std::string& input, int) -> replxx::Replxx::completions_t {
 		std::vector<std::string> completions;
 		const auto err = executor_.GetSuggestions(input, completions);
 		replxx::Replxx::completions_t result;
@@ -45,12 +45,14 @@ void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_
 
 template <typename DBInterface>
 template <typename T>
-void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_completion_callback)(old_v_callback_t const&, void*)) {
+void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_completion_callback)(const old_v_callback_t&, void*)) {
 	(rx.*set_completion_callback)(
-		[this](std::string const& input, int, void*) -> replxx::Replxx::completions_t {
+		[this](const std::string& input, int, void*) -> replxx::Replxx::completions_t {
 			std::vector<std::string> completions;
 			const auto err = executor_.GetSuggestions(input, completions);
-			if (!err.ok()) return {};
+			if (!err.ok()) {
+				return {};
+			}
 			return completions;
 		},
 		nullptr);
@@ -95,14 +97,18 @@ bool CommandsProcessor<DBInterface>::interactive() {
 
 	// main repl loop
 	while (executor_.GetStatus().running) {
-		char const* input = nullptr;
+		const char* input = nullptr;
 		do {
 			input = rx.input(prompt);
 		} while (!input && errno == EAGAIN);
 
-		if (input == nullptr) break;
+		if (input == nullptr) {
+			break;
+		}
 
-		if (!*input) continue;
+		if (!*input) {
+			continue;
+		}
 
 		Error err = process(input);
 		if (!err.ok()) {
@@ -119,7 +125,9 @@ bool CommandsProcessor<DBInterface>::interactive() {
 	while (executor_.GetStatus().running) {
 		std::string command;
 		std::cout << prompt;
-		if (!std::getline(std::cin, command)) break;
+		if (!std::getline(std::cin, command)) {
+			break;
+		}
 		Error err = process(command);
 		if (!err.ok()) {
 			std::cerr << "ERROR: " << err.what() << std::endl;

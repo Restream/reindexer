@@ -69,7 +69,9 @@ TEST_F(ReplicationLoadApi, Base) {
 
 	SetWALSize(masterId_, 50000, "some");
 	for (size_t i = 0; i < 2; ++i) {
-		if (i % 3 == 0) DeleteFromMaster();
+		if (i % 3 == 0) {
+			DeleteFromMaster();
+		}
 		SetWALSize(masterId_, (int64_t(i) + 1) * 25000, "some1");
 		FillData(1000);
 		SetWALSize(masterId_, (int64_t(i) + 1) * 50000, "some");
@@ -112,7 +114,9 @@ TEST_F(ReplicationLoadApi, BaseTagsMatcher) {
 	SetSchema(masterId_, "some1", kReplTestSchema2);
 	FillData(1000);
 	for (size_t i = 0; i < 2; ++i) {
-		if (i == 1) DeleteFromMaster();
+		if (i == 1) {
+			DeleteFromMaster();
+		}
 		FillData(1000);
 	}
 	StartServer(1);
@@ -312,7 +316,9 @@ TEST_F(ReplicationLoadApi, DISABLED_BasicTestNoMasterRestart) {
 	});
 
 	for (size_t i = 0; i < 10; ++i) {
-		if (i % 3 == 0) DeleteFromMaster();
+		if (i % 3 == 0) {
+			DeleteFromMaster();
+		}
 		FillData(1000);
 		SimpleSelect(0);
 		SimpleSelect(rand() % 3 + 1);
@@ -341,7 +347,9 @@ TEST_F(ReplicationLoadApi, SingleSlaveTest) {
 			counter++;
 
 			RestartServer(i);
-			if (counter % 3 == 0) DeleteFromMaster();
+			if (counter % 3 == 0) {
+				DeleteFromMaster();
+			}
 		}
 	});
 
@@ -375,7 +383,9 @@ TEST_F(ReplicationLoadApi, DuplicatePKSlaveTest) {
 
 	bool isFirst = true;
 	for (const auto id : ids) {
-		if (!isFirst) changedIds += ", ";
+		if (!isFirst) {
+			changedIds += ", ";
+		}
 		changedIds += std::to_string(id);
 		isFirst = false;
 	}

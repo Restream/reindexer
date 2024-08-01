@@ -21,14 +21,14 @@ class QueryPreprocessor;
 struct JoinSelectIterator {
 	size_t joinIndex;
 	double Cost() const noexcept { return std::numeric_limits<float>::max(); }
-	void Dump(WrSerializer &, const std::vector<JoinedSelector> &) const;
+	void Dump(WrSerializer&, const std::vector<JoinedSelector>&) const;
 };
 
 struct SelectIteratorsBracket : private Bracket {
 	using Bracket::Bracket;
 	using Bracket::Size;
 	using Bracket::Append;
-	void CopyPayloadFrom(const SelectIteratorsBracket &other) noexcept { haveJoins = other.haveJoins; }
+	void CopyPayloadFrom(const SelectIteratorsBracket& other) noexcept { haveJoins = other.haveJoins; }
 	bool haveJoins = false;
 };
 
@@ -43,7 +43,7 @@ class SelectIteratorContainer
 								ComparatorIndexed<Uuid>, EqualPositionComparator, ComparatorNotIndexed>;
 
 public:
-	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx *ctx = nullptr)
+	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx* ctx = nullptr)
 		: pt_(std::move(pt)), ctx_(ctx), maxIterations_(std::numeric_limits<int>::max()), wasZeroIterations_(false) {}
 
 	void SortByCost(int expectedIterations);
@@ -52,10 +52,10 @@ public:
 	void CheckFirstQuery();
 	// Let iterators choose most effecive algorith
 	void SetExpectMaxIterations(int expectedIterations);
-	void PrepareIteratorsForSelectLoop(QueryPreprocessor &, unsigned sortId, bool isFt, const NamespaceImpl &, SelectFunction::Ptr &,
-									   FtCtx::Ptr &, const RdxContext &);
+	void PrepareIteratorsForSelectLoop(QueryPreprocessor&, unsigned sortId, bool isFt, const NamespaceImpl&, SelectFunction::Ptr&,
+									   FtCtx::Ptr&, const RdxContext&);
 	template <bool reverse, bool hasComparators>
-	bool Process(PayloadValue &, bool *finish, IdType *rowId, IdType, bool match);
+	bool Process(PayloadValue&, bool* finish, IdType* rowId, IdType, bool match);
 
 	bool IsSelectIterator(size_t i) const noexcept {
 		assertrx_throw(i < Size());
@@ -71,12 +71,12 @@ public:
 			[] RX_PRE_LMBD_ALWAYS_INLINE(
 				OneOf<SelectIteratorsBracket, JoinSelectIterator, FieldsComparator, AlwaysFalse, AlwaysTrue, EqualPositionComparator>)
 				RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIterator &sit) RX_POST_LMBD_ALWAYS_INLINE noexcept { return sit.distinct; },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIterator& sit) RX_POST_LMBD_ALWAYS_INLINE noexcept { return sit.distinct; },
 			Restricted<ComparatorNotIndexed,
 					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
-				[] RX_PRE_LMBD_ALWAYS_INLINE(const auto &comp) RX_POST_LMBD_ALWAYS_INLINE noexcept { return comp.IsDistinct(); }));
+				[] RX_PRE_LMBD_ALWAYS_INLINE(const auto& comp) RX_POST_LMBD_ALWAYS_INLINE noexcept { return comp.IsDistinct(); }));
 	}
-	void ExplainJSON(int iters, JsonBuilder &builder, const std::vector<JoinedSelector> *js) const {
+	void ExplainJSON(int iters, JsonBuilder& builder, const std::vector<JoinedSelector>* js) const {
 		explainJSON(cbegin(), cend(), iters, builder, js);
 	}
 
@@ -87,60 +87,66 @@ public:
 	}
 	int GetMaxIterations(bool withZero = false) const noexcept { return (withZero && wasZeroIterations_) ? 0 : maxIterations_; }
 	std::string Dump() const;
-	static bool IsExpectingOrderedResults(const QueryEntry &qe) noexcept {
+	static bool IsExpectingOrderedResults(const QueryEntry& qe) noexcept {
 		return IsOrderedCondition(qe.Condition()) || (qe.Condition() != CondAny && qe.Values().size() <= 1);
 	}
 
 private:
-	bool prepareIteratorsForSelectLoop(QueryPreprocessor &, size_t begin, size_t end, unsigned sortId, bool isFt, const NamespaceImpl &,
-									   SelectFunction::Ptr &, FtCtx::Ptr &, const RdxContext &);
+	bool prepareIteratorsForSelectLoop(QueryPreprocessor&, size_t begin, size_t end, unsigned sortId, bool isFt, const NamespaceImpl&,
+									   SelectFunction::Ptr&, FtCtx::Ptr&, const RdxContext&);
 	void sortByCost(span<unsigned int> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations);
 	double fullCost(span<unsigned> indexes, unsigned i, unsigned from, unsigned to, int expectedIterations) const noexcept;
 	double cost(span<unsigned> indexes, unsigned cur, int expectedIterations) const noexcept;
 	double cost(span<unsigned> indexes, unsigned from, unsigned to, int expectedIterations) const noexcept;
 	void moveJoinsToTheBeginingOfORs(span<unsigned> indexes, unsigned from, unsigned to);
 	// Check idset must be 1st
-	static void checkFirstQuery(Container &);
+	static void checkFirstQuery(Container&);
 	template <bool reverse>
-	bool checkIfSatisfyCondition(SelectIterator &, bool *finish, IdType rowId);
-	bool checkIfSatisfyCondition(JoinSelectIterator &, PayloadValue &, IdType properRowId, bool match);
+	bool checkIfSatisfyCondition(SelectIterator&, bool* finish, IdType rowId);
+	bool checkIfSatisfyCondition(JoinSelectIterator&, PayloadValue&, IdType properRowId, bool match);
 	template <bool reverse, bool hasComparators>
-	bool checkIfSatisfyAllConditions(iterator begin, iterator end, PayloadValue &, bool *finish, IdType rowId, IdType properRowId,
+	bool checkIfSatisfyAllConditions(iterator begin, iterator end, PayloadValue&, bool* finish, IdType rowId, IdType properRowId,
 									 bool match);
-	static std::string explainJSON(const_iterator it, const_iterator to, int iters, JsonBuilder &builder,
-								   const std::vector<JoinedSelector> *);
+	static std::string explainJSON(const_iterator it, const_iterator to, int iters, JsonBuilder& builder,
+								   const std::vector<JoinedSelector>*);
 	template <bool reverse>
 	static IdType getNextItemId(const_iterator begin, const_iterator end, IdType from);
 	static bool isIdset(const_iterator it, const_iterator end);
 	static bool markBracketsHavingJoins(iterator begin, iterator end) noexcept;
 	bool haveJoins(size_t i) const noexcept;
 
-	SelectKeyResults processQueryEntry(const QueryEntry &qe, const NamespaceImpl &ns, StrictMode strictMode);
-	SelectKeyResults processQueryEntry(const QueryEntry &qe, bool enableSortIndexOptimize, const NamespaceImpl &ns, unsigned sortId,
-									   bool isQueryFt, SelectFunction::Ptr &selectFnc, bool &isIndexFt, bool &isIndexSparse, FtCtx::Ptr &,
-									   QueryPreprocessor &qPreproc, const RdxContext &);
+	SelectKeyResults processQueryEntry(const QueryEntry& qe, const NamespaceImpl& ns, StrictMode strictMode);
+	SelectKeyResults processQueryEntry(const QueryEntry& qe, bool enableSortIndexOptimize, const NamespaceImpl& ns, unsigned sortId,
+									   bool isQueryFt, SelectFunction::Ptr& selectFnc, bool& isIndexFt, bool& isIndexSparse, FtCtx::Ptr&,
+									   QueryPreprocessor& qPreproc, const RdxContext&);
 	template <bool left>
-	void processField(FieldsComparator &, const QueryField &, const NamespaceImpl &) const;
-	void processJoinEntry(const JoinQueryEntry &, OpType);
-	void processQueryEntryResults(SelectKeyResults &&, OpType, const NamespaceImpl &, const QueryEntry &, bool isIndexFt,
-								  bool isIndexSparse, std::optional<OpType> nextOp);
+	void processField(FieldsComparator&, const QueryField&, const NamespaceImpl&) const;
+	void processJoinEntry(const JoinQueryEntry&, OpType);
+	void processQueryEntryResults(SelectKeyResults&&, OpType, const NamespaceImpl&, const QueryEntry&, bool isIndexFt, bool isIndexSparse,
+								  std::optional<OpType> nextOp);
 	using EqualPositions = h_vector<size_t, 4>;
-	void processEqualPositions(const std::vector<EqualPositions> &equalPositions, const NamespaceImpl &ns, const QueryEntries &queries);
-	static std::vector<EqualPositions> prepareEqualPositions(const QueryEntries &queries, size_t begin, size_t end);
+	void processEqualPositions(const std::vector<EqualPositions>& equalPositions, const NamespaceImpl& ns, const QueryEntries& queries);
+	static std::vector<EqualPositions> prepareEqualPositions(const QueryEntries& queries, size_t begin, size_t end);
 
 	/// @return end() if empty or last opened bracket is empty
 	iterator lastAppendedOrClosed() {
 		typename Container::iterator it = this->container_.begin(), end = this->container_.end();
-		if (!this->activeBrackets_.empty()) it += (this->activeBrackets_.back() + 1);
-		if (it == end) return this->end();
+		if (!this->activeBrackets_.empty()) {
+			it += (this->activeBrackets_.back() + 1);
+		}
+		if (it == end) {
+			return this->end();
+		}
 		iterator i = it, i2 = it, e = end;
-		while (++i2 != e) i = i2;
+		while (++i2 != e) {
+			i = i2;
+		}
 		return i;
 	}
-	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JoinedSelector> &, WrSerializer &);
+	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JoinedSelector>&, WrSerializer&);
 
 	PayloadType pt_;
-	SelectCtx *ctx_;
+	SelectCtx* ctx_;
 	int maxIterations_;
 	bool wasZeroIterations_;
 };
