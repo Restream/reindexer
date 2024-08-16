@@ -15,12 +15,12 @@ namespace reindexer {
 template <class T>
 class EqualPositionComparatorImpl {
 	using ValuesSet = intrusive_atomic_rc_wrapper<std::unordered_set<T>>;
-	using AllSetValuesSet = intrusive_atomic_rc_wrapper<std::unordered_set<const T *>>;
+	using AllSetValuesSet = intrusive_atomic_rc_wrapper<std::unordered_set<const T*>>;
 
 public:
 	EqualPositionComparatorImpl() noexcept = default;
 
-	void SetValues(CondType cond, const VariantArray &values) {
+	void SetValues(CondType cond, const VariantArray& values) {
 		if (cond == CondSet) {
 			valuesS_.reset(new ValuesSet{});
 		} else if (cond == CondAllSet) {
@@ -62,7 +62,9 @@ public:
 				return valuesS_->find(lhs) != valuesS_->end();
 			case CondAllSet: {
 				const auto it = valuesS_->find(lhs);
-				if (it == valuesS_->end()) return false;
+				if (it == valuesS_->end()) {
+					return false;
+				}
 				allSetValuesS_->insert(&*it);
 				return allSetValuesS_->size() == valuesS_->size();
 			}
@@ -88,17 +90,17 @@ public:
 
 private:
 	KeyValueType type() {
-		if constexpr (std::is_same_v<T, int>)
+		if constexpr (std::is_same_v<T, int>) {
 			return KeyValueType::Int{};
-		else if constexpr (std::is_same_v<T, bool>)
+		} else if constexpr (std::is_same_v<T, bool>) {
 			return KeyValueType::Bool{};
-		else if constexpr (std::is_same_v<T, int64_t>)
+		} else if constexpr (std::is_same_v<T, int64_t>) {
 			return KeyValueType::Int64{};
-		else if constexpr (std::is_same_v<T, double>)
+		} else if constexpr (std::is_same_v<T, double>) {
 			return KeyValueType::Double{};
-		else if constexpr (std::is_same_v<T, Uuid>)
+		} else if constexpr (std::is_same_v<T, Uuid>) {
 			return KeyValueType::Uuid{};
-		else {
+		} else {
 			static_assert(std::is_same_v<T, int>, "Unknown KeyValueType");
 		}
 	}
@@ -115,12 +117,12 @@ private:
 template <>
 class EqualPositionComparatorImpl<Uuid> {
 	using ValuesSet = intrusive_atomic_rc_wrapper<std::unordered_set<Uuid>>;
-	using AllSetValuesSet = intrusive_atomic_rc_wrapper<std::unordered_set<const Uuid *>>;
+	using AllSetValuesSet = intrusive_atomic_rc_wrapper<std::unordered_set<const Uuid*>>;
 
 public:
 	EqualPositionComparatorImpl() noexcept = default;
 
-	void SetValues(CondType cond, const VariantArray &values) {
+	void SetValues(CondType cond, const VariantArray& values) {
 		if (cond == CondSet) {
 			valuesS_.reset(new ValuesSet{});
 		} else if (cond == CondAllSet) {
@@ -128,7 +130,7 @@ public:
 			allSetValuesS_.reset(new AllSetValuesSet{});
 		}
 
-		for (const Variant &key : values) {
+		for (const Variant& key : values) {
 			key.Type().EvaluateOneOf(
 				overloaded{[&](KeyValueType::Uuid) { addValue(cond, key.As<Uuid>()); },
 						   [&](KeyValueType::String) {
@@ -166,7 +168,9 @@ public:
 				return valuesS_->find(lhs) != valuesS_->end();
 			case CondAllSet: {
 				const auto it = valuesS_->find(lhs);
-				if (it == valuesS_->end()) return false;
+				if (it == valuesS_->end()) {
+					return false;
+				}
 				allSetValuesS_->insert(&*it);
 				return allSetValuesS_->size() == valuesS_->size();
 			}
@@ -202,14 +206,14 @@ private:
 template <>
 class EqualPositionComparatorImpl<key_string> {
 public:
-	EqualPositionComparatorImpl(const CollateOpts &collate) : collate_{collate} {}
+	EqualPositionComparatorImpl(const CollateOpts& collate) : collate_{collate} {}
 
-	void SetValues(CondType cond, const VariantArray &values) {
+	void SetValues(CondType cond, const VariantArray& values) {
 		if (cond == CondSet) {
 			valuesS_ = make_intrusive<intrusive_rc_wrapper<key_string_set>>(collate_);
 		} else if (cond == CondAllSet) {
 			valuesS_ = make_intrusive<intrusive_rc_wrapper<key_string_set>>(collate_);
-			allSetValuesS_ = make_intrusive<intrusive_rc_wrapper<std::unordered_set<const key_string *>>>();
+			allSetValuesS_ = make_intrusive<intrusive_rc_wrapper<std::unordered_set<const key_string*>>>();
 		}
 
 		for (Variant key : values) {
@@ -241,7 +245,9 @@ public:
 				assertrx_dbg(valuesS_);
 				assertrx_dbg(allSetValuesS_);
 				auto it = valuesS_->find(lhs);
-				if (it == valuesS_->end()) return false;
+				if (it == valuesS_->end()) {
+					return false;
+				}
 				allSetValuesS_->insert(&*it);
 				return allSetValuesS_->size() == valuesS_->size();
 			}
@@ -267,17 +273,17 @@ public:
 
 	class key_string_set : public tsl::hopscotch_sc_set<key_string, hash_key_string, equal_key_string, less_key_string> {
 	public:
-		key_string_set(const CollateOpts &opts)
+		key_string_set(const CollateOpts& opts)
 			: tsl::hopscotch_sc_set<key_string, hash_key_string, equal_key_string, less_key_string>(
 				  1000, hash_key_string(CollateMode(opts.mode)), equal_key_string(opts), std::allocator<key_string>(),
 				  less_key_string(opts)) {}
 	};
 
 	intrusive_ptr<intrusive_rc_wrapper<key_string_set>> valuesS_;
-	intrusive_ptr<intrusive_rc_wrapper<std::unordered_set<const key_string *>>> allSetValuesS_;
+	intrusive_ptr<intrusive_rc_wrapper<std::unordered_set<const key_string*>>> allSetValuesS_;
 
 private:
-	void addValue(CondType cond, const key_string &value) {
+	void addValue(CondType cond, const key_string& value) {
 		if (cond == CondSet || cond == CondAllSet) {
 			valuesS_->emplace(value);
 		} else {
@@ -301,8 +307,10 @@ class EqualPositionComparatorImpl<Point> {
 public:
 	EqualPositionComparatorImpl() noexcept = default;
 
-	void SetValues(const VariantArray &values) {
-		if (values.size() != 2) throw Error(errQueryExec, "CondDWithin expects two arguments");
+	void SetValues(const VariantArray& values) {
+		if (values.size() != 2) {
+			throw Error(errQueryExec, "CondDWithin expects two arguments");
+		}
 		if (values[0].Type().Is<KeyValueType::Tuple>()) {
 			rhs_ = values[0].As<Point>();
 			distance_ = values[1].As<double>();

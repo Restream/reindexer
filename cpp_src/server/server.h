@@ -28,6 +28,7 @@ public:
 	bool IsRunning() const noexcept;
 	void ReopenLogFiles();
 	std::string GetCoreLogPath() const;
+
 protected:
 	std::unique_ptr<ServerImpl> impl_;
 };

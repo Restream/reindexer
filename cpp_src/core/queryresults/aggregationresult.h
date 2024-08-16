@@ -35,7 +35,7 @@ struct Parameters {
 template <typename T, typename K>
 class ParametersFields {
 public:
-	explicit ParametersFields(const T &fieldsStorage) : fieldsStorage_(fieldsStorage) {}
+	explicit ParametersFields(const T& fieldsStorage) : fieldsStorage_(fieldsStorage) {}
 
 	K Value() const { return fieldsStorage_.at(Parameters::Value()); }
 	K Type() const { return fieldsStorage_.at(Parameters::Type()); }
@@ -46,11 +46,11 @@ public:
 	K Fields() const { return fieldsStorage_.at(Parameters::Fields()); }
 
 private:
-	const T &fieldsStorage_;
+	const T& fieldsStorage_;
 };
 
 struct FacetResult {
-	FacetResult(const h_vector<std::string, 1> &v, int c) noexcept : values(v), count(c) {}
+	FacetResult(const h_vector<std::string, 1>& v, int c) noexcept : values(v), count(c) {}
 	FacetResult() noexcept : count(0) {}
 
 	h_vector<std::string, 1> values;
@@ -58,9 +58,9 @@ struct FacetResult {
 };
 
 struct AggregationResult {
-	void GetJSON(WrSerializer &ser) const;
-	void GetMsgPack(WrSerializer &wrser) const;
-	void GetProtobuf(WrSerializer &wrser) const;
+	void GetJSON(WrSerializer& ser) const;
+	void GetMsgPack(WrSerializer& wrser) const;
+	void GetProtobuf(WrSerializer& wrser) const;
 	Error FromJSON(span<char> json);
 	Error FromMsgPack(span<char> msgpack);
 	double GetValueOrZero() const noexcept { return value_ ? *value_ : 0; }
@@ -74,15 +74,21 @@ struct AggregationResult {
 	PayloadType payloadType;
 
 	static AggType strToAggType(std::string_view type);
-	static void GetProtobufSchema(ProtobufSchemaBuilder &);
+	static void GetProtobufSchema(ProtobufSchemaBuilder&);
 
 	template <typename Node>
 	void from(Node root) {
-		const Node &node = root[Parameters::Value()];
+		const Node& node = root[Parameters::Value()];
 		bool isValid = false;
-		if constexpr (std::is_same_v<MsgPackValue, Node>) isValid = node.isValid();
-		if constexpr (std::is_same_v<gason::JsonNode, Node>) isValid = !node.empty();
-		if (isValid) value_ = node.template As<double>();
+		if constexpr (std::is_same_v<MsgPackValue, Node>) {
+			isValid = node.isValid();
+		}
+		if constexpr (std::is_same_v<gason::JsonNode, Node>) {
+			isValid = !node.empty();
+		}
+		if (isValid) {
+			value_ = node.template As<double>();
+		}
 
 		type = strToAggType(root[Parameters::Type()].template As<std::string>());
 
@@ -105,35 +111,41 @@ struct AggregationResult {
 	}
 
 	template <typename Builder, typename Fields>
-	void get(Builder &builder, const Fields &parametersFields) const {
-		if (value_) builder.Put(parametersFields.Value(), *value_);
+	void get(Builder& builder, const Fields& parametersFields) const {
+		if (value_) {
+			builder.Put(parametersFields.Value(), *value_);
+		}
 		builder.Put(parametersFields.Type(), AggTypeToStr(type));
 		if (!facets.empty()) {
 			auto facetsArray = builder.Array(parametersFields.Facets(), facets.size());
-			for (auto &facet : facets) {
+			for (auto& facet : facets) {
 				auto facetObj = facetsArray.Object(0, 2);
 				facetObj.Put(parametersFields.Count(), facet.count);
 				auto valuesArray = facetObj.Array(parametersFields.Values(), facet.values.size());
-				for (const auto &v : facet.values) valuesArray.Put(0, v);
+				for (const auto& v : facet.values) {
+					valuesArray.Put(0, v);
+				}
 			}
 		}
 
 		if (!distincts.empty()) {
 			auto distinctsArray = builder.Array(parametersFields.Distincts(), distincts.size());
-			for (const Variant &v : distincts) {
+			for (const Variant& v : distincts) {
 				distinctsArray.Put(0, v.As<std::string>(payloadType, distinctsFields));
 			}
 		}
 
 		auto fieldsArray = builder.Array(parametersFields.Fields(), fields.size());
-		for (auto &v : fields) fieldsArray.Put(0, v);
+		for (auto& v : fields) {
+			fieldsArray.Put(0, v);
+		}
 		fieldsArray.End();
 	}
 	template <typename S>
-	S &DumpFields(S &os) {
+	S& DumpFields(S& os) {
 		os << '[';
 		bool first = true;
-		for (const auto &f : fields) {
+		for (const auto& f : fields) {
 			if (!first) {
 				os << ", ";
 			}

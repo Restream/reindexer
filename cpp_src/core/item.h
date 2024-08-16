@@ -28,10 +28,10 @@ public:
 	Item() noexcept : impl_(nullptr), status_(errNotValid) {}
 	/// Destroy Item
 	~Item();
-	Item(const Item &) = delete;
-	Item(Item &&other) noexcept : impl_(other.impl_), status_(std::move(other.status_)), id_(other.id_) { other.impl_ = nullptr; }
-	Item &operator=(const Item &) = delete;
-	Item &operator=(Item &&) noexcept;
+	Item(const Item&) = delete;
+	Item(Item&& other) noexcept : impl_(other.impl_), status_(std::move(other.status_)), id_(other.id_) { other.impl_ = nullptr; }
+	Item& operator=(const Item&) = delete;
+	Item& operator=(Item&&) noexcept;
 
 	/// Reference to field. Interface for field data manipulation
 	class [[nodiscard]] FieldRef {
@@ -60,12 +60,12 @@ public:
 		/// @tparam T - type. Must be one of: int, int64_t, double
 		/// @param val - value, which will be setted to field
 		template <typename T>
-		FieldRef &operator=(const T &val) {
+		FieldRef& operator=(const T& val) {
 			return operator=(Variant(val));
 		}
 		/// Set single point type value
 		/// @param p - point value, which will be setted to field
-		FieldRef &operator=(Point p) {
+		FieldRef& operator=(Point p) {
 			double arr[]{p.X(), p.Y()};
 			return operator=(span<const double>(arr, 2));
 		}
@@ -74,24 +74,24 @@ public:
 		/// @tparam T - type. Must be one of: int, int64_t, double
 		/// @param arr - std::vector of T values, which will be setted to field
 		template <typename T>
-		FieldRef &operator=(span<const T> arr);
+		FieldRef& operator=(span<const T> arr);
 		/// Set array of values to field
 		/// @tparam T - type. Must be one of: int, int64_t, double
 		/// @param arr - std::vector of T values, which will be setted to field
 		template <typename T>
-		FieldRef &operator=(const std::vector<T> &arr) {
+		FieldRef& operator=(const std::vector<T>& arr) {
 			return operator=(span<const std::remove_const_t<T>>(arr));
 		}
 		/// Set string value to field
 		/// If Item is in Unsafe Mode, then Item will not store str, but just keep pointer to str,
 		/// application *MUST* hold str until end of life of Item
 		/// @param str - pointer to C null-terminated string, which will be setted to field
-		FieldRef &operator=(const char *str);
+		FieldRef& operator=(const char* str);
 		/// Set string value<br>
 		/// If Item is in Unsafe Mode, then Item will not store str, but just keep pointer to str,
 		/// application *MUST* hold str until end of life of Item
 		/// @param str - std::string, which will be setted to field
-		FieldRef &operator=(const std::string &str);
+		FieldRef& operator=(const std::string& str);
 
 		/// Get field index name
 		std::string_view Name() const;
@@ -105,15 +105,15 @@ public:
 		operator VariantArray() const;
 		/// Set field value
 		/// @param kr - key reference object, which will be set to field
-		FieldRef &operator=(Variant kr);
+		FieldRef& operator=(Variant kr);
 		/// Set field value
 		/// @param krs - key reference object, which will be set to field
-		FieldRef &operator=(const VariantArray &krs);
+		FieldRef& operator=(const VariantArray& krs);
 
 	private:
-		FieldRef(int field, ItemImpl *itemImpl) noexcept : itemImpl_(itemImpl), field_(field) {}
-		FieldRef(std::string_view jsonPath, ItemImpl *itemImpl) noexcept : itemImpl_(itemImpl), jsonPath_(jsonPath), field_(-1) {}
-		ItemImpl *itemImpl_;
+		FieldRef(int field, ItemImpl* itemImpl) noexcept : itemImpl_(itemImpl), field_(field) {}
+		FieldRef(std::string_view jsonPath, ItemImpl* itemImpl) noexcept : itemImpl_(itemImpl), jsonPath_(jsonPath), field_(-1) {}
+		ItemImpl* itemImpl_;
 		std::string_view jsonPath_;
 		int field_;
 	};
@@ -124,7 +124,7 @@ public:
 	/// @param slice - data slice with Json.
 	/// @param endp - pointer to end of parsed part of slice
 	/// @param pkOnly - if TRUE, that mean a JSON string will be parse only primary key fields
-	Error FromJSON(std::string_view slice, char **endp = nullptr, bool pkOnly = false) & noexcept;
+	Error FromJSON(std::string_view slice, char** endp = nullptr, bool pkOnly = false) & noexcept;
 
 	/// Build item from JSON<br>
 	/// If Item is in *Unsafe Mode*, then Item will not store slice, but just keep pointer to data in slice,
@@ -137,7 +137,7 @@ public:
 	/// Builds item from msgpack::object.
 	/// @param buf - msgpack encoded data buffer.
 	/// @param offset - position to start from.
-	Error FromMsgPack(std::string_view buf, size_t &offset) & noexcept;
+	Error FromMsgPack(std::string_view buf, size_t& offset) & noexcept;
 
 	/// Builds item from Protobuf
 	/// @param sbuf - Protobuf encoded data
@@ -145,14 +145,14 @@ public:
 
 	/// Packs data in msgpack format
 	/// @param wrser - buffer to serialize data to
-	Error GetMsgPack(WrSerializer &wrser) & noexcept;
+	Error GetMsgPack(WrSerializer& wrser) & noexcept;
 	/// Packs data in msgpack format
 	/// @return data slice with MsgPack
 	[[nodiscard]] std::string_view GetMsgPack() &;
 
 	/// Packs item data to Protobuf
 	/// @param wrser - buffer to serialize data to
-	Error GetProtobuf(WrSerializer &wrser) & noexcept;
+	Error GetProtobuf(WrSerializer& wrser) & noexcept;
 
 	/// Serialize item to CJSON.<br>
 	/// If Item is in *Unsafe Mode*, then returned slice is allocated in temporary buffer, and can be invalidated by any next operation
@@ -192,7 +192,7 @@ public:
 	[[nodiscard]] FieldsSet PkFields() const;
 	/// Set additional percepts for modify operation
 	/// @param precepts - strings in format "fieldName=Func()"
-	void SetPrecepts(const std::vector<std::string> &precepts) &;
+	void SetPrecepts(const std::vector<std::string>& precepts) &;
 	/// Check was names tags updated while modify operation
 	/// @return true: tags was updated.
 	[[nodiscard]] bool IsTagsUpdated() const noexcept;
@@ -206,7 +206,7 @@ public:
 	/// The advantage of unsafe mode is speed. It does not call extra memory allocation from heap and copying data.<br>
 	/// The disadvantage of unsafe mode is potentially danger code. Most of C++ stl containters in many cases invalidates references -
 	/// and in unsafe mode caller is responsibe to guarantee, that all resources passed to Item will keep valid
-	Item &Unsafe(bool enable = true) & noexcept;
+	Item& Unsafe(bool enable = true) & noexcept;
 	/// Get index type by field id
 	/// @return either index type or Undefined (if index with this number does not exist or PayloadType is not available)
 	KeyValueType GetIndexType(int field) const noexcept;
@@ -214,15 +214,15 @@ public:
 	/// @param name - field name
 	/// @param itemImpl - item
 	/// @return field's ref
-	static FieldRef FieldRefByName(std::string_view name, ItemImpl &itemImpl);
+	static FieldRef FieldRefByName(std::string_view name, ItemImpl& itemImpl);
 
 private:
-	explicit Item(ItemImpl *impl) : impl_(impl) {}
-	explicit Item(const Error &err) : impl_(nullptr), status_(err) {}
+	explicit Item(ItemImpl* impl) : impl_(impl) {}
+	explicit Item(const Error& err) : impl_(nullptr), status_(err) {}
 	void setID(int id) { id_ = id; }
 	void setLSN(int64_t lsn);
 
-	ItemImpl *impl_;
+	ItemImpl* impl_;
 	Error status_;
 	int id_ = -1;
 	friend class NamespaceImpl;

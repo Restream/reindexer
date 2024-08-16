@@ -15,7 +15,7 @@ namespace gason {
 
 using double_conversion::StringToDoubleConverter;
 
-const char *jsonStrError(int err) {
+const char* jsonStrError(int err) {
 	switch (err) {
 #define XX(no, str) \
 	case JSON_##no: \
@@ -27,18 +27,20 @@ const char *jsonStrError(int err) {
 	}
 }
 
-void *JsonAllocator::allocate(size_t size) {
+void* JsonAllocator::allocate(size_t size) {
 	size = (size + 7) & ~7;
 
 	if (head && head->used + size <= JSON_ZONE_SIZE) {
-		char *p = (char *)head + head->used;
+		char* p = (char*)head + head->used;
 		head->used += size;
 		return p;
 	}
 
 	size_t allocSize = sizeof(Zone) + size;
-	Zone *zone = (Zone *)malloc(allocSize <= JSON_ZONE_SIZE ? JSON_ZONE_SIZE : allocSize);
-	if (zone == nullptr) return nullptr;
+	Zone* zone = (Zone*)malloc(allocSize <= JSON_ZONE_SIZE ? JSON_ZONE_SIZE : allocSize);
+	if (zone == nullptr) {
+		return nullptr;
+	}
 	zone->used = allocSize;
 	if (allocSize <= JSON_ZONE_SIZE || head == nullptr) {
 		zone->next = head;
@@ -47,12 +49,12 @@ void *JsonAllocator::allocate(size_t size) {
 		zone->next = head->next;
 		head->next = zone;
 	}
-	return (char *)zone + sizeof(Zone);
+	return (char*)zone + sizeof(Zone);
 }
 
 void JsonAllocator::deallocate() {
 	while (head) {
-		Zone *next = head->next;
+		Zone* next = head->next;
 		free(head);
 		head = next;
 	}
@@ -68,11 +70,13 @@ static inline bool isdigit(char c) { return c >= '0' && c <= '9'; }
 static inline bool isxdigit(char c) { return (c >= '0' && c <= '9') || ((c & ~' ') >= 'A' && (c & ~' ') <= 'F'); }
 
 static inline int char2int(char c) {
-	if (c <= '9') return c - '0';
+	if (c <= '9') {
+		return c - '0';
+	}
 	return (c & ~' ') - 'A' + 10;
 }
 
-bool isDouble(char *s, size_t &size) {
+bool isDouble(char* s, size_t& size) {
 	size = 0;
 
 	if (*s == '-') {
@@ -111,7 +115,7 @@ bool isDouble(char *s, size_t &size) {
 	return res;
 }
 
-static double string2double(char *s, char **endptr, size_t size) {
+static double string2double(char* s, char** endptr, size_t size) {
 	StringToDoubleConverter sd(StringToDoubleConverter::NO_FLAGS, 0, 0, "inf", "nan");
 	int len;
 	double vv = sd.StringToDouble(s, size, &len);
@@ -119,14 +123,16 @@ static double string2double(char *s, char **endptr, size_t size) {
 	return vv;
 }
 
-static inline JsonNode *insertAfter(JsonNode *tail, JsonNode *node) {
-	if (!tail) return node->next = node;
+static inline JsonNode* insertAfter(JsonNode* tail, JsonNode* node) {
+	if (!tail) {
+		return node->next = node;
+	}
 	node->next = tail->next;
 	tail->next = node;
 	return node;
 }
 
-static inline JsonValue listToValue(JsonTag tag, JsonNode *tail) {
+static inline JsonValue listToValue(JsonTag tag, JsonNode* tail) {
 	if (tail) {
 		auto head = tail->next;
 		tail->next = nullptr;
@@ -135,25 +141,29 @@ static inline JsonValue listToValue(JsonTag tag, JsonNode *tail) {
 	return JsonValue(tag, nullptr);
 }
 
-static int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAllocator &allocator, LargeStringStorageT &largeStrings) {
-	JsonNode *tails[JSON_STACK_SIZE];
+static int jsonParse(span<char> str, char** endptr, JsonValue* value, JsonAllocator& allocator, LargeStringStorageT& largeStrings) {
+	JsonNode* tails[JSON_STACK_SIZE];
 	JsonTag tags[JSON_STACK_SIZE];
 	JsonString keys[JSON_STACK_SIZE];
 	JsonValue o;
 	int pos = -1;
-	char *s = str.data();
+	char* s = str.data();
 	size_t l = str.size();
 	bool separator = true;
-	JsonNode *node;
+	JsonNode* node;
 	*endptr = s;
 	size_t size = 0;
 
 	while (l) {
 		while (l && isspace(*s)) {
 			++s, --l;
-			if (!l) break;
+			if (!l) {
+				break;
+			}
 		}
-		if (!l) break;
+		if (!l) {
+			break;
+		}
 		*endptr = s++;
 		--l;
 		bool negative = false;
@@ -193,8 +203,10 @@ static int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAlloca
 				}
 				break;
 			case '"':
-				if (s - str.data() < 2) return JSON_UNEXPECTED_CHARACTER;
-				for (char *it = s - 2; l; ++it, ++s, --l) {
+				if (s - str.data() < 2) {
+					return JSON_UNEXPECTED_CHARACTER;
+				}
+				for (char* it = s - 2; l; ++it, ++s, --l) {
 					int c = *it = *s;
 					if (c == '\\') {
 						c = *++s;
@@ -257,51 +269,75 @@ static int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAlloca
 				}
 				break;
 			case 't':
-				if (!(s[0] == 'r' && s[1] == 'u' && s[2] == 'e' && isdelim(s[3]))) return JSON_BAD_IDENTIFIER;
+				if (!(s[0] == 'r' && s[1] == 'u' && s[2] == 'e' && isdelim(s[3]))) {
+					return JSON_BAD_IDENTIFIER;
+				}
 				o = JsonValue(JSON_TRUE);
 				s += 3, l -= 3;
 				break;
 			case 'f':
-				if (!(s[0] == 'a' && s[1] == 'l' && s[2] == 's' && s[3] == 'e' && isdelim(s[4]))) return JSON_BAD_IDENTIFIER;
+				if (!(s[0] == 'a' && s[1] == 'l' && s[2] == 's' && s[3] == 'e' && isdelim(s[4]))) {
+					return JSON_BAD_IDENTIFIER;
+				}
 				o = JsonValue(JSON_FALSE);
 				s += 4, l -= 4;
 				break;
 			case 'n':
-				if (!(s[0] == 'u' && s[1] == 'l' && s[2] == 'l' && isdelim(s[3]))) return JSON_BAD_IDENTIFIER;
+				if (!(s[0] == 'u' && s[1] == 'l' && s[2] == 'l' && isdelim(s[3]))) {
+					return JSON_BAD_IDENTIFIER;
+				}
 				o = JsonValue(JSON_NULL);
 				s += 3, l -= 3;
 				break;
 			case ']':
-				if (pos == -1) return JSON_STACK_UNDERFLOW;
-				if (tags[pos] != JSON_ARRAY) return JSON_MISMATCH_BRACKET;
+				if (pos == -1) {
+					return JSON_STACK_UNDERFLOW;
+				}
+				if (tags[pos] != JSON_ARRAY) {
+					return JSON_MISMATCH_BRACKET;
+				}
 				o = listToValue(JSON_ARRAY, tails[pos--]);
 				break;
 			case '}':
-				if (pos == -1) return JSON_STACK_UNDERFLOW;
-				if (tags[pos] != JSON_OBJECT) return JSON_MISMATCH_BRACKET;
-				if (keys[pos].ptr != nullptr) return JSON_UNEXPECTED_CHARACTER;
+				if (pos == -1) {
+					return JSON_STACK_UNDERFLOW;
+				}
+				if (tags[pos] != JSON_OBJECT) {
+					return JSON_MISMATCH_BRACKET;
+				}
+				if (keys[pos].ptr != nullptr) {
+					return JSON_UNEXPECTED_CHARACTER;
+				}
 				o = listToValue(JSON_OBJECT, tails[pos--]);
 				break;
 			case '[':
-				if (++pos == JSON_STACK_SIZE) return JSON_STACK_OVERFLOW;
+				if (++pos == JSON_STACK_SIZE) {
+					return JSON_STACK_OVERFLOW;
+				}
 				tails[pos] = nullptr;
 				tags[pos] = JSON_ARRAY;
 				keys[pos] = JsonString();
 				separator = true;
 				continue;
 			case '{':
-				if (++pos == JSON_STACK_SIZE) return JSON_STACK_OVERFLOW;
+				if (++pos == JSON_STACK_SIZE) {
+					return JSON_STACK_OVERFLOW;
+				}
 				tails[pos] = nullptr;
 				tags[pos] = JSON_OBJECT;
 				keys[pos] = JsonString();
 				separator = true;
 				continue;
 			case ':':
-				if (separator || keys[pos].ptr == nullptr) return JSON_UNEXPECTED_CHARACTER;
+				if (separator || keys[pos].ptr == nullptr) {
+					return JSON_UNEXPECTED_CHARACTER;
+				}
 				separator = true;
 				continue;
 			case ',':
-				if (separator || keys[pos].ptr != nullptr) return JSON_UNEXPECTED_CHARACTER;
+				if (separator || keys[pos].ptr != nullptr) {
+					return JSON_UNEXPECTED_CHARACTER;
+				}
 				separator = true;
 				continue;
 			case '\0':
@@ -320,16 +356,22 @@ static int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAlloca
 
 		if (tags[pos] == JSON_OBJECT) {
 			if (!keys[pos].ptr) {
-				if (o.getTag() != JSON_STRING) return JSON_UNQUOTED_KEY;
+				if (o.getTag() != JSON_STRING) {
+					return JSON_UNQUOTED_KEY;
+				}
 				keys[pos] = o.sval;
 				continue;
 			}
-			if ((node = (JsonNode *)allocator.allocate(sizeof(JsonNode))) == nullptr) return JSON_ALLOCATION_FAILURE;
+			if ((node = (JsonNode*)allocator.allocate(sizeof(JsonNode))) == nullptr) {
+				return JSON_ALLOCATION_FAILURE;
+			}
 			tails[pos] = insertAfter(tails[pos], node);
 			tails[pos]->key = keys[pos];
 			keys[pos] = JsonString();
 		} else {
-			if ((node = (JsonNode *)allocator.allocate(sizeof(JsonNode))) == nullptr) return JSON_ALLOCATION_FAILURE;
+			if ((node = (JsonNode*)allocator.allocate(sizeof(JsonNode))) == nullptr) {
+				return JSON_ALLOCATION_FAILURE;
+			}
 			tails[pos] = insertAfter(tails[pos], node);
 			tails[pos]->key = JsonString();
 		}
@@ -338,39 +380,47 @@ static int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAlloca
 	return JSON_BREAKING_BAD;
 }
 
-JsonNode *JsonNode::toNode() const {
-	if (empty() || value.getTag() == JSON_NULL) return nullptr;
-	if (value.getTag() != JSON_OBJECT && value.getTag() != JSON_ARRAY)
+JsonNode* JsonNode::toNode() const {
+	if (empty() || value.getTag() == JSON_NULL) {
+		return nullptr;
+	}
+	if (value.getTag() != JSON_OBJECT && value.getTag() != JSON_ARRAY) {
 		throw Exception(std::string("Can't convert json field '") + std::string(key) + "' to object or array");
+	}
 	return value.toNode();
 }
 
-const JsonNode &JsonNode::operator[](std::string_view key) const {
+const JsonNode& JsonNode::operator[](std::string_view key) const {
 	if (value.getTag() != JSON_OBJECT && value.getTag() != JSON_NULL) {
 		throw Exception(std::string("Can't obtain json field '") + std::string(key) + "' from non-object json node");
 	}
-	for (auto &v : (*this))
-		if (std::string_view(v.key) == key) return v;
+	for (auto& v : (*this)) {
+		if (std::string_view(v.key) == key) {
+			return v;
+		}
+	}
 	// TODO: Remove NOLINT after pyreindexer update. Issue #1736
 	static JsonNode empty_node{{JsonTag(JSON_EMPTY)}, nullptr, {}};	 // NOLINT(*EnumCastOutOfRange)
 	return empty_node;
 }
 
-JsonNode JsonParser::Parse(span<char> str, size_t *length) {
+JsonNode JsonParser::Parse(span<char> str, size_t* length) {
 	largeStrings_->clear();
-	char *endp = nullptr;
+	char* endp = nullptr;
 	JsonNode val{{}, nullptr, {}};
-	const char *begin = str.data();
+	const char* begin = str.data();
 	int status = jsonParse(str, &endp, &val.value, alloc_, *largeStrings_);
 	if (status != JSON_OK) {
 		size_t pos = endp - str.data();
 		throw Exception(std::string("Error parsing json: ") + jsonStrError(status) + ", pos " + std::to_string(pos));
 	}
-	if (length) *length = endp - begin;
+	if (length) {
+		*length = endp - begin;
+	}
 	return val;
 }
 
-JsonNode JsonParser::Parse(std::string_view str, size_t *length) {
+JsonNode JsonParser::Parse(std::string_view str, size_t* length) {
 	tmp_.reserve(str.size());
 	tmp_.assign(str.begin(), str.end());
 	return Parse(span<char>(&tmp_[0], tmp_.size()), length);
@@ -380,12 +430,14 @@ static inline bool haveEqualType(JsonTag lt, JsonTag rt) noexcept {
 	return lt == rt || (lt == JSON_TRUE && rt == JSON_FALSE) || (lt == JSON_FALSE && rt == JSON_TRUE);
 }
 
-bool isHomogeneousArray(const gason::JsonValue &v) noexcept {
+bool isHomogeneousArray(const gason::JsonValue& v) noexcept {
 	bool hasTag = false;
 	gason::JsonTag prevTag;
-	for (const auto &elem : v) {
+	for (const auto& elem : v) {
 		if (hasTag) {
-			if (!haveEqualType(prevTag, elem.value.getTag())) return false;
+			if (!haveEqualType(prevTag, elem.value.getTag())) {
+				return false;
+			}
 		} else {
 			hasTag = true;
 		}

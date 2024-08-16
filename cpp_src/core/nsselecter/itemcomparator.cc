@@ -24,15 +24,15 @@ struct FieldsCompRes {
 
 namespace reindexer {
 
-bool ItemComparator::operator()(const ItemRef &lhs, const ItemRef &rhs) const {
+bool ItemComparator::operator()(const ItemRef& lhs, const ItemRef& rhs) const {
 	size_t expressionIndex{0};
 	FieldsCompRes mainNsRes;
 	FieldsCompRes joinedNsRes;
-	for (const auto &comp : comparators_) {
+	for (const auto& comp : comparators_) {
 		const ComparationResult res = std::visit(
 			overloaded{[&](CompareByExpression c) noexcept {
 						   assertrx_throw(expressionIndex < ctx_.sortingContext.exprResults.size());
-						   const auto &eR{ctx_.sortingContext.exprResults[expressionIndex++]};
+						   const auto& eR{ctx_.sortingContext.exprResults[expressionIndex++]};
 						   const auto lR{eR[lhs.SortExprResultsIdx()]};
 						   const auto rR{eR[rhs.SortExprResultsIdx()]};
 						   if (lR == rR) {
@@ -45,8 +45,8 @@ bool ItemComparator::operator()(const ItemRef &lhs, const ItemRef &rhs) const {
 					   },
 					   [&](CompareByJoinedField c) {
 						   if (joinedNsRes.firstDifferentFieldIdx == kNotComputed) {
-							   const auto &jNs = joined_;
-							   const auto &joinedSelector = *jNs.joinedSelector;
+							   const auto& jNs = joined_;
+							   const auto& joinedSelector = *jNs.joinedSelector;
 							   const joins::ItemIterator ljIt{joinResults_, lhs.Id()};
 							   const joins::ItemIterator rjIt{joinResults_, rhs.Id()};
 							   const auto ljfIt = ljIt.at(c.joinedNs);
@@ -71,45 +71,47 @@ bool ItemComparator::operator()(const ItemRef &lhs, const ItemRef &rhs) const {
 						   return mainNsRes.GetResult(c.desc);
 					   }},
 			comp);
-		if (res != ComparationResult::Eq) return res == ComparationResult::Lt;
+		if (res != ComparationResult::Eq) {
+			return res == ComparationResult::Lt;
+		}
 	}
 	// If values are equal, then sort by row ID, to give consistent results
-	return std::visit([&](const auto &e) noexcept { return e.data.desc ? lhs.Id() > rhs.Id() : lhs.Id() < rhs.Id(); },
+	return std::visit([&](const auto& e) noexcept { return e.data.desc ? lhs.Id() > rhs.Id() : lhs.Id() < rhs.Id(); },
 					  ctx_.sortingContext.entries[0]);
 }
 
 class ItemComparator::BackInserter {
 public:
-	explicit BackInserter(ItemComparator &comparator) noexcept : comparator_(comparator) {}
+	explicit BackInserter(ItemComparator& comparator) noexcept : comparator_(comparator) {}
 	void expr(bool desc) { comparator_.comparators_.emplace_back(CompareByExpression{desc}); }
-	void fields(TagsPath &&tp) { comparator_.fields_.push_back(std::move(tp)); }
-	void fields(Joined &joined, TagsPath &&tp) { joined.fields.push_back(std::move(tp)); }
+	void fields(TagsPath&& tp) { comparator_.fields_.push_back(std::move(tp)); }
+	void fields(Joined& joined, TagsPath&& tp) { joined.fields.push_back(std::move(tp)); }
 	void fields(int fieldIdx) {
 		if (fieldIdx != SetByJsonPath && !comparator_.fields_.contains(fieldIdx)) {
 			comparator_.fields_.push_back(fieldIdx);
-			auto &rawDataRef = comparator_.rawData_.emplace_back();
+			auto& rawDataRef = comparator_.rawData_.emplace_back();
 			if (auto rawData = comparator_.ns_.indexes_[fieldIdx]->ColumnData(); rawData) {
 				rawDataRef.ptr = rawData;
 				rawDataRef.type = comparator_.ns_.payloadType_.Field(fieldIdx).Type();
 			}
 		}
 	}
-	void fields(Joined &joined, int fieldIdx) { joined.fields.push_back(fieldIdx); }
+	void fields(Joined& joined, int fieldIdx) { joined.fields.push_back(fieldIdx); }
 	void index(bool desc) { comparator_.comparators_.emplace_back(CompareByField{desc}); }
 	void joined(size_t nsIdx, bool desc) { comparator_.comparators_.emplace_back(CompareByJoinedField{nsIdx, desc}); }
-	void collateOpts(const CollateOpts *opts) { comparator_.collateOpts_.emplace_back(opts); }
-	void collateOpts(Joined &joined, const CollateOpts *opts) { joined.collateOpts.emplace_back(opts); }
+	void collateOpts(const CollateOpts* opts) { comparator_.collateOpts_.emplace_back(opts); }
+	void collateOpts(Joined& joined, const CollateOpts* opts) { joined.collateOpts.emplace_back(opts); }
 
 private:
-	ItemComparator &comparator_;
+	ItemComparator& comparator_;
 };
 
 class ItemComparator::FrontInserter {
 public:
-	FrontInserter(ItemComparator &comparator) noexcept : comparator_(comparator) {}
+	FrontInserter(ItemComparator& comparator) noexcept : comparator_(comparator) {}
 	void expr(bool desc) { comparator_.comparators_.emplace(comparator_.comparators_.begin(), CompareByExpression{desc}); }
-	void fields(TagsPath &&tp) { comparator_.fields_.push_front(std::move(tp)); }
-	void fields(Joined &joined, TagsPath &&tp) { joined.fields.push_front(std::move(tp)); }
+	void fields(TagsPath&& tp) { comparator_.fields_.push_front(std::move(tp)); }
+	void fields(Joined& joined, TagsPath&& tp) { joined.fields.push_front(std::move(tp)); }
 	void fields(int fieldIdx) {
 		if (fieldIdx != SetByJsonPath && !comparator_.fields_.contains(fieldIdx)) {
 			comparator_.fields_.push_front(fieldIdx);
@@ -120,23 +122,23 @@ public:
 			}
 		}
 	}
-	void fields(Joined &joined, int fieldIdx) { joined.fields.push_front(fieldIdx); }
+	void fields(Joined& joined, int fieldIdx) { joined.fields.push_front(fieldIdx); }
 	void index(bool desc) { comparator_.comparators_.emplace(comparator_.comparators_.begin(), CompareByField{desc}); }
 	void joined(size_t nsIdx, bool desc) {
 		comparator_.comparators_.emplace(comparator_.comparators_.begin(), CompareByJoinedField{nsIdx, desc});
 	}
-	void collateOpts(const CollateOpts *opts) { comparator_.collateOpts_.emplace(comparator_.collateOpts_.begin(), opts); }
-	void collateOpts(Joined &joined, const CollateOpts *opts) { joined.collateOpts.emplace(joined.collateOpts.begin(), opts); }
+	void collateOpts(const CollateOpts* opts) { comparator_.collateOpts_.emplace(comparator_.collateOpts_.begin(), opts); }
+	void collateOpts(Joined& joined, const CollateOpts* opts) { joined.collateOpts.emplace(joined.collateOpts.begin(), opts); }
 
 private:
-	ItemComparator &comparator_;
+	ItemComparator& comparator_;
 };
 
 template <typename Inserter>
-void ItemComparator::bindOne(const SortingContext::Entry &sortingEntry, Inserter insert, bool multiSort) {
-	std::visit(overloaded{[&](const SortingContext::ExpressionEntry &e) { insert.expr(e.data.desc); },
-						  [&](const SortingContext::JoinedFieldEntry &e) {
-							  auto &jns = joined_;
+void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter insert, bool multiSort) {
+	std::visit(overloaded{[&](const SortingContext::ExpressionEntry& e) { insert.expr(e.data.desc); },
+						  [&](const SortingContext::JoinedFieldEntry& e) {
+							  auto& jns = joined_;
 							  if (jns.joinedSelector == nullptr) {
 								  assertrx_throw(ctx_.joinedSelectors);
 								  assertrx_throw(ctx_.joinedSelectors->size() > e.nsIdx);
@@ -145,12 +147,12 @@ void ItemComparator::bindOne(const SortingContext::Entry &sortingEntry, Inserter
 								  assertrx_dbg(&(*ctx_.joinedSelectors)[e.nsIdx] == jns.joinedSelector);
 							  }
 							  assertrx_dbg(!std::holds_alternative<JoinPreResult::Values>(jns.joinedSelector->PreResult().payload));
-							  const auto &ns = *jns.joinedSelector->RightNs();
+							  const auto& ns = *jns.joinedSelector->RightNs();
 							  const int fieldIdx = e.index;
 							  if (fieldIdx == IndexValueType::SetByJsonPath || ns.indexes_[fieldIdx]->Opts().IsSparse()) {
 								  TagsPath tagsPath;
 								  if (fieldIdx != IndexValueType::SetByJsonPath) {
-									  const FieldsSet &fs = ns.indexes_[fieldIdx]->Fields();
+									  const FieldsSet& fs = ns.indexes_[fieldIdx]->Fields();
 									  assertrx_throw(fs.getTagsPathsLength() > 0);
 									  tagsPath = fs.getTagsPath(0);
 								  } else {
@@ -167,7 +169,7 @@ void ItemComparator::bindOne(const SortingContext::Entry &sortingEntry, Inserter
 									  insert.collateOpts(jns, nullptr);
 								  }
 							  } else {
-								  const auto &idx = *ns.indexes_[fieldIdx];
+								  const auto& idx = *ns.indexes_[fieldIdx];
 								  if (idx.Opts().IsArray()) {
 									  throw Error(errQueryExec, "Sorting cannot be applied to array field.");
 								  }
@@ -192,12 +194,12 @@ void ItemComparator::bindOne(const SortingContext::Entry &sortingEntry, Inserter
 								  insert.collateOpts(jns, &idx.Opts().collateOpts_);
 							  }
 						  },
-						  [&](const SortingContext::FieldEntry &e) {
+						  [&](const SortingContext::FieldEntry& e) {
 							  const int fieldIdx = e.data.index;
 							  if (fieldIdx == IndexValueType::SetByJsonPath || ns_.indexes_[fieldIdx]->Opts().IsSparse()) {
 								  TagsPath tagsPath;
 								  if (fieldIdx != IndexValueType::SetByJsonPath) {
-									  const FieldsSet &fs = ns_.indexes_[fieldIdx]->Fields();
+									  const FieldsSet& fs = ns_.indexes_[fieldIdx]->Fields();
 									  assertrx_throw(fs.getTagsPathsLength() > 0);
 									  tagsPath = fs.getTagsPath(0);
 								  } else {
@@ -224,7 +226,7 @@ void ItemComparator::bindOne(const SortingContext::Entry &sortingEntry, Inserter
 										  const auto field(fields_[i]);
 										  assertrx_dbg(field != SetByJsonPath);
 										  comparators_.emplace_back(CompareByField{e.data.desc});
-										  auto &rawDataRef = rawData_.emplace_back();
+										  auto& rawDataRef = rawData_.emplace_back();
 										  if (auto rawData = ns_.indexes_[field]->ColumnData(); rawData) {
 											  rawDataRef.ptr = rawData;
 											  rawDataRef.type = ns_.payloadType_.Field(field).Type();
@@ -244,8 +246,8 @@ void ItemComparator::bindOne(const SortingContext::Entry &sortingEntry, Inserter
 }
 
 void ItemComparator::BindForForcedSort() {
-	const auto &entries = ctx_.sortingContext.entries;
-	[[maybe_unused]] const auto &exprResults = ctx_.sortingContext.exprResults;
+	const auto& entries = ctx_.sortingContext.entries;
+	[[maybe_unused]] const auto& exprResults = ctx_.sortingContext.exprResults;
 	assertrx_throw(entries.size() >= exprResults.size());
 	comparators_.reserve(entries.size());
 	const bool multiSort = entries.size() > 1;
@@ -255,13 +257,13 @@ void ItemComparator::BindForForcedSort() {
 }
 
 void ItemComparator::BindForGeneralSort() {
-	const auto &entries = ctx_.sortingContext.entries;
-	[[maybe_unused]] const auto &exprResults = ctx_.sortingContext.exprResults;
+	const auto& entries = ctx_.sortingContext.entries;
+	[[maybe_unused]] const auto& exprResults = ctx_.sortingContext.exprResults;
 	assertrx_throw(entries.size() >= exprResults.size());
 	const bool multiSort = entries.size() > 1;
 	if (comparators_.empty()) {
 		comparators_.reserve(entries.size());
-		for (const auto &e : entries) {
+		for (const auto& e : entries) {
 			bindOne(e, BackInserter{*this}, multiSort);
 		}
 	} else if (!entries.empty()) {
@@ -269,42 +271,42 @@ void ItemComparator::BindForGeneralSort() {
 	}
 }
 
-ComparationResult ItemComparator::compareFields(IdType lId, IdType rId, size_t &firstDifferentFieldIdx) const {
+ComparationResult ItemComparator::compareFields(IdType lId, IdType rId, size_t& firstDifferentFieldIdx) const {
 	const bool commonOpts = (collateOpts_.size() == 1);
 	size_t tagPathIdx = 0;
 	size_t rawDataIdx = 0;
 	for (size_t i = 0, sz = fields_.size(); i < sz; ++i) {
-		const CollateOpts *opts(commonOpts ? collateOpts_[0] : collateOpts_[i]);
+		const CollateOpts* opts(commonOpts ? collateOpts_[0] : collateOpts_[i]);
 		ComparationResult cmpRes;
 		const auto field(fields_[i]);
 		if (field != SetByJsonPath && rawData_[rawDataIdx].ptr) {
-			const auto &rd = rawData_[rawDataIdx];
+			const auto& rd = rawData_[rawDataIdx];
 			++rawDataIdx;
 			const auto rawData = rd.ptr;
 			auto values = rd.type.EvaluateOneOf(
 				[rawData, lId, rId](KeyValueType::Bool) noexcept {
-					return std::make_pair(Variant(*(static_cast<const bool *>(rawData) + lId)),
-										  Variant(*(static_cast<const bool *>(rawData) + rId)));
+					return std::make_pair(Variant(*(static_cast<const bool*>(rawData) + lId)),
+										  Variant(*(static_cast<const bool*>(rawData) + rId)));
 				},
 				[rawData, lId, rId](KeyValueType::Int) noexcept {
-					return std::make_pair(Variant(*(static_cast<const int *>(rawData) + lId)),
-										  Variant(*(static_cast<const int *>(rawData) + rId)));
+					return std::make_pair(Variant(*(static_cast<const int*>(rawData) + lId)),
+										  Variant(*(static_cast<const int*>(rawData) + rId)));
 				},
 				[rawData, lId, rId](KeyValueType::Int64) noexcept {
-					return std::make_pair(Variant(*(static_cast<const int64_t *>(rawData) + lId)),
-										  Variant(*(static_cast<const int64_t *>(rawData) + rId)));
+					return std::make_pair(Variant(*(static_cast<const int64_t*>(rawData) + lId)),
+										  Variant(*(static_cast<const int64_t*>(rawData) + rId)));
 				},
 				[rawData, lId, rId](KeyValueType::Double) noexcept {
-					return std::make_pair(Variant(*(static_cast<const double *>(rawData) + lId)),
-										  Variant(*(static_cast<const double *>(rawData) + rId)));
+					return std::make_pair(Variant(*(static_cast<const double*>(rawData) + lId)),
+										  Variant(*(static_cast<const double*>(rawData) + rId)));
 				},
 				[rawData, lId, rId](KeyValueType::String) noexcept {
-					return std::make_pair(Variant(p_string(static_cast<const std::string_view *>(rawData) + lId), Variant::no_hold_t{}),
-										  Variant(p_string(static_cast<const std::string_view *>(rawData) + rId), Variant::no_hold_t{}));
+					return std::make_pair(Variant(p_string(static_cast<const std::string_view*>(rawData) + lId), Variant::no_hold_t{}),
+										  Variant(p_string(static_cast<const std::string_view*>(rawData) + rId), Variant::no_hold_t{}));
 				},
 				[rawData, lId, rId](KeyValueType::Uuid) noexcept {
-					return std::make_pair(Variant(*(static_cast<const Uuid *>(rawData) + lId)),
-										  Variant(*(static_cast<const Uuid *>(rawData) + rId)));
+					return std::make_pair(Variant(*(static_cast<const Uuid*>(rawData) + lId)),
+										  Variant(*(static_cast<const Uuid*>(rawData) + rId)));
 				},
 				[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>)
 					-> std::pair<Variant, Variant> { throw_as_assert; });

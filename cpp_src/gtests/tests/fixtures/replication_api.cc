@@ -6,7 +6,9 @@ bool ReplicationApi::StopServer(size_t id) {
 	std::lock_guard<std::mutex> lock(m_);
 
 	assertrx(id < svc_.size());
-	if (!svc_[id].Get()) return false;
+	if (!svc_[id].Get()) {
+		return false;
+	}
 	svc_[id].Drop();
 	auto now = std::chrono::milliseconds(0);
 	const auto pause = std::chrono::milliseconds(10);
@@ -24,7 +26,9 @@ bool ReplicationApi::StartServer(size_t id) {
 	std::lock_guard<std::mutex> lock(m_);
 
 	assertrx(id < svc_.size());
-	if (svc_[id].IsRunning()) return false;
+	if (svc_[id].IsRunning()) {
+		return false;
+	}
 	svc_[id].InitServer(id, kDefaultRpcPort + id, kDefaultHttpPort + id, kStoragePath + "node/" + std::to_string(id),
 						"node" + std::to_string(id), true);
 	return true;
@@ -92,21 +96,27 @@ void ReplicationApi::ForceSync() {
 		}
 	});
 	for (size_t i = 0; i < svc_.size(); i++) {
-		if (i != masterId_) GetSrv(i)->ForceSync();
+		if (i != masterId_) {
+			GetSrv(i)->ForceSync();
+		}
 	}
 	done = true;
 	awaitForceSync.join();
 }
 
 void ReplicationApi::SwitchMaster(size_t id, const ReplicationConfigTest::NsSet& namespaces) {
-	if (id == masterId_) return;
+	if (id == masterId_) {
+		return;
+	}
 	masterId_ = id;
 	ReplicationConfigTest config("master", false, true, id);
 	GetSrv(masterId_)->MakeMaster(config);
 	for (size_t i = 0; i < svc_.size(); i++) {
 		std::string masterDsn = "cproto://127.0.0.1:" + std::to_string(kDefaultRpcPort + masterId_) + "/node" + std::to_string(masterId_);
 		ReplicationConfigTest config("slave", false, true, i, masterDsn, "server_" + std::to_string(i), namespaces);
-		if (i != masterId_) GetSrv(i)->MakeSlave(config);
+		if (i != masterId_) {
+			GetSrv(i)->MakeSlave(config);
+		}
 	}
 }
 
@@ -150,10 +160,14 @@ void ReplicationApi::SetUp() {
 void ReplicationApi::TearDown() {
 	std::lock_guard<std::mutex> lock(m_);
 	for (auto& server : svc_) {
-		if (server.Get()) server.Get()->Stop();
+		if (server.Get()) {
+			server.Get()->Stop();
+		}
 	}
 	for (auto& server : svc_) {
-		if (!server.Get()) continue;
+		if (!server.Get()) {
+			continue;
+		}
 		server.Drop();
 		auto now = std::chrono::milliseconds(0);
 		const auto pause = std::chrono::milliseconds(10);

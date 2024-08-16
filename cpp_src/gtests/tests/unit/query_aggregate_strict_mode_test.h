@@ -160,7 +160,11 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 		}
 	};
 
-	for (const auto& aggType : aggTypes)
-		for (const auto& [field, modes] : scenarios)
-			for (const auto& [mode, err] : modes) testUnit(field, aggType, mode, err);
+	for (const auto& aggType : aggTypes) {
+		for (const auto& [field, modes] : scenarios) {
+			for (const auto& [mode, err] : modes) {
+				testUnit(field, aggType, mode, err);
+			}
+		}
+	}
 }

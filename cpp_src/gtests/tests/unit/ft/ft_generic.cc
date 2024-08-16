@@ -66,7 +66,9 @@ TEST_P(FTGenericApi, CompositeSelect) {
 			auto ritem(it.GetItem(false));
 			for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 				auto field = ritem[idx].Name();
-				if (field == "id") continue;
+				if (field == "id") {
+					continue;
+				}
 				auto it = data.find(ritem[field].As<std::string>());
 				ASSERT_TRUE(it != data.end());
 				data.erase(it);
@@ -103,7 +105,9 @@ TEST_P(FTGenericApi, CompositeSelectWithFields) {
 				auto ritem(it.GetItem(false));
 				for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 					auto curField = ritem[idx].Name();
-					if (curField != field) continue;
+					if (curField != field) {
+						continue;
+					}
 					auto it = data.find(ritem[curField].As<std::string>());
 					ASSERT_TRUE(it != data.end());
 					data.erase(it);
@@ -151,7 +155,9 @@ TEST_P(FTGenericApi, MergeWithSameNSAndSelectFunctions) {
 				auto ritem(it.GetItem(false));
 				for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 					auto curField = ritem[idx].Name();
-					if (curField != field) continue;
+					if (curField != field) {
+						continue;
+					}
 					auto it = data.find(ritem[curField].As<std::string>());
 					ASSERT_TRUE(it != data.end());
 					data.erase(it);
@@ -766,7 +772,7 @@ TEST_P(FTGenericApi, Unique) {
 	std::vector<std::string> data;
 	std::set<size_t> check;
 	std::set<std::string> checks;
-	reindexer::logInstallWriter([](int, char*) { /*std::cout << buf << std::endl;*/ }, reindexer::LoggerPolicy::WithLocks);
+	reindexer::logInstallWriter([](int, char*) { /*std::cout << buf << std::endl;*/ }, reindexer::LoggerPolicy::WithLocks, int(LogTrace));
 
 	for (int i = 0; i < 1000; ++i) {
 		bool inserted = false;

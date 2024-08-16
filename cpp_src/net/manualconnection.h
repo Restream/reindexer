@@ -27,16 +27,16 @@ public:
 
 	void set_connect_timeout(std::chrono::milliseconds timeout) noexcept { connect_timeout_ = timeout; }
 	void close_conn(int err);
-	void attach(ev::dynamic_loop &loop) noexcept;
+	void attach(ev::dynamic_loop& loop) noexcept;
 	void detach() noexcept;
-	void restart(socket &&s);
+	void restart(socket&& s);
 
 	template <typename buf_t>
-	void async_read(buf_t &data, size_t cnt, async_cb_t cb) {
+	void async_read(buf_t& data, size_t cnt, async_cb_t cb) {
 		async_read_impl(data, cnt, std::move(cb));
 	}
 	template <typename buf_t>
-	size_t async_read(buf_t &data, size_t cnt, int &err) noexcept {
+	size_t async_read(buf_t& data, size_t cnt, int& err) noexcept {
 		auto co_id = coroutine::current();
 		auto l = [&err, co_id](int _err, size_t /*cnt*/, span<char> /*buf*/) {
 			err = _err;
@@ -45,11 +45,11 @@ public:
 		return async_read_impl<buf_t, decltype(l), suspend_switch_policy>(data, cnt, std::move(l));
 	}
 	template <typename buf_t>
-	void async_write(buf_t &data, async_cb_t cb, bool send_now = true) {
+	void async_write(buf_t& data, async_cb_t cb, bool send_now = true) {
 		async_write_impl(data, std::move(cb), send_now);
 	}
 	template <typename buf_t>
-	size_t async_write(buf_t &data, int &err, bool send_now = true) noexcept {
+	size_t async_write(buf_t& data, int& err, bool send_now = true) noexcept {
 		auto co_id = coroutine::current();
 		auto l = [&err, co_id](int _err, size_t /*cnt*/, span<char> /*buf*/) {
 			err = _err;
@@ -95,10 +95,10 @@ private:
 	};
 
 	struct empty_switch_policy {
-		void operator()(async_data & /*data*/) {}
+		void operator()(async_data& /*data*/) {}
 	};
 	struct suspend_switch_policy {
-		void operator()(async_data &data) {
+		void operator()(async_data& data) {
 			while (!data.empty()) {
 				coroutine::suspend();
 			}
@@ -106,10 +106,10 @@ private:
 	};
 
 	template <typename buf_t, typename cb_t, typename switch_policy_t = empty_switch_policy>
-	size_t async_read_impl(buf_t &data, size_t cnt, cb_t cb) {
+	size_t async_read_impl(buf_t& data, size_t cnt, cb_t cb) {
 		assertrx(r_data_.empty());
 		assertrx(data.size() >= cnt);
-		auto &transfer = r_data_.transfer;
+		auto& transfer = r_data_.transfer;
 		transfer.set_expected(cnt);
 		int int_err = 0;
 		auto data_span = span<char>(data.data(), cnt);
@@ -132,9 +132,20 @@ private:
 	}
 
 	template <typename buf_t, typename cb_t, typename switch_policy_t = empty_switch_policy>
-	size_t async_write_impl(buf_t &data, cb_t cb, bool send_now) {
+	size_t async_write_impl(buf_t& data, cb_t cb, bool send_now) {
+#if _WIN32
+		/*
+		On Windows FD_WRITE network event is recorded when a socket is first connected with a call to the connect,
+		ConnectEx, WSAConnect, WSAConnectByList, or WSAConnectByName function or when a socket is accepted with accept, AcceptEx,
+		or WSAAccept function and then after a send fails with WSAEWOULDBLOCK and buffer space becomes available.
+
+		https://learn.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-wsaeventselect
+		*/
+
+		send_now = true;
+#endif
 		assertrx(w_data_.empty());
-		auto &transfer = w_data_.transfer;
+		auto& transfer = w_data_.transfer;
 		transfer.set_expected(data.size());
 		int int_err = 0;
 		if (data.size()) {
@@ -156,7 +167,7 @@ private:
 		return transfer.transfered_size();
 	}
 
-	void on_async_op_done(async_data &data, int err) {
+	void on_async_op_done(async_data& data, int err) {
 		if (!data.empty()) {
 			auto cb = std::move(data.cb);
 			auto buf = data.buf;
@@ -165,16 +176,16 @@ private:
 			cb(err, transfered, buf);
 		}
 	}
-	ssize_t write(span<char>, transfer_data &transfer, int &err_ref);
-	ssize_t read(span<char>, transfer_data &transfer, int &err_ref);
-	void read_to_buf(int &err_ref);
+	ssize_t write(span<char>, transfer_data& transfer, int& err_ref);
+	ssize_t read(span<char>, transfer_data& transfer, int& err_ref);
+	void read_to_buf(int& err_ref);
 	void add_io_events(int events) noexcept;
 	void set_io_events(int events) noexcept;
-	void io_callback(ev::io &watcher, int revents);
-	void connect_timer_cb(ev::timer &watcher, int);
+	void io_callback(ev::io& watcher, int revents);
+	void connect_timer_cb(ev::timer& watcher, int);
 	void write_cb();
 	int read_cb();
-	bool read_from_buf(span<char> rd_buf, transfer_data &transfer, bool read_full) noexcept;
+	bool read_from_buf(span<char> rd_buf, transfer_data& transfer, bool read_full) noexcept;
 
 	ev::io io_;
 	socket sock_;

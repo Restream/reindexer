@@ -2,7 +2,7 @@
 
 namespace reindexer {
 
-DefaultValueCoder::DefaultValueCoder(std::string_view ns, const PayloadFieldType &fld, std::vector<TagsPath> &&tps, int16_t fieldIdx)
+DefaultValueCoder::DefaultValueCoder(std::string_view ns, const PayloadFieldType& fld, std::vector<TagsPath>&& tps, int16_t fieldIdx)
 	: ns_(ns),
 	  field_(fld.Name()),
 	  tags_(std::move(tps)),
@@ -19,31 +19,31 @@ bool DefaultValueCoder::Match(int field) noexcept {
 	return false;  // returned result is always same
 }
 
-bool DefaultValueCoder::Match(TagType tt, const TagsPath &tp) {
+bool DefaultValueCoder::Match(TagType tt, const TagsPath& tp) {
 	static const bool result = false;  // returned result is always same
 
 	// nothing to look for (start tuple global object)
 	if (tp.empty()) {
 		state_ = State::wait;
-		inArray_ = false;
-		arrField_ = 0;
+		// inArray_ = false;
+		// arrField_ = 0;
 		return result;
 	}
 
 	// found\recorded earlier
-	if ((state_ == State::found) || ((state_ == State::write) && !inArray_)) {
+	if ((state_ == State::found) || ((state_ == State::write) /* && !inArray_*/)) {
 		return result;
 	}
 
 	// check if active array has been processed
 	const bool arrayTag = (tt == TAG_ARRAY);
-	if (inArray_) {
-		inArray_ = ((tt == TAG_OBJECT) || arrayTag) ? (tp.back() == arrField_) : (tp[tp.size() - 2] == arrField_);	// -2 pre-last item
-		// recorded earlier - stop it
-		if (!inArray_ && (state_ == State::write)) {
-			return result;
-		}
-	}
+	// if (inArray_) {
+	// 	inArray_ = ((tt == TAG_OBJECT) || arrayTag) ? (tp.back() == arrField_) : (tp[tp.size() - 2] == arrField_);	// -2 pre-last item
+	// 	// recorded earlier - stop it
+	// 	if (!inArray_ && (state_ == State::write)) {
+	// 		return result;
+	// 	}
+	// }
 
 	// try match nested field
 	if (tt == TAG_OBJECT) {
@@ -54,8 +54,13 @@ bool DefaultValueCoder::Match(TagType tt, const TagsPath &tp) {
 
 	// may be end element of adjacent nested field
 	if (arrayTag) {
-		inArray_ = (tp.front() == basePath_->front());
-		arrField_ = tp.back();
+		if (tp.size() <= basePath_->size() && std::equal(tp.begin(), tp.end(), basePath_->begin())) {
+			// Do not create anything inside objects arrays #1819
+			state_ = State::found;
+			return result;
+		}
+		// inArray_ = (tp.front() == basePath_->front());
+		// arrField_ = tp.back();
 	}
 
 	// not nested
@@ -73,7 +78,7 @@ bool DefaultValueCoder::Match(TagType tt, const TagsPath &tp) {
 	return result;
 }
 
-void DefaultValueCoder::Serialize(WrSerializer &wrser) {
+void DefaultValueCoder::Serialize(WrSerializer& wrser) {
 	if (blocked()) {
 		return;	 // skip processing
 	}
@@ -89,9 +94,9 @@ void DefaultValueCoder::Serialize(WrSerializer &wrser) {
 		}
 	}
 
-	write(wrser);
+	const auto written = write(wrser);
 	Reset();
-	state_ = State::write;
+	state_ = written ? State::write : State::found;
 }
 
 bool DefaultValueCoder::Reset() noexcept {
@@ -101,10 +106,10 @@ bool DefaultValueCoder::Reset() noexcept {
 	return (state_ == State::write);
 }
 
-void DefaultValueCoder::match(const TagsPath &tp) {
+void DefaultValueCoder::match(const TagsPath& tp) {
 	++nestingLevel_;
 
-	for (auto &path : tags_) {
+	for (auto& path : tags_) {
 		if (path.front() != tp.front()) {
 			continue;
 		}
@@ -131,7 +136,11 @@ void DefaultValueCoder::match(const TagsPath &tp) {
 	}
 }
 
-void DefaultValueCoder::write(WrSerializer &wrser) const {
+bool DefaultValueCoder::write(WrSerializer& wrser) const {
+	if (array_ && copyPos_ + 1 < basePath_->size()) {
+		// Do not create multiple levels for nested array indexes to avoid problems with decoding in Go/Java connectors. #1819
+		return false;
+	}
 	int32_t nestedObjects = 0;
 	for (size_t idx = copyPos_, sz = basePath_->size(); idx < sz; ++idx) {
 		auto tagName = (*basePath_)[idx];
@@ -156,6 +165,7 @@ void DefaultValueCoder::write(WrSerializer &wrser) const {
 	while (nestedObjects-- > 0) {
 		wrser.PutCTag(kCTagEnd);
 	}
+	return true;
 }
 
 }  // namespace reindexer

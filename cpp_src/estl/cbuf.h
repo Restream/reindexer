@@ -17,14 +17,14 @@ public:
 		full_ = false;
 		buf_size_ = bufsize;
 	}
-	cbuf(cbuf &&other) noexcept
+	cbuf(cbuf&& other) noexcept
 		: head_(other.head_), tail_(other.tail_), full_(other.full_), buf_size_(other.buf_size_), buf_(std::move(other.buf_)) {
 		other.head_ = 0;
 		other.tail_ = 0;
 		other.full_ = false;
 		other.buf_size_ = 0;
 	}
-	cbuf &operator=(cbuf &&other) noexcept {
+	cbuf& operator=(cbuf&& other) noexcept {
 		if (this != &other) {
 			buf_ = std::move(other.buf_);
 			head_ = other.head_;
@@ -38,46 +38,64 @@ public:
 		}
 		return *this;
 	}
-	cbuf(const cbuf &) = delete;
-	cbuf &operator=(const cbuf &) = delete;
+	cbuf(const cbuf&) = delete;
+	cbuf& operator=(const cbuf&) = delete;
 
-	size_t write(const T *p_ins, size_t s_ins) {
-		if (s_ins > available()) grow(std::max(s_ins - available(), buf_size_));
+	size_t write(const T* p_ins, size_t s_ins) {
+		if (s_ins > available()) {
+			grow(std::max(s_ins - available(), buf_size_));
+		}
 
-		if (!s_ins) return 0;
+		if (!s_ins) {
+			return 0;
+		}
 
 		size_t lSize = buf_size_ - head_;
 
 		std::copy(p_ins, p_ins + std::min(s_ins, lSize), &buf_[head_]);
-		if (s_ins > lSize) std::copy(p_ins + lSize, p_ins + s_ins, &buf_[0]);
+		if (s_ins > lSize) {
+			std::copy(p_ins + lSize, p_ins + s_ins, &buf_[0]);
+		}
 
 		head_ = (head_ + s_ins) % buf_size_;
 		full_ = (head_ == tail_);
 		return s_ins;
 	}
-	size_t read(T *p_ins, size_t s_ins) {
-		if (s_ins > size()) s_ins = size();
+	size_t read(T* p_ins, size_t s_ins) {
+		if (s_ins > size()) {
+			s_ins = size();
+		}
 
-		if (!s_ins) return 0;
+		if (!s_ins) {
+			return 0;
+		}
 
 		size_t lSize = buf_size_ - tail_;
 
 		std::copy(&buf_[tail_], &buf_[tail_ + std::min(s_ins, lSize)], p_ins);
-		if (s_ins > lSize) std::copy(&buf_[0], &buf_[s_ins - lSize], p_ins + lSize);
+		if (s_ins > lSize) {
+			std::copy(&buf_[0], &buf_[s_ins - lSize], p_ins + lSize);
+		}
 
 		tail_ = (tail_ + s_ins) % buf_size_;
 		full_ = false;
 		return s_ins;
 	}
-	size_t peek(T *p_ins, size_t s_ins) {
-		if (s_ins > size()) s_ins = size();
+	size_t peek(T* p_ins, size_t s_ins) {
+		if (s_ins > size()) {
+			s_ins = size();
+		}
 
-		if (!s_ins) return 0;
+		if (!s_ins) {
+			return 0;
+		}
 
 		size_t lSize = buf_size_ - tail_;
 
 		std::copy(&buf_[tail_], &buf_[tail_ + std::min(s_ins, lSize)], p_ins);
-		if (s_ins > lSize) std::copy(&buf_[0], &buf_[s_ins - lSize], p_ins + lSize);
+		if (s_ins > lSize) {
+			std::copy(&buf_[0], &buf_[s_ins - lSize], p_ins + lSize);
+		}
 
 		return s_ins;
 	}
@@ -98,7 +116,9 @@ public:
 
 	size_t size() noexcept {
 		std::ptrdiff_t D = head_ - tail_;
-		if (D < 0 || (D == 0 && full_)) D += buf_size_;
+		if (D < 0 || (D == 0 && full_)) {
+			D += buf_size_;
+		}
 		return D;
 	}
 
@@ -124,7 +144,9 @@ public:
 	void unroll() { grow(0); }
 	size_t available() noexcept { return (buf_size_ - size()); }
 	void reserve(size_t sz) {
-		if (sz > capacity()) grow(sz - capacity());
+		if (sz > capacity()) {
+			grow(sz - capacity());
+		}
 	}
 
 protected:
@@ -135,7 +157,9 @@ protected:
 
 		std::unique_ptr<T[]> new_buf(new T[new_size]);
 		std::copy(&buf_[tail_], &buf_[tail_ + std::min(sz, lSize)], &new_buf[0]);
-		if (sz > lSize) std::copy(&buf_[0], &buf_[head_], &new_buf[lSize]);
+		if (sz > lSize) {
+			std::copy(&buf_[0], &buf_[head_], &new_buf[lSize]);
+		}
 
 		tail_ = 0;
 		head_ = sz % new_size;

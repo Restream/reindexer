@@ -13,7 +13,7 @@ static const size_t kHeapFreeMinThreshold = 200 * 1048576;	///< Do not release p
 
 TCMallocHeapWathcher::TCMallocHeapWathcher() : TCMallocHeapWathcher(nullptr, -1, -1.0) {}
 
-TCMallocHeapWathcher::TCMallocHeapWathcher(MallocExtension *mallocExtention, int64_t cacheLimit, float maxCacheRatio,
+TCMallocHeapWathcher::TCMallocHeapWathcher(MallocExtension* mallocExtention, int64_t cacheLimit, float maxCacheRatio,
 										   std::shared_ptr<spdlog::logger> logger)
 	: mallocExtention_(mallocExtention),
 	  cacheLimit_(cacheLimit),
@@ -22,11 +22,11 @@ TCMallocHeapWathcher::TCMallocHeapWathcher(MallocExtension *mallocExtention, int
 	  heapChunkReleasePeriod_(std::chrono::milliseconds(100)),
 	  logger_(std::move(logger)) {}
 
-TCMallocHeapWathcher::TCMallocHeapWathcher(MallocExtension *mallocExtention, int64_t cacheLimit, float maxCacheRatio)
+TCMallocHeapWathcher::TCMallocHeapWathcher(MallocExtension* mallocExtention, int64_t cacheLimit, float maxCacheRatio)
 	: TCMallocHeapWathcher(mallocExtention, cacheLimit, maxCacheRatio, nullptr) {}
 
 template <typename... Args>
-void TCMallocHeapWathcher::logDebug(Args &&...args) {
+void TCMallocHeapWathcher::logDebug(Args&&... args) {
 	if (logger_) {
 		logger_->debug(std::forward<Args>(args)...);
 	}
@@ -47,7 +47,9 @@ void TCMallocHeapWathcher::CheckHeapUsagePeriodic() {
 			std::chrono::duration_cast<std::chrono::milliseconds>(deadline_.time_since_epoch()).count());
 	});
 
-	if (!mallocExtention_) return;
+	if (!mallocExtention_) {
+		return;
+	}
 
 	if ((cacheLimit_ > 0) || (maxCacheRatio_ > 0)) {
 		if (ClockT::now_coarse() < deadline_) {

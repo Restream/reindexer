@@ -21,19 +21,19 @@ private:
 	static constexpr int64_t kDefaultCounter = kMaxCounter - 1;
 
 public:
-	void GetJSON(JsonBuilder &builder) const;
+	void GetJSON(JsonBuilder& builder) const;
 
-	void FromJSON(const gason::JsonNode &root) {
+	void FromJSON(const gason::JsonNode& root) {
 		const int server = root["server_id"].As<int>(0);
 		const int64_t counter = root["counter"].As<int64_t>(kDefaultCounter);
 		payload_ = int64_t(lsn_t(counter, server));
 	}
 
 	lsn_t() noexcept = default;
-	lsn_t(const lsn_t &) noexcept = default;
-	lsn_t(lsn_t &&) noexcept = default;
-	lsn_t &operator=(const lsn_t &) noexcept = default;
-	lsn_t &operator=(lsn_t &&) noexcept = default;
+	lsn_t(const lsn_t&) noexcept = default;
+	lsn_t(lsn_t&&) noexcept = default;
+	lsn_t& operator=(const lsn_t&) noexcept = default;
+	lsn_t& operator=(lsn_t&&) noexcept = default;
 	explicit lsn_t(int64_t v) : lsn_t(v % kMaxCounter, v / kMaxCounter) {}
 	lsn_t(int64_t counter, int16_t server) {
 		validateCounter(counter);
@@ -60,11 +60,14 @@ public:
 	bool isEmpty() const noexcept { return Counter() == kDefaultCounter; }
 
 	int compare(lsn_t o) const {
-		if (Server() != o.Server()) throw Error(errLogic, "Compare lsn from different server");
-		if (Counter() < o.Counter())
+		if (Server() != o.Server()) {
+			throw Error(errLogic, "Compare lsn from different server");
+		}
+		if (Counter() < o.Counter()) {
 			return -1;
-		else if (Counter() > o.Counter())
+		} else if (Counter() > o.Counter()) {
 			return 1;
+		}
 		return 0;
 	}
 
@@ -89,7 +92,7 @@ private:
 		}
 	}
 
-	[[noreturn]] static void throwValidation(ErrorCode, const char *, int64_t);
+	[[noreturn]] static void throwValidation(ErrorCode, const char*, int64_t);
 };
 
 struct LSNPair {
@@ -99,8 +102,4 @@ struct LSNPair {
 	lsn_t originLSN_;
 };
 
-inline static std::ostream &operator<<(std::ostream &o, const reindexer::lsn_t &sv) {
-	o << sv.Server() << ":" << sv.Counter();
-	return o;
-}
 }  // namespace reindexer

@@ -54,23 +54,29 @@ AggType AggregationResult::strToAggType(std::string_view type) {
 	return AggUnknown;
 }
 
-void AggregationResult::GetJSON(WrSerializer &ser) const {
+void AggregationResult::GetJSON(WrSerializer& ser) const {
 	JsonBuilder builder(ser);
 	ParameterFieldGetter fieldsGetter;
 	get(builder, ParametersFields<ParameterFieldGetter, std::string_view>(fieldsGetter));
 }
 
-void AggregationResult::GetMsgPack(WrSerializer &wrser) const {
+void AggregationResult::GetMsgPack(WrSerializer& wrser) const {
 	int elements = 2;
-	if (value_) ++elements;
-	if (!facets.empty()) ++elements;
-	if (!distincts.empty()) ++elements;
+	if (value_) {
+		++elements;
+	}
+	if (!facets.empty()) {
+		++elements;
+	}
+	if (!distincts.empty()) {
+		++elements;
+	}
 	MsgPackBuilder msgpackBuilder(wrser, ObjType::TypeObject, elements);
 	ParameterFieldGetter fieldsGetter;
 	get(msgpackBuilder, ParametersFields<ParameterFieldGetter, std::string_view>(fieldsGetter));
 }
 
-void AggregationResult::GetProtobuf(WrSerializer &wrser) const {
+void AggregationResult::GetProtobuf(WrSerializer& wrser) const {
 	ProtobufBuilder builder(&wrser, ObjType::TypePlain);
 	get(builder, ParametersFields<ParametersFieldsNumbers, int>(kParametersFieldNumbers));
 }
@@ -84,7 +90,7 @@ Error AggregationResult::FromMsgPack(span<char> msgpack) {
 			return Error(errLogic, "Error unpacking aggregation data in msgpack");
 		}
 		from(root);
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 	return errOK;
@@ -95,13 +101,13 @@ Error AggregationResult::FromJSON(span<char> json) {
 		gason::JsonParser parser;
 		auto root = parser.Parse(json);
 		from(root);
-	} catch (const gason::Exception &ex) {
+	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "AggregationResult: %s", ex.what());
 	}
 	return errOK;
 }
 
-void AggregationResult::GetProtobufSchema(ProtobufSchemaBuilder &builder) {
+void AggregationResult::GetProtobufSchema(ProtobufSchemaBuilder& builder) {
 	ParametersFields<ParametersFieldsNumbers, int> fields(kParametersFieldNumbers);
 	ProtobufSchemaBuilder results = builder.Object(0, "AggregationResults");
 	results.Field(Parameters::Value(), fields.Value(), FieldProps{KeyValueType::Double{}});

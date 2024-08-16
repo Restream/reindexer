@@ -2,21 +2,25 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "core/formatters/jsonstring_fmt.h"
 #include "estl/fast_hash_map.h"
 #include "estl/h_vector.h"
-#include "gason/gason.h"
 #include "tools/errors.h"
 
 namespace reindexer {
 
 JsonSchemaChecker::JsonSchemaChecker(const std::string& json, std::string rootTypeName) : rootTypeName_(std::move(rootTypeName)) {
 	Error err = createTypeTable(json);
-	if (!err.ok()) throw err;
+	if (!err.ok()) {
+		throw err;
+	}
 	isInit = true;
 }
 
 Error JsonSchemaChecker::Init(const std::string& json, std::string rootTypeName) {
-	if (isInit) return Error(errLogic, "JsonSchemaChecker already initialized.");
+	if (isInit) {
+		return Error(errLogic, "JsonSchemaChecker already initialized.");
+	}
 	rootTypeName_ = std::move(rootTypeName);
 	return createTypeTable(json);
 }
@@ -29,7 +33,9 @@ bool JsonSchemaChecker::isSimpleType(std::string_view tp) {
 std::string JsonSchemaChecker::createType(const PrefixTree::PrefixTreeNode* node, const std::string& typeName) {
 	using namespace std::string_view_literals;
 	JsonSchemaChecker::TypeDescr typeDescr;
-	if (indexes_.find(typeName) != indexes_.end()) return typeName;
+	if (indexes_.find(typeName) != indexes_.end()) {
+		return typeName;
+	}
 	if (node->children.empty() && node->props.allowAdditionalProps == true) {
 		return std::string("any");
 	}
@@ -54,7 +60,9 @@ std::string JsonSchemaChecker::createType(const PrefixTree::PrefixTreeNode* node
 			throw Error(errLogic, "Incorrect schema type [%s]", chProps.type);
 		}
 		auto typeIndexIt = indexes_.find(subElement.typeName);
-		if (typeIndexIt == indexes_.end()) throw Error(errLogic, "Incorrect type %s", subElement.typeName);
+		if (typeIndexIt == indexes_.end()) {
+			throw Error(errLogic, "Incorrect type %s", subElement.typeName);
+		}
 		subElement.typeIndex = typeIndexIt->second;
 		typeDescr.subElementsTable.emplace_back(ch.first, std::move(subElement));
 	}
@@ -74,7 +82,9 @@ void JsonSchemaChecker::addSimpleType(std::string tpName) {
 
 Error JsonSchemaChecker::createTypeTable(const std::string& json) {
 	auto err = schema_.FromJSON(std::string_view(json));
-	if (!err.ok()) return err;
+	if (!err.ok()) {
+		return err;
+	}
 	auto root = schema_.GetRoot();
 
 	addSimpleType("any");
@@ -107,7 +117,9 @@ Error JsonSchemaChecker::Check(gason::JsonNode node) {
 	}
 
 	auto indxIt = indexes_.find(rootTypeName_);
-	if (indxIt == indexes_.end()) return Error(errParseJson, "Type '%s' not found.", rootTypeName_);
+	if (indxIt == indexes_.end()) {
+		return Error(errParseJson, "Type '%s' not found.", rootTypeName_);
+	}
 	int nType = indxIt->second;
 	std::string path;
 	path.reserve(512);
@@ -133,18 +145,23 @@ Error JsonSchemaChecker::checkScheme(const gason::JsonNode& node, int typeIndex,
 	for (const auto& elem : node) {
 		auto subElemIndex = descr.subElementsIndex.find(std::string_view(elem.key));
 		if (subElemIndex == descr.subElementsIndex.end()) {
-			if (!descr.allowAdditionalProps)
+			if (!descr.allowAdditionalProps) {
 				return Error(errParseJson, "Key [%s] not allowed in [%s] object.", elem.key, path);
-			else
+			} else {
 				continue;
+			}
 		}
 		err = checkExists(elem.key, &mmVals[subElemIndex->second], path);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 		if (elem.value.getTag() == gason::JSON_OBJECT) {
 			if (descr.subElementsTable[subElemIndex->second].second.typeName != "any") {
 				err = checkScheme(elem, descr.subElementsTable[subElemIndex->second].second.typeIndex, path,
 								  descr.subElementsTable[subElemIndex->second].first);
-				if (!err.ok()) return err;
+				if (!err.ok()) {
+					return err;
+				}
 			}
 		} else if (elem.value.getTag() == gason::JSON_ARRAY) {
 			if (descr.subElementsTable[subElemIndex->second].second.typeName != "any") {
@@ -155,7 +172,9 @@ Error JsonSchemaChecker::checkScheme(const gason::JsonNode& node, int typeIndex,
 					if (entry.value.getTag() == gason::JSON_ARRAY || entry.value.getTag() == gason::JSON_OBJECT) {
 						err = checkScheme(entry, descr.subElementsTable[subElemIndex->second].second.typeIndex, path,
 										  descr.subElementsTable[subElemIndex->second].first);
-						if (!err.ok()) return err;
+						if (!err.ok()) {
+							return err;
+						}
 					}
 				}
 			}

@@ -10,7 +10,9 @@ inline bool isUuidDelimPos(unsigned i) noexcept {
 }
 
 inline std::string randStrUuid() {
-	if (rand() % 1000 == 0) return std::string{nilUUID};
+	if (rand() % 1000 == 0) {
+		return std::string{nilUUID};
+	}
 	std::string strUuid;
 	strUuid.reserve(reindexer::Uuid::kStrFormLen);
 	for (size_t i = 0; i < reindexer::Uuid::kStrFormLen; ++i) {

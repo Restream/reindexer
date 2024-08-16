@@ -25,7 +25,9 @@ public:
 
 	void reset(pointer p = pointer(), std::memory_order order = std::memory_order_seq_cst) {
 		auto old = ptr.exchange(p, order);
-		if (old) delete old;
+		if (old) {
+			delete old;
+		}
 	}
 	operator pointer() const { return ptr; }
 	pointer operator->() const { return ptr; }
@@ -60,7 +62,9 @@ public:
 
 	void reset(pointer p = pointer(), std::memory_order order = std::memory_order_seq_cst) {
 		auto old = ptr.exchange(p, order);
-		if (old) delete[] old;
+		if (old) {
+			delete[] old;
+		}
 	}
 	operator pointer() const { return ptr; }
 	pointer operator->() const { return ptr; }

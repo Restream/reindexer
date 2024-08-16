@@ -4,7 +4,7 @@
 #include <dlfcn.h>
 #include <stdlib.h>
 #include <mutex>
-#endif  // REINDEX_WITH_GPERFTOOLS
+#endif	// REINDEX_WITH_GPERFTOOLS
 
 namespace reindexer {
 namespace alloc_ext {
@@ -44,7 +44,7 @@ int MallocHook_AddDeleteHook(MallocHook_DeleteHook hook) {
 
 bool TCMallocHooksAreAvailable() { return (getAddNewHookFn() != nullptr) && (getAddDeleteHookFn() != nullptr); }
 
-#endif  // REINDEX_WITH_GPERFTOOLS
+#endif	// REINDEX_WITH_GPERFTOOLS
 
 }  // namespace alloc_ext
 }  // namespace reindexer

@@ -17,11 +17,11 @@ public:
 	using Key = K;
 	LRUCache(size_t sizeLimit, uint32_t hitCount) noexcept : totalCacheSize_(0), cacheSizeLimit_(sizeLimit), hitCountToCache_(hitCount) {}
 	struct Iterator {
-		Iterator(bool k = false, const V &v = V()) : valid(k), val(v) {}
-		Iterator(const Iterator &other) = delete;
-		Iterator &operator=(const Iterator &other) = delete;
-		Iterator(Iterator &&other) noexcept : valid(other.valid), val(std::move(other.val)) { other.valid = false; }
-		Iterator &operator=(Iterator &&other) noexcept {
+		Iterator(bool k = false, const V& v = V()) : valid(k), val(v) {}
+		Iterator(const Iterator& other) = delete;
+		Iterator& operator=(const Iterator& other) = delete;
+		Iterator(Iterator&& other) noexcept : valid(other.valid), val(std::move(other.val)) { other.valid = false; }
+		Iterator& operator=(Iterator&& other) noexcept {
 			if (this != &other) {
 				valid = other.valid;
 				val = std::move(other.val);
@@ -33,9 +33,9 @@ public:
 		V val;
 	};
 	// Get cached val. Create new entry in cache if unexists
-	Iterator Get(const K &k);
+	Iterator Get(const K& k);
 	// Put cached val
-	void Put(const K &k, V &&v);
+	void Put(const K& k, V&& v);
 
 	LRUCacheMemStat GetMemStat();
 
@@ -45,7 +45,7 @@ public:
 	}
 
 	template <typename T>
-	void Dump(T &os, std::string_view step, std::string_view offset) const {
+	void Dump(T& os, std::string_view step, std::string_view offset) const {
 		std::string newOffset{offset};
 		newOffset += step;
 		os << "{\n" << newOffset << "totalCacheSize: ";
@@ -59,7 +59,9 @@ public:
 		   << newOffset << "items: [";
 		if (!items_.empty()) {
 			for (auto b = items_.begin(), it = b, e = items_.end(); it != e; ++it) {
-				if (it != b) os << ',';
+				if (it != b) {
+					os << ',';
+				}
 				os << '\n' << newOffset << '{' << it->first << ": ";
 				it->second.Dump(os);
 				os << '}';
@@ -68,14 +70,16 @@ public:
 		}
 		os << "],\n" << newOffset << "lruList: [";
 		for (auto b = lru_.begin(), it = b, e = lru_.end(); it != e; ++it) {
-			if (it != b) os << ", ";
+			if (it != b) {
+				os << ", ";
+			}
 			os << **it;
 		}
 		os << "]\n" << offset << '}';
 	}
 
 	template <typename F>
-	void Clear(const F &cond) {
+	void Clear(const F& cond) {
 		std::lock_guard lock(lock_);
 		for (auto it = lru_.begin(); it != lru_.end();) {
 			if (!cond(**it)) {
@@ -97,13 +101,13 @@ public:
 	}
 
 protected:
-	typedef std::list<const K *> LRUList;
+	typedef std::list<const K*> LRUList;
 	struct Entry {
 		V val;
 		typename LRUList::iterator lruPos;
 		int hitCount = 0;
 		template <typename T>
-		void Dump(T &os) const {
+		void Dump(T& os) const {
 			os << "{val: " << val << ", hitCount: " << hitCount << '}';
 		}
 	};

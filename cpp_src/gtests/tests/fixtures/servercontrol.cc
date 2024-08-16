@@ -61,7 +61,9 @@ void ServerControl::Interface::Stop() {
 std::string ServerControl::Interface::getLogName(const std::string& log, bool core) {
 	std::string name = getTestLogPath();
 	name += (log + "_");
-	if (!core) name += std::to_string(id_);
+	if (!core) {
+		name += std::to_string(id_);
+	}
 	name += ".log";
 	return name;
 }
@@ -313,7 +315,9 @@ void ServerControl::Interface::setReplicationConfig(const ReplicationConfigTest&
 	replConf.Put("server_id", config.serverId_);
 
 	auto nsArray = replConf.Array("namespaces");
-	for (auto& ns : config.namespaces_) nsArray.Put(nullptr, ns);
+	for (auto& ns : config.namespaces_) {
+		nsArray.Put(nullptr, ns);
+	}
 	nsArray.End();
 	replConf.End();
 	jb.End();
@@ -371,8 +375,9 @@ ReplicationTestState ServerControl::Interface::GetState(std::string_view ns) {
 		state.ownLsn.FromJSON(root["replication"]["last_lsn_v2"]);
 		if (!isSlave) {
 			state.lsn.FromJSON(root["replication"]["last_lsn_v2"]);
-		} else
+		} else {
 			state.lsn.FromJSON(root["replication"]["origin_lsn"]);
+		}
 
 		state.dataCount = root["replication"]["data_count"].As<int64_t>();
 		state.dataHash = root["replication"]["data_hash"].As<uint64_t>();

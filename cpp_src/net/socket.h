@@ -17,10 +17,10 @@ class lst_socket;
 class socket {
 public:
 	socket() = default;
-	socket(const socket &&other) = delete;
-	socket(socket &&other) noexcept : fd_(other.fd_), type_(other.type_) { other.fd_ = -1; }
-	socket &operator=(const socket &other) = delete;
-	socket &operator=(socket &&other) noexcept {
+	socket(const socket&& other) = delete;
+	socket(socket&& other) noexcept : fd_(other.fd_), type_(other.type_) { other.fd_ = -1; }
+	socket& operator=(const socket& other) = delete;
+	socket& operator=(socket&& other) noexcept {
 		if rx_likely (this != &other) {
 			if (valid()) {
 				close();
@@ -59,7 +59,7 @@ private:
 	friend class lst_socket;
 
 	socket(int fd, socket_domain type) noexcept : fd_(fd), type_(type) {}
-	int create(std::string_view addr, struct addrinfo **pres);
+	int create(std::string_view addr, struct addrinfo** pres);
 	void domain(socket_domain t) noexcept { type_ = t; }
 
 	int fd_ = -1;
@@ -69,13 +69,13 @@ private:
 class lst_socket {
 public:
 	lst_socket() = default;
-	lst_socket(const lst_socket &&other) = delete;
-	lst_socket(lst_socket &&other) noexcept
+	lst_socket(const lst_socket&& other) = delete;
+	lst_socket(lst_socket&& other) noexcept
 		: sock_(std::move(other.sock_)), lockFd_(other.lockFd_), unPath_(std::move(other.unPath_)), unLock_(std::move(other.unLock_)) {
 		other.lockFd_ = -1;
 	}
-	lst_socket &operator=(const lst_socket &other) = delete;
-	lst_socket &operator=(lst_socket &&other) noexcept {
+	lst_socket& operator=(const lst_socket& other) = delete;
+	lst_socket& operator=(lst_socket&& other) noexcept {
 		if rx_likely (this != &other) {
 			if (valid()) {
 				close();

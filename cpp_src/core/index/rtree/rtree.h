@@ -199,14 +199,18 @@ private:
 		bool DWithin(Point p, double distance, RectangleTree::Visitor& visitor) const noexcept override {
 			for (const auto& v : data_) {
 				if (reindexer::DWithin(Traits::GetPoint(v), p, distance)) {
-					if (visitor(v)) return true;
+					if (visitor(v)) {
+						return true;
+					}
 				}
 			}
 			return false;
 		}
 		bool ForEach(RectangleTree::Visitor& visitor) const noexcept override {
 			for (const auto& v : data_) {
-				if (visitor(v)) return true;
+				if (visitor(v)) {
+					return true;
+				}
 			}
 			return false;
 		}
@@ -216,7 +220,9 @@ private:
 				if (visitor(*it)) {
 					data_.erase(it);
 					if (data_.size() < MinEntries) {
-						if (data_.empty()) this->SetBoundRect({});
+						if (data_.empty()) {
+							this->SetBoundRect({});
+						}
 						return {true, true};
 					} else {
 						adjustBoundRect();
@@ -239,23 +245,35 @@ private:
 		}
 
 		double AreaIncrease(const reindexer::Rectangle& r) const noexcept override {
-			if (data_.empty()) return r.Area();
+			if (data_.empty()) {
+				return r.Area();
+			}
 			return SplitterT::AreaIncrease(this->BoundRect(), r);
 		}
 
 		bool Check(const Node* parent) const noexcept override {
-			if (parent != this->Parent()) return false;
-			if (data_.size() > MaxEntries) return false;
+			if (parent != this->Parent()) {
+				return false;
+			}
+			if (data_.size() > MaxEntries) {
+				return false;
+			}
 			if (data_.empty()) {
-				if (this->BoundRect() != reindexer::Rectangle{}) return false;
+				if (this->BoundRect() != reindexer::Rectangle{}) {
+					return false;
+				}
 			} else {
 				const reindexer::Rectangle thisBoundRect{this->BoundRect()};
 				reindexer::Rectangle boundRectOfAllChildren = boundRect(Traits::GetPoint(data_[0]));
 				for (const auto& v : data_) {
 					boundRectOfAllChildren = boundRect(boundRectOfAllChildren, Traits::GetPoint(v));
-					if (!thisBoundRect.Contain(Traits::GetPoint(v))) return false;
+					if (!thisBoundRect.Contain(Traits::GetPoint(v))) {
+						return false;
+					}
 				}
-				if (thisBoundRect != boundRectOfAllChildren) return false;
+				if (thisBoundRect != boundRectOfAllChildren) {
+					return false;
+				}
 			}
 			return true;
 		}
@@ -301,9 +319,13 @@ private:
 
 		bool IsLeaf() const noexcept override { return false; }
 		bool IsFull() const noexcept override {
-			if (data_.size() < MaxEntries) return false;
+			if (data_.size() < MaxEntries) {
+				return false;
+			}
 			for (const auto& n : data_) {
-				if (!n->IsFull()) return false;
+				if (!n->IsFull()) {
+					return false;
+				}
 			}
 			return true;
 		}
@@ -316,7 +338,9 @@ private:
 		}
 		bool Empty() const noexcept override {
 			for (const auto& n : data_) {
-				if (!n->Empty()) return false;
+				if (!n->Empty()) {
+					return false;
+				}
 			}
 			return true;
 		}
@@ -345,7 +369,9 @@ private:
 			for (auto& n : data_) {
 				if (n->BoundRect().Contain(p)) {
 					const auto res = n->find(p);
-					if (res.second) return res;
+					if (res.second) {
+						return res;
+					}
 				}
 			}
 			return {{nullptr, {}}, false};
@@ -354,7 +380,9 @@ private:
 			for (auto& n : data_) {
 				if (n->BoundRect().Contain(p)) {
 					const auto res = n->find(p);
-					if (res.second) return res;
+					if (res.second) {
+						return res;
+					}
 				}
 			}
 			return {{nullptr, {}}, false};
@@ -369,7 +397,9 @@ private:
 			if (splittedChildren.first) {
 				data_[nodeToInsert] = std::move(splittedChildren.first);
 				auto splittedNodes = insert(std::move(splittedChildren.second));
-				if (splittedNodes.first) return splittedNodes;
+				if (splittedNodes.first) {
+					return splittedNodes;
+				}
 				data_[nodeToInsert]->SetParent(this);
 			}
 			if (data_.size() == 1) {
@@ -383,16 +413,22 @@ private:
 		bool DWithin(Point p, double distance, RectangleTree::Visitor& visitor) const noexcept override {
 			for (const auto& n : data_) {
 				if (reindexer::DWithin(n->BoundRect(), p, distance)) {
-					if (n->ForEach(visitor)) return true;
+					if (n->ForEach(visitor)) {
+						return true;
+					}
 				} else if (intersect(n->BoundRect(), Circle{p, distance})) {
-					if (n->DWithin(p, distance, visitor)) return true;
+					if (n->DWithin(p, distance, visitor)) {
+						return true;
+					}
 				}
 			}
 			return false;
 		}
 		bool ForEach(RectangleTree::Visitor& visitor) const noexcept override {
 			for (const auto& n : data_) {
-				if (n->ForEach(visitor)) return true;
+				if (n->ForEach(visitor)) {
+					return true;
+				}
 			}
 			return false;
 		}
@@ -419,17 +455,29 @@ private:
 		}
 
 		bool Check(const Node* parent) const noexcept override {
-			if (parent != this->Parent()) return false;
-			if (data_.empty()) return false;
-			if (data_.size() > MaxEntries) return false;
+			if (parent != this->Parent()) {
+				return false;
+			}
+			if (data_.empty()) {
+				return false;
+			}
+			if (data_.size() > MaxEntries) {
+				return false;
+			}
 			const reindexer::Rectangle thisBoundRect{this->BoundRect()};
 			reindexer::Rectangle boundRectOfAllChildren = data_[0]->BoundRect();
 			for (const auto& n : data_) {
-				if (!n->Check(this)) return false;
+				if (!n->Check(this)) {
+					return false;
+				}
 				boundRectOfAllChildren = boundRect(boundRectOfAllChildren, n->BoundRect());
-				if (!thisBoundRect.Contain(n->BoundRect())) return false;
+				if (!thisBoundRect.Contain(n->BoundRect())) {
+					return false;
+				}
 			}
-			if (this->BoundRect() != boundRectOfAllChildren) return false;
+			if (this->BoundRect() != boundRectOfAllChildren) {
+				return false;
+			}
 			return true;
 		}
 
@@ -557,12 +605,16 @@ public:
 
 	iterator find(Point p) noexcept {
 		const auto res = root_.find(p);
-		if (res.second) return res.first;
+		if (res.second) {
+			return res.first;
+		}
 		return end();
 	}
 	const_iterator find(Point p) const noexcept {
 		const auto res = root_.find(p);
-		if (res.second) return res.first;
+		if (res.second) {
+			return res.first;
+		}
 		return cend();
 	}
 	void DWithin(Point p, double distance, RectangleTree::Visitor& visitor) const { root_.DWithin(p, distance, visitor); }

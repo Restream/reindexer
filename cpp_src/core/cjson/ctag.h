@@ -95,11 +95,13 @@ public:
 	[[nodiscard]] RX_ALWAYS_INLINE constexpr bool operator!=(carraytag other) const noexcept { return !operator==(other); }
 
 private:
-	RX_ALWAYS_INLINE explicit constexpr carraytag(uint32_t atag) noexcept : carraytag{countImpl(atag), typeImpl(atag)} { assertrx_dbg(atag == atag_); }
+	RX_ALWAYS_INLINE explicit constexpr carraytag(uint32_t atag) noexcept : carraytag{countImpl(atag), typeImpl(atag)} {
+		assertrx_dbg(atag == atag_);
+	}
 	[[nodiscard]] RX_ALWAYS_INLINE constexpr uint32_t asNumber() const noexcept { return atag_; }
 	[[nodiscard]] RX_ALWAYS_INLINE static constexpr TagType typeImpl(uint32_t atag) noexcept {
 		assertrx_dbg(((atag >> kCountBits) & kTypeMask) <= kMaxTagType);
-		return static_cast<TagType>((atag >> kCountBits) & kTypeMask); // NOLINT(*EnumCastOutOfRange)
+		return static_cast<TagType>((atag >> kCountBits) & kTypeMask);	// NOLINT(*EnumCastOutOfRange)
 	}
 	[[nodiscard]] RX_ALWAYS_INLINE static constexpr uint32_t countImpl(uint32_t atag) noexcept { return atag & kCountMask; }
 

@@ -28,7 +28,9 @@ class QuadraticSplitter : public GuttmanSplitter<Entry, Node, Traits, Iterator, 
 		assertrx(next <= MaxEntries);
 		double firstAreaIncrease{0.0}, secondAreaIncrease{0.0};
 		for (size_t i = next; i <= MaxEntries; ++i) {
-			if (this->moved_[i]) continue;
+			if (this->moved_[i]) {
+				continue;
+			}
 			const auto rect = Base::getBoundRect((i == MaxEntries) ? this->appendingEntry_ : this->srcNode_.data_[i]);
 			const auto currFirstAreaIncrease = Base::AreaIncrease(firstNode->BoundRect(), rect);
 			const auto currSecondAreaIncrease = Base::AreaIncrease(secondNode->BoundRect(), rect);

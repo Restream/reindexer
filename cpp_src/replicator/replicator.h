@@ -13,9 +13,9 @@ class ReindexerImpl;
 
 class Replicator : public IUpdatesObserver {
 public:
-	Replicator(ReindexerImpl *slave);
+	Replicator(ReindexerImpl* slave);
 	~Replicator();
-	bool Configure(const ReplicationConfigData &config);
+	bool Configure(const ReplicationConfigData& config);
 	Error Start();
 	void Stop();
 	void Enable() { enabled_.store(true, std::memory_order_release); }
@@ -26,7 +26,7 @@ protected:
 		Error lastError;
 		int updated = 0, deleted = 0, errors = 0, updatedIndexes = 0, deletedIndexes = 0, updatedMeta = 0, processed = 0, schemasSet = 0,
 			txStarts = 0, txEnds = 0;
-		WrSerializer &Dump(WrSerializer &ser);
+		WrSerializer& Dump(WrSerializer& ser);
 	};
 	struct NsErrorMsg {
 		Error err;
@@ -34,10 +34,10 @@ protected:
 	};
 	class SyncQueue {
 	public:
-		SyncQueue(const std::mutex &replicatorMtx) noexcept : replicatorMtx_(replicatorMtx) {}
-		void Push(const std::string &nsName, NamespaceDef &&nsDef, bool force);
-		bool Get(NamespaceDef &def, bool &force) const;
-		bool Pop(std::string_view nsName, const std::unique_lock<std::mutex> &replicatorLock) noexcept;
+		SyncQueue(const std::mutex& replicatorMtx) noexcept : replicatorMtx_(replicatorMtx) {}
+		void Push(const std::string& nsName, NamespaceDef&& nsDef, bool force);
+		bool Get(NamespaceDef& def, bool& force) const;
+		bool Pop(std::string_view nsName, const std::unique_lock<std::mutex>& replicatorLock) noexcept;
 		size_t Size() const noexcept { return size_.load(std::memory_order_acquire); }
 		bool Contains(std::string_view nsName) noexcept;
 		void Clear() noexcept;
@@ -45,7 +45,7 @@ protected:
 	private:
 		struct recordData {
 			recordData() = default;
-			recordData(NamespaceDef &&_def, bool _forced) : def(std::move(_def)), forced(_forced) {}
+			recordData(NamespaceDef&& _def, bool _forced) : def(std::move(_def)), forced(_forced) {}
 
 			NamespaceDef def;
 			bool forced = false;
@@ -53,11 +53,11 @@ protected:
 		fast_hash_map<std::string, recordData, nocase_hash_str, nocase_equal_str, nocase_less_str> queue_;
 		std::atomic<size_t> size_ = {0};
 		mutable std::mutex mtx_;
-		const std::mutex &replicatorMtx_;
+		const std::mutex& replicatorMtx_;
 	};
 
 	struct ForceSyncContext {
-		const NamespaceDef &nsDef;
+		const NamespaceDef& nsDef;
 		std::function<void()> replaceTagsMatcher;
 	};
 
@@ -69,47 +69,47 @@ protected:
 		std::string_view forceSyncReason;
 	};
 	// Sync single namespace
-	SyncNsResult syncNamespace(const NamespaceDef &ns, std::string_view forceSyncReason, SyncQueue *sourceQueue,
+	SyncNsResult syncNamespace(const NamespaceDef& ns, std::string_view forceSyncReason, SyncQueue* sourceQueue,
 							   std::string_view initiator);
 	// Sync database
 	Error syncDatabase(std::string_view initiator);
 	// Read and apply WAL from master
-	Error syncNamespaceByWAL(const NamespaceDef &ns);
+	Error syncNamespaceByWAL(const NamespaceDef& ns);
 	// Apply WAL from master to namespace
-	Error applyWAL(Namespace::Ptr &slaveNs, client::QueryResults &qr, const ForceSyncContext *fsyncCtx = nullptr);
+	Error applyWAL(Namespace::Ptr& slaveNs, client::QueryResults& qr, const ForceSyncContext* fsyncCtx = nullptr);
 	// Sync indexes of namespace
-	Error syncIndexesForced(Namespace::Ptr &slaveNs, const ForceSyncContext &fsyncCtx);
+	Error syncIndexesForced(Namespace::Ptr& slaveNs, const ForceSyncContext& fsyncCtx);
 	// Sync namespace schema
-	Error syncSchemaForced(Namespace::Ptr &slaveNs, const NamespaceDef &masterNsDef);
+	Error syncSchemaForced(Namespace::Ptr& slaveNs, const NamespaceDef& masterNsDef);
 	// Forced sync of namespace
-	Error syncNamespaceForced(const NamespaceDef &ns, std::string_view reason);
+	Error syncNamespaceForced(const NamespaceDef& ns, std::string_view reason);
 	// Sync metadata
-	Error syncMetaForced(Namespace::Ptr &slaveNs, std::string_view nsName);
+	Error syncMetaForced(Namespace::Ptr& slaveNs, std::string_view nsName);
 	// Apply single WAL record
-	Error applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr &ns, const WALRecord &wrec, SyncStat &stat);
+	Error applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr& ns, const WALRecord& wrec, SyncStat& stat);
 	// Apply single transaction WAL record
-	Error applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr &ns, const WALRecord &wrec, SyncStat &stat);
-	void checkNoOpenedTransaction(std::string_view nsName, Namespace::Ptr &slaveNs);
+	Error applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr& ns, const WALRecord& wrec, SyncStat& stat);
+	void checkNoOpenedTransaction(std::string_view nsName, Namespace::Ptr& slaveNs);
 	// Apply single cjson item
-	Error modifyItem(LSNPair LSNs, Namespace::Ptr &ns, std::string_view cjson, int modifyMode, const TagsMatcher &tm, SyncStat &stat);
+	Error modifyItem(LSNPair LSNs, Namespace::Ptr& ns, std::string_view cjson, int modifyMode, const TagsMatcher& tm, SyncStat& stat);
 	// Add single cjson item into tx
-	Error modifyItemTx(LSNPair LSNs, Transaction &tx, std::string_view cjson, int modifyMode, const TagsMatcher &tm, SyncStat &stat);
-	static Error unpackItem(Item &, lsn_t, std::string_view cjson, const TagsMatcher &tm);
+	Error modifyItemTx(LSNPair LSNs, Transaction& tx, std::string_view cjson, int modifyMode, const TagsMatcher& tm, SyncStat& stat);
+	static Error unpackItem(Item&, lsn_t, std::string_view cjson, const TagsMatcher& tm);
 	// Push update to the queue to apply it later
-	void pushPendingUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &wrec);
+	void pushPendingUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord& wrec);
 
-	void OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &wrec) override final;
-	void onWALUpdateImpl(LSNPair LSNs, std::string_view nsName, const WALRecord &wrec);
+	void OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord& wrec) override final;
+	void onWALUpdateImpl(LSNPair LSNs, std::string_view nsName, const WALRecord& wrec);
 	void OnUpdatesLost(std::string_view nsName) override final;
-	void OnConnectionState(const Error &err) override final;
+	void OnConnectionState(const Error& err) override final;
 
-	bool canApplyUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &wrec);
+	bool canApplyUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord& wrec);
 	bool isSyncEnabled(std::string_view nsName);
-	bool retryIfNetworkError(const Error &err);
-	void subscribeUpdatesIfRequired(const std::string &nsName);
+	bool retryIfNetworkError(const Error& err);
+	void subscribeUpdatesIfRequired(const std::string& nsName);
 
 	std::unique_ptr<client::Reindexer> master_;
-	ReindexerImpl *slave_;
+	ReindexerImpl* slave_;
 
 	net::ev::dynamic_loop loop_;
 	std::thread thread_;
@@ -141,7 +141,7 @@ protected:
 	std::atomic<bool> enabled_;
 
 	const RdxContext dummyCtx_;
-	std::unordered_map<const Namespace *, Transaction> transactions_;
+	std::unordered_map<const Namespace*, Transaction> transactions_;
 	fast_hash_map<std::string, NsErrorMsg, nocase_hash_str, nocase_equal_str, nocase_less_str> lastNsErrMsg_;
 	SyncQueue syncQueue_;
 };

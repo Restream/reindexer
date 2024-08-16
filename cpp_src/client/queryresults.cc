@@ -12,7 +12,7 @@ using namespace reindexer::net;
 QueryResults::QueryResults(int fetchFlags)
 	: conn_(nullptr), queryID_(0), fetchOffset_(0), fetchFlags_(fetchFlags), fetchAmount_(0), requestTimeout_(0) {}
 
-QueryResults::QueryResults(QueryResults &&obj) noexcept
+QueryResults::QueryResults(QueryResults&& obj) noexcept
 	: conn_(obj.conn_),
 	  nsArray_(std::move(obj.nsArray_)),
 	  rawResult_(std::move(obj.rawResult_)),
@@ -25,7 +25,7 @@ QueryResults::QueryResults(QueryResults &&obj) noexcept
 	  status_(std::move(obj.status_)),
 	  cmpl_(std::move(obj.cmpl_)) {}
 
-QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
+QueryResults& QueryResults::operator=(QueryResults&& obj) noexcept {
 	if (this != &obj) {
 		rawResult_ = std::move(obj.rawResult_);
 		conn_ = obj.conn_;
@@ -42,7 +42,7 @@ QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	return *this;
 }
 
-QueryResults::QueryResults(net::cproto::ClientConnection *conn, NsArray &&nsArray, Completion cmpl, int fetchFlags, int fetchAmount,
+QueryResults::QueryResults(net::cproto::ClientConnection* conn, NsArray&& nsArray, Completion cmpl, int fetchFlags, int fetchAmount,
 						   seconds timeout)
 	: conn_(conn),
 	  nsArray_(std::move(nsArray)),
@@ -53,7 +53,7 @@ QueryResults::QueryResults(net::cproto::ClientConnection *conn, NsArray &&nsArra
 	  requestTimeout_(timeout),
 	  cmpl_(std::move(cmpl)) {}
 
-QueryResults::QueryResults(net::cproto::ClientConnection *conn, NsArray &&nsArray, Completion cmpl, std::string_view rawResult, int queryID,
+QueryResults::QueryResults(net::cproto::ClientConnection* conn, NsArray&& nsArray, Completion cmpl, std::string_view rawResult, int queryID,
 						   int fetchFlags, int fetchAmount, seconds timeout)
 	: QueryResults(conn, std::move(nsArray), std::move(cmpl), fetchFlags, fetchAmount, timeout) {
 	Bind(rawResult, queryID);
@@ -85,7 +85,7 @@ void QueryResults::Bind(std::string_view rawResult, int queryID) {
 				PayloadType("tmp").clone()->deserialize(ser);
 			},
 			ResultSerializer::AggsFlag::ClearAggregations);
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		status_ = err;
 	}
 
@@ -116,7 +116,9 @@ void QueryResults::fetchNextResults() {
 h_vector<std::string_view, 1> QueryResults::GetNamespaces() const {
 	h_vector<std::string_view, 1> ret;
 	ret.reserve(nsArray_.size());
-	for (auto &ns : nsArray_) ret.push_back(ns->name_);
+	for (auto& ns : nsArray_) {
+		ret.push_back(ns->name_);
+	}
 	return ret;
 }
 
@@ -128,14 +130,14 @@ TagsMatcher QueryResults::getTagsMatcher(int nsid) const {
 class AdditionalRank : public IAdditionalDatasource<JsonBuilder> {
 public:
 	AdditionalRank(double r) noexcept : rank_(r) {}
-	void PutAdditionalFields(JsonBuilder &builder) const override final { builder.Put("rank()", rank_); }
-	IEncoderDatasourceWithJoins *GetJoinsDatasource() noexcept override final { return nullptr; }
+	void PutAdditionalFields(JsonBuilder& builder) const override final { builder.Put("rank()", rank_); }
+	IEncoderDatasourceWithJoins* GetJoinsDatasource() noexcept override final { return nullptr; }
 
 private:
 	double rank_;
 };
 
-void QueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSerializer &wrser, bool withHdrLen) {
+void QueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSerializer& wrser, bool withHdrLen) {
 	auto tm = qr_->getTagsMatcher(itemParams_.nsid);
 	JsonEncoder enc(&tm);
 	JsonBuilder builder(wrser, ObjType::TypePlain);
@@ -157,7 +159,7 @@ void QueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSerializ
 	}
 }
 
-Error QueryResults::Iterator::GetMsgPack(WrSerializer &wrser, bool withHdrLen) {
+Error QueryResults::Iterator::GetMsgPack(WrSerializer& wrser, bool withHdrLen) {
 	readNext();
 	int type = qr_->queryParams_.flags & kResultsFormatMask;
 	if (type == kResultsMsgPack) {
@@ -172,7 +174,7 @@ Error QueryResults::Iterator::GetMsgPack(WrSerializer &wrser, bool withHdrLen) {
 	return errOK;
 }
 
-Error QueryResults::Iterator::GetJSON(WrSerializer &wrser, bool withHdrLen) {
+Error QueryResults::Iterator::GetJSON(WrSerializer& wrser, bool withHdrLen) {
 	readNext();
 	try {
 		switch (qr_->queryParams_.flags & kResultsFormatMask) {
@@ -190,13 +192,13 @@ Error QueryResults::Iterator::GetJSON(WrSerializer &wrser, bool withHdrLen) {
 			default:
 				return Error(errParseBin, "Server returned data in unknown format %d", qr_->queryParams_.flags & kResultsFormatMask);
 		}
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 	return errOK;
 }
 
-Error QueryResults::Iterator::GetCJSON(WrSerializer &wrser, bool withHdrLen) {
+Error QueryResults::Iterator::GetCJSON(WrSerializer& wrser, bool withHdrLen) {
 	readNext();
 	try {
 		switch (qr_->queryParams_.flags & kResultsFormatMask) {
@@ -213,7 +215,7 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer &wrser, bool withHdrLen) {
 			default:
 				return Error(errParseBin, "Server returned data in unknown format %d", qr_->queryParams_.flags & kResultsFormatMask);
 		}
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 	return errOK;
@@ -239,7 +241,7 @@ Item QueryResults::Iterator::GetItem() {
 				break;
 			}
 			case kResultsJson: {
-				char *endp = nullptr;
+				char* endp = nullptr;
 				err = item.FromJSON(itemParams_.data, &endp);
 				break;
 			}
@@ -250,7 +252,7 @@ Item QueryResults::Iterator::GetItem() {
 			return item;
 		}
 		return Item();
-	} catch (const Error &) {
+	} catch (const Error&) {
 		return Item();
 	}
 }
@@ -272,7 +274,9 @@ std::string_view QueryResults::Iterator::GetRaw() {
 }
 
 void QueryResults::Iterator::readNext() {
-	if (nextPos_ != 0) return;
+	if (nextPos_ != 0) {
+		return;
+	}
 
 	std::string_view rawResult(qr_->rawResult_.data(), qr_->rawResult_.size());
 
@@ -285,12 +289,12 @@ void QueryResults::Iterator::readNext() {
 			(void)joinedCnt;
 		}
 		nextPos_ = pos_ + ser.Pos();
-	} catch (const Error &err) {
-		const_cast<QueryResults *>(qr_)->status_ = err;
+	} catch (const Error& err) {
+		const_cast<QueryResults*>(qr_)->status_ = err;
 	}
 }
 
-QueryResults::Iterator &QueryResults::Iterator::operator++() {
+QueryResults::Iterator& QueryResults::Iterator::operator++() {
 	try {
 		readNext();
 		idx_++;
@@ -298,11 +302,11 @@ QueryResults::Iterator &QueryResults::Iterator::operator++() {
 		nextPos_ = 0;
 
 		if (idx_ != qr_->queryParams_.qcount && idx_ == qr_->queryParams_.count + qr_->fetchOffset_) {
-			const_cast<QueryResults *>(qr_)->fetchNextResults();
+			const_cast<QueryResults*>(qr_)->fetchNextResults();
 			pos_ = 0;
 		}
-	} catch (const Error &err) {
-		const_cast<QueryResults *>(qr_)->status_ = err;
+	} catch (const Error& err) {
+		const_cast<QueryResults*>(qr_)->status_ = err;
 	}
 
 	return *this;

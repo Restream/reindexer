@@ -19,10 +19,10 @@ public:
 			throw std::logic_error("Empty channels are not allowed");
 		}
 	}
-	channel(const channel &) = delete;
-	channel(channel &&) = delete;
-	channel &operator=(const channel &) = delete;
-	channel &operator=(channel &&) = delete;
+	channel(const channel&) = delete;
+	channel(channel&&) = delete;
+	channel& operator=(const channel&) = delete;
+	channel& operator=(channel&&) = delete;
 
 	/// Push object to channel.
 	/// If channel is full, current coroutine will suspend and wait for pop()-calls from other coroutines.
@@ -30,7 +30,7 @@ public:
 	/// If there are readers awaiting data, current coroutine will call resume() and switch to those readers.
 	/// @param obj - Object to push
 	template <typename U>
-	void push(U &&obj) {
+	void push(U&& obj) {
 		assertrx(current());  // For now channels should not be used from main routine dew to current resume/suspend logic
 		bool await = false;
 		while (full() || closed_) {
@@ -127,13 +127,13 @@ private:
 		return std::make_pair(T(), false);
 	}
 	template <typename U>
-	void push_impl(U &&obj) {
+	void push_impl(U&& obj) {
 		buf_[w_ptr_] = std::forward<U>(obj);
 		w_ptr_ = (w_ptr_ + 1) % buf_.size();
 		++data_size_;
 		assertrx(data_size_ <= buf_.size());
 	}
-	static void remove_waiter(waiters_container &waiters) { waiters.erase(std::find(waiters.begin(), waiters.end(), current())); }
+	static void remove_waiter(waiters_container& waiters) { waiters.erase(std::find(waiters.begin(), waiters.end(), current())); }
 
 	h_vector<T, 1> buf_;
 	size_t r_ptr_ = 0;

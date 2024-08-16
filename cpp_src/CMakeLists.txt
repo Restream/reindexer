@@ -44,7 +44,7 @@ else()
   option(LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set(REINDEXER_VERSION_DEFAULT "3.27.0")
+set(REINDEXER_VERSION_DEFAULT "3.28.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -86,8 +86,8 @@ if(NOT MSVC AND NOT APPLE)
 endif()
 
 if(MSVC)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -MP")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -wd4800 -wd4396 -wd4503 -MP")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -MP -MD")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -wd4800 -wd4396 -wd4503 -MP -MD")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -SAFESEH:NO")
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror -Wswitch-enum")
@@ -296,7 +296,8 @@ set_source_files_properties (${REINDEXER_SOURCE_PATH}/core/storage/leveldblogger
 list(APPEND REINDEXER_LIBRARIES reindexer)
 add_library(${TARGET} STATIC ${HDRS} ${SRCS} ${VENDORS})
 add_definitions(-DREINDEX_CORE_BUILD=1)
-
+add_definitions(-DFMT_HEADER_ONLY=1)
+add_definitions(-DSPDLOG_FMT_EXTERNAL=1)
 
 # add_definitions(-DREINDEX_FT_EXTRA_DEBUG=1)
 
@@ -567,9 +568,10 @@ endif()
 
 include_directories(${PROJECT_BINARY_DIR})
 
-string ( REGEX REPLACE "(.*)([0-9]+)\\.([0-9]+)\\.([0-9]+)(.*)" "\\2.\\3.\\4" REINDEXER_VERSION ${REINDEXER_VERSION_FULL})
+string ( REGEX REPLACE "v([0-9]+)\\.([0-9]+)\\.([0-9]+)(.*)" "\\1.\\2.\\3" REINDEXER_VERSION ${REINDEXER_VERSION_FULL})
 string ( REGEX REPLACE ".*-([0-9]+)-(.*)" "\\1.\\2" REINDEXER_RELEASE ${REINDEXER_VERSION_FULL})
 set(REINDEXER_VERSION_REDUCED ${REINDEXER_VERSION})
+
 if(CMAKE_MATCH_1)
   set(REINDEXER_VERSION ${REINDEXER_VERSION}.${REINDEXER_RELEASE})
 endif()

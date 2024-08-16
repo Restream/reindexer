@@ -36,7 +36,7 @@ namespace debug {
 
 using namespace std::string_view_literals;
 
-TraceEntry::TraceEntry(TraceEntry &&other) noexcept
+TraceEntry::TraceEntry(TraceEntry&& other) noexcept
 	: funcName_(other.funcName_),
 	  objFile_(other.objFile_),
 	  srcFile_(other.srcFile_),
@@ -48,7 +48,7 @@ TraceEntry::TraceEntry(TraceEntry &&other) noexcept
 	other.holder_ = nullptr;
 }
 
-TraceEntry &TraceEntry::operator=(TraceEntry &&other) noexcept {
+TraceEntry& TraceEntry::operator=(TraceEntry&& other) noexcept {
 	if (this != &other) {
 		funcName_ = other.funcName_;
 		objFile_ = other.objFile_;
@@ -73,7 +73,9 @@ TraceEntry::TraceEntry(uintptr_t addr) {
 #if REINDEX_WITH_LIBDL
 	Dl_info dl_info;
 
-	if (!dladdr(reinterpret_cast<void *>(addr), &dl_info)) return;
+	if (!dladdr(reinterpret_cast<void*>(addr), &dl_info)) {
+		return;
+	}
 
 	objFile_ = dl_info.dli_fname;
 	ofs_ = uintptr_t(addr) - uintptr_t(dl_info.dli_saddr);
@@ -90,7 +92,7 @@ TraceEntry::TraceEntry(uintptr_t addr) {
 #endif
 }
 
-std::ostream &TraceEntry::Dump(std::ostream &os) const {
+std::ostream& TraceEntry::Dump(std::ostream& os) const {
 	os << "0x" << std::hex << std::setfill('0') << std::setw(14) << addr_ << " " << funcName_ << std::dec;
 	if (srcLine_) {
 		// pretty print file path:
@@ -101,14 +103,17 @@ std::ostream &TraceEntry::Dump(std::ostream &os) const {
 		std::string srcFile(srcFile_);
 		if (fs::Stat(srcFile) != fs::StatFile) {
 			auto pos = srcFile.find("cpp_src/");
-			if (pos != std::string::npos) srcFile = srcFile.substr(pos);
+			if (pos != std::string::npos) {
+				srcFile = srcFile.substr(pos);
+			}
 		} else {
 			srcFile = fs::GetRelativePath(srcFile, 2);
 		}
 
 		os << " (" << srcFile << ":" << srcLine_ << ")";
-	} else
+	} else {
 		os << " + " << ofs_;
+	}
 	return os;
 }
 
@@ -117,7 +122,7 @@ class TraceResolverLibbacktrace : public TraceResolver {
 public:
 	TraceResolverLibbacktrace() { init(); }
 
-	bool Resolve(TraceEntry &te) override final {
+	bool Resolve(TraceEntry& te) override final {
 		backtrace_pcinfo(state_, te.addr_, callback, errorCallback, &te);
 		return true;
 	}
@@ -127,12 +132,12 @@ protected:
 		state_ = backtrace_create_state("/proc/self/exe", 1, errorCallback, NULL);
 		return true;
 	}
-	static void errorCallback(void * /*data*/, const char *msg, int errnum) {
+	static void errorCallback(void* /*data*/, const char* msg, int errnum) {
 		std::cerr << "libbacktarce error:" << msg << " " << errnum << std::endl;
 	}
 
-	static int callback(void *data, uintptr_t /*pc*/, const char *filename, int lineno, const char * /*function*/) {
-		TraceEntry *te = reinterpret_cast<TraceEntry *>(data);
+	static int callback(void* data, uintptr_t /*pc*/, const char* filename, int lineno, const char* /*function*/) {
+		TraceEntry* te = reinterpret_cast<TraceEntry*>(data);
 		if (filename) {
 			te->srcFile_ = filename;
 			te->srcLine_ = lineno;
@@ -144,7 +149,7 @@ protected:
 	}
 
 protected:
-	backtrace_state *state_ = nullptr;
+	backtrace_state* state_ = nullptr;
 };
 
 std::unique_ptr<TraceResolver> TraceResolver::New() { return std::unique_ptr<TraceResolver>(new TraceResolverLibbacktrace()); }
@@ -156,15 +161,19 @@ public:
 	TraceResolverApple() { init(); }
 	~TraceResolverApple() { CSRelease(cs_); }
 
-	bool Resolve(TraceEntry &te) {
+	bool Resolve(TraceEntry& te) {
 		bool ret = false;
-		if (!cs_.csCppData || !cs_.csCppObj) return false;
+		if (!cs_.csCppData || !cs_.csCppObj) {
+			return false;
+		}
 
 		auto info = CSSymbolicatorGetSourceInfoWithAddressAtTime(cs_, te.addr_, CS_NOW);
 		auto sym = (info.csCppData && info.csCppObj) ? CSSourceInfoGetSymbol(info)
 													 : CSSymbolicatorGetSymbolWithAddressAtTime(cs_, te.addr_, CS_NOW);
 
-		if (!sym.csCppData || !sym.csCppObj) return false;
+		if (!sym.csCppData || !sym.csCppObj) {
+			return false;
+		}
 
 		auto owner = CSSymbolGetSymbolOwner(sym);
 		if (owner.csCppData && owner.csCppObj) {
@@ -181,7 +190,9 @@ public:
 protected:
 	bool init() {
 		auto hlib = dlopen("/System/Library/PrivateFrameworks/CoreSymbolication.framework/Versions/A/CoreSymbolication", RTLD_NOW);
-		if (!hlib) return false;
+		if (!hlib) {
+			return false;
+		}
 
 		CSSymbolicatorCreateWithPid = reinterpret_cast<pCSSymbolicatorCreateWithPid>(dlsym(hlib, "CSSymbolicatorCreateWithPid"));
 		CSRelease = reinterpret_cast<pCSRelease>(dlsym(hlib, "CSRelease"));
@@ -197,13 +208,15 @@ protected:
 		bool ok = CSSymbolicatorCreateWithPid && CSRelease && CSSymbolicatorGetSymbolWithAddressAtTime &&
 				  CSSymbolicatorGetSourceInfoWithAddressAtTime && CSSourceInfoGetLineNumber && CSSourceInfoGetPath &&
 				  CSSourceInfoGetSymbol && CSSymbolGetSymbolOwner;
-		if (ok) cs_ = CSSymbolicatorCreateWithPid(getpid());
+		if (ok) {
+			cs_ = CSSymbolicatorCreateWithPid(getpid());
+		}
 		return ok;
 	}
 
 	struct CSTypeRef {
-		void *csCppData;
-		void *csCppObj;
+		void* csCppData;
+		void* csCppObj;
 	};
 	static uint64_t constexpr CS_NOW = 0x80000000;
 
@@ -217,7 +230,7 @@ protected:
 	typedef CSSymbolRef (*pCSSymbolicatorGetSymbolWithAddressAtTime)(CSSymbolicatorRef cs, vm_address_t addr, uint64_t time);
 	typedef CSSourceInfoRef (*pCSSymbolicatorGetSourceInfoWithAddressAtTime)(CSSymbolicatorRef cs, vm_address_t addr, uint64_t time);
 	typedef int (*pCSSourceInfoGetLineNumber)(CSSourceInfoRef info);
-	typedef const char *(*pCSSourceInfoGetPath)(CSSourceInfoRef info);
+	typedef const char* (*pCSSourceInfoGetPath)(CSSourceInfoRef info);
 	typedef CSSymbolRef (*pCSSourceInfoGetSymbol)(CSSourceInfoRef info);
 	typedef CSSymbolOwnerRef (*pCSSymbolGetSymbolOwner)(CSSymbolRef sym);
 

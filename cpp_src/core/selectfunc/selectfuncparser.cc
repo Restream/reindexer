@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-SelectFuncStruct &SelectFuncParser::Parse(const std::string &query) {
+SelectFuncStruct& SelectFuncParser::Parse(const std::string& query) {
 	tokenizer parser(query);
 
 	token tok = parser.next_token(tokenizer::flags::no_flags);
@@ -41,7 +41,7 @@ SelectFuncStruct &SelectFuncParser::Parse(const std::string &query) {
 	return selectFuncStruct_;
 }
 
-void SelectFuncParser::parsePositionalAndNamedArgs(tokenizer &parser, const Args &args) {
+void SelectFuncParser::parsePositionalAndNamedArgs(tokenizer& parser, const Args& args) {
 	using namespace std::string_view_literals;
 	token tok;
 	tok = parser.next_token(tokenizer::flags::no_flags);
@@ -176,7 +176,7 @@ void SelectFuncParser::parsePositionalAndNamedArgs(tokenizer &parser, const Args
 	}
 }
 
-SelectFuncStruct &SelectFuncParser::ParseFunction(tokenizer &parser, bool partOfExpression, token &tok) {
+SelectFuncStruct& SelectFuncParser::ParseFunction(tokenizer& parser, bool partOfExpression, token& tok) {
 	using namespace std::string_view_literals;
 	if (tok.text().empty()) {
 		tok = parser.next_token();
@@ -232,32 +232,56 @@ SelectFuncStruct &SelectFuncParser::ParseFunction(tokenizer &parser, bool partOf
 }
 
 bool SelectFuncParser::IsFunction(std::string_view val) noexcept {
-	if (val.length() < 3) return false;
+	if (val.length() < 3) {
+		return false;
+	}
 
 	size_t i = 0;
-	if (!isalpha(val[i++])) return false;
+	if (!isalpha(val[i++])) {
+		return false;
+	}
 
 	int openParenthesis = 0, closeParenthesis = 0;
 	for (; i < val.length(); ++i) {
 		char ch = val[i];
 		switch (ch) {
 			case '(':
-				if (openParenthesis++ > 0) return false;
-				if (closeParenthesis > 0) return false;
+				if (openParenthesis++ > 0) {
+					return false;
+				}
+				if (closeParenthesis > 0) {
+					return false;
+				}
 				break;
 			case ')':
-				if (openParenthesis != 1) return false;
-				if (closeParenthesis++ > 0) return false;
-				if (i == val.length() - 1) return true;
+				if (openParenthesis != 1) {
+					return false;
+				}
+				if (closeParenthesis++ > 0) {
+					return false;
+				}
+				if (i == val.length() - 1) {
+					return true;
+				}
 				break;
 			case ',':
-				if (openParenthesis != 1) return false;
-				if (closeParenthesis != 0) return false;
-				if (i == val.length() - 1) return false;
+				if (openParenthesis != 1) {
+					return false;
+				}
+				if (closeParenthesis != 0) {
+					return false;
+				}
+				if (i == val.length() - 1) {
+					return false;
+				}
 				break;
 			default:
-				if (openParenthesis > 1) return false;
-				if (closeParenthesis > 0) return false;
+				if (openParenthesis > 1) {
+					return false;
+				}
+				if (closeParenthesis > 0) {
+					return false;
+				}
 				break;
 		}
 	}
@@ -265,9 +289,13 @@ bool SelectFuncParser::IsFunction(std::string_view val) noexcept {
 	return false;
 }
 
-bool SelectFuncParser::IsFunction(const VariantArray &val) noexcept {
-	if (val.size() != 1) return false;
-	if (!val.front().Type().Is<KeyValueType::String>()) return false;
+bool SelectFuncParser::IsFunction(const VariantArray& val) noexcept {
+	if (val.size() != 1) {
+		return false;
+	}
+	if (!val.front().Type().Is<KeyValueType::String>()) {
+		return false;
+	}
 	return IsFunction(static_cast<std::string_view>(val.front()));
 }
 

@@ -29,7 +29,7 @@ void ExpressionEvaluator::captureArrayContent(tokenizer& parser) {
 		if rx_unlikely (tok.text() == "]"sv) {
 			throw Error(errParseSQL, "Expected field value, but found ']' in query, %s", parser.where());
 		}
-		arrayValues_.emplace_back(token2kv(tok, parser, false));
+		arrayValues_.emplace_back(token2kv(tok, parser, CompositeAllowed::No, FieldAllowed::No));
 		tok = parser.next_token(tokenizer::flags::no_flags);
 		if (tok.text() == "]"sv) {
 			break;
@@ -48,7 +48,7 @@ void ExpressionEvaluator::throwUnexpectedTokenError(tokenizer& parser, const tok
 }
 
 ExpressionEvaluator::PrimaryToken ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValue& v, StringAllowed strAllowed,
-																	   token& outTok) {
+																	   NonIntegralAllowed nonIntAllowed, token& outTok) {
 	outTok = parser.next_token();
 	if (outTok.text() == "("sv) {
 		const double val = performSumAndSubtracting(parser, v);
@@ -73,11 +73,11 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::getPrimaryToken(tokenizer
 			}
 		}
 		case TokenName:
-			return handleTokenName(parser, v, outTok);
+			return handleTokenName(parser, v, nonIntAllowed, outTok);
 		case TokenString:
 			if (strAllowed == StringAllowed::Yes) {
 				arrayValues_.MarkArray();
-				arrayValues_.emplace_back(token2kv(outTok, parser, false));
+				arrayValues_.emplace_back(token2kv(outTok, parser, CompositeAllowed::No, FieldAllowed::No));
 				return {.value = std::nullopt, .type = PrimaryToken::Type::Array};
 			} else {
 				throwUnexpectedTokenError(parser, outTok);
@@ -91,7 +91,8 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::getPrimaryToken(tokenizer
 	throw Error(errParams, "Unexpected token in expression: '%s'", outTok.text());
 }
 
-ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(tokenizer& parser, const PayloadValue& v, token& outTok) {
+ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(tokenizer& parser, const PayloadValue& v,
+																	   NonIntegralAllowed nonIntAllowed, token& outTok) {
 	int field = 0;
 	VariantArray fieldValues;
 	ConstPayload pv(type_, v);
@@ -109,7 +110,7 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(tokenizer
 								 return {.value = arrayValues_.back().As<double>(), .type = PrimaryToken::Type::Array};
 							 },
 							 [&, this](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Uuid>) -> PrimaryToken {
-								 if rx_unlikely (state_ != StateArrayConcat &&
+								 if rx_unlikely (nonIntAllowed == NonIntegralAllowed::No && state_ != StateArrayConcat &&
 												 parser.peek_token(tokenizer::flags::treat_sign_as_token).text() != "|"sv) {
 									 throw Error(errParams, kWrongFieldTypeError, outTok.text());
 								 }
@@ -140,7 +141,11 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(tokenizer
 		return {.value = double((outTok.text() == "array_remove"sv) ? Command::ArrayRemove : Command::ArrayRemoveOnce),
 				.type = PrimaryToken::Type::Command};
 	} else if rx_unlikely (outTok.text() == "true"sv || outTok.text() == "false"sv) {
-		throwUnexpectedTokenError(parser, outTok);
+		if rx_unlikely (nonIntAllowed == NonIntegralAllowed::No) {
+			throwUnexpectedTokenError(parser, outTok);
+		}
+		arrayValues_.emplace_back(outTok.text() == "true"sv);
+		return {.value = std::nullopt, .type = PrimaryToken::Type::Null};
 	}
 
 	pv.GetByJsonPath(outTok.text(), tagsMatcher_, fieldValues, KeyValueType::Undefined{});
@@ -200,7 +205,7 @@ void ExpressionEvaluator::handleCommand(tokenizer& parser, const PayloadValue& v
 	VariantArray resultArr;
 
 	token valueToken;
-	auto trr = getPrimaryToken(parser, v, StringAllowed::No, valueToken);
+	auto trr = getPrimaryToken(parser, v, StringAllowed::No, NonIntegralAllowed::Yes, valueToken);
 	if rx_unlikely (trr.type != PrimaryToken::Type::Null) {
 		if rx_unlikely (trr.type != PrimaryToken::Type::Array) {
 			throw Error(errParams, "Only an array field is expected as first parameter of command 'array_remove_once/array_remove'");
@@ -217,7 +222,7 @@ void ExpressionEvaluator::handleCommand(tokenizer& parser, const PayloadValue& v
 	}
 
 	// parse list of delete items
-	auto val = getPrimaryToken(parser, v, StringAllowed::Yes, valueToken);
+	auto val = getPrimaryToken(parser, v, StringAllowed::Yes, NonIntegralAllowed::Yes, valueToken);
 	if rx_unlikely (val.type != PrimaryToken::Type::Null) {
 		if ((val.type != PrimaryToken::Type::Array) && (val.type != PrimaryToken::Type::Scalar)) {
 			throw Error(errParams, "Expecting array or scalar as command parameter: '%s'", valueToken.text());
@@ -257,7 +262,7 @@ void ExpressionEvaluator::handleCommand(tokenizer& parser, const PayloadValue& v
 
 double ExpressionEvaluator::performArrayConcatenation(tokenizer& parser, const PayloadValue& v, token& tok) {
 	token valueToken;
-	auto left = getPrimaryToken(parser, v, StringAllowed::No, valueToken);
+	auto left = getPrimaryToken(parser, v, StringAllowed::No, NonIntegralAllowed::No, valueToken);
 	tok = parser.peek_token();
 	switch (left.type) {
 		case PrimaryToken::Type::Scalar:
@@ -291,7 +296,7 @@ double ExpressionEvaluator::performArrayConcatenation(tokenizer& parser, const P
 			throw Error(errParams, "Unable to mix arrays concatenation and arithmetic operations. Got token: '%s'", tok.text());
 		}
 		state_ = StateArrayConcat;
-		auto right = getPrimaryToken(parser, v, StringAllowed::No, valueToken);
+		auto right = getPrimaryToken(parser, v, StringAllowed::No, NonIntegralAllowed::No, valueToken);
 		if rx_unlikely (right.type == PrimaryToken::Type::Scalar) {
 			throw Error(errParams, kScalarsInConcatenationError, valueToken.text());
 		}
@@ -320,7 +325,9 @@ double ExpressionEvaluator::performMultiplicationAndDivision(tokenizer& parser, 
 			// tok.text() == "/"sv
 			parser.next_token(tokenizer::flags::treat_sign_as_token);
 			const double val = performMultiplicationAndDivision(parser, v, tok);
-			if (val == 0) throw Error(errLogic, "Division by zero!");
+			if (val == 0) {
+				throw Error(errLogic, "Division by zero!");
+			}
 			left /= val;
 		}
 	}

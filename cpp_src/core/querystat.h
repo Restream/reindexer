@@ -55,16 +55,22 @@ public:
 	QueryStatCalculator(std::function<void(bool, std::chrono::microseconds)> hitter, std::chrono::microseconds threshold, bool enable,
 						Logger<T> logger = Logger{})
 		: hitter_(std::move(hitter)), threshold_(threshold), enable_(enable), logger_(std::move(logger)) {
-		if (enable_) tmStart = system_clock_w::now();
+		if (enable_) {
+			tmStart = system_clock_w::now();
+		}
 	}
 
 	QueryStatCalculator(Logger<T> logger, bool enable = true) : enable_(enable), logger_(std::move(logger)) {
-		if (enable_) tmStart = system_clock_w::now();
+		if (enable_) {
+			tmStart = system_clock_w::now();
+		}
 	}
 	~QueryStatCalculator() {
 		if (enable_) {
 			auto time = std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - tmStart);
-			if (hitter_ && time >= threshold_) hitter_(false, time);
+			if (hitter_ && time >= threshold_) {
+				hitter_(false, time);
+			}
 
 			if constexpr (Logger<T>::isEnabled) {
 				logger_.Dump(time);
@@ -74,7 +80,9 @@ public:
 	void LockHit() {
 		if (enable_ && hitter_) {
 			auto time = std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - tmStart);
-			if (time >= threshold_) hitter_(true, time);
+			if (time >= threshold_) {
+				hitter_(true, time);
+			}
 		}
 	}
 

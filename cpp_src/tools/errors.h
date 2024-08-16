@@ -3,20 +3,20 @@
 #include <iostream>
 #include <string>
 #include <string_view>
-#include "core/type_consts.h"
+#include "core/type_formats.h"
 #include "estl/intrusive_ptr.h"
 
 #ifdef REINDEX_CORE_BUILD
 #include "debug/backtrace.h"
-#include "spdlog/fmt/bundled/printf.h"
+#include "fmt/printf.h"
 #endif	// REINDEX_CORE_BUILD
 
 namespace reindexer {
 
 #if defined(REINDEX_CORE_BUILD)
 template <typename... Args>
-void assertf_fmt(const char *fmt, const Args &...args) {
-	fmt::fprintf(std::cerr, fmt, args...);
+void assertf_fmt(const char* fmt, const Args&... args) {
+	fmt::fprintf(stderr, fmt, args...);
 }
 #if defined(NDEBUG)
 #define assertf(...) ((void)0)
@@ -75,7 +75,7 @@ public:
 			}
 		}
 	}
-	Error(ErrorCode code, const char *what) noexcept : code_{code} {
+	Error(ErrorCode code, const char* what) noexcept : code_{code} {
 		if (code_ != errOK) {
 			try {
 				what_ = make_intrusive<WhatT>(what);
@@ -84,26 +84,26 @@ public:
 			}
 		}
 	}
-	Error(const std::exception &e) noexcept : code_{errSystem} {
+	Error(const std::exception& e) noexcept : code_{errSystem} {
 		try {
 			what_ = make_intrusive<WhatT>(e.what());
 		} catch (...) {
 			what_ = defaultErrorText_;
 		}
 	}
-	Error(const Error &) noexcept = default;
-	Error(Error &&) noexcept = default;
-	Error &operator=(const Error &) noexcept = default;
-	Error &operator=(Error &&) noexcept = default;
+	Error(const Error&) noexcept = default;
+	Error(Error&&) noexcept = default;
+	Error& operator=(const Error&) noexcept = default;
+	Error& operator=(Error&&) noexcept = default;
 
 #ifdef REINDEX_CORE_BUILD
 	template <typename... Args>
-	Error(ErrorCode code, const char *fmt, const Args &...args) noexcept : code_{code} {
+	Error(ErrorCode code, const char* fmt, const Args&... args) noexcept : code_{code} {
 		if (code_ != errOK) {
 			try {
 				try {
 					what_ = make_intrusive<WhatT>(fmt::sprintf(fmt, args...));
-				} catch (const fmt::FormatError &) {
+				} catch (const std::exception&) {
 					assertf_dbg(false, "Incorrect error format: '%s'", fmt);
 					what_ = make_intrusive<WhatT>(fmt);
 				}
@@ -114,7 +114,7 @@ public:
 	}
 #endif	// REINDEX_CORE_BUILD
 
-	[[nodiscard]] const std::string &what() const & noexcept {
+	[[nodiscard]] const std::string& what() const& noexcept {
 		static const std::string noerr;
 		return what_ ? *what_ : noerr;
 	}
@@ -129,8 +129,8 @@ public:
 	[[nodiscard]] bool ok() const noexcept { return code_ == errOK; }
 
 	explicit operator bool() const noexcept { return !ok(); }
-	[[nodiscard]] bool operator==(const Error &other) const noexcept { return code() == other.code() && what() == other.what(); }
-	[[nodiscard]] bool operator!=(const Error &other) const noexcept { return !(*this == other); }
+	[[nodiscard]] bool operator==(const Error& other) const noexcept { return code() == other.code() && what() == other.what(); }
+	[[nodiscard]] bool operator!=(const Error& other) const noexcept { return !(*this == other); }
 
 private:
 	WhatPtr what_;

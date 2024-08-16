@@ -26,7 +26,7 @@ namespace reindexer {
 		case CondDWithin:
 			break;
 	}
-	throw Error(errForbidden, "Not invertible conditional operator '%s(%d)' in query", CondTypeToStr(cond), cond);
+	throw Error(errForbidden, "Not invertible conditional operator '%s(%s)' in query", CondTypeToStr(cond), CondTypeToStrShort(cond));
 }
 
 [[nodiscard]] CondType InvertNotCondition(CondType cond) {
@@ -49,7 +49,7 @@ namespace reindexer {
 		case CondDWithin:
 			break;
 	}
-	throw Error(errForbidden, "Not invertible conditional operator '%s(%d)' in query", CondTypeToStr(cond), cond);
+	throw Error(errForbidden, "Not invertible conditional operator '%s(%s)' in query", CondTypeToStr(cond), CondTypeToStrShort(cond));
 }
 
 [[nodiscard]] std::string_view CondTypeToStr(CondType t) {

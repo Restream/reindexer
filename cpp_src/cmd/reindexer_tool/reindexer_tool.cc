@@ -35,7 +35,7 @@ static void InstallLogLevel(const std::vector<std::string>& args) {
 				std::cout << buf << std::endl;
 			}
 		},
-		reindexer::LoggerPolicy::WithoutLocks);
+		reindexer::LoggerPolicy::WithoutLocks, llevel);
 }
 
 }  // namespace reindexer_tool
@@ -161,11 +161,15 @@ int main(int argc, char* argv[]) {
 		CommandsProcessor<reindexer::client::CoroReindexer> commandsProcessor(args::get(outFileName), args::get(fileName),
 																			  args::get(connThreads), config);
 		err = commandsProcessor.Connect(dsn, reindexer::client::ConnectOpts().CreateDBIfMissing(createDBF && args::get(createDBF)));
-		if (err.ok()) ok = commandsProcessor.Run(args::get(command));
+		if (err.ok()) {
+			ok = commandsProcessor.Run(args::get(command));
+		}
 	} else if (checkIfStartsWithCS("builtin://"sv, dsn)) {
 		CommandsProcessor<reindexer::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName), args::get(connThreads));
 		err = commandsProcessor.Connect(dsn, ConnectOpts().DisableReplication());
-		if (err.ok()) ok = commandsProcessor.Run(args::get(command));
+		if (err.ok()) {
+			ok = commandsProcessor.Run(args::get(command));
+		}
 	} else {
 #ifdef _WIN32
 		std::cerr << "Invalid DSN format: " << dsn << " Must begin from cproto:// or builtin://" << std::endl;

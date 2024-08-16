@@ -42,7 +42,9 @@ int main(int argc, char** argv) {
 
 	shared_ptr<Reindexer> DB = std::make_shared<Reindexer>();
 	auto err = DB->Connect("builtin://" + kStoragePath);
-	if (!err.ok()) return err.code();
+	if (!err.ok()) {
+		return err.code();
+	}
 
 	JoinItems joinItems(DB.get(), 50'000);
 	ApiTvSimple apiTvSimple(DB.get(), "ApiTvSimple", kItemsInBenchDataset);
@@ -54,31 +56,49 @@ int main(int argc, char** argv) {
 	ApiEncDec decoding(DB.get(), "EncDec");
 
 	err = apiTvSimple.Initialize();
-	if (!err.ok()) return err.code();
+	if (!err.ok()) {
+		return err.code();
+	}
 
 	err = apiTvSimpleComparators.Initialize();
-	if (!err.ok()) return err.code();
+	if (!err.ok()) {
+		return err.code();
+	}
 
 	err = apiTvSimpleSparse.Initialize();
-	if (!err.ok()) return err.code();
+	if (!err.ok()) {
+		return err.code();
+	}
 
 	err = joinItems.Initialize();
-	if (!err.ok()) return err.code();
+	if (!err.ok()) {
+		return err.code();
+	}
 
 	err = apiTvComposite.Initialize();
-	if (!err.ok()) return err.code();
+	if (!err.ok()) {
+		return err.code();
+	}
 
 	err = geometry.Initialize();
-	if (!err.ok()) return err.code();
+	if (!err.ok()) {
+		return err.code();
+	}
 
 	err = aggregation.Initialize();
-	if (!err.ok()) return err.code();
+	if (!err.ok()) {
+		return err.code();
+	}
 
 	err = decoding.Initialize();
-	if (!err.ok()) return err.code();
+	if (!err.ok()) {
+		return err.code();
+	}
 
 	::benchmark::Initialize(&argc, argv);
-	if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
+	if (::benchmark::ReportUnrecognizedArguments(argc, argv)) {
+		return 1;
+	}
 
 	joinItems.RegisterAllCases();
 	apiTvSimple.RegisterAllCases();

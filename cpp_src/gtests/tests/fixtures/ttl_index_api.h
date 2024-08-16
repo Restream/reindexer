@@ -68,7 +68,9 @@ public:
 			for (size_t i = 0; i < 10; ++i) {
 				std::this_thread::sleep_for(kStep);
 				count = GetItemsCount();
-				if (count == 0) break;
+				if (count == 0) {
+					break;
+				}
 			}
 		}
 		return count;

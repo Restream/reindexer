@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "core/defnsconfigs.h"
+#include "core/formatters/lsn_fmt.h"
 #include "servercontrol.h"
 
 using namespace reindexer;
@@ -14,7 +15,9 @@ public:
 	class ServerControlVec : public std::vector<ServerControl> {
 	public:
 		~ServerControlVec() {
-			for (auto& node : *this) node.Stop();
+			for (auto& node : *this) {
+				node.Stop();
+			}
 		}
 	};
 
@@ -24,9 +27,9 @@ public:
 		ReplicationTestState state1, state2;
 		while (true) {
 			now += pause;
-			ASSERT_TRUE(now < kMaxSyncTime) << "Wait sync is too long. s1 lsn: " << state1.lsn << "; s2 lsn: " << state2.lsn
-											<< "; s1 count: " << state1.dataCount << "; s2 count: " << state2.dataCount
-											<< " s1 hash: " << state1.dataHash << "; s2 hash: " << state2.dataHash;
+			ASSERT_TRUE(now < kMaxSyncTime) << fmt::format(
+				"Wait sync is too long. s1 lsn: {}; s2 lsn: {}; s1 count: {}; s2 count: {}; s1 hash: {}; s2 hash: {}", state1.lsn,
+				state2.lsn, state1.dataCount, state2.dataCount, state1.dataHash, state2.dataHash);
 			state1 = s1.Get()->GetState(nsName);
 			state2 = s2.Get()->GetState(nsName);
 			if (state1.lsn == state2.lsn && state1.dataCount == state2.dataCount && state1.dataHash == state2.dataHash) {
@@ -714,8 +717,12 @@ TEST_F(ReplicationSlaveSlaveApi, NodeWithMasterAndSlaveNs1) {
 	}
 	{
 		std::vector<int> results_data;
-		for (unsigned int i = 0; i < n; i++) results_data.push_back(c1 + i);
-		for (unsigned int i = 0; i < n; i++) results_data.push_back(c2 + i);
+		for (unsigned int i = 0; i < n; i++) {
+			results_data.push_back(c1 + i);
+		}
+		for (unsigned int i = 0; i < n; i++) {
+			results_data.push_back(c2 + i);
+		}
 
 		std::vector<int> results_3;
 		testns3.GetData(slave, results_3);
@@ -771,8 +778,12 @@ TEST_F(ReplicationSlaveSlaveApi, NodeWithMasterAndSlaveNs2) {
 	}
 	{
 		std::vector<int> results_data;
-		for (unsigned int i = 0; i < n; i++) results_data.push_back(c1 + i);
-		for (unsigned int i = 0; i < n; i++) results_data.push_back(c2 + i);
+		for (unsigned int i = 0; i < n; i++) {
+			results_data.push_back(c1 + i);
+		}
+		for (unsigned int i = 0; i < n; i++) {
+			results_data.push_back(c2 + i);
+		}
 
 		std::vector<int> results_3;
 		testns3.GetData(slave, results_3);
@@ -979,7 +990,9 @@ TEST_F(ReplicationSlaveSlaveApi, RestrictUpdates) {
 			ASSERT_TRUE(err.ok()) << err.what();
 			master.Get()->api.Upsert(nsName, item);
 			ASSERT_TRUE(err.ok()) << err.what();
-			if (i % 100 == 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			if (i % 100 == 0) {
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			}
 		}
 	};
 
@@ -1258,7 +1271,7 @@ public:
 			ASSERT_TRUE(err.ok()) << err.what();
 			master.Get()->api.Upsert("ns1", item);
 		}
-	};
+	}
 
 	void ChangeServerId(bool isMaster, ServerControl& node, int newServerId, int port) {
 		if (isMaster) {

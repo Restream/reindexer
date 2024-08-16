@@ -99,13 +99,15 @@ public:
 										IndexDeclaration{kFieldNameAge, "tree", "int", IndexOpts(), 0},
 										IndexDeclaration{kFieldNameName, "tree", "string", IndexOpts(), 0},
 										IndexDeclaration{kFieldNameDescription, "text", "string", IndexOpts{}, 0},
-										IndexDeclaration{kFieldNameYearSparse, "hash", "string", IndexOpts().Sparse(), 0}});
+										IndexDeclaration{kFieldNameYearSparse, "hash", "string", IndexOpts().Sparse(), 0},
+										IndexDeclaration{kFieldNameRegion, "hash", "int", IndexOpts{}, 0}});
 		addIndexFields(joinNs, kFieldNameId, {{kFieldNameId, reindexer::KeyValueType::Int{}}});
 		addIndexFields(joinNs, kFieldNameYear, {{kFieldNameYear, reindexer::KeyValueType::Int{}}});
 		addIndexFields(joinNs, kFieldNameAge, {{kFieldNameAge, reindexer::KeyValueType::Int{}}});
 		addIndexFields(joinNs, kFieldNameName, {{kFieldNameName, reindexer::KeyValueType::String{}}});
 		addIndexFields(joinNs, kFieldNameDescription, {{kFieldNameDescription, reindexer::KeyValueType::String{}}});
 		addIndexFields(joinNs, kFieldNameYearSparse, {{kFieldNameYearSparse, reindexer::KeyValueType::String{}}});
+		addIndexFields(joinNs, kFieldNameRegion, {{kFieldNameRegion, reindexer::KeyValueType::Int{}}});
 
 		err = rt.reindexer->OpenNamespace(testSimpleNs);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -283,12 +285,16 @@ public:
 		if (ser.Len()) {
 			ser << "\nExpected values:\n";
 			for (size_t i = 0; i < expectedValues.size(); ++i) {
-				if (i != 0) ser << ", ";
+				if (i != 0) {
+					ser << ", ";
+				}
 				expectedValues[i].Dump(ser);
 			}
 			ser << "\nObtained values:\n";
 			for (size_t i = 0; i < qr.Count(); ++i) {
-				if (i != 0) ser << ", ";
+				if (i != 0) {
+					ser << ", ";
+				}
 				reindexer::Item item(qr[i].GetItem(false));
 				const reindexer::Variant fieldValue = item[fieldName];
 				fieldValue.Dump(ser);
@@ -345,8 +351,8 @@ protected:
 		Commit(forcedSortOffsetNs);
 	}
 
-	void FillTestJoinNamespace() {
-		for (int i = 0; i < 300; ++i) {
+	void FillTestJoinNamespace(int start, int count) {
+		for (int i = start; i < start + count; ++i) {
 			Item item = NewItem(joinNs);
 			item[kFieldNameId] = i;
 			item[kFieldNameYear] = 1900 + i;
@@ -357,6 +363,7 @@ protected:
 			if (rand() % 4 != 0) {
 				item[kFieldNameYearSparse] = std::to_string(rand() % 50 + 2000);
 			}
+			item[kFieldNameRegion] = rand() % 10;
 			Upsert(joinNs, item);
 			saveItem(std::move(item), joinNs);
 		}
@@ -436,7 +443,9 @@ protected:
 
 	std::vector<Variant> ForcedSortOffsetTestExpectedResults(size_t offset, size_t limit, bool desc,
 															 const std::vector<int>& forcedSortOrder, Column column) const {
-		if (limit == 0 || offset >= forcedSortOffsetValues.size()) return {};
+		if (limit == 0 || offset >= forcedSortOffsetValues.size()) {
+			return {};
+		}
 		std::vector<int> res;
 		res.resize(forcedSortOffsetValues.size());
 		std::transform(
@@ -464,7 +473,9 @@ protected:
 																							  bool desc2Column,
 																							  const std::vector<int>& forcedSortOrder,
 																							  Column firstSortColumn) {
-		if (limit == 0 || offset >= forcedSortOffsetValues.size()) return {};
+		if (limit == 0 || offset >= forcedSortOffsetValues.size()) {
+			return {};
+		}
 		if (firstSortColumn == First) {
 			std::sort(forcedSortOffsetValues.begin(), forcedSortOffsetValues.end(),
 					  [desc1Column, desc2Column](std::pair<int, int> lhs, std::pair<int, int> rhs) {
@@ -581,7 +592,9 @@ protected:
 	std::vector<std::string> RandStrVector(size_t count) {
 		std::vector<std::string> res;
 		res.reserve(count);
-		for (size_t i = 0; i < count; ++i) res.emplace_back(RandString());
+		for (size_t i = 0; i < count; ++i) {
+			res.emplace_back(RandString());
+		}
 		return res;
 	}
 
@@ -618,13 +631,17 @@ protected:
 			item[kFieldNameUuid] = randUuid();
 			std::vector<reindexer::Uuid> arr;
 			arr.reserve(s);
-			for (size_t i = 0; i < s; ++i) arr.emplace_back(randUuid());
+			for (size_t i = 0; i < s; ++i) {
+				arr.emplace_back(randUuid());
+			}
 			item[kFieldNameUuidArr] = std::move(arr);
 		} else {
 			item[kFieldNameUuid] = randStrUuid();
 			std::vector<std::string> arr;
 			arr.reserve(s);
-			for (size_t i = 0; i < s; ++i) arr.emplace_back(randStrUuid());
+			for (size_t i = 0; i < s; ++i) {
+				arr.emplace_back(randStrUuid());
+			}
 			item[kFieldNameUuidArr] = std::move(arr);
 		}
 
@@ -922,7 +939,9 @@ protected:
 			std::string name;
 			int year;
 			bool operator<(const MultifieldFacetItem& other) const {
-				if (year == other.year) return name < other.name;
+				if (year == other.year) {
+					return name < other.name;
+				}
 				return year > other.year;
 			}
 		};
@@ -1158,6 +1177,7 @@ protected:
 	const char* kFieldNameCountries = "countries";
 	const char* kFieldNameAge = "age";
 	const char* kFieldNameDescription = "description";
+	const char* kFieldNameRegion = "region";
 	const char* kFieldNameRate = "rate";
 	const char* kFieldNameIsDeleted = "is_deleted";
 	const char* kFieldNameActor = "actor";

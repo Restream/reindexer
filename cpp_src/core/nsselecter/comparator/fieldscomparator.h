@@ -16,7 +16,9 @@ public:
 	bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		if (ctx_.size() > 1) {
 			for (const auto& c : ctx_) {
-				if (!compare(item, c)) return false;
+				if (!compare(item, c)) {
+					return false;
+				}
 			}
 			return true;
 		}
@@ -130,7 +132,9 @@ private:
 	bool compare(const PayloadValue& item, const Context&);
 	void validateTypes(KeyValueType lType, KeyValueType rType) const;
 	inline static bool compareTypes(KeyValueType lType, KeyValueType rType) noexcept {
-		if (lType.IsSame(rType)) return true;
+		if (lType.IsSame(rType)) {
+			return true;
+		}
 		return lType.EvaluateOneOf(
 			[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) noexcept {
 				return rType.EvaluateOneOf(

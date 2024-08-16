@@ -18,13 +18,13 @@ using namespace reindexer;
 
 #ifndef DEBUG_FT
 struct DataStructHash {
-	inline size_t operator()(const std::wstring &ent) const noexcept { return Hash(ent); }
+	inline size_t operator()(const std::wstring& ent) const noexcept { return Hash(ent); }
 };
 struct DataStructEQ {
-	inline bool operator()(const std::wstring &ent, const std::wstring &ent1) const noexcept { return ent == ent1; }
+	inline bool operator()(const std::wstring& ent, const std::wstring& ent1) const noexcept { return ent == ent1; }
 };
 struct DataStructLess {
-	inline bool operator()(const std::wstring &ent, const std::wstring &ent1) const noexcept { return ent < ent1; }
+	inline bool operator()(const std::wstring& ent, const std::wstring& ent1) const noexcept { return ent < ent1; }
 };
 template <typename T1>
 using data_map = tsl::hopscotch_map<std::wstring, T1, DataStructHash, DataStructEQ>;
@@ -47,10 +47,10 @@ public:
 	typedef shared_ptr<BaseHolder> Ptr;
 	BaseHolder() {}
 
-	BaseHolder(BaseHolder &rhs) = delete;
-	BaseHolder(BaseHolder &&) noexcept = delete;
-	BaseHolder &operator=(const BaseHolder &) = delete;
-	BaseHolder &operator=(BaseHolder &&) noexcept = delete;
+	BaseHolder(BaseHolder& rhs) = delete;
+	BaseHolder(BaseHolder&&) noexcept = delete;
+	BaseHolder& operator=(const BaseHolder&) = delete;
+	BaseHolder& operator=(BaseHolder&&) noexcept = delete;
 
 	void ClearTemp() {
 		data_map<IdRelSet> tmp_data;
@@ -62,10 +62,10 @@ public:
 		ClearTemp();
 		data_.clear();
 	}
-	void SetConfig(const std::unique_ptr<FtFuzzyConfig> &cfg) { cfg_ = *cfg.get(); }
-	DIt GetData(const wchar_t *key);
+	void SetConfig(const std::unique_ptr<FtFuzzyConfig>& cfg) { cfg_ = *cfg.get(); }
+	DIt GetData(const wchar_t* key);
 	void SetSize(uint32_t size, VDocIdType id, int filed);
-	void AddDada(const wchar_t *key, VDocIdType id, int pos, int field);
+	void AddDada(const wchar_t* key, VDocIdType id, int pos, int field);
 	void Commit();
 
 public:

@@ -13,7 +13,9 @@ FullTextDumper& FullTextDumper::Init() {
 }
 
 void FullTextDumper::LogFinalData(const reindexer::QueryResults& result) {
-	if (!std::getenv(env.c_str())) return;
+	if (!std::getenv(env.c_str())) {
+		return;
+	}
 
 	startThread();
 	std::vector<std::string> tmp_buffer;
@@ -29,7 +31,9 @@ void FullTextDumper::LogFinalData(const reindexer::QueryResults& result) {
 	new_info_ = true;
 }
 void FullTextDumper::Log(const std::string& data) {
-	if (!std::getenv(env.c_str())) return;
+	if (!std::getenv(env.c_str())) {
+		return;
+	}
 
 	startThread();
 	std::lock_guard<std::mutex> lk(cv_m);
@@ -38,7 +42,9 @@ void FullTextDumper::Log(const std::string& data) {
 }
 
 void FullTextDumper::AddResultData(const std::string& reqest) {
-	if (!std::getenv(env.c_str())) return;
+	if (!std::getenv(env.c_str())) {
+		return;
+	}
 
 	startThread();
 	std::vector<std::string> tmp_buffer;
@@ -95,7 +101,9 @@ void FullTextDumper::writeToFile() {
 			}
 			file.close();
 		}
-		if (stoped_ || !std::getenv(env.c_str())) return;
+		if (stoped_ || !std::getenv(env.c_str())) {
+			return;
+		}
 
 		std::unique_lock<std::mutex> lk(cv_m);
 		if (cv.wait_for(lk, seconds(write_timeout_seconds), [this] { return stoped_.load(); })) {
@@ -112,10 +120,14 @@ FullTextDumper::~FullTextDumper() {
 	}
 
 	// static class destructor - nothing conflicrts here
-	if (buffer_.empty()) return;
+	if (buffer_.empty()) {
+		return;
+	}
 
 	std::ofstream file(file_path, std::ios::app);
-	if (!file.is_open()) return;
+	if (!file.is_open()) {
+		return;
+	}
 	for (const auto& data : buffer_) {
 		file << data << "\n";
 	}

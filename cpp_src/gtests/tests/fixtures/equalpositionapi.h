@@ -43,7 +43,9 @@ protected:
 		vec.reserve(length);
 		for (size_t i = 0; i < static_cast<size_t>(length); ++i) {
 			vec.emplace_back(val);
-			if (i % multipleCond) val += initVal;
+			if (i % multipleCond) {
+				val += initVal;
+			}
 		}
 		return vec;
 	}

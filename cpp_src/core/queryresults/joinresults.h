@@ -73,7 +73,9 @@ public:
 
 	JoinedFieldIterator(const NamespaceResults* parent, const ItemOffsets& offsets, uint8_t joinedFieldOrder) noexcept
 		: joinRes_(parent), offsets_(&offsets), order_(joinedFieldOrder) {
-		if (offsets_->size() > 0) updateOffset();
+		if (offsets_->size() > 0) {
+			updateOffset();
+		}
 	}
 
 	bool operator==(const JoinedFieldIterator& other) const;

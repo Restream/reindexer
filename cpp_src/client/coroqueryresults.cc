@@ -12,7 +12,7 @@ using namespace reindexer::net;
 CoroQueryResults::CoroQueryResults(int fetchFlags)
 	: conn_(nullptr), fetchOffset_(0), fetchFlags_(fetchFlags), fetchAmount_(0), requestTimeout_(0) {}
 
-CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection *conn, NsArray &&nsArray, int fetchFlags, int fetchAmount,
+CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, int fetchFlags, int fetchAmount,
 								   seconds timeout)
 	: conn_(conn),
 	  nsArray_(std::move(nsArray)),
@@ -21,7 +21,7 @@ CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection *conn, NsAr
 	  fetchAmount_(fetchAmount),
 	  requestTimeout_(timeout) {}
 
-CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection *conn, NsArray &&nsArray, std::string_view rawResult, RPCQrId id,
+CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, std::string_view rawResult, RPCQrId id,
 								   int fetchFlags, int fetchAmount, seconds timeout)
 	: CoroQueryResults(conn, std::move(nsArray), fetchFlags, fetchAmount, timeout) {
 	Bind(rawResult, id);
@@ -61,7 +61,7 @@ void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id) {
 				RawResBufT::max_size(), rawResLen, fetchAmount_);
 		}
 		rawResult_.assign(copyStart, rawResult.end());
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		status_ = err;
 	}
 }
@@ -98,7 +98,9 @@ void CoroQueryResults::fetchNextResults() {
 h_vector<std::string_view, 1> CoroQueryResults::GetNamespaces() const {
 	h_vector<std::string_view, 1> ret;
 	ret.reserve(nsArray_.size());
-	for (auto &ns : nsArray_) ret.push_back(ns->name_);
+	for (auto& ns : nsArray_) {
+		ret.push_back(ns->name_);
+	}
 	return ret;
 }
 
@@ -107,14 +109,14 @@ TagsMatcher CoroQueryResults::getTagsMatcher(int nsid) const { return nsArray_[n
 class AdditionalRank : public IAdditionalDatasource<JsonBuilder> {
 public:
 	AdditionalRank(double r) noexcept : rank_(r) {}
-	void PutAdditionalFields(JsonBuilder &builder) const override final { builder.Put("rank()", rank_); }
-	IEncoderDatasourceWithJoins *GetJoinsDatasource() noexcept override final { return nullptr; }
+	void PutAdditionalFields(JsonBuilder& builder) const override final { builder.Put("rank()", rank_); }
+	IEncoderDatasourceWithJoins* GetJoinsDatasource() noexcept override final { return nullptr; }
 
 private:
 	double rank_;
 };
 
-void CoroQueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSerializer &wrser, bool withHdrLen) {
+void CoroQueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSerializer& wrser, bool withHdrLen) {
 	auto tm = qr_->getTagsMatcher(itemParams_.nsid);
 	JsonEncoder enc(&tm);
 	JsonBuilder builder(wrser, ObjType::TypePlain);
@@ -136,7 +138,7 @@ void CoroQueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSeri
 	}
 }
 
-Error CoroQueryResults::Iterator::GetMsgPack(WrSerializer &wrser, bool withHdrLen) {
+Error CoroQueryResults::Iterator::GetMsgPack(WrSerializer& wrser, bool withHdrLen) {
 	readNext();
 	int type = qr_->queryParams_.flags & kResultsFormatMask;
 	if (type == kResultsMsgPack) {
@@ -151,7 +153,7 @@ Error CoroQueryResults::Iterator::GetMsgPack(WrSerializer &wrser, bool withHdrLe
 	return errOK;
 }
 
-Error CoroQueryResults::Iterator::GetJSON(WrSerializer &wrser, bool withHdrLen) {
+Error CoroQueryResults::Iterator::GetJSON(WrSerializer& wrser, bool withHdrLen) {
 	readNext();
 	try {
 		switch (qr_->queryParams_.flags & kResultsFormatMask) {
@@ -169,13 +171,13 @@ Error CoroQueryResults::Iterator::GetJSON(WrSerializer &wrser, bool withHdrLen) 
 			default:
 				return Error(errParseBin, "Server returned data in unknown format %d", qr_->queryParams_.flags & kResultsFormatMask);
 		}
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 	return errOK;
 }
 
-Error CoroQueryResults::Iterator::GetCJSON(WrSerializer &wrser, bool withHdrLen) {
+Error CoroQueryResults::Iterator::GetCJSON(WrSerializer& wrser, bool withHdrLen) {
 	readNext();
 	try {
 		switch (qr_->queryParams_.flags & kResultsFormatMask) {
@@ -193,7 +195,7 @@ Error CoroQueryResults::Iterator::GetCJSON(WrSerializer &wrser, bool withHdrLen)
 			default:
 				return Error(errParseBin, "Server returned data in unknown format %d", qr_->queryParams_.flags & kResultsFormatMask);
 		}
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 	return errOK;
@@ -215,7 +217,7 @@ Item CoroQueryResults::Iterator::GetItem() {
 				break;
 			}
 			case kResultsJson: {
-				char *endp = nullptr;
+				char* endp = nullptr;
 				err = item.FromJSON(itemParams_.data, &endp);
 				break;
 			}
@@ -226,7 +228,7 @@ Item CoroQueryResults::Iterator::GetItem() {
 			return item;
 		}
 		return Item();
-	} catch (const Error &) {
+	} catch (const Error&) {
 		return Item();
 	}
 }
@@ -248,7 +250,9 @@ std::string_view CoroQueryResults::Iterator::GetRaw() {
 }
 
 void CoroQueryResults::Iterator::readNext() {
-	if (nextPos_ != 0) return;
+	if (nextPos_ != 0) {
+		return;
+	}
 
 	std::string_view rawResult(qr_->rawResult_.data(), qr_->rawResult_.size());
 
@@ -261,12 +265,12 @@ void CoroQueryResults::Iterator::readNext() {
 			(void)joinedCnt;
 		}
 		nextPos_ = pos_ + ser.Pos();
-	} catch (const Error &err) {
-		const_cast<CoroQueryResults *>(qr_)->status_ = err;
+	} catch (const Error& err) {
+		const_cast<CoroQueryResults*>(qr_)->status_ = err;
 	}
 }
 
-CoroQueryResults::Iterator &CoroQueryResults::Iterator::operator++() {
+CoroQueryResults::Iterator& CoroQueryResults::Iterator::operator++() {
 	try {
 		readNext();
 		idx_++;
@@ -274,11 +278,11 @@ CoroQueryResults::Iterator &CoroQueryResults::Iterator::operator++() {
 		nextPos_ = 0;
 
 		if (idx_ != qr_->queryParams_.qcount && idx_ == qr_->queryParams_.count + qr_->fetchOffset_) {
-			const_cast<CoroQueryResults *>(qr_)->fetchNextResults();
+			const_cast<CoroQueryResults*>(qr_)->fetchNextResults();
 			pos_ = 0;
 		}
-	} catch (const Error &err) {
-		const_cast<CoroQueryResults *>(qr_)->status_ = err;
+	} catch (const Error& err) {
+		const_cast<CoroQueryResults*>(qr_)->status_ = err;
 	}
 
 	return *this;

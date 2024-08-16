@@ -245,7 +245,9 @@ struct StringMapEntryCleaner {
 
 	template <typename T, std::enable_if_t<RequiresStringHolder<T>(), bool> = true>
 	void free_node(const T& str) const {
-		if (needSaveExpiredStrings_) strHolder_.Add(str);
+		if (needSaveExpiredStrings_) {
+			strHolder_.Add(str);
+		}
 	}
 
 	template <typename T, std::enable_if_t<RequiresStringHolder<T>(), bool> = true>

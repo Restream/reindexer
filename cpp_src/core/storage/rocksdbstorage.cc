@@ -25,63 +25,87 @@ static void toReadOptions(const StorageOpts& opts, rocksdb::ReadOptions& ropts) 
 RocksDbStorage::RocksDbStorage() = default;
 
 Error RocksDbStorage::Read(const StorageOpts& opts, std::string_view key, std::string& value) {
-	if (!db_) throw Error(errParams, kStorageNotInitialized);
+	if (!db_) {
+		throw Error(errParams, kStorageNotInitialized);
+	}
 
 	rocksdb::ReadOptions options;
 	toReadOptions(opts, options);
 	rocksdb::Status status = db_->Get(options, rocksdb::Slice(key.data(), key.size()), &value);
-	if (status.ok()) return Error();
+	if (status.ok()) {
+		return Error();
+	}
 	return Error(status.IsNotFound() ? errNotFound : errLogic, status.ToString());
 }
 
 Error RocksDbStorage::Write(const StorageOpts& opts, std::string_view key, std::string_view value) {
-	if (!db_) throw Error(errParams, kStorageNotInitialized);
+	if (!db_) {
+		throw Error(errParams, kStorageNotInitialized);
+	}
 
 	rocksdb::WriteOptions options;
 	toWriteOptions(opts, options);
 	rocksdb::Status status = db_->Put(options, rocksdb::Slice(key.data(), key.size()), rocksdb::Slice(value.data(), value.size()));
-	if (status.ok()) return Error();
+	if (status.ok()) {
+		return Error();
+	}
 	return Error(status.IsNotFound() ? errNotFound : errLogic, status.ToString());
 }
 
 Error RocksDbStorage::Write(const StorageOpts& opts, UpdatesCollection& buffer) {
-	if (!db_) throw Error(errParams, kStorageNotInitialized);
+	if (!db_) {
+		throw Error(errParams, kStorageNotInitialized);
+	}
 
 	rocksdb::WriteOptions options;
 	toWriteOptions(opts, options);
 	RocksDbBatchBuffer* batchBuffer = static_cast<RocksDbBatchBuffer*>(&buffer);
 	rocksdb::Status status = db_->Write(options, &batchBuffer->batchWrite_);
-	if (status.ok()) return Error();
+	if (status.ok()) {
+		return Error();
+	}
 	return Error(status.IsNotFound() ? errNotFound : errLogic, status.ToString());
 }
 
 Error RocksDbStorage::Delete(const StorageOpts& opts, std::string_view key) {
-	if (!db_) throw Error(errParams, kStorageNotInitialized);
+	if (!db_) {
+		throw Error(errParams, kStorageNotInitialized);
+	}
 
 	rocksdb::WriteOptions options;
 	toWriteOptions(opts, options);
 	rocksdb::Status status = db_->Delete(options, rocksdb::Slice(key.data(), key.size()));
-	if (status.ok()) return Error();
+	if (status.ok()) {
+		return Error();
+	}
 	return Error(errLogic, status.ToString());
 }
 
 Error RocksDbStorage::Repair(const std::string& path) {
 	rocksdb::Options options;
 	auto status = rocksdb::RepairDB(path, options);
-	if (status.ok()) return Error();
+	if (status.ok()) {
+		return Error();
+	}
 	return Error(errLogic, status.ToString());
 }
 
 Snapshot::Ptr RocksDbStorage::MakeSnapshot() {
-	if (!db_) throw Error(errParams, kStorageNotInitialized);
+	if (!db_) {
+		throw Error(errParams, kStorageNotInitialized);
+	}
 	const rocksdb::Snapshot* ldbSnapshot = db_->GetSnapshot();
 	assertrx(ldbSnapshot);
 	return std::make_shared<RocksDbSnapshot>(ldbSnapshot);
 }
 
 void RocksDbStorage::ReleaseSnapshot(Snapshot::Ptr snapshot) {
-	if (!db_) throw Error(errParams, kStorageNotInitialized);
-	if (!snapshot) throw Error(errParams, "Storage pointer is null");
+	if (!db_) {
+		throw Error(errParams, kStorageNotInitialized);
+	}
+	if (!snapshot) {
+		throw Error(errParams, "Storage pointer is null");
+	}
 	const RocksDbSnapshot* levelDbSnpshot = static_cast<const RocksDbSnapshot*>(snapshot.get());
 	db_->ReleaseSnapshot(levelDbSnpshot->snapshot_);
 	snapshot.reset();
@@ -109,7 +133,9 @@ Error RocksDbStorage::Reopen() {
 }
 
 Cursor* RocksDbStorage::GetCursor(StorageOpts& opts) {
-	if (!db_) throw Error(errParams, kStorageNotInitialized);
+	if (!db_) {
+		throw Error(errParams, kStorageNotInitialized);
+	}
 	rocksdb::ReadOptions options;
 	toReadOptions(opts, options);
 	options.fill_cache = false;

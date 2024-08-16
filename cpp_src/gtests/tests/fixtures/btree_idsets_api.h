@@ -39,8 +39,12 @@ protected:
 			Upsert(default_namespace, item);
 			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
-			if (i % 100 == 0) currStrValue = RandString();
-			if (i % 200 == 0) currIntValue = rand() % 100000;
+			if (i % 100 == 0) {
+				currStrValue = RandString();
+			}
+			if (i % 200 == 0) {
+				currIntValue = rand() % 100000;
+			}
 		}
 
 		lastStrValue = currStrValue;
@@ -61,7 +65,9 @@ protected:
 			Upsert(joinedNsName, item);
 			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
-			if (i % 300) currValue = rand() % 10000;
+			if (i % 300) {
+				currValue = rand() % 10000;
+			}
 		}
 		Commit(joinedNsName);
 	}

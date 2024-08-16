@@ -10,7 +10,7 @@ TEST_F(BtreeIdsetsApi, SelectByStringField) {
 	std::string strValueToCheck = lastStrValue;
 	Error err = rt.reindexer->Select(Query(default_namespace).Not().Where(kFieldOne, CondEq, strValueToCheck), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
-	for (auto &it : qr) {
+	for (auto& it : qr) {
 		Item item = it.GetItem(false);
 		Variant kr = item[kFieldOne];
 		EXPECT_TRUE(kr.Type().Is<reindexer::KeyValueType::String>());
@@ -24,7 +24,7 @@ TEST_F(BtreeIdsetsApi, SelectByIntField) {
 	QueryResults qr;
 	Error err = rt.reindexer->Select(Query(default_namespace).Where(kFieldTwo, CondGe, Variant(static_cast<int>(boundaryValue))), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
-	for (auto &it : qr) {
+	for (auto& it : qr) {
 		Item item = it.GetItem(false);
 		Variant kr = item[kFieldTwo];
 		EXPECT_TRUE(kr.Type().Is<reindexer::KeyValueType::Int>());
@@ -44,7 +44,7 @@ TEST_F(BtreeIdsetsApi, SelectByBothFields) {
 										 .Where(kFieldTwo, CondGe, Variant(static_cast<int>(boundaryValue))),
 									 qr);
 	EXPECT_TRUE(err.ok()) << err.what();
-	for (auto &it : qr) {
+	for (auto& it : qr) {
 		Item item = it.GetItem(false);
 		Variant krOne = item[kFieldOne];
 		EXPECT_TRUE(krOne.Type().Is<reindexer::KeyValueType::String>());
@@ -154,7 +154,9 @@ TEST_F(ReindexerApi, BtreeUnbuiltIndexIteratorsTest) {
 	pos = ids2.size() - 1;
 	while (bIt2.Next()) {
 		EXPECT_TRUE(bIt2.Value() == ids2[pos]) << "iterator value = " << bIt2.Value() << "; expected value = " << ids2[pos];
-		if (pos) --pos;
+		if (pos) {
+			--pos;
+		}
 	}
 	EXPECT_TRUE(pos == 0);
 	EXPECT_TRUE(!bIt2.Next());

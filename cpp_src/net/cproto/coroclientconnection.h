@@ -36,14 +36,14 @@ public:
 		return ret;
 	}
 	CoroRPCAnswer() = default;
-	CoroRPCAnswer(const Error &error) : status_(error) {}
-	CoroRPCAnswer(const CoroRPCAnswer &other) = delete;
-	CoroRPCAnswer(CoroRPCAnswer &&other) = default;
-	CoroRPCAnswer &operator=(CoroRPCAnswer &&other) = default;
-	CoroRPCAnswer &operator=(const CoroRPCAnswer &other) = delete;
+	CoroRPCAnswer(const Error& error) : status_(error) {}
+	CoroRPCAnswer(const CoroRPCAnswer& other) = delete;
+	CoroRPCAnswer(CoroRPCAnswer&& other) = default;
+	CoroRPCAnswer& operator=(CoroRPCAnswer&& other) = default;
+	CoroRPCAnswer& operator=(const CoroRPCAnswer& other) = delete;
 
-	void EnsureHold(chunk &&ch) {
-		ch.append(std::string_view(reinterpret_cast<const char *>(data_.data()), data_.size()));
+	void EnsureHold(chunk&& ch) {
+		ch.append(std::string_view(reinterpret_cast<const char*>(data_.data()), data_.size()));
 		storage_ = std::move(ch);
 		data_ = {storage_.data(), storage_.size()};
 	}
@@ -56,18 +56,18 @@ protected:
 };
 
 struct CommandParams {
-	CommandParams(CmdCode c, seconds n, milliseconds e, const IRdxCancelContext *ctx)
+	CommandParams(CmdCode c, seconds n, milliseconds e, const IRdxCancelContext* ctx)
 		: cmd(c), netTimeout(n), execTimeout(e), cancelCtx(ctx) {}
 	CmdCode cmd;
 	seconds netTimeout;
 	milliseconds execTimeout;
-	const IRdxCancelContext *cancelCtx;
+	const IRdxCancelContext* cancelCtx;
 };
 
 class CoroClientConnection {
 public:
-	using UpdatesHandlerT = std::function<void(const CoroRPCAnswer &ans)>;
-	using FatalErrorHandlerT = std::function<void(const Error &err)>;
+	using UpdatesHandlerT = std::function<void(const CoroRPCAnswer& ans)>;
+	using FatalErrorHandlerT = std::function<void(const Error& err)>;
 
 	struct Options {
 		Options()
@@ -109,16 +109,16 @@ public:
 	CoroClientConnection();
 	~CoroClientConnection();
 
-	void Start(ev::dynamic_loop &loop, ConnectData &&connectData);
+	void Start(ev::dynamic_loop& loop, ConnectData&& connectData);
 	void Stop();
 	bool IsRunning() const noexcept { return isRunning_; }
-	Error Status(seconds netTimeout, milliseconds execTimeout, const IRdxCancelContext *ctx);
+	Error Status(seconds netTimeout, milliseconds execTimeout, const IRdxCancelContext* ctx);
 	seconds Now() const noexcept { return seconds(now_); }
 	void SetUpdatesHandler(UpdatesHandlerT handler) noexcept { updatesHandler_ = std::move(handler); }
 	void SetFatalErrorHandler(FatalErrorHandlerT handler) noexcept { fatalErrorHandler_ = std::move(handler); }
 
 	template <typename... Argss>
-	CoroRPCAnswer Call(const CommandParams &opts, const Argss &...argss) {
+	CoroRPCAnswer Call(const CommandParams& opts, const Argss&... argss) {
 		Args args;
 		args.reserve(sizeof...(argss));
 		return call(opts, args, argss...);
@@ -130,7 +130,7 @@ private:
 		uint32_t seq;
 		bool used;
 		seconds deadline;
-		const reindexer::IRdxCancelContext *cancelCtx;
+		const reindexer::IRdxCancelContext* cancelCtx;
 		coroutine::channel<CoroRPCAnswer> rspCh;
 	};
 
@@ -140,32 +140,32 @@ private:
 	};
 
 	template <typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const std::string_view &val, const Argss &...argss) {
+	inline CoroRPCAnswer call(const CommandParams& opts, Args& args, const std::string_view& val, const Argss&... argss) {
 		args.push_back(Variant(p_string(&val)));
 		return call(opts, args, argss...);
 	}
 	template <typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const std::string &val, const Argss &...argss) {
+	inline CoroRPCAnswer call(const CommandParams& opts, Args& args, const std::string& val, const Argss&... argss) {
 		args.push_back(Variant(p_string(&val)));
 		return call(opts, args, argss...);
 	}
 	template <typename T, typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const T &val, const Argss &...argss) {
+	inline CoroRPCAnswer call(const CommandParams& opts, Args& args, const T& val, const Argss&... argss) {
 		args.push_back(Variant(val));
 		return call(opts, args, argss...);
 	}
 
-	CoroRPCAnswer call(const CommandParams &opts, const Args &args);
-	Error callNoReply(const CommandParams &opts, uint32_t seq, const Args &args);
+	CoroRPCAnswer call(const CommandParams& opts, const Args& args);
+	Error callNoReply(const CommandParams& opts, uint32_t seq, const Args& args);
 
-	MarkedChunk packRPC(CmdCode cmd, uint32_t seq, const Args &args, const Args &ctxArgs);
-	void appendChunck(std::vector<char> &buf, chunk &&ch);
-	Error login(std::vector<char> &buf);
-	void closeConn(const Error &err) noexcept;
-	void handleFatalError(const Error &err) noexcept;
+	MarkedChunk packRPC(CmdCode cmd, uint32_t seq, const Args& args, const Args& ctxArgs);
+	void appendChunck(std::vector<char>& buf, chunk&& ch);
+	Error login(std::vector<char>& buf);
+	void closeConn(const Error& err) noexcept;
+	void handleFatalError(const Error& err) noexcept;
 	chunk getChunk() noexcept;
-	void recycleChunk(chunk &&) noexcept;
-	void sendCloseResults(CProtoHeader const &, CoroRPCAnswer const &);
+	void recycleChunk(chunk&&) noexcept;
+	void sendCloseResults(const CProtoHeader&, const CoroRPCAnswer&);
 
 	void writerRoutine();
 	void readerRoutine();
@@ -176,7 +176,7 @@ private:
 	uint32_t now_;
 	bool terminate_ = false;
 	bool isRunning_ = false;
-	ev::dynamic_loop *loop_ = nullptr;
+	ev::dynamic_loop* loop_ = nullptr;
 
 	// seq -> rpc data
 	std::vector<RPCData> rpcCalls_;

@@ -51,8 +51,11 @@ public:
 	~spinlock() = default;
 
 	void lock() {
-		for (unsigned int i = 1; !try_lock(); ++i)
-			if ((i & 0xff) == 0) std::this_thread::yield();
+		for (unsigned int i = 1; !try_lock(); ++i) {
+			if ((i & 0xff) == 0) {
+				std::this_thread::yield();
+			}
+		}
 	}
 	bool try_lock() { return !_M_lock.test_and_set(std::memory_order_acq_rel); }
 	void unlock() { _M_lock.clear(std::memory_order_release); }

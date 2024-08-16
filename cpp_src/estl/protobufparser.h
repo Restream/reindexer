@@ -24,7 +24,9 @@ struct ProtobufValue {
 									   throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%s] to number",
 															  value.Type().Name());
 								   });
-		if (v < minv || v > maxv) throw reindexer::Error(errParams, "Value is out of bounds: [%d,%d]", minv, maxv);
+		if (v < minv || v > maxv) {
+			throw reindexer::Error(errParams, "Value is out of bounds: [%d,%d]", minv, maxv);
+		}
 		return v;
 	}
 

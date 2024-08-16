@@ -28,9 +28,9 @@ public:
 
 	ReindexerTestApi() : reindexer(std::make_shared<DB>()) {}
 	template <typename FieldsT>
-	static void DefineNamespaceDataset(DB &rx, std::string_view ns, const FieldsT &fields) {
+	static void DefineNamespaceDataset(DB& rx, std::string_view ns, const FieldsT& fields) {
 		auto err = reindexer::Error();
-		for (const auto &field : fields) {
+		for (const auto& field : fields) {
 			if (field.indexType != "composite") {
 				err = rx.AddIndex(ns, {std::string{field.indexName},
 									   {std::string{field.indexName}},
@@ -59,7 +59,7 @@ public:
 	void DefineNamespaceDataset(std::string_view ns, std::initializer_list<const IndexDeclaration> fields) {
 		DefineNamespaceDataset(*reindexer, ns, fields);
 	}
-	void DefineNamespaceDataset(std::string_view ns, const std::vector<IndexDeclaration> &fields) {
+	void DefineNamespaceDataset(std::string_view ns, const std::vector<IndexDeclaration>& fields) {
 		DefineNamespaceDataset(*reindexer, ns, fields);
 	}
 
@@ -76,7 +76,7 @@ public:
 		auto err = reindexer->OpenNamespace(ns);
 		ASSERT_TRUE(err.ok()) << err.what() << "; namespace: " << ns;
 	}
-	void AddIndex(std::string_view ns, const reindexer::IndexDef &idef) {
+	void AddIndex(std::string_view ns, const reindexer::IndexDef& idef) {
 		auto err = reindexer->AddIndex(ns, idef);
 		if (!err.ok()) {
 			reindexer::WrSerializer ser;
@@ -88,7 +88,7 @@ public:
 		auto err = reindexer->DropIndex(ns, reindexer::IndexDef(std::string(name)));
 		ASSERT_TRUE(err.ok()) << err.what() << "; namespace: " << ns << "; name: " << name;
 	}
-	void Upsert(std::string_view ns, ItemType &item) {
+	void Upsert(std::string_view ns, ItemType& item) {
 		assertrx(!!item);
 		auto err = reindexer->Upsert(ns, item);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -101,45 +101,47 @@ public:
 		err = reindexer->Upsert(ns, item);
 		ASSERT_TRUE(err.ok()) << err.what() << "; " << json;
 	}
-	void Update(const reindexer::Query &q, QueryResultsType &qr) {
+	void Update(const reindexer::Query& q, QueryResultsType& qr) {
 		auto err = reindexer->Update(q, qr);
 		ASSERT_TRUE(err.ok()) << err.what() << "; " << q.GetSQL(QueryUpdate);
 	}
-	size_t Update(const reindexer::Query &q) {
+	size_t Update(const reindexer::Query& q) {
 		QueryResultsType qr;
 		Update(q, qr);
 		return qr.Count();
 	}
-	QueryResultsType UpdateQR(const reindexer::Query &q) {
+	QueryResultsType UpdateQR(const reindexer::Query& q) {
 		QueryResultsType qr;
 		Update(q, qr);
 		return qr;
 	}
-	void Select(const reindexer::Query &q, QueryResultsType &qr) {
+	void Select(const reindexer::Query& q, QueryResultsType& qr) {
 		auto err = reindexer->Select(q, qr);
 		ASSERT_TRUE(err.ok()) << err.what() << "; " << q.GetSQL();
 	}
-	QueryResultsType Select(const reindexer::Query &q) {
+	QueryResultsType Select(const reindexer::Query& q) {
 		QueryResultsType qr;
 		Select(q, qr);
 		return qr;
 	}
-	void Delete(std::string_view ns, ItemType &item) {
+	void Delete(std::string_view ns, ItemType& item) {
 		assertrx(!!item);
 		auto err = reindexer->Delete(ns, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
-	size_t Delete(const reindexer::Query &q) {
+	size_t Delete(const reindexer::Query& q) {
 		QueryResultsType qr;
 		auto err = reindexer->Delete(q, qr);
 		EXPECT_TRUE(err.ok()) << err.what() << "; " << q.GetSQL(QueryDelete);
 		return qr.Count();
 	}
-	reindexer::Error DumpIndex(std::ostream &os, std::string_view ns, std::string_view index) {
+	reindexer::Error DumpIndex(std::ostream& os, std::string_view ns, std::string_view index) {
 		return reindexer->DumpIndex(os, ns, index);
 	}
-	void PrintQueryResults(const std::string &ns, const QueryResultsType &res) {
-		if (!verbose) return;
+	void PrintQueryResults(const std::string& ns, const QueryResultsType& res) {
+		if (!verbose) {
+			return;
+		}
 		{
 			ItemType rdummy(reindexer->NewItem(ns));
 			std::string outBuf;

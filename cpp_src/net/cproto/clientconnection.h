@@ -28,17 +28,21 @@ class RPCAnswer {
 public:
 	Error Status() const;
 	Args GetArgs(int minArgs = 0) const;
-	RPCAnswer(const Error &error) : status_(error) {}
+	RPCAnswer(const Error& error) : status_(error) {}
 	~RPCAnswer() {
-		if (hold_) delete[] data_.data();
+		if (hold_) {
+			delete[] data_.data();
+		}
 	}
-	RPCAnswer(const RPCAnswer &other) = delete;
-	RPCAnswer(RPCAnswer &&other) : status_(std::move(other.status_)), data_(std::move(other.data_)), hold_(other.hold_) {
+	RPCAnswer(const RPCAnswer& other) = delete;
+	RPCAnswer(RPCAnswer&& other) : status_(std::move(other.status_)), data_(std::move(other.data_)), hold_(other.hold_) {
 		other.hold_ = false;
 	}
-	RPCAnswer &operator=(RPCAnswer &&other) {
+	RPCAnswer& operator=(RPCAnswer&& other) {
 		if (this != &other) {
-			if (hold_) delete[] data_.data();
+			if (hold_) {
+				delete[] data_.data();
+			}
 			status_ = std::move(other.status_);
 			data_ = std::move(other.data_);
 			hold_ = other.hold_;
@@ -46,10 +50,10 @@ public:
 		}
 		return *this;
 	}
-	RPCAnswer &operator=(const RPCAnswer &other) = delete;
+	RPCAnswer& operator=(const RPCAnswer& other) = delete;
 	void EnsureHold() {
 		if (!hold_) {
-			uint8_t *data = new uint8_t[data_.size()];
+			uint8_t* data = new uint8_t[data_.size()];
 			memcpy(data, data_.data(), data_.size());
 			data_ = {data, data_.size()};
 			hold_ = true;
@@ -65,17 +69,17 @@ protected:
 };
 
 struct CommandParams {
-	CommandParams(CmdCode c, seconds n, milliseconds e, const IRdxCancelContext *ctx)
+	CommandParams(CmdCode c, seconds n, milliseconds e, const IRdxCancelContext* ctx)
 		: cmd(c), netTimeout(n), execTimeout(e), cancelCtx(ctx) {}
 	CmdCode cmd;
 	seconds netTimeout;
 	milliseconds execTimeout;
-	const IRdxCancelContext *cancelCtx;
+	const IRdxCancelContext* cancelCtx;
 };
 
 class ClientConnection : public ConnectionMT {
 public:
-	typedef std::function<void(RPCAnswer &&ans, ClientConnection *conn)> Completion;
+	typedef std::function<void(RPCAnswer&& ans, ClientConnection* conn)> Completion;
 	typedef std::function<bool(int)> ConnectionFailCallback;
 	struct Options {
 		Options()
@@ -120,26 +124,26 @@ public:
 		int lastFailedEntryIdx = {-1};
 	};
 
-	ClientConnection(ev::dynamic_loop &loop, ConnectData *connectData,
+	ClientConnection(ev::dynamic_loop& loop, ConnectData* connectData,
 					 ConnectionFailCallback connectionFailCallback = ConnectionFailCallback());
 	~ClientConnection();
 
 	template <typename... Argss>
-	void Call(const Completion &cmpl, const CommandParams &opts, Argss... argss) {
+	void Call(const Completion& cmpl, const CommandParams& opts, Argss... argss) {
 		Args args;
 		args.reserve(sizeof...(argss));
 		call(cmpl, opts, args, argss...);
 	}
 
 	template <typename... Argss>
-	RPCAnswer Call(const CommandParams &opts, Argss... argss) {
+	RPCAnswer Call(const CommandParams& opts, Argss... argss) {
 		Args args;
 		args.reserve(sizeof...(argss));
 
 		RPCAnswer ret;
 		std::atomic_bool set(false);
 		auto callRet = call(
-			[&ret, &set](RPCAnswer &&ans, ClientConnection * /*conn*/) {
+			[&ret, &set](RPCAnswer&& ans, ClientConnection* /*conn*/) {
 				ret = std::move(ans);
 				ret.EnsureHold();
 				set = true;
@@ -184,12 +188,12 @@ public:
 protected:
 	enum State { ConnInit, ConnConnecting, ConnConnected, ConnFailed, ConnClosing };
 
-	void connect_async_cb(ev::async &) { connectInternal(); }
-	void keep_alive_cb(ev::periodic &, int);
-	void deadline_check_cb(ev::timer &, int);
+	void connect_async_cb(ev::async&) { connectInternal(); }
+	void keep_alive_cb(ev::periodic&, int);
+	void deadline_check_cb(ev::timer&, int);
 
 	void connectInternal() noexcept;
-	void failInternal(const Error &error);
+	void failInternal(const Error& error);
 	void disconnect();
 
 	struct RPCCompletion {
@@ -200,32 +204,32 @@ protected:
 		atomic_unique_ptr<RPCCompletion> next;
 		std::atomic<bool> used;
 		seconds deadline;
-		const reindexer::IRdxCancelContext *cancelCtx;
+		const reindexer::IRdxCancelContext* cancelCtx;
 	};
 	struct CallReturn {
-		explicit CallReturn(RPCCompletion *c = nullptr, uint32_t s = 0) noexcept : cmpl(c), seq(s) {}
+		explicit CallReturn(RPCCompletion* c = nullptr, uint32_t s = 0) noexcept : cmpl(c), seq(s) {}
 
-		RPCCompletion *cmpl;
+		RPCCompletion* cmpl;
 		uint32_t seq;
 	};
 
 	template <typename... Argss>
-	inline CallReturn call(const Completion &cmpl, const CommandParams &opts, Args &args, const std::string_view &val, Argss... argss) {
+	inline CallReturn call(const Completion& cmpl, const CommandParams& opts, Args& args, const std::string_view& val, Argss... argss) {
 		args.emplace_back(p_string(&val));
 		return call(cmpl, opts, args, argss...);
 	}
 	template <typename... Argss>
-	inline CallReturn call(const Completion &cmpl, const CommandParams &opts, Args &args, const std::string &val, Argss... argss) {
+	inline CallReturn call(const Completion& cmpl, const CommandParams& opts, Args& args, const std::string& val, Argss... argss) {
 		args.emplace_back(p_string(&val));
 		return call(cmpl, opts, args, argss...);
 	}
 	template <typename T, typename... Argss>
-	inline CallReturn call(const Completion &cmpl, const CommandParams &opts, Args &args, const T &val, Argss... argss) {
+	inline CallReturn call(const Completion& cmpl, const CommandParams& opts, Args& args, const T& val, Argss... argss) {
 		args.emplace_back(val);
 		return call(cmpl, opts, args, argss...);
 	}
-	CallReturn call(const Completion &cmpl, const CommandParams &opts, const Args &args);
-	chunk packRPC(CmdCode cmd, uint32_t seq, const Args &args, const Args &ctxArgs);
+	CallReturn call(const Completion& cmpl, const CommandParams& opts, const Args& args);
+	chunk packRPC(CmdCode cmd, uint32_t seq, const Args& args, const Args& ctxArgs);
 
 	ReadResT onRead() override;
 	void onClose() override;
@@ -246,7 +250,7 @@ protected:
 	std::atomic<uint32_t> now_;
 	std::atomic<bool> terminate_;
 	ConnectionFailCallback onConnectionFailed_;
-	ConnectData *connectData_;
+	ConnectData* connectData_;
 	int currDsnIdx_, actualDsnIdx_;
 	ev::async reconnect_;
 	std::atomic<bool> enableSnappy_;

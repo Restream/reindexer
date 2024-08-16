@@ -25,7 +25,9 @@ void tokenizer::skip_space() noexcept {
 token tokenizer::next_token(flags flgs) {
 	skip_space();
 
-	if (cur_ == q_.end()) return token(TokenEnd);
+	if (cur_ == q_.end()) {
+		return token(TokenEnd);
+	}
 
 	token res(TokenSymbol);
 
@@ -33,7 +35,9 @@ token tokenizer::next_token(flags flgs) {
 		res.type = TokenName;
 		int openBrackets{0};
 		do {
-			if (*cur_ == '*' && *(cur_ - 1) != '[') break;
+			if (*cur_ == '*' && *(cur_ - 1) != '[') {
+				break;
+			}
 			res.text_.push_back(flgs.has_to_lower() ? tolower(*cur_++) : *cur_++);
 			++pos_;
 		} while (cur_ != q_.end() && (isalpha(*cur_) || isdigit(*cur_) || *cur_ == '_' || *cur_ == '#' || *cur_ == '.' || *cur_ == '*' ||
@@ -94,7 +98,9 @@ token tokenizer::next_token(flags flgs) {
 			auto c = *cur_;
 			if (c == '\\') {
 				++pos_;
-				if (++cur_ == q_.end()) break;
+				if (++cur_ == q_.end()) {
+					break;
+				}
 				c = *cur_;
 				switch (c) {
 					case 'n':
@@ -163,8 +169,9 @@ std::string tokenizer::where() const {
 		if (*pos == '\n') {
 			line++;
 			col = 0;
-		} else
+		} else {
 			col++;
+		}
 	}
 	return std::string()
 		.append("line: ")

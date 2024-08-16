@@ -11,14 +11,14 @@ enum token_type { TokenEnd, TokenName, TokenNumber, TokenString, TokenOp, TokenS
 class token {
 public:
 	explicit token(token_type t = TokenSymbol) noexcept : type(t) {}
-	token(const token &) = delete;
-	token &operator=(const token &) = delete;
-	token(token &&) noexcept = default;
-	token &operator=(token &&) noexcept = default;
+	token(const token&) = delete;
+	token& operator=(const token&) = delete;
+	token(token&&) noexcept = default;
+	token& operator=(token&&) noexcept = default;
 
 	[[nodiscard]] RX_ALWAYS_INLINE std::string_view text() const noexcept { return std::string_view(text_.data(), text_.size()); }
 	void to_lower() noexcept {
-		for (auto &c : text_) {
+		for (auto& c : text_) {
 			c = tolower(c);
 		}
 	}
@@ -78,7 +78,7 @@ public:
 	}
 	[[nodiscard]] std::string where() const;
 	[[nodiscard]] size_t length() const noexcept { return q_.length(); }
-	[[nodiscard]] const char *begin() const noexcept { return q_.data(); }
+	[[nodiscard]] const char* begin() const noexcept { return q_.data(); }
 
 private:
 	std::string_view q_;
@@ -86,6 +86,8 @@ private:
 	size_t pos_ = 0;
 };
 
-Variant token2kv(const token &currTok, tokenizer &parser, bool allowComposite);
+enum class CompositeAllowed : bool { No = false, Yes = true };
+enum class FieldAllowed : bool { No = false, Yes = true };
+Variant token2kv(const token& currTok, tokenizer& parser, CompositeAllowed allowComposite, FieldAllowed allowField);
 
 }  // namespace reindexer

@@ -21,7 +21,7 @@ namespace json_string {
 constexpr static unsigned kLargeJSONStrFlag = 0x80;
 
 template <bool isLargeString>
-inline size_t length(const uint8_t *p) noexcept {
+inline size_t length(const uint8_t* p) noexcept {
 	if constexpr (isLargeString) {
 		return p[-1] | (unsigned(p[0]) << 8) | (unsigned(p[1]) << 16) | ((unsigned(p[2]) & ~kLargeJSONStrFlag) << 24);
 	} else {
@@ -29,14 +29,14 @@ inline size_t length(const uint8_t *p) noexcept {
 	}
 }
 
-inline size_t length(const uint8_t *p) noexcept {
+inline size_t length(const uint8_t* p) noexcept {
 	if (p[2] & kLargeJSONStrFlag) {
 		return length<true>(p);
 	}
 	return length<false>(p);
 }
 
-inline std::string_view to_string_view(const uint8_t *p) noexcept {
+inline std::string_view to_string_view(const uint8_t* p) noexcept {
 	if (p[2] & kLargeJSONStrFlag) {
 		const auto len = length<true>(p);
 		uintptr_t uptr;
@@ -49,13 +49,13 @@ inline std::string_view to_string_view(const uint8_t *p) noexcept {
 #else
 		static_assert(false, "Unexpected uintptr_t size");
 #endif
-		return std::string_view(reinterpret_cast<const char *>(uptr), len);
+		return std::string_view(reinterpret_cast<const char*>(uptr), len);
 	}
 	const auto len = length<false>(p);
-	return std::string_view(reinterpret_cast<const char *>(p - len), len);
+	return std::string_view(reinterpret_cast<const char*>(p - len), len);
 }
 
-inline void encode(uint8_t *p, uint64_t l, std::vector<std::unique_ptr<char[]>> &storage) {
+inline void encode(uint8_t* p, uint64_t l, std::vector<std::unique_ptr<char[]>>& storage) {
 	if (l >= (uint64_t(1) << 23)) {
 		storage.emplace_back(new char[l]);
 		std::copy(p - l, p, storage.back().get());

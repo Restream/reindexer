@@ -3,7 +3,7 @@
 #include "core/namespace/namespaceimpl.h"
 namespace reindexer {
 
-const std::string& NsSelectFuncInterface::GetName() const noexcept { return nm_.name_; };
+const std::string& NsSelectFuncInterface::GetName() const noexcept { return nm_.name_; }
 int NsSelectFuncInterface::getIndexByName(std::string_view index) const noexcept { return nm_.getIndexByName(index); }
 bool NsSelectFuncInterface::getIndexByName(std::string_view name, int& index) const noexcept { return nm_.tryGetIndexByName(name, index); }
 int NsSelectFuncInterface::getIndexesCount() const noexcept { return nm_.indexes_.size(); }

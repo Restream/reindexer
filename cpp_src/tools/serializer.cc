@@ -9,7 +9,7 @@ namespace reindexer {
 p_string Serializer::GetPVString() { return p_string(getPVStringPtr()); }
 
 p_string Serializer::GetPSlice() {
-	auto ret = reinterpret_cast<const l_string_hdr *>(buf_ + pos_);
+	auto ret = reinterpret_cast<const l_string_hdr*>(buf_ + pos_);
 	auto l = GetUInt32();
 	checkbound(pos_, l, len_);
 	pos_ += l;
@@ -30,8 +30,8 @@ p_string Serializer::GetPSlice() {
 
 Variant Serializer::getPVStringVariant() { return Variant(GetPVString()); }
 
-const v_string_hdr *Serializer::getPVStringPtr() {
-	auto ret = reinterpret_cast<const v_string_hdr *>(buf_ + pos_);
+const v_string_hdr* Serializer::getPVStringPtr() {
+	auto ret = reinterpret_cast<const v_string_hdr*>(buf_ + pos_);
 	auto l = GetVarUint();
 	checkbound(pos_, l, len_);
 	pos_ += l;
@@ -80,10 +80,10 @@ void WrSerializer::VStringHelper::End() {
 }
 
 void WrSerializer::PrintJsonString(std::string_view str, PrintJsonStringMode mode) {
-	const char *s = str.data();
+	const char* s = str.data();
 	size_t l = str.size();
 	grow(l * 6 + 3);
-	char *d = reinterpret_cast<char *>(buf_ + len_);
+	char* d = reinterpret_cast<char*>(buf_ + len_);
 	*d++ = '"';
 
 	while (l--) {
@@ -131,24 +131,24 @@ void WrSerializer::PrintJsonString(std::string_view str, PrintJsonStringMode mod
 		}
 	}
 	*d++ = '"';
-	len_ = d - reinterpret_cast<char *>(buf_);
+	len_ = d - reinterpret_cast<char*>(buf_);
 }
 
 void WrSerializer::PutStrUuid(Uuid uuid) {
 	grow(Uuid::kStrFormLen + 10);
 	len_ += uint32_pack(Uuid::kStrFormLen, buf_ + len_);
-	uuid.PutToStr({reinterpret_cast<char *>(buf_ + len_), cap_ - len_});
+	uuid.PutToStr({reinterpret_cast<char*>(buf_ + len_), cap_ - len_});
 	len_ += Uuid::kStrFormLen;
 }
 
 void WrSerializer::PrintJsonUuid(Uuid uuid) {
 	grow(Uuid::kStrFormLen + 2);
-	char *d = reinterpret_cast<char *>(buf_ + len_);
+	char* d = reinterpret_cast<char*>(buf_ + len_);
 	*d++ = '"';
 	uuid.PutToStr({d, cap_ - len_});
 	d += Uuid::kStrFormLen;
 	*d++ = '"';
-	len_ = d - reinterpret_cast<char *>(buf_);
+	len_ = d - reinterpret_cast<char*>(buf_);
 }
 
 const int kHexDumpBytesInRow = 16;
@@ -156,7 +156,7 @@ const int kHexDumpBytesInRow = 16;
 void WrSerializer::PrintHexDump(std::string_view str) {
 	grow((kHexDumpBytesInRow * 4 + 12) * (1 + (str.size() / kHexDumpBytesInRow)));
 
-	char *d = reinterpret_cast<char *>(buf_ + len_);
+	char* d = reinterpret_cast<char*>(buf_ + len_);
 
 	for (int row = 0; row < int(str.size()); row += kHexDumpBytesInRow) {
 		d = u32toax(row, d, 8);
@@ -178,11 +178,11 @@ void WrSerializer::PrintHexDump(std::string_view str) {
 		}
 		*d++ = '\n';
 	}
-	len_ = d - reinterpret_cast<char *>(buf_);
+	len_ = d - reinterpret_cast<char*>(buf_);
 }
 
 std::unique_ptr<uint8_t[]> WrSerializer::DetachLStr() {
-	reinterpret_cast<l_string_hdr *>(buf_)->length = len_ - sizeof(uint32_t);
+	reinterpret_cast<l_string_hdr*>(buf_)->length = len_ - sizeof(uint32_t);
 	return DetachBuf();
 }
 

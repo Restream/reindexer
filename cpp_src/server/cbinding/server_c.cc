@@ -42,7 +42,9 @@ reindexer_error start_reindexer_server(uintptr_t psvc, reindexer_string _config)
 	auto svc = reinterpret_cast<Server*>(psvc);
 	if (svc) {
 		err = svc->InitFromYAML(str2c(_config));
-		if (!err.ok()) return error2c(err);
+		if (!err.ok()) {
+			return error2c(err);
+		}
 		err = (svc->Start() == 0 ? Error{} : Error(errLogic, "server startup error"));
 	}
 	return error2c(err);

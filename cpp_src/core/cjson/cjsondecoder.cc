@@ -7,7 +7,7 @@
 namespace reindexer {
 
 template <typename FilterT, typename RecoderT, typename TagOptT>
-bool CJsonDecoder::decodeCJson(Payload &pl, Serializer &rdser, WrSerializer &wrser, FilterT filter, RecoderT recoder, TagOptT) {
+bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrser, FilterT filter, RecoderT recoder, TagOptT) {
 	const ctag tag = rdser.GetCTag();
 	TagType tagType = tag.Type();
 	if (tagType == TAG_END) {
@@ -38,7 +38,7 @@ bool CJsonDecoder::decodeCJson(Payload &pl, Serializer &rdser, WrSerializer &wrs
 			} else if (recoder.Recode(rdser, pl, tagName, wrser)) {
 				// No more actions needed after recoding
 			} else {
-				const auto &fieldRef{pl.Type().Field(field)};
+				const auto& fieldRef{pl.Type().Field(field)};
 				const KeyValueType fieldType{fieldRef.Type()};
 				if (tagType == TAG_ARRAY) {
 					if rx_unlikely (!fieldRef.IsArray()) {
@@ -65,9 +65,7 @@ bool CJsonDecoder::decodeCJson(Payload &pl, Serializer &rdser, WrSerializer &wrs
 					objectScalarIndexes_.set(field);
 					pl.Set(field, cjsonValueToVariant(tagType, rdser, fieldType), true);
 					fieldType.EvaluateOneOf(
-						[&](OneOf<KeyValueType::Int, KeyValueType::Int64>) {
-							wrser.PutCTag(ctag{TAG_VARINT, tagName, field});
-						},
+						[&](OneOf<KeyValueType::Int, KeyValueType::Int64>) { wrser.PutCTag(ctag{TAG_VARINT, tagName, field}); },
 						[&](OneOf<KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Null, KeyValueType::Uuid>) {
 							wrser.PutCTag(ctag{fieldType.ToTagType(), tagName, field});
 						},
@@ -84,8 +82,7 @@ bool CJsonDecoder::decodeCJson(Payload &pl, Serializer &rdser, WrSerializer &wrs
 			tagType = recoder.RegisterTagType(tagType, tagsPath_);
 			wrser.PutCTag(ctag{tagType, tagName, field});
 			if (tagType == TAG_OBJECT) {
-				while (decodeCJson(pl, rdser, wrser, filter.MakeCleanCopy(), recoder.MakeCleanCopy(), NamedTagOpt{}))
-					;
+				while (decodeCJson(pl, rdser, wrser, filter.MakeCleanCopy(), recoder.MakeCleanCopy(), NamedTagOpt{}));
 			} else if (recoder.Recode(rdser, wrser)) {
 				// No more actions needed after recoding
 			} else if (tagType == TAG_ARRAY) {
@@ -112,8 +109,7 @@ bool CJsonDecoder::decodeCJson(Payload &pl, Serializer &rdser, WrSerializer &wrs
 		} else {
 			// !match
 			wrser.PutCTag(ctag{tagType, tagName, field});
-			while (decodeCJson(pl, rdser, wrser, filter.MakeSkipFilter(), recoder.MakeCleanCopy(), NamedTagOpt{}))
-				;
+			while (decodeCJson(pl, rdser, wrser, filter.MakeSkipFilter(), recoder.MakeCleanCopy(), NamedTagOpt{}));
 		}
 	}
 
@@ -124,7 +120,7 @@ bool CJsonDecoder::decodeCJson(Payload &pl, Serializer &rdser, WrSerializer &wrs
 	return true;
 }
 
-[[nodiscard]] Variant CJsonDecoder::cjsonValueToVariant(TagType tagType, Serializer &rdser, KeyValueType fieldType) {
+[[nodiscard]] Variant CJsonDecoder::cjsonValueToVariant(TagType tagType, Serializer& rdser, KeyValueType fieldType) {
 	if (fieldType.Is<KeyValueType::String>() && tagType != TagType::TAG_STRING) {
 		storage_.emplace_back(rdser.GetRawVariant(KeyValueType{tagType}).As<std::string>());
 		return Variant(p_string(&storage_.back()), Variant::no_hold_t{});
@@ -133,22 +129,22 @@ bool CJsonDecoder::decodeCJson(Payload &pl, Serializer &rdser, WrSerializer &wrs
 	}
 }
 
-RX_NO_INLINE void CJsonDecoder::throwTagReferenceError(ctag tag, const Payload &pl) {
+RX_NO_INLINE void CJsonDecoder::throwTagReferenceError(ctag tag, const Payload& pl) {
 	throw Error(errLogic, "Reference tag was found in transport CJSON for field %d[%s] in ns [%s]", tag.Field(),
 				tagsMatcher_.tag2name(tag.Name()), pl.Type().Name());
 }
 
-RX_NO_INLINE void CJsonDecoder::throwUnexpectedArrayError(const PayloadFieldType &fieldRef) {
+RX_NO_INLINE void CJsonDecoder::throwUnexpectedArrayError(const PayloadFieldType& fieldRef) {
 	throw Error(errLogic, "Error parsing cjson field '%s' - got array, expected scalar %s", fieldRef.Name(), fieldRef.Type().Name());
 }
 
 template bool CJsonDecoder::decodeCJson<CJsonDecoder::DummyFilter, CJsonDecoder::DummyRecoder, CJsonDecoder::NamelessTagOpt>(
-	Payload &, Serializer &, WrSerializer &, CJsonDecoder::DummyFilter, CJsonDecoder::DummyRecoder, CJsonDecoder::NamelessTagOpt);
+	Payload&, Serializer&, WrSerializer&, CJsonDecoder::DummyFilter, CJsonDecoder::DummyRecoder, CJsonDecoder::NamelessTagOpt);
 template bool CJsonDecoder::decodeCJson<CJsonDecoder::DummyFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt>(
-	Payload &, Serializer &, WrSerializer &, CJsonDecoder::DummyFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt);
+	Payload&, Serializer&, WrSerializer&, CJsonDecoder::DummyFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt);
 template bool CJsonDecoder::decodeCJson<CJsonDecoder::RestrictingFilter, CJsonDecoder::DummyRecoder, CJsonDecoder::NamelessTagOpt>(
-	Payload &, Serializer &, WrSerializer &, CJsonDecoder::RestrictingFilter, CJsonDecoder::DummyRecoder, CJsonDecoder::NamelessTagOpt);
+	Payload&, Serializer&, WrSerializer&, CJsonDecoder::RestrictingFilter, CJsonDecoder::DummyRecoder, CJsonDecoder::NamelessTagOpt);
 template bool CJsonDecoder::decodeCJson<CJsonDecoder::RestrictingFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt>(
-	Payload &, Serializer &, WrSerializer &, CJsonDecoder::RestrictingFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt);
+	Payload&, Serializer&, WrSerializer&, CJsonDecoder::RestrictingFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt);
 
 }  // namespace reindexer

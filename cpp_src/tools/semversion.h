@@ -12,14 +12,14 @@ public:
 	SemVersion() = default;
 	SemVersion(std::string_view version) { parse(version); }
 
-	bool operator<(const SemVersion &rVersion) const {
+	bool operator<(const SemVersion& rVersion) const {
 		return std::lexicographical_compare(versionDigits_.begin(), versionDigits_.end(), rVersion.versionDigits_.begin(),
 											rVersion.versionDigits_.end());
 	}
-	bool operator==(const SemVersion &rVersion) const { return (versionDigits_ == rVersion.versionDigits_); }
-	bool operator!=(const SemVersion &rVersion) const { return (versionDigits_ != rVersion.versionDigits_); }
+	bool operator==(const SemVersion& rVersion) const { return (versionDigits_ == rVersion.versionDigits_); }
+	bool operator!=(const SemVersion& rVersion) const { return (versionDigits_ != rVersion.versionDigits_); }
 
-	const std::string &StrippedString() const { return versionStr_; }
+	const std::string& StrippedString() const { return versionStr_; }
 
 private:
 	void parse(std::string_view input) {
@@ -37,7 +37,7 @@ private:
 		}
 		version = splitted[0];
 		split(version, ".", false, splitted);
-		for (auto &it : splitted) {
+		for (auto& it : splitted) {
 			bool valid = true;
 			int res = jsteemann::atoi<int>(it.data(), it.data() + it.size(), valid);
 			if (!valid) {

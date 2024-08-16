@@ -19,7 +19,9 @@ struct Compare;
 template <>
 struct Compare<reindexer::Point> {
 	bool operator()(reindexer::Point lhs, reindexer::Point rhs) const noexcept {
-		if (lhs.X() == rhs.X()) return lhs.Y() < rhs.Y();
+		if (lhs.X() == rhs.X()) {
+			return lhs.Y() < rhs.Y();
+		}
 		return lhs.X() < rhs.X();
 	}
 };
@@ -101,7 +103,9 @@ static void TestIterators() {
 	size_t dublicates = 0;
 	for (size_t i = 0; i < 10000 + dublicates; ++i) {
 		const auto res = tree.insert(reindexer::randPoint(kRange));
-		if (!res.second) ++dublicates;
+		if (!res.second) {
+			++dublicates;
+		}
 		ASSERT_TRUE(tree.Check());
 		auto it = tree.begin(), end = tree.end();
 		auto cit = tree.cbegin(), cend = tree.cend();
@@ -152,7 +156,9 @@ static void TestSearch() {
 		const reindexer::Point point{randPoint(kRange)};
 		const double distance = randBinDouble(0, 100);
 		for (const auto& r : data) {
-			if (reindexer::DWithin(point, r, distance)) DWithinVisitor.Add(r);
+			if (reindexer::DWithin(point, r, distance)) {
+				DWithinVisitor.Add(r);
+			}
 		}
 
 		tree.DWithin(point, distance, DWithinVisitor);
@@ -251,7 +257,9 @@ static void TestMap() {
 		const reindexer::Point point{randPoint(kRange)};
 		const double distance = randBinDouble(0, 100);
 		for (const auto& r : data) {
-			if (reindexer::DWithin(point, r.first, distance)) visitor.Add(r);
+			if (reindexer::DWithin(point, r.first, distance)) {
+				visitor.Add(r);
+			}
 		}
 		map.DWithin(point, distance, visitor);
 		ASSERT_EQ(visitor.Size(), 0);

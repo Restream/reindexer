@@ -25,18 +25,24 @@ Error CoroTransaction::addTxItem(Item&& item, ItemModifyMode mode) {
 				conn_->Call({net::cproto::kCmdAddTxItem, RequestTimeout_, execTimeout_, nullptr}, FormatJson, itemData, mode, "", 0, txId_);
 
 			if (!ret.Status().ok()) {
-				if (ret.Status().code() != errStateInvalidated || tryCount > 2) return ret.Status();
+				if (ret.Status().code() != errStateInvalidated || tryCount > 2) {
+					return ret.Status();
+				}
 
 				CoroQueryResults qr;
 				InternalRdxContext ctx;
 				ctx = ctx.WithTimeout(execTimeout_);
 				auto err = rpcClient_->Select(Query(nsName_).Limit(0), qr, ctx);
-				if (!err.ok()) return Error(errLogic, "Can't update TagsMatcher");
+				if (!err.ok()) {
+					return Error(errLogic, "Can't update TagsMatcher");
+				}
 
 				auto newItem = NewItem();
 				char* endp = nullptr;
 				err = newItem.FromJSON(item.impl_->GetJSON(), &endp);
-				if (!err.ok()) return err;
+				if (!err.ok()) {
+					return err;
+				}
 				item = std::move(newItem);
 			} else {
 				break;
@@ -48,7 +54,9 @@ Error CoroTransaction::addTxItem(Item&& item, ItemModifyMode mode) {
 }
 
 Item CoroTransaction::NewItem() {
-	if (!rpcClient_) return Item(Error(errLogic, "rpcClient not set for client transaction"));
+	if (!rpcClient_) {
+		return Item(Error(errLogic, "rpcClient not set for client transaction"));
+	}
 	return rpcClient_->NewItem(nsName_);
 }
 }  // namespace client

@@ -12,18 +12,24 @@ namespace reindexer {
 
 static CacheMode str2cacheMode(std::string_view mode) {
 	using namespace std::string_view_literals;
-	if (mode == "on"sv) return CacheModeOn;
-	if (mode == "off"sv || mode == ""sv) return CacheModeOff;
-	if (mode == "aggressive"sv) return CacheModeAggressive;
+	if (mode == "on"sv) {
+		return CacheModeOn;
+	}
+	if (mode == "off"sv || mode == ""sv) {
+		return CacheModeOff;
+	}
+	if (mode == "aggressive"sv) {
+		return CacheModeAggressive;
+	}
 
 	throw Error(errParams, "Unknown cache mode %s", mode);
 }
 
-Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
+Error DBConfigProvider::FromJSON(const gason::JsonNode& root) {
 	try {
 		smart_lock<shared_timed_mutex> lk(mtx_, true);
 
-		auto &profilingNode = root["profiling"];
+		auto& profilingNode = root["profiling"];
 		if (!profilingNode.empty()) {
 			profilingData_ = ProfilingConfigData{};
 			profilingData_.queriesPerfStats = profilingNode["queriesperfstats"].As<bool>();
@@ -45,13 +51,15 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 																				 transactionNode["avg_step_threshold_us"].As<int32_t>()});
 				}
 			}
-			if (handlers_[ProfilingConf]) (handlers_[ProfilingConf])();
+			if (handlers_[ProfilingConf]) {
+				(handlers_[ProfilingConf])();
+			}
 		}
 
-		auto &namespacesNode = root["namespaces"];
+		auto& namespacesNode = root["namespaces"];
 		if (!namespacesNode.empty()) {
 			namespacesData_.clear();
-			for (auto &nsNode : namespacesNode) {
+			for (auto& nsNode : namespacesNode) {
 				NamespaceConfigData data;
 				data.lazyLoad = nsNode["lazyload"].As<bool>();
 				data.noQueryIdleThreshold = nsNode["unload_idle_threshold"].As<int>();
@@ -96,20 +104,26 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 
 				namespacesData_.emplace(nsNode["namespace"].As<std::string>(), std::move(data));  // NOLINT(performance-move-const-arg)
 			}
-			if (handlers_[NamespaceDataConf]) (handlers_[NamespaceDataConf])();
+			if (handlers_[NamespaceDataConf]) {
+				(handlers_[NamespaceDataConf])();
+			}
 		}
 
-		auto &replicationNode = root["replication"];
+		auto& replicationNode = root["replication"];
 		if (!replicationNode.empty()) {
 			auto err = replicationData_.FromJSON(replicationNode);
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 
-			if (handlers_[ReplicationConf]) (handlers_[ReplicationConf])();
+			if (handlers_[ReplicationConf]) {
+				(handlers_[ReplicationConf])();
+			}
 		}
 		return errOK;
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
-	} catch (const gason::Exception &ex) {
+	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "DBConfigProvider: %s", ex.what());
 	}
 }
@@ -124,7 +138,7 @@ ReplicationConfigData DBConfigProvider::GetReplicationConfig() {
 	return replicationData_;
 }
 
-bool DBConfigProvider::GetNamespaceConfig(std::string_view nsName, NamespaceConfigData &data) {
+bool DBConfigProvider::GetNamespaceConfig(std::string_view nsName, NamespaceConfigData& data) {
 	shared_lock<shared_timed_mutex> lk(mtx_);
 	auto it = namespacesData_.find(nsName);
 	if (it == namespacesData_.end()) {
@@ -138,7 +152,7 @@ bool DBConfigProvider::GetNamespaceConfig(std::string_view nsName, NamespaceConf
 	return true;
 }
 
-Error ReplicationConfigData::FromYML(const std::string &yaml) {
+Error ReplicationConfigData::FromYML(const std::string& yaml) {
 	try {
 		YAML::Node root = YAML::Load(yaml);
 		masterDSN = root["master_dsn"].as<std::string>(masterDSN);
@@ -156,18 +170,18 @@ Error ReplicationConfigData::FromYML(const std::string &yaml) {
 		serverId = root["server_id"].as<int>(serverId);
 		auto node = root["namespaces"];
 		namespaces.clear();
-		for (const auto &it : node) {
+		for (const auto& it : node) {
 			namespaces.insert(it.as<std::string>());
 		}
 		return errOK;
-	} catch (const YAML::Exception &ex) {
+	} catch (const YAML::Exception& ex) {
 		return Error(errParams, "yaml parsing error: '%s'", ex.what());
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 }
 
-Error ReplicationConfigData::FromJSON(const gason::JsonNode &root) {
+Error ReplicationConfigData::FromJSON(const gason::JsonNode& root) {
 	try {
 		masterDSN = root["master_dsn"].As<std::string>();
 		appName = root["app_name"].As<std::string>(std::move(appName));
@@ -183,21 +197,27 @@ Error ReplicationConfigData::FromJSON(const gason::JsonNode &root) {
 		enableCompression = root["enable_compression"].As<bool>(enableCompression);
 		serverId = root["server_id"].As<int>(serverId);
 		namespaces.clear();
-		for (auto &objNode : root["namespaces"]) {
+		for (auto& objNode : root["namespaces"]) {
 			namespaces.insert(objNode.As<std::string>());
 		}
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
-	} catch (const gason::Exception &ex) {
+	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "ReplicationConfigData: %s", ex.what());
 	}
 	return errOK;
 }
 
-ReplicationRole ReplicationConfigData::str2role(const std::string &role) {
-	if (role == "master") return ReplicationMaster;
-	if (role == "slave") return ReplicationSlave;
-	if (role == "none") return ReplicationNone;
+ReplicationRole ReplicationConfigData::str2role(const std::string& role) {
+	if (role == "master") {
+		return ReplicationMaster;
+	}
+	if (role == "slave") {
+		return ReplicationSlave;
+	}
+	if (role == "none") {
+		return ReplicationNone;
+	}
 
 	throw Error(errParams, "Unknown replication role %s", role);
 }
@@ -216,7 +236,7 @@ std::string ReplicationConfigData::role2str(ReplicationRole role) noexcept {
 	}
 }
 
-void ReplicationConfigData::GetJSON(JsonBuilder &jb) const {
+void ReplicationConfigData::GetJSON(JsonBuilder& jb) const {
 	jb.Put("role", role2str(role));
 	jb.Put("master_dsn", masterDSN);
 	jb.Put("app_name", appName);
@@ -230,14 +250,16 @@ void ReplicationConfigData::GetJSON(JsonBuilder &jb) const {
 	jb.Put("server_id", serverId);
 	{
 		auto arrNode = jb.Array("namespaces");
-		for (const auto &ns : namespaces) arrNode.Put(nullptr, ns);
+		for (const auto& ns : namespaces) {
+			arrNode.Put(nullptr, ns);
+		}
 	}
 }
 
-void ReplicationConfigData::GetYAML(WrSerializer &ser) const {
+void ReplicationConfigData::GetYAML(WrSerializer& ser) const {
 	YAML::Node nssYaml;
 	nssYaml["namespaces"] = YAML::Node(YAML::NodeType::Sequence);
-	for (const auto &ns : namespaces) {
+	for (const auto& ns : namespaces) {
 		nssYaml["namespaces"].push_back(ns);
 	}
 	// clang-format off

@@ -26,8 +26,10 @@ private:
 	};
 
 	enum class StringAllowed : bool { No = false, Yes = true };
-	[[nodiscard]] PrimaryToken getPrimaryToken(tokenizer& parser, const PayloadValue& v, StringAllowed strAllowed, token& outTok);
-	[[nodiscard]] PrimaryToken handleTokenName(tokenizer& parser, const PayloadValue& v, token& outTok);
+	enum class NonIntegralAllowed : bool { No = false, Yes = true };
+	[[nodiscard]] PrimaryToken getPrimaryToken(tokenizer& parser, const PayloadValue& v, StringAllowed strAllowed,
+											   NonIntegralAllowed nonIntAllowed, token& outTok);
+	[[nodiscard]] PrimaryToken handleTokenName(tokenizer& parser, const PayloadValue& v, NonIntegralAllowed nonIntAllowed, token& outTok);
 	[[nodiscard]] double performSumAndSubtracting(tokenizer& parser, const PayloadValue& v);
 	[[nodiscard]] double performMultiplicationAndDivision(tokenizer& parser, const PayloadValue& v, token& lastTok);
 	[[nodiscard]] double performArrayConcatenation(tokenizer& parser, const PayloadValue& v, token& lastTok);

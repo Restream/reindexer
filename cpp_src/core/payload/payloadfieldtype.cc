@@ -7,7 +7,9 @@
 namespace reindexer {
 
 size_t PayloadFieldType::Sizeof() const noexcept {
-	if (IsArray()) return sizeof(PayloadFieldValue::Array);
+	if (IsArray()) {
+		return sizeof(PayloadFieldValue::Array);
+	}
 	return ElemSizeof();
 }
 
@@ -24,7 +26,9 @@ size_t PayloadFieldType::ElemSizeof() const noexcept {
 }
 
 size_t PayloadFieldType::Alignof() const noexcept {
-	if (IsArray()) return alignof(PayloadFieldValue::Array);
+	if (IsArray()) {
+		return alignof(PayloadFieldValue::Array);
+	}
 	return Type().EvaluateOneOf(
 		[](KeyValueType::Bool) noexcept { return alignof(bool); }, [](KeyValueType::Int) noexcept { return alignof(int); },
 		[](KeyValueType::Int64) noexcept { return alignof(int64_t); }, [](KeyValueType::Uuid) noexcept { return alignof(Uuid); },

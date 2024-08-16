@@ -12,7 +12,9 @@ protected:
 	~Splitter() = default;
 
 	static double AreaIncrease(const Rectangle& lhs, const Rectangle& rhs) noexcept {
-		if (lhs.Contain(rhs)) return 0.0;
+		if (lhs.Contain(rhs)) {
+			return 0.0;
+		}
 		return reindexer::boundRect(lhs, rhs).Area() - lhs.Area();
 	}
 
@@ -45,13 +47,17 @@ protected:
 												 bool splitOfChildAvailable) {
 		size_t i = 0;
 		if (!splitOfChildAvailable) {
-			while (i < data.size() && data[i]->IsFull()) ++i;
+			while (i < data.size() && data[i]->IsFull()) {
+				++i;
+			}
 		}
 		assertrx(i < data.size());
 		auto minAreaIncrease = data[i]->AreaIncrease(insertingRect);
 		size_t result = i;
 		for (++i; i < data.size(); ++i) {
-			if (!splitOfChildAvailable && data[i]->IsFull()) continue;
+			if (!splitOfChildAvailable && data[i]->IsFull()) {
+				continue;
+			}
 			const auto currAreaIncrease = data[i]->AreaIncrease(insertingRect);
 			if ((approxEqual(currAreaIncrease, minAreaIncrease) && data[i]->BoundRect().Area() < data[result]->BoundRect().Area()) ||
 				currAreaIncrease < minAreaIncrease) {
@@ -70,7 +76,9 @@ protected:
 		}
 		auto minAreaIncrease = dst.AreaIncrease(data[result]->BoundRect());
 		for (size_t i = result + 1; i < data.size(); ++i) {
-			if (i == except) continue;
+			if (i == except) {
+				continue;
+			}
 			const auto currAreaIncrease = dst.AreaIncrease(data[i]->BoundRect());
 			if ((approxEqual(currAreaIncrease, minAreaIncrease) && data[i]->BoundRect().Area() < data[result]->BoundRect().Area()) ||
 				currAreaIncrease < minAreaIncrease) {

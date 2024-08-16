@@ -9,17 +9,17 @@
 #include <stdlib.h>
 #include <mutex>
 #include "tools/alloc_ext/tc_malloc_extension.h"
-#endif  // _WIN32
+#endif	// _WIN32
 
 #ifdef _WIN32
 
 void ProfilerRegisterThread() { ::ProfilerRegisterThread(); }
 
-int ProfilerStart(const char *fname) { return ::ProfilerStart(); }
+int ProfilerStart(const char* fname) { return ::ProfilerStart(); }
 
 void ProfilerStop() { ::ProfilerStop(); }
 
-char *GetHeapProfile() { return ::GetHeapProfile(); }
+char* GetHeapProfile() { return ::GetHeapProfile(); }
 
 bool GperfProfilerIsAvailable() { return true; }
 
@@ -29,9 +29,9 @@ namespace reindexer_server {
 namespace pprof {
 
 using ProfilerRegisterThreadFn = void (*)();
-using ProfilerStartFn = int (*)(const char *);
+using ProfilerStartFn = int (*)(const char*);
 using ProfilerStopFn = void (*)();
-using GetHeapProfileFn = char *(*)();
+using GetHeapProfileFn = char* (*)();
 
 static ProfilerRegisterThreadFn getProfilerRegisterThreadFn() {
 	static auto profiler_register_thread_fn = reinterpret_cast<ProfilerRegisterThreadFn>(dlsym(RTLD_DEFAULT, "ProfilerRegisterThread"));
@@ -61,7 +61,7 @@ void ProfilerRegisterThread() {
 	return;
 }
 
-int ProfilerStart(const char *fname) {
+int ProfilerStart(const char* fname) {
 	auto profiler_start_fn = getProfilerStartFn();
 	if (profiler_start_fn) {
 		return profiler_start_fn(fname);
@@ -77,7 +77,7 @@ void ProfilerStop() {
 	return;
 }
 
-char *GetHeapProfile() {
+char* GetHeapProfile() {
 	auto get_heap_profile_fn = getGetHeapProfileFn();
 	if (get_heap_profile_fn) {
 		return get_heap_profile_fn();
@@ -90,9 +90,9 @@ bool GperfProfilerIsAvailable() {
 		   (getProfilerStopFn() != nullptr) && (getGetHeapProfileFn() != nullptr);
 }
 
-#endif  //_WIN32
+#endif	//_WIN32
 
 }  // namespace pprof
 }  // namespace reindexer_server
 
-#endif  // REINDEX_WITH_GPERFTOOLS
+#endif	// REINDEX_WITH_GPERFTOOLS

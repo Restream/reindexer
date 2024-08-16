@@ -8,49 +8,85 @@ namespace reindexer_server {
 class LoggerWrapper {
 public:
 	LoggerWrapper() = default;
-	LoggerWrapper(const char *name) : logger_(spdlog::get(name)) {}
+	LoggerWrapper(const char* name) : logger_(spdlog::get(name)) {}
 
 	operator bool() const noexcept { return logger_ != nullptr; }
 
 	template <typename... Args>
-	void error(Args &&...args) const {
+	void error(spdlog::format_string_t<Args...> fmt, Args&&... args) const {
 		if (logger_) {
-			logger_->error(std::forward<Args>(args)...);
+			logger_->error(fmt, std::forward<Args>(args)...);
+		}
+	}
+	template <typename T>
+	void error(const T& msg) const {
+		if (logger_) {
+			logger_->error(msg);
 		}
 	}
 
 	template <typename... Args>
-	void warn(Args &&...args) const {
+	void warn(spdlog::format_string_t<Args...> fmt, Args&&... args) const {
 		if (logger_) {
-			logger_->warn(std::forward<Args>(args)...);
+			logger_->warn(fmt, std::forward<Args>(args)...);
+		}
+	}
+	template <typename T>
+	void warn(const T& msg) const {
+		if (logger_) {
+			logger_->warn(msg);
 		}
 	}
 
 	template <typename... Args>
-	void info(Args &&...args) const {
+	void info(spdlog::format_string_t<Args...> fmt, Args&&... args) const {
 		if (logger_) {
-			logger_->info(std::forward<Args>(args)...);
+			logger_->info(fmt, std::forward<Args>(args)...);
+		}
+	}
+	template <typename T>
+	void info(const T& msg) const {
+		if (logger_) {
+			logger_->info(msg);
 		}
 	}
 
 	template <typename... Args>
-	void trace(Args &&...args) const {
+	void trace(spdlog::format_string_t<Args...> fmt, Args&&... args) const {
 		if (logger_) {
-			logger_->trace(std::forward<Args>(args)...);
+			logger_->trace(fmt, std::forward<Args>(args)...);
+		}
+	}
+	template <typename T>
+	void trace(const T& msg) const {
+		if (logger_) {
+			logger_->trace(msg);
 		}
 	}
 
 	template <typename... Args>
-	void critical(Args &&...args) const {
+	void critical(spdlog::format_string_t<Args...> fmt, Args&&... args) const {
 		if (logger_) {
-			logger_->critical(std::forward<Args>(args)...);
+			logger_->critical(fmt, std::forward<Args>(args)...);
+		}
+	}
+	template <typename T>
+	void critical(const T& msg) const {
+		if (logger_) {
+			logger_->critical(msg);
 		}
 	}
 
 	template <typename... Args>
-	void debug(Args &&...args) const {
+	void debug(spdlog::format_string_t<Args...> fmt, Args&&... args) const {
 		if (logger_) {
-			logger_->debug(std::forward<Args>(args)...);
+			logger_->debug(fmt, std::forward<Args>(args)...);
+		}
+	}
+	template <typename T>
+	void debug(const T& msg) const {
+		if (logger_) {
+			logger_->debug(msg);
 		}
 	}
 
@@ -59,9 +95,3 @@ private:
 };
 
 }  // namespace reindexer_server
-
-namespace fmt {
-static inline void format_arg(fmt::BasicFormatter<char> &f, const char *&, std::string_view s) {
-	f.writer() << fmt::BasicStringRef<char>(s.data(), s.length());
-}
-}  // namespace fmt

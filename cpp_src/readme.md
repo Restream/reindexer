@@ -35,6 +35,16 @@ While using docker, you may pass reindexer server config options via envinronmen
 - `RX_DISABLE_NS_LEAK` - Disables namespaces memory leak on database destruction (will slow down server's termination).
 - `RX_MAX_HTTP_REQ` - allows to configure max HTTP request size (in bytes). Default value is `2097152` (= 2 MB). `0` means 'unlimited'.
 
+### Image build
+
+Usually this is not required, but you may also build reindexer's docker image on your own, using this [Dockerfile](#cmd/reindexer_server/contrib/Dockerfile):
+
+```bash
+docker build -t my-reindexer-image -f cpp_src/cmd/reindexer_server/contrib/Dockerfile .
+```
+
+Build command above must be executed from root project's directory.
+
 ## Linux
 
 ### RHEL/Centos/Fedora
@@ -297,6 +307,11 @@ If reindexer library was built with rocksdb, it requires Go build tag `rocksdb` 
 ### Data transport formats
 
 Reindexer supports the following data formats to communicate with other applications (mainly via HTTP REST API): JSON, MSGPACK and Protobuf.
+
+## Log rotation
+
+There are no builtin mechanis for automatic log rotation, however `reindexer server` is able to reopen logfiles on `SIGHUP`.
+So, your external log manager (it may be even a simple `cron` script) have to move existing log files somewhere and then send `SIGHUP`-signal to the `reindexer server` process to recreate log files.
 
 #### Protobuf
 

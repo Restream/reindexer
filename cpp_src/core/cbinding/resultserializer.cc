@@ -41,7 +41,9 @@ void WrResultSerializer::putQueryParams(const QueryResults* results) {
 
 		for (int i = 0; i < totalCnt; i++) {
 			const TagsMatcher& tm = results->getTagsMatcher(i);
-			if (int32_t(tm.version() ^ tm.stateToken()) != opts_.ptVersions[i]) cnt++;
+			if (int32_t(tm.version() ^ tm.stateToken()) != opts_.ptVersions[i]) {
+				cnt++;
+			}
 		}
 		PutVarUint(cnt);
 		for (int i = 0; i < totalCnt; i++) {
@@ -149,7 +151,9 @@ void WrResultSerializer::putItemParams(const QueryResults* result, int idx, bool
 		default:
 			throw Error(errParams, "Can't serialize query results: unknown format %d", int((opts_.flags & kResultsFormatMask)));
 	}
-	if (!err.ok()) throw Error(errParseBin, "Internal error serializing query results: %s", err.what());
+	if (!err.ok()) {
+		throw Error(errParseBin, "Internal error serializing query results: %s", err.what());
+	}
 }
 
 void WrResultSerializer::putPayloadType(const QueryResults* results, int nsid) {
@@ -180,14 +184,24 @@ bool WrResultSerializer::PutResults(const QueryResults* result) {
 	}
 
 	// Result has items from multiple namespaces, so pass nsid to each item
-	if (result->getMergedNSCount() > 1) opts_.flags |= kResultsWithNsID;
+	if (result->getMergedNSCount() > 1) {
+		opts_.flags |= kResultsWithNsID;
+	}
 	// Result has joined items, so pass them to client within items from main NS
-	if (result->joined_.size() > 0) opts_.flags |= kResultsWithJoined;
+	if (result->joined_.size() > 0) {
+		opts_.flags |= kResultsWithJoined;
+	}
 
-	if (result->haveRank) opts_.flags |= kResultsWithRank;
-	if (result->needOutputRank) opts_.flags |= kResultsNeedOutputRank;
+	if (result->haveRank) {
+		opts_.flags |= kResultsWithRank;
+	}
+	if (result->needOutputRank) {
+		opts_.flags |= kResultsNeedOutputRank;
+	}
 	// If data is not cacheable, just do not pass item's ID and LSN. Clients should not cache this data
-	if (result->nonCacheableData) opts_.flags &= ~kResultsWithItemID;
+	if (result->nonCacheableData) {
+		opts_.flags &= ~kResultsWithItemID;
+	}
 	// MsgPack items contain fields names so there is no need to transfer payload types
 	// and joined data, as well as for JSON (they both contain it already)
 	if ((opts_.flags & kResultsFormatMask) == kResultsJson || (opts_.flags & kResultsFormatMask) == kResultsMsgPack) {
@@ -212,15 +226,21 @@ bool WrResultSerializer::PutResults(const QueryResults* result) {
 				}
 				for (auto it = jIt.begin(), end = jIt.end(); it != end; ++it, ++joinedField) {
 					PutVarUint(it.ItemsCount());
-					if (it.ItemsCount() == 0) continue;
+					if (it.ItemsCount() == 0) {
+						continue;
+					}
 					QueryResults qr = it.ToQueryResults();
 					qr.addNSContext(result->getPayloadType(joinedField), result->getTagsMatcher(joinedField),
 									result->getFieldsFilter(joinedField), result->getSchema(joinedField));
-					for (size_t idx = 0, qrCnt = qr.Count(); idx < qrCnt; ++idx) putItemParams(&qr, idx, false);
+					for (size_t idx = 0, qrCnt = qr.Count(); idx < qrCnt; ++idx) {
+						putItemParams(&qr, idx, false);
+					}
 				}
 			}
 		}
-		if (i == 0) grow((opts_.fetchLimit - 1) * (len_ - saveLen));
+		if (i == 0) {
+			grow((opts_.fetchLimit - 1) * (len_ - saveLen));
+		}
 	}
 	return opts_.fetchOffset + opts_.fetchLimit >= result->Count();
 }

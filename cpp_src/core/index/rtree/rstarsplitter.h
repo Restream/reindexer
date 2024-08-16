@@ -123,7 +123,9 @@ public:
 		}
 		size_t i = 0;
 		if (!splitOfChildAvailable) {
-			while (i < data.size() && data[i]->IsFull()) ++i;
+			while (i < data.size() && data[i]->IsFull()) {
+				++i;
+			}
 		}
 		assertrx(i < data.size());
 		auto minOverlapIncrease = overlap(boundRect(data[i]->BoundRect(), insertingRect), i, data) - overlap(data[i]->BoundRect(), i, data);
@@ -166,7 +168,9 @@ public:
 		auto minOverlapIncrease =
 			overlap(boundRect(data[result]->BoundRect(), dstBoundRect), result, except, data) - overlap(dstBoundRect, result, except, data);
 		for (size_t i = result + 1; i < data.size(); ++i) {
-			if (i == except) continue;
+			if (i == except) {
+				continue;
+			}
 			const auto currOverlapIncrease =
 				overlap(boundRect(data[i]->BoundRect(), dstBoundRect), i, except, data) - overlap(dstBoundRect, i, except, data);
 			if (approxEqual(minOverlapIncrease, currOverlapIncrease)) {
@@ -204,7 +208,9 @@ private:
 		return result;
 	}
 	static double overlap(const Rectangle& rect, size_t index1, size_t index2, const decltype(std::declval<Node>().data_)& data) noexcept {
-		if (index1 > index2) std::swap(index1, index2);
+		if (index1 > index2) {
+			std::swap(index1, index2);
+		}
 		assertrx(index2 < data.size());
 		double result = 0.0;
 		size_t i = 0;
@@ -222,10 +228,14 @@ private:
 	static double overlap(const Rectangle& r1, const Rectangle& r2) noexcept {
 		const auto left = std::max(r1.Left(), r2.Left());
 		const auto right = std::min(r1.Right(), r2.Right());
-		if (left >= right) return 0.0;
+		if (left >= right) {
+			return 0.0;
+		}
 		const auto bottom = std::max(r1.Bottom(), r2.Bottom());
 		const auto top = std::min(r1.Top(), r2.Top());
-		if (bottom >= top) return 0.0;
+		if (bottom >= top) {
+			return 0.0;
+		}
 		return (right - left) * (top - bottom);
 	}
 };

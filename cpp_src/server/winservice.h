@@ -12,12 +12,12 @@ namespace reindexer_server {
 
 class WinService {
 public:
-	WinService(const std::string &name, const std::string &displayName, std::function<void(void)> run, std::function<void(void)> terminate,
+	WinService(const std::string& name, const std::string& displayName, std::function<void(void)> run, std::function<void(void)> terminate,
 			   std::function<bool(void)> status);
 	virtual ~WinService();
-	void Message(bool bError, const char *fmt, ...);
+	void Message(bool bError, const char* fmt, ...);
 	int Start();
-	bool Install(const char *cmdline);
+	bool Install(const char* cmdline);
 	bool Remove(bool silent = false);
 
 	void ServiceCtrl(DWORD dwCtrlCode);

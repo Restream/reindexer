@@ -474,32 +474,44 @@ Error ReindexerService::buildItems(WrSerializer& wrser, const reindexer::QueryRe
 				for (auto& item : qr) {
 					array.Raw(nullptr, "");
 					status = item.GetJSON(wrser, false);
-					if (!status.ok()) return status;
+					if (!status.ok()) {
+						return status;
+					}
 				}
 			}
 			if (qr.GetAggregationResults().size() > 0) {
 				status = buildAggregation(builder, wrser, qr, opts);
-				if (!status.ok()) return status;
+				if (!status.ok()) {
+					return status;
+				}
 			}
 			break;
 		}
 		case EncodingType::MSGPACK: {
 			int fields = 0;
 			bool withItems = (qr.Count() > 0);
-			if (withItems) ++fields;
+			if (withItems) {
+				++fields;
+			}
 			bool withAggregation = (qr.GetAggregationResults().size() > 0);
-			if (withAggregation) ++fields;
+			if (withAggregation) {
+				++fields;
+			}
 			MsgPackBuilder builder(wrser, ObjType::TypeObject, fields);
 			if (withItems) {
 				MsgPackBuilder array = builder.Array("items", qr.Count());
 				for (auto& item : qr) {
 					status = item.GetMsgPack(wrser, false);
-					if (!status.ok()) return status;
+					if (!status.ok()) {
+						return status;
+					}
 				}
 			}
 			if (withAggregation) {
 				status = buildAggregation(builder, wrser, qr, opts);
-				if (!status.ok()) return status;
+				if (!status.ok()) {
+					return status;
+				}
 			}
 			break;
 		}
@@ -508,7 +520,9 @@ Error ReindexerService::buildItems(WrSerializer& wrser, const reindexer::QueryRe
 			ProtobufBuilder array = builder.Array("items");
 			for (auto& it : qr) {
 				status = it.GetProtobuf(wrser, false);
-				if (!status.ok()) return status;
+				if (!status.ok()) {
+					return status;
+				}
 			}
 			break;
 		}
@@ -518,12 +532,16 @@ Error ReindexerService::buildItems(WrSerializer& wrser, const reindexer::QueryRe
 			}
 			for (auto& item : qr) {
 				status = packCJSONItem(wrser, item, opts);
-				if (!status.ok()) return status;
+				if (!status.ok()) {
+					return status;
+				}
 
 				auto jIt = item.GetJoined();
 				if (opts.withjoineditems() && jIt.getJoinedItemsCount() > 0) {
 					wrser.PutVarUint(jIt.getJoinedItemsCount() > 0 ? jIt.getJoinedFieldsCount() : 0);
-					if (jIt.getJoinedItemsCount() == 0) continue;
+					if (jIt.getJoinedItemsCount() == 0) {
+						continue;
+					}
 
 					size_t joinedField = item.qr_->joined_.size();
 					for (size_t ns = 0; ns < item.GetItemRef().Nsid(); ++ns) {
@@ -531,13 +549,17 @@ Error ReindexerService::buildItems(WrSerializer& wrser, const reindexer::QueryRe
 					}
 					for (auto it = jIt.begin(); it != jIt.end(); ++it, ++joinedField) {
 						wrser.PutVarUint(it.ItemsCount());
-						if (it.ItemsCount() == 0) continue;
+						if (it.ItemsCount() == 0) {
+							continue;
+						}
 						QueryResults jqr = it.ToQueryResults();
 						jqr.addNSContext(qr.getPayloadType(joinedField), qr.getTagsMatcher(joinedField), qr.getFieldsFilter(joinedField),
 										 qr.getSchema(joinedField));
 						for (size_t i = 0; i < jqr.Count(); i++) {
 							status = packCJSONItem(wrser, jqr.begin() + i, opts);
-							if (!status.ok()) return status;
+							if (!status.ok()) {
+								return status;
+							}
 						}
 					}
 				}
@@ -979,7 +1001,7 @@ Error ReindexerService::execSqlQueryByType(QueryResults& res, const SelectSqlReq
 				break;
 			}
 			default:
-				return Error(errParams, "unknown query type %d", q.Type());
+				return Error(errParams, "unknown query type %d", int(q.Type()));
 		}
 		reindexer::Reindexer* rx = nullptr;
 		auto err = getDB(request.dbname(), requiredRole, &rx);
@@ -1001,7 +1023,7 @@ Error ReindexerService::execSqlQueryByType(QueryResults& res, const SelectSqlReq
 				return rx->TruncateNamespace(q.NsName());
 			}
 			default:
-				return Error(errParams, "unknown query type %d", q.Type());
+				return Error(errParams, "unknown query type %d", int(q.Type()));
 		}
 	} catch (Error& e) {
 		return e;

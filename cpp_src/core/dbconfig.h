@@ -48,7 +48,7 @@ public:
 
 class ProfilingConfigData {
 public:
-	ProfilingConfigData &operator=(const ProfilingConfigData &d) noexcept {
+	ProfilingConfigData& operator=(const ProfilingConfigData& d) noexcept {
 		queriesThresholdUS.store(d.queriesThresholdUS, std::memory_order_relaxed);
 		queriesPerfStats.store(d.queriesPerfStats, std::memory_order_relaxed);
 		perfStats.store(d.perfStats, std::memory_order_relaxed);
@@ -74,14 +74,14 @@ constexpr size_t kDefaultCacheSizeLimit = 1024 * 1024 * 128;
 constexpr uint32_t kDefaultHitCountToCache = 2;
 
 struct NamespaceCacheConfigData {
-	bool IsIndexesCacheEqual(const NamespaceCacheConfigData &o) noexcept {
+	bool IsIndexesCacheEqual(const NamespaceCacheConfigData& o) noexcept {
 		return idxIdsetCacheSize == o.idxIdsetCacheSize && idxIdsetHitsToCache == o.idxIdsetHitsToCache &&
 			   ftIdxCacheSize == o.ftIdxCacheSize && ftIdxHitsToCache == o.ftIdxHitsToCache;
 	}
-	bool IsJoinCacheEqual(const NamespaceCacheConfigData &o) noexcept {
+	bool IsJoinCacheEqual(const NamespaceCacheConfigData& o) noexcept {
 		return joinCacheSize == o.joinCacheSize && joinHitsToCache == o.joinHitsToCache;
 	}
-	bool IsQueryCountCacheEqual(const NamespaceCacheConfigData &o) noexcept {
+	bool IsQueryCountCacheEqual(const NamespaceCacheConfigData& o) noexcept {
 		return queryCountCacheSize == o.queryCountCacheSize && queryCountHitsToCache == o.queryCountHitsToCache;
 	}
 
@@ -117,12 +117,13 @@ struct NamespaceConfigData {
 };
 
 enum ReplicationRole { ReplicationNone, ReplicationMaster, ReplicationSlave, ReplicationReadOnly };
+inline constexpr int format_as(ReplicationRole v) noexcept { return int(v); }
 
 struct ReplicationConfigData {
-	Error FromYML(const std::string &yml);
-	Error FromJSON(const gason::JsonNode &v);
-	void GetJSON(JsonBuilder &jb) const;
-	void GetYAML(WrSerializer &ser) const;
+	Error FromYML(const std::string& yml);
+	Error FromJSON(const gason::JsonNode& v);
+	void GetJSON(JsonBuilder& jb) const;
+	void GetYAML(WrSerializer& ser) const;
 
 	ReplicationRole role = ReplicationNone;
 	std::string masterDSN;
@@ -139,7 +140,7 @@ struct ReplicationConfigData {
 	bool enableCompression = true;
 	int serverId = 0;
 
-	bool operator==(const ReplicationConfigData &rdata) const noexcept {
+	bool operator==(const ReplicationConfigData& rdata) const noexcept {
 		return (role == rdata.role) && (connPoolSize == rdata.connPoolSize) && (workerThreads == rdata.workerThreads) &&
 			   (clusterID == rdata.clusterID) && (forceSyncOnLogicError == rdata.forceSyncOnLogicError) &&
 			   (forceSyncOnWrongDataHash == rdata.forceSyncOnWrongDataHash) && (masterDSN == rdata.masterDSN) &&
@@ -147,10 +148,10 @@ struct ReplicationConfigData {
 			   (timeoutSec == rdata.timeoutSec) && (namespaces == rdata.namespaces) && (enableCompression == rdata.enableCompression) &&
 			   (serverId == rdata.serverId) && (appName == rdata.appName);
 	}
-	bool operator!=(const ReplicationConfigData &rdata) const noexcept { return !operator==(rdata); }
+	bool operator!=(const ReplicationConfigData& rdata) const noexcept { return !operator==(rdata); }
 
 protected:
-	static ReplicationRole str2role(const std::string &);
+	static ReplicationRole str2role(const std::string&);
 	static std::string role2str(ReplicationRole) noexcept;
 };
 
@@ -158,14 +159,14 @@ class DBConfigProvider {
 public:
 	DBConfigProvider() = default;
 	~DBConfigProvider() = default;
-	DBConfigProvider(DBConfigProvider &obj) = delete;
-	DBConfigProvider &operator=(DBConfigProvider &obj) = delete;
+	DBConfigProvider(DBConfigProvider& obj) = delete;
+	DBConfigProvider& operator=(DBConfigProvider& obj) = delete;
 
-	Error FromJSON(const gason::JsonNode &root);
+	Error FromJSON(const gason::JsonNode& root);
 	void setHandler(ConfigType cfgType, std::function<void()> handler);
 
 	ReplicationConfigData GetReplicationConfig();
-	bool GetNamespaceConfig(std::string_view nsName, NamespaceConfigData &data);
+	bool GetNamespaceConfig(std::string_view nsName, NamespaceConfigData& data);
 	LongQueriesLoggingParams GetSelectLoggingParams() const noexcept {
 		return profilingData_.longSelectLoggingParams.load(std::memory_order_relaxed);
 	}

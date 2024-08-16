@@ -64,7 +64,7 @@ void ItemsLoader::reading() {
 			}
 
 			// Read LSN
-			int64_t lsn = *reinterpret_cast<const int64_t *>(dataSlice.data());
+			int64_t lsn = *reinterpret_cast<const int64_t*>(dataSlice.data());
 			if (lsn < 0) {
 				lastErr = Error(errParseBin, "Ivalid LSN value: %d", lsn);
 				logPrintf(LogTrace, "Error load item to '%s' from storage: '%s'", ns_.name_, lastErr.what());
@@ -89,10 +89,10 @@ void ItemsLoader::reading() {
 			if (terminated_) {
 				return;
 			}
-			auto &item = items_.PlaceItem();
+			auto& item = items_.PlaceItem();
 			lck.unlock();
 
-			auto &sliceStorageP = slices_[sliceId];
+			auto& sliceStorageP = slices_[sliceId];
 			if (sliceStorageP.len < dataSlice.size()) {
 				sliceStorageP.len = dataSlice.size() * 1.1;
 				sliceStorageP.data.reset(new char[sliceStorageP.len]);
@@ -103,7 +103,7 @@ void ItemsLoader::reading() {
 			item.impl.Unsafe(true);
 			try {
 				item.impl.FromCJSON(dataSlice);
-			} catch (const Error &err) {
+			} catch (const Error& err) {
 				logPrintf(LogTrace, "Error load item to '%s' from storage: '%s'", ns_.name_, err.what());
 				++errCount;
 				lastErr = err;
@@ -179,7 +179,7 @@ void ItemsLoader::insertion() {
 
 			for (unsigned i = 0; i < items.size(); ++i) {
 				const auto id = i + startId;
-				auto &plData = ns_.items_[id];
+				auto& plData = ns_.items_[id];
 				Payload pl(ns_.payloadType_, plData);
 				Payload plNew(items[i].impl.GetPayload());
 				// Index [0] must be inserted after all other simple indexes
@@ -190,7 +190,7 @@ void ItemsLoader::insertion() {
 				indexInserters.BuildCompositeIndexesAsync();
 			}
 			for (unsigned i = 0; i < items.size(); ++i) {
-				auto &plData = ns_.items_[i + startId];
+				auto& plData = ns_.items_[i + startId];
 				Payload pl(ns_.payloadType_, plData);
 				plData.SetLSN(items[i].impl.Value().GetLSN());
 				ns_.repl_.dataHash ^= pl.GetHash();
@@ -206,30 +206,33 @@ void ItemsLoader::insertion() {
 }
 
 void ItemsLoader::clearIndexCache() {
-	for (auto &idx : ns_.indexes_) {
+	for (auto& idx : ns_.indexes_) {
 		idx->DestroyCache();
 		idx->Commit();
 	}
 }
 
 template <typename MutexT>
-void ItemsLoader::doInsertField(NamespaceImpl::IndexesStorage &indexes, unsigned field, IdType id, Payload &pl, Payload &plNew,
-								VariantArray &krefs, VariantArray &skrefs, MutexT &mtx) {
-	Index &index = *indexes[field];
+void ItemsLoader::doInsertField(NamespaceImpl::IndexesStorage& indexes, unsigned field, IdType id, Payload& pl, Payload& plNew,
+								VariantArray& krefs, VariantArray& skrefs, MutexT& mtx) {
+	Index& index = *indexes[field];
 	const bool isIndexSparse = index.Opts().IsSparse();
 	if (isIndexSparse) {
 		assertrx(index.Fields().getTagsPathsLength() > 0);
 		try {
 			plNew.GetByJsonPath(index.Fields().getTagsPath(0), skrefs, index.KeyType());
-		} catch (const Error &) {
+		} catch (const Error&) {
 			skrefs.resize(0);
 		}
 	} else {
 		plNew.Get(field, skrefs);
 	}
 
-	if (index.Opts().GetCollateMode() == CollateUTF8)
-		for (auto &key : skrefs) key.EnsureUTF8();
+	if (index.Opts().GetCollateMode() == CollateUTF8) {
+		for (auto& key : skrefs) {
+			key.EnsureUTF8();
+		}
+	}
 
 	// Put value to index
 	krefs.resize(0);
@@ -252,7 +255,7 @@ void ItemsLoader::doInsertField(NamespaceImpl::IndexesStorage &indexes, unsigned
 	}
 }
 
-IndexInserters::IndexInserters(NamespaceImpl::IndexesStorage &indexes, PayloadType pt) : indexes_(indexes), pt_(std::move(pt)) {
+IndexInserters::IndexInserters(NamespaceImpl::IndexesStorage& indexes, PayloadType pt) : indexes_(indexes), pt_(std::move(pt)) {
 	for (int i = 1; i < indexes_.firstCompositePos(); ++i) {
 		if (indexes_[i]->Opts().IsArray()) {
 			hasArrayIndexes_ = true;
@@ -277,7 +280,7 @@ void IndexInserters::Stop() {
 		shared_.terminate = true;
 		cvReady_.notify_all();
 	}
-	for (auto &th : threads_) {
+	for (auto& th : threads_) {
 		th.join();
 	}
 	threads_.clear();
@@ -332,7 +335,7 @@ void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 			if (shared_.composite) {
 				for (unsigned i = 0; i < shared_.newItems.size(); ++i) {
 					const auto id = startId + i;
-					const auto &plData = shared_.nsItems[i];
+					const auto& plData = shared_.nsItems[i];
 					for (unsigned field = firstCompositeIndex + threadId - kTIDOffset; field < totalIndexes; field += threadsCnt) {
 						bool needClearCache{false};
 						indexes_[field]->Upsert(Variant{plData}, id, needClearCache);
@@ -342,8 +345,8 @@ void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 				if (hasArrayIndexes_) {
 					for (unsigned i = 0; i < shared_.newItems.size(); ++i) {
 						const auto id = startId + i;
-						auto &item = shared_.newItems[i].impl;
-						auto &plData = shared_.nsItems[i];
+						auto& item = shared_.newItems[i].impl;
+						auto& plData = shared_.nsItems[i];
 						Payload pl(pt_, plData);
 						Payload plNew = item.GetPayload();
 						for (unsigned field = threadId - kTIDOffset + 1; field < firstCompositeIndex; field += threadsCnt) {
@@ -355,8 +358,8 @@ void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 					dummy_mutex dummyMtx;
 					for (unsigned i = 0; i < shared_.newItems.size(); ++i) {
 						const auto id = startId + i;
-						auto &item = shared_.newItems[i].impl;
-						auto &plData = shared_.nsItems[i];
+						auto& item = shared_.newItems[i].impl;
+						auto& plData = shared_.nsItems[i];
 						Payload pl(pt_, plData);
 						Payload plNew = item.GetPayload();
 						for (unsigned field = threadId - kTIDOffset + 1; field < firstCompositeIndex; field += threadsCnt) {
@@ -366,7 +369,7 @@ void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 				}
 			}
 			onItemsHandled();
-		} catch (Error &e) {
+		} catch (Error& e) {
 			onException(e);
 		} catch (...) {
 			onException(Error(errLogic, "Unknown exception in insertion loop"));

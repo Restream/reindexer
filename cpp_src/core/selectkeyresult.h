@@ -21,11 +21,11 @@ class SingleSelectKeyResult {
 
 public:
 	SingleSelectKeyResult() noexcept {}
-	explicit SingleSelectKeyResult(IndexIterator::Ptr &&indexForwardIter) noexcept : indexForwardIter_(std::move(indexForwardIter)) {
+	explicit SingleSelectKeyResult(IndexIterator::Ptr&& indexForwardIter) noexcept : indexForwardIter_(std::move(indexForwardIter)) {
 		assertrx(indexForwardIter_ != nullptr);
 	}
 	template <typename KeyEntryT>
-	explicit SingleSelectKeyResult(const KeyEntryT &ids, SortType sortId) noexcept {
+	explicit SingleSelectKeyResult(const KeyEntryT& ids, SortType sortId) noexcept {
 		if (ids.Unsorted().IsCommited()) {
 			ids_ = ids.Sorted(sortId);
 		} else {
@@ -35,10 +35,10 @@ public:
 			useBtree_ = true;
 		}
 	}
-	explicit SingleSelectKeyResult(IdSet::Ptr &&ids) noexcept : tempIds_(std::move(ids)), ids_(*tempIds_) {}
+	explicit SingleSelectKeyResult(IdSet::Ptr&& ids) noexcept : tempIds_(std::move(ids)), ids_(*tempIds_) {}
 	explicit SingleSelectKeyResult(IdSetCRef ids) noexcept : ids_(ids) {}
 	explicit SingleSelectKeyResult(IdType rBegin, IdType rEnd) noexcept : rBegin_(rBegin), rEnd_(rEnd), isRange_(true) {}
-	SingleSelectKeyResult(const SingleSelectKeyResult &other) noexcept
+	SingleSelectKeyResult(const SingleSelectKeyResult& other) noexcept
 		: tempIds_(other.tempIds_),
 		  ids_(other.ids_),
 		  set_(other.set_),
@@ -65,7 +65,7 @@ public:
 			}
 		}
 	}
-	SingleSelectKeyResult &operator=(const SingleSelectKeyResult &other) noexcept {
+	SingleSelectKeyResult& operator=(const SingleSelectKeyResult& other) noexcept {
 		if (&other != this) {
 			tempIds_ = other.tempIds_;
 			ids_ = other.ids_;
@@ -100,7 +100,7 @@ public:
 	IdSetCRef ids_;
 
 protected:
-	const base_idsetset *set_ = nullptr;
+	const base_idsetset* set_ = nullptr;
 
 	union {
 		IdSetCRef::const_iterator begin_;
@@ -175,7 +175,7 @@ public:
 	/// @return amount of loops.
 	size_t GetMaxIterations(size_t limitIters = std::numeric_limits<size_t>::max()) const noexcept {
 		size_t cnt = 0;
-		for (const SingleSelectKeyResult &r : *this) {
+		for (const SingleSelectKeyResult& r : *this) {
 			if (r.indexForwardIter_) {
 				cnt += r.indexForwardIter_->GetMaxIterations(limitIters);
 			} else if (r.isRange_) {
@@ -185,7 +185,9 @@ public:
 			} else {
 				cnt += r.ids_.size();
 			}
-			if (cnt > limitIters) break;
+			if (cnt > limitIters) {
+				break;
+			}
 		}
 		return cnt;
 	}
@@ -198,7 +200,7 @@ public:
 	/// @param opts - merge customization options
 	/// @return Pointer to a sorted IdSet object made
 	/// from all the SingleSelectKeyResult inner objects.
-	IdSet::Ptr MergeIdsets(MergeOptions &&opts, size_t idsCount) {
+	IdSet::Ptr MergeIdsets(MergeOptions&& opts, size_t idsCount) {
 		IdSet::Ptr mergedIds;
 		if (opts.genericSort) {
 			mergedIds = mergeGenericSort(idsCount);
@@ -246,27 +248,27 @@ private:
 		auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 		mergedIds->reserve(idsCount);
 
-		auto firstSetIt = std::partition(begin(), end(), [](const SingleSelectKeyResult &v) noexcept { return !v.useBtree_; });
+		auto firstSetIt = std::partition(begin(), end(), [](const SingleSelectKeyResult& v) noexcept { return !v.useBtree_; });
 		const auto vecsCnt = firstSetIt - begin();
 
-		h_vector<value_type *, 64> ptrsVec;
+		h_vector<value_type*, 64> ptrsVec;
 		ptrsVec.reserve(size());
 
-		for (auto &v : *this) {
+		for (auto& v : *this) {
 			if rx_unlikely (v.isRange_) {
 				throw Error(errLogic, "Unable to merge 'range' idset ('merge sort mode')");
 			}
 			ptrsVec.emplace_back(&v);
 		}
-		span<value_type *> vecSpan(ptrsVec.data(), vecsCnt);
-		span<value_type *> setSpan(ptrsVec.data() + vecsCnt, size() - vecsCnt);
+		span<value_type*> vecSpan(ptrsVec.data(), vecsCnt);
+		span<value_type*> setSpan(ptrsVec.data() + vecsCnt, size() - vecsCnt);
 
-		for (auto &v : vecSpan) {
+		for (auto& v : vecSpan) {
 			assertrx_dbg(!v->useBtree_);
 			v->it_ = v->ids_.begin();
 			v->end_ = v->ids_.end();
 		}
-		for (auto &v : setSpan) {
+		for (auto& v : setSpan) {
 			assertrx_dbg(v->useBtree_);
 			v->itset_ = v->set_->begin();
 			v->setend_ = v->set_->end();
@@ -276,12 +278,12 @@ private:
 		for (;;) {
 			int curMin = INT_MAX;
 			for (auto vsIt = vecSpan.begin(), vsItEnd = vecSpan.end(); vsIt != vsItEnd;) {
-				auto &itvec = (*vsIt)->it_;
-				auto &vecend = (*vsIt)->end_;
+				auto& itvec = (*vsIt)->it_;
+				auto& vecend = (*vsIt)->end_;
 				for (;; ++itvec) {
 					if (itvec == vecend) {
 						std::swap(*vsIt, vecSpan.back());
-						vecSpan = span<value_type *>(vecSpan.data(), vecSpan.size() - 1);
+						vecSpan = span<value_type*>(vecSpan.data(), vecSpan.size() - 1);
 						--vsItEnd;
 						break;
 					}
@@ -296,12 +298,12 @@ private:
 				}
 			}
 			for (auto ssIt = setSpan.begin(), ssItEnd = setSpan.end(); ssIt != ssItEnd;) {
-				auto &itset = (*ssIt)->itset_;
-				auto &setend = (*ssIt)->setend_;
+				auto& itset = (*ssIt)->itset_;
+				auto& setend = (*ssIt)->setend_;
 				for (;; ++itset) {
 					if (itset == setend) {
 						std::swap(*ssIt, setSpan.back());
-						setSpan = span<value_type *>(setSpan.data(), setSpan.size() - 1);
+						setSpan = span<value_type*>(setSpan.data(), setSpan.size() - 1);
 						--ssItEnd;
 						break;
 					}
@@ -329,16 +331,16 @@ private:
 		mergedIds->reserve(idsCount);
 
 		struct IdSetGreater {
-			bool operator()(const value_type *l, const value_type *r) noexcept {
+			bool operator()(const value_type* l, const value_type* r) noexcept {
 				const auto lval = l->useBtree_ ? *(l->itset_) : *(l->it_);
 				const auto rval = r->useBtree_ ? *(r->itset_) : *(r->it_);
 				return lval > rval;
 			}
 		};
 
-		h_vector<value_type *, 64> ptrsVec;
+		h_vector<value_type*, 64> ptrsVec;
 		ptrsVec.reserve(size());
-		for (auto &v : *this) {
+		for (auto& v : *this) {
 			if rx_unlikely (v.isRange_) {
 				throw Error(errLogic, "Unable to merge 'range' idset ('merge sort mode')");
 			}
@@ -357,10 +359,10 @@ private:
 				}
 			}
 		}
-		span<value_type *> idsetsSpan(ptrsVec.data(), ptrsVec.size());
+		span<value_type*> idsetsSpan(ptrsVec.data(), ptrsVec.size());
 		std::make_heap(idsetsSpan.begin(), idsetsSpan.end(), IdSetGreater{});
 		int min = INT_MIN;
-		auto handleMinValue = [&mergedIds, &idsetsSpan, &min](auto &it, auto end) noexcept {
+		auto handleMinValue = [&mergedIds, &idsetsSpan, &min](auto& it, auto end) noexcept {
 			auto val = *it;
 			if (val > min) {
 				mergedIds->AddUnordered(val);
@@ -369,20 +371,20 @@ private:
 			do {
 				if (++it == end) {
 					std::swap(idsetsSpan.front(), idsetsSpan.back());
-					idsetsSpan = span<value_type *>(idsetsSpan.begin(), idsetsSpan.size() - 1);
+					idsetsSpan = span<value_type*>(idsetsSpan.begin(), idsetsSpan.size() - 1);
 					return;
 				}
 			} while (*it <= min);
 		};
 
 		while (!idsetsSpan.empty()) {
-			auto &minV = *idsetsSpan.front();
+			auto& minV = *idsetsSpan.front();
 			if (minV.useBtree_) {
 				handleMinValue(minV.itset_, minV.setend_);
 			} else {
 				handleMinValue(minV.it_, minV.end_);
 			}
-			heapifyRoot<value_type *, IdSetGreater>(idsetsSpan);
+			heapifyRoot<value_type*, IdSetGreater>(idsetsSpan);
 		}
 		return mergedIds;
 	}
@@ -390,14 +392,14 @@ private:
 	template <typename T, typename CompareT>
 	RX_ALWAYS_INLINE void heapifyRoot(span<T> vec) noexcept {
 		static_assert(std::is_pointer_v<T>, "Expecting T being a pointer for the fast swaps");
-		T *target = vec.begin();
-		T *end = target + vec.size();
+		T* target = vec.begin();
+		T* end = target + vec.size();
 		CompareT c;
 		for (size_t i = 0;;) {
-			T *cur = target;
+			T* cur = target;
 			const auto lIdx = (i << 1) + 1;
-			T *left = vec.begin() + lIdx;
-			T *right = left + 1;
+			T* left = vec.begin() + lIdx;
+			T* right = left + 1;
 
 			if (left < end && c(*target, *left)) {
 				target = left;
@@ -428,16 +430,16 @@ class SelectKeyResults : public std::variant<SelectKeyResultsVector, ComparatorN
 
 public:
 	SelectKeyResults() noexcept : Base{SelectKeyResultsVector{}} {}
-	SelectKeyResults(SelectKeyResult &&res) noexcept : Base{SelectKeyResultsVector{std::move(res)}} {}
+	SelectKeyResults(SelectKeyResult&& res) noexcept : Base{SelectKeyResultsVector{std::move(res)}} {}
 	template <typename T>
-	SelectKeyResults(ComparatorIndexed<T> &&comp) noexcept : Base{std::move(comp)} {}
-	SelectKeyResults(ComparatorNotIndexed &&comp) noexcept : Base{std::move(comp)} {}
+	SelectKeyResults(ComparatorIndexed<T>&& comp) noexcept : Base{std::move(comp)} {}
+	SelectKeyResults(ComparatorNotIndexed&& comp) noexcept : Base{std::move(comp)} {}
 	void Clear() noexcept { std::get<SelectKeyResultsVector>(*this).clear(); }
-	void EmplaceBack(SelectKeyResult &&sr) { std::get<SelectKeyResultsVector>(*this).emplace_back(std::move(sr)); }
-	SelectKeyResult &&Front() && noexcept { return std::move(std::get<SelectKeyResultsVector>(*this).front()); }
-	const Base &AsVariant() const & noexcept { return *this; }
-	Base &AsVariant() & noexcept { return *this; }
-	auto AsVariant() const && = delete;
+	void EmplaceBack(SelectKeyResult&& sr) { std::get<SelectKeyResultsVector>(*this).emplace_back(std::move(sr)); }
+	SelectKeyResult&& Front() && noexcept { return std::move(std::get<SelectKeyResultsVector>(*this).front()); }
+	const Base& AsVariant() const& noexcept { return *this; }
+	Base& AsVariant() & noexcept { return *this; }
+	auto AsVariant() const&& = delete;
 };
 
 }  // namespace reindexer

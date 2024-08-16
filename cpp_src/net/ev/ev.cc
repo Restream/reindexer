@@ -105,7 +105,7 @@ public:
 loop_select_backend::loop_select_backend() : private_(new loop_select_backend_private) {}
 loop_select_backend::~loop_select_backend() = default;
 
-void loop_select_backend::init(dynamic_loop *owner) noexcept {
+void loop_select_backend::init(dynamic_loop* owner) noexcept {
 	owner_ = owner;
 	private_->maxfd_ = -1;
 	FD_ZERO(&private_->rfds_);
@@ -115,7 +115,9 @@ void loop_select_backend::init(dynamic_loop *owner) noexcept {
 void loop_select_backend::set(int fd, int events, int /*oldevents*/) noexcept {
 	assertrx(fd < capacity());
 
-	if (fd > private_->maxfd_) private_->maxfd_ = fd;
+	if (fd > private_->maxfd_) {
+		private_->maxfd_ = fd;
+	}
 
 	if (events & READ) {
 		FD_SET(fd, &private_->rfds_);
@@ -134,7 +136,9 @@ void loop_select_backend::stop(int fd) noexcept {
 	FD_CLR(fd, &private_->rfds_);
 	FD_CLR(fd, &private_->wfds_);
 
-	if (fd == private_->maxfd_) private_->maxfd_--;
+	if (fd == private_->maxfd_) {
+		private_->maxfd_--;
+	}
 }
 
 int loop_select_backend::runonce(int64_t t) {
@@ -147,12 +151,16 @@ int loop_select_backend::runonce(int64_t t) {
 	memcpy(&wfds, &private_->wfds_, 1 + (private_->maxfd_ / 8));
 
 	int ret = select(private_->maxfd_ + 1, &rfds, &wfds, nullptr, t != -1 ? &tv : nullptr);
-	if (ret < 0) return ret;
+	if (ret < 0) {
+		return ret;
+	}
 
 	for (int fd = 0; fd < private_->maxfd_ + 1; fd++) {
 		int events = (FD_ISSET(fd, &rfds) ? READ : 0) | (FD_ISSET(fd, &wfds) ? WRITE : 0);
 		if (events) {
-			if (!check_async(fd)) owner_->io_callback(fd, events);
+			if (!check_async(fd)) {
+				owner_->io_callback(fd, events);
+			}
 		}
 	}
 	return ret;
@@ -172,7 +180,7 @@ public:
 loop_poll_backend::loop_poll_backend() : private_(new loop_poll_backend_private) {}
 loop_poll_backend::~loop_poll_backend() {}
 
-void loop_poll_backend::init(dynamic_loop *owner) {
+void loop_poll_backend::init(dynamic_loop* owner) {
 	owner_ = owner;
 	private_->fds_.reserve(2048);
 	private_->fds_.resize(0);
@@ -180,7 +188,7 @@ void loop_poll_backend::init(dynamic_loop *owner) {
 
 void loop_poll_backend::set(int fd, int events, int /*oldevents*/) {
 	short ev = ((events & READ) ? (POLLRDNORM | POLLIN) : 0) | ((events & WRITE) ? (POLLWRNORM | POLLOUT) : 0);
-	int &idx = owner_->fds_[fd].idx;
+	int& idx = owner_->fds_[fd].idx;
 
 	if (idx < 0) {
 		private_->fds_.push_back({fd, ev, 0});
@@ -193,7 +201,7 @@ void loop_poll_backend::set(int fd, int events, int /*oldevents*/) {
 }
 
 void loop_poll_backend::stop(int fd) {
-	int &idx = owner_->fds_[fd].idx;
+	int& idx = owner_->fds_[fd].idx;
 	assertrx(idx >= 0 && !private_->fds_.empty());
 
 	if (static_cast<size_t>(idx) < private_->fds_.size() - 1) {
@@ -209,20 +217,28 @@ void loop_poll_backend::stop(int fd) {
 
 int loop_poll_backend::runonce(int64_t t) {
 	int ret = poll(&private_->fds_[0], private_->fds_.size(), t != -1 ? t / 1000 : -1);
-	if (ret < 1) return ret;
+	if (ret < 1) {
+		return ret;
+	}
 
 	for (size_t i = 0; i < private_->fds_.size();) {
-		pollfd &pfd = private_->fds_[i];
+		pollfd& pfd = private_->fds_[i];
 		private_->wasErased_ = false;
 		if (pfd.revents != 0) {
 			int events =
 				((pfd.revents & (POLLRDNORM | POLLIN | POLLHUP)) ? READ : 0) | ((pfd.revents & (POLLWRNORM | POLLOUT)) ? WRITE : 0);
 			if (events) {
-				if (!check_async(pfd.fd)) owner_->io_callback(pfd.fd, events);
-				if (!private_->wasErased_) pfd.revents = 0;
+				if (!check_async(pfd.fd)) {
+					owner_->io_callback(pfd.fd, events);
+				}
+				if (!private_->wasErased_) {
+					pfd.revents = 0;
+				}
 			}
 		}
-		if (!private_->wasErased_) ++i;
+		if (!private_->wasErased_) {
+			++i;
+		}
 	}
 	return ret;
 }
@@ -246,7 +262,7 @@ loop_epoll_backend::~loop_epoll_backend() {
 	private_->ctlfd_ = -1;
 }
 
-void loop_epoll_backend::init(dynamic_loop *owner) {
+void loop_epoll_backend::init(dynamic_loop* owner) {
 	owner_ = owner;
 	private_->ctlfd_ = epoll_create1(EPOLL_CLOEXEC);
 	if (private_->ctlfd_ < 0) {
@@ -285,10 +301,12 @@ int loop_epoll_backend::runonce(int64_t t) {
 	std::swap(private_->events_, private_->eventsTmp_);
 	private_->events_.resize(private_->eventsTmp_.size());
 	for (int i = 0; i < ret; i++) {
-		auto &eventRef = private_->eventsTmp_[i];
+		auto& eventRef = private_->eventsTmp_[i];
 		int events = ((eventRef.events & (EPOLLIN | EPOLLHUP)) ? READ : 0) | ((eventRef.events & EPOLLOUT) ? WRITE : 0);
 		int fd = eventRef.data.fd;
-		if (!check_async(fd)) owner_->io_callback(fd, events);
+		if (!check_async(fd)) {
+			owner_->io_callback(fd, events);
+		}
 	}
 	return ret;
 }
@@ -316,7 +334,7 @@ loop_wsa_backend::loop_wsa_backend() : private_(new loop_wsa_backend_private) {
 }
 
 loop_wsa_backend::~loop_wsa_backend() {
-	for (auto &fd : private_->wfds_) {
+	for (auto& fd : private_->wfds_) {
 		CloseHandle(fd.hEvent);
 		fd.hEvent = INVALID_HANDLE_VALUE;
 	}
@@ -325,10 +343,10 @@ loop_wsa_backend::~loop_wsa_backend() {
 	}
 }
 
-void loop_wsa_backend::init(dynamic_loop *owner) { owner_ = owner; }
+void loop_wsa_backend::init(dynamic_loop* owner) { owner_ = owner; }
 
 void loop_wsa_backend::set(int fd, int events, int oldevents) {
-	auto it = std::find_if(private_->wfds_.begin(), private_->wfds_.end(), [&](const win_fd &wfd) { return wfd.fd == fd; });
+	auto it = std::find_if(private_->wfds_.begin(), private_->wfds_.end(), [&](const win_fd& wfd) { return wfd.fd == fd; });
 	if (it == private_->wfds_.end()) {
 		assertrx(int(private_->wfds_.size()) < capacity());
 		win_fd new_wfd;
@@ -344,7 +362,7 @@ void loop_wsa_backend::set(int fd, int events, int oldevents) {
 }
 
 void loop_wsa_backend::stop(int fd) {
-	auto it = std::find_if(private_->wfds_.begin(), private_->wfds_.end(), [&](const win_fd &wfd) { return wfd.fd == fd; });
+	auto it = std::find_if(private_->wfds_.begin(), private_->wfds_.end(), [&](const win_fd& wfd) { return wfd.fd == fd; });
 	if (it == private_->wfds_.end()) {
 		return;
 	}
@@ -355,7 +373,9 @@ void loop_wsa_backend::stop(int fd) {
 int loop_wsa_backend::runonce(int64_t t) {
 	HANDLE objs[WSA_MAXIMUM_WAIT_EVENTS];
 	unsigned ecount = private_->wfds_.size();
-	for (unsigned i = 0; i < ecount; i++) objs[i] = private_->wfds_[i].hEvent;
+	for (unsigned i = 0; i < ecount; i++) {
+		objs[i] = private_->wfds_[i].hEvent;
+	}
 
 	if (private_->hAsyncEvent != INVALID_HANDLE_VALUE) {
 		objs[ecount] = private_->hAsyncEvent;
@@ -467,7 +487,9 @@ void dynamic_loop::run() {
 
 		if (!gEnableBusyLoop && timers_.size()) {
 			tv = std::chrono::duration_cast<std::chrono::microseconds>(timers_.front()->deadline_ - now).count();
-			if (tv < 0) tv = 0;
+			if (tv < 0) {
+				tv = 0;
+			}
 		}
 		int ret = backend_.runonce(tv);
 
@@ -499,7 +521,7 @@ void dynamic_loop::run() {
 	remove_coro_cb();
 }
 
-void dynamic_loop::set(int fd, io *watcher, int events) {
+void dynamic_loop::set(int fd, io* watcher, int events) {
 	if (fd < 0) {
 		return;
 	}
@@ -522,7 +544,7 @@ void dynamic_loop::stop(int fd) {
 	backend_.stop(fd);
 }
 
-void dynamic_loop::set(timer *watcher, double t) {
+void dynamic_loop::set(timer* watcher, double t) {
 	auto it = std::find(timers_.begin(), timers_.end(), watcher);
 	if (it != timers_.end()) {
 		timers_.erase(it);
@@ -531,18 +553,18 @@ void dynamic_loop::set(timer *watcher, double t) {
 	watcher->deadline_ = steady_clock_w::now();
 	watcher->deadline_ += std::chrono::duration<int64_t, std::ratio<1, 1000000>>(int64_t(t * 1000000));
 	it = std::lower_bound(timers_.begin(), timers_.end(), watcher,
-						  [](const timer *lhs, const timer *rhs) { return lhs->deadline_ < rhs->deadline_; });
+						  [](const timer* lhs, const timer* rhs) { return lhs->deadline_ < rhs->deadline_; });
 	timers_.insert(it, watcher);
 }
 
-void dynamic_loop::stop(timer *watcher) {
+void dynamic_loop::stop(timer* watcher) {
 	auto it = std::find(timers_.begin(), timers_.end(), watcher);
 	if (it != timers_.end()) {
 		timers_.erase(it);
 	}
 }
 
-void dynamic_loop::set(sig *watcher) {
+void dynamic_loop::set(sig* watcher) {
 	auto it = std::find(sigs_.begin(), sigs_.end(), watcher);
 	if (it != sigs_.end()) {
 		fprintf(stderr, "sig %d already set\n", watcher->signum_);
@@ -566,7 +588,7 @@ void dynamic_loop::set(sig *watcher) {
 #endif
 }
 
-void dynamic_loop::stop(sig *watcher) {
+void dynamic_loop::stop(sig* watcher) {
 	auto it = std::find(sigs_.begin(), sigs_.end(), watcher);
 	if (it == sigs_.end()) {
 		fprintf(stderr, "sig %d is not set\n", watcher->signum_);
@@ -584,7 +606,7 @@ void dynamic_loop::stop(sig *watcher) {
 #endif
 }
 
-void dynamic_loop::set(async *watcher) {
+void dynamic_loop::set(async* watcher) {
 	auto it = std::find(asyncs_.begin(), asyncs_.end(), watcher);
 	if (it != asyncs_.end()) {
 		return;
@@ -593,7 +615,7 @@ void dynamic_loop::set(async *watcher) {
 	asyncs_.push_back(watcher);
 }
 
-void dynamic_loop::stop(async *watcher) {
+void dynamic_loop::stop(async* watcher) {
 	auto it = std::find(asyncs_.begin(), asyncs_.end(), watcher);
 	if (it == asyncs_.end()) {
 		return;
@@ -601,7 +623,7 @@ void dynamic_loop::stop(async *watcher) {
 	asyncs_.erase(it);
 }
 
-void dynamic_loop::send(async *watcher) {
+void dynamic_loop::send(async* watcher) {
 	watcher->sent_ = true;
 	bool was = async_sent_.exchange(true);
 	if (!was) {
@@ -609,7 +631,7 @@ void dynamic_loop::send(async *watcher) {
 	}
 }
 
-bool dynamic_loop::is_active(const timer *watcher) const noexcept {
+bool dynamic_loop::is_active(const timer* watcher) const noexcept {
 	return std::find(timers_.begin(), timers_.end(), watcher) != timers_.end();
 }
 
@@ -630,8 +652,9 @@ void dynamic_loop::async_callback() {
 			(*async)->sent_ = false;
 			(*async)->callback();
 			async = asyncs_.begin();
-		} else
+		} else {
 			async++;
+		}
 	}
 }
 

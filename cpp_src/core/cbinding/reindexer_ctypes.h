@@ -12,7 +12,7 @@ typedef struct reindexer_config {
 } reindexer_config;
 
 typedef struct reindexer_buffer {
-	uint8_t *data;
+	uint8_t* data;
 	int len;
 } reindexer_buffer;
 
@@ -24,12 +24,12 @@ typedef struct reindexer_resbuffer {
 } reindexer_resbuffer;
 
 typedef struct reindexer_error {
-	const char *what;
+	const char* what;
 	int code;
 } reindexer_error;
 
 typedef struct reindexer_string {
-	void *p;
+	void* p;
 	int32_t n;
 	int8_t reserved[4];
 } reindexer_string;

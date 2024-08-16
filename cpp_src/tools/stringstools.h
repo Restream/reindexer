@@ -43,7 +43,9 @@ Container& split(const typename Container::value_type& str, std::string_view del
 		pos = str.find_first_of(delimiters, lastPos);
 		if (pos == Container::value_type::npos) {
 			pos = str.length();
-			if (pos != lastPos || !trimEmpty) tokens.push_back(str.substr(lastPos, pos - lastPos));
+			if (pos != lastPos || !trimEmpty) {
+				tokens.push_back(str.substr(lastPos, pos - lastPos));
+			}
 			break;
 		} else if (pos != lastPos || !trimEmpty) {
 			tokens.push_back(str.substr(lastPos, pos - lastPos));
@@ -174,9 +176,13 @@ StrictMode strictModeFromString(std::string_view strStrictMode);
 std::string_view strictModeToString(StrictMode mode);
 
 inline constexpr bool iequals(std::string_view lhs, std::string_view rhs) noexcept {
-	if (lhs.size() != rhs.size()) return false;
+	if (lhs.size() != rhs.size()) {
+		return false;
+	}
 	for (auto itl = lhs.begin(), itr = rhs.begin(); itl != lhs.end() && itr != rhs.end();) {
-		if (tolower(*itl++) != tolower(*itr++)) return false;
+		if (tolower(*itl++) != tolower(*itr++)) {
+			return false;
+		}
 	}
 	return true;
 }

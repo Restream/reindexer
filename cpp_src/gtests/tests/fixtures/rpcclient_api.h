@@ -43,7 +43,7 @@ protected:
 		void Stop();
 		const std::string& GetDsn() const { return dsn_; }
 		RPCServerStatus Status() const { return server_->Status(); }
-		Error const& ErrorStatus() const { return err_; }
+		const Error& ErrorStatus() const { return err_; }
 		size_t CloseQRRequestsCount() const { return server_->CloseQRRequestsCount(); }
 
 	private:

@@ -69,7 +69,7 @@ public:
 		}
 		size_ = other.size_;
 	}
-	h_vector(h_vector&& other) noexcept : size_(0), is_hdata_(1) {
+	h_vector(h_vector&& other) noexcept : e_{0, 0}, size_(0), is_hdata_(1) {
 		if (other.is_hdata()) {
 			const pointer p = reinterpret_cast<pointer>(hdata_);
 			const pointer op = reinterpret_cast<pointer>(other.hdata_);
@@ -104,7 +104,9 @@ public:
 			}
 			if constexpr (!std::is_trivially_destructible_v<T>) {
 				const auto old_sz = size();
-				for (; i < old_sz; i++) p[i].~T();
+				for (; i < old_sz; i++) {
+					p[i].~T();
+				}
 			}
 			size_ = other.size_;
 		}
@@ -139,9 +141,13 @@ public:
 	bool operator==(const h_vector& other) const noexcept(noexcept(std::declval<value_type>() == std::declval<value_type>())) {
 		if (&other != this) {
 			const size_type sz = size_;
-			if (sz != other.size()) return false;
+			if (sz != other.size()) {
+				return false;
+			}
 			for (size_t i = 0; i < sz; ++i) {
-				if (!(operator[](i) == other[i])) return false;
+				if (!(operator[](i) == other[i])) {
+					return false;
+				}
 			}
 			return true;
 		}
@@ -161,7 +167,9 @@ public:
 		} else if constexpr (!std::is_trivially_destructible_v<T>) {
 			const pointer p = ptr();
 			const size_type sz = size_;
-			for (size_type i = 0; i < sz; ++i) p[i].~T();
+			for (size_type i = 0; i < sz; ++i) {
+				p[i].~T();
+			}
 		}
 		size_ = 0;
 	}
@@ -223,12 +231,16 @@ public:
 		if constexpr (!reindexer::is_trivially_default_constructible<T>::value) {
 			const pointer p = ptr();
 			const size_type old_sz = size_;
-			for (size_type i = old_sz; i < sz; ++i) new (p + i) T();
+			for (size_type i = old_sz; i < sz; ++i) {
+				new (p + i) T();
+			}
 		}
 		if constexpr (!std::is_trivially_destructible_v<T>) {
 			const pointer p = ptr();
 			const size_type old_sz = size_;
-			for (size_type i = sz; i < old_sz; ++i) p[i].~T();
+			for (size_type i = sz; i < old_sz; ++i) {
+				p[i].~T();
+			}
 		}
 		size_ = sz;
 	}
@@ -267,7 +279,9 @@ public:
 				}
 				++old_data;
 			}
-			if (!is_hdata()) operator delete(oold_data);
+			if (!is_hdata()) {
+				operator delete(oold_data);
+			}
 			e_.data_ = new_data;
 			e_.cap_ = sz;
 			is_hdata_ = 0;
@@ -342,7 +356,9 @@ public:
 		return begin() + i;
 	}
 	iterator insert(const_iterator pos, difference_type count, const T& v) {
-		if (count == 0) return const_cast<iterator>(pos);
+		if (count == 0) {
+			return const_cast<iterator>(pos);
+		}
 		difference_type i = pos - begin();
 		rx_debug_check_subscript_le(i);
 		const int64_t sz = size_;
@@ -400,7 +416,9 @@ public:
 	iterator insert(const_iterator pos, InputIt first, InputIt last) {
 		rx_debug_check_valid_range(first, last);
 		const difference_type cnt = last - first;
-		if (cnt == 0) return const_cast<iterator>(pos);
+		if (cnt == 0) {
+			return const_cast<iterator>(pos);
+		}
 		const difference_type i = pos - begin();
 		rx_debug_check_subscript_le(i);
 		const int64_t sz = size_;
@@ -455,14 +473,18 @@ public:
 		std::move(std::make_move_iterator(firstPtr + cnt), std::make_move_iterator(p + sz), firstPtr);
 		const auto newSize = sz - cnt;
 		if constexpr (!std::is_trivially_destructible_v<T>) {
-			for (size_type j = newSize; j < sz; ++j) p[j].~T();
+			for (size_type j = newSize; j < sz; ++j) {
+				p[j].~T();
+			}
 		}
 		size_ = newSize;
 		return firstPtr;
 	}
 	void shrink_to_fit() {
 		const auto sz = size();
-		if (is_hdata() || sz == capacity()) return;
+		if (is_hdata() || sz == capacity()) {
+			return;
+		}
 
 		h_vector tmp;
 		tmp.reserve(sz);
@@ -480,12 +502,16 @@ protected:
 		if (is_hdata()) {
 			if constexpr (!std::is_trivially_destructible_v<T>) {
 				const size_type sz = size_;
-				for (size_type i = 0; i < sz; ++i) reinterpret_cast<pointer>(hdata_)[i].~T();
+				for (size_type i = 0; i < sz; ++i) {
+					reinterpret_cast<pointer>(hdata_)[i].~T();
+				}
 			}
 		} else {
 			if constexpr (!std::is_trivially_destructible_v<T>) {
 				const size_type sz = size_;
-				for (size_type i = 0; i < sz; ++i) e_.data_[i].~T();
+				for (size_type i = 0; i < sz; ++i) {
+					e_.data_[i].~T();
+				}
 			}
 			operator delete(e_.data_);
 		}
@@ -511,7 +537,9 @@ template <typename C, int H>
 inline static std::ostream& operator<<(std::ostream& o, const reindexer::h_vector<C, H>& vec) {
 	o << "[";
 	for (unsigned i = 0; i < vec.size(); i++) {
-		if (i != 0) o << ",";
+		if (i != 0) {
+			o << ",";
+		}
 		o << vec[i] << " ";
 	}
 	o << "]";

@@ -11,7 +11,7 @@ namespace reindexer {
 namespace datastorage {
 
 class NoOpLogger : public leveldb::Logger {
-    void Logv(const char* /*format*/, va_list /*ap*/) override final {}
+	void Logv(const char* /*format*/, va_list /*ap*/) override final {}
 };
 
 static NoOpLogger dummyLevelDBLogger;

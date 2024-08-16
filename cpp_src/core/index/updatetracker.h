@@ -18,17 +18,17 @@ public:
 
 	template <typename T1>
 	struct hash_ptr {
-		size_t operator()(const T1 &obj) const noexcept { return std::hash<uintptr_t>()(reinterpret_cast<uintptr_t>(obj.get())); }
+		size_t operator()(const T1& obj) const noexcept { return std::hash<uintptr_t>()(reinterpret_cast<uintptr_t>(obj.get())); }
 	};
 	template <typename T1>
 	struct equal_ptr {
-		bool operator()(const T1 &lhs, const T1 &rhs) const noexcept {
+		bool operator()(const T1& lhs, const T1& rhs) const noexcept {
 			return reinterpret_cast<uintptr_t>(lhs.get()) == reinterpret_cast<uintptr_t>(rhs.get());
 		}
 	};
 	template <typename T1>
 	struct less_ptr {
-		bool operator()(const T1 &lhs, const T1 &rhs) const noexcept {
+		bool operator()(const T1& lhs, const T1& rhs) const noexcept {
 			return reinterpret_cast<uintptr_t>(lhs.get()) < reinterpret_cast<uintptr_t>(rhs.get());
 		}
 	};
@@ -46,21 +46,25 @@ public:
 		typename std::conditional_t<kHoldsPointers, pointers_set, typename std::conditional_t<kHoldsPoints, points_set, generic_set>>;
 
 	UpdateTracker() = default;
-	UpdateTracker(const UpdateTracker<T> &other)
+	UpdateTracker(const UpdateTracker<T>& other)
 		: completeUpdate_(other.updated_.size() || other.completeUpdate_),
 		  simpleCounting_(other.simpleCounting_),
 		  updatesCounter_(other.updatesCounter_) {
 		updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);
 	}
-	UpdateTracker &operator=(const UpdateTracker<T> &other) = delete;
+	UpdateTracker& operator=(const UpdateTracker<T>& other) = delete;
 
-	void markUpdated(T &idx_map, typename T::iterator &k, bool skipCommited = true) {
-		if (skipCommited && k->second.Unsorted().IsCommited()) return;
+	void markUpdated(T& idx_map, typename T::iterator& k, bool skipCommited = true) {
+		if (skipCommited && k->second.Unsorted().IsCommited()) {
+			return;
+		}
 		if (simpleCounting_) {
 			++updatesCounter_;
 			return;
 		}
-		if (completeUpdate_) return;
+		if (completeUpdate_) {
+			return;
+		}
 		if (updated_.size() > static_cast<size_t>(idx_map.size() / 8) || updated_.size() > 10000000) {
 			completeUpdate_ = true;
 			clearUpdates();
@@ -69,8 +73,8 @@ public:
 		emplaceUpdate(k);
 	}
 
-	void commitUpdated(T &idx_map) {
-		for (const auto &valIt : updated_) {
+	void commitUpdated(T& idx_map) {
+		for (const auto& valIt : updated_) {
 			auto keyIt = idx_map.find(valIt);
 			assertrx(keyIt != idx_map.end());
 			keyIt->second.Unsorted().Commit();
@@ -78,7 +82,7 @@ public:
 		}
 	}
 
-	void markDeleted(typename T::iterator &k) {
+	void markDeleted(typename T::iterator& k) {
 		if (simpleCounting_) {
 			++updatesCounter_;
 		} else {
@@ -92,8 +96,8 @@ public:
 		updatesCounter_ = 0;
 		clearUpdates();
 	}
-	hash_map &updated() { return updated_; }
-	const hash_map &updated() const { return updated_; }
+	hash_map& updated() { return updated_; }
+	const hash_map& updated() const { return updated_; }
 	uint32_t updatesSize() const noexcept { return updatesSize_.load(std::memory_order_relaxed); }
 	uint32_t updatesBuckets() const noexcept { return updatesBuckets_.load(std::memory_order_relaxed); }
 	uint32_t allocated() const noexcept { return allocatedMem_.load(std::memory_order_relaxed); }
@@ -113,14 +117,14 @@ public:
 	}
 
 protected:
-	void eraseUpdate(typename T::iterator &k) {
+	void eraseUpdate(typename T::iterator& k) {
 		updated_.erase(k->first);
 		updatesSize_.store(updated_.size(), std::memory_order_relaxed);
 		updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);
 		allocatedMem_.store(getMapAllocatedMemSize(), std::memory_order_relaxed);
 		overflowSize_.store(getMapOverflowSize(), std::memory_order_relaxed);
 	}
-	void emplaceUpdate(typename T::iterator &k) {
+	void emplaceUpdate(typename T::iterator& k) {
 		updated_.emplace(k->first);
 		updatesSize_.store(updated_.size(), std::memory_order_relaxed);
 		updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);

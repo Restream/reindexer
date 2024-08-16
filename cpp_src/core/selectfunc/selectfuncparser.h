@@ -28,19 +28,19 @@ struct SelectFuncStruct {
 
 class SelectFuncParser {
 public:
-	SelectFuncStruct &Parse(const std::string &query);
-	SelectFuncStruct &ParseFunction(tokenizer &parser, bool partOfExpression, token &tok);
+	SelectFuncStruct& Parse(const std::string& query);
+	SelectFuncStruct& ParseFunction(tokenizer& parser, bool partOfExpression, token& tok);
 	static bool IsFunction(std::string_view val) noexcept;
-	static bool IsFunction(const VariantArray &val) noexcept;
+	static bool IsFunction(const VariantArray& val) noexcept;
 
 protected:
 	struct Args {
-		explicit Args(unsigned int p, std::unordered_set<std::string> &&n) : posArgsCount(p), namedArgs(std::move(n)) {}
+		explicit Args(unsigned int p, std::unordered_set<std::string>&& n) : posArgsCount(p), namedArgs(std::move(n)) {}
 		unsigned int posArgsCount;
 		std::unordered_set<std::string> namedArgs;
 	};
 
-	void parsePositionalAndNamedArgs(tokenizer &parser, const Args &args);
+	void parsePositionalAndNamedArgs(tokenizer& parser, const Args& args);
 
 	SelectFuncStruct selectFuncStruct_;
 };

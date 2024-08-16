@@ -7,6 +7,7 @@
 #include "config.h"
 #include "loggerwrapper.h"
 #include "net/ev/ev.h"
+#include "spdlog/sinks/reopen_file_sink.h"
 
 #ifndef _WIN32
 #include "pidfile.h"
@@ -22,7 +23,7 @@ struct IDBManagerStatsCollector;
 struct IRPCServerStatsCollector;
 
 class ServerImpl {
-	using SinkMap = std::unordered_map<std::string, std::shared_ptr<spdlog::sinks::fast_file_sink>>;
+	using SinkMap = std::unordered_map<std::string, std::shared_ptr<spdlog::sinks::reopen_file_sink_st>>;
 
 public:
 	ServerImpl(ServerMode mode);

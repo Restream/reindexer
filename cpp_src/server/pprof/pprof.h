@@ -12,16 +12,16 @@ using reindexer::WrSerializer;
 
 class Pprof {
 public:
-	void Attach(http::Router &router);
+	void Attach(http::Router& router);
 
-	int Profile(http::Context &ctx);
-	int ProfileHeap(http::Context &ctx);
-	int Growth(http::Context &ctx);
-	int CmdLine(http::Context &ctx);
-	int Symbol(http::Context &ctx);
+	int Profile(http::Context& ctx);
+	int ProfileHeap(http::Context& ctx);
+	int Growth(http::Context& ctx);
+	int CmdLine(http::Context& ctx);
+	int Symbol(http::Context& ctx);
 
 protected:
-	void resolveSymbol(uintptr_t ptr, WrSerializer &out);
+	void resolveSymbol(uintptr_t ptr, WrSerializer& out);
 };
 
 }  // namespace reindexer_server

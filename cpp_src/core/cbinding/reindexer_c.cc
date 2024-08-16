@@ -449,17 +449,25 @@ reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpt
 	}
 
 	Reindexer* db = reinterpret_cast<Reindexer*>(rx);
-	if (!db) return error2c(err_not_init);
+	if (!db) {
+		return error2c(err_not_init);
+	}
 	Error err = db->Connect(str2c(dsn), opts);
-	if (err.ok() && db->NeedTraceActivity()) db->SetActivityTracer("builtin", "");
+	if (err.ok() && db->NeedTraceActivity()) {
+		db->SetActivityTracer("builtin", "");
+	}
 	return error2c(err);
 }
 
 reindexer_error reindexer_init_system_namespaces(uintptr_t rx) {
 	Reindexer* db = reinterpret_cast<Reindexer*>(rx);
-	if (!db) return error2c(err_not_init);
+	if (!db) {
+		return error2c(err_not_init);
+	}
 	Error err = db->InitSystemNamespaces();
-	if (err.ok() && db->NeedTraceActivity()) db->SetActivityTracer("builtin", "");
+	if (err.ok() && db->NeedTraceActivity()) {
+		db->SetActivityTracer("builtin", "");
+	}
 	return error2c(err);
 }
 
@@ -520,7 +528,9 @@ reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, i
 
 			ActiveQueryScope scope(q, QuerySelect);
 			err = rdxKeeper.db().Select(q, *result);
-			if (q.GetDebugLevel() >= LogError && err.code() != errOK) logPrintf(LogError, "Query error %s", err.what());
+			if (q.GetDebugLevel() >= LogError && err.code() != errOK) {
+				logPrintf(LogError, "Query error %s", err.what());
+			}
 			if (err.ok()) {
 				results2c(std::move(result), &out, as_json, pt_versions, pt_versions_count);
 			} else {
@@ -555,7 +565,9 @@ reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in, reindexe
 
 			ActiveQueryScope scope(q, QueryDelete);
 			res = rdxKeeper.db().Delete(q, *result);
-			if (q.GetDebugLevel() >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
+			if (q.GetDebugLevel() >= LogError && res.code() != errOK) {
+				logPrintf(LogError, "Query error %s", res.what());
+			}
 			if (res.ok()) {
 				results2c(std::move(result), &out);
 			}
@@ -584,7 +596,9 @@ reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in, reindexe
 
 			ActiveQueryScope scope(q, QueryUpdate);
 			res = rdxKeeper.db().Update(q, *result);
-			if (q.GetDebugLevel() >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
+			if (q.GetDebugLevel() >= LogError && res.code() != errOK) {
+				logPrintf(LogError, "Query error %s", res.what());
+			}
 			if (res.ok()) {
 				int32_t ptVers = -1;
 				results2c(std::move(result), &out, 0, &ptVers, 1);
@@ -737,9 +751,9 @@ reindexer_error reindexer_commit(uintptr_t rx, reindexer_string nsName) {
 	return error2c(!db ? err_not_init : db->Commit(str2cv(nsName)));
 }
 
-void reindexer_enable_logger(void (*logWriter)(int, char*)) { logInstallWriter(logWriter, LoggerPolicy::WithLocks); }
+void reindexer_enable_logger(void (*logWriter)(int, char*)) { logInstallWriter(logWriter, LoggerPolicy::WithLocks, int(LogTrace)); }
 
-void reindexer_disable_logger() { logInstallWriter(nullptr, LoggerPolicy::WithLocks); }
+void reindexer_disable_logger() { logInstallWriter(nullptr, LoggerPolicy::WithLocks, int(LogNone)); }
 
 reindexer_error reindexer_free_buffer(reindexer_resbuffer in) {
 	constexpr static put_results_to_pool putResultsToPool;

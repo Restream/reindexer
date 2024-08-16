@@ -14,15 +14,21 @@ void Geometry::Insert(State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		for (size_t i = 0; i < N; ++i) {
 			auto item = MakeItem(state);
-			if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+			if (!item.Status().ok()) {
+				state.SkipWithError(item.Status().what().c_str());
+			}
 
 			auto err = db_->Insert(nsdef_.name, item);
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
+			if (!err.ok()) {
+				state.SkipWithError(err.what().c_str());
+			}
 		}
 	}
 
 	auto err = db_->Commit(nsdef_.name);
-	if (!err.ok()) state.SkipWithError(err.what().c_str());
+	if (!err.ok()) {
+		state.SkipWithError(err.what().c_str());
+	}
 }
 
 template <size_t N>
@@ -33,7 +39,9 @@ void Geometry::GetDWithin(benchmark::State& state) {
 		q.DWithin("point", reindexer::randPoint(kRange), kRange / N);
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -46,10 +54,14 @@ void Geometry::Reset(State& state) {
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK()).AddIndex("point", "rtree", "point", IndexOpts().RTreeType(rtreeType));
 
 		auto err = db_->DropNamespace(nsdef_.name);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 
 		err = db_->AddNamespace(nsdef_);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -84,7 +96,9 @@ void Geometry::RegisterAllCases() {
 reindexer::Error Geometry::Initialize() {
 	assertrx(db_);
 	auto err = db_->AddNamespace(nsdef_);
-	if (!err.ok()) return err;
+	if (!err.ok()) {
+		return err;
+	}
 
 	return {};
 }
@@ -101,7 +115,9 @@ reindexer::Item Geometry::MakeItem(benchmark::State& state) {
 	bld.Array("point", {point.X(), point.Y()});
 	bld.End();
 	const auto err = item.FromJSON(wrSer_.Slice());
-	if (!err.ok()) state.SkipWithError(err.what().c_str());
+	if (!err.ok()) {
+		state.SkipWithError(err.what().c_str());
+	}
 
 	return item;
 }

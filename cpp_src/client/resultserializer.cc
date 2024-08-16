@@ -30,7 +30,9 @@ void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, con
 	bool firstAgg = true;
 	for (;;) {
 		int tag = GetVarUint();
-		if (tag == QueryResultEnd) break;
+		if (tag == QueryResultEnd) {
+			break;
+		}
 		if ((clearAggs == AggsFlag::DontClearAggregations) && firstAgg) {
 			firstAgg = false;
 			ret.aggResults.clear();

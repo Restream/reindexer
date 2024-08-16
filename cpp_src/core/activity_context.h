@@ -94,7 +94,9 @@ public:
 					   int ipConnectionId, bool clientState = false);
 	RdxActivityContext(RdxActivityContext&&);
 	~RdxActivityContext() {
-		if (parent_) parent_->Unregister(this);
+		if (parent_) {
+			parent_->Unregister(this);
+		}
 		assertrx(refCount_.load(std::memory_order_relaxed) == 0u);
 	}
 	operator Activity() const;

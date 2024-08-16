@@ -40,7 +40,7 @@ public:
 		Iterator& operator++();
 		Error Status() const noexcept { return qr_->status_; }
 		bool operator!=(const Iterator& other) const noexcept { return idx_ != other.idx_; }
-		bool operator==(const Iterator& other) const noexcept { return idx_ == other.idx_; };
+		bool operator==(const Iterator& other) const noexcept { return idx_ == other.idx_; }
 		Iterator& operator*() { return *this; }
 		void readNext();
 		void getJSONFromCJSON(std::string_view cjson, WrSerializer& wrser, bool withHdrLen = true);

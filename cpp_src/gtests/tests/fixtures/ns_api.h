@@ -45,11 +45,14 @@ protected:
 		const char jsonPattern[] =
 			R"json({"id": %s,
 			"int_field":1,
+			"int_field2":88,
 			"indexed_array_field": [11,22,33,44,55,66,77,88,99],
 			"objects":[{"more":[{"array":[9,8,7,6,5]},{"array":[4,3,2,1,0]}]}],
 			"":{"empty_obj_field":"not empty"},
 			"array_field": [1,2,3],
 			"string_array":["first", "second", "third"],
+			"bool_array":[true, false],
+			"bool_array2":[false, true],
 			"extra" : "%s",
 			"sparse_field": %ld,
 			"nested":{
@@ -144,7 +147,9 @@ protected:
 													IndexDeclaration{"ft21+ft22+ft23=ft24", "text", "composite", IndexOpts(), 0}});
 
 		static constexpr int itemsCount = 1000;
-		for (int i = 0; i < itemsCount; ++i) InsertNewTruncateItem(i);
+		for (int i = 0; i < itemsCount; ++i) {
+			InsertNewTruncateItem(i);
+		}
 
 		const static Query q{truncate_namespace};
 		QueryResults qr1;

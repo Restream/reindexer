@@ -23,10 +23,10 @@ public:
 	public:
 		// TODO: Any additional condition check should be added here
 		bool Check() const { return true; }
-		void FromJSON(const gason::JsonNode &) {}
-		void GetJSON(JsonBuilder &) const {}
+		void FromJSON(const gason::JsonNode&) {}
+		void GetJSON(JsonBuilder&) const {}
 
-		bool operator==(const Filter &) const { return true; }
+		bool operator==(const Filter&) const { return true; }
 	};
 
 	/// Merge two filters sets
@@ -34,7 +34,7 @@ public:
 	/// If one of the filters set contains some conditions for specific namespace,
 	/// then result filters set will also contain this conditions
 	/// @param rhs - Another filters set
-	void Merge(const UpdatesFilters &rhs);
+	void Merge(const UpdatesFilters& rhs);
 	/// Add new filter for specified namespace. Doesn't merge filters, just concatenates it into disjunction sequence
 	/// @param ns - Namespace
 	/// @param filter - Filter to add
@@ -45,10 +45,10 @@ public:
 	bool Check(std::string_view ns) const;
 
 	Error FromJSON(span<char> json);
-	void FromJSON(const gason::JsonNode &root);
-	void GetJSON(WrSerializer &ser) const;
+	void FromJSON(const gason::JsonNode& root);
+	void GetJSON(WrSerializer& ser) const;
 
-	bool operator==(const UpdatesFilters &rhs) const;
+	bool operator==(const UpdatesFilters& rhs) const;
 
 private:
 	using FiltersList = h_vector<Filter, 4>;
@@ -59,29 +59,29 @@ private:
 class IUpdatesObserver {
 public:
 	virtual ~IUpdatesObserver() = default;
-	virtual void OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &rec) = 0;
+	virtual void OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord& rec) = 0;
 	virtual void OnUpdatesLost(std::string_view nsName) = 0;
-	virtual void OnConnectionState(const Error &err) = 0;
+	virtual void OnConnectionState(const Error& err) = 0;
 };
 
 class UpdatesObservers {
 public:
 	struct ObserverInfo {
-		IUpdatesObserver *ptr;
+		IUpdatesObserver* ptr;
 		UpdatesFilters filters;
 	};
 
-	void Add(IUpdatesObserver *observer, const UpdatesFilters &filter, SubscriptionOpts opts);
-	Error Delete(IUpdatesObserver *observer);
+	void Add(IUpdatesObserver* observer, const UpdatesFilters& filter, SubscriptionOpts opts);
+	Error Delete(IUpdatesObserver* observer);
 	std::vector<ObserverInfo> Get() const;
 
-	void OnModifyItem(LSNPair LSNs, std::string_view nsName, ItemImpl *item, int modifyMode, bool inTransaction);
+	void OnModifyItem(LSNPair LSNs, std::string_view nsName, ItemImpl* item, int modifyMode, bool inTransaction);
 
-	void OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &rec);
+	void OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord& rec);
 
 	void OnUpdatesLost(std::string_view nsName);
 
-	void OnConnectionState(const Error &err);
+	void OnConnectionState(const Error& err);
 	bool Empty() {
 		shared_lock<shared_timed_mutex> lck(mtx_);
 		return observers_.empty();
@@ -93,6 +93,6 @@ protected:
 	mutable shared_timed_mutex mtx_;
 };
 
-std::ostream &operator<<(std::ostream &o, const reindexer::UpdatesFilters &sv);
+std::ostream& operator<<(std::ostream& o, const reindexer::UpdatesFilters& sv);
 
 }  // namespace reindexer

@@ -164,12 +164,10 @@ private:
 	void flush(const StorageFlushOpts& opts);
 	void beginNewUpdatesChunk();
 	void write(bool fromSyncCall, std::string_view key, std::string_view value) {
-		asyncOp(
-			fromSyncCall, [this](std::string_view k, std::string_view v) { curUpdatesChunck_->Put(k, v); }, key, value);
+		asyncOp(fromSyncCall, [this](std::string_view k, std::string_view v) { curUpdatesChunck_->Put(k, v); }, key, value);
 	}
 	void remove(bool fromSyncCall, std::string_view key) {
-		asyncOp(
-			fromSyncCall, [this](std::string_view k) { curUpdatesChunck_->Remove(k); }, key);
+		asyncOp(fromSyncCall, [this](std::string_view k) { curUpdatesChunck_->Remove(k); }, key);
 	}
 	template <typename StorageCall, typename... Args>
 	void asyncOp(bool fromSyncCall, StorageCall&& call, const Args&... args) {

@@ -1,8 +1,8 @@
 #include "coroutine.h"
+#include <algorithm>
 #include <cstdio>
 #include <iterator>
 #include <thread>
-#include <algorithm>
 #include "tools/clock.h"
 
 namespace reindexer {
@@ -10,7 +10,7 @@ namespace coroutine {
 
 static void static_entry() { ordinator::instance().entry(); }
 
-ordinator &ordinator::instance() noexcept {
+ordinator& ordinator::instance() noexcept {
 	static thread_local ordinator ord;
 	return ord;
 }
@@ -18,12 +18,12 @@ ordinator &ordinator::instance() noexcept {
 void ordinator::entry() {
 	const routine_t index = current_ - 1;
 	{
-		routine &current_routine = routines_[index];
+		routine& current_routine = routines_[index];
 		if (current_routine.func) {
 			try {
 				auto func = std::move(current_routine.func);
 				func();
-			} catch (std::exception &e) {
+			} catch (std::exception& e) {
 				fprintf(stderr, "Unhandled exception in coroutine \"%u\": %s\n", index + 1, e.what());
 			} catch (...) {
 				fprintf(stderr, "Unhandled exception in coroutine \"%u\": some custom exception\n", index + 1);
@@ -31,7 +31,7 @@ void ordinator::entry() {
 		}
 	}
 
-	routine &current_routine = routines_[index];
+	routine& current_routine = routines_[index];
 	remove_from_call_stack(index + 1);
 	current_ = pop_from_call_stack();
 	current_routine.finalize();
@@ -66,13 +66,19 @@ int ordinator::resume(routine_t id) {
 	assertrx(id <= routines_.size());
 	assertrx(id);  // For now the main routine should not be resumed explicitly
 
-	if (id > routines_.size()) return -1;
+	if (id > routines_.size()) {
+		return -1;
+	}
 
 	{
-		routine &routine = routines_[id - 1];
-		if (routine.is_finalized()) return -2;
+		routine& routine = routines_[id - 1];
+		if (routine.is_finalized()) {
+			return -2;
+		}
 
-		if (routine.is_empty()) routine.create_fiber();
+		if (routine.is_empty()) {
+			routine.create_fiber();
+		}
 		push_to_call_stack(current_);
 
 		current_ = id;
@@ -80,7 +86,7 @@ int ordinator::resume(routine_t id) {
 		routine.resume();
 	}
 
-	routine &routine = routines_[id - 1];
+	routine& routine = routines_[id - 1];
 	if (routine.is_dead()) {
 		clear_finalized();
 	}
@@ -119,7 +125,9 @@ void ordinator::remove_from_call_stack(routine_t id) noexcept {
 }
 
 bool ordinator::set_loop_completion_callback(ordinator::cmpl_cb_t cb) noexcept {
-	if (loop_completion_callback_) return false;
+	if (loop_completion_callback_) {
+		return false;
+	}
 	loop_completion_callback_ = std::move(cb);
 	return true;
 }
@@ -130,7 +138,7 @@ int64_t ordinator::add_completion_callback(ordinator::cmpl_cb_t cb) {
 	for (;;) {
 		id = steady_clock_w::now().time_since_epoch().count();
 		auto found =
-			std::find_if(completion_callbacks_.begin(), completion_callbacks_.end(), [id](cmpl_cb_data &data) { return data.id == id; });
+			std::find_if(completion_callbacks_.begin(), completion_callbacks_.end(), [id](cmpl_cb_data& data) { return data.id == id; });
 		if (found == completion_callbacks_.end()) {
 			break;
 		} else if (++cnt == 3) {
@@ -155,7 +163,7 @@ bool ordinator::remove_loop_completion_callback() noexcept {
 int ordinator::remove_completion_callback(int64_t id) noexcept {
 	auto old_sz = completion_callbacks_.size();
 	completion_callbacks_.erase(
-		std::remove_if(completion_callbacks_.begin(), completion_callbacks_.end(), [id](cmpl_cb_data &data) { return data.id == id; }),
+		std::remove_if(completion_callbacks_.begin(), completion_callbacks_.end(), [id](cmpl_cb_data& data) { return data.id == id; }),
 		completion_callbacks_.end());
 	auto diff = old_sz - completion_callbacks_.size();
 	if (diff == 0) {
@@ -201,7 +209,7 @@ ordinator::routine::~routine() {
 	}
 }
 
-ordinator::routine::routine(ordinator::routine &&o) noexcept
+ordinator::routine::routine(ordinator::routine&& o) noexcept
 	: func(std::move(o.func)), fiber_(o.fiber_), stack_size_(o.stack_size_), is_empty_(o.is_empty_), finalized_(o.finalized_) {
 	o.fiber_ = nullptr;
 }
@@ -220,7 +228,7 @@ void ordinator::clear_finalized() {
 	assertrx(!finalized_indexes_.empty());
 	auto index = finalized_indexes_.back();
 
-	auto &routine = routines_[index];
+	auto& routine = routines_[index];
 	assertrx(routine.is_finalized());
 	routine.clear();
 	if (loop_completion_callback_) {
@@ -228,7 +236,7 @@ void ordinator::clear_finalized() {
 	}
 
 	auto callbacks = completion_callbacks_;
-	for (auto &callback : callbacks) {
+	for (auto& callback : callbacks) {
 		callback.cb(index + 1);
 	}
 }

@@ -37,9 +37,13 @@ void TableCalculator<QueryResultsT>::calculate(size_t limit) {
 	const size_t size = std::min(limit, r_.Count());
 	rows_.reserve(size);
 	for (auto it : r_) {
-		if (it.IsRaw()) continue;
+		if (it.IsRaw()) {
+			continue;
+		}
 		Error err = it.GetJSON(ser, false);
-		if (!err.ok()) continue;
+		if (!err.ok()) {
+			continue;
+		}
 
 		gason::JsonParser parser;
 		gason::JsonNode root = parser.Parse(reindexer::giftStr(ser.Slice()));
@@ -59,14 +63,18 @@ void TableCalculator<QueryResultsT>::calculate(size_t limit) {
 				columnData.maxWidthCh = std::max(columnData.maxWidthCh, reindexer::getStringTerminalWidth(fieldName));
 			}
 
-			if (fieldValue.empty()) ++columnData.emptyValues;
+			if (fieldValue.empty()) {
+				++columnData.emptyValues;
+			}
 			columnData.entries++;
 			rowData[fieldName] = fieldValue;
 		}
 
 		rows_.emplace_back(std::move(rowData));
 
-		if (++i == size) break;
+		if (++i == size) {
+			break;
+		}
 		ser.Reset();
 	}
 
@@ -141,7 +149,9 @@ TableViewBuilder<QueryResultsT>::TableViewBuilder(const QueryResultsT& r) : r_(r
 
 template <typename QueryResultsT>
 void TableViewBuilder<QueryResultsT>::Build(std::ostream& o, const std::function<bool(void)>& isCanceled) {
-	if (isCanceled()) return;
+	if (isCanceled()) {
+		return;
+	}
 	TerminalSize terminalSize = reindexer::getTerminalSize();
 	TableCalculator<QueryResultsT> tableCalculator(r_, terminalSize.width);
 	BuildHeader(o, tableCalculator, isCanceled);
@@ -151,7 +161,9 @@ void TableViewBuilder<QueryResultsT>::Build(std::ostream& o, const std::function
 template <typename QueryResultsT>
 void TableViewBuilder<QueryResultsT>::BuildHeader(std::ostream& o, TableCalculator<QueryResultsT>& tableCalculator,
 												  const std::function<bool(void)>& isCanceled) {
-	if (isCanceled()) return;
+	if (isCanceled()) {
+		return;
+	}
 
 	auto& header = tableCalculator.GetHeader();
 	auto& columnsData = tableCalculator.GetColumnsSettings();
@@ -166,7 +178,9 @@ void TableViewBuilder<QueryResultsT>::BuildHeader(std::ostream& o, TableCalculat
 		auto& columnData = columnsData[columnName];
 		ensureFieldWidthIsOk(columnName, columnData.widthCh);
 		o << std::setw(computeFieldWidth(columnName, columnData.widthCh)) << columnName;
-		if (rowIdx != header.size() - 1) o << kSeparator;
+		if (rowIdx != header.size() - 1) {
+			o << kSeparator;
+		}
 	}
 	o << std::endl << headerLine << std::endl;
 }
@@ -182,7 +196,9 @@ bool TableViewBuilder<QueryResultsT>::isValueMultiline(std::string_view value, b
 template <typename QueryResultsT>
 void TableViewBuilder<QueryResultsT>::startLine(std::ostream& o, const int& currLineWidth) {
 	o << std::endl;
-	for (size_t i = 0; i < currLineWidth - kSeparator.length(); ++i) o << " ";
+	for (size_t i = 0; i < currLineWidth - kSeparator.length(); ++i) {
+		o << " ";
+	}
 	o << kSeparator;
 }
 
@@ -217,7 +233,9 @@ void TableViewBuilder<QueryResultsT>::BuildRow(std::ostream& o, int idx, TableCa
 			for (wchar_t wc; (sz = std::mbtowc(&wc, cstr, end - cstr)) > 0; cstr += sz) {
 				currWidth += mk_wcwidth(wc);
 				if (currWidth >= symbolsTillTheEOFLine) {
-					if (pos != 0) startLine(o, currLineWidth);
+					if (pos != 0) {
+						startLine(o, currLineWidth);
+					}
 					o << std::left;
 					o << value.substr(pos, count);
 					pos = total;
@@ -228,7 +246,9 @@ void TableViewBuilder<QueryResultsT>::BuildRow(std::ostream& o, int idx, TableCa
 			}
 
 			if (count > 0) {
-				if (pos != 0) startLine(o, currLineWidth);
+				if (pos != 0) {
+					startLine(o, currLineWidth);
+				}
 				o << value.substr(pos, count);
 			}
 		} else {
@@ -262,10 +282,14 @@ void TableViewBuilder<QueryResultsT>::BuildRow(std::ostream& o, int idx, TableCa
 template <typename QueryResultsT>
 void TableViewBuilder<QueryResultsT>::BuildTable(std::ostream& o, TableCalculator<QueryResultsT>& tableCalculator,
 												 const std::function<bool(void)>& isCanceled) {
-	if (isCanceled()) return;
+	if (isCanceled()) {
+		return;
+	}
 	auto& rows = tableCalculator.GetRows();
 	for (size_t i = 0; i < rows.size(); ++i) {
-		if (isCanceled()) return;
+		if (isCanceled()) {
+			return;
+		}
 		BuildRow(o, i, tableCalculator);
 	}
 }
@@ -289,11 +313,15 @@ void TableViewBuilder<QueryResultsT>::ensureFieldWidthIsOk(std::string& str, int
 		int newWidth = 0;
 		static const std::string dots = " ...";
 		bool withDots = (maxWidth > 10);
-		if (withDots) maxWidth -= dots.length();
+		if (withDots) {
+			maxWidth -= dots.length();
+		}
 		try {
 			for (auto it = str.begin(); it != str.end() && (sz = utf8::internal::sequence_length(it)) > 0;) {
 				newWidth += mk_wcwidth(utf8::next(it, str.end()));
-				if (newWidth > maxWidth) break;
+				if (newWidth > maxWidth) {
+					break;
+				}
 				n += sz;
 			}
 		} catch (const std::exception&) {
@@ -301,7 +329,9 @@ void TableViewBuilder<QueryResultsT>::ensureFieldWidthIsOk(std::string& str, int
 			n = maxWidth;
 		}
 		str = str.substr(0, n);
-		if (withDots) str += dots;
+		if (withDots) {
+			str += dots;
+		}
 	}
 }
 

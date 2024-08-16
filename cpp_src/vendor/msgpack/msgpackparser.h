@@ -17,6 +17,7 @@ enum MsgPackTag : int {
 	MSGPACK_ARRAY = 0x06,
 	MSGPACK_MAP = 0x07,
 };
+inline constexpr int format_as(MsgPackTag v) noexcept { return int(v); }
 
 struct MsgPackValue {
 	explicit MsgPackValue(const msgpack_object* p = nullptr);
@@ -25,7 +26,9 @@ struct MsgPackValue {
 	template <typename T, typename std::enable_if<(std::is_integral<T>::value || std::is_floating_point<T>::value) &&
 												  !std::is_same<T, bool>::value>::type* = nullptr>
 	T As(T defval = T(), T minv = std::numeric_limits<T>::lowest(), T maxv = std::numeric_limits<T>::max()) const {
-		if (!isValid()) return defval;
+		if (!isValid()) {
+			return defval;
+		}
 		T v;
 		MsgPackTag tag = getTag();
 		switch (tag) {
@@ -47,13 +50,17 @@ struct MsgPackValue {
 			default:
 				throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%d] to number", tag);
 		}
-		if (v < minv || v > maxv) throw reindexer::Error(errParams, fmt::format("Value is out of bounds: [{},{}]", minv, maxv));
+		if (v < minv || v > maxv) {
+			throw reindexer::Error(errParams, fmt::format("Value is out of bounds: [{},{}]", minv, maxv));
+		}
 		return v;
 	}
 	template <typename T,
 			  typename std::enable_if<std::is_same<std::string, T>::value || std::is_same<std::string_view, T>::value>::type* = nullptr>
 	T As(T defval = T()) const {
-		if (!isValid()) return defval;
+		if (!isValid()) {
+			return defval;
+		}
 		MsgPackTag tag = getTag();
 		if (tag != MSGPACK_STRING) {
 			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%d] to string", tag);
@@ -62,7 +69,9 @@ struct MsgPackValue {
 	}
 	template <typename T, typename std::enable_if<std::is_same<T, bool>::value>::type* = nullptr>
 	T As(T defval = T()) const {
-		if (!isValid()) return defval;
+		if (!isValid()) {
+			return defval;
+		}
 		MsgPackTag tag = getTag();
 		if (tag != MSGPACK_BOOLEAN) {
 			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%d] to bool", tag);
@@ -104,7 +113,9 @@ public:
 	MsgPackValue Parse(T data, size_t& offset) {
 		prepare();
 		msgpack_unpack_return ret = msgpack_unpack_next(&unpacked_, data.data(), data.size(), &offset);
-		if (ret != MSGPACK_UNPACK_SUCCESS) return MsgPackValue(nullptr);
+		if (ret != MSGPACK_UNPACK_SUCCESS) {
+			return MsgPackValue(nullptr);
+		}
 		return MsgPackValue(&unpacked_.data);
 	}
 

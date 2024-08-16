@@ -21,7 +21,9 @@ public:
 		} else {
 			impl_ = std::make_shared<BtreeIndexForwardIteratorImpl<T>>(idxMap_, first_, last_);
 		}
-		if (impl_->getSize() == 0) return;
+		if (impl_->getSize() == 0) {
+			return;
+		}
 		impl_->shiftToBegin();
 		impl_->shiftIdsetToBegin();
 	}
@@ -51,7 +53,9 @@ public:
 		return impl_->getValue();
 	}
 	size_t GetMaxIterations(size_t limitIters) noexcept final {
-		if (cachedIters_ != std::numeric_limits<size_t>::max()) return cachedIters_;
+		if (cachedIters_ != std::numeric_limits<size_t>::max()) {
+			return cachedIters_;
+		}
 		return BtreeIndexForwardIteratorImpl<T>(idxMap_, first_, last_).getMaxIterations(limitIters);
 	}
 	void SetMaxIterations(size_t iters) noexcept final { cachedIters_ = iters; }

@@ -73,7 +73,7 @@ protected:
 	Error queryResultsToJson(std::ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery, bool fstream);
 	Error getAvailableDatabases(std::vector<std::string>&);
 
-	void addCommandsSuggestions(std::string const& input, std::vector<std::string>& suggestions);
+	void addCommandsSuggestions(const std::string& input, std::vector<std::string>& suggestions);
 	void checkForNsNameMatch(std::string_view str, std::vector<std::string>& suggestions);
 	void checkForCommandNameMatch(std::string_view str, std::initializer_list<std::string_view> cmds,
 								  std::vector<std::string>& suggestions);

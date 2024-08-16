@@ -19,12 +19,12 @@ class ordinator {
 public:
 	using cmpl_cb_t = std::function<void(routine_t)>;
 
-	ordinator(const ordinator &) = delete;
-	ordinator(ordinator &&) = delete;
-	ordinator &operator=(const ordinator &) = delete;
-	ordinator &operator=(ordinator &&) = delete;
+	ordinator(const ordinator&) = delete;
+	ordinator(ordinator&&) = delete;
+	ordinator& operator=(const ordinator&) = delete;
+	ordinator& operator=(ordinator&&) = delete;
 
-	static ordinator &instance() noexcept;
+	static ordinator& instance() noexcept;
 
 	/// Create new coroutine in current thread
 	/// @param function - Function, that will be executed in this coroutine
@@ -69,15 +69,15 @@ private:
 	public:
 		routine() noexcept = default;
 		~routine();
-		routine(const routine &) = delete;
-		routine(routine &&other) noexcept;
-		routine(std::function<void()> _func, koishi_coroutine_t *fiber, size_t stack_size) noexcept
+		routine(const routine&) = delete;
+		routine(routine&& other) noexcept;
+		routine(std::function<void()> _func, koishi_coroutine_t* fiber, size_t stack_size) noexcept
 			: func(std::move(_func)), fiber_(fiber), stack_size_(stack_size), is_empty_(true) {
 			assertrx(stack_size_);
 			assertrx(fiber_);
 		}
-		routine &operator=(const routine &) = delete;
-		routine &operator=(routine &&) = delete;
+		routine& operator=(const routine&) = delete;
+		routine& operator=(routine&&) = delete;
 
 		/// Check if coroutine is already finished it's execution and ready to be cleared
 		/// @returns true - if coroutine is finalized, false - if couroutine is still in progress
@@ -104,7 +104,7 @@ private:
 		std::function<void()> func;
 
 	private:
-		koishi_coroutine_t *fiber_ = nullptr;
+		koishi_coroutine_t* fiber_ = nullptr;
 		size_t stack_size_ = k_default_stack_limit;
 		bool is_empty_ = true;
 		bool finalized_ = false;

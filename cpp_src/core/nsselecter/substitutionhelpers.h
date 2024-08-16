@@ -32,9 +32,9 @@ public:
 		h_vector<uint16_t, 8> entries;
 	};
 
-	CompositeSearcher(const NamespaceImpl &ns) noexcept : ns_(ns) {}
+	CompositeSearcher(const NamespaceImpl& ns) noexcept : ns_(ns) {}
 
-	void Add(int field, const std::vector<int> &composites, unsigned entry) {
+	void Add(int field, const std::vector<int>& composites, unsigned entry) {
 		assertrx_throw(entry < std::numeric_limits<uint16_t>::max());
 		for (auto composite : composites) {
 			const auto idxType = ns_.indexes_[composite]->Type();
@@ -42,7 +42,7 @@ public:
 				continue;
 			}
 			bool found = false;
-			for (auto &d : d_) {
+			for (auto& d : d_) {
 				if (d.idx == composite) {
 					d.fields.push_back(field);
 					d.entries.push_back(entry);
@@ -59,8 +59,8 @@ public:
 		int res = -1;
 		unsigned maxSize = 0;
 		for (int i = 0; i < int(d_.size()); ++i) {
-			auto &data = d_[i];
-			const auto &idxFields = ns_.indexes_[data.idx]->Fields();
+			auto& data = d_[i];
+			const auto& idxFields = ns_.indexes_[data.idx]->Fields();
 			// If all of the composite fields were found in query
 			const auto dfCnt = data.fields.count();
 			if (dfCnt == idxFields.size() && idxFields.contains(data.fields)) {
@@ -88,9 +88,9 @@ public:
 		if (unsigned(curId) + 1 != d_.size()) {
 			std::swap(d_[curId], d_.back());
 		}
-		const auto &cur = d_.back();
+		const auto& cur = d_.back();
 		for (unsigned i = 0, sz = d_.size(); i < sz - deleted; ++i) {
-			auto &data = d_[i];
+			auto& data = d_[i];
 			if (haveIntersection(data.entries, cur.entries)) {
 				std::swap(data, d_[sz - ++deleted]);
 				--i;
@@ -107,7 +107,7 @@ public:
 		}
 		return res;
 	}
-	const IndexData &operator[](uint16_t i) const noexcept { return d_[i]; }
+	const IndexData& operator[](uint16_t i) const noexcept { return d_[i]; }
 
 private:
 	void remove(uint16_t i) noexcept {
@@ -116,7 +116,7 @@ private:
 		}
 		d_.pop_back();
 	}
-	static bool haveIntersection(const h_vector<uint16_t, 8> &lEntries, const h_vector<uint16_t, 8> &rEntries) noexcept {
+	static bool haveIntersection(const h_vector<uint16_t, 8>& lEntries, const h_vector<uint16_t, 8>& rEntries) noexcept {
 		for (auto lit = lEntries.begin(), rit = rEntries.begin(); lit != lEntries.end() && rit != rEntries.end();) {
 			if (*lit < *rit) {
 				++lit;
@@ -130,7 +130,7 @@ private:
 	}
 
 	h_vector<IndexData, 6> d_;
-	const NamespaceImpl &ns_;
+	const NamespaceImpl& ns_;
 };
 
 // EntriesRange - query entries range. [from; to)
@@ -150,7 +150,7 @@ public:
 		}
 		--from_;
 	}
-	bool Append(const EntriesRange &r) noexcept {
+	bool Append(const EntriesRange& r) noexcept {
 		if (to_ == r.from_) {
 			to_ = r.to_;
 			return true;

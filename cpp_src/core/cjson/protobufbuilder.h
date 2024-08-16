@@ -107,10 +107,14 @@ public:
 	void Array(int fieldIdx, Serializer& rdser, TagType tagType, int count) {
 		if (tagType == TAG_VARINT || tagType == TAG_DOUBLE || tagType == TAG_BOOL) {
 			auto array = ArrayPacked(fieldIdx);
-			while (count--) packItem(fieldIdx, tagType, rdser, array);
+			while (count--) {
+				packItem(fieldIdx, tagType, rdser, array);
+			}
 		} else {
 			auto array = ArrayNotPacked(fieldIdx);
-			while (count--) packItem(fieldIdx, tagType, rdser, array);
+			while (count--) {
+				packItem(fieldIdx, tagType, rdser, array);
+			}
 		}
 	}
 

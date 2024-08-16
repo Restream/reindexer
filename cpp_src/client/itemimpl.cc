@@ -8,7 +8,7 @@
 namespace reindexer {
 namespace client {
 
-ItemImpl &ItemImpl::operator=(ItemImpl &&other) noexcept {
+ItemImpl& ItemImpl::operator=(ItemImpl&& other) noexcept {
 	if (&other != this) {
 		payloadType_ = std::move(other.payloadType_);
 		payloadValue_ = std::move(other.payloadValue_);
@@ -57,7 +57,7 @@ void ItemImpl::FromCJSON(std::string_view slice) {
 	pl.Set(0, Variant(p_string(&tupleData_), Variant::no_hold_t{}));
 }
 
-Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*/) {
+Error ItemImpl::FromJSON(std::string_view slice, char** endp, bool /*pkOnly*/) {
 	std::string_view data = slice;
 	if (!unsafe_ && endp == nullptr) {
 		holder_.emplace_back(slice);
@@ -71,11 +71,13 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*/) {
 	gason::JsonParser parser(&largeJSONStrings_);
 	try {
 		node = parser.Parse(giftStr(data), &len);
-		if (node.value.getTag() != gason::JSON_OBJECT) return Error(errParseJson, "Expected json object");
-		if (unsafe_ && endp) {
-			*endp = const_cast<char *>(data.data()) + len;
+		if (node.value.getTag() != gason::JSON_OBJECT) {
+			return Error(errParseJson, "Expected json object");
 		}
-	} catch (gason::Exception &e) {
+		if (unsafe_ && endp) {
+			*endp = const_cast<char*>(data.data()) + len;
+		}
+	} catch (gason::Exception& e) {
 		return Error(errParseJson, "Error parsing json: '%s', pos: %d", e.what(), len);
 	}
 
@@ -94,7 +96,7 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*/) {
 	return err;
 }
 
-Error ItemImpl::FromMsgPack(std::string_view buf, size_t &offset) {
+Error ItemImpl::FromMsgPack(std::string_view buf, size_t& offset) {
 	Payload pl = GetPayload();
 	MsgPackDecoder decoder(tagsMatcher_);
 
@@ -107,7 +109,7 @@ Error ItemImpl::FromMsgPack(std::string_view buf, size_t &offset) {
 	return err;
 }
 
-void ItemImpl::FromCJSON(ItemImpl *other) {
+void ItemImpl::FromCJSON(ItemImpl* other) {
 	auto cjson = other->GetCJSON();
 	FromCJSON(cjson);
 }
@@ -117,7 +119,7 @@ std::string_view ItemImpl::GetMsgPack() {
 	ConstPayload pl = GetConstPayload();
 
 	MsgPackEncoder msgpackEncoder(&tagsMatcher_);
-	const TagsLengths &tagsLengths = msgpackEncoder.GetTagsMeasures(pl);
+	const TagsLengths& tagsLengths = msgpackEncoder.GetTagsMeasures(pl);
 
 	ser_.Reset();
 	MsgPackBuilder msgpackBuilder(ser_, &tagsLengths, &startTag, ObjType::TypePlain, &tagsMatcher_);

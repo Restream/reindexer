@@ -30,7 +30,7 @@ void VerifyQueryResult(const QueryResults& qr, const std::vector<std::string>& f
 	EXPECT_TRUE(fields.size() == keys.size());
 	EXPECT_TRUE(keys.size() == condTypes.size());
 	size_t totalFound = 0;
-	for (auto &item : qr) {
+	for (auto& item : qr) {
 		size_t len = INT_MAX;
 		Item it = item.GetItem(false);
 
@@ -45,8 +45,12 @@ void VerifyQueryResult(const QueryResults& qr, const std::vector<std::string>& f
 		bool equal = true;
 		for (;;) {
 			size_t key = 0;
-			while ((j < len) && !Compare(vals[key][j], keys[key], condTypes[key])) ++j;
-			if (eof()) break;
+			while ((j < len) && !Compare(vals[key][j], keys[key], condTypes[key])) {
+				++j;
+			}
+			if (eof()) {
+				break;
+			}
 			equal = true;
 			while (++key < keys.size()) {
 				equal &= Compare(vals[key][j], keys[key], condTypes[key]);
@@ -60,7 +64,9 @@ void VerifyQueryResult(const QueryResults& qr, const std::vector<std::string>& f
 			}
 			++j;
 		}
-		if (!equal) TEST_COUT << it.GetJSON() << std::endl;
+		if (!equal) {
+			TEST_COUT << it.GetJSON() << std::endl;
+		}
 	}
 	EXPECT_TRUE(totalFound == qr.Count()) << " totalFound=" << totalFound << ", qr.Count()=" << qr.Count();
 }

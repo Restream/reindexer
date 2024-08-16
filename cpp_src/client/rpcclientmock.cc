@@ -54,7 +54,9 @@ Error RPCClientMock::Delete(const Query& query, QueryResults& result, const Inte
 	};
 
 	int flags = kResultsWithItemID;
-	if (outputFormat == FormatMsgPack) flags |= kResultsMsgPack;
+	if (outputFormat == FormatMsgPack) {
+		flags |= kResultsMsgPack;
+	}
 	auto ret = conn->Call(mkCommand(cproto::kCmdDeleteQuery, &ctx), ser.Slice(), flags);
 	icompl(ret, conn);
 	return ret.Status();
@@ -132,7 +134,9 @@ Error RPCClientMock::modifyItem(std::string_view nsName, Item& item, int mode, s
 		auto ret = conn->Call(mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), nsName, format, data, mode, ser.Slice(),
 							  item.GetStateToken(), 0);
 		if (!ret.Status().ok()) {
-			if (ret.Status().code() != errStateInvalidated || tryCount > 2) return ret.Status();
+			if (ret.Status().code() != errStateInvalidated || tryCount > 2) {
+				return ret.Status();
+			}
 			if (withNetTimeout) {
 				netTimeout = netDeadline - conn->Now();
 			}
@@ -148,7 +152,9 @@ Error RPCClientMock::modifyItem(std::string_view nsName, Item& item, int mode, s
 			auto newItem = NewItem(nsName);
 			char* endp = nullptr;
 			Error err = newItem.FromJSON(item.impl_->GetJSON(), &endp);
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 
 			item = std::move(newItem);
 			continue;
@@ -174,7 +180,9 @@ Error RPCClientMock::modifyItemAsync(std::string_view nsName, Item* item, int mo
 			ser.PutVString(p);
 		}
 	}
-	if (!conn) conn = getConn();
+	if (!conn) {
+		conn = getConn();
+	}
 
 	std::string_view data;
 	switch (format) {
@@ -196,7 +204,9 @@ Error RPCClientMock::modifyItemAsync(std::string_view nsName, Item* item, int mo
 	conn->Call(
 		[this, ns, mode, item, deadline, ctx, format](const net::cproto::RPCAnswer& ret, cproto::ClientConnection* conn) -> void {
 			if (!ret.Status().ok()) {
-				if (ret.Status().code() != errStateInvalidated) return ctx.cmpl()(ret.Status());
+				if (ret.Status().code() != errStateInvalidated) {
+					return ctx.cmpl()(ret.Status());
+				}
 				seconds netTimeout(0);
 				if (deadline.count()) {
 					netTimeout = deadline - conn->Now();
@@ -205,7 +215,9 @@ Error RPCClientMock::modifyItemAsync(std::string_view nsName, Item* item, int mo
 				QueryResults* qr = new QueryResults;
 				InternalRdxContext ctxCmpl = ctx.WithCompletion([=](const Error& ret) {
 					delete qr;
-					if (!ret.ok()) return ctx.cmpl()(ret);
+					if (!ret.ok()) {
+						return ctx.cmpl()(ret);
+					}
 
 					seconds timeout(0);
 					if (deadline.count()) {
@@ -215,15 +227,21 @@ Error RPCClientMock::modifyItemAsync(std::string_view nsName, Item* item, int mo
 					// Rebuild item with new state
 					auto newItem = NewItem(ns);
 					Error err = newItem.FromJSON(item->impl_->GetJSON());
-					if (!err.ok()) return ctx.cmpl()(ret);
+					if (!err.ok()) {
+						return ctx.cmpl()(ret);
+					}
 					newItem.SetPrecepts(item->impl_->GetPrecepts());
 					*item = std::move(newItem);
 					err = modifyItemAsync(ns, item, mode, conn, timeout, ctx, format);
-					if (!err.ok()) return ctx.cmpl()(ret);
+					if (!err.ok()) {
+						return ctx.cmpl()(ret);
+					}
 				});
 				auto err = selectImpl(Query(ns).Limit(0), *qr, conn, netTimeout, ctxCmpl, format);
-				if (err.ok()) return ctx.cmpl()(err);
-			} else
+				if (err.ok()) {
+					return ctx.cmpl()(err);
+				}
+			} else {
 				try {
 					auto args = ret.GetArgs(2);
 					ctx.cmpl()(QueryResults(conn, {getNamespace(ns)}, nullptr, p_string(args[0]), int(args[1]), 0, config_.FetchAmount,
@@ -232,6 +250,7 @@ Error RPCClientMock::modifyItemAsync(std::string_view nsName, Item* item, int mo
 				} catch (const Error& err) {
 					ctx.cmpl()(err);
 				}
+			}
 		},
 		mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), ns, format, data, mode, ser.Slice(), item->GetStateToken(), 0);
 	return errOK;
@@ -250,7 +269,9 @@ Error RPCClientMock::selectImpl(std::string_view query, QueryResults& result, cp
 	h_vector<int32_t, 4> vers;
 	vec2pack(vers, pser);
 
-	if (!conn) conn = getConn();
+	if (!conn) {
+		conn = getConn();
+	}
 
 	result = QueryResults(conn, {}, ctx.cmpl(), result.fetchFlags_, config_.FetchAmount, config_.RequestTimeout);
 
@@ -316,7 +337,9 @@ Error RPCClientMock::selectImpl(const Query& query, QueryResults& result, cproto
 	}
 	vec2pack(vers, pser);
 
-	if (!conn) conn = getConn();
+	if (!conn) {
+		conn = getConn();
+	}
 
 	result = QueryResults(conn, std::move(nsArray), ctx.cmpl(), result.fetchFlags_, config_.FetchAmount, config_.RequestTimeout);
 

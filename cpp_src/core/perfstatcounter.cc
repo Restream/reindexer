@@ -80,7 +80,9 @@ template <typename Mutex>
 void PerfStatCounter<Mutex>::lap() {
 	auto now = system_clock_w::now();
 	std::chrono::microseconds elapsed = std::chrono::duration_cast<std::chrono::microseconds>(now - calcStartTime);
-	if (elapsed < std::chrono::microseconds(1000000)) return;
+	if (elapsed < std::chrono::microseconds(1000000)) {
+		return;
+	}
 	avgHitCount = calcHitCount;
 	avgTime = calcTime;
 	calcTime = std::chrono::microseconds(0);

@@ -14,29 +14,29 @@ class WrSerializer;
 struct NamespaceDef {
 	NamespaceDef() = default;
 
-	NamespaceDef(const std::string &iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing())
+	NamespaceDef(const std::string& iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing())
 		: name(iname), storage(istorage) {}
 
-	NamespaceDef &AddIndex(const std::string &iname, const std::string &indexType, const std::string &fieldType,
+	NamespaceDef& AddIndex(const std::string& iname, const std::string& indexType, const std::string& fieldType,
 						   IndexOpts opts = IndexOpts()) {
 		indexes.emplace_back(iname, JsonPaths{iname}, indexType, fieldType, std::move(opts));
 		return *this;
 	}
 
-	NamespaceDef &AddIndex(const std::string &iname, const JsonPaths &jsonPaths, const std::string &indexType, const std::string &fieldType,
+	NamespaceDef& AddIndex(const std::string& iname, const JsonPaths& jsonPaths, const std::string& indexType, const std::string& fieldType,
 						   IndexOpts opts = IndexOpts()) {
 		indexes.emplace_back(iname, jsonPaths, indexType, fieldType, std::move(opts));
 		return *this;
 	}
 
-	NamespaceDef &AddIndex(const IndexDef &idxDef) {
+	NamespaceDef& AddIndex(const IndexDef& idxDef) {
 		indexes.emplace_back(idxDef);
 		return *this;
 	}
 
 	Error FromJSON(span<char> json);
-	void FromJSON(const gason::JsonNode &root);
-	void GetJSON(WrSerializer &, int formatFlags = 0) const;
+	void FromJSON(const gason::JsonNode& root);
+	void GetJSON(WrSerializer&, int formatFlags = 0) const;
 
 public:
 	std::string name;
@@ -63,24 +63,24 @@ struct EnumNamespacesOpts {
 	}
 
 	// Add not openened namespaces to enumeration
-	EnumNamespacesOpts &WithClosed(bool value = true) {
+	EnumNamespacesOpts& WithClosed(bool value = true) {
 		options_ = value ? options_ | kEnumNamespacesWithClosed : options_ & ~(kEnumNamespacesWithClosed);
 		return *this;
 	}
 
 	// Return only namespaces names (faster, and do not try rlock nses)
-	EnumNamespacesOpts &OnlyNames(bool value = true) {
+	EnumNamespacesOpts& OnlyNames(bool value = true) {
 		options_ = value ? options_ | kEnumNamespacesOnlyNames : options_ & ~(kEnumNamespacesOnlyNames);
 		return *this;
 	}
 
 	// Hide system namespaces from enumeration
-	EnumNamespacesOpts &HideSystem(bool value = true) {
+	EnumNamespacesOpts& HideSystem(bool value = true) {
 		options_ = value ? options_ | kEnumNamespacesHideSystem : options_ & ~(kEnumNamespacesHideSystem);
 		return *this;
 	}
 	// Add name filter
-	EnumNamespacesOpts &WithFilter(std::string_view flt) {
+	EnumNamespacesOpts& WithFilter(std::string_view flt) {
 		filter_ = flt;
 		return *this;
 	}

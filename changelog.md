@@ -1,3 +1,27 @@
+# Version 3.28.0 (16.08.2024)
+## Core
+- [fea] Updated [logging library](https://github.com/gabime/spdlog) to v1.14.1 and [formatting library](https://github.com/fmtlib/fmt) to v11.0.2
+- [fea] Optimized log level checks to avoid excessive serializtion in core logs
+- [fea] Added support for [array_remove](readme.md#remove-array-elements-by-values) with scalar values in SQL
+- [fea] Added support for [array_remove](readme.md#remove-array-elements-by-values) with non-integral values
+- [fix] Disabled default values creation for object array indexes to avoid Go/Java connectors incompatibility
+- [fix] Fixed sorted JOIN-subqueries over optimized `tree`-indexes with unordered conditions
+
+## Reindexer server
+- [fix] Fixed [docker's](https://hub.docker.com/r/reindexer/reindexer) SEGFAULT on M1 CPU
+
+## Reindexer tool
+- [fix] Fixed possible stucking in interactive mode on Windows
+
+## Face
+- [fea] Changed default value for `rtree` fields in 'new item' modal (now it's zero point instead of empty array)
+- [fix] Fixed items table view (previously it could disapear in some rare cases depending on items contents)
+- [fix] Fixed 'delete database' button
+- [fix] Fixed `default stop words` behavior in fulltext index settings
+- [fix] Fixed rendering of the last namespace in namespaces list
+- [fix] Fixed links to the docs depending on the current chosen interface language
+- [ref] Changed `bm25` grouping in fulltext index settings
+
 # Version 3.27.0 (09.07.2024)
 ## Core
 - [fea] Decreased heap allocations count in general selection pipeline

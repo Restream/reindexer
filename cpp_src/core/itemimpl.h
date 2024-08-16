@@ -15,10 +15,10 @@ namespace reindexer {
 struct ItemImplRawData {
 	ItemImplRawData() = default;
 	explicit ItemImplRawData(PayloadValue v) : payloadValue_(std::move(v)) {}
-	ItemImplRawData(const ItemImplRawData &) = delete;
-	ItemImplRawData(ItemImplRawData &&) = default;
-	ItemImplRawData &operator=(const ItemImplRawData &) = delete;
-	ItemImplRawData &operator=(ItemImplRawData &&) = default;
+	ItemImplRawData(const ItemImplRawData&) = delete;
+	ItemImplRawData(ItemImplRawData&&) = default;
+	ItemImplRawData& operator=(const ItemImplRawData&) = delete;
+	ItemImplRawData& operator=(ItemImplRawData&&) = default;
 
 	PayloadValue payloadValue_;
 	std::unique_ptr<uint8_t[]> tupleData_;
@@ -38,7 +38,7 @@ public:
 	ItemImpl() = default;
 
 	// Construct empty item
-	ItemImpl(PayloadType type, const TagsMatcher &tagsMatcher, const FieldsSet &pkFields = {}, std::shared_ptr<const Schema> schema = {})
+	ItemImpl(PayloadType type, const TagsMatcher& tagsMatcher, const FieldsSet& pkFields = {}, std::shared_ptr<const Schema> schema = {})
 		: ItemImplRawData(PayloadValue(type.TotalSize(), nullptr, type.TotalSize() + 0x100)),
 		  payloadType_(std::move(type)),
 		  tagsMatcher_(tagsMatcher),
@@ -48,64 +48,64 @@ public:
 	}
 
 	// Construct empty item
-	ItemImpl(PayloadType type, const TagsMatcher &tagsMatcher, const FieldsSet &pkFields, std::shared_ptr<const Schema> schema,
-			 ItemImplRawData &&rawData)
+	ItemImpl(PayloadType type, const TagsMatcher& tagsMatcher, const FieldsSet& pkFields, std::shared_ptr<const Schema> schema,
+			 ItemImplRawData&& rawData)
 		: ItemImplRawData(std::move(rawData)),
 		  payloadType_(std::move(type)),
 		  tagsMatcher_(tagsMatcher),
 		  pkFields_(pkFields),
 		  schema_(std::move(schema)) {}
 
-	ItemImpl(PayloadType type, PayloadValue v, const TagsMatcher &tagsMatcher, std::shared_ptr<const Schema> schema = {})
+	ItemImpl(PayloadType type, PayloadValue v, const TagsMatcher& tagsMatcher, std::shared_ptr<const Schema> schema = {})
 		: ItemImplRawData(std::move(v)), payloadType_(std::move(type)), tagsMatcher_(tagsMatcher), schema_{std::move(schema)} {
 		tagsMatcher_.clearUpdated();
 	}
 
-	ItemImpl(const ItemImpl &) = delete;
-	ItemImpl(ItemImpl &&) = default;
-	ItemImpl &operator=(ItemImpl &&) = default;
-	ItemImpl &operator=(const ItemImpl &) = delete;
+	ItemImpl(const ItemImpl&) = delete;
+	ItemImpl(ItemImpl&&) = default;
+	ItemImpl& operator=(ItemImpl&&) = default;
+	ItemImpl& operator=(const ItemImpl&) = delete;
 
-	void ModifyField(std::string_view jsonPath, const VariantArray &keys, FieldModifyMode mode);
-	void ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &keys, FieldModifyMode mode);
-	void SetField(int field, const VariantArray &krs);
-	void SetField(std::string_view jsonPath, const VariantArray &keys);
+	void ModifyField(std::string_view jsonPath, const VariantArray& keys, FieldModifyMode mode);
+	void ModifyField(const IndexedTagsPath& tagsPath, const VariantArray& keys, FieldModifyMode mode);
+	void SetField(int field, const VariantArray& krs);
+	void SetField(std::string_view jsonPath, const VariantArray& keys);
 	void DropField(std::string_view jsonPath);
 	Variant GetField(int field);
-	void GetField(int field, VariantArray &);
+	void GetField(int field, VariantArray&);
 	FieldsSet PkFields() const { return pkFields_; }
 	int NameTag(std::string_view name) const { return tagsMatcher_.name2tag(name); }
 
 	VariantArray GetValueByJSONPath(std::string_view jsonPath);
 
 	std::string_view GetJSON();
-	Error FromJSON(std::string_view slice, char **endp = nullptr, bool pkOnly = false);
-	void FromCJSON(ItemImpl &other, Recoder *);
+	Error FromJSON(std::string_view slice, char** endp = nullptr, bool pkOnly = false);
+	void FromCJSON(ItemImpl& other, Recoder*);
 
 	std::string_view GetCJSON(bool withTagsMatcher = false);
-	std::string_view GetCJSON(WrSerializer &ser, bool withTagsMatcher = false);
-	void FromCJSON(std::string_view slice, bool pkOnly = false, Recoder * = nullptr);
-	Error FromMsgPack(std::string_view sbuf, size_t &offset);
+	std::string_view GetCJSON(WrSerializer& ser, bool withTagsMatcher = false);
+	void FromCJSON(std::string_view slice, bool pkOnly = false, Recoder* = nullptr);
+	Error FromMsgPack(std::string_view sbuf, size_t& offset);
 	Error FromProtobuf(std::string_view sbuf);
-	Error GetMsgPack(WrSerializer &wrser);
+	Error GetMsgPack(WrSerializer& wrser);
 	std::string_view GetMsgPack();
-	Error GetProtobuf(WrSerializer &wrser);
+	Error GetProtobuf(WrSerializer& wrser);
 
-	const PayloadType &Type() const noexcept { return payloadType_; }
-	PayloadValue &Value() noexcept { return payloadValue_; }
-	PayloadValue &RealValue() noexcept { return realValue_; }
+	const PayloadType& Type() const noexcept { return payloadType_; }
+	PayloadValue& Value() noexcept { return payloadValue_; }
+	PayloadValue& RealValue() noexcept { return realValue_; }
 	Payload GetPayload() noexcept { return Payload(payloadType_, payloadValue_); }
 	ConstPayload GetConstPayload() const noexcept { return ConstPayload(payloadType_, payloadValue_); }
 	std::shared_ptr<const Schema> GetSchema() const noexcept { return schema_; }
 
-	TagsMatcher &tagsMatcher() noexcept { return tagsMatcher_; }
-	std::shared_ptr<const Schema> &schema() noexcept { return schema_; }
+	TagsMatcher& tagsMatcher() noexcept { return tagsMatcher_; }
+	std::shared_ptr<const Schema>& schema() noexcept { return schema_; }
 
-	void SetPrecepts(const std::vector<std::string> &precepts) {
+	void SetPrecepts(const std::vector<std::string>& precepts) {
 		precepts_ = precepts;
 		cjson_ = std::string_view();
 	}
-	const std::vector<std::string> &GetPrecepts() const noexcept { return precepts_; }
+	const std::vector<std::string>& GetPrecepts() const noexcept { return precepts_; }
 	void Unsafe(bool enable) noexcept { unsafe_ = enable; }
 	bool IsUnsafe() const noexcept { return unsafe_; }
 	void Clear() {
@@ -128,7 +128,7 @@ public:
 	}
 	void SetNamespace(std::shared_ptr<Namespace> ns) noexcept { ns_ = std::move(ns); }
 	std::shared_ptr<Namespace> GetNamespace() const noexcept { return ns_; }
-	static void validateModifyArray(const VariantArray &values);
+	static void validateModifyArray(const VariantArray& values);
 
 private:
 	// Index fields payload data

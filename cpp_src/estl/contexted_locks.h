@@ -40,14 +40,18 @@ public:
 		lck._M_context = nullptr;
 	}
 	~contexted_unique_lock() {
-		if (_M_owns) _M_mtx->unlock();
+		if (_M_owns) {
+			_M_mtx->unlock();
+		}
 	}
 
 	contexted_unique_lock(const contexted_unique_lock&) = delete;
 	contexted_unique_lock& operator=(const contexted_unique_lock&) = delete;
 	contexted_unique_lock& operator=(contexted_unique_lock&& lck) noexcept {
 		if (this != &lck) {
-			if (_M_owns) unlock();
+			if (_M_owns) {
+				unlock();
+			}
 			_M_mtx = lck._M_mtx;
 			_M_owns = lck._M_owns;
 			_M_context = lck._M_context;
@@ -98,8 +102,12 @@ public:
 
 private:
 	void _M_lockable() const noexcept {
-		if (_M_mtx == nullptr) assertrx(0);
-		if (_M_owns) assertrx(0);
+		if (_M_mtx == nullptr) {
+			assertrx(0);
+		}
+		if (_M_owns) {
+			assertrx(0);
+		}
 	}
 
 	MutexType* _M_mtx;
@@ -130,14 +138,18 @@ public:
 		lck._M_context = nullptr;
 	}
 	~contexted_shared_lock() {
-		if (_M_owns) _M_mtx->unlock_shared();
+		if (_M_owns) {
+			_M_mtx->unlock_shared();
+		}
 	}
 
 	contexted_shared_lock(const contexted_shared_lock&) = delete;
 	contexted_shared_lock& operator=(const contexted_shared_lock&) = delete;
 	contexted_shared_lock& operator=(contexted_shared_lock&& lck) noexcept {
 		if (this != &lck) {
-			if (_M_owns) unlock();
+			if (_M_owns) {
+				unlock();
+			}
 			_M_mtx = lck._M_mtx;
 			_M_owns = lck._M_owns;
 			_M_context = lck._M_context;
@@ -170,7 +182,9 @@ public:
 	}
 
 	void unlock() {
-		if (!_M_owns) assertrx(0);
+		if (!_M_owns) {
+			assertrx(0);
+		}
 		_M_mtx->unlock_shared();
 		_M_owns = false;
 	}
@@ -188,8 +202,12 @@ public:
 
 private:
 	void _M_lockable() const noexcept {
-		if (_M_mtx == nullptr) assertrx(0);
-		if (_M_owns) assertrx(0);
+		if (_M_mtx == nullptr) {
+			assertrx(0);
+		}
+		if (_M_owns) {
+			assertrx(0);
+		}
 	}
 
 	MutexType* _M_mtx;
