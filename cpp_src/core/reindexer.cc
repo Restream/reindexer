@@ -15,7 +15,9 @@ static WrSerializer& printPkFields(const Item& item, WrSerializer& ser) {
 	size_t jsonPathIdx = 0;
 	const FieldsSet fields = item.PkFields();
 	for (auto it = fields.begin(); it != fields.end(); ++it) {
-		if (it != fields.begin()) ser << " AND "sv;
+		if (it != fields.begin()) {
+			ser << " AND "sv;
+		}
 		int field = *it;
 		if (field == IndexValueType::SetByJsonPath) {
 			assertrx(jsonPathIdx < fields.getTagsPathsLength());

@@ -73,7 +73,9 @@ Error RPCClient::AddNamespace(const NamespaceDef& nsDef, const InternalRdxContex
 	replOpts.GetJSON(serReplOpts);
 	auto status = conn_.Call(mkCommand(cproto::kCmdOpenNamespace, &ctx), ser.Slice(), serReplOpts.Slice()).Status();
 
-	if (!status.ok()) return status;
+	if (!status.ok()) {
+		return status;
+	}
 
 	namespaces_->Add(nsDef.name);
 	return errOK;
@@ -117,7 +119,9 @@ Error RPCClient::TruncateNamespace(std::string_view nsName, const InternalRdxCon
 
 Error RPCClient::RenameNamespace(std::string_view srcNsName, std::string_view dstNsName, const InternalRdxContext& ctx) {
 	auto status = conn_.Call(mkCommand(cproto::kCmdRenameNamespace, &ctx), srcNsName, dstNsName).Status();
-	if (!status.ok() && status.code() != errTimeout) return status;
+	if (!status.ok() && status.code() != errTimeout) {
+		return status;
+	}
 	if (srcNsName != dstNsName) {
 		namespaces_->Erase(srcNsName);
 		namespaces_->Erase(dstNsName);
@@ -212,9 +216,13 @@ Error RPCClient::modifyItemCJSON(std::string_view nsName, Item& item, CoroQueryR
 				netTimeout = std::chrono::duration_cast<std::chrono::milliseconds>(netDeadline - conn_.Now());
 			}
 			auto newItem = NewItem(nsName);
-			if (!newItem.Status().ok()) return newItem.Status();
+			if (!newItem.Status().ok()) {
+				return newItem.Status();
+			}
 			err = newItem.FromJSON(item.impl_->GetJSON());
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 			if (item.impl_->tagsMatcher().isUpdated()) {
 				// Add new names missing in JSON from tm
 				newItem.impl_->addTagNamesFrom(item.impl_->tagsMatcher());
@@ -276,7 +284,9 @@ Error RPCClient::modifyItemRaw(std::string_view nsName, std::string_view cjson, 
 	const auto ret = conn_.Call(mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), nsName, int(DataFormat::FormatCJson), cjson, mode,
 								std::string_view(), stateToken, 0);
 
-	if (!ret.Status().ok()) return ret.Status();
+	if (!ret.Status().ok()) {
+		return ret.Status();
+	}
 
 	try {
 		const auto args = ret.GetArgs(2);
@@ -292,7 +302,9 @@ Error RPCClient::modifyItemRaw(std::string_view nsName, std::string_view cjson, 
 					const int version = ser.GetVarUint();
 					TagsMatcher newTm;
 					newTm.deserialize(ser, version, stateToken);
-					if (nsIdx != 0) throw Error(errLogic, "Unexpected namespace index in item modification response: %d", nsIdx);
+					if (nsIdx != 0) {
+						throw Error(errLogic, "Unexpected namespace index in item modification response: %d", nsIdx);
+					}
 					nsPtr->TryReplaceTagsMatcher(std::move(newTm));
 					PayloadType("tmp").clone()->deserialize(ser);
 				},
@@ -335,7 +347,9 @@ Error RPCClient::GetMeta(std::string_view nsName, const std::string& key, std::v
 				auto json = k.As<std::string>();
 				data.emplace_back();
 				auto err = data.back().FromJSON(giftStr(json));
-				if (!err.ok()) return err;
+				if (!err.ok()) {
+					return err;
+				}
 			}
 		}
 		return ret.Status();
@@ -414,7 +428,9 @@ Error RPCClient::Update(const Query& query, CoroQueryResults& result, const Inte
 void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
 	// Get array of payload Type Versions
 	ser.PutVarUint(vec.size());
-	for (auto v : vec) ser.PutVarUint(v);
+	for (auto v : vec) {
+		ser.PutVarUint(v);
+	}
 }
 
 Error RPCClient::Select(std::string_view querySQL, CoroQueryResults& result, const InternalRdxContext& ctx) {
@@ -555,7 +571,9 @@ Error RPCClient::GetSqlSuggestions(std::string_view query, int pos, std::vector<
 			suggests.clear();
 			suggests.reserve(rargs.size());
 
-			for (auto& rarg : rargs) suggests.push_back(rarg.As<std::string>());
+			for (auto& rarg : rargs) {
+				suggests.push_back(rarg.As<std::string>());
+			}
 		}
 		return ret.Status();
 	} catch (const Error& err) {

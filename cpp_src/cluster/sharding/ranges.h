@@ -10,7 +10,9 @@ template <typename T>
 struct Segment {
 	explicit Segment(T e) : left(std::move(e)), right(left) {}
 	explicit Segment(T e1, T e2) : left(std::move(e1)), right(std::move(e2)) {
-		if (left > right) std::swap(left, right);
+		if (left > right) {
+			std::swap(left, right);
+		}
 	}
 	T left, right;
 	bool isEnabled = true;
@@ -20,7 +22,9 @@ template <typename T>
 std::optional<Segment<T>> getUnion(const Segment<T>& s1, const Segment<T>& s2) {
 	const auto& [left, right] = s2.left >= s1.left ? std::tie(s1, s2) : std::tie(s2, s1);
 
-	if (left.right < right.left) return std::nullopt;
+	if (left.right < right.left) {
+		return std::nullopt;
+	}
 
 	return Segment<T>{left.left, std::max(right.right, left.right)};
 }

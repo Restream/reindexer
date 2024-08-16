@@ -8,7 +8,7 @@ namespace reindexer {
 
 struct QueryDebugContext {
 	bool HasTrackedQuery() const noexcept { return mainQuery || externQuery || parentQuery || !externSql.empty(); }
-	std::string_view GetMainSQL(std::string &storage) const noexcept {
+	std::string_view GetMainSQL(std::string& storage) const noexcept {
 		try {
 			storage.clear();
 			if (mainQuery) {
@@ -23,7 +23,7 @@ struct QueryDebugContext {
 			return "<unable to get tracked main query SQL (exception)>";
 		}
 	}
-	std::string_view GetParentSQL(std::string &storage) const noexcept {
+	std::string_view GetParentSQL(std::string& storage) const noexcept {
 		try {
 			storage.clear();
 			if (parentQuery) {
@@ -39,22 +39,22 @@ struct QueryDebugContext {
 		externSql = std::string_view();
 	}
 
-	const Query *mainQuery = nullptr;
-	const Query *externQuery = nullptr;
+	const Query* mainQuery = nullptr;
+	const Query* externQuery = nullptr;
 	std::string_view externSql;
-	const Query *parentQuery = nullptr;
-	const std::atomic<int> *nsOptimizationState = nullptr;
-	ExplainCalc *explainCalc = nullptr;
-	const std::atomic<int> *nsLockerState = nullptr;
-	StringsHolder *nsStrHolder = nullptr;
+	const Query* parentQuery = nullptr;
+	const std::atomic<int>* nsOptimizationState = nullptr;
+	ExplainCalc* explainCalc = nullptr;
+	const std::atomic<int>* nsLockerState = nullptr;
+	StringsHolder* nsStrHolder = nullptr;
 	QueryType realQueryType = QuerySelect;
 	QueryType externRealQueryType = QuerySelect;
 };
 
 thread_local QueryDebugContext g_queryDebugCtx;
 
-ActiveQueryScope::ActiveQueryScope(SelectCtx &ctx, const std::atomic<int> &nsOptimizationState, ExplainCalc &explainCalc,
-								   const std::atomic<int> &nsLockerState, StringsHolder *strHolder) noexcept
+ActiveQueryScope::ActiveQueryScope(SelectCtx& ctx, const std::atomic<int>& nsOptimizationState, ExplainCalc& explainCalc,
+								   const std::atomic<int>& nsLockerState, StringsHolder* strHolder) noexcept
 	: type_(ctx.requiresCrashTracking ? Type::CoreQueryTracker : Type::NoTracking) {
 	if (ctx.requiresCrashTracking) {
 		g_queryDebugCtx.mainQuery = &ctx.query;
@@ -67,8 +67,8 @@ ActiveQueryScope::ActiveQueryScope(SelectCtx &ctx, const std::atomic<int> &nsOpt
 	}
 }
 
-ActiveQueryScope::ActiveQueryScope(const Query &q, QueryType realQueryType, const std::atomic<int> &nsOptimizationState,
-								   StringsHolder *strHolder) noexcept
+ActiveQueryScope::ActiveQueryScope(const Query& q, QueryType realQueryType, const std::atomic<int>& nsOptimizationState,
+								   StringsHolder* strHolder) noexcept
 	: type_(Type::CoreQueryTracker) {
 	g_queryDebugCtx.mainQuery = &q;
 	g_queryDebugCtx.parentQuery = nullptr;
@@ -79,7 +79,7 @@ ActiveQueryScope::ActiveQueryScope(const Query &q, QueryType realQueryType, cons
 	g_queryDebugCtx.realQueryType = realQueryType;
 }
 
-ActiveQueryScope::ActiveQueryScope(const Query &q, QueryType realQueryType) noexcept : type_(Type::ExternalQueryTracker) {
+ActiveQueryScope::ActiveQueryScope(const Query& q, QueryType realQueryType) noexcept : type_(Type::ExternalQueryTracker) {
 	g_queryDebugCtx.externQuery = &q;
 	g_queryDebugCtx.externRealQueryType = realQueryType;
 }
@@ -150,7 +150,7 @@ static std::string_view nsInvalidationStateName(int state) {
 	}
 }
 
-void PrintCrashedQuery(std::ostream &out) {
+void PrintCrashedQuery(std::ostream& out) {
 	if (!g_queryDebugCtx.HasTrackedQuery()) {
 		out << "*** No additional info from crash query tracker ***" << std::endl;
 		return;
@@ -175,11 +175,13 @@ void PrintCrashedQuery(std::ostream &out) {
 		out << " memstat = " << g_queryDebugCtx.nsStrHolder->MemStat() << std::endl;
 		out << " holds indexes = " << std::boolalpha << g_queryDebugCtx.nsStrHolder->HoldsIndexes() << std::endl;
 		if (g_queryDebugCtx.nsStrHolder->HoldsIndexes()) {
-			const auto &indexes = g_queryDebugCtx.nsStrHolder->Indexes();
+			const auto& indexes = g_queryDebugCtx.nsStrHolder->Indexes();
 			out << " indexes.size = " << indexes.size() << std::endl;
 			out << " indexes = [";
 			for (size_t i = 0; i < indexes.size(); ++i) {
-				if (i) out << " ";
+				if (i) {
+					out << " ";
+				}
 				out << indexes[i]->Name();
 			}
 			out << "]" << std::endl;

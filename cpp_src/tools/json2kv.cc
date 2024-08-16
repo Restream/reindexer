@@ -7,7 +7,7 @@
 
 namespace reindexer {
 
-Variant jsonValue2Variant(const gason::JsonValue &v, KeyValueType t, std::string_view fieldName) {
+Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string_view fieldName) {
 	switch (v.getTag()) {
 		case gason::JSON_NUMBER:
 			return t.EvaluateOneOf(
@@ -61,7 +61,7 @@ Variant jsonValue2Variant(const gason::JsonValue &v, KeyValueType t, std::string
 				[](KeyValueType::Double) noexcept { return Variant(0.0); }, [](KeyValueType::Bool) noexcept { return Variant(false); },
 				[](KeyValueType::Int) noexcept { return Variant(0); },
 				[](KeyValueType::Int64) noexcept { return Variant(static_cast<int64_t>(0)); },
-				[](KeyValueType::String) { return Variant(static_cast<const char *>(nullptr)); },
+				[](KeyValueType::String) { return Variant(static_cast<const char*>(nullptr)); },
 				[](KeyValueType::Uuid) noexcept { return Variant{Uuid{}}; },
 				[&](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null>) -> Variant {
 					throw Error(errLogic, "Error parsing json field '%s' - got null, expected %s", fieldName, t.Name());
@@ -70,7 +70,7 @@ Variant jsonValue2Variant(const gason::JsonValue &v, KeyValueType t, std::string
 			throw Error(errLogic, "Error parsing json field '%s' - unable to use object in this context", fieldName);
 		case gason::JSON_ARRAY: {
 			VariantArray variants;
-			for (const auto &elem : v) {
+			for (const auto& elem : v) {
 				if (elem.value.getTag() != gason::JSON_NULL) {
 					variants.emplace_back(jsonValue2Variant(elem.value, KeyValueType::Undefined{}, fieldName));
 				}

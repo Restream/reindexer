@@ -11,22 +11,22 @@ namespace {
 
 using namespace std::string_view_literals;
 
-static const std::vector<std::string_view> &condsUsual() {
+static const std::vector<std::string_view>& condsUsual() {
 	static const std::vector data{"SET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv, "LT"sv, "LE"sv, "GT"sv, "GE"sv, "RANGE"sv};
 	return data;
 }
 
-static const std::vector<std::string_view> &condsText() {
+static const std::vector<std::string_view>& condsText() {
 	static const std::vector data{"MATCH"sv};
 	return data;
 }
 
-static const std::vector<std::string_view> &condsBool() {
+static const std::vector<std::string_view>& condsBool() {
 	static const std::vector data{"SET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv};
 	return data;
 }
 
-static const std::vector<std::string_view> &condsGeom() {
+static const std::vector<std::string_view>& condsGeom() {
 	static const std::vector data{"DWITHIN"sv};
 	return data;
 }
@@ -35,11 +35,11 @@ enum Caps { CapComposite = 0x1, CapSortable = 0x2, CapFullText = 0x4 };
 
 struct IndexInfo {
 	const std::string_view fieldType, indexType;
-	const std::vector<std::string_view> &conditions;
+	const std::vector<std::string_view>& conditions;
 	int caps;
 };
 
-static const std::unordered_map<IndexType, IndexInfo, std::hash<int>, std::equal_to<int>> &availableIndexes() {
+static const std::unordered_map<IndexType, IndexInfo, std::hash<int>, std::equal_to<int>>& availableIndexes() {
 	// clang-format off
 	static const std::unordered_map<IndexType, IndexInfo, std::hash<int>, std::equal_to<int>> data {
 		{IndexIntHash,			{"int"sv, "hash"sv,				condsUsual(),	CapSortable}},
@@ -86,7 +86,8 @@ constexpr auto kRTreeRStar = "rstar"sv;
 
 namespace reindexer {
 
-IndexDef::IndexDef(std::string name, JsonPaths jsonPaths, std::string indexType, std::string fieldType, IndexOpts opts, int64_t expireAfter) noexcept
+IndexDef::IndexDef(std::string name, JsonPaths jsonPaths, std::string indexType, std::string fieldType, IndexOpts opts,
+				   int64_t expireAfter) noexcept
 	: name_(std::move(name)),
 	  jsonPaths_(std::move(jsonPaths)),
 	  indexType_(std::move(indexType)),
@@ -106,7 +107,7 @@ IndexDef::IndexDef(std::string name, JsonPaths jsonPaths, IndexType type, IndexO
 	this->FromType(type);
 }
 
-bool IndexDef::IsEqual(const IndexDef &other, IndexComparison cmpType) const {
+bool IndexDef::IsEqual(const IndexDef& other, IndexComparison cmpType) const {
 	return name_ == other.name_ && jsonPaths_ == other.jsonPaths_ && Type() == other.Type() && fieldType_ == other.fieldType_ &&
 		   opts_.IsEqual(other.opts_, cmpType) && expireAfter_ == other.expireAfter_;
 }
@@ -124,20 +125,22 @@ IndexType IndexDef::Type() const {
 			iType = "hash";
 		}
 	}
-	for (const auto &it : availableIndexes()) {
-		if (fieldType_ == it.second.fieldType && iType == it.second.indexType) return it.first;
+	for (const auto& it : availableIndexes()) {
+		if (fieldType_ == it.second.fieldType && iType == it.second.indexType) {
+			return it.first;
+		}
 	}
 
 	throw Error(errParams, "Unsupported combination of field '%s' type '%s' and index type '%s'", name_, fieldType_, indexType_);
 }
 
 void IndexDef::FromType(IndexType type) {
-	const auto &it = availableIndexes().at(type);
+	const auto& it = availableIndexes().at(type);
 	fieldType_ = it.fieldType;
 	indexType_ = it.indexType;
 }
 
-const std::vector<std::string_view> &IndexDef::Conditions() const noexcept {
+const std::vector<std::string_view>& IndexDef::Conditions() const noexcept {
 	const auto it{availableIndexes().find(Type())};
 	assertrx(it != availableIndexes().cend());
 	return it->second.conditions;
@@ -153,18 +156,18 @@ bool isStore(IndexType type) noexcept {
 Error IndexDef::FromJSON(span<char> json) {
 	try {
 		IndexDef::FromJSON(gason::JsonParser().Parse(json));
-	} catch (const gason::Exception &ex) {
+	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "IndexDef: %s", ex.what());
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 	return errOK;
 }
 
-void IndexDef::FromJSON(const gason::JsonNode &root) {
+void IndexDef::FromJSON(const gason::JsonNode& root) {
 	name_ = root["name"].As<std::string>();
 	jsonPaths_.clear();
-	for (auto &subElem : root["json_paths"]) {
+	for (auto& subElem : root["json_paths"]) {
 		jsonPaths_.push_back(subElem.As<std::string>());
 	}
 	fieldType_ = root["field_type"].As<std::string>();
@@ -200,8 +203,10 @@ void IndexDef::FromJSON(const gason::JsonNode &root) {
 	auto collateStr = root["collate_mode"].As<std::string_view>();
 	if (!collateStr.empty()) {
 		auto collateIt = find_if(begin(kAvailableCollates), end(kAvailableCollates),
-								 [&collateStr](const std::pair<CollateMode, std::string_view> &p) { return collateStr == p.second; });
-		if (collateIt == end(kAvailableCollates)) throw Error(errParams, "Unknown collate mode %s", collateStr);
+								 [&collateStr](const std::pair<CollateMode, std::string_view>& p) { return collateStr == p.second; });
+		if (collateIt == end(kAvailableCollates)) {
+			throw Error(errParams, "Unknown collate mode %s", collateStr);
+		}
 		CollateMode collateValue = collateIt->first;
 		opts_.SetCollateMode(collateValue);
 		if (collateValue == CollateCustom) {
@@ -210,7 +215,7 @@ void IndexDef::FromJSON(const gason::JsonNode &root) {
 	}
 }
 
-void IndexDef::GetJSON(WrSerializer &ser, int formatFlags) const {
+void IndexDef::GetJSON(WrSerializer& ser, int formatFlags) const {
 	JsonBuilder builder(ser);
 
 	builder.Put("name", name_)
@@ -250,13 +255,13 @@ void IndexDef::GetJSON(WrSerializer &ser, int formatFlags) const {
 		builder.Put("is_sortable", isSortable(Type()));
 		builder.Put("is_fulltext", IsFullText(Type()));
 		auto arr = builder.Array("conditions");
-		for (auto &cond : Conditions()) {
+		for (auto& cond : Conditions()) {
 			arr.Put(nullptr, cond);
 		}
 	}
 
 	auto arrNode = builder.Array("json_paths");
-	for (auto &jsonPath : jsonPaths_) {
+	for (auto& jsonPath : jsonPaths_) {
 		arrNode.Put(nullptr, jsonPath);
 	}
 }

@@ -17,4 +17,4 @@ int MallocHook_AddDeleteHook(MallocHook_DeleteHook hook);
 }  // namespace alloc_ext
 }  // namespace reindexer
 
-#endif  // REINDEX_WITH_GPERFTOOLS
+#endif	// REINDEX_WITH_GPERFTOOLS

@@ -23,28 +23,28 @@ public:
 	virtual size_t GetJoinedRowsCount() const noexcept = 0;
 	virtual size_t GetJoinedRowItemsCount(size_t rowId) const = 0;
 	virtual ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) = 0;
-	virtual const std::string &GetJoinedItemNamespace(size_t rowid) noexcept = 0;
-	virtual const TagsMatcher &GetJoinedItemTagsMatcher(size_t rowid) noexcept = 0;
-	virtual const FieldsSet &GetJoinedItemFieldsFilter(size_t rowid) noexcept = 0;
+	virtual const std::string& GetJoinedItemNamespace(size_t rowid) noexcept = 0;
+	virtual const TagsMatcher& GetJoinedItemTagsMatcher(size_t rowid) noexcept = 0;
+	virtual const FieldsSet& GetJoinedItemFieldsFilter(size_t rowid) noexcept = 0;
 };
 
 template <typename Builder>
 class IAdditionalDatasource {
 public:
-	virtual void PutAdditionalFields(Builder &) const = 0;
-	virtual IEncoderDatasourceWithJoins *GetJoinsDatasource() noexcept = 0;
+	virtual void PutAdditionalFields(Builder&) const = 0;
+	virtual IEncoderDatasourceWithJoins* GetJoinsDatasource() noexcept = 0;
 };
 
 template <typename Builder>
 class BaseEncoder {
 public:
-	BaseEncoder(const TagsMatcher *tagsMatcher, const FieldsSet *filter = nullptr);
-	void Encode(ConstPayload &pl, Builder &builder,
-				const h_vector<IAdditionalDatasource<Builder> *, 2> &dss = h_vector<IAdditionalDatasource<Builder> *, 2>());
-	void Encode(std::string_view tuple, Builder &wrSer,
-				const h_vector<IAdditionalDatasource<Builder> *, 2> &dss = h_vector<IAdditionalDatasource<Builder> *, 2>());
+	BaseEncoder(const TagsMatcher* tagsMatcher, const FieldsSet* filter = nullptr);
+	void Encode(ConstPayload& pl, Builder& builder,
+				const h_vector<IAdditionalDatasource<Builder>*, 2>& dss = h_vector<IAdditionalDatasource<Builder>*, 2>());
+	void Encode(std::string_view tuple, Builder& wrSer,
+				const h_vector<IAdditionalDatasource<Builder>*, 2>& dss = h_vector<IAdditionalDatasource<Builder>*, 2>());
 
-	const TagsLengths &GetTagsMeasures(ConstPayload &pl, IEncoderDatasourceWithJoins *ds = nullptr);
+	const TagsLengths& GetTagsMeasures(ConstPayload& pl, IEncoderDatasourceWithJoins* ds = nullptr);
 
 protected:
 	using IndexedTagsPathInternalT = IndexedTagsPathImpl<16>;
@@ -52,20 +52,20 @@ protected:
 	constexpr static bool kWithFieldExtractor = std::is_same_v<FieldsExtractor, Builder>;
 
 	struct DummyTagsPathScope {
-		DummyTagsPathScope(TagsPath & /*tagsPath*/, int16_t /*tagName*/) noexcept {}
+		DummyTagsPathScope(TagsPath& /*tagsPath*/, int16_t /*tagName*/) noexcept {}
 	};
 	using PathScopeT = std::conditional_t<kWithTagsPathTracking, TagsPathScope<TagsPath>, DummyTagsPathScope>;
 
-	bool encode(ConstPayload *pl, Serializer &rdser, Builder &builder, bool visible);
-	void encodeJoinedItems(Builder &builder, IEncoderDatasourceWithJoins *ds, size_t joinedIdx);
-	bool collectTagsSizes(ConstPayload &pl, Serializer &rdser);
-	void collectJoinedItemsTagsSizes(IEncoderDatasourceWithJoins *ds, size_t rowid);
+	bool encode(ConstPayload* pl, Serializer& rdser, Builder& builder, bool visible);
+	void encodeJoinedItems(Builder& builder, IEncoderDatasourceWithJoins* ds, size_t joinedIdx);
+	bool collectTagsSizes(ConstPayload& pl, Serializer& rdser);
+	void collectJoinedItemsTagsSizes(IEncoderDatasourceWithJoins* ds, size_t rowid);
 
-	std::string_view getPlTuple(ConstPayload &pl);
+	std::string_view getPlTuple(ConstPayload& pl);
 
-	const TagsMatcher *tagsMatcher_;
+	const TagsMatcher* tagsMatcher_;
 	std::array<int, kMaxIndexes> fieldsoutcnt_{0};
-	const FieldsSet *filter_;
+	const FieldsSet* filter_;
 	WrSerializer tmpPlTuple_;
 	TagsPath curTagsPath_;
 	IndexedTagsPathInternalT indexedTagsPath_;

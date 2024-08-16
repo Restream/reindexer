@@ -18,7 +18,9 @@ public:
 
 	FastIndexText(const FastIndexText& other) : Base(other) {
 		initConfig(other.getConfig());
-		for (auto& idx : this->idx_map) idx.second.SetVDocID(FtKeyEntryData::ndoc);
+		for (auto& idx : this->idx_map) {
+			idx.second.SetVDocID(FtKeyEntryData::ndoc);
+		}
 	}
 
 	FastIndexText(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg)

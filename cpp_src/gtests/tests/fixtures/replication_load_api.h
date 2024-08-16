@@ -13,7 +13,7 @@ public:
 
 		// untill we use shared ptr it will be not destroyed
 		auto srv = GetSrv(masterId_);
-		auto &api = srv->api;
+		auto& api = srv->api;
 
 		Error err = api.reindexer->OpenNamespace("some", opt);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -38,7 +38,7 @@ public:
 		SCOPED_TRACE("Fill data " + std::to_string(count));
 		// untill we use shared ptr it will be not destroyed
 		auto srv = GetSrv(masterId_);
-		auto &api = srv->api;
+		auto& api = srv->api;
 
 		reindexer::shared_lock<reindexer::shared_timed_mutex> lk(restartMutex_);
 
@@ -62,7 +62,7 @@ public:
 		SCOPED_TRACE("Selecting some");
 		reindexer::Query qr("some");
 		auto srv = GetSrv(num);
-		auto &api = srv->api;
+		auto& api = srv->api;
 		BaseApi::QueryResultsType res;
 		auto err = api.reindexer->Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -72,7 +72,7 @@ public:
 	BaseApi::QueryResultsType DeleteFromMaster() {
 		SCOPED_TRACE("Deleting some from master");
 		auto srv = GetSrv(masterId_);
-		auto &api = srv->api;
+		auto& api = srv->api;
 		BaseApi::QueryResultsType res;
 		auto err = api.reindexer->Delete(reindexer::Query("some"), res);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -87,25 +87,25 @@ public:
 		SCOPED_TRACE("ForceSync");
 		GetSrv(masterId_)->ForceSync();
 	}
-	void RestartWithReplicationConfigFiles(size_t num, const std::string &asyncReplConfigYaml, const std::string &replConfigYaml) {
+	void RestartWithReplicationConfigFiles(size_t num, const std::string& asyncReplConfigYaml, const std::string& replConfigYaml) {
 		SCOPED_TRACE("RestartWithReplicationConfigFiles");
 		GetSrv(num)->WriteAsyncReplicationConfig(asyncReplConfigYaml);
 		GetSrv(num)->WriteReplicationConfig(replConfigYaml);
 		ASSERT_TRUE(StopServer(num));
 		ASSERT_TRUE(StartServer(num));
 	}
-	void SetServerConfig(size_t num, const AsyncReplicationConfigTest &config) {
+	void SetServerConfig(size_t num, const AsyncReplicationConfigTest& config) {
 		SCOPED_TRACE("SetServerConfig");
 		auto srv = GetSrv(num);
 		srv->SetReplicationConfig(config);
 	}
-	void CheckReplicationConfigFile(size_t num, const AsyncReplicationConfigTest &expConfig) {
+	void CheckReplicationConfigFile(size_t num, const AsyncReplicationConfigTest& expConfig) {
 		SCOPED_TRACE("Checking config from file");
 		auto srv = GetSrv(num);
 		auto curConfig = srv->GetServerConfig(ServerControl::ConfigType::File);
 		EXPECT_EQ(expConfig, curConfig) << "expConfig:\n" << expConfig.GetJSON() << "\ncurConfig:\n" << curConfig.GetJSON();
 	}
-	void CheckReplicationConfigNamespace(size_t num, const AsyncReplicationConfigTest &expConfig, std::chrono::seconds awaitTime) {
+	void CheckReplicationConfigNamespace(size_t num, const AsyncReplicationConfigTest& expConfig, std::chrono::seconds awaitTime) {
 		SCOPED_TRACE("Checking config from namespace with timeout");
 		auto srv = GetSrv(num);
 		for (int i = 0; i < awaitTime.count(); ++i) {
@@ -118,7 +118,7 @@ public:
 		auto curConfig = srv->GetServerConfig(ServerControl::ConfigType::Namespace);
 		EXPECT_EQ(expConfig, curConfig) << "config:\n" << expConfig.GetJSON() << "\ncurConfig:\n" << curConfig.GetJSON();
 	}
-	void CheckReplicationConfigNamespace(size_t num, const AsyncReplicationConfigTest &expConfig) {
+	void CheckReplicationConfigNamespace(size_t num, const AsyncReplicationConfigTest& expConfig) {
 		SCOPED_TRACE("Checking config from namespace");
 		EXPECT_EQ(expConfig, GetSrv(num)->GetServerConfig(ServerControl::ConfigType::Namespace));
 	}
@@ -127,7 +127,7 @@ public:
 		versions.reserve(GetServersCount());
 		for (size_t i = 0; i < GetServersCount(); i++) {
 			auto srv = GetSrv(i);
-			auto &api = srv->api;
+			auto& api = srv->api;
 			BaseApi::QueryResultsType res;
 			auto err = api.reindexer->Select(reindexer::Query(ns), res);
 			EXPECT_TRUE(err.ok()) << err.what();

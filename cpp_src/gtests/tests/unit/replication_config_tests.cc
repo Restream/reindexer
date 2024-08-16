@@ -84,15 +84,18 @@ public:
 		std::string replConfYaml;
 		auto read = fs::ReadFile(fs::JoinPath(storagePath, kReplicationConfigFilename), replConfYaml);
 		EXPECT_GT(read, 0) << "Repl config file read error";
-		if (read < 0) return false;
+		if (read < 0) {
+			return false;
+		}
 		ReplicationConfigData replConf;
 		auto errParse = replConf.FromYAML(replConfYaml);
 
 		if (expectErrorParseYAML) {
 			EXPECT_EQ(errParse.code(), errParseYAML) << errParse.what();
 			return errParse.code() == errParseYAML;
-		} else
+		} else {
 			return CheckReplicationConfigData(errParse, replConf, expectedConf);
+		}
 	}
 
 	bool CheckReplicationConfigNS(reindexer::Reindexer& rx, const ReplicationConfigData& expectedConf, bool expectErrorParseJSON = false) {

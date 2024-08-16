@@ -81,7 +81,7 @@ class ExpressionTree {
 			}
 		};
 		template <typename T>
-		struct GetVisitor<T const> {
+		struct GetVisitor<const T> {
 			RX_ALWAYS_INLINE const T& operator()(const T& v) const noexcept { return v; }
 			template <typename U>
 			RX_ALWAYS_INLINE const T& operator()(const U&) const noexcept {
@@ -559,20 +559,30 @@ public:
 	ExpressionTree& operator=(ExpressionTree&&) = default;
 	ExpressionTree(const ExpressionTree& other) : activeBrackets_{other.activeBrackets_} {
 		container_.reserve(other.container_.size());
-		for (const Node& n : other.container_) container_.emplace_back(n.Copy());
+		for (const Node& n : other.container_) {
+			container_.emplace_back(n.Copy());
+		}
 	}
 	ExpressionTree& operator=(const ExpressionTree& other) {
-		if rx_unlikely (this == &other) return *this;
+		if rx_unlikely (this == &other) {
+			return *this;
+		}
 		container_.clear();
 		container_.reserve(other.container_.size());
-		for (const Node& n : other.container_) container_.emplace_back(n.Copy());
+		for (const Node& n : other.container_) {
+			container_.emplace_back(n.Copy());
+		}
 		activeBrackets_ = other.activeBrackets_;
 		return *this;
 	}
 	RX_ALWAYS_INLINE bool operator==(const ExpressionTree& other) const noexcept {
-		if (container_.size() != other.container_.size()) return false;
+		if (container_.size() != other.container_.size()) {
+			return false;
+		}
 		for (size_t i = 0; i < container_.size(); ++i) {
-			if (container_[i] != other.container_[i]) return false;
+			if (container_[i] != other.container_[i]) {
+				return false;
+			}
 		}
 		return true;
 	}
@@ -588,10 +598,14 @@ public:
 		assertrx_dbg(pos < container_.size());
 		for (unsigned& b : activeBrackets_) {
 			assertrx_dbg(b < container_.size());
-			if (b >= pos) ++b;
+			if (b >= pos) {
+				++b;
+			}
 		}
 		for (size_t i = 0; i < pos; ++i) {
-			if (container_[i].IsSubTree() && Next(i) > pos) container_[i].Append();
+			if (container_[i].IsSubTree() && Next(i) > pos) {
+				container_[i].Append();
+			}
 		}
 		container_.emplace(container_.begin() + pos, op, std::forward<T>(v));
 	}
@@ -604,10 +618,14 @@ public:
 		assertrx_throw(pos < container_.size());
 		for (unsigned& b : activeBrackets_) {
 			assertrx_throw(b < container_.size());
-			if (b >= pos) ++b;
+			if (b >= pos) {
+				++b;
+			}
 		}
 		for (size_t i = 0; i < pos; ++i) {
-			if (container_[i].IsSubTree() && Next(i) > pos) container_[i].Append();
+			if (container_[i].IsSubTree() && Next(i) > pos) {
+				container_[i].Append();
+			}
 		}
 		container_.emplace(container_.begin() + pos, op, T(std::forward<Args>(args)...));
 	}
@@ -617,10 +635,14 @@ public:
 		assertrx_dbg(pos < container_.size());
 		for (unsigned& b : activeBrackets_) {
 			assertrx_dbg(b < container_.size());
-			if (b > pos) ++b;
+			if (b > pos) {
+				++b;
+			}
 		}
 		for (size_t i = 0; i < pos; ++i) {
-			if (container_[i].IsSubTree() && Next(i) > pos) container_[i].Append();
+			if (container_[i].IsSubTree() && Next(i) > pos) {
+				container_[i].Append();
+			}
 		}
 		container_.emplace(container_.begin() + pos + 1, op, std::forward<T>(v));
 	}
@@ -661,12 +683,16 @@ public:
 	/// Appends value as first child of the root
 	template <typename T>
 	RX_ALWAYS_INLINE void AppendFront(OperationType op, T&& v) {
-		for (unsigned& i : activeBrackets_) ++i;
+		for (unsigned& i : activeBrackets_) {
+			++i;
+		}
 		container_.emplace(container_.begin(), op, std::forward<T>(v));
 	}
 	template <typename T, typename... Args>
 	RX_ALWAYS_INLINE void AppendFront(OperationType op, Args&&... args) {
-		for (unsigned& i : activeBrackets_) ++i;
+		for (unsigned& i : activeBrackets_) {
+			++i;
+		}
 		container_.emplace(container_.begin(), op, T{std::forward<Args>(args)...});
 	}
 	void PopBack() {
@@ -687,7 +713,9 @@ public:
 		assertrx_dbg(to <= container_.size());
 		for (unsigned& b : activeBrackets_) {
 			assertrx_dbg(b < container_.size());
-			if (b >= from) ++b;
+			if (b >= from) {
+				++b;
+			}
 		}
 		for (size_t i = 0; i < from; ++i) {
 			if (container_[i].IsSubTree()) {
@@ -789,7 +817,9 @@ public:
 			std::remove_if(activeBrackets_.begin(), activeBrackets_.end(), [from, to](size_t b) { return b >= from && b < to; }),
 			activeBrackets_.end());
 		for (auto& b : activeBrackets_) {
-			if (b >= to) b -= count;
+			if (b >= to) {
+				b -= count;
+			}
 		}
 	}
 	template <typename Visitor>
@@ -814,21 +844,29 @@ public:
 	}
 	template <typename Visitor>
 	RX_ALWAYS_INLINE void VisitForEach(const Visitor& visitor) const {
-		for (const Node& node : container_) node.visit(visitor);
+		for (const Node& node : container_) {
+			node.visit(visitor);
+		}
 	}
 	template <typename Visitor>
 	RX_ALWAYS_INLINE void VisitForEach(const Visitor& visitor) {
-		for (Node& node : container_) node.visit(visitor);
+		for (Node& node : container_) {
+			node.visit(visitor);
+		}
 	}
 	template <typename... Fs>
 	RX_ALWAYS_INLINE void VisitForEach(Fs&&... fs) const {
 		overloaded visitor{std::forward<Fs>(fs)...};
-		for (const Node& node : container_) node.visit(visitor);
+		for (const Node& node : container_) {
+			node.visit(visitor);
+		}
 	}
 	template <typename... Fs>
 	RX_ALWAYS_INLINE void VisitForEach(Fs&&... fs) {
 		overloaded visitor{std::forward<Fs>(fs)...};
-		for (Node& node : container_) node.visit(visitor);
+		for (Node& node : container_) {
+			node.visit(visitor);
+		}
 	}
 
 	/// @class const_iterator
@@ -905,16 +943,22 @@ public:
 	RX_ALWAYS_INLINE const_iterator cend() const noexcept { return {container_.end()}; }
 	/// @return iterator to first entry of current bracket
 	RX_ALWAYS_INLINE const_iterator begin_of_current_bracket() const noexcept {
-		if (activeBrackets_.empty()) return container_.cbegin();
+		if (activeBrackets_.empty()) {
+			return container_.cbegin();
+		}
 		return container_.cbegin() + activeBrackets_.back() + 1;
 	}
 
 	RX_ALWAYS_INLINE const SubTree* LastOpenBracket() const {
-		if (activeBrackets_.empty()) return nullptr;
+		if (activeBrackets_.empty()) {
+			return nullptr;
+		}
 		return &container_[activeBrackets_.back()].template Value<SubTree>();
 	}
 	RX_ALWAYS_INLINE SubTree* LastOpenBracket() {
-		if (activeBrackets_.empty()) return nullptr;
+		if (activeBrackets_.empty()) {
+			return nullptr;
+		}
 		return &container_[activeBrackets_.back()].template Value<SubTree>();
 	}
 	/// @return the last appended leaf or last closed subtree or last openned subtree if it is empty
@@ -923,9 +967,13 @@ public:
 		size_t start = 0;  // start of last openned subtree;
 		if (!activeBrackets_.empty()) {
 			start = activeBrackets_.back() + 1;
-			if (start == container_.size()) return start - 1;  // last oppened subtree is empty
+			if (start == container_.size()) {
+				return start - 1;  // last oppened subtree is empty
+			}
 		}
-		while (Next(start) != container_.size()) start = Next(start);
+		while (Next(start) != container_.size()) {
+			start = Next(start);
+		}
 		return start;
 	}
 

@@ -3,15 +3,15 @@
 
 namespace reindexer {
 
-Error ParallelExecutor::createIntegralError(std::vector<std::pair<Error, int>> &errors, size_t clientCount) {
+Error ParallelExecutor::createIntegralError(std::vector<std::pair<Error, int>>& errors, size_t clientCount) {
 	if (errors.empty()) {
 		return {};
 	}
 	std::string descr;
 	bool eqErr = true;
-	const Error &firstErr = errors[0].first;
+	const Error& firstErr = errors[0].first;
 	unsigned errStrictModeCounter = 0;
-	for (const auto &e : errors) {
+	for (const auto& e : errors) {
 		if (!(e.first == firstErr)) {
 			eqErr = false;
 		}
@@ -30,9 +30,9 @@ Error ParallelExecutor::createIntegralError(std::vector<std::pair<Error, int>> &
 	return Error(errors[0].first.code(), descr);
 }
 
-Error ParallelExecutor::ExecSelect(const Query &query, QueryResults &result, const sharding::ConnectionsVector &connections,
-								   const RdxContext &ctx,
-								   std::function<Error(const Query &, LocalQueryResults &, const RdxContext &)> &&localAction) {
+Error ParallelExecutor::ExecSelect(const Query& query, QueryResults& result, const sharding::ConnectionsVector& connections,
+								   const RdxContext& ctx,
+								   std::function<Error(const Query&, LocalQueryResults&, const RdxContext&)>&& localAction) {
 	std::condition_variable cv;
 	std::mutex mtx;
 
@@ -47,13 +47,13 @@ Error ParallelExecutor::ExecSelect(const Query &query, QueryResults &result, con
 
 	size_t clientCount = countClientConnection(connections);
 	for (auto itr = connections.rbegin(); itr != connections.rend(); ++itr) {
-		if (auto &connection = *itr; connection) {
+		if (auto& connection = *itr; connection) {
 			const int shardId = connection.ShardId();
-			auto &clientData = clientResults.emplace_back(connection.ShardId());
+			auto& clientData = clientResults.emplace_back(connection.ShardId());
 			clientData.results = client::QueryResults{result.Flags()};
 			clientData.connection =
 				connection->WithShardingParallelExecution(connections.size() > 1)
-					.WithCompletion([clientCount, &clientCompl, &clientErrors, shardId, &mtx, &cv, this](const Error &err) {
+					.WithCompletion([clientCount, &clientCompl, &clientErrors, shardId, &mtx, &cv, this](const Error& err) {
 						completionFunction(clientCount, clientCompl, clientErrors, shardId, mtx, cv, err);
 					})
 					.WithContext(ctx.GetCancelCtx());
@@ -86,8 +86,8 @@ Error ParallelExecutor::ExecSelect(const Query &query, QueryResults &result, con
 		const auto shardingVersion = result.GetShardingConfigVersion();
 		for (size_t i = 0; i < clientResults.size(); ++i) {
 			bool hasError = false;
-			auto &clientData = clientResults[i];
-			for (auto &ep : clientErrors) {
+			auto& clientData = clientResults[i];
+			for (auto& ep : clientErrors) {
 				if (ep.second == clientData.shardId) {
 					hasError = true;
 					break;
@@ -107,8 +107,8 @@ Error ParallelExecutor::ExecSelect(const Query &query, QueryResults &result, con
 	return createIntegralError(clientErrors, isLocalCall ? clientCount + 1 : clientCount);
 }
 
-void ParallelExecutor::completionFunction(size_t clientCount, size_t &clientCompl, std::vector<std::pair<Error, int>> &clientErrors,
-										  int shardId, std::mutex &mtx, std::condition_variable &cv, const Error &err) {
+void ParallelExecutor::completionFunction(size_t clientCount, size_t& clientCompl, std::vector<std::pair<Error, int>>& clientErrors,
+										  int shardId, std::mutex& mtx, std::condition_variable& cv, const Error& err) {
 	std::lock_guard lck(mtx);
 	clientCompl++;
 	if (!err.ok()) {
@@ -119,10 +119,12 @@ void ParallelExecutor::completionFunction(size_t clientCount, size_t &clientComp
 	}
 }
 
-size_t ParallelExecutor::countClientConnection(const sharding::ConnectionsVector &connections) {
+size_t ParallelExecutor::countClientConnection(const sharding::ConnectionsVector& connections) {
 	size_t count = 0;
 	for (auto itr = connections.begin(); itr != connections.end(); ++itr) {
-		if (!itr->IsOnThisShard()) count++;
+		if (!itr->IsOnThisShard()) {
+			count++;
+		}
 	}
 	return count;
 }

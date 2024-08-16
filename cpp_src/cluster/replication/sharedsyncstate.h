@@ -103,8 +103,7 @@ public:
 	RaftInfo AwaitRole(bool allowTransitState, const ContextT& ctx) const {
 		shared_lock<MtxT> lck(mtx_);
 		if (allowTransitState) {
-			cond_.wait(
-				lck, [this] { return !isRunning() || next_ == current_; }, ctx);
+			cond_.wait(lck, [this] { return !isRunning() || next_ == current_; }, ctx);
 		} else {
 			cond_.wait(
 				lck,

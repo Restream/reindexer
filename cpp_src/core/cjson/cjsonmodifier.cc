@@ -11,11 +11,11 @@ const std::string_view kWrongFieldsAmountMsg = "Number of fields for update shou
 
 class CJsonModifier::Context {
 public:
-	Context(const IndexedTagsPath &fieldPath, const VariantArray &v, WrSerializer &ser, std::string_view tuple, FieldModifyMode m,
-			const Payload *pl = nullptr)
+	Context(const IndexedTagsPath& fieldPath, const VariantArray& v, WrSerializer& ser, std::string_view tuple, FieldModifyMode m,
+			const Payload* pl = nullptr)
 		: value(v), wrser(ser), rdser(tuple), mode(m), payload(pl) {
 		jsonPath.reserve(fieldPath.size());
-		for (const IndexedPathNode &node : fieldPath) {
+		for (const IndexedPathNode& node : fieldPath) {
 			isForAllItems_ = isForAllItems_ || node.IsForAllItems();
 			jsonPath.emplace_back(node.NameTag());
 		}
@@ -29,23 +29,23 @@ public:
 	}
 	[[nodiscard]] bool IsForAllItems() const noexcept { return isForAllItems_; }
 
-	const VariantArray &value;
-	WrSerializer &wrser;
+	const VariantArray& value;
+	WrSerializer& wrser;
 	Serializer rdser;
 	TagsPath jsonPath;
 	IndexedTagsPath currObjPath;
 	FieldModifyMode mode = FieldModeSet;
 	bool fieldUpdated = false;
 	bool updateArrayElements = false;
-	const Payload *payload = nullptr;
+	const Payload* payload = nullptr;
 	std::array<unsigned, kMaxIndexes> fieldsArrayOffsets;
 
 private:
 	bool isForAllItems_ = false;
 };
 
-void CJsonModifier::SetFieldValue(std::string_view tuple, const IndexedTagsPath &fieldPath, const VariantArray &val, WrSerializer &ser,
-								  const Payload &pl) {
+void CJsonModifier::SetFieldValue(std::string_view tuple, const IndexedTagsPath& fieldPath, const VariantArray& val, WrSerializer& ser,
+								  const Payload& pl) {
 	auto ctx = initState(tuple, fieldPath, val, ser, &pl, FieldModifyMode::FieldModeSet);
 	updateFieldInTuple(ctx);
 	if (!ctx.fieldUpdated && !ctx.IsForAllItems()) {
@@ -53,8 +53,8 @@ void CJsonModifier::SetFieldValue(std::string_view tuple, const IndexedTagsPath 
 	}
 }
 
-void CJsonModifier::SetObject(std::string_view tuple, const IndexedTagsPath &fieldPath, const VariantArray &val, WrSerializer &ser,
-							  const Payload &pl) {
+void CJsonModifier::SetObject(std::string_view tuple, const IndexedTagsPath& fieldPath, const VariantArray& val, WrSerializer& ser,
+							  const Payload& pl) {
 	auto ctx = initState(tuple, fieldPath, val, ser, &pl, FieldModifyMode::FieldModeSetJson);
 	buildCJSON(ctx);
 	if (!ctx.fieldUpdated && !ctx.IsForAllItems()) {
@@ -62,13 +62,13 @@ void CJsonModifier::SetObject(std::string_view tuple, const IndexedTagsPath &fie
 	}
 }
 
-void CJsonModifier::RemoveField(std::string_view tuple, const IndexedTagsPath &fieldPath, WrSerializer &wrser) {
+void CJsonModifier::RemoveField(std::string_view tuple, const IndexedTagsPath& fieldPath, WrSerializer& wrser) {
 	auto ctx = initState(tuple, fieldPath, {}, wrser, nullptr, FieldModeDrop);
 	dropFieldInTuple(ctx);
 }
 
-CJsonModifier::Context CJsonModifier::initState(std::string_view tuple, const IndexedTagsPath &fieldPath, const VariantArray &val,
-												WrSerializer &ser, const Payload *pl, FieldModifyMode mode) {
+CJsonModifier::Context CJsonModifier::initState(std::string_view tuple, const IndexedTagsPath& fieldPath, const VariantArray& val,
+												WrSerializer& ser, const Payload* pl, FieldModifyMode mode) {
 	if (fieldPath.empty()) {
 		throw Error(errLogic, kWrongFieldsAmountMsg);
 	}
@@ -79,12 +79,12 @@ CJsonModifier::Context CJsonModifier::initState(std::string_view tuple, const In
 	return ctx;
 }
 
-void CJsonModifier::updateObject(Context &ctx, int tagName) const {
+void CJsonModifier::updateObject(Context& ctx, int tagName) const {
 	ctx.fieldUpdated = true;
 	JsonDecoder jsonDecoder(tagsMatcher_);
 	if (ctx.value.IsArrayValue()) {
 		CJsonBuilder cjsonBuilder(ctx.wrser, ObjType::TypeArray, &tagsMatcher_, tagName);
-		for (const auto &item : ctx.value) {
+		for (const auto& item : ctx.value) {
 			auto objBuilder = cjsonBuilder.Object(nullptr);
 			jsonDecoder.Decode(std::string_view(item), objBuilder, ctx.jsonPath);
 		}
@@ -96,7 +96,7 @@ void CJsonModifier::updateObject(Context &ctx, int tagName) const {
 	jsonDecoder.Decode(std::string_view(ctx.value.front()), cjsonBuilder, ctx.jsonPath);
 }
 
-void CJsonModifier::insertField(Context &ctx) const {
+void CJsonModifier::insertField(Context& ctx) const {
 	ctx.fieldUpdated = true;
 	assertrx(ctx.currObjPath.size() < fieldPath_.size());
 
@@ -127,10 +127,14 @@ void CJsonModifier::insertField(Context &ctx) const {
 	ctx.currObjPath.clear();
 }
 
-bool CJsonModifier::needToInsertField(const Context &ctx) const {
+bool CJsonModifier::needToInsertField(const Context& ctx) const {
 	assertrx_throw(!fieldPath_.empty());
-	if (ctx.fieldUpdated || fieldPath_.back().IsArrayNode()) return false;
-	if (ctx.currObjPath.size() >= fieldPath_.size()) return false;
+	if (ctx.fieldUpdated || fieldPath_.back().IsArrayNode()) {
+		return false;
+	}
+	if (ctx.currObjPath.size() >= fieldPath_.size()) {
+		return false;
+	}
 	assertrx_throw(ctx.currObjPath.size() <= fieldPath_.size());
 	for (unsigned i = 0; i < ctx.currObjPath.size(); ++i) {
 		if (fieldPath_[i] != ctx.currObjPath[i]) {
@@ -148,11 +152,11 @@ bool CJsonModifier::needToInsertField(const Context &ctx) const {
 	return true;
 }
 
-TagType CJsonModifier::determineUpdateTagType(const Context &ctx, int field) const {
+TagType CJsonModifier::determineUpdateTagType(const Context& ctx, int field) const {
 	if (isIndexed(field)) {
-		const PayloadFieldType &fieldType = pt_.Field(field);
+		const PayloadFieldType& fieldType = pt_.Field(field);
 		if (!fieldType.IsArray() || ctx.updateArrayElements || !ctx.value.IsNullValue()) {
-			for (auto &v : ctx.value) {
+			for (auto& v : ctx.value) {
 				if (!fieldType.Type().IsSame(v.Type())) {
 					throw Error(errParams, "Inserted field %s type [%s] doesn't match it's index type [%s]", fieldType.Name(),
 								v.Type().Name(), fieldType.Type().Name());
@@ -169,10 +173,12 @@ TagType CJsonModifier::determineUpdateTagType(const Context &ctx, int field) con
 	return arrayKvType2Tag(ctx.value);
 }
 
-bool CJsonModifier::checkIfFoundTag(Context &ctx, bool isLastItem) const {
-	if (tagsPath_.empty() || !fieldPath_.Compare(tagsPath_)) return false;
+bool CJsonModifier::checkIfFoundTag(Context& ctx, bool isLastItem) const {
+	if (tagsPath_.empty() || !fieldPath_.Compare(tagsPath_)) {
+		return false;
+	}
 
-	const auto &backFieldPath = fieldPath_.back();
+	const auto& backFieldPath = fieldPath_.back();
 	if (!backFieldPath.IsArrayNode() || ((!backFieldPath.IsForAllItems() || isLastItem))) {
 		ctx.fieldUpdated = true;
 	}
@@ -180,11 +186,11 @@ bool CJsonModifier::checkIfFoundTag(Context &ctx, bool isLastItem) const {
 	return true;
 }
 
-void CJsonModifier::setArray(Context &ctx) const {
+void CJsonModifier::setArray(Context& ctx) const {
 	auto type = arrayKvType2Tag(ctx.value);
 	ctx.wrser.PutCArrayTag(carraytag{ctx.value.size(), type});
 	const bool isObjsArr = (type == TAG_OBJECT);
-	for (const auto &item : ctx.value) {
+	for (const auto& item : ctx.value) {
 		if (isObjsArr) {
 			type = item.Type().ToTagType();
 			ctx.wrser.PutCTag(ctag{type});
@@ -193,7 +199,7 @@ void CJsonModifier::setArray(Context &ctx) const {
 	}
 }
 
-void CJsonModifier::writeCTag(const ctag &tag, Context &ctx) {
+void CJsonModifier::writeCTag(const ctag& tag, Context& ctx) {
 	bool tagMatched = checkIfFoundTag(ctx);
 	const TagType tagType = tag.Type();
 	const int field = tag.Field();
@@ -201,7 +207,7 @@ void CJsonModifier::writeCTag(const ctag &tag, Context &ctx) {
 	if (tagType == TAG_ARRAY) {
 		const auto count = ctx.rdser.GetVarUint();
 		if (!tagMatched || !ctx.fieldUpdated) {
-			auto &lastTag = tagsPath_.back();
+			auto& lastTag = tagsPath_.back();
 			for (uint64_t i = 0; i < count; ++i) {
 				lastTag.SetIndex(i);
 				const bool isLastItem = (i + 1 == count);
@@ -241,7 +247,7 @@ void CJsonModifier::writeCTag(const ctag &tag, Context &ctx) {
 	}
 }
 
-void CJsonModifier::updateArray(TagType atagType, uint32_t count, int tagName, Context &ctx) {
+void CJsonModifier::updateArray(TagType atagType, uint32_t count, int tagName, Context& ctx) {
 	assertrx_throw(!ctx.value.IsArrayValue());	// Unable to update array's element with array-value
 
 	Variant value;
@@ -293,7 +299,7 @@ void CJsonModifier::updateArray(TagType atagType, uint32_t count, int tagName, C
 	assertrx_throw(ctx.fieldUpdated);
 }
 
-void CJsonModifier::copyArray(int tagName, Context &ctx) {
+void CJsonModifier::copyArray(int tagName, Context& ctx) {
 	const carraytag atag = ctx.rdser.GetCArrayTag();
 	const TagType atagType = atag.Type();
 	const auto count = atag.Count();
@@ -360,11 +366,13 @@ void CJsonModifier::copyArray(int tagName, Context &ctx) {
 	}
 }
 
-bool CJsonModifier::updateFieldInTuple(Context &ctx) {
+bool CJsonModifier::updateFieldInTuple(Context& ctx) {
 	const ctag tag = ctx.rdser.GetCTag();
 
 	if (tag == kCTagEnd) {
-		if (needToInsertField(ctx)) insertField(ctx);
+		if (needToInsertField(ctx)) {
+			insertField(ctx);
+		}
 		ctx.wrser.PutCTag(kCTagEnd);
 		return false;
 	}
@@ -413,7 +421,7 @@ bool CJsonModifier::updateFieldInTuple(Context &ctx) {
 	return true;
 }
 
-bool CJsonModifier::dropFieldInTuple(Context &ctx) {
+bool CJsonModifier::dropFieldInTuple(Context& ctx) {
 	const ctag tag = ctx.rdser.GetCTag();
 	if (tag == kCTagEnd) {
 		ctx.wrser.PutCTag(kCTagEnd);
@@ -492,7 +500,7 @@ bool CJsonModifier::dropFieldInTuple(Context &ctx) {
 	return true;
 }
 
-void CJsonModifier::embedFieldValue(TagType type, int field, Context &ctx, size_t idx) const {
+void CJsonModifier::embedFieldValue(TagType type, int field, Context& ctx, size_t idx) const {
 	if (isIndexed(field)) {
 		assertrx(ctx.payload);
 		const Variant v = ctx.payload->Get(field, ctx.fieldsArrayOffsets[field] + idx);
@@ -503,10 +511,12 @@ void CJsonModifier::embedFieldValue(TagType type, int field, Context &ctx, size_
 	copyCJsonValue(type, ctx.rdser, ctx.wrser);
 }
 
-bool CJsonModifier::buildCJSON(Context &ctx) {
+bool CJsonModifier::buildCJSON(Context& ctx) {
 	const auto tag = ctx.rdser.GetCTag();
 	if (tag == kCTagEnd) {
-		if (needToInsertField(ctx)) insertField(ctx);
+		if (needToInsertField(ctx)) {
+			insertField(ctx);
+		}
 		ctx.wrser.PutCTag(kCTagEnd);
 		return false;
 	}

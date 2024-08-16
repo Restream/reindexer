@@ -12,7 +12,9 @@ namespace {
 template <typename C>
 static bool isAllEqual(const C& c) {
 	for (size_t i = 1, size = c.size(); i < size; ++i) {
-		if (!(c[0] == c[i])) return false;
+		if (!(c[0] == c[i])) {
+			return false;
+		}
 	}
 	return true;
 }

@@ -137,9 +137,10 @@ RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, Activity
 
 RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, ActivityContainer& activityContainer,
 												QueryResults& qresults) const {
-	if (activityTracer_.empty() || query.empty())
+	if (activityTracer_.empty() || query.empty()) {
 		return {
 			LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_, shardId_, shardingParallelExecution_};
+	}
 	assertrx(!qresults.activityCtx_);
 	qresults.activityCtx_.emplace(activityTracer_, user_, query, activityContainer, connectionId_, true);
 	return RdxContext{

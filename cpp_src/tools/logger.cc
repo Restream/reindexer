@@ -5,9 +5,12 @@
 
 namespace reindexer {
 
+namespace logger_details {
+
 static LogWriter g_logWriter;
 static read_write_spinlock g_LoggerMtx;
 static std::atomic<LoggerPolicy> g_MtLogger = {LoggerPolicy::NotInit};
+std::atomic<int> g_LogLevel = LogTrace;
 
 RX_ALWAYS_INLINE void write(int level, char* buf) {
 	if (g_logWriter) {
@@ -15,7 +18,7 @@ RX_ALWAYS_INLINE void write(int level, char* buf) {
 	}
 }
 
-void logPrint(int level, char* buf) {
+void logPrintImpl(int level, char* buf) {
 	switch (g_MtLogger.load(std::memory_order_relaxed)) {
 		case LoggerPolicy::NotInit:
 		case LoggerPolicy::WithLocks: {
@@ -27,14 +30,15 @@ void logPrint(int level, char* buf) {
 			break;
 	}
 }
+}  // namespace logger_details
 
-void logInstallWriter(LogWriter writer, LoggerPolicy policy) {
+void logInstallWriter(LogWriter writer, LoggerPolicy policy, int globalLogLevel) {
 	std::string errorText;
 
 	static std::mutex g_LoggerPolicyMtx;
 	std::unique_lock lck(g_LoggerPolicyMtx);
 
-	const auto curPolicy = g_MtLogger.load(std::memory_order_relaxed);
+	const auto curPolicy = logger_details::g_MtLogger.load(std::memory_order_relaxed);
 	if (curPolicy != LoggerPolicy::NotInit && policy != curPolicy) {
 		errorText =
 			fmt::sprintf("Attempt to switch logger's lock policy, which was previously set. Current: %d; new: %d. Logger was not changed",
@@ -49,13 +53,14 @@ void logInstallWriter(LogWriter writer, LoggerPolicy policy) {
 #endif
 	}
 
-	g_MtLogger.store(policy, std::memory_order_relaxed);
+	logger_details::g_MtLogger.store(policy, std::memory_order_relaxed);
+	logger_details::g_LogLevel.store(globalLogLevel, std::memory_order_relaxed);
 
 	if (curPolicy == LoggerPolicy::WithLocks || policy == LoggerPolicy::WithLocks) {
-		std::lock_guard logLck(g_LoggerMtx);
-		g_logWriter = std::move(writer);
+		std::lock_guard logLck(logger_details::g_LoggerMtx);
+		logger_details::g_logWriter = std::move(writer);
 	} else {
-		g_logWriter = std::move(writer);
+		logger_details::g_logWriter = std::move(writer);
 	}
 }
 

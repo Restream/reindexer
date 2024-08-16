@@ -59,7 +59,9 @@ TableViewScroller::TableViewScroller(reindexer::TableViewBuilder& tableBuilder, 
 	: tableBuilder_(tableBuilder), linesOnPage_(linesOnPage) {}
 
 void TableViewScroller::Scroll(Output& output, std::vector<std::string>&& jsonData, const std::function<bool(void)>& isCanceled) {
-	if (isCanceled()) return;
+	if (isCanceled()) {
+		return;
+	}
 
 	reindexer::TerminalSize terminalSize = reindexer::getTerminalSize();
 	reindexer::TableCalculator tableCalculator(std::move(jsonData), terminalSize.width);
@@ -68,7 +70,9 @@ void TableViewScroller::Scroll(Output& output, std::vector<std::string>&& jsonDa
 
 #ifndef WIN32
 	FILE* pfile = nullptr;
-	if (viaMoreCmd) pfile = popen("more", "w");
+	if (viaMoreCmd) {
+		pfile = popen("more", "w");
+	}
 #else
 	viaMoreCmd = false;
 #endif
@@ -93,7 +97,9 @@ void TableViewScroller::Scroll(Output& output, std::vector<std::string>&& jsonDa
 	}
 
 #ifndef WIN32
-	if (pfile) pclose(pfile);
+	if (pfile) {
+		pclose(pfile);
+	}
 #endif
 }
 

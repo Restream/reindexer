@@ -120,7 +120,7 @@ TEST_F(RPCClientTestApi, CoroSelectTimeout) {
 	for (size_t i = 0; i < kCorCount; ++i) {
 		ASSERT_TRUE(finished[i]);
 	}
-	Error const err = StopServer();
+	const Error err = StopServer();
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
@@ -563,7 +563,9 @@ TEST_F(RPCClientTestApi, TemporaryNamespaceAutoremove) {
 		err = rx.EnumNamespaces(nsList, EnumNamespacesOpts().OnlyNames().HideSystem());
 		ASSERT_TRUE(err.ok()) << err.what();
 		if (nsList.size() > 0) {
-			for (auto& ns : nsList) std::cerr << ns.name << std::endl;
+			for (auto& ns : nsList) {
+				std::cerr << ns.name << std::endl;
+			}
 			ASSERT_TRUE(false);
 		}
 

@@ -16,16 +16,16 @@ class Writer;
 class RPCUpdatesPusherV3 : public reindexer::IUpdatesObserverV3 {
 public:
 	RPCUpdatesPusherV3();
-	void SetWriter(Writer *writer) { writer_ = writer; }
-	void OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &walRec) override final;
+	void SetWriter(Writer* writer) { writer_ = writer; }
+	void OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord& walRec) override final;
 	void OnUpdatesLost(std::string_view nsName) override final;
-	void OnConnectionState(const Error &err) override final;
-	void SetFilter(std::function<bool(WALRecord &)> filter) { filter_ = std::move(filter); }
+	void OnConnectionState(const Error& err) override final;
+	void SetFilter(std::function<bool(WALRecord&)> filter) { filter_ = std::move(filter); }
 
 protected:
-	Writer *writer_;
+	Writer* writer_;
 	std::atomic<uint32_t> seq_;
-	std::function<bool(WALRecord &)> filter_;
+	std::function<bool(WALRecord&)> filter_;
 };
 }  // namespace cproto
 }  // namespace net
@@ -40,16 +40,16 @@ class Args;
 class Writer;
 class RPCEventsPusher : public reindexer::IEventsObserver {
 public:
-	void SetWriter(Writer *writer) noexcept { writer_ = writer; }
+	void SetWriter(Writer* writer) noexcept { writer_ = writer; }
 
 	size_t AvailableEventsSpace() noexcept override final {
 		assertrx_dbg(writer_);
 		return writer_ ? writer_->AvailableEventsSpace() : 0;
 	}
-	void SendEvent(uint32_t streamsMask, const EventsSerializationOpts &opts, const EventRecord &rec) override final;
+	void SendEvent(uint32_t streamsMask, const EventsSerializationOpts& opts, const EventRecord& rec) override final;
 
 protected:
-	Writer *writer_ = nullptr;
+	Writer* writer_ = nullptr;
 };
 }  // namespace cproto
 }  // namespace net

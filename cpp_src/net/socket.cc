@@ -21,7 +21,7 @@ int socket::connect(std::string_view addr, socket_domain t) {
 	int ret = 0;
 	type_ = t;
 	if (domain() == socket_domain::tcp) {
-		struct addrinfo *results = nullptr;
+		struct addrinfo* results = nullptr;
 		ret = create(addr, &results);
 		if rx_likely (!ret) {
 			assertrx(results != nullptr);
@@ -49,7 +49,7 @@ int socket::connect(std::string_view addr, socket_domain t) {
 		memcpy(address.sun_path, addr.data(), addr.size());
 		address.sun_path[addr.size()] = 0;
 
-		if rx_unlikely (::connect(fd_, reinterpret_cast<struct sockaddr *>(&address), sizeof(address)) != 0) {	// -V595
+		if rx_unlikely (::connect(fd_, reinterpret_cast<struct sockaddr*>(&address), sizeof(address)) != 0) {  // -V595
 			if rx_unlikely (!would_block(last_error())) {
 				perror("connect error");
 				close();
@@ -77,7 +77,7 @@ ssize_t socket::send(span<chunk> chunks) {
 	iov.resize(chunks.size());
 
 	for (unsigned i = 0; i < chunks.size(); i++) {
-		iov[i].buf = reinterpret_cast<CHAR *>(chunks[i].data());
+		iov[i].buf = reinterpret_cast<CHAR*>(chunks[i].data());
 		iov[i].len = chunks[i].size();
 	}
 	DWORD numberOfBytesSent;
@@ -103,12 +103,12 @@ int socket::setLinger0() {
 		struct linger sl;
 		sl.l_onoff = 1;	 /* enable linger */
 		sl.l_linger = 0; /* with 0 seconds timeout */
-		return setsockopt(fd(), SOL_SOCKET, SO_LINGER, reinterpret_cast<const char *>(&sl), sizeof(sl));
+		return setsockopt(fd(), SOL_SOCKET, SO_LINGER, reinterpret_cast<const char*>(&sl), sizeof(sl));
 	}
 	return -1;
 }
 
-int socket::create(std::string_view addr, struct addrinfo **presults) {
+int socket::create(std::string_view addr, struct addrinfo** presults) {
 	assertrx(!valid());
 
 	if (domain() == socket_domain::tcp) {
@@ -121,15 +121,17 @@ int socket::create(std::string_view addr, struct addrinfo **presults) {
 		*presults = nullptr;
 
 		std::string saddr(addr);
-		char *paddr = &saddr[0];
+		char* paddr = &saddr[0];
 
-		char *pport = strchr(paddr, ':');
+		char* pport = strchr(paddr, ':');
 		if (pport == nullptr) {
 			pport = paddr;
 			paddr = nullptr;
 		} else {
 			*pport = 0;
-			if (*paddr == 0) paddr = nullptr;
+			if (*paddr == 0) {
+				paddr = nullptr;
+			}
 			pport++;
 		}
 
@@ -147,7 +149,7 @@ int socket::create(std::string_view addr, struct addrinfo **presults) {
 		}
 
 		int enable = 1;
-		if rx_unlikely (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char *>(&enable), sizeof(enable)) < 0) {
+		if rx_unlikely (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char*>(&enable), sizeof(enable)) < 0) {
 			perror("setsockopt(SO_REUSEADDR) failed");
 		}
 	} else {
@@ -178,11 +180,11 @@ int socket::create(std::string_view addr, struct addrinfo **presults) {
 std::string socket::addr() const {
 	if (domain() == socket_domain::tcp) {
 		struct sockaddr_storage saddr;
-		struct sockaddr *paddr = reinterpret_cast<sockaddr *>(&saddr);
+		struct sockaddr* paddr = reinterpret_cast<sockaddr*>(&saddr);
 		socklen_t len = sizeof(saddr);
 		if rx_likely (::getpeername(fd_, paddr, &len) == 0) {
 			char buf[INET_ADDRSTRLEN] = {};
-			auto port = ntohs(reinterpret_cast<sockaddr_in *>(paddr)->sin_port);
+			auto port = ntohs(reinterpret_cast<sockaddr_in*>(paddr)->sin_port);
 			if rx_likely (getnameinfo(paddr, len, buf, INET_ADDRSTRLEN, NULL, 0, NI_NUMERICHOST) == 0) {
 				return std::string(buf) + ':' + std::to_string(port);
 			} else {
@@ -209,7 +211,7 @@ int socket::set_nonblock() {
 int socket::set_nodelay() noexcept {
 	if (domain() == socket_domain::tcp) {
 		int flag = 1;
-		return setsockopt(fd_, SOL_TCP, TCP_NODELAY, reinterpret_cast<char *>(&flag), sizeof(flag));
+		return setsockopt(fd_, SOL_TCP, TCP_NODELAY, reinterpret_cast<char*>(&flag), sizeof(flag));
 	} else {
 		return 0;
 	}
@@ -272,7 +274,7 @@ int lst_socket::bind(std::string_view addr, socket_domain t) {
 	int ret = 0;
 	sock_.domain(t);
 	if (domain() == socket_domain::tcp) {
-		struct addrinfo *results = nullptr;
+		struct addrinfo* results = nullptr;
 		ret = sock_.create(addr, &results);
 		if rx_unlikely (!ret) {
 			assertrx(results != nullptr);
@@ -324,7 +326,7 @@ int lst_socket::bind(std::string_view addr, socket_domain t) {
 		}
 		unlink(unPath_.c_str());
 
-		if rx_unlikely (::bind(sock_.fd(), reinterpret_cast<struct sockaddr *>(&address), sizeof(address)) < 0) {
+		if rx_unlikely (::bind(sock_.fd(), reinterpret_cast<struct sockaddr*>(&address), sizeof(address)) < 0) {
 			perror("bind() error");
 			close();
 			return -1;

@@ -35,7 +35,7 @@ static void InstallLogLevel(const std::vector<std::string>& args) {
 				std::cout << buf << std::endl;
 			}
 		},
-		reindexer::LoggerPolicy::WithoutLocks);
+		reindexer::LoggerPolicy::WithoutLocks, llevel);
 }
 
 }  // namespace reindexer_tool
@@ -66,14 +66,14 @@ int main(int argc, char* argv[]) {
 		{'d', "dsn"}, "", Options::Single | Options::Global);
 #endif	// _WIN32
 	args::ValueFlag<std::string> fileName(progOptions, "FILENAME", "execute commands from file, then exit", {'f', "filename"}, "",
-									 Options::Single | Options::Global);
-	args::ValueFlag<std::string> command(progOptions, "COMMAND", "run only single command (SQL or internal) and exit'", {'c', "command"}, "",
-									Options::Single | Options::Global);
+										  Options::Single | Options::Global);
+	args::ValueFlag<std::string> command(progOptions, "COMMAND", "run only single command (SQL or internal) and exit'", {'c', "command"},
+										 "", Options::Single | Options::Global);
 	args::ValueFlag<std::string> outFileName(progOptions, "FILENAME", "send query results to file", {'o', "output"}, "",
-										Options::Single | Options::Global);
+											 Options::Single | Options::Global);
 	args::ValueFlag<std::string> dumpMode(progOptions, "DUMP_MODE",
-									 "dump mode for sharded databases: 'full_node' (default), 'sharded_only', 'local_only'", {"dump-mode"},
-									 "", Options::Single | Options::Global);
+										  "dump mode for sharded databases: 'full_node' (default), 'sharded_only', 'local_only'",
+										  {"dump-mode"}, "", Options::Single | Options::Global);
 
 	args::ValueFlag<unsigned> connThreads(progOptions, "INT=1..65535", "Number of threads(connections) used by db connector",
 										  {'t', "threads"}, 1, Options::Single | Options::Global);
@@ -164,11 +164,15 @@ int main(int argc, char* argv[]) {
 		CommandsProcessor<reindexer::client::CoroReindexer> commandsProcessor(args::get(outFileName), args::get(fileName),
 																			  args::get(connThreads), config);
 		err = commandsProcessor.Connect(dsn, reindexer::client::ConnectOpts().CreateDBIfMissing(createDBF && args::get(createDBF)));
-		if (err.ok()) ok = commandsProcessor.Run(args::get(command), args::get(dumpMode));
+		if (err.ok()) {
+			ok = commandsProcessor.Run(args::get(command), args::get(dumpMode));
+		}
 	} else if (checkIfStartsWithCS("builtin://"sv, dsn)) {
 		CommandsProcessor<reindexer::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName), args::get(connThreads));
 		err = commandsProcessor.Connect(dsn, ConnectOpts().DisableReplication());
-		if (err.ok()) ok = commandsProcessor.Run(args::get(command), args::get(dumpMode));
+		if (err.ok()) {
+			ok = commandsProcessor.Run(args::get(command), args::get(dumpMode));
+		}
 	} else {
 #ifdef _WIN32
 		std::cerr << "Invalid DSN format: " << dsn << " Must begin from cproto:// or builtin://" << std::endl;

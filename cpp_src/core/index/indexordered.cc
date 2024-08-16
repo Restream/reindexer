@@ -8,7 +8,7 @@
 namespace reindexer {
 
 template <typename T>
-Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id, bool &clearCache) {
+Variant IndexOrdered<T>::Upsert(const Variant& key, IdType id, bool& clearCache) {
 	if (key.Type().Is<KeyValueType::Null>()) {
 		if (this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_)) {
 			this->cache_.reset();
@@ -21,10 +21,11 @@ Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id, bool &clearCache)
 
 	auto keyIt = this->idx_map.lower_bound(static_cast<ref_type>(key));
 
-	if (keyIt == this->idx_map.end() || this->idx_map.key_comp()(static_cast<ref_type>(key), keyIt->first))
+	if (keyIt == this->idx_map.end() || this->idx_map.key_comp()(static_cast<ref_type>(key), keyIt->first)) {
 		keyIt = this->idx_map.insert(keyIt, {static_cast<key_type>(key), typename T::mapped_type()});
-	else
+	} else {
 		this->delMemStat(keyIt);
+	}
 
 	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_)) {
 		this->isBuilt_ = false;
@@ -38,10 +39,12 @@ Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id, bool &clearCache)
 }
 
 template <typename T>
-SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType condition, SortType sortId, Index::SelectOpts opts,
-											const BaseFunctionCtx::Ptr &ctx, const RdxContext &rdxCtx) {
+SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType condition, SortType sortId, Index::SelectOpts opts,
+											const BaseFunctionCtx::Ptr& ctx, const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
-	if (opts.forceComparator) return IndexStore<StoreIndexKeyType<T>>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
+	if (opts.forceComparator) {
+		return IndexStore<StoreIndexKeyType<T>>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
+	}
 
 	// Get set of keys or single key
 	if (!IsOrderedCondition(condition)) {
@@ -62,23 +65,31 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 			break;
 		case CondLe:
 			endIt = this->idx_map.lower_bound(static_cast<ref_type>(key1));
-			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(static_cast<ref_type>(key1), endIt->first)) ++endIt;
+			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(static_cast<ref_type>(key1), endIt->first)) {
+				++endIt;
+			}
 			break;
 		case CondGt:
 			startIt = this->idx_map.upper_bound(static_cast<ref_type>(key1));
 			break;
 		case CondGe:
 			startIt = this->idx_map.find(static_cast<ref_type>(key1));
-			if (startIt == this->idx_map.end()) startIt = this->idx_map.upper_bound(static_cast<ref_type>(key1));
+			if (startIt == this->idx_map.end()) {
+				startIt = this->idx_map.upper_bound(static_cast<ref_type>(key1));
+			}
 			break;
 		case CondRange: {
-			const auto &key2 = keys[1];
+			const auto& key2 = keys[1];
 
 			startIt = this->idx_map.find(static_cast<ref_type>(key1));
-			if (startIt == this->idx_map.end()) startIt = this->idx_map.upper_bound(static_cast<ref_type>(key1));
+			if (startIt == this->idx_map.end()) {
+				startIt = this->idx_map.upper_bound(static_cast<ref_type>(key1));
+			}
 
 			endIt = this->idx_map.lower_bound(static_cast<ref_type>(key2));
-			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(static_cast<ref_type>(key2), endIt->first)) ++endIt;
+			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(static_cast<ref_type>(key2), endIt->first)) {
+				++endIt;
+			}
 
 			if (endIt != this->idx_map.end() && this->idx_map.key_comp()(endIt->first, static_cast<ref_type>(key1))) {
 				return SelectKeyResults(std::move(res));
@@ -123,12 +134,12 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 		// TODO: use count of items in ns to more clever select plan
 		if (count < 50) {
 			struct {
-				T *i_map;
+				T* i_map;
 				SortType sortId;
 				typename T::iterator startIt, endIt;
 			} ctx = {&this->idx_map, sortId, startIt, endIt};
 
-			auto selector = [&ctx, count](SelectKeyResult &res, size_t &idsCount) {
+			auto selector = [&ctx, count](SelectKeyResult& res, size_t& idsCount) {
 				idsCount = 0;
 				res.reserve(count);
 				for (auto it = ctx.startIt; it != ctx.endIt; ++it) {
@@ -158,17 +169,20 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 }
 
 template <typename T>
-void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext &ctx) {
+void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext& ctx) {
 	logPrintf(LogTrace, "IndexOrdered::MakeSortOrders (%s)", this->name_);
-	auto &ids2Sorts = ctx.ids2Sorts();
+	auto& ids2Sorts = ctx.ids2Sorts();
 	size_t totalIds = 0;
-	for (auto it : ids2Sorts)
-		if (it != SortIdUnexists) totalIds++;
+	for (auto it : ids2Sorts) {
+		if (it != SortIdUnexists) {
+			totalIds++;
+		}
+	}
 
 	this->sortId_ = ctx.getCurSortId();
 	this->sortOrders_.resize(totalIds);
 	size_t idx = 0;
-	for (auto &keyIt : this->idx_map) {
+	for (auto& keyIt : this->idx_map) {
 		// assert (keyIt.second.size());
 		for (auto id : keyIt.second.Unsorted()) {
 			if (id >= int(ids2Sorts.size()) || ids2Sorts[id] == SortIdUnexists) {
@@ -202,8 +216,8 @@ IndexIterator::Ptr IndexOrdered<T>::CreateIterator() const {
 }
 
 template <typename KeyEntryT>
-static std::unique_ptr<Index> IndexOrdered_New(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
-											   const NamespaceCacheConfigData &cacheCfg) {
+static std::unique_ptr<Index> IndexOrdered_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+											   const NamespaceCacheConfigData& cacheCfg) {
 	switch (idef.Type()) {
 		case IndexIntBTree:
 			return std::make_unique<IndexOrdered<number_map<int, KeyEntryT>>>(idef, std::move(payloadType), std::move(fields), cacheCfg);
@@ -239,8 +253,8 @@ static std::unique_ptr<Index> IndexOrdered_New(const IndexDef &idef, PayloadType
 }
 
 // NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
-std::unique_ptr<Index> IndexOrdered_New(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
-										const NamespaceCacheConfigData &cacheCfg) {
+std::unique_ptr<Index> IndexOrdered_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+										const NamespaceCacheConfigData& cacheCfg) {
 	return (idef.opts_.IsPK() || idef.opts_.IsDense())
 			   ? IndexOrdered_New<Index::KeyEntryPlain>(idef, std::move(payloadType), std::move(fields), cacheCfg)
 			   : IndexOrdered_New<Index::KeyEntry>(idef, std::move(payloadType), std::move(fields), cacheCfg);

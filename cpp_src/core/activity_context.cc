@@ -31,7 +31,9 @@ void ActivityContainer::Unregister(const RdxActivityContext* context) {
 }
 
 void ActivityContainer::Reregister(const RdxActivityContext* oldCtx, const RdxActivityContext* newCtx) {
-	if (oldCtx == newCtx) return;
+	if (oldCtx == newCtx) {
+		return;
+	}
 
 	std::unique_lock lck(mtx_);
 	const auto eraseCount = cont_.erase(oldCtx);
@@ -71,7 +73,9 @@ std::vector<Activity> ActivityContainer::List([[maybe_unused]] int serverId) {
 #endif
 
 		ret.reserve(cont_.size());
-		for (const RdxActivityContext* ctx : cont_) ret.emplace_back(*ctx);
+		for (const RdxActivityContext* ctx : cont_) {
+			ret.emplace_back(*ctx);
+		}
 	}
 	return ret;
 }
@@ -95,18 +99,16 @@ RdxActivityContext::RdxActivityContext(std::string_view activityTracer, std::str
 	: data_{nextId(),			ipConnectionId,		   std::string(activityTracer), std::string(user),
 			std::string(query), system_clock_w::now(), Activity::InProgress,		""sv},
 	  state_(serializeState(clientState ? Activity::Sending : Activity::InProgress)),
-	  parent_(&parent)
-{
+	  parent_(&parent) {
 	parent_->Register(this);
 }
 
 // NOLINTNEXTLINE (performance-noexcept-move-constructor)
 RdxActivityContext::RdxActivityContext(RdxActivityContext&& other)
-	: data_(other.data_),
-	  state_(other.state_.load(std::memory_order_relaxed)),
-	  parent_(other.parent_)
-{
-	if (parent_) parent_->Reregister(&other, this);
+	: data_(other.data_), state_(other.state_.load(std::memory_order_relaxed)), parent_(other.parent_) {
+	if (parent_) {
+		parent_->Reregister(&other, this);
+	}
 	other.parent_ = nullptr;
 }
 

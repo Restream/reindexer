@@ -10,7 +10,7 @@ namespace reindexer {
 
 #ifdef REINDEX_WITH_V3_FOLLOWERS
 
-void UpdatesFilters::Merge(const UpdatesFilters &rhs) {
+void UpdatesFilters::Merge(const UpdatesFilters& rhs) {
 	if (filters_.empty()) {
 		return;
 	}
@@ -18,13 +18,13 @@ void UpdatesFilters::Merge(const UpdatesFilters &rhs) {
 		filters_.clear();
 		return;
 	}
-	for (auto &rhsFilter : rhs.filters_) {
+	for (auto& rhsFilter : rhs.filters_) {
 		auto foundNs = filters_.find(rhsFilter.first);
 		if (foundNs == filters_.end()) {
 			filters_.emplace(rhsFilter.first, rhsFilter.second);
 		} else {
-			auto &nsFilters = foundNs.value();
-			for (auto &filter : rhsFilter.second) {
+			auto& nsFilters = foundNs.value();
+			for (auto& filter : rhsFilter.second) {
 				const auto foundFilter = std::find(nsFilters.cbegin(), nsFilters.cend(), filter);
 				if (foundFilter == nsFilters.cend()) {
 					nsFilters.emplace_back(filter);
@@ -41,7 +41,7 @@ void UpdatesFilters::AddFilter(std::string_view ns, UpdatesFilters::Filter filte
 		lst.emplace_back(std::move(filter));  // NOLINT(performance-move-const-arg)
 		filters_.emplace(std::string(ns), std::move(lst));
 	} else {
-		auto &nsFilters = foundNs.value();
+		auto& nsFilters = foundNs.value();
 		const auto foundFilter = std::find(nsFilters.cbegin(), nsFilters.cend(), filter);
 		if (foundFilter == nsFilters.cend()) {
 			nsFilters.emplace_back(std::move(filter));	// NOLINT(performance-move-const-arg)
@@ -59,7 +59,7 @@ bool UpdatesFilters::Check(std::string_view ns) const noexcept {
 		return false;
 	}
 
-	for (auto &filter : found.value()) {
+	for (auto& filter : found.value()) {
 		if (filter.Check()) {
 			return true;
 		}
@@ -70,22 +70,22 @@ bool UpdatesFilters::Check(std::string_view ns) const noexcept {
 Error UpdatesFilters::FromJSON(span<char> json) {
 	try {
 		FromJSON(gason::JsonParser().Parse(json));
-	} catch (const gason::Exception &ex) {
+	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "UpdatesFilter: %s", ex.what());
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 	return errOK;
 }
 
-void UpdatesFilters::FromJSON(const gason::JsonNode &root) {
-	for (const auto &ns : root["namespaces"sv]) {
+void UpdatesFilters::FromJSON(const gason::JsonNode& root) {
+	for (const auto& ns : root["namespaces"sv]) {
 		auto name = ns["name"sv].As<std::string_view>();
-		auto &filtersNode = ns["filters"sv];
+		auto& filtersNode = ns["filters"sv];
 		if (filtersNode.empty() || begin(filtersNode) == end(filtersNode)) {
 			AddFilter(name, Filter());
 		} else {
-			for (const auto &f : ns["filters"sv]) {
+			for (const auto& f : ns["filters"sv]) {
 				Filter filter;
 				filter.FromJSON(f);
 				AddFilter(name, std::move(filter));	 // NOLINT(performance-move-const-arg)
@@ -94,30 +94,30 @@ void UpdatesFilters::FromJSON(const gason::JsonNode &root) {
 	}
 }
 
-void UpdatesFilters::GetJSON(WrSerializer &ser) const {
+void UpdatesFilters::GetJSON(WrSerializer& ser) const {
 	JsonBuilder builder(ser);
 	GetJSON(builder);
 }
 
-void UpdatesFilters::GetJSON(JsonBuilder &builder) const {
+void UpdatesFilters::GetJSON(JsonBuilder& builder) const {
 	auto arr = builder.Array("namespaces"sv);
-	for (const auto &nsFilters : filters_) {
+	for (const auto& nsFilters : filters_) {
 		auto obj = arr.Object();
 		obj.Put("name"sv, nsFilters.first);
 		auto arrFilters = obj.Array("filters"sv);
-		for (const auto &filter : nsFilters.second) {
+		for (const auto& filter : nsFilters.second) {
 			auto filtersObj = arrFilters.Object();
 			filter.GetJSON(filtersObj);
 		}
 	}
 }
 
-bool UpdatesFilters::operator==(const UpdatesFilters &rhs) const {
+bool UpdatesFilters::operator==(const UpdatesFilters& rhs) const {
 	if (filters_.size() != rhs.filters_.size()) {
 		return false;
 	}
 
-	for (const auto &nsFilters : filters_) {
+	for (const auto& nsFilters : filters_) {
 		const auto rhsNsFilters = rhs.filters_.find(nsFilters.first);
 		if (rhsNsFilters == rhs.filters_.cend()) {
 			return false;
@@ -125,7 +125,7 @@ bool UpdatesFilters::operator==(const UpdatesFilters &rhs) const {
 		if (rhsNsFilters.value().size() != nsFilters.second.size()) {
 			return false;
 		}
-		for (const auto &filter : nsFilters.second) {
+		for (const auto& filter : nsFilters.second) {
 			const auto rhsFilter = std::find(rhsNsFilters.value().cbegin(), rhsNsFilters.value().cend(), filter);
 			if (rhsFilter == rhsNsFilters.value().cend()) {
 				return false;
@@ -136,16 +136,16 @@ bool UpdatesFilters::operator==(const UpdatesFilters &rhs) const {
 	return true;
 }
 
-std::ostream &operator<<(std::ostream &o, const reindexer::UpdatesFilters &filters) {
+std::ostream& operator<<(std::ostream& o, const reindexer::UpdatesFilters& filters) {
 	reindexer::WrSerializer ser;
 	filters.GetJSON(ser);
 	o << ser.Slice();
 	return o;
 }
 
-void UpdatesObservers::Add(IUpdatesObserverV3 *observer, const UpdatesFilters &filters, SubscriptionOpts opts) {
+void UpdatesObservers::Add(IUpdatesObserverV3* observer, const UpdatesFilters& filters, SubscriptionOpts opts) {
 	std::unique_lock<shared_timed_mutex> lck(mtx_);
-	auto it = std::find_if(observersV3_.begin(), observersV3_.end(), [observer](const ObserverInfo &info) { return info.ptr == observer; });
+	auto it = std::find_if(observersV3_.begin(), observersV3_.end(), [observer](const ObserverInfo& info) { return info.ptr == observer; });
 	if (it != observersV3_.end()) {
 		if (opts.IsIncrementSubscription()) {
 			it->filters.Merge(filters);
@@ -157,9 +157,9 @@ void UpdatesObservers::Add(IUpdatesObserverV3 *observer, const UpdatesFilters &f
 	}
 }
 
-Error UpdatesObservers::Remove(IUpdatesObserverV3 *observer) {
+Error UpdatesObservers::Remove(IUpdatesObserverV3* observer) {
 	std::unique_lock<shared_timed_mutex> lck(mtx_);
-	auto it = std::find_if(observersV3_.begin(), observersV3_.end(), [observer](const ObserverInfo &info) { return info.ptr == observer; });
+	auto it = std::find_if(observersV3_.begin(), observersV3_.end(), [observer](const ObserverInfo& info) { return info.ptr == observer; });
 	if (it == observersV3_.end()) {
 		return Error(errParams, "Observer was not added");
 	}
@@ -172,9 +172,11 @@ std::vector<UpdatesObservers::ObserverInfo> UpdatesObservers::Get() const {
 	return observersV3_;
 }
 
-void UpdatesObservers::OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &walRec) {
+void UpdatesObservers::OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord& walRec) {
 	// Disable updates of system namespaces (it may cause recursive lock)
-	if (isSystemNamespaceNameFast(nsName)) return;
+	if (isSystemNamespaceNameFast(nsName)) {
+		return;
+	}
 
 	bool skipFilters = walRec.type == WalNamespaceAdd || walRec.type == WalNamespaceDrop || walRec.type == WalNamespaceRename ||
 					   walRec.type == WalForceSync || nsName.empty();
@@ -202,7 +204,7 @@ void UpdatesObservers::OnUpdatesLost(std::string_view nsName) {
 UpdatesFilters UpdatesObservers::GetMergedFilter() const {
 	shared_lock<shared_timed_mutex> lck(mtx_);
 	UpdatesFilters filter = observersV3_.size() ? observersV3_.front().filters : UpdatesFilters();
-	for (const auto &observer : observersV3_) {
+	for (const auto& observer : observersV3_) {
 		filter.Merge(observer.filters);
 	}
 	return filter;
@@ -210,7 +212,7 @@ UpdatesFilters UpdatesObservers::GetMergedFilter() const {
 
 #endif	// REINDEX_WITH_V3_FOLLOWERS
 
-void UpdatesObservers::SendAsyncEventOnly(updates::UpdateRecord &&rec) {
+void UpdatesObservers::SendAsyncEventOnly(updates::UpdateRecord&& rec) {
 	if (eventsListener_.HasListenersFor(rec.NsName())) {
 		EventsContainer events;
 		events.emplace_back(std::move(rec));
@@ -221,13 +223,13 @@ void UpdatesObservers::SendAsyncEventOnly(updates::UpdateRecord &&rec) {
 	}
 }
 
-Error UpdatesObservers::SendUpdate(updates::UpdateRecord &&rec, std::function<void()> beforeWaitF, const RdxContext &ctx) {
+Error UpdatesObservers::SendUpdate(updates::UpdateRecord&& rec, std::function<void()> beforeWaitF, const RdxContext& ctx) {
 	cluster::UpdatesContainer recs;
 	recs.emplace_back(std::move(rec));
 	return SendUpdates(std::move(recs), std::move(beforeWaitF), ctx);
 }
 
-Error UpdatesObservers::SendUpdates(cluster::UpdatesContainer &&recs, std::function<void()> beforeWaitF, const RdxContext &ctx) {
+Error UpdatesObservers::SendUpdates(cluster::UpdatesContainer&& recs, std::function<void()> beforeWaitF, const RdxContext& ctx) {
 	if (recs.empty()) {
 		return {};
 	}
@@ -241,13 +243,13 @@ Error UpdatesObservers::SendUpdates(cluster::UpdatesContainer &&recs, std::funct
 	return replicator_.Replicate(std::move(recs), std::move(beforeWaitF), ctx);
 }
 
-Error UpdatesObservers::SendAsyncUpdate(updates::UpdateRecord &&rec, const RdxContext &ctx) {
+Error UpdatesObservers::SendAsyncUpdate(updates::UpdateRecord&& rec, const RdxContext& ctx) {
 	cluster::UpdatesContainer recs(1);
 	recs[0] = std::move(rec);
 	return replicator_.ReplicateAsync(std::move(recs), ctx);
 }
 
-Error UpdatesObservers::SendAsyncUpdates(cluster::UpdatesContainer &&recs, const RdxContext &ctx) {
+Error UpdatesObservers::SendAsyncUpdates(cluster::UpdatesContainer&& recs, const RdxContext& ctx) {
 	if (recs.empty()) {
 		return {};
 	}
@@ -261,10 +263,10 @@ Error UpdatesObservers::SendAsyncUpdates(cluster::UpdatesContainer &&recs, const
 	return replicator_.ReplicateAsync(std::move(recs), ctx);
 }
 
-EventsContainer UpdatesObservers::convertUpdatesContainer(const cluster::UpdatesContainer &data) {
+EventsContainer UpdatesObservers::convertUpdatesContainer(const cluster::UpdatesContainer& data) {
 	EventsContainer copy;
 	copy.reserve(data.size());
-	for (auto &d : data) {
+	for (auto& d : data) {
 		copy.emplace_back(d);
 	}
 	return copy;

@@ -146,8 +146,12 @@ private:
 			int tMin = INT32_MAX;
 			int tMax = 0;
 			for (auto v : timeOfTest_) {
-				if (v < tMin) tMin = v;
-				if (v > tMax) tMax = v;
+				if (v < tMin) {
+					tMin = v;
+				}
+				if (v > tMax) {
+					tMax = v;
+				}
 			}
 			std::vector<int> gist;
 			const int columnCount = 1000;
@@ -168,7 +172,9 @@ private:
 			for (auto v : timeOfTest_) {
 				averageTime += v;
 				int indx = double(v - tMin) / dt;
-				if (indx >= columnCount) indx = columnCount - 1;
+				if (indx >= columnCount) {
+					indx = columnCount - 1;
+				}
 				gist[indx]++;
 			}
 			averageTime /= timeOfTest_.size();
@@ -179,14 +185,18 @@ private:
 			fileOut << "\"data\":[" << std::endl;
 			bool isFirst = true;
 			for (auto v : gist) {
-				if (!isFirst) fileOut << "," << std::endl;
+				if (!isFirst) {
+					fileOut << "," << std::endl;
+				}
 				fileOut << v;
 				isFirst = false;
 			}
 			fileOut << "],\n \"raw_data\":[" << std::endl;
 			isFirst = true;
 			for (auto v : timeOfTest_) {
-				if (!isFirst) fileOut << "," << std::endl;
+				if (!isFirst) {
+					fileOut << "," << std::endl;
+				}
 				fileOut << v;
 				isFirst = false;
 			}

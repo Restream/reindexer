@@ -47,11 +47,13 @@ int MsgPackDecoder::decodeKeyToTag(const msgpack_object_kv& obj) {
 		case MSGPACK_OBJECT_EXT:
 			break;
 	}
-	throw Error(errParams, "Unsupported MsgPack map key type: %s(%d)", ToString(obj.key.type), obj.key.type);
+	throw Error(errParams, "Unsupported MsgPack map key type: %s(%d)", ToString(obj.key.type), int(obj.key.type));
 }
 
 void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_object& obj, int tagName) {
-	if (tagName) tagsPath_.emplace_back(tagName);
+	if (tagName) {
+		tagsPath_.emplace_back(tagName);
+	}
 	switch (obj.type) {
 		case MSGPACK_OBJECT_NIL:
 			builder.Null(tagName);
@@ -116,9 +118,11 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 		case MSGPACK_OBJECT_BIN:
 		case MSGPACK_OBJECT_EXT:
 		default:
-			throw Error(errParams, "Unsupported MsgPack type: %s(%d)", ToString(obj.type), obj.type);
+			throw Error(errParams, "Unsupported MsgPack type: %s(%d)", ToString(obj.type), int(obj.type));
 	}
-	if (tagName) tagsPath_.pop_back();
+	if (tagName) {
+		tagsPath_.pop_back();
+	}
 }
 
 Error MsgPackDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& wrser, size_t& offset) {
@@ -127,11 +131,13 @@ Error MsgPackDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& wr
 		tagsPath_.clear();
 		size_t baseOffset = offset;
 		MsgPackValue data = parser_.Parse(buf, offset);
-		if rx_unlikely (!data.p) return Error(errLogic, "Error unpacking msgpack data");
+		if rx_unlikely (!data.p) {
+			return Error(errLogic, "Error unpacking msgpack data");
+		}
 		if rx_unlikely (data.p->type != MSGPACK_OBJECT_MAP) {
 			std::string_view slice = buf.substr(baseOffset, 16);
 			return Error(errNotValid, "Unexpected MsgPack value. Expected %s, but got %s(%d) at %d(~>\"%s\"...)",
-						 ToString(MSGPACK_OBJECT_MAP), ToString(data.p->type), data.p->type, baseOffset, slice);
+						 ToString(MSGPACK_OBJECT_MAP), ToString(data.p->type), int(data.p->type), baseOffset, slice);
 		}
 
 		CJsonBuilder cjsonBuilder(wrser, ObjType::TypePlain, &tm_, 0);

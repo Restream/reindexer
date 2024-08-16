@@ -4,6 +4,7 @@
 #include <mutex>
 #include <vector>
 #include "estl/mutex.h"
+#include "tools/assertrx.h"
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -24,12 +25,12 @@ public:
 	}
 	void MarkUnsynchonized(uint32_t nodeId) {
 		std::lock_guard lck(mtx_);
-		assert(nodeId < lastUpdates_.size());
+		assertrx(nodeId < lastUpdates_.size());
 		lastUpdates_[nodeId] = kUnsynchronizedID;
 	}
 	void MarkSynchronized(uint32_t nodeId, int64_t updateId) {
 		std::lock_guard lck(mtx_);
-		assert(nodeId < lastUpdates_.size());
+		assertrx(nodeId < lastUpdates_.size());
 		lastUpdates_[nodeId] = updateId;
 	}
 	std::vector<int64_t> GetSynchronized(uint32_t synchronizedCount) const {

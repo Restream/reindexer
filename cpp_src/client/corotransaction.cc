@@ -88,7 +88,9 @@ Error CoroTransaction::addTxItem(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 	if (item.IsTagsUpdated()) {
 		newItem = NewItem();
 		err = mergeTmFromItem(item, newItem);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 		item = std::move(newItem);
 	}
 
@@ -112,7 +114,9 @@ Error CoroTransaction::addTxItem(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 		CoroQueryResults qr;
 		InternalRdxContext ctx = InternalRdxContext{}.WithTimeout(i_.execTimeout_).WithShardId(ShardingKeyType::ProxyOff, false);
 		err = i_.rpcClient_->Select(Query(i_.ns_->name).Limit(0), qr, ctx);
-		if (!err.ok()) return Error(errLogic, "Can't update TagsMatcher");
+		if (!err.ok()) {
+			return Error(errLogic, "Can't update TagsMatcher");
+		}
 
 		auto nsTm = i_.ns_->GetTagsMatcher();
 		if (nsTm.stateToken() != i_.localTm_->stateToken()) {
@@ -125,7 +129,9 @@ Error CoroTransaction::addTxItem(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 
 		newItem = NewItem();
 		err = mergeTmFromItem(item, newItem);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 
 		item = std::move(newItem);
 	}
@@ -158,12 +164,17 @@ Error CoroTransaction::mergeTmFromItem(Item& item, Item& rItem) {
 	}
 	if (itemTmMergeSucceed) {
 		auto err = rItem.Unsafe().FromCJSON(item.impl_->GetCJSON());
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 	} else {
 		auto err = rItem.Unsafe().FromJSON(item.impl_->GetJSON());
-		if (!err.ok()) return err;
-		if (rItem.IsTagsUpdated() && !i_.localTm_->try_merge(rItem.impl_->tagsMatcher()))
+		if (!err.ok()) {
+			return err;
+		}
+		if (rItem.IsTagsUpdated() && !i_.localTm_->try_merge(rItem.impl_->tagsMatcher())) {
 			return Error(errLogic, "Unable to merge item's TagsMatcher.");
+		}
 		rItem.impl_->tagsMatcher() = *i_.localTm_;
 		rItem.impl_->tagsMatcher().setUpdated();
 	}
@@ -183,7 +194,9 @@ PayloadType CoroTransaction::GetPayloadType() const noexcept {
 
 template <typename ClientT>
 Item CoroTransaction::NewItem(ClientT* client) {
-	if (IsFree()) return Item(Error(errLogic, "Transaction was not initialized"));
+	if (IsFree()) {
+		return Item(Error(errLogic, "Transaction was not initialized"));
+	}
 	Item item(new ItemImpl<ClientT>(i_.ns_->payloadType, *i_.localTm_, client, i_.requestTimeout_));
 	item.impl_->tagsMatcher().clearUpdated();
 	return item;

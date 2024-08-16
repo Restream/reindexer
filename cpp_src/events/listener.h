@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/defnsconfigs.h"
+#include "core/formatters/namespacesname_fmt.h"
 #include "core/type_consts.h"
 #include "estl/shared_mutex.h"
 #include "events/subscriber_config.h"
@@ -16,14 +17,14 @@ namespace reindexer {
 
 class EventsListener : public IExternalEventsListener {
 public:
-	EventsListener(const std::string &dbName, size_t maxUpdatesQueueSize);
+	EventsListener(const std::string& dbName, size_t maxUpdatesQueueSize);
 	~EventsListener() override;
 
-	[[nodiscard]] Error SendEvents(EventsContainer &&recs) override final {
+	[[nodiscard]] Error SendEvents(EventsContainer&& recs) override final {
 		shared_lock lck(mtx_);
 		return updatesQueue_.template PushAsync<true>(std::move(recs)).first;
 	}
-	[[nodiscard]] bool HasListenersFor(const NamespaceName &ns) const noexcept override final {
+	[[nodiscard]] bool HasListenersFor(const NamespaceName& ns) const noexcept override final {
 		if (subsCount_.load(std::memory_order_acquire) == 0) {
 			return false;
 		}
@@ -42,8 +43,8 @@ public:
 		return commonFilter_.nss->empty() || commonFilter_.nss->find(ns) != commonFilter_.nss->end();
 	}
 
-	[[nodiscard]] Error AddOrUpdate(IEventsObserver &observer, EventSubscriberConfig &&cfg);
-	[[nodiscard]] Error Remove(IEventsObserver &observer);
+	[[nodiscard]] Error AddOrUpdate(IEventsObserver& observer, EventSubscriberConfig&& cfg);
+	[[nodiscard]] Error Remove(IEventsObserver& observer);
 
 	void SetEventsServerID(int serverID) noexcept { serverID_.store(serverID, std::memory_order_relaxed); }
 	void SetEventsShardID(int shardID) noexcept { shardID_.store(shardID, std::memory_order_relaxed); }
@@ -68,15 +69,15 @@ private:
 		EventSubscriberConfig cfg;
 	};
 
-	using DBMapT = fast_hash_map<const void *, DBNamespaces>;
-	using SubscribersMapT = fast_hash_map<IEventsObserver *, ObserverInfo>;
+	using DBMapT = fast_hash_map<const void*, DBNamespaces>;
+	using SubscribersMapT = fast_hash_map<IEventsObserver*, ObserverInfo>;
 
 	void stop();
 	void rebuildCommonFilter();
 	void eventsLoop() noexcept;
 	void handleUpdates();
 	void eraseUpdatesOnUnsubscribe(uint32_t uid, uint64_t from, uint64_t to, uint32_t replicas);
-	uint32_t buildStreamsMask(const ObserverInfo &observer, const EventRecord &rec) noexcept;
+	uint32_t buildStreamsMask(const ObserverInfo& observer, const EventRecord& rec) noexcept;
 
 	std::thread eventsThread_;
 	std::atomic<bool> terminate_ = {false};

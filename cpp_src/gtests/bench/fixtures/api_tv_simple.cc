@@ -105,7 +105,9 @@ reindexer::Error ApiTvSimple::Initialize() {
 	assertrx(db_);
 	auto err = db_->AddNamespace(nsdef_);
 
-	if (!err.ok()) return err;
+	if (!err.ok()) {
+		return err;
+	}
 
 	countries_ = {"Portugal",
 				  "Afghanistan",
@@ -175,29 +177,41 @@ reindexer::Error ApiTvSimple::Initialize() {
 		.AddIndex("str_fuzzy_coll_num", "fuzzytext", "string", IndexOpts(0, CollateNumeric));
 
 	err = db_->AddNamespace(strNsDef);
-	if (!err.ok()) return err;
+	if (!err.ok()) {
+		return err;
+	}
 
 	for (size_t i = 0; i < kTotalItemsStringSelectNs; ++i) {
 		auto item = MakeStrItem();
-		if (!item.Status().ok()) return item.Status();
+		if (!item.Status().ok()) {
+			return item.Status();
+		}
 		err = db_->Insert(stringSelectNs_, item);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 	}
 
 	NamespaceDef mainNsDef{mainNs_};
 	mainNsDef.AddIndex("id", "hash", "int", IndexOpts().PK()).AddIndex("field", "hash", "int", IndexOpts());
 	err = db_->AddNamespace(mainNsDef);
-	if (!err.ok()) return err;
+	if (!err.ok()) {
+		return err;
+	}
 	NamespaceDef rightNsDef{rightNs_};
 	rightNsDef.AddIndex("id", "hash", "int", IndexOpts().PK())
 		.AddIndex("field", "hash", "int", IndexOpts())
 		.AddIndex("id_tree", "tree", "int", IndexOpts());
 	err = db_->AddNamespace(rightNsDef);
-	if (!err.ok()) return err;
+	if (!err.ok()) {
+		return err;
+	}
 
 	for (size_t i = 0; i < kTotalItemsMainJoinNs; ++i) {
 		reindexer::Item mItem = db_->NewItem(mainNsDef.name);
-		if (!mItem.Status().ok()) return mItem.Status();
+		if (!mItem.Status().ok()) {
+			return mItem.Status();
+		}
 		mItem.Unsafe();
 		wrSer_.Reset();
 		reindexer::JsonBuilder bld(wrSer_);
@@ -205,12 +219,18 @@ reindexer::Error ApiTvSimple::Initialize() {
 		bld.Put("field", i);
 		bld.End();
 		err = mItem.FromJSON(wrSer_.Slice());
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 		err = db_->Insert(mainNsDef.name, mItem);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 
 		reindexer::Item rItem = db_->NewItem(rightNsDef.name);
-		if (!rItem.Status().ok()) return rItem.Status();
+		if (!rItem.Status().ok()) {
+			return rItem.Status();
+		}
 		rItem.Unsafe();
 		wrSer_.Reset();
 		reindexer::JsonBuilder bld2(wrSer_);
@@ -219,9 +239,13 @@ reindexer::Error ApiTvSimple::Initialize() {
 		bld2.Put("id_tree", i);
 		bld2.End();
 		err = rItem.FromJSON(wrSer_.Slice());
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 		err = db_->Insert(rightNsDef.name, rItem);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 	}
 	return {};
 }
@@ -255,7 +279,9 @@ reindexer::Item ApiTvSimple::MakeStrItem() {
 		bld.Put("field_str", "value_" + idStr);
 		bld.End();
 		const auto err = item.FromJSON(wrSer_.Slice());
-		if (!err.ok()) assert(!item.Status().ok());
+		if (!err.ok()) {
+			assert(!item.Status().ok());
+		}
 	}
 	return item;
 }
@@ -297,7 +323,9 @@ void ApiTvSimple::WarmUpIndexes(State& state) {
 			Query q(nsdef_.name);
 			q.Where("packages", CondSet, packages_.at(i % packages_.size())).Limit(20).Sort("start_time", false);
 			err = db_->Select(q, qres);
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
+			if (!err.ok()) {
+				state.SkipWithError(err.what().c_str());
+			}
 		}
 
 		for (size_t i = 0; i < packages_.size() * 2; ++i) {
@@ -305,7 +333,9 @@ void ApiTvSimple::WarmUpIndexes(State& state) {
 			Query q(nsdef_.name);
 			q.Where("packages", CondSet, packages_.at(i % packages_.size())).Limit(20).Sort("year", false);
 			err = db_->Select(q, qres);
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
+			if (!err.ok()) {
+				state.SkipWithError(err.what().c_str());
+			}
 		}
 
 		for (size_t i = 0; i < priceIDs_.size() * 3; ++i) {
@@ -313,7 +343,9 @@ void ApiTvSimple::WarmUpIndexes(State& state) {
 			Query q(kJoinNamespace);
 			q.Where("id", CondSet, priceIDs_.at(i % priceIDs_.size())).Limit(20);
 			err = db_->Select(q, qres);
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
+			if (!err.ok()) {
+				state.SkipWithError(err.what().c_str());
+			}
 		}
 	}
 }
@@ -325,8 +357,12 @@ void ApiTvSimple::StringsSelect(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
+		if (!qres.Count()) {
+			state.SkipWithError("Results does not contain any value");
+		}
 	}
 }
 
@@ -338,9 +374,13 @@ void ApiTvSimple::GetByID(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 
-		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+		if (!qres.Count()) {
+			state.SkipWithError("Results does not contain any value");
+		}
 	}
 }
 
@@ -352,9 +392,13 @@ void ApiTvSimple::GetByIDInBrackets(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 
-		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+		if (!qres.Count()) {
+			state.SkipWithError("Results does not contain any value");
+		}
 	}
 }
 
@@ -366,9 +410,13 @@ void ApiTvSimple::GetEqInt(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 
-		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+		if (!qres.Count()) {
+			state.SkipWithError("Results does not contain any value");
+		}
 	}
 }
 
@@ -381,9 +429,13 @@ void ApiTvSimple::GetUuid(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 
-		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+		if (!qres.Count()) {
+			state.SkipWithError("Results does not contain any value");
+		}
 	}
 }
 
@@ -396,9 +448,13 @@ void ApiTvSimple::GetUuidStr(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 
-		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+		if (!qres.Count()) {
+			state.SkipWithError("Results does not contain any value");
+		}
 	}
 }
 
@@ -410,9 +466,13 @@ void ApiTvSimple::GetEqArrayInt(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 
-		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+		if (!qres.Count()) {
+			state.SkipWithError("Results does not contain any value");
+		}
 	}
 }
 
@@ -424,9 +484,13 @@ void ApiTvSimple::GetEqString(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 
-		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+		if (!qres.Count()) {
+			state.SkipWithError("Results does not contain any value");
+		}
 	}
 }
 
@@ -438,9 +502,13 @@ void ApiTvSimple::GetLikeString(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 
-		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+		if (!qres.Count()) {
+			state.SkipWithError("Results does not contain any value");
+		}
 	}
 }
 
@@ -454,9 +522,13 @@ void ApiTvSimple::GetByRangeIDAndSortByHash(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 
-		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+		if (!qres.Count()) {
+			state.SkipWithError("Results does not contain any value");
+		}
 	}
 }
 
@@ -470,9 +542,13 @@ void ApiTvSimple::GetByRangeIDAndSortByTree(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 
-		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+		if (!qres.Count()) {
+			state.SkipWithError("Results does not contain any value");
+		}
 	}
 }
 
@@ -484,7 +560,9 @@ void ApiTvSimple::Query1Cond(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -496,7 +574,9 @@ void ApiTvSimple::Query1CondTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -508,7 +588,9 @@ void ApiTvSimple::Query1CondCachedTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -526,7 +608,9 @@ void ApiTvSimple::Query2Cond(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -538,7 +622,9 @@ void ApiTvSimple::Query2CondTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -550,7 +636,9 @@ void ApiTvSimple::Query2CondCachedTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -570,7 +658,9 @@ void ApiTvSimple::Query2CondLeftJoin2Cond(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -591,7 +681,9 @@ void ApiTvSimple::Query2CondLeftJoin2CondTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -612,7 +704,9 @@ void ApiTvSimple::Query2CondLeftJoin2CondCachedTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -632,7 +726,9 @@ void ApiTvSimple::Query2CondLeftJoin3Cond(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -653,7 +749,9 @@ void ApiTvSimple::Query2CondLeftJoin3CondTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -674,7 +772,9 @@ void ApiTvSimple::Query2CondLeftJoin3CondCachedTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -698,7 +798,9 @@ void ApiTvSimple::Query0CondInnerJoinUnlimit(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 		++num;
 	}
 }
@@ -714,7 +816,9 @@ void ApiTvSimple::Query0CondInnerJoinUnlimitLowSelectivity(benchmark::State& sta
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -727,7 +831,9 @@ void ApiTvSimple::SubQueryEq(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -741,7 +847,9 @@ void ApiTvSimple::SubQuerySet(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -757,7 +865,9 @@ void ApiTvSimple::SubQueryAggregate(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -777,7 +887,9 @@ void ApiTvSimple::Query2CondInnerJoin2Cond(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -797,7 +909,9 @@ void ApiTvSimple::Query2CondInnerJoin3Cond(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -814,7 +928,9 @@ void ApiTvSimple::InnerJoinInjectConditionFromMain(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -828,7 +944,9 @@ void ApiTvSimple::InnerJoinRejectInjection(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -836,19 +954,25 @@ void ApiTvSimple::Query0CondInnerJoinPreResultStoreValues(benchmark::State& stat
 	using reindexer::JoinedSelector;
 	static const std::string rightNs = "rightNs";
 	static const std::vector<std::string> leftNs = {"leftNs1", "leftNs2", "leftNs3", "leftNs4"};
-	static constexpr char const* id = "id";
-	static constexpr char const* data = "data";
+	static constexpr const char* id = "id";
+	static constexpr const char* data = "data";
 	static constexpr int maxDataValue = 10;
 	static constexpr int maxRightNsRowCount = maxDataValue * (JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization() - 1);
 	static constexpr int maxLeftNsRowCount = 10000;
 
 	const auto createNs = [this, &state](const std::string& ns) {
 		reindexer::Error err = db_->OpenNamespace(ns);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 		err = db_->AddIndex(ns, {id, "hash", "int", IndexOpts().PK()});
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 		err = db_->AddIndex(ns, {data, "hash", "int", IndexOpts()});
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	};
 	const auto fill = [this, &state](const std::string& ns, int startId, int endId) {
 		reindexer::Error err;
@@ -857,7 +981,9 @@ void ApiTvSimple::Query0CondInnerJoinPreResultStoreValues(benchmark::State& stat
 			item[id] = i;
 			item[data] = i % maxDataValue;
 			err = db_->Upsert(ns, item);
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
+			if (!err.ok()) {
+				state.SkipWithError(err.what().c_str());
+			}
 		}
 	};
 
@@ -878,10 +1004,14 @@ void ApiTvSimple::Query0CondInnerJoinPreResultStoreValues(benchmark::State& stat
 
 				QueryResults qres;
 				reindexer::Error err = db_->Select(q, qres);
-				if (!err.ok()) state.SkipWithError(err.what().c_str());
+				if (!err.ok()) {
+					state.SkipWithError(err.what().c_str());
+				}
 			});
 		}
-		for (auto& th : threads) th.join();
+		for (auto& th : threads) {
+			th.join();
+		}
 	}
 }
 
@@ -902,7 +1032,9 @@ void ApiTvSimple::Query2CondInnerJoin2CondTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -923,7 +1055,9 @@ void ApiTvSimple::Query2CondInnerJoin3CondTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -944,7 +1078,9 @@ void ApiTvSimple::Query2CondInnerJoin2CondCachedTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -965,7 +1101,9 @@ void ApiTvSimple::Query2CondInnerJoin3CondCachedTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -983,7 +1121,9 @@ void ApiTvSimple::Query3Cond(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -1002,7 +1142,9 @@ void ApiTvSimple::Query3CondTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -1021,7 +1163,9 @@ void ApiTvSimple::Query3CondCachedTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -1037,7 +1181,9 @@ void ApiTvSimple::Query3CondKillIdsCache(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -1055,7 +1201,9 @@ void ApiTvSimple::Query3CondRestoreIdsCache(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -1074,7 +1222,9 @@ void ApiTvSimple::Query4Cond(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -1094,7 +1244,9 @@ void ApiTvSimple::Query4CondTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -1114,7 +1266,9 @@ void ApiTvSimple::Query4CondCachedTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -1134,7 +1288,9 @@ void ApiTvSimple::Query4CondRange(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -1155,7 +1311,9 @@ void ApiTvSimple::Query4CondRangeTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -1176,7 +1334,9 @@ void ApiTvSimple::Query4CondRangeCachedTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -1198,7 +1358,9 @@ void ApiTvSimple::Query4CondRangeDropCache(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -1221,7 +1383,9 @@ void ApiTvSimple::Query4CondRangeDropCacheTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -1244,7 +1408,9 @@ void ApiTvSimple::Query4CondRangeDropCacheCachedTotal(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -1257,6 +1423,8 @@ void ApiTvSimple::query2CondIdSet(benchmark::State& state, const std::vector<std
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }

@@ -10,7 +10,9 @@ namespace frozen {
 template <typename String>
 constexpr std::size_t hash_ascii_string_nocase(const String& value, std::size_t seed) {
 	std::size_t d = (0x811c9dc5 ^ seed) * static_cast<std::size_t>(0x01000193);
-	for (const auto& c : value) d = (d ^ (static_cast<std::size_t>(c) | 0x20)) * static_cast<std::size_t>(0x01000193);
+	for (const auto& c : value) {
+		d = (d ^ (static_cast<std::size_t>(c) | 0x20)) * static_cast<std::size_t>(0x01000193);
+	}
 	return d >> 8;
 }
 

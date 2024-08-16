@@ -7,7 +7,7 @@
 namespace reindexer {
 
 template <void (PerfStatCounterST::*hitFunc)(std::chrono::microseconds)>
-void QueriesStatTracer::hit(const QuerySQL &sql, std::chrono::microseconds time) {
+void QueriesStatTracer::hit(const QuerySQL& sql, std::chrono::microseconds time) {
 	std::unique_lock<std::mutex> lck(mtx_);
 	const auto it = stat_.find(sql.normalized);
 	if (it == stat_.end()) {
@@ -20,19 +20,21 @@ void QueriesStatTracer::hit(const QuerySQL &sql, std::chrono::microseconds time)
 		}
 	}
 }
-template void QueriesStatTracer::hit<&PerfStatCounterST::Hit>(const QuerySQL &, std::chrono::microseconds);
-template void QueriesStatTracer::hit<&PerfStatCounterST::LockHit>(const QuerySQL &, std::chrono::microseconds);
+template void QueriesStatTracer::hit<&PerfStatCounterST::Hit>(const QuerySQL&, std::chrono::microseconds);
+template void QueriesStatTracer::hit<&PerfStatCounterST::LockHit>(const QuerySQL&, std::chrono::microseconds);
 
 const std::vector<QueryPerfStat> QueriesStatTracer::Data() {
 	std::unique_lock<std::mutex> lck(mtx_);
 
 	std::vector<QueryPerfStat> ret;
 	ret.reserve(stat_.size());
-	for (auto &stat : stat_) ret.push_back({stat.first, stat.second.Get<PerfStat>(), stat.second.longestQuery});
+	for (auto& stat : stat_) {
+		ret.push_back({stat.first, stat.second.Get<PerfStat>(), stat.second.longestQuery});
+	}
 	return ret;
 }
 
-void QueryPerfStat::GetJSON(WrSerializer &ser) const {
+void QueryPerfStat::GetJSON(WrSerializer& ser) const {
 	JsonBuilder builder(ser);
 
 	builder.Put("query", query);

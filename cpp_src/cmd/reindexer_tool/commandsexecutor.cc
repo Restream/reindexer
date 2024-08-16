@@ -130,12 +130,16 @@ bool CommandsExecutor<DBInterface>::isHavingReplicationConfig(WrSerializer& wser
 		typename DBInterface::QueryResultsT results(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
 
 		auto err = db().Select(Query("#replicationstats").Where("type", CondEq, type), results);
-		if (!err.ok()) throw err;
+		if (!err.ok()) {
+			throw err;
+		}
 
 		if (results.Count() == 1) {
 			wser.Reset();
 			err = results.begin().GetJSON(wser, false);
-			if (!err.ok()) throw err;
+			if (!err.ok()) {
+				throw err;
+			}
 
 			gason::JsonParser parser;
 			auto root = parser.Parse(reindexer::giftStr(wser.Slice()));
@@ -278,7 +282,9 @@ Error CommandsExecutor<DBInterface>::runImpl(const std::string& dsn, Args&&... a
 		if (err.ok() && !uri_.parse(dsn)) {
 			err = Error(errNotValid, "Cannot connect to DB: Not a valid uri");
 		}
-		if (err.ok()) err = db().Connect(dsn, std::forward<Args>(args)...);
+		if (err.ok()) {
+			err = db().Connect(dsn, std::forward<Args>(args)...);
+		}
 		if (err.ok()) {
 			loop_.spawn(
 				[this] {
@@ -361,7 +367,9 @@ std::string CommandsExecutor<DBInterface>::getCurrentDsn(bool withPath) const {
 template <typename DBInterface>
 Error CommandsExecutor<DBInterface>::queryResultsToJson(std::ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery,
 														bool fstream) {
-	if (cancelCtx_.IsCancelled()) return errOK;
+	if (cancelCtx_.IsCancelled()) {
+		return errOK;
+	}
 	WrSerializer ser;
 	size_t i = 0;
 	bool scrollable = !fstream && !reindexer::isStdoutRedirected();
@@ -372,8 +380,12 @@ Error CommandsExecutor<DBInterface>::queryResultsToJson(std::ostream& o, const t
 	}
 	bool prettyPrint = variables_[kVariableOutput] == kOutputModePretty;
 	for (auto it : r) {
-		if (auto err = it.Status(); !err.ok()) return err;
-		if (cancelCtx_.IsCancelled()) break;
+		if (auto err = it.Status(); !err.ok()) {
+			return err;
+		}
+		if (cancelCtx_.IsCancelled()) {
+			break;
+		}
 		if (isWALQuery) {
 			ser << '#';
 			{
@@ -394,19 +406,27 @@ Error CommandsExecutor<DBInterface>::queryResultsToJson(std::ostream& o, const t
 				return std::move(err);
 			}
 		} else {
-			if (isWALQuery) ser << "WalItemUpdate ";
+			if (isWALQuery) {
+				ser << "WalItemUpdate ";
+			}
 
 			if (prettyPrint) {
 				WrSerializer json;
 				Error err = it.GetJSON(json, false);
-				if (!err.ok()) return err;
+				if (!err.ok()) {
+					return err;
+				}
 				prettyPrintJSON(reindexer::giftStr(json.Slice()), ser);
 			} else {
 				Error err = it.GetJSON(ser, false);
-				if (!err.ok()) return err;
+				if (!err.ok()) {
+					return err;
+				}
 			}
 		}
-		if ((++i != r.Count()) && !isWALQuery) ser << ',';
+		if ((++i != r.Count()) && !isWALQuery) {
+			ser << ',';
+		}
 		ser << '\n';
 		if ((ser.Len() > 0x100000) || prettyPrint || scrollable) {
 			if (scrollable && (i % (terminalSize.height - 1) == 0)) {
@@ -433,7 +453,7 @@ Error CommandsExecutor<reindexer::Reindexer>::getAvailableDatabases(std::vector<
 }
 
 template <typename DBInterface>
-void CommandsExecutor<DBInterface>::addCommandsSuggestions(std::string const& cmd, std::vector<std::string>& suggestions) {
+void CommandsExecutor<DBInterface>::addCommandsSuggestions(const std::string& cmd, std::vector<std::string>& suggestions) {
 	LineParser parser(cmd);
 	std::string_view token = parser.NextToken();
 
@@ -497,7 +517,9 @@ template <typename DBInterface>
 void CommandsExecutor<DBInterface>::checkForNsNameMatch(std::string_view str, std::vector<std::string>& suggestions) {
 	std::vector<NamespaceDef> allNsDefs;
 	Error err = db().EnumNamespaces(allNsDefs, reindexer::EnumNamespacesOpts().WithClosed());
-	if (!err.ok()) return;
+	if (!err.ok()) {
+		return;
+	}
 	for (auto& ns : allNsDefs) {
 		if (str.empty() || reindexer::isBlank(str) || ((str.length() < ns.name.length()) && reindexer::checkIfStartsWith(str, ns.name))) {
 			suggestions.emplace_back(ns.name);
@@ -520,14 +542,20 @@ Error CommandsExecutor<DBInterface>::processImpl(const std::string& command) noe
 	LineParser parser(command);
 	auto token = parser.NextToken();
 
-	if (!token.length()) return Error();
+	if (!token.length()) {
+		return Error();
+	}
 	if (fromFile_ && reindexer::checkIfStartsWith<reindexer::CaseSensitive::Yes>(kDumpModePrefix, command)) {
 		DumpOptions opts;
 		auto err = opts.FromJSON(reindexer::giftStr(command.substr(kDumpModePrefix.size())));
-		if (!err.ok()) return Error(errParams, "Unable to parse dump mode from cmd: %s", err.what());
+		if (!err.ok()) {
+			return Error(errParams, "Unable to parse dump mode from cmd: %s", err.what());
+		}
 		dumpMode_ = opts.mode;
 	}
-	if (token.substr(0, 2) == "--") return Error();
+	if (token.substr(0, 2) == "--") {
+		return Error();
+	}
 
 	Error ret;
 	for (auto& c : cmds_) {
@@ -588,11 +616,17 @@ std::vector<std::string> ToJSONVector(const QueryResultsT& r) {
 	vec.reserve(r.Count());
 	reindexer::WrSerializer ser;
 	for (auto& it : r) {
-		if (!it.Status().ok()) continue;
+		if (!it.Status().ok()) {
+			continue;
+		}
 		ser.Reset();
-		if (it.IsRaw()) continue;
+		if (it.IsRaw()) {
+			continue;
+		}
 		Error err = it.GetJSON(ser, false);
-		if (!err.ok()) continue;
+		if (!err.ok()) {
+			continue;
+		}
 		vec.emplace_back(ser.Slice());
 	}
 	return vec;
@@ -642,7 +676,9 @@ Error CommandsExecutor<DBInterface>::commandSelect(const std::string& command) n
 			}
 			if (!cancelCtx_.IsCancelled()) {
 				output_() << "Returned " << results.Count() << " rows";
-				if (results.TotalCount()) output_() << ", total count " << results.TotalCount();
+				if (results.TotalCount()) {
+					output_() << ", total count " << results.TotalCount();
+				}
 				output_() << std::endl;
 			}
 
@@ -670,14 +706,18 @@ Error CommandsExecutor<DBInterface>::commandSelect(const std::string& command) n
 								rowWidth += mW;
 							}
 							for (size_t i = 0; i < agg.fields.size(); ++i) {
-								if (i != 0) output_() << "| ";
+								if (i != 0) {
+									output_() << "| ";
+								}
 								output_() << std::left << std::setw(maxW.at(i)) << agg.fields[i];
 							}
 							output_() << "| count" << std::endl;
 							output_() << std::left << std::setw(rowWidth) << std::setfill('-') << "" << std::endl << std::setfill(' ');
 							for (auto& row : agg.facets) {
 								for (size_t i = 0; i < row.values.size(); ++i) {
-									if (i != 0) output_() << "| ";
+									if (i != 0) {
+										output_() << "| ";
+									}
 									output_() << std::left << std::setw(maxW.at(i)) << row.values[i];
 								}
 								output_() << "| " << row.count << std::endl;
@@ -787,10 +827,14 @@ Error CommandsExecutor<DBInterface>::commandDelete(const std::string& command) {
 	auto nsName = reindexer::unescapeString(parser.NextToken());
 
 	auto item = db().NewItem(nsName);
-	if (!item.Status().ok()) return item.Status();
+	if (!item.Status().ok()) {
+		return item.Status();
+	}
 
 	auto err = item.Unsafe().FromJSON(parser.CurPtr());
-	if (!err.ok()) return err;
+	if (!err.ok()) {
+		return err;
+	}
 
 	return db().Delete(nsName, item);
 }
@@ -819,10 +863,14 @@ Error CommandsExecutor<DBInterface>::commandDump(const std::string& command) {
 	const auto dumpMode = dumpMode_.load();
 
 	auto err = db().EnumNamespaces(allNsDefs, reindexer::EnumNamespacesOpts().HideTemporary());
-	if (err) return err;
+	if (err) {
+		return err;
+	}
 
 	err = filterNamespacesByDumpMode(allNsDefs, dumpMode);
-	if (err) return err;
+	if (err) {
+		return err;
+	}
 
 	if (!parser.End()) {
 		// build list of namespaces for dumped
@@ -854,7 +902,9 @@ Error CommandsExecutor<DBInterface>::commandDump(const std::string& command) {
 
 	for (auto& nsDef : doNsDefs) {
 		// skip system namespaces, except #config
-		if (reindexer::isSystemNamespaceNameFast(nsDef.name) && nsDef.name != "#config") continue;
+		if (reindexer::isSystemNamespaceNameFast(nsDef.name) && nsDef.name != "#config") {
+			continue;
+		}
 
 		wrser << "-- Dumping namespace '" << nsDef.name << "' ..." << '\n';
 
@@ -888,16 +938,22 @@ Error CommandsExecutor<DBInterface>::commandDump(const std::string& command) {
 		typename DBInterface::QueryResultsT itemResults;
 		err = parametrizedDb.Select(Query(nsDef.name), itemResults);
 
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 
 		for (auto it : itemResults) {
-			if (auto err = it.Status(); !err.ok()) return err;
+			if (auto err = it.Status(); !err.ok()) {
+				return err;
+			}
 			if (cancelCtx_.IsCancelled()) {
 				return Error(errCanceled, "Canceled");
 			}
 			wrser << "\\UPSERT " << reindexer::escapeString(nsDef.name) << ' ';
 			err = it.GetJSON(wrser, false);
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 			wrser << '\n';
 			if (wrser.Len() > 0x100000) {
 				output_() << wrser.Slice();
@@ -987,11 +1043,15 @@ Error CommandsExecutor<DBInterface>::commandMeta(const std::string& command) {
 		auto nsName = reindexer::unescapeString(parser.NextToken());
 		std::vector<std::string> allMeta;
 		auto err = db().EnumMeta(nsName, allMeta);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 		for (auto& metaKey : allMeta) {
 			std::string metaData;
 			err = db().GetMeta(nsName, metaKey, metaData);
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 			output_() << metaKey << " = " << metaData << std::endl;
 		}
 		return err;
@@ -1071,7 +1131,9 @@ Error CommandsExecutor<DBInterface>::commandBench(const std::string& command) {
 	nsDef.AddIndex("id", "hash", "int", IndexOpts().PK());
 
 	err = db().AddNamespace(nsDef);
-	if (!err.ok()) return err;
+	if (!err.ok()) {
+		return err;
+	}
 
 	output_() << "Seeding " << kBenchItemsCount << " documents to bench namespace..." << std::endl;
 	err = seedBenchItems();
@@ -1089,8 +1151,12 @@ Error CommandsExecutor<DBInterface>::commandBench(const std::string& command) {
 	auto worker = std::bind(getBenchWorkerFn(count, errCount), deadline);
 	const auto numThreads = std::min(std::max(numThreads_, 1u), 65535u);
 	auto threads = std::unique_ptr<std::thread[]>(new std::thread[numThreads]);
-	for (unsigned i = 0; i < numThreads; i++) threads[i] = std::thread(worker);
-	for (unsigned i = 0; i < numThreads; i++) threads[i].join();
+	for (unsigned i = 0; i < numThreads; i++) {
+		threads[i] = std::thread(worker);
+	}
+	for (unsigned i = 0; i < numThreads; i++) {
+		threads[i].join();
+	}
 
 	output_() << "Done. Got " << count / benchTime << " QPS, " << errCount << " errors" << std::endl;
 	return err;
@@ -1106,15 +1172,23 @@ Error CommandsExecutor<reindexer::client::CoroReindexer>::commandProcessDatabase
 	if (subCommand == "list"sv) {
 		std::vector<std::string> dbList;
 		Error err = getAvailableDatabases(dbList);
-		if (!err.ok()) return err;
-		for (const std::string& dbName : dbList) output_() << dbName << std::endl;
+		if (!err.ok()) {
+			return err;
+		}
+		for (const std::string& dbName : dbList) {
+			output_() << dbName << std::endl;
+		}
 		return Error();
 	} else if (subCommand == "use"sv) {
 		std::string currentDsn = getCurrentDsn() + std::string(parser.NextToken());
 		stop(false);
 		auto err = db().Connect(currentDsn, loop_);
-		if (err.ok()) err = db().Status();
-		if (err.ok()) output_() << "Succesfully connected to " << currentDsn << std::endl;
+		if (err.ok()) {
+			err = db().Status();
+		}
+		if (err.ok()) {
+			output_() << "Succesfully connected to " << currentDsn << std::endl;
+		}
 		return err;
 	} else if (subCommand == "create"sv) {
 		auto dbName = parser.NextToken();
@@ -1152,10 +1226,14 @@ Error CommandsExecutor<reindexer::client::CoroReindexer>::seedBenchItems() {
 		JsonBuilder(ser).Put("id", i).Put("data", i);
 
 		auto err = item.Unsafe().FromJSON(ser.Slice());
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 
 		err = db().Upsert(kBenchNamespace, item);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 	}
 	return errOK;
 }
@@ -1172,7 +1250,9 @@ Error CommandsExecutor<reindexer::Reindexer>::seedBenchItems() {
 			JsonBuilder(ser).Put("id", i).Put("data", i);
 
 			auto intErr = item.Unsafe().FromJSON(ser.Slice());
-			if (intErr.ok()) intErr = db().Upsert(kBenchNamespace, item);
+			if (intErr.ok()) {
+				intErr = db().Upsert(kBenchNamespace, item);
+			}
 			if (!intErr.ok()) {
 				err = intErr;
 				return;
@@ -1214,7 +1294,9 @@ std::function<void(reindexer::system_clock_w::time_point)> CommandsExecutor<rein
 					Query q = Query(kBenchNamespace).Where(kBenchIndex, CondEq, count % kBenchItemsCount);
 					reindexer::client::CoroReindexer::QueryResultsT results;
 					auto err = rx.Select(q, results);
-					if (!err.ok()) errCount++;
+					if (!err.ok()) {
+						errCount++;
+					}
 				}
 			};
 			wait_group wg;
@@ -1241,7 +1323,9 @@ std::function<void(reindexer::system_clock_w::time_point)> CommandsExecutor<rein
 
 			const auto err = db().WithCompletion([results, &errCount](const Error& err) {
 									 delete results;
-									 if (!err.ok()) errCount++;
+									 if (!err.ok()) {
+										 errCount++;
+									 }
 								 })
 								 .Select(q, *results);
 			if (!err.ok()) {
@@ -1253,11 +1337,15 @@ std::function<void(reindexer::system_clock_w::time_point)> CommandsExecutor<rein
 
 template <typename DBInterface>
 reindexer::Error CommandsExecutor<DBInterface>::filterNamespacesByDumpMode(std::vector<NamespaceDef>& defs, DumpOptions::Mode mode) {
-	if (mode == DumpOptions::Mode::FullNode) return Error();
+	if (mode == DumpOptions::Mode::FullNode) {
+		return Error();
+	}
 
 	typename DBInterface::QueryResultsT qr;
 	auto err = db().Select(Query("#config").Where("type", CondEq, "sharding"), qr);
-	if (!err.ok()) return err;
+	if (!err.ok()) {
+		return err;
+	}
 	if (qr.Count() != 1) {
 		output_() << "Sharding is not enabled, hovewer non-default dump mode is detected. That's weird...";
 		return Error();
@@ -1266,14 +1354,18 @@ reindexer::Error CommandsExecutor<DBInterface>::filterNamespacesByDumpMode(std::
 	ShardingConfig cfg;
 	WrSerializer ser;
 	err = qr.begin().GetJSON(ser, false);
-	if (!err.ok()) return err;
+	if (!err.ok()) {
+		return err;
+	}
 
 	auto json = reindexer::giftStr(ser.Slice());
 	try {
 		gason::JsonParser parser;
 		auto root = parser.Parse(json);
 		err = cfg.FromJSON(root["sharding"]);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "Unable to parse sharding config: %s", ex.what());
 	}
@@ -1306,7 +1398,9 @@ reindexer::Error CommandsExecutor<DBInterface>::getMergedSerialMeta(DBInterface&
 																	std::string& result) {
 	std::vector<reindexer::ShardedMeta> meta;
 	auto err = db.GetMeta(nsName, key, meta);
-	if (!err.ok()) return err;
+	if (!err.ok()) {
+		return err;
+	}
 
 	int64_t maxVal = 0;
 	for (auto& sm : meta) {

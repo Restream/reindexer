@@ -39,7 +39,7 @@ void ItemImplBase::FromCJSON(std::string_view slice) {
 	ser_.Reset();
 	try {
 		decoder.Decode(pl, rdser, ser_);
-	} catch (const Error &) {
+	} catch (const Error&) {
 		if (!hasBundledTm) {
 			const auto err = tryToUpdateTagsMatcher();
 			if (!err.ok()) {
@@ -58,11 +58,11 @@ void ItemImplBase::FromCJSON(std::string_view slice) {
 
 	const auto tupleSize = ser_.Len();
 	tupleHolder_ = ser_.DetachBuf();
-	tupleData_ = std::string_view(reinterpret_cast<char *>(tupleHolder_.get()), tupleSize);
+	tupleData_ = std::string_view(reinterpret_cast<char*>(tupleHolder_.get()), tupleSize);
 	pl.Set(0, Variant(p_string(&tupleData_), Variant::no_hold_t{}));
 }
 
-Error ItemImplBase::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*/) {
+Error ItemImplBase::FromJSON(std::string_view slice, char** endp, bool /*pkOnly*/) {
 	std::string_view data = slice;
 	if (!unsafe_ && endp == nullptr) {
 		holder_.clear();
@@ -76,11 +76,13 @@ Error ItemImplBase::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*
 	gason::JsonParser parser(&largeJSONStrings_);
 	try {
 		node = parser.Parse(giftStr(data), &len);
-		if (node.value.getTag() != gason::JSON_OBJECT) return Error(errParseJson, "Expected json object");
-		if (unsafe_ && endp) {
-			*endp = const_cast<char *>(data.data()) + len;
+		if (node.value.getTag() != gason::JSON_OBJECT) {
+			return Error(errParseJson, "Expected json object");
 		}
-	} catch (gason::Exception &e) {
+		if (unsafe_ && endp) {
+			*endp = const_cast<char*>(data.data()) + len;
+		}
+	} catch (gason::Exception& e) {
 		return Error(errParseJson, "Error parsing json: '%s', pos: %d", e.what(), len);
 	}
 
@@ -94,13 +96,13 @@ Error ItemImplBase::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*
 		// Put tuple to field[0]
 		const auto tupleSize = ser_.Len();
 		tupleHolder_ = ser_.DetachBuf();
-		tupleData_ = std::string_view(reinterpret_cast<char *>(tupleHolder_.get()), tupleSize);
+		tupleData_ = std::string_view(reinterpret_cast<char*>(tupleHolder_.get()), tupleSize);
 		pl.Set(0, Variant(p_string(&tupleData_), Variant::no_hold_t{}));
 	}
 	return err;
 }
 
-Error ItemImplBase::FromMsgPack(std::string_view buf, size_t &offset) {
+Error ItemImplBase::FromMsgPack(std::string_view buf, size_t& offset) {
 	Payload pl = GetPayload();
 	MsgPackDecoder decoder(tagsMatcher_);
 
@@ -115,13 +117,13 @@ Error ItemImplBase::FromMsgPack(std::string_view buf, size_t &offset) {
 	if (err.ok()) {
 		const auto tupleSize = ser_.Len();
 		tupleHolder_ = ser_.DetachBuf();
-		tupleData_ = std::string_view(reinterpret_cast<char *>(tupleHolder_.get()), tupleSize);
+		tupleData_ = std::string_view(reinterpret_cast<char*>(tupleHolder_.get()), tupleSize);
 		pl.Set(0, Variant(p_string(&tupleData_), Variant::no_hold_t{}));
 	}
 	return err;
 }
 
-void ItemImplBase::FromCJSON(ItemImplBase *other) {
+void ItemImplBase::FromCJSON(ItemImplBase* other) {
 	auto cjson = other->GetCJSON();
 	FromCJSON(cjson);
 }
@@ -131,7 +133,7 @@ std::string_view ItemImplBase::GetMsgPack() {
 	ConstPayload pl = GetConstPayload();
 
 	MsgPackEncoder msgpackEncoder(&tagsMatcher_);
-	const TagsLengths &tagsLengths = msgpackEncoder.GetTagsMeasures(pl);
+	const TagsLengths& tagsLengths = msgpackEncoder.GetTagsMeasures(pl);
 
 	ser_.Reset();
 	MsgPackBuilder msgpackBuilder(ser_, &tagsLengths, &startTag, ObjType::TypePlain, &tagsMatcher_);
@@ -172,10 +174,10 @@ std::string_view ItemImplBase::GetCJSON() {
 	return ser_.Slice().substr(sizeof(uint32_t) + 1);
 }
 
-void ItemImplBase::GetPrecepts(WrSerializer &ser) {
+void ItemImplBase::GetPrecepts(WrSerializer& ser) {
 	if (precepts_.size()) {
 		ser.PutVarUint(precepts_.size());
-		for (auto &p : precepts_) {
+		for (auto& p : precepts_) {
 			ser.PutVString(p);
 		}
 	}

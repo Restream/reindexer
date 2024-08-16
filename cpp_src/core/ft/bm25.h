@@ -19,7 +19,9 @@ private:
 	static RX_ALWAYS_INLINE double IDF(double totalDocCount, double matchedDocCount) noexcept {
 		double f = log((totalDocCount - matchedDocCount + 1) / matchedDocCount) / log(1 + totalDocCount);
 		// saturate min to 0.2
-		if (f < 0.2) f = 0.2;
+		if (f < 0.2) {
+			f = 0.2;
+		}
 		return f;
 	}
 	static RX_ALWAYS_INLINE double TF(double termCountInDoc, double wordsInDoc) noexcept {

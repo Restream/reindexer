@@ -6,7 +6,9 @@ bool ReplicationApi::StopServer(size_t id) {
 	std::lock_guard<std::mutex> lock(m_);
 
 	assertrx(id < svc_.size());
-	if (!svc_[id].Get()) return false;
+	if (!svc_[id].Get()) {
+		return false;
+	}
 	svc_[id].Drop();
 	auto now = std::chrono::milliseconds(0);
 	const auto pause = std::chrono::milliseconds(10);
@@ -24,7 +26,9 @@ bool ReplicationApi::StartServer(size_t id) {
 	std::lock_guard<std::mutex> lock(m_);
 
 	assertrx(id < svc_.size());
-	if (svc_[id].IsRunning()) return false;
+	if (svc_[id].IsRunning()) {
+		return false;
+	}
 	svc_[id].InitServer(ServerControlConfig(id, kDefaultRpcPort + id, kDefaultHttpPort + id, kStoragePath + "node/" + std::to_string(id),
 											"node" + std::to_string(id)));
 	return true;
@@ -102,7 +106,9 @@ void ReplicationApi::ForceSync() {
 }
 
 void ReplicationApi::SwitchMaster(size_t id, const AsyncReplicationConfigTest::NsSet& namespaces, std::string replMode) {
-	if (id == masterId_) return;
+	if (id == masterId_) {
+		return;
+	}
 	masterId_ = id;
 
 	using ReplNode = AsyncReplicationConfigTest::Node;
@@ -164,10 +170,14 @@ void ReplicationApi::SetUp() {
 void ReplicationApi::TearDown() {
 	std::lock_guard<std::mutex> lock(m_);
 	for (auto& server : svc_) {
-		if (server.Get(false)) server.Get(false)->Stop();
+		if (server.Get(false)) {
+			server.Get(false)->Stop();
+		}
 	}
 	for (auto& server : svc_) {
-		if (!server.Get(false)) continue;
+		if (!server.Get(false)) {
+			continue;
+		}
 		server.Drop();
 		auto now = std::chrono::milliseconds(0);
 		const auto pause = std::chrono::milliseconds(10);

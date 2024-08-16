@@ -226,7 +226,9 @@ std::vector<std::string> FTApi::CreateAllPermutatedQueries(const std::string& qu
 		result.push_back(queryStart);
 		std::string& query = result.back();
 		for (auto it = indexedWords.cbegin(); it != indexedWords.cend(); ++it) {
-			if (it != indexedWords.cbegin()) query += sep;
+			if (it != indexedWords.cbegin()) {
+				query += sep;
+			}
 			query += it->second;
 		}
 		query += queryEnd;

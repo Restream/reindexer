@@ -16,6 +16,8 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/keyvalue/p_string.h"
 #include "server/loggerwrapper.h"
+#include "spdlog/async.h"
+#include "spdlog/sinks/reopen_file_sink.h"
 #include "tools/serializer.h"
 
 TEST(ReindexerTest, DeleteTemporaryNamespaceOnConnect) {
@@ -866,8 +868,12 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 		err = rt.reindexer->Upsert(default_namespace, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		if (i % 5 == 0) sameOldValue += 5;
-		if (i % 3 == 0) ++stringValuedIdx;
+		if (i % 5 == 0) {
+			sameOldValue += 5;
+		}
+		if (i % 3 == 0) {
+			++stringValuedIdx;
+		}
 		stringValuedIdx %= possibleValues.size();
 	}
 
@@ -896,11 +902,12 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 				cmpRes[j] = lastValues[j].Compare<reindexer::NotComparable::Return>(sortedValue);
 				bool needToVerify = true;
 				if (j != 0) {
-					for (int k = j - 1; k >= 0; --k)
+					for (int k = j - 1; k >= 0; --k) {
 						if (cmpRes[k] != reindexer::ComparationResult::Eq) {
 							needToVerify = false;
 							break;
 						}
+					}
 				}
 				needToVerify = (j == 0) || needToVerify;
 				if (needToVerify) {
@@ -1708,22 +1715,29 @@ TEST_F(ReindexerApi, LoggerWriteInterruptTest) {
 	struct Logger {
 		Logger() {
 			spdlog::drop_all();
-			spdlog::set_async_mode(16384, spdlog::async_overflow_policy::discard_log_msg, nullptr, std::chrono::seconds(2));
+			spdlog::init_thread_pool(16384, 1);
+			spdlog::flush_every(std::chrono::seconds(2));
+			spdlog::flush_on(spdlog::level::err);
 			spdlog::set_level(spdlog::level::trace);
-			spdlog::set_pattern("[%L%d/%m %T.%e %t] %v");
+			spdlog::set_pattern("%^[%L%d/%m %T.%e %t] %v%$", spdlog::pattern_time_type::utc);
 
 			std::remove(logFile.c_str());
-			sinkPtr = std::make_shared<spdlog::sinks::fast_file_sink>(logFile);
-			spdlog::create("log", sinkPtr);
+			using LogFactoryT = spdlog::async_factory_impl<spdlog::async_overflow_policy::discard_new>;
+			using spdlog::sinks::reopen_file_sink_st;
+			auto lptr = LogFactoryT::create<reopen_file_sink_st>("log", logFile);
+			assertrx(lptr->sinks().size() == 1);
+			sinkPtr = std::dynamic_pointer_cast<reopen_file_sink_st>(lptr->sinks()[0]);
+			assertrx(sinkPtr);
 			logger = reindexer_server::LoggerWrapper("log");
 		}
 		~Logger() {
 			spdlog::drop_all();
+			spdlog::shutdown();
 			std::remove(logFile.c_str());
 		}
 		const std::string logFile = "/tmp/reindex_logtest.out";
 		reindexer_server::LoggerWrapper logger;
-		std::shared_ptr<spdlog::sinks::fast_file_sink> sinkPtr;
+		std::shared_ptr<spdlog::sinks::reopen_file_sink_st> sinkPtr;
 	} instance;
 
 	reindexer::logInstallWriter(
@@ -1732,23 +1746,23 @@ TEST_F(ReindexerApi, LoggerWriteInterruptTest) {
 				instance.logger.trace(buf);
 			}
 		},
-		reindexer::LoggerPolicy::WithLocks);
+		reindexer::LoggerPolicy::WithLocks, int(LogTrace));
 	auto writeThread = std::thread([]() {
 		for (size_t i = 0; i < 10000; ++i) {
-			reindexer::logPrintf(LogTrace, "Detailed and amazing description of this error: [%d]!", i);
+			logPrintf(LogTrace, "Detailed and amazing description of this error: [%d]!", i);
 		}
 	});
 	auto reopenThread = std::thread([&instance]() {
 		for (size_t i = 0; i < 1000; ++i) {
 			instance.sinkPtr->reopen();
-			reindexer::logPrintf(LogTrace, "REOPENED [%d]", i);
+			logPrintf(LogTrace, "REOPENED [%d]", i);
 			std::this_thread::sleep_for(std::chrono::milliseconds(3));
 		}
 	});
 	writeThread.join();
 	reopenThread.join();
-	reindexer::logPrintf(LogTrace, "FINISHED\n");
-	reindexer::logInstallWriter(nullptr, reindexer::LoggerPolicy::WithLocks);
+	logPrintf(LogTrace, "FINISHED\n");
+	reindexer::logInstallWriter(nullptr, reindexer::LoggerPolicy::WithLocks, int(LogTrace));
 }
 
 TEST_F(ReindexerApi, IntToStringIndexUpdate) {

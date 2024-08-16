@@ -5,7 +5,7 @@
 
 namespace reindexer {
 
-void jsonValueToString(gason::JsonValue o, WrSerializer &ser, int shift, int indent, bool escapeStrings) {
+void jsonValueToString(gason::JsonValue o, WrSerializer& ser, int shift, int indent, bool escapeStrings) {
 	using namespace std::string_view_literals;
 	bool enableEol = (shift != 0) || (indent != 0);
 	switch (o.getTag()) {
@@ -28,13 +28,19 @@ void jsonValueToString(gason::JsonValue o, WrSerializer &ser, int shift, int ind
 				break;
 			}
 			ser << '[';
-			if (enableEol) ser << '\n';
+			if (enableEol) {
+				ser << '\n';
+			}
 
-			for (const auto &i : o) {
+			for (const auto& i : o) {
 				ser.Fill(' ', indent + shift);
 				jsonValueToString(i.value, ser, shift, indent + shift);
-				if (i.next) ser << ',';
-				if (enableEol) ser << '\n';
+				if (i.next) {
+					ser << ',';
+				}
+				if (enableEol) {
+					ser << '\n';
+				}
 			}
 			ser.Fill(' ', indent);
 			ser << ']';
@@ -45,15 +51,21 @@ void jsonValueToString(gason::JsonValue o, WrSerializer &ser, int shift, int ind
 				break;
 			}
 			ser << '{';
-			if (enableEol) ser << '\n';
+			if (enableEol) {
+				ser << '\n';
+			}
 
-			for (const auto &i : o) {
+			for (const auto& i : o) {
 				ser.Fill(' ', indent + shift);
 				ser.PrintJsonString(i.key);
 				ser << ": ";
 				jsonValueToString(i.value, ser, shift, indent + shift);
-				if (i.next) ser << ',';
-				if (enableEol) ser << '\n';
+				if (i.next) {
+					ser << ',';
+				}
+				if (enableEol) {
+					ser << '\n';
+				}
 			}
 			ser.Fill(' ', indent);
 			ser << '}';
@@ -75,11 +87,11 @@ void jsonValueToString(gason::JsonValue o, WrSerializer &ser, int shift, int ind
 	}
 }
 
-void prettyPrintJSON(span<char> json, WrSerializer &ser, int shift) {
+void prettyPrintJSON(span<char> json, WrSerializer& ser, int shift) {
 	jsonValueToString(gason::JsonParser().Parse(json).value, ser, shift, 0);
 }
 
-std::string stringifyJson(const gason::JsonNode &elem, bool escapeStrings) {
+std::string stringifyJson(const gason::JsonNode& elem, bool escapeStrings) {
 	WrSerializer ser;
 	jsonValueToString(elem.value, ser, 0, 0, escapeStrings);
 

@@ -7,13 +7,17 @@
 
 namespace reindexer {
 
-bool Highlight::Process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct &func, std::vector<key_string> &stringsHolder) {
-	if (func.funcArgs.size() < 2) throw Error(errParams, "Invalid highlight params need minimum 2 - have %d", func.funcArgs.size());
+bool Highlight::Process(ItemRef& res, PayloadType& pl_type, const SelectFuncStruct& func, std::vector<key_string>& stringsHolder) {
+	if (func.funcArgs.size() < 2) {
+		throw Error(errParams, "Invalid highlight params need minimum 2 - have %d", func.funcArgs.size());
+	}
 
-	if (!func.ctx || func.ctx->type != BaseFunctionCtx::kFtCtx) return false;
+	if (!func.ctx || func.ctx->type != BaseFunctionCtx::kFtCtx) {
+		return false;
+	}
 
 	FtCtx::Ptr ftctx = reindexer::static_ctx_pointer_cast<FtCtx>(func.ctx);
-	auto &dataFtCtx = *ftctx->GetData();
+	auto& dataFtCtx = *ftctx->GetData();
 	if (!dataFtCtx.holders_.has_value()) {
 		return false;
 	}
@@ -35,10 +39,12 @@ bool Highlight::Process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 		throw Error(errLogic, "Unable to apply highlight function to the non-string field '%s'", func.field);
 	}
 
-	const std::string *data = p_string(kr[0]).getCxxstr();
+	const std::string* data = p_string(kr[0]).getCxxstr();
 	auto pva = dataFtCtx.area_[it->second].GetAreas(func.fieldNo);
-	if (!pva || pva->Empty()) return false;
-	auto &va = *pva;
+	if (!pva || pva->Empty()) {
+		return false;
+	}
+	auto& va = *pva;
 
 	std::string result_string;
 	result_string.reserve(data->size() + va.Size() * (func.funcArgs[0].size() + func.funcArgs[1].size()));

@@ -10,7 +10,9 @@ int computeObjectLength(TagsLengths& tagsLengths, std::size_t startTag, std::siz
 		if (tagsLengths[i] == TagValues::StartObject) {
 			std::size_t pos;
 			tagsLengths[i] = computeObjectLength(tagsLengths, i + 1, pos);
-			if (!arrayItem) ++objectLength;
+			if (!arrayItem) {
+				++objectLength;
+			}
 			i = pos;
 		} else if (tagsLengths[i] == TagValues::EndObject) {
 			++i;
@@ -22,7 +24,9 @@ int computeObjectLength(TagsLengths& tagsLengths, std::size_t startTag, std::siz
 			arrayItem = false;
 			++i;
 		} else {
-			if (!arrayItem) ++objectLength;
+			if (!arrayItem) {
+				++objectLength;
+			}
 			++i;
 		}
 	}

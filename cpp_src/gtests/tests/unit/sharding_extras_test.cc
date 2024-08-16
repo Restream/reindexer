@@ -16,7 +16,7 @@ TEST_F(ShardingExtrasApi, LargeProxiedSelects) {
 
 	// Distributed qr
 	{
-		auto &rx = *getNode(0)->api.reindexer;
+		auto& rx = *getNode(0)->api.reindexer;
 		client::QueryResults qr;
 		Query q = Query(default_namespace);
 
@@ -25,7 +25,7 @@ TEST_F(ShardingExtrasApi, LargeProxiedSelects) {
 		ASSERT_EQ(qr.Count(), kShardDataCount * kShards);
 		TestCout() << "Distributed select done" << std::endl;
 		WrSerializer wser;
-		for (auto &it : qr) {
+		for (auto& it : qr) {
 			wser.Reset();
 			err = it.GetJSON(wser, false);
 			ASSERT_TRUE(err.ok()) << err.what();
@@ -43,7 +43,7 @@ TEST_F(ShardingExtrasApi, LargeProxiedSelects) {
 
 	// Proxied qr
 	{
-		auto &rx = *getNode(0)->api.reindexer;
+		auto& rx = *getNode(0)->api.reindexer;
 		client::QueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key2");
 
@@ -52,7 +52,7 @@ TEST_F(ShardingExtrasApi, LargeProxiedSelects) {
 		ASSERT_EQ(qr.Count(), kShardDataCount);
 		TestCout() << "Proxied select done" << std::endl;
 		WrSerializer wser;
-		for (auto &it : qr) {
+		for (auto& it : qr) {
 			wser.Reset();
 			err = it.GetJSON(wser, false);
 			ASSERT_TRUE(err.ok()) << err.what();
@@ -73,7 +73,7 @@ TEST_F(ShardingExtrasApi, SelectFTSeveralShards) {
 	InitShardingConfig cfg;
 	cfg.nodesInCluster = 1;
 	Init(std::move(cfg));
-	auto &rx = *getNode(0)->api.reindexer;
+	auto& rx = *getNode(0)->api.reindexer;
 
 	client::QueryResults qr1;
 	Query q = Query(default_namespace).Where(kFieldFTData, CondEq, RandString());
@@ -92,7 +92,7 @@ TEST_F(ShardingExtrasApi, LocalQuery) {
 	InitShardingConfig cfg;
 	Init(std::move(cfg));
 
-	for (const char *localPreffix : {"local", "local explain", "explain local"}) {
+	for (const char* localPreffix : {"local", "local explain", "explain local"}) {
 		for (size_t i = 0; i < NodesCount(); ++i) {
 			client::QueryResults localQr;
 			auto err = getNode(i)->api.reindexer->Select(Query::FromSQL(localPreffix + " select * from "s + default_namespace), localQr);
@@ -111,7 +111,7 @@ TEST_F(ShardingExtrasApi, LocalQuery) {
 		bool failed = false;
 		try {
 			localQuery = Query::FromSQL("local update " + default_namespace);
-		} catch (const Error &err) {
+		} catch (const Error& err) {
 			failed = true;
 			EXPECT_EQ(err.what(), "Syntax error at or near 'update', line: 1 column: 6 27; only SELECT query could be LOCAL");
 		}
@@ -145,7 +145,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 	nsDef.AddIndex(kFieldData, "hash", "string", IndexOpts());
 	Error err = shard1->AddNamespace(nsDef);
 	ASSERT_TRUE(err.ok()) << err.what();
-	for (auto &json : kLocalNsData) {
+	for (auto& json : kLocalNsData) {
 		auto item = shard1->NewItem(kLocalNamespace);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		err = item.FromJSON(json);
@@ -178,7 +178,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 	const auto kNodesCount = NodesCount();
 	for (const bool local : {true, false}) {
 		for (size_t i = 0; i < kNodesCount; ++i) {
-			auto &rx = *getNode(i)->api.reindexer;
+			auto& rx = *getNode(i)->api.reindexer;
 			const std::string key = "key" + std::to_string(kShardWithLocalNs);
 			client::QueryResults qr;
 			Query q = Query(default_namespace)
@@ -209,7 +209,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 	// Use local ns as left_ns (sharded ns has proper shardin key)
 	for (const bool local : {true, false}) {
 		for (size_t i = 0; i < kNodesCount; ++i) {
-			auto &rx = *getNode(i)->api.reindexer;
+			auto& rx = *getNode(i)->api.reindexer;
 			const std::string key = "key" + std::to_string(kShardWithLocalNs);
 			client::QueryResults qr;
 			Query q = Query(kLocalNamespace)
@@ -239,7 +239,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 	// Use local ns as left_ns (sharded ns does not have sharding key)
 	for (const bool local : {true, false}) {
 		for (size_t i = 0; i < kNodesCount; ++i) {
-			auto &rx = *getNode(i)->api.reindexer;
+			auto& rx = *getNode(i)->api.reindexer;
 			client::QueryResults qr;
 			Query q = Query(kLocalNamespace).Local(local).InnerJoin(kFieldId, kFieldId, CondEq, Query(default_namespace));
 			err = rx.Select(q, qr);
@@ -269,7 +269,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 	// Use local ns as right_ns or left ns on wrong shard (this shard does not have this local namespace)
 	for (const bool local : {true, false}) {
 		for (size_t i = 0; i < kNodesCount; ++i) {
-			auto &rx = *getNode(i)->api.reindexer;
+			auto& rx = *getNode(i)->api.reindexer;
 			const std::string key = "key" + std::to_string((kShardWithLocalNs + 1) % kShards);
 			{
 				client::QueryResults qr;
@@ -309,7 +309,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 	// Use sharded ns as left_ns without sharding key
 	for (const bool local : {true, false}) {
 		for (size_t i = 0; i < kNodesCount; ++i) {
-			auto &rx = *getNode(i)->api.reindexer;
+			auto& rx = *getNode(i)->api.reindexer;
 			client::QueryResults qr;
 			Query q = Query(default_namespace).Local(local).InnerJoin(kFieldId, kFieldId, CondEq, Query(kLocalNamespace));
 			err = rx.Select(q, qr);
@@ -340,7 +340,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 
 TEST_F(ShardingExtrasApi, TagsMatcherConfusion) {
 	const std::string kNewField = "new_field";
-	auto buildItem = [&](WrSerializer &wrser, int id, std::string &&location, const std::string &data, std::string &&newFieldValue) {
+	auto buildItem = [&](WrSerializer& wrser, int id, std::string&& location, const std::string& data, std::string&& newFieldValue) {
 		reindexer::JsonBuilder jsonBuilder(wrser);
 		jsonBuilder.Put(kFieldId, int(id));
 		jsonBuilder.Put(kFieldLocation, location);
@@ -383,19 +383,19 @@ TEST_F(ShardingExtrasApi, DiffTmInResultFromShards) {
 	cfg.nodesInCluster = 1;
 	Init(std::move(cfg));
 
-	auto &rx = *svc_[0][0].Get()->api.reindexer;
+	auto& rx = *svc_[0][0].Get()->api.reindexer;
 
 	const std::map<int, std::map<std::string, std::string>> sampleData = {
 		{1, {{kFieldLocation, "key2"}, {kFieldData, RandString()}, {"f1", RandString()}}},
 		{2, {{kFieldLocation, "key1"}, {kFieldData, RandString()}, {"f2", RandString()}}}};
 
-	auto insertItem = [this, &rx](int id, const std::map<std::string, std::string> &data) {
+	auto insertItem = [this, &rx](int id, const std::map<std::string, std::string>& data) {
 		client::Item item = rx.NewItem(default_namespace);
 		ASSERT_TRUE(item.Status().ok());
 		WrSerializer wrser;
 		reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 		jsonBuilder.Put(kFieldId, id);
-		for (const auto &[key, value] : data) {
+		for (const auto& [key, value] : data) {
 			jsonBuilder.Put(key, value);
 		}
 		jsonBuilder.End();
@@ -405,7 +405,7 @@ TEST_F(ShardingExtrasApi, DiffTmInResultFromShards) {
 		ASSERT_TRUE(err.ok()) << err.what();
 	};
 
-	for (const auto &s : sampleData) {
+	for (const auto& s : sampleData) {
 		insertItem(s.first, s.second);
 	}
 
@@ -425,7 +425,7 @@ TEST_F(ShardingExtrasApi, DiffTmInResultFromShards) {
 		ASSERT_NE(id, -1);
 		auto itData = sampleData.find(id);
 		ASSERT_NE(itData, sampleData.end());
-		for (const auto &[key, value] : itData->second) {
+		for (const auto& [key, value] : itData->second) {
 			ASSERT_EQ(root[key].As<std::string>(), value);
 		}
 	}
@@ -438,7 +438,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 	cfg.nodesInCluster = 1;
 	Init(cfg);
 	const unsigned int kShardCount = cfg.shards;
-	auto &rx = *svc_[0][0].Get()->api.reindexer;
+	auto& rx = *svc_[0][0].Get()->api.reindexer;
 	Error err = rx.OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 
@@ -453,7 +453,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 												 {"With item IDs", kResultsWithItemID | kResultsCJson | kResultsWithPayloadTypes}};
 	auto hasIDFn = [](int flags) { return flags & kResultsWithItemID; };
 
-	for (auto &[setName, flags] : flagSets) {
+	for (auto& [setName, flags] : flagSets) {
 		TestCout() << "Flags set: " << setName << std::endl;
 		std::vector<fast_hash_set<int64_t>> lsnsByShard;
 		const bool isExpectingID = hasIDFn(flags);
@@ -461,7 +461,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 		TestCout() << "Checking select queries" << std::endl;
 		const Query q(default_namespace);
 		for (unsigned int k = 0; k < kShardCount; k++) {
-			auto &rxSel = *svc_[k][0].Get()->api.reindexer;
+			auto& rxSel = *svc_[k][0].Get()->api.reindexer;
 			{
 				lsnsByShard.clear();
 				lsnsByShard.resize(kShards);
@@ -469,7 +469,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 
 				err = rxSel.Select(q, qr);
 				ASSERT_TRUE(err.ok()) << err.what();
-				for (auto &i : qr) {
+				for (auto& i : qr) {
 					auto item = i.GetItem();
 					std::string_view json = item.GetJSON();
 					gason::JsonParser parser;
@@ -502,7 +502,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 				err = rxSel.Select(
 					Query::FromSQL(fmt::sprintf("select * from %s where %s = 'key%d'", default_namespace, kFieldLocation, l)), qr);
 				ASSERT_TRUE(err.ok()) << err.what() << "; " << l;
-				for (auto &i : qr) {
+				for (auto& i : qr) {
 					auto item = i.GetItem();
 					int shardId = item.GetShardID();
 					lsn_t lsn = item.GetLSN();
@@ -522,14 +522,14 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 
 		TestCout() << "Checking update queries" << std::endl;
 		for (unsigned int k = 0; k < kShardCount; k++) {
-			auto &rxUpdate = *svc_[k][0].Get()->api.reindexer;
+			auto& rxUpdate = *svc_[k][0].Get()->api.reindexer;
 			for (int l = 0; l < 3; l++) {
 				client::QueryResults qr(flags);
 				err = rxUpdate.Update(Query::FromSQL(fmt::sprintf("update %s set %s='datanew' where %s='key%d'", default_namespace,
 																  kFieldData, kFieldLocation, l)),
 									  qr);
 				ASSERT_TRUE(err.ok()) << err.what();
-				for (auto &i : qr) {
+				for (auto& i : qr) {
 					auto item = i.GetItem();
 					int shardId = item.GetShardID();
 					lsn_t lsn = item.GetLSN();
@@ -551,14 +551,14 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 		lsnsByShard.clear();
 		lsnsByShard.resize(kShards);
 		for (unsigned int k = 0; k < kShardCount; k++) {
-			auto &rxDelete = *svc_[k][0].Get()->api.reindexer;
+			auto& rxDelete = *svc_[k][0].Get()->api.reindexer;
 			for (unsigned int l = 0; l < kShardCount; l++) {
 				client::QueryResults qr(flags);
 				err = rxDelete.Delete(
 					Query::FromSQL(fmt::sprintf("Delete from %s where %s = 'key%d'", default_namespace, kFieldLocation, l)), qr);
 				ASSERT_TRUE(err.ok()) << err.what();
 				ASSERT_EQ(qr.Count(), kMaxCountOnShard);
-				for (auto &i : qr) {
+				for (auto& i : qr) {
 					auto item = i.GetItem();
 					int shardId = item.GetShardID();
 					lsn_t lsn = item.GetLSN();
@@ -582,7 +582,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 
 		TestCout() << "Checking transactions" << std::endl;
 		for (unsigned int k = 0; k < kShardCount; k++) {
-			auto &rxTx = *svc_[k][0].Get()->api.reindexer;
+			auto& rxTx = *svc_[k][0].Get()->api.reindexer;
 			err = rxTx.TruncateNamespace(default_namespace);
 			ASSERT_TRUE(err.ok()) << err.what();
 			int startId = 0;
@@ -613,7 +613,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 				err = rxTx.CommitTransaction(tx, qr);
 				ASSERT_TRUE(err.ok()) << err.what();
 				ASSERT_EQ(qr.Count(), kMaxCountOnShard);
-				for (auto &i : qr) {
+				for (auto& i : qr) {
 					auto item = i.GetItem();
 					int shardId = item.GetShardID();
 					lsn_t lsn = item.GetLSN();
@@ -632,7 +632,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 		if (isExpectingID) {  // Single insertions do not have QR options. Only format is available
 			TestCout() << "Checking insertions" << std::endl;
 			for (unsigned int k = 0; k < kShardCount; k++) {
-				auto &rxTx = *svc_[k][0].Get()->api.reindexer;
+				auto& rxTx = *svc_[k][0].Get()->api.reindexer;
 				err = rxTx.TruncateNamespace(default_namespace);
 				ASSERT_TRUE(err.ok()) << err.what();
 				for (unsigned int l = 0; l < kShardCount; l++) {
@@ -665,7 +665,7 @@ TEST_F(ShardingExtrasApi, StrictMode) {
 	cfg.rowsInTableOnShard = 0;
 	Init(std::move(cfg));
 
-	auto &rx = *svc_[0][0].Get()->api.reindexer;
+	auto& rx = *svc_[0][0].Get()->api.reindexer;
 	const std::string kFieldForSingleShard = "my_new_field";
 	const std::string kUnknownField = "unknown_field";
 	const std::string kValue = "value";
@@ -827,7 +827,7 @@ TEST_F(ShardingExtrasApi, DISABLED_ProxiedActivityState) {
 		ASSERT_TRUE(err.ok()) << err.what();
 	};
 
-	auto checkActivity = [](int followerId, const std::string &descr, const std::string &stateNameCheck) {
+	auto checkActivity = [](int followerId, const std::string& descr, const std::string& stateNameCheck) {
 		std::string fileName = "activity_" + std::to_string(followerId) + ".json";
 		std::ifstream f(fileName);
 		std::stringstream buffer;
@@ -837,7 +837,7 @@ TEST_F(ShardingExtrasApi, DISABLED_ProxiedActivityState) {
 		auto root = parser.Parse(std::string_view(jsonLog));
 		auto blocks = root["blocks"];
 		bool isFind = false;
-		for (auto &b : blocks) {
+		for (auto& b : blocks) {
 			if (b["description"].As<std::string>() == descr) {
 				ASSERT_TRUE(!b["sub_block"].empty());
 				auto arr1 = begin(b["sub_block"]);

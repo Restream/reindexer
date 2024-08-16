@@ -57,7 +57,7 @@ std::vector<std::string> parseCSVRow(std::string_view row) {
 	return fields;
 }
 
-std::string csv2json(std::string_view row, const std::vector<std::string> &schema) {
+std::string csv2json(std::string_view row, const std::vector<std::string>& schema) {
 	auto fields = parseCSVRow(row);
 
 	if (schema.size() < fields.size()) {
@@ -72,7 +72,7 @@ std::string csv2json(std::string_view row, const std::vector<std::string> &schem
 				try {
 					gason::JsonParser().Parse(std::string_view{fields[i]});
 					builder.Raw(schema[i], fields[i]);
-				} catch (const gason::Exception &) {
+				} catch (const gason::Exception&) {
 					builder.Raw(schema[i], '"' + fields[i] + '"');
 				}
 			}

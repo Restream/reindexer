@@ -18,7 +18,7 @@ using namespace std::string_view_literals;
 const std::string kUsersYAMLFilename = "users.yml";
 const std::string kUsersJSONFilename = "users.json";
 
-DBManager::DBManager(const ServerConfig &config, IClientsStats *clientsStats)
+DBManager::DBManager(const ServerConfig& config, IClientsStats* clientsStats)
 	: config_(config), storageType_(datastorage::StorageType::LevelDB), clientsStats_(clientsStats) {}
 
 Error DBManager::Init() {
@@ -36,11 +36,11 @@ Error DBManager::Init() {
 
 	try {
 		storageType_ = datastorage::StorageTypeFromString(config_.StorageEngine);
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 
-	for (auto &de : foundDb) {
+	for (auto& de : foundDb) {
 		if (de.isDir && validateObjectName(de.name, false)) {
 			auto status = loadOrCreateDatabase(de.name, config_.StartWithErrors, config_.Autorepair);
 			if (!status.ok()) {
@@ -57,13 +57,13 @@ Error DBManager::Init() {
 	return {};
 }
 
-Error DBManager::OpenDatabase(const std::string &dbName, AuthContext &auth, bool canCreate) {
+Error DBManager::OpenDatabase(const std::string& dbName, AuthContext& auth, bool canCreate) {
 	RdxContext dummyCtx;
 	auto status = Login(dbName, auth);
 	if (!status.ok()) {
 		return status;
 	}
-	auto dbConnect = [&auth](Reindexer *db) {
+	auto dbConnect = [&auth](Reindexer* db) {
 		if (auth.checkClusterID_) {
 			return db->Connect(std::string(), ConnectOpts().WithExpectedClusterID(auth.expectedClusterID_));
 		}
@@ -74,7 +74,9 @@ Error DBManager::OpenDatabase(const std::string &dbName, AuthContext &auth, bool
 	auto it = dbs_.find(dbName);
 	if (it != dbs_.end()) {
 		status = dbConnect(it->second.get());
-		if (!status.ok()) return status;
+		if (!status.ok()) {
+			return status;
+		}
 		auth.db_ = it->second.get();
 		return Error();
 	}
@@ -94,7 +96,9 @@ Error DBManager::OpenDatabase(const std::string &dbName, AuthContext &auth, bool
 	it = dbs_.find(dbName);
 	if (it != dbs_.end()) {
 		status = dbConnect(it->second.get());
-		if (!status.ok()) return status;
+		if (!status.ok()) {
+			return status;
+		}
 		auth.db_ = it->second.get();
 		return Error();
 	}
@@ -110,7 +114,7 @@ Error DBManager::OpenDatabase(const std::string &dbName, AuthContext &auth, bool
 	return Error();
 }
 
-Error DBManager::loadOrCreateDatabase(const std::string &dbName, bool allowDBErrors, bool withAutorepair, const AuthContext &auth) {
+Error DBManager::loadOrCreateDatabase(const std::string& dbName, bool allowDBErrors, bool withAutorepair, const AuthContext& auth) {
 	if (clustersShutDown_) {
 		return Error(errTerminated, "DBManager is already preparing for shutdown");
 	}
@@ -141,15 +145,15 @@ Error DBManager::loadOrCreateDatabase(const std::string &dbName, bool allowDBErr
 	return status;
 }
 
-Error DBManager::DropDatabase(AuthContext &auth) {
+Error DBManager::DropDatabase(AuthContext& auth) {
 	{
-		Reindexer *db = nullptr;
+		Reindexer* db = nullptr;
 		auto status = auth.GetDB(kRoleOwner, &db);
 		if (!status.ok()) {
 			return status;
 		}
 	}
-	const std::string &dbName = auth.dbName_;
+	const std::string& dbName = auth.dbName_;
 
 	std::unique_lock<shared_timed_mutex> lck(mtx_);
 	auto it = dbs_.find(dbName);
@@ -168,21 +172,23 @@ std::vector<std::string> DBManager::EnumDatabases() {
 
 	shared_lock<shared_timed_mutex> lck(mtx_);
 	dbs.reserve(dbs_.size());
-	for (const auto &it : dbs_) dbs.emplace_back(it.first);
+	for (const auto& it : dbs_) {
+		dbs.emplace_back(it.first);
+	}
 	return dbs;
 }
 
 void DBManager::ShutdownClusters() {
 	std::unique_lock lck(mtx_);
 	if (!clustersShutDown_) {
-		for (auto &db : dbs_) {
+		for (auto& db : dbs_) {
 			db.second->ShutdownCluster();
 		}
 		clustersShutDown_ = true;
 	}
 }
 
-Error DBManager::Login(const std::string &dbName, AuthContext &auth) {
+Error DBManager::Login(const std::string& dbName, AuthContext& auth) {
 	if (kRoleSystem == auth.role_) {
 		auth.dbName_ = dbName;
 		return {};
@@ -214,7 +220,7 @@ Error DBManager::Login(const std::string &dbName, AuthContext &auth) {
 	auth.role_ = kRoleNone;
 
 	if (!dbName.empty()) {
-		const UserRecord &urec = it->second;
+		const UserRecord& urec = it->second;
 
 		auto dbIt = urec.roles.find("*");
 		if (dbIt != urec.roles.end()) {
@@ -227,7 +233,6 @@ Error DBManager::Login(const std::string &dbName, AuthContext &auth) {
 		}
 	}
 	auth.dbName_ = dbName;
-	// logPrintf(LogInfo, "Authorized user '%s', to db '%s', role=%s", auth.login_, dbName, UserRoleName(auth.role_));
 
 	return {};
 }
@@ -248,12 +253,14 @@ Error DBManager::readUsers() noexcept {
 Error DBManager::readUsersYAML() noexcept {
 	std::string content;
 	int res = fs::ReadFile(fs::JoinPath(config_.StoragePath, kUsersYAMLFilename), content);
-	if (res < 0) return Error(errNotFound, "Can't read '%s' file", kUsersYAMLFilename);
+	if (res < 0) {
+		return Error(errNotFound, "Can't read '%s' file", kUsersYAMLFilename);
+	}
 	try {
 		YAML::ScannerOpts opts;
 		opts.disableAnchors = true;
 		YAML::Node root = YAML::Load(content, opts);
-		for (const auto &user : root) {
+		for (const auto& user : root) {
 			UserRecord urec;
 			urec.login = user.first.as<std::string>();
 			auto userNode = user.second;
@@ -264,11 +271,11 @@ Error DBManager::readUsersYAML() noexcept {
 			}
 			auto userRoles = userNode["roles"];
 			if (userRoles.IsMap()) {
-				for (const auto &role : userRoles) {
+				for (const auto& role : userRoles) {
 					std::string db(role.first.as<std::string>());
 					try {
 						urec.roles.emplace(db, userRoleFromString(role.second.as<std::string>()));
-					} catch (const Error &err) {
+					} catch (const Error& err) {
 						logPrintf(LogWarning, "Skipping user '%s' for db '%s': ", urec.login, db, err.what());
 					}
 				}
@@ -281,7 +288,7 @@ Error DBManager::readUsersYAML() noexcept {
 				logPrintf(LogWarning, "Skipping user '%s': no 'roles' node found", urec.login);
 			}
 		}
-	} catch (const YAML::Exception &ex) {
+	} catch (const YAML::Exception& ex) {
 		return Error(errParseYAML, "Users: %s", ex.what());
 	}
 	return errOK;
@@ -290,12 +297,14 @@ Error DBManager::readUsersYAML() noexcept {
 Error DBManager::readUsersJSON() noexcept {
 	std::string content;
 	int res = fs::ReadFile(fs::JoinPath(config_.StoragePath, kUsersJSONFilename), content);
-	if (res < 0) return Error(errNotFound, "Can't read '%s' file", kUsersJSONFilename);
+	if (res < 0) {
+		return Error(errNotFound, "Can't read '%s' file", kUsersJSONFilename);
+	}
 
 	try {
 		gason::JsonParser parser;
 		auto root = parser.Parse(giftStr(content));
-		for (auto &userNode : root) {
+		for (auto& userNode : root) {
 			UserRecord urec;
 			urec.login = std::string(userNode.key);
 			auto err = ParseMd5CryptString(userNode["hash"].As<std::string>(), urec.hash, urec.salt);
@@ -303,12 +312,12 @@ Error DBManager::readUsersJSON() noexcept {
 				logPrintf(LogWarning, "Hash parsing error for user '%s': %s", urec.login, err.what());
 				continue;
 			}
-			for (auto &roleNode : userNode["roles"]) {
+			for (auto& roleNode : userNode["roles"]) {
 				std::string db(roleNode.key);
 				try {
 					UserRole role = userRoleFromString(roleNode.As<std::string_view>());
 					urec.roles.emplace(db, role);
-				} catch (const Error &err) {
+				} catch (const Error& err) {
 					logPrintf(LogWarning, "Skipping user '%s' for db '%s': ", urec.login, db, err.what());
 				}
 			}
@@ -318,7 +327,7 @@ Error DBManager::readUsersJSON() noexcept {
 				users_.emplace(urec.login, urec);
 			}
 		}
-	} catch (const gason::Exception &ex) {
+	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "Users: %s", ex.what());
 	}
 	return errOK;

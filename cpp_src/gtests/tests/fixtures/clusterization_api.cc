@@ -1,5 +1,6 @@
 #include "clusterization_api.h"
 
+#include "core/formatters/lsn_fmt.h"
 #include "yaml-cpp/yaml.h"
 
 void ClusterizationApi::Cluster::initCluster(size_t count, size_t initialServerId, const YAML::Node& clusterConf) {
@@ -142,7 +143,9 @@ size_t ClusterizationApi::Cluster::InitServer(size_t id, const YAML::Node& clust
 bool ClusterizationApi::Cluster::StartServer(size_t id) {
 	assert(id < svc_.size());
 	auto& server = svc_[id];
-	if (server.IsRunning()) return false;
+	if (server.IsRunning()) {
+		return false;
+	}
 	ServerControlConfig scConfig(id, defaults_.defaultRpcPort + id, defaults_.defaultHttpPort + id,
 								 fs::JoinPath(defaults_.baseTestsetDbPath, "node/" + std::to_string(id)), "node" + std::to_string(id), true,
 								 maxUpdatesSize_);
@@ -153,7 +156,9 @@ bool ClusterizationApi::Cluster::StartServer(size_t id) {
 bool ClusterizationApi::Cluster::StopServer(size_t id) {
 	assert(id < svc_.size());
 	auto& server = svc_[id];
-	if (!server.Get()) return false;
+	if (!server.Get()) {
+		return false;
+	}
 	server.Stop();
 	server.Drop();
 	auto now = std::chrono::milliseconds(0);
@@ -267,19 +272,18 @@ void ClusterizationApi::Cluster::WaitSync(std::string_view ns, lsn_t expectedLsn
 }
 
 void ClusterizationApi::Cluster::PrintClusterInfo(std::string_view ns, std::vector<ServerControl>& svc) {
-	std::cerr << "Cluster info for " << ns << ":\n";
+	fmt::println(stderr, "Cluster info for {}:", ns);
 	for (size_t id = 0; id < svc.size(); ++id) {
-		std::cerr << "Node " << id << ": ";
+		fmt::print(stderr, "Node {}: ", id);
 		if (svc[id].IsRunning()) {
 			auto xstate = svc[id].Get()->GetState(std::string(ns));
 			const std::string tmStateToken = xstate.tmStatetoken.has_value() ? std::to_string(xstate.tmStatetoken.value()) : "<none>";
 			const std::string tmVersion = xstate.tmVersion.has_value() ? std::to_string(xstate.tmVersion.value()) : "<none>";
-			std::cerr << "{ ns_version: " << xstate.nsVersion << ", lsn: " << xstate.lsn << ", data_hash: " << xstate.dataHash
-					  << ", tm_token: " << tmStateToken << ", tm_version: " << tmVersion << " }";
+			fmt::println(stderr, "{{ ns_version: {}, lsn: {}, data_hash: {}, tm_token: {}, tm_version: {} }}", xstate.nsVersion, xstate.lsn,
+						 xstate.dataHash, tmStateToken, tmVersion);
 		} else {
-			std::cerr << "down";
+			fmt::println(stderr, "down");
 		}
-		std::cerr << std::endl;
 	}
 }
 

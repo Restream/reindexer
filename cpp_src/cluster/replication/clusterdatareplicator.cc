@@ -208,8 +208,12 @@ RaftInfo ClusterDataReplicator::GetRaftInfo(bool allowTransitState, const RdxCon
 }
 
 bool ClusterDataReplicator::NamespaceIsInClusterConfig(std::string_view nsName) const {
-	if (nsName == kReplicationStatsNamespace) return true;
-	if (nsName.size() && (nsName[0] == '#' || nsName[0] == '@')) return false;
+	if (nsName == kReplicationStatsNamespace) {
+		return true;
+	}
+	if (nsName.size() && (nsName[0] == '#' || nsName[0] == '@')) {
+		return false;
+	}
 
 	std::lock_guard lck(mtx_);
 	if (!config_.has_value()) {

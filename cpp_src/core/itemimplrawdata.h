@@ -11,10 +11,10 @@ namespace reindexer {
 struct ItemImplRawData {
 	ItemImplRawData() = default;
 	explicit ItemImplRawData(PayloadValue v) : payloadValue_(std::move(v)) {}
-	ItemImplRawData(const ItemImplRawData &) = delete;
-	ItemImplRawData(ItemImplRawData &&) = default;
-	ItemImplRawData &operator=(const ItemImplRawData &) = delete;
-	ItemImplRawData &operator=(ItemImplRawData &&) = default;
+	ItemImplRawData(const ItemImplRawData&) = delete;
+	ItemImplRawData(ItemImplRawData&&) = default;
+	ItemImplRawData& operator=(const ItemImplRawData&) = delete;
+	ItemImplRawData& operator=(ItemImplRawData&&) = default;
 
 	PayloadValue payloadValue_;
 	std::unique_ptr<uint8_t[]> tupleData_;

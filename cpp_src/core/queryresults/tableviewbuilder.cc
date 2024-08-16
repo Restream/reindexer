@@ -50,7 +50,9 @@ void TableCalculator::calculate(std::vector<std::string>&& jsonData) {
 				columnData.maxWidthCh = std::max(columnData.maxWidthCh, reindexer::getStringTerminalWidth(fieldName));
 			}
 
-			if (fieldValue.empty()) ++columnData.emptyValues;
+			if (fieldValue.empty()) {
+				++columnData.emptyValues;
+			}
 			columnData.entries++;
 			rowData[fieldName] = fieldValue;
 		}
@@ -111,7 +113,9 @@ void TableCalculator::calculate(std::vector<std::string>&& jsonData) {
 }
 
 void TableViewBuilder::Build(std::ostream& o, std::vector<std::string>&& jsonData, const std::function<bool(void)>& isCanceled) {
-	if (isCanceled()) return;
+	if (isCanceled()) {
+		return;
+	}
 	TerminalSize terminalSize = reindexer::getTerminalSize();
 	TableCalculator tableCalculator(std::move(jsonData), terminalSize.width);
 	BuildHeader(o, tableCalculator, isCanceled);
@@ -119,7 +123,9 @@ void TableViewBuilder::Build(std::ostream& o, std::vector<std::string>&& jsonDat
 }
 
 void TableViewBuilder::BuildHeader(std::ostream& o, TableCalculator& tableCalculator, const std::function<bool(void)>& isCanceled) {
-	if (isCanceled()) return;
+	if (isCanceled()) {
+		return;
+	}
 
 	auto& header = tableCalculator.GetHeader();
 	auto& columnsData = tableCalculator.GetColumnsSettings();
@@ -134,7 +140,9 @@ void TableViewBuilder::BuildHeader(std::ostream& o, TableCalculator& tableCalcul
 		auto& columnData = columnsData[columnName];
 		ensureFieldWidthIsOk(columnName, columnData.widthCh);
 		o << std::setw(computeFieldWidth(columnName, columnData.widthCh)) << columnName;
-		if (rowIdx != header.size() - 1) o << kSeparator;
+		if (rowIdx != header.size() - 1) {
+			o << kSeparator;
+		}
 	}
 	o << std::endl << headerLine << std::endl;
 }
@@ -148,7 +156,9 @@ bool TableViewBuilder::isValueMultiline(std::string_view value, bool breakingThe
 
 void TableViewBuilder::startLine(std::ostream& o, const int& currLineWidth) {
 	o << std::endl;
-	for (size_t i = 0; i < currLineWidth - kSeparator.length(); ++i) o << " ";
+	for (size_t i = 0; i < currLineWidth - kSeparator.length(); ++i) {
+		o << " ";
+	}
 	o << kSeparator;
 }
 
@@ -182,7 +192,9 @@ void TableViewBuilder::BuildRow(std::ostream& o, int idx, TableCalculator& table
 			for (wchar_t wc; (sz = std::mbtowc(&wc, cstr, end - cstr)) > 0; cstr += sz) {
 				currWidth += mk_wcwidth(wc);
 				if (currWidth >= symbolsTillTheEOFLine) {
-					if (pos != 0) startLine(o, currLineWidth);
+					if (pos != 0) {
+						startLine(o, currLineWidth);
+					}
 					o << std::left;
 					o << value.substr(pos, count);
 					pos = total;
@@ -193,7 +205,9 @@ void TableViewBuilder::BuildRow(std::ostream& o, int idx, TableCalculator& table
 			}
 
 			if (count > 0) {
-				if (pos != 0) startLine(o, currLineWidth);
+				if (pos != 0) {
+					startLine(o, currLineWidth);
+				}
 				o << value.substr(pos, count);
 			}
 		} else {
@@ -225,10 +239,14 @@ void TableViewBuilder::BuildRow(std::ostream& o, int idx, TableCalculator& table
 }
 
 void TableViewBuilder::BuildTable(std::ostream& o, TableCalculator& tableCalculator, const std::function<bool(void)>& isCanceled) {
-	if (isCanceled()) return;
+	if (isCanceled()) {
+		return;
+	}
 	auto& rows = tableCalculator.GetRows();
 	for (size_t i = 0; i < rows.size(); ++i) {
-		if (isCanceled()) return;
+		if (isCanceled()) {
+			return;
+		}
 		BuildRow(o, i, tableCalculator);
 	}
 }
@@ -250,11 +268,15 @@ void TableViewBuilder::ensureFieldWidthIsOk(std::string& str, int maxWidth) {
 		int newWidth = 0;
 		static const std::string dots = " ...";
 		bool withDots = (maxWidth > 10);
-		if (withDots) maxWidth -= dots.length();
+		if (withDots) {
+			maxWidth -= dots.length();
+		}
 		try {
 			for (auto it = str.begin(); it != str.end() && (sz = utf8::internal::sequence_length(it)) > 0;) {
 				newWidth += mk_wcwidth(utf8::next(it, str.end()));
-				if (newWidth > maxWidth) break;
+				if (newWidth > maxWidth) {
+					break;
+				}
 				n += sz;
 			}
 		} catch (const std::exception&) {
@@ -262,7 +284,9 @@ void TableViewBuilder::ensureFieldWidthIsOk(std::string& str, int maxWidth) {
 			n = maxWidth;
 		}
 		str = str.substr(0, n);
-		if (withDots) str += dots;
+		if (withDots) {
+			str += dots;
+		}
 	}
 }
 

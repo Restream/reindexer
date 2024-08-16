@@ -32,20 +32,28 @@ static bool ismt;
 
 #include "tools/alloc_ext/tc_malloc_extension.h"
 
-static void traced_new_mt(const void *ptr, size_t size) {
-	if (ptr && size) tracer_mt.traced_new(reindexer::alloc_ext::instance()->GetAllocatedSize(const_cast<void *>(ptr)));
+static void traced_new_mt(const void* ptr, size_t size) {
+	if (ptr && size) {
+		tracer_mt.traced_new(reindexer::alloc_ext::instance()->GetAllocatedSize(const_cast<void*>(ptr)));
+	}
 }
 
-static void traced_delete_mt(const void *ptr) {
-	if (ptr) tracer_mt.traced_delete(reindexer::alloc_ext::instance()->GetAllocatedSize(const_cast<void *>(ptr)));
+static void traced_delete_mt(const void* ptr) {
+	if (ptr) {
+		tracer_mt.traced_delete(reindexer::alloc_ext::instance()->GetAllocatedSize(const_cast<void*>(ptr)));
+	}
 }
 
-static void traced_new(const void *ptr, size_t size) {
-	if (ptr && size) tracer.traced_new(reindexer::alloc_ext::instance()->GetAllocatedSize(const_cast<void *>(ptr)));
+static void traced_new(const void* ptr, size_t size) {
+	if (ptr && size) {
+		tracer.traced_new(reindexer::alloc_ext::instance()->GetAllocatedSize(const_cast<void*>(ptr)));
+	}
 }
 
-static void traced_delete(const void *ptr) {
-	if (ptr) tracer.traced_delete(reindexer::alloc_ext::instance()->GetAllocatedSize(const_cast<void *>(ptr)));
+static void traced_delete(const void* ptr) {
+	if (ptr) {
+		tracer.traced_delete(reindexer::alloc_ext::instance()->GetAllocatedSize(const_cast<void*>(ptr)));
+	}
 }
 
 void allocdebug_init() {
@@ -54,9 +62,8 @@ void allocdebug_init() {
 		reindexer::alloc_ext::MallocHook_AddDeleteHook(traced_delete);
 		ismt = false;
 	} else {
-		reindexer::logPrintf(
-			LogWarning,
-			"Reindexer was compiled with GPerf tools, but tcmalloc was not successfully linked. Malloc new hook is unavailable");
+		logPrintf(LogWarning,
+				  "Reindexer was compiled with GPerf tools, but tcmalloc was not successfully linked. Malloc new hook is unavailable");
 	}
 }
 
@@ -66,9 +73,8 @@ void allocdebug_init_mt() {
 		reindexer::alloc_ext::MallocHook_AddDeleteHook(traced_delete_mt);
 		ismt = true;
 	} else {
-		reindexer::logPrintf(
-			LogWarning,
-			"Reindexer was compiled with GPerf tools, but tcmalloc was not successfully linked. Malloc delete hook is unavailable");
+		logPrintf(LogWarning,
+				  "Reindexer was compiled with GPerf tools, but tcmalloc was not successfully linked. Malloc delete hook is unavailable");
 	}
 }
 
@@ -83,6 +89,6 @@ size_t get_alloc_size_total() { return ismt ? tracer_mt.alloced_sz_total.load() 
 size_t get_alloc_cnt_total() { return ismt ? tracer_mt.alloced_cnt_total.load() : tracer.alloced_cnt_total; }
 
 void allocdebug_show() {
-	reindexer::logPrintf(LogInfo, "meminfo (alloced %dM, %d total allocs, %d remain)", get_alloc_size() / (1024 * 1024),
-						 get_alloc_cnt_total(), get_alloc_cnt());
+	logPrintf(LogInfo, "meminfo (alloced %dM, %d total allocs, %d remain)", get_alloc_size() / (1024 * 1024), get_alloc_cnt_total(),
+			  get_alloc_cnt());
 }

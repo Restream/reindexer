@@ -19,14 +19,20 @@ namespace reindexer {
 
 static CacheMode str2cacheMode(std::string_view mode) {
 	using namespace std::string_view_literals;
-	if (mode == "on"sv) return CacheModeOn;
-	if (mode == "off"sv || mode == ""sv) return CacheModeOff;
-	if (mode == "aggressive"sv) return CacheModeAggressive;
+	if (mode == "on"sv) {
+		return CacheModeOn;
+	}
+	if (mode == "off"sv || mode == ""sv) {
+		return CacheModeOff;
+	}
+	if (mode == "aggressive"sv) {
+		return CacheModeAggressive;
+	}
 
 	throw Error(errParams, "Unknown cache mode %s", mode);
 }
 
-Error DBConfigProvider::FromJSON(const gason::JsonNode &root, bool autoCorrect) {
+Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) {
 	std::bitset<kConfigTypesTotalCount> typesChanged;
 
 	std::string errLogString;
@@ -34,7 +40,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root, bool autoCorrect) 
 		smart_lock<shared_timed_mutex> lk(mtx_, true);
 
 		ProfilingConfigData profilingDataSafe;
-		auto &profilingNode = root["profiling"];
+		auto& profilingNode = root["profiling"];
 		if (!profilingNode.empty()) {
 			profilingDataLoadResult_ = profilingDataSafe.FromJSON(profilingNode);
 
@@ -46,11 +52,11 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root, bool autoCorrect) 
 		}
 
 		fast_hash_map<std::string, NamespaceConfigData, hash_str, equal_str, less_str> namespacesData;
-		auto &namespacesNode = root["namespaces"];
+		auto& namespacesNode = root["namespaces"];
 		if (!namespacesNode.empty()) {
 			std::string namespacesErrLogString;
 			bool nssHaveErrors = false;
-			for (auto &nsNode : namespacesNode) {
+			for (auto& nsNode : namespacesNode) {
 				std::string nsName;
 				if (auto err = tryReadRequiredJsonValue(&errLogString, nsNode, "namespace", nsName)) {
 					ensureEndsWith(namespacesErrLogString, "\n") += err.what();
@@ -79,7 +85,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root, bool autoCorrect) 
 		}
 
 		cluster::AsyncReplConfigData asyncReplConfigDataSafe;
-		auto &asyncReplicationNode = root["async_replication"];
+		auto& asyncReplicationNode = root["async_replication"];
 		if (!asyncReplicationNode.empty()) {
 			asyncReplicationDataLoadResult_ = asyncReplConfigDataSafe.FromJSON(asyncReplicationNode);
 
@@ -91,7 +97,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root, bool autoCorrect) 
 		}
 
 		ReplicationConfigData replicationDataSafe;
-		auto &replicationNode = root["replication"];
+		auto& replicationNode = root["replication"];
 		if (!replicationNode.empty()) {
 			if (!autoCorrect) {
 				replicationDataLoadResult_ = replicationDataSafe.FromJSON(replicationNode);
@@ -123,9 +129,9 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root, bool autoCorrect) 
 			}
 		}
 
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		ensureEndsWith(errLogString, "\n") += err.what();
-	} catch (const gason::Exception &ex) {
+	} catch (const gason::Exception& ex) {
 		ensureEndsWith(errLogString, "\n") += ex.what();
 	}
 
@@ -143,16 +149,16 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root, bool autoCorrect) 
 			if (handlers_[changedType]) {
 				try {
 					handlers_[changedType]();
-				} catch (const Error &err) {
+				} catch (const Error& err) {
 					logPrintf(LogError, "DBConfigProvider: Error processing event handler: '%s'", err.what());
 				}
 			}
 
 			if (ReplicationConf == changedType) {
-				for (auto &f : replicationConfigDataHandlers_) {
+				for (auto& f : replicationConfigDataHandlers_) {
 					try {
 						f.second(replicationData_);
-					} catch (const Error &err) {
+					} catch (const Error& err) {
 						logPrintf(LogError, "DBConfigProvider: Error processing replication config event handler: '%s'", err.what());
 					}
 				}
@@ -185,7 +191,7 @@ void DBConfigProvider::setHandler(ConfigType cfgType, std::function<void()> hand
 	handlers_[cfgType] = std::move(handler);
 }
 
-int DBConfigProvider::setHandler(std::function<void(const ReplicationConfigData &)> handler) {
+int DBConfigProvider::setHandler(std::function<void(const ReplicationConfigData&)> handler) {
 	smart_lock<shared_timed_mutex> lk(mtx_, true);
 	replicationConfigDataHandlers_[++handlersCounter_] = std::move(handler);
 	return handlersCounter_;
@@ -206,7 +212,7 @@ cluster::AsyncReplConfigData DBConfigProvider::GetAsyncReplicationConfig() {
 	return asyncReplicationData_;
 }
 
-bool DBConfigProvider::GetNamespaceConfig(std::string_view nsName, NamespaceConfigData &data) {
+bool DBConfigProvider::GetNamespaceConfig(std::string_view nsName, NamespaceConfigData& data) {
 	shared_lock<shared_timed_mutex> lk(mtx_);
 	auto it = namespacesData_.find(nsName);
 	if (it == namespacesData_.end()) {
@@ -220,7 +226,7 @@ bool DBConfigProvider::GetNamespaceConfig(std::string_view nsName, NamespaceConf
 	return true;
 }
 
-Error ProfilingConfigData::FromJSON(const gason::JsonNode &v) {
+Error ProfilingConfigData::FromJSON(const gason::JsonNode& v) {
 	using namespace std::string_view_literals;
 	std::string errorString;
 	auto err = tryReadOptionalJsonValue(&errorString, v, "queriesperfstats"sv, queriesPerfStats);
@@ -230,9 +236,9 @@ Error ProfilingConfigData::FromJSON(const gason::JsonNode &v) {
 	err = tryReadOptionalJsonValue(&errorString, v, "activitystats"sv, activityStats);
 	(void)err;	// ignored; Errors will be handled with errorString
 
-	auto &longQueriesLogging = v["long_queries_logging"sv];
+	auto& longQueriesLogging = v["long_queries_logging"sv];
 	if (longQueriesLogging.isObject()) {
-		auto &select = longQueriesLogging["select"sv];
+		auto& select = longQueriesLogging["select"sv];
 		if (select.isObject()) {
 			const auto p = longSelectLoggingParams.load(std::memory_order_relaxed);
 			int32_t thresholdUs = p.thresholdUs;
@@ -243,7 +249,7 @@ Error ProfilingConfigData::FromJSON(const gason::JsonNode &v) {
 			longSelectLoggingParams.store(LongQueriesLoggingParams(thresholdUs, normalized), std::memory_order_relaxed);
 		}
 
-		auto &updateDelete = longQueriesLogging["update_delete"sv];
+		auto& updateDelete = longQueriesLogging["update_delete"sv];
 		if (updateDelete.isObject()) {
 			const auto p = longUpdDelLoggingParams.load(std::memory_order_relaxed);
 			int32_t thresholdUs = p.thresholdUs;
@@ -254,7 +260,7 @@ Error ProfilingConfigData::FromJSON(const gason::JsonNode &v) {
 			longUpdDelLoggingParams.store(LongQueriesLoggingParams(thresholdUs, normalized), std::memory_order_relaxed);
 		}
 
-		auto &transaction = longQueriesLogging["transaction"sv];
+		auto& transaction = longQueriesLogging["transaction"sv];
 		if (transaction.isObject()) {
 			const auto p = longTxLoggingParams.load(std::memory_order_relaxed);
 			int32_t thresholdUs = p.thresholdUs;
@@ -273,7 +279,7 @@ Error ProfilingConfigData::FromJSON(const gason::JsonNode &v) {
 	return {};
 }
 
-Error ReplicationConfigData::FromYAML(const std::string &yaml) {
+Error ReplicationConfigData::FromYAML(const std::string& yaml) {
 	try {
 		YAML::Node root = YAML::Load(yaml);
 		clusterID = root["cluster_id"].as<int>(clusterID);
@@ -281,9 +287,9 @@ Error ReplicationConfigData::FromYAML(const std::string &yaml) {
 		if (auto err = Validate(); !err.ok()) {
 			return Error(errParams, "ReplicationConfigData: YAML parsing error: '%s'", err.what());
 		}
-	} catch (const YAML::Exception &ex) {
+	} catch (const YAML::Exception& ex) {
 		return Error(errParseYAML, "ReplicationConfigData: YAML parsing error: '%s'", ex.what());
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 	return Error();
@@ -292,14 +298,14 @@ Error ReplicationConfigData::FromYAML(const std::string &yaml) {
 Error ReplicationConfigData::FromJSON(std::string_view json) {
 	try {
 		return FromJSON(gason::JsonParser().Parse(json));
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
-	} catch (const gason::Exception &ex) {
+	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "ReplicationConfigData: %s\n", ex.what());
 	}
 }
 
-Error ReplicationConfigData::FromJSON(const gason::JsonNode &root) {
+Error ReplicationConfigData::FromJSON(const gason::JsonNode& root) {
 	using namespace std::string_view_literals;
 	std::string errorString;
 	auto err = tryReadOptionalJsonValue(&errorString, root, "cluster_id"sv, clusterID);
@@ -317,7 +323,7 @@ Error ReplicationConfigData::FromJSON(const gason::JsonNode &root) {
 	return Error();
 }
 
-void ReplicationConfigData::FromJSONWithCorrection(const gason::JsonNode &root, Error &fixedErrors) {
+void ReplicationConfigData::FromJSONWithCorrection(const gason::JsonNode& root, Error& fixedErrors) {
 	using namespace std::string_view_literals;
 	fixedErrors = Error();
 	std::string errorString;
@@ -334,15 +340,17 @@ void ReplicationConfigData::FromJSONWithCorrection(const gason::JsonNode &root, 
 		ensureEndsWith(errorString, "\n") += fmt::sprintf("Fixing to default: server_id = %d.", serverID);
 	}
 
-	if (!errorString.empty()) fixedErrors = Error(errParseJson, errorString);
+	if (!errorString.empty()) {
+		fixedErrors = Error(errParseJson, errorString);
+	}
 }
 
-void ReplicationConfigData::GetJSON(JsonBuilder &jb) const {
+void ReplicationConfigData::GetJSON(JsonBuilder& jb) const {
 	jb.Put("cluster_id", clusterID);
 	jb.Put("server_id", serverID);
 }
 
-void ReplicationConfigData::GetYAML(WrSerializer &ser) const {
+void ReplicationConfigData::GetYAML(WrSerializer& ser) const {
 	// clang-format off
 	ser <<	"# Cluser ID - must be same for client and for master\n"
 			"cluster_id: " + std::to_string(clusterID) + "\n"
@@ -362,11 +370,11 @@ Error ReplicationConfigData::Validate() const {
 	return Error();
 }
 
-std::ostream &operator<<(std::ostream &os, const ReplicationConfigData &data) {
+std::ostream& operator<<(std::ostream& os, const ReplicationConfigData& data) {
 	return os << "{ server_id: " << data.serverID << "; cluster_id: " << data.clusterID << "}";
 }
 
-Error NamespaceConfigData::FromJSON(const gason::JsonNode &v) {
+Error NamespaceConfigData::FromJSON(const gason::JsonNode& v) {
 	using namespace std::string_view_literals;
 	std::string errorString;
 	auto err = tryReadOptionalJsonValue(&errorString, v, "lazyload"sv, lazyLoad);
@@ -387,7 +395,7 @@ Error NamespaceConfigData::FromJSON(const gason::JsonNode &v) {
 	if (tryReadOptionalJsonValue(&errorString, v, "join_cache_mode"sv, stringViewVal).ok()) {
 		try {
 			cacheMode = str2cacheMode(stringViewVal);
-		} catch (Error &err) {
+		} catch (Error& err) {
 			ensureEndsWith(errorString, "\n") += "errParams: " + err.what();
 		}
 	}

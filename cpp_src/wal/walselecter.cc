@@ -1,5 +1,6 @@
 #include "walselecter.h"
 #include "core/cjson/jsonbuilder.h"
+#include "core/formatters/lsn_fmt.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/nsselecter.h"
 #include "core/rdxcontext.h"
@@ -9,11 +10,11 @@ namespace reindexer {
 
 const SemVersion kMinUnknownReplSupportRxVersion("2.6.0");
 
-WALSelecter::WALSelecter(const NamespaceImpl *ns, bool allowTxWithoutBegining) : ns_(ns), allowTxWithoutBegining_(allowTxWithoutBegining) {}
+WALSelecter::WALSelecter(const NamespaceImpl* ns, bool allowTxWithoutBegining) : ns_(ns), allowTxWithoutBegining_(allowTxWithoutBegining) {}
 
-void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool snapshot) {
+void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool snapshot) {
 	using namespace std::string_view_literals;
-	const Query &q = params.query;
+	const Query& q = params.query;
 	int count = q.Limit();
 	int start = q.Offset();
 	result.totalCount = 0;
@@ -30,7 +31,7 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 	for (size_t i = 0; i < q.Entries().Size(); ++i) {
 		q.Entries().Visit(
 			i,
-			[&lsnIdx, &versionIdx, i] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntry &qe) RX_POST_LMBD_ALWAYS_INLINE {
+			[&lsnIdx, &versionIdx, i] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntry& qe) RX_POST_LMBD_ALWAYS_INLINE {
 				if ("#lsn"sv == qe.FieldName()) {
 					lsnIdx = i;
 				} else if ("#slave_version"sv == qe.FieldName()) {
@@ -39,11 +40,11 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 					throw Error(errLogic, "Unexpected index in WAL select query: %s", qe.FieldName());
 				}
 			},
-			[&q] RX_PRE_LMBD_ALWAYS_INLINE(const auto &)
+			[&q] RX_PRE_LMBD_ALWAYS_INLINE(const auto&)
 				RX_POST_LMBD_ALWAYS_INLINE { throw Error(errLogic, "Unexpected WAL select query: %s", q.GetSQL()); });
 	}
 	auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.Entries().Get<QueryEntry>(versionIdx).Values()[0].As<std::string>());
-	auto &lsnEntry = q.Entries().Get<QueryEntry>(lsnIdx);
+	auto& lsnEntry = q.Entries().Get<QueryEntry>(lsnIdx);
 	if (lsnEntry.Values().size() == 1 && (lsnEntry.Condition() == CondGt || lsnEntry.Condition() == CondGe)) {
 		lsn_t fromLSN = lsn_t(std::min(lsnEntry.Values()[0].As<int64_t>(), std::numeric_limits<int64_t>::max() - 1));
 		if (fromLSN.isEmpty()) {
@@ -60,7 +61,7 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 		}
 
 		const auto walEnd = ns_->wal_.end();
-		auto putWalRecord = [&result](WALTracker::iterator it, const WALRecord &rec) {
+		auto putWalRecord = [&result](WALTracker::iterator it, const WALRecord& rec) {
 			auto data = it.GetRaw();
 			// Put as ItemRef with raw container
 			PayloadValue pv(data.size(), data.data());
@@ -90,8 +91,8 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 						start--;
 					} else if (count) {
 						// Put as usual ItemRef
-						assertf(ns_->items_[rec.id].GetLSN() == it.GetLSN(), "lsn %ld != %ld, ns=%s", ns_->items_[rec.id].GetLSN(),
-								it.GetLSN(), ns_->name_);
+						[[maybe_unused]] const auto iLSN = lsn_t(ns_->items_[rec.id].GetLSN());
+						assertf(iLSN.Counter() == (lsn_t(it.GetLSN()).Counter()), "lsn %s != %s, ns=%s", iLSN, it.GetLSN(), ns_->name_);
 						result.Add(ItemRef(rec.id, ns_->items_[rec.id]));
 						count--;
 					}
@@ -151,7 +152,7 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 	} else if (lsnEntry.Condition() == CondAny) {
 		bool enableSpecialRecords = snapshot || !(slaveVersion < kMinUnknownReplSupportRxVersion);
 		if (start == 0 && enableSpecialRecords) {
-			auto addSpRecord = [&result](const WALRecord &wrec) {
+			auto addSpRecord = [&result](const WALRecord& wrec) {
 				PackedWALRecord wr;
 				wr.Pack(wrec);
 				PayloadValue val(wr.size(), wr.data());
@@ -166,7 +167,7 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 				addSpRecord(wrec);
 			}
 			std::vector<std::string> metaKeys = ns_->enumMeta();
-			for (const auto &key : metaKeys) {
+			for (const auto& key : metaKeys) {
 				auto metaVal = ns_->getMeta(key);
 				WALRecord wrec(WalPutMeta, key, metaVal, false);
 				addSpRecord(wrec);
@@ -179,7 +180,9 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 			}
 		}
 		for (size_t id = 0; count && id < ns_->items_.size(); ++id) {
-			if (ns_->items_[id].IsFree()) continue;
+			if (ns_->items_[id].IsFree()) {
+				continue;
+			}
 			if (start) {
 				start--;
 			} else if (count) {
@@ -194,7 +197,7 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 	putReplState(result);
 }
 
-void WALSelecter::putReplState(LocalQueryResults &result) {
+void WALSelecter::putReplState(LocalQueryResults& result) {
 	WrSerializer ser;
 	JsonBuilder jb(ser);
 	// prepare json with replication state

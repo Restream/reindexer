@@ -1,7 +1,7 @@
 #pragma once
 
-#include "updates/updaterecord.h"
 #include "core/keyvalue/variant.h"
+#include "updates/updaterecord.h"
 
 namespace reindexer {
 
@@ -11,7 +11,8 @@ class NsContext;
 
 class FunctionExecutor {
 public:
-	explicit FunctionExecutor(NamespaceImpl& ns, h_vector<updates::UpdateRecord, 2>& replUpdates) noexcept : ns_(ns), replUpdates_(replUpdates) {}
+	explicit FunctionExecutor(NamespaceImpl& ns, h_vector<updates::UpdateRecord, 2>& replUpdates) noexcept
+		: ns_(ns), replUpdates_(replUpdates) {}
 	Variant Execute(SelectFuncStruct& funcData, const NsContext& ctx);
 
 private:

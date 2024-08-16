@@ -69,17 +69,17 @@ struct DistanceBetweenJoinedIndexesSameNs;
 
 class NsContext {
 public:
-	NsContext(const RdxContext &rdxCtx) noexcept : rdxContext(rdxCtx) {}
-	NsContext &InTransaction(lsn_t stepLsn) noexcept {
+	NsContext(const RdxContext& rdxCtx) noexcept : rdxContext(rdxCtx) {}
+	NsContext& InTransaction(lsn_t stepLsn) noexcept {
 		inTransaction = true;
 		originLsn_ = stepLsn;
 		return *this;
 	}
-	NsContext &CopiedNsRequest() noexcept {
+	NsContext& CopiedNsRequest() noexcept {
 		isCopiedNsRequest = true;
 		return *this;
 	}
-	NsContext &InSnapshot(lsn_t stepLsn, bool wal, bool requireResync, bool initialLeaderSync) noexcept {
+	NsContext& InSnapshot(lsn_t stepLsn, bool wal, bool requireResync, bool initialLeaderSync) noexcept {
 		inSnapshot = true;
 		isWal = wal;
 		originLsn_ = stepLsn;
@@ -91,7 +91,7 @@ public:
 	bool IsForceSyncItem() const noexcept { return inSnapshot && !isWal; }
 	bool IsWalSyncItem() const noexcept { return inSnapshot && isWal; }
 
-	const RdxContext &rdxContext;
+	const RdxContext& rdxContext;
 	bool inTransaction{false};
 	bool inSnapshot{false};
 	bool isCopiedNsRequest{false};
@@ -126,11 +126,11 @@ class NamespaceImpl final : public intrusive_atomic_rc_base {  // NOLINT(*perfor
 	class RollBack_updateItems;
 	class IndexesCacheCleaner {
 	public:
-		explicit IndexesCacheCleaner(NamespaceImpl &ns) noexcept : ns_{ns} {}
-		IndexesCacheCleaner(const IndexesCacheCleaner &) = delete;
-		IndexesCacheCleaner(IndexesCacheCleaner &&) = delete;
-		IndexesCacheCleaner &operator=(const IndexesCacheCleaner &) = delete;
-		IndexesCacheCleaner &operator=(IndexesCacheCleaner &&) = delete;
+		explicit IndexesCacheCleaner(NamespaceImpl& ns) noexcept : ns_{ns} {}
+		IndexesCacheCleaner(const IndexesCacheCleaner&) = delete;
+		IndexesCacheCleaner(IndexesCacheCleaner&&) = delete;
+		IndexesCacheCleaner& operator=(const IndexesCacheCleaner&) = delete;
+		IndexesCacheCleaner& operator=(IndexesCacheCleaner&&) = delete;
 		void Add(SortType s) {
 			if rx_unlikely (s >= sorts_.size()) {
 				throw Error(errLogic, "Index sort type overflow: %d. Limit is %d", s, sorts_.size() - 1);
@@ -142,7 +142,7 @@ class NamespaceImpl final : public intrusive_atomic_rc_base {  // NOLINT(*perfor
 		~IndexesCacheCleaner();
 
 	private:
-		const NamespaceImpl &ns_;
+		const NamespaceImpl& ns_;
 		std::bitset<kMaxIndexes> sorts_;
 	};
 
@@ -170,22 +170,23 @@ class NamespaceImpl final : public intrusive_atomic_rc_base {  // NOLINT(*perfor
 
 	class NSUpdateSortedContext final : public UpdateSortedContext {
 	public:
-		NSUpdateSortedContext(const NamespaceImpl &ns, SortType curSortId)
+		NSUpdateSortedContext(const NamespaceImpl& ns, SortType curSortId)
 			: ns_(ns), sorted_indexes_(ns_.getSortedIdxCount()), curSortId_(curSortId) {
 			ids2Sorts_.reserve(ns.items_.size());
 			ids2SortsMemSize_ = ids2Sorts_.capacity() * sizeof(SortType);
 			ns.nsUpdateSortedContextMemory_.fetch_add(ids2SortsMemSize_);
-			for (IdType i = 0; i < IdType(ns_.items_.size()); i++)
+			for (IdType i = 0; i < IdType(ns_.items_.size()); i++) {
 				ids2Sorts_.push_back(ns_.items_[i].IsFree() ? SortIdUnexists : SortIdUnfilled);
+			}
 		}
 		~NSUpdateSortedContext() override { ns_.nsUpdateSortedContextMemory_.fetch_sub(ids2SortsMemSize_); }
 		int getSortedIdxCount() const noexcept override { return sorted_indexes_; }
 		SortType getCurSortId() const noexcept override { return curSortId_; }
-		const std::vector<SortType> &ids2Sorts() const noexcept override { return ids2Sorts_; }
-		std::vector<SortType> &ids2Sorts() noexcept override { return ids2Sorts_; }
+		const std::vector<SortType>& ids2Sorts() const noexcept override { return ids2Sorts_; }
+		std::vector<SortType>& ids2Sorts() noexcept override { return ids2Sorts_; }
 
 	private:
-		const NamespaceImpl &ns_;
+		const NamespaceImpl& ns_;
 		const int sorted_indexes_{0};
 		const IdType curSortId_{-1};
 		std::vector<SortType> ids2Sorts_;
@@ -196,24 +197,24 @@ class NamespaceImpl final : public intrusive_atomic_rc_base {  // NOLINT(*perfor
 	public:
 		using Base = std::vector<std::unique_ptr<Index>>;
 
-		explicit IndexesStorage(const NamespaceImpl &ns) noexcept;
+		explicit IndexesStorage(const NamespaceImpl& ns) noexcept;
 
-		IndexesStorage(const IndexesStorage &src) = delete;
-		IndexesStorage &operator=(const IndexesStorage &src) = delete;
+		IndexesStorage(const IndexesStorage& src) = delete;
+		IndexesStorage& operator=(const IndexesStorage& src) = delete;
 
-		IndexesStorage(IndexesStorage &&src) = delete;
-		IndexesStorage &operator=(IndexesStorage &&src) noexcept = delete;
+		IndexesStorage(IndexesStorage&& src) = delete;
+		IndexesStorage& operator=(IndexesStorage&& src) noexcept = delete;
 
 		int denseIndexesSize() const noexcept { return ns_.payloadType_.NumFields(); }
 		int sparseIndexesSize() const noexcept { return ns_.sparseIndexesCount_; }
 		int compositeIndexesSize() const noexcept { return totalSize() - denseIndexesSize() - sparseIndexesSize(); }
 		int firstSparsePos() const noexcept { return ns_.payloadType_.NumFields(); }
 		int firstCompositePos() const noexcept { return ns_.payloadType_.NumFields() + ns_.sparseIndexesCount_; }
-		int firstCompositePos(const PayloadType &pt, int sparseIndexes) const noexcept { return pt.NumFields() + sparseIndexes; }
+		int firstCompositePos(const PayloadType& pt, int sparseIndexes) const noexcept { return pt.NumFields() + sparseIndexes; }
 		int totalSize() const noexcept { return size(); }
 
 	private:
-		const NamespaceImpl &ns_;
+		const NamespaceImpl& ns_;
 	};
 
 	class Items final : public std::vector<PayloadValue> {
@@ -237,12 +238,12 @@ public:
 			using MutexType = Mutex;
 
 			NsWLock() = default;
-			NsWLock(MutexType &mtx, std::try_to_lock_t t, const RdxContext &ctx, bool isCL) : impl_(mtx, t, ctx), isClusterLck_(isCL) {}
-			NsWLock(MutexType &mtx, const RdxContext &ctx, bool isCL) : impl_(mtx, ctx), isClusterLck_(isCL) {}
-			NsWLock(const NsWLock &) = delete;
-			NsWLock(NsWLock &&) = default;
-			NsWLock &operator=(const NsWLock &) = delete;
-			NsWLock &operator=(NsWLock &&) = default;
+			NsWLock(MutexType& mtx, std::try_to_lock_t t, const RdxContext& ctx, bool isCL) : impl_(mtx, t, ctx), isClusterLck_(isCL) {}
+			NsWLock(MutexType& mtx, const RdxContext& ctx, bool isCL) : impl_(mtx, ctx), isClusterLck_(isCL) {}
+			NsWLock(const NsWLock&) = delete;
+			NsWLock(NsWLock&&) = default;
+			NsWLock& operator=(const NsWLock&) = delete;
+			NsWLock& operator=(NsWLock&&) = default;
 			void lock() { impl_.lock(); }
 			void unlock() { impl_.unlock(); }
 			bool owns_lock() const { return impl_.owns_lock(); }
@@ -255,10 +256,10 @@ public:
 		typedef contexted_shared_lock<Mutex, const RdxContext> RLockT;
 		typedef NsWLock WLockT;
 
-		Locker(const cluster::IDataSyncer &syncer, const NamespaceImpl &owner) noexcept : syncer_(syncer), owner_(owner) {}
+		Locker(const cluster::IDataSyncer& syncer, const NamespaceImpl& owner) noexcept : syncer_(syncer), owner_(owner) {}
 
-		RLockT RLock(const RdxContext &ctx) const { return RLockT(mtx_, ctx); }
-		WLockT DataWLock(const RdxContext &ctx, bool skipClusterStatusCheck) const {
+		RLockT RLock(const RdxContext& ctx) const { return RLockT(mtx_, ctx); }
+		WLockT DataWLock(const RdxContext& ctx, bool skipClusterStatusCheck) const {
 			WLockT lck(mtx_, ctx, true);
 			checkInvalidation();
 			const bool requireSync = !ctx.NoWaitSync() && ctx.GetOriginLSN().isEmpty() && !owner_.isSystem();
@@ -282,22 +283,22 @@ public:
 
 			return lck;
 		}
-		WLockT SimpleWLock(const RdxContext &ctx) const {
+		WLockT SimpleWLock(const RdxContext& ctx) const {
 			WLockT lck(mtx_, ctx, false);
 			checkInvalidation();
 			return lck;
 		}
-		bool IsNotLocked(const RdxContext &ctx) const { return WLockT(mtx_, std::try_to_lock_t{}, ctx, false).owns_lock(); }
+		bool IsNotLocked(const RdxContext& ctx) const { return WLockT(mtx_, std::try_to_lock_t{}, ctx, false).owns_lock(); }
 		void MarkReadOnly() noexcept { invalidation_.store(int(InvalidationType::Readonly), std::memory_order_release); }
 		void MarkOverwrittenByUser() noexcept { invalidation_.store(int(InvalidationType::OverwrittenByUser), std::memory_order_release); }
 		void MarkOverwrittenByForceSync() noexcept {
 			invalidation_.store(int(InvalidationType::OverwrittenByReplicator), std::memory_order_release);
 		}
-		const std::atomic<int> &InvalidationType() const noexcept { return invalidation_; }
+		const std::atomic<int>& InvalidationType() const noexcept { return invalidation_; }
 		bool IsValid() const noexcept {
 			return NamespaceImpl::InvalidationType(invalidation_.load(std::memory_order_acquire)) == InvalidationType::Valid;
 		}
-		const cluster::IDataSyncer &Syncer() const noexcept { return syncer_; }
+		const cluster::IDataSyncer& Syncer() const noexcept { return syncer_; }
 
 	private:
 		void checkInvalidation() const {
@@ -317,97 +318,97 @@ public:
 
 		mutable Mutex mtx_;
 		std::atomic<int> invalidation_ = {int(InvalidationType::Valid)};
-		const cluster::IDataSyncer &syncer_;
-		const NamespaceImpl &owner_;
+		const cluster::IDataSyncer& syncer_;
+		const NamespaceImpl& owner_;
 	};
 
-	NamespaceImpl(const std::string &_name, std::optional<int32_t> stateToken, const cluster::IDataSyncer &, UpdatesObservers &);
-	NamespaceImpl &operator=(const NamespaceImpl &) = delete;
+	NamespaceImpl(const std::string& _name, std::optional<int32_t> stateToken, const cluster::IDataSyncer&, UpdatesObservers&);
+	NamespaceImpl& operator=(const NamespaceImpl&) = delete;
 	~NamespaceImpl() override;
 
-	NamespaceName GetName(const RdxContext &ctx) const {
+	NamespaceName GetName(const RdxContext& ctx) const {
 		auto rlck = rLock(ctx);
 		return name_;
 	}
-	bool IsSystem(const RdxContext &ctx) const {
+	bool IsSystem(const RdxContext& ctx) const {
 		auto rlck = rLock(ctx);
 		return isSystem();
 	}
-	bool IsTemporary(const RdxContext &ctx) const { return GetReplState(ctx).temporary; }
-	void SetNsVersion(lsn_t version, const RdxContext &ctx);
+	bool IsTemporary(const RdxContext& ctx) const { return GetReplState(ctx).temporary; }
+	void SetNsVersion(lsn_t version, const RdxContext& ctx);
 
-	void EnableStorage(const std::string &path, StorageOpts opts, StorageType storageType, const RdxContext &ctx);
-	void LoadFromStorage(unsigned threadsCount, const RdxContext &ctx);
-	void DeleteStorage(const RdxContext &);
+	void EnableStorage(const std::string& path, StorageOpts opts, StorageType storageType, const RdxContext& ctx);
+	void LoadFromStorage(unsigned threadsCount, const RdxContext& ctx);
+	void DeleteStorage(const RdxContext&);
 
 	uint32_t GetItemsCount() const { return itemsCount_.load(std::memory_order_relaxed); }
 	uint32_t GetItemsCapacity() const { return itemsCapacity_.load(std::memory_order_relaxed); }
-	void AddIndex(const IndexDef &indexDef, const RdxContext &ctx);
-	void UpdateIndex(const IndexDef &indexDef, const RdxContext &ctx);
-	void DropIndex(const IndexDef &indexDef, const RdxContext &ctx);
-	void SetSchema(std::string_view schema, const RdxContext &ctx);
-	std::string GetSchema(int format, const RdxContext &ctx);
+	void AddIndex(const IndexDef& indexDef, const RdxContext& ctx);
+	void UpdateIndex(const IndexDef& indexDef, const RdxContext& ctx);
+	void DropIndex(const IndexDef& indexDef, const RdxContext& ctx);
+	void SetSchema(std::string_view schema, const RdxContext& ctx);
+	std::string GetSchema(int format, const RdxContext& ctx);
 
-	void Insert(Item &item, const RdxContext &);
-	void Update(Item &item, const RdxContext &);
-	void Upsert(Item &item, const RdxContext &);
-	void Delete(Item &item, const RdxContext &);
-	void ModifyItem(Item &item, ItemModifyMode mode, const RdxContext &);
-	void Truncate(const RdxContext &);
-	void Refill(std::vector<Item> &, const RdxContext &);
+	void Insert(Item& item, const RdxContext&);
+	void Update(Item& item, const RdxContext&);
+	void Upsert(Item& item, const RdxContext&);
+	void Delete(Item& item, const RdxContext&);
+	void ModifyItem(Item& item, ItemModifyMode mode, const RdxContext&);
+	void Truncate(const RdxContext&);
+	void Refill(std::vector<Item>&, const RdxContext&);
 
 	template <typename JoinPreResultCtx>
-	void Select(LocalQueryResults &result, SelectCtxWithJoinPreSelect<JoinPreResultCtx> &params, const RdxContext &);
-	NamespaceDef GetDefinition(const RdxContext &ctx);
-	NamespaceMemStat GetMemStat(const RdxContext &);
-	NamespacePerfStat GetPerfStat(const RdxContext &);
-	void ResetPerfStat(const RdxContext &);
-	std::vector<std::string> EnumMeta(const RdxContext &ctx);
+	void Select(LocalQueryResults& result, SelectCtxWithJoinPreSelect<JoinPreResultCtx>& params, const RdxContext&);
+	NamespaceDef GetDefinition(const RdxContext& ctx);
+	NamespaceMemStat GetMemStat(const RdxContext&);
+	NamespacePerfStat GetPerfStat(const RdxContext&);
+	void ResetPerfStat(const RdxContext&);
+	std::vector<std::string> EnumMeta(const RdxContext& ctx);
 
-	void BackgroundRoutine(RdxActivityContext *);
+	void BackgroundRoutine(RdxActivityContext*);
 	void StorageFlushingRoutine();
-	void CloseStorage(const RdxContext &);
+	void CloseStorage(const RdxContext&);
 
-	LocalTransaction NewTransaction(const RdxContext &ctx);
-	void CommitTransaction(LocalTransaction &tx, LocalQueryResults &result, const NsContext &ctx,
-						   QueryStatCalculator<LocalTransaction, long_actions::Logger> &queryStatCalculator);
+	LocalTransaction NewTransaction(const RdxContext& ctx);
+	void CommitTransaction(LocalTransaction& tx, LocalQueryResults& result, const NsContext& ctx,
+						   QueryStatCalculator<LocalTransaction, long_actions::Logger>& queryStatCalculator);
 
-	Item NewItem(const RdxContext &ctx);
-	void ToPool(ItemImpl *item);
+	Item NewItem(const RdxContext& ctx);
+	void ToPool(ItemImpl* item);
 	// Get metadata from storage by key
-	std::string GetMeta(const std::string &key, const RdxContext &ctx);
+	std::string GetMeta(const std::string& key, const RdxContext& ctx);
 	// Put metadata to storage by key
-	void PutMeta(const std::string &key, std::string_view data, const RdxContext &ctx);
+	void PutMeta(const std::string& key, std::string_view data, const RdxContext& ctx);
 	// Delete metadata from storage by key
-	void DeleteMeta(const std::string &key, const RdxContext &ctx);
-	int64_t GetSerial(const std::string &field, UpdatesContainer &replUpdates, const NsContext &ctx);
+	void DeleteMeta(const std::string& key, const RdxContext& ctx);
+	int64_t GetSerial(const std::string& field, UpdatesContainer& replUpdates, const NsContext& ctx);
 
 	int getIndexByName(std::string_view index) const;
 	int getIndexByNameOrJsonPath(std::string_view name) const;
 	int getScalarIndexByName(std::string_view name) const;
-	bool tryGetIndexByName(std::string_view name, int &index) const;
-	bool getIndexByNameOrJsonPath(std::string_view name, int &index) const;
-	bool getScalarIndexByName(std::string_view name, int &index) const;
-	bool getSparseIndexByJsonPath(std::string_view jsonPath, int &index) const;
-	PayloadType getPayloadType(const RdxContext &ctx) const;
+	bool tryGetIndexByName(std::string_view name, int& index) const;
+	bool getIndexByNameOrJsonPath(std::string_view name, int& index) const;
+	bool getScalarIndexByName(std::string_view name, int& index) const;
+	bool getSparseIndexByJsonPath(std::string_view jsonPath, int& index) const;
+	PayloadType getPayloadType(const RdxContext& ctx) const;
 
-	void FillResult(LocalQueryResults &result, const IdSet &ids) const;
+	void FillResult(LocalQueryResults& result, const IdSet& ids) const;
 
 	void EnablePerfCounters(bool enable = true) { enablePerfCounters_ = enable; }
 
-	ReplicationState GetReplState(const RdxContext &) const;
-	ReplicationStateV2 GetReplStateV2(const RdxContext &) const;
+	ReplicationState GetReplState(const RdxContext&) const;
+	ReplicationStateV2 GetReplStateV2(const RdxContext&) const;
 
-	void OnConfigUpdated(DBConfigProvider &configProvider, const RdxContext &ctx);
-	StorageOpts GetStorageOpts(const RdxContext &);
-	std::shared_ptr<const Schema> GetSchemaPtr(const RdxContext &ctx) const;
+	void OnConfigUpdated(DBConfigProvider& configProvider, const RdxContext& ctx);
+	StorageOpts GetStorageOpts(const RdxContext&);
+	std::shared_ptr<const Schema> GetSchemaPtr(const RdxContext& ctx) const;
 	IndexesCacheCleaner GetIndexesCacheCleaner() { return IndexesCacheCleaner{*this}; }
-	Error SetClusterizationStatus(ClusterizationStatus &&status, const RdxContext &ctx);
-	void ApplySnapshotChunk(const SnapshotChunk &ch, bool isInitialLeaderSync, const RdxContext &ctx);
-	void GetSnapshot(Snapshot &snapshot, const SnapshotOpts &opts, const RdxContext &ctx);
-	void SetTagsMatcher(TagsMatcher &&tm, const RdxContext &ctx);
+	Error SetClusterizationStatus(ClusterizationStatus&& status, const RdxContext& ctx);
+	void ApplySnapshotChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, const RdxContext& ctx);
+	void GetSnapshot(Snapshot& snapshot, const SnapshotOpts& opts, const RdxContext& ctx);
+	void SetTagsMatcher(TagsMatcher&& tm, const RdxContext& ctx);
 	void SetDestroyFlag() noexcept { dbDestroyed_ = true; }
-	Error FlushStorage(const RdxContext &ctx) {
+	Error FlushStorage(const RdxContext& ctx) {
 		const auto flushOpts = StorageFlushOpts().WithImmediateReopen();
 		auto lck = rLock(ctx);
 		storage_.Flush(flushOpts);
@@ -423,18 +424,18 @@ private:
 	};
 
 	struct PKModifyRevertData {
-		PKModifyRevertData(PayloadValue &p, lsn_t l) : pv(p), lsn(l) {}
-		PayloadValue &pv;
+		PKModifyRevertData(PayloadValue& p, lsn_t l) : pv(p), lsn(l) {}
+		PayloadValue& pv;
 		lsn_t lsn;
 	};
 
-	Error rebuildIndexesTagsPaths(const TagsMatcher &newTm);
+	Error rebuildIndexesTagsPaths(const TagsMatcher& newTm);
 	ReplicationState getReplState() const;
 	std::string sysRecordName(std::string_view sysTag, uint64_t version);
-	void writeSysRecToStorage(std::string_view data, std::string_view sysTag, uint64_t &version, bool direct);
+	void writeSysRecToStorage(std::string_view data, std::string_view sysTag, uint64_t& version, bool direct);
 	void saveIndexesToStorage();
 	void saveSchemaToStorage();
-	Error loadLatestSysRecord(std::string_view baseSysTag, uint64_t &version, std::string &content);
+	Error loadLatestSysRecord(std::string_view baseSysTag, uint64_t& version, std::string& content);
 	bool loadIndexesFromStorage();
 	void saveReplStateToStorage(bool direct = true);
 	void saveTagsMatcherToStorage(bool clearUpdate);
@@ -446,73 +447,73 @@ private:
 	void markUpdated(IndexOptimization requestedOptimization);
 	void scheduleIndexOptimization(IndexOptimization requestedOptimization);
 	Item newItem();
-	void doUpdate(const Query &query, LocalQueryResults &result, UpdatesContainer &pendedRepl, const NsContext &);
-	void doDelete(const Query &query, LocalQueryResults &result, UpdatesContainer &pendedRepl, const NsContext &);
-	void doUpsert(ItemImpl *ritem, IdType id, bool doUpdate);
-	void modifyItem(Item &item, ItemModifyMode mode, UpdatesContainer &pendedRepl, const NsContext &ctx);
-	void deleteItem(Item &item, UpdatesContainer &pendedRepl, const NsContext &ctx);
-	void doModifyItem(Item &item, ItemModifyMode mode, UpdatesContainer &pendedRepl, const NsContext &ctx, IdType suggestedId = -1);
-	void updateTagsMatcherFromItem(ItemImpl *ritem, const NsContext &ctx);
+	void doUpdate(const Query& query, LocalQueryResults& result, UpdatesContainer& pendedRepl, const NsContext&);
+	void doDelete(const Query& query, LocalQueryResults& result, UpdatesContainer& pendedRepl, const NsContext&);
+	void doUpsert(ItemImpl* ritem, IdType id, bool doUpdate);
+	void modifyItem(Item& item, ItemModifyMode mode, UpdatesContainer& pendedRepl, const NsContext& ctx);
+	void deleteItem(Item& item, UpdatesContainer& pendedRepl, const NsContext& ctx);
+	void doModifyItem(Item& item, ItemModifyMode mode, UpdatesContainer& pendedRepl, const NsContext& ctx, IdType suggestedId = -1);
+	void updateTagsMatcherFromItem(ItemImpl* ritem, const NsContext& ctx);
 	template <NeedRollBack needRollBack, FieldChangeType fieldChangeType>
-	[[nodiscard]] RollBack_updateItems<needRollBack> updateItems(const PayloadType &oldPlType, int changedField);
-	void fillSparseIndex(Index &, std::string_view jsonPath);
+	[[nodiscard]] RollBack_updateItems<needRollBack> updateItems(const PayloadType& oldPlType, int changedField);
+	void fillSparseIndex(Index&, std::string_view jsonPath);
 	void doDelete(IdType id);
-	void doTruncate(UpdatesContainer &pendedRepl, const NsContext &ctx);
-	void optimizeIndexes(const NsContext &);
-	[[nodiscard]] RollBack_insertIndex insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const std::string &realName);
-	void addIndex(const IndexDef &indexDef, bool disableTmVersionInc, bool skipEqualityCheck = false);
-	void doAddIndex(const IndexDef &indexDef, bool skipEqualityCheck, UpdatesContainer &pendedRepl, const NsContext &ctx);
-	void addCompositeIndex(const IndexDef &indexDef);
-	bool checkIfSameIndexExists(const IndexDef &indexDef, bool *requireTtlUpdate);
+	void doTruncate(UpdatesContainer& pendedRepl, const NsContext& ctx);
+	void optimizeIndexes(const NsContext&);
+	[[nodiscard]] RollBack_insertIndex insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const std::string& realName);
+	void addIndex(const IndexDef& indexDef, bool disableTmVersionInc, bool skipEqualityCheck = false);
+	void doAddIndex(const IndexDef& indexDef, bool skipEqualityCheck, UpdatesContainer& pendedRepl, const NsContext& ctx);
+	void addCompositeIndex(const IndexDef& indexDef);
+	bool checkIfSameIndexExists(const IndexDef& indexDef, bool* requireTtlUpdate);
 	template <typename PathsT, typename JsonPathsContainerT>
-	void createCompositeFieldsSet(const std::string &idxName, const PathsT &paths, FieldsSet &fields);
-	void verifyCompositeIndex(const IndexDef &indexDef) const;
+	void createCompositeFieldsSet(const std::string& idxName, const PathsT& paths, FieldsSet& fields);
+	void verifyCompositeIndex(const IndexDef& indexDef) const;
 	template <typename GetNameF>
-	void verifyAddIndex(const IndexDef &indexDef, GetNameF &&) const;
-	void verifyUpdateIndex(const IndexDef &indexDef) const;
-	void verifyUpdateCompositeIndex(const IndexDef &indexDef) const;
-	bool updateIndex(const IndexDef &indexDef, bool disableTmVersionInc);
-	bool doUpdateIndex(const IndexDef &indexDef, UpdatesContainer &pendedRepl, const NsContext &ctx);
-	void dropIndex(const IndexDef &index, bool disableTmVersionInc);
-	void doDropIndex(const IndexDef &index, UpdatesContainer &pendedRepl, const NsContext &ctx);
-	void addToWAL(const IndexDef &indexDef, WALRecType type, const NsContext &ctx);
-	void addToWAL(std::string_view json, WALRecType type, const NsContext &ctx);
-	void removeExpiredItems(RdxActivityContext *);
-	void removeExpiredStrings(RdxActivityContext *);
-	void setSchema(std::string_view schema, UpdatesContainer &pendedRepl, const NsContext &ctx);
-	void setTagsMatcher(TagsMatcher &&tm, UpdatesContainer &pendedRepl, const NsContext &ctx);
-	void replicateItem(IdType itemId, const NsContext &ctx, bool statementReplication, uint64_t oldPlHash, size_t oldItemCapacity,
-					   int oldTmVersion, std::optional<PKModifyRevertData> &&modifyData, UpdatesContainer &pendedRepl);
+	void verifyAddIndex(const IndexDef& indexDef, GetNameF&&) const;
+	void verifyUpdateIndex(const IndexDef& indexDef) const;
+	void verifyUpdateCompositeIndex(const IndexDef& indexDef) const;
+	bool updateIndex(const IndexDef& indexDef, bool disableTmVersionInc);
+	bool doUpdateIndex(const IndexDef& indexDef, UpdatesContainer& pendedRepl, const NsContext& ctx);
+	void dropIndex(const IndexDef& index, bool disableTmVersionInc);
+	void doDropIndex(const IndexDef& index, UpdatesContainer& pendedRepl, const NsContext& ctx);
+	void addToWAL(const IndexDef& indexDef, WALRecType type, const NsContext& ctx);
+	void addToWAL(std::string_view json, WALRecType type, const NsContext& ctx);
+	void removeExpiredItems(RdxActivityContext*);
+	void removeExpiredStrings(RdxActivityContext*);
+	void setSchema(std::string_view schema, UpdatesContainer& pendedRepl, const NsContext& ctx);
+	void setTagsMatcher(TagsMatcher&& tm, UpdatesContainer& pendedRepl, const NsContext& ctx);
+	void replicateItem(IdType itemId, const NsContext& ctx, bool statementReplication, uint64_t oldPlHash, size_t oldItemCapacity,
+					   int oldTmVersion, std::optional<PKModifyRevertData>&& modifyData, UpdatesContainer& pendedRepl);
 
 	template <NeedRollBack needRollBack>
 	[[nodiscard]] RollBack_recreateCompositeIndexes<needRollBack> recreateCompositeIndexes(size_t startIdx, size_t endIdx);
 	NamespaceDef getDefinition() const;
-	IndexDef getIndexDefinition(const std::string &indexName) const;
+	IndexDef getIndexDefinition(const std::string& indexName) const;
 	IndexDef getIndexDefinition(size_t i) const;
 
-	std::string getMeta(const std::string &key) const;
-	void putMeta(const std::string &key, std::string_view data, UpdatesContainer &pendedRepl, const NsContext &ctx);
-	void deleteMeta(const std::string &key, UpdatesContainer &pendedRepl, const NsContext &ctx);
+	std::string getMeta(const std::string& key) const;
+	void putMeta(const std::string& key, std::string_view data, UpdatesContainer& pendedRepl, const NsContext& ctx);
+	void deleteMeta(const std::string& key, UpdatesContainer& pendedRepl, const NsContext& ctx);
 
-	std::pair<IdType, bool> findByPK(ItemImpl *ritem, bool inTransaction, const RdxContext &ctx);
+	std::pair<IdType, bool> findByPK(ItemImpl* ritem, bool inTransaction, const RdxContext& ctx);
 
-	RX_ALWAYS_INLINE SelectKeyResult getPkDocs(const ConstPayload &cpl, bool inTransaction, const RdxContext &ctx);
-	RX_ALWAYS_INLINE VariantArray getPkKeys(const ConstPayload &cpl, Index *pkIndex, int fieldNum);
-	void checkUniquePK(const ConstPayload &cpl, bool inTransaction, const RdxContext &ctx);
+	RX_ALWAYS_INLINE SelectKeyResult getPkDocs(const ConstPayload& cpl, bool inTransaction, const RdxContext& ctx);
+	RX_ALWAYS_INLINE VariantArray getPkKeys(const ConstPayload& cpl, Index* pkIndex, int fieldNum);
+	void checkUniquePK(const ConstPayload& cpl, bool inTransaction, const RdxContext& ctx);
 
 	int getSortedIdxCount() const noexcept;
 	void updateSortedIdxCount();
-	void setFieldsBasedOnPrecepts(ItemImpl *ritem, UpdatesContainer &replUpdates, const NsContext &ctx);
+	void setFieldsBasedOnPrecepts(ItemImpl* ritem, UpdatesContainer& replUpdates, const NsContext& ctx);
 
-	void putToJoinCache(JoinCacheRes &res, std::shared_ptr<const JoinPreResult> preResult) const;
-	void putToJoinCache(JoinCacheRes &res, JoinCacheVal &&val) const;
-	void getFromJoinCache(const Query &, const JoinedQuery &, JoinCacheRes &out) const;
-	void getFromJoinCache(const Query &, JoinCacheRes &out) const;
-	void getFromJoinCacheImpl(JoinCacheRes &out) const;
-	void getInsideFromJoinCache(JoinCacheRes &ctx) const;
+	void putToJoinCache(JoinCacheRes& res, std::shared_ptr<const JoinPreResult> preResult) const;
+	void putToJoinCache(JoinCacheRes& res, JoinCacheVal&& val) const;
+	void getFromJoinCache(const Query&, const JoinedQuery&, JoinCacheRes& out) const;
+	void getFromJoinCache(const Query&, JoinCacheRes& out) const;
+	void getFromJoinCacheImpl(JoinCacheRes& out) const;
+	void getInsideFromJoinCache(JoinCacheRes& ctx) const;
 	int64_t lastUpdateTimeNano() const noexcept { return repl_.updatedUnixNano; }
 
-	const FieldsSet &pkFields();
+	const FieldsSet& pkFields();
 
 	std::vector<std::string> enumMeta() const;
 
@@ -525,17 +526,17 @@ private:
 	void markReadOnly() noexcept { locker_.MarkReadOnly(); }
 	void markOverwrittenByUser() noexcept { locker_.MarkOverwrittenByUser(); }
 	void markOverwrittenByForceSync() noexcept { locker_.MarkOverwrittenByForceSync(); }
-	Locker::WLockT simpleWLock(const RdxContext &ctx) const { return locker_.SimpleWLock(ctx); }
-	Locker::WLockT dataWLock(const RdxContext &ctx, bool skipClusterStatusCheck = false) const {
+	Locker::WLockT simpleWLock(const RdxContext& ctx) const { return locker_.SimpleWLock(ctx); }
+	Locker::WLockT dataWLock(const RdxContext& ctx, bool skipClusterStatusCheck = false) const {
 		return locker_.DataWLock(ctx, skipClusterStatusCheck);
 	}
-	bool isNotLocked(const RdxContext &ctx) const { return locker_.IsNotLocked(ctx); }
-	Locker::RLockT rLock(const RdxContext &ctx) const { return locker_.RLock(ctx); }
-	void checkClusterRole(const RdxContext &ctx) const { checkClusterRole(ctx.GetOriginLSN()); }
+	bool isNotLocked(const RdxContext& ctx) const { return locker_.IsNotLocked(ctx); }
+	Locker::RLockT rLock(const RdxContext& ctx) const { return locker_.RLock(ctx); }
+	void checkClusterRole(const RdxContext& ctx) const { checkClusterRole(ctx.GetOriginLSN()); }
 	void checkClusterRole(lsn_t originLsn) const;
-	void checkClusterStatus(const RdxContext &ctx) const { checkClusterStatus(ctx.GetOriginLSN()); }
+	void checkClusterStatus(const RdxContext& ctx) const { checkClusterStatus(ctx.GetOriginLSN()); }
 	void checkClusterStatus(lsn_t originLsn) const;
-	void replicateTmUpdateIfRequired(UpdatesContainer &pendedRepl, int oldTmVersion, const NsContext &ctx) noexcept;
+	void replicateTmUpdateIfRequired(UpdatesContainer& pendedRepl, int oldTmVersion, const NsContext& ctx) noexcept;
 
 	bool SortOrdersBuilt() const noexcept { return optimizationState_.load(std::memory_order_acquire) == OptimizationCompleted; }
 
@@ -568,23 +569,23 @@ private:
 	std::shared_ptr<Schema> schema_;
 
 	StringsHolderPtr strHolder() const noexcept { return strHolder_; }
-	std::set<std::string> GetFTIndexes(const RdxContext &) const;
+	std::set<std::string> GetFTIndexes(const RdxContext&) const;
 	size_t itemsCount() const noexcept { return items_.size() - free_.size(); }
-	const NamespaceConfigData &config() const noexcept { return config_; }
+	const NamespaceConfigData& config() const noexcept { return config_; }
 
-	void DumpIndex(std::ostream &os, std::string_view index, const RdxContext &ctx) const;
+	void DumpIndex(std::ostream& os, std::string_view index, const RdxContext& ctx) const;
 
-	NamespaceImpl(const NamespaceImpl &src, AsyncStorage::FullLockT &storageLock);
+	NamespaceImpl(const NamespaceImpl& src, AsyncStorage::FullLockT& storageLock);
 
 	bool isSystem() const noexcept { return isSystemNamespaceNameFast(name_); }
 	IdType createItem(size_t realSize, IdType suggestedId);
 
-	void processWalRecord(WALRecord &&wrec, const NsContext &ctx, lsn_t itemLsn = lsn_t(), Item *item = nullptr);
-	void replicateAsync(updates::UpdateRecord &&rec, const RdxContext &ctx);
-	void replicateAsync(UpdatesContainer &&recs, const RdxContext &ctx);
+	void processWalRecord(WALRecord&& wrec, const NsContext& ctx, lsn_t itemLsn = lsn_t(), Item* item = nullptr);
+	void replicateAsync(updates::UpdateRecord&& rec, const RdxContext& ctx);
+	void replicateAsync(UpdatesContainer&& recs, const RdxContext& ctx);
 	template <typename QueryStatsCalculatorT>
-	void replicate(UpdatesContainer &&recs, NamespaceImpl::Locker::WLockT &&wlck, bool tryForceFlush,
-				   QueryStatsCalculatorT &&statCalculator, const NsContext &ctx) {
+	void replicate(UpdatesContainer&& recs, NamespaceImpl::Locker::WLockT&& wlck, bool tryForceFlush,
+				   QueryStatsCalculatorT&& statCalculator, const NsContext& ctx) {
 		if (!repl_.temporary) {
 			assertrx(!ctx.isCopiedNsRequest);
 			auto err = observers_.SendUpdates(
@@ -614,17 +615,17 @@ private:
 
 	void setTemporary() noexcept { repl_.temporary = true; }
 
-	void removeIndex(std::unique_ptr<Index> &);
-	void dumpIndex(std::ostream &os, std::string_view index) const;
-	void tryForceFlush(Locker::WLockT &&wlck) {
+	void removeIndex(std::unique_ptr<Index>&);
+	void dumpIndex(std::ostream& os, std::string_view index) const;
+	void tryForceFlush(Locker::WLockT&& wlck) {
 		if (wlck.owns_lock()) {
 			wlck.unlock();
 			storage_.TryForceFlush();
 		}
 	}
-	size_t getWalSize(const NamespaceConfigData &cfg) const noexcept { return isSystem() ? int64_t(1) : std::max(cfg.walSize, int64_t(1)); }
+	size_t getWalSize(const NamespaceConfigData& cfg) const noexcept { return isSystem() ? int64_t(1) : std::max(cfg.walSize, int64_t(1)); }
 	void clearNamespaceCaches();
-	std::vector<TagsPath> pickJsonPath(const PayloadFieldType &fld);
+	std::vector<TagsPath> pickJsonPath(const PayloadFieldType& fld);
 
 	PerfStatCounterMT updatePerfCounter_, selectPerfCounter_;
 	std::atomic_bool enablePerfCounters_{false};
@@ -656,6 +657,6 @@ private:
 	mutable std::atomic<int64_t> nsUpdateSortedContextMemory_{0};
 	std::atomic<bool> dbDestroyed_{false};
 	lsn_t incarnationTag_;	// Determines unique namespace incarnation for the correct go cache invalidation
-	UpdatesObservers &observers_;
+	UpdatesObservers& observers_;
 };
 }  // namespace reindexer

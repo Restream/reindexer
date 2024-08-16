@@ -6,17 +6,19 @@
 
 namespace reindexer {
 
-enum { TxBit = (1 << 7) };
+constexpr unsigned kTxBit = (1 << 7);
 
-void PackedWALRecord::Pack(const WALRecord &rec) {
+void PackedWALRecord::Pack(const WALRecord& rec) {
 	WrSerializer ser;
 	rec.Pack(ser);
 	assign(ser.Buf(), ser.Buf() + ser.Len());
 }
 
-void WALRecord::Pack(WrSerializer &ser) const {
-	if (type == WalEmpty) return;
-	ser.PutVarUint(inTransaction ? (type | TxBit) : type);
+void WALRecord::Pack(WrSerializer& ser) const {
+	if (type == WalEmpty) {
+		return;
+	}
+	ser.PutVarUint(inTransaction ? (unsigned(type) | kTxBit) : unsigned(type));
 	switch (type) {
 		case WalItemUpdate:
 		case WalShallowItem:
@@ -69,9 +71,9 @@ WALRecord::WALRecord(span<const uint8_t> packed) {
 	}
 	Serializer ser(packed.data(), packed.size());
 	const unsigned unpackedType = ser.GetVarUint();
-	if (unpackedType & TxBit) {
+	if (unpackedType & kTxBit) {
 		inTransaction = true;
-		type = static_cast<WALRecType>(unpackedType ^ TxBit);
+		type = static_cast<WALRecType>(unpackedType ^ kTxBit);
 	} else {
 		inTransaction = false;
 		type = static_cast<WALRecType>(unpackedType);
@@ -171,9 +173,11 @@ static std::string_view wrecType2Str(WALRecType t) {
 	return "<Unknown>"sv;
 }
 
-WrSerializer &WALRecord::Dump(WrSerializer &ser, const std::function<std::string(std::string_view)> &cjsonViewer) const {
+WrSerializer& WALRecord::Dump(WrSerializer& ser, const std::function<std::string(std::string_view)>& cjsonViewer) const {
 	ser << wrecType2Str(type);
-	if (inTransaction) ser << " InTransaction";
+	if (inTransaction) {
+		ser << " InTransaction";
+	}
 	switch (type) {
 		case WalEmpty:
 		case WalNamespaceAdd:
@@ -210,7 +214,7 @@ WrSerializer &WALRecord::Dump(WrSerializer &ser, const std::function<std::string
 	std::abort();
 }
 
-void WALRecord::GetJSON(JsonBuilder &jb, const std::function<std::string(std::string_view)> &cjsonViewer) const {
+void WALRecord::GetJSON(JsonBuilder& jb, const std::function<std::string(std::string_view)>& cjsonViewer) const {
 	jb.Put("type", wrecType2Str(type));
 	jb.Put("in_transaction", inTransaction);
 
@@ -270,9 +274,9 @@ void WALRecord::GetJSON(JsonBuilder &jb, const std::function<std::string(std::st
 	std::abort();
 }
 
-WALRecord::WALRecord(std::string_view data) : WALRecord(span<const uint8_t>(reinterpret_cast<const uint8_t *>(data.data()), data.size())) {}
+WALRecord::WALRecord(std::string_view data) : WALRecord(span<const uint8_t>(reinterpret_cast<const uint8_t*>(data.data()), data.size())) {}
 
-void MarkedPackedWALRecord::Pack(int16_t _server, const WALRecord &rec) {
+void MarkedPackedWALRecord::Pack(int16_t _server, const WALRecord& rec) {
 	server = _server;
 	PackedWALRecord::Pack(rec);
 }
@@ -284,7 +288,7 @@ SharedWALRecord WALRecord::GetShared(int64_t lsn, int64_t upstreamLSN, std::stri
 	}
 	return shared_;
 }
-SharedWALRecord::SharedWALRecord(int64_t lsn, int64_t originLSN, std::string_view nsName, const WALRecord &rec) {
+SharedWALRecord::SharedWALRecord(int64_t lsn, int64_t originLSN, std::string_view nsName, const WALRecord& rec) {
 	const size_t kCapToSizeRelation = 4;
 	WrSerializer ser;
 	ser.PutVarint(lsn);

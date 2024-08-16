@@ -51,10 +51,10 @@ public:
 
 		public:
 			Counters GetCounters() const noexcept { return replication_.load(std::memory_order_acquire); }
-			const U &Data() const noexcept { return data_; }
+			const U& Data() const noexcept { return data_; }
 
 		private:
-			UpdatesStatus replicated(uint32_t consensusCnt, uint32_t requiredReplicas, bool isEmmiter, Error &&err) {
+			UpdatesStatus replicated(uint32_t consensusCnt, uint32_t requiredReplicas, bool isEmmiter, Error&& err) {
 				auto expected = replication_.load(std::memory_order_acquire);
 				Counters repl;
 				UpdatesStatus status;
@@ -115,15 +115,15 @@ public:
 			U data_;
 			// steady_clock_w::time_point deadline;  // TODO: Implement deadline logic
 			std::atomic<Counters> replication_ = Counters{0, 0, 0, 1, 0};
-			std::function<void(Error &&)> *onResult_ = nullptr;
+			std::function<void(Error&&)>* onResult_ = nullptr;
 
 			friend UpdatesQueue;
 		};
 
 		QueueEntry() = default;
-		QueueEntry(uint64_t id, UpdatesQueue &owner, StatsCollectorT stats) : id_(id), owner_(owner), stats_(std::move(stats)) {}
-		QueueEntry(uint64_t id, UpdatesQueue &owner, DroppedUpdatesT) : IsUpdatesDropBlock(true), id_(id), owner_(owner) {}
-		QueueEntry(QueueEntry &&) = default;
+		QueueEntry(uint64_t id, UpdatesQueue& owner, StatsCollectorT stats) : id_(id), owner_(owner), stats_(std::move(stats)) {}
+		QueueEntry(uint64_t id, UpdatesQueue& owner, DroppedUpdatesT) : IsUpdatesDropBlock(true), id_(id), owner_(owner) {}
+		QueueEntry(QueueEntry&&) = default;
 
 		ReplicationResult OnUpdateHandled(uint32_t nodeId, uint32_t consensusCnt, uint32_t requiredReplicas, uint16_t offset,
 										  bool isEmmiter, Error err) {
@@ -162,8 +162,10 @@ public:
 				}
 			}
 		}
-		const Value &GetUpdate(uint16_t offset) const {
-			if (offset >= count_.load(std::memory_order_acquire)) throw Error(errParams, "Unexpected offset: %d", offset);
+		const Value& GetUpdate(uint16_t offset) const {
+			if (offset >= count_.load(std::memory_order_acquire)) {
+				throw Error(errParams, "Unexpected offset: %d", offset);
+			}
 			return data_[offset];
 		}
 		uint64_t ID() const noexcept { return id_; }
@@ -178,14 +180,14 @@ public:
 
 	private:
 		// Private methods should be invoked under queue's unique lock
-		Value &value(uint16_t offset) noexcept {
+		Value& value(uint16_t offset) noexcept {
 			assert(offset < count_.load(std::memory_order_relaxed));
 			return data_[offset];
 		}
 		bool isFull() const noexcept { return count_.load(std::memory_order_relaxed) == kBatch; }
 
 		template <bool skipResultCounting>
-		uint64_t append(U &&val, size_t sizeBytes, std::function<void(Error &&)> *onRes) noexcept {
+		uint64_t append(U&& val, size_t sizeBytes, std::function<void(Error&&)>* onRes) noexcept {
 			assertrx(!isFull());
 			auto count = count_.load(std::memory_order_relaxed);
 			totalSizeBytes_ += sizeBytes;
@@ -214,7 +216,7 @@ public:
 		Value data_[kBatch];
 		uint64_t totalSizeBytes_ = sizeof(QueueEntry);
 		const uint64_t id_ = 0;
-		UpdatesQueue<U, StatsCollectorT, LoggerT> &owner_;
+		UpdatesQueue<U, StatsCollectorT, LoggerT>& owner_;
 		std::atomic<uint16_t> count_ = {0};
 		std::atomic<uint16_t> erased_ = {0};
 		uint16_t resultsSent_ = 0;
@@ -270,7 +272,7 @@ public:
 		}
 		return queue_[idx];
 	}
-	void SetWritable(bool isWritable, Error &&err) {
+	void SetWritable(bool isWritable, Error&& err) {
 		std::unique_lock<std::mutex> lck(mtx_);
 		if (!isWritable) {
 			invalidationErr_ = std::move(err);
@@ -278,7 +280,7 @@ public:
 			if (queue_.size()) {
 				lastUpdateId += queue_.back()->ID() + queue_.back()->Count();
 			}
-			for (auto &chunk : queue_) {
+			for (auto& chunk : queue_) {
 				for (size_t i = 0; i < chunk->Count(); ++i) {
 					auto e = invalidationErr_;
 					onResult(chunk->value(i), std::move(e));
@@ -297,13 +299,13 @@ public:
 		}
 	}
 	template <typename ContextT>
-	std::pair<Error, bool> PushAndWait(UpdatesContainerT &&data, std::function<void()> beforeWait, const ContextT &) {
+	std::pair<Error, bool> PushAndWait(UpdatesContainerT&& data, std::function<void()> beforeWait, const ContextT&) {
 		struct {
 			size_t dataSize = 0;
 			size_t executedCnt = 0;
 			Error err;
 		} localData;
-		std::function<void(Error &&)> onResult = [this, &localData](Error &&err) {
+		std::function<void(Error&&)> onResult = [this, &localData](Error&& err) {
 			if (!err.ok()) {
 				localData.err = std::move(err);
 			}
@@ -350,7 +352,7 @@ public:
 		}
 	}
 	template <bool skipResultCounting>
-	std::pair<Error, bool> PushAsync(UpdatesContainerT &&data) {
+	std::pair<Error, bool> PushAsync(UpdatesContainerT&& data) {
 		std::deque<UpdatePtr> dropped;
 		{
 			std::lock_guard lck(mtx_);
@@ -375,11 +377,11 @@ public:
 		return false;
 	}
 	template <typename ContainerT>
-	void Init(std::optional<ContainerT> &&allowList, const LoggerT *l) {
+	void Init(std::optional<ContainerT>&& allowList, const LoggerT* l) {
 		log_ = l;
 		if (allowList.has_value()) {
 			allowList_ = TokensHashSetT();
-			for (auto &&token : *allowList) {
+			for (auto&& token : *allowList) {
 				allowList_->emplace(std::move(token));
 			}
 			allowList.reset();
@@ -397,8 +399,8 @@ private:
 	};
 
 	constexpr static std::string_view logModuleName() noexcept { return std::string_view("queue"); }
-	std::pair<uint64_t, uint64_t> addDataToQueue(UpdatesContainerT &&data, std::function<void(Error &&)> *onResult,
-												 std::deque<UpdatePtr> &dropped) {
+	std::pair<uint64_t, uint64_t> addDataToQueue(UpdatesContainerT&& data, std::function<void(Error&&)>* onResult,
+												 std::deque<UpdatePtr>& dropped) {
 		assert(onResult);
 		std::pair<uint64_t, uint64_t> res;
 		for (size_t i = 0; i < data.size(); ++i) {
@@ -412,15 +414,15 @@ private:
 		return res;
 	}
 	template <bool skipResultCounting>
-	void addDataToQueue(UpdatesContainerT &&data, std::deque<UpdatePtr> &dropped) {
-		for (auto &&d : data) {
+	void addDataToQueue(UpdatesContainerT&& data, std::deque<UpdatePtr>& dropped) {
+		for (auto&& d : data) {
 			addDataImpl<skipResultCounting>(std::move(d), nullptr);
 		}
 		dropOverflowingUpdates(dropped);
 		notifyAll();
 	}
 	void notifyAll() {
-		for (auto &notifier : newDataNotifiers_) {
+		for (auto& notifier : newDataNotifiers_) {
 			if (notifier.second.awaitsData) {
 				notifier.second.awaitsData = false;
 				notifier.second.n();
@@ -435,7 +437,7 @@ private:
 		}
 	}
 	template <bool skipResultCounting>
-	uint64_t addDataImpl(T &&d, std::function<void(Error &&)> *onResult) {
+	uint64_t addDataImpl(T&& d, std::function<void(Error&&)>* onResult) {
 		uint64_t storageSize = 0;
 		if (!queue_.size() || queue_.back()->isFull()) {
 			queue_.emplace_back(make_intrusive<intrusive_atomic_rc_wrapper<UpdateT>>(nextChunkID_, *this, stats_));
@@ -449,7 +451,7 @@ private:
 		stats_.OnUpdatePushed(id, size + storageSize);
 		return id;
 	}
-	void onResult(uint64_t id, Error &&err) {
+	void onResult(uint64_t id, Error&& err) {
 		std::unique_lock lck(mtx_);
 		const auto idx = tryGetIdx(id);
 		if (idx < 0) {
@@ -457,7 +459,7 @@ private:
 		}
 		auto updPtr = queue_[idx];
 		const auto offset = id - updPtr->ID();
-		auto &entry = updPtr->value(offset);
+		auto& entry = updPtr->value(offset);
 		updPtr->addSentResult();
 		logTraceW([&] {
 			if (entry.onResult_) {
@@ -469,7 +471,7 @@ private:
 		onResult(entry, std::move(err));
 		eraseReplicated(lck);
 	}
-	void onResult(typename QueueEntry<T, kBatchSize>::Value &v, Error &&err) {
+	void onResult(typename QueueEntry<T, kBatchSize>::Value& v, Error&& err) {
 		if (v.onResult_) {
 			(*v.onResult_)(std::move(err));
 			v.onResult_ = nullptr;
@@ -479,7 +481,7 @@ private:
 		std::unique_lock lck(mtx_);
 		eraseReplicated(lck);
 	}
-	void eraseReplicated(std::unique_lock<std::mutex> &lck) noexcept {
+	void eraseReplicated(std::unique_lock<std::mutex>& lck) noexcept {
 		while (queue_.size() && queue_.front()->isAllResultsSent() && queue_.front()->IsFullyErased()) {
 			auto updPtr = queue_.front();
 			queue_.pop_front();
@@ -501,14 +503,14 @@ private:
 		}
 		return idx;
 	}
-	void dropOverflowingUpdates(std::deque<UpdatePtr> &dropped) {
+	void dropOverflowingUpdates(std::deque<UpdatePtr>& dropped) {
 		if (MaxDataSize && dataSize_ > MaxDataSize && queue_.size() > 1 && queue_.front()->isAllResultsSent()) {
 			int64_t lastChunckId = -1;
 			uint64_t droppedUpdatesSize = 0;
 			std::swap(dropped, queue_);
 			uint64_t firstUnskipableIdx = 0;
 			for (; firstUnskipableIdx < dropped.size(); ++firstUnskipableIdx) {
-				auto &upd = dropped[firstUnskipableIdx];
+				auto& upd = dropped[firstUnskipableIdx];
 				if (!upd->isAllResultsSent() || !upd->isFull()) {
 					break;
 				}
@@ -533,19 +535,19 @@ private:
 	}
 	uint64_t getNextUpdateID() const noexcept { return queue_.size() ? queue_.back()->NextUpdateID() : nextChunkID_; }
 	template <typename F>
-	void logWarnW(F &&f) const {
+	void logWarnW(F&& f) const {
 		if (log_) {
 			log_->Warn(std::forward<F>(f));
 		}
 	}
 	template <typename F>
-	void logInfoW(F &&f) const {
+	void logInfoW(F&& f) const {
 		if (log_) {
 			log_->Info(std::forward<F>(f));
 		}
 	}
 	template <typename F>
-	void logTraceW(F &&f) const {
+	void logTraceW(F&& f) const {
 		if (log_) {
 			log_->Trace(std::forward<F>(f));
 		}
@@ -562,7 +564,7 @@ private:
 	uint64_t nextChunkID_ = 0;
 	StatsCollectorT stats_;
 	uint64_t dataSize_ = 0;
-	const LoggerT *log_ = nullptr;
+	const LoggerT* log_ = nullptr;
 };
 
 }  // namespace updates

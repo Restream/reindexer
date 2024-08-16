@@ -151,7 +151,9 @@ protected:
 
 			{
 				reindexer::shared_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
-				if (i % 4 == 0) authorIdIdx = rand() % authorsIds.size();
+				if (i % 4 == 0) {
+					authorIdIdx = rand() % authorsIds.size();
+				}
 			}
 		}
 
@@ -207,7 +209,9 @@ protected:
 			for (auto& qr : queryRes) {
 				wrSer.Reset();
 				err = qr.GetJSON(wrSer, false);
-				if (!err.ok()) break;
+				if (!err.ok()) {
+					break;
+				}
 				gason::JsonParser().Parse(reindexer::giftStr(wrSer.Slice()));
 			}
 		} catch (const gason::Exception& ex) {
@@ -231,7 +235,9 @@ protected:
 				}
 				std::cout << std::endl;
 				++idx;
-				if (itemIt.getJoinedFieldsCount() > 1) std::cout << std::endl;
+				if (itemIt.getJoinedFieldsCount() > 1) {
+					std::cout << std::endl;
+				}
 			}
 		}
 	}
@@ -258,7 +264,9 @@ protected:
 
 	bool CompareQueriesResults(QueryResultRows& lhs, QueryResultRows& rhs) {
 		EXPECT_EQ(lhs.size(), rhs.size()) << "Two queries results have different size!";
-		if (lhs.size() != rhs.size()) return false;
+		if (lhs.size() != rhs.size()) {
+			return false;
+		}
 
 		for (auto it = lhs.begin(); it != lhs.end(); ++it) {
 			const BookId& bookId(it->first);
@@ -276,11 +284,13 @@ protected:
 						const reindexer::VariantArray& fieldVal1(it2->second);
 						const reindexer::VariantArray& fieldVal2(itFieldValue->second);
 						EXPECT_TRUE(fieldVal1 == fieldVal2) << "Fields " << fieldName << " have different values!";
-					} else
+					} else {
 						return false;
+					}
 				}
-			} else
+			} else {
 				return false;
+			}
 		}
 
 		return true;

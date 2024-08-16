@@ -26,8 +26,8 @@ public:
 		return createNS(ns, pattern);
 	}
 
-	void DoTestDefault(const std::shared_ptr<reindexer::Reindexer> &reindexer, std::string_view ns, const reindexer::IndexDef &indexDef,
-					   std::string_view pattern, std::string_view field, const VariantArray &expectedValues,
+	void DoTestDefault(const std::shared_ptr<reindexer::Reindexer>& reindexer, std::string_view ns, const reindexer::IndexDef& indexDef,
+					   std::string_view pattern, std::string_view field, const VariantArray& expectedValues,
 					   std::string_view description) const {
 		auto err = rt.reindexer->AddIndex(ns, indexDef);
 		ASSERT_TRUE(err.ok()) << err.what() << "\n" << description;
@@ -35,7 +35,7 @@ public:
 		validateResults(reindexer, ns, pattern, field, expectedValues, description);
 	}
 
-	void DoTestEmpty(const std::shared_ptr<reindexer::Reindexer> &reindexer, std::string_view ns, const reindexer::IndexDef &indexDef,
+	void DoTestEmpty(const std::shared_ptr<reindexer::Reindexer>& reindexer, std::string_view ns, const reindexer::IndexDef& indexDef,
 					 std::string_view pattern, std::string_view description) const {
 		auto err = reindexer->AddIndex(ns, indexDef);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -43,8 +43,8 @@ public:
 		checkExpectations(reindexer, ns, pattern, description);
 	}
 
-	void DoCallAndCheckError(const std::shared_ptr<reindexer::Reindexer> &reindexer, std::string_view ns,
-							 const reindexer::IndexDef &indexDef, std::string_view errMsg) const {
+	void DoCallAndCheckError(const std::shared_ptr<reindexer::Reindexer>& reindexer, std::string_view ns,
+							 const reindexer::IndexDef& indexDef, std::string_view errMsg) const {
 		std::vector<std::string> items;
 		getItems(reindexer, ns, items);
 
@@ -55,7 +55,7 @@ public:
 		checkItems(reindexer, ns, items);
 	}
 
-	void ValidateReloadState(const std::shared_ptr<reindexer::Reindexer> &reindexer, std::string_view ns, std::string_view pattern,
+	void ValidateReloadState(const std::shared_ptr<reindexer::Reindexer>& reindexer, std::string_view ns, std::string_view pattern,
 							 std::string_view description) const {
 		auto err = rt.reindexer->CloseNamespace(ns);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -70,7 +70,7 @@ public:
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	void SpecialCheckForNull(const std::shared_ptr<reindexer::Reindexer> &reindexer, std::string_view ns, std::string_view firstItemPattern,
+	void SpecialCheckForNull(const std::shared_ptr<reindexer::Reindexer>& reindexer, std::string_view ns, std::string_view firstItemPattern,
 							 std::string_view itemPattern, std::string_view description) const {
 		specialCheckForNull(reindexer, ns, firstItemPattern, itemPattern, description);
 		validateReloadStateForNull(reindexer, ns, firstItemPattern, itemPattern, description);
@@ -106,15 +106,17 @@ private:
 		}
 	}
 
-	void checkIfItemJSONValid(QueryResults::Iterator &it, bool print = false) const {
+	void checkIfItemJSONValid(QueryResults::Iterator& it, bool print = false) const {
 		reindexer::WrSerializer wrser;
 		Error err = it.GetJSON(wrser, false);
 		EXPECT_TRUE(err.ok()) << err.what();
-		if (err.ok() && print) std::cout << wrser.Slice() << std::endl;
+		if (err.ok() && print) {
+			std::cout << wrser.Slice() << std::endl;
+		}
 	}
 
-	void validateResults(const std::shared_ptr<reindexer::Reindexer> &reindexer, std::string_view ns, std::string_view pattern,
-						 std::string_view field, const VariantArray &expectedValues, std::string_view description) const {
+	void validateResults(const std::shared_ptr<reindexer::Reindexer>& reindexer, std::string_view ns, std::string_view pattern,
+						 std::string_view field, const VariantArray& expectedValues, std::string_view description) const {
 		SCOPED_TRACE(description);
 
 		QueryResults qr;
@@ -142,7 +144,7 @@ private:
 		}
 	}
 
-	void checkExpectations(const std::shared_ptr<reindexer::Reindexer> &reindexer, std::string_view ns, std::string_view pattern,
+	void checkExpectations(const std::shared_ptr<reindexer::Reindexer>& reindexer, std::string_view ns, std::string_view pattern,
 						   std::string_view description) const {
 		SCOPED_TRACE(description);
 
@@ -164,21 +166,21 @@ private:
 		}
 	}
 
-	void getItems(const std::shared_ptr<reindexer::Reindexer> &reindexer, std::string_view ns, std::vector<std::string> &items) const {
+	void getItems(const std::shared_ptr<reindexer::Reindexer>& reindexer, std::string_view ns, std::vector<std::string>& items) const {
 		QueryResults qr;
 		auto err = reindexer->Select("SELECT * FROM " + std::string(ns), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		items.clear();
 		items.reserve(qr.Count());
-		for (auto &it : qr) {
+		for (auto& it : qr) {
 			auto item = it.GetItem(false);
 			items.emplace_back(item.GetJSON());
 		}
 	}
 
-	void checkItems(const std::shared_ptr<reindexer::Reindexer> &reindexer, std::string_view ns,
-					const std::vector<std::string> &items) const {
+	void checkItems(const std::shared_ptr<reindexer::Reindexer>& reindexer, std::string_view ns,
+					const std::vector<std::string>& items) const {
 		QueryResults qr;
 		auto err = reindexer->Select("SELECT * FROM " + std::string(ns), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -194,7 +196,7 @@ private:
 		}
 	}
 
-	void specialCheckForNull(const std::shared_ptr<reindexer::Reindexer> &reindexer, std::string_view ns, std::string_view firstItemPattern,
+	void specialCheckForNull(const std::shared_ptr<reindexer::Reindexer>& reindexer, std::string_view ns, std::string_view firstItemPattern,
 							 std::string_view itemPattern, std::string_view description) const {
 		SCOPED_TRACE(description);
 
@@ -210,7 +212,7 @@ private:
 			Item item = it.GetItem(false);
 			checkIfItemJSONValid(it);
 			const auto json = item.GetJSON();
-			const auto &pattern = (idx == IdStart) ? firstItemPattern : itemPattern;
+			const auto& pattern = (idx == IdStart) ? firstItemPattern : itemPattern;
 			const auto expJson = fmt::sprintf(pattern.data(), idx);
 			ASSERT_EQ(json, expJson);
 
@@ -218,7 +220,7 @@ private:
 		}
 	}
 
-	void validateReloadStateForNull(const std::shared_ptr<reindexer::Reindexer> &reindexer, std::string_view ns,
+	void validateReloadStateForNull(const std::shared_ptr<reindexer::Reindexer>& reindexer, std::string_view ns,
 									std::string_view firstItemPattern, std::string_view itemPattern, std::string_view description) const {
 		auto err = rt.reindexer->CloseNamespace(ns);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -343,20 +345,23 @@ TEST_F(IndexTupleTest, ArrayTest) {
 				  {"obj.some.new_array", {"obj.some.new_array", "arr_fld1", "arr_fld2"}, "hash", "int64", IndexOpts().Array(), 0},
 				  R"("array":[],"arr_fld":[],"arr_fld2":[])", "arr_fld2", VariantArray{}.MarkArray(),
 				  "add another array index (chooses last of two). Add empty array");
+	// TODO: This logic is disabled due to #1819
 	DoTestDefault(rt.reindexer, ns, {"obj.new.array", {"obj.new.array"}, "hash", "int64", IndexOpts().Array(), 0},
-				  R"("array":[],"arr_fld":[],"arr_fld2":[],"obj":{"new":{"array":[]}})", "obj.new.array", VariantArray{},
+				  R"("array":[],"arr_fld":[],"arr_fld2":[]})" /*,"obj":{"new":{"array":[]}})"*/, "obj.new.array", VariantArray{},
 				  "add new nested (only) index. Add empty array");
+	// TODO: This logic is disabled due to #1819
 	DoTestDefault(rt.reindexer, ns, {"arr", "hash", "int64", IndexOpts().Array()},
-				  R"("array":[],"arr_fld":[],"arr_fld2":[],"obj":{"new":{"array":[]}},"arr":[])", "arr", VariantArray{},
+				  R"("array":[],"arr_fld":[],"arr_fld2":[],"arr":[]})" /*,"obj":{"new":{"array":[]}},"arr":[])"*/, "arr", VariantArray{},
 				  "add new field with nested (only) indexes. Add empty array");
 	DoCallAndCheckError(rt.reindexer, ns,
 						{"arr_restriction", {"arr_fld3", "arr_fld4", "arr.some.arr_1st"}, "hash", "int64", IndexOpts().Array(), 0},
 						"Cannot add field with name 'arr_restriction' (jsonpath 'arr.some.arr_1st') and type 'int64' to namespace"
 						" 'testNSArray'. Already exists json path 'arr' with type 'int64' in field 'arr'. Rewriting is impossible");
 	DoTestEmpty(rt.reindexer, ns, {"new_sparse_array", {"new_sparse_array"}, "hash", "int64", IndexOpts().Array().Sparse(), 0},
-				R"({"id":%d,"array":[],"arr_fld":[],"arr_fld2":[],"obj":{"new":{"array":[]}},"arr":[]})",
+				R"({"id":%d,"array":[],"arr_fld":[],"arr_fld2":[],"arr":[]})" /*,"obj":{"new":{"array":[]}},"arr":[]})"*/,
 				"add new sparse array index. Do nothing");
-	ValidateReloadState(rt.reindexer, ns, R"({"id":%d,"array":[],"arr_fld":[],"arr_fld2":[],"obj":{"new":{"array":[]}},"arr":[]})",
+	ValidateReloadState(rt.reindexer, ns,
+						R"({"id":%d,"array":[],"arr_fld":[],"arr_fld2":[],"arr":[]})" /*,"obj":{"new":{"array":[]}},"arr":[]})"*/,
 						"reload ns (ArrayTest)");
 }
 
@@ -368,28 +373,42 @@ TEST_F(IndexTupleTest, ArrayNestedTest) {
 						"Can't convert 'OK' to number");
 	DoCallAndCheckError(rt.reindexer, ns, {"try_change_type", {"last.text"}, "hash", "int", IndexOpts().Array()},
 						"Can't convert 'OK' to number");
+	// TODO: This logic is disabled due to #1819
 	DoTestDefault(
 		rt.reindexer, ns, {"next.another.last", {"next.another.last"}, "hash", "string", IndexOpts().Array()},
-		R"("objs":[{"fld":1},{"fld":2},{"fld":5}],"obj":{"nested":0},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14}}},"arr":[{"nested_arr":[{"field":[3,2,1]},{"field":11},{"field":[9]}]}],"next":{"another":{"last":[]}})",
+		R"("objs":[{"fld":1},{"fld":2},{"fld":5}],"obj":{"nested":0},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14}}},"arr":[{"nested_arr":[{"field":[3,2,1]},{"field":11},{"field":[9]}]}]})" /*,"next":{"another":{"last":[]}})"*/
+		,
 		"next.another.last", VariantArray{}, "add nested index to field by new path. Add empty array");
 	DoTestDefault(
 		rt.reindexer, ns, {"obj.alternative", {"obj.alternative"}, "hash", "string", IndexOpts().Array()},
-		R"("objs":[{"fld":1},{"fld":2},{"fld":5}],"obj":{"nested":0,"alternative":[]},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14}}},"arr":[{"nested_arr":[{"field":[3,2,1]},{"field":11},{"field":[9]}]}],"next":{"another":{"last":[]}})",
+		R"("objs":[{"fld":1},{"fld":2},{"fld":5}],"obj":{"nested":0,"alternative":[]},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14}}},"arr":[{"nested_arr":[{"field":[3,2,1]},{"field":11},{"field":[9]}]}]})" /*,"next":{"another":{"last":[]}})"*/
+		,
 		"obj.alternative", VariantArray{}, "add nested index to field. Add empty array");
+
 	DoTestDefault(
-		rt.reindexer, ns, {"last.1st.2nd.ext.more", {"last.1st.2nd.ext.more"}, "hash", "string", IndexOpts().Array()},
-		R"("objs":[{"fld":1},{"fld":2},{"fld":5}],"obj":{"nested":0,"alternative":[]},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14,"ext":{"more":[]}}}},"arr":[{"nested_arr":[{"field":[3,2,1]},{"field":11},{"field":[9]}]}],"next":{"another":{"last":[]}})",
+		rt.reindexer, ns, {"last.1st.2nd.ext", {"last.1st.2nd.ext"}, "hash", "string", IndexOpts().Array()},
+		R"("objs":[{"fld":1},{"fld":2},{"fld":5}],"obj":{"nested":0,"alternative":[]},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14,"ext":[]}}},"arr":[{"nested_arr":[{"field":[3,2,1]},{"field":11},{"field":[9]}]}]})" /*,"next":{"another":{"last":[]}})"*/
+		,
 		"last.1st.2nd.ext.more", VariantArray{}, "add nested-nested index to field. Add empty array");
-	DoCallAndCheckError(rt.reindexer, ns,
-						{"last.1st.2nd.ext.more", {"last.alt", "last.1st.2nd.ext.more"}, "hash", "string", IndexOpts().Array()},
-						"Index 'testNSArrayObj.last.1st.2nd.ext.more' already exists with different settings");
+	DoCallAndCheckError(rt.reindexer, ns, {"last.1st.2nd.ext", {"last.alt", "last.1st.2nd.ext"}, "hash", "string", IndexOpts().Array()},
+						"Index 'testNSArrayObj.last.1st.2nd.ext' already exists with different settings");
+	// TODO: This logic is disabled due to #1819
+	// DoTestDefault(
+	// 	rt.reindexer, ns, {"last.1st.2nd.ext.more", {"last.1st.2nd.ext.more"}, "hash", "string", IndexOpts().Array()},
+	// 	R"("objs":[{"fld":1},{"fld":2},{"fld":5}],"obj":{"nested":0,"alternative":[]},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14,"ext":{"more":[]}}}},"arr":[{"nested_arr":[{"field":[3,2,1]},{"field":11},{"field":[9]}]}],"next":{"another":{"last":[]}})",
+	// 	"last.1st.2nd.ext.more", VariantArray{}, "add nested-nested index to field. Add empty array");
+	// DoCallAndCheckError(rt.reindexer, ns,
+	// 					{"last.1st.2nd.ext.more", {"last.alt", "last.1st.2nd.ext.more"}, "hash", "string", IndexOpts().Array()},
+	// 					"Index 'testNSArrayObj.last.1st.2nd.ext.more' already exists with different settings");
 	DoTestDefault(
 		rt.reindexer, ns, {"last.1st.ext", {"last.1st.ext"}, "hash", "string", IndexOpts().Array()},
-		R"("objs":[{"fld":1},{"fld":2},{"fld":5}],"obj":{"nested":0,"alternative":[]},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14,"ext":{"more":[]}}},"ext":[]},"arr":[{"nested_arr":[{"field":[3,2,1]},{"field":11},{"field":[9]}]}],"next":{"another":{"last":[]}})",
+		R"("objs":[{"fld":1},{"fld":2},{"fld":5}],"obj":{"nested":0,"alternative":[]},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14,"ext":[]}},"ext":[]},"arr":[{"nested_arr":[{"field":[3,2,1]},{"field":11},{"field":[9]}]}]})" /*,"next":{"another":{"last":[]}})"*/
+		,
 		"last.1st.ext", VariantArray{}, "add array index into the presented nested field. Add empty array");
 	ValidateReloadState(
 		rt.reindexer, ns,
-		R"({"id":%d,"objs":[{"fld":1},{"fld":2},{"fld":5}],"obj":{"nested":0,"alternative":[]},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14,"ext":{"more":[]}}},"ext":[]},"arr":[{"nested_arr":[{"field":[3,2,1]},{"field":11},{"field":[9]}]}],"next":{"another":{"last":[]}}})",
+		R"({"id":%d,"objs":[{"fld":1},{"fld":2},{"fld":5}],"obj":{"nested":0,"alternative":[]},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14,"ext":[]}},"ext":[]},"arr":[{"nested_arr":[{"field":[3,2,1]},{"field":11},{"field":[9]}]}]})" /*,"next":{"another":{"last":[]}}})"*/
+		,
 		"reload ns (ArrayNestedTest)");
 }
 
@@ -397,25 +416,26 @@ TEST_F(IndexTupleTest, ArrayInToArrayTest) {
 	static const std::string ns = "testNSArrayArr";
 	CreateNamespace(ns);
 
+	// TODO: This logic is disabled due to #1819
 	DoTestDefault(
 		rt.reindexer, ns, {"objs.more", {"objs.more"}, "hash", "string", IndexOpts().Array()},
-		R"("objs":[{"fld":1,"more":[]},{"fld":2,"more":[]},{"fld":5,"more":[]}],"obj":{"nested":0},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14}}},"arr":[{"nested_arr":[{"field":[3,2,1]},{"field":11},{"field":[9]}]}])",
-		"obj.more", VariantArray{}, "add nested index into array. Add empty array");
+		R"("objs":[{"fld":1},{"fld":2},{"fld":5}],"obj":{"nested":0},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14}}},"arr":[{"nested_arr":[{"field":[3,2,1]},{"field":11},{"field":[9]}]}])",
+		"obj.more", VariantArray{}, "do not add anything into objects array");
 	DoTestEmpty(
 		rt.reindexer, ns, {"arr.nested_arr.field", {"arr.nested_arr.field"}, "hash", "string", IndexOpts().Array()},
-		R"({"id":%d,"objs":[{"fld":1,"more":[]},{"fld":2,"more":[]},{"fld":5,"more":[]}],"obj":{"nested":0},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14}}},"arr":[{"nested_arr":[{"field":["3","2","1"]},{"field":"11"},{"field":["9"]}]}]})",
+		R"({"id":%d,"objs":[{"fld":1},{"fld":2},{"fld":5}],"obj":{"nested":0},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14}}},"arr":[{"nested_arr":[{"field":["3","2","1"]},{"field":"11"},{"field":["9"]}]}]})",
 		"add nested index to array array (update). Do nothing");
 	DoTestEmpty(
 		rt.reindexer, ns, {"arr.new_fld", {"arr.new_fld"}, "hash", "string", IndexOpts().Array()},
-		R"({"id":%d,"objs":[{"fld":1,"more":[]},{"fld":2,"more":[]},{"fld":5,"more":[]}],"obj":{"nested":0},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14}}},"arr":[{"nested_arr":[{"field":["3","2","1"]},{"field":"11"},{"field":["9"]}]}]})",
+		R"({"id":%d,"objs":[{"fld":1},{"fld":2},{"fld":5}],"obj":{"nested":0},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14}}},"arr":[{"nested_arr":[{"field":["3","2","1"]},{"field":"11"},{"field":["9"]}]}]})",
 		"add nested index to array array. Do nothing");
 	DoTestEmpty(
 		rt.reindexer, ns, {"arr.nested_arr.ext_fld", {"arr.nested_arr.ext_fld"}, "hash", "string", IndexOpts().Array()},
-		R"({"id":%d,"objs":[{"fld":1,"more":[]},{"fld":2,"more":[]},{"fld":5,"more":[]}],"obj":{"nested":0},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14}}},"arr":[{"nested_arr":[{"field":["3","2","1"]},{"field":"11"},{"field":["9"]}]}]})",
+		R"({"id":%d,"objs":[{"fld":1},{"fld":2},{"fld":5}],"obj":{"nested":0},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14}}},"arr":[{"nested_arr":[{"field":["3","2","1"]},{"field":"11"},{"field":["9"]}]}]})",
 		"add nested nested index to array array. Do nothing");
 	ValidateReloadState(
 		rt.reindexer, ns,
-		R"({"id":%d,"objs":[{"fld":1,"more":[]},{"fld":2,"more":[]},{"fld":5,"more":[]}],"obj":{"nested":0},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14}}},"arr":[{"nested_arr":[{"field":["3","2","1"]},{"field":"11"},{"field":["9"]}]}]})",
+		R"({"id":%d,"objs":[{"fld":1},{"fld":2},{"fld":5}],"obj":{"nested":0},"last":{"text":"OK","1st":{"2nd":{"3rd":3.14}}},"arr":[{"nested_arr":[{"field":["3","2","1"]},{"field":"11"},{"field":["9"]}]}]})",
 		"reload ns (ArrayInToArrayTest)");
 }
 
@@ -478,8 +498,12 @@ TEST_F(IndexTupleTest, NestedArrayTest) {
 	static const std::string ns = "testNSNestedArray";
 	CreateArrayNamespace(ns);
 
+	// TODO: This logic is disabled due to #1819
 	DoTestDefault(rt.reindexer, ns, {"obj.obj1.arr", {"obj.obj1.arr"}, "hash", "int", IndexOpts().Array()},
-				  R"("obj":{"val":10,"obj1":{"arr":[]}},"arr":[1,2,3])", "obj.obj1.arr", VariantArray{},
+				  R"("obj":{"val":10},"arr":[1,2,3])", "obj.obj1.arr", VariantArray{},
+				  // R"("obj":{"val":10,"obj1":{"arr":[]}},"arr":[1,2,3])", "obj.obj1.arr", VariantArray{},
 				  "add obj.obj1.arr. Add default value");
-	ValidateReloadState(rt.reindexer, ns, R"({"id":%d,"obj":{"val":10,"obj1":{"arr":[]}},"arr":[1,2,3]})", "reload ns (NestedArrayTest)");
+	DoTestDefault(rt.reindexer, ns, {"obj.arr", {"obj.arr"}, "hash", "int", IndexOpts().Array()},
+				  R"("obj":{"val":10,"arr":[]},"arr":[1,2,3])", "obj.arr", VariantArray{}, "add obj.arr. Add default value");
+	ValidateReloadState(rt.reindexer, ns, R"({"id":%d,"obj":{"val":10,"arr":[]},"arr":[1,2,3]})", "reload ns (NestedArrayTest)");
 }

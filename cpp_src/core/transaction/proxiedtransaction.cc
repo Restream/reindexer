@@ -9,7 +9,7 @@
 
 namespace reindexer {
 
-Error ProxiedTransaction::Modify(Item &&item, ItemModifyMode mode, lsn_t lsn) {
+Error ProxiedTransaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 	client::Item clientItem;
 	bool itemFromCache = false;
 	try {
@@ -32,7 +32,7 @@ Error ProxiedTransaction::Modify(Item &&item, ItemModifyMode mode, lsn_t lsn) {
 		if (!err.ok()) {
 			throw err;
 		}
-	} catch (Error &e) {
+	} catch (Error& e) {
 		if (!itemFromCache) {
 			return e;
 		}
@@ -73,45 +73,45 @@ Error ProxiedTransaction::Modify(Item &&item, ItemModifyMode mode, lsn_t lsn) {
 
 	try {
 		asyncData_.AddNewAsyncRequest();
-	} catch (Error &err) {
+	} catch (Error& err) {
 		return err;
 	}
 
-	return tx_.modify(std::move(clientItem), mode, lsn, [this](const Error &e) { asyncData_.OnAsyncRequestDone(e); });
+	return tx_.modify(std::move(clientItem), mode, lsn, [this](const Error& e) { asyncData_.OnAsyncRequestDone(e); });
 }
 
-Error ProxiedTransaction::Modify(Query &&query, lsn_t lsn) {
+Error ProxiedTransaction::Modify(Query&& query, lsn_t lsn) {
 	try {
 		asyncData_.AddNewAsyncRequest();
-	} catch (Error &err) {
+	} catch (Error& err) {
 		return err;
 	}
-	return tx_.modify(std::move(query), lsn, [this](const Error &e) { asyncData_.OnAsyncRequestDone(e); });
+	return tx_.modify(std::move(query), lsn, [this](const Error& e) { asyncData_.OnAsyncRequestDone(e); });
 }
 
 Error ProxiedTransaction::PutMeta(std::string_view key, std::string_view value, lsn_t lsn) {
 	try {
 		asyncData_.AddNewAsyncRequest();
-	} catch (Error &err) {
+	} catch (Error& err) {
 		return err;
 	}
-	return tx_.putMeta(key, value, lsn, [this](const Error &e) { asyncData_.OnAsyncRequestDone(e); });
+	return tx_.putMeta(key, value, lsn, [this](const Error& e) { asyncData_.OnAsyncRequestDone(e); });
 }
 
-Error ProxiedTransaction::SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn) {
+Error ProxiedTransaction::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) {
 	try {
 		asyncData_.AddNewAsyncRequest();
-	} catch (Error &err) {
+	} catch (Error& err) {
 		return err;
 	}
 	{
 		std::lock_guard lck(mtx_);
 		itemCache_.isValid = false;
 	}
-	return tx_.setTagsMatcher(std::move(tm), lsn, [this](const Error &e) { asyncData_.OnAsyncRequestDone(e); });
+	return tx_.setTagsMatcher(std::move(tm), lsn, [this](const Error& e) { asyncData_.OnAsyncRequestDone(e); });
 }
 
-void ProxiedTransaction::Rollback(int serverId, const RdxContext &ctx) {
+void ProxiedTransaction::Rollback(int serverId, const RdxContext& ctx) {
 	auto err = asyncData_.AwaitAsyncRequests();
 	(void)err;	// ignore; Error does not matter here
 	if (tx_.rx_) {
@@ -121,11 +121,15 @@ void ProxiedTransaction::Rollback(int serverId, const RdxContext &ctx) {
 	}
 }
 
-Error ProxiedTransaction::Commit(int serverId, int shardId, QueryResults &result, const RdxContext &ctx) {
+Error ProxiedTransaction::Commit(int serverId, int shardId, QueryResults& result, const RdxContext& ctx) {
 	auto err = asyncData_.AwaitAsyncRequests();
-	if (!err.ok()) return err;
+	if (!err.ok()) {
+		return err;
+	}
 
-	if (!tx_.Status().ok()) return tx_.Status();
+	if (!tx_.Status().ok()) {
+		return tx_.Status();
+	}
 
 	assertrx(tx_.rx_);
 	client::InternalRdxContext c;
@@ -142,7 +146,7 @@ Error ProxiedTransaction::Commit(int serverId, int shardId, QueryResults &result
 	if (err.ok()) {
 		try {
 			result.AddQr(std::move(clientResults), shardId);
-		} catch (Error &e) {
+		} catch (Error& e) {
 			return e;
 		}
 	}
@@ -151,13 +155,17 @@ Error ProxiedTransaction::Commit(int serverId, int shardId, QueryResults &result
 
 void ProxiedTransaction::AsyncData::AddNewAsyncRequest() {
 	std::lock_guard lck(mtx_);
-	if (!err_.ok()) throw err_;
+	if (!err_.ok()) {
+		throw err_;
+	}
 	++asyncRequests_;
 }
 
-void ProxiedTransaction::AsyncData::OnAsyncRequestDone(const Error &e) noexcept {
+void ProxiedTransaction::AsyncData::OnAsyncRequestDone(const Error& e) noexcept {
 	std::lock_guard lck(mtx_);
-	if (!e.ok()) err_ = e;
+	if (!e.ok()) {
+		err_ = e;
+	}
 	assertrx(asyncRequests_ > 0);
 	if (--asyncRequests_ == 0) {
 		cv_.notify_all();

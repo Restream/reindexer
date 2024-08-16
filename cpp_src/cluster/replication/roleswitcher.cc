@@ -442,8 +442,7 @@ void RoleSwitcher::connectNodes() {
 void RoleSwitcher::disconnectNodes() {
 	coroutine::wait_group swg;
 	for (auto& node : nodes_) {
-		loop_.spawn(
-			swg, [&node]() noexcept { node.client.Stop(); }, k16kCoroStack);
+		loop_.spawn(swg, [&node]() noexcept { node.client.Stop(); }, k16kCoroStack);
 	}
 	swg.wait();
 }

@@ -25,7 +25,9 @@ class QueriesVerifier : public virtual ::testing::Test {
 	struct PkHash {
 		size_t operator()(const std::vector<reindexer::VariantArray> pk) const noexcept {
 			size_t ret = pk.size();
-			for (const auto& k : pk) ret = ((ret * 127) ^ (ret >> 3)) ^ k.Hash();
+			for (const auto& k : pk) {
+				ret = ((ret * 127) ^ (ret >> 3)) ^ k.Hash();
+			}
 			return ret;
 		}
 	};
@@ -233,15 +235,21 @@ protected:
 		// Check non found items, to not match conditions
 
 		// If query has limit and offset, skip verification
-		if (query.HasOffset() || query.HasLimit()) return;
+		if (query.HasOffset() || query.HasLimit()) {
+			return;
+		}
 
 		// If query has distinct, skip verification
 		for (const auto& agg : query.aggregations_) {
-			if (agg.Type() == AggDistinct) return;
+			if (agg.Type() == AggDistinct) {
+				return;
+			}
 		}
 
 		for (auto& insertedItem : insertedItems_[query.NsName()]) {
-			if (pks.find(insertedItem.first) != pks.end()) continue;
+			if (pks.find(insertedItem.first) != pks.end()) {
+				continue;
+			}
 			bool conditionsSatisfied =
 				checkConditions(insertedItem.second, query.Entries().cbegin(), query.Entries().cend(), joinedSelectors, indexesFields);
 
@@ -283,7 +291,9 @@ protected:
 		auto& ii = insertedItems_[ns];
 		const auto it = ii.find(pk);
 		if (it == ii.end()) {
-			for (auto& p : pk) p.EnsureHold();
+			for (auto& p : pk) {
+				p.EnsureHold();
+			}
 			[[maybe_unused]] const auto res = ii.emplace(std::move(pk), std::move(item));
 			assertrx(res.second);
 		} else {
@@ -327,9 +337,11 @@ private:
 		bool result = true;
 		for (; it != to; ++it) {
 			OpType op = it->operation;
-			if (op != OpOr && !result) return false;
+			if (op != OpOr && !result) {
+				return false;
+			}
 			bool skip = false;
-			bool const iterationResult = it->Visit(
+			const bool iterationResult = it->Visit(
 				[](const reindexer::SubQueryEntry&) -> bool {
 					assertrx(0);
 					std::abort();
@@ -370,7 +382,9 @@ private:
 					return checkCondition(item, qe, indexesFields);
 				},
 				[](const reindexer::AlwaysFalse&) noexcept { return false; }, [](const reindexer::AlwaysTrue&) noexcept { return true; });
-			if (skip) continue;
+			if (skip) {
+				continue;
+			}
 			switch (op) {
 				case OpNot:
 					result = !iterationResult;
@@ -402,14 +416,20 @@ private:
 		bool result = true;
 		// check only on root level
 		for (auto it = qr.Entries().cbegin(); it != qr.Entries().cend(); ++it) {
-			if (!it->Is<reindexer::QueryEntry>()) continue;
+			if (!it->Is<reindexer::QueryEntry>()) {
+				continue;
+			}
 			const reindexer::QueryEntry& qentry = it->Value<reindexer::QueryEntry>();
-			if (!qentry.Distinct()) continue;
+			if (!qentry.Distinct()) {
+				continue;
+			}
 
 			const std::string fieldName = getFieldName(qentry.FieldName(), indexesFields);
 			reindexer::VariantArray fieldValue = item[fieldName];
 			EXPECT_EQ(fieldValue.size(), 1) << "Distinct field's size cannot be > 1";
-			if (fieldValue.empty()) return false;
+			if (fieldValue.empty()) {
+				return false;
+			}
 
 			std::unordered_set<std::string>& values = distincts[fieldName];
 			reindexer::Variant keyValue(fieldValue[0]);
@@ -431,7 +451,9 @@ private:
 			assertrx(joinEntries[0].Operation() != OpOr);
 			for (const auto& je : joinEntries) {
 				if (je.Operation() == OpOr) {
-					if (result) continue;
+					if (result) {
+						continue;
+					}
 				} else if (!result) {
 					break;
 				}
@@ -451,7 +473,9 @@ private:
 						assertrx(0);
 				}
 			}
-			if (result) return true;
+			if (result) {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -525,7 +549,9 @@ private:
 	static bool checkGeomConditions(const reindexer::Item& item, const reindexer::QueryEntry& qentry, const IndexesData& indexesFields) {
 		assertrx(qentry.Values().size() == 2);
 		const reindexer::VariantArray coordinates = item[getFieldName(qentry.FieldName(), indexesFields)];
-		if (coordinates.empty()) return false;
+		if (coordinates.empty()) {
+			return false;
+		}
 		assertrx(coordinates.size() == 2);
 		const double x = coordinates[0].As<double>();
 		const double y = coordinates[1].As<double>();
@@ -594,12 +620,16 @@ private:
 			case CondEq:
 			case CondSet:
 				for (const reindexer::Variant& kv : keyValues) {
-					if (compareCompositeValues(indexesValues, kv, opts) == reindexer::ComparationResult::Eq) return true;
+					if (compareCompositeValues(indexesValues, kv, opts) == reindexer::ComparationResult::Eq) {
+						return true;
+					}
 				}
 				return false;
 			case CondAllSet:
 				for (const reindexer::Variant& kv : keyValues) {
-					if (compareCompositeValues(indexesValues, kv, opts) != reindexer::ComparationResult::Eq) return false;
+					if (compareCompositeValues(indexesValues, kv, opts) != reindexer::ComparationResult::Eq) {
+						return false;
+					}
 				}
 				return !keyValues.empty();
 			case CondLike:
@@ -707,7 +737,9 @@ private:
 				case CondEq:
 				case CondSet:
 					for (const reindexer::Variant& kv : keys) {
-						if (compare<betweenFields>(value, kv, opts, fieldType) == reindexer::ComparationResult::Eq) return true;
+						if (compare<betweenFields>(value, kv, opts, fieldType) == reindexer::ComparationResult::Eq) {
+							return true;
+						}
 					}
 					return false;
 				case CondLike:
@@ -746,8 +778,9 @@ private:
 			if (!checkCondition(item,
 								reindexer::BetweenFieldsQueryEntry{std::string{firstFields[i].name}, qentry.Condition(),
 																   std::string{secondFields[i].name}},
-								indexesFields))
+								indexesFields)) {
 				return false;
+			}
 		}
 		return !firstFields.empty();
 	}
@@ -863,7 +896,9 @@ private:
 					const auto values2 = getJoinedField(item.GetID(), qr, i.nsIdx, i.index2, i.column2);
 					return distance(static_cast<reindexer::Point>(values1), static_cast<reindexer::Point>(values2));
 				});
-			if (it->operation.negative) value = -value;
+			if (it->operation.negative) {
+				value = -value;
+			}
 			switch (it->operation.op) {
 				case OpPlus:
 					result += value;
@@ -929,7 +964,9 @@ private:
 			} else {
 				ret += '[';
 				for (size_t i = 0, s = values.size(); i < s; ++i) {
-					if (i != 0) ret += ',';
+					if (i != 0) {
+						ret += ',';
+					}
 					ret += values[i].template As<std::string>();
 				}
 				ret += ']';
@@ -976,7 +1013,9 @@ private:
 
 	static void printFailedSortOrder(const reindexer::Query& query, const reindexer::LocalQueryResults& qr, int itemIndex,
 									 int itemsToShow = 10) {
-		if (qr.Count() == 0) return;
+		if (qr.Count() == 0) {
+			return;
+		}
 
 		TestCout() << "Sort order or last items:" << std::endl;
 		reindexer::Item rdummy(qr[0].GetItem(false));
@@ -988,22 +1027,32 @@ private:
 		TestCout().BoldOff();
 
 		int firstItem = itemIndex - itemsToShow;
-		if (firstItem < 0) firstItem = 0;
+		if (firstItem < 0) {
+			firstItem = 0;
+		}
 		for (int i = firstItem; i <= itemIndex; ++i) {
 			reindexer::Item item(qr[i].GetItem(false));
-			if (i == itemIndex) TestCout().BoldOn();
+			if (i == itemIndex) {
+				TestCout().BoldOn();
+			}
 			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
 				TestCout() << item[query.sortingEntries_[j].expression].As<std::string>() << " ";
 			}
-			if (i == itemIndex) TestCout().BoldOff();
+			if (i == itemIndex) {
+				TestCout().BoldOff();
+			}
 			TestCout().Endl();
 		}
 
 		firstItem = itemIndex + 1;
 		int lastItem = firstItem + itemsToShow;
 		const int count = static_cast<int>(qr.Count());
-		if (firstItem >= count) firstItem = count - 1;
-		if (lastItem > count) lastItem = count;
+		if (firstItem >= count) {
+			firstItem = count - 1;
+		}
+		if (lastItem > count) {
+			lastItem = count;
+		}
 		for (int i = firstItem; i < lastItem; ++i) {
 			reindexer::Item item(qr[i].GetItem(false));
 			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {

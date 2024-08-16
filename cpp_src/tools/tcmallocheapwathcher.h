@@ -17,14 +17,14 @@ namespace reindexer {
 class TCMallocHeapWathcher {
 public:
 	TCMallocHeapWathcher();
-	explicit TCMallocHeapWathcher(MallocExtension *mallocExtention, int64_t cacheLimit, float maxCacheRatio);
-	explicit TCMallocHeapWathcher(MallocExtension *mallocExtention, int64_t cacheLimit, float maxCacheRatio,
+	explicit TCMallocHeapWathcher(MallocExtension* mallocExtention, int64_t cacheLimit, float maxCacheRatio);
+	explicit TCMallocHeapWathcher(MallocExtension* mallocExtention, int64_t cacheLimit, float maxCacheRatio,
 								  std::shared_ptr<spdlog::logger> logger);
 
-	TCMallocHeapWathcher(const TCMallocHeapWathcher &) = delete;
-	TCMallocHeapWathcher &operator=(const TCMallocHeapWathcher &) = delete;
-	TCMallocHeapWathcher(TCMallocHeapWathcher &&) = default;
-	TCMallocHeapWathcher &operator=(TCMallocHeapWathcher &&) = default;
+	TCMallocHeapWathcher(const TCMallocHeapWathcher&) = delete;
+	TCMallocHeapWathcher& operator=(const TCMallocHeapWathcher&) = delete;
+	TCMallocHeapWathcher(TCMallocHeapWathcher&&) = default;
+	TCMallocHeapWathcher& operator=(TCMallocHeapWathcher&&) = default;
 	~TCMallocHeapWathcher();
 
 	void CheckHeapUsagePeriodic();
@@ -32,7 +32,7 @@ public:
 private:
 	using ClockT = steady_clock_w;
 
-	MallocExtension *mallocExtention_;
+	MallocExtension* mallocExtention_;
 	int64_t cacheLimit_;
 	float maxCacheRatio_;
 	std::chrono::microseconds heapInspectionPeriod_;
@@ -41,7 +41,7 @@ private:
 	ClockT::time_point deadline_;
 
 	template <typename... Args>
-	void logDebug(Args &&...args);
+	void logDebug(Args&&... args);
 };
 
 }  // namespace reindexer

@@ -15,18 +15,18 @@ static void terminate_handler() {
 	std::exception_ptr exptr = std::current_exception();
 	if (exptr) {
 #ifndef _WIN32
-		const char *type = abi::__cxa_current_exception_type()->name();
+		const char* type = abi::__cxa_current_exception_type()->name();
 		int status;
-		const char *demangled = abi::__cxa_demangle(type, NULL, NULL, &status);
+		const char* demangled = abi::__cxa_demangle(type, NULL, NULL, &status);
 		sout << "*** Terminating with uncaught exception of type " << (demangled ? demangled : type);
 #else
 		sout << "*** Terminating with uncaught exception ";
 #endif
 		try {
 			std::rethrow_exception(exptr);
-		} catch (std::exception &ex) {
+		} catch (std::exception& ex) {
 			sout << ": " << ex.what();
-		} catch (Error &err) {
+		} catch (Error& err) {
 			sout << ": " << err.what();
 		} catch (...) {
 			sout << ": <unknown exception>";

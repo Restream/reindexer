@@ -38,14 +38,14 @@ public:
 		return ret;
 	}
 	CoroRPCAnswer() = default;
-	CoroRPCAnswer(const Error &error) : status_(error) {}
-	CoroRPCAnswer(const CoroRPCAnswer &other) = delete;
-	CoroRPCAnswer(CoroRPCAnswer &&other) = default;
-	CoroRPCAnswer &operator=(CoroRPCAnswer &&other) = default;
-	CoroRPCAnswer &operator=(const CoroRPCAnswer &other) = delete;
+	CoroRPCAnswer(const Error& error) : status_(error) {}
+	CoroRPCAnswer(const CoroRPCAnswer& other) = delete;
+	CoroRPCAnswer(CoroRPCAnswer&& other) = default;
+	CoroRPCAnswer& operator=(CoroRPCAnswer&& other) = default;
+	CoroRPCAnswer& operator=(const CoroRPCAnswer& other) = delete;
 
-	void EnsureHold(chunk &&ch) {
-		ch.append(std::string_view(reinterpret_cast<const char *>(data_.data()), data_.size()));
+	void EnsureHold(chunk&& ch) {
+		ch.append(std::string_view(reinterpret_cast<const char*>(data_.data()), data_.size()));
 		storage_ = std::move(ch);
 		data_ = {storage_.data(), storage_.size()};
 	}
@@ -64,11 +64,11 @@ struct CommandParams;
 
 class CoroClientConnection {
 public:
-	using UpdatesHandlerT = std::function<void(const CoroRPCAnswer &ans)>;
+	using UpdatesHandlerT = std::function<void(const CoroRPCAnswer& ans)>;
 	using FatalErrorHandlerT = std::function<void(Error err)>;
 	using ClockT = steady_clock_w;
 	using TimePointT = ClockT::time_point;
-	using ConnectionStateHandlerT = std::function<void(const Error &)>;
+	using ConnectionStateHandlerT = std::function<void(const Error&)>;
 
 	struct Options {
 		Options() noexcept
@@ -111,10 +111,10 @@ public:
 	CoroClientConnection();
 	~CoroClientConnection() { Stop(); }
 
-	void Start(ev::dynamic_loop &loop, ConnectData &&connectData);
+	void Start(ev::dynamic_loop& loop, ConnectData&& connectData);
 	void Stop();
 	bool IsRunning() const noexcept { return isRunning_; }
-	Error Status(bool forceCheck, milliseconds netTimeout, milliseconds execTimeout, const IRdxCancelContext *ctx);
+	Error Status(bool forceCheck, milliseconds netTimeout, milliseconds execTimeout, const IRdxCancelContext* ctx);
 	bool RequiresStatusCheck() const noexcept { return !loggedIn_; }
 	TimePointT Now() const noexcept { return now_; }
 	std::optional<TimePointT> LoginTs() const noexcept {
@@ -123,7 +123,7 @@ public:
 	void SetConnectionStateHandler(ConnectionStateHandlerT handler) noexcept { connectionStateHandler_ = std::move(handler); }
 
 	template <typename... Argss>
-	CoroRPCAnswer Call(const CommandParams &opts, const Argss &...argss) {
+	CoroRPCAnswer Call(const CommandParams& opts, const Argss&... argss) {
 		Args args;
 		args.reserve(sizeof...(argss));
 		return call(opts, args, argss...);
@@ -136,7 +136,7 @@ private:
 		bool used;
 		bool system;
 		TimePointT deadline;
-		const reindexer::IRdxCancelContext *cancelCtx;
+		const reindexer::IRdxCancelContext* cancelCtx;
 		coroutine::channel<CoroRPCAnswer> rspCh;
 	};
 
@@ -148,34 +148,34 @@ private:
 	};
 
 	template <typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const std::string_view &val, const Argss &...argss) {
+	inline CoroRPCAnswer call(const CommandParams& opts, Args& args, const std::string_view& val, const Argss&... argss) {
 		args.push_back(Variant(p_string(&val)));
 		return call(opts, args, argss...);
 	}
 	template <typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const std::string &val, const Argss &...argss) {
+	inline CoroRPCAnswer call(const CommandParams& opts, Args& args, const std::string& val, const Argss&... argss) {
 		args.push_back(Variant(p_string(&val)));
 		return call(opts, args, argss...);
 	}
 	template <typename T, typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const T &val, const Argss &...argss) {
+	inline CoroRPCAnswer call(const CommandParams& opts, Args& args, const T& val, const Argss&... argss) {
 		args.push_back(Variant(val));
 		return call(opts, args, argss...);
 	}
 
-	CoroRPCAnswer call(const CommandParams &opts, const Args &args);
-	Error callNoReply(const CommandParams &opts, uint32_t seq, const Args &args);
+	CoroRPCAnswer call(const CommandParams& opts, const Args& args);
+	Error callNoReply(const CommandParams& opts, uint32_t seq, const Args& args);
 
-	MarkedChunk packRPC(CmdCode cmd, uint32_t seq, bool noReply, const Args &args, const Args &ctxArgs,
+	MarkedChunk packRPC(CmdCode cmd, uint32_t seq, bool noReply, const Args& args, const Args& ctxArgs,
 						std::optional<TimePointT> requiredLoginTs);
-	void appendChunck(std::vector<char> &buf, chunk &&ch);
-	Error login(std::vector<char> &buf);
-	void handleFatalErrorFromReader(const Error &err) noexcept;
-	void handleFatalErrorImpl(const Error &err) noexcept;
-	void handleFatalErrorFromWriter(const Error &err) noexcept;
+	void appendChunck(std::vector<char>& buf, chunk&& ch);
+	Error login(std::vector<char>& buf);
+	void handleFatalErrorFromReader(const Error& err) noexcept;
+	void handleFatalErrorImpl(const Error& err) noexcept;
+	void handleFatalErrorFromWriter(const Error& err) noexcept;
 	chunk getChunk() noexcept;
-	void recycleChunk(chunk &&) noexcept;
-	void sendCloseResults(CProtoHeader const &, CoroRPCAnswer const &);
+	void recycleChunk(chunk&&) noexcept;
+	void sendCloseResults(const CProtoHeader&, const CoroRPCAnswer&);
 
 	void writerRoutine();
 	void readerRoutine();
@@ -191,7 +191,7 @@ private:
 	TimePointT now_;
 	bool terminate_ = false;
 	bool isRunning_ = false;
-	ev::dynamic_loop *loop_ = nullptr;
+	ev::dynamic_loop* loop_ = nullptr;
 
 	// seq -> rpc data
 	std::vector<RPCData> rpcCalls_;
@@ -213,7 +213,7 @@ private:
 };
 
 struct CommandParams {
-	CommandParams(CmdCode c, milliseconds n, milliseconds e, lsn_t l, int sId, int shId, const IRdxCancelContext *ctx,
+	CommandParams(CmdCode c, milliseconds n, milliseconds e, lsn_t l, int sId, int shId, const IRdxCancelContext* ctx,
 				  bool parallel) noexcept
 		: cmd(c),
 		  netTimeout(n),
@@ -223,7 +223,7 @@ struct CommandParams {
 		  shardId(shId),
 		  cancelCtx(ctx),
 		  shardingParallelExecution(parallel) {}
-	CommandParams(CmdCode c, milliseconds n, milliseconds e, lsn_t l, int sId, int shId, const IRdxCancelContext *ctx, bool parallel,
+	CommandParams(CmdCode c, milliseconds n, milliseconds e, lsn_t l, int sId, int shId, const IRdxCancelContext* ctx, bool parallel,
 				  CoroClientConnection::TimePointT loginTs) noexcept
 		: CommandParams(c, n, e, l, sId, shId, ctx, parallel) {
 		requiredLoginTs.emplace(loginTs);
@@ -234,7 +234,7 @@ struct CommandParams {
 	lsn_t lsn;
 	int serverId;
 	int shardId;
-	const IRdxCancelContext *cancelCtx;
+	const IRdxCancelContext* cancelCtx;
 	bool shardingParallelExecution;
 	std::optional<CoroClientConnection::TimePointT> requiredLoginTs;
 };

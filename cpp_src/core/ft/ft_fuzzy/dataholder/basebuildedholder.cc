@@ -2,7 +2,7 @@
 
 namespace search_engine {
 
-DIt BaseHolder::GetData(const wchar_t *key) {
+DIt BaseHolder::GetData(const wchar_t* key) {
 #ifndef DEBUG_FT
 	return data_.find(std::wstring(key, cfg_.bufferSize));
 #else
@@ -10,7 +10,7 @@ DIt BaseHolder::GetData(const wchar_t *key) {
 #endif
 }
 void BaseHolder::SetSize(uint32_t size, VDocIdType id, int field) { words_[id][field] += size; }
-void BaseHolder::AddDada(const wchar_t *key, VDocIdType id, int pos, int field) {
+void BaseHolder::AddDada(const wchar_t* key, VDocIdType id, int pos, int field) {
 #ifndef DEBUG_FT
 	std::wstring wkey(key, cfg_.bufferSize);
 	auto it = tmp_data_.find(wkey);
@@ -35,7 +35,7 @@ void BaseHolder::AddDada(const wchar_t *key, VDocIdType id, int pos, int field) 
 void BaseHolder::Commit() {
 	data_.reserve(tmp_data_.size());
 	data_.clear();
-	for (auto &val : tmp_data_) {
+	for (auto& val : tmp_data_) {
 		data_.insert(std::make_pair(val.first, AdvacedPackedVec(std::move(val.second))));
 	}
 

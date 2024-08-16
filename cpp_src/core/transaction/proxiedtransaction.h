@@ -15,22 +15,22 @@ class QueryResults;
 
 class ProxiedTransaction {
 public:
-	ProxiedTransaction(client::Transaction &&_tx, bool _proxiedViaSharding)
+	ProxiedTransaction(client::Transaction&& _tx, bool _proxiedViaSharding)
 		: tx_(std::move(_tx)), proxiedViaSharding_(_proxiedViaSharding), asyncData_(mtx_) {}
 
-	Error Modify(Item &&item, ItemModifyMode mode, lsn_t lsn);
-	Error Modify(Query &&query, lsn_t lsn);
+	Error Modify(Item&& item, ItemModifyMode mode, lsn_t lsn);
+	Error Modify(Query&& query, lsn_t lsn);
 	Error PutMeta(std::string_view key, std::string_view value, lsn_t lsn);
-	Error SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn);
-	void Rollback(int serverId, const RdxContext &ctx);
-	Error Commit(int serverId, int shardId, QueryResults &result, const RdxContext &ctx);
+	Error SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn);
+	void Rollback(int serverId, const RdxContext& ctx);
+	Error Commit(int serverId, int shardId, QueryResults& result, const RdxContext& ctx);
 
 private:
 	class AsyncData {
 	public:
-		AsyncData(std::mutex &mtx) noexcept : mtx_(mtx) {}
+		AsyncData(std::mutex& mtx) noexcept : mtx_(mtx) {}
 		void AddNewAsyncRequest();
-		void OnAsyncRequestDone(const Error &e) noexcept;
+		void OnAsyncRequestDone(const Error& e) noexcept;
 		Error AwaitAsyncRequests() noexcept;
 		~AsyncData() {
 			auto err = AwaitAsyncRequests();
@@ -38,7 +38,7 @@ private:
 		}
 
 	private:
-		std::mutex &mtx_;
+		std::mutex& mtx_;
 		std::condition_variable cv_;
 		Error err_;
 		unsigned asyncRequests_ = 0;

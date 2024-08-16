@@ -169,7 +169,9 @@ void WrResultSerializer::putItemParams(ItT& it, int shardId, QueryResults::Proxi
 		default:
 			throw Error(errParams, "Can't serialize query results: unknown format %d", int((opts_.flags & kResultsFormatMask)));
 	}
-	if (!err.ok()) throw Error(errParseBin, "Internal error serializing query results: %s", err.what());
+	if (!err.ok()) {
+		throw Error(errParseBin, "Internal error serializing query results: %s", err.what());
+	}
 }
 
 void WrResultSerializer::putPayloadTypes(WrSerializer& ser, const QueryResults* results, const ResultFetchOpts& opts, int cnt,
@@ -203,7 +205,9 @@ std::pair<int, int> WrResultSerializer::getPtUpdatesCount(const QueryResults* re
 
 		for (int i = 0; i < totalCnt; i++) {
 			const TagsMatcher& tm = results->GetTagsMatcher(i);
-			if (int32_t(tm.version() ^ tm.stateToken()) != opts_.ptVersions[i]) ++cnt;
+			if (int32_t(tm.version() ^ tm.stateToken()) != opts_.ptVersions[i]) {
+				++cnt;
+			}
 		}
 		return std::make_pair(cnt, totalCnt);
 	}
@@ -225,14 +229,24 @@ bool WrResultSerializer::PutResults(QueryResults* result, const BindingCapabilit
 	}
 
 	// Result has items from multiple namespaces, so pass nsid to each item
-	if (result->GetMergedNSCount() > 1) opts_.flags |= kResultsWithNsID;
+	if (result->GetMergedNSCount() > 1) {
+		opts_.flags |= kResultsWithNsID;
+	}
 	// Result has joined items, so pass them to client within items from main NS
-	if (result->HaveJoined()) opts_.flags |= kResultsWithJoined;
+	if (result->HaveJoined()) {
+		opts_.flags |= kResultsWithJoined;
+	}
 
-	if (result->HaveRank()) opts_.flags |= kResultsWithRank;
-	if (result->NeedOutputRank()) opts_.flags |= kResultsNeedOutputRank;
+	if (result->HaveRank()) {
+		opts_.flags |= kResultsWithRank;
+	}
+	if (result->NeedOutputRank()) {
+		opts_.flags |= kResultsNeedOutputRank;
+	}
 	// If data is not cacheable, just do not pass item's ID and LSN. Clients should not cache this data
-	if (!result->IsCacheEnabled()) opts_.flags &= ~kResultsWithItemID;
+	if (!result->IsCacheEnabled()) {
+		opts_.flags &= ~kResultsWithItemID;
+	}
 	// MsgPack items contain fields names so there is no need to transfer payload types
 	// and joined data, as well as for JSON (they both contain it already)
 	if ((opts_.flags & kResultsFormatMask) == kResultsJson || (opts_.flags & kResultsFormatMask) == kResultsMsgPack) {
@@ -267,14 +281,20 @@ bool WrResultSerializer::PutResults(QueryResults* result, const BindingCapabilit
 				size_t joinedField = rowIt.qr_->GetJoinedField(rowIt.GetNsID());
 				for (auto it = jIt.begin(), end = jIt.end(); it != end; ++it, ++joinedField) {
 					PutVarUint(it.ItemsCount());
-					if (it.ItemsCount() == 0) continue;
+					if (it.ItemsCount() == 0) {
+						continue;
+					}
 					LocalQueryResults qr = it.ToQueryResults();
 					qr.addNSContext(*result, joinedField, lsn_t());
-					for (auto& jit : qr) putItemParams(jit, rowIt.GetShardId(), storage, nullptr);
+					for (auto& jit : qr) {
+						putItemParams(jit, rowIt.GetShardId(), storage, nullptr);
+					}
 				}
 			}
 		}
-		if (i == 0) grow((opts_.fetchLimit - 1) * (len_ - saveLen));
+		if (i == 0) {
+			grow((opts_.fetchLimit - 1) * (len_ - saveLen));
+		}
 	}
 	return opts_.fetchOffset + opts_.fetchLimit >= result->Count();
 }

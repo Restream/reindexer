@@ -12,33 +12,33 @@ public:
 	Snapshot() = default;
 	Snapshot(TagsMatcher tm, lsn_t nsVersion, uint64_t expectedDataHash, uint64_t expectedDataCount, ClusterizationStatus clusterStatus);
 	Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, uint64_t expectedDataHash, uint64_t expectedDataCount,
-			 ClusterizationStatus clusterStatus, LocalQueryResults &&wal, LocalQueryResults &&raw = LocalQueryResults());
-	Snapshot(const Snapshot &) = delete;
-	Snapshot(Snapshot &&) = default;
-	Snapshot &operator=(const Snapshot &) = delete;
-	Snapshot &operator=(Snapshot &&) noexcept;
+			 ClusterizationStatus clusterStatus, LocalQueryResults&& wal, LocalQueryResults&& raw = LocalQueryResults());
+	Snapshot(const Snapshot&) = delete;
+	Snapshot(Snapshot&&) = default;
+	Snapshot& operator=(const Snapshot&) = delete;
+	Snapshot& operator=(Snapshot&&) noexcept;
 	~Snapshot();
 
 	class Iterator {
 	public:
-		Iterator(Iterator &&) = default;
-		Iterator(const Iterator &it) noexcept : sn_(it.sn_), idx_(it.idx_) {}
-		Iterator(const Snapshot *sn, size_t idx) : sn_(sn), idx_(idx) {}
-		Iterator &operator=(const Iterator &it) noexcept {
+		Iterator(Iterator&&) = default;
+		Iterator(const Iterator& it) noexcept : sn_(it.sn_), idx_(it.idx_) {}
+		Iterator(const Snapshot* sn, size_t idx) : sn_(sn), idx_(idx) {}
+		Iterator& operator=(const Iterator& it) noexcept {
 			sn_ = it.sn_;
 			idx_ = it.idx_;
 			return *this;
 		}
-		Iterator &operator=(Iterator &&it) = default;
+		Iterator& operator=(Iterator&& it) = default;
 		SnapshotChunk Chunk() const;
-		Iterator &operator++() noexcept;
-		Iterator &operator+(size_t delta) noexcept;
-		bool operator!=(const Iterator &other) const noexcept { return idx_ != other.idx_; }
-		bool operator==(const Iterator &other) const noexcept { return idx_ == other.idx_; }
-		Iterator &operator*() { return *this; }
+		Iterator& operator++() noexcept;
+		Iterator& operator+(size_t delta) noexcept;
+		bool operator!=(const Iterator& other) const noexcept { return idx_ != other.idx_; }
+		bool operator==(const Iterator& other) const noexcept { return idx_ == other.idx_; }
+		Iterator& operator*() { return *this; }
 
 	private:
-		const Snapshot *sn_;
+		const Snapshot* sn_;
 		size_t idx_;
 		mutable WrSerializer ser_;
 	};
@@ -62,22 +62,22 @@ private:
 
 	class ItemsContainer {
 	public:
-		void AddItem(ItemRef &&item);
+		void AddItem(ItemRef&& item);
 		size_t Size() const noexcept { return data_.size(); }
 		size_t ItemsCount() const noexcept { return itemsCount_; }
-		const std::vector<Chunk> &Data() const noexcept { return data_; }
-		void LockItems(const PayloadType &pt, bool lock);
+		const std::vector<Chunk>& Data() const noexcept { return data_; }
+		void LockItems(const PayloadType& pt, bool lock);
 
 	private:
-		void lockItem(const PayloadType &pt, ItemRef &itemref, bool lock) noexcept;
+		void lockItem(const PayloadType& pt, ItemRef& itemref, bool lock) noexcept;
 
 		std::vector<Chunk> data_;
 		size_t itemsCount_ = 0;
 	};
 
-	void addRawData(LocalQueryResults &&);
-	void addWalData(LocalQueryResults &&);
-	void appendQr(ItemsContainer &container, LocalQueryResults &&qr);
+	void addRawData(LocalQueryResults&&);
+	void addWalData(LocalQueryResults&&);
+	void appendQr(ItemsContainer& container, LocalQueryResults&& qr);
 	void lockItems(bool lock);
 	PayloadValue createTmItem() const;
 

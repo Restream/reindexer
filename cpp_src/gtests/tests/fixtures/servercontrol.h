@@ -27,7 +27,9 @@ struct AsyncReplicationConfigTest {
 			jb.Put("dsn", dsn);
 			auto arrNode = jb.Array("namespaces");
 			if (nsList) {
-				for (const auto& ns : *nsList) arrNode.Put(nullptr, ns);
+				for (const auto& ns : *nsList) {
+					arrNode.Put(nullptr, ns);
+				}
 			}
 		}
 
@@ -84,7 +86,9 @@ struct AsyncReplicationConfigTest {
 		jb.Put("online_updates_delay_msec", onlineUpdatesDelayMSec);
 		{
 			auto arrNode = jb.Array("namespaces");
-			for (const auto& ns : namespaces) arrNode.Put(nullptr, ns);
+			for (const auto& ns : namespaces) {
+				arrNode.Put(nullptr, ns);
+			}
 		}
 		{
 			auto arrNode = jb.Array("nodes");

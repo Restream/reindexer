@@ -17,8 +17,8 @@ namespace reindexer {
 constexpr int kMaxIdsForDistinct = 500;
 
 template <typename T>
-IndexUnordered<T>::IndexUnordered(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
-								  const NamespaceCacheConfigData &cacheCfg)
+IndexUnordered<T>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+								  const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
 	  idx_map(),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
@@ -27,81 +27,81 @@ IndexUnordered<T>::IndexUnordered(const IndexDef &idef, PayloadType &&payloadTyp
 }
 
 template <>
-IndexUnordered<str_map<Index::KeyEntryPlain>>::IndexUnordered(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
-															  const NamespaceCacheConfigData &cacheCfg)
+IndexUnordered<str_map<Index::KeyEntryPlain>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+															  const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
 	  idx_map(idef.opts_.collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
 template <>
-IndexUnordered<str_map<Index::KeyEntry>>::IndexUnordered(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
-														 const NamespaceCacheConfigData &cacheCfg)
+IndexUnordered<str_map<Index::KeyEntry>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+														 const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
 	  idx_map(idef.opts_.collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
 template <>
-IndexUnordered<unordered_str_map<Index::KeyEntry>>::IndexUnordered(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
-																   const NamespaceCacheConfigData &cacheCfg)
+IndexUnordered<unordered_str_map<Index::KeyEntry>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+																   const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
 	  idx_map(idef.opts_.collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
 template <>
-IndexUnordered<unordered_str_map<Index::KeyEntryPlain>>::IndexUnordered(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
-																		const NamespaceCacheConfigData &cacheCfg)
+IndexUnordered<unordered_str_map<Index::KeyEntryPlain>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+																		const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
 	  idx_map(idef.opts_.collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
 template <>
-IndexUnordered<unordered_str_map<FtKeyEntry>>::IndexUnordered(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
-															  const NamespaceCacheConfigData &cacheCfg)
+IndexUnordered<unordered_str_map<FtKeyEntry>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+															  const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
 	  idx_map(idef.opts_.collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
 template <>
-IndexUnordered<unordered_payload_map<FtKeyEntry, true>>::IndexUnordered(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
-																		const NamespaceCacheConfigData &cacheCfg)
+IndexUnordered<unordered_payload_map<FtKeyEntry, true>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+																		const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
 	  idx_map(PayloadType{Base::GetPayloadType()}, FieldsSet{Base::Fields()}),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
 template <>
-IndexUnordered<unordered_payload_map<Index::KeyEntry, true>>::IndexUnordered(const IndexDef &idef, PayloadType &&payloadType,
-																			 FieldsSet &&fields, const NamespaceCacheConfigData &cacheCfg)
+IndexUnordered<unordered_payload_map<Index::KeyEntry, true>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType,
+																			 FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
 	  idx_map(PayloadType{Base::GetPayloadType()}, FieldsSet{Base::Fields()}),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
 template <>
-IndexUnordered<unordered_payload_map<Index::KeyEntryPlain, true>>::IndexUnordered(const IndexDef &idef, PayloadType &&payloadType,
-																				  FieldsSet &&fields,
-																				  const NamespaceCacheConfigData &cacheCfg)
+IndexUnordered<unordered_payload_map<Index::KeyEntryPlain, true>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType,
+																				  FieldsSet&& fields,
+																				  const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
 	  idx_map(PayloadType{Base::GetPayloadType()}, FieldsSet{Base::Fields()}),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
 template <>
-IndexUnordered<payload_map<Index::KeyEntry, true>>::IndexUnordered(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
-																   const NamespaceCacheConfigData &cacheCfg)
+IndexUnordered<payload_map<Index::KeyEntry, true>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+																   const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
 	  idx_map(PayloadType{Base::GetPayloadType()}, FieldsSet{Base::Fields()}),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
 template <>
-IndexUnordered<payload_map<Index::KeyEntryPlain, true>>::IndexUnordered(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
-																		const NamespaceCacheConfigData &cacheCfg)
+IndexUnordered<payload_map<Index::KeyEntryPlain, true>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+																		const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
 	  idx_map(PayloadType{Base::GetPayloadType()}, FieldsSet{Base::Fields()}),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
@@ -117,7 +117,7 @@ bool IndexUnordered<T>::HoldsStrings() const noexcept {
 }
 
 template <typename T>
-IndexUnordered<T>::IndexUnordered(const IndexUnordered &other)
+IndexUnordered<T>::IndexUnordered(const IndexUnordered& other)
 	: Base(other),
 	  idx_map(other.idx_map),
 	  cache_(nullptr),
@@ -127,29 +127,29 @@ IndexUnordered<T>::IndexUnordered(const IndexUnordered &other)
 	  tracker_(other.tracker_) {}
 
 template <typename key_type>
-size_t heap_size(const key_type & /*kt*/) {
+size_t heap_size(const key_type& /*kt*/) {
 	return 0;
 }
 
 template <>
-size_t heap_size<key_string>(const key_string &kt) {
+size_t heap_size<key_string>(const key_string& kt) {
 	return kt->heap_size() + sizeof(*kt.get());
 }
 
 template <>
-size_t heap_size<key_string_with_hash>(const key_string_with_hash &kt) {
+size_t heap_size<key_string_with_hash>(const key_string_with_hash& kt) {
 	return kt->heap_size() + sizeof(*kt.get());
 }
 
 struct DeepClean {
 	template <typename T>
-	void operator()(T &v) const {
+	void operator()(T& v) const {
 		free_node(v.first);
 		free_node(v.second);
 	}
 
 	template <typename T>
-	void free_node(T &v) const {
+	void free_node(T& v) const {
 		if constexpr (!std::is_const_v<T>) {
 			v = T{};
 		}
@@ -171,7 +171,7 @@ void IndexUnordered<T>::delMemStat(typename T::iterator it) {
 }
 
 template <typename T>
-Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id, bool &clearCache) {
+Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCache) {
 	// reset cache
 	if (key.Type().Is<KeyValueType::Null>()) {	// TODO maybe error or default value if the index is not sparse
 		if (this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_)) {
@@ -203,7 +203,7 @@ Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id, bool &clearCach
 }
 
 template <typename T>
-void IndexUnordered<T>::Delete(const Variant &key, IdType id, StringsHolder &strHolder, bool &clearCache) {
+void IndexUnordered<T>::Delete(const Variant& key, IdType id, StringsHolder& strHolder, bool& clearCache) {
 	if (key.Type().Is<KeyValueType::Null>()) {
 		this->empty_ids_.Unsorted().Erase(id);	// ignore result
 		this->isBuilt_ = false;
@@ -251,8 +251,8 @@ void IndexUnordered<T>::Delete(const Variant &key, IdType id, StringsHolder &str
 // WARNING: 'keys' is a key for LRUCache and in some cases (for ordered indexes, for example) can contain values,
 // which are not correspond to the initial values from queries conditions
 template <typename T>
-bool IndexUnordered<T>::tryIdsetCache(const VariantArray &keys, CondType condition, SortType sortId,
-									  const std::function<bool(SelectKeyResult &, size_t &)> &selector, SelectKeyResult &res) {
+bool IndexUnordered<T>::tryIdsetCache(const VariantArray& keys, CondType condition, SortType sortId,
+									  const std::function<bool(SelectKeyResult&, size_t&)>& selector, SelectKeyResult& res) {
 	size_t idsCount;
 	if (!cache_ || IsComposite(this->Type())) {
 		selector(res, idsCount);
@@ -282,10 +282,12 @@ bool IndexUnordered<T>::tryIdsetCache(const VariantArray &keys, CondType conditi
 }
 
 template <typename T>
-SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType condition, SortType sortId, Index::SelectOpts opts,
-											  const BaseFunctionCtx::Ptr &funcCtx, const RdxContext &rdxCtx) {
+SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType condition, SortType sortId, Index::SelectOpts opts,
+											  const BaseFunctionCtx::Ptr& funcCtx, const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
-	if (opts.forceComparator) return Base::SelectKey(keys, condition, sortId, opts, funcCtx, rdxCtx);
+	if (opts.forceComparator) {
+		return Base::SelectKey(keys, condition, sortId, opts, funcCtx, rdxCtx);
+	}
 
 	SelectKeyResult res;
 
@@ -300,15 +302,15 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 		case CondEq:
 		case CondSet: {
 			struct {
-				T *i_map;
-				const VariantArray &keys;
+				T* i_map;
+				const VariantArray& keys;
 				SortType sortId;
 				Index::SelectOpts opts;
 				bool isSparse;
 			} ctx = {&this->idx_map, keys, sortId, opts, this->opts_.IsSparse()};
 			bool selectorWasSkipped = false;
 			// should return true, if fallback to comparator required
-			auto selector = [&ctx, &selectorWasSkipped](SelectKeyResult &res, size_t &idsCount) -> bool {
+			auto selector = [&ctx, &selectorWasSkipped](SelectKeyResult& res, size_t& idsCount) -> bool {
 				idsCount = 0;
 				// Skip this index if there are some other indexes with potentially higher selectivity
 				if (!ctx.opts.distinct && ctx.keys.size() > 1 && 8 * ctx.keys.size() > size_t(ctx.opts.maxIterations) &&
@@ -317,7 +319,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 					return true;
 				}
 				res.reserve(ctx.keys.size());
-				for (const auto &key : ctx.keys) {
+				for (const auto& key : ctx.keys) {
 					auto keyIt = ctx.i_map->find(static_cast<ref_type>(key));
 					if (keyIt != ctx.i_map->end()) {
 						res.emplace_back(keyIt->second, ctx.sortId);
@@ -328,7 +330,9 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 				res.deferedExplicitSort = SelectKeyResult::IsGenericSortRecommended(res.size(), idsCount, idsCount);
 
 				// avoid comparator for sparse index
-				if (ctx.isSparse || !ctx.opts.itemsCountInNamespace) return false;
+				if (ctx.isSparse || !ctx.opts.itemsCountInNamespace) {
+					return false;
+				}
 				// Check selectivity:
 				// if ids count too much (more than maxSelectivityPercentForIdset() of namespace),
 				// and index not optimized, or we have >4 other conditions
@@ -371,7 +375,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 			if (opts.distinct && this->idx_map.size() < kMaxIdsForDistinct) {  // TODO change to more clever condition
 				// Get set of any keys
 				res.reserve(this->idx_map.size());
-				for (auto &keyIt : this->idx_map) {
+				for (auto& keyIt : this->idx_map) {
 					res.emplace_back(keyIt.second, sortId);
 				}
 				break;
@@ -394,15 +398,19 @@ template <typename T>
 void IndexUnordered<T>::Commit() {
 	this->empty_ids_.Unsorted().Commit();
 
-	if (!cache_) cache_.reset(new IdSetCache(cacheMaxSize_, hitsToCache_));
+	if (!cache_) {
+		cache_.reset(new IdSetCache(cacheMaxSize_, hitsToCache_));
+	}
 
-	if (!tracker_.isUpdated()) return;
+	if (!tracker_.isUpdated()) {
+		return;
+	}
 
 	logPrintf(LogTrace, "IndexUnordered::Commit (%s) %d uniq keys, %d empty, %s", this->name_, this->idx_map.size(),
 			  this->empty_ids_.Unsorted().size(), tracker_.isCompleteUpdated() ? "complete" : "partial");
 
 	if (tracker_.isCompleteUpdated()) {
-		for (auto &keyIt : this->idx_map) {
+		for (auto& keyIt : this->idx_map) {
 			keyIt.second.Unsorted().Commit();
 			assertrx(keyIt.second.Unsorted().size());
 		}
@@ -413,11 +421,11 @@ void IndexUnordered<T>::Commit() {
 }
 
 template <typename T>
-void IndexUnordered<T>::UpdateSortedIds(const UpdateSortedContext &ctx) {
+void IndexUnordered<T>::UpdateSortedIds(const UpdateSortedContext& ctx) {
 	logPrintf(LogTrace, "IndexUnordered::UpdateSortedIds (%s) %d uniq keys, %d empty", this->name_, this->idx_map.size(),
 			  this->empty_ids_.Unsorted().size());
 	// For all keys in index
-	for (auto &keyIt : this->idx_map) {
+	for (auto& keyIt : this->idx_map) {
 		keyIt.second.UpdateSortedIds(ctx);
 	}
 
@@ -428,15 +436,19 @@ template <typename T>
 void IndexUnordered<T>::SetSortedIdxCount(int sortedIdxCount) {
 	if (this->sortedIdxCount_ != sortedIdxCount) {
 		this->sortedIdxCount_ = sortedIdxCount;
-		for (auto &keyIt : idx_map) keyIt.second.Unsorted().ReserveForSorted(this->sortedIdxCount_);
+		for (auto& keyIt : idx_map) {
+			keyIt.second.Unsorted().ReserveForSorted(this->sortedIdxCount_);
+		}
 	}
 }
 
 template <typename T>
-IndexMemStat IndexUnordered<T>::GetMemStat(const RdxContext &ctx) {
+IndexMemStat IndexUnordered<T>::GetMemStat(const RdxContext& ctx) {
 	IndexMemStat ret = Base::GetMemStat(ctx);
 	ret.uniqKeysCount = idx_map.size();
-	if (cache_) ret.idsetCache = cache_->GetMemStat();
+	if (cache_) {
+		ret.idsetCache = cache_->GetMemStat();
+	}
 	ret.trackedUpdatesCount = tracker_.updatesSize();
 	ret.trackedUpdatesBuckets = tracker_.updatesBuckets();
 	ret.trackedUpdatesSize = tracker_.allocated();
@@ -446,7 +458,7 @@ IndexMemStat IndexUnordered<T>::GetMemStat(const RdxContext &ctx) {
 
 template <typename T>
 template <typename S>
-void IndexUnordered<T>::dump(S &os, std::string_view step, std::string_view offset) const {
+void IndexUnordered<T>::dump(S& os, std::string_view step, std::string_view offset) const {
 	std::string newOffset{offset};
 	newOffset += step;
 	os << "{\n" << newOffset << "<IndexStore>: ";
@@ -456,7 +468,9 @@ void IndexUnordered<T>::dump(S &os, std::string_view step, std::string_view offs
 		std::string secondOffset{newOffset};
 		secondOffset += step;
 		for (auto b = idx_map.begin(), it = b, e = idx_map.end(); it != e; ++it) {
-			if (it != b) os << ',';
+			if (it != b) {
+				os << ',';
+			}
 			os << '\n' << secondOffset << '{' << it->first << ": ";
 			it->second.Dump(os, step, secondOffset);
 			os << '}';
@@ -475,7 +489,7 @@ void IndexUnordered<T>::dump(S &os, std::string_view step, std::string_view offs
 }
 
 template <typename T>
-void IndexUnordered<T>::AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue &q) {
+void IndexUnordered<T>::AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue& q) {
 	if constexpr (Base::template HasAddTask<decltype(idx_map)>::value) {
 		idx_map.add_destroy_task(&q);
 	}
@@ -483,7 +497,7 @@ void IndexUnordered<T>::AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue 
 }
 
 template <typename T>
-void IndexUnordered<T>::ReconfigureCache(const NamespaceCacheConfigData &cacheCfg) {
+void IndexUnordered<T>::ReconfigureCache(const NamespaceCacheConfigData& cacheCfg) {
 	if (cacheMaxSize_ != cacheCfg.idxIdsetCacheSize || hitsToCache_ != cacheCfg.idxIdsetHitsToCache) {
 		cacheMaxSize_ = cacheCfg.idxIdsetCacheSize;
 		hitsToCache_ = cacheCfg.idxIdsetHitsToCache;
@@ -494,8 +508,8 @@ void IndexUnordered<T>::ReconfigureCache(const NamespaceCacheConfigData &cacheCf
 }
 
 template <typename KeyEntryT>
-static std::unique_ptr<Index> IndexUnordered_New(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
-												 const NamespaceCacheConfigData &cacheCfg) {
+static std::unique_ptr<Index> IndexUnordered_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+												 const NamespaceCacheConfigData& cacheCfg) {
 	switch (idef.Type()) {
 		case IndexIntHash:
 			return std::make_unique<IndexUnordered<unordered_number_map<int, KeyEntryT>>>(idef, std::move(payloadType), std::move(fields),
@@ -533,8 +547,8 @@ static std::unique_ptr<Index> IndexUnordered_New(const IndexDef &idef, PayloadTy
 }
 
 // NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
-std::unique_ptr<Index> IndexUnordered_New(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
-										  const NamespaceCacheConfigData &cacheCfg) {
+std::unique_ptr<Index> IndexUnordered_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+										  const NamespaceCacheConfigData& cacheCfg) {
 	return (idef.opts_.IsPK() || idef.opts_.IsDense())
 			   ? IndexUnordered_New<Index::KeyEntryPlain>(idef, std::move(payloadType), std::move(fields), cacheCfg)
 			   : IndexUnordered_New<Index::KeyEntry>(idef, std::move(payloadType), std::move(fields), cacheCfg);

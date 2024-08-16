@@ -22,12 +22,16 @@ IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inT
 	size_t counter = 0;
 	for (auto it = result.data_->begin(); it != result.data_->end(); ++it, ++counter) {
 		it->proc_ *= coof;
-		if (it->proc_ < getConfig()->minOkProc) continue;
+		if (it->proc_ < getConfig()->minOkProc) {
+			continue;
+		}
 		assertrx(it->id_ < this->vdocs_.size());
 		const auto& id_set = this->vdocs_[it->id_].keyEntry->Sorted(0);
 		fctx->Add(id_set.begin(), id_set.end(), it->proc_);
 		mergedIds->Append(id_set.begin(), id_set.end(), IdSet::Unordered);
-		if ((counter & 0xFF) == 0 && !inTransaction) ThrowOnCancel(rdxCtx);
+		if ((counter & 0xFF) == 0 && !inTransaction) {
+			ThrowOnCancel(rdxCtx);
+		}
 	}
 
 	return mergedIds;

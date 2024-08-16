@@ -57,7 +57,7 @@ public:
 	/// Construct context with user credentials
 	/// @param login - User's login
 	/// @param password - User's password
-	AuthContext(const std::string &login, const std::string &password) : login_(login), password_(password) {}
+	AuthContext(const std::string& login, const std::string& password) : login_(login), password_(password) {}
 	/// Set expected leader's replication clusted ID
 	/// @param clusterID - Expected cluster ID value
 	void SetExpectedClusterID(int clusterID) noexcept {
@@ -68,10 +68,11 @@ public:
 	/// @param role - Requested role one of UserRole enum
 	/// @param ret - Pointer to returned database pointer
 	/// @return Error - error object
-	Error GetDB(UserRole role, Reindexer **ret) noexcept {
-		if (role > role_)
+	Error GetDB(UserRole role, Reindexer** ret) noexcept {
+		if (role > role_) {
 			return Error(errForbidden, "Forbidden: need role %s of db '%s' user '%s' have role=%s", UserRoleName(role), dbName_, login_,
 						 UserRoleName(role_));
+		}
 		*ret = db_;
 		return errOK;
 	}
@@ -85,10 +86,10 @@ public:
 	bool HaveDB() const noexcept { return db_ != nullptr; }
 	/// Get user login
 	/// @return user login
-	const std::string &Login() const noexcept { return login_; }
+	const std::string& Login() const noexcept { return login_; }
 	/// Get database name
 	/// @return db name
-	const std::string &DBName() const noexcept { return dbName_; }
+	const std::string& DBName() const noexcept { return dbName_; }
 	/// Get user rights
 	/// @return user rights
 	UserRole UserRights() const noexcept { return role_; }
@@ -102,7 +103,7 @@ protected:
 	std::string dbName_;
 	int expectedClusterID_ = -1;
 	bool checkClusterID_ = false;
-	Reindexer *db_ = nullptr;
+	Reindexer* db_ = nullptr;
 };
 
 static inline AuthContext MakeSystemAuthContext() { return AuthContext(kRoleSystem); }
@@ -113,7 +114,7 @@ public:
 	/// Construct DBManager
 	/// @param config - server config reference
 	/// @param clientsStats - object for receiving clients statistics
-	DBManager(const ServerConfig &config, IClientsStats *clientsStats = nullptr);
+	DBManager(const ServerConfig& config, IClientsStats* clientsStats = nullptr);
 	/// Initialize database:
 	/// Read all found databases to RAM
 	/// Read user's database
@@ -126,17 +127,17 @@ public:
 	/// @param dbName - database name. Can be empty.
 	/// @param auth - AuthContext with user credentials
 	/// @return Error - error object
-	Error Login(const std::string &dbName, AuthContext &auth);
+	Error Login(const std::string& dbName, AuthContext& auth);
 	/// Open database and authentificate user
 	/// @param dbName - database name, Can't be empty
 	/// @param auth - AuthContext filled with user credentials or already authorized AuthContext
 	/// @param canCreate - true: Create database, if not exists; false: return error, if database not exists
 	/// @return Error - error object
-	Error OpenDatabase(const std::string &dbName, AuthContext &auth, bool canCreate);
+	Error OpenDatabase(const std::string& dbName, AuthContext& auth, bool canCreate);
 	/// Drop database from disk storage and memory. Reindexer DB object will be destroyed
 	/// @param auth - Authorized AuthContext, with valid Reindexer DB object and reasonale role
 	/// @return Error - error object
-	Error DropDatabase(AuthContext &auth);
+	Error DropDatabase(AuthContext& auth);
 	/// Check if security disabled
 	/// @return bool - true: security checks are disabled; false: security checks are enabled
 	bool IsNoSecurity() { return !config_.EnableSecurity; }
@@ -153,15 +154,15 @@ private:
 	Error readUsersJSON() noexcept;
 	Error createDefaultUsersYAML() noexcept;
 	static UserRole userRoleFromString(std::string_view strRole);
-	Error loadOrCreateDatabase(const std::string &name, bool allowDBErrors, bool withAutorepair, const AuthContext &auth = AuthContext());
+	Error loadOrCreateDatabase(const std::string& name, bool allowDBErrors, bool withAutorepair, const AuthContext& auth = AuthContext());
 
 	std::unordered_map<std::string, std::unique_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_;
 	std::unordered_map<std::string, UserRecord> users_;
-	const ServerConfig &config_;
+	const ServerConfig& config_;
 	Mutex mtx_;
 	datastorage::StorageType storageType_;
 
-	IClientsStats *clientsStats_ = nullptr;
+	IClientsStats* clientsStats_ = nullptr;
 	bool clustersShutDown_ = false;
 };
 

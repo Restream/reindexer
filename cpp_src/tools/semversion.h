@@ -12,15 +12,15 @@ public:
 	SemVersion() = default;
 	SemVersion(std::string_view version) { parse(version); }
 
-	bool operator<(const SemVersion &rVersion) const noexcept {
+	bool operator<(const SemVersion& rVersion) const noexcept {
 		return std::lexicographical_compare(versionDigits_.begin(), versionDigits_.end(), rVersion.versionDigits_.begin(),
 											rVersion.versionDigits_.end());
 	}
-	bool operator<=(const SemVersion &rVersion) const noexcept { return *this < rVersion || *this == rVersion; }
-	bool operator==(const SemVersion &rVersion) const noexcept { return (versionDigits_ == rVersion.versionDigits_); }
-	bool operator!=(const SemVersion &rVersion) const noexcept { return (versionDigits_ != rVersion.versionDigits_); }
+	bool operator<=(const SemVersion& rVersion) const noexcept { return *this < rVersion || *this == rVersion; }
+	bool operator==(const SemVersion& rVersion) const noexcept { return (versionDigits_ == rVersion.versionDigits_); }
+	bool operator!=(const SemVersion& rVersion) const noexcept { return (versionDigits_ != rVersion.versionDigits_); }
 
-	const std::string &StrippedString() const noexcept { return versionStr_; }
+	const std::string& StrippedString() const noexcept { return versionStr_; }
 	int16_t Major() const noexcept { return versionDigits_.size() ? versionDigits_[0] : 0; }
 
 private:
@@ -39,7 +39,7 @@ private:
 		}
 		version = splitted[0];
 		split(version, ".", false, splitted);
-		for (auto &it : splitted) {
+		for (auto& it : splitted) {
 			bool valid = true;
 			int res = jsteemann::atoi<int>(it.data(), it.data() + it.size(), valid);
 			if (!valid) {

@@ -32,12 +32,16 @@ int main(int argc, char** argv) {
 
 	shared_ptr<Reindexer> DB = std::make_shared<Reindexer>();
 	auto err = DB->Connect("builtin://" + kStoragePath);
-	if (!err.ok()) return err.code();
+	if (!err.ok()) {
+		return err.code();
+	}
 
 	FullText ft(DB.get(), "fulltext", kItemsInBenchDataset);
 
 	err = ft.Initialize();
-	if (!err.ok()) return err.code();
+	if (!err.ok()) {
+		return err.code();
+	}
 
 	::benchmark::Initialize(&argc, argv);
 	std::optional<size_t> slowIterationCount;

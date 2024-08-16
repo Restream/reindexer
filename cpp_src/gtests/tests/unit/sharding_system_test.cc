@@ -75,7 +75,7 @@ TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 	const size_t kValidThreadsCount = 5;
 	Init();
 	const std::string kDSN = getNode(0)->kRPCDsn;
-	auto upsertItemF = [&](int index, client::Reindexer &rx) {
+	auto upsertItemF = [&](int index, client::Reindexer& rx) {
 		client::Item item = rx.NewItem(default_namespace);
 		EXPECT_TRUE(item.Status().ok());
 
@@ -99,7 +99,7 @@ TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 	};
 
 	std::vector<RxWithStatus> rxClients(kValidThreadsCount);
-	for (auto &rx : rxClients) {
+	for (auto& rx : rxClients) {
 		auto err = rx.client->Connect(kDSN);
 		ASSERT_TRUE(err.ok()) << err.what();
 		err = rx.client->Status();
@@ -156,7 +156,7 @@ TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 			constexpr size_t kMaxErrors = 5;  // FIXME: Max errors should be 1
 			for (size_t i = 0; i < kValidThreadsCount; ++i) {
 				alwaysValidThreads.emplace_back(std::thread([&, currShard = shard, index = i, idx = i]() {
-					auto &rx = rxClients[idx];
+					auto& rx = rxClients[idx];
 					bool succeed = false;
 					Error err;
 					for (size_t j = 0; j < kMaxErrors; ++j) {
@@ -170,7 +170,7 @@ TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 					ASSERT_TRUE(succeed) << err.what() << "; shard = " << currShard << "; location = " << key;
 				}));
 				alwaysValidThreads.emplace_back(std::thread([&, currShard = shard, idx = i]() {
-					auto &rx = rxClients[idx];
+					auto& rx = rxClients[idx];
 					bool succeed = false;
 					Error err;
 					for (size_t j = 0; j < kMaxErrors; ++j) {
@@ -187,14 +187,14 @@ TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 					ASSERT_TRUE(succeed) << err.what() << "; shard = " << currShard;
 				}));
 			}
-			for (auto &th : alwaysValidThreads) {
+			for (auto& th : alwaysValidThreads) {
 				th.join();
 			}
 			// ASSERT_LE(errorsCount, std::max(kMaxErrors, kValidThreadsCount)) << "Too many network errors: " << errorsCount.load();
 			StartByIndex(server);
 		}
 		stop = true;
-		for (auto &th : anyResultThreads) {
+		for (auto& th : anyResultThreads) {
 			th.join();
 		}
 	}
@@ -228,7 +228,7 @@ TEST_F(ShardingSystemApi, Shutdown) {
 		}
 	}
 	done = true;
-	for (auto &th : threads) {
+	for (auto& th : threads) {
 		th.join();
 	}
 }
@@ -258,7 +258,7 @@ TEST_F(ShardingSystemApi, AwaitShards) {
 			std::unique_lock lck(mtx);
 			cv.wait(lck, [&ready] { return ready; });
 			lck.unlock();
-			for (auto &ns : kNamespaces) {
+			for (auto& ns : kNamespaces) {
 				auto err = rx->OpenNamespace(ns);
 				ASSERT_TRUE(err.ok()) << "Namespace: " << ns << "; " << err.what();
 			}
@@ -273,7 +273,7 @@ TEST_F(ShardingSystemApi, AwaitShards) {
 	for (size_t shard = 1; shard < kShards; ++shard) {
 		Start(shard);
 	}
-	for (auto &th : tds) {
+	for (auto& th : tds) {
 		th.join();
 	}
 
@@ -323,7 +323,7 @@ TEST_F(ShardingSystemApi, AwaitShardsTimeout) {
 		}
 	});
 
-	for (auto &th : tds) {
+	for (auto& th : tds) {
 		th.join();
 	}
 	done = true;

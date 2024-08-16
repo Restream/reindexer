@@ -13,19 +13,19 @@ class Transaction;
 
 class TransactionImpl {
 public:
-	TransactionImpl(LocalTransaction &&ltx) : data_(std::move(ltx.data_)), tx_{std::move(ltx.tx_)}, status_(std::move(ltx.err_)) {}
-	TransactionImpl(LocalTransaction &&ltx, client::Reindexer &&clusterLeader)
+	TransactionImpl(LocalTransaction&& ltx) : data_(std::move(ltx.data_)), tx_{std::move(ltx.tx_)}, status_(std::move(ltx.err_)) {}
+	TransactionImpl(LocalTransaction&& ltx, client::Reindexer&& clusterLeader)
 		: data_(std::move(ltx.data_)), tx_{std::move(clusterLeader)}, status_(std::move(ltx.err_)) {}
 
-	Error Insert(Item &&item, lsn_t lsn) { return Modify(std::move(item), ModeInsert, lsn); }
-	Error Update(Item &&item, lsn_t lsn) { return Modify(std::move(item), ModeUpdate, lsn); }
-	Error Upsert(Item &&item, lsn_t lsn) { return Modify(std::move(item), ModeUpsert, lsn); }
-	Error Delete(Item &&item, lsn_t lsn) { return Modify(std::move(item), ModeDelete, lsn); }
-	Error Modify(Item &&item, ItemModifyMode mode, lsn_t lsn = lsn_t());
-	Error Modify(Query &&query, lsn_t lsn = lsn_t());
+	Error Insert(Item&& item, lsn_t lsn) { return Modify(std::move(item), ModeInsert, lsn); }
+	Error Update(Item&& item, lsn_t lsn) { return Modify(std::move(item), ModeUpdate, lsn); }
+	Error Upsert(Item&& item, lsn_t lsn) { return Modify(std::move(item), ModeUpsert, lsn); }
+	Error Delete(Item&& item, lsn_t lsn) { return Modify(std::move(item), ModeDelete, lsn); }
+	Error Modify(Item&& item, ItemModifyMode mode, lsn_t lsn = lsn_t());
+	Error Modify(Query&& query, lsn_t lsn = lsn_t());
 	Error Nop(lsn_t lsn);
 	Error PutMeta(std::string_view key, std::string_view value, lsn_t lsn = lsn_t());
-	Error SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn);
+	Error SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn);
 
 	Item NewItem();
 	Error Status() const noexcept;
@@ -35,10 +35,10 @@ public:
 	bool IsTagsUpdated() const noexcept;
 	Transaction::TimepointT GetStartTime() const noexcept { return data_->startTime; }
 	void SetShardingRouter(sharding::LocatorServiceAdapter shardingRouter);
-	Error Rollback(int serverId, const RdxContext &ctx);
-	Error Commit(int serverId, bool expectSharding, ReindexerImpl &rx, QueryResults &result, const RdxContext &ctx);
+	Error Rollback(int serverId, const RdxContext& ctx);
+	Error Commit(int serverId, bool expectSharding, ReindexerImpl& rx, QueryResults& result, const RdxContext& ctx);
 
-	static LocalTransaction Transform(TransactionImpl &tx);
+	static LocalTransaction Transform(TransactionImpl& tx);
 
 private:
 	struct Empty {};
@@ -46,13 +46,13 @@ private:
 	using TxStepsPtr = std::unique_ptr<TransactionSteps>;
 	using RxClientT = client::Reindexer;
 
-	void updateShardIdIfNecessary(int shardId, const Variant &curShardKey);
-	void lazyInit(const Item &item);
-	void lazyInit(const Query &q);
+	void updateShardIdIfNecessary(int shardId, const Variant& curShardKey);
+	void lazyInit(const Item& item);
+	void lazyInit(const Query& q);
 	void lazyInit();
-	void initProxiedTx(RxClientT *leader);
+	void initProxiedTx(RxClientT* leader);
 	void initProxiedTxIfRequired();
-	void updateTagsMatcherIfNecessary(Item &item);
+	void updateTagsMatcherIfNecessary(Item& item);
 
 	mutable std::mutex mtx_;
 	std::unique_ptr<SharedTransactionData> data_;

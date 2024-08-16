@@ -8,10 +8,14 @@ void Aggregation::Insert(State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		for (size_t i = 0; i < N; ++i) {
 			auto item = MakeItem(state);
-			if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+			if (!item.Status().ok()) {
+				state.SkipWithError(item.Status().what().c_str());
+			}
 
 			auto err = db_->Insert(nsdef_.name, item);
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
+			if (!err.ok()) {
+				state.SkipWithError(err.what().c_str());
+			}
 		}
 	}
 }
@@ -28,7 +32,9 @@ void Aggregation::RegisterAllCases() {
 reindexer::Error Aggregation::Initialize() {
 	assertrx(db_);
 	auto err = db_->AddNamespace(nsdef_);
-	if (!err.ok()) return err;
+	if (!err.ok()) {
+		return err;
+	}
 	return {};
 }
 
@@ -50,7 +56,9 @@ reindexer::Item Aggregation::MakeItem(benchmark::State& state) {
 	arr.End();
 	bld.End();
 	const auto err = item.FromJSON(wrSer_.Slice());
-	if (!err.ok()) state.SkipWithError(err.what().c_str());
+	if (!err.ok()) {
+		state.SkipWithError(err.what().c_str());
+	}
 	return item;
 }
 
@@ -61,7 +69,9 @@ void Aggregation::Facet(benchmark::State& state) {
 		q.Aggregate(AggFacet, {"int_data"});
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -72,7 +82,9 @@ void Aggregation::MultiFacet(benchmark::State& state) {
 		q.Aggregate(AggFacet, {"int_data", "str_data"});
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -83,6 +95,8 @@ void Aggregation::ArrayFacet(benchmark::State& state) {
 		q.Aggregate(AggFacet, {"int_array_data"});
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
 	}
 }

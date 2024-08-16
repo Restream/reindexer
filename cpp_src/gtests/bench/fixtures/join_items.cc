@@ -5,7 +5,9 @@
 reindexer::Error JoinItems::Initialize() {
 	assertrx(db_);
 	auto err = db_->AddNamespace(nsdef_);
-	if (!err.ok()) return err;
+	if (!err.ok()) {
+		return err;
+	}
 
 	adjectives_ = {"able",	   "above",	  "absolute", "balanced", "becoming", "beloved", "calm",	 "capable",	 "capital",	 "destined",
 				   "devoted",  "direct",  "enabled",  "enabling", "endless",  "factual", "fair",	 "faithful", "grand",	 "grateful",
@@ -48,7 +50,9 @@ reindexer::Item JoinItems::MakeItem(benchmark::State&) {
 
 std::string JoinItems::randomString(const std::string& prefix) {
 	std::string result;
-	if (!prefix.empty()) result += prefix + "_";
+	if (!prefix.empty()) {
+		result += prefix + "_";
+	}
 	result += adjectives_.at(random<size_t>(0, adjectives_.size() - 1));
 	result += "_";
 	result += names_.at(random<size_t>(0, names_.size() - 1));

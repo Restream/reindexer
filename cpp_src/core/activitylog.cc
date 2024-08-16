@@ -91,7 +91,9 @@ void ActivityContainerLog::Dump(int serverId) {
 
 	auto jba = jb.Array("blocks");
 	for (const auto& o : operation_) {
-		if (o.operations.empty()) continue;
+		if (o.operations.empty()) {
+			continue;
+		}
 		auto jbb = jba.Object();
 		jbb.Put("description", o.description);
 		jbb.Put("Completed", o.completed);
@@ -134,7 +136,9 @@ void ActivityContainerLog::Dump(int serverId) {
 	std::ofstream fTxt(fileNameTxt);
 
 	for (const auto& o : operation_) {
-		if (o.operations.empty()) continue;
+		if (o.operations.empty()) {
+			continue;
+		}
 		fTxt << "Completed = " << o.completed << " description = " << o.description << std::endl;
 		for (const auto& k : o.operations) {
 			fTxt << "    "

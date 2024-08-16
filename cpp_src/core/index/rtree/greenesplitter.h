@@ -30,9 +30,15 @@ public:
 			assertrx(seeds.first < seeds.second);
 			size_t indexes[MaxEntries - 1];
 			size_t i = 0;
-			for (; i < seeds.first; ++i) indexes[i] = i;
-			for (++i; i < seeds.second; ++i) indexes[i - 1] = i;
-			for (++i; i <= MaxEntries; ++i) indexes[i - 2] = i;
+			for (; i < seeds.first; ++i) {
+				indexes[i] = i;
+			}
+			for (++i; i < seeds.second; ++i) {
+				indexes[i - 1] = i;
+			}
+			for (++i; i <= MaxEntries; ++i) {
+				indexes[i - 2] = i;
+			}
 			// Choose axis
 			const auto firstSeedBoundRect = Base::getBoundRect(src[seeds.first]);
 			const auto secondSeedBoundRect = Base::getBoundRect(seeds.second == MaxEntries ? this->appendingEntry_ : src[seeds.second]);
@@ -76,7 +82,9 @@ public:
 			for (; i < (MaxEntries - 1) / 2; ++i) {
 				this->moveEntryTo(*firstNode, indexes[i]);
 			}
-			if (MaxEntries % 2 == 0) ++i;
+			if (MaxEntries % 2 == 0) {
+				++i;
+			}
 			for (; i < MaxEntries - 1; ++i) {
 				this->moveEntryTo(*secondNode, indexes[i]);
 			}

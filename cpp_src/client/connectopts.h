@@ -29,5 +29,5 @@ struct ConnectOpts {
 	int expectedClusterID = -1;
 };
 
-}
-}
+}  // namespace client
+}  // namespace reindexer

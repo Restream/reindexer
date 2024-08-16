@@ -301,8 +301,12 @@ static bool ValidateStatsOnTestEnding(int leaderId, int kTransitionServer, const
 	}
 	O_EXPECT_EQ(withAssertion, stats.nodeStats.size(), kClusterSize) {
 		std::set<size_t> onlineNodes, offlineNodes;
-		for (auto node : kSecondNodesGroup) offlineNodes.emplace(node);
-		for (auto node : kFirstNodesGroup) onlineNodes.emplace(node);
+		for (auto node : kSecondNodesGroup) {
+			offlineNodes.emplace(node);
+		}
+		for (auto node : kFirstNodesGroup) {
+			onlineNodes.emplace(node);
+		}
 		onlineNodes.emplace(kTransitionServer);
 		for (auto& nodeStat : stats.nodeStats) {
 			const std::string kExpectedDsn =

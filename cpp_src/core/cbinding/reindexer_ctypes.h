@@ -7,7 +7,7 @@ extern "C" {
 #include <stdint.h>
 
 typedef struct reindexer_buffer {
-	uint8_t *data;
+	uint8_t* data;
 	int len;
 } reindexer_buffer;
 
@@ -18,12 +18,12 @@ typedef struct reindexer_resbuffer {
 } reindexer_resbuffer;
 
 typedef struct reindexer_error {
-	const char *what;
+	const char* what;
 	int code;
 } reindexer_error;
 
 typedef struct reindexer_string {
-	void *p;
+	void* p;
 	int32_t n;
 	int8_t reserved[4];
 } reindexer_string;
@@ -41,7 +41,7 @@ typedef struct reindexer_ret {
 } reindexer_ret;
 
 typedef struct reindexer_array_ret {
-	reindexer_buffer *out_buffers;
+	reindexer_buffer* out_buffers;
 	uint32_t out_size;
 	uintptr_t data;
 	int err_code;

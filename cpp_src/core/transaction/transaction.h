@@ -39,22 +39,22 @@ public:
 	using ClockT = system_clock_w;
 	using TimepointT = ClockT::time_point;
 
-	explicit Transaction(LocalTransaction &&ltx);
-	Transaction(LocalTransaction &&ltx, client::Reindexer &&clusterLeader);
+	explicit Transaction(LocalTransaction&& ltx);
+	Transaction(LocalTransaction&& ltx, client::Reindexer&& clusterLeader);
 
 	~Transaction();
-	Transaction(Transaction &&) noexcept;
-	Transaction &operator=(Transaction &&) noexcept;
+	Transaction(Transaction&&) noexcept;
+	Transaction& operator=(Transaction&&) noexcept;
 
-	Error Insert(Item &&item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeInsert, lsn); }
-	Error Update(Item &&item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeUpdate, lsn); }
-	Error Upsert(Item &&item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeUpsert, lsn); }
-	Error Delete(Item &&item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeDelete, lsn); }
-	Error Modify(Item &&item, ItemModifyMode mode, lsn_t lsn = lsn_t());
-	Error Modify(Query &&query, lsn_t lsn = lsn_t());
+	Error Insert(Item&& item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeInsert, lsn); }
+	Error Update(Item&& item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeUpdate, lsn); }
+	Error Upsert(Item&& item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeUpsert, lsn); }
+	Error Delete(Item&& item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeDelete, lsn); }
+	Error Modify(Item&& item, ItemModifyMode mode, lsn_t lsn = lsn_t());
+	Error Modify(Query&& query, lsn_t lsn = lsn_t());
 	Error Nop(lsn_t lsn);
 	Error PutMeta(std::string_view key, std::string_view value, lsn_t lsn = lsn_t());
-	Error SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn);
+	Error SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn);
 	bool IsFree() const noexcept { return impl_ == nullptr && status_.ok(); }
 	Item NewItem();
 	Error Status() const noexcept;
@@ -64,15 +64,15 @@ public:
 	bool IsTagsUpdated() const noexcept;
 	TimepointT GetStartTime() const noexcept;
 
-	static LocalTransaction Transform(Transaction &&tx);
+	static LocalTransaction Transform(Transaction&& tx);
 
 protected:
 	Transaction(Error err);
 	Transaction();
-	Transaction(Transaction &&tr, sharding::LocatorServiceAdapter shardingRouter);
+	Transaction(Transaction&& tr, sharding::LocatorServiceAdapter shardingRouter);
 
-	Error rollback(int serverId, const RdxContext &);
-	Error commit(int serverId, bool expectSharding, ReindexerImpl &rx, QueryResults &result, const RdxContext &ctx);
+	Error rollback(int serverId, const RdxContext&);
+	Error commit(int serverId, bool expectSharding, ReindexerImpl& rx, QueryResults& result, const RdxContext& ctx);
 
 	std::unique_ptr<TransactionImpl> impl_;
 	Error status_;

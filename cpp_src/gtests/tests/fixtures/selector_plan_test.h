@@ -99,14 +99,18 @@ private:
 	static std::vector<T> adoptValuesType(std::initializer_list<T> values) {
 		std::vector<T> result;
 		result.reserve(values.size());
-		for (const T& v : values) result.push_back(v);
+		for (const T& v : values) {
+			result.push_back(v);
+		}
 		return result;
 	}
 
 	static std::vector<std::string> adoptValuesType(std::initializer_list<const char*> values) {
 		std::vector<std::string> result;
 		result.reserve(values.size());
-		for (const char* v : values) result.emplace_back(v);
+		for (const char* v : values) {
+			result.emplace_back(v);
+		}
 		return result;
 	}
 

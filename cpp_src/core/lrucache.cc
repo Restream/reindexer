@@ -10,8 +10,10 @@ namespace reindexer {
 constexpr uint32_t kMaxHitCountToCache = 1024;
 
 template <typename K, typename V, typename hash, typename equal>
-typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(const K &key) {
-	if rx_unlikely (cacheSizeLimit_ == 0) return Iterator();
+typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(const K& key) {
+	if rx_unlikely (cacheSizeLimit_ == 0) {
+		return Iterator();
+	}
 
 	std::lock_guard lk(lock_);
 
@@ -31,25 +33,24 @@ typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(
 		return Iterator();
 	}
 	++getCount_;
-
-	// logPrintf(LogInfo, "Cache::Get (cond=%d,sortId=%d,keys=%d), total in cache items=%d,size=%d", key.cond, key.sort,
-	// 		  (int)key.keys.size(), items_.size(), totalCacheSize_);
 	return Iterator(true, it->second.val);
 }
 
 template <typename K, typename V, typename hash, typename equal>
-void LRUCache<K, V, hash, equal>::Put(const K &key, V &&v) {
-	if rx_unlikely (cacheSizeLimit_ == 0) return;
+void LRUCache<K, V, hash, equal>::Put(const K& key, V&& v) {
+	if rx_unlikely (cacheSizeLimit_ == 0) {
+		return;
+	}
 
 	std::lock_guard lk(lock_);
 	auto it = items_.find(key);
-	if (it == items_.end()) return;
+	if (it == items_.end()) {
+		return;
+	}
 
 	totalCacheSize_ += v.Size() - it->second.val.Size();
 	it->second.val = std::move(v);
 
-	// logPrintf(LogInfo, "IdSetCache::Put () add %d,left %d,fwdCnt=%d,sz=%d", endIt - begIt, left, it->second.fwdCount,
-	// 		  it->second.ids->size());
 	++putCount_;
 
 	eraseLRU();

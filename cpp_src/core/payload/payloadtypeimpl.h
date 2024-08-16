@@ -20,34 +20,34 @@ class PayloadTypeImpl {
 public:
 	PayloadTypeImpl(std::string name, std::initializer_list<PayloadFieldType> fields = {}) : fields_(fields), name_(std::move(name)) {}
 
-	const PayloadFieldType &Field(int field) const & noexcept {
+	const PayloadFieldType& Field(int field) const& noexcept {
 		assertf(field < NumFields(), "%s: %d, %d", name_, field, NumFields());
 		return fields_[field];
 	}
-	const PayloadFieldType &Field(int) const && = delete;
+	const PayloadFieldType& Field(int) const&& = delete;
 
-	const std::string &Name() const & noexcept { return name_; }
-	const std::string &Name() const && = delete;
+	const std::string& Name() const& noexcept { return name_; }
+	const std::string& Name() const&& = delete;
 	void SetName(std::string_view name) noexcept { name_ = std::string(name); }
 	int NumFields() const noexcept { return fields_.size(); }
 	void Add(PayloadFieldType f);
 	bool Drop(std::string_view field);
 	int FieldByName(std::string_view field) const;
-	bool FieldByName(std::string_view name, int &field) const noexcept;
+	bool FieldByName(std::string_view name, int& field) const noexcept;
 	bool Contains(std::string_view field) const noexcept { return fieldsByName_.find(field) != fieldsByName_.end(); }
 	int FieldByJsonPath(std::string_view jsonPath) const noexcept;
-	const std::vector<int> &StrFields() const & noexcept { return strFields_; }
-	const std::vector<int> &StrFields() const && = delete;
+	const std::vector<int>& StrFields() const& noexcept { return strFields_; }
+	const std::vector<int>& StrFields() const&& = delete;
 
-	void serialize(WrSerializer &ser) const;
-	void deserialize(Serializer &ser);
+	void serialize(WrSerializer& ser) const;
+	void deserialize(Serializer& ser);
 
 	size_t TotalSize() const noexcept;
 	std::string ToString() const;
-	void Dump(std::ostream &, std::string_view step, std::string_view offset) const;
+	void Dump(std::ostream&, std::string_view step, std::string_view offset) const;
 
 private:
-	void checkNewJsonPathBeforeAdd(const PayloadFieldType &f, const std::string &jsonPath) const;
+	void checkNewJsonPathBeforeAdd(const PayloadFieldType& f, const std::string& jsonPath) const;
 
 	std::vector<PayloadFieldType> fields_;
 	FieldMap fieldsByName_;

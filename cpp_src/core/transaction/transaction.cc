@@ -4,14 +4,14 @@
 
 namespace reindexer {
 
-Transaction::Transaction(LocalTransaction &&ltx) : impl_(std::make_unique<TransactionImpl>(std::move(ltx))) {}
+Transaction::Transaction(LocalTransaction&& ltx) : impl_(std::make_unique<TransactionImpl>(std::move(ltx))) {}
 
-Transaction::Transaction(LocalTransaction &&ltx, client::Reindexer &&clusterLeader)
+Transaction::Transaction(LocalTransaction&& ltx, client::Reindexer&& clusterLeader)
 	: impl_(std::make_unique<TransactionImpl>(std::move(ltx), std::move(clusterLeader))) {}
 
 Transaction::~Transaction() = default;
-Transaction::Transaction(Transaction &&) noexcept = default;
-Transaction &Transaction::operator=(Transaction &&) noexcept = default;
+Transaction::Transaction(Transaction&&) noexcept = default;
+Transaction& Transaction::operator=(Transaction&&) noexcept = default;
 
 std::string_view Transaction::GetNsName() const noexcept {
 	static const std::string empty;
@@ -21,14 +21,14 @@ std::string_view Transaction::GetNsName() const noexcept {
 	return empty;
 }
 
-Error Transaction::Modify(Item &&item, ItemModifyMode mode, lsn_t lsn) {
+Error Transaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 	if (impl_) {
 		return impl_->Modify(std::move(item), mode, lsn);
 	}
 	return status_;
 }
 
-Error Transaction::Modify(Query &&query, lsn_t lsn) {
+Error Transaction::Modify(Query&& query, lsn_t lsn) {
 	if (impl_) {
 		return impl_->Modify(std::move(query), lsn);
 	}
@@ -49,7 +49,7 @@ Error Transaction::PutMeta(std::string_view key, std::string_view value, lsn_t l
 	return status_;
 }
 
-Error Transaction::SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn) {
+Error Transaction::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) {
 	if (impl_) {
 		return impl_->SetTagsMatcher(std::move(tm), lsn);
 	}
@@ -81,7 +81,7 @@ Transaction::TimepointT Transaction::GetStartTime() const noexcept {
 	return Transaction::TimepointT();
 }
 
-LocalTransaction Transaction::Transform(Transaction &&tx) {
+LocalTransaction Transaction::Transform(Transaction&& tx) {
 	if (tx.impl_) {
 		return TransactionImpl::Transform(*tx.impl_);
 	}
@@ -90,16 +90,16 @@ LocalTransaction Transaction::Transform(Transaction &&tx) {
 
 Transaction::Transaction(Error err) : status_(std::move(err)) {}
 
-Transaction::Transaction(Transaction &&tr, sharding::LocatorServiceAdapter shardingRouter) : Transaction(std::move(tr)) {
+Transaction::Transaction(Transaction&& tr, sharding::LocatorServiceAdapter shardingRouter) : Transaction(std::move(tr)) {
 	assertrx(impl_);
 	impl_->SetShardingRouter(std::move(shardingRouter));
 }
 
 Transaction::Transaction() = default;
 
-Error Transaction::rollback(int serverId, const RdxContext &ctx) { return impl_ ? impl_->Rollback(serverId, ctx) : status_; }
+Error Transaction::rollback(int serverId, const RdxContext& ctx) { return impl_ ? impl_->Rollback(serverId, ctx) : status_; }
 
-Error Transaction::commit(int serverId, bool expectSharding, ReindexerImpl &rx, QueryResults &result, const RdxContext &ctx) {
+Error Transaction::commit(int serverId, bool expectSharding, ReindexerImpl& rx, QueryResults& result, const RdxContext& ctx) {
 	return impl_ ? impl_->Commit(serverId, expectSharding, rx, result, ctx) : status_;
 }
 

@@ -206,21 +206,31 @@ void RxSelector::DoSelect(const Query& q, LocalQueryResults& result, NsLocker<T>
 														'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '.', '+'};
 	std::string_view::size_type i = 0;
 	const auto s = sortExpr.size();
-	while (i < s && isspace(sortExpr[i])) ++i;
+	while (i < s && isspace(sortExpr[i])) {
+		++i;
+	}
 	bool inQuotes = false;
 	if (i < s && sortExpr[i] == '"') {
 		++i;
 		inQuotes = true;
 	}
-	while (i < s && isspace(sortExpr[i])) ++i;
+	while (i < s && isspace(sortExpr[i])) {
+		++i;
+	}
 	std::string_view::size_type j = 0, s2 = joinedNs.size();
 	for (; j < s2 && i < s; ++i, ++j) {
-		if (sortExpr[i] != joinedNs[j]) return false;
+		if (sortExpr[i] != joinedNs[j]) {
+			return false;
+		}
 	}
-	if (i >= s || sortExpr[i] != '.') return false;
+	if (i >= s || sortExpr[i] != '.') {
+		return false;
+	}
 	for (++i; i < s; ++i) {
 		if (!kJoinedIndexNameSyms.test(sortExpr[i])) {
-			if (isspace(sortExpr[i])) break;
+			if (isspace(sortExpr[i])) {
+				break;
+			}
 			if (inQuotes && sortExpr[i] == '"') {
 				inQuotes = false;
 				++i;
@@ -229,9 +239,15 @@ void RxSelector::DoSelect(const Query& q, LocalQueryResults& result, NsLocker<T>
 			return false;
 		}
 	}
-	while (i < s && isspace(sortExpr[i])) ++i;
-	if (inQuotes && i < s && sortExpr[i] == '"') ++i;
-	while (i < s && isspace(sortExpr[i])) ++i;
+	while (i < s && isspace(sortExpr[i])) {
+		++i;
+	}
+	if (inQuotes && i < s && sortExpr[i] == '"') {
+		++i;
+	}
+	while (i < s && isspace(sortExpr[i])) {
+		++i;
+	}
 	return i == s;
 }
 
@@ -404,7 +420,9 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, LocalQueryRes
 												   SelectFunctionsHolder& func, std::vector<QueryResultsContext>& queryResultsContexts,
 												   const RdxContext& rdxCtx) {
 	JoinedSelectors joinedSelectors;
-	if (q.GetJoinQueries().empty()) return joinedSelectors;
+	if (q.GetJoinQueries().empty()) {
+		return joinedSelectors;
+	}
 	auto ns = locks.Get(q.NsName());
 	assertrx_throw(ns);
 

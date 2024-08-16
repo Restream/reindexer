@@ -51,7 +51,7 @@ protected:
 	bool check_async(int fd);
 
 	int async_fd_ = -1;
-	dynamic_loop *owner_ = nullptr;
+	dynamic_loop* owner_ = nullptr;
 };
 #else	// HAVE_EVENT_FD
 class loop_posix_base {
@@ -65,7 +65,7 @@ protected:
 	bool check_async(int fd);
 
 	int async_fds_[2] = {-1, -1};
-	dynamic_loop *owner_ = nullptr;
+	dynamic_loop* owner_ = nullptr;
 };
 #endif	// HAVE_EVENT_FD
 
@@ -74,7 +74,7 @@ class loop_poll_backend : public loop_posix_base {
 public:
 	loop_poll_backend();
 	~loop_poll_backend();
-	void init(dynamic_loop *owner);
+	void init(dynamic_loop* owner);
 	void set(int fd, int events, int oldevents);
 	void stop(int fd);
 	int runonce(int64_t tv);
@@ -89,7 +89,7 @@ class loop_select_backend : public loop_posix_base {
 public:
 	loop_select_backend();
 	~loop_select_backend();
-	void init(dynamic_loop *owner) noexcept;
+	void init(dynamic_loop* owner) noexcept;
 	void set(int fd, int events, int oldevents) noexcept;
 	void stop(int fd) noexcept;
 	int runonce(int64_t tv);
@@ -106,7 +106,7 @@ class loop_epoll_backend : public loop_posix_base {
 public:
 	loop_epoll_backend();
 	~loop_epoll_backend();
-	void init(dynamic_loop *owner);
+	void init(dynamic_loop* owner);
 	void set(int fd, int events, int oldevents);
 	void stop(int fd);
 	int runonce(int64_t tv);
@@ -123,7 +123,7 @@ class loop_wsa_backend {
 public:
 	loop_wsa_backend();
 	~loop_wsa_backend();
-	void init(dynamic_loop *owner);
+	void init(dynamic_loop* owner);
 	void set(int fd, int events, int oldevents);
 	void stop(int fd);
 	int runonce(int64_t tv);
@@ -133,7 +133,7 @@ public:
 	static int capacity();
 
 protected:
-	dynamic_loop *owner_;
+	dynamic_loop* owner_;
 	std::unique_ptr<loop_wsa_backend_private> private_;
 };
 #endif
@@ -166,7 +166,7 @@ public:
 		auto id = coroutine::create(std::move(func), stack_size);
 		new_tasks_.emplace_back(id);
 	}
-	void spawn(coroutine::wait_group &wg, std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit) {
+	void spawn(coroutine::wait_group& wg, std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit) {
 		wg.add(1);
 		spawn(
 			[f = std::move(func), &wg]() {	// NOLINT(*.NewDeleteLeaks) False positive
@@ -179,7 +179,7 @@ public:
 	void sleep(std::chrono::duration<Rep, Period> dur);
 	template <typename Rep1, typename Period1, typename Rep2, typename Period2, typename TerminateT>
 	void granular_sleep(std::chrono::duration<Rep1, Period1> dur, std::chrono::duration<Rep2, Period2> granularity,
-						const TerminateT &terminate);
+						const TerminateT& terminate);
 	void yield() {
 		// Yield is allowed for loop-thread only
 		assertrx(coroTid_ == std::thread::id() || coroTid_ == std::this_thread::get_id());
@@ -190,16 +190,16 @@ public:
 	}
 
 protected:
-	void set(int fd, io *watcher, int events);
-	void set(timer *watcher, double t);
-	void set(async *watcher);
-	void set(sig *watcher);
+	void set(int fd, io* watcher, int events);
+	void set(timer* watcher, double t);
+	void set(async* watcher);
+	void set(sig* watcher);
 	void stop(int fd);
-	void stop(timer *watcher);
-	void stop(async *watcher);
-	void stop(sig *watcher);
-	void send(async *watcher);
-	bool is_active(const timer *watcher) const noexcept;
+	void stop(timer* watcher);
+	void stop(async* watcher);
+	void stop(sig* watcher);
+	void send(async* watcher);
+	bool is_active(const timer* watcher) const noexcept;
 
 	void io_callback(int fd, int events);
 	void async_callback();
@@ -210,13 +210,13 @@ protected:
 	struct fd_handler {
 		int emask_ = 0;
 		int idx = -1;
-		io *watcher_ = nullptr;
+		io* watcher_ = nullptr;
 	};
 
 	std::vector<fd_handler> fds_;
-	std::vector<timer *> timers_;
-	std::vector<async *> asyncs_;
-	std::vector<sig *> sigs_;
+	std::vector<timer*> timers_;
+	std::vector<async*> asyncs_;
+	std::vector<sig*> sigs_;
 	bool break_ = false;
 	bool coro_cb_is_set_ = false;
 	std::atomic<int> async_sent_;
@@ -248,41 +248,59 @@ class loop_ref {
 
 public:
 	void break_loop() noexcept {
-		if (loop_) loop_->break_loop();
+		if (loop_) {
+			loop_->break_loop();
+		}
 	}
 	void run() {
-		if (loop_) loop_->run();
+		if (loop_) {
+			loop_->run();
+		}
 	}
 	void enable_asyncs() {
-		if (loop_) loop_->backend_.enable_asyncs();
+		if (loop_) {
+			loop_->backend_.enable_asyncs();
+		}
 	}
 	bool is_valid() const noexcept { return loop_; }
-	void spawn(coroutine::wait_group &wg, std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit) {
-		if (loop_) loop_->spawn(wg, std::move(func), stack_size);
+	void spawn(coroutine::wait_group& wg, std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit) {
+		if (loop_) {
+			loop_->spawn(wg, std::move(func), stack_size);
+		}
 	}
 	void spawn(std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit) {
-		if (loop_) loop_->spawn(std::move(func), stack_size);
+		if (loop_) {
+			loop_->spawn(std::move(func), stack_size);
+		}
 	}
 
 protected:
 	template <typename... Args>
 	void set(Args... args) {
-		if (loop_) loop_->set(args...);
+		if (loop_) {
+			loop_->set(args...);
+		}
 	}
 	template <typename... Args>
 	void stop(Args... args) {
-		if (loop_) loop_->stop(args...);
+		if (loop_) {
+			loop_->stop(args...);
+		}
 	}
 	template <typename... Args>
 	void send(Args... args) {
-		if (loop_) loop_->send(args...);
+		if (loop_) {
+			loop_->send(args...);
+		}
 	}
 	template <typename... Args>
 	bool is_active(Args... args) const noexcept {
-		if (loop_) return loop_->is_active(args...);
+		if (loop_) {
+			return loop_->is_active(args...);
+		}
 		return false;
 	}
-	dynamic_loop *loop_ = nullptr;
+	dynamic_loop* loop_ = nullptr;
 };
 
 class io {
@@ -290,10 +308,10 @@ class io {
 
 public:
 	io() = default;
-	io(const io &) = delete;
+	io(const io&) = delete;
 	~io() { stop(); }
 
-	void set(dynamic_loop &loop_) noexcept { loop.loop_ = &loop_; }
+	void set(dynamic_loop& loop_) noexcept { loop.loop_ = &loop_; }
 	void set(int events) { loop.set(fd, this, events); }
 	void start(int _fd, int events) {
 		fd = _fd;
@@ -305,11 +323,11 @@ public:
 	}
 	void reset() noexcept { loop.loop_ = nullptr; }
 
-	template <typename K, void (K::*func)(io &, int events)>
-	void set(K *object) {
-		func_ = [object](io &watcher, int events) { (static_cast<K *>(object)->*func)(watcher, events); };
+	template <typename K, void (K::*func)(io&, int events)>
+	void set(K* object) {
+		func_ = [object](io& watcher, int events) { (static_cast<K*>(object)->*func)(watcher, events); };
 	}
-	void set(std::function<void(io &watcher, int events)> func) noexcept { func_ = std::move(func); }
+	void set(std::function<void(io& watcher, int events)> func) noexcept { func_ = std::move(func); }
 
 	int fd = -1;
 	loop_ref loop;
@@ -319,19 +337,19 @@ protected:
 		assertrx(func_ != nullptr);
 		func_(*this, events);
 	}
-	std::function<void(io &watcher, int events)> func_ = nullptr;
+	std::function<void(io& watcher, int events)> func_ = nullptr;
 };
 class timer {
 	friend class dynamic_loop;
 
 public:
 	timer() = default;
-	timer(const timer &) = delete;
-	timer(timer &&) = default;
-	timer &operator=(timer &&) = default;
+	timer(const timer&) = delete;
+	timer(timer&&) = default;
+	timer& operator=(timer&&) = default;
 	~timer() { stop(); }
 
-	void set(dynamic_loop &loop_) noexcept { loop.loop_ = &loop_; }
+	void set(dynamic_loop& loop_) noexcept { loop.loop_ = &loop_; }
 	void start(double t, double p = 0) {
 		period_ = p;
 		loop.set(this, t);
@@ -339,11 +357,11 @@ public:
 	void stop() { loop.stop(this); }
 	void reset() noexcept { loop.loop_ = nullptr; }
 
-	template <typename K, void (K::*func)(timer &, int t)>
-	void set(K *object) {
-		func_ = [object](timer &watcher, int t) { (static_cast<K *>(object)->*func)(watcher, t); };
+	template <typename K, void (K::*func)(timer&, int t)>
+	void set(K* object) {
+		func_ = [object](timer& watcher, int t) { (static_cast<K*>(object)->*func)(watcher, t); };
 	}
-	void set(std::function<void(timer &, int)> func) noexcept { func_ = std::move(func); }
+	void set(std::function<void(timer&, int)> func) noexcept { func_ = std::move(func); }
 
 	bool is_active() const noexcept { return loop.is_active(this); }
 	bool has_period() const noexcept { return period_ > 0.00000001; }
@@ -368,7 +386,7 @@ protected:
 		}
 	}
 
-	std::function<void(timer &watcher, int t)> func_ = nullptr;
+	std::function<void(timer& watcher, int t)> func_ = nullptr;
 	double period_ = 0;
 	bool in_coro_storage_ = false;
 };
@@ -380,7 +398,7 @@ void dynamic_loop::sleep(std::chrono::duration<Rep, Period> dur) {
 	auto id = coroutine::current();
 	if (id) {
 		timer tm(timer::coro_t{});
-		tm.set([id](timer &, int) { coroutine::resume(id); });
+		tm.set([id](timer&, int) { coroutine::resume(id); });
 		tm.set(*this);
 		const double awaitTime = std::chrono::duration_cast<std::chrono::microseconds>(dur).count();
 		tm.start(awaitTime / 1e6);
@@ -395,7 +413,7 @@ void dynamic_loop::sleep(std::chrono::duration<Rep, Period> dur) {
 
 template <typename Rep1, typename Period1, typename Rep2, typename Period2, typename TerminateT>
 void dynamic_loop::granular_sleep(std::chrono::duration<Rep1, Period1> dur, std::chrono::duration<Rep2, Period2> granularity,
-								  const TerminateT &terminate) {
+								  const TerminateT& terminate) {
 	for (std::chrono::nanoseconds t = dur; t.count() > 0; t -= granularity) {
 		if (terminate()) {
 			return;
@@ -409,10 +427,10 @@ class sig {
 
 public:
 	sig() = default;  // -V730
-	sig(const sig &) = delete;
+	sig(const sig&) = delete;
 	~sig() { stop(); }
 
-	void set(dynamic_loop &loop_) noexcept { loop.loop_ = &loop_; }
+	void set(dynamic_loop& loop_) noexcept { loop.loop_ = &loop_; }
 	void start(int signum) {
 		signum_ = signum;
 		loop.set(this);
@@ -420,11 +438,11 @@ public:
 	void stop() { loop.stop(this); }
 	void reset() noexcept { loop.loop_ = nullptr; }
 
-	template <typename K, void (K::*func)(sig &)>
-	void set(K *object) {
-		func_ = [object](sig &watcher) { (static_cast<K *>(object)->*func)(watcher); };
+	template <typename K, void (K::*func)(sig&)>
+	void set(K* object) {
+		func_ = [object](sig& watcher) { (static_cast<K*>(object)->*func)(watcher); };
 	}
-	void set(std::function<void(sig &)> func) noexcept { func_ = std::move(func); }
+	void set(std::function<void(sig&)> func) noexcept { func_ = std::move(func); }
 
 	loop_ref loop;
 
@@ -434,7 +452,7 @@ protected:
 		func_(*this);
 	}
 
-	std::function<void(sig &watcher)> func_ = nullptr;
+	std::function<void(sig& watcher)> func_ = nullptr;
 #ifndef _WIN32
 	struct sigaction old_action_;
 #else
@@ -448,10 +466,10 @@ class async {
 
 public:
 	async() : sent_(false) {}
-	async(const async &) = delete;
+	async(const async&) = delete;
 	~async() { stop(); }
 
-	void set(dynamic_loop &loop_) {
+	void set(dynamic_loop& loop_) {
 		loop.loop_ = &loop_;
 		loop.enable_asyncs();
 	}
@@ -460,11 +478,11 @@ public:
 	void reset() noexcept { loop.loop_ = nullptr; }
 	void send() { loop.send(this); }
 
-	template <typename K, void (K::*func)(async &)>
-	void set(K *object) {
-		func_ = [object](async &watcher) { (static_cast<K *>(object)->*func)(watcher); };
+	template <typename K, void (K::*func)(async&)>
+	void set(K* object) {
+		func_ = [object](async& watcher) { (static_cast<K*>(object)->*func)(watcher); };
 	}
-	void set(std::function<void(async &)> func) noexcept { func_ = std::move(func); }
+	void set(std::function<void(async&)> func) noexcept { func_ = std::move(func); }
 
 	loop_ref loop;
 
@@ -474,7 +492,7 @@ protected:
 		func_(*this);
 	}
 
-	std::function<void(async &watcher)> func_ = nullptr;
+	std::function<void(async& watcher)> func_ = nullptr;
 	std::atomic<bool> sent_;
 };
 

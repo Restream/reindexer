@@ -26,16 +26,16 @@ struct IndexDef {
 			 int64_t expireAfter = 0) noexcept;
 	IndexDef(std::string name, std::string indexType, std::string fieldType, IndexOpts opts);
 	IndexDef(std::string name, JsonPaths jsonPaths, IndexType type, IndexOpts opts);
-	bool IsEqual(const IndexDef &other, IndexComparison cmpType) const;
+	bool IsEqual(const IndexDef& other, IndexComparison cmpType) const;
 	IndexType Type() const;
-	const std::vector<std::string_view> &Conditions() const noexcept;
+	const std::vector<std::string_view>& Conditions() const noexcept;
 	void FromType(IndexType type);
 	Error FromJSON(span<char> json);
-	void FromJSON(const gason::JsonNode &jvalue);
-	void GetJSON(WrSerializer &ser, int formatFlags = 0) const;
+	void FromJSON(const gason::JsonNode& jvalue);
+	void GetJSON(WrSerializer& ser, int formatFlags = 0) const;
 	size_t HeapSize() const noexcept {
 		size_t size = name_.size() + indexType_.size() + fieldType_.size() + opts_.config.size();
-		for (auto &path : jsonPaths_) {
+		for (auto& path : jsonPaths_) {
 			size += path.size();
 		}
 		return size;

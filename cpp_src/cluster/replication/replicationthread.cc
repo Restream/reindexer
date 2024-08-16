@@ -165,7 +165,10 @@ void ReplThread<BehaviourParamT>::Run(ReplThreadConfig config, const std::vector
 	terminateCh_.close();
 	nodes.clear();
 
-	log_.Info([this] { rtfmt("%d: Replication thread was terminated. TID: %d", serverId_, std::this_thread::get_id()); });
+	log_.Info([this] {
+		rtfmt("%d: Replication thread was terminated. TID: %d", serverId_,
+			  static_cast<size_t>(std::hash<std::thread::id>()(std::this_thread::get_id())));
+	});
 }
 
 template <typename BehaviourParamT>
@@ -252,7 +255,9 @@ void ReplThread<BehaviourParamT>::nodeReplicationRoutine(Node& node) {
 			}
 			if (isNetworkError(err) || isLeaderChangedError(err)) {
 				const bool retrySync = handleUpdatesWithError(node, err);
-				if (retrySync) break;
+				if (retrySync) {
+					break;
+				}
 			}
 		}
 	}
@@ -585,7 +590,9 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 		}
 
 		err = thisNode.GetSnapshot(nsName, SnapshotOpts(requiredLsn, config_.MaxWALDepthOnForceSync), snapshot, RdxContext());
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 		if (snapshot.HasRawData()) {
 			logInfo("%d:%d:%s Snapshot has raw data, creating tmp namespace", serverId_, node.uid, nsName);
 			createTmpNamespace = true;
@@ -602,11 +609,15 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 			// TODO: Allow tmp ns without storage via config
 			err = client.WithLSN(lsn_t(0, serverId_))
 					  .CreateTemporaryNamespace(nsName, tmpNsGuard.tmpNsName, StorageOpts().Enabled(), snapshot.NsVersion());
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 			if constexpr (std::is_same_v<BehaviourParamT, AsyncThreadParam>) {
 				err = client.SetClusterizationStatus(tmpNsGuard.tmpNsName,
 													 ClusterizationStatus{serverId_, ClusterizationStatus::Role::SimpleReplica});
-				if (!err.ok()) return err;
+				if (!err.ok()) {
+					return err;
+				}
 			}
 			replNsName = tmpNsGuard.tmpNsName;
 		} else {
@@ -629,7 +640,9 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 
 		ReplicationStateV2 replState;
 		err = client.GetReplState(replNsName, replState);
-		if (!err.ok() && err.code() != errNotFound) return err;
+		if (!err.ok() && err.code() != errNotFound) {
+			return err;
+		}
 		logInfo(
 			"%d:%d:%s Sync done. { snapshot: { ns_version: %d, lsn: %d, data_hash: %d, data_count: %d }, remote: { ns_version: %d, lsn: "
 			"%d, data_hash: %d, data_count: %d } }",
@@ -652,7 +665,9 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 		if (createTmpNamespace) {
 			logInfo("%d:%d:%s Renaming: %s -> %s", serverId_, node.uid, nsName, replNsName, nsName);
 			err = client.WithLSN(lsn_t(0, serverId_)).RenameNamespace(replNsName, nsName);
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 			tmpNsGuard.tmpNsName.clear();
 		}
 	} catch (Error& err) {
@@ -875,7 +890,9 @@ bool ReplThread<BehaviourParamT>::handleUpdatesWithError(Node& node, const Error
 	UpdatesQueueT::UpdatePtr updatePtr;
 	bool hadErrorOnLastUpdate = false;
 
-	if (!updatesNotifier.empty()) updatesNotifier.pop();
+	if (!updatesNotifier.empty()) {
+		updatesNotifier.pop();
+	}
 	do {
 		updatePtr = updates_->Read(node.nextUpdateId, std::this_thread::get_id());
 		if (!updatePtr) {
@@ -899,7 +916,9 @@ bool ReplThread<BehaviourParamT>::handleUpdatesWithError(Node& node, const Error
 				continue;
 			}
 			const auto& nsName = it.NsName();
-			if (!bhvParam_.IsNamespaceInConfig(node.uid, nsName)) continue;
+			if (!bhvParam_.IsNamespaceInConfig(node.uid, nsName)) {
+				continue;
+			}
 
 			if (it.Type() == updates::URType::AddNamespace || it.Type() == updates::URType::DropNamespace) {
 				node.namespaceData[nsName].isClosed = false;
@@ -958,16 +977,22 @@ Error ReplThread<BehaviourParamT>::checkIfReplicationAllowed(Node& node, LogLeve
 		const Query q = Query(std::string(kReplicationStatsNamespace)).Where("type", CondEq, Variant(cluster::kClusterReplStatsType));
 		client::CoroQueryResults qr;
 		err = node.client.Select(q, qr);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 
 		if (qr.Count() == 1) {
 			WrSerializer wser;
 			err = qr.begin().GetJSON(wser, false);
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 
 			ReplicationStats stats;
 			err = stats.FromJSON(giftStr(wser.Slice()));
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 
 			if (stats.nodeStats.size()) {
 				if (stats.nodeStats[0].namespaces.size()) {
@@ -1242,8 +1267,6 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const updates::Update
 	} catch (std::bad_variant_access& e) {
 		assert(false);
 		return Error(errLogic, "Bad variant access: %s", e.what());
-	} catch (const fmt::internal::RuntimeError& err) {
-		return Error(errLogic, err.what());
 	} catch (const spdlog::spdlog_ex& err) {
 		return Error(errLogic, err.what());
 	} catch (Error err) {

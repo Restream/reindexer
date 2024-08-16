@@ -191,7 +191,9 @@ void QueryResults::RebuildMergedData() {
 					}
 
 					auto newValue = newAgg.GetValue();
-					if (!newValue) continue;
+					if (!newValue) {
+						continue;
+					}
 
 					auto value = mergedAgg.GetValue();
 
@@ -816,12 +818,16 @@ public:
 				positions1.resize(
 					std::set_intersection(positions2.begin(), positions2.end(), it->second.begin(), it->second.end(), positions1.begin()) -
 					positions1.begin());
-				if (positions1.empty()) break;
+				if (positions1.empty()) {
+					break;
+				}
 			} else {
 				positions2.resize(
 					std::set_intersection(positions1.begin(), positions1.end(), it->second.begin(), it->second.end(), positions2.begin()) -
 					positions2.begin());
-				if (positions2.empty()) break;
+				if (positions2.empty()) {
+					break;
+				}
 			}
 		}
 		const h_vector<size_t, 4>* positions = ((i == size) != (i % 2 == 0)) ? &positions1 : &positions2;
@@ -860,12 +866,16 @@ public:
 				positions1.resize(
 					std::set_intersection(positions2.begin(), positions2.end(), it->second.begin(), it->second.end(), positions1.begin()) -
 					positions1.begin());
-				if (positions1.empty()) break;
+				if (positions1.empty()) {
+					break;
+				}
 			} else {
 				positions2.resize(
 					std::set_intersection(positions1.begin(), positions1.end(), it->second.begin(), it->second.end(), positions2.begin()) -
 					positions2.begin());
-				if (positions2.empty()) break;
+				if (positions2.empty()) {
+					break;
+				}
 			}
 		}
 		positions = ((i == size) != (i % 2 == 0)) ? &positions1 : &positions2;
@@ -941,7 +951,9 @@ public:
 		}
 	}
 	bool operator()(int lhs, int rhs) const {
-		if (lhs == rhs) return false;
+		if (lhs == rhs) {
+			return false;
+		}
 		TagsMatcher ltm, rtm;
 		PayloadType lpt, rpt;
 		ItemRef liref, riref;
@@ -1185,7 +1197,9 @@ int QueryResults::findFirstQrWithItems(int minShardId) {
 template <typename QrItT>
 Item QueryResults::Iterator::getItem(QrItT& it, std::unique_ptr<ItemImpl>&& itemImpl, bool convertViaJSON) {
 	auto err = fillItemImpl(it, *itemImpl, convertViaJSON);
-	if (!err.ok()) return Item(err);
+	if (!err.ok()) {
+		return Item(err);
+	}
 	return Item(itemImpl.release());
 }
 
@@ -1198,9 +1212,13 @@ Error QueryResults::fillItemImpl(QrItT& it, ItemImpl& itemImpl, bool convertViaJ
 		itemImpl.FromCJSON(wrser.Slice());
 	} else {
 		err = it.GetJSON(wrser, false);
-		if (err.ok()) err = itemImpl.FromJSON(wrser.Slice());
+		if (err.ok()) {
+			err = itemImpl.FromJSON(wrser.Slice());
+		}
 	}
-	if (err.ok()) itemImpl.Value().SetLSN(it.GetLSN());
+	if (err.ok()) {
+		itemImpl.Value().SetLSN(it.GetLSN());
+	}
 	return err;
 }
 
@@ -1211,7 +1229,9 @@ Error QueryResults::Iterator::getCJSONviaJSON(WrSerializer& wrser, bool withHdrL
 	itemImpl.Unsafe(true);
 	WrSerializer tmpWrser;
 	Error err = it.GetJSON(tmpWrser, false);
-	if (err.ok()) err = itemImpl.FromJSON(tmpWrser.Slice());
+	if (err.ok()) {
+		err = itemImpl.FromJSON(tmpWrser.Slice());
+	}
 	if (err.ok()) {
 		if (withHdrLen) {
 			auto slicePosSaver = wrser.StartSlice();

@@ -34,9 +34,10 @@ public:
 				   (lhs.Type().Is<KeyValueType::Int>() && rhs.Type().Is<KeyValueType::Int64>());
 		}
 		void ValidateTypes(const Variant& lhs, const Variant& rhs) const {
-			if (!lhs.Type().IsSame(rhs.Type()))
+			if (!lhs.Type().IsSame(rhs.Type())) {
 				throw Error(errLogic, "Comparator internal error. Different compared types. Left - %s. Right - %s", lhs.Type().Name(),
 							rhs.Type().Name());
+			}
 		}
 	};
 
@@ -94,8 +95,9 @@ public:
 
 	template <typename ValuesDataType>
 	void FillUniqueIds(fast_hash_set<int>& uniqueIds, const ValuesDataType& keysToShard) const {
-		for (auto itValuesData = keysToShard.begin(); itValuesData != keysToShard.end(); ++itValuesData)
+		for (auto itValuesData = keysToShard.begin(); itValuesData != keysToShard.end(); ++itValuesData) {
 			uniqueIds.insert(itValuesData->second);
+		}
 	}
 
 private:

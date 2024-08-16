@@ -35,7 +35,7 @@ using reindexer::cbuf;
 template <typename Mutex>
 class Connection {
 public:
-	Connection(socket &&s, ev::dynamic_loop &loop, bool enableStat, size_t readBufSize = kConnReadbufSize,
+	Connection(socket&& s, ev::dynamic_loop& loop, bool enableStat, size_t readBufSize = kConnReadbufSize,
 			   size_t writeBufSize = kConnWriteBufSize, int idleTimeout = -1);
 	virtual ~Connection();
 
@@ -47,16 +47,16 @@ protected:
 	virtual void onClose() = 0;
 
 	// Generic callback
-	void callback(ev::io &watcher, int revents);
+	void callback(ev::io& watcher, int revents);
 	void write_cb();
 	ReadResT read_cb();
-	void async_cb(ev::async &watcher);
-	void timeout_cb(ev::periodic &watcher, int);
+	void async_cb(ev::async& watcher);
+	void timeout_cb(ev::periodic& watcher, int);
 
 	void closeConn();
-	void attach(ev::dynamic_loop &loop);
+	void attach(ev::dynamic_loop& loop);
 	void detach();
-	void restart(socket &&s);
+	void restart(socket&& s);
 
 	socket sock_;
 	ev::io io_;

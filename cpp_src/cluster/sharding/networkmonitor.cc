@@ -75,7 +75,9 @@ void NetworkMonitor::Shutdown() {
 }
 
 void NetworkMonitor::sendStatusRequests() {
-	if (inProgress_) return;
+	if (inProgress_) {
+		return;
+	}
 
 	inProgress_ = true;
 	executed_ = 0;
@@ -105,8 +107,7 @@ void NetworkMonitor::sendStatusRequests() {
 Error NetworkMonitor::awaitStatuses(std::unique_lock<std::recursive_mutex>& lck, const RdxContext& ctx) {
 	if (inProgress_) {
 		assertrx(ctx.IsCancelable());
-		cv_.wait(
-			lck, [this] { return areStatusesReady(); }, ctx);
+		cv_.wait(lck, [this] { return areStatusesReady(); }, ctx);
 		inProgress_ = false;
 	}
 	if (hostsConnections_->size() == succeed_.size()) {

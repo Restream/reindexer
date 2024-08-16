@@ -22,10 +22,10 @@ Variant::Variant(p_string v, hold_t) : variant_{0, 0, KeyValueType::String{}} {
 		*cast<p_string>() = v;
 	}
 }
-Variant::Variant(const VariantArray &values) : variant_{0, 1, KeyValueType::Tuple{}} {
+Variant::Variant(const VariantArray& values) : variant_{0, 1, KeyValueType::Tuple{}} {
 	WrSerializer ser;
 	ser.PutVarUint(values.size());
-	for (const Variant &kv : values) {
+	for (const Variant& kv : values) {
 		ser.PutVariant(kv);
 	}
 	new (cast<void>()) key_string(make_key_string(ser.Slice()));
@@ -45,23 +45,23 @@ Variant::Variant(Uuid uuid) noexcept : uuid_() {
 	}
 }
 
-static void serialize(WrSerializer &, const std::tuple<> &) noexcept {}
+static void serialize(WrSerializer&, const std::tuple<>&) noexcept {}
 
 template <typename... Ts>
-void serialize(WrSerializer &ser, const std::tuple<Ts...> &v) {
+void serialize(WrSerializer& ser, const std::tuple<Ts...>& v) {
 	ser.PutVariant(Variant{std::get<0>(v)});
 	serialize(ser, tail(v));
 }
 
 template <typename... Ts>
-Variant::Variant(const std::tuple<Ts...> &values) : variant_{0, 1, KeyValueType::Tuple{}} {
+Variant::Variant(const std::tuple<Ts...>& values) : variant_{0, 1, KeyValueType::Tuple{}} {
 	WrSerializer ser;
 	ser.PutVarUint(sizeof...(Ts));
 	serialize(ser, values);
 	new (cast<void>()) key_string(make_key_string(ser.Slice()));
 }
-template Variant::Variant(const std::tuple<int, std::string> &);
-template Variant::Variant(const std::tuple<std::string, int> &);
+template Variant::Variant(const std::tuple<int, std::string>&);
+template Variant::Variant(const std::tuple<std::string, int>&);
 
 template <typename T>
 inline static void assertKeyType([[maybe_unused]] KeyValueType got) noexcept {
@@ -96,12 +96,16 @@ Variant::operator Point() const { return static_cast<Point>(getCompositeValues()
 template <>
 Point Variant::As<Point>() const {
 	assertrx(!isUuid());
-	if (!variant_.type.Is<KeyValueType::Tuple>()) throw Error(errParams, "Can't convert %s to Point", variant_.type.Name());
+	if (!variant_.type.Is<KeyValueType::Tuple>()) {
+		throw Error(errParams, "Can't convert %s to Point", variant_.type.Name());
+	}
 	return static_cast<Point>(getCompositeValues());
 }
 template <>
 Uuid Variant::As<Uuid>() const {
-	if (isUuid()) return Uuid{*this};
+	if (isUuid()) {
+		return Uuid{*this};
+	}
 	return variant_.type.EvaluateOneOf(
 		[&](KeyValueType::Uuid) { return Uuid{*this}; }, [&](KeyValueType::String) { return Uuid{this->As<std::string>()}; },
 		[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Double, KeyValueType::Tuple,
@@ -120,7 +124,7 @@ void Variant::free() noexcept {
 	variant_.hold = 0;
 }
 
-void Variant::copy(const Variant &other) {
+void Variant::copy(const Variant& other) {
 	assertrx(!isUuid());
 	assertrx(!other.isUuid());
 	assertrx(variant_.hold == 1);
@@ -134,10 +138,12 @@ void Variant::copy(const Variant &other) {
 		[&](OneOf<KeyValueType::Null, KeyValueType::Uuid>) noexcept {});
 }
 
-Variant &Variant::EnsureHold() & {
-	if (isUuid() || variant_.hold == 1) return *this;
+Variant& Variant::EnsureHold() & {
+	if (isUuid() || variant_.hold == 1) {
+		return *this;
+	}
 	variant_.type.EvaluateOneOf([&](OneOf<KeyValueType::String, KeyValueType::Tuple>) { *this = Variant(this->operator key_string()); },
-								[&](KeyValueType::Composite) { *this = Variant(this->operator const PayloadValue &()); },
+								[&](KeyValueType::Composite) { *this = Variant(this->operator const PayloadValue&()); },
 								[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Null,
 										 KeyValueType::Undefined, KeyValueType::Double, KeyValueType::Uuid>) noexcept {});
 	return *this;
@@ -181,9 +187,9 @@ p_string Variant::As<p_string>() const {
 }
 
 template <>
-std::string Variant::As<std::string>(const PayloadType &pt, const FieldsSet &fields) const {
+std::string Variant::As<std::string>(const PayloadType& pt, const FieldsSet& fields) const {
 	if (!isUuid() && variant_.type.Is<KeyValueType::Composite>()) {
-		ConstPayload pl(pt, operator const PayloadValue &());
+		ConstPayload pl(pt, operator const PayloadValue&());
 		VariantArray va;
 		size_t tagsPathIdx = 0;
 		for (auto field : fields) {
@@ -227,7 +233,9 @@ std::optional<T> tryParseAs(std::string_view str) noexcept {
 
 template <>
 std::optional<double> tryParseAs<double>(std::string_view str) noexcept {
-	if (str.empty()) return 0.0;
+	if (str.empty()) {
+		return 0.0;
+	}
 	using namespace double_conversion;
 	static const StringToDoubleConverter converter{StringToDoubleConverter::ALLOW_LEADING_SPACES |
 													   StringToDoubleConverter::ALLOW_TRAILING_SPACES |
@@ -273,7 +281,7 @@ int Variant::As<int>() const {
 		[&](KeyValueType::Uuid) -> int { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}); });
 }
 
-static std::optional<bool> tryConvertToBool(const p_string &str) {
+static std::optional<bool> tryConvertToBool(const p_string& str) {
 	using namespace std::string_view_literals;
 	if (iequals(str, "true"sv)) {
 		return true;
@@ -355,7 +363,7 @@ double Variant::As<double>() const {
 }
 
 template <NotComparable notComparable>
-ComparationResult Variant::Compare(const Variant &other, const CollateOpts &collateOpts) const {
+ComparationResult Variant::Compare(const Variant& other, const CollateOpts& collateOpts) const {
 	if (isUuid()) {
 		assertrx(other.Type().Is<KeyValueType::Uuid>());
 		return Uuid{*this}.Compare(Uuid{other});
@@ -404,8 +412,8 @@ ComparationResult Variant::Compare(const Variant &other, const CollateOpts &coll
 			[](OneOf<KeyValueType::Undefined>) noexcept -> ComparationResult { abort(); });
 	}
 }
-template ComparationResult Variant::Compare<NotComparable::Return>(const Variant &, const CollateOpts &) const;
-template ComparationResult Variant::Compare<NotComparable::Throw>(const Variant &, const CollateOpts &) const;
+template ComparationResult Variant::Compare<NotComparable::Return>(const Variant&, const CollateOpts&) const;
+template ComparationResult Variant::Compare<NotComparable::Throw>(const Variant&, const CollateOpts&) const;
 
 template <NotComparable notComparable>
 ComparationResult Variant::relaxCompareWithString(std::string_view str) const noexcept(notComparable == NotComparable::Return) {
@@ -508,7 +516,7 @@ ComparationResult Variant::relaxCompareWithString(std::string_view str) const no
 
 class Comparator {
 public:
-	explicit Comparator(const Variant &v1, const Variant &v2) noexcept : v1_{v1}, v2_{v2} {}
+	explicit Comparator(const Variant& v1, const Variant& v2) noexcept : v1_{v1}, v2_{v2} {}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Bool, KeyValueType::Bool) const noexcept {
 		return compare(v1_.As<bool>(), v2_.As<bool>());
 	}
@@ -579,12 +587,12 @@ public:
 	}
 
 private:
-	const Variant &v1_;
-	const Variant &v2_;
+	const Variant& v1_;
+	const Variant& v2_;
 };
 
 template <WithString withString, NotComparable notComparable>
-ComparationResult Variant::RelaxCompare(const Variant &other, const CollateOpts &collateOpts) const {
+ComparationResult Variant::RelaxCompare(const Variant& other, const CollateOpts& collateOpts) const {
 	thread_local char uuidStrBuf[Uuid::kStrFormLen];
 	thread_local const std::string_view uuidStrBufView{uuidStrBuf, Uuid::kStrFormLen};
 	thread_local const p_string uuidStrBufPString{&uuidStrBufView};
@@ -654,10 +662,10 @@ ComparationResult Variant::RelaxCompare(const Variant &other, const CollateOpts 
 	}
 }
 
-template ComparationResult Variant::RelaxCompare<WithString::Yes, NotComparable::Return>(const Variant &, const CollateOpts &) const;
-template ComparationResult Variant::RelaxCompare<WithString::No, NotComparable::Return>(const Variant &, const CollateOpts &) const;
-template ComparationResult Variant::RelaxCompare<WithString::Yes, NotComparable::Throw>(const Variant &, const CollateOpts &) const;
-template ComparationResult Variant::RelaxCompare<WithString::No, NotComparable::Throw>(const Variant &, const CollateOpts &) const;
+template ComparationResult Variant::RelaxCompare<WithString::Yes, NotComparable::Return>(const Variant&, const CollateOpts&) const;
+template ComparationResult Variant::RelaxCompare<WithString::No, NotComparable::Return>(const Variant&, const CollateOpts&) const;
+template ComparationResult Variant::RelaxCompare<WithString::Yes, NotComparable::Throw>(const Variant&, const CollateOpts&) const;
+template ComparationResult Variant::RelaxCompare<WithString::No, NotComparable::Throw>(const Variant&, const CollateOpts&) const;
 
 size_t Variant::Hash() const noexcept {
 	if (isUuid()) {
@@ -690,7 +698,7 @@ void Variant::EnsureUTF8() const {
 	}
 }
 
-Variant Variant::convert(KeyValueType type, const PayloadType *payloadType, const FieldsSet *fields) const & {
+Variant Variant::convert(KeyValueType type, const PayloadType* payloadType, const FieldsSet* fields) const& {
 	if (Type().IsSame(type)) {
 		return *this;
 	}
@@ -699,7 +707,7 @@ Variant Variant::convert(KeyValueType type, const PayloadType *payloadType, cons
 	return dst;
 }
 
-Variant &Variant::convert(KeyValueType type, const PayloadType *payloadType, const FieldsSet *fields) & {
+Variant& Variant::convert(KeyValueType type, const PayloadType* payloadType, const FieldsSet* fields) & {
 	if (isUuid()) {
 		type.EvaluateOneOf([&](KeyValueType::Uuid) noexcept {}, [&](KeyValueType::String) { *this = Variant{std::string{Uuid{*this}}}; },
 						   [&](KeyValueType::Composite) {
@@ -715,7 +723,9 @@ Variant &Variant::convert(KeyValueType type, const PayloadType *payloadType, con
 						   });
 		return *this;
 	}
-	if (type.IsSame(variant_.type) || type.Is<KeyValueType::Null>() || variant_.type.Is<KeyValueType::Null>()) return *this;
+	if (type.IsSame(variant_.type) || type.Is<KeyValueType::Null>() || variant_.type.Is<KeyValueType::Null>()) {
+		return *this;
+	}
 	type.EvaluateOneOf(
 		[&](KeyValueType::Int) { *this = Variant(As<int>()); }, [&](KeyValueType::Bool) { *this = Variant(As<bool>()); },
 		[&](KeyValueType::Int64) { *this = Variant(As<int64_t>()); }, [&](KeyValueType::Double) { *this = Variant(As<double>()); },
@@ -745,7 +755,7 @@ Variant &Variant::convert(KeyValueType type, const PayloadType *payloadType, con
 	return *this;
 }
 
-std::optional<Variant> Variant::tryConvert(KeyValueType type, const PayloadType *payloadType, const FieldsSet *fields) const & {
+std::optional<Variant> Variant::tryConvert(KeyValueType type, const PayloadType* payloadType, const FieldsSet* fields) const& {
 	if (Type().IsSame(type)) {
 		return *this;
 	} else {
@@ -758,7 +768,7 @@ std::optional<Variant> Variant::tryConvert(KeyValueType type, const PayloadType 
 	}
 }
 
-bool Variant::tryConvert(KeyValueType type, const PayloadType *payloadType, const FieldsSet *fields) & {
+bool Variant::tryConvert(KeyValueType type, const PayloadType* payloadType, const FieldsSet* fields) & {
 	using namespace std::string_view_literals;
 	if (isUuid()) {
 		return type.EvaluateOneOf([&](KeyValueType::Uuid) noexcept { return true; },
@@ -973,20 +983,22 @@ bool Variant::tryConvert(KeyValueType type, const PayloadType *payloadType, cons
 	return res;
 }
 
-void Variant::convertToComposite(const PayloadType &payloadType, const FieldsSet &fields) {
+void Variant::convertToComposite(const PayloadType& payloadType, const FieldsSet& fields) {
 	assertrx(!isUuid());
 	assertrx(variant_.type.Is<KeyValueType::Tuple>() && variant_.hold == 1);
 	key_string val = *cast<key_string>();
 
-	if (variant_.hold == 1) free();
+	if (variant_.hold == 1) {
+		free();
+	}
 	// Alloc usual payloadvalue + extra memory for hold string
 
-	auto &pv = *new (cast<void>()) PayloadValue(payloadType.TotalSize() + val->size());
+	auto& pv = *new (cast<void>()) PayloadValue(payloadType.TotalSize() + val->size());
 	variant_.hold = 1;
 	variant_.type = KeyValueType::Composite{};
 
 	// Copy serializer buffer with strings to extra payloadvalue memory
-	char *data = reinterpret_cast<char *>(pv.Ptr() + payloadType.TotalSize());
+	char* data = reinterpret_cast<char*>(pv.Ptr() + payloadType.TotalSize());
 	memcpy(data, val->data(), val->size());
 
 	Serializer ser(std::string_view(data, val->size()));
@@ -1047,7 +1059,7 @@ Variant::operator std::string_view() const noexcept {
 	assertKeyType<KeyValueType::String>(variant_.type);
 	return (variant_.hold == 1) ? std::string_view(**cast<key_string>()) : *cast<p_string>();
 }
-Variant::operator const PayloadValue &() const noexcept {
+Variant::operator const PayloadValue&() const noexcept {
 	assertrx(!isUuid());
 	assertKeyType<KeyValueType::Composite>(variant_.type);
 	assertrx(variant_.hold == 1);
@@ -1055,7 +1067,7 @@ Variant::operator const PayloadValue &() const noexcept {
 }
 
 template <typename T>
-void Variant::Dump(T &os, CheckIsStringPrintable checkPrintableString) const {
+void Variant::Dump(T& os, CheckIsStringPrintable checkPrintableString) const {
 	if (isUuid()) {
 		os << Uuid{*this};
 	} else {
@@ -1075,26 +1087,28 @@ void Variant::Dump(T &os, CheckIsStringPrintable checkPrintableString) const {
 	}
 }
 
-template void Variant::Dump(WrSerializer &, CheckIsStringPrintable) const;
-template void Variant::Dump(std::ostream &, CheckIsStringPrintable) const;
-template void Variant::Dump(std::stringstream &, CheckIsStringPrintable) const;
+template void Variant::Dump(WrSerializer&, CheckIsStringPrintable) const;
+template void Variant::Dump(std::ostream&, CheckIsStringPrintable) const;
+template void Variant::Dump(std::stringstream&, CheckIsStringPrintable) const;
 
 template <typename T>
-void VariantArray::Dump(T &os, CheckIsStringPrintable checkPrintableString) const {
+void VariantArray::Dump(T& os, CheckIsStringPrintable checkPrintableString) const {
 	os << '{';
-	for (auto &arg : *this) {
-		if (&arg != &at(0)) os << ", ";
+	for (auto& arg : *this) {
+		if (&arg != &at(0)) {
+			os << ", ";
+		}
 		arg.Dump(os, checkPrintableString);
 	}
 	os << '}';
 }
 
-template void VariantArray::Dump(WrSerializer &, CheckIsStringPrintable) const;
-template void VariantArray::Dump(std::ostream &, CheckIsStringPrintable) const;
-template void VariantArray::Dump(std::stringstream &, CheckIsStringPrintable) const;
+template void VariantArray::Dump(WrSerializer&, CheckIsStringPrintable) const;
+template void VariantArray::Dump(std::ostream&, CheckIsStringPrintable) const;
+template void VariantArray::Dump(std::stringstream&, CheckIsStringPrintable) const;
 
 template <typename T>
-static std::string dumpImpl(T &&obj, CheckIsStringPrintable checkPrintableString) {
+static std::string dumpImpl(T&& obj, CheckIsStringPrintable checkPrintableString) {
 	std::stringstream ss;
 	obj.Dump(ss, checkPrintableString);
 	return ss.str();
@@ -1111,28 +1125,29 @@ VariantArray::operator Point() const {
 }
 
 template <WithString withString, NotComparable notComparable>
-ComparationResult VariantArray::RelaxCompare(const VariantArray &other, const CollateOpts &collateOpts) const {
+ComparationResult VariantArray::RelaxCompare(const VariantArray& other, const CollateOpts& collateOpts) const {
 	auto lhsIt{cbegin()}, rhsIt{other.cbegin()};
-	auto const lhsEnd{cend()}, rhsEnd{other.cend()};
+	const auto lhsEnd{cend()}, rhsEnd{other.cend()};
 	for (; lhsIt != lhsEnd && rhsIt != rhsEnd; ++lhsIt, ++rhsIt) {
 		const auto res = lhsIt->RelaxCompare<withString, notComparable>(*rhsIt, collateOpts);
-		if (res != ComparationResult::Eq) return res;
+		if (res != ComparationResult::Eq) {
+			return res;
+		}
 	}
 	if (lhsIt == lhsEnd) {
-		if (rhsIt == rhsEnd) return ComparationResult::Eq;
+		if (rhsIt == rhsEnd) {
+			return ComparationResult::Eq;
+		}
 		return ComparationResult::Lt;
 	} else {
 		return ComparationResult::Gt;
 	}
 }
 
-template ComparationResult VariantArray::RelaxCompare<WithString::Yes, NotComparable::Return>(const VariantArray &,
-																							  const CollateOpts &) const;
-template ComparationResult VariantArray::RelaxCompare<WithString::No, NotComparable::Return>(const VariantArray &,
-																							 const CollateOpts &) const;
-template ComparationResult VariantArray::RelaxCompare<WithString::Yes, NotComparable::Throw>(const VariantArray &,
-																							 const CollateOpts &) const;
-template ComparationResult VariantArray::RelaxCompare<WithString::No, NotComparable::Throw>(const VariantArray &,
-																							const CollateOpts &) const;
+template ComparationResult VariantArray::RelaxCompare<WithString::Yes, NotComparable::Return>(const VariantArray&,
+																							  const CollateOpts&) const;
+template ComparationResult VariantArray::RelaxCompare<WithString::No, NotComparable::Return>(const VariantArray&, const CollateOpts&) const;
+template ComparationResult VariantArray::RelaxCompare<WithString::Yes, NotComparable::Throw>(const VariantArray&, const CollateOpts&) const;
+template ComparationResult VariantArray::RelaxCompare<WithString::No, NotComparable::Throw>(const VariantArray&, const CollateOpts&) const;
 
 }  // namespace reindexer

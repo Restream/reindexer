@@ -12,7 +12,7 @@ using namespace std::string_view_literals;
 
 // This method is for simple modify-requests, proxied by cluster (and for #replicationstats request)
 // This QR's can contain only items and aggregations from single namespace
-void ClusterProxy::clientToCoreQueryResults(client::QueryResults &clientResults, LocalQueryResults &result) {
+void ClusterProxy::clientToCoreQueryResults(client::QueryResults& clientResults, LocalQueryResults& result) {
 	QueryResults qr;
 	if (clientResults.HaveJoined()) {
 		throw Error(errLogic, "JOIN queries are not supported by Cluster Proxy");
@@ -26,7 +26,7 @@ void ClusterProxy::clientToCoreQueryResults(client::QueryResults &clientResults,
 
 	const auto itemsCnt = clientResults.Count();
 	if (clientResults.GetMergedNSCount() > 0) {
-		auto &incTags = clientResults.GetIncarnationTags()[0].tags;
+		auto& incTags = clientResults.GetIncarnationTags()[0].tags;
 		if (itemsCnt || incTags.size()) {
 			result.addNSContext(clientResults.GetPayloadType(0), clientResults.GetTagsMatcher(0), FieldsSet(), nullptr,
 								incTags.size() ? incTags[0] : lsn_t());
@@ -40,8 +40,8 @@ void ClusterProxy::clientToCoreQueryResults(client::QueryResults &clientResults,
 	}
 
 	RdxContext dummyCtx;
-	auto &localPt = result.getPayloadType(0);
-	auto &localTm = result.getTagsMatcher(0);
+	auto& localPt = result.getPayloadType(0);
+	auto& localTm = result.getTagsMatcher(0);
 	auto cNamespaces = clientResults.GetNamespaces();
 	for (auto it = clientResults.begin(), itEnd = clientResults.end(); it != itEnd; ++it) {
 		auto item = it.GetItem();
@@ -73,7 +73,7 @@ void ClusterProxy::clientToCoreQueryResults(client::QueryResults &clientResults,
 }
 
 template <>
-ErrorCode ClusterProxy::getErrCode<Error>(const Error &err, Error &r) {
+ErrorCode ClusterProxy::getErrCode<Error>(const Error& err, Error& r) {
 	if (!err.ok()) {
 		r = err;
 		return ErrorCode(err.code());
@@ -82,7 +82,7 @@ ErrorCode ClusterProxy::getErrCode<Error>(const Error &err, Error &r) {
 }
 
 template <>
-ErrorCode ClusterProxy::getErrCode<Transaction>(const Error &err, Transaction &r) {
+ErrorCode ClusterProxy::getErrCode<Transaction>(const Error& err, Transaction& r) {
 	if (!err.ok()) {
 		r = Transaction(err);
 		return ErrorCode(err.code());
@@ -90,7 +90,7 @@ ErrorCode ClusterProxy::getErrCode<Transaction>(const Error &err, Transaction &r
 	return ErrorCode(r.Status().code());
 }
 
-std::shared_ptr<client::Reindexer> ClusterProxy::getLeader(const cluster::RaftInfo &info) {
+std::shared_ptr<client::Reindexer> ClusterProxy::getLeader(const cluster::RaftInfo& info) {
 	{
 		shared_lock lck(mtx_);
 		if (info.leaderId == leaderId_) {
@@ -124,11 +124,11 @@ void ClusterProxy::resetLeader() {
 	leaderId_ = -1;
 }
 
-ClusterProxy::ClusterProxy(ReindexerConfig cfg, ActivityContainer &activities, ReindexerImpl::CallbackMap &&proxyCallbacks)
+ClusterProxy::ClusterProxy(ReindexerConfig cfg, ActivityContainer& activities, ReindexerImpl::CallbackMap&& proxyCallbacks)
 	: impl_(std::move(cfg), activities, addCallbacks(std::move(proxyCallbacks))), leaderId_(-1) {
 	sId_.store(impl_.configProvider_.GetReplicationConfig().serverID, std::memory_order_release);
 	replCfgHandlerID_ = impl_.configProvider_.setHandler(
-		[this](const ReplicationConfigData &data) { sId_.store(data.serverID, std::memory_order_release); });
+		[this](const ReplicationConfigData& data) { sId_.store(data.serverID, std::memory_order_release); });
 }
 ClusterProxy::~ClusterProxy() {
 	if (replCfgHandlerID_.has_value()) {
@@ -136,12 +136,12 @@ ClusterProxy::~ClusterProxy() {
 	}
 }
 
-ReindexerImpl::CallbackMap ClusterProxy::addCallbacks(ReindexerImpl::CallbackMap &&callbackMap) const {
+ReindexerImpl::CallbackMap ClusterProxy::addCallbacks(ReindexerImpl::CallbackMap&& callbackMap) const {
 	// TODO: add callbacks for actions of ClusterProxy level
 	return std::move(callbackMap);
 }
 
-Error ClusterProxy::Connect(const std::string &dsn, ConnectOpts opts) {
+Error ClusterProxy::Connect(const std::string& dsn, ConnectOpts opts) {
 	Error err = impl_.Connect(dsn, opts);
 	if (!err.ok()) {
 		return err;
@@ -156,7 +156,7 @@ Error ClusterProxy::Connect(const std::string &dsn, ConnectOpts opts) {
 	return err;
 }
 
-bool ClusterProxy::shouldProxyQuery(const Query &q) {
+bool ClusterProxy::shouldProxyQuery(const Query& q) {
 	assertrx(q.Type() == QuerySelect);
 	if (kReplicationStatsNamespace != q.NsName()) {
 		return false;
@@ -176,7 +176,7 @@ bool ClusterProxy::shouldProxyQuery(const Query &q) {
 		if (it->Is<QueryEntry>() && it->Value<QueryEntry>().FieldName() == "type"sv) {
 			auto nextIt = it;
 			++nextIt;
-			auto &entry = it->Value<QueryEntry>();
+			auto& entry = it->Value<QueryEntry>();
 			if (hasTypeCond || entry.Condition() != CondEq || entry.Values().size() != 1 ||
 				!entry.Values()[0].Type().Is<KeyValueType::String>() || it->operation != OpAnd ||
 				(nextIt != end && nextIt->operation == OpOr)) {
@@ -217,9 +217,9 @@ Error ClusterProxy::ResetShardingConfig(std::optional<cluster::ShardingConfig> c
 #endif
 
 template <auto ClientMethod, auto ImplMethod, typename... Args>
-[[nodiscard]] Error ClusterProxy::shardingConfigCandidateAction(const RdxContext &ctx, Args &&...args) noexcept {
+[[nodiscard]] Error ClusterProxy::shardingConfigCandidateAction(const RdxContext& ctx, Args&&... args) noexcept {
 	try {
-		const auto action = [this](const RdxContext &c, LeaderRefT l, Args &&...aa) {
+		const auto action = [this](const RdxContext& c, LeaderRefT l, Args&&... aa) {
 			return baseFollowerAction<decltype(ClientMethod), ClientMethod>(c, l, std::forward<Args>(aa)...);
 		};
 
@@ -230,26 +230,26 @@ template <auto ClientMethod, auto ImplMethod, typename... Args>
 	CATCH_AND_RETURN
 }
 
-[[nodiscard]] Error ClusterProxy::SaveShardingCfgCandidate(std::string_view config, int64_t sourceId, const RdxContext &ctx) noexcept {
+[[nodiscard]] Error ClusterProxy::SaveShardingCfgCandidate(std::string_view config, int64_t sourceId, const RdxContext& ctx) noexcept {
 	return shardingConfigCandidateAction<&client::Reindexer::SaveNewShardingConfig, &ReindexerImpl::saveShardingCfgCandidate>(ctx, config,
 																															  sourceId);
 }
 
-[[nodiscard]] Error ClusterProxy::ApplyShardingCfgCandidate(int64_t sourceId, const RdxContext &ctx) noexcept {
+[[nodiscard]] Error ClusterProxy::ApplyShardingCfgCandidate(int64_t sourceId, const RdxContext& ctx) noexcept {
 	return shardingConfigCandidateAction<&client::Reindexer::ApplyNewShardingConfig, &ReindexerImpl::applyShardingCfgCandidate>(ctx,
 																																sourceId);
 }
 
-[[nodiscard]] Error ClusterProxy::ResetOldShardingConfig(int64_t sourceId, const RdxContext &ctx) noexcept {
+[[nodiscard]] Error ClusterProxy::ResetOldShardingConfig(int64_t sourceId, const RdxContext& ctx) noexcept {
 	return shardingConfigCandidateAction<&client::Reindexer::ResetOldShardingConfig, &ReindexerImpl::resetOldShardingConfig>(ctx, sourceId);
 }
 
-[[nodiscard]] Error ClusterProxy::ResetShardingConfigCandidate(int64_t sourceId, const RdxContext &ctx) noexcept {
+[[nodiscard]] Error ClusterProxy::ResetShardingConfigCandidate(int64_t sourceId, const RdxContext& ctx) noexcept {
 	return shardingConfigCandidateAction<&client::Reindexer::ResetShardingConfigCandidate, &ReindexerImpl::resetShardingConfigCandidate>(
 		ctx, sourceId);
 }
 
-[[nodiscard]] Error ClusterProxy::RollbackShardingConfigCandidate(int64_t sourceId, const RdxContext &ctx) noexcept {
+[[nodiscard]] Error ClusterProxy::RollbackShardingConfigCandidate(int64_t sourceId, const RdxContext& ctx) noexcept {
 	return shardingConfigCandidateAction<&client::Reindexer::RollbackShardingConfigCandidate,
 										 &ReindexerImpl::rollbackShardingConfigCandidate>(ctx, sourceId);
 }

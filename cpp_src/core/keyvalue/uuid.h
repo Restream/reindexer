@@ -3,9 +3,9 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include "estl/comparation_result.h"
 #include "tools/assertrx.h"
 #include "variant.h"
-#include "estl/comparation_result.h"
 
 namespace reindexer {
 class Uuid;
@@ -62,7 +62,8 @@ public:
 	[[nodiscard]] explicit operator std::string() const;
 	[[nodiscard]] ComparationResult Compare(const Uuid& other) const noexcept {
 		if (data_[0] == other.data_[0]) {
-			return data_[1] == other.data_[1] ? ComparationResult::Eq : (data_[1] < other.data_[1] ? ComparationResult::Lt : ComparationResult::Gt);
+			return data_[1] == other.data_[1] ? ComparationResult::Eq
+											  : (data_[1] < other.data_[1] ? ComparationResult::Lt : ComparationResult::Gt);
 		} else {
 			return data_[0] < other.data_[0] ? ComparationResult::Lt : ComparationResult::Gt;
 		}

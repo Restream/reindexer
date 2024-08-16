@@ -6,10 +6,10 @@ namespace reindexer {
 namespace net {
 namespace cproto {
 
-void Args::Dump(WrSerializer &wrser) const {
+void Args::Dump(WrSerializer& wrser) const {
 	wrser << '{';
 
-	for (const auto &arg : *this) {
+	for (const auto& arg : *this) {
 		if (&arg != &at(0)) {
 			wrser << ", ";
 		}

@@ -16,7 +16,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 		FillCompositeIndexesNamespace(0, 1000);
 		FillTestSimpleNamespace();
 		FillComparatorsNamespace();
-		FillTestJoinNamespace();
+		FillTestJoinNamespace(0, 300);
 		FillGeomNamespace();
 
 		CheckStandartQueries();
@@ -36,7 +36,9 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 			Error err = rt.reindexer->Delete(default_namespace, it->second);
 			ASSERT_TRUE(err.ok()) << err.what();
 			it = items.erase(it);
-			if (++itemsCount == 4000) break;
+			if (++itemsCount == 4000) {
+				break;
+			}
 		}
 
 		FillDefaultNamespace(0, 500, 0);
@@ -47,7 +49,9 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 			Error err = rt.reindexer->Delete(default_namespace, it->second);
 			ASSERT_TRUE(err.ok()) << err.what();
 			it = items.erase(it);
-			if (++itemsCount == 5000) break;
+			if (++itemsCount == 5000) {
+				break;
+			}
 		}
 
 		for (size_t i = 0; i < 5000; ++i) {
@@ -662,7 +666,9 @@ TEST_F(QueriesApi, DslGenerateParse) {
 
 static std::vector<int> generateForcedSortOrder(int maxValue, size_t size) {
 	std::set<int> res;
-	while (res.size() < size) res.insert(rand() % maxValue);
+	while (res.size() < size) {
+		res.insert(rand() % maxValue);
+	}
 	return {res.cbegin(), res.cend()};
 }
 
@@ -799,7 +805,9 @@ TEST_F(QueriesApi, JoinByNotIndexField) {
 			ser.Reset();
 			reindexer::JsonBuilder json{ser};
 			json.Put("id", i);
-			if (i % 2 == 1) json.Put("f", i);
+			if (i % 2 == 1) {
+				json.Put("f", i);
+			}
 			json.End();
 			Item item = rt.reindexer->NewItem(nsName);
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
@@ -1017,16 +1025,22 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 			}
 			{
 				auto data0 = json.Array(fmt::sprintf("Array_level0_id_%d", id));
-				for (int i = 0; i < 5; ++i) data0.Put(nullptr, fmt::sprintf("array_data_0_%d", i));
+				for (int i = 0; i < 5; ++i) {
+					data0.Put(nullptr, fmt::sprintf("array_data_0_%d", i));
+				}
 				data0.Put(nullptr, std::string("\"arr_quoted_field(\"this is quoted too\")\""));
 			}
 			{
 				auto data0 = json.Object(fmt::sprintf("Object_level0_id_%d", id));
-				for (int i = 0; i < 5; ++i) data0.Put(fmt::sprintf("Object_%d", i), fmt::sprintf("object_data_0_%d", i));
+				for (int i = 0; i < 5; ++i) {
+					data0.Put(fmt::sprintf("Object_%d", i), fmt::sprintf("object_data_0_%d", i));
+				}
 				data0.Put("Quoted Field lvl0", std::string("\"obj_quoted_field(\"this is quoted too\")\""));
 				{
 					auto data1 = data0.Object(fmt::sprintf("Object_level1_id_%d", id));
-					for (int j = 0; j < 5; ++j) data1.Put(fmt::sprintf("objectData1 %d", j), fmt::sprintf("objectData1 %d", j));
+					for (int j = 0; j < 5; ++j) {
+						data1.Put(fmt::sprintf("objectData1 %d", j), fmt::sprintf("objectData1 %d", j));
+					}
 					data1.Put("Quoted Field lvl1", std::string("\"obj_quoted_field(\"this is quoted too\")\""));
 				}
 			}

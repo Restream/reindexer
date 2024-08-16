@@ -32,10 +32,11 @@ void MergedData::Add(const IDCtx& ctx) {
 		if (!first_) {
 			coof = ctx.pos - prev_.src_pos;
 
-			if (src_dst < 0)
+			if (src_dst < 0) {
 				coof = ctx.cfg.posSourceDistMin;
-			else
+			} else {
 				coof = (ctx.total_size * ctx.cfg.posSourceDistBoost - (coof - 1)) / double(ctx.total_size * ctx.cfg.posSourceDistBoost);
+			}
 		}
 		src_dst *= coof;
 		src_dst = (src_dst * max_src_dist) / ctx.total_size;
@@ -50,7 +51,9 @@ void MergedData::Add(const IDCtx& ctx) {
 		dst = (dst * max_dst_dist) / size;
 
 		double fboost = ctx.opts->fieldsOpts[ctx.data->at(i).field()].boost;
-		if (!fboost) fboost = 1;
+		if (!fboost) {
+			fboost = 1;
+		}
 
 		src_dst = src_dst + dst;
 		src_dst *= fboost;
@@ -86,7 +89,9 @@ SearchResult BaseMerger::Merge(MergeCtx& ctx, bool inTransaction, const reindexe
 	DataSet<MergedData> data_set(min_id_, max_id_);
 	double max_proc = 0;
 	for (auto& res : *ctx.results) {
-		if (!inTransaction) ThrowOnCancel(rdxCtx);
+		if (!inTransaction) {
+			ThrowOnCancel(rdxCtx);
+		}
 		for (auto it = res.data->begin(); it != res.data->end(); ++it) {
 			IDCtx id_ctx{&it->Pos(), res.pos, &max_proc, ctx.total_size, res.opts, *ctx.cfg, res.proc, ctx.sizes};
 

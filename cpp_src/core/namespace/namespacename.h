@@ -61,7 +61,6 @@ private:
 	intrusive_ptr<ValueT> impl_;
 };
 
-inline std::ostream& operator<<(std::ostream& os, const NamespaceName& name) { return os << name.OriginalName(); }
 inline bool operator==(const NamespaceName& lhs, const NamespaceName& rhs) noexcept {
 	return std::string_view(lhs) == std::string_view(rhs);
 }

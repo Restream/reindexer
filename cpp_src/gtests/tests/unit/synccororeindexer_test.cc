@@ -397,7 +397,9 @@ TEST(SyncCoroRx, StopWhileWriting) {
 				reindexer::client::Item item = client.NewItem(kNsName);
 				auto stateAfterOp = state.load();
 				checkError(item.Status(), stateBeforeOp, stateAfterOp);
-				if (!item.Status().ok()) continue;
+				if (!item.Status().ok()) {
+					continue;
+				}
 
 				const std::string json = R"#({"id":)#" + std::to_string(i++) + R"#(, "val":)#" + "\"aaaaaaaaaaaaaaa \"" + R"#(})#";
 				stateBeforeOp = state.load();
@@ -407,13 +409,17 @@ TEST(SyncCoroRx, StopWhileWriting) {
 				auto err = item.FromJSON(json);
 				stateAfterOp = state.load();
 				checkError(err, stateBeforeOp, stateAfterOp);
-				if (err.ok()) continue;
+				if (err.ok()) {
+					continue;
+				}
 
 				stateBeforeOp = state.load();
 				err = client.Upsert(kNsName, item);
 				stateAfterOp = state.load();
 				checkError(err, stateBeforeOp, stateAfterOp);
-				if (err.ok()) continue;
+				if (err.ok()) {
+					continue;
+				}
 			}
 		});
 	}

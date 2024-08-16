@@ -144,7 +144,9 @@ protected:
 
 	void AddRuntimeStringIndex(int indexNumber, bool pk = false) {
 		IndexOpts opts;
-		if (pk) opts.PK();
+		if (pk) {
+			opts.PK();
+		}
 		std::string indexName = getRuntimeStringIndexName(indexNumber);
 		Error err = rt.reindexer->AddIndex(default_namespace, {indexName, "hash", "string", opts});
 		ASSERT_TRUE(err.ok()) << err.what();

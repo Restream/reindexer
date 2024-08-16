@@ -49,7 +49,7 @@ struct ClientData {
 
 struct Context;
 struct IRPCCall {
-	void (*Get)(IRPCCall *, CmdCode &, std::string_view &nsName, Args &);
+	void (*Get)(IRPCCall*, CmdCode&, std::string_view& nsName, Args&);
 	intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> data_;
 };
 
@@ -57,22 +57,22 @@ class Writer {
 public:
 	virtual ~Writer() = default;
 	virtual size_t AvailableEventsSpace() noexcept = 0;
-	virtual void SendEvent(chunk &&ch) = 0;
-	virtual void WriteRPCReturn(Context &ctx, const Args &args, const Error &status) = 0;
-	virtual void CallRPC(const IRPCCall &call) = 0;
-	virtual void SetClientData(std::unique_ptr<ClientData> &&data) noexcept = 0;
-	virtual ClientData *GetClientData() noexcept = 0;
+	virtual void SendEvent(chunk&& ch) = 0;
+	virtual void WriteRPCReturn(Context& ctx, const Args& args, const Error& status) = 0;
+	virtual void CallRPC(const IRPCCall& call) = 0;
+	virtual void SetClientData(std::unique_ptr<ClientData>&& data) noexcept = 0;
+	virtual ClientData* GetClientData() noexcept = 0;
 	virtual std::shared_ptr<reindexer::net::connection_stat> GetConnectionStat() noexcept = 0;
 };
 
 struct Context {
-	void Return(const Args &args, const Error &status = Error()) { writer->WriteRPCReturn(*this, args, status); }
-	void SetClientData(std::unique_ptr<ClientData> &&data) noexcept { writer->SetClientData(std::move(data)); }
-	ClientData *GetClientData() noexcept { return writer->GetClientData(); }
+	void Return(const Args& args, const Error& status = Error()) { writer->WriteRPCReturn(*this, args, status); }
+	void SetClientData(std::unique_ptr<ClientData>&& data) noexcept { writer->SetClientData(std::move(data)); }
+	ClientData* GetClientData() noexcept { return writer->GetClientData(); }
 
 	std::string_view clientAddr;
-	RPCCall *call;
-	Writer *writer;
+	RPCCall* call;
+	Writer* writer;
 	Stat stat;
 	bool respSent;
 };
@@ -85,7 +85,7 @@ public:
 	/// @param object - handler class object
 	/// @param func - handler
 	template <class K, typename... Args>
-	void Register(CmdCode cmd, K *object, Error (K::*func)(Context &, Args... args)) {
+	void Register(CmdCode cmd, K* object, Error (K::*func)(Context&, Args... args)) {
 		handlers_[cmd] = FuncWrapper<K, Args...>{object, func};
 	}
 
@@ -93,7 +93,7 @@ public:
 	/// @param object - handler class object
 	/// @param func - handler
 	template <class K>
-	void Middleware(K *object, Error (K::*func)(Context &)) {
+	void Middleware(K* object, Error (K::*func)(Context&)) {
 		middlewares_.push_back(FuncWrapper<K>{object, func});
 	}
 
@@ -101,41 +101,41 @@ public:
 	/// @param object - logger class object
 	/// @param func - logger
 	template <class K>
-	void Logger(K *object, void (K::*func)(Context &ctx, const Error &err, const Args &ret)) {
-		logger_ = [=](Context &ctx, const Error &err, const Args &ret) { (static_cast<K *>(object)->*func)(ctx, err, ret); };
+	void Logger(K* object, void (K::*func)(Context& ctx, const Error& err, const Args& ret)) {
+		logger_ = [=](Context& ctx, const Error& err, const Args& ret) { (static_cast<K*>(object)->*func)(ctx, err, ret); };
 	}
 
 	/// Set closer notifier
 	/// @param object close class object
 	/// @param func function, to be called on connecion close
 	template <class K>
-	void OnClose(K *object, void (K::*func)(Context &ctx, const Error &err)) {
-		onClose_ = [=](Context &ctx, const Error &err) { (static_cast<K *>(object)->*func)(ctx, err); };
+	void OnClose(K* object, void (K::*func)(Context& ctx, const Error& err)) {
+		onClose_ = [=](Context& ctx, const Error& err) { (static_cast<K*>(object)->*func)(ctx, err); };
 	}
 
 	/// Set response sent notifier
 	/// @param object class object
 	/// @param func function, to be called on response sent
 	template <class K>
-	void OnResponse(K *object, void (K::*func)(Context &ctx)) {
-		onResponse_ = [=](Context &ctx) { (static_cast<K *>(object)->*func)(ctx); };
+	void OnResponse(K* object, void (K::*func)(Context& ctx)) {
+		onResponse_ = [=](Context& ctx) { (static_cast<K*>(object)->*func)(ctx); };
 	}
 
 	/// Get reference to the current logger functor
 	/// @return Log handler reference
-	const std::function<void(Context &ctx, const Error &err, const Args &args)> &LoggerRef() const noexcept { return logger_; }
+	const std::function<void(Context& ctx, const Error& err, const Args& args)>& LoggerRef() const noexcept { return logger_; }
 	/// Get reference to the current OnClose() functor
 	/// @return OnClose callback reference
-	const std::function<void(Context &ctx, const Error &err)> &OnCloseRef() const noexcept { return onClose_; }
+	const std::function<void(Context& ctx, const Error& err)>& OnCloseRef() const noexcept { return onClose_; }
 	/// Get reference to the current OnResponse() functor
 	/// @return OnResponse callback reference
-	const std::function<void(Context &ctx)> &OnResponseRef() const noexcept { return onResponse_; }
+	const std::function<void(Context& ctx)>& OnResponseRef() const noexcept { return onResponse_; }
 
 	/// Handle RPC fron the context
 	/// @param ctx - RPC context
-	Error Handle(Context &ctx) {
+	Error Handle(Context& ctx) {
 		if rx_likely (uint32_t(ctx.call->cmd) < uint32_t(handlers_.size())) {
-			for (auto &middleware : middlewares_) {
+			for (auto& middleware : middlewares_) {
 				auto ret = middleware(ctx);
 				if (!ret.ok()) {
 					return ret;
@@ -157,41 +157,41 @@ private:
 	struct is_optional<std::optional<T>> : public std::true_type {};
 
 	template <typename T, std::enable_if_t<!is_optional<T>::value, int> = 0>
-	static T get_arg(const Args &args, size_t index, const Context &ctx) {
+	static T get_arg(const Args& args, size_t index, const Context& ctx) {
 		if (index >= args.size()) {
 			throw Error(errParams, "Invalid args of %s call; argument %d is not submited", CmdName(ctx.call->cmd), static_cast<int>(index));
 		}
 		return T(args[index]);
 	}
 	template <typename T, std::enable_if_t<is_optional<T>::value, int> = 0>
-	static T get_arg(const Args &args, size_t index, const Context &) {
+	static T get_arg(const Args& args, size_t index, const Context&) {
 		return index < args.size() ? T(typename T::value_type(args[index])) : T();
 	}
 
 	template <typename K, typename... Args>
 	class FuncWrapper {
 	public:
-		FuncWrapper(K *o, Error (K::*f)(Context &, Args...)) noexcept : obj_{o}, func_{f} {}
-		Error operator()(Context &ctx) const { return impl(ctx, std::index_sequence_for<Args...>{}); }
+		FuncWrapper(K* o, Error (K::*f)(Context&, Args...)) noexcept : obj_{o}, func_{f} {}
+		Error operator()(Context& ctx) const { return impl(ctx, std::index_sequence_for<Args...>{}); }
 
 	private:
 		template <size_t... I>
-		Error impl(Context &ctx, std::index_sequence<I...>) const {
+		Error impl(Context& ctx, std::index_sequence<I...>) const {
 			return (obj_->*func_)(ctx, get_arg<Args>(ctx.call->args, I, ctx)...);
 		}
-		K *obj_;
-		Error (K::*func_)(Context &, Args...);
+		K* obj_;
+		Error (K::*func_)(Context&, Args...);
 	};
 
-	using Handler = std::function<Error(Context &)>;
+	using Handler = std::function<Error(Context&)>;
 
 	std::array<Handler, kCmdCodeMax> handlers_;
 	h_vector<Handler, 1> middlewares_;
 
-	std::function<void(Context &ctx, const Error &err, const Args &args)> logger_;
-	std::function<void(Context &ctx, const Error &err)> onClose_;
+	std::function<void(Context& ctx, const Error& err, const Args& args)> logger_;
+	std::function<void(Context& ctx, const Error& err)> onClose_;
 	// This should be called from the connection thread only to prevet access to other connection's ClientData
-	std::function<void(Context &ctx)> onResponse_;
+	std::function<void(Context& ctx)> onResponse_;
 };
 }  // namespace cproto
 }  // namespace net

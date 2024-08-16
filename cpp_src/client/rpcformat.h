@@ -8,4 +8,4 @@ namespace client {
 enum class RPCDataFormat { CJSON = DataFormat::FormatCJson, MsgPack = DataFormat::FormatMsgPack };
 
 }
-}
+}  // namespace reindexer

@@ -21,7 +21,9 @@ ShardingKeys::ShardingKeys(const reindexer::cluster::ShardingConfig& config) {
 				std::visit(overloaded{[&key, left = l](VariantHashMap& values) { values[left] = key.shardId; },
 									  [&key, left = l, right = r](Variant4SegmentMap& values) {
 										  values[{left}] = key.shardId;
-										  if (left != right) values[{right, true}] = key.shardId;
+										  if (left != right) {
+											  values[{right, true}] = key.shardId;
+										  }
 									  }},
 						   nsData.keysToShard);
 			}
@@ -47,7 +49,9 @@ int ShardingKeys::GetDefaultHost(std::string_view nsName) const {
 
 bool ShardingKeys::IsShardIndex(std::string_view ns, std::string_view index) const {
 	const auto itNsData = keys_.find(ns);
-	if (itNsData == keys_.end()) return false;
+	if (itNsData == keys_.end()) {
+		return false;
+	}
 	return itNsData->second.indexName == index;
 }
 

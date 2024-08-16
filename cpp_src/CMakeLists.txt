@@ -45,7 +45,7 @@ else()
   option(LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "4.16.0")
+set (REINDEXER_VERSION_DEFAULT "4.17.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -302,7 +302,8 @@ set_source_files_properties (${REINDEXER_SOURCE_PATH}/core/storage/leveldblogger
 list(APPEND REINDEXER_LIBRARIES reindexer)
 add_library(${TARGET} STATIC ${HDRS} ${SRCS} ${VENDORS})
 add_definitions(-DREINDEX_CORE_BUILD=1)
-
+add_definitions(-DFMT_HEADER_ONLY=1)
+add_definitions(-DSPDLOG_FMT_EXTERNAL=1)
 
 # add_definitions(-DREINDEX_FT_EXTRA_DEBUG=1)
 if (ENABLE_SERVER_AS_PROCESS_IN_TEST)

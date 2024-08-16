@@ -21,34 +21,34 @@ public:
 	using NodeData = cluster::NodeData;
 	using RaftInfo = cluster::RaftInfo;
 	/// Completion routine
-	typedef std::function<void(const Error &err)> Completion;
+	typedef std::function<void(const Error& err)> Completion;
 
 	/// Create Reindexer database object
-	RaftClient(const ReindexerConfig & = ReindexerConfig());
+	RaftClient(const ReindexerConfig& = ReindexerConfig());
 	/// Destrory Reindexer database object
 	~RaftClient();
-	RaftClient(const RaftClient &) = delete;
-	RaftClient(RaftClient &&) noexcept;
-	RaftClient &operator=(const RaftClient &) = delete;
-	RaftClient &operator=(RaftClient &&) noexcept;
+	RaftClient(const RaftClient&) = delete;
+	RaftClient(RaftClient&&) noexcept;
+	RaftClient& operator=(const RaftClient&) = delete;
+	RaftClient& operator=(RaftClient&&) noexcept;
 
 	/// Connect - connect to reindexer server
 	/// @param dsn - uri of server and database, like: `cproto://user@password:127.0.0.1:6534/dbname`
 	/// @param loop - event loop for connections and coroutines handling
 	/// @param opts - Connect options. May contaion any of <br>
-	Error Connect(const std::string &dsn, net::ev::dynamic_loop &loop, const client::ConnectOpts &opts = client::ConnectOpts());
+	Error Connect(const std::string& dsn, net::ev::dynamic_loop& loop, const client::ConnectOpts& opts = client::ConnectOpts());
 	/// Stop - shutdown connector
 	void Stop();
 	/// SuggestLeader - send cluster leader suggestion
 	/// @param suggestion - node, suggested as a leader
 	/// @param response - node, which has to be come leader according to remote server
-	Error SuggestLeader(const NodeData &suggestion, NodeData &response);
+	Error SuggestLeader(const NodeData& suggestion, NodeData& response);
 	/// LeadersPing - send ping from cluster leader to follower
 	/// @param leader - info about current node (leader)
-	Error LeadersPing(const NodeData &leader);
+	Error LeadersPing(const NodeData& leader);
 	/// GetRaftInfo - get raft status of the remote node
 	/// @param info - status of the remote node
-	Error GetRaftInfo(RaftInfo &info);
+	Error GetRaftInfo(RaftInfo& info);
 	/// Get curret connection status
 	/// @param forceCheck - forces to check status immediatlly (otherwise result of periodic check will be returned)
 	Error Status(bool forceCheck = false);
@@ -56,15 +56,15 @@ public:
 	Error SetDesiredLeaderId(int leaderId);
 	/// Add cancelable context
 	/// @param cancelCtx - context pointer
-	RaftClient WithContext(const IRdxCancelContext *cancelCtx) { return RaftClient(impl_, ctx_.WithCancelContext(cancelCtx)); }
+	RaftClient WithContext(const IRdxCancelContext* cancelCtx) { return RaftClient(impl_, ctx_.WithCancelContext(cancelCtx)); }
 
 	/// Add execution timeout to the next query
 	/// @param timeout - Optional server-side execution timeout for each subquery
 	RaftClient WithTimeout(milliseconds timeout) { return RaftClient(impl_, ctx_.WithTimeout(timeout)); }
 
 private:
-	RaftClient(RPCClient *impl, InternalRdxContext &&ctx) : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}
-	RPCClient *impl_;
+	RaftClient(RPCClient* impl, InternalRdxContext&& ctx) : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}
+	RPCClient* impl_;
 	bool owner_;
 	InternalRdxContext ctx_;
 };

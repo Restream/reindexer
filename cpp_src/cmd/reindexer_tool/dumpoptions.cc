@@ -36,15 +36,15 @@ Error DumpOptions::FromJSON(reindexer::span<char> json) {
 		gason::JsonParser parser;
 		auto root = parser.Parse(json);
 		mode = ModeFromStr(root["mode"].As<std::string_view>());
-	} catch (const gason::Exception &ex) {
+	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "DumpOptions: %s", ex.what());
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 	return Error();
 }
 
-void DumpOptions::GetJSON(reindexer::WrSerializer &ser) const {
+void DumpOptions::GetJSON(reindexer::WrSerializer& ser) const {
 	reindexer::JsonBuilder jb(ser);
 	jb.Put("mode", StrFromMode(mode));
 }

@@ -7,13 +7,15 @@ namespace reindexer {
 
 using namespace std::string_view_literals;
 
-void NamespaceMemStat::GetJSON(WrSerializer &ser) {
+void NamespaceMemStat::GetJSON(WrSerializer& ser) {
 	JsonBuilder builder(ser);
 
 	builder.Put("name", name.OriginalName());
 	builder.Put("items_count", itemsCount);
 
-	if (emptyItemsCount) builder.Put("empty_items_count", emptyItemsCount);
+	if (emptyItemsCount) {
+		builder.Put("empty_items_count", emptyItemsCount);
+	}
 
 	builder.Put("strings_waiting_to_be_deleted_size", stringsWaitingToBeDeletedSize);
 	builder.Put("storage_ok", storageOK);
@@ -45,31 +47,53 @@ void NamespaceMemStat::GetJSON(WrSerializer &ser) {
 	}
 
 	auto arr = builder.Array("indexes");
-	for (auto &index : indexes) {
+	for (auto& index : indexes) {
 		auto obj = arr.Object();
 		index.GetJSON(obj);
 	}
 }
 
-void LRUCacheMemStat::GetJSON(JsonBuilder &builder) {
+void LRUCacheMemStat::GetJSON(JsonBuilder& builder) {
 	builder.Put("total_size", totalSize);
 	builder.Put("items_count", itemsCount);
 	builder.Put("empty_count", emptyCount);
 	builder.Put("hit_count_limit", hitCountLimit);
 }
 
-void IndexMemStat::GetJSON(JsonBuilder &builder) {
-	if (uniqKeysCount) builder.Put("uniq_keys_count", uniqKeysCount);
-	if (trackedUpdatesCount) builder.Put("tracked_updates_count", trackedUpdatesCount);
-	if (trackedUpdatesBuckets) builder.Put("tracked_updates_buckets", trackedUpdatesBuckets);
-	if (trackedUpdatesSize) builder.Put("tracked_updates_size", trackedUpdatesSize);
-	if (trackedUpdatesOveflow) builder.Put("tracked_updates_overflow", trackedUpdatesOveflow);
-	if (dataSize) builder.Put("data_size", dataSize);
-	if (idsetBTreeSize) builder.Put("idset_btree_size", idsetBTreeSize);
-	if (idsetPlainSize) builder.Put("idset_plain_size", idsetPlainSize);
-	if (sortOrdersSize) builder.Put("sort_orders_size", sortOrdersSize);
-	if (fulltextSize) builder.Put("fulltext_size", fulltextSize);
-	if (columnSize) builder.Put("column_size", columnSize);
+void IndexMemStat::GetJSON(JsonBuilder& builder) {
+	if (uniqKeysCount) {
+		builder.Put("uniq_keys_count", uniqKeysCount);
+	}
+	if (trackedUpdatesCount) {
+		builder.Put("tracked_updates_count", trackedUpdatesCount);
+	}
+	if (trackedUpdatesBuckets) {
+		builder.Put("tracked_updates_buckets", trackedUpdatesBuckets);
+	}
+	if (trackedUpdatesSize) {
+		builder.Put("tracked_updates_size", trackedUpdatesSize);
+	}
+	if (trackedUpdatesOveflow) {
+		builder.Put("tracked_updates_overflow", trackedUpdatesOveflow);
+	}
+	if (dataSize) {
+		builder.Put("data_size", dataSize);
+	}
+	if (idsetBTreeSize) {
+		builder.Put("idset_btree_size", idsetBTreeSize);
+	}
+	if (idsetPlainSize) {
+		builder.Put("idset_plain_size", idsetPlainSize);
+	}
+	if (sortOrdersSize) {
+		builder.Put("sort_orders_size", sortOrdersSize);
+	}
+	if (fulltextSize) {
+		builder.Put("fulltext_size", fulltextSize);
+	}
+	if (columnSize) {
+		builder.Put("column_size", columnSize);
+	}
 
 	if (idsetCache.totalSize || idsetCache.itemsCount || idsetCache.emptyCount || idsetCache.hitCountLimit) {
 		auto obj = builder.Object("idset_cache");
@@ -79,7 +103,7 @@ void IndexMemStat::GetJSON(JsonBuilder &builder) {
 	builder.Put("name", name);
 }
 
-void PerfStat::GetJSON(JsonBuilder &builder) {
+void PerfStat::GetJSON(JsonBuilder& builder) {
 	builder.Put("total_queries_count", totalHitCount);
 	builder.Put("total_avg_latency_us", totalTimeUs);
 	builder.Put("total_avg_lock_time_us", totalLockTimeUs);
@@ -91,7 +115,7 @@ void PerfStat::GetJSON(JsonBuilder &builder) {
 	builder.Put("max_latency_us", maxTimeUs);
 }
 
-void NamespacePerfStat::GetJSON(WrSerializer &ser) {
+void NamespacePerfStat::GetJSON(WrSerializer& ser) {
 	JsonBuilder builder(ser);
 
 	builder.Put("name", name.OriginalName());
@@ -116,7 +140,7 @@ void NamespacePerfStat::GetJSON(WrSerializer &ser) {
 	}
 }
 
-void IndexPerfStat::GetJSON(JsonBuilder &builder) {
+void IndexPerfStat::GetJSON(JsonBuilder& builder) {
 	builder.Put("name", name);
 	{
 		auto obj = builder.Object("selects");
@@ -128,7 +152,7 @@ void IndexPerfStat::GetJSON(JsonBuilder &builder) {
 	}
 }
 
-static bool LoadLsn(lsn_t &to, const gason::JsonNode &node) {
+static bool LoadLsn(lsn_t& to, const gason::JsonNode& node) {
 	if (!node.empty()) {
 		if (node.value.getTag() == gason::JSON_OBJECT) {
 			to.FromJSON(node);
@@ -140,7 +164,7 @@ static bool LoadLsn(lsn_t &to, const gason::JsonNode &node) {
 	return false;
 }
 
-void ReplicationState::GetJSON(JsonBuilder &builder) {
+void ReplicationState::GetJSON(JsonBuilder& builder) {
 	builder.Put("last_lsn", int64_t(lastLsn));
 	{
 		auto lastLsnObj = builder.Object("last_lsn_v2");
@@ -188,19 +212,19 @@ void ReplicationState::FromJSON(span<char> json) {
 			wasV3ReplicatedNS = wasV3ReplicatedNS || root["slave_mode"].As<bool>(false);
 		}
 
-	} catch (const gason::Exception &ex) {
+	} catch (const gason::Exception& ex) {
 		throw Error(errParseJson, "ReplicationState: %s", ex.what());
 	}
 }
 
-void ReplicationStat::GetJSON(JsonBuilder &builder) {
+void ReplicationStat::GetJSON(JsonBuilder& builder) {
 	ReplicationState::GetJSON(builder);
 	builder.Put("wal_count", walCount);
 	builder.Put("wal_size", walSize);
 	builder.Put("server_id", serverId);
 }
 
-void TxPerfStat::GetJSON(JsonBuilder &builder) {
+void TxPerfStat::GetJSON(JsonBuilder& builder) {
 	builder.Put("total_count", totalCount);
 	builder.Put("total_copy_count", totalCopyCount);
 	builder.Put("avg_steps_count", avgStepsCount);
@@ -238,12 +262,12 @@ static constexpr ClusterizationStatus::Role strToNsClusterizationRole(std::strin
 	return ClusterizationStatus::Role::None;
 }
 
-void ClusterizationStatus::GetJSON(WrSerializer &ser) const {
+void ClusterizationStatus::GetJSON(WrSerializer& ser) const {
 	JsonBuilder builder(ser);
 	GetJSON(builder);
 }
 
-void ClusterizationStatus::GetJSON(JsonBuilder &builder) const {
+void ClusterizationStatus::GetJSON(JsonBuilder& builder) const {
 	builder.Put("leader_id", leaderId);
 	builder.Put("role", nsClusterizationRoleToStr(role));
 }
@@ -251,20 +275,20 @@ void ClusterizationStatus::GetJSON(JsonBuilder &builder) const {
 Error ClusterizationStatus::FromJSON(span<char> json) {
 	try {
 		FromJSON(gason::JsonParser().Parse(json));
-	} catch (const gason::Exception &ex) {
+	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "ClusterizationStatus: %s", ex.what());
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 	return errOK;
 }
 
-void ClusterizationStatus::FromJSON(const gason::JsonNode &root) {
+void ClusterizationStatus::FromJSON(const gason::JsonNode& root) {
 	leaderId = root["leader_id"].As<int>();
 	role = strToNsClusterizationRole(root["role"].As<std::string_view>());
 }
 
-void ReplicationStateV2::GetJSON(JsonBuilder &builder) {
+void ReplicationStateV2::GetJSON(JsonBuilder& builder) {
 	builder.Put("last_lsn", int64_t(lastLsn));
 	builder.Put("data_hash", dataHash);
 	if (HasDataCount()) {
@@ -284,7 +308,7 @@ void ReplicationStateV2::FromJSON(span<char> json) {
 		dataCount = root["data_count"].As<int64_t>(kNoDataCount);
 		nsVersion = lsn_t(root["ns_version"].As<int64_t>());
 		clusterStatus.FromJSON(root["cluster_status"]);
-	} catch (const gason::Exception &ex) {
+	} catch (const gason::Exception& ex) {
 		throw Error(errParseJson, "ReplicationState: %s", ex.what());
 	}
 }

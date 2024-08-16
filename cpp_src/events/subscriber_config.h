@@ -20,11 +20,11 @@ public:
 		using SetT = fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str>;
 
 		explicit StreamConfig(uint16_t _id) : id(_id) {}
-		bool Check(const EventRecord &rec) const noexcept {
+		bool Check(const EventRecord& rec) const noexcept {
 			if (!eventTypes.empty() && !eventTypes.count(rec.Type())) {
 				return false;
 			}
-			const auto &ns = rec.NsName();
+			const auto& ns = rec.NsName();
 			if (!isSystemNamespaceNameFast(ns)) {
 				return nss.empty() || nss.count(ns);
 			}
@@ -39,11 +39,11 @@ public:
 	using StreamsContainerT = std::vector<StreamConfig>;
 
 	[[nodiscard]] Error FromJSON(span<char> json) noexcept;
-	void FromJSON(const gason::JsonNode &root);
-	void GetJSON(WrSerializer &ser) const;
+	void FromJSON(const gason::JsonNode& root);
+	void GetJSON(WrSerializer& ser) const;
 
-	const StreamsContainerT &Streams() const & noexcept { return streams_; }
-	const StreamsContainerT &Streams() const && = delete;
+	const StreamsContainerT& Streams() const& noexcept { return streams_; }
+	const StreamsContainerT& Streams() const&& = delete;
 	size_t ActiveStreams() const noexcept { return streams_.size(); }
 	bool WithDBName() const noexcept { return withDBName_; }
 	bool WithServerID() const noexcept { return withServerID_; }
@@ -51,7 +51,7 @@ public:
 	bool WithLSN() const noexcept { return withLSN_; }
 	bool WithTimestamp() const noexcept { return withTimestamp_; }
 	SubscriptionDataType DataType() const noexcept { return dataType_; }
-	const EventsSetT &Events() const noexcept { return eventTypes_; }
+	const EventsSetT& Events() const noexcept { return eventTypes_; }
 
 private:
 	int formatVersion_ = kSubscribersConfigFormatVersion;

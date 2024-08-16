@@ -25,11 +25,11 @@ public:
 			throw Error(errLogic, "Unable to initialize LocatorService's interface with nullptr");
 		}
 	}
-	std::shared_ptr<client::Reindexer> GetShardConnection(std::string_view ns, int shardId, Error &status);
+	std::shared_ptr<client::Reindexer> GetShardConnection(std::string_view ns, int shardId, Error& status);
 	int ActualShardId() const noexcept;
 	int64_t SourceId() const noexcept;
-	std::pair<int, Variant> GetShardIdKeyPair(std::string_view ns, const Item &item) const;
-	std::pair<ShardIDsContainer, Variant> GetShardIdKeyPair(const Query &q) const;
+	std::pair<int, Variant> GetShardIdKeyPair(std::string_view ns, const Item& item) const;
+	std::pair<ShardIDsContainer, Variant> GetShardIdKeyPair(const Query& q) const;
 
 	inline operator bool() const noexcept { return locator_.operator bool(); }
 	inline void reset() noexcept { locator_.reset(); }

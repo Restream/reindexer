@@ -14,14 +14,14 @@ class RdxContext;
 namespace search_engine {
 
 struct IDCtx {
-	const RVector<IdRelType::PosType, 3> *data;
+	const RVector<IdRelType::PosType, 3>* data;
 	int pos;
-	double *max_proc;
+	double* max_proc;
 	size_t total_size;
-	const FtDslOpts *opts;
-	const FtFuzzyConfig &cfg;
+	const FtDslOpts* opts;
+	const FtFuzzyConfig& cfg;
 	double proc;
-	word_size_map *sizes;
+	word_size_map* sizes;
 };
 struct ResultMerger {
 	int src_pos;
@@ -32,7 +32,7 @@ struct ResultMerger {
 
 class MergedData {
 public:
-	MergedData(size_t id, const IDCtx &ctx) : id_(id) {
+	MergedData(size_t id, const IDCtx& ctx) : id_(id) {
 		size_it_ = ctx.sizes->find(id_);
 		if (size_it_ == ctx.sizes->end()) {
 			abort();
@@ -40,7 +40,7 @@ public:
 		Add(ctx);
 	}
 
-	void Add(const IDCtx &ctx);
+	void Add(const IDCtx& ctx);
 	double proc_ = 0;
 	size_t id_;
 	size_t count_ = 0;
@@ -58,24 +58,24 @@ struct SearchResult {
 using namespace reindexer;
 
 struct FirstResult {
-	const AdvacedPackedVec *data;
-	const FtDslOpts *opts;
+	const AdvacedPackedVec* data;
+	const FtDslOpts* opts;
 	int pos;
 	double proc;
 };
 
 struct MergeCtx {
-	std::vector<FirstResult> *results;
-	const FtFuzzyConfig *cfg;
+	std::vector<FirstResult>* results;
+	const FtFuzzyConfig* cfg;
 	size_t total_size;
-	word_size_map *sizes;
+	word_size_map* sizes;
 };
 
 class BaseMerger {
 public:
 	BaseMerger(int max_id, int min_id);
 
-	SearchResult Merge(MergeCtx &ctx, bool inTransaction, const RdxContext &);
+	SearchResult Merge(MergeCtx& ctx, bool inTransaction, const RdxContext&);
 
 private:
 	int max_id_;

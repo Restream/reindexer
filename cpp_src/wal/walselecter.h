@@ -10,12 +10,12 @@ class RdxContext;
 struct SelectCtx;
 class WALSelecter {
 public:
-	WALSelecter(const NamespaceImpl *ns, bool allowTxWithoutBegining);
-	void operator()(LocalQueryResults &result, SelectCtx &params, bool snapshot = false);
+	WALSelecter(const NamespaceImpl* ns, bool allowTxWithoutBegining);
+	void operator()(LocalQueryResults& result, SelectCtx& params, bool snapshot = false);
 
 protected:
-	void putReplState(LocalQueryResults &result);
-	const NamespaceImpl *ns_;
+	void putReplState(LocalQueryResults& result);
+	const NamespaceImpl* ns_;
 	const bool allowTxWithoutBegining_;
 };
 

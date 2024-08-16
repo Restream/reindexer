@@ -6,11 +6,11 @@ namespace reindexer {
 
 struct sinkArgs {
 	template <typename... Args>
-	sinkArgs(Args const &...) {}
+	sinkArgs(const Args&...) {}
 };
 
 template <typename... Args>
-void clusterProxyLog(int level, const char *fmt, const Args &...args) {
+void clusterProxyLog(int level, const char* fmt, const Args&... args) {
 #if RX_ENABLE_CLUSTERPROXY_LOGS
 	auto str = fmt::sprintf(fmt, args...);
 	logPrint(level, &str[0]);
@@ -19,4 +19,4 @@ void clusterProxyLog(int level, const char *fmt, const Args &...args) {
 #endif
 }
 
-}
+}  // namespace reindexer

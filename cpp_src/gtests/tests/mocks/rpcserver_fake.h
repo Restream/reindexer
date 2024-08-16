@@ -26,20 +26,20 @@ struct RPCClientData final : public cproto::ClientData {
 
 class RPCServerFake {
 public:
-	RPCServerFake(const RPCServerConfig &conf);
+	RPCServerFake(const RPCServerConfig& conf);
 
-	bool Start(const std::string &addr, ev::dynamic_loop &loop, Error loginError);
+	bool Start(const std::string& addr, ev::dynamic_loop& loop, Error loginError);
 	Error Stop();
 
-	Error Ping(cproto::Context &ctx);
-	Error Login(cproto::Context &ctx, p_string login, p_string password, p_string db);
-	Error Select(cproto::Context &ctx, p_string query, int flags, int limit, p_string ptVersions);
-	Error OpenNamespace(cproto::Context &ctx, p_string ns);
-	Error DropNamespace(cproto::Context &ctx, p_string ns);
-	Error CloseResults(cproto::Context &ctx, int reqId, std::optional<int64_t> qrUID, std::optional<bool> doNotReply);
+	Error Ping(cproto::Context& ctx);
+	Error Login(cproto::Context& ctx, p_string login, p_string password, p_string db);
+	Error Select(cproto::Context& ctx, p_string query, int flags, int limit, p_string ptVersions);
+	Error OpenNamespace(cproto::Context& ctx, p_string ns);
+	Error DropNamespace(cproto::Context& ctx, p_string ns);
+	Error CloseResults(cproto::Context& ctx, int reqId, std::optional<int64_t> qrUID, std::optional<bool> doNotReply);
 	RPCServerStatus Status() const;
 
-	Error CheckAuth(cproto::Context &ctx);
+	Error CheckAuth(cproto::Context& ctx);
 	size_t OpenedQRCount();
 	size_t CloseQRRequestsCount() const { return closeQRRequestsCounter_.load(std::memory_order_relaxed); }
 

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "updates/updaterecord.h"
 #include "snapshot.h"
+#include "updates/updaterecord.h"
 
 namespace reindexer {
 

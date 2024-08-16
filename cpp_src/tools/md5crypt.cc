@@ -16,8 +16,8 @@ namespace reindexer {
 
 constexpr std::string_view kMD5CryptDelimiter = "$";
 
-std::string MD5crypt(const std::string &passwd, const std::string &salt) noexcept {
-	static unsigned const char cov2char[64] = {
+std::string MD5crypt(const std::string& passwd, const std::string& salt) noexcept {
+	static const unsigned char cov2char[64] = {
 		/* from crypto/des/fcrypt.c */
 		0x2E, 0x2F, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A,
 		0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66,
@@ -59,21 +59,21 @@ std::string MD5crypt(const std::string &passwd, const std::string &salt) noexcep
 
 	for (size_t i = 0; i < 1000; i++) {
 		MD5 md;
-		md.add((i & 1) ? reinterpret_cast<const unsigned char *>(passwd.c_str()) : buf, (i & 1) ? passwd.size() : sizeof(buf));
+		md.add((i & 1) ? reinterpret_cast<const unsigned char*>(passwd.c_str()) : buf, (i & 1) ? passwd.size() : sizeof(buf));
 		if (i % 3) {
 			md.add(trunkatedSalt, saltLen);
 		}
 		if (i % 7) {
 			md.add(passwd.c_str(), passwd.size());
 		}
-		md.add((i & 1) ? buf : reinterpret_cast<const unsigned char *>(passwd.c_str()), (i & 1) ? sizeof(buf) : passwd.size());
+		md.add((i & 1) ? buf : reinterpret_cast<const unsigned char*>(passwd.c_str()), (i & 1) ? sizeof(buf) : passwd.size());
 		md.getHash(buf);
 	}
 
 	char resultBuf[23] = {0};
 	/* transform buf into output string */
 	unsigned char bufPerm[sizeof(buf)];
-	char *output = resultBuf;
+	char* output = resultBuf;
 	for (int dest = 0, source = 0; dest < 14; dest++, source = (source + 6) % 17) {
 		bufPerm[dest] = buf[source];
 	}
@@ -93,7 +93,7 @@ std::string MD5crypt(const std::string &passwd, const std::string &salt) noexcep
 	return std::string(resultBuf);
 }
 
-Error ParseMd5CryptString(const std::string &input, std::string &outHash, std::string &outSalt) {
+Error ParseMd5CryptString(const std::string& input, std::string& outHash, std::string& outSalt) {
 	if (input.empty() || input.find(kMD5CryptDelimiter) != 0) {
 		outHash = input;
 		outSalt.clear();

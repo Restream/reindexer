@@ -2,6 +2,7 @@
 #include <fstream>
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
+#include "core/formatters/lsn_fmt.h"
 #include "systemhelpers.h"
 #include "tools/fsops.h"
 #include "vendor/gason/gason.h"
@@ -204,7 +205,9 @@ cluster::ReplicationStats ServerControl::Interface::GetReplicationStats(std::str
 std::string ServerControl::Interface::getLogName(const std::string& log, bool core) {
 	std::string name = getTestLogPath();
 	name += (log + "_");
-	if (!core) name += std::to_string(config_.id);
+	if (!core) {
+		name += std::to_string(config_.id);
+	}
 	name += ".log";
 	return name;
 }
@@ -482,11 +485,11 @@ void ServerControl::WaitSync(const ServerControl::Interface::Ptr& s1, const Serv
 		const std::string tmStateToken2 = state2.tmStatetoken.has_value() ? std::to_string(state2.tmStatetoken.value()) : "<none>";
 		const std::string tmVersion1 = state1.tmVersion.has_value() ? std::to_string(state1.tmVersion.value()) : "<none>";
 		const std::string tmVersion2 = state2.tmVersion.has_value() ? std::to_string(state2.tmVersion.value()) : "<none>";
-		ASSERT_TRUE(now < kMaxSyncTime) << "Wait sync is too long. s1 lsn: " << state1.lsn << "; s2 lsn: " << state2.lsn
-										<< "; s1 count: " << state1.dataCount << "; s2 count: " << state2.dataCount
-										<< " s1 hash: " << state1.dataHash << "; s2 hash: " << state2.dataHash
-										<< " s1 tm_token: " << tmStateToken1 << "; s2 tm_token: " << tmStateToken2
-										<< " s1 tm_version: " << tmVersion1 << "; s2 tm_version: " << tmVersion2;
+		ASSERT_TRUE(now < kMaxSyncTime) << fmt::format(
+			"Wait sync is too long. s1 lsn: {}; s2 lsn: {}; s1 count: {}; s2 count: {}; s1 hash: {}; s2 hash: {}; s1 tm_token: {}; s2 "
+			"tm_token: {}; s1 tm_version: {}; s2 tm_version: {}",
+			state1.lsn, state2.lsn, state1.dataCount, state2.dataCount, state1.dataHash, state2.dataHash, tmStateToken1, tmStateToken2,
+			tmVersion1, tmVersion2);
 		state1 = s1->GetState(nsName);
 		state2 = s2->GetState(nsName);
 
@@ -570,14 +573,18 @@ Error ServerControl::Interface::TryResetReplicationRole(const std::string& ns) {
 	BaseApi::QueryResultsType res;
 	Error err;
 	auto item = api.NewItem("#config");
-	if (!item.Status().ok()) return item.Status();
+	if (!item.Status().ok()) {
+		return item.Status();
+	}
 	if (ns.size()) {
 		err =
 			item.FromJSON(fmt::sprintf(R"json({"type":"action","action":{"command":"reset_replication_role","namespace":"%s"}})json", ns));
 	} else {
 		err = item.FromJSON(R"json({"type":"action","action":{"command":"reset_replication_role"}})json");
 	}
-	if (!err.ok()) return err;
+	if (!err.ok()) {
+		return err;
+	}
 	return api.reindexer->Upsert("#config", item);
 }
 

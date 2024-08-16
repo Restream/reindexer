@@ -13,9 +13,9 @@ public:
 	using IntrusiveT = intrusive_atomic_rc_wrapper<INamespaces>;
 	using PtrT = intrusive_ptr<IntrusiveT>;
 
-	virtual void Add(const std::string &name) = 0;
+	virtual void Add(const std::string& name) = 0;
 	virtual void Erase(std::string_view name) = 0;
-	virtual Namespace *Get(std::string_view name) = 0;
+	virtual Namespace* Get(std::string_view name) = 0;
 	virtual ~INamespaces() = default;
 };
 

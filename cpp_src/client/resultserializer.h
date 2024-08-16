@@ -63,9 +63,9 @@ public:
 		Serializer ser(Buf(), Len());
 		return ser.GetVarUint() & kResultsWithPayloadTypes;
 	}
-	void GetRawQueryParams(QueryParams &ret, const std::function<void(int nsId)> &updatePayloadFunc, Options options,
-						   ParsingData &parsingData);
-	void GetExtraParams(QueryParams &ret, Options opts);
+	void GetRawQueryParams(QueryParams& ret, const std::function<void(int nsId)>& updatePayloadFunc, Options options,
+						   ParsingData& parsingData);
+	void GetExtraParams(QueryParams& ret, Options opts);
 	ItemParams GetItemData(int flags, int shardId);
 };
 

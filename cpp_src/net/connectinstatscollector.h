@@ -30,7 +30,7 @@ public:
 
 	std::shared_ptr<connection_stat> get_stat() const noexcept { return stat_; }
 
-	void attach(ev::dynamic_loop &loop) noexcept;
+	void attach(ev::dynamic_loop& loop) noexcept;
 	void detach() noexcept;
 	void restart();
 	void stop() noexcept;
@@ -48,7 +48,7 @@ public:
 	void update_send_buf_size(size_t size) noexcept { stat_->send_buf_bytes.store(size, std::memory_order_relaxed); }
 
 protected:
-	void stats_check_cb(ev::periodic &watcher, int) noexcept;
+	void stats_check_cb(ev::periodic& watcher, int) noexcept;
 
 private:
 	std::shared_ptr<connection_stat> stat_;

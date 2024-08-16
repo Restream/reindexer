@@ -65,11 +65,15 @@ reindexer::Error ApiEncDec::prepareBenchData() {
 		.AddIndex("string_hash_array_index", "hash", "string", IndexOpts().Array())
 		.AddIndex("string_tree_array_index", "tree", "string", IndexOpts().Array());
 	auto err = db_->AddNamespace(nsDef);
-	if (!err.ok()) return err;
+	if (!err.ok()) {
+		return err;
+	}
 
 	fieldsToExtract_.clear();
 	itemForCjsonBench_ = std::make_unique<reindexer::Item>(db_->NewItem(nsName_));
-	if (!itemForCjsonBench_->Status().ok()) return itemForCjsonBench_->Status();
+	if (!itemForCjsonBench_->Status().ok()) {
+		return itemForCjsonBench_->Status();
+	}
 	reindexer::WrSerializer wser;
 	reindexer::JsonBuilder bld(wser);
 	constexpr size_t len = 10;
@@ -146,10 +150,16 @@ reindexer::Error ApiEncDec::prepareBenchData() {
 	}
 	bld.End();
 	err = itemForCjsonBench_->FromJSON(wser.Slice());
-	if (!err.ok()) return err;
-	if (!itemForCjsonBench_->Status().ok()) return itemForCjsonBench_->Status();
+	if (!err.ok()) {
+		return err;
+	}
+	if (!itemForCjsonBench_->Status().ok()) {
+		return itemForCjsonBench_->Status();
+	}
 	err = db_->Insert(nsName_, *itemForCjsonBench_);
-	if (!err.ok()) return err;
+	if (!err.ok()) {
+		return err;
+	}
 	itemCJSON_ = itemForCjsonBench_->GetCJSON();
 	itemJSON_ = itemForCjsonBench_->GetJSON();
 	wser.Reset();
@@ -164,8 +174,12 @@ void ApiEncDec::FromCJSON(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		const auto err = item.FromCJSON(itemCJSON_);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
+		if (!item.Status().ok()) {
+			state.SkipWithError(item.Status().what().c_str());
+		}
 	}
 }
 
@@ -175,8 +189,12 @@ void ApiEncDec::FromCJSONPKOnly(benchmark::State& state) {
 		AllocsTracker allocsTracker(state);
 		for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 			const auto err = item.FromCJSON(itemCJSON_, true);
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
-			if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+			if (!err.ok()) {
+				state.SkipWithError(err.what().c_str());
+			}
+			if (!item.Status().ok()) {
+				state.SkipWithError(item.Status().what().c_str());
+			}
 		}
 	}
 	assertrx(item["id"].Get<int>() == kCjsonBenchItemID);
@@ -198,7 +216,9 @@ void ApiEncDec::ExtractField(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		const auto& fieldName = fieldsToExtract_[rand() % fieldsToExtract_.size()];
 		const auto va = VariantArray((*itemForCjsonBench_)[fieldName]);
-		if (va.size() != 1) state.SkipWithError(fmt::sprintf("Unexpected result size: %d", va.size()).c_str());
+		if (va.size() != 1) {
+			state.SkipWithError(fmt::sprintf("Unexpected result size: %d", va.size()).c_str());
+		}
 	}
 }
 
@@ -207,8 +227,12 @@ void ApiEncDec::FromJSON(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		const auto err = item.FromJSON(itemJSON_);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
+		if (!item.Status().ok()) {
+			state.SkipWithError(item.Status().what().c_str());
+		}
 	}
 }
 
@@ -226,8 +250,12 @@ void ApiEncDec::FromPrettyJSON(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		const auto err = item.FromJSON(itemPrettyJSON_);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
+		if (!item.Status().ok()) {
+			state.SkipWithError(item.Status().what().c_str());
+		}
 	}
 }
 
@@ -248,8 +276,12 @@ void ApiEncDec::FromMsgPack(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		size_t offset = 0;
 		const auto err = item.FromMsgPack(itemMsgPack_, offset);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+		}
+		if (!item.Status().ok()) {
+			state.SkipWithError(item.Status().what().c_str());
+		}
 	}
 }
 

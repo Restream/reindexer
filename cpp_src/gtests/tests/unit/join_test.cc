@@ -183,7 +183,9 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 			const reindexer::ItemRef& rowid = rowIt.GetItemRef();
 
 			auto itemIt = rowIt.GetJoined();
-			if (itemIt.getJoinedItemsCount() == 0) continue;
+			if (itemIt.getJoinedItemsCount() == 0) {
+				continue;
+			}
 			for (auto joinedFieldIt = itemIt.begin(); joinedFieldIt != itemIt.end(); ++joinedFieldIt) {
 				reindexer::ItemImpl item2(joinedFieldIt.GetItem(0, joinQueryRes.GetPayloadType(1), joinQueryRes.GetTagsMatcher(1)));
 				Variant authorIdKeyRef2 = item2.GetField(joinQueryRes.GetPayloadType(1).FieldByName(authorid_fk));
@@ -198,7 +200,9 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 		for (auto rowIt : joinQueryRes.ToLocalQr()) {
 			IdType rowid = rowIt.GetItemRef().Id();
 			auto itemIt = rowIt.GetJoined();
-			if (itemIt.getJoinedItemsCount() == 0) continue;
+			if (itemIt.getJoinedItemsCount() == 0) {
+				continue;
+			}
 			auto joinedFieldIt = itemIt.begin();
 			for (int i = 0; i < joinedFieldIt.ItemsCount(); ++i) {
 				reindexer::ItemImpl item(joinedFieldIt.GetItem(i, joinQueryRes.GetPayloadType(1), joinQueryRes.GetTagsMatcher(1)));
@@ -296,7 +300,9 @@ TEST_F(JoinSelectsApi, JoinTestSorting) {
 
 			Variant key = item[authorid];
 			auto itemIt = rowIt.GetJoined();
-			if (itemIt.getJoinedItemsCount() == 0) continue;
+			if (itemIt.getJoinedItemsCount() == 0) {
+				continue;
+			}
 			auto joinedFieldIt = itemIt.begin();
 
 			Variant prevJoinedValue;
@@ -440,17 +446,23 @@ TEST_F(JoinSelectsApi, JoinsEasyStressTest) {
 	std::vector<std::thread> threads;
 	for (size_t i = 0; i < 20; ++i) {
 		threads.push_back(std::thread(selectTh));
-		if (i % 2 == 0) threads.push_back(std::thread(removeTh));
-		if (i % 4 == 0) threads.push_back(std::thread([this, since, count]() { FillBooksNamespace(since, count); }));
+		if (i % 2 == 0) {
+			threads.push_back(std::thread(removeTh));
+		}
+		if (i % 4 == 0) {
+			threads.push_back(std::thread([this, since, count]() { FillBooksNamespace(since, count); }));
+		}
 		since += 1000;
 	}
-	for (size_t i = 0; i < threads.size(); ++i) threads[i].join();
+	for (size_t i = 0; i < threads.size(); ++i) {
+		threads[i].join();
+	}
 }
 
 TEST_F(JoinSelectsApi, JoinPreResultStoreValuesOptimizationStressTest) {
 	using reindexer::JoinedSelector;
 	static const std::string rightNs = "rightNs";
-	static constexpr char const* data = "data";
+	static constexpr const char* data = "data";
 	static constexpr int maxDataValue = 10;
 	static constexpr int maxRightNsRowCount = maxDataValue * JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization();
 	static constexpr int maxLeftNsRowCount = 10000;
@@ -458,7 +470,9 @@ TEST_F(JoinSelectsApi, JoinPreResultStoreValuesOptimizationStressTest) {
 	static std::vector<std::string> leftNs;
 	if (leftNs.empty()) {
 		leftNs.reserve(leftNsCount);
-		for (size_t i = 0; i < leftNsCount; ++i) leftNs.push_back("leftNs" + std::to_string(i));
+		for (size_t i = 0; i < leftNsCount; ++i) {
+			leftNs.push_back("leftNs" + std::to_string(i));
+		}
 	}
 
 	const auto createNs = [this](const std::string& ns) {
@@ -488,13 +502,17 @@ TEST_F(JoinSelectsApi, JoinPreResultStoreValuesOptimizationStressTest) {
 			// about 50% of queries will use the optimization
 			Query q{Query(leftNs[i]).InnerJoin(data, data, CondEq, Query(rightNs).Where(data, CondEq, rand() % maxDataValue))};
 			QueryResults qres;
-			while (!start) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			while (!start) {
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			}
 			Error err = rt.reindexer->Select(q, qres);
 			ASSERT_TRUE(err.ok()) << err.what();
 		});
 	}
 	start = true;
-	for (auto& th : threads) th.join();
+	for (auto& th : threads) {
+		th.join();
+	}
 }
 
 static void checkForAllowedJsonTags(const std::vector<std::string>& tags, gason::JsonValue jsonValue) {

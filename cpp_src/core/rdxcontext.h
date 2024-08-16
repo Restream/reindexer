@@ -25,7 +25,9 @@ constexpr std::string_view kDefaultCancelError = "Context was canceled";
 
 template <typename Context>
 void ThrowOnCancel(const Context& ctx, std::string_view errMsg = std::string_view()) {
-	if (!ctx.IsCancelable()) return;
+	if (!ctx.IsCancelable()) {
+		return;
+	}
 
 	const auto cancel = ctx.CheckCancel();
 	switch (cancel) {
@@ -127,7 +129,9 @@ public:
 		  holdStatus_(ptr ? HoldT::kPtr : HoldT::kEmpty),
 		  shardingParallelExecution_(parallel),
 		  noWaitSync_(noWaitSync) {
-		if (holdStatus_ == HoldT::kPtr) activityPtr_->refCount_.fetch_add(1u, std::memory_order_relaxed);
+		if (holdStatus_ == HoldT::kPtr) {
+			activityPtr_->refCount_.fetch_add(1u, std::memory_order_relaxed);
+		}
 	}
 
 	RdxContext(RdxContext&& other) noexcept;
@@ -140,7 +144,9 @@ public:
 	const IRdxCancelContext* GetCancelCtx() const noexcept { return cancelCtx_; }
 	bool IsCancelable() const noexcept { return cancelCtx_ && cancelCtx_->IsCancelable(); }
 	CancelType CheckCancel() const noexcept {
-		if (!cancelCtx_) return CancelType::None;
+		if (!cancelCtx_) {
+			return CancelType::None;
+		}
 		return cancelCtx_->GetCancelType();
 	}
 	/// returning value should be assined to a local variable which will be destroyed after the locking complete

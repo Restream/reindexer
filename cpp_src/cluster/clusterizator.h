@@ -15,7 +15,7 @@ namespace cluster {
 
 class Clusterizator : public IDataReplicator, public IDataSyncer {
 public:
-	Clusterizator(ReindexerImpl &thisNode, size_t maxUpdatesSize);
+	Clusterizator(ReindexerImpl& thisNode, size_t maxUpdatesSize);
 
 	void Configure(ReplicationConfigData replConfig);
 	void Configure(ClusterConfigData clusterConfig);
@@ -29,26 +29,26 @@ public:
 	void Stop(bool disable = false) noexcept;
 	void Enable() noexcept { enabled_.store(true, std::memory_order_release); }
 	bool Enabled() const noexcept { return enabled_.load(std::memory_order_acquire); }
-	Error SuggestLeader(const cluster::NodeData &suggestion, cluster::NodeData &response);
+	Error SuggestLeader(const cluster::NodeData& suggestion, cluster::NodeData& response);
 	Error SetDesiredLeaderId(int leaderId, bool sendToOtherNodes);
-	Error LeadersPing(const cluster::NodeData &);
-	RaftInfo GetRaftInfo(bool allowTransitState, const RdxContext &ctx) const;
+	Error LeadersPing(const cluster::NodeData&);
+	RaftInfo GetRaftInfo(bool allowTransitState, const RdxContext& ctx) const;
 	bool NamespaceIsInClusterConfig(std::string_view nsName);
 	bool NamesapceIsInReplicationConfig(std::string_view nsName);
 
-	Error Replicate(UpdatesContainer &&recs, std::function<void()> beforeWaitF, const RdxContext &ctx) override final;
-	Error ReplicateAsync(UpdatesContainer &&recs, const RdxContext &ctx) override final;
-	void AwaitInitialSync(const NamespaceName &nsName, const RdxContext &ctx) const override final {
+	Error Replicate(UpdatesContainer&& recs, std::function<void()> beforeWaitF, const RdxContext& ctx) override final;
+	Error ReplicateAsync(UpdatesContainer&& recs, const RdxContext& ctx) override final;
+	void AwaitInitialSync(const NamespaceName& nsName, const RdxContext& ctx) const override final {
 		if (enabled_.load(std::memory_order_acquire)) {
 			sharedSyncState_.AwaitInitialSync(nsName, ctx);
 		}
 	}
-	void AwaitInitialSync(const RdxContext &ctx) const override final {
+	void AwaitInitialSync(const RdxContext& ctx) const override final {
 		if (enabled_.load(std::memory_order_acquire)) {
 			sharedSyncState_.AwaitInitialSync(ctx);
 		}
 	}
-	bool IsInitialSyncDone(const NamespaceName &name) const override final {
+	bool IsInitialSyncDone(const NamespaceName& name) const override final {
 		return !enabled_.load(std::memory_order_acquire) || sharedSyncState_.IsInitialSyncDone(name);
 	}
 	bool IsInitialSyncDone() const override final {
@@ -60,7 +60,7 @@ public:
 	void SetClusterReplicatonLogLevel(LogLevel level) noexcept { clusterReplicator_.SetLogLevel(level); }
 
 private:
-	static bool replicationIsNotRequired(const UpdatesContainer &recs) noexcept;
+	static bool replicationIsNotRequired(const UpdatesContainer& recs) noexcept;
 	void validateConfig() const;
 
 	mutable std::mutex mtx_;

@@ -10,7 +10,7 @@ class ItemMoveSemanticsApi : public ReindexerApi {
 protected:
 	const std::string pkField = "bookid";
 	const int32_t itemsCount = 100000;
-	const char *jsonPattern = "{\"bookid\":%d,\"title\":\"title\",\"pages\":200,\"price\":299,\"genreid_fk\":3,\"authorid_fk\":10}";
+	const char* jsonPattern = "{\"bookid\":%d,\"title\":\"title\",\"pages\":200,\"price\":299,\"genreid_fk\":3,\"authorid_fk\":10}";
 	std::map<int, Item> items_;
 
 	void SetUp() override {
@@ -45,8 +45,8 @@ protected:
 	}
 
 	void verifyAndUpsertItems() {
-		for (auto &pair : items_) {
-			auto &&item = pair.second;
+		for (auto& pair : items_) {
+			auto&& item = pair.second;
 			Error err = rt.reindexer->Upsert(default_namespace, item);
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_NO_THROW(gason::JsonParser().Parse(item.GetJSON()));
@@ -58,7 +58,7 @@ protected:
 		if (itItem == items_.end()) {
 			return Item();
 		}
-		auto &&item = itItem->second;
+		auto&& item = itItem->second;
 		return std::move(item);
 	}
 

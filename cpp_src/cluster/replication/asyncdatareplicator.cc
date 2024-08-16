@@ -98,7 +98,9 @@ ReplicationStats AsyncDataReplicator::GetReplicationStats() const {
 }
 
 bool AsyncDataReplicator::NamespaceIsInAsyncConfig(std::string_view nsName) const {
-	if (nsName.size() && (nsName[0] == '#' || nsName[0] == '@')) return false;
+	if (nsName.size() && (nsName[0] == '#' || nsName[0] == '@')) {
+		return false;
+	}
 
 	const UpdatesQueueT::HashT h;
 	const size_t hash = h(nsName);

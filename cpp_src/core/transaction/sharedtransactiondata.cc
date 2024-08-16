@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-void SharedTransactionData::UpdateTagsMatcherIfNecessary(ItemImpl &ritem) {
+void SharedTransactionData::UpdateTagsMatcherIfNecessary(ItemImpl& ritem) {
 	if (!ritem.tagsMatcher().isUpdated()) {
 		return;
 	}
@@ -16,10 +16,13 @@ void SharedTransactionData::UpdateTagsMatcherIfNecessary(ItemImpl &ritem) {
 		ritem = std::move(tmpItem);
 
 		auto err = ritem.FromJSON(jsonSliceBuf, nullptr);
-		if (!err.ok()) throw err;
+		if (!err.ok()) {
+			throw err;
+		}
 
-		if (ritem.tagsMatcher().isUpdated() && !tagsMatcher_.try_merge(ritem.tagsMatcher()))
+		if (ritem.tagsMatcher().isUpdated() && !tagsMatcher_.try_merge(ritem.tagsMatcher())) {
 			throw Error(errLogic, "Could not insert item. TagsMatcher was not merged.");
+		}
 		ritem.tagsMatcher() = tagsMatcher_;
 		ritem.tagsMatcher().setUpdated();
 	} else {
@@ -29,7 +32,7 @@ void SharedTransactionData::UpdateTagsMatcherIfNecessary(ItemImpl &ritem) {
 	tagsUpdated_ = true;
 }
 
-void SharedTransactionData::SetTagsMatcher(TagsMatcher &&tm) {
+void SharedTransactionData::SetTagsMatcher(TagsMatcher&& tm) {
 	if (tm.stateToken() != tagsMatcher_.stateToken()) {
 		throw Error(errParams, "Tx tm statetoken missmatch: %08X vs %08X", tagsMatcher_.stateToken(), tm.stateToken());
 	}

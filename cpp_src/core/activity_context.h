@@ -57,7 +57,9 @@ class RdxActivityContext {
 				context_->refCount_.fetch_add(1u, std::memory_order_relaxed);
 #endif
 #ifdef RX_LOGACTIVITY
-				if (context_->parent_) context_->parent_->AddOperation(context_, state, true);
+				if (context_->parent_) {
+					context_->parent_->AddOperation(context_, state, true);
+				}
 #endif
 			}
 		}
@@ -68,7 +70,9 @@ class RdxActivityContext {
 				context_->refCount_.fetch_add(1u, std::memory_order_relaxed);
 #endif
 #ifdef RX_LOGACTIVITY
-				if (context_->parent_) context_->parent_->AddOperation(context_, Activity::WaitLock, true);
+				if (context_->parent_) {
+					context_->parent_->AddOperation(context_, Activity::WaitLock, true);
+				}
 #endif
 			}
 		}
@@ -84,7 +88,9 @@ class RdxActivityContext {
 				[[maybe_unused]] const auto refs = context_->refCount_.fetch_sub(1u, std::memory_order_relaxed);
 				assertrx(refs != 0u);
 #ifdef RX_LOGACTIVITY
-				if (context_->parent_) context_->parent_->AddOperation(context_, state, false);
+				if (context_->parent_) {
+					context_->parent_->AddOperation(context_, state, false);
+				}
 #endif
 			}
 		}
@@ -103,7 +109,9 @@ public:
 					   int ipConnectionId, bool clientState = false);
 	RdxActivityContext(RdxActivityContext&&);
 	~RdxActivityContext() {
-		if (parent_) parent_->Unregister(this);
+		if (parent_) {
+			parent_->Unregister(this);
+		}
 		assertrx(refCount_.load(std::memory_order_relaxed) == 0u);
 	}
 	operator Activity() const;

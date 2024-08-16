@@ -35,22 +35,22 @@ public:
 	Item();
 	/// Destroy Item
 	~Item();
-	Item(const Item &) = delete;
-	Item(Item &&) noexcept;
-	Item &operator=(const Item &) = delete;
-	Item &operator=(Item &&) noexcept;
+	Item(const Item&) = delete;
+	Item(Item&&) noexcept;
+	Item& operator=(const Item&) = delete;
+	Item& operator=(Item&&) noexcept;
 
 	/// Build item from JSON<br>
 	/// If Item is in *Unsafe Mode*, then Item will not store slice, but just keep pointer to data in slice,
 	/// application *MUST* hold slice until end of life of Item
 	/// @param slice - data slice with Json.
 	/// @param endp - pounter to end of parsed part of slice
-	Error FromJSON(std::string_view slice, char **endp = nullptr, bool = false);
+	Error FromJSON(std::string_view slice, char** endp = nullptr, bool = false);
 	/// Build item from JSON<br>
 	/// If Item is in *Unsafe Mode*, then Item will not store slice, but just keep pointer to data in slice,
 	/// application *MUST* hold slice until end of life of Item
 	/// @param slice - data slice with CJson
-	Error FromCJSON(std::string_view slice) &noexcept;
+	Error FromCJSON(std::string_view slice) & noexcept;
 	void FromCJSONImpl(std::string_view slice) &;
 	/// Serialize item to CJSON.<br>
 	/// If Item is in *Unfafe Mode*, then returned slice is allocated in temporary buffer, and can be invalidated by any next operation with
@@ -68,7 +68,7 @@ public:
 	/// Builds item from msgpack::object.
 	/// @param slice - msgpack encoded data buffer.
 	/// @param offset - position to start from.
-	Error FromMsgPack(std::string_view slice, size_t &offset);
+	Error FromMsgPack(std::string_view slice, size_t& offset);
 	/// Get status of item
 	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next operation
 	/// with Item
@@ -101,10 +101,10 @@ public:
 	/// The advantage of unsafe mode is speed. It does not call extra memory allocation from heap and copying data.<br>
 	/// The disadvantage of unsafe mode is potentially danger code. Most of C++ stl containters in many cases invalidates references -
 	/// and in unsafe mode caller is responsibe to guarantee, that all resources passed to Item will keep valid
-	Item &Unsafe(bool enable = true) noexcept;
+	Item& Unsafe(bool enable = true) noexcept;
 
 private:
-	explicit Item(ItemImplBase *impl);
+	explicit Item(ItemImplBase* impl);
 	explicit Item(Error err);
 	void setID(int id) noexcept { id_ = id; }
 	void setLSN(lsn_t lsn) noexcept { lsn_ = lsn; }

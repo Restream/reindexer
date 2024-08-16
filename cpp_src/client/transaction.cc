@@ -33,7 +33,9 @@ int64_t Transaction::GetTransactionId() const noexcept { return tr_.i_.txId_; }
 Error Transaction::modify(Item&& item, ItemModifyMode mode, lsn_t lsn, Transaction::Completion asyncCmpl) {
 	if (!IsFree()) {
 		auto err = rx_->addTxItem(*this, std::move(item), mode, lsn, std::move(asyncCmpl));
-		if (!err.ok()) setStatus(std::move(err));
+		if (!err.ok()) {
+			setStatus(std::move(err));
+		}
 		return Status();
 	}
 	return Status().ok() ? kBadTxStatus : Status();
@@ -42,7 +44,9 @@ Error Transaction::modify(Item&& item, ItemModifyMode mode, lsn_t lsn, Transacti
 Error Transaction::modify(Query&& query, lsn_t lsn, Transaction::Completion asyncCmpl) {
 	if (!IsFree()) {
 		auto err = rx_->modifyTx(*this, std::move(query), lsn, std::move(asyncCmpl));
-		if (!err.ok()) setStatus(std::move(err));
+		if (!err.ok()) {
+			setStatus(std::move(err));
+		}
 		return Status();
 	}
 	return Status().ok() ? kBadTxStatus : Status();
@@ -51,7 +55,9 @@ Error Transaction::modify(Query&& query, lsn_t lsn, Transaction::Completion asyn
 Error Transaction::putMeta(std::string_view key, std::string_view value, lsn_t lsn, Transaction::Completion asyncCmpl) {
 	if (!IsFree()) {
 		auto err = rx_->putTxMeta(*this, key, value, lsn, std::move(asyncCmpl));
-		if (!err.ok()) setStatus(std::move(err));
+		if (!err.ok()) {
+			setStatus(std::move(err));
+		}
 		return Status();
 	}
 	return Status().ok() ? kBadTxStatus : Status();
@@ -60,7 +66,9 @@ Error Transaction::putMeta(std::string_view key, std::string_view value, lsn_t l
 Error Transaction::setTagsMatcher(TagsMatcher&& tm, lsn_t lsn, Transaction::Completion asyncCmpl) {
 	if (!IsFree()) {
 		auto err = rx_->setTxTm(*this, std::move(tm), lsn, std::move(asyncCmpl));
-		if (!err.ok()) setStatus(std::move(err));
+		if (!err.ok()) {
+			setStatus(std::move(err));
+		}
 		return Status();
 	}
 	return Status().ok() ? kBadTxStatus : Status();

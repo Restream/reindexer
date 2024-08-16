@@ -12,7 +12,7 @@
 
 namespace reindexer {
 
-enum WALRecType {
+enum WALRecType : unsigned {
 	WalEmpty = 0,
 	WalReplState = 1,
 	WalItemUpdate = 2,
@@ -36,6 +36,7 @@ enum WALRecType {
 	WalShallowItem = 20,
 	WalDeleteMeta = 21,
 };
+inline constexpr int format_as(WALRecType v) noexcept { return int(v); }
 
 class WrSerializer;
 class JsonBuilder;
@@ -50,7 +51,7 @@ struct SharedWALRecord {
 		p_string nsName, pwalRec;
 	};
 	SharedWALRecord(intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> packed = nullptr) : packed_(std::move(packed)) {}
-	SharedWALRecord(int64_t upstreamLSN, int64_t originLSN, std::string_view nsName, const WALRecord &rec);
+	SharedWALRecord(int64_t upstreamLSN, int64_t originLSN, std::string_view nsName, const WALRecord& rec);
 	Unpacked Unpack();
 
 	intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> packed_;
@@ -67,9 +68,9 @@ struct WALRecord {
 		: type(_type), itemMeta{key, value}, inTransaction(inTx) {}
 	explicit WALRecord(WALRecType _type, std::string_view cjson, int tmVersion, ItemModifyMode modifyMode, bool inTx = false)
 		: type(_type), itemModify{cjson, tmVersion, modifyMode}, inTransaction(inTx) {}
-	WrSerializer &Dump(WrSerializer &ser, const std::function<std::string(std::string_view)> &cjsonViewer) const;
-	void GetJSON(JsonBuilder &jb, const std::function<std::string(std::string_view)> &cjsonViewer) const;
-	void Pack(WrSerializer &ser) const;
+	WrSerializer& Dump(WrSerializer& ser, const std::function<std::string(std::string_view)>& cjsonViewer) const;
+	void GetJSON(JsonBuilder& jb, const std::function<std::string(std::string_view)>& cjsonViewer) const;
+	void Pack(WrSerializer& ser) const;
 
 #ifdef REINDEX_WITH_V3_FOLLOWERS
 	SharedWALRecord GetShared(int64_t lsn, int64_t upstreamLSN, std::string_view nsName) const;
@@ -100,17 +101,17 @@ struct WALRecord {
 
 struct PackedWALRecord : public h_vector<uint8_t, 12> {
 	using h_vector<uint8_t, 12>::h_vector;
-	void Pack(const WALRecord &rec);
+	void Pack(const WALRecord& rec);
 };
 
 #pragma pack(push, 1)
 struct MarkedPackedWALRecord : public PackedWALRecord {
 	MarkedPackedWALRecord() = default;
 	template <typename RecordT>
-	MarkedPackedWALRecord(int16_t s, RecordT &&rec) : PackedWALRecord(std::forward<RecordT>(rec)), server(s) {}
+	MarkedPackedWALRecord(int16_t s, RecordT&& rec) : PackedWALRecord(std::forward<RecordT>(rec)), server(s) {}
 
 	int16_t server;
-	void Pack(int16_t _serverId, const WALRecord &rec);
+	void Pack(int16_t _serverId, const WALRecord& rec);
 };
 #pragma pack(pop)
 

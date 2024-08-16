@@ -16,11 +16,11 @@ enum SnapshotRecordOpts {
 class SnapshotRecord {
 public:
 	SnapshotRecord() = default;
-	SnapshotRecord(lsn_t lsn, PackedWALRecord &&wrec) : lsn_(lsn), rec_(std::move(wrec)) {}
-	void Deserialize(Serializer &ser);
-	void Serilize(WrSerializer &ser) const;
+	SnapshotRecord(lsn_t lsn, PackedWALRecord&& wrec) : lsn_(lsn), rec_(std::move(wrec)) {}
+	void Deserialize(Serializer& ser);
+	void Serilize(WrSerializer& ser) const;
 	WALRecord Unpack() const { return WALRecord(rec_); }
-	const PackedWALRecord &Record() const { return rec_; }
+	const PackedWALRecord& Record() const { return rec_; }
 	lsn_t LSN() const noexcept { return lsn_; }
 
 private:
@@ -30,10 +30,10 @@ private:
 
 class SnapshotChunk {
 public:
-	const std::vector<SnapshotRecord> &Records() const noexcept { return records; }
+	const std::vector<SnapshotRecord>& Records() const noexcept { return records; }
 
-	void Deserialize(Serializer &ser);
-	void Serilize(WrSerializer &ser) const;
+	void Deserialize(Serializer& ser);
+	void Serilize(WrSerializer& ser) const;
 
 	void MarkShallow(bool v = true) noexcept { opts_ = v ? opts_ | kShallowSnapshotChunk : opts_ & ~(kShallowSnapshotChunk); }
 	void MarkWAL(bool v = true) noexcept { opts_ = v ? opts_ | kWALSnapshotChunk : opts_ & ~(kWALSnapshotChunk); }
@@ -60,10 +60,10 @@ struct SnapshotOpts {
 	explicit SnapshotOpts(ExtendedLsn _from = ExtendedLsn(), int64_t _maxWalDepthOnForceSync = -1) noexcept
 		: from(_from), maxWalDepthOnForceSync(_maxWalDepthOnForceSync) {}
 
-	Error FromJSON(const gason::JsonNode &root);
+	Error FromJSON(const gason::JsonNode& root);
 	Error FromJSON(span<char> json);
-	void GetJSON(JsonBuilder &jb) const;
-	void GetJSON(WrSerializer &ser) const;
+	void GetJSON(JsonBuilder& jb) const;
+	void GetJSON(WrSerializer& ser) const;
 
 	ExtendedLsn from;
 	int64_t maxWalDepthOnForceSync;

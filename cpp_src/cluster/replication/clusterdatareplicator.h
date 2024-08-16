@@ -16,20 +16,20 @@ public:
 	using UpdatesQueueT = UpdatesQueuePair<updates::UpdateRecord>;
 	using UpdatesQueueShardT = UpdatesQueueT::QueueT;
 
-	ClusterDataReplicator(UpdatesQueueT &, SharedSyncState<> &, ReindexerImpl &);
+	ClusterDataReplicator(UpdatesQueueT&, SharedSyncState<>&, ReindexerImpl&);
 
 	void Configure(ClusterConfigData config);
 	void Configure(ReplicationConfigData config);
 	bool IsExpectingStartup() const noexcept;
 	void Run();
 	void Stop(bool resetConfig = false);
-	const std::optional<ClusterConfigData> &Config() const noexcept { return config_; }
+	const std::optional<ClusterConfigData>& Config() const noexcept { return config_; }
 
-	Error SuggestLeader(const NodeData &suggestion, NodeData &response);
+	Error SuggestLeader(const NodeData& suggestion, NodeData& response);
 	Error SetDesiredLeaderId(int serverId, bool sendToOtherNodes);
 
-	Error LeadersPing(const NodeData &leader);
-	RaftInfo GetRaftInfo(bool allowTransitState, const RdxContext &ctx) const;
+	Error LeadersPing(const NodeData& leader);
+	RaftInfo GetRaftInfo(bool allowTransitState, const RdxContext& ctx) const;
 	bool NamespaceIsInClusterConfig(std::string_view nsName) const;
 	ReplicationStats GetReplicationStats() const;
 	void SetLogLevel(LogLevel level) noexcept { log_.SetLevel(level); }
@@ -54,10 +54,10 @@ private:
 		ClusterCommand() = default;
 		ClusterCommand(ClusterCommandId c, int server, bool _send, std::promise<Error> p)
 			: id(c), serverId(server), send(_send), result(std::move(p)) {}
-		ClusterCommand(ClusterCommand &&) = default;
-		ClusterCommand &operator=(ClusterCommand &&other) = default;
-		ClusterCommand(ClusterCommand &) = delete;
-		ClusterCommand &operator=(ClusterCommand &other) = delete;
+		ClusterCommand(ClusterCommand&&) = default;
+		ClusterCommand& operator=(ClusterCommand&& other) = default;
+		ClusterCommand(ClusterCommand&) = delete;
+		ClusterCommand& operator=(ClusterCommand& other) = delete;
 
 		ClusterCommandId id = kNoComand;
 		int serverId = -1;
@@ -67,11 +67,11 @@ private:
 
 	class CommandQuery {
 	public:
-		void AddCommand(ClusterCommand &&c) {
+		void AddCommand(ClusterCommand&& c) {
 			std::lock_guard<std::mutex> lk(lock_);
 			commands_.push(std::move(c));
 		}
-		bool GetCommand(ClusterCommand &c) {
+		bool GetCommand(ClusterCommand& c) {
 			std::lock_guard<std::mutex> lk(lock_);
 			if (commands_.empty()) {
 				return false;
@@ -97,9 +97,9 @@ private:
 	std::atomic<bool> terminate_ = {false};
 	Logger log_;
 	RaftManager raftManager_;
-	UpdatesQueueT &updatesQueue_;
-	SharedSyncState<> &sharedSyncState_;
-	ReindexerImpl &thisNode_;
+	UpdatesQueueT& updatesQueue_;
+	SharedSyncState<>& sharedSyncState_;
+	ReindexerImpl& thisNode_;
 	std::deque<ClusterReplThread> replThreads_;
 	std::function<void()> requestElectionsRestartCb_;
 	std::optional<ClusterConfigData> config_;

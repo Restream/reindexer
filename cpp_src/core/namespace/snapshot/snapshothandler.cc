@@ -206,7 +206,9 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 			Serializer ser(rec.rawItem.itemCJson.data(), rec.rawItem.itemCJson.size());
 			item = ns_.newItem();
 			err = item.FromCJSON(rec.rawItem.itemCJson, false);
-			if (err.ok()) ns_.doModifyItem(item, ModeUpsert, pendedRepl, ctx, (chCtx.wal) ? -1 : rec.rawItem.id);
+			if (err.ok()) {
+				ns_.doModifyItem(item, ModeUpsert, pendedRepl, ctx, (chCtx.wal) ? -1 : rec.rawItem.id);
+			}
 			break;
 		}
 		case WalTagsMatcher: {
@@ -225,7 +227,9 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 		}
 		case WalInitTransaction:
 		case WalCommitTransaction:
-			if (chCtx.wal) err = Error(errLogic, "Unexpected tx WAL record %d\n", int(rec.type));
+			if (chCtx.wal) {
+				err = Error(errLogic, "Unexpected tx WAL record %d\n", int(rec.type));
+			}
 			break;
 		case WalEmpty:
 			ns_.wal_.Add(WALRecord(WalEmpty), lsn);
@@ -273,28 +277,40 @@ void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeader
 			case WalItemModify: {
 				Item item = tx.NewItem();
 				auto err = item.Unsafe().FromCJSON(wrec.itemModify.itemCJson, false);
-				if (!err.ok()) throw err;
+				if (!err.ok()) {
+					throw err;
+				}
 				err = tx.Modify(std::move(item), static_cast<ItemModifyMode>(wrec.itemModify.modifyMode), lsn);
-				if (!err.ok()) throw err;
+				if (!err.ok()) {
+					throw err;
+				}
 				break;
 			}
 			case WalUpdateQuery: {
 				auto err = tx.Modify(Query::FromSQL(wrec.data), lsn);
-				if (!err.ok()) throw err;
+				if (!err.ok()) {
+					throw err;
+				}
 				break;
 			}
 			case WalRawItem: {
 				Serializer ser(wrec.rawItem.itemCJson.data(), wrec.rawItem.itemCJson.size());
 				Item item = tx.NewItem();
 				auto err = item.Unsafe().FromCJSON(wrec.rawItem.itemCJson, false);
-				if (!err.ok()) throw err;
+				if (!err.ok()) {
+					throw err;
+				}
 				err = tx.Modify(std::move(item), ModeUpsert, lsn);
-				if (!err.ok()) throw err;
+				if (!err.ok()) {
+					throw err;
+				}
 				break;
 			}
 			case WalEmpty: {
 				auto err = tx.Nop(lsn);
-				if (!err.ok()) throw err;
+				if (!err.ok()) {
+					throw err;
+				}
 				break;
 			}
 			case WalReplState:

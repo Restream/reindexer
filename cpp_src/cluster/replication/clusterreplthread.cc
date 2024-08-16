@@ -5,9 +5,10 @@ namespace reindexer {
 namespace cluster {
 
 ClusterReplThread::ClusterReplThread(int serverId, ReindexerImpl& thisNode, const NsNamesHashSetT* namespaces,
-									 std::shared_ptr<updates::UpdatesQueue<updates::UpdateRecord, ReplicationStatsCollector, Logger> > q, SharedSyncState<>& syncState,
-									 SynchronizationList& syncList, std::function<void()> requestElectionsRestartCb,
-									 ReplicationStatsCollector statsCollector, const Logger& l)
+									 std::shared_ptr<updates::UpdatesQueue<updates::UpdateRecord, ReplicationStatsCollector, Logger>> q,
+									 SharedSyncState<>& syncState, SynchronizationList& syncList,
+									 std::function<void()> requestElectionsRestartCb, ReplicationStatsCollector statsCollector,
+									 const Logger& l)
 	: base_(serverId, thisNode, std::move(q),
 			ClusterThreadParam(namespaces, leadershipAwaitCh, syncState, syncList, std::move(requestElectionsRestartCb)), statsCollector,
 			l),

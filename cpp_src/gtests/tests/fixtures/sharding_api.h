@@ -211,7 +211,9 @@ public:
 		assert(shardId < svc_.size());
 		auto& cluster = svc_[shardId];
 		for (auto& sc : cluster) {
-			if (!sc.Get()) return false;
+			if (!sc.Get()) {
+				return false;
+			}
 			sc.Stop();
 		}
 		for (auto& sc : cluster) {
@@ -232,13 +234,17 @@ public:
 		for (size_t i = 0; i < svc_.size(); ++i) {
 			for (size_t j = 0; j < svc_[i].size(); ++j) {
 				auto& server = svc_[i][j];
-				if (server.Get(false)) server.Get()->Stop();
+				if (server.Get(false)) {
+					server.Get()->Stop();
+				}
 			}
 		}
 		for (size_t i = 0; i < svc_.size(); ++i) {
 			for (size_t j = 0; j < svc_[i].size(); ++j) {
 				auto& server = svc_[i][j];
-				if (!server.Get(false)) continue;
+				if (!server.Get(false)) {
+					continue;
+				}
 				server.Drop();
 				auto now = std::chrono::milliseconds(0);
 				const auto pause = std::chrono::milliseconds(10);
@@ -271,7 +277,9 @@ public:
 	}
 
 	bool StopSC(ServerControl& sc) {
-		if (!sc.Get()) return false;
+		if (!sc.Get()) {
+			return false;
+		}
 		sc.Stop();
 		sc.Drop();
 		auto now = std::chrono::milliseconds(0);
@@ -294,7 +302,9 @@ public:
 	client::Item CreateItem(std::string_view nsName, client::Reindexer& rx, std::string_view key, int index, WrSerializer& wrser,
 							uint8_t strlen = 0) {
 		client::Item item = rx.NewItem(nsName);
-		if (!item.Status().ok()) return item;
+		if (!item.Status().ok()) {
+			return item;
+		}
 		wrser.Reset();
 		reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 		jsonBuilder.Put(kFieldId, int(index));
@@ -320,7 +330,9 @@ public:
 							  fast_hash_map<int, std::string>* insertedItemsById = nullptr, uint8_t strlen = 0) {
 		WrSerializer wrser;
 		client::Item item = CreateItem(nsName, rx, key, index, wrser, strlen);
-		if (!item.Status().ok()) return item.Status();
+		if (!item.Status().ok()) {
+			return item.Status();
+		}
 
 		if (insertedItemsById) {
 			const auto found = insertedItemsById->find(index);

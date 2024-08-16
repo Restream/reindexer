@@ -27,8 +27,7 @@ void BaseEncoder<Builder>::Encode(std::string_view tuple, Builder& builder, cons
 	[[maybe_unused]] const ctag begTag = rdser.GetCTag();
 	assertrx(begTag.Type() == TAG_OBJECT);
 	Builder objNode = builder.Object(nullptr);
-	while (encode(nullptr, rdser, objNode, true))
-		;
+	while (encode(nullptr, rdser, objNode, true));
 	for (auto ds : dss) {
 		if (ds) {
 			if (const auto joinsDs = ds->GetJoinsDatasource()) {
@@ -57,8 +56,7 @@ void BaseEncoder<Builder>::Encode(ConstPayload& pl, Builder& builder, const h_ve
 	[[maybe_unused]] const ctag begTag = rdser.GetCTag();
 	assertrx(begTag.Type() == TAG_OBJECT);
 	Builder objNode = builder.Object(nullptr);
-	while (encode(&pl, rdser, objNode, true))
-		;
+	while (encode(&pl, rdser, objNode, true));
 	for (auto ds : dss) {
 		if (ds) {
 			if (const auto joinsDs = ds->GetJoinsDatasource()) {
@@ -100,7 +98,9 @@ const TagsLengths& BaseEncoder<Builder>::GetTagsMeasures(ConstPayload& pl, IEnco
 template <typename Builder>
 void BaseEncoder<Builder>::collectJoinedItemsTagsSizes(IEncoderDatasourceWithJoins* ds, size_t rowid) {
 	const size_t itemsCount = ds->GetJoinedRowItemsCount(rowid);
-	if (!itemsCount) return;
+	if (!itemsCount) {
+		return;
+	}
 
 	BaseEncoder<Builder> subEnc(&ds->GetJoinedItemTagsMatcher(rowid), &ds->GetJoinedItemFieldsFilter(rowid));
 	for (size_t i = 0; i < itemsCount; ++i) {
@@ -112,7 +112,9 @@ void BaseEncoder<Builder>::collectJoinedItemsTagsSizes(IEncoderDatasourceWithJoi
 template <typename Builder>
 void BaseEncoder<Builder>::encodeJoinedItems(Builder& builder, IEncoderDatasourceWithJoins* ds, size_t rowid) {
 	const size_t itemsCount = ds->GetJoinedRowItemsCount(rowid);
-	if (!itemsCount) return;
+	if (!itemsCount) {
+		return;
+	}
 
 	std::string nsTagName("joined_" + ds->GetJoinedItemNamespace(rowid));
 	auto arrNode = builder.Array(nsTagName);
@@ -152,7 +154,9 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 
 	// get field from indexed field
 	if (tagField >= 0) {
-		if (!pl) throw Error(errParams, "Trying to encode index field %d without payload", tagField);
+		if (!pl) {
+			throw Error(errParams, "Trying to encode index field %d without payload", tagField);
+		}
 		const auto& f = pl->Type().Field(tagField);
 		if (!f.IsArray() && objectScalarIndexes_.test(tagField)) {
 			throw Error(errParams, "Non-array field '%s' [%d] from '%s' can only be encoded once.", f.Name(), tagField, pl->Type().Name());
@@ -180,7 +184,9 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 			}
 			case TAG_NULL:
 				objectScalarIndexes_.set(tagField);
-				if (visible) builder.Null(tagName);
+				if (visible) {
+					builder.Null(tagName);
+				}
 				break;
 			case TAG_VARINT:
 			case TAG_DOUBLE:
@@ -190,7 +196,9 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 			case TAG_OBJECT:
 			case TAG_UUID:
 				objectScalarIndexes_.set(tagField);
-				if (visible) builder.Put(tagName, pl->Get(tagField, cnt), cnt);
+				if (visible) {
+					builder.Put(tagName, pl->Get(tagField, cnt), cnt);
+				}
 				++cnt;
 				break;
 		}
@@ -218,19 +226,19 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 					builder.Array(tagName, rdser, atagType, atagCount);
 				} else {
 					const KeyValueType kvt{atagType};
-					for (size_t i = 0; i < atagCount; ++i) rdser.SkipRawVariant(kvt);
+					for (size_t i = 0; i < atagCount; ++i) {
+						rdser.SkipRawVariant(kvt);
+					}
 				}
 				break;
 			}
 			case TAG_OBJECT: {
 				if (visible) {
 					auto objNode = builder.Object(tagName);
-					while (encode(pl, rdser, objNode, true))
-						;
+					while (encode(pl, rdser, objNode, true));
 				} else {
 					thread_local static Builder objNode;
-					while (encode(pl, rdser, objNode, false))
-						;
+					while (encode(pl, rdser, objNode, false));
 				}
 				break;
 			}
@@ -328,7 +336,9 @@ bool BaseEncoder<Builder>::collectTagsSizes(ConstPayload& pl, Serializer& rdser)
 			}
 		}
 	}
-	if (tagName && filter_) curTagsPath_.pop_back();
+	if (tagName && filter_) {
+		curTagsPath_.pop_back();
+	}
 
 	return true;
 }

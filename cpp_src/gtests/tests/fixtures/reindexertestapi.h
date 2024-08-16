@@ -31,12 +31,12 @@ public:
 
 	ReindexerTestApi() : reindexer(std::make_shared<DB>()) {}
 	template <typename ConfigT>
-	ReindexerTestApi(const ConfigT &cfg) : reindexer(std::make_shared<DB>(cfg)) {}
+	ReindexerTestApi(const ConfigT& cfg) : reindexer(std::make_shared<DB>(cfg)) {}
 
 	template <typename FieldsT>
-	static void DefineNamespaceDataset(DB &rx, std::string_view ns, const FieldsT &fields) {
+	static void DefineNamespaceDataset(DB& rx, std::string_view ns, const FieldsT& fields) {
 		auto err = reindexer::Error();
-		for (const auto &field : fields) {
+		for (const auto& field : fields) {
 			if (field.indexType != "composite") {
 				err = rx.AddIndex(ns, {std::string{field.indexName},
 									   {std::string{field.indexName}},
@@ -63,7 +63,7 @@ public:
 	void DefineNamespaceDataset(std::string_view ns, std::initializer_list<const IndexDeclaration> fields) {
 		DefineNamespaceDataset(*reindexer, ns, fields);
 	}
-	void DefineNamespaceDataset(std::string_view ns, const std::vector<IndexDeclaration> &fields) {
+	void DefineNamespaceDataset(std::string_view ns, const std::vector<IndexDeclaration>& fields) {
 		DefineNamespaceDataset(*reindexer, ns, fields);
 	}
 
@@ -72,7 +72,7 @@ public:
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what() << "; namespace: " << ns;
 		return item;
 	}
-	void Upsert(std::string_view ns, ItemType &item) {
+	void Upsert(std::string_view ns, ItemType& item) {
 		assertrx(!!item);
 		auto err = reindexer->WithTimeout(kBasicTimeout).Upsert(ns, item);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -82,7 +82,7 @@ public:
 		auto err = reindexer->WithTimeout(kBasicTimeout).OpenNamespace(ns);
 		ASSERT_TRUE(err.ok()) << err.what() << "; namespace: " << ns;
 	}
-	void AddIndex(std::string_view ns, const reindexer::IndexDef &idef) {
+	void AddIndex(std::string_view ns, const reindexer::IndexDef& idef) {
 		auto err = reindexer->WithTimeout(kBasicTimeout).AddIndex(ns, idef);
 		if (!err.ok()) {
 			reindexer::WrSerializer ser;
@@ -94,7 +94,7 @@ public:
 		auto err = reindexer->WithTimeout(kBasicTimeout).DropIndex(ns, reindexer::IndexDef(std::string(name)));
 		ASSERT_TRUE(err.ok()) << err.what() << "; namespace: " << ns << "; name: " << name;
 	}
-	void Upsert(std::string_view ns, ItemType &item, std::function<void(const reindexer::Error &)> cmpl) {
+	void Upsert(std::string_view ns, ItemType& item, std::function<void(const reindexer::Error&)> cmpl) {
 		assertrx(!!item);
 		auto err = reindexer->WithTimeout(kBasicTimeout).WithCompletion(cmpl).Upsert(ns, item);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -107,45 +107,47 @@ public:
 		err = reindexer->WithTimeout(kBasicTimeout).Upsert(ns, item);
 		ASSERT_TRUE(err.ok()) << err.what() << "; " << json;
 	}
-	void Update(const reindexer::Query &q, QueryResultsType &qr) {
+	void Update(const reindexer::Query& q, QueryResultsType& qr) {
 		auto err = reindexer->WithTimeout(kBasicTimeout).Update(q, qr);
 		ASSERT_TRUE(err.ok()) << err.what() << "; " << q.GetSQL(QueryUpdate);
 	}
-	size_t Update(const reindexer::Query &q) {
+	size_t Update(const reindexer::Query& q) {
 		QueryResultsType qr;
 		Update(q, qr);
 		return qr.Count();
 	}
-	QueryResultsType UpdateQR(const reindexer::Query &q) {
+	QueryResultsType UpdateQR(const reindexer::Query& q) {
 		QueryResultsType qr;
 		Update(q, qr);
 		return qr;
 	}
-	void Select(const reindexer::Query &q, QueryResultsType &qr) {
+	void Select(const reindexer::Query& q, QueryResultsType& qr) {
 		auto err = reindexer->WithTimeout(kBasicTimeout).Select(q, qr);
 		ASSERT_TRUE(err.ok()) << err.what() << "; " << q.GetSQL();
 	}
-	QueryResultsType Select(const reindexer::Query &q) {
+	QueryResultsType Select(const reindexer::Query& q) {
 		QueryResultsType qr;
 		Select(q, qr);
 		return qr;
 	}
-	void Delete(std::string_view ns, ItemType &item) {
+	void Delete(std::string_view ns, ItemType& item) {
 		assertrx(!!item);
 		auto err = reindexer->WithTimeout(kBasicTimeout).Delete(ns, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
-	size_t Delete(const reindexer::Query &q) {
+	size_t Delete(const reindexer::Query& q) {
 		QueryResultsType qr;
 		auto err = reindexer->WithTimeout(kBasicTimeout).Delete(q, qr);
 		EXPECT_TRUE(err.ok()) << err.what() << "; " << q.GetSQL(QueryDelete);
 		return qr.Count();
 	}
-	reindexer::Error DumpIndex(std::ostream &os, std::string_view ns, std::string_view index) {
+	reindexer::Error DumpIndex(std::ostream& os, std::string_view ns, std::string_view index) {
 		return reindexer->DumpIndex(os, ns, index);
 	}
-	void PrintQueryResults(const std::string &ns, const QueryResultsType &res) {
-		if (!verbose) return;
+	void PrintQueryResults(const std::string& ns, const QueryResultsType& res) {
+		if (!verbose) {
+			return;
+		}
 		{
 			ItemType rdummy(reindexer->NewItem(ns));
 			std::string outBuf;
@@ -168,7 +170,7 @@ public:
 		}
 		TestCout() << std::endl;
 	}
-	std::string PrintItem(ItemType &item) {
+	std::string PrintItem(ItemType& item) {
 		std::string outBuf = "";
 		for (auto idx = 1; idx < item.NumFields(); idx++) {
 			outBuf += std::string(item[idx].Name()) + "=";

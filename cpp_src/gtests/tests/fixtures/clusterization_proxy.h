@@ -223,7 +223,9 @@ public:
 		}
 		while (true) {
 			int k = rand() % clusterSize;
-			if (k != leaderId) return k;
+			if (k != leaderId) {
+				return k;
+			}
 		}
 	}
 };

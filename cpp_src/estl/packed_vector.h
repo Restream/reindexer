@@ -60,7 +60,9 @@ public:
 	}
 
 	void erase_back(size_type pos) {
-		for (auto it = iterator(this, data_.begin() + pos); it != end(); ++it) size_--;
+		for (auto it = iterator(this, data_.begin() + pos); it != end(); ++it) {
+			size_--;
+		}
 		data_.resize(pos);
 	}
 
@@ -76,7 +78,9 @@ public:
 		for (auto it = from; it != to; it++, i++) {
 			if (!(i % 100)) {
 				size_type sz = 0, j = 0;
-				for (auto iit = it; j < 100 && iit != to; iit++, j++) sz += iit->maxpackedsize();
+				for (auto iit = it; j < 100 && iit != to; iit++, j++) {
+					sz += iit->maxpackedsize();
+				}
 				data_.resize(p + sz);
 			}
 			p += it->pack(&*(data_.begin() + p));

@@ -29,70 +29,70 @@ public:
 	typedef QueryResults QueryResultsT;
 
 	/// Create Reindexer database object
-	ReindexerImpl(const ReindexerConfig &, uint32_t connCount, uint32_t threadsCount);
+	ReindexerImpl(const ReindexerConfig&, uint32_t connCount, uint32_t threadsCount);
 	/// Destrory Reindexer database object
 	~ReindexerImpl();
-	ReindexerImpl(const ReindexerImpl &) = delete;
-	ReindexerImpl &operator=(const ReindexerImpl &) = delete;
+	ReindexerImpl(const ReindexerImpl&) = delete;
+	ReindexerImpl& operator=(const ReindexerImpl&) = delete;
 
-	Error Connect(const std::string &dsn, const client::ConnectOpts &opts = client::ConnectOpts());
+	Error Connect(const std::string& dsn, const client::ConnectOpts& opts = client::ConnectOpts());
 	void Stop();
-	Error OpenNamespace(std::string_view nsName, const InternalRdxContext &ctx, const StorageOpts &opts, const NsReplicationOpts &replOpts);
-	Error AddNamespace(const NamespaceDef &nsDef, const InternalRdxContext &ctx, const NsReplicationOpts &replOpts);
-	Error CloseNamespace(std::string_view nsName, const InternalRdxContext &ctx);
-	Error DropNamespace(std::string_view nsName, const InternalRdxContext &ctx);
-	Error TruncateNamespace(std::string_view nsName, const InternalRdxContext &ctx);
-	Error RenameNamespace(std::string_view srcNsName, const std::string &dstNsName, const InternalRdxContext &ctx);
-	Error AddIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
-	Error UpdateIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
-	Error DropIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
-	Error SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext &ctx);
-	Error GetSchema(std::string_view nsName, int format, std::string &schema, const InternalRdxContext &ctx);
-	Error EnumNamespaces(std::vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx);
-	Error EnumDatabases(std::vector<std::string> &dbList, const InternalRdxContext &ctx);
-	Error Insert(std::string_view nsName, Item &item, RPCDataFormat format, const InternalRdxContext &ctx);
-	Error Insert(std::string_view nsName, Item &item, QueryResults &result, const InternalRdxContext &ctx);
-	Error Update(std::string_view nsName, Item &item, RPCDataFormat format, const InternalRdxContext &ctx);
-	Error Update(std::string_view nsName, Item &item, QueryResults &result, const InternalRdxContext &ctx);
-	Error Upsert(std::string_view nsName, Item &item, RPCDataFormat format, const InternalRdxContext &ctx);
-	Error Upsert(std::string_view nsName, Item &item, QueryResults &result, const InternalRdxContext &ctx);
-	Error Update(const Query &query, QueryResults &result, const InternalRdxContext &ctx);
-	Error Delete(std::string_view nsName, Item &item, RPCDataFormat format, const InternalRdxContext &ctx);
-	Error Delete(std::string_view nsName, Item &item, QueryResults &result, const InternalRdxContext &ctx);
-	Error Delete(const Query &query, QueryResults &result, const InternalRdxContext &ctx);
-	Error Select(std::string_view query, QueryResults &result, const InternalRdxContext &ctx);
-	Error Select(const Query &query, QueryResults &result, const InternalRdxContext &ctx);
-	Item NewItem(std::string_view nsName, const InternalRdxContext &ctx);
-	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data, const InternalRdxContext &ctx);
-	Error GetMeta(std::string_view nsName, const std::string &key, std::vector<ShardedMeta> &data, const InternalRdxContext &ctx);
-	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data, const InternalRdxContext &ctx);
-	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const InternalRdxContext &ctx);
-	Error DeleteMeta(std::string_view nsName, const std::string &key, const InternalRdxContext &ctx);
-	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions);
-	Error Status(bool forceCheck, const InternalRdxContext &ctx);
-	CoroTransaction NewTransaction(std::string_view nsName, const InternalRdxContext &ctx);
-	Error CommitTransaction(Transaction &tr, QueryResults &results, const InternalRdxContext &ctx);
-	Error RollBackTransaction(Transaction &tr, const InternalRdxContext &ctx);
-	Error GetReplState(std::string_view nsName, ReplicationStateV2 &state, const InternalRdxContext &ctx);
+	Error OpenNamespace(std::string_view nsName, const InternalRdxContext& ctx, const StorageOpts& opts, const NsReplicationOpts& replOpts);
+	Error AddNamespace(const NamespaceDef& nsDef, const InternalRdxContext& ctx, const NsReplicationOpts& replOpts);
+	Error CloseNamespace(std::string_view nsName, const InternalRdxContext& ctx);
+	Error DropNamespace(std::string_view nsName, const InternalRdxContext& ctx);
+	Error TruncateNamespace(std::string_view nsName, const InternalRdxContext& ctx);
+	Error RenameNamespace(std::string_view srcNsName, const std::string& dstNsName, const InternalRdxContext& ctx);
+	Error AddIndex(std::string_view nsName, const IndexDef& index, const InternalRdxContext& ctx);
+	Error UpdateIndex(std::string_view nsName, const IndexDef& index, const InternalRdxContext& ctx);
+	Error DropIndex(std::string_view nsName, const IndexDef& index, const InternalRdxContext& ctx);
+	Error SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext& ctx);
+	Error GetSchema(std::string_view nsName, int format, std::string& schema, const InternalRdxContext& ctx);
+	Error EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const InternalRdxContext& ctx);
+	Error EnumDatabases(std::vector<std::string>& dbList, const InternalRdxContext& ctx);
+	Error Insert(std::string_view nsName, Item& item, RPCDataFormat format, const InternalRdxContext& ctx);
+	Error Insert(std::string_view nsName, Item& item, QueryResults& result, const InternalRdxContext& ctx);
+	Error Update(std::string_view nsName, Item& item, RPCDataFormat format, const InternalRdxContext& ctx);
+	Error Update(std::string_view nsName, Item& item, QueryResults& result, const InternalRdxContext& ctx);
+	Error Upsert(std::string_view nsName, Item& item, RPCDataFormat format, const InternalRdxContext& ctx);
+	Error Upsert(std::string_view nsName, Item& item, QueryResults& result, const InternalRdxContext& ctx);
+	Error Update(const Query& query, QueryResults& result, const InternalRdxContext& ctx);
+	Error Delete(std::string_view nsName, Item& item, RPCDataFormat format, const InternalRdxContext& ctx);
+	Error Delete(std::string_view nsName, Item& item, QueryResults& result, const InternalRdxContext& ctx);
+	Error Delete(const Query& query, QueryResults& result, const InternalRdxContext& ctx);
+	Error Select(std::string_view query, QueryResults& result, const InternalRdxContext& ctx);
+	Error Select(const Query& query, QueryResults& result, const InternalRdxContext& ctx);
+	Item NewItem(std::string_view nsName, const InternalRdxContext& ctx);
+	Error GetMeta(std::string_view nsName, const std::string& key, std::string& data, const InternalRdxContext& ctx);
+	Error GetMeta(std::string_view nsName, const std::string& key, std::vector<ShardedMeta>& data, const InternalRdxContext& ctx);
+	Error PutMeta(std::string_view nsName, const std::string& key, std::string_view data, const InternalRdxContext& ctx);
+	Error EnumMeta(std::string_view nsName, std::vector<std::string>& keys, const InternalRdxContext& ctx);
+	Error DeleteMeta(std::string_view nsName, const std::string& key, const InternalRdxContext& ctx);
+	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions);
+	Error Status(bool forceCheck, const InternalRdxContext& ctx);
+	CoroTransaction NewTransaction(std::string_view nsName, const InternalRdxContext& ctx);
+	Error CommitTransaction(Transaction& tr, QueryResults& results, const InternalRdxContext& ctx);
+	Error RollBackTransaction(Transaction& tr, const InternalRdxContext& ctx);
+	Error GetReplState(std::string_view nsName, ReplicationStateV2& state, const InternalRdxContext& ctx);
 
-	[[nodiscard]] Error SaveNewShardingConfig(std::string_view config, int64_t sourceId, const InternalRdxContext &ctx) noexcept;
-	[[nodiscard]] Error ResetOldShardingConfig(int64_t sourceId, const InternalRdxContext &ctx) noexcept;
-	[[nodiscard]] Error ResetShardingConfigCandidate(int64_t sourceId, const InternalRdxContext &ctx) noexcept;
-	[[nodiscard]] Error RollbackShardingConfigCandidate(int64_t sourceId, const InternalRdxContext &ctx) noexcept;
-	[[nodiscard]] Error ApplyNewShardingConfig(int64_t sourceId, const InternalRdxContext &ctx) noexcept;
+	[[nodiscard]] Error SaveNewShardingConfig(std::string_view config, int64_t sourceId, const InternalRdxContext& ctx) noexcept;
+	[[nodiscard]] Error ResetOldShardingConfig(int64_t sourceId, const InternalRdxContext& ctx) noexcept;
+	[[nodiscard]] Error ResetShardingConfigCandidate(int64_t sourceId, const InternalRdxContext& ctx) noexcept;
+	[[nodiscard]] Error RollbackShardingConfigCandidate(int64_t sourceId, const InternalRdxContext& ctx) noexcept;
+	[[nodiscard]] Error ApplyNewShardingConfig(int64_t sourceId, const InternalRdxContext& ctx) noexcept;
 
 private:
 	friend class QueryResults;
 	friend class Transaction;
-	Error fetchResults(int flags, int offset, int limit, QueryResults &result);
-	Error fetchResults(int flags, QueryResults &result);
-	Error closeResults(QueryResults &result);
-	Error addTxItem(Transaction &tr, Item &&item, ItemModifyMode mode, lsn_t lsn, Transaction::Completion cmpl);
-	Error putTxMeta(Transaction &tr, std::string_view key, std::string_view value, lsn_t lsn, Transaction::Completion cmpl);
-	Error setTxTm(Transaction &tr, TagsMatcher &&tm, lsn_t lsn, Transaction::Completion cmpl);
-	Error modifyTx(Transaction &tr, Query &&q, lsn_t lsn, Transaction::Completion cmpl);
-	Item newItemTx(CoroTransaction &tr);
-	void threadLoopFun(uint32_t tid, std::promise<Error> &isRunning, const std::string &dsn, const client::ConnectOpts &opts);
+	Error fetchResults(int flags, int offset, int limit, QueryResults& result);
+	Error fetchResults(int flags, QueryResults& result);
+	Error closeResults(QueryResults& result);
+	Error addTxItem(Transaction& tr, Item&& item, ItemModifyMode mode, lsn_t lsn, Transaction::Completion cmpl);
+	Error putTxMeta(Transaction& tr, std::string_view key, std::string_view value, lsn_t lsn, Transaction::Completion cmpl);
+	Error setTxTm(Transaction& tr, TagsMatcher&& tm, lsn_t lsn, Transaction::Completion cmpl);
+	Error modifyTx(Transaction& tr, Query&& q, lsn_t lsn, Transaction::Completion cmpl);
+	Item newItemTx(CoroTransaction& tr);
+	void threadLoopFun(uint32_t tid, std::promise<Error>& isRunning, const std::string& dsn, const client::ConnectOpts& opts);
 	void stop();
 
 	enum CmdName {
@@ -160,7 +160,7 @@ private:
 	template <typename T>
 	class Future {
 	public:
-		Future(ResultType<T> *res) noexcept : res_(res) {}
+		Future(ResultType<T>* res) noexcept : res_(res) {}
 
 		void wait() {
 			if (res_) {
@@ -170,16 +170,16 @@ private:
 		}
 
 	private:
-		ResultType<T> *res_ = nullptr;
+		ResultType<T>* res_ = nullptr;
 	};
 
 	template <typename T>
 	class Promise {
 	public:
 		Promise() noexcept = default;
-		Promise(ResultType<T> &res) noexcept : res_(&res) {}
+		Promise(ResultType<T>& res) noexcept : res_(&res) {}
 
-		void set_value(T &&v) {
+		void set_value(T&& v) {
 			if (res_) {
 				std::lock_guard lck(res_->mtx);
 				res_->data = std::move(v);
@@ -190,11 +190,11 @@ private:
 		Future<T> get_future() noexcept { return Future(res_); }
 
 	private:
-		ResultType<T> *res_ = nullptr;
+		ResultType<T>* res_ = nullptr;
 	};
 
 	struct DatabaseCommandDataBase {
-		DatabaseCommandDataBase(CmdName _id, const InternalRdxContext &_ctx) noexcept : id(_id), ctx(_ctx) {}
+		DatabaseCommandDataBase(CmdName _id, const InternalRdxContext& _ctx) noexcept : id(_id), ctx(_ctx) {}
 		CmdName id;
 		InternalRdxContext ctx;
 		virtual ~DatabaseCommandDataBase() = default;
@@ -205,22 +205,22 @@ private:
 		Promise<R> ret;
 		std::tuple<P...> arguments;
 
-		DatabaseCommandData(CmdName _id, const InternalRdxContext &_ctx, P &&...p)
+		DatabaseCommandData(CmdName _id, const InternalRdxContext& _ctx, P&&... p)
 			: DatabaseCommandDataBase(_id, _ctx), arguments(std::forward<P>(p)...) {}
-		DatabaseCommandData(CmdName _id, const InternalRdxContext &_ctx, Promise<R> &&r, P &&...p)
+		DatabaseCommandData(CmdName _id, const InternalRdxContext& _ctx, Promise<R>&& r, P&&... p)
 			: DatabaseCommandDataBase(_id, _ctx), ret(std::move(r)), arguments(std::forward<P>(p)...) {}
-		DatabaseCommandData(const DatabaseCommandData &) = delete;
-		DatabaseCommandData(DatabaseCommandData &&) = default;
+		DatabaseCommandData(const DatabaseCommandData&) = delete;
+		DatabaseCommandData(DatabaseCommandData&&) = default;
 	};
 
 	class DatabaseCommand {
 	public:
-		DatabaseCommand(DatabaseCommandDataBase *cmd = nullptr) : cmd_(cmd) {}
+		DatabaseCommand(DatabaseCommandDataBase* cmd = nullptr) : cmd_(cmd) {}
 		template <typename DatabaseCommandDataT>
-		DatabaseCommand(DatabaseCommandDataT &&cmd) : owns_(true), cmd_(new DatabaseCommandData(std::forward<DatabaseCommandDataT>(cmd))) {}
-		DatabaseCommand(DatabaseCommand &&r) noexcept : owns_(r.owns_), cmd_(r.cmd_) { r.owns_ = false; }
-		DatabaseCommand(const DatabaseCommand &r) = delete;
-		DatabaseCommand &operator=(DatabaseCommand &&r) {
+		DatabaseCommand(DatabaseCommandDataT&& cmd) : owns_(true), cmd_(new DatabaseCommandData(std::forward<DatabaseCommandDataT>(cmd))) {}
+		DatabaseCommand(DatabaseCommand&& r) noexcept : owns_(r.owns_), cmd_(r.cmd_) { r.owns_ = false; }
+		DatabaseCommand(const DatabaseCommand& r) = delete;
+		DatabaseCommand& operator=(DatabaseCommand&& r) {
 			if (this != &r) {
 				if (owns_) {
 					delete cmd_;
@@ -231,27 +231,27 @@ private:
 			}
 			return *this;
 		}
-		DatabaseCommand &operator=(const DatabaseCommand &r) = delete;
+		DatabaseCommand& operator=(const DatabaseCommand& r) = delete;
 		~DatabaseCommand() {
 			if (owns_) {
 				delete cmd_;
 			}
 		}
 
-		DatabaseCommandDataBase *Data() noexcept { return cmd_; }
+		DatabaseCommandDataBase* Data() noexcept { return cmd_; }
 
 	private:
 		bool owns_ = false;
-		DatabaseCommandDataBase *cmd_;
+		DatabaseCommandDataBase* cmd_;
 	};
 
 	template <typename R, typename... Args>
-	R sendCommand(CmdName c, const InternalRdxContext &ctx, Args &&...args) {
+	R sendCommand(CmdName c, const InternalRdxContext& ctx, Args&&... args) {
 		return sendCommand<false, R, Args...>(nullptr, c, ctx, std::forward<Args>(args)...);
 	}
 
 	template <bool withClient, typename R, typename... Args>
-	R sendCommand(const void *conn, CmdName c, const InternalRdxContext &ctx, Args &&...args) {
+	R sendCommand(const void* conn, CmdName c, const InternalRdxContext& ctx, Args&&... args) {
 		if (!ctx.cmpl()) {
 			ResultType<R> res;
 			Promise<R> promise(res);
@@ -262,11 +262,11 @@ private:
 			if constexpr (withClient) {
 				err = commandsQueue_.Push(
 					conn,
-					DatabaseCommand(static_cast<DatabaseCommandDataBase *>(&cmd)));	 // pointer to stack data. 'wait' in this function!
+					DatabaseCommand(static_cast<DatabaseCommandDataBase*>(&cmd)));	// pointer to stack data. 'wait' in this function!
 			} else {
 				(void)conn;
 				err = commandsQueue_.Push(
-					DatabaseCommand(static_cast<DatabaseCommandDataBase *>(&cmd)));	 // pointer to stack data. 'wait' in this function!
+					DatabaseCommand(static_cast<DatabaseCommandDataBase*>(&cmd)));	// pointer to stack data. 'wait' in this function!
 			}
 			if (err.ok()) {
 				future.wait();
@@ -296,9 +296,9 @@ private:
 		return R(Error(errForbidden, "Unable to use this method with completion callback"));
 	}
 
-	bool isNetworkError(const Error &err) { return err.code() == errNetwork; }
-	bool isNetworkError(const CoroTransaction &tx) { return isNetworkError(tx.Status()); }
-	bool isNetworkError(const Item &item) { return isNetworkError(item.Status()); }
+	bool isNetworkError(const Error& err) { return err.code() == errNetwork; }
+	bool isNetworkError(const CoroTransaction& tx) { return isNetworkError(tx.Status()); }
+	bool isNetworkError(const Item& item) { return isNetworkError(item.Status()); }
 
 	template <typename>
 	struct CalculateCommandType;
@@ -309,8 +309,8 @@ private:
 
 	// cmd may be owned by another thread and will be invalidated after this function
 	template <typename F>
-	void execCommand(DatabaseCommandDataBase *cmd, F &&fun) {
-		auto cd = dynamic_cast<typename CalculateCommandType<decltype(&F::operator())>::type *>(cmd);
+	void execCommand(DatabaseCommandDataBase* cmd, F&& fun) {
+		auto cd = dynamic_cast<typename CalculateCommandType<decltype(&F::operator())>::type*>(cmd);
 		if (cd) {
 			auto r = std::apply(std::move(fun), cd->arguments);
 			if constexpr (std::is_same_v<decltype(r), Error>) {
@@ -340,14 +340,14 @@ private:
 	};
 	class CommandsQueue {
 	public:
-		Error Push(DatabaseCommand &&cmd) {
+		Error Push(DatabaseCommand&& cmd) {
 			uint32_t minReq = std::numeric_limits<uint32_t>::max();
-			ThreadData *targetTh = nullptr;
+			ThreadData* targetTh = nullptr;
 			std::unique_lock<std::mutex> lck(mtx_);
 			if (!isValid_) {
 				return Error(errNotValid, "Reindexer command queue is invalidated");
 			}
-			for (auto &th : thData_) {
+			for (auto& th : thData_) {
 				const auto reqCnt = th.reqCnt.load(std::memory_order_acquire);
 				if (reqCnt < minReq) {
 					minReq = reqCnt;
@@ -367,7 +367,7 @@ private:
 			}
 			return Error();
 		}
-		Error Push(const void *conn, DatabaseCommand &&cmd) {
+		Error Push(const void* conn, DatabaseCommand&& cmd) {
 			std::unique_lock<std::mutex> lck(mtx_);
 			if (!isValid_) {
 				return Error(errNotValid, "Reindexer command queue is invalidated");
@@ -376,7 +376,7 @@ private:
 			if (found == thByConns_.end()) {
 				return Error(errParams, "Request for incorrect connection");
 			}
-			auto &th = *found->second;
+			auto& th = *found->second;
 			const bool notify = !th.isReading && (th.personalQueue.empty());
 			th.isReading = true;
 			th.personalQueue.emplace_back(std::move(cmd));
@@ -387,26 +387,26 @@ private:
 			}
 			return Error();
 		}
-		void Get(uint32_t tid, h_vector<DatabaseCommand, 16> &cmds);
+		void Get(uint32_t tid, h_vector<DatabaseCommand, 16>& cmds);
 		void OnCmdDone(uint32_t tid);
-		void Invalidate(uint32_t tid, h_vector<DatabaseCommand, 16> &cmds);
-		void Init(std::deque<WorkerThread> &threads);
+		void Invalidate(uint32_t tid, h_vector<DatabaseCommand, 16>& cmds);
+		void Init(std::deque<WorkerThread>& threads);
 		void SetValid();
 		void ClearConnectionsMapping();
-		void RegisterConn(uint32_t tid, const void *conn);
+		void RegisterConn(uint32_t tid, const void* conn);
 
 	private:
 		struct ThreadData {
-			ThreadData(net::ev::async &async) noexcept : commandAsync(async) {}
+			ThreadData(net::ev::async& async) noexcept : commandAsync(async) {}
 			std::atomic<uint32_t> reqCnt = 0;
 			h_vector<DatabaseCommand, 16> personalQueue;
-			net::ev::async &commandAsync;
+			net::ev::async& commandAsync;
 			bool isReading = false;
 		};
 
 		bool isValid_ = false;
 		RecyclingList<DatabaseCommand, 64> sharedQueue_;
-		fast_hash_map<const void *, ThreadData *> thByConns_;
+		fast_hash_map<const void*, ThreadData*> thByConns_;
 		std::deque<ThreadData> thData_;
 		std::mutex mtx_;
 	};
@@ -434,8 +434,8 @@ private:
 	INamespaces::PtrT sharedNamespaces_;
 	std::atomic<bool> requiresStatusCheck_ = {true};
 
-	void coroInterpreter(Connection<DatabaseCommand> &, ConnectionsPool<DatabaseCommand> &, uint32_t tid) noexcept;
-	Error fetchResultsImpl(int flags, int offset, int limit, CoroQueryResults &qr);
+	void coroInterpreter(Connection<DatabaseCommand>&, ConnectionsPool<DatabaseCommand>&, uint32_t tid) noexcept;
+	Error fetchResultsImpl(int flags, int offset, int limit, CoroQueryResults& qr);
 };
 }  // namespace client
 }  // namespace reindexer

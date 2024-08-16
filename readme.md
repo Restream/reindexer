@@ -1257,6 +1257,11 @@ Example code for aggregate `items` by `price` and `name`
 	}
 ```
 
+Sorting by aggregated`FACET`'s fields has distinct syntax in it's SQL version:
+```sql
+SELECT FACET(name, price ORDER BY "name" ASC, "count" DESC) FROM items
+```
+
 ### Search in array fields with matching array indexes
 
 Reindexer allows to search data in array fields when matching values have same indexes positions.
@@ -1529,7 +1534,7 @@ There are predefined events collections in [streamopts.go](#events/streamopts.go
 
 `EventsStreamOptions` also allow to configure events contents: LSN, database name, timestamps, etc. Currently events do not contain related documents' JSON/CJSON.
 
-Note: Reindexer's core is using internal queue to collect and send events to the subscribers. Events objects are shared bentween events queue and replication queue. Max size of those queues may be configured via `maxupdatessize`(standalone)/`MaxUpdatesSizeBytes`(builtinserver)/`WithMaxUpdatesSize()`(builtin) DB parameter (default size is 1 GB).
+Note: Reindexer's core is using internal queue to collect and send events to the subscribers. Events objects are shared between events queue and replication queue. Max size of those queues may be configured via `maxupdatessize`(standalone)/`MaxUpdatesSizeBytes`(builtinserver)/`WithMaxUpdatesSize()`(builtin) DB parameter (default size is 1 GB).
 In case of queue overflow some of the events may be dropped and `EventTypeUpdatesDrop` will be generated instead of them.
 
 ## Logging, debug, profiling and tracing

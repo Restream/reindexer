@@ -18,7 +18,7 @@ void ShardingProxy::ShutdownCluster() {
 	}
 }
 
-auto ShardingProxy::isWithSharding(const Query &q, const RdxContext &ctx, int &actualShardId, int64_t &cfgSourceId) const {
+auto ShardingProxy::isWithSharding(const Query& q, const RdxContext& ctx, int& actualShardId, int64_t& cfgSourceId) const {
 	using ret_type = std::optional<decltype(shardingRouter_.SharedLock(ctx))>;
 
 	if (q.IsLocal()) {
@@ -54,7 +54,7 @@ auto ShardingProxy::isWithSharding(const Query &q, const RdxContext &ctx, int &a
 	return ret_type(std::move(lockedShardingRouter));
 }
 
-auto ShardingProxy::isWithSharding(std::string_view nsName, const RdxContext &ctx) const {
+auto ShardingProxy::isWithSharding(std::string_view nsName, const RdxContext& ctx) const {
 	using ret_type = std::optional<decltype(shardingRouter_.SharedLock(ctx))>;
 
 	if (nsName.size() && (nsName[0] == '#' || nsName[0] == '@')) {
@@ -73,7 +73,7 @@ auto ShardingProxy::isWithSharding(std::string_view nsName, const RdxContext &ct
 	return isWithSharding(ctx) ? ret_type(std::move(lockedShardingRouter)) : ret_type{};
 }
 
-bool ShardingProxy::isWithSharding(const RdxContext &ctx) const noexcept {
+bool ShardingProxy::isWithSharding(const RdxContext& ctx) const noexcept {
 	if (int(ctx.ShardId()) == ShardingKeyType::ProxyOff) {
 		return false;
 	}
@@ -86,33 +86,39 @@ using ImplCallBackT = ReindexerImpl::CallbackT;
 ShardingProxy::ShardingProxy(ReindexerConfig cfg)
 	: impl_(std::move(cfg), activities_,
 			{{{"apply_sharding_config", ImplCallBackT::Type::User},
-			  [this](const gason::JsonNode &action, const ImplCallBackT::ExtrasT &, const RdxContext &ctx) {
-				  auto &locallyNode = action["locally"];
+			  [this](const gason::JsonNode& action, const ImplCallBackT::ExtrasT&, const RdxContext& ctx) {
+				  auto& locallyNode = action["locally"];
 				  const bool locally = !locallyNode.empty() && locallyNode.As<bool>();
 				  if (locally) {
 					  const std::optional<int64_t> externalSourceId =
 						  action["source_id"].empty() ? std::optional<int64_t>() : action["source_id"].As<int64_t>();
-					  Error (ShardingProxy::*method)(const gason::JsonNode &, std::optional<int64_t>, const RdxContext &) noexcept =
+					  Error (ShardingProxy::*method)(const gason::JsonNode&, std::optional<int64_t>, const RdxContext&) noexcept =
 						  &ShardingProxy::handleNewShardingConfigLocally;
 					  auto err = std::invoke(method, this, action["config"], externalSourceId, ctx);
-					  if (!err.ok()) throw err;
+					  if (!err.ok()) {
+						  throw err;
+					  }
 				  } else {
 					  auto err = std::invoke(&ShardingProxy::handleNewShardingConfig, this, action["config"], ctx);
-					  if (!err.ok()) throw err;
+					  if (!err.ok()) {
+						  throw err;
+					  }
 				  }
 			  }},
 			 {{"leader_config_process", ImplCallBackT::Type::System},
-			  [this](const gason::JsonNode &config, const ImplCallBackT::ExtrasT &extras, const RdxContext &ctx) {
-				  auto *sourceIdPtr = std::get_if<ImplCallBackT::SourceIdT>(&extras);
+			  [this](const gason::JsonNode& config, const ImplCallBackT::ExtrasT& extras, const RdxContext& ctx) {
+				  auto* sourceIdPtr = std::get_if<ImplCallBackT::SourceIdT>(&extras);
 				  std::optional<int64_t> externalSourceId;
 				  if (sourceIdPtr) {
 					  externalSourceId = sourceIdPtr->sourceId;
 				  }
 				  auto err = handleNewShardingConfigLocally<>(config, externalSourceId, ctx);
-				  if (!err.ok()) throw err;
+				  if (!err.ok()) {
+					  throw err;
+				  }
 			  }}}) {}
 
-Error ShardingProxy::Connect(const std::string &dsn, ConnectOpts opts) {
+Error ShardingProxy::Connect(const std::string& dsn, ConnectOpts opts) {
 	try {
 		bool connected = connected_.load(std::memory_order_acquire);
 		// Expecting for the first time Connect is being called under exlusive lock.
@@ -138,27 +144,33 @@ Error ShardingProxy::Connect(const std::string &dsn, ConnectOpts opts) {
 			connected_.store(err.ok(), std::memory_order_release);
 		}
 		return err;
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
 template <ShardingProxy::ConfigResetFlag resetFlag>
-Error ShardingProxy::resetShardingConfigs(int64_t sourceId, const RdxContext &ctx) noexcept {
+Error ShardingProxy::resetShardingConfigs(int64_t sourceId, const RdxContext& ctx) noexcept {
 	try {
 		// To avoid connection errors, it is necessary to copy the connections from the current ShardingConfig
 		// since ParallelExecutor consistently calls the functions that disconnect shards
 		std::optional<cluster::ShardingConfig> config = std::nullopt;
 		obtainConfigForResetRouting(config, resetFlag, ctx);
 
-		if (!config) return Error();
+		if (!config) {
+			return Error();
+		}
 
 		auto router = sharding::LocatorService(impl_, *config);
 		auto err = router.Start();
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 
 		auto oldConnections = router.GetAllShardsConnections(err);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 
 		ParallelExecutor exec(router.ActualShardId());
 		return exec.Exec(
@@ -174,14 +186,14 @@ Error ShardingProxy::resetShardingConfigs(int64_t sourceId, const RdxContext &ct
 	CATCH_AND_RETURN
 }
 
-void ShardingProxy::obtainConfigForResetRouting(std::optional<cluster::ShardingConfig> &config, ConfigResetFlag resetFlag,
-												const RdxContext &ctx) const {
+void ShardingProxy::obtainConfigForResetRouting(std::optional<cluster::ShardingConfig>& config, ConfigResetFlag resetFlag,
+												const RdxContext& ctx) const {
 	auto lockedShardingRouter = shardingRouter_.SharedLock(ctx);
 
 	if (!shardingInitialized_.load(std::memory_order_acquire)) {
 		if (resetFlag == ConfigResetFlag::RollbackApplied) {
 			auto lockedConfigCandidate = configCandidate_.SharedLock(ctx);
-			if (auto &cfg = lockedConfigCandidate.Config()) {
+			if (auto& cfg = lockedConfigCandidate.Config()) {
 				config = *cfg;
 				return;
 			} else {
@@ -218,23 +230,31 @@ int64_t ShardingProxy::generateSourceId() const {
 	return sourceId;
 }
 
-Error ShardingProxy::handleNewShardingConfig(const gason::JsonNode &configJSON, const RdxContext &ctx) noexcept {
+Error ShardingProxy::handleNewShardingConfig(const gason::JsonNode& configJSON, const RdxContext& ctx) noexcept {
 	try {
-		if (stringifyJson(configJSON).empty()) return Error(errParams, "New sharding config is empty");
+		if (stringifyJson(configJSON).empty()) {
+			return Error(errParams, "New sharding config is empty");
+		}
 
 		cluster::ShardingConfig config;
 		auto err = config.FromJSON(configJSON);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 		config.thisShardId = ShardingKeyType::NotSetShard;
 
 		checkSyncCluster(config);
 
 		auto router = std::make_unique<sharding::LocatorService>(impl_, config);
 		err = router->Start();
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 
 		auto connections = router->GetAllShardsConnections(err);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 
 		auto sourceId = generateSourceId();
 
@@ -242,7 +262,7 @@ Error ShardingProxy::handleNewShardingConfig(const gason::JsonNode &configJSON, 
 
 		std::unordered_map<int, std::string> cfgsStorage;
 
-		auto SaveNewShardingConfigWrapper = [&cfgsStorage](client::Reindexer &conn, cluster::ShardingConfig config, int64_t sourceId,
+		auto SaveNewShardingConfigWrapper = [&cfgsStorage](client::Reindexer& conn, cluster::ShardingConfig config, int64_t sourceId,
 														   int shardId) {
 			config.thisShardId = shardId;
 			cfgsStorage[shardId] = config.GetJSON();
@@ -254,7 +274,7 @@ Error ShardingProxy::handleNewShardingConfig(const gason::JsonNode &configJSON, 
 		// Saving config candidates in shards obtained from received config
 		err = execNodes.Exec(
 			ctx, sharding::ConnectionsPtr(connections), SaveNewShardingConfigWrapper,
-			[](const cluster::ShardingConfig &, int64_t) { return Error(); }, config, sourceId);
+			[](const cluster::ShardingConfig&, int64_t) { return Error(); }, config, sourceId);
 
 		if (!err.ok()) {
 			// Resetting sent config candidates due to errors
@@ -266,7 +286,9 @@ Error ShardingProxy::handleNewShardingConfig(const gason::JsonNode &configJSON, 
 
 		// Resetting existing shardings in case of successful saving of all candidates
 		err = resetShardingConfigs<ConfigResetFlag::ResetExistent>(sourceId, ctx);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 
 		// Applying previously saved config candidates
 		err = execNodes.Exec(
@@ -282,14 +304,15 @@ Error ShardingProxy::handleNewShardingConfig(const gason::JsonNode &configJSON, 
 	CATCH_AND_RETURN
 }
 
-Error ShardingProxy::handleNewShardingConfigLocally(const gason::JsonNode &configJSON, std::optional<int64_t> externalSourceId,
-													const RdxContext &ctx) noexcept {
+Error ShardingProxy::handleNewShardingConfigLocally(const gason::JsonNode& configJSON, std::optional<int64_t> externalSourceId,
+													const RdxContext& ctx) noexcept {
 	try {
 		if (configJSON.empty()) {
-			if (auto lockedConfigCandidate = configCandidate_.SharedLock(ctx); lockedConfigCandidate.Config())
+			if (auto lockedConfigCandidate = configCandidate_.SharedLock(ctx); lockedConfigCandidate.Config()) {
 				return Error(errParams,
 							 "Attempt to reset the config if there is an unprocessed config candidate with sourceId - %d. Try later.",
 							 lockedConfigCandidate.SourceId());
+			}
 
 			auto lockedShardingRouter = shardingRouter_.UniqueLock(ctx);
 			[[maybe_unused]] auto err = impl_.ResetShardingConfig();
@@ -305,12 +328,14 @@ Error ShardingProxy::handleNewShardingConfigLocally(const gason::JsonNode &confi
 }
 
 template <typename ConfigType>
-Error ShardingProxy::handleNewShardingConfigLocally(const ConfigType &rawConfig, std::optional<int64_t> externalSourceId,
-													const RdxContext &ctx) noexcept {
+Error ShardingProxy::handleNewShardingConfigLocally(const ConfigType& rawConfig, std::optional<int64_t> externalSourceId,
+													const RdxContext& ctx) noexcept {
 	try {
 		cluster::ShardingConfig config;
 		auto err = config.FromJSON(rawConfig);
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 
 		int64_t sourceId;
 		if (externalSourceId.has_value()) {
@@ -328,7 +353,7 @@ Error ShardingProxy::handleNewShardingConfigLocally(const ConfigType &rawConfig,
 	CATCH_AND_RETURN
 }
 
-bool ShardingProxy::needProxyWithinCluster(const RdxContext &ctx) {
+bool ShardingProxy::needProxyWithinCluster(const RdxContext& ctx) {
 	if (!ctx.GetOriginLSN().isEmpty()) {
 		return false;
 	}
@@ -374,13 +399,13 @@ struct ShardingProxy::ShardingProxyMethods {
 };
 
 template <auto RequestType, typename Request>
-void ShardingProxy::shardingControlRequestAction(const Request &request, const RdxContext &ctx) {
+void ShardingProxy::shardingControlRequestAction(const Request& request, const RdxContext& ctx) {
 	auto data = std::get<RequestEnum2Types::GetType<RequestType>>(request.data);
 
 	if (needProxyWithinCluster(ctx)) {
 		Error err;
 		auto clusterMethod = ClusterProxyMethods::GetValue<RequestType>();
-		if constexpr (std::is_invocable_v<decltype(clusterMethod), ClusterProxy *, std::string_view, int64_t, const RdxContext &>) {
+		if constexpr (std::is_invocable_v<decltype(clusterMethod), ClusterProxy*, std::string_view, int64_t, const RdxContext&>) {
 			err = (impl_.*clusterMethod)(data.config, data.sourceId, ctx);
 		} else {
 			err = (impl_.*clusterMethod)(data.sourceId, ctx);
@@ -393,7 +418,7 @@ void ShardingProxy::shardingControlRequestAction(const Request &request, const R
 	(this->*ShardingProxyMethods::Map::GetValue<RequestType>())(std::move(data), ctx);
 }
 
-Error ShardingProxy::ShardingControlRequest(const sharding::ShardingControlRequestData &request, const RdxContext &ctx) noexcept {
+Error ShardingProxy::ShardingControlRequest(const sharding::ShardingControlRequestData& request, const RdxContext& ctx) noexcept {
 	try {
 		using Type = sharding::ShardingControlRequestData::Type;
 
@@ -420,7 +445,7 @@ Error ShardingProxy::ShardingControlRequest(const sharding::ShardingControlReque
 			}
 			case Type::ApplyLeaderConfig: {
 				assertrx(!ctx.GetOriginLSN().isEmpty());
-				const auto &data = std::get<sharding::ApplyLeaderConfigCommand>(request.data);
+				const auto& data = std::get<sharding::ApplyLeaderConfigCommand>(request.data);
 				return data.config.empty() ? handleNewShardingConfigLocally(gason::JsonNode::EmptyNode(), std::optional<int64_t>(), ctx)
 										   : handleNewShardingConfigLocally<span<char>>(std::string(data.config), data.sourceId, ctx);
 			}
@@ -432,15 +457,17 @@ Error ShardingProxy::ShardingControlRequest(const sharding::ShardingControlReque
 	return Error();
 }
 
-void ShardingProxy::saveShardingCfgCandidate(const sharding::SaveConfigCommand &data, const RdxContext &ctx) {
+void ShardingProxy::saveShardingCfgCandidate(const sharding::SaveConfigCommand& data, const RdxContext& ctx) {
 	cluster::ShardingConfig config;
 	auto err = config.FromJSON(std::string(data.config));
-	if (!err.ok()) throw err;
+	if (!err.ok()) {
+		throw err;
+	}
 
 	saveShardingCfgCandidateImpl(std::move(config), data.sourceId, ctx);
 }
 
-void ShardingProxy::saveShardingCfgCandidateImpl(cluster::ShardingConfig config, int64_t sourceId, const RdxContext &ctx) {
+void ShardingProxy::saveShardingCfgCandidateImpl(cluster::ShardingConfig config, int64_t sourceId, const RdxContext& ctx) {
 	if (ctx.GetOriginLSN().isEmpty()) {
 		checkNamespaces(config, ctx);
 	}
@@ -477,15 +504,19 @@ void ShardingProxy::saveShardingCfgCandidateImpl(cluster::ShardingConfig config,
 
 		for (auto i = 0; i < iters; ++i) {
 			sleep_for(period);
-			if (configCandidate_.NeedStopReseter()) return;
+			if (configCandidate_.NeedStopReseter()) {
+				return;
+			}
 		}
 
-		while (!configCandidate_.TryResetConfig()) sleep_for(period);
+		while (!configCandidate_.TryResetConfig()) {
+			sleep_for(period);
+		}
 	});
 }
 
 Query ShardingProxy::NamespaceDataChecker::query() const {
-	using NextOp = Query &(Query::*)() &;
+	using NextOp = Query& (Query::*)()&;
 	const bool isDefault = ns_.defaultShard == thisShardId_;
 	auto nextOp = isDefault ? NextOp(&Query::Or) : NextOp(&Query::Not);
 
@@ -497,11 +528,13 @@ Query ShardingProxy::NamespaceDataChecker::query() const {
 	}
 
 	VariantArray vals;
-	for (const auto &key : ns_.keys) {
+	for (const auto& key : ns_.keys) {
 		bool isShardKey = key.shardId == thisShardId_;
-		if (isDefault == isShardKey) continue;
+		if (isDefault == isShardKey) {
+			continue;
+		}
 
-		for (const auto &segment : key.values) {
+		for (const auto& segment : key.values) {
 			if (segment.left == segment.right) {
 				vals.emplace_back(segment.left);
 			} else {
@@ -517,28 +550,32 @@ Query ShardingProxy::NamespaceDataChecker::query() const {
 	return query;
 }
 
-bool ShardingProxy::NamespaceDataChecker::needQueryCheck(const cluster::ShardingConfig &oldConfig) const {
+bool ShardingProxy::NamespaceDataChecker::needQueryCheck(const cluster::ShardingConfig& oldConfig) const {
 	using Keys = decltype(cluster::ShardingConfig::Key::values);
 
 	Keys empty;
-	auto keys = [&empty](const auto &keys, int thisShardId) -> const auto & {
-		if (auto it = std::find_if(keys.begin(), keys.end(), [thisShardId](const auto &key) { return key.shardId == thisShardId; });
+	auto keys = [&empty](const auto& keys, int thisShardId) -> const auto& {
+		if (auto it = std::find_if(keys.begin(), keys.end(), [thisShardId](const auto& key) { return key.shardId == thisShardId; });
 			it != keys.end()) {
 			return it->values;
 		}
 		return empty;
 	};
 
-	auto it = std::find_if(oldConfig.namespaces.begin(), oldConfig.namespaces.end(), [this](const auto &ns) { return ns.ns == ns_.ns; });
+	auto it = std::find_if(oldConfig.namespaces.begin(), oldConfig.namespaces.end(), [this](const auto& ns) { return ns.ns == ns_.ns; });
 
-	if (it == oldConfig.namespaces.end() || oldConfig.thisShardId == it->defaultShard) return true;
+	if (it == oldConfig.namespaces.end() || oldConfig.thisShardId == it->defaultShard) {
+		return true;
+	}
 
-	const auto &oldThisShardKeys = keys(it->keys, oldConfig.thisShardId);
+	const auto& oldThisShardKeys = keys(it->keys, oldConfig.thisShardId);
 
 	if (thisShardId_ == ns_.defaultShard) {
 		Keys allNewExceptThisShard;
-		for (const auto &key : ns_.keys) {
-			if (key.shardId == thisShardId_) continue;
+		for (const auto& key : ns_.keys) {
+			if (key.shardId == thisShardId_) {
+				continue;
+			}
 			allNewExceptThisShard.insert(allNewExceptThisShard.end(), key.values.begin(), key.values.end());
 		}
 
@@ -548,7 +585,7 @@ bool ShardingProxy::NamespaceDataChecker::needQueryCheck(const cluster::Sharding
 	}
 }
 
-void ShardingProxy::NamespaceDataChecker::Check(ShardingProxy &proxy, const RdxContext &ctx) {
+void ShardingProxy::NamespaceDataChecker::Check(ShardingProxy& proxy, const RdxContext& ctx) {
 	if (auto oldConfigPtr = proxy.impl_.GetShardingConfig(); oldConfigPtr && !needQueryCheck(*oldConfigPtr)) {
 		logPrintf(LogInfo, "Verification of the sharding keys for the namespace '%s' on shard %d is not required", ns_.ns, thisShardId_);
 		return;
@@ -574,20 +611,21 @@ void ShardingProxy::NamespaceDataChecker::Check(ShardingProxy &proxy, const RdxC
 	}
 }
 
-void ShardingProxy::checkNamespaces(const cluster::ShardingConfig &config, const RdxContext &ctx) {
-	for (const auto &ns : config.namespaces) {
-		if (auto nsPtr = impl_.GetNamespacePtrNoThrow(ns.ns, ctx); nsPtr && nsPtr->GetItemsCount())
+void ShardingProxy::checkNamespaces(const cluster::ShardingConfig& config, const RdxContext& ctx) {
+	for (const auto& ns : config.namespaces) {
+		if (auto nsPtr = impl_.GetNamespacePtrNoThrow(ns.ns, ctx); nsPtr && nsPtr->GetItemsCount()) {
 			NamespaceDataChecker(ns, config.thisShardId).Check(*this, ctx);
+		}
 	}
 }
 
-void ShardingProxy::checkSyncCluster(const cluster::ShardingConfig &shardingConfig) {
+void ShardingProxy::checkSyncCluster(const cluster::ShardingConfig& shardingConfig) {
 	client::ReindexerConfig cfg;
 	cfg.AppName = "sharding_proxy_check_cluster_dsns";
 	cfg.SyncRxCoroCount = 1;
 	cfg.EnableCompression = true;
 	cfg.RequestDedicatedThread = true;
-	for (const auto &[shardId, hosts] : shardingConfig.shards) {
+	for (const auto& [shardId, hosts] : shardingConfig.shards) {
 		auto dsn = hosts.front();
 		auto connection = std::make_shared<client::Reindexer>(client::Reindexer(cfg, 1, 1));
 
@@ -600,21 +638,27 @@ void ShardingProxy::checkSyncCluster(const cluster::ShardingConfig &shardingConf
 
 		client::QueryResults qr;
 		auto err = connection->WithTimeout(shardingConfig.reconnectTimeout).Select(q, qr);
-		if (!err.ok()) throw err;
+		if (!err.ok()) {
+			throw err;
+		}
 
 		WrSerializer wser;
 		err = qr.begin().GetJSON(wser, false);
-		if (!err.ok()) throw err;
+		if (!err.ok()) {
+			throw err;
+		}
 
 		cluster::ReplicationStats stats;
 		err = stats.FromJSON(giftStr(wser.Slice()));
-		if (!err.ok()) throw err;
+		if (!err.ok()) {
+			throw err;
+		}
 
 		if (!stats.nodeStats.empty() && stats.nodeStats.size() != hosts.size()) {
 			throw Error(errLogic, "Not equal count of dsns in cluster and sharding config[%s]", dsn);
 		}
 
-		for (const auto &nodeStat : stats.nodeStats) {
+		for (const auto& nodeStat : stats.nodeStats) {
 			if (auto it = std::find(hosts.begin(), hosts.end(), nodeStat.dsn); it == hosts.end()) {
 				throw Error(errLogic, "Different sets of DSNs in cluster and sharding config");
 			}
@@ -622,10 +666,10 @@ void ShardingProxy::checkSyncCluster(const cluster::ShardingConfig &shardingConf
 	}
 }
 
-void ShardingProxy::applyNewShardingConfig(const sharding::ApplyConfigCommand &data, const RdxContext &ctx) {
+void ShardingProxy::applyNewShardingConfig(const sharding::ApplyConfigCommand& data, const RdxContext& ctx) {
 	auto lockedConfigCandidate = configCandidate_.UniqueLock(ctx);
 	int64_t sourceId = data.sourceId;
-	auto &config = lockedConfigCandidate.Config();
+	auto& config = lockedConfigCandidate.Config();
 
 	if (!config) {
 		if (sourceId == lockedConfigCandidate.SourceId()) {
@@ -636,9 +680,10 @@ void ShardingProxy::applyNewShardingConfig(const sharding::ApplyConfigCommand &d
 		}
 	}
 
-	if (sourceId != lockedConfigCandidate.SourceId())
+	if (sourceId != lockedConfigCandidate.SourceId()) {
 		throw Error(errParams, "Attempt to apply a config with a different sourceId - %d. Current sourceId - %d", sourceId,
 					lockedConfigCandidate.SourceId());
+	}
 
 	if (auto oldConfig = impl_.GetShardingConfig()) {
 		if (*oldConfig == *config) {
@@ -672,12 +717,13 @@ void ShardingProxy::applyNewShardingConfig(const sharding::ApplyConfigCommand &d
 }
 
 template <ShardingProxy::ConfigResetFlag resetFlag>
-void ShardingProxy::resetOrRollbackShardingConfig(const sharding::ResetConfigCommand &data, const RdxContext &ctx) {
+void ShardingProxy::resetOrRollbackShardingConfig(const sharding::ResetConfigCommand& data, const RdxContext& ctx) {
 	int64_t sourceId = data.sourceId;
 	auto lockedConfigCandidate = configCandidate_.UniqueLock(ctx);
-	if (lockedConfigCandidate.Config() && sourceId != lockedConfigCandidate.SourceId())
+	if (lockedConfigCandidate.Config() && sourceId != lockedConfigCandidate.SourceId()) {
 		throw Error(errParams, "Attempt to %s a config with a different sourceId - %d. Current sourceId - %d",
 					resetFlag == ConfigResetFlag::RollbackApplied ? "rollback" : "reset", sourceId, lockedConfigCandidate.SourceId());
+	}
 
 	auto lockedShardingRouter = shardingRouter_.UniqueLock(ctx);
 
@@ -691,7 +737,7 @@ void ShardingProxy::resetOrRollbackShardingConfig(const sharding::ResetConfigCom
 			  resetFlag == ConfigResetFlag::RollbackApplied ? "Candidate in" : "Old", sourceId);
 }
 
-void ShardingProxy::resetConfigCandidate(const sharding::ResetConfigCommand &data, const RdxContext &ctx) {
+void ShardingProxy::resetConfigCandidate(const sharding::ResetConfigCommand& data, const RdxContext& ctx) {
 	int64_t sourceId = data.sourceId;
 	auto lockedConfigCandidate = configCandidate_.UniqueLock(ctx);
 
@@ -711,200 +757,224 @@ void ShardingProxy::resetConfigCandidate(const sharding::ResetConfigCommand &dat
 	logPrintf(LogInfo, "Sharding config candidate was reseted. Source - %d", sourceId);
 }
 
-Error ShardingProxy::OpenNamespace(std::string_view nsName, const StorageOpts &opts, const NsReplicationOpts &replOpts,
-								   const RdxContext &ctx) {
+Error ShardingProxy::OpenNamespace(std::string_view nsName, const StorageOpts& opts, const NsReplicationOpts& replOpts,
+								   const RdxContext& ctx) {
 	try {
-		auto localOpen = [this, &ctx](std::string_view nsName, const StorageOpts &opts, const NsReplicationOpts &replOpts) {
+		auto localOpen = [this, &ctx](std::string_view nsName, const StorageOpts& opts, const NsReplicationOpts& replOpts) {
 			return impl_.OpenNamespace(nsName, opts, replOpts, ctx);
 		};
 
 		if (auto lckRouterOpt = isWithSharding(nsName, ctx)) {
 			Error err = (*lckRouterOpt)->AwaitShards(ctx);
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 
 			return delegateToShards(*lckRouterOpt, ctx, &client::Reindexer::OpenNamespace, localOpen, nsName, opts, replOpts);
 		}
 		return localOpen(nsName, opts, replOpts);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::AddNamespace(const NamespaceDef &nsDef, const NsReplicationOpts &replOpts, const RdxContext &ctx) {
+Error ShardingProxy::AddNamespace(const NamespaceDef& nsDef, const NsReplicationOpts& replOpts, const RdxContext& ctx) {
 	try {
-		auto localAdd = [this, &ctx](const NamespaceDef &nsDef, const NsReplicationOpts &replOpts) {
+		auto localAdd = [this, &ctx](const NamespaceDef& nsDef, const NsReplicationOpts& replOpts) {
 			return impl_.AddNamespace(nsDef, replOpts, ctx);
 		};
 		if (auto lckRouterOpt = isWithSharding(nsDef.name, ctx)) {
 			Error status = (*lckRouterOpt)->AwaitShards(ctx);
-			if (!status.ok()) return status;
+			if (!status.ok()) {
+				return status;
+			}
 
 			auto connections = (*lckRouterOpt)->GetShardsConnections(status);
 
 			lckRouterOpt->Unlock();
 
-			if (!status.ok()) return status;
-			for (auto &connection : *connections) {
+			if (!status.ok()) {
+				return status;
+			}
+			for (auto& connection : *connections) {
 				if (connection) {
 					status = connection->AddNamespace(nsDef, replOpts);
 				} else {
 					status = localAdd(nsDef, replOpts);
 				}
-				if (!status.ok()) return status;
+				if (!status.ok()) {
+					return status;
+				}
 			}
 			return status;
 		}
 		return localAdd(nsDef, replOpts);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::CloseNamespace(std::string_view nsName, const RdxContext &ctx) {
+Error ShardingProxy::CloseNamespace(std::string_view nsName, const RdxContext& ctx) {
 	try {
 		auto localClose = [this, &ctx](std::string_view nsName) { return impl_.CloseNamespace(nsName, ctx); };
 
 		if (auto lckRouterOpt = isWithSharding(nsName, ctx)) {
 			Error err = (*lckRouterOpt)->AwaitShards(ctx);
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 			return delegateToShardsByNs(*lckRouterOpt, ctx, &client::Reindexer::CloseNamespace, localClose, nsName);
 		}
 		return localClose(nsName);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::DropNamespace(std::string_view nsName, const RdxContext &ctx) {
+Error ShardingProxy::DropNamespace(std::string_view nsName, const RdxContext& ctx) {
 	try {
 		auto localDrop = [this, &ctx](std::string_view nsName) { return impl_.DropNamespace(nsName, ctx); };
 
 		if (auto lckRouterOpt = isWithSharding(nsName, ctx)) {
 			Error err = (*lckRouterOpt)->AwaitShards(ctx);
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 
 			return delegateToShards(*lckRouterOpt, ctx, &client::Reindexer::DropNamespace, localDrop, nsName);
 		}
 		return localDrop(nsName);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::TruncateNamespace(std::string_view nsName, const RdxContext &ctx) {
+Error ShardingProxy::TruncateNamespace(std::string_view nsName, const RdxContext& ctx) {
 	try {
 		auto localTruncate = [this, &ctx](std::string_view nsName) { return impl_.TruncateNamespace(nsName, ctx); };
 		if (auto lckRouterOpt = isWithSharding(nsName, ctx)) {
 			Error err = (*lckRouterOpt)->AwaitShards(ctx);
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 
 			return delegateToShards(*lckRouterOpt, ctx, &client::Reindexer::TruncateNamespace, localTruncate, nsName);
 		}
 		return localTruncate(nsName);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::RenameNamespace(std::string_view srcNsName, const std::string &dstNsName, const RdxContext &ctx) {
+Error ShardingProxy::RenameNamespace(std::string_view srcNsName, const std::string& dstNsName, const RdxContext& ctx) {
 	try {
-		auto localRename = [this, &ctx](std::string_view srcNsName, const std::string &dstNsName) {
+		auto localRename = [this, &ctx](std::string_view srcNsName, const std::string& dstNsName) {
 			return impl_.RenameNamespace(srcNsName, dstNsName, ctx);
 		};
 		if (auto lckRouterOpt = isWithSharding(srcNsName, ctx)) {
 			Error err = (*lckRouterOpt)->AwaitShards(ctx);
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 
 			return delegateToShards(*lckRouterOpt, ctx, &client::Reindexer::RenameNamespace, localRename, srcNsName, dstNsName);
 		}
 		return localRename(srcNsName, dstNsName);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::AddIndex(std::string_view nsName, const IndexDef &index, const RdxContext &ctx) {
+Error ShardingProxy::AddIndex(std::string_view nsName, const IndexDef& index, const RdxContext& ctx) {
 	try {
-		auto localAddIndex = [this, &ctx](std::string_view nsName, const IndexDef &index) { return impl_.AddIndex(nsName, index, ctx); };
+		auto localAddIndex = [this, &ctx](std::string_view nsName, const IndexDef& index) { return impl_.AddIndex(nsName, index, ctx); };
 
 		if (auto lckRouterOpt = isWithSharding(nsName, ctx)) {
 			Error err = (*lckRouterOpt)->AwaitShards(ctx);
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 
 			return delegateToShards(*lckRouterOpt, ctx, &client::Reindexer::AddIndex, localAddIndex, nsName, index);
 		}
 		return localAddIndex(nsName, index);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::UpdateIndex(std::string_view nsName, const IndexDef &index, const RdxContext &ctx) {
+Error ShardingProxy::UpdateIndex(std::string_view nsName, const IndexDef& index, const RdxContext& ctx) {
 	try {
-		auto localUpdateIndex = [this, &ctx](std::string_view nsName, const IndexDef &index) {
+		auto localUpdateIndex = [this, &ctx](std::string_view nsName, const IndexDef& index) {
 			return impl_.UpdateIndex(nsName, index, ctx);
 		};
 
 		if (auto lckRouterOpt = isWithSharding(nsName, ctx)) {
 			Error err = (*lckRouterOpt)->AwaitShards(ctx);
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 
 			return delegateToShards(*lckRouterOpt, ctx, &client::Reindexer::UpdateIndex, localUpdateIndex, nsName, index);
 		}
 		return localUpdateIndex(nsName, index);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::DropIndex(std::string_view nsName, const IndexDef &index, const RdxContext &ctx) {
+Error ShardingProxy::DropIndex(std::string_view nsName, const IndexDef& index, const RdxContext& ctx) {
 	try {
-		auto localDropIndex = [this, &ctx](std::string_view nsName, const IndexDef &index) { return impl_.DropIndex(nsName, index, ctx); };
+		auto localDropIndex = [this, &ctx](std::string_view nsName, const IndexDef& index) { return impl_.DropIndex(nsName, index, ctx); };
 		if (auto lckRouterOpt = isWithSharding(nsName, ctx)) {
 			Error err = (*lckRouterOpt)->AwaitShards(ctx);
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 
 			return delegateToShards(*lckRouterOpt, ctx, &client::Reindexer::DropIndex, localDropIndex, nsName, index);
 		}
 		return localDropIndex(nsName, index);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::SetSchema(std::string_view nsName, std::string_view schema, const RdxContext &ctx) {
+Error ShardingProxy::SetSchema(std::string_view nsName, std::string_view schema, const RdxContext& ctx) {
 	try {
 		auto localSetSchema = [this, &ctx](std::string_view nsName, std::string_view schema) {
 			return impl_.SetSchema(nsName, schema, ctx);
 		};
 		if (auto lckRouterOpt = isWithSharding(nsName, ctx)) {
 			Error err = (*lckRouterOpt)->AwaitShards(ctx);
-			if (!err.ok()) return err;
+			if (!err.ok()) {
+				return err;
+			}
 
 			return delegateToShards(*lckRouterOpt, ctx, &client::Reindexer::SetSchema, localSetSchema, nsName, schema);
 		}
 		return localSetSchema(nsName, schema);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::Insert(std::string_view nsName, Item &item, const RdxContext &ctx) {
+Error ShardingProxy::Insert(std::string_view nsName, Item& item, const RdxContext& ctx) {
 	try {
-		auto insertFn = [this, &ctx](std::string_view nsName, Item &item) { return impl_.Insert(nsName, item, ctx); };
+		auto insertFn = [this, &ctx](std::string_view nsName, Item& item) { return impl_.Insert(nsName, item, ctx); };
 
 		if (auto lckRouterOpt = isWithSharding(nsName, ctx)) {
 			return modifyItemOnShard<&client::Reindexer::Insert>(*lckRouterOpt, ctx, nsName, item, insertFn);
 		}
 		return insertFn(nsName, item);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::Insert(std::string_view nsName, Item &item, QueryResults &result, const RdxContext &ctx) {
+Error ShardingProxy::Insert(std::string_view nsName, Item& item, QueryResults& result, const RdxContext& ctx) {
 	try {
-		auto insertFn = [this, &ctx](std::string_view nsName, Item &item, LocalQueryResults &qr) {
+		auto insertFn = [this, &ctx](std::string_view nsName, Item& item, LocalQueryResults& qr) {
 			return impl_.Insert(nsName, item, qr, ctx);
 		};
 
@@ -913,27 +983,27 @@ Error ShardingProxy::Insert(std::string_view nsName, Item &item, QueryResults &r
 			return modifyItemOnShard<&client::Reindexer::Insert>(*lckRouterOpt, ctx, nsName, item, result, insertFn);
 		}
 		return insertFn(nsName, item, result.ToLocalQr(true));
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::Update(std::string_view nsName, Item &item, const RdxContext &ctx) {
+Error ShardingProxy::Update(std::string_view nsName, Item& item, const RdxContext& ctx) {
 	try {
-		auto updateFn = [this, &ctx](std::string_view nsName, Item &item) { return impl_.Update(nsName, item, ctx); };
+		auto updateFn = [this, &ctx](std::string_view nsName, Item& item) { return impl_.Update(nsName, item, ctx); };
 
 		if (auto lckRouterOpt = isWithSharding(nsName, ctx)) {
 			return modifyItemOnShard<&client::Reindexer::Update>(*lckRouterOpt, ctx, nsName, item, updateFn);
 		}
 		return updateFn(nsName, item);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::Update(std::string_view nsName, Item &item, QueryResults &result, const RdxContext &ctx) {
+Error ShardingProxy::Update(std::string_view nsName, Item& item, QueryResults& result, const RdxContext& ctx) {
 	try {
-		auto updateFn = [this, &ctx](std::string_view nsName, Item &item, LocalQueryResults &qr) {
+		auto updateFn = [this, &ctx](std::string_view nsName, Item& item, LocalQueryResults& qr) {
 			return impl_.Update(nsName, item, qr, ctx);
 		};
 
@@ -942,14 +1012,14 @@ Error ShardingProxy::Update(std::string_view nsName, Item &item, QueryResults &r
 			return modifyItemOnShard<&client::Reindexer::Update>(*lckRouterOpt, ctx, nsName, item, result, updateFn);
 		}
 		return updateFn(nsName, item, result.ToLocalQr(true));
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::Update(const Query &query, QueryResults &result, const RdxContext &ctx) {
+Error ShardingProxy::Update(const Query& query, QueryResults& result, const RdxContext& ctx) {
 	try {
-		auto updateFn = [this](const Query &q, LocalQueryResults &qr, const RdxContext &ctx) { return impl_.Update(q, qr, ctx); };
+		auto updateFn = [this](const Query& q, LocalQueryResults& qr, const RdxContext& ctx) { return impl_.Update(q, qr, ctx); };
 
 		int actualShardId = ShardingKeyType::NotSharded;
 		int64_t shardingVersion = -1;
@@ -960,14 +1030,14 @@ Error ShardingProxy::Update(const Query &query, QueryResults &result, const RdxC
 		result.SetShardingConfigVersion(shardingVersion);
 		result.AddQr(LocalQueryResults{}, actualShardId);
 		return updateFn(query, result.ToLocalQr(false), ctx);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::Upsert(std::string_view nsName, Item &item, QueryResults &result, const RdxContext &ctx) {
+Error ShardingProxy::Upsert(std::string_view nsName, Item& item, QueryResults& result, const RdxContext& ctx) {
 	try {
-		auto upsertFn = [this, &ctx](std::string_view nsName, Item &item, LocalQueryResults &qr) {
+		auto upsertFn = [this, &ctx](std::string_view nsName, Item& item, LocalQueryResults& qr) {
 			return impl_.Upsert(nsName, item, qr, ctx);
 		};
 
@@ -976,40 +1046,40 @@ Error ShardingProxy::Upsert(std::string_view nsName, Item &item, QueryResults &r
 			return modifyItemOnShard<&client::Reindexer::Upsert>(*lckRouterOpt, ctx, nsName, item, result, upsertFn);
 		}
 		return upsertFn(nsName, item, result.ToLocalQr(true));
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::Upsert(std::string_view nsName, Item &item, const RdxContext &ctx) {
+Error ShardingProxy::Upsert(std::string_view nsName, Item& item, const RdxContext& ctx) {
 	try {
-		auto upsertFn = [this, &ctx](std::string_view nsName, Item &item) { return impl_.Upsert(nsName, item, ctx); };
+		auto upsertFn = [this, &ctx](std::string_view nsName, Item& item) { return impl_.Upsert(nsName, item, ctx); };
 
 		if (auto lckRouterOpt = isWithSharding(nsName, ctx)) {
 			return modifyItemOnShard<&client::Reindexer::Upsert>(*lckRouterOpt, ctx, nsName, item, upsertFn);
 		}
 		return upsertFn(nsName, item);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::Delete(std::string_view nsName, Item &item, const RdxContext &ctx) {
+Error ShardingProxy::Delete(std::string_view nsName, Item& item, const RdxContext& ctx) {
 	try {
-		auto deleteFn = [this, &ctx](std::string_view nsName, Item &item) { return impl_.Delete(nsName, item, ctx); };
+		auto deleteFn = [this, &ctx](std::string_view nsName, Item& item) { return impl_.Delete(nsName, item, ctx); };
 
 		if (auto lckRouterOpt = isWithSharding(nsName, ctx)) {
 			return modifyItemOnShard<&client::Reindexer::Delete>(*lckRouterOpt, ctx, nsName, item, deleteFn);
 		}
 		return deleteFn(nsName, item);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::Delete(std::string_view nsName, Item &item, QueryResults &result, const RdxContext &ctx) {
+Error ShardingProxy::Delete(std::string_view nsName, Item& item, QueryResults& result, const RdxContext& ctx) {
 	try {
-		auto deleteFn = [this, &ctx](std::string_view nsName, Item &item, LocalQueryResults &qr) {
+		auto deleteFn = [this, &ctx](std::string_view nsName, Item& item, LocalQueryResults& qr) {
 			return impl_.Delete(nsName, item, qr, ctx);
 		};
 
@@ -1018,14 +1088,14 @@ Error ShardingProxy::Delete(std::string_view nsName, Item &item, QueryResults &r
 			return modifyItemOnShard<&client::Reindexer::Delete>(*lckRouterOpt, ctx, nsName, item, result, deleteFn);
 		}
 		return deleteFn(nsName, item, result.ToLocalQr(true));
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::Delete(const Query &query, QueryResults &result, const RdxContext &ctx) {
+Error ShardingProxy::Delete(const Query& query, QueryResults& result, const RdxContext& ctx) {
 	try {
-		auto deleteFn = [this](const Query &q, LocalQueryResults &qr, const RdxContext &ctx) { return impl_.Delete(q, qr, ctx); };
+		auto deleteFn = [this](const Query& q, LocalQueryResults& qr, const RdxContext& ctx) { return impl_.Delete(q, qr, ctx); };
 
 		result.SetQuery(&query);
 		int actualShardId = ShardingKeyType::NotSharded;
@@ -1036,12 +1106,12 @@ Error ShardingProxy::Delete(const Query &query, QueryResults &result, const RdxC
 		result.SetShardingConfigVersion(shardingVersion);
 		result.AddQr(LocalQueryResults{}, actualShardId);
 		return deleteFn(query, result.ToLocalQr(false), ctx);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::Select(std::string_view sql, QueryResults &result, unsigned proxyFetchLimit, const RdxContext &ctx) {
+Error ShardingProxy::Select(std::string_view sql, QueryResults& result, unsigned proxyFetchLimit, const RdxContext& ctx) {
 	try {
 		const Query query = Query::FromSQL(sql);
 		switch (query.type_) {
@@ -1060,12 +1130,12 @@ Error ShardingProxy::Select(std::string_view sql, QueryResults &result, unsigned
 			default:
 				return Error(errLogic, "Incorrect sql type %d", query.type_);
 		}
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 }
 
-Error ShardingProxy::Select(const Query &query, QueryResults &result, unsigned proxyFetchLimit, const RdxContext &ctx) {
+Error ShardingProxy::Select(const Query& query, QueryResults& result, unsigned proxyFetchLimit, const RdxContext& ctx) {
 	try {
 		if (query.Type() != QuerySelect) {
 			return Error(errLogic, "'Select' call request type is not equal to 'QuerySelect'.");
@@ -1077,33 +1147,33 @@ Error ShardingProxy::Select(const Query &query, QueryResults &result, unsigned p
 		if (auto lckRouterOpt = isWithSharding(query, ctx, actualShardId, shardingVersion)) {
 			return executeQueryOnShard(
 				*lckRouterOpt, query, result, proxyFetchLimit, ctx,
-				[this](const Query &q, LocalQueryResults &qr, const RdxContext &ctx) { return impl_.Select(q, qr, ctx); });
+				[this](const Query& q, LocalQueryResults& qr, const RdxContext& ctx) { return impl_.Select(q, qr, ctx); });
 		}
 		result.SetShardingConfigVersion(shardingVersion);
 		result.AddQr(LocalQueryResults{}, actualShardId);
 		return impl_.Select(query, result.ToLocalQr(false), ctx);
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 }
 
-auto ShardingProxy::ShardingRouter::SharedPtr(const RdxContext &ctx) const {
+auto ShardingProxy::ShardingRouter::SharedPtr(const RdxContext& ctx) const {
 	auto lk = SharedLock(ctx);
 	return locatorService_;
 }
 
-Transaction ShardingProxy::NewTransaction(std::string_view nsName, const RdxContext &ctx) {
+Transaction ShardingProxy::NewTransaction(std::string_view nsName, const RdxContext& ctx) {
 	try {
 		if (auto lckRouterOpt = isWithSharding(nsName, ctx)) {
 			return Transaction(impl_.NewTransaction(nsName, ctx), sharding::LocatorServiceAdapter(shardingRouter_.SharedPtr(ctx)));
 		}
 		return impl_.NewTransaction(nsName, ctx);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::CommitTransaction(Transaction &tr, QueryResults &result, const RdxContext &ctx) {
+Error ShardingProxy::CommitTransaction(Transaction& tr, QueryResults& result, const RdxContext& ctx) {
 	if (!tr.Status().ok()) {
 		return Error(tr.Status().code(), "Unable to commit tx with error status: '%s'", tr.Status().what());
 	}
@@ -1111,37 +1181,37 @@ Error ShardingProxy::CommitTransaction(Transaction &tr, QueryResults &result, co
 	try {
 		result.SetQuery(nullptr);
 		return impl_.CommitTransaction(tr, result, (bool)isWithSharding(tr.GetNsName(), ctx), ctx);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::GetMeta(std::string_view nsName, const std::string &key, std::vector<ShardedMeta> &data, const RdxContext &ctx) {
+Error ShardingProxy::GetMeta(std::string_view nsName, const std::string& key, std::vector<ShardedMeta>& data, const RdxContext& ctx) {
 	try {
-		auto localGetMeta = [this, &ctx](std::string_view nsName, const std::string &key, std::vector<ShardedMeta> &data, int shardId) {
+		auto localGetMeta = [this, &ctx](std::string_view nsName, const std::string& key, std::vector<ShardedMeta>& data, int shardId) {
 			data.emplace_back(shardId, std::string());
 			return impl_.GetMeta(nsName, key, data.back().data, ctx);
 		};
 
 		if (auto lckRouterOpt = isWithSharding(nsName, ctx)) {
-			auto predicate = [](const ShardedMeta &) noexcept { return true; };
+			auto predicate = [](const ShardedMeta&) noexcept { return true; };
 			Error err = collectFromShardsByNs(
 				*lckRouterOpt, ctx,
-				static_cast<Error (client::Reindexer::*)(std::string_view, const std::string &, std::vector<ShardedMeta> &)>(
+				static_cast<Error (client::Reindexer::*)(std::string_view, const std::string&, std::vector<ShardedMeta>&)>(
 					&client::Reindexer::GetMeta),
 				localGetMeta, data, predicate, nsName, key);
 			return err;
 		}
 
 		return localGetMeta(nsName, key, data, ctx.ShardId());
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::PutMeta(std::string_view nsName, const std::string &key, std::string_view data, const RdxContext &ctx) {
+Error ShardingProxy::PutMeta(std::string_view nsName, const std::string& key, std::string_view data, const RdxContext& ctx) {
 	try {
-		auto localPutMeta = [this, &ctx](std::string_view nsName, const std::string &key, std::string_view data) {
+		auto localPutMeta = [this, &ctx](std::string_view nsName, const std::string& key, std::string_view data) {
 			return impl_.PutMeta(nsName, key, data, ctx);
 		};
 
@@ -1149,14 +1219,14 @@ Error ShardingProxy::PutMeta(std::string_view nsName, const std::string &key, st
 			return delegateToShards(*lckRouterOpt, ctx, &client::Reindexer::PutMeta, localPutMeta, nsName, key, data);
 		}
 		return localPutMeta(nsName, key, data);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const RdxContext &ctx) {
+Error ShardingProxy::EnumMeta(std::string_view nsName, std::vector<std::string>& keys, const RdxContext& ctx) {
 	try {
-		auto localEnumMeta = [this, &ctx](std::string_view nsName, std::vector<std::string> &keys, [[maybe_unused]] int shardId) {
+		auto localEnumMeta = [this, &ctx](std::string_view nsName, std::vector<std::string>& keys, [[maybe_unused]] int shardId) {
 			return impl_.EnumMeta(nsName, keys, ctx);
 		};
 
@@ -1164,45 +1234,45 @@ Error ShardingProxy::EnumMeta(std::string_view nsName, std::vector<std::string> 
 			fast_hash_set<std::string> allKeys;
 			Error err = collectFromShardsByNs(
 				*lckRouterOpt, ctx, &client::Reindexer::EnumMeta, localEnumMeta, keys,
-				[&allKeys](const std::string &key) { return allKeys.emplace(key).second; }, nsName);
+				[&allKeys](const std::string& key) { return allKeys.emplace(key).second; }, nsName);
 
 			return err;
 		}
 		return localEnumMeta(nsName, keys, ShardingKeyType::NotSetShard /*not used*/);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
-Error ShardingProxy::DeleteMeta(std::string_view nsName, const std::string &key, const RdxContext &ctx) {
+Error ShardingProxy::DeleteMeta(std::string_view nsName, const std::string& key, const RdxContext& ctx) {
 	try {
-		auto localDeleteMeta = [this, &ctx](std::string_view nsName, const std::string &key) { return impl_.DeleteMeta(nsName, key, ctx); };
+		auto localDeleteMeta = [this, &ctx](std::string_view nsName, const std::string& key) { return impl_.DeleteMeta(nsName, key, ctx); };
 
 		if (auto lckRouterOpt = isWithSharding(nsName, ctx)) {
 			return delegateToShards(*lckRouterOpt, ctx, &client::Reindexer::DeleteMeta, localDeleteMeta, nsName, key);
 		}
 		return localDeleteMeta(nsName, key);
-	} catch (Error &e) {
+	} catch (Error& e) {
 		return e;
 	}
 }
 
 template <typename ShardingRouterLock>
-bool ShardingProxy::isSharderQuery(const Query &q, const ShardingRouterLock &shLockShardingRouter) const {
+bool ShardingProxy::isSharderQuery(const Query& q, const ShardingRouterLock& shLockShardingRouter) const {
 	if (isSharded(q.NsName(), shLockShardingRouter)) {
 		return true;
 	}
-	for (const auto &jq : q.GetJoinQueries()) {
+	for (const auto& jq : q.GetJoinQueries()) {
 		if (isSharded(jq.NsName(), shLockShardingRouter)) {
 			return true;
 		}
 	}
-	for (const auto &mq : q.GetMergeQueries()) {
+	for (const auto& mq : q.GetMergeQueries()) {
 		if (isSharded(mq.NsName(), shLockShardingRouter)) {
 			return true;
 		}
 	}
-	for (const auto &sq : q.GetSubQueries()) {
+	for (const auto& sq : q.GetSubQueries()) {
 		if (isSharded(sq.NsName(), shLockShardingRouter)) {
 			return true;
 		}
@@ -1211,11 +1281,11 @@ bool ShardingProxy::isSharderQuery(const Query &q, const ShardingRouterLock &shL
 }
 
 template <typename ShardingRouterLock>
-bool ShardingProxy::isSharded(std::string_view nsName, const ShardingRouterLock &shLockShardingRouter) const noexcept {
+bool ShardingProxy::isSharded(std::string_view nsName, const ShardingRouterLock& shLockShardingRouter) const noexcept {
 	return shLockShardingRouter->IsSharded(nsName);
 }
 
-void ShardingProxy::calculateNewLimitOfsset(size_t count, size_t totalCount, unsigned &limit, unsigned &offset) {
+void ShardingProxy::calculateNewLimitOfsset(size_t count, size_t totalCount, unsigned& limit, unsigned& offset) {
 	if (limit != UINT_MAX) {
 		if (count >= limit) {
 			limit = 0;
@@ -1230,7 +1300,7 @@ void ShardingProxy::calculateNewLimitOfsset(size_t count, size_t totalCount, uns
 	}
 }
 
-reindexer::client::Item ShardingProxy::toClientItem(std::string_view ns, client::Reindexer *connection, reindexer::Item &item) {
+reindexer::client::Item ShardingProxy::toClientItem(std::string_view ns, client::Reindexer* connection, reindexer::Item& item) {
 	assertrx(connection);
 	Error err;
 	reindexer::client::Item clientItem = connection->NewItem(ns);
@@ -1245,14 +1315,16 @@ reindexer::client::Item ShardingProxy::toClientItem(std::string_view ns, client:
 			return clientItem;
 		}
 	}
-	if (!err.ok()) throw err;
+	if (!err.ok()) {
+		throw err;
+	}
 	throw clientItem.Status();
 }
 
 template <typename LockedRouter, typename ClientF, typename LocalF, typename T, typename Predicate, typename... Args>
-Error ShardingProxy::collectFromShardsByNs(LockedRouter &lockedShardingRouter, const RdxContext &rdxCtx, const ClientF &clientF,
-										   const LocalF &localF, std::vector<T> &result, const Predicate &predicate,
-										   std::string_view nsName, Args &&...args) {
+Error ShardingProxy::collectFromShardsByNs(LockedRouter& lockedShardingRouter, const RdxContext& rdxCtx, const ClientF& clientF,
+										   const LocalF& localF, std::vector<T>& result, const Predicate& predicate,
+										   std::string_view nsName, Args&&... args) {
 	try {
 		Error status;
 
@@ -1261,19 +1333,21 @@ Error ShardingProxy::collectFromShardsByNs(LockedRouter &lockedShardingRouter, c
 
 		lockedShardingRouter.Unlock();
 
-		if (!status.ok()) return status;
+		if (!status.ok()) {
+			return status;
+		}
 
 		ParallelExecutor execNodes(actualShardId);
 		return execNodes.ExecCollect(rdxCtx, std::move(connections), clientF, localF, result, predicate, nsName,
 									 std::forward<Args>(args)...);
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 }
 
 template <typename LockedRouter, typename Func, typename FLocal, typename... Args>
-Error ShardingProxy::delegateToShards(LockedRouter &lockedShardingRouter, const RdxContext &rdxCtx, const Func &f, const FLocal &local,
-									  Args &&...args) {
+Error ShardingProxy::delegateToShards(LockedRouter& lockedShardingRouter, const RdxContext& rdxCtx, const Func& f, const FLocal& local,
+									  Args&&... args) {
 	Error status;
 	try {
 		auto [actualShardId, connections] =
@@ -1281,11 +1355,13 @@ Error ShardingProxy::delegateToShards(LockedRouter &lockedShardingRouter, const 
 
 		lockedShardingRouter.Unlock();
 
-		if (!status.ok()) return status;
+		if (!status.ok()) {
+			return status;
+		}
 
 		ParallelExecutor execNodes(actualShardId);
 		return execNodes.Exec(rdxCtx, std::move(connections), f, local, std::forward<Args>(args)...);
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 
@@ -1293,8 +1369,8 @@ Error ShardingProxy::delegateToShards(LockedRouter &lockedShardingRouter, const 
 }
 
 template <typename LockedRouter, typename Func, typename FLocal, typename... Args>
-Error ShardingProxy::delegateToShardsByNs(LockedRouter &lockedShardingRouter, const RdxContext &rdxCtx, const Func &f, const FLocal &local,
-										  std::string_view nsName, Args &&...args) {
+Error ShardingProxy::delegateToShardsByNs(LockedRouter& lockedShardingRouter, const RdxContext& rdxCtx, const Func& f, const FLocal& local,
+										  std::string_view nsName, Args&&... args) {
 	Error status;
 	try {
 		auto [actualShardId, connections] =
@@ -1302,19 +1378,21 @@ Error ShardingProxy::delegateToShardsByNs(LockedRouter &lockedShardingRouter, co
 
 		lockedShardingRouter.Unlock();
 
-		if (!status.ok()) return status;
+		if (!status.ok()) {
+			return status;
+		}
 
 		ParallelExecutor execNodes(actualShardId);
 		return execNodes.Exec(rdxCtx, std::move(connections), f, local, nsName, std::forward<Args>(args)...);
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 	return status;
 }
 
 template <ShardingProxy::ItemModifyFT fn, typename LockedRouter, typename LocalFT>
-Error ShardingProxy::modifyItemOnShard(LockedRouter &lockedShardingRouter, const RdxContext &ctx, std::string_view nsName, Item &item,
-									   const LocalFT &localFn) {
+Error ShardingProxy::modifyItemOnShard(LockedRouter& lockedShardingRouter, const RdxContext& ctx, std::string_view nsName, Item& item,
+									   const LocalFT& localFn) {
 	try {
 		Error status;
 
@@ -1328,7 +1406,9 @@ Error ShardingProxy::modifyItemOnShard(LockedRouter &lockedShardingRouter, const
 		}
 		if (connection) {
 			client::Item clientItem = toClientItem(nsName, connection.get(), item);
-			if (!clientItem.Status().ok()) return clientItem.Status();
+			if (!clientItem.Status().ok()) {
+				return clientItem.Status();
+			}
 			const auto timeout = ctx.GetRemainingTimeout();
 			if (timeout.has_value() && timeout->count() <= 0) {
 				return Error(errTimeout, "Item modify request timeout");
@@ -1353,15 +1433,15 @@ Error ShardingProxy::modifyItemOnShard(LockedRouter &lockedShardingRouter, const
 			return status;
 		}
 		item.setShardID(actualShardId);
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 	return Error();
 }
 
 template <ShardingProxy::ItemModifyQrFT fn, typename LockedRouter, typename LocalFT>
-Error ShardingProxy::modifyItemOnShard(LockedRouter &lockedShardingRouter, const RdxContext &ctx, std::string_view nsName, Item &item,
-									   QueryResults &result, const LocalFT &localFn) {
+Error ShardingProxy::modifyItemOnShard(LockedRouter& lockedShardingRouter, const RdxContext& ctx, std::string_view nsName, Item& item,
+									   QueryResults& result, const LocalFT& localFn) {
 	Error status;
 
 	auto [actualShardId, connection] =
@@ -1376,7 +1456,9 @@ Error ShardingProxy::modifyItemOnShard(LockedRouter &lockedShardingRouter, const
 	if (connection) {
 		client::Item clientItem = toClientItem(nsName, connection.get(), item);
 		client::QueryResults qrClient(result.Flags(), 0);
-		if (!clientItem.Status().ok()) return clientItem.Status();
+		if (!clientItem.Status().ok()) {
+			return clientItem.Status();
+		}
 
 		const auto timeout = ctx.GetRemainingTimeout();
 		if (timeout.has_value() && timeout->count() <= 0) {
@@ -1397,8 +1479,8 @@ Error ShardingProxy::modifyItemOnShard(LockedRouter &lockedShardingRouter, const
 }
 
 template <typename LockedRouter, typename LocalFT>
-Error ShardingProxy::executeQueryOnShard(LockedRouter &lockedShardingRouter, const Query &query, QueryResults &result,
-										 unsigned proxyFetchLimit, const RdxContext &ctx, LocalFT &&localAction) noexcept {
+Error ShardingProxy::executeQueryOnShard(LockedRouter& lockedShardingRouter, const Query& query, QueryResults& result,
+										 unsigned proxyFetchLimit, const RdxContext& ctx, LocalFT&& localAction) noexcept {
 	Error status;
 	try {
 		auto [actualShardId, connectionsPtr] =
@@ -1406,10 +1488,12 @@ Error ShardingProxy::executeQueryOnShard(LockedRouter &lockedShardingRouter, con
 
 		lockedShardingRouter.Unlock();
 
-		if (!status.ok()) return status;
+		if (!status.ok()) {
+			return status;
+		}
 
 		assertrx(connectionsPtr);
-		sharding::ConnectionsVector &connections = *connectionsPtr;
+		sharding::ConnectionsVector& connections = *connectionsPtr;
 
 		if (query.Type() == QueryUpdate && connections.size() != 1) {
 			return Error(errLogic, "Update request can be executed on one node only.");
@@ -1536,15 +1620,15 @@ Error ShardingProxy::executeQueryOnShard(LockedRouter &lockedShardingRouter, con
 				}
 			}
 		}
-	} catch (const Error &e) {
+	} catch (const Error& e) {
 		return e;
 	}
 	return Error{};
 }
 
 template <typename CalucalteFT>
-Error ShardingProxy::executeQueryOnClient(client::Reindexer &connection, const Query &q, client::QueryResults &qrClient,
-										  const CalucalteFT &limitOffsetCalc) {
+Error ShardingProxy::executeQueryOnClient(client::Reindexer& connection, const Query& q, client::QueryResults& qrClient,
+										  const CalucalteFT& limitOffsetCalc) {
 	Error status;
 	switch (q.Type()) {
 		case QuerySelect: {

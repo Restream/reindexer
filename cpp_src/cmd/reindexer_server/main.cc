@@ -26,6 +26,6 @@ int main(int argc, char* argv[]) {
 
 	svc.EnableHandleSignals();
 	int ret = svc.Start();
-	spdlog::drop_all();
+	spdlog::shutdown();
 	return ret;
 }

@@ -154,7 +154,9 @@ TEST_F(ReindexerApi, BtreeUnbuiltIndexIteratorsTest) {
 	pos = ids2.size() - 1;
 	while (bIt2.Next()) {
 		EXPECT_TRUE(bIt2.Value() == ids2[pos]) << "iterator value = " << bIt2.Value() << "; expected value = " << ids2[pos];
-		if (pos) --pos;
+		if (pos) {
+			--pos;
+		}
 	}
 	EXPECT_TRUE(pos == 0);
 	EXPECT_TRUE(!bIt2.Next());

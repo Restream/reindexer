@@ -566,8 +566,12 @@ TEST_F(CascadeReplicationApi, NodeWithMasterAndSlaveNs1) {
 	}
 	{
 		std::vector<int> results_data;
-		for (unsigned int i = 0; i < n; i++) results_data.push_back(c1 + i);
-		for (unsigned int i = 0; i < n; i++) results_data.push_back(c2 + i);
+		for (unsigned int i = 0; i < n; i++) {
+			results_data.push_back(c1 + i);
+		}
+		for (unsigned int i = 0; i < n; i++) {
+			results_data.push_back(c2 + i);
+		}
 
 		std::vector<int> results_3;
 		testns3.GetData(slave, results_3);
@@ -625,8 +629,12 @@ TEST_F(CascadeReplicationApi, NodeWithMasterAndSlaveNs2) {
 	{
 		std::vector<int> results_data;
 		results_data.reserve(2 * n);
-		for (unsigned int i = 0; i < n; i++) results_data.push_back(c1 + i);
-		for (unsigned int i = 0; i < n; i++) results_data.push_back(c2 + i);
+		for (unsigned int i = 0; i < n; i++) {
+			results_data.push_back(c1 + i);
+		}
+		for (unsigned int i = 0; i < n; i++) {
+			results_data.push_back(c2 + i);
+		}
 
 		std::vector<int> results_3;
 		results_3.reserve(results_data.size());

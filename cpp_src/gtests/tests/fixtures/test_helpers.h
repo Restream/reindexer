@@ -13,11 +13,11 @@ struct QueryWatcher {
 		}
 	}
 
-	const reindexer::Query &q;
+	const reindexer::Query& q;
 };
 
 template <typename ItemType>
-std::string PrintItem(const ItemType &item) {
+std::string PrintItem(const ItemType& item) {
 	std::stringstream out;
 	for (auto idx = 1; idx < item.NumFields(); idx++) {
 		out << item[idx].Name() << '=';
@@ -27,7 +27,9 @@ std::string PrintItem(const ItemType &item) {
 		} else {
 			out << '[';
 			for (size_t i = 0, s = values.size(); i < s; ++i) {
-				if (i != 0) out << ", ";
+				if (i != 0) {
+					out << ", ";
+				}
 				out << values[i].template As<std::string>();
 			}
 			out << "] ";

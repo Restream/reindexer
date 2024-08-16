@@ -27,19 +27,19 @@ private:
 public:
 	static constexpr int64_t kDefaultCounter = kMaxCounter - 1;
 
-	void GetJSON(JsonBuilder &builder) const;
+	void GetJSON(JsonBuilder& builder) const;
 
-	void FromJSON(const gason::JsonNode &root) {
+	void FromJSON(const gason::JsonNode& root) {
 		const int server = root["server_id"].As<int>(0);
 		const int64_t counter = root["counter"].As<int64_t>(kDefaultCounter);
 		payload_ = int64_t(lsn_t(counter, server));
 	}
 
 	lsn_t() noexcept = default;
-	lsn_t(const lsn_t &) noexcept = default;
-	lsn_t(lsn_t &&) noexcept = default;
-	lsn_t &operator=(const lsn_t &) noexcept = default;
-	lsn_t &operator=(lsn_t &&) noexcept = default;
+	lsn_t(const lsn_t&) noexcept = default;
+	lsn_t(lsn_t&&) noexcept = default;
+	lsn_t& operator=(const lsn_t&) noexcept = default;
+	lsn_t& operator=(lsn_t&&) noexcept = default;
 	explicit lsn_t(int64_t v) : lsn_t(v % kMaxCounter, v / kMaxCounter) {}
 	lsn_t(int64_t counter, int16_t server) {
 		validateCounter(counter);
@@ -48,11 +48,11 @@ public:
 	}
 	explicit operator int64_t() const noexcept { return payload_; }
 	explicit operator uint64_t() const noexcept { return static_cast<uint64_t>(payload_); }
-	lsn_t &operator++() noexcept {
+	lsn_t& operator++() noexcept {
 		SetCounter(Counter() + 1);
 		return *this;
 	}
-	lsn_t &operator--() noexcept {
+	lsn_t& operator--() noexcept {
 		SetCounter(Counter() - 1);
 		return *this;
 	}
@@ -81,11 +81,14 @@ public:
 	bool isEmpty() const noexcept { return Counter() == kDefaultCounter; }
 
 	int compare(lsn_t o) const {
-		if (Server() != o.Server()) throw Error(errLogic, "Compare lsn from different server");
-		if (Counter() < o.Counter())
+		if (Server() != o.Server()) {
+			throw Error(errLogic, "Compare lsn from different server");
+		}
+		if (Counter() < o.Counter()) {
 			return -1;
-		else if (Counter() > o.Counter())
+		} else if (Counter() > o.Counter()) {
 			return 1;
+		}
 		return 0;
 	}
 
@@ -110,10 +113,10 @@ private:
 		}
 	}
 
-	[[noreturn]] static void throwValidation(ErrorCode, const char *, int64_t);
+	[[noreturn]] static void throwValidation(ErrorCode, const char*, int64_t);
 };
 
-inline static std::ostream &operator<<(std::ostream &o, const reindexer::lsn_t &sv) {
+inline static std::ostream& operator<<(std::ostream& o, const reindexer::lsn_t& sv) {
 	o << sv.Server() << ":" << sv.Counter();
 	return o;
 }

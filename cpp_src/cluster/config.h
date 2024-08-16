@@ -160,7 +160,9 @@ struct ClusterConfigData {
 
 	unsigned int GetNodeIndexForServerId(int serverId) const {
 		for (unsigned int i = 0; i < nodes.size(); ++i) {
-			if (nodes[i].serverId == serverId) return i;
+			if (nodes[i].serverId == serverId) {
+				return i;
+			}
 		}
 		throw Error(errLogic, "Cluster config. Cannot find node index for ServerId(%d)", serverId);
 	}

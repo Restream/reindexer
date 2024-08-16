@@ -2,7 +2,7 @@
 
 namespace reindexer {
 
-CsvBuilder::CsvBuilder(ObjType type, const CsvBuilder &parent)
+CsvBuilder::CsvBuilder(ObjType type, const CsvBuilder& parent)
 	: ser_(parent.ser_),
 	  tm_(parent.tm_),
 	  type_(type),
@@ -36,7 +36,7 @@ CsvBuilder::CsvBuilder(ObjType type, const CsvBuilder &parent)
 	}
 }
 
-CsvBuilder::CsvBuilder(WrSerializer &ser, CsvOrdering &ordering)
+CsvBuilder::CsvBuilder(WrSerializer& ser, CsvOrdering& ordering)
 	: ser_(&ser),
 	  level_(-1),
 	  ordering_(!ordering.ordering_.empty() ? &ordering.ordering_ : nullptr),
@@ -46,7 +46,7 @@ CsvBuilder::~CsvBuilder() { End(); }
 
 std::string_view CsvBuilder::getNameByTag(int tagName) { return tagName ? tm_->tag2name(tagName) : std::string_view(); }
 
-CsvBuilder &CsvBuilder::End() {
+CsvBuilder& CsvBuilder::End() {
 	if (!positions_.empty()) {
 		postProcessing();
 	}
@@ -89,9 +89,13 @@ void CsvBuilder::putName(std::string_view name) {
 		tmProcessing(name);
 	}
 
-	if (count_++) (*ser_) << ',';
+	if (count_++) {
+		(*ser_) << ',';
+	}
 
-	if (level_ < 1) return;
+	if (level_ < 1) {
+		return;
+	}
 
 	if (name.data()) {
 		(*ser_) << '"';
@@ -106,7 +110,7 @@ void CsvBuilder::tmProcessing(std::string_view name) {
 
 	auto prevFinishPos = ser_->Len();
 	if (tag > 0) {
-		auto it = std::find_if(ordering_->begin(), ordering_->end(), [&tag](const auto &t) { return t == tag; });
+		auto it = std::find_if(ordering_->begin(), ordering_->end(), [&tag](const auto& t) { return t == tag; });
 
 		if (it != ordering_->end()) {
 			if (curTagPos_ > -1) {
@@ -125,7 +129,9 @@ void CsvBuilder::tmProcessing(std::string_view name) {
 		if (curTagPos_ > -1) {
 			positions_[curTagPos_].second = prevFinishPos;
 		}
-		if (count_) (*ser_) << ',';
+		if (count_) {
+			(*ser_) << ',';
+		}
 
 		(*ser_) << "\"{";
 		type_ = ObjType::TypeObject;
@@ -148,7 +154,7 @@ void CsvBuilder::postProcessing() {
 	auto joinedData = std::string_view(ser_->Slice().data() + positions_[curTagPos_].second, ser_->Len() - positions_[curTagPos_].second);
 
 	bool needDelim = false;
-	for (auto &[begin, end] : positions_) {
+	for (auto& [begin, end] : positions_) {
 		if (needDelim) {
 			*buf_ << ',';
 		} else {
@@ -162,7 +168,7 @@ void CsvBuilder::postProcessing() {
 	*ser_ << buf_->Slice();
 }
 
-CsvBuilder &CsvBuilder::Put(std::string_view name, std::string_view arg, int /*offset*/) {
+CsvBuilder& CsvBuilder::Put(std::string_view name, std::string_view arg, int /*offset*/) {
 	putName(name);
 
 	std::string_view optQuote = level_ > 0 ? "\"" : "";
@@ -173,25 +179,25 @@ CsvBuilder &CsvBuilder::Put(std::string_view name, std::string_view arg, int /*o
 	return *this;
 }
 
-CsvBuilder &CsvBuilder::Put(std::string_view name, Uuid arg, int /*offset*/) {
+CsvBuilder& CsvBuilder::Put(std::string_view name, Uuid arg, int /*offset*/) {
 	putName(name);
 	ser_->PrintJsonUuid(arg);
 	return *this;
 }
 
-CsvBuilder &CsvBuilder::Raw(std::string_view name, std::string_view arg) {
+CsvBuilder& CsvBuilder::Raw(std::string_view name, std::string_view arg) {
 	putName(name);
 	(*ser_) << arg;
 	return *this;
 }
 
-CsvBuilder &CsvBuilder::Null(std::string_view name) {
+CsvBuilder& CsvBuilder::Null(std::string_view name) {
 	putName(name);
 	(*ser_) << "null";
 	return *this;
 }
 
-CsvBuilder &CsvBuilder::Put(std::string_view name, const Variant &kv, int offset) {
+CsvBuilder& CsvBuilder::Put(std::string_view name, const Variant& kv, int offset) {
 	kv.Type().EvaluateOneOf(
 		[&](KeyValueType::Int) { Put(name, int(kv), offset); }, [&](KeyValueType::Int64) { Put(name, int64_t(kv), offset); },
 		[&](KeyValueType::Double) { Put(name, double(kv), offset); },
@@ -199,7 +205,7 @@ CsvBuilder &CsvBuilder::Put(std::string_view name, const Variant &kv, int offset
 		[&](KeyValueType::Bool) { Put(name, bool(kv), offset); },
 		[&](KeyValueType::Tuple) {
 			auto arrNode = Array(name);
-			for (auto &val : kv.getCompositeValues()) {
+			for (auto& val : kv.getCompositeValues()) {
 				arrNode.Put({nullptr, 0}, val);
 			}
 		},

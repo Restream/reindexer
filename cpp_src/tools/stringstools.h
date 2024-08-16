@@ -46,7 +46,9 @@ Container& split(const typename Container::value_type& str, std::string_view del
 		pos = str.find_first_of(delimiters, lastPos);
 		if (pos == Container::value_type::npos) {
 			pos = str.length();
-			if (pos != lastPos || !trimEmpty) tokens.push_back(str.substr(lastPos, pos - lastPos));
+			if (pos != lastPos || !trimEmpty) {
+				tokens.push_back(str.substr(lastPos, pos - lastPos));
+			}
 			break;
 		} else if (pos != lastPos || !trimEmpty) {
 			tokens.push_back(str.substr(lastPos, pos - lastPos));
@@ -178,9 +180,13 @@ StrictMode strictModeFromString(std::string_view strStrictMode);
 std::string_view strictModeToString(StrictMode mode);
 
 inline constexpr bool iequals(std::string_view lhs, std::string_view rhs) noexcept {
-	if (lhs.size() != rhs.size()) return false;
+	if (lhs.size() != rhs.size()) {
+		return false;
+	}
 	for (auto itl = lhs.begin(), itr = rhs.begin(); itl != lhs.end() && itr != rhs.end();) {
-		if (tolower(*itl++) != tolower(*itr++)) return false;
+		if (tolower(*itl++) != tolower(*itr++)) {
+			return false;
+		}
 	}
 	return true;
 }
@@ -212,7 +218,7 @@ RX_ALWAYS_INLINE bool checkIfEndsWith(std::string_view pattern, std::string_view
 
 bool isPrintable(std::string_view str) noexcept;
 bool isBlank(std::string_view token) noexcept;
-bool endsWith(std::string const& source, std::string_view ending) noexcept;
+bool endsWith(const std::string& source, std::string_view ending) noexcept;
 std::string& ensureEndsWith(std::string& source, std::string_view ending);
 
 Error cursosPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos);

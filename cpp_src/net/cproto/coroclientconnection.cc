@@ -33,7 +33,7 @@ CoroClientConnection::CoroClientConnection()
 	seqNums_.close();
 }
 
-void CoroClientConnection::Start(ev::dynamic_loop &loop, ConnectData &&connectData) {
+void CoroClientConnection::Start(ev::dynamic_loop& loop, ConnectData&& connectData) {
 	if (!isRunning_) {
 		// Don't allow to call Start, while error handling is in progress
 		errSyncCh_.pop();
@@ -80,7 +80,7 @@ void CoroClientConnection::Stop() {
 		conn_.close_conn(k_sock_closed_err);
 		const Error err(errNetwork, "Connection closed");
 		// Cancel all the system requests
-		for (auto &c : rpcCalls_) {
+		for (auto& c : rpcCalls_) {
 			if (c.used && c.rspCh.opened() && !c.rspCh.full() && c.system) {
 				c.rspCh.push(err);
 			}
@@ -93,14 +93,14 @@ void CoroClientConnection::Stop() {
 	}
 }
 
-Error CoroClientConnection::Status(bool forceCheck, milliseconds netTimeout, milliseconds execTimeout, const IRdxCancelContext *ctx) {
+Error CoroClientConnection::Status(bool forceCheck, milliseconds netTimeout, milliseconds execTimeout, const IRdxCancelContext* ctx) {
 	if (!RequiresStatusCheck() && !forceCheck) {
 		return errOK;
 	}
 	return call({kCmdPing, netTimeout, execTimeout, lsn_t(), -1, ShardingKeyType::NotSetShard, ctx, false}, {}).Status();
 }
 
-CoroRPCAnswer CoroClientConnection::call(const CommandParams &opts, const Args &args) {
+CoroRPCAnswer CoroClientConnection::call(const CommandParams& opts, const Args& args) {
 	if (opts.cancelCtx) {
 		switch (opts.cancelCtx->GetCancelType()) {
 			case CancelType::Explicit:
@@ -125,7 +125,7 @@ CoroRPCAnswer CoroClientConnection::call(const CommandParams &opts, const Args &
 	errSyncCh_.pop();
 
 	const uint32_t seq = seqp.first;
-	auto &call = rpcCalls_[seq % rpcCalls_.size()];
+	auto& call = rpcCalls_[seq % rpcCalls_.size()];
 	call.seq = seq;
 	call.used = true;
 	call.deadline = deadline;
@@ -153,7 +153,7 @@ CoroRPCAnswer CoroClientConnection::call(const CommandParams &opts, const Args &
 	return ans;
 }
 
-Error CoroClientConnection::callNoReply(const CommandParams &opts, uint32_t seq, const Args &args) {
+Error CoroClientConnection::callNoReply(const CommandParams& opts, uint32_t seq, const Args& args) {
 	if (opts.cancelCtx) {
 		switch (opts.cancelCtx->GetCancelType()) {
 			case CancelType::Explicit:
@@ -179,8 +179,8 @@ Error CoroClientConnection::callNoReply(const CommandParams &opts, uint32_t seq,
 	return errOK;
 }
 
-CoroClientConnection::MarkedChunk CoroClientConnection::packRPC(CmdCode cmd, uint32_t seq, bool noReply, const Args &args,
-																const Args &ctxArgs, std::optional<TimePointT> requiredLoginTs) {
+CoroClientConnection::MarkedChunk CoroClientConnection::packRPC(CmdCode cmd, uint32_t seq, bool noReply, const Args& args,
+																const Args& ctxArgs, std::optional<TimePointT> requiredLoginTs) {
 	CProtoHeader hdr;
 	hdr.len = 0;
 	hdr.magic = kCprotoMagic;
@@ -193,7 +193,7 @@ CoroClientConnection::MarkedChunk CoroClientConnection::packRPC(CmdCode cmd, uin
 	chunk ch = getChunk();
 	WrSerializer ser(std::move(ch));
 
-	ser.Write(std::string_view(reinterpret_cast<char *>(&hdr), sizeof(hdr)));
+	ser.Write(std::string_view(reinterpret_cast<char*>(&hdr), sizeof(hdr)));
 	args.Pack(ser);
 	ctxArgs.Pack(ser);
 	if (hdr.compressed) {
@@ -203,19 +203,19 @@ CoroClientConnection::MarkedChunk CoroClientConnection::packRPC(CmdCode cmd, uin
 		ser.Write(compressedBuffer_);
 	}
 	assertrx(ser.Len() < size_t(std::numeric_limits<int32_t>::max()));
-	reinterpret_cast<CProtoHeader *>(ser.Buf())->len = ser.Len() - sizeof(hdr);
+	reinterpret_cast<CProtoHeader*>(ser.Buf())->len = ser.Len() - sizeof(hdr);
 
 	return {seq, noReply, requiredLoginTs, ser.DetachChunk()};
 }
 
-void CoroClientConnection::appendChunck(std::vector<char> &buf, chunk &&ch) {
+void CoroClientConnection::appendChunck(std::vector<char>& buf, chunk&& ch) {
 	auto oldBufSize = buf.size();
 	buf.resize(buf.size() + ch.size());
 	memcpy(buf.data() + oldBufSize, ch.data(), ch.size());
 	recycleChunk(std::move(ch));
 }
 
-Error CoroClientConnection::login(std::vector<char> &buf) {
+Error CoroClientConnection::login(std::vector<char>& buf) {
 	assertrx(conn_.state() != manual_connection::conn_state::connecting);
 	if (conn_.state() == manual_connection::conn_state::init) {
 		assertrx(buf.size() == 0);
@@ -244,8 +244,15 @@ Error CoroClientConnection::login(std::vector<char> &buf) {
 
 		std::string userName = connectData_.uri.username();
 		std::string password = connectData_.uri.password();
-		if (dbName[0] == '/') dbName = dbName.substr(1);
+		if (dbName[0] == '/') {
+			dbName = dbName.substr(1);
+		}
+#ifdef WIN32
+		enableCompression_ = false;	 // Disable compression on Windows #1823
+#else
 		enableCompression_ = connectData_.opts.enableCompression;
+#endif
+
 		requestDedicatedThread_ = connectData_.opts.requestDedicatedThread;
 		Args args = {Arg{p_string(&userName)},
 					 Arg{p_string(&password)},
@@ -278,7 +285,7 @@ Error CoroClientConnection::login(std::vector<char> &buf) {
 	return errOK;
 }
 
-void CoroClientConnection::handleFatalErrorFromReader(const Error &err) noexcept {
+void CoroClientConnection::handleFatalErrorFromReader(const Error& err) noexcept {
 	if (errSyncCh_.opened() || terminate_) {
 		return;
 	} else {
@@ -288,9 +295,9 @@ void CoroClientConnection::handleFatalErrorFromReader(const Error &err) noexcept
 	handleFatalErrorImpl(err);
 }
 
-void CoroClientConnection::handleFatalErrorImpl(const Error &err) noexcept {
+void CoroClientConnection::handleFatalErrorImpl(const Error& err) noexcept {
 	setLoggedIn(false);
-	for (auto &c : rpcCalls_) {
+	for (auto& c : rpcCalls_) {
 		if (c.used && c.rspCh.opened() && !c.rspCh.full()) {
 			c.rspCh.push(err);
 		}
@@ -301,7 +308,7 @@ void CoroClientConnection::handleFatalErrorImpl(const Error &err) noexcept {
 	errSyncCh_.close();
 }
 
-void CoroClientConnection::handleFatalErrorFromWriter(const Error &err) noexcept {
+void CoroClientConnection::handleFatalErrorFromWriter(const Error& err) noexcept {
 	if (!terminate_) {
 		if (errSyncCh_.opened()) {
 			errSyncCh_.pop();
@@ -325,7 +332,7 @@ chunk CoroClientConnection::getChunk() noexcept {
 	return ch;
 }
 
-void CoroClientConnection::recycleChunk(chunk &&ch) noexcept {
+void CoroClientConnection::recycleChunk(chunk&& ch) noexcept {
 	if (ch.capacity() <= kMaxChunckSizeToRecycle && recycledChuncks_.size() < kMaxRecycledChuncks) {
 		recycledChuncks_.emplace_back(std::move(ch));
 	}
@@ -345,7 +352,7 @@ void CoroClientConnection::writerRoutine() {
 			}
 			if (mch.first.requiredLoginTs.has_value() && mch.first.requiredLoginTs != LoginTs()) {
 				recycleChunk(std::move(mch.first.data));
-				auto &c = rpcCalls_[mch.first.seq % rpcCalls_.size()];
+				auto& c = rpcCalls_[mch.first.seq % rpcCalls_.size()];
 				if (c.used && c.rspCh.opened() && !c.rspCh.full()) {
 					c.rspCh.push(
 						Error(errNetwork,
@@ -364,7 +371,7 @@ void CoroClientConnection::writerRoutine() {
 				handleFatalErrorFromWriter(status);
 				continue;
 			}
-			const auto &rpcData = rpcCalls_[mch.first.seq % rpcCalls_.size()];
+			const auto& rpcData = rpcCalls_[mch.first.seq % rpcCalls_.size()];
 			if ((rpcData.used && rpcData.seq == mch.first.seq) || mch.first.noReply) {
 				appendChunck(buf, std::move(mch.first.data));
 				++cnt;
@@ -451,7 +458,7 @@ void CoroClientConnection::readerRoutine() {
 				ans.status_ = Error(static_cast<ErrorCode>(errCode), std::string{errMsg});
 			}
 			ans.data_ = span<const uint8_t>(ser.Buf() + ser.Pos(), ser.Len() - ser.Pos());
-		} catch (const Error &err) {
+		} catch (const Error& err) {
 			// disconnect
 			handleFatalErrorFromReader(err);
 			break;
@@ -468,7 +475,7 @@ void CoroClientConnection::readerRoutine() {
 				handleFatalErrorFromReader(ans.Status());
 			}
 		} else if (hdr.cmd != kCmdUpdates) {
-			auto &rpcData = rpcCalls_[hdr.seq % rpcCalls_.size()];
+			auto& rpcData = rpcCalls_[hdr.seq % rpcCalls_.size()];
 			if (!rpcData.used || rpcData.seq != hdr.seq) {
 				auto cmdSv = CmdName(hdr.cmd);
 				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%d(%.*s)\n", int(hdr.seq), hdr.cmd, int(cmdSv.size()), cmdSv.data());
@@ -487,7 +494,7 @@ void CoroClientConnection::readerRoutine() {
 	} while (loggedIn_ && !terminate_);
 }
 
-void CoroClientConnection::sendCloseResults(CProtoHeader const &hdr, CoroRPCAnswer const &ans) {
+void CoroClientConnection::sendCloseResults(const CProtoHeader& hdr, const CoroRPCAnswer& ans) {
 	if (!ans.Status().ok()) {
 		return;
 	}
@@ -532,8 +539,10 @@ void CoroClientConnection::deadlineRoutine() {
 		loop_->granular_sleep(kDeadlineCheckInterval, kCoroSleepGranularity, [this] { return terminate_; });
 		now_ += kDeadlineCheckInterval;
 
-		for (auto &c : rpcCalls_) {
-			if (!c.used) continue;
+		for (auto& c : rpcCalls_) {
+			if (!c.used) {
+				continue;
+			}
 			bool expired = (c.deadline.time_since_epoch().count() && c.deadline <= now_);
 			bool canceled = (c.cancelCtx && c.cancelCtx->IsCancelable() && (c.cancelCtx->GetCancelType() == CancelType::Explicit));
 			if (expired || canceled) {

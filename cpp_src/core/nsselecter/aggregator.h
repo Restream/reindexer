@@ -19,21 +19,21 @@ public:
 		enum { Count = -1 };
 	};
 
-	Aggregator(const PayloadType &, const FieldsSet &, AggType aggType, const h_vector<std::string, 1> &names,
-			   const h_vector<SortingEntry, 1> &sort = {}, size_t limit = QueryEntry::kDefaultLimit,
+	Aggregator(const PayloadType&, const FieldsSet&, AggType aggType, const h_vector<std::string, 1>& names,
+			   const h_vector<SortingEntry, 1>& sort = {}, size_t limit = QueryEntry::kDefaultLimit,
 			   size_t offset = QueryEntry::kDefaultOffset, bool compositeIndexFields = false);
-	Aggregator(Aggregator &&) noexcept;
+	Aggregator(Aggregator&&) noexcept;
 	~Aggregator();
 
-	void Aggregate(const PayloadValue &lhs);
+	void Aggregate(const PayloadValue& lhs);
 	AggregationResult GetResult() const;
 
-	Aggregator(const Aggregator &) = delete;
-	Aggregator &operator=(const Aggregator &) = delete;
-	Aggregator &operator=(Aggregator &&) = delete;
+	Aggregator(const Aggregator&) = delete;
+	Aggregator& operator=(const Aggregator&) = delete;
+	Aggregator& operator=(Aggregator&&) = delete;
 
 	AggType Type() const noexcept { return aggType_; }
-	const h_vector<std::string, 1> &Names() const noexcept { return names_; }
+	const h_vector<std::string, 1>& Names() const noexcept { return names_; }
 
 	bool DistinctChanged() noexcept { return distinctChecker_(); }
 
@@ -47,7 +47,7 @@ private:
 	using SinglefieldUnorderedMap = fast_hash_map<Variant, int>;
 	using Facets = std::variant<MultifieldOrderedMap, MultifieldUnorderedMap, SinglefieldOrderedMap, SinglefieldUnorderedMap>;
 
-	void aggregate(const Variant &variant);
+	void aggregate(const Variant& variant);
 
 	PayloadType payloadType_;
 	FieldsSet fields_;
@@ -62,14 +62,16 @@ private:
 
 	class RelaxVariantCompare {
 	public:
-		RelaxVariantCompare(const PayloadType &type, const FieldsSet &fields) : type_(type), fields_(fields) {}
-		bool operator()(const Variant &v1, const Variant &v2) const {
-			if (!v1.Type().IsSame(v2.Type())) return false;
+		RelaxVariantCompare(const PayloadType& type, const FieldsSet& fields) : type_(type), fields_(fields) {}
+		bool operator()(const Variant& v1, const Variant& v2) const {
+			if (!v1.Type().IsSame(v2.Type())) {
+				return false;
+			}
 			return v1.Type().EvaluateOneOf(
 				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int,
 						  KeyValueType::Uuid>) { return v1.Compare<NotComparable::Return>(v2) == ComparationResult::Eq; },
 				[&](KeyValueType::Composite) {
-					return ConstPayload(type_, static_cast<const PayloadValue &>(v1)).IsEQ(static_cast<const PayloadValue &>(v2), fields_);
+					return ConstPayload(type_, static_cast<const PayloadValue&>(v1)).IsEQ(static_cast<const PayloadValue&>(v2), fields_);
 				},
 				[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined>) -> bool { throw_as_assert; });
 		}
@@ -79,12 +81,12 @@ private:
 		FieldsSet fields_;
 	};
 	struct DistinctHasher {
-		DistinctHasher(const PayloadType &type, const FieldsSet &fields) : type_(type), fields_(fields) {}
-		size_t operator()(const Variant &v) const {
+		DistinctHasher(const PayloadType& type, const FieldsSet& fields) : type_(type), fields_(fields) {}
+		size_t operator()(const Variant& v) const {
 			return v.Type().EvaluateOneOf(
 				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int,
 						  KeyValueType::Uuid>) noexcept { return v.Hash(); },
-				[&](KeyValueType::Composite) { return ConstPayload(type_, static_cast<const PayloadValue &>(v)).GetHash(fields_); },
+				[&](KeyValueType::Composite) { return ConstPayload(type_, static_cast<const PayloadValue&>(v)).GetHash(fields_); },
 				[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined>) -> size_t { throw_as_assert; });
 		}
 
@@ -95,7 +97,7 @@ private:
 
 	class DistinctChangeChecker {
 	public:
-		DistinctChangeChecker(const Aggregator &aggregator) noexcept : aggregator_(aggregator) {}
+		DistinctChangeChecker(const Aggregator& aggregator) noexcept : aggregator_(aggregator) {}
 		[[nodiscard]] bool operator()() noexcept {
 			assertrx_dbg(aggregator_.Type() == AggType::AggDistinct);
 			assertrx_dbg(aggregator_.distincts_);
@@ -105,7 +107,7 @@ private:
 		}
 
 	private:
-		const Aggregator &aggregator_;
+		const Aggregator& aggregator_;
 		size_t lastCheckSize_ = 0;
 	} distinctChecker_;
 

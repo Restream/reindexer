@@ -9,11 +9,11 @@
 #include "gtests/tests/unit/csv2jsonconverter.h"
 #include "sharding_api.h"
 
-static void CheckServerIDs(std::vector<std::vector<ServerControl>> &svc) {
+static void CheckServerIDs(std::vector<std::vector<ServerControl>>& svc) {
 	WrSerializer ser;
 	size_t idx = 0;
-	for (auto &cluster : svc) {
-		for (auto &sc : cluster) {
+	for (auto& cluster : svc) {
+		for (auto& sc : cluster) {
 			auto rx = sc.Get()->api.reindexer;
 			client::QueryResults qr;
 			auto err = rx->Select(Query("#config").Where("type", CondEq, "replication"), qr);
@@ -63,12 +63,12 @@ void ShardingApi::runSelectTest(std::string_view nsName) {
 						ASSERT_TRUE(emplaced) << "Non-unique ID. JSON: " << json;
 					}
 
-					const auto &joinedData = it.GetJoined();
+					const auto& joinedData = it.GetJoined();
 					EXPECT_EQ(joinedData.size(), 1);
 					for (size_t joinedField = 0; joinedField < joinedData.size(); ++joinedField) {
 						QueryResults qrJoined;
-						const auto &joinedItems = joinedData[joinedField];
-						for (const auto &itemData : joinedItems) {
+						const auto& joinedItems = joinedData[joinedField];
+						for (const auto& itemData : joinedItems) {
 							ItemImpl itemimpl = ItemImpl(qr.GetPayloadType(1), qr.GetTagsMatcher(1));
 							itemimpl.Unsafe(true);
 							itemimpl.FromCJSON(itemData.data);
@@ -111,7 +111,7 @@ void ShardingApi::runSelectTest(std::string_view nsName) {
 						auto id = root["id"].As<int>(-1);
 						ASSERT_NE(id, -1) << json;
 						ASSERT_NE(
-							std::find_if(requestedIDs.begin(), requestedIDs.end(), [id](const Variant &v) { return v.As<int>() == id; }),
+							std::find_if(requestedIDs.begin(), requestedIDs.end(), [id](const Variant& v) { return v.As<int>() == id; }),
 							requestedIDs.end())
 							<< json;
 					}
@@ -227,7 +227,7 @@ void ShardingApi::runMetaTest(std::string_view nsName) {
 				for (int k = 0; k < int(kShards); ++k) {
 					shardsSet.emplace(k);
 				}
-				for (auto &m : sharded) {
+				for (auto& m : sharded) {
 					ASSERT_EQ(m.data, properValue) << m.shardId;
 					ASSERT_EQ(shardsSet.count(m.shardId), 1)
 						<< "m.shardId = " << m.shardId << "; i = " << i << "; j = " << j << "; shard = " << shard;
@@ -318,7 +318,7 @@ void ShardingApi::runSerialTest(std::string_view nsName) {
 		for (int j = 0; j < int(kShards); ++j) {
 			expectedSerials.emplace(j, std::to_string(NodesCount() * kItemsCountByShard[j]));
 		}
-		for (auto &m : sharded) {
+		for (auto& m : sharded) {
 			ASSERT_EQ(expectedSerials.count(m.shardId), 1) << "m.shardId = " << m.shardId << "; i = " << i;
 			ASSERT_EQ(expectedSerials[m.shardId], m.data) << m.shardId << "; i = " << i;
 			expectedSerials.erase(m.shardId);
@@ -418,7 +418,7 @@ void ShardingApi::runUpdateIndexTest(std::string_view nsName) {
 			ASSERT_EQ(nsdefs.size(), 1);
 			ASSERT_EQ(nsdefs.front().name, nsName);
 			ASSERT_TRUE(std::find_if(nsdefs.front().indexes.begin(), nsdefs.front().indexes.end(),
-									 [](const IndexDef &index) { return index.name_ == "new"; }) != nsdefs.front().indexes.end());
+									 [](const IndexDef& index) { return index.name_ == "new"; }) != nsdefs.front().indexes.end());
 			err = rx->DropIndex(nsName, indexDef);
 			ASSERT_TRUE(err.ok()) << err.what();
 			nsdefs.clear();
@@ -427,7 +427,7 @@ void ShardingApi::runUpdateIndexTest(std::string_view nsName) {
 			ASSERT_EQ(nsdefs.size(), 1);
 			ASSERT_EQ(nsdefs.front().name, nsName);
 			ASSERT_TRUE(std::find_if(nsdefs.front().indexes.begin(), nsdefs.front().indexes.end(),
-									 [](const IndexDef &index) { return index.name_ == "new"; }) == nsdefs.front().indexes.end());
+									 [](const IndexDef& index) { return index.name_ == "new"; }) == nsdefs.front().indexes.end());
 		}
 	}
 }
@@ -462,7 +462,7 @@ void ShardingApi::runDropNamespaceTest(std::string_view nsName) {
 	ASSERT_TRUE(nsdefs.empty());
 }
 
-void ShardingApi::checkTransactionErrors(client::Reindexer &rx, std::string_view nsName) {
+void ShardingApi::checkTransactionErrors(client::Reindexer& rx, std::string_view nsName) {
 	// Check errros handling in transactions
 	for (unsigned i = 0; i < 2; ++i) {
 		auto tr = rx.NewTransaction(nsName);
@@ -610,7 +610,7 @@ TEST_F(ShardingApi, BaseApiTestset) {
 	runTransactionsTest(nsIt++->name);
 }
 
-void ShardingApi::runTransactionsTest(std::string_view nsName, const std::map<int, std::set<int>> &shardDataDistrib) {
+void ShardingApi::runTransactionsTest(std::string_view nsName, const std::map<int, std::set<int>>& shardDataDistrib) {
 	TestCout() << "Running TransactionsTest" << std::endl;
 
 	std::shared_ptr<client::Reindexer> rx = svc_[0][0].Get()->api.reindexer;
@@ -624,11 +624,11 @@ void ShardingApi::runTransactionsTest(std::string_view nsName, const std::map<in
 	ASSERT_NE(qr.GetShardingConfigVersion(), ShardingSourceId::NotSet);
 
 	for (size_t shard = 0; shard < kShards; ++shard) {
-		const auto &keys = shardDataDistrib.at(shard);
+		const auto& keys = shardDataDistrib.at(shard);
 
 		reindexer::client::Transaction tr = rx->NewTransaction(nsName);
 		ASSERT_TRUE(tr.Status().ok()) << tr.Status().what();
-		for (const auto &key : keys) {
+		for (const auto& key : keys) {
 			client::Item item = tr.NewItem();
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
@@ -657,16 +657,16 @@ void ShardingApi::runTransactionsTest(std::string_view nsName, const std::map<in
 	ASSERT_NE(qr.GetShardingConfigVersion(), ShardingSourceId::NotSet) << "ns = " << nsName;
 
 	int sizeQR = std::accumulate(shardDataDistrib.begin(), shardDataDistrib.end(), 0,
-								 [](int sum, const auto &el) { return sum + el.second.size(); });
+								 [](int sum, const auto& el) { return sum + el.second.size(); });
 	ASSERT_EQ(qr.Count(), sizeQR);
 }
 
 template <typename T>
-void ShardingApi::runSelectTest(std::string_view nsName, const std::map<int, std::set<T>> &shardDataDistrib) {
+void ShardingApi::runSelectTest(std::string_view nsName, const std::map<int, std::set<T>>& shardDataDistrib) {
 	TestCout() << "Running SELECT test" << std::endl;
 
 	std::set<T> checkData;
-	for (auto &[_, s] : shardDataDistrib) {
+	for (auto& [_, s] : shardDataDistrib) {
 		(void)_;
 		checkData.insert(s.begin(), s.end());
 	}
@@ -679,7 +679,7 @@ void ShardingApi::runSelectTest(std::string_view nsName, const std::map<int, std
 		ASSERT_TRUE(err.ok()) << err.what() << "; node index = " << i;
 		ASSERT_EQ(qr.Count(), checkData.size()) << "node index = " << i;
 
-		for (auto &res : qr) {
+		for (auto& res : qr) {
 			WrSerializer wrser;
 			err = res.GetJSON(wrser);
 			ASSERT_TRUE(err.ok()) << err.what();
@@ -694,7 +694,7 @@ void ShardingApi::runSelectTest(std::string_view nsName, const std::map<int, std
 }
 
 template <typename T>
-void ShardingApi::runLocalSelectTest(std::string_view nsName, const std::map<int, std::set<T>> &shardDataDistrib) {
+void ShardingApi::runLocalSelectTest(std::string_view nsName, const std::map<int, std::set<T>>& shardDataDistrib) {
 	TestCout() << "Running LOCAL SELECT test" << std::endl;
 
 	auto checkDataDistrib = [nsName, this, &shardDataDistrib](int shard) {
@@ -708,7 +708,7 @@ void ShardingApi::runLocalSelectTest(std::string_view nsName, const std::map<int
 		ASSERT_TRUE(err.ok()) << err.what() << "; ns: " << nsName;
 		ASSERT_EQ(qr.Count(), shardDataDistrib.at(shard).size()) << "Shard - " << shard;
 
-		for (auto &res : qr) {
+		for (auto& res : qr) {
 			WrSerializer wrser;
 			err = res.GetJSON(wrser);
 			ASSERT_TRUE(err.ok()) << err.what();
@@ -720,11 +720,13 @@ void ShardingApi::runLocalSelectTest(std::string_view nsName, const std::map<int
 		}
 	};
 
-	for (size_t shard = 0; shard < kShards; ++shard) checkDataDistrib(shard);
+	for (size_t shard = 0; shard < kShards; ++shard) {
+		checkDataDistrib(shard);
+	}
 }
 
 template <typename T>
-void ShardingApi::fillShard(int shard, const std::set<T> &data, const std::string &kNsName, const std::string &kFieldId) {
+void ShardingApi::fillShard(int shard, const std::set<T>& data, const std::string& kNsName, const std::string& kFieldId) {
 	auto rx = svc_[shard][0].Get()->api.reindexer;
 
 	NamespaceDef nsDef{kNsName};
@@ -743,7 +745,7 @@ void ShardingApi::fillShard(int shard, const std::set<T> &data, const std::strin
 	Error err = rx->AddNamespace(nsDef);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	for (const auto &value : data) {
+	for (const auto& value : data) {
 		WrSerializer wrser;
 		auto item = rx->NewItem(kNsName);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
@@ -760,10 +762,12 @@ void ShardingApi::fillShard(int shard, const std::set<T> &data, const std::strin
 }
 
 template <typename T>
-void ShardingApi::fillShards(const std::map<int, std::set<T>> &shardDataDistrib, const std::string &kNsName, const std::string &kFieldId) {
+void ShardingApi::fillShards(const std::map<int, std::set<T>>& shardDataDistrib, const std::string& kNsName, const std::string& kFieldId) {
 	TestCout() << "Filling in the data" << std::endl;
 	std::set<T> data;
-	for (const auto &p : shardDataDistrib) data.insert(p.second.begin(), p.second.end());
+	for (const auto& p : shardDataDistrib) {
+		data.insert(p.second.begin(), p.second.end());
+	}
 	fillShard(0, data, kNsName, kFieldId);
 }
 
@@ -775,10 +779,12 @@ TEST_F(ShardingApi, ShardingInvalidTxTest) {
 	cfg.nodesInCluster = 1;	 // Only one node in the cluster is needed for the test
 	cfg.additionalNss.emplace_back(kNsName);
 	cfg.additionalNss[0].indexName = kSharingIdx;
-	const char *kShardKeyTmplt = "Shard%dKey%d";
+	const char* kShardKeyTmplt = "Shard%dKey%d";
 	cfg.additionalNss[0].keyValuesNodeCreation = [kShardKeyTmplt](int shard) {
 		ShardingConfig::Key key;
-		for (int i = 0; i < 3; ++i) key.values.emplace_back(Variant(fmt::sprintf(kShardKeyTmplt, shard, i)));
+		for (int i = 0; i < 3; ++i) {
+			key.values.emplace_back(Variant(fmt::sprintf(kShardKeyTmplt, shard, i)));
+		}
 		key.shardId = shard;
 		return key;
 	};
@@ -797,7 +803,7 @@ TEST_F(ShardingApi, ShardingInvalidTxTest) {
 	reindexer::client::Transaction tr = rx->NewTransaction(kNsName);
 	ASSERT_TRUE(tr.Status().ok()) << tr.Status().what();
 
-	auto itemTmplt = fmt::sprintf("{\"%s\": %s, \"%s\": \"%s\"}", kFieldId, "%s", kSharingIdx, kShardKeyTmplt);
+	auto itemTmplt = fmt::sprintf("{\"%s\": %s, \"%s\": \"%s\"}", kFieldId, "%d", kSharingIdx, kShardKeyTmplt);
 	auto makeItem = [&tr](std::string_view rawItem) {
 		client::Item item = tr.NewItem();
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
@@ -809,7 +815,7 @@ TEST_F(ShardingApi, ShardingInvalidTxTest) {
 		return item;
 	};
 
-	for (const auto &rawItem : {fmt::sprintf(itemTmplt, 0, 2, 0), fmt::sprintf(itemTmplt, 1, 2, 1), fmt::sprintf(itemTmplt, 2, 2, 2)}) {
+	for (const auto& rawItem : {fmt::sprintf(itemTmplt, 0, 2, 0), fmt::sprintf(itemTmplt, 1, 2, 1), fmt::sprintf(itemTmplt, 2, 2, 2)}) {
 		err = tr.Upsert(makeItem(rawItem));
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
@@ -914,7 +920,7 @@ TEST_F(ShardingApi, SelectTestForRangesWithDoubleKeys) {
 
 template <typename T>
 ShardingApi::ShardingConfig ShardingApi::makeShardingConfigByDistrib(std::string_view nsName,
-																	 const std::map<int, std::set<T>> &shardDataDistrib, int shards,
+																	 const std::map<int, std::set<T>>& shardDataDistrib, int shards,
 																	 int nodes) const {
 	using Cfg = ShardingConfig;
 	constexpr auto algType =
@@ -923,14 +929,16 @@ ShardingApi::ShardingConfig ShardingApi::makeShardingConfigByDistrib(std::string
 	std::vector<Cfg::Key> keys;
 	keys.reserve(shardDataDistrib.size());
 
-	for (const auto &[shardID, set] : shardDataDistrib) {
+	for (const auto& [shardID, set] : shardDataDistrib) {
 		std::vector<sharding::Segment<Variant>> values;
 		values.reserve(set.size());
 
 		if constexpr (algType == ShardingAlgorithmType::ByRange) {
 			values = {set.begin(), set.end()};
 		} else {
-			for (const auto &v : set) values.emplace_back(Variant(v));
+			for (const auto& v : set) {
+				values.emplace_back(Variant(v));
+			}
 		}
 		keys.emplace_back(Cfg::Key{shardID, algType, std::move(values)});
 	}
@@ -952,10 +960,12 @@ ShardingApi::ShardingConfig ShardingApi::makeShardingConfigByDistrib(std::string
 	return cfg;
 }
 
-Error ShardingApi::applyNewShardingConfig(client::Reindexer &rx, const ShardingConfig &config, ApplyType type,
+Error ShardingApi::applyNewShardingConfig(client::Reindexer& rx, const ShardingConfig& config, ApplyType type,
 										  std::optional<int64_t> sourceId) const {
 	reindexer::client::Item item = rx.NewItem("#config");
-	if (!item.Status().ok()) return item.Status();
+	if (!item.Status().ok()) {
+		return item.Status();
+	}
 
 	{
 		WrSerializer wrser;
@@ -976,11 +986,15 @@ Error ShardingApi::applyNewShardingConfig(client::Reindexer &rx, const ShardingC
 		action.End();
 		jsonBuilder.End();
 		Error err = item.FromJSON(wrser.Slice());
-		if (!err.ok()) return err;
+		if (!err.ok()) {
+			return err;
+		}
 	}
 
 	auto err = rx.Upsert("#config", item);
-	if (!item.Status().ok()) return item.Status();
+	if (!item.Status().ok()) {
+		return item.Status();
+	}
 
 	return err;
 }
@@ -993,7 +1007,7 @@ TEST_F(ShardingApi, RuntimeShardingConfigTest) {
 	cfg.nodesInCluster = 1;	 // Only one node in the cluster is needed for the test
 	Init(std::move(cfg));
 
-	auto &rx = *svc_[0][0].Get()->api.reindexer;
+	auto& rx = *svc_[0][0].Get()->api.reindexer;
 	auto err = rx.DropNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 
@@ -1020,7 +1034,9 @@ void ShardingApi::MultyThreadApplyConfigTest(ShardingApi::ApplyType type) {
 	const int shardsCount = 4;
 	const int parallelSelectsCount = shardsCount;
 	std::map<int, std::set<int>> shardDataDistrib;
-	for (int i = 0; i < shardsCount; ++i) shardDataDistrib[i] = {10 * i, 10 * i + 1, 10 * i + 2, 10 * i + 3, 10 * i + 4, 10 * i + 5};
+	for (int i = 0; i < shardsCount; ++i) {
+		shardDataDistrib[i] = {10 * i, 10 * i + 1, 10 * i + 2, 10 * i + 3, 10 * i + 4, 10 * i + 5};
+	}
 	constexpr int64_t kLocalSourceId = 11111;  // Use this value in the local config for consistancy
 
 	kShards = shardsCount;
@@ -1033,7 +1049,7 @@ void ShardingApi::MultyThreadApplyConfigTest(ShardingApi::ApplyType type) {
 	}
 
 	auto fillDataLocalNss = [this, &kNonShardedNs](int shardId) {
-		auto &rx = *svc_[shardId][0].Get()->api.reindexer;
+		auto& rx = *svc_[shardId][0].Get()->api.reindexer;
 
 		NamespaceDef nsDef{kNonShardedNs};
 		nsDef.AddIndex(kFieldId, "hash", "int", IndexOpts().PK());
@@ -1056,7 +1072,9 @@ void ShardingApi::MultyThreadApplyConfigTest(ShardingApi::ApplyType type) {
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
 	};
-	for (int shardId = 0; shardId < parallelSelectsCount; ++shardId) fillDataLocalNss(shardId);
+	for (int shardId = 0; shardId < parallelSelectsCount; ++shardId) {
+		fillDataLocalNss(shardId);
+	}
 
 	auto config = makeShardingConfigByDistrib(kNsName, shardDataDistrib, shardsCount, 1);
 
@@ -1097,7 +1115,7 @@ void ShardingApi::MultyThreadApplyConfigTest(ShardingApi::ApplyType type) {
 			i));
 	}
 
-	for (auto &res : results) {
+	for (auto& res : results) {
 		auto err = res.get();
 		if (type == ApplyType::Local) {
 			ASSERT_TRUE(err.ok()) << err.what();
@@ -1129,7 +1147,9 @@ void ShardingApi::MultyThreadApplyConfigTest(ShardingApi::ApplyType type) {
 	runSelectTest(kNsName, shardDataDistrib);
 
 	stopSelects.store(true);
-	for (auto &selectsThread : parallelSelectsPerShard) selectsThread.join();
+	for (auto& selectsThread : parallelSelectsPerShard) {
+		selectsThread.join();
+	}
 }
 
 TEST_F(ShardingApi, RuntimeShardingConfigMultyApplyTest) { MultyThreadApplyConfigTest(ApplyType::Shared); }
@@ -1141,7 +1161,7 @@ TEST_F(ShardingApi, RuntimeShardingConfigLocallyResetTest) {
 	cfg.shards = 4;
 	Init(std::move(cfg));
 
-	auto &rx = *svc_[0][0].Get()->api.reindexer;
+	auto& rx = *svc_[0][0].Get()->api.reindexer;
 	auto shCfg = getShardingConfigFrom(rx);
 	assertrx(shCfg.has_value());
 
@@ -1168,11 +1188,11 @@ TEST_F(ShardingApi, RuntimeShardingConfigLocallyResetTest) {
 	assertrx(!shCfg.has_value());
 }
 
-void ShardingApi::checkConfig(const ServerControl::Interface::Ptr &server, const cluster::ShardingConfig &config) {
+void ShardingApi::checkConfig(const ServerControl::Interface::Ptr& server, const cluster::ShardingConfig& config) {
 	ASSERT_NO_THROW(checkConfigThrow(server, config));
 }
 
-void ShardingApi::checkConfigThrow(const ServerControl::Interface::Ptr &server, const cluster::ShardingConfig &config) {
+void ShardingApi::checkConfigThrow(const ServerControl::Interface::Ptr& server, const cluster::ShardingConfig& config) {
 	auto fromConfigNs = getShardingConfigFrom(*server->api.reindexer);
 	assertrx(fromConfigNs.has_value());
 	if (config != *fromConfigNs) {
@@ -1194,12 +1214,12 @@ void ShardingApi::checkConfigThrow(const ServerControl::Interface::Ptr &server, 
 	}
 }
 
-int64_t ShardingApi::getSourceIdFrom(const ServerControl::Interface::Ptr &server) {
+int64_t ShardingApi::getSourceIdFrom(const ServerControl::Interface::Ptr& server) {
 	auto cfg = getShardingConfigFrom(*server->api.reindexer);
 	return cfg.has_value() ? cfg->sourceId : int64_t(ShardingSourceId::NotSet);
 }
 
-std::optional<ShardingApi::ShardingConfig> ShardingApi::getShardingConfigFrom(reindexer::client::Reindexer &rx) {
+std::optional<ShardingApi::ShardingConfig> ShardingApi::getShardingConfigFrom(reindexer::client::Reindexer& rx) {
 	client::QueryResults qr;
 	Query q = Query("#config").Where("type", CondEq, "sharding");
 	auto err = rx.Select(q, qr);
@@ -1237,7 +1257,7 @@ void ShardingApi::changeClusterLeader(int shardId) {
 	ASSERT_TRUE(!nodes.empty());
 
 	int leaderId = -1;
-	for (auto &node : nodes) {
+	for (auto& node : nodes) {
 		if (node["role"].As<std::string_view>() == "leader") {
 			leaderId = node["server_id"].As<int>();
 			break;
@@ -1259,7 +1279,9 @@ TEST_F(ShardingApi, RuntimeUpdateShardingCfgWithClusterTest) {
 	const int shardsCount = 3;
 	const int nodesInCluster = 3;
 	std::map<int, std::set<int>> shardDataDistrib;
-	for (int i = 0; i < shardsCount; ++i) shardDataDistrib[i] = {10 * i, 10 * i + 1, 10 * i + 2, 10 * i + 3, 10 * i + 4, 10 * i + 5};
+	for (int i = 0; i < shardsCount; ++i) {
+		shardDataDistrib[i] = {10 * i, 10 * i + 1, 10 * i + 2, 10 * i + 3, 10 * i + 4, 10 * i + 5};
+	}
 
 	InitShardingConfig cfg;
 	cfg.needFillDefaultNs = false;
@@ -1270,7 +1292,7 @@ TEST_F(ShardingApi, RuntimeUpdateShardingCfgWithClusterTest) {
 	const int parallelSelectsCount = shardsCount;
 
 	auto fillDataLocalNss = [this, &kNonShardedNs](int shardId) {
-		auto &rx = *svc_[shardId][0].Get()->api.reindexer;
+		auto& rx = *svc_[shardId][0].Get()->api.reindexer;
 
 		NamespaceDef nsDef{kNonShardedNs};
 		nsDef.AddIndex(kFieldId, "hash", "int", IndexOpts().PK());
@@ -1292,7 +1314,9 @@ TEST_F(ShardingApi, RuntimeUpdateShardingCfgWithClusterTest) {
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
 	};
-	for (int shardId = 0; shardId < parallelSelectsCount; ++shardId) fillDataLocalNss(shardId);
+	for (int shardId = 0; shardId < parallelSelectsCount; ++shardId) {
+		fillDataLocalNss(shardId);
+	}
 
 	std::vector<std::thread> parallelSelectsPerShard;
 	parallelSelectsPerShard.reserve(parallelSelectsCount);
@@ -1338,7 +1362,9 @@ TEST_F(ShardingApi, RuntimeUpdateShardingCfgWithClusterTest) {
 	auto err = applyNewShardingConfig(*svc_[0][0].Get()->api.reindexer, config, ApplyType::Shared);
 
 	stopChangeLeader.store(true);
-	for (auto &chLeaderThread : parallelChangeLeaders) chLeaderThread.join();
+	for (auto& chLeaderThread : parallelChangeLeaders) {
+		chLeaderThread.join();
+	}
 
 	if (!err.ok()) {
 		ASSERT_THAT(err.what(), testing::MatchesRegex(".*(Role was switched to|Request was proxied to follower node).*")) << err.what();
@@ -1348,7 +1374,9 @@ TEST_F(ShardingApi, RuntimeUpdateShardingCfgWithClusterTest) {
 		// Applying without changing leader must be done correctly
 		do {
 			err = applyNewShardingConfig(*svc_[0][0].Get()->api.reindexer, config, ApplyType::Shared);
-			if (err.ok()) break;
+			if (err.ok()) {
+				break;
+			}
 
 			ASSERT_THAT(err.what(), testing::MatchesRegex(".*Config candidate is busy already.*")) << err.what();
 			std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -1371,13 +1399,15 @@ TEST_F(ShardingApi, RuntimeUpdateShardingCfgWithClusterTest) {
 	config.sourceId = getSourceIdFrom(svc_[0][0].Get());
 	for (size_t i = 0; i < svc_.size(); ++i) {
 		config.thisShardId = i;
-		for (auto &node : svc_[i]) {
+		for (auto& node : svc_[i]) {
 			checkConfig(node.Get(), config);
 		}
 	}
 
 	stopSelects.store(true);
-	for (auto &selectsThread : parallelSelectsPerShard) selectsThread.join();
+	for (auto& selectsThread : parallelSelectsPerShard) {
+		selectsThread.join();
+	}
 }
 
 TEST_F(ShardingApi, RuntimeUpdateShardingWithDisabledNodesTest) {
@@ -1385,7 +1415,9 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithDisabledNodesTest) {
 	const int shardsCount = 3;
 	const int nodesInCluster = 3;
 	std::map<int, std::set<int>> shardDataDistrib;
-	for (int i = 0; i < shardsCount; ++i) shardDataDistrib[i] = {10 * i, 10 * i + 1, 10 * i + 2, 10 * i + 3, 10 * i + 4, 10 * i + 5};
+	for (int i = 0; i < shardsCount; ++i) {
+		shardDataDistrib[i] = {10 * i, 10 * i + 1, 10 * i + 2, 10 * i + 3, 10 * i + 4, 10 * i + 5};
+	}
 
 	InitShardingConfig cfg;
 	cfg.needFillDefaultNs = false;
@@ -1403,8 +1435,10 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithDisabledNodesTest) {
 	parallelDisablingNodes.reserve(shardsCount);
 	std::atomic<bool> stopDisableNodes = false;
 
-	auto startServer = [this](ServerControl &server, int idx) {
-		if (server.IsRunning()) return false;
+	auto startServer = [this](ServerControl& server, int idx) {
+		if (server.IsRunning()) {
+			return false;
+		}
 		auto [shard, _] = getSCIdxs(idx);
 		std::string pathToDb = fs::JoinPath(GetDefaults().baseTestsetDbPath, "shard" + std::to_string(shard) + "/" + std::to_string(idx));
 		std::string dbName = "shard" + std::to_string(idx);
@@ -1415,8 +1449,10 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithDisabledNodesTest) {
 		return true;
 	};
 
-	auto stopServer = [](ServerControl &server) {
-		if (!server.Get()) return false;
+	auto stopServer = [](ServerControl& server) {
+		if (!server.Get()) {
+			return false;
+		}
 		server.Stop();
 		server.Drop();
 		const auto kMaxServerStartTime = std::chrono::seconds(15);
@@ -1447,7 +1483,7 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithDisabledNodesTest) {
 					ASSERT_TRUE(!nodes.empty());
 
 					int leaderId = -1;
-					for (auto &node : nodes) {
+					for (auto& node : nodes) {
 						if (node["role"].As<std::string_view>() == "leader") {
 							leaderId = node["server_id"].As<int>();
 							break;
@@ -1468,7 +1504,9 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithDisabledNodesTest) {
 	auto err = applyNewShardingConfig(*svc_[0][0].Get()->api.reindexer, config, ApplyType::Shared);
 
 	stopDisableNodes.store(true);
-	for (auto &th : parallelDisablingNodes) th.join();
+	for (auto& th : parallelDisablingNodes) {
+		th.join();
+	}
 
 	if (!err.ok()) {
 		// Applying without changing leader must be done correctly
@@ -1492,7 +1530,7 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithDisabledNodesTest) {
 	config.sourceId = getSourceIdFrom(svc_[0][0].Get());
 	for (size_t i = 0; i < svc_.size(); ++i) {
 		config.thisShardId = i;
-		for (auto &node : svc_[i]) {
+		for (auto& node : svc_[i]) {
 			checkConfig(node.Get(), config);
 		}
 	}
@@ -1505,7 +1543,9 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithActualConfigTest) {
 	const int shardsCount = 3;
 	const int nodesInCluster = 3;
 	std::map<int, std::set<int>> shardDataDistrib;
-	for (int i = 0; i < shardsCount; ++i) shardDataDistrib[i] = {10 * i, 10 * i + 1, 10 * i + 2, 10 * i + 3, 10 * i + 4, 10 * i + 5};
+	for (int i = 0; i < shardsCount; ++i) {
+		shardDataDistrib[i] = {10 * i, 10 * i + 1, 10 * i + 2, 10 * i + 3, 10 * i + 4, 10 * i + 5};
+	}
 
 	InitShardingConfig cfg;
 	cfg.needFillDefaultNs = false;
@@ -1522,11 +1562,11 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithActualConfigTest) {
 	std::iota(nodeIds.begin(), nodeIds.end(), 0);
 	for (int shardId = 0; shardId < shardsCount; ++shardId) {
 		std::next_permutation(nodeIds.begin(), nodeIds.end());
-		auto &shard = svc_[shardId];
+		auto& shard = svc_[shardId];
 		shard[0].Get()->GetReplicationStats("cluster");	 // Await replication startup
 		for (size_t i = 0; i < nodeIds.size(); ++i) {
 			const bool useIncorrectCfg = (i != nodeIds.size() - 1);
-			auto &localCfg = useIncorrectCfg ? configIncorrect : config;
+			auto& localCfg = useIncorrectCfg ? configIncorrect : config;
 			localCfg.thisShardId = shardId;
 			localCfg.sourceId = useIncorrectCfg ? kSourceId : kSourceId + 1;
 			auto err = applyNewShardingConfig(*shard[nodeIds[i]].Get()->api.reindexer, localCfg, ApplyType::Local, localCfg.sourceId);
@@ -1546,7 +1586,7 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithActualConfigTest) {
 		try {
 			for (size_t i = 0; i < svc_.size(); ++i) {
 				config.thisShardId = i;
-				for (auto &node : svc_[i]) {
+				for (auto& node : svc_[i]) {
 					checkConfigThrow(node.Get(), config);
 				}
 			}
@@ -1593,14 +1633,16 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithFilledNssTest) {
 
 	auto config = makeShardingConfigByDistrib(kNsName, shardDataDistribBySegment, shardsCount);
 
-	for (int shard = 0; shard < shardsCount; ++shard) fillShard(shard, shardDataDistrib[shard], kNsName, kFieldId);
+	for (int shard = 0; shard < shardsCount; ++shard) {
+		fillShard(shard, shardDataDistrib[shard], kNsName, kFieldId);
+	}
 
 	// Filling the namespaces of the shards with values that should not be on these shards, and trying to apply the config
 	std::map<int, int> wrongValsForShards{{0, 10}, {1, 99}, {2, 30}, {3, 20}};
-	for (const auto &[shardId, val] : wrongValsForShards) {
+	for (const auto& [shardId, val] : wrongValsForShards) {
 		auto rx = svc_[shardId][0].Get()->api.reindexer;
 
-		auto fillItem = [&, val = val](client::Item &item) {
+		auto fillItem = [&, val = val](client::Item& item) {
 			WrSerializer wrser;
 			item = rx->NewItem(kNsName);
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
@@ -1666,7 +1708,9 @@ TEST_F(ShardingApi, NsNamesCaseInsensitivityTest) {
 	cfg.additionalNss[0].indexName = kFieldId;
 	cfg.additionalNss[0].keyValuesNodeCreation = [](int shard) {
 		ShardingConfig::Key key;
-		for (int i = 0; i < 5; ++i) key.values.emplace_back(Variant(10 * shard + i));
+		for (int i = 0; i < 5; ++i) {
+			key.values.emplace_back(Variant(10 * shard + i));
+		}
 
 		key.shardId = shard;
 		return key;
@@ -1689,7 +1733,7 @@ TEST_F(ShardingApi, CheckUpdCfgNsAfterApplySharingCfg) {
 	cfg.needFillDefaultNs = false;
 	Init(std::move(cfg));
 
-	auto &rx = *svc_[0][0].Get()->api.reindexer;
+	auto& rx = *svc_[0][0].Get()->api.reindexer;
 	auto newConfig = makeShardingConfigByDistrib(kNsName, shardDataDistrib, 3, 1);
 	auto err = applyNewShardingConfig(rx, newConfig, ApplyType::Shared);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -1715,7 +1759,9 @@ TEST_F(ShardingApi, PartialClusterNodesSetInShardingCfgTest) {
 	cfg.additionalNss[0].indexName = "id";
 	cfg.additionalNss[0].keyValuesNodeCreation = [](int shard) {
 		ShardingConfig::Key key;
-		for (int i = 0; i < 6; ++i) key.values.emplace_back(Variant(10 * shard + i));
+		for (int i = 0; i < 6; ++i) {
+			key.values.emplace_back(Variant(10 * shard + i));
+		}
 		key.shardId = shard;
 		key.algorithmType = ShardingAlgorithmType::ByRange;
 		return key;
@@ -1767,7 +1813,7 @@ TEST_F(ShardingApi, CheckSortQueryResultsByShardID) {
 		WrSerializer wrser;
 
 		// Checking on each node that the output is sorted by shard ID
-		for (auto &res : qr) {
+		for (auto& res : qr) {
 			wrser.Reset();
 			err = res.GetJSON(wrser);
 			ASSERT_TRUE(err.ok()) << err.what();
@@ -1823,7 +1869,7 @@ TEST_F(ShardingApi, DISABLED_SelectProxyBench) {
 		cv.notify_all();
 		lck.unlock();
 		TestCout() << fmt::sprintf("Start with %d threads", thCnt) << std::endl;
-		for (auto &th : threads) {
+		for (auto& th : threads) {
 			th.join();
 		}
 		// <Stop profiling here>
@@ -2193,8 +2239,8 @@ TEST_F(ShardingApi, EnumLocalNamespaces) {
 		auto err = rx->EnumNamespaces(nss, EnumNamespacesOpts().OnlyNames().HideSystem());
 		ASSERT_TRUE(err.ok()) << err.what() << "; shard = " << shard;
 		ASSERT_EQ(nss.size(), kExpectedNss[shard].size());
-		for (auto &expNs : kExpectedNss[shard]) {
-			const auto found = std::find_if(nss.begin(), nss.end(), [&expNs](const NamespaceDef &def) { return def.name == expNs; });
+		for (auto& expNs : kExpectedNss[shard]) {
+			const auto found = std::find_if(nss.begin(), nss.end(), [&expNs](const NamespaceDef& def) { return def.name == expNs; });
 			ASSERT_TRUE(found != nss.end()) << expNs << "; shard = " << shard;
 		}
 	}
@@ -2219,8 +2265,8 @@ TEST_F(ShardingApi, EnumLocalNamespaces) {
 		err = rx->EnumNamespaces(nss, EnumNamespacesOpts().OnlyNames().HideSystem());
 		ASSERT_TRUE(err.ok()) << err.what() << "; shard = " << shard;
 		ASSERT_EQ(nss.size(), kExpectedNss[shard].size());
-		for (auto &expNs : kExpectedNss[shard]) {
-			const auto found = std::find_if(nss.begin(), nss.end(), [&expNs](const NamespaceDef &def) { return def.name == expNs; });
+		for (auto& expNs : kExpectedNss[shard]) {
+			const auto found = std::find_if(nss.begin(), nss.end(), [&expNs](const NamespaceDef& def) { return def.name == expNs; });
 			ASSERT_TRUE(found != nss.end()) << expNs << "; shard = " << shard;
 		}
 	}
@@ -2283,7 +2329,7 @@ TEST_F(ShardingApi, ConfigYaml) {
 		std::optional<std::string> yamlForCompare = std::nullopt;
 	};
 
-	auto substRangesInTemplate = [](const std::vector<std::string> &values) {
+	auto substRangesInTemplate = [](const std::vector<std::string>& values) {
 		std::string res(kConfigTemplate);
 		for (size_t i = 0; i < 3; ++i) {
 			auto tmplt = fmt::sprintf("${%d}", i);
@@ -2772,10 +2818,10 @@ proxy_conn_threads: 4
 
 	testCases.insert(testCases.end(), rangesTestCases.begin(), rangesTestCases.end());
 
-	for (const auto &[yaml, expected, yaml4Cmp] : testCases) {
+	for (const auto& [yaml, expected, yaml4Cmp] : testCases) {
 		const Error err = config.FromYAML(yaml);
 		if (std::holds_alternative<Cfg>(expected)) {
-			const auto &cfg{std::get<Cfg>(expected)};
+			const auto& cfg{std::get<Cfg>(expected)};
 			EXPECT_TRUE(err.ok()) << err.what() << "\nYAML:\n" << yaml;
 			if (err.ok()) {
 				EXPECT_EQ(config, cfg) << yaml << "\nexpected:\n" << cfg.GetYAML();
@@ -2867,7 +2913,7 @@ TEST_F(ShardingApi, ConfigJson) {
 			 2},
 		 R"({"version":1,"namespaces":[{"namespace":"namespace1","default_shard":0,"index":"count","keys":[{"shard_id":1,"values":[1,2,{"range":[3,5]},{"range":[10,15]}]},{"shard_id":2,"values":[16,{"range":[36,65]},{"range":[100,150]}]},{"shard_id":3,"values":[{"range":[24,35]},{"range":[88,95]}]}]}],"shards":[{"shard_id":0,"dsns":["cproto://127.0.0.1:19000/shard0"]},{"shard_id":1,"dsns":["cproto://127.0.0.1:19010/shard1"]},{"shard_id":2,"dsns":["cproto://127.0.0.1:19020/shard2"]},{"shard_id":3,"dsns":["cproto://127.0.0.1:19030/shard3"]}],"this_shard_id":0,"reconnect_timeout_msec":4000,"shards_awaiting_timeout_sec":30,"config_rollback_timeout_sec":30,"proxy_conn_count":3,"proxy_conn_concurrency":5,"proxy_conn_threads":2})"}};
 
-	for (const auto &[json, cfg, json4cmp] : testCases) {
+	for (const auto& [json, cfg, json4cmp] : testCases) {
 		const auto generatedJson = cfg.GetJSON();
 		EXPECT_EQ(generatedJson, json4cmp ? json4cmp.value() : json);
 
@@ -2883,8 +2929,8 @@ TEST_F(ShardingApi, ConfigKeyValues) {
 	struct shardInfo {
 		bool result;
 		struct Key {
-			Key(const char *c_str) : left(std::string(c_str)) {}
-			Key(std::string &&left, std::string &&right) : left(std::move(left)), right(std::move(right)) {}
+			Key(const char* c_str) : left(std::string(c_str)) {}
+			Key(std::string&& left, std::string&& right) : left(std::move(left)), right(std::move(right)) {}
 			std::string left, right;
 			operator std::string() const { return right.empty() ? left : fmt::sprintf("{\"range\": [%s, %s]}", left, right); }
 		};
@@ -2893,7 +2939,7 @@ TEST_F(ShardingApi, ConfigKeyValues) {
 	};
 
 	// NOLINTBEGIN (performance-inefficient-string-concatenation)
-	auto generateConfigYaml = [](const shardInfo &info) -> std::string {
+	auto generateConfigYaml = [](const shardInfo& info) -> std::string {
 		YAML::Node y;
 		y["version"] = 1;
 		y["namespaces"] = YAML::Node(YAML::NodeType::Sequence);
@@ -2909,10 +2955,10 @@ TEST_F(ShardingApi, ConfigKeyValues) {
 				YAML::Node kY;
 				kY["shard_id"] = i + 1;
 				kY["values"] = YAML::Node(YAML::NodeType::Sequence);
-				for (const auto &[left, right] : info.shards[i]) {
-					if (right.empty())
+				for (const auto& [left, right] : info.shards[i]) {
+					if (right.empty()) {
 						kY["values"].push_back(left);
-					else {
+					} else {
 						auto segmentNode = YAML::Node(YAML::NodeType::Sequence);
 						segmentNode.SetStyle(YAML::EmitterStyle::Flow);
 						segmentNode.push_back(left);
@@ -2934,7 +2980,7 @@ TEST_F(ShardingApi, ConfigKeyValues) {
 		return YAML::Dump(y);
 	};
 
-	auto generateConfigJson = [](const shardInfo &info) -> std::string {
+	auto generateConfigJson = [](const shardInfo& info) -> std::string {
 		// clang-format off
 		std::string conf =
 					"{\n"
@@ -3016,7 +3062,7 @@ TEST_F(ShardingApi, ConfigKeyValues) {
 								};
 	// clang-format on
 
-	for (const auto &test : tests) {
+	for (const auto& test : tests) {
 		std::string conf = generateConfigJson(test);
 		ShardingConfig config;
 		Error err = config.FromJSON(conf);
@@ -3028,7 +3074,7 @@ TEST_F(ShardingApi, ConfigKeyValues) {
 	tests.push_back({false, {{"1", "2"}, {"3", "string"}}});
 	tests.push_back({false, {{"key1", "key2"}, {"key1", "key3"}}});
 
-	for (const auto &test : tests) {
+	for (const auto& test : tests) {
 		std::string conf = generateConfigYaml(test);
 		ShardingConfig config;
 		Error err = config.FromYAML(conf);
@@ -3079,7 +3125,7 @@ TEST_F(ShardingApi, RestrictionOnRequest) {
 		ASSERT_EQ(err.code(), errLogic);
 	}
 }
-static void CheckTotalCount(bool cached, client::Reindexer &rx, const std::string &ns, size_t expected) {
+static void CheckTotalCount(bool cached, client::Reindexer& rx, const std::string& ns, size_t expected) {
 	client::QueryResults qr;
 	Error err;
 	if (cached) {
@@ -3091,15 +3137,15 @@ static void CheckTotalCount(bool cached, client::Reindexer &rx, const std::strin
 	ASSERT_EQ(qr.TotalCount(), expected);
 }
 
-static void CheckCachedCountAggregations(client::Reindexer &rx, const std::string &ns, size_t dataPerShard, size_t shardsCount,
-										 const std::string &fieldLocation) {
+static void CheckCachedCountAggregations(client::Reindexer& rx, const std::string& ns, size_t dataPerShard, size_t shardsCount,
+										 const std::string& fieldLocation) {
 	{
 		// Check distributed query without offset
 		client::QueryResults qr;
 		Error err = rx.Select(Query(ns).CachedTotal().Limit(0), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qr.TotalCount(), shardsCount * dataPerShard);
-		auto &agg = qr.GetAggregationResults();
+		auto& agg = qr.GetAggregationResults();
 		ASSERT_EQ(agg.size(), 1);
 		ASSERT_EQ(agg[0].type, AggCountCached);
 		ASSERT_TRUE(agg[0].GetValue());
@@ -3111,7 +3157,7 @@ static void CheckCachedCountAggregations(client::Reindexer &rx, const std::strin
 		Error err = rx.Select(Query(ns).CachedTotal().Limit(0).Offset(1), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qr.TotalCount(), shardsCount * dataPerShard);
-		auto &agg = qr.GetAggregationResults();
+		auto& agg = qr.GetAggregationResults();
 		ASSERT_EQ(agg.size(), 1);
 		ASSERT_EQ(agg[0].type, AggCount);  // Here agg type was change to 'AggCount' by internal proxy
 		ASSERT_TRUE(agg[0].GetValue());
@@ -3123,7 +3169,7 @@ static void CheckCachedCountAggregations(client::Reindexer &rx, const std::strin
 		Error err = rx.Select(Query(ns).Where(fieldLocation, CondEq, "key2").CachedTotal().Limit(0), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qr.TotalCount(), dataPerShard);
-		auto &agg = qr.GetAggregationResults();
+		auto& agg = qr.GetAggregationResults();
 		ASSERT_EQ(agg.size(), 1);
 		ASSERT_EQ(agg[0].type, AggCountCached);
 		ASSERT_TRUE(agg[0].GetValue());
@@ -3135,7 +3181,7 @@ static void CheckCachedCountAggregations(client::Reindexer &rx, const std::strin
 		Error err = rx.Select(Query(ns).Where(fieldLocation, CondEq, "key2").CachedTotal().Limit(0).Offset(1), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qr.TotalCount(), dataPerShard);
-		auto &agg = qr.GetAggregationResults();
+		auto& agg = qr.GetAggregationResults();
 		ASSERT_EQ(agg.size(), 1);
 		ASSERT_EQ(agg[0].type, AggCountCached);
 		ASSERT_TRUE(agg[0].GetValue());
@@ -3144,7 +3190,7 @@ static void CheckCachedCountAggregations(client::Reindexer &rx, const std::strin
 }
 
 template <typename T>
-T getField(std::string_view field, reindexer::client::QueryResults::Iterator &it) {
+T getField(std::string_view field, reindexer::client::QueryResults::Iterator& it) {
 	auto item = it.GetItem();
 	std::string_view json = item.GetJSON();
 	gason::JsonParser parser;
@@ -3166,7 +3212,7 @@ TEST_F(ShardingApi, SelectOffsetLimit) {
 	Init(std::move(cfg));
 	const std::string_view kNsName = default_namespace;
 
-	auto &rx = *svc_[0][0].Get()->api.reindexer;
+	auto& rx = *svc_[0][0].Get()->api.reindexer;
 
 	const unsigned long kMaxCountOnShard = 40;
 	Fill(kNsName, rx, "key3", 0, kMaxCountOnShard);
@@ -3187,7 +3233,7 @@ TEST_F(ShardingApi, SelectOffsetLimit) {
 												   {10, 50, 50}, {10, 70, 70}, {50, 70, 70},  {50, 100, 70}, {119, 1, 1},
 												   {119, 10, 1}, {0, 0, 0},	   {120, 10, 0},  {150, 10, 0}};
 
-	auto execVariant = [&rx, this](const LimitOffsetCase &v, bool checkCount) {
+	auto execVariant = [&rx, this](const LimitOffsetCase& v, bool checkCount) {
 		Query q = Query(default_namespace).Limit(v.limit).Offset(v.offset);
 		if (checkCount) {
 			q.ReqTotal();
@@ -3205,7 +3251,7 @@ TEST_F(ShardingApi, SelectOffsetLimit) {
 		}
 	};
 
-	for (const auto &v : variants) {
+	for (const auto& v : variants) {
 		execVariant(v, true);
 		execVariant(v, false);
 	}
@@ -3233,7 +3279,7 @@ template <typename T>
 class CompareFields<T> {
 public:
 	CompareFields(std::string_view f, std::vector<T> v = {}) : field_{f}, forcedValues_{std::move(v)} {}
-	int operator()(reindexer::client::QueryResults::Iterator &it) {
+	int operator()(reindexer::client::QueryResults::Iterator& it) {
 		T v = getField<T>(field_, it);
 		int result = 0;
 		if (prevValue_) {
@@ -3253,7 +3299,7 @@ public:
 		prevValue_ = std::move(v);
 		return result;
 	}
-	std::tuple<T> GetValues(reindexer::client::QueryResults::Iterator &it) const { return std::make_tuple(getField<T>(field_, it)); }
+	std::tuple<T> GetValues(reindexer::client::QueryResults::Iterator& it) const { return std::make_tuple(getField<T>(field_, it)); }
 	std::tuple<T> GetPrevValues() const {
 		assert(prevValue_.has_value());
 		return std::make_tuple(*prevValue_);
@@ -3276,7 +3322,7 @@ class CompareFields<T, Ts...> : private CompareFields<Ts...> {
 public:
 	CompareFields(std::string_view f, string_view<Ts>... args, std::vector<std::tuple<T, Ts...>> v = {})
 		: Base{args...}, impl_{f}, forcedValues_{std::move(v)} {}
-	int operator()(reindexer::client::QueryResults::Iterator &it) {
+	int operator()(reindexer::client::QueryResults::Iterator& it) {
 		if (!forcedValues_.empty() && impl_.HavePrevValue()) {
 			const auto prevValues = GetPrevValues();
 			const auto values = GetValues(it);
@@ -3299,7 +3345,7 @@ public:
 		}
 		return res;
 	}
-	std::tuple<T, Ts...> GetValues(reindexer::client::QueryResults::Iterator &it) const {
+	std::tuple<T, Ts...> GetValues(reindexer::client::QueryResults::Iterator& it) const {
 		return std::tuple_cat(impl_.GetValues(it), Base::GetValues(it));
 	}
 	std::tuple<T, Ts...> GetPrevValues() const { return std::tuple_cat(impl_.GetPrevValues(), Base::GetPrevValues()); }
@@ -3316,12 +3362,12 @@ private:
 template <typename... Ts>
 class CompareExpr {
 public:
-	CompareExpr(std::vector<std::string> &&fields, std::function<double(Ts...)> &&f) : fields_{std::move(fields)}, func_{std::move(f)} {}
-	int operator()(reindexer::client::QueryResults::Iterator &it) { return impl(it, std::index_sequence_for<Ts...>{}); }
+	CompareExpr(std::vector<std::string>&& fields, std::function<double(Ts...)>&& f) : fields_{std::move(fields)}, func_{std::move(f)} {}
+	int operator()(reindexer::client::QueryResults::Iterator& it) { return impl(it, std::index_sequence_for<Ts...>{}); }
 
 private:
 	template <size_t... I>
-	int impl(reindexer::client::QueryResults::Iterator &it, std::index_sequence<I...>) {
+	int impl(reindexer::client::QueryResults::Iterator& it, std::index_sequence<I...>) {
 		const double r = func_(getField<Ts>(fields_[I], it)...);
 		int result = 0;
 		if (prevResult_ && *prevResult_ != r) {
@@ -3337,8 +3383,8 @@ private:
 
 class ShardingApi::CompareShardId {
 public:
-	CompareShardId(const ShardingApi &api) noexcept : api_{api} {}
-	int operator()(reindexer::client::QueryResults::Iterator &it) {
+	CompareShardId(const ShardingApi& api) noexcept : api_{api} {}
+	int operator()(reindexer::client::QueryResults::Iterator& it) {
 		std::string keyValue = getField<std::string>(api_.kFieldLocation, it);
 		keyValue = keyValue.substr(3);
 		size_t curShardId = std::stoi(keyValue);
@@ -3355,7 +3401,7 @@ public:
 
 private:
 	std::optional<size_t> prevShardId_;
-	const ShardingApi &api_;
+	const ShardingApi& api_;
 };
 
 TEST_F(ShardingApi, OrderBy) {
@@ -3372,7 +3418,7 @@ TEST_F(ShardingApi, OrderBy) {
 		std::variant<std::vector<int>, std::vector<std::string>, std::vector<std::tuple<int, std::string>>,
 					 std::vector<std::tuple<std::string, int>>>
 			forcedValues;
-		std::function<int(reindexer::client::QueryResults::Iterator &)> test;
+		std::function<int(reindexer::client::QueryResults::Iterator&)> test;
 		bool testId{false};
 	};
 	std::set<std::string> compositeIndexes{kFieldIdLocation, kFieldLocationId, kIndexDataIntLocation, kIndexLocationDataInt};
@@ -3451,7 +3497,7 @@ TEST_F(ShardingApi, OrderBy) {
 		 CompareExpr<int, int>{{kFieldDataInt, kSparseFieldDataInt}, [](int data, int sparse) { return 5.0 * sparse + data / 4.0; }}},
 	};
 	struct TestCase {
-		TestCase(const SortCase &sc, bool d = ((rand() % 2) == 0)) : sort{sc}, desc{d} {}
+		TestCase(const SortCase& sc, bool d = ((rand() % 2) == 0)) : sort{sc}, desc{d} {}
 		SortCase sort;
 		bool desc;
 	};
@@ -3462,12 +3508,18 @@ TEST_F(ShardingApi, OrderBy) {
 		testCases.reserve(sortsCount);
 		std::set<std::string> usedFields;
 		for (size_t i = 0; testCases.size() < sortsCount && i < sortCases.size(); ++i) {
-			if (i != 0 && !std::visit([](const auto &c) { return c.empty(); }, sortCases[i].forcedValues)) continue;
+			if (i != 0 && !std::visit([](const auto& c) { return c.empty(); }, sortCases[i].forcedValues)) {
+				continue;
+			}
 			if (compositeIndexes.find(sortCases[i].expression) == compositeIndexes.end()) {
-				if (usedFields.find(sortCases[i].expression) != usedFields.end()) continue;
+				if (usedFields.find(sortCases[i].expression) != usedFields.end()) {
+					continue;
+				}
 				usedFields.insert(sortCases[i].expression);
 				if (const auto it = synonymIndexes.find(sortCases[i].expression); it != synonymIndexes.end()) {
-					if (usedFields.find(it->second) != usedFields.end()) continue;
+					if (usedFields.find(it->second) != usedFields.end()) {
+						continue;
+					}
 					usedFields.insert(it->second);
 				}
 			} else {
@@ -3488,7 +3540,9 @@ TEST_F(ShardingApi, OrderBy) {
 						}
 					}
 				} while (end != std::string::npos);
-				if (found) continue;
+				if (found) {
+					continue;
+				}
 				end = -1;
 				do {
 					std::string::size_type start = end + 1;
@@ -3524,9 +3578,9 @@ TEST_F(ShardingApi, OrderBy) {
 			limit = 1;
 		}
 		Query q = Query{default_namespace};
-		for (const auto &tc : testCases) {
+		for (const auto& tc : testCases) {
 			std::visit(
-				[&](const auto &c) {
+				[&](const auto& c) {
 					if (c.empty()) {
 						q.Sort(tc.sort.expression, tc.desc);
 					} else {
@@ -3569,7 +3623,9 @@ TEST_F(ShardingApi, OrderBy) {
 					if (r == 1) {
 						expectedId = [id = start, s, this]() mutable {
 							const auto res = id--;
-							if (id % kShards == s) --id;
+							if (id % kShards == s) {
+								--id;
+							}
 							return res;
 						};
 					} else {
@@ -3592,7 +3648,9 @@ TEST_F(ShardingApi, OrderBy) {
 					if (r == 1) {
 						expectedId = [id = start, s, this]() mutable {
 							const auto res = id++;
-							if (id % kShards == s) ++id;
+							if (id % kShards == s) {
+								++id;
+							}
 							return res;
 						};
 					} else {
@@ -3668,16 +3726,16 @@ TEST_F(ShardingApi, TestCsvQrDistributedQuery) {
 
 	int count = 0;
 
-	for (auto &[_, values] : shardDataDistrib) {
+	for (auto& [_, values] : shardDataDistrib) {
 		(void)_;
-		for (const auto &value : values) {
+		for (const auto& value : values) {
 			WrSerializer wrser;
 			auto item = rx->NewItem(kNsName);
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 			reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 			jsonBuilder.Put(kFieldId, value);
-			const auto &valStr = std::to_string(value);
+			const auto& valStr = std::to_string(value);
 			jsonBuilder.Put("Field" + valStr, "data" + valStr);
 			jsonBuilder.End();
 
@@ -3733,8 +3791,8 @@ TEST_F(ShardingApi, TestCsvQrDistributedQuery) {
 	auto csv2jsonSchema = std::vector<std::string>{"id", "Field0", "Field1", "Field2", "Field3", "Field4", "Field5", "Field6", "Field7"};
 
 	std::vector<int> orderingVec;
-	const auto &tm = qr.GetTagsMatcher(0);
-	for (const auto &tagName : csv2jsonSchema) {
+	const auto& tm = qr.GetTagsMatcher(0);
+	for (const auto& tagName : csv2jsonSchema) {
 		auto tag = tm.name2tag(tagName);
 		EXPECT_TRUE(tag > 0);
 		orderingVec.emplace_back(tag);
@@ -3743,7 +3801,7 @@ TEST_F(ShardingApi, TestCsvQrDistributedQuery) {
 	auto ordering = reindexer::CsvOrdering{orderingVec};
 
 	reindexer::WrSerializer serCsv, serJson;
-	for (auto &q : qr) {
+	for (auto& q : qr) {
 		err = q.GetCSV(serCsv, ordering);
 		ASSERT_TRUE(err.ok()) << err.what();
 
@@ -3754,7 +3812,7 @@ TEST_F(ShardingApi, TestCsvQrDistributedQuery) {
 		auto converted = parserCsv.Parse(std::string_view(reindexer::csv2json(serCsv.Slice(), csv2jsonSchema)));
 		auto orig = parserJson.Parse(serJson.Slice());
 
-		for (const auto &fieldName : csv2jsonSchema) {
+		for (const auto& fieldName : csv2jsonSchema) {
 			if (converted[fieldName].empty() || orig[fieldName].empty()) {
 				EXPECT_TRUE(converted[fieldName].empty() && orig[fieldName].empty()) << "fieldName: " << fieldName;
 				continue;

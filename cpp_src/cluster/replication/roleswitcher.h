@@ -30,9 +30,9 @@ public:
 		int maxConcurrentSnapshotsPerNode = -1;
 	};
 
-	RoleSwitcher(SharedSyncState<> &, SynchronizationList &, ReindexerImpl &, const ReplicationStatsCollector &, const Logger &);
+	RoleSwitcher(SharedSyncState<>&, SynchronizationList&, ReindexerImpl&, const ReplicationStatsCollector&, const Logger&);
 
-	void Run(std::vector<std::string> &&dsns, RoleSwitcher::Config &&cfg);
+	void Run(std::vector<std::string>&& dsns, RoleSwitcher::Config&& cfg);
 	void OnRoleChanged() {
 		std::lock_guard lck(mtx_);
 		if (syncer_) {
@@ -60,19 +60,21 @@ private:
 	static constexpr std::string_view logModuleName() noexcept { return std::string_view("roleswitcher"); }
 	void await();
 	void notify() {
-		if (!awaitCh_.full()) awaitCh_.push(true);
+		if (!awaitCh_.full()) {
+			awaitCh_.push(true);
+		}
 	}
 	void terminate() { awaitCh_.close(); }
 	void handleRoleSwitch();
 	template <typename ContainerT>
-	void switchNamespaces(const RaftInfo &state, const ContainerT &namespaces);
+	void switchNamespaces(const RaftInfo& state, const ContainerT& namespaces);
 	void handleInitialSync(RaftInfo::Role newRole);
 	void initialLeadersSync();
-	Error awaitRoleSwitchForNamespace(client::CoroReindexer &client, const NamespaceName& nsName, ReplicationStateV2 &st);
-	Error getNodesListForNs(const NamespaceName &nsName, std::list<reindexer::cluster::LeaderSyncQueue::Entry> &syncQueue);
+	Error awaitRoleSwitchForNamespace(client::CoroReindexer& client, const NamespaceName& nsName, ReplicationStateV2& st);
+	Error getNodesListForNs(const NamespaceName& nsName, std::list<reindexer::cluster::LeaderSyncQueue::Entry>& syncQueue);
 	NsNamesHashSetT collectNsNames();
 	template <typename RxT>
-	Error appendNsNamesFrom(RxT &rx, NsNamesHashSetT &set);
+	Error appendNsNamesFrom(RxT& rx, NsNamesHashSetT& set);
 	void connectNodes();
 	void disconnectNodes();
 	size_t getConsensusCnt() const noexcept { return GetConsensusForN(nodes_.size() + 1); }
@@ -80,8 +82,8 @@ private:
 
 	std::vector<Node> nodes_;
 	net::ev::dynamic_loop loop_;
-	SharedSyncState<> &sharedSyncState_;
-	ReindexerImpl &thisNode_;
+	SharedSyncState<>& sharedSyncState_;
+	ReindexerImpl& thisNode_;
 	ReplicationStatsCollector statsCollector_;
 	steady_clock_w::time_point roleSwitchTm_;
 	coroutine::channel<bool> awaitCh_;
@@ -91,13 +93,13 @@ private:
 	RdxContext ctx_;
 	net::ev::async roleSwitchAsync_;
 	std::atomic<bool> terminate_ = {false};
-	SynchronizationList &syncList_;
+	SynchronizationList& syncList_;
 	bool timerIsCanceled_ = false;
 	Config cfg_;
 
 	std::mutex mtx_;
 	std::unique_ptr<LeaderSyncer> syncer_;
-	const Logger &log_;
+	const Logger& log_;
 };
 
 }  // namespace cluster

@@ -39,8 +39,12 @@ template <class T, size_t block_size>
 typename SmartDeque<T, block_size>::pointer SmartDeque<T, block_size>::operator[](size_t num) const {
 	size_t size = (num / block_size);
 	size_t offset = (num % block_size);
-	if (!data_ || size >= size_ || !data_[size]) return nullptr;
-	if (data_[size][offset].proc_ == 0) return nullptr;
+	if (!data_ || size >= size_ || !data_[size]) {
+		return nullptr;
+	}
+	if (data_[size][offset].proc_ == 0) {
+		return nullptr;
+	}
 	return &data_[size][offset];
 }
 template <class T, size_t block_size>
@@ -163,7 +167,9 @@ SmartDeque<T, block_size>& SmartDeque<T, block_size>::operator=(SmartDeque&& rhs
 
 template <class T, size_t block_size>
 SmartDeque<T, block_size>::~SmartDeque() {
-	if (!data_) return;
+	if (!data_) {
+		return;
+	}
 	for (size_t i = 0; i < size_; ++i) {
 		delete[] data_[i];
 	}
@@ -172,14 +178,18 @@ SmartDeque<T, block_size>::~SmartDeque() {
 
 template <class T, size_t block_size>
 void SmartDeque<T, block_size>::allocSection(size_t num) {
-	if (!data_) return;
+	if (!data_) {
+		return;
+	}
 	data_[num] = new T[block_size];
 	memset(data_[num], 0, block_size * sizeof(T));
 }
 
 template <class T, size_t block_size>
 typename SmartDeque<T, block_size>::iterator& SmartDeque<T, block_size>::iterator::operator++() {
-	if (parent_ == nullptr) return *this;
+	if (parent_ == nullptr) {
+		return *this;
+	}
 
 	for (; size_ < parent_->size_; ++size_, offset_ = 0) {
 		if (parent_->data_[size_]) {
@@ -199,7 +209,7 @@ typename SmartDeque<T, block_size>::iterator& SmartDeque<T, block_size>::iterato
 
 template <class T, size_t block_size>
 SmartDeque<T, block_size>::iterator::iterator() : size_(0), offset_(0), parent_(nullptr), current_(nullptr) {
-	if constexpr(std::is_trivial<T>::value) {
+	if constexpr (std::is_trivial<T>::value) {
 		memset(&default_data, 0, sizeof(default_data));
 	} else {
 		static_assert(std::is_default_constructible<T>::value, "Expecting default contractible type");
@@ -207,7 +217,7 @@ SmartDeque<T, block_size>::iterator::iterator() : size_(0), offset_(0), parent_(
 }
 template <class T, size_t block_size>
 SmartDeque<T, block_size>::iterator::iterator(SmartDeque* parent) : size_(0), offset_(0), parent_(parent), current_(nullptr) {
-	if constexpr(std::is_trivial<T>::value) {
+	if constexpr (std::is_trivial<T>::value) {
 		memset(&default_data, 0, sizeof(default_data));
 	} else {
 		static_assert(std::is_default_constructible<T>::value, "Expecting default contractible type");

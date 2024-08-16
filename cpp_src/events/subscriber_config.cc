@@ -9,9 +9,9 @@ using namespace std::string_view_literals;
 Error EventSubscriberConfig::FromJSON(span<char> json) noexcept {
 	try {
 		FromJSON(gason::JsonParser().Parse(json));
-	} catch (const gason::Exception &ex) {
+	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "UpdatesFilter: %s", ex.what());
-	} catch (const Error &err) {
+	} catch (const Error& err) {
 		return err;
 	}
 	CATCH_STD_AND_RETURN;
@@ -205,7 +205,7 @@ static std::string_view EventTypeToStr(updates::URType t) {
 	}
 }
 
-void EventSubscriberConfig::FromJSON(const gason::JsonNode &root) {
+void EventSubscriberConfig::FromJSON(const gason::JsonNode& root) {
 	formatVersion_ = root["version"sv].As<int>(-1);
 	if (formatVersion_ < kMinSubscribersConfigFormatVersion) {
 		throw Error(errParams,
@@ -221,27 +221,27 @@ void EventSubscriberConfig::FromJSON(const gason::JsonNode &root) {
 
 	streams_.clear();
 	streams_.reserve(kMaxStreamsPerSub);
-	for (const auto &stream : root["streams"sv]) {
+	for (const auto& stream : root["streams"sv]) {
 		const int id = stream["id"].As<int>(-1);
 		if (id < 0 || unsigned(id) >= kMaxStreamsPerSub) {
 			throw Error(errParams, "Stream ID %d is out of range [0, %d]", id, kMaxStreamsPerSub - 1);
 		}
-		if (std::find_if(streams_.begin(), streams_.end(), [id](const StreamConfig &s) noexcept { return s.id == id; }) != streams_.end()) {
+		if (std::find_if(streams_.begin(), streams_.end(), [id](const StreamConfig& s) noexcept { return s.id == id; }) != streams_.end()) {
 			throw Error(errParams, "Stream ID %d is duplicated", id);
 		}
 
-		auto &s = streams_.emplace_back(id);
+		auto& s = streams_.emplace_back(id);
 		s.withConfigNamespace = stream["with_config_namespace"sv].As<bool>(false);
 
-		for (const auto &ns : stream["namespaces"sv]) {
+		for (const auto& ns : stream["namespaces"sv]) {
 			s.nss.emplace(ns["name"sv].As<std::string>());
 		}
-		const auto &eventTypesNode = stream["event_types"sv];
+		const auto& eventTypesNode = stream["event_types"sv];
 		if (eventTypesNode.empty() || begin(eventTypesNode) == end(eventTypesNode)) {
 			eventTypes_.clear();
 		} else {
 			const bool addCommonEvents = (!eventTypes_.empty() || streams_.size() == 1);
-			for (const auto &eventType : eventTypesNode) {
+			for (const auto& eventType : eventTypesNode) {
 				const auto et = EventTypeFromStr(eventType.As<std::string>());
 				s.eventTypes.emplace(et);
 				if (addCommonEvents) {
@@ -252,7 +252,7 @@ void EventSubscriberConfig::FromJSON(const gason::JsonNode &root) {
 	}
 }
 
-void EventSubscriberConfig::GetJSON(WrSerializer &ser) const {
+void EventSubscriberConfig::GetJSON(WrSerializer& ser) const {
 	JsonBuilder builder(ser);
 	{
 		builder.Put("version"sv, formatVersion_);
@@ -264,20 +264,20 @@ void EventSubscriberConfig::GetJSON(WrSerializer &ser) const {
 		builder.Put("data_type"sv, SubDataTypeToStr(dataType_));
 
 		auto streamArr = builder.Array("streams"sv);
-		for (auto &stream : streams_) {
+		for (auto& stream : streams_) {
 			auto streamObj = streamArr.Object();
 			streamObj.Put("id"sv, stream.id);
 			streamObj.Put("with_config_namespace"sv, stream.withConfigNamespace);
 			{
 				auto nssArr = streamObj.Array("namespaces"sv);
-				for (const auto &ns : stream.nss) {
+				for (const auto& ns : stream.nss) {
 					auto obj = nssArr.Object();
 					obj.Put("name"sv, ns);
 				}
 			}
 			{
 				auto eventTypesArr = builder.Array("event_types"sv);
-				for (auto &e : stream.eventTypes) {
+				for (auto& e : stream.eventTypes) {
 					eventTypesArr.Put(nullptr, EventTypeToStr(e));
 				}
 			}

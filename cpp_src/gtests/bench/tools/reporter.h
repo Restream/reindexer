@@ -16,7 +16,7 @@ protected:
 		std::string str = FormatString("%-*s %13s %13s", static_cast<int>(name_field_width_), "Benchmark", "Time", "RPS");
 		if (!run.counters.empty()) {
 			if (output_options_ & OO_Tabular) {
-				for (auto const& c : run.counters) {
+				for (const auto& c : run.counters) {
 					if (std::string_view(c.first) == std::string_view("bytes_per_second") ||
 						std::string_view(c.first) == std::string_view("items_per_second")) {
 						continue;
@@ -60,7 +60,7 @@ protected:
 				continue;
 			}
 			const std::size_t cNameLen = std::max(std::string::size_type(10), c.first.length());
-			auto const& s = HumanReadableNumber(c.second.value, true);
+			const auto& s = HumanReadableNumber(c.second.value, true);
 			if (output_options_ & OO_Tabular) {
 				if (c.second.flags & Counter::kIsRate) {
 					IgnoreColorPrint(Out, " %*s/s", cNameLen - 2, s.c_str());

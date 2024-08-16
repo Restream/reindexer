@@ -160,7 +160,8 @@ void LeaderSyncThread::sync() {
 			const auto& node = entry.data[idx];
 			const uint64_t expectedDataHash = node.hash;
 			const int64_t expectedDataCount = node.count;
-			logInfo("%d: Trying to sync ns '%s' from %d (TID: %d)", cfg_.serverId, entry.nsName, nodeId, std::this_thread::get_id());
+			logInfo("%d: Trying to sync ns '%s' from %d (TID: %d)", cfg_.serverId, entry.nsName, nodeId,
+					static_cast<size_t>(std::hash<std::thread::id>()(std::this_thread::get_id())));
 			std::string tmpNsName;
 			auto tryDropTmpNamespace = [this, &tmpNsName] {
 				if (!tmpNsName.empty()) {

@@ -6,7 +6,9 @@
 namespace reindexer {
 
 void Synonyms::GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& result, int proc) {
-	if (one2one_.empty()) return;
+	if (one2one_.empty()) {
+		return;
+	}
 
 	auto it = one2one_.find(data);
 	if (it == one2one_.end()) {
@@ -54,7 +56,9 @@ static void divOptsForAlternatives(FtDslOpts& opts, size_t size) {
 	assertrx(size != 0);
 	opts.boost /= size;
 	opts.termLenBoost /= size;
-	for (auto& fOpts : opts.fieldsOpts) fOpts.boost /= size;
+	for (auto& fOpts : opts.fieldsOpts) {
+		fOpts.boost /= size;
+	}
 	opts.qpos /= size;
 }
 

@@ -1,3 +1,19 @@
+# Version 4.17.0 *beta* (16.08.2024)
+## Core
+- [fea] Updated [logging library](https://github.com/gabime/spdlog) to v1.14.1 and [formatting library](https://github.com/fmtlib/fmt) to v11.0.2
+- [fea] Optimized log level checks to avoid excessive serializtion in core logs
+- [fea] Added support for [array_remove](readme.md#remove-array-elements-by-values) with scalar values in SQL
+- [fea] Added support for [array_remove](readme.md#remove-array-elements-by-values) with non-integral values
+- [fix] Disabled default values creation for object array indexes to avoid Go/Java connectors incompatibility
+- [fix] Fixed sorted JOIN-subqueries over optimized `tree`-indexes with unordered conditions
+
+## Reindexer server
+- [fix] Fixed [docker's](https://hub.docker.com/r/reindexer/reindexer) SEGFAULT on M1 CPU
+- [fix] Disable network compression on Windows (it some cases it may lead to crashes)
+
+## Reindexer tool
+- [fix] Fixed possible stucking in interactive mode on Windows
+
 # Version 4.16.0 *beta* (26.07.2024)
 
 ## Reindexer server

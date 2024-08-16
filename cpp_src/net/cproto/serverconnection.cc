@@ -17,7 +17,7 @@ const auto kCProtoTimeoutSec = 300.;
 #ifdef REINDEX_WITH_V3_FOLLOWERS
 constexpr auto kUpdatesResendTimeout = 0.1;
 
-ServerConnection::ServerConnection(socket &&s, ev::dynamic_loop &loop, Dispatcher &dispatcher, bool enableStat, size_t maxUpdatesSize,
+ServerConnection::ServerConnection(socket&& s, ev::dynamic_loop& loop, Dispatcher& dispatcher, bool enableStat, size_t maxUpdatesSize,
 								   bool enableCustomBalancing)
 	: net::ConnectionST(std::move(s), loop, enableStat, kConnReadbufSize, kConnWriteBufSize, kCProtoTimeoutSec),
 	  maxUpdatesSize_(maxUpdatesSize),
@@ -37,7 +37,7 @@ ServerConnection::ServerConnection(socket &&s, ev::dynamic_loop &loop, Dispatche
 	updatesAsync_.start();
 }
 #else	// REINDEX_WITH_V3_FOLLOWERS
-ServerConnection::ServerConnection(socket &&s, ev::dynamic_loop &loop, Dispatcher &dispatcher, bool enableStat, bool enableCustomBalancing)
+ServerConnection::ServerConnection(socket&& s, ev::dynamic_loop& loop, Dispatcher& dispatcher, bool enableStat, bool enableCustomBalancing)
 	: net::ConnectionST(std::move(s), loop, enableStat, kConnReadbufSize, kConnWriteBufSize, kCProtoTimeoutSec),
 	  maxPendingUpdates_(kConnWriteBufSize * 0.8),
 	  dispatcher_(dispatcher),
@@ -54,14 +54,14 @@ ServerConnection::ServerConnection(socket &&s, ev::dynamic_loop &loop, Dispatche
 
 ServerConnection::~ServerConnection() { BaseConnT::closeConn(); }
 
-bool ServerConnection::Restart(socket &&s) {
+bool ServerConnection::Restart(socket&& s) {
 	BaseConnT::restart(std::move(s));
 	updatesAsync_.start();
 	callback(io_, ev::READ);
 	return true;
 }
 
-void ServerConnection::Attach(ev::dynamic_loop &loop) {
+void ServerConnection::Attach(ev::dynamic_loop& loop) {
 	if (!BaseConnT::attached_) {
 		BaseConnT::attach(loop);
 		updatesAsync_.set(loop);
@@ -74,7 +74,7 @@ void ServerConnection::Attach(ev::dynamic_loop &loop) {
 	}
 }
 
-void ServerConnection::CallRPC(const IRPCCall &call) {
+void ServerConnection::CallRPC(const IRPCCall& call) {
 #ifdef REINDEX_WITH_V3_FOLLOWERS
 	std::lock_guard lck(updatesMtx_);
 	updatesV3_.emplace_back(call);
@@ -90,7 +90,7 @@ void ServerConnection::CallRPC(const IRPCCall &call) {
 
 		WrSerializer ser;
 		ser.PutVString(nsName);
-		IRPCCall callLost = {[](IRPCCall *callLost, CmdCode &cmd, std::string_view &ns, Args &args) {
+		IRPCCall callLost = {[](IRPCCall* callLost, CmdCode& cmd, std::string_view& ns, Args& args) {
 								 Serializer s(callLost->data_->data(), callLost->data_->size());
 								 cmd = kCmdUpdates;
 								 args = {Arg(std::string(s.GetVString()))};
@@ -122,7 +122,7 @@ void ServerConnection::CallRPC(const IRPCCall &call) {
 #endif	// REINDEX_WITH_V3_FOLLOWERS
 }
 
-void ServerConnection::SendEvent(chunk &&ch) {
+void ServerConnection::SendEvent(chunk&& ch) {
 	bool notify = false;
 	{
 		std::lock_guard lck(updatesMtx_);
@@ -157,7 +157,7 @@ void ServerConnection::onClose() {
 	rebalance_ = nullptr;
 }
 
-void ServerConnection::handleRPC(Context &ctx) {
+void ServerConnection::handleRPC(Context& ctx) {
 	Error err = dispatcher_.Handle(ctx);
 
 	if (!ctx.respSent) {
@@ -172,7 +172,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 		Context ctx{BaseConnT::clientAddr_, nullptr, this, {{}, {}}, false};
 		std::string uncompressed;
 
-		auto len = BaseConnT::rdBuf_.peek(reinterpret_cast<char *>(&hdr), sizeof(hdr));
+		auto len = BaseConnT::rdBuf_.peek(reinterpret_cast<char*>(&hdr), sizeof(hdr));
 		if (len < sizeof(hdr)) {
 			return BaseConnT::ReadResT::Default;
 		}
@@ -180,7 +180,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 		if (hdr.magic != kCprotoMagic) {
 			try {
 				responceRPC(ctx, Error(errParams, "Invalid cproto magic %08x", int(hdr.magic)), Args());
-			} catch (const Error &err) {
+			} catch (const Error& err) {
 				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what().c_str());
 			}
 			BaseConnT::closeConn_ = true;
@@ -193,14 +193,18 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 					ctx,
 					Error(errParams, "Unsupported cproto version %04x. This server expects reindexer client v1.9.8+", int(hdr.version)),
 					Args());
-			} catch (const Error &err) {
+			} catch (const Error& err) {
 				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what().c_str());
 			}
 			BaseConnT::closeConn_ = true;
 			return BaseConnT::ReadResT::Default;
 		}
 		// Enable compression, only if clients sand compressed data to us
+#ifdef WIN32
+		enableSnappy_ = false;	// Disable compression on Windows #1823
+#else
 		enableSnappy_ = (hdr.version >= kCprotoMinSnappyVersion) && hdr.compressed;
+#endif
 
 		// Rebalance connection, when first message was recieved
 		if rx_unlikely (balancingType_ == BalancingType::NotSet) {
@@ -294,9 +298,9 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 			}
 
 			handleRPC(ctx);
-		} catch (const Error &err) {
+		} catch (const Error& err) {
 			handleException(ctx, err);
-		} catch (const std::exception &err) {
+		} catch (const std::exception& err) {
 			handleException(ctx, Error(errLogic, err.what()));
 		} catch (...) {
 			handleException(ctx, Error(errLogic, "Unknown exception"));
@@ -307,7 +311,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 	return BaseConnT::ReadResT::Default;
 }
 
-static void packRPC(WrSerializer &ser, Context &ctx, const Error &status, const Args &args, bool enableSnappy) {
+static void packRPC(WrSerializer& ser, Context& ctx, const Error& status, const Args& args, bool enableSnappy) {
 	CProtoHeader hdr;
 	hdr.len = 0;
 	hdr.magic = kCprotoMagic;
@@ -323,7 +327,7 @@ static void packRPC(WrSerializer &ser, Context &ctx, const Error &status, const 
 	}
 
 	size_t savePos = ser.Len();
-	ser.Write(std::string_view(reinterpret_cast<char *>(&hdr), sizeof(hdr)));
+	ser.Write(std::string_view(reinterpret_cast<char*>(&hdr), sizeof(hdr)));
 
 	ser.PutVarUint(status.code());
 	ser.PutVString(status.what());
@@ -339,22 +343,22 @@ static void packRPC(WrSerializer &ser, Context &ctx, const Error &status, const 
 	if (ser.Len() - savePos >= size_t(std::numeric_limits<int32_t>::max())) {
 		throw Error(errNetwork, "Too large RPC message(%d), size: %d bytes", hdr.cmd, ser.Len());
 	}
-	reinterpret_cast<CProtoHeader *>(ser.Buf() + savePos)->len = ser.Len() - savePos - sizeof(hdr);
+	reinterpret_cast<CProtoHeader*>(ser.Buf() + savePos)->len = ser.Len() - savePos - sizeof(hdr);
 }
 
-static chunk packRPC(chunk chunk, Context &ctx, const Error &status, const Args &args, bool enableSnappy) {
+static chunk packRPC(chunk chunk, Context& ctx, const Error& status, const Args& args, bool enableSnappy) {
 	WrSerializer ser(std::move(chunk));
 	packRPC(ser, ctx, status, args, enableSnappy);
 	return ser.DetachChunk();
 }
 
-void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args &args) {
+void ServerConnection::responceRPC(Context& ctx, const Error& status, const Args& args) {
 	if rx_unlikely (ctx.respSent) {
 		fprintf(stderr, "Warning - RPC responce already sent\n");
 		return;
 	}
 
-	auto &&chunk = packRPC(BaseConnT::wrBuf_.get_chunk(), ctx, status, args, enableSnappy_);
+	auto&& chunk = packRPC(BaseConnT::wrBuf_.get_chunk(), ctx, status, args, enableSnappy_);
 	auto len = chunk.len();
 	BaseConnT::wrBuf_.write(std::move(chunk));
 	if (BaseConnT::stats_) {
@@ -376,16 +380,16 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 	}
 }
 
-void ServerConnection::handleException(Context &ctx, const Error &err) noexcept {
+void ServerConnection::handleException(Context& ctx, const Error& err) noexcept {
 	// Exception occurs on unrecoverable error. Send responce, and drop connection
 	fprintf(stderr, "Dropping RPC-connection. Reason: %s\n", err.what().c_str());
 	try {
 		if (!ctx.respSent) {
 			responceRPC(ctx, err, Args());
 		}
-	} catch (const Error &e) {
+	} catch (const Error& e) {
 		fprintf(stderr, "responceRPC unexpected error: %s\n", e.what().c_str());
-	} catch (const std::exception &e) {
+	} catch (const std::exception& e) {
 		fprintf(stderr, "responceRPC unexpected error (std::exception): %s\n", e.what());
 	} catch (...) {
 		fprintf(stderr, "responceRPC unexpected error (unknow exception)\n");
@@ -520,7 +524,7 @@ void ServerConnection::sendUpdates() {
 	WrSerializer ser(BaseConnT::wrBuf_.get_chunk());
 	for (cnt = 0; cnt < updates.size(); ++cnt) {
 		args.clear<false>();
-		auto &upd = updates[cnt];
+		auto& upd = updates[cnt];
 		std::string_view updateData(upd);
 		args.emplace_back(p_string(&updateData), Variant::no_hold_t{});
 		packRPC(ser, ctx, Error(), args, enableSnappy_);

@@ -12,7 +12,7 @@ using Arg = Variant;
 class Args : public h_vector<Variant, 9> {
 public:
 	using h_vector<Variant, 9>::h_vector;
-	void Unpack(Serializer &ser) {
+	void Unpack(Serializer& ser) {
 		resize(0);
 		unsigned count = ser.GetVarUint();
 
@@ -20,13 +20,13 @@ public:
 			push_back(ser.GetVariant());
 		}
 	}
-	void Pack(WrSerializer &ser) const {
+	void Pack(WrSerializer& ser) const {
 		ser.PutVarUint(size());
-		for (auto &arg : *this) {
+		for (auto& arg : *this) {
 			ser.PutVariant(arg);
 		}
 	}
-	void Dump(WrSerializer &wrser) const;
+	void Dump(WrSerializer& wrser) const;
 };
 }  // namespace cproto
 }  // namespace net

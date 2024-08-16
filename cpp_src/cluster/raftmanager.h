@@ -19,24 +19,24 @@ class RaftManager {
 public:
 	using ClockT = steady_clock_w;
 
-	RaftManager(net::ev::dynamic_loop &loop, ReplicationStatsCollector statsCollector, const Logger &l,
+	RaftManager(net::ev::dynamic_loop& loop, ReplicationStatsCollector statsCollector, const Logger& l,
 				std::function<void(uint32_t, bool)> onNodeNetworkStatusChangedCb);
 
 	void SetTerminateFlag(bool val) noexcept { terminate_ = val; }
-	void Configure(const ReplicationConfigData &, const ClusterConfigData &);
+	void Configure(const ReplicationConfigData&, const ClusterConfigData&);
 	RaftInfo::Role Elections();
 	bool LeaderIsAvailable(ClockT::time_point now) const noexcept;
 	bool FollowersAreAvailable();
 	int32_t GetLeaderId() const { return getLeaderId(voteData_.load()); }
 	RaftInfo::Role GetRole() const { return getRole(voteData_.load()); }
 	int32_t GetTerm() const { return getTerm(voteData_.load()); }
-	Error SuggestLeader(const cluster::NodeData &suggestion, cluster::NodeData &response);
+	Error SuggestLeader(const cluster::NodeData& suggestion, cluster::NodeData& response);
 	[[nodiscard]] Error SendDesiredLeaderId(int nextServerId) noexcept {
 		RETURN_RESULT_NOEXCEPT(DesiredLeaderIdSender(loop_, nodes_, serverId_, nextServerId, log_)())
 	}
 	void SetDesiredLeaderId(int serverId);
 	int GetDesiredLeaderId() { return nextServerId_.GetNextServerId(); }
-	Error LeadersPing(const cluster::NodeData &);
+	Error LeadersPing(const cluster::NodeData&);
 	void AwaitTermination();
 
 private:
@@ -61,7 +61,7 @@ private:
 	};
 
 	struct RaftNode {
-		RaftNode(const client::ReindexerConfig &config, std::string _dsn, uint32_t _uid, int _serverId)
+		RaftNode(const client::ReindexerConfig& config, std::string _dsn, uint32_t _uid, int _serverId)
 			: client(config), dsn(std::move(_dsn)), uid(_uid), serverId(_serverId) {}
 		client::RaftClient client;
 		std::string dsn;
@@ -73,10 +73,10 @@ private:
 
 	class DesiredLeaderIdSender {
 	public:
-		DesiredLeaderIdSender(net::ev::dynamic_loop &, const std::vector<RaftNode> &, int serverId, int nextServerId, const Logger &);
+		DesiredLeaderIdSender(net::ev::dynamic_loop&, const std::vector<RaftNode>&, int serverId, int nextServerId, const Logger&);
 		~DesiredLeaderIdSender() {
 			coroutine::wait_group wgStop;
-			for (auto &client : clients_) {
+			for (auto& client : clients_) {
 				loop_.spawn(wgStop, [&client]() { client.Stop(); });
 			}
 			wgStop.wait();
@@ -92,10 +92,10 @@ private:
 			return !err.ok() ? err : client.SetDesiredLeaderId(nextServerId_);
 		}
 
-		net::ev::dynamic_loop &loop_;
+		net::ev::dynamic_loop& loop_;
 		std::vector<client::RaftClient> clients_;
-		const std::vector<RaftNode> &nodes_;
-		const Logger &log_;
+		const std::vector<RaftNode>& nodes_;
+		const Logger& log_;
 		const int thisServerId_;
 		const int nextServerId_;
 		size_t nextServerNodeIndex_;
@@ -109,14 +109,14 @@ private:
 	static int64_t setRole(int64_t voteData, RaftInfo::Role role) { return (voteData & ~(0xFFll << 24)) | (int64_t(role) << 24); }
 	static int32_t getTerm(int64_t voteData) { return int32_t(voteData >> 32); }
 	static int64_t setTerm(int64_t voteData, int32_t term) { return (int64_t(term) << 32) + (voteData & ~(0xFFFFFFFFll << 32)); }
-	static void randomizedSleep(net::ev::dynamic_loop &loop, std::chrono::milliseconds base, std::chrono::milliseconds maxDiff);
+	static void randomizedSleep(net::ev::dynamic_loop& loop, std::chrono::milliseconds base, std::chrono::milliseconds maxDiff);
 	int32_t beginElectionsTerm(int presetLeader);
 	bool endElections(int32_t term, RaftInfo::Role result);
 	bool isConsensus(size_t num) const noexcept;
 	bool hasRecentLeadersPing(ClockT::time_point now) const noexcept;
 	client::ConnectOpts createConnectionOpts() const { return client::ConnectOpts().WithExpectedClusterID(clusterID_); }
 
-	net::ev::dynamic_loop &loop_;
+	net::ev::dynamic_loop& loop_;
 	ReplicationStatsCollector statsCollector_;
 	std::vector<RaftNode> nodes_;
 	std::atomic_int_fast64_t voteData_ = {0};  // roundId << 32 + role << 24 + leaderId
@@ -127,7 +127,7 @@ private:
 	int clusterID_ = 1;
 	NextServerId nextServerId_;
 	std::function<void(uint32_t, bool)> onNodeNetworkStatusChangedCb_;
-	const Logger &log_;
+	const Logger& log_;
 };
 
 }  // namespace cluster

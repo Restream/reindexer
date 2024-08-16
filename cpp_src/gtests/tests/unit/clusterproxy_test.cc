@@ -9,8 +9,12 @@ static std::string itemData(int id, std::string_view valueData, std::string_view
 	WrSerializer ser;
 	JsonBuilder jb(ser);
 	jb.Put("id", id);
-	if (!valueData.empty()) jb.Put("value", valueData);
-	if (!modifyValueData.empty()) jb.Put("modifydata", modifyValueData);
+	if (!valueData.empty()) {
+		jb.Put("value", valueData);
+	}
+	if (!modifyValueData.empty()) {
+		jb.Put("modifydata", modifyValueData);
+	}
 	jb.End();
 	return std::string(ser.Slice());
 }
@@ -344,7 +348,9 @@ static void CheckAddUpdateDropIndex(ClusterizationApi::Cluster& cluster, int nod
 		Error err = cluster.GetNode(node)->api.reindexer->EnumNamespaces(defs, EnumNamespacesOpts().HideSystem().HideTemporary());
 		EXPECT_TRUE(err.ok()) << err.what();
 		for (const auto& def : defs) {
-			if (def.name != nsName) continue;
+			if (def.name != nsName) {
+				continue;
+			}
 			for (const auto& indxDef : def.indexes) {
 				if (indxDef.name_ == indxName) {
 					return indxDef;
@@ -461,7 +467,7 @@ static void SelectHelper(int node, const std::string& nsName, ClusterizationApi:
 	if (id >= 0) {
 		ASSERT_EQ(id, itsel.GetID());
 	}
-};
+}
 
 static void Select0Helper(int node, const std::string& nsName, ClusterizationApi::Cluster& cluster) {
 	reindexer::Query q(nsName);
@@ -469,7 +475,7 @@ static void Select0Helper(int node, const std::string& nsName, ClusterizationApi
 	Error err = cluster.GetNode(node)->api.reindexer->Select(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.Count(), 0);
-};
+}
 
 static void CheckInsertUpsertUpdateDelete(ClusterizationApi::Cluster& cluster, int leaderId, int followerId) {
 	const std::string kNsName = "nsInsert";

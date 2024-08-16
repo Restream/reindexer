@@ -125,7 +125,9 @@ void AsyncStorage::InheritUpdatesFrom(AsyncStorage& src, AsyncStorage::FullLockT
 			totalUpdatesCount_.fetch_add(src.curUpdatesChunck_.updatesCount, std::memory_order_release);
 			src.totalUpdatesCount_.fetch_sub(src.curUpdatesChunck_.updatesCount, std::memory_order_release);
 			finishedUpdateChuncks_.push_front(std::move(src.curUpdatesChunck_));
-			if (lastBatchWithSyncUpdates_ >= 0) ++lastBatchWithSyncUpdates_;
+			if (lastBatchWithSyncUpdates_ >= 0) {
+				++lastBatchWithSyncUpdates_;
+			}
 		}
 		while (src.finishedUpdateChuncks_.size()) {
 			auto& upd = src.finishedUpdateChuncks_.back();
@@ -133,7 +135,9 @@ void AsyncStorage::InheritUpdatesFrom(AsyncStorage& src, AsyncStorage::FullLockT
 			src.totalUpdatesCount_.fetch_sub(upd.updatesCount, std::memory_order_release);
 			finishedUpdateChuncks_.push_front(std::move(upd));
 			src.finishedUpdateChuncks_.pop_back();
-			if (lastBatchWithSyncUpdates_ >= 0) ++lastBatchWithSyncUpdates_;
+			if (lastBatchWithSyncUpdates_ >= 0) {
+				++lastBatchWithSyncUpdates_;
+			}
 		}
 		src.storage_.reset();
 		// Do not update lockfree status here to avoid status flickering on ns copying
