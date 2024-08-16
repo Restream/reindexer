@@ -37,7 +37,7 @@ private:
 	WordT set_[kWordsCount] = {0};
 };
 
-static_assert(std::numeric_limits<uint8_t>::max() - std::numeric_limits<uint8_t>::min() + 1 == Charset::max_values_count(),
+static_assert(size_t(std::numeric_limits<uint8_t>::max() - std::numeric_limits<uint8_t>::min() + 1) == Charset::max_values_count(),
 			  "Expecting max uint8_t range of [0, 255] for the simplicity");
 
 }  // namespace reindexer::estl

@@ -76,12 +76,13 @@ template <CondType Cond>
 }  // namespace comparators
 
 [[nodiscard]] std::string ComparatorNotIndexed::ConditionStr() const {
-	return std::visit([&](const auto& impl) { return impl.ConditionStr(); }, impl_);
+	assertrx_dbg(dynamic_cast<const ImplVariantType*>(impl_.get()));
+	return std::visit([&](const auto& impl) { return impl.ConditionStr(); }, *static_cast<const ImplVariantType*>(impl_.get()));
 }
 
-comparators::ComparatorNotIndexedVariant ComparatorNotIndexed::createImpl(CondType cond, const VariantArray& values,
-																		  const PayloadType& payloadType, const TagsPath& fieldPath,
-																		  bool distinct) {
+ComparatorNotIndexed::ImplVariantType ComparatorNotIndexed::createImpl(CondType cond, const VariantArray& values,
+																	   const PayloadType& payloadType, const TagsPath& fieldPath,
+																	   bool distinct) {
 	using namespace comparators;
 	if (distinct) {
 		switch (cond) {

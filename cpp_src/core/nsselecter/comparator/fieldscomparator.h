@@ -10,9 +10,14 @@
 
 namespace reindexer {
 
-class FieldsComparator {
+class FieldsComparatorImpl : public intrusive_rc_base {
 public:
-	FieldsComparator(std::string_view lField, CondType cond, std::string_view rField, PayloadType plType);
+	FieldsComparatorImpl(std::string_view lField, CondType cond, std::string_view rField, PayloadType plType);
+	FieldsComparatorImpl(const FieldsComparatorImpl&) = delete;
+	FieldsComparatorImpl(FieldsComparatorImpl&&) = delete;
+	FieldsComparatorImpl& operator=(const FieldsComparatorImpl&) = delete;
+	FieldsComparatorImpl& operator=(FieldsComparatorImpl&&) = delete;
+
 	bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		if (ctx_.size() > 1) {
 			for (const auto& c : ctx_) {
@@ -153,6 +158,28 @@ private:
 	h_vector<Context, 1> ctx_{Context{}};
 	int matchedCount_ = 0;
 	bool leftFieldSet = false;
+};
+
+class FieldsComparator {
+public:
+	FieldsComparator(std::string_view lField, CondType cond, std::string_view rField, PayloadType plType)
+		: impl_{make_intrusive<FieldsComparatorImpl>(lField, cond, rField, plType)} {}
+	bool Compare(const PayloadValue& item, IdType rowId) { return impl_->Compare(item, rowId); }
+	double Cost(int expectedIterations) const noexcept { return impl_->Cost(expectedIterations); }
+	const std::string& Name() const& noexcept { return impl_->Name(); }
+	const std::string& Name() const&& = delete;
+	const std::string& Dump() const& noexcept { return impl_->Dump(); }
+	const std::string& Dump() const&& = delete;
+	int GetMatchedCount() const noexcept { return impl_->GetMatchedCount(); }
+	void SetLeftField(const FieldsSet& fields) { return impl_->SetLeftField(fields); }
+	void SetRightField(const FieldsSet& fields) { return impl_->SetRightField(fields); }
+	void SetLeftField(const FieldsSet& fset, KeyValueType type, bool isArray) { return impl_->SetLeftField(fset, type, isArray); }
+	void SetRightField(const FieldsSet& fset, KeyValueType type, bool isArray) { return impl_->SetRightField(fset, type, isArray); }
+	void SetCollateOpts(const CollateOpts& cOpts) { impl_->SetCollateOpts(cOpts); }
+
+private:
+	// Using pointer to reduce ExpressionTree Node size
+	intrusive_ptr<FieldsComparatorImpl> impl_;
 };
 
 }  // namespace reindexer

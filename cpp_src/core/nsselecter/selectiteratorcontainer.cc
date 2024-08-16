@@ -647,13 +647,13 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 			// suggest that all JOINs in chain of OR ... OR ... OR ... OR will be before all not JOINs (see SortByCost)
 			if (result) {
 				// check what it does not holds join
-				if (it->Visit([] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket& b)
-								  RX_POST_LMBD_ALWAYS_INLINE noexcept { return !b.haveJoins; },
-							  [] RX_PRE_LMBD_ALWAYS_INLINE(const JoinSelectIterator&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
-							  [] RX_PRE_LMBD_ALWAYS_INLINE(
-								  OneOf<SelectIterator, FieldsComparator, AlwaysTrue, EqualPositionComparator, ComparatorNotIndexed,
-										Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>)
-								  RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; })) {
+				if (it->Visit(
+						[](const SelectIteratorsBracket& b) noexcept { return !b.haveJoins; },
+						[](const JoinSelectIterator&) noexcept { return false; },
+						[](OneOf<SelectIterator, FieldsComparator, AlwaysTrue, EqualPositionComparator, ComparatorNotIndexed,
+								 Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>) noexcept {
+							return true;
+						})) {
 					continue;
 				}
 			}
@@ -664,18 +664,16 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 		}
 		bool lastFinish = false;
 		const bool lastResult = it->Visit(
-			[&] RX_PRE_LMBD_ALWAYS_INLINE(SelectIteratorsBracket&) RX_POST_LMBD_ALWAYS_INLINE {
+			[&](SelectIteratorsBracket&) {
 				return checkIfSatisfyAllConditions<reverse, hasComparators>(it.begin(), it.end(), pv, &lastFinish, rowId, properRowId,
 																			match);
 			},
-			[&] RX_PRE_LMBD_ALWAYS_INLINE(SelectIterator & sit)
-				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition<reverse>(sit, &lastFinish, rowId); },
-			[&] RX_PRE_LMBD_ALWAYS_INLINE(JoinSelectIterator & jit)
-				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(jit, pv, properRowId, match); },
+			[&](SelectIterator& sit) { return checkIfSatisfyCondition<reverse>(sit, &lastFinish, rowId); },
+			[&](JoinSelectIterator& jit) { return checkIfSatisfyCondition(jit, pv, properRowId, match); },
 			Restricted<FieldsComparator, EqualPositionComparator, ComparatorNotIndexed,
 					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
-				[&pv, properRowId] RX_PRE_LMBD_ALWAYS_INLINE(auto& c) RX_POST_LMBD_ALWAYS_INLINE { return c.Compare(pv, properRowId); }),
-			[] RX_PRE_LMBD_ALWAYS_INLINE(AlwaysTrue&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; });
+				[&pv, properRowId](auto& c) { return c.Compare(pv, properRowId); }),
+			[](AlwaysTrue&) noexcept { return true; });
 		if (op == OpOr) {
 			result |= lastResult;
 			currentFinish &= (!result && lastFinish);
@@ -700,9 +698,8 @@ IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterat
 		switch (it->operation) {
 			case OpOr: {
 				auto next = it->Visit(
-					[it, from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket&)
-						RX_POST_LMBD_ALWAYS_INLINE { return getNextItemId<reverse>(it.cbegin(), it.cend(), from); },
-					[from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIterator& sit) RX_POST_LMBD_ALWAYS_INLINE {
+					[it, from](const SelectIteratorsBracket&) { return getNextItemId<reverse>(it.cbegin(), it.cend(), from); },
+					[from](const SelectIterator& sit) {
 						if constexpr (reverse) {
 							if (sit.End()) {
 								return std::numeric_limits<IdType>::lowest();
@@ -720,11 +717,11 @@ IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterat
 						}
 						return from;
 					},
-					[from] RX_PRE_LMBD_ALWAYS_INLINE(
-						const OneOf<JoinSelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed, AlwaysTrue,
-									Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>)
-						RX_POST_LMBD_ALWAYS_INLINE { return from; },
-					[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse&) RX_POST_LMBD_ALWAYS_INLINE {
+					[from](const OneOf<JoinSelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed, AlwaysTrue,
+									   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>) {
+						return from;
+					},
+					[](const AlwaysFalse&) {
 						return reverse ? std::numeric_limits<IdType>::lowest() : std::numeric_limits<IdType>::max();
 					});
 				if constexpr (reverse) {
@@ -736,9 +733,8 @@ IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterat
 			case OpAnd:
 				from = result;
 				result = it->Visit(
-					[it, from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket&)
-						RX_POST_LMBD_ALWAYS_INLINE { return getNextItemId<reverse>(it.cbegin(), it.cend(), from); },
-					[from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIterator& sit) RX_POST_LMBD_ALWAYS_INLINE {
+					[it, from](const SelectIteratorsBracket&) { return getNextItemId<reverse>(it.cbegin(), it.cend(), from); },
+					[from](const SelectIterator& sit) {
 						if constexpr (reverse) {
 							if (sit.End()) {
 								return std::numeric_limits<IdType>::lowest();
@@ -756,11 +752,11 @@ IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterat
 						}
 						return from;
 					},
-					[from] RX_PRE_LMBD_ALWAYS_INLINE(
-						const OneOf<JoinSelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed, AlwaysTrue,
-									Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>)
-						RX_POST_LMBD_ALWAYS_INLINE { return from; },
-					[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse&) RX_POST_LMBD_ALWAYS_INLINE {
+					[from](const OneOf<JoinSelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed, AlwaysTrue,
+									   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>) {
+						return from;
+					},
+					[](const AlwaysFalse&) {
 						return reverse ? std::numeric_limits<IdType>::lowest() : std::numeric_limits<IdType>::max();
 					});
 				break;

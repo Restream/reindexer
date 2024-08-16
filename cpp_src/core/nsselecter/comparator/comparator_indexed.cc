@@ -103,10 +103,6 @@ void initComparator(const reindexer::VariantArray& from, typename reindexer::com
 template <typename T>
 void initComparator(CondType cond, const reindexer::VariantArray& from, reindexer::comparators::DataHolder<T>& to) {
 	using namespace reindexer::comparators;
-	using SingleType = typename DataHolder<T>::SingleType;
-	using RangeType = typename DataHolder<T>::RangeType;
-	using SetPtrType = typename DataHolder<T>::SetPtrType;
-	using AllSetPtrType = typename DataHolder<T>::AllSetPtrType;
 	using SetWrpType = typename DataHolder<T>::SetWrpType;
 	using AllSetWrpType = typename DataHolder<T>::AllSetWrpType;
 	switch (cond) {
@@ -118,17 +114,15 @@ void initComparator(CondType cond, const reindexer::VariantArray& from, reindexe
 			to.value_ = GetValue<T>(cond, from, 0);
 			break;
 		case CondRange:
-			to.value_.~SingleType();
-			new (&to.range_) RangeType{GetValue<T>(cond, from, 0), GetValue<T>(cond, from, 1)};
+			to.value_ = GetValue<T>(cond, from, 0);
+			to.value2_ = GetValue<T>(cond, from, 1);
 			break;
 		case CondSet:
-			to.value_.~SingleType();
-			new (&to.setPtr_) SetPtrType{make_intrusive<SetWrpType>()};
+			to.setPtr_ = make_intrusive<SetWrpType>();
 			initComparator<T, CondSet>(from, *to.setPtr_);
 			break;
 		case CondAllSet:
-			to.value_.~SingleType();
-			new (&to.allSetPtr_) AllSetPtrType{make_intrusive<AllSetWrpType>()};
+			to.allSetPtr_ = make_intrusive<AllSetWrpType>();
 			initComparator<T, CondAllSet>(from, *to.allSetPtr_);
 			break;
 		case CondAny:
@@ -143,12 +137,8 @@ void initComparator(CondType cond, const reindexer::VariantArray& from, reindexe
 void initStringComparator(CondType cond, const reindexer::VariantArray& from, reindexer::comparators::DataHolder<reindexer::key_string>& to,
 						  const CollateOpts& collate) {
 	using namespace reindexer::comparators;
-	using SingleType = DataHolder<reindexer::key_string>::SingleType;
-	using RangeType = DataHolder<reindexer::key_string>::RangeType;
 	using SetType = DataHolder<reindexer::key_string>::SetType;
 	using AllSetType = DataHolder<reindexer::key_string>::AllSetType;
-	using SetPtrType = DataHolder<reindexer::key_string>::SetPtrType;
-	using AllSetPtrType = DataHolder<reindexer::key_string>::AllSetPtrType;
 	using SetWrpType = DataHolder<reindexer::key_string>::SetWrpType;
 	using AllSetWrpType = DataHolder<reindexer::key_string>::AllSetWrpType;
 	switch (cond) {
@@ -161,17 +151,15 @@ void initStringComparator(CondType cond, const reindexer::VariantArray& from, re
 			to.value_ = GetValue<reindexer::key_string>(cond, from, 0);
 			break;
 		case CondRange:
-			to.value_.~SingleType();
-			new (&to.range_) RangeType{GetValue<reindexer::key_string>(cond, from, 0), GetValue<reindexer::key_string>(cond, from, 1)};
+			to.value_ = GetValue<reindexer::key_string>(cond, from, 0);
+			to.value2_ = GetValue<reindexer::key_string>(cond, from, 1);
 			break;
 		case CondSet:
-			to.value_.~SingleType();
-			new (&to.setPtr_) SetPtrType{make_intrusive<SetWrpType>(SetType{collate})};
+			to.setPtr_ = make_intrusive<SetWrpType>(SetType{collate});
 			initComparator<reindexer::key_string, CondSet>(from, *to.setPtr_);
 			break;
 		case CondAllSet:
-			to.value_.~SingleType();
-			new (&to.allSetPtr_) AllSetPtrType{make_intrusive<AllSetWrpType>(AllSetType{collate, {}})};
+			to.allSetPtr_ = make_intrusive<AllSetWrpType>(AllSetType{collate, {}});
 			initComparator<reindexer::key_string, CondAllSet>(from, *to.allSetPtr_);
 			break;
 		case CondAny:
@@ -185,13 +173,8 @@ void initStringComparator(CondType cond, const reindexer::VariantArray& from, re
 template <typename T, CondType Cond, typename V>
 [[nodiscard]] std::string comparatorCondStr(const V& values) {
 	using namespace std::string_literals;
-	if constexpr (Cond == CondRange) {
-		if constexpr (std::is_same_v<T, reindexer::key_string>) {
-			return fmt::sprintf("RANGE(%s, %s)", values.value1_.valueView_, values.value2_.valueView_);
-		} else {
-			return fmt::format("RANGE({}, {})", values.first, values.second);
-		}
-	} else if constexpr (Cond == CondSet) {
+	static_assert(Cond != CondRange, "Incorrect specialization");
+	if constexpr (Cond == CondSet) {
 		if (values.empty()) {
 			return "IN []"s;
 		} else {
@@ -205,12 +188,25 @@ template <typename T, CondType Cond, typename V>
 		}
 	} else if constexpr (Cond == CondEq || Cond == CondLt || Cond == CondLe || Cond == CondGt || Cond == CondGe) {
 		if constexpr (std::is_same_v<T, reindexer::key_string>) {
-			return fmt::sprintf("%s %s", reindexer::comparators::CondToStr<Cond>(), values.valueView_);
+			return fmt::format("{} {}", reindexer::comparators::CondToStr<Cond>(), values.valueView_);
 		} else {
 			return fmt::format("{} {}", reindexer::comparators::CondToStr<Cond>(), values);
 		}
 	} else if constexpr (Cond == CondLike && std::is_same_v<T, reindexer::key_string>) {
-		return fmt::sprintf("LIKE \"%s\"", values.valueView_);
+		return fmt::format("LIKE \"{}\"", values.valueView_);
+	}
+	abort();
+}
+
+template <typename T, CondType Cond, typename V>
+[[nodiscard]] std::string comparatorCondStr(const V& value, const V& value2) {
+	using namespace std::string_literals;
+	if constexpr (Cond == CondRange) {
+		if constexpr (std::is_same_v<T, reindexer::key_string>) {
+			return fmt::format("RANGE({}, {})", value.valueView_, value2.valueView_);
+		} else {
+			return fmt::format("RANGE({}, {})", value, value2);
+		}
 	}
 	abort();
 }
@@ -229,7 +225,7 @@ template <typename T>
 		case CondGe:
 			return comparatorCondStr<T, CondGe>(data.value_);
 		case CondRange:
-			return comparatorCondStr<T, CondRange>(data.range_);
+			return comparatorCondStr<T, CondRange>(data.value_, data.value2_);
 		case CondSet:
 			assertrx_dbg(data.setPtr_);
 			return comparatorCondStr<T, CondSet>(*data.setPtr_);
@@ -251,25 +247,31 @@ template <CondType Cond>
 	const typename reindexer::comparators::ValuesHolder<reindexer::PayloadValue, Cond>::Type& values,
 	const reindexer::PayloadType& payloadType, const reindexer::FieldsSet& fields) {
 	using namespace std::string_literals;
-	if constexpr (Cond == CondRange) {
-		return fmt::sprintf("RANGE(%s, %s)", reindexer::Variant{values.first}.As<std::string>(payloadType, fields),
-							reindexer::Variant{values.second}.As<std::string>(payloadType, fields));
-	} else if constexpr (Cond == CondSet) {
+	static_assert(Cond != CondRange, "Incorrect specialization");
+	if constexpr (Cond == CondSet) {
 		if (values.empty()) {
 			return "IN []"s;
 		} else {
-			return fmt::sprintf("IN [%s, ...]", reindexer::Variant{*values.begin()}.As<std::string>(payloadType, fields));
+			return fmt::format("IN [{}, ...]", reindexer::Variant{*values.begin()}.As<std::string>(payloadType, fields));
 		}
 	} else if constexpr (Cond == CondAllSet) {
 		if (values.values_.empty()) {
 			return "ALLSET []"s;
 		} else {
-			return fmt::sprintf("ALLSET [%s, ...]", reindexer::Variant{values.values_.begin()->first}.As<std::string>(payloadType, fields));
+			return fmt::format("ALLSET [{}, ...]", reindexer::Variant{values.values_.begin()->first}.As<std::string>(payloadType, fields));
 		}
 	} else if constexpr (Cond == CondEq || Cond == CondLt || Cond == CondLe || Cond == CondGt || Cond == CondGe) {
-		return fmt::sprintf("%s %s", reindexer::comparators::CondToStr<Cond>(),
-							reindexer::Variant{values}.As<std::string>(payloadType, fields));
+		return fmt::format("{} {}", reindexer::comparators::CondToStr<Cond>(),
+						   reindexer::Variant{values}.As<std::string>(payloadType, fields));
 	}
+}
+
+template <typename V>
+[[nodiscard]] std::string compositeRangeComparatorCondStr(const V& value, const V& value2, const reindexer::PayloadType& payloadType,
+														  const reindexer::FieldsSet& fields) {
+	using namespace std::string_literals;
+	return fmt::format("RANGE({}, {})", reindexer::Variant{value}.As<std::string>(payloadType, fields),
+					   reindexer::Variant{value2}.As<std::string>(payloadType, fields));
 }
 
 [[nodiscard]] std::string anyComparatorCondStr() {
@@ -483,7 +485,7 @@ ComparatorIndexedJsonPathStringDistinct::ComparatorIndexedJsonPathStringDistinct
 
 ComparatorIndexedComposite::ComparatorIndexedComposite(const VariantArray& values, const CollateOpts& collate, const FieldsSet& fields,
 													   const PayloadType& payloadType, CondType cond)
-	: collateOpts_{&collate}, fields_{fields}, payloadType_{payloadType} {
+	: collateOpts_{&collate}, fields_{make_intrusive<FieldsSetWrp>(fields)}, payloadType_{payloadType} {
 	switch (cond) {
 		case CondEq:
 		case CondLt:
@@ -493,19 +495,16 @@ ComparatorIndexedComposite::ComparatorIndexedComposite(const VariantArray& value
 			value_ = GetValue<PayloadValue>(cond, values, 0);
 			break;
 		case CondRange:
-			value_.~PayloadValue();
-			new (&range_) RangeType{GetValue<PayloadValue>(cond, values, 0), GetValue<PayloadValue>(cond, values, 1)};
+			value_ = GetValue<PayloadValue>(cond, values, 0);
+			value2_ = GetValue<PayloadValue>(cond, values, 1);
 			break;
 		case CondSet:
-			value_.~PayloadValue();
-			new (&setPtr_) SetPtrType{make_intrusive<SetWrpType>(SetType{values.size(), reindexer::hash_composite_ref{payloadType, fields},
-																		 reindexer::equal_composite_ref{payloadType, fields}})};
+			setPtr_ = make_intrusive<SetWrpType>(SetType{values.size(), reindexer::hash_composite_ref{payloadType, fields},
+														 reindexer::equal_composite_ref{payloadType, fields}});
 			initComparator<PayloadValue, CondSet>(values, *setPtr_);
 			break;
 		case CondAllSet:
-			value_.~PayloadValue();
-			new (&allSetPtr_) AllSetPtrType{
-				make_intrusive<AllSetWrpType>(AllSetType{{reindexer::PayloadType{payloadType}, reindexer::FieldsSet{fields}}, {}})};
+			allSetPtr_ = make_intrusive<AllSetWrpType>(AllSetType{{reindexer::PayloadType{payloadType}, reindexer::FieldsSet{fields}}, {}});
 			initComparator<PayloadValue, CondAllSet>(values, *allSetPtr_);
 			break;
 		case CondAny:
@@ -520,23 +519,23 @@ ComparatorIndexedComposite::ComparatorIndexedComposite(const VariantArray& value
 [[nodiscard]] std::string ComparatorIndexedComposite::ConditionStr() const {
 	switch (cond_) {
 		case CondEq:
-			return compositeComparatorCondStr<CondEq>(value_, payloadType_, fields_);
+			return compositeComparatorCondStr<CondEq>(value_, payloadType_, *fields_);
 		case CondLt:
-			return compositeComparatorCondStr<CondLt>(value_, payloadType_, fields_);
+			return compositeComparatorCondStr<CondLt>(value_, payloadType_, *fields_);
 		case CondLe:
-			return compositeComparatorCondStr<CondLe>(value_, payloadType_, fields_);
+			return compositeComparatorCondStr<CondLe>(value_, payloadType_, *fields_);
 		case CondGt:
-			return compositeComparatorCondStr<CondGt>(value_, payloadType_, fields_);
+			return compositeComparatorCondStr<CondGt>(value_, payloadType_, *fields_);
 		case CondGe:
-			return compositeComparatorCondStr<CondGe>(value_, payloadType_, fields_);
+			return compositeComparatorCondStr<CondGe>(value_, payloadType_, *fields_);
 		case CondRange:
-			return compositeComparatorCondStr<CondRange>(range_, payloadType_, fields_);
+			return compositeRangeComparatorCondStr(value_, value2_, payloadType_, *fields_);
 		case CondSet:
 			assertrx_dbg(setPtr_);
-			return compositeComparatorCondStr<CondSet>(*setPtr_, payloadType_, fields_);
+			return compositeComparatorCondStr<CondSet>(*setPtr_, payloadType_, *fields_);
 		case CondAllSet:
 			assertrx_dbg(allSetPtr_);
-			return compositeComparatorCondStr<CondAllSet>(*allSetPtr_, payloadType_, fields_);
+			return compositeComparatorCondStr<CondAllSet>(*allSetPtr_, payloadType_, *fields_);
 		case CondLike:
 		case CondAny:
 		case CondEmpty:

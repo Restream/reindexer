@@ -15,7 +15,6 @@
 #include "estl/fast_hash_set.h"
 #include "helpers.h"
 #include "tools/string_regexp_functions.h"
-#include "vendor/sparse-map/sparse_set.h"
 
 namespace reindexer {
 
@@ -51,41 +50,14 @@ struct ValuesHolder<key_string, Cond> {
 	};
 };
 
-// TODO: fast_hash_map here somehow causes crashes in the centos 7 asan CI builds
-template <typename T, typename U, typename HashT>
-using LowSparsityMap = tsl::sparse_map<T, U, HashT, std::equal_to<T>, std::allocator<std::pair<T, U>>,
-									   tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>;
-
-template <typename T, typename HashT>
-using LowSparsitySet = tsl::sparse_set<T, HashT, std::equal_to<T>, std::allocator<T>, tsl::sh::power_of_two_growth_policy<2>,
-									   tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>;
-
 template <typename T>
 struct ValuesHolder<T, CondRange> {
-	using Type = std::pair<T, T>;
-};
-
-template <>
-struct ValuesHolder<key_string, CondRange> {
-	struct Type {
-		ValuesHolder<key_string, CondEq>::Type value1_;
-		ValuesHolder<key_string, CondEq>::Type value2_;
-	};
-};
-
-template <>
-struct ValuesHolder<int, CondSet> {
-	using Type = LowSparsitySet<int, hash_int<int>>;
-};
-
-template <>
-struct ValuesHolder<int64_t, CondSet> {
-	using Type = LowSparsitySet<int64_t, hash_int<int64_t>>;
+	// Empty
 };
 
 template <typename T>
 struct ValuesHolder<T, CondSet> {
-	using Type = LowSparsitySet<T, std::hash<T>>;
+	using Type = fast_hash_set<T>;
 };
 
 template <>
@@ -98,26 +70,10 @@ struct ValuesHolder<PayloadValue, CondSet> {
 	using Type = unordered_payload_ref_set;
 };
 
-template <>
-struct ValuesHolder<int, CondAllSet> {
-	struct Type {
-		LowSparsityMap<int, int, hash_int<int>> values_;
-		fast_hash_set<int> allSetValues_;
-	};
-};
-
-template <>
-struct ValuesHolder<int64_t, CondAllSet> {
-	struct Type {
-		LowSparsityMap<int64_t, int, hash_int<int64_t>> values_;
-		fast_hash_set<int> allSetValues_;
-	};
-};
-
 template <typename T>
 struct ValuesHolder<T, CondAllSet> {
 	struct Type {
-		LowSparsityMap<T, int, std::hash<T>> values_;
+		fast_hash_map<T, int> values_;
 		fast_hash_set<int> allSetValues_;
 	};
 };
@@ -141,7 +97,6 @@ struct ValuesHolder<PayloadValue, CondAllSet> {
 template <typename T>
 struct DataHolder {
 	using SingleType = typename ValuesHolder<T, CondEq>::Type;
-	using RangeType = typename ValuesHolder<T, CondRange>::Type;
 	using SetType = typename ValuesHolder<T, CondSet>::Type;
 	using SetWrpType = intrusive_rc_wrapper<SetType>;
 	using SetPtrType = intrusive_ptr<SetWrpType>;
@@ -149,188 +104,16 @@ struct DataHolder {
 	using AllSetWrpType = intrusive_rc_wrapper<AllSetType>;
 	using AllSetPtrType = intrusive_ptr<AllSetWrpType>;
 
-	DataHolder() noexcept : cond_{CondEq}, value_{} {}
-	DataHolder(DataHolder&& other) noexcept : cond_{other.cond_} {
-		switch (other.cond_) {
-			case CondEq:
-			case CondLt:
-			case CondLe:
-			case CondGt:
-			case CondGe:
-			case CondLike:
-				new (&this->value_) SingleType{std::move(other.value_)};
-				break;
-			case CondRange:
-				new (&this->range_) RangeType{std::move(other.range_)};
-				break;
-			case CondSet:
-				new (&this->setPtr_) SetPtrType{std::move(other.setPtr_)};
-				break;
-			case CondAllSet:
-				new (&this->allSetPtr_) AllSetPtrType{std::move(other.allSetPtr_)};
-				break;
-			case CondAny:
-			case CondEmpty:
-			case CondDWithin:
-				new (&this->value_) SingleType{};
-				break;
-		}
-	}
-	DataHolder(const DataHolder& other) : cond_{CondAny} {
-		switch (other.cond_) {
-			case CondEq:
-			case CondLt:
-			case CondLe:
-			case CondGt:
-			case CondGe:
-			case CondLike:
-				new (&this->value_) SingleType{other.value_};
-				break;
-			case CondRange:
-				new (&this->range_) RangeType{other.range_};
-				break;
-			case CondSet:
-				new (&this->setPtr_) SetPtrType{other.setPtr_};
-				break;
-			case CondAllSet:
-				new (&this->allSetPtr_) AllSetPtrType{other.allSetPtr_};
-				break;
-			case CondAny:
-			case CondEmpty:
-			case CondDWithin:
-				new (&this->value_) SingleType{};
-				break;
-		}
-		cond_ = other.cond_;
-	}
-	DataHolder& operator=(DataHolder&& other) noexcept {
-		if (this == &other) {
-			return *this;
-		}
-		if (cond_ != other.cond_) {
-			clear();
-			switch (other.cond_) {
-				case CondEq:
-				case CondLt:
-				case CondLe:
-				case CondGt:
-				case CondGe:
-				case CondLike:
-					new (&this->value_) SingleType{std::move(other.value_)};
-					break;
-				case CondRange:
-					new (&this->range_) RangeType{std::move(other.range_)};
-					break;
-				case CondSet:
-					new (&this->setPtr_) SetPtrType{std::move(other.setPtr_)};
-					break;
-				case CondAllSet:
-					new (&this->allSetPtr_) AllSetPtrType{std::move(other.allSetPtr_)};
-					break;
-				case CondAny:
-				case CondEmpty:
-				case CondDWithin:
-					break;
-			}
-			this->cond_ = other.cond_;
-		} else {
-			switch (other.cond_) {
-				case CondEq:
-				case CondLt:
-				case CondLe:
-				case CondGt:
-				case CondGe:
-				case CondLike:
-					this->value_ = std::move(other.value_);
-					break;
-				case CondRange:
-					this->range_ = std::move(other.range_);
-					break;
-				case CondSet:
-					this->setPtr_ = std::move(other.setPtr_);
-					break;
-				case CondAllSet:
-					this->allSetPtr_ = std::move(other.allSetPtr_);
-					break;
-				case CondAny:
-				case CondEmpty:
-				case CondDWithin:
-					break;
-			}
-		}
-		return *this;
-	}
-	DataHolder& operator=(const DataHolder& other) {
-		if (this == &other) {
-			return *this;
-		}
-		if (cond_ != other.cond_) {
-			clear();
-			switch (other.cond_) {
-				case CondEq:
-				case CondLt:
-				case CondLe:
-				case CondGt:
-				case CondGe:
-				case CondLike:
-					new (&this->value_) SingleType{other.value_};
-					break;
-				case CondRange:
-					new (&this->range_) RangeType{other.range_};
-					break;
-				case CondSet:
-					new (&this->setPtr_) SetPtrType{other.setPtr_};
-					break;
-				case CondAllSet:
-					new (&this->allSetPtr_) AllSetPtrType{other.allSetPtr_};
-					break;
-				case CondAny:
-				case CondEmpty:
-				case CondDWithin:
-					break;
-			}
-			this->cond_ = other.cond_;
-		} else {
-			DataHolder tmp{other};
-			*this = std::move(tmp);
-		}
-		return *this;
-	}
-	~DataHolder() { clear(); }
-	void clear() noexcept {
-		switch (cond_) {
-			case CondEq:
-			case CondLt:
-			case CondLe:
-			case CondGt:
-			case CondGe:
-			case CondLike:
-				value_.~SingleType();
-				break;
-			case CondRange:
-				range_.~RangeType();
-				break;
-			case CondSet:
-				setPtr_.~SetPtrType();
-				break;
-			case CondAllSet:
-				allSetPtr_.~AllSetPtrType();
-				break;
-			case CondDWithin:
-			case CondAny:
-			case CondEmpty:
-			default:
-				break;
-		}
-		cond_ = CondAny;
-	}
+	DataHolder() noexcept : cond_{CondEq} {}
+	DataHolder(DataHolder&& other) noexcept = default;
+	DataHolder(const DataHolder& other) = default;
+	DataHolder& operator=(DataHolder&& other) noexcept = default;
+	DataHolder& operator=(const DataHolder& other) = default;
 	CondType cond_;
-	union {
-		SingleType value_;
-		RangeType range_;
-		SetPtrType setPtr_;
-		AllSetPtrType allSetPtr_;
-	};
+	SingleType value_{};   // Either single value or right range boundry
+	SingleType value2_{};  // Left range boundry
+	SetPtrType setPtr_{};
+	AllSetPtrType allSetPtr_{};
 };
 
 template <typename T>
@@ -351,7 +134,7 @@ public:
 			case CondGe:
 				return *ptr >= this->value_;
 			case CondRange:
-				return this->range_.first <= *ptr && *ptr <= this->range_.second;
+				return this->value_ <= *ptr && *ptr <= this->value2_;
 			case CondSet:
 				assertrx_dbg(this->setPtr_);
 				return this->setPtr_->find(*ptr) != this->setPtr_->cend();
@@ -393,7 +176,7 @@ public:
 			case CondGe:
 				return v >= this->value_;
 			case CondRange:
-				return this->range_.first <= v && v <= this->range_.second;
+				return this->value_ <= v && v <= this->value2_;
 			case CondSet:
 				assertrx_dbg(this->setPtr_);
 				return this->setPtr_->find(v) != this->setPtr_->cend();
@@ -435,7 +218,7 @@ public:
 			case CondGe:
 				return value >= this->value_ && distinct_.Compare(value);
 			case CondRange:
-				return this->range_.first <= value && value <= this->range_.second && distinct_.Compare(value);
+				return this->value_ <= value && value <= this->value2_ && distinct_.Compare(value);
 			case CondSet:
 				assertrx_dbg(this->setPtr_);
 				return this->setPtr_->find(value) != this->setPtr_->cend() && distinct_.Compare(value);
@@ -481,7 +264,7 @@ public:
 			case CondGe:
 				return value >= this->value_ && distinct_.Compare(value);
 			case CondRange:
-				return this->range_.first <= value && value <= this->range_.second && distinct_.Compare(value);
+				return this->value_ <= value && value <= this->value2_ && distinct_.Compare(value);
 			case CondSet:
 				assertrx_dbg(this->setPtr_);
 				return this->setPtr_->find(value) != this->setPtr_->cend() && distinct_.Compare(value);
@@ -546,7 +329,7 @@ public:
 					}
 					continue;
 				case CondRange:
-					if (this->range_.first <= *ptr && *ptr <= this->range_.second) {
+					if (this->value_ <= *ptr && *ptr <= this->value2_) {
 						return true;
 					}
 					continue;
@@ -625,7 +408,7 @@ public:
 					}
 					continue;
 				case CondRange:
-					if (this->range_.first <= *ptr && *ptr <= this->range_.second && distinct_.Compare(*ptr)) {
+					if (this->value_ <= *ptr && *ptr <= this->value2_ && distinct_.Compare(*ptr)) {
 						return true;
 					}
 					continue;
@@ -720,7 +503,7 @@ public:
 					continue;
 				case CondRange: {
 					const auto v = value.As<T>();
-					if (this->range_.first <= v && v <= this->range_.second) {
+					if (this->value_ <= v && v <= this->value2_) {
 						return true;
 					}
 				}
@@ -810,7 +593,7 @@ public:
 					continue;
 				case CondRange: {
 					const auto v = value;
-					if (this->range_.first <= v && v <= this->range_.second && distinct_.Compare(value)) {
+					if (this->value_ <= v && v <= this->value2_ && distinct_.Compare(value)) {
 						return true;
 					}
 				}
@@ -875,8 +658,8 @@ public:
 				assertrx_dbg(this->setPtr_);
 				return setPtr_->find(value) != setPtr_->cend();
 			case CondRange:
-				return (collateCompare(value, range_.value1_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
-					   (collateCompare(value, range_.value2_.valueView_, *collateOpts_) & ComparationResult::Le);
+				return (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
+					   (collateCompare(value, value2_.valueView_, *collateOpts_) & ComparationResult::Le);
 			case CondAllSet:
 				assertrx_dbg(this->allSetPtr_);
 				return allSetPtr_->values_.size() == 1 && allSetPtr_->values_.find(value) != allSetPtr_->values_.cend();
@@ -920,8 +703,8 @@ public:
 				assertrx_dbg(this->setPtr_);
 				return setPtr_->find(value) != setPtr_->cend();
 			case CondRange:
-				return (collateCompare(value, range_.value1_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
-					   (collateCompare(value, range_.value2_.valueView_, *collateOpts_) & ComparationResult::Le);
+				return (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
+					   (collateCompare(value, value2_.valueView_, *collateOpts_) & ComparationResult::Le);
 			case CondAllSet:
 				assertrx_dbg(this->allSetPtr_);
 				return allSetPtr_->values_.size() == 1 && allSetPtr_->values_.find(value) != allSetPtr_->values_.cend();
@@ -964,9 +747,8 @@ public:
 				assertrx_dbg(this->setPtr_);
 				return setPtr_->find(value) != setPtr_->cend() && distinct_.Compare(value);
 			case CondRange:
-				return (collateCompare(value, range_.value1_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
-					   (collateCompare(value, range_.value2_.valueView_, *collateOpts_) & ComparationResult::Le) &&
-					   distinct_.Compare(value);
+				return (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
+					   (collateCompare(value, value2_.valueView_, *collateOpts_) & ComparationResult::Le) && distinct_.Compare(value);
 			case CondAllSet:
 				assertrx_dbg(this->allSetPtr_);
 				return allSetPtr_->values_.size() == 1 && allSetPtr_->values_.find(value) != allSetPtr_->values_.cend() &&
@@ -1013,9 +795,8 @@ public:
 				assertrx_dbg(this->setPtr_);
 				return setPtr_->find(value) != setPtr_->cend() && distinct_.Compare(value);
 			case CondRange:
-				return (collateCompare(value, range_.value1_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
-					   (collateCompare(value, range_.value2_.valueView_, *collateOpts_) & ComparationResult::Le) &&
-					   distinct_.Compare(value);
+				return (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
+					   (collateCompare(value, value2_.valueView_, *collateOpts_) & ComparationResult::Le) && distinct_.Compare(value);
 			case CondAllSet:
 				assertrx_dbg(this->allSetPtr_);
 				return allSetPtr_->values_.size() == 1 && allSetPtr_->values_.find(value) != allSetPtr_->values_.cend() &&
@@ -1069,8 +850,8 @@ public:
 					}
 					continue;
 				case CondRange:
-					if ((collateCompare(value, range_.value1_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
-						(collateCompare(value, range_.value2_.valueView_, *collateOpts_) & ComparationResult::Le)) {
+					if ((collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
+						(collateCompare(value, value2_.valueView_, *collateOpts_) & ComparationResult::Le)) {
 						return true;
 					}
 					continue;
@@ -1154,9 +935,8 @@ public:
 					}
 					continue;
 				case CondRange:
-					if ((collateCompare(value, range_.value1_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
-						(collateCompare(value, range_.value2_.valueView_, *collateOpts_) & ComparationResult::Le) &&
-						distinct_.Compare(value)) {
+					if ((collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
+						(collateCompare(value, value2_.valueView_, *collateOpts_) & ComparationResult::Le) && distinct_.Compare(value)) {
 						return true;
 					}
 					continue;
@@ -1251,8 +1031,8 @@ public:
 					}
 					break;
 				case CondRange:
-					if ((collateCompare(value, range_.value1_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
-						(collateCompare(value, range_.value2_.valueView_, *collateOpts_) & ComparationResult::Le)) {
+					if ((collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
+						(collateCompare(value, value2_.valueView_, *collateOpts_) & ComparationResult::Le)) {
 						return true;
 					}
 					break;
@@ -1339,9 +1119,8 @@ public:
 					}
 					break;
 				case CondRange:
-					if ((collateCompare(value, range_.value1_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
-						(collateCompare(value, range_.value2_.valueView_, *collateOpts_) & ComparationResult::Le) &&
-						distinct_.Compare(value)) {
+					if ((collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Ge) &&
+						(collateCompare(value, value2_.valueView_, *collateOpts_) & ComparationResult::Le) && distinct_.Compare(value)) {
 						return true;
 					}
 					break;
@@ -1427,26 +1206,26 @@ public:
 				return setPtr_->find(item) != setPtr_->cend();
 			case CondRange: {
 				ConstPayload pv{payloadType_, item};
-				return (pv.Compare<WithString::Yes, NotComparable::Throw>(range_.first, fields_, *collateOpts_) & ComparationResult::Ge) &&
-					   (pv.Compare<WithString::Yes, NotComparable::Throw>(range_.second, fields_, *collateOpts_) & ComparationResult::Le);
+				return (pv.Compare<WithString::Yes, NotComparable::Throw>(value_, *fields_, *collateOpts_) & ComparationResult::Ge) &&
+					   (pv.Compare<WithString::Yes, NotComparable::Throw>(value2_, *fields_, *collateOpts_) & ComparationResult::Le);
 			}
 			case CondAllSet:
 				assertrx_dbg(this->allSetPtr_);
 				return allSetPtr_->values_.size() == 1 && allSetPtr_->values_.find(item) != allSetPtr_->values_.end();
 			case CondEq:
-				return ConstPayload{payloadType_, item}.Compare<WithString::Yes, NotComparable::Throw>(value_, fields_, *collateOpts_) ==
+				return ConstPayload{payloadType_, item}.Compare<WithString::Yes, NotComparable::Throw>(value_, *fields_, *collateOpts_) ==
 					   ComparationResult::Eq;
 			case CondLt:
-				return ConstPayload{payloadType_, item}.Compare<WithString::Yes, NotComparable::Throw>(value_, fields_, *collateOpts_) ==
+				return ConstPayload{payloadType_, item}.Compare<WithString::Yes, NotComparable::Throw>(value_, *fields_, *collateOpts_) ==
 					   ComparationResult::Lt;
 			case CondLe:
-				return ConstPayload{payloadType_, item}.Compare<WithString::Yes, NotComparable::Throw>(value_, fields_, *collateOpts_) &
+				return ConstPayload{payloadType_, item}.Compare<WithString::Yes, NotComparable::Throw>(value_, *fields_, *collateOpts_) &
 					   ComparationResult::Le;
 			case CondGt:
-				return ConstPayload{payloadType_, item}.Compare<WithString::Yes, NotComparable::Throw>(value_, fields_, *collateOpts_) ==
+				return ConstPayload{payloadType_, item}.Compare<WithString::Yes, NotComparable::Throw>(value_, *fields_, *collateOpts_) ==
 					   ComparationResult::Gt;
 			case CondGe:
-				return ConstPayload{payloadType_, item}.Compare<WithString::Yes, NotComparable::Throw>(value_, fields_, *collateOpts_) &
+				return ConstPayload{payloadType_, item}.Compare<WithString::Yes, NotComparable::Throw>(value_, *fields_, *collateOpts_) &
 					   ComparationResult::Ge;
 			case CondAny:
 			case CondEmpty:
@@ -1462,8 +1241,11 @@ public:
 	void ClearDistinctValues() const noexcept {}
 
 private:
+	// Using pointer for cheap copying and ExpressionTree size reduction
+	using FieldsSetWrp = intrusive_rc_wrapper<FieldsSet>;
+
 	const CollateOpts* collateOpts_;
-	FieldsSet fields_;
+	intrusive_ptr<FieldsSetWrp> fields_;
 	PayloadType payloadType_;
 };
 
@@ -1514,7 +1296,7 @@ public:
 	void ClearDistinctValues() noexcept { distinct_.ClearValues(); }
 
 private:
-	ComparatorIndexedDistinct<Point> distinct_;
+	ComparatorIndexedDistinct<Point, fast_hash_set_l<Point>> distinct_;
 	Point point_;
 	double distance_;
 	size_t offset_;
@@ -1569,7 +1351,7 @@ public:
 	void ClearDistinctValues() noexcept { distinct_.ClearValues(); }
 
 private:
-	ComparatorIndexedDistinct<Point> distinct_;
+	ComparatorIndexedDistinct<Point, fast_hash_set_l<Point>> distinct_;
 	PayloadType payloadType_;
 	TagsPath tagsPath_;
 	VariantArray buffer_;
@@ -1674,7 +1456,10 @@ public:
 	void ClearDistinctValues() noexcept { distinct_.ClearValues(); }
 
 private:
-	ComparatorIndexedDistinct<T> distinct_;
+	using ComparatoristincType = std::conditional_t<std::is_same_v<T, Point>, ComparatorIndexedDistinct<Point, fast_hash_set_l<Point>>,
+													ComparatorIndexedDistinct<T>>;
+
+	ComparatoristincType distinct_;
 	size_t offset_;
 };
 

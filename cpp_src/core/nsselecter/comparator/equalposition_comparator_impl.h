@@ -1,11 +1,10 @@
 #pragma once
 
 #include <memory.h>
-#include <unordered_set>
 #include "core/index/string_map.h"
 #include "core/keyvalue/geometry.h"
 #include "core/keyvalue/p_string.h"
-#include "estl/intrusive_ptr.h"
+#include "estl/fast_hash_set.h"
 #include "estl/one_of.h"
 #include "tools/string_regexp_functions.h"
 #include "vendor/hopscotch/hopscotch_sc_set.h"
@@ -13,19 +12,23 @@
 namespace reindexer {
 
 template <class T>
-class EqualPositionComparatorImpl {
-	using ValuesSet = intrusive_atomic_rc_wrapper<std::unordered_set<T>>;
-	using AllSetValuesSet = intrusive_atomic_rc_wrapper<std::unordered_set<const T*>>;
+class EqualPositionComparatorTypeImpl {
+	using ValuesSet = fast_hash_set<T>;
+	using AllSetValuesSet = fast_hash_set<const T*>;
 
 public:
-	EqualPositionComparatorImpl() noexcept = default;
+	EqualPositionComparatorTypeImpl() noexcept = default;
+	EqualPositionComparatorTypeImpl(const EqualPositionComparatorTypeImpl&) = delete;
+	EqualPositionComparatorTypeImpl& operator=(const EqualPositionComparatorTypeImpl&) = delete;
+	EqualPositionComparatorTypeImpl(EqualPositionComparatorTypeImpl&&) = default;
+	EqualPositionComparatorTypeImpl& operator=(EqualPositionComparatorTypeImpl&&) = default;
 
 	void SetValues(CondType cond, const VariantArray& values) {
 		if (cond == CondSet) {
-			valuesS_.reset(new ValuesSet{});
+			valuesS_ = std::make_unique<ValuesSet>();
 		} else if (cond == CondAllSet) {
-			valuesS_.reset(new ValuesSet{});
-			allSetValuesS_.reset(new AllSetValuesSet{});
+			valuesS_ = std::make_unique<ValuesSet>();
+			allSetValuesS_ = std::make_unique<AllSetValuesSet>();
 		}
 
 		for (Variant key : values) {
@@ -85,8 +88,8 @@ public:
 	}
 
 	h_vector<T, 2> values_;
-	intrusive_ptr<ValuesSet> valuesS_;
-	intrusive_ptr<AllSetValuesSet> allSetValuesS_;
+	std::unique_ptr<ValuesSet> valuesS_;
+	std::unique_ptr<AllSetValuesSet> allSetValuesS_;
 
 private:
 	KeyValueType type() {
@@ -115,19 +118,23 @@ private:
 };
 
 template <>
-class EqualPositionComparatorImpl<Uuid> {
-	using ValuesSet = intrusive_atomic_rc_wrapper<std::unordered_set<Uuid>>;
-	using AllSetValuesSet = intrusive_atomic_rc_wrapper<std::unordered_set<const Uuid*>>;
+class EqualPositionComparatorTypeImpl<Uuid> {
+	using ValuesSet = fast_hash_set<Uuid>;
+	using AllSetValuesSet = fast_hash_set<const Uuid*>;
 
 public:
-	EqualPositionComparatorImpl() noexcept = default;
+	EqualPositionComparatorTypeImpl() noexcept = default;
+	EqualPositionComparatorTypeImpl(const EqualPositionComparatorTypeImpl&) = delete;
+	EqualPositionComparatorTypeImpl& operator=(const EqualPositionComparatorTypeImpl&) = delete;
+	EqualPositionComparatorTypeImpl(EqualPositionComparatorTypeImpl&&) = default;
+	EqualPositionComparatorTypeImpl& operator=(EqualPositionComparatorTypeImpl&&) = default;
 
 	void SetValues(CondType cond, const VariantArray& values) {
 		if (cond == CondSet) {
-			valuesS_.reset(new ValuesSet{});
+			valuesS_ = std::make_unique<ValuesSet>();
 		} else if (cond == CondAllSet) {
-			valuesS_.reset(new ValuesSet{});
-			allSetValuesS_.reset(new AllSetValuesSet{});
+			valuesS_ = std::make_unique<ValuesSet>();
+			allSetValuesS_ = std::make_unique<AllSetValuesSet>();
 		}
 
 		for (const Variant& key : values) {
@@ -190,8 +197,8 @@ public:
 	}
 
 	h_vector<Uuid, 1> values_;
-	intrusive_ptr<ValuesSet> valuesS_;
-	intrusive_ptr<AllSetValuesSet> allSetValuesS_;
+	std::unique_ptr<ValuesSet> valuesS_;
+	std::unique_ptr<AllSetValuesSet> allSetValuesS_;
 
 private:
 	void addValue(CondType cond, Uuid value) {
@@ -204,16 +211,20 @@ private:
 };
 
 template <>
-class EqualPositionComparatorImpl<key_string> {
+class EqualPositionComparatorTypeImpl<key_string> {
 public:
-	EqualPositionComparatorImpl(const CollateOpts& collate) : collate_{collate} {}
+	EqualPositionComparatorTypeImpl(const CollateOpts& collate) : collate_{collate} {}
+	EqualPositionComparatorTypeImpl(const EqualPositionComparatorTypeImpl&) = delete;
+	EqualPositionComparatorTypeImpl& operator=(const EqualPositionComparatorTypeImpl&) = delete;
+	EqualPositionComparatorTypeImpl(EqualPositionComparatorTypeImpl&&) = default;
+	EqualPositionComparatorTypeImpl& operator=(EqualPositionComparatorTypeImpl&&) = default;
 
 	void SetValues(CondType cond, const VariantArray& values) {
 		if (cond == CondSet) {
-			valuesS_ = make_intrusive<intrusive_rc_wrapper<key_string_set>>(collate_);
+			valuesS_ = std::make_unique<key_string_set>(collate_);
 		} else if (cond == CondAllSet) {
-			valuesS_ = make_intrusive<intrusive_rc_wrapper<key_string_set>>(collate_);
-			allSetValuesS_ = make_intrusive<intrusive_rc_wrapper<std::unordered_set<const key_string*>>>();
+			valuesS_ = std::make_unique<key_string_set>(collate_);
+			allSetValuesS_ = std::make_unique<fast_hash_set<const key_string*>>();
 		}
 
 		for (Variant key : values) {
@@ -279,8 +290,8 @@ public:
 				  less_key_string(opts)) {}
 	};
 
-	intrusive_ptr<intrusive_rc_wrapper<key_string_set>> valuesS_;
-	intrusive_ptr<intrusive_rc_wrapper<std::unordered_set<const key_string*>>> allSetValuesS_;
+	std::unique_ptr<key_string_set> valuesS_;
+	std::unique_ptr<fast_hash_set<const key_string*>> allSetValuesS_;
 
 private:
 	void addValue(CondType cond, const key_string& value) {
@@ -297,15 +308,23 @@ private:
 };
 
 template <>
-class EqualPositionComparatorImpl<PayloadValue> {
+class EqualPositionComparatorTypeImpl<PayloadValue> {
 public:
-	EqualPositionComparatorImpl() = delete;
+	EqualPositionComparatorTypeImpl() = delete;
+	EqualPositionComparatorTypeImpl(const EqualPositionComparatorTypeImpl&) = delete;
+	EqualPositionComparatorTypeImpl& operator=(const EqualPositionComparatorTypeImpl&) = delete;
+	EqualPositionComparatorTypeImpl(EqualPositionComparatorTypeImpl&&) = default;
+	EqualPositionComparatorTypeImpl& operator=(EqualPositionComparatorTypeImpl&&) = default;
 };
 
 template <>
-class EqualPositionComparatorImpl<Point> {
+class EqualPositionComparatorTypeImpl<Point> {
 public:
-	EqualPositionComparatorImpl() noexcept = default;
+	EqualPositionComparatorTypeImpl() noexcept = default;
+	EqualPositionComparatorTypeImpl(const EqualPositionComparatorTypeImpl&) = delete;
+	EqualPositionComparatorTypeImpl& operator=(const EqualPositionComparatorTypeImpl&) = delete;
+	EqualPositionComparatorTypeImpl(EqualPositionComparatorTypeImpl&&) = default;
+	EqualPositionComparatorTypeImpl& operator=(EqualPositionComparatorTypeImpl&&) = default;
 
 	void SetValues(const VariantArray& values) {
 		if (values.size() != 2) {
