@@ -431,6 +431,7 @@ private:
 	bool SortOrdersBuilt() const noexcept { return optimizationState_.load(std::memory_order_acquire) == OptimizationCompleted; }
 
 	int64_t correctMaxIterationsIdSetPreResult(int64_t maxIterationsIdSetPreResult) const;
+	void rebuildIndexesToCompositeMapping() noexcept;
 
 	IndexesStorage indexes_;
 	fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str, nocase_less_str> indexesNames_;

@@ -330,6 +330,8 @@ func TestEncDec(t *testing.T) {
 }
 
 func TestSingleElemToSlice(t *testing.T) {
+	t.Parallel()
+
 	ns := "test_single_elem_slice"
 	item := SingleElemSliceItem{
 		ID:               1,
@@ -359,6 +361,8 @@ func TestSingleElemToSlice(t *testing.T) {
 }
 
 func TestSlicesConcatenation(t *testing.T) {
+	t.Parallel()
+
 	ns := "test_slices_concatenation"
 	item := SlicesConcatenationItem{
 		ID:                 1,

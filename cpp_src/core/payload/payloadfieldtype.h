@@ -24,6 +24,7 @@ public:
 	const std::vector<std::string>& JsonPaths() const& noexcept { return jsonPaths_; }
 	const std::vector<std::string>& JsonPaths() && = delete;
 	void AddJsonPath(const std::string& jsonPath) { jsonPaths_.push_back(jsonPath); }
+	std::string ToString() const;
 
 private:
 	KeyValueType type_;

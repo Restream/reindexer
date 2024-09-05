@@ -1,4 +1,5 @@
 #include "payloadfieldtype.h"
+#include <sstream>
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/uuid.h"
 #include "estl/one_of.h"
@@ -37,6 +38,19 @@ size_t PayloadFieldType::Alignof() const noexcept {
 			assertrx(0);
 			abort();
 		});
+}
+
+std::string PayloadFieldType::ToString() const {
+	std::stringstream ss;
+	ss << "{ type: " << type_.Name() << ", name: " << name_ << ", jsonpaths: [";
+	for (auto jit = jsonPaths_.cbegin(); jit != jsonPaths_.cend(); ++jit) {
+		if (jit != jsonPaths_.cbegin()) {
+			ss << ", ";
+		}
+		ss << *jit;
+	}
+	ss << "] }";
+	return ss.str();
 }
 
 }  // namespace reindexer

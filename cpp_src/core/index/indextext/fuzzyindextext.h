@@ -23,7 +23,7 @@ public:
 		abort();
 	}
 	std::unique_ptr<Index> Clone() const override final { return std::make_unique<FuzzyIndexText<T>>(*this); }
-	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&, FtUseExternStatuses,
+	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses&&, FtUseExternStatuses,
 					  const RdxContext&) override final;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final {
 		this->isBuilt_ = false;

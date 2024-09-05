@@ -2,15 +2,14 @@
 
 #include <string>
 #include <string_view>
-#include <unordered_set>
 #include <variant>
 
+#include "estl/fast_hash_set.h"
 #include "tools/stringstools.h"
-#include "vendor/hopscotch/hopscotch_sc_set.h"
 
 namespace reindexer {
 
-template <typename T>
+template <typename T, typename SetType = fast_hash_set<T>>
 class ComparatorIndexedDistinct {
 public:
 	ComparatorIndexedDistinct() : values_{make_intrusive<SetWrpType>()} {}
@@ -28,7 +27,6 @@ public:
 	}
 
 private:
-	using SetType = std::unordered_set<T>;
 	using SetWrpType = intrusive_rc_wrapper<SetType>;
 	using SetPtrType = intrusive_ptr<SetWrpType>;
 

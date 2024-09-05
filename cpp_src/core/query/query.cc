@@ -168,6 +168,13 @@ void Query::Join(JoinedQuery&& jq) & {
 	adoptNested(joinQueries_.back());
 }
 
+void Query::checkSetObjectValue(const Variant& value) const {
+	if (!value.Type().Is<KeyValueType::String>()) {
+		throw Error(errLogic, "Unexpected variant type in SetObject: %s. Expecting KeyValueType::String with JSON-content",
+					value.Type().Name());
+	}
+}
+
 VariantArray Query::deserializeValues(Serializer& ser, CondType cond) {
 	VariantArray values;
 	auto cnt = ser.GetVarUint();

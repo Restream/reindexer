@@ -188,11 +188,11 @@ template <typename T>
 class intrusive_atomic_rc_wrapper : public T {
 public:
 	template <typename... Args>
-	intrusive_atomic_rc_wrapper(Args&&... args) : T(std::forward<Args>(args)...), refcount(0) {}
+	intrusive_atomic_rc_wrapper(Args&&... args) : T(std::forward<Args>(args)...) {}
 	intrusive_atomic_rc_wrapper& operator=(const intrusive_atomic_rc_wrapper&) = delete;
 
 protected:
-	std::atomic<int> refcount;
+	std::atomic<int> refcount{0};
 
 	friend void intrusive_ptr_add_ref<>(intrusive_atomic_rc_wrapper<T>* x) noexcept;
 	friend void intrusive_ptr_release<>(intrusive_atomic_rc_wrapper<T>* x) noexcept;
@@ -225,11 +225,11 @@ template <typename T>
 class intrusive_rc_wrapper : public T {
 public:
 	template <typename... Args>
-	intrusive_rc_wrapper(Args&&... args) : T(std::forward<Args>(args)...), refcount(0) {}
+	intrusive_rc_wrapper(Args&&... args) : T(std::forward<Args>(args)...) {}
 	intrusive_rc_wrapper& operator=(const intrusive_rc_wrapper&) = delete;
 
 protected:
-	int refcount;
+	int refcount{0};
 
 	friend void intrusive_ptr_add_ref<>(intrusive_rc_wrapper<T>* x) noexcept;
 	friend void intrusive_ptr_release<>(intrusive_rc_wrapper<T>* x) noexcept;
@@ -238,12 +238,11 @@ protected:
 
 class intrusive_atomic_rc_base {
 public:
-	intrusive_atomic_rc_base() noexcept : refcount(0) {}
 	intrusive_atomic_rc_base& operator=(const intrusive_atomic_rc_base&) = delete;
 	virtual ~intrusive_atomic_rc_base() = default;
 
 protected:
-	std::atomic<int> refcount;
+	std::atomic<int> refcount{0};
 
 	friend void intrusive_ptr_add_ref(intrusive_atomic_rc_base* x) noexcept;
 	friend void intrusive_ptr_release(intrusive_atomic_rc_base* x) noexcept;
@@ -266,6 +265,33 @@ inline bool intrusive_ptr_is_unique(intrusive_atomic_rc_base* x) noexcept {
 	// std::memory_order_acquire - is essential for COW constructions based on intrusive_ptr
 	return !x || (x->refcount.load(std::memory_order_acquire) == 1);
 }
+
+class intrusive_rc_base {
+public:
+	intrusive_rc_base& operator=(const intrusive_rc_base&) = delete;
+	virtual ~intrusive_rc_base() = default;
+
+protected:
+	int refcount{0};
+
+	friend void intrusive_ptr_add_ref(intrusive_rc_base* x) noexcept;
+	friend void intrusive_ptr_release(intrusive_rc_base* x) noexcept;
+	friend bool intrusive_ptr_is_unique(intrusive_rc_base* x) noexcept;
+};
+
+inline void intrusive_ptr_add_ref(intrusive_rc_base* x) noexcept {
+	if (x) {
+		++x->refcount;
+	}
+}
+
+inline void intrusive_ptr_release(intrusive_rc_base* x) noexcept {
+	if (x && --x->refcount == 0) {
+		delete x;
+	}
+}
+
+inline bool intrusive_ptr_is_unique(intrusive_rc_base* x) noexcept { return !x || (x->refcount == 1); }
 
 template <typename T, typename... Args>
 intrusive_ptr<T> make_intrusive(Args&&... args) {

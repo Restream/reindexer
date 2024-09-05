@@ -279,14 +279,15 @@ void SelectIteratorContainer::processField(FieldsComparator& fc, const QueryFiel
 }
 
 SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry& qe, bool enableSortIndexOptimize, const NamespaceImpl& ns,
-															unsigned sortId, bool isQueryFt, SelectFunction::Ptr& selectFnc,
-															bool& isIndexFt, bool& isIndexSparse, FtCtx::Ptr& ftCtx,
-															QueryPreprocessor& qPreproc, const RdxContext& rdxCtx) {
+															unsigned sortId, bool isQueryFt, FtSortType ftSortType,
+															SelectFunction::Ptr& selectFnc, bool& isIndexFt, bool& isIndexSparse,
+															FtCtx::Ptr& ftCtx, QueryPreprocessor& qPreproc, const RdxContext& rdxCtx) {
 	auto& index = ns.indexes_[qe.IndexNo()];
 	isIndexFt = IsFullText(index->Type());
 	isIndexSparse = index->Opts().IsSparse();
 
 	Index::SelectOpts opts;
+	opts.ftSortType = ftSortType;
 	opts.itemsCountInNamespace = ns.itemsCount();
 	if (!ns.SortOrdersBuilt()) {
 		opts.disableIdSetCache = 1;
@@ -512,15 +513,15 @@ std::vector<SelectIteratorContainer::EqualPositions> SelectIteratorContainer::pr
 	return result;
 }
 
-void SelectIteratorContainer::PrepareIteratorsForSelectLoop(QueryPreprocessor& qPreproc, unsigned sortId, bool isFt,
+void SelectIteratorContainer::PrepareIteratorsForSelectLoop(QueryPreprocessor& qPreproc, unsigned sortId, bool isFt, FtSortType ftSortType,
 															const NamespaceImpl& ns, SelectFunction::Ptr& selectFnc, FtCtx::Ptr& ftCtx,
 															const RdxContext& rdxCtx) {
-	prepareIteratorsForSelectLoop(qPreproc, 0, qPreproc.Size(), sortId, isFt, ns, selectFnc, ftCtx, rdxCtx);
+	prepareIteratorsForSelectLoop(qPreproc, 0, qPreproc.Size(), sortId, isFt, ftSortType, ns, selectFnc, ftCtx, rdxCtx);
 }
 
 bool SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor& qPreproc, size_t begin, size_t end, unsigned sortId,
-															bool isQueryFt, const NamespaceImpl& ns, SelectFunction::Ptr& selectFnc,
-															FtCtx::Ptr& ftCtx, const RdxContext& rdxCtx) {
+															bool isQueryFt, FtSortType ftSortType, const NamespaceImpl& ns,
+															SelectFunction::Ptr& selectFnc, FtCtx::Ptr& ftCtx, const RdxContext& rdxCtx) {
 	const auto& queries = qPreproc.GetQueryEntries();
 	auto equalPositions = prepareEqualPositions(queries, begin, end);
 	bool sortIndexFound = false;
@@ -534,7 +535,7 @@ bool SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor& q
 				[&](const QueryEntriesBracket&) {
 					OpenBracket(op);
 					const bool contFT =
-						prepareIteratorsForSelectLoop(qPreproc, i + 1, next, sortId, isQueryFt, ns, selectFnc, ftCtx, rdxCtx);
+						prepareIteratorsForSelectLoop(qPreproc, i + 1, next, sortId, isQueryFt, ftSortType, ns, selectFnc, ftCtx, rdxCtx);
 					if (contFT && (op == OpOr || (next < end && queries.GetOperation(next) == OpOr))) {
 						throw Error(errLogic, "OR operation is not allowed with bracket containing fulltext index");
 					}
@@ -560,8 +561,8 @@ bool SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor& q
 							}
 							sortIndexFound = true;
 						}
-						selectResults = processQueryEntry(qe, enableSortIndexOptimize, ns, sortId, isQueryFt, selectFnc, isIndexFt,
-														  isIndexSparse, ftCtx, qPreproc, rdxCtx);
+						selectResults = processQueryEntry(qe, enableSortIndexOptimize, ns, sortId, isQueryFt, ftSortType, selectFnc,
+														  isIndexFt, isIndexSparse, ftCtx, qPreproc, rdxCtx);
 					} else {
 						auto strictMode = ns.config_.strictMode;
 						if (ctx_) {
@@ -670,11 +671,14 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 			},
 			[&] RX_PRE_LMBD_ALWAYS_INLINE(SelectIterator & sit)
 				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition<reverse>(sit, &lastFinish, rowId); },
-			[&] RX_PRE_LMBD_ALWAYS_INLINE(JoinSelectIterator & jit)
-				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(jit, pv, properRowId, match); },
+			[&] /*RX_PRE_LMBD_ALWAYS_INLINE*/ (JoinSelectIterator & jit) /*RX_POST_LMBD_ALWAYS_INLINE*/ {
+				return checkIfSatisfyCondition(jit, pv, properRowId, match);
+			},
 			Restricted<FieldsComparator, EqualPositionComparator, ComparatorNotIndexed,
 					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
-				[&pv, properRowId] RX_PRE_LMBD_ALWAYS_INLINE(auto& c) RX_POST_LMBD_ALWAYS_INLINE { return c.Compare(pv, properRowId); }),
+				[&pv, properRowId] /*RX_PRE_LMBD_ALWAYS_INLINE*/ (auto& c) /*RX_POST_LMBD_ALWAYS_INLINE*/ {
+					return c.Compare(pv, properRowId);
+				}),
 			[] RX_PRE_LMBD_ALWAYS_INLINE(AlwaysTrue&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; });
 		if (op == OpOr) {
 			result |= lastResult;

@@ -400,11 +400,8 @@ public:
 	/// @param hasExpressions - true: value has expressions in it
 	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
 	Query& SetObject(Str&& field, VariantArray value, bool hasExpressions = false) & {
-		for (auto& it : value) {
-			if (!it.Type().Is<KeyValueType::String>()) {
-				throw Error(errLogic, "Unexpected variant type in SetObject: %s. Expecting KeyValueType::String with JSON-content",
-							it.Type().Name());
-			}
+		for (const auto& it : value) {
+			checkSetObjectValue(it);
 		}
 		updateFields_.emplace_back(std::forward<Str>(field), std::move(value), FieldModeSetJson, hasExpressions);
 		return *this;
@@ -687,7 +684,8 @@ public:
 			throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 		}
 		selectFilter_.insert(selectFilter_.begin(), l.begin(), l.end());
-		selectFilter_.erase(std::remove_if(selectFilter_.begin(), selectFilter_.end(), [](const auto& s) { return s == "*"sv; }),
+		selectFilter_.erase(
+			std::remove_if(selectFilter_.begin(), selectFilter_.end(), [](const auto& s) { return s == "*"sv || s.empty(); }),
 							selectFilter_.end());
 		return *this;
 	}
@@ -968,6 +966,7 @@ private:
 	using OnHelper = OnHelperTempl<Query&>;
 	using OnHelperR = OnHelperTempl<Query&&>;
 
+	void checkSetObjectValue(const Variant& value) const;
 	void deserialize(Serializer& ser, bool& hasJoinConditions);
 	VariantArray deserializeValues(Serializer&, CondType);
 	void checkSubQueryNoData() const;

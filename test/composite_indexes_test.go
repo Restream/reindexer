@@ -909,6 +909,82 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 			},
 		}, "")
 	})
+
+	t.Run("substitution after other indexes drop", func(t *testing.T) {
+		checkSubstitution := func() {
+			it := DB.Query(ns).
+				Where("first1", reindexer.EQ, item.First1).
+				Where("third", reindexer.EQ, item.Third).
+				Explain().Exec(t)
+			require.NoError(t, it.Error())
+			defer it.Close()
+			require.Equal(t, it.Count(), 1)
+			explainRes, err := it.GetExplainResults()
+			require.NoError(t, err)
+			require.NotNil(t, explainRes)
+
+			printExplainRes(explainRes)
+			checkExplain(t, explainRes.Selectors, []expectedExplain{
+				{
+					Field:     "first1+third",
+					FieldType: "indexed",
+					Method:    "index",
+					Keys:      1,
+					Matched:   1,
+				},
+			}, "")
+		}
+
+		err := DB.DropIndex(ns, "second1+second2")
+		require.NoError(t, err)
+		// Check substitution right after composite deletion
+		checkSubstitution()
+
+		err = DB.DropIndex(ns, "second1")
+		require.NoError(t, err)
+		err = DB.DropIndex(ns, "second2")
+		require.NoError(t, err)
+		// Check substitution after other indexes deletion
+		checkSubstitution()
+	})
+
+	t.Run("no substitution after current index drop", func(t *testing.T) {
+		err := DB.DropIndex(ns, "first1+third")
+		require.NoError(t, err)
+		it := DB.Query(ns).
+			Where("first1", reindexer.EQ, item.First1).
+			Where("third", reindexer.EQ, item.Third).
+			Explain().Exec(t)
+		require.NoError(t, it.Error())
+		defer it.Close()
+		require.Equal(t, it.Count(), 1)
+		explainRes, err := it.GetExplainResults()
+		require.NoError(t, err)
+		require.NotNil(t, explainRes)
+
+		printExplainRes(explainRes)
+		checkExplain(t, explainRes.Selectors, []expectedExplain{
+			{
+				Field:   "-scan",
+				Method:  "scan",
+				Matched: 1,
+			},
+			{
+				Field:       "first1",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Matched:     1,
+				Comparators: 1,
+			},
+			{
+				Field:       "third",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Matched:     1,
+				Comparators: 1,
+			},
+		}, "")
+	})
 }
 
 func TestCompositeIndexesBestSubstitution(t *testing.T) {

@@ -313,6 +313,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 	var ptr unsafe.Pointer
 
 	k := v.Kind()
+
 	offset := 0
 	switch k {
 	case reflect.Slice:
@@ -331,7 +332,11 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 		// offset is 0
 		// No concatenation for the fixed size arrays
 	default:
-		panic(fmt.Errorf("can not convert '%s' to 'array'", v.Type().Kind().String()))
+		if count == 0 { // Allows empty slice for any scalar type (using default value)
+			return
+		} else {
+			panic(fmt.Errorf("can not convert '%s' to 'array'", v.Type().Kind().String()))
+		}
 	}
 
 	if subtag != TAG_OBJECT {
@@ -583,6 +588,7 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 	ctagName := ctag.Name()
 
 	k := v.Kind()
+	initialV := v
 	if k == reflect.Ptr {
 		if v.IsNil() {
 			v.Set(reflect.New(v.Type().Elem()))
@@ -641,6 +647,7 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 		} else {
 			panic(fmt.Errorf("err: intf=%s, name='%s' %s", v.Type().Name(), dec.state.tagsMatcher.tag2name(ctagName), ctag.Dump()))
 		}
+		initialV = v
 		k = v.Kind()
 		if k == reflect.Ptr {
 			if v.IsNil() {
@@ -659,8 +666,12 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 		switch ctagType {
 		case TAG_ARRAY:
 			count := int(rdser.GetVarUInt())
-			pl.getArray(int(ctagField), *cnt, count, v)
-			*cnt += count
+			if k == reflect.Slice || k == reflect.Array || count != 0 { // Allows empty slice for any scalar type (using default value)
+				pl.getArray(int(ctagField), *cnt, count, v)
+				*cnt += count
+			} else {
+				initialV.Set(reflect.Zero(initialV.Type())) // Set nil to scalar pointers, intialized with empty arrays
+			}
 		default:
 			pl.getValue(int(ctagField), *cnt, v)
 			(*cnt)++
@@ -670,6 +681,9 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 		switch ctagType {
 		case TAG_ARRAY:
 			dec.decodeSlice(pl, rdser, &v, fieldsoutcnt, cctagsPath)
+			if v.Kind() != reflect.Array && v.Kind() != reflect.Slice && v.Kind() != reflect.Interface {
+				initialV.Set(reflect.Zero(initialV.Type())) // Set nil to scalar pointers, intialized with empty arrays
+			}
 		case TAG_OBJECT:
 			for dec.decodeValue(pl, rdser, v, fieldsoutcnt, cctagsPath) {
 			}

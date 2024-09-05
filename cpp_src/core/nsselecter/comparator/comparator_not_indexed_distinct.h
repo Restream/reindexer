@@ -1,33 +1,26 @@
 #pragma once
 
-#include <string_view>
-#include <unordered_set>
 #include "core/keyvalue/variant.h"
+#include "estl/fast_hash_set.h"
 
 namespace reindexer {
 
 class ComparatorNotIndexedDistinct {
 public:
-	ComparatorNotIndexedDistinct() : values_{make_intrusive<SetWrpType>()} {}
-	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const Variant& v) const {
-		assertrx_dbg(values_);
-		return values_->find(v) == values_->cend();
-	}
-	void ExcludeValues(Variant&& v) {
-		assertrx_dbg(values_);
-		values_->emplace(std::move(v));
-	}
-	void ClearValues() noexcept {
-		assertrx_dbg(values_);
-		values_->clear();
-	}
+	ComparatorNotIndexedDistinct() = default;
+	ComparatorNotIndexedDistinct(const ComparatorNotIndexedDistinct&) = delete;
+	ComparatorNotIndexedDistinct& operator=(const ComparatorNotIndexedDistinct&) = delete;
+	ComparatorNotIndexedDistinct(ComparatorNotIndexedDistinct&&) = default;
+	ComparatorNotIndexedDistinct& operator=(ComparatorNotIndexedDistinct&&) = default;
+
+	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const Variant& v) const { return values_.find(v) == values_.cend(); }
+	void ExcludeValues(Variant&& v) { values_.emplace(std::move(v)); }
+	void ClearValues() noexcept { values_.clear(); }
 
 private:
-	using SetType = std::unordered_set<Variant>;
-	using SetWrpType = intrusive_rc_wrapper<SetType>;
-	using SetPtrType = intrusive_ptr<SetWrpType>;
+	using SetType = fast_hash_set<Variant>;
 
-	SetPtrType values_;
+	SetType values_;
 };
 
 }  // namespace reindexer

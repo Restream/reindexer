@@ -68,7 +68,7 @@ private:
 
 namespace reindexer {
 
-FieldsComparator::FieldsComparator(std::string_view lField, CondType cond, std::string_view rField, PayloadType plType)
+FieldsComparatorImpl::FieldsComparatorImpl(std::string_view lField, CondType cond, std::string_view rField, PayloadType plType)
 	: condition_{cond}, payloadType_{std::move(plType)} {
 	switch (condition_) {
 		case CondEq:
@@ -92,7 +92,7 @@ FieldsComparator::FieldsComparator(std::string_view lField, CondType cond, std::
 }
 
 template <typename LArr, typename RArr>
-bool FieldsComparator::compare(const LArr& lhs, const RArr& rhs) {
+bool FieldsComparatorImpl::compare(const LArr& lhs, const RArr& rhs) {
 	static constexpr bool needCompareTypes{std::is_same_v<LArr, VariantArray> || std::is_same_v<RArr, VariantArray>};
 	switch (condition_) {
 		case CondRange:
@@ -214,7 +214,7 @@ bool FieldsComparator::compare(const LArr& lhs, const RArr& rhs) {
 	}
 }
 
-bool FieldsComparator::compare(const PayloadValue& item, const Context& ctx) {
+bool FieldsComparatorImpl::compare(const PayloadValue& item, const Context& ctx) {
 	bool result;
 	if (ctx.lCtx_.fields_.getTagsPathsLength() > 0) {
 		VariantArray lhs;
@@ -262,7 +262,7 @@ bool FieldsComparator::compare(const PayloadValue& item, const Context& ctx) {
 	return result;
 }
 
-void FieldsComparator::validateTypes(KeyValueType lType, KeyValueType rType) const {
+void FieldsComparatorImpl::validateTypes(KeyValueType lType, KeyValueType rType) const {
 	if (lType.IsSame(rType) || lType.Is<KeyValueType::Undefined>() || rType.Is<KeyValueType::Undefined>()) {
 		return;
 	}

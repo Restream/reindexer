@@ -3,7 +3,7 @@
 #include <ctime>
 #include <memory>
 #include "core/cjson/cjsondecoder.h"
-#include "core/cjson/defaultvaluecoder.h"
+// #include "core/cjson/defaultvaluecoder.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/uuid_recoders.h"
 #include "core/formatters/lsn_fmt.h"
@@ -26,6 +26,7 @@
 #include "tools/flagguard.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
+#include "tools/scope_guard.h"
 #include "tools/stringstools.h"
 #include "tools/timetools.h"
 
@@ -356,7 +357,6 @@ class NamespaceImpl::RollBack_recreateCompositeIndexes final : private RollBackB
 public:
 	RollBack_recreateCompositeIndexes(NamespaceImpl& ns, size_t startIdx, size_t count) : ns_{ns}, startIdx_{startIdx} {
 		indexes_.reserve(count);
-		std::swap(ns_.indexesToComposites_, indexesToComposites_);
 	}
 	~RollBack_recreateCompositeIndexes() override {
 		RollBack();
@@ -378,7 +378,6 @@ public:
 		for (size_t i = 0, s = indexes_.size(); i < s; ++i) {
 			std::swap(ns_.indexes_[i + startIdx_], indexes_[i]);
 		}
-		std::swap(ns_.indexesToComposites_, indexesToComposites_);
 		Disable();
 	}
 	void SaveIndex(std::unique_ptr<Index>&& idx) { indexes_.emplace_back(std::move(idx)); }
@@ -393,7 +392,6 @@ public:
 private:
 	NamespaceImpl& ns_;
 	std::vector<std::unique_ptr<Index>> indexes_;
-	fast_hash_map<int, std::vector<int>> indexesToComposites_;
 	size_t startIdx_;
 };
 
@@ -428,10 +426,6 @@ NamespaceImpl::RollBack_recreateCompositeIndexes<needRollBack> NamespaceImpl::re
 			auto newIndex{Index::New(indexDef, PayloadType{payloadType_}, FieldsSet{fields}, config_.cacheConfig)};
 			rollbacker.SaveIndex(std::move(index));
 			std::swap(index, newIndex);
-
-			for (auto field : fields) {
-				indexesToComposites_[field].emplace_back(i);
-			}
 		}
 	}
 	return rollbacker;
@@ -570,15 +564,17 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 			} else {
 				recoder = std::make_unique<RecoderStringToUuid>(changedField);
 			}
-		} else {
-			const auto& indexToUpdate = indexes_[changedField];
-			if (!IsComposite(indexToUpdate->Type()) && !indexToUpdate->Opts().IsSparse()) {
-				auto tagsNames = pickJsonPath(fld);
-				if (!tagsNames.empty()) {
-					recoder = std::make_unique<DefaultValueCoder>(name_, fld, std::move(tagsNames), changedField);
-				}
-			}
 		}
+		// TODO: This logic must be reenabled after #1353. Now it's potentially unsafe
+		//  else {
+		// 	const auto& indexToUpdate = indexes_[changedField];
+		// 	if (!IsComposite(indexToUpdate->Type()) && !indexToUpdate->Opts().IsSparse()) {
+		// 		auto tagsNames = pickJsonPath(fld);
+		// 		if (!tagsNames.empty()) {
+		// 			recoder = std::make_unique<DefaultValueCoder>(name_, fld, std::move(tagsNames), changedField);
+		// 		}
+		// 	}
+		// }
 	}
 	rollbacker.SaveTuple();
 
@@ -810,6 +806,10 @@ void NamespaceImpl::dropIndex(const IndexDef& index) {
 		throw Error(errParams, errMsg, index.name_);
 	}
 
+	// Guard approach is a bit suboptimal, but simpler
+	const auto compositesMappingGuard =
+		MakeScopeGuard([this] { indexesToComposites_.clear(); }, [this] { rebuildIndexesToCompositeMapping(); });
+
 	int fieldIdx = itIdxName->second;
 	std::unique_ptr<Index>& indexToRemove = indexes_[fieldIdx];
 	if (!IsComposite(indexToRemove->Type()) && indexToRemove->Opts().IsSparse()) {
@@ -848,15 +848,7 @@ void NamespaceImpl::dropIndex(const IndexDef& index) {
 		idx->SetFields(std::move(newFields));
 	}
 
-	const bool isComposite = IsComposite(indexToRemove->Type());
-	if (isComposite) {
-		for (auto& v : indexesToComposites_) {
-			const auto f = std::find(v.second.begin(), v.second.end(), fieldIdx);
-			if (f != v.second.end()) {
-				v.second.erase(f);
-			}
-		}
-	} else if (!indexToRemove->Opts().IsSparse()) {
+	if (!IsComposite(indexToRemove->Type()) && !indexToRemove->Opts().IsSparse()) {
 		PayloadType oldPlType = payloadType_;
 		payloadType_.Drop(index.name_);
 		tagsMatcher_.UpdatePayloadType(payloadType_);
@@ -1183,6 +1175,10 @@ bool NamespaceImpl::addIndex(const IndexDef& indexDef) {
 					indexes_[currentPKIndex->second]->Name());
 	}
 
+	// Guard approach is a bit suboptimal, but simpler
+	const auto compositesMappingGuard =
+		MakeScopeGuard([this] { indexesToComposites_.clear(); }, [this] { rebuildIndexesToCompositeMapping(); });
+
 	if (IsComposite(indexDef.Type())) {
 		verifyCompositeIndex(indexDef);
 		addCompositeIndex(indexDef);
@@ -1305,10 +1301,6 @@ void NamespaceImpl::addCompositeIndex(const IndexDef& indexDef) {
 				indexesCacheCleaner.Add(indexes_[idxPos]->SortId());
 			}
 		}
-	}
-
-	for (auto field : fields) {
-		indexesToComposites_[field].emplace_back(idxPos);
 	}
 
 	updateSortedIdxCount();
@@ -2717,6 +2709,8 @@ bool NamespaceImpl::loadIndexesFromStorage() {
 					addIndex(indexDef);
 				} catch (const Error& e) {
 					err = e;
+				} catch (std::exception& e) {
+					err = Error(errLogic, "Exception: '%s'", e.what());
 				}
 			}
 			if (!err.ok()) {
@@ -3389,6 +3383,22 @@ int64_t NamespaceImpl::correctMaxIterationsIdSetPreResult(int64_t maxIterationsI
 		}
 	}
 	return res;
+}
+
+void NamespaceImpl::rebuildIndexesToCompositeMapping() noexcept {
+	// The only possible exception here is bad_alloc, but required memory footprint is really small
+	const auto beg = indexes_.firstCompositePos();
+	const auto end = beg + indexes_.compositeIndexesSize();
+	fast_hash_map<int, std::vector<int>> indexesToComposites;
+	for (auto i = beg; i < end; ++i) {
+		const auto& index = indexes_[i];
+		assertrx(IsComposite(index->Type()));
+		const auto& fields = index->Fields();
+		for (auto field : fields) {
+			indexesToComposites[field].emplace_back(i);
+		}
+	}
+	indexesToComposites_ = std::move(indexesToComposites);
 }
 
 }  // namespace reindexer

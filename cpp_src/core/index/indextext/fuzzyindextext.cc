@@ -5,9 +5,10 @@
 namespace reindexer {
 
 template <typename T>
-IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&,
+IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses&&,
 									 FtUseExternStatuses withExternSt, const RdxContext& rdxCtx) {
 	assertrx_throw(withExternSt == FtUseExternStatuses::No);
+	(void)ftSortType;
 	(void)withExternSt;
 	auto result = engine_.Search(dsl, inTransaction, rdxCtx);
 

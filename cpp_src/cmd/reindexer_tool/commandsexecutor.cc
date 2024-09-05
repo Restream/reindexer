@@ -56,11 +56,14 @@ Error CommandsExecutor<DBInterface>::GetSuggestions(const std::string& input, st
 
 template <typename DBInterface>
 Error CommandsExecutor<DBInterface>::Stop() {
-	GenericCommand cmd([this] {
-		stop(true);
-		return Error{};
-	});
-	auto err = execCommand(cmd);
+	Error err;
+	if (GetStatus().running) {
+		GenericCommand cmd([this] {
+			stop(true);
+			return Error{};
+		});
+		err = execCommand(cmd);
+	}
 	if (err.ok() && executorThr_.joinable()) {
 		executorThr_.join();
 	}

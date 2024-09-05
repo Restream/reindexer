@@ -8,6 +8,8 @@
 
 namespace reindexer {
 
+enum FtSortType { RankOnly, RankAndID, ExternalExpression };
+
 class FtCtx : public BaseFunctionCtx {
 public:
 	typedef intrusive_ptr<FtCtx> Ptr;

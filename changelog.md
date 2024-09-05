@@ -1,3 +1,18 @@
+# Version 3.28.1 (05.09.2024)
+## Core
+- [fix] Fixed pagination for `MERGE` fulltext queries. Previously those queries could return duplicates on different pages due to missing ordering guarantees
+- [fix] Fixed fields filters serialization for `DISTINCT` aggregations (affects SQL logging only)
+- [fix] Temporary disabled default values logic for indexed field from v3.27.0 - this logic may cause stability issues and will be reworked in further releases
+- [fix] Add extra check for composites indexes substitution
+- [fix] Fix composites substitution after indexes update
+
+## Reindexer tool
+- [fix] Fixed crash in `\quit`-command after previous errors
+- [fix] Fixed crash in `git bash` on `Windows` platforms
+
+## Face
+- [fix] Fixed XSS vulnerability in table view
+
 # Version 3.28.0 (16.08.2024)
 ## Core
 - [fea] Updated [logging library](https://github.com/gabime/spdlog) to v1.14.1 and [formatting library](https://github.com/fmtlib/fmt) to v11.0.2

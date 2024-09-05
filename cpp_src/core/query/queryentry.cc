@@ -270,6 +270,12 @@ std::string BetweenFieldsQueryEntry::Dump() const {
 	return std::string{ser.Slice()};
 }
 
+void BetweenFieldsQueryEntry::checkCondition(CondType cond) const {
+	if (cond == CondAny || cond == CondEmpty || cond == CondDWithin) {
+		throw Error{errLogic, "Condition '%s' is inapplicable between two fields", CondTypeToStr(cond)};
+	}
+}
+
 void QueryEntries::serialize(CondType cond, const VariantArray& values, WrSerializer& ser) {
 	ser.PutVarUint(cond);
 	if (cond == CondDWithin) {
@@ -910,6 +916,11 @@ std::string SubQueryFieldEntry::Dump(const std::vector<Query>& subQueries) const
 	return ss.str();
 }
 
+void SubQueryFieldEntry::checkCondition(CondType cond) const {
+	if (cond == CondAny || cond == CondEmpty) {
+		throw Error{errQueryExec, "Condition %s with field and subquery", cond == CondAny ? "Any" : "Empty"};
+	}
+}
 template <typename JS>
 void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS>& joinedSelectors,
 						const std::vector<Query>& subQueries, WrSerializer& ser) {

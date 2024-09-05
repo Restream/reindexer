@@ -3,8 +3,8 @@
 #include "core/ft/filters/kblayout.h"
 #include "core/ft/filters/synonyms.h"
 #include "core/ft/filters/translit.h"
-#include "core/ft/ft_fast/selecter.h"
 #include "estl/contexted_locks.h"
+#include "sort/pdqsort.hpp"
 #include "tools/clock.h"
 #include "tools/logger.h"
 
@@ -124,10 +124,60 @@ IndexMemStat FastIndexText<T>::GetMemStat(const RdxContext& ctx) {
 	ret.idsetCache = this->cache_ft_ ? this->cache_ft_->GetMemStat() : LRUCacheMemStat();
 	return ret;
 }
+template <typename T>
+MergeData::iterator FastIndexText<T>::unstableRemoveIf(MergeData& md, int minRelevancy, double scalingFactor, size_t& releventDocs,
+													   int& cnt) {
+	if (md.empty()) {
+		return md.begin();
+	}
+	auto& holder = *this->holder_;
+	auto first = md.begin();
+	auto last = md.end();
+	while (true) {
+		while (true) {
+			if (first == last) {
+				return first;
+			}
+			auto& vdoc = holder.vdocs_[first->id];
+			if (!vdoc.keyEntry) {
+				break;
+			}
+			first->proc *= scalingFactor;
+			if (first->proc < minRelevancy) {
+				break;
+			}
+			assertrx_throw(!vdoc.keyEntry->Unsorted().empty());
+			cnt += vdoc.keyEntry->Sorted(0).size();
+			++releventDocs;
+
+			++first;
+		}
+		while (true) {
+			--last;
+			if (first == last) {
+				return first;
+			}
+			if (!holder.vdocs_[last->id].keyEntry) {
+				continue;
+			}
+			last->proc *= scalingFactor;
+			if (last->proc >= minRelevancy) {
+				break;
+			}
+		}
+		auto& vdoc = holder.vdocs_[last->id];
+		assertrx_throw(!vdoc.keyEntry->Unsorted().empty());
+		cnt += vdoc.keyEntry->Sorted(0).size();
+		++releventDocs;
+
+		*first = std::move(*last);
+		++first;
+	}
+}
 
 template <typename T>
-IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&& statuses,
-									FtUseExternStatuses useExternSt, const RdxContext& rdxCtx) {
+IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType,
+									FtMergeStatuses&& statuses, FtUseExternStatuses useExternSt, const RdxContext& rdxCtx) {
 	fctx->GetData()->extraWordSymbols_ = this->getConfig()->extraWordSymbols;
 	fctx->GetData()->isWordPositions_ = true;
 
@@ -138,9 +188,11 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTr
 			assertrx_throw(d);
 			Selecter<PackedIdRelVec> selecter{*d, this->Fields().size(), fctx->NeedArea(), holder_->cfg_->maxAreasInDoc};
 			if (useExternSt == FtUseExternStatuses::No) {
-				mergeData = selecter.Process<FtUseExternStatuses::No>(std::move(dsl), inTransaction, std::move(statuses.statuses), rdxCtx);
+				mergeData = selecter.Process<FtUseExternStatuses::No>(std::move(dsl), inTransaction, ftSortType,
+																	  std::move(statuses.statuses), rdxCtx);
 			} else {
-				mergeData = selecter.Process<FtUseExternStatuses::Yes>(std::move(dsl), inTransaction, std::move(statuses.statuses), rdxCtx);
+				mergeData = selecter.Process<FtUseExternStatuses::Yes>(std::move(dsl), inTransaction, ftSortType,
+																	   std::move(statuses.statuses), rdxCtx);
 			}
 			break;
 		}
@@ -149,9 +201,11 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTr
 			assertrx_throw(d);
 			Selecter<IdRelVec> selecter{*d, this->Fields().size(), fctx->NeedArea(), holder_->cfg_->maxAreasInDoc};
 			if (useExternSt == FtUseExternStatuses::No) {
-				mergeData = selecter.Process<FtUseExternStatuses::No>(std::move(dsl), inTransaction, std::move(statuses.statuses), rdxCtx);
+				mergeData = selecter.Process<FtUseExternStatuses::No>(std::move(dsl), inTransaction, ftSortType,
+																	  std::move(statuses.statuses), rdxCtx);
 			} else {
-				mergeData = selecter.Process<FtUseExternStatuses::Yes>(std::move(dsl), inTransaction, std::move(statuses.statuses), rdxCtx);
+				mergeData = selecter.Process<FtUseExternStatuses::Yes>(std::move(dsl), inTransaction, ftSortType,
+																	   std::move(statuses.statuses), rdxCtx);
 			}
 			break;
 		}
@@ -170,19 +224,32 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTr
 	const double scalingFactor = mergeData.maxRank > 255 ? 255.0 / mergeData.maxRank : 1.0;
 	const int minRelevancy = getConfig()->minRelevancy * 100 * scalingFactor;
 	size_t releventDocs = 0;
-	for (auto& vid : mergeData) {
-		auto& vdoc = holder.vdocs_[vid.id];
-		if (!vdoc.keyEntry) {
-			continue;
-		}
-		vid.proc *= scalingFactor;
-		if (vid.proc <= minRelevancy) {
+	switch (ftSortType) {
+		case FtSortType::RankAndID: {
+			auto itF = unstableRemoveIf(mergeData, minRelevancy, scalingFactor, releventDocs, cnt);
+			mergeData.erase(itF, mergeData.end());
 			break;
 		}
+		case FtSortType::RankOnly: {
+			for (auto& vid : mergeData) {
+				auto& vdoc = holder.vdocs_[vid.id];
+				if (!vdoc.keyEntry) {
+					continue;
+				}
+				vid.proc *= scalingFactor;
+				if (vid.proc <= minRelevancy) {
+					break;
+				}
 
-		assertrx_throw(!vdoc.keyEntry->Unsorted().empty());
-		cnt += vdoc.keyEntry->Sorted(0).size();
-		++releventDocs;
+				assertrx_throw(!vdoc.keyEntry->Unsorted().empty());
+				cnt += vdoc.keyEntry->Sorted(0).size();
+				++releventDocs;
+			}
+			break;
+		}
+		case FtSortType::ExternalExpression: {
+			throw Error(errLogic, "FtSortType::ExternalExpression not implemented.");
+		}
 	}
 
 	mergedIds->reserve(cnt);
@@ -238,6 +305,44 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTr
 		logPrintf(LogInfo, "Relevancy(%d): %s", fctx->Size(), str);
 	}
 	assertrx_throw(mergedIds->size() == fctx->Size());
+	if (ftSortType == FtSortType::RankAndID) {
+		std::vector<size_t> sortIds;
+		size_t nItems = mergedIds->size();
+		sortIds.reserve(mergedIds->size());
+		for (size_t i = 0; i < nItems; i++) {
+			sortIds.emplace_back(i);
+		}
+		std::vector<int16_t>& proc = fctx->GetData()->proc_;
+		boost::sort::pdqsort(sortIds.begin(), sortIds.end(), [&proc, mergedIds](size_t i1, size_t i2) {
+			int p1 = proc[i1];
+			int p2 = proc[i2];
+			if (p1 > p2) {
+				return true;
+			} else if (p1 < p2) {
+				return false;
+			} else {
+				return (*mergedIds)[i1] < (*mergedIds)[i2];
+			}
+		});
+
+		for (size_t i = 0; i < nItems; i++) {
+			auto vm = (*mergedIds)[i];
+			auto vp = proc[i];
+			size_t j = i;
+			while (true) {
+				size_t k = sortIds[j];
+				sortIds[j] = j;
+				if (k == i) {
+					break;
+				}
+				(*mergedIds)[j] = (*mergedIds)[k];
+				proc[j] = proc[k];
+				j = k;
+			}
+			(*mergedIds)[j] = vm;
+			proc[j] = vp;
+		}
+	}
 	return mergedIds;
 }
 template <typename T>
@@ -351,11 +456,12 @@ template <typename T>
 template <typename F>
 RX_ALWAYS_INLINE void FastIndexText<T>::appendMergedIds(MergeData& mergeData, size_t releventDocs, F&& appender) {
 	auto& holder = *this->holder_;
-	for (size_t i = 0; i < releventDocs; ++i) {
+	for (size_t i = 0; i < releventDocs;) {
 		auto& vid = mergeData[i];
 		auto& vdoc = holder.vdocs_[vid.id];
 		if (vdoc.keyEntry) {
 			appender(vdoc.keyEntry->Sorted(0).begin(), vdoc.keyEntry->Sorted(0).end(), vid);
+			i++;
 		}
 	}
 }

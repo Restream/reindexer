@@ -170,10 +170,7 @@ bool CommandsProcessor<DBInterface>::Run(const std::string& command) {
 
 template <typename DBInterface>
 Error CommandsProcessor<DBInterface>::stop() {
-	if (executor_.GetStatus().running) {
-		return executor_.Stop();
-	}
-	return Error();
+	return executor_.Stop();
 }
 
 template class CommandsProcessor<reindexer::client::CoroReindexer>;
