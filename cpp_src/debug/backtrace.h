@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <string_view>
+#include <string>
 
 namespace reindexer {
 namespace debug {

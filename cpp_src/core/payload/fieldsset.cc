@@ -13,6 +13,12 @@ FieldsSet::FieldsSet(const TagsMatcher& tagsMatcher, const h_vector<std::string,
 	}
 }
 
+std::string FieldsSet::ToString(DumpWithMask withMask) const {
+	std::stringstream ret;
+	Dump(ret, withMask);
+	return ret.str();
+}
+
 void FieldsSet::throwMaxValueError(int f) {
 	throw Error(errLogic, "Can not push_back(%d) to FieldsSet. Value must be in scope [-1,%d]", f, kMaxIndexes - 1);
 }

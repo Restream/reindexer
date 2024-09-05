@@ -1,3 +1,27 @@
+# Version 4.17.1 *beta* (05.09.2024)
+## Core
+- [fix] Fixed pagination for `MERGE` fulltext queries. Previously those queries could return duplicates on different pages due to missing ordering guarantees
+- [fix] Fixed fields filters serialization for `DISTINCT` aggregations (affects SQL logging only)
+- [fix] Temporary disabled default values logic for indexed fields from v4.16.0 - this logic may cause stability issues and will be reworked in further releases
+- [fix] Add extra check for composites indexes substitution
+- [fix] Fix composites substitution after indexes update
+
+## Reindexer tool
+- [fix] Fixed crash in `\quit`-command after previous errors
+- [fix] Fixed crash in `git bash` on `Windows` platforms
+
+## Face
+- [fea] Added RU language in UI
+- [fea] Changed BM25 settings layout
+- [fea] Added new documentation links
+- [fix] Fixed database deletion
+- [fix] Fixed default value of the stop words in fulltext config
+- [fix] Fixed default value of the rtree-indexes in item creation tab
+- [fix] Fixed last namespace displaying
+- [fix] Fixed the issue with removing of 'Statistics -> Replication' table on the page reloading
+- [fix] Renamed 'Stat(ms)' field on Replication page
+- [fix] Fixed XSS vulnerability in table view
+
 # Version 4.17.0 *beta* (16.08.2024)
 ## Core
 - [fea] Updated [logging library](https://github.com/gabime/spdlog) to v1.14.1 and [formatting library](https://github.com/fmtlib/fmt) to v11.0.2

@@ -52,8 +52,8 @@ public:
 	void CheckFirstQuery();
 	// Let iterators choose most effecive algorith
 	void SetExpectMaxIterations(int expectedIterations);
-	void PrepareIteratorsForSelectLoop(QueryPreprocessor&, unsigned sortId, bool isFt, const NamespaceImpl&, SelectFunction::Ptr&,
-									   FtCtx::Ptr&, const RdxContext&);
+	void PrepareIteratorsForSelectLoop(QueryPreprocessor&, unsigned sortId, bool isFt, FtSortType ftSortType, const NamespaceImpl&,
+									   SelectFunction::Ptr&, FtCtx::Ptr&, const RdxContext&);
 	template <bool reverse, bool hasComparators>
 	bool Process(PayloadValue&, bool* finish, IdType* rowId, IdType, bool match);
 
@@ -92,8 +92,8 @@ public:
 	}
 
 private:
-	bool prepareIteratorsForSelectLoop(QueryPreprocessor&, size_t begin, size_t end, unsigned sortId, bool isFt, const NamespaceImpl&,
-									   SelectFunction::Ptr&, FtCtx::Ptr&, const RdxContext&);
+	bool prepareIteratorsForSelectLoop(QueryPreprocessor&, size_t begin, size_t end, unsigned sortId, bool isFt, FtSortType ftSortType,
+									   const NamespaceImpl&, SelectFunction::Ptr&, FtCtx::Ptr&, const RdxContext&);
 	void sortByCost(span<unsigned int> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations);
 	double fullCost(span<unsigned> indexes, unsigned i, unsigned from, unsigned to, int expectedIterations) const noexcept;
 	double cost(span<unsigned> indexes, unsigned cur, int expectedIterations) const noexcept;
@@ -117,8 +117,8 @@ private:
 
 	SelectKeyResults processQueryEntry(const QueryEntry& qe, const NamespaceImpl& ns, StrictMode strictMode);
 	SelectKeyResults processQueryEntry(const QueryEntry& qe, bool enableSortIndexOptimize, const NamespaceImpl& ns, unsigned sortId,
-									   bool isQueryFt, SelectFunction::Ptr& selectFnc, bool& isIndexFt, bool& isIndexSparse, FtCtx::Ptr&,
-									   QueryPreprocessor& qPreproc, const RdxContext&);
+									   bool isQueryFt, FtSortType ftSortType, SelectFunction::Ptr& selectFnc, bool& isIndexFt,
+									   bool& isIndexSparse, FtCtx::Ptr&, QueryPreprocessor& qPreproc, const RdxContext&);
 	template <bool left>
 	void processField(FieldsComparator&, const QueryField&, const NamespaceImpl&) const;
 	void processJoinEntry(const JoinQueryEntry&, OpType);

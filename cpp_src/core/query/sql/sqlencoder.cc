@@ -207,9 +207,6 @@ WrSerializer& SQLEncoder::GetSQL(WrSerializer& ser, bool stripArgs) const {
 					}
 				} else {
 					for (const auto& filter : query_.SelectFilters()) {
-						if (filter == distinctIndex) {
-							continue;
-						}
 						if (needComma) {
 							ser << ", ";
 						} else {

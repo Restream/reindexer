@@ -236,7 +236,7 @@ private:
 	}
 };
 
-TEST_F(IndexTupleTest, ScalarTest) {
+TEST_F(IndexTupleTest, DISABLED_ScalarTest) {
 	static const std::string ns = "testNSScalar";
 	CreateEmptyNamespace(ns);
 
@@ -251,7 +251,7 @@ TEST_F(IndexTupleTest, ScalarTest) {
 	ValidateReloadState(rt.reindexer, ns, R"({"id":%d,"text":"","int":0})", "reload ns (ScalarTest)");
 }
 
-TEST_F(IndexTupleTest, ScalarNestedTest) {
+TEST_F(IndexTupleTest, DISABLED_ScalarNestedTest) {
 	static const std::string ns = "testNSNested";
 	CreateEmptyNamespace(ns);
 
@@ -329,7 +329,8 @@ TEST_F(IndexTupleTest, NestedUpdateTest) {
 		"reload ns (NestedUpdateTest)");
 }
 
-TEST_F(IndexTupleTest, ArrayTest) {
+// TODO: This test must be reenabled after #1353
+TEST_F(IndexTupleTest, DISABLED_ArrayTest) {
 	static const std::string ns = "testNSArray";
 	CreateEmptyNamespace(ns);
 
@@ -365,7 +366,8 @@ TEST_F(IndexTupleTest, ArrayTest) {
 						"reload ns (ArrayTest)");
 }
 
-TEST_F(IndexTupleTest, ArrayNestedTest) {
+// TODO: This test must be reenabled after #1353
+TEST_F(IndexTupleTest, DISABLED_ArrayNestedTest) {
 	static const std::string ns = "testNSArrayObj";
 	CreateNamespace(ns);
 
@@ -439,7 +441,8 @@ TEST_F(IndexTupleTest, ArrayInToArrayTest) {
 		"reload ns (ArrayInToArrayTest)");
 }
 
-TEST_F(IndexTupleTest, NestedOrderingTest) {
+// TODO: This test must be reenabled after #1353
+TEST_F(IndexTupleTest, DISABLED_NestedOrderingTest) {
 	static const std::string ns = "testNSNestedOrdering";
 	CreateEmptyNamespace(ns);
 
@@ -457,7 +460,8 @@ TEST_F(IndexTupleTest, NestedOrderingTest) {
 						"reload ns (NestedDiffOrderingTest)");
 }
 
-TEST_F(IndexTupleTest, NullTest) {
+// TODO: This test must be reenabled after #1353
+TEST_F(IndexTupleTest, DISABLED_NullTest) {
 	static const std::string ns = "testNSNull";
 	CreateEmptyNamespace(ns);
 
@@ -483,7 +487,8 @@ TEST_F(IndexTupleTest, NullTest) {
 						"null values test");
 }
 
-TEST_F(IndexTupleTest, FailTest) {
+// TODO: This test must be reenabled after #1353
+TEST_F(IndexTupleTest, DISABLED_FailTest) {
 	static const std::string ns = "testNSFail";
 	CreateEmptyNamespace(ns);
 
@@ -494,7 +499,8 @@ TEST_F(IndexTupleTest, FailTest) {
 	ValidateReloadState(rt.reindexer, ns, R"({"id":%d,"obj":{"nest":0},"idx":false})", "reload ns (FailTest)");
 }
 
-TEST_F(IndexTupleTest, NestedArrayTest) {
+// TODO: This test must be reenabled after #1353
+TEST_F(IndexTupleTest, DISABLED_NestedArrayTest) {
 	static const std::string ns = "testNSNestedArray";
 	CreateArrayNamespace(ns);
 

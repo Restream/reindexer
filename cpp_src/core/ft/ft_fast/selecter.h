@@ -1,6 +1,7 @@
 #pragma once
 #include "core/ft/ftdsl.h"
 #include "core/ft/idrelset.h"
+#include "core/selectfunc/ctx/ftctx.h"
 #include "dataholder.h"
 
 namespace reindexer {
@@ -53,7 +54,8 @@ public:
 	};
 
 	template <FtUseExternStatuses>
-	MergeData Process(FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext&);
+	MergeData Process(FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses::Statuses&& mergeStatuses,
+					  const RdxContext&);
 
 private:
 	struct TextSearchResult {
@@ -178,7 +180,7 @@ private:
 
 	template <typename Bm25Type, typename MergedOffsetT>
 	MergeData mergeResults(std::vector<TextSearchResults>&& rawResults, size_t maxMergedSize, const std::vector<size_t>& synonymsBounds,
-						   bool inTransaction, FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext&);
+						   bool inTransaction, FtSortType ftSortType, FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext&);
 
 	template <typename Bm25Type, typename MergedOffsetT>
 	void mergeIteration(TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses, MergeData& merged,
@@ -244,7 +246,8 @@ private:
 
 	template <typename MergedOffsetT>
 	MergeData mergeResultsBmType(std::vector<TextSearchResults>&& results, size_t totalORVids, const std::vector<size_t>& synonymsBounds,
-								 bool inTransaction, FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext& rdxCtx);
+								 bool inTransaction, FtSortType ftSortType, FtMergeStatuses::Statuses&& mergeStatuses,
+								 const RdxContext& rdxCtx);
 
 	void debugMergeStep(const char* msg, int vid, float normBm25, float normDist, int finalRank, int prevRank);
 	template <FtUseExternStatuses>

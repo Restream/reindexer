@@ -34,7 +34,8 @@ public:
 			  forceComparator(0),
 			  unbuiltSortOrders(0),
 			  indexesNotOptimized(0),
-			  inTransaction{0} {}
+			  inTransaction{0},
+			  ftSortType(0) {}
 		unsigned itemsCountInNamespace;
 		int maxIterations;
 		unsigned distinct : 1;
@@ -43,6 +44,7 @@ public:
 		unsigned unbuiltSortOrders : 1;
 		unsigned indexesNotOptimized : 1;
 		unsigned inTransaction : 1;
+		unsigned ftSortType : 2;
 	};
 	using KeyEntry = reindexer::KeyEntry<IdSet>;
 	using KeyEntryPlain = reindexer::KeyEntry<IdSetPlain>;

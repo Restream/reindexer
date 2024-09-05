@@ -75,7 +75,7 @@ TEST_F(GrpcClientApi, SelectJSON) {
 					for (auto field : object) {
 						name = std::string_view(field.key);
 						const auto& fieldValue(field.value);
-						if (name == "id") {
+						if (name == "id" || name == "age") {
 							ASSERT_TRUE(fieldValue.getTag() == gason::JSON_NUMBER);
 						} else if (name == "joined_test_namespace2") {
 							ASSERT_TRUE(fieldValue.getTag() == gason::JSON_ARRAY);

@@ -237,7 +237,8 @@ public:
 	template <typename Q>
 	void ExecuteAndVerifyWithSql(Q&& query) {
 		ExecuteAndVerify(query);
-		Query queryFromSql = Query::FromSQL(query.GetSQL());
+		Query queryFromSql = Query::FromSQL(query.GetSQL()).Strict(query.GetStrictMode()).Debug(query.GetDebugLevel());
+		ASSERT_EQ(query, queryFromSql);
 		ExecuteAndVerify(std::move(queryFromSql));
 	}
 
@@ -257,7 +258,8 @@ public:
 	template <typename Q>
 	void ExecuteAndVerifyWithSql(Q&& query, QueryResults& qr) {
 		ExecuteAndVerify(query, qr);
-		Query queryFromSql = Query::FromSQL(query.GetSQL());
+		Query queryFromSql = Query::FromSQL(query.GetSQL()).Strict(query.GetStrictMode()).Debug(query.GetDebugLevel());
+		ASSERT_EQ(query, queryFromSql);
 		qr.Clear();
 		ExecuteAndVerify(std::move(queryFromSql), qr);
 	}
@@ -733,6 +735,12 @@ protected:
 										.Where(kFieldNameGenre, CondEq, randomGenre)
 										.Distinct(distinct.c_str())
 										.Sort(kFieldNameYear, true));
+
+				ExecuteAndVerifyWithSql(Query(default_namespace)
+											.Select({distinct.c_str()})
+											.Distinct(distinct.c_str())
+											.Where(kFieldNameGenre, CondEq, randomGenre)
+											.Sort(kFieldNameYear, true));
 		}
 	}
 

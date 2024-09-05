@@ -195,7 +195,11 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 					   ctx.preSelect.Result().payload);
 		}
 
-		qres.PrepareIteratorsForSelectLoop(qPreproc, ctx.sortingContext.sortId(), isFt, *ns_, fnc_, ft_ctx_, rdxCtx);
+		qres.PrepareIteratorsForSelectLoop(qPreproc, ctx.sortingContext.sortId(), isFt,
+										   (isFt && (ctx.isMergeQuery == IsMergeQuery::Yes || (!ctx.query.GetMergeQueries().empty())))
+											   ? FtSortType::RankAndID
+											   : FtSortType::RankOnly,
+										   *ns_, fnc_, ft_ctx_, rdxCtx);
 
 		explain.AddSelectTime();
 

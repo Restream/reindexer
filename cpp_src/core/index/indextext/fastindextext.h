@@ -2,6 +2,7 @@
 
 #include "core/ft/config/ftfastconfig.h"
 #include "core/ft/ft_fast/dataholder.h"
+#include "core/ft/ft_fast/selecter.h"
 #include "indextext.h"
 
 namespace reindexer {
@@ -31,8 +32,8 @@ public:
 		// Creates uncommited copy
 		return std::make_unique<FastIndexText<T>>(*this);
 	}
-	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&, FtUseExternStatuses,
-					  const RdxContext&) override final;
+	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransactionbool, FtSortType ftSortType, FtMergeStatuses&&,
+					  FtUseExternStatuses, const RdxContext&) override final;
 	IndexMemStat GetMemStat(const RdxContext&) override final;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final;
 	void Delete(const Variant& key, IdType id, StringsHolder&, bool& clearCache) override final;
@@ -54,6 +55,8 @@ private:
 	void buildVdocs(Data& data);
 	template <typename F>
 	void appendMergedIds(MergeData& merged, size_t releventDocs, F&& appender);
+
+	MergeData::iterator unstableRemoveIf(MergeData& md, const int minRelevancy, double scalingFactor, size_t& releventDocs, int& cnt);
 
 	std::unique_ptr<IDataHolder> holder_;
 };

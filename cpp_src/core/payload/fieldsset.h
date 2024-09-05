@@ -224,8 +224,10 @@ public:
 	}
 	bool operator!=(const FieldsSet& f) const noexcept { return !(*this == f); }
 
+	enum class DumpWithMask { No, Yes };
+
 	template <typename T>
-	void Dump(T& os) const {
+	void Dump(T& os, DumpWithMask withMask) const {
 		const DumpFieldsPath fieldsPathDumper{os};
 		os << "{[";
 		for (auto b = begin(), it = b, e = end(); it != e; ++it) {
@@ -234,7 +236,11 @@ public:
 			}
 			os << *it;
 		}
-		os << "], mask: " << mask_ << ", tagsPaths: [";
+		os << "], ";
+		if (withMask == DumpWithMask::Yes) {
+			os << "mask: " << mask_ << ", ";
+		}
+		os << "tagsPaths: [";
 		for (auto b = tagsPaths_.cbegin(), it = b, e = tagsPaths_.cend(); it != e; ++it) {
 			if (it != b) {
 				os << ", ";
@@ -251,6 +257,7 @@ public:
 		}
 		os << "]}";
 	}
+	std::string ToString(DumpWithMask withMask) const;
 
 private:
 	template <typename F>

@@ -120,8 +120,8 @@ void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, RV
 // RX_NO_INLINE just for build test purpose. Do not expect any effect here
 template <typename IdCont>
 template <FtUseExternStatuses useExternSt>
-RX_NO_INLINE MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses::Statuses&& mergeStatuses,
-												 const RdxContext& rdxCtx) {
+RX_NO_INLINE MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType,
+												 FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext& rdxCtx) {
 	FtSelectContext ctx;
 	ctx.rawResults.reserve(dsl.size());
 	// STEP 2: Search dsl terms for each variant
@@ -213,11 +213,11 @@ RX_NO_INLINE MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransa
 	const auto maxMergedSize = std::min(size_t(holder_.cfg_->mergeLimit), ctx.totalORVids);
 
 	if (maxMergedSize < 0xFFFF) {
-		return mergeResultsBmType<uint16_t>(std::move(results), ctx.totalORVids, synonymsBounds, inTransaction, std::move(mergeStatuses),
-											rdxCtx);
+		return mergeResultsBmType<uint16_t>(std::move(results), ctx.totalORVids, synonymsBounds, inTransaction, ftSortType,
+											std::move(mergeStatuses), rdxCtx);
 	} else if (maxMergedSize < 0xFFFFFFFF) {
-		return mergeResultsBmType<uint32_t>(std::move(results), ctx.totalORVids, synonymsBounds, inTransaction, std::move(mergeStatuses),
-											rdxCtx);
+		return mergeResultsBmType<uint32_t>(std::move(results), ctx.totalORVids, synonymsBounds, inTransaction, ftSortType,
+											std::move(mergeStatuses), rdxCtx);
 	} else {
 		assertrx_throw(false);
 	}
@@ -227,17 +227,17 @@ RX_NO_INLINE MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransa
 template <typename IdCont>
 template <typename MergedOffsetT>
 MergeData Selecter<IdCont>::mergeResultsBmType(std::vector<TextSearchResults>&& results, size_t totalORVids,
-											   const std::vector<size_t>& synonymsBounds, bool inTransaction,
+											   const std::vector<size_t>& synonymsBounds, bool inTransaction, FtSortType ftSortType,
 											   FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext& rdxCtx) {
 	switch (holder_.cfg_->bm25Config.bm25Type) {
 		case FtFastConfig::Bm25Config::Bm25Type::rx:
-			return mergeResults<Bm25Rx, MergedOffsetT>(std::move(results), totalORVids, synonymsBounds, inTransaction,
+			return mergeResults<Bm25Rx, MergedOffsetT>(std::move(results), totalORVids, synonymsBounds, inTransaction, ftSortType,
 													   std::move(mergeStatuses), rdxCtx);
 		case FtFastConfig::Bm25Config::Bm25Type::classic:
-			return mergeResults<Bm25Classic, MergedOffsetT>(std::move(results), totalORVids, synonymsBounds, inTransaction,
+			return mergeResults<Bm25Classic, MergedOffsetT>(std::move(results), totalORVids, synonymsBounds, inTransaction, ftSortType,
 															std::move(mergeStatuses), rdxCtx);
 		case FtFastConfig::Bm25Config::Bm25Type::wordCount:
-			return mergeResults<TermCount, MergedOffsetT>(std::move(results), totalORVids, synonymsBounds, inTransaction,
+			return mergeResults<TermCount, MergedOffsetT>(std::move(results), totalORVids, synonymsBounds, inTransaction, ftSortType,
 														  std::move(mergeStatuses), rdxCtx);
 	}
 	assertrx_throw(false);
@@ -1284,7 +1284,7 @@ bool Selecter<IdCont>::TyposHandler::isWordFitMaxLettPerm(const std::string_view
 template <typename IdCont>
 template <typename Bm25T, typename MergedOffsetT>
 MergeData Selecter<IdCont>::mergeResults(std::vector<TextSearchResults>&& rawResults, size_t maxMergedSize,
-										 const std::vector<size_t>& synonymsBounds, bool inTransaction,
+										 const std::vector<size_t>& synonymsBounds, bool inTransaction, FtSortType ftSortType,
 										 FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext& rdxCtx) {
 	const auto& vdocs = holder_.vdocs_;
 	MergeData merged;
@@ -1388,9 +1388,19 @@ MergeData Selecter<IdCont>::mergeResults(std::vector<TextSearchResults>&& rawRes
 			merged.maxRank = m.proc;
 		}
 	}
-
-	boost::sort::pdqsort_branchless(merged.begin(), merged.end(),
-									[](const MergeInfo& lhs, const MergeInfo& rhs) noexcept { return lhs.proc > rhs.proc; });
+	switch (ftSortType) {
+		case FtSortType::RankOnly: {
+			boost::sort::pdqsort_branchless(merged.begin(), merged.end(),
+											[](const MergeInfo& lhs, const MergeInfo& rhs) noexcept { return lhs.proc > rhs.proc; });
+			return merged;
+		}
+		case FtSortType::RankAndID: {
+			return merged;
+		}
+		case FtSortType::ExternalExpression:
+			throw Error(errLogic, "FtSortType::ExternalExpression not implemented.");
+			break;
+	}
 	return merged;
 }
 
@@ -1431,13 +1441,14 @@ void Selecter<IdCont>::printVariants(const FtSelectContext& ctx, const TextSearc
 }
 
 template class Selecter<PackedIdRelVec>;
-template MergeData Selecter<PackedIdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, FtMergeStatuses::Statuses&&,
+template MergeData Selecter<PackedIdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
 																			  const RdxContext&);
-template MergeData Selecter<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtMergeStatuses::Statuses&&,
+template MergeData Selecter<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
 																			   const RdxContext&);
 template class Selecter<IdRelVec>;
-template MergeData Selecter<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, FtMergeStatuses::Statuses&&, const RdxContext&);
-template MergeData Selecter<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtMergeStatuses::Statuses&&,
+template MergeData Selecter<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
+																		const RdxContext&);
+template MergeData Selecter<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
 																		 const RdxContext&);
 
 }  // namespace reindexer

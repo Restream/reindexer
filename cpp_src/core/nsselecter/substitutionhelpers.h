@@ -2,6 +2,7 @@
 
 #include "core/index/index.h"
 #include "core/namespace/namespaceimpl.h"
+#include "tools/logger.h"
 
 namespace reindexer {
 
@@ -36,9 +37,30 @@ public:
 
 	void Add(int field, const std::vector<int>& composites, unsigned entry) {
 		assertrx_throw(entry < std::numeric_limits<uint16_t>::max());
+		const auto compositesBeg = ns_.indexes_.firstCompositePos();
+		const auto compositesEnd = compositesBeg + ns_.indexes_.compositeIndexesSize();
 		for (auto composite : composites) {
-			const auto idxType = ns_.indexes_[composite]->Type();
+			if rx_unlikely (composite < compositesBeg || composite >= compositesEnd) {
+				// TODO: this may be removed later (somewhere around v3.31/v3.32) after some extra investigations (relates to #1830)
+				logFmt(LogError,
+					   "<assertion failed>: Unexpected composite index identifier during substitution attempt: {}. Composites range is "
+					   "[{}, {});\n(field: {}; {})",
+					   composite, compositesBeg, compositesEnd, field, ns_.payloadType_.Field(field).ToString());
+				assertrx_dbg(false);
+				continue;
+			}
+			auto compositePtr = ns_.indexes_[composite].get();
+			const auto idxType = compositePtr->Type();
 			if (idxType != IndexCompositeBTree && idxType != IndexCompositeHash) {
+				continue;
+			}
+			if (auto& idxFields = compositePtr->Fields(); !idxFields.contains(field)) {
+				// TODO: this may be removed later (somewhere around v3.31/v3.32) after some extra investigations (relates to #1830)
+				logFmt(LogError,
+					   "<assertion failed>: Unexpected field {} in composite index {}:{} during substitution attempt. Actual composite "
+					   "fields: {}",
+					   field, composite, compositePtr->Name(), idxFields.ToString(FieldsSet::DumpWithMask::No));
+				assertrx_dbg(false);
 				continue;
 			}
 			bool found = false;

@@ -1,5 +1,7 @@
+#ifndef _MSC_VER
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wswitch-enum"
+#endif
 
 #ifdef __linux__
 /* dwarf.c -- Get file/line information from DWARF for backtraces.
@@ -3419,4 +3421,6 @@ int backtrace_dwarf_add(struct backtrace_state *state, uintptr_t base_address, c
 int ___dwarf_c_dummy_suppress_warning;
 #endif
 
+#ifndef _MSC_VER
 #pragma GCC diagnostic pop
+#endif

@@ -118,7 +118,7 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType cond
 		}
 	}
 	return doSelectKey(keys, needPutCache ? std::optional{std::move(ckey)} : std::nullopt, std::move(mergeStatuses),
-					   FtUseExternStatuses::No, opts.inTransaction, std::move(ftctx), rdxCtx);
+					   FtUseExternStatuses::No, opts.inTransaction, FtSortType(opts.ftSortType), std::move(ftctx), rdxCtx);
 }
 
 template <typename T>
@@ -135,7 +135,7 @@ SelectKeyResults IndexText<T>::resultFromCache(const VariantArray& keys, FtIdSet
 template <typename T>
 SelectKeyResults IndexText<T>::doSelectKey(const VariantArray& keys, const std::optional<IdSetCacheKey>& ckey,
 										   FtMergeStatuses&& mergeStatuses, FtUseExternStatuses useExternSt, bool inTransaction,
-										   FtCtx::Ptr ftctx, const RdxContext& rdxCtx) {
+										   FtSortType ftSortType, FtCtx::Ptr ftctx, const RdxContext& rdxCtx) {
 	if rx_unlikely (cfg_->logLevel >= LogInfo) {
 		logPrintf(LogInfo, "Searching for '%s' in '%s' %s", keys[0].As<std::string>(), this->payloadType_ ? this->payloadType_->Name() : "",
 				  ckey ? "(will cache)" : "");
@@ -145,7 +145,7 @@ SelectKeyResults IndexText<T>::doSelectKey(const VariantArray& keys, const std::
 	FtDSLQuery dsl(this->ftFields_, this->cfg_->stopWords, this->cfg_->extraWordSymbols);
 	dsl.parse(keys[0].As<p_string>());
 
-	IdSet::Ptr mergedIds = Select(ftctx, std::move(dsl), inTransaction, std::move(mergeStatuses), useExternSt, rdxCtx);
+	IdSet::Ptr mergedIds = Select(ftctx, std::move(dsl), inTransaction, ftSortType, std::move(mergeStatuses), useExternSt, rdxCtx);
 	SelectKeyResult res;
 	if (mergedIds) {
 		bool need_put = (useExternSt == FtUseExternStatuses::No) && ckey.has_value();
@@ -189,7 +189,8 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType cond
 	if rx_unlikely (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
 		throw Error(errParams, "Full text index (%s) support only EQ or SET condition with 1 or 2 parameter", Index::Name());
 	}
-	return doSelectKey(keys, std::nullopt, std::move(preselect), FtUseExternStatuses::Yes, opts.inTransaction, prepareFtCtx(ctx), rdxCtx);
+	return doSelectKey(keys, std::nullopt, std::move(preselect), FtUseExternStatuses::Yes, opts.inTransaction, FtSortType(opts.ftSortType),
+					   prepareFtCtx(ctx), rdxCtx);
 }
 
 template <typename T>

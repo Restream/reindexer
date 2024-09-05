@@ -35,6 +35,7 @@ public:
 	using base_idset::rend;
 	using base_idset::const_reverse_iterator;
 	using base_idset::const_iterator;
+	using base_idset::operator[];
 
 	enum EditMode {
 		Ordered,   // Keep idset ordered, and ready to select (insert is slow O(logN)+O(N))

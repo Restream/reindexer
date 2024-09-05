@@ -86,7 +86,7 @@ void Index::dump(S& os, std::string_view step, std::string_view offset) const {
 	payloadType_.Dump(os, step, newOffset);
 	if (IsComposite(type_)) {
 		os << ",\n" << newOffset << "fields: ";
-		fields_.Dump(os);
+		fields_.Dump(os, FieldsSet::DumpWithMask::Yes);
 	}
 	os << ",\n"
 	   << newOffset << "sortedIdxCount: " << sortedIdxCount_ << ",\n"

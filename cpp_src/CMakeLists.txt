@@ -45,7 +45,7 @@ else()
   option(LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "4.17.0")
+set (REINDEXER_VERSION_DEFAULT "4.17.1")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -297,7 +297,11 @@ else()
 endif()
 
 # Static LevelDB v1.23 is built with -fno-rtti by default. To inherit our logger from leveldb's logger, this file must be built with -fno-rtti to
-set_source_files_properties (${REINDEXER_SOURCE_PATH}/core/storage/leveldblogger.cc PROPERTIES COMPILE_FLAGS "-fno-rtti")
+if(MSVC)
+  set_source_files_properties (${REINDEXER_SOURCE_PATH}/core/storage/leveldblogger.cc PROPERTIES COMPILE_FLAGS "/GR-")
+else()
+  set_source_files_properties (${REINDEXER_SOURCE_PATH}/core/storage/leveldblogger.cc PROPERTIES COMPILE_FLAGS "-fno-rtti")
+endif()
 
 list(APPEND REINDEXER_LIBRARIES reindexer)
 add_library(${TARGET} STATIC ${HDRS} ${SRCS} ${VENDORS})
@@ -357,6 +361,7 @@ else()
     GIT_TAG "1.1.8"
     CMAKE_ARGS -DSNAPPY_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
     -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     )
   include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
   link_directories(${CMAKE_CURRENT_BINARY_DIR})
@@ -443,9 +448,10 @@ if(NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR OR WITH_TSAN)
     GIT_TAG "master"
     CMAKE_ARGS -DLEVELDB_BUILD_TESTS=OFF -DLEVELDB_BUILD_BENCHMARKS=OFF
     -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
-    "-DCMAKE_CXX_FLAGS=-fPIC -I${CMAKE_CURRENT_BINARY_DIR}/include"
+    "-DCMAKE_CXX_FLAGS=-I${CMAKE_CURRENT_BINARY_DIR}/include"
     -DCMAKE_EXE_LINKER_FLAGS=-L${CMAKE_CURRENT_BINARY_DIR}
     -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON
   )
   if(NOT SNAPPY_FOUND)
     add_dependencies(leveldb_lib snappy_lib)

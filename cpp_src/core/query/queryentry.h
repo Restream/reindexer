@@ -20,8 +20,8 @@ using ConstPayload = PayloadIface<const PayloadValue>;
 class TagsMatcher;
 
 struct JoinQueryEntry {
-	JoinQueryEntry(size_t joinIdx) noexcept : joinIndex{joinIdx} {}
-	size_t joinIndex;
+	explicit JoinQueryEntry(size_t joinIdx) noexcept : joinIndex{joinIdx} {}
+	size_t joinIndex{std::numeric_limits<size_t>::max()};
 	bool operator==(const JoinQueryEntry& other) const noexcept { return joinIndex == other.joinIndex; }
 	bool operator!=(const JoinQueryEntry& other) const noexcept { return !operator==(other); }
 
@@ -38,8 +38,6 @@ public:
 
 	template <typename Str>
 	explicit QueryField(Str&& fieldName) noexcept : fieldName_{std::forward<Str>(fieldName)} {}
-	QueryField(std::string&& fieldName, int idxNo, FieldsSet fields, KeyValueType fieldType,
-			   std::vector<KeyValueType>&& compositeFieldsTypes);
 	QueryField(QueryField&&) noexcept = default;
 	QueryField(const QueryField&) = default;
 	QueryField& operator=(QueryField&&) noexcept = default;
@@ -160,9 +158,7 @@ public:
 
 	[[nodiscard]] std::string Dump() const;
 	[[nodiscard]] std::string DumpBrief() const;
-	[[nodiscard]] bool IsInjectedFromMain() const noexcept { return injectedFrom_ == InjectedFromMain; }
 	[[nodiscard]] bool IsInjectedFrom(size_t joinedQueryNo) const noexcept { return injectedFrom_ == joinedQueryNo; }
-	void InjectedFrom(size_t joinedQueryNo) noexcept { injectedFrom_ = joinedQueryNo; }
 
 	auto Values() const&& = delete;
 	auto FieldData() const&& = delete;
@@ -172,9 +168,9 @@ private:
 	void verifyNotIgnoringEmptyValues() const { VerifyQueryEntryValues(condition_, values_); }
 
 	VariantArray values_;
-	CondType condition_;
-	bool distinct_ = false;
-	size_t injectedFrom_ = NotInjected;
+	CondType condition_{CondAny};
+	bool distinct_{false};
+	size_t injectedFrom_{NotInjected};
 };
 
 class BetweenFieldsQueryEntry {
@@ -182,9 +178,7 @@ public:
 	template <typename StrL, typename StrR>
 	BetweenFieldsQueryEntry(StrL&& fstIdx, CondType cond, StrR&& sndIdx)
 		: leftField_{std::forward<StrL>(fstIdx)}, rightField_{std::forward<StrR>(sndIdx)}, condition_{cond} {
-		if (condition_ == CondAny || condition_ == CondEmpty || condition_ == CondDWithin) {
-			throw Error{errLogic, "Condition '%s' is inapplicable between two fields", CondTypeToStr(condition_)};
-		}
+		checkCondition(cond);
 	}
 
 	[[nodiscard]] bool operator==(const BetweenFieldsQueryEntry&) const noexcept;
@@ -224,9 +218,11 @@ public:
 	auto RightFieldData() const&& = delete;
 
 private:
+	void checkCondition(CondType cond) const;
+
 	QueryField leftField_;
 	QueryField rightField_;
-	CondType condition_;
+	CondType condition_{CondAny};
 };
 
 struct AlwaysFalse {};
@@ -264,9 +260,9 @@ public:
 	auto Values() const&& = delete;
 
 private:
-	CondType condition_;
+	CondType condition_{CondAny};
 	// index of Query in Query::subQueries_
-	size_t queryIndex_;
+	size_t queryIndex_{std::numeric_limits<size_t>::max()};
 	VariantArray values_;
 };
 
@@ -274,9 +270,7 @@ class SubQueryFieldEntry {
 public:
 	template <typename Str>
 	SubQueryFieldEntry(Str&& field, CondType cond, size_t qIdx) : field_{std::forward<Str>(field)}, condition_{cond}, queryIndex_{qIdx} {
-		if (cond == CondAny || cond == CondEmpty) {
-			throw Error{errQueryExec, "Condition %s with field and subquery", cond == CondAny ? "Any" : "Empty"};
-		}
+		checkCondition(cond);
 	}
 	[[nodiscard]] const std::string& FieldName() const& noexcept { return field_; }
 	[[nodiscard]] std::string&& FieldName() && noexcept { return std::move(field_); }
@@ -291,10 +285,12 @@ public:
 	auto FieldName() const&& = delete;
 
 private:
+	void checkCondition(CondType cond) const;
+
 	std::string field_;
-	CondType condition_;
+	CondType condition_{CondAny};
 	// index of Query in Query::subQueries_
-	size_t queryIndex_;
+	size_t queryIndex_{std::numeric_limits<size_t>::max()};
 };
 
 class UpdateEntry {
@@ -319,8 +315,8 @@ public:
 private:
 	std::string column_;
 	VariantArray values_;
-	FieldModifyMode mode_ = FieldModeSet;
-	bool isExpression_ = false;
+	FieldModifyMode mode_{FieldModeSet};
+	bool isExpression_{false};
 };
 
 class QueryJoinEntry {
@@ -379,11 +375,11 @@ public:
 private:
 	QueryField leftField_;
 	QueryField rightField_;
-	const OpType op_;
-	const CondType condition_;
-	const bool reverseNamespacesOrder_;	 ///< controls SQL encoding order
-										 ///< false: mainNs.index Condition joinNs.joinIndex
-										 ///< true:  joinNs.joinIndex Invert(Condition) mainNs.index
+	const OpType op_{OpOr};
+	const CondType condition_{CondAny};
+	const bool reverseNamespacesOrder_{false}; ///< controls SQL encoding order
+											   ///< false: mainNs.index Condition joinNs.joinIndex
+											   ///< true:  joinNs.joinIndex Invert(Condition) mainNs.index
 };
 
 enum class InjectionDirection : bool { IntoMain, FromMain };
@@ -393,7 +389,7 @@ class QueryEntries : public ExpressionTree<OpType, QueryEntriesBracket, 4, Query
 										   AlwaysTrue, SubQueryEntry, SubQueryFieldEntry> {
 	using Base = ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse,
 								AlwaysTrue, SubQueryEntry, SubQueryFieldEntry>;
-	QueryEntries(Base&& b) : Base{std::move(b)} {}
+	explicit QueryEntries(Base&& b) : Base{std::move(b)} {}
 
 public:
 	QueryEntries() = default;
@@ -402,7 +398,6 @@ public:
 	QueryEntries& operator=(QueryEntries&&) = default;
 
 	void ToDsl(const Query& parentQuery, JsonBuilder& builder) const { return toDsl(cbegin(), cend(), parentQuery, builder); }
-	void WriteSQLWhere(const Query& parentQuery, WrSerializer&, bool stripArgs) const;
 	void Serialize(WrSerializer& ser, const std::vector<Query>& subQueries) const { serialize(cbegin(), cend(), ser, subQueries); }
 	bool CheckIfSatisfyConditions(const ConstPayload& pl) const { return checkIfSatisfyConditions(cbegin(), cend(), pl); }
 	static bool CheckIfSatisfyCondition(const VariantArray& lValues, CondType, const VariantArray& rValues);
@@ -422,7 +417,6 @@ public:
 
 private:
 	static void toDsl(const_iterator it, const_iterator to, const Query& parentQuery, JsonBuilder&);
-	static void writeSQL(const Query& parentQuery, const_iterator from, const_iterator to, WrSerializer&, bool stripArgs);
 	static void serialize(const_iterator it, const_iterator to, WrSerializer&, const std::vector<Query>& subQueries);
 	static void serialize(CondType, const VariantArray& values, WrSerializer&);
 	static bool checkIfSatisfyConditions(const_iterator begin, const_iterator end, const ConstPayload&);
@@ -473,11 +467,11 @@ public:
 	void SetOffset(unsigned);
 
 private:
-	AggType type_;
+	AggType type_{AggUnknown};
 	h_vector<std::string, 1> fields_;
 	SortingEntries sortingEntries_;
-	unsigned limit_ = QueryEntry::kDefaultLimit;
-	unsigned offset_ = QueryEntry::kDefaultOffset;
+	unsigned limit_{QueryEntry::kDefaultLimit};
+	unsigned offset_{QueryEntry::kDefaultOffset};
 };
 
 }  // namespace reindexer
