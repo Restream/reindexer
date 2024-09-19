@@ -1188,6 +1188,9 @@ func (q *Query) On(index string, condition int, joinIndex string) *Query {
 }
 
 // Select add filter to  fields of result's objects
+// The `fields` should be specified in the same case as the jsonpaths corresponding to them.
+// Non-existent `fields` and `fields` in the wrong case are ignored.
+// If there are no `fields` in this list that meet these conditions, then the filter works as "*".
 func (q *Query) Select(fields ...string) *Query {
 	for _, field := range fields {
 		q.ser.PutVarCUInt(querySelectFilter).PutVString(field)

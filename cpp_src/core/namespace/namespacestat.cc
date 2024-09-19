@@ -274,7 +274,8 @@ void ClusterizationStatus::GetJSON(JsonBuilder& builder) const {
 
 Error ClusterizationStatus::FromJSON(span<char> json) {
 	try {
-		FromJSON(gason::JsonParser().Parse(json));
+		gason::JsonParser parser;
+		FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "ClusterizationStatus: %s", ex.what());
 	} catch (const Error& err) {

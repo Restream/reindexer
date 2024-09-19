@@ -366,7 +366,8 @@ void ServerControl::Interface::AddFollower(const std::string& dsn, std::optional
 		err = qr.begin().GetJSON(ser, false);
 		ASSERT_TRUE(err.ok()) << err.what();
 		curConf = cluster::AsyncReplConfigData();
-		err = curConf.FromJSON(gason::JsonParser().Parse(ser.Slice())["async_replication"]);
+		gason::JsonParser parser;
+		err = curConf.FromJSON(parser.Parse(ser.Slice())["async_replication"]);
 		ASSERT_TRUE(err.ok()) << err.what();
 	};
 	cluster::AsyncReplConfigData curConf;

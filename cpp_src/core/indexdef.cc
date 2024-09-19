@@ -155,7 +155,8 @@ bool isStore(IndexType type) noexcept {
 
 Error IndexDef::FromJSON(span<char> json) {
 	try {
-		IndexDef::FromJSON(gason::JsonParser().Parse(json));
+		gason::JsonParser parser;
+		IndexDef::FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "IndexDef: %s", ex.what());
 	} catch (const Error& err) {

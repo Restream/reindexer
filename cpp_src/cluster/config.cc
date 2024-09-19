@@ -28,7 +28,8 @@ static void ValidateDSN(std::string_view dsn) {
 
 Error NodeData::FromJSON(span<char> json) {
 	try {
-		return FromJSON(gason::JsonParser().Parse(json));
+		gason::JsonParser parser;
+		return FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "NodeData: %s", ex.what());
 	} catch (const Error& err) {
@@ -63,7 +64,8 @@ void NodeData::GetJSON(WrSerializer& ser) const {
 
 Error RaftInfo::FromJSON(span<char> json) {
 	try {
-		return FromJSON(gason::JsonParser().Parse(json));
+		gason::JsonParser parser;
+		return FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "RaftInfo: %s", ex.what());
 	} catch (const Error& err) {
@@ -293,7 +295,8 @@ Error AsyncReplConfigData::FromYAML(const std::string& yaml) {
 
 Error AsyncReplConfigData::FromJSON(std::string_view json) {
 	try {
-		return FromJSON(gason::JsonParser().Parse(json));
+		gason::JsonParser parser;
+		return FromJSON(parser.Parse(json));
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& ex) {
@@ -906,7 +909,8 @@ Error ShardingConfig::FromYAML(const std::string& yaml) {
 
 Error ShardingConfig::FromJSON(span<char> json) {
 	try {
-		return FromJSON(gason::JsonParser().Parse(json));
+		gason::JsonParser parser;
+		return FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "ShardingConfig: %s", ex.what());
 	} catch (const Error& err) {

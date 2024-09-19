@@ -1,3 +1,20 @@
+# Version 4.17.2 *beta* (19.09.2024)
+## Core
+- [fix] Fixed data race in cached comparators (`joins cache` may cause incorrect comparators deletion)
+- [fix] Changed `select fields filters` behavior: incorrect fields in the filter will be ignored (instead of full filter reset)
+
+## Go connector
+- [fix] Unexported fields and fields, marked with `"json":-`, will not create indexes anymore (including nested ones). Check updated example [here](readme.md#nested-structs)
+- [fix] Unexported fields, makred with `joined` now produce explicit error (previously such fields silently did not work)
+
+## Deploy
+- [fea] Added `RedOS 8` prebuilt packages
+
+## Face
+- [fea] Changed column tooltips on `Statistics->Queries` page
+- [fea] Grouped slow log settings on `Database config` page
+- [fix] Fixed the `JOIN` links in `Explain result` table
+
 # Version 4.17.1 *beta* (05.09.2024)
 ## Core
 - [fix] Fixed pagination for `MERGE` fulltext queries. Previously those queries could return duplicates on different pages due to missing ordering guarantees

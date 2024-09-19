@@ -7,8 +7,11 @@ constexpr double kUpdatesHandlingPeriod = 0.05;
 
 EventsListener::EventsListener(const std::string& dbName, size_t maxUpdatesQueueSize)
 	: updatesQueue_(maxUpdatesQueueSize), dbName_(dbName) {
-	using VecT = std::vector<std::string>;
-	updatesQueue_.Init<VecT>(std::optional<VecT>().emplace(), nullptr);	 // TODO: Add some logger #1724
+	{
+		using VecT = std::vector<std::string>;
+		VecT container;
+		updatesQueue_.Init<VecT>(std::move(container), nullptr);  // TODO: Add some logger #1724
+	}
 	terminateAsync_.set(loop_);
 	terminateAsync_.set([](net::ev::async& a) noexcept { a.loop.break_loop(); });
 	terminateAsync_.start();

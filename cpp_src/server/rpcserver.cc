@@ -1028,7 +1028,7 @@ Error RPCServer::Select(cproto::Context& ctx, p_string queryBin, int flags, int 
 	}
 
 	RPCQrWatcher::Ref qres;
-	RPCQrId id{-1, data->caps.HasResultsWithShardIDs() ? RPCQrWatcher::kUninitialized : RPCQrWatcher::kDisabled};
+	RPCQrId id{-1, data->caps.HasQrIdleTimeouts() ? RPCQrWatcher::kUninitialized : RPCQrWatcher::kDisabled};
 	try {
 		qres = createQueryResults(ctx, id, flags);
 	} catch (Error& e) {
@@ -1052,7 +1052,7 @@ Error RPCServer::Select(cproto::Context& ctx, p_string queryBin, int flags, int 
 
 Error RPCServer::SelectSQL(cproto::Context& ctx, p_string querySql, int flags, int limit, p_string ptVersionsPck) {
 	const auto data = getClientDataSafe(ctx);
-	RPCQrId id{-1, data->caps.HasResultsWithShardIDs() ? RPCQrWatcher::kUninitialized : RPCQrWatcher::kDisabled};
+	RPCQrId id{-1, data->caps.HasQrIdleTimeouts() ? RPCQrWatcher::kUninitialized : RPCQrWatcher::kDisabled};
 	RPCQrWatcher::Ref qres;
 	try {
 		qres = createQueryResults(ctx, id, flags);

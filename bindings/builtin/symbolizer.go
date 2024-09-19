@@ -2,7 +2,7 @@ package builtin
 
 // extern void cgoTraceback(void*);
 // extern void cgoSymbolizer(void*);
-// extern void cgoSignalsInit();
+// extern void cgoSignalsInit(void);
 import "C"
 import (
 	"os"

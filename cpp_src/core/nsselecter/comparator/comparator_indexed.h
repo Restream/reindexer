@@ -98,17 +98,24 @@ template <typename T>
 struct DataHolder {
 	using SingleType = typename ValuesHolder<T, CondEq>::Type;
 	using SetType = typename ValuesHolder<T, CondSet>::Type;
-	using SetWrpType = intrusive_rc_wrapper<SetType>;
+	using SetWrpType = const intrusive_atomic_rc_wrapper<SetType>;	// must be const for safe intrusive copying
 	using SetPtrType = intrusive_ptr<SetWrpType>;
 	using AllSetType = typename ValuesHolder<T, CondAllSet>::Type;
-	using AllSetWrpType = intrusive_rc_wrapper<AllSetType>;
-	using AllSetPtrType = intrusive_ptr<AllSetWrpType>;
+	using AllSetPtrType = std::unique_ptr<AllSetType>;
 
 	DataHolder() noexcept : cond_{CondEq} {}
 	DataHolder(DataHolder&& other) noexcept = default;
-	DataHolder(const DataHolder& other) = default;
+	DataHolder(const DataHolder& o)
+		: cond_{o.cond_},
+		  value_{o.value_},
+		  value2_{o.value2_},
+		  setPtr_{o.setPtr_},
+		  allSetPtr_{o.allSetPtr_ ? std::make_unique<AllSetType>(*o.allSetPtr_) : nullptr} {
+		// allSetPtr's data are modified during comparison, so we have to make a real copy
+	}
 	DataHolder& operator=(DataHolder&& other) noexcept = default;
-	DataHolder& operator=(const DataHolder& other) = default;
+	DataHolder& operator=(const DataHolder& o) = delete;
+
 	CondType cond_;
 	SingleType value_{};   // Either single value or right range boundry
 	SingleType value2_{};  // Left range boundry
@@ -837,7 +844,7 @@ public:
 	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		if (cond_ == CondAllSet) {
 			assertrx_dbg(this->allSetPtr_);
-			allSetPtr_->allSetValues_.clear();
+			this->allSetPtr_->allSetValues_.clear();
 		}
 		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
 		const p_string* ptr = reinterpret_cast<const p_string*>(item.Ptr() + arr.offset);
@@ -921,7 +928,7 @@ public:
 	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		if (cond_ == CondAllSet) {
 			assertrx_dbg(this->allSetPtr_);
-			allSetPtr_->allSetValues_.clear();
+			this->allSetPtr_->allSetValues_.clear();
 		}
 		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
 		const p_string* ptr = reinterpret_cast<const p_string*>(item.Ptr() + arr.offset);
@@ -1017,7 +1024,7 @@ public:
 	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		if (cond_ == CondAllSet) {
 			assertrx_dbg(this->allSetPtr_);
-			allSetPtr_->allSetValues_.clear();
+			this->allSetPtr_->allSetValues_.clear();
 		}
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::String{});
@@ -1105,7 +1112,7 @@ public:
 	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		if (cond_ == CondAllSet) {
 			assertrx_dbg(this->allSetPtr_);
-			allSetPtr_->allSetValues_.clear();
+			this->allSetPtr_->allSetValues_.clear();
 		}
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::String{});
@@ -1242,7 +1249,7 @@ public:
 
 private:
 	// Using pointer for cheap copying and ExpressionTree size reduction
-	using FieldsSetWrp = intrusive_rc_wrapper<FieldsSet>;
+	using FieldsSetWrp = const intrusive_atomic_rc_wrapper<FieldsSet>;	// must be const for safe intrusive copying
 
 	const CollateOpts* collateOpts_;
 	intrusive_ptr<FieldsSetWrp> fields_;
@@ -1305,13 +1312,13 @@ private:
 class ComparatorIndexedJsonPathDWithin {
 public:
 	ComparatorIndexedJsonPathDWithin(const FieldsSet& fields, const PayloadType& payloadType, const VariantArray&);
-	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
-		buffer_.clear<false>();
-		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::Double{});
-		if rx_unlikely (buffer_.size() != 2) {
+	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const {
+		VariantArray buffer;
+		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer, KeyValueType::Double{});
+		if rx_unlikely (buffer.size() != 2) {
 			throw Error(errQueryExec, "DWithin with not point data");
 		}
-		return DWithin(Point{buffer_[0].As<double>(), buffer_[1].As<double>()}, point_, distance_);
+		return DWithin(Point{buffer[0].As<double>(), buffer[1].As<double>()}, point_, distance_);
 	}
 	[[nodiscard]] std::string ConditionStr() const;
 	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
@@ -1321,7 +1328,6 @@ public:
 private:
 	PayloadType payloadType_;
 	TagsPath tagsPath_;
-	VariantArray buffer_;
 	Point point_;
 	double distance_;
 };
@@ -1329,24 +1335,24 @@ private:
 class ComparatorIndexedJsonPathDWithinDistinct {
 public:
 	ComparatorIndexedJsonPathDWithinDistinct(const FieldsSet& fields, const PayloadType& payloadType, const VariantArray&);
-	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
-		buffer_.clear<false>();
-		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::Double{});
-		if rx_unlikely (buffer_.size() != 2) {
+	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const {
+		VariantArray buffer;
+		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer, KeyValueType::Double{});
+		if rx_unlikely (buffer.size() != 2) {
 			throw Error(errQueryExec, "DWithin with not point data");
 		}
-		const Point p{buffer_[0].As<double>(), buffer_[1].As<double>()};
+		const Point p{buffer[0].As<double>(), buffer[1].As<double>()};
 		return DWithin(p, point_, distance_) && distinct_.Compare(p);
 	}
 	[[nodiscard]] std::string ConditionStr() const;
 	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
-		buffer_.clear<false>();
-		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::Double{});
-		if rx_unlikely (buffer_.size() != 2) {
+		VariantArray buffer;
+		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer, KeyValueType::Double{});
+		if rx_unlikely (buffer.size() != 2) {
 			return;
 		}
-		distinct_.ExcludeValues(Point{buffer_[0].As<double>(), buffer_[1].As<double>()});
+		distinct_.ExcludeValues(Point{buffer[0].As<double>(), buffer[1].As<double>()});
 	}
 	void ClearDistinctValues() noexcept { distinct_.ClearValues(); }
 
@@ -1354,7 +1360,6 @@ private:
 	ComparatorIndexedDistinct<Point, fast_hash_set_l<Point>> distinct_;
 	PayloadType payloadType_;
 	TagsPath tagsPath_;
-	VariantArray buffer_;
 	Point point_;
 	double distance_;
 };
@@ -1456,10 +1461,10 @@ public:
 	void ClearDistinctValues() noexcept { distinct_.ClearValues(); }
 
 private:
-	using ComparatoristincType = std::conditional_t<std::is_same_v<T, Point>, ComparatorIndexedDistinct<Point, fast_hash_set_l<Point>>,
-													ComparatorIndexedDistinct<T>>;
+	using ComparatorDistinctType = std::conditional_t<std::is_same_v<T, Point>, ComparatorIndexedDistinct<Point, fast_hash_set_l<Point>>,
+													  ComparatorIndexedDistinct<T>>;
 
-	ComparatoristincType distinct_;
+	ComparatorDistinctType distinct_;
 	size_t offset_;
 };
 

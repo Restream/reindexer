@@ -49,7 +49,8 @@ protected:
 			auto&& item = pair.second;
 			Error err = rt.reindexer->Upsert(default_namespace, item);
 			ASSERT_TRUE(err.ok()) << err.what();
-			ASSERT_NO_THROW(gason::JsonParser().Parse(item.GetJSON()));
+			gason::JsonParser parser;
+			ASSERT_NO_THROW(parser.Parse(item.GetJSON()));
 		}
 	}
 

@@ -70,7 +70,8 @@ std::string csv2json(std::string_view row, const std::vector<std::string>& schem
 		for (size_t i = 0; i < fields.size(); ++i) {
 			if (!fields[i].empty()) {
 				try {
-					gason::JsonParser().Parse(std::string_view{fields[i]});
+					gason::JsonParser parser;
+					parser.Parse(std::string_view{fields[i]});
 					builder.Raw(schema[i], fields[i]);
 				} catch (const gason::Exception&) {
 					builder.Raw(schema[i], '"' + fields[i] + '"');
