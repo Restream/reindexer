@@ -6,19 +6,18 @@
 
 namespace reindexer {
 
-void EqualPositionComparatorImpl::BindField(const std::string& name, int field, const VariantArray& values, CondType cond,
-											const CollateOpts& collate) {
+void EqualPositionComparator::BindField(const std::string& name, int field, const VariantArray& values, CondType cond,
+										const CollateOpts& collate) {
 	bindField(name, field, values, cond, collate);
 }
 
-void EqualPositionComparatorImpl::BindField(const std::string& name, const FieldsPath& fieldPath, const VariantArray& values,
-											CondType cond) {
+void EqualPositionComparator::BindField(const std::string& name, const FieldsPath& fieldPath, const VariantArray& values, CondType cond) {
 	bindField(name, fieldPath, values, cond, CollateOpts{});
 }
 
 template <typename F>
-void EqualPositionComparatorImpl::bindField(const std::string& name, F field, const VariantArray& values, CondType cond,
-											const CollateOpts& collate) {
+void EqualPositionComparator::bindField(const std::string& name, F field, const VariantArray& values, CondType cond,
+										const CollateOpts& collate) {
 	fields_.push_back(field);
 	Context& ctx = ctx_.emplace_back(collate);
 
@@ -34,7 +33,7 @@ void EqualPositionComparatorImpl::bindField(const std::string& name, F field, co
 	name_ += ' ' + name;
 }
 
-bool EqualPositionComparatorImpl::Compare(const PayloadValue& pv, IdType /*rowId*/) {
+bool EqualPositionComparator::Compare(const PayloadValue& pv, IdType /*rowId*/) {
 	ConstPayload pl(payloadType_, pv);
 	size_t len = INT_MAX;
 
@@ -66,14 +65,13 @@ bool EqualPositionComparatorImpl::Compare(const PayloadValue& pv, IdType /*rowId
 		}
 
 		if (cmpRes) {
-			++matchedCount_;
 			return true;
 		}
 	}
 	return false;
 }
 
-bool EqualPositionComparatorImpl::compareField(size_t field, const Variant& v) {
+bool EqualPositionComparator::compareField(size_t field, const Variant& v) {
 	return v.Type().EvaluateOneOf(
 		[&](KeyValueType::Bool) { return ctx_[field].cmpBool.Compare(ctx_[field].cond, static_cast<bool>(v)); },
 		[&](KeyValueType::Int) { return ctx_[field].cmpInt.Compare(ctx_[field].cond, static_cast<int>(v)); },

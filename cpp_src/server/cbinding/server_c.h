@@ -7,7 +7,7 @@ extern "C" {
 
 #include "core/cbinding/reindexer_ctypes.h"
 
-uintptr_t init_reindexer_server();
+uintptr_t init_reindexer_server(void);
 void destroy_reindexer_server(uintptr_t psvc);
 reindexer_error start_reindexer_server(uintptr_t psvc, reindexer_string config);
 reindexer_error stop_reindexer_server(uintptr_t psvc);

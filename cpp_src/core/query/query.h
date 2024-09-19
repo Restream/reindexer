@@ -673,6 +673,9 @@ public:
 	}
 
 	/// Sets list of columns in this namespace to be finally selected.
+	/// The columns should be specified in the same case as the jsonpaths corresponding to them.
+	/// Non-existent fields and fields in the wrong case are ignored.
+	/// If there are no fields in this list that meet these conditions, then the filter works as "*".
 	/// @param l - list of columns to be selected.
 	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
 	Query& Select(std::initializer_list<Str> l) & {
@@ -692,7 +695,7 @@ public:
 		selectFilter_.insert(selectFilter_.begin(), l.begin(), l.end());
 		selectFilter_.erase(
 			std::remove_if(selectFilter_.begin(), selectFilter_.end(), [](const auto& s) { return s == "*"sv || s.empty(); }),
-							selectFilter_.end());
+			selectFilter_.end());
 		return *this;
 	}
 	template <typename StrCont>

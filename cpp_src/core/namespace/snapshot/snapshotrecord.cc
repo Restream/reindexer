@@ -52,7 +52,8 @@ Error SnapshotOpts::FromJSON(const gason::JsonNode& root) {
 
 Error SnapshotOpts::FromJSON(span<char> json) {
 	try {
-		return FromJSON(gason::JsonParser().Parse(json));
+		gason::JsonParser parser;
+		return FromJSON(parser.Parse(json));
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& ex) {

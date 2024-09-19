@@ -220,25 +220,25 @@ func TestNotStringItemsWithUuidTag(t *testing.T) {
 	nsOpts := reindexer.DefaultNamespaceOptions()
 
 	t.Run("cant open ns when int field with uuid tag", func(t *testing.T) {
-		errExpr := "UUID index is not applicable with 'int64' field, only with 'string'"
+		errExpr := "UUID index is not applicable with 'int64' field, only with 'string' (index name: 'uuid', field name: 'Uuid', jsonpath: 'uuid')"
 		assert.EqualError(t, DB.OpenNamespace(TestIntItemWithUuidTagNs, nsOpts,
 			TestIntItemWithUuidTagStruct{}), errExpr)
 	})
 
 	t.Run("cant open ns when int64 field with uuid tag", func(t *testing.T) {
-		errExpr := "UUID index is not applicable with 'int64' field, only with 'string'"
+		errExpr := "UUID index is not applicable with 'int64' field, only with 'string' (index name: 'uuid', field name: 'Uuid', jsonpath: 'uuid')"
 		assert.EqualError(t, DB.OpenNamespace(TestInt64ItemWithUuidTagNs, nsOpts,
 			TestInt64ItemWithUuidTagStruct{}), errExpr)
 	})
 
 	t.Run("cant open ns when float field with uuid tag", func(t *testing.T) {
-		errExpr := "UUID index is not applicable with 'double' field, only with 'string'"
+		errExpr := "UUID index is not applicable with 'double' field, only with 'string' (index name: 'uuid', field name: 'Uuid', jsonpath: 'uuid')"
 		assert.EqualError(t, DB.OpenNamespace(TestFloatItemWithUuidTagNs, nsOpts,
 			TestFloatItemWithUuidTagStruct{}), errExpr)
 	})
 
 	t.Run("cant open ns when double field with uuid tag", func(t *testing.T) {
-		errExpr := "UUID index is not applicable with 'double' field, only with 'string'"
+		errExpr := "UUID index is not applicable with 'double' field, only with 'string' (index name: 'uuid', field name: 'Uuid', jsonpath: 'uuid')"
 		assert.EqualError(t, DB.OpenNamespace(TestDoubleItemWithUuidTagNs, nsOpts,
 			TestDoubleItemWithUuidTagStruct{}), errExpr)
 	})
@@ -250,13 +250,13 @@ func TestNotStringItemsWithUuidTag(t *testing.T) {
 	})
 
 	t.Run("cant open ns when byte field with uuid tag", func(t *testing.T) {
-		errExpr := "UUID index is not applicable with 'int' field, only with 'string'"
+		errExpr := "UUID index is not applicable with 'int' field, only with 'string' (index name: 'uuid', field name: 'Uuid', jsonpath: 'uuid')"
 		assert.EqualError(t, DB.OpenNamespace(TestByteItemWithUuidTagNs, nsOpts,
 			TestByteItemWithUuidTagStruct{}), errExpr)
 	})
 
 	t.Run("cant open ns when bool field with uuid tag", func(t *testing.T) {
-		errExpr := "UUID index is not applicable with 'bool' field, only with 'string'"
+		errExpr := "UUID index is not applicable with 'bool' field, only with 'string' (index name: 'uuid', field name: 'Uuid', jsonpath: 'uuid')"
 		assert.EqualError(t, DB.OpenNamespace(TestBoolItemWithUuidTagNs, nsOpts,
 			TestBoolItemWithUuidTagStruct{}), errExpr)
 	})

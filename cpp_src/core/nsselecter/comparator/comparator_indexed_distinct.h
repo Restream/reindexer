@@ -12,7 +12,12 @@ namespace reindexer {
 template <typename T, typename SetType = fast_hash_set<T>>
 class ComparatorIndexedDistinct {
 public:
-	ComparatorIndexedDistinct() : values_{make_intrusive<SetWrpType>()} {}
+	ComparatorIndexedDistinct() : values_{std::make_unique<SetType>()} {}
+	ComparatorIndexedDistinct(ComparatorIndexedDistinct&&) = default;
+	ComparatorIndexedDistinct& operator=(ComparatorIndexedDistinct&&) = default;
+	ComparatorIndexedDistinct(const ComparatorIndexedDistinct& o)
+		: values_{o.values_ ? std::make_unique<SetType>(*o.values_) : std::make_unique<SetType>()} {}
+
 	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const T& v) const noexcept {
 		assertrx_dbg(values_);
 		return values_->find(v) == values_->cend();
@@ -27,15 +32,19 @@ public:
 	}
 
 private:
-	using SetWrpType = intrusive_rc_wrapper<SetType>;
-	using SetPtrType = intrusive_ptr<SetWrpType>;
+	using SetPtrType = std::unique_ptr<SetType>;
 
 	SetPtrType values_;
 };
 
 class ComparatorIndexedDistinctString {
 public:
-	ComparatorIndexedDistinctString(const CollateOpts& collate) : values_{make_intrusive<SetWrpType>(collate)} {}
+	ComparatorIndexedDistinctString(const CollateOpts& collate) : values_{std::make_unique<SetType>(collate)}, collateOpts_{&collate} {}
+	ComparatorIndexedDistinctString(ComparatorIndexedDistinctString&&) = default;
+	ComparatorIndexedDistinctString& operator=(ComparatorIndexedDistinctString&&) = default;
+	ComparatorIndexedDistinctString(const ComparatorIndexedDistinctString& o)
+		: values_{o.values_ ? std::make_unique<SetType>(*o.values_) : std::make_unique<SetType>(*o.collateOpts_)} {}
+
 	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(std::string_view str) const noexcept {
 		assertrx_dbg(values_);
 		return values_->find(str) == values_->cend();
@@ -86,10 +95,10 @@ private:
 	};
 
 	using SetType = string_view_set;
-	using SetWrpType = intrusive_rc_wrapper<SetType>;
-	using SetPtrType = intrusive_ptr<SetWrpType>;
+	using SetPtrType = std::unique_ptr<SetType>;
 
 	SetPtrType values_;
+	const CollateOpts* collateOpts_;
 };
 
 }  // namespace reindexer

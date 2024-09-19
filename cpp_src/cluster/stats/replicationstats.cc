@@ -137,7 +137,8 @@ void NodeStats::GetJSON(JsonBuilder& builder) const {
 
 Error ReplicationStats::FromJSON(span<char> json) {
 	try {
-		return FromJSON(gason::JsonParser().Parse(json));
+		gason::JsonParser parser;
+		return FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "RaftInfo: %s", ex.what());
 	} catch (const Error& err) {

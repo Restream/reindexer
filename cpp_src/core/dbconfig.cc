@@ -297,7 +297,8 @@ Error ReplicationConfigData::FromYAML(const std::string& yaml) {
 
 Error ReplicationConfigData::FromJSON(std::string_view json) {
 	try {
-		return FromJSON(gason::JsonParser().Parse(json));
+		gason::JsonParser parser;
+		return FromJSON(parser.Parse(json));
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& ex) {

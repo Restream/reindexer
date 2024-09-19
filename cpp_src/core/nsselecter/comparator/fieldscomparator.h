@@ -10,24 +10,27 @@
 
 namespace reindexer {
 
-class FieldsComparatorImpl : public intrusive_rc_base {
+class FieldsComparator {
 public:
-	FieldsComparatorImpl(std::string_view lField, CondType cond, std::string_view rField, PayloadType plType);
-	FieldsComparatorImpl(const FieldsComparatorImpl&) = delete;
-	FieldsComparatorImpl(FieldsComparatorImpl&&) = delete;
-	FieldsComparatorImpl& operator=(const FieldsComparatorImpl&) = delete;
-	FieldsComparatorImpl& operator=(FieldsComparatorImpl&&) = delete;
+	FieldsComparator(std::string_view lField, CondType cond, std::string_view rField, PayloadType plType);
+	FieldsComparator(const FieldsComparator&) = default;
+	FieldsComparator(FieldsComparator&&) = default;
+	FieldsComparator& operator=(const FieldsComparator&) = delete;
+	FieldsComparator& operator=(FieldsComparator&&) = default;
 
 	bool Compare(const PayloadValue& item, IdType /*rowId*/) {
-		if (ctx_.size() > 1) {
-			for (const auto& c : ctx_) {
-				if (!compare(item, c)) {
-					return false;
-				}
-			}
-			return true;
+		if (ctx_.size() == 1) {
+			const bool res = compare(item, ctx_[0]);
+			matchedCount_ += int(res);
+			return res;
 		}
-		return compare(item, ctx_[0]);
+		for (const auto& c : ctx_) {
+			if (!compare(item, c)) {
+				return false;
+			}
+		}
+		++matchedCount_;
+		return true;
 	}
 	double Cost(int expectedIterations) const noexcept {
 		double cost = 1.0;
@@ -48,16 +51,18 @@ public:
 	const std::string& Name() const&& = delete;
 	const std::string& Dump() const& noexcept { return Name(); }
 	const std::string& Dump() const&& = delete;
-	int GetMatchedCount() const noexcept { return matchedCount_; }
 	void SetLeftField(const FieldsSet& fields) {
+		assertrx_throw(!leftFieldSet_);
 		setField(fields, ctx_[0].lCtx_);
-		leftFieldSet = true;
+		leftFieldSet_ = true;
 	}
 	void SetRightField(const FieldsSet& fields) {
-		assertrx_dbg(leftFieldSet);
+		assertrx_throw(leftFieldSet_);
 		setField(fields, ctx_[0].rCtx_);
 	}
-	void SetLeftField(const FieldsSet& fset, KeyValueType type, bool isArray) {
+	void SetLeftField(const FieldsSet& fset, KeyValueType type, bool isArray, const CollateOpts& cOpts) {
+		assertrx_throw(!leftFieldSet_);
+		collateOpts_ = &cOpts;
 		if (type.Is<KeyValueType::Composite>()) {
 			ctx_.clear();
 			ctx_.resize(fset.size());
@@ -65,10 +70,10 @@ public:
 		} else {
 			setField(ctx_[0].lCtx_, fset, type, isArray);
 		}
-		leftFieldSet = true;
+		leftFieldSet_ = true;
 	}
 	void SetRightField(const FieldsSet& fset, KeyValueType type, bool isArray) {
-		assertrx_dbg(leftFieldSet);
+		assertrx_throw(leftFieldSet_);
 		if ((ctx_.size() > 1) != type.Is<KeyValueType::Composite>()) {
 			throw Error{errQueryExec, "A composite index cannot be compared with a non-composite one: %s", name_};
 		}
@@ -82,7 +87,7 @@ public:
 			setField(ctx_[0].rCtx_, fset, type, isArray);
 		}
 	}
-	void SetCollateOpts(const CollateOpts& cOpts) { collateOpts_ = cOpts; }
+	int GetMatchedCount() const noexcept { return matchedCount_; }
 
 private:
 	struct FieldContext {
@@ -133,8 +138,8 @@ private:
 		}
 	}
 	template <typename LArr, typename RArr>
-	bool compare(const LArr& lhs, const RArr& rhs);
-	bool compare(const PayloadValue& item, const Context&);
+	bool compare(const LArr& lhs, const RArr& rhs) const;
+	bool compare(const PayloadValue& item, const Context&) const;
 	void validateTypes(KeyValueType lType, KeyValueType rType) const;
 	inline static bool compareTypes(KeyValueType lType, KeyValueType rType) noexcept {
 		if (lType.IsSame(rType)) {
@@ -153,33 +158,11 @@ private:
 
 	std::string name_;
 	CondType condition_;
+	int matchedCount_{0};
 	PayloadType payloadType_;
-	CollateOpts collateOpts_;
-	h_vector<Context, 1> ctx_{Context{}};
-	int matchedCount_ = 0;
-	bool leftFieldSet = false;
-};
-
-class FieldsComparator {
-public:
-	FieldsComparator(std::string_view lField, CondType cond, std::string_view rField, PayloadType plType)
-		: impl_{make_intrusive<FieldsComparatorImpl>(lField, cond, rField, plType)} {}
-	bool Compare(const PayloadValue& item, IdType rowId) { return impl_->Compare(item, rowId); }
-	double Cost(int expectedIterations) const noexcept { return impl_->Cost(expectedIterations); }
-	const std::string& Name() const& noexcept { return impl_->Name(); }
-	const std::string& Name() const&& = delete;
-	const std::string& Dump() const& noexcept { return impl_->Dump(); }
-	const std::string& Dump() const&& = delete;
-	int GetMatchedCount() const noexcept { return impl_->GetMatchedCount(); }
-	void SetLeftField(const FieldsSet& fields) { return impl_->SetLeftField(fields); }
-	void SetRightField(const FieldsSet& fields) { return impl_->SetRightField(fields); }
-	void SetLeftField(const FieldsSet& fset, KeyValueType type, bool isArray) { return impl_->SetLeftField(fset, type, isArray); }
-	void SetRightField(const FieldsSet& fset, KeyValueType type, bool isArray) { return impl_->SetRightField(fset, type, isArray); }
-	void SetCollateOpts(const CollateOpts& cOpts) { impl_->SetCollateOpts(cOpts); }
-
-private:
-	// Using pointer to reduce ExpressionTree Node size
-	intrusive_ptr<FieldsComparatorImpl> impl_;
+	const CollateOpts* collateOpts_{nullptr};
+	std::vector<Context> ctx_;
+	bool leftFieldSet_{false};
 };
 
 }  // namespace reindexer

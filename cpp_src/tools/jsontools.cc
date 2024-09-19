@@ -88,7 +88,8 @@ void jsonValueToString(gason::JsonValue o, WrSerializer& ser, int shift, int ind
 }
 
 void prettyPrintJSON(span<char> json, WrSerializer& ser, int shift) {
-	jsonValueToString(gason::JsonParser().Parse(json).value, ser, shift, 0);
+	gason::JsonParser parser;
+	jsonValueToString(parser.Parse(json).value, ser, shift, 0);
 }
 
 std::string stringifyJson(const gason::JsonNode& elem, bool escapeStrings) {

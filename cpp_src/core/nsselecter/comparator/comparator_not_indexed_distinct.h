@@ -8,7 +8,7 @@ namespace reindexer {
 class ComparatorNotIndexedDistinct {
 public:
 	ComparatorNotIndexedDistinct() = default;
-	ComparatorNotIndexedDistinct(const ComparatorNotIndexedDistinct&) = delete;
+	ComparatorNotIndexedDistinct(const ComparatorNotIndexedDistinct&) = default;
 	ComparatorNotIndexedDistinct& operator=(const ComparatorNotIndexedDistinct&) = delete;
 	ComparatorNotIndexedDistinct(ComparatorNotIndexedDistinct&&) = default;
 	ComparatorNotIndexedDistinct& operator=(ComparatorNotIndexedDistinct&&) = default;

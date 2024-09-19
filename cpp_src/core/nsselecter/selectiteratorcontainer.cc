@@ -261,8 +261,7 @@ void SelectIteratorContainer::processField(FieldsComparator& fc, const QueryFiel
 	if (field.IsFieldIndexed()) {
 		auto& index = ns.indexes_[field.IndexNo()];
 		if constexpr (left) {
-			fc.SetCollateOpts(index->Opts().collateOpts_);
-			fc.SetLeftField(field.Fields(), field.FieldType(), index->Opts().IsArray());
+			fc.SetLeftField(field.Fields(), field.FieldType(), index->Opts().IsArray(), index->Opts().collateOpts_);
 		} else {
 			fc.SetRightField(field.Fields(), field.FieldType(), index->Opts().IsArray());
 		}

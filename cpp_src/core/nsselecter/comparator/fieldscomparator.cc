@@ -68,7 +68,7 @@ private:
 
 namespace reindexer {
 
-FieldsComparatorImpl::FieldsComparatorImpl(std::string_view lField, CondType cond, std::string_view rField, PayloadType plType)
+FieldsComparator::FieldsComparator(std::string_view lField, CondType cond, std::string_view rField, PayloadType plType)
 	: condition_{cond}, payloadType_{std::move(plType)} {
 	switch (condition_) {
 		case CondEq:
@@ -86,14 +86,17 @@ FieldsComparatorImpl::FieldsComparatorImpl(std::string_view lField, CondType con
 		case CondDWithin:
 			throw Error{errQueryExec, "Condition %s is not supported for two field comparing", CondTypeToStr(condition_)};
 	}
+	ctx_.resize(1);
 	std::stringstream nameStream;
 	nameStream << lField << ' ' << condition_ << ' ' << rField;
 	name_ = nameStream.str();
 }
 
 template <typename LArr, typename RArr>
-bool FieldsComparatorImpl::compare(const LArr& lhs, const RArr& rhs) {
+bool FieldsComparator::compare(const LArr& lhs, const RArr& rhs) const {
 	static constexpr bool needCompareTypes{std::is_same_v<LArr, VariantArray> || std::is_same_v<RArr, VariantArray>};
+	const static CollateOpts kDefaultCollateOpts;
+	const CollateOpts& collateOpts = collateOpts_ ? *collateOpts_ : kDefaultCollateOpts;
 	switch (condition_) {
 		case CondRange:
 			if (rhs.size() < 2 || rhs[0].Type().template Is<KeyValueType::Null>() || rhs[1].Type().template Is<KeyValueType::Null>()) {
@@ -105,8 +108,8 @@ bool FieldsComparatorImpl::compare(const LArr& lhs, const RArr& rhs) {
 						continue;
 					}
 				}
-				if ((v.RelaxCompare<WithString::Yes, NotComparable::Throw>(rhs[0], collateOpts_) & ComparationResult::Ge) &&
-					(v.RelaxCompare<WithString::Yes, NotComparable::Throw>(rhs[1], collateOpts_) & ComparationResult::Le)) {
+				if ((v.RelaxCompare<WithString::Yes, NotComparable::Throw>(rhs[0], collateOpts) & ComparationResult::Ge) &&
+					(v.RelaxCompare<WithString::Yes, NotComparable::Throw>(rhs[1], collateOpts) & ComparationResult::Le)) {
 					return true;
 				}
 			}
@@ -138,7 +141,7 @@ bool FieldsComparatorImpl::compare(const LArr& lhs, const RArr& rhs) {
 							continue;
 						}
 					}
-					if (lv.RelaxCompare<WithString::Yes, NotComparable::Throw>(rv, collateOpts_) == ComparationResult::Eq) {
+					if (lv.RelaxCompare<WithString::Yes, NotComparable::Throw>(rv, collateOpts) == ComparationResult::Eq) {
 						found = true;
 						break;
 					}
@@ -171,7 +174,7 @@ bool FieldsComparatorImpl::compare(const LArr& lhs, const RArr& rhs) {
 							continue;
 						}
 					}
-					const auto compRes = lv.RelaxCompare<WithString::Yes, NotComparable::Throw>(rv, collateOpts_);
+					const auto compRes = lv.RelaxCompare<WithString::Yes, NotComparable::Throw>(rv, collateOpts);
 					switch (condition_) {
 						case CondEq:
 						case CondSet:
@@ -214,7 +217,7 @@ bool FieldsComparatorImpl::compare(const LArr& lhs, const RArr& rhs) {
 	}
 }
 
-bool FieldsComparatorImpl::compare(const PayloadValue& item, const Context& ctx) {
+bool FieldsComparator::compare(const PayloadValue& item, const Context& ctx) const {
 	bool result;
 	if (ctx.lCtx_.fields_.getTagsPathsLength() > 0) {
 		VariantArray lhs;
@@ -256,13 +259,10 @@ bool FieldsComparatorImpl::compare(const PayloadValue& item, const Context& ctx)
 		result = compare(ArrayAdapter(item.Ptr() + ctx.lCtx_.offset_, 1, ctx.lCtx_.sizeof_, ctx.lCtx_.type_),
 						 ArrayAdapter(item.Ptr() + ctx.rCtx_.offset_, 1, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));
 	}
-	if (result) {
-		++matchedCount_;
-	}
 	return result;
 }
 
-void FieldsComparatorImpl::validateTypes(KeyValueType lType, KeyValueType rType) const {
+void FieldsComparator::validateTypes(KeyValueType lType, KeyValueType rType) const {
 	if (lType.IsSame(rType) || lType.Is<KeyValueType::Undefined>() || rType.Is<KeyValueType::Undefined>()) {
 		return;
 	}

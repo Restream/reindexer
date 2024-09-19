@@ -1,6 +1,5 @@
 #pragma once
 
-#include <memory.h>
 #include "core/index/string_map.h"
 #include "core/keyvalue/geometry.h"
 #include "core/keyvalue/p_string.h"
@@ -17,19 +16,9 @@ class EqualPositionComparatorTypeImpl {
 	using AllSetValuesSet = fast_hash_set<const T*>;
 
 public:
-	EqualPositionComparatorTypeImpl() noexcept = default;
-	EqualPositionComparatorTypeImpl(const EqualPositionComparatorTypeImpl&) = delete;
-	EqualPositionComparatorTypeImpl& operator=(const EqualPositionComparatorTypeImpl&) = delete;
-	EqualPositionComparatorTypeImpl(EqualPositionComparatorTypeImpl&&) = default;
-	EqualPositionComparatorTypeImpl& operator=(EqualPositionComparatorTypeImpl&&) = default;
-
 	void SetValues(CondType cond, const VariantArray& values) {
-		if (cond == CondSet) {
-			valuesS_ = std::make_unique<ValuesSet>();
-		} else if (cond == CondAllSet) {
-			valuesS_ = std::make_unique<ValuesSet>();
-			allSetValuesS_ = std::make_unique<AllSetValuesSet>();
-		}
+		assertrx_throw(valuesS_.empty());
+		assertrx_throw(allSetValuesS_.empty());
 
 		for (Variant key : values) {
 			key.Type().EvaluateOneOf([](OneOf<KeyValueType::String, KeyValueType::Uuid>) {},
@@ -62,14 +51,14 @@ public:
 				assertrx_throw(values_.size() == 2);
 				return lhs >= values_[0] && lhs <= values_[1];
 			case CondSet:
-				return valuesS_->find(lhs) != valuesS_->end();
+				return valuesS_.find(lhs) != valuesS_.end();
 			case CondAllSet: {
-				const auto it = valuesS_->find(lhs);
-				if (it == valuesS_->end()) {
+				const auto it = valuesS_.find(lhs);
+				if (it == valuesS_.end()) {
 					return false;
 				}
-				allSetValuesS_->insert(&*it);
-				return allSetValuesS_->size() == valuesS_->size();
+				allSetValuesS_.insert(&*it);
+				return allSetValuesS_.size() == valuesS_.size();
 			}
 			case CondAny:
 				return true;
@@ -82,14 +71,11 @@ public:
 		std::abort();
 	}
 
-	void ClearAllSetValues() {
-		assertrx_throw(allSetValuesS_);
-		allSetValuesS_->clear();
-	}
+	void ClearAllSetValues() { allSetValuesS_.clear(); }
 
 	h_vector<T, 2> values_;
-	std::unique_ptr<ValuesSet> valuesS_;
-	std::unique_ptr<AllSetValuesSet> allSetValuesS_;
+	ValuesSet valuesS_;
+	AllSetValuesSet allSetValuesS_;
 
 private:
 	KeyValueType type() {
@@ -110,7 +96,7 @@ private:
 
 	void addValue(CondType cond, T value) {
 		if (cond == CondSet || cond == CondAllSet) {
-			valuesS_->emplace(value);
+			valuesS_.emplace(value);
 		} else {
 			values_.emplace_back(value);
 		}
@@ -123,19 +109,9 @@ class EqualPositionComparatorTypeImpl<Uuid> {
 	using AllSetValuesSet = fast_hash_set<const Uuid*>;
 
 public:
-	EqualPositionComparatorTypeImpl() noexcept = default;
-	EqualPositionComparatorTypeImpl(const EqualPositionComparatorTypeImpl&) = delete;
-	EqualPositionComparatorTypeImpl& operator=(const EqualPositionComparatorTypeImpl&) = delete;
-	EqualPositionComparatorTypeImpl(EqualPositionComparatorTypeImpl&&) = default;
-	EqualPositionComparatorTypeImpl& operator=(EqualPositionComparatorTypeImpl&&) = default;
-
 	void SetValues(CondType cond, const VariantArray& values) {
-		if (cond == CondSet) {
-			valuesS_ = std::make_unique<ValuesSet>();
-		} else if (cond == CondAllSet) {
-			valuesS_ = std::make_unique<ValuesSet>();
-			allSetValuesS_ = std::make_unique<AllSetValuesSet>();
-		}
+		assertrx_throw(valuesS_.empty());
+		assertrx_throw(allSetValuesS_.empty());
 
 		for (const Variant& key : values) {
 			key.Type().EvaluateOneOf(
@@ -172,14 +148,14 @@ public:
 				assertrx_throw(values_.size() >= 2);
 				return lhs >= values_[0] && lhs <= values_[1];
 			case CondSet:
-				return valuesS_->find(lhs) != valuesS_->end();
+				return valuesS_.find(lhs) != valuesS_.end();
 			case CondAllSet: {
-				const auto it = valuesS_->find(lhs);
-				if (it == valuesS_->end()) {
+				const auto it = valuesS_.find(lhs);
+				if (it == valuesS_.end()) {
 					return false;
 				}
-				allSetValuesS_->insert(&*it);
-				return allSetValuesS_->size() == valuesS_->size();
+				allSetValuesS_.insert(&*it);
+				return allSetValuesS_.size() == valuesS_.size();
 			}
 			case CondAny:
 				return true;
@@ -191,19 +167,16 @@ public:
 		}
 		std::abort();
 	}
-	void ClearAllSetValues() {
-		assertrx_throw(allSetValuesS_);
-		allSetValuesS_->clear();
-	}
+	void ClearAllSetValues() { allSetValuesS_.clear(); }
 
 	h_vector<Uuid, 1> values_;
-	std::unique_ptr<ValuesSet> valuesS_;
-	std::unique_ptr<AllSetValuesSet> allSetValuesS_;
+	ValuesSet valuesS_;
+	AllSetValuesSet allSetValuesS_;
 
 private:
 	void addValue(CondType cond, Uuid value) {
 		if (cond == CondSet || cond == CondAllSet) {
-			valuesS_->emplace(value);
+			valuesS_.emplace(value);
 		} else {
 			values_.emplace_back(value);
 		}
@@ -213,19 +186,15 @@ private:
 template <>
 class EqualPositionComparatorTypeImpl<key_string> {
 public:
-	EqualPositionComparatorTypeImpl(const CollateOpts& collate) : collate_{collate} {}
-	EqualPositionComparatorTypeImpl(const EqualPositionComparatorTypeImpl&) = delete;
-	EqualPositionComparatorTypeImpl& operator=(const EqualPositionComparatorTypeImpl&) = delete;
+	EqualPositionComparatorTypeImpl(const CollateOpts& collate) : valuesS_(collate), collate_{collate} {}
+	EqualPositionComparatorTypeImpl(const EqualPositionComparatorTypeImpl&) = default;
+	EqualPositionComparatorTypeImpl& operator=(const EqualPositionComparatorTypeImpl&) = default;
 	EqualPositionComparatorTypeImpl(EqualPositionComparatorTypeImpl&&) = default;
 	EqualPositionComparatorTypeImpl& operator=(EqualPositionComparatorTypeImpl&&) = default;
 
 	void SetValues(CondType cond, const VariantArray& values) {
-		if (cond == CondSet) {
-			valuesS_ = std::make_unique<key_string_set>(collate_);
-		} else if (cond == CondAllSet) {
-			valuesS_ = std::make_unique<key_string_set>(collate_);
-			allSetValuesS_ = std::make_unique<fast_hash_set<const key_string*>>();
-		}
+		assertrx_throw(valuesS_.empty());
+		assertrx_throw(allSetValuesS_.empty());
 
 		for (Variant key : values) {
 			key.convert(KeyValueType::String{});
@@ -250,17 +219,14 @@ public:
 				return (collateCompare(std::string_view(lhs), rhs, collate_) & ComparationResult::Ge) &&
 					   (collateCompare(std::string_view(lhs), std::string_view(*values_[1]), collate_) & ComparationResult::Le);
 			case CondSet:
-				assertrx_dbg(valuesS_);
-				return valuesS_->find(std::string_view(lhs)) != valuesS_->end();
+				return valuesS_.find(std::string_view(lhs)) != valuesS_.end();
 			case CondAllSet: {
-				assertrx_dbg(valuesS_);
-				assertrx_dbg(allSetValuesS_);
-				auto it = valuesS_->find(lhs);
-				if (it == valuesS_->end()) {
+				auto it = valuesS_.find(lhs);
+				if (it == valuesS_.end()) {
 					return false;
 				}
-				allSetValuesS_->insert(&*it);
-				return allSetValuesS_->size() == valuesS_->size();
+				allSetValuesS_.insert(&*it);
+				return allSetValuesS_.size() == valuesS_.size();
 			}
 			case CondAny:
 				return true;
@@ -274,10 +240,7 @@ public:
 		}
 		std::abort();
 	}
-	void ClearAllSetValues() {
-		assertrx_dbg(allSetValuesS_);
-		allSetValuesS_->clear();
-	}
+	void ClearAllSetValues() { allSetValuesS_.clear(); }
 
 	h_vector<key_string, 1> values_;
 	std::string_view cachedValueSV_;
@@ -290,13 +253,13 @@ public:
 				  less_key_string(opts)) {}
 	};
 
-	std::unique_ptr<key_string_set> valuesS_;
-	std::unique_ptr<fast_hash_set<const key_string*>> allSetValuesS_;
+	key_string_set valuesS_;
+	fast_hash_set<const key_string*> allSetValuesS_;
 
 private:
 	void addValue(CondType cond, const key_string& value) {
 		if (cond == CondSet || cond == CondAllSet) {
-			valuesS_->emplace(value);
+			valuesS_.emplace(value);
 		} else {
 			values_.emplace_back(value);
 			if (values_.size() == 1) {
@@ -311,21 +274,11 @@ template <>
 class EqualPositionComparatorTypeImpl<PayloadValue> {
 public:
 	EqualPositionComparatorTypeImpl() = delete;
-	EqualPositionComparatorTypeImpl(const EqualPositionComparatorTypeImpl&) = delete;
-	EqualPositionComparatorTypeImpl& operator=(const EqualPositionComparatorTypeImpl&) = delete;
-	EqualPositionComparatorTypeImpl(EqualPositionComparatorTypeImpl&&) = default;
-	EqualPositionComparatorTypeImpl& operator=(EqualPositionComparatorTypeImpl&&) = default;
 };
 
 template <>
 class EqualPositionComparatorTypeImpl<Point> {
 public:
-	EqualPositionComparatorTypeImpl() noexcept = default;
-	EqualPositionComparatorTypeImpl(const EqualPositionComparatorTypeImpl&) = delete;
-	EqualPositionComparatorTypeImpl& operator=(const EqualPositionComparatorTypeImpl&) = delete;
-	EqualPositionComparatorTypeImpl(EqualPositionComparatorTypeImpl&&) = default;
-	EqualPositionComparatorTypeImpl& operator=(EqualPositionComparatorTypeImpl&&) = default;
-
 	void SetValues(const VariantArray& values) {
 		if (values.size() != 2) {
 			throw Error(errQueryExec, "CondDWithin expects two arguments");

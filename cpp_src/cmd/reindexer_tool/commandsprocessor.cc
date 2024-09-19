@@ -30,7 +30,7 @@ Error CommandsProcessor<DBInterface>::process(const std::string& command) {
 template <typename DBInterface>
 template <typename T>
 void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_completion_callback)(const new_v_callback_t&)) {
-	(rx.*set_completion_callback)([this](const std::string& input, int) -> replxx::Replxx::completions_t {
+	(rx.*set_completion_callback)([this](const std::string& input, int) {
 		std::vector<std::string> completions;
 		const auto err = executor_.GetSuggestions(input, completions);
 		replxx::Replxx::completions_t result;
@@ -47,13 +47,16 @@ template <typename DBInterface>
 template <typename T>
 void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_completion_callback)(const old_v_callback_t&, void*)) {
 	(rx.*set_completion_callback)(
-		[this](const std::string& input, int, void*) -> replxx::Replxx::completions_t {
+		[this](const std::string& input, int, void*) {
 			std::vector<std::string> completions;
 			const auto err = executor_.GetSuggestions(input, completions);
-			if (!err.ok()) {
-				return {};
+			replxx::Replxx::completions_t result;
+			if (err.ok()) {
+				for (const std::string& suggestion : completions) {
+					result.emplace_back(suggestion);
+				}
 			}
-			return completions;
+			return result;
 		},
 		nullptr);
 }
