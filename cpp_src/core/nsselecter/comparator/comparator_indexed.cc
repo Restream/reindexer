@@ -85,26 +85,31 @@ typename reindexer::comparators::ValuesHolder<reindexer::key_string, Cond>::Type
 	}
 }
 
-template <typename T, CondType Cond>
-void initComparator(const reindexer::VariantArray& from, typename reindexer::comparators::ValuesHolder<T, Cond>::Type& to) {
-	if constexpr (Cond == CondSet) {
-		for (const reindexer::Variant& v : from) {
-			to.insert(reindexer::comparators::GetValue<T>(v));
-		}
-	} else if constexpr (Cond == CondAllSet) {
-		int i = 0;
-		for (const reindexer::Variant& v : from) {
-			to.values_.emplace(reindexer::comparators::GetValue<T>(v), i);
-			++i;
-		}
+template <typename T, typename SetT>
+void initComparatorSet(const reindexer::VariantArray& from, reindexer::comparators::DataHolder<T>& to, SetT&& set) {
+	for (const reindexer::Variant& v : from) {
+		set.insert(reindexer::comparators::GetValue<T>(v));
 	}
+	using SetWrpType = typename reindexer::comparators::DataHolder<T>::SetWrpType;
+	to.setPtr_ = reindexer::make_intrusive<SetWrpType>(std::forward<SetT>(set));
+}
+
+template <typename T, typename SetT>
+void initComparatorAllSet(const reindexer::VariantArray& from, reindexer::comparators::DataHolder<T>& to, SetT&& set) {
+	int i = 0;
+	for (const reindexer::Variant& v : from) {
+		set.values_.emplace(reindexer::comparators::GetValue<T>(v), i);
+		++i;
+	}
+	using AllSetType = typename reindexer::comparators::DataHolder<T>::AllSetType;
+	to.allSetPtr_ = std::make_unique<AllSetType>(std::forward<SetT>(set));
 }
 
 template <typename T>
 void initComparator(CondType cond, const reindexer::VariantArray& from, reindexer::comparators::DataHolder<T>& to) {
 	using namespace reindexer::comparators;
-	using SetWrpType = typename DataHolder<T>::SetWrpType;
-	using AllSetWrpType = typename DataHolder<T>::AllSetWrpType;
+	using SetType = typename DataHolder<T>::SetType;
+	using AllSetType = typename DataHolder<T>::AllSetType;
 	switch (cond) {
 		case CondEq:
 		case CondLt:
@@ -118,12 +123,10 @@ void initComparator(CondType cond, const reindexer::VariantArray& from, reindexe
 			to.value2_ = GetValue<T>(cond, from, 1);
 			break;
 		case CondSet:
-			to.setPtr_ = make_intrusive<SetWrpType>();
-			initComparator<T, CondSet>(from, *to.setPtr_);
+			initComparatorSet(from, to, SetType{});
 			break;
 		case CondAllSet:
-			to.allSetPtr_ = make_intrusive<AllSetWrpType>();
-			initComparator<T, CondAllSet>(from, *to.allSetPtr_);
+			initComparatorAllSet(from, to, AllSetType{});
 			break;
 		case CondAny:
 		case CondEmpty:
@@ -139,8 +142,6 @@ void initStringComparator(CondType cond, const reindexer::VariantArray& from, re
 	using namespace reindexer::comparators;
 	using SetType = DataHolder<reindexer::key_string>::SetType;
 	using AllSetType = DataHolder<reindexer::key_string>::AllSetType;
-	using SetWrpType = DataHolder<reindexer::key_string>::SetWrpType;
-	using AllSetWrpType = DataHolder<reindexer::key_string>::AllSetWrpType;
 	switch (cond) {
 		case CondEq:
 		case CondLt:
@@ -155,12 +156,10 @@ void initStringComparator(CondType cond, const reindexer::VariantArray& from, re
 			to.value2_ = GetValue<reindexer::key_string>(cond, from, 1);
 			break;
 		case CondSet:
-			to.setPtr_ = make_intrusive<SetWrpType>(SetType{collate});
-			initComparator<reindexer::key_string, CondSet>(from, *to.setPtr_);
+			initComparatorSet(from, to, SetType{collate});
 			break;
 		case CondAllSet:
-			to.allSetPtr_ = make_intrusive<AllSetWrpType>(AllSetType{collate, {}});
-			initComparator<reindexer::key_string, CondAllSet>(from, *to.allSetPtr_);
+			initComparatorAllSet(from, to, AllSetType{collate, {}});
 			break;
 		case CondAny:
 		case CondEmpty:
@@ -499,13 +498,12 @@ ComparatorIndexedComposite::ComparatorIndexedComposite(const VariantArray& value
 			value2_ = GetValue<PayloadValue>(cond, values, 1);
 			break;
 		case CondSet:
-			setPtr_ = make_intrusive<SetWrpType>(SetType{values.size(), reindexer::hash_composite_ref{payloadType, fields},
-														 reindexer::equal_composite_ref{payloadType, fields}});
-			initComparator<PayloadValue, CondSet>(values, *setPtr_);
+			initComparatorSet(values, *this,
+							  SetType{values.size(), reindexer::hash_composite_ref{payloadType, fields},
+									  reindexer::equal_composite_ref{payloadType, fields}});
 			break;
 		case CondAllSet:
-			allSetPtr_ = make_intrusive<AllSetWrpType>(AllSetType{{reindexer::PayloadType{payloadType}, reindexer::FieldsSet{fields}}, {}});
-			initComparator<PayloadValue, CondAllSet>(values, *allSetPtr_);
+			initComparatorAllSet(values, *this, AllSetType{{reindexer::PayloadType{payloadType}, reindexer::FieldsSet{fields}}, {}});
 			break;
 		case CondAny:
 		case CondEmpty:

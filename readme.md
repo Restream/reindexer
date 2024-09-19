@@ -171,7 +171,7 @@ import (
 
 )
 
-// Define struct with reindex tags
+// Define struct with reindex tags. Fields must be exported - private fields can not be written into reindexer
 type Item struct {
 	ID       int64  `reindex:"id,,pk"`    // 'id' is primary key
 	Name     string `reindex:"name"`      // add index by 'name' field
@@ -457,10 +457,12 @@ Fields with regular indexes are not nullable. Condition `is NULL` is supported o
 ### Nested Structs
 
 By default, Reindexer scans all nested structs and adds their fields to the namespace (as well as indexes specified).
+During indexes scan private (unexported fields), fields tagged with `reindex:"-"` and fields tagged with `json:"-"` will be skipped.
 
 ```go
 type Actor struct {
 	Name string `reindex:"actor_name"`
+	Age  int    `reindex:"age"`
 }
 
 type BaseItem struct {
@@ -469,13 +471,16 @@ type BaseItem struct {
 }
 
 type ComplexItem struct {
-	BaseItem         // Index fields of BaseItem will be added to reindex
-	Actor    []Actor // Index fields of Actor will be added to reindex as arrays
-	Name     string  `reindex:"name"`      // Hash-index for "name"
-	Year     int     `reindex:"year,tree"` // Tree-index for "year"
-	Value    int     `reindex:"value,-"`   // Store(column)-index for "value"
-	Metainfo int     `json:"-"`            // Field "MetaInfo" will not be stored in reindexer
-	Parent   *Item   `reindex:"-"`         // Index fields of parent will NOT be added to reindex
+	BaseItem              // Index fields of BaseItem will be added to reindex
+	Actor         []Actor // Index fields ("name" and "age") of Actor will be added to reindex as array-indexes
+	Name          string  `reindex:"name"`      // Hash-index for "name"
+	Year          int     `reindex:"year,tree"` // Tree-index for "year"
+	Value         int     `reindex:"value,-"`   // Store(column)-index for "value"
+	Metainfo      int     `json:"-"`            // Field "MetaInfo" will not be stored in reindexer
+	Parent        *Item   `reindex:"-"`         // Index fields of "Parent" will NOT be added to reindex and all of the "Parent" exported content will be stored as non-indexed data
+	ParentHidden  *Item   `json:"-"`            // Indexes and fields of "ParentHidden" will NOT be added to reindexer
+	privateParent *Item                         // Indexes and fields of "ParentHidden" will NOT be added to reindexer (same as with `json:"-"`)
+	AnotherActor  Actor   `reindex:"actor"`     // Index fields of "AnotherActor" will be added to reindexer with prefix "actor." (in this example two indexes will be created: "actor.actor_name" and "actor.age")
 }
 ```
 
@@ -895,6 +900,7 @@ type Actor struct {
 	IsVisible bool   `reindex:"is_visible"`
 }
 
+// Fields, marked with 'joined' must also be exported - otherwise reindexer's binding will not be able to put data in those fields
 type ItemWithJoin struct {
 	ID          int      `reindex:"id"`
 	Name        string   `reindex:"name"`
@@ -1334,7 +1340,7 @@ In case of requirement to serialize results of Query in JSON format, then it is 
 ```go
 ...
 	iterator := db.Query("items").
-		Select ("id","name").        // Filter output JSON: Select only "id" and "name" fields of items, another fields will be omitted
+		Select ("id","name").        // Filter output JSON: Select only "id" and "name" fields of items, another fields will be omitted. This fields should be specified in the same case as the jsonpaths corresponding to them.
 		Limit (1).
 		ExecToJson ("root_object")   // Name of root object of output JSON
 
@@ -1409,7 +1415,7 @@ WARNING: when used `AllowUnsafe(true)` queries returns shared pointers to struct
 
 #### Limit size of object cache
 
-By default, maximum size of object cache is 256000 items for each namespace. To change maximum size use `ObjCacheSize` method of `NameapaceOptions`, passed
+By default, maximum size of object cache is 256000 items for each namespace. To change maximum size use `ObjCacheSize` method of `NamespaceOptions`, passed
 to OpenNamespace. e.g.
 
 ```go

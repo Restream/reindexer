@@ -7,13 +7,13 @@
 
 namespace reindexer {
 
-class EqualPositionComparatorImpl : public intrusive_rc_base {
+class EqualPositionComparator {
 public:
-	EqualPositionComparatorImpl(const PayloadType& payloadType) : payloadType_{payloadType}, name_{"EqualPositions"} {}
-	EqualPositionComparatorImpl(const EqualPositionComparatorImpl&) = delete;
-	EqualPositionComparatorImpl(EqualPositionComparatorImpl&&) = delete;
-	EqualPositionComparatorImpl& operator=(const EqualPositionComparatorImpl&) = delete;
-	EqualPositionComparatorImpl& operator=(EqualPositionComparatorImpl&&) = delete;
+	EqualPositionComparator(const PayloadType& payloadType) : payloadType_{payloadType}, name_{"EqualPositions"} {}
+	EqualPositionComparator(const EqualPositionComparator&) = default;
+	EqualPositionComparator(EqualPositionComparator&&) = default;
+	EqualPositionComparator& operator=(const EqualPositionComparator&) = delete;
+	EqualPositionComparator& operator=(EqualPositionComparator&&) = default;
 
 	void BindField(const std::string& name, int field, const VariantArray&, CondType, const CollateOpts&);
 	void BindField(const std::string& name, const FieldsPath&, const VariantArray&, CondType);
@@ -55,32 +55,6 @@ private:
 	PayloadType payloadType_;
 	std::string name_;
 	int matchedCount_{0};
-};
-
-class EqualPositionComparator {
-public:
-	EqualPositionComparator(const PayloadType& payloadType) : impl_{make_intrusive<EqualPositionComparatorImpl>(payloadType)} {}
-
-	void BindField(const std::string& name, int field, const VariantArray& values, CondType cond, const CollateOpts& opts) {
-		return impl_->BindField(name, field, values, cond, opts);
-	}
-	void BindField(const std::string& name, const FieldsPath& fields, const VariantArray& values, CondType cond) {
-		return impl_->BindField(name, fields, values, cond);
-	}
-	bool Compare(const PayloadValue& pv, IdType id) { return impl_->Compare(pv, id); }
-	bool IsBinded() noexcept { return impl_->IsBinded(); }
-	[[nodiscard]] int GetMatchedCount() const noexcept { return impl_->GetMatchedCount(); }
-	[[nodiscard]] int FieldsCount() const noexcept { return impl_->FieldsCount(); }
-	[[nodiscard]] const std::string& Name() const& noexcept { return impl_->Name(); }
-	[[nodiscard]] const std::string& Dump() const& noexcept { return impl_->Name(); }
-	[[nodiscard]] double Cost(int expectedIterations) const noexcept { return impl_->Cost(expectedIterations); }
-
-	auto Name() const&& = delete;
-	auto Dump() const&& = delete;
-
-private:
-	// Using pointer to reduce ExpressionTree Node size
-	intrusive_ptr<EqualPositionComparatorImpl> impl_;
 };
 
 }  // namespace reindexer

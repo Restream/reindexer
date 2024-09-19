@@ -257,9 +257,9 @@ class JsonParser {
 public:
 	JsonParser(LargeStringStorageT* strings = nullptr) : largeStrings_(strings ? strings : &internalLargeStrings_) {}
 	// Inplace parse. Buffer pointed by str will be changed
-	JsonNode Parse(span<char> str, size_t* length = nullptr);
+	JsonNode Parse(span<char> str, size_t* length = nullptr) &;
 	// Copy str. Buffer pointed by str will be copied
-	JsonNode Parse(std::string_view str, size_t* length = nullptr);
+	JsonNode Parse(std::string_view str, size_t* length = nullptr) &;
 
 private:
 	JsonAllocator alloc_;

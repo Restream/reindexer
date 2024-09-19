@@ -8,7 +8,7 @@ extern "C" {
 #include "core/type_consts.h"
 #include "reindexer_ctypes.h"
 
-uintptr_t init_reindexer();
+uintptr_t init_reindexer(void);
 uintptr_t init_reindexer_with_config(reindexer_config config);
 
 void destroy_reindexer(uintptr_t rx);
@@ -66,9 +66,9 @@ reindexer_error reindexer_delete_meta(uintptr_t rx, reindexer_string ns, reindex
 reindexer_error reindexer_cancel_context(reindexer_ctx_info ctx_info, ctx_cancel_type how);
 
 void reindexer_enable_logger(void (*logWriter)(int level, char* msg));
-void reindexer_disable_logger();
+void reindexer_disable_logger(void);
 
-void reindexer_init_locale();
+void reindexer_init_locale(void);
 
 #ifdef __cplusplus
 }

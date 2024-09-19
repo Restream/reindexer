@@ -310,6 +310,7 @@ func (db *reindexerImpl) openNamespace(ctx context.Context, namespace string, op
 				db.binding.DropNamespace(ctx, namespace)
 				continue
 			}
+			db.unregisterNamespaceImpl(namespace)
 			db.binding.CloseNamespace(ctx, namespace)
 			break
 		}
@@ -336,6 +337,12 @@ func (db *reindexerImpl) registerNamespace(ctx context.Context, namespace string
 	defer db.nsModifySlowLock.Unlock()
 
 	return db.registerNamespaceImpl(namespace, opts, s)
+}
+
+func (db *reindexerImpl) unregisterNamespaceImpl(namespace string) {
+	db.lock.Lock()
+	defer db.lock.Unlock()
+	delete(db.ns, namespace)
 }
 
 // registerNamespace Register go type against namespace. There are no data and indexes changes will be performed
@@ -392,10 +399,10 @@ func (db *reindexerImpl) registerNamespaceImpl(namespace string, opts *Namespace
 	if err = validator.Validate(s); err != nil {
 		return err
 	}
-	if ns.indexes, err = parseIndexes(namespace, ns.rtype, &ns.joined); err != nil {
+	if ns.indexes, err = parseIndexes(ns.rtype, &ns.joined); err != nil {
 		return err
 	}
-	if schema := parseSchema(namespace, ns.rtype); schema != nil {
+	if schema := parseSchema(ns.rtype); schema != nil {
 		ns.schema = *schema
 	}
 
@@ -418,10 +425,7 @@ func (db *reindexerImpl) dropNamespace(ctx context.Context, namespace string) er
 	db.nsModifySlowLock.Lock()
 	defer db.nsModifySlowLock.Unlock()
 
-	db.lock.Lock()
-	delete(db.ns, namespace)
-	db.lock.Unlock()
-
+	db.unregisterNamespaceImpl(namespace)
 	return db.binding.DropNamespace(ctx, namespace)
 }
 
@@ -485,10 +489,7 @@ func (db *reindexerImpl) closeNamespace(ctx context.Context, namespace string) e
 	db.nsModifySlowLock.Lock()
 	defer db.nsModifySlowLock.Unlock()
 
-	db.lock.Lock()
-	delete(db.ns, namespace)
-	db.lock.Unlock()
-
+	db.unregisterNamespaceImpl(namespace)
 	return db.binding.CloseNamespace(ctx, namespace)
 }
 

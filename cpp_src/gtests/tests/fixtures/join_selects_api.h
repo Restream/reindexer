@@ -219,7 +219,8 @@ protected:
 				if (!err.ok()) {
 					break;
 				}
-				gason::JsonParser().Parse(reindexer::giftStr(wrSer.Slice()));
+				gason::JsonParser parser;
+				parser.Parse(reindexer::giftStr(wrSer.Slice()));
 			}
 		} catch (const gason::Exception& ex) {
 			return Error(errParseJson, "VerifyResJSON: %s", ex.what());

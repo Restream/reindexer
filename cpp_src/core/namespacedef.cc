@@ -8,7 +8,8 @@ namespace reindexer {
 
 Error NamespaceDef::FromJSON(span<char> json) {
 	try {
-		FromJSON(gason::JsonParser().Parse(json));
+		gason::JsonParser parser;
+		FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "NamespaceDef: %s", ex.what());
 	} catch (const Error& err) {

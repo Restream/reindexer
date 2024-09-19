@@ -404,7 +404,7 @@ const JsonNode& JsonNode::operator[](std::string_view key) const {
 	return empty_node;
 }
 
-JsonNode JsonParser::Parse(span<char> str, size_t* length) {
+JsonNode JsonParser::Parse(span<char> str, size_t* length) & {
 	largeStrings_->clear();
 	char* endp = nullptr;
 	JsonNode val{{}, nullptr, {}};
@@ -420,7 +420,7 @@ JsonNode JsonParser::Parse(span<char> str, size_t* length) {
 	return val;
 }
 
-JsonNode JsonParser::Parse(std::string_view str, size_t* length) {
+JsonNode JsonParser::Parse(std::string_view str, size_t* length) & {
 	tmp_.reserve(str.size());
 	tmp_.assign(str.begin(), str.end());
 	return Parse(span<char>(&tmp_[0], tmp_.size()), length);

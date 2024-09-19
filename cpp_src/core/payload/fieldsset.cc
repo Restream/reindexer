@@ -9,7 +9,9 @@ namespace reindexer {
 
 FieldsSet::FieldsSet(const TagsMatcher& tagsMatcher, const h_vector<std::string, 1>& fields) : mask_(0) {
 	for (const std::string& str : fields) {
-		tagsPaths_.emplace_back(tagsMatcher.path2tag(str));
+		if (auto tagsPath = tagsMatcher.path2tag(str); !tagsPath.empty()) {
+			tagsPaths_.emplace_back(std::move(tagsPath));
+		}
 	}
 }
 

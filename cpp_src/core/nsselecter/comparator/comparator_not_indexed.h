@@ -18,7 +18,7 @@ template <CondType Cond>
 class ComparatorNotIndexedImplBase {
 protected:
 	ComparatorNotIndexedImplBase(const VariantArray&);
-	ComparatorNotIndexedImplBase(const ComparatorNotIndexedImplBase&) = delete;
+	ComparatorNotIndexedImplBase(const ComparatorNotIndexedImplBase&) = default;
 	ComparatorNotIndexedImplBase& operator=(const ComparatorNotIndexedImplBase&) = delete;
 	ComparatorNotIndexedImplBase(ComparatorNotIndexedImplBase&&) = default;
 	ComparatorNotIndexedImplBase& operator=(ComparatorNotIndexedImplBase&&) = default;
@@ -48,7 +48,7 @@ template <>
 class ComparatorNotIndexedImplBase<CondRange> {
 protected:
 	ComparatorNotIndexedImplBase(const VariantArray&);
-	ComparatorNotIndexedImplBase(const ComparatorNotIndexedImplBase&) = delete;
+	ComparatorNotIndexedImplBase(const ComparatorNotIndexedImplBase&) = default;
 	ComparatorNotIndexedImplBase& operator=(const ComparatorNotIndexedImplBase&) = delete;
 	ComparatorNotIndexedImplBase(ComparatorNotIndexedImplBase&&) = default;
 	ComparatorNotIndexedImplBase& operator=(ComparatorNotIndexedImplBase&&) = default;
@@ -71,7 +71,7 @@ protected:
 			values_.insert(v);
 		}
 	}
-	ComparatorNotIndexedImplBase(const ComparatorNotIndexedImplBase&) = delete;
+	ComparatorNotIndexedImplBase(const ComparatorNotIndexedImplBase&) = default;
 	ComparatorNotIndexedImplBase& operator=(const ComparatorNotIndexedImplBase&) = delete;
 	ComparatorNotIndexedImplBase(ComparatorNotIndexedImplBase&&) = default;
 	ComparatorNotIndexedImplBase& operator=(ComparatorNotIndexedImplBase&&) = default;
@@ -89,7 +89,7 @@ template <>
 class ComparatorNotIndexedImplBase<CondLike> {
 protected:
 	ComparatorNotIndexedImplBase(const VariantArray&);
-	ComparatorNotIndexedImplBase(const ComparatorNotIndexedImplBase&) = delete;
+	ComparatorNotIndexedImplBase(const ComparatorNotIndexedImplBase&) = default;
 	ComparatorNotIndexedImplBase& operator=(const ComparatorNotIndexedImplBase&) = delete;
 	ComparatorNotIndexedImplBase(ComparatorNotIndexedImplBase&&) = default;
 	ComparatorNotIndexedImplBase& operator=(ComparatorNotIndexedImplBase&&) = default;
@@ -117,7 +117,7 @@ class ComparatorNotIndexedImpl<Cond, false> : private ComparatorNotIndexedImplBa
 public:
 	ComparatorNotIndexedImpl(const VariantArray& values, const PayloadType& payloadType, const TagsPath& fieldPath)
 		: Base{values}, payloadType_{payloadType}, fieldPath_{fieldPath} {}
-	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = delete;
+	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = default;
 	ComparatorNotIndexedImpl& operator=(const ComparatorNotIndexedImpl&) = delete;
 	ComparatorNotIndexedImpl(ComparatorNotIndexedImpl&&) = default;
 	ComparatorNotIndexedImpl& operator=(ComparatorNotIndexedImpl&&) = default;
@@ -149,7 +149,7 @@ class ComparatorNotIndexedImpl<Cond, true> : private ComparatorNotIndexedImplBas
 public:
 	ComparatorNotIndexedImpl(const VariantArray& values, const PayloadType& payloadType, const TagsPath& fieldPath)
 		: Base{values}, distinct_{}, payloadType_{payloadType}, fieldPath_{fieldPath} {}
-	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = delete;
+	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = default;
 	ComparatorNotIndexedImpl& operator=(const ComparatorNotIndexedImpl&) = delete;
 	ComparatorNotIndexedImpl(ComparatorNotIndexedImpl&&) = default;
 	ComparatorNotIndexedImpl& operator=(ComparatorNotIndexedImpl&&) = default;
@@ -185,7 +185,7 @@ class ComparatorNotIndexedImpl<CondAny, false> {
 public:
 	ComparatorNotIndexedImpl(const PayloadType& payloadType, const TagsPath& fieldPath)
 		: payloadType_{payloadType}, fieldPath_{fieldPath} {}
-	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = delete;
+	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = default;
 	ComparatorNotIndexedImpl& operator=(const ComparatorNotIndexedImpl&) = delete;
 	ComparatorNotIndexedImpl(ComparatorNotIndexedImpl&&) = default;
 	ComparatorNotIndexedImpl& operator=(ComparatorNotIndexedImpl&&) = default;
@@ -215,7 +215,7 @@ class ComparatorNotIndexedImpl<CondAny, true> {
 public:
 	ComparatorNotIndexedImpl(const PayloadType& payloadType, const TagsPath& fieldPath)
 		: payloadType_{payloadType}, fieldPath_{fieldPath} {}
-	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = delete;
+	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = default;
 	ComparatorNotIndexedImpl& operator=(const ComparatorNotIndexedImpl&) = delete;
 	ComparatorNotIndexedImpl(ComparatorNotIndexedImpl&&) = default;
 	ComparatorNotIndexedImpl& operator=(ComparatorNotIndexedImpl&&) = default;
@@ -251,7 +251,7 @@ class ComparatorNotIndexedImpl<CondEmpty, false> {
 public:
 	ComparatorNotIndexedImpl(const PayloadType& payloadType, const TagsPath& fieldPath)
 		: payloadType_{payloadType}, fieldPath_{fieldPath} {}
-	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = delete;
+	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = default;
 	ComparatorNotIndexedImpl& operator=(const ComparatorNotIndexedImpl&) = delete;
 	ComparatorNotIndexedImpl(ComparatorNotIndexedImpl&&) = default;
 	ComparatorNotIndexedImpl& operator=(ComparatorNotIndexedImpl&&) = default;
@@ -282,7 +282,7 @@ class ComparatorNotIndexedImpl<CondEmpty, true> : private ComparatorNotIndexedIm
 
 public:
 	ComparatorNotIndexedImpl(const PayloadType& payloadType, const TagsPath& fieldPath) : Base{payloadType, fieldPath} {}
-	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = delete;
+	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = default;
 	ComparatorNotIndexedImpl& operator=(const ComparatorNotIndexedImpl&) = delete;
 	ComparatorNotIndexedImpl(ComparatorNotIndexedImpl&&) = default;
 	ComparatorNotIndexedImpl& operator=(ComparatorNotIndexedImpl&&) = default;
@@ -298,18 +298,19 @@ template <>
 class ComparatorNotIndexedImpl<CondDWithin, false> {
 public:
 	ComparatorNotIndexedImpl(const VariantArray& values, const PayloadType& payloadType, const TagsPath& fieldPath);
-	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = delete;
+	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = default;
 	ComparatorNotIndexedImpl& operator=(const ComparatorNotIndexedImpl&) = delete;
 	ComparatorNotIndexedImpl(ComparatorNotIndexedImpl&&) = default;
 	ComparatorNotIndexedImpl& operator=(ComparatorNotIndexedImpl&&) = default;
 
 	[[nodiscard]] std::string ConditionStr() const;
 	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
-		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer_, KeyValueType::Undefined{});
-		if (buffer_.size() < 2 || !buffer_[0].Type().IsNumeric() || !buffer_[1].Type().IsNumeric()) {
+		VariantArray buffer;
+		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer, KeyValueType::Undefined{});
+		if (buffer.size() < 2 || !buffer[0].Type().IsNumeric() || !buffer[1].Type().IsNumeric()) {
 			return false;
 		}
-		return DWithin(Point{buffer_[0].As<double>(), buffer_[1].As<double>()}, point_, distance_);
+		return DWithin(Point{buffer[0].As<double>(), buffer[1].As<double>()}, point_, distance_);
 	}
 	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
 	void ClearDistinctValues() const noexcept {}
@@ -318,7 +319,6 @@ public:
 protected:
 	PayloadType payloadType_;
 	TagsPath fieldPath_;
-	VariantArray buffer_;
 	Point point_;
 	double distance_;
 };
@@ -330,27 +330,29 @@ class ComparatorNotIndexedImpl<CondDWithin, true> : private ComparatorNotIndexed
 public:
 	ComparatorNotIndexedImpl(const VariantArray& values, const PayloadType& payloadType, const TagsPath& fieldPath)
 		: Base{values, payloadType, fieldPath} {}
-	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = delete;
+	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = default;
 	ComparatorNotIndexedImpl& operator=(const ComparatorNotIndexedImpl&) = delete;
 	ComparatorNotIndexedImpl(ComparatorNotIndexedImpl&&) = default;
 	ComparatorNotIndexedImpl& operator=(ComparatorNotIndexedImpl&&) = default;
 
 	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
-		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer_, KeyValueType::Undefined{});
-		if (buffer_.size() != 2 || !buffer_[0].Type().Is<KeyValueType::Double>() || !buffer_[0].Type().Is<KeyValueType::Double>()) {
+		VariantArray buffer;
+		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer, KeyValueType::Undefined{});
+		if (buffer.size() != 2 || !buffer[0].Type().Is<KeyValueType::Double>() || !buffer[0].Type().Is<KeyValueType::Double>()) {
 			return false;
 		}
-		const Point p{buffer_[0].As<double>(), buffer_[1].As<double>()};
+		const Point p{buffer[0].As<double>(), buffer[1].As<double>()};
 		return DWithin(p, point_, distance_) && distinct_.Compare(Variant{p});
 	}
 	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
 	void ClearDistinctValues() noexcept { distinct_.ClearValues(); }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
-		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer_, KeyValueType::Undefined{});
-		if (buffer_.size() != 2 || !buffer_[0].Type().Is<KeyValueType::Double>() || !buffer_[0].Type().Is<KeyValueType::Double>()) {
+		VariantArray buffer;
+		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer, KeyValueType::Undefined{});
+		if (buffer.size() != 2 || !buffer[0].Type().Is<KeyValueType::Double>() || !buffer[0].Type().Is<KeyValueType::Double>()) {
 			return;
 		}
-		const Point p{buffer_[0].As<double>(), buffer_[1].As<double>()};
+		const Point p{buffer[0].As<double>(), buffer[1].As<double>()};
 		distinct_.ExcludeValues(Variant{p});
 	}
 	using Base::ConditionStr;
@@ -370,7 +372,7 @@ public:
 			++i;
 		}
 	}
-	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = delete;
+	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = default;
 	ComparatorNotIndexedImpl& operator=(const ComparatorNotIndexedImpl&) = delete;
 	ComparatorNotIndexedImpl(ComparatorNotIndexedImpl&&) = default;
 	ComparatorNotIndexedImpl& operator=(ComparatorNotIndexedImpl&&) = default;
@@ -411,7 +413,7 @@ class ComparatorNotIndexedImpl<CondAllSet, true> : private ComparatorNotIndexedI
 public:
 	ComparatorNotIndexedImpl(const VariantArray& values, const PayloadType& payloadType, const TagsPath& fieldPath)
 		: Base{values, payloadType, fieldPath} {}
-	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = delete;
+	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = default;
 	ComparatorNotIndexedImpl& operator=(const ComparatorNotIndexedImpl&) = delete;
 	ComparatorNotIndexedImpl(ComparatorNotIndexedImpl&&) = default;
 	ComparatorNotIndexedImpl& operator=(ComparatorNotIndexedImpl&&) = default;
@@ -454,16 +456,24 @@ using ComparatorNotIndexedVariant = std::variant<
 	ComparatorNotIndexedImpl<CondGe, true>, ComparatorNotIndexedImpl<CondRange, true>, ComparatorNotIndexedImpl<CondLike, true>,
 	ComparatorNotIndexedImpl<CondSet, true>, ComparatorNotIndexedImpl<CondAllSet, true>, ComparatorNotIndexedImpl<CondDWithin, true>>;
 
-using ComparatorNotIndexedVariantWrp = intrusive_rc_wrapper<ComparatorNotIndexedVariant>;
-
 }  // namespace comparators
 
 class ComparatorNotIndexed {
 public:
 	ComparatorNotIndexed(std::string_view fieldName, CondType cond, const VariantArray& values, const PayloadType& payloadType,
 						 const TagsPath& fieldPath, bool distinct)
-		: impl_{make_intrusive<comparators::ComparatorNotIndexedVariantWrp>(createImpl(cond, values, payloadType, fieldPath, distinct))},
+		: impl_{std::make_unique<comparators::ComparatorNotIndexedVariant>(createImpl(cond, values, payloadType, fieldPath, distinct))},
 		  fieldName_{fieldName} {}
+	ComparatorNotIndexed(ComparatorNotIndexed&&) = default;
+	ComparatorNotIndexed& operator=(ComparatorNotIndexed&&) = default;
+	ComparatorNotIndexed(const ComparatorNotIndexed& o)
+		: impl_{o.impl_ ? std::make_unique<comparators::ComparatorNotIndexedVariant>(*o.impl_) : nullptr},
+		  matchedCount_{o.matchedCount_},
+		  isNotOperation_{o.isNotOperation_},
+		  fieldName_{o.fieldName_} {
+		assertrx_throw(o.impl_);
+	}
+
 	[[nodiscard]] const std::string& Name() const& noexcept { return fieldName_; }
 	auto Name() const&& = delete;
 	[[nodiscard]] std::string ConditionStr() const;
@@ -676,7 +686,7 @@ private:
 	using ImplVariantType = comparators::ComparatorNotIndexedVariant;
 	static ImplVariantType createImpl(CondType, const VariantArray& values, const PayloadType&, const TagsPath&, bool distinct);
 	// Using pointer to reduce ExpressionTree Node size
-	intrusive_ptr<comparators::ComparatorNotIndexedVariantWrp> impl_;
+	std::unique_ptr<ImplVariantType> impl_;
 	int matchedCount_{0};
 	bool isNotOperation_{false};
 	std::string fieldName_;

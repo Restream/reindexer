@@ -67,7 +67,8 @@ bool UpdatesFilters::Check(std::string_view ns) const {
 
 Error UpdatesFilters::FromJSON(span<char> json) {
 	try {
-		FromJSON(gason::JsonParser().Parse(json));
+		gason::JsonParser parser;
+		FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "UpdatesFilter: %s", ex.what());
 	} catch (const Error& err) {
