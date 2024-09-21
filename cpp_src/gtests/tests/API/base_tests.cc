@@ -2045,11 +2045,11 @@ TEST_F(ReindexerApi, IntFieldConvertToStringIndexTest) {
 }
 
 TEST_F(ReindexerApi, MetaIndexTest) {
-	const std::string kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/meta_index_test/");
-	reindexer::fs::RmDirAll(kStoragePath);
+	const auto storagePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/meta_index_test/");
+	reindexer::fs::RmDirAll(storagePath); // ignore result
 
 	auto rx = std::make_unique<Reindexer>();
-	auto err = rx->Connect("builtin://" + kStoragePath);
+	auto err = rx->Connect("builtin://" + storagePath);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rx->OpenNamespace(default_namespace, StorageOpts().Enabled().CreateIfMissing());

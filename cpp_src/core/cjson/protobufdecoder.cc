@@ -1,14 +1,13 @@
 #include "protobufdecoder.h"
 #include "core/schema.h"
 #include "estl/protobufparser.h"
-#include "protobufbuilder.h"
 
 namespace reindexer {
 
 void ArraysStorage::UpdateArraySize(int tagName, int field) { GetArray(tagName, field); }
 
 CJsonBuilder& ArraysStorage::GetArray(int tagName, int field) {
-	assertrx(indexes_.size() > 0);
+	assertrx(!indexes_.empty());
 	auto it = data_.find(tagName);
 	if (it == data_.end()) {
 		indexes_.back().emplace_back(tagName);
@@ -25,7 +24,7 @@ CJsonBuilder& ArraysStorage::GetArray(int tagName, int field) {
 void ArraysStorage::onAddObject() { indexes_.emplace_back(h_vector<int, 1>()); }
 
 void ArraysStorage::onObjectBuilt(CJsonBuilder& parent) {
-	assertrx(indexes_.size() > 0);
+	assertrx(!indexes_.empty());
 	for (int tagName : indexes_.back()) {
 		auto it = data_.find(tagName);
 		assertrx(it != data_.end());
@@ -69,10 +68,10 @@ void ProtobufDecoder::setValue(Payload& pl, CJsonBuilder& builder, ProtobufValue
 Error ProtobufDecoder::decodeArray(Payload& pl, CJsonBuilder& builder, const ProtobufValue& item) {
 	ProtobufObject object(item.As<std::string_view>(), *schema_, tagsPath_, tm_);
 	ProtobufParser parser(object);
-	bool packed = item.IsOfPrimitiveType();
-	int field = tm_.tags2field(tagsPath_.data(), tagsPath_.size());
+	const bool packed = item.IsOfPrimitiveType();
+	const int field = tm_.tags2field(tagsPath_.data(), tagsPath_.size());
 	if (field > 0) {
-		auto& f = pl.Type().Field(field);
+		const auto& f = pl.Type().Field(field);
 		if rx_unlikely (!f.IsArray()) {
 			throw Error(errLogic, "Error parsing protobuf field '%s' - got array, expected scalar %s", f.Name(), f.Type().Name());
 		}
@@ -104,7 +103,7 @@ Error ProtobufDecoder::decodeArray(Payload& pl, CJsonBuilder& builder, const Pro
 			}
 		}
 	}
-	return Error();
+	return {};
 }
 
 Error ProtobufDecoder::decode(Payload& pl, CJsonBuilder& builder, const ProtobufValue& item) {

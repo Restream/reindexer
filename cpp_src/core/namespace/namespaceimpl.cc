@@ -3,7 +3,6 @@
 #include <ctime>
 #include <memory>
 #include "core/cjson/cjsondecoder.h"
-// #include "core/cjson/defaultvaluecoder.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/uuid_recoders.h"
 #include "core/formatters/lsn_fmt.h"
@@ -99,7 +98,7 @@ NamespaceImpl::NamespaceImpl(const NamespaceImpl& src, AsyncStorage::FullLockT& 
 	  optimizationState_{NotOptimized},
 	  strHolder_{makeStringsHolder()},
 	  nsUpdateSortedContextMemory_{0},
-	  dbDestroyed_(false) {
+	  dbDestroyed_{false} {
 	for (auto& idxIt : src.indexes_) {
 		indexes_.push_back(idxIt->Clone());
 	}
@@ -111,23 +110,23 @@ NamespaceImpl::NamespaceImpl(const NamespaceImpl& src, AsyncStorage::FullLockT& 
 
 NamespaceImpl::NamespaceImpl(const std::string& name, UpdatesObservers& observers)
 	: intrusive_atomic_rc_base(),
-	  indexes_(*this),
-	  name_(name),
-	  payloadType_(name),
-	  tagsMatcher_(payloadType_),
-	  enablePerfCounters_(false),
-	  queryCountCache_(
-		  std::make_unique<QueryCountCache>(config_.cacheConfig.queryCountCacheSize, config_.cacheConfig.queryCountHitsToCache)),
-	  joinCache_(std::make_unique<JoinCache>(config_.cacheConfig.joinCacheSize, config_.cacheConfig.joinHitsToCache)),
+	  indexes_{*this},
+	  name_{name},
+	  payloadType_{name},
+	  tagsMatcher_{payloadType_},
+	  enablePerfCounters_{false},
+	  queryCountCache_{
+		  std::make_unique<QueryCountCache>(config_.cacheConfig.queryCountCacheSize, config_.cacheConfig.queryCountHitsToCache)},
+	  joinCache_{std::make_unique<JoinCache>(config_.cacheConfig.joinCacheSize, config_.cacheConfig.joinHitsToCache)},
 	  wal_(getWalSize(config_)),
-	  observers_(&observers),
+	  observers_{&observers},
 	  lastSelectTime_{0},
 	  cancelCommitCnt_{0},
 	  lastUpdateTime_{0},
-	  nsIsLoading_(false),
-	  serverIdChanged_(false),
+	  nsIsLoading_{false},
+	  serverIdChanged_{false},
 	  strHolder_{makeStringsHolder()},
-	  dbDestroyed_(false) {
+	  dbDestroyed_{false} {
 	logPrintf(LogTrace, "NamespaceImpl::NamespaceImpl (%s)", name_);
 	FlagGuardT nsLoadingGuard(nsIsLoading_);
 	items_.reserve(10000);
@@ -392,7 +391,7 @@ public:
 private:
 	NamespaceImpl& ns_;
 	std::vector<std::unique_ptr<Index>> indexes_;
-	size_t startIdx_;
+	size_t startIdx_{0};
 };
 
 template <>
@@ -476,31 +475,10 @@ private:
 	NamespaceImpl& ns_;
 	RollBack_recreateCompositeIndexes<needRollBack> rollbacker_recreateCompositeIndexes_;
 	std::vector<std::pair<size_t, PayloadValue>> items_;
-	uint64_t dataHash_;
-	size_t itemsDataSize_;
+	uint64_t dataHash_{0};
+	size_t itemsDataSize_{0};
 	std::unique_ptr<Index> tuple_;
 };
-
-std::vector<TagsPath> NamespaceImpl::pickJsonPath(const PayloadFieldType& fld) {
-	const auto& paths = fld.JsonPaths();
-	if (fld.IsArray()) {
-		std::vector<TagsPath> result;
-		result.reserve(paths.size());
-		for (const auto& path : paths) {
-			auto tags = tagsMatcher_.path2tag(path, false);
-			result.push_back(std::move(tags));
-			// first without nested path - always (any, now last one found)
-			if ((result.size() > 1) && (result.back().size() == 1)) {
-				std::swap(result.front(), result.back());
-			}
-		}
-		return result;
-	}
-
-	assertrx_throw(paths.size() == 1);
-	auto tags = tagsMatcher_.path2tag(paths.front(), false);
-	return {std::move(tags)};
-}
 
 template <>
 class NamespaceImpl::RollBack_updateItems<NeedRollBack::No> {
@@ -565,16 +543,6 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 				recoder = std::make_unique<RecoderStringToUuid>(changedField);
 			}
 		}
-		// TODO: This logic must be reenabled after #1353. Now it's potentially unsafe
-		//  else {
-		// 	const auto& indexToUpdate = indexes_[changedField];
-		// 	if (!IsComposite(indexToUpdate->Type()) && !indexToUpdate->Opts().IsSparse()) {
-		// 		auto tagsNames = pickJsonPath(fld);
-		// 		if (!tagsNames.empty()) {
-		// 			recoder = std::make_unique<DefaultValueCoder>(name_, fld, std::move(tagsNames), changedField);
-		// 		}
-		// 	}
-		// }
 	}
 	rollbacker.SaveTuple();
 
@@ -598,7 +566,6 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 		ItemImpl oldItem(oldPlType, plCurr, tagsMatcher_);
 		oldItem.Unsafe(true);
 		newItem.FromCJSON(oldItem, recoder.get());
-		const bool itemTupleUpdated = recoder && recoder->Reset();
 
 		PayloadValue plNew = oldValue.CopyTo(payloadType_, fieldChangeType == FieldChangeType::Add);
 		plNew.SetLSN(plCurr.GetLSN());
@@ -650,17 +617,6 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 		plCurr = std::move(plNew);
 		repl_.dataHash ^= Payload(payloadType_, plCurr).GetHash();
 		itemsDataSize_ += plCurr.GetCapacity() + sizeof(PayloadValue::dataHeader);
-
-		// update data in storage
-		if (itemTupleUpdated && storage_.IsValid()) {
-			pk.Reset();
-			data.Reset();
-			pk << kRxStorageItemPrefix;
-			Payload(payloadType_, plCurr).SerializeFields(pk, pkFields());
-			data.PutUInt64(plCurr.GetLSN());
-			newItem.GetCJSON(data);
-			storage_.Write(pk.Slice(), data.Slice());
-		}
 	}
 
 	markUpdated(IndexOptimization::Partial);
@@ -1351,7 +1307,7 @@ int NamespaceImpl::getIndexByName(std::string_view index) const {
 }
 
 int NamespaceImpl::getIndexByNameOrJsonPath(std::string_view index) const {
-	int idx;
+	int idx = 0;
 	if (tryGetIndexByName(index, idx)) {
 		return idx;
 	}
@@ -1364,7 +1320,7 @@ int NamespaceImpl::getIndexByNameOrJsonPath(std::string_view index) const {
 }
 
 int NamespaceImpl::getScalarIndexByName(std::string_view index) const {
-	int idx;
+	int idx = 0;
 	if (tryGetIndexByName(index, idx)) {
 		if (idx < indexes_.firstCompositePos()) {
 			return idx;
@@ -1395,7 +1351,7 @@ bool NamespaceImpl::getIndexByNameOrJsonPath(std::string_view name, int& index) 
 }
 
 bool NamespaceImpl::getScalarIndexByName(std::string_view name, int& index) const {
-	int idx;
+	int idx = 0;
 	if (tryGetIndexByName(name, idx)) {
 		if (idx < indexes_.firstCompositePos()) {
 			index = idx;
@@ -1609,7 +1565,7 @@ void NamespaceImpl::doDelete(IdType id) {
 	storage_.Remove(pk.Slice());
 
 	// erase last item
-	int field;
+	int field = 0;
 
 	// erase from composite indexes
 	auto indexesCacheCleaner{GetIndexesCacheCleaner()};
@@ -2984,6 +2940,9 @@ void NamespaceImpl::removeExpiredItems(RdxActivityContext* ctx) {
 		qr.AddNamespace(this, true);
 		auto q = Query(name_).Where(index->Name(), CondLt, expirationThreshold);
 		doDelete(q, qr, rdxCtx);
+		if (qr.Count()) {
+			logFmt(LogInfo, "{}: {} items were removed: TTL({}) has expired", name_, qr.Count(), index->Name());
+		}
 	}
 	tryForceFlush(std::move(wlck));
 }
@@ -3228,8 +3187,7 @@ void NamespaceImpl::checkApplySlaveUpdate(bool fromReplication) {
 	if (repl_.slaveMode && !repl_.replicatorEnabled)  // readOnly
 	{
 		throw Error(errLogic, "Can't modify read only ns '%s'", name_);
-	} else if (repl_.slaveMode && repl_.replicatorEnabled)	// slave
-	{
+	} else if (repl_.slaveMode && repl_.replicatorEnabled) {    // slave
 		if (!fromReplication) {
 			logPrintf(LogTrace, "[repl:%s]:%d Can't modify slave ns '%s' repl_.slaveMode=%d repl_.replicatorenabled=%d fromReplication=%d",
 					  name_, serverId_, name_, repl_.slaveMode, repl_.replicatorEnabled, fromReplication);
@@ -3237,8 +3195,7 @@ void NamespaceImpl::checkApplySlaveUpdate(bool fromReplication) {
 		} else if (repl_.status == ReplicationState::Status::Fatal) {
 			throw Error(errLogic, "Can't modify slave ns '%s', ns has fatal replication error: %s", name_, repl_.replError.what());
 		}
-	} else if (!repl_.slaveMode && !repl_.replicatorEnabled)  // master
-	{
+	} else if (!repl_.slaveMode && !repl_.replicatorEnabled) {  // master
 		if (fromReplication) {
 			throw Error(errLogic, "Can't modify master ns '%s' from replicator", name_);
 		} else if (repl_.status == ReplicationState::Status::Fatal) {

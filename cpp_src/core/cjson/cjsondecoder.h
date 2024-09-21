@@ -17,10 +17,8 @@ public:
 	[[nodiscard]] virtual TagType Type(TagType oldTagType) = 0;
 	virtual void Recode(Serializer&, WrSerializer&) const = 0;
 	virtual void Recode(Serializer&, Payload&, int tagName, WrSerializer&) = 0;
-	[[nodiscard]] virtual bool Match(int field) noexcept = 0;
-	[[nodiscard]] virtual bool Match(TagType, const TagsPath&) = 0;
-	virtual void Serialize(WrSerializer& wrser) = 0;
-	virtual bool Reset() = 0;
+	[[nodiscard]] virtual bool Match(int field) const noexcept = 0;
+	[[nodiscard]] virtual bool Match(const TagsPath&) const = 0;
 	virtual ~Recoder() = default;
 };
 
@@ -49,7 +47,7 @@ public:
 
 	class IndexedSkipFilter {
 	public:
-		IndexedSkipFilter(const FieldsSet& f) noexcept : f_(&f) {}
+		explicit IndexedSkipFilter(const FieldsSet& f) noexcept : f_(&f) {}
 		IndexedSkipFilter MakeCleanCopy() const noexcept { return IndexedSkipFilter(*f_); }
 		IndexedSkipFilter MakeSkipFilter() const noexcept { return IndexedSkipFilter(*f_); }
 
@@ -57,7 +55,7 @@ public:
 		RX_ALWAYS_INLINE bool match(const TagsPath&) const noexcept { return false; }
 
 	private:
-		const FieldsSet* f_;
+		const FieldsSet* f_{nullptr};
 	};
 
 	class RestrictingFilter {
@@ -85,8 +83,8 @@ public:
 		}
 
 	private:
-		const FieldsSet* f_;
-		bool match_;
+		const FieldsSet* f_{nullptr};
+		bool match_{false};
 	};
 
 	class DummyRecoder {
@@ -96,7 +94,6 @@ public:
 		RX_ALWAYS_INLINE bool Recode(Serializer&, Payload&, int, WrSerializer&) const noexcept { return false; }
 		RX_ALWAYS_INLINE TagType RegisterTagType(TagType tagType, int) const noexcept { return tagType; }
 		RX_ALWAYS_INLINE TagType RegisterTagType(TagType tagType, const TagsPath&) const noexcept { return tagType; }
-		RX_ALWAYS_INLINE void Serialize(WrSerializer&) const {}
 	};
 	class DefaultRecoder {
 	public:
@@ -121,14 +118,13 @@ public:
 			return needToRecode_ ? r_->Type(tagType) : tagType;
 		}
 		RX_ALWAYS_INLINE TagType RegisterTagType(TagType tagType, const TagsPath& tagsPath) {
-			needToRecode_ = r_->Match(tagType, tagsPath);
+			needToRecode_ = r_->Match(tagsPath);
 			return needToRecode_ ? r_->Type(tagType) : tagType;
 		}
-		RX_ALWAYS_INLINE void Serialize(WrSerializer& wser) const { r_->Serialize(wser); }
 
 	private:
-		Recoder* r_;
-		bool needToRecode_;
+		Recoder* r_{nullptr};
+		bool needToRecode_{false};
 	};
 	struct NamedTagOpt {};
 	struct NamelessTagOpt {};
@@ -166,7 +162,7 @@ private:
 
 	TagsMatcher& tagsMatcher_;
 	TagsPath tagsPath_;
-	int32_t arrayLevel_ = 0;
+	int32_t arrayLevel_{0};
 	ScalarIndexesSetT objectScalarIndexes_;
 	// storage for owning strings obtained from numbers
 	std::deque<std::string>& storage_;

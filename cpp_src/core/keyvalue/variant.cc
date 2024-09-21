@@ -520,31 +520,31 @@ public:
 		return compare(v1_.As<bool>(), v2_.As<bool>());
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Bool, KeyValueType::Int) const noexcept {
-		return compare(v1_.As<bool>(), v2_.As<int>());
+		return compare(int(v1_.As<bool>()), v2_.As<int>());
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Bool, KeyValueType::Int64) const noexcept {
-		return compare(v1_.As<bool>(), v2_.As<int64_t>());
+		return compare(int64_t(v1_.As<bool>()), v2_.As<int64_t>());
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Bool, KeyValueType::Double) const noexcept {
-		return compare(v1_.As<bool>(), v2_.As<double>());
+		return compare(double(v1_.As<bool>()), v2_.As<double>());
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int, KeyValueType::Bool) const noexcept {
-		return compare(v1_.As<int>(), v2_.As<bool>());
+		return compare(v1_.As<int>(), int(v2_.As<bool>()));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int, KeyValueType::Int) const noexcept {
 		return compare(v1_.As<int>(), v2_.As<int>());
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int, KeyValueType::Int64) const noexcept {
-		return compare(v1_.As<int>(), v2_.As<int64_t>());
+		return compare(int64_t(v1_.As<int>()), v2_.As<int64_t>());
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int, KeyValueType::Double) const noexcept {
 		return compare(v1_.As<int>(), v2_.As<double>());
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int64, KeyValueType::Bool) const noexcept {
-		return compare(v1_.As<int64_t>(), v2_.As<bool>());
+		return compare(v1_.As<int64_t>(), int64_t(v2_.As<bool>()));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int64, KeyValueType::Int) const noexcept {
-		return compare(v1_.As<int64_t>(), v2_.As<int>());
+		return compare(v1_.As<int64_t>(), int64_t(v2_.As<int>()));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int64, KeyValueType::Int64) const noexcept {
 		return compare(v1_.As<int64_t>(), v2_.As<int64_t>());
@@ -553,7 +553,7 @@ public:
 		return compare(v1_.As<int64_t>(), v2_.As<double>());
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Double, KeyValueType::Bool) const noexcept {
-		return compare(v1_.As<double>(), v2_.As<bool>());
+		return compare(v1_.As<double>(), double(v2_.As<bool>()));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Double, KeyValueType::Int) const noexcept {
 		return compare(v1_.As<double>(), v2_.As<int>());

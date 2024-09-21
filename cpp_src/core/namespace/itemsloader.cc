@@ -57,7 +57,7 @@ void ItemsLoader::reading() {
 				throw Error(errLogic, "Can't load data storage of '%s' - there are no PK fields in ns", ns_.name_);
 			}
 			if (dataSlice.size() < sizeof(int64_t)) {
-				lastErr = Error(errParseBin, "Not enougth data in data slice");
+				lastErr = Error(errParseBin, "Not enough data in data slice");
 				logPrintf(LogTrace, "Error load item to '%s' from storage: '%s'", ns_.name_, lastErr.what());
 				++errCount;
 				continue;
@@ -66,7 +66,7 @@ void ItemsLoader::reading() {
 			// Read LSN
 			int64_t lsn = *reinterpret_cast<const int64_t*>(dataSlice.data());
 			if (lsn < 0) {
-				lastErr = Error(errParseBin, "Ivalid LSN value: %d", lsn);
+				lastErr = Error(errParseBin, "Invalid LSN value: %d", lsn);
 				logPrintf(LogTrace, "Error load item to '%s' from storage: '%s'", ns_.name_, lastErr.what());
 				++errCount;
 				continue;
@@ -114,7 +114,7 @@ void ItemsLoader::reading() {
 				continue;
 			}
 			item.impl.Value().SetLSN(int64_t(l));
-			// Prealloc payload here, because reading|parsing thread is faster then index insertion thread
+			// Preallocate payload here, because reading|parsing thread is faster than index insertion thread
 			item.preallocPl = PayloadValue(item.impl.GetConstPayload().RealSize());
 
 			lck.lock();

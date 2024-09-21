@@ -115,13 +115,8 @@ void JsonDecoder::decodeJson(Payload* pl, CJsonBuilder& builder, const gason::Js
 			builder.Null(tagName);
 			break;
 		case gason::JSON_ARRAY: {
-			ObjType type;
 			CounterGuardIR32 g(arrayLevel_);
-			if (gason::isHomogeneousArray(v)) {
-				type = ObjType::TypeArray;
-			} else {
-				type = ObjType::TypeObjectArray;
-			}
+			ObjType type = (gason::isHomogeneousArray(v)) ? ObjType::TypeArray : ObjType::TypeObjectArray;
 			auto arrNode = builder.Array(tagName, type);
 			for (const auto& elem : v) {
 				decodeJson(pl, arrNode, elem.value, 0, match);

@@ -110,7 +110,7 @@ protected:
 	void SetUp() {
 		colors_ = {"red", "green", "blue", "yellow", "purple", "orange"};
 		names_ = {"bubble", "dog", "tomorrow", "car", "dinner", "dish"};
-		db_.reset(new Reindexer);
+		db_ = std::make_shared<Reindexer>();
 	}
 
 	Data randomItemData() {

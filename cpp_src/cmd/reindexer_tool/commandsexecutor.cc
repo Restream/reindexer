@@ -25,7 +25,6 @@ const std::string kVariableOutput = "output";
 const std::string kOutputModeJson = "json";
 const std::string kOutputModeTable = "table";
 const std::string kOutputModePretty = "pretty";
-const std::string kOutputModePrettyCollapsed = "collapsed";
 const std::string kBenchNamespace = "rxtool_bench";
 const std::string kBenchIndex = "id";
 
@@ -157,7 +156,10 @@ Error CommandsExecutor<DBInterface>::fromFileImpl(std::istream& in) {
 	while (GetStatus().running && std::getline(in, line.str)) {
 		if (reindexer::checkIfStartsWith("\\upsert ", line.str) || reindexer::checkIfStartsWith("\\delete ", line.str)) {
 			try {
-				cmdCh.push(line);
+				LineData l;
+				l.lineNum = line.lineNum;
+				reindexer::deepCopy(l.str, line.str);
+				cmdCh.push(std::move(l));
 			} catch (std::exception&) {
 				break;
 			}
@@ -506,7 +508,7 @@ Error CommandsExecutor<DBInterface>::processImpl(const std::string& command) noe
 		} catch (std::exception& e) {
 			return Error(errLogic, "std::exception during command's execution: %s", e.what());
 		} catch (...) {
-			return Error(errLogic, "Unknow exception during command's execution");
+			return Error(errLogic, "Unknown exception during command's execution");
 		}
 	}
 	return Error(errParams, "Unknown command '%s'. Type '\\help' to list of available commands", token);
@@ -683,7 +685,7 @@ Error CommandsExecutor<DBInterface>::commandUpsert(const std::string& command) {
 
 	status = db().Upsert(nsName, item);
 	if (!fromFile_ && status.ok()) {
-		output_() << "Upserted successfuly: 1 items" << std::endl;
+		output_() << "Upserted successfully: 1 items" << std::endl;
 	}
 	return status;
 }
@@ -809,7 +811,7 @@ Error CommandsExecutor<DBInterface>::commandDump(const std::string& command) {
 		}
 
 		for (auto it : itemResults) {
-			if (auto err = it.Status(); !err.ok()) {
+			if (err = it.Status(); !err.ok()) {
 				return err;
 			}
 			if (cancelCtx_.IsCancelled()) {
@@ -1103,7 +1105,7 @@ Error CommandsExecutor<reindexer::client::CoroReindexer>::commandProcessDatabase
 			err = db().Status();
 		}
 		if (err.ok()) {
-			output_() << "Succesfully connected to " << currentDsn << std::endl;
+			output_() << "Successfully connected to " << currentDsn << std::endl;
 		}
 		return err;
 	} else if (subCommand == "create"sv) {
@@ -1119,7 +1121,7 @@ Error CommandsExecutor<reindexer::client::CoroReindexer>::commandProcessDatabase
 		std::vector<std::string> dbNames;
 		err = db().EnumDatabases(dbNames);
 		if (std::find(dbNames.begin(), dbNames.end(), std::string(dbName)) != dbNames.end()) {
-			output_() << "Succesfully created database '" << dbName << "'" << std::endl;
+			output_() << "Successfully created database '" << dbName << "'" << std::endl;
 		} else {
 			std::cerr << "Error on database '" << dbName << "' creation" << std::endl;
 		}

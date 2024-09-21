@@ -19,10 +19,8 @@ public:
 	}
 	void Recode(Serializer&, WrSerializer&) const override final;
 	void Recode(Serializer&, Payload&, int, WrSerializer&) override final { assertrx(false); }
-	[[nodiscard]] bool Match(int) noexcept override final { return false; }
-	[[nodiscard]] bool Match(TagType, const TagsPath& tp) noexcept override final { return tagsPath_ == tp; }
-	void Serialize(WrSerializer&) override final {}
-	bool Reset() override final { return false; }
+	[[nodiscard]] bool Match(int) const noexcept final { return false; }
+	[[nodiscard]] bool Match(const TagsPath& tp) const noexcept final { return tagsPath_ == tp; }
 
 private:
 	TagsPath tagsPath_;
@@ -54,8 +52,8 @@ public:
 		}
 		return TAG_ARRAY;
 	}
-	[[nodiscard]] bool Match(int f) noexcept override final { return f == field_; }
-	[[nodiscard]] bool Match(TagType, const TagsPath&) noexcept override final { return false; }
+	[[nodiscard]] bool Match(int f) const noexcept final { return f == field_; }
+	[[nodiscard]] bool Match(const TagsPath&) const noexcept final { return false; }
 	void Recode(Serializer&, WrSerializer&) const override final { assertrx(false); }
 	void Recode(Serializer& rdser, Payload& pl, int tagName, WrSerializer& wrser) override final {
 		if (fromNotArrayField_) {
@@ -78,8 +76,6 @@ public:
 			wrser.PutVarUint(count);
 		}
 	}
-	void Serialize(WrSerializer&) override final {}
-	bool Reset() override final { return false; }
 
 private:
 	const int field_{std::numeric_limits<int>::max()};
@@ -98,15 +94,13 @@ public:
 		}
 		return TAG_UUID;
 	}
-	[[nodiscard]] bool Match(int f) noexcept override final { return f == field_; }
-	[[nodiscard]] bool Match(TagType, const TagsPath&) noexcept override final { return false; }
+	[[nodiscard]] bool Match(int f) const noexcept final { return f == field_; }
+	[[nodiscard]] bool Match(const TagsPath&) const noexcept final { return false; }
 	void Recode(Serializer&, WrSerializer&) const override final { assertrx(false); }
 	void Recode(Serializer& rdser, Payload& pl, int tagName, WrSerializer& wrser) override final {
 		pl.Set(field_, Variant{rdser.GetStrUuid()}, true);
 		wrser.PutCTag(ctag{TAG_UUID, tagName, field_});
 	}
-	void Serialize(WrSerializer&) override final {}
-	bool Reset() override final { return false; }
 
 private:
 	const int field_{std::numeric_limits<int>::max()};

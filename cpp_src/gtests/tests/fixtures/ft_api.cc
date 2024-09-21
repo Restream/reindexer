@@ -1,7 +1,7 @@
 #include "ft_api.h"
 
 void FTApi::Init(const reindexer::FtFastConfig& ftCfg, unsigned nses, const std::string& storage) {
-	rt.reindexer.reset(new reindexer::Reindexer);
+	rt.reindexer = std::make_shared<reindexer::Reindexer>();
 	if (!storage.empty()) {
 		auto err = rt.reindexer->Connect("builtin://" + storage);
 		ASSERT_TRUE(err.ok()) << err.what();
