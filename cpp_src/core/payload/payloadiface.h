@@ -84,7 +84,7 @@ public:
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
 	void SetSingleElement(int field, const Variant& key);
 
-	// Set element or array by field index
+	// Set element or array by index path
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
 	void Set(std::string_view field, const VariantArray& keys, bool append = false) {
 		return Set(t_.FieldByName(field), keys, append);

@@ -2045,11 +2045,11 @@ TEST_F(ReindexerApi, IntFieldConvertToStringIndexTest) {
 }
 
 TEST_F(ReindexerApi, MetaIndexTest) {
-	const std::string kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/meta_index_test/");
-	reindexer::fs::RmDirAll(kStoragePath);
+	const auto storagePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/meta_index_test/");
+	reindexer::fs::RmDirAll(storagePath);  // ignore result
 
 	auto rx = std::make_unique<Reindexer>();
-	auto err = rx->Connect("builtin://" + kStoragePath);
+	auto err = rx->Connect("builtin://" + storagePath);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rx->OpenNamespace(default_namespace, StorageOpts().Enabled().CreateIfMissing());
@@ -2151,4 +2151,76 @@ TEST_F(ReindexerApi, MetaIndexTest) {
 	err = rx->EnumMeta(default_namespace, readKeys);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(readKeys, std::vector<std::string>{});
+}
+
+TEST_F(ReindexerApi, QueryResultsLSNTest) {
+	using namespace std::string_view_literals;
+	constexpr int kDataCount = 10;
+
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+
+	for (int i = 0; i < kDataCount; ++i) {
+		auto item = rt.NewItem(default_namespace);
+		item["id"] = i;
+		rt.Upsert(default_namespace, item);
+	}
+
+	// Select and save current LSNs
+	auto qr = rt.Select(Query(default_namespace));
+	ASSERT_EQ(qr.Count(), kDataCount);
+	std::vector<reindexer::lsn_t> lsns;
+	lsns.reserve(kDataCount);
+	for (auto& it : qr) {
+		auto lsn = it.GetLSN();
+		ASSERT_FALSE(reindexer::lsn_t{lsn}.isEmpty());
+		lsns.emplace_back(lsn);
+	}
+
+	{
+		// Modify data in different ways
+		const auto updated = rt.Update(Query(default_namespace).Where("id", CondEq, 0).Set("data", {Variant{"modified_0"sv}}));
+		ASSERT_EQ(updated, 1);
+		const auto deleted = rt.Delete(Query(default_namespace).Where("id", CondEq, 1));
+		ASSERT_EQ(deleted, 1);
+		auto delItem = rt.NewItem(default_namespace);
+		delItem["id"] = 2;
+		rt.Delete(default_namespace, delItem);
+		rt.UpsertJSON(default_namespace, R"j({"id":3, "data":"modified_3"})j");
+	}
+
+	{
+		// Modify data via transaction
+		auto tx = rt.reindexer->NewTransaction(default_namespace);
+		ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
+
+		auto updQ = Query(default_namespace).Where("id", CondEq, 4).Set("data", {Variant{"modified_4"sv}});
+		updQ.type_ = QueryUpdate;
+		tx.Modify(std::move(updQ));
+
+		auto delQ = Query(default_namespace).Where("id", CondEq, 5);
+		delQ.type_ = QueryDelete;
+		tx.Modify(std::move(delQ));
+
+		auto delItem = tx.NewItem();
+		delItem["id"] = 6;
+		tx.Delete(std::move(delItem));
+		auto updItem = tx.NewItem();
+		updItem["id"] = 7;
+		updItem["data"] = "modified_7";
+		tx.Update(std::move(updItem));
+		QueryResults txQr;
+		auto err = rt.reindexer->CommitTransaction(tx, txQr);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
+	// Truncate all remaining data
+	auto err = rt.reindexer->TruncateNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// Check that LSNs have not changed for the existing Qr
+	for (size_t i = 0; i < kDataCount; ++i) {
+		auto lsn = reindexer::lsn_t{(qr.begin() + i).GetLSN()};
+		ASSERT_EQ(lsn, lsns[i]) << i;
+	}
 }

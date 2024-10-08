@@ -71,6 +71,10 @@ type Aggregation struct {
 	Fields  []string `json:"fields"`
 }
 
+type EqualPosition struct {
+	Positions []string `json:"positions"`
+}
+
 type sort Sort
 
 type Sort struct {
@@ -80,13 +84,14 @@ type Sort struct {
 }
 
 type Filter struct {
-	Op      string      `json:"Op,omitempty"`
-	Field   string      `json:"Field,omitempty"`
-	Joined  *JoinQuery  `json:"Join_Query,omitempty"`
-	SubQ    *SubQuery   `json:"Subquery,omitempty"`
-	Cond    string      `json:"Cond,omitempty"`
-	Value   interface{} `json:"Value,omitempty"`
-	Filters []Filter    `json:"Filters,omitempty"`
+	Op             string          `json:"Op,omitempty"`
+	Field          string          `json:"Field,omitempty"`
+	Joined         *JoinQuery      `json:"Join_Query,omitempty"`
+	SubQ           *SubQuery       `json:"Subquery,omitempty"`
+	Cond           string          `json:"Cond,omitempty"`
+	Value          interface{}     `json:"Value,omitempty"`
+	EqualPositions []EqualPosition `json:"equal_positions,omitempty"`
+	Filters        []Filter        `json:"Filters,omitempty"`
 }
 
 type JoinOnCondition struct {
@@ -136,13 +141,14 @@ type SubQuery struct {
 }
 
 type filter struct {
-	Op      string     `json:"op,omitempty"`
-	Field   string     `json:"field,omitempty"`
-	Joined  *joinQuery `json:"join_query,omitempty"`
-	SubQ    *subQuery  `json:"subquery,omitempty"`
-	Cond    string     `json:"cond,omitempty"`
-	Value   value      `json:"value,omitempty"`
-	Filters []filter   `json:"filters,omitempty"`
+	Op             string          `json:"op,omitempty"`
+	Field          string          `json:"field,omitempty"`
+	Joined         *joinQuery      `json:"join_query,omitempty"`
+	SubQ           *subQuery       `json:"subquery,omitempty"`
+	Cond           string          `json:"cond,omitempty"`
+	Value          value           `json:"value,omitempty"`
+	EqualPositions []EqualPosition `json:"equal_positions,omitempty"`
+	Filters        []filter        `json:"filters,omitempty"`
 }
 
 type value struct {
@@ -216,6 +222,7 @@ func (f *Filter) fillFilter(flt *filter) error {
 	f.Op = flt.Op
 	f.Cond = flt.Cond
 	f.Field = flt.Field
+	f.EqualPositions = flt.EqualPositions
 	if flt.Joined != nil {
 		f.Joined = &JoinQuery{joinQueryBase: joinQueryBase{Namespace: flt.Joined.Namespace,
 			Type: flt.Joined.Type, Sort: flt.Joined.Sort,

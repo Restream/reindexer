@@ -133,7 +133,7 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 
 
 ### Version information
-*Version* : 3.28.2
+*Version* : 3.29.0
 
 
 ### License information

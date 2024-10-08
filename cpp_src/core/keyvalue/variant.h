@@ -43,6 +43,7 @@ public:
 	explicit Variant(std::string&& v) : variant_{0, 1, KeyValueType::String{}} {
 		new (cast<void>()) key_string(make_key_string(std::move(v)));
 	}
+	explicit Variant(std::string_view v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(make_key_string(v)); }
 	explicit Variant(const key_string& v) noexcept : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(v); }
 	explicit Variant(key_string&& v) noexcept : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(std::move(v)); }
 	explicit Variant(const PayloadValue& v) noexcept : variant_{0, 1, KeyValueType::Composite{}} { new (cast<void>()) PayloadValue(v); }

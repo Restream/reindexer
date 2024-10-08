@@ -743,11 +743,11 @@ protected:
 										.Distinct(distinct.c_str())
 										.Sort(kFieldNameYear, true));
 
-				ExecuteAndVerifyWithSql(Query(default_namespace)
-											.Select({distinct.c_str()})
-											.Distinct(distinct.c_str())
-											.Where(kFieldNameGenre, CondEq, randomGenre)
-											.Sort(kFieldNameYear, true));
+			ExecuteAndVerifyWithSql(Query(default_namespace)
+										.Select({distinct.c_str()})
+										.Distinct(distinct.c_str())
+										.Where(kFieldNameGenre, CondEq, randomGenre)
+										.Sort(kFieldNameYear, true));
 		}
 	}
 

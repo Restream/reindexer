@@ -900,19 +900,37 @@ TEST_F(ReplicationSlaveSlaveApi, RenameSlaveNs) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(r1.Count() == 1);
 }
+
 TEST_F(ReplicationSlaveSlaveApi, Node3ApplyWal) {
 	// Node configuration:
 	//			master
 	//			  |
 	//			slave1
-	//            |
-	//          slave2
+	//			  |
+	//			slave2
 	// Checks applying syncNamespaceByWAL on slave1 and slave2 node.
 
 	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "Node3ApplyWal"));
 	const std::string upDsn1 = "cproto://127.0.0.1:7770/db";
 	const std::string upDsn2 = "cproto://127.0.0.1:7771/db";
-	const unsigned int n = 2000;  // 11;
+	const unsigned n = 500;
+	const unsigned nTx = 500;
+
+	auto modifyData = [&](ServerControl& sc, TestNamespace1& ns, int from) {
+		ns.AddRows(sc, from, n);
+		ns.AddRows(sc, from + n, nTx);
+
+		auto& api = sc.Get()->api;
+		client::SyncCoroQueryResults qrUpd(api.reindexer.get()), qrDel(api.reindexer.get());
+		api.Update(Query(ns.nsName_)
+					   .Where("id", CondSet, {Variant{from + 1}, Variant{from + 2}, Variant{from + 5}, Variant{from + 10}})
+					   .Set("data", {Variant{"new value"}}),
+				   qrUpd);
+		ASSERT_GT(qrUpd.Count(), 0);
+		api.Delete(Query(ns.nsName_).Where("id", CondSet, {Variant{from + 5}, Variant{from + 7}, Variant{from + 9}}), qrDel);
+		ASSERT_GT(qrDel.Count(), 0);
+	};
+
 	{
 		ServerControl master;
 		ServerControl slave1;
@@ -920,14 +938,14 @@ TEST_F(ReplicationSlaveSlaveApi, Node3ApplyWal) {
 		master.InitServer(0, 7770, 7880, kBaseDbPath + "/master", "db", true);
 		master.Get()->MakeMaster();
 		TestNamespace1 testns1(master, "ns1");
-		testns1.AddRows(master, 3000, n);
-		// start init of slave
+		modifyData(master, testns1, 3000);
+		// Start init of slave
 		{
 			slave1.InitServer(1, 7771, 7881, kBaseDbPath + "/slave1", "db", true);
 			slave2.InitServer(2, 7772, 7882, kBaseDbPath + "/slave2", "db", true);
-			ReplicationConfigTest configSlave1("slave", false, true, 1, upDsn1, "slave1");
+			ReplicationConfigTest configSlave1("slave", false, false, 1, upDsn1, "slave1");
 			slave1.Get()->MakeSlave(configSlave1);
-			ReplicationConfigTest configSlave2("slave", false, true, 2, upDsn2, "slave2");
+			ReplicationConfigTest configSlave2("slave", false, false, 2, upDsn2, "slave2");
 			slave2.Get()->MakeSlave(configSlave2);
 			WaitSync(master, slave1, "ns1");
 			WaitSync(master, slave2, "ns1");
@@ -937,12 +955,13 @@ TEST_F(ReplicationSlaveSlaveApi, Node3ApplyWal) {
 		slave2.Stop();
 	}
 
+	// Restart all nodes
 	{
 		ServerControl master;
 		master.InitServer(0, 7770, 7880, kBaseDbPath + "/master", "db", true);
 		master.Get()->MakeMaster();
 		TestNamespace1 testns1(master, "ns1");
-		testns1.AddRows(master, 30000, n);
+		modifyData(master, testns1, 30000);
 	}
 	ServerControl master;
 	master.InitServer(0, 7770, 7880, kBaseDbPath + "/master", "db", true);
@@ -954,10 +973,21 @@ TEST_F(ReplicationSlaveSlaveApi, Node3ApplyWal) {
 	ServerControl slave2;
 	slave2.InitServer(2, 7772, 7882, kBaseDbPath + "/slave2", "db", true);
 
-	// std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-
 	WaitSync(master, slave1, "ns1");
 	WaitSync(master, slave2, "ns1");
+
+	{
+		// Add more data and restart leader
+		TestNamespace1 testns1(master, "ns1");
+		modifyData(master, testns1, 100000);
+		master.Stop();
+		master = ServerControl();
+		master.InitServer(0, 7770, 7880, kBaseDbPath + "/master", "db", true);
+		master.Get()->MakeMaster();
+	}
+	WaitSync(master, slave1, "ns1");
+	WaitSync(master, slave2, "ns1");
+
 	master.Stop();
 	slave1.Stop();
 	slave2.Stop();

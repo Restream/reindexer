@@ -1047,6 +1047,9 @@ func (q *Query) Get() (item interface{}, found bool) {
 
 // GetCtx will execute query, and return 1 st item, panic on error
 func (q *Query) GetCtx(ctx context.Context) (item interface{}, found bool) {
+	if q.root != nil {
+		q = q.root
+	}
 	iter := q.Limit(1).MustExecCtx(ctx)
 	defer iter.Close()
 	if iter.Next() {
@@ -1062,6 +1065,9 @@ func (q *Query) GetJson() (json []byte, found bool) {
 
 // GetJsonCtx will execute query, and return 1 st item, panic on error
 func (q *Query) GetJsonCtx(ctx context.Context) (json []byte, found bool) {
+	if q.root != nil {
+		q = q.root
+	}
 	it := q.Limit(1).ExecToJsonCtx(ctx)
 	defer it.Close()
 	if it.Error() != nil {

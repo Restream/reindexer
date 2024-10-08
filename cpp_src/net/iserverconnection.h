@@ -32,7 +32,7 @@ public:
 
 	/// Restart connection
 	/// @param s - socket of the accepted connection.
-	/// @return true - if successfuly restarted, false - if connection can't be restarted.
+	/// @return true - if successfully restarted, false - if connection can't be restarted.
 	virtual bool Restart(socket&& s) = 0;
 	/// Attach connection to another listener loop. Must be called from thread of loop
 	/// @param loop - another loop to bind

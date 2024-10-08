@@ -6,6 +6,8 @@
 #include "core/rdxcontext.h"
 #include "tools/semversion.h"
 
+#include "tools/logger.h"
+
 namespace reindexer {
 
 const SemVersion kMinUnknownReplSupportRxVersion("2.6.0");
@@ -18,6 +20,8 @@ void WALSelecter::operator()(QueryResults& result, SelectCtx& params) {
 	int count = q.Limit();
 	int start = q.Offset();
 	result.totalCount = 0;
+
+	logFmt(LogInfo, "{}:{} WAL select (v3): {}", ns_->serverId_, ns_->name_, q.GetSQL(QuerySelect));
 
 	if (!q.IsWALQuery()) {
 		throw Error(errLogic, "Query to WAL should contain only 1 condition '#lsn > number'");

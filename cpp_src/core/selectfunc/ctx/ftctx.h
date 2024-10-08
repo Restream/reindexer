@@ -8,49 +8,58 @@
 
 namespace reindexer {
 
+struct FtCtxData : public intrusive_atomic_rc_base {
+	FtCtxData(BaseFunctionCtx::CtxType t) noexcept : type(t) {}
+	virtual ~FtCtxData() = default;
+	void InitHolders() {
+		assertrx_dbg(!holders.has_value());
+		holders.emplace();
+	}
+	typedef intrusive_ptr<FtCtxData> Ptr;
+	std::vector<int16_t> proc;
+	std::optional<RHashMap<IdType, size_t>> holders;
+	bool isComposite = false;
+	bool isWordPositions = false;
+	std::string extraWordSymbols;
+	BaseFunctionCtx::CtxType type;
+};
+
+template <typename AreaType>
+struct FtCtxAreaData : public FtCtxData {
+	FtCtxAreaData(BaseFunctionCtx::CtxType t) noexcept : FtCtxData(t) {}
+	std::vector<AreasInDocument<AreaType>> area;
+};
 enum FtSortType { RankOnly, RankAndID, ExternalExpression };
 
 class FtCtx : public BaseFunctionCtx {
 public:
 	typedef intrusive_ptr<FtCtx> Ptr;
-	struct Data : public BaseFunctionCtx {
-		bool NeedArea() const noexcept { return holders_.has_value(); }
-		void InitHolders() {
-			assertrx_dbg(!holders_.has_value());
-			holders_.emplace();
-		}
+	FtCtx(BaseFunctionCtx::CtxType t);
+	int16_t Proc(size_t pos) const noexcept { return (pos < data_->proc.size()) ? data_->proc[pos] : 0; }
 
-		typedef intrusive_ptr<Data> Ptr;
-		std::vector<int16_t> proc_;
-		std::optional<fast_hash_map<IdType, size_t>> holders_;
-		std::vector<AreaHolder> area_;
-		bool isComposite_ = false;
-		bool isWordPositions_ = false;
-		std::string extraWordSymbols_;
-	};
-
-	FtCtx() : data_(make_intrusive<Data>()) { this->type = BaseFunctionCtx::kFtCtx; }
-	int16_t Proc(size_t pos) const noexcept { return (pos < data_->proc_.size()) ? data_->proc_[pos] : 0; }
-
-	template <typename InputIterator>
-	void Add(InputIterator begin, InputIterator end, int16_t proc, AreaHolder&& holder);
 	template <typename InputIterator>
 	void Add(InputIterator begin, InputIterator end, int16_t proc);
 
 	template <typename InputIterator>
-	void Add(InputIterator begin, InputIterator end, int16_t proc, const std::vector<bool>& mask, AreaHolder&& holder);
-	template <typename InputIterator>
 	void Add(InputIterator begin, InputIterator end, int16_t proc, const std::vector<bool>& mask);
 
-	void Reserve(size_t size) { data_->proc_.reserve(size); }
-	size_t Size() const noexcept { return data_->proc_.size(); }
-	bool NeedArea() const noexcept { return data_->NeedArea(); }
-	bool PrepareAreas(const RHashMap<std::string, int>& fields, const std::string& name);
+	template <typename InputIterator, typename AreaType>
+	void Add(InputIterator begin, InputIterator end, int16_t proc, AreasInDocument<AreaType>&& holder);
 
-	void SetData(Data::Ptr data) noexcept { data_ = std::move(data); }
-	const Data::Ptr& GetData() const noexcept { return data_; }
+	template <typename InputIterator, typename AreaType>
+	void Add(InputIterator begin, InputIterator end, int16_t proc, const std::vector<bool>& mask, AreasInDocument<AreaType>&& holder);
+
+	void Reserve(size_t size) { data_->proc.reserve(size); }
+	size_t Size() const noexcept { return data_->proc.size(); }
+
+	void SetExtraWordSymbols(const std::string& s) { data_->extraWordSymbols = s; }
+	void SetWordPosition(bool v) { data_->isWordPositions = v; }
+
+	FtCtxData::Ptr GetData() { return data_; }
+	void SetData(FtCtxData::Ptr data) noexcept { data_ = std::move(data); }
 
 private:
-	Data::Ptr data_;
+	FtCtxData::Ptr data_;
 };
+
 }  // namespace reindexer

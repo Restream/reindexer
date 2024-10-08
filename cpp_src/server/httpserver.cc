@@ -1501,17 +1501,12 @@ int HTTPServer::queryResultsProtobuf(http::Context& ctx, const reindexer::QueryR
 	WrSerializer wrSer(ctx.writer->GetChunk());
 	ProtobufBuilder protobufBuilder(&wrSer);
 
-	int itemsField = kProtoQueryResultsFields.at(kParamItems);
 	for (size_t i = offset; i < res.Count() && i < offset + limit; i++) {
-		auto item = protobufBuilder.Object(itemsField);
 		auto it = res[i];
-		auto i1 = item.Object(res.getNsNumber(it.GetItemRef().Nsid()) + 1);
 		const auto err = it.GetProtobuf(wrSer, false);
 		if (!err.ok()) {
 			return ctx.Protobuf(err.code(), wrSer.DetachChunk());
 		}
-		i1.End();
-		item.End();
 	}
 
 	int aggregationField = kProtoQueryResultsFields.at(kParamAggregations);

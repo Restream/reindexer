@@ -16,8 +16,6 @@
 
 #include "core/reindexer.h"
 
-const std::string kStoragePath = "/tmp/reindex/bench_test";
-
 using std::shared_ptr;
 using reindexer::Reindexer;
 
@@ -33,15 +31,16 @@ const int kItemsInComparatorsBenchDataset = 100'000;
 #endif
 
 int main(int argc, char** argv) {
-	if (reindexer::fs::RmDirAll(kStoragePath) < 0 && errno != ENOENT) {
-		std::cerr << "Could not clean working dir '" << kStoragePath << "'.";
+	const auto storagePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/bench_test");
+	if (reindexer::fs::RmDirAll(storagePath) < 0 && errno != ENOENT) {
+		std::cerr << "Could not clean working dir '" << storagePath << "'.";
 		std::cerr << "Reason: " << strerror(errno) << std::endl;
 
 		return 1;
 	}
 
-	shared_ptr<Reindexer> DB = std::make_shared<Reindexer>();
-	auto err = DB->Connect("builtin://" + kStoragePath);
+	auto DB = std::make_shared<Reindexer>();
+	auto err = DB->Connect("builtin://" + storagePath);
 	if (!err.ok()) {
 		return err.code();
 	}

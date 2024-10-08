@@ -870,7 +870,7 @@ func (db *reindexerImpl) mustBeginTx(ctx context.Context, namespace string) *Tx 
 	return tx
 }
 
-func (db *reindexerImpl) addFilterDSL(filter *dsl.Filter, q *Query) error {
+func (db *reindexerImpl) addFilterDSL(filter *dsl.Filter, q *Query, fields *map[string]bool) error {
 	if filter.Field == "" {
 		return ErrEmptyFieldName
 	}
@@ -880,6 +880,7 @@ func (db *reindexerImpl) addFilterDSL(filter *dsl.Filter, q *Query) error {
 	}
 	if filter.Value != nil || cond == bindings.ANY || cond == bindings.EMPTY {
 		// Skip filter if value is nil (for backwards compatibility reasons)
+		(*fields)[filter.Field] = q.nextOp == opAND
 		q.Where(filter.Field, cond, filter.Value)
 	} else {
 		q.And()
@@ -1036,9 +1037,12 @@ func (db *reindexerImpl) addSubqueryDSL(filter *dsl.Filter, q *Query) error {
 }
 
 func (db *reindexerImpl) handleFiltersDSL(filters []dsl.Filter, joinIDs *map[string]int, q *Query) (*Query, error) {
+	equalPositionsFilters := make([]*dsl.Filter, 0, len(filters))
+	fields := make(map[string]bool)
+
 	for fi := range filters {
 		filter := &filters[fi]
-		switch strings.ToLower(filters[fi].Op) {
+		switch strings.ToLower(filter.Op) {
 		case "":
 			q.And()
 		case "and":
@@ -1048,7 +1052,7 @@ func (db *reindexerImpl) handleFiltersDSL(filters []dsl.Filter, joinIDs *map[str
 		case "not":
 			q.Not()
 		default:
-			return nil, bindings.NewError(fmt.Sprintf("rq: dsl filter op is invalid: '%s'", filters[fi].Op), ErrCodeParams)
+			return nil, bindings.NewError(fmt.Sprintf("rq: dsl filter op is invalid: '%s'", filter.Op), ErrCodeParams)
 		}
 
 		if filter.Joined != nil {
@@ -1107,12 +1111,61 @@ func (db *reindexerImpl) handleFiltersDSL(filters []dsl.Filter, joinIDs *map[str
 				return nil, err
 			}
 			continue
+		} else if len(filter.EqualPositions) > 0 {
+			equalPositionsFilters = append(equalPositionsFilters, filter)
+			continue
 		}
-		if err := db.addFilterDSL(filter, q); err != nil {
+		if err := db.addFilterDSL(filter, q, &fields); err != nil {
 			return nil, err
 		}
 	}
+
+	if err := db.processEqualPositions(q, equalPositionsFilters, fields); err != nil {
+		return nil, err
+	}
+
 	return q, nil
+}
+
+func (db *reindexerImpl) processEqualPositions(q *Query, filters []*dsl.Filter, conditionFields map[string]bool) error {
+	for _, filter := range filters {
+		if filter.Cond != "" ||
+			filter.Op != "" ||
+			filter.Field != "" ||
+			filter.Value != nil ||
+			filter.Filters != nil ||
+			filter.Joined != nil ||
+			filter.SubQ != nil {
+			return bindings.NewError("rq: filter: filter with 'equal_positions'-field should not contain any other fields besides it", ErrCodeParams)
+		}
+
+		for _, EqualPositionsElement := range filter.EqualPositions {
+			fieldsCount := len(EqualPositionsElement.Positions)
+			if fieldsCount < 2 {
+				return bindings.NewError(fmt.Sprintf("rq: filter: 'equal_positions' is supposed to have at least 2 arguments. Arguments: %v",
+					EqualPositionsElement.Positions), ErrCodeParams)
+			}
+
+			fields := make([]string, 0, fieldsCount)
+			for _, field := range EqualPositionsElement.Positions {
+				isAndOp, exist := conditionFields[field]
+				if !exist {
+					return bindings.NewError("rq: filter: fields from 'equal_positions'-filter must be specified in the 'where'-conditions of other filters in the current bracket",
+						ErrCodeParams)
+				}
+				if !isAndOp {
+					return bindings.NewError(fmt.Sprintf("rq: filter: only AND operation allowed for equal position; equal position field with not AND operation: '%s'; equal position fields: %v",
+						field,
+						EqualPositionsElement.Positions),
+						ErrCodeParams)
+				}
+				fields = append(fields, field)
+			}
+
+			q.EqualPosition(fields...)
+		}
+	}
+	return nil
 }
 
 func (db *reindexerImpl) addAggregationsDSL(q *Query, aggs []dsl.Aggregation) error {

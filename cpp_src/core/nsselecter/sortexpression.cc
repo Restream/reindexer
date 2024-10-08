@@ -64,11 +64,11 @@ VariantArray SortExpression::GetJoinedFieldValues(IdType rowId, const joins::Nam
 												  const std::vector<JoinedSelector>& joinedSelectors, size_t nsIdx, std::string_view column,
 												  int index) {
 	const auto& js = joinedSelectors[nsIdx];
-	std::reference_wrapper<const PayloadType> pt =
-		std::visit(overloaded{[](const JoinPreResult::Values& values) noexcept { return std::cref(values.payloadType); },
-							  Restricted<IdSet, SelectIteratorContainer>{}(
-								  [&js](const auto&) noexcept { return std::cref(js.rightNs_->payloadType_); })},
-				   js.PreResult().payload);
+	std::reference_wrapper<const PayloadType> pt = std::visit(
+		overloaded{
+			[](const JoinPreResult::Values& values) noexcept { return std::cref(values.payloadType); },
+			Restricted<IdSet, SelectIteratorContainer>{}([&js](const auto&) noexcept { return std::cref(js.rightNs_->payloadType_); })},
+		js.PreResult().payload);
 	const ConstPayload pv{pt, getJoinedValue(rowId, joinResults, joinedSelectors, nsIdx)};
 	VariantArray values;
 	if (index == IndexValueType::SetByJsonPath) {
@@ -156,11 +156,11 @@ double DistanceBetweenJoinedIndexes::GetValue(IdType rowId, const joins::Namespa
 double DistanceBetweenJoinedIndexesSameNs::GetValue(IdType rowId, const joins::NamespaceResults& joinResults,
 													const std::vector<JoinedSelector>& joinedSelectors) const {
 	const auto& js = joinedSelectors[nsIdx];
-	std::reference_wrapper<const PayloadType> pt =
-		std::visit(overloaded{[](const JoinPreResult::Values& values) noexcept { return std::cref(values.payloadType); },
-							  Restricted<IdSet, SelectIteratorContainer>{}(
-								  [&js](const auto&) noexcept { return std::cref(js.rightNs_->payloadType_); })},
-				   js.PreResult().payload);
+	std::reference_wrapper<const PayloadType> pt = std::visit(
+		overloaded{
+			[](const JoinPreResult::Values& values) noexcept { return std::cref(values.payloadType); },
+			Restricted<IdSet, SelectIteratorContainer>{}([&js](const auto&) noexcept { return std::cref(js.rightNs_->payloadType_); })},
+		js.PreResult().payload);
 	const ConstPayload pv{pt, SortExpression::getJoinedValue(rowId, joinResults, joinedSelectors, nsIdx)};
 	TagsMatcher tm = std::visit(overloaded{[](const JoinPreResult::Values& values) noexcept { return std::cref(values.tagsMatcher); },
 										   Restricted<IdSet, SelectIteratorContainer>{}(

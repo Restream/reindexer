@@ -229,7 +229,7 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 								  [](const SelectIteratorContainer&) -> VariantArray { throw_as_assert; }},
 					   preresult.payload);
 		auto ctx = selectFnc ? selectFnc->CreateCtx(joinEntry.LeftIdxNo()) : BaseFunctionCtx::Ptr{};
-		assertrx_throw(!ctx || ctx->type != BaseFunctionCtx::kFtCtx);
+		assertrx_throw(!ctx || ctx->type != BaseFunctionCtx::CtxType::kFtCtx);
 
 		if (leftIndex->Opts().GetCollateMode() == CollateUTF8) {
 			for (auto& key : values) {

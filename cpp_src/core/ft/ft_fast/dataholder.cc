@@ -104,8 +104,8 @@ void DataHolder<IdCont>::Clear() {
 }
 
 template <typename IdCont>
-void DataHolder<IdCont>::StartCommit(bool complte_updated) {
-	if (NeedRebuild(complte_updated)) {
+void DataHolder<IdCont>::StartCommit(bool complete_updated) {
+	if (NeedRebuild(complete_updated)) {
 		status_ = FullRebuild;
 
 		Clear();

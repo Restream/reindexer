@@ -1,7 +1,7 @@
 #include "ft_api.h"
 
 void FTApi::Init(const reindexer::FtFastConfig& ftCfg, unsigned nses, const std::string& storage) {
-	rt.reindexer.reset(new reindexer::Reindexer);
+	rt.reindexer = std::make_shared<reindexer::Reindexer>();
 	if (!storage.empty()) {
 		auto err = rt.reindexer->Connect("builtin://" + storage);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -154,24 +154,15 @@ void FTApi::AddInBothFields(std::string_view ns, std::string_view w1, std::strin
 	rt.Commit(ns);
 }
 
-reindexer::QueryResults FTApi::SimpleSelect(std::string word, bool withHighlight) {
-	auto q{reindexer::Query("nm1").Where("ft3", CondEq, std::move(word)).WithRank()};
+reindexer::QueryResults FTApi::SimpleSelect(std::string_view ns, std::string_view index, std::string_view dsl, bool withHighlight) {
+	auto q{reindexer::Query(ns).Where(index, CondEq, std::string(dsl)).WithRank()};
 	reindexer::QueryResults res;
 	if (withHighlight) {
-		q.AddFunction("ft3 = highlight(!,!)");
+		q.AddFunction(fmt::format("{} = highlight(!,!)", index));
 	}
 	auto err = rt.reindexer->Select(q, res);
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	return res;
-}
-
-reindexer::QueryResults FTApi::SimpleSelect3(std::string word) {
-	auto qr{reindexer::Query("nm3").Where("ft", CondEq, std::move(word))};
-	reindexer::QueryResults res;
-	qr.AddFunction("ft = highlight(!,!)");
-	auto err = rt.reindexer->Select(qr, res);
-	EXPECT_TRUE(err.ok()) << err.what();
 	return res;
 }
 

@@ -1516,13 +1516,13 @@ TEST_F(NsApi, ArrayRemoveWithSql) {
 			Item item = it.GetItem(false);
 			checkIfItemJSONValid(it);
 			VariantArray values = item["array_field"];
-			ASSERT_EQ(values.size(), 1 + 8 + 2); // [0] || [11,22,33,44,55,66,77,88] || [7,9] remove 99
-			int i = 0; // 1
-			for ( ; i < 9; ++i) {
-				ASSERT_EQ(values[i].As<int>(), i * 11); // +8
+			ASSERT_EQ(values.size(), 1 + 8 + 2);  // [0] || [11,22,33,44,55,66,77,88] || [7,9] remove 99
+			int i = 0;							  // 1
+			for (; i < 9; ++i) {
+				ASSERT_EQ(values[i].As<int>(), i * 11);	 // +8
 			}
 			ASSERT_EQ(values[i++].As<int>(), 7);
-			ASSERT_EQ(values[i].As<int>(), 9); // +2
+			ASSERT_EQ(values[i].As<int>(), 9);	// +2
 		}
 	}
 
@@ -1536,12 +1536,12 @@ TEST_F(NsApi, ArrayRemoveWithSql) {
 			Item item = it.GetItem(false);
 			checkIfItemJSONValid(it);
 			VariantArray values = item["array_field"];
-			ASSERT_EQ(values.size(), 1 + 8 + 1); // [0,11,22,33,44,55,66,77,88,9] remove 7
-			int i = 0; // 1
-			for ( ; i < 9; ++i) {
-				ASSERT_EQ(values[i].As<int>(), i * 11); // +8
+			ASSERT_EQ(values.size(), 1 + 8 + 1);  // [0,11,22,33,44,55,66,77,88,9] remove 7
+			int i = 0;							  // 1
+			for (; i < 9; ++i) {
+				ASSERT_EQ(values[i].As<int>(), i * 11);	 // +8
 			}
-			ASSERT_EQ(values[i].As<int>(), 9); // +1
+			ASSERT_EQ(values[i].As<int>(), 9);	// +1
 		}
 	}
 
@@ -1633,12 +1633,12 @@ TEST_F(NsApi, ArrayRemoveWithSql) {
 			Item item = it.GetItem(false);
 			checkIfItemJSONValid(it);
 			VariantArray values = item["array_field"];
-			ASSERT_EQ(values.size(), 9); // [11,22,33,44,55,66,77,88,9] remove 0
+			ASSERT_EQ(values.size(), 9);  // [11,22,33,44,55,66,77,88,9] remove 0
 			int i = 0;
-			for ( ; i < 8; ++i) {
-				ASSERT_EQ(values[i].As<int>(), (i + 1) * 11); // +8
+			for (; i < 8; ++i) {
+				ASSERT_EQ(values[i].As<int>(), (i + 1) * 11);  // +8
 			}
-			ASSERT_EQ(values[i].As<int>(), 9); // +1
+			ASSERT_EQ(values[i].As<int>(), 9);	// +1
 		}
 	}
 
@@ -1652,12 +1652,12 @@ TEST_F(NsApi, ArrayRemoveWithSql) {
 			Item item = it.GetItem(false);
 			checkIfItemJSONValid(it);
 			VariantArray values = item["array_field"];
-			ASSERT_EQ(values.size(), 8); // [11,22,33,44,55,66,77,9] remove 88
+			ASSERT_EQ(values.size(), 8);  // [11,22,33,44,55,66,77,9] remove 88
 			int i = 0;
-			for ( ; i < 7; ++i) {
-				ASSERT_EQ(values[i].As<int>(), (i + 1) * 11); // +7
+			for (; i < 7; ++i) {
+				ASSERT_EQ(values[i].As<int>(), (i + 1) * 11);  // +7
 			}
-			ASSERT_EQ(values[i].As<int>(), 9); // +1
+			ASSERT_EQ(values[i].As<int>(), 9);	// +1
 		}
 	}
 

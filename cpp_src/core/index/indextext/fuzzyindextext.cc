@@ -5,7 +5,8 @@
 namespace reindexer {
 
 template <typename T>
-IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses&&,
+
+IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr bctx, FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses&&,
 									 FtUseExternStatuses withExternSt, const RdxContext& rdxCtx) {
 	assertrx_throw(withExternSt == FtUseExternStatuses::No);
 	(void)ftSortType;
@@ -15,6 +16,7 @@ IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inT
 	auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 
 	mergedIds->reserve(result.data_->size() * 2);
+	intrusive_ptr<FtCtx> fctx = static_ctx_pointer_cast<FtCtx>(bctx);
 	fctx->Reserve(result.data_->size() * 2);
 	double coof = 1;
 	if (result.max_proc_ > 100) {

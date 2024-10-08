@@ -28,9 +28,11 @@ public:
 
 	void AddInBothFields(std::string_view ns, std::string_view w1, std::string_view w2);
 
-	reindexer::QueryResults SimpleSelect(std::string word, bool withHighlight = true);
-
-	reindexer::QueryResults SimpleSelect3(std::string word);
+	reindexer::QueryResults SimpleSelect(std::string_view ns, std::string_view index, std::string_view dsl, bool withHighlight);
+	reindexer::QueryResults SimpleSelect(std::string_view word, bool withHighlight = true) {
+		return SimpleSelect("nm1", "ft3", word, withHighlight);
+	}
+	reindexer::QueryResults SimpleSelect3(std::string_view word) { return SimpleSelect("nm3", "ft", word, true); }
 
 	reindexer::Error Delete(int id);
 	reindexer::QueryResults SimpleCompositeSelect(std::string word);

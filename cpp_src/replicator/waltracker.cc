@@ -128,7 +128,7 @@ std::vector<std::pair<int64_t, std::string>> WALTracker::readFromStorage(int64_t
 			// Read LSN
 			const int64_t lsn = *reinterpret_cast<const int64_t*>(dataSlice.data());
 			assertrx(lsn >= 0);
-			maxLSN = std::max(maxLSN, lsn);
+			maxLSN = std::max(maxLSN, lsn_t(lsn).Counter());
 			dataSlice = dataSlice.substr(sizeof(lsn));
 			data.emplace_back(lsn, std::string(dataSlice));
 		}

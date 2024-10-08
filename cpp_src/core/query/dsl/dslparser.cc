@@ -142,7 +142,7 @@ constexpr static auto kAggregationTypes = MakeFastStrMap<AggType>({
 	{"count_cached", AggCountCached},
 });
 
-// additionalfor parse field 'equation_positions'
+// additional for parse field 'equation_positions'
 constexpr static auto kEquationPositionMap = MakeFastStrMap<EqualPosition>({{"positions", EqualPosition::Positions}});
 
 // additional for 'Root::QueryType' field

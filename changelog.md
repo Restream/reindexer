@@ -1,3 +1,28 @@
+# Version 3.29.0 (08.10.2024)
+## Core
+- [fea] Added Chinese and Japanese symbols into locale. Currently those symbols will be indexed by fulltext engine (using space-separators), but proper tokenization for the languages will be added in the separate release
+- [fea] Added [debug_rank() function](fulltext.md#debug_rank) for fulltext-indexes (it allows to get some more ranking details in the resulting docs)
+- [fix] Fixed crash in fulltext index data deletion after `incorrect encoding` error handling
+- [fix] Fixed LSN setting for deleted items
+- [fix] Fixed large `int64` convertion in SQL queries
+
+## Replication
+- [fix] Fixed possible datahash missmatch after WAL-sync in cascade replication setups
+- [fix] Fixed storage rollback from v4 with non-default `server ID` values
+
+## Reindexer server
+- [fix] Fixed GRPC queries responses in [Protobuf format](cpp_src/readme.md#protobuf)
+
+## Go connector
+- [fea] Added ["equal_positions" filters](readme.md#search-in-array-fields-with-matching-array-indexes) support into [Go DSL](dsl/dsl.go)
+- [fix] Fixed interaction between `query.Get()` and joined-queries. Now `Get()` correctly applies `limit` to the main query
+
+## Build
+- [fix] Fixed `AltLinux` `gperftools` [dependency](dependencies.sh) name
+
+## Face
+- [fix] Fixed NS config changes saving after tabs switch
+
 # Version 3.28.2 (19.09.2024)
 ## Core
 - [fix] Fixed data race in cached comparators (`joins cache` may cause incorrect comparators deletion)

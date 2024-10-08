@@ -26,6 +26,12 @@ type TestDSLJoinItem struct {
 	JID int `reindex:"jid,,pk"`
 }
 
+type TestDSLEqualPositionItem struct {
+	ID          int   `reindex:"id,,pk"`
+	ArrayField1 []int `reindex:"array_field_1"`
+	ArrayField2 []int `reindex:"array_field_2"`
+}
+
 func init() {
 	tnamespaces["test_namespace_dsl"] = TestDSLItem{}
 	tnamespaces["test_namespace_dsl_ft"] = TestDSLFtItem{}
@@ -34,6 +40,8 @@ func init() {
 
 	tnamespaces["test_namespace_dsl_2"] = TestDSLItem{}
 	tnamespaces["test_namespace_dsl_joined_3"] = TestDSLJoinItem{}
+
+	tnamespaces["test_namespace_dsl_equal_position"] = TestDSLEqualPositionItem{}
 }
 
 func newTestDSLItem(id int) interface{} {
@@ -117,6 +125,15 @@ func getTestDSLJoinItemsIDs(items []interface{}) []int {
 	return resultIDs
 }
 
+func getTestDSLEqualPositionItemsIDs(items []interface{}) []int {
+	resultIDs := make([]int, len(items))
+	for i, v := range items {
+		item := v.(*TestDSLEqualPositionItem)
+		resultIDs[i] = item.ID
+	}
+	return resultIDs
+}
+
 func execDSLTwice(t *testing.T, testF func(*testing.T, *reindexer.Query), jsonDSL string) {
 	var marshaledJSON []byte
 	{
@@ -142,6 +159,21 @@ func execDSLTwice(t *testing.T, testF func(*testing.T, *reindexer.Query), jsonDS
 	}
 }
 
+func fillTestDSLEqualPositionItem(t *testing.T, ns string, start int, count int) {
+	tx := newTestTx(DB, ns)
+	for i := 0; i < count; i++ {
+		if err := tx.Upsert(
+			TestDSLEqualPositionItem{
+				ID:          start + i,
+				ArrayField1: []int{1 - i%2, 1, 2, 3, 100 * (i % 2)},
+				ArrayField2: []int{0 + i%2, -1, -2, -3, 100},
+			}); err != nil {
+			require.NoError(t, err)
+		}
+	}
+	tx.MustCommit()
+}
+
 func TestDSLQueries(t *testing.T) {
 	t.Parallel()
 
@@ -149,6 +181,7 @@ func TestDSLQueries(t *testing.T) {
 	fillTestDSLFtItems(t, "test_namespace_dsl_ft")
 	fillTestDSLJoinItems(t, "test_namespace_dsl_joined_1", 80, 40)
 	fillTestDSLJoinItems(t, "test_namespace_dsl_joined_2", 10, 10)
+	fillTestDSLEqualPositionItem(t, "test_namespace_dsl_equal_position", 0, 10)
 
 	t.Run("basic dsl parsing", func(t *testing.T) {
 		const jsonDSL = `
@@ -1739,6 +1772,97 @@ func TestDSLQueries(t *testing.T) {
 			require.Equal(t, expectedIDs, getTestDSLItemsIDs(items))
 		}, jsonDSL)
 	})
+
+	t.Run("dsl with equal_positions", func(t *testing.T) {
+		const eqPosFilter = `
+		{
+			"equal_positions":
+			[
+				{
+					"positions":
+					[
+						"array_field_1",
+						"array_field_2"
+					]
+				}
+			]
+		}`
+
+		whereFilter := func(val1 int, val2 int) string {
+			return fmt.Sprintf(
+				`
+				{
+					"field": "array_field_1",
+					"cond": "eq",
+					"value": %d
+				},
+				{
+					"field": "array_field_2",
+					"cond": "eq",
+					"value": %d
+				}`,
+				val1,
+				val2,
+			)
+		}
+
+		// the corresponding sql-like condition:
+		// ( array_field_1 = 100 AND array_field_2 = 100 EQUAL_POSITION(array_field_1, array_field_2) )
+		// AND
+		// (
+		//   ( array_field_1 = 1 AND array_field_2 = 0 EQUAL_POSITION(array_field_1, array_field_2) )
+		//   OR
+		//   ( array_field_1 = 0 AND array_field_2 = 1 EQUAL_POSITION(array_field_1, array_field_2) )
+		// )
+		jsonDSL := fmt.Sprintf(
+			`
+			{
+				"namespace": "test_namespace_dsl_equal_position",
+				"type": "select",
+				"filters":
+				[
+					%[1]s,
+					%[4]s,
+					{
+						"filters":
+						[
+							{
+								"filters":
+								[
+									%[2]s,
+									%[4]s
+								]
+							},
+							{
+								"op": "or",
+								"filters":
+								[
+									%[3]s,
+									%[4]s
+								]
+							}
+						]
+					}
+				],
+				"sort": {
+					"field": "id"
+				}
+			}`,
+			whereFilter(100, 100),
+			whereFilter(1, 0),
+			whereFilter(0, 1),
+			eqPosFilter,
+		)
+
+		execDSLTwice(t, func(t *testing.T, q *reindexer.Query) {
+			it := q.MustExec()
+			require.NoError(t, it.Error())
+			expectedIDs := []int{1, 3, 5, 7, 9}
+			items, err := it.FetchAll()
+			require.NoError(t, err)
+			require.Equal(t, expectedIDs, getTestDSLEqualPositionItemsIDs(items))
+		}, jsonDSL)
+	})
 }
 
 func TestDSLQueriesParsingErrors(t *testing.T) {
@@ -2965,5 +3089,116 @@ func TestCreateDSLQueriesErrors(t *testing.T) {
 		}
 		`
 		checkErrorQueryFrom(t, jsonDSL, "rq: nested join quieries are not supported")
+	})
+
+	const wrongJsonDSLTmplt = `
+		{
+			"namespace": "test_namespace_dsl_equal_position",
+			"type": "select",
+			"filters":
+			[
+				{
+					"op": "and",
+					"cond": "eq",
+					"field": "f1",
+					"value": 0
+				},
+				{
+					"op": "and",
+					"cond": "eq",
+					"field": "f2",
+					"value": 0
+				},
+				%s
+			]
+		}`
+
+	testCase := func(errorMessage string, equalPositions string) {
+		checkErrorQueryFrom(t, fmt.Sprintf(wrongJsonDSLTmplt, equalPositions), errorMessage)
+	}
+
+	t.Run("dsl equal_positions must contain at least 2 arguments", func(t *testing.T) {
+		testCase(
+			"rq: filter: 'equal_positions' is supposed to have at least 2 arguments. Arguments: [f1]",
+			`{
+				"equal_positions":
+				[
+					{
+						"positions":
+						[
+							"f1"
+						]
+					}
+				]
+
+			}`,
+		)
+	})
+
+	t.Run("dsl equal_positions fields must be specified in other filters", func(t *testing.T) {
+		testCase(
+			"rq: filter: fields from 'equal_positions'-filter must be specified in the 'where'-conditions of other filters in the current bracket",
+			`{
+				"equal_positions":
+				[
+					{
+						"positions":
+						[
+							"f1",
+							"f2",
+							"f3"
+						]
+					}
+				]
+
+			}`,
+		)
+	})
+
+	t.Run("dsl equal_positions should not contain extra fields", func(t *testing.T) {
+		testCase(
+			"rq: filter: filter with 'equal_positions'-field should not contain any other fields besides it",
+			`{
+				"equal_positions":
+				[
+					{
+						"positions":
+						[
+							"f1",
+							"f2"
+						]
+					}
+				],
+				"value": 100,
+				"cond": "eq",
+				"field": "f1"
+			}`,
+		)
+	})
+
+	t.Run("dsl equal_positions fields should be represented using AND operation only", func(t *testing.T) {
+		testCase(
+			"rq: filter: only AND operation allowed for equal position; equal position field with not AND operation: 'f3'; equal position fields: [f1 f2 f3]",
+			`{
+				"op": "or",
+				"cond": "eq",
+				"field": "f3",
+				"value": 0
+			},
+			{
+				"equal_positions":
+				[
+					{
+						"positions":
+						[
+							"f1",
+							"f2",
+							"f3"
+						]
+					}
+				]
+
+			}`,
+		)
 	})
 }

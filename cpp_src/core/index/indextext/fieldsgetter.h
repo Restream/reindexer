@@ -45,7 +45,7 @@ public:
 				} else {
 					const std::string_view stringRef(kref);
 					if (rx_likely(!utf8::is_valid(stringRef.data(), stringRef.data() + stringRef.size()))) {
-						throw Error(errParams, "Invalid UTF8 string in FullTextindex");
+						throw Error(errParams, "Invalid UTF8 string in FullText index");
 					}
 					ret.emplace_back(stringRef, fieldPos);
 				}

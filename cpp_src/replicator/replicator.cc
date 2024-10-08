@@ -319,7 +319,7 @@ Replicator::SyncNsResult Replicator::syncNamespace(const NamespaceDef& ns, std::
 													rec.first.upstreamLSN_.Counter() > replState.lastUpstreamLSN.Counter()
 											  : false;
 						if (terminate_) {
-							logPrintf(LogTrace, "[repl:%s:%s]:%d Terminationg updates applying cycle due to termination flag", ns.name,
+							logPrintf(LogTrace, "[repl:%s:%s]:%d Terminating updates applying cycle due to termination flag", ns.name,
 									  slave_->storagePath_, config_.serverId);
 							break;
 						}
@@ -972,7 +972,7 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 			break;
 		// force sync namespace
 		case WalForceSync:
-			logPrintf(LogTrace, "[repl:%s]:%d WalForceSync: Scheduling force-sync for the namepsace", nsName, config_.serverId);
+			logPrintf(LogTrace, "[repl:%s]:%d WalForceSync: Scheduling force-sync for the namespace", nsName, config_.serverId);
 			return sendSyncAsync(rec, true);
 			break;
 		case WalWALSync:
@@ -980,7 +980,7 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 			return sendSyncAsync(rec, false);
 			break;
 
-		// Replication state
+			// Replication state
 		case WalReplState: {  // last record in query
 			stat.processed--;
 			stat.masterState.FromJSON(giftStr(rec.data));
@@ -1344,8 +1344,8 @@ bool Replicator::canApplyUpdate(LSNPair LSNs, std::string_view nsName, const WAL
 	std::lock_guard lck(syncMtx_);
 	if (syncQueue_.Size() != 0 && syncQueue_.Contains(nsName)) {
 		logPrintf(LogTrace,
-				  "[repl:%s]:%d Skipping update due to scheduled namespace resync %s (%d). Pushin this update to the pending queue", nsName,
-				  config_.serverId, LSNs.upstreamLSN_, int(wrec.type));
+				  "[repl:%s]:%d Skipping update due to scheduled namespace resync %s (%d). Submitting this update to the pending queue",
+				  nsName, config_.serverId, LSNs.upstreamLSN_, int(wrec.type));
 		pushPendingUpdate(LSNs, nsName, wrec);
 		return false;
 	}
@@ -1360,8 +1360,8 @@ bool Replicator::canApplyUpdate(LSNPair LSNs, std::string_view nsName, const WAL
 			auto it = pendedUpdates_.find(nsName);
 			if (it != pendedUpdates_.end()) {
 				if (it->second.UpdatesLost) {
-					logPrintf(LogTrace, "[repl:%s]:%d NOT APPLY update lost %s (%d)", nsName, config_.serverId, LSNs.upstreamLSN_,
-							  int(wrec.type));
+					logPrintf(LogTrace, "[repl:%s]:%d Skipping update (lsn: %d; type: %d): there are lost updates for namespace", nsName,
+							  config_.serverId, LSNs.upstreamLSN_, int(wrec.type));
 					return false;
 				} else {
 					logPrintf(LogTrace, "[repl:%s]:%d apply update pendeded not empty %s (%d)", nsName, config_.serverId, LSNs.upstreamLSN_,

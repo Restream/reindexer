@@ -119,6 +119,7 @@ public:
 	RdxContext OnlyActivity() const { return RdxContext{Activity()}; }
 	RdxActivityContext* Activity() const noexcept;
 	Completion Compl() const { return cmpl_; }
+	bool IsInWalSync() const noexcept { return fromReplication_ && LSNs_.originLSN_.isEmpty(); }
 
 	const bool fromReplication_;
 	LSNPair LSNs_;

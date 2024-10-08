@@ -109,39 +109,6 @@ BaseFunctionCtx::Ptr SelectFunction::createFuncForProc(int indexNo) {
 	}
 }
 
-bool SelectFunction::NeedArea(int indexNo) const {
-	if (functions_.empty()) {
-		return false;
-	}
-	IndexType indexType = nm_.getIndexType(indexNo);
-
-	auto checkField = [&](int field) -> bool {
-		const auto it = functions_.find(field);
-		if (it != functions_.end()) {
-			if (std::holds_alternative<Snippet>(it->second.func) || std::holds_alternative<SnippetN>(it->second.func) ||
-				std::holds_alternative<Highlight>(it->second.func)) {
-				return true;
-			}
-		}
-		return false;
-	};
-
-	if (IsComposite(indexType)) {
-		int cjsonFieldIdx = nm_.getIndexesCount();
-		for (auto field : nm_.getIndexFields(indexNo)) {
-			if (field == IndexValueType::SetByJsonPath) {
-				field = cjsonFieldIdx++;
-			}
-			if (checkField(field)) {
-				return true;
-			}
-		}
-	} else {
-		return checkField(indexNo);
-	}
-	return false;
-}
-
 BaseFunctionCtx::Ptr SelectFunction::CreateCtx(int indexNo) {
 	// we use this hack because ft always needs ctx to generate proc in response
 	if (functions_.empty() && IsFullText(nm_.getIndexType(indexNo))) {
@@ -220,8 +187,46 @@ bool SelectFunction::ProcessItem(ItemRef& res, PayloadType& pl_type, std::vector
 BaseFunctionCtx::Ptr SelectFunction::createCtx(SelectFuncStruct& data, BaseFunctionCtx::Ptr ctx, IndexType index_type) {
 	if (IsFullText(index_type)) {
 		if (!ctx) {
-			data.ctx = make_intrusive<FtCtx>();
+			switch (SelectFuncType(data.func.index())) {
+				case SelectFuncType::None:
+					data.ctx = make_intrusive<FtCtx>(BaseFunctionCtx::CtxType::kFtCtx);
+					break;
+				case SelectFuncType::Snippet:
+				case SelectFuncType::Highlight:
+				case SelectFuncType::SnippetN:
+					data.ctx = make_intrusive<FtCtx>(BaseFunctionCtx::CtxType::kFtArea);
+					break;
+				case SelectFuncType::DebugRank:
+					data.ctx = make_intrusive<FtCtx>(BaseFunctionCtx::CtxType::kFtAreaDebug);
+					break;
+				case SelectFuncType::Max:
+					throw reindexer::Error(errLogic, "incorrect function type 'Max'");
+			}
 		} else {
+			switch (SelectFuncType(data.func.index())) {
+				case SelectFuncType::None:
+					if (ctx->type != BaseFunctionCtx::CtxType::kFtCtx) {
+						throw reindexer::Error(errLogic, "The existing calling context type '%d' does not allow this function",
+											   int(ctx->type));
+					}
+					break;
+				case SelectFuncType::Snippet:
+				case SelectFuncType::Highlight:
+				case SelectFuncType::SnippetN:
+					if (ctx->type != BaseFunctionCtx::CtxType::kFtArea) {
+						throw reindexer::Error(errLogic, "The existing calling context type '%d' does not allow this function",
+											   int(ctx->type));
+					}
+					break;
+				case SelectFuncType::DebugRank:
+					if (ctx->type != BaseFunctionCtx::CtxType::kFtAreaDebug) {
+						throw reindexer::Error(errLogic, "The existing calling context type '%d' does not allow this function",
+											   int(ctx->type));
+					}
+					break;
+				case SelectFuncType::Max:
+					throw reindexer::Error(errLogic, "incorrect function type 'Max'");
+			}
 			data.ctx = std::move(ctx);
 		}
 		const std::string& indexName = (data.indexNo >= nm_.getIndexesCount()) ? data.field : nm_.getIndexName(data.indexNo);

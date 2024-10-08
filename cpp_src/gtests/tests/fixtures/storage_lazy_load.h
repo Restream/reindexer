@@ -5,7 +5,7 @@
 
 class DISABLED_StorageLazyLoadApi : public ReindexerApi {
 public:
-	DISABLED_StorageLazyLoadApi() : pk_(0), inserted_(0) { rt.reindexer.reset(new Reindexer); }
+	DISABLED_StorageLazyLoadApi() : pk_(0), inserted_(0) { rt.reindexer = std::make_shared<reindexer::Reindexer>(); }
 	~DISABLED_StorageLazyLoadApi() { dropNs(); }
 
 	void SetUp() override {

@@ -29,7 +29,7 @@ public:
 	enum class StrictSuffixValidation { No, Yes };
 
 	void Init(const reindexer::FtFastConfig& ftCfg) {
-		rt.reindexer.reset(new reindexer::Reindexer);
+		rt.reindexer = std::make_shared<reindexer::Reindexer>();
 		auto err = rt.reindexer->OpenNamespace(GetDefaultNamespace());
 		ASSERT_TRUE(err.ok()) << err.what();
 		rt.DefineNamespaceDataset(GetDefaultNamespace(), {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},

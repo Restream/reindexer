@@ -185,10 +185,10 @@ A Snippet::RecalcZoneHelper::RecalcZoneToOffset(const Area& area) {
 	return outAreas;
 }
 
-void Snippet::buildResult(RecalcZoneHelper& recalcZoneHelper, const AreaBuffer& pva, const std::string& data, std::string& resultString) {
+void Snippet::buildResult(RecalcZoneHelper& recalcZoneHelper, const AreasInField<Area>& pva, const std::string& data,
+						  std::string& resultString) {
 	// resultString =preDelim_+with_area_str+data_str_before+marker_before+zone_str+marker_after+data_strAfter+postDelim_
 	Area snippetAreaPrev;
-	Area snippetAreaPrevChar;
 	zonesList_.clear<false>();
 
 	for (const auto& area : pva.GetData()) {
@@ -228,7 +228,7 @@ void Snippet::buildResult(RecalcZoneHelper& recalcZoneHelper, const AreaBuffer& 
 	resultString.append(postDelim_);
 }
 
-void Snippet::buildResultWithPrefix(RecalcZoneHelper& recalcZoneHelper, const AreaBuffer& pva, const std::string& data,
+void Snippet::buildResultWithPrefix(RecalcZoneHelper& recalcZoneHelper, const AreasInField<Area>& pva, const std::string& data,
 									std::string& resultString) {
 	// resultString =preDelim_+with_area_str+data_str_before+marker_before+zone_str+marker_after+data_strAfter+postDelim_
 	Area snippetAreaPrev;
@@ -257,28 +257,31 @@ void Snippet::buildResultWithPrefix(RecalcZoneHelper& recalcZoneHelper, const Ar
 	addSnippet(resultString, data, snippetAreaPrev, snippetAreaPrevChar);
 }
 
-bool Snippet::Process(ItemRef& res, PayloadType& pl_type, const SelectFuncStruct& func, std::vector<key_string>& stringsHolder) {
+bool Snippet::Process(ItemRef& res, PayloadType& plType, const SelectFuncStruct& func, std::vector<key_string>& stringsHolder) {
 	if (!func.ctx) {
 		return false;
-	}
-	init(func);
-
-	FtCtx::Ptr ftctx = reindexer::static_ctx_pointer_cast<FtCtx>(func.ctx);
-	auto& dataFtCtx = *ftctx->GetData();
-	if (!dataFtCtx.isWordPositions_) {
-		throw Error(errParams, "Snippet function does not work with ft_fuzzy index.");
 	}
 	if (!func.tagsPath.empty()) {
 		throw Error(errConflict, "SetByJsonPath is not implemented yet!");
 	}
-	if (!dataFtCtx.holders_.has_value()) {
+
+	init(func);
+
+	FtCtx::Ptr ftctx = reindexer::static_ctx_pointer_cast<FtCtx>(func.ctx);
+	auto& dataFtCtx = *(reindexer::static_ctx_pointer_cast<FtCtxAreaData<Area>>(ftctx->GetData()));
+
+	if (!dataFtCtx.isWordPositions) {
+		throw Error(errParams, "Snippet function does not work with ft_fuzzy index.");
+	}
+	if (!dataFtCtx.holders.has_value()) {
 		return false;
 	}
-	auto it = dataFtCtx.holders_->find(res.Id());
-	if (it == dataFtCtx.holders_->end()) {
+
+	auto it = dataFtCtx.holders->find(res.Id());
+	if (it == dataFtCtx.holders->end()) {
 		return false;
 	}
-	Payload pl(pl_type, res.Value());
+	Payload pl(plType, res.Value());
 
 	VariantArray kr;
 	pl.Get(func.field, kr);
@@ -287,7 +290,8 @@ bool Snippet::Process(ItemRef& res, PayloadType& pl_type, const SelectFuncStruct
 	}
 
 	const std::string* data = p_string(kr[0]).getCxxstr();
-	auto pva = dataFtCtx.area_[it->second].GetAreas(func.fieldNo);
+
+	auto pva = dataFtCtx.area[it->second].GetAreas(func.fieldNo);
 	if (!pva || pva->Empty()) {
 		return false;
 	}
@@ -295,7 +299,7 @@ bool Snippet::Process(ItemRef& res, PayloadType& pl_type, const SelectFuncStruct
 	std::string resultString;
 	resultString.reserve(data->size());
 
-	RecalcZoneHelper recalcZoneHelper(*data, ftctx->GetData()->extraWordSymbols_, after_, before_, leftBound_, rightBound_);
+	RecalcZoneHelper recalcZoneHelper(*data, ftctx->GetData()->extraWordSymbols, after_, before_, leftBound_, rightBound_);
 
 	if (needAreaStr_) {
 		buildResultWithPrefix(recalcZoneHelper, *pva, *data, resultString);
