@@ -122,7 +122,7 @@ NamespacePerfStat Namespace::GetPerfStat(const RdxContext& ctx) {
 
 void Namespace::ApplySnapshotChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, const RdxContext& ctx) {
 	if (!ch.IsTx() || ch.IsShallow() || !ch.IsWAL()) {
-		return nsFuncWrapper<&NamespaceImpl::ApplySnapshotChunk>(ch, isInitialLeaderSync, ctx);
+		nsFuncWrapper<&NamespaceImpl::ApplySnapshotChunk>(ch, isInitialLeaderSync, ctx);
 	} else {
 		SnapshotTxHandler handler(*this);
 		handler.ApplyChunk(ch, isInitialLeaderSync, ctx);
@@ -156,17 +156,20 @@ bool Namespace::isExpectingSelectsOnNamespace(const NamespaceImpl::Ptr& ns, cons
 
 void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, const std::string& storagePath,
 						 const std::function<void(std::function<void()>)>& replicateCb, const RdxContext& ctx) {
-	logPrintf(LogTrace, "[rename] Trying to rename namespace '%s'...", GetName(ctx));
+	auto srcNsName = GetName(ctx);
+	logPrintf(LogInfo, "[rename] Trying to rename namespace '%s'...", srcNsName);
 	std::string dbpath;
 	const auto flushOpts = StorageFlushOpts().WithImmediateReopen();
 	auto lck = nsFuncWrapper<&NamespaceImpl::dataWLock>(ctx, true);
 	auto srcNsPtr = atomicLoadMainNs();
 	auto& srcNs = *srcNsPtr;
+	logPrintf(LogInfo, "[rename] Performing double check for unflushed data for '%s'...", srcNsName);
 	srcNs.storage_.Flush(flushOpts);  // Repeat flush, to raise any disk errors before attempt to close storage
 	auto storageStatus = srcNs.storage_.GetStatusCached();
 	if (!storageStatus.err.ok()) {
 		throw Error(storageStatus.err.code(), "Unable to flush storage before rename: %s", storageStatus.err.what());
 	}
+	logPrintf(LogInfo, "[rename] All data in '%s' were flushed succesfully", srcNsName);
 	NamespaceImpl::Locker::WLockT dstLck;
 	NamespaceImpl::Ptr dstNs;
 	if (dst) {
@@ -237,7 +240,7 @@ void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, co
 			  srcNs.tagsMatcher_.stateToken(), srcNs.tagsMatcher_.version());
 
 	if (hadStorage) {
-		logPrintf(LogTrace, "[rename] Storage was moved from %s to %s", srcDbpath, dbpath);
+		logPrintf(LogInfo, "[rename] Storage was moved from '%s' to '%s'", srcDbpath, dbpath);
 		auto status = srcNs.storage_.Open(storageType, srcNs.name_, dbpath, srcNs.storageOpts_);
 		if (!status.ok()) {
 			srcNs.storage_.Close();

@@ -33,8 +33,9 @@ public:
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType, Index::SelectOpts, const BaseFunctionCtx::Ptr&, FtPreselectT&&,
 							   const RdxContext&) override;
 	void UpdateSortedIds(const UpdateSortedContext&) override {}
-	virtual IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses&&,
+	virtual IdSet::Ptr Select(FtCtx::Ptr ctx, FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses&&,
 							  FtUseExternStatuses, const RdxContext&) = 0;
+
 	void SetOpts(const IndexOpts& opts) override;
 	void Commit() override final {
 		// Do nothing
@@ -65,10 +66,11 @@ protected:
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::IndexText>;
 
 	virtual void commitFulltextImpl() = 0;
-	FtCtx::Ptr prepareFtCtx(const BaseFunctionCtx::Ptr&);
 	SelectKeyResults doSelectKey(const VariantArray& keys, const std::optional<IdSetCacheKey>&, FtMergeStatuses&&,
-								 FtUseExternStatuses useExternSt, bool inTransaction, FtSortType ftSortType, FtCtx::Ptr, const RdxContext&);
-	SelectKeyResults resultFromCache(const VariantArray& keys, FtIdSetCache::Iterator&&, FtCtx::Ptr&);
+								 FtUseExternStatuses useExternSt, bool inTransaction, FtSortType ftSortType,
+								 const BaseFunctionCtx::Ptr& ctx, const RdxContext&);
+
+	SelectKeyResults resultFromCache(const VariantArray& keys, FtIdSetCache::Iterator&&, const BaseFunctionCtx::Ptr&);
 	void build(const RdxContext& rdxCtx);
 
 	void initSearchers();

@@ -109,7 +109,7 @@ public:
 	virtual void Process(size_t fieldSize, bool multithread) = 0;
 	virtual size_t GetMemStat() = 0;
 	virtual void Clear() = 0;
-	virtual void StartCommit(bool complte_updated) = 0;
+	virtual void StartCommit(bool complete_updated) = 0;
 	void SetConfig(FtFastConfig* cfg);
 	CommitStep& GetStep(WordIdType id) noexcept {
 		assertrx(id.b.step_num < steps.size());

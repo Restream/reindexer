@@ -11,7 +11,6 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 	const ctag tag = rdser.GetCTag();
 	TagType tagType = tag.Type();
 	if (tag == kCTagEnd) {
-		recoder.Serialize(wrser);
 		wrser.PutCTag(kCTagEnd);
 		return false;
 	}

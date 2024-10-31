@@ -31,7 +31,7 @@ void RoleSwitcher::Run(std::vector<std::string>&& dsns, RoleSwitcher::Config&& c
 
 	nodes_.reserve(dsns.size());
 	for (auto&& dsn : dsns) {
-		nodes_.emplace_back(Node{std::move(dsn), {clientCfg}});
+		nodes_.emplace_back(Node{std::move(dsn), client::CoroReindexer{clientCfg}});
 	}
 	assert(cfg_.onRoleSwitchDone);
 

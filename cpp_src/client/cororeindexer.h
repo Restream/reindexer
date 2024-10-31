@@ -36,7 +36,7 @@ public:
 	using ConnectionStateHandlerT = std::function<void(const Error&)>;
 
 	/// Create Reindexer database object
-	CoroReindexer(const ReindexerConfig& = ReindexerConfig());
+	explicit CoroReindexer(const ReindexerConfig& = ReindexerConfig());
 	/// Destroy Reindexer database object
 	~CoroReindexer();
 	CoroReindexer(const CoroReindexer&) = delete;
@@ -264,6 +264,7 @@ public:
 	typedef CoroQueryResults QueryResultsT;
 	typedef Item ItemT;
 	typedef ReindexerConfig ConfigT;
+	typedef CoroTransaction TransactionT;
 
 private:
 	CoroReindexer(RPCClient* impl, InternalRdxContext&& ctx) : impl_(impl), ctx_(std::move(ctx)) {}

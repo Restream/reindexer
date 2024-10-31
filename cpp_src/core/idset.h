@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <string>
+#include "core/ft/usingcontainer.h"
 #include "cpp-btree/btree_set.h"
 #include "estl/h_vector.h"
 #include "estl/intrusive_ptr.h"
@@ -12,7 +13,7 @@
 
 namespace reindexer {
 
-using base_idset = h_vector<IdType, 3>;
+using base_idset = RVector<IdType, 3>;
 using base_idsetset = btree::btree_set<int>;
 
 class IdSetPlain : protected base_idset {

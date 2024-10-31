@@ -4,7 +4,7 @@
 Reindexer's goal is to provide fast search with complex queries.
 
 Reindexer is compact, fast and it does not have heavy dependencies.
-reindexer is up to 5x times faster, than mongodb, and 10x times than elastic search. See [benchmaks section](https://github.com/Restream/reindexer-benchmarks) for details.
+reindexer is up to 5x times faster, than mongodb, and 10x times than elastic search. See [benchmarks section](https://github.com/Restream/reindexer-benchmarks) for details.
 
 # Installation
 
@@ -20,7 +20,7 @@ docker run -p9088:9088 -p6534:6534 -it reindexer/reindexer
 
 ### Container configuration
 
-While using docker, you may pass reindexer server config options via envinronment variables:
+While using docker, you may pass reindexer server config options via environment variables:
 
 - `RX_DATABASE` - path to reindexer's storage. Default value is `/db`.
 - `RX_CORELOG` - path to core log file (or `none` to disable core logging). Default value is `stdout`.
@@ -157,7 +157,7 @@ The simplest way to use reindexer with any program language - is using REST API.
 
 ## GRPC API
 
-[GPRC](https://grpc.io) is a modern open-source high-performance RPC framework developed at Google that can run in any environment. It can efficiently connect services in and across data centers with pluggable support for load balancing, tracing, health checking and authentication. It uses HTTP/2 for transport, Protocol Buffers as the interface description language and it is more efficient (and also easier) to use than HTTP API. Reindexer supports GRPC API since version 3.0.
+[GRPC](https://grpc.io) is a modern open-source high-performance RPC framework developed at Google that can run in any environment. It can efficiently connect services in and across data centers with pluggable support for load balancing, tracing, health checking and authentication. It uses HTTP/2 for transport, Protocol Buffers as the interface description language, and it is more efficient (and also easier) to use than HTTP API. Reindexer supports GRPC API since version 3.0.
 
 Reindexer's GRPC API is defined in [reindexer.proto](server/proto/reindexer.proto) file.
 
@@ -185,20 +185,20 @@ The concept of streaming is described [here](https://grpc.io/docs/what-is-grpc/c
 
 ### Prometheus (server-side)
 
-Reindexer has a bunch of prometheus metrics available via http-URL `/metrics` (i.e. `http://localhost:9088/metrics`). This metrics may be enabled by passing `--prometheus` as reindexer_server command line argument or by setting `metrics:prometheus` flag in server yaml-config file. Some of the metrics also require `perfstats` to be enabled in `profiling`-config
+Reindexer has a bunch of prometheus metrics available via http-URL `/metrics` (i.e. `http://localhost:9088/metrics`). This metrics may be enabled by passing `--prometheus` as reindexer_server command line argument or by setting `metrics:prometheus` flag in server yaml-config file. Some metrics also require `perfstats` to be enabled in `profiling`-config
 
 `reindexer_qps_total` - total queries per second for each database, namespace and query type
-`reindexer_avg_latency` - average queryies latency for each database, namespace and query type
+`reindexer_avg_latency` - average queries latency for each database, namespace and query type
 `reindexer_caches_size_bytes`, `reindexer_indexes_size_bytes`, `reindexer_data_size_bytes` - caches, indexes and data size for each namespace
 `reindexer_items_count` - items count in each namespace
-`reindexer_memory_allocated_bytes` - current amount of dynamicly allocated memory according to tcmalloc/jemalloc
+`reindexer_memory_allocated_bytes` - current amount of dynamically allocated memory according to tcmalloc/jemalloc
 `reindexer_rpc_clients_count` - current number of RPC clients for each database
 `reindexer_input_traffic_total_bytes`, `reindexer_output_traffic_total_bytes` - total input/output RPC/http traffic for each database
 `reindexer_info` - generic reindexer server info (currently it's just a version number)
 
 ### Prometheus (client-side, Go)
 
-Go binding for reindexer is using [prometheus/client_golang](https://github.com/prometheus/client_golang) to collect some metrics (RPS and request's latency) from client's side. Pass `WithPrometheusMetrics()`-option to enable metric's collecting:
+Go binding for reindexer is using [prometheus/client_golang](https://github.com/prometheus/client_golang) to collect some metrics (RPS and request's latency) from client's side. Pass `WithPrometheusMetrics()`-option to enable metrics collecting:
 ```
 // Create DB connection for cproto-mode with metrics enabled
 db := reindexer.NewReindex("cproto://127.0.0.1:6534/testdb", reindex.WithPrometheusMetrics())
@@ -206,10 +206,10 @@ db := reindexer.NewReindex("cproto://127.0.0.1:6534/testdb", reindex.WithPrometh
 http.Handle("/metrics", promhttp.Handler())
 ```
 
-All of the metricts will be exported into `DefaultRegistry`. Check [this](https://github.com/prometheus/client_golang/blob/main/prometheus/promauto/auto.go#L57-L85) for basic prometheus usage example.
+All the metrics will be exported into `DefaultRegistry`. Check [this](https://github.com/prometheus/client_golang/blob/main/prometheus/promauto/auto.go#L57-L85) for basic prometheus usage example.
 
-Both server-side and client-side metrics contain 'latency', however, client-side latency will also count all the time consumed by the binding's queue, network communication (for cproto/ucproto) and deseriallization.
-So client-side latency may be more rellevant for user's applications the server-side latency.
+Both server-side and client-side metrics contain 'latency', however, client-side latency will also count all the time consumed by the binding's queue, network communication (for cproto/ucproto) and deserialization.
+So client-side latency may be more relevant for user's applications the server-side latency.
 
 ## Maintenance
 
@@ -280,7 +280,7 @@ Mode may be set via command line options on server startup:
 reindexer_server --db /tmp/rx --rpc-threading dedicated --http-threading shared
 ```
 
-In shared mode server creates fixed number of threads to handle connections (one thread per physical CPU core) and all of the connection will be distributed between those threads. In this mode requests from different connections may be forced to be executed sequentially.
+In shared mode server creates fixed number of threads to handle connections (one thread per physical CPU core) and all the connection will be distributed between those threads. In this mode requests from different connections may be forced to be executed sequentially.
 
 In dedicated mode server creates one thread per connection. This approach may be inefficient in case of frequent reconnects or large amount of database clients (due to thread creation overhead), however it allows to reach maximum level of concurrency for requests.
 
@@ -307,12 +307,12 @@ storage:
   engine: leveldb
 ```
 
-To configure storage type for Go bindings either `bindings.ConnectOptions` (for builtin) or `confg.ServerConfig` (for builtinserver) structs may be used.
+To configure storage type for Go bindings either `bindings.ConnectOptions` (for builtin) or `confg.ServerConfig` (for builtin-server) structs may be used.
 
 ### RocksDB
 
 Reindexer will try to autodetect RocksDB library and its dependencies at compile time if CMake flag `ENABLE_ROCKSDB` was passed (enabled by default).
-If reindexer library was built with rocksdb, it requires Go build tag `rocksdb` in order to link with go-applications and go-bindinds.
+If reindexer library was built with rocksdb, it requires Go build tag `rocksdb` in order to link with go-applications and go-bindings.
 
 ### Data transport formats
 
@@ -320,10 +320,10 @@ Reindexer supports the following data formats to communicate with other applicat
 
 ## Log rotation
 
-There are no builtin mechanis for automatic log rotation, however `reindexer server` is able to reopen logfiles on `SIGHUP`.
+There are no builtin mechanism for automatic log rotation, however `reindexer server` is able to reopen logfiles on `SIGHUP`.
 So, your external log manager (it may be even a simple `cron` script) have to move existing log files somewhere and then send `SIGHUP`-signal to the `reindexer server` process to recreate log files.
 
-#### Protobuf
+## Protobuf
 
 Protocol buffers are language-neutral, platform-neutral, extensible mechanism for serializing structured data. You define how you want your data to be structured once, then you can use special generated source code to easily write and read your structured data to and from a variety of data streams and using a variety of languages (https://developers.google.com/protocol-buffers).
 

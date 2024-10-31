@@ -48,46 +48,8 @@ public:
 		uint32_t fpos;
 	};
 
-	template <typename PosType>
-	int MergeWithDist(const IdRelType& newWordPos, unsigned int dist, PosType& res) const {
-		int minDist = INT_MAX;
-		auto rightIt = newWordPos.pos_.begin();
-		const auto leftEnd = pos_.end();
-		const auto rightEnd = newWordPos.pos_.end();
-		for (auto leftIt = pos_.begin(); leftIt != leftEnd; ++leftIt) {
-			while (rightIt != rightEnd && rightIt->fpos < leftIt->fpos) {
-				++rightIt;
-			}
-			// here right pos > left pos
-			if (rightIt == rightEnd) {
-				break;
-			}
-			if (rightIt->field() != leftIt->field()) {
-				continue;
-			}
-
-			auto leftItNext = leftIt + 1;
-			uint32_t leftNextPos = std::numeric_limits<uint32_t>::max();
-			if (leftItNext != leftEnd) {
-				leftNextPos = leftItNext->pos();
-			}
-
-			while (rightIt != rightEnd && rightIt->field() == leftIt->field() && uint32_t(rightIt->pos()) < leftNextPos &&
-				   rightIt->fpos - leftIt->fpos <= dist) {
-				int d = rightIt->fpos - leftIt->fpos;
-				if (d < minDist) {
-					minDist = d;
-				}
-				if constexpr (std::is_same_v<PosType, IdRelType>) {
-					res.Add(*rightIt);
-				} else {
-					res.emplace_back(*rightIt, leftIt - pos_.begin());
-				}
-				++rightIt;
-			}
-		}
-		return minDist;
-	}
+	template <typename PosTypeT>
+	int MergeWithDist(const IdRelType& newWordPos, unsigned int dist, PosTypeT& res, const std::string& inf) const;
 
 	void Add(int pos, int field) {
 		assertrx_throw(0 <= field && field <= kMaxFtCompositeFields);
@@ -139,6 +101,13 @@ private:
 	RVector<PosType, 3> pos_;
 	uint64_t usedFieldsMask_ = 0;  // fields that occur in pos_
 	VDocIdType id_ = 0;			   // index of the document in which the word occurs
+};
+
+struct PosTypeDebug : public IdRelType::PosType {
+	PosTypeDebug() = default;
+	explicit PosTypeDebug(const IdRelType::PosType& pos, const std::string& inf) : IdRelType::PosType(pos), info(inf) {}
+	explicit PosTypeDebug(const IdRelType::PosType& pos, std::string&& inf) noexcept : IdRelType::PosType(pos), info(std::move(inf)) {}
+	std::string info;
 };
 
 class IdRelSet : public std::vector<IdRelType> {

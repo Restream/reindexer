@@ -70,7 +70,7 @@ TEST_P(FTGenericApi, CompositeSelect) {
 					continue;
 				}
 				auto it = data.find(ritem[field].As<std::string>());
-				ASSERT_TRUE(it != data.end());
+				ASSERT_TRUE(it != data.end()) << ritem[field].As<std::string>();
 				data.erase(it);
 			}
 		}
@@ -234,6 +234,7 @@ TEST_P(FTGenericApi, SelectWithDistance) {
 
 TEST_P(FTGenericApi, AreasOnSuffix) {
 	auto ftCfg = GetDefaultConfig();
+	ftCfg.optimization = reindexer::FtFastConfig::Optimization::CPU;
 	Init(ftCfg);
 
 	Add("the nos1 the nos2 the nosmn the nose"sv);
@@ -247,6 +248,169 @@ TEST_P(FTGenericApi, AreasOnSuffix) {
 	CheckResults("*mask", {{"the !ssmask! the !nnmask! the !mask! the ", ""}, {"the nos1 the !mmask! stop nos2 table", ""}}, false);
 	CheckResults("*level*", {{"the !sslevel1! the !nnlevel2! the !kklevel! the !level!", ""}}, false);
 	CheckResults("+nos* +*mask ", {{"the !nos1! the !mmask! stop !nos2! table", ""}}, false);
+}
+
+TEST_P(FTGenericApi, DebugInfo) {
+	auto ftCfg = GetDefaultConfig();
+	Init(ftCfg);
+
+	Add("Маша ела кашу. Каша кушалась сама. Машу ругали."sv);
+	Add("Коля, Сеня гуляли."sv);
+	Add("слово простая фраза что то еще."sv);
+	Add("слово начало простая фраза конец что то еще простая фраза слово слово."sv);
+	Add("жил пил гулял"sv);
+
+	auto removeLineEnd = [](std::vector<std::string>& dataCompare) {
+		for (auto& s : dataCompare) {
+			s.erase(std::remove(s.begin(), s.end(), '\n'), s.end());
+		}
+	};
+
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft3", CondEq, "маша");
+		q.AddFunction("ft3 = debug_rank()");
+		q.Select({"ft1"});
+		reindexer::QueryResults res;
+		auto err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(res.Count(), 1);
+		auto it = res.begin();
+		reindexer::WrSerializer wrSer;
+		err = it.GetJSON(wrSer, false);
+		ASSERT_TRUE(err.ok()) << err.what();
+		// clang-format off
+        std::vector<std::string> dataCompare={R"({"ft1":
+"{term_rank:97, term:маша, pattern:маша, bm25_norm:0.9798439468181269, term_len_boost:1, position_rank:1, norm_dist:0, proc:100, full_match_boost:0} Маша ела кашу. Каша кушалась сама.
+ {term_rank:77, term:маша, pattern:машу, bm25_norm:0.9798439468181269, term_len_boost:1, position_rank:0.994, norm_dist:0, proc:80, full_match_boost:0} Машу ругали."})"};
+		// clang-format on
+		removeLineEnd(dataCompare);
+		ASSERT_EQ(wrSer.Slice(), dataCompare[0]);
+	}
+
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft3", CondEq, "коля сеня");
+		q.AddFunction("ft3 = debug_rank()");
+		q.Select({"ft1"});
+		reindexer::QueryResults res;
+		auto err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(res.Count(), 1);
+		auto it = res.begin();
+		reindexer::WrSerializer wrSer;
+		err = it.GetJSON(wrSer, false);
+		ASSERT_TRUE(err.ok()) << err.what();
+		// clang-format off
+		std::vector<std::string> dataCompare={R"({"ft1":
+"{term_rank:102, term:коля, pattern:коля, bm25_norm:1.022314131295854, term_len_boost:1, position_rank:1, norm_dist:0, proc:100, full_match_boost:0} Коля,
+ {term_rank:102, term:сеня, pattern:сеня, bm25_norm:1.022314131295854, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:100, full_match_boost:0} Сеня гуляли."})"};
+		// clang-format on
+		removeLineEnd(dataCompare);
+		ASSERT_EQ(wrSer.Slice(), dataCompare[0]);
+	}
+
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft3", CondEq, "'начало простая фраза конец' 'простая фраза'");
+		q.AddFunction("ft3 = debug_rank()");
+		q.Select({"ft1"});
+		q.Sort("id", false);
+		q.WithRank();
+		// clang-format off
+        std::vector<std::string> dataCompare={
+R"###({"ft1":"слово
+ <!>{term_rank:93, term:простая, pattern:простая, bm25_norm:0.9399331930048559, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:100, full_match_boost:0} простая
+ {term_rank:85, term:фраза, pattern:фраза, bm25_norm:0.9399331930048559, term_len_boost:0.9142857193946838, position_rank:0.998, norm_dist:0, proc:100, full_match_boost:0} фраза<!!>
+ что то еще.","rank()":101.0})###",
+R"##({"ft1":"слово
+ <!>{term_rank:92, term:начало, pattern:начало, bm25_norm:0.9624865670750559, term_len_boost:0.9571428596973419, position_rank:0.999, norm_dist:0, proc:100, full_match_boost:0} начало
+ {term_rank:94, term:простая, pattern:простая, bm25_norm:0.9436916111700189, term_len_boost:1, position_rank:0.998, norm_dist:0, proc:100, full_match_boost:0}
+ <!>{term_rank:94, term:простая, pattern:простая, bm25_norm:0.9436916111700189, term_len_boost:1, position_rank:0.998, norm_dist:0, proc:100, full_match_boost:0} простая
+ {term_rank:86, term:фраза, pattern:фраза, bm25_norm:0.9436916111700189, term_len_boost:0.9142857193946838, position_rank:0.997, norm_dist:0, proc:100, full_match_boost:0}
+ {term_rank:86, term:фраза, pattern:фраза, bm25_norm:0.9436916111700189, term_len_boost:0.9142857193946838, position_rank:0.997, norm_dist:0, proc:100, full_match_boost:0} фраза<!!>
+ {term_rank:87, term:конец, pattern:конец, bm25_norm:0.9624865670750559, term_len_boost:0.9142857193946838, position_rank:0.996, norm_dist:0, proc:100, full_match_boost:0} конец<!!>
+ что то еще
+ <!>{term_rank:94, term:простая, pattern:простая, bm25_norm:0.9436916111700189, term_len_boost:1, position_rank:0.998, norm_dist:0, proc:100, full_match_boost:0} простая
+ {term_rank:86, term:фраза, pattern:фраза, bm25_norm:0.9436916111700189, term_len_boost:0.9142857193946838, position_rank:0.997, norm_dist:0, proc:100, full_match_boost:0} фраза<!!>
+ слово слово.","rank()":255.0})##"
+            };
+		// clang-format on
+		removeLineEnd(dataCompare);
+		reindexer::QueryResults res;
+		auto err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(res.Count(), 2);
+
+		size_t i = 0;
+		for (auto it : res) {
+			reindexer::WrSerializer wrSer;
+			err = it.GetJSON(wrSer, false);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(dataCompare[i], wrSer.Slice());
+			i++;
+		}
+	}
+
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft3", CondEq, "'простыми фразами'");
+		q.AddFunction("ft3 = debug_rank()");
+		q.Select({"ft1"});
+		q.Sort("id", false);
+		// clang-format off
+        std::vector<std::string> dataCompare={
+R"###({"ft1":"слово
+ <!>{term_rank:74, term:простыми, pattern:простая, bm25_norm:0.9399331930048559, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:79, full_match_boost:0} простая
+ {term_rank:74, term:фразами, pattern:фраза, bm25_norm:0.9399331930048559, term_len_boost:0.9624999999999999, position_rank:0.998, norm_dist:0, proc:82, full_match_boost:0} фраза<!!>
+ что то еще."})###",
+R"###({"ft1":"слово начало
+ <!>{term_rank:74, term:простыми, pattern:простая, bm25_norm:0.9436916111700189, term_len_boost:1, position_rank:0.998, norm_dist:0, proc:79, full_match_boost:0} простая
+ {term_rank:74, term:фразами, pattern:фраза, bm25_norm:0.9436916111700189, term_len_boost:0.9624999999999999, position_rank:0.997, norm_dist:0, proc:82, full_match_boost:0} фраза<!!>
+ конец что то еще
+ <!>{term_rank:74, term:простыми, pattern:простая, bm25_norm:0.9436916111700189, term_len_boost:1, position_rank:0.998, norm_dist:0, proc:79, full_match_boost:0} простая
+ {term_rank:74, term:фразами, pattern:фраза, bm25_norm:0.9436916111700189, term_len_boost:0.9624999999999999, position_rank:0.997, norm_dist:0, proc:82, full_match_boost:0} фраза<!!>
+ слово слово."})###"
+            };
+		// clang-format on
+		removeLineEnd(dataCompare);
+
+		reindexer::QueryResults res;
+		auto err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(res.Count(), 2);
+		size_t i = 0;
+		for (auto it : res) {
+			reindexer::WrSerializer wrSer;
+			err = it.GetJSON(wrSer, false);
+			EXPECT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(dataCompare[i], wrSer.Slice());
+			i++;
+		}
+	}
+
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft3", CondEq, "жил~ пил");
+		q.Select({"ft1"});
+		q.AddFunction("ft3 = debug_rank()");
+		reindexer::QueryResults res;
+		auto err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(res.Count(), 1);
+		auto it = res.begin();
+		reindexer::WrSerializer wrSer;
+		err = it.GetJSON(wrSer, false);
+		ASSERT_TRUE(err.ok()) << err.what();
+		//clang-format off
+		std::vector<std::string> dataCompare = {
+			R"({"ft1":"{term_rank:102, term:жил, pattern:жил, bm25_norm:1.022314131295854, term_len_boost:1, position_rank:1, norm_dist:0, proc:100, full_match_boost:0} жил
+ {term_rank:71, term:жил, pattern:ил, bm25_norm:1.022314131295854, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:70, full_match_boost:0}
+ {term_rank:102, term:пил, pattern:пил, bm25_norm:1.022314131295854, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:100, full_match_boost:0} пил гулял"})"};
+		//clang-format on
+		removeLineEnd(dataCompare);
+		ASSERT_EQ(wrSer.Slice(), dataCompare[0]);
+	}
 }
 
 TEST_P(FTGenericApi, AreasMaxRank) {

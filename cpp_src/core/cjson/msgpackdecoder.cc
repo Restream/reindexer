@@ -145,13 +145,13 @@ Error MsgPackDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& wr
 	} catch (const Error& err) {
 		return err;
 	} catch (const std::exception& ex) {
-		return Error(errNotValid, "%s", ex.what());
+		return {errNotValid, "%s", ex.what()};
 	} catch (...) {
 		// all internal errors shall be handled and converted to Error
-		return Error(errNotValid, "Unexpected exception");
+		return {errNotValid, "Unexpected exception"};
 	}
 
-	return Error();
+	return {};
 }
 
 constexpr std::string_view ToString(msgpack_object_type type) {

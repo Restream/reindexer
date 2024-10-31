@@ -325,7 +325,6 @@ func (q *Query) WhereQuery(subQuery *Query, condition int, keys interface{}) *Qu
 }
 
 // Where - Add comparing two fields where condition to DB query
-// For composite indexes keys must be []interface{}, with value of each subindex
 func (q *Query) WhereBetweenFields(firstField string, condition int, secondField string) *Query {
 	q.ser.PutVarCUInt(queryBetweenFieldsCondition)
 	q.ser.PutVarCUInt(q.nextOp)
@@ -502,13 +501,13 @@ func (q *Query) WhereComposite(index string, condition int, keys ...interface{})
 	return q.Where(index, condition, keys)
 }
 
-// WhereString - Add where condition to DB query with string args
+// Match - Add where string EQ-condition to DB query with string args
 func (q *Query) Match(index string, keys ...string) *Query {
 
 	return q.WhereString(index, EQ, keys...)
 }
 
-// WhereString - Add where condition to DB query with bool args
+// WhereBool - Add where condition to DB query with bool args
 func (q *Query) WhereBool(index string, condition int, keys ...bool) *Query {
 
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
@@ -658,14 +657,14 @@ func (q *Query) SortStFieldDistance(field1 string, field2 string, desc bool) *Qu
 	return q.Sort(sb.String(), desc)
 }
 
-// AND - next condition will added with AND
+// AND - next condition will be added with AND
 // This is the default operation for WHERE statement. Do not have to be called explicitly in user's code. Used in DSL conversion
 func (q *Query) And() *Query {
 	q.nextOp = opAND
 	return q
 }
 
-// OR - next condition will added with OR
+// OR - next condition will be added with OR
 // Implements short-circuiting:
 // if the previous condition is successful the next will not be evaluated, but except Join conditions
 func (q *Query) Or() *Query {
@@ -673,7 +672,7 @@ func (q *Query) Or() *Query {
 	return q
 }
 
-// Not - next condition will added with NOT AND
+// Not - next condition will be added with NOT AND
 // Implements short-circuiting:
 // if the previous condition is failed the next will not be evaluated
 func (q *Query) Not() *Query {
@@ -1047,6 +1046,9 @@ func (q *Query) Get() (item interface{}, found bool) {
 
 // GetCtx will execute query, and return 1 st item, panic on error
 func (q *Query) GetCtx(ctx context.Context) (item interface{}, found bool) {
+	if q.root != nil {
+		q = q.root
+	}
 	iter := q.Limit(1).MustExecCtx(ctx)
 	defer iter.Close()
 	if iter.Next() {
@@ -1062,6 +1064,9 @@ func (q *Query) GetJson() (json []byte, found bool) {
 
 // GetJsonCtx will execute query, and return 1 st item, panic on error
 func (q *Query) GetJsonCtx(ctx context.Context) (json []byte, found bool) {
+	if q.root != nil {
+		q = q.root
+	}
 	it := q.Limit(1).ExecToJsonCtx(ctx)
 	defer it.Close()
 	if it.Error() != nil {

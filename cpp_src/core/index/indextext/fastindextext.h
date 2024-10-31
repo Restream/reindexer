@@ -7,8 +7,6 @@
 
 namespace reindexer {
 
-struct MergeData;
-
 template <typename T>
 class FastIndexText : public IndexText<T> {
 	using Base = IndexText<T>;
@@ -32,8 +30,9 @@ public:
 		// Creates uncommited copy
 		return std::make_unique<FastIndexText<T>>(*this);
 	}
-	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransactionbool, FtSortType ftSortType, FtMergeStatuses&&,
-					  FtUseExternStatuses, const RdxContext&) override final;
+	IdSet::Ptr Select(FtCtx::Ptr ctx, FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses&&, FtUseExternStatuses,
+					  const RdxContext&) override final;
+
 	IndexMemStat GetMemStat(const RdxContext&) override final;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final;
 	void Delete(const Variant& key, IdType id, StringsHolder&, bool& clearCache) override final;
@@ -47,16 +46,30 @@ public:
 	bool EnablePreselectBeforeFt() const override final { return getConfig()->enablePreselectBeforeFt; }
 
 private:
+	template <typename MergeType>
+	IdSet::Ptr afterSelect(FtCtx& fctx, MergeType&& mergeData, FtSortType ftSortType, FtMergeStatuses&& statuses, FtUseExternStatuses);
+
+	template <typename VectorType>
+	IdSet::Ptr applyOptimizationAndSelect(DataHolder<VectorType>* d, BaseFunctionCtx::Ptr bctx, FtDSLQuery&& dsl, bool inTransaction,
+										  FtSortType ftSortType, FtMergeStatuses&& statuses, FtUseExternStatuses, const RdxContext& rdxCtx);
+
+	template <typename VectorType, FtUseExternStatuses useExternalStatuses>
+	IdSet::Ptr applyCtxTypeAndSelect(DataHolder<VectorType>* d, const BaseFunctionCtx::Ptr& bctx, FtDSLQuery&& dsl, bool inTransaction,
+									 FtSortType ftSortType, FtMergeStatuses&& statuses, FtUseExternStatuses useExternSt,
+									 const RdxContext& rdxCtx);
+
+protected:
 	void commitFulltextImpl() override final;
 	FtFastConfig* getConfig() const noexcept { return dynamic_cast<FtFastConfig*>(this->cfg_.get()); }
 	void initConfig(const FtFastConfig* = nullptr);
 	void initHolder(FtFastConfig&);
 	template <class Data>
 	void buildVdocs(Data& data);
-	template <typename F>
-	void appendMergedIds(MergeData& merged, size_t releventDocs, F&& appender);
-
-	MergeData::iterator unstableRemoveIf(MergeData& md, const int minRelevancy, double scalingFactor, size_t& releventDocs, int& cnt);
+	template <typename MergeType, typename F>
+	void appendMergedIds(MergeType& merged, size_t releventDocs, F&& appender);
+	template <typename MergeType>
+	typename MergeType::iterator unstableRemoveIf(MergeType& md, const int minRelevancy, double scalingFactor, size_t& releventDocs,
+												  int& cnt);
 
 	std::unique_ptr<IDataHolder> holder_;
 };

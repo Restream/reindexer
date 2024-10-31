@@ -1584,7 +1584,6 @@ int HTTPServer::queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults
 	WrSerializer wrSer(ctx.writer->GetChunk());
 	ProtobufBuilder protobufBuilder(&wrSer);
 
-	int itemsField = kProtoQueryResultsFields.at(kParamItems);
 	auto& lres = res.ToLocalQr();
 	WrSerializer itemSer;
 	std::vector<std::string> jsonData;
@@ -1596,15 +1595,11 @@ int HTTPServer::queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults
 		jsonData.reserve(size);
 	}
 	for (size_t i = offset; i < lres.Count() && i < offset + limit; i++) {
-		auto item = protobufBuilder.Object(itemsField);
 		auto it = lres[i];
-		auto i1 = item.Object(lres.getNsNumber(it.GetItemRef().Nsid()) + 1);
 		const auto err = it.GetProtobuf(wrSer, false);
 		if (!err.ok()) {
 			return ctx.Protobuf(err.code(), wrSer.DetachChunk());
 		}
-		i1.End();
-		item.End();
 		if (withColumns) {
 			itemSer.Reset();
 			const auto err = it.GetJSON(itemSer, false);

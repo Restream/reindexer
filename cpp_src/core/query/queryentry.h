@@ -377,9 +377,9 @@ private:
 	QueryField rightField_;
 	const OpType op_{OpOr};
 	const CondType condition_{CondAny};
-	const bool reverseNamespacesOrder_{false}; ///< controls SQL encoding order
-											   ///< false: mainNs.index Condition joinNs.joinIndex
-											   ///< true:  joinNs.joinIndex Invert(Condition) mainNs.index
+	const bool reverseNamespacesOrder_{false};	///< controls SQL encoding order
+												///< false: mainNs.index Condition joinNs.joinIndex
+												///< true:  joinNs.joinIndex Invert(Condition) mainNs.index
 };
 
 enum class InjectionDirection : bool { IntoMain, FromMain };

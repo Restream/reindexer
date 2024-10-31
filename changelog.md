@@ -1,3 +1,20 @@
+# Version 4.18.0 (31.10.2024) *beta*
+## Replication
+- [fix] Fixed possible origin LSN missmatch in snapshots during WAL/Force syncs
+
+## Reindexer server
+- [fix] Fixed logical operations (`or`, `not`) parsining in JSON DSL joined queries
+
+## Ported
+- [fea/fix] Ported all the fixes and features from [v3.29.0](https://github.com/Restream/reindexer/releases/tag/v3.25.0), [v3.26.0](https://github.com/Restream/reindexer/releases/tag/v3.29.0)
+
+## Face
+- [fea] Added disabled mode for selectors on NS config page
+- [fix] Fixed `shard_id` filter on the Items table after the Item editing
+- [fix] Fixed scroll position on NS menu 
+- [fix] Fixed the issue related to NS config changes saving on tabs switching
+- [fix] Fixed duplicated requests on Indexes and Items pages
+
 # Version 4.17.2 *beta* (19.09.2024)
 ## Core
 - [fix] Fixed data race in cached comparators (`joins cache` may cause incorrect comparators deletion)

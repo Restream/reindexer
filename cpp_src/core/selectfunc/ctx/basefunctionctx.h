@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/selectfunc/functions/debugrank.h"
 #include "core/selectfunc/functions/highlight.h"
 #include "core/selectfunc/functions/snippet.h"
 
@@ -26,21 +27,22 @@ constexpr std::size_t variant_index() {
 	}
 }
 
-using SelectFuncVariant = std::variant<FuncNone, Snippet, Highlight, SnippetN>;
+using SelectFuncVariant = std::variant<FuncNone, Snippet, Highlight, SnippetN, DebugRank>;
 enum class SelectFuncType {
 	None = variant_index<SelectFuncVariant, FuncNone>(),
 	Snippet = variant_index<SelectFuncVariant, Snippet>(),
 	Highlight = variant_index<SelectFuncVariant, Highlight>(),
 	SnippetN = variant_index<SelectFuncVariant, SnippetN>(),
-
+	DebugRank = variant_index<SelectFuncVariant, DebugRank>(),
 	Max	 // Max possible value
 };
 
 class BaseFunctionCtx : public intrusive_atomic_rc_base {
 public:
 	typedef intrusive_ptr<BaseFunctionCtx> Ptr;
-	enum CtxType { kFtCtx = 0 };
-	virtual ~BaseFunctionCtx() {}
+	enum class CtxType { kFtCtx = 1, kFtArea = 2, kFtAreaDebug = 3 };
+	BaseFunctionCtx(CtxType t) noexcept : type(t) {}
+	virtual ~BaseFunctionCtx() = default;
 
 	void AddFunction(const std::string& name, SelectFuncType functionIndx) {
 		auto it = std::find_if(functions_.begin(), functions_.end(), [&name](const FuncData& data) { return data.name == name; });
@@ -67,7 +69,8 @@ private:
 		FuncData(std::string&& _name) noexcept : name(std::move(_name)) {}
 
 		std::string name;
-		TypesArrayT types{};
+
+		TypesArrayT types = {};
 	};
 	h_vector<FuncData, 2> functions_;
 };

@@ -416,7 +416,7 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 					const NamespaceName nsName(ns.name);
 					err = syncNamespace(node, nsName, replState);
 					if (!err.ok()) {
-						logWarn("%d:%d Namespace sync error: %s", serverId_, node.uid, err.what());
+						logWarn("%d:%d:%s Namespace sync error: %s", serverId_, node.uid, nsName, err.what());
 						if (err.code() == errNotFound) {
 							err = Error();
 							logWarn("%d:%d Expecting drop namespace record for '%s'", serverId_, node.uid, nsName);
@@ -424,7 +424,7 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 							replState = ReplicationStateV2();
 							err = syncNamespace(node, nsName, replState);
 							if (!err.ok()) {
-								logWarn("%d:%d Namespace sync error (resync due to datahash missmatch): %s", serverId_, node.uid,
+								logWarn("%d:%d:%s Namespace sync error (resync due to datahash missmatch): %s", serverId_, node.uid, nsName,
 										err.what());
 							}
 						}
@@ -437,7 +437,7 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 			}
 
 			if (integralError.ok()) {
-				integralError = Error(errTimeout, "%d:%d Unable to sync namespace", serverId_, node.uid);
+				integralError = Error(errTimeout, "%d:%d:%s Unable to sync namespace", serverId_, node.uid, ns.name);
 				return;
 			}
 		});
@@ -594,12 +594,12 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 			return err;
 		}
 		if (snapshot.HasRawData()) {
-			logInfo("%d:%d:%s Snapshot has raw data, creating tmp namespace", serverId_, node.uid, nsName);
+			logInfo("%d:%d:%s Snapshot has RAW data, creating tmp namespace (performing FORCE sync)", serverId_, node.uid, nsName);
 			createTmpNamespace = true;
 		} else if (snapshot.NsVersion().Server() != requiredLsn.NsVersion().Server() ||
 				   snapshot.NsVersion().Counter() != requiredLsn.NsVersion().Counter()) {
-			logInfo("%d:%d:%s Snapshot has different ns version (%d vs %d), creating tmp namespace", serverId_, node.uid, nsName,
-					snapshot.NsVersion(), requiredLsn.NsVersion());
+			logInfo("%d:%d:%s Snapshot has different ns version (%d vs %d), creating tmp namespace (performing FORCE sync)", serverId_,
+					node.uid, nsName, snapshot.NsVersion(), requiredLsn.NsVersion());
 			createTmpNamespace = true;
 		}
 

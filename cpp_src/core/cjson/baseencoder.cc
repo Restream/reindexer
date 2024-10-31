@@ -1,6 +1,5 @@
 #include "baseencoder.h"
 #include <cstdlib>
-#include <limits>
 #include "cjsonbuilder.h"
 #include "cjsontools.h"
 #include "core/keyvalue/p_string.h"
@@ -48,7 +47,7 @@ void BaseEncoder<Builder>::Encode(ConstPayload& pl, Builder& builder, const h_ve
 	}
 
 	objectScalarIndexes_.reset();
-	std::fill_n(std::begin(fieldsoutcnt_), pl.NumFields(), 0);
+	std::fill(fieldsoutcnt_.begin(), fieldsoutcnt_.end(), 0);
 	builder.SetTagsMatcher(tagsMatcher_);
 	if constexpr (kWithTagsPathTracking) {
 		builder.SetTagsPath(&curTagsPath_);
@@ -175,11 +174,11 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 						[&](KeyValueType::String) { builder.Array(tagName, pl->GetArray<p_string>(tagField).subspan(cnt, count), cnt); },
 						[&](KeyValueType::Uuid) { builder.Array(tagName, pl->GetArray<Uuid>(tagField).subspan(cnt, count), cnt); },
 						[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite>) noexcept {
-							assertrx(0);
+							assertrx(false);
 							abort();
 						});
 				}
-				cnt += count;
+				cnt += int(count);
 				break;
 			}
 			case TAG_NULL:

@@ -227,7 +227,6 @@ Error RPCClient::modifyItemCJSON(std::string_view nsName, Item& item, CoroQueryR
 				// Add new names missing in JSON from tm
 				newItem.impl_->addTagNamesFrom(item.impl_->tagsMatcher());
 			}
-
 			item = std::move(newItem);
 		}
 	}

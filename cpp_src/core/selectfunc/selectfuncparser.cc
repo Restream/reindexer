@@ -190,37 +190,43 @@ SelectFuncStruct& SelectFuncParser::ParseFunction(tokenizer& parser, bool partOf
 		static const Args args(4, {"pre_delim", "post_delim", "with_area", "left_bound", "right_bound"});
 		parsePositionalAndNamedArgs(parser, args);
 		return selectFuncStruct_;
+	} else if (tok.text() == "debug_rank") {
+		selectFuncStruct_.func = DebugRank();
 	}
 	selectFuncStruct_.funcName = std::string(tok.text());
 
 	tok = parser.next_token(tokenizer::flags::no_flags);
 	if (tok.text() == "(") {
-		std::string arg;
-		while (!parser.end()) {
-			tok = parser.next_token(tokenizer::flags::no_flags);
-			if (tok.text() == ")") {
-				if (!partOfExpression) {
-					token nextTok = parser.next_token(tokenizer::flags::no_flags);
-					if (nextTok.text().length() > 0) {
-						throw Error(errParseDSL, "%s: Unexpected character `%s` after closing parenthesis", selectFuncStruct_.funcName,
-									nextTok.text());
+		if (parser.peek_token(tokenizer::flags::no_flags).text() == ")") {
+			parser.next_token(tokenizer::flags::no_flags);
+			selectFuncStruct_.isFunction = true;
+		} else {
+			std::string arg;
+			while (!parser.end()) {
+				tok = parser.next_token(tokenizer::flags::no_flags);
+				if (tok.text() == ")") {
+					if (!partOfExpression) {
+						token nextTok = parser.next_token(tokenizer::flags::no_flags);
+						if (nextTok.text().length() > 0) {
+							throw Error(errParseDSL, "%s: Unexpected character `%s` after closing parenthesis", selectFuncStruct_.funcName,
+										nextTok.text());
+						}
 					}
+					selectFuncStruct_.funcArgs.emplace_back(std::move(arg));
+					selectFuncStruct_.isFunction = true;
+					arg.clear();
+					break;
 				}
-				selectFuncStruct_.funcArgs.emplace_back(std::move(arg));
-				selectFuncStruct_.isFunction = true;
-				arg.clear();
-				break;
+				if (tok.text() == "," && tok.type == TokenSymbol) {
+					selectFuncStruct_.funcArgs.emplace_back(std::move(arg));
+					arg.clear();
+				} else {
+					arg += tok.text();
+				}
 			}
-			if (tok.text() == "," && tok.type == TokenSymbol) {
-				selectFuncStruct_.funcArgs.emplace_back(std::move(arg));
-				arg.clear();
-			} else {
-				arg += tok.text();
+			if (!selectFuncStruct_.isFunction) {
+				throw Error(errParseDSL, "%s: The closing parenthesis is required, but found `%s`", selectFuncStruct_.funcName, tok.text());
 			}
-		}
-		if (!selectFuncStruct_.isFunction) {
-			throw Error(errParseDSL, "%s: The closing parenthesis is required, but found `%s`. Select function name: `%s`",
-						selectFuncStruct_.funcName, tok.text(), selectFuncStruct_.funcName);
 		}
 	} else {
 		throw Error(errParseDSL, "%s: An open parenthesis is required, but found `%s`. Select function name: `%s`",

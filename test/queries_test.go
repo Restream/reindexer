@@ -558,7 +558,7 @@ func TestQueries(t *testing.T) {
 			panic(err)
 		}
 
-		CheckTestItemsQueries(t, testCaseWithIDOnlyIndexe)
+		CheckTestItemsQueries(t, testCaseWithIDOnlyIndexes)
 	})
 	t.Run("Sparse indexed queries", func(t *testing.T) {
 		t.Parallel()
@@ -1285,7 +1285,7 @@ var testCaseWithCommonIndexes = IndexesTestCase{
 	},
 	Item: TestItem{},
 }
-var testCaseWithIDOnlyIndexe = IndexesTestCase{
+var testCaseWithIDOnlyIndexes = IndexesTestCase{
 	Name:      "TEST WITH ID ONLY INDEX",
 	Namespace: "test_items_id_only",
 	Options: sortDistinctOptions{

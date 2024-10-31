@@ -12,7 +12,8 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 	const auto from = opts.from;
 	try {
 		if (!from.IsCompatibleByNsVersion(ExtendedLsn(ns_.repl_.nsVersion, ns_.wal_.LastLSN()))) {
-			throw Error(errOutdatedWAL);
+			throw Error(errOutdatedWAL, "Requested LSN is not compatible by NS version (%d). Current namespace has %d", from.NsVersion(),
+						ns_.repl_.nsVersion);
 		}
 		Query q = Query(ns_.name_).Where("#lsn", CondGt, int64_t(from.LSN()));
 		SelectCtx selCtx(q, nullptr);
@@ -27,6 +28,8 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 		if (err.code() != errOutdatedWAL) {
 			throw err;
 		}
+		logFmt(LogInfo, "[repl:{}]:{} Creating RAW (force sync) snapshot. Reason: {}", ns_.name_.OriginalName(), ns_.wal_.GetServer(),
+			   err.what());
 		const auto minLsn = ns_.wal_.LSNByOffset(opts.maxWalDepthOnForceSync);
 		if (minLsn.isEmpty()) {
 			return Snapshot(ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.repl_.dataHash, ns_.itemsCount(), ns_.repl_.clusterStatus);
@@ -65,6 +68,7 @@ void SnapshotHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeaderSy
 	for (auto& rec : ch.Records()) {
 		applyRecord(rec, ctx, repl);
 	}
+	ns_.storage_.TryForceFlush();
 }
 
 void SnapshotHandler::applyRecord(const SnapshotRecord& snRec, const ChunkContext& ctx, h_vector<updates::UpdateRecord, 2>& pendedRepl) {
@@ -126,7 +130,6 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 	NsContext ctx(dummyCtx_);
 	ctx.InSnapshot(lsn, chCtx.wal, false, chCtx.initialLeaderSync);
 	auto rec = snRec.Unpack();
-
 	switch (rec.type) {
 		// Modify item
 		case WalItemModify: {
@@ -217,8 +220,8 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 			const auto version = ser.GetVarint();
 			const auto stateToken = ser.GetVarint();
 			tm.deserialize(ser, version, stateToken);
-			logPrintf(LogInfo, "Changing tm's statetoken on %d: %08X->%08X", ns_.wal_.GetServer(), ns_.tagsMatcher_.stateToken(),
-					  stateToken);
+			logPrintf(LogInfo, "[%s]: Changing tm's statetoken on %d: %08X->%08X", ns_.name_, ns_.wal_.GetServer(),
+					  ns_.tagsMatcher_.stateToken(), stateToken);
 			ns_.tagsMatcher_ = std::move(tm);
 			ns_.tagsMatcher_.UpdatePayloadType(ns_.payloadType_, NeedChangeTmVersion::No);
 			ns_.tagsMatcher_.setUpdated();
@@ -294,7 +297,6 @@ void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeader
 				break;
 			}
 			case WalRawItem: {
-				Serializer ser(wrec.rawItem.itemCJson.data(), wrec.rawItem.itemCJson.size());
 				Item item = tx.NewItem();
 				auto err = item.Unsafe().FromCJSON(wrec.rawItem.itemCJson, false);
 				if (!err.ok()) {

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "fmt/format.h"
 #include "core/keyvalue/uuid.h"
+#include "fmt/format.h"
 
 template <>
 struct fmt::printf_formatter<reindexer::Uuid> {

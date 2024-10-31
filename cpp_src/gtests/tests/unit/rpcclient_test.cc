@@ -159,7 +159,7 @@ TEST_F(RPCClientTestApi, CoroRequestCancels) {
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
-TEST_F(RPCClientTestApi, CoroSuccessfullRequestWithTimeout) {
+TEST_F(RPCClientTestApi, CoroSuccessfulRequestWithTimeout) {
 	// Should be able to execute some basic requests with timeout
 	AddFakeServer();
 	StartServer();
@@ -601,8 +601,8 @@ TEST_F(RPCClientTestApi, ItemJSONWithDouble) {
 	loop.run();
 }
 
-TEST_F(RPCClientTestApi, UnknowResultsFlag) {
-	// Check if server will not resturn unknown result flag
+TEST_F(RPCClientTestApi, UnknownResultsFlag) {
+	// Check if server will not return unknown result flag
 	StartDefaultRealServer();
 	ev::dynamic_loop loop;
 	bool finished = false;
@@ -849,7 +849,7 @@ TEST_F(RPCClientTestApi, QRWithMultipleIterationLoops) {
 
 TEST_F(RPCClientTestApi, AggregationsFetching) {
 	// Validate, that distinct results will remain valid after query results fetching.
-	// Actual aggregation values will be sent for initial 'select' only, but must be available at any point of iterator's lifetime.
+	// Actual aggregation values will only be sent for initial 'select', but must be available at any point in iterator's lifetime.
 	using namespace reindexer::client;
 	using namespace reindexer::net::ev;
 
@@ -1009,13 +1009,8 @@ TEST_F(RPCClientTestApi, AggregationsWithStrictModeTest) {
 }
 
 TEST_F(RPCClientTestApi, SubQuery) {
-	using namespace reindexer::client;
-	using namespace reindexer::net::ev;
-	using reindexer::coroutine::wait_group;
-	using reindexer::coroutine::wait_group_guard;
-
 	StartDefaultRealServer();
-	dynamic_loop loop;
+	reindexer::net::ev::dynamic_loop loop;
 
 	loop.spawn([&loop, this]() noexcept {
 		const std::string kLeftNsName = "left_ns";
@@ -1027,7 +1022,7 @@ TEST_F(RPCClientTestApi, SubQuery) {
 		constexpr auto kFetchCount = 50;
 		constexpr auto kNsSize = kFetchCount * 3;
 		cfg.FetchAmount = kFetchCount;
-		CoroReindexer rx(cfg);
+		reindexer::client::CoroReindexer rx(cfg);
 		auto err = rx.Connect(dsn, loop, opts);
 		ASSERT_TRUE(err.ok()) << err.what();
 
@@ -1071,6 +1066,70 @@ TEST_F(RPCClientTestApi, SubQuery) {
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_EQ(qr.Count(), limit);
 		}
+		rx.Stop();
+	});
+
+	loop.run();
+}
+
+TEST_F(RPCClientTestApi, CoroTransactionInsertWithPrecepts) {
+	StartDefaultRealServer();
+	reindexer::net::ev::dynamic_loop loop;
+
+	loop.spawn([&loop, this]() noexcept {
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		reindexer::client::ConnectOpts opts;
+		opts.CreateDBIfMissing();
+		reindexer::client::CoroReindexer rx;
+		auto err = rx.Connect(dsn, loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
+		const std::string kNsName = "TestCoroInsertWithPrecepts";
+		CreateNamespace(rx, kNsName);
+
+		constexpr int kNsSize = 5;
+
+		auto insertFn = [&rx, kNsSize](const std::string& nsName) {
+			std::vector<std::string> precepts = {"id=SERIAL()"};
+
+			auto tx = rx.NewTransaction(nsName);
+			ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
+
+			for (size_t i = 0; i < kNsSize; ++i) {
+				auto item = tx.NewItem();
+				ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+				WrSerializer wrser;
+				JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+				jsonBuilder.Put("id", 100);
+				jsonBuilder.End();
+
+				char* endp = nullptr;
+				auto err = item.Unsafe().FromJSON(wrser.Slice(), &endp);
+				ASSERT_TRUE(err.ok()) << err.what();
+
+				item.SetPrecepts(precepts);
+
+				err = tx.Insert(std::move(item));
+				ASSERT_TRUE(err.ok()) << err.what();
+			}
+			client::CoroQueryResults qr;
+			auto err = rx.CommitTransaction(tx, qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), kNsSize);
+		};
+
+		insertFn(kNsName);
+
+		{
+			client::CoroQueryResults qr;
+			err = rx.Select(Query(kNsName), qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), kNsSize);
+			for (auto& it : qr) {
+				ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+			}
+		}
+
 		rx.Stop();
 	});
 

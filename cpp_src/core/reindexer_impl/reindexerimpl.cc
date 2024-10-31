@@ -750,7 +750,10 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 			rlock.unlock();
 
 			if (srcNs) {
-				auto err = srcNs->awaitMainNs(rdxCtx)->FlushStorage(rdxCtx);
+				auto nsPtr = srcNs->awaitMainNs(rdxCtx);
+				logFmt(LogInfo, "[rename] Performing storage flush before namespace renaming ('{}' -> '{}')...", srcNsName, dstNsName);
+				auto err = nsPtr->FlushStorage(rdxCtx);
+				logFmt(LogInfo, "[rename] Flush done for '{}'", srcNsName);
 				if (!err.ok()) {
 					return Error(err.code(), "Unable to flush storage before rename: %s", err.what());
 				}

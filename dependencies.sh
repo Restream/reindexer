@@ -40,7 +40,7 @@ debian_debs="build-essential g++ libunwind-dev libgoogle-perftools-dev libsnappy
 alpine_apks="g++ snappy-dev leveldb-dev libunwind-dev make curl cmake unzip git"
 arch_pkgs="gcc snappy leveldb make curl cmake unzip git"
 redos_rpms="gcc gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip git cmake rpm-build python-srpm-macros"
-altlinux_rpms="gcc gcc-c++ make libsnappy-devel libleveldb-devel gperftools-devel curl unzip git cmake ctest rpm-build rpmdevtools"
+altlinux_rpms="gcc gcc-c++ make libsnappy-devel libleveldb-devel libgperftools-devel curl unzip git cmake ctest rpm-build rpmdevtools"
 
 cmake_installed () {
     info_msg "Check for installed cmake ..... "

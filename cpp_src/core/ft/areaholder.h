@@ -14,10 +14,8 @@ public:
 	Area() noexcept : start(0), end(0) {}
 	Area(int s, int e) noexcept : start(s), end(e) {}
 
-	[[nodiscard]] bool inline IsIn(int pos) noexcept { return pos <= end && pos >= start; }
-
-	[[nodiscard]] bool inline Concat(const Area& rhs) noexcept {
-		if (IsIn(rhs.start) || IsIn(rhs.end) || (start > rhs.start && end < rhs.end)) {
+	[[nodiscard]] bool Concat(const Area& rhs) noexcept {
+		if (isIn(rhs.start) || isIn(rhs.end) || (start > rhs.start && end < rhs.end)) {
 			if (start > rhs.start) {
 				start = rhs.start;
 			}
@@ -31,19 +29,35 @@ public:
 
 	int start;
 	int end;
+
+private:
+	[[nodiscard]] bool inline isIn(int pos) noexcept { return pos <= end && pos >= start; }
 };
 
-class AreaHolder;
+struct AreaDebug {
+	enum class PhraseMode { None, Start, End };
+	AreaDebug() {}
+	AreaDebug(int s, int e, std::string&& p, PhraseMode phMode) noexcept : start(s), end(e), props(p), phraseMode(phMode) {}
+	[[nodiscard]] RX_ALWAYS_INLINE bool Concat(const AreaDebug&) noexcept { return false; }
+	int start = 0;
+	int end = 0;
+	std::string props;
+	PhraseMode phraseMode = PhraseMode::None;
+};
 
-class AreaBuffer {
+template <typename AreaType>
+class AreasInDocument;
+
+template <typename AreaType>
+class AreasInField {
 public:
-	AreaBuffer() = default;
+	AreasInField() = default;
 	[[nodiscard]] size_t Size() const noexcept { return data_.size(); }
 	[[nodiscard]] bool Empty() const noexcept { return data_.empty(); }
 	void Commit() {
 		if (!data_.empty()) {
 			boost::sort::pdqsort_branchless(data_.begin(), data_.end(),
-											[](const Area& rhs, const Area& lhs) noexcept { return rhs.start < lhs.start; });
+											[](const AreaType& rhs, const AreaType& lhs) noexcept { return rhs.start < lhs.start; });
 			for (auto vit = data_.begin() + 1; vit != data_.end(); ++vit) {
 				auto prev = vit - 1;
 				if (vit->Concat(*prev)) {
@@ -52,7 +66,7 @@ public:
 			}
 		}
 	}
-	[[nodiscard]] bool Insert(Area&& area, float termRank, int maxAreasInDoc, float maxTermRank) {
+	[[nodiscard]] bool Insert(AreaType&& area, float termRank, int maxAreasInDoc, float maxTermRank) {
 		if (!data_.empty() && data_.back().Concat(area)) {
 			return true;
 		} else {
@@ -71,22 +85,26 @@ public:
 		return false;
 	}
 
-	[[nodiscard]] const RVector<Area, 2>& GetData() const noexcept { return data_; }
-	void MoveAreas(AreaHolder& to, int field, int32_t rank, int maxAreasInDoc);
+	[[nodiscard]] const RVector<AreaType, 2>& GetData() const noexcept { return data_; }
+	void MoveAreas(AreasInDocument<AreaType>& to, int field, int32_t rank, int maxAreasInDoc) {
+		for (auto& v : data_) {
+			[[maybe_unused]] bool r = to.InsertArea(std::move(v), field, rank, maxAreasInDoc);
+		}
+		to.UpdateRank(rank);
+		data_.resize(0);
+	}
 
 private:
-	RVector<Area, 2> data_;
+	RVector<AreaType, 2> data_;
 	int index_ = 0;
 };
 
-class AreaHolder {
+template <typename AreaType>
+class AreasInDocument {
 public:
-	typedef std::shared_ptr<AreaHolder> Ptr;
-	typedef std::unique_ptr<AreaHolder> UniquePtr;
-
-	AreaHolder() = default;
-	~AreaHolder() = default;
-	AreaHolder(AreaHolder&&) = default;
+	AreasInDocument() = default;
+	~AreasInDocument() = default;
+	AreasInDocument(AreasInDocument&&) = default;
 	void Reserve(int size) { areas_.reserve(size); }
 	void ReserveField(int size) { areas_.resize(size); }
 	void Commit() {
@@ -95,21 +113,24 @@ public:
 			area.Commit();
 		}
 	}
-	[[nodiscard]] bool AddWord(int pos, int field, int32_t rank, int maxAreasInDoc) {
-		return InsertArea(Area{pos, pos + 1}, field, rank, maxAreasInDoc);
+	[[nodiscard]] bool AddWord(AreaType&& area, int field, int32_t rank, int maxAreasInDoc) {
+		return InsertArea(std::move(area), field, rank, maxAreasInDoc);
 	}
 	void UpdateRank(int32_t rank) noexcept {
 		if (rank > maxTermRank_) {
 			maxTermRank_ = rank;
 		}
 	}
-	[[nodiscard]] AreaBuffer* GetAreas(int field) {
+
+	[[nodiscard]] AreasInField<AreaType>* GetAreas(int field) {
 		if (!commited_) {
 			Commit();
 		}
 		return (areas_.size() <= size_t(field)) ? nullptr : &areas_[field];
 	}
-	[[nodiscard]] AreaBuffer* GetAreasRaw(int field) noexcept { return (areas_.size() <= size_t(field)) ? nullptr : &areas_[field]; }
+	[[nodiscard]] AreasInField<AreaType>* GetAreasRaw(int field) noexcept {
+		return (areas_.size() <= size_t(field)) ? nullptr : &areas_[field];
+	}
 	[[nodiscard]] bool IsCommited() const noexcept { return commited_; }
 	[[nodiscard]] size_t GetAreasCount() const noexcept {
 		size_t size = 0;
@@ -118,7 +139,7 @@ public:
 		}
 		return size;
 	}
-	[[nodiscard]] bool InsertArea(Area&& area, int field, int32_t rank, int maxAreasInDoc) {
+	[[nodiscard]] bool InsertArea(AreaType&& area, int field, int32_t rank, int maxAreasInDoc) {
 		commited_ = false;
 		if (areas_.size() <= size_t(field)) {
 			areas_.resize(field + 1);
@@ -129,16 +150,8 @@ public:
 
 private:
 	bool commited_ = false;
-	RVector<AreaBuffer, 3> areas_;
+	RVector<AreasInField<AreaType>, 3> areas_;
 	int32_t maxTermRank_ = 0;
 };
-
-inline void AreaBuffer::MoveAreas(AreaHolder& to, int field, int32_t rank, int maxAreasInDoc) {
-	for (auto& v : data_) {
-		[[maybe_unused]] bool r = to.InsertArea(std::move(v), field, rank, maxAreasInDoc);
-	}
-	to.UpdateRank(rank);
-	data_.resize(0);
-}
 
 }  // namespace reindexer

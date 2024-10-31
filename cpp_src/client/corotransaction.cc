@@ -8,8 +8,7 @@
 #include "core/keyvalue/p_string.h"
 #include "net/cproto/coroclientconnection.h"
 
-namespace reindexer {
-namespace client {
+namespace reindexer::client {
 
 CoroTransaction::~CoroTransaction() {
 	if (!IsFree()) {
@@ -226,5 +225,4 @@ CoroTransaction::Impl::Impl(CoroTransaction::Impl&&) noexcept = default;
 CoroTransaction::Impl& CoroTransaction::Impl::operator=(CoroTransaction::Impl&&) noexcept = default;
 CoroTransaction::Impl::~Impl() = default;
 
-}  // namespace client
-}  // namespace reindexer
+}  // namespace reindexer::client

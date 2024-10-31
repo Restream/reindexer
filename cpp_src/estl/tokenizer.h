@@ -89,5 +89,6 @@ private:
 enum class CompositeAllowed : bool { No = false, Yes = true };
 enum class FieldAllowed : bool { No = false, Yes = true };
 Variant token2kv(const token& currTok, tokenizer& parser, CompositeAllowed allowComposite, FieldAllowed allowField);
+Variant getVariantFromToken(const token& tok);
 
 }  // namespace reindexer

@@ -22,7 +22,7 @@ struct SelectFuncStruct {
 	std::unordered_map<std::string, std::string> namedArgs;
 	BaseFunctionCtx::Ptr ctx;
 	TagsPath tagsPath;
-	int indexNo = -1;
+	int indexNo = IndexValueType::NotSet;
 	int fieldNo = 0;
 };
 

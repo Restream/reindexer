@@ -1,8 +1,8 @@
 #pragma once
 
 #include <functional>
-#include <string_view>
 #include <string>
+#include <string_view>
 
 namespace reindexer {
 namespace debug {

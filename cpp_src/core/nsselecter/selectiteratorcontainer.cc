@@ -309,7 +309,7 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry& qe
 	opts.inTransaction = ctx_->inTransaction;
 
 	auto ctx = selectFnc ? selectFnc->CreateCtx(qe.IndexNo()) : BaseFunctionCtx::Ptr{};
-	if (ctx && ctx->type == BaseFunctionCtx::kFtCtx) {
+	if (ctx) {
 		ftCtx = reindexer::static_ctx_pointer_cast<FtCtx>(ctx);
 	}
 

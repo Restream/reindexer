@@ -18,6 +18,7 @@ Reindexer has builtin full text search engine. This document describes usage of 
     - [Highlight](#highlight)
     - [Snippet](#snippet)
     - [Snippet_n](#snippet_n)
+    - [Debug_rank](#debug_rank)
 - [Typos algorithm](#typos-algorithm)
     - [Typos handling details](#typos-handling-details)
     - [More examples](#more-examples)
@@ -193,7 +194,7 @@ It is possible to merge multiple queries results and sort final result by releva
 ```
 ## Using select functions
 It is possible to use select functions to process result data.
-For now you can use snippet, snippet_n and highlight. For composite indexes the result of the function will be written in to corresponding subfields.
+For now you can use snippet, snippet_n and highlight, debug_rank. For composite indexes the result of the function will be written in to corresponding subfields.
 You can not put [,)\0] symbols in functions params. If the value contains special characters, it must be enclosed
 in single quotes.
 
@@ -272,6 +273,10 @@ b.Query("items").Match("text", query).Limit(limit).Offset(offset).Functions("tex
 ```
 
 result: "{me <b>text</b> str}"
+
+### Debug_rank
+
+This function outputs additional information about ranking of the found word in the text in the key-value format. Returned format and content may vary depending on reindexer's version. Works with `text`-index only.
 
 ## Typos algorithm
 

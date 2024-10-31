@@ -107,7 +107,7 @@ public:
 
 	/// Set closer notifier
 	/// @param object close class object
-	/// @param func function, to be called on connecion close
+	/// @param func function, to be called on connection close
 	template <class K>
 	void OnClose(K* object, void (K::*func)(Context& ctx, const Error& err)) {
 		onClose_ = [=](Context& ctx, const Error& err) { (static_cast<K*>(object)->*func)(ctx, err); };
@@ -131,7 +131,7 @@ public:
 	/// @return OnResponse callback reference
 	const std::function<void(Context& ctx)>& OnResponseRef() const noexcept { return onResponse_; }
 
-	/// Handle RPC fron the context
+	/// Handle RPC from the context
 	/// @param ctx - RPC context
 	Error Handle(Context& ctx) {
 		if rx_likely (uint32_t(ctx.call->cmd) < uint32_t(handlers_.size())) {
@@ -159,7 +159,7 @@ private:
 	template <typename T, std::enable_if_t<!is_optional<T>::value, int> = 0>
 	static T get_arg(const Args& args, size_t index, const Context& ctx) {
 		if (index >= args.size()) {
-			throw Error(errParams, "Invalid args of %s call; argument %d is not submited", CmdName(ctx.call->cmd), static_cast<int>(index));
+			throw Error(errParams, "Invalid args of %s call; argument %d is not submitted", CmdName(ctx.call->cmd), static_cast<int>(index));
 		}
 		return T(args[index]);
 	}
@@ -190,7 +190,7 @@ private:
 
 	std::function<void(Context& ctx, const Error& err, const Args& args)> logger_;
 	std::function<void(Context& ctx, const Error& err)> onClose_;
-	// This should be called from the connection thread only to prevet access to other connection's ClientData
+	// This should be called from the connection thread only to prevent access to other connection's ClientData
 	std::function<void(Context& ctx)> onResponse_;
 };
 }  // namespace cproto

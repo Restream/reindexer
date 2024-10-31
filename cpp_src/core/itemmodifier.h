@@ -54,7 +54,7 @@ private:
 				data_.reserve(DefaultCJsonSize);
 			}
 			data_.assign(str.begin(), str.end());
-			cjson_ = std::string_view(&data_[0], str.size());
+			cjson_ = !str.empty() ? std::string_view(&data_[0], str.size()) : std::string_view();
 		}
 		p_string Get() const { return p_string(&cjson_); }
 		void Reset() { cjson_ = {nullptr, 0}; }

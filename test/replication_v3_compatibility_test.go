@@ -414,7 +414,7 @@ func TestReplV3CompatibilityChainTransition(t *testing.T) {
 	const dataCount = 1000
 
 	nodes := []nodeData{{
-		ServerID: 1,
+		ServerID: 0,
 		Cfg:      config.DefaultServerConfig(),
 		HTTPAddr: "127.0.0.1:31088",
 		RPCAddr:  "127.0.0.1:31534",

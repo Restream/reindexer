@@ -8,6 +8,7 @@
 #include "core/itemimpl.h"
 #include "core/namespace/namespace.h"
 #include "joinresults.h"
+#include "server/outputparameters.h"
 #include "tools/catch_and_return.h"
 
 namespace reindexer {
@@ -279,6 +280,9 @@ Error LocalQueryResults::Iterator::GetProtobuf(WrSerializer& wrser, bool withHdr
 	auto& itemRef = qr_->items_[idx_];
 	assertrx(qr_->ctxs.size() > itemRef.Nsid());
 	auto& ctx = qr_->ctxs[itemRef.Nsid()];
+	if (!ctx.schema_) {
+		return Error(errParams, "The schema was not found for Protobuf builder");
+	}
 
 	if (itemRef.Value().IsFree()) {
 		return Error(errNotFound, "Item not found");
@@ -287,6 +291,10 @@ Error LocalQueryResults::Iterator::GetProtobuf(WrSerializer& wrser, bool withHdr
 	ConstPayload pl(ctx.type_, itemRef.Value());
 	ProtobufEncoder encoder(&ctx.tagsMatcher_);
 	ProtobufBuilder builder(&wrser, ObjType::TypePlain, ctx.schema_.get(), const_cast<TagsMatcher*>(&ctx.tagsMatcher_));
+
+	auto item = builder.Object(kProtoQueryResultsFields.at(kParamItems));
+	auto ItemImpl = item.Object(ctx.schema_->GetProtobufNsNumber() + 1);
+
 	if (withHdrLen) {
 		auto slicePosSaver = wrser.StartSlice();
 		encoder.Encode(pl, builder);
@@ -294,7 +302,7 @@ Error LocalQueryResults::Iterator::GetProtobuf(WrSerializer& wrser, bool withHdr
 		encoder.Encode(pl, builder);
 	}
 
-	return errOK;
+	return {};
 }
 
 Error LocalQueryResults::Iterator::GetJSON(WrSerializer& ser, bool withHdrLen) {

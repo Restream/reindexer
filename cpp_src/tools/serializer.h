@@ -147,9 +147,9 @@ private:
 	Variant getPVStringVariant();
 	const v_string_hdr* getPVStringPtr();
 
-	const uint8_t* buf_;
-	size_t len_;
-	size_t pos_;
+	const uint8_t* buf_{nullptr};
+	size_t len_{0};
+	size_t pos_{0};
 };
 
 class WrSerializer {
@@ -263,8 +263,8 @@ private:
 		}
 
 	private:
-		WrSerializer* ser_;
-		size_t pos_;
+		const WrSerializer* ser_{nullptr};
+		size_t pos_{0};
 	};
 
 public:
@@ -287,8 +287,8 @@ public:
 		void End();
 
 	private:
-		WrSerializer* ser_;
-		size_t pos_;
+		WrSerializer* ser_{nullptr};
+		size_t pos_{0};
 	};
 
 	SliceHelper StartSlice() {
@@ -463,22 +463,20 @@ public:
 	size_t Cap() const noexcept { return cap_; }
 	void Reserve(size_t cap) {
 		if (cap > cap_) {
-			cap_ = cap;
-			uint8_t* b = new uint8_t[cap_];
-			memcpy(b, buf_, len_);
+			auto b = std::make_unique<uint8_t[]>(cap);
+			memcpy(b.get(), buf_, len_);
 			if (HasAllocatedBuffer()) {
 				delete[] buf_;	// NOLINT(*.NewDelete) False positive
 			}
-			buf_ = b;
+			buf_ = b.release();
+			cap_ = cap;
 			hasExternalBuf_ = false;
 		}
 	}
 	RX_ALWAYS_INLINE std::string_view Slice() const noexcept { return {reinterpret_cast<const char*>(buf_), len_}; }
 	const char* c_str() noexcept {
-		if (!len_ || buf_[len_] != 0) {
-			grow(1);
-			buf_[len_] = 0;
-		}
+		grow(1);
+		buf_[len_] = 0;
 		return reinterpret_cast<const char*>(buf_);
 	}
 	bool HasHeap() const noexcept { return buf_ != inBuf_ && cap_; }
@@ -492,11 +490,11 @@ protected:
 			Reserve((newCap == newCapAligned) ? newCap : (newCapAligned + 0x1000));
 		}
 	}
-	uint8_t* buf_ = nullptr;
-	size_t len_ = 0;
-	size_t cap_ = 0;
+	uint8_t* buf_{nullptr};
+	size_t len_{0};
+	size_t cap_{0};
 	uint8_t inBuf_[0x100];
-	bool hasExternalBuf_ = false;
+	bool hasExternalBuf_{false};
 };
 
 inline int msgpack_wrserializer_write(void* data, const char* buf, size_t len) {

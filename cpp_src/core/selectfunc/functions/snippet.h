@@ -40,8 +40,8 @@ private:
 		std::string_view leftBound_, rightBound_;
 	};
 
-	void buildResult(RecalcZoneHelper& recalcZoneHelper, const AreaBuffer& pva, const std::string& data, std::string& resultString);
-	void buildResultWithPrefix(RecalcZoneHelper& recalcZoneHelper, const AreaBuffer& pva, const std::string& data,
+	void buildResult(RecalcZoneHelper& recalcZoneHelper, const AreasInField<Area>& pva, const std::string& data, std::string& resultString);
+	void buildResultWithPrefix(RecalcZoneHelper& recalcZoneHelper, const AreasInField<Area>& pva, const std::string& data,
 							   std::string& resultString);
 
 	bool isInit_ = false;

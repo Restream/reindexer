@@ -7,11 +7,9 @@
 
 namespace reindexer {
 
-namespace net {
-namespace cproto {
+namespace net::cproto {
 class CoroClientConnection;
-}  // namespace cproto
-}  // namespace net
+}  // namespace net::cproto
 
 namespace client {
 
@@ -58,7 +56,7 @@ private:
 	friend class RPCClient;
 	friend class ReindexerImpl;
 	friend class Transaction;
-	CoroTransaction(Error status) noexcept : i_(std::move(status)) {}
+	explicit CoroTransaction(Error status) noexcept : i_(std::move(status)) {}
 	CoroTransaction(RPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout, std::chrono::milliseconds execTimeout,
 					Namespace* ns) noexcept
 		: i_(rpcClient, txId, requestTimeout, execTimeout, ns) {}
@@ -82,13 +80,13 @@ private:
 		Impl& operator=(Impl&&) noexcept;
 		~Impl();
 
-		int64_t txId_ = -1;
-		RPCClient* rpcClient_ = nullptr;
-		std::chrono::milliseconds requestTimeout_ = std::chrono::milliseconds{0};
-		std::chrono::milliseconds execTimeout_ = std::chrono::milliseconds{0};
+		int64_t txId_{-1};
+		RPCClient* rpcClient_{nullptr};
+		std::chrono::milliseconds requestTimeout_{0};
+		std::chrono::milliseconds execTimeout_{0};
 		Error status_;
 		std::unique_ptr<TagsMatcher> localTm_;
-		Namespace* ns_ = nullptr;
+		Namespace* ns_{nullptr};
 		steady_clock_w::time_point sessionTs_;
 	};
 
@@ -96,4 +94,5 @@ private:
 };
 
 }  // namespace client
+
 }  // namespace reindexer

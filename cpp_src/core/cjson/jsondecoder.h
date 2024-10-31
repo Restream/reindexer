@@ -8,8 +8,8 @@ namespace reindexer {
 
 class JsonDecoder {
 public:
-	explicit JsonDecoder(TagsMatcher& tagsMatcher) noexcept : tagsMatcher_(tagsMatcher), filter_(nullptr) {}
-	JsonDecoder(TagsMatcher& tagsMatcher, const FieldsSet* filter) noexcept : tagsMatcher_(tagsMatcher), filter_(filter) {}
+	explicit JsonDecoder(TagsMatcher& tagsMatcher, const FieldsSet* filter = nullptr) noexcept
+		: tagsMatcher_(tagsMatcher), filter_(filter) {}
 	Error Decode(Payload& pl, WrSerializer& wrSer, const gason::JsonValue& v);
 	void Decode(std::string_view json, CJsonBuilder& builder, const TagsPath& fieldPath);
 
@@ -21,8 +21,8 @@ private:
 
 	TagsMatcher& tagsMatcher_;
 	TagsPath tagsPath_;
-	const FieldsSet* filter_;
-	int32_t arrayLevel_ = 0;
+	const FieldsSet* filter_{nullptr};
+	int32_t arrayLevel_{0};
 	ScalarIndexesSetT objectScalarIndexes_;
 };
 

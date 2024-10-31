@@ -85,7 +85,7 @@ type payloadIface struct {
 func (pl *payloadIface) ptr(field, idx, typ int) unsafe.Pointer {
 
 	if pl.p == 0 {
-		panic(fmt.Errorf("Null pointer derefernce"))
+		panic(fmt.Errorf("Null pointer dereference"))
 	}
 
 	f := &pl.t.Fields[field]
@@ -98,7 +98,7 @@ func (pl *payloadIface) ptr(field, idx, typ int) unsafe.Pointer {
 
 	if !f.IsArray {
 		if idx != 0 {
-			panic(fmt.Errorf("Trying to acces by index '%d' to non array field '%s'", idx, f.Name))
+			panic(fmt.Errorf("Trying to access by index '%d' to non array field '%s'", idx, f.Name))
 		}
 		return p
 	}
@@ -217,7 +217,7 @@ func (pl *payloadIface) getArrayLen(field int) int {
 	return int((*ArrayHeader)(p).len)
 }
 
-// get c reflect value and set to go reflect valie
+// get c reflect value and set to go reflect value
 func (pl *payloadIface) getValue(field int, idx int, v reflect.Value) {
 
 	k := v.Type().Kind()

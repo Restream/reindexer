@@ -65,7 +65,7 @@ public:
 	/// @param server - Server ID
 	void SetServer(int16_t server) { lsnCounter_.SetServer(server); }
 	/// Get server id from local LSN counter
-	int16_t GetServer() { return lsnCounter_.Server(); }
+	int16_t GetServer() const noexcept { return lsnCounter_.Server(); }
 	/// Reset WAL state
 	void Reset();
 
@@ -97,11 +97,11 @@ public:
 	iterator end() const { return {lsnCounter_.Counter(), this}; }
 	/// Get upper_bound
 	/// @param lsn LSN counter of record
-	/// @return iterator pointing LSN record greate than lsn
+	/// @return iterator pointing LSN record greate than LSN
 	iterator upper_bound(lsn_t lsn) const { return !available(lsn) ? end() : iterator{lsn.Counter() + 1, this}; }
 	/// Get inclusive_upper_bound
 	/// @param lsn LSN counter of record
-	/// @return iterator pointing LSN record greate or equal to lsn
+	/// @return iterator pointing LSN record greate or equal to LSN
 	iterator inclusive_upper_bound(lsn_t lsn) const { return !available(lsn) ? end() : iterator{lsn.Counter(), this}; }
 	/// Check if LSN is outdated, and complete log is not available
 	/// @param lsn LSN of record

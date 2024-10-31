@@ -1,4 +1,5 @@
 #include "tokenizer.h"
+#include "double-conversion/double-conversion.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
@@ -180,6 +181,57 @@ std::string tokenizer::where() const {
 		.append(std::to_string(col))
 		.append(" ")
 		.append(std::to_string(q_.size()));
+}
+
+Variant getVariantFromToken(const token& tok) {
+	const std::string_view str = tok.text();
+	if (tok.type != TokenNumber || str.empty()) {
+		return Variant(make_key_string(str.data(), str.length()));
+	}
+
+	if (!isdigit(str[0]) && (str.size() == 1 || (str[0] != '+' && str[0] != '-'))) {
+		return Variant(make_key_string(str.data(), str.length()));
+	}
+
+	bool isFloat = false;
+	// INT64_MAX(9'223'372'036'854'775'807) contains 19 digits + 1 for possible sign
+	const size_t maxSignsInInt = 19 + (isdigit(str[0]) ? 0 : 1);
+	bool nullDecimalPart = true;
+
+	size_t decPointPos = str.size();
+	for (unsigned i = 1; i < str.size(); i++) {
+		if (str[i] == '.') {
+			if (isFloat) {
+				// second point - not a number
+				return Variant(make_key_string(str.data(), str.length()));
+			}
+
+			decPointPos = i;
+
+			isFloat = true;
+			continue;
+		}
+
+		if (!isdigit(str[i])) {
+			return Variant(make_key_string(str.data(), str.length()));
+		}
+
+		if (isFloat) {
+			nullDecimalPart = nullDecimalPart && str[i] == '0';
+		}
+	}
+
+	isFloat = !nullDecimalPart || (isFloat && decPointPos > maxSignsInInt);
+
+	if (!isFloat) {
+		auto intPart = str.substr(0, decPointPos);
+		return intPart.size() <= maxSignsInInt ? Variant(stoll(intPart)) : Variant(make_key_string(str.data(), str.length()));
+	}
+
+	using double_conversion::StringToDoubleConverter;
+	static const StringToDoubleConverter converter{StringToDoubleConverter::NO_FLAGS, NAN, NAN, nullptr, nullptr};
+	int countOfCharsParsedAsDouble = 0;
+	return Variant(converter.StringToDouble(str.data(), str.size(), &countOfCharsParsedAsDouble));
 }
 
 }  // namespace reindexer

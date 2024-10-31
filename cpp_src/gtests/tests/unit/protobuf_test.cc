@@ -19,10 +19,10 @@ const std::string kStreetValue = "Miracle Street, ";
 const std::string kPostalCodeValue = "9745 123 ";
 const double kSalaryValue = 11238761238768.232342342;
 
-TEST_F(ReindexerApi, ProtobufConvesrionTest) {
+TEST_F(ReindexerApi, ProtobufConversionTest) {
 	// Check protobuf for basic types (int/double/array) and double <-> int conversion
 	// !!! This test is using schema from cpp_src/gtests/tests/proto/conversion.proto.
-	// !!! Protobuf indexes are not constant and depend from the internal reindexer::Schema implementation.
+	// !!! Protobuf indexes are not persistent and depend on the internal implementation of reindexer::Schema.
 	// clang-format off
 	const std::string schema = R"z(
 			{
@@ -93,7 +93,7 @@ TEST_F(ReindexerApi, ProtobufConvesrionTest) {
 TEST_F(ReindexerApi, ProtobufEasyArrayTest) {
 	// Check protobuf for arrays and nested objects
 	// !!! This test is using schema from cpp_src/gtests/tests/proto/easyarrays.proto.
-	// !!! Protobuf indexes are not constant and depend from the internal reindexer::Schema implementation.
+	// !!! Protobuf indexes are not persistent and depend on the internal implementation of reindexer::Schema.
 	// clang-format off
 	const std::string schema = R"z(
 			{

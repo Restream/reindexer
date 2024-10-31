@@ -315,33 +315,6 @@ private:
 	SqlParsingCtx& nestedCtx_;
 };
 
-static KeyValueType detectValueType(const token& tok) {
-	const std::string_view val = tok.text();
-	if (tok.type == TokenNumber) {
-		unsigned i = 0;
-		bool flt = false;
-		bool digit = val.length() < 21 && val.length() > 0;
-		if (val[i] == '+' || val[i] == '-') {
-			i++;
-		}
-		for (; i < val.length() && digit; i++) {
-			if (val[i] == '.') {
-				flt = true;
-			} else if (!isdigit(val[i])) {
-				digit = false;
-			}
-		}
-		if (digit && val.length() > 0) {
-			if (flt) {
-				return {KeyValueType::Double{}};
-			} else {
-				return {KeyValueType::Int64{}};
-			}
-		}
-	}
-	return {KeyValueType::String{}};
-}
-
 Variant token2kv(const token& tok, tokenizer& parser, CompositeAllowed allowComposite, FieldAllowed allowField) {
 	if (tok.text() == "{"sv) {
 		// Composite value parsing
@@ -354,7 +327,7 @@ Variant token2kv(const token& tok, tokenizer& parser, CompositeAllowed allowComp
 			compositeValues.push_back(token2kv(nextTok, parser, CompositeAllowed::No, FieldAllowed::No));
 			nextTok = parser.next_token();
 			if (nextTok.text() == "}"sv) {
-				return Variant(compositeValues); // end process
+				return Variant(compositeValues);  // end process
 			}
 			if (nextTok.text() != ","sv) {
 				throw Error(errParseSQL, "Expected ',', but found '%s' in query, %s", nextTok.text(), parser.where());
@@ -379,24 +352,7 @@ Variant token2kv(const token& tok, tokenizer& parser, CompositeAllowed allowComp
 		throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text(), parser.where());
 	}
 
-	return detectValueType(tok).EvaluateOneOf(
-		[&](KeyValueType::Int64) { return Variant(int64_t(stoll(value))); },
-		[&](KeyValueType::Double) {
-			try {
-				using double_conversion::StringToDoubleConverter;
-				static const StringToDoubleConverter converter{StringToDoubleConverter::NO_FLAGS, NAN, NAN, nullptr, nullptr};
-				int countOfCharsParsedAsDouble;
-				return Variant(converter.StringToDouble(value.data(), int(value.size()), &countOfCharsParsedAsDouble));
-			} catch (...) {
-				throw Error(errParseSQL, "Unable to convert '%s' to double value", value);
-			}
-		},
-		[&](KeyValueType::String) { return Variant(make_key_string(value.data(), value.length())); },
-		[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Bool, KeyValueType::Int, KeyValueType::Composite,
-				 KeyValueType::Null, KeyValueType::Uuid>) noexcept -> Variant {
-			assertrx(0);
-			abort();
-		});
+	return getVariantFromToken(tok);
 }
 
 int SQLParser::parseOrderBy(tokenizer& parser, SortingEntries& sortingEntries, std::vector<Variant>& forcedSortOrder_) {
@@ -591,7 +547,7 @@ void SQLParser::parseCommand(tokenizer& parser) const {
 	tok = parser.next_token();
 	// try parse as scalar value
 	if ((tok.type == TokenNumber) || (tok.type == TokenString) || (tok.type == TokenName)) {
-		token2kv(tok, parser, CompositeAllowed::No, FieldAllowed::Yes); // ignore result
+		token2kv(tok, parser, CompositeAllowed::No, FieldAllowed::Yes);	 // ignore result
 	} else {
 		parseArray(parser, tok.text(), nullptr);
 	}

@@ -10,7 +10,6 @@
 namespace reindexer {
 
 class TagsMatcher;
-class JsonBuilder;
 class MsgPackBuilder;
 class ProtobufBuilder;
 class CsvBuilder;
@@ -38,7 +37,7 @@ public:
 template <typename Builder>
 class BaseEncoder {
 public:
-	BaseEncoder(const TagsMatcher* tagsMatcher, const FieldsSet* filter = nullptr);
+	explicit BaseEncoder(const TagsMatcher* tagsMatcher, const FieldsSet* filter = nullptr);
 	void Encode(ConstPayload& pl, Builder& builder,
 				const h_vector<IAdditionalDatasource<Builder>*, 2>& dss = h_vector<IAdditionalDatasource<Builder>*, 2>());
 	void Encode(std::string_view tuple, Builder& wrSer,
@@ -63,9 +62,9 @@ protected:
 
 	std::string_view getPlTuple(ConstPayload& pl);
 
-	const TagsMatcher* tagsMatcher_;
-	std::array<int, kMaxIndexes> fieldsoutcnt_{0};
-	const FieldsSet* filter_;
+	const TagsMatcher* tagsMatcher_{nullptr};
+	std::array<int, kMaxIndexes> fieldsoutcnt_;
+	const FieldsSet* filter_{nullptr};
 	WrSerializer tmpPlTuple_;
 	TagsPath curTagsPath_;
 	IndexedTagsPathInternalT indexedTagsPath_;

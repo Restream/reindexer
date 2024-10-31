@@ -14,7 +14,6 @@ namespace reindexer {
 using std::chrono::milliseconds;
 
 class ShardingProxy;
-class ProtobufSchema;
 struct ReplicationStateV2;
 struct ClusterizationStatus;
 class SnapshotChunk;
@@ -52,6 +51,7 @@ public:
 	/// Create Reindexer database object
 	/// @param cfg - general database options
 	explicit Reindexer(ReindexerConfig cfg = ReindexerConfig());
+
 	/// Destroy Reindexer database object
 	~Reindexer();
 	/// Create not holding copy
@@ -379,6 +379,7 @@ public:
 
 	typedef QueryResults QueryResultsT;
 	typedef Item ItemT;
+	typedef Transaction TransactionT;
 
 	Error DumpIndex(std::ostream& os, std::string_view nsName, std::string_view index);
 

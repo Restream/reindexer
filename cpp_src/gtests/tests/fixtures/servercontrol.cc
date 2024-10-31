@@ -60,10 +60,13 @@ ServerControl::ServerControl(ServerControl&& rhs) noexcept {
 	rhs.stopped_ = nullptr;
 }
 ServerControl& ServerControl::operator=(ServerControl&& rhs) noexcept {
-	WLock lock(rhs.mtx_);
-	interface = std::move(rhs.interface);
-	stopped_ = rhs.stopped_;
-	rhs.stopped_ = nullptr;
+	if (this != &rhs) {
+		WLock lock(rhs.mtx_);
+		interface = std::move(rhs.interface);
+		delete stopped_;
+		stopped_ = rhs.stopped_;
+		rhs.stopped_ = nullptr;
+	}
 	return *this;
 }
 

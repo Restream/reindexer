@@ -514,8 +514,6 @@ Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults&
 			break;
 		}
 		case EncodingType::PROTOBUF: {
-			ProtobufBuilder builder(&wrser, ObjType::TypeObject);
-			ProtobufBuilder array = builder.Array("items");
 			for (auto& it : qr) {
 				status = it.GetProtobuf(wrser, false);
 				if (!status.ok()) {

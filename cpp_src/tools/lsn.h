@@ -44,6 +44,9 @@ public:
 	lsn_t(int64_t counter, int16_t server) {
 		validateCounter(counter);
 		validateServerId(server);
+		if (counter < 0) {
+			counter = kDefaultCounter;
+		}
 		payload_ = server * kMaxCounter + counter;
 	}
 	explicit operator int64_t() const noexcept { return payload_; }
@@ -73,6 +76,9 @@ public:
 	int64_t SetCounter(int64_t counter) {
 		validateCounter(counter);
 		payload_ = Server() * kMaxCounter + counter;
+		if (counter < 0) {
+			counter = kDefaultCounter;
+		}
 		return payload_;
 	}
 	int64_t Counter() const noexcept { return payload_ % kMaxCounter; }

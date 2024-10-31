@@ -6,6 +6,8 @@
 #include "core/rdxcontext.h"
 #include "tools/semversion.h"
 
+#include "tools/logger.h"
+
 namespace reindexer {
 
 const SemVersion kMinUnknownReplSupportRxVersion("2.6.0");
@@ -72,7 +74,8 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 		if (firstIt != walEnd) {
 			WALRecord firstRec = *firstIt;
 			if (!allowTxWithoutBegining_ && firstRec.inTransaction && firstRec.type != WalInitTransaction) {
-				throw Error(errOutdatedWAL, "WAL starts from init tx record. LSN: %d, type: %d", firstIt.GetLSN(), firstRec.type);
+				throw Error(errOutdatedWAL, "WAL starts from tx record, which is not 'init tx'. LSN: %d, type: %d", firstIt.GetLSN(),
+							firstRec.type);
 			}
 		}
 		for (auto it = firstIt; count && it != walEnd; ++it) {

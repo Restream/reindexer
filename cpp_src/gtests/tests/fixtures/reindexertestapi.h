@@ -78,8 +78,8 @@ public:
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	}
-	void OpenNamespace(std::string_view ns) {
-		auto err = reindexer->WithTimeout(kBasicTimeout).OpenNamespace(ns);
+	void OpenNamespace(std::string_view ns, const StorageOpts& storage = StorageOpts()) {
+		auto err = reindexer->WithTimeout(kBasicTimeout).OpenNamespace(ns, storage);
 		ASSERT_TRUE(err.ok()) << err.what() << "; namespace: " << ns;
 	}
 	void AddIndex(std::string_view ns, const reindexer::IndexDef& idef) {
@@ -140,6 +140,10 @@ public:
 		auto err = reindexer->WithTimeout(kBasicTimeout).Delete(q, qr);
 		EXPECT_TRUE(err.ok()) << err.what() << "; " << q.GetSQL(QueryDelete);
 		return qr.Count();
+	}
+	void Delete(const reindexer::Query& q, QueryResultsType& qr) {
+		auto err = reindexer->Delete(q, qr);
+		EXPECT_TRUE(err.ok()) << err.what() << "; " << q.GetSQL(QueryDelete);
 	}
 	reindexer::Error DumpIndex(std::ostream& os, std::string_view ns, std::string_view index) {
 		return reindexer->DumpIndex(os, ns, index);

@@ -144,7 +144,7 @@ constexpr static auto kAggregationTypes = MakeFastStrMap<AggType>({
 	{"count_cached", AggCountCached},
 });
 
-// additionalfor parse field 'equation_positions'
+// additional for parse field 'equation_positions'
 constexpr static auto kEquationPositionMap = MakeFastStrMap<EqualPosition>({{"positions", EqualPosition::Positions}});
 
 // additional for 'Root::QueryType' field
@@ -380,8 +380,18 @@ static void parseFilter(const JsonValue& filter, Query& q, std::vector<std::pair
 		case JOIN: {
 			assertrx(q.GetJoinQueries().size() > 0);
 			const auto& qjoin = q.GetJoinQueries().back();
-			if (qjoin.joinType != JoinType::LeftJoin) {
-				q.AppendQueryEntry<JoinQueryEntry>((qjoin.joinType == JoinType::InnerJoin) ? OpAnd : OpOr, q.GetJoinQueries().size() - 1);
+			if (qjoin.joinType == JoinType::LeftJoin) {
+				if (op != OpAnd) {
+					throw Error(errParseJson, "Operation %s is not allowed with LeftJoin", OpTypeToStr(op));
+				}
+			} else {
+				if (qjoin.joinType == JoinType::OrInnerJoin) {
+					if (op == OpNot) {
+						throw Error(errParseJson, "Operation NOT is not allowed with OrInnerJoin");
+					}
+					op = OpOr;
+				}
+				q.AppendQueryEntry<JoinQueryEntry>(op, q.GetJoinQueries().size() - 1);
 			}
 			break;
 		}

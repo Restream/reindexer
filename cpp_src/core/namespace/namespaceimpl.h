@@ -624,9 +624,10 @@ private:
 			storage_.TryForceFlush();
 		}
 	}
-	size_t getWalSize(const NamespaceConfigData& cfg) const noexcept { return isSystem() ? int64_t(1) : std::max(cfg.walSize, int64_t(1)); }
+	int64_t getWalSize(const NamespaceConfigData& cfg) const noexcept {
+		return isSystem() ? int64_t(1) : std::max(cfg.walSize, int64_t(1));
+	}
 	void clearNamespaceCaches();
-	std::vector<TagsPath> pickJsonPath(const PayloadFieldType& fld);
 
 	PerfStatCounterMT updatePerfCounter_, selectPerfCounter_;
 	std::atomic_bool enablePerfCounters_{false};
