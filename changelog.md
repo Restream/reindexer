@@ -6,7 +6,7 @@
 - [fix] Fixed logical operations (`or`, `not`) parsining in JSON DSL joined queries
 
 ## Ported
-- [fea/fix] Ported all the fixes and features from [v3.29.0](https://github.com/Restream/reindexer/releases/tag/v3.25.0), [v3.26.0](https://github.com/Restream/reindexer/releases/tag/v3.29.0)
+- [fea/fix] Ported all the fixes and features from [v3.29.0](https://github.com/Restream/reindexer/releases/tag/v3.29.0)
 
 ## Face
 - [fea] Added disabled mode for selectors on NS config page
