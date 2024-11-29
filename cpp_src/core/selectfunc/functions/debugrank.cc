@@ -50,7 +50,8 @@ bool DebugRank::Process(ItemRef& res, PayloadType& plType, const SelectFuncStruc
 
 	std::string resultString;
 
-	Word2PosHelper word2pos(*data, ftctx->GetData()->extraWordSymbols);
+	auto splitterTask = ftctx->GetData()->splitter->CreateTask();
+	splitterTask->SetText(*data);
 
 	static const std::string_view startString = "<!>";
 	static const std::string_view endString = "<!!>";
@@ -61,7 +62,7 @@ bool DebugRank::Process(ItemRef& res, PayloadType& plType, const SelectFuncStruc
 	while (id < areaVector.size()) {
 		bool next = false;
 		int endStringCount = 0;
-		std::pair<int, int> pos = word2pos.convert(areaVector[id].start, areaVector[id].end);
+		std::pair<int, int> pos = splitterTask->Convert(areaVector[id].start, areaVector[id].end);
 		resultString += std::string_view(data->c_str() + beforeStr, pos.first - beforeStr);
 		do {
 			next = false;

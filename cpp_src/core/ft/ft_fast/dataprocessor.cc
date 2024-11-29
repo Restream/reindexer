@@ -3,6 +3,7 @@
 #include "core/ft/numtotext.h"
 #include "core/ft/typos.h"
 
+#include "frisosplitter.h"
 #include "tools/clock.h"
 #include "tools/logger.h"
 #include "tools/serializer.h"
@@ -20,7 +21,7 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 	ExceptionPtrWrapper exwr;
 	words_map words_um;
 	const auto tm0 = system_clock_w::now();
-	size_t szCnt = buildWordsMap(words_um, multithread);
+	size_t szCnt = buildWordsMap(words_um, multithread, holder_.splitter_);
 	const auto tm1 = system_clock_w::now();
 	auto& words = holder_.GetWords();
 	const size_t wrdOffset = words.size();
@@ -82,7 +83,7 @@ typename DataProcessor<IdCont>::WordsVector DataProcessor<IdCont>::insertIntoSuf
 	found.reserve(words_um.size());
 
 	for (auto& keyIt : words_um) {
-		// if we still haven't whis word we add it to new suffix tree else we will only add info to current word
+		// if we still don't have that word, we add it to new suffix tree, otherwise we just add information to current word
 
 		auto id = words.size();
 		WordIdType pos = holder.findWord(keyIt.first);
@@ -188,7 +189,7 @@ void makeDocsDistribution(ContextT* ctxs, size_t ctxsCount, size_t docs) {
 }
 
 template <typename IdCont>
-size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithread) {
+size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithread, intrusive_ptr<const ISplitter> textSplitter) {
 	ExceptionPtrWrapper exwr;
 	uint32_t maxIndexWorkers = getMaxBuildWorkers(multithread);
 	size_t szCnt = 0;
@@ -237,16 +238,14 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 	const int fieldscount = fieldSize_;
 	size_t offset = holder_.vdocsOffset_;
 	// build words map parallel in maxIndexWorkers threads
-	auto worker = [this, &ctxs, &vdocsTexts, offset, fieldscount, &cfg, &vdocs](int i) {
+	auto worker = [this, &ctxs, &vdocsTexts, offset, fieldscount, &cfg, &vdocs, &textSplitter](int i) {
 		auto ctx = &ctxs[i];
-		std::string str;
-		std::vector<std::string_view> wrds;
 		std::vector<std::string> virtualWords;
 		const size_t start = ctx->from;
 		const size_t fin = ctx->to;
-		const std::string_view extraWordSymbols(cfg->extraWordSymbols);
 		const bool enableNumbersSearch = cfg->enableNumbersSearch;
 		const word_hash h;
+		auto task = textSplitter->CreateTask();
 		for (VDocIdType j = start; j < fin; ++j) {
 			const size_t vdocId = offset + j;
 			auto& vdoc = vdocs[vdocId];
@@ -255,14 +254,15 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 
 			auto& vdocsText = vdocsTexts[j];
 			for (size_t field = 0, sz = vdocsText.size(); field < sz; ++field) {
-				split(vdocsText[field].first, str, wrds, extraWordSymbols);
+				task->SetText(vdocsText[field].first);
 				const int rfield = vdocsText[field].second;
 				assertrx(rfield < fieldscount);
 
-				vdoc.wordsCount[rfield] = wrds.size();
+				const std::vector<std::string_view>& words = task->GetResults();
+				vdoc.wordsCount[rfield] = words.size();
 
 				int insertPos = -1;
-				for (auto word : wrds) {
+				for (auto word : words) {
 					++insertPos;
 					const auto whash = h(word);
 					if (!word.length() || cfg->stopWords.find(word, whash) != cfg->stopWords.end()) {
@@ -287,7 +287,7 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 	for (uint32_t t = 1; t < maxIndexWorkers; ++t) {
 		ctxs[t].thread = runInThread(exwr, worker, t);
 	}
-	// If there was only 1 build thread. Just return it's build results
+	// If there was only 1 build thread. Just return build results
 	worker(0);
 	words_um = std::move(ctxs[0].words_um);
 	// Merge results into single map
@@ -393,8 +393,8 @@ void DataProcessor<IdCont>::buildTyposMap(uint32_t startPos, const WordsVector& 
 	if (maxTyposInWord == halfMaxTypos) {
 		assertrx_throw(maxTyposInWord > 0);
 		typos_context tctx[kMaxTyposInWord];
-		const auto multiplicator = wordsSize * (10 << (maxTyposInWord - 1));
-		typosHalf.reserve(multiplicator / 2, multiplicator * 5);
+		const auto multiplier = wordsSize * (10 << (maxTyposInWord - 1));
+		typosHalf.reserve(multiplier / 2, multiplier * 5);
 		auto wordPos = startPos;
 
 		for (auto& word : preprocWords) {
@@ -411,7 +411,7 @@ void DataProcessor<IdCont>::buildTyposMap(uint32_t startPos, const WordsVector& 
 	} else {
 		assertrx_throw(maxTyposInWord == halfMaxTypos + 1);
 
-		auto multiplicator = wordsSize * (10 << (halfMaxTypos > 1 ? (halfMaxTypos - 1) : 0));
+		auto multiplier = wordsSize * (10 << (halfMaxTypos > 1 ? (halfMaxTypos - 1) : 0));
 		ExceptionPtrWrapper exwr;
 		std::thread maxTyposTh = runInThread(
 			exwr,
@@ -419,7 +419,7 @@ void DataProcessor<IdCont>::buildTyposMap(uint32_t startPos, const WordsVector& 
 				typos_context tctx[kMaxTyposInWord];
 				auto wordPos = startPos;
 				mult = wordsSize * (10 << (maxTyposInWord - 1)) - mult;
-				typosMax.reserve(multiplicator / 2, multiplicator * 5);
+				typosMax.reserve(multiplier / 2, multiplier * 5);
 				for (auto& word : preprocWords) {
 					const auto wordString = std::get_if<std::string_view>(&word);
 					if (!wordString) {
@@ -436,12 +436,12 @@ void DataProcessor<IdCont>::buildTyposMap(uint32_t startPos, const WordsVector& 
 				}
 				typosMax.shrink_to_fit();
 			},
-			multiplicator);
+			multiplier);
 
 		try {
 			auto wordPos = startPos;
 			typos_context tctx[kMaxTyposInWord];
-			typosHalf.reserve(multiplicator / 2, multiplicator * 5);
+			typosHalf.reserve(multiplier / 2, multiplier * 5);
 			for (auto& word : preprocWords) {
 				const auto wordString = std::get_if<std::string_view>(&word);
 				if (!wordString) {

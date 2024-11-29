@@ -11,6 +11,34 @@
 #include "tools/serializer.h"
 #include "vendor/gason/gason.h"
 
+TEST_F(NsApi, TupleColumnSize) {
+	// Check, that -tuple index does not have column subindex
+	rt.OpenNamespace(default_namespace);
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName, "hash", "int", IndexOpts().PK(), 0},
+											   IndexDeclaration{"date", "-", "int64", IndexOpts(), 0},
+											   IndexDeclaration{"dense", "-", "int64", IndexOpts().Dense(), 0}});
+
+	constexpr int kDataCount = 500;
+	for (int i = 0; i < kDataCount; ++i) {
+		rt.UpsertJSON(default_namespace, fmt::sprintf(R"j({"%s":%d,"date":%d,"dense":%d})j", idIdxName, i, rand(), rand()));
+	}
+
+	auto memstats = getMemStat(*rt.reindexer, default_namespace);
+	const VariantArray sizes(memstats["indexes.column_size"]);
+	const VariantArray names(memstats["indexes.name"]);
+	constexpr int kMaxEmptyColumnSize = 32;	 // Platform dependant
+	ASSERT_EQ(sizes.size(), 4);
+	ASSERT_EQ(names.size(), 4);
+	EXPECT_EQ(names[0].As<std::string>(), "-tuple");
+	EXPECT_LE(sizes[0].As<int>(), kMaxEmptyColumnSize);
+	EXPECT_EQ(names[1].As<std::string>(), idIdxName);
+	EXPECT_GT(sizes[1].As<int>(), kDataCount);
+	EXPECT_EQ(names[2].As<std::string>(), "date");
+	EXPECT_GT(sizes[2].As<int>(), kDataCount);
+	EXPECT_EQ(names[3].As<std::string>(), "dense");
+	EXPECT_LE(sizes[3].As<int>(), kMaxEmptyColumnSize);
+}
+
 TEST_F(NsApi, IndexDrop) {
 	rt.OpenNamespace(default_namespace);
 	DefineNamespaceDataset(
@@ -29,7 +57,7 @@ TEST_F(NsApi, IndexDrop) {
 	for (int i = 0; i < 1000; ++i) {
 		Item item = NewItem(default_namespace);
 		item[idIdxName] = i;
-		item["data"] = rand();
+		item["date"] = rand();
 		item["price"] = rand();
 		item["serialNumber"] = i * 100;
 		item["fileName"] = "File" + std::to_string(i);

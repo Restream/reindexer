@@ -79,7 +79,7 @@ Error CoroReindexer::GetSqlSuggestions(const std::string_view sqlQuery, int pos,
 Error CoroReindexer::Status() { return impl_->Status(ctx_); }
 
 CoroTransaction CoroReindexer::NewTransaction(std::string_view nsName) { return impl_->NewTransaction(nsName, ctx_); }
-Error CoroReindexer::CommitTransaction(CoroTransaction& tr) { return impl_->CommitTransaction(tr, ctx_); }
+Error CoroReindexer::CommitTransaction(CoroTransaction& tr, CoroQueryResults& result) { return impl_->CommitTransaction(tr, result, ctx_); }
 Error CoroReindexer::RollBackTransaction(CoroTransaction& tr) { return impl_->RollBackTransaction(tr, ctx_); }
 
 }  // namespace client

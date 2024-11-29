@@ -1,27 +1,23 @@
 #pragma once
 
 #include <core/type_consts.h>
-#include <memory>
 #include "basefunctionctx.h"
 #include "core/ft/areaholder.h"
+#include "core/ft/ft_fast/splitter.h"
 #include "core/ft/usingcontainer.h"
 
 namespace reindexer {
 
 struct FtCtxData : public intrusive_atomic_rc_base {
 	FtCtxData(BaseFunctionCtx::CtxType t) noexcept : type(t) {}
-	virtual ~FtCtxData() = default;
-	void InitHolders() {
-		assertrx_dbg(!holders.has_value());
-		holders.emplace();
-	}
+	~FtCtxData() override = default;
 	typedef intrusive_ptr<FtCtxData> Ptr;
 	std::vector<int16_t> proc;
 	std::optional<RHashMap<IdType, size_t>> holders;
-	bool isComposite = false;
 	bool isWordPositions = false;
 	std::string extraWordSymbols;
 	BaseFunctionCtx::CtxType type;
+	intrusive_ptr<const ISplitter> splitter;
 };
 
 template <typename AreaType>
@@ -52,10 +48,10 @@ public:
 	void Reserve(size_t size) { data_->proc.reserve(size); }
 	size_t Size() const noexcept { return data_->proc.size(); }
 
-	void SetExtraWordSymbols(const std::string& s) { data_->extraWordSymbols = s; }
-	void SetWordPosition(bool v) { data_->isWordPositions = v; }
+	void SetSplitter(intrusive_ptr<const ISplitter> s) noexcept { data_->splitter = std::move(s); }
+	void SetWordPosition(bool v) noexcept { data_->isWordPositions = v; }
 
-	FtCtxData::Ptr GetData() { return data_; }
+	const FtCtxData::Ptr& GetData() const noexcept { return data_; }
 	void SetData(FtCtxData::Ptr data) noexcept { data_ = std::move(data); }
 
 private:

@@ -212,7 +212,21 @@ void ServerImpl::ReopenLogFiles() {
 
 std::string ServerImpl::GetCoreLogPath() const { return GetDirPath(config_.CoreLog); }
 
+#if defined(WITH_GRPC) && defined(REINDEX_WITH_LIBDL)
+static void* tryToOpenGRPCLib(bool enabled) noexcept {
+#ifdef __APPLE__
+	return enabled ? dlopen("libreindexer_grpc_library.dylib", RTLD_NOW) : nullptr;
+#else	// __APPLE__
+	return enabled ? dlopen("libreindexer_grpc_library.so", RTLD_NOW) : nullptr;
+#endif	// __APPLE__
+}
+#endif	// defined(WITH_GRPC) && defined(REINDEX_WITH_LIBDL)
+
 int ServerImpl::run() {
+#if defined(WITH_GRPC) && defined(REINDEX_WITH_LIBDL)
+	void* hGRPCServiceLib = tryToOpenGRPCLib(config_.EnableGRPC);
+#endif	// defined(WITH_GRPC) && defined(REINDEX_WITH_LIBDL)
+
 	auto err = loggerConfigure();
 	(void)err;	// ingore; In case of the multiple builtin servers, we will get errors here
 
@@ -351,29 +365,23 @@ int ServerImpl::run() {
 		}
 #if defined(WITH_GRPC)
 		void* hGRPCService = nullptr;
-#if REINDEX_WITH_LIBDL
-#ifdef __APPLE__
-		auto hGRPCServiceLib = dlopen("libreindexer_grpc_library.dylib", RTLD_NOW);
-#else
-		auto hGRPCServiceLib = dlopen("libreindexer_grpc_library.so", RTLD_NOW);
-#endif
-		if (hGRPCServiceLib && config_.EnableGRPC) {
-			auto start_grpc = reinterpret_cast<p_start_reindexer_grpc>(dlsym(hGRPCServiceLib, "start_reindexer_grpc"));
-
-			hGRPCService = start_grpc(*dbMgr_, config_.TxIdleTimeout, loop_, config_.GRPCAddr);
-			logger_.info("Listening gRPC service on {0}", config_.GRPCAddr);
-		} else if (config_.EnableGRPC) {
-			logger_.error("Can't load libreindexer_grpc_library. gRPC will not work: {}", dlerror());
-			return EXIT_FAILURE;
-		}
-#else
 		if (config_.EnableGRPC) {
+#if REINDEX_WITH_LIBDL
+			if (hGRPCServiceLib) {
+				auto start_grpc = reinterpret_cast<p_start_reindexer_grpc>(dlsym(hGRPCServiceLib, "start_reindexer_grpc"));
+				hGRPCService = start_grpc(*dbMgr_, config_.TxIdleTimeout, loop_, config_.GRPCAddr);
+				logger_.info("Listening gRPC service on {0}", config_.GRPCAddr);
+			} else {
+				logger_.error("Can't load libreindexer_grpc_library. gRPC will not work: {}", dlerror());
+				return EXIT_FAILURE;
+			}
+#else	// REINDEX_WITH_LIBDL
 			hGRPCService = start_reindexer_grpc(*dbMgr_, config_.TxIdleTimeout, loop_, config_.GRPCAddr);
 			logger_.info("Listening gRPC service on {0}", config_.GRPCAddr);
+#endif	// REINDEX_WITH_LIBDL
 		}
+#endif	// WITH_GRPC
 
-#endif
-#endif
 		auto sigCallback = [&](ev::sig& sig) {
 			logger_.info("Signal received. Terminating...");
 #ifndef REINDEX_WITH_ASAN
@@ -430,21 +438,20 @@ int ServerImpl::run() {
 		logger_.info("RPC Server(TCP) shutdown completed.");
 		httpServer.Stop();
 		logger_.info("HTTP Server shutdown completed.");
-#if defined(WITH_GRPC)
-#if REINDEX_WITH_LIBDL
-		if (hGRPCServiceLib && config_.EnableGRPC) {
-			auto stop_grpc = reinterpret_cast<p_stop_reindexer_grpc>(dlsym(hGRPCServiceLib, "stop_reindexer_grpc"));
-			stop_grpc(hGRPCService);
-			logger_.info("gRPC Server shutdown completed.");
-		}
-#else
+#ifdef WITH_GRPC
 		if (config_.EnableGRPC) {
+#if REINDEX_WITH_LIBDL
+			if (hGRPCServiceLib) {
+				auto stop_grpc = reinterpret_cast<p_stop_reindexer_grpc>(dlsym(hGRPCServiceLib, "stop_reindexer_grpc"));
+				stop_grpc(hGRPCService);
+				logger_.info("gRPC Server shutdown completed.");
+			}
+#else	// REINDEX_WITH_LIBDL
 			stop_reindexer_grpc(hGRPCService);
 			logger_.info("gRPC Server shutdown completed.");
+#endif	// REINDEX_WITH_LIBDL
 		}
-
-#endif
-#endif
+#endif	// WITH_GRPC
 	} catch (const Error& err) {
 		logger_.error("Unhandled exception occurred: {0}", err.what());
 	}

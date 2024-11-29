@@ -443,14 +443,15 @@ Error RPCServer::CommitTx(cproto::Context& ctx, int64_t txId, std::optional<int>
 		ResultFetchOpts opts;
 		int flags;
 		if (flagsOpts) {
-			flags = *flagsOpts;
+			// Transactions can not send items content
+			flags = flagsOpts.value() & ~kResultsFormatMask;
 		} else {
 			flags = kResultsWithItemID;
 			if (tr.IsTagsUpdated()) {
 				flags |= kResultsWithPayloadTypes;
 			}
 		}
-		if (tr.IsTagsUpdated()) {
+		if (flags & kResultsWithPayloadTypes) {
 			opts = ResultFetchOpts{
 				.flags = flags, .ptVersions = {&ptVers, 1}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
 		} else {

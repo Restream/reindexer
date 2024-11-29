@@ -514,6 +514,11 @@ void Query::Serialize(WrSerializer& ser, uint8_t mode) const {
 		}
 	}
 
+	for (const auto& funcText : selectFunctions_) {
+		ser.PutVarUint(QueryItemType::QuerySelectFunction);
+		ser.PutVString(funcText);
+	}
+
 	if (!(mode & SkipLimitOffset)) {
 		if (HasLimit()) {
 			ser.PutVarUint(QueryLimit);
@@ -558,6 +563,15 @@ void Query::Serialize(WrSerializer& ser, uint8_t mode) const {
 		} else if (field.Mode() == FieldModeDrop) {
 			ser.PutVarUint(QueryDropField);
 			ser.PutVString(field.Column());
+		} else if (field.Mode() == FieldModeSetJson) {
+			ser.PutVarUint(QueryUpdateObject);
+			ser.PutVString(field.Column());
+			ser.PutVarUint(field.Values().size());
+			ser.PutVarUint(field.Values().IsArrayValue());
+			for (const Variant& val : field.Values()) {
+				ser.PutVarUint(field.IsExpression());
+				ser.PutVariant(val);
+			}
 		} else {
 			throw Error(errLogic, "Unsupported item modification mode = %d", field.Mode());
 		}

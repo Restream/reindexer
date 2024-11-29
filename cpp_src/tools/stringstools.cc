@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "atoi/atoi.h"
+#include "fmt/compile.h"
 #include "frozen_str_tools.h"
 #include "itoa/itoa.h"
 #include "tools/assertrx.h"
@@ -18,69 +19,6 @@
 namespace reindexer {
 
 namespace stringtools_impl {
-
-static int double_to_str(double v, char* buf, int capacity, int flags) {
-	double_conversion::StringBuilder builder(buf, capacity);
-	double_conversion::DoubleToStringConverter dc(flags, NULL, NULL, 'e', -6, 21, 0, 0);
-
-	if (!dc.ToShortest(v, &builder)) {
-		// NaN/Inf are not allowed here
-		throw Error(errParams, "Unable to convert '%f' to string", v);
-	}
-	return builder.position();
-}
-
-static std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPos, std::string_view extraWordSymbols) {
-	auto wordStartIt = str.begin();
-	auto wordEndIt = str.begin();
-	auto it = str.begin();
-	auto endIt = str.end();
-	assertrx(endPos > wordPos);
-	int numWords = endPos - (wordPos + 1);
-	for (; it != endIt;) {
-		auto ch = utf8::unchecked::next(it);
-
-		while (it != endIt && extraWordSymbols.find(ch) == std::string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
-			wordStartIt = it;
-			ch = utf8::unchecked::next(it);
-		}
-
-		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
-			wordEndIt = it;
-			if (it == endIt) {
-				break;
-			}
-			ch = utf8::unchecked::next(it);
-		}
-
-		if (wordStartIt != it) {
-			if (!wordPos) {
-				break;
-			} else {
-				wordPos--;
-				wordStartIt = it;
-			}
-		}
-	}
-
-	for (; numWords != 0 && it != endIt; numWords--) {
-		auto ch = utf8::unchecked::next(it);
-
-		while (it != endIt && !IsAlpha(ch) && !IsDigit(ch)) {
-			ch = utf8::unchecked::next(it);
-		}
-
-		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
-			wordEndIt = it;
-			if (it == endIt) {
-				break;
-			}
-			ch = utf8::unchecked::next(it);
-		}
-	}
-
-	return {int(std::distance(str.begin(), wordStartIt)), int(std::distance(str.begin(), wordEndIt))};
-}
 
 static std::string_view urldecode2(char* buf, std::string_view str) {
 	char a, b;
@@ -288,77 +226,6 @@ void split(std::string_view str, std::string& buf, std::vector<std::string_view>
 			words.emplace_back(&(*begIt), bufIt - begIt);
 		}
 	}
-}
-template <typename Pos>
-Pos wordToByteAndCharPos(std::string_view str, int wordPosition, std::string_view extraWordSymbols) {
-	auto wordStartIt = str.begin();
-	auto wordEndIt = str.begin();
-	auto it = str.begin();
-	Pos wp;
-	const bool constexpr needChar = std::is_same_v<Pos, WordPositionEx>;
-	if constexpr (needChar) {
-		wp.start.ch = -1;
-	}
-	for (; it != str.end();) {
-		auto ch = utf8::unchecked::next(it);
-		if constexpr (needChar) {
-			wp.start.ch++;
-		}
-		// skip not word symbols
-		while (it != str.end() && extraWordSymbols.find(ch) == std::string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
-			wordStartIt = it;
-			ch = utf8::unchecked::next(it);
-			if constexpr (needChar) {
-				wp.start.ch++;
-			}
-		}
-		if constexpr (needChar) {
-			wp.end.ch = wp.start.ch;
-		}
-		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
-			wordEndIt = it;
-			if constexpr (needChar) {
-				wp.end.ch++;
-			}
-			if (it == str.end()) {
-				break;
-			}
-			ch = utf8::unchecked::next(it);
-		}
-
-		if (wordStartIt != it) {
-			if (!wordPosition) {
-				break;
-			} else {
-				wordPosition--;
-				wordStartIt = it;
-			}
-		}
-		if constexpr (needChar) {
-			wp.start.ch = wp.end.ch;
-		}
-	}
-	if (wordPosition != 0) {
-		throw Error(errParams, "wordToByteAndCharPos: incorrect input string=%s wordPosition=%d", str, wordPosition);
-	}
-	wp.SetBytePosition(wordStartIt - str.begin(), wordEndIt - str.begin());
-	return wp;
-}
-template WordPositionEx wordToByteAndCharPos<WordPositionEx>(std::string_view str, int wordPosition, std::string_view extraWordSymbols);
-template WordPosition wordToByteAndCharPos<WordPosition>(std::string_view str, int wordPosition, std::string_view extraWordSymbols);
-
-std::pair<int, int> Word2PosHelper::convert(int wordPos, int endPos) {
-	if (wordPos < lastWordPos_) {
-		lastWordPos_ = 0;
-		lastOffset_ = 0;
-	}
-
-	auto ret = stringtools_impl::word2Pos(data_.substr(lastOffset_), wordPos - lastWordPos_, endPos - lastWordPos_, extraWordSymbols_);
-	ret.first += lastOffset_;
-	ret.second += lastOffset_;
-	lastOffset_ = ret.first;
-	lastWordPos_ = wordPos;
-	return ret;
 }
 
 void split(std::string_view utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words, std::string_view extraWordSymbols) {
@@ -697,17 +564,31 @@ int64_t stoll(std::string_view sl) {
 }
 
 int double_to_str(double v, char* buf, int capacity) {
-	const int flags = double_conversion::DoubleToStringConverter::UNIQUE_ZERO |
-					  double_conversion::DoubleToStringConverter::EMIT_POSITIVE_EXPONENT_SIGN |
-					  double_conversion::DoubleToStringConverter::EMIT_TRAILING_DECIMAL_POINT |
-					  double_conversion::DoubleToStringConverter::EMIT_TRAILING_ZERO_AFTER_POINT;
-	return stringtools_impl::double_to_str(v, buf, capacity, flags);
+	(void)capacity;
+	auto end = fmt::format_to(buf, FMT_COMPILE("{}"), v);
+	auto p = buf;
+	do {
+		if (*p == '.' || *p == 'e') {
+			break;
+		}
+	} while (++p != end);
+
+	if (p == end) {
+		*end++ = '.';
+		*end++ = '0';
+	}
+
+	assertrx_dbg(end - buf < capacity);
+	return end - buf;
 }
+
 int double_to_str_no_trailing(double v, char* buf, int capacity) {
-	const int flags =
-		double_conversion::DoubleToStringConverter::UNIQUE_ZERO | double_conversion::DoubleToStringConverter::EMIT_POSITIVE_EXPONENT_SIGN;
-	return stringtools_impl::double_to_str(v, buf, capacity, flags);
+	(void)capacity;
+	auto end = fmt::format_to(buf, FMT_COMPILE("{}"), v);
+	assertrx_dbg(end - buf < capacity);
+	return end - buf;
 }
+
 std::string double_to_str(double v) {
 	std::string res;
 	res.resize(32);

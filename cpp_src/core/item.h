@@ -100,7 +100,7 @@ public:
 		/// If field is array, and contains not exact 1 element, then throws reindexer::Error
 		/// @return Variant object with field value
 		operator Variant() const;
-		/// Get VariantArray with field values. If field is not array, then 1 elemnt will be returned
+		/// Get VariantArray with field values. If field is not array, then 1 element will be returned
 		/// @return VariantArray with field values
 		operator VariantArray() const;
 		/// Set field value

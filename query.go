@@ -137,7 +137,7 @@ type Query struct {
 	executed        bool
 	fetchCount      int
 	queriesCount    int
-	opennedBrackets []int
+	openedBrackets  []int
 	tx              *Tx
 	traceNew        []byte
 	traceClose      []byte
@@ -186,7 +186,7 @@ func newQuery(db *reindexerImpl, namespace string, tx *Tx) *Query {
 		q.executed = false
 		q.nsArray = q.nsArray[:0]
 		q.queriesCount = 0
-		q.opennedBrackets = q.opennedBrackets[:0]
+		q.openedBrackets = q.openedBrackets[:0]
 	}
 	mktrace(&q.traceNew)
 
@@ -325,7 +325,6 @@ func (q *Query) WhereQuery(subQuery *Query, condition int, keys interface{}) *Qu
 }
 
 // Where - Add comparing two fields where condition to DB query
-// For composite indexes keys must be []interface{}, with value of each subindex
 func (q *Query) WhereBetweenFields(firstField string, condition int, secondField string) *Query {
 	q.ser.PutVarCUInt(queryBetweenFieldsCondition)
 	q.ser.PutVarCUInt(q.nextOp)
@@ -342,7 +341,7 @@ func (q *Query) OpenBracket() *Query {
 	q.ser.PutVarCUInt(queryOpenBracket)
 	q.ser.PutVarCUInt(q.nextOp)
 	q.nextOp = opAND
-	q.opennedBrackets = append(q.opennedBrackets, q.queriesCount)
+	q.openedBrackets = append(q.openedBrackets, q.queriesCount)
 	q.queriesCount++
 	return q
 }
@@ -352,11 +351,11 @@ func (q *Query) CloseBracket() *Query {
 	if q.nextOp != opAND {
 		panic(fmt.Errorf("Operation before close bracket"))
 	}
-	if len(q.opennedBrackets) < 1 {
+	if len(q.openedBrackets) < 1 {
 		panic(fmt.Errorf("Close bracket before open it"))
 	}
 	q.ser.PutVarCUInt(queryCloseBracket)
-	q.opennedBrackets = q.opennedBrackets[:len(q.opennedBrackets)-1]
+	q.openedBrackets = q.openedBrackets[:len(q.openedBrackets)-1]
 	return q
 }
 
@@ -450,7 +449,6 @@ func (q *Query) WhereInt32(index string, condition int, keys ...int32) *Query {
 
 // WhereInt64 - Add where condition to DB query with int64 args
 func (q *Query) WhereInt64(index string, condition int, keys ...int64) *Query {
-
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
 	q.queriesCount++
@@ -464,7 +462,6 @@ func (q *Query) WhereInt64(index string, condition int, keys ...int64) *Query {
 
 // WhereString - Add where condition to DB query with string args
 func (q *Query) WhereString(index string, condition int, keys ...string) *Query {
-
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
 	q.queriesCount++
@@ -480,7 +477,6 @@ func (q *Query) WhereString(index string, condition int, keys ...string) *Query 
 // This function applies binary encoding to the uuid value.
 // 'index' MUST be declared as uuid index in this case
 func (q *Query) WhereUuid(index string, condition int, keys ...string) *Query {
-
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
 	q.queriesCount++
@@ -502,13 +498,12 @@ func (q *Query) WhereComposite(index string, condition int, keys ...interface{})
 	return q.Where(index, condition, keys)
 }
 
-// WhereString - Add where condition to DB query with string args
+// Match - Add where string EQ-condition to DB query with string args
 func (q *Query) Match(index string, keys ...string) *Query {
-
 	return q.WhereString(index, EQ, keys...)
 }
 
-// WhereString - Add where condition to DB query with bool args
+// WhereBool - Add where condition to DB query with bool args
 func (q *Query) WhereBool(index string, condition int, keys ...bool) *Query {
 
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
@@ -555,25 +550,14 @@ func (q *Query) DWithin(index string, point Point, distance float64) *Query {
 	return q
 }
 
-func (q *Query) AggregateSum(field string) *Query {
-	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggSum).PutVarCUInt(1).PutVString(field)
+func (q *Query) setAggregate(field string, aggregateType int) *Query {
+	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(aggregateType).PutVarCUInt(1).PutVString(field)
 	return q
 }
-
-func (q *Query) AggregateAvg(field string) *Query {
-	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggAvg).PutVarCUInt(1).PutVString(field)
-	return q
-}
-
-func (q *Query) AggregateMin(field string) *Query {
-	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggMin).PutVarCUInt(1).PutVString(field)
-	return q
-}
-
-func (q *Query) AggregateMax(field string) *Query {
-	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggMax).PutVarCUInt(1).PutVString(field)
-	return q
-}
+func (q *Query) AggregateSum(field string) *Query { return q.setAggregate(field, AggSum) }
+func (q *Query) AggregateAvg(field string) *Query { return q.setAggregate(field, AggAvg) }
+func (q *Query) AggregateMin(field string) *Query { return q.setAggregate(field, AggMin) }
+func (q *Query) AggregateMax(field string) *Query { return q.setAggregate(field, AggMax) }
 
 type AggregateFacetRequest struct {
 	query *Query
@@ -589,23 +573,24 @@ func (q *Query) AggregateFacet(fields ...string) *AggregateFacetRequest {
 	return &r
 }
 
-func (r *AggregateFacetRequest) Limit(limit int) *AggregateFacetRequest {
-	r.query.ser.PutVarCUInt(queryAggregationLimit).PutVarCUInt(limit)
+func (r *AggregateFacetRequest) setAggregateType(aggregateType int, value int) *AggregateFacetRequest {
+	r.query.ser.PutVarCUInt(aggregateType).PutVarCUInt(value)
 	return r
 }
-
+func (r *AggregateFacetRequest) Limit(limit int) *AggregateFacetRequest {
+	return r.setAggregateType(queryAggregationLimit, limit)
+}
 func (r *AggregateFacetRequest) Offset(offset int) *AggregateFacetRequest {
-	r.query.ser.PutVarCUInt(queryAggregationOffset).PutVarCUInt(offset)
-	return r
+	return r.setAggregateType(queryAggregationOffset, offset)
 }
 
 // Use field 'count' to sort by facet's count value.
 func (r *AggregateFacetRequest) Sort(field string, desc bool) *AggregateFacetRequest {
 	r.query.ser.PutVarCUInt(queryAggregationSort).PutVString(field)
 	if desc {
-		r.query.ser.PutVarCUInt(1)
+		r.query.ser.PutVarUInt(1)
 	} else {
-		r.query.ser.PutVarCUInt(0)
+		r.query.ser.PutVarUInt(0)
 	}
 	return r
 }
@@ -615,7 +600,6 @@ func (r *AggregateFacetRequest) Sort(field string, desc bool) *AggregateFacetReq
 // For composite indexes values must be []interface{}, with value of each subindex
 // Forced sort is support for the first sorting field only
 func (q *Query) Sort(sortIndex string, desc bool, values ...interface{}) *Query {
-
 	q.ser.PutVarCUInt(querySortIndex)
 	q.ser.PutVString(sortIndex)
 	if desc {
@@ -658,14 +642,14 @@ func (q *Query) SortStFieldDistance(field1 string, field2 string, desc bool) *Qu
 	return q.Sort(sb.String(), desc)
 }
 
-// AND - next condition will added with AND
+// AND - next condition will be added with AND
 // This is the default operation for WHERE statement. Do not have to be called explicitly in user's code. Used in DSL conversion
 func (q *Query) And() *Query {
 	q.nextOp = opAND
 	return q
 }
 
-// OR - next condition will added with OR
+// OR - next condition will be added with OR
 // Implements short-circuiting:
 // if the previous condition is successful the next will not be evaluated, but except Join conditions
 func (q *Query) Or() *Query {
@@ -673,7 +657,7 @@ func (q *Query) Or() *Query {
 	return q
 }
 
-// Not - next condition will added with NOT AND
+// Not - next condition will be added with NOT AND
 // Implements short-circuiting:
 // if the previous condition is failed the next will not be evaluated
 func (q *Query) Not() *Query {
@@ -687,55 +671,40 @@ func (q *Query) Distinct(distinctIndex string) *Query {
 	return q
 }
 
-// ReqTotal Request total items calculation
-func (q *Query) ReqTotal(totalNames ...string) *Query {
+func (q *Query) reqTotal(accurateMode int, totalNames ...string) *Query {
 	q.ser.PutVarCUInt(queryReqTotal)
-	q.ser.PutVarCUInt(modeAccurateTotal)
+	q.ser.PutVarCUInt(accurateMode)
 	if len(totalNames) != 0 {
 		q.totalName = totalNames[0]
 	}
 	return q
 }
 
+// ReqTotal Request total items calculation
+func (q *Query) ReqTotal(totalNames ...string) *Query { return q.reqTotal(modeAccurateTotal, totalNames...) }
+
 // CachedTotal Request cached total items calculation
-func (q *Query) CachedTotal(totalNames ...string) *Query {
-	q.ser.PutVarCUInt(queryReqTotal)
-	q.ser.PutVarCUInt(modeCachedTotal)
-	if len(totalNames) != 0 {
-		q.totalName = totalNames[0]
+func (q *Query) CachedTotal(totalNames ...string) *Query { return q.reqTotal(modeCachedTotal, totalNames...) }
+
+func (q *Query) setValue(qmode int, value int) *Query {
+	if value > cInt32Max {
+		value = cInt32Max
 	}
+	q.ser.PutVarCUInt(qmode).PutVarCUInt(value)
 	return q
 }
 
 // Limit - Set limit (count) of returned items
-func (q *Query) Limit(limitItems int) *Query {
-	if limitItems > cInt32Max {
-		limitItems = cInt32Max
-	}
-	q.ser.PutVarCUInt(queryLimit).PutVarCUInt(limitItems)
-	return q
-}
+func (q *Query) Limit(limitItems int) *Query { return q.setValue(queryLimit, limitItems) }
 
 // Offset - Set start offset of returned items
-func (q *Query) Offset(startOffset int) *Query {
-	if startOffset > cInt32Max {
-		startOffset = cInt32Max
-	}
-	q.ser.PutVarCUInt(queryOffset).PutVarCUInt(startOffset)
-	return q
-}
+func (q *Query) Offset(startOffset int) *Query { return q.setValue(queryOffset, startOffset) }
 
 // Debug - Set debug level
-func (q *Query) Debug(level int) *Query {
-	q.ser.PutVarCUInt(queryDebugLevel).PutVarCUInt(level)
-	return q
-}
+func (q *Query) Debug(level int) *Query { return q.setValue(queryDebugLevel, level) }
 
 // Strict - Set query strict mode
-func (q *Query) Strict(mode QueryStrictMode) *Query {
-	q.ser.PutVarCUInt(queryStrictMode).PutVarCUInt(int(mode))
-	return q
-}
+func (q *Query) Strict(mode QueryStrictMode) *Query { return q.setValue(queryStrictMode, int(mode)) }
 
 // Explain - Request explain for query
 func (q *Query) Explain() *Query {
@@ -1193,15 +1162,19 @@ func (q *Query) On(index string, condition int, joinIndex string) *Query {
 	return q
 }
 
+func (q *Query) addFields(itemType int, fields ...string) *Query {
+	for _, field := range fields {
+		q.ser.PutVarCUInt(itemType).PutVString(field)
+	}
+	return q
+}
+
 // Select add filter to  fields of result's objects
 // The `fields` should be specified in the same case as the jsonpaths corresponding to them.
 // Non-existent `fields` and `fields` in the wrong case are ignored.
 // If there are no `fields` in this list that meet these conditions, then the filter works as "*".
 func (q *Query) Select(fields ...string) *Query {
-	for _, field := range fields {
-		q.ser.PutVarCUInt(querySelectFilter).PutVString(field)
-	}
-	return q
+	return q.addFields(querySelectFilter, fields...)
 }
 
 // FetchCount sets the number of items that will be fetched by one operation
@@ -1213,19 +1186,16 @@ func (q *Query) FetchCount(n int) *Query {
 
 // Functions add optional select functions (e.g highlight or snippet ) to fields of result's objects
 func (q *Query) Functions(fields ...string) *Query {
-	for _, field := range fields {
-		q.ser.PutVarCUInt(querySelectFunction).PutVString(field)
-	}
-	return q
+	return q.addFields(querySelectFunction, fields...)
 }
 
 // Adds equal position fields to arrays
 func (q *Query) EqualPosition(fields ...string) *Query {
 	q.ser.PutVarCUInt(queryEqualPosition)
-	if len(q.opennedBrackets) == 0 {
+	if len(q.openedBrackets) == 0 {
 		q.ser.PutVarCUInt(0)
 	} else {
-		q.ser.PutVarCUInt(q.opennedBrackets[len(q.opennedBrackets)-1] + 1)
+		q.ser.PutVarCUInt(q.openedBrackets[len(q.openedBrackets)-1] + 1)
 	}
 	q.ser.PutVarCUInt(len(fields))
 	for _, field := range fields {

@@ -153,8 +153,9 @@ void MsgPackBuilder::appendJsonObject(std::string_view name, const gason::JsonNo
 			Null(std::string_view(obj.key));
 			break;
 		}
+		case gason::JSON_EMPTY:
 		default:
-			throw(Error(errLogic, "Unexpected json tag: %d", int(obj.value.getTag())));
+			throw(Error(errLogic, "Unexpected json tag for Object: %d", int(obj.value.getTag())));
 	}
 }
 

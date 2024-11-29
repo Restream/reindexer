@@ -73,7 +73,7 @@ public:
 	Error Status(const InternalRdxContext& ctx);
 
 	CoroTransaction NewTransaction(std::string_view nsName, const InternalRdxContext& ctx);
-	Error CommitTransaction(CoroTransaction& tr, const InternalRdxContext& ctx);
+	Error CommitTransaction(CoroTransaction& tr, CoroQueryResults& result, const InternalRdxContext& ctx);
 	Error RollBackTransaction(CoroTransaction& tr, const InternalRdxContext& ctx);
 
 protected:

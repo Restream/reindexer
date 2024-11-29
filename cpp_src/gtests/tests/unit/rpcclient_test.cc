@@ -75,7 +75,7 @@ TEST_F(RPCClientTestApi, RequestCancels) {
 	ASSERT_TRUE(res.ok()) << res.what();
 }
 
-TEST_F(RPCClientTestApi, SuccessfullRequestWithTimeout) {
+TEST_F(RPCClientTestApi, SuccessfulRequestWithTimeout) {
 	AddFakeServer();
 	StartServer();
 	reindexer::client::ReindexerConfig config;
@@ -103,9 +103,9 @@ TEST_F(RPCClientTestApi, ErrorLoginResponse) {
 }
 
 TEST_F(RPCClientTestApi, SeveralDsnReconnect) {
-	const std::string cprotoIdentifier = "cproto://";
-	const std::string dbName = "/test_db";
-	const std::vector<std::string> uris = {"127.0.0.1:25673", "127.0.0.1:25674", "127.0.0.1:25675", "127.0.0.1:25676"};
+	const std::string_view cprotoIdentifier = "cproto://";
+	const std::string_view dbName = "/test_db";
+	const std::array<std::string, 4> uris = {"127.0.0.1:25673", "127.0.0.1:25674", "127.0.0.1:25675", "127.0.0.1:25676"};
 
 	RPCServerConfig serverConfig;
 	serverConfig.loginDelay = std::chrono::milliseconds(1);
@@ -158,7 +158,7 @@ TEST_F(RPCClientTestApi, SeveralDsnReconnect) {
 		ASSERT_TRUE(res.ok()) << res.what();
 	}
 	res = StopAllServers();
-	(void)res;	// ingore; Error is fine here
+	(void)res;	// ignore; Error is fine here
 }
 
 TEST_F(RPCClientTestApi, SelectFromClosedNamespace) {
@@ -168,8 +168,6 @@ TEST_F(RPCClientTestApi, SelectFromClosedNamespace) {
 	bool finished = false;
 	loop.spawn([&loop, &finished] {
 		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
-		reindexer::client::ReindexerConfig config;
-		config.FetchAmount = 0;
 		reindexer::client::ConnectOpts opts;
 		opts.CreateDBIfMissing();
 		reindexer::client::CoroReindexer rx;
@@ -228,8 +226,6 @@ TEST_F(RPCClientTestApi, RenameNamespace) {
 	bool finished = false;
 	loop.spawn([&loop, &finished] {
 		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
-		reindexer::client::ReindexerConfig config;
-		config.FetchAmount = 0;
 		reindexer::client::ConnectOpts opts;
 		opts.CreateDBIfMissing();
 		reindexer::client::CoroReindexer rx;
@@ -454,7 +450,7 @@ TEST_F(RPCClientTestApi, CoroRequestCancels) {
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
-TEST_F(RPCClientTestApi, CoroSuccessfullRequestWithTimeout) {
+TEST_F(RPCClientTestApi, CoroSuccessfulRequestWithTimeout) {
 	// Should be able to execute some basic requests with timeout
 	AddFakeServer();
 	StartServer();
@@ -587,7 +583,8 @@ TEST_F(RPCClientTestApi, CoroUpserts) {
 				err = tx.Upsert(std::move(item));
 				ASSERT_TRUE(err.ok()) << err.what();
 			}
-			auto err = rx.CommitTransaction(tx);
+			reindexer::client::CoroQueryResults qr;
+			auto err = rx.CommitTransaction(tx, qr);
 			ASSERT_TRUE(err.ok()) << err.what();
 		};
 
@@ -772,15 +769,15 @@ TEST_F(RPCClientTestApi, CoroUpdatesFilteringByNs) {
 		CreateNamespace(rx, kNs4Name);
 		CreateNamespace(rx, kNs5Name);
 
-		UpdatesReciever reciever1(loop);  // Recieves updates for ns 'n5' and 'ns1'
+		UpdatesReciever receiver1(loop);  // Receives updates for ns 'n5' and 'ns1'
 		{
 			UpdatesFilters filters;
 			filters.AddFilter(kNs5Name, UpdatesFilters::Filter());
-			err = rx.SubscribeUpdates(&reciever1, filters);
+			err = rx.SubscribeUpdates(&receiver1, filters);
 			ASSERT_TRUE(err.ok()) << err.what();
 			UpdatesFilters filters1;
 			filters1.AddFilter(kNs1Name, UpdatesFilters::Filter());
-			err = rx.SubscribeUpdates(&reciever1, filters1, SubscriptionOpts().IncrementSubscription());
+			err = rx.SubscribeUpdates(&receiver1, filters1, SubscriptionOpts().IncrementSubscription());
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
 
@@ -788,26 +785,26 @@ TEST_F(RPCClientTestApi, CoroUpdatesFilteringByNs) {
 			const size_t count = 50;
 			FillData(rx, kNs4Name, 0, count);
 			FillData(rx, kNs5Name, 0, count);
-			ASSERT_TRUE(reciever1.AwaitNamespaces(1));
-			ASSERT_TRUE(reciever1.AwaitItems(kNs5Name, count));
-			reciever1.Reset();
+			ASSERT_TRUE(receiver1.AwaitNamespaces(1));
+			ASSERT_TRUE(receiver1.AwaitItems(kNs5Name, count));
+			receiver1.Reset();
 		}
 
-		UpdatesReciever reciever2(loop);  // Recieves all the updates
+		UpdatesReciever receiver2(loop);  // Receives all the updates
 		{
 			UpdatesFilters filters;
-			err = rx.SubscribeUpdates(&reciever2, filters);
+			err = rx.SubscribeUpdates(&receiver2, filters);
 			ASSERT_TRUE(err.ok()) << err.what();
 			UpdatesFilters filters1;
-			err = rx.SubscribeUpdates(&reciever2, filters1, SubscriptionOpts().IncrementSubscription());
+			err = rx.SubscribeUpdates(&receiver2, filters1, SubscriptionOpts().IncrementSubscription());
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
 
-		UpdatesReciever reciever3(loop);  // Recieves updates for ns 'ns4'
+		UpdatesReciever receiver3(loop);  // Receives updates for ns 'ns4'
 		{
 			UpdatesFilters filters;
 			filters.AddFilter(kNs4Name, UpdatesFilters::Filter());
-			err = rx.SubscribeUpdates(&reciever3, filters);
+			err = rx.SubscribeUpdates(&receiver3, filters);
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
 
@@ -815,18 +812,18 @@ TEST_F(RPCClientTestApi, CoroUpdatesFilteringByNs) {
 			const size_t count = 100;
 			FillData(rx, kNs4Name, 0, count);
 			FillData(rx, kNs5Name, 0, count);
-			ASSERT_TRUE(reciever1.AwaitNamespaces(1));
-			ASSERT_TRUE(reciever1.AwaitItems(kNs5Name, count));
-			reciever1.Reset();
+			ASSERT_TRUE(receiver1.AwaitNamespaces(1));
+			ASSERT_TRUE(receiver1.AwaitItems(kNs5Name, count));
+			receiver1.Reset();
 
-			ASSERT_TRUE(reciever2.AwaitNamespaces(2));
-			ASSERT_TRUE(reciever2.AwaitItems(kNs5Name, count));
-			ASSERT_TRUE(reciever2.AwaitItems(kNs4Name, count));
-			reciever2.Reset();
+			ASSERT_TRUE(receiver2.AwaitNamespaces(2));
+			ASSERT_TRUE(receiver2.AwaitItems(kNs5Name, count));
+			ASSERT_TRUE(receiver2.AwaitItems(kNs4Name, count));
+			receiver2.Reset();
 
-			ASSERT_TRUE(reciever3.AwaitNamespaces(1));
-			ASSERT_TRUE(reciever3.AwaitItems(kNs4Name, count));
-			reciever3.Reset();
+			ASSERT_TRUE(receiver3.AwaitNamespaces(1));
+			ASSERT_TRUE(receiver3.AwaitItems(kNs4Name, count));
+			receiver3.Reset();
 		}
 
 		err = rx.OpenNamespace(kNs1Name);
@@ -838,27 +835,27 @@ TEST_F(RPCClientTestApi, CoroUpdatesFilteringByNs) {
 		err = rx.DropNamespace(kNs2Name);
 		ASSERT_TRUE(err.ok()) << err.what();
 		{
-			ASSERT_TRUE(reciever1.AwaitNamespaces(2));
-			ASSERT_TRUE(reciever1.AwaitItems(kNs1Name, 2));
-			ASSERT_TRUE(reciever1.AwaitItems(kNs2Name, 2));
-			reciever1.Reset();
+			ASSERT_TRUE(receiver1.AwaitNamespaces(2));
+			ASSERT_TRUE(receiver1.AwaitItems(kNs1Name, 2));
+			ASSERT_TRUE(receiver1.AwaitItems(kNs2Name, 2));
+			receiver1.Reset();
 
-			ASSERT_TRUE(reciever2.AwaitNamespaces(2));
-			ASSERT_TRUE(reciever2.AwaitItems(kNs1Name, 2));
-			ASSERT_TRUE(reciever2.AwaitItems(kNs2Name, 2));
-			reciever2.Reset();
+			ASSERT_TRUE(receiver2.AwaitNamespaces(2));
+			ASSERT_TRUE(receiver2.AwaitItems(kNs1Name, 2));
+			ASSERT_TRUE(receiver2.AwaitItems(kNs2Name, 2));
+			receiver2.Reset();
 
-			ASSERT_TRUE(reciever3.AwaitNamespaces(2));
-			ASSERT_TRUE(reciever3.AwaitItems(kNs1Name, 2));
-			ASSERT_TRUE(reciever3.AwaitItems(kNs2Name, 2));
-			reciever3.Reset();
+			ASSERT_TRUE(receiver3.AwaitNamespaces(2));
+			ASSERT_TRUE(receiver3.AwaitItems(kNs1Name, 2));
+			ASSERT_TRUE(receiver3.AwaitItems(kNs2Name, 2));
+			receiver3.Reset();
 		}
 
-		err = rx.UnsubscribeUpdates(&reciever1);
+		err = rx.UnsubscribeUpdates(&receiver1);
 		ASSERT_TRUE(err.ok()) << err.what();
-		err = rx.UnsubscribeUpdates(&reciever2);
+		err = rx.UnsubscribeUpdates(&receiver2);
 		ASSERT_TRUE(err.ok()) << err.what();
-		err = rx.UnsubscribeUpdates(&reciever3);
+		err = rx.UnsubscribeUpdates(&receiver3);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		{
@@ -866,9 +863,9 @@ TEST_F(RPCClientTestApi, CoroUpdatesFilteringByNs) {
 			FillData(rx, kNs4Name, 0, count);
 			FillData(rx, kNs5Name, 0, count);
 			loop.sleep(std::chrono::seconds(2));
-			ASSERT_TRUE(reciever1.AwaitNamespaces(0));
-			ASSERT_TRUE(reciever2.AwaitNamespaces(0));
-			ASSERT_TRUE(reciever3.AwaitNamespaces(0));
+			ASSERT_TRUE(receiver1.AwaitNamespaces(0));
+			ASSERT_TRUE(receiver2.AwaitNamespaces(0));
+			ASSERT_TRUE(receiver3.AwaitNamespaces(0));
 		}
 		rx.Stop();
 
@@ -883,8 +880,8 @@ TEST_F(RPCClientTestApi, CoroUpdatesFilteringByNs) {
 	ASSERT_TRUE(finished);
 }
 
-TEST_F(RPCClientTestApi, UnknowResultsFlag) {
-	// Check if server will not resturn unknown result flag
+TEST_F(RPCClientTestApi, UnknownResultsFlag) {
+	// Check if server will not return unknown result flag
 	StartDefaultRealServer();
 	ev::dynamic_loop loop;
 	bool finished = false;
@@ -999,7 +996,7 @@ TEST_F(RPCClientTestApi, AggregationsWithStrictModeTest) {
 }
 TEST_F(RPCClientTestApi, AggregationsFetching) {
 	// Validate, that distinct results will remain valid after query results fetching.
-	// Actual aggregation values will be sent for initial 'select' only, but must be available at any point of iterator's lifetime.
+	// Actual aggregation values will only be sent for initial 'select', but must be available at any point in iterator's lifetime.
 	using namespace reindexer::client;
 	using namespace reindexer::net::ev;
 
@@ -1023,7 +1020,7 @@ TEST_F(RPCClientTestApi, AggregationsFetching) {
 		FillData(rx, nsName, 0, kItemsCount);
 
 		{
-			CoroQueryResults qr;
+			reindexer::client::CoroQueryResults qr;
 			const auto q = Query(nsName).Distinct("id").ReqTotal().Explain();
 			err = rx.Select(q, qr);
 			ASSERT_TRUE(err.ok()) << err.what();
@@ -1058,13 +1055,8 @@ TEST_F(RPCClientTestApi, AggregationsFetching) {
 }
 
 TEST_F(RPCClientTestApi, SubQuery) {
-	using namespace reindexer::client;
-	using namespace reindexer::net::ev;
-	using reindexer::coroutine::wait_group;
-	using reindexer::coroutine::wait_group_guard;
-
 	StartDefaultRealServer();
-	dynamic_loop loop;
+	reindexer::net::ev::dynamic_loop loop;
 
 	loop.spawn([&loop, this]() noexcept {
 		const std::string kLeftNsName = "left_ns";
@@ -1076,7 +1068,7 @@ TEST_F(RPCClientTestApi, SubQuery) {
 		constexpr auto kFetchCount = 50;
 		constexpr auto kNsSize = kFetchCount * 3;
 		cfg.FetchAmount = kFetchCount;
-		CoroReindexer rx(cfg);
+		reindexer::client::CoroReindexer rx(cfg);
 		auto err = rx.Connect(dsn, loop, opts);
 		ASSERT_TRUE(err.ok()) << err.what();
 
@@ -1120,6 +1112,301 @@ TEST_F(RPCClientTestApi, SubQuery) {
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_EQ(qr.Count(), limit);
 		}
+		rx.Stop();
+	});
+
+	loop.run();
+}
+
+TEST_F(RPCClientTestApi, CoroTransactionInsertWithPrecepts) {
+	StartDefaultRealServer();
+	reindexer::net::ev::dynamic_loop loop;
+
+	loop.spawn([&loop, this]() noexcept {
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		reindexer::client::ConnectOpts opts;
+		opts.CreateDBIfMissing();
+		reindexer::client::CoroReindexer rx;
+		auto err = rx.Connect(dsn, loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
+		const std::string kNsName = "TestCoroInsertWithPrecepts";
+		CreateNamespace(rx, kNsName);
+
+		constexpr int kNsSize = 5;
+
+		auto insertFn = [&rx](const std::string& nsName, int count) {
+			std::vector<std::string> precepts = {"id=SERIAL()"};
+
+			auto tx = rx.NewTransaction(nsName);
+			ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
+
+			for (int i = 0; i < count; ++i) {
+				auto item = tx.NewItem();
+				ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+				WrSerializer wrser;
+				JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+				jsonBuilder.Put("id", 100);
+				jsonBuilder.End();
+
+				char* endp = nullptr;
+				auto err = item.Unsafe().FromJSON(wrser.Slice(), &endp);
+				ASSERT_TRUE(err.ok()) << err.what();
+
+				item.SetPrecepts(precepts);
+
+				err = tx.Insert(std::move(item));
+				ASSERT_TRUE(err.ok()) << err.what();
+			}
+			reindexer::client::CoroQueryResults qr;
+			auto err = rx.CommitTransaction(tx, qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), count);
+		};
+
+		insertFn(kNsName, kNsSize);
+
+		{
+			client::CoroQueryResults qr;
+			err = rx.Select(Query(kNsName), qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), kNsSize);
+			for (auto& it : qr) {
+				ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+			}
+		}
+
+		rx.Stop();
+	});
+
+	loop.run();
+}
+
+TEST_F(RPCClientTestApi, QuerySelectDWithin) {
+	StartDefaultRealServer();
+	reindexer::net::ev::dynamic_loop loop;
+
+	loop.spawn([&loop, this]() noexcept {
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		reindexer::client::ConnectOpts opts;
+		opts.CreateDBIfMissing();
+		reindexer::client::CoroReindexer rx;
+		auto err = rx.Connect(dsn, loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
+		const std::string kNsName = "TestQuerySelectDWithin";
+		CreateNamespace(rx, kNsName);
+		err = rx.AddIndex(kNsName, {"point", "rtree", "point", IndexOpts().RTreeType(IndexOpts::RStar)});
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		constexpr int kNsSize = 5;
+
+		auto insertFn = [&rx](const std::string& nsName, int count) {
+
+			auto tx = rx.NewTransaction(nsName);
+			ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
+
+			for (int i = 0; i < count; ++i) {
+				auto item = tx.NewItem();
+				ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+				WrSerializer wrser;
+				JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+				jsonBuilder.Put("id", i);
+				jsonBuilder.Put("point", Variant{VariantArray::Create({i, i})});
+				jsonBuilder.End();
+
+				char* endp = nullptr;
+				auto err = item.Unsafe().FromJSON(wrser.Slice(), &endp);
+				ASSERT_TRUE(err.ok()) << err.what();
+
+				err = tx.Insert(std::move(item));
+				ASSERT_TRUE(err.ok()) << err.what();
+			}
+			reindexer::client::CoroQueryResults qr;
+			auto err = rx.CommitTransaction(tx, qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), count);
+		};
+
+		insertFn(kNsName, kNsSize);
+
+		{
+			client::CoroQueryResults qr;
+			err = rx.Select(Query(kNsName).DWithin("point", Point(3, 2.5), 2.2), qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), 3);
+
+			WrSerializer ser;
+			unsigned i = 2;
+			for (auto& it : qr) {
+				ser.Reset();
+				ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+				err = it.GetJSON(ser, false);
+				ASSERT_TRUE(err.ok()) << err.what();
+				const auto expected = fmt::sprintf(R"json({"id":%d,"point":[%0.1f,%0.1f]})json", i, float(i), float(i));
+				EXPECT_EQ(ser.Slice(), expected);
+				++i;
+			}
+		}
+
+		rx.Stop();
+	});
+
+	loop.run();
+}
+
+TEST_F(RPCClientTestApi, QuerySelectFunctions) {
+	StartDefaultRealServer();
+	reindexer::net::ev::dynamic_loop loop;
+
+	loop.spawn([&loop, this]() noexcept {
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		reindexer::client::ConnectOpts opts;
+		opts.CreateDBIfMissing();
+		reindexer::client::CoroReindexer rx;
+		auto err = rx.Connect(dsn, loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
+		const std::string kNsName = "TestQuerySelectFunctions";
+		CreateNamespace(rx, kNsName);
+		err = rx.AddIndex(kNsName, reindexer::IndexDef{"ft", {"ft"}, "text", "string", IndexOpts{}});
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		const std::array<std::string_view, 3> content = {"one word", "sword two", "three work 333"};
+
+		auto insertFn = [&rx, &content](const std::string& nsName) {
+
+			auto tx = rx.NewTransaction(nsName);
+			ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
+
+			unsigned i = 0;
+			for (auto text : content) {
+				auto item = tx.NewItem();
+				ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+				WrSerializer wrser;
+				JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+				jsonBuilder.Put("id", i);
+				jsonBuilder.Put("ft", text);
+				jsonBuilder.End();
+
+				char* endp = nullptr;
+				auto err = item.Unsafe().FromJSON(wrser.Slice(), &endp);
+				ASSERT_TRUE(err.ok()) << err.what();
+
+				err = tx.Insert(std::move(item));
+				ASSERT_TRUE(err.ok()) << err.what();
+				++i;
+			}
+			reindexer::client::CoroQueryResults qr;
+			auto err = rx.CommitTransaction(tx, qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), content.size());
+		};
+
+		insertFn(kNsName);
+
+		{
+			client::CoroQueryResults qr;
+			auto query = Query(kNsName).Where("ft", CondEq, "word~");
+			query.AddFunction(R"(ft=highlight(<,>))");
+			query.AddFunction(R"(ft=highlight(!!,!))");
+			err = rx.Select(query, qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), content.size());
+
+			const std::array<std::string, 3> expected_content = {"one <word>", "<sword> two", "three <work> 333"};
+
+			WrSerializer ser;
+			std::string expected;
+			unsigned i = 0;
+			for (auto& it : qr) {
+				ser.Reset();
+				ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+				err = it.GetJSON(ser, false);
+				ASSERT_TRUE(err.ok()) << err.what();
+				expected = R"({"id":)" + std::to_string(i) + R"(,"ft":")" + expected_content[i] + R"("})";
+				EXPECT_EQ(ser.Slice(), expected);
+				++i;
+			}
+		}
+
+		rx.Stop();
+	});
+
+	loop.run();
+}
+
+TEST_F(RPCClientTestApi, QuerySetObjectUpdate) {
+	StartDefaultRealServer();
+	reindexer::net::ev::dynamic_loop loop;
+
+	loop.spawn([&loop, this]() noexcept {
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		reindexer::client::ConnectOpts opts;
+		opts.CreateDBIfMissing();
+		reindexer::client::CoroReindexer rx;
+		auto err = rx.Connect(dsn, loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
+		const std::string kNsName = "TestQuerySetObjectUpdate";
+		CreateNamespace(rx, kNsName);
+		err = rx.AddIndex(kNsName, reindexer::IndexDef{"idx", {"nested.field"}, "hash", "int", IndexOpts{}});
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		constexpr unsigned kNsSize = 3;
+
+		auto insertFn = [&rx](const std::string& nsName, unsigned count) {
+
+			auto tx = rx.NewTransaction(nsName);
+			ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
+
+			for (unsigned i = 0; i < count; ++i) {
+				auto item = tx.NewItem();
+				ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+				WrSerializer wrser;
+				JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+				jsonBuilder.Put("id", i);
+				jsonBuilder.Put("nested", R"({"field": 1891})");
+				jsonBuilder.End();
+
+				char* endp = nullptr;
+				auto err = item.Unsafe().FromJSON(wrser.Slice(), &endp);
+				ASSERT_TRUE(err.ok()) << err.what();
+
+				err = tx.Insert(std::move(item));
+				ASSERT_TRUE(err.ok()) << err.what();
+			}
+			reindexer::client::CoroQueryResults qr;
+			auto err = rx.CommitTransaction(tx, qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), count);
+		};
+
+		insertFn(kNsName, kNsSize);
+
+		{
+			client::CoroQueryResults qr;
+			// R"(UPDATE TestQuerySetObjectUpdate SET nested = {"field": 1240} where id >= 0)"
+			auto query = Query(kNsName).Where("id", CondGe, "0")
+							.SetObject("nested", Variant(std::string(R"({"field": 1240})")));
+			err = rx.Update(query, qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), kNsSize);
+
+			WrSerializer ser;
+			std::string expected;
+			unsigned i = 0;
+			for (auto& it : qr) {
+				ser.Reset();
+				ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+				err = it.GetJSON(ser, false);
+				ASSERT_TRUE(err.ok()) << err.what();
+				expected = R"({"id":)" + std::to_string(i) + R"(,"nested":{"field":1240}})";
+				EXPECT_EQ(ser.Slice(), expected);
+				++i;
+			}
+		}
+
 		rx.Stop();
 	});
 

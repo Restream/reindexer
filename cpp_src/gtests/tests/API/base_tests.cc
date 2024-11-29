@@ -1191,7 +1191,7 @@ TEST_F(ReindexerApi, DslFieldsTest) {
 				}
 			},
 		   {
-			"op": "OR",
+			"op": "AND",
 			"join_query": {
 				"type": "left",
 				"namespace": "test2",

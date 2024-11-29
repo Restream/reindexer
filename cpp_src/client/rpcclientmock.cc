@@ -1,7 +1,6 @@
 #include "rpcclientmock.h"
 #include <functional>
 #include "client/itemimpl.h"
-#include "core/namespacedef.h"
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -129,7 +128,7 @@ Error RPCClientMock::modifyItem(std::string_view nsName, Item& item, int mode, s
 				data = item.GetMsgPack();
 				break;
 			default:
-				return Error(errParams, "ModifyItem: Unknow data format [%d]", format);
+				return Error(errParams, "ModifyItem: Unknown data format [%d]", format);
 		}
 		auto ret = conn->Call(mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), nsName, format, data, mode, ser.Slice(),
 							  item.GetStateToken(), 0);
@@ -142,8 +141,8 @@ Error RPCClientMock::modifyItem(std::string_view nsName, Item& item, int mode, s
 			}
 			QueryResults qr;
 			InternalRdxContext ctxCompl = ctx.WithCompletion(nullptr);
-			auto ret = selectImpl(Query(std::string(nsName)).Limit(0), qr, nullptr, netTimeout, ctxCompl, format);
-			if (ret.code() == errTimeout) {
+			Error err = selectImpl(Query(std::string(nsName)).Limit(0), qr, nullptr, netTimeout, ctxCompl, format);
+			if (err.code() == errTimeout) {
 				return Error(errTimeout, "Request timeout");
 			}
 			if (withNetTimeout) {
@@ -151,7 +150,7 @@ Error RPCClientMock::modifyItem(std::string_view nsName, Item& item, int mode, s
 			}
 			auto newItem = NewItem(nsName);
 			char* endp = nullptr;
-			Error err = newItem.FromJSON(item.impl_->GetJSON(), &endp);
+			err = newItem.FromJSON(item.impl_->GetJSON(), &endp);
 			if (!err.ok()) {
 				return err;
 			}
@@ -169,6 +168,8 @@ Error RPCClientMock::modifyItem(std::string_view nsName, Item& item, int mode, s
 			return err;
 		}
 	}
+
+	return errOK;
 }
 
 Error RPCClientMock::modifyItemAsync(std::string_view nsName, Item* item, int mode, cproto::ClientConnection* conn, seconds netTimeout,
@@ -196,7 +197,7 @@ Error RPCClientMock::modifyItemAsync(std::string_view nsName, Item* item, int mo
 			data = item->GetMsgPack();
 			break;
 		default:
-			return Error(errParams, "ModifyItem: Unknow data format [%d]", format);
+			return Error(errParams, "ModifyItem: Unknown data format [%d]", format);
 	}
 
 	std::string ns(nsName);

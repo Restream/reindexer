@@ -145,7 +145,7 @@ bool DoubleToStringConverter::ToShortestIeeeNumber(double value, StringBuilder* 
         return HandleSpecialValues(value, result_builder);
     }
 
-    int decimal_point;
+    int decimal_point = -1;
     bool sign;
     const int kDecimalRepCapacity = kBase10MaximalLength + 1;
     char decimal_rep[kDecimalRepCapacity];

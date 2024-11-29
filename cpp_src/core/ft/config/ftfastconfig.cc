@@ -128,6 +128,15 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 		}
 		enablePreselectBeforeFt = root["enable_preselect_before_ft"].As<>(enablePreselectBeforeFt);
 
+		const std::string splitterStr = toLower(root["splitter"].As<std::string>("fast"));
+		if (splitterStr == "fast") {
+			splitterType = Splitter::Fast;
+		} else if (splitterStr == "friso") {
+			splitterType = Splitter::Friso;
+		} else {
+			throw Error(errParseJson, "FtFastConfig: unknown splitter value: %s", splitterStr);
+		}
+
 		parseBase(root);
 	} catch (const gason::Exception& ex) {
 		throw Error(errParseJson, "FtFastConfig: %s", ex.what());
@@ -171,6 +180,16 @@ std::string FtFastConfig::GetJson(const fast_hash_map<std::string, int>& fields)
 			jsonBuilder.Put("optimization", "CPU");
 			break;
 	}
+
+	switch (splitterType) {
+		case Splitter::Fast:
+			jsonBuilder.Put("splitter", "fast");
+			break;
+		case Splitter::Friso:
+			jsonBuilder.Put("splitter", "friso");
+			break;
+	}
+
 	jsonBuilder.Put("enable_preselect_before_ft", enablePreselectBeforeFt);
 	if (fields.empty() || isAllEqual(fieldsCfg)) {
 		assertrx(!fieldsCfg.empty());

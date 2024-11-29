@@ -1,5 +1,4 @@
 #include "client/rpcclient.h"
-#include <stdio.h>
 #include <functional>
 #include "client/itemimpl.h"
 #include "core/namespacedef.h"
@@ -8,7 +7,6 @@
 #include "tools/cpucheck.h"
 #include "tools/errors.h"
 #include "tools/logger.h"
-#include "vendor/gason/gason.h"
 
 namespace reindexer {
 namespace client {
@@ -245,8 +243,8 @@ Error RPCClient::modifyItem(std::string_view nsName, Item& item, int mode, secon
 			}
 			QueryResults qr;
 			InternalRdxContext ctxCompl = ctx.WithCompletion(nullptr);
-			auto ret = selectImpl(Query(std::string(nsName)).Limit(0), qr, nullptr, netTimeout, ctxCompl);
-			if (ret.code() == errTimeout) {
+			Error err = selectImpl(Query(std::string(nsName)).Limit(0), qr, nullptr, netTimeout, ctxCompl);
+			if (err.code() == errTimeout) {
 				return Error(errTimeout, "Request timeout");
 			}
 			if (withNetTimeout) {
@@ -254,11 +252,10 @@ Error RPCClient::modifyItem(std::string_view nsName, Item& item, int mode, secon
 			}
 			auto newItem = NewItem(nsName);
 			char* endp = nullptr;
-			Error err = newItem.FromJSON(item.impl_->GetJSON(), &endp);
+			err = newItem.FromJSON(item.impl_->GetJSON(), &endp);
 			if (!err.ok()) {
 				return err;
 			}
-
 			item = std::move(newItem);
 			continue;
 		}
@@ -272,6 +269,8 @@ Error RPCClient::modifyItem(std::string_view nsName, Item& item, int mode, secon
 			return err;
 		}
 	}
+
+	return errOK;
 }
 
 Error RPCClient::modifyItemAsync(std::string_view nsName, Item* item, int mode, cproto::ClientConnection* conn, seconds netTimeout,
@@ -768,7 +767,7 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 			// then we need to ask server to send tagsMatcher.
 
 			++serialDelays_;
-			// Delay this update and all the further updates until we get responce from server.
+			// Postpone this update and all subsequent updates until we receive response from the server.
 			ans.EnsureHold();
 			delayedUpdates_.emplace_back(std::move(ans));
 
@@ -828,8 +827,8 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 	} else if (wrec.type == WalTagsMatcher) {
 		TagsMatcher tm;
 		Serializer ser(wrec.data.data(), wrec.data.size());
-		const auto version = ser.GetVarint();
-		const auto stateToken = ser.GetVarint();
+		const auto version = int(ser.GetVarint());
+		const auto stateToken = int(ser.GetVarint());
 		tm.deserialize(ser, version, stateToken);
 		auto ns = getNamespace(nsName);
 		std::lock_guard lck(ns->lck_);

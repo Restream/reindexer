@@ -22,13 +22,15 @@ reindexer_tool {OPTIONS}
 
 Options
   -d[DSN],      --dsn=[DSN]              DSN to 'reindexer', like 'cproto://127.0.0.1:6534/dbname', 'builtin:///var/lib/reindexer/dbname' or `ucproto://user@password:/tmp/reindexer.sock:/dbname`
-  -f[FILENAME], --filename=[FILENAME]    execute commands from file, then exit
-  -c[COMMAND],  --command=[COMMAND]      run only single command (SQL or internal) and exit
-  -o[FILENAME], --output=[FILENAME]      send query results to file
-  -l[INT=1..5], --log=[INT=1..5]         reindexer logging level
+  -f[FILENAME], --filename=[FILENAME]    Execute commands from file, then exit
+  -c[COMMAND],  --command=[COMMAND]      Run single command (SQL or internal) and exit
+  -o[FILENAME], --output=[FILENAME]      Send query results to file
+  -l[INT=1..5], --log=[INT=1..5]         Reindexer logging level
   -C[INT],      --connections=[INT]      Number of simulateonous connections to db
   -t[INT],      --threads=[INT]          Number of threads used by db connector (used only for bench)
-
+  --createdb                             Creates target database if it is missing
+  -a[Application name],
+  --appname=[Application name]           Application name which will be used in login info
 ```
 
 ## Commands
@@ -135,5 +137,8 @@ reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --command '\dump' --output myd
 
 Restore database from backup file:
 ```sh
-reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --filename mydb.rxdump
+reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --createdb --filename mydb.rxdump
 ```
+
+Option `createdb` in example above allows to automatically create `mydb` if it does not exist. By default `reindexer_tool` requires an existing database to connect.
+

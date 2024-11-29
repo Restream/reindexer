@@ -294,13 +294,12 @@ std::string CommandsExecutor<DBInterface>::getCurrentDsn(bool withPath) const {
 		reindexer::split(std::string_view(uri_.path()), ":", true, pathParts);
 		std::string_view dbName;
 		if (pathParts.size() >= 2) {
-			dbName = pathParts.back();
+			dbName = pathParts.back().substr(1);  // ignore '/' in dbName
 		}
-		if (dbName.size()) {
-			dsn += uri_.path().substr(0, uri_.path().size() - dbName.size() - 1) + ':' + (withPath ? uri_.path() : "/");
-		} else {
-			dsn += uri_.path() + ':' + (withPath ? uri_.path() : "/");
-		}
+
+		// after URI-parsing uri_.path() looks like e.g. /tmp/reindexer.sock:/db or /tmp/reindexer.sock
+		// and hostname-, port- fields are empty
+		dsn += uri_.path().substr(0, uri_.path().size() - (withPath ? 0 : dbName.size())) + (dbName.empty() ? ":/" : "");
 	} else {
 		dsn += uri_.hostname() + ':' + uri_.port() + (withPath ? uri_.path() : "/");
 	}

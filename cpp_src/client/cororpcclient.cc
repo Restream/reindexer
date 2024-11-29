@@ -1,12 +1,10 @@
 #include "client/cororpcclient.h"
-#include <stdio.h>
 #include <functional>
 #include "client/itemimpl.h"
 #include "core/namespacedef.h"
 #include "gason/gason.h"
 #include "tools/errors.h"
 #include "tools/logger.h"
-#include "vendor/gason/gason.h"
 
 namespace reindexer {
 namespace client {
@@ -164,8 +162,8 @@ Error CoroRPCClient::modifyItem(std::string_view nsName, Item& item, int mode, s
 			}
 			CoroQueryResults qr;
 			InternalRdxContext ctxCompl = ctx.WithCompletion(nullptr);
-			auto ret = selectImpl(Query(nsName).Limit(0), qr, netTimeout, ctxCompl);
-			if (ret.code() == errTimeout) {
+			Error err = selectImpl(Query(nsName).Limit(0), qr, netTimeout, ctxCompl);
+			if (err.code() == errTimeout) {
 				return Error(errTimeout, "Request timeout");
 			}
 			if (withNetTimeout) {
@@ -173,7 +171,7 @@ Error CoroRPCClient::modifyItem(std::string_view nsName, Item& item, int mode, s
 			}
 			auto newItem = NewItem(nsName);
 			char* endp = nullptr;
-			Error err = newItem.FromJSON(item.impl_->GetJSON(), &endp);
+			err = newItem.FromJSON(item.impl_->GetJSON(), &endp);
 			if (!err.ok()) {
 				return err;
 			}
@@ -181,6 +179,8 @@ Error CoroRPCClient::modifyItem(std::string_view nsName, Item& item, int mode, s
 			item = std::move(newItem);
 		}
 	}
+
+	return errOK;
 }
 
 Error CoroRPCClient::subscribeImpl(bool subscribe) {
@@ -299,7 +299,6 @@ void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
 	for (auto v : vec) {
 		ser.PutVarUint(v);
 	}
-	return;
 }
 
 Error CoroRPCClient::selectImpl(std::string_view query, CoroQueryResults& result, seconds netTimeout, const InternalRdxContext& ctx) {
@@ -595,14 +594,29 @@ CoroTransaction CoroRPCClient::NewTransaction(std::string_view nsName, const Int
 	return CoroTransaction(std::move(err));
 }
 
-Error CoroRPCClient::CommitTransaction(CoroTransaction& tr, const InternalRdxContext& ctx) {
+Error CoroRPCClient::CommitTransaction(CoroTransaction& tr, CoroQueryResults& result, const InternalRdxContext& ctx) {
+	Error returnErr;
 	if (tr.conn_) {
-		auto ret = tr.conn_->Call(mkCommand(cproto::kCmdCommitTx, &ctx), tr.txId_).Status();
-		tr.clear();
-		return ret;
+		const int flags = result.fetchFlags_ ? result.fetchFlags_ : (kResultsWithItemID | kResultsWithPayloadTypes);
+		NsArray nsArray{getNamespace(tr.nsName_)};
+		result = CoroQueryResults(tr.conn_, std::move(nsArray), flags, config_.FetchAmount, config_.RequestTimeout);
+		auto ret = tr.conn_->Call(mkCommand(cproto::kCmdCommitTx, &ctx), tr.txId_, flags);
+		returnErr = ret.Status();
+		try {
+			if (ret.Status().ok()) {
+				auto args = ret.GetArgs(2);
+				result.Bind(p_string(args[0]), RPCQrId{int(args[1]), args.size() > 2 ? int64_t(args[2]) : -1});
+			}
+		} catch (const Error& err) {
+			returnErr = err;
+		}
+	} else {
+		returnErr = Error(errLogic, "connection is nullptr");
 	}
-	return Error(errLogic, "connection is nullptr");
+	tr.clear();
+	return returnErr;
 }
+
 Error CoroRPCClient::RollBackTransaction(CoroTransaction& tr, const InternalRdxContext& ctx) {
 	if (tr.conn_) {
 		auto ret = tr.conn_->Call(mkCommand(cproto::kCmdRollbackTx, &ctx), tr.txId_).Status();

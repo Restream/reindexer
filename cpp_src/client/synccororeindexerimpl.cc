@@ -130,8 +130,8 @@ SyncCoroTransaction SyncCoroReindexerImpl::NewTransaction(std::string_view nsNam
 	}
 	return SyncCoroTransaction(tx.Status(), this);
 }
-Error SyncCoroReindexerImpl::CommitTransaction(SyncCoroTransaction& tr, const InternalRdxContext& ctx) {
-	Error err = sendCommand<Error>(DbCmdCommitTransaction, tr.tr_, ctx);
+Error SyncCoroReindexerImpl::CommitTransaction(SyncCoroTransaction& tr, SyncCoroQueryResults& results, const InternalRdxContext& ctx) {
+	Error err = sendCommand<Error>(DbCmdCommitTransaction, tr.tr_, results.results_, ctx);
 	tr = SyncCoroTransaction(errOK, this);
 	return err;
 }
@@ -386,8 +386,10 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient& rx
 				break;
 			}
 			case DbCmdCommitTransaction: {
-				std::function<Error(CoroTransaction&, const InternalRdxContext&)> f =
-					std::bind(&client::CoroRPCClient::CommitTransaction, &rx, _1, _2);
+				std::function<Error(CoroTransaction&, CoroQueryResults&, const InternalRdxContext&)> f =
+					std::bind(static_cast<Error (client::CoroRPCClient::*)(CoroTransaction&, CoroQueryResults&, const InternalRdxContext&)>(
+								  &client::CoroRPCClient::CommitTransaction),
+							  &rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}

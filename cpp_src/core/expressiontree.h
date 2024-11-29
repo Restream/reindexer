@@ -8,11 +8,11 @@
 namespace reindexer {
 
 /// @class Bracket
-/// A beginnig of subtree, all children are placed just behind it
+/// A beginning of subtree, all children are placed just behind it
 /// contains size of space occupied by all children + 1 for this node
 class Bracket {
 public:
-	Bracket(size_t s) noexcept : size_(s) {}
+	explicit Bracket(size_t s) noexcept : size_(s) {}
 	RX_ALWAYS_INLINE size_t Size() const noexcept { return size_; }
 	/// Increase space occupied by children
 	RX_ALWAYS_INLINE void Append() noexcept { ++size_; }
@@ -122,14 +122,14 @@ class ExpressionTree {
 		template <typename T>
 		Node(OperationType op, T&& v) : storage_{std::forward<T>(v)}, operation{op} {}
 		Node(const Node& other) : storage_{other.storage_}, operation{other.operation} {}
-		Node(Node&& other) : storage_{std::move(other.storage_)}, operation{std::move(other.operation)} {}
+		Node(Node&& other) noexcept : storage_{std::move(other.storage_)}, operation{std::move(other.operation)} {}
 		~Node() = default;
 		RX_ALWAYS_INLINE Node& operator=(const Node& other) {
 			storage_ = other.storage_;
 			operation = other.operation;
 			return *this;
 		}
-		RX_ALWAYS_INLINE Node& operator=(Node&& other) {
+		RX_ALWAYS_INLINE Node& operator=(Node&& other) noexcept {
 			storage_ = std::move(other.storage_);
 			operation = std::move(other.operation);
 			return *this;
@@ -556,8 +556,8 @@ protected:
 
 public:
 	ExpressionTree() = default;
-	ExpressionTree(ExpressionTree&&) = default;
-	ExpressionTree& operator=(ExpressionTree&&) = default;
+	ExpressionTree(ExpressionTree&&) noexcept = default;
+	ExpressionTree& operator=(ExpressionTree&&) noexcept = default;
 	ExpressionTree(const ExpressionTree& other) : activeBrackets_{other.activeBrackets_} {
 		container_.reserve(other.container_.size());
 		for (const Node& n : other.container_) {
@@ -647,7 +647,7 @@ public:
 		}
 		container_.emplace(container_.begin() + pos + 1, op, std::forward<T>(v));
 	}
-	/// Appends value to the last openned subtree
+	/// Appends value to the last opened subtree
 	template <typename T>
 	void Append(OperationType op, T&& v) {
 		for (unsigned i : activeBrackets_) {
@@ -656,7 +656,7 @@ public:
 		}
 		container_.emplace_back(op, std::forward<T>(v));
 	}
-	/// Appends value to the last openned subtree
+	/// Appends value to the last opened subtree
 	template <typename T>
 	void Append(OperationType op, const T& v) {
 		for (unsigned i : activeBrackets_) {
@@ -665,7 +665,7 @@ public:
 		}
 		container_.emplace_back(op, v);
 	}
-	/// Appends value to the last openned subtree
+	/// Appends value to the last opened subtree
 	template <typename T, typename... Args>
 	void Append(OperationType op, Args&&... args) {
 		for (unsigned i : activeBrackets_) {
@@ -675,7 +675,7 @@ public:
 		container_.emplace_back(op, T{std::forward<Args>(args)...});
 	}
 	class const_iterator;
-	/// Appends all nodes from the interval to the last openned subtree
+	/// Appends all nodes from the interval to the last opened subtree
 	RX_ALWAYS_INLINE void Append(const_iterator begin, const_iterator end) {
 		container_.reserve(container_.size() + (end.PlainIterator() - begin.PlainIterator()));
 		append(begin, end);
@@ -747,14 +747,14 @@ public:
 		activeBrackets_.push_back(container_.size());
 		container_.emplace_back(op, size_t{1}, std::forward<Args>(args)...);
 	}
-	/// Closes last openned subtree for appendment
+	/// Closes last open subtree for appending
 	void CloseBracket() {
 		if rx_unlikely (activeBrackets_.empty()) {
 			throw Error(errLogic, "Close bracket before open");
 		}
 		activeBrackets_.pop_back();
 	}
-	/// Sets operation to last appended leaf or last closed subtree or last openned subtree if it is empty
+	/// Sets operation to last appended leaf or last closed subtree or last opened subtree if it is empty
 	RX_ALWAYS_INLINE void SetLastOperation(OperationType op) { container_[LastAppendedElement()].operation = op; }
 	RX_ALWAYS_INLINE bool Empty() const noexcept { return container_.empty(); }
 	RX_ALWAYS_INLINE size_t Size() const noexcept { return container_.size(); }
@@ -962,14 +962,14 @@ public:
 		}
 		return &container_[activeBrackets_.back()].template Value<SubTree>();
 	}
-	/// @return the last appended leaf or last closed subtree or last openned subtree if it is empty
+	/// @return the last appended leaf or last closed subtree or last opened subtree if it is empty
 	size_t LastAppendedElement() const noexcept {
 		assertrx_dbg(!container_.empty());
-		size_t start = 0;  // start of last openned subtree;
+		size_t start = 0;  // start of last opened subtree;
 		if (!activeBrackets_.empty()) {
 			start = activeBrackets_.back() + 1;
 			if (start == container_.size()) {
-				return start - 1;  // last oppened subtree is empty
+				return start - 1;  // last opened subtree is empty
 			}
 		}
 		while (Next(start) != container_.size()) {
@@ -980,7 +980,7 @@ public:
 
 protected:
 	Container container_;
-	/// stack of openned brackets (beginnigs of subtrees)
+	/// stack of opened brackets (beginnings of subtrees)
 	h_vector<unsigned, 2> activeBrackets_;
 	void clear() {
 		container_.clear();

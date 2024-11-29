@@ -1,8 +1,7 @@
 #include "synccororeindexer.h"
 #include "synccororeindexerimpl.h"
 
-namespace reindexer {
-namespace client {
+namespace reindexer::client {
 
 SyncCoroReindexer::SyncCoroReindexer(const ReindexerConfig& config) : impl_(new SyncCoroReindexerImpl(config)), owner_(true), ctx_() {}
 SyncCoroReindexer::~SyncCoroReindexer() {
@@ -67,8 +66,9 @@ Error SyncCoroReindexer::GetSqlSuggestions(const std::string_view sqlQuery, int 
 Error SyncCoroReindexer::Status() { return impl_->Status(ctx_); }
 
 SyncCoroTransaction SyncCoroReindexer::NewTransaction(std::string_view nsName) { return impl_->NewTransaction(nsName, ctx_); }
-Error SyncCoroReindexer::CommitTransaction(SyncCoroTransaction& tr) { return impl_->CommitTransaction(tr, ctx_); }
+Error SyncCoroReindexer::CommitTransaction(SyncCoroTransaction& tr, SyncCoroQueryResults& result) {
+	return impl_->CommitTransaction(tr, result, ctx_);
+}
 Error SyncCoroReindexer::RollBackTransaction(SyncCoroTransaction& tr) { return impl_->RollBackTransaction(tr, ctx_); }
 
-}  // namespace client
-}  // namespace reindexer
+}  // namespace reindexer::client

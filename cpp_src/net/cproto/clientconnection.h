@@ -214,7 +214,7 @@ protected:
 	};
 
 	template <typename... Argss>
-	inline CallReturn call(const Completion& cmpl, const CommandParams& opts, Args& args, const std::string_view& val, Argss... argss) {
+	inline CallReturn call(const Completion& cmpl, const CommandParams& opts, Args& args, std::string_view val, Argss... argss) {
 		args.emplace_back(p_string(&val));
 		return call(cmpl, opts, args, argss...);
 	}

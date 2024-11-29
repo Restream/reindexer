@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/ft/areaholder.h"
+#include "core/ft/ft_fast/splitter.h"
 #include "core/queryresults/queryresults.h"
 
 namespace reindexer {
@@ -17,11 +18,11 @@ private:
 
 	class RecalcZoneHelper {
 	public:
-		RecalcZoneHelper(std::string_view data, const std::string& extra, unsigned int after, unsigned int before,
+		RecalcZoneHelper(std::string_view data, intrusive_ptr<const ISplitter> splitter, unsigned int after, unsigned int before,
 						 std::string_view leftBound, std::string_view rightBound) noexcept
 			: str_(data),
 			  data_(data),
-			  extraWordSymbols_(extra),
+			  splitter_(std::move(splitter)),
 			  after_(after),
 			  before_(before),
 			  leftBound_(leftBound),
@@ -35,12 +36,13 @@ private:
 		size_t wordCount_ = 0;
 		int stringBeginOffsetByte_ = 0;
 		int stringBeginOffsetChar_ = 0;
-		const std::string& extraWordSymbols_;
+		const intrusive_ptr<const ISplitter> splitter_;
 		unsigned int after_, before_;
 		std::string_view leftBound_, rightBound_;
 	};
 
 	void buildResult(RecalcZoneHelper& recalcZoneHelper, const AreasInField<Area>& pva, const std::string& data, std::string& resultString);
+
 	void buildResultWithPrefix(RecalcZoneHelper& recalcZoneHelper, const AreasInField<Area>& pva, const std::string& data,
 							   std::string& resultString);
 

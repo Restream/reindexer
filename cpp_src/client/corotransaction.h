@@ -5,12 +5,9 @@
 
 namespace reindexer {
 
-namespace net {
-namespace cproto {
-
+namespace net::cproto {
 class CoroClientConnection;
-}  // namespace cproto
-}  // namespace net
+}  // namespace net::cproto
 
 namespace client {
 
@@ -35,7 +32,7 @@ private:
 	friend class CoroRPCClient;
 	friend class SyncCoroReindexerImpl;
 	friend class SyncCoroTransaction;
-	CoroTransaction(Error status) : status_(std::move(status)) {}
+	explicit CoroTransaction(Error status) : status_(std::move(status)) {}
 	CoroTransaction(CoroRPCClient* rpcClient, net::cproto::CoroClientConnection* conn, int64_t txId, std::chrono::seconds RequestTimeout,
 					std::chrono::milliseconds execTimeout, std::string nsName)
 		: txId_(txId),
@@ -53,9 +50,9 @@ private:
 		status_ = errOK;
 	}
 
-	int64_t txId_ = -1;
-	CoroRPCClient* rpcClient_ = nullptr;
-	reindexer::net::cproto::CoroClientConnection* conn_ = nullptr;
+	int64_t txId_{-1};
+	CoroRPCClient* rpcClient_{nullptr};
+	reindexer::net::cproto::CoroClientConnection* conn_{nullptr};
 	std::chrono::seconds RequestTimeout_{0};
 	std::chrono::milliseconds execTimeout_{0};
 	std::string nsName_;
@@ -63,4 +60,5 @@ private:
 };
 
 }  // namespace client
+
 }  // namespace reindexer

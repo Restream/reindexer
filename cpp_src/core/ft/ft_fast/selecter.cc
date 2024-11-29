@@ -36,7 +36,7 @@ constexpr int kMaxStemSkipLen = 1;
 constexpr bool kVariantsWithDifLength = (kMinStemRellevantLen - kMaxStemSkipLen) > 2;
 
 template <typename IdCont>
-void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, RVector<FtBoundVariantEntry, 4>* lowRelVariants,
+void Selector<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, RVector<FtBoundVariantEntry, 4>* lowRelVariants,
 									   size_t termIdx, const std::vector<std::string>& langs, const FtDSLQuery& dsl,
 									   std::vector<SynonymsDsl>* synonymsDsl) {
 	const FtDSLEntry& term = dsl[termIdx];
@@ -120,7 +120,7 @@ void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, RV
 // RX_NO_INLINE just for build test purpose. Do not expect any effect here
 template <typename IdCont>
 template <FtUseExternStatuses useExternSt, typename MergeType>
-MergeType Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses::Statuses&& mergeStatuses,
+MergeType Selector<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses::Statuses&& mergeStatuses,
 									const RdxContext& rdxCtx) {
 	FtSelectContext ctx;
 	ctx.rawResults.reserve(dsl.size());
@@ -226,7 +226,7 @@ MergeType Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, FtSort
 
 template <typename IdCont>
 template <typename MergedOffsetT, typename MergeType>
-MergeType Selecter<IdCont>::mergeResultsBmType(std::vector<TextSearchResults>&& results, size_t totalORVids,
+MergeType Selector<IdCont>::mergeResultsBmType(std::vector<TextSearchResults>&& results, size_t totalORVids,
 											   const std::vector<size_t>& synonymsBounds, bool inTransaction, FtSortType ftSortType,
 											   FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext& rdxCtx) {
 	switch (holder_.cfg_->bm25Config.bm25Type) {
@@ -246,7 +246,7 @@ MergeType Selecter<IdCont>::mergeResultsBmType(std::vector<TextSearchResults>&& 
 
 template <typename IdCont>
 template <FtUseExternStatuses useExternSt>
-void Selecter<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHolder<IdCont>::CommitStep& step,
+void Selector<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHolder<IdCont>::CommitStep& step,
 										   const FtVariantEntry& variant, unsigned curRawResultIdx,
 										   const FtMergeStatuses::Statuses& mergeStatuses, int vidsLimit) {
 	auto& res = ctx.rawResults[curRawResultIdx];
@@ -314,7 +314,7 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 
 		const auto it = res.foundWords->find(glbwordId);
 		if (it == res.foundWords->end() || it->second.first != curRawResultIdx) {
-			res.push_back({&hword.vids, keyIt->first, proc, suffixes.virtual_word_len(suffixWordId)});
+			res.push_back({&hword.vids, keyIt->first, proc});
 			const auto vidsSize = hword.vids.size();
 			res.idsCnt_ += vidsSize;
 			if (variant.opts.op == OpOr) {
@@ -339,14 +339,14 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 		if (vidsLimit <= vids) {
 			limitString = fmt::sprintf(". Lookup terminated by VIDs limit(%d)", initialLimit);
 		}
-		logPrintf(LogInfo, "Lookup variant '%s' (%d%%), matched %d suffixes, with %d vids, skiped %d, excluded %d%s", tmpstr, variant.proc,
+		logPrintf(LogInfo, "Lookup variant '%s' (%d%%), matched %d suffixes, with %d vids, skipped %d, excluded %d%s", tmpstr, variant.proc,
 				  matched, vids, skipped, excludedCnt, limitString);
 	}
 }
 
 template <typename IdCont>
 template <FtUseExternStatuses useExternSt>
-void Selecter<IdCont>::processVariants(FtSelectContext& ctx, const FtMergeStatuses::Statuses& mergeStatuses) {
+void Selector<IdCont>::processVariants(FtSelectContext& ctx, const FtMergeStatuses::Statuses& mergeStatuses) {
 	for (const FtVariantEntry& variant : ctx.variants) {
 		for (auto& step : holder_.steps) {
 			processStepVariants<useExternSt>(ctx, step, variant, ctx.rawResults.size() - 1, mergeStatuses, std::numeric_limits<int>::max());
@@ -356,7 +356,7 @@ void Selecter<IdCont>::processVariants(FtSelectContext& ctx, const FtMergeStatus
 
 template <typename IdCont>
 template <FtUseExternStatuses useExternSt>
-void Selecter<IdCont>::processLowRelVariants(FtSelectContext& ctx, const FtMergeStatuses::Statuses& mergeStatuses) {
+void Selector<IdCont>::processLowRelVariants(FtSelectContext& ctx, const FtMergeStatuses::Statuses& mergeStatuses) {
 	// Add words from low relevancy variants, ordered by length & proc
 	if constexpr (kVariantsWithDifLength) {
 		boost::sort::pdqsort(ctx.lowRelVariants.begin(), ctx.lowRelVariants.end(),
@@ -386,7 +386,7 @@ void Selecter<IdCont>::processLowRelVariants(FtSelectContext& ctx, const FtMerge
 			if (variant.GetLenCached() != lastVariantLen) {
 				if (unsigned(targetORLimit) <= ctx.totalORVids) {
 					if rx_unlikely (holder_.cfg_->logLevel >= LogTrace) {
-						logPrintf(LogInfo, "Terminating on target OR limit. Current vairiant is '%s%s%s'", variant.opts.suff ? "*" : "",
+						logPrintf(LogInfo, "Terminating on target OR limit. Current variant is '%s%s%s'", variant.opts.suff ? "*" : "",
 								  variant.pattern, variant.opts.pref ? "*" : "");
 					}
 					break;
@@ -428,7 +428,7 @@ void Selecter<IdCont>::processLowRelVariants(FtSelectContext& ctx, const FtMerge
 RX_ALWAYS_INLINE double bound(double k, double weight, double boost) noexcept { return (1.0 - weight) + k * boost * weight; }
 
 template <typename IdCont>
-RX_ALWAYS_INLINE void Selecter<IdCont>::debugMergeStep(const char* msg, int vid, float normBm25, float normDist, int finalRank,
+RX_ALWAYS_INLINE void Selector<IdCont>::debugMergeStep(const char* msg, int vid, float normBm25, float normDist, int finalRank,
 													   int prevRank) {
 #ifdef REINDEX_FT_EXTRA_DEBUG
 	if (holder_.cfg_->logLevel < LogTrace) {
@@ -448,7 +448,7 @@ RX_ALWAYS_INLINE void Selecter<IdCont>::debugMergeStep(const char* msg, int vid,
 }
 template <typename IdCont>
 template <typename Calculator>
-RX_ALWAYS_INLINE void Selecter<IdCont>::calcFieldBoost(const Calculator& bm25Calc, unsigned long long f, const IdRelType& relid,
+RX_ALWAYS_INLINE void Selector<IdCont>::calcFieldBoost(const Calculator& bm25Calc, unsigned long long f, const IdRelType& relid,
 													   const FtDslOpts& opts, TermRankInfo& termInf, bool& dontSkipCurTermRank,
 													   h_vector<double, 4>& ranksInFields, int& field) {
 	assertrx(f < holder_.cfg_->fieldsCfg.size());
@@ -483,7 +483,7 @@ RX_ALWAYS_INLINE void Selecter<IdCont>::calcFieldBoost(const Calculator& bm25Cal
 
 template <typename IdCont>
 template <typename PosT>
-void Selecter<IdCont>::insertSubMergeArea(const MergedIdRelGroupArea<PosT>& posInfo, PosT cur, int prevIndex, AreasInDocument<Area>& area) {
+void Selector<IdCont>::insertSubMergeArea(const MergedIdRelGroupArea<PosT>& posInfo, PosT cur, int prevIndex, AreasInDocument<Area>& area) {
 	PosT last = cur, first = cur;
 	int indx = int(posInfo.wordPosForChain.size()) - 2;
 	while (indx >= 0 && prevIndex != -1) {
@@ -500,7 +500,7 @@ void Selecter<IdCont>::insertSubMergeArea(const MergedIdRelGroupArea<PosT>& posI
 
 template <typename IdCont>
 template <typename PosT>
-void Selecter<IdCont>::insertSubMergeArea(const MergedIdRelGroupArea<PosT>& posInfo, PosT cur, int prevIndex,
+void Selector<IdCont>::insertSubMergeArea(const MergedIdRelGroupArea<PosT>& posInfo, PosT cur, int prevIndex,
 										  AreasInDocument<AreaDebug>& area) {
 	int indx = int(posInfo.wordPosForChain.size()) - 1;
 	while (indx >= 0 && prevIndex != -1) {
@@ -522,7 +522,7 @@ void Selecter<IdCont>::insertSubMergeArea(const MergedIdRelGroupArea<PosT>& posI
 
 template <typename IdCont>
 template <typename AreaType, typename PosT>
-AreasInDocument<AreaType> Selecter<IdCont>::createAreaFromSubMerge(const MergedIdRelGroupArea<PosT>& posInfo) {
+AreasInDocument<AreaType> Selector<IdCont>::createAreaFromSubMerge(const MergedIdRelGroupArea<PosT>& posInfo) {
 	AreasInDocument<AreaType> area;
 	if (posInfo.wordPosForChain.empty()) {
 		return area;
@@ -535,7 +535,7 @@ AreasInDocument<AreaType> Selecter<IdCont>::createAreaFromSubMerge(const MergedI
 
 template <typename IdCont>
 template <typename AreaType>
-void Selecter<IdCont>::copyAreas(AreasInDocument<AreaType>& subMerged, AreasInDocument<AreaType>& merged, int32_t rank) {
+void Selector<IdCont>::copyAreas(AreasInDocument<AreaType>& subMerged, AreasInDocument<AreaType>& merged, int32_t rank) {
 	for (size_t f = 0; f < fieldSize_; f++) {
 		auto areas = subMerged.GetAreas(f);
 		if (areas) {
@@ -546,7 +546,7 @@ void Selecter<IdCont>::copyAreas(AreasInDocument<AreaType>& subMerged, AreasInDo
 
 template <typename IdCont>
 template <typename PosType, typename MergedOffsetT, typename MergeType>
-void Selecter<IdCont>::subMergeLoop(MergeType& subMerged, std::vector<PosType>& subMergedPos, MergeType& merged,
+void Selector<IdCont>::subMergeLoop(MergeType& subMerged, std::vector<PosType>& subMergedPos, MergeType& merged,
 									std::vector<MergedIdRel>& merged_rd, FtMergeStatuses::Statuses& mergeStatuses,
 									std::vector<MergedOffsetT>& idoffsets, std::vector<bool>* checkAndOpMerge, const bool hasBeenAnd) {
 	for (size_t subMergedIndex = 0, sz = subMerged.size(); subMergedIndex < sz; subMergedIndex++) {
@@ -615,7 +615,7 @@ void Selecter<IdCont>::subMergeLoop(MergeType& subMerged, std::vector<PosType>& 
 
 template <typename IdCont>
 template <typename MergedIdRelGroupType, typename Bm25T, typename MergedOffsetT, typename MergeType>
-void Selecter<IdCont>::mergeGroupResult(std::vector<TextSearchResults>& rawResults, size_t from, size_t to,
+void Selector<IdCont>::mergeGroupResult(std::vector<TextSearchResults>& rawResults, size_t from, size_t to,
 										FtMergeStatuses::Statuses& mergeStatuses, MergeType& merged, std::vector<MergedIdRel>& merged_rd,
 										OpType op, const bool hasBeenAnd, std::vector<MergedOffsetT>& idoffsets, const bool inTransaction,
 										const RdxContext& rdxCtx) {
@@ -668,7 +668,7 @@ void Selecter<IdCont>::mergeGroupResult(std::vector<TextSearchResults>& rawResul
 }
 template <typename IdCont>
 template <typename MergedOffsetT, typename MergeType>
-void Selecter<IdCont>::addNewTerm(FtMergeStatuses::Statuses& mergeStatuses, MergeType& merged, std::vector<MergedOffsetT>& idoffsets,
+void Selector<IdCont>::addNewTerm(FtMergeStatuses::Statuses& mergeStatuses, MergeType& merged, std::vector<MergedOffsetT>& idoffsets,
 								  std::vector<bool>& curExists, const IdRelType& relid, index_t rawResIndex, int32_t termRank, int field) {
 	const int vid = relid.Id();
 	MergeInfo info;
@@ -690,7 +690,7 @@ void Selecter<IdCont>::addNewTerm(FtMergeStatuses::Statuses& mergeStatuses, Merg
 }
 
 template <typename IdCont>
-void Selecter<IdCont>::addAreas(AreasInDocument<Area>& area, const IdRelType& relid, int32_t termRank, const TermRankInfo& termInf,
+void Selector<IdCont>::addAreas(AreasInDocument<Area>& area, const IdRelType& relid, int32_t termRank, const TermRankInfo& termInf,
 								const std::wstring& pattern) {
 	(void)termInf;
 	(void)pattern;
@@ -703,7 +703,7 @@ void Selecter<IdCont>::addAreas(AreasInDocument<Area>& area, const IdRelType& re
 }
 
 template <typename IdCont>
-void Selecter<IdCont>::addAreas(AreasInDocument<AreaDebug>& area, const IdRelType& relid, int32_t termRank, const TermRankInfo& termInf,
+void Selector<IdCont>::addAreas(AreasInDocument<AreaDebug>& area, const IdRelType& relid, int32_t termRank, const TermRankInfo& termInf,
 								const std::wstring& pattern) {
 	(void)termRank;
 	utf16_to_utf8(pattern, const_cast<std::string&>(termInf.ftDslTerm));
@@ -732,7 +732,7 @@ void Selecter<IdCont>::addAreas(AreasInDocument<AreaDebug>& area, const IdRelTyp
 //  allmax=max(docRank)
 template <typename IdCont>
 template <typename Bm25Type, typename MergedOffsetT, typename MergedType>
-void Selecter<IdCont>::mergeIteration(TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses,
+void Selector<IdCont>::mergeIteration(TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses,
 									  MergedType& merged, std::vector<MergedIdRel>& merged_rd, std::vector<MergedOffsetT>& idoffsets,
 									  std::vector<bool>& curExists, const bool hasBeenAnd, const bool inTransaction,
 									  const RdxContext& rdxCtx) {
@@ -757,7 +757,7 @@ void Selecter<IdCont>::mergeIteration(TextSearchResults& rawRes, index_t rawResI
 		}
 	}
 
-	// loop on subterm (word, translit, stemmmer,...)
+	// loop on subterm (word, translit, stemmer,...)
 	for (auto& r : rawRes) {
 		if (!inTransaction) {
 			ThrowOnCancel(rdxCtx);
@@ -774,7 +774,7 @@ void Selecter<IdCont>::mergeIteration(TextSearchResults& rawRes, index_t rawResI
 			// relid contains all subterm positions in the given document
 			const int vid = relid.Id();
 			index_t vidStatus = mergeStatuses[vid];
-			// Do not calc anithing if
+			// Do not calc anything if
 			if ((vidStatus == FtMergeStatuses::kExcluded) | (hasBeenAnd & (vidStatus == 0))) {
 				continue;
 			}
@@ -853,10 +853,10 @@ void Selecter<IdCont>::mergeIteration(TextSearchResults& rawRes, index_t rawResI
 		}
 	}
 }
-template <typename IdCont>
 
+template <typename IdCont>
 template <typename Calculator>
-std::pair<double, int> Selecter<IdCont>::calcTermRank(const TextSearchResults& rawRes, Calculator bm25Calc, const IdRelType& relid,
+std::pair<double, int> Selector<IdCont>::calcTermRank(const TextSearchResults& rawRes, Calculator bm25Calc, const IdRelType& relid,
 													  TermRankInfo& termInf) {
 	// Find field with max rank
 	int field = 0;
@@ -899,7 +899,7 @@ std::pair<double, int> Selecter<IdCont>::calcTermRank(const TextSearchResults& r
 
 template <typename IdCont>
 template <typename MergedIdRelGroupType, typename Bm25Type, typename MergedOffsetT, typename MergeType>
-void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses,
+void Selector<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses,
 										   MergeType& merged, std::vector<MergedIdRelGroupType>& mergedPos,
 										   std::vector<MergedOffsetT>& idoffsets, std::vector<bool>& present, const bool firstTerm,
 										   const bool inTransaction, const RdxContext& rdxCtx) {
@@ -910,7 +910,7 @@ void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 	present.clear();
 	present.resize(totalDocsCount, false);
 
-	// loop on subterm (word, translit, stemmmer,...)
+	// loop on subterm (word, translit, stemmer,...)
 	for (auto& r : rawRes) {
 		if (!inTransaction) {
 			ThrowOnCancel(rdxCtx);
@@ -927,7 +927,7 @@ void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 			// relid contains all subterm positions in the given document
 			vid = relid.Id();
 			index_t vidStatus = mergeStatuses[vid];
-			// Do not calc anithing if
+			// Do not calc anything if
 			if ((vidStatus == FtMergeStatuses::kExcluded) | (!firstTerm & (vidStatus == 0))) {
 				continue;
 			}
@@ -1073,7 +1073,7 @@ void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 
 template <typename IdCont>
 template <typename MergedIdRelGroupType, typename Bm25Type, typename MergedOffsetT, typename MergeType>
-void Selecter<IdCont>::mergeResultsPart(std::vector<TextSearchResults>& rawResults, size_t from, size_t to, MergeType& merged,
+void Selector<IdCont>::mergeResultsPart(std::vector<TextSearchResults>& rawResults, size_t from, size_t to, MergeType& merged,
 										std::vector<MergedIdRelGroupType>& mergedPos, const bool inTransaction, const RdxContext& rdxCtx) {
 	// Current implementation supports OpAnd only
 	assertrx_throw(to <= rawResults.size());
@@ -1117,7 +1117,7 @@ void Selecter<IdCont>::mergeResultsPart(std::vector<TextSearchResults>& rawResul
 }
 
 template <typename IdCont>
-size_t Selecter<IdCont>::TyposHandler::Process(std::vector<TextSearchResults>& rawResults, const DataHolder<IdCont>& holder,
+size_t Selector<IdCont>::TyposHandler::Process(std::vector<TextSearchResults>& rawResults, const DataHolder<IdCont>& holder,
 											   const FtDSLEntry& term) {
 	TextSearchResults& res = rawResults.back();
 	const unsigned curRawResultIdx = rawResults.size() - 1;
@@ -1126,7 +1126,7 @@ size_t Selecter<IdCont>::TyposHandler::Process(std::vector<TextSearchResults>& r
 	for (auto& step : holder.steps) {
 		typos_context tctx[kMaxTyposInWord];
 		const decltype(step.typosHalf_)* typoses[2]{&step.typosHalf_, &step.typosMax_};
-		int matched = 0, skiped = 0, vids = 0;
+		int matched = 0, skipped = 0, vids = 0;
 		mktypos(
 			tctx, term.pattern, maxTyposInWord_, holder.cfg_->maxTypoLen,
 			[&, this](std::string_view typo, int level, const typos_context::TyposVec& positions) {
@@ -1141,14 +1141,14 @@ size_t Selecter<IdCont>::TyposHandler::Process(std::vector<TextSearchResults>& r
 							(positions.size() - wordTypo.positions.size()) > int(maxExtraLetts_)) {
 							logTraceF(LogInfo, " skipping typo '%s' of word '%s': to many extra letters (%d)", typoIt->first,
 									  step.suffixes_.word_at(wordIdSfx), positions.size() - wordTypo.positions.size());
-							++skiped;
+							++skipped;
 							continue;
 						}
 						if (wordTypo.positions.size() > positions.size() &&
 							(wordTypo.positions.size() - positions.size()) > int(maxMissingLetts_)) {
 							logTraceF(LogInfo, " skipping typo '%s' of word '%s': to many missing letters (%d)", typoIt->first,
 									  step.suffixes_.word_at(wordIdSfx), wordTypo.positions.size() - positions.size());
-							++skiped;
+							++skipped;
 							continue;
 						}
 						if (!isWordFitMaxTyposDist(wordTypo, positions)) {
@@ -1157,7 +1157,7 @@ size_t Selecter<IdCont>::TyposHandler::Process(std::vector<TextSearchResults>& r
 								!isWordFitMaxLettPerm(step.suffixes_.word_at(wordIdSfx), wordTypo, term.pattern, positions)) {
 								logTraceF(LogInfo, " skipping typo '%s' of word '%s' due to max_typos_distance settings", typoIt->first,
 										  step.suffixes_.word_at(wordIdSfx));
-								++skiped;
+								++skipped;
 								continue;
 							}
 						}
@@ -1171,7 +1171,7 @@ size_t Selecter<IdCont>::TyposHandler::Process(std::vector<TextSearchResults>& r
 						const auto it = res.foundWords->find(wordTypo.word);
 						if (it == res.foundWords->end() || it->second.first != curRawResultIdx) {
 							const auto& hword = holder.GetWordById(wordTypo.word);
-							res.push_back({&hword.vids, typoIt->first, proc, step.suffixes_.virtual_word_len(wordIdSfx)});
+							res.push_back({&hword.vids, typoIt->first, proc});
 							res.idsCnt_ += hword.vids.size();
 							res.foundWords->emplace(wordTypo.word, std::make_pair(curRawResultIdx, res.size() - 1));
 
@@ -1181,7 +1181,7 @@ size_t Selecter<IdCont>::TyposHandler::Process(std::vector<TextSearchResults>& r
 							vids += hword.vids.size();
 							totalVids += hword.vids.size();
 						} else {
-							++skiped;
+							++skipped;
 						}
 					}
 					if (dontUseMaxTyposForBoth_ && level == 1 && typo.size() != patternSize) {
@@ -1190,7 +1190,7 @@ size_t Selecter<IdCont>::TyposHandler::Process(std::vector<TextSearchResults>& r
 				}
 			});
 		if rx_unlikely (holder.cfg_->logLevel >= LogInfo) {
-			logPrintf(LogInfo, "Lookup typos, matched %d typos, with %d vids, skiped %d", matched, vids, skiped);
+			logPrintf(LogInfo, "Lookup typos, matched %d typos, with %d vids, skipped %d", matched, vids, skipped);
 		}
 	}
 	return totalVids;
@@ -1200,14 +1200,14 @@ RX_ALWAYS_INLINE unsigned uabs(int a) { return unsigned(std::abs(a)); }
 
 template <typename IdCont>
 template <typename... Args>
-void Selecter<IdCont>::TyposHandler::logTraceF(int level, const char* fmt, Args&&... args) {
+void Selector<IdCont>::TyposHandler::logTraceF(int level, const char* fmt, Args&&... args) {
 	if rx_unlikely (logLevel_ >= LogTrace) {
 		logPrintf(level, fmt, std::forward<Args>(args)...);
 	}
 }
 
 template <typename IdCont>
-bool Selecter<IdCont>::TyposHandler::isWordFitMaxTyposDist(const WordTypo& found, const typos_context::TyposVec& current) {
+bool Selector<IdCont>::TyposHandler::isWordFitMaxTyposDist(const WordTypo& found, const typos_context::TyposVec& current) {
 	static_assert(kMaxTyposInWord <= 2, "Code in this function is expecting specific size of the typos positions arrays");
 	if (!useMaxTypoDist_ || found.positions.size() == 0) {
 		return true;
@@ -1260,7 +1260,7 @@ bool Selecter<IdCont>::TyposHandler::isWordFitMaxTyposDist(const WordTypo& found
 }
 
 template <typename IdCont>
-bool Selecter<IdCont>::TyposHandler::isWordFitMaxLettPerm(const std::string_view foundWord, const WordTypo& found,
+bool Selector<IdCont>::TyposHandler::isWordFitMaxLettPerm(const std::string_view foundWord, const WordTypo& found,
 														  const std::wstring& currentWord, const typos_context::TyposVec& current) {
 	if (found.positions.size() == 0) {
 		return true;
@@ -1293,7 +1293,7 @@ bool Selecter<IdCont>::TyposHandler::isWordFitMaxLettPerm(const std::string_view
 				std::swap(foundLeft, foundRight);
 			}
 
-			// Rigth letter position requires correction for the comparison with distance, but not for the letter itself
+			// Right letter position requires correction for the comparison with distance, but not for the letter itself
 			const auto foundRightLetter = foundWordUTF16_[foundRight--];
 			const auto foundLeftLetter = foundWordUTF16_[foundLeft];
 			const auto curP0Letter = currentWord[curP0];
@@ -1313,7 +1313,7 @@ bool Selecter<IdCont>::TyposHandler::isWordFitMaxLettPerm(const std::string_view
 				if (curLeft > curRight) {
 					std::swap(curLeft, curRight);
 				}
-				// Rigth letter position requires correction for the comparison with distance, but not for the letter itself
+				// Right letter position requires correction for the comparison with distance, but not for the letter itself
 				const auto curRightLetter = currentWord[curRight--];
 				const auto curLeftLetter = currentWord[curLeft];
 				const auto foundP0Letter = foundWordUTF16_[foundP0];
@@ -1363,7 +1363,7 @@ bool Selecter<IdCont>::TyposHandler::isWordFitMaxLettPerm(const std::string_view
 
 template <typename IdCont>
 template <typename Bm25T, typename MergedOffsetT, typename MergedType>
-MergedType Selecter<IdCont>::mergeResults(std::vector<TextSearchResults>&& rawResults, size_t maxMergedSize,
+MergedType Selector<IdCont>::mergeResults(std::vector<TextSearchResults>&& rawResults, size_t maxMergedSize,
 										  const std::vector<size_t>& synonymsBounds, bool inTransaction, FtSortType ftSortType,
 										  FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext& rdxCtx) {
 	const auto& vdocs = holder_.vdocs_;
@@ -1488,7 +1488,7 @@ MergedType Selecter<IdCont>::mergeResults(std::vector<TextSearchResults>&& rawRe
 }
 
 template <typename IdCont>
-void Selecter<IdCont>::printVariants(const FtSelectContext& ctx, const TextSearchResults& res) {
+void Selector<IdCont>::printVariants(const FtSelectContext& ctx, const TextSearchResults& res) {
 	WrSerializer wrSer;
 	wrSer << "variants: [";
 	for (auto& variant : ctx.variants) {
@@ -1523,38 +1523,38 @@ void Selecter<IdCont>::printVariants(const FtSelectContext& ctx, const TextSearc
 	logPrintf(LogInfo, "Variants: [%s]", wrSer.Slice());
 }
 
-template class Selecter<PackedIdRelVec>;
-template MergeDataBase Selecter<PackedIdRelVec>::Process<FtUseExternStatuses::No, MergeDataBase>(FtDSLQuery&&, bool, FtSortType,
+template class Selector<PackedIdRelVec>;
+template MergeDataBase Selector<PackedIdRelVec>::Process<FtUseExternStatuses::No, MergeDataBase>(FtDSLQuery&&, bool, FtSortType,
 																								 FtMergeStatuses::Statuses&&,
 																								 const RdxContext&);
-template MergeData<Area> Selecter<PackedIdRelVec>::Process<FtUseExternStatuses::No, MergeData<Area>>(FtDSLQuery&&, bool, FtSortType,
+template MergeData<Area> Selector<PackedIdRelVec>::Process<FtUseExternStatuses::No, MergeData<Area>>(FtDSLQuery&&, bool, FtSortType,
 																									 FtMergeStatuses::Statuses&&,
 																									 const RdxContext&);
-template MergeData<AreaDebug> Selecter<PackedIdRelVec>::Process<FtUseExternStatuses::No, MergeData<AreaDebug>>(FtDSLQuery&&, bool,
+template MergeData<AreaDebug> Selector<PackedIdRelVec>::Process<FtUseExternStatuses::No, MergeData<AreaDebug>>(FtDSLQuery&&, bool,
 																											   FtSortType,
 																											   FtMergeStatuses::Statuses&&,
 																											   const RdxContext&);
 
-template MergeDataBase Selecter<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType,
+template MergeDataBase Selector<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType,
 																				   FtMergeStatuses::Statuses&&, const RdxContext&);
-template MergeData<Area> Selecter<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType,
+template MergeData<Area> Selector<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType,
 																					 FtMergeStatuses::Statuses&&, const RdxContext&);
-template MergeData<AreaDebug> Selecter<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType,
+template MergeData<AreaDebug> Selector<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType,
 																						  FtMergeStatuses::Statuses&&, const RdxContext&);
 
-template class Selecter<IdRelVec>;
-template MergeDataBase Selecter<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
+template class Selector<IdRelVec>;
+template MergeDataBase Selector<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
 																			const RdxContext&);
-template MergeData<Area> Selecter<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
+template MergeData<Area> Selector<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
 																			  const RdxContext&);
-template MergeData<AreaDebug> Selecter<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, FtSortType,
+template MergeData<AreaDebug> Selector<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, FtSortType,
 																				   FtMergeStatuses::Statuses&&, const RdxContext&);
 
-template MergeDataBase Selecter<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
+template MergeDataBase Selector<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
 																			 const RdxContext&);
-template MergeData<Area> Selecter<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
+template MergeData<Area> Selector<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
 																			   const RdxContext&);
-template MergeData<AreaDebug> Selecter<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType,
+template MergeData<AreaDebug> Selector<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType,
 																					FtMergeStatuses::Statuses&&, const RdxContext&);
 
 }  // namespace reindexer

@@ -27,7 +27,7 @@ public:
 		initConfig();
 	}
 	std::unique_ptr<Index> Clone() const override {
-		// Creates uncommited copy
+		// Creates uncommitted copy
 		return std::make_unique<FastIndexText<T>>(*this);
 	}
 	IdSet::Ptr Select(FtCtx::Ptr ctx, FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses&&, FtUseExternStatuses,
@@ -68,8 +68,7 @@ protected:
 	template <typename MergeType, typename F>
 	void appendMergedIds(MergeType& merged, size_t releventDocs, F&& appender);
 	template <typename MergeType>
-	typename MergeType::iterator unstableRemoveIf(MergeType& md, const int minRelevancy, double scalingFactor, size_t& releventDocs,
-												  int& cnt);
+	typename MergeType::iterator unstableRemoveIf(MergeType& md, int minRelevancy, double scalingFactor, size_t& releventDocs, int& cnt);
 
 	std::unique_ptr<IDataHolder> holder_;
 };

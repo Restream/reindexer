@@ -134,7 +134,7 @@ NamespaceImpl::NamespaceImpl(const std::string& name, UpdatesObservers& observer
 	optimizationState_.store(NotOptimized);
 
 	// Add index and payload field for tuple of non indexed fields
-	IndexDef tupleIndexDef(kTupleName, {}, IndexStrStore, IndexOpts());
+	IndexDef tupleIndexDef(kTupleName, {}, IndexStrStore, IndexOpts().Dense());
 	addIndex(tupleIndexDef);
 
 	logPrintf(LogInfo, "Namespace::Construct (%s).Workers: %d, timeout: %d, tm: { state_token: 0x%08X, version: %d }", name_,
@@ -3195,7 +3195,7 @@ IdType NamespaceImpl::createItem(size_t realSize) {
 	} else {
 		id = items_.size();
 		if (id == std::numeric_limits<IdType>::max()) {
-			throw Error(errParams, "Max item ID value is reached: %d", id);
+			throw Error(errParams, "Max item ID value is reached. Unable to store more than %d items in '%s' namespace", id, name_);
 		}
 		items_.emplace_back(PayloadValue(realSize));
 	}

@@ -399,8 +399,7 @@ const JsonNode& JsonNode::operator[](std::string_view key) const {
 			return v;
 		}
 	}
-	// TODO: Remove NOLINT after pyreindexer update. Issue #1736
-	static JsonNode empty_node{{JsonTag(JSON_EMPTY)}, nullptr, {}};	 // NOLINT(*EnumCastOutOfRange)
+	static JsonNode empty_node{JSON_EMPTY, nullptr, {}};
 	return empty_node;
 }
 

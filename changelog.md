@@ -1,3 +1,42 @@
+# Version 3.30.0 (29.11.2024)
+## Core
+- [fea] Optimized memory layout for `-tuple`-index (this slightly reduces memory consumation for any `reindexer` database)
+- [fea] Added [dragonbox](https://github.com/jk-jeon/dragonbox)/[fmt](https://github.com/fmtlib/fmt) instead of [double-conversion](https://github.com/google/double-conversion) for JSON floating point number serialization (the dragonbox serialization works about 2 times faster)
+- [fix] Fixed assertion in aggregations by `composite indexes`
+
+## Fulltext
+- [fea] Added basic support for Korean symbols
+- [fea] Added basic support for Japanese Katakana symbols
+- [fea] Added alternative tokenizer based on [friso](https://github.com/lionsoul2014/friso) for Chinese language splitting. [Read more...](fulltext.md#text-splitters). Current implementation works only for chinese and english symbols and will be extended in further releases
+
+## Reindexer server
+- [fix] Fixed logical operations(`OR`/`NOT`) handling for `joined`-queries in `JSON DSL` (method `POST /api/v1/db/<db>/query`)
+- [fix] Unified `int<->double` conversion logic for `JSON`/`MgsPack`/`Protobuf`
+
+## Reindexer tool
+- [fix] Fixed `\bench` command for `ucproto`-mode
+
+## CPP client
+- [fix] Fixed `precepts` in client's transaction
+- [fix] Fixed `DWITHIN` condition serialization for select `Query`-object
+- [fix] Fixed fulltext select functions serialization for select `Query`-object
+- [fix] Fixed `SetObject` serialization for update `Query`-object
+
+## Build
+- [fix] Fixed build for `MinGW 14.1.0/14.2.0`
+
+## Deploy
+- [upd] Added deploy for `Fedora 41` packages
+- [upd] Deprecated deploy for `Fedora 39` packages
+
+## Face
+- [fea] Added disabled mode for selectors on the NS config page
+- [fea] Added `column_size` field to Memory statistics table
+- [fix] Fixed scroll position on NS menu 
+- [fix] Fixed doubled requests on Indexes and Items pages
+- [fix] Fixed wrong info message about disabled statistics when the database do not have Namespaces
+- [fix] Fixed last row position in Memory statistics table
+
 # Version 3.29.0 (08.10.2024)
 ## Core
 - [fea] Added Chinese and Japanese symbols into locale. Currently those symbols will be indexed by fulltext engine (using space-separators), but proper tokenization for the languages will be added in the separate release

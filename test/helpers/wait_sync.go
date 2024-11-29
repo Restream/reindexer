@@ -16,7 +16,7 @@ func WaitForSyncWithMaster(t *testing.T, master *reindexer.Reindexer, slave *rei
 	var masterBadLsn reindexer.LsnT
 	var slaveBadLsn reindexer.LsnT
 
-	for i := 0; i < 300; i++ {
+	for i := 0; i < 450; i++ {
 
 		complete = true
 

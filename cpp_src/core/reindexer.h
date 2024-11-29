@@ -15,7 +15,6 @@ using std::chrono::milliseconds;
 class ReindexerImpl;
 class IUpdatesObserver;
 class IClientsStats;
-class ProtobufSchema;
 class UpdatesFilters;
 
 /// The main Reindexer interface. Holds database object<br>
@@ -32,7 +31,7 @@ public:
 
 	/// Create Reindexer database object
 	/// @param cfg - general database options
-	Reindexer(ReindexerConfig cfg = ReindexerConfig());
+	explicit Reindexer(ReindexerConfig cfg = ReindexerConfig());
 
 	/// Destroy Reindexer database object
 	~Reindexer();
@@ -281,6 +280,7 @@ public:
 
 	typedef QueryResults QueryResultsT;
 	typedef Item ItemT;
+	typedef Transaction TransactionT;
 
 	Error DumpIndex(std::ostream& os, std::string_view nsName, std::string_view index);
 

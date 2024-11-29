@@ -44,7 +44,7 @@ else()
   option(LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set(REINDEXER_VERSION_DEFAULT "3.29.0")
+set(REINDEXER_VERSION_DEFAULT "3.30.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -302,6 +302,7 @@ add_library(${TARGET} STATIC ${HDRS} ${SRCS} ${VENDORS})
 add_definitions(-DREINDEX_CORE_BUILD=1)
 add_definitions(-DFMT_HEADER_ONLY=1)
 add_definitions(-DSPDLOG_FMT_EXTERNAL=1)
+add_definitions(-DFMT_USE_FULL_CACHE_DRAGONBOX=1)
 
 # add_definitions(-DREINDEX_FT_EXTRA_DEBUG=1)
 
@@ -464,6 +465,13 @@ set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 find_package(Threads REQUIRED ON)
 list(APPEND REINDEXER_LIBRARIES ${CMAKE_THREAD_LIBS_INIT} )
 
+include(CMakeRC)
+
+file(GLOB CHINA_DICT LIST_DIRECTORIES false ${REINDEXER_SOURCE_PATH}/resource/china_dict/*.lex)
+cmrc_add_resource_library(friso_dict_resources WHENCE ${REINDEXER_SOURCE_PATH}/resource ${CHINA_DICT})
+list(APPEND REINDEXER_LIBRARIES friso_dict_resources)
+add_dependencies(${TARGET} friso_dict_resources)
+
 if(WITH_CPPTRACE)
   ExternalProject_Add(
     cpptrace_lib
@@ -571,7 +579,6 @@ endif()
 if(NOT REINDEXER_VERSION_CUR_H STREQUAL REINDEXER_VERSION_H)
   file(WRITE ${PROJECT_BINARY_DIR}/reindexer_version.h ${REINDEXER_VERSION_H})
 endif()
-
 include_directories(${PROJECT_BINARY_DIR})
 
 string ( REGEX REPLACE "v([0-9]+)\\.([0-9]+)\\.([0-9]+)(.*)" "\\1.\\2.\\3" REINDEXER_VERSION ${REINDEXER_VERSION_FULL})

@@ -1262,9 +1262,13 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const std::vector<AggregateEn
 					fields.push_back(ns_->indexes_[idx]->Fields().getTagsPath(0));
 				} else if (ag.Type() == AggFacet && ag.Fields().size() > 1 && ns_->indexes_[idx]->Opts().IsArray()) {
 					throw Error(errQueryExec, "Multifield facet cannot contain an array field");
-				} else if (ag.Type() == AggDistinct && IsComposite(ns_->indexes_[idx]->Type())) {
-					fields = ns_->indexes_[idx]->Fields();
-					compositeIndexFields = true;
+				} else if (IsComposite(ns_->indexes_[idx]->Type())) {
+					if (ag.Type() == AggDistinct) {
+						fields = ns_->indexes_[idx]->Fields();
+						compositeIndexFields = true;
+					} else {
+						throw Error(errQueryExec, "Only DISTINCT aggregations are allowed over composite fields");
+					}
 				}
 
 				else {

@@ -5,11 +5,6 @@
 
 namespace reindexer {
 
-void IDataHolder::SetConfig(FtFastConfig* cfg) {
-	cfg_ = cfg;
-	steps.reserve(cfg_->maxRebuildSteps + 1);
-}
-
 size_t IDataHolder::GetMemStat() {
 	size_t res = 0;
 	for (auto& step : steps) {
@@ -31,7 +26,7 @@ void IDataHolder::Clear() {
 	rowId2Vdoc_.clear();
 }
 
-std::string IDataHolder::Dump() {
+std::string IDataHolder::Dump() const {
 	std::stringstream ss;
 	ss << "Holder dump: step count: " << steps.size() << std::endl;
 	ss << "Status: ";
@@ -40,7 +35,7 @@ std::string IDataHolder::Dump() {
 			ss << "\"create new\"";
 			break;
 		case RecommitLast:
-			ss << "\"recomit last\"";
+			ss << "\"recommit last\"";
 			break;
 		case FullRebuild:
 			ss << "\"full rebuild\"";
@@ -71,7 +66,7 @@ void IDataHolder::throwStepsOverflow() const {
 				steps.size() - 1, kWordIdMaxStepVal);
 }
 
-WordIdType IDataHolder::findWord(std::string_view word) {
+WordIdType IDataHolder::findWord(std::string_view word) const {
 	WordIdType id;
 	id.SetEmpty();
 	if (steps.size() <= 1) {
@@ -109,7 +104,7 @@ void DataHolder<IdCont>::StartCommit(bool complete_updated) {
 		status_ = FullRebuild;
 
 		Clear();
-	} else if (NeedRecomitLast()) {
+	} else if (NeedRecommitLast()) {
 		status_ = RecommitLast;
 		words_.erase(words_.begin() + steps.back().wordOffset_, words_.end());
 
@@ -125,12 +120,23 @@ void DataHolder<IdCont>::StartCommit(bool complete_updated) {
 		status_ = CreateNew;
 		steps.emplace_back(CommitStep{});
 	}
-	return;
 }
 
 template <typename IdCont>
 void DataHolder<IdCont>::Process(size_t fieldSize, bool multithread) {
 	DataProcessor<IdCont>{*this, fieldSize}.Process(multithread);
+}
+
+template <typename IdCont>
+DataHolder<IdCont>::DataHolder(FtFastConfig* c) {
+	cfg_ = c;
+	if (cfg_->splitterType == FtFastConfig::Splitter::Fast) {
+		splitter_ = make_intrusive<FastTextSplitter>(cfg_->extraWordSymbols);
+	} else if (cfg_->splitterType == FtFastConfig::Splitter::Friso) {
+		splitter_ = make_intrusive<FrisoTextSplitter>();
+	} else {
+		assertrx_throw(false);
+	}
 }
 
 template class DataHolder<PackedIdRelVec>;

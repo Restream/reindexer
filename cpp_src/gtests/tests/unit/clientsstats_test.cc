@@ -190,9 +190,10 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 		resultFilters.FromJSON(clientsStats["updates_filter"]);
 		EXPECT_EQ(resultFilters, filters);
 
-		err = reindexer.CommitTransaction(tx1);
+		CoroQueryResults resultDummy1, resultDummy2;
+		err = reindexer.CommitTransaction(tx1, resultDummy1);
 		ASSERT_TRUE(err.ok()) << err.what();
-		err = reindexer.CommitTransaction(tx2);
+		err = reindexer.CommitTransaction(tx2, resultDummy2);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		finished = true;
@@ -343,9 +344,10 @@ TEST_F(ClientsStatsApi, TxCountLimitation) {
 		ASSERT_EQ(txs.size(), kMaxTxCount);
 		ASSERT_EQ(StatsTxCount(reindexer), kMaxTxCount);
 
+		CoroQueryResults qrDummy;
 		for (size_t i = 0; i < kMaxTxCount / 2; ++i) {
 			if (i % 2) {
-				err = reindexer.CommitTransaction(txs[i]);
+				err = reindexer.CommitTransaction(txs[i], qrDummy);
 			} else {
 				err = reindexer.RollBackTransaction(txs[i]);
 			}
@@ -362,7 +364,7 @@ TEST_F(ClientsStatsApi, TxCountLimitation) {
 		for (size_t i = 0; i < txs.size(); ++i) {
 			if (!txs[i].IsFree() && txs[i].Status().ok()) {
 				if (i % 2) {
-					err = reindexer.CommitTransaction(txs[i]);
+					err = reindexer.CommitTransaction(txs[i], qrDummy);
 				} else {
 					err = reindexer.RollBackTransaction(txs[i]);
 				}

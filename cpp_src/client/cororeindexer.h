@@ -32,7 +32,7 @@ public:
 	typedef std::function<void(const Error& err)> Completion;
 
 	/// Create Reindexer database object
-	CoroReindexer(const ReindexerConfig& = ReindexerConfig());
+	explicit CoroReindexer(const ReindexerConfig& = ReindexerConfig());
 	/// Destroy Reindexer database object
 	~CoroReindexer();
 	CoroReindexer(const CoroReindexer&) = delete;
@@ -180,7 +180,8 @@ public:
 	CoroTransaction NewTransaction(std::string_view nsName);
 	/// Commit transaction - transaction will be deleted after commit
 	/// @param tr - transaction to commit
-	Error CommitTransaction(CoroTransaction& tr);
+	/// @param result - QueryResults with IDs of items changed by tx.
+	Error CommitTransaction(CoroTransaction& tr, CoroQueryResults& result);
 	/// RollBack transaction - transaction will be deleted after rollback
 	/// @param tr - transaction to rollback
 	Error RollBackTransaction(CoroTransaction& tr);
@@ -196,6 +197,7 @@ public:
 	typedef CoroQueryResults QueryResultsT;
 	typedef Item ItemT;
 	typedef ReindexerConfig ConfigT;
+	typedef CoroTransaction TransactionT;
 
 private:
 	CoroReindexer(CoroRPCClient* impl, InternalRdxContext&& ctx) : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}

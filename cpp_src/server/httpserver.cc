@@ -1,7 +1,5 @@
 #include "httpserver.h"
 #include <sys/stat.h>
-#include <iomanip>
-#include <sstream>
 #include "base64/base64.h"
 #include "core/cjson/csvbuilder.h"
 #include "core/cjson/jsonbuilder.h"

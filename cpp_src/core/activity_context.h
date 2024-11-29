@@ -93,12 +93,7 @@ public:
 	RdxActivityContext(std::string_view activityTracer, std::string_view user, std::string_view query, ActivityContainer&,
 					   int ipConnectionId, bool clientState = false);
 	RdxActivityContext(RdxActivityContext&&);
-	~RdxActivityContext() {
-		if (parent_) {
-			parent_->Unregister(this);
-		}
-		assertrx(refCount_.load(std::memory_order_relaxed) == 0u);
-	}
+	~RdxActivityContext();
 	operator Activity() const;
 
 	RdxActivityContext(const RdxActivityContext&) = delete;

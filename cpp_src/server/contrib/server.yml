@@ -4,7 +4,7 @@ info:
     **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
     Reindexer's goal is to provide fast search with complex queries.
     Reindexer is compact, fast and it does not have heavy dependencies.
-  version: "3.29.0"
+  version: "3.30.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -3122,6 +3122,13 @@ definitions:
             default: 95
             minimum: 0
             maximum: 500
+      splitter:
+        type: string
+        description: "Text tokenization algorithm. 'fast' - splits text by spaces, special characters and unsupported UTF-8 symbols. Each token is a combination of letters from supported UTF-8 subset, numbers and extra word symbols. 'friso' - algorithm based on mmseg for Chinese and English"
+        enum:
+        - "fast"
+        - "friso"
+        default: "fast"
 
   FulltextFieldConfig:
     type: object

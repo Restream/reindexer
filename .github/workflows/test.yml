@@ -47,8 +47,11 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-20.04, ubuntu-22.04, macos-13]
+        os: [ubuntu-22.04, macos-13]
         include:
+          - os: ubuntu-24.04
+            cc: gcc-12
+            cxx: g++-12
           - os: ubuntu-latest
             sanitizer: ASAN
             cc: gcc-10
@@ -111,7 +114,7 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-20.04, ubuntu-22.04, macos-13]
+        os: [ubuntu-22.04, ubuntu-24.04, macos-13]
         test: ['C++', 'GO']
         include:
           - os: ubuntu-latest
@@ -188,7 +191,7 @@ jobs:
   test-pyreindexer:
     strategy:
       matrix:
-        os: [ubuntu-20.04, ubuntu-22.04]
+        os: [ubuntu-22.04, ubuntu-24.04]
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: build

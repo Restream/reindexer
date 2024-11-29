@@ -362,40 +362,6 @@ void ServerControl::Drop() {
 	interface.reset();
 }
 
-ReplicationTestState ServerControl::Interface::GetState(std::string_view ns) {
-	Query qr = Query("#memstats").Where("name", CondEq, p_string(&ns));
-	BaseApi::QueryResultsType res(api.reindexer.get());
-	auto err = api.reindexer->Select(qr, res);
-	EXPECT_TRUE(err.ok()) << err.what();
-	ReplicationTestState state;
-	for (auto it : res) {
-		WrSerializer ser;
-		err = it.GetJSON(ser, false);
-		EXPECT_TRUE(err.ok()) << err.what();
-		gason::JsonParser parser;
-		auto root = parser.Parse(ser.Slice());
-		bool isSlave = root["replication"]["slave_mode"].As<bool>();
-		state.ownLsn.FromJSON(root["replication"]["last_lsn_v2"]);
-		if (!isSlave) {
-			state.lsn.FromJSON(root["replication"]["last_lsn_v2"]);
-		} else {
-			state.lsn.FromJSON(root["replication"]["origin_lsn"]);
-		}
-
-		state.dataCount = root["replication"]["data_count"].As<int64_t>();
-		state.dataHash = root["replication"]["data_hash"].As<uint64_t>();
-		state.slaveMode = root["replication"]["slave_mode"].As<bool>();
-		state.updateUnixNano = root["replication"]["updated_unix_nano"].As<uint64_t>();
-
-		/*		std::cout << "\n"
-					  << std::hex << "lsn = " << int64_t(state.lsn) << std::dec << " dataCount = " << state.dataCount
-					  << " dataHash = " << state.dataHash << " [" << ser.c_str() << "] is slave = " << state.slaveMode << "\n"
-					  << std::endl;
-		*/
-	}
-	return state;
-}
-
 void ServerControl::Interface::ForceSync() {
 	Error err;
 	auto item = api.NewItem("#config");

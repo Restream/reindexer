@@ -137,8 +137,10 @@ public:
 			err = tr.Upsert(std::move(item));
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
-		auto err = rx.CommitTransaction(tr);
+		reindexer::client::SyncCoroQueryResults qr(&rx);
+		auto err = rx.CommitTransaction(tr, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), count);
 	}
 
 	std::function<void(ServerControl&, int, unsigned int, std::string)> AddRow1msSleep = [](ServerControl& masterControl, int from,
@@ -1344,7 +1346,7 @@ TEST_P(ServerIdChange, UpdateServerId) {
 	TestNamespace1 ns(master);
 
 	const int startId = 0;
-	const int n2 = 20000;
+	const int n2 = 1000;
 	const int dn = 10;
 
 	AddFun(master, dataStore, startId, n2);
@@ -1397,8 +1399,6 @@ TEST_P(ServerIdChange, UpdateServerId) {
 		}
 
 		std::vector<std::map<int64_t, std::string>> results;
-
-		Query qr = Query("ns1").Sort("id", true);
 
 		for (size_t i = 0; i < nodes.size(); i++) {
 			results.emplace_back();

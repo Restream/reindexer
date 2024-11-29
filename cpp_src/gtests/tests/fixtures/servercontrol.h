@@ -50,15 +50,6 @@ struct ReplicationConfigTest {
 	int serverId_;
 };
 
-struct ReplicationTestState {
-	reindexer::lsn_t lsn;
-	reindexer::lsn_t ownLsn;
-	uint64_t dataHash = 0;
-	size_t dataCount = 0;
-	bool slaveMode = false;
-	uint64_t updateUnixNano = 0;
-};
-
 using BaseApi = ReindexerTestApi<reindexer::client::SyncCoroReindexer>;
 
 class ServerControl {
@@ -101,7 +92,7 @@ public:
 		// Make this server slave
 		void MakeSlave(const ReplicationConfigTest& config);
 		// check with master or slave that sync complete
-		ReplicationTestState GetState(std::string_view ns);
+		ReplicationTestState GetState(std::string_view ns) { return api.GetReplicationState(ns); }
 		// Force sync (restart slave's replicator)
 		void ForceSync();
 		// get server config from file

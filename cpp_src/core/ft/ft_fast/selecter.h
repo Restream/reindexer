@@ -15,7 +15,7 @@ struct MergeInfo {
 };
 
 struct MergeDataBase : public std::vector<MergeInfo> {
-	virtual ~MergeDataBase() {}
+	virtual ~MergeDataBase() = default;
 	int maxRank = 0;
 };
 
@@ -26,27 +26,27 @@ struct MergeData : public MergeDataBase {
 };
 
 template <typename IdCont>
-class Selecter {
+class Selector {
 	typedef fast_hash_map<WordIdType, std::pair<size_t, size_t>, WordIdTypeHash, WordIdTypeEqual, WordIdTypeLess> FoundWordsType;
 
 public:
-	Selecter(DataHolder<IdCont>& holder, size_t fieldSize, int maxAreasInDoc)
+	Selector(DataHolder<IdCont>& holder, size_t fieldSize, int maxAreasInDoc)
 		: holder_(holder), fieldSize_(fieldSize), maxAreasInDoc_(maxAreasInDoc) {}
 
 	// Intermediate information about document found at current merge step. Used only for queries with 2 or more terms
 	struct MergedIdRel {
 		explicit MergedIdRel(IdRelType&& c, int r, int q) : next(std::move(c)), rank(r), qpos(q) {}
 		explicit MergedIdRel(int r, int q) : rank(r), qpos(q) {}
-		MergedIdRel(MergedIdRel&&) = default;
+		MergedIdRel(MergedIdRel&&) noexcept = default;
 		IdRelType cur;	 // Ids & pos of matched document of current step
 		IdRelType next;	 // Ids & pos of matched document of next step
-		int32_t rank;	 // Rank of curent matched document
+		int32_t rank;	 // Rank of current matched document
 		int32_t qpos;	 // Position in query
 	};
 
 	struct MergedIdRelGroup : public MergedIdRel {
 		explicit MergedIdRelGroup(IdRelType&& c, int r, int q) : MergedIdRel(r, q), posTmp(std::move(c)) {}
-		MergedIdRelGroup(MergedIdRelGroup&&) = default;
+		MergedIdRelGroup(MergedIdRelGroup&&) noexcept = default;
 		IdRelType posTmp;  // Group only. Collect all positions for subpatterns and index into vector we merged with
 	};
 
@@ -55,7 +55,7 @@ public:
 		using TypeTParam = PosT;
 		MergedIdRelGroupArea(IdRelType&& c, int r, int q, RVector<std::pair<PosT, int>, 4>&& p)
 			: MergedIdRel(std::move(c), r, q), posTmp(std::move(p)) {}
-		MergedIdRelGroupArea(MergedIdRelGroupArea&&) = default;
+		MergedIdRelGroupArea(MergedIdRelGroupArea&&) noexcept = default;
 
 		RVector<std::pair<PosT, int>, 4>
 			posTmp;	 // For group only. Collect all positions for subpatterns and the index in the vector with which we merged
@@ -71,7 +71,6 @@ private:
 		const IdCont* vids;		   // indexes of documents (vdoc) containing the given word + position + field
 		std::string_view pattern;  // word,translit,.....
 		int proc;
-		int16_t wordLen;
 	};
 
 	struct TermRankInfo {
@@ -150,13 +149,13 @@ private:
 		}
 
 		std::vector<FtVariantEntry> variants;
-		// Variants with low relevancy. For example, short terms, recieved from stemmers.
+		// Variants with low relevancy. For example, short terms, received from stemmers.
 		// Those variants will be handled separately from main variants array (and some of them will probably be excluded)
 		RVector<FtBoundVariantEntry, 4> lowRelVariants;
 
 		// Found words map, shared between all the terms
 		// The main purpose is to detect unique words and also reuse already allocated map buckets
-		// This map is rellevant only for sequential varinants/terms handling
+		// This map is relevant only for sequential variants/terms handling
 		FoundWordsType foundWordsSharedOR;
 		// Optional words map for AND operations.
 		// It will be cleared for each variant, so it's separated from OR/NOT words map
@@ -310,8 +309,5 @@ private:
 	size_t fieldSize_;
 	int maxAreasInDoc_;
 };
-
-extern template class Selecter<PackedIdRelVec>;
-extern template class Selecter<IdRelVec>;
 
 }  // namespace reindexer

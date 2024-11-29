@@ -154,7 +154,8 @@ public:
 	SyncCoroTransaction NewTransaction(std::string_view nsName);
 	/// Commit transaction - transaction will be deleted after commit
 	/// @param tr - transaction to commit
-	Error CommitTransaction(SyncCoroTransaction& tr);
+	/// @param result - QueryResults with IDs of items changed by tx.
+	Error CommitTransaction(SyncCoroTransaction& tr, SyncCoroQueryResults& result);
 	/// RollBack transaction - transaction will be deleted after rollback
 	/// @param tr - transaction to rollback
 	Error RollBackTransaction(SyncCoroTransaction& tr);

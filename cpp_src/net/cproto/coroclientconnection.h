@@ -140,7 +140,7 @@ private:
 	};
 
 	template <typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams& opts, Args& args, const std::string_view& val, const Argss&... argss) {
+	inline CoroRPCAnswer call(const CommandParams& opts, Args& args, std::string_view val, const Argss&... argss) {
 		args.push_back(Variant(p_string(&val)));
 		return call(opts, args, argss...);
 	}

@@ -2,6 +2,7 @@
 #include "transactionimpl.h"
 namespace reindexer {
 
+Transaction::Transaction() = default;
 Transaction::Transaction(const std::string& nsName, const PayloadType& pt, const TagsMatcher& tm, const FieldsSet& pf,
 						 std::shared_ptr<const Schema> schema)
 	: impl_(new TransactionImpl(nsName, pt, tm, pf, std::move(schema))) {}
@@ -9,8 +10,8 @@ Transaction::Transaction(const std::string& nsName, const PayloadType& pt, const
 Transaction::Transaction(const Error& err) : status_(err) {}
 
 Transaction::~Transaction() = default;
-Transaction::Transaction(Transaction&&) noexcept = default;
-Transaction& Transaction::operator=(Transaction&&) noexcept = default;
+Transaction::Transaction(Transaction&& other) noexcept = default;
+Transaction& Transaction::operator=(Transaction&& other) noexcept = default;
 
 const std::string& Transaction::GetName() const {
 	static std::string empty;

@@ -21,7 +21,7 @@ private:
 	using WordVariant = std::variant<std::string_view, WordIdType>;
 
 	static_assert(std::is_trivially_destructible_v<WordVariant>, "Expecting trivial destructor");
-	static_assert(sizeof(WordVariant) <= 24, "Expecting same size as correspondig union");
+	static_assert(sizeof(WordVariant) <= 24, "Expecting same size as corresponding union");
 
 	class WordsVector : private std::vector<WordVariant> {
 		using Base = std::vector<WordVariant>;
@@ -84,7 +84,7 @@ private:
 		std::vector<std::thread> threads_;
 	};
 
-	[[nodiscard]] size_t buildWordsMap(words_map& m, bool multithread);
+	[[nodiscard]] size_t buildWordsMap(words_map& m, bool multithread, intrusive_ptr<const ISplitter> textSplitter);
 	void buildVirtualWord(std::string_view word, words_map& words_um, VDocIdType docType, int rfield, size_t insertPos,
 						  std::vector<std::string>& container);
 	void buildTyposMap(uint32_t startPos, const WordsVector& preprocWords);
@@ -97,8 +97,5 @@ private:
 	DataHolder<IdCont>& holder_;
 	size_t fieldSize_;
 };
-
-extern template class DataProcessor<PackedIdRelVec>;
-extern template class DataProcessor<IdRelVec>;
 
 }  // namespace reindexer

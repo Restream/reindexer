@@ -53,7 +53,7 @@ public:
 	Error GetSqlSuggestions(const std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions);
 	Error Status(const InternalRdxContext& ctx);
 	SyncCoroTransaction NewTransaction(std::string_view nsName, const InternalRdxContext& ctx);
-	Error CommitTransaction(SyncCoroTransaction& tr, const InternalRdxContext& ctx);
+	Error CommitTransaction(SyncCoroTransaction& tr, SyncCoroQueryResults& results, const InternalRdxContext& ctx);
 	Error RollBackTransaction(SyncCoroTransaction& tr, const InternalRdxContext& ctx);
 
 private:

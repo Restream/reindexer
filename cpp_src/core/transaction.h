@@ -15,11 +15,11 @@ class Transaction {
 public:
 	using time_point = system_clock_w::time_point;
 
+	Transaction();
 	Transaction(const std::string& nsName, const PayloadType& pt, const TagsMatcher& tm, const FieldsSet& pf,
 				std::shared_ptr<const Schema> schema);
 	Transaction(const Error& err);
 	~Transaction();
-	Transaction() = default;
 	Transaction(Transaction&&) noexcept;
 	Transaction& operator=(Transaction&&) noexcept;
 

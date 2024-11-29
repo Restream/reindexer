@@ -1,8 +1,12 @@
 #include <gtest/gtest-param-test.h>
+#include <fstream>
 #include <unordered_map>
 #include "core/cjson/jsonbuilder.h"
+#include "core/ft/ft_fast/frisosplitter.h"
 #include "core/ft/limits.h"
 #include "ft_api.h"
+#include "gtests/tests/tests_data.h"
+#include "tools/fsops.h"
 #include "tools/logger.h"
 #include "yaml-cpp/yaml.h"
 
@@ -37,6 +41,16 @@ protected:
 			ASSERT_TRUE(err.ok()) << err.what();
 			rt.Upsert(ns, item);
 		}
+	}
+	template <typename T>
+	std::string PrintArray(const T& data, const std::string& name) {
+		std::stringstream stream;
+		stream << name << " :";
+		for (const auto& v : data) {
+			stream << v << ", ";
+		}
+		stream << std::endl;
+		return stream.str();
 	}
 };
 
@@ -1849,6 +1863,162 @@ TEST_P(FTGenericApi, StopWordsWithMorphemes) {
 	CheckResults("*на*", {}, false);
 	CheckResults("на~", {}, false);
 	CheckResults("на", {}, false);
+}
+
+TEST_P(FTGenericApi, FrisoTest) {
+	auto splitter = reindexer::make_intrusive<reindexer::FrisoTextSplitter>();
+	gason::JsonParser parser;
+	auto frisoCorpusPath = reindexer::fs::JoinPath(std::string(kTestsDataPath), "friso/friso_corpus.json");
+	std::ifstream t(frisoCorpusPath);
+	ASSERT_TRUE(t.is_open());
+	std::string json((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
+	auto root = parser.Parse(reindexer::giftStr(json));
+	auto task = splitter->CreateTask();
+	for (auto& elem : root["result"]) {
+		int id = elem["id"].As<int>();
+		std::string str = elem["str"].As<std::string>();
+		std::vector<std::string> res;
+		for (auto& word : elem["words"]) {
+			res.push_back(word.As<std::string>());
+		}
+		task->SetText(str);
+		const std::vector<std::string_view>& words = task->GetResults();
+		ASSERT_EQ(words.size(), res.size()) << "id=" << id << " " << PrintArray(words, "words ") << " " << PrintArray(res, "res ");
+		for (size_t j = 0; j < words.size(); j++) {
+			ASSERT_EQ(words[j], res[j]) << "id=" << id << " j=" << j << " splitWords[j]=" << words[j] << " res[j]=" << res[j];
+		}
+	}
+}
+
+TEST_P(FTGenericApi, FrisoTestSelect) {
+	reindexer::FtFastConfig cfg = GetDefaultConfig();
+	cfg.stopWords = {};
+	cfg.splitterType = reindexer::FtFastConfig::Splitter::Friso;
+	Init(cfg);
+
+	std::unordered_map<std::string, std::set<int>> index;
+	std::vector<std::string> key;
+	gason::JsonParser parser;
+	auto frisoCorpusPath = reindexer::fs::JoinPath(std::string(kTestsDataPath), "friso/friso_corpus.json");
+	std::ifstream t(frisoCorpusPath);
+	ASSERT_TRUE(t.is_open());
+	std::string json((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
+	auto root = parser.Parse(reindexer::giftStr(json));
+	for (auto& elem : root["result"]) {
+		int id = elem["id"].As<int>();
+		std::string str = elem["str"].As<std::string>();
+		Add(str);
+		std::vector<std::string> res;
+		for (auto& word : elem["words"]) {
+			std::string w = word.As<std::string>();
+			index[w].insert(id);
+		}
+	}
+	key.reserve(index.size());
+	for (const auto& v : index) {
+		key.emplace_back(v.first);
+	}
+	std::vector<std::string> testData = {
+		"各方", "硫胺素", "求精", "花腔",	  "下去", "插花", "推演", "怎",	  "野",		 "6折",	 "象征",	   "work",	 "说明",
+		"sv",	"詳",	  "u91",  "悬壶济世", "均有", "鬱",	  "探究", "含磷", "束手",	 "櫃",	 "中央社",	   "吸力",	 "oxy",
+		"接受", "富豪",	  "療",	  "820",	  "授奖", "姻",	  "潛",	  "tei",  "限值",	 "西部", "pagination", "paiwan", "咖啡因",
+		"俊逸", "假的",	  "pnh",  "245mm",	  "哭著", "谷底", "汆",	  "意表", "liuchiu", "殆",	 "mhw5500fw"};
+
+	for (unsigned int i = 0; i < testData.size(); i++) {
+		std::string findWord = testData[i];
+		if (findWord == "~" || findWord == "*" || findWord == "-" || findWord == "<" || findWord == ">" || findWord == "," ||
+			findWord == "」") {
+			continue;
+		}
+
+		reindexer::QueryResults res = SimpleSelect("=" + findWord, false);
+		std::set<int> ids;
+		for (auto r : res) {
+			auto item = r.GetItem();
+			int val = item["id"].As<int>();
+			ids.insert(val);
+		}
+		std::set<int>& wordDocs = index[findWord];
+		std::vector<int> diff;
+		std::set_symmetric_difference(ids.begin(), ids.end(), wordDocs.begin(), wordDocs.end(), std::back_inserter(diff));
+		ASSERT_TRUE(diff.empty()) << "i=" << i << "findWord=" << findWord << "" << PrintArray(ids, "find ") << " "
+								  << PrintArray(wordDocs, "reference ");
+	}
+}
+
+TEST_P(FTGenericApi, FrisoTextPostprocess) {
+	reindexer::FtFastConfig cfg = GetDefaultConfig();
+	cfg.splitterType = reindexer::FtFastConfig::Splitter::Friso;
+	cfg.stopWords = {};
+	cfg.maxAreasInDoc = 10;
+	Init(cfg);
+	Add("以下為聯絡我們訊息，歡迎大家瀏覽查閱。");
+	// words of sentence
+	//{"以下", "為", "聯", "絡", "我", "們", "訊", "息", "，",	"歡", "迎", "大家", "瀏", "覽", "查", "閱", "。"};
+
+	{
+		reindexer::QueryResults res = SimpleSelect("為", true);
+		ASSERT_EQ(res.Count(), 1);
+		auto item = res.begin().GetItem();
+		std::string json = item["ft1"].As<std::string>();
+		ASSERT_EQ(json, "以下!為!聯絡我們訊息，歡迎大家瀏覽查閱。");
+	}
+	{
+		reindexer::QueryResults res = SimpleSelect("大家", true);
+		ASSERT_EQ(res.Count(), 1);
+		auto item = res.begin().GetItem();
+		std::string json = item["ft1"].As<std::string>();
+		ASSERT_EQ(json, "以下為聯絡我們訊息，歡迎!大家!瀏覽查閱。");
+	}
+
+	{
+		reindexer::QueryResults res = SimpleSelect("大家 瀏", true);
+		ASSERT_EQ(res.Count(), 1);
+		auto item = res.begin().GetItem();
+		std::string json = item["ft1"].As<std::string>();
+		ASSERT_EQ(json, "以下為聯絡我們訊息，歡迎!大家瀏!覽查閱。");
+	}
+
+	{
+		auto q{reindexer::Query("nm1").Where("ft3", CondEq, "大家").WithRank()};
+		reindexer::QueryResults res;
+		q.AddFunction("ft3 = snippet(<,>,2,2,'#','#')");
+		auto err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(res.Count(), 1);
+		auto item = res.begin().GetItem();
+		std::string json = item["ft1"].As<std::string>();
+		ASSERT_EQ(json, "#歡迎<大家>瀏覽#");
+	}
+
+	{
+		std::vector<std::pair<std::string, std::string>> tests = {{"為", "{[2,3]<b>為</b>!"}, {"大家", "{[12,14]<b>大家</b>!"}};
+		for (const auto& t : tests) {
+			auto q{reindexer::Query("nm1").Where("ft3", CondEq, t.first).WithRank()};
+			reindexer::QueryResults res;
+			q.AddFunction("ft3 = snippet_n('<b>','</b>',0,0,pre_delim='{',post_delim='!', with_area=1, left_bound='|',right_bound='|')");
+			auto err = rt.reindexer->Select(q, res);
+			EXPECT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(res.Count(), 1);
+			auto item = res.begin().GetItem();
+			std::string json = item["ft1"].As<std::string>();
+			ASSERT_EQ(json, t.second);
+		}
+	}
+	{
+		auto q{reindexer::Query("nm1").Where("ft3", CondEq, "大家 查").WithRank()};
+		reindexer::QueryResults res;
+		q.AddFunction("ft3 = debug_rank()");
+		auto err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(res.Count(), 1);
+		auto item = res.begin().GetItem();
+		std::string json = item["ft1"].As<std::string>();
+		ASSERT_EQ(json,
+				  "以下為聯絡我們訊息，歡迎{term_rank:90, term:大家, pattern:大家, bm25_norm:0.92, term_len_boost:1, position_rank:0.9889, "
+				  "norm_dist:0, proc:100, full_match_boost:0} 大家瀏覽{term_rank:77, term:查, pattern:查, bm25_norm:0.92, "
+				  "term_len_boost:0.85, position_rank:0.9886, norm_dist:0, proc:100, full_match_boost:0} 查閱。");
+	}
 }
 
 INSTANTIATE_TEST_SUITE_P(, FTGenericApi,
