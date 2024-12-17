@@ -1,7 +1,6 @@
 #pragma once
 
 #include <gtest/gtest.h>
-#include <deque>
 #include <map>
 #include "gason/gason.h"
 #include "reindexer_api.h"

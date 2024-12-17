@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cluster/stats/replicationstats.h"
+#include "gtests/tests/gtest_cout.h"
 #include "gtests/tools.h"
 #include "replication_api.h"
 

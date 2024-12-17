@@ -26,12 +26,16 @@
 #if defined(__GNUC__) || defined(__clang__)
 #define RX_ATTR_ALWAYS_INLINE __attribute__((always_inline))
 #define RX_ALWAYS_INLINE inline RX_ATTR_ALWAYS_INLINE
-#if defined(__clang__) || defined(_WIN32) || defined(_WIN64)
+#if defined(__clang__)
 #define RX_PRE_LMBD_ALWAYS_INLINE
 #define RX_POST_LMBD_ALWAYS_INLINE RX_ATTR_ALWAYS_INLINE
 #else
-#define RX_PRE_LMBD_ALWAYS_INLINE RX_ATTR_ALWAYS_INLINE
 #define RX_POST_LMBD_ALWAYS_INLINE
+#if defined(__MINGW64__) && __GNUC__ < 14
+#define RX_PRE_LMBD_ALWAYS_INLINE
+#else
+#define RX_PRE_LMBD_ALWAYS_INLINE RX_ATTR_ALWAYS_INLINE
+#endif
 #endif
 #define RX_NO_INLINE __attribute__((noinline))
 #elif defined(_MSC_VER)

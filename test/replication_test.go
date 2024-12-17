@@ -125,6 +125,7 @@ func TestMasterSlaveSlaveNoStorage(t *testing.T) {
 			"http": u.Hostname() + ":" + strconv.Itoa(10001+i),
 			"rpc":  u.Host,
 			"db":   u.Path[1:],
+			"urpc": "none",
 		})
 	}
 
@@ -233,8 +234,9 @@ func serverUp(t *testing.T, cfg map[string]string, serverID int, ns []string) *r
 	opts = append(opts, reindexer.WithCreateDBIfMissing())
 	srvCfg := &rxConfig.ServerConfig{
 		Net: rxConfig.NetConf{
-			HTTPAddr: cfg["http"],
-			RPCAddr:  cfg["rpc"],
+			HTTPAddr:    cfg["http"],
+			RPCAddr:     cfg["rpc"],
+			UnixRPCAddr: cfg["urpc"],
 		},
 	}
 	opts = append(opts, reindexer.WithServerConfig(5*time.Second, srvCfg))

@@ -41,7 +41,6 @@ inline constexpr int format_as(WALRecType v) noexcept { return int(v); }
 class WrSerializer;
 class JsonBuilder;
 struct WALRecord;
-class SharedWALRecord;
 
 #ifdef REINDEX_WITH_V3_FOLLOWERS
 struct SharedWALRecord {

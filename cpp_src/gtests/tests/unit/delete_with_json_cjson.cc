@@ -1,8 +1,5 @@
-#include <iostream>
 #include <tuple>
-
 #include "get_pk_api.h"
-#include "tools/logger.h"
 
 #define SIMPLE_ITEM_NAMESPACE "test_extrack_pk_simple"
 #define NESTED_ITEM_NAMESPACE "test_extract_pk_nested"

@@ -1,5 +1,6 @@
 #include "manualconnection.h"
 #include <errno.h>
+#include "tools/catch_and_return.h"
 
 namespace reindexer {
 namespace net {
@@ -68,6 +69,22 @@ void manual_connection::restart(socket&& s) {
 	if (stats_) {
 		stats_->restart();
 	}
+}
+
+Error manual_connection::with_tls(bool enable) {
+	try {
+		if (enable) {
+			if (!sslCtx_) {
+				sslCtx_ = openssl::create_client_context();
+			}
+			sock_.ssl = openssl::create_ssl(sslCtx_);
+		} else {
+			sslCtx_ = nullptr;
+			sock_.ssl = nullptr;
+		}
+	}
+	CATCH_AND_RETURN
+	return {};
 }
 
 int manual_connection::async_connect(std::string_view addr, socket_domain type) noexcept {
@@ -227,6 +244,20 @@ void manual_connection::set_io_events(int events) noexcept {
 void manual_connection::io_callback(ev::io&, int revents) {
 	if (ev::ERROR & revents) {
 		return;
+	}
+
+	if (state_ == conn_state::connecting && sock_.ssl) {
+		if (int(openssl::SSL_get_fd(*sock_.ssl)) == -1) {
+			openssl::SSL_set_fd(*sock_.ssl, sock_.fd());
+		}
+
+		if (int ssl_events = openssl::ssl_handshake<&openssl::SSL_connect>(sock_.ssl); ssl_events < 0) {
+			close_conn(ssl_events == -SSL_ERROR_SYSCALL ? k_sock_closed_err : k_connect_ssl_err);
+			return;
+		} else if (ssl_events > 0) {
+			set_io_events(ssl_events);
+			return;
+		}
 	}
 
 	const auto conn_id = conn_id_;

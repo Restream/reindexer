@@ -79,7 +79,7 @@ public:
 		size_t GetSynchronizedNodesCount(size_t nodeId);
 		void EnablePerfStats(size_t nodeId);
 		void ChangeLeader(int& curLeaderId, int newLeaderId);
-		void AddAsyncNode(size_t nodeId, const std::string& dsn, cluster::AsyncReplicationMode replMode,
+		void AddAsyncNode(size_t nodeId, const DSN& dsn, cluster::AsyncReplicationMode replMode,
 						  std::optional<std::vector<std::string> >&& nsList = {});
 		void AwaitLeaderBecomeAvailable(size_t nodeId, std::chrono::milliseconds awaitTime = std::chrono::milliseconds(5000));
 

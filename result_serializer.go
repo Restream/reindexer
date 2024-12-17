@@ -65,7 +65,7 @@ func (s *resultSerializer) readRawtItemParams(shardId int) (v rawResultItemParam
 			v.shardid = int(s.GetVarUInt())
 		}
 	} else {
-		v.shardid = bindings.NotSharded
+		v.shardid = bindings.ShardingProxyOff
 	}
 
 	switch s.flags & bindings.ResultsFormatMask {

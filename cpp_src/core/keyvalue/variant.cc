@@ -3,7 +3,6 @@
 #include <functional>
 
 #include "core/payload/payloadiface.h"
-#include "estl/overloaded.h"
 #include "estl/tuple_utils.h"
 #include "tools/compare.h"
 #include "tools/serializer.h"

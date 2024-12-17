@@ -1,7 +1,6 @@
 #include "btree_idsets_api.h"
 #include "core/index/index.h"
 #include "core/index/string_map.h"
-#include "core/indexopts.h"
 #include "core/nsselecter/btreeindexiterator.h"
 #include "core/queryresults/joinresults.h"
 

@@ -13,7 +13,9 @@ void ServerConfig::Reset() {
 	StorageEngine = "leveldb";
 	HTTPAddr = "0.0.0.0:9088";
 	RPCAddr = "0.0.0.0:6534";
-	RPCUnixAddr = "";
+	HTTPsAddr = "0.0.0.0:9089";
+	RPCsAddr = "0.0.0.0:6535";
+	RPCUnixAddr = "none";
 	GRPCAddr = "0.0.0.0:16534";
 	RPCThreadingMode = kSharedThreading;
 	RPCUnixThreadingMode = kSharedThreading;
@@ -107,7 +109,15 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 
 	args::Group netGroup(parser, "Network options");
 	args::ValueFlag<std::string> httpAddrF(netGroup, "PORT", "http listen host:port", {'p', "httpaddr"}, HTTPAddr, args::Options::Single);
+	args::ValueFlag<std::string> httpsAddrF(netGroup, "TLS-PORT", "https listen host:port", {"httpsaddr"}, HTTPsAddr,
+											args::Options::Single);
 	args::ValueFlag<std::string> rpcAddrF(netGroup, "RPORT", "RPC listen host:port", {'r', "rpcaddr"}, RPCAddr, args::Options::Single);
+	args::ValueFlag<std::string> rpcsAddrF(netGroup, "RPC-TLS-PORT", "RPC with TLS support listen host:port", {"rpcsaddr"}, RPCsAddr,
+										   args::Options::Single);
+	args::ValueFlag<std::string> sslCertPathF(netGroup, "SSL Certificate PATH", "path to ssl certificate", {"ssl-cert"}, SslCertPath,
+											  args::Options::Single);
+	args::ValueFlag<std::string> sslKeyPathF(netGroup, "SSL Private Key PATH", "path to ssl key", {"ssl-key"}, SslKeyPath,
+											 args::Options::Single);
 #ifndef _WIN32
 	args::ValueFlag<std::string> rpcUnixAddrF(netGroup, "URPORT", "RPC listen path (unix domain socket)", {"urpcaddr"}, RPCUnixAddr,
 											  args::Options::Single);
@@ -209,6 +219,13 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	if (storageF) {
 		StoragePath = args::get(storageF);
 	}
+
+	if (sslCertPathF) {
+		SslCertPath = args::get(sslCertPathF);
+	}
+	if (sslKeyPathF) {
+		SslKeyPath = args::get(sslKeyPathF);
+	}
 	if (storageEngineF) {
 		StorageEngine = args::get(storageEngineF);
 	}
@@ -229,6 +246,12 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	}
 	if (rpcAddrF) {
 		RPCAddr = args::get(rpcAddrF);
+	}
+	if (httpsAddrF) {
+		HTTPsAddr = args::get(httpsAddrF);
+	}
+	if (rpcsAddrF) {
+		RPCsAddr = args::get(rpcsAddrF);
 	}
 
 	if (rpcThreadingModeF) {
@@ -360,8 +383,12 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node& root) {
 		CoreLog = root["logger"]["corelog"].as<std::string>(CoreLog);
 		HttpLog = root["logger"]["httplog"].as<std::string>(HttpLog);
 		RpcLog = root["logger"]["rpclog"].as<std::string>(RpcLog);
+		SslCertPath = root["net"]["ssl_cert"].as<std::string>(SslCertPath);
+		SslKeyPath = root["net"]["ssl_key"].as<std::string>(SslKeyPath);
 		HTTPAddr = root["net"]["httpaddr"].as<std::string>(HTTPAddr);
+		HTTPsAddr = root["net"]["httpsaddr"].as<std::string>(HTTPsAddr);
 		RPCAddr = root["net"]["rpcaddr"].as<std::string>(RPCAddr);
+		RPCsAddr = root["net"]["rpcsaddr"].as<std::string>(RPCsAddr);
 		RPCThreadingMode = root["net"]["rpc_threading"].as<std::string>(RPCThreadingMode);
 		HttpThreadingMode = root["net"]["http_threading"].as<std::string>(HttpThreadingMode);
 		WebRoot = root["net"]["webroot"].as<std::string>(WebRoot);

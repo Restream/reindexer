@@ -1,6 +1,7 @@
 #include "leadersyncer.h"
 #include "client/snapshot.h"
 #include "cluster/logger.h"
+#include "cluster/sharding/shardingcontrolrequest.h"
 #include "core/defnsconfigs.h"
 #include "core/reindexer_impl/reindexerimpl.h"
 
@@ -46,15 +47,16 @@ Error LeaderSyncer::Sync(std::list<LeaderSyncQueue::Entry>&& entries, SharedSync
 
 template <typename T>
 static auto makeClusterSet(const std::vector<T>& cluster) {
-	std::vector<std::string_view> res(cluster.size());
+	std::vector<std::reference_wrapper<const DSN>> res;
+	res.reserve(cluster.size());
 	for (size_t i = 0; i < cluster.size(); ++i) {
 		if constexpr (std::is_same_v<T, cluster::ClusterNodeConfig>) {
-			res[i] = cluster[i].dsn;
+			res.emplace_back(cluster[i].dsn);
 		} else {
-			res[i] = cluster[i];
+			res.emplace_back(cluster[i]);
 		}
 	}
-	std::sort(res.begin(), res.end());
+	std::sort(res.begin(), res.end(), DSN::RefWrapperCompare{});
 	return res;
 }
 
@@ -75,7 +77,6 @@ void LeaderSyncThread::actualizeShardingConfig() {
 	clCfg.AppName = "leader_sync-sharding_cfg_syncer";
 	clCfg.EnableCompression = false;
 	clCfg.RequestDedicatedThread = true;
-	const Query shardingQ = Query(kConfigNamespace).Where("type", CondEq, "sharding");
 	for (const auto& dsn : cfg_.dsns) {
 		loop_.spawn([&]() noexcept {
 			try {
@@ -86,35 +87,14 @@ void LeaderSyncThread::actualizeShardingConfig() {
 					return;
 				}
 
-				client::CoroQueryResults qr;
-				err = client.Select(shardingQ, qr);
+				sharding::ShardingControlResponseData response;
+				err = client.WithLSN(lsn_t{0}).ShardingControlRequest({sharding::ControlCmdType::GetNodeConfig}, response);
 				if (!err.ok()) {
 					logWarn("%s: Actualization sharding config error: %s", dsn, err.what());
 					return;
 				}
-				if (qr.Count() == 0) {
-					logInfo("%s: No sharding found on the node. Skipping", dsn);
-					return;
-				}
-				if (qr.Count() != 1) {
-					logWarn("%s: Unexpected count of sharding config query results", dsn);
-					return;
-				}
 
-				WrSerializer wrser;
-				err = qr.begin().GetJSON(wrser, false);
-				if (!err.ok()) {
-					logWarn("%s: Unable to get sharding config JSON: %s", dsn, err.what());
-					return;
-				}
-				cluster::ShardingConfig nodeConfig;
-				gason::JsonParser parser;
-				err = nodeConfig.FromJSON(parser.Parse(giftStr(wrser.Slice()))["sharding"]);
-
-				if (!err.ok()) {
-					logWarn("%s: Actualization sharding config error: %s", dsn, err.what());
-					return;
-				}
+				cluster::ShardingConfig nodeConfig = std::get<sharding::GetNodeConfigCommand>(response.data).config;
 
 				if (!isClusterEqualSomeShard(nodeConfig)) {
 					logWarn("%s: Different sets of nodes of the obtained config and the current cluster", dsn);
@@ -139,8 +119,8 @@ void LeaderSyncThread::actualizeShardingConfig() {
 	if (updated) {
 		using CallbackT = ReindexerImpl::CallbackT;
 		gason::JsonParser parser;
-		this->thisNode_.proxyCallbacks_.at({"leader_config_process", CallbackT::Type::System})(parser.Parse(giftStr(config.GetJSON())),
-																							   CallbackT::SourceIdT{config.sourceId}, {});
+		this->thisNode_.proxyCallbacks_.at({"leader_config_process", CallbackT::Type::System})(
+			parser.Parse(giftStr(config.GetJSON(cluster::MaskingDSN::Disabled))), CallbackT::SourceIdT{config.sourceId}, {});
 	}
 }
 

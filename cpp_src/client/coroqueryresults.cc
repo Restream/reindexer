@@ -166,12 +166,9 @@ TagsMatcher CoroQueryResults::GetTagsMatcher(int nsid) const noexcept {
 }
 
 TagsMatcher CoroQueryResults::GetTagsMatcher(std::string_view nsName) const noexcept {
-	auto it =
-		std::find_if(i_.nsArray_.begin(), i_.nsArray_.end(), [&nsName](Namespace* ns) { return (std::string_view(ns->name) == nsName); });
-	if (it == i_.nsArray_.end()) {
-		return TagsMatcher();
-	}
-	return (*it)->GetTagsMatcher();
+	const auto it = std::find_if(i_.nsArray_.begin(), i_.nsArray_.end(),
+								 [&nsName](const std::shared_ptr<Namespace>& ns) { return (std::string_view(ns->name) == nsName); });
+	return (it != i_.nsArray_.end()) ? (*it)->GetTagsMatcher() : TagsMatcher();
 }
 
 PayloadType CoroQueryResults::GetPayloadType(int nsid) const noexcept {
@@ -180,12 +177,9 @@ PayloadType CoroQueryResults::GetPayloadType(int nsid) const noexcept {
 }
 
 PayloadType CoroQueryResults::GetPayloadType(std::string_view nsName) const noexcept {
-	auto it =
-		std::find_if(i_.nsArray_.begin(), i_.nsArray_.end(), [&nsName](Namespace* ns) { return (std::string_view(ns->name) == nsName); });
-	if (it == i_.nsArray_.end()) {
-		return PayloadType();
-	}
-	return (*it)->payloadType;
+	const auto it = std::find_if(i_.nsArray_.begin(), i_.nsArray_.end(),
+								 [&nsName](const std::shared_ptr<Namespace>& ns) { return (std::string_view(ns->name) == nsName); });
+	return (it != i_.nsArray_.end()) ? (*it)->payloadType : PayloadType();
 }
 
 const std::string& CoroQueryResults::GetNsName(int nsid) const noexcept {
@@ -309,6 +303,11 @@ void CoroQueryResults::Iterator::checkIdx() const {
 	}
 }
 
+Error CoroQueryResults::Iterator::unavailableIdxError() const {
+	return Error(errNotValid, "Requested item's index [%d] in not available in this QueryResults. Avalibale indexes: [%d, %d)", idx_,
+				 qr_->i_.fetchOffset_, qr_->i_.queryParams_.qcount);
+}
+
 Error CoroQueryResults::Iterator::GetMsgPack(WrSerializer& wrser, bool withHdrLen) {
 	try {
 		checkIdx();
@@ -327,7 +326,7 @@ Error CoroQueryResults::Iterator::GetMsgPack(WrSerializer& wrser, bool withHdrLe
 		return err;
 	}
 
-	return errOK;
+	return {};
 }
 
 void CoroQueryResults::Iterator::getCSVFromCJSON(std::string_view cjson, WrSerializer& wrser, CsvOrdering& ordering) const {
@@ -353,14 +352,14 @@ void CoroQueryResults::Iterator::getCSVFromCJSON(std::string_view cjson, WrSeria
 		switch (qr_->i_.queryParams_.flags & kResultsFormatMask) {
 			case kResultsCJson: {
 				getCSVFromCJSON(itemParams_.data, wrser, ordering);
-				return errOK;
+				return {};
 			}
 			default:
 				return Error(errParseBin, "Server returned data in unexpected format %d", qr_->i_.queryParams_.flags & kResultsFormatMask);
 		}
 	}
 	CATCH_AND_RETURN
-	return errOK;
+	return {};
 }
 
 Error CoroQueryResults::Iterator::GetJSON(WrSerializer& wrser, bool withHdrLen) {
@@ -394,7 +393,7 @@ Error CoroQueryResults::Iterator::GetJSON(WrSerializer& wrser, bool withHdrLen) 
 	} catch (const Error& err) {
 		return err;
 	}
-	return errOK;
+	return {};
 }
 
 Error CoroQueryResults::Iterator::GetCJSON(WrSerializer& wrser, bool withHdrLen) {
@@ -419,7 +418,7 @@ Error CoroQueryResults::Iterator::GetCJSON(WrSerializer& wrser, bool withHdrLen)
 	} catch (const Error& err) {
 		return err;
 	}
-	return errOK;
+	return {};
 }
 
 Item CoroQueryResults::Iterator::GetItem() {

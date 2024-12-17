@@ -18,7 +18,7 @@ RoleSwitcher::RoleSwitcher(SharedSyncState<>& syncState, SynchronizationList& sy
 	roleSwitchAsync_.set(loop_);
 }
 
-void RoleSwitcher::Run(std::vector<std::string>&& dsns, RoleSwitcher::Config&& cfg) {
+void RoleSwitcher::Run(std::vector<DSN>&& dsns, RoleSwitcher::Config&& cfg) {
 	cfg_ = std::move(cfg);
 	client::ReindexerConfig clientCfg;
 	clientCfg.NetTimeout = cfg_.netTimeout;
@@ -226,7 +226,7 @@ void RoleSwitcher::initialLeadersSync() {
 
 	constexpr auto kMaxThreadsCount = 32;
 	const auto syncThreadsCount = (cfg_.syncThreads > 0) ? std::min(cfg_.syncThreads, kMaxThreadsCount) : kMaxThreadsCount;
-	std::vector<std::string> dsns(nodes_.size());
+	std::vector<DSN> dsns(nodes_.size());
 	std::transform(nodes_.begin(), nodes_.end(), dsns.begin(), [](const Node& node) { return node.dsn; });
 	LeaderSyncer::Config syncerCfg{
 		dsns,

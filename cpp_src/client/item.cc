@@ -1,5 +1,5 @@
 #include "client/item.h"
-#include "client/itemimpl.h"
+#include "client/itemimplbase.h"
 #include "tools/catch_and_return.h"
 
 namespace reindexer {

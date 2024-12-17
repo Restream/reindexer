@@ -222,7 +222,10 @@ Error CoroClientConnection::login(std::vector<char>& buf) {
 		readWg_.wait();
 		int ret = 0;
 		std::string dbName;
-		if (connectData_.uri.scheme() == "cproto") {
+		if (auto err = conn_.with_tls(connectData_.uri.scheme() == "cprotos"); !err.ok()) {
+			return err;
+		}
+		if (connectData_.uri.scheme() == "cproto" || connectData_.uri.scheme() == "cprotos") {
 			dbName = connectData_.uri.path();
 			std::string port = connectData_.uri.port().length() ? connectData_.uri.port() : std::string("6534");
 			ret = conn_.async_connect(connectData_.uri.hostname() + ":" + port, socket_domain::tcp);
@@ -271,10 +274,15 @@ Error CoroClientConnection::login(std::vector<char>& buf) {
 		auto written = conn_.async_write(buf, err);
 		auto toWrite = buf.size();
 		buf.clear();
-		if (err) {
+		if (err != 0) {
 			// TODO: handle reconnects
-			return err > 0 ? Error(errNetwork, "Connection error: %s", strerror(err))
-						   : Error(errNetwork, "Unable to write login cmd: connection closed");
+			if (err > 0) {
+				return Error(errNetwork, "Connection error: %s", strerror(err));
+			} else if (err == k_connect_ssl_err) {
+				return Error(errConnectSSL, "SSL handshake/connection error");
+			} else {
+				return Error(errNetwork, "Unable to write login cmd: connection closed");
+			}
 		}
 		assertrx(written == toWrite);
 		(void)written;

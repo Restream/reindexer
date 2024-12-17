@@ -1,7 +1,8 @@
 #include <thread>
+#include "auth_tools.h"
 #include "cascade_replication_api.h"
-#include "core/cjson/jsonbuilder.h"
 #include "core/queryresults/queryresults.h"
+#include "gtests/tests/gtest_cout.h"
 #include "vendor/gason/gason.h"
 
 using namespace reindexer;
@@ -489,17 +490,17 @@ TEST_F(CascadeReplicationApi, ForceSync3Node) {
 	ServerControl slave1;
 	slave1.InitServer(ServerControlConfig(1, 7771, 7881, kBaseDbPath + "/slave1", "db"));
 	slave1.Get()->MakeFollower();
-	master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave1.Get()->RpcPort()));
+	master->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave1.Get()));
 
 	ServerControl slave2;
 	slave2.InitServer(ServerControlConfig(2, 7772, 7882, kBaseDbPath + "/slave2", "db"));
 	slave2.Get()->MakeFollower();
-	slave1.Get()->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave2.Get()->RpcPort()));
+	slave1.Get()->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave2.Get()));
 
 	ServerControl slave3;
 	slave3.InitServer(ServerControlConfig(3, 7773, 7883, kBaseDbPath + "/slave3", "db"));
 	slave3.Get()->MakeFollower();
-	slave2.Get()->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave3.Get()->RpcPort()));
+	slave2.Get()->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave3.Get()));
 
 	WaitSync(master, slave1.Get(), testns.nsName_);
 	WaitSync(master, slave2.Get(), testns.nsName_);
@@ -543,7 +544,7 @@ TEST_F(CascadeReplicationApi, NodeWithMasterAndSlaveNs1) {
 	slave->MakeFollower();
 	TestNamespace1 testns3(slave, "ns3");
 	testns3.AddRows(slave, c1, n);
-	master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave->RpcPort()));
+	master->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave));
 	testns3.AddRows(slave, c2, n);
 
 	WaitSync(master, slave, testns1.nsName_);
@@ -607,7 +608,7 @@ TEST_F(CascadeReplicationApi, NodeWithMasterAndSlaveNs2) {
 	TestNamespace1 testns4(slave, "ns1");
 	testns4.AddRows(slave, c1, n);
 	master->MakeLeader(AsyncReplicationConfigTest("leader", {}, true, true, 0, "node0"));
-	master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave->RpcPort()), {{"ns1"}});
+	master->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave), {{"ns1"}});
 	testns3.AddRows(slave, c2, n);
 
 	WaitSync(master, slave, testns1.nsName_);
@@ -667,7 +668,7 @@ TEST_F(CascadeReplicationApi, NodeWithMasterAndSlaveNs3) {
 	TestNamespace1 testns4(slave, "ns1");
 	testns4.AddRows(slave, c1, n);
 	master->SetReplicationConfig(AsyncReplicationConfigTest("leader", {}, true, true, 0, "node0"));
-	master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave->RpcPort()), {{"ns1"}});
+	master->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave), {{"ns1"}});
 	testns3.AddRows(slave, c2, n);
 
 	ASSERT_EQ(testns1.nsName_, testns4.nsName_);
@@ -699,7 +700,7 @@ TEST_F(CascadeReplicationApi, RenameError) {
 	ServerControl slave1;
 	slave1.InitServer(ServerControlConfig(1, 7771, 7881, kBaseDbPath + "/slave1", "db"));
 	slave1.Get()->MakeFollower();
-	master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave1.Get()->RpcPort()));
+	master->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave1.Get()));
 
 	WaitSync(master, slave1.Get(), testns.nsName_);
 
@@ -816,9 +817,9 @@ TEST_F(CascadeReplicationApi, Node3ApplyWal) {
 			auto slave1 = slave1Sc.Get();
 			auto slave2 = slave2Sc.Get();
 			slave1->MakeFollower();
-			master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave1->RpcPort()));
+			master->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave1));
 			slave2->MakeFollower();
-			slave1->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave2->RpcPort()));
+			slave1->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave2));
 			WaitSync(master, slave1, kNsName);
 			WaitSync(master, slave2, kNsName);
 		}
@@ -892,7 +893,7 @@ TEST_F(CascadeReplicationApi, RestrictUpdates) {
 		dataString.append("xxx");
 	}
 
-	master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave->RpcPort()));
+	master->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave));
 
 	for (unsigned int i = 0; i < count; i++) {
 		reindexer::client::Item item = master->api.NewItem("ns1");
@@ -941,7 +942,7 @@ TEST_F(CascadeReplicationApi, LSNConflictWithSQLUpdate) {
 	followerSc.InitServer(ServerControlConfig(0, 7771, 7881, reindexer::fs::JoinPath(kBaseStoragePath, "follower"), "db", true));
 	auto follower = followerSc.Get();
 	follower->MakeFollower();
-	leader->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", follower->RpcPort()));
+	leader->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, follower));
 	WaitSync(leader, follower, kNsName);
 
 	follower.reset();
@@ -987,7 +988,7 @@ TEST_F(CascadeReplicationApi, ConcurrentForceSync) {
 		auto follower = nodes.back().Get();
 		follower->SetReplicationConfig(
 			AsyncReplicationConfigTest{"follower", {}, false, true, int(id), "node_" + std::to_string(id), std::move(nsSet)});
-		leader->AddFollower(fmt::format("cproto://127.0.0.1:{}/{}", follower->RpcPort(), kDbName));
+		leader->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, follower));
 		return follower;
 	};
 

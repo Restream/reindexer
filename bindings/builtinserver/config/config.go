@@ -84,6 +84,7 @@ func DefaultServerConfig() *ServerConfig {
 			HTTPThreading: "shared",
 			RPCAddr:       "0.0.0.0:6534",
 			RPCThreading:  "shared",
+			UnixRPCAddr:   "none",
 			Security:      false,
 		},
 		Logger: LoggerConf{

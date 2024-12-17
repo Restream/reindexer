@@ -23,7 +23,7 @@ static const reindexer::SemVersion kMinSubscriptionV4RxVersion("4.15.0");
 
 RPCClientData::~RPCClientData() {
 	Reindexer* db = nullptr;
-	auto err = auth.GetDB(kRoleNone, &db);
+	auto err = auth.GetDB<AuthContext::CalledFrom::Core>(kRoleNone, &db);
 	if (subscribed && db && err.ok()) {
 #ifdef REINDEX_WITH_V3_FOLLOWERS
 		err = db->UnsubscribeUpdates(&pusherV3);
@@ -106,7 +106,7 @@ Error RPCServer::Login(cproto::Context& ctx, p_string login, p_string password, 
 		conn.connectionStat = ctx.writer->GetConnectionStat();
 		conn.ip = std::string(ctx.clientAddr);
 		conn.protocol = protocolName_;
-		reindexer::deepCopy(conn.userName, clientData->auth.Login());
+		reindexer::deepCopy(conn.userName, clientData->auth.Login().Str());
 		reindexer::deepCopy(conn.dbName, clientData->auth.DBName());
 		conn.userRights = std::string(UserRoleName(clientData->auth.UserRights()));
 		reindexer::deepCopy(conn.clientVersion, clientData->rxVersion.StrippedString());
@@ -255,7 +255,7 @@ void RPCServer::Logger(cproto::Context& ctx, const Error& err, const cproto::Arg
 
 	if (ctx.call) {
 		ser << cproto::CmdName(ctx.call->cmd) << " "sv;
-		ctx.call->args.Dump(ser);
+		ctx.call->args.Dump(ser, cproto::GetMaskArgs(ctx.call->cmd));
 	} else {
 		ser << '-';
 	}
@@ -739,14 +739,16 @@ Reindexer RPCServer::getDB(cproto::Context& ctx, UserRole role) {
 	auto clientData = getClientDataUnsafe(ctx);
 	if (rx_likely(clientData)) {
 		Reindexer* db = nullptr;
-		auto status = clientData->auth.GetDB(role, &db);
+		auto status = clientData->auth.GetDB<AuthContext::CalledFrom::RPCServer>(role, &db, ctx.call->lsn, ctx.call->emmiterServerId,
+																				 ctx.call->shardId);
 		if rx_unlikely (!status.ok()) {
 			throw status;
 		}
+
 		if (rx_likely(db != nullptr)) {
 			return db->NeedTraceActivity() ? db->WithContextParams(ctx.call->execTimeout, ctx.call->lsn, ctx.call->emmiterServerId,
 																   ctx.call->shardId, ctx.call->shardingParallelExecution, ctx.clientAddr,
-																   clientData->auth.Login(), clientData->connID)
+																   clientData->auth.Login().Str(), clientData->connID)
 										   : db->WithContextParams(ctx.call->execTimeout, ctx.call->lsn, ctx.call->emmiterServerId,
 																   ctx.call->shardId, ctx.call->shardingParallelExecution);
 		}
@@ -756,13 +758,15 @@ Reindexer RPCServer::getDB(cproto::Context& ctx, UserRole role) {
 
 void RPCServer::cleanupTmpNamespaces(RPCClientData& clientData, std::string_view activity) {
 	Reindexer* dbPtr = nullptr;
-	auto status = clientData.auth.GetDB(kRoleDBAdmin, &dbPtr);
+	auto status =
+		clientData.auth.GetDB<AuthContext::CalledFrom::RPCServer>(kRoleDBAdmin, &dbPtr, lsn_t{0}, -1, ShardingKeyType::NotSetShard);
 	if (!status.ok() || dbPtr == nullptr) {
 		logger_.info("RPC: Unable to cleanup tmp namespaces:{}", status.what());
 		return;
 	}
-	auto db =
-		dbPtr->NeedTraceActivity() ? dbPtr->WithActivityTracer(activity, std::string(clientData.auth.Login()), clientData.connID) : *dbPtr;
+	auto db = dbPtr->NeedTraceActivity()
+				  ? dbPtr->WithActivityTracer(activity, std::string(clientData.auth.Login().Str()), clientData.connID)
+				  : *dbPtr;
 
 	for (auto& ns : clientData.tmpNss) {
 		auto e = db.DropNamespace(ns);
@@ -1310,14 +1314,27 @@ Error RPCServer::SuggestLeader(cproto::Context& ctx, p_string suggestion) {
 	return err;
 }
 
-[[nodiscard]] Error RPCServer::ShardingControlRequest(cproto::Context& ctx, p_string data) noexcept {
+Error RPCServer::ShardingControlRequest(cproto::Context& ctx, p_string data) noexcept {
 	try {
 		sharding::ShardingControlRequestData req;
 		Error err = req.FromJSON(giftStr(data));
 		if (!err.ok()) {
 			return err;
 		}
-		return getDB(ctx, kRoleDBAdmin).ShardingControlRequest(req);
+
+		sharding::ShardingControlResponseData res;
+		err = getDB(ctx, kRoleDBAdmin).ShardingControlRequest(req, res);
+		if (err.ok()) {
+			WrSerializer ser;
+			if (res.type == sharding::ControlCmdType::GetNodeConfig) {
+				std::get<sharding::GetNodeConfigCommand>(res.data).masking =
+					getClientDataSafe(ctx)->auth.UserRights() < UserRole::kRoleDBAdmin;
+			}
+			res.GetJSON(ser);
+			auto slice = ser.Slice();
+			ctx.Return({cproto::Arg(p_string(&slice))});
+		}
+		return err;
 	}
 	CATCH_AND_RETURN
 }
@@ -1430,10 +1447,12 @@ bool RPCServer::Start(const std::string& addr, ev::dynamic_loop& loop, RPCSocket
 #else	// REINDEX_WITH_V3_FOLLOWERS
 	auto factory = cproto::ServerConnection::NewFactory(dispatcher_, serverConfig_.EnableConnectionsStats);
 #endif	// REINDEX_WITH_V3_FOLLOWERS
+	auto sslCtx =
+		serverConfig_.RPCsAddr == addr ? openssl::create_server_context(serverConfig_.SslCertPath, serverConfig_.SslKeyPath) : nullptr;
 	if (threadingMode == ServerConfig::kDedicatedThreading) {
-		listener_ = std::make_unique<ForkedListener>(loop, std::move(factory));
+		listener_ = std::make_unique<ForkedListener>(loop, std::move(factory), std::move(sslCtx));
 	} else {
-		listener_ = std::make_unique<Listener<ListenerType::Mixed>>(loop, std::move(factory));
+		listener_ = std::make_unique<Listener<ListenerType::Mixed>>(loop, std::move(factory), std::move(sslCtx));
 	}
 
 	assertrx(!qrWatcherThread_.joinable());

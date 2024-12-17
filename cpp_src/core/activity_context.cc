@@ -112,6 +112,13 @@ RdxActivityContext::RdxActivityContext(RdxActivityContext&& other)
 	other.parent_ = nullptr;
 }
 
+RdxActivityContext::~RdxActivityContext() {
+	if (parent_) {
+		parent_->Unregister(this);
+	}
+	assertrx(refCount_.load(std::memory_order_relaxed) == 0u);
+}
+
 RdxActivityContext::operator Activity() const {
 	Activity ret = data_;
 	const auto state = deserializeState(state_.load(std::memory_order_relaxed));

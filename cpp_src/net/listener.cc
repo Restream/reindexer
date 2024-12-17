@@ -5,6 +5,7 @@
 #include "core/type_consts.h"
 #include "server/pprof/gperf_profiler.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
+#include "tools/crypt.h"
 #include "tools/errors.h"
 #include "tools/hardware_concurrency.h"
 #include "tools/logger.h"
@@ -32,8 +33,9 @@ Listener<LT>::Listener(ev::dynamic_loop& loop, std::shared_ptr<Shared> shared)
 }
 
 template <ListenerType LT>
-Listener<LT>::Listener(ev::dynamic_loop& loop, ConnectionFactory&& connFactory, int maxListeners)
-	: Listener(loop, std::make_shared<Shared>(std::move(connFactory), (maxListeners ? maxListeners : hardware_concurrency()) + 1)) {}
+Listener<LT>::Listener(ev::dynamic_loop& loop, ConnectionFactory&& connFactory, openssl::SslCtxPtr sslCtx, int maxListeners)
+	: Listener(loop, std::make_shared<Shared>(std::move(connFactory), (maxListeners ? maxListeners : hardware_concurrency()) + 1,
+											  std::move(sslCtx))) {}
 
 template <ListenerType LT>
 Listener<LT>::~Listener() {
@@ -75,6 +77,38 @@ bool Listener<LT>::Bind(std::string addr, socket_domain type) {
 	return true;
 }
 
+[[nodiscard]] static int try_ssl_accept(socket& client, const openssl::SslCtxPtr& ctx) {
+	if (!ctx) {
+		return 0;
+	}
+
+	try {
+		client.ssl = openssl::create_ssl(ctx);
+	} catch (Error& err) {
+		// Error has already been logged in create_ssl already
+		return -1;
+	}
+
+	auto logSslErr = [] {
+		logFmt(LogError, "{}: {}", openssl::ERR_get_error(), openssl::ERR_error_string(openssl::ERR_get_error(), NULL));
+	};
+
+	if (int res = openssl::SSL_set_fd(*client.ssl, client.fd()); res == 0) {
+		logSslErr();
+		return -1;
+	}
+
+	if (int res = openssl::SSL_accept(*client.ssl); res != 1) {
+		int err = openssl::SSL_get_error(*client.ssl, res);
+		if (err != SSL_ERROR_WANT_READ && err != SSL_ERROR_WANT_WRITE) {
+			logSslErr();
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
 template <ListenerType LT>
 void Listener<LT>::io_accept(ev::io& /*watcher*/, int revents) {
 	if (ev::ERROR & revents) {
@@ -90,6 +124,10 @@ void Listener<LT>::io_accept(ev::io& /*watcher*/, int revents) {
 
 	if (shared_->terminating_) {
 		logPrintf(LogWarning, "Can't accept connection. Listener is terminating!");
+		return;
+	}
+
+	if (try_ssl_accept(client, shared_->sslCtx_) != 0) {
 		return;
 	}
 
@@ -419,8 +457,12 @@ void Listener<LT>::reserve_stack() {
 }
 
 template <ListenerType LT>
-Listener<LT>::Shared::Shared(ConnectionFactory&& connFactory, int maxListeners)
-	: maxListeners_(maxListeners), listenersCount_(1), connFactory_(std::move(connFactory)), terminating_(false) {}
+Listener<LT>::Shared::Shared(ConnectionFactory&& connFactory, int maxListeners, openssl::SslCtxPtr SslCtx)
+	: sslCtx_(std::move(SslCtx)),
+	  maxListeners_(maxListeners),
+	  listenersCount_(1),
+	  connFactory_(std::move(connFactory)),
+	  terminating_(false) {}
 
 template <ListenerType LT>
 Listener<LT>::Shared::~Shared() {
@@ -429,8 +471,8 @@ Listener<LT>::Shared::~Shared() {
 	}
 }
 
-ForkedListener::ForkedListener(ev::dynamic_loop& loop, ConnectionFactory&& connFactory)
-	: connFactory_(std::move(connFactory)), loop_(loop) {
+ForkedListener::ForkedListener(ev::dynamic_loop& loop, ConnectionFactory&& connFactory, openssl::SslCtxPtr sslCtx)
+	: sslCtx_(std::move(sslCtx)), connFactory_(std::move(connFactory)), loop_(loop) {
 	io_.set<ForkedListener, &ForkedListener::io_accept>(this);
 	io_.set(loop);
 	async_.set<ForkedListener, &ForkedListener::async_cb>(this);
@@ -487,6 +529,11 @@ void ForkedListener::io_accept(ev::io& /*watcher*/, int revents) {
 		logPrintf(LogWarning, "Can't accept connection. Listener is terminating!");
 		return;
 	}
+
+	if (try_ssl_accept(client, sslCtx_) != 0) {
+		return;
+	}
+
 	++runningThreadsCount_;
 
 	std::thread th([this, client = std::move(client)]() mutable noexcept {

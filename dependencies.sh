@@ -30,17 +30,35 @@ error_msg() {
     printf "${RED_BOLD}[ ERROR ] ${NC}$1\n"
 }
 
+centos_openssl_msg() {
+	message="The package manager of this OS does not contain the required version of the openssl library.
+To use the extended authorization and authentication functionality in RX,
+you can build and install openssl from source, following the instructions below:
+  yum -y install perl-IPC-Cmd perl-Test-Simple && \\
+  cd /usr/src  && \\
+  wget https://www.openssl.org/source/openssl-3.2.1.tar.gz  && \\
+  tar -zxf openssl-3.2.1.tar.gz  && \\
+  rm openssl-3.2.1.tar.gz && \\
+  cd /usr/src/openssl-3.2.1 && \\
+  ./config no-shared no-module zlib-dynamic && \\
+  make -j8 && \\
+  make test && \\
+  make install"
+
+	printf "${YELLOW_BOLD}[ ATTENTION ]\n${NC}$message\n"
+}
+
 # declare dependencies arrays for systems
 osx_deps="gperftools leveldb snappy cmake git"
-centos8_rpms="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
 almalinux9_rpms="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
-fedora_rpms=" gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
-centos7_rpms="centos-release-scl devtoolset-10-gcc devtoolset-10-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
-debian_debs="build-essential g++ libunwind-dev libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git"
-alpine_apks="g++ snappy-dev leveldb-dev libunwind-dev make curl cmake unzip git"
+fedora_rpms=" gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git openssl-devel"
+centos7_rpms="centos-release-scl devtoolset-10-gcc devtoolset-10-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git wget"
+centos8_rpms="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git wget"
+debian_debs="build-essential g++ libunwind-dev libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git libssl-dev"
+alpine_apks="g++ snappy-dev leveldb-dev libunwind-dev make curl cmake unzip git openssl-dev"
 arch_pkgs="gcc snappy leveldb make curl cmake unzip git"
-redos_rpms="gcc gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip git cmake rpm-build python-srpm-macros"
-altlinux_rpms="gcc gcc-c++ make libsnappy-devel libleveldb-devel libgperftools-devel curl unzip git cmake ctest rpm-build rpmdevtools"
+redos_rpms="gcc gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip git cmake rpm-build python-srpm-macros openssl-devel"
+altlinux_rpms="gcc gcc-c++ make libsnappy-devel libleveldb-devel libgperftools-devel curl unzip git cmake ctest rpm-build rpmdevtools openssl-devel"
 
 cmake_installed () {
     info_msg "Check for installed cmake ..... "
@@ -66,11 +84,11 @@ install_cmake_linux () {
             apt-get -y install cmake >/dev/null 2>&1
             ;;
     esac
-    
+
     if [ $? -ne 0 ]; then
         error_msg "Error install 'cmake'" && return 1
     fi
-    
+
     success_msg "Package 'cmake' was installed successfully." && return
 }
 
@@ -134,6 +152,9 @@ install_centos8() {
             fi
         fi
     done
+
+    centos_openssl_msg
+
     cmake_installed || install_cmake_linux
     return $?
 }
@@ -154,6 +175,9 @@ install_centos7() {
             fi
         fi
     done
+
+    centos_openssl_msg
+
     source scl_source enable devtoolset-10
     cmake_installed || install_cmake_linux
     return $?

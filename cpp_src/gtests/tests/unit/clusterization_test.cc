@@ -1,10 +1,5 @@
-#include <numeric>
-#include <unordered_map>
-#include <unordered_set>
-#include "client/raftclient.h"
 #include "clusterization_api.h"
-#include "core/cjson/jsonbuilder.h"
-#include "yaml-cpp/yaml.h"
+#include "gtests/tests/gtest_cout.h"
 
 TEST_F(ClusterizationApi, LeaderElections) {
 	// Check leader election on deffirent conditions
@@ -237,8 +232,8 @@ static bool ValidateStatsOnTestBeginning(size_t kClusterSize, const Clusterizati
 
 	bool hasUpdates = false;
 	for (auto& nodeStat : stats.nodeStats) {
-		const std::string kExpectedDsn =
-			fmt::format("cproto://127.0.0.1:{}/node{}", ports.defaultRpcPort + nodeStat.serverId, nodeStat.serverId);
+		const DSN kExpectedDsn = MakeDsn(reindexer_server::UserRole::kRoleReplication, nodeStat.serverId,
+										 ports.defaultRpcPort + nodeStat.serverId, "node" + std::to_string(nodeStat.serverId));
 		O_EXPECT_EQ(withAssertion, nodeStat.dsn, kExpectedDsn)
 		if (nodeStat.updatesCount > 0) {
 			hasUpdates = true;
@@ -309,8 +304,8 @@ static bool ValidateStatsOnTestEnding(int leaderId, int kTransitionServer, const
 		}
 		onlineNodes.emplace(kTransitionServer);
 		for (auto& nodeStat : stats.nodeStats) {
-			const std::string kExpectedDsn =
-				fmt::format("cproto://127.0.0.1:{}/node{}", ports.defaultRpcPort + nodeStat.serverId, nodeStat.serverId);
+			const DSN kExpectedDsn = MakeDsn(reindexer_server::UserRole::kRoleReplication, nodeStat.serverId,
+											 ports.defaultRpcPort + nodeStat.serverId, "node" + std::to_string(nodeStat.serverId));
 			O_EXPECT_EQ(withAssertion, nodeStat.dsn, kExpectedDsn)
 			O_EXPECT_TRUE(withAssertion,
 						  nodeStat.updatesCount == 0 || nodeStat.updatesCount == 1)	 // (may contain "initial leader resync" update record
@@ -800,7 +795,7 @@ TEST_F(ClusterizationApi, NamespaceVersioning) {
 		TestCout() << "Leader id is " << leaderId << std::endl;
 		size_t id = 0;
 
-		ReplicationStateApi latestNsState;
+		ReplicationTestState latestNsState;
 		auto CreateAndDropNsFn = [&leaderId, &cluster, kNsName, &latestNsState](size_t dataCount, size_t stopId, bool drop,
 																				bool awaitLeader) {
 			// Create ns and fill data

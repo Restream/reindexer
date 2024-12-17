@@ -5,8 +5,6 @@
 #include "client/rpcclient.h"
 #include "net/ev/ev.h"
 
-#include <chrono>
-
 namespace reindexer {
 
 namespace client {
@@ -36,7 +34,7 @@ public:
 	/// @param dsn - uri of server and database, like: `cproto://user@password:127.0.0.1:6534/dbname`
 	/// @param loop - event loop for connections and coroutines handling
 	/// @param opts - Connect options. May contaion any of <br>
-	Error Connect(const std::string& dsn, net::ev::dynamic_loop& loop, const client::ConnectOpts& opts = client::ConnectOpts());
+	Error Connect(const DSN& dsn, net::ev::dynamic_loop& loop, const client::ConnectOpts& opts = client::ConnectOpts());
 	/// Stop - shutdown connector
 	void Stop();
 	/// SuggestLeader - send cluster leader suggestion

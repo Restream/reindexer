@@ -2,6 +2,7 @@ package bindings
 
 import (
 	"context"
+	"crypto/tls"
 	"net/url"
 	"time"
 
@@ -382,6 +383,10 @@ type OptionStrictJoinHandlers struct {
 type OptionReconnectionStrategy struct {
 	Strategy          string
 	AllowUnknownNodes bool
+}
+
+type OptionTLS struct {
+	Config *tls.Config
 }
 
 type Status struct {

@@ -522,6 +522,11 @@ void Query::Serialize(WrSerializer& ser, uint8_t mode) const {
 		}
 	}
 
+	for (const auto& funcText : selectFunctions_) {
+		ser.PutVarUint(QueryItemType::QuerySelectFunction);
+		ser.PutVString(funcText);
+	}
+
 	if (!(mode & SkipLimitOffset)) {
 		if (HasLimit()) {
 			ser.PutVarUint(QueryLimit);
@@ -574,10 +579,8 @@ void Query::Serialize(WrSerializer& ser, uint8_t mode) const {
 			ser.PutVarUint(field.Values().size());
 			ser.PutVarUint(field.Values().IsArrayValue());
 			for (const Variant& val : field.Values()) {
-				ser.PutVarUint(0);
-				ser.PutKeyValueType(KeyValueType::String{});
-				auto v = val.As<std::string>();
-				ser.PutVString(v);
+				ser.PutVarUint(field.IsExpression());
+				ser.PutVariant(val);
 			}
 		} else {
 			throw Error(errLogic, "Unsupported item modification mode = %d", field.Mode());

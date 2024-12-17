@@ -77,6 +77,7 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 			}
 			return Variant(variants);
 		}
+		case gason::JSON_EMPTY:
 		default:
 			throw Error(errLogic, "Error parsing json field '%s' - got unexpected tag: %d", fieldName, v.getTag());
 	}

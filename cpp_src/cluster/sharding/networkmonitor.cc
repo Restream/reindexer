@@ -52,7 +52,7 @@ Error NetworkMonitor::AwaitShards(const RdxContext& ctx) noexcept {
 				sendStatusRequests();
 				err = awaitStatuses(lck, *actualCtx);
 			}
-		} while (!err.ok() && !terminated_);
+		} while (!err.ok() && err.code() == errTimeout && !terminated_);
 		if (terminated_) {
 			return Error(errTerminated, "Sharding proxy was shutdowned");
 		}
@@ -91,6 +91,7 @@ void NetworkMonitor::sendStatusRequests() {
 							   if (e.ok()) {
 								   succeed_.emplace(idx);
 							   }
+							   lastCompletionError_ = e;
 							   if (areStatusesReady()) {
 								   lck.unlock();
 								   cv_.notify_all();
@@ -113,8 +114,11 @@ Error NetworkMonitor::awaitStatuses(std::unique_lock<std::recursive_mutex>& lck,
 	if (hostsConnections_->size() == succeed_.size()) {
 		return Error();
 	}
-
-	return Error(errTimeout, "Shards are not connected yet");
+	if (lastCompletionError_.code() == errConnectSSL) {
+		return lastCompletionError_;
+	} else {
+		return Error(errTimeout, "Shards are not connected yet");
+	}
 }
 
 bool NetworkMonitor::areStatusesReady() const noexcept {

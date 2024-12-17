@@ -1,5 +1,6 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <fstream>
 #include <future>
 #include "cluster/sharding/ranges.h"
 #include "core/cjson/csvbuilder.h"
@@ -8,6 +9,7 @@
 #include "estl/tuple_utils.h"
 #include "gtests/tests/unit/csv2jsonconverter.h"
 #include "sharding_api.h"
+#include "yaml-cpp/yaml.h"
 
 static void CheckServerIDs(std::vector<std::vector<ServerControl>>& svc) {
 	WrSerializer ser;
@@ -587,6 +589,30 @@ void ShardingApi::runTransactionsTest(std::string_view nsName) {
 	}
 }
 
+TEST_F(ShardingApi, CheckMaskingTest) {
+	auto dsnTmplt = "cproto://%s:%s@127.0.0.1:6534/some_db";
+	auto login = "userlogin";
+	auto passwd = "userpassword";
+	auto orig = fmt::sprintf(dsnTmplt, login, passwd);
+	auto masked = fmt::sprintf(dsnTmplt, maskLogin(login), maskPassword(passwd));
+	auto dsn = DSN(orig);
+
+	std::stringstream ss;
+	ss << dsn;
+	ASSERT_EQ(masked, ss.str());
+
+	Error err(errParams, "%s", dsn);
+	ASSERT_EQ(err.what(), masked);
+
+	ASSERT_EQ(fmt::sprintf("%s", dsn), masked);
+	ASSERT_EQ(fmt::format("{}", dsn), masked);
+
+	ASSERT_TRUE(RelaxCompare(dsn, DSN(masked)));
+	auto maskedDsn = DSN(masked);
+
+	ASSERT_EQ(fmt::sprintf("%s", dsn), fmt::sprintf("%s", maskedDsn));
+}
+
 TEST_F(ShardingApi, BaseApiTestset) {
 	InitShardingConfig cfg;
 	const std::vector<InitShardingConfig::Namespace> nss = {
@@ -594,6 +620,7 @@ TEST_F(ShardingApi, BaseApiTestset) {
 		{"serial_test", true},		   {"update_items_test", true}, {"delete_items_test", true}, {"update_index_test", true},
 		{"drop_namespace_test", true}, {"transactions_test", true}};
 	cfg.additionalNss = nss;
+
 	Init(std::move(cfg));
 	CheckServerIDs(svc_);
 
@@ -943,12 +970,13 @@ ShardingApi::ShardingConfig ShardingApi::makeShardingConfigByDistrib(std::string
 		keys.emplace_back(Cfg::Key{shardID, algType, std::move(values)});
 	}
 
-	std::map<int, std::vector<std::string>> shardsMap;
+	std::map<int, std::vector<DSN>> shardsMap;
 	for (int shard = 0; shard < shards; ++shard) {
 		shardsMap[shard].reserve(nodes);
 		const size_t startId = shard * nodes;
 		for (size_t i = startId; i < startId + nodes; ++i) {
-			shardsMap[shard].push_back(fmt::format("cproto://127.0.0.1:{}/shard{}", GetDefaults().defaultRpcPort + i, i));
+			shardsMap[shard].emplace_back(
+				MakeDsn(reindexer_server::UserRole::kRoleSharding, i, GetDefaults().defaultRpcPort + i, "shard" + std::to_string(i)));
 		}
 	}
 
@@ -981,7 +1009,7 @@ Error ShardingApi::applyNewShardingConfig(client::Reindexer& rx, const ShardingC
 			assertrx(!sourceId.has_value());
 		}
 		auto configNode = action.Object("config");
-		config.GetJSON(configNode);
+		config.GetJSON(configNode, cluster::MaskingDSN::Disabled);
 		configNode.End();
 		action.End();
 		jsonBuilder.End();
@@ -997,6 +1025,20 @@ Error ShardingApi::applyNewShardingConfig(client::Reindexer& rx, const ShardingC
 	}
 
 	return err;
+}
+
+void ShardingApi::checkMaskedDSNsInConfig(int shardId) {
+	auto config = getShardingConfigFrom(*svc_[shardId][0].Get()->api.reindexer);
+	assertrx(config.has_value());
+	for (const auto& [shard, dsns] : config->shards) {
+		int nodeId = 0;
+		for (const auto& dsn : dsns) {
+			auto serverId = shard * kNodesInCluster + nodeId++;
+			auto expected = MakeDsn(reindexer_server::UserRole::kRoleSharding, serverId, GetDefaults().defaultRpcPort + serverId,
+									"shard" + std::to_string(serverId));
+			EXPECT_EQ(fmt::sprintf("%s", expected), dsn);
+		}
+	}
 }
 
 TEST_F(ShardingApi, RuntimeShardingConfigTest) {
@@ -1191,14 +1233,23 @@ TEST_F(ShardingApi, RuntimeShardingConfigLocallyResetTest) {
 void ShardingApi::checkConfig(const ServerControl::Interface::Ptr& server, const cluster::ShardingConfig& config) {
 	ASSERT_NO_THROW(checkConfigThrow(server, config));
 }
+// It is necessary to duplicate the implementation of the ShardingConfig operator==
+// so that the operator== redefined in the "auth_tools.h" is used when comparing DSNs
+static bool CompareShardingConfigs(const cluster::ShardingConfig& lhs, const cluster::ShardingConfig& rhs) {
+	return lhs.namespaces == rhs.namespaces && lhs.thisShardId == rhs.thisShardId && lhs.shards == rhs.shards &&
+		   lhs.reconnectTimeout == rhs.reconnectTimeout && lhs.shardsAwaitingTimeout == rhs.shardsAwaitingTimeout &&
+		   lhs.configRollbackTimeout == rhs.configRollbackTimeout && lhs.proxyConnCount == rhs.proxyConnCount &&
+		   lhs.proxyConnConcurrency == rhs.proxyConnConcurrency && rhs.proxyConnThreads == lhs.proxyConnThreads &&
+		   rhs.sourceId == lhs.sourceId;
+}
 
 void ShardingApi::checkConfigThrow(const ServerControl::Interface::Ptr& server, const cluster::ShardingConfig& config) {
 	auto fromConfigNs = getShardingConfigFrom(*server->api.reindexer);
 	assertrx(fromConfigNs.has_value());
-	if (config != *fromConfigNs) {
+	if (!CompareShardingConfigs(config, *fromConfigNs)) {
 		throw std::logic_error(
 			fmt::sprintf("The equality of config and fromConfigNs is expected, but:\nconfig:\n\t%s\nfromConfigNs:\n\t%s\n",
-						 config.GetJSON(), fromConfigNs->GetJSON()));
+						 config.GetJSON(cluster::MaskingDSN::Disabled), fromConfigNs->GetJSON(cluster::MaskingDSN::Disabled)));
 	}
 
 	std::string configYAML;
@@ -1207,10 +1258,10 @@ void ShardingApi::checkConfigThrow(const ServerControl::Interface::Ptr& server, 
 	ShardingConfig fromFileConfig;
 	auto err = fromFileConfig.FromYAML(configYAML);
 	ASSERT_TRUE(err.ok()) << err.what();
-	if (config != fromFileConfig) {
+	if (!CompareShardingConfigs(config, fromFileConfig)) {
 		throw std::logic_error(
 			fmt::sprintf("The equality of config and fromFileConfig is expected, but:\nconfig:\n\t%s\nfromFileConfig:\n\t%s\n",
-						 config.GetJSON(), fromFileConfig.GetJSON()));
+						 config.GetJSON(cluster::MaskingDSN::Disabled), fromFileConfig.GetJSON(cluster::MaskingDSN::Disabled)));
 	}
 }
 
@@ -1595,7 +1646,7 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithActualConfigTest) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(20));
 		}
 		needContinue = system_clock_w::now() - start < deadline;
-		ASSERT_TRUE(needContinue) << "Time limit for appliing config by leaders exceeded";
+		ASSERT_TRUE(needContinue) << "Time limit for applying config by leaders exceeded";
 	}
 
 	fillShards(shardDataDistrib, kNsName, kFieldId);
@@ -1744,7 +1795,9 @@ TEST_F(ShardingApi, CheckUpdCfgNsAfterApplySharingCfg) {
 
 	EXPECT_NE(readConfig->sourceId, ShardingSourceId::NotSet);
 	readConfig->sourceId = ShardingSourceId::NotSet;
-	ASSERT_EQ(newConfig, *readConfig) << "expected:\n" << newConfig.GetJSON() << "\nobtained:\n" << readConfig->GetJSON();
+	ASSERT_TRUE(CompareShardingConfigs(newConfig, *readConfig)) << "expected:\n"
+																<< newConfig.GetJSON(cluster::MaskingDSN::Disabled) << "\nobtained:\n"
+																<< readConfig->GetJSON(cluster::MaskingDSN::Disabled);
 }
 
 TEST_F(ShardingApi, PartialClusterNodesSetInShardingCfgTest) {
@@ -1767,15 +1820,16 @@ TEST_F(ShardingApi, PartialClusterNodesSetInShardingCfgTest) {
 		return key;
 	};
 
-	std::map<int, std::vector<std::string>> shardsMap;
+	std::map<int, std::vector<DSN>> shardsMap;
 	for (int shard = 0; shard < cfg.shards; ++shard) {
 		// must comply with node numbering given by in Init function
 		// take only one node for shard from cluster
 		auto nodeId = shard * knodesInCluster;
-		shardsMap[shard].push_back(fmt::format("cproto://127.0.0.1:{}/shard{}", GetDefaults().defaultRpcPort + nodeId, nodeId));
+		shardsMap[shard].emplace_back(MakeDsn(reindexer_server::UserRole::kRoleSharding, nodeId, GetDefaults().defaultRpcPort + nodeId,
+											  "shard" + std::to_string(nodeId)));
 	}
 	// replace shards part in sharding config due to in one shard was only one of 7 nodes of sync cluster
-	cfg.shardsMap = std::make_shared<std::map<int, std::vector<std::string>>>(std::move(shardsMap));
+	cfg.shardsMap = std::make_shared<std::map<int, std::vector<DSN>>>(std::move(shardsMap));
 	cfg.nodesInCluster = knodesInCluster;
 	Init(std::move(cfg));
 
@@ -2362,10 +2416,10 @@ TEST_F(ShardingApi, ConfigYaml) {
 							  {3, ByRange, {sharding::Segment{Variant(24), Variant(35)}, sharding::Segment{Variant(88), Variant(95)}}}},
 							 0}},
 
-						   {{0, {"cproto://127.0.0.1:19000/shard0"}},
-							{1, {"cproto://127.0.0.1:19010/shard1"}},
-							{2, {"cproto://127.0.0.1:19020/shard2"}},
-							{3, {"cproto://127.0.0.1:19030/shard3"}}},
+						   {{0, {DSN("cproto://127.0.0.1:19000/shard0")}},
+							{1, {DSN("cproto://127.0.0.1:19010/shard1")}},
+							{2, {DSN("cproto://127.0.0.1:19020/shard2")}},
+							{3, {DSN("cproto://127.0.0.1:19030/shard3")}}},
 						   0},
 		substRangesInTemplate({
 	   R"(- 1
@@ -2399,10 +2453,10 @@ TEST_F(ShardingApi, ConfigYaml) {
 							  {3, ByRange, {sharding::Segment(Variant(17)), sharding::Segment(Variant(22)), sharding::Segment{Variant(24), Variant(39)}, sharding::Segment{Variant(88), Variant(95)}}}},
 							 0}},
 
-						   {{0, {"cproto://127.0.0.1:19000/shard0"}},
-							{1, {"cproto://127.0.0.1:19010/shard1"}},
-							{2, {"cproto://127.0.0.1:19020/shard2"}},
-							{3, {"cproto://127.0.0.1:19030/shard3"}}},
+						   {{0, {DSN("cproto://127.0.0.1:19000/shard0")}},
+							{1, {DSN("cproto://127.0.0.1:19010/shard1")}},
+							{2, {DSN("cproto://127.0.0.1:19020/shard2")}},
+							{3, {DSN("cproto://127.0.0.1:19030/shard3")}}},
 						   0},
 		substRangesInTemplate({
 	   R"(- [0, 15])",
@@ -2548,7 +2602,7 @@ shards_awaiting_timeout_sec: 25
 config_rollback_timeout_sec: 30
 proxy_conn_count: 15
 )"s,
-		 Error{errParams, "Scheme of sharding dsn must be cproto: 127.0.0.1:19001/shard1"}},
+		 Error{errParams, "Scheme of sharding dsn must be cproto or cprotos: 127.0.0.1:19001/shard1"}},
 		{R"(version: 1
 namespaces:
   - namespace: best_namespace
@@ -2714,7 +2768,9 @@ proxy_conn_threads: 5
 			   {Cfg::Key{1, ByValue, {sharding::Segment(Variant("south")), sharding::Segment(Variant("west"))}},
 				{2, ByValue, {sharding::Segment(Variant("north"))}}},
 			   0}},
-			 {{0, {"cproto://127.0.0.1:19000/shard0"}}, {1, {"cproto://127.0.0.1:19001/shard1"}}, {2, {"cproto://127.0.0.2:19002/shard2"}}},
+			 {{0, {DSN("cproto://127.0.0.1:19000/shard0")}},
+			  {1, {DSN("cproto://127.0.0.1:19001/shard1")}},
+			  {2, {DSN("cproto://127.0.0.2:19002/shard2")}}},
 			 0,
 			 std::chrono::milliseconds(5000),
 			 std::chrono::seconds(25),
@@ -2783,38 +2839,39 @@ proxy_conn_threads: 4
 				{2, ByValue, {sharding::Segment(Variant("London"))}},
 				{3, ByValue, {sharding::Segment(Variant("Paris"))}}},
 			   1}},
-			 {{0, {"cproto://127.0.0.1:19000/shard0", "cproto://127.0.0.1:19001/shard0", "cproto://127.0.0.1:19002/shard0"}},
-			  {1, {"cproto://127.0.0.1:19010/shard1", "cproto://127.0.0.1:19011/shard1"}},
-			  {2, {"cproto://127.0.0.2:19020/shard2"}},
+			 {{0, {DSN("cproto://127.0.0.1:19000/shard0"), DSN("cproto://127.0.0.1:19001/shard0"), DSN("cproto://127.0.0.1:19002/shard0")}},
+			  {1, {DSN("cproto://127.0.0.1:19010/shard1"), DSN("cproto://127.0.0.1:19011/shard1")}},
+			  {2, {DSN("cproto://127.0.0.2:19020/shard2")}},
 			  {3,
-			   {"cproto://127.0.0.2:19030/shard3", "cproto://127.0.0.2:19031/shard3", "cproto://127.0.0.2:19032/shard3",
-				"cproto://127.0.0.2:19033/shard3"}}},
+			   {DSN("cproto://127.0.0.2:19030/shard3"), DSN("cproto://127.0.0.2:19031/shard3"), DSN("cproto://127.0.0.2:19032/shard3"),
+				DSN("cproto://127.0.0.2:19033/shard3")}}},
 			 0}},
-		{sample.str(), Cfg{{{"namespace1",
-							 "count",
-							 {Cfg::Key{1,
-									   ByRange,
-									   {sharding::Segment(Variant(0)), sharding::Segment{Variant(7), Variant(10)},
-										sharding::Segment{Variant(13), Variant(21)}}},
-							  {2,
-							   ByValue,
-							   {sharding::Segment(Variant(1)), sharding::Segment(Variant(2)), sharding::Segment(Variant(3)),
-								sharding::Segment(Variant(4))}},
-							  {3, ByValue, {sharding::Segment(Variant(11))}}},
-							 0},
-							{"namespace2",
-							 "city",
-							 {Cfg::Key{1, ByValue, {sharding::Segment(Variant("Moscow"))}},
-							  {2, ByValue, {sharding::Segment(Variant("London"))}},
-							  {3, ByValue, {sharding::Segment(Variant("Paris"))}}},
-							 3}},
-						   {{0, {"cproto://127.0.0.1:19000/shard0", "cproto://127.0.0.1:19001/shard0", "cproto://127.0.0.1:19002/shard0"}},
-							{1, {"cproto://127.0.0.1:19010/shard1", "cproto://127.0.0.1:19011/shard1"}},
-							{2, {"cproto://127.0.0.2:19020/shard2"}},
-							{3,
-							 {"cproto://127.0.0.2:19030/shard3", "cproto://127.0.0.2:19031/shard3", "cproto://127.0.0.2:19032/shard3",
-							  "cproto://127.0.0.2:19033/shard3"}}},
-						   0}}};
+		{sample.str(),
+		 Cfg{{{"namespace1",
+			   "count",
+			   {Cfg::Key{1,
+						 ByRange,
+						 {sharding::Segment(Variant(0)), sharding::Segment{Variant(7), Variant(10)},
+						  sharding::Segment{Variant(13), Variant(21)}}},
+				{2,
+				 ByValue,
+				 {sharding::Segment(Variant(1)), sharding::Segment(Variant(2)), sharding::Segment(Variant(3)),
+				  sharding::Segment(Variant(4))}},
+				{3, ByValue, {sharding::Segment(Variant(11))}}},
+			   0},
+			  {"namespace2",
+			   "city",
+			   {Cfg::Key{1, ByValue, {sharding::Segment(Variant("Moscow"))}},
+				{2, ByValue, {sharding::Segment(Variant("London"))}},
+				{3, ByValue, {sharding::Segment(Variant("Paris"))}}},
+			   3}},
+			 {{0, {DSN("cproto://127.0.0.1:19000/shard0"), DSN("cproto://127.0.0.1:19001/shard0"), DSN("cproto://127.0.0.1:19002/shard0")}},
+			  {1, {DSN("cproto://127.0.0.1:19010/shard1"), DSN("cproto://127.0.0.1:19011/shard1")}},
+			  {2, {DSN("cproto://127.0.0.2:19020/shard2")}},
+			  {3,
+			   {DSN("cproto://127.0.0.2:19030/shard3"), DSN("cproto://127.0.0.2:19031/shard3"), DSN("cproto://127.0.0.2:19032/shard3"),
+				DSN("cproto://127.0.0.2:19033/shard3")}}},
+			 0}}};
 
 	testCases.insert(testCases.end(), rangesTestCases.begin(), rangesTestCases.end());
 
@@ -2851,7 +2908,9 @@ TEST_F(ShardingApi, ConfigJson) {
 			   {Cfg::Key{1, ByValue, {sharding::Segment(Variant("south")), sharding::Segment(Variant("west"))}},
 				{2, ByValue, {sharding::Segment(Variant("north"))}}},
 			   0}},
-			 {{0, {"cproto://127.0.0.1:19000/shard0"}}, {1, {"cproto://127.0.0.1:19001/shard1"}}, {2, {"cproto://127.0.0.2:19002/shard2"}}},
+			 {{0, {DSN("cproto://127.0.0.1:19000/shard0")}},
+			  {1, {DSN("cproto://127.0.0.1:19001/shard1")}},
+			  {2, {DSN("cproto://127.0.0.2:19002/shard2")}}},
 			 0,
 			 std::chrono::milliseconds(5000),
 			 std::chrono::seconds(20),
@@ -2873,12 +2932,12 @@ TEST_F(ShardingApi, ConfigJson) {
 				{2, ByValue, {sharding::Segment(Variant("London"))}},
 				{3, ByValue, {sharding::Segment(Variant("Paris"))}}},
 			   3}},
-			 {{0, {"cproto://127.0.0.1:19000/shard0", "cproto://127.0.0.1:19001/shard0", "cproto://127.0.0.1:19002/shard0"}},
-			  {1, {"cproto://127.0.0.1:19010/shard1", "cproto://127.0.0.1:19011/shard1"}},
-			  {2, {"cproto://127.0.0.2:19020/shard2"}},
+			 {{0, {DSN("cproto://127.0.0.1:19000/shard0"), DSN("cproto://127.0.0.1:19001/shard0"), DSN("cproto://127.0.0.1:19002/shard0")}},
+			  {1, {DSN("cproto://127.0.0.1:19010/shard1"), DSN("cproto://127.0.0.1:19011/shard1")}},
+			  {2, {DSN("cproto://127.0.0.2:19020/shard2")}},
 			  {3,
-			   {"cproto://127.0.0.2:19030/shard3", "cproto://127.0.0.2:19031/shard3", "cproto://127.0.0.2:19032/shard3",
-				"cproto://127.0.0.2:19033/shard3"}}},
+			   {DSN("cproto://127.0.0.2:19030/shard3"), DSN("cproto://127.0.0.2:19031/shard3"), DSN("cproto://127.0.0.2:19032/shard3"),
+				DSN("cproto://127.0.0.2:19033/shard3")}}},
 			 0,
 			 std::chrono::milliseconds(4000),
 			 std::chrono::seconds(30),
@@ -2900,10 +2959,10 @@ TEST_F(ShardingApi, ConfigJson) {
 				{3, ByRange, {sharding::Segment{Variant(24), Variant(35)}, sharding::Segment{Variant(88), Variant(95)}}}},
 			   0}},
 
-			 {{0, {"cproto://127.0.0.1:19000/shard0"}},
-			  {1, {"cproto://127.0.0.1:19010/shard1"}},
-			  {2, {"cproto://127.0.0.1:19020/shard2"}},
-			  {3, {"cproto://127.0.0.1:19030/shard3"}}},
+			 {{0, {DSN("cproto://127.0.0.1:19000/shard0")}},
+			  {1, {DSN("cproto://127.0.0.1:19010/shard1")}},
+			  {2, {DSN("cproto://127.0.0.1:19020/shard2")}},
+			  {3, {DSN("cproto://127.0.0.1:19030/shard3")}}},
 			 0,
 			 std::chrono::milliseconds(4000),
 			 std::chrono::seconds(30),
@@ -2914,13 +2973,13 @@ TEST_F(ShardingApi, ConfigJson) {
 		 R"({"version":1,"namespaces":[{"namespace":"namespace1","default_shard":0,"index":"count","keys":[{"shard_id":1,"values":[1,2,{"range":[3,5]},{"range":[10,15]}]},{"shard_id":2,"values":[16,{"range":[36,65]},{"range":[100,150]}]},{"shard_id":3,"values":[{"range":[24,35]},{"range":[88,95]}]}]}],"shards":[{"shard_id":0,"dsns":["cproto://127.0.0.1:19000/shard0"]},{"shard_id":1,"dsns":["cproto://127.0.0.1:19010/shard1"]},{"shard_id":2,"dsns":["cproto://127.0.0.1:19020/shard2"]},{"shard_id":3,"dsns":["cproto://127.0.0.1:19030/shard3"]}],"this_shard_id":0,"reconnect_timeout_msec":4000,"shards_awaiting_timeout_sec":30,"config_rollback_timeout_sec":30,"proxy_conn_count":3,"proxy_conn_concurrency":5,"proxy_conn_threads":2})"}};
 
 	for (const auto& [json, cfg, json4cmp] : testCases) {
-		const auto generatedJson = cfg.GetJSON();
+		const auto generatedJson = cfg.GetJSON(cluster::MaskingDSN::Disabled);
 		EXPECT_EQ(generatedJson, json4cmp ? json4cmp.value() : json);
 
 		const Error err = config.FromJSON(std::string(json));
 		EXPECT_TRUE(err.ok()) << err.what();
 		if (err.ok()) {
-			EXPECT_EQ(config, cfg) << json << "\nexpected:\n" << cfg.GetJSON();
+			EXPECT_EQ(config, cfg) << json << "\nexpected:\n" << cfg.GetJSON(cluster::MaskingDSN::Disabled);
 		}
 	}
 }

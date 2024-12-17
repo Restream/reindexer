@@ -291,8 +291,9 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 			if (stats.nodeStats.size()) {
 				auto res = tryConnectToLeader(dsns, stats, reconnectStatus);
 				if (reconnectStatus.ok()) {
-					logPrintf(LogTrace, "[sharding proxy] Shard %d will proxy data to shard %d (cluster) via %s", thisShard_, shardID,
-							  connections_.actualIndex.has_value() ? dsns[connections_.actualIndex.value()] : "'Unknow DSN'");
+					logPrintf(
+						LogTrace, "[sharding proxy] Shard %d will proxy data to shard %d (cluster) via %s", thisShard_, shardID,
+						connections_.actualIndex.has_value() ? fmt::sprintf("%s", dsns[connections_.actualIndex.value()]) : "'Unknow DSN'");
 					return res;
 				}
 				break;
@@ -313,12 +314,12 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 	return {};
 }
 
-std::shared_ptr<client::Reindexer> ConnectStrategy::tryConnectToLeader(const std::vector<std::string>& dsns,
-																	   const cluster::ReplicationStats& stats, Error& reconnectStatus) {
-	auto tryGetConnection = [this, &reconnectStatus](const std::vector<std::string>& dsns,
-													 const std::string& dsn) -> std::shared_ptr<reindexer::client::Reindexer> {
+std::shared_ptr<client::Reindexer> ConnectStrategy::tryConnectToLeader(const std::vector<DSN>& dsns, const cluster::ReplicationStats& stats,
+																	   Error& reconnectStatus) {
+	auto tryGetConnection = [this, &reconnectStatus](const std::vector<DSN>& dsns,
+													 const DSN& dsn) -> std::shared_ptr<reindexer::client::Reindexer> {
 		for (size_t i = 0; i < dsns.size(); ++i) {
-			if (dsns[i] == dsn) {
+			if (RelaxCompare(dsns[i], dsn)) {
 				auto& conn = *connections_[i];
 				reconnectStatus = conn.WithTimeout(config_.reconnectTimeout).Status(true);
 				connections_.actualIndex = i;
@@ -438,7 +439,7 @@ Error LocatorService::Start() {
 		}
 
 		connections.reserve(hosts.size());
-		for (const std::string& dsn : hosts) {
+		for (const auto& dsn : hosts) {
 			auto& connection = connections.emplace_back(std::make_shared<client::Reindexer>(
 				client::Reindexer(cfg, proxyConnCount, proxyConnThreads).WithShardId(int(shardId), true)));
 

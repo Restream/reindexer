@@ -2,7 +2,7 @@ package bindings
 
 const CInt32Max = int(^uint32(0) >> 1)
 
-const ReindexerVersion = "v4.18.0"
+const ReindexerVersion = "v4.19.0"
 
 // public go consts from type_consts.h and reindexer_ctypes.h
 const (
@@ -200,5 +200,4 @@ const (
 const (
 	ShardingNotSet   = -1
 	ShardingProxyOff = -2
-	NotSharded       = -3
 )

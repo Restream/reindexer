@@ -32,7 +32,7 @@ public:
 
 	RoleSwitcher(SharedSyncState<>&, SynchronizationList&, ReindexerImpl&, const ReplicationStatsCollector&, const Logger&);
 
-	void Run(std::vector<std::string>&& dsns, RoleSwitcher::Config&& cfg);
+	void Run(std::vector<DSN>&& dsns, RoleSwitcher::Config&& cfg);
 	void OnRoleChanged() {
 		std::lock_guard lck(mtx_);
 		if (syncer_) {
@@ -53,7 +53,7 @@ public:
 
 private:
 	struct Node {
-		std::string dsn;
+		DSN dsn;
 		client::CoroReindexer client;
 	};
 

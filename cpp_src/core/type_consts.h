@@ -144,7 +144,8 @@ enum ErrorCode {
 	errSystem = 37,
 	errAssert = 38,
 	errParseYAML = 39,
-	errNamespaceOverwritten = 40
+	errNamespaceOverwritten = 40,
+	errConnectSSL = 41,
 };
 
 enum SchemaType { JsonSchemaType, ProtobufSchemaType };
@@ -390,7 +391,7 @@ typedef struct RPCQrId {
 
 #ifdef __cplusplus
 namespace ShardingKeyType {
-enum ShardingKey { ProxyOff = -2, NotSetShard = -1, NotSharded = -3 };
+enum ShardingKey { ProxyOff = -2, NotSetShard = -1 };
 }
 namespace ShardingSourceId {
 enum SourceId { NotSet = -1 };

@@ -43,7 +43,7 @@ private:
 	}
 	bool isRunning() const noexcept { return raftThread_.joinable(); }
 	void clusterControlRoutine(int serverId);
-	std::string getManagementDsn(int id) const;
+	DSN getManagementDsn(int id) const;
 	void onRoleChanged(RaftInfo::Role to, int leaderId);
 	void stop();
 

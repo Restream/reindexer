@@ -29,7 +29,7 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 		return status;
 	}
 	reindexer::Reindexer* db = nullptr;
-	status = authCtx.GetDB(reindexer_server::UserRole(userRole), &db);
+	status = authCtx.GetDB<reindexer_server::AuthContext::CalledFrom::GRPC>(reindexer_server::UserRole(userRole), &db);
 	if (!status.ok()) {
 		return status;
 	}
@@ -825,7 +825,7 @@ void ReindexerService::removeExpiredTxCb(reindexer::net::ev::periodic&, int) {
 			auto status = dbMgr_.OpenDatabase(it->second.dbName, ctx, false);
 			if (status.ok()) {
 				reindexer::Reindexer* db = nullptr;
-				status = ctx.GetDB(reindexer_server::kRoleSystem, &db);
+				status = ctx.GetDB<reindexer_server::AuthContext::CalledFrom::GRPC>(reindexer_server::kRoleSystem, &db);
 				if (db && status.ok()) {
 					status = db->RollBackTransaction(*it->second.tx);
 					(void)status;  // ignore

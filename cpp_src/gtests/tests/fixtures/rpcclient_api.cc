@@ -7,7 +7,7 @@
 const std::string RPCClientTestApi::kDefaultRPCServerAddr = "127.0.0.1:" + std::to_string(RPCClientTestApi::kDefaultRPCPort);
 
 void RPCClientTestApi::TestServer::Start(const std::string& addr, Error errOnLogin) {
-	dsn_ = addr;
+	dsn_ = DSN(addr);
 	serverThread_.reset(new std::thread([this, addr, errOnLogin = std::move(errOnLogin)]() {
 		server_.reset(new RPCServerFake(conf_));
 		stop_.set(loop_);
@@ -42,7 +42,7 @@ void RPCClientTestApi::TestServer::Stop() {
 		}
 		serverThread_.reset();
 		terminate_ = false;
-		dsn_.clear();
+		dsn_ = {};
 	}
 }
 

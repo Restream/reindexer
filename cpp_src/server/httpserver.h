@@ -77,6 +77,7 @@ public:
 	int GetMemInfo(http::Context& ctx);
 	void Logger(http::Context& ctx);
 	void OnResponse(http::Context& ctx);
+	int GetRole(http::Context& ctx);
 
 protected:
 	Error modifyItem(Reindexer& db, std::string& nsName, Item& item, ItemModifyMode mode);
@@ -152,6 +153,7 @@ protected:
 private:
 	Error execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults& res, http::Context& ctx);
 	bool isParameterSetOn(std::string_view val) const noexcept;
+	int getAuth(http::Context& ctx, AuthContext& auth, const std::string& dbName) const;
 };
 
 }  // namespace reindexer_server

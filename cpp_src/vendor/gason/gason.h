@@ -24,12 +24,9 @@ enum JsonTag : uint8_t {
 	JSON_TRUE,
 	JSON_FALSE,
 	JSON_NULL = 0xF,
+	JSON_EMPTY = 0xFF
 };
 constexpr inline int format_as(JsonTag v) noexcept { return int(v); }
-
-// TODO: Move this to the JsonTag-enum, when pyreindexer deploy will be fixed. Currently this would break old pyrx builds
-// Issue #1736
-constexpr uint8_t JSON_EMPTY = 0xFF;
 
 struct JsonNode;
 
@@ -170,13 +167,14 @@ struct JsonNode {
 			case JSON_ARRAY:
 			case JSON_OBJECT:
 			case JSON_NULL:
+			case JSON_EMPTY:
 			default:
 				throw Exception(std::string("Can't convert json field '") + std::string(key) + "' to bool");
 		}
 	}
 
 	const JsonNode& operator[](std::string_view sv) const;
-	bool empty() const noexcept { return uint8_t(value.getTag()) == JSON_EMPTY; }
+	bool empty() const noexcept { return value.getTag() == JSON_EMPTY; }
 	bool isObject() const noexcept { return value.getTag() == JSON_OBJECT; }
 	JsonNode* toNode() const;
 	static JsonNode EmptyNode() noexcept;

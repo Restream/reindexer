@@ -1,6 +1,7 @@
 #include "clusterization_api.h"
 
 #include "core/formatters/lsn_fmt.h"
+#include "gtests/tests/gtest_cout.h"
 #include "yaml-cpp/yaml.h"
 
 void ClusterizationApi::Cluster::initCluster(size_t count, size_t initialServerId, const YAML::Node& clusterConf) {
@@ -237,7 +238,7 @@ void ClusterizationApi::Cluster::doWaitSync(std::string_view ns, std::vector<Ser
 		}
 		ASSERT_TRUE(now < syncTime);
 		bool empty = true;
-		ReplicationStateApi state;
+		ReplicationTestState state;
 		syncedCnt = 0;
 		for (auto& node : svc) {
 			if (node.IsRunning()) {
@@ -408,7 +409,7 @@ void ClusterizationApi::Cluster::ChangeLeader(int& curLeaderId, int newLeaderId)
 	ASSERT_EQ(curLeaderId, newLeaderId);
 }
 
-void ClusterizationApi::Cluster::AddAsyncNode(size_t nodeId, const std::string& dsn, cluster::AsyncReplicationMode replMode,
+void ClusterizationApi::Cluster::AddAsyncNode(size_t nodeId, const DSN& dsn, cluster::AsyncReplicationMode replMode,
 											  std::optional<std::vector<std::string>>&& nsList) {
 	assert(nodeId < svc_.size());
 	auto asyncLeader = svc_[nodeId].Get();
@@ -465,7 +466,7 @@ YAML::Node ClusterizationApi::Cluster::CreateClusterConfigStatic(const std::vect
 	clusterConf["nodes"] = YAML::Node(YAML::NodeType::Sequence);
 	for (size_t id : nodeIds) {
 		YAML::Node node;
-		node["dsn"] = fmt::format("cproto://127.0.0.1:{}/node{}", ports.defaultRpcPort + id, id);
+		node["dsn"] = MakeDsn(reindexer_server::UserRole::kRoleReplication, id, ports.defaultRpcPort + id, "node" + std::to_string(id));
 		node["server_id"] = id;
 		clusterConf["nodes"].push_back(node);
 	}

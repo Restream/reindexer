@@ -2,7 +2,6 @@
 
 #include <gtest/gtest.h>
 #include "reindexer_api.h"
-#include "tools/timetools.h"
 
 class NsApi : public ReindexerApi {
 protected:

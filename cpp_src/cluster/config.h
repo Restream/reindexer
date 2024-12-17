@@ -6,6 +6,7 @@
 #include "core/namespace/namespacenamesets.h"
 #include "estl/span.h"
 #include "sharding/ranges.h"
+#include "tools/dsn.h"
 #include "tools/errors.h"
 
 namespace gason {
@@ -31,7 +32,7 @@ constexpr auto kRoleSwitchStepTime = std::chrono::milliseconds(150);
 struct NodeData {
 	int serverId = -1;
 	int electionsTerm = 0;
-	std::string dsn;
+	DSN dsn;
 
 	Error FromJSON(span<char> json);
 	Error FromJSON(const gason::JsonNode& v);
@@ -57,18 +58,19 @@ struct RaftInfo {
 
 struct ClusterNodeConfig {
 	int GetServerID() const noexcept { return serverId; }
-	const std::string& GetRPCDsn() const noexcept { return dsn; }
-	const std::string& GetManagementDsn() const noexcept { return dsn; }
+	const DSN& GetRPCDsn() const noexcept { return dsn; }
+	const DSN& GetManagementDsn() const noexcept { return dsn; }
 	void FromYAML(const YAML::Node& yaml);
 
 	bool operator==(const ClusterNodeConfig& rdata) const noexcept { return (serverId == rdata.serverId) && (dsn == rdata.dsn); }
 
 	int serverId = -1;
-	std::string dsn;
+	DSN dsn;
 };
 
 struct AsyncReplConfigData;
 enum class AsyncReplicationMode { Default, FromClusterLeader };
+enum class MaskingDSN : bool { Disabled = false, Enabled = true };
 
 class AsyncReplNodeConfig {
 public:
@@ -86,13 +88,13 @@ public:
 	using NamespaceList = intrusive_atomic_rc_wrapper<NamespaceListImpl>;
 
 	AsyncReplNodeConfig() = default;
-	AsyncReplNodeConfig(std::string _dsn) : dsn(std::move(_dsn)) {}
+	AsyncReplNodeConfig(DSN _dsn) : dsn(std::move(_dsn)) {}
 
 	int GetServerID() const noexcept { return -1; }
-	const std::string& GetRPCDsn() const { return dsn; }
+	const DSN& GetRPCDsn() const { return dsn; }
 	void FromYAML(const YAML::Node& yaml);
 	void FromJSON(const gason::JsonNode& root);
-	void GetJSON(JsonBuilder& jb) const;
+	void GetJSON(JsonBuilder& jb, MaskingDSN) const;
 	void GetYAML(YAML::Node& yaml) const;
 
 	bool HasOwnNsList() const noexcept { return hasOwnNsList_; }
@@ -122,7 +124,7 @@ public:
 		return (dsn == rdata.dsn) && nsListsAreEqual(rdata) && replicationModesAreEqual(rdata);
 	}
 
-	std::string dsn;
+	DSN dsn;
 
 private:
 	bool nsListsAreEqual(const AsyncReplNodeConfig& rdata) const noexcept {
@@ -196,7 +198,7 @@ struct ShardingConfig {
 	static constexpr auto kDefaultRollbackTimeout = std::chrono::seconds(30);
 
 	struct Key {
-		Error FromYAML(const YAML::Node& yaml, const std::map<int, std::vector<std::string>>& shards, KeyValueType& valuesType,
+		Error FromYAML(const YAML::Node& yaml, const std::map<int, std::vector<DSN>>& shards, KeyValueType& valuesType,
 					   std::vector<sharding::Segment<Variant>>& checkVal);
 		Error FromJSON(const gason::JsonNode&, KeyValueType& valuesType, std::vector<sharding::Segment<Variant>>& checkVal);
 
@@ -216,7 +218,7 @@ struct ShardingConfig {
 						 const std::vector<sharding::Segment<Variant>>& checkVal);
 	};
 	struct Namespace {
-		Error FromYAML(const YAML::Node& yaml, const std::map<int, std::vector<std::string>>& shards);
+		Error FromYAML(const YAML::Node& yaml, const std::map<int, std::vector<DSN>>& shards);
 		Error FromJSON(const gason::JsonNode&);
 		void GetYAML(YAML::Node&) const;
 		void GetJSON(JsonBuilder&) const;
@@ -231,12 +233,13 @@ struct ShardingConfig {
 	Error FromJSON(const gason::JsonNode&);
 	std::string GetYAML() const;
 	YAML::Node GetYAMLObj() const;
-	std::string GetJSON() const;
-	void GetJSON(WrSerializer&) const;
-	void GetJSON(JsonBuilder&) const;
+
+	std::string GetJSON(MaskingDSN) const;
+	void GetJSON(WrSerializer&, MaskingDSN) const;
+	void GetJSON(JsonBuilder&, MaskingDSN) const;
 	Error Validate() const;
 	std::vector<Namespace> namespaces;
-	std::map<int, std::vector<std::string>> shards;
+	std::map<int, std::vector<DSN>> shards;
 	int thisShardId = ShardingKeyType::ProxyOff;
 	std::chrono::milliseconds reconnectTimeout = std::chrono::milliseconds(3000);
 	std::chrono::seconds shardsAwaitingTimeout = std::chrono::seconds(30);
@@ -258,7 +261,7 @@ struct AsyncReplConfigData {
 	Error FromYAML(const std::string& yml);
 	Error FromJSON(std::string_view json);
 	Error FromJSON(const gason::JsonNode& v);
-	void GetJSON(JsonBuilder& jb) const;
+	void GetJSON(JsonBuilder& jb, MaskingDSN) const;
 	void GetYAML(WrSerializer& ser) const;
 	static Role Str2role(std::string_view role) noexcept;
 	static std::string Role2str(Role) noexcept;

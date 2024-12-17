@@ -301,13 +301,22 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 		// Get set of keys or single key
 		case CondEq:
 		case CondSet: {
+			for (const auto& key : keys) {
+				if (key.IsNullValue()) {
+					throw Error(errParams,
+								"Can not use 'null'-value with operators '=' and 'IN()' (index: '%s'). Use 'IS NULL'/'IS NOT NULL' instead",
+								this->Name());
+				}
+			}
+
 			struct {
 				T* i_map;
 				const VariantArray& keys;
+				std::string_view indexName;
 				SortType sortId;
 				Index::SelectOpts opts;
 				bool isSparse;
-			} ctx = {&this->idx_map, keys, sortId, opts, this->opts_.IsSparse()};
+			} ctx = {&this->idx_map, keys, this->Name(), sortId, opts, this->opts_.IsSparse()};
 			bool selectorWasSkipped = false;
 			// should return true, if fallback to comparator required
 			auto selector = [&ctx, &selectorWasSkipped](SelectKeyResult& res, size_t& idsCount) -> bool {
@@ -357,7 +366,10 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 		case CondAllSet: {
 			// Get set of key, where all request keys are present
 			SelectKeyResults rslts;
-			for (auto key : keys) {
+			for (const auto& key : keys) {
+				if (key.IsNullValue()) {
+					throw Error(errParams, "Can not use 'null'-value with operator 'allset' (index: '%s')", this->Name());
+				}
 				SelectKeyResult res1;
 				auto keyIt = this->idx_map.find(static_cast<ref_type>(key.convert(this->KeyType())));
 				if (keyIt == this->idx_map.end()) {

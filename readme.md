@@ -18,7 +18,7 @@ about reindexer server and HTTP API refer to
 
 There are two LTS-versions of reindexer available: v3.x.x and v4.x.x.
 
-3.x.x is currently our mainstream branch and 4.x.x (release/4 branch) is beta-version with experimental RAFT-cluster and sharding support.
+3.x.x is currently our mainstream branch and 4.x.x (release/4 branch) is experimental release-branch with RAFT-cluster and sharding support.
 Storages are compatible between those versions, however, replication configs are totally different. Versions 3 and 4 are getting all the same bugfixes and features (except replication-related ones).
 
 # Table of contents:
@@ -176,7 +176,7 @@ import (
 
 	// OR use Reindexer as standalone server and connect to it via TCP or unix domain socket (if available).
 	// _ "github.com/restream/reindexer/v4/bindings/cproto"
-
+	
 	// OR link Reindexer as static library with bundled server.
 	// _ "github.com/restream/reindexer/v4/bindings/builtinserver"
 	// "github.com/restream/reindexer/v4/bindings/builtinserver/config"
@@ -199,6 +199,16 @@ func main() {
 	// Database should be created explicitly via reindexer_tool or via WithCreateDBIfMissing option:
 	// If server security mode is enabled, then username and password are mandatory
 	// db := reindexer.NewReindex("cproto://user:pass@127.0.0.1:6534/testdb", reindexer.WithCreateDBIfMissing())
+
+	// OR - Init a database instance and choose the binding (connect to server via TCP sockets with TLS support
+	// using cprotos-protocol and a package tls from the standard GO library)
+	// Database should be created explicitly via reindexer_tool or via WithCreateDBIfMissing option:
+	// If server security mode is enabled, then username and password are mandatory
+	// It is assumed that reindexer RPC-server with TLS support is running at this address. 6535 is the default port for it.
+	// tlsConfig := tls.Config{
+	// 	/*required options*/
+	// }
+	// db := reindexer.NewReindex("cprotos://user:pass@127.0.0.1:6535/testdb", reindexer.WithCreateDBIfMissing(), reindexer.WithTLSConfig(&tlsConfig))
 
 	// OR - Init a database instance and choose the binding (connect to server via unix domain sockets)
 	// Unix domain sockets are available on the unix systems only (socket file has to be explicitly set on the server's side with '--urpcaddr' option)
@@ -334,7 +344,7 @@ Reindexer can run in 3 different modes:
 
 - `embedded (builtin)` Reindexer is embedded into application as static library, and does not require separate server process.
 - `embedded with server (builtinserver)` Reindexer is embedded into application as static library, and start server. In this mode other
-  clients can connect to application via cproto, ucproto or http.
+  clients can connect to application via cproto, cprotos, ucproto, http or https.
 - `standalone` Reindexer run as standalone server, application connects to Reindexer via network or unix domain sockets.
 
 ### Installation for server mode

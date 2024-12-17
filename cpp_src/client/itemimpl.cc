@@ -16,15 +16,15 @@ Error ItemImpl<C>::tryToUpdateTagsMatcher() {
 	Error err = client_->Select(q, qr, InternalRdxContext().WithTimeout(requestTimeout_).WithShardId(ShardingKeyType::ProxyOff, false));
 	if (err.ok() && qr.GetNamespacesCount() > 0) {
 		TagsMatcher newTm = qr.GetTagsMatcher(0);
-		if (newTm.version() == tagsMatcher_.version()) {
-			return Error(errLogic, "TM version is up-to-date (%d)", newTm.version());
+		if (newTm.version() == tagsMatcher_.version() && newTm.stateToken() == tagsMatcher_.stateToken()) {
+			return Error(errLogic, "TM version is up-to-date (%d) and state tokens are same: (%08X)", newTm.version(), newTm.stateToken());
 		}
 		WrSerializer wrser;
 		newTm.serialize(wrser);
 		std::string_view buf(wrser.Slice());
 		Serializer ser(buf);
 		tagsMatcher_.deserialize(ser, newTm.version(), newTm.stateToken());
-		return errOK;
+		return {};
 	}
 	return err.ok() ? Error(errLogic, "Unable to update tagsmatcher: QR namespaces array is empty") : err;
 }

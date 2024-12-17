@@ -59,7 +59,7 @@ reindexer_error get_reindexer_instance(uintptr_t psvc, reindexer_string dbname, 
 		AuthContext ctx(str2c(user), str2c(pass));
 		err = svc->GetDBManager().OpenDatabase(str2c(dbname), ctx, true);
 		if (err.ok()) {
-			err = ctx.GetDB(kRoleOwner, &target_db);
+			err = ctx.GetDB<AuthContext::CalledFrom::Core>(kRoleOwner, &target_db);
 		}
 	}
 

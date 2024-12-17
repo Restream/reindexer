@@ -39,6 +39,8 @@ struct ServerConfig {
 	std::string StorageEngine;
 	std::string HTTPAddr;
 	std::string RPCAddr;
+	std::string HTTPsAddr;
+	std::string RPCsAddr;
 	std::string RPCUnixAddr;
 	std::string RPCThreadingMode;
 	std::string RPCUnixThreadingMode;
@@ -49,6 +51,8 @@ struct ServerConfig {
 	std::string HttpLog;
 	std::string RpcLog;
 	std::string StoragePath;
+	std::string SslCertPath;
+	std::string SslKeyPath;
 	bool StartWithErrors;
 	bool Autorepair;
 	bool AllowNamespaceLeak;

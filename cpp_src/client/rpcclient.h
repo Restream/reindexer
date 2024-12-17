@@ -1,6 +1,5 @@
 ﻿#pragma once
 
-#include <functional>
 #include "client/coroqueryresults.h"
 #include "client/corotransaction.h"
 #include "client/inamespaces.h"
@@ -13,7 +12,6 @@
 #include "core/query/query.h"
 #include "core/shardedmeta.h"
 #include "coroutine/mutex.h"
-#include "coroutine/waitgroup.h"
 #include "net/cproto/coroclientconnection.h"
 
 namespace reindexer {
@@ -26,39 +24,42 @@ struct ClusterControlRequestData;
 
 namespace sharding {
 struct ShardingControlRequestData;
-}
+struct ShardingControlResponseData;
+}  // namespace sharding
 namespace client {
 
 class Snapshot;
 
 template <typename MtxT>
-class NamespacesImpl : public INamespaces::IntrusiveT {
+class NamespacesImpl final : public INamespaces::IntrusiveT {
 public:
-	using MapT = fast_hash_map<std::string, std::unique_ptr<Namespace>, nocase_hash_str, nocase_equal_str, nocase_less_str>;
-	void Add(const std::string& name) override final {
+	using MapT = fast_hash_map<std::string, std::shared_ptr<Namespace>, nocase_hash_str, nocase_equal_str, nocase_less_str>;
+	void Add(const std::string& name) override {
+		auto ns = std::make_shared<Namespace>(name);
+
 		std::lock_guard ulck(mtx_);
-		namespaces_.emplace(name, std::make_unique<Namespace>(name));
+		namespaces_.emplace(name, std::move(ns));
 	}
-	void Erase(std::string_view name) override final {
+	void Erase(std::string_view name) override {
 		std::lock_guard ulck(mtx_);
 		namespaces_.erase(name);
 	}
-	Namespace* Get(std::string_view name) override final {
+	std::shared_ptr<Namespace> Get(std::string_view name) override {
 		shared_lock slck(mtx_);
 		auto nsIt = namespaces_.find(name);
 		if (nsIt == namespaces_.end()) {
 			slck.unlock();
 
 			std::string nsName(name);
-			auto nsPtr = std::make_unique<Namespace>(nsName);
+			auto nsPtr = std::make_shared<Namespace>(nsName);
 			std::lock_guard ulck(mtx_);
 			nsIt = namespaces_.find(name);
 			if (nsIt == namespaces_.end()) {
 				nsIt = namespaces_.emplace(std::move(nsName), std::move(nsPtr)).first;
 			}
-			return nsIt->second.get();
+			return nsIt->second;
 		}
-		return nsIt->second.get();
+		return nsIt->second;
 	}
 
 private:
@@ -80,7 +81,7 @@ public:
 	RPCClient& operator=(RPCClient&&) = delete;
 	~RPCClient();
 
-	Error Connect(const std::string& dsn, ev::dynamic_loop& loop, const ConnectOpts& opts);
+	Error Connect(const DSN& dsn, ev::dynamic_loop& loop, const ConnectOpts& opts);
 	void Stop();
 
 	Error OpenNamespace(std::string_view nsName, const InternalRdxContext& ctx,
@@ -165,7 +166,8 @@ public:
 
 	typedef CoroQueryResults QueryResultsT;
 
-	[[nodiscard]] Error ShardingControlRequest(const sharding::ShardingControlRequestData& request, const InternalRdxContext& ctx) noexcept;
+	Error ShardingControlRequest(const sharding::ShardingControlRequestData& request, sharding::ShardingControlResponseData& response,
+								 const InternalRdxContext& ctx) noexcept;
 
 protected:
 	Error selectImpl(const Query& query, CoroQueryResults& result, milliseconds netTimeout, const InternalRdxContext& ctx);
@@ -174,7 +176,7 @@ protected:
 	Error modifyItemFormat(std::string_view nsName, Item& item, RPCDataFormat format, int mode, milliseconds netTimeout,
 						   const InternalRdxContext& ctx);
 	Error modifyItemRaw(std::string_view nsName, std::string_view cjson, int mode, milliseconds netTimeout, const InternalRdxContext& ctx);
-	Namespace* getNamespace(std::string_view nsName);
+	std::shared_ptr<Namespace> getNamespace(std::string_view nsName);
 
 	void onConnectionState(Error err) noexcept {
 		const auto observers = observers_;

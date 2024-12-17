@@ -9,8 +9,6 @@
 #include "client/rpcformat.h"
 #include "client/transaction.h"
 #include "core/shardedmeta.h"
-#include "coroutine/channel.h"
-#include "coroutine/waitgroup.h"
 #include "estl/fast_hash_map.h"
 #include "estl/recycle_list.h"
 #include "net/ev/ev.h"
@@ -35,7 +33,7 @@ public:
 	ReindexerImpl(const ReindexerImpl&) = delete;
 	ReindexerImpl& operator=(const ReindexerImpl&) = delete;
 
-	Error Connect(const std::string& dsn, const client::ConnectOpts& opts = client::ConnectOpts());
+	Error Connect(const DSN& dsn, const client::ConnectOpts& opts = client::ConnectOpts());
 	void Stop();
 	Error OpenNamespace(std::string_view nsName, const InternalRdxContext& ctx, const StorageOpts& opts, const NsReplicationOpts& replOpts);
 	Error AddNamespace(const NamespaceDef& nsDef, const InternalRdxContext& ctx, const NsReplicationOpts& replOpts);
@@ -75,11 +73,11 @@ public:
 	Error RollBackTransaction(Transaction& tr, const InternalRdxContext& ctx);
 	Error GetReplState(std::string_view nsName, ReplicationStateV2& state, const InternalRdxContext& ctx);
 
-	[[nodiscard]] Error SaveNewShardingConfig(std::string_view config, int64_t sourceId, const InternalRdxContext& ctx) noexcept;
-	[[nodiscard]] Error ResetOldShardingConfig(int64_t sourceId, const InternalRdxContext& ctx) noexcept;
-	[[nodiscard]] Error ResetShardingConfigCandidate(int64_t sourceId, const InternalRdxContext& ctx) noexcept;
-	[[nodiscard]] Error RollbackShardingConfigCandidate(int64_t sourceId, const InternalRdxContext& ctx) noexcept;
-	[[nodiscard]] Error ApplyNewShardingConfig(int64_t sourceId, const InternalRdxContext& ctx) noexcept;
+	Error SaveNewShardingConfig(std::string_view config, int64_t sourceId, const InternalRdxContext& ctx) noexcept;
+	Error ResetOldShardingConfig(int64_t sourceId, const InternalRdxContext& ctx) noexcept;
+	Error ResetShardingConfigCandidate(int64_t sourceId, const InternalRdxContext& ctx) noexcept;
+	Error RollbackShardingConfigCandidate(int64_t sourceId, const InternalRdxContext& ctx) noexcept;
+	Error ApplyNewShardingConfig(int64_t sourceId, const InternalRdxContext& ctx) noexcept;
 
 private:
 	friend class QueryResults;
@@ -87,12 +85,12 @@ private:
 	Error fetchResults(int flags, int offset, int limit, QueryResults& result);
 	Error fetchResults(int flags, QueryResults& result);
 	Error closeResults(QueryResults& result);
-	Error addTxItem(Transaction& tr, Item&& item, ItemModifyMode mode, lsn_t lsn, Transaction::Completion cmpl);
-	Error putTxMeta(Transaction& tr, std::string_view key, std::string_view value, lsn_t lsn, Transaction::Completion cmpl);
-	Error setTxTm(Transaction& tr, TagsMatcher&& tm, lsn_t lsn, Transaction::Completion cmpl);
-	Error modifyTx(Transaction& tr, Query&& q, lsn_t lsn, Transaction::Completion cmpl);
+	Error addTxItem(Transaction& tr, Item&& item, ItemModifyMode mode, const InternalRdxContext& ctx);
+	Error putTxMeta(Transaction& tr, std::string_view key, std::string_view value, const InternalRdxContext& ctx);
+	Error setTxTm(Transaction& tr, TagsMatcher&& tm, const InternalRdxContext& ctx);
+	Error modifyTx(Transaction& tr, Query&& q, const InternalRdxContext& ctx);
 	Item newItemTx(CoroTransaction& tr);
-	void threadLoopFun(uint32_t tid, std::promise<Error>& isRunning, const std::string& dsn, const client::ConnectOpts& opts);
+	void threadLoopFun(uint32_t tid, std::promise<Error>& isRunning, const DSN& dsn, const client::ConnectOpts& opts);
 	void stop();
 
 	enum CmdName {

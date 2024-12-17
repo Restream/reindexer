@@ -52,6 +52,7 @@
   * [Get system information](#get-system-information)
   * [Try to release free memory back to the operating system for reuse by other applications.](#try-to-release-free-memory-back-to-the-operating-system-for-reuse-by-other-applications)
   * [Get memory usage information](#get-memory-usage-information)
+  * [Get user role](#get-user-role)
   * [Get activity stats information](#get-activity-stats-information)
   * [Get client connection information](#get-client-connection-information)
   * [Get replication statistics](#get-replication-statistics)
@@ -127,6 +128,7 @@
   * [UpdateField](#updatefield)
   * [UpdatePerfStats](#updateperfstats)
   * [UpdateResponse](#updateresponse)
+  * [UserRoleResponse](#userroleresponse)
 
 <!-- tocstop -->
 
@@ -137,7 +139,7 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 
 
 ### Version information
-*Version* : 4.18.0
+*Version* : 4.19.0
 
 
 ### License information
@@ -1810,6 +1812,30 @@ This operation will return memory usage information from tcmalloc allocator.
 
 
 
+### Get user role
+```
+GET /user/role
+```
+
+
+#### Description
+Get the role of the currently authorized user in the Reindexer. If authorization is disabled, the owner's role is returned
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|successful operation|[UserRoleResponse](#userroleresponse)|
+|**401**|Forbidden|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* system
+
+
+
 ### Get activity stats information
 ```
 GET /db/{database}/namespaces/%23activitystats/items
@@ -2420,6 +2446,7 @@ Fulltext Index configuration
 |**partial_match_decrease**  <br>*optional*|Decrease of relevancy in case of partial match by value: partial_match_decrease * (non matched symbols) / (matched symbols)  <br>**Minimum value** : `0`  <br>**Maximum value** : `100`|integer|
 |**position_boost**  <br>*optional*|Boost of search query term position  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**position_weight**  <br>*optional*|Weight of search query term position in final rank. 0: term position will not change final rank. 1: term position will affect to final rank in 0 - 100% range  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
+|**splitter**  <br>*optional*|Text tokenization algorithm. 'fast' - splits text by spaces, special characters and unsupported UTF-8 symbols. Each token is a combination of letters from supported UTF-8 subset, numbers and extra word symbols. 'mmseg_cn' - algorithm based on friso implementation of mmseg for Chinese and English  <br>**Default** : `"fast"`|enum (fast, mmseg_cn)|
 |**stemmers**  <br>*optional*|List of stemmers to use|< string > array|
 |**stop_words**  <br>*optional*|List of objects of stop words. Words from this list will be ignored when building indexes|< [FtStopWordObject](#ftstopwordobject) > array|
 |**sum_ranks_by_fields_ratio**  <br>*optional*|Ratio to summation of ranks of match one term in several fields. For example, if value of this ratio is K, request is '@+f1,+f2,+f3 word', ranks of match in fields are R1, R2, R3 and R2 < R1 < R3, final rank will be R = R2 + K*R1 + K*K*R3  <br>**Default** : `0.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
@@ -3235,6 +3262,14 @@ Performance statistics for update operations
 |Name|Description|Schema|
 |---|---|---|
 |**updated**  <br>*optional*|Count of updated items|integer|
+
+
+
+### UserRoleResponse
+
+|Name|Description|Schema|
+|---|---|---|
+|**user_role**  <br>*optional*|User role|enum (owner, db_admin, data_write, data_read, none, unauthoried)|
 
 
 

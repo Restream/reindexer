@@ -1,6 +1,5 @@
 #include "client/reindexer.h"
 #include "client/cororeindexer.h"
-#include "client/itemimpl.h"
 #include "client/reindexerimpl.h"
 #include "client/rpcclient.h"
 
@@ -11,7 +10,8 @@ Reindexer::Reindexer(const ReindexerConfig& config, uint32_t connCount, uint32_t
 	: impl_(new ReindexerImpl(config, connCount, threads)), ctx_() {}
 Reindexer::~Reindexer() = default;
 
-Error Reindexer::Connect(const std::string& dsn, const client::ConnectOpts& opts) { return impl_->Connect(dsn, opts); }
+Error Reindexer::Connect(const std::string& dsn, const client::ConnectOpts& opts) { return Connect(DSN(dsn), opts); }
+Error Reindexer::Connect(const DSN& dsn, const client::ConnectOpts& opts) { return impl_->Connect(dsn, opts); }
 void Reindexer::Stop() { impl_->Stop(); }
 Error Reindexer::AddNamespace(const NamespaceDef& nsDef, const NsReplicationOpts& replOpts) {
 	return impl_->AddNamespace(nsDef, ctx_, replOpts);
@@ -77,21 +77,19 @@ Error Reindexer::CommitTransaction(Transaction& tr, QueryResults& result) { retu
 Error Reindexer::RollBackTransaction(Transaction& tr) { return impl_->RollBackTransaction(tr, ctx_); }
 Error Reindexer::GetReplState(std::string_view nsName, ReplicationStateV2& state) { return impl_->GetReplState(nsName, state, ctx_); }
 
-[[nodiscard]] Error Reindexer::SaveNewShardingConfig(std::string_view config, int64_t sourceId) noexcept {
+Error Reindexer::SaveNewShardingConfig(std::string_view config, int64_t sourceId) noexcept {
 	return impl_->SaveNewShardingConfig(config, sourceId, ctx_);
 }
 
-[[nodiscard]] Error Reindexer::ResetShardingConfigCandidate(int64_t sourceId) noexcept {
-	return impl_->ResetShardingConfigCandidate(sourceId, ctx_);
-}
+Error Reindexer::ResetShardingConfigCandidate(int64_t sourceId) noexcept { return impl_->ResetShardingConfigCandidate(sourceId, ctx_); }
 
-[[nodiscard]] Error Reindexer::ResetOldShardingConfig(int64_t sourceId) noexcept { return impl_->ResetOldShardingConfig(sourceId, ctx_); }
+Error Reindexer::ResetOldShardingConfig(int64_t sourceId) noexcept { return impl_->ResetOldShardingConfig(sourceId, ctx_); }
 
-[[nodiscard]] Error Reindexer::RollbackShardingConfigCandidate(int64_t sourceId) noexcept {
+Error Reindexer::RollbackShardingConfigCandidate(int64_t sourceId) noexcept {
 	return impl_->RollbackShardingConfigCandidate(sourceId, ctx_);
 }
 
-[[nodiscard]] Error Reindexer::ApplyNewShardingConfig(int64_t sourceId) noexcept { return impl_->ApplyNewShardingConfig(sourceId, ctx_); }
+Error Reindexer::ApplyNewShardingConfig(int64_t sourceId) noexcept { return impl_->ApplyNewShardingConfig(sourceId, ctx_); }
 
 }  // namespace client
 }  // namespace reindexer

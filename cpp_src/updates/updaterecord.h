@@ -1,6 +1,5 @@
 #pragma once
 
-#include <string_view>
 #include <variant>
 #include "core/cjson/tagsmatcher.h"
 #include "core/indexdef.h"
@@ -12,12 +11,12 @@ namespace reindexer {
 namespace updates {
 
 struct ItemReplicationRecord {
-	ItemReplicationRecord(WrSerializer&& _cjson) noexcept : cjson(std::move(_cjson)) {}
+	ItemReplicationRecord(chunk&& _ch) noexcept : ch(std::move(_ch)) {}
 	ItemReplicationRecord(const ItemReplicationRecord&) = delete;
 	ItemReplicationRecord& operator=(const ItemReplicationRecord&) = delete;
-	size_t Size() const noexcept { return sizeof(ItemReplicationRecord) + (cjson.HasHeap() ? cjson.Slice().size() : 0); }
+	size_t Size() const noexcept { return sizeof(ItemReplicationRecord) + ch.size(); }
 
-	const WrSerializer cjson;
+	const chunk ch;
 };
 
 struct TagsMatcherReplicationRecord {
@@ -31,12 +30,12 @@ struct TagsMatcherReplicationRecord {
 };
 
 struct IndexReplicationRecord {
-	IndexReplicationRecord(IndexDef&& i) noexcept : idef(std::move(i)) {}
+	IndexReplicationRecord(IndexDef&& i) noexcept : idef(std::make_unique<const IndexDef>(std::move(i))) {}
 	IndexReplicationRecord(const IndexReplicationRecord&) = delete;
 	IndexReplicationRecord& operator=(const IndexReplicationRecord&) = delete;
-	size_t Size() const noexcept { return sizeof(IndexReplicationRecord) + idef.HeapSize(); }
+	size_t Size() const noexcept { return sizeof(IndexReplicationRecord) + idef->HeapSize(); }
 
-	const IndexDef idef;
+	std::unique_ptr<const IndexDef> idef;
 };
 
 struct MetaReplicationRecord {
@@ -68,12 +67,13 @@ struct SchemaReplicationRecord {
 };
 
 struct AddNamespaceReplicationRecord {
-	AddNamespaceReplicationRecord(NamespaceDef&& nd, int64_t st) noexcept : def(std::move(nd)), stateToken(st) {}
+	AddNamespaceReplicationRecord(NamespaceDef&& nd, int64_t st) noexcept
+		: def(std::make_unique<const NamespaceDef>(std::move(nd))), stateToken(st) {}
 	AddNamespaceReplicationRecord(const AddNamespaceReplicationRecord&) = delete;
 	AddNamespaceReplicationRecord& operator=(const AddNamespaceReplicationRecord&) = delete;
-	size_t Size() const noexcept { return sizeof(AddNamespaceReplicationRecord) + def.HeapSize(); }
+	size_t Size() const noexcept { return sizeof(AddNamespaceReplicationRecord) + def->HeapSize(); }
 
-	const NamespaceDef def;
+	std::unique_ptr<const NamespaceDef> def;
 	const int64_t stateToken;
 };
 

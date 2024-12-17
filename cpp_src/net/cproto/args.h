@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/keyvalue/variant.h"
+#include "tools/masking.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -26,7 +27,7 @@ public:
 			ser.PutVariant(arg);
 		}
 	}
-	void Dump(WrSerializer& wrser) const;
+	void Dump(WrSerializer& wrser, const h_vector<MaskingFunc, 2>& maskArgsFuncs = {}) const;
 };
 }  // namespace cproto
 }  // namespace net

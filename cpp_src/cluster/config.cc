@@ -1,8 +1,5 @@
 #include "cluster/config.h"
 
-#include <set>
-#include <string_view>
-
 #include "core/cjson/jsonbuilder.h"
 #include "core/indexdef.h"
 #include "core/type_consts.h"
@@ -18,11 +15,9 @@ using namespace std::string_view_literals;
 namespace reindexer {
 namespace cluster {
 
-const std::string_view kCprotoPrefix = "cproto://";
-
-static void ValidateDSN(std::string_view dsn) {
-	if (!checkIfStartsWith(kCprotoPrefix, dsn)) {
-		throw Error(errParams, "DSN must start with cproto://. Actual DSN is %s", dsn);
+static void ValidateDSN(const DSN& dsn) {
+	if (dsn.Parser().scheme() != "cproto" && dsn.Parser().scheme() != "cprotos") {
+		throw Error(errParams, "DSN must start with cproto:// or cprotos://. Actual DSN is %s", dsn);
 	}
 }
 
@@ -42,7 +37,7 @@ Error NodeData::FromJSON(const gason::JsonNode& root) {
 	try {
 		serverId = root["server_id"].As<int>(serverId);
 		electionsTerm = root["elections_term"].As<int>(electionsTerm);
-		dsn = root["dsn"].As<std::string>();
+		dsn = DSN(root["dsn"].As<std::string>());
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& ex) {
@@ -127,12 +122,12 @@ RaftInfo::Role RaftInfo::RoleFromStr(std::string_view role) {
 
 void ClusterNodeConfig::FromYAML(const YAML::Node& root) {
 	serverId = root["server_id"].as<int>(serverId);
-	dsn = root["dsn"].as<std::string>(dsn);
+	dsn = DSN(root["dsn"].as<std::string>());
 	ValidateDSN(dsn);
 }
 
 void AsyncReplNodeConfig::FromYAML(const YAML::Node& root) {
-	dsn = root["dsn"].as<std::string>(dsn);
+	dsn = DSN(root["dsn"].as<std::string>());
 	ValidateDSN(dsn);
 	auto node = root["namespaces"];
 	namespaces_.reset();
@@ -151,7 +146,7 @@ void AsyncReplNodeConfig::FromYAML(const YAML::Node& root) {
 }
 
 void AsyncReplNodeConfig::FromJSON(const gason::JsonNode& root) {
-	dsn = root["dsn"].As<std::string>(dsn);
+	dsn = DSN(root["dsn"].As<std::string>());
 	ValidateDSN(dsn);
 	{
 		auto& node = root["namespaces"];
@@ -170,8 +165,12 @@ void AsyncReplNodeConfig::FromJSON(const gason::JsonNode& root) {
 	}
 }
 
-void AsyncReplNodeConfig::GetJSON(JsonBuilder& jb) const {
-	jb.Put("dsn", dsn);
+void AsyncReplNodeConfig::GetJSON(JsonBuilder& jb, MaskingDSN maskingDSN) const {
+	if (maskingDSN == MaskingDSN::Disabled) {
+		jb.Put("dsn", dsn.dsn_);
+	} else if (maskingDSN == MaskingDSN::Enabled) {
+		jb.Put("dsn", dsn);
+	}
 	if (hasOwnNsList_) {
 		auto arrNode = jb.Array("namespaces");
 		for (const auto& ns : namespaces_->data) {
@@ -376,7 +375,7 @@ Error AsyncReplConfigData::FromJSON(const gason::JsonNode& root) {
 	return Error();
 }
 
-void AsyncReplConfigData::GetJSON(JsonBuilder& jb) const {
+void AsyncReplConfigData::GetJSON(JsonBuilder& jb, MaskingDSN maskingDSN) const {
 	jb.Put("role", Role2str(role));
 	jb.Put("replication_mode", Mode2str(mode));
 	jb.Put("app_name", appName);
@@ -402,7 +401,7 @@ void AsyncReplConfigData::GetJSON(JsonBuilder& jb) const {
 		auto arrNode = jb.Array("nodes");
 		for (const auto& node : nodes) {
 			auto obj = arrNode.Object();
-			node.GetJSON(obj);
+			node.GetJSON(obj, maskingDSN);
 		}
 	}
 }
@@ -533,7 +532,7 @@ std::string AsyncReplConfigData::Mode2str(AsyncReplicationMode mode) noexcept {
 	}
 }
 
-Error ShardingConfig::Namespace::FromYAML(const YAML::Node& yaml, const std::map<int, std::vector<std::string>>& shards) {
+Error ShardingConfig::Namespace::FromYAML(const YAML::Node& yaml, const std::map<int, std::vector<DSN>>& shards) {
 	if (!yaml["namespace"].IsScalar()) {
 		return Error(errParams, "'namespace' node must be scalar.");
 	}
@@ -694,13 +693,14 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromJSON(const gason::Jso
 		}
 		case gason::JsonTag::JSON_ARRAY:
 		case gason::JsonTag::JSON_NULL:
+		case gason::JsonTag::JSON_EMPTY:
 		default:
 			throw Error(errParams, "Incorrect JsonTag for sharding key: %d", int(jsonValue.getTag()));
 	}
 }
 
-Error ShardingConfig::Key::FromYAML(const YAML::Node& yaml, const std::map<int, std::vector<std::string>>& _shards,
-									KeyValueType& valuesType, std::vector<sharding::Segment<Variant>>& checkVal) {
+Error ShardingConfig::Key::FromYAML(const YAML::Node& yaml, const std::map<int, std::vector<DSN>>& _shards, KeyValueType& valuesType,
+									std::vector<sharding::Segment<Variant>>& checkVal) {
 	values.clear();
 	const auto& shardIdNode = yaml["shard_id"];
 	if (!shardIdNode.IsDefined()) {
@@ -999,7 +999,10 @@ YAML::Node ShardingConfig::GetYAMLObj() const {
 		for (const auto& [id, dsns] : shards) {
 			YAML::Node n;
 			n["shard_id"] = id;
-			n["dsns"] = dsns;
+			n["dsns"] = YAML::Node(YAML::NodeType::Sequence);
+			for (const auto& dsn : dsns) {
+				n["dsns"].push_back(dsn);
+			}
 			shardsNode.push_back(n);
 		}
 	}
@@ -1016,18 +1019,18 @@ YAML::Node ShardingConfig::GetYAMLObj() const {
 	return yaml;
 }
 
-std::string ShardingConfig::GetJSON() const {
+std::string ShardingConfig::GetJSON(MaskingDSN masking) const {
 	WrSerializer ser;
-	GetJSON(ser);
+	GetJSON(ser, masking);
 	return std::string{ser.Slice()};
 }
 
-void ShardingConfig::GetJSON(WrSerializer& ser) const {
+void ShardingConfig::GetJSON(WrSerializer& ser, MaskingDSN masking) const {
 	JsonBuilder jb(ser);
-	GetJSON(jb);
+	GetJSON(jb, masking);
 }
 
-void ShardingConfig::GetJSON(JsonBuilder& jb) const {
+void ShardingConfig::GetJSON(JsonBuilder& jb, MaskingDSN masking) const {
 	jb.Put("version", 1);
 	{
 		auto namespacesNode = jb.Array("namespaces");
@@ -1043,7 +1046,11 @@ void ShardingConfig::GetJSON(JsonBuilder& jb) const {
 			shrdNode.Put("shard_id", id);
 			auto dsnsNode = shrdNode.Array("dsns");
 			for (const auto& d : dsns) {
-				dsnsNode.Put(0, d);
+				if (masking == MaskingDSN::Disabled) {
+					dsnsNode.Put(0, d.dsn_);
+				} else if (masking == MaskingDSN::Enabled) {
+					dsnsNode.Put(0, d);
+				}
 			}
 		}
 	}
@@ -1060,21 +1067,20 @@ void ShardingConfig::GetJSON(JsonBuilder& jb) const {
 }
 
 Error ShardingConfig::Validate() const {
-	std::set<std::string> dsns;
+	std::set<std::reference_wrapper<const DSN>, DSN::RefWrapperCompare> dsns;
 	for (const auto& s : shards) {
 		if (s.first < 0) {
 			return Error(errParams, "Shard id should not be less than zero");
 		}
 		for (const auto& dsn : s.second) {
-			if (!dsns.insert(dsn).second) {
+			if (!dsns.insert(std::cref(dsn)).second) {
 				return Error(errParams, "DSNs in shard's config should be unique. Dublicated dsn: %s", dsn);
 			}
-			httpparser::UrlParser urlParser;
-			if (!urlParser.parse(dsn)) {
+			if (!dsn.Parser().isValid()) {
 				return Error(errParams, "%s is not valid uri", dsn);
 			}
-			if (urlParser.scheme() != "cproto") {
-				return Error(errParams, "Scheme of sharding dsn must be cproto: %s", dsn);
+			if (dsn.Parser().scheme() != "cproto" && dsn.Parser().scheme() != "cprotos") {
+				return Error(errParams, "Scheme of sharding dsn must be cproto or cprotos: %s", dsn);
 			}
 		}
 	}

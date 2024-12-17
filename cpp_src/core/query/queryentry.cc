@@ -283,13 +283,13 @@ void QueryEntries::serialize(CondType cond, const VariantArray& values, WrSerial
 		ser.PutVarUint(3);
 		if (values[0].Type().Is<KeyValueType::Tuple>()) {
 			const Point point = static_cast<Point>(values[0]);
-			ser.PutDouble(point.X());
-			ser.PutDouble(point.Y());
+			ser.PutVariant(Variant(point.X()));
+			ser.PutVariant(Variant(point.Y()));
 			ser.PutVariant(values[1]);
 		} else {
 			const Point point = static_cast<Point>(values[1]);
-			ser.PutDouble(point.X());
-			ser.PutDouble(point.Y());
+			ser.PutVariant(Variant(point.X()));
+			ser.PutVariant(Variant(point.Y()));
 			ser.PutVariant(values[0]);
 		}
 	} else {

@@ -4,7 +4,7 @@ info:
     **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
     Reindexer's goal is to provide fast search with complex queries.
     Reindexer is compact, fast and it does not have heavy dependencies.
-  version: "4.18.0"
+  version: "4.19.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -1874,6 +1874,20 @@ paths:
         500:
           $ref: "#/responses/UnexpectedError"
 
+  /user/role:
+    get:
+      tags:
+        - "system"
+      summary: "Get user role"
+      description: "Get the role of the currently authorized user in the Reindexer. If authorization is disabled, the owner's role is returned"
+      operationId: "getUserRole"
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/UserRoleResponse"
+        401:
+          $ref: "#/responses/Forbidden"
 
   /db/{database}/namespaces/%23activitystats/items:
     get:
@@ -3271,6 +3285,13 @@ definitions:
             default: 95
             minimum: 0
             maximum: 500
+      splitter:
+        type: string
+        description: "Text tokenization algorithm. 'fast' - splits text by spaces, special characters and unsupported UTF-8 symbols. Each token is a combination of letters from supported UTF-8 subset, numbers and extra word symbols. 'mmseg_cn' - algorithm based on friso implementation of mmseg for Chinese and English"
+        enum:
+        - "fast"
+        - "mmseg_cn"
+        default: "fast"
 
   FulltextFieldConfig:
     type: object
@@ -4423,3 +4444,17 @@ definitions:
       tx_id:
         type: "string"
         description: "Unique transaction id"
+
+  UserRoleResponse:
+    type: "object"
+    properties:
+      user_role:
+        type: "string"
+        description: "User role"
+        enum:
+        - "owner"
+        - "db_admin"
+        - "data_write"
+        - "data_read"
+        - "none"
+        - "unauthoried"

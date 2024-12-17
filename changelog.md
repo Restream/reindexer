@@ -1,3 +1,32 @@
+# Version 4.19.0 (17.12.2024)
+
+## Core
+- [fea] Added automatic masking for reindexer user's credentials in log files and cluster/sharding JSON's (except for `async_replication` configs in `#config`-namespace)
+- [fix] Fixed assertion on attempt to use 'null'-values with `=`, `IN()`, `<`, `>`, `<=`, `>=` and `RANGE()` operators
+
+## Replication
+- [fea] Optimized memory footprint for online-updates queue
+
+## Reindexer server
+- [fea] Added `OpenSSL` support for HTTP-server (`https`) and RPC-server (`cprotos`). [Read more...](cpp_src/readme.md#tls-support)
+- [fea] Added special user roles `sharding` and `replication` with all required rights and restrictions for correspondig scenarios
+- [fea] Added support for SHA256/SHA512-based encription for user's passwords in `users.yml`. [Read more...](cpp_src/readme.md#authentication)
+- [fea] Added HTTP method `GET api/v1/user/role` to check current user's role
+- [fix] Fixed possible update buffer overflow for [events subscription](readme.md#events-subscription) in TCP-mode
+
+## Ported
+- [fea/fix] Ported all the fixes and features from [v3.30.0](https://github.com/Restream/reindexer/releases/tag/v3.30.0)
+
+## Face
+- [fea] Added `column_size` field to the Memory table
+- [fea] Added `splitter` field to the Full text index config
+- [fix] Fixed wrong info message about disabled statistics when the database didn't have Namespaces
+- [fix] Fixed last row position in the Memory table
+- [fix] Fixed wrong input field clearing on cache settings page
+- [fix] Fixed sort order icon on the tables
+- [fix] Fixed Replication Statistics table behavior on tabs switching
+- [fix] Fixed data saving in JSON view on the Fulltext index settings page
+
 # Version 4.18.0 (31.10.2024) *beta*
 ## Replication
 - [fix] Fixed possible origin LSN missmatch in snapshots during WAL/Force syncs

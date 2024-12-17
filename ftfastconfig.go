@@ -180,7 +180,9 @@ type FtFastConfig struct {
 	MaxTotalAreasToCache int `json:"max_total_areas_to_cache"`
 	// Configuration for certain field
 	FieldsCfg []FtFastFieldConfig `json:"fields,omitempty"`
-	// Optimize the index by memory or by cpu
+	// Optimize the index by memory or by cpu. Default 'memory'.
+	// 'memory': compressed vector of document identifiers
+	// 'cpu':  uncompressed vector of document identifiers
 	Optimization string `json:"optimization,omitempty"`
 	// Enable to execute others queries before the ft query
 	EnablePreselectBeforeFt bool `json:"enable_preselect_before_ft"`
@@ -188,6 +190,11 @@ type FtFastConfig struct {
 	FtBaseRankingConfig *FtBaseRanking `json:"base_ranking,omitempty"`
 	// Config for document ranking
 	Bm25Config *Bm25ConfigType `json:"bm25_config,omitempty"`
+	// Text tokenization algorithm. Default 'fast'.
+	// 'fast' :    splits text by spaces, special characters and unsupported UTF-8 symbols.
+	//             Each token is a combination of letters from supported UTF-8 subset, numbers and extra word symbols.
+	// 'mmseg_cn': algorithm based on friso mmseg for Chinese and English
+	SplitterType string `json:"splitter,omitempty"`
 }
 
 func DefaultFtFastConfig() FtFastConfig {

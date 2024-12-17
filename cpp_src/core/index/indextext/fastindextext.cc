@@ -3,6 +3,8 @@
 #include "core/ft/filters/kblayout.h"
 #include "core/ft/filters/synonyms.h"
 #include "core/ft/filters/translit.h"
+#include "core/ft/ft_fast/frisosplitter.h"
+#include "core/ft/ft_fast/splitter.h"
 #include "estl/contexted_locks.h"
 #include "sort/pdqsort.hpp"
 #include "tools/clock.h"
@@ -22,10 +24,10 @@ template <typename T>
 void FastIndexText<T>::initHolder(FtFastConfig& cfg) {
 	switch (cfg.optimization) {
 		case FtFastConfig::Optimization::Memory:
-			holder_.reset(new DataHolder<PackedIdRelVec>);
+			holder_ = std::make_unique<DataHolder<PackedIdRelVec>>(&cfg);
 			break;
 		case FtFastConfig::Optimization::CPU:
-			holder_.reset(new DataHolder<IdRelVec>);
+			holder_ = std::make_unique<DataHolder<IdRelVec>>(&cfg);
 			break;
 		default:
 			assertrx(0);
@@ -37,7 +39,6 @@ void FastIndexText<T>::initHolder(FtFastConfig& cfg) {
 	for (const char** lang = stemLangs; *lang; ++lang) {
 		holder_->stemmers_.emplace(*lang, *lang);
 	}
-	holder_->SetConfig(&cfg);
 }
 
 template <typename T>
@@ -306,25 +307,25 @@ template <typename VectorType, FtUseExternStatuses useExternalStatuses>
 IdSet::Ptr FastIndexText<T>::applyCtxTypeAndSelect(DataHolder<VectorType>* d, const BaseFunctionCtx::Ptr& bctx, FtDSLQuery&& dsl,
 												   bool inTransaction, FtSortType ftSortType, FtMergeStatuses&& statuses,
 												   FtUseExternStatuses useExternSt, const RdxContext& rdxCtx) {
-	Selecter<VectorType> selecter{*d, this->Fields().size(), holder_->cfg_->maxAreasInDoc};
+	Selector<VectorType> selector{*d, this->Fields().size(), holder_->cfg_->maxAreasInDoc};
 	intrusive_ptr<FtCtx> fctx = static_ctx_pointer_cast<FtCtx>(bctx);
 	assertrx_throw(fctx);
-	fctx->SetExtraWordSymbols(this->getConfig()->extraWordSymbols);
 	fctx->SetWordPosition(true);
+	fctx->SetSplitter(this->holder_->GetSplitter());
 
 	switch (bctx->type) {
 		case BaseFunctionCtx::CtxType::kFtCtx: {
-			MergeDataBase mergeData = selecter.template Process<useExternalStatuses, MergeDataBase>(
+			MergeDataBase mergeData = selector.template Process<useExternalStatuses, MergeDataBase>(
 				std::move(dsl), inTransaction, ftSortType, std::move(statuses.statuses), rdxCtx);
 			return afterSelect(*fctx.get(), std::move(mergeData), ftSortType, std::move(statuses), useExternSt);
 		}
 		case BaseFunctionCtx::CtxType::kFtArea: {
-			MergeData<Area> mergeData = selecter.template Process<useExternalStatuses, MergeData<Area>>(
+			MergeData<Area> mergeData = selector.template Process<useExternalStatuses, MergeData<Area>>(
 				std::move(dsl), inTransaction, ftSortType, std::move(statuses.statuses), rdxCtx);
 			return afterSelect(*fctx.get(), std::move(mergeData), ftSortType, std::move(statuses), useExternSt);
 		}
 		case BaseFunctionCtx::CtxType::kFtAreaDebug: {
-			MergeData<AreaDebug> mergeData = selecter.template Process<useExternalStatuses, MergeData<AreaDebug>>(
+			MergeData<AreaDebug> mergeData = selector.template Process<useExternalStatuses, MergeData<AreaDebug>>(
 				std::move(dsl), inTransaction, ftSortType, std::move(statuses.statuses), rdxCtx);
 			return afterSelect(*fctx.get(), std::move(mergeData), ftSortType, std::move(statuses), useExternSt);
 		}
@@ -354,12 +355,14 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr bctx, FtDSLQuery&& dsl, bool inTr
 		case FtFastConfig::Optimization::Memory: {
 			DataHolder<PackedIdRelVec>* d = dynamic_cast<DataHolder<PackedIdRelVec>*>(holder_.get());
 			assertrx_throw(d);
+
 			return applyOptimizationAndSelect<PackedIdRelVec>(d, bctx, std::move(dsl), inTransaction, ftSortType, std::move(statuses),
 															  useExternSt, rdxCtx);
 		}
 		case FtFastConfig::Optimization::CPU: {
 			DataHolder<IdRelVec>* d = dynamic_cast<DataHolder<IdRelVec>*>(holder_.get());
 			assertrx_throw(d);
+
 			return applyOptimizationAndSelect<IdRelVec>(d, bctx, std::move(dsl), inTransaction, ftSortType, std::move(statuses),
 														useExternSt, rdxCtx);
 		}
@@ -426,7 +429,7 @@ void FastIndexText<T>::buildVdocs(Container& data) {
 	// buffer strings, for printing non text fields
 	auto& bufStrs = this->holder_->bufStrs_;
 	// array with pointers to docs fields text
-	// Prepare vdocs -> addresable array all docs in the index
+	// Prepare vdocs -> addressable array all docs in the index
 
 	this->holder_->szCnt = 0;
 	auto& vdocs = this->holder_->vdocs_;
@@ -511,10 +514,12 @@ void FastIndexText<T>::SetOpts(const IndexOpts& opts) {
 
 	if (!eq_c(oldCfg.stopWords, newCfg.stopWords) || oldCfg.stemmers != newCfg.stemmers || oldCfg.maxTypoLen != newCfg.maxTypoLen ||
 		oldCfg.enableNumbersSearch != newCfg.enableNumbersSearch || oldCfg.extraWordSymbols != newCfg.extraWordSymbols ||
-		oldCfg.synonyms != newCfg.synonyms || oldCfg.maxTypos != newCfg.maxTypos || oldCfg.optimization != newCfg.optimization) {
+		oldCfg.synonyms != newCfg.synonyms || oldCfg.maxTypos != newCfg.maxTypos || oldCfg.optimization != newCfg.optimization ||
+		oldCfg.splitterType != newCfg.splitterType) {
 		logPrintf(LogInfo, "FulltextIndex config changed, it will be rebuilt on next search");
 		this->isBuilt_ = false;
-		if (oldCfg.optimization != newCfg.optimization) {
+		if (oldCfg.optimization != newCfg.optimization || oldCfg.splitterType != newCfg.splitterType ||
+			oldCfg.extraWordSymbols != newCfg.extraWordSymbols) {
 			initHolder(newCfg);
 		} else {
 			this->holder_->Clear();

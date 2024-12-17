@@ -48,7 +48,7 @@ struct NodeStats {
 	}
 	bool operator!=(const NodeStats& r) const noexcept { return !(*this == r); }
 
-	std::string dsn;
+	DSN dsn;
 	int64_t updatesCount;
 	int serverId;
 	Status status;
@@ -108,7 +108,7 @@ struct SyncStatsCounter {
 };
 
 struct NodeStatsCounter {
-	NodeStatsCounter(std::string d, std::vector<std::string> nss) : dsn(std::move(d)), namespaces(std::move(nss)) {}
+	NodeStatsCounter(DSN d, std::vector<std::string> nss) : dsn(std::move(d)), namespaces(std::move(nss)) {}
 	void OnUpdateApplied(int64_t updateId) noexcept { lastAppliedUpdateId_.store(updateId, std::memory_order_relaxed); }
 	void OnStatusChanged(NodeStats::Status st) noexcept { status.store(st, std::memory_order_relaxed); }
 	void OnSyncStateChanged(NodeStats::SyncState st) noexcept { syncState.store(st, std::memory_order_relaxed); }
@@ -129,7 +129,7 @@ struct NodeStatsCounter {
 	}
 	NodeStats Get() const;
 
-	const std::string dsn;
+	const DSN dsn;
 	const std::vector<std::string> namespaces;
 	std::atomic<int64_t> lastAppliedUpdateId_ = {-1};
 	std::atomic<int> serverId = {-1};

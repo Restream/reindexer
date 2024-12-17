@@ -87,6 +87,15 @@ public:
 		return Put(getNameByTag(tagName), arg, offset);
 	}
 
+	template <typename T, std::enable_if_t<!std::is_arithmetic_v<T> && !std::is_constructible_v<std::string_view, T>>* = nullptr>
+	JsonBuilder& Put(std::string_view name, const T& arg, int /*offset*/ = 0) {
+		putName(name);
+		std::ostringstream sstream;
+		sstream << arg;
+		ser_->PrintJsonString(sstream.str());
+		return *this;
+	}
+
 	JsonBuilder& Raw(int tagName, std::string_view arg) { return Raw(getNameByTag(tagName), arg); }
 	JsonBuilder& Raw(std::string_view name, std::string_view arg);
 	JsonBuilder& Raw(std::nullptr_t, std::string_view arg) { return Raw(std::string_view{}, arg); }

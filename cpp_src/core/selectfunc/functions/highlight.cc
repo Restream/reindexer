@@ -1,4 +1,5 @@
 #include "highlight.h"
+#include "core/ft/ft_fast/frisosplitter.h"
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
@@ -49,18 +50,18 @@ bool Highlight::Process(ItemRef& res, PayloadType& pl_type, const SelectFuncStru
 	result_string.reserve(data->size() + va.Size() * (func.funcArgs[0].size() + func.funcArgs[1].size()));
 	result_string = *data;
 
-	Word2PosHelper word2pos(*data, ftctx->GetData()->extraWordSymbols);
+	auto splitterTask = ftctx->GetData()->splitter->CreateTask();
+	splitterTask->SetText(*data);
 
 	int offset = 0;
 	for (auto area : va.GetData()) {
 		std::pair<int, int> pos =
-			ftctx->GetData()->isWordPositions ? word2pos.convert(area.start, area.end) : std::make_pair(area.start, area.end);
+			ftctx->GetData()->isWordPositions ? splitterTask->Convert(area.start, area.end) : std::make_pair(area.start, area.end);
 
 		result_string.insert(pos.first + offset, func.funcArgs[0]);
 		offset += func.funcArgs[0].size();
 
 		result_string.insert(pos.second + offset, func.funcArgs[1]);
-
 		offset += func.funcArgs[1].size();
 	}
 

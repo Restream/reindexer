@@ -2,6 +2,7 @@ package reindexer
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -553,6 +554,11 @@ func WithOpenTelemetry() interface{} {
 
 func WithStrictJoinHandlers() interface{} {
 	return bindings.OptionStrictJoinHandlers{EnableStrictJoinHandlers: true}
+}
+
+// Enables connection to Reindexer using TLS. If tls.Config is nil TLS is disabled
+func WithTLSConfig(config *tls.Config) interface{} {
+	return bindings.OptionTLS{Config: config}
 }
 
 // WithReconnectionStrategy allows to configure the behavior during reconnect after error.

@@ -1,26 +1,18 @@
 #include <fstream>
-#include <ostream>
-#include <unordered_map>
-#include <unordered_set>
 
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
 #include "core/item.h"
-#include "core/keyvalue/key_string.h"
 #include "core/keyvalue/variant.h"
 #include "core/namespace/namespacestat.h"
-#include "core/queryresults/joinresults.h"
 #include "core/reindexer.h"
 #include "core/type_consts.h"
 
 #include "tools/errors.h"
 #include "tools/fsops.h"
-#include "tools/logger.h"
 #include "tools/serializer.h"
 
 #include "gtest/gtest.h"
-
-#include <string.h>
 
 #define __FILENAME__ (strrchr("/" __FILE__, '/') + 1)
 #define GTEST_TRACE_SCOPE(SCOPE_DESCRIPTION) testing::ScopedTrace trace(__FILE__, __LINE__, SCOPE_DESCRIPTION)

@@ -1,6 +1,7 @@
 #include <gtest/gtest-param-test.h>
 #include <algorithm>
 #include "ft_api.h"
+#include "gtests/tests/gtest_cout.h"
 
 using namespace std::string_view_literals;
 

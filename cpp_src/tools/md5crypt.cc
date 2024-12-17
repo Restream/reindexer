@@ -8,13 +8,28 @@
  * https://www.openssl.org/source/license.html
  */
 
-#include "md5crypt.h"
+#include "crypt.h"
+#include "estl/fast_hash_map.h"
 #include "tools/stringstools.h"
 #include "vendor/hash/md5.h"
 
 namespace reindexer {
 
-constexpr std::string_view kMD5CryptDelimiter = "$";
+constexpr std::string_view kCryptDelimiter = "$";
+
+constexpr std::string_view kMD5CryptMagic{"1"};
+#if WITH_OPENSSL
+constexpr std::string_view kSHA256CryptMagic{"5"};
+constexpr std::string_view kSHA512CryptMagic{"6"};
+#endif
+
+static const fast_hash_map<std::string_view, HashAlgorithm> kHashOptions{{kMD5CryptMagic, HashAlgorithm::MD5}
+#if WITH_OPENSSL
+																		 ,
+																		 {kSHA256CryptMagic, HashAlgorithm::SHA256},
+																		 {kSHA512CryptMagic, HashAlgorithm::SHA512}
+#endif
+};
 
 std::string MD5crypt(const std::string& passwd, const std::string& salt) noexcept {
 	static const unsigned char cov2char[64] = {
@@ -32,9 +47,9 @@ std::string MD5crypt(const std::string& passwd, const std::string& salt) noexcep
 	{
 		MD5 md;
 		md.add(passwd.c_str(), passwd.size());
-		md.add(kMD5CryptDelimiter.data(), kMD5CryptDelimiter.size());
+		md.add(kCryptDelimiter.data(), kCryptDelimiter.size());
 		md.add(reindexer::kMD5CryptMagic.data(), reindexer::kMD5CryptMagic.size());
-		md.add(kMD5CryptDelimiter.data(), kMD5CryptDelimiter.size());
+		md.add(kCryptDelimiter.data(), kCryptDelimiter.size());
 		md.add(trunkatedSalt, saltLen);
 
 		MD5 md2;
@@ -93,18 +108,20 @@ std::string MD5crypt(const std::string& passwd, const std::string& salt) noexcep
 	return std::string(resultBuf);
 }
 
-Error ParseMd5CryptString(const std::string& input, std::string& outHash, std::string& outSalt) {
-	if (input.empty() || input.find(kMD5CryptDelimiter) != 0) {
+Error ParseCryptString(const std::string& input, std::string& outHash, std::string& outSalt, HashAlgorithm& hashAlgorithm) {
+	if (input.empty() || input.find(kCryptDelimiter) != 0) {
 		outHash = input;
 		outSalt.clear();
 		return errOK;
 	} else {
 		std::vector<std::string> hashParts;
-		split(input, kMD5CryptDelimiter, false, hashParts);
+		split(input, kCryptDelimiter, false, hashParts);
 		if (hashParts.size() != 4) {
 			return Error(errParams, "Unexpected hash format. Expectig '$type$salt$hash");
 		}
-		if (std::string_view(hashParts[1]) != kMD5CryptMagic) {
+		if (auto it = kHashOptions.find(hashParts[1]); it != kHashOptions.end()) {
+			hashAlgorithm = it->second;
+		} else {
 			return Error(errParams, "Unsupported hash magic: %s", hashParts[1].c_str());
 		}
 		outHash = std::move(hashParts[3]);

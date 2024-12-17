@@ -13,7 +13,7 @@ namespace httpparser {
 
 class UrlParser {
 public:
-	UrlParser() : valid(false) {}
+	UrlParser() noexcept : valid(false) {}
 
 	explicit UrlParser(const std::string& url) : valid(true) { parse(url); }
 

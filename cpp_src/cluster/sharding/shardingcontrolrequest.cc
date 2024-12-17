@@ -1,51 +1,36 @@
 #include "shardingcontrolrequest.h"
 #include "core/cjson/jsonbuilder.h"
-#include "gason/gason.h"
 #include "tools/catch_and_return.h"
 
 namespace reindexer::sharding {
 
-void ShardingControlRequestData::GetJSON(WrSerializer& ser) const {
+template <typename ControlDataT>
+static void getJSON(const ControlDataT& shardingControl, WrSerializer& ser) {
 	JsonBuilder request(ser);
-	request.Put("type", int(type));
+	request.Put("type", int(shardingControl.type));
 	{
 		auto payloadBuilder = request.Object("payload");
-		std::visit([&payloadBuilder](const auto& d) { d.GetJSON(payloadBuilder); }, data);
+		std::visit([&payloadBuilder](const auto& d) { d.GetJSON(payloadBuilder); }, shardingControl.data);
 	}
 }
 
-[[nodiscard]] Error ShardingControlRequestData::FromJSON(span<char> json) noexcept {
+template <typename ControlDataT>
+static Error fromJSON(ControlDataT& shardingControl, span<char> json) noexcept {
 	try {
 		gason::JsonParser parser;
 		auto node = parser.Parse(json);
-		Type commandType = Type(node["type"].As<int>());
-
-		switch (commandType) {
-			case Type::SaveCandidate:
-				data = SaveConfigCommand{};
-				break;
-			case Type::ApplyLeaderConfig:
-				data = ApplyLeaderConfigCommand{};
-				break;
-			case Type::ApplyNew:
-				data = ApplyConfigCommand{};
-				break;
-			case Type::ResetOldSharding:
-			case Type::ResetCandidate:
-			case Type::RollbackCandidate:
-				data = ResetConfigCommand{};
-				break;
-			default:
-				return Error(errParams, "Unknown sharding command request. Command type [%d].", int(commandType));
-		}
-
-		const auto& payloadNode = node["payload"];
-		std::visit([&payloadNode](auto& d) { d.FromJSON(payloadNode); }, data);
-		type = commandType;
+		shardingControl = ControlDataT(ControlCmdType(node["type"].As<int>()));
+		std::visit([&node](auto& d) { d.FromJSON(node["payload"]); }, shardingControl.data);
 	}
 	CATCH_AND_RETURN
 	return errOK;
 }
+
+void ShardingControlRequestData::GetJSON(WrSerializer& ser) const { return getJSON(*this, ser); }
+void ShardingControlResponseData::GetJSON(WrSerializer& ser) const { return getJSON(*this, ser); }
+
+Error ShardingControlRequestData::FromJSON(span<char> json) noexcept { return fromJSON(*this, json); }
+Error ShardingControlResponseData::FromJSON(span<char> json) noexcept { return fromJSON(*this, json); }
 
 void ApplyLeaderConfigCommand::GetJSON(JsonBuilder& json) const {
 	json.Put("config", config);
@@ -77,5 +62,14 @@ void ApplyConfigCommand::FromJSON(const gason::JsonNode& payload) { sourceId = p
 void ResetConfigCommand::GetJSON(JsonBuilder& json) const { json.Put("source_id", sourceId); }
 
 void ResetConfigCommand::FromJSON(const gason::JsonNode& payload) { sourceId = payload["source_id"].As<int64_t>(); }
+
+void GetNodeConfigCommand::GetJSON(JsonBuilder& json) const { json.Put("config", config.GetJSON(cluster::MaskingDSN(masking))); }
+
+void GetNodeConfigCommand::FromJSON(const gason::JsonNode& payload) {
+	auto err = config.FromJSON(payload["config"].As<std::string>());
+	if (!err.ok()) {
+		throw err;
+	}
+}
 
 }  // namespace reindexer::sharding

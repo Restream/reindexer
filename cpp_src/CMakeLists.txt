@@ -34,6 +34,11 @@ option(ENABLE_SSE "Enable SSE instructions" ON)
 option(ENABLE_SERVER_AS_PROCESS_IN_TEST "Run reindexer servers as separate processes in tests" OFF)
 option(ENABLE_V3_FOLLOWERS "Enable compatibility mode with reindexer v3 followers. This is temporary flag and will be removed in further releases" OFF)
 
+if(APPLE)
+  option(ENABLE_OPENSSL "Enable OpenSSL" OFF)
+else()
+  option(ENABLE_OPENSSL "Enable OpenSSL" ON)
+endif()
 
 if(NOT GRPC_PACKAGE_PROVIDER)
   set(GRPC_PACKAGE_PROVIDER "CONFIG")
@@ -45,7 +50,7 @@ else()
   option(LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "4.18.0")
+set (REINDEXER_VERSION_DEFAULT "4.19.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -308,6 +313,7 @@ add_library(${TARGET} STATIC ${HDRS} ${SRCS} ${VENDORS})
 add_definitions(-DREINDEX_CORE_BUILD=1)
 add_definitions(-DFMT_HEADER_ONLY=1)
 add_definitions(-DSPDLOG_FMT_EXTERNAL=1)
+add_definitions(-DFMT_USE_FULL_CACHE_DRAGONBOX=1)
 
 # add_definitions(-DREINDEX_FT_EXTRA_DEBUG=1)
 if (ENABLE_SERVER_AS_PROCESS_IN_TEST)
@@ -473,6 +479,13 @@ set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 find_package(Threads REQUIRED ON)
 list(APPEND REINDEXER_LIBRARIES ${CMAKE_THREAD_LIBS_INIT} )
 
+include(CMakeRC)
+
+file(GLOB CHINA_DICT LIST_DIRECTORIES false ${REINDEXER_SOURCE_PATH}/resource/china_dict/*.lex)
+cmrc_add_resource_library(friso_dict_resources WHENCE ${REINDEXER_SOURCE_PATH}/resource ${CHINA_DICT})
+list(APPEND REINDEXER_LIBRARIES friso_dict_resources)
+add_dependencies(${TARGET} friso_dict_resources)
+
 if(WITH_CPPTRACE)
   ExternalProject_Add(
     cpptrace_lib
@@ -559,6 +572,18 @@ if(WIN32)
   list(APPEND REINDEXER_LIBRARIES shlwapi dbghelp ws2_32)
 endif()
 
+if (MSVC)
+    add_definitions(-DNOMINMAX)
+endif()
+
+if(ENABLE_OPENSSL)
+  find_package(OpenSSL)
+  if(OPENSSL_FOUND)
+    include_directories(SYSTEM ${OPENSSL_INCLUDE_DIR})
+    add_definitions(-DWITH_OPENSSL)
+  endif()
+endif()
+
 set(REINDEXER_LIBRARIES_GLOBAL ${REINDEXER_LIBRARIES} PARENT_SCOPE)
 set(REINDEXER_LINK_DIRECTORIES_GLOBAL ${REINDEXER_LINK_DIRECTORIES} PARENT_SCOPE)
 
@@ -580,7 +605,6 @@ endif()
 if(NOT REINDEXER_VERSION_CUR_H STREQUAL REINDEXER_VERSION_H)
   file(WRITE ${PROJECT_BINARY_DIR}/reindexer_version.h ${REINDEXER_VERSION_H})
 endif()
-
 include_directories(${PROJECT_BINARY_DIR})
 
 string ( REGEX REPLACE "v([0-9]+)\\.([0-9]+)\\.([0-9]+)(.*)" "\\1.\\2.\\3" REINDEXER_VERSION ${REINDEXER_VERSION_FULL})

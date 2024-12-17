@@ -1,4 +1,5 @@
 #include "equalpositionapi.h"
+#include "gtests/tests/gtest_cout.h"
 
 using QueryResults = ReindexerApi::QueryResults;
 using Item = ReindexerApi::Item;
@@ -69,7 +70,7 @@ void VerifyQueryResult(const QueryResults& qr, const std::vector<std::string>& f
 			++j;
 		}
 		if (!equal) {
-			TEST_COUT << it.GetJSON() << std::endl;
+			TestCout() << it.GetJSON() << std::endl;
 		}
 	}
 	EXPECT_TRUE(totalFound == qr.Count()) << " totalFound=" << totalFound << ", qr.Count()=" << qr.Count();

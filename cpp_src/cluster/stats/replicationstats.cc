@@ -101,7 +101,7 @@ static Error NodeErrorFromJson(const gason::JsonNode& lastErrorRoot) {
 }
 
 void NodeStats::FromJSON(const gason::JsonNode& root) {
-	dsn = root["dsn"sv].As<std::string>(dsn);
+	dsn = DSN(root["dsn"sv].As<std::string>());
 	serverId = root["server_id"sv].As<int>(-1);
 	updatesCount = root["pending_updates_count"sv].As<int64_t>(0);
 	status = NodeStatusFromStr(root["status"sv].As<std::string_view>("none"sv));

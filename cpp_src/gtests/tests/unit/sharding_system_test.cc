@@ -57,8 +57,7 @@ TEST_F(ShardingSystemApi, ReconnectTimeout) {
 		auto err = rx->WithTimeout(kTimeout).Update(
 			Query(default_namespace).Set(kFieldData, newValue).Where(kFieldLocation, CondEq, location), qr);
 		if (err.code() != errTimeout && err.code() != errNetwork && err.code() != errUpdateReplication) {
-			ASSERT_TRUE(false) << err.what() << "(" << err.code() << ")"
-							   << "; shard = " << shard;
+			ASSERT_TRUE(false) << err.what() << "(" << err.code() << ")" << "; shard = " << shard;
 		}
 	}
 
@@ -74,7 +73,7 @@ TEST_F(ShardingSystemApi, ReconnectTimeout) {
 TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 	const size_t kValidThreadsCount = 5;
 	Init();
-	const std::string kDSN = getNode(0)->kRPCDsn;
+	const auto& kDSN = getNode(0)->kRPCDsn;
 	auto upsertItemF = [&](int index, client::Reindexer& rx) {
 		client::Item item = rx.NewItem(default_namespace);
 		EXPECT_TRUE(item.Status().ok());

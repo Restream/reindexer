@@ -110,7 +110,7 @@ private:
 	};
 
 	std::shared_ptr<client::Reindexer> doReconnect(int shardID, Error& reconnectStatus);
-	std::shared_ptr<client::Reindexer> tryConnectToLeader(const std::vector<std::string>& dsns, const cluster::ReplicationStats& stats,
+	std::shared_ptr<client::Reindexer> tryConnectToLeader(const std::vector<DSN>& dsns, const cluster::ReplicationStats& stats,
 														  Error& reconnectStatus);
 	const cluster::ShardingConfig& config_;
 	Connections& connections_;

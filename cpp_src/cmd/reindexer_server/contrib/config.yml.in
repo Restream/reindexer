@@ -14,6 +14,15 @@ net:
   security: false
   # Idle timeout for http transactions
   tx_idle_timeout: 600
+  # Http read|write operations timeouts
+  # Optional timeout (seconds) for HTTP read operations (i.e. selects, get meta, transactions and others).
+  # Default is 0 (forever waiting).
+  http_read_timeout: 0
+  # Optional timeout (seconds) for HTTP write operations (i.e. update, delete, put meta, add index, transactions new|modify|commit and others). May not be set to 0.
+  # Default is 60 seconds.
+  http_write_timeout: 60
+  # Max replicated online-updates queue size in bytes (defaul value is 1GB)
+  maxupdatessize: 1073741824
 
 # Logger configuration
 logger:
@@ -26,6 +35,10 @@ logger:
 # System options
 system:
   user: reindexer
+  # Recommended maximum free cache size of tcmalloc memory allocator in bytes. Disabled by default (-1)
+  allocator_cache_limit: -1
+  # Recommended maximum cache size of tcmalloc memory allocator in relation to total reindexer allocated memory size, in units. Disabled by default (-1)
+  allocator_cache_part: -1
 
 # Debugging features
 debug:

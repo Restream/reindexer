@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 #include <string_view>
+#include "estl/h_vector.h"
+#include "tools/masking.h"
 
 namespace reindexer {
 namespace net {
@@ -103,6 +105,8 @@ struct CProtoHeader {
 };
 
 #pragma pack(pop)
+
+const h_vector<MaskingFunc, 2>& GetMaskArgs(CmdCode);
 
 }  // namespace cproto
 }  // namespace net

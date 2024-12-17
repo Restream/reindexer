@@ -26,13 +26,9 @@ public:
 
 	ReindexerApi() = default;
 
-	void DefineNamespaceDataset(std::string_view ns, std::initializer_list<const IndexDeclaration> fields) {
-		rt.DefineNamespaceDataset(ns, fields);
-	}
-	void DefineNamespaceDataset(std::string_view ns, const std::vector<IndexDeclaration>& fields) { rt.DefineNamespaceDataset(ns, fields); }
-	void DefineNamespaceDataset(Reindexer& rx, const std::string& ns, std::initializer_list<const IndexDeclaration> fields) {
-		rt.DefineNamespaceDataset(rx, ns, fields);
-	}
+	void DefineNamespaceDataset(std::string_view ns, std::initializer_list<const IndexDeclaration> fields);
+	void DefineNamespaceDataset(std::string_view ns, const std::vector<IndexDeclaration>& fields);
+	void DefineNamespaceDataset(Reindexer& rx, const std::string& ns, std::initializer_list<const IndexDeclaration> fields);
 	Item NewItem(std::string_view ns) { return rt.NewItem(ns); }
 
 	void Upsert(std::string_view ns, Item& item) { rt.Upsert(ns, item); }
@@ -47,41 +43,15 @@ public:
 	std::string RandLikePattern() { return rt.RandLikePattern(); }
 	std::string RuRandString() { return rt.RuRandString(); }
 	std::vector<int> RandIntVector(size_t size, int start, int range) { return rt.RandIntVector(size, start, range); }
-	void AwaitIndexOptimization(const std::string& nsName) {
-		bool optimization_completed = false;
-		unsigned waitForIndexOptimizationCompleteIterations = 0;
-		while (!optimization_completed) {
-			ASSERT_LT(waitForIndexOptimizationCompleteIterations++, 200) << "Too long index optimization";
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
-			reindexer::QueryResults qr;
-			Error err = rt.reindexer->Select(Query("#memstats").Where("name", CondEq, nsName), qr);
-			ASSERT_TRUE(err.ok()) << err.what();
-			ASSERT_EQ(1, qr.Count());
-			optimization_completed = qr.begin().GetItem(false)["optimization_completed"].Get<bool>();
-		}
-	}
+	void AwaitIndexOptimization(const std::string& nsName);
 
 public:
 	const std::string default_namespace = "test_namespace";
 	ReindexerTestApi<reindexer::Reindexer> rt;
 
 protected:
-	void initializeDefaultNs() {
-		auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled());
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->AddIndex(default_namespace, {"value", "text", "string", IndexOpts()});
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
-
-	static Item getMemStat(Reindexer& rx, const std::string& ns) {
-		QueryResults qr;
-		auto err = rx.Select(Query("#memstats").Where("name", CondEq, ns), qr);
-		EXPECT_TRUE(err.ok()) << err.what();
-		EXPECT_EQ(qr.Count(), 1);
-		return qr.begin().GetItem(false);
-	}
+	void initializeDefaultNs();
+	static reindexer::Item getMemStat(Reindexer& rx, const std::string& ns);
 };
 
 class CanceledRdxContext : public reindexer::IRdxCancelContext {

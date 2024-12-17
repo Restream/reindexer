@@ -76,7 +76,11 @@ T& operator<<(T& os, const IdSetCacheVal& v) {
 
 struct equal_idset_cache_key {
 	bool operator()(const IdSetCacheKey& lhs, const IdSetCacheKey& rhs) const noexcept {
-		return lhs.cond == rhs.cond && lhs.sort == rhs.sort && *lhs.keys == *rhs.keys;
+		try {
+			return lhs.cond == rhs.cond && lhs.sort == rhs.sort && *lhs.keys == *rhs.keys;
+		} catch (...) {
+			return false;  // For non-comparable variant arrays (really rare case in this context)
+		}
 	}
 };
 struct hash_idset_cache_key {

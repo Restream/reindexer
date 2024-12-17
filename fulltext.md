@@ -28,6 +28,7 @@ Reindexer has builtin full text search engine. This document describes usage of 
     - [Stopwords details](#stopwords-details)
     - [Detailed typos config](#detailed-typos-config)
     - [Base ranking config](#base-ranking-config)
+    - [Text splitters](#text-splitters)
     - [Basic document ranking algorithms](#basic-document-ranking-algorithms)
     - [Limitations and know issues](#limitations-and-know-issues)
 
@@ -383,7 +384,8 @@ Several parameters of full text search engine can be configured from application
 |   | MaxTotalAreasToCache  |    int   | Max total number of highlighted areas in ft result, when result still remains cacheable. '-1' means unlimited                                                                                                                                                                                                                     |      -1       |
 |   |     Optimization      |  string  | Optimize the index by 'memory' or by 'cpu'                                                                                                                                                                                                                                                                                        |   "memory"    |
 |   |     FtBaseRanking     |  struct  | Relevance of the word in different forms                                                                                                                                                                                                                                                                                          |               |
-|   |      Bm25Config       |  struct  | Document ranking function parameters  [More...](#basic-document-ranking-algorithms)                                                                                                                                                                                                                                                        |               |
+|   |      Bm25Config       |  struct  | Document ranking function parameters  [More...](#basic-document-ranking-algorithms)                                                                                                                                                                                                                                               |               |
+|   |     SplitterType      |  string  | Text breakdown algorithm. Available values: 'mmseg_cn' and 'fast'                                                                                                                                                                                                                                                                    |    "fast"     |
 
 ### Stopwords details
 The list item can be either a string or a structure containing a string (the stopword) and a bool attribute (`is_morpheme`) indicating whether the stopword can be part of a word that can be shown in query-results.
@@ -446,6 +448,47 @@ FtBaseRanking: config for the base relevancy of the word in different forms.
 |   | Kblayout                     |    int   | Relevancy of the match in incorrect kblayout                                                                                                                                                                                                              |       90      |
 |   | Translit                     |    int   | Relevancy of the match in translit                                                                                                                                                                                                                        |       90      |
 |   | Synonyms                     |    int   | Relevancy of synonyms match                                                                                                                                                                                                                               |       95      |
+
+
+### Text splitters
+Reindexer supports two algorithms to break texts into words: `fast` and `mmseg_cn`.
+
+Default `fast` algorithm is based on the definition of a word in the form of a alpha (from supported Unicode subset), number and an extended character, everything else (whitespaces, special characters, unsopported Unicode subsets, etc) will be threated as a delimiters.
+
+Reindexer supports the following unicode block codes / extra symbols:
+
+- `Basic Latin`
+- `Latin-1 Supplement`
+- `Latin Extended-A`
+- `Latin Extended-B`
+- `Latin Extended Additional`
+- `IPA Extensions`
+- `Greek and Coptic`
+- `Cyrillic`
+- `Armenian`
+- `Hebrew`
+- `Arabic`
+- `Devanagari`
+- `Gujarati`
+- `Georgian`
+- `Hangul Jamo`
+- `Greek Extended`
+- `Enclosed Alphanumerics`
+- `Hiragana`
+- `Katakana`
+- `Hangul Compatibility Jamo`
+- `CJK Unified Ideographs`
+- `Hangul Jamo Extended-A`
+- `Hangul Syllables`
+- `Hangul Jamo Extended-B`
+- `Fullwidth Latin Forms` 
+- Digits: '0'-'9'
+- Extended characters: defined in the `ExtraWordSymbols` field of the text index config.
+
+This algorithm is simple and provides high performance, but it can not handle texts without delimiters (for example, Chinese language does not requires whitespaces between words, so `fast`-splitter will not be able to index it properly). 
+
+Alternative `mmseg_cn`-splitter is based on [friso](https://github.com/lionsoul2014/friso) implementation of `mmseg` algorithm and uses dictionaries for tokenization. Currently this splitter supports only Chinese and English languages.
+
 
 ### Basic document ranking algorithms
 

@@ -2,7 +2,6 @@
 #include "client/corotransaction.h"
 #include "client/itemimpl.h"
 #include "client/namespace.h"
-#include "client/reindexerimpl.h"
 #include "client/rpcclient.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/keyvalue/p_string.h"
@@ -154,9 +153,10 @@ Error CoroTransaction::addTxItemRaw(std::string_view cjson, ItemModifyMode mode,
 
 Error CoroTransaction::mergeTmFromItem(Item& item, Item& rItem) {
 	bool itemTmMergeSucceed = true;
-	if (item.IsTagsUpdated()) {
+	if (item.IsTagsUpdated() || item.GetStateToken() != rItem.GetStateToken()) {
 		if (i_.localTm_->try_merge(item.impl_->tagsMatcher())) {
 			rItem = NewItem();
+			item.impl_->tagsMatcher().setUpdated();
 		} else {
 			itemTmMergeSucceed = false;
 		}
@@ -204,13 +204,14 @@ Item CoroTransaction::NewItem(ClientT* client) {
 template Item CoroTransaction::NewItem<ReindexerImpl>(ReindexerImpl* client);
 
 CoroTransaction::Impl::Impl(RPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout,
-							std::chrono::milliseconds execTimeout, Namespace* ns) noexcept
+							std::chrono::milliseconds execTimeout, std::shared_ptr<Namespace>&& ns, int emmiterServerId) noexcept
 	: txId_(txId),
 	  rpcClient_(rpcClient),
 	  requestTimeout_(requestTimeout),
 	  execTimeout_(execTimeout),
 	  localTm_(std::make_unique<TagsMatcher>(ns->GetTagsMatcher())),
-	  ns_(ns) {
+	  ns_(std::move(ns)),
+	  emmiterServerId_(emmiterServerId) {
 	assert(rpcClient_);
 	assert(ns_);
 	const auto sessinTsOpt = rpcClient_->conn_.LoginTs();

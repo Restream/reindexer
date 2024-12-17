@@ -214,6 +214,7 @@ TEST_F(ClientsStatsApi, TxCountLimitation) {
 		ASSERT_EQ(txs.size(), kMaxTxCount);
 		ASSERT_EQ(StatsTxCount(reindexer), kMaxTxCount);
 
+		CoroQueryResults qrDummy;
 		for (size_t i = 0; i < kMaxTxCount / 2; ++i) {
 			if (i % 2) {
 				CoroQueryResults qr;

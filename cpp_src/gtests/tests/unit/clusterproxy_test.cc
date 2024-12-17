@@ -1,7 +1,7 @@
 #include "client/queryresults.h"
-#include "cluster/raftmanager.h"
 #include "clusterization_proxy.h"
 #include "core/cjson/jsonbuilder.h"
+#include "gtests/tests/gtest_cout.h"
 
 using namespace reindexer;
 
@@ -1045,12 +1045,12 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderOfflineNodeAndNotExistNode) {
 			}
 			{
 				const int stopFollowerId = GetRandFollower(kClusterSize, leaderId);
-				const std::string stopDsn = cluster.GetNode(stopFollowerId)->kRPCDsn;
+				const auto stopDsn = MakeDsn(reindexer_server::UserRole::kRoleReplication, cluster.GetNode(stopFollowerId));
 				cluster.StopServer(stopFollowerId);
 				auto item = cluster.GetNode(leaderId)->CreateClusterChangeLeaderItem(stopFollowerId);
 				Error err = cluster.GetNode(leaderId)->api.reindexer->Update("#config", item);
 				ASSERT_FALSE(err.ok());
-				ASSERT_EQ(err.what(), "Target node " + stopDsn + " is not available.");
+				ASSERT_EQ(err.what(), fmt::sprintf("Target node %s is not available.", stopDsn));
 				int leaderNew = cluster.AwaitLeader(kMaxElectionsTime);
 				ASSERT_EQ(leaderId, leaderNew);
 				cluster.StartServer(stopFollowerId);

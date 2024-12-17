@@ -7,11 +7,11 @@
 #include "core/namespacedef.h"
 #include "core/shardedmeta.h"
 #include "internalrdxcontext.h"
-#include "net/ev/ev.h"
 
 namespace reindexer {
 
 struct ReplicationStateV2;
+class DSN;
 
 namespace client {
 
@@ -36,6 +36,7 @@ public:
 	/// `ucproto://user@password:/tmp/reindexer.sock:/dbname`
 	/// @param opts - Connect options. May contain any of <br>
 	Error Connect(const std::string& dsn, const client::ConnectOpts& opts = client::ConnectOpts());
+	Error Connect(const DSN& dsn, const client::ConnectOpts& opts = client::ConnectOpts());
 	/// Stop - shutdown connector
 	void Stop();
 	/// Open or create namespace
@@ -205,15 +206,15 @@ public:
 	/// Process new sharding config
 	/// @param config - New sharding config
 	/// @param sourceId - Unique identifier for operations with a specific config candidate
-	[[nodiscard]] Error SaveNewShardingConfig(std::string_view config, int64_t sourceId) noexcept;
+	Error SaveNewShardingConfig(std::string_view config, int64_t sourceId) noexcept;
 	/// Resetting the old sharding config before applying the new one
-	[[nodiscard]] Error ResetOldShardingConfig(int64_t sourceId) noexcept;
+	Error ResetOldShardingConfig(int64_t sourceId) noexcept;
 	/// Resetting sharding config candidates if there were errors when saving of candidates on other nodes
-	[[nodiscard]] Error ResetShardingConfigCandidate(int64_t sourceId) noexcept;
+	Error ResetShardingConfigCandidate(int64_t sourceId) noexcept;
 	/// Rollback config candidate if there were errors when trying to apply candidates on other nodes
-	[[nodiscard]] Error RollbackShardingConfigCandidate(int64_t sourceId) noexcept;
+	Error RollbackShardingConfigCandidate(int64_t sourceId) noexcept;
 	/// Apply new sharding config on all shards
-	[[nodiscard]] Error ApplyNewShardingConfig(int64_t sourceId) noexcept;
+	Error ApplyNewShardingConfig(int64_t sourceId) noexcept;
 
 	/// Add cancelable context
 	/// @param cancelCtx - context pointer
@@ -233,10 +234,12 @@ public:
 
 	typedef QueryResults QueryResultsT;
 	typedef Item ItemT;
+	typedef Transaction TransactionT;
+	typedef ReindexerConfig ConfigT;
 
 private:
 	friend QueryResults;
-	Reindexer(std::shared_ptr<ReindexerImpl> impl, InternalRdxContext&& ctx) : impl_(std::move(impl)), ctx_(std::move(ctx)) {}
+	Reindexer(std::shared_ptr<ReindexerImpl> impl, InternalRdxContext&& ctx) noexcept : impl_(std::move(impl)), ctx_(std::move(ctx)) {}
 	std::shared_ptr<ReindexerImpl> impl_;
 
 	InternalRdxContext ctx_;

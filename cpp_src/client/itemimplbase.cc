@@ -1,13 +1,9 @@
-#include "client/coroqueryresults.h"
-#include "client/rpcclient.h"
+#include "itemimplbase.h"
 #include "core/cjson/baseencoder.h"
 #include "core/cjson/cjsondecoder.h"
 #include "core/cjson/jsondecoder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/msgpackdecoder.h"
-#include "itemimpl.h"
-
-using std::move;
 
 namespace reindexer {
 namespace client {
@@ -39,11 +35,11 @@ void ItemImplBase::FromCJSON(std::string_view slice) {
 	ser_.Reset();
 	try {
 		decoder.Decode(pl, rdser, ser_);
-	} catch (const Error&) {
+	} catch (const Error& e) {
 		if (!hasBundledTm) {
 			const auto err = tryToUpdateTagsMatcher();
 			if (!err.ok()) {
-				throw Error(errParseJson, "Error parsing CJSON: %s", err.what());
+				throw Error(errParseJson, "Error parsing CJSON: [%s]; [%s]", e.what(), err.what());
 			}
 			ser_.Reset();
 			rdser.SetPos(0);

@@ -314,11 +314,11 @@ bool QueryResults::IsCacheEnabled() const noexcept {
 }
 
 bool QueryResults::HaveShardIDs() const noexcept {
-	if (local_ && local_->shardID != ShardingKeyType::ProxyOff && local_->shardID != ShardingKeyType::NotSharded) {
+	if (local_ && local_->shardID != ShardingKeyType::ProxyOff) {
 		return true;
 	}
 	for (auto& qrp : remote_) {
-		if (qrp.shardID != ShardingKeyType::ProxyOff && qrp.shardID != ShardingKeyType::NotSharded) {
+		if (qrp.shardID != ShardingKeyType::ProxyOff) {
 			return true;
 		}
 	}

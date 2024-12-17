@@ -43,9 +43,11 @@ public:
 				const int shardId = itr->ShardId();
 				auto& clientData = results.emplace_back(shardId);
 				clientData.connection =
-					connection->WithCompletion([clientCount, &clientCompl, &clientErrors, shardId, &mtx, &cv, this](const Error& err) {
-						completionFunction(clientCount, clientCompl, clientErrors, shardId, mtx, cv, err);
-					});
+					connection
+						->WithCompletion([clientCount, &clientCompl, &clientErrors, shardId, &mtx, &cv, this](const Error& err) {
+							completionFunction(clientCount, clientCompl, clientErrors, shardId, mtx, cv, err);
+						})
+						.WithShardId(shardId, true);
 
 				auto& conn = clientData.connection;
 				auto invokeWrap = [&f, &conn](auto&&... args) { return std::invoke(f, conn, std::forward<decltype(args)>(args)...); };

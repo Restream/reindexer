@@ -25,6 +25,13 @@ ComparatorNotIndexedImplBase<Cond>::ComparatorNotIndexedImplBase(const VariantAr
 ComparatorNotIndexedImplBase<CondRange>::ComparatorNotIndexedImplBase(const VariantArray& values)
 	: value1_{GetValue<Variant>(CondRange, values, 0)}, value2_{GetValue<Variant>(CondRange, values, 1)} {}
 
+ComparatorNotIndexedImplBase<CondSet>::ComparatorNotIndexedImplBase(const VariantArray& values) : values_{values.size()} {
+	for (const Variant& v : values) {
+		throwOnNull(v, CondSet);
+		values_.insert(v);
+	}
+}
+
 ComparatorNotIndexedImplBase<CondLike>::ComparatorNotIndexedImplBase(const VariantArray& values)
 	: value_{GetValue<key_string>(CondLike, values, 0)}, valueView_{p_string{value_}} {}
 
@@ -34,6 +41,18 @@ ComparatorNotIndexedImpl<CondDWithin, false>::ComparatorNotIndexedImpl(const Var
 	  fieldPath_{fieldPath},
 	  point_{GetValue<Point>(CondDWithin, values, 0)},
 	  distance_{GetValue<double>(CondDWithin, values, 1)} {}
+
+reindexer::comparators::ComparatorNotIndexedImpl<CondAllSet, false>::ComparatorNotIndexedImpl(const VariantArray& values,
+																							  const PayloadType& payloadType,
+																							  const TagsPath& fieldPath)
+	: payloadType_{payloadType}, fieldPath_{fieldPath}, values_{values.size()} {
+	int i = 0;
+	for (const Variant& v : values) {
+		throwOnNull(v, CondAllSet);
+		values_.emplace(v, i);
+		++i;
+	}
+}
 
 template <CondType Cond>
 [[nodiscard]] std::string ComparatorNotIndexedImplBase<Cond>::ConditionStr() const {

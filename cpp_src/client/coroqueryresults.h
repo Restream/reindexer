@@ -34,12 +34,11 @@ struct LazyQueryResultsMode {};
 using std::chrono::seconds;
 using std::chrono::milliseconds;
 
-class Namespace;
 class QueryResults;
 
 class CoroQueryResults {
 public:
-	using NsArray = h_vector<Namespace*, 1>;
+	using NsArray = h_vector<std::shared_ptr<Namespace>, 4>;
 
 	CoroQueryResults(int fetchFlags = 0, int fetchAmount = 0) noexcept : i_(fetchFlags, fetchAmount, false) {}
 	// This constructor enables lazy parsing for aggregations and explain results. This mode is usefull for raw buffer qr's proxying on
@@ -79,8 +78,7 @@ public:
 				return qr_->i_.status_;
 			}
 			if (!isAvailable()) {
-				static const Error kErrUnavailable(errNotValid, "Requested item's index in not available in this QueryResults");
-				return kErrUnavailable;
+				return unavailableIdxError();
 			}
 			return Error();
 		}
@@ -93,6 +91,7 @@ public:
 		void getCSVFromCJSON(std::string_view cjson, WrSerializer& wrser, CsvOrdering& ordering) const;
 		void checkIdx() const;
 		bool isAvailable() const noexcept { return idx_ >= qr_->i_.fetchOffset_ && idx_ < qr_->i_.queryParams_.qcount; }
+		Error unavailableIdxError() const;
 
 		const CoroQueryResults* qr_;
 		int idx_, pos_, nextPos_;

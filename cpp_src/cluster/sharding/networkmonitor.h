@@ -38,6 +38,7 @@ private:
 	ConnectionsMap* hostsConnections_ = nullptr;
 	std::chrono::seconds defaultTimeout_;
 	std::chrono::milliseconds statusCallTimeout_;
+	Error lastCompletionError_{};
 };
 
 }  // namespace sharding

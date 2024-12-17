@@ -265,8 +265,10 @@ Error Reindexer::SubscribeUpdates(IEventsObserver& observer, EventSubscriberConf
 }
 Error Reindexer::UnsubscribeUpdates(IEventsObserver& observer) { return impl_->UnsubscribeUpdates(observer); }
 
-[[nodiscard]] Error Reindexer::ShardingControlRequest(const sharding::ShardingControlRequestData& request) noexcept {
-	return impl_->ShardingControlRequest(request, impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "SHARDING CONTROL REQUEST"; }));
+Error Reindexer::ShardingControlRequest(const sharding::ShardingControlRequestData& request,
+										sharding::ShardingControlResponseData& response) noexcept {
+	return impl_->ShardingControlRequest(request, response,
+										 impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "SHARDING CONTROL REQUEST"; }));
 }
 
 // REINDEX_WITH_V3_FOLLOWERS

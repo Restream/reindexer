@@ -1,5 +1,6 @@
 #pragma once
 #include <stdio.h>
+#include <sstream>
 
 #define PRINTF(...)              \
 	do {                         \

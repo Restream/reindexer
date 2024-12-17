@@ -31,6 +31,9 @@ CoroReindexer& CoroReindexer::operator=(CoroReindexer&& rdx) noexcept {
 }
 
 Error CoroReindexer::Connect(const std::string& dsn, net::ev::dynamic_loop& loop, const ConnectOpts& opts) {
+	return Connect(DSN(dsn), loop, opts);
+}
+Error CoroReindexer::Connect(const DSN& dsn, net::ev::dynamic_loop& loop, const ConnectOpts& opts) {
 	return impl_->Connect(dsn, loop, opts);
 }
 void CoroReindexer::Stop() { impl_->Stop(); }
@@ -110,8 +113,9 @@ int64_t CoroReindexer::AddConnectionStateObserver(CoroReindexer::ConnectionState
 }
 Error CoroReindexer::RemoveConnectionStateObserver(int64_t id) { return impl_->RemoveConnectionStateObserver(id); }
 
-[[nodiscard]] Error CoroReindexer::ShardingControlRequest(const sharding::ShardingControlRequestData& request) noexcept {
-	return impl_->ShardingControlRequest(request, ctx_);
+Error CoroReindexer::ShardingControlRequest(const sharding::ShardingControlRequestData& request,
+											sharding::ShardingControlResponseData& response) noexcept {
+	return impl_->ShardingControlRequest(request, response, ctx_);
 }
 
 }  // namespace client

@@ -74,13 +74,20 @@ template <typename T>
 	}
 }
 
+inline static void throwOnNull(const Variant& v, CondType cond) {
+	if (v.IsNullValue()) {
+		throw Error{errParams, "Can not use 'null'-value directly with '%s' condition in comparator", CondTypeToStr(cond)};
+	}
+}
+
 template <typename T>
 [[nodiscard]] T GetValue(CondType cond, const VariantArray& values, size_t i) {
 	if (values.size() <= i) {
 		throw Error{errQueryExec, "Too many arguments for condition %s", CondTypeToStr(cond)};
-	} else {
-		return GetValue<T>(values[i]);
 	}
+	const auto& val = values[i];
+	throwOnNull(val, cond);
+	return GetValue<T>(values[i]);
 }
 
 }  // namespace comparators

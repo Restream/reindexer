@@ -1,15 +1,15 @@
-
 #include "args.h"
-#include "tools/stringstools.h"
+#include "tools/serializer.h"
 
 namespace reindexer {
 namespace net {
 namespace cproto {
 
-void Args::Dump(WrSerializer& wrser) const {
+void Args::Dump(WrSerializer& wrser, const h_vector<MaskingFunc, 2>& maskArgsFuncs) const {
 	wrser << '{';
 
-	for (const auto& arg : *this) {
+	for (size_t i = 0; i < size(); ++i) {
+		const auto& arg = (*this)[i];
 		if (&arg != &at(0)) {
 			wrser << ", ";
 		}
@@ -17,7 +17,7 @@ void Args::Dump(WrSerializer& wrser) const {
 			[&](KeyValueType::String) {
 				std::string_view str(arg);
 				if (isPrintable(str)) {
-					wrser << '\'' << str << '\'';
+					wrser << '\'' << (i < maskArgsFuncs.size() && maskArgsFuncs.at(i) ? maskArgsFuncs.at(i)(str).c_str() : str) << '\'';
 				} else {
 					wrser << "slice{len:" << str.length() << '}';
 				}

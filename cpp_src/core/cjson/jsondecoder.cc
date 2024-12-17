@@ -75,6 +75,7 @@ void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gas
 					builder.Ref(tagName, value, field);
 					pl.Set(field, std::move(value), true);
 				} break;
+				case gason::JSON_EMPTY:
 				default:
 					throw Error(errLogic, "Unexpected '%d' tag", elem.value.getTag());
 			}
@@ -132,6 +133,7 @@ void JsonDecoder::decodeJson(Payload* pl, CJsonBuilder& builder, const gason::Js
 			}
 			break;
 		}
+		case gason::JSON_EMPTY:
 		default:
 			throw Error(errLogic, "Unexpected '%d' tag", jsonTag);
 	}

@@ -58,8 +58,8 @@ private:
 	friend class Transaction;
 	explicit CoroTransaction(Error status) noexcept : i_(std::move(status)) {}
 	CoroTransaction(RPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout, std::chrono::milliseconds execTimeout,
-					Namespace* ns) noexcept
-		: i_(rpcClient, txId, requestTimeout, execTimeout, ns) {}
+					std::shared_ptr<Namespace>&& ns, int emmiterServerId) noexcept
+		: i_(rpcClient, txId, requestTimeout, execTimeout, std::move(ns), emmiterServerId) {}
 
 	Error addTxItem(Item&& item, ItemModifyMode mode, lsn_t lsn);
 	Error addTxItemRaw(std::string_view cjson, ItemModifyMode mode, lsn_t lsn);
@@ -74,7 +74,7 @@ private:
 
 	struct Impl {
 		Impl(RPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout, std::chrono::milliseconds execTimeout,
-			 Namespace* ns) noexcept;
+			 std::shared_ptr<Namespace>&& ns, int emmiterServerId) noexcept;
 		Impl(Error&& status) noexcept;
 		Impl(Impl&&) noexcept;
 		Impl& operator=(Impl&&) noexcept;
@@ -86,8 +86,9 @@ private:
 		std::chrono::milliseconds execTimeout_{0};
 		Error status_;
 		std::unique_ptr<TagsMatcher> localTm_;
-		Namespace* ns_{nullptr};
+		std::shared_ptr<Namespace> ns_;
 		steady_clock_w::time_point sessionTs_;
+		int emmiterServerId_ = -1;
 	};
 
 	Impl i_;

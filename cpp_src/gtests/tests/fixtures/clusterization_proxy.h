@@ -4,7 +4,6 @@
 #include <fstream>
 #include <unordered_map>
 #include "clusterization_api.h"
-#include "spdlog/fmt/fmt.h"
 #include "tools/timetools.h"
 
 class ClusterizationProxyApi : public ClusterizationApi {

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -142,6 +143,8 @@ type connectionImpl struct {
 	requestDedicatedThread bool
 	loggerOwner            LoggerOwner
 	eventsHandler          bindings.EventsHandler
+
+	configTLS *tls.Config
 }
 
 type newConnParams struct {
@@ -154,6 +157,7 @@ type newConnParams struct {
 	requestDedicatedThread bool
 	caps                   bindings.BindingCapabilities
 	envetsHandler          bindings.EventsHandler
+	tls                    bindings.OptionTLS
 }
 
 func newConnection(
@@ -175,6 +179,7 @@ func newConnection(
 		requestDedicatedThread: params.requestDedicatedThread,
 		loggerOwner:            loggerOwner,
 		eventsHandler:          eventsHandler,
+		configTLS:              params.tls.Config,
 	}
 	for i := 0; i < queueSize; i++ {
 		c.seqs <- uint32(i)
@@ -259,15 +264,21 @@ func (c *connectionImpl) deadlineTicker() {
 }
 
 func (c *connectionImpl) connect(ctx context.Context, dsn *url.URL) (err error) {
-	var d net.Dialer
-	if dsn.Scheme == "cproto" {
-		if c.conn, err = d.DialContext(ctx, "tcp", dsn.Host); err != nil {
+	var netDialer net.Dialer
+	if dsn.Scheme == "cprotos" {
+		tlsDialer := tls.Dialer{Config: c.configTLS, NetDialer: &netDialer}
+		if c.conn, err = tlsDialer.DialContext(ctx, "tcp", dsn.Host); err != nil {
+			return err
+		}
+		c.conn.(*tls.Conn).NetConn().(*net.TCPConn).SetNoDelay(true)
+	} else if dsn.Scheme == "cproto" {
+		if c.conn, err = netDialer.DialContext(ctx, "tcp", dsn.Host); err != nil {
 			return err
 		}
 		c.conn.(*net.TCPConn).SetNoDelay(true)
 	} else {
-		d.LocalAddr = nil
-		if c.conn, err = d.DialContext(ctx, "unix", dsn.Host); err != nil {
+		netDialer.LocalAddr = nil
+		if c.conn, err = netDialer.DialContext(ctx, "unix", dsn.Host); err != nil {
 			return err
 		}
 	}

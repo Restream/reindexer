@@ -8,14 +8,26 @@ int main() {
 	// Initialize database
 	Reindexer db;
 	Error err = db.Connect("cproto://127.0.0.1:6534/reindex", reindexer::client::ConnectOpts().CreateDBIfMissing());
-	if (!err.ok()) return -1;
+	if (!err.ok()) {
+		std::cerr << "Reindexer.Connect: " << err.what() << std::endl;
+		return -1;
+	}
 	// Create namespace and add index
 	err = db.OpenNamespace("mytable");
-	if (!err.ok()) return -1;
+	if (!err.ok()) {
+		std::cerr << "Reindexer.OpenNamespace: " << err.what() << std::endl;
+		return -2;
+	}
 	err = db.AddIndex("mytable", {"id", "hash", "int", IndexOpts().PK()});
-	if (!err.ok()) return -2;
+	if (!err.ok()) {
+		std::cerr << "Reindexer.AddIndex: " << err.what() << std::endl;
+		return -3;
+	}
 	err = db.AddIndex("mytable", {"genre", "hash", "string", IndexOpts()});
-	if (!err.ok()) return -3;
+	if (!err.ok()) {
+		std::cerr << "Reindexer.AddIndex: " << err.what() << std::endl;
+		return -4;
+	}
 
 	// Insert some data in JSON format
 	for (int i = 0; i < 5; ++i) {
@@ -23,9 +35,15 @@ int main() {
 		std::string data = "{\"id\":" + std::to_string(i) + ",\"name\":\"Some name " + std::to_string(i) + "\", \"genre\":\"some genre " +
 						   std::to_string(i) + "\"}";
 		err = item.FromJSON(data);
-		if (!err.ok()) return -4;
+		if (!err.ok()) {
+			std::cerr << "Item.FromJSON error: " << err.what() << std::endl;
+			return -5;
+		}
 		err = db.Upsert("mytable", item);
-		if (!err.ok()) return -5;
+		if (!err.ok()) {
+			std::cerr << "Reindexer.Upsert error: " << err.what() << std::endl;
+			return -6;
+		}
 	}
 
 	// Build & execute query
@@ -33,8 +51,8 @@ int main() {
 	QueryResults results;
 	err = db.Select(query, results);
 	if (!err.ok()) {
-		std::cerr << "Select error" << err.what() << std::endl;
-		return -6;
+		std::cerr << "Select error: " << err.what() << std::endl;
+		return -7;
 	}
 
 	// Fetch and print results

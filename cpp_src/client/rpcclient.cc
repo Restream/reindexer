@@ -1,11 +1,10 @@
 #include "client/rpcclient.h"
 #include <functional>
-#include "client/itemimpl.h"
+#include "client/itemimplbase.h"
 #include "client/snapshot.h"
 #include "cluster/clustercontrolrequest.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
 #include "core/namespace/namespacestat.h"
-#include "core/namespace/snapshot/snapshot.h"
 #include "core/namespacedef.h"
 #include "core/schema.h"
 #include "gason/gason.h"
@@ -27,7 +26,7 @@ RPCClient::RPCClient(const ReindexerConfig& config, INamespaces::PtrT sharedName
 
 RPCClient::~RPCClient() { Stop(); }
 
-Error RPCClient::Connect(const std::string& dsn, ev::dynamic_loop& loop, const client::ConnectOpts& opts) {
+Error RPCClient::Connect(const DSN& dsn, ev::dynamic_loop& loop, const client::ConnectOpts& opts) {
 	using namespace std::string_view_literals;
 
 	std::lock_guard lck(mtx_);
@@ -35,17 +34,17 @@ Error RPCClient::Connect(const std::string& dsn, ev::dynamic_loop& loop, const c
 		return Error(errLogic, "Client is already started (%s)", dsn);
 	}
 
-	cproto::CoroClientConnection::ConnectData connectData;
-	if (!connectData.uri.parse(dsn)) {
+	cproto::CoroClientConnection::ConnectData connectData{.uri = dsn.Parser(), .opts = {}};
+	if (!connectData.uri.isValid()) {
 		return Error(errParams, "%s is not valid uri", dsn);
 	}
 #ifdef _WIN32
-	if (connectData.uri.scheme() != "cproto"sv) {
-		return Error(errParams, "Scheme must be cproto");
+	if (connectData.uri.scheme() != "cproto"sv && connectData.uri.scheme() != "cprotos"sv) {
+		return Error(errParams, "Scheme must be cproto or cprotos");
 	}
 #else
-	if (connectData.uri.scheme() != "cproto"sv && connectData.uri.scheme() != "ucproto"sv) {
-		return Error(errParams, "Scheme must be either cproto or ucproto");
+	if (connectData.uri.scheme() != "cproto"sv && connectData.uri.scheme() != "ucproto"sv && connectData.uri.scheme() != "cprotos"sv) {
+		return Error(errParams, "Scheme must be either cproto, cprotos or ucproto");
 	}
 #endif
 
@@ -92,7 +91,11 @@ Error RPCClient::CloseNamespace(std::string_view nsName, const InternalRdxContex
 }
 
 Error RPCClient::DropNamespace(std::string_view nsName, const InternalRdxContext& ctx) {
-	return conn_.Call(mkCommand(cproto::kCmdDropNamespace, &ctx), nsName).Status();
+	auto status = conn_.Call(mkCommand(cproto::kCmdDropNamespace, &ctx), nsName).Status();
+	if (status.ok()) {
+		namespaces_->Erase(nsName);
+	}
+	return status;
 }
 
 Error RPCClient::CreateTemporaryNamespace(std::string_view baseName, std::string& resultName, const InternalRdxContext& ctx,
@@ -168,7 +171,6 @@ Error RPCClient::modifyItemCJSON(std::string_view nsName, Item& item, CoroQueryR
 	item.impl_->GetPrecepts(ser);
 
 	bool withNetTimeout = (netTimeout.count() > 0);
-	auto nsPtr = getNamespace(nsName);
 	for (int tryCount = 0;; tryCount++) {
 		auto netDeadline = conn_.Now() + netTimeout;
 		auto ret = conn_.Call(mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), nsName, int(DataFormat::FormatCJson), item.GetCJSON(),
@@ -176,7 +178,7 @@ Error RPCClient::modifyItemCJSON(std::string_view nsName, Item& item, CoroQueryR
 		if (ret.Status().ok()) {
 			try {
 				const auto args = ret.GetArgs(2);
-				CoroQueryResults qr(nullptr, &conn_, {nsPtr}, p_string(args[0]),
+				CoroQueryResults qr(nullptr, &conn_, {getNamespace(nsName)}, p_string(args[0]),
 									RPCQrId{int(args[1]), args.size() > 2 ? int64_t(args[2]) : -1}, 0, config_.FetchAmount,
 									config_.NetTimeout, false);
 				assertrx(qr.IsBound());	 // Bind must always happens inside QR's constructor. Just extra check
@@ -278,8 +280,7 @@ Error RPCClient::modifyItemRaw(std::string_view nsName, std::string_view cjson, 
 		return Error(errParams, "Raw CJSON interface does not support CJSON with bundled tags matcher");
 	}
 
-	auto nsPtr = getNamespace(nsName);
-	const auto stateToken = nsPtr->GetStateToken();
+	const auto stateToken = getNamespace(nsName)->GetStateToken();
 	const auto ret = conn_.Call(mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), nsName, int(DataFormat::FormatCJson), cjson, mode,
 								std::string_view(), stateToken, 0);
 
@@ -294,9 +295,10 @@ Error RPCClient::modifyItemRaw(std::string_view nsName, std::string_view cjson, 
 		if (ser.ContainsPayloads()) {
 			ResultSerializer::QueryParams qdata;
 			ResultSerializer::ParsingData pdata;
+			auto nsPtr = getNamespace(nsName);
 			ser.GetRawQueryParams(
 				qdata,
-				[&ser, nsPtr](int nsIdx) {
+				[&ser, nsPtr = std::move(nsPtr)](int nsIdx) {
 					const uint32_t stateToken = ser.GetVarUint();
 					const int version = ser.GetVarUint();
 					TagsMatcher newTm;
@@ -387,7 +389,7 @@ Error RPCClient::Delete(const Query& query, CoroQueryResults& result, const Inte
 	query.Serialize(ser);
 
 	CoroQueryResults::NsArray nsArray;
-	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
+	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.emplace_back(getNamespace(q.NsName())); });
 
 	const int flags = result.i_.fetchFlags_ ? result.i_.fetchFlags_ : (kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
 	result = CoroQueryResults(&conn_, std::move(nsArray), flags, config_.FetchAmount, config_.NetTimeout, result.i_.lazyMode_);
@@ -587,7 +589,7 @@ Error RPCClient::Status(bool forceCheck, const InternalRdxContext& ctx) {
 	return conn_.Status(forceCheck, std::max(config_.NetTimeout, ctx.execTimeout()), ctx.execTimeout(), ctx.getCancelCtx());
 }
 
-Namespace* RPCClient::getNamespace(std::string_view nsName) { return namespaces_->Get(nsName); }
+std::shared_ptr<Namespace> RPCClient::getNamespace(std::string_view nsName) { return namespaces_->Get(nsName); }
 
 cproto::CommandParams RPCClient::mkCommand(cproto::CmdCode cmd, const InternalRdxContext* ctx) const noexcept {
 	return mkCommand(cmd, config_.NetTimeout, ctx);
@@ -620,7 +622,8 @@ CoroTransaction RPCClient::NewTransaction(std::string_view nsName, const Interna
 	if (err.ok()) {
 		try {
 			auto args = ret.GetArgs(1);
-			return CoroTransaction(this, int64_t(args[0]), config_.NetTimeout, ctx.execTimeout(), getNamespace(nsName));
+			return CoroTransaction(this, int64_t(args[0]), config_.NetTimeout, ctx.execTimeout(), getNamespace(nsName),
+								   ctx.emmiterServerId());
 		} catch (Error& e) {
 			err = std::move(e);
 		}
@@ -781,12 +784,26 @@ Error RPCClient::GetRaftInfo(RaftInfo& info, const InternalRdxContext& ctx) {
 	return ret.Status();
 }
 
-[[nodiscard]] Error RPCClient::ShardingControlRequest(const sharding::ShardingControlRequestData& request,
-													  const InternalRdxContext& ctx) noexcept {
+Error RPCClient::ShardingControlRequest(const sharding::ShardingControlRequestData& request,
+										sharding::ShardingControlResponseData& response, const InternalRdxContext& ctx) noexcept {
 	try {
 		WrSerializer ser;
 		request.GetJSON(ser);
-		return conn_.Call(mkCommand(cproto::kShardingControlRequest, &ctx), ser.Slice()).Status();
+		auto ret = conn_.Call(mkCommand(cproto::kShardingControlRequest, &ctx), ser.Slice());
+		if (ret.Status().ok()) {
+			try {
+				if (auto args = ret.GetArgs(); args.size() == 1) {
+					auto json = args[0].As<std::string>();
+					auto err = response.FromJSON(giftStr(json));
+					if (!err.ok()) {
+						return err;
+					}
+				}
+			} catch (Error& err) {
+				return err;
+			}
+		}
+		return ret.Status();
 	}
 	CATCH_AND_RETURN
 }

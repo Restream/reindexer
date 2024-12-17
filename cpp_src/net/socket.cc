@@ -3,6 +3,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <memory>
+#include <numeric>
 #include <string>
 #include "estl/h_vector.h"
 #include "tools/oscompat.h"
@@ -12,7 +13,7 @@ namespace net {
 
 #ifdef _WIN32
 static int print_not_supported() {
-	fprintf(stderr, "Unix domain socket are not supported on windows\n");
+	fprintf(stderr, "Unix domain sockets are not supported on windows\n");
 	return -1;
 }
 #endif	// _WIN32
@@ -31,6 +32,17 @@ int socket::connect(std::string_view addr, socket_domain t) {
 					close();
 				}
 				ret = -1;
+			}
+			if (ssl && ret != -1) {
+				openssl::SSL_set_fd(*ssl, fd_);
+				if (int res = openssl::SSL_connect(*ssl); res != 1) {
+					ret = -1;
+					int err = openssl::SSL_get_error(*ssl, res);
+					if (err != SSL_ERROR_WANT_READ && err != SSL_ERROR_WANT_WRITE) {
+						perror("ssl connect error");
+						close();
+					}
+				}
 			}
 		}
 		if rx_likely (results) {
@@ -62,39 +74,84 @@ int socket::connect(std::string_view addr, socket_domain t) {
 }
 
 ssize_t socket::recv(span<char> buf) {
-	//
-	return ::recv(fd_, buf.data(), buf.size(), 0);
+	if (ssl) {
+		return reindexer::openssl::SSL_read(*ssl, buf.data(), buf.size());
+	} else {
+		return ::recv(fd_, buf.data(), buf.size(), 0);
+	}
 }
 
 ssize_t socket::send(span<char> buf) {
-	//
-	return ::send(fd_, buf.data(), buf.size(), 0);
+	if (ssl) {
+		return reindexer::openssl::SSL_write(*ssl, buf.data(), buf.size());
+	} else {
+		return ::send(fd_, buf.data(), buf.size(), 0);
+	}
+}
+
+ssize_t socket::ssl_send(span<chunk> chunks) {
+	constexpr size_t defaultBufCapacity = 0x1000;
+	constexpr size_t maxBufSize = 0x4000;
+
+	size_t size = std::accumulate(chunks.begin(), chunks.end(), 0, [](int res, const chunk& ch) { return res + ch.size(); });
+
+	if (ssl_write_buf_.empty()) {
+		ssl_write_buf_.reserve(defaultBufCapacity);
+	}
+
+	if (size > ssl_write_buf_.size()) {
+		ssl_write_buf_.resize(size);
+	}
+
+	size_t total_size = 0;
+	for (const auto& ch : chunks) {
+		memcpy(ssl_write_buf_.data() + total_size, ch.data(), ch.size());
+		total_size += ch.size();
+	}
+
+	int ret = reindexer::openssl::SSL_write(*ssl, ssl_write_buf_.data(), size);
+
+	if (size > maxBufSize && ret > 0) {
+		std::vector<uint8_t> tmp;
+		tmp.reserve(defaultBufCapacity);
+		std::swap(ssl_write_buf_, tmp);
+	}
+
+	return ret;
 }
 
 #ifdef _WIN32
 ssize_t socket::send(span<chunk> chunks) {
-	h_vector<WSABUF, 64> iov;
-	iov.resize(chunks.size());
+	if (ssl) {
+		return ssl_send(chunks);
+	} else {
+		h_vector<WSABUF, 64> iov;
+		iov.resize(chunks.size());
 
-	for (unsigned i = 0; i < chunks.size(); i++) {
-		iov[i].buf = reinterpret_cast<CHAR*>(chunks[i].data());
-		iov[i].len = chunks[i].size();
+		for (unsigned i = 0; i < chunks.size(); i++) {
+			iov[i].buf = reinterpret_cast<CHAR*>(chunks[i].data());
+			iov[i].len = chunks[i].size();
+		}
+		DWORD numberOfBytesSent;
+		int res = ::WSASend(SOCKET(fd_), iov.data(), iov.size(), &numberOfBytesSent, 0, NULL, NULL);
+
+		return res == 0 ? numberOfBytesSent : -1;
 	}
-	DWORD numberOfBytesSent;
-	int res = ::WSASend(SOCKET(fd_), iov.data(), iov.size(), &numberOfBytesSent, 0, NULL, NULL);
-
-	return res == 0 ? numberOfBytesSent : -1;
 }
 #else	// _WIN32
 ssize_t socket::send(span<chunk> chunks) {
-	h_vector<iovec, 64> iov;
-	iov.resize(chunks.size());
+	if (ssl) {
+		return ssl_send(chunks);
+	} else {
+		h_vector<iovec, 64> iov;
+		iov.resize(chunks.size());
 
-	for (unsigned i = 0; i < chunks.size(); i++) {
-		iov[i].iov_base = chunks[i].data();
-		iov[i].iov_len = chunks[i].size();
+		for (unsigned i = 0; i < chunks.size(); i++) {
+			iov[i].iov_base = chunks[i].data();
+			iov[i].iov_len = chunks[i].size();
+		}
+		return ::writev(fd_, iov.data(), iov.size());
 	}
-	return ::writev(fd_, iov.data(), iov.size());
 }
 #endif	// _WIN32
 
@@ -266,6 +323,8 @@ int socket::close() {
 		perror("close() error");
 	}
 	fd_ = -1;
+	ssl.reset();
+	ssl_write_buf_ = std::vector<uint8_t>{};
 	return ret;
 }
 

@@ -1,11 +1,14 @@
 #pragma once
 
+#include "auth_tools.h"
+
 #include "client/reindexer.h"
 #include "cluster/stats/replicationstats.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/namespace/namespacestat.h"
 #include "estl/shared_mutex.h"
 #include "reindexertestapi.h"
+#include "server/dbmanager.h"
 #include "server/server.h"
 #include "tools/fsops.h"
 
@@ -19,7 +22,8 @@ struct AsyncReplicationConfigTest {
 	using NsSet = std::unordered_set<std::string, reindexer::nocase_hash_str, reindexer::nocase_equal_str>;
 
 	struct Node {
-		Node(std::string _dsn, std::optional<NsSet> _nsList = std::optional<NsSet>()) : dsn(std::move(_dsn)), nsList(std::move(_nsList)) {}
+		Node(reindexer::DSN _dsn, std::optional<NsSet> _nsList = std::optional<NsSet>())
+			: dsn(std::move(_dsn)), nsList(std::move(_nsList)) {}
 		bool operator==(const Node& node) const noexcept { return dsn == node.dsn && nsList == node.nsList; }
 		bool operator!=(const Node& node) const noexcept { return !(*this == node); }
 
@@ -33,7 +37,7 @@ struct AsyncReplicationConfigTest {
 			}
 		}
 
-		std::string dsn;
+		reindexer::DSN dsn;
 		std::optional<NsSet> nsList;
 	};
 
@@ -121,17 +125,6 @@ struct AsyncReplicationConfigTest {
 	}
 };
 
-struct ReplicationStateApi {
-	reindexer::lsn_t lsn;
-	reindexer::lsn_t nsVersion;
-	uint64_t dataHash = 0;
-	size_t dataCount = 0;
-	std::optional<int> tmVersion;
-	std::optional<int> tmStatetoken;
-	uint64_t updateUnixNano = 0;
-	reindexer::ClusterizationStatus::Role role = reindexer::ClusterizationStatus::Role::None;
-};
-
 using BaseApi = ReindexerTestApi<reindexer::client::Reindexer>;
 
 void WriteConfigFile(const std::string& path, const std::string& configYaml);
@@ -152,7 +145,7 @@ struct ServerControlConfig {
 	unsigned short httpPort;
 	unsigned short rpcPort;
 	std::string dbName;
-	bool enableStats = false;
+	bool enableStats = true;
 	size_t maxUpdatesSize = 0;
 	bool asServerProcess = kTestServersInSeparateProcesses;
 	bool disableNetworkTimeout = false;
@@ -185,6 +178,7 @@ public:
 
 	struct Interface {
 		typedef std::shared_ptr<Interface> Ptr;
+
 		Interface(std::atomic_bool& stopped, ServerControlConfig config);
 		Interface(std::atomic_bool& stopped, ServerControlConfig config, const YAML::Node& ReplicationConfig,
 				  const YAML::Node& ClusterConfig, const YAML::Node& ShardingConfig, const YAML::Node& AsyncReplicationConfig);
@@ -197,11 +191,11 @@ public:
 		void MakeFollower();
 
 		void SetReplicationConfig(const AsyncReplicationConfigTest& config);
-		void AddFollower(const std::string& dsn,
+		void AddFollower(const reindexer::DSN& dsn,
 						 std::optional<std::vector<std::string>>&& nsList = std::optional<std::vector<std::string>>(),
 						 reindexer::cluster::AsyncReplicationMode replMode = reindexer::cluster::AsyncReplicationMode::Default);
 		// check with master or slave that sync complete
-		ReplicationStateApi GetState(std::string_view ns);
+		ReplicationTestState GetState(std::string_view ns) { return api.GetReplicationState(ns); }
 		// Force sync (restart leader's replicator)
 		void ForceSync();
 		// Reset replication role for the node
@@ -221,6 +215,8 @@ public:
 		void WriteClusterConfig(const std::string& configYaml);
 		// write sharding config to file
 		void WriteShardingConfig(const std::string& configYaml);
+		// write user auth data to file
+		void WriteUsersYAMLFile(const std::string& usersYml);
 		// set server's WAL size
 		void SetWALSize(int64_t size, std::string_view nsName);
 		// set optimization sort workers count
@@ -231,8 +227,9 @@ public:
 		reindexer::cluster::ReplicationStats GetReplicationStats(std::string_view type);
 
 		size_t Id() const noexcept { return config_.id; }
-		unsigned short RpcPort() { return config_.rpcPort; }
-		unsigned short HttpPort() { return config_.httpPort; }
+		unsigned short RpcPort() const noexcept { return config_.rpcPort; }
+		unsigned short HttpPort() const noexcept { return config_.httpPort; }
+		std::string DbName() const noexcept { return config_.dbName; }
 		std::string GetReplicationConfigFilePath() const {
 			return reindexer::fs::JoinPath(reindexer::fs::JoinPath(config_.storagePath, config_.dbName), kReplicationConfigFilename);
 		}
@@ -245,6 +242,7 @@ public:
 		std::string GetShardingConfigFilePath() const {
 			return reindexer::fs::JoinPath(reindexer::fs::JoinPath(config_.storagePath, config_.dbName), kClusterShardingFilename);
 		}
+		std::string GetUsersYAMLFilePath() const { return reindexer::fs::JoinPath(config_.storagePath, kUsersYAMLFilename); }
 
 		reindexer_server::Server srv;
 #ifndef _WIN32
@@ -252,8 +250,6 @@ public:
 		pid_t reindexerServerPIDWait = -1;
 #endif
 		BaseApi api;
-
-		const std::string kRPCDsn;
 
 	private:
 		template <typename ValueT>
@@ -268,14 +264,17 @@ public:
 		std::atomic_bool& stopped_;
 
 		const ServerControlConfig config_;
+		std::string dumpUserRecYAML() const noexcept;
 
 	public:
+		const reindexer::DSN kRPCDsn;
 		const std::string kAsyncReplicationConfigFilename = "async_replication.conf";
 		const std::string kStorageTypeFilename = ".reindexer.storage";
 		const std::string kReplicationConfigFilename = "replication.conf";
 		const std::string kClusterConfigFilename = "cluster.conf";
 		const std::string kClusterShardingFilename = "sharding.conf";
 		const std::string kConfigNs = "#config";
+		const std::string kUsersYAMLFilename = "users.yml";
 	};
 	// Get server - wait means wait until server starts if no server
 	Interface::Ptr Get(bool wait = true);

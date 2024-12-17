@@ -4,6 +4,7 @@
 #include "core/dbconfig.h"
 #include "core/formatters/lsn_fmt.h"
 #include "systemhelpers.h"
+#include "tools/crypt.h"
 #include "tools/fsops.h"
 #include "vendor/gason/gason.h"
 #include "vendor/yaml-cpp/yaml.h"
@@ -19,6 +20,9 @@ void WriteConfigFile(const std::string& path, const std::string& configYaml) {
 	file << configYaml;
 	file.flush();
 }
+
+static constexpr auto kDefaultSSLCertFile = "cert.pem";
+static constexpr auto kDefaultSSLKeyFile = "key.pem";
 
 ServerControl::Interface::~Interface() {
 	Stop();
@@ -161,6 +165,25 @@ void ServerControl::Interface::WriteShardingConfig(const std::string& configYaml
 	file.flush();
 }
 
+std::string ServerControl::Interface::dumpUserRecYAML() const noexcept {
+	YAML::Emitter res;
+	res << YAML::BeginMap;
+	for (const auto& [role, rec] : TestUserDataFactory::Get(config_.id)) {
+		res << YAML::Key << rec.login << YAML::Value;
+		res << YAML::BeginMap;
+		res << YAML::Key << "hash" << YAML::Value << fmt::format("$1${}${}", "rdx_salt", reindexer::MD5crypt(rec.password, "rdx_salt"));
+		res << YAML::Key << "roles" << YAML::Value;
+		res << YAML::BeginMap;
+		res << YAML::Key << YAML::Alias("") << YAML::Value << std::string(reindexer_server::UserRoleName(role));
+		res << YAML::EndMap;
+		res << YAML::EndMap;
+	}
+	res << YAML::EndMap;
+	return res.c_str();
+}
+
+void ServerControl::Interface::WriteUsersYAMLFile(const std::string& usersYml) { WriteConfigFile(GetUsersYAMLFilePath(), usersYml); }
+
 void ServerControl::Interface::SetWALSize(int64_t size, std::string_view nsName) { setNamespaceConfigItem(nsName, "wal_size", size); }
 
 void ServerControl::Interface::SetTxAlwaysCopySize(int64_t size, std::string_view nsName) {
@@ -220,9 +243,9 @@ ServerControl::Interface::Interface(std::atomic_bool& stopped, ServerControlConf
 									const YAML::Node& AsyncReplicationConfig)
 	: api(client::ReindexerConfig(10000, 0,
 								  config.disableNetworkTimeout ? std::chrono::milliseconds(100000000) : std::chrono::milliseconds(0))),
-	  kRPCDsn("cproto://127.0.0.1:" + std::to_string(config.rpcPort) + "/" + config.dbName),
 	  stopped_(stopped),
-	  config_(std::move(config)) {
+	  config_(std::move(config)),
+	  kRPCDsn(MakeDsn(reindexer_server::UserRole::kRoleDBAdmin, config_.id, config_.rpcPort, config_.dbName)) {
 	std::string path = reindexer::fs::JoinPath(config_.storagePath, config_.dbName);
 	if (reindexer::fs::MkDirAll(path) < 0) {
 		assertf(false, "Unable to remove %s", path);
@@ -240,15 +263,25 @@ ServerControl::Interface::Interface(std::atomic_bool& stopped, ServerControlConf
 	if (!ShardingConfig.IsNull()) {
 		WriteShardingConfig(YAML::Dump(ShardingConfig));
 	}
+	if (WithSecurity()) {
+		WriteUsersYAMLFile(dumpUserRecYAML());
+	}
 	Init();
 }
 
 ServerControl::Interface::Interface(std::atomic_bool& stopped, ServerControlConfig config)
 	: api(client::ReindexerConfig(10000, 0,
 								  config.disableNetworkTimeout ? std::chrono::milliseconds(100000000) : std::chrono::milliseconds(0))),
-	  kRPCDsn("cproto://127.0.0.1:" + std::to_string(config.rpcPort) + "/" + config.dbName),
 	  stopped_(stopped),
-	  config_(std::move(config)) {
+	  config_(std::move(config)),
+	  kRPCDsn(MakeDsn(reindexer_server::UserRole::kRoleDBAdmin, config_.id, config_.rpcPort, config_.dbName)) {
+	if (WithSecurity()) {
+		std::string path = reindexer::fs::JoinPath(config_.storagePath, config_.dbName);
+		if (reindexer::fs::MkDirAll(path) < 0) {
+			assertf(false, "Unable to remove %s", path);
+		}
+		WriteUsersYAMLFile(dumpUserRecYAML());
+	}
 	Init();
 }
 
@@ -261,9 +294,17 @@ void ServerControl::Interface::Init() {
 	y["logger"]["rpclog"] = getLogName("rpc");
 	y["logger"]["serverlog"] = getLogName("server");
 	y["logger"]["corelog"] = getLogName("core", true);
-	y["net"]["httpaddr"] = "0.0.0.0:" + std::to_string(config_.httpPort);
-	y["net"]["rpcaddr"] = "0.0.0.0:" + std::to_string(config_.rpcPort);
+	for (const auto& p : {"httpaddr", "rpcaddr", "httpsaddr", "rpcsaddr"}) {
+		y["net"][p] = "none";
+	}
+	y["net"][fmt::format("http{}addr", WithSecurity() ? "s" : "")] = "0.0.0.0:" + std::to_string(config_.httpPort);
+	y["net"][fmt::format("rpc{}addr", WithSecurity() ? "s" : "")] = "0.0.0.0:" + std::to_string(config_.rpcPort);
 	y["net"]["enable_cluster"] = true;
+	y["net"]["security"] = WithSecurity();
+	if (WithSecurity()) {
+		y["net"]["ssl_cert"] = reindexer::fs::JoinPath(TLSPath(), kDefaultSSLCertFile);
+		y["net"]["ssl_key"] = reindexer::fs::JoinPath(TLSPath(), kDefaultSSLKeyFile);
+	}
 	if (config_.maxUpdatesSize) {
 		y["net"]["maxupdatessize"] = config_.maxUpdatesSize;
 	}
@@ -292,9 +333,8 @@ void ServerControl::Interface::Init() {
 	}
 
 	// init client
-	std::string dsn = "cproto://127.0.0.1:" + std::to_string(config_.rpcPort) + "/" + config_.dbName;
 	Error err;
-	err = api.reindexer->Connect(dsn, client::ConnectOpts().CreateDBIfMissing());
+	err = api.reindexer->Connect(kRPCDsn, client::ConnectOpts().CreateDBIfMissing());
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	while (!api.reindexer->Status().ok()) {
@@ -358,7 +398,7 @@ void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfig
 	upsertConfigItemFromObject("async_replication", asyncReplConf);
 }
 
-void ServerControl::Interface::AddFollower(const std::string& dsn, std::optional<std::vector<std::string>>&& nsList,
+void ServerControl::Interface::AddFollower(const DSN& dsn, std::optional<std::vector<std::string>>&& nsList,
 										   cluster::AsyncReplicationMode replMode) {
 	auto getCurConf = [this](cluster::AsyncReplConfigData& curConf) {
 		BaseApi::QueryResultsType qr;
@@ -482,7 +522,7 @@ bool ServerControl::DropAndWaitStop() {
 void ServerControl::WaitSync(const ServerControl::Interface::Ptr& s1, const ServerControl::Interface::Ptr& s2, const std::string& nsName) {
 	auto now = std::chrono::milliseconds(0);
 	const auto pause = std::chrono::milliseconds(50);
-	ReplicationStateApi state1, state2;
+	ReplicationTestState state1, state2;
 	while (true) {
 		now += pause;
 		const std::string tmStateToken1 = state1.tmStatetoken.has_value() ? std::to_string(state1.tmStatetoken.value()) : "<none>";
@@ -510,53 +550,6 @@ void ServerControl::WaitSync(const ServerControl::Interface::Ptr& s1, const Serv
 		}
 		std::this_thread::sleep_for(pause);
 	}
-}
-
-ReplicationStateApi ServerControl::Interface::GetState(std::string_view ns) {
-	ReplicationStateApi state;
-	{
-		Query qr = Query("#memstats").Where("name", CondEq, ns);
-		BaseApi::QueryResultsType res;
-		auto err = api.reindexer->Select(qr, res);
-		EXPECT_TRUE(err.ok()) << err.what();
-		for (auto it : res) {
-			WrSerializer ser;
-			err = it.GetJSON(ser, false);
-			EXPECT_TRUE(err.ok()) << err.what();
-			gason::JsonParser parser;
-			auto root = parser.Parse(ser.Slice());
-			state.lsn.FromJSON(root["replication"]["last_lsn_v2"]);
-
-			state.dataCount = root["replication"]["data_count"].As<int64_t>();
-			state.dataHash = root["replication"]["data_hash"].As<uint64_t>();
-			state.nsVersion.FromJSON(root["replication"]["ns_version"]);
-			state.updateUnixNano = root["replication"]["updated_unix_nano"].As<uint64_t>();
-			try {
-				reindexer::ClusterizationStatus clStatus;
-				clStatus.FromJSON(root["replication"]["clusterization_status"]);
-				state.role = clStatus.role;
-			} catch (...) {
-				EXPECT_TRUE(false) << "Unable to parse cluster status: " << ser.Slice();
-			}
-
-			/*		TestCout() << "\n"
-						  << std::hex << "lsn = " << int64_t(state.lsn) << std::dec << " dataCount = " << state.dataCount
-						  << " dataHash = " << state.dataHash << " [" << ser.c_str() << "]\n"
-						  << std::endl;
-			*/
-		}
-	}
-	{
-		Query qr = Query(ns).Limit(0);
-		BaseApi::QueryResultsType res;
-		auto err = api.reindexer->Select(qr, res);
-		if (err.ok()) {
-			auto tm = res.GetTagsMatcher(ns);
-			state.tmVersion = tm.version();
-			state.tmStatetoken = tm.stateToken();
-		}
-	}
-	return state;
 }
 
 void ServerControl::Interface::ForceSync() {
@@ -629,8 +622,16 @@ BaseApi::ItemType ServerControl::Interface::CreateClusterChangeLeaderItem(int le
 
 std::vector<std::string> ServerControl::Interface::getCLIParamArray(bool enableStats, size_t maxUpdatesSize) {
 	std::vector<std::string> paramArray;
+
 	paramArray.push_back("reindexer_server");
 	paramArray.push_back("--db=" + config_.storagePath);
+
+	if (WithSecurity()) {
+		paramArray.push_back("--ssl-cert=" + reindexer::fs::JoinPath(TLSPath(), kDefaultSSLCertFile));
+		paramArray.push_back("--ssl-key=" + reindexer::fs::JoinPath(TLSPath(), kDefaultSSLKeyFile));
+		paramArray.push_back("--security");
+	}
+
 	if (enableStats) {
 		paramArray.push_back("--clientsstats");
 	}
@@ -640,8 +641,10 @@ std::vector<std::string> ServerControl::Interface::getCLIParamArray(bool enableS
 	// paramArray.push_back("--httplog");
 	paramArray.push_back("--corelog=" + getLogName("core"));
 
-	paramArray.push_back("--httpaddr=0.0.0.0:" + std::to_string(config_.httpPort));
-	paramArray.push_back("--rpcaddr=0.0.0.0:" + std::to_string(config_.rpcPort));
+	paramArray.push_back(fmt::format("--http{}addr=0.0.0.0:{}", WithSecurity() ? "s" : "", config_.httpPort));
+	paramArray.push_back(fmt::format("--http{}addr=none", WithSecurity() ? "" : "s"));
+	paramArray.push_back(fmt::format("--rpc{}addr=0.0.0.0:{}", WithSecurity() ? "s" : "", config_.rpcPort));
+	paramArray.push_back(fmt::format("--rpc{}addr=none", WithSecurity() ? "" : "s"));
 	paramArray.push_back("--enable-cluster");
 	if (maxUpdatesSize) {
 		paramArray.push_back("--updatessize=" + std::to_string(maxUpdatesSize));
@@ -657,7 +660,11 @@ void ServerControl::Interface::upsertConfigItemFromObject(std::string_view type,
 	jb.Put("type", type);
 	{
 		auto objBuilder = jb.Object(type);
-		object.GetJSON(objBuilder);
+		if constexpr (std::is_same_v<ValueT, cluster::AsyncReplConfigData>) {
+			object.GetJSON(objBuilder, cluster::MaskingDSN::Disabled);
+		} else {
+			object.GetJSON(objBuilder);
+		}
 		objBuilder.End();
 	}
 	jb.End();

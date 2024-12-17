@@ -1,6 +1,6 @@
 FROM debian:stable-slim AS build
 
-RUN apt update -y && apt install -y  libunwind-dev build-essential libsnappy-dev libleveldb-dev \
+RUN apt update -y && apt install -y  libunwind-dev build-essential libsnappy-dev libleveldb-dev openssl \
     make curl unzip git cmake libjemalloc-dev \
     libgrpc++-dev protobuf-compiler-grpc protobuf-compiler libprotobuf-dev
 
@@ -20,6 +20,9 @@ FROM debian:stable-slim
 COPY --from=build /usr/local /usr/local
 COPY --from=build /entrypoint.sh /entrypoint.sh
 RUN apt update -y && apt install -y libleveldb1d libunwind8 libjemalloc2 libgrpc++1.51 && rm -rf /var/lib/apt
+
+RUN ln -s /usr/lib/x86_64-linux-gnu/libcrypto.so.3 /usr/lib/x86_64-linux-gnu/libcrypto.so && \
+    ln -s /usr/lib/x86_64-linux-gnu/libssl.so.3 /usr/lib/x86_64-linux-gnu/libssl.so
 
 ENV RX_DATABASE=/db
 ENV RX_CORELOG=stdout

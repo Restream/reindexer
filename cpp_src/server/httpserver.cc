@@ -1,8 +1,6 @@
 #include "httpserver.h"
 
 #include <sys/stat.h>
-#include <iomanip>
-#include <sstream>
 #include "base64/base64.h"
 #include "core/cjson/csvbuilder.h"
 #include "core/cjson/jsonbuilder.h"
@@ -841,10 +839,10 @@ int HTTPServer::Check(http::Context& ctx) {
 		builder.Put("start_time", startTs);
 		builder.Put("uptime", uptime);
 		builder.Put("rpc_address", serverConfig_.RPCAddr);
-		if (!serverConfig_.RPCUnixAddr.empty()) {
-			builder.Put("urpc_address", serverConfig_.RPCUnixAddr);
-		}
+		builder.Put("rpcs_address", serverConfig_.RPCsAddr);
 		builder.Put("http_address", serverConfig_.HTTPAddr);
+		builder.Put("https_address", serverConfig_.HTTPsAddr);
+		builder.Put("urpc_address", serverConfig_.RPCUnixAddr);
 		builder.Put("storage_path", serverConfig_.StoragePath);
 		builder.Put("rpc_log", serverConfig_.RpcLog);
 		builder.Put("http_log", serverConfig_.HttpLog);
@@ -1020,6 +1018,8 @@ bool HTTPServer::Start(const std::string& addr, ev::dynamic_loop& loop) {
 	router_.POST<HTTPServer, &HTTPServer::PostMemReset>("/api/v1/allocator/drop_cache", this);
 	router_.GET<HTTPServer, &HTTPServer::GetMemInfo>("/api/v1/allocator/info", this);
 
+	router_.GET<HTTPServer, &HTTPServer::GetRole>("/api/v1/user/role", this);
+
 	router_.OnResponse(this, &HTTPServer::OnResponse);
 	router_.Middleware<HTTPServer, &HTTPServer::CheckAuth>(this);
 
@@ -1034,11 +1034,14 @@ bool HTTPServer::Start(const std::string& addr, ev::dynamic_loop& loop) {
 		prometheus_->Attach(router_);
 	}
 
+	auto sslCtx =
+		serverConfig_.HTTPsAddr == addr ? openssl::create_server_context(serverConfig_.SslCertPath, serverConfig_.SslKeyPath) : nullptr;
 	if (serverConfig_.HttpThreadingMode == ServerConfig::kDedicatedThreading) {
-		listener_ = std::make_unique<ForkedListener>(loop, http::ServerConnection::NewFactory(router_, serverConfig_.MaxHttpReqSize));
+		listener_ = std::make_unique<ForkedListener>(loop, http::ServerConnection::NewFactory(router_, serverConfig_.MaxHttpReqSize),
+													 std::move(sslCtx));
 	} else {
 		listener_ = std::make_unique<Listener<ListenerType::Shared>>(
-			loop, http::ServerConnection::NewFactory(router_, serverConfig_.MaxHttpReqSize));
+			loop, http::ServerConnection::NewFactory(router_, serverConfig_.MaxHttpReqSize), std::move(sslCtx));
 	}
 	deadlineChecker_.set<HTTPServer, &HTTPServer::deadlineTimerCb>(this);
 	deadlineChecker_.set(loop);
@@ -1830,10 +1833,11 @@ Reindexer HTTPServer::getDB(http::Context& ctx, std::string* dbNameOut) {
 		*dbNameOut = std::move(dbName);
 	}
 
-	status = actx->GetDB(role, &db);
+	status = actx->GetDB<AuthContext::CalledFrom::HTTPServer>(role, &db);
 	if (!status.ok()) {
 		throw http::HttpStatus(status);
 	}
+
 	assertrx(db);
 	std::string_view timeoutHeader = ctx.request->headers.Get("Request-Timeout");
 	std::optional<int> timeoutSec;
@@ -1916,7 +1920,7 @@ void HTTPServer::removeExpiredTx() {
 			auto status = dbMgr_.OpenDatabase(it->second.dbName, ctx, false);
 			if (status.ok()) {
 				reindexer::Reindexer* db = nullptr;
-				status = ctx.GetDB(kRoleSystem, &db);
+				status = ctx.GetDB<AuthContext::CalledFrom::HTTPServer>(kRoleSystem, &db);
 				if (db && status.ok()) {
 					logger_.info("Rollback tx {} on idle deadline", it->first);
 					status = db->RollBackTransaction(*it->second.tx);
@@ -1929,12 +1933,7 @@ void HTTPServer::removeExpiredTx() {
 	}
 }
 
-int HTTPServer::CheckAuth(http::Context& ctx) {
-	(void)ctx;
-	if (dbMgr_.IsNoSecurity()) {
-		return 0;
-	}
-
+int HTTPServer::getAuth(http::Context& ctx, AuthContext& auth, const std::string& dbName) const {
 	std::string_view authHeader = ctx.request->headers.Get("authorization");
 
 	if (authHeader.length() < 6) {
@@ -1951,12 +1950,26 @@ int HTTPServer::CheckAuth(http::Context& ctx) {
 		*password++ = 0;
 	}
 
-	AuthContext auth(credBuf, password ? password : "");
-	auto status = dbMgr_.Login("", auth);
+	auth = AuthContext(credBuf, password ? password : "");
+	auto status = dbMgr_.Login(dbName, auth);
 	if (!status.ok()) {
 		ctx.writer->SetHeader({"WWW-Authenticate"sv, "Basic realm=\"reindexer\""sv});
 		ctx.String(http::StatusUnauthorized, status.what());
 		return -1;
+	}
+
+	return 0;
+}
+
+int HTTPServer::CheckAuth(http::Context& ctx) {
+	(void)ctx;
+	if (dbMgr_.IsNoSecurity()) {
+		return 0;
+	}
+
+	AuthContext auth;
+	if (auto res = getAuth(ctx, auth, ""); res != 0) {
+		return res;
 	}
 
 	std::unique_ptr<HTTPClientData> clientData(new HTTPClientData);
@@ -2138,6 +2151,25 @@ void HTTPServer::OnResponse(http::Context& ctx) {
 		statsWatcher_->OnInputTraffic(*dbNamePtr, statsSourceName(), std::string_view(), ctx.stat.sizeStat.reqSizeBytes);
 		statsWatcher_->OnOutputTraffic(*dbNamePtr, statsSourceName(), std::string_view(), ctx.stat.sizeStat.respSizeBytes);
 	}
+}
+
+int HTTPServer::GetRole(http::Context& ctx) {
+	auto response = [&ctx](UserRole role) {
+		WrSerializer wrSer(ctx.writer->GetChunk());
+		JsonBuilder builder(wrSer);
+		builder.Put("user_role", UserRoleName(role));
+		builder.End();
+		return ctx.JSON(http::StatusOK, wrSer.DetachChunk());
+	};
+
+	if (dbMgr_.IsNoSecurity()) {
+		return response(kRoleOwner);
+	}
+
+	AuthContext auth;
+	auto res = getAuth(ctx, auth, "*");
+
+	return res != 0 ? res : response(auth.UserRights());
 }
 
 bool HTTPServer::isParameterSetOn(std::string_view val) const noexcept {

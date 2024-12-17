@@ -149,7 +149,7 @@ void ClusterDataReplicator::Run() {
 					th.OnRoleSwitch();
 				}
 			};
-			std::vector<std::string> dsns;
+			std::vector<DSN> dsns;
 			dsns.reserve(nodes.size());
 			for (auto& node : nodes) {
 				dsns.emplace_back(node.GetRPCDsn());
@@ -335,7 +335,7 @@ void ClusterDataReplicator::clusterControlRoutine(int serverId) {
 	raftManager_.AwaitTermination();
 }
 
-std::string ClusterDataReplicator::getManagementDsn(int id) const {
+DSN ClusterDataReplicator::getManagementDsn(int id) const {
 	if (config_.has_value()) {
 		for (auto& node : config_.value().nodes) {
 			if (node.serverId == id) {
@@ -343,7 +343,7 @@ std::string ClusterDataReplicator::getManagementDsn(int id) const {
 			}
 		}
 	}
-	return std::string();
+	return {};
 }
 
 void ClusterDataReplicator::onRoleChanged(RaftInfo::Role to, int leaderId) {

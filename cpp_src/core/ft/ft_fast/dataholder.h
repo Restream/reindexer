@@ -4,6 +4,8 @@
 #include "core/ft/areaholder.h"
 #include "core/ft/config/ftfastconfig.h"
 #include "core/ft/filters/itokenfilter.h"
+#include "core/ft/ft_fast/frisosplitter.h"
+#include "core/ft/ft_fast/splitter.h"
 #include "core/ft/idrelset.h"
 #include "core/ft/limits.h"
 #include "core/ft/stemmer.h"
@@ -25,7 +27,7 @@ struct VDocEntry {
 	std::string keyDoc;
 #endif
 
-	const FtKeyEntryData* keyEntry;
+	const FtKeyEntryData* keyEntry{nullptr};
 	RVector<float, 3> wordsCount;
 	RVector<float, 3> mostFreqWordCount;
 };
@@ -110,7 +112,7 @@ public:
 	virtual size_t GetMemStat() = 0;
 	virtual void Clear() = 0;
 	virtual void StartCommit(bool complete_updated) = 0;
-	void SetConfig(FtFastConfig* cfg);
+	intrusive_ptr<const ISplitter> GetSplitter() const noexcept { return splitter_; }
 	CommitStep& GetStep(WordIdType id) noexcept {
 		assertrx(id.b.step_num < steps.size());
 		return steps[id.b.step_num];
@@ -119,22 +121,22 @@ public:
 		assertrx(id.b.step_num < steps.size());
 		return steps[id.b.step_num];
 	}
-	bool NeedRebuild(bool complte_updated) const noexcept {
-		return steps.empty() || complte_updated || steps.size() >= size_t(cfg_->maxRebuildSteps) ||
+	bool NeedRebuild(bool complete_updated) const noexcept {
+		return steps.empty() || complete_updated || steps.size() >= size_t(cfg_->maxRebuildSteps) ||
 			   (steps.size() == 1 && steps.front().suffixes_.word_size() < size_t(cfg_->maxStepSize));
 	}
-	bool NeedRecomitLast() const noexcept { return steps.back().suffixes_.word_size() < size_t(cfg_->maxStepSize); }
+	bool NeedRecommitLast() const noexcept { return steps.back().suffixes_.word_size() < size_t(cfg_->maxStepSize); }
 	void SetWordsOffset(uint32_t word_offset) noexcept {
 		assertrx(!steps.empty());
 		if (status_ == CreateNew) {
 			steps.back().wordOffset_ = word_offset;
 		}
 	}
-	bool NeedClear(bool complte_updated) const noexcept { return NeedRebuild(complte_updated) || !NeedRecomitLast(); }
+	bool NeedClear(bool complte_updated) const noexcept { return NeedRebuild(complte_updated) || !NeedRecommitLast(); }
 	suffix_map<char, WordIdType>& GetSuffix() noexcept { return steps.back().suffixes_; }
 	flat_str_multimap<char, WordTypo>& GetTyposHalf() noexcept { return steps.back().typosHalf_; }
 	flat_str_multimap<char, WordTypo>& GetTyposMax() noexcept { return steps.back().typosMax_; }
-	WordIdType findWord(std::string_view word);
+	WordIdType findWord(std::string_view word) const;
 	uint32_t GetSuffixWordId(WordIdType id) const noexcept { return GetSuffixWordId(id, steps.back()); }
 	uint32_t GetSuffixWordId(WordIdType id, const CommitStep& step) const noexcept {
 		assertrx(!id.IsEmpty());
@@ -162,7 +164,7 @@ public:
 		wId.b.step_num = steps.size() - 1;
 		return wId;
 	}
-	std::string Dump();
+	std::string Dump() const;
 
 private:
 	[[noreturn]] static void throwWordIdOverflow(uint32_t id);
@@ -183,7 +185,7 @@ public:	 // TODO: #1688 Fix private class data isolation here
 	size_t cur_vdoc_pos_ = 0;
 	ProcessStatus status_{CreateNew};
 	std::vector<double> avgWordsCount_;
-	// Virtual documents, merged. Addresable by VDocIdType
+	// Virtual documents, merged. Addressable by VDocIdType
 	// Temp data for build
 	std::vector<RVector<std::pair<std::string_view, uint32_t>, 8>> vdocsTexts;
 	std::vector<std::unique_ptr<std::string>> bufStrs_;
@@ -192,11 +194,13 @@ public:	 // TODO: #1688 Fix private class data isolation here
 	FtFastConfig* cfg_{nullptr};
 	// index - rowId, value vdocId (index in array vdocs_)
 	std::vector<size_t> rowId2Vdoc_;
+	intrusive_ptr<const ISplitter> splitter_;
 };
 
 template <typename IdCont>
 class DataHolder : public IDataHolder {
 public:
+	explicit DataHolder(FtFastConfig* c);
 	void Process(size_t fieldSize, bool multithread) final;
 	size_t GetMemStat() override final;
 	void StartCommit(bool complte_updated) override final;
@@ -215,8 +219,5 @@ public:
 	}
 	std::vector<PackedWordEntry<IdCont>> words_;
 };
-
-extern template class DataHolder<PackedIdRelVec>;
-extern template class DataHolder<IdRelVec>;
 
 }  // namespace reindexer

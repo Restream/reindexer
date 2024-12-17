@@ -6,8 +6,8 @@
 #include "core/type_consts.h"
 #include "reindexer_api.h"
 #include "rpc_test_client.h"
-#include "server/dbmanager.h"
 #include "server/server.h"
+#include "tools/dsn.h"
 #include "tools/fsops.h"
 #include "yaml-cpp/yaml.h"
 
@@ -44,7 +44,7 @@ public:
 		}
 
 		client_.reset(new reindexer::client::RPCTestClient());
-		err = client_->Connect("cproto://127.0.0.1:25677/" + kDbName, reindexer::client::ConnectOpts().CreateDBIfMissing());
+		err = client_->Connect(reindexer::DSN("cproto://127.0.0.1:25677/" + kDbName), reindexer::client::ConnectOpts().CreateDBIfMissing());
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		err = client_->OpenNamespace(default_namespace, StorageOpts().CreateIfMissing());

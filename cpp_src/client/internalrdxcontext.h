@@ -32,6 +32,10 @@ public:
 		  shardId_(shardId),
 		  shardingParallelExecution_(parallel) {}
 
+	explicit InternalRdxContext(lsn_t lsn, Completion cmpl = nullptr, int shardId = ShardingKeyType::NotSetShard, bool parallel = false,
+								int emmiterServerId = -1, milliseconds execTimeout = milliseconds(0)) noexcept
+		: InternalRdxContext(std::move(cmpl), std::move(execTimeout), std::move(lsn), emmiterServerId, shardId, parallel) {}
+
 	InternalRdxContext WithCancelContext(const IRdxCancelContext* cancelCtx) noexcept {
 		return InternalRdxContext(cancelCtx, cmpl_, execTimeout_, lsn_, emmiterServerId_, shardId_, shardingParallelExecution_);
 	}

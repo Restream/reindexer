@@ -34,7 +34,8 @@ struct RaftInfo;
 
 namespace sharding {
 struct ShardingControlRequestData;
-}
+struct ShardingControlResponseData;
+}  // namespace sharding
 
 /// The main Reindexer interface. Holds database object<br>
 /// *Thread safety*: All methods of Reindexer are thread safe. <br>
@@ -299,7 +300,9 @@ public:
 
 	/// Execute sharding control request
 	/// @param request - control params
-	[[nodiscard]] Error ShardingControlRequest(const sharding::ShardingControlRequestData& request) noexcept;
+	/// @param response - control response
+	Error ShardingControlRequest(const sharding::ShardingControlRequestData& request,
+								 sharding::ShardingControlResponseData& response) noexcept;
 
 	/// Add cancelable context
 	/// @param ctx - context pointer
@@ -380,6 +383,7 @@ public:
 	typedef QueryResults QueryResultsT;
 	typedef Item ItemT;
 	typedef Transaction TransactionT;
+	typedef ReindexerConfig ConfigT;
 
 	Error DumpIndex(std::ostream& os, std::string_view nsName, std::string_view index);
 

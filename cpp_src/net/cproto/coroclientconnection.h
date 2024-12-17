@@ -1,10 +1,6 @@
 #pragma once
 
-#include <atomic>
-#include <condition_variable>
 #include <optional>
-#include <thread>
-#include <vector>
 #include "args.h"
 #include "core/keyvalue/p_string.h"
 #include "coroutine/channel.h"
@@ -12,6 +8,7 @@
 #include "cproto.h"
 #include "net/manualconnection.h"
 #include "tools/lsn.h"
+#include "tools/serializer.h"
 #include "urlparser/urlparser.h"
 
 namespace reindexer {
@@ -29,8 +26,10 @@ public:
 	Error Status() const { return status_; }
 	Args GetArgs(int minArgs = 0) const {
 		cproto::Args ret;
-		Serializer ser(data_.data(), data_.size());
-		ret.Unpack(ser);
+		if (!data_.empty()) {
+			Serializer ser(data_.data(), data_.size());
+			ret.Unpack(ser);
+		}
 		if (int(ret.size()) < minArgs) {
 			throw Error(errParams, "Server returned %d args, but expected %d", int(ret.size()), minArgs);
 		}
@@ -148,7 +147,7 @@ private:
 	};
 
 	template <typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams& opts, Args& args, const std::string_view& val, const Argss&... argss) {
+	inline CoroRPCAnswer call(const CommandParams& opts, Args& args, std::string_view val, const Argss&... argss) {
 		args.push_back(Variant(p_string(&val)));
 		return call(opts, args, argss...);
 	}

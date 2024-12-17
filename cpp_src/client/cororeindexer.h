@@ -1,6 +1,5 @@
 #pragma once
 
-#include <chrono>
 #include "client/coroqueryresults.h"
 #include "client/corotransaction.h"
 #include "client/internalrdxcontext.h"
@@ -16,10 +15,12 @@ class SnapshotChunk;
 struct SnapshotOpts;
 struct ReplicationStateV2;
 struct ClusterizationStatus;
+class DSN;
 
 namespace sharding {
 struct ShardingControlRequestData;
-}
+struct ShardingControlResponseData;
+}  // namespace sharding
 
 namespace client {
 
@@ -50,6 +51,7 @@ public:
 	/// @param loop - event loop for connections and coroutines handling
 	/// @param opts - Connect options. May contain any of <br>
 	Error Connect(const std::string& dsn, net::ev::dynamic_loop& loop, const client::ConnectOpts& opts = client::ConnectOpts());
+	Error Connect(const DSN& dsn, net::ev::dynamic_loop& loop, const client::ConnectOpts& opts = client::ConnectOpts());
 	/// Stop - shutdown connector
 	void Stop();
 	/// Open or create namespace
@@ -246,7 +248,9 @@ public:
 
 	/// Execute sharding control request during the sharding config change
 	/// @param request - control params
-	[[nodiscard]] Error ShardingControlRequest(const sharding::ShardingControlRequestData& request) noexcept;
+	/// @param response - control response
+	Error ShardingControlRequest(const sharding::ShardingControlRequestData& request,
+								 sharding::ShardingControlResponseData& response) noexcept;
 
 	/// Add cancelable context
 	/// @param cancelCtx - context pointer
@@ -260,6 +264,9 @@ public:
 	/// Add shard info
 	/// @param id - shard id
 	CoroReindexer WithShardId(int id, bool parallel) { return {impl_, ctx_.WithShardId(id, parallel)}; }
+	/// Add emmiter server id
+	/// @param serverId - emmiter server id
+	CoroReindexer WithEmmiterServerId(int serverId) { return {impl_, ctx_.WithEmmiterServerId(serverId)}; }
 
 	typedef CoroQueryResults QueryResultsT;
 	typedef Item ItemT;

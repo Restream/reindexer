@@ -36,13 +36,15 @@ Reindexer supports async logical leader-follower replication and sync RAFT-clust
 
 ## Write ahead log (WAL)
 
-Write ahead log is combination of rows updates and statements execution. WAL is stored as part of namespace storage. Each WAL record has unique 64-bit log sequence number (LSN), which also contains server id.
-WAL is ring structure, therefore after N updates (1M by default) are recorded, oldest WAL records will be automatically removed.
+Write ahead log is combination of rows updates and statements execution. WAL is stored as part of namespace storage. Each WAL record has unique 64-bit log sequence number (LSN), which also contains server id. WAL overhead is 18 bytes of RAM per each row update record.
+WAL is ring structure, therefore after N updates (4M by default) are recorded, oldest WAL records will be automatically removed.
 WAL in storage contains only records with statements (bulk updates, deletes and index structure changes). Rows updates are not stored as dedicated WAL records, but each document contains it's own LSN - this is enough to restore complete WAL in RAM on namespace loading from disk.
 
-Side effect of this mechanic is lack of exact sequence of indexes updates/data updates, and therefore in case of incompatible data migration (e.g. indexed field type changed) follower will fail to apply offline WAL, and will fallback to forced sync
+Side effect of this mechanic is lack of exact sequence of indexes updates/data updates, and therefore in case of incompatible data migration (e.g. indexed field type changed) follower will fail to apply offline WAL, and will fallback to forced sync.
 
-WAL overhead is 18 bytes of RAM per each row update record.
+During `force sync` reindexer will try to transfer all of the namespace's data into temporary in-memory table (it's name starts with `@tmp_`-prefix) and then perform atomic swap at the end of synchronization. This process requires an additional RAM for the full namespace copy.
+
+When namespace is large (or network connection is not fast enough) `force sync` takes a long time. During the sync `leader`-node may still recieve an updates, which will be placed into ring WAL buffer and internal online updates queue. So, it is possible to face situtation, when right after `force sync` target namespace will have an outdated LSN (in cases, when both WAL buffer and online updates queue got overflow during synchronization proccess) and this will lead to another attempt of `force sync`. To avoid such situations, you may try to set larger WAL size (check the section below) and larger online updates buffer size (it may be set via `--updatessize` CLI flag or `net.maxupdatessize` config option on `reindexer_server` startup).
 
 ### Maximum WAL size configuration
 

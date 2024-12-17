@@ -67,11 +67,11 @@ CascadeReplicationApi::Cluster CascadeReplicationApi::CreateConfiguration(std::v
 
 		if (isFollower) {
 			assert(int(nodes.size()) > clusterConfig[i].leaderId + 1);
-			nodes[clusterConfig[i].leaderId].Get()->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", srv->RpcPort()),
+			nodes[clusterConfig[i].leaderId].Get()->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, srv),
 																std::move(clusterConfig[i].nsList));
 		}
 	}
-	return CascadeReplicationApi::Cluster(basePort, std::move(nodes));
+	return CascadeReplicationApi::Cluster(baseServerId, std::move(nodes));
 }
 
 void CascadeReplicationApi::ApplyConfig(const ServerPtr& sc, std::string_view json) {
@@ -174,7 +174,7 @@ void CascadeReplicationApi::Cluster::ShutdownServer(size_t id) {
 void CascadeReplicationApi::Cluster::InitServer(size_t id, unsigned short rpcPort, unsigned short httpPort, const std::string& storagePath,
 												const std::string& dbName, bool enableStats) {
 	assert(id < nodes_.size());
-	nodes_[id].InitServer(ServerControlConfig(baseServerId_ + id, rpcPort, httpPort, storagePath, dbName, enableStats));
+	nodes_[id].InitServer(ServerControlConfig(baseServerId_ + id, rpcPort, httpPort, storagePath, dbName, enableStats, 0));
 }
 
 CascadeReplicationApi::Cluster::~Cluster() {

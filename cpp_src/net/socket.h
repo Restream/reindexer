@@ -6,6 +6,7 @@
 #include "estl/chunk.h"
 #include "estl/span.h"
 #include "tools/ssize_t.h"
+#include "tools/tls.h"
 
 struct addrinfo;
 namespace reindexer {
@@ -18,7 +19,7 @@ class socket {
 public:
 	socket() = default;
 	socket(const socket&& other) = delete;
-	socket(socket&& other) noexcept : fd_(other.fd_), type_(other.type_) { other.fd_ = -1; }
+	socket(socket&& other) noexcept : ssl(std::move(other.ssl)), fd_(other.fd_), type_(other.type_) { other.fd_ = -1; }
 	socket& operator=(const socket& other) = delete;
 	socket& operator=(socket&& other) noexcept {
 		if rx_likely (this != &other) {
@@ -27,6 +28,7 @@ public:
 			}
 			fd_ = other.fd_;
 			type_ = other.type_;
+			ssl = std::move(other.ssl);
 			other.fd_ = -1;
 		}
 		return *this;
@@ -55,6 +57,8 @@ public:
 	static int last_error() noexcept;
 	static bool would_block(int error) noexcept;
 
+	openssl::SslPtr ssl;
+
 private:
 	friend class lst_socket;
 
@@ -62,8 +66,14 @@ private:
 	int create(std::string_view addr, struct addrinfo** pres);
 	void domain(socket_domain t) noexcept { type_ = t; }
 
+	ssize_t ssl_send(span<chunk> chunks);
+
 	int fd_ = -1;
 	socket_domain type_ = socket_domain::tcp;
+
+	// When sending big data, SSL_write can return -1, but the write operation can be performed again.
+	// SSL_write expects the buffer to be at the same address as in the previous attempt
+	std::vector<uint8_t> ssl_write_buf_;
 };
 
 class lst_socket {

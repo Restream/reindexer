@@ -12,11 +12,11 @@ environment:
       TOOLCHAIN: x86_64-8.1.0-posix-seh-rt_v6-rev0
       APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
 
-    - BUILD_TYPE: Release
-      COMPILER: MinGW
-      PLATFORM: Win32
-      TOOLCHAIN: i686-8.1.0-posix-dwarf-rt_v6-rev0
-      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+#    - BUILD_TYPE: Release
+#      COMPILER: MinGW
+#      PLATFORM: Win32
+#      TOOLCHAIN: i686-8.1.0-posix-dwarf-rt_v6-rev0
+#      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
 
 build_script:
   - git describe --tags

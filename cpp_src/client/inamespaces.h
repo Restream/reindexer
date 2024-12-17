@@ -15,7 +15,7 @@ public:
 
 	virtual void Add(const std::string& name) = 0;
 	virtual void Erase(std::string_view name) = 0;
-	virtual Namespace* Get(std::string_view name) = 0;
+	virtual std::shared_ptr<Namespace> Get(std::string_view name) = 0;
 	virtual ~INamespaces() = default;
 };
 

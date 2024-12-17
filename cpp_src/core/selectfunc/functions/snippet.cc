@@ -1,4 +1,5 @@
 #include "snippet.h"
+#include "core/ft/ft_fast/frisosplitter.h"
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
@@ -139,7 +140,11 @@ A Snippet::RecalcZoneHelper::RecalcZoneToOffset(const Area& area) {
 	using PointType = std::conditional_t<std::is_same_v<Areas, A>, WordPosition, WordPositionEx>;
 	constexpr bool needChar = std::is_same_v<AreasEx, A>;
 	A outAreas;
-	PointType p1 = wordToByteAndCharPos<PointType>(str_, area.start - wordCount_, extraWordSymbols_);
+	auto splitterTask = splitter_->CreateTask();
+	splitterTask->SetText(str_);
+
+	PointType p1;
+	splitterTask->WordToByteAndCharPos(area.start - wordCount_, p1);
 
 	wordCount_ += area.start - wordCount_;
 	outAreas.zoneArea.start = p1.StartByte() + stringBeginOffsetByte_;
@@ -151,7 +156,9 @@ A Snippet::RecalcZoneHelper::RecalcZoneToOffset(const Area& area) {
 			stringBeginOffsetChar_ += p1.end.ch;
 		}
 		str_ = str_.substr(p1.EndByte());
-		auto p2 = wordToByteAndCharPos<PointType>(str_, area.end - wordCount_ - 1, extraWordSymbols_);
+		splitterTask->SetText(str_);
+		PointType p2;
+		splitterTask->WordToByteAndCharPos(area.end - wordCount_ - 1, p2);
 		wordCount_ += area.end - wordCount_;
 		outAreas.zoneArea.end = p2.EndByte() + stringBeginOffsetByte_;
 		if constexpr (needChar) {
@@ -192,7 +199,7 @@ void Snippet::buildResult(RecalcZoneHelper& recalcZoneHelper, const AreasInField
 	zonesList_.clear<false>();
 
 	for (const auto& area : pva.GetData()) {
-		Areas a = recalcZoneHelper.RecalcZoneToOffset<Areas>(area);
+		Areas a = recalcZoneHelper.template RecalcZoneToOffset<Areas>(area);
 
 		if (snippetAreaPrev.start == 0 && snippetAreaPrev.end == 0) {
 			snippetAreaPrev = a.snippetArea;
@@ -236,7 +243,7 @@ void Snippet::buildResultWithPrefix(RecalcZoneHelper& recalcZoneHelper, const Ar
 	zonesList_.clear<false>();
 
 	for (const auto& area : pva.GetData()) {
-		AreasEx a = recalcZoneHelper.RecalcZoneToOffset<AreasEx>(area);
+		AreasEx a = recalcZoneHelper.template RecalcZoneToOffset<AreasEx>(area);
 		if (snippetAreaPrev.start == 0 && snippetAreaPrev.end == 0) {
 			snippetAreaPrev = a.snippetArea;
 			snippetAreaPrevChar = a.snippetAreaChar;
@@ -299,7 +306,7 @@ bool Snippet::Process(ItemRef& res, PayloadType& plType, const SelectFuncStruct&
 	std::string resultString;
 	resultString.reserve(data->size());
 
-	RecalcZoneHelper recalcZoneHelper(*data, ftctx->GetData()->extraWordSymbols, after_, before_, leftBound_, rightBound_);
+	RecalcZoneHelper recalcZoneHelper(*data, ftctx->GetData()->splitter, after_, before_, leftBound_, rightBound_);
 
 	if (needAreaStr_) {
 		buildResultWithPrefix(recalcZoneHelper, *pva, *data, resultString);

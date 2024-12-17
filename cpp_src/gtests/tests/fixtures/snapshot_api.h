@@ -7,10 +7,6 @@
 #include "rpcclient_api.h"
 
 class SnapshotTestApi : public RPCClientTestApi {
-public:
-	SnapshotTestApi() {}
-	virtual ~SnapshotTestApi() {}
-
 protected:
 	struct NsDataState {
 		lsn_t lsn;

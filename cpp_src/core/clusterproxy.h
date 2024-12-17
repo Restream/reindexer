@@ -10,6 +10,11 @@
 
 namespace reindexer {
 
+namespace sharding {
+struct ShardingControlRequestData;
+struct ShardingControlResponseData;
+}  // namespace sharding
+
 #define CallProxyFunction(Fn) proxyCall<decltype(&ReindexerImpl::Fn), &ReindexerImpl::Fn, Error>
 
 #define DefFunctor1(P1, F, Action)                                   \
@@ -179,7 +184,7 @@ public:
 		using LocalFT = LocalTransaction (ReindexerImpl::*)(std::string_view, const RdxContext&);
 		auto action = [this](const RdxContext& ctx, LeaderRefT clientToLeader, std::string_view nsName) {
 			try {
-				client::Reindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(GetServerID());
+				client::Reindexer l = clientToLeader->WithEmmiterServerId(GetServerID());
 				return Transaction(impl_.NewTransaction(nsName, ctx), std::move(l));
 			} catch (const Error& err) {
 				return Transaction(err);
@@ -281,14 +286,11 @@ public:
 	PayloadType GetPayloadType(std::string_view nsName) { return impl_.getPayloadType(nsName); }
 	std::set<std::string> GetFTIndexes(std::string_view nsName) { return impl_.getFTIndexes(nsName); }
 
-	[[nodiscard]] Error ResetShardingConfig(std::optional<cluster::ShardingConfig> config = std::nullopt) noexcept;
+	Error ResetShardingConfig(std::optional<cluster::ShardingConfig> config = std::nullopt) noexcept;
 	void SaveNewShardingConfigFile(const cluster::ShardingConfig& config) const { impl_.saveNewShardingConfigFile(config); }
 
-	[[nodiscard]] Error SaveShardingCfgCandidate(std::string_view config, int64_t sourceId, const RdxContext& ctx) noexcept;
-	[[nodiscard]] Error ApplyShardingCfgCandidate(int64_t sourceId, const RdxContext& ctx) noexcept;
-	[[nodiscard]] Error ResetOldShardingConfig(int64_t sourceId, const RdxContext& ctx) noexcept;
-	[[nodiscard]] Error ResetShardingConfigCandidate(int64_t sourceId, const RdxContext& ctx) noexcept;
-	[[nodiscard]] Error RollbackShardingConfigCandidate(int64_t sourceId, const RdxContext& ctx) noexcept;
+	Error ShardingControlRequest(const sharding::ShardingControlRequestData& request, sharding::ShardingControlResponseData& response,
+								 const RdxContext& ctx) noexcept;
 
 	Error SubscribeUpdates(IEventsObserver& observer, EventSubscriberConfig&& cfg) {
 		return impl_.SubscribeUpdates(observer, std::move(cfg));
@@ -327,7 +329,7 @@ private:
 										 ? (std::min(uint32_t(clientConnConcurrency), kMaxClusterProxyConnConcurrency))
 										 : cluster::kDefaultClusterProxyCoroPerConn;
 		}
-		std::shared_ptr<client::Reindexer> Get(const std::string& dsn) {
+		std::shared_ptr<client::Reindexer> Get(const DSN& dsn) {
 			{
 				shared_lock lck(mtx_);
 				if (shutdown_) {
@@ -371,7 +373,7 @@ private:
 
 	private:
 		shared_timed_mutex mtx_;
-		fast_hash_map<std::string, std::shared_ptr<client::Reindexer>> conns_;
+		fast_hash_map<DSN, std::shared_ptr<client::Reindexer>> conns_;
 		bool shutdown_ = false;
 		uint32_t clientThreads_ = cluster::kDefaultClusterProxyConnThreads;
 		uint32_t clientConns_ = cluster::kDefaultClusterProxyConnCount;
@@ -406,7 +408,7 @@ private:
 	}
 
 	template <auto ClientMethod, auto ImplMethod, typename... Args>
-	[[nodiscard]] Error shardingConfigCandidateAction(const RdxContext& ctx, Args&&... args) noexcept;
+	Error shardingControlRequestAction(const RdxContext& ctx, Args&&... args) noexcept;
 
 #if RX_ENABLE_CLUSTERPROXY_LOGS
 
@@ -533,7 +535,7 @@ private:
 	template <typename FnL, FnL fnl, typename... Args>
 	Error baseFollowerAction(const RdxContext& ctx, LeaderRefT clientToLeader, Args&&... args) {
 		try {
-			client::Reindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(sId_);
+			client::Reindexer l = clientToLeader->WithEmmiterServerId(sId_);
 			const auto ward = ctx.BeforeClusterProxy();
 			Error err = (l.*fnl)(std::forward<Args>(args)...);
 			return err;
@@ -554,7 +556,7 @@ private:
 					return err;
 				}
 				clientItem.SetPrecepts(item.impl_->GetPrecepts());
-				client::Reindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(sId_);
+				client::Reindexer l = clientToLeader->WithEmmiterServerId(sId_);
 				{
 					const auto ward = ctx.BeforeClusterProxy();
 					err = (l.*fnl)(nsName, clientItem);
@@ -578,7 +580,7 @@ private:
 	Error resultFollowerAction(const RdxContext& ctx, LeaderRefT clientToLeader, const Query& query, LocalQueryResults& qr) {
 		try {
 			Error err;
-			client::Reindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(sId_);
+			client::Reindexer l = clientToLeader->WithEmmiterServerId(sId_);
 			client::QueryResults clientResults;
 			{
 				const auto ward = ctx.BeforeClusterProxy();
@@ -611,7 +613,7 @@ private:
 				return err;
 			}
 			clientItem.SetPrecepts(item.impl_->GetPrecepts());
-			client::Reindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(sId_);
+			client::Reindexer l = clientToLeader->WithEmmiterServerId(sId_);
 			client::QueryResults clientResults;
 			{
 				const auto ward = ctx.BeforeClusterProxy();

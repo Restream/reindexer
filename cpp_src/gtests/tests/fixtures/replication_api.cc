@@ -61,11 +61,11 @@ void ReplicationApi::RestartServer(size_t id) {
 void ReplicationApi::WaitSync(std::string_view ns, reindexer::lsn_t expectedLsn) {
 	auto now = std::chrono::milliseconds(0);
 	const auto pause = std::chrono::milliseconds(10);
-	ReplicationStateApi state;
+	ReplicationTestState state;
 	while (state.lsn.isEmpty()) {
 		now += pause;
 		ASSERT_LT(now, kMaxSyncTime);
-		ReplicationStateApi xstate = GetSrv(masterId_)->GetState(ns);  // get an reference state and then compare all with it
+		ReplicationTestState xstate = GetSrv(masterId_)->GetState(ns);	// get an reference state and then compare all with it
 		for (size_t i = 0; i < svc_.size(); i++) {
 			if (i != masterId_) {
 				state = GetSrv(i)->GetState(ns);
@@ -121,7 +121,7 @@ void ReplicationApi::SwitchMaster(size_t id, const AsyncReplicationConfigTest::N
 			conf.nodes.clear();
 			conf.role = "follower";
 			srv->SetReplicationConfig(conf);
-			followers.emplace_back(ReplNode{fmt::format("cproto://127.0.0.1:{}/node{}", srv->RpcPort(), i)});
+			followers.emplace_back(ReplNode{MakeDsn(UserRole::kRoleReplication, srv)});
 		}
 	}
 	AsyncReplicationConfigTest config("leader", std::move(followers), false, true, id, "node" + std::to_string(masterId_), namespaces,
@@ -160,7 +160,7 @@ void ReplicationApi::SetUp() {
 		svc_.push_back(ServerControl());
 		svc_.back().InitServer(ServerControlConfig(i, rpcPort, kDefaultHttpPort + i, kStoragePath + "node/" + std::to_string(i), dbName));
 		svc_.back().Get()->MakeFollower();
-		followers.emplace_back(AsyncReplicationConfigTest::Node{fmt::format("cproto://127.0.0.1:{}/{}", rpcPort, dbName)});
+		followers.emplace_back(AsyncReplicationConfigTest::Node{MakeDsn(UserRole::kRoleReplication, svc_.back().Get())});
 	}
 
 	svc_.front().InitServer(ServerControlConfig(0, kDefaultRpcPort, kDefaultHttpPort, kStoragePath + "node/0", "node0"));

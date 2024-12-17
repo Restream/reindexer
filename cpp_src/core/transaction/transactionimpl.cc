@@ -193,7 +193,7 @@ Error TransactionImpl::Commit(int serverId, bool expectSharding, ReindexerImpl& 
 
 	if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
 		const auto ward = ctx.BeforeClusterProxy();
-		auto res = (*proxiedTx)->Commit(serverId, shardId_, result, ctx);
+		auto res = (*proxiedTx)->Commit(serverId, result, ctx);
 		if (res.ok() && shardingRouter_) {
 			result.SetShardingConfigVersion(shardingRouter_.SourceId());
 		}
@@ -249,7 +249,7 @@ void TransactionImpl::updateShardIdIfNecessary(int shardId, const Variant& curSh
 		assertrx(data_);
 		if (auto connection = shardingRouter_.GetShardConnection(data_->nsName, shardId, status)) {
 			if (status.ok()) {
-				tx_ = std::make_unique<ProxiedTransaction>(connection->NewTransaction(data_->nsName), true);
+				tx_ = std::make_unique<ProxiedTransaction>(connection->NewTransaction(data_->nsName), shardId_);
 			}
 		} else if (status.ok()) {
 			if (auto* leader = std::get_if<RxClientT>(&tx_)) {
@@ -295,7 +295,7 @@ void TransactionImpl::lazyInit() {
 }
 
 void TransactionImpl::initProxiedTx(RxClientT* leader) {
-	tx_ = std::make_unique<ProxiedTransaction>(leader->NewTransaction(data_->nsName), false);
+	tx_ = std::make_unique<ProxiedTransaction>(leader->NewTransaction(data_->nsName), ShardingKeyType::NotSetShard);
 }
 
 void TransactionImpl::initProxiedTxIfRequired() {

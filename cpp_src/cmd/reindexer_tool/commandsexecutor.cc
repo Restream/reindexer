@@ -351,23 +351,27 @@ Error CommandsExecutor<DBInterface>::runImpl(const std::string& dsn, Args&&... a
 }
 
 template <typename DBInterface>
-std::string CommandsExecutor<DBInterface>::getCurrentDsn(bool withPath) const {
+reindexer::DSN CommandsExecutor<DBInterface>::getCurrentDsn(bool withPath) const {
 	using namespace std::string_view_literals;
 	std::string dsn(uri_.scheme() + "://");
 	if (!uri_.password().empty() && !uri_.username().empty()) {
 		dsn += uri_.username() + ':' + uri_.password() + '@';
 	}
 	if (uri_.scheme() == "ucproto"sv) {
-		auto dbName = uri_.db();
-		if (dbName.size()) {
-			dsn += uri_.path().substr(0, uri_.path().size() - dbName.size() - 1) + ':' + (withPath ? uri_.path() : "/");
-		} else {
-			dsn += uri_.path() + ':' + (withPath ? uri_.path() : "/");
+		std::vector<std::string_view> pathParts;
+		reindexer::split(std::string_view(uri_.path()), ":", true, pathParts);
+		std::string_view dbName;
+		if (pathParts.size() >= 2) {
+			dbName = pathParts.back().substr(1);  // ignore '/' in dbName
 		}
+
+		// after URI-parsing uri_.path() looks like e.g. /tmp/reindexer.sock:/db or /tmp/reindexer.sock
+		// and hostname-, port- fields are empty
+		dsn += uri_.path().substr(0, uri_.path().size() - (withPath ? 0 : dbName.size())) + (dbName.empty() ? ":/" : "");
 	} else {
 		dsn += uri_.hostname() + ':' + uri_.port() + (withPath ? uri_.path() : "/");
 	}
-	return dsn;
+	return reindexer::DSN(dsn);
 }
 
 template <typename DBInterface>
@@ -1174,7 +1178,7 @@ Error CommandsExecutor<reindexer::client::CoroReindexer>::commandProcessDatabase
 	LineParser parser(command);
 	parser.NextToken();
 	std::string_view subCommand = parser.NextToken();
-	assertrx(uri_.scheme() == "cproto"sv || uri_.scheme() == "ucproto"sv);
+	assertrx(uri_.scheme() == "cproto"sv || uri_.scheme() == "cprotos"sv || uri_.scheme() == "ucproto"sv);
 	if (subCommand == "list"sv) {
 		std::vector<std::string> dbList;
 		Error err = getAvailableDatabases(dbList);
@@ -1186,7 +1190,7 @@ Error CommandsExecutor<reindexer::client::CoroReindexer>::commandProcessDatabase
 		}
 		return Error();
 	} else if (subCommand == "use"sv) {
-		std::string currentDsn = getCurrentDsn() + std::string(parser.NextToken());
+		reindexer::DSN currentDsn = getCurrentDsn().WithDb(std::string(parser.NextToken()));
 		stop(false);
 		auto err = db().Connect(currentDsn, loop_);
 		if (err.ok()) {
@@ -1198,7 +1202,7 @@ Error CommandsExecutor<reindexer::client::CoroReindexer>::commandProcessDatabase
 		return err;
 	} else if (subCommand == "create"sv) {
 		auto dbName = parser.NextToken();
-		std::string currentDsn = getCurrentDsn() + std::string(dbName);
+		reindexer::DSN currentDsn = getCurrentDsn().WithDb(std::string(dbName));
 		stop(false);
 		output_() << "Creating database '" << dbName << "'" << std::endl;
 		auto err = db().Connect(currentDsn, loop_, reindexer::client::ConnectOpts().CreateDBIfMissing());

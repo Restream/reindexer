@@ -58,7 +58,10 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 	SelectKeyResult res;
 	auto startIt = this->idx_map.begin();
 	auto endIt = this->idx_map.end();
-	auto key1 = *keys.begin();
+	const auto& key1 = *keys.begin();
+	if (key1.IsNullValue() || (keys.size() > 1 && keys[1].IsNullValue())) {
+		throw Error(errParams, "Can not use 'null'-value with operators '>','<','<=','>=' and 'RANGE()' (index: '%s')", this->Name());
+	}
 	switch (condition) {
 		case CondLt:
 			endIt = this->idx_map.lower_bound(static_cast<ref_type>(key1));

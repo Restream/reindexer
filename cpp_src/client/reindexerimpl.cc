@@ -1,8 +1,8 @@
 #include "client/reindexerimpl.h"
 #include "client/connectionspool.h"
-#include "client/itemimpl.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
 #include "tools/catch_and_return.h"
+#include "tools/dsn.h"
 
 namespace reindexer {
 namespace client {
@@ -33,7 +33,7 @@ ReindexerImpl::ReindexerImpl(const ReindexerConfig& conf, uint32_t connCount, ui
 
 ReindexerImpl::~ReindexerImpl() { stop(); }
 
-Error ReindexerImpl::Connect(const std::string& dsn, const client::ConnectOpts& opts) {
+Error ReindexerImpl::Connect(const DSN& dsn, const client::ConnectOpts& opts) {
 	std::lock_guard lock(workersMtx_);
 	if (workers_.size() && workers_[0].th.joinable()) {
 		return Error(errLogic, "Client is already started (%s)", dsn);
@@ -224,25 +224,20 @@ Error ReindexerImpl::GetReplState(std::string_view nsName, ReplicationStateV2& s
 	return sendCommand<Error>(DbCmdGetReplState, ctx, std::move(nsName), state);
 }
 
-[[nodiscard]] Error ReindexerImpl::SaveNewShardingConfig(std::string_view config, int64_t sourceId,
-														 const InternalRdxContext& ctx) noexcept {
-	RETURN_RESULT_NOEXCEPT(
-		sendCommand<Error, std::string_view, int64_t>(DbCmdSaveNewShardingCfg, ctx, std::move(config), std::move(sourceId)))
-}
+Error ReindexerImpl::SaveNewShardingConfig(std::string_view config, int64_t sourceId, const InternalRdxContext& ctx) noexcept {
+	RETURN_RESULT_NOEXCEPT(sendCommand<Error, std::string_view, int64_t>(DbCmdSaveNewShardingCfg, ctx, std::move(config),
+																		 std::move(sourceId)))}
 
-[[nodiscard]] Error ReindexerImpl::ResetShardingConfigCandidate(int64_t sourceId, const InternalRdxContext& ctx) noexcept {
-	RETURN_RESULT_NOEXCEPT(sendCommand<Error, int64_t>(DbCmdResetConfigCandidate, ctx, std::move(sourceId)))
-}
+Error ReindexerImpl::ResetShardingConfigCandidate(int64_t sourceId, const InternalRdxContext& ctx) noexcept {
+	RETURN_RESULT_NOEXCEPT(sendCommand<Error, int64_t>(DbCmdResetConfigCandidate, ctx, std::move(sourceId)))}
 
-[[nodiscard]] Error ReindexerImpl::ResetOldShardingConfig(int64_t sourceId, const InternalRdxContext& ctx) noexcept {
-	RETURN_RESULT_NOEXCEPT(sendCommand<Error, int64_t>(DbCmdResetOldShardingCfg, ctx, std::move(sourceId)))
-}
+Error ReindexerImpl::ResetOldShardingConfig(int64_t sourceId, const InternalRdxContext& ctx) noexcept {
+	RETURN_RESULT_NOEXCEPT(sendCommand<Error, int64_t>(DbCmdResetOldShardingCfg, ctx, std::move(sourceId)))}
 
-[[nodiscard]] Error ReindexerImpl::RollbackShardingConfigCandidate(int64_t sourceId, const InternalRdxContext& ctx) noexcept {
-	RETURN_RESULT_NOEXCEPT(sendCommand<Error, int64_t>(DbCmdRollbackConfigCandidate, ctx, std::move(sourceId)))
-}
+Error ReindexerImpl::RollbackShardingConfigCandidate(int64_t sourceId, const InternalRdxContext& ctx) noexcept {
+	RETURN_RESULT_NOEXCEPT(sendCommand<Error, int64_t>(DbCmdRollbackConfigCandidate, ctx, std::move(sourceId)))}
 
-[[nodiscard]] Error ReindexerImpl::ApplyNewShardingConfig(int64_t sourceId, const InternalRdxContext& ctx) noexcept {
+Error ReindexerImpl::ApplyNewShardingConfig(int64_t sourceId, const InternalRdxContext& ctx) noexcept {
 	RETURN_RESULT_NOEXCEPT(sendCommand<Error, int64_t>(DbCmdApplyNewShardingCfg, ctx, std::move(sourceId)))}
 
 Error ReindexerImpl::fetchResults(int flags, int offset, int limit, QueryResults& result) {
@@ -258,31 +253,27 @@ Error ReindexerImpl::closeResults(QueryResults& result) {
 	return sendCommand<true, Error>(result.coroConnection(), DbCmdCloseResults, InternalRdxContext(), result.results_);
 }
 
-Error ReindexerImpl::addTxItem(Transaction& tr, Item&& item, ItemModifyMode mode, lsn_t lsn, Transaction::Completion cmpl) {
-	return sendCommand<true, Error>(tr.coroConnection(), DbCmdAddTxItem, InternalRdxContext(std::move(cmpl)), tr.tr_, std::move(item),
-									std::move(mode), std::move(lsn));
+Error ReindexerImpl::addTxItem(Transaction& tr, Item&& item, ItemModifyMode mode, const InternalRdxContext& ctx) {
+	return sendCommand<true, Error>(tr.coroConnection(), DbCmdAddTxItem, ctx, tr.tr_, std::move(item), std::move(mode));
 }
 
-Error ReindexerImpl::putTxMeta(Transaction& tr, std::string_view key, std::string_view value, lsn_t lsn, Transaction::Completion cmpl) {
-	return sendCommand<true, Error>(tr.coroConnection(), DbCmdPutTxMeta, InternalRdxContext(std::move(cmpl)), tr.tr_, std::move(key),
-									std::move(value), std::move(lsn));
+Error ReindexerImpl::putTxMeta(Transaction& tr, std::string_view key, std::string_view value, const InternalRdxContext& ctx) {
+	return sendCommand<true, Error>(tr.coroConnection(), DbCmdPutTxMeta, ctx, tr.tr_, std::move(key), std::move(value));
 }
 
-Error ReindexerImpl::setTxTm(Transaction& tr, TagsMatcher&& tm, lsn_t lsn, Transaction::Completion cmpl) {
-	return sendCommand<true, Error>(tr.coroConnection(), DbCmdSetTxTagsMatcher, InternalRdxContext(std::move(cmpl)), tr.tr_, std::move(tm),
-									std::move(lsn));
+Error ReindexerImpl::setTxTm(Transaction& tr, TagsMatcher&& tm, const InternalRdxContext& ctx) {
+	return sendCommand<true, Error>(tr.coroConnection(), DbCmdSetTxTagsMatcher, ctx, tr.tr_, std::move(tm));
 }
 
-Error ReindexerImpl::modifyTx(Transaction& tr, Query&& q, lsn_t lsn, Transaction::Completion cmpl) {
-	return sendCommand<true, Error>(tr.coroConnection(), DbCmdModifyTx, InternalRdxContext(std::move(cmpl)), tr.tr_, std::move(q),
-									std::move(lsn));
+Error ReindexerImpl::modifyTx(Transaction& tr, Query&& q, const InternalRdxContext& ctx) {
+	return sendCommand<true, Error>(tr.coroConnection(), DbCmdModifyTx, ctx, tr.tr_, std::move(q));
 }
 
 Item ReindexerImpl::newItemTx(CoroTransaction& tr) {
 	return sendCommand<true, Item>(tr.getConn(), DbCmdNewItemTx, InternalRdxContext(), tr);
 }
 
-void ReindexerImpl::threadLoopFun(uint32_t tid, std::promise<Error>& isRunning, const std::string& dsn, const client::ConnectOpts& opts) {
+void ReindexerImpl::threadLoopFun(uint32_t tid, std::promise<Error>& isRunning, const DSN& dsn, const client::ConnectOpts& opts) {
 	auto& th = workers_[tid];
 	assert(sharedNamespaces_);
 	if (!th.connData) {
@@ -656,10 +647,10 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 				break;
 			}
 			case DbCmdAddTxItem: {
-				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction&, Item, ItemModifyMode, lsn_t>*>(cmd);
+				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction&, Item, ItemModifyMode>*>(cmd);
 				assertrx(cd);
-				Error err = std::get<0>(cd->arguments)
-								.Modify(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments), std::get<3>(cd->arguments));
+				Error err =
+					std::get<0>(cd->arguments).Modify(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments), cmd->ctx.lsn());
 				if (cd->ctx.cmpl()) {
 					cd->ctx.cmpl()(err);
 				} else {
@@ -668,10 +659,10 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 				break;
 			}
 			case DbCmdPutTxMeta: {
-				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction&, std::string_view, std::string_view, lsn_t>*>(cmd);
+				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction&, std::string_view, std::string_view>*>(cmd);
 				assertrx(cd);
-				Error err = std::get<0>(cd->arguments)
-								.PutMeta(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments), std::get<3>(cd->arguments));
+				Error err =
+					std::get<0>(cd->arguments).PutMeta(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments), cd->ctx.lsn());
 				if (cd->ctx.cmpl()) {
 					cd->ctx.cmpl()(err);
 				} else {
@@ -680,9 +671,9 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 				break;
 			}
 			case DbCmdSetTxTagsMatcher: {
-				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction&, TagsMatcher, lsn_t>*>(cmd);
+				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction&, TagsMatcher>*>(cmd);
 				assertrx(cd);
-				Error err = std::get<0>(cd->arguments).SetTagsMatcher(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments));
+				Error err = std::get<0>(cd->arguments).SetTagsMatcher(std::move(std::get<1>(cd->arguments)), cd->ctx.lsn());
 				if (cd->ctx.cmpl()) {
 					cd->ctx.cmpl()(err);
 				} else {
@@ -691,7 +682,7 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 				break;
 			}
 			case DbCmdModifyTx: {
-				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction&, Query, lsn_t>*>(cmd);
+				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction&, Query>*>(cmd);
 				assertrx(cd);
 				CoroTransaction& tr = std::get<0>(cd->arguments);
 				Error err(errLogic, "Connection pointer in transaction is nullptr.");
@@ -701,20 +692,18 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 					std::get<1>(cd->arguments).Serialize(ser);
 					switch (std::get<1>(cd->arguments).type_) {
 						case QueryUpdate:
-							err =
-								txConn
-									->Call({cproto::kCmdUpdateQueryTx, tr.i_.requestTimeout_, tr.i_.execTimeout_,
-											std::get<2>(cd->arguments), -1, ShardingKeyType::NotSetShard, nullptr, false, tr.i_.sessionTs_},
-										   ser.Slice(), tr.i_.txId_)
-									.Status();
+							err = txConn
+									  ->Call({cproto::kCmdUpdateQueryTx, tr.i_.requestTimeout_, tr.i_.execTimeout_, cmd->ctx.lsn(),
+											  cmd->ctx.emmiterServerId(), cmd->ctx.shardId(), nullptr, false, tr.i_.sessionTs_},
+											 ser.Slice(), tr.i_.txId_)
+									  .Status();
 							break;
 						case QueryDelete:
-							err =
-								txConn
-									->Call({cproto::kCmdDeleteQueryTx, tr.i_.requestTimeout_, tr.i_.execTimeout_,
-											std::get<2>(cd->arguments), -1, ShardingKeyType::NotSetShard, nullptr, false, tr.i_.sessionTs_},
-										   ser.Slice(), tr.i_.txId_)
-									.Status();
+							err = txConn
+									  ->Call({cproto::kCmdDeleteQueryTx, tr.i_.requestTimeout_, tr.i_.execTimeout_, cmd->ctx.lsn(),
+											  cmd->ctx.emmiterServerId(), cmd->ctx.shardId(), nullptr, false, tr.i_.sessionTs_},
+											 ser.Slice(), tr.i_.txId_)
+									  .Status();
 							break;
 						case QuerySelect:
 						case QueryTruncate:
@@ -736,36 +725,40 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 			}
 			case DbCmdSaveNewShardingCfg: {
 				execCommand(cmd, [&conn, &cmd](std::string_view config, int64_t sourceId) {
-					return conn.rx.ShardingControlRequest(
-						sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::SaveCandidate>(config, sourceId), cmd->ctx);
+					sharding::ShardingControlResponseData res;
+					return conn.rx.ShardingControlRequest({sharding::ControlCmdType::SaveCandidate, config, sourceId}, res, cmd->ctx);
 				});
 				break;
 			}
 			case DbCmdResetOldShardingCfg: {
 				execCommand(cmd, [&conn, &cmd](int64_t sourceId) {
+					sharding::ShardingControlResponseData res;
 					return conn.rx.ShardingControlRequest(
-						sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ResetOldSharding>(sourceId), cmd->ctx);
+						sharding::ShardingControlRequestData{sharding::ControlCmdType::ResetOldSharding, sourceId}, res, cmd->ctx);
 				});
 				break;
 			}
 			case DbCmdRollbackConfigCandidate: {
 				execCommand(cmd, [&conn, &cmd](int64_t sourceId) {
+					sharding::ShardingControlResponseData res;
 					return conn.rx.ShardingControlRequest(
-						sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::RollbackCandidate>(sourceId), cmd->ctx);
+						sharding::ShardingControlRequestData{sharding::ControlCmdType::RollbackCandidate, sourceId}, res, cmd->ctx);
 				});
 				break;
 			}
 			case DbCmdResetConfigCandidate: {
 				execCommand(cmd, [&conn, &cmd](int64_t sourceId) {
+					sharding::ShardingControlResponseData res;
 					return conn.rx.ShardingControlRequest(
-						sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ResetCandidate>(sourceId), cmd->ctx);
+						sharding::ShardingControlRequestData{sharding::ControlCmdType::ResetCandidate, sourceId}, res, cmd->ctx);
 				});
 				break;
 			}
 			case DbCmdApplyNewShardingCfg: {
 				execCommand(cmd, [&conn, &cmd](int64_t sourceId) {
+					sharding::ShardingControlResponseData res;
 					return conn.rx.ShardingControlRequest(
-						sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ApplyNew>(sourceId), cmd->ctx);
+						sharding::ShardingControlRequestData{sharding::ControlCmdType::ApplyNew, sourceId}, res, cmd->ctx);
 				});
 				break;
 			}

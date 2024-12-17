@@ -98,6 +98,16 @@ void Connection<Mutex>::callback(ev::io& /*watcher*/, int revents) {
 	}
 	++rwCounter_;
 
+	if (sock_.ssl) {
+		if (int ssl_events = openssl::ssl_handshake<&openssl::SSL_accept>(sock_.ssl); ssl_events < 0) {
+			closeConn();
+			return;
+		} else if (ssl_events > 0) {
+			io_.start(sock_.fd(), ssl_events);
+			return;
+		}
+	}
+
 	if (revents & ev::READ) {
 		const auto res = read_cb();
 		if (res == ReadResT::Rebalanced) {

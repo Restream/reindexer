@@ -123,7 +123,8 @@ int main(int argc, char* argv[]) {
 			return 2;
 		}
 
-		if (checkIfStartsWithCS("cproto://"sv, db) || checkIfStartsWithCS("ucproto://"sv, db) || checkIfStartsWithCS("builtin://"sv, db)) {
+		if (checkIfStartsWithCS("cproto://"sv, db) || checkIfStartsWithCS("ucproto://"sv, db) || checkIfStartsWithCS("cprotos://"sv, db) ||
+			checkIfStartsWithCS("builtin://"sv, db)) {
 #ifdef _WIN32
 			if (checkIfStartsWithCS("ucproto://"sv, db) == 0) {
 				std::cerr << "Invalid DSN: ucproto:// is not supported on the Windows platform. Use cproto:// or builtin:// instead"
@@ -150,7 +151,7 @@ int main(int argc, char* argv[]) {
 		std::cout << "Reindexer command line tool version " << REINDEX_VERSION << std::endl;
 	}
 
-	if (checkIfStartsWithCS("cproto://"sv, dsn) || checkIfStartsWithCS("ucproto://"sv, dsn)) {
+	if (checkIfStartsWithCS("cproto://"sv, dsn) || checkIfStartsWithCS("cprotos://"sv, dsn) || checkIfStartsWithCS("ucproto://"sv, dsn)) {
 #ifdef _WIN32
 		if (checkIfStartsWithCS("ucproto://"sv, dsn)) {
 			std::cerr << "Invalid DSN: ucproto:// is not supported on the Windows platform. Use cproto:// or builtin:// instead"

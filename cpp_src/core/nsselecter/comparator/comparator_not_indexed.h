@@ -66,11 +66,7 @@ private:
 template <>
 class ComparatorNotIndexedImplBase<CondSet> {
 protected:
-	ComparatorNotIndexedImplBase(const VariantArray& values) : values_{values.size()} {
-		for (const Variant& v : values) {
-			values_.insert(v);
-		}
-	}
+	ComparatorNotIndexedImplBase(const VariantArray& values);
 	ComparatorNotIndexedImplBase(const ComparatorNotIndexedImplBase&) = default;
 	ComparatorNotIndexedImplBase& operator=(const ComparatorNotIndexedImplBase&) = delete;
 	ComparatorNotIndexedImplBase(ComparatorNotIndexedImplBase&&) = default;
@@ -364,14 +360,7 @@ private:
 template <>
 class ComparatorNotIndexedImpl<CondAllSet, false> {
 public:
-	ComparatorNotIndexedImpl(const VariantArray& values, const PayloadType& payloadType, const TagsPath& fieldPath)
-		: payloadType_{payloadType}, fieldPath_{fieldPath}, values_{values.size()} {
-		int i = 0;
-		for (const Variant& v : values) {
-			values_.emplace(v, i);
-			++i;
-		}
-	}
+	ComparatorNotIndexedImpl(const VariantArray& values, const PayloadType& payloadType, const TagsPath& fieldPath);
 	ComparatorNotIndexedImpl(const ComparatorNotIndexedImpl&) = default;
 	ComparatorNotIndexedImpl& operator=(const ComparatorNotIndexedImpl&) = delete;
 	ComparatorNotIndexedImpl(ComparatorNotIndexedImpl&&) = default;

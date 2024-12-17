@@ -1,4 +1,5 @@
 #include "cproto.h"
+#include "estl/fast_hash_map.h"
 
 namespace reindexer {
 namespace net {
@@ -112,6 +113,15 @@ std::string_view CmdName(uint16_t cmd) noexcept {
 		default:
 			return "Unknown"sv;
 	}
+}
+
+// The index in the h_vector must correspond to the index of the argument which must be masked so the gaps must be filled with nullptr
+static const fast_hash_map<CmdCode, h_vector<MaskingFunc, 2>> cmdMaskArgs{{kCmdLogin, {&maskLogin, &maskPassword}}};
+
+const h_vector<MaskingFunc, 2>& GetMaskArgs(CmdCode cmd) {
+	static const h_vector<MaskingFunc, 2> dummy;
+	auto it = cmdMaskArgs.find(cmd);
+	return it != cmdMaskArgs.end() ? it.value() : dummy;
 }
 
 }  // namespace cproto

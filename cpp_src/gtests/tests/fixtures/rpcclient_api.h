@@ -5,6 +5,7 @@
 #include "client/cororeindexer.h"
 #include "rpcserver_fake.h"
 #include "server/server.h"
+#include "tools/dsn.h"
 #include "tools/fsops.h"
 
 class RPCClientTestApi : public ::testing::Test {
@@ -30,7 +31,7 @@ protected:
 		TestServer(const RPCServerConfig& conf) : terminate_(false), serverIsReady_(false), conf_(conf) {}
 		void Start(const std::string& addr, Error errOnLogin = Error());
 		void Stop();
-		const std::string& GetDsn() const { return dsn_; }
+		const DSN& GetDsn() const { return dsn_; }
 		RPCServerStatus Status() const { return server_->Status(); }
 		const Error& ErrorStatus() const { return err_; }
 		size_t CloseQRRequestsCount() const { return server_->CloseQRRequestsCount(); }
@@ -42,7 +43,7 @@ protected:
 		net::ev::async stop_;
 		std::atomic<bool> terminate_;
 		std::atomic<bool> serverIsReady_;
-		std::string dsn_;
+		DSN dsn_;
 		RPCServerConfig conf_;
 		Error err_{errOK};
 	};

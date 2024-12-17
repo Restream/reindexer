@@ -137,7 +137,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 		}
 
 		reindexer::Reindexer* db = nullptr;
-		status = ctx.GetDB(kRoleSystem, &db);
+		status = ctx.GetDB<AuthContext::CalledFrom::Core>(kRoleSystem, &db);
 		assertrx(status.ok());
 		assertrx(db);
 		(void)status;

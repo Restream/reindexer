@@ -60,6 +60,7 @@ var emptyLogger bindings.NullLogger
 func init() {
 	rand.Seed(time.Now().UnixNano())
 	bindings.RegisterBinding("cproto", new(NetCProto))
+	bindings.RegisterBinding("cprotos", new(NetCProto))
 	if runtime.GOOS != "windows" {
 		bindings.RegisterBinding("ucproto", new(NetCProto))
 	}
@@ -88,6 +89,7 @@ type NetCProto struct {
 	lock               sync.RWMutex
 	logger             bindings.Logger
 	logMtx             sync.RWMutex
+	tls                bindings.OptionTLS
 }
 
 type dsn struct {
@@ -310,6 +312,8 @@ func (binding *NetCProto) Init(u []url.URL, eh bindings.EventsHandler, options .
 		case bindings.OptionReconnectionStrategy:
 			binding.dsn.reconnectionStrategy = v.Strategy
 			binding.dsn.allowUnknownNodes = v.AllowUnknownNodes
+		case bindings.OptionTLS:
+			binding.tls = v
 
 		default:
 			fmt.Printf("Unknown cproto option: %#v\n", option)
@@ -396,7 +400,8 @@ func (binding *NetCProto) createConnParams() newConnParams {
 		appName:                binding.appName,
 		enableCompression:      binding.compression.EnableCompression,
 		requestDedicatedThread: binding.dedicatedThreads.DedicatedThreads,
-		caps:                   binding.caps}
+		caps:                   binding.caps,
+		tls:                    binding.tls}
 }
 
 func (binding *NetCProto) createEventConn(ctx context.Context, connParams newConnParams, eventsSubOptsJSON []byte) error {

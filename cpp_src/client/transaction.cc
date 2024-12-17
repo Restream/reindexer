@@ -19,7 +19,7 @@ Item Transaction::NewItem() {
 
 Transaction::~Transaction() {
 	if (!IsFree()) {
-		auto err = rx_->RollBackTransaction(*this, InternalRdxContext());
+		auto err = rx_->RollBackTransaction(*this, InternalRdxContext(lsn_t{0}, nullptr, 0));
 		(void)err;	// ignore
 	}
 	tr_.clear();
@@ -30,9 +30,18 @@ TagsMatcher Transaction::GetTagsMatcher() const { return tr_.GetTagsMatcher(); }
 
 int64_t Transaction::GetTransactionId() const noexcept { return tr_.i_.txId_; }
 
-Error Transaction::modify(Item&& item, ItemModifyMode mode, lsn_t lsn, Transaction::Completion asyncCmpl) {
+Error Transaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
+	return modify(std::move(item), mode, InternalRdxContext(std::move(lsn)));
+}
+Error Transaction::PutMeta(std::string_view key, std::string_view value, lsn_t lsn) {
+	return putMeta(key, value, InternalRdxContext(std::move(lsn)));
+}
+Error Transaction::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) { return setTagsMatcher(std::move(tm), InternalRdxContext(std::move(lsn))); }
+Error Transaction::Modify(Query&& query, lsn_t lsn) { return modify(std::move(query), InternalRdxContext(std::move(lsn))); }
+
+Error Transaction::modify(Item&& item, ItemModifyMode mode, InternalRdxContext&& ctx) {
 	if (!IsFree()) {
-		auto err = rx_->addTxItem(*this, std::move(item), mode, lsn, std::move(asyncCmpl));
+		auto err = rx_->addTxItem(*this, std::move(item), mode, ctx.WithEmmiterServerId(tr_.i_.emmiterServerId_));
 		if (!err.ok()) {
 			setStatus(std::move(err));
 		}
@@ -41,9 +50,9 @@ Error Transaction::modify(Item&& item, ItemModifyMode mode, lsn_t lsn, Transacti
 	return Status().ok() ? kBadTxStatus : Status();
 }
 
-Error Transaction::modify(Query&& query, lsn_t lsn, Transaction::Completion asyncCmpl) {
+Error Transaction::modify(Query&& query, InternalRdxContext&& ctx) {
 	if (!IsFree()) {
-		auto err = rx_->modifyTx(*this, std::move(query), lsn, std::move(asyncCmpl));
+		auto err = rx_->modifyTx(*this, std::move(query), ctx.WithEmmiterServerId(tr_.i_.emmiterServerId_));
 		if (!err.ok()) {
 			setStatus(std::move(err));
 		}
@@ -52,9 +61,9 @@ Error Transaction::modify(Query&& query, lsn_t lsn, Transaction::Completion asyn
 	return Status().ok() ? kBadTxStatus : Status();
 }
 
-Error Transaction::putMeta(std::string_view key, std::string_view value, lsn_t lsn, Transaction::Completion asyncCmpl) {
+Error Transaction::putMeta(std::string_view key, std::string_view value, InternalRdxContext&& ctx) {
 	if (!IsFree()) {
-		auto err = rx_->putTxMeta(*this, key, value, lsn, std::move(asyncCmpl));
+		auto err = rx_->putTxMeta(*this, key, value, ctx.WithEmmiterServerId(tr_.i_.emmiterServerId_));
 		if (!err.ok()) {
 			setStatus(std::move(err));
 		}
@@ -63,9 +72,9 @@ Error Transaction::putMeta(std::string_view key, std::string_view value, lsn_t l
 	return Status().ok() ? kBadTxStatus : Status();
 }
 
-Error Transaction::setTagsMatcher(TagsMatcher&& tm, lsn_t lsn, Transaction::Completion asyncCmpl) {
+Error Transaction::setTagsMatcher(TagsMatcher&& tm, InternalRdxContext&& ctx) {
 	if (!IsFree()) {
-		auto err = rx_->setTxTm(*this, std::move(tm), lsn, std::move(asyncCmpl));
+		auto err = rx_->setTxTm(*this, std::move(tm), ctx.WithEmmiterServerId(tr_.i_.emmiterServerId_));
 		if (!err.ok()) {
 			setStatus(std::move(err));
 		}

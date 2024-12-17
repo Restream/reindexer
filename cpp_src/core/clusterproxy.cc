@@ -1,4 +1,5 @@
 #include "clusterproxy.h"
+#include "cluster/sharding/shardingcontrolrequest.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/defnsconfigs.h"
 #include "estl/shared_mutex.h"
@@ -103,14 +104,13 @@ std::shared_ptr<client::Reindexer> ClusterProxy::getLeader(const cluster::RaftIn
 	}
 	leader_.reset();
 	leaderId_ = -1;
-	std::string leaderDsn;
-	Error err = impl_.GetLeaderDsn(leaderDsn, GetServerID(), info);
+	DSN leaderDsn;
+	Error err = impl_.getLeaderDsn(leaderDsn, GetServerID(), info);
 	if (!err.ok()) {
 		throw err;
 	}
-	if (leaderDsn.empty()) {
-		err = Error(errLogic, "Leader dsn is empty.");
-		throw err;
+	if (!leaderDsn.Parser().isValid()) {
+		throw Error(errLogic, "Leader dsn is not valid. %s", leaderDsn);
 	}
 	leader_ = clusterConns_.Get(leaderDsn);
 	leaderId_ = info.leaderId;
@@ -217,7 +217,7 @@ Error ClusterProxy::ResetShardingConfig(std::optional<cluster::ShardingConfig> c
 #endif
 
 template <auto ClientMethod, auto ImplMethod, typename... Args>
-[[nodiscard]] Error ClusterProxy::shardingConfigCandidateAction(const RdxContext& ctx, Args&&... args) noexcept {
+Error ClusterProxy::shardingControlRequestAction(const RdxContext& ctx, Args&&... args) noexcept {
 	try {
 		const auto action = [this](const RdxContext& c, LeaderRefT l, Args&&... aa) {
 			return baseFollowerAction<decltype(ClientMethod), ClientMethod>(c, l, std::forward<Args>(aa)...);
@@ -230,28 +230,41 @@ template <auto ClientMethod, auto ImplMethod, typename... Args>
 	CATCH_AND_RETURN
 }
 
-[[nodiscard]] Error ClusterProxy::SaveShardingCfgCandidate(std::string_view config, int64_t sourceId, const RdxContext& ctx) noexcept {
-	return shardingConfigCandidateAction<&client::Reindexer::SaveNewShardingConfig, &ReindexerImpl::saveShardingCfgCandidate>(ctx, config,
-																															  sourceId);
-}
-
-[[nodiscard]] Error ClusterProxy::ApplyShardingCfgCandidate(int64_t sourceId, const RdxContext& ctx) noexcept {
-	return shardingConfigCandidateAction<&client::Reindexer::ApplyNewShardingConfig, &ReindexerImpl::applyShardingCfgCandidate>(ctx,
-																																sourceId);
-}
-
-[[nodiscard]] Error ClusterProxy::ResetOldShardingConfig(int64_t sourceId, const RdxContext& ctx) noexcept {
-	return shardingConfigCandidateAction<&client::Reindexer::ResetOldShardingConfig, &ReindexerImpl::resetOldShardingConfig>(ctx, sourceId);
-}
-
-[[nodiscard]] Error ClusterProxy::ResetShardingConfigCandidate(int64_t sourceId, const RdxContext& ctx) noexcept {
-	return shardingConfigCandidateAction<&client::Reindexer::ResetShardingConfigCandidate, &ReindexerImpl::resetShardingConfigCandidate>(
-		ctx, sourceId);
-}
-
-[[nodiscard]] Error ClusterProxy::RollbackShardingConfigCandidate(int64_t sourceId, const RdxContext& ctx) noexcept {
-	return shardingConfigCandidateAction<&client::Reindexer::RollbackShardingConfigCandidate,
-										 &ReindexerImpl::rollbackShardingConfigCandidate>(ctx, sourceId);
+Error ClusterProxy::ShardingControlRequest(const sharding::ShardingControlRequestData& request, sharding::ShardingControlResponseData&,
+										   const RdxContext& ctx) noexcept {
+	using Type = sharding::ControlCmdType;
+	switch (request.type) {
+		case Type::SaveCandidate: {
+			const auto& data = std::get<sharding::SaveConfigCommand>(request.data);
+			return shardingControlRequestAction<&client::Reindexer::SaveNewShardingConfig, &ReindexerImpl::saveShardingCfgCandidate>(
+				ctx, data.config, data.sourceId);
+		}
+		case Type::ResetOldSharding: {
+			const auto& data = std::get<sharding::ResetConfigCommand>(request.data);
+			return shardingControlRequestAction<&client::Reindexer::ResetOldShardingConfig, &ReindexerImpl::resetOldShardingConfig>(
+				ctx, data.sourceId);
+		}
+		case Type::ResetCandidate: {
+			const auto& data = std::get<sharding::ResetConfigCommand>(request.data);
+			return shardingControlRequestAction<&client::Reindexer::ResetShardingConfigCandidate,
+												&ReindexerImpl::resetShardingConfigCandidate>(ctx, data.sourceId);
+		}
+		case Type::RollbackCandidate: {
+			const auto& data = std::get<sharding::ResetConfigCommand>(request.data);
+			return shardingControlRequestAction<&client::Reindexer::RollbackShardingConfigCandidate,
+												&ReindexerImpl::rollbackShardingConfigCandidate>(ctx, data.sourceId);
+		}
+		case Type::ApplyNew: {
+			const auto& data = std::get<sharding::ApplyConfigCommand>(request.data);
+			return shardingControlRequestAction<&client::Reindexer::ApplyNewShardingConfig, &ReindexerImpl::applyShardingCfgCandidate>(
+				ctx, data.sourceId);
+		}
+		case Type::GetNodeConfig:
+		case Type::ApplyLeaderConfig:
+		default:
+			break;
+	}
+	return {};
 }
 
 }  // namespace reindexer

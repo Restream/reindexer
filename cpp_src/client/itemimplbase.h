@@ -1,14 +1,10 @@
 #pragma once
 
-#include <chrono>
 #include <deque>
 #include <vector>
-#include "client/internalrdxcontext.h"
-#include "core/keyvalue/key_string.h"
 #include "core/keyvalue/variant.h"
 #include "core/payload/payloadiface.h"
 #include "core/query/query.h"
-#include "gason/gason.h"
 #include "tools/serializer.h"
 
 namespace reindexer {

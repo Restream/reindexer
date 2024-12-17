@@ -3,6 +3,7 @@ package reindexer
 import (
 	"context"
 	"fmt"
+	"hash/crc32"
 	"log"
 	"net/url"
 	"reflect"
@@ -1403,7 +1404,20 @@ func dsnParse(dsn interface{}) (string, []url.URL) {
 			panic(fmt.Errorf("Can't parse DB DSN '%s'", dsn))
 		}
 		if scheme != "" && scheme != u.Scheme {
-			panic(fmt.Sprintf("DSN has a different schemas. %s", dsn))
+			maskDsn := func(u *url.URL) string {
+				if password, ok := u.User.Password(); ok {
+					maskLogin := func(username string) string {
+						if len(username) > 4 {
+							return username[2:] + "..." + username[len(username)-2:]
+						} else {
+							return "..."
+						}
+					}
+					u.User = url.UserPassword(maskLogin(u.User.Username()), fmt.Sprintf("%08x", crc32.ChecksumIEEE([]byte(password))))
+				}
+				return u.String()
+			}
+			panic(fmt.Sprintf("DSN has a different schemas. %s", maskDsn(u)))
 		}
 		dsnParsed = append(dsnParsed, *u)
 		scheme = u.Scheme

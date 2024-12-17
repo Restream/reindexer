@@ -131,7 +131,8 @@ public:
 		return baseCtx.CreateRdxContext(""sv, activities_, results);
 	}
 
-	[[nodiscard]] Error ShardingControlRequest(const sharding::ShardingControlRequestData& request, const RdxContext& ctx) noexcept;
+	Error ShardingControlRequest(const sharding::ShardingControlRequestData& request, sharding::ShardingControlResponseData& response,
+								 const RdxContext& ctx) noexcept;
 
 	Error SubscribeUpdates(IEventsObserver& observer, EventSubscriberConfig&& cfg) {
 		return impl_.SubscribeUpdates(observer, std::move(cfg));
@@ -201,8 +202,6 @@ private:
 	void applyNewShardingConfig(const sharding::ApplyConfigCommand& requestData, const RdxContext& ctx);
 
 	bool needProxyWithinCluster(const RdxContext& ctx);
-	template <auto RequestType, typename Request>
-	void shardingControlRequestAction(const Request& request, const RdxContext& ctx);
 
 	enum class ConfigResetFlag { RollbackApplied = 0, ResetExistent = 1 };
 	// Resetting the existing sharding configs on other shards before applying the new one OR
@@ -363,9 +362,6 @@ private:
 	std::atomic_bool connected_ = {false};
 	mutable shared_timed_mutex connectMtx_;
 	ActivityContainer activities_;
-
-	// this is required because newConfig process methods are private
-	struct ShardingProxyMethods;
 };
 
 }  // namespace reindexer

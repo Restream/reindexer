@@ -5,10 +5,7 @@
 namespace reindexer {
 namespace client {
 
-enum ConnectOpt {
-	kConnectOptCreateIfMissing = 1 << 0,
-	kConnectOptCheckClusterID = 1 << 1,
-};
+enum ConnectOpt { kConnectOptCreateIfMissing = 1 << 0, kConnectOptCheckClusterID = 1 << 1 };
 
 struct ConnectOpts {
 	bool IsCreateDBIfMissing() const { return options & kConnectOptCreateIfMissing; }

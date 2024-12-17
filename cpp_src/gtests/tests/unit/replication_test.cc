@@ -142,7 +142,7 @@ TEST_F(ReplicationLoadApi, Base) {
 		using namespace reindexer::cluster;
 		auto dsnIt = std::find_if(replConf.nodes.begin(), replConf.nodes.end(),
 								  [&nodeStat](const AsyncReplicationConfigTest::Node& node) { return nodeStat.dsn == node.dsn; });
-		ASSERT_NE(dsnIt, replConf.nodes.end()) << "Unexpected dsn value: " << nodeStat.dsn;
+		ASSERT_NE(dsnIt, replConf.nodes.end()) << fmt::sprintf("Unexpected dsn value: %s", nodeStat.dsn);
 		ASSERT_EQ(nodeStat.status, NodeStats::Status::Online);
 		ASSERT_EQ(nodeStat.syncState, NodeStats::SyncState::OnlineReplication);
 		ASSERT_EQ(nodeStat.role, RaftInfo::Role::Follower);
@@ -551,21 +551,23 @@ TEST_F(ReplicationLoadApi, ConfigSync) {
 	AsyncReplicationConfigTest config("none", {}, true, false, 3, "node_1", {}, "default");
 	CheckReplicationConfigNamespace(kTestServerID, config);
 
-	config = AsyncReplicationConfigTest("leader", {ReplNode{"cproto://127.0.0.1:53019/db"}, ReplNode{"cproto://127.0.0.1:53020/db"}}, false,
-										true, 3, "node_1", {"ns1", "ns2"}, "default");
+	config =
+		AsyncReplicationConfigTest("leader", {ReplNode{DSN("cproto://127.0.0.1:53019/db")}, ReplNode{DSN("cproto://127.0.0.1:53020/db")}},
+								   false, true, 3, "node_1", {"ns1", "ns2"}, "default");
 	SCOPED_TRACE("Set replication config(two nodes) via namespace");
 	SetServerConfig(kTestServerID, config);
 	// Validate #config namespace
 	CheckReplicationConfigFile(kTestServerID, config);
 
-	config = AsyncReplicationConfigTest("leader", {ReplNode{"cproto://127.0.0.1:45000/db"}}, false, true, 3, "node_xxx", {}, "default");
+	config =
+		AsyncReplicationConfigTest("leader", {ReplNode{DSN("cproto://127.0.0.1:45000/db")}}, false, true, 3, "node_xxx", {}, "default");
 	SCOPED_TRACE("Set replication config(one node) via namespace");
 	SetServerConfig(kTestServerID, config);
 	// Validate replication.conf file
 	CheckReplicationConfigFile(kTestServerID, config);
 
-	config = AsyncReplicationConfigTest("leader", {ReplNode{"cproto://127.0.0.1:45000/db", {{"ns1", "ns2"}}}}, false, true, 3, "node_xxx",
-										{}, "default", 150);
+	config = AsyncReplicationConfigTest("leader", {ReplNode{DSN("cproto://127.0.0.1:45000/db"), {{"ns1", "ns2"}}}}, false, true, 3,
+										"node_xxx", {}, "default", 150);
 	SCOPED_TRACE("Set replication config with custom ns list for existing node via namespace");
 	SetServerConfig(kTestServerID, config);
 	// Validate replication.conf file
@@ -592,9 +594,9 @@ TEST_F(ReplicationLoadApi, ConfigSync) {
 			"      - ns4\n"
 			"  -\n"
 			"    dsn: cproto://127.0.0.1:53002/db2\n");
-	config = AsyncReplicationConfigTest("leader",
-										{ReplNode{"cproto://127.0.0.1:53001/db1", {{"ns4"}}}, ReplNode{"cproto://127.0.0.1:53002/db2"}},
-										false, true, 3, "node_1", {"ns1", "ns3"}, "default", 50);
+	config = AsyncReplicationConfigTest(
+		"leader", {ReplNode{DSN("cproto://127.0.0.1:53001/db1"), {{"ns4"}}}, ReplNode{DSN("cproto://127.0.0.1:53002/db2")}}, false, true, 3,
+		"node_1", {"ns1", "ns3"}, "default", 50);
 	// Validate #config namespace
 	CheckReplicationConfigNamespace(kTestServerID, config, std::chrono::seconds(3));
 

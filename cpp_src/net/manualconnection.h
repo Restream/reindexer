@@ -15,6 +15,7 @@ using reindexer::cbuf;
 
 constexpr int k_sock_closed_err = -1;
 constexpr int k_connect_timeout_err = -2;
+constexpr int k_connect_ssl_err = -3;
 
 class manual_connection {
 public:
@@ -30,6 +31,8 @@ public:
 	void attach(ev::dynamic_loop& loop) noexcept;
 	void detach() noexcept;
 	void restart(socket&& s);
+
+	Error with_tls(bool enable);
 
 	template <typename buf_t>
 	void async_read(buf_t& data, size_t cnt, async_cb_t cb) {
@@ -189,6 +192,7 @@ private:
 
 	ev::io io_;
 	socket sock_;
+	openssl::SslCtxPtr sslCtx_;
 	ev::timer connect_timer_;
 	conn_state state_ = conn_state::init;
 	bool attached_ = false;

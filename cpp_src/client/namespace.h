@@ -8,10 +8,8 @@
 namespace reindexer {
 namespace client {
 
-class Namespace {
+class Namespace final : public intrusive_atomic_rc_base {
 public:
-	typedef std::shared_ptr<Namespace> Ptr;
-
 	Namespace(std::string name);
 	Item NewItem();
 

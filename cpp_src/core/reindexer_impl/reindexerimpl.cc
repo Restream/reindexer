@@ -927,7 +927,7 @@ void ReindexerImpl::setClusterizationStatus(ClusterizationStatus&& status, const
 	clusterStatus_ = std::move(status);
 }
 
-template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg, typename... Args>
+template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::* MemFn, typename Arg, typename... Args>
 Error ReindexerImpl::applyNsFunction(std::string_view nsName, const RdxContext& rdxCtx, Arg arg, Args&&... args) {
 	Error err;
 	try {
@@ -1468,7 +1468,7 @@ Error ReindexerImpl::tryLoadShardingConf(const RdxContext& ctx) noexcept {
 			jb.Put("type", kShardingConfigType);
 			auto shardCfgObj = jb.Object(kShardingConfigType);
 			if (config) {
-				config->GetJSON(shardCfgObj);
+				config->GetJSON(shardCfgObj, cluster::MaskingDSN::Enabled);
 			}
 		}
 		Error err = item.FromJSON(ser.Slice());
@@ -1631,7 +1631,11 @@ Error ReindexerImpl::tryLoadConfFromYAML(const std::string& yamlConf) {
 		JsonBuilder jb(ser);
 		jb.Put("type", type);
 		auto jsonNode = jb.Object(type);
-		config.GetJSON(jsonNode);
+		if constexpr (std::is_same_v<ConfigT, cluster::AsyncReplConfigData>) {
+			config.GetJSON(jsonNode, cluster::MaskingDSN::Disabled);
+		} else {
+			config.GetJSON(jsonNode);
+		}
 		jsonNode.End();
 		jb.End();
 
@@ -1678,7 +1682,7 @@ void ReindexerImpl::updateToSystemNamespace(std::string_view nsName, Item& item,
 				clusterizator_->Configure(std::move(asyncReplConf));
 			}
 			if (!configJson[kShardingConfigType].empty()) {
-				throw Error(errLogic, "Sharding configuration cannot be updated");
+				throw Error(errLogic, "Sharding configuration can not be updated directly. Use 'apply_sharding_config' action instead");
 			}
 
 			const auto namespaces = getNamespaces(ctx);
@@ -2249,13 +2253,13 @@ Error ReindexerImpl::ClusterControlRequest(const ClusterControlRequestData& requ
 	return Error(errParams, "Unknown cluster command request. Command type [%d].", int(request.type));
 }
 
-Error ReindexerImpl::GetLeaderDsn(std::string& dsn, unsigned short serverId, const cluster::RaftInfo& info) {
+Error ReindexerImpl::getLeaderDsn(DSN& dsn, unsigned short serverId, const cluster::RaftInfo& info) {
 	try {
 		if (!clusterConfig_ || !clusterizator_->Enabled()) {
 			return Error(errLogic, "Cluster config not set.");
 		}
 		if (serverId == info.leaderId) {
-			dsn.clear();
+			dsn = {};
 			return errOK;
 		}
 		for (const auto& node : clusterConfig_->nodes) {
@@ -2317,7 +2321,7 @@ Error ReindexerImpl::saveShardingCfgCandidate(std::string_view config, int64_t s
 		}
 
 		for (const auto& nodeStat : nodeStats) {
-			if (auto it = std::find(hosts.begin(), hosts.end(), nodeStat.dsn); it == hosts.end()) {
+			if (auto it = std::find_if(hosts.begin(), hosts.end(), std::bind(&RelaxCompare, _1, nodeStat.dsn)); it == hosts.end()) {
 				throw Error(errLogic, "Different sets of DSNs in cluster and sharding config");
 			}
 		}

@@ -67,18 +67,6 @@ void split(std::string_view str, std::string& buf, std::vector<std::string_view>
 
 int getUTF8StringCharactersCount(std::string_view str) noexcept;
 
-class Word2PosHelper {
-public:
-	Word2PosHelper(std::string_view data, std::string_view extraWordSymbols) noexcept
-		: data_(data), lastWordPos_(0), lastOffset_(0), extraWordSymbols_(extraWordSymbols) {}
-	std::pair<int, int> convert(int wordPos, int endPos);
-
-protected:
-	std::string_view data_;
-	int lastWordPos_, lastOffset_;
-	std::string_view extraWordSymbols_;
-};
-
 struct TextOffset {
 	int byte = 0;
 	int ch = 0;
@@ -105,9 +93,6 @@ struct WordPosition {
 	[[nodiscard]] int StartByte() const noexcept { return start; }
 	[[nodiscard]] int EndByte() const noexcept { return end; }
 };
-
-template <typename Pos>
-[[nodiscard]] Pos wordToByteAndCharPos(std::string_view str, int wordPosition, std::string_view extraWordSymbols);
 
 template <CollateMode collateMode>
 [[nodiscard]] ComparationResult collateCompare(std::string_view lhs, std::string_view rhs,

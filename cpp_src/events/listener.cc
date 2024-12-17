@@ -10,7 +10,15 @@ EventsListener::EventsListener(const std::string& dbName, size_t maxUpdatesQueue
 	{
 		using VecT = std::vector<std::string>;
 		VecT container;
+
+#ifndef __clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 		updatesQueue_.Init<VecT>(std::move(container), nullptr);  // TODO: Add some logger #1724
+#ifndef __clang__
+#pragma GCC diagnostic pop
+#endif
 	}
 	terminateAsync_.set(loop_);
 	terminateAsync_.set([](net::ev::async& a) noexcept { a.loop.break_loop(); });

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <fstream>
 #include "clusterization_api.h"
 #include "core/cjson/jsonbuilder.h"
+#include "gtests/tests/gtest_cout.h"
 #include "tools/fsops.h"
 #include "yaml-cpp/yaml.h"
 
@@ -36,7 +36,7 @@ struct InitShardingConfig {
 	int nodeIdInThread = -1;  // Allows to run one of the nodes in thread, instead fo process
 	uint8_t strlen = 0;		  // Strings len in items, which will be created during Fill()
 	// if it is necessary to explicitly set specific cluster nodes in shards
-	std::shared_ptr<std::map<int, std::vector<std::string>>> shardsMap;
+	std::shared_ptr<std::map<int, std::vector<DSN>>> shardsMap;
 };
 
 class ShardingApi : public ReindexerApi {
@@ -54,9 +54,6 @@ public:
 		for (auto& cluster : svc_) {
 			cluster.resize(kNodesInCluster);
 		}
-		auto getHostDsn = [&](size_t id) {
-			return "cproto://127.0.0.1:" + std::to_string(GetDefaults().defaultRpcPort + id) + "/shard" + std::to_string(id);
-		};
 		config_.shardsAwaitingTimeout = c.awaitTimeout;
 		config_.namespaces.clear();
 		config_.namespaces.resize(namespaces.size());
@@ -73,7 +70,9 @@ public:
 			} else {
 				config_.shards[shard].reserve(kNodesInCluster);
 				for (size_t node = 0; node < kNodesInCluster; ++node) {
-					config_.shards[shard].emplace_back(getHostDsn(id++));
+					config_.shards[shard].emplace_back(MakeDsn(reindexer_server::UserRole::kRoleSharding, id,
+															   GetDefaults().defaultRpcPort + id, "shard" + std::to_string(id)));
+					id++;
 				}
 			}
 			for (size_t nsId = 0; nsId < namespaces.size(); ++nsId) {
@@ -105,7 +104,8 @@ public:
 			const size_t startId = shard * kNodesInCluster;
 			for (size_t i = startId; i < startId + kNodesInCluster; ++i) {
 				YAML::Node node;
-				node["dsn"] = fmt::format("cproto://127.0.0.1:{}/shard{}", GetDefaults().defaultRpcPort + i, i);
+				node["dsn"] =
+					MakeDsn(reindexer_server::UserRole::kRoleReplication, i, GetDefaults().defaultRpcPort + i, "shard" + std::to_string(i));
 				node["server_id"] = i;
 				clusterConf["nodes"].push_back(node);
 			}
@@ -189,6 +189,7 @@ public:
 		ReindexerApi::SetUp();
 	}
 	void TearDown() override {
+		checkMasking();
 		ReindexerApi::TearDown();
 		Stop();
 		svc_.clear();
@@ -390,7 +391,8 @@ public:
 			if (err.ok()) {
 				stats = node->GetReplicationStats("cluster");
 				for (auto& nodeStat : stats.nodeStats) {
-					if (nodeStat.dsn == node->kRPCDsn && nodeStat.syncState == cluster::NodeStats::SyncState::OnlineReplication) {
+					if (nodeStat.dsn == MakeDsn(reindexer_server::UserRole::kRoleReplication, node) &&
+						nodeStat.syncState == cluster::NodeStats::SyncState::OnlineReplication) {
 						isReady = true;
 						break;
 					}
@@ -402,7 +404,8 @@ public:
 		if (!isReady) {
 			WrSerializer ser;
 			stats.GetJSON(ser);
-			ASSERT_TRUE(isReady) << "Node on '" << getNode(idx)->kRPCDsn << "' does not have online replication status: " << ser.Slice();
+			ASSERT_TRUE(isReady) << "Node on '" << fmt::sprintf("%s", getNode(idx)->kRPCDsn)
+								 << "' does not have online replication status: " << ser.Slice();
 		}
 	}
 	size_t NodesCount() const { return kShards * kNodesInCluster; }
@@ -476,6 +479,16 @@ protected:
 	std::optional<ShardingConfig> getShardingConfigFrom(reindexer::client::Reindexer& rx);
 
 	void changeClusterLeader(int shardId);
+
+	void checkMaskedDSNsInConfig(int i);
+
+	void checkMasking() {
+		if (WithSecurity() && !svc_.empty()) {
+			for (size_t shardId = 0; shardId < kShards; ++shardId) {
+				if (svc_[shardId][0].IsRunning()) checkMaskedDSNsInConfig(shardId);
+			}
+		}
+	}
 
 	size_t kShards = 3;
 	size_t kNodesInCluster = 3;

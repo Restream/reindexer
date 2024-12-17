@@ -1,11 +1,6 @@
 #include "api_tv_simple_sparse.h"
-#include <thread>
 #include "allocs_tracker.h"
-#include "core/cjson/jsonbuilder.h"
-#include "core/nsselecter/joinedselector.h"
-#include "core/reindexer.h"
 #include "gtests/tools.h"
-#include "tools/string_regexp_functions.h"
 
 #include "helpers.h"
 

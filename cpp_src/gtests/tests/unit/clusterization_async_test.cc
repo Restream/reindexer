@@ -1,4 +1,5 @@
 #include "clusterization_async_api.h"
+#include "gtests/tests/gtest_cout.h"
 
 using namespace reindexer;
 
@@ -12,7 +13,7 @@ TEST_F(ClusterizationAsyncApi, AsyncReplicationForClusterNamespaces) {
 	//           async3
 	struct AsyncNode {
 		ServerControl sc;
-		std::string dsn;
+		DSN dsn;
 	};
 
 	net::ev::dynamic_loop loop;
@@ -29,9 +30,10 @@ TEST_F(ClusterizationAsyncApi, AsyncReplicationForClusterNamespaces) {
 			const int id = kClusterSize + 1 + i;
 			ServerControlConfig scConfig(id, defaults.defaultRpcPort + id, defaults.defaultHttpPort + id,
 										 fs::JoinPath(defaults.baseTestsetDbPath, "node/" + std::to_string(id)),
-										 "node" + std::to_string(id), true);
+										 "node" + std::to_string(id), true, 0);
 			asyncNodes[i].sc.InitServer(std::move(scConfig));
-			asyncNodes[i].dsn = fmt::format("cproto://127.0.0.1:{}/node{}", defaults.defaultRpcPort + id, id);
+			asyncNodes[i].dsn =
+				MakeDsn(reindexer_server::UserRole::kRoleReplication, id, defaults.defaultRpcPort + id, "node" + std::to_string(id));
 		}
 		auto WaitSyncWithExternalNodes = [&asyncNodes](const std::string& nsName, size_t count, const ServerControl::Interface::Ptr& s) {
 			for (size_t i = 0; i < count; ++i) {

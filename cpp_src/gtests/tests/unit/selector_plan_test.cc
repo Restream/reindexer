@@ -1,5 +1,4 @@
 #include "selector_plan_test.h"
-#include <thread>
 
 template <>
 std::string SelectorPlanTest::readFieldValue<std::string>(const std::string& str, std::string::size_type pos) {

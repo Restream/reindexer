@@ -114,7 +114,7 @@ private:
 class LeaderSyncThread {
 public:
 	struct Config {
-		const std::vector<std::string>& dsns;
+		const std::vector<DSN>& dsns;
 		int64_t maxWALDepthOnForceSync;
 		int clusterId;
 		int serverId;
@@ -170,7 +170,7 @@ private:
 class LeaderSyncer {
 public:
 	struct Config {
-		const std::vector<std::string>& dsns;
+		const std::vector<DSN>& dsns;
 		int64_t maxWALDepthOnForceSync;
 		int clusterId;
 		int serverId;

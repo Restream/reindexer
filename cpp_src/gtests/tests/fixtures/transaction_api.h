@@ -1,7 +1,5 @@
-#ifndef TRANSACTION_H
-#define TRANSACTION_H
+#pragma once
 
-#include <thread>
 #include "reindexer_api.h"
 
 class TransactionApi : public ReindexerApi {
@@ -75,5 +73,3 @@ protected:
 	const char* kFieldData1 = "data1";
 	const char* kFieldData2 = "data2";
 };
-
-#endif	// TRANSACTION_H

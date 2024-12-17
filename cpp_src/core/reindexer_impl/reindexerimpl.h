@@ -130,7 +130,6 @@ public:
 	Error SuggestLeader(const cluster::NodeData& suggestion, cluster::NodeData& response);
 	Error LeadersPing(const cluster::NodeData&);
 	Error GetRaftInfo(bool allowTransitState, cluster::RaftInfo&, const RdxContext& ctx);
-	Error GetLeaderDsn(std::string& dsn, unsigned short serverId, const cluster::RaftInfo& info);
 	Error ClusterControlRequest(const ClusterControlRequestData& request);
 	Error SetTagsMatcher(std::string_view nsName, TagsMatcher&& tm, const RdxContext& ctx);
 	void ShutdownCluster();
@@ -232,6 +231,7 @@ private:
 		ReindexerImpl& owner_;
 	};
 
+	Error getLeaderDsn(DSN& dsn, unsigned short serverId, const cluster::RaftInfo& info);
 	Error insertDontUpdateSystemNS(std::string_view nsName, Item& item, const RdxContext& ctx);
 	FilterNsNamesT detectFilterNsNames(const Query& q);
 	[[nodiscard]] StatsLocker::StatsLockT syncSystemNamespaces(std::string_view sysNsName, const FilterNsNamesT&, const RdxContext& ctx);

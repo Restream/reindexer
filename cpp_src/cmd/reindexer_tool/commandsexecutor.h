@@ -8,7 +8,7 @@
 #include "dumpoptions.h"
 #include "iotools.h"
 #include "net/ev/ev.h"
-#include "tools/clock.h"
+#include "tools/dsn.h"
 #include "vendor/urlparser/urlparser.h"
 
 namespace reindexer_tool {
@@ -74,7 +74,7 @@ protected:
 	typename std::enable_if<!std::is_default_constructible<T>::value, T>::type createDB(typename T::ConfigT config) {
 		return T(loop_, config);
 	}
-	std::string getCurrentDsn(bool withPath = false) const;
+	reindexer::DSN getCurrentDsn(bool withPath = false) const;
 	Error queryResultsToJson(std::ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery, bool fstream);
 	Error getAvailableDatabases(std::vector<std::string>&);
 

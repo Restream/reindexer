@@ -1,7 +1,7 @@
 FROM alpine:3.20 AS build
 
 RUN cd /tmp && apk update && \
-    apk add git curl autoconf automake libtool linux-headers g++ make libunwind-dev grpc-dev protobuf-dev c-ares-dev patch && \
+    apk add git curl autoconf automake libtool linux-headers g++ make libunwind-dev grpc-dev protobuf-dev c-ares-dev patch openssl && \
     git clone https://github.com/gperftools/gperftools.git && \
     cd gperftools && git checkout gperftools-2.15 && \
     sed -i s/_sigev_un\._tid/sigev_notify_thread_id/ src/profile-handler.cc && \
@@ -28,6 +28,9 @@ FROM alpine:3.20
 COPY --from=build /usr/local /usr/local
 COPY --from=build /entrypoint.sh /entrypoint.sh
 RUN apk update && apk add libstdc++ libunwind snappy leveldb c-ares libprotobuf xz-libs grpc-cpp && rm -rf /var/cache/apk/*
+
+RUN ln -s /usr/lib/libcrypto.so.3 /usr/lib/libcrypto.so && \
+    ln -s /usr/lib/libssl.so.3 /usr/lib/libssl.so
 
 ENV RX_DATABASE=/db
 ENV RX_CORELOG=stdout

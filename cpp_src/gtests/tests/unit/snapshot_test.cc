@@ -1,6 +1,5 @@
 #include "core/namespace/namespacestat.h"
 #include "core/type_consts.h"
-#include "coroutine/waitgroup.h"
 #include "net/cproto/cproto.h"
 #include "net/ev/ev.h"
 #include "snapshot_api.h"

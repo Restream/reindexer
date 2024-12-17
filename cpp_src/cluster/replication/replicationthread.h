@@ -119,7 +119,7 @@ public:
 
 		int serverId;
 		uint32_t uid;
-		std::string dsn;
+		DSN dsn;
 		client::CoroReindexer client;
 		std::unique_ptr<UpdatesChT> updateNotifier = std::make_unique<UpdatesChT>();
 		std::unordered_map<NamespaceName, NamespaceData, NamespaceNameHash, NamespaceNameEqual>

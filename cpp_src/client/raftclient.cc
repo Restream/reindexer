@@ -22,18 +22,20 @@ RaftClient& RaftClient::operator=(RaftClient&& rdx) noexcept {
 	return *this;
 }
 
-Error RaftClient::Connect(const std::string& dsn, net::ev::dynamic_loop& loop, const client::ConnectOpts& opts) {
+Error RaftClient::Connect(const DSN& dsn, net::ev::dynamic_loop& loop, const client::ConnectOpts& opts) {
 	return impl_->Connect(dsn, loop, opts);
 }
 void RaftClient::Stop() { impl_->Stop(); }
 
-Error RaftClient::SuggestLeader(const NodeData& suggestion, NodeData& response) { return impl_->SuggestLeader(suggestion, response, ctx_); }
-
-Error RaftClient::SetDesiredLeaderId(int nextLeaderId) {
-	return impl_->ClusterControlRequest(ClusterControlRequestData{SetClusterLeaderCommand{nextLeaderId}}, ctx_);
+Error RaftClient::SuggestLeader(const NodeData& suggestion, NodeData& response) {
+	return impl_->SuggestLeader(suggestion, response, ctx_.WithLSN(lsn_t{0}));
 }
 
-Error RaftClient::LeadersPing(const NodeData& leader) { return impl_->LeadersPing(leader, ctx_); }
+Error RaftClient::SetDesiredLeaderId(int nextLeaderId) {
+	return impl_->ClusterControlRequest(ClusterControlRequestData{SetClusterLeaderCommand{nextLeaderId}}, ctx_.WithLSN(lsn_t{0}));
+}
+
+Error RaftClient::LeadersPing(const NodeData& leader) { return impl_->LeadersPing(leader, ctx_.WithLSN(lsn_t{0})); }
 
 Error RaftClient::GetRaftInfo(RaftClient::RaftInfo& info) { return impl_->GetRaftInfo(info, ctx_); }
 

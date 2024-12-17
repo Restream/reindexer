@@ -65,7 +65,7 @@ public:
 		return BaseConnT::stats_ ? BaseConnT::stats_->get_stat() : std::shared_ptr<connection_stat>();
 	}
 	size_t AvailableEventsSpace() noexcept override {
-		auto available = int64_t(maxPendingUpdates_) - BaseConnT::wrBuf_.size_atomic() - pendingUpdates();
+		int64_t available = int64_t(maxPendingUpdates_) - int64_t(BaseConnT::wrBuf_.size_atomic()) - int64_t(pendingUpdates());
 		return available > 0 ? size_t(available) : 0;
 	}
 	void SendEvent(chunk&& ch) override;

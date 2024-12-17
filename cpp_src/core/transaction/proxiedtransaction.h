@@ -15,15 +15,14 @@ class QueryResults;
 
 class ProxiedTransaction {
 public:
-	ProxiedTransaction(client::Transaction&& _tx, bool _proxiedViaSharding)
-		: tx_(std::move(_tx)), proxiedViaSharding_(_proxiedViaSharding), asyncData_(mtx_) {}
+	ProxiedTransaction(client::Transaction&& _tx, int shardId) : tx_(std::move(_tx)), shardId_(shardId), asyncData_(mtx_) {}
 
 	Error Modify(Item&& item, ItemModifyMode mode, lsn_t lsn);
 	Error Modify(Query&& query, lsn_t lsn);
 	Error PutMeta(std::string_view key, std::string_view value, lsn_t lsn);
 	Error SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn);
 	void Rollback(int serverId, const RdxContext& ctx);
-	Error Commit(int serverId, int shardId, QueryResults& result, const RdxContext& ctx);
+	Error Commit(int serverId, QueryResults& result, const RdxContext& ctx);
 
 private:
 	class AsyncData {
@@ -50,7 +49,7 @@ private:
 	};
 
 	client::Transaction tx_;
-	const bool proxiedViaSharding_ = false;
+	int shardId_ = ShardingKeyType::NotSetShard;
 	std::mutex mtx_;
 	AsyncData asyncData_;
 	ItemCache itemCache_;

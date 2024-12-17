@@ -6,7 +6,6 @@
 #include "estl/smart_lock.h"
 #include "parallelexecutor.h"
 #include "tools/catch_and_return.h"
-#include "tools/compiletimemap.h"
 #include "tools/jsontools.h"
 
 namespace reindexer {
@@ -265,7 +264,7 @@ Error ShardingProxy::handleNewShardingConfig(const gason::JsonNode& configJSON, 
 		auto SaveNewShardingConfigWrapper = [&cfgsStorage](client::Reindexer& conn, cluster::ShardingConfig config, int64_t sourceId,
 														   int shardId) {
 			config.thisShardId = shardId;
-			cfgsStorage[shardId] = config.GetJSON();
+			cfgsStorage[shardId] = config.GetJSON(cluster::MaskingDSN::Disabled);
 			return conn.SaveNewShardingConfig(cfgsStorage[shardId], sourceId);
 		};
 
@@ -374,74 +373,47 @@ bool ShardingProxy::needProxyWithinCluster(const RdxContext& ctx) {
 	return true;
 }
 
-namespace {
-using ReqT = sharding::ShardingControlRequestData::Type;
-using ClusterProxyMethods = meta::Map<RDX_META_PAIR(ReqT::SaveCandidate, &ClusterProxy::SaveShardingCfgCandidate),
-									  RDX_META_PAIR(ReqT::ResetOldSharding, &ClusterProxy::ResetOldShardingConfig),
-									  RDX_META_PAIR(ReqT::ApplyNew, &ClusterProxy::ApplyShardingCfgCandidate),
-									  RDX_META_PAIR(ReqT::ResetCandidate, &ClusterProxy::ResetShardingConfigCandidate),
-									  RDX_META_PAIR(ReqT::RollbackCandidate, &ClusterProxy::RollbackShardingConfigCandidate)>;
-
-using RequestEnum2Types = meta::Map<
-	RDX_META_PAIR(ReqT::SaveCandidate, sharding::SaveConfigCommand), RDX_META_PAIR(ReqT::ResetOldSharding, sharding::ResetConfigCommand),
-	RDX_META_PAIR(ReqT::ApplyNew, sharding::ApplyConfigCommand), RDX_META_PAIR(ReqT::ResetCandidate, sharding::ResetConfigCommand),
-	RDX_META_PAIR(ReqT::RollbackCandidate, sharding::ResetConfigCommand)>;
-
-}  // namespace
-
-struct ShardingProxy::ShardingProxyMethods {
-	using Map =
-		meta::Map<RDX_META_PAIR(ReqT::SaveCandidate, &ShardingProxy::saveShardingCfgCandidate),
-				  RDX_META_PAIR(ReqT::ResetOldSharding, &ShardingProxy::resetOrRollbackShardingConfig<ConfigResetFlag::ResetExistent>),
-				  RDX_META_PAIR(ReqT::ApplyNew, &ShardingProxy::applyNewShardingConfig),
-				  RDX_META_PAIR(ReqT::ResetCandidate, &ShardingProxy::resetConfigCandidate),
-				  RDX_META_PAIR(ReqT::RollbackCandidate, &ShardingProxy::resetOrRollbackShardingConfig<ConfigResetFlag::RollbackApplied>)>;
-};
-
-template <auto RequestType, typename Request>
-void ShardingProxy::shardingControlRequestAction(const Request& request, const RdxContext& ctx) {
-	auto data = std::get<RequestEnum2Types::GetType<RequestType>>(request.data);
-
-	if (needProxyWithinCluster(ctx)) {
-		Error err;
-		auto clusterMethod = ClusterProxyMethods::GetValue<RequestType>();
-		if constexpr (std::is_invocable_v<decltype(clusterMethod), ClusterProxy*, std::string_view, int64_t, const RdxContext&>) {
-			err = (impl_.*clusterMethod)(data.config, data.sourceId, ctx);
-		} else {
-			err = (impl_.*clusterMethod)(data.sourceId, ctx);
-		}
-		if (!err.ok()) {
-			throw err;
-		}
-	}
-
-	(this->*ShardingProxyMethods::Map::GetValue<RequestType>())(std::move(data), ctx);
-}
-
-Error ShardingProxy::ShardingControlRequest(const sharding::ShardingControlRequestData& request, const RdxContext& ctx) noexcept {
+Error ShardingProxy::ShardingControlRequest(const sharding::ShardingControlRequestData& request,
+											sharding::ShardingControlResponseData& response, const RdxContext& ctx) noexcept {
 	try {
-		using Type = sharding::ShardingControlRequestData::Type;
+		response = sharding::ShardingControlResponseData{request.type};
 
+		if (needProxyWithinCluster(ctx)) {
+			if (auto err = impl_.ShardingControlRequest(request, response, ctx); !err.ok()) {
+				return err;
+			}
+		}
+
+		using Type = sharding::ControlCmdType;
 		switch (request.type) {
 			case Type::SaveCandidate: {
-				shardingControlRequestAction<Type::SaveCandidate>(request, ctx);
-				break;
+				saveShardingCfgCandidate(std::get<sharding::SaveConfigCommand>(request.data), ctx);
+				return Error();
 			}
 			case Type::ResetOldSharding: {
-				shardingControlRequestAction<Type::ResetOldSharding>(request, ctx);
-				break;
+				resetOrRollbackShardingConfig<ConfigResetFlag::ResetExistent>(std::get<sharding::ResetConfigCommand>(request.data), ctx);
+				return Error();
 			}
 			case Type::ResetCandidate: {
-				shardingControlRequestAction<Type::ResetCandidate>(request, ctx);
-				break;
+				resetConfigCandidate(std::get<sharding::ResetConfigCommand>(request.data), ctx);
+				return Error();
 			}
 			case Type::RollbackCandidate: {
-				shardingControlRequestAction<Type::RollbackCandidate>(request, ctx);
-				break;
+				resetOrRollbackShardingConfig<ConfigResetFlag::RollbackApplied>(std::get<sharding::ResetConfigCommand>(request.data), ctx);
+				return Error();
 			}
 			case Type::ApplyNew: {
-				shardingControlRequestAction<Type::ApplyNew>(request, ctx);
-				break;
+				applyNewShardingConfig(std::get<sharding::ApplyConfigCommand>(request.data), ctx);
+				return Error();
+			}
+			case Type::GetNodeConfig: {
+				auto& data = std::get<sharding::GetNodeConfigCommand>(response.data);
+				if (auto configPtr = impl_.GetShardingConfig()) {
+					data.config = *configPtr;
+					return Error();
+				} else {
+					return Error(errParams, "Sharding config is not set on this node");
+				}
 			}
 			case Type::ApplyLeaderConfig: {
 				assertrx(!ctx.GetOriginLSN().isEmpty());
@@ -450,11 +422,10 @@ Error ShardingProxy::ShardingControlRequest(const sharding::ShardingControlReque
 										   : handleNewShardingConfigLocally<span<char>>(std::string(data.config), data.sourceId, ctx);
 			}
 			default:
-				throw Error(errLogic, "Unsupported sharding request command: %d", int(request.type));
+				return Error(errLogic, "Unsupported sharding request command: %d", int(request.type));
 		}
 	}
 	CATCH_AND_RETURN
-	return Error();
 }
 
 void ShardingProxy::saveShardingCfgCandidate(const sharding::SaveConfigCommand& data, const RdxContext& ctx) {
@@ -659,7 +630,8 @@ void ShardingProxy::checkSyncCluster(const cluster::ShardingConfig& shardingConf
 		}
 
 		for (const auto& nodeStat : stats.nodeStats) {
-			if (auto it = std::find(hosts.begin(), hosts.end(), nodeStat.dsn); it == hosts.end()) {
+			if (auto it = std::find_if(hosts.begin(), hosts.end(), std::bind(&RelaxCompare, std::placeholders::_1, nodeStat.dsn));
+				it == hosts.end()) {
 				throw Error(errLogic, "Different sets of DSNs in cluster and sharding config");
 			}
 		}
@@ -1021,7 +993,7 @@ Error ShardingProxy::Update(const Query& query, QueryResults& result, const RdxC
 	try {
 		auto updateFn = [this](const Query& q, LocalQueryResults& qr, const RdxContext& ctx) { return impl_.Update(q, qr, ctx); };
 
-		int actualShardId = ShardingKeyType::NotSharded;
+		int actualShardId = ShardingKeyType::ProxyOff;
 		int64_t shardingVersion = -1;
 		result.SetQuery(&query);
 		if (auto lckRouterOpt = isWithSharding(query, ctx, actualShardId, shardingVersion)) {
@@ -1098,7 +1070,7 @@ Error ShardingProxy::Delete(const Query& query, QueryResults& result, const RdxC
 		auto deleteFn = [this](const Query& q, LocalQueryResults& qr, const RdxContext& ctx) { return impl_.Delete(q, qr, ctx); };
 
 		result.SetQuery(&query);
-		int actualShardId = ShardingKeyType::NotSharded;
+		int actualShardId = ShardingKeyType::ProxyOff;
 		int64_t shardingVersion = -1;
 		if (auto lckRouterOpt = isWithSharding(query, ctx, actualShardId, shardingVersion)) {
 			return executeQueryOnShard(*lckRouterOpt, query, result, 0, ctx, std::move(deleteFn));
@@ -1142,7 +1114,7 @@ Error ShardingProxy::Select(const Query& query, QueryResults& result, unsigned p
 		}
 
 		result.SetQuery(&query);
-		int actualShardId = ShardingKeyType::NotSharded;
+		int actualShardId = ShardingKeyType::ProxyOff;
 		int64_t shardingVersion = -1;
 		if (auto lckRouterOpt = isWithSharding(query, ctx, actualShardId, shardingVersion)) {
 			return executeQueryOnShard(

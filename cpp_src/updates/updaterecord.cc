@@ -165,7 +165,9 @@ UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_
 		case URType::ItemUpsertTx:
 		case URType::ItemDeleteTx:
 		case URType::ItemInsertTx: {
-			data_ = make_intrusive<ImplT>(std::in_place_type<ItemReplicationRecord>, std::move(_data));
+			auto ch = _data.DetachChunk();
+			ch.shrink(1);
+			data_ = make_intrusive<ImplT>(std::in_place_type<ItemReplicationRecord>, std::move(ch));
 			break;
 		}
 		case URType::None:

@@ -1,8 +1,6 @@
 #include "base_fixture.h"
 
 #include <benchmark/benchmark.h>
-#include <functional>
-#include <random>
 #include <string>
 #include <thread>
 

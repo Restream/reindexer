@@ -311,13 +311,13 @@ template <>
 			std::string config;
 			std::optional<int64_t> sourceId;
 			if (auto configPtr = thisNode.shardingConfig_.Get()) {
-				config = configPtr->GetJSON();
+				config = configPtr->GetJSON(cluster::MaskingDSN::Disabled);
 				sourceId = configPtr->sourceId;
 			}
 
+			sharding::ShardingControlResponseData res;
 			return node.client.WithLSN(lsn_t(0, serverId_))
-				.ShardingControlRequest(
-					sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ApplyLeaderConfig>(config, std::move(sourceId)));
+				.ShardingControlRequest({sharding::ControlCmdType::ApplyLeaderConfig, config, std::move(sourceId)}, res);
 		}
 		return Error(errTimeout, "%d:%d DB role switch waiting timeout", serverId_, node.uid);
 	}
@@ -401,7 +401,7 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 						if (nsExists && (replState.clusterStatus.role != ClusterizationStatus::Role::SimpleReplica ||
 										 replState.clusterStatus.leaderId != serverId_)) {
 							logTrace("%d:%d Switching role for '%s' on remote node", serverId_, node.uid, ns.name);
-							err = node.client.SetClusterizationStatus(
+							err = node.client.WithEmmiterServerId(serverId_).SetClusterizationStatus(
 								ns.name, ClusterizationStatus{serverId_, ClusterizationStatus::Role::SimpleReplica});
 						}
 					}
@@ -613,8 +613,8 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 				return err;
 			}
 			if constexpr (std::is_same_v<BehaviourParamT, AsyncThreadParam>) {
-				err = client.SetClusterizationStatus(tmpNsGuard.tmpNsName,
-													 ClusterizationStatus{serverId_, ClusterizationStatus::Role::SimpleReplica});
+				err = client.WithEmmiterServerId(serverId_).SetClusterizationStatus(
+					tmpNsGuard.tmpNsName, ClusterizationStatus{serverId_, ClusterizationStatus::Role::SimpleReplica});
 				if (!err.ok()) {
 					return err;
 				}
@@ -1029,31 +1029,31 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const updates::Update
 		switch (rec.Type()) {
 			case updates::URType::ItemUpdate: {
 				auto& data = std::get<ItemReplicationRecord>(*rec.Data());
-				return UpdateApplyStatus(client.WithLSN(lsn).Update(nsName, data.cjson.Slice()), rec.Type());
+				return UpdateApplyStatus(client.WithLSN(lsn).Update(nsName, std::string_view{data.ch}), rec.Type());
 			}
 			case updates::URType::ItemUpsert: {
 				auto& data = std::get<ItemReplicationRecord>(*rec.Data());
-				return UpdateApplyStatus(client.WithLSN(lsn).Upsert(nsName, data.cjson.Slice()), rec.Type());
+				return UpdateApplyStatus(client.WithLSN(lsn).Upsert(nsName, std::string_view{data.ch}), rec.Type());
 			}
 			case updates::URType::ItemDelete: {
 				auto& data = std::get<ItemReplicationRecord>(*rec.Data());
-				return UpdateApplyStatus(client.WithLSN(lsn).Delete(nsName, data.cjson.Slice()), rec.Type());
+				return UpdateApplyStatus(client.WithLSN(lsn).Delete(nsName, std::string_view{data.ch}), rec.Type());
 			}
 			case updates::URType::ItemInsert: {
 				auto& data = std::get<ItemReplicationRecord>(*rec.Data());
-				return UpdateApplyStatus(client.WithLSN(lsn).Insert(nsName, data.cjson.Slice()), rec.Type());
+				return UpdateApplyStatus(client.WithLSN(lsn).Insert(nsName, std::string_view{data.ch}), rec.Type());
 			}
 			case updates::URType::IndexAdd: {
 				auto& data = std::get<IndexReplicationRecord>(*rec.Data());
-				return UpdateApplyStatus(client.WithLSN(lsn).AddIndex(nsName, data.idef), rec.Type());
+				return UpdateApplyStatus(client.WithLSN(lsn).AddIndex(nsName, *data.idef), rec.Type());
 			}
 			case updates::URType::IndexDrop: {
 				auto& data = std::get<IndexReplicationRecord>(*rec.Data());
-				return UpdateApplyStatus(client.WithLSN(lsn).DropIndex(nsName, data.idef), rec.Type());
+				return UpdateApplyStatus(client.WithLSN(lsn).DropIndex(nsName, *data.idef), rec.Type());
 			}
 			case updates::URType::IndexUpdate: {
 				auto& data = std::get<IndexReplicationRecord>(*rec.Data());
-				return UpdateApplyStatus(client.WithLSN(lsn).UpdateIndex(nsName, data.idef), rec.Type());
+				return UpdateApplyStatus(client.WithLSN(lsn).UpdateIndex(nsName, *data.idef), rec.Type());
 			}
 			case updates::URType::PutMeta: {
 				auto& data = std::get<MetaReplicationRecord>(*rec.Data());
@@ -1111,13 +1111,13 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const updates::Update
 				auto& data = std::get<ItemReplicationRecord>(*rec.Data());
 				switch (rec.Type()) {
 					case updates::URType::ItemUpdateTx:
-						return UpdateApplyStatus(nsData.tx.Update(data.cjson.Slice(), lsn), rec.Type());
+						return UpdateApplyStatus(nsData.tx.Update(std::string_view{data.ch}, lsn), rec.Type());
 					case updates::URType::ItemUpsertTx:
-						return UpdateApplyStatus(nsData.tx.Upsert(data.cjson.Slice(), lsn), rec.Type());
+						return UpdateApplyStatus(nsData.tx.Upsert(std::string_view{data.ch}, lsn), rec.Type());
 					case updates::URType::ItemDeleteTx:
-						return UpdateApplyStatus(nsData.tx.Delete(data.cjson.Slice(), lsn), rec.Type());
+						return UpdateApplyStatus(nsData.tx.Delete(std::string_view{data.ch}, lsn), rec.Type());
 					case updates::URType::ItemInsertTx:
-						return UpdateApplyStatus(nsData.tx.Insert(data.cjson.Slice(), lsn), rec.Type());
+						return UpdateApplyStatus(nsData.tx.Insert(std::string_view{data.ch}, lsn), rec.Type());
 					case updates::URType::None:
 					case updates::URType::ItemUpdate:
 					case updates::URType::ItemUpsert:
@@ -1177,7 +1177,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const updates::Update
 				auto& data = std::get<AddNamespaceReplicationRecord>(*rec.Data());
 				const auto sid = rec.ExtLSN().NsVersion().Server();
 				auto err =
-					client.WithLSN(lsn_t(0, sid)).AddNamespace(data.def, NsReplicationOpts{{data.stateToken}, rec.ExtLSN().NsVersion()});
+					client.WithLSN(lsn_t(0, sid)).AddNamespace(*data.def, NsReplicationOpts{{data.stateToken}, rec.ExtLSN().NsVersion()});
 				if (err.ok() && nsData.isClosed) {
 					nsData.isClosed = false;
 					logTrace("%d:%d:%s Namespace is closed on leader. Scheduling resync for followers", serverId_, node.uid, nsName);
@@ -1186,8 +1186,8 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const updates::Update
 				nsData.isClosed = false;
 				if constexpr (!isClusterReplThread()) {
 					if (err.ok()) {
-						err = client.SetClusterizationStatus(nsName,
-															 ClusterizationStatus{serverId_, ClusterizationStatus::Role::SimpleReplica});
+						err = client.WithEmmiterServerId(serverId_).SetClusterizationStatus(
+							nsName, ClusterizationStatus{serverId_, ClusterizationStatus::Role::SimpleReplica});
 					}
 				}
 				return UpdateApplyStatus(std::move(err), rec.Type());
@@ -1223,38 +1223,37 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const updates::Update
 			}
 			case updates::URType::SaveShardingConfig: {
 				auto& data = std::get<SaveNewShardingCfgRecord>(*rec.Data());
+				sharding::ShardingControlResponseData res;
 				auto err = client.WithLSN(lsn_t(0, serverId_))
-							   .ShardingControlRequest(sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::SaveCandidate>(
-								   data.config, data.sourceId));
+							   .ShardingControlRequest({sharding::ControlCmdType::SaveCandidate, data.config, data.sourceId}, res);
 				return UpdateApplyStatus(std::move(err), rec.Type());
 			}
-
 			case updates::URType::ApplyShardingConfig: {
 				auto& data = std::get<ApplyNewShardingCfgRecord>(*rec.Data());
-				auto err = client.WithLSN(lsn_t(0, serverId_))
-							   .ShardingControlRequest(
-								   sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ApplyNew>(data.sourceId));
+				sharding::ShardingControlResponseData res;
+				auto err =
+					client.WithLSN(lsn_t(0, serverId_)).ShardingControlRequest({sharding::ControlCmdType::ApplyNew, data.sourceId}, res);
 				return UpdateApplyStatus(std::move(err), rec.Type());
 			}
 			case updates::URType::ResetOldShardingConfig: {
 				auto& data = std::get<ResetShardingCfgRecord>(*rec.Data());
+				sharding::ShardingControlResponseData res;
 				auto err = client.WithLSN(lsn_t(0, serverId_))
-							   .ShardingControlRequest(
-								   sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ResetOldSharding>(data.sourceId));
+							   .ShardingControlRequest({sharding::ControlCmdType::ResetOldSharding, data.sourceId}, res);
 				return UpdateApplyStatus(std::move(err), rec.Type());
 			}
 			case updates::URType::ResetCandidateConfig: {
 				auto& data = std::get<ResetShardingCfgRecord>(*rec.Data());
+				sharding::ShardingControlResponseData res;
 				auto err = client.WithLSN(lsn_t(0, serverId_))
-							   .ShardingControlRequest(
-								   sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ResetCandidate>(data.sourceId));
+							   .ShardingControlRequest({sharding::ControlCmdType::ResetCandidate, data.sourceId}, res);
 				return UpdateApplyStatus(std::move(err), rec.Type());
 			}
 			case updates::URType::RollbackCandidateConfig: {
 				auto& data = std::get<ResetShardingCfgRecord>(*rec.Data());
+				sharding::ShardingControlResponseData res;
 				auto err = client.WithLSN(lsn_t(0, serverId_))
-							   .ShardingControlRequest(
-								   sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::RollbackCandidate>(data.sourceId));
+							   .ShardingControlRequest({sharding::ControlCmdType::RollbackCandidate, data.sourceId}, res);
 				return UpdateApplyStatus(std::move(err), rec.Type());
 			}
 

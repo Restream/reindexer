@@ -1,13 +1,11 @@
-#include <fstream>
 #include <mutex>
 
-#include <thread>
 #include "dbmanager.h"
 #include "estl/smart_lock.h"
 #include "gason/gason.h"
+#include "tools/crypt.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
-#include "tools/md5crypt.h"
 #include "tools/stringstools.h"
 #include "vendor/yaml-cpp/yaml.h"
 
@@ -15,8 +13,8 @@ namespace reindexer_server {
 
 using namespace std::string_view_literals;
 
-const std::string kUsersYAMLFilename = "users.yml";
-const std::string kUsersJSONFilename = "users.json";
+static const std::string kUsersYAMLFilename = "users.yml";
+static const std::string kUsersJSONFilename = "users.json";
 
 DBManager::DBManager(const ServerConfig& config, IClientsStats* clientsStats)
 	: config_(config), storageType_(datastorage::StorageType::LevelDB), clientsStats_(clientsStats) {}
@@ -27,6 +25,8 @@ Error DBManager::Init() {
 		if (!status.ok()) {
 			return status;
 		}
+
+		authManager_.Init(*this);
 	}
 
 	std::vector<fs::DirEntry> foundDb;
@@ -148,7 +148,7 @@ Error DBManager::loadOrCreateDatabase(const std::string& dbName, bool allowDBErr
 Error DBManager::DropDatabase(AuthContext& auth) {
 	{
 		Reindexer* db = nullptr;
-		auto status = auth.GetDB(kRoleOwner, &db);
+		auto status = auth.GetDB<AuthContext::CalledFrom::Core>(kRoleOwner, &db);
 		if (!status.ok()) {
 			return status;
 		}
@@ -204,17 +204,43 @@ Error DBManager::Login(const std::string& dbName, AuthContext& auth) {
 		return {};
 	}
 
-	auto it = users_.find(auth.login_);
+	auto it = users_.find(auth.login_.Str());
 	if (it == users_.end()) {
 		return Error(errForbidden, "Unauthorized");
 	}
-	// TODO change to SCRAM-RSA
-	if (!it->second.salt.empty()) {
-		if (it->second.hash != reindexer::MD5crypt(auth.password_, it->second.salt)) {
+
+	if (!authorized(auth)) {
+		// TODO change to SCRAM-RSA
+		if (!it->second.salt.empty()) {
+			std::string hash;
+			if (it->second.algorithm == reindexer::HashAlgorithm::MD5) {
+				hash = reindexer::MD5crypt(auth.password_, it->second.salt);
+			} else if (!auth.password_.empty()) {
+				if (!openssl::LibCryptoAvailable()) {
+					return Error(errSystem,
+								 "It is not possible to use some necessary functions from the installed openssl library. Try updating the "
+								 "library or installing last dev-package");
+				}
+				std::string dummySalt;
+				HashAlgorithm dummyAlg;
+				auto err =
+					ParseCryptString(shacrypt(auth.password_.data(), it->second.algorithm == reindexer::HashAlgorithm::SHA256 ? "5" : "6",
+											  it->second.salt.data()),
+									 hash, dummySalt, dummyAlg);
+
+				if (!err.ok()) {
+					return Error(errForbidden, "Unauthorized: %s", err.what());
+				}
+			}
+
+			if (it->second.hash != hash) {
+				return Error(errForbidden, "Unauthorized");
+			}
+
+			authManager_.Refresh(auth.login_.Str(), auth.password_);
+		} else if (it->second.hash != auth.password_) {
 			return Error(errForbidden, "Unauthorized");
 		}
-	} else if (it->second.hash != auth.password_) {
-		return Error(errForbidden, "Unauthorized");
 	}
 
 	auth.role_ = kRoleNone;
@@ -236,6 +262,8 @@ Error DBManager::Login(const std::string& dbName, AuthContext& auth) {
 
 	return {};
 }
+
+bool DBManager::authorized(const AuthContext& auth) { return authManager_.Check(auth.login_.Str(), auth.password_); }
 
 Error DBManager::readUsers() noexcept {
 	users_.clear();
@@ -264,7 +292,7 @@ Error DBManager::readUsersYAML() noexcept {
 			UserRecord urec;
 			urec.login = user.first.as<std::string>();
 			auto userNode = user.second;
-			auto err = ParseMd5CryptString(userNode["hash"].as<std::string>(), urec.hash, urec.salt);
+			auto err = ParseCryptString(userNode["hash"].as<std::string>(), urec.hash, urec.salt, urec.algorithm);
 			if (!err.ok()) {
 				logPrintf(LogWarning, "Hash parsing error for user '%s': %s", urec.login, err.what());
 				continue;
@@ -307,7 +335,7 @@ Error DBManager::readUsersJSON() noexcept {
 		for (auto& userNode : root) {
 			UserRecord urec;
 			urec.login = std::string(userNode.key);
-			auto err = ParseMd5CryptString(userNode["hash"].As<std::string>(), urec.hash, urec.salt);
+			auto err = ParseCryptString(userNode["hash"].As<std::string>(), urec.hash, urec.salt, urec.algorithm);
 			if (!err.ok()) {
 				logPrintf(LogWarning, "Hash parsing error for user '%s': %s", urec.login, err.what());
 				continue;
@@ -335,27 +363,37 @@ Error DBManager::readUsersJSON() noexcept {
 
 Error DBManager::createDefaultUsersYAML() noexcept {
 	logPrintf(LogInfo, "Creating default %s file", kUsersYAMLFilename);
-	int64_t res = fs::WriteFile(fs::JoinPath(config_.StoragePath, kUsersYAMLFilename),
-								"# List of db's users, their's roles and privileges\n\n"
-								"# Anchors and aliases do not work here due to compatibility reasons\n\n"
-								"# Username\n"
-								"reindexer:\n"
-								"  # Hash type(right now '$1' is the only value), salt and hash in BSD MD5 Crypt format\n"
-								"  # Hash may be generated via openssl tool - `openssl passwd -1 -salt MySalt MyPassword`\n"
-								"  # If hash doesn't start with '$' sign it will be used as raw password itself\n"
-								"  hash: $1$rdxsalt$VIR.dzIB8pasIdmyVGV0E/\n"
-								"  # User's roles for specific databases, * in place of db name means any database\n"
-								"  # Allowed roles:\n"
-								"  # 1) data_read - user can read data from database\n"
-								"  # 2) data_write - user can write data to database\n"
-								"  # 3) db_admin - user can manage database: kRoleDataWrite + create & delete namespaces, modify indexes\n"
-								"  # 4) owner - user has all privilegies on database: kRoleDBAdmin + create & drop database\n"
-								"  roles:\n"
-								"    *: owner\n");
+	int64_t res = fs::WriteFile(
+		fs::JoinPath(config_.StoragePath, kUsersYAMLFilename),
+		"# List of db's users, their's roles and privileges\n\n"
+		"# Anchors and aliases do not work here due to compatibility reasons\n\n"
+		"# Username\n"
+		"reindexer:\n"
+		"  # Hash may be generated via openssl tool - `openssl passwd -<type> -salt MySalt MyPassword`\n"
+		"  # <type> can take one of the following values:\n"
+		"  #    1 - MD5-based password algorithm\n"
+		"  #    5 - SHA256-based password algorithm\n"
+		"  #    6 - SHA512-based password algorithm\n"
+		"  #    For values 5 and 6 of <type> to work correctly, you should have the openssl library dev-package installed in the system\n"
+		"  # If hash doesn't start with '$' sign it will be used as raw password itself\n"
+		"  hash: $1$rdxsalt$VIR.dzIB8pasIdmyVGV0E/\n"
+		"  # User's roles for specific databases, * in place of db name means any database\n"
+		"  # Allowed roles:\n"
+		"  # 1) data_read - user can read data from database\n"
+		"  # 2) data_write - user can write data to database\n"
+		"  # 3) db_admin - user can manage database: kRoleDataWrite + create & delete namespaces, modify indexes\n"
+		"  # 4) replication - same as db_admin but with restrictions on use in various protocols and "
+		"additional context checks for replication. This role should be used for the asynchronous and synchronous (RAFT-cluster) "
+		"replication instead of db_admin/owner\n"
+		"  # 5) sharding - same as db_admin but with restrictions on use in various protocols and additional "
+		"context checks for sharding. This role should be used for the sharding interconnections instead of db_admin/owner\n"
+		"  # 6) owner - user has all privileges on database: kRoleDBAdmin + create & drop database\n"
+		"  roles:\n"
+		"    *: owner\n");
 	if (res < 0) {
 		return Error(errParams, "Unable to write default config file: %s", strerror(errno));
 	}
-	users_.emplace("reindexer", UserRecord{"reindexer", "VIR.dzIB8pasIdmyVGV0E/", "rdxsalt", {{"*", kRoleOwner}}});
+	users_.emplace("reindexer", UserRecord{"reindexer", "VIR.dzIB8pasIdmyVGV0E/", "rdxsalt", {{"*", kRoleOwner}}, HashAlgorithm::MD5});
 	return errOK;
 }
 
@@ -366,6 +404,10 @@ UserRole DBManager::userRoleFromString(std::string_view strRole) {
 		return kRoleDataWrite;
 	} else if (strRole == "db_admin"sv) {
 		return kRoleDBAdmin;
+	} else if (strRole == "replication"sv) {
+		return kRoleReplication;
+	} else if (strRole == "sharding"sv) {
+		return kRoleSharding;
 	} else if (strRole == "owner"sv) {
 		return kRoleOwner;
 	}
@@ -384,6 +426,10 @@ std::string_view UserRoleName(UserRole role) noexcept {
 			return "data_write"sv;
 		case kRoleDBAdmin:
 			return "db_admin"sv;
+		case kRoleReplication:
+			return "replication"sv;
+		case kRoleSharding:
+			return "sharding"sv;
 		case kRoleOwner:
 			return "owner"sv;
 		case kRoleSystem:
