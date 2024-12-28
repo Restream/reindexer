@@ -930,7 +930,7 @@ void NamespaceImpl::verifyUpdateIndex(const IndexDef& indexDef) const {
 		// Array may be converted to scalar and scalar to array only if there are no items in namespace
 		throw Error(
 			errParams,
-			"Cannot update index '%s' in namespace '%s'. Can't convert array index to not array and vice versa for non-empty namespace",
+			"Cannot update index '%s' in namespace '%s'. Can't convert array index to not array and vice versa in non-empty namespace",
 			indexDef.name_, name_);
 	}
 	if (indexDef.opts_.IsPK() && indexDef.opts_.IsArray()) {
