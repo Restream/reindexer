@@ -43,6 +43,10 @@ struct IndexOpts {
 	[[nodiscard]] IndexOpts&& RTreeType(RTreeIndexType type) && noexcept { return std::move(RTreeType(type)); }
 	IndexOpts& SetCollateMode(CollateMode mode) & noexcept;
 	[[nodiscard]] IndexOpts&& SetCollateMode(CollateMode mode) && noexcept { return std::move(SetCollateMode(mode)); }
+	IndexOpts& SetCollateSortOrder(reindexer::SortingPrioritiesTable&& sortOrder) & noexcept;
+	[[nodiscard]] IndexOpts&& SetCollateSortOrder(reindexer::SortingPrioritiesTable&& sortOrder) && noexcept {
+		return std::move(SetCollateSortOrder(std::move(sortOrder)));
+	}
 	template <typename Str, std::enable_if_t<std::is_assignable_v<std::string, Str>>* = nullptr>
 	IndexOpts& SetConfig(Str&& conf) & {
 		config = std::forward<Str>(conf);
@@ -52,7 +56,8 @@ struct IndexOpts {
 	[[nodiscard]] IndexOpts&& SetConfig(Str&& config) && {
 		return std::move(SetConfig(std::forward<Str>(config)));
 	}
-	CollateMode GetCollateMode() const noexcept { return static_cast<CollateMode>(collateOpts_.mode); }
+	CollateMode GetCollateMode() const noexcept { return collateOpts_.mode; }
+	reindexer::SortingPrioritiesTable GetCollateSortOrder() const noexcept { return collateOpts_.sortOrderTable; }
 
 	bool IsEqual(const IndexOpts& other, IndexComparison cmpType) const noexcept;
 

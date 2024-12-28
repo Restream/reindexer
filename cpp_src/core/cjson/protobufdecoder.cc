@@ -1,4 +1,5 @@
 #include "protobufdecoder.h"
+#include "core/cjson/cjsontools.h"
 #include "core/schema.h"
 #include "estl/protobufparser.h"
 
@@ -51,9 +52,10 @@ void ProtobufDecoder::setValue(Payload& pl, CJsonBuilder& builder, ProtobufValue
 		if (item.isArray) {
 			arraysStorage_.UpdateArraySize(item.tagName, field);
 		} else {
+			validateArrayFieldRestrictions(f, 1, "protobuf");
 			builder.Ref(item.tagName, value, field);
 		}
-		pl.Set(field, std::move(value), true);
+		pl.Set(field, convertValueForPayload(pl, field, std::move(value), "protobuf"), true);
 		objectScalarIndexes_.set(field);
 	} else {
 		if (item.isArray) {
@@ -78,13 +80,14 @@ Error ProtobufDecoder::decodeArray(Payload& pl, CJsonBuilder& builder, const Pro
 		if (packed) {
 			int count = 0;
 			while (!parser.IsEof()) {
-				pl.Set(field, parser.ReadArrayItem(item.itemType), true);
+				pl.Set(field, convertValueForPayload(pl, field, parser.ReadArrayItem(item.itemType), "protobuf"), true);
 				++count;
 			}
 			builder.ArrayRef(item.tagName, field, count);
 		} else {
 			setValue(pl, builder, item);
 		}
+		validateArrayFieldRestrictions(f, reinterpret_cast<PayloadFieldValue::Array*>(pl.Field(field).p_)->len, "protobuf");
 	} else {
 		CJsonBuilder& array = arraysStorage_.GetArray(item.tagName);
 		if (packed) {

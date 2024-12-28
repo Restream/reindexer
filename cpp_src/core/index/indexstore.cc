@@ -23,7 +23,7 @@ void IndexStore<key_string>::Delete(const Variant& key, IdType /*id*/, StringsHo
 		return;
 	}
 	auto keyIt = str_map.find(std::string_view(key));
-	// assertf(keyIt != str_map.end(), "Delete unexists key from index '%s' id=%d", name_, id);
+	// assertf(keyIt != str_map.end(), "Delete non-existent key from index '%s' id=%d", name_, id);
 	if (keyIt == str_map.end()) {
 		return;
 	}
@@ -127,11 +127,11 @@ SelectKeyResults IndexStore<T>::SelectKey(const VariantArray& keys, CondType con
 										  const BaseFunctionCtx::Ptr& /*ctx*/, const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 	if (condition == CondEmpty && !this->opts_.IsArray() && !this->opts_.IsSparse()) {
-		throw Error(errParams, "The 'is NULL' condition is suported only by 'sparse' or 'array' indexes");
+		throw Error(errParams, "The 'is NULL' condition is supported only by 'sparse' or 'array' indexes");
 	}
 
 	if (condition == CondAny && !this->opts_.IsArray() && !this->opts_.IsSparse() && !sopts.distinct) {
-		throw Error(errParams, "The 'NOT NULL' condition is suported only by 'sparse' or 'array' indexes");
+		throw Error(errParams, "The 'NOT NULL' condition is supported only by 'sparse' or 'array' indexes");
 	}
 
 	return ComparatorIndexed<T>{

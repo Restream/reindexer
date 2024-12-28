@@ -207,6 +207,11 @@ void throwScalarMultipleEncodesError(const Payload& pl, const PayloadFieldType& 
 	throw Error(errLogic, "Non-array field '%s' [%d] from '%s' can only be encoded once.", f.Name(), field, pl.Type().Name());
 }
 
+void throwUnexpectedArraySizeError(std::string_view parserName, const PayloadFieldType& f, int arraySize) {
+	throw Error(errParams, "%s array field '%s' for this index type must contain %d elements, but got %d", parserName, f.Name(),
+				f.ArrayDim(), arraySize);
+}
+
 static void dumpCjsonValue(TagType type, Serializer& cjson, std::ostream& dump) {
 	switch (type) {
 		case TAG_VARINT:

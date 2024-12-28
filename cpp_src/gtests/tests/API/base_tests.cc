@@ -2224,3 +2224,52 @@ TEST_F(ReindexerApi, QueryResultsLSNTest) {
 		ASSERT_EQ(lsn, lsns[i]) << i;
 	}
 }
+
+TEST_F(ReindexerApi, SelectNull) {
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"value", "tree", "string", IndexOpts()});
+	rt.AddIndex(default_namespace, {"store", "-", "string", IndexOpts()});
+	rt.AddIndex(default_namespace, {"store_num", "-", "string", IndexOpts().Sparse()});
+	rt.UpsertJSON(default_namespace, R"_({"id":1234, "value" : "value", "store": "store", "store_num": 10, "not_indexed": null})_");
+
+	for (unsigned i = 0; i < 3; ++i) {
+		QueryResults qr;
+		auto err = rt.reindexer->Select(Query(default_namespace).Not().Where("id", CondEq, Variant()), qr);
+		ASSERT_FALSE(err.ok());
+		EXPECT_EQ(err.code(), errParams) << err.what();
+		EXPECT_EQ(err.what(), "Can not use 'null'-value with operators '=' and 'IN()' (index: 'id'). Use 'IS NULL'/'IS NOT NULL' instead");
+
+		qr.Clear();
+		err = rt.reindexer->Select(Query(default_namespace).Where("id", CondSet, VariantArray{Variant(1234), Variant()}), qr);
+		ASSERT_FALSE(err.ok());
+		EXPECT_EQ(err.code(), errParams) << err.what();
+		EXPECT_EQ(err.what(), "Can not use 'null'-value with operators '=' and 'IN()' (index: 'id'). Use 'IS NULL'/'IS NOT NULL' instead");
+
+		qr.Clear();
+		err = rt.reindexer->Select(Query(default_namespace).Where("value", CondLt, Variant()), qr);
+		ASSERT_FALSE(err.ok());
+		EXPECT_EQ(err.code(), errParams) << err.what();
+		EXPECT_EQ(err.what(), "Can not use 'null'-value with operators '>','<','<=','>=' and 'RANGE()' (index: 'value')");
+
+		qr.Clear();
+		err = rt.reindexer->Select(Query(default_namespace).Where("store", CondEq, Variant()), qr);
+		ASSERT_FALSE(err.ok());
+		EXPECT_EQ(err.code(), errParams) << err.what();
+		EXPECT_EQ(err.what(), "Can not use 'null'-value directly with 'CondEq' condition in comparator");
+
+		qr.Clear();
+		err = rt.reindexer->Select(Query(default_namespace).Where("store_num", CondSet, Variant()), qr);
+		ASSERT_FALSE(err.ok());
+		EXPECT_EQ(err.code(), errParams) << err.what();
+		EXPECT_EQ(err.what(), "Can not use 'null'-value directly with 'CondEq' condition in comparator");
+
+		qr.Clear();
+		err = rt.reindexer->Select(Query(default_namespace).Where("not_indexed", CondSet, VariantArray{Variant(1234), Variant()}), qr);
+		ASSERT_FALSE(err.ok());
+		EXPECT_EQ(err.code(), errParams) << err.what();
+		EXPECT_EQ(err.what(), "Can not use 'null'-value directly with 'CondSet' condition in comparator");
+
+		AwaitIndexOptimization(default_namespace);
+	}
+}

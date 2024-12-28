@@ -59,6 +59,11 @@ IndexOpts& IndexOpts::SetCollateMode(CollateMode mode) & noexcept {
 	return *this;
 }
 
+IndexOpts& IndexOpts::SetCollateSortOrder(reindexer::SortingPrioritiesTable&& sortOrder) & noexcept {
+	collateOpts_.sortOrderTable = std::move(sortOrder);
+	return *this;
+}
+
 template <typename T>
 void IndexOpts::Dump(T& os) const {
 	os << '{';

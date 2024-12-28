@@ -10,11 +10,12 @@ namespace reindexer {
 
 struct QueryCountCacheVal {
 	QueryCountCacheVal() = default;
-	QueryCountCacheVal(size_t total) noexcept : total_count(total) {}
+	QueryCountCacheVal(size_t total) noexcept : totalCount(total) {}
 
 	size_t Size() const noexcept { return 0; }
+	bool IsInitialized() const noexcept { return totalCount >= 0; }
 
-	int total_count = -1;
+	int totalCount = -1;
 };
 
 constexpr uint8_t kCountCachedKeyMode =
@@ -67,8 +68,6 @@ struct HashQueryCacheKey {
 	}
 };
 
-using QueryCountCache = LRUCache<QueryCacheKey, QueryCountCacheVal, HashQueryCacheKey, EqQueryCacheKey>;
-
-;
+using QueryCountCache = LRUCache<LRUCacheImpl<QueryCacheKey, QueryCountCacheVal, HashQueryCacheKey, EqQueryCacheKey>, LRUWithAtomicPtr::No>;
 
 }  // namespace reindexer

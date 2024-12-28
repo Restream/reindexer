@@ -12,7 +12,7 @@ constexpr char kConfigNamespace[] = "#config";
 constexpr char kActivityStatsNamespace[] = "#activitystats";
 constexpr char kClientsStatsNamespace[] = "#clientsstats";
 constexpr char kNsNameField[] = "name";
-const std::vector<std::string> kDefDBConfig = {
+constexpr std::string_view kDefDBConfig[] = {
 	R"json({
 		"type":"profiling",
 		"profiling":{
@@ -90,7 +90,7 @@ const std::vector<std::string> kDefDBConfig = {
 		}
 	})json"};
 
-const std::vector<NamespaceDef> kSystemNsDefs = {
+const NamespaceDef kSystemNsDefs[] = {
 	NamespaceDef(kConfigNamespace, StorageOpts().Enabled().CreateIfMissing().DropOnFileFormatError())
 		.AddIndex("type", "hash", "string", IndexOpts().PK()),
 	NamespaceDef(kPerfStatsNamespace, StorageOpts())

@@ -10,7 +10,7 @@
 namespace reindexer {
 class NumToText {
 public:
-	static std::vector<std::string>& convert(std::string_view numStr, std::vector<std::string>& output);
+	static std::vector<std::string_view>& convert(std::string_view numStr, std::vector<std::string_view>& output);
 };
 
 }  // namespace reindexer

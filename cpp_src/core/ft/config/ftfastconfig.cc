@@ -131,8 +131,8 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 		const std::string splitterStr = toLower(root["splitter"].As<std::string>("fast"));
 		if (splitterStr == "fast") {
 			splitterType = Splitter::Fast;
-		} else if (splitterStr == "friso") {
-			splitterType = Splitter::Friso;
+		} else if (splitterStr == "friso" || splitterStr == "mmseg_cn") {
+			splitterType = Splitter::MMSegCN;
 		} else {
 			throw Error(errParseJson, "FtFastConfig: unknown splitter value: %s", splitterStr);
 		}
@@ -185,8 +185,8 @@ std::string FtFastConfig::GetJson(const fast_hash_map<std::string, int>& fields)
 		case Splitter::Fast:
 			jsonBuilder.Put("splitter", "fast");
 			break;
-		case Splitter::Friso:
-			jsonBuilder.Put("splitter", "friso");
+		case Splitter::MMSegCN:
+			jsonBuilder.Put("splitter", "mmseg_cn");
 			break;
 	}
 

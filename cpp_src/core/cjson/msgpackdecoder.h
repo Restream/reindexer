@@ -19,7 +19,6 @@ public:
 
 private:
 	void decode(Payload& pl, CJsonBuilder& builder, const msgpack_object& obj, int tagName);
-	void iterateOverArray(const msgpack_object* begin, const msgpack_object* end, Payload& pl, CJsonBuilder& builder);
 
 	int decodeKeyToTag(const msgpack_object_kv& obj);
 

@@ -19,7 +19,7 @@ public:
 
 	VariantArray krefs;
 
-	// Specific implemetation for composite index
+	// Specific implementation for composite index
 	RVector<std::pair<std::string_view, uint32_t>, 8> getDocFields(const PayloadValue& doc,
 																   std::vector<std::unique_ptr<std::string>>& strsBuf) {
 		ConstPayload pl(plt_, doc);

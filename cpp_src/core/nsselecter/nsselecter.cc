@@ -53,9 +53,9 @@ void NsSelecter::operator()(QueryResults& result, SelectCtxWithJoinPreSelect<Joi
 	if (aggregationQueryRef.CalcTotal() == ModeCachedTotal || containAggCountCached) {
 		ckey = QueryCacheKey{ctx.query, kCountCachedKeyMode, ctx.joinedSelectors};
 
-		auto cached = ns_->queryCountCache_->Get(ckey);
-		if (cached.valid && cached.val.total_count >= 0) {
-			result.totalCount += cached.val.total_count;
+		auto cached = ns_->queryCountCache_.Get(ckey);
+		if (cached.valid && cached.val.IsInitialized()) {
+			result.totalCount += cached.val.totalCount;
 			if (logLevel >= LogTrace) {
 				logPrintf(LogInfo, "[%s] using total count value from cache: %d", ns_->name_, result.totalCount);
 			}
@@ -442,7 +442,7 @@ void NsSelecter::operator()(QueryResults& result, SelectCtxWithJoinPreSelect<Joi
 		if rx_unlikely (logLevel >= LogTrace) {
 			logPrintf(LogInfo, "[%s] put totalCount value into query cache: %d ", ns_->name_, result.totalCount);
 		}
-		ns_->queryCountCache_->Put(ckey, {static_cast<size_t>(result.totalCount - initTotalCount)});
+		ns_->queryCountCache_.Put(ckey, {static_cast<size_t>(result.totalCount - initTotalCount)});
 	}
 	if constexpr (std::is_same_v<JoinPreResultCtx, JoinPreResultBuildCtx>) {
 		if rx_unlikely (logLevel >= LogTrace) {
@@ -669,11 +669,8 @@ It NsSelecter::applyForcedSortImpl(NamespaceImpl& ns, It begin, It end, const It
 			VariantArray keyRefs;
 			const auto boundary = std::stable_partition(begin, end, [&](const ItemRef& itemRef) {
 				valueGetter.Payload(itemRef).Get(idx, keyRefs);
-				if constexpr (desc) {
-					return keyRefs.empty() || (sortMap.find(keyRefs[0]) == sortMap.end());
-				} else {
-					return !keyRefs.empty() && (sortMap.find(keyRefs[0]) != sortMap.end());
-				}
+				const auto descOrder = keyRefs.empty() || (sortMap.find(keyRefs[0]) == sortMap.end());
+				return desc ? descOrder : !descOrder;
 			});
 
 			VariantArray lhsItemValue;

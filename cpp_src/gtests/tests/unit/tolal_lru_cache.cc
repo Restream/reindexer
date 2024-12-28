@@ -82,7 +82,7 @@ TEST(LruCache, SimpleTest) {
 	QueryCountCache cache(reindexer::kDefaultCacheSizeLimit, reindexer::kDefaultHitCountToCache);
 
 	PRINTF("checking query cache...\n");
-	for (auto i = 0; i < kIterCount; i++) {
+	for (i = 0; i < kIterCount; i++) {
 		auto idx = rand() % qs.size();
 		auto& qce = qs.at(idx);
 		QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.JoinedSelectorsPtr()};
@@ -91,7 +91,7 @@ TEST(LruCache, SimpleTest) {
 
 		if (cached.valid) {
 			ASSERT_TRUE(exist) << "query missing in query cache";
-			ASSERT_EQ(cached.val.total_count, qce.expectedTotal) << "cached data are not valid";
+			ASSERT_EQ(cached.val.totalCount, qce.expectedTotal) << "cached data are not valid";
 		} else {
 			size_t total = static_cast<size_t>(rand() % 10000);
 			cache.Put(ckey, QueryCountCacheVal{total});

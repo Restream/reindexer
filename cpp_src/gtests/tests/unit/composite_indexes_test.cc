@@ -1,4 +1,8 @@
 #include "composite_indexes_api.h"
+#include "gmock/gmock.h"
+#include "yaml-cpp/node/node.h"
+#include "yaml-cpp/node/parse.h"
+#include "yaml-cpp/yaml.h"
 
 TEST_F(CompositeIndexesApi, CompositeIndexesAddTest) {
 	addCompositeIndex({kFieldNameBookid, kFieldNameBookid2}, CompositeIndexHash, IndexOpts().PK());
@@ -284,4 +288,77 @@ TEST_F(CompositeIndexesApi, CompositeOverCompositeTest) {
 	EXPECT_EQ(err.code(), errParams);
 	EXPECT_EQ(err.what(), fmt::sprintf(kExpectedErrorPattern, getCompositeIndexName({kComposite1, kComposite2}), kComposite1));
 	addData();
+}
+
+TEST_F(CompositeIndexesApi, FastUpdateIndex) {
+	const std::vector<std::string> kIndexTypes{"-", "hash", "tree"};
+	const std::vector<std::string> kIndexNames{"IntIndex", "Int64Index", "DoubleIndex", "StringIndex"};
+	const std::vector<std::string> kFieldTypes{"int", "int64", "double", "string"};
+
+	auto indexDef = [](const std::string& idxName, const std::string& fieldType, const std::string& type) {
+		return reindexer::IndexDef{idxName, {idxName}, type, fieldType, IndexOpts()};
+	};
+
+	auto err = rt.reindexer->AddIndex(default_namespace, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	for (size_t i = 0; i < kIndexNames.size(); ++i) {
+		err = rt.reindexer->AddIndex(default_namespace, indexDef(kIndexNames[i], kFieldTypes[i], kIndexTypes[2]));
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
+	auto compParts = {kIndexNames[0], kIndexNames[1], kIndexNames[2], kIndexNames[3]};
+
+	addCompositeIndex(compParts, CompositeIndexHash, IndexOpts());
+
+	for (int i = 0; i < 100; ++i) {
+		Item item = NewItem(default_namespace);
+		item["id"] = i;
+		item[kIndexNames[0]] = i % 10 == 0 ? 0 : rand();
+		item[kIndexNames[1]] = i % 10 == 0 ? 1 : rand();
+		item[kIndexNames[2]] = i % 10 == 0 ? 2.0 : (rand() / 100.0);
+		item[kIndexNames[3]] = i % 10 == 0 ? "string" : RandString();
+		Upsert(default_namespace, item);
+	};
+
+	auto query = Query(default_namespace)
+					 .Explain()
+					 .WhereComposite(getCompositeIndexName(compParts), CondEq, {{Variant{0}, Variant{1}, Variant{2.0}, Variant{"string"}}});
+
+	auto qrCheck = rt.Select(query);
+	auto checkItems = rt.GetSerializedQrItems(qrCheck);
+	auto checkCount = qrCheck.Count();
+	for (size_t i = 0; i < kIndexNames.size(); ++i) {
+		for (size_t j = 0; j < kIndexTypes.size(); ++j) {
+			if (kFieldTypes[i] == "double" && kIndexTypes[j] == "hash") {
+				continue;
+			}
+			auto err = rt.reindexer->UpdateIndex(default_namespace, indexDef(kIndexNames[i], kFieldTypes[i], kIndexTypes[j]));
+			ASSERT_TRUE(err.ok()) << err.what();
+
+			auto qr = rt.Select(query);
+
+			ASSERT_EQ(rt.GetSerializedQrItems(qr), checkItems);
+			ASSERT_EQ(qr.Count(), checkCount);
+
+			YAML::Node root = YAML::Load(qr.explainResults);
+			auto selectors = root["selectors"];
+			ASSERT_TRUE(selectors.IsSequence()) << qr.explainResults;
+			ASSERT_EQ(selectors.size(), 1) << qr.explainResults;
+			ASSERT_EQ(selectors[0]["field"].as<std::string>(), getCompositeIndexName(compParts)) << qr.explainResults;
+		}
+	}
+
+	for (size_t i = 0; i < kFieldTypes.size(); ++i) {
+		for (size_t j = 0; j < kFieldTypes.size(); ++j) {
+			if (i == j) {
+				continue;
+			}
+			auto err = rt.reindexer->UpdateIndex(default_namespace, indexDef(kIndexNames[i], kFieldTypes[j], "tree"));
+			ASSERT_FALSE(err.ok()) << err.what();
+			auto err1Text = fmt::format("Cannot remove index {} : it's a part of a composite index .*", kIndexNames[i]);
+			auto err2Text = fmt::format("Cannot convert key from type {} to {}", kFieldTypes[i], kFieldTypes[j]);
+			ASSERT_THAT(err.what(), testing::MatchesRegex(fmt::format("({}|{})", err1Text, err2Text)));
+		}
+	}
 }

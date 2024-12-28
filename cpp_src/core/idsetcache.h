@@ -61,6 +61,7 @@ struct IdSetCacheVal {
 	IdSetCacheVal() = default;
 	IdSetCacheVal(IdSet::Ptr&& i) noexcept : ids(std::move(i)) {}
 	size_t Size() const noexcept { return ids ? (sizeof(*ids.get()) + ids->heap_size()) : 0; }
+	bool IsInitialized() const noexcept { return bool(ids); }
 
 	IdSet::Ptr ids;
 };
@@ -76,17 +77,23 @@ T& operator<<(T& os, const IdSetCacheVal& v) {
 
 struct equal_idset_cache_key {
 	bool operator()(const IdSetCacheKey& lhs, const IdSetCacheKey& rhs) const noexcept {
-		return lhs.cond == rhs.cond && lhs.sort == rhs.sort && *lhs.keys == *rhs.keys;
+		try {
+			return lhs.cond == rhs.cond && lhs.sort == rhs.sort && *lhs.keys == *rhs.keys;
+		} catch (...) {
+			return false;  // For non-comparable variant arrays (really rare case in this context)
+		}
 	}
 };
 struct hash_idset_cache_key {
 	size_t operator()(const IdSetCacheKey& s) const noexcept { return (size_t(s.cond) << 8) ^ (size_t(s.sort) << 16) ^ s.keys->Hash(); }
 };
 
-using IdSetCacheBase = LRUCache<IdSetCacheKey, IdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
+using IdSetCacheBase =
+	LRUCache<LRUCacheImpl<IdSetCacheKey, IdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>, LRUWithAtomicPtr::Yes>;
 
 class IdSetCache : public IdSetCacheBase {
 public:
+	IdSetCache() = default;
 	IdSetCache(size_t sizeLimit, uint32_t hitCount) : IdSetCacheBase(sizeLimit, hitCount) {}
 	void ClearSorted(const std::bitset<kMaxIndexes>& s) {
 		if (s.any()) {

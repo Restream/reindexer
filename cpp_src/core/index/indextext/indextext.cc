@@ -10,13 +10,14 @@ namespace reindexer {
 template <typename T>
 IndexText<T>::IndexText(const IndexText<T>& other)
 	: IndexUnordered<T>(other),
-	  cache_ft_(std::make_unique<FtIdSetCache>(other.cacheMaxSize_, other.hitsToCache_)),
+	  cache_ft_(other.cacheMaxSize_, other.hitsToCache_),
 	  cacheMaxSize_(other.cacheMaxSize_),
 	  hitsToCache_(other.hitsToCache_) {
+	cache_ft_.CopyInternalPerfStatsFrom(other.cache_ft_);
 	initSearchers();
 }
-// Generic implemetation for string index
 
+// Generic implementation for string index
 template <typename T>
 void IndexText<T>::initSearchers() {
 	size_t jsonPathIdx = 0;
@@ -36,7 +37,7 @@ void IndexText<T>::initSearchers() {
 			throw Error(errParams, "Composite fulltext index '%s' contains duplicated fields", this->name_);
 		}
 		if rx_unlikely (ftFields_.size() > kMaxFtCompositeFields) {
-			throw Error(errParams, "Unable to create composite fulltext '%s' index with %d fields. Fileds count limit is %d", this->name_,
+			throw Error(errParams, "Unable to create composite fulltext '%s' index with %d fields. Fields count limit is %d", this->name_,
 						ftFields_.size(), kMaxFtCompositeFields);
 		}
 	}
@@ -64,11 +65,24 @@ void IndexText<T>::ReconfigureCache(const NamespaceCacheConfigData& cacheCfg) {
 	if (cacheMaxSize_ != cacheCfg.ftIdxCacheSize || hitsToCache_ != cacheCfg.ftIdxHitsToCache) {
 		cacheMaxSize_ = cacheCfg.ftIdxCacheSize;
 		hitsToCache_ = cacheCfg.ftIdxHitsToCache;
-		if (cache_ft_) {
-			cache_ft_ = std::make_unique<FtIdSetCache>(cacheMaxSize_, hitsToCache_);
+		if (cache_ft_.IsActive()) {
+			cache_ft_.Reinitialize(cacheMaxSize_, hitsToCache_);
 		}
 	}
 	Base::ReconfigureCache(cacheCfg);
+}
+
+template <typename T>
+IndexPerfStat IndexText<T>::GetIndexPerfStat() {
+	auto stats = Base::GetIndexPerfStat();
+	stats.cache = cache_ft_.GetPerfStat();
+	return stats;
+}
+
+template <typename T>
+void IndexText<T>::ResetIndexPerfStat() {
+	Base::ResetIndexPerfStat();
+	cache_ft_.ResetPerfStat();
 }
 
 template <typename T>
@@ -84,7 +98,7 @@ void IndexText<T>::build(const RdxContext& rdxCtx) {
 	}
 }
 
-// Generic implemetation for string index
+// Generic implementation for string index
 template <typename T>
 SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType condition, SortType, Index::SelectOpts opts,
 										 const BaseFunctionCtx::Ptr& ctx, const RdxContext& rdxCtx) {
@@ -96,9 +110,9 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType cond
 	auto mergeStatuses = this->GetFtMergeStatuses(rdxCtx);
 	bool needPutCache = false;
 	IdSetCacheKey ckey{keys, condition, 0};
-	auto cache_ft = cache_ft_->Get(ckey);
+	auto cache_ft = cache_ft_.Get(ckey);
 	if (cache_ft.valid) {
-		if (!cache_ft.val.ids) {
+		if (!cache_ft.val.IsInitialized()) {
 			needPutCache = true;
 		} else if (ctx->type == BaseFunctionCtx::CtxType::kFtArea &&
 				   (!cache_ft.val.ctx || !(cache_ft.val.ctx->type == BaseFunctionCtx::CtxType::kFtArea))) {
@@ -170,7 +184,7 @@ SelectKeyResults IndexText<T>::doSelectKey(const VariantArray& keys, const std::
 			}
 		}
 		if (need_put && mergedIds->size()) {
-			cache_ft_->Put(*ckey, FtIdSetCacheVal{IdSet::Ptr(mergedIds), std::move(ftCtxDataBase)});
+			cache_ft_.Put(*ckey, FtIdSetCacheVal{IdSet::Ptr(mergedIds), std::move(ftCtxDataBase)});
 		}
 
 		res.emplace_back(std::move(mergedIds));

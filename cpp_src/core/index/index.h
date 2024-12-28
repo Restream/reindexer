@@ -118,13 +118,8 @@ public:
 	PerfStatCounterMT& GetSelectPerfCounter() { return selectPerfCounter_; }
 	PerfStatCounterMT& GetCommitPerfCounter() { return commitPerfCounter_; }
 
-	IndexPerfStat GetIndexPerfStat() {
-		return IndexPerfStat(name_, selectPerfCounter_.Get<PerfStat>(), commitPerfCounter_.Get<PerfStat>());
-	}
-	void ResetIndexPerfStat() {
-		selectPerfCounter_.Reset();
-		commitPerfCounter_.Reset();
-	}
+	virtual IndexPerfStat GetIndexPerfStat();
+	virtual void ResetIndexPerfStat();
 	virtual bool HoldsStrings() const noexcept = 0;
 	virtual void DestroyCache() {}
 	virtual void ClearCache() {}
@@ -139,7 +134,7 @@ public:
 protected:
 	// Index type. Can be one of enum IndexType
 	IndexType type_;
-	// Name of index (usualy name of field).
+	// Name of index (usually name of field).
 	std::string name_;
 	// Vector or ids, sorted by this index. Available only for ordered indexes
 	std::vector<IdType> sortOrders_;
@@ -160,7 +155,7 @@ protected:
 	PerfStatCounterMT selectPerfCounter_;
 	KeyValueType keyType_ = KeyValueType::Undefined{};
 	KeyValueType selectKeyType_ = KeyValueType::Undefined{};
-	// Count of sorted indexes in namespace to resereve additional space in idsets
+	// Count of sorted indexes in namespace to reserve additional space in idsets
 	int sortedIdxCount_ = 0;
 	bool isBuilt_{false};
 

@@ -14,7 +14,7 @@ class WrSerializer;
 struct NamespaceDef {
 	NamespaceDef() = default;
 
-	NamespaceDef(const std::string& iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing())
+	explicit NamespaceDef(const std::string& iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing())
 		: name(iname), storage(istorage) {}
 
 	NamespaceDef& AddIndex(const std::string& iname, const std::string& indexType, const std::string& fieldType,

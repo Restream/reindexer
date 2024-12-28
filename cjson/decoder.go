@@ -36,8 +36,7 @@ func fieldByTag(t reflect.Type, tag string) (result reflect.StructField, ok bool
 	}
 	for i := 0; i < t.NumField(); i++ {
 		result = t.Field(i)
-		if ftag := result.Tag.Get("json"); len(ftag) > 0 {
-			ftag, _ = splitStr(ftag, ',')
+		if ftag, _ := splitStr(result.Tag.Get("json"), ','); len(ftag) > 0 {
 			if tag == ftag {
 				return result, true
 			}

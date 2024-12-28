@@ -193,9 +193,6 @@ void PayloadTypeImpl::deserialize(Serializer& ser) {
 
 		PayloadFieldType ft(t, name, jsonPaths, isArray);
 
-		if (isArray) {
-			ft.SetArray();
-		}
 		ft.SetOffset(offset);
 		fieldsByName_.emplace(name, fields_.size());
 		if (t.Is<KeyValueType::String>()) {

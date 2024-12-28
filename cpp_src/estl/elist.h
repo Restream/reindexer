@@ -5,7 +5,7 @@
 namespace reindexer {
 
 // Wrapper for std::list, which holds list's size.
-// For some older libstdc++ implemetation, std::list::size() has O(N) complection
+// For some older libstdc++ implementation, std::list::size() has O(N) complection
 // (for example, Centos7 with devtoolsets is affected to this issue)
 template <typename T, typename Allocator>
 class elist {

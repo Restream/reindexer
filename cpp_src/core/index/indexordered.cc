@@ -1,4 +1,3 @@
-
 #include "indexordered.h"
 #include "core/nsselecter/btreeindexiterator.h"
 #include "core/rdxcontext.h"
@@ -11,7 +10,7 @@ template <typename T>
 Variant IndexOrdered<T>::Upsert(const Variant& key, IdType id, bool& clearCache) {
 	if (key.Type().Is<KeyValueType::Null>()) {
 		if (this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_)) {
-			this->cache_.reset();
+			this->cache_.ResetImpl();
 			clearCache = true;
 			this->isBuilt_ = false;
 		}
@@ -29,7 +28,7 @@ Variant IndexOrdered<T>::Upsert(const Variant& key, IdType id, bool& clearCache)
 
 	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_)) {
 		this->isBuilt_ = false;
-		this->cache_.reset();
+		this->cache_.ResetImpl();
 		clearCache = true;
 	}
 	this->tracker_.markUpdated(this->idx_map, keyIt);
@@ -49,7 +48,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 	// Get set of keys or single key
 	if (!IsOrderedCondition(condition)) {
 		if (opts.unbuiltSortOrders && keys.size() > 1) {
-			throw Error(errLogic, "Attemt to use btree index '%s' for sort optimization with unordered multivalue condition (%s)",
+			throw Error(errLogic, "Attempt to use btree index '%s' for sort optimization with unordered multivalued condition (%s)",
 						this->Name(), CondTypeToStr(condition));
 		}
 		return IndexUnordered<T>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
@@ -58,7 +57,10 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 	SelectKeyResult res;
 	auto startIt = this->idx_map.begin();
 	auto endIt = this->idx_map.end();
-	auto key1 = *keys.begin();
+	const auto& key1 = *keys.begin();
+	if (key1.IsNullValue() || (keys.size() > 1 && keys[1].IsNullValue())) {
+		throw Error(errParams, "Can not use 'null'-value with operators '>','<','<=','>=' and 'RANGE()' (index: '%s')", this->Name());
+	}
 	switch (condition) {
 		case CondLt:
 			endIt = this->idx_map.lower_bound(static_cast<ref_type>(key1));
@@ -137,15 +139,15 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 				T* i_map;
 				SortType sortId;
 				typename T::iterator startIt, endIt;
-			} ctx = {&this->idx_map, sortId, startIt, endIt};
+			} selectorCtx = {&this->idx_map, sortId, startIt, endIt};
 
-			auto selector = [&ctx, count](SelectKeyResult& res, size_t& idsCount) {
+			auto selector = [&selectorCtx, count](SelectKeyResult& res, size_t& idsCount) {
 				idsCount = 0;
 				res.reserve(count);
-				for (auto it = ctx.startIt; it != ctx.endIt; ++it) {
-					assertrx_dbg(it != ctx.i_map->end());
+				for (auto it = selectorCtx.startIt; it != selectorCtx.endIt; ++it) {
+					assertrx_dbg(it != selectorCtx.i_map->end());
 					idsCount += it->second.Unsorted().Size();
-					res.emplace_back(it->second, ctx.sortId);
+					res.emplace_back(it->second, selectorCtx.sortId);
 				}
 				res.deferedExplicitSort = false;
 				return false;
@@ -198,8 +200,7 @@ void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext& ctx) {
 			}
 		}
 	}
-	// fill unexist indexs
-
+	// fill non-existent indexs
 	for (auto it = ids2Sorts.begin(); it != ids2Sorts.end(); ++it) {
 		if (*it == SortIdUnfilled) {
 			*it = idx;

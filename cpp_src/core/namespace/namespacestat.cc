@@ -1,8 +1,6 @@
-
 #include "namespacestat.h"
 #include "core/cjson/jsonbuilder.h"
 #include "gason/gason.h"
-#include "tools/jsontools.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -75,8 +73,8 @@ void IndexMemStat::GetJSON(JsonBuilder& builder) {
 	if (trackedUpdatesSize) {
 		builder.Put("tracked_updates_size", trackedUpdatesSize);
 	}
-	if (trackedUpdatesOveflow) {
-		builder.Put("tracked_updates_overflow", trackedUpdatesOveflow);
+	if (trackedUpdatesOverflow) {
+		builder.Put("tracked_updates_overflow", trackedUpdatesOverflow);
 	}
 	if (dataSize) {
 		builder.Put("data_size", dataSize);
@@ -133,6 +131,14 @@ void NamespacePerfStat::GetJSON(WrSerializer& ser) {
 		auto obj = builder.Object("transactions");
 		transactions.GetJSON(obj);
 	}
+	if (queryCountCache.state != LRUCachePerfStat::State::DoesNotExist) {
+		auto obj = builder.Object("query_count_cache");
+		queryCountCache.GetJSON(obj);
+	}
+	if (joinCache.state != LRUCachePerfStat::State::DoesNotExist) {
+		auto obj = builder.Object("join_cache");
+		joinCache.GetJSON(obj);
+	}
 
 	auto arr = builder.Array("indexes");
 
@@ -151,6 +157,10 @@ void IndexPerfStat::GetJSON(JsonBuilder& builder) {
 	{
 		auto obj = builder.Object("commits");
 		commits.GetJSON(obj);
+	}
+	if (cache.state != LRUCachePerfStat::State::DoesNotExist) {
+		auto obj = builder.Object("cache");
+		cache.GetJSON(obj);
 	}
 }
 
@@ -316,6 +326,29 @@ void TxPerfStat::GetJSON(JsonBuilder& builder) {
 	builder.Put("avg_copy_time_us", avgCopyTimeUs);
 	builder.Put("min_copy_time_us", minCopyTimeUs);
 	builder.Put("max_copy_time_us", maxCopyTimeUs);
+}
+
+void LRUCachePerfStat::GetJSON(JsonBuilder& builder) {
+	switch (state) {
+		case State::DoesNotExist:
+			return;
+		case State::Inactive:
+			builder.Put("is_active", false);
+			break;
+		case State::Active:
+			builder.Put("is_active", true);
+			break;
+	}
+
+	builder.Put("total_queries", TotalQueries());
+	builder.Put("cache_hit_rate", HitRate());
+}
+
+uint64_t LRUCachePerfStat::TotalQueries() const noexcept { return hits + misses; }
+
+double LRUCachePerfStat::HitRate() const noexcept {
+	const auto tq = TotalQueries();
+	return tq ? (double(hits) / double(tq)) : 0.0;
 }
 
 }  // namespace reindexer

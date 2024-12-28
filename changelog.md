@@ -1,3 +1,29 @@
+# Version 3.31.0 (28.12.2024)
+## Core
+- [fea] Added fast path for index updates for some specific cases (when index switches type between `tree`/`hash`/`-` and/or changes it's `is_dense`-flag)
+- [fea] Allowed to update part of the composite index for some specific cases (when underlying index uses `fast path` update)
+- [fea] Added information about index/namespace cache hits into `#perfstats`-namespace
+- [fea] Slight comparators optimization (better inlining)
+- [fea] Allowed to update scalar-index to array-index and vice versa for the case, when namespace is empty
+- [fix] Fixed incorrect [EqualPosition's](readme.md#search-in-array-fields-with-matching-array-indexes) interaction with brackets optimizer in `SELECT`-queries. Now optimizer should not remove the brackets containing `EqualPosition`
+- [fix] Fixed crash in `ORDER BY` arithmetic sorting expresion with composite indexes
+- [fix] Fixed assertion on attempt to use 'null'-values with `=`, `IN()`, `<`, `>`, `<=`, `>=` and `RANGE()` operators
+- [fix] Added extra type validations for indexed document content during CJSON/JSON/MsgPack/Protobuf deserialization
+- [fix] Added JSON-validation for `SetObject`-method in `UPDATE`-queries
+
+## Fulltext
+- [fix] Fixed areas positions for `number search`
+- [fix] Removed some of the default stop-words
+
+## Go connector
+- [fea] Added support for empty `reindex`/`json` tags with default index/jsonpath-names (i.e. constructions like ``StrField string `reindex:"" json:""` ``)
+
+## Face
+- [fea] Added `splitter` field to the Full text index settings
+- [fix] Fixed wrong input field clearing on the cache settings page
+- [fix] Fixed sort order icon on the tables
+- [fix] Fixed data saving in JSON view on the Index settings page
+
 # Version 3.30.0 (29.11.2024)
 ## Core
 - [fea] Optimized memory layout for `-tuple`-index (this slightly reduces memory consumation for any `reindexer` database)

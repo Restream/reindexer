@@ -609,7 +609,7 @@ Error Replicator::syncNamespaceForced(const NamespaceDef& ns, std::string_view r
 
 	err = syncMetaForced(tmpNs, ns.name);
 	if (err.ok()) {
-		err = syncSchemaForced(tmpNs, ns.name);
+		err = syncSchemaForced(tmpNs, NamespaceDef(ns.name));
 	}
 
 	//  Make query to complete master's namespace data

@@ -132,7 +132,7 @@ DataHolder<IdCont>::DataHolder(FtFastConfig* c) {
 	cfg_ = c;
 	if (cfg_->splitterType == FtFastConfig::Splitter::Fast) {
 		splitter_ = make_intrusive<FastTextSplitter>(cfg_->extraWordSymbols);
-	} else if (cfg_->splitterType == FtFastConfig::Splitter::Friso) {
+	} else if (cfg_->splitterType == FtFastConfig::Splitter::MMSegCN) {
 		splitter_ = make_intrusive<FrisoTextSplitter>();
 	} else {
 		assertrx_throw(false);

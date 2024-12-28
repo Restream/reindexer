@@ -385,7 +385,7 @@ Several parameters of full text search engine can be configured from application
 |   |     Optimization      |  string  | Optimize the index by 'memory' or by 'cpu'                                                                                                                                                                                                                                                                                        |   "memory"    |
 |   |     FtBaseRanking     |  struct  | Relevance of the word in different forms                                                                                                                                                                                                                                                                                          |               |
 |   |      Bm25Config       |  struct  | Document ranking function parameters  [More...](#basic-document-ranking-algorithms)                                                                                                                                                                                                                                               |               |
-|   |     SplitterType      |  string  | Text breakdown algorithm. Available values: 'friso' and 'fast'                                                                                                                                                                                                                                                                    |    "fast"     |
+|   |     SplitterType      |  string  | Text breakdown algorithm. Available values: 'mmseg_cn' and 'fast'                                                                                                                                                                                                                                                                    |    "fast"     |
 
 ### Stopwords details
 The list item can be either a string or a structure containing a string (the stopword) and a bool attribute (`is_morpheme`) indicating whether the stopword can be part of a word that can be shown in query-results.
@@ -420,7 +420,7 @@ If the list of stopwords looks like this:
 ```
 and there are pair of documents containing this word: `{"...under the roof ..."}, {"... to understand and forgive..."}`. Then for the query 'under*' we will get as a result only document `{"... to understand and forgive..."}` and for the query 'under'  we will get nothing as a result.
 
-If the "StopWords" section is not specified in the config, then the [default](./cpp_src/core/ft/stopwords/stop_en.cc) stopwords list will be used, and if it is explicitly specified empty, it means that there are no stopwords.
+If the "StopWords" section is not specified in the config, then the [default_en](./cpp_src/core/ft/stopwords/stop_en.cc) and [default_ru](./cpp_src/core/ft/stopwords/stop_ru.cc) stopwords list will be used, and if it is explicitly specified empty, it means that there are no stopwords.
 
 ### Detailed typos config
 
@@ -451,7 +451,7 @@ FtBaseRanking: config for the base relevancy of the word in different forms.
 
 
 ### Text splitters
-Reindexer supports two algorithms to break texts into words: `fast` and `friso`.
+Reindexer supports two algorithms to break texts into words: `fast` and `mmseg_cn`.
 
 Default `fast` algorithm is based on the definition of a word in the form of a alpha (from supported Unicode subset), number and an extended character, everything else (whitespaces, special characters, unsopported Unicode subsets, etc) will be threated as a delimiters.
 
@@ -487,7 +487,7 @@ Reindexer supports the following unicode block codes / extra symbols:
 
 This algorithm is simple and provides high performance, but it can not handle texts without delimiters (for example, Chinese language does not requires whitespaces between words, so `fast`-splitter will not be able to index it properly). 
 
-Alternative `friso`-splitter is based on [friso](https://github.com/lionsoul2014/friso) implementation of `mmseg` algorithm and uses dictionaries for tokenization. Currently this splitter supports only Chinese and English languages.
+Alternative `mmseg_cn`-splitter is based on [friso](https://github.com/lionsoul2014/friso) implementation of `mmseg` algorithm and uses dictionaries for tokenization. Currently this splitter supports only Chinese and English languages.
 
 
 ### Basic document ranking algorithms

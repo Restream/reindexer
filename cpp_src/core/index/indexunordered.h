@@ -5,7 +5,6 @@
 #include "core/idsetcache.h"
 #include "core/index/indexstore.h"
 #include "core/index/updatetracker.h"
-#include "estl/atomic_unique_ptr.h"
 
 namespace reindexer {
 
@@ -29,8 +28,8 @@ public:
 	IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg);
 	IndexUnordered(const IndexUnordered& other);
 
-	Variant Upsert(const Variant& key, IdType id, bool& chearCache) override;
-	void Delete(const Variant& key, IdType id, StringsHolder&, bool& chearCache) override;
+	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override;
+	void Delete(const Variant& key, IdType id, StringsHolder&, bool& clearCache) override;
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType cond, SortType stype, Index::SelectOpts opts,
 							   const BaseFunctionCtx::Ptr& ctx, const RdxContext&) override;
 	void Commit() override;
@@ -39,18 +38,12 @@ public:
 	IndexMemStat GetMemStat(const RdxContext&) override;
 	size_t Size() const noexcept override final { return idx_map.size(); }
 	void SetSortedIdxCount(int sortedIdxCount) override;
+	IndexPerfStat GetIndexPerfStat() override;
+	void ResetIndexPerfStat() override;
 	bool HoldsStrings() const noexcept override;
-	void DestroyCache() override { cache_.reset(); }
-	void ClearCache() override {
-		if (cache_) {
-			cache_->Clear();
-		}
-	}
-	void ClearCache(const std::bitset<kMaxIndexes>& s) override {
-		if (cache_) {
-			cache_->ClearSorted(s);
-		}
-	}
+	void DestroyCache() override { cache_.ResetImpl(); }
+	void ClearCache() override { cache_.Clear(); }
+	void ClearCache(const std::bitset<kMaxIndexes>& s) override { cache_.ClearSorted(s); }
 	void Dump(std::ostream& os, std::string_view step = "  ", std::string_view offset = "") const override { dump(os, step, offset); }
 	void EnableUpdatesCountingMode(bool val) noexcept override { tracker_.enableCountingMode(val); }
 
@@ -66,7 +59,7 @@ protected:
 	// Index map
 	T idx_map;
 	// Merged idsets cache
-	atomic_unique_ptr<IdSetCache> cache_;
+	IdSetCache cache_;
 	size_t cacheMaxSize_;
 	uint32_t hitsToCache_;
 	// Empty ids

@@ -53,7 +53,7 @@ struct FtFastConfig : public BaseFTConfig {
 	int maxAreasInDoc = 5;
 	int maxTotalAreasToCache = -1;
 
-	enum class Splitter { Fast, Friso } splitterType = Splitter::Fast;
+	enum class Splitter { Fast, MMSegCN } splitterType = Splitter::Fast;
 
 	RVector<FtFastFieldConfig, 8> fieldsCfg;
 	enum class Optimization { CPU, Memory } optimization = Optimization::Memory;

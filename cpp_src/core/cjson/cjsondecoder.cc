@@ -40,11 +40,12 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 				const auto& fieldRef{pl.Type().Field(field)};
 				const KeyValueType fieldType{fieldRef.Type()};
 				if (tagType == TAG_ARRAY) {
+					const carraytag atag = rdser.GetCArrayTag();
+					const auto count = atag.Count();
 					if rx_unlikely (!fieldRef.IsArray()) {
 						throwUnexpectedArrayError(fieldRef);
 					}
-					const carraytag atag = rdser.GetCArrayTag();
-					const auto count = atag.Count();
+					validateArrayFieldRestrictions(fieldRef, count, "cjson");
 					const int ofs = pl.ResizeArray(field, count, true);
 					const TagType atagType = atag.Type();
 					if (atagType != TAG_OBJECT) {
@@ -61,6 +62,7 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 					wrser.PutVarUint(count);
 				} else {
 					validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, fieldRef, field, isInArray(), "cjson");
+					validateArrayFieldRestrictions(fieldRef, 1, "cjson");
 					objectScalarIndexes_.set(field);
 					pl.Set(field, cjsonValueToVariant(tagType, rdser, fieldType), true);
 					fieldType.EvaluateOneOf(

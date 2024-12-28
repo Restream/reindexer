@@ -209,7 +209,7 @@ jobs:
         run: |
           if [[ $OS == ubuntu* ]]; then
             sudo ./dependencies.sh
-            python3 -m pip install setuptools
+            python3 -m pip install setuptools build
           else
             ./dependencies.sh
           fi
@@ -238,7 +238,9 @@ jobs:
         with:
           repository: restream/reindexer-py
       - name: Install PyReindexer
-        run: sudo python3 setup.py install
+        run: |
+          python -m build
+          python -m pip install .
       - name: Test PyReindexer
         run: |
           cd pyreindexer

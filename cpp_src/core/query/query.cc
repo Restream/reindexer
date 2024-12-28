@@ -45,7 +45,7 @@ void Query::checkSubQuery() const {
 
 void Query::checkSubQueryNoData() const {
 	if rx_unlikely (!aggregations_.empty()) {
-		throw Error{errQueryExec, "Aggregaton cannot be in subquery with condition Any or Empty"};
+		throw Error{errQueryExec, "Aggregation cannot be in subquery with condition Any or Empty"};
 	}
 	if rx_unlikely (HasLimit() && Limit() != 0) {
 		throw Error{errQueryExec, "Limit cannot be in subquery with condition Any or Empty"};
@@ -175,7 +175,7 @@ void Query::checkSetObjectValue(const Variant& value) const {
 	}
 }
 
-VariantArray Query::deserializeValues(Serializer& ser, CondType cond) {
+VariantArray Query::deserializeValues(Serializer& ser, CondType cond) const {
 	VariantArray values;
 	auto cnt = ser.GetVarUint();
 	if (cond == CondDWithin) {
@@ -196,6 +196,10 @@ VariantArray Query::deserializeValues(Serializer& ser, CondType cond) {
 		}
 	}
 	return values;
+}
+
+void Query::deserializeJoinOn(Serializer&) {
+	throw Error(errLogic, "Unexpected call. JoinOn actual only for JoinQuery");
 }
 
 void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
@@ -252,7 +256,7 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				aggregations_.emplace_back(type, std::move(fields));
 				auto& ae = aggregations_.back();
 				while (!ser.Eof() && !aggEnd) {
-					int atype = ser.GetVarUint();
+					auto atype = ser.GetVarUint();
 					switch (atype) {
 						case QueryAggregationSort: {
 							auto fieldName = ser.GetVString();
@@ -287,7 +291,7 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				if (sortingEntry.expression.length()) {
 					sortingEntries_.push_back(std::move(sortingEntry));
 				}
-				int cnt = ser.GetVarUint();
+				auto cnt = ser.GetVarUint();
 				if (cnt != 0 && sortingEntries_.size() != 1) {
 					throw Error(errParams, "Forced sort order is allowed for the first sorting entry only");
 				}
@@ -298,12 +302,7 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				break;
 			}
 			case QueryJoinOn: {
-				const OpType op = static_cast<OpType>(ser.GetVarUint());
-				const CondType condition = static_cast<CondType>(ser.GetVarUint());
-				std::string leftFieldName{ser.GetVString()};
-				std::string rightFieldName{ser.GetVString()};
-				reinterpret_cast<JoinedQuery*>(this)->joinEntries_.emplace_back(op, condition, std::move(leftFieldName),
-																				std::move(rightFieldName));
+				deserializeJoinOn(ser);
 				break;
 			}
 			case QueryDebugLevel:
@@ -350,7 +349,7 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				VariantArray val;
 				std::string field(ser.GetVString());
 				bool isArray = ser.GetVarUint();
-				int numValues = ser.GetVarUint();
+				auto numValues = ser.GetVarUint();
 				bool hasExpressions = false;
 				while (numValues--) {
 					hasExpressions = ser.GetVarUint();
@@ -362,7 +361,7 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 			case QueryUpdateField: {
 				VariantArray val;
 				std::string field(ser.GetVString());
-				int numValues = ser.GetVarUint();
+				auto numValues = ser.GetVarUint();
 				bool isArray = numValues > 1;
 				bool hasExpressions = false;
 				while (numValues--) {
@@ -376,7 +375,7 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				VariantArray val;
 				std::string field(ser.GetVString());
 				bool hasExpressions = false;
-				int numValues = ser.GetVarUint();
+				auto numValues = ser.GetVarUint();
 				val.MarkArray(ser.GetVarUint() == 1);
 				while (numValues--) {
 					hasExpressions = ser.GetVarUint();
@@ -428,7 +427,10 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 			entries_.Get<QueryEntriesBracket>(eqPos.first - 1).equalPositions.emplace_back(std::move(eqPos.second));
 		}
 	}
-	return;
+}
+
+void Query::serializeJoinEntries(WrSerializer&) const {
+	throw Error(errLogic, "Unexpected call. JoinEntries actual only for JoinQuery");
 }
 
 void Query::Serialize(WrSerializer& ser, uint8_t mode) const {
@@ -473,13 +475,7 @@ void Query::Serialize(WrSerializer& ser, uint8_t mode) const {
 	}
 
 	if (mode & WithJoinEntries) {
-		for (const auto& qje : reinterpret_cast<const JoinedQuery*>(this)->joinEntries_) {
-			ser.PutVarUint(QueryJoinOn);
-			ser.PutVarUint(qje.Operation());
-			ser.PutVarUint(qje.Condition());
-			ser.PutVString(qje.LeftFieldName());
-			ser.PutVString(qje.RightFieldName());
-		}
+		serializeJoinEntries(ser);
 	}
 
 	for (const auto& equalPoses : entries_.equalPositions) {
@@ -745,6 +741,24 @@ bool Query::IsWALQuery() const noexcept {
 			   (kLsnIndexName == index1 && kSlaveVersionIndexName == index0);
 	}
 	return false;
+}
+
+void JoinedQuery::deserializeJoinOn(Serializer& ser) {
+	const OpType op = static_cast<OpType>(ser.GetVarUint());
+	const CondType condition = static_cast<CondType>(ser.GetVarUint());
+	std::string leftFieldName{ser.GetVString()};
+	std::string rightFieldName{ser.GetVString()};
+	joinEntries_.emplace_back(op, condition, std::move(leftFieldName), std::move(rightFieldName));
+}
+
+void JoinedQuery::serializeJoinEntries(WrSerializer& ser) const {
+	for (const auto& qje : joinEntries_) {
+		ser.PutVarUint(QueryJoinOn);
+		ser.PutVarUint(qje.Operation());
+		ser.PutVarUint(qje.Condition());
+		ser.PutVString(qje.LeftFieldName());
+		ser.PutVString(qje.RightFieldName());
+	}
 }
 
 }  // namespace reindexer

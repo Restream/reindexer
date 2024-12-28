@@ -4,7 +4,7 @@ info:
     **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
     Reindexer's goal is to provide fast search with complex queries.
     Reindexer is compact, fast and it does not have heavy dependencies.
-  version: "3.30.0"
+  version: "3.31.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -3124,10 +3124,10 @@ definitions:
             maximum: 500
       splitter:
         type: string
-        description: "Text tokenization algorithm. 'fast' - splits text by spaces, special characters and unsupported UTF-8 symbols. Each token is a combination of letters from supported UTF-8 subset, numbers and extra word symbols. 'friso' - algorithm based on mmseg for Chinese and English"
+        description: "Text tokenization algorithm. 'fast' - splits text by spaces, special characters and unsupported UTF-8 symbols. Each token is a combination of letters from supported UTF-8 subset, numbers and extra word symbols. 'mmseg_cn' - algorithm based on friso implementation of mmseg for Chinese and English"
         enum:
         - "fast"
-        - "friso"
+        - "mmseg_cn"
         default: "fast"
 
   FulltextFieldConfig:
@@ -3811,9 +3811,15 @@ definitions:
         $ref: "#/definitions/SelectPerfStats"
       transactions:
         $ref: "#/definitions/TransactionsPerfStats"
+      join_cache:
+        description: "Joins cache statistics"
+        $ref: "#/definitions/LRUCachePerfStats"
+      query_count_cache:
+        description: "Queries cache statistics (for the queries with COUNT_CACHED() aggregation)"
+        $ref: "#/definitions/LRUCachePerfStats"
       indexes:
         type: array
-        description: "Memory consumption of each namespace index"
+        description: "Performance statistics for each namespace index"
         items:
           type: object
           properties:
@@ -3824,6 +3830,9 @@ definitions:
               $ref: "#/definitions/UpdatePerfStats"
             selects:
               $ref: "#/definitions/SelectPerfStats"
+            cache:
+              description: "If index does not use IDs cache at all, this struct won't be present in response"
+              $ref: "#/definitions/LRUCachePerfStats"
   
   CommonPerfStats:
     type: object
@@ -3937,6 +3946,22 @@ definitions:
           longest_query:
             type: string
             description: "not normalized SQL representation of longest query"
+
+  LRUCachePerfStats:
+    description: "Performance statistics for specific LRU-cache instance"
+    properties:
+      total_queries:
+        description: "Queries total count"
+        type: integer
+        minimum: 0
+      cache_hit_rate:
+        description: "Cache hit rate (hits / total_queries)"
+        type: number
+        minimum: 0.0
+        maximum: 1.0
+      is_active:
+        description: "Determines if cache is currently in use. Usually it has 'false' value for uncommited indexes"
+        type: boolean
 
   SystemConfigItem:
     type: object

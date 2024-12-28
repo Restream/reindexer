@@ -21,9 +21,9 @@ void JoinedSelector::selectFromRightNs(QueryResults& joinItemR, const Query& que
 		rightNs_->putToJoinCache(joinRes_, preSelectCtx_.ResultPtr());
 	}
 	if (joinResLong.haveData) {
-		found = joinResLong.it.val.ids_->size();
+		found = joinResLong.it.val.ids->size();
 		matchedAtLeastOnce = joinResLong.it.val.matchedAtLeastOnce;
-		rightNs_->FillResult(joinItemR, *joinResLong.it.val.ids_);
+		rightNs_->FillResult(joinItemR, *joinResLong.it.val.ids);
 	} else {
 		SelectCtxWithJoinPreSelect<JoinPreResultExecuteCtx> ctx(query, nullptr, preSelectCtx_);
 		ctx.matchedAtLeastOnce = false;
@@ -41,10 +41,10 @@ void JoinedSelector::selectFromRightNs(QueryResults& joinItemR, const Query& que
 	}
 	if (joinResLong.needPut) {
 		JoinCacheVal val;
-		val.ids_ = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
+		val.ids = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 		val.matchedAtLeastOnce = matchedAtLeastOnce;
 		for (auto& r : joinItemR.Items()) {
-			val.ids_->Add(r.Id(), IdSet::Unordered, 0);
+			val.ids->Add(r.Id(), IdSet::Unordered, 0);
 		}
 		rightNs_->putToJoinCache(joinResLong, std::move(val));
 	}
@@ -199,7 +199,7 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 		assertrx_throw(!IsFullText(leftIndex->Type()));
 
 		// Avoiding to use 'GetByJsonPath' during values extraction
-		// TODO: Sometimes this substituition may be effective even with 'GetByJsonPath', so we should allow user to hint this optimization.
+		// TODO: Sometimes this substitution may be effective even with 'GetByJsonPath', so we should allow user to hint this optimization.
 		bool hasSparse = false;
 		for (int field : joinEntry.RightFields()) {
 			if (field == SetByJsonPath) {
@@ -213,14 +213,14 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 
 		const VariantArray values =
 			std::visit(overloaded{[&](const IdSet& preselected) {
-									  const std::vector<IdType>* sortOrderes = nullptr;
+									  const std::vector<IdType>* sortOrders = nullptr;
 									  if (preresult.sortOrder.index) {
-										  sortOrderes = &(preresult.sortOrder.index->SortOrders());
+										  sortOrders = &(preresult.sortOrder.index->SortOrders());
 									  }
 									  return readValuesOfRightNsFrom(
 										  preselected,
-										  [this, sortOrderes](IdType rowId) noexcept {
-											  const auto properRowId = sortOrderes ? (*sortOrderes)[rowId] : rowId;
+										  [this, sortOrders](IdType rowId) noexcept {
+											  const auto properRowId = sortOrders ? (*sortOrders)[rowId] : rowId;
 											  return ConstPayload{rightNs_->payloadType_, rightNs_->items_[properRowId]};
 										  },
 										  joinEntry, rightNs_->payloadType_);

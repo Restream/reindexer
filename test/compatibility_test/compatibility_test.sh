@@ -39,19 +39,19 @@ test_outdated_instance() {
 	echo "====Master: ${master_cmd}"
 	echo "====Slave: ${slave_cmd}"
 	init_storages
-	${master_cmd} --db "${master_db_path}" -l0 --serverlog=\"reindexer_master_$3.1.log\" --corelog=\"reindexer_master_$3.1.log\" --httplog=\"\" --rpclog=\"\" &
+	${master_cmd} --db "${master_db_path}" -l trace --serverlog=reindexer_master_$3.1.log --corelog=reindexer_master_$3.1.log --httplog=none --rpclog=none &
 	master_pid=$!
 	sleep 8
 	go run ${script_dir}/filler.go --dsn "${master_dsn}/${db_name}" --offset 0
 	echo "====Force sync"
-	${slave_cmd} --db "${slave_db_path}" -p 9089 -r 6535 -l0 --serverlog=\"reindexer_slave_$3.1.log\" --corelog=\"reindexer_slave_$3.1.log\" --httplog=\"\" --rpclog=\"\" &
+	${slave_cmd} --db "${slave_db_path}" -p 9089 -r 6535 -l trace --serverlog=reindexer_slave_$3.1.log --corelog=reindexer_slave_$3.1.log --httplog=none --rpclog=none &
 	slave_pid=$!
 	sleep 8
 	kill $slave_pid
-    wait $slave_pid
+	wait $slave_pid
 	go run ${script_dir}/filler.go --dsn "${master_dsn}/${db_name}" --offset 100
 	echo "====Sync by WAL"
-	${slave_cmd} --db "${slave_db_path}" -p 9089 -r 6535 -l0 --serverlog=\"reindexer_slave_$3.2.log\" --corelog=\"reindexer_slave_$3.2.log\" --httplog=\"\" --rpclog=\"\" &
+	${slave_cmd} --db "${slave_db_path}" -p 9089 -r 6535 -l trace --serverlog=reindexer_slave_$3.2.log --corelog=reindexer_slave_$3.2.log --httplog=none --rpclog=none &
 	slave_pid=$!
 	sleep 12
 	echo "====Online sync"
@@ -60,11 +60,10 @@ test_outdated_instance() {
 	build/cpp_src/cmd/reindexer_tool/reindexer_tool --dsn "${master_dsn}/${db_name}" --command "\dump ${ns_name}" --output "${master_dump}"
 	build/cpp_src/cmd/reindexer_tool/reindexer_tool --dsn "${slave_dsn}/${db_name}" --command "\dump ${ns_name}" --output "${slave_dump}"
 	kill $slave_pid
-    wait $slave_pid
-    kill $master_pid
-    wait $master_pid
-    sed -i -E "s/(\\NAMESPACES ADD.*)(\"schema\":\"\{.*\}\")/\1\"schema\":\"\{\}\"/" "${master_dump}"
-    ${script_dir}/compare_dumps.sh "${master_dump}" "${slave_dump}"
+	wait $slave_pid
+	kill $master_pid
+	wait $master_pid
+	${script_dir}/compare_dumps.sh "${master_dump}" "${slave_dump}"
 }
 
 echo "====Installing reindexer package===="

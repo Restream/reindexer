@@ -32,8 +32,8 @@ Listener<LT>::Listener(ev::dynamic_loop& loop, std::shared_ptr<Shared> shared)
 
 template <ListenerType LT>
 Listener<LT>::Listener(ev::dynamic_loop& loop, ConnectionFactory&& connFactory, int maxListeners)
-	: Listener(loop,
-			   std::make_shared<Shared>(std::move(connFactory), (maxListeners ? maxListeners : std::thread::hardware_concurrency()) + 1)) {}
+	: Listener(loop, std::make_shared<Shared>(std::move(connFactory),
+											  (maxListeners ? maxListeners : (double(std::thread::hardware_concurrency()) * 1.2)) + 1)) {}
 
 template <ListenerType LT>
 Listener<LT>::~Listener() {

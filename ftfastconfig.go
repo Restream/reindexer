@@ -191,9 +191,9 @@ type FtFastConfig struct {
 	// Config for document ranking
 	Bm25Config *Bm25ConfigType `json:"bm25_config,omitempty"`
 	// Text tokenization algorithm. Default 'fast'.
-	// 'fast' : splits text by spaces, special characters and unsupported UTF-8 symbols.
-	//          Each token is a combination of letters from supported UTF-8 subset, numbers and extra word symbols.
-	// 'friso': algorithm based on mmseg for Chinese and English
+	// 'fast' :    splits text by spaces, special characters and unsupported UTF-8 symbols.
+	//             Each token is a combination of letters from supported UTF-8 subset, numbers and extra word symbols.
+	// 'mmseg_cn': algorithm based on friso mmseg for Chinese and English
 	SplitterType string `json:"splitter,omitempty"`
 }
 

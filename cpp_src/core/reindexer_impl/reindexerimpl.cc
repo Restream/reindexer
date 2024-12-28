@@ -8,15 +8,10 @@
 #include "core/defnsconfigs.h"
 #include "core/iclientsstats.h"
 #include "core/index/index.h"
-#include "core/itemimpl.h"
-#include "core/nsselecter/nsselecter.h"
 #include "core/nsselecter/querypreprocessor.h"
 #include "core/query/sql/sqlsuggester.h"
-#include "core/queryresults/joinresults.h"
 #include "core/selectfunc/selectfunc.h"
-#include "core/type_consts_helpers.h"
 #include "debug/crashqueryreporter.h"
-#include "estl/defines.h"
 #include "replicator/replicator.h"
 #include "rx_selector.h"
 #include "server/outputparameters.h"
@@ -616,7 +611,7 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 	return {};
 }
 
-template <bool needUpdateSystemNs, typename MakeCtxStrFn, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg, typename... Args>
+template <bool needUpdateSystemNs, typename MakeCtxStrFn, typename MemFnType, MemFnType Namespace::* MemFn, typename Arg, typename... Args>
 Error ReindexerImpl::applyNsFunction(std::string_view nsName, const InternalRdxContext& ctx, const MakeCtxStrFn& makeCtxStr, Arg arg,
 									 Args... args) {
 	Error err;
@@ -1746,8 +1741,8 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, std::vector<std::strin
 }
 
 [[nodiscard]] bool ReindexerImpl::isSystemNamespaceNameStrict(std::string_view name) noexcept {
-	return std::find_if(kSystemNsDefs.begin(), kSystemNsDefs.end(),
-						[name](const NamespaceDef& nsDef) { return iequals(nsDef.name, name); }) != kSystemNsDefs.end();
+	return std::find_if(std::cbegin(kSystemNsDefs), std::cend(kSystemNsDefs),
+						[name](const NamespaceDef& nsDef) { return iequals(nsDef.name, name); }) != std::cend(kSystemNsDefs);
 }
 
 Error ReindexerImpl::Status() {

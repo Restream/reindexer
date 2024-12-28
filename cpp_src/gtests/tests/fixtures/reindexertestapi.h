@@ -95,6 +95,8 @@ public:
 	void SetVerbose(bool v) noexcept { verbose = v; }
 	std::shared_ptr<DB> reindexer;
 
+	static std::vector<std::string> GetSerializedQrItems(reindexer::QueryResults& qr);
+
 private:
 	QueryResultsType createQR();
 

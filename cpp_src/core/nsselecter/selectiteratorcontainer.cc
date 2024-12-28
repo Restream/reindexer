@@ -670,14 +670,11 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 			},
 			[&] RX_PRE_LMBD_ALWAYS_INLINE(SelectIterator & sit)
 				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition<reverse>(sit, &lastFinish, rowId); },
-			[&] /*RX_PRE_LMBD_ALWAYS_INLINE*/ (JoinSelectIterator & jit) /*RX_POST_LMBD_ALWAYS_INLINE*/ {
-				return checkIfSatisfyCondition(jit, pv, properRowId, match);
-			},
+			[&] RX_PRE_LMBD_ALWAYS_INLINE(JoinSelectIterator & jit)
+				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(jit, pv, properRowId, match); },
 			Restricted<FieldsComparator, EqualPositionComparator, ComparatorNotIndexed,
 					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
-				[&pv, properRowId] /*RX_PRE_LMBD_ALWAYS_INLINE*/ (auto& c) /*RX_POST_LMBD_ALWAYS_INLINE*/ {
-					return c.Compare(pv, properRowId);
-				}),
+				[&pv, properRowId] RX_PRE_LMBD_ALWAYS_INLINE(auto& c) RX_POST_LMBD_ALWAYS_INLINE { return c.Compare(pv, properRowId); }),
 			[] RX_PRE_LMBD_ALWAYS_INLINE(AlwaysTrue&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; });
 		if (op == OpOr) {
 			result |= lastResult;

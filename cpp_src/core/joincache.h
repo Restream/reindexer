@@ -48,14 +48,16 @@ struct JoinPreResult;
 
 struct JoinCacheVal {
 	JoinCacheVal() = default;
-	size_t Size() const noexcept { return ids_ ? (sizeof(*ids_.get()) + ids_->heap_size()) : 0; }
-	IdSet::Ptr ids_;
+	size_t Size() const noexcept { return ids ? (sizeof(*ids.get()) + ids->heap_size()) : 0; }
+	bool IsInitialized() const noexcept { return inited; }
+
+	IdSet::Ptr ids;
 	bool matchedAtLeastOnce = false;
 	bool inited = false;
 	std::shared_ptr<const JoinPreResult> preResult;
 };
 
-using JoinCache = LRUCache<JoinCacheKey, JoinCacheVal, hash_join_cache_key, equal_join_cache_key>;
+using JoinCache = LRUCache<LRUCacheImpl<JoinCacheKey, JoinCacheVal, hash_join_cache_key, equal_join_cache_key>, LRUWithAtomicPtr::No>;
 
 struct JoinCacheRes {
 	bool haveData = false;

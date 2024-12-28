@@ -1,8 +1,6 @@
 #pragma once
 
 #include <stdlib.h>
-#include <chrono>
-#include <mutex>
 #include <string>
 #include <vector>
 #include "core/lsn.h"
@@ -37,7 +35,7 @@ struct IndexMemStat {
 	size_t trackedUpdatesCount = 0;
 	size_t trackedUpdatesBuckets = 0;
 	size_t trackedUpdatesSize = 0;
-	size_t trackedUpdatesOveflow = 0;
+	size_t trackedUpdatesOverflow = 0;
 	LRUCacheMemStat idsetCache;
 	size_t GetIndexStructSize() const noexcept {
 		return idsetPlainSize + idsetBTreeSize + sortOrdersSize + fulltextSize + columnSize + trackedUpdatesSize;
@@ -62,7 +60,9 @@ struct MasterState {
 struct ReplicationState {
 	enum class Status { None, Idle, Error, Fatal, Syncing };
 
-	void GetJSON(JsonBuilder& builder);
+	virtual ~ReplicationState() = default;
+
+	virtual void GetJSON(JsonBuilder& builder);
 	void FromJSON(span<char>);
 
 	// LSN of last change
@@ -94,8 +94,9 @@ struct ReplicationState {
 	lsn_t lastUpstreamLSN;
 };
 
-struct ReplicationStat : public ReplicationState {
-	void GetJSON(JsonBuilder& builder);
+struct ReplicationStat final : public ReplicationState {
+	void GetJSON(JsonBuilder& builder) override;
+
 	size_t walCount = 0;
 	size_t walSize = 0;
 };
@@ -123,6 +124,18 @@ struct NamespaceMemStat {
 	LRUCacheMemStat joinCache;
 	LRUCacheMemStat queryCache;
 	std::vector<IndexMemStat> indexes;
+};
+
+struct LRUCachePerfStat {
+	enum class State { DoesNotExist, Active, Inactive };
+
+	void GetJSON(JsonBuilder& builder);
+	uint64_t TotalQueries() const noexcept;
+	double HitRate() const noexcept;
+
+	State state = State::DoesNotExist;
+	uint64_t hits = 0;
+	uint64_t misses = 0;
 };
 
 struct PerfStat {
@@ -160,13 +173,14 @@ struct TxPerfStat {
 
 struct IndexPerfStat {
 	IndexPerfStat() = default;
-	IndexPerfStat(const std::string& n, const PerfStat& s, const PerfStat& c) : name(n), selects(s), commits(c) {}
+	IndexPerfStat(const std::string& n, PerfStat&& s, PerfStat&& c) : name(n), selects(std::move(s)), commits(std::move(c)) {}
 
 	void GetJSON(JsonBuilder& builder);
 
 	std::string name;
 	PerfStat selects;
 	PerfStat commits;
+	LRUCachePerfStat cache;
 };
 
 struct NamespacePerfStat {
@@ -177,6 +191,8 @@ struct NamespacePerfStat {
 	PerfStat selects;
 	TxPerfStat transactions;
 	std::vector<IndexPerfStat> indexes;
+	LRUCachePerfStat joinCache;
+	LRUCachePerfStat queryCountCache;
 };
 
 }  // namespace reindexer

@@ -26,6 +26,9 @@ static reindexer::VariantArray getFieldValues(reindexer::ConstPayload pv, reinde
 	if (index == IndexValueType::SetByJsonPath) {
 		pv.GetByJsonPath(column, tagsMatcher, values, reindexer::KeyValueType::Undefined{});
 	} else {
+		if (index >= pv.NumFields()) {
+			throw reindexer::Error(errQueryExec, "Composite fields in sort expression are not supported");
+		}
 		pv.Get(index, values);
 	}
 	return values;

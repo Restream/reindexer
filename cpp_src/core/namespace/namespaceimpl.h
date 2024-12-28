@@ -3,8 +3,6 @@
 #include <atomic>
 #include <deque>
 #include <memory>
-#include <set>
-#include <thread>
 #include <vector>
 #include "asyncstorage.h"
 #include "core/cjson/tagsmatcher.h"
@@ -334,6 +332,8 @@ private:
 		lsn_t lsn;
 	};
 
+	friend struct IndexFastUpdate;
+
 	Error rebuildIndexesTagsPaths(const TagsMatcher& newTm);
 	ReplicationState getReplState() const;
 	std::string sysRecordName(std::string_view sysTag, uint64_t version);
@@ -493,8 +493,8 @@ private:
 	std::atomic_bool enablePerfCounters_{false};
 
 	NamespaceConfigData config_;
-	std::unique_ptr<QueryCountCache> queryCountCache_;
-	std::unique_ptr<JoinCache> joinCache_;
+	QueryCountCache queryCountCache_;
+	JoinCache joinCache_;
 	// Replication variables
 	WALTracker wal_;
 	ReplicationState repl_;

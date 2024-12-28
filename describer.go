@@ -260,6 +260,29 @@ type TxPerfStat struct {
 	MaxCopyTimeUs int64 `json:"max_copy_time_us"`
 }
 
+// LRUCachePerfStat is information about LRU cache efficiency
+type LRUCachePerfStat struct {
+	// Total queries to cache
+	TotalQueries uint64 `json:"total_queries"`
+	// Cache hit rate (CacheHits / TotalQueries)
+	CacheHitRate float64 `json:"cache_hit_rate"`
+	// Determines if cache is currently in use. Usually it has 'false' value for uncommited indexes
+	IsActive bool `json:"is_active"`
+}
+
+// IndexPerfStat is information about specific index performance statistics
+type IndexPerfStat struct {
+	// Name of index
+	Name string `json:"name"`
+	// Performance statistics for index commit operations
+	Commits PerfStat `json:"commits"`
+	// Performance statistics for index select operations
+	Selects PerfStat `json:"selects"`
+	// Performance statistics for LRU IdSets index cache (or fulltext cache for text indexes).
+	// Nil-value means, that index does not use cache at all
+	Cache *LRUCachePerfStat `json:"cache,omitempty"`
+}
+
 // NamespacePerfStat is information about namespace's performance statistics
 // and located in '#perfstats' system namespace
 type NamespacePerfStat struct {
@@ -271,6 +294,12 @@ type NamespacePerfStat struct {
 	Selects PerfStat `json:"selects"`
 	// Performance statistics for transactions
 	Transactions TxPerfStat `json:"transactions"`
+	// Performance statistics for JOINs cache
+	JoinCache LRUCachePerfStat `json:"join_cache"`
+	// Performance statistics for CountCached aggregation cache
+	QueryCountCache LRUCachePerfStat `json:"query_count_cache"`
+	// Performance statistics for each namespace index
+	Indexes IndexPerfStat `json:"indexes"`
 }
 
 // ClientConnectionStat is information about client connection

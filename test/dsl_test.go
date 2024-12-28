@@ -622,7 +622,7 @@ func TestDSLQueries(t *testing.T) {
 
 			execDSLTwice(t, func(t *testing.T, q *reindexer.Query) {
 				_, err := q.Exec().FetchAll()
-				require.ErrorContains(t, err, fmt.Sprintf("The '%s' condition is suported only by 'sparse' or 'array' indexes", cond[1]))
+				require.ErrorContains(t, err, fmt.Sprintf("The '%s' condition is supported only by 'sparse' or 'array' indexes", cond[1]))
 			}, fmt.Sprintf(jsonDSL, cond[0]))
 		}
 	})
@@ -1296,7 +1296,7 @@ func TestDSLQueries(t *testing.T) {
 
 			execDSLTwice(t, func(t *testing.T, q *reindexer.Query) {
 				_, err := q.Exec().FetchAll()
-				require.ErrorContains(t, err, fmt.Sprintf("The '%s' condition is suported only by 'sparse' or 'array' indexes", cond[1]))
+				require.ErrorContains(t, err, fmt.Sprintf("The '%s' condition is supported only by 'sparse' or 'array' indexes", cond[1]))
 			}, fmt.Sprintf(jsonDSL, cond[0]))
 		}
 	})

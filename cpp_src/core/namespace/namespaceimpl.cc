@@ -7,6 +7,7 @@
 #include "core/cjson/uuid_recoders.h"
 #include "core/formatters/lsn_fmt.h"
 #include "core/index/index.h"
+#include "core/index/indexfastupdate.h"
 #include "core/index/ttlindex.h"
 #include "core/itemimpl.h"
 #include "core/itemmodifier.h"
@@ -80,9 +81,8 @@ NamespaceImpl::NamespaceImpl(const NamespaceImpl& src, AsyncStorage::FullLockT& 
 	  schema_{src.schema_},
 	  enablePerfCounters_{src.enablePerfCounters_.load()},
 	  config_{src.config_},
-	  queryCountCache_{
-		  std::make_unique<QueryCountCache>(config_.cacheConfig.queryCountCacheSize, config_.cacheConfig.queryCountHitsToCache)},
-	  joinCache_{std::make_unique<JoinCache>(config_.cacheConfig.joinCacheSize, config_.cacheConfig.joinHitsToCache)},
+	  queryCountCache_{config_.cacheConfig.queryCountCacheSize, config_.cacheConfig.queryCountHitsToCache},
+	  joinCache_{config_.cacheConfig.joinCacheSize, config_.cacheConfig.joinHitsToCache},
 	  wal_{src.wal_, storage_},
 	  repl_{src.repl_},
 	  observers_{src.observers_},
@@ -102,6 +102,8 @@ NamespaceImpl::NamespaceImpl(const NamespaceImpl& src, AsyncStorage::FullLockT& 
 	for (auto& idxIt : src.indexes_) {
 		indexes_.push_back(idxIt->Clone());
 	}
+	queryCountCache_.CopyInternalPerfStatsFrom(src.queryCountCache_);
+	joinCache_.CopyInternalPerfStatsFrom(src.joinCache_);
 
 	markUpdated(IndexOptimization::Full);
 	logPrintf(LogInfo, "Namespace::CopyContentsFrom (%s).Workers: %d, timeout: %d, tm: { state_token: 0x%08X, version: %d }", name_,
@@ -115,9 +117,8 @@ NamespaceImpl::NamespaceImpl(const std::string& name, UpdatesObservers& observer
 	  payloadType_{name},
 	  tagsMatcher_{payloadType_},
 	  enablePerfCounters_{false},
-	  queryCountCache_{
-		  std::make_unique<QueryCountCache>(config_.cacheConfig.queryCountCacheSize, config_.cacheConfig.queryCountHitsToCache)},
-	  joinCache_{std::make_unique<JoinCache>(config_.cacheConfig.joinCacheSize, config_.cacheConfig.joinHitsToCache)},
+	  queryCountCache_{config_.cacheConfig.queryCountCacheSize, config_.cacheConfig.queryCountHitsToCache},
+	  joinCache_{config_.cacheConfig.joinCacheSize, config_.cacheConfig.joinHitsToCache},
 	  wal_(getWalSize(config_)),
 	  observers_{&observers},
 	  lastSelectTime_{0},
@@ -269,13 +270,12 @@ void NamespaceImpl::OnConfigUpdated(DBConfigProvider& configProvider, const RdxC
 				  config_.cacheConfig.ftIdxCacheSize / 1024, config_.cacheConfig.ftIdxHitsToCache);
 	}
 	if (needReconfigureJoinCache) {
-		joinCache_ = std::make_unique<JoinCache>(config_.cacheConfig.joinCacheSize, config_.cacheConfig.joinHitsToCache);
+		joinCache_.Reinitialize(config_.cacheConfig.joinCacheSize, config_.cacheConfig.joinHitsToCache);
 		logPrintf(LogTrace, "[%s] Join cache has been reconfigured: { max_size %lu KB; hits: %u }", name_,
 				  config_.cacheConfig.joinCacheSize / 1024, config_.cacheConfig.joinHitsToCache);
 	}
 	if (needReconfigureQueryCountCache) {
-		queryCountCache_ =
-			std::make_unique<QueryCountCache>(config_.cacheConfig.queryCountCacheSize, config_.cacheConfig.queryCountHitsToCache);
+		queryCountCache_.Reinitialize(config_.cacheConfig.queryCountCacheSize, config_.cacheConfig.queryCountHitsToCache);
 		logPrintf(LogTrace, "[%s] Queries count cache has been reconfigured: { max_size %lu KB; hits: %u }", name_,
 				  config_.cacheConfig.queryCountCacheSize / 1024, config_.cacheConfig.queryCountHitsToCache);
 	}
@@ -752,8 +752,8 @@ void NamespaceImpl::dumpIndex(std::ostream& os, std::string_view index) const {
 }
 
 void NamespaceImpl::clearNamespaceCaches() {
-	queryCountCache_->Clear();
-	joinCache_->Clear();
+	queryCountCache_.Clear();
+	joinCache_.Clear();
 }
 
 void NamespaceImpl::dropIndex(const IndexDef& index) {
@@ -926,9 +926,12 @@ void NamespaceImpl::verifyUpdateIndex(const IndexDef& indexDef) const {
 		throw Error(errConflict, "Cannot add PK index '%s.%s'. Already exists another PK index - '%s'", name_, indexDef.name_,
 					indexes_[currentPKIt->second]->Name());
 	}
-	if (indexDef.opts_.IsArray() != oldIndex->Opts().IsArray()) {
-		throw Error(errParams, "Cannot update index '%s' in namespace '%s'. Can't convert array index to not array and vice versa",
-					indexDef.name_, name_);
+	if (indexDef.opts_.IsArray() != oldIndex->Opts().IsArray() && !items_.empty()) {
+		// Array may be converted to scalar and scalar to array only if there are no items in namespace
+		throw Error(
+			errParams,
+			"Cannot update index '%s' in namespace '%s'. Can't convert array index to not array and vice versa for non-empty namespace",
+			indexDef.name_, name_);
 	}
 	if (indexDef.opts_.IsPK() && indexDef.opts_.IsArray()) {
 		throw Error(errParams, "Cannot update index '%s' in namespace '%s'. PK field can't be array", indexDef.name_, name_);
@@ -967,7 +970,7 @@ void NamespaceImpl::verifyUpdateIndex(const IndexDef& indexDef) const {
 		FieldsSet changedFields{idxNameIt->second};
 		PayloadType newPlType = payloadType_;
 		newPlType.Drop(indexDef.name_);
-		newPlType.Add(PayloadFieldType(newIndex->KeyType(), indexDef.name_, indexDef.jsonPaths_, indexDef.opts_.IsArray()));
+		newPlType.Add(PayloadFieldType(*newIndex, indexDef));
 		verifyConvertTypes(oldIndex->KeyType(), newIndex->KeyType(), newPlType, changedFields);
 	}
 }
@@ -1168,7 +1171,7 @@ bool NamespaceImpl::addIndex(const IndexDef& indexDef) {
 	} else {
 		PayloadType oldPlType = payloadType_;
 		auto newIndex = Index::New(indexDef, PayloadType(), FieldsSet(), config_.cacheConfig);
-		payloadType_.Add(PayloadFieldType{newIndex->KeyType(), indexName, jsonPaths, newIndex->Opts().IsArray()});
+		payloadType_.Add(PayloadFieldType(*newIndex, indexDef));
 		rollbacker.SetOldPayloadType(std::move(oldPlType));
 		tagsMatcher_.UpdatePayloadType(payloadType_);
 		rollbacker.NeedResetPayloadTypeInTagsMatcher();
@@ -1220,8 +1223,11 @@ bool NamespaceImpl::updateIndex(const IndexDef& indexDef) {
 	}
 
 	verifyUpdateIndex(indexDef);
-	dropIndex(indexDef);
-	addIndex(indexDef);
+
+	if (!IndexFastUpdate::Try(*this, foundIndex, indexDef)) {
+		dropIndex(indexDef);
+		addIndex(indexDef);
+	}
 	return true;
 }
 
@@ -2188,7 +2194,7 @@ void NamespaceImpl::doModifyItem(Item& item, ItemModifyMode mode, const NsContex
 	}
 
 	for (int field = 1, regularIndexes = indexes_.firstCompositePos(); field < regularIndexes; ++field) {
-		Index& index = *indexes_[field];
+		const Index& index = *indexes_[field];
 		if (index.Opts().GetCollateMode() == CollateUTF8 && index.KeyType().Is<KeyValueType::String>()) {
 			if (index.Opts().IsSparse()) {
 				assertrx(index.Fields().getTagsPathsLength() > 0);
@@ -2480,8 +2486,8 @@ NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext& ctx) {
 	NamespaceMemStat ret;
 	auto rlck = rLock(ctx);
 	ret.name = name_;
-	ret.joinCache = joinCache_->GetMemStat();
-	ret.queryCache = queryCountCache_->GetMemStat();
+	ret.joinCache = joinCache_.GetMemStat();
+	ret.queryCache = queryCountCache_.GetMemStat();
 
 	ret.itemsCount = itemsCount();
 	*(static_cast<ReplicationState*>(&ret.replication)) = getReplState();
@@ -2550,6 +2556,9 @@ NamespacePerfStat NamespaceImpl::GetPerfStat(const RdxContext& ctx) {
 	ret.name = name_;
 	ret.selects = selectPerfCounter_.Get<PerfStat>();
 	ret.updates = updatePerfCounter_.Get<PerfStat>();
+	ret.joinCache = joinCache_.GetPerfStat();
+	ret.queryCountCache = queryCountCache_.GetPerfStat();
+	ret.indexes.reserve(indexes_.size() - 1);
 	for (unsigned i = 1; i < indexes_.size(); i++) {
 		ret.indexes.emplace_back(indexes_[i]->GetIndexPerfStat());
 	}
@@ -2563,6 +2572,8 @@ void NamespaceImpl::ResetPerfStat(const RdxContext& ctx) {
 	for (auto& i : indexes_) {
 		i->ResetIndexPerfStat();
 	}
+	queryCountCache_.ResetPerfStat();
+	joinCache_.ResetPerfStat();
 }
 
 Error NamespaceImpl::loadLatestSysRecord(std::string_view baseSysTag, uint64_t& version, std::string& content) {
@@ -3282,11 +3293,11 @@ void NamespaceImpl::getFromJoinCache(const Query& q, JoinCacheRes& out) const {
 }
 
 void NamespaceImpl::getFromJoinCacheImpl(JoinCacheRes& ctx) const {
-	auto it = joinCache_->Get(ctx.key);
+	auto it = joinCache_.Get(ctx.key);
 	ctx.needPut = false;
 	ctx.haveData = false;
 	if (it.valid) {
-		if (!it.val.inited) {
+		if (!it.val.IsInitialized()) {
 			ctx.needPut = true;
 		} else {
 			ctx.haveData = true;
@@ -3307,11 +3318,11 @@ void NamespaceImpl::putToJoinCache(JoinCacheRes& res, JoinPreResult::CPtr preRes
 	res.needPut = false;
 	joinCacheVal.inited = true;
 	joinCacheVal.preResult = std::move(preResult);
-	joinCache_->Put(res.key, std::move(joinCacheVal));
+	joinCache_.Put(res.key, std::move(joinCacheVal));
 }
 void NamespaceImpl::putToJoinCache(JoinCacheRes& res, JoinCacheVal&& val) const {
 	val.inited = true;
-	joinCache_->Put(res.key, std::move(val));
+	joinCache_.Put(res.key, std::move(val));
 }
 
 const FieldsSet& NamespaceImpl::pkFields() {

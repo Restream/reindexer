@@ -34,6 +34,12 @@ public:
 		: namespace_(std::forward<Str>(nsName)), start_(start), count_(count), calcTotal_(calcTotal) {}
 
 	Query() = default;
+	virtual ~Query() = default;
+
+	Query(Query&& other) noexcept = default;
+	Query& operator=(Query&& other) noexcept = default;
+	Query(const Query& other) = default;
+	Query& operator=(const Query& other) = delete;
 
 	/// Allows to compare 2 Query objects.
 	[[nodiscard]] bool operator==(const Query&) const;
@@ -970,8 +976,10 @@ private:
 	using OnHelperR = OnHelperTempl<Query&&>;
 
 	void checkSetObjectValue(const Variant& value) const;
+	virtual void deserializeJoinOn(Serializer& ser);
 	void deserialize(Serializer& ser, bool& hasJoinConditions);
-	VariantArray deserializeValues(Serializer&, CondType);
+	VariantArray deserializeValues(Serializer&, CondType) const;
+	virtual void serializeJoinEntries(WrSerializer& ser) const;
 	void checkSubQueryNoData() const;
 	void checkSubQueryWithData() const;
 	void checkSubQuery() const;
@@ -996,7 +1004,7 @@ private:
 	OpType nextOp_ = OpAnd;						/// Next operation constant.
 };
 
-class JoinedQuery : public Query {
+class JoinedQuery final : public Query {
 public:
 	JoinedQuery(JoinType jt, const Query& q) : Query(q), joinType{jt} {}
 	JoinedQuery(JoinType jt, Query&& q) : Query(std::move(q)), joinType{jt} {}
@@ -1005,6 +1013,10 @@ public:
 
 	JoinType joinType{JoinType::LeftJoin};	   /// Default join type.
 	h_vector<QueryJoinEntry, 1> joinEntries_;  /// Condition for join. Filled in each subqueries, empty in root query
+
+private:
+	void deserializeJoinOn(Serializer& ser);
+	void serializeJoinEntries(WrSerializer& ser) const;
 };
 
 template <typename Q>

@@ -403,9 +403,12 @@ size_t QueryPreprocessor::removeBrackets(size_t begin, size_t end) {
 	if (begin != end && GetOperation(begin) == OpOr) {
 		throw Error{errQueryExec, "OR operator in first condition or after left join"};
 	}
+	if (!equalPositions.empty()) {
+		return 0;
+	}
 	size_t deleted = 0;
 	for (size_t i = begin; i < end - deleted; i = Next(i)) {
-		if (!IsSubTree(i)) {
+		if (!IsSubTree(i) || (Is<QueryEntriesBracket>(i) && !Get<QueryEntriesBracket>(i).equalPositions.empty())) {
 			continue;
 		}
 		deleted += removeBrackets(i + 1, Next(i));
