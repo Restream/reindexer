@@ -1,11 +1,20 @@
 #include "payloadfieldtype.h"
 #include <sstream>
+#include "core/index/index.h"
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/uuid.h"
 #include "estl/one_of.h"
 #include "payloadfieldvalue.h"
 
 namespace reindexer {
+
+PayloadFieldType::PayloadFieldType(const Index& index, const IndexDef& indexDef) noexcept
+	: type_(index.KeyType()),
+	  name_(indexDef.name_),
+	  jsonPaths_(indexDef.jsonPaths_),
+	  offset_(0),
+	  isArray_(index.Opts().IsArray()),
+	  arrayDim_(indexDef.Type() == IndexType::IndexRTree ? 2 : -1) {}
 
 size_t PayloadFieldType::Sizeof() const noexcept {
 	if (IsArray()) {

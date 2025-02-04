@@ -165,6 +165,7 @@ public:
 	void ReleaseStrings(int field) noexcept;
 	void MoveStrings(int field, StringsHolder& dest);
 	void CopyStrings(std::vector<key_string>& dest);
+	void CopyStrings(h_vector<key_string, 16>& dest);
 
 	// Item values' string for printing
 	std::string Dump() const;

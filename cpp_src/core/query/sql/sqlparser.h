@@ -103,7 +103,7 @@ protected:
 	void parseJoinEntries(tokenizer& parser, const std::string& mainNs, JoinedQuery& jquery);
 
 	/// Parse equal_positions
-	void parseEqualPositions(tokenizer& parser, std::vector<std::pair<size_t, EqualPosition_t>>& equalPositions, size_t openBracketsCount);
+	void parseEqualPositions(tokenizer& parser);
 
 	Point parseGeomFromText(tokenizer& parser) const;
 	void parseDWithin(tokenizer& parser, OpType nextOp);

@@ -612,11 +612,10 @@ void QueriesApi::CheckSqlQueries() {
 
 void QueriesApi::checkDslQuery(std::string_view dslQuery, Query&& checkQuery) {
 	Query parsedQuery;
-	Error err = parsedQuery.FromJSON(dslQuery);
-	ASSERT_TRUE(err.ok()) << "Query: " << dslQuery << "; err: " << err.what();
+	ASSERT_NO_THROW(parsedQuery = Query::FromJSON(dslQuery));
 
 	QueryResults dslQr;
-	err = rt.reindexer->Select(parsedQuery, dslQr);
+	auto err = rt.reindexer->Select(parsedQuery, dslQr);
 	ASSERT_TRUE(err.ok()) << "Query: " << dslQuery << "; err: " << err.what();
 
 	QueryResults checkQr;

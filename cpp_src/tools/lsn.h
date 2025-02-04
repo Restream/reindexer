@@ -17,14 +17,13 @@ struct LSNUnpacked {
 	int64_t counter;
 };
 
-struct lsn_t {
+class lsn_t {
 private:
-	static constexpr int16_t kMinServerIDValue = 0;
-	static constexpr int16_t kMaxServerIDValue = 999;
-
 	static constexpr int64_t kMaxCounter = 1000000000000000ll;
 
 public:
+	static constexpr int16_t kMinServerIDValue = 0;
+	static constexpr int16_t kMaxServerIDValue = 999;
 	static constexpr int64_t kDefaultCounter = kMaxCounter - 1;
 
 	void GetJSON(JsonBuilder& builder) const;
@@ -75,10 +74,10 @@ public:
 	}
 	int64_t SetCounter(int64_t counter) {
 		validateCounter(counter);
-		payload_ = Server() * kMaxCounter + counter;
 		if (counter < 0) {
 			counter = kDefaultCounter;
 		}
+		payload_ = Server() * kMaxCounter + counter;
 		return payload_;
 	}
 	int64_t Counter() const noexcept { return payload_ % kMaxCounter; }

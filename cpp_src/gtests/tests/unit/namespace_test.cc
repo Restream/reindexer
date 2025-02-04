@@ -2917,10 +2917,9 @@ TEST_F(NsApi, TestUpdateFieldWithExpressions) {
 }
 
 static void checkQueryDsl(const Query& src) {
-	Query dst;
 	const std::string dsl = src.GetJSON();
-	Error err = dst.FromJSON(dsl);
-	EXPECT_TRUE(err.ok()) << err.what();
+	Query dst;
+	EXPECT_NO_THROW(dst = Query::FromJSON(dsl));
 	bool objectValues = false;
 	if (src.UpdateFields().size() > 0) {
 		EXPECT_TRUE(src.UpdateFields().size() == dst.UpdateFields().size());
@@ -2997,6 +2996,18 @@ TEST_F(NsApi, TestModifyQueriesSqlEncoder) {
 	Query q7 = Query::FromSQL(sqlSpeccharsUpdate);
 	EXPECT_EQ(q7.GetSQL(), sqlSpeccharsUpdate);
 	checkQueryDsl(q7);
+
+	{
+		// Check from #674
+		Query q = Query::FromSQL(
+			"explain select id, name, count(*) from ns where (a = 100 and b = 10 equal_position(a,b)) or (c < 10 and d = 77 "
+			"equal_position(c,d)) inner join (select * from ns2 where not a == 0) on ns.id == ns2.id order by id limit 100 offset 10");
+		q.Merge(Query("ns3"));
+		q.Merge(Query("ns4"));
+		Query dst;
+		EXPECT_NO_THROW(dst = Query::FromJSON(q.GetJSON()));
+		ASSERT_EQ(q.GetSQL(), dst.GetSQL());
+	}
 }
 
 static void generateObject(reindexer::JsonBuilder& builder, const std::string& prefix, ReindexerApi* rtapi) {

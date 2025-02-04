@@ -61,7 +61,16 @@ std::unique_ptr<Index> Index::New(const IndexDef& idef, PayloadType&& payloadTyp
 		case IndexUuidHash:
 			return IndexUuid_New(idef, std::move(payloadType), std::move(fields), cacheCfg);
 	}
-	throw Error(errParams, "Ivalid index type %d for index '%s'", idef.Type(), idef.name_);
+	throw Error(errParams, "Invalid index type %d for index '%s'", idef.Type(), idef.name_);
+}
+
+IndexPerfStat Index::GetIndexPerfStat() {
+	return IndexPerfStat(name_, selectPerfCounter_.Get<PerfStat>(), commitPerfCounter_.Get<PerfStat>());
+}
+
+void Index::ResetIndexPerfStat() {
+	this->selectPerfCounter_.Reset();
+	this->commitPerfCounter_.Reset();
 }
 
 template <typename S>

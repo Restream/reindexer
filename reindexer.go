@@ -159,6 +159,7 @@ type AggregationResult struct {
 
 // NewReindex Create new instanse of Reindexer DB
 // Returns pointer to created instance
+// The absolute path for Windows builtin should look like 'builtin://C:/my/folder/db'
 func NewReindex(dsn interface{}, options ...interface{}) *Reindexer {
 	rx := &Reindexer{
 		impl: newReindexImpl(dsn, options...),

@@ -60,6 +60,7 @@ public:
 	template <typename... Ts>
 	explicit Uuid(Ts...) = delete;
 	[[nodiscard]] explicit operator std::string() const;
+	[[nodiscard]] explicit operator key_string() const;
 	[[nodiscard]] ComparationResult Compare(const Uuid& other) const noexcept {
 		if (data_[0] == other.data_[0]) {
 			return data_[1] == other.data_[1] ? ComparationResult::Eq

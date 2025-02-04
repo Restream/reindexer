@@ -1,6 +1,7 @@
 #pragma once
 
 #include "args.h"
+#include "core/keyvalue/p_string.h"
 #include "cproto.h"
 #include "estl/chunk.h"
 #include "net/connectinstatscollector.h"
@@ -151,14 +152,34 @@ private:
 
 	template <typename T, std::enable_if_t<!is_optional<T>::value, int> = 0>
 	static T get_arg(const Args& args, size_t index, const Context& ctx) {
-		if (index >= args.size()) {
-			throw Error(errParams, "Invalid args of %s call; argument %d is not submitted", CmdName(ctx.call->cmd), static_cast<int>(index));
+		if rx_unlikely (index >= args.size()) {
+			throw Error(errParams, "Invalid args of %s call; argument %d is not submitted", CmdName(ctx.call->cmd),
+						static_cast<int>(index));
+		}
+		if rx_unlikely (!args[index].Type().IsSame(KeyValueType::From<T>())) {
+			throw Error(errLogic, "Incorrect variant type of %s call, argument index %d, type '%s', expected type '%s'",
+						CmdName(ctx.call->cmd), static_cast<int>(index), args[index].Type().Name(), KeyValueType::From<T>().Name());
 		}
 		return T(args[index]);
 	}
 	template <typename T, std::enable_if_t<is_optional<T>::value, int> = 0>
-	static T get_arg(const Args& args, size_t index, const Context&) {
-		return index < args.size() ? T(typename T::value_type(args[index])) : T();
+	static T get_arg(const Args& args, size_t index, const Context& ctx) {
+		if rx_unlikely (index >= args.size()) {
+#if !defined(__clang__) && defined(__GNUC__) && __GNUC__ == 9
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+			return T();
+#if !defined(__clang__) && defined(__GNUC__) && __GNUC__ == 9
+#pragma GCC diagnostic pop
+#endif
+		}
+		if rx_unlikely (!args[index].Type().IsSame(KeyValueType::From<typename T::value_type>())) {
+			throw Error(errLogic, "Incorrect variant type of %s call, argument index %d, type '%s', optional expected type '%s'",
+						CmdName(ctx.call->cmd), static_cast<int>(index), args[index].Type().Name(),
+						KeyValueType::From<typename T::value_type>().Name());
+		}
+		return T(typename T::value_type(args[index]));
 	}
 
 	template <typename K, typename... Args>

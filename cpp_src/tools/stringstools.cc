@@ -1,12 +1,11 @@
 #include <memory.h>
 #include <algorithm>
-#include <locale>
 
 #include "atoi/atoi.h"
-#include "fmt/compile.h"
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/uuid.h"
 #include "estl/one_of.h"
+#include "fmt/compile.h"
 #include "frozen_str_tools.h"
 #include "itoa/itoa.h"
 #include "stringstools.h"
@@ -172,8 +171,11 @@ Variant stringToVariant(std::string_view value) {
 	return kvt.EvaluateOneOf([value](KeyValueType::Int64) { return Variant(int64_t(stoll(value))); },
 							 [value](KeyValueType::Int) { return Variant(int(stoi(value))); },
 							 [value](KeyValueType::Double) {
-								 char* p = nullptr;
-								 return Variant(double(strtod(value.data(), &p)));
+								 using double_conversion::StringToDoubleConverter;
+								 static const StringToDoubleConverter converter{StringToDoubleConverter::NO_FLAGS, NAN, NAN, nullptr,
+																				nullptr};
+								 int countOfCharsParsedAsDouble = 0;
+								 return Variant(converter.StringToDouble(value.data(), value.size(), &countOfCharsParsedAsDouble));
 							 },
 							 [value](KeyValueType::String) { return Variant(make_key_string(value.data(), value.length())); },
 							 [value](KeyValueType::Bool) noexcept { return (value.size() == 4) ? Variant(true) : Variant(false); },
@@ -419,13 +421,38 @@ ComparationResult collateCompare<CollateUTF8>(std::string_view lhs, std::string_
 	return ComparationResult::Eq;
 }
 
+static long int strntol(std::string_view str, const char** end, int base) noexcept {
+	char buf[24];
+	long int ret;
+	const char* beg = str.data();
+	auto sz = str.size();
+	for (; beg && sz && *beg == ' '; beg++, sz--);
+	assertrx_dbg(end);
+
+	if (!sz || sz >= sizeof(buf)) {
+		*end = str.data();
+		return 0;
+	}
+
+	// beg can not be null if sz != 0
+	// NOLINTNEXTLINE(clang-analyzer-core.NonNullParamChecker)
+	std::memcpy(buf, beg, sz);
+	buf[sz] = '\0';
+	ret = std::strtol(buf, const_cast<char**>(end), base);
+	if (ret == LONG_MIN || ret == LONG_MAX) {
+		return ret;
+	}
+	*end = str.data() + (*end - buf);
+	return ret;
+}
+
 template <>
 ComparationResult collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept {
-	char* posl = nullptr;
-	char* posr = nullptr;
+	const char* posl = nullptr;
+	const char* posr = nullptr;
 
-	int numl = strtol(lhs.data(), &posl, 10);
-	int numr = strtol(rhs.data(), &posr, 10);
+	int numl = strntol(lhs, &posl, 10);
+	int numr = strntol(rhs, &posr, 10);
 
 	if (numl == numr) {
 		auto minlen = std::min(lhs.size() - (posl - lhs.data()), rhs.size() - (posr - rhs.data()));

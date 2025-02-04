@@ -111,15 +111,17 @@ Item::FieldRef& Item::FieldRef::operator=(span<const T> arr) {
 			}
 		} else {
 			if (!itemImpl_->holder_) {
-				itemImpl_->holder_ = std::make_unique<std::deque<std::string>>();
+				itemImpl_->holder_ = std::make_unique<ItemImplRawData::HolderT>();
 			}
 			for (auto& elem : arr) {
 				if constexpr (std::is_same_v<T, p_string>) {
-					itemImpl_->holder_->push_back(elem.toString());
+					itemImpl_->holder_->emplace_back(elem.getKeyString());
+				} else if constexpr (std::is_same_v<T, key_string>) {
+					itemImpl_->holder_->emplace_back(elem);
 				} else {
-					itemImpl_->holder_->push_back(elem);
+					itemImpl_->holder_->emplace_back(make_key_string(elem));
 				}
-				pl.Set(field_, pos++, Variant(p_string{&itemImpl_->holder_->back()}, Variant::no_hold_t{}));
+				pl.Set(field_, pos++, Variant(p_string{itemImpl_->holder_->back()}, Variant::no_hold_t{}));
 			}
 		}
 	} else {

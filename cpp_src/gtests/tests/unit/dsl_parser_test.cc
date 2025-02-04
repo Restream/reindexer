@@ -3,8 +3,7 @@
 static void checkQueryDslParse(const reindexer::Query& q) {
 	const std::string dsl = q.GetJSON();
 	Query parsedQuery;
-	Error err = parsedQuery.FromJSON(dsl);
-	ASSERT_TRUE(err.ok()) << err.what() << "\nDSL:\n" << dsl;
+	ASSERT_NO_THROW(parsedQuery = Query::FromJSON(dsl));
 	ASSERT_EQ(q, parsedQuery) << "DSL:\n" << dsl << "\nOriginal query:\n" << q.GetSQL() << "\nParsed query:\n" << parsedQuery.GetSQL();
 }
 

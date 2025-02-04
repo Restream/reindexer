@@ -1333,8 +1333,20 @@ TEST_F(RPCClientTestApi, QuerySetObjectUpdate) {
 
 		insertFn(kNsName, kNsSize);
 
+		client::CoroQueryResults qr;
 		{
-			client::CoroQueryResults qr;
+			err = rx.Update(Query(kNsName).Where("id", CondGe, "0").SetObject("nested", Variant(std::string(R"([{"field": 1240}])"))), qr);
+			ASSERT_FALSE(err.ok());
+			EXPECT_EQ(err.what(), "Error modifying field value: 'Unsupported JSON format. Unnamed field detected'");
+		}
+
+		{
+			err = rx.Update(Query(kNsName).Where("id", CondGe, "0").SetObject("nested", Variant(std::string(R"({{"field": 1240}})"))), qr);
+			ASSERT_FALSE(err.ok());
+			EXPECT_EQ(err.what(), "Error modifying field value: 'JSONDecoder: Error parsing json: unquoted key, pos 15'");
+		}
+
+		{
 			// R"(UPDATE TestQuerySetObjectUpdate SET nested = {"field": 1240} where id >= 0)"
 			auto query = Query(kNsName).Where("id", CondGe, "0").SetObject("nested", Variant(std::string(R"({"field": 1240})")));
 			err = rx.Update(query, qr);

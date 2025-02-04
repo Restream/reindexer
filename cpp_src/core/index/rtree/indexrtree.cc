@@ -82,7 +82,7 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArra
 	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_)) {
 		this->isBuilt_ = false;
 		// reset cache
-		this->cache_.reset();
+		this->cache_.ResetImpl();
 		clearCache = true;
 	}
 	this->tracker_.markUpdated(this->idx_map, keyIt);
@@ -105,7 +105,7 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const Varia
 	if (keyIt == this->idx_map.end()) {
 		return;
 	}
-	this->cache_.reset();
+	this->cache_.ResetImpl();
 	clearCache = true;
 	this->isBuilt_ = false;
 
@@ -113,7 +113,7 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const Varia
 	delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
-	assertf(this->Opts().IsSparse() || delcnt, "Delete unexists id from index '%s' id=%d,key=%s (%s)", this->name_, id,
+	assertf(this->Opts().IsSparse() || delcnt, "Delete non-existent id from index '%s' id=%d,key=%s (%s)", this->name_, id,
 			Variant(keys).template As<std::string>(this->payloadType_, this->Fields()),
 			Variant(keyIt->first).As<std::string>(this->payloadType_, this->Fields()));
 

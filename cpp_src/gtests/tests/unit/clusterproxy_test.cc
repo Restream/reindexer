@@ -1121,6 +1121,7 @@ TEST_F(ClusterizationProxyApi, Shutdown) {
 				std::this_thread::sleep_for(kSleepTime);
 			}
 		};
+		threads.reserve(kClusterSize);
 		for (size_t i = 0; i < kClusterSize; ++i) {
 			threads.emplace_back(addItemFn, i % kClusterSize, kNsName);
 		}

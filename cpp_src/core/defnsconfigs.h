@@ -15,7 +15,7 @@ constexpr char kClusterConfigNamespace[] = "#clusterconfig";
 const std::string_view kReplicationStatsNamespace = "#replicationstats";
 constexpr char kNsNameField[] = "name";
 
-const std::vector<std::string> kDefDBConfig = {
+constexpr std::string_view kDefDBConfig[] = {
 	R"json({
 		"type":"profiling",
 		"profiling":{
@@ -61,6 +61,7 @@ const std::vector<std::string> kDefDBConfig = {
 				"max_iterations_idset_preresult":20000,
 				"index_updates_counting_mode":false,
 				"sync_storage_flush_limit":20000,
+				"strict_mode":"names",
 				"cache":{
 					"index_idset_cache_size":134217728,
 					"index_idset_hits_to_cache":2,
@@ -107,7 +108,7 @@ const std::vector<std::string> kDefDBConfig = {
 		}
 	})json"};
 
-const std::vector<NamespaceDef> kSystemNsDefs = {
+const NamespaceDef kSystemNsDefs[] = {
 	NamespaceDef(kConfigNamespace, StorageOpts().Enabled().CreateIfMissing().DropOnFileFormatError())
 		.AddIndex("type", "hash", "string", IndexOpts().PK()),
 	NamespaceDef(kPerfStatsNamespace, StorageOpts())
@@ -154,7 +155,6 @@ const std::vector<NamespaceDef> kSystemNsDefs = {
 		.AddIndex("storage_enabled", "-", "bool", IndexOpts().Dense())
 		.AddIndex("storage_status", "-", "string", IndexOpts().Dense())
 		.AddIndex("storage_path", "-", "string", IndexOpts().Dense())
-		.AddIndex("storage_loaded", "-", "bool", IndexOpts().Dense())
 		.AddIndex("optimization_completed", "-", "bool", IndexOpts().Dense())
 		.AddIndex("query_cache.total_size", "-", "int64", IndexOpts().Dense())
 		.AddIndex("query_cache.items_count", "-", "int64", IndexOpts().Dense())

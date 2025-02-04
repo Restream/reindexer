@@ -120,15 +120,15 @@ func TestOpenNs(t *testing.T) {
 
 		err := DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), FailSimple{})
 		assert.ErrorContains(t, err,
-			"non-composite/non-joined field ('Age'), marked with `json:-` can not have explicit reindex tags, but it does ('age,hash')")
+			"non-composite/non-joined field ('Age'), marked with `json:-` can not have explicit reindex tags, but it does (reindex:\"age,hash\")")
 
 		err = DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), FailPrivate{})
 		assert.ErrorContains(t, err,
-			"unexported non-composite field ('private') can not have reindex tags, but it does ('private,hash')")
+			"unexported non-composite field ('private') can not have reindex tags, but it does (reindex:\"private,hash\")")
 
 		err = DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), FailPrivateJoin{})
 		assert.ErrorContains(t, err,
-			"unexported non-composite field ('privateAccounts') can not have reindex tags, but it does ('accounts,,joined')")
+			"unexported non-composite field ('privateAccounts') can not have reindex tags, but it does (reindex:\"accounts,,joined\")")
 
 		err = DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), FailJoinScalar{})
 		assert.ErrorContains(t, err,

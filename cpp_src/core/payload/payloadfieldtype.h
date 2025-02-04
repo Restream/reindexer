@@ -5,16 +5,20 @@
 
 namespace reindexer {
 
+class Index;
+struct IndexDef;
 // Type of field
 class PayloadFieldType {
 public:
+	explicit PayloadFieldType(const Index&, const IndexDef&) noexcept;
 	PayloadFieldType(KeyValueType t, std::string n, std::vector<std::string> j, bool a) noexcept
-		: type_(t), name_(std::move(n)), jsonPaths_(std::move(j)), offset_(0), isArray_(a) {}
+		: type_(t), name_(std::move(n)), jsonPaths_(std::move(j)), offset_(0), isArray_(a), arrayDim_(-1) {}
 
 	size_t Sizeof() const noexcept;
 	size_t ElemSizeof() const noexcept;
 	size_t Alignof() const noexcept;
 	bool IsArray() const noexcept { return isArray_; }
+	int8_t ArrayDim() const noexcept { return arrayDim_; }
 	void SetArray() noexcept { isArray_ = true; }
 	void SetOffset(size_t o) noexcept { offset_ = o; }
 	size_t Offset() const noexcept { return offset_; }
@@ -32,6 +36,7 @@ private:
 	std::vector<std::string> jsonPaths_;
 	size_t offset_;
 	bool isArray_;
+	int8_t arrayDim_;
 };
 
 }  // namespace reindexer

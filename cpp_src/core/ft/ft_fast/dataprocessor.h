@@ -86,7 +86,7 @@ private:
 
 	[[nodiscard]] size_t buildWordsMap(words_map& m, bool multithread, intrusive_ptr<const ISplitter> textSplitter);
 	void buildVirtualWord(std::string_view word, words_map& words_um, VDocIdType docType, int rfield, size_t insertPos,
-						  std::vector<std::string>& container);
+						  std::vector<std::string_view>& container);
 	void buildTyposMap(uint32_t startPos, const WordsVector& preprocWords);
 	[[nodiscard]] static WordsVector insertIntoSuffix(words_map& words_um, DataHolder<IdCont>& holder);
 	[[nodiscard]] static size_t commitIdRelSets(const WordsVector& preprocWords, words_map& words_um, DataHolder<IdCont>& holder,

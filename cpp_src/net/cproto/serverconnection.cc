@@ -259,21 +259,33 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 				Args ctxArgs;
 				ctxArgs.Unpack(ser);
 				if (ctxArgs.size() > 0) {
+					if (!ctxArgs[0].Type().IsSame(KeyValueType::From<int64_t>())) {
+						throw Error(errLogic, "Incorrect variant type for 'execTimeout' type='%s'", ctxArgs[0].Type().Name());
+					}
 					ctx.call->execTimeout = milliseconds(int64_t(ctxArgs[0]));
 				} else {
 					ctx.call->execTimeout = milliseconds(0);
 				}
 				if (ctxArgs.size() > 1) {
+					if (!ctxArgs[1].Type().IsSame(KeyValueType::From<int64_t>())) {
+						throw Error(errLogic, "Incorrect variant type for 'lsn' type='%s'", ctxArgs[1].Type().Name());
+					}
 					ctx.call->lsn = lsn_t(int64_t(ctxArgs[1]));
 				} else {
 					ctx.call->lsn = lsn_t();
 				}
 				if (ctxArgs.size() > 2) {
+					if (!ctxArgs[2].Type().IsSame(KeyValueType::From<int64_t>())) {
+						throw Error(errLogic, "Incorrect variant type for 'emmiterServerId' type='%s'", ctxArgs[2].Type().Name());
+					}
 					ctx.call->emmiterServerId = int64_t(ctxArgs[2]);
 				} else {
 					ctx.call->emmiterServerId = -1;
 				}
 				if (ctxArgs.size() > 3) {
+					if (!ctxArgs[3].Type().IsSame(KeyValueType::From<int64_t>())) {
+						throw Error(errLogic, "Incorrect variant type for 'shardIdValue' type='%s'", ctxArgs[3].Type().Name());
+					}
 					const int64_t shardIdValue = int64_t(ctxArgs[3]);
 					if (shardIdValue < 0) {
 						if (shardIdValue < std::numeric_limits<int>::min()) {

@@ -26,7 +26,7 @@ class suffix_map {
 		iterator(const iterator& other) noexcept : idx_(other.idx_), m_(other.m_) {}
 		// NOLINTNEXTLINE(bugprone-unhandled-self-assignment)
 		iterator& operator=(const iterator& other) noexcept {
-			idx_ = other.idx;
+			idx_ = other.idx_;
 			m_ = other.m_;
 			return *this;
 		}
@@ -35,7 +35,7 @@ class suffix_map {
 			return value_type(std::make_pair(p, m_->mapped_[m_->sa_[idx_]]));
 		}
 
-		const value_type operator->() const {
+		value_type operator->() const {
 			auto* p = &m_->text_[m_->sa_[idx_]];
 			return value_type(std::make_pair(p, m_->mapped_[m_->sa_[idx_]]));
 		}
@@ -136,25 +136,21 @@ public:
 		return end();
 	}
 
-	int insert(std::string_view word, const V& val, int virtual_len = -1) {
-		if (virtual_len == -1) {
-			virtual_len = word.length();
-		}
+	int insert(std::string_view word, const V& val) {
 		int wpos = text_.size();
 		size_t real_len = word.length();
 		text_.insert(text_.end(), word.begin(), word.end());
 		text_.emplace_back('\0');
 		mapped_.insert(mapped_.end(), real_len + 1, val);
 		words_.emplace_back(wpos);
-		words_len_.emplace_back(real_len, virtual_len);
+		words_len_.emplace_back(real_len);
 		built_ = false;
 		return wpos;
 	}
 
 	const CharT* word_at(int idx) const noexcept { return &text_[words_[idx]]; }
 
-	int16_t word_len_at(int idx) const noexcept { return words_len_[idx].first; }
-	int16_t virtual_word_len(int idx) const noexcept { return words_len_[idx].second; }
+	int16_t word_len_at(int idx) const noexcept { return words_len_[idx]; }
 
 	void build() {
 		if (built_) {
@@ -220,7 +216,7 @@ protected:
 
 	std::vector<int> sa_, words_;
 	std::vector<int16_t> lcp_;
-	std::vector<std::pair<uint8_t, uint8_t>> words_len_;
+	std::vector<uint8_t> words_len_;
 	std::vector<V> mapped_;
 	std::vector<CharT> text_;
 	bool built_ = false;

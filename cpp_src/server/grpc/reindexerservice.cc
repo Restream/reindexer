@@ -624,7 +624,11 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 	reindexer::Query q;
 	switch (query.encdoingtype()) {
 		case EncodingType::JSON:
-			status = q.FromJSON(query.data());
+			try {
+				q = reindexer::Query::FromJSON(query.data());
+			} catch (reindexer::Error& err) {
+				status = std::move(err);
+			}
 			break;
 		case EncodingType::MSGPACK:
 			// TODO: merge from appropriate MR

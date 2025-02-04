@@ -50,7 +50,7 @@ public:
 	unsigned Count() const noexcept { return count_; }
 	bool MoreThanOneEvaluation() const noexcept { return queryEntryAddedByForcedSortOptimization_; }
 	bool AvailableSelectBySortIndex() const noexcept { return !queryEntryAddedByForcedSortOptimization_ || !forcedStage(); }
-	void InjectConditionsFromJoins(JoinedSelectors& js, OnConditionInjections& expalainOnInjections, LogLevel, bool inTransaction,
+	void InjectConditionsFromJoins(JoinedSelectors& js, OnConditionInjections& explainOnInjections, LogLevel, bool inTransaction,
 								   bool enableSortOrders, const RdxContext& rdxCtx);
 	void Reduce(bool isFt);
 	using QueryEntries::Size;

@@ -210,17 +210,17 @@ int QueryPreprocessor::calculateMaxIterations(const size_t from, const size_t to
 	return res;
 }
 
-void QueryPreprocessor::InjectConditionsFromJoins(JoinedSelectors& js, OnConditionInjections& expalainOnInjections, LogLevel logLevel,
+void QueryPreprocessor::InjectConditionsFromJoins(JoinedSelectors& js, OnConditionInjections& explainOnInjections, LogLevel logLevel,
 												  bool inTransaction, bool enableSortOrders, const RdxContext& rdxCtx) {
 	h_vector<int, 256> maxIterations(Size());
 	span<int> maxItersSpan(maxIterations.data(), maxIterations.size());
 	const int maxIters = calculateMaxIterations(0, Size(), ns_.itemsCount(), maxItersSpan, inTransaction, enableSortOrders, rdxCtx);
 	const bool needExplain = query_.NeedExplain() || logLevel >= LogInfo;
 	if (needExplain) {
-		injectConditionsFromJoins<JoinOnExplainEnabled>(0, Size(), js, expalainOnInjections, maxIters, maxIterations, inTransaction,
+		injectConditionsFromJoins<JoinOnExplainEnabled>(0, Size(), js, explainOnInjections, maxIters, maxIterations, inTransaction,
 														enableSortOrders, rdxCtx);
 	} else {
-		injectConditionsFromJoins<JoinOnExplainDisabled>(0, Size(), js, expalainOnInjections, maxIters, maxIterations, inTransaction,
+		injectConditionsFromJoins<JoinOnExplainDisabled>(0, Size(), js, explainOnInjections, maxIters, maxIterations, inTransaction,
 														 enableSortOrders, rdxCtx);
 	}
 	assertrx_dbg(maxIterations.size() == Size());
@@ -371,7 +371,7 @@ std::pair<size_t, bool> QueryPreprocessor::removeAlwaysTrue(size_t begin, size_t
 }
 
 void QueryPreprocessor::Reduce(bool isFt) {
-	bool changed;
+	bool changed = false;
 	do {
 		changed = removeBrackets();
 		changed = LookupQueryIndexes() || changed;
@@ -404,9 +404,12 @@ size_t QueryPreprocessor::removeBrackets(size_t begin, size_t end) {
 	if (begin != end && GetOperation(begin) == OpOr) {
 		throw Error{errQueryExec, "OR operator in first condition or after left join"};
 	}
+	if (!equalPositions.empty()) {
+		return 0;
+	}
 	size_t deleted = 0;
 	for (size_t i = begin; i < end - deleted; i = Next(i)) {
-		if (!IsSubTree(i)) {
+		if (!IsSubTree(i) || (Is<QueryEntriesBracket>(i) && !Get<QueryEntriesBracket>(i).equalPositions.empty())) {
 			continue;
 		}
 		deleted += removeBrackets(i + 1, Next(i));
@@ -1487,7 +1490,7 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 																				JoinPreResult::CPtr joinPreresult,
 																				const QueryJoinEntry& joinEntry, CondType condition,
 																				int mainQueryMaxIterations, const RdxContext& rdxCtx) {
-	size_t limit = 0;
+	int64_t limit = 0;
 	const auto& rNsCfg = rightNs.config();
 	if (rNsCfg.maxPreselectSize == 0) {
 		limit = std::max<int64_t>(rNsCfg.minPreselectSize, rightNs.itemsCount() * rNsCfg.maxPreselectPart);
@@ -1497,8 +1500,12 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 		limit =
 			std::min(std::max<int64_t>(rNsCfg.minPreselectSize, rightNs.itemsCount() * rNsCfg.maxPreselectPart), rNsCfg.maxPreselectSize);
 	}
+	constexpr unsigned kExtraLimit = 2;
+	if (limit < 0 || limit > (std::numeric_limits<unsigned>::max() - kExtraLimit)) {
+		limit = std::numeric_limits<unsigned>::max() - kExtraLimit;
+	}
 	joinQuery.Explain(query_.NeedExplain());
-	joinQuery.Limit(limit + 2);
+	joinQuery.Limit(limit + kExtraLimit);
 	joinQuery.Offset(QueryEntry::kDefaultOffset);
 	joinQuery.sortingEntries_.clear<false>();
 	joinQuery.forcedSortOrder_.clear();
@@ -1535,7 +1542,7 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 	LocalQueryResults qr;
 	SelectCtxWithJoinPreSelect ctx{joinQuery, nullptr, JoinPreResultExecuteCtx{std::move(joinPreresult), mainQueryMaxIterations}};
 	rightNs.Select(qr, ctx, rdxCtx);
-	if (ctx.preSelect.Mode() == JoinPreSelectMode::InjectionRejected || qr.Count() > limit) {
+	if (ctx.preSelect.Mode() == JoinPreSelectMode::InjectionRejected || qr.Count() > size_t(limit)) {
 		return {CondAny, {}};
 	}
 	assertrx_throw(qr.aggregationResults.size() == 1);

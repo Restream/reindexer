@@ -50,17 +50,16 @@ public:
 class WordEntry {
 public:
 	WordEntry() noexcept = default;
-	WordEntry(const IdRelSet& _vids, bool _virtualWord) : vids(_vids), virtualWord(_virtualWord) {}
+	WordEntry(const IdRelSet& _vids) : vids_(_vids) {}
 	WordEntry(const WordEntry&) = delete;
 	WordEntry(WordEntry&&) noexcept = default;
 	WordEntry& operator=(const WordEntry&) = delete;
 	WordEntry& operator=(WordEntry&&) noexcept = default;
 
 	// Explicit copy
-	WordEntry MakeCopy() const { return WordEntry(this->vids, this->virtualWord); }
+	WordEntry MakeCopy() const { return WordEntry(vids_); }
 
-	IdRelSet vids;
-	bool virtualWord = false;
+	IdRelSet vids_;
 };
 enum ProcessStatus { FullRebuild, RecommitLast, CreateNew };
 

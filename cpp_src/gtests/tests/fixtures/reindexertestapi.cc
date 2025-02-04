@@ -277,5 +277,20 @@ std::vector<int> ReindexerTestApi<DB>::RandIntVector(size_t size, int start, int
 	return vec;
 }
 
+template <typename DB>
+std::vector<std::string> ReindexerTestApi<DB>::GetSerializedQrItems(reindexer::QueryResults& qr) {
+	std::vector<std::string> items;
+	items.reserve(qr.Count());
+	reindexer::WrSerializer wrser;
+	for (auto it : qr) {
+		EXPECT_TRUE(it.Status().ok()) << it.Status().what();
+		wrser.Reset();
+		auto err = it.GetJSON(wrser, false);
+		EXPECT_TRUE(err.ok()) << err.what();
+		items.emplace_back(wrser.Slice());
+	}
+	return items;
+}
+
 template class ReindexerTestApi<reindexer::Reindexer>;
 template class ReindexerTestApi<reindexer::client::Reindexer>;

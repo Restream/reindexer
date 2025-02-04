@@ -2,13 +2,14 @@
 
 #include <core/type_consts.h>
 #include <functional>
-#include <memory>
 #include <string>
 #include <string_view>
 #include "core/keyvalue/p_string.h"
 #include "estl/chunk.h"
 #include "estl/h_vector.h"
+#include "estl/intrusive_ptr.h"
 #include "estl/span.h"
+#include "tools/lsn.h"
 
 namespace reindexer {
 
@@ -105,11 +106,17 @@ struct PackedWALRecord : public h_vector<uint8_t, 12> {
 
 #pragma pack(push, 1)
 struct MarkedPackedWALRecord : public PackedWALRecord {
-	MarkedPackedWALRecord() = default;
+	MarkedPackedWALRecord(int16_t s) noexcept : server{s} {
+		assertrx_dbg(server >= lsn_t::kMinServerIDValue);
+		assertrx_dbg(server <= lsn_t::kMaxServerIDValue);
+	}
 	template <typename RecordT>
-	MarkedPackedWALRecord(int16_t s, RecordT&& rec) : PackedWALRecord(std::forward<RecordT>(rec)), server(s) {}
+	MarkedPackedWALRecord(int16_t s, RecordT&& rec) : PackedWALRecord(std::forward<RecordT>(rec)), server(s) {
+		assertrx_dbg(server >= lsn_t::kMinServerIDValue);
+		assertrx_dbg(server <= lsn_t::kMaxServerIDValue);
+	}
 
-	int16_t server;
+	int16_t server = -1;
 	void Pack(int16_t _serverId, const WALRecord& rec);
 };
 #pragma pack(pop)

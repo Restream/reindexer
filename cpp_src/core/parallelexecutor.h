@@ -1,5 +1,6 @@
 #pragma once
 
+#include <deque>
 #include "cluster/sharding/sharding.h"
 #include "core/queryresults/queryresults.h"
 

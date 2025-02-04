@@ -1,6 +1,5 @@
 #pragma once
 
-#include <deque>
 #include <vector>
 
 #include "core/cjson/msgpackdecoder.h"
@@ -98,24 +97,7 @@ public:
 	const std::vector<std::string>& GetPrecepts() const noexcept { return precepts_; }
 	void Unsafe(bool enable) noexcept { unsafe_ = enable; }
 	bool IsUnsafe() const noexcept { return unsafe_; }
-	void Clear() {
-		tagsMatcher_ = TagsMatcher();
-		precepts_.clear();
-		cjson_ = std::string_view();
-		holder_.reset();
-		keyStringsHolder_.reset();
-		sourceData_.reset();
-		largeJSONStrings_.clear();
-		tupleData_.reset();
-		ser_ = WrSerializer();
-
-		GetPayload().Reset();
-		payloadValue_.SetLSN(lsn_t());
-
-		unsafe_ = false;
-		ns_.reset();
-		realValue_.Free();
-	}
+	void Clear();
 	void SetNamespace(std::shared_ptr<Namespace> ns) noexcept { ns_ = std::move(ns); }
 	std::shared_ptr<Namespace> GetNamespace() const noexcept { return ns_; }
 	static void validateModifyArray(const VariantArray& values);

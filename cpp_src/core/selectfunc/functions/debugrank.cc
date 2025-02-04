@@ -40,7 +40,7 @@ bool DebugRank::Process(ItemRef& res, PayloadType& plType, const SelectFuncStruc
 		throw Error(errLogic, "Unable to apply debug_rank function to the non-string field '%s'", func.field);
 	}
 
-	const std::string* data = p_string(kr[0]).getCxxstr();
+	const std::string_view data = std::string_view(p_string(kr[0]));
 
 	const auto pva = dataFtCtx.area[it->second].GetAreas(func.fieldNo);
 	if (!pva || pva->Empty()) {
@@ -51,7 +51,7 @@ bool DebugRank::Process(ItemRef& res, PayloadType& plType, const SelectFuncStruc
 	std::string resultString;
 
 	auto splitterTask = ftctx->GetData()->splitter->CreateTask();
-	splitterTask->SetText(*data);
+	splitterTask->SetText(data);
 
 	static const std::string_view startString = "<!>";
 	static const std::string_view endString = "<!!>";
@@ -63,7 +63,7 @@ bool DebugRank::Process(ItemRef& res, PayloadType& plType, const SelectFuncStruc
 		bool next = false;
 		int endStringCount = 0;
 		std::pair<int, int> pos = splitterTask->Convert(areaVector[id].start, areaVector[id].end);
-		resultString += std::string_view(data->c_str() + beforeStr, pos.first - beforeStr);
+		resultString += std::string_view(data.data() + beforeStr, pos.first - beforeStr);
 		do {
 			next = false;
 			switch (areaVector[id].phraseMode) {
@@ -86,13 +86,13 @@ bool DebugRank::Process(ItemRef& res, PayloadType& plType, const SelectFuncStruc
 				next = true;
 			}
 		} while (next);
-		resultString += std::string_view(data->c_str() + pos.first, pos.second - pos.first);
+		resultString += std::string_view(data.data() + pos.first, pos.second - pos.first);
 		beforeStr = pos.second;
 		for (int i = 0; i < endStringCount; i++) {
 			resultString += endString;
 		}
 	}
-	resultString += std::string_view(data->c_str() + beforeStr, data->size() - beforeStr);
+	resultString += std::string_view(data.data() + beforeStr, data.size() - beforeStr);
 
 	stringsHolder.emplace_back(make_key_string(std::move(resultString)));
 	res.Value().Clone();

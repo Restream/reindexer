@@ -123,7 +123,7 @@ void WALTracker::Init(int64_t sz, int64_t minLSN, int64_t maxLSN, AsyncStorage& 
 void WALTracker::put(lsn_t lsn, const WALRecord& rec) {
 	int64_t pos = lsn.Counter() % walSize_;
 	if (pos >= int64_t(records_.size())) {
-		records_.resize(uint64_t(pos + 1));
+		records_.resize(uint64_t(pos + 1), GetServer());
 	}
 
 	heapSize_ -= records_[pos].heap_size();
@@ -201,10 +201,10 @@ std::vector<std::pair<lsn_t, std::string>> WALTracker::readFromStorage(int64_t& 
 void WALTracker::initPositions(int64_t sz, int64_t minLSN, int64_t maxLSN) {
 	int64_t counter = maxLSN + 1;
 	lsnCounter_.SetCounter(counter);
-	lastLsn_ = lsn_t(maxLSN, lsnCounter_.Server());
+	lastLsn_ = lsn_t(maxLSN, GetServer());
 	walSize_ = sz;
 	records_.clear();
-	records_.resize(std::min(counter, walSize_));
+	records_.resize(std::min(counter, walSize_), GetServer());
 	heapSize_ = 0;
 	if (minLSN == std::numeric_limits<int64_t>::max() || !walSize_) {
 		walOffset_ = 0;
@@ -219,6 +219,7 @@ void WALTracker::initPositions(int64_t sz, int64_t minLSN, int64_t maxLSN) {
 
 template <typename RecordT>
 lsn_t WALTracker::add(RecordT&& rec, lsn_t originLsn, bool toStorage, lsn_t oldLsn) {
+	const auto localServerID = GetServer();
 	lsn_t lsn = originLsn;
 	if (lsn.isEmpty()) {
 		lsn = lsnCounter_++;
@@ -229,7 +230,7 @@ lsn_t WALTracker::add(RecordT&& rec, lsn_t originLsn, bool toStorage, lsn_t oldL
 		auto newCounter = lsn.Counter();
 		if (lsnCounter_.Counter() == 0) {  // If there are no WAL records and we've got record with some large LSN
 			assertrx(records_.empty());
-			records_.resize(newCounter % walSize_);
+			records_.resize(newCounter % walSize_, localServerID);
 		}
 		lsnCounter_.SetCounter(newCounter + 1);
 	}
@@ -242,7 +243,7 @@ lsn_t WALTracker::add(RecordT&& rec, lsn_t originLsn, bool toStorage, lsn_t oldL
 	put(lastLsn_, std::forward<RecordT>(rec));
 	if (!oldLsn.isEmpty() && available(oldLsn)) {
 		put(oldLsn, WALRecord());
-		if (oldLsn.Server()) {
+		if (oldLsn.Server() != localServerID) {
 			writeToStorage(oldLsn);	 // Write empty record to the storage to preserve it's server ID
 		}
 	}

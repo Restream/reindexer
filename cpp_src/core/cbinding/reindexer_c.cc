@@ -1,8 +1,7 @@
 #include "reindexer_c.h"
 
-#include <stdlib.h>
 #include <string.h>
-#include <locale>
+#include <clocale>
 #include <mutex>
 #include <shared_mutex>
 
@@ -18,7 +17,7 @@
 
 using namespace reindexer;
 constexpr int kQueryResultsPoolSize = 1024;
-constexpr int kMaxConcurentQueries = 65534;
+constexpr int kMaxConcurrentQueries = 65534;
 constexpr size_t kCtxArrSize = 1024;
 constexpr size_t kWarnLargeResultsLimit = 0x40000000;
 constexpr size_t kMaxPooledResultsCap = 0x10000;
@@ -86,7 +85,7 @@ struct TransactionWrapper {
 };
 
 static std::atomic<int> serializedResultsCount{0};
-static sync_pool<QueryResultsWrapper, kQueryResultsPoolSize, kMaxConcurentQueries> res_pool;
+static sync_pool<QueryResultsWrapper, kQueryResultsPoolSize, kMaxConcurrentQueries> res_pool;
 static CGOCtxPool ctx_pool(kCtxArrSize);
 
 struct put_results_to_pool {
@@ -154,7 +153,7 @@ static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reinde
 	}
 
 	out->results_ptr = uintptr_t(result.release());
-	if (const auto count{serializedResultsCount.fetch_add(1, std::memory_order_relaxed)}; count > kMaxConcurentQueries) {
+	if (const auto count{serializedResultsCount.fetch_add(1, std::memory_order_relaxed)}; count > kMaxConcurrentQueries) {
 		logPrintf(LogWarning, "Too many serialized results: count=%d, alloced=%d", count, res_pool.Alloced());
 	}
 }
@@ -186,7 +185,7 @@ reindexer_error reindexer_ping(uintptr_t rx) {
 	return error2c(db ? Error(errOK) : err_not_init);
 }
 
-static void procces_packed_item(Item& item, int /*mode*/, int state_token, reindexer_buffer data, int format, Error& err) {
+static void proccess_packed_item(Item& item, int /*mode*/, int state_token, reindexer_buffer data, int format, Error& err) {
 	if (item.Status().ok()) {
 		switch (format) {
 			case FormatJson:
@@ -212,7 +211,7 @@ static void procces_packed_item(Item& item, int /*mode*/, int state_token, reind
 
 reindexer_error reindexer_modify_item_packed_tx(uintptr_t rx, uintptr_t tr, reindexer_buffer args, reindexer_buffer data) {
 	auto db = reinterpret_cast<ReindexerWrapper*>(rx);
-	TransactionWrapper* trw = reinterpret_cast<TransactionWrapper*>(tr);
+	auto trw = reinterpret_cast<TransactionWrapper*>(tr);
 	if (!db) {
 		return error2c(err_not_init);
 	}
@@ -226,12 +225,12 @@ reindexer_error reindexer_modify_item_packed_tx(uintptr_t rx, uintptr_t tr, rein
 	int state_token = ser.GetVarUint();
 	Error err = err_not_init;
 	auto item = trw->tr_.NewItem();
-	procces_packed_item(item, mode, state_token, data, format, err);
+	proccess_packed_item(item, mode, state_token, data, format, err);
 	if (err.code() == errTagsMissmatch) {
 		item = db->rx.NewItem(trw->tr_.GetNsName());
 		err = item.Status();
 		if (err.ok()) {
-			procces_packed_item(item, mode, state_token, data, format, err);
+			proccess_packed_item(item, mode, state_token, data, format, err);
 		}
 	}
 	if (err.ok()) {
@@ -263,7 +262,7 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 
 			Item item = rdxKeeper.db().NewItem(ns);
 
-			procces_packed_item(item, mode, state_token, data, format, err);
+			proccess_packed_item(item, mode, state_token, data, format, err);
 
 			query_results_ptr res;
 			if (err.ok()) {
@@ -677,7 +676,7 @@ reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in, reindexe
 
 reindexer_error reindexer_delete_query_tx(uintptr_t rx, uintptr_t tr, reindexer_buffer in) {
 	auto db = reinterpret_cast<ReindexerWrapper*>(rx);
-	TransactionWrapper* trw = reinterpret_cast<TransactionWrapper*>(tr);
+	auto trw = reinterpret_cast<TransactionWrapper*>(tr);
 	if (!db) {
 		return error2c(err_not_init);
 	}
@@ -698,7 +697,7 @@ reindexer_error reindexer_delete_query_tx(uintptr_t rx, uintptr_t tr, reindexer_
 
 reindexer_error reindexer_update_query_tx(uintptr_t rx, uintptr_t tr, reindexer_buffer in) {
 	auto db = reinterpret_cast<ReindexerWrapper*>(rx);
-	TransactionWrapper* trw = reinterpret_cast<TransactionWrapper*>(tr);
+	auto trw = reinterpret_cast<TransactionWrapper*>(tr);
 	if (!db) {
 		return error2c(err_not_init);
 	}
@@ -761,7 +760,7 @@ reindexer_ret reindexer_enum_meta(uintptr_t rx, reindexer_string ns, reindexer_c
 		out.len = ser.Len();
 		out.data = uintptr_t(ser.Buf());
 		out.results_ptr = uintptr_t(results.release());
-		if (const auto count{serializedResultsCount.fetch_add(1, std::memory_order_relaxed)}; count > kMaxConcurentQueries) {
+		if (const auto count{serializedResultsCount.fetch_add(1, std::memory_order_relaxed)}; count > kMaxConcurrentQueries) {
 			logPrintf(LogWarning, "Too many serialized results: count=%d, alloced=%d", count, res_pool.Alloced());
 		}
 	}
@@ -794,7 +793,7 @@ reindexer_ret reindexer_get_meta(uintptr_t rx, reindexer_string ns, reindexer_st
 		out.len = results->ser.Len();
 		out.data = uintptr_t(results->ser.Buf());
 		out.results_ptr = uintptr_t(results.release());
-		if (const auto count{serializedResultsCount.fetch_add(1, std::memory_order_relaxed)}; count > kMaxConcurentQueries) {
+		if (const auto count{serializedResultsCount.fetch_add(1, std::memory_order_relaxed)}; count > kMaxConcurrentQueries) {
 			logPrintf(LogWarning, "Too many serialized results: count=%d, alloced=%d", count, res_pool.Alloced());
 		}
 	}

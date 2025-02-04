@@ -88,14 +88,15 @@ bool FrisoCharTypes::utf8_numeric_string(std::string_view str) {
 	int bytes = 1;
 
 	while (*s != '\0') {
-		if (*s < 0) {  // full-width chars.
+		const char c = *s;
+		if (c & (1 << 7)) {	 // full-width chars.
 			const char* it = s;
 			int u = utf8::unchecked::next(it);
 			bytes = it - s;
 			if (u < 65296 || u > 65305) {
 				return false;
 			}
-		} else if (*s < 48 || *s > 57) {
+		} else if (c < 48 || c > 57) {
 			return false;
 		}
 		s += bytes;
@@ -113,12 +114,13 @@ bool FrisoCharTypes::utf8_decimal_string(std::string_view str) {
 	}
 
 	for (i = 1; i < len; bytes = 1) {
+		const char c = str[i];
 		// count the number of char '.'
-		if (str[i] == '.') {
+		if (c == '.') {
 			i++;
 			p++;
 			continue;
-		} else if (str[i] < 0) {
+		} else if (c & (1 << 7)) {
 			// full-width numeric.
 			const char* s = &str[0] + i;
 			u = utf8::unchecked::next(s);
@@ -126,7 +128,7 @@ bool FrisoCharTypes::utf8_decimal_string(std::string_view str) {
 			if (u < 65296 || u > 65305) {
 				return false;
 			}
-		} else if (str[i] < 48 || str[i] > 57) {
+		} else if (c < 48 || c > 57) {
 			return false;
 		}
 

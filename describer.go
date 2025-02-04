@@ -117,8 +117,6 @@ func CreateInt64FromLSN(v LsnT) int64 {
 type NamespaceMemStat struct {
 	// Name of namespace
 	Name string `json:"name"`
-	// [[deperecated]]. do not use
-	StorageError string `json:"storage_error"`
 	// Filesystem path to namespace storage
 	StoragePath string `json:"storage_path"`
 	// Status of disk storage (true, if storage is enabled and writable)
@@ -262,6 +260,29 @@ type TxPerfStat struct {
 	MaxCopyTimeUs int64 `json:"max_copy_time_us"`
 }
 
+// LRUCachePerfStat is information about LRU cache efficiency
+type LRUCachePerfStat struct {
+	// Total queries to cache
+	TotalQueries uint64 `json:"total_queries"`
+	// Cache hit rate (CacheHits / TotalQueries)
+	CacheHitRate float64 `json:"cache_hit_rate"`
+	// Determines if cache is currently in use. Usually it has 'false' value for uncommited indexes
+	IsActive bool `json:"is_active"`
+}
+
+// IndexPerfStat is information about specific index performance statistics
+type IndexPerfStat struct {
+	// Name of index
+	Name string `json:"name"`
+	// Performance statistics for index commit operations
+	Commits PerfStat `json:"commits"`
+	// Performance statistics for index select operations
+	Selects PerfStat `json:"selects"`
+	// Performance statistics for LRU IdSets index cache (or fulltext cache for text indexes).
+	// Nil-value means, that index does not use cache at all
+	Cache *LRUCachePerfStat `json:"cache,omitempty"`
+}
+
 // NamespacePerfStat is information about namespace's performance statistics
 // and located in '#perfstats' system namespace
 type NamespacePerfStat struct {
@@ -273,6 +294,12 @@ type NamespacePerfStat struct {
 	Selects PerfStat `json:"selects"`
 	// Performance statistics for transactions
 	Transactions TxPerfStat `json:"transactions"`
+	// Performance statistics for JOINs cache
+	JoinCache LRUCachePerfStat `json:"join_cache"`
+	// Performance statistics for CountCached aggregation cache
+	QueryCountCache LRUCachePerfStat `json:"query_count_cache"`
+	// Performance statistics for each namespace index
+	Indexes IndexPerfStat `json:"indexes"`
 }
 
 // ClientConnectionStat is information about client connection
@@ -505,6 +532,10 @@ type DBNamespacesConfig struct {
 	// 0 - disables synchronous storage flush. In this case storage will be flushed in background thread only
 	// Default value is 20000
 	SyncStorageFlushLimit int `json:"sync_storage_flush_limit"`
+	// Strict mode for queries. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions"
+	// Default value - 'names'
+	// Possible values: 'indexes','names','none'
+	StrictMode string `json:"strict_mode,omitempty"`
 	// Namespaces' cache configs
 	CacheConfig *NamespaceCacheConfig `json:"cache,omitempty"`
 }

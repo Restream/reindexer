@@ -18,7 +18,7 @@ class Namespace;
 struct NamespaceDef {
 	NamespaceDef() = default;
 
-	NamespaceDef(std::string iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing())
+	explicit NamespaceDef(std::string iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing())
 		: name(std::move(iname)), storage(istorage) {}
 
 	NamespaceDef& AddIndex(const std::string& iname, const std::string& indexType, const std::string& fieldType,

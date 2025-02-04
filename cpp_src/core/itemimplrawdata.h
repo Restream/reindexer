@@ -1,14 +1,16 @@
 #pragma once
 
 #include "core/keyvalue/key_string.h"
+#include "estl/h_vector.h"
 #include "payload/payloadvalue.h"
 
-#include <deque>
 #include <memory>
 
 namespace reindexer {
 
 struct ItemImplRawData {
+	using HolderT = h_vector<key_string, 16>;
+
 	ItemImplRawData() = default;
 	explicit ItemImplRawData(PayloadValue v) : payloadValue_(std::move(v)) {}
 	ItemImplRawData(const ItemImplRawData&) = delete;
@@ -21,8 +23,7 @@ struct ItemImplRawData {
 	std::unique_ptr<char[]> sourceData_;
 	std::vector<std::unique_ptr<char[]>> largeJSONStrings_;
 	std::vector<std::string> precepts_;
-	std::unique_ptr<std::deque<std::string>> holder_;
-	std::unique_ptr<std::vector<key_string>> keyStringsHolder_;
+	std::unique_ptr<HolderT> holder_;
 };
 
 }  // namespace reindexer

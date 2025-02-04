@@ -9,8 +9,12 @@ namespace reindexer {
 
 constexpr uint32_t kMaxHitCountToCache = 1024;
 
-template <typename K, typename V, typename hash, typename equal>
-typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(const K& key) {
+template <typename K, typename V, typename HashT, typename EqualT>
+LRUCacheImpl<K, V, HashT, EqualT>::LRUCacheImpl(size_t sizeLimit, uint32_t hitCount) noexcept
+	: totalCacheSize_(0), cacheSizeLimit_(sizeLimit), hitCountToCache_(hitCount) {}
+
+template <typename K, typename V, typename HashT, typename EqualT>
+typename LRUCacheImpl<K, V, HashT, EqualT>::Iterator LRUCacheImpl<K, V, HashT, EqualT>::Get(const K& key) {
 	if rx_unlikely (cacheSizeLimit_ == 0) {
 		return Iterator();
 	}
@@ -36,8 +40,8 @@ typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(
 	return Iterator(true, it->second.val);
 }
 
-template <typename K, typename V, typename hash, typename equal>
-void LRUCache<K, V, hash, equal>::Put(const K& key, V&& v) {
+template <typename K, typename V, typename HashT, typename EqualT>
+void LRUCacheImpl<K, V, HashT, EqualT>::Put(const K& key, V&& v) {
 	if rx_unlikely (cacheSizeLimit_ == 0) {
 		return;
 	}
@@ -65,8 +69,8 @@ void LRUCache<K, V, hash, equal>::Put(const K& key, V&& v) {
 	}
 }
 
-template <typename K, typename V, typename hash, typename equal>
-RX_ALWAYS_INLINE bool LRUCache<K, V, hash, equal>::eraseLRU() {
+template <typename K, typename V, typename HashT, typename EqualT>
+RX_ALWAYS_INLINE bool LRUCacheImpl<K, V, HashT, EqualT>::eraseLRU() {
 	typename LRUList::iterator it = lru_.begin();
 
 	while (totalCacheSize_ > cacheSizeLimit_) {
@@ -98,11 +102,11 @@ RX_ALWAYS_INLINE bool LRUCache<K, V, hash, equal>::eraseLRU() {
 	return !lru_.empty();
 }
 
-template <typename K, typename V, typename hash, typename equal>
-bool LRUCache<K, V, hash, equal>::clearAll() {
+template <typename K, typename V, typename HashT, typename EqualT>
+bool LRUCacheImpl<K, V, HashT, EqualT>::clearAll() {
 	const bool res = !items_.empty();
 	totalCacheSize_ = 0;
-	std::unordered_map<K, Entry, hash, equal>().swap(items_);
+	std::unordered_map<K, Entry, HashT, EqualT>().swap(items_);
 	LRUList().swap(lru_);
 	getCount_ = 0;
 	putCount_ = 0;
@@ -110,8 +114,8 @@ bool LRUCache<K, V, hash, equal>::clearAll() {
 	return res;
 }
 
-template <typename K, typename V, typename hash, typename equal>
-LRUCacheMemStat LRUCache<K, V, hash, equal>::GetMemStat() {
+template <typename K, typename V, typename HashT, typename EqualT>
+LRUCacheMemStat LRUCacheImpl<K, V, HashT, EqualT>::GetMemStat() const {
 	LRUCacheMemStat ret;
 
 	std::lock_guard lk(lock_);
@@ -125,9 +129,38 @@ LRUCacheMemStat LRUCache<K, V, hash, equal>::GetMemStat() {
 
 	return ret;
 }
-template class LRUCache<IdSetCacheKey, IdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
-template class LRUCache<IdSetCacheKey, FtIdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
-template class LRUCache<QueryCacheKey, QueryCountCacheVal, HashQueryCacheKey, EqQueryCacheKey>;
-template class LRUCache<JoinCacheKey, JoinCacheVal, hash_join_cache_key, equal_join_cache_key>;
+
+template <typename K, typename V, typename HashT, typename EqualT>
+void LRUCacheImpl<K, V, HashT, EqualT>::Clear() {
+	std::lock_guard lk(lock_);
+	clearAll();
+}
+
+template <typename K, typename V, typename HashT, typename EqualT>
+void LRUCacheImpl<K, V, HashT, EqualT>::Clear(std::function<bool(const Key&)> cond) {
+	std::lock_guard lock(lock_);
+	for (auto it = lru_.begin(); it != lru_.end();) {
+		if (!cond(**it)) {
+			++it;
+			continue;
+		}
+		auto mIt = items_.find(**it);
+		assertrx(mIt != items_.end());
+		const size_t oldSize = sizeof(Entry) + kElemSizeOverhead + mIt->first.Size() + mIt->second.val.Size();
+		if rx_unlikely (oldSize > totalCacheSize_) {
+			clearAll();
+			return;
+		}
+		totalCacheSize_ -= oldSize;
+		items_.erase(mIt);
+		it = lru_.erase(it);
+		++eraseCount_;
+	}
+}
+
+template class LRUCacheImpl<IdSetCacheKey, IdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
+template class LRUCacheImpl<IdSetCacheKey, FtIdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
+template class LRUCacheImpl<QueryCacheKey, QueryCountCacheVal, HashQueryCacheKey, EqQueryCacheKey>;
+template class LRUCacheImpl<JoinCacheKey, JoinCacheVal, hash_join_cache_key, equal_join_cache_key>;
 
 }  // namespace reindexer

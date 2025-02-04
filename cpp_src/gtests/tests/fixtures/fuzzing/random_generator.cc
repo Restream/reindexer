@@ -391,7 +391,7 @@ std::vector<size_t> RandomGenerator::RndFieldsForCompositeIndex(const std::vecto
 	const size_t count = compositeIndexSize(scalarIndexes.size());
 	result.reserve(count);
 	const bool uniqueFields = count <= scalarIndexes.size() && !RndErr();
-	// TODO unexisted and not indexed fields
+	// TODO non-existent and not indexed fields
 	if (uniqueFields) {
 		auto scalars = scalarIndexes;
 		while (result.size() < count) {

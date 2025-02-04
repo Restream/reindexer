@@ -177,7 +177,11 @@ public:
 		size_t cnt = 0;
 		for (const SingleSelectKeyResult& r : *this) {
 			if (r.indexForwardIter_) {
-				cnt += r.indexForwardIter_->GetMaxIterations(limitIters);
+				auto iters = r.indexForwardIter_->GetMaxIterations(limitIters);
+				if (iters == std::numeric_limits<size_t>::max()) {
+					return limitIters;
+				}
+				cnt += iters;
 			} else if (r.isRange_) {
 				cnt += std::abs(r.rEnd_ - r.rBegin_);
 			} else if (r.useBtree_) {
@@ -186,7 +190,7 @@ public:
 				cnt += r.ids_.size();
 			}
 			if (cnt > limitIters) {
-				break;
+				return limitIters;
 			}
 		}
 		return cnt;

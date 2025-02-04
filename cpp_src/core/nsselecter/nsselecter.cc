@@ -53,9 +53,9 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 	if (aggregationQueryRef.CalcTotal() == ModeCachedTotal || containAggCountCached) {
 		ckey = QueryCacheKey{ctx.query, kCountCachedKeyMode, ctx.joinedSelectors};
 
-		auto cached = ns_->queryCountCache_->Get(ckey);
-		if (cached.valid && cached.val.total_count >= 0) {
-			result.totalCount += cached.val.total_count;
+		auto cached = ns_->queryCountCache_.Get(ckey);
+		if (cached.valid && cached.val.IsInitialized()) {
+			result.totalCount += cached.val.totalCount;
 			if (logLevel >= LogTrace) {
 				logPrintf(LogInfo, "[%s] using total count value from cache: %d", ns_->name_, result.totalCount);
 			}
@@ -280,6 +280,7 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 
 		if (!qres.HasIdsets()) {
 			SelectKeyResult scan;
+			std::string_view scanName = "-scan";
 			if (ctx.sortingContext.isOptimizationEnabled()) {
 				auto it = ns_->indexes_[ctx.sortingContext.uncommitedIndex]->CreateIterator();
 				maxIterations = ns_->itemsCount();
@@ -287,17 +288,35 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 				scan.emplace_back(std::move(it));
 			} else {
 				// special case - no idset in query
-				IdType limit = ns_->items_.size();
-				if (ctx.sortingContext.isIndexOrdered() && ctx.sortingContext.enableSortOrders) {
-					const Index* index = ctx.sortingContext.sortIndex();
-					assertrx_throw(index);
-					limit = index->SortOrders().size();
+				const auto itemsInUse = ns_->items_.size() - ns_->free_.size();
+				const bool haveLotOfFree = (ns_->free_.size() > 200'000) && (ns_->free_.size() > (4 * itemsInUse));
+				const bool useSortOrders = ctx.sortingContext.isIndexOrdered() && ctx.sortingContext.enableSortOrders;
+				if (haveLotOfFree && !useSortOrders) {
+					// Attempt to improve selection time by using dense IdSet, when there are a lot of empty items in namespace
+					scanName = "-scan-dns";
+					base_idset denseSet;
+					denseSet.reserve(itemsInUse);
+					for (IdType i = 0, sz = IdType(ns_->items_.size()); i < sz; ++i) {
+						if (!ns_->items_[i].IsFree()) {
+							denseSet.emplace_back(i);
+						}
+					}
+					scan.emplace_back(make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>(std::move(denseSet)));
+					maxIterations = itemsInUse;
+				} else {
+					// Use ids range
+					IdType limit = ns_->items_.size();
+					if (useSortOrders) {
+						const Index* index = ctx.sortingContext.sortIndex();
+						assertrx_throw(index);
+						limit = index->SortOrders().size();
+					}
+					scan.emplace_back(0, limit);
+					maxIterations = limit;
 				}
-				scan.emplace_back(0, limit);
-				maxIterations = limit;
 			}
 			// Iterator Field Kind: -scan. Sorting Context! -> None
-			qres.AppendFront<SelectIterator>(OpAnd, std::move(scan), false, "-scan", IteratorFieldKind::None, true);
+			qres.AppendFront<SelectIterator>(OpAnd, std::move(scan), false, std::string(scanName), IteratorFieldKind::None, true);
 		}
 		// Get maximum iterations count, for right calculation comparators costs
 		qres.SortByCost(maxIterations);
@@ -446,7 +465,7 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 		if rx_unlikely (logLevel >= LogTrace) {
 			logPrintf(LogInfo, "[%s] put totalCount value into query cache: %d ", ns_->name_, result.totalCount);
 		}
-		ns_->queryCountCache_->Put(ckey, {static_cast<size_t>(result.totalCount - initTotalCount)});
+		ns_->queryCountCache_.Put(ckey, {static_cast<size_t>(result.totalCount - initTotalCount)});
 	}
 	if constexpr (std::is_same_v<JoinPreResultCtx, JoinPreResultBuildCtx>) {
 		if rx_unlikely (logLevel >= LogTrace) {
@@ -641,8 +660,10 @@ public:
 		} else if (iter->second != cost_ - 1) {
 			static constexpr auto errMsg = "Forced sort value '%s' is duplicated. Deduplicated by the first occurrence.";
 			if constexpr (std::is_same_v<V, Variant>) {
+				// NOLINTNEXTLINE (bugprone-use-after-move,-warnings-as-errors)
 				logPrintf(LogInfo, errMsg, value.template As<std::string>());
 			} else {
+				// NOLINTNEXTLINE (bugprone-use-after-move,-warnings-as-errors)
 				logPrintf(LogInfo, errMsg, Variant{std::forward<V>(value)}.template As<std::string>());
 			}
 		}
@@ -673,11 +694,8 @@ It NsSelecter::applyForcedSortImpl(NamespaceImpl& ns, It begin, It end, const It
 			VariantArray keyRefs;
 			const auto boundary = std::stable_partition(begin, end, [&](const ItemRef& itemRef) {
 				valueGetter.Payload(itemRef).Get(idx, keyRefs);
-				if constexpr (desc) {
-					return keyRefs.empty() || (sortMap.find(keyRefs[0]) == sortMap.end());
-				} else {
-					return !keyRefs.empty() && (sortMap.find(keyRefs[0]) != sortMap.end());
-				}
+				const auto descOrder = keyRefs.empty() || (sortMap.find(keyRefs[0]) == sortMap.end());
+				return desc ? descOrder : !descOrder;
 			});
 
 			VariantArray lhsItemValue;
@@ -948,15 +966,16 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 
 	// reserve query results, if we have only 1 condition with 1 idset
 	if (qres.Size() == 1 && qres.IsSelectIterator(0) && qres.Get<SelectIterator>(0).size() == 1) {
-		const unsigned reserve = std::min(unsigned(qres.Get<SelectIterator>(0).GetMaxIterations()), ctx.count);
-		if constexpr (std::is_same_v<JoinPreResultCtx, JoinPreResultBuildCtx>) {
-			if (auto* values = std::get_if<JoinPreResult::Values>(&sctx.preSelect.Result().payload); values) {
-				values->reserve(reserve + initCount);
+		if (const size_t reserve = qres.Get<SelectIterator>(0).GetMaxIterations(ctx.count); reserve < size_t(QueryEntry::kDefaultLimit)) {
+			if constexpr (std::is_same_v<JoinPreResultCtx, JoinPreResultBuildCtx>) {
+				if (auto* values = std::get_if<JoinPreResult::Values>(&sctx.preSelect.Result().payload); values) {
+					values->reserve(reserve + initCount);
+				} else {
+					resultReserve(result, initCount + reserve);
+				}
 			} else {
 				resultReserve(result, initCount + reserve);
 			}
-		} else {
-			resultReserve(result, initCount + reserve);
 		}
 	}
 
@@ -1199,10 +1218,10 @@ void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId,
 				   sctx.preSelect.Result().payload);
 	} else {
 		if (!sctx.sortingContext.expressions.empty()) {
-			result.Add({properRowId, sctx.sortingContext.exprResults[0].size(), proc, sctx.nsid});
+			result.AddItemRef(properRowId, sctx.sortingContext.exprResults[0].size(), proc, sctx.nsid);
 			calculateSortExpressions(proc, rowId, properRowId, sctx, result);
 		} else {
-			result.Add({properRowId, ns_->items_[properRowId], proc, sctx.nsid});
+			result.AddItemRef(properRowId, ns_->items_[properRowId], proc, sctx.nsid);
 		}
 
 		const int kLimitItems = 10000000;
@@ -1520,7 +1539,7 @@ public:
 							   if (isInSequence_) {
 								   curCost_ += res.GetMaxIterations(totalCost_);
 							   } else {
-								   totalCost_ = std::min(totalCost_, res.GetMaxIterations(totalCost_));
+								   totalCost_ = res.GetMaxIterations(totalCost_);
 							   }
 						   }
 					   },

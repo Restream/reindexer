@@ -127,6 +127,10 @@ void Namespace::ApplySnapshotChunk(const SnapshotChunk& ch, bool isInitialLeader
 		SnapshotTxHandler handler(*this);
 		handler.ApplyChunk(ch, isInitialLeaderSync, ctx);
 	}
+
+	if (ch.IsLastChunk() && (ch.IsShallow() || !ch.IsWAL())) {
+		ns_->RebuildFreeItemsStorage(ctx);
+	}
 }
 
 bool Namespace::needNamespaceCopy(const NamespaceImpl::Ptr& ns, const LocalTransaction& tx) const noexcept {

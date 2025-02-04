@@ -17,14 +17,6 @@ template <typename T, int holdSize>
 class h_vector : public std::vector<T> {};
 #else
 
-#if !defined(__clang__) && defined(__GNUC__) && __GNUC__ == 4
-template <typename T>
-using is_trivially_default_constructible = std::has_trivial_default_constructor<T>;
-#else
-template <typename T>
-using is_trivially_default_constructible = std::is_trivially_default_constructible<T>;
-#endif
-
 template <typename T, unsigned holdSize = 4, unsigned objSize = sizeof(T)>
 class h_vector {
 	static_assert(holdSize > 0);
@@ -228,7 +220,7 @@ public:
 
 	void resize(size_type sz) {
 		grow(sz);
-		if constexpr (!reindexer::is_trivially_default_constructible<T>::value) {
+		if constexpr (!std::is_trivially_default_constructible<T>::value) {
 			const pointer p = ptr();
 			const size_type old_sz = size_;
 			for (size_type i = old_sz; i < sz; ++i) {
@@ -294,19 +286,22 @@ public:
 		}
 	}
 	void push_back(const T& v) {
-		grow(size_ + 1);
-		new (ptr() + size_) T(v);
+		const auto size = size_;
+		grow(size + 1);
+		new (ptr() + size) T(v);
 		++size_;
 	}
 	void push_back(T&& v) {
-		grow(size_ + 1);
-		new (ptr() + size_) T(std::move(v));
+		const auto size = size_;
+		grow(size + 1);
+		new (ptr() + size) T(std::move(v));
 		++size_;
 	}
 	template <typename... Args>
 	reference emplace_back(Args&&... args) {
-		grow(size_ + 1);
-		auto p = ptr() + size_;
+		const auto size = size_;
+		grow(size + 1);
+		auto p = ptr() + size;
 		new (p) T(std::forward<Args>(args)...);
 		++size_;
 		return *p;
@@ -498,19 +493,19 @@ public:
 protected:
 	pointer ptr() noexcept { return is_hdata() ? reinterpret_cast<pointer>(hdata_) : e_.data_; }
 	const_pointer ptr() const noexcept { return is_hdata() ? reinterpret_cast<const_pointer>(hdata_) : e_.data_; }
-	void destruct() noexcept {
+	RX_ALWAYS_INLINE void destruct() noexcept {
 		if (is_hdata()) {
 			if constexpr (!std::is_trivially_destructible_v<T>) {
-				const size_type sz = size_;
-				for (size_type i = 0; i < sz; ++i) {
-					reinterpret_cast<pointer>(hdata_)[i].~T();
+				auto beg = reinterpret_cast<pointer>(hdata_), end = beg + size_;
+				for (auto ptr = beg; ptr != end; ++ptr) {
+					ptr->~T();
 				}
 			}
 		} else {
 			if constexpr (!std::is_trivially_destructible_v<T>) {
-				const size_type sz = size_;
-				for (size_type i = 0; i < sz; ++i) {
-					e_.data_[i].~T();
+				auto beg = e_.data_, end = beg + size_;
+				for (auto ptr = beg; ptr != end; ++ptr) {
+					ptr->~T();
 				}
 			}
 			operator delete(e_.data_);

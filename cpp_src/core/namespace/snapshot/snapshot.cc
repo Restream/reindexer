@@ -212,7 +212,7 @@ SnapshotChunk Snapshot::Iterator::Chunk() const {
 	chunk.MarkShallow(shallow);
 	chunk.MarkWAL(wal);
 	chunk.MarkTx(chunks[idx].txChunk);
-	chunk.MarkLast(idx == sn_->Size() - 1);
+	chunk.MarkLast(idx_ == sn_->Size() - 1);
 	return chunk;
 }
 

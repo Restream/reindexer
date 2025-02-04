@@ -47,15 +47,10 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-22.04, macos-13]
+        os: [ubuntu-22.04, ubuntu-24.04, macos-13]
         include:
-          - os: ubuntu-24.04
-            cc: gcc-12
-            cxx: g++-12
           - os: ubuntu-latest
             sanitizer: ASAN
-            cc: gcc-10
-            cxx: g++-10
           - os: ubuntu-latest
             sanitizer: TSAN
             cc: gcc-12
@@ -66,6 +61,7 @@ jobs:
       OS: ${{matrix.os}}
       CC: ${{matrix.cc}}
       CXX: ${{matrix.cxx}}
+      SANITIZER: ${{matrix.sanitizer}}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -85,7 +81,11 @@ jobs:
           export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
           if [[ $OS == ubuntu-latest ]]; then
-            cmake -DENABLE_GRPC=ON -DWITH_${{matrix.sanitizer}}=On ..
+            if [[ $SANITIZER == 'ASAN' ]]; then
+              cmake -DENABLE_GRPC=ON -DWITH_${{matrix.sanitizer}}=On -DGTEST_SKIP_SHARDING=On ..
+            else
+              cmake -DENABLE_GRPC=ON -DWITH_${{matrix.sanitizer}}=On ..
+            fi
           elif [[ $OS == macos* ]]; then
             cmake -DGH_CI_OSX=ON ..
           else
@@ -119,8 +119,6 @@ jobs:
         include:
           - os: ubuntu-latest
             sanitizer: ASAN
-            cc: gcc-10
-            cxx: g++-10
             test: 'C++'
           - os: ubuntu-latest
             sanitizer: ASAN

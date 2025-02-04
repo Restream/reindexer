@@ -23,10 +23,26 @@ IndexOpts::IndexOpts(const std::string& sortOrderUTF8, uint8_t flags, RTreeIndex
 	: options(flags), collateOpts_(sortOrderUTF8), rtreeType_(rtreeType) {}
 
 bool IndexOpts::IsEqual(const IndexOpts& other, IndexComparison cmpType) const noexcept {
-	return options == other.options && (cmpType == IndexComparison::SkipConfig || config == other.config) &&
-		   collateOpts_.mode == other.collateOpts_.mode &&
-		   collateOpts_.sortOrderTable.GetSortOrderCharacters() == other.collateOpts_.sortOrderTable.GetSortOrderCharacters() &&
-		   rtreeType_ == other.rtreeType_;
+	auto thisCopy = *this;
+	thisCopy.Dense(other.IsDense());
+
+	// Compare without config and 'IsDense' option
+	const bool baseEqual =
+		thisCopy.options == other.options && collateOpts_.mode == other.collateOpts_.mode &&
+		collateOpts_.sortOrderTable.GetSortOrderCharacters() == other.collateOpts_.sortOrderTable.GetSortOrderCharacters() &&
+		rtreeType_ == other.rtreeType_;
+	if (!baseEqual) {
+		return false;
+	}
+	switch (cmpType) {
+		case IndexComparison::BasicCompatibilityOnly:
+			return true;
+		case IndexComparison::SkipConfig:
+			return IsDense() == other.IsDense();
+		case IndexComparison::Full:
+		default:
+			return IsDense() == other.IsDense() && config == other.config;
+	}
 }
 
 IndexOpts& IndexOpts::PK(bool value) & noexcept {
@@ -56,6 +72,11 @@ IndexOpts& IndexOpts::RTreeType(RTreeIndexType value) & noexcept {
 
 IndexOpts& IndexOpts::SetCollateMode(CollateMode mode) & noexcept {
 	collateOpts_.mode = mode;
+	return *this;
+}
+
+IndexOpts& IndexOpts::SetCollateSortOrder(reindexer::SortingPrioritiesTable&& sortOrder) & noexcept {
+	collateOpts_.sortOrderTable = std::move(sortOrder);
 	return *this;
 }
 

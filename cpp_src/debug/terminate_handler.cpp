@@ -37,6 +37,8 @@ static void terminate_handler() {
 	}
 	const auto writer = backtrace_get_writer();
 	writer(sout.str());
+	std::cerr << "Reindexer was terminated by terminate()-call. STDERR info:\n";
+	std::cerr << sout.str() << std::endl;
 	sout.str(std::string());
 	sout.clear();
 	print_crash_query(sout);
@@ -45,6 +47,7 @@ static void terminate_handler() {
 	sout.clear();
 	print_backtrace(sout, nullptr, -1);
 	writer(sout.str());
+	std::cerr << sout.str() << std::endl;
 	exit(-1);
 }
 

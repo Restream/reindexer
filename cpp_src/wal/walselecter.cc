@@ -3,10 +3,7 @@
 #include "core/formatters/lsn_fmt.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/nsselecter.h"
-#include "core/rdxcontext.h"
 #include "tools/semversion.h"
-
-#include "tools/logger.h"
 
 namespace reindexer {
 
@@ -33,7 +30,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 	for (size_t i = 0; i < q.Entries().Size(); ++i) {
 		q.Entries().Visit(
 			i,
-			[&lsnIdx, &versionIdx, i] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntry& qe) RX_POST_LMBD_ALWAYS_INLINE {
+			[&lsnIdx, &versionIdx, i](const QueryEntry& qe) {
 				if ("#lsn"sv == qe.FieldName()) {
 					lsnIdx = i;
 				} else if ("#slave_version"sv == qe.FieldName()) {
@@ -42,8 +39,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 					throw Error(errLogic, "Unexpected index in WAL select query: %s", qe.FieldName());
 				}
 			},
-			[&q] RX_PRE_LMBD_ALWAYS_INLINE(const auto&)
-				RX_POST_LMBD_ALWAYS_INLINE { throw Error(errLogic, "Unexpected WAL select query: %s", q.GetSQL()); });
+			[&q](const auto&) { throw Error(errLogic, "Unexpected WAL select query: %s", q.GetSQL()); });
 	}
 	auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.Entries().Get<QueryEntry>(versionIdx).Values()[0].As<std::string>());
 	auto& lsnEntry = q.Entries().Get<QueryEntry>(lsnIdx);
@@ -68,7 +64,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 			// Put as ItemRef with raw container
 			PayloadValue pv(data.size(), data.data());
 			pv.SetLSN(it.GetLSN());
-			result.Add(ItemRef(rec.id, pv, 0, 0, true));
+			result.AddItemRef(rec.id, std::move(pv), 0, 0, true);
 		};
 		const auto firstIt = lsnEntry.Condition() == CondGt ? ns_->wal_.upper_bound(fromLSN) : ns_->wal_.inclusive_upper_bound(fromLSN);
 		if (firstIt != walEnd) {
@@ -96,7 +92,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 						// Put as usual ItemRef
 						[[maybe_unused]] const auto iLSN = lsn_t(ns_->items_[rec.id].GetLSN());
 						assertf(iLSN.Counter() == (lsn_t(it.GetLSN()).Counter()), "lsn %s != %s, ns=%s", iLSN, it.GetLSN(), ns_->name_);
-						result.Add(ItemRef(rec.id, ns_->items_[rec.id]));
+						result.AddItemRef(rec.id, ns_->items_[rec.id]);
 						count--;
 					}
 					result.totalCount++;
@@ -134,9 +130,10 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 					break;
 				case WalEmpty:
 					if (snapshot) {
+						// We have to store empty records in snapshot to preserve original server IDs
 						assertrx(!start);
 						assertrx(count < 0);
-						putWalRecord(it, rec);	// TODO: Check if it's possible to remove empty records from, snapshot
+						putWalRecord(it, rec);
 					}
 					break;
 				case WalReplState:
@@ -160,7 +157,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 				wr.Pack(wrec);
 				PayloadValue val(wr.size(), wr.data());
 				val.SetLSN(lsn_t());
-				result.Add(ItemRef(-1, val, 0, 0, true));
+				result.AddItemRef(-1, std::move(val), 0, 0, true);
 			};
 			for (unsigned int i = 1; i < ns_->indexes_.size(); i++) {
 				auto indexDef = ns_->getIndexDefinition(i);
@@ -189,7 +186,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 			if (start) {
 				start--;
 			} else if (count) {
-				result.Add(ItemRef(id, ns_->items_[id]));
+				result.AddItemRef(id, ns_->items_[id]);
 				count--;
 			}
 			result.totalCount++;
@@ -214,6 +211,6 @@ void WALSelecter::putReplState(LocalQueryResults& result) {
 	// Put as ItemRef with raw container
 	PayloadValue pv(wr.size(), wr.data());
 	pv.SetLSN(lsn_t());
-	result.Add(ItemRef(-1, pv, 0, 0, true));
+	result.AddItemRef(-1, std::move(pv), 0, 0, true);
 }
 }  // namespace reindexer

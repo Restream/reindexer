@@ -81,7 +81,7 @@ enum CmdCode : uint16_t {
 std::string_view CmdName(uint16_t cmd) noexcept;
 
 // Maximum number of active queries per client
-const uint32_t kMaxConcurentQueries = 256;
+const uint32_t kMaxConcurrentQueries = 256;
 
 // Maximum number of active snapshots per client
 const uint32_t kMaxConcurentSnapshots = 8;

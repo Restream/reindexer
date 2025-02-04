@@ -845,7 +845,7 @@ RPCQrWatcher::Ref RPCServer::createQueryResults(cproto::Context& ctx, RPCQrId& i
 		}
 	}
 
-	if rx_unlikely (data->results.size() >= cproto::kMaxConcurentQueries) {
+	if rx_unlikely (data->results.size() >= cproto::kMaxConcurrentQueries) {
 		for (unsigned idx = 0; idx < data->results.size(); ++idx) {
 			RPCQrId tmpQrId{data->results[idx].main, data->results[idx].uid};
 			assertrx(tmpQrId.main >= 0);

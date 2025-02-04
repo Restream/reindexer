@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string_view>
 #include "core/key_value_type.h"
 #include "objtype.h"

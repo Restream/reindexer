@@ -44,13 +44,16 @@ public:
 	~LocalQueryResults();
 	LocalQueryResults& operator=(const LocalQueryResults&) = delete;
 	LocalQueryResults& operator=(LocalQueryResults&& obj) noexcept;
-	void Add(const ItemRef&);
+	template <typename... Args>
+	void AddItemRef(Args&&... args) {
+		items_.emplace_back(std::forward<Args>(args)...);
+	}
 	// use enableHold = false only if you are sure that the LocalQueryResults will be destroyed before the item
 	// or if data from the item are contained in namespace added to the LocalQueryResults
 	// enableHold is ignored when withData = false
 	void AddItem(Item& item, bool withData = false, bool enableHold = true);
 	std::string Dump() const;
-	void Erase(ItemRefVector::iterator begin, ItemRefVector::iterator end);
+	void Erase(ItemRefVector::const_iterator begin, ItemRefVector::const_iterator end) { items_.erase(begin, end); }
 	size_t Count() const noexcept { return items_.size(); }
 	size_t TotalCount() const noexcept { return totalCount; }
 	const std::string& GetExplainResults() const& noexcept { return explainResults; }
@@ -96,6 +99,10 @@ public:
 		bool operator!=(const Iterator& other) const noexcept { return idx_ != other.idx_; }
 		bool operator==(const Iterator& other) const noexcept { return idx_ == other.idx_; }
 		Iterator& operator*() noexcept { return *this; }
+		static Iterator SwitchQueryResultsPtrUnsafe(Iterator&& it, const LocalQueryResults& qr) {
+			it.qr_ = &qr;
+			return std::move(it);
+		}
 
 		const LocalQueryResults* qr_;
 		int idx_;

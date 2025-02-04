@@ -255,7 +255,11 @@ TEST_F(CascadeReplicationApi, MasterSlaveSlaveReload) {
 	auto leader = cluster.Get(0);
 	TestNamespace1 ns1(leader);
 	const int startId = 1000;
+#ifdef REINDEX_WITH_ASAN
+	const int n2 = 4000;
+#else	// REINDEX_WITH_ASAN
 	const int n2 = 20000;
+#endif	// REINDEX_WITH_ASAN
 
 	auto AddThread = [&leader, &ns1]() { ns1.AddRows(leader, startId, n2); };
 
@@ -567,6 +571,7 @@ TEST_F(CascadeReplicationApi, NodeWithMasterAndSlaveNs1) {
 	}
 	{
 		std::vector<int> results_data;
+		results_data.reserve(2 * n);
 		for (unsigned int i = 0; i < n; i++) {
 			results_data.push_back(c1 + i);
 		}
@@ -1006,8 +1011,13 @@ TEST_F(CascadeReplicationApi, ConcurrentForceSync) {
 	}
 
 	// Fill leader's data
+#ifdef REINDEX_WITH_ASAN
+	const size_t kRows = 2000;
+	const size_t kDataBytes = 100;
+#else	// REINDEX_WITH_ASAN
 	const size_t kRows = 10000;
 	const size_t kDataBytes = 1000;
+#endif	// REINDEX_WITH_ASAN
 	std::vector<TestNamespace1> testNsList;
 	for (auto& ns : kNsList) {
 		testNsList.emplace_back(nodes[0].Get(), ns);
@@ -1197,4 +1207,44 @@ TEST_F(CascadeReplicationApi, FollowerNetworkAndSyncStatus) {
 
 	cluster.ShutdownServer(1);
 	AwaitFollowersState(cluster.Get(0), cluster::NodeStats::Status::Offline, cluster::NodeStats::SyncState::AwaitingResync);
+}
+
+TEST_F(CascadeReplicationApi, ManyLeadersOneFollowerTest) {
+	const int kLeadersCount = 5;
+	const int kBasePort = 7770;
+	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "ManyLeadersOneFollowerTest/node_"));
+
+	std::vector<ServerControl> leaders;
+	leaders.reserve(kLeadersCount);
+	ServerControl follower;
+
+	std::vector<TestNamespace1> nss;
+	nss.reserve(kLeadersCount);
+
+	follower.InitServer(ServerControlConfig(kLeadersCount, kBasePort + kLeadersCount, kBasePort + 1000 + kLeadersCount,
+											kBaseDbPath + std::to_string(kLeadersCount), "db"));
+	follower.Get()->MakeFollower();
+
+	for (int serverId = 0; serverId < kLeadersCount; ++serverId) {
+		leaders.emplace_back().InitServer(
+			ServerControlConfig(serverId, kBasePort + serverId, kBasePort + 1000 + serverId, kBaseDbPath + std::to_string(serverId), "db"));
+
+		nss.emplace_back(leaders.back().Get(), "ns_" + std::to_string(serverId));
+		nss.back().AddRows(leaders.back().Get(), 0, 10);
+
+		leaders.back().Get()->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, follower.Get()),
+										  std::vector{nss.back().nsName_});
+	}
+
+	auto sync = [&] {
+		for (int serverId = 0; serverId < kLeadersCount; ++serverId) {
+			WaitSync(leaders[serverId].Get(), follower.Get(), nss[serverId].nsName_);
+		}
+	};
+
+	sync();
+	for (int serverId = 0; serverId < kLeadersCount; ++serverId) {
+		nss[serverId].AddRows(leaders[serverId].Get(), 10, 20);
+	}
+	sync();
 }

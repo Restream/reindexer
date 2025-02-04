@@ -161,7 +161,9 @@ TEST_F(QueriesApi, TransactionStress) {
 	current_size = 350;
 	uint32_t stepSize = 1000;
 
-	for (size_t i = 0; i < 4; i++) {
+	constexpr size_t kThreads = 4;
+	pool.reserve(kThreads);
+	for (size_t i = 0; i < kThreads; i++) {
 		pool.push_back(std::thread([this, i, &current_size, stepSize]() {
 			size_t start_pos = i * stepSize;
 			if (i % 2 == 0) {
@@ -640,22 +642,18 @@ TEST_F(QueriesApi, DslGenerateParse) {
 				EXPECT_EQ(ser.Slice(), dsl);
 			}
 			if (direction & PARSE) {
-				Query parsed;
 				try {
-					const auto err = parsed.FromJSON(dsl);
-					ASSERT_TRUE(err.ok()) << err.what() << "\nDSL: " << dsl;
+					Query parsed = Query::FromJSON(dsl);
+					EXPECT_EQ(parsed, q) << dsl;
 				} catch (const Error& err) {
 					ADD_FAILURE() << "Unexpected error: " << err.what() << "\nDSL: " << dsl;
 					continue;
 				}
-				EXPECT_EQ(parsed, q) << dsl;
 			}
 		} else {
 			const Error& expectedErr = std::get<Error>(expected);
-			Query parsed;
 			try {
-				const auto err = parsed.FromJSON(dsl);
-				ASSERT_TRUE(err.ok()) << err.what();
+				Query parsed = Query::FromJSON(dsl);
 				ADD_FAILURE() << "Expected error: " << expectedErr.what() << "\nDSL: " << dsl;
 			} catch (const Error& err) {
 				EXPECT_EQ(err.what(), expectedErr.what()) << "\nDSL: " << dsl;
@@ -1213,7 +1211,7 @@ std::string print(const reindexer::Query& q, reindexer::QueryResults::Iterator& 
 }
 
 void QueriesApi::sortByNsDifferentTypesImpl(std::string_view fillingNs, const reindexer::Query& qTemplate, const std::string& sortPrefix) {
-	const auto addItem = [&](int id, auto v) {
+	const auto addItem = [&](int id, const auto& v) {
 		reindexer::WrSerializer ser;
 		{
 			reindexer::JsonBuilder json{ser};

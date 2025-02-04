@@ -1,6 +1,5 @@
 #pragma once
 
-#include <mutex>
 #include "core/ft/config/baseftconfig.h"
 #include "core/ft/filters/itokenfilter.h"
 #include "core/ft/ft_fast/dataholder.h"
@@ -21,7 +20,7 @@ public:
 	IndexText(const IndexText<T>& other);
 	IndexText(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg)
 		: IndexUnordered<T>(idef, std::move(payloadType), std::move(fields), cacheCfg),
-		  cache_ft_(std::make_unique<FtIdSetCache>(cacheCfg.ftIdxCacheSize, cacheCfg.ftIdxHitsToCache)),
+		  cache_ft_(cacheCfg.ftIdxCacheSize, cacheCfg.ftIdxHitsToCache),
 		  cacheMaxSize_(cacheCfg.ftIdxCacheSize),
 		  hitsToCache_(cacheCfg.ftIdxHitsToCache) {
 		this->selectKeyType_ = KeyValueType::String{};
@@ -42,25 +41,25 @@ public:
 		// Rebuild will be done on first select
 	}
 	void CommitFulltext() override final {
-		cache_ft_ = std::make_unique<FtIdSetCache>(cacheMaxSize_, hitsToCache_);
+		cache_ft_.Reinitialize(cacheMaxSize_, hitsToCache_);
 		commitFulltextImpl();
 		this->isBuilt_ = true;
 	}
 	void SetSortedIdxCount(int) override final {}
 	void DestroyCache() override {
 		Base::DestroyCache();
-		cache_ft_.reset();
+		cache_ft_.ResetImpl();
 	}
 	void ClearCache() override {
 		Base::ClearCache();
-		if (cache_ft_) {
-			cache_ft_->Clear();
-		}
+		cache_ft_.Clear();
 	}
 	void ClearCache(const std::bitset<kMaxIndexes>& s) override { Base::ClearCache(s); }
 	void MarkBuilt() noexcept override { assertrx(0); }
 	bool IsFulltext() const noexcept override final { return true; }
 	void ReconfigureCache(const NamespaceCacheConfigData& cacheCfg) override final;
+	IndexPerfStat GetIndexPerfStat() override final;
+	void ResetIndexPerfStat() override final;
 
 protected:
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::IndexText>;
@@ -76,7 +75,7 @@ protected:
 	void initSearchers();
 	FieldsGetter Getter();
 
-	std::unique_ptr<FtIdSetCache> cache_ft_;
+	FtIdSetCache cache_ft_;
 	size_t cacheMaxSize_;
 	uint32_t hitsToCache_;
 

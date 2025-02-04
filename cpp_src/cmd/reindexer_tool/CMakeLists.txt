@@ -22,7 +22,7 @@ if (NOT MSVC AND NOT WITH_STDLIB_DEBUG)
     ExternalProject_Add(
       replxx_lib
       GIT_REPOSITORY "https://github.com/Restream/replxx"
-      GIT_TAG "b50b7b7a8c2835b45607cffabc18e4742072e9e6"
+      GIT_TAG "98aa91965d7495e030f31c6f05969177fe5ab81d"
       CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
     )
     include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)

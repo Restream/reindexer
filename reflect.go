@@ -40,9 +40,13 @@ type indexOptions struct {
 }
 
 func parseRxTags(field reflect.StructField) (idxName string, idxType string, expireAfter string, idxSettings []string) {
-	tagsSlice := strings.SplitN(field.Tag.Get("reindex"), ",", 3)
+	tag, isSet := field.Tag.Lookup("reindex")
+	tagsSlice := strings.SplitN(tag, ",", 3)
 	var idxOpts string
 	idxName, idxType, expireAfter, idxOpts = tagsSlice[0], "", "", ""
+	if isSet && len(idxName) == 0 && !field.Anonymous && field.Name != "_" {
+		idxName = field.Name
+	}
 
 	if len(tagsSlice) > 1 {
 		idxType = tagsSlice[1]
@@ -140,14 +144,14 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 		}
 
 		if jsonTag == "-" && !opts.isComposite && !opts.isJoined {
-			if reindexTag := field.Tag.Get("reindex"); reindexTag != "" {
-				return fmt.Errorf("non-composite/non-joined field ('%s'), marked with `json:-` can not have explicit reindex tags, but it does ('%s')", field.Name, reindexTag)
+			if reindexTag, isSet := field.Tag.Lookup("reindex"); isSet {
+				return fmt.Errorf("non-composite/non-joined field ('%s'), marked with `json:-` can not have explicit reindex tags, but it does (reindex:\"%s\")", field.Name, reindexTag)
 			}
 			continue
 		}
 		if !opts.isComposite && !field.IsExported() {
-			if reindexTag := field.Tag.Get("reindex"); reindexTag != "" {
-				return fmt.Errorf("unexported non-composite field ('%s') can not have reindex tags, but it does ('%s')", field.Name, reindexTag)
+			if reindexTag, isSet := field.Tag.Lookup("reindex"); isSet {
+				return fmt.Errorf("unexported non-composite field ('%s') can not have reindex tags, but it does (reindex:\"%s\")", field.Name, reindexTag)
 			}
 			continue
 		}

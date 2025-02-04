@@ -370,6 +370,7 @@ TEST(SyncCoroRx, StopWhileWriting) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	std::vector<std::thread> writingThreads;
+	writingThreads.reserve(kWritingThreadsCount);
 	for (size_t i = 0; i < kWritingThreadsCount; ++i) {
 		writingThreads.emplace_back([&client, &state, &kNsName, kWritingThreadSleep]() noexcept {
 			int i = 0;

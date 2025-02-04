@@ -1,6 +1,5 @@
 #pragma once
 
-#include <deque>
 #include <vector>
 #include "core/keyvalue/variant.h"
 #include "core/payload/payloadiface.h"
@@ -76,7 +75,7 @@ protected:
 
 	std::vector<std::string> precepts_;
 	bool unsafe_ = false;
-	std::deque<std::string> holder_;
+	h_vector<key_string, 16> holder_;
 	std::vector<std::unique_ptr<char[]>> largeJSONStrings_;
 };
 

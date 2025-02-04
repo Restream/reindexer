@@ -21,11 +21,11 @@ void ItemImpl::SetField(int field, const VariantArray& krs) {
 		VariantArray krsCopy;
 		krsCopy.reserve(krs.size());
 		if (!holder_) {
-			holder_ = std::make_unique<std::deque<std::string>>();
+			holder_ = std::make_unique<ItemImplRawData::HolderT>();
 		}
 		for (auto& kr : krs) {
-			holder_->push_back(kr.As<std::string>());
-			krsCopy.emplace_back(p_string{&holder_->back()});
+			auto& back = holder_->emplace_back(kr.As<key_string>());
+			krsCopy.emplace_back(p_string{back});
 		}
 		GetPayload().Set(field, krsCopy, false);
 	} else {
@@ -148,6 +148,25 @@ Error ItemImpl::GetProtobuf(WrSerializer& wrser) {
 	return Error();
 }
 
+void ItemImpl::Clear() {
+	static const TagsMatcher kEmptyTagsMaptcher;
+	tagsMatcher_ = kEmptyTagsMaptcher;
+	precepts_.clear();
+	cjson_ = std::string_view();
+	holder_.reset();
+	sourceData_.reset();
+	largeJSONStrings_.clear();
+	tupleData_.reset();
+	ser_ = WrSerializer();
+
+	GetPayload().Reset();
+	payloadValue_.SetLSN(lsn_t());
+
+	unsafe_ = false;
+	ns_.reset();
+	realValue_.Free();
+}
+
 // Construct item from compressed json
 void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder* recoder) {
 	payloadValue_.Clone();
@@ -173,7 +192,7 @@ void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder* recoder) 
 	Payload pl = GetPayload();
 	pl.Reset();
 	if (!holder_) {
-		holder_ = std::make_unique<std::deque<std::string>>();
+		holder_ = std::make_unique<ItemImplRawData::HolderT>();
 	}
 	CJsonDecoder decoder(tagsMatcher_, *holder_);
 

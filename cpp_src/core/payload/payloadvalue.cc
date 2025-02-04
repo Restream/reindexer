@@ -27,14 +27,6 @@ uint8_t* PayloadValue::alloc(size_t cap) {
 	return pn;
 }
 
-void PayloadValue::release() noexcept {
-	if (p_ && header()->refcount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-		header()->~dataHeader();
-		operator delete(p_);
-	}
-	p_ = nullptr;
-}
-
 void PayloadValue::Clone(size_t size) {
 	// If we have exclusive data - just up lsn
 	if (p_ && header()->refcount.load(std::memory_order_acquire) == 1) {

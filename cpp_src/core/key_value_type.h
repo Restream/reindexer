@@ -282,6 +282,7 @@ private:
 
 class key_string;
 class Uuid;
+struct p_string;
 
 template <>
 RX_ALWAYS_INLINE KeyValueType KeyValueType::From<bool>() {
@@ -311,6 +312,16 @@ RX_ALWAYS_INLINE KeyValueType KeyValueType::From<key_string>() {
 template <>
 RX_ALWAYS_INLINE KeyValueType KeyValueType::From<Uuid>() {
 	return KeyValueType::Uuid{};
+}
+
+template <>
+RX_ALWAYS_INLINE KeyValueType KeyValueType::From<std::string_view>() {
+	return KeyValueType::String{};
+}
+
+template <>
+RX_ALWAYS_INLINE KeyValueType KeyValueType::From<p_string>() {
+	return KeyValueType::String{};
 }
 
 }  // namespace reindexer

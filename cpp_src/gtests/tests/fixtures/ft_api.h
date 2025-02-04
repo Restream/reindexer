@@ -35,9 +35,9 @@ public:
 	reindexer::QueryResults SimpleSelect3(std::string_view word) { return SimpleSelect("nm3", "ft", word, true); }
 
 	reindexer::Error Delete(int id);
-	reindexer::QueryResults SimpleCompositeSelect(std::string word);
-	reindexer::QueryResults CompositeSelectField(const std::string& field, std::string word);
-	reindexer::QueryResults StressSelect(std::string word);
+	reindexer::QueryResults SimpleCompositeSelect(std::string_view word);
+	reindexer::QueryResults CompositeSelectField(const std::string& field, std::string_view word);
+	reindexer::QueryResults StressSelect(std::string_view word);
 	std::vector<std::string> CreateAllPermutatedQueries(const std::string& queryStart, std::vector<std::string> words,
 														const std::string& queryEnd, const std::string& sep = " ");
 	void CheckAllPermutations(const std::string& queryStart, const std::vector<std::string>& words, const std::string& queryEnd,

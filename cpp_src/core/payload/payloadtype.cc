@@ -151,7 +151,7 @@ int PayloadTypeImpl::FieldByJsonPath(std::string_view jsonPath) const noexcept {
 }
 
 void PayloadTypeImpl::serialize(WrSerializer& ser) const {
-	ser.PutVarUint(base_key_string::export_hdr_offset());
+	ser.PutVarUint(key_string_impl::export_hdr_offset());
 	ser.PutVarUint(NumFields());
 	for (int i = 0; i < NumFields(); i++) {
 		ser.PutKeyValueType(Field(i).Type());
@@ -191,9 +191,6 @@ void PayloadTypeImpl::deserialize(Serializer& ser) {
 
 		PayloadFieldType ft(t, name, std::move(jsonPaths), isArray);
 
-		if (isArray) {
-			ft.SetArray();
-		}
 		ft.SetOffset(offset);
 		fieldsByName_.emplace(std::move(name), fields_.size());
 		if (t.Is<KeyValueType::String>()) {

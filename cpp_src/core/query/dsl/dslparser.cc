@@ -276,10 +276,9 @@ static void parseSort(const JsonValue& v, SortingEntries& sortingEntries, std::v
 }
 
 void parseSingleJoinQuery(const JsonValue& join, Query& query);
-void parseEqualPositions(const JsonValue& dsl, std::vector<std::pair<size_t, EqualPosition_t>>& equalPositions, size_t lastBracketPosition);
+void parseEqualPositions(const JsonValue& dsl, Query& query);
 
-static void parseFilter(const JsonValue& filter, Query& q, std::vector<std::pair<size_t, EqualPosition_t>>& equalPositions,
-						size_t lastBracketPosition) {
+static void parseFilter(const JsonValue& filter, Query& q) {
 	OpType op = OpAnd;
 	CondType condition{CondEq};
 	VariantArray values;
@@ -333,16 +332,15 @@ static void parseFilter(const JsonValue& filter, Query& q, std::vector<std::pair
 			case Filter::Filters: {
 				checkJsonValueType(v, name, JSON_ARRAY);
 				q.NextOp(op).OpenBracket();
-				const auto bracketPosition = q.Entries().Size();
 				for (const auto& f : v) {
-					parseFilter(f.value, q, equalPositions, bracketPosition);
+					parseFilter(f.value, q);
 				}
 				q.CloseBracket();
 				entryType = BRACKET;
 				break;
 			}
 			case Filter::EqualPositions:
-				parseEqualPositions(v, equalPositions, lastBracketPosition);
+				parseEqualPositions(v, q);
 				entryType = EQUAL_POSITIONS;
 				break;
 			case Filter::SubQuery:
@@ -470,7 +468,7 @@ void parseSingleJoinQuery(const JsonValue& join, Query& query) {
 			case JoinRoot::Filters:
 				checkJsonValueType(value, name, JSON_ARRAY);
 				for (const auto& filter : value) {
-					parseFilter(filter.value, qjoin, equalPositions, 0);
+					parseFilter(filter.value, qjoin);
 				}
 				break;
 			case JoinRoot::Sort:
@@ -497,13 +495,6 @@ void parseSingleJoinQuery(const JsonValue& join, Query& query) {
 				qjoin.Select(std::move(selectFilters));
 				break;
 			}
-		}
-	}
-	for (auto&& eqPos : equalPositions) {
-		if (eqPos.first == 0) {
-			qjoin.SetEqualPositions(std::move(eqPos.second));
-		} else {
-			qjoin.SetEqualPositions(eqPos.first - 1, std::move(eqPos.second));
 		}
 	}
 	query.AddJoinQuery(std::move(qjoin));
@@ -567,8 +558,7 @@ static void parseAggregation(const JsonValue& aggregation, Query& query) {
 	query.aggregations_.emplace_back(type, std::move(fields), std::move(sortingEntries), limit, offset);
 }
 
-void parseEqualPositions(const JsonValue& dsl, std::vector<std::pair<size_t, EqualPosition_t>>& equalPositions,
-						 size_t lastBracketPosition) {
+void parseEqualPositions(const JsonValue& dsl, Query& query) {
 	for (const auto& ar : dsl) {
 		auto subArray = ar.value;
 		checkJsonValueType(subArray, ar.key, JSON_OBJECT);
@@ -582,11 +572,7 @@ void parseEqualPositions(const JsonValue& dsl, std::vector<std::pair<size_t, Equ
 						checkJsonValueType(f.value, f.key, JSON_STRING);
 						ep.emplace_back(f.value.toString());
 					}
-					if (ep.size() < 2) {
-						throw Error(errLogic, "equal_position() is supposed to have at least 2 arguments. Arguments: [%s]",
-									ep.size() == 1 ? ep[0] : "");
-					}
-					equalPositions.emplace_back(lastBracketPosition, std::move(ep));
+					query.EqualPositions(std::move(ep));
 				}
 			}
 		}
@@ -649,8 +635,6 @@ void parse(const JsonValue& root, Query& q) {
 	if (root.getTag() != JSON_OBJECT) {
 		throw Error(errParseJson, "Json is malformed: %d", root.getTag());
 	}
-
-	std::vector<std::pair<size_t, EqualPosition_t>> equalPositions;
 	for (const auto& elem : root) {
 		auto& v = elem.value;
 		auto name = elem.key;
@@ -673,7 +657,7 @@ void parse(const JsonValue& root, Query& q) {
 			case Root::Filters:
 				checkJsonValueType(v, name, JSON_ARRAY);
 				for (const auto& filter : v) {
-					parseFilter(filter.value, q, equalPositions, 0);
+					parseFilter(filter.value, q);
 				}
 				break;
 
@@ -749,37 +733,29 @@ void parse(const JsonValue& root, Query& q) {
 				break;
 		}
 	}
-	for (auto&& eqPos : equalPositions) {
-		if (eqPos.first == 0) {
-			q.SetEqualPositions(std::move(eqPos.second));
-		} else {
-			q.SetEqualPositions(eqPos.first - 1, std::move(eqPos.second));
-		}
-	}
 }
 
 #include "query.json.h"
 
-Error Parse(std::string_view str, Query& q) {
+void Parse(std::string_view str, Query& q) {
 	static JsonSchemaChecker schemaChecker(kQueryJson, "query");
 	try {
 		gason::JsonParser parser;
 		auto root = parser.Parse(str);
 		Error err = schemaChecker.Check(root);
 		if (!err.ok()) {
-			return err;
+			throw err;
 		}
 		dsl::parse(root.value, q);
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "Query: %s", ex.what());
+		throw Error(errParseJson, "Query: %s", ex.what());
 	} catch (const Error& err) {
-		return err;
+		throw err;
 	} catch (const std::exception& ex) {
-		return Error(errParseJson, "Exception: %s", ex.what());
+		throw Error(errParseJson, "Exception: %s", ex.what());
 	} catch (...) {
-		return Error(errParseJson, "Unknown Exception");
+		throw Error(errParseJson, "Unknown Exception");
 	}
-	return errOK;
 }
 
 }  // namespace dsl

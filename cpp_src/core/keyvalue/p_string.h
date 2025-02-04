@@ -39,7 +39,7 @@ struct p_string {
 	constexpr static uint64_t tagVstr = 0x3ULL;
 	// ptr points to slice object
 	constexpr static uint64_t tagSlice = 0x4ULL;
-	// ptr points to key_string payload atomic_rc_wrapper<base_key_string>
+	// ptr points to key_string payload atomic_rc_wrapper<key_string_impl>
 	constexpr static uint64_t tagKeyString = 0x5ULL;
 	// ptr points to json_string
 	constexpr static uint64_t tagJsonStr = 0x6ULL;
@@ -70,8 +70,9 @@ struct p_string {
 				return std::string_view(str.ptr, str.size);
 			}
 			case tagCxxstr:
-			case tagKeyString:
 				return std::string_view(*reinterpret_cast<const std::string*>(ptr()));
+			case tagKeyString:
+				return std::string_view(*reinterpret_cast<const key_string_impl*>(ptr()));
 			case tagSlice:
 				return *reinterpret_cast<const std::string_view*>(ptr());
 			case tagLstr: {
@@ -95,8 +96,9 @@ struct p_string {
 			case tagCstr:
 				return reinterpret_cast<const char*>(ptr());
 			case tagCxxstr:
-			case tagKeyString:
 				return (reinterpret_cast<const std::string*>(ptr()))->data();
+			case tagKeyString:
+				return (reinterpret_cast<const key_string_impl*>(ptr()))->data();
 			case tagMsgPackStr:
 				return (reinterpret_cast<const l_msgpack_hdr*>(ptr()))->ptr;
 			case tagSlice:
@@ -123,8 +125,9 @@ struct p_string {
 				case tagCstr:
 					return strlen(reinterpret_cast<const char*>(ptr()));
 				case tagCxxstr:
-				case tagKeyString:
 					return (reinterpret_cast<const std::string*>(ptr()))->length();
+				case tagKeyString:
+					return (reinterpret_cast<const key_string_impl*>(ptr()))->size();
 				case tagSlice:
 					return (reinterpret_cast<const std::string_view*>(ptr()))->size();
 				case tagLstr:
@@ -157,14 +160,21 @@ struct p_string {
 	bool operator>=(p_string other) const noexcept { return compare(other) >= 0; }
 	bool operator<=(p_string other) const noexcept { return compare(other) <= 0; }
 	const std::string* getCxxstr() const noexcept {
-		assertrx(type() == tagCxxstr || type() == tagKeyString);
+		assertrx(type() == tagCxxstr);
 		return reinterpret_cast<const std::string*>(ptr());
 	}
 
 	key_string getKeyString() const noexcept {
+		if (type() == tagKeyString) {
+			auto str = reinterpret_cast<key_string_impl*>(const_cast<void*>(ptr()));
+			return key_string(str);
+		} else {
+			return make_key_string(data(), size());
+		}
+	}
+	const key_string_impl* getBaseKeyString() const noexcept {
 		assertrx(type() == tagKeyString);
-		auto str = reinterpret_cast<base_key_string*>(const_cast<void*>(ptr()));
-		return key_string(str);
+		return reinterpret_cast<key_string_impl*>(const_cast<void*>(ptr()));
 	}
 
 	int type() const noexcept { return (v & tagMask) >> tagShift; }

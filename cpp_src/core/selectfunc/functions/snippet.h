@@ -14,7 +14,7 @@ public:
 
 private:
 	void init(const SelectFuncStruct& func);
-	void addSnippet(std::string& resultString, const std::string& data, const Area& snippetAreaPrev, const Area& snippetAreaPrevChar) const;
+	void addSnippet(std::string& resultString, std::string_view data, const Area& snippetAreaPrev, const Area& snippetAreaPrevChar) const;
 
 	class RecalcZoneHelper {
 	public:
@@ -41,9 +41,8 @@ private:
 		std::string_view leftBound_, rightBound_;
 	};
 
-	void buildResult(RecalcZoneHelper& recalcZoneHelper, const AreasInField<Area>& pva, const std::string& data, std::string& resultString);
-
-	void buildResultWithPrefix(RecalcZoneHelper& recalcZoneHelper, const AreasInField<Area>& pva, const std::string& data,
+	void buildResult(RecalcZoneHelper& recalcZoneHelper, const AreasInField<Area>& pva, std::string_view data, std::string& resultString);
+	void buildResultWithPrefix(RecalcZoneHelper& recalcZoneHelper, const AreasInField<Area>& pva, std::string_view data,
 							   std::string& resultString);
 
 	bool isInit_ = false;

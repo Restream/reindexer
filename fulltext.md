@@ -420,7 +420,7 @@ If the list of stopwords looks like this:
 ```
 and there are pair of documents containing this word: `{"...under the roof ..."}, {"... to understand and forgive..."}`. Then for the query 'under*' we will get as a result only document `{"... to understand and forgive..."}` and for the query 'under'  we will get nothing as a result.
 
-If the "StopWords" section is not specified in the config, then the [default](./cpp_src/core/ft/stopwords/stop_en.cc) stopwords list will be used, and if it is explicitly specified empty, it means that there are no stopwords.
+If the "StopWords" section is not specified in the config, then the [default_en](./cpp_src/core/ft/stopwords/stop_en.cc) and [default_ru](./cpp_src/core/ft/stopwords/stop_ru.cc) stopwords list will be used, and if it is explicitly specified empty, it means that there are no stopwords.
 
 ### Detailed typos config
 

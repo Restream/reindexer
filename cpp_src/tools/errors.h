@@ -7,39 +7,35 @@
 #include "estl/intrusive_ptr.h"
 
 #ifdef REINDEX_CORE_BUILD
-#include "debug/backtrace.h"
 #include "fmt/printf.h"
 #endif	// REINDEX_CORE_BUILD
 
 namespace reindexer {
 
+[[noreturn]] void print_backtrace_and_abort(std::string&& msg);
+
 #if defined(REINDEX_CORE_BUILD)
 template <typename... Args>
-void assertf_fmt(const char* fmt, const Args&... args) {
-	fmt::fprintf(stderr, fmt, args...);
+std::string assertf_fmt(const char* fmt, const Args&... args) {
+	return fmt::sprintf(fmt, args...);
 }
 #if defined(NDEBUG)
 #define assertf(...) ((void)0)
 #else
 // Using (void)fmt here to force ';' usage after the macro
-#define assertf(e, fmt, ...)                                                                                \
-	if rx_unlikely (!(e)) {                                                                                 \
-		reindexer::assertf_fmt("%s:%d: failed assertion '%s':\n" fmt, __FILE__, __LINE__, #e, __VA_ARGS__); \
-		reindexer::debug::print_backtrace(std::cerr, nullptr, -1);                                          \
-		reindexer::debug::print_crash_query(std::cerr);                                                     \
-		abort();                                                                                            \
-	}                                                                                                       \
+#define assertf(e, fmt, ...)                                                                                     \
+	if rx_unlikely (!(e)) {                                                                                      \
+		reindexer::print_backtrace_and_abort(                                                                    \
+			reindexer::assertf_fmt("%s:%d: failed assertion '%s':\n" fmt, __FILE__, __LINE__, #e, __VA_ARGS__)); \
+	}                                                                                                            \
 	(void)fmt
 #endif	// NDEBUG
 
 #ifdef RX_WITH_STDLIB_DEBUG
-#define assertf_dbg(e, fmt, ...)                                                                            \
-	if rx_unlikely (!(e)) {                                                                                 \
-		reindexer::assertf_fmt("%s:%d: failed assertion '%s':\n" fmt, __FILE__, __LINE__, #e, __VA_ARGS__); \
-		reindexer::debug::print_backtrace(std::cerr, nullptr, -1);                                          \
-		reindexer::debug::print_crash_query(std::cerr);                                                     \
-		abort();                                                                                            \
-	}                                                                                                       \
+#define assertf_dbg(e, fmt, ...)                                                                                                       \
+	if rx_unlikely (!(e)) {                                                                                                            \
+		print_backtrace_and_abort(reindexer::assertf_fmt("%s:%d: failed assertion '%s':\n" fmt, __FILE__, __LINE__, #e, __VA_ARGS__)); \
+	}                                                                                                                                  \
 	(void)fmt
 #else  // RX_WITH_STDLIB_DEBUG
 #define assertf_dbg(...) ((void)0)

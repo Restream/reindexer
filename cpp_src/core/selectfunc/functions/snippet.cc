@@ -100,7 +100,7 @@ void Snippet::init(const SelectFuncStruct& func) {
 	isInit_ = true;
 }
 
-void Snippet::addSnippet(std::string& resultString, const std::string& data, const Area& snippetAreaPrev,
+void Snippet::addSnippet(std::string& resultString, std::string_view data, const Area& snippetAreaPrev,
 						 const Area& snippetAreaPrevChar) const {
 	resultString.append(preDelim_);
 
@@ -181,6 +181,7 @@ A Snippet::RecalcZoneHelper::RecalcZoneToOffset(const Area& area) {
 		wordCount_++;
 	}
 
+	// NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
 	auto b = calcUtf8BeforeDelims(data_.data(), outAreas.zoneArea.start, before_, leftBound_);
 	auto a = calcUtf8AfterDelims({data_.data() + outAreas.zoneArea.end, data_.size() - outAreas.zoneArea.end}, after_, rightBound_);
 	outAreas.snippetArea.start = outAreas.zoneArea.start - b.first;
@@ -192,7 +193,7 @@ A Snippet::RecalcZoneHelper::RecalcZoneToOffset(const Area& area) {
 	return outAreas;
 }
 
-void Snippet::buildResult(RecalcZoneHelper& recalcZoneHelper, const AreasInField<Area>& pva, const std::string& data,
+void Snippet::buildResult(RecalcZoneHelper& recalcZoneHelper, const AreasInField<Area>& pva, std::string_view data,
 						  std::string& resultString) {
 	// resultString =preDelim_+with_area_str+data_str_before+marker_before+zone_str+marker_after+data_strAfter+postDelim_
 	Area snippetAreaPrev;
@@ -235,7 +236,7 @@ void Snippet::buildResult(RecalcZoneHelper& recalcZoneHelper, const AreasInField
 	resultString.append(postDelim_);
 }
 
-void Snippet::buildResultWithPrefix(RecalcZoneHelper& recalcZoneHelper, const AreasInField<Area>& pva, const std::string& data,
+void Snippet::buildResultWithPrefix(RecalcZoneHelper& recalcZoneHelper, const AreasInField<Area>& pva, std::string_view data,
 									std::string& resultString) {
 	// resultString =preDelim_+with_area_str+data_str_before+marker_before+zone_str+marker_after+data_strAfter+postDelim_
 	Area snippetAreaPrev;
@@ -296,7 +297,7 @@ bool Snippet::Process(ItemRef& res, PayloadType& plType, const SelectFuncStruct&
 		throw Error(errLogic, "Unable to apply snippet function to the non-string field '%s'", func.field);
 	}
 
-	const std::string* data = p_string(kr[0]).getCxxstr();
+	const std::string_view data = std::string_view(p_string(kr[0]));
 
 	auto pva = dataFtCtx.area[it->second].GetAreas(func.fieldNo);
 	if (!pva || pva->Empty()) {
@@ -304,14 +305,14 @@ bool Snippet::Process(ItemRef& res, PayloadType& plType, const SelectFuncStruct&
 	}
 
 	std::string resultString;
-	resultString.reserve(data->size());
+	resultString.reserve(data.size());
 
-	RecalcZoneHelper recalcZoneHelper(*data, ftctx->GetData()->splitter, after_, before_, leftBound_, rightBound_);
+	RecalcZoneHelper recalcZoneHelper(data, ftctx->GetData()->splitter, after_, before_, leftBound_, rightBound_);
 
 	if (needAreaStr_) {
-		buildResultWithPrefix(recalcZoneHelper, *pva, *data, resultString);
+		buildResultWithPrefix(recalcZoneHelper, *pva, data, resultString);
 	} else {
-		buildResult(recalcZoneHelper, *pva, *data, resultString);
+		buildResult(recalcZoneHelper, *pva, data, resultString);
 	}
 
 	stringsHolder.emplace_back(make_key_string(std::move(resultString)));

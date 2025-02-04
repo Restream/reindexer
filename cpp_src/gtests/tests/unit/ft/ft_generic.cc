@@ -140,7 +140,7 @@ TEST_P(FTGenericApi, MergeWithSameNSAndSelectFunctions) {
 
 	for (const auto& query : CreateAllPermutatedQueries("", {"*entity", "somethin*"}, "")) {
 		for (const auto& field : {std::string("ft1"), std::string("ft2")}) {
-			auto dsl = std::string("@").append(field).append(" ").append(query);
+			auto dsl = fmt::format("@{} {}", field, query);
 			auto qr{reindexer::Query("nm1").Where("ft3", CondEq, dsl)};
 			reindexer::QueryResults res;
 			auto mqr{reindexer::Query("nm1").Where("ft3", CondEq, std::move(dsl))};
@@ -835,9 +835,36 @@ TEST_P(FTGenericApi, SelectWithSeveralGroup) {
 
 TEST_P(FTGenericApi, NumberToWordsSelect) {
 	Init(GetDefaultConfig());
-	Add("оценка 5 майкл джордан 23"sv, ""sv);
+	auto row1 = Add("оценка 52 майкл джордан 23 пятьдесят"sv);
+	auto row2 = Add("8"sv);
+	auto row3 = Add("41 цифра и еще цифра 241"sv);
+	auto row4 = Add("начало 120 цифра и еще цифра 9120 конец"sv);
+	auto row5 = Add("слово один пять два 5 семь 7 ещё пять слово"sv);
+	auto row6 = Add("слово один 5 два пять семь 7 ещё 5 слово"sv);
+	auto row7 = Add("1000000000000 1000000000 50000000055 1000000"sv);
+	auto row8 = Add("70 1 7 77 377 70 7"sv);
 
-	CheckAllPermutations("", {"пять", "+двадцать", "+три"}, "", {{"оценка !5! майкл джордан !23!", ""}});
+	auto select = [this](int id, const std::string& ftQuery, const std::string& result) {
+		auto q{reindexer::Query("nm1").Where("ft3", CondEq, std::string(ftQuery)).And().Where("id", CondEq, id).WithRank()};
+		reindexer::QueryResults res;
+		q.AddFunction("ft3 = highlight(!,!)");
+		auto err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(res.Count(), 1);
+		auto item = res.begin().GetItem();
+		std::string val = item["ft1"].As<std::string>();
+		ASSERT_EQ(val, result);
+	};
+	select(row1.second, "52 +двадцать +три", "оценка !52! майкл джордан !23! пятьдесят");
+	select(row2.second, "восемь", "!8!");
+	select(row3.second, "сорок", "!41! цифра и еще цифра !241!");
+	select(row3.second, "один", "!41! цифра и еще цифра !241!");
+	select(row4.second, "сто конец", "начало !120! цифра и еще цифра !9120 конец!");
+	select(row4.second, "тысяч", "начало 120 цифра и еще цифра !9120! конец");
+	select(row5.second, "пять", "слово один !пять! два !5! семь 7 ещё !пять! слово");
+	select(row6.second, "пять", "слово один !5! два !пять! семь 7 ещё !5! слово");
+	select(row7.second, "миллиардов", "1000000000000 !1000000000 50000000055! 1000000");
+	select(row8.second, "\"=семьдесят =семь\"", "70 1 7 !77 377 70 7!");
 }
 
 // Make sure FT seeks by a huge number set by string in DSL
@@ -853,6 +880,9 @@ TEST_P(FTGenericApi, HugeNumberToWordsSelect) {
 		"+четыреста +сорок");
 	// Make sure it found this only string
 	ASSERT_TRUE(qr.Count() == 1);
+	auto item = qr.begin().GetItem();
+	std::string json = item["ft1"].As<std::string>();
+	ASSERT_EQ(json, "много !7343121521906522180408440! денег");
 }
 
 // Make sure way too huge numbers are ignored in FT
@@ -1935,7 +1965,7 @@ TEST_P(FTGenericApi, FrisoTestSelect) {
 		"俊逸", "假的",	  "pnh",  "245mm",	  "哭著", "谷底", "汆",	  "意表", "liuchiu", "殆",	 "mhw5500fw"};
 
 	for (unsigned int i = 0; i < testData.size(); i++) {
-		std::string findWord = testData[i];
+		const std::string& findWord = testData[i];
 		if (findWord == "~" || findWord == "*" || findWord == "-" || findWord == "<" || findWord == ">" || findWord == "," ||
 			findWord == "」") {
 			continue;

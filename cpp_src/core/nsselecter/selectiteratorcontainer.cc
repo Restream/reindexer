@@ -609,11 +609,12 @@ bool SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor& q
 
 template <bool reverse>
 RX_ALWAYS_INLINE bool SelectIteratorContainer::checkIfSatisfyCondition(SelectIterator& it, bool* finish, IdType rowId) {
+	IdType val = it.Val();
 	if constexpr (reverse) {
-		while (it.Val() > rowId && it.Next(rowId)) {
+		for (; val > rowId && it.Next(rowId); val = it.Val()) {
 		}
 	} else {
-		while (it.Val() < rowId && it.Next(rowId)) {
+		for (; val < rowId && it.Next(rowId); val = it.Val()) {
 		}
 	}
 	if (it.End()) {
@@ -621,9 +622,9 @@ RX_ALWAYS_INLINE bool SelectIteratorContainer::checkIfSatisfyCondition(SelectIte
 		return false;
 	}
 	if constexpr (reverse) {
-		return it.Val() >= rowId;
+		return val >= rowId;
 	} else {
-		return it.Val() <= rowId;
+		return val <= rowId;
 	}
 }
 
@@ -670,14 +671,11 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 			},
 			[&] RX_PRE_LMBD_ALWAYS_INLINE(SelectIterator & sit)
 				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition<reverse>(sit, &lastFinish, rowId); },
-			[&] /*RX_PRE_LMBD_ALWAYS_INLINE*/ (JoinSelectIterator & jit) /*RX_POST_LMBD_ALWAYS_INLINE*/ {
-				return checkIfSatisfyCondition(jit, pv, properRowId, match);
-			},
+			[&] RX_PRE_LMBD_ALWAYS_INLINE(JoinSelectIterator & jit)
+				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(jit, pv, properRowId, match); },
 			Restricted<FieldsComparator, EqualPositionComparator, ComparatorNotIndexed,
 					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
-				[&pv, properRowId] /*RX_PRE_LMBD_ALWAYS_INLINE*/ (auto& c) /*RX_POST_LMBD_ALWAYS_INLINE*/ {
-					return c.Compare(pv, properRowId);
-				}),
+				[&pv, properRowId] RX_PRE_LMBD_ALWAYS_INLINE(auto& c) RX_POST_LMBD_ALWAYS_INLINE { return c.Compare(pv, properRowId); }),
 			[] RX_PRE_LMBD_ALWAYS_INLINE(AlwaysTrue&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; });
 		if (op == OpOr) {
 			result |= lastResult;
@@ -703,30 +701,31 @@ IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterat
 		switch (it->operation) {
 			case OpOr: {
 				auto next = it->Visit(
-					[it, from](const SelectIteratorsBracket&) { return getNextItemId<reverse>(it.cbegin(), it.cend(), from); },
-					[from](const SelectIterator& sit) {
+					[it, from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket&)
+						RX_POST_LMBD_ALWAYS_INLINE { return getNextItemId<reverse>(it.cbegin(), it.cend(), from); },
+					[from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIterator& sit) RX_POST_LMBD_ALWAYS_INLINE {
 						if constexpr (reverse) {
 							if (sit.End()) {
 								return std::numeric_limits<IdType>::lowest();
 							}
-							if (sit.Val() < from) {
-								return sit.Val() + 1;
+							if (const auto val = sit.Val(); val < from) {
+								return val + 1;
 							}
 						} else {
 							if (sit.End()) {
 								return std::numeric_limits<IdType>::max();
 							}
-							if (sit.Val() > from) {
-								return sit.Val() - 1;
+							if (const auto val = sit.Val(); val > from) {
+								return val - 1;
 							}
 						}
 						return from;
 					},
-					[from](const OneOf<JoinSelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed, AlwaysTrue,
-									   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>) {
-						return from;
-					},
-					[](const AlwaysFalse&) {
+					[from] RX_PRE_LMBD_ALWAYS_INLINE(
+						const OneOf<JoinSelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed, AlwaysTrue,
+									Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>)
+						RX_POST_LMBD_ALWAYS_INLINE { return from; },
+					[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse&) RX_POST_LMBD_ALWAYS_INLINE {
 						return reverse ? std::numeric_limits<IdType>::lowest() : std::numeric_limits<IdType>::max();
 					});
 				if constexpr (reverse) {
@@ -738,30 +737,31 @@ IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterat
 			case OpAnd:
 				from = result;
 				result = it->Visit(
-					[it, from](const SelectIteratorsBracket&) { return getNextItemId<reverse>(it.cbegin(), it.cend(), from); },
-					[from](const SelectIterator& sit) {
+					[it, from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket&)
+						RX_POST_LMBD_ALWAYS_INLINE { return getNextItemId<reverse>(it.cbegin(), it.cend(), from); },
+					[from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIterator& sit) RX_POST_LMBD_ALWAYS_INLINE {
 						if constexpr (reverse) {
 							if (sit.End()) {
 								return std::numeric_limits<IdType>::lowest();
 							}
-							if (sit.Val() < from) {
-								return sit.Val() + 1;
+							if (const auto val = sit.Val(); val < from) {
+								return val + 1;
 							}
 						} else {
 							if (sit.End()) {
 								return std::numeric_limits<IdType>::max();
 							}
-							if (sit.Val() > from) {
-								return sit.Val() - 1;
+							if (const auto val = sit.Val(); val > from) {
+								return val - 1;
 							}
 						}
 						return from;
 					},
-					[from](const OneOf<JoinSelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed, AlwaysTrue,
-									   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>) {
-						return from;
-					},
-					[](const AlwaysFalse&) {
+					[from] RX_PRE_LMBD_ALWAYS_INLINE(
+						const OneOf<JoinSelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed, AlwaysTrue,
+									Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>)
+						RX_POST_LMBD_ALWAYS_INLINE { return from; },
+					[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse&) RX_POST_LMBD_ALWAYS_INLINE {
 						return reverse ? std::numeric_limits<IdType>::lowest() : std::numeric_limits<IdType>::max();
 					});
 				break;

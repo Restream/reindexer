@@ -90,7 +90,7 @@ void QueryResults::AddQr(LocalQueryResults&& local, int shardID, bool buildMerge
 		if (NeedOutputShardId()) {
 			local.SetOutputShardId(shardID);
 		}
-		local_ = std::make_unique<QrMetaData<LocalQueryResults>>(std::move(local));
+		local_.emplace(std::move(local));
 		local_->shardID = shardID;
 		switch (type_) {
 			case Type::None:
@@ -121,19 +121,24 @@ void QueryResults::AddQr(client::QueryResults&& remote, int shardID, bool buildM
 	}
 	if (type_ == Type::None || remote.Count() != 0 || remote.TotalCount() != 0 || !remote.GetAggregationResults().empty()) {
 		begin_.it = std::nullopt;
-		remote_.emplace_back(std::move(remote));
-		remote_.back().shardID = shardID;
+		if (remote_.empty()) {
+			remote_.reserve(16u);
+		}
+		remote_.emplace_back(std::make_unique<QrMetaData<client::QueryResults>>(std::move(remote)));
+		remote_.back()->shardID = shardID;
 		switch (type_) {
 			case Type::None:
 				type_ = Type::SingleRemote;
-				remote_[0].hasCompatibleTm = true;
+				remote_[0]->hasCompatibleTm = true;
 				break;
 			case Type::SingleRemote:
 				type_ = Type::MultipleRemote;
-				remote_[0].hasCompatibleTm = false;
+				remote_[0]->hasCompatibleTm = false;
 				break;
 			case Type::Local:
 				type_ = Type::Mixed;
+				assertrx_dbg(local_);
+				// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 				local_->hasCompatibleTm = false;
 				break;
 			case Type::MultipleRemote:
@@ -152,6 +157,7 @@ void QueryResults::RebuildMergedData() {
 		mergedData_.reset();
 		if (type_ == Type::Mixed) {
 			assertrx(local_);
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			const auto nss = local_->qr.GetNamespaces();
 			if (nss.size() > 1) {
 				throw Error(errLogic, "Local query result has %d namespaces, but distributed query results may have only 1", nss.size());
@@ -170,14 +176,14 @@ void QueryResults::RebuildMergedData() {
 
 		assertrx(remote_.size());
 		for (auto& qrp : remote_) {
-			const auto nss = qrp.qr.GetNamespaces();
-			const auto& agg = qrp.qr.GetAggregationResults();
+			const auto nss = qrp->qr.GetNamespaces();
+			const auto& agg = qrp->qr.GetAggregationResults();
 			if (mergedData_) {
 				if (!iequals(mergedData_->pt.Name(), nss[0])) {
 					throw Error(errLogic, "Query results in distributed query have different ns names: '%s' vs '%s'",
 								mergedData_->pt.Name(), nss[0]);
 				}
-				if (mergedData_->haveRank != qrp.qr.HaveRank() || mergedData_->needOutputRank != qrp.qr.NeedOutputRank()) {
+				if (mergedData_->haveRank != qrp->qr.HaveRank() || mergedData_->needOutputRank != qrp->qr.NeedOutputRank()) {
 					throw Error(errLogic, "Rank options are incompatible between query results inside distributed query results");
 				}
 				if (mergedData_->aggregationResults.size() != agg.size()) {
@@ -221,7 +227,7 @@ void QueryResults::RebuildMergedData() {
 					}
 				}
 			} else {
-				mergedData_ = std::make_unique<MergedData>(std::string(nss[0]), qrp.qr.HaveRank(), qrp.qr.NeedOutputRank());
+				mergedData_ = std::make_unique<MergedData>(std::string(nss[0]), qrp->qr.HaveRank(), qrp->qr.NeedOutputRank());
 				for (const auto& a : agg) {
 					if (a.type == AggAvg || a.type == AggFacet || a.type == AggDistinct || a.type == AggUnknown) {
 						throw Error(errLogic, "Remote query result (within distributed results) has unsupported aggregations");
@@ -239,7 +245,7 @@ void QueryResults::RebuildMergedData() {
 			mergedData_->pt = local_->qr.getPayloadType(0);
 		}
 		for (auto& qrp : remote_) {
-			tmList.emplace_back(qrp.qr.GetTagsMatcher(0));
+			tmList.emplace_back(qrp->qr.GetTagsMatcher(0));
 		}
 		mergedData_->tm = TagsMatcher::CreateMergedTagsMatcher(tmList);
 
@@ -247,7 +253,7 @@ void QueryResults::RebuildMergedData() {
 			local_->hasCompatibleTm = local_->qr.getTagsMatcher(0).IsSubsetOf(mergedData_->tm);
 		}
 		for (auto& qrp : remote_) {
-			qrp.hasCompatibleTm = qrp.qr.GetTagsMatcher(0).IsSubsetOf(mergedData_->tm);
+			qrp->hasCompatibleTm = qrp->qr.GetTagsMatcher(0).IsSubsetOf(mergedData_->tm);
 		}
 	} catch (...) {
 		mergedData_.reset();
@@ -264,10 +270,12 @@ const std::vector<AggregationResult>& QueryResults::GetAggregationResults() & {
 			return kEmpty;
 		}
 		case Type::Local: {
+			assertrx_dbg(local_);
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			return local_->qr.GetAggregationResults();
 		}
 		case Type::SingleRemote: {
-			return remote_[0].qr.GetAggregationResults();
+			return remote_[0]->qr.GetAggregationResults();
 		}
 		case Type::MultipleRemote:
 		case Type::Mixed:
@@ -281,9 +289,11 @@ h_vector<std::string_view, 1> QueryResults::GetNamespaces() const {
 		case Type::None:
 			return h_vector<std::string_view, 1>();
 		case Type::Local:
+			assertrx_dbg(local_);
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			return local_->qr.GetNamespaces();
 		case Type::SingleRemote:
-			return remote_[0].qr.GetNamespaces();
+			return remote_[0]->qr.GetNamespaces();
 		case Type::MultipleRemote:
 		case Type::Mixed:
 		default:
@@ -296,19 +306,22 @@ bool QueryResults::IsCacheEnabled() const noexcept {
 		case Type::None:
 			return true;
 		case Type::Local:
+			assertrx_dbg(local_);
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			return local_->qr.IsCacheEnabled();
 		case Type::SingleRemote:
 		case Type::MultipleRemote:
 		case Type::Mixed:
 		default: {
-			bool res = true;
-			if (local_) {
-				res = res && local_->qr.IsCacheEnabled();
+			if (local_ && !local_->qr.IsCacheEnabled()) {
+				return false;
 			}
 			for (auto& qrp : remote_) {
-				res = res && qrp.qr.IsCacheEnabled();
+				if (!qrp->qr.IsCacheEnabled()) {
+					return false;
+				}
 			}
-			return res;
+			return true;
 		}
 	}
 }
@@ -318,7 +331,7 @@ bool QueryResults::HaveShardIDs() const noexcept {
 		return true;
 	}
 	for (auto& qrp : remote_) {
-		if (qrp.shardID != ShardingKeyType::ProxyOff) {
+		if (qrp->shardID != ShardingKeyType::ProxyOff) {
 			return true;
 		}
 	}
@@ -330,9 +343,11 @@ int QueryResults::GetCommonShardID() const {
 		case Type::None:
 			return -1;
 		case Type::Local:
+			assertrx_dbg(local_);
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			return local_->shardID;
 		case Type::SingleRemote:
-			return remote_[0].shardID;
+			return remote_[0]->shardID;
 		case Type::MultipleRemote:
 		case Type::Mixed:
 			break;
@@ -343,11 +358,11 @@ int QueryResults::GetCommonShardID() const {
 	}
 	for (auto& qrp : remote_) {
 		if (shardId.has_value()) {
-			if (qrp.shardID != *shardId) {
-				throw Error(errLogic, "Distributed query results does not have common shard id (%d vs %d)", qrp.shardID, *shardId);
+			if (qrp->shardID != *shardId) {
+				throw Error(errLogic, "Distributed query results does not have common shard id (%d vs %d)", qrp->shardID, *shardId);
 			}
 		} else {
-			shardId = qrp.shardID;
+			shardId = qrp->shardID;
 		}
 	}
 	return shardId.has_value() ? *shardId : ShardingKeyType::ProxyOff;
@@ -358,9 +373,11 @@ PayloadType QueryResults::GetPayloadType(int nsid) const noexcept {
 		case Type::None:
 			return PayloadType();
 		case Type::Local:
+			assertrx_dbg(local_);
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			return local_->qr.getPayloadType(nsid);
 		case Type::SingleRemote:
-			return remote_[0].qr.GetPayloadType(nsid);
+			return remote_[0]->qr.GetPayloadType(nsid);
 		case Type::MultipleRemote:
 		case Type::Mixed:
 		default:
@@ -373,9 +390,11 @@ TagsMatcher QueryResults::GetTagsMatcher(int nsid) const noexcept {
 		case Type::None:
 			return TagsMatcher();
 		case Type::Local:
+			assertrx_dbg(local_);
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			return local_->qr.getTagsMatcher(nsid);
 		case Type::SingleRemote:
-			return remote_[0].qr.GetTagsMatcher(nsid);
+			return remote_[0]->qr.GetTagsMatcher(nsid);
 		case Type::MultipleRemote:
 		case Type::Mixed:
 		default:
@@ -388,9 +407,11 @@ bool QueryResults::HaveRank() const noexcept {
 		case Type::None:
 			return false;
 		case Type::Local:
+			assertrx_dbg(local_);
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			return local_->qr.haveRank;
 		case Type::SingleRemote:
-			return remote_[0].qr.HaveRank();
+			return remote_[0]->qr.HaveRank();
 		case Type::MultipleRemote:
 		case Type::Mixed:
 			break;
@@ -403,9 +424,11 @@ bool QueryResults::NeedOutputRank() const noexcept {
 		case Type::None:
 			return false;
 		case Type::Local:
+			assertrx_dbg(local_);
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			return local_->qr.needOutputRank;
 		case Type::SingleRemote:
-			return remote_[0].qr.NeedOutputRank();
+			return remote_[0]->qr.NeedOutputRank();
 		case Type::MultipleRemote:
 		case Type::Mixed:
 			break;
@@ -418,9 +441,11 @@ bool QueryResults::HaveJoined() const noexcept {
 		case Type::None:
 			return false;
 		case Type::Local:
+			assertrx_dbg(local_);
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			return local_->qr.joined_.size();
 		case Type::SingleRemote:
-			return remote_[0].qr.HaveJoined();
+			return remote_[0]->qr.HaveJoined();
 		case Type::MultipleRemote:
 		case Type::Mixed:
 			break;
@@ -457,8 +482,12 @@ uint32_t QueryResults::GetJoinedField(int parentNsId) const noexcept {
 			joinedField += qData_->mergedJoinedSizes[ns];
 		}
 	} else if (type_ == Type::Local) {
+		assertrx_dbg(local_);
+		// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 		joinedField = local_->qr.joined_.size();
 		for (int ns = 0; ns < parentNsId; ++ns) {
+			assertrx_dbg(local_);
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			joinedField += local_->qr.joined_[size_t(ns)].GetJoinedSelectorsCount();
 		}
 	}
@@ -482,6 +511,7 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer& wrser, bool withHdrLen) {
 			case Type::None:
 				return Error(errLogic, "QueryResults are empty");
 			case Type::Local:
+				assertrx_dbg(qr_->local_);
 				// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 				return localIt_->GetCJSON(wrser, withHdrLen);
 			case Type::SingleRemote:
@@ -490,19 +520,22 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer& wrser, bool withHdrLen) {
 				break;
 		}
 
-		Error err = std::visit(overloaded{[&](LocalQueryResults::Iterator it) {
-											  if (qr_->local_->hasCompatibleTm) {
-												  return it.GetCJSON(wrser, withHdrLen);
-											  }
-											  return getCJSONviaJSON(wrser, withHdrLen, it);
-										  },
-										  [&](client::QueryResults::Iterator it) {
-											  if (qr_->type_ == Type::SingleRemote || qr_->remote_[size_t(qr_->curQrId_)].hasCompatibleTm) {
-												  return it.GetCJSON(wrser, withHdrLen);
-											  }
-											  return getCJSONviaJSON(wrser, withHdrLen, it);
-										  }},
-							   getVariantIt());
+		Error err =
+			std::visit(overloaded{[&](LocalQueryResults::Iterator it) {
+									  assertrx_dbg(qr_->local_);
+									  // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+									  if (qr_->local_->hasCompatibleTm) {
+										  return it.GetCJSON(wrser, withHdrLen);
+									  }
+									  return getCJSONviaJSON(wrser, withHdrLen, it);
+								  },
+								  [&](client::QueryResults::Iterator it) {
+									  if (qr_->type_ == Type::SingleRemote || qr_->remote_[size_t(qr_->curQrId_)]->hasCompatibleTm) {
+										  return it.GetCJSON(wrser, withHdrLen);
+									  }
+									  return getCJSONviaJSON(wrser, withHdrLen, it);
+								  }},
+					   getVariantIt());
 		return err;
 	} catch (Error& e) {
 		return e;
@@ -536,6 +569,7 @@ Item QueryResults::Iterator::GetItem(bool enableHold) {
 			case Type::None:
 				return Item();
 			case Type::Local:
+				assertrx_dbg(qr_->local_);
 				// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 				return localIt_->GetItem(enableHold);
 			case Type::SingleRemote:
@@ -550,12 +584,14 @@ Item QueryResults::Iterator::GetItem(bool enableHold) {
 			auto& mData = qr_->getMergedData();
 			itemImpl.reset(new ItemImpl(mData.pt, mData.tm));
 		} else {
-			auto& remoteQr = qr_->remote_[size_t(qr_->curQrId_)].qr;
+			auto& remoteQr = qr_->remote_[size_t(qr_->curQrId_)]->qr;
 			const int nsId = std::get<client::QueryResults::Iterator>(vit).GetNSID();
 			itemImpl.reset(new ItemImpl(remoteQr.GetPayloadType(nsId), remoteQr.GetTagsMatcher(nsId)));
 		}
 
 		Item item = std::visit(overloaded{[&](LocalQueryResults::Iterator& it) {
+											  assertrx_dbg(qr_->local_);
+											  // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 											  auto item = getItem(it, std::move(itemImpl), !qr_->local_->hasCompatibleTm);
 											  item.setID(it.GetItemRef().Id());
 											  item.setLSN(it.GetItemRef().Value().GetLSN());
@@ -563,9 +599,9 @@ Item QueryResults::Iterator::GetItem(bool enableHold) {
 											  return item;
 										  },
 										  [&](client::QueryResults::Iterator& it) {
-											  auto item = getItem(it, std::move(itemImpl),
-																  !qr_->remote_[size_t(qr_->curQrId_)].hasCompatibleTm ||
-																	  !qr_->remote_[size_t(qr_->curQrId_)].qr.IsCJSON());
+											  auto& remoteQr = *qr_->remote_[size_t(qr_->curQrId_)];
+											  auto item =
+												  getItem(it, std::move(itemImpl), !remoteQr.hasCompatibleTm || !remoteQr.qr.IsCJSON());
 											  item.setID(it.GetID());
 											  assertrx(!it.GetLSN().isEmpty());
 											  item.setLSN(it.GetLSN());
@@ -598,12 +634,13 @@ void QueryResults::QrMetaData<QrT>::ResetJoinStorage(int64_t idx) const {
 
 joins::ItemIterator QueryResults::Iterator::GetJoined(std::vector<ItemRefCache>* storage) {
 	if (qr_->type_ == Type::Local) {
+		assertrx_dbg(localIt_);
 		// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 		return localIt_->GetJoined();
 	} else if (qr_->type_ == Type::SingleRemote) {
 		validateProxiedIterator();
 
-		auto rit = qr_->remote_[0].it;
+		auto rit = qr_->remote_[0]->it;
 		const auto& joinedData = rit.GetJoined();
 		if (!joinedData.size()) {
 			return joins::ItemIterator::CreateEmpty();
@@ -612,7 +649,7 @@ joins::ItemIterator QueryResults::Iterator::GetJoined(std::vector<ItemRefCache>*
 			throw Error(errLogic, "Unable to init joined data without initial query");
 		}
 
-		auto& rqr = qr_->remote_[0];
+		auto& rqr = *qr_->remote_[0];
 		if (storage || !rqr.CheckIfNsJoinStorageHasSameIdx(idx_)) {
 			try {
 				rqr.ResetJoinStorage(idx_);
@@ -628,10 +665,10 @@ joins::ItemIterator QueryResults::Iterator::GetJoined(std::vector<ItemRefCache>*
 					LocalQueryResults qrJoined;
 					const auto& joinedItems = joinedData[i];
 					for (const auto& itemData : joinedItems) {
-						ItemImpl itemimpl(qr_->remote_[0].qr.GetPayloadType(jField), qr_->remote_[0].qr.GetTagsMatcher(jField));
+						ItemImpl itemimpl(rqr.qr.GetPayloadType(jField), rqr.qr.GetTagsMatcher(jField));
 						itemimpl.FromCJSON(itemData.data);
 
-						qrJoined.Add(ItemRef(itemData.id, itemimpl.Value(), itemData.proc, itemData.nsid, true));
+						qrJoined.AddItemRef(itemData.id, itemimpl.Value(), itemData.proc, itemData.nsid, true);
 						if (!storage) {
 							rqr.NsJoinRes()->data.joinedRawData.emplace_back(std::move(itemimpl));
 						} else {
@@ -648,7 +685,7 @@ joins::ItemIterator QueryResults::Iterator::GetJoined(std::vector<ItemRefCache>*
 			}
 		}
 
-		return joins::ItemIterator(&(qr_->remote_[0].NsJoinRes()->data.jr), rit.itemParams_.id);
+		return joins::ItemIterator(&(rqr.NsJoinRes()->data.jr), rit.itemParams_.id);
 	}
 	// Distributed queries can not have joins
 	return reindexer::joins::ItemIterator::CreateEmpty();
@@ -959,6 +996,8 @@ public:
 		ItemRef liref, riref;
 		int lShardId, rShardId;
 		if (lhs < 0) {
+			assertrx_dbg(qr_.local_);
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			const auto& lqr = *qr_.local_;
 			liref = lqr.it.GetItemRef();
 			ltm = lqr.qr.getTagsMatcher(0);
@@ -966,13 +1005,15 @@ public:
 			lShardId = lqr.shardID;
 		} else {
 			assertrx(static_cast<size_t>(lhs) < qr_.remote_.size());
-			auto& rqr = qr_.remote_[lhs];
+			auto& rqr = *qr_.remote_[lhs];
 			liref = rqr.ItemRefData(qr_.curQrId_).data.ref;
 			ltm = rqr.qr.GetTagsMatcher(0);
 			lpt = rqr.qr.GetPayloadType(0);
 			lShardId = rqr.shardID;
 		}
 		if (rhs < 0) {
+			assertrx_dbg(qr_.local_);
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			const auto& lqr = *qr_.local_;
 			riref = lqr.it.GetItemRef();
 			rtm = lqr.qr.getTagsMatcher(0);
@@ -980,7 +1021,7 @@ public:
 			rShardId = lqr.shardID;
 		} else {
 			assertrx(static_cast<size_t>(rhs) < qr_.remote_.size());
-			auto& rqr = qr_.remote_[rhs];
+			auto& rqr = *qr_.remote_[rhs];
 			riref = rqr.ItemRefData(qr_.curQrId_).data.ref;
 			rtm = rqr.qr.GetTagsMatcher(0);
 			rpt = rqr.qr.GetPayloadType(0);
@@ -1015,6 +1056,8 @@ void QueryResults::SetOrdering(const Query& q, const NamespaceImpl& ns, const Rd
 
 void QueryResults::beginImpl() const {
 	if (type_ == Type::Local) {
+		assertrx_dbg(local_);
+		// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 		begin_.it = Iterator{this, 0, {local_->qr.begin() + std::min<size_t>(offset, count())}};
 	} else {
 		begin_.it = Iterator{this, 0, std::nullopt};
@@ -1032,6 +1075,7 @@ QueryResults::Iterator& QueryResults::Iterator::operator++() {
 			*this = qr_->end();
 			return *this;
 		case Type::Local:
+			assertrx_dbg(localIt_);
 			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			++(*localIt_);
 			return *this;
@@ -1049,14 +1093,18 @@ QueryResults::Iterator& QueryResults::Iterator::operator++() {
 	auto* qr = const_cast<QueryResults*>(qr_);
 	if (!qr_->orderedQrs_ || qr_->type_ == Type::SingleRemote) {
 		if (qr->curQrId_ < 0) {
+			assertrx_dbg(qr->local_);
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			++qr->local_->it;
 			++qr->lastSeenIdx_;
 			++idx_;
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			if (qr->local_->it == qr->local_->qr.end()) {
+				// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 				qr->curQrId_ = qr->findFirstQrWithItems(qr->local_->shardID);
 			}
 		} else if (size_t(qr->curQrId_) < qr_->remote_.size()) {
-			auto& remoteQrp = qr->remote_[size_t(qr_->curQrId_)];
+			auto& remoteQrp = *qr->remote_[size_t(qr_->curQrId_)];
 			++remoteQrp.it;
 			++qr->lastSeenIdx_;
 			++idx_;
@@ -1071,6 +1119,8 @@ QueryResults::Iterator& QueryResults::Iterator::operator++() {
 		assertrx(*qr->orderedQrs_->begin() == qrId);
 		auto oNode = qr->orderedQrs_->extract(qr->orderedQrs_->begin());
 		if (qrId < 0) {
+			assertrx_dbg(qr->local_);
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			++qr->local_->it;
 			if (qr->local_->it != qr->local_->qr.end()) {
 				oNode.value() = -1;
@@ -1078,8 +1128,9 @@ QueryResults::Iterator& QueryResults::Iterator::operator++() {
 			}
 		} else {
 			assertrx(static_cast<size_t>(qrId) < qr_->remote_.size());
-			++qr->remote_[qrId].it;
-			if (qr->remote_[qrId].it != qr->remote_[qrId].qr.end()) {
+			auto& remoteQrp = *qr->remote_[qrId];
+			++remoteQrp.it;
+			if (remoteQrp.it != remoteQrp.qr.end()) {
 				oNode.value() = qrId;
 				qr->orderedQrs_->insert(std::move(oNode));
 			}
@@ -1117,6 +1168,7 @@ ItemRef QueryResults::Iterator::GetItemRef(ProxiedRefsStorage* storage) {
 		case Type::None:
 			return ItemRef();
 		case Type::Local:
+			assertrx_dbg(localIt_);
 			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			return localIt_->GetItemRef();
 		case Type::SingleRemote:
@@ -1128,9 +1180,9 @@ ItemRef QueryResults::Iterator::GetItemRef(ProxiedRefsStorage* storage) {
 		overloaded{[](QrMetaData<LocalQueryResults>* qr) noexcept { return qr->it.GetItemRef(); },
 				   [&](QrMetaData<client::QueryResults>* qr) {
 					   if (!qr->CheckIfItemRefStorageHasSameIdx(idx_) || storage) {
+						   auto& remoteQr = *qr_->remote_[size_t(qr_->curQrId_)];
 						   ItemImpl itemimpl(qr_->GetPayloadType(0), qr_->GetTagsMatcher(0));
-						   const bool convertViaJSON =
-							   !qr_->remote_[size_t(qr_->curQrId_)].hasCompatibleTm || !qr_->remote_[size_t(qr_->curQrId_)].qr.IsCJSON();
+						   const bool convertViaJSON = !remoteQr.hasCompatibleTm || !remoteQr.qr.IsCJSON();
 						   Error err = fillItemImpl(qr->it, itemimpl, convertViaJSON);
 						   if (!err.ok()) {
 							   throw err;
@@ -1167,8 +1219,9 @@ int QueryResults::findFirstQrWithItems(int minShardId) {
 			orderedQrs_->emplace(-1);
 		}
 		for (int i = 0, size = remote_.size(); i < size; ++i) {
-			if (remote_[i].qr.Count()) {
-				assertrx(remote_[i].it == remote_[i].qr.begin());
+			auto& remote = *remote_[i];
+			if (remote.qr.Count()) {
+				assertrx(remote.it == remote.qr.begin());
 				orderedQrs_->emplace(i);
 			}
 		}
@@ -1185,9 +1238,10 @@ int QueryResults::findFirstQrWithItems(int minShardId) {
 			foundShardId = local_->shardID;
 		}
 		for (int i = 0, size = remote_.size(); i < size; ++i) {
-			if (remote_[i].qr.Count() && remote_[i].shardID < foundShardId && remote_[i].shardID > minShardId) {
+			auto& remote = *remote_[i];
+			if (remote.qr.Count() && remote.shardID < foundShardId && remote.shardID > minShardId) {
 				foundPos = i;
-				foundShardId = remote_[i].shardID;
+				foundShardId = remote.shardID;
 			}
 		}
 		return foundPos;

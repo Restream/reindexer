@@ -252,6 +252,7 @@ TEST_F(ShardingSystemApi, AwaitShards) {
 
 	std::shared_ptr<client::Reindexer> rx = getNode(0)->api.reindexer;
 	std::vector<std::thread> tds;
+	tds.reserve(kThreads);
 	for (size_t i = 0; i < kThreads; ++i) {
 		tds.emplace_back([&] {
 			std::unique_lock lck(mtx);
@@ -302,6 +303,7 @@ TEST_F(ShardingSystemApi, AwaitShardsTimeout) {
 	std::atomic<bool> done = false;
 	std::shared_ptr<client::Reindexer> rx = getNode(0)->api.reindexer;
 	std::vector<std::thread> tds;
+	tds.reserve(kThreads);
 	for (size_t i = 0; i < kThreads; ++i) {
 		tds.emplace_back([&] {
 			auto err = rx->OpenNamespace(kNewNs);

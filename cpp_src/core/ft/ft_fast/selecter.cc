@@ -966,7 +966,7 @@ void Selector<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 				}
 				if (!curMergedPos.posTmp.empty()) {
 					present[vid] = true;
-					double normDist = bound(1.0 / minDist, holder_.cfg_->distanceWeight, holder_.cfg_->distanceBoost);
+					double normDist = bound(1.0 / (minDist < 1 ? 1 : minDist), holder_.cfg_->distanceWeight, holder_.cfg_->distanceBoost);
 					int finalRank = normDist * termRank;
 					//'rank' of the current subTerm is greater than the previous subTerm, update the overall 'rank' and save the rank of the
 					// subTerm for possible

@@ -51,9 +51,27 @@ private:
 	public:
 		QrMetaData(QrT&& _qr = QrT()) : qr(std::move(_qr)), it(qr.begin()) {}
 		QrMetaData(const QrMetaData&) = delete;
-		QrMetaData(QrMetaData&&) = delete;
+		QrMetaData(QrMetaData&& o) noexcept
+			: qr(std::move(o.qr)),
+			  it(QrT::Iterator::SwitchQueryResultsPtrUnsafe(std::move(o.it), qr)),
+			  hasCompatibleTm(o.hasCompatibleTm),
+			  shardID(o.shardID),
+			  itemRefData_(std::move(o.itemRefData_)),
+			  nsJoinRes_(std::move(o.nsJoinRes_)) {}
 		QrMetaData& operator=(const QrMetaData&) = delete;
-		QrMetaData& operator=(QrMetaData&&) = delete;
+		QrMetaData& operator=(QrMetaData&& o) noexcept {
+			if (this != &o) {
+				qr = std::move(o.qr);
+				// SwitchQueryResultsPtrUnsafe is not implemented for client query results - iterator contains to many different pointer
+				// and it is unsafe to move it
+				it = QrT::Iterator::SwitchQueryResultsPtrUnsafe(std::move(o.it), qr);
+				hasCompatibleTm = o.hasCompatibleTm;
+				shardID = o.shardID;
+				itemRefData_ = std::move(o.itemRefData_);
+				nsJoinRes_ = std::move(o.nsJoinRes_);
+			}
+			return *this;
+		}
 
 		QrT qr;
 		typename QrT::Iterator it;
@@ -78,7 +96,7 @@ private:
 			cnt += local_->qr.Count();
 		}
 		for (const auto& qrp : remote_) {
-			cnt += qrp.qr.Count();
+			cnt += qrp->qr.Count();
 		}
 		return cnt;
 	}
@@ -106,8 +124,8 @@ public:
 			cnt += local_->qr.TotalCount();
 		}
 		for (const auto& qrp : remote_) {
-			if (qrp.qr.TotalCount() > 0) {
-				cnt += size_t(qrp.qr.TotalCount());
+			if (qrp->qr.TotalCount() > 0) {
+				cnt += size_t(qrp->qr.TotalCount());
 			}
 		}
 		return cnt;
@@ -136,7 +154,7 @@ public:
 			case Type::Local:
 				return local_->qr.GetExplainResults();
 			case Type::SingleRemote:
-				return remote_[0].qr.GetExplainResults();
+				return remote_[0]->qr.GetExplainResults();
 			case Type::Mixed:
 				if (local_->qr.explainResults.size()) {
 					throw Error(errForbidden, "Explain is not supported for distribute queries");
@@ -144,7 +162,7 @@ public:
 				[[fallthrough]];
 			case Type::MultipleRemote:
 				for (auto& qrp : remote_) {
-					if (qrp.qr.GetExplainResults().size()) {
+					if (qrp->qr.GetExplainResults().size()) {
 						throw Error(errForbidden, "Explain is not supported for distribute queries");
 					}
 				}
@@ -166,7 +184,7 @@ public:
 				return local_->qr.getMergedNSCount();
 			}
 			case Type::SingleRemote: {
-				return remote_[0].qr.GetMergedNSCount();
+				return remote_[0]->qr.GetMergedNSCount();
 			}
 			case Type::MultipleRemote:
 			case Type::Mixed:
@@ -195,7 +213,7 @@ public:
 				return ret;
 			}
 			case Type::SingleRemote: {
-				auto& remote = remote_[0];
+				auto& remote = *remote_[0];
 				auto& remoteTags = remote.qr.GetIncarnationTags();
 				if (remoteTags.empty()) {
 					return ret;
@@ -220,7 +238,7 @@ public:
 				[[fallthrough]];
 			case Type::MultipleRemote:
 				for (auto& r : remote_) {
-					auto& remoteTags = r.qr.GetIncarnationTags();
+					auto& remoteTags = r->qr.GetIncarnationTags();
 					if (remoteTags.empty()) {
 						continue;
 					}
@@ -228,7 +246,7 @@ public:
 						throw Error(errLogic, "Unexpected shards count in the remote query results");
 					}
 					auto& tags = ret.emplace_back(remoteTags[0]);
-					tags.shardId = r.shardID;
+					tags.shardId = r->shardID;
 				}
 				return ret;
 		}
@@ -269,23 +287,24 @@ public:
 	bool IsWALQuery() const noexcept { return qData_.has_value() && qData_->isWalQuery; }
 	uint32_t GetJoinedField(int parentNsId) const noexcept;
 	bool IsRawProxiedBufferAvailable(int flags) const noexcept {
-		if (type_ != Type::SingleRemote || !remote_[0].qr.IsInLazyMode()) {
+		if (type_ != Type::SingleRemote || !remote_[0]->qr.IsInLazyMode()) {
 			return false;
 		}
 
+		auto& remote = *remote_[0];
 		const auto qrFlags =
-			remote_[0].qr.GetFlags() ? (remote_[0].qr.GetFlags() & ~kResultsWithPayloadTypes & ~kResultsWithShardId) : kResultsCJson;
+			remote.qr.GetFlags() ? (remote.qr.GetFlags() & ~kResultsWithPayloadTypes & ~kResultsWithShardId) : kResultsCJson;
 		const auto qrFormat = qrFlags & kResultsFormatMask;
 		const auto reqFlags = flags ? (flags & ~kResultsWithPayloadTypes & ~kResultsWithShardId) : kResultsCJson;
 		const auto reqFormat = reqFlags & kResultsFormatMask;
 		return qrFormat == reqFormat && (qrFlags & reqFlags) == reqFlags;
 	}
-	bool GetRawProxiedBuffer(client::ParsedQrRawBuffer& out) { return remote_[0].qr.GetRawBuffer(out); }
+	bool GetRawProxiedBuffer(client::ParsedQrRawBuffer& out) { return remote_[0]->qr.GetRawBuffer(out); }
 	void FetchRawBuffer(int flgs, int off, int lim) {
 		if (!IsRawProxiedBufferAvailable(flgs)) {
 			throw Error(errLogic, "Raw buffer is not available");
 		}
-		remote_[0].qr.FetchNextResults(flgs, off, lim);
+		remote_[0]->qr.FetchNextResults(flgs, off, lim);
 	}
 	void SetFlags(int flags) {
 		if (GetType() != Type::None) {
@@ -339,7 +358,7 @@ public:
 			if (qr_->curQrId_ < 0) {
 				return qr_->local_->shardID;
 			}
-			return qr_->remote_[size_t(qr_->curQrId_)].shardID;
+			return qr_->remote_[size_t(qr_->curQrId_)]->shardID;
 		}
 		bool IsRaw() const {
 			struct {
@@ -403,7 +422,7 @@ public:
 			if (qr_->curQrId_ < 0) {
 				return Error();
 			}
-			return qr_->remote_[qr_->curQrId_].it.Status();
+			return qr_->remote_[qr_->curQrId_]->it.Status();
 		}
 		bool operator!=(const Iterator& other) const noexcept { return !(*this == other); }
 		bool operator==(const Iterator& other) const noexcept {
@@ -443,7 +462,7 @@ public:
 				return &(*qr->local_);
 			}
 			if (size_t(qr_->curQrId_) < qr->remote_.size()) {
-				return &qr->remote_[size_t(qr_->curQrId_)];
+				return qr->remote_[size_t(qr_->curQrId_)].get();
 			}
 			throw Error(errNotValid, "Iterator is not valid");
 		}
@@ -466,7 +485,7 @@ public:
 				return qr->local_->it;
 			}
 			if (size_t(qr_->curQrId_) < qr->remote_.size()) {
-				return qr->remote_[size_t(qr_->curQrId_)].it;
+				return qr->remote_[size_t(qr_->curQrId_)]->it;
 			}
 			throw Error(errNotValid, "Iterator is not valid");
 		}
@@ -523,8 +542,9 @@ private:
 
 	int64_t shardingConfigVersion_ = ShardingSourceId::NotSet;
 	std::unique_ptr<MergedData> mergedData_;  // Merged data of distributed query results
-	std::unique_ptr<QrMetaData<LocalQueryResults>> local_;
-	std::deque<QrMetaData<client::QueryResults>> remote_;
+	std::optional<QrMetaData<LocalQueryResults>> local_;
+	// We could use std::deque to make QrMetaData non-movable, but deque's default constructor performs allocation in GCC's implementation
+	std::vector<std::unique_ptr<QrMetaData<client::QueryResults>>> remote_;
 	int64_t lastSeenIdx_ = 0;
 	int curQrId_ = -1;
 	Type type_ = Type::None;

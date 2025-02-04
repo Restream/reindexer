@@ -1,12 +1,10 @@
 #include "sqlparser.h"
 #include "core/keyvalue/geometry.h"
-#include "core/keyvalue/key_string.h"
 #include "core/query/query.h"
 #include "core/queryresults/aggregationresult.h"
 #include "core/type_consts_helpers.h"
 #include "sqltokentype.h"
 #include "tools/stringstools.h"
-#include "vendor/double-conversion/double-conversion.h"
 #include "vendor/gason/gason.h"
 
 namespace reindexer {
@@ -34,7 +32,8 @@ token SQLParser::peekSqlToken(tokenizer& parser, SqlTokenType tokenType, bool to
 			tokenLen = ctx_.suggestionsPos - parser.getPos() + 1;
 		}
 		if (!ctx_.foundPossibleSuggestions || tokenLen) {
-			ctx_.suggestions.emplace_back(std::string(tok.text().data(), tokenLen), tokenType);
+			// NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
+			ctx_.suggestions.emplace_back(std::string(tok.text().data(), std::min(tok.text().size(), tokenLen)), tokenType);
 			ctx_.foundPossibleSuggestions = true;
 			ctx_.possibleSuggestionDetectedInThisClause = true;
 		}
@@ -818,19 +817,32 @@ int SQLParser::parseWhere(tokenizer& parser) {
 		nextOp = OpNot;
 		parser.next_token();
 	}
-	std::vector<std::pair<size_t, EqualPosition_t>> equalPositions;
-	size_t lastBracketPosition = 0;
 	int openBracketsCount = 0;
+	bool expectSecondLogicalOperand = false;
+	auto throwIfExpectSecondLogicalOperand = [&tok, &parser, &expectSecondLogicalOperand]() {
+		if (expectSecondLogicalOperand) {
+			throw Error(errParseSQL, "Expected second logical operand, but found '%s' in query '%s'", tok.text(), parser.where());
+		}
+	};
 	while (!parser.end()) {
 		tok = peekSqlToken(parser, nested == Nested::Yes ? NestedWhereFieldSqlToken : WhereFieldSqlToken, false);
 		parser.next_token(tokenizer::flags::no_flags);
+		while (tok.type == TokenName && iequals(tok.text(), "equal_position"sv)) {
+			parseEqualPositions(parser);
+			tok = peekSqlToken(parser, nested == Nested::Yes ? NestedWhereFieldSqlToken : WhereFieldSqlToken, false);
+			parser.next_token(tokenizer::flags::no_flags);
+		}
+		expectSecondLogicalOperand = false;
 		if (tok.text() == "("sv) {
 			tok = peekSqlToken(parser, nested == Nested::Yes ? NestedWhereFieldSqlToken : WhereFieldOrSubquerySqlToken, false);
-			if (nested == Nested::Yes || !iequals(tok.text(), "select"sv) || isCondition(parser.peek_second_token().text())) {
+			// isCondition(parser.peek_second_token().text() to distinguish the token type operator 'select' or field with name 'select'
+			if (nested == Nested::No && iequals(tok.text(), "select"sv) && !isCondition(parser.peek_second_token().text())) {
+				parseWhereCondition(parser, parseSubQuery(parser), nextOp);
+				nextOp = OpAnd;
+			} else {
 				query_.NextOp(nextOp);
 				query_.OpenBracket();
 				++openBracketsCount;
-				lastBracketPosition = query_.Entries().Size();
 				if (iequals(tok.text(), "not"sv)) {
 					nextOp = OpNot;
 					parser.next_token();
@@ -839,8 +851,6 @@ int SQLParser::parseWhere(tokenizer& parser) {
 				}
 				continue;
 			}
-			parseWhereCondition(parser, parseSubQuery(parser), nextOp);
-			nextOp = OpAnd;
 		} else if (tok.type == TokenName) {
 			if (iequals(tok.text(), "st_dwithin"sv)) {
 				parseDWithin(parser, nextOp);
@@ -848,6 +858,7 @@ int SQLParser::parseWhere(tokenizer& parser) {
 			} else if constexpr (nested == Nested::No) {
 				if (iequals(tok.text(), "join"sv)) {
 					parseJoin(JoinType::LeftJoin, parser);
+
 				} else if (iequals(tok.text(), "left"sv)) {
 					peekSqlToken(parser, LeftSqlToken);
 					if (parser.next_token().text() != "join"sv) {
@@ -873,25 +884,35 @@ int SQLParser::parseWhere(tokenizer& parser) {
 		} else if (tok.type == TokenNumber || tok.type == TokenString) {
 			throw Error(errParseSQL, "%s is invalid at this location. (text = '%s'  location = %s)",
 						tok.type == TokenNumber ? "Number" : "String", tok.text(), parser.where());
+		} else {
+			expectSecondLogicalOperand = true;
 		}
 
 		tok = parser.peek_token();
 		while (tok.text() == "equal_position"sv) {
-			parseEqualPositions(parser, equalPositions, lastBracketPosition);
+			parser.next_token();
+			parseEqualPositions(parser);
 			tok = parser.peek_token();
 		}
 
 		while (openBracketsCount > 0 && tok.text() == ")"sv) {
+			throwIfExpectSecondLogicalOperand();
 			query_.CloseBracket();
 			--openBracketsCount;
 			parser.next_token();
 			tok = parser.peek_token();
+			while (tok.text() == "equal_position"sv) {
+				parser.next_token();
+				parseEqualPositions(parser);
+				tok = parser.peek_token();
+			}
 		}
 
 		tok = peekSqlToken(parser, WhereOpSqlToken, false);
-
 		if (iequals(tok.text(), "and"sv)) {
+			throwIfExpectSecondLogicalOperand();
 			nextOp = OpAnd;
+			expectSecondLogicalOperand = true;
 			parser.next_token();
 			tok = peekSqlToken(parser, nested == Nested::Yes ? NestedAndSqlToken : AndSqlToken, false);
 			if (iequals(tok.text(), "not"sv)) {
@@ -901,55 +922,36 @@ int SQLParser::parseWhere(tokenizer& parser) {
 				continue;
 			}
 		} else if (iequals(tok.text(), "or"sv)) {
+			throwIfExpectSecondLogicalOperand();
 			parser.next_token();
 			peekSqlToken(parser, FieldNameSqlToken);
 			nextOp = OpOr;
+			expectSecondLogicalOperand = true;
 		} else if (!iequals(tok.text(), "join"sv) && !iequals(tok.text(), "inner"sv) && !iequals(tok.text(), "left"sv)) {
 			break;
 		}
 	}
-	for (auto& eqPos : equalPositions) {
-		if (eqPos.first == 0) {
-			query_.SetEqualPositions(std::move(eqPos.second));
-		} else {
-			query_.SetEqualPositions(eqPos.first - 1, std::move(eqPos.second));
-		}
-	}
+	throwIfExpectSecondLogicalOperand();
 
 	if (query_.Entries().Empty()) {
 		throw Error(errParseSQL, "Expected condition after 'WHERE'");
 	}
-
 	return 0;
 }
 
-void SQLParser::parseEqualPositions(tokenizer& parser, std::vector<std::pair<size_t, EqualPosition_t>>& equalPositions,
-									size_t lastBracketPosition) {
-	parser.next_token();
+void SQLParser::parseEqualPositions(tokenizer& parser) {
 	auto tok = parser.next_token();
 	if (tok.text() != "("sv) {
 		throw Error(errParseSQL, "Expected '(', but found '%s', %s", tok.text(), parser.where());
 	}
-	EqualPosition_t fields;
+	EqualPosition_t fieldNames;
 	for (;;) {
 		auto nameWithCase = peekSqlToken(parser, FieldNameSqlToken);
 		tok = parser.next_token(tokenizer::flags::no_flags);
 		if (tok.type != TokenName) {
 			throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
 		}
-		bool validField = false;
-		for (auto it = query_.Entries().begin_of_current_bracket(); it != query_.Entries().end(); ++it) {
-			if (it->Is<QueryEntry>() && nameWithCase.text() == it->Value<QueryEntry>().FieldName()) {
-				validField = true;
-				break;
-			}
-		}
-		if (!validField) {
-			throw Error(errParseSQL,
-						"Only fields that present in 'Where' condition are allowed to use in equal_position(), but found '%s' in query, %s",
-						nameWithCase.text(), parser.where());
-		}
-		fields.emplace_back(nameWithCase.text());
+		fieldNames.emplace_back(nameWithCase.text());
 		tok = parser.next_token(tokenizer::flags::no_flags);
 		if (tok.text() == ")"sv) {
 			break;
@@ -958,11 +960,7 @@ void SQLParser::parseEqualPositions(tokenizer& parser, std::vector<std::pair<siz
 			throw Error(errParseSQL, "Expected ',', but found '%s', %s", tok.text(), parser.where());
 		}
 	}
-	if (fields.size() < 2) {
-		throw Error(errLogic, "equal_position() is supposed to have at least 2 arguments. Arguments: [%s]",
-					fields.empty() ? "" : fields[0]);  // -V547
-	}
-	equalPositions.emplace_back(lastBracketPosition, std::move(fields));
+	query_.EqualPositions(std::move(fieldNames));
 }
 
 Point SQLParser::parseGeomFromText(tokenizer& parser) const {

@@ -167,10 +167,10 @@ reindexer::Error FTApi::Delete(int id) {
 	return this->rt.reindexer->Delete("nm1", item);
 }
 
-reindexer::QueryResults FTApi::SimpleCompositeSelect(std::string word) {
+reindexer::QueryResults FTApi::SimpleCompositeSelect(std::string_view word) {
 	auto qr{reindexer::Query("nm1").Where("ft3", CondEq, word)};
 	reindexer::QueryResults res;
-	auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, std::move(word))};
+	auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, word)};
 	mqr.AddFunction("ft1 = snippet(<b>,\"\"</b>,3,2,,d)");
 
 	qr.Merge(std::move(mqr));
@@ -181,11 +181,11 @@ reindexer::QueryResults FTApi::SimpleCompositeSelect(std::string word) {
 	return res;
 }
 
-reindexer::QueryResults FTApi::CompositeSelectField(const std::string& field, std::string word) {
-	word = '@' + field + ' ' + word;
-	auto qr{reindexer::Query("nm1").Where("ft3", CondEq, word)};
+reindexer::QueryResults FTApi::CompositeSelectField(const std::string& field, std::string_view word) {
+	const auto query = fmt::format("@{} {}", field, word);
+	auto qr{reindexer::Query("nm1").Where("ft3", CondEq, query)};
 	reindexer::QueryResults res;
-	auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, std::move(word))};
+	auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, query)};
 	mqr.AddFunction(field + " = snippet(<b>,\"\"</b>,3,2,,d)");
 
 	qr.Merge(std::move(mqr));
@@ -196,8 +196,8 @@ reindexer::QueryResults FTApi::CompositeSelectField(const std::string& field, st
 	return res;
 }
 
-reindexer::QueryResults FTApi::StressSelect(std::string word) {
-	const auto qr{reindexer::Query("nm1").Where("ft3", CondEq, std::move(word))};
+reindexer::QueryResults FTApi::StressSelect(std::string_view word) {
+	const auto qr{reindexer::Query("nm1").Where("ft3", CondEq, word)};
 	reindexer::QueryResults res;
 	auto err = rt.reindexer->Select(qr, res);
 	EXPECT_TRUE(err.ok()) << err.what();

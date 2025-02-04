@@ -120,11 +120,12 @@ template <typename T>
 IndexUnordered<T>::IndexUnordered(const IndexUnordered& other)
 	: Base(other),
 	  idx_map(other.idx_map),
-	  cache_(nullptr),
 	  cacheMaxSize_(other.cacheMaxSize_),
 	  hitsToCache_(other.hitsToCache_),
 	  empty_ids_(other.empty_ids_),
-	  tracker_(other.tracker_) {}
+	  tracker_(other.tracker_) {
+	cache_.CopyInternalPerfStatsFrom(other.cache_);
+}
 
 template <typename key_type>
 size_t heap_size(const key_type& /*kt*/) {
@@ -133,12 +134,12 @@ size_t heap_size(const key_type& /*kt*/) {
 
 template <>
 size_t heap_size<key_string>(const key_string& kt) {
-	return kt->heap_size() + sizeof(*kt.get());
+	return kt.heap_size();
 }
 
 template <>
 size_t heap_size<key_string_with_hash>(const key_string_with_hash& kt) {
-	return kt->heap_size() + sizeof(*kt.get());
+	return kt.heap_size();
 }
 
 struct DeepClean {
@@ -175,7 +176,7 @@ Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCach
 	// reset cache
 	if (key.Type().Is<KeyValueType::Null>()) {	// TODO maybe error or default value if the index is not sparse
 		if (this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_)) {
-			cache_.reset();
+			cache_.ResetImpl();
 			clearCache = true;
 			this->isBuilt_ = false;
 		}
@@ -191,7 +192,7 @@ Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCach
 	}
 
 	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_)) {
-		cache_.reset();
+		cache_.ResetImpl();
 		clearCache = true;
 		this->isBuilt_ = false;
 	}
@@ -207,7 +208,7 @@ void IndexUnordered<T>::Delete(const Variant& key, IdType id, StringsHolder& str
 	if (key.Type().Is<KeyValueType::Null>()) {
 		this->empty_ids_.Unsorted().Erase(id);	// ignore result
 		this->isBuilt_ = false;
-		cache_.reset();
+		cache_.ResetImpl();
 		clearCache = true;
 		return;
 	}
@@ -218,7 +219,7 @@ void IndexUnordered<T>::Delete(const Variant& key, IdType id, StringsHolder& str
 		delMemStat(keyIt);
 		delcnt = keyIt->second.Unsorted().Erase(id);
 		this->isBuilt_ = false;
-		cache_.reset();
+		cache_.ResetImpl();
 		clearCache = true;
 	}
 	assertf(delcnt || this->opts_.IsArray() || this->Opts().IsSparse(), "Delete non-existing id from index '%s' id=%d,key=%s (%s)",
@@ -254,23 +255,23 @@ template <typename T>
 bool IndexUnordered<T>::tryIdsetCache(const VariantArray& keys, CondType condition, SortType sortId,
 									  const std::function<bool(SelectKeyResult&, size_t&)>& selector, SelectKeyResult& res) {
 	size_t idsCount;
-	if (!cache_ || IsComposite(this->Type())) {
+	if (!cache_.IsActive() || IsComposite(this->Type())) {
 		selector(res, idsCount);
 		return false;
 	}
 
 	bool scanWin = false;
 	IdSetCacheKey ckey{keys, condition, sortId};
-	auto cached = cache_->Get(ckey);
+	auto cached = cache_.Get(ckey);
 	if (cached.valid) {
-		if (!cached.val.ids) {
+		if (!cached.val.IsInitialized()) {
 			scanWin = selector(res, idsCount);
 			if (!scanWin) {
 				// Do not use generic sort, when expecting duplicates in the id sets
 				const bool useGenericSort =
 					res.deferedExplicitSort && !(this->opts_.IsArray() && (condition == CondEq || condition == CondSet));
-				cache_->Put(ckey,
-							res.MergeIdsets(SelectKeyResult::MergeOptions{.genericSort = useGenericSort, .shrinkResult = true}, idsCount));
+				cache_.Put(ckey,
+						   res.MergeIdsets(SelectKeyResult::MergeOptions{.genericSort = useGenericSort, .shrinkResult = true}, idsCount));
 			}
 		} else {
 			res.emplace_back(std::move(cached.val.ids));
@@ -294,7 +295,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 	switch (condition) {
 		case CondEmpty:
 			if (!this->opts_.IsArray() && !this->opts_.IsSparse()) {
-				throw Error(errParams, "The 'is NULL' condition is suported only by 'sparse' or 'array' indexes");
+				throw Error(errParams, "The 'is NULL' condition is supported only by 'sparse' or 'array' indexes");
 			}
 			res.emplace_back(this->empty_ids_, sortId);
 			break;
@@ -410,8 +411,8 @@ template <typename T>
 void IndexUnordered<T>::Commit() {
 	this->empty_ids_.Unsorted().Commit();
 
-	if (!cache_) {
-		cache_.reset(new IdSetCache(cacheMaxSize_, hitsToCache_));
+	if (!cache_.IsActive()) {
+		cache_.Reinitialize(cacheMaxSize_, hitsToCache_);
 	}
 
 	if (!tracker_.isUpdated()) {
@@ -455,16 +456,27 @@ void IndexUnordered<T>::SetSortedIdxCount(int sortedIdxCount) {
 }
 
 template <typename T>
+IndexPerfStat IndexUnordered<T>::GetIndexPerfStat() {
+	auto stats = Base::GetIndexPerfStat();
+	stats.cache = cache_.GetPerfStat();
+	return stats;
+}
+
+template <typename T>
+void IndexUnordered<T>::ResetIndexPerfStat() {
+	Base::ResetIndexPerfStat();
+	cache_.ResetPerfStat();
+}
+
+template <typename T>
 IndexMemStat IndexUnordered<T>::GetMemStat(const RdxContext& ctx) {
 	IndexMemStat ret = Base::GetMemStat(ctx);
 	ret.uniqKeysCount = idx_map.size();
-	if (cache_) {
-		ret.idsetCache = cache_->GetMemStat();
-	}
+	ret.idsetCache = cache_.GetMemStat();
 	ret.trackedUpdatesCount = tracker_.updatesSize();
 	ret.trackedUpdatesBuckets = tracker_.updatesBuckets();
 	ret.trackedUpdatesSize = tracker_.allocated();
-	ret.trackedUpdatesOveflow = tracker_.overflow();
+	ret.trackedUpdatesOverflow = tracker_.overflow();
 	return ret;
 }
 
@@ -490,11 +502,7 @@ void IndexUnordered<T>::dump(S& os, std::string_view step, std::string_view offs
 		os << '\n' << newOffset;
 	}
 	os << "},\n" << newOffset << "cache: ";
-	if (cache_) {
-		cache_->Dump(os, step, newOffset);
-	} else {
-		os << "empty";
-	}
+	cache_.Dump(os, step, newOffset);
 	os << ",\n" << newOffset << "empty_ids: ";
 	empty_ids_.Dump(os, step, newOffset);
 	os << "\n" << offset << '}';
@@ -513,8 +521,8 @@ void IndexUnordered<T>::ReconfigureCache(const NamespaceCacheConfigData& cacheCf
 	if (cacheMaxSize_ != cacheCfg.idxIdsetCacheSize || hitsToCache_ != cacheCfg.idxIdsetHitsToCache) {
 		cacheMaxSize_ = cacheCfg.idxIdsetCacheSize;
 		hitsToCache_ = cacheCfg.idxIdsetHitsToCache;
-		if (cache_) {
-			cache_.reset(new IdSetCache(cacheMaxSize_, hitsToCache_));
+		if (cache_.IsActive()) {
+			cache_.Reinitialize(cacheMaxSize_, hitsToCache_);
 		}
 	}
 }

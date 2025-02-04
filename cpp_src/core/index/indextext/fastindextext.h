@@ -66,9 +66,9 @@ protected:
 	template <class Data>
 	void buildVdocs(Data& data);
 	template <typename MergeType, typename F>
-	void appendMergedIds(MergeType& merged, size_t releventDocs, F&& appender);
+	void appendMergedIds(MergeType& merged, size_t relevantDocs, F&& appender);
 	template <typename MergeType>
-	typename MergeType::iterator unstableRemoveIf(MergeType& md, int minRelevancy, double scalingFactor, size_t& releventDocs, int& cnt);
+	typename MergeType::iterator unstableRemoveIf(MergeType& md, int minRelevancy, double scalingFactor, size_t& relevantDocs, int& cnt);
 
 	std::unique_ptr<IDataHolder> holder_;
 };

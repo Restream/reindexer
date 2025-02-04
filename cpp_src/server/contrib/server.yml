@@ -4,46 +4,46 @@ info:
     **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
     Reindexer's goal is to provide fast search with complex queries.
     Reindexer is compact, fast and it does not have heavy dependencies.
-  version: "4.19.0"
+  version: "4.20.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
     url: "http://www.apache.org/licenses/LICENSE-2.0.html"
 basePath: "/api/v1"
 tags:
-- name: "databases"
-  description: "Databases management"
-- name: "namespaces"
-  description: "Namespaces management"
-- name: "items"
-  description: "Documents management"
-- name: "indexes"
-  description: "Indexes management"
-- name: "queries"
-  description: "Queries to reindexer (dsl/sql)"
-- name: "system"
-  description: "System methods"
+  - name: "databases"
+    description: "Databases management"
+  - name: "namespaces"
+    description: "Namespaces management"
+  - name: "items"
+    description: "Documents management"
+  - name: "indexes"
+    description: "Indexes management"
+  - name: "queries"
+    description: "Queries to reindexer (dsl/sql)"
+  - name: "system"
+    description: "System methods"
 schemes:
-- "http"
+  - "http"
 produces:
-- "application/json"
+  - "application/json"
 
 paths:
   /db:
     post:
       tags:
-      - "databases"
+        - "databases"
       summary: "Create new database"
       description: |
         This operation will create new database. If database is already exists, then error will be returned.
       operationId: "createDatabase"
       parameters:
-      - in: body
-        name: "body"
-        description: "Database definition"
-        required: true
-        schema:
-          $ref: "#/definitions/Database"
+        - in: body
+          name: "body"
+          description: "Database definition"
+          required: true
+          schema:
+            $ref: "#/definitions/Database"
       responses:
         200:
           $ref: "#/responses/OK"
@@ -60,19 +60,19 @@ paths:
 
     get:
       tags:
-      - "databases"
+        - "databases"
       summary: "List available databases"
       description: |
         This operation will output list of all available databases
       operationId: "describeDatabases"
       parameters:
-      - name: "sort_order"
-        in: query
-        type: string
-        description: "Sort Order"
-        enum:
-        - "asc"
-        - "desc"
+        - name: "sort_order"
+          in: query
+          type: string
+          description: "Sort Order"
+          enum:
+            - "asc"
+            - "desc"
       responses:
         200:
           description: "successful operation"
@@ -92,7 +92,7 @@ paths:
   /db/{database}:
     delete:
       tags:
-      - "databases"
+        - "databases"
       summary: "Drop database"
       description: |
         This operation will remove complete database from memory and disk. 
@@ -100,11 +100,11 @@ paths:
         Can not be undone. USE WITH CAUTION.
       operationId: "dropDatabase"
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
       responses:
         200:
           $ref: "#/responses/OK"
@@ -122,24 +122,24 @@ paths:
   /db/{database}/namespaces:
     post:
       tags:
-      - "namespaces"
+        - "namespaces"
       summary: "Create namespace"
       description: |
         This operation will create new namespace in specified database.
         If namespace is already exists, then operation do not nothing.
       operationId: "openNamespace"
       parameters:
-      - in: body
-        name: "body"
-        description: "Namespace definition"
-        required: true
-        schema:
-          $ref: "#/definitions/Namespace"
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
+        - in: body
+          name: "body"
+          description: "Namespace definition"
+          required: true
+          schema:
+            $ref: "#/definitions/Namespace"
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
       responses:
         200:
           $ref: "#/responses/OK"
@@ -155,25 +155,25 @@ paths:
           $ref: "#/responses/UnexpectedError"
     get:
       tags:
-      - "namespaces"
+        - "namespaces"
       summary: "List available namespaces"
       description: |
         This operation will list all available namespaces in specified database.
         If database is not exists, then error will be returned.
       operationId: "describeNamespaces"
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "sort_order"
-        in: query
-        type: string
-        description: "Sort Order"
-        enum:
-        - "asc"
-        - "desc"
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "sort_order"
+          in: query
+          type: string
+          description: "Sort Order"
+          enum:
+            - "asc"
+            - "desc"
       responses:
         200:
           description: "successful operation"
@@ -193,22 +193,22 @@ paths:
   /db/{database}/namespaces/{name}:
     get:
       tags:
-      - "namespaces"
+        - "namespaces"
       summary: "Get namespace description"
       description: |
         This operation will return specified namespace description, including options of namespace, and available indexes
       operationId: "describeCurrNamespace"
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
       responses:
         200:
           description: "successful operation"
@@ -226,7 +226,7 @@ paths:
           $ref: "#/responses/UnexpectedError"
     delete:
       tags:
-      - "namespaces"
+        - "namespaces"
       summary: "Drop namespace"
       description: |
         This operation will delete completely namespace from memory and disk.
@@ -234,16 +234,16 @@ paths:
         Can not be undone. USE WITH CAUTION.
       operationId: "dropNamespace"
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
       responses:
         200:
           $ref: "#/responses/OK"
@@ -261,22 +261,22 @@ paths:
   /db/{database}/namespaces/{name}/truncate:
     delete:
       tags:
-      - "namespaces"
+        - "namespaces"
       summary: "Truncate namespace"
       description: |
         This operation will delete all items from namespace.
       operationId: "truncateNamespace"
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
       responses:
         200:
           $ref: "#/responses/OK"
@@ -294,27 +294,27 @@ paths:
   /db/{database}/namespaces/{name}/rename/{newname}:
     get:
       tags:
-      - "namespaces"
+        - "namespaces"
       summary: "Rename namespace"
       description: |
         This operation will rename namespace.
       operationId: "renameNamespace"
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
-      - name: "newname"
-        in: path
-        type: string
-        description: "Namespace new name"
-        required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
+        - name: "newname"
+          in: path
+          type: string
+          description: "Namespace new name"
+          required: true
 
       responses:
         200:
@@ -334,47 +334,47 @@ paths:
   /db/{database}/namespaces/{name}/metalist:
     get:
       tags:
-      - "namespaces"
+        - "namespaces"
       summary: "Get list of namespace's meta info"
       description: |
         This operation will return list of keys of all meta of specified namespace
       operationId: "getNamespaceMetalist"
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
-      - name: "sort_order"
-        in: query
-        required: false
-        description: "Sort Order"
-        type: string
-        enum:
-        - "asc"
-        - "desc"
-      - name: "with_values"
-        in: query
-        required: false
-        description: "Include values in response"
-        type: boolean
-        default: false
-      - name: "offset"
-        in: query
-        required: false
-        type: integer
-        default: 0
-      - name: "limit"
-        in: query
-        required: false
-        type: integer
-        description: "If 0 - no limit"
-        default: 0
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
+        - name: "sort_order"
+          in: query
+          required: false
+          description: "Sort Order"
+          type: string
+          enum:
+            - "asc"
+            - "desc"
+        - name: "with_values"
+          in: query
+          required: false
+          description: "Include values in response"
+          type: boolean
+          default: false
+        - name: "offset"
+          in: query
+          required: false
+          type: integer
+          default: 0
+        - name: "limit"
+          in: query
+          required: false
+          type: integer
+          description: "If 0 - no limit"
+          default: 0
       responses:
         200:
           description: "successful operation"
@@ -394,27 +394,27 @@ paths:
   /db/{database}/namespaces/{name}/metabykey/{key}:
     get:
       tags:
-      - "namespaces"
+        - "namespaces"
       summary: "Get namespace's meta info by key"
       description: |
         This operation will return value of namespace's meta with specified key
       operationId: "getNamespaceMetaByKey"
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
-      - name: "key"
-        in: path
-        required: true
-        description: "Meta key"
-        type: string
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
+        - name: "key"
+          in: path
+          required: true
+          description: "Meta key"
+          type: string
       responses:
         200:
           description: "Successful operation"
@@ -432,27 +432,27 @@ paths:
           $ref: "#/responses/UnexpectedError"
     delete:
       tags:
-      - "namespaces"
+        - "namespaces"
       summary: "Remove namespace's meta info for key"
       description: |
         This operation will remove meta with specified key from namespace
       operationId: "deleteNamespaceMetaByKey"
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
-      - name: "key"
-        in: path
-        required: true
-        description: "Meta key"
-        type: string
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
+        - name: "key"
+          in: path
+          required: true
+          description: "Meta key"
+          type: string
       responses:
         200:
           $ref: "#/responses/OK"
@@ -470,28 +470,28 @@ paths:
   /db/{database}/namespaces/{name}/metabykey:
     put:
       tags:
-      - "namespaces"
+        - "namespaces"
       summary: "Put namespace's meta info with specified key and value"
       description: |
         This operation will set namespace's meta with specified key and value
       operationId: "putNamespaceMetaByKey"
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
-      - name: "meta_info"
-        in: body
-        required: true
-        description: "Meta info"
-        schema:
-          $ref: "#/definitions/MetaInfo"
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
+        - name: "meta_info"
+          in: body
+          required: true
+          description: "Meta info"
+          schema:
+            $ref: "#/definitions/MetaInfo"
       responses:
         200:
           description: "successful operation"
@@ -511,7 +511,7 @@ paths:
   /db/{database}/namespaces/{name}/items:
     delete:
       tags:
-      - "items"
+        - "items"
       summary: "Delete documents from namespace"
       operationId: "deleteItems"
       description: |
@@ -523,29 +523,29 @@ paths:
         ...
         ```
       parameters:
-      - in: body
-        name: "body"
-        schema:
-          type: object
-        required: true
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
-      - name: "precepts"
-        in: query
-        type: array
-        collectionFormat: "multi"
-        description: "Precepts to be done"
-        required: false
-        items:
+        - in: body
+          name: "body"
+          schema:
+            type: object
+          required: true
+        - name: "database"
+          in: path
           type: string
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
+        - name: "precepts"
+          in: query
+          type: array
+          collectionFormat: "multi"
+          description: "Precepts to be done"
+          required: false
+          items:
+            type: string
       responses:
         200:
           description: "successful operation"
@@ -563,7 +563,7 @@ paths:
           $ref: "#/responses/UnexpectedError"
     post:
       tags:
-      - "items"
+        - "items"
       summary: "Insert documents to namespace"
       operationId: "postItems"
       description: |
@@ -575,38 +575,38 @@ paths:
         ...
         ```
       parameters:
-      - in: body
-        name: "body"
-        schema:
-          type: object
-        required: true
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
-      - name: "precepts"
-        in: query
-        type: array
-        collectionFormat: "multi"
-        description: "Precepts to be done"
-        required: false
-        items:
+        - in: body
+          name: "body"
+          schema:
+            type: object
+          required: true
+        - name: "database"
+          in: path
           type: string
-      - name: "format"
-        in: query
-        type: string
-        description: "encoding data format"
-        required: false
-        enum:
-          - json
-          - msgpack
-          - protobuf
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
+        - name: "precepts"
+          in: query
+          type: array
+          collectionFormat: "multi"
+          description: "Precepts to be done"
+          required: false
+          items:
+            type: string
+        - name: "format"
+          in: query
+          type: string
+          description: "encoding data format"
+          required: false
+          enum:
+            - json
+            - msgpack
+            - protobuf
       responses:
         200:
           description: "successful operation"
@@ -624,7 +624,7 @@ paths:
           $ref: "#/responses/UnexpectedError"
     put:
       tags:
-      - "items"
+        - "items"
       summary: "Update documents in namespace"
       operationId: "putItems"
       description: |
@@ -636,38 +636,38 @@ paths:
         ...
         ```
       parameters:
-      - in: body
-        name: "body"
-        schema:
-          type: object
-        required: true
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
-      - name: "precepts"
-        in: query
-        type: array
-        collectionFormat: "multi"
-        description: "Precepts to be done"
-        required: false
-        items:
+        - in: body
+          name: "body"
+          schema:
+            type: object
+          required: true
+        - name: "database"
+          in: path
           type: string
-      - name: "format"
-        in: query
-        type: string
-        description: "encoding data format"
-        required: false
-        enum:
-          - json
-          - msgpack
-          - protobuf
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
+        - name: "precepts"
+          in: query
+          type: array
+          collectionFormat: "multi"
+          description: "Precepts to be done"
+          required: false
+          items:
+            type: string
+        - name: "format"
+          in: query
+          type: string
+          description: "encoding data format"
+          required: false
+          enum:
+            - json
+            - msgpack
+            - protobuf
       responses:
         200:
           description: "successful operation"
@@ -686,7 +686,7 @@ paths:
 
     patch:
       tags:
-      - "items"
+        - "items"
       summary: "Upsert documents in namespace"
       operationId: "patchItems"
       description: |
@@ -698,38 +698,38 @@ paths:
         ...
         ```
       parameters:
-      - in: body
-        name: "body"
-        schema:
-          type: object
-        required: true
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
-      - name: "precepts"
-        in: query
-        type: array
-        collectionFormat: "multi"
-        description: "Precepts to be done"
-        required: false
-        items:
+        - in: body
+          name: "body"
+          schema:
+            type: object
+          required: true
+        - name: "database"
+          in: path
           type: string
-      - name: "format"
-        in: query
-        type: string
-        description: "encoding data format"
-        required: false
-        enum:
-          - json
-          - msgpack
-          - protobuf
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
+        - name: "precepts"
+          in: query
+          type: array
+          collectionFormat: "multi"
+          description: "Precepts to be done"
+          required: false
+          items:
+            type: string
+        - name: "format"
+          in: query
+          type: string
+          description: "encoding data format"
+          required: false
+          enum:
+            - json
+            - msgpack
+            - protobuf
       responses:
         200:
           description: "successful operation"
@@ -747,75 +747,75 @@ paths:
           $ref: "#/responses/UnexpectedError"
     get:
       tags:
-      - "items"
+        - "items"
       summary: "Get documents from namespace"
       operationId: "getItems"
       description: |
         This operation will select documents from namespace with specified filters, and sort them by specified sort order. Paging with limit and offset are supported.
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
-      - name: "limit"
-        in: query
-        type: integer
-        description: "Maximum count of returned items"
-      - name: "offset"
-        in: query
-        type: integer
-        description: "Offset of first returned item"
-      - name: "sort_field"
-        in: query
-        type: string
-        description: "Sort Field"
-      - name: "sort_order"
-        in: query
-        type: string
-        description: "Sort Order"
-        enum:
-        - "asc"
-        - "desc"
-      - name: "filter"
-        in: query
-        type: string
-        description: "Filter with SQL syntax, e.g: field1 = 'v1' AND field2 > 'v2'"
-      - name: "fields"
-        in: query
-        type: string
-        description: "Comma-separated list of returned fields"
-      - name: "format"
-        in: query
-        type: string
-        description: "encoding data format"
-        required: false
-        enum:
-          - json
-          - msgpack
-          - protobuf
-          - csv-file
-      - name: "sharding"
-        in: query
-        type: string
-        description: "if off then get items from current node only"
-        required: false
-        enum:
-          - on
-          - off
-      - name: "with_shard_ids"
-        in: query
-        type: string
-        description: "if sharding is enabled, then add the #shard_id field to the item"
-        required: false
-        enum:
-          - on
-          - off          
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
+        - name: "limit"
+          in: query
+          type: integer
+          description: "Maximum count of returned items"
+        - name: "offset"
+          in: query
+          type: integer
+          description: "Offset of first returned item"
+        - name: "sort_field"
+          in: query
+          type: string
+          description: "Sort Field"
+        - name: "sort_order"
+          in: query
+          type: string
+          description: "Sort Order"
+          enum:
+            - "asc"
+            - "desc"
+        - name: "filter"
+          in: query
+          type: string
+          description: "Filter with SQL syntax, e.g: field1 = 'v1' AND field2 > 'v2'"
+        - name: "fields"
+          in: query
+          type: string
+          description: "Comma-separated list of returned fields"
+        - name: "format"
+          in: query
+          type: string
+          description: "encoding data format"
+          required: false
+          enum:
+            - json
+            - msgpack
+            - protobuf
+            - csv-file
+        - name: "sharding"
+          in: query
+          type: string
+          description: "if off then get items from current node only"
+          required: false
+          enum:
+            - on
+            - off
+        - name: "with_shard_ids"
+          in: query
+          type: string
+          description: "if sharding is enabled, then add the #shard_id field to the item"
+          required: false
+          enum:
+            - on
+            - off
       responses:
         200:
           description: "successful operation"
@@ -835,22 +835,22 @@ paths:
   /db/{database}/namespaces/{name}/indexes:
     get:
       tags:
-      - "indexes"
+        - "indexes"
       summary: "List available indexes"
       description: |
         This operation will return list of available indexes, from specified database and namespace.
       operationId: "describeIndexes"
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
       responses:
         200:
           description: "successful operation"
@@ -868,29 +868,29 @@ paths:
           $ref: "#/responses/UnexpectedError"
     post:
       tags:
-      - "indexes"
+        - "indexes"
       summary: "Add new index to namespace"
       operationId: "postIndex"
       description: |
         This operation will create new index. If index is already exists with the different parameters, then error will be returned.
         Operation synchronous, so it can take long time, if namespace contains bunch of documents.
       parameters:
-      - in: body
-        name: "body"
-        description: "Index definition"
-        schema:
-          $ref: "#/definitions/Index"
-        required: true
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
+        - in: body
+          name: "body"
+          description: "Index definition"
+          schema:
+            $ref: "#/definitions/Index"
+          required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
       responses:
         200:
           $ref: "#/responses/OK"
@@ -906,29 +906,29 @@ paths:
           $ref: "#/responses/UnexpectedError"
     put:
       tags:
-      - "indexes"
+        - "indexes"
       summary: "Update index in namespace"
       operationId: "putIndex"
       description: |
         This operation will update index parameters. E.g. type of field or type of index.
         Operation synchronous, so it can take long time, if namespace contains bunch of documents
       parameters:
-      - in: body
-        name: "body"
-        description: "Index definition"
-        schema:
-          $ref: "#/definitions/Index"
-        required: true
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
+        - in: body
+          name: "body"
+          description: "Index definition"
+          schema:
+            $ref: "#/definitions/Index"
+          required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
       responses:
         200:
           $ref: "#/responses/OK"
@@ -946,28 +946,28 @@ paths:
   /db/{database}/namespaces/{name}/indexes/{indexname}:
     delete:
       tags:
-      - "indexes"
+        - "indexes"
       summary: "Drop index from namespace"
       operationId: "deleteIndex"
       description: |
         This operation will remove index from namespace. No data will be erased.
         Operation synchronous, so it can take long time, if namespace contains bunch of documents.
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
-      - name: "indexname"
-        in: path
-        type: string
-        description: "Index name"
-        required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
+        - name: "indexname"
+          in: path
+          type: string
+          description: "Index name"
+          required: true
       responses:
         200:
           $ref: "#/responses/OK"
@@ -985,28 +985,28 @@ paths:
   /db/{database}/namespaces/{name}/schema:
     put:
       tags:
-      - "schema"
+        - "schema"
       summary: "Set namespace schema"
       operationId: "putSchema"
       description: |
         This operation will set namespace schema (information about available fields and field types)
       parameters:
-      - in: body
-        name: "body"
-        description: This operation will put new schema for specified database and namespace
-        schema:
-          $ref: "#/definitions/SchemaDef"
-        required: true
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
+        - in: body
+          name: "body"
+          description: This operation will put new schema for specified database and namespace
+          schema:
+            $ref: "#/definitions/SchemaDef"
+          required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
       responses:
         200:
           $ref: "#/responses/OK"
@@ -1022,21 +1022,21 @@ paths:
           $ref: "#/responses/UnexpectedError"
     get:
       tags:
-      - "schema"
+        - "schema"
       summary: "Get namespace schema"
       description: This operation will return current schema from specified database and namespace
       operationId: "getSchema"
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: path
-        type: string
-        description: "Namespace name"
-        required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
       responses:
         200:
           description: "successful operation"
@@ -1056,27 +1056,27 @@ paths:
   /db/{database}/protobuf_schema:
     get:
       produces:
-      - "text/plain"
+        - "text/plain"
       tags:
-      - "schema"
+        - "schema"
       summary: "Get protobuf communication parameters schema"
       operationId: "getNsParamsSchema"
       description: |
-        This operation allows to get client/server communication parameters as google protobuf schema (content of .proto file) 
+        This operation allows to get client/server communication parameters as google protobuf schema (content of .proto file)
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "ns"
-        in: "query"
-        type: "array"
-        collectionFormat: "multi"
-        description: "Namespace name"
-        items:
-          type: "string"
-        required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "ns"
+          in: "query"
+          type: "array"
+          collectionFormat: "multi"
+          description: "Namespace name"
+          items:
+            type: "string"
+          required: true
       responses:
         200:
           description: "successful operation"
@@ -1094,7 +1094,7 @@ paths:
   /db/{database}/query:
     get:
       tags:
-      - "queries"
+        - "queries"
       summary: "Query documents from namespace"
       operationId: "getQuery"
       description: |
@@ -1102,52 +1102,52 @@ paths:
         Two level paging is supported. At first, applied normal SQL `LIMIT` and `OFFSET`,
         then `limit` and `offset` from http request.
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "q"
-        in: query
-        type: string
-        description: "SQL query"
-        required: true
-      - name: "limit"
-        in: query
-        type: integer
-        description: "Maximum count of returned items"
-      - name: "offset"
-        in: query
-        type: integer
-        description: "Offset of first returned item"
-      - name: with_columns
-        in: query
-        type: boolean
-        description: "Return columns names and widths for table format output"
-        required: false
-      - name: width
-        in: query
-        type: integer
-        description: "Total width in rows of view for table format output"
-        required: false
-      - name: "format"
-        in: query
-        type: string
-        description: "encoding data format"
-        required: false
-        enum:
-          - json
-          - msgpack
-          - protobuf 
-          - csv-file
-      - name: "sharding"
-        in: query
-        type: string
-        description: "if off then execute SQL query on current node"
-        required: false
-        enum:
-          - on
-          - off
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "q"
+          in: query
+          type: string
+          description: "SQL query"
+          required: true
+        - name: "limit"
+          in: query
+          type: integer
+          description: "Maximum count of returned items"
+        - name: "offset"
+          in: query
+          type: integer
+          description: "Offset of first returned item"
+        - name: with_columns
+          in: query
+          type: boolean
+          description: "Return columns names and widths for table format output"
+          required: false
+        - name: width
+          in: query
+          type: integer
+          description: "Total width in rows of view for table format output"
+          required: false
+        - name: "format"
+          in: query
+          type: string
+          description: "encoding data format"
+          required: false
+          enum:
+            - json
+            - msgpack
+            - protobuf
+            - csv-file
+        - name: "sharding"
+          in: query
+          type: string
+          description: "if off then execute SQL query on current node"
+          required: false
+          enum:
+            - on
+            - off
 
       responses:
         200:
@@ -1166,43 +1166,43 @@ paths:
           $ref: "#/responses/UnexpectedError"
     post:
       tags:
-      - "queries"
+        - "queries"
       summary: "Query documents from namespace"
       operationId: "postQuery"
       description: |
         This operation queries documents from namespace by DSL query.
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - in: body
-        name: "body"
-        description: "DSL query"
-        required: true
-        schema:
-          $ref: "#/definitions/Query"
-      - name: with_columns
-        in: query
-        type: boolean
-        description: "Return columns names and widths for table format output"
-        required: false
-      - name: width
-        in: query
-        type: integer
-        description: "Total width in rows of view for table format output"
-        required: false
-      - name: "format"
-        in: query
-        type: string
-        description: "encoding data format"
-        required: false
-        enum:
-          - json
-          - msgpack
-          - protobuf
-          - csv-file
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - in: body
+          name: "body"
+          description: "DSL query"
+          required: true
+          schema:
+            $ref: "#/definitions/Query"
+        - name: with_columns
+          in: query
+          type: boolean
+          description: "Return columns names and widths for table format output"
+          required: false
+        - name: width
+          in: query
+          type: integer
+          description: "Total width in rows of view for table format output"
+          required: false
+        - name: "format"
+          in: query
+          type: string
+          description: "encoding data format"
+          required: false
+          enum:
+            - json
+            - msgpack
+            - protobuf
+            - csv-file
       responses:
         200:
           description: "successful operation"
@@ -1220,23 +1220,23 @@ paths:
           $ref: "#/responses/UnexpectedError"
     put:
       tags:
-      - "queries"
+        - "queries"
       summary: "Update documents in namespace"
       operationId: "updateQuery"
       description: |
         This operation updates documents in namespace by DSL query.
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - in: body
-        name: "body"
-        description: "DSL query"
-        required: true
-        schema:
-          $ref: "#/definitions/Query"
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - in: body
+          name: "body"
+          description: "DSL query"
+          required: true
+          schema:
+            $ref: "#/definitions/Query"
       responses:
         200:
           $ref: "#/responses/OK"
@@ -1252,23 +1252,23 @@ paths:
           $ref: "#/responses/UnexpectedError"
     delete:
       tags:
-      - "queries"
+        - "queries"
       summary: "Delete documents from namespace"
       operationId: "deleteQuery"
       description: |
         This operation removes documents from namespace by DSL query.
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - in: body
-        name: "body"
-        description: "DSL query"
-        required: true
-        schema:
-          $ref: "#/definitions/Query"
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - in: body
+          name: "body"
+          description: "DSL query"
+          required: true
+          schema:
+            $ref: "#/definitions/Query"
       responses:
         200:
           $ref: "#/responses/OK"
@@ -1286,29 +1286,29 @@ paths:
   /db/{database}/namespaces/{name}/transactions/begin:
     post:
       tags:
-      - "transactions"
+        - "transactions"
       summary: "Begin transaction to namespace"
       operationId: "beginTx"
       parameters:
-      - name: "database"
-        in: "path"
-        type: "string"
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: "path"
-        type: "string"
-        description: "Namespace name"
-        required: true
-      - name: "format"
-        in: "query"
-        type: "string"
-        description: "encoding data format"
-        required: false
-        enum:
-          - json
-          - msgpack
-          - protobuf
+        - name: "database"
+          in: "path"
+          type: "string"
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: "path"
+          type: "string"
+          description: "Namespace name"
+          required: true
+        - name: "format"
+          in: "query"
+          type: "string"
+          description: "encoding data format"
+          required: false
+          enum:
+            - json
+            - msgpack
+            - protobuf
       responses:
         200:
           description: "successful operation"
@@ -1328,20 +1328,20 @@ paths:
   /db/{database}/transactions/{tx_id}/commit:
     post:
       tags:
-      - "transactions"
+        - "transactions"
       summary: "Commit transaction"
       operationId: "commitTx"
       parameters:
-      - name: "database"
-        in: "path"
-        type: "string"
-        description: "Database name"
-        required: true
-      - name: "tx_id"
-        in: "path"
-        type: "string"
-        description: "transaction id"
-        required: true
+        - name: "database"
+          in: "path"
+          type: "string"
+          description: "Database name"
+          required: true
+        - name: "tx_id"
+          in: "path"
+          type: "string"
+          description: "transaction id"
+          required: true
       responses:
         200:
           $ref: "#/responses/OK"
@@ -1359,20 +1359,20 @@ paths:
   /db/{database}/transactions/{tx_id}/rollback:
     post:
       tags:
-      - "transactions"
+        - "transactions"
       summary: "Rollback transaction"
       operationId: "rollbackTx"
       parameters:
-      - name: "database"
-        in: "path"
-        type: "string"
-        description: "Database name"
-        required: true
-      - name: "tx_id"
-        in: "path"
-        type: "string"
-        description: "transaction id"
-        required: true
+        - name: "database"
+          in: "path"
+          type: "string"
+          description: "Database name"
+          required: true
+        - name: "tx_id"
+          in: "path"
+          type: "string"
+          description: "transaction id"
+          required: true
       responses:
         200:
           $ref: "#/responses/OK"
@@ -1390,7 +1390,7 @@ paths:
   /db/{database}/transactions/{tx_id}/items:
     delete:
       tags:
-      - "transactions"
+        - "transactions"
       summary: "Delete documents from namespace via transaction"
       operationId: "deleteItemsTx"
       description: |
@@ -1403,29 +1403,29 @@ paths:
         ...
         ```
       parameters:
-      - in: "body"
-        name: "body"
-        schema:
-          type: "object"
-        required: true
-      - name: "database"
-        in: "path"
-        type: "string"
-        description: "Database name"
-        required: true
-      - name: "precepts"
-        in: "query"
-        type: "array"
-        collectionFormat: "multi"
-        description: "Precepts to be done"
-        required: false
-        items:
+        - in: "body"
+          name: "body"
+          schema:
+            type: "object"
+          required: true
+        - name: "database"
+          in: "path"
           type: "string"
-      - name: "tx_id"
-        in: "path"
-        type: "string"
-        description: "transaction id"
-        required: true
+          description: "Database name"
+          required: true
+        - name: "precepts"
+          in: "query"
+          type: "array"
+          collectionFormat: "multi"
+          description: "Precepts to be done"
+          required: false
+          items:
+            type: "string"
+        - name: "tx_id"
+          in: "path"
+          type: "string"
+          description: "transaction id"
+          required: true
       responses:
         200:
           $ref: "#/responses/OK"
@@ -1441,7 +1441,7 @@ paths:
           $ref: "#/responses/UnexpectedError"
     post:
       tags:
-      - "transactions"
+        - "transactions"
       summary: "Insert documents to namespace via transaction"
       operationId: "postItemsTx"
       description: |
@@ -1454,38 +1454,38 @@ paths:
         ...
         ```
       parameters:
-      - in: "body"
-        name: "body"
-        schema:
-          type: "object"
-        required: true
-      - name: "database"
-        in: "path"
-        type: "string"
-        description: "Database name"
-        required: true
-      - name: "tx_id"
-        in: "path"
-        type: "string"
-        description: "transaction id"
-        required: true
-      - name: "precepts"
-        in: "query"
-        type: "array"
-        collectionFormat: "multi"
-        description: "Precepts to be done"
-        required: false
-        items:
+        - in: "body"
+          name: "body"
+          schema:
+            type: "object"
+          required: true
+        - name: "database"
+          in: "path"
           type: "string"
-      - name: "format"
-        in: "query"
-        type: "string"
-        description: "encoding data format"
-        required: false
-        enum:
-          - json
-          - msgpack
-          - protobuf
+          description: "Database name"
+          required: true
+        - name: "tx_id"
+          in: "path"
+          type: "string"
+          description: "transaction id"
+          required: true
+        - name: "precepts"
+          in: "query"
+          type: "array"
+          collectionFormat: "multi"
+          description: "Precepts to be done"
+          required: false
+          items:
+            type: "string"
+        - name: "format"
+          in: "query"
+          type: "string"
+          description: "encoding data format"
+          required: false
+          enum:
+            - json
+            - msgpack
+            - protobuf
       responses:
         200:
           $ref: "#/responses/OK"
@@ -1501,7 +1501,7 @@ paths:
           $ref: "#/responses/UnexpectedError"
     put:
       tags:
-      - "transactions"
+        - "transactions"
       summary: "Update documents in namespace via transaction"
       operationId: "putItemsTx"
       description: |
@@ -1514,38 +1514,38 @@ paths:
         ...
         ```
       parameters:
-      - in: "body"
-        name: "body"
-        schema:
-          type: "object"
-        required: true
-      - name: "database"
-        in: "path"
-        type: "string"
-        description: "Database name"
-        required: true
-      - name: "tx_id"
-        in: "path"
-        type: "string"
-        description: "transaction id"
-        required: true
-      - name: "precepts"
-        in: "query"
-        type: "array"
-        collectionFormat: "multi"
-        description: "Precepts to be done"
-        required: false
-        items:
+        - in: "body"
+          name: "body"
+          schema:
+            type: "object"
+          required: true
+        - name: "database"
+          in: "path"
           type: "string"
-      - name: "format"
-        in: "query"
-        type: "string"
-        description: "encoding data format"
-        required: false
-        enum:
-          - json
-          - msgpack
-          - protobuf
+          description: "Database name"
+          required: true
+        - name: "tx_id"
+          in: "path"
+          type: "string"
+          description: "transaction id"
+          required: true
+        - name: "precepts"
+          in: "query"
+          type: "array"
+          collectionFormat: "multi"
+          description: "Precepts to be done"
+          required: false
+          items:
+            type: "string"
+        - name: "format"
+          in: "query"
+          type: "string"
+          description: "encoding data format"
+          required: false
+          enum:
+            - json
+            - msgpack
+            - protobuf
       responses:
         200:
           $ref: "#/responses/OK"
@@ -1561,7 +1561,7 @@ paths:
           $ref: "#/responses/UnexpectedError"
     patch:
       tags:
-      - "transactions"
+        - "transactions"
       summary: "Upsert documents in namespace via transaction"
       operationId: "patchItemsTx"
       description: |
@@ -1574,38 +1574,38 @@ paths:
         ...
         ```
       parameters:
-      - in: "body"
-        name: "body"
-        schema:
-          type: "object"
-        required: true
-      - name: "database"
-        in: "path"
-        type: "string"
-        description: "Database name"
-        required: true
-      - name: "tx_id"
-        in: "path"
-        type: "string"
-        description: "transaction id"
-        required: true
-      - name: "precepts"
-        in: "query"
-        type: "array"
-        collectionFormat: "multi"
-        description: "Precepts to be done"
-        required: false
-        items:
+        - in: "body"
+          name: "body"
+          schema:
+            type: "object"
+          required: true
+        - name: "database"
+          in: "path"
           type: "string"
-      - name: "format"
-        in: "query"
-        type: "string"
-        description: "encoding data format"
-        required: false
-        enum:
-          - json
-          - msgpack
-          - protobuf
+          description: "Database name"
+          required: true
+        - name: "tx_id"
+          in: "path"
+          type: "string"
+          description: "transaction id"
+          required: true
+        - name: "precepts"
+          in: "query"
+          type: "array"
+          collectionFormat: "multi"
+          description: "Precepts to be done"
+          required: false
+          items:
+            type: "string"
+        - name: "format"
+          in: "query"
+          type: "string"
+          description: "encoding data format"
+          required: false
+          enum:
+            - json
+            - msgpack
+            - protobuf
       responses:
         200:
           $ref: "#/responses/OK"
@@ -1623,42 +1623,42 @@ paths:
   /db/{database}/transactions/{tx_id}/query:
     get:
       tags:
-      - "transactions"
+        - "transactions"
       summary: "Delete/update queries for transactions"
       operationId: "getQueryTx"
       description: |
         This will add DELETE/UPDATE SQL query into transaction.
         This query UPDATEs/DELETEs documents from namespace
       parameters:
-      - name: "database"
-        in: "path"
-        type: "string"
-        description: "Database name"
-        required: true
-      - name: "tx_id"
-        in: "path"
-        type: "string"
-        description: "transaction id"
-        required: true
-      - name: "q"
-        in: "query"
-        type: "string"
-        description: "SQL query"
-        required: true
-      - name: width
-        in: "query"
-        type: "integer"
-        description: "Total width in rows of view for table format output"
-        required: false
-      - name: "format"
-        in: "query"
-        type: "string"
-        description: "encoding data format"
-        required: false
-        enum:
-          - json
-          - msgpack
-          - protobuf
+        - name: "database"
+          in: "path"
+          type: "string"
+          description: "Database name"
+          required: true
+        - name: "tx_id"
+          in: "path"
+          type: "string"
+          description: "transaction id"
+          required: true
+        - name: "q"
+          in: "query"
+          type: "string"
+          description: "SQL query"
+          required: true
+        - name: width
+          in: "query"
+          type: "integer"
+          description: "Total width in rows of view for table format output"
+          required: false
+        - name: "format"
+          in: "query"
+          type: "string"
+          description: "encoding data format"
+          required: false
+          enum:
+            - json
+            - msgpack
+            - protobuf
       responses:
         200:
           $ref: "#/responses/OK"
@@ -1674,34 +1674,34 @@ paths:
           $ref: "#/responses/UnexpectedError"
     delete:
       tags:
-      - "transactions"
+        - "transactions"
       summary: "Delete documents from namespace (transactions)"
       operationId: "deleteQueryTx"
       description: |
         This will add DELETE query into transaction.
         DELETE query removes documents from namespace by DSL query.
       parameters:
-      - name: "database"
-        in: "path"
-        type: "string"
-        description: "Database name"
-        required: true
-      - name: "tx_id"
-        in: "path"
-        type: "string"
-        description: "transaction id"
-        required: true
-      - in: "body"
-        name: "body"
-        description: "DSL query"
-        required: true
-        schema:
-          $ref: "#/definitions/Query"
-      - name: "tx_id"
-        in: "query"
-        type: "string"
-        description: "transaction id"
-        required: false
+        - name: "database"
+          in: "path"
+          type: "string"
+          description: "Database name"
+          required: true
+        - name: "tx_id"
+          in: "path"
+          type: "string"
+          description: "transaction id"
+          required: true
+        - in: "body"
+          name: "body"
+          description: "DSL query"
+          required: true
+          schema:
+            $ref: "#/definitions/Query"
+        - name: "tx_id"
+          in: "query"
+          type: "string"
+          description: "transaction id"
+          required: false
       responses:
         200:
           $ref: "#/responses/OK"
@@ -1719,32 +1719,32 @@ paths:
   /db/{database}/suggest:
     get:
       tags:
-      - "queries"
+        - "queries"
       summary: "Suggest for autocompletion of SQL query"
       operationId: "getSuggest"
       description: |
         This operation pareses SQL query, and suggests autocompletion variants
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "q"
-        in: query
-        type: string
-        description: "SQL query"
-        required: true
-      - name: "pos"
-        in: query
-        type: integer
-        description: "Cursor position for suggest"
-        required: true
-      - name: "line"
-        in: query
-        type: integer
-        description: "Cursor line for suggest"
-        required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "q"
+          in: query
+          type: string
+          description: "SQL query"
+          required: true
+        - name: "pos"
+          in: query
+          type: integer
+          description: "Cursor position for suggest"
+          required: true
+        - name: "line"
+          in: query
+          type: integer
+          description: "Cursor line for suggest"
+          required: true
       responses:
         200:
           description: "successful operation"
@@ -1764,43 +1764,43 @@ paths:
   /db/{database}/sqlquery:
     post:
       tags:
-      - "queries"
+        - "queries"
       summary: "Query documents from namespace"
       operationId: "postSQLQuery"
       description: |
         This operation queries documents from namespace by SQL query. Query can be preceded by `EXPLAIN` statement, then query execution plan will be returned with query results.
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "q"
-        in: body
-        schema:
+        - name: "database"
+          in: path
           type: string
-        description: "SQL query"
-        required: true
-      - name: with_columns
-        in: query
-        type: boolean
-        description: "Return columns names and widths for table format output"
-        required: false
-      - name: width
-        in: query
-        type: integer
-        description: "Total width in rows of view for table format output"
-        required: false
-      - name: "format"
-        in: query
-        type: string
-        description: "encoding data format"
-        required: false
-        enum:
-          - json
-          - msgpack
-          - protobuf
-          - csv-file
+          description: "Database name"
+          required: true
+        - name: "q"
+          in: body
+          schema:
+            type: string
+          description: "SQL query"
+          required: true
+        - name: with_columns
+          in: query
+          type: boolean
+          description: "Return columns names and widths for table format output"
+          required: false
+        - name: width
+          in: query
+          type: integer
+          description: "Total width in rows of view for table format output"
+          required: false
+        - name: "format"
+          in: query
+          type: string
+          description: "encoding data format"
+          required: false
+          enum:
+            - json
+            - msgpack
+            - protobuf
+            - csv-file
       responses:
         200:
           description: "successful operation"
@@ -1820,7 +1820,7 @@ paths:
   /check:
     get:
       tags:
-      - "system"
+        - "system"
       summary: "Get system information"
       description: "This operation will return system information about server version, uptime, and resources consumption"
       operationId: "getSysInfo"
@@ -1892,16 +1892,16 @@ paths:
   /db/{database}/namespaces/%23activitystats/items:
     get:
       tags:
-      - "system"
+        - "system"
       summary: "Get activity stats information"
       description: "This operation will return detailed information about current activity of all connected to the database clients"
       operationId: "getActivityStats"
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
       responses:
         200:
           description: "successful operation"
@@ -1921,16 +1921,16 @@ paths:
   /db/{database}/namespaces/%23clientsstats/items:
     get:
       tags:
-      - "system"
+        - "system"
       summary: "Get client connection information"
       description: "This operation will return detailed information about all connections on the server"
       operationId: "getClientsStats"
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
       responses:
         200:
           description: "successful operation"
@@ -1950,21 +1950,21 @@ paths:
   /db/{database}/namespaces/%23replicationstats/items:
     get:
       tags:
-      - "system"
+        - "system"
       summary: "Get replication statistics"
       description: "This operation will return detailed informatiom about replication status on this node or cluster"
       operationId: "getGlobalReplicationStats"
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
-      - name: "filter"
-        in: query
-        type: string
-        description: "Filter with SQL syntax, e.g: field1 = 'v1' AND field2 > 'v2'. Has to filter by 'type' field: either 'async' or 'cluster'"
-        required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "filter"
+          in: query
+          type: string
+          description: "Filter with SQL syntax, e.g: field1 = 'v1' AND field2 > 'v2'. Has to filter by 'type' field: either 'async' or 'cluster'"
+          required: true
       responses:
         200:
           description: "successful operation"
@@ -1982,16 +1982,16 @@ paths:
   /db/{database}/namespaces/%23memstats/items:
     get:
       tags:
-      - "system"
+        - "system"
       summary: "Get memory stats information"
       description: "This operation will return detailed information about database memory consumption"
       operationId: "getMemStats"
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
       responses:
         200:
           description: "successful operation"
@@ -2011,16 +2011,16 @@ paths:
   /db/{database}/namespaces/%23perfstats/items:
     get:
       tags:
-      - "system"
+        - "system"
       summary: "Get performance stats information"
       description: "This operation will return detailed information about database performance timings. By default performance stats is turned off."
       operationId: "getPerfStats"
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
       responses:
         200:
           description: "successful operation"
@@ -2040,16 +2040,16 @@ paths:
   /db/{database}/namespaces/%23queriesperfstats/items:
     get:
       tags:
-      - "system"
+        - "system"
       summary: "Get SELECT queries performance stats information"
       description: "This operation will return detailed information about database memory consumption. By default quires performance stat is turned off."
       operationId: "getQueriesPerfStats"
       parameters:
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
       responses:
         200:
           description: "successful operation"
@@ -2069,7 +2069,7 @@ paths:
   /db/{database}/namespaces/%23config/items:
     put:
       tags:
-      - "system"
+        - "system"
       summary: "Update system config"
       operationId: "putSystemConfig"
       description: |
@@ -2077,16 +2077,16 @@ paths:
         - profiling configuration. It is used to enable recording of queries and overall performance;
         - log queries configuration.
       parameters:
-      - in: body
-        name: "body"
-        schema:
-          $ref: "#/definitions/SystemConfigItem"
-        required: true
-      - name: "database"
-        in: path
-        type: string
-        description: "Database name"
-        required: true
+        - in: body
+          name: "body"
+          schema:
+            $ref: "#/definitions/SystemConfigItem"
+          required: true
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
       responses:
         200:
           description: "successful operation"
@@ -2215,13 +2215,13 @@ definitions:
               type: string
               description: "Current operation state"
               enum:
-              - "in_progress" 
-              - "wait_lock"
-              - "sending"
-              - "indexes_lookup"
-              - "select_loop"
-              - "proxied_via_cluster_proxy"
-              - "proxied_via_sharding_proxy"
+                - "in_progress"
+                - "wait_lock"
+                - "sending"
+                - "indexes_lookup"
+                - "select_loop"
+                - "proxied_via_cluster_proxy"
+                - "proxied_via_sharding_proxy"
             lock_description:
               type: string
 
@@ -2423,13 +2423,13 @@ definitions:
     type: object
     properties:
       total_items:
-         type: integer
-         description: "Total count of databases"
+        type: integer
+        description: "Total count of databases"
       items:
-         type: array
-         items:
-           description: "Name of database"
-           type: string
+        type: array
+        items:
+          description: "Name of database"
+          type: string
 
   Database:
     type: object
@@ -2469,7 +2469,7 @@ definitions:
             description: "If true, then documents will be stored to disc storage, else all data will be lost on server shutdown"
       indexes:
         type: array
-        items: 
+        items:
           $ref: "#/definitions/Index"
 
   Index:
@@ -2480,7 +2480,7 @@ definitions:
       - field_type
       - index_type
     properties:
-      name: 
+      name:
         description: "Name of index, can contains letters, digits and underscores"
         type: string
         pattern: "^[A-Za-z0-9_\\-]*$"
@@ -2496,24 +2496,24 @@ definitions:
         type: string
         description: "Field data type"
         enum:
-        - "int"
-        - "int64"
-        - "double"
-        - "string"
-        - "bool"
-        - "composite"
-        - "point"
+          - "int"
+          - "int64"
+          - "double"
+          - "string"
+          - "bool"
+          - "composite"
+          - "point"
       index_type:
         type: string
         description: "Index structure type"
         default: "hash"
         enum:
-        - "hash"
-        - "tree"
-        - "text"
-        - "rtree"
-        - "ttl"
-        - "-"
+          - "hash"
+          - "tree"
+          - "text"
+          - "rtree"
+          - "ttl"
+          - "-"
       expire_after:
         description: "Specify, time to live for ttl index, in seconds"
         type: integer
@@ -2536,10 +2536,10 @@ definitions:
         type: string
         description: "Algorithm to construct RTree index"
         enum:
-        - "linear"
-        - "quadratic"
-        - "greene"
-        - "rstar"
+          - "linear"
+          - "quadratic"
+          - "greene"
+          - "rstar"
         default: "rstar"
       is_simple_tag:
         description: "Use simple tag instead of actual index, which will notice rx about possible field name for strict policies"
@@ -2550,10 +2550,10 @@ definitions:
         description: "String collate mode"
         default: "none"
         enum:
-        - "none"
-        - "ascii"
-        - "utf8"
-        - "numeric"
+          - "none"
+          - "ascii"
+          - "utf8"
+          - "numeric"
       sort_order_letters:
         type: string
         description: "Sort order letters"
@@ -2586,10 +2586,10 @@ definitions:
         description: "Entity type"
         type: string
         enum:
-        - "object"
-        - "string"
-        - "number"
-        - "array"
+          - "object"
+          - "string"
+          - "number"
+          - "array"
 
   SchemaDef:
     $ref: "#/definitions/JsonObjectDef"
@@ -2617,7 +2617,7 @@ definitions:
         description: "is updated value an array"
       values:
         type: "array"
-        items: 
+        items:
           type: "object"
         description: "Values to update field with"
 
@@ -2654,7 +2654,7 @@ definitions:
       filters:
         type: array
         description: "Filter for results documents"
-        items: 
+        items:
           $ref: "#/definitions/FilterDef"
       sort:
         description: "Specifies results sorting order"
@@ -2735,7 +2735,7 @@ definitions:
       filters:
         type: array
         description: "Filter for results documents"
-        items: 
+        items:
           $ref: "#/definitions/FilterDef"
       sort:
         description: "Specifies results sorting order"
@@ -2774,31 +2774,31 @@ definitions:
         type: string
         description: "Condition operator"
         enum:
-        - "EQ" # Equality (between field and value or between 2 fields)
-        - "GT" # Grower than (>)
-        - "GE" # Grower or equal (>=)
-        - "LE" # Less or equal (<=)
-        - "LT" # Less than (>)
-        - "SET" # field in (value1, value2, ...). Checks if value belongs to the set (or if 2 arrays has common values)
-        - "ALLSET" # Checks all the values from the first array (field) belong to the second array (value)
-        - "EMPTY" # Check if field is null
-        - "RANGE" # Check if field is >= value1 and <= value2
-        - "LIKE" # Filter strings by give patter
-        - "DWITHIN" # Checks if point (from field) lies within given circle. Value must look like this: [[1, -3.5],5.0], where [1, -3.5] is the central point of the circle and 5.0 is the radius
+          - "EQ" # Equality (between field and value or between 2 fields)
+          - "GT" # Grower than (>)
+          - "GE" # Grower or equal (>=)
+          - "LE" # Less or equal (<=)
+          - "LT" # Less than (>)
+          - "SET" # field in (value1, value2, ...). Checks if value belongs to the set (or if 2 arrays has common values)
+          - "ALLSET" # Checks all the values from the first array (field) belong to the second array (value)
+          - "EMPTY" # Check if field is null
+          - "RANGE" # Check if field is >= value1 and <= value2
+          - "LIKE" # Filter strings by give patter
+          - "DWITHIN" # Checks if point (from field) lies within given circle. Value must look like this: [[1, -3.5],5.0], where [1, -3.5] is the central point of the circle and 5.0 is the radius
       op:
         type: string
         description: "Logic operator"
         enum:
-        - "AND"
-        - "OR"
-        - "NOT"
+          - "AND"
+          - "OR"
+          - "NOT"
       value:
         description: "Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5],5.0]' for DWITHIN"
         type: object
       filters:
         type: array
         description: "Filter for results documents"
-        items: 
+        items:
           $ref: "#/definitions/FilterDef"
       join_query:
         $ref: "#/definitions/JoinedDef"
@@ -2842,7 +2842,7 @@ definitions:
     type: object
     required:
       - namespace
-      - on
+      - "on"
       - type
     properties:
       namespace:
@@ -2852,13 +2852,13 @@ definitions:
         type: string
         description: "Join type"
         enum:
-        - "LEFT"
-        - "INNER"
-        - "ORINNER"
+          - "LEFT"
+          - "INNER"
+          - "ORINNER"
       filters:
         type: array
         description: "Filter for results documents"
-        items: 
+        items:
           $ref: "#/definitions/FilterDef"
       sort:
         type: "array"
@@ -2873,7 +2873,7 @@ definitions:
       on:
         type: array
         description: "Join ON statement"
-        items: 
+        items:
           $ref: "#/definitions/OnDef"
       select_filter:
         description: "Filter fields of returned document. Can be dot separated, e.g 'subobject.field'"
@@ -2898,19 +2898,19 @@ definitions:
         type: string
         description: "Condition operator"
         enum:
-        - "EQ" # Equality
-        - "GT" # Grower than (>)
-        - "GE" # Grower or equal (>=)
-        - "LE" # Less or equal (<=)
-        - "LT" # Less than (>)
-        - "SET" # X in (v1, v2, ...)
+          - "EQ" # Equality
+          - "GT" # Grower than (>)
+          - "GE" # Grower or equal (>=)
+          - "LE" # Less or equal (<=)
+          - "LT" # Less than (>)
+          - "SET" # X in (v1, v2, ...)
       op:
         type: string
         description: "Logic operator"
         enum:
-        - "AND"
-        - "OR"
-        - "NOT"
+          - "AND"
+          - "OR"
+          - "NOT"
 
   AggregationsDef:
     type: object
@@ -2927,12 +2927,12 @@ definitions:
         type: string
         description: "Aggregation function"
         enum:
-        - "SUM"
-        - "AVG"
-        - "MIN"
-        - "MAX"
-        - "FACET"
-        - "DISTINCT"
+          - "SUM"
+          - "AVG"
+          - "MIN"
+          - "MAX"
+          - "FACET"
+          - "DISTINCT"
       sort:
         description: "Specifies results sorting order. Allowed only for FACET"
         type: array
@@ -2940,7 +2940,7 @@ definitions:
           $ref: "#/definitions/AggregationsSortDef"
       limit:
         type: integer
-        default: UINT_MAX
+        default: 4294967295
         minimum: 0
         description: "Number of rows to get from result set. Allowed only for FACET"
       offset:
@@ -2964,10 +2964,10 @@ definitions:
         type: string
         description: "Aggregation function"
         enum:
-        - "SUM"
-        - "AVG"
-        - "MIN"
-        - "MAX"
+          - "SUM"
+          - "AVG"
+          - "MIN"
+          - "MAX"
 
   AggregationsSortDef:
     description: "Specifies facet aggregations results sorting order"
@@ -3032,7 +3032,7 @@ definitions:
           $ref: "#/definitions/FtStopWordObject"
       stemmers:
         type: array
-        default: ["en","ru"]
+        default: [ "en","ru" ]
         description: "List of stemmers to use"
         items:
           type: string
@@ -3180,8 +3180,8 @@ definitions:
         type: string
         description: "Optimize the index by memory or by cpu"
         enum:
-        - "Memory"
-        - "CPU"
+          - "Memory"
+          - "CPU"
         default: "Memory"
       enable_preselect_before_ft:
         type: boolean
@@ -3289,8 +3289,8 @@ definitions:
         type: string
         description: "Text tokenization algorithm. 'fast' - splits text by spaces, special characters and unsupported UTF-8 symbols. Each token is a combination of letters from supported UTF-8 subset, numbers and extra word symbols. 'mmseg_cn' - algorithm based on friso implementation of mmseg for Chinese and English"
         enum:
-        - "fast"
-        - "mmseg_cn"
+          - "fast"
+          - "mmseg_cn"
         default: "fast"
 
   FulltextFieldConfig:
@@ -3497,7 +3497,7 @@ definitions:
       general_sort_us:
         type: integer
         description: "Result sort time"
-      sort_index: 
+      sort_index:
         type: string
         description: "Index, which used for sort results"
       sort_by_uncommitted_index:
@@ -3513,10 +3513,10 @@ definitions:
               type: string
               description: "Method, used to process condition"
               enum:
-              - "scan"
-              - "index"
-              - "inner_join"
-              - "left_join"
+                - "scan"
+                - "index"
+                - "inner_join"
+                - "left_join"
             field:
               type: string
               description: "Field or index name"
@@ -3548,20 +3548,20 @@ definitions:
               type: string
               description: "Select iterator type"
               enum:
-              - "Comparator"
-              - "TwoFieldsComparison"
-              - "Skipped"
-              - "Forward"
-              - "Reverse"
-              - "SingleRange"
-              - "SingleIdset"
-              - "SingleIdSetWithDeferedSort"
-              - "RevSingleRange"
-              - "RevSingleIdset"
-              - "RevSingleIdSetWithDeferedSort"
-              - "OnlyComparator"
-              - "Unsorted"
-              - "UnbuiltSortOrdersIndex"
+                - "Comparator"
+                - "TwoFieldsComparison"
+                - "Skipped"
+                - "Forward"
+                - "Reverse"
+                - "SingleRange"
+                - "SingleIdset"
+                - "SingleIdSetWithDeferedSort"
+                - "RevSingleRange"
+                - "RevSingleIdset"
+                - "RevSingleIdSetWithDeferedSort"
+                - "OnlyComparator"
+                - "Unsorted"
+                - "UnbuiltSortOrdersIndex"
             description:
               type: string
               description: "Description of the selector"
@@ -3617,9 +3617,9 @@ definitions:
                     type: string
                     description: Optional. Aggregation type used in subquery
                     enum:
-                    - "min"
-                    - "max"
-                    - "distinct"
+                      - "min"
+                      - "max"
+                      - "distinct"
                   success:
                     type: boolean
                     description: result of injection attempt
@@ -3667,12 +3667,12 @@ definitions:
         type: string
         description: "Aggregation function"
         enum:
-        - "SUM"
-        - "AVG"
-        - "MIN"
-        - "MAX"
-        - "FACET"
-        - "DISTINCT"
+          - "SUM"
+          - "AVG"
+          - "MIN"
+          - "MAX"
+          - "FACET"
+          - "DISTINCT"
       value:
         type: number
         description: "Value, calculated by aggregator"
@@ -3690,7 +3690,7 @@ definitions:
               description: "Facet fields values"
               items:
                 type: string
-            count: 
+            count:
               type: integer
               description: "Count of elements these fields values"
       distincts:
@@ -3764,7 +3764,7 @@ definitions:
     properties:
       name:
         type: string
-        description: "Name of namespace" 
+        description: "Name of namespace"
       items_count:
         type: integer
         description: "Total count of documents in namespace"
@@ -3858,17 +3858,17 @@ definitions:
 
   JoinCacheMemStats:
     description: "Join cache stats. Stores results of selects to right table by ON condition"
-    allOf: 
+    allOf:
       - $ref: "#/definitions/CacheMemStats"
 
   QueryCacheMemStats:
     description: "Query cache stats. Stores results of SELECT COUNT(*) by Where conditions"
-    allOf: 
+    allOf:
       - $ref: "#/definitions/CacheMemStats"
 
   IndexCacheMemStats:
     description: "Idset cache stats. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys"
-    allOf: 
+    allOf:
       - $ref: "#/definitions/CacheMemStats"
 
   CacheMemStats:
@@ -3919,18 +3919,18 @@ definitions:
         type: object
         description: "State of current master namespace"
         properties:
-           data_hash:
-             type: integer
-             description: "Hashsum of all records in namespace"
-           last_lsn:
-             type: integer
-             description: "Last Log Sequence Number (LSN) of applied namespace modification"
-           updated_unix_nano:
-             type: integer
-             description: "Last update time"
-           data_count:
-             type: integer
-             description: "Items count in master namespace"
+          data_hash:
+            type: integer
+            description: "Hashsum of all records in namespace"
+          last_lsn:
+            type: integer
+            description: "Last Log Sequence Number (LSN) of applied namespace modification"
+          updated_unix_nano:
+            type: integer
+            description: "Last update time"
+          data_count:
+            type: integer
+            description: "Items count in master namespace"
       incarnation_counter:
         type: integer
         description: "Number of storage's master <-> slave switches"
@@ -3967,16 +3967,22 @@ definitions:
     properties:
       name:
         type: string
-        description: "Name of namespace" 
+        description: "Name of namespace"
       updates:
         $ref: "#/definitions/UpdatePerfStats"
       selects:
         $ref: "#/definitions/SelectPerfStats"
       transactions:
         $ref: "#/definitions/TransactionsPerfStats"
+      join_cache:
+        description: "Joins cache statistics"
+        $ref: "#/definitions/LRUCachePerfStats"
+      query_count_cache:
+        description: "Queries cache statistics (for the queries with COUNT_CACHED() aggregation)"
+        $ref: "#/definitions/LRUCachePerfStats"
       indexes:
         type: array
-        description: "Memory consumption of each namespace index"
+        description: "Performance statistics for each namespace index"
         items:
           type: object
           properties:
@@ -3987,7 +3993,10 @@ definitions:
               $ref: "#/definitions/UpdatePerfStats"
             selects:
               $ref: "#/definitions/SelectPerfStats"
-  
+            cache:
+              description: "If index does not use IDs cache at all, this struct won't be present in response"
+              $ref: "#/definitions/LRUCachePerfStats"
+
   CommonPerfStats:
     type: object
     properties:
@@ -4021,12 +4030,12 @@ definitions:
 
   UpdatePerfStats:
     description: "Performance statistics for update operations"
-    allOf: 
+    allOf:
       - $ref: "#/definitions/CommonPerfStats"
 
   SelectPerfStats:
     description: "Performance statistics for select operations"
-    allOf: 
+    allOf:
       - $ref: "#/definitions/CommonPerfStats"
 
   TransactionsPerfStats:
@@ -4090,7 +4099,7 @@ definitions:
 
   QueryPerfStats:
     description: "Performance statistics per each query"
-    allOf: 
+    allOf:
       - $ref: "#/definitions/CommonPerfStats"
       - type: object
         properties:
@@ -4101,18 +4110,34 @@ definitions:
             type: string
             description: "not normalized SQL representation of longest query"
 
+  LRUCachePerfStats:
+    description: "Performance statistics for specific LRU-cache instance"
+    properties:
+      total_queries:
+        description: "Queries total count"
+        type: integer
+        minimum: 0
+      cache_hit_rate:
+        description: "Cache hit rate (hits / total_queries)"
+        type: number
+        minimum: 0.0
+        maximum: 1.0
+      is_active:
+        description: "Determines if cache is currently in use. Usually it has 'false' value for uncommited indexes"
+        type: boolean
+
   SystemConfigItem:
     type: object
     required:
       - type
     properties:
-      type: 
+      type:
         type: string
         enum:
-        - profiling
-        - namespaces
-        - replication
-        - action
+          - profiling
+          - namespaces
+          - replication
+          - action
         default: "profiling"
       profiling:
         $ref: "#/definitions/ProfilingConfig"
@@ -4155,15 +4180,15 @@ definitions:
         $ref: "#/definitions/LongQueriesLogging"
 
   LongQueriesLogging:
-        type: object
-        description: "Parameters for logging long queries and transactions"
-        properties:
-          select:
-            $ref: "#/definitions/SelectLogging"
-          update_delete:
-            $ref: "#/definitions/UpdateDeleteLogging"
-          transaction:
-            $ref: "#/definitions/TransactionLogging"
+    type: object
+    description: "Parameters for logging long queries and transactions"
+    properties:
+      select:
+        $ref: "#/definitions/SelectLogging"
+      update_delete:
+        $ref: "#/definitions/UpdateDeleteLogging"
+      transaction:
+        $ref: "#/definitions/TransactionLogging"
 
   SelectLogging:
     type: object
@@ -4178,16 +4203,16 @@ definitions:
         default: false
 
   UpdateDeleteLogging:
-            type: object
-            properties:
-              threshold_us:
-                type: integer
-                description: "Threshold value for logging UPDATE and DELETE queries, if -1 logging is disabled"
-                default: -1
-              normalized:
-                type: boolean
-                description: "Output the query in a normalized form"
-                default: false
+    type: object
+    properties:
+      threshold_us:
+        type: integer
+        description: "Threshold value for logging UPDATE and DELETE queries, if -1 logging is disabled"
+        default: -1
+      normalized:
+        type: boolean
+        description: "Output the query in a normalized form"
+        default: false
 
   TransactionLogging:
     type: object
@@ -4203,7 +4228,7 @@ definitions:
 
   NamespacesConfig:
     type: object
-    properties:  
+    properties:
       namespace:
         type: string
         description: "Name of namespace, or `*` for setting to all namespaces"
@@ -4278,6 +4303,13 @@ definitions:
         default: 20000
         minimum: 0
         description: "Enables synchronous storage flush inside write-calls, if async updates count is more than sync_storage_flush_limit. 0 - disables synchronous storage flush, in this case storage will be flushed in background thread only"
+      strict_mode:
+        description: "Strict mode for queries. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions"
+        type: string
+        enum:
+          - "none"
+          - "names"
+          - "indexes"
       cache:
         type: object
         properties:
@@ -4329,7 +4361,7 @@ definitions:
       server_id:
         type: integer
         default: 0
-        minimun: 0
+        minimum: 0
         maximum: 999
         description: "Node identifier. Should be unique for each node in the replicated cluster (non-unique IDs are also allowed, but may lead to the inconsistency in some cases"
       cluster_id:
@@ -4342,7 +4374,7 @@ definitions:
       - role
       - nodes
       - namespaces
-    properties:  
+    properties:
       role:
         type: string
         description: "Replication role"
@@ -4427,7 +4459,7 @@ definitions:
     type: object
     required:
       - command
-    properties:  
+    properties:
       command:
         type: string
         description: "Command to execute"
@@ -4452,9 +4484,9 @@ definitions:
         type: "string"
         description: "User role"
         enum:
-        - "owner"
-        - "db_admin"
-        - "data_write"
-        - "data_read"
-        - "none"
-        - "unauthoried"
+          - "owner"
+          - "db_admin"
+          - "data_write"
+          - "data_read"
+          - "none"
+          - "unauthoried"

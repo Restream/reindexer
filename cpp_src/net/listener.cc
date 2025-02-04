@@ -34,7 +34,7 @@ Listener<LT>::Listener(ev::dynamic_loop& loop, std::shared_ptr<Shared> shared)
 
 template <ListenerType LT>
 Listener<LT>::Listener(ev::dynamic_loop& loop, ConnectionFactory&& connFactory, openssl::SslCtxPtr sslCtx, int maxListeners)
-	: Listener(loop, std::make_shared<Shared>(std::move(connFactory), (maxListeners ? maxListeners : hardware_concurrency()) + 1,
+	: Listener(loop, std::make_shared<Shared>(std::move(connFactory), (maxListeners ? maxListeners : (double(hardware_concurrency()) * 1.2)) + 1,
 											  std::move(sslCtx))) {}
 
 template <ListenerType LT>

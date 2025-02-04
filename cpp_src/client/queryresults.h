@@ -37,9 +37,8 @@ public:
 
 	class Iterator : public CoroQueryResults::Iterator {
 	public:
-		Iterator(const QueryResults* r, const CoroQueryResults* qr, int idx, int pos, int nextPos,
-				 ResultSerializer::ItemParams itemParams) noexcept
-			: CoroQueryResults::Iterator{qr, idx, pos, nextPos, itemParams, {}}, r_(r) {}
+		Iterator(const QueryResults& r, int idx, int pos, int nextPos, ResultSerializer::ItemParams itemParams) noexcept
+			: CoroQueryResults::Iterator{&r.results_, idx, pos, nextPos, itemParams, {}}, r_(&r) {}
 		Iterator& operator*() { return *this; }
 		Iterator& operator++() noexcept {
 			try {
@@ -57,11 +56,12 @@ public:
 			}
 			return *this;
 		}
+
 		const QueryResults* r_;
 	};
 
-	Iterator begin() const noexcept { return Iterator{this, &results_, 0, 0, 0, {}}; }
-	Iterator end() const noexcept { return Iterator{this, &results_, int(results_.Count()), 0, 0, {}}; }
+	Iterator begin() const noexcept { return Iterator{*this, 0, 0, 0, {}}; }
+	Iterator end() const noexcept { return Iterator{*this, int(results_.Count()), 0, 0, {}}; }
 
 	size_t Count() const noexcept { return results_.Count(); }
 	int TotalCount() const noexcept { return results_.TotalCount(); }

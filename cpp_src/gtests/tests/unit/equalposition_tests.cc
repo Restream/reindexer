@@ -315,3 +315,41 @@ TEST_F(EqualPositionApi, SelectBrackets) {
 	EXPECT_TRUE(err.ok()) << err.what();
 	VerifyQueryResult(qr, {kFieldA1, kFieldA2, kFieldA3}, {key1, key2, key3}, {CondEq, CondEq, CondEq});
 }
+
+TEST_F(EqualPositionApi, EqualPositionBrackets) {
+	const std::string_view ns{"ns2"};
+	rt.OpenNamespace(ns, StorageOpts().Enabled(false));
+	rt.AddIndex(ns, {"id", "hash", "int", IndexOpts().PK()});
+	rt.UpsertJSON(ns, R"#({"id": 0, "id1":11, "id2":21 "a1": [10, 20, 30], "a2": [20, 30, 40]}})#");
+	rt.UpsertJSON(ns, R"#({"id": 1, "id1":11, "id2":21 "a1": [20, 10, 30], "a2": [10, 30, 40]}})#");
+	rt.UpsertJSON(ns, R"#({"id": 2, "id1":11, "id2":21 "a1": [30, 10, 30], "a2": [30, 60, 40]}})#");
+
+	auto check = [this](std::string_view sql, std::string_view resJson) {
+		try {
+			auto qr = rt.Select(Query::FromSQL(sql));
+			auto jsonVec = rt.GetSerializedQrItems(qr);
+			ASSERT_EQ(jsonVec.size(), 1);
+			ASSERT_EQ(jsonVec[0], resJson);
+		} catch (const Error& e) {
+			ASSERT_TRUE(false) << e.what();
+		}
+	};
+	check("SELECT id FROM ns2 WHERE a1=10 AND a2=20 equal_position(a1, a2)", R"#({"id":0})#");
+	check("SELECT id FROM ns2 WHERE a1=10 AND a2=20 equal_position(a1, a2) equal_position(a1, a2)", R"#({"id":0})#");
+	check("SELECT id FROM ns2 WHERE a1=10 AND a2=20 equal_position(a1, a2) equal_position(a1, a2) equal_position(a1, a2)", R"#({"id":0})#");
+
+	check("SELECT id FROM ns2 WHERE equal_position(a1, a2) a1=10 AND a2=30", R"#({"id":1})#");
+	check("SELECT id FROM ns2 WHERE equal_position(a1, a2) equal_position(a1, a2) a1=10 AND a2=30", R"#({"id":1})#");
+	check("SELECT id FROM ns2 WHERE equal_position(a1, a2) equal_position(a1, a2) equal_position(a1, a2) a1=10 AND a2=30", R"#({"id":1})#");
+
+	check("SELECT id FROM ns2 WHERE a1=10 equal_position(a1, a2) AND a2=20", R"#({"id":0})#");
+	check("SELECT id FROM ns2 WHERE a1=10 equal_position(a1, a2) equal_position(a1, a2) AND a2=20", R"#({"id":0})#");
+	check("SELECT id FROM ns2 WHERE a1=10 equal_position(a1, a2) equal_position(a1, a2) equal_position(a1, a2) AND a2=20", R"#({"id":0})#");
+
+	check("SELECT id FROM ns2 WHERE a1=10 AND equal_position(a1, a2) a2=20", R"#({"id":0})#");
+	check("SELECT id FROM ns2 WHERE a1=10 AND equal_position(a1, a2) equal_position(a1, a2) a2=20", R"#({"id":0})#");
+	check("SELECT id FROM ns2 WHERE a1=10 AND equal_position(a1, a2) equal_position(a1, a2) equal_position(a1, a2) a2=20", R"#({"id":0})#");
+
+	check("SELECT id FROM ns2 WHERE a1=10 AND  a2=20  AND (id1=11 or id1=12) equal_position(a1, a2)", R"#({"id":0})#");
+	check("SELECT id FROM ns2 WHERE a1=10 AND  a2=20  AND equal_position(a1, a2) (id1=11 or id1=12)", R"#({"id":0})#");
+}

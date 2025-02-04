@@ -3,18 +3,19 @@
 #include "core/payload/payloadvalue.h"
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
+#include "tools/assertrx.h"
 
 namespace reindexer {
 
 static const int kDefaultQueryResultsSize = 32;
 class ItemRef {
 public:
-	ItemRef() : id_(0), proc_(0), raw_(0), valueInitialized_(false), nsid_(0) {}
-	ItemRef(IdType id, const PayloadValue& value, uint16_t proc = 0, uint16_t nsid = 0, bool raw = false)
+	ItemRef() noexcept : id_(0), proc_(0), raw_(0), valueInitialized_(false), nsid_(0) {}
+	ItemRef(IdType id, const PayloadValue& value, uint16_t proc = 0, uint16_t nsid = 0, bool raw = false) noexcept
 		: id_(id), proc_(proc), raw_(raw), valueInitialized_(true), nsid_(nsid), value_(value) {}
-	ItemRef(IdType id, unsigned sortExprResultsIdx, uint16_t proc = 0, uint16_t nsid = 0)
+	ItemRef(IdType id, unsigned sortExprResultsIdx, uint16_t proc = 0, uint16_t nsid = 0) noexcept
 		: id_(id), proc_(proc), raw_(0), valueInitialized_(false), nsid_(nsid), sortExprResultsIdx_(sortExprResultsIdx) {}
-	ItemRef(ItemRef&& other)
+	ItemRef(ItemRef&& other) noexcept
 		: id_(other.id_),
 		  proc_(other.proc_),
 		  raw_(other.raw_),
@@ -25,7 +26,7 @@ public:
 			new (&value_) PayloadValue(std::move(other.value_));
 		}
 	}
-	ItemRef(const ItemRef& other)
+	ItemRef(const ItemRef& other) noexcept
 		: id_(other.id_),
 		  proc_(other.proc_),
 		  raw_(other.raw_),
@@ -36,7 +37,7 @@ public:
 			new (&value_) PayloadValue(other.value_);
 		}
 	}
-	ItemRef& operator=(ItemRef&& other) {
+	ItemRef& operator=(ItemRef&& other) noexcept {
 		if (&other == this) {
 			return *this;
 		}
@@ -61,7 +62,7 @@ public:
 		valueInitialized_ = other.valueInitialized_;
 		return *this;
 	}
-	ItemRef& operator=(const ItemRef& other) {
+	ItemRef& operator=(const ItemRef& other) noexcept {
 		if (&other == this) {
 			return *this;
 		}

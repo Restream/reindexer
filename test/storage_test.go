@@ -1,8 +1,10 @@
 package reindexer
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"net/url"
 	"os"
 	"testing"
@@ -78,9 +80,29 @@ type TestItemV6 struct {
 	F4  int `reindex:"f4"`
 }
 
+// Item with regular indexes
+type TestIndexesCompatibilityRegularItem struct {
+	ID       int    `reindex:"id,,pk"`
+	StrField string `reindex:"str_field"`
+	IntField int    `reindexe:"int_field,tree"`
+}
+
+const testIndexesCompatibilityRegularNs = "indexes_compat_r_d"
+
+// Item with dense indexes
+type TestIndexesCompatibilityDenseItem struct {
+	ID       int    `reindex:"id,,pk"`
+	StrField string `reindex:"str_field,,dense"`
+	IntField int    `reindexe:"int_field,tree,dense"`
+}
+
+const testIndexesCompatibilityDenseNs = "indexes_compat_d_r"
+
 func init() {
 	tnamespaces[TestItemsStorageNs] = TestItemV1{}
 	tnamespaces[TestWalNs] = TestItem{}
+	tnamespaces[testIndexesCompatibilityRegularNs] = TestIndexesCompatibilityRegularItem{}
+	tnamespaces[testIndexesCompatibilityDenseNs] = TestIndexesCompatibilityDenseItem{}
 }
 
 func TestStorageChangeFormat(t *testing.T) {
@@ -227,5 +249,78 @@ func TestWal(t *testing.T) {
 		require.NoError(t, err)
 		lastLsn2 := getLastLsnCounter(t, ns)
 		require.Equal(t, lastLsn1, lastLsn2)
+	})
+}
+
+func newTestIndexesCompatibilityRegularItem(id int) interface{} {
+	return &TestIndexesCompatibilityRegularItem{
+		ID:       1000000 + id,
+		StrField: randString(),
+		IntField: rand.Intn(100000),
+	}
+}
+
+func newTestIndexesCompatibilityDenseItem(id int) interface{} {
+	return &TestIndexesCompatibilityDenseItem{
+		ID:       1000000 + id,
+		StrField: randString(),
+		IntField: rand.Intn(100000),
+	}
+}
+
+func TestDenseIndexesCompatibility(t *testing.T) {
+	getJSONContent := func(t *testing.T, ns string) []string {
+		var ret []string
+		it := DB.Query(ns).Sort("id", false).MustExec(t)
+		require.NoError(t, it.Error())
+		for it.Next() {
+			require.NoError(t, it.Error())
+			j, err := json.Marshal(it.Object())
+			require.NoError(t, err)
+			ret = append(ret, string(j))
+		}
+		return ret
+	}
+
+	testImpl := func(t *testing.T, ns string, oldNewItem func(id int) interface{}, newNewItem func(id int) interface{}, newItemType interface{}) {
+		const inserts = 100
+		for i := 0; i < inserts; i++ {
+			upd, err := DB.Insert(ns, oldNewItem(i))
+			require.NoError(t, err)
+			require.Equal(t, 1, upd)
+		}
+		initialJSONs := getJSONContent(t, ns)
+
+		err := DB.CloseNamespace(ns)
+		require.NoError(t, err)
+		err = DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), newItemType)
+		require.NoError(t, err)
+		reopennedJSONs := getJSONContent(t, ns)
+		require.Equal(t, initialJSONs, reopennedJSONs)
+		require.Equal(t, len(reopennedJSONs), inserts)
+
+		const offset = inserts / 2
+		var newJSONs []string
+		for i := offset; i < inserts+offset; i++ {
+			item := newNewItem(i)
+			j, err := json.Marshal(item)
+			require.NoError(t, err)
+			newJSONs = append(newJSONs, string(j))
+			err = DB.Upsert(ns, item)
+			require.NoError(t, err)
+		}
+		finalJSONs := getJSONContent(t, ns)
+		require.Equal(t, initialJSONs[0:offset], finalJSONs[0:offset])
+		require.Equal(t, newJSONs, finalJSONs[offset:])
+	}
+
+	t.Run("Binding is able to reopen namespace with dense indexes", func(t *testing.T) {
+		testImpl(t, testIndexesCompatibilityRegularNs, newTestIndexesCompatibilityRegularItem,
+			newTestIndexesCompatibilityDenseItem, TestIndexesCompatibilityDenseItem{})
+	})
+
+	t.Run("Binding is able to reopen namespace with regular indexes", func(t *testing.T) {
+		testImpl(t, testIndexesCompatibilityDenseNs, newTestIndexesCompatibilityDenseItem,
+			newTestIndexesCompatibilityRegularItem, TestIndexesCompatibilityRegularItem{})
 	})
 }

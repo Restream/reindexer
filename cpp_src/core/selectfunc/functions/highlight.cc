@@ -38,7 +38,7 @@ bool Highlight::Process(ItemRef& res, PayloadType& pl_type, const SelectFuncStru
 		throw Error(errLogic, "Unable to apply highlight function to the non-string field '%s'", func.field);
 	}
 
-	const std::string* data = p_string(kr[0]).getCxxstr();
+	const std::string_view data = std::string_view(p_string(kr[0]));
 
 	auto pva = dataFtCtx.area[it->second].GetAreas(func.fieldNo);
 	if (!pva || pva->Empty()) {
@@ -47,11 +47,11 @@ bool Highlight::Process(ItemRef& res, PayloadType& pl_type, const SelectFuncStru
 	auto& va = *pva;
 
 	std::string result_string;
-	result_string.reserve(data->size() + va.Size() * (func.funcArgs[0].size() + func.funcArgs[1].size()));
-	result_string = *data;
+	result_string.reserve(data.size() + va.Size() * (func.funcArgs[0].size() + func.funcArgs[1].size()));
+	result_string.append(data);
 
 	auto splitterTask = ftctx->GetData()->splitter->CreateTask();
-	splitterTask->SetText(*data);
+	splitterTask->SetText(data);
 
 	int offset = 0;
 	for (auto area : va.GetData()) {

@@ -75,10 +75,6 @@ LocalQueryResults::~LocalQueryResults() = default;
 
 void LocalQueryResults::Clear() { *this = LocalQueryResults(); }
 
-void LocalQueryResults::Erase(ItemRefVector::iterator start, ItemRefVector::iterator finish) { items_.erase(start, finish); }
-
-void LocalQueryResults::Add(const ItemRef& i) { items_.push_back(i); }
-
 // Used to save strings when converting the client result to the server.
 // The server item is created, inserted into the result and deleted
 // so that the rows are not deleted, they are saved in the results.
@@ -426,10 +422,10 @@ Item LocalQueryResults::Iterator::GetItem(bool enableHold) {
 	auto item = Item(new ItemImpl(ctx.type_, itemRef.Value(), ctx.tagsMatcher_, ctx.schema_));
 	item.impl_->payloadValue_.Clone();
 	if (enableHold) {
-		if (!item.impl_->keyStringsHolder_) {
-			item.impl_->keyStringsHolder_.reset(new std::vector<key_string>);
+		if (!item.impl_->holder_) {
+			item.impl_->holder_ = std::make_unique<ItemImplRawData::HolderT>();
 		}
-		Payload{ctx.type_, item.impl_->payloadValue_}.CopyStrings(*(item.impl_->keyStringsHolder_));
+		Payload{ctx.type_, item.impl_->payloadValue_}.CopyStrings(*(item.impl_->holder_));
 	}
 
 	item.setID(itemRef.Id());
@@ -444,14 +440,19 @@ void LocalQueryResults::AddItem(Item& item, bool withData, bool enableHold) {
 			ctxs.emplace_back(ritem->Type(), ritem->tagsMatcher(), FieldsSet(), ritem->GetSchema(),
 							  ns ? ns->ns_->incarnationTag_ : lsn_t());
 		}
-		Add(ItemRef(item.GetID(), withData ? (ritem->RealValue().IsFree() ? ritem->Value() : ritem->RealValue()) : PayloadValue()));
-		if (withData && enableHold) {
-			if (ns) {
-				Payload{ns->ns_->payloadType_, items_.back().Value()}.CopyStrings(stringsHolder_);
-			} else {
-				assertrx(ctxs.size() == 1);
-				Payload{ctxs.back().type_, items_.back().Value()}.CopyStrings(stringsHolder_);
+		if (withData) {
+			auto& value = ritem->RealValue().IsFree() ? ritem->Value() : ritem->RealValue();
+			AddItemRef(item.GetID(), value);
+			if (enableHold) {
+				if (auto ns{ritem->GetNamespace()}; ns) {
+					ConstPayload{ns->ns_->payloadType_, value}.CopyStrings(stringsHolder_);
+				} else {
+					assertrx(ctxs.size() == 1);
+					ConstPayload{ctxs.back().type_, value}.CopyStrings(stringsHolder_);
+				}
 			}
+		} else {
+			AddItemRef(item.GetID(), PayloadValue());
 		}
 	}
 }

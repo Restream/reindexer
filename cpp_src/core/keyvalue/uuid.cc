@@ -203,6 +203,12 @@ Uuid::operator std::string() const {
 	return res;
 }
 
+Uuid::operator key_string() const {
+	char res[kStrFormLen];
+	PutToStr({res, kStrFormLen});
+	return make_key_string(std::string_view(res, kStrFormLen));
+}
+
 void Uuid::PutToStr(span<char> str) const noexcept {
 	assertrx(str.size() >= kStrFormLen);
 	static constexpr char hexChars[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};

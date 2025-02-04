@@ -92,6 +92,7 @@
   * [JoinCacheMemStats](#joincachememstats)
   * [JoinedDef](#joineddef)
   * [JsonObjectDef](#jsonobjectdef)
+  * [LRUCachePerfStats](#lrucacheperfstats)
   * [LongQueriesLogging](#longquerieslogging)
   * [MetaByKeyResponse](#metabykeyresponse)
   * [MetaInfo](#metainfo)
@@ -139,7 +140,7 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 
 
 ### Version information
-*Version* : 4.19.0
+*Version* : 4.20.0
 
 
 ### License information
@@ -2696,6 +2697,18 @@ Join cache stats. Stores results of selects to right table by ON condition
 
 
 
+### LRUCachePerfStats
+Performance statistics for specific LRU-cache instance
+
+
+|Name|Description|Schema|
+|---|---|---|
+|**cache_hit_rate**  <br>*optional*|Cache hit rate (hits / total_queries)  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number|
+|**is_active**  <br>*optional*|Determines if cache is currently in use. Usually it has 'false' value for uncommited indexes|boolean|
+|**total_queries**  <br>*optional*|Queries total count  <br>**Minimum value** : `0`|integer|
+
+
+
 ### LongQueriesLogging
 Parameters for logging long queries and transactions
 
@@ -2801,8 +2814,10 @@ List of meta info of the specified namespace
 
 |Name|Description|Schema|
 |---|---|---|
-|**indexes**  <br>*optional*|Memory consumption of each namespace index|< [indexes](#namespaceperfstats-indexes) > array|
+|**indexes**  <br>*optional*|Performance statistics for each namespace index|< [indexes](#namespaceperfstats-indexes) > array|
+|**join_cache**  <br>*optional*|Joins cache statistics|[LRUCachePerfStats](#lrucacheperfstats)|
 |**name**  <br>*optional*|Name of namespace|string|
+|**query_count_cache**  <br>*optional*|Queries cache statistics (for the queries with COUNT_CACHED() aggregation)|[LRUCachePerfStats](#lrucacheperfstats)|
 |**selects**  <br>*optional*||[SelectPerfStats](#selectperfstats)|
 |**transactions**  <br>*optional*||[TransactionsPerfStats](#transactionsperfstats)|
 |**updates**  <br>*optional*||[UpdatePerfStats](#updateperfstats)|
@@ -2812,6 +2827,7 @@ List of meta info of the specified namespace
 
 |Name|Description|Schema|
 |---|---|---|
+|**cache**  <br>*optional*|If index does not use IDs cache at all, this struct won't be present in response|[LRUCachePerfStats](#lrucacheperfstats)|
 |**name**  <br>*optional*|Name of index|string|
 |**selects**  <br>*optional*||[SelectPerfStats](#selectperfstats)|
 |**updates**  <br>*optional*||[UpdatePerfStats](#updateperfstats)|
@@ -2852,6 +2868,7 @@ List of meta info of the specified namespace
 |**optimization_sort_workers**  <br>*optional*|Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations|integer|
 |**optimization_timeout_ms**  <br>*optional*|Timeout before background indexes optimization start after last update. 0 - disable optimizations|integer|
 |**start_copy_policy_tx_size**  <br>*optional*|Enable namespace copying for transaction with steps count greater than this value (if copy_politics_multiplier also allows this)|integer|
+|**strict_mode**  <br>*optional*|Strict mode for queries. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions|enum (none, names, indexes)|
 |**sync_storage_flush_limit**  <br>*optional*|Enables synchronous storage flush inside write-calls, if async updates count is more than sync_storage_flush_limit. 0 - disables synchronous storage flush, in this case storage will be flushed in background thread only  <br>**Minimum value** : `0`|integer|
 |**tx_size_to_always_copy**  <br>*optional*|Force namespace copying for transaction with steps count greater than this value|integer|
 |**unload_idle_threshold**  <br>*optional*|Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded|integer|
@@ -2999,7 +3016,7 @@ Performance statistics per each query
 |Name|Description|Schema|
 |---|---|---|
 |**cluster_id**  <br>*optional*|Cluser ID - must be same for client and for master|integer|
-|**server_id**  <br>*optional*|Node identifier. Should be unique for each node in the replicated cluster (non-unique IDs are also allowed, but may lead to the inconsistency in some cases  <br>**Maximum value** : `999`|integer|
+|**server_id**  <br>*optional*|Node identifier. Should be unique for each node in the replicated cluster (non-unique IDs are also allowed, but may lead to the inconsistency in some cases  <br>**Minimum value** : `0`  <br>**Maximum value** : `999`|integer|
 
 
 

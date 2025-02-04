@@ -1,5 +1,4 @@
 #include "sortexpression.h"
-#include <set>
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/joinedselector.h"
 #include "core/nsselecter/joinedselectormock.h"
@@ -26,6 +25,9 @@ static reindexer::VariantArray getFieldValues(reindexer::ConstPayload pv, reinde
 	if (index == IndexValueType::SetByJsonPath) {
 		pv.GetByJsonPath(column, tagsMatcher, values, reindexer::KeyValueType::Undefined{});
 	} else {
+		if (index >= pv.NumFields()) {
+			throw reindexer::Error(errQueryExec, "Composite fields in sort expression are not supported");
+		}
 		pv.Get(index, values);
 	}
 	return values;
@@ -245,7 +247,8 @@ static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std:
 		++pos;
 	}
 	if (pos != end && *pos == '.') {
-		std::string_view namespaceName = {expr.data(), static_cast<size_t>(pos - expr.data())};
+		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
+		std::string_view namespaceName{expr.data(), static_cast<size_t>(pos - expr.data())};
 
 		// Check for quotes in join expression to skip them
 		joinedFieldInQuotes = namespaceName.at(0) == '"';
@@ -270,6 +273,7 @@ static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std:
 	while (pos != end && kIndexNameSyms.test(*pos)) {
 		++pos;
 	}
+	// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 	std::string_view name{expr.data(), static_cast<size_t>(pos - expr.data())};
 	if (name.empty()) {
 		throwParseError(fullExpr, pos, "Expected index or function name.");
@@ -301,22 +305,26 @@ static Point parsePoint(std::string_view& expr, std::string_view funcName, std::
 													   StringToDoubleConverter::ALLOW_SPACES_AFTER_SIGN,
 												   0.0, 0.0, nullptr, nullptr};
 	if (funcName != "st_geomfromtext") {
+		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 		throwParseError(fullExpr, expr.data(), "Unsupported function inside ST_Distance() : '" + std::string(funcName) + "'.");
 	}
 	expr.remove_prefix(1);
 	skipSpaces();
 	if (expr.empty() || (expr[0] != '\'' && expr[0] != '"')) {
+		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 		throwParseError(fullExpr, expr.data(), "Expected \" or '.");
 	}
 	const char openQuote = expr[0];
 	expr.remove_prefix(1);
 	skipSpaces();
 	if (!checkIfStartsWith("point"sv, expr)) {
+		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 		throwParseError(fullExpr, expr.data(), "Expected 'point'.");
 	}
 	expr.remove_prefix(5);
 	skipSpaces();
 	if (expr.empty() || expr[0] != '(') {
+		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 		throwParseError(fullExpr, expr.data(), "Expected '('.");
 	}
 	expr.remove_prefix(1);
@@ -324,6 +332,7 @@ static Point parsePoint(std::string_view& expr, std::string_view funcName, std::
 	int countOfCharsParsedAsDouble = 0;
 	const double x = converter.StringToDouble(expr.data(), expr.size(), &countOfCharsParsedAsDouble);
 	if (countOfCharsParsedAsDouble == 0) {
+		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 		throwParseError(fullExpr, expr.data(), "Expected number.");
 	}
 	expr.remove_prefix(countOfCharsParsedAsDouble);
@@ -331,21 +340,25 @@ static Point parsePoint(std::string_view& expr, std::string_view funcName, std::
 	countOfCharsParsedAsDouble = 0;
 	const double y = converter.StringToDouble(expr.data(), expr.size(), &countOfCharsParsedAsDouble);
 	if (countOfCharsParsedAsDouble == 0) {
+		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 		throwParseError(fullExpr, expr.data(), "Expected number.");
 	}
 	expr.remove_prefix(countOfCharsParsedAsDouble);
 	skipSpaces();
 	if (expr.empty() || expr[0] != ')') {
+		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 		throwParseError(fullExpr, expr.data(), "Expected ')'.");
 	}
 	expr.remove_prefix(1);
 	skipSpaces();
 	if (expr.empty() || expr[0] != openQuote) {
+		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 		throwParseError(fullExpr, expr.data(), std::string("Expected ") + openQuote + '.');
 	}
 	expr.remove_prefix(1);
 	skipSpaces();
 	if (expr.empty() || expr[0] != ')') {
+		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 		throwParseError(fullExpr, expr.data(), "Expected ')'.");
 	}
 	expr.remove_prefix(1);
@@ -360,6 +373,7 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 	skipSpaces();
 	if (parsedIndexName1.joinedSelectorIt != joinedSelectors.cend()) {
 		if (expr.empty() || expr[0] != ',') {
+			// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 			throwParseError(fullExpr, expr.data(), "Expected ','.");
 		}
 		expr.remove_prefix(1);
@@ -369,6 +383,7 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 		if (parsedIndexName2.joinedSelectorIt != joinedSelectors.cend()) {
 			if (parsedIndexName1.joinedSelectorIt == parsedIndexName2.joinedSelectorIt) {
 				if (toLower(parsedIndexName1.name) == toLower(parsedIndexName2.name)) {
+					// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 					throwParseError(fullExpr, expr.data(), "Distance between two same indexes");
 				}
 				Append({op, negative},
@@ -393,6 +408,7 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 		const auto point = parsePoint(expr, toLower(parsedIndexName1.name), fullExpr, skipSpaces);
 		skipSpaces();
 		if (expr.empty() || expr[0] != ',') {
+			// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 			throwParseError(fullExpr, expr.data(), "Expected ','.");
 		}
 		expr.remove_prefix(1);
@@ -400,6 +416,7 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 		const auto parsedIndexName2 = parseIndexName(expr, joinedSelectors, fullExpr);
 		skipSpaces();
 		if (!expr.empty() && expr[0] == '(') {
+			// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 			throwParseError(fullExpr, expr.data(), "Allowed only one function inside ST_Geometry");
 		}
 		if (parsedIndexName2.joinedSelectorIt != joinedSelectors.cend()) {
@@ -411,6 +428,7 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 		}
 	} else {
 		if (expr.empty() || expr[0] != ',') {
+			// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 			throwParseError(fullExpr, expr.data(), "Expected ','.");
 		}
 		expr.remove_prefix(1);
@@ -428,6 +446,7 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 				Append({op, negative}, DistanceFromPoint{std::move(parsedIndexName1.name), point});
 			} else {
 				if (toLower(parsedIndexName1.name) == toLower(parsedIndexName2.name)) {
+					// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 					throwParseError(fullExpr, expr.data(), "Distance between two same indexes");
 				}
 				Append({op, negative}, DistanceBetweenIndexes{std::move(parsedIndexName1.name), std::move(parsedIndexName2.name)});
@@ -469,6 +488,7 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 				expr.remove_prefix(1);
 				skipSpaces();
 				if (expr.empty()) {
+					// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 					throwParseError(fullExpr, expr.data(), "The expression unexpected ends after unary operator.");
 				}
 			}
@@ -477,6 +497,7 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 				OpenBracket({op, negative});
 				expr = parse(expr, containIndexOrFunction, fullExpr, joinedSelectors);
 				if (expr.empty() || expr[0] != ')') {
+					// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 					throwParseError(fullExpr, expr.data(), "Expected ')'.");
 				}
 				expr.remove_prefix(1);
@@ -514,9 +535,11 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 							} else if (funcName == "st_distance") {
 								parseDistance(expr, joinedSelectors, fullExpr, op, negative, skipSpaces);
 							} else {
+								// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 								throwParseError(fullExpr, expr.data(), "Unsupported function name : '" + funcName + "'.");
 							}
 							if (expr.empty() || expr[0] != ')') {
+								// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 								throwParseError(fullExpr, expr.data(), "Expected ')'.");
 							}
 							expr.remove_prefix(1);
@@ -557,6 +580,7 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 					}
 					break;
 				default:
+					// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 					throwParseError(fullExpr, expr.data(),
 									std::string("Expected ')', '+', '-', '*' of '/', but obtained '") + expr[0] + "'.");
 			}
@@ -566,6 +590,7 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 		skipSpaces();
 	}
 	if (expectValue) {
+		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 		throwParseError(fullExpr, expr.data(), "Expected value.");
 	}
 	if (needCloseBracket) {
@@ -580,9 +605,11 @@ SortExpression SortExpression::Parse(std::string_view expression, const std::vec
 	bool containIndexOrFunction = false;
 	const auto expr = result.parse(expression, &containIndexOrFunction, expression, joinedSelector);
 	if (!expr.empty()) {
+		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 		throwParseError(expression, expr.data(), "");
 	}
 	if (!containIndexOrFunction) {
+		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 		throwParseError(expression, expr.data(), "Sort expression does not depend from namespace data");
 	}
 	return result;

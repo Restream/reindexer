@@ -68,7 +68,7 @@ void ClusterProxy::clientToCoreQueryResults(client::QueryResults& clientResults,
 			localTm.deserialize(ser, itemimpl.tagsMatcher().version(), itemimpl.tagsMatcher().stateToken());
 		}
 		itemimpl.Value().SetLSN(item.GetLSN());
-		result.Add(ItemRef(it.itemParams_.id, itemimpl.Value(), it.itemParams_.proc, it.itemParams_.nsid, true));
+		result.AddItemRef(it.itemParams_.id, itemimpl.Value(), it.itemParams_.proc, it.itemParams_.nsid, true);
 		result.SaveRawData(std::move(itemimpl));
 	}
 }

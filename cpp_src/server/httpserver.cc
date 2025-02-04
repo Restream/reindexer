@@ -169,13 +169,14 @@ int HTTPServer::PostQuery(http::Context& ctx) {
 	std::string dsl = ctx.body->Read();
 
 	reindexer::Query q;
-	auto err = q.FromJSON(dsl);
-	if (!err.ok()) {
+	try {
+		q = Query::FromJSON(dsl);
+	} catch (Error& err) {
 		return jsonStatus(ctx, http::HttpStatus(err));
 	}
 
 	reindexer::ActiveQueryScope scope(q, QuerySelect);
-	err = db.Select(q, res);
+	auto err = db.Select(q, res);
 	if (!err.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(err));
 	}
@@ -187,14 +188,15 @@ int HTTPServer::DeleteQuery(http::Context& ctx) {
 	std::string dsl = ctx.body->Read();
 
 	reindexer::Query q;
-	auto status = q.FromJSON(dsl);
-	if (!status.ok()) {
-		return jsonStatus(ctx, http::HttpStatus(status));
+	try {
+		q = Query::FromJSON(dsl);
+	} catch (Error& err) {
+		return jsonStatus(ctx, http::HttpStatus(err));
 	}
 
 	reindexer::ActiveQueryScope scope(q, QueryDelete);
 	reindexer::QueryResults res;
-	status = db.Delete(q, res);
+	auto status = db.Delete(q, res);
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
@@ -211,14 +213,15 @@ int HTTPServer::UpdateQuery(http::Context& ctx) {
 	std::string dsl = ctx.body->Read();
 
 	reindexer::Query q;
-	auto status = q.FromJSON(dsl);
-	if (!status.ok()) {
-		return jsonStatus(ctx, http::HttpStatus(status));
+	try {
+		q = Query::FromJSON(dsl);
+	} catch (Error& err) {
+		return jsonStatus(ctx, http::HttpStatus(err));
 	}
 
 	reindexer::ActiveQueryScope scope(q, QueryUpdate);
 	reindexer::QueryResults res;
-	status = db.Update(q, res);
+	auto status = db.Update(q, res);
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
@@ -2084,9 +2087,10 @@ int HTTPServer::DeleteQueryTx(http::Context& ctx) {
 	std::string dsl = ctx.body->Read();
 
 	reindexer::Query q;
-	auto ret = q.FromJSON(dsl);
-	if (!ret.ok()) {
-		return jsonStatus(ctx, http::HttpStatus(ret));
+	try {
+		q = Query::FromJSON(dsl);
+	} catch (Error& err) {
+		return jsonStatus(ctx, http::HttpStatus(err));
 	}
 	reindexer::QueryResults res;
 	std::string txId = urldecode2(ctx.request->urlParams[1]);

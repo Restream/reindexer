@@ -52,6 +52,7 @@ void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gas
 						(void)subelem;
 						++count;
 					}
+					validateArrayFieldRestrictions(f, count, "json");
 					int pos = pl.ResizeArray(field, count, true);
 					for (auto& subelem : elem.value) {
 						pl.Set(field, pos++, jsonValue2Variant(subelem.value, f.Type(), f.Name()));
@@ -70,6 +71,7 @@ void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gas
 				case gason::JSON_TRUE:
 				case gason::JSON_FALSE: {
 					validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, field, isInArray(), "json");
+					validateArrayFieldRestrictions(f, 1, "json");
 					objectScalarIndexes_.set(field);
 					Variant value = jsonValue2Variant(elem.value, f.Type(), f.Name());
 					builder.Ref(tagName, value, field);
@@ -150,7 +152,10 @@ public:
 
 void JsonDecoder::decodeJsonObject(const gason::JsonValue& root, CJsonBuilder& builder) {
 	for (const auto& elem : root) {
-		int tagName = tagsMatcher_.name2tag(elem.key, true);
+		const int tagName = tagsMatcher_.name2tag(elem.key, true);
+		if (tagName == 0) {
+			throw Error(errParseJson, "Unsupported JSON format. Unnamed field detected");
+		}
 		TagsPathGuard tagsPathGuard(tagsPath_, tagName);
 		decodeJson(nullptr, builder, elem.value, tagName, true);
 	}

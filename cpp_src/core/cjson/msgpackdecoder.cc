@@ -11,19 +11,17 @@ template <typename T>
 void MsgPackDecoder::setValue(Payload& pl, CJsonBuilder& builder, const T& value, int tagName) {
 	int field = tm_.tags2field(tagsPath_.data(), tagsPath_.size());
 	if (field > 0) {
-		validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, pl.Type().Field(field), field, isInArray(), "msgpack");
+		const auto& f = pl.Type().Field(field);
+		validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, field, isInArray(), "msgpack");
+		if (!isInArray()) {
+			validateArrayFieldRestrictions(f, 1, "msgpack");
+		}
 		Variant val(value);
 		builder.Ref(tagName, val, field);
-		pl.Set(field, std::move(val), true);
+		pl.Set(field, convertValueForPayload(pl, field, std::move(val), "msgpack"));
 		objectScalarIndexes_.set(field);
 	} else {
 		builder.Put(tagName, value);
-	}
-}
-
-void MsgPackDecoder::iterateOverArray(const msgpack_object* begin, const msgpack_object* end, Payload& pl, CJsonBuilder& array) {
-	for (const msgpack_object* p = begin; p != end; ++p) {
-		decode(pl, array, *p, 0);
 	}
 }
 
@@ -95,11 +93,43 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 				if rx_unlikely (!f.IsArray()) {
 					throw Error(errLogic, "Error parsing msgpack field '%s' - got array, expected scalar %s", f.Name(), f.Type().Name());
 				}
-				auto& array = builder.ArrayRef(tagName, field, count);
-				iterateOverArray(begin, end, pl, array);
+				validateArrayFieldRestrictions(f, count, "msgpack");
+				int pos = pl.ResizeArray(field, count, true);
+				for (const msgpack_object* p = begin; p != end; ++p) {
+					pl.Set(field, pos++,
+						   convertValueForPayload(
+							   pl, field,
+							   [&] {
+								   switch (p->type) {
+									   case MSGPACK_OBJECT_BOOLEAN:
+										   return Variant{p->via.boolean};
+									   case MSGPACK_OBJECT_POSITIVE_INTEGER:
+										   return Variant{int64_t(p->via.u64)};
+									   case MSGPACK_OBJECT_NEGATIVE_INTEGER:
+										   return Variant{p->via.i64};
+									   case MSGPACK_OBJECT_FLOAT32:
+									   case MSGPACK_OBJECT_FLOAT64:
+										   return Variant{p->via.f64};
+									   case MSGPACK_OBJECT_STR:
+										   return Variant{p_string(reinterpret_cast<const l_msgpack_hdr*>(&p->via.str)), Variant::hold_t{}};
+									   case MSGPACK_OBJECT_NIL:
+									   case MSGPACK_OBJECT_ARRAY:
+									   case MSGPACK_OBJECT_MAP:
+									   case MSGPACK_OBJECT_BIN:
+									   case MSGPACK_OBJECT_EXT:
+									   default:
+										   throw Error(errParams, "Unsupported MsgPack array field type: %s(%d)", ToString(p->type),
+													   int(p->type));
+								   }
+							   }(),
+							   "msgpack"));
+				}
+				builder.ArrayRef(tagName, field, count);
 			} else {
 				auto array = builder.Array(tagName, type);
-				iterateOverArray(begin, end, pl, array);
+				for (const msgpack_object* p = begin; p != end; ++p) {
+					decode(pl, array, *p, 0);
+				}
 			}
 			break;
 		}

@@ -217,7 +217,7 @@ public:
 				return collateCompare(std::string_view(lhs), rhs, collate_) == ComparationResult::Gt;
 			case CondRange:
 				return (collateCompare(std::string_view(lhs), rhs, collate_) & ComparationResult::Ge) &&
-					   (collateCompare(std::string_view(lhs), std::string_view(*values_[1]), collate_) & ComparationResult::Le);
+					   (collateCompare(std::string_view(lhs), std::string_view(values_[1]), collate_) & ComparationResult::Le);
 			case CondSet:
 				return valuesS_.find(std::string_view(lhs)) != valuesS_.end();
 			case CondAllSet: {
@@ -263,7 +263,7 @@ private:
 		} else {
 			values_.emplace_back(value);
 			if (values_.size() == 1) {
-				cachedValueSV_ = std::string_view(*values_[0]);
+				cachedValueSV_ = std::string_view(values_[0]);
 			}
 		}
 	}

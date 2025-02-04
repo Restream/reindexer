@@ -1173,9 +1173,11 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 }
 
 static void TestDSLParseCorrectness(const std::string& testDsl) {
-	Query query;
-	Error err = query.FromJSON(testDsl);
-	EXPECT_TRUE(err.ok()) << err.what();
+	try {
+		Query query = query.FromJSON(testDsl);
+	} catch (Error& err) {
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
 }
 
 TEST_F(ReindexerApi, DslFieldsTest) {
@@ -1373,14 +1375,14 @@ TEST_F(ReindexerApi, DistinctQueriesEncodingTest) {
 
 	std::string dsl = q1.GetJSON();
 	Query q2;
-	const auto err = q2.FromJSON(dsl);
-	ASSERT_TRUE(err.ok()) << err.what();
+	EXPECT_NO_THROW(q2 = Query::FromJSON(dsl));
 	EXPECT_EQ(q1, q2) << "q1: " << q1.GetSQL() << "\nq2: " << q2.GetSQL();
 
 	Query q3{Query(default_namespace).Distinct("name").Distinct("city").Where("id", CondGt, static_cast<int64_t>(10))};
 	std::string sql2 = q3.GetSQL();
 
-	Query q4 = Query::FromSQL(sql2);
+	Query q4;
+	EXPECT_NO_THROW(q4 = Query::FromSQL(sql2));
 	EXPECT_EQ(q3, q4) << "q3: " << q3.GetSQL() << "\nq4: " << q4.GetSQL();
 	EXPECT_EQ(sql2, q4.GetSQL());
 }
@@ -1808,8 +1810,7 @@ TEST_F(ReindexerApi, SelectFilterWithAggregationConstraints) {
 
 	std::string sql = "select id, distinct(year) from test_namespace";
 	EXPECT_NO_THROW(q = Query::FromSQL(sql));
-	Error status = Query().FromJSON(q.GetJSON());
-	EXPECT_TRUE(status.ok()) << status.what();
+	EXPECT_NO_THROW(Query::FromJSON(q.GetJSON()));
 
 	q = Query().Select({"id"});
 	EXPECT_NO_THROW(q.Aggregate(AggDistinct, {"year"}, {}));
@@ -1818,16 +1819,21 @@ TEST_F(ReindexerApi, SelectFilterWithAggregationConstraints) {
 	EXPECT_THROW(q = Query::FromSQL(sql), Error);
 	q = Query(default_namespace).Select({"id"});
 	q.aggregations_.emplace_back(reindexer::AggregateEntry{AggMax, {"year"}});
-	status = Query().FromJSON(q.GetJSON());
-	EXPECT_FALSE(status.ok());
-	EXPECT_TRUE(status.what() == std::string(reindexer::kAggregationWithSelectFieldsMsgError));
+	try {
+		Query::FromJSON(q.GetJSON());
+	} catch (Error& err) {
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), reindexer::kAggregationWithSelectFieldsMsgError);
+	}
+
 	EXPECT_THROW(q.Aggregate(AggMax, {"price"}, {}), Error);
 
 	sql = "select facet(year), id, name from test_namespace";
 	EXPECT_THROW(q = Query::FromSQL(sql), Error);
 	q = Query(default_namespace).Select({"id", "name"});
 	EXPECT_THROW(q.Aggregate(AggFacet, {"year"}, {}), Error);
-	status = Query().FromJSON(fmt::sprintf(R"({"namespace":"%s",
+	try {
+		Query::FromJSON(fmt::sprintf(R"({"namespace":"%s",
 	"limit":-1,
 	"offset":0,
 	"req_total":"disabled",
@@ -1849,9 +1855,11 @@ TEST_F(ReindexerApi, SelectFilterWithAggregationConstraints) {
 			"fields":["year"]
 		}
 	]})",
-										   default_namespace));
-	EXPECT_FALSE(status.ok());
-	EXPECT_TRUE(status.what() == std::string(reindexer::kAggregationWithSelectFieldsMsgError));
+									 default_namespace));
+	} catch (Error& err) {
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), reindexer::kAggregationWithSelectFieldsMsgError);
+	}
 
 	EXPECT_THROW((void)Query::FromSQL("select max(id), * from test_namespace"), Error);
 	EXPECT_THROW((void)Query::FromSQL("select *, max(id) from test_namespace"), Error);

@@ -1,7 +1,32 @@
+# Version 4.20.0 (04.02.2025)
+## Core
+- [fea] Optimized indexed strings memory layout (each unique indexed string now requires 20-36 bytes less memery, depending on platform)
+- [fea] Optimized non-built btree-index selection
+- [fea] Optimized selections with large documents count in results
+- [fea] Reduced allocations count in inserts/upserts and select-queries
+- [fea] Changed index compatibility check in `AddIndex`: now `dense` and `regular` indexes are treated compatible
+- [fix] Fixed parsing for [EQUAL_POSITION](readme.md#search-in-array-fields-with-matching-array-indexes) with brackets in SQL
+
+## Replication
+- [fea] Improved full sync performance for namespaces with large amount of empty documents
+
+## Reindexer server
+- [fix] Added more TCP-requests format checks
+- [fix] Fixed [server.yml](cpp_src/server/contrib/server.yml) format errors
+
+## Go connector
+- [fea] Added support for absolute path on Windows platforms in `builtin`-binding
+
+## Build
+- [fix] Fixed build for ARM docker image
+
+## Ported
+- [fea/fix] Ported all the fixes and features from [v3.31.0](https://github.com/Restream/reindexer/releases/tag/v3.31.0)
+
 # Version 4.19.0 (17.12.2024)
 
 ## Core
-- [fea] Added automatic masking for reindexer user's credentials in log files and cluster/sharding JSON's (except for `async_replication` configs in `#config`-namespace)
+- [fea] Added automatic masking for reindexer user's credentials in log files and cluster/sharding JSON's (except for `async_replication`-config in `#config`-namespace)
 - [fix] Fixed assertion on attempt to use 'null'-values with `=`, `IN()`, `<`, `>`, `<=`, `>=` and `RANGE()` operators
 
 ## Replication

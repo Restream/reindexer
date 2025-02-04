@@ -1,4 +1,5 @@
-#if defined(__GNUC__) && (__GNUC__ == 12) && defined(REINDEX_WITH_ASAN)
+#if defined(__GNUC__) && ((__GNUC__ == 12) || (__GNUC__ == 13)) && defined(REINDEX_WITH_ASAN)
+// regex header is broken in GCC 12.0-13.3 with ASAN
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #include <regex>
@@ -7,6 +8,7 @@
 #include <regex>
 #endif	// REINDEX_WITH_ASAN
 
+#include "core/ft/numtotext.h"
 #include "gtest/gtest.h"
 #include "reindexer_api.h"
 #include "tools/customlocal.h"
@@ -169,4 +171,64 @@ TEST_F(ReindexerApi, LikeWithFullTextIndex) {
 	QueryResults qr;
 	err = rt.reindexer->Select(Query(default_namespace).Where("name", CondLike, "%" + content[rand() % content.size()]), qr);
 	ASSERT_TRUE(!err.ok());
+}
+
+TEST_F(ReindexerApi, NumToText) {
+	auto out = [](const std::vector<std::string_view>& resNum) {
+		std::stringstream s;
+		for (auto& v : resNum) {
+			s << "[" << v << "] ";
+		}
+		s << std::endl;
+		return s.str();
+	};
+	std::vector<std::string_view> resNum;
+	bool r = reindexer::NumToText::convert("0", resNum) == std::vector<std::string_view>{"ноль"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("00", resNum) == std::vector<std::string_view>{"ноль", "ноль"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("000010", resNum) == std::vector<std::string_view>{"ноль", "ноль", "ноль", "ноль", "десять"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("01000000", resNum) == std::vector<std::string_view>{"ноль", "один", "миллион"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("121", resNum) == std::vector<std::string_view>{"сто", "двадцать", "один"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("1", resNum) == std::vector<std::string_view>{"один"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("9", resNum) == std::vector<std::string_view>{"девять"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("10", resNum) == std::vector<std::string_view>{"десять"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("13", resNum) == std::vector<std::string_view>{"тринадцать"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("30", resNum) == std::vector<std::string_view>{"тридцать"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("48", resNum) == std::vector<std::string_view>{"сорок", "восемь"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("100", resNum) == std::vector<std::string_view>{"сто"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("500", resNum) == std::vector<std::string_view>{"пятьсот"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("999", resNum) == std::vector<std::string_view>{"девятьсот", "девяносто", "девять"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("1000", resNum) == std::vector<std::string_view>{"одна", "тысяча"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("1001", resNum) == std::vector<std::string_view>{"одна", "тысяча", "один"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("5111", resNum) == std::vector<std::string_view>{"пять", "тысяч", "сто", "одиннадцать"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("777101", resNum) ==
+		std::vector<std::string_view>{"семьсот", "семьдесят", "семь", "тысяч", "сто", "один"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("1000000000", resNum) == std::vector<std::string_view>{"один", "миллиард"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("1005000000", resNum) == std::vector<std::string_view>{"один", "миллиард", "пять", "миллионов"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("50000000055", resNum) ==
+		std::vector<std::string_view>{"пятьдесят", "миллиардов", "пятьдесят", "пять"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("100000000000000000000000000", resNum) == std::vector<std::string_view>{"сто", "септиллионов"};
+	ASSERT_TRUE(r) << out(resNum);
+	r = reindexer::NumToText::convert("1000000000000000000000000000", resNum) == std::vector<std::string_view>{};
+	ASSERT_TRUE(r) << out(resNum);
 }

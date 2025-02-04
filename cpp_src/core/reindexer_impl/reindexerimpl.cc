@@ -10,10 +10,8 @@
 #include "core/defnsconfigs.h"
 #include "core/iclientsstats.h"
 #include "core/index/index.h"
-#include "core/itemimpl.h"
 #include "core/nsselecter/querypreprocessor.h"
 #include "core/query/sql/sqlsuggester.h"
-#include "core/queryresults/joinresults.h"
 #include "core/selectfunc/selectfunc.h"
 #include "debug/crashqueryreporter.h"
 #include "rx_selector.h"
@@ -219,11 +217,11 @@ Error ReindexerImpl::enableStorage(const std::string& storagePath) {
 		watcher.SetDirectory(storagePath_);
 	}
 	auto err = readClusterConfigFile();
-	if (res.ok()) {
+	if (!err.ok() && res.ok()) {
 		res = Error(err.code(), "Failed to read cluster config file: '%s'", err.what());
 	}
 	err = readShardingConfigFile();
-	if (res.ok()) {
+	if (!err.ok() && res.ok()) {
 		res = Error(err.code(), "Failed to read sharding config file: '%s'", err.what());
 	}
 
@@ -729,7 +727,7 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 									 const RdxContext& rdxCtx) {
 	Namespace::Ptr dstNs, srcNs;
 	try {
-		if (std::string_view(dstNsName) == srcNsName.data()) {
+		if (std::string_view(dstNsName) == srcNsName) {
 			return {};
 		}
 		if (isSystemNamespaceNameStrict(srcNsName)) {
@@ -1097,7 +1095,8 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 		RxSelector::NsLocker<const RdxContext> locks(rdxCtx);
 
 		auto mainNsWrp = getNamespace(q.NsName(), rdxCtx);
-		auto mainNs = q.IsWALQuery() ? mainNsWrp->awaitMainNs(rdxCtx) : mainNsWrp->getMainNs();
+		const bool isWalQuery = q.IsWALQuery();
+		auto mainNs = isWalQuery ? mainNsWrp->awaitMainNs(rdxCtx) : mainNsWrp->getMainNs();
 
 		const auto queriesPerfStatsEnabled = configProvider_.QueriesPerfStatsEnabled();
 		const auto queriesThresholdUS = configProvider_.QueriesThresholdUS();
@@ -1115,12 +1114,11 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 
 		auto hitter = queriesPerfStatsEnabled
 			? [&sql, &tracker](bool lockHit, std::chrono::microseconds time) {
-				if (lockHit){
+				if (lockHit) {
 					tracker.LockHit(sql, time);
-}
-				else{
+				} else {
 					tracker.Hit(sql, time);
-}
+				}
 			} : std::function<void(bool, std::chrono::microseconds)>{};
 
 		const bool isSystemNsRequest = isSystemNamespaceNameFast(q.NsName());
@@ -1138,12 +1136,13 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 		mainNs->updateSelectTime();
 		locks.Add(std::move(mainNs));
 		struct {
+			bool isWalQuery;
 			RxSelector::NsLocker<const RdxContext>& locks;
 			const RdxContext& ctx;
-		} refs{locks, rdxCtx};
+		} refs{isWalQuery, locks, rdxCtx};
 		q.WalkNested(false, true, true, [this, &refs](const Query& q) {
 			auto nsWrp = getNamespace(q.NsName(), refs.ctx);
-			auto ns = q.IsWALQuery() ? nsWrp->awaitMainNs(refs.ctx) : nsWrp->getMainNs();
+			auto ns = refs.isWalQuery ? nsWrp->awaitMainNs(refs.ctx) : nsWrp->getMainNs();
 			ns->updateSelectTime();
 			refs.locks.Add(std::move(ns));
 		});
@@ -1162,13 +1161,13 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 		RxSelector::DoSelect(q, result, locks, func, rdxCtx, statCalculator);
 		func.Process(result);
 	} catch (const Error& err) {
-		if (rdxCtx.Compl()) {
-			rdxCtx.Compl()(err);
+		if (auto cmpl = rdxCtx.Compl(); cmpl) {
+			cmpl(err);
 		}
 		return err;
 	}
-	if (rdxCtx.Compl()) {
-		rdxCtx.Compl()(errOK);
+	if (auto cmpl = rdxCtx.Compl(); cmpl) {
+		cmpl(Error());
 	}
 	return Error();
 }
@@ -2224,8 +2223,8 @@ Error ReindexerImpl::ApplySnapshotChunk(std::string_view nsName, const SnapshotC
 }
 
 bool ReindexerImpl::isSystemNamespaceNameStrict(std::string_view name) noexcept {
-	return std::find_if(kSystemNsDefs.begin(), kSystemNsDefs.end(),
-						[name](const NamespaceDef& nsDef) { return iequals(nsDef.name, name); }) != kSystemNsDefs.end();
+	return std::find_if(std::cbegin(kSystemNsDefs), std::cend(kSystemNsDefs),
+						[name](const NamespaceDef& nsDef) { return iequals(nsDef.name, name); }) != std::cend(kSystemNsDefs);
 }
 
 Error ReindexerImpl::SuggestLeader(const cluster::NodeData& suggestion, cluster::NodeData& response) {
@@ -2274,11 +2273,6 @@ Error ReindexerImpl::getLeaderDsn(DSN& dsn, unsigned short serverId, const clust
 	return Error(errLogic, "Leader serverId is missing in the config.");
 }
 
-template <typename Tuple, size_t... I>
-static auto makeUpdateRecord(Tuple&& t, std::index_sequence<I...>) {
-	return UpdateRecord{std::get<I>(std::forward<Tuple>(t))...};
-}
-
 template <typename PreReplFunc, typename... Args>
 Error ReindexerImpl::shardingConfigReplAction(const RdxContext& ctx, PreReplFunc func, Args&&... args) noexcept {
 	try {
@@ -2288,7 +2282,8 @@ Error ReindexerImpl::shardingConfigReplAction(const RdxContext& ctx, PreReplFunc
 		}
 
 		return observers_.SendUpdate(
-			makeUpdateRecord(func(std::forward<Args>(args)...), std::make_index_sequence<std::tuple_size_v<decltype(func(args...))>>{}),
+			std::apply([](auto&&... args) { return UpdateRecord{std::forward<decltype(args)>(args)...}; },
+					   func(std::forward<Args>(args)...)),
 			[&wlck] {
 				assertrx(wlck.isClusterLck());
 				wlck.unlock();

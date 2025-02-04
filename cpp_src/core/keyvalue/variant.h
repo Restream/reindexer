@@ -40,9 +40,6 @@ public:
 	Variant(p_string v, hold_t);
 	explicit Variant(p_string v) noexcept : Variant(v, no_hold_t{}) {}
 	explicit Variant(const std::string& v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(make_key_string(v)); }
-	explicit Variant(std::string&& v) : variant_{0, 1, KeyValueType::String{}} {
-		new (cast<void>()) key_string(make_key_string(std::move(v)));
-	}
 	explicit Variant(std::string_view v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(make_key_string(v)); }
 	explicit Variant(const key_string& v) noexcept : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(v); }
 	explicit Variant(key_string&& v) noexcept : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(std::move(v)); }
@@ -266,6 +263,8 @@ template <>
 bool Variant::As<bool>() const;
 template <>
 std::string Variant::As<std::string>() const;
+template <>
+key_string Variant::As<key_string>() const;
 
 class VariantArray : public h_vector<Variant, 2> {
 	using Base = h_vector<Variant, 2>;

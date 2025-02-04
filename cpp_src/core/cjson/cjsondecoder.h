@@ -24,8 +24,9 @@ public:
 
 class CJsonDecoder {
 public:
-	explicit CJsonDecoder(TagsMatcher& tagsMatcher, std::deque<std::string>& storage) noexcept
-		: tagsMatcher_(tagsMatcher), storage_(storage) {}
+	using StrHolderT = h_vector<key_string, 16>;
+
+	explicit CJsonDecoder(TagsMatcher& tagsMatcher, StrHolderT& storage) noexcept : tagsMatcher_(tagsMatcher), storage_(storage) {}
 	class SkipFilter {
 	public:
 		SkipFilter MakeCleanCopy() const noexcept { return SkipFilter(); }
@@ -165,7 +166,7 @@ private:
 	int32_t arrayLevel_{0};
 	ScalarIndexesSetT objectScalarIndexes_;
 	// storage for owning strings obtained from numbers
-	std::deque<std::string>& storage_;
+	StrHolderT& storage_;
 };
 
 extern template bool CJsonDecoder::decodeCJson<CJsonDecoder::DummyFilter, CJsonDecoder::DummyRecoder, CJsonDecoder::NamelessTagOpt>(

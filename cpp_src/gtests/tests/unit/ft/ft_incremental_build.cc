@@ -173,8 +173,8 @@ public:
 		return query;
 	}
 
-	reindexer::QueryResults SimpleSelect(std::string query) {
-		auto q = reindexer::Query(GetDefaultNamespace()).Where("ft3", CondEq, std::move(query)).WithRank();
+	reindexer::QueryResults SimpleSelect(std::string_view query) {
+		auto q = reindexer::Query(GetDefaultNamespace()).Where("ft3", CondEq, query).WithRank();
 		reindexer::QueryResults res;
 		auto err = rt.reindexer->Select(q, res);
 		EXPECT_TRUE(err.ok()) << err.what();

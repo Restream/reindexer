@@ -23,14 +23,15 @@ void IndexStore<key_string>::Delete(const Variant& key, IdType /*id*/, StringsHo
 		return;
 	}
 	auto keyIt = str_map.find(std::string_view(key));
-	// assertf(keyIt != str_map.end(), "Delete unexists key from index '%s' id=%d", name_, id);
+	// assertf(keyIt != str_map.end(), "Delete non-existent key from index '%s' id=%d", name_, id);
 	if (keyIt == str_map.end()) {
 		return;
 	}
 	assertrx_dbg(keyIt->second > 0);
 	if ((keyIt->second--) == 1) {
-		const auto strSize = sizeof(*keyIt->first.get()) + keyIt->first->heap_size();
-		memStat_.dataSize -= sizeof(unordered_str_map<int>::value_type) + strSize;
+		const auto strSize = keyIt->first.heap_size();
+		const auto staticSizeApproximate = size_t(float(sizeof(unordered_str_map<int>::value_type)) / str_map.max_load_factor());
+		memStat_.dataSize -= staticSizeApproximate + strSize;
 		strHolder.Add(std::move(keyIt->first), strSize);
 		str_map.template erase<no_deep_clean>(keyIt);
 	}
@@ -70,11 +71,11 @@ Variant IndexStore<key_string>::Upsert(const Variant& key, IdType id, bool& /*cl
 		keyIt = str_map.find(std::string_view(key));
 		if (keyIt == str_map.end()) {
 			keyIt = str_map.emplace(static_cast<key_string>(key), 0).first;
-			// sizeof(key_string) + heap of string
-			memStat_.dataSize += sizeof(unordered_str_map<int>::value_type) + sizeof(*keyIt->first.get()) + keyIt->first->heap_size();
+			const auto staticSizeApproximate = size_t(float(sizeof(unordered_str_map<int>::value_type)) / str_map.max_load_factor());
+			memStat_.dataSize += staticSizeApproximate + keyIt->first.heap_size();
 		}
 		++(keyIt->second);
-		val = (*keyIt->first);
+		val = keyIt->first;
 	} else {
 		val = std::string_view(key);
 	}
@@ -127,11 +128,11 @@ SelectKeyResults IndexStore<T>::SelectKey(const VariantArray& keys, CondType con
 										  const BaseFunctionCtx::Ptr& /*ctx*/, const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 	if (condition == CondEmpty && !this->opts_.IsArray() && !this->opts_.IsSparse()) {
-		throw Error(errParams, "The 'is NULL' condition is suported only by 'sparse' or 'array' indexes");
+		throw Error(errParams, "The 'is NULL' condition is supported only by 'sparse' or 'array' indexes");
 	}
 
 	if (condition == CondAny && !this->opts_.IsArray() && !this->opts_.IsSparse() && !sopts.distinct) {
-		throw Error(errParams, "The 'NOT NULL' condition is suported only by 'sparse' or 'array' indexes");
+		throw Error(errParams, "The 'NOT NULL' condition is supported only by 'sparse' or 'array' indexes");
 	}
 
 	return ComparatorIndexed<T>{

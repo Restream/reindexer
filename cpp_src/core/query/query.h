@@ -34,6 +34,12 @@ public:
 		: namespace_(std::forward<Str>(nsName)), start_(start), count_(count), calcTotal_(calcTotal) {}
 
 	Query() = default;
+	virtual ~Query() = default;
+
+	Query(Query&& other) noexcept = default;
+	Query& operator=(Query&& other) noexcept = default;
+	Query(const Query& other) = default;
+	Query& operator=(const Query& other) = delete;
 
 	/// Allows to compare 2 Query objects.
 	[[nodiscard]] bool operator==(const Query&) const;
@@ -63,10 +69,10 @@ public:
 	/// @return Query in SQL format
 	[[nodiscard]] std::string GetSQL(QueryType realType) const;
 
-	/// Parses JSON dsl set.
+	/// Parses JSON dsl set. Throws Error-exption on errors
 	/// @param dsl - dsl set.
-	/// @return always returns errOk or throws an exception.
-	Error FromJSON(std::string_view dsl);
+	/// @return Result query
+	static Query FromJSON(std::string_view dsl);
 
 	/// returns structure of a query in JSON dsl format
 	[[nodiscard]] std::string GetJSON() const;
@@ -880,10 +886,10 @@ public:
 		entries_.SetValue(i, T{std::forward<Args>(args)...});
 	}
 	void UpdateField(UpdateEntry&& ue) & { updateFields_.emplace_back(std::move(ue)); }
-	void SetEqualPositions(EqualPosition_t&& ep) & { entries_.equalPositions.emplace_back(std::move(ep)); }
-	void SetEqualPositions(size_t bracketPosition, EqualPosition_t&& ep) & {
-		entries_.Get<QueryEntriesBracket>(bracketPosition).equalPositions.emplace_back(std::move(ep));
-	}
+
+	Query& EqualPositions(EqualPosition_t&& ep) &;
+	[[nodiscard]] Query&& EqualPositions(EqualPosition_t&& ep) && { return std::move(EqualPositions(std::move(ep))); }
+
 	void Join(JoinedQuery&&) &;
 	void ReserveQueryEntries(size_t s) & { entries_.Reserve(s); }
 	template <typename T, typename... Args>
@@ -977,8 +983,10 @@ private:
 	using OnHelperR = OnHelperTempl<Query&&>;
 
 	void checkSetObjectValue(const Variant& value) const;
+	virtual void deserializeJoinOn(Serializer& ser);
 	void deserialize(Serializer& ser, bool& hasJoinConditions);
-	VariantArray deserializeValues(Serializer&, CondType);
+	VariantArray deserializeValues(Serializer&, CondType) const;
+	virtual void serializeJoinEntries(WrSerializer& ser) const;
 	void checkSubQueryNoData() const;
 	void checkSubQueryWithData() const;
 	void checkSubQuery() const;
@@ -1004,7 +1012,7 @@ private:
 	OpType nextOp_ = OpAnd;						/// Next operation constant.
 };
 
-class JoinedQuery : public Query {
+class JoinedQuery final : public Query {
 public:
 	JoinedQuery(JoinType jt, const Query& q) : Query(q), joinType{jt} {}
 	JoinedQuery(JoinType jt, Query&& q) : Query(std::move(q)), joinType{jt} {}
@@ -1014,6 +1022,10 @@ public:
 
 	JoinType joinType{JoinType::LeftJoin};	   /// Default join type.
 	h_vector<QueryJoinEntry, 1> joinEntries_;  /// Condition for join. Filled in each subqueries, empty in root query
+
+private:
+	void deserializeJoinOn(Serializer& ser) override;
+	void serializeJoinEntries(WrSerializer& ser) const override;
 };
 
 template <typename Q>

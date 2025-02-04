@@ -6,6 +6,8 @@
 #include "core/cjson/tagspath.h"
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
+#include "estl/overloaded.h"
+#include "tools/assertrx.h"
 
 namespace reindexer {
 

@@ -3,7 +3,6 @@
 #include <atomic>
 #include <deque>
 #include <memory>
-#include <set>
 #include <vector>
 #include "asyncstorage.h"
 #include "cluster/idatareplicator.h"
@@ -414,6 +413,7 @@ public:
 		storage_.Flush(flushOpts);
 		return storage_.GetStatusCached().err;
 	}
+	void RebuildFreeItemsStorage(const RdxContext& ctx);
 
 private:
 	struct SysRecordsVersions {
@@ -428,6 +428,8 @@ private:
 		PayloadValue& pv;
 		lsn_t lsn;
 	};
+
+	friend struct IndexFastUpdate;
 
 	Error rebuildIndexesTagsPaths(const TagsMatcher& newTm);
 	ReplicationState getReplState() const;
@@ -579,7 +581,7 @@ private:
 	NamespaceImpl(const NamespaceImpl& src, AsyncStorage::FullLockT& storageLock);
 
 	bool isSystem() const noexcept { return isSystemNamespaceNameFast(name_); }
-	IdType createItem(size_t realSize, IdType suggestedId);
+	IdType createItem(size_t realSize, IdType suggestedId, const NsContext& ctx);
 
 	void processWalRecord(WALRecord&& wrec, const NsContext& ctx, lsn_t itemLsn = lsn_t(), Item* item = nullptr);
 	void replicateAsync(updates::UpdateRecord&& rec, const RdxContext& ctx);
@@ -633,8 +635,8 @@ private:
 	std::atomic_bool enablePerfCounters_{false};
 
 	NamespaceConfigData config_;
-	std::unique_ptr<QueryCountCache> queryCountCache_;
-	std::unique_ptr<JoinCache> joinCache_;
+	QueryCountCache queryCountCache_;
+	JoinCache joinCache_;
 	// Replication variables
 	WALTracker wal_;
 	ReplicationState repl_;

@@ -182,9 +182,10 @@ public:
 	size_t getBtreeIdsetSize() const noexcept override {
 		return static_cast<const IdSet&>(this->idxMapIt_->second.Unsorted()).set_->size();
 	}
-	size_t getMaxIterations(size_t limitIters) noexcept {
+	std::pair<size_t, bool> getMaxIterations(size_t limitIters) noexcept {
 		size_t cnt = 0;
-		for (auto it = idxMapItBegin_; cnt < limitIters && it != idxMapItEnd_; ++it) {
+		auto it = idxMapItBegin_;
+		for (; cnt < limitIters && it != idxMapItEnd_; ++it) {
 			this->detectCurrentIdsetType(it->second.Unsorted());
 			switch (this->currentIdsetType_) {
 				case Base::IdsetType::Btree:
@@ -197,7 +198,7 @@ public:
 					std::abort();
 			}
 		}
-		return cnt;
+		return {cnt, it == idxMapItEnd_};
 	}
 
 private:

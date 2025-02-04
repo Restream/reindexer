@@ -1103,8 +1103,10 @@ protected:
 		ExecuteAndVerify(Query(compositeIndexesNs)
 							 .WhereComposite(kCompositeFieldTitleName.c_str(), CondLe,
 											 {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
+		constexpr size_t kStringKeysCnt = 1010;
 		std::vector<VariantArray> stringKeys;
-		for (size_t i = 0; i < 1010; ++i) {
+		stringKeys.reserve(kStringKeysCnt);
+		for (size_t i = 0; i < kStringKeysCnt; ++i) {
 			stringKeys.emplace_back(VariantArray{Variant(RandString()), Variant(RandString())});
 		}
 		ExecuteAndVerify(Query(compositeIndexesNs).WhereComposite(kCompositeFieldTitleName.c_str(), CondSet, stringKeys));

@@ -556,16 +556,19 @@ template <typename T>
 void PayloadIface<T>::AddRefStrings(int field) noexcept {
 	auto& f = t_.Field(field);
 	assertrx(f.Type().template Is<KeyValueType::String>());
+	auto vptr = v_->Ptr();
 
 	// direct payloadvalue manipulation for speed optimize
 	if (!f.IsArray()) {
-		auto str = *reinterpret_cast<const p_string*>((v_->Ptr() + f.Offset()));
-		key_string_add_ref(const_cast<std::string*>(str.getCxxstr()));
+		auto str = *reinterpret_cast<const p_string*>((vptr + f.Offset()));
+		key_string_impl::addref_unsafe(str.getBaseKeyString());
 	} else {
-		auto arr = reinterpret_cast<PayloadFieldValue::Array*>(v_->Ptr() + f.Offset());
-		for (int i = 0; i < arr->len; i++) {
-			auto str = *reinterpret_cast<const p_string*>(v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
-			key_string_add_ref(const_cast<std::string*>(str.getCxxstr()));
+		const auto elemSize = f.ElemSizeof();
+		auto arr = reinterpret_cast<PayloadFieldValue::Array*>(vptr + f.Offset());
+		const auto arrOffset = arr->offset;
+		for (int i = 0, arrLen = arr->len; i < arrLen; ++i) {
+			auto str = reinterpret_cast<const p_string*>(vptr + arrOffset + i * elemSize);
+			key_string_impl::addref_unsafe(str->getBaseKeyString());
 		}
 	}
 }
@@ -581,16 +584,19 @@ template <typename T>
 void PayloadIface<T>::ReleaseStrings(int field) noexcept {
 	auto& f = t_.Field(field);
 	assertrx(f.Type().template Is<KeyValueType::String>());
+	auto vptr = v_->Ptr();
 
 	// direct payloadvalue manipulation for speed optimize
 	if (!f.IsArray()) {
-		auto str = *reinterpret_cast<p_string*>((v_->Ptr() + f.Offset()));
-		key_string_release(const_cast<std::string*>(str.getCxxstr()));
+		auto str = reinterpret_cast<p_string*>((vptr + f.Offset()));
+		key_string_impl::release_unsafe(str->getBaseKeyString());
 	} else {
-		auto arr = reinterpret_cast<PayloadFieldValue::Array*>(v_->Ptr() + f.Offset());
-		for (int i = 0; i < arr->len; i++) {
-			auto str = *reinterpret_cast<const p_string*>(v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
-			key_string_release(const_cast<std::string*>(str.getCxxstr()));
+		const auto elemSize = f.ElemSizeof();
+		auto arr = reinterpret_cast<PayloadFieldValue::Array*>(vptr + f.Offset());
+		const auto arrOffset = arr->offset;
+		for (int i = 0, arrLen = arr->len; i < arrLen; ++i) {
+			auto str = reinterpret_cast<const p_string*>(vptr + arrOffset + i * elemSize);
+			key_string_impl::release_unsafe(str->getBaseKeyString());
 		}
 	}
 }
@@ -604,12 +610,12 @@ void PayloadIface<T>::copyOrMoveStrings(int field, StrHolder& dest, bool copy) {
 	// direct payloadvalue manipulation for speed optimize
 	if (!f.IsArray()) {
 		auto str = *reinterpret_cast<p_string*>((v_->Ptr() + f.Offset()));
-		dest.emplace_back(reinterpret_cast<base_key_string*>(const_cast<std::string*>(str.getCxxstr())), copy);
+		dest.emplace_back(str.getBaseKeyString(), copy);
 	} else {
 		auto arr = reinterpret_cast<PayloadFieldValue::Array*>(v_->Ptr() + f.Offset());
 		for (int i = 0; i < arr->len; i++) {
 			auto str = *reinterpret_cast<const p_string*>(v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
-			dest.emplace_back(reinterpret_cast<base_key_string*>(const_cast<std::string*>(str.getCxxstr())), copy);
+			dest.emplace_back(str.getBaseKeyString(), copy);
 		}
 	}
 }
@@ -639,14 +645,21 @@ void PayloadIface<T>::MoveStrings(int field, StringsHolder& dest) {
 
 template <typename T>
 void PayloadIface<T>::CopyStrings(std::vector<key_string>& dest) {
-	for (auto field : t_.StrFields()) {
+	for (int field : t_.StrFields()) {
+		copyOrMoveStrings(field, dest, true);
+	}
+}
+
+template <typename T>
+void PayloadIface<T>::CopyStrings(h_vector<key_string, 16>& dest) {
+	for (int field : t_.StrFields()) {
 		copyOrMoveStrings(field, dest, true);
 	}
 }
 
 template <typename T>
 void PayloadIface<T>::ReleaseStrings() noexcept {
-	for (auto field : t_.StrFields()) {
+	for (int field : t_.StrFields()) {
 		ReleaseStrings(field);
 	}
 }

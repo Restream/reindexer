@@ -50,7 +50,7 @@ else()
   option(LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "4.19.0")
+set (REINDEXER_VERSION_DEFAULT "4.20.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -72,6 +72,13 @@ if(MSVC)
   set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -Zi")
   set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG -Zi")
   set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG -Zi")
+elseif(WITH_ASAN)
+  # Using O2 instead of O3 to build a bit faster.
+  # Also this allows to avoid SEGFAULT in libasan.so during coroutines interaction on CentOS7 (gcc-12).
+  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g1")
+  set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -g1")
+  set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG")
+  set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG")
 else()
   set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 -g1")
   set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O3 -g1")

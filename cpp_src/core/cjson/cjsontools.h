@@ -18,6 +18,7 @@ void skipCjsonTag(ctag tag, Serializer& rdser, std::array<unsigned, kMaxIndexes>
 
 [[noreturn]] void throwUnexpectedNestedArrayError(std::string_view parserName, const PayloadFieldType& f);
 [[noreturn]] void throwScalarMultipleEncodesError(const Payload& pl, const PayloadFieldType& f, int field);
+[[noreturn]] void throwUnexpectedArraySizeError(std::string_view parserName, const PayloadFieldType& f, int arraySize);
 RX_ALWAYS_INLINE void validateNonArrayFieldRestrictions(const ScalarIndexesSetT& scalarIndexes, const Payload& pl,
 														const PayloadFieldType& f, int field, bool isInArray, std::string_view parserName) {
 	if (!f.IsArray()) {
@@ -26,6 +27,14 @@ RX_ALWAYS_INLINE void validateNonArrayFieldRestrictions(const ScalarIndexesSetT&
 		}
 		if rx_unlikely (scalarIndexes.test(field)) {
 			throwScalarMultipleEncodesError(pl, f, field);
+		}
+	}
+}
+
+RX_ALWAYS_INLINE void validateArrayFieldRestrictions(const PayloadFieldType& f, int arraySize, std::string_view parserName) {
+	if (f.IsArray()) {
+		if rx_unlikely (arraySize && f.ArrayDim() > 0 && f.ArrayDim() != arraySize) {
+			throwUnexpectedArraySizeError(parserName, f, arraySize);
 		}
 	}
 }
@@ -47,6 +56,23 @@ inline void DumpCjson(Serializer& cjson, std::ostream& dump, const TagsMatcher* 
 }
 inline void DumpCjson(Serializer&& cjson, std::ostream& dump, const TagsMatcher* tm = nullptr, std::string_view tab = "  ") {
 	DumpCjson(cjson, dump, tm, tab);
+}
+
+static inline Variant convertValueForPayload(Payload& pl, int field, Variant&& value, std::string_view source) {
+	if (field < 0) {
+		return value;
+	}
+
+	auto plFieldType = pl.Type().Field(field).Type();
+	if (plFieldType.IsSame(value.Type())) {
+		return value;
+	} else if ((plFieldType.IsNumeric() && value.Type().IsNumeric()) ||
+			   (plFieldType.Is<KeyValueType::Uuid>() && value.Type().Is<KeyValueType::String>())) {
+		return value.convert(pl.Type().Field(field).Type());
+	} else {
+		throw Error(errLogic, "Error parsing %s field '%s' - got %s, expected %s", source, pl.Type().Field(field).Name(),
+					value.Type().Name(), plFieldType.Name());
+	}
 }
 
 }  // namespace reindexer

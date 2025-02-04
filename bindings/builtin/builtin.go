@@ -255,7 +255,7 @@ func (binding *Builtin) Init(u []url.URL, eh bindings.EventsHandler, options ...
 		caps: C.int64_t(caps.Value),
 	}
 
-	return err2go(C.reindexer_connect_v4(binding.rx, str2c(u[0].Path), opts, str2c(bindings.ReindexerVersion), ccaps))
+	return err2go(C.reindexer_connect_v4(binding.rx, str2c(u[0].Host+u[0].Path), opts, str2c(bindings.ReindexerVersion), ccaps))
 }
 
 func (binding *Builtin) StartWatchOnCtx(ctx context.Context) (CCtxWrapper, error) {

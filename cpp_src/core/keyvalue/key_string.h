@@ -1,114 +1,142 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
-#include <string>
+#include <cstring>
+#include <limits>
+#include <new>
 #include <string_view>
+#include "estl/defines.h"
 #include "estl/fast_hash_traits.h"
-#include "estl/intrusive_ptr.h"
 
 namespace reindexer {
 
-typedef const std::string const_string;
-
-class base_key_string : public std::string {
+class key_string_impl {
 public:
-	base_key_string(std::string_view str) : std::string(str.data(), str.length()) {
-		export_hdr_.refcounter.store(0, std::memory_order_release);
-		bind();
-	}
-	template <typename... Args>
-	base_key_string(Args&&... args) : std::string(std::forward<Args>(args)...) {
-		export_hdr_.refcounter.store(0, std::memory_order_release);
-		bind();
-	}
+	using size_type = int32_t;
 
-	template <typename... Args>
-	void assign(Args&&... args) {
-		const_string::assign(std::forward<Args>(args)...);
-		bind();
-	}
-	static ptrdiff_t export_hdr_offset() noexcept {
-		static base_key_string sample;
-		return ptrdiff_t(reinterpret_cast<const char*>(&sample.export_hdr_) - reinterpret_cast<const char*>(&sample));
-	}
-	size_t heap_size() noexcept {
-		// Check for SSO (small string optimization)
-		uintptr_t pstart = uintptr_t(this);
-		uintptr_t pend = pstart + sizeof(std::string);
-		uintptr_t pdata = uintptr_t(data());
-		return (pdata >= pstart && pdata < pend) ? 0 : (capacity() + 1);  // +1 for terminating \0
-	}
+	key_string_impl(const key_string_impl&) = delete;
+	key_string_impl(key_string_impl&&) = delete;
+	key_string_impl& operator=(const key_string_impl&) = delete;
+	key_string_impl& operator=(key_string_impl&&) = delete;
 
-	// delete all modification methods - to be sure, that base_key_string is mutable, and export will not invalidate after construction
-	iterator begin() = delete;
-	iterator end() = delete;
-	char& operator[](int) = delete;
-	template <typename... Args>
-	void insert(Args&&... args) = delete;
-	template <typename... Args>
-	void append(Args&&... args) = delete;
-	template <typename... Args>
-	void copy(Args&&... args) = delete;
-	template <typename... Args>
-	void replace(Args&&... args) = delete;
-	void push_back(char c) = delete;
-	template <typename... Args>
-	void erase(Args&&... args) = delete;
-	template <typename... Args>
-	void reserve(Args&&... args) = delete;
-	template <typename... Args>
-	void resize(Args&&... args) = delete;
-	void at(int) = delete;
-	void shrink_to_fit() = delete;
-	void clear() = delete;
+	static ptrdiff_t export_hdr_offset() noexcept { return 0; }
+	const char* data() const noexcept { return data_; }
+	size_t size() const noexcept { return export_hdr_.len; }
+	operator std::string_view() const noexcept { return std::string_view(data_, export_hdr_.len); }
 
-protected:
-	friend void intrusive_ptr_add_ref(base_key_string* x) noexcept {
+	// Unsafe ref counter methods for direct payload access
+	static void addref_unsafe(const key_string_impl* x) noexcept {
 		if (x) {
 			x->export_hdr_.refcounter.fetch_add(1, std::memory_order_relaxed);
 		}
 	}
-	friend void intrusive_ptr_release(base_key_string* x) noexcept {
-		if (x && x->export_hdr_.refcounter.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-			delete x;  // NOLINT(*.NewDelete) False positive
+	static void release_unsafe(const key_string_impl* x) noexcept {
+		if ((x && x->export_hdr_.refcounter.fetch_sub(1, std::memory_order_acq_rel) == 1)) {
+			x->~key_string_impl();
+			operator delete(const_cast<key_string_impl*>(x));
 		}
 	}
-	friend bool intrusive_ptr_is_unique(base_key_string* x) noexcept {
-		// std::memory_order_acquire - is essential for COW constructions based on intrusive_ptr
-		return !x || (x->export_hdr_.refcounter.load(std::memory_order_acquire) == 1);
-	}
 
-	void bind() noexcept {
-		export_hdr_.cstr = std::string::c_str();
-		export_hdr_.len = length();
+private:
+	friend class key_string;
+	// Only key_string should be able to construct key_string_impl
+	explicit key_string_impl(std::string_view str) noexcept {
+		std::memcpy(data_, str.data(), str.size());
+		export_hdr_.cstr = data_;
+		export_hdr_.len = str.size();
+		export_hdr_.refcounter.store(0, std::memory_order_relaxed);
 	}
 
 	struct export_hdr {
 		const void* cstr;
-		int32_t len;
-		std::atomic<int32_t> refcounter;
+		size_type len;
+		mutable std::atomic<int32_t> refcounter;
 	} export_hdr_;
+	char data_[];
 };
 
 static_assert(sizeof(std::atomic<int32_t>) == sizeof(int8_t[4]),
 			  "refcounter in cbinding (struct reindexer_string) is reserved via int8_t array. Sizes must be same");
 
-class key_string : public intrusive_ptr<base_key_string> {
+class key_string {
 public:
-	using intrusive_ptr<base_key_string>::intrusive_ptr;
+	using const_iterator = const char*;
+	using iterator = const_iterator;
+
+	key_string() noexcept : impl_(nullptr) {}
+	explicit key_string(std::nullptr_t) noexcept : key_string() {}
+	key_string(const key_string_impl* str) noexcept : impl_(str) { key_string_impl::addref_unsafe(impl_); }
+	key_string(const key_string_impl* str, bool add_ref) noexcept : impl_(str) {
+		if (add_ref) {
+			key_string_impl::addref_unsafe(impl_);
+		}
+	}
+	explicit key_string(std::string_view str) {
+		if rx_unlikely (str.size() > kMaxLen) {
+			throwMaxLenOverflow(str.size());
+		}
+		void* impl = operator new(sizeof(key_string_impl) + str.size());
+		impl_ = new (impl) key_string_impl(str);
+		key_string_impl::addref_unsafe(impl_);
+	}
+	key_string(const key_string& rhs) noexcept : impl_(rhs.impl_) { key_string_impl::addref_unsafe(impl_); }
+	key_string(key_string&& rhs) noexcept : impl_(rhs.impl_) { rhs.impl_ = nullptr; }
+	~key_string() { key_string_impl::release_unsafe(impl_); }
+
+	key_string& operator=(key_string&& rhs) noexcept {
+		swap(rhs);
+		return *this;
+	}
+	// NOLINTNEXTLINE(bugprone-unhandled-self-assignment)
+	key_string& operator=(const key_string& rhs) noexcept {
+		key_string copy(rhs);
+		swap(copy);
+		return *this;
+	}
+
+	const key_string_impl* get() const noexcept { return impl_; }
+	size_t size() const noexcept { return impl_ ? impl_->size() : 0; }
+	const char* data() const& noexcept { return impl_ ? impl_->data() : nullptr; }
+	const char* data() && = delete;
+
+	explicit operator bool() const noexcept { return impl_; }
+	operator std::string_view() const noexcept { return impl_ ? std::string_view(*impl_) : std::string_view(); }
+	void swap(key_string& rhs) noexcept { std::swap(impl_, rhs.impl_); }
+	size_t heap_size() const noexcept { return impl_ ? (sizeof(key_string_impl) + impl_->size()) : 0; }
+
+	iterator begin() const& noexcept { return impl_ ? impl_->data() : nullptr; }
+	iterator end() const& noexcept { return impl_ ? (impl_->data() + impl_->size()) : nullptr; }
+	const_iterator cbegin() const& noexcept { return begin(); }
+	const_iterator cend() const& noexcept { return end(); }
+	iterator begin() const&& = delete;
+	iterator end() && = delete;
+	const_iterator cbegin() && = delete;
+	const_iterator cend() && = delete;
+
+private:
+	constexpr static size_t kMaxLen = std::numeric_limits<key_string_impl::size_type>::max();
+
+	[[noreturn]] void throwMaxLenOverflow(size_t len);
+
+	const key_string_impl* impl_;
 };
 
 template <typename... Args>
 key_string make_key_string(Args&&... args) {
-	return key_string(new base_key_string(std::forward<Args>(args)...));
+	return key_string(std::string_view(std::forward<Args>(args)...));
 }
 
-inline static bool operator==(const key_string& rhs, const key_string& lhs) noexcept { return *rhs == *lhs; }
+template <typename T>
+T& operator<<(T& os, const key_string& k) {
+	return os << std::string_view(k);
+}
 
-// Unchecked cast to derived class!
-// It assumes, that all strings in payload are intrusive_ptr
-inline void key_string_add_ref(std::string* str) noexcept { intrusive_ptr_add_ref(reinterpret_cast<base_key_string*>(str)); }
-inline void key_string_release(std::string* str) noexcept { intrusive_ptr_release(reinterpret_cast<base_key_string*>(str)); }
+inline static bool operator==(const key_string& lhs, const key_string& rhs) noexcept {
+	return std::string_view(rhs) == std::string_view(lhs);
+}
+inline static bool operator==(const key_string& lhs, std::string_view rhs) noexcept { return std::string_view(lhs) == rhs; }
+inline static bool operator==(std::string_view lhs, const key_string& rhs) noexcept { return std::string_view(rhs) == lhs; }
 
 template <>
 struct is_recommends_sc_hash_map<key_string> {
@@ -116,17 +144,12 @@ struct is_recommends_sc_hash_map<key_string> {
 };
 
 }  // namespace reindexer
-namespace std {
-template <>
-struct hash<reindexer::base_key_string> {
-public:
-	size_t operator()(const reindexer::base_key_string& obj) const { return hash<std::string>()(obj); }
-};
 
+namespace std {
 template <>
 struct hash<reindexer::key_string> {
 public:
-	size_t operator()(const reindexer::key_string& obj) const { return hash<reindexer::base_key_string>()(*obj); }
+	size_t operator()(const reindexer::key_string& obj) const noexcept { return hash<std::string_view>()(obj); }
 };
 
 }  // namespace std
