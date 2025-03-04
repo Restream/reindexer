@@ -308,7 +308,7 @@ These commands can be used by inserting them via upsert into the #config namespa
 ### Rebuilding clusters for IVF index
 
 ```json
-`{"type":"action","action":{"command":"rebuild_ivf_index", "namespace":"*", "index":"*", "data_part": 0.5}}`
+{"type":"action","action":{"command":"rebuild_ivf_index", "namespace":"*", "index":"*", "data_part": 0.5}}
 ```
 
 The command can be useful for cases where the composition of vectors in the index has changed significantly and the current centroids do not provide sufficiently high-quality output.
@@ -319,7 +319,7 @@ The command can be useful for cases where the composition of vectors in the inde
 ### Removing disk cache for ANN indexes
 
 ```json
-`{"type":"action","action":{"command":"drop_ann_storage_cache", "namespace":"*", "index":"*"}}`
+{"type":"action","action":{"command":"drop_ann_storage_cache", "namespace":"*", "index":"*"}}
 ```
 
 The command can be useful for cases when you need to force the re-creation of the disk cache for ANN indexes, or disable it completely (using it together with the `RX_DISABLE_ANN_CACHE` environment variable).
