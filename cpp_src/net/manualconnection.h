@@ -15,10 +15,11 @@ using reindexer::cbuf;
 
 constexpr int k_sock_closed_err = -1;
 constexpr int k_connect_timeout_err = -2;
+constexpr int k_connect_ssl_err = -3;
 
 class manual_connection {
 public:
-	using async_cb_t = std::function<void(int err, size_t cnt, span<char> buf)>;
+	using async_cb_t = std::function<void(int err, size_t cnt, std::span<char> buf)>;
 
 	enum class conn_state { init, connecting, connected };
 
@@ -31,6 +32,8 @@ public:
 	void detach() noexcept;
 	void restart(socket&& s);
 
+	Error with_tls(bool enable);
+
 	template <typename buf_t>
 	void async_read(buf_t& data, size_t cnt, async_cb_t cb) {
 		async_read_impl(data, cnt, std::move(cb));
@@ -38,7 +41,7 @@ public:
 	template <typename buf_t>
 	size_t async_read(buf_t& data, size_t cnt, int& err) noexcept {
 		auto co_id = coroutine::current();
-		auto l = [&err, co_id](int _err, size_t /*cnt*/, span<char> /*buf*/) {
+		auto l = [&err, co_id](int _err, size_t /*cnt*/, std::span<char> /*buf*/) {
 			err = _err;
 			coroutine::resume(co_id);
 		};
@@ -51,7 +54,7 @@ public:
 	template <typename buf_t>
 	size_t async_write(buf_t& data, int& err, bool send_now = true) noexcept {
 		auto co_id = coroutine::current();
-		auto l = [&err, co_id](int _err, size_t /*cnt*/, span<char> /*buf*/) {
+		auto l = [&err, co_id](int _err, size_t /*cnt*/, std::span<char> /*buf*/) {
 			err = _err;
 			coroutine::resume(co_id);
 		};
@@ -79,19 +82,19 @@ private:
 
 	struct async_data {
 		bool empty() const noexcept { return cb == nullptr; }
-		void set_cb(span<char> _buf, async_cb_t _cb) noexcept {
+		void set_cb(std::span<char> _buf, async_cb_t _cb) noexcept {
 			assertrx(!cb);
 			cb = std::move(_cb);
 			buf = _buf;
 		}
 		void reset() noexcept {
 			cb = nullptr;
-			buf = span<char>();
+			buf = std::span<char>();
 		}
 
 		async_cb_t cb = nullptr;
 		transfer_data transfer;
-		span<char> buf;
+		std::span<char> buf;
 	};
 
 	struct empty_switch_policy {
@@ -112,7 +115,7 @@ private:
 		auto& transfer = r_data_.transfer;
 		transfer.set_expected(cnt);
 		int int_err = 0;
-		auto data_span = span<char>(data.data(), cnt);
+		auto data_span = std::span<char>(data.data(), cnt);
 		if (state_ != conn_state::connecting) {
 			auto nread = read(data_span, transfer, int_err);
 			if (!nread) {
@@ -126,7 +129,7 @@ private:
 			switch_policy_t swtch;
 			swtch(r_data_);
 		} else {
-			cb(int_err, transfer.transfered_size(), span<char>(data.data(), data.size()));
+			cb(int_err, transfer.transfered_size(), std::span<char>(data.data(), data.size()));
 		}
 		return transfer.transfered_size();
 	}
@@ -149,7 +152,7 @@ private:
 		transfer.set_expected(data.size());
 		int int_err = 0;
 		if (data.size()) {
-			auto data_span = span<char>(data.data(), data.size());
+			auto data_span = std::span<char>(data.data(), data.size());
 			if (send_now && state_ != conn_state::connecting) {
 				write(data_span, transfer, int_err);
 			}
@@ -176,8 +179,8 @@ private:
 			cb(err, transfered, buf);
 		}
 	}
-	ssize_t write(span<char>, transfer_data& transfer, int& err_ref);
-	ssize_t read(span<char>, transfer_data& transfer, int& err_ref);
+	ssize_t write(std::span<char>, transfer_data& transfer, int& err_ref);
+	ssize_t read(std::span<char>, transfer_data& transfer, int& err_ref);
 	void read_to_buf(int& err_ref);
 	void add_io_events(int events) noexcept;
 	void set_io_events(int events) noexcept;
@@ -185,10 +188,11 @@ private:
 	void connect_timer_cb(ev::timer& watcher, int);
 	void write_cb();
 	int read_cb();
-	bool read_from_buf(span<char> rd_buf, transfer_data& transfer, bool read_full) noexcept;
+	bool read_from_buf(std::span<char> rd_buf, transfer_data& transfer, bool read_full) noexcept;
 
 	ev::io io_;
 	socket sock_;
+	openssl::SslCtxPtr sslCtx_;
 	ev::timer connect_timer_;
 	conn_state state_ = conn_state::init;
 	bool attached_ = false;

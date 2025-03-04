@@ -1,30 +1,22 @@
-
 #include "client/item.h"
-#include "client/itemimpl.h"
+#include "client/itemimplbase.h"
 #include "tools/catch_and_return.h"
 
-namespace reindexer {
-namespace client {
+namespace reindexer::client {
 
-Item::Item() : status_(errNotValid) {}
+const static Error kInvalidItemStatus{errNotValid, "Item is not valid"};
 
-Item::Item(Item&& other) noexcept : impl_(std::move(other.impl_)), status_(std::move(other.status_)), id_(other.id_) {}
+// NOLINTNEXTLINE (bugprone-throw-keyword-missing)
+Item::Item() : status_(kInvalidItemStatus) {}
 
-Item::Item(ItemImpl* impl) : impl_(impl) {}
-Item::Item(const Error& err) : impl_(nullptr), status_(err) {}
+Item::Item(Item&& other) noexcept = default;
 
-Item& Item::operator=(Item&& other) noexcept {
-	if (&other != this) {
-		impl_ = std::move(other.impl_);
-		status_ = std::move(other.status_);
-		id_ = other.id_;
-	}
-	return *this;
-}
+Item::Item(ItemImplBase* impl) : impl_(impl) {}
+Item::Item(Error err) : impl_(nullptr), status_(std::move(err)) {}
 
-Item::~Item() {}
+Item& Item::operator=(Item&& other) noexcept = default;
 
-Item::operator bool() const { return impl_ != nullptr; }
+Item::~Item() = default;
 
 Error Item::FromJSON(std::string_view slice, char** endp, bool pkOnly) { return impl_->FromJSON(slice, endp, pkOnly); }
 Error Item::FromCJSON(std::string_view slice) & noexcept {
@@ -39,14 +31,12 @@ Error Item::FromMsgPack(std::string_view slice, size_t& offset) { return impl_->
 std::string_view Item::GetCJSON() { return impl_->GetCJSON(); }
 std::string_view Item::GetJSON() { return impl_->GetJSON(); }
 std::string_view Item::GetMsgPack() { return impl_->GetMsgPack(); }
-void Item::SetPrecepts(const std::vector<std::string>& precepts) { impl_->SetPrecepts(precepts); }
-bool Item::IsTagsUpdated() { return impl_->tagsMatcher().isUpdated(); }
-int Item::GetStateToken() { return impl_->tagsMatcher().stateToken(); }
-
-Item& Item::Unsafe(bool enable) {
+void Item::SetPrecepts(std::vector<std::string> precepts) { impl_->SetPrecepts(std::move(precepts)); }
+bool Item::IsTagsUpdated() const noexcept { return impl_->tagsMatcher().isUpdated(); }
+int Item::GetStateToken() const noexcept { return impl_->tagsMatcher().stateToken(); }
+Item& Item::Unsafe(bool enable) noexcept {
 	impl_->Unsafe(enable);
 	return *this;
 }
 
-}  // namespace client
-}  // namespace reindexer
+}  // namespace reindexer::client

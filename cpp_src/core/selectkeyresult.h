@@ -1,7 +1,6 @@
 #pragma once
 
 #include <climits>
-#include <memory>
 
 #include "core/idset.h"
 #include "core/index/indexiterator.h"
@@ -103,8 +102,8 @@ protected:
 	const base_idsetset* set_ = nullptr;
 
 	union {
-		IdSetCRef::const_iterator begin_;
-		IdSetCRef::const_reverse_iterator rbegin_;
+		IdSetCRef::iterator begin_;
+		IdSetCRef::reverse_iterator rbegin_;
 		base_idsetset::const_iterator setbegin_;
 		base_idsetset::const_reverse_iterator setrbegin_;
 		int rBegin_ = 0;
@@ -112,8 +111,8 @@ protected:
 	};
 
 	union {
-		IdSetCRef::const_iterator end_;
-		IdSetCRef::const_reverse_iterator rend_;
+		IdSetCRef::iterator end_;
+		IdSetCRef::reverse_iterator rend_;
 		base_idsetset::const_iterator setend_;
 		base_idsetset::const_reverse_iterator setrend_;
 		int rEnd_ = 0;
@@ -121,8 +120,8 @@ protected:
 	};
 
 	union {
-		IdSetCRef::const_iterator it_;
-		IdSetCRef::const_reverse_iterator rit_;
+		IdSetCRef::iterator it_;
+		IdSetCRef::reverse_iterator rit_;
 		base_idsetset::const_iterator itset_;
 		base_idsetset::const_reverse_iterator ritset_;
 		int rIt_ = 0;
@@ -177,7 +176,11 @@ public:
 		size_t cnt = 0;
 		for (const SingleSelectKeyResult& r : *this) {
 			if (r.indexForwardIter_) {
-				cnt += r.indexForwardIter_->GetMaxIterations(limitIters);
+				auto iters = r.indexForwardIter_->GetMaxIterations(limitIters);
+				if (iters == std::numeric_limits<size_t>::max()) {
+					return limitIters;
+				}
+				cnt += iters;
 			} else if (r.isRange_) {
 				cnt += std::abs(r.rEnd_ - r.rBegin_);
 			} else if (r.useBtree_) {
@@ -186,7 +189,7 @@ public:
 				cnt += r.ids_.size();
 			}
 			if (cnt > limitIters) {
-				break;
+				return limitIters;
 			}
 		}
 		return cnt;
@@ -260,8 +263,8 @@ private:
 			}
 			ptrsVec.emplace_back(&v);
 		}
-		span<value_type*> vecSpan(ptrsVec.data(), vecsCnt);
-		span<value_type*> setSpan(ptrsVec.data() + vecsCnt, size() - vecsCnt);
+		std::span<value_type*> vecSpan(ptrsVec.data(), vecsCnt);
+		std::span<value_type*> setSpan(ptrsVec.data() + vecsCnt, size() - vecsCnt);
 
 		for (auto& v : vecSpan) {
 			assertrx_dbg(!v->useBtree_);
@@ -283,7 +286,7 @@ private:
 				for (;; ++itvec) {
 					if (itvec == vecend) {
 						std::swap(*vsIt, vecSpan.back());
-						vecSpan = span<value_type*>(vecSpan.data(), vecSpan.size() - 1);
+						vecSpan = std::span<value_type*>(vecSpan.data(), vecSpan.size() - 1);
 						--vsItEnd;
 						break;
 					}
@@ -303,7 +306,7 @@ private:
 				for (;; ++itset) {
 					if (itset == setend) {
 						std::swap(*ssIt, setSpan.back());
-						setSpan = span<value_type*>(setSpan.data(), setSpan.size() - 1);
+						setSpan = std::span<value_type*>(setSpan.data(), setSpan.size() - 1);
 						--ssItEnd;
 						break;
 					}
@@ -359,7 +362,7 @@ private:
 				}
 			}
 		}
-		span<value_type*> idsetsSpan(ptrsVec.data(), ptrsVec.size());
+		std::span<value_type*> idsetsSpan(ptrsVec.data(), ptrsVec.size());
 		std::make_heap(idsetsSpan.begin(), idsetsSpan.end(), IdSetGreater{});
 		int min = INT_MIN;
 		auto handleMinValue = [&mergedIds, &idsetsSpan, &min](auto& it, auto end) noexcept {
@@ -371,7 +374,7 @@ private:
 			do {
 				if (++it == end) {
 					std::swap(idsetsSpan.front(), idsetsSpan.back());
-					idsetsSpan = span<value_type*>(idsetsSpan.begin(), idsetsSpan.size() - 1);
+					idsetsSpan = std::span<value_type*>(idsetsSpan.begin(), idsetsSpan.size() - 1);
 					return;
 				}
 			} while (*it <= min);
@@ -390,15 +393,15 @@ private:
 	}
 
 	template <typename T, typename CompareT>
-	RX_ALWAYS_INLINE void heapifyRoot(span<T> vec) noexcept {
+	RX_ALWAYS_INLINE void heapifyRoot(std::span<T> vec) noexcept {
 		static_assert(std::is_pointer_v<T>, "Expecting T being a pointer for the fast swaps");
-		T* target = vec.begin();
+		T* target = vec.data();
 		T* end = target + vec.size();
 		CompareT c;
 		for (size_t i = 0;;) {
 			T* cur = target;
 			const auto lIdx = (i << 1) + 1;
-			T* left = vec.begin() + lIdx;
+			T* left = vec.data() + lIdx;
 			T* right = left + 1;
 
 			if (left < end && c(*target, *left)) {

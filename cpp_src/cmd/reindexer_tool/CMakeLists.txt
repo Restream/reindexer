@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.18)
 
 project(reindexer_tool)
 
@@ -22,7 +22,7 @@ if (NOT MSVC AND NOT WITH_STDLIB_DEBUG)
     ExternalProject_Add(
       replxx_lib
       GIT_REPOSITORY "https://github.com/Restream/replxx"
-      GIT_TAG "b50b7b7a8c2835b45607cffabc18e4742072e9e6"
+      GIT_TAG "98aa91965d7495e030f31c6f05969177fe5ab81d"
       CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
     )
     include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
@@ -42,6 +42,7 @@ add_executable(${TARGET} ${SRCS})
 
 # Enable export to provide readable stacktraces
 set_property(TARGET ${TARGET} PROPERTY ENABLE_EXPORTS 1)
+set_property(TARGET ${TARGET} PROPERTY DEFINE_SYMBOL "")
 
 if (NOT MSVC AND NOT WITH_STDLIB_DEBUG)
   if (NOT ReplXX_LIBRARY OR NOT ReplXX_INCLUDE_DIR)

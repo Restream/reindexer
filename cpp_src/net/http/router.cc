@@ -45,6 +45,7 @@ HttpStatusCode HttpStatus::errCodeToHttpStatus(int errCode) {
 		case errNotFound:
 			return StatusNotFound;
 		case errNotValid:
+		case errStrictMode:
 		case errParams:
 		case errParseSQL:
 		case errParseDSL:
@@ -78,7 +79,7 @@ int Context::JSON(int code, chunk&& chunk) {
 int Context::CSV(int code, chunk&& chunk) {
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/csv; charset=utf-8"sv});
-	if (auto filename = request->headers.Get("Save-Csv-To"sv); !filename.empty()) {
+	if (auto filename = request->headers.Get("Save-CSV-To"sv); !filename.empty()) {
 		writer->SetHeader(http::Header{"Content-Disposition"sv, fmt::sprintf("attachment; filename=\"%s\"", filename)});
 	}
 	writer->Write(std::move(chunk), Writer::WriteMode::PreChunkedBody);

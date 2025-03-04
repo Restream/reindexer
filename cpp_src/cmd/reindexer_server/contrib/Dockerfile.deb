@@ -1,7 +1,7 @@
 FROM debian:stable-slim AS build
 
-RUN apt update -y && apt install -y  libunwind-dev build-essential libsnappy-dev libleveldb-dev \
-    make curl unzip git cmake libjemalloc-dev \
+RUN apt update -y && apt install -y  libunwind-dev build-essential libsnappy-dev libleveldb-dev openssl \
+    make curl unzip git cmake libjemalloc-dev libopenblas-pthread-dev \
     libgrpc++-dev protobuf-compiler-grpc protobuf-compiler libprotobuf-dev
 
 ADD . /src
@@ -10,7 +10,7 @@ RUN cd /src && \
     mkdir build && \
     cd build && \
     cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_GRPC=On -DGRPC_PACKAGE_PROVIDER="MODULE" .. && \
-    make -j8 reindexer_server reindexer_tool && \
+    make -j6 reindexer_server reindexer_tool && \
     make install -C cpp_src/cmd/reindexer_server && \
     make install -C cpp_src/cmd/reindexer_tool && \
     make install -C cpp_src/server/grpc && \
@@ -19,7 +19,10 @@ RUN cd /src && \
 FROM debian:stable-slim
 COPY --from=build /usr/local /usr/local
 COPY --from=build /entrypoint.sh /entrypoint.sh
-RUN apt update -y && apt install -y libleveldb1d libunwind8 libjemalloc2 libgrpc++1.51 && rm -rf /var/lib/apt
+RUN apt update -y && apt install -y libleveldb1d libunwind8 libopenblas0-pthread libjemalloc2 libgrpc++1.51 libgomp1 && rm -rf /var/lib/apt
+
+RUN ln -s /usr/lib/x86_64-linux-gnu/libcrypto.so.3 /usr/lib/x86_64-linux-gnu/libcrypto.so && \
+    ln -s /usr/lib/x86_64-linux-gnu/libssl.so.3 /usr/lib/x86_64-linux-gnu/libssl.so
 
 ENV RX_DATABASE=/db
 ENV RX_CORELOG=stdout
@@ -27,6 +30,9 @@ ENV RX_HTTPLOG=stdout
 ENV RX_RPCLOG=stdout
 ENV RX_SERVERLOG=stdout
 ENV RX_LOGLEVEL=info
+# Number of thread to build IVF's centroids
+ENV RX_IVF_OMP_THREADS=8
+ENV OPENBLAS_NUM_THREADS=8
 
 RUN chmod +x /entrypoint.sh
 

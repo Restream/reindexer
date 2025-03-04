@@ -1,8 +1,10 @@
 #include "composite_indexes_api.h"
 #include "gmock/gmock.h"
-#include "yaml-cpp/node/node.h"
-#include "yaml-cpp/node/parse.h"
 #include "yaml-cpp/yaml.h"
+
+using QueryResults = ReindexerApi::QueryResults;
+using Item = ReindexerApi::Item;
+using Reindexer = ReindexerApi::Reindexer;
 
 TEST_F(CompositeIndexesApi, CompositeIndexesAddTest) {
 	addCompositeIndex({kFieldNameBookid, kFieldNameBookid2}, CompositeIndexHash, IndexOpts().PK());
@@ -40,7 +42,6 @@ TEST_F(CompositeIndexesApi, AddIndexWithExistingCompositeIndex) {
 		item[this->kFieldNameName] = names[i];
 		item[this->kFieldNameTitle] = kFieldNameTitle;
 		Upsert(namespaceName, item);
-		Commit(namespaceName);
 	}
 	err = rt.reindexer->AddIndex(namespaceName, {kFieldNameName, {kFieldNameName}, "text", "string", IndexOpts()});
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -78,16 +79,9 @@ TEST_F(CompositeIndexesApi, DropTest2) {
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
-	err = rt.reindexer->Commit(test_ns);
-	EXPECT_TRUE(err.ok()) << err.what();
-
 	selectAll(rt.reindexer.get(), test_ns);
 
-	reindexer::IndexDef idef("id");
-	err = rt.reindexer->DropIndex(test_ns, idef);
-	EXPECT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->Commit(test_ns);
+	err = rt.reindexer->DropIndex(test_ns, reindexer::IndexDef{"id"});
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	selectAll(rt.reindexer.get(), test_ns);
@@ -109,8 +103,8 @@ TEST_F(CompositeIndexesApi, CompositeIndexesDropTest) {
 
 TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	int priceValue = 77777, pagesValue = 88888;
-	const char* titleValue = "test book1 title";
-	const char* nameValue = "test book1 name";
+	constexpr std::string_view titleValue = "test book1 title";
+	constexpr std::string_view nameValue = "test book1 name";
 
 	addCompositeIndex({kFieldNameBookid, kFieldNameBookid2}, CompositeIndexHash, IndexOpts().PK());
 	fillNamespace(0, 100);
@@ -118,7 +112,7 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	std::string compositeIndexName(getCompositeIndexName({kFieldNamePrice, kFieldNamePages}));
 	addCompositeIndex({kFieldNamePrice, kFieldNamePages}, CompositeIndexHash, IndexOpts());
 
-	addOneRow(300, 3000, titleValue, pagesValue, priceValue, nameValue);
+	addOneRow(300, 3000, std::string(titleValue), pagesValue, priceValue, std::string(nameValue));
 	fillNamespace(101, 200);
 
 	auto qr = execAndCompareQuery(
@@ -134,8 +128,8 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	Item titleNameRow = qr.begin().GetItem(false);
 	Variant selectedTitle = titleNameRow[kFieldNameTitle];
 	Variant selectedName = titleNameRow[kFieldNameName];
-	EXPECT_EQ(static_cast<reindexer::key_string>(selectedTitle)->compare(std::string(titleValue)), 0);
-	EXPECT_EQ(static_cast<reindexer::key_string>(selectedName)->compare(std::string(nameValue)), 0);
+	EXPECT_EQ(static_cast<reindexer::key_string>(selectedTitle), titleValue);
+	EXPECT_EQ(static_cast<reindexer::key_string>(selectedName), nameValue);
 
 	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondLt, {{Variant(priceValue), Variant(pagesValue)}}));
 	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondLe, {{Variant(priceValue), Variant(pagesValue)}}));
@@ -153,7 +147,7 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	for (int i = 0; i < 10; ++i) {
 		intKeys.emplace_back(VariantArray{Variant(i), Variant(i * 5)});
 	}
-	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondSet, intKeys));
+	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondSet, intKeys));
 
 	dropIndex(compositeIndexName);
 	fillNamespace(401, 500);
@@ -163,30 +157,23 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 
 	fillNamespace(701, 900);
 
-	execAndCompareQuery(
-		Query(default_namespace)
-			.WhereComposite(compositeIndexName2.c_str(), CondEq, {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
-	execAndCompareQuery(
-		Query(default_namespace)
-			.WhereComposite(compositeIndexName2.c_str(), CondGe, {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
-	execAndCompareQuery(
-		Query(default_namespace)
-			.WhereComposite(compositeIndexName2.c_str(), CondLt, {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
-	execAndCompareQuery(
-		Query(default_namespace)
-			.WhereComposite(compositeIndexName2.c_str(), CondLe, {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
+	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName2, CondEq, {{Variant(titleValue), Variant(nameValue)}}));
+	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName2, CondGe, {{Variant(titleValue), Variant(nameValue)}}));
+	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName2, CondLt, {{Variant(titleValue), Variant(nameValue)}}));
+	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName2, CondLe, {{Variant(titleValue), Variant(nameValue)}}));
 
 	fillNamespace(1201, 2000);
 
+	constexpr size_t kStringKeysCnt = 1010;
 	std::vector<VariantArray> stringKeys;
-	for (size_t i = 0; i < 1010; ++i) {
+	stringKeys.reserve(kStringKeysCnt);
+	for (size_t i = 0; i < kStringKeysCnt; ++i) {
 		stringKeys.emplace_back(VariantArray{Variant(RandString()), Variant(RandString())});
 	}
-	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName2.c_str(), CondSet, stringKeys));
-	execAndCompareQuery(
-		Query(default_namespace)
-			.Where(kFieldNameName, CondEq, nameValue)
-			.WhereComposite(compositeIndexName2.c_str(), CondEq, {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
+	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName2, CondSet, stringKeys));
+	execAndCompareQuery(Query(default_namespace)
+							.Where(kFieldNameName, CondEq, nameValue)
+							.WhereComposite(compositeIndexName2, CondEq, {{Variant(titleValue), Variant(nameValue)}}));
 
 	dropIndex(compositeIndexName2);
 	fillNamespace(201, 300);
@@ -341,11 +328,11 @@ TEST_F(CompositeIndexesApi, FastUpdateIndex) {
 			ASSERT_EQ(rt.GetSerializedQrItems(qr), checkItems);
 			ASSERT_EQ(qr.Count(), checkCount);
 
-			YAML::Node root = YAML::Load(qr.explainResults);
+			YAML::Node root = YAML::Load(qr.GetExplainResults());
 			auto selectors = root["selectors"];
-			ASSERT_TRUE(selectors.IsSequence()) << qr.explainResults;
-			ASSERT_EQ(selectors.size(), 1) << qr.explainResults;
-			ASSERT_EQ(selectors[0]["field"].as<std::string>(), getCompositeIndexName(compParts)) << qr.explainResults;
+			ASSERT_TRUE(selectors.IsSequence()) << qr.GetExplainResults();
+			ASSERT_EQ(selectors.size(), 1) << qr.GetExplainResults();
+			ASSERT_EQ(selectors[0]["field"].as<std::string>(), getCompositeIndexName(compParts)) << qr.GetExplainResults();
 		}
 	}
 

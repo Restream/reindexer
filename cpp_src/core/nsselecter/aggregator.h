@@ -68,12 +68,16 @@ private:
 				return false;
 			}
 			return v1.Type().EvaluateOneOf(
-				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int,
-						  KeyValueType::Uuid>) { return v1.Compare<NotComparable::Return>(v2) == ComparationResult::Eq; },
+				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::String, KeyValueType::Bool,
+						  KeyValueType::Int, KeyValueType::Uuid>) {
+					return v1.Compare<NotComparable::Return>(v2) == ComparationResult::Eq;
+				},
 				[&](KeyValueType::Composite) {
 					return ConstPayload(type_, static_cast<const PayloadValue&>(v1)).IsEQ(static_cast<const PayloadValue&>(v2), fields_);
 				},
-				[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined>) -> bool { throw_as_assert; });
+				[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::FloatVector>) -> bool {
+					throw_as_assert;
+				});
 		}
 
 	private:
@@ -84,10 +88,12 @@ private:
 		DistinctHasher(const PayloadType& type, const FieldsSet& fields) : type_(type), fields_(fields) {}
 		size_t operator()(const Variant& v) const {
 			return v.Type().EvaluateOneOf(
-				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int,
-						  KeyValueType::Uuid>) noexcept { return v.Hash(); },
+				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::String, KeyValueType::Bool,
+						  KeyValueType::Int, KeyValueType::Uuid>) noexcept { return v.Hash(); },
 				[&](KeyValueType::Composite) { return ConstPayload(type_, static_cast<const PayloadValue&>(v)).GetHash(fields_); },
-				[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined>) -> size_t { throw_as_assert; });
+				[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::FloatVector>) -> size_t {
+					throw_as_assert;
+				});
 		}
 
 	private:

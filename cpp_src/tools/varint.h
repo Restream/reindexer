@@ -260,5 +260,5 @@ inline unsigned scan_varint(unsigned len, const uint8_t* data) noexcept {
 #ifndef _MSC_VER
 #pragma GCC diagnostic pop
 #else
-#pragma warning(push)
+#pragma warning(pop)
 #endif

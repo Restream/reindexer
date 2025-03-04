@@ -46,11 +46,12 @@ static inline void *alloc_stack_mem(size_t size) {
 	return aligned_alloc(koishi_util_page_size(), size);
 #elif defined KOISHI_HAVE_POSIX_MEMALIGN
 	void *p = NULL;
-	posix_memalign(&p, koishi_util_page_size(), size);
+	int res = posix_memalign(&p, koishi_util_page_size(), size);
+	(void)res;
 	return p;
 #else
-	#pragma GCC warning "Stack will not be aligned to page size"
-	return calloc(1, size);
+	//#pragma GCC warning "Stack will not be aligned to page size"
+	return malloc(size);
 #endif
 }
 

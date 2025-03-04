@@ -12,11 +12,11 @@ using namespace std::string_view_literals;
 
 std::string_view kvTypeToJsonSchemaType(KeyValueType type) {
 	return type.EvaluateOneOf([](OneOf<KeyValueType::Int, KeyValueType::Int64>) noexcept { return "integer"sv; },
-							  [](KeyValueType::Double) noexcept { return "number"sv; },
+							  [](OneOf<KeyValueType::Double, KeyValueType::Float>) noexcept { return "number"sv; },
 							  [](KeyValueType::Bool) noexcept { return "boolean"sv; },
 							  [](OneOf<KeyValueType::String, KeyValueType::Uuid>) noexcept { return "string"sv; },
 							  [](KeyValueType::Null) noexcept { return "null"sv; }, [](KeyValueType::Tuple) noexcept { return "object"sv; },
-							  [&](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) -> std::string_view {
+							  [&](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) -> std::string_view {
 								  throw Error(errParams, "Impossible to convert type [%s] to json schema type", type.Name());
 							  });
 }
@@ -253,7 +253,7 @@ Error PrefixTree::buildProtobufSchema(ProtobufSchemaBuilder& builder, const Pref
 	return Error();
 }
 
-Schema::Schema(std::string_view json) : paths_(), originalJson_() {
+Schema::Schema(std::string_view json) : paths_(), originalJson_("{}"sv) {
 	auto err = FromJSON(json);
 	if (!err.ok()) {
 		throw err;
@@ -283,13 +283,7 @@ Error Schema::FromJSON(std::string_view json) {
 	return err;
 }
 
-void Schema::GetJSON(WrSerializer& ser) const {
-	if (!originalJson_.empty()) {
-		ser << originalJson_;
-	} else {
-		ser << "{}";
-	}
-}
+void Schema::GetJSON(WrSerializer& ser) const { ser << originalJson_; }
 
 KeyValueType Schema::GetFieldType(const TagsPath& fieldPath, bool& isArray) const {
 	return paths_.fieldsTypes_.GetField(fieldPath, isArray);
@@ -303,7 +297,9 @@ Error Schema::BuildProtobufSchema(TagsMatcher& tm, PayloadType& pt) {
 }
 
 Error Schema::GetProtobufSchema(WrSerializer& schema) const {
-	schema.Write(protobufSchema_);
+	if (protobufSchemaStatus_.ok()) {
+		schema.Write(protobufSchema_);
+	}
 	return protobufSchemaStatus_;
 }
 
@@ -354,8 +350,8 @@ void Schema::parseJsonNode(const gason::JsonNode& node, PrefixTree::PathT& split
 	if (!properties.empty()) {
 		for (auto& subnode : properties) {
 			splittedPath.emplace_back(std::string(subnode.key));
-			bool isSubnodeRequred = (required.find(std::string_view(subnode.key)) != required.end());
-			parseJsonNode(subnode, splittedPath, isSubnodeRequred);
+			bool isSubnodeRequired = (required.find(std::string_view(subnode.key)) != required.end());
+			parseJsonNode(subnode, splittedPath, isSubnodeRequired);
 			splittedPath.pop_back();
 		}
 	}
@@ -369,7 +365,7 @@ std::vector<int> Schema::MakeCsvTagOrdering(const TagsMatcher& tm) const {
 	gason::JsonParser parser;
 	auto tags0lvl = parser.Parse(std::string_view(originalJson_))["required"];
 
-	if (tags0lvl.value.getTag() != gason::JsonTag::JSON_ARRAY) {
+	if (tags0lvl.value.getTag() != gason::JsonTag::ARRAY) {
 		throw Error(errParams, "Incorrect type of \"required\" tag in namespace json-schema");
 	}
 

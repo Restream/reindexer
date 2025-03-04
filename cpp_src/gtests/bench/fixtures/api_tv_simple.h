@@ -3,6 +3,7 @@
 #include <unordered_map>
 
 #include "base_fixture.h"
+#include "core/system_ns_names.h"
 
 class ApiTvSimple : private BaseFixture {
 public:
@@ -42,7 +43,9 @@ private:
 
 		void shrinkCache() {
 			// Shrink cache size to force cache invalidation
-			auto q = reindexer::Query("#config").Set("namespaces.cache.index_idset_cache_size", 1024).Where("type", CondEq, "namespaces");
+			auto q = reindexer::Query(reindexer::kConfigNamespace)
+						 .Set("namespaces.cache.index_idset_cache_size", 1024)
+						 .Where("type", CondEq, "namespaces");
 			reindexer::QueryResults qr;
 			auto err = db_.Update(q, qr);
 			assertrx(err.ok());
@@ -50,7 +53,7 @@ private:
 		}
 		void setHitsCount(unsigned hitsCount) {
 			// Set required hits count and default cache size
-			auto q = reindexer::Query("#config")
+			auto q = reindexer::Query(reindexer::kConfigNamespace)
 						 .Set("namespaces.cache.index_idset_cache_size", kDefaultCacheSize)
 						 .Set("namespaces.cache.index_idset_hits_to_cache", int64_t(hitsCount))
 						 .Where("type", CondEq, "namespaces");

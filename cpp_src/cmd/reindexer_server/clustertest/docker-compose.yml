@@ -1,0 +1,44 @@
+version: '3.4'
+
+services:
+  node0:
+    image: reindexer/reindexer:v4.6.1
+    environment:
+      - RX_CLUSTER_NODES=3
+      - RX_SERVER_ID=0
+    ports:
+      - "9088:9088"
+      - "6534:6534"
+    volumes:
+       - rxnode0:/db
+       - ./:/entry
+    entrypoint: /entry/entrypoint.sh
+  node1:
+    image: reindexer/reindexer:v4.6.1
+    environment:
+      - RX_CLUSTER_NODES=3
+      - RX_SERVER_ID=1
+    ports:
+      - "9089:9088"
+      - "6535:6534"
+    volumes:
+       - rxnode1:/db
+       - ./:/entry
+    entrypoint: /entry/entrypoint.sh
+  node2:
+    image: reindexer/reindexer:v4.6.1
+    environment:
+      - RX_CLUSTER_NODES=3
+      - RX_SERVER_ID=2
+    ports:
+      - "9090:9088"
+      - "6536:6534"
+    volumes:
+       - rxnode2:/db
+       - ./:/entry
+    entrypoint: /entry/entrypoint.sh
+volumes:
+  rxnode0:
+  rxnode1:
+  rxnode2:
+

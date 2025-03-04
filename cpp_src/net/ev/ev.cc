@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
+#include <sstream>
+#include "debug/backtrace.h"
 #include "tools/oscompat.h"
 
 #ifdef HAVE_EVENT_FD
@@ -452,6 +454,9 @@ dynamic_loop::~dynamic_loop() {
 void dynamic_loop::run() {
 	if (coroTid_ != std::thread::id() && coroTid_ != std::this_thread::get_id()) {
 		// Loop has coroutines from another thread
+		std::stringstream ss;
+		reindexer::debug::print_backtrace(ss, nullptr, -1);
+		fprintf(stderr, "Backtrace:\n%s\n", ss.str().c_str());
 		assertrx(false);
 	}
 
@@ -479,13 +484,14 @@ void dynamic_loop::run() {
 			}
 		}
 
-		if (has_coro_tasks && running_tasks_.empty()) {
+		if (has_coro_tasks && running_tasks_.empty() && yielded_tasks_.empty()) {
 			break;
 		}
 
-		int tv = gEnableBusyLoop ? 0 : -1;
+		bool busy_loop = gEnableBusyLoop || yielded_tasks_.size();
+		int tv = busy_loop ? 0 : -1;
 
-		if (!gEnableBusyLoop && timers_.size()) {
+		if (!busy_loop && timers_.size()) {
 			tv = std::chrono::duration_cast<std::chrono::microseconds>(timers_.front()->deadline_ - now).count();
 			if (tv < 0) {
 				tv = 0;
@@ -508,8 +514,9 @@ void dynamic_loop::run() {
 			}
 		}
 		if (ret >= 0 && timers_.size()) {
-			if (!gEnableBusyLoop || !(++count & 0x7F)) {
+			if (!busy_loop || !(++count & 0x7F)) {
 				now = steady_clock_w::now();
+				count = 0;
 			}
 			while (timers_.size() && now >= timers_.front()->deadline_) {
 				auto tim = timers_.front();
@@ -517,6 +524,12 @@ void dynamic_loop::run() {
 				tim->callback(1);
 			}
 		}
+		h_vector<coroutine::routine_t, 5> yielded_tasks;
+		std::swap(yielded_tasks, yielded_tasks_);
+		for (auto id : yielded_tasks) {
+			coroutine::resume(id);
+		}
+		yielded_tasks.clear();
 	}
 	remove_coro_cb();
 }

@@ -24,6 +24,11 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#ifndef _MSC_VER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
+
 #include "divsufsort_private.h"
 
 
@@ -584,3 +589,7 @@ trsort(saidx_t *ISA, saidx_t *SA, saidx_t n, saidx_t depth) {
     if(unsorted == 0) { break; }
   }
 }
+
+#ifndef _MSC_VER
+#pragma GCC diagnostic pop
+#endif

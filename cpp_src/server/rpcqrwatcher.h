@@ -69,13 +69,13 @@ public:
 		Data d_;
 	};
 
-	Ref GetQueryResults(RPCQrId& id) {
+	Ref GetQueryResults(RPCQrId& id, int flags) {
 		if (id.main < 0) {
 			if (id.uid != kDisabled) {
 				id.uid = uidCounter_.fetch_add(1, std::memory_order_relaxed) & kUIDValueBitmask;
 			}
 
-			Ref ref = createQueryResults(id.uid);
+			Ref ref = createQueryResults(id.uid, flags);
 			id.main = ref.ID();
 			return ref;
 		}
@@ -233,7 +233,7 @@ private:
 	bool isMainIDValid(int32_t id) const noexcept { return id < int32_t(allocated_.load(std::memory_order_acquire)) && id >= 0; }
 	bool isUIDValid(int64_t uid) const noexcept { return uid == (uid & kUIDValueBitmask) || uid == kDisabled || uid == kUninitialized; }
 	void onRefDestroyed(uint32_t id) {
-		[[maybe_unused]] const auto allocated = allocated_.load(std::memory_order_relaxed);
+		[[maybe_unused]] const auto allocated = allocated_.load(std::memory_order_acquire);
 		assertf(id < allocated, "id: %d, allocated: %d", id, allocated);
 		auto& qrs = qrs_[id];
 		UID curUID = qrs.uid.load(std::memory_order_acquire);
@@ -262,7 +262,7 @@ private:
 			putFreeID(id);
 		}
 	}
-	Ref createQueryResults(int64_t uid) {
+	Ref createQueryResults(int64_t uid, int flags) {
 		std::pair<uint32_t, bool> freeIDP;
 		{
 			std::lock_guard lck(mtx_);
@@ -277,6 +277,7 @@ private:
 		auto& qrs = qrs_[freeIDP.first];
 		qrs.lastAccessTime.store(now(), std::memory_order_relaxed);
 		qrs.uid.store(UID(uid, true), std::memory_order_release);
+		qrs.qr.setFlags(flags);
 		return Ref(freeIDP.first, qrs.qr, *this);
 	}
 	Ref getQueryResults(uint32_t id, int64_t uid) {

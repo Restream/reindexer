@@ -17,7 +17,7 @@ void UpdateExpireAfter(Index* i, int64_t v) {
 
 std::unique_ptr<Index> TtlIndex_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 									const NamespaceCacheConfigData& cacheCfg) {
-	if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
+	if (idef.Opts().IsPK() || idef.Opts().IsDense()) {
 		return std::make_unique<TtlIndex<number_map<int64_t, Index::KeyEntryPlain>>>(idef, std::move(payloadType), std::move(fields),
 																					 cacheCfg);
 	}

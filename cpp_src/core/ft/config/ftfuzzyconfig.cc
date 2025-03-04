@@ -33,7 +33,7 @@ void FtFuzzyConfig::parse(std::string_view json, const RHashMap<std::string, int
 	}
 }
 
-std::string FtFuzzyConfig::GetJson(const fast_hash_map<std::string, int>&) const {
+std::string FtFuzzyConfig::GetJSON(const fast_hash_map<std::string, int>&) const {
 	WrSerializer wrser;
 	JsonBuilder jsonBuilder(wrser);
 	BaseFTConfig::getJson(jsonBuilder);

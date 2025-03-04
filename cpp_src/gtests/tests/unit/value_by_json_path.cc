@@ -8,9 +8,6 @@ TEST_F(ReindexerApi, GetValueByJsonPath) {
 	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "string", IndexOpts().PK()});
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	err = rt.reindexer->Commit(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-
 	struct Data {
 		std::string id;
 		long intField;
@@ -36,9 +33,6 @@ TEST_F(ReindexerApi, GetValueByJsonPath) {
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		err = rt.reindexer->Upsert(default_namespace, item);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->Commit(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		VariantArray intField = item["inner.intField"];
@@ -76,9 +70,6 @@ TEST_F(ReindexerApi, SelectByJsonPath) {
 	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "string", IndexOpts().PK()});
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	err = rt.reindexer->Commit(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-
 	const char jsonPattern[] = R"xxx({"id": "%s", "nested": {"string": "%s", "int": %d, "intarray" : [1,2,3]}})xxx";
 
 	std::vector<int64_t> properIntValues;
@@ -100,9 +91,6 @@ TEST_F(ReindexerApi, SelectByJsonPath) {
 
 		err = rt.reindexer->Upsert(default_namespace, item);
 		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->Commit(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	QueryResults qr1;
@@ -111,7 +99,7 @@ TEST_F(ReindexerApi, SelectByJsonPath) {
 	err = rt.reindexer->Select(query1, qr1);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr1.Count(), 1);
-	Item theOnlyItem = qr1[0].GetItem(false);
+	Item theOnlyItem = qr1.begin().GetItem(false);
 	VariantArray krefs = theOnlyItem["nested.string"];
 	ASSERT_EQ(krefs.size(), 1);
 	EXPECT_EQ(krefs[0].As<std::string>(), strValueToFind.As<std::string>());
@@ -124,11 +112,12 @@ TEST_F(ReindexerApi, SelectByJsonPath) {
 	ASSERT_EQ(qr2.Count(), properIntValues.size());
 
 	ASSERT_EQ(properIntValues.size(), qr2.Count());
-	for (size_t i = 0; i < properIntValues.size(); ++i) {
-		Item item = qr2[i].GetItem(false);
+	size_t i = 0;
+	for (auto& it : qr2) {
+		Item item = it.GetItem(false);
 		VariantArray krefs = item["nested.int"];
 		ASSERT_EQ(krefs.size(), 1);
-		EXPECT_EQ(static_cast<int64_t>(krefs[0]), properIntValues[i]);
+		EXPECT_EQ(static_cast<int64_t>(krefs[0]), properIntValues[i++]);
 	}
 
 	QueryResults qr3;
@@ -149,9 +138,6 @@ TEST_F(ReindexerApi, CompositeFTSelectByJsonPath) {
 	err = rt.reindexer->AddIndex(default_namespace, {"locale", "hash", "string", IndexOpts()});
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	err = rt.reindexer->Commit(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-
 	const char jsonPattern[] = R"xxx({"id": "key%d", "locale" : "%s", "nested": {"name": "name%d", "count": %ld}})xxx";
 
 	for (int i = 0; i < 20'000; ++i) {
@@ -167,14 +153,9 @@ TEST_F(ReindexerApi, CompositeFTSelectByJsonPath) {
 
 		err = rt.reindexer->Upsert(default_namespace, item);
 		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->Commit(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	err = rt.reindexer->AddIndex(default_namespace, {"composite_ft", {"nested.name", "id", "locale"}, "text", "composite", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->Commit(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	QueryResults qr;

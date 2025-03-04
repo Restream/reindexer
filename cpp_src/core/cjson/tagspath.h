@@ -2,11 +2,7 @@
 
 #include <cstdlib>
 #include <functional>
-#include <string>
-#include <string_view>
-
-#include "core/keyvalue/key_string.h"
-#include "core/keyvalue/variant.h"
+#include "estl/h_vector.h"
 #include "tools/customhash.h"
 
 namespace reindexer {
@@ -43,16 +39,9 @@ public:
 
 	int NameTag() const noexcept { return nameTag_; }
 	int Index() const noexcept { return index_; }
-	std::string_view Expression() const noexcept {
-		if (expression_ && expression_->length() > 0) {
-			return std::string_view(expression_->c_str(), expression_->length());
-		}
-		return std::string_view();
-	}
 
 	bool IsArrayNode() const noexcept { return (IsForAllItems() || index_ != IndexValueType::NotSet); }
 	bool IsWithIndex() const noexcept { return index_ != ForAllItems && index_ != IndexValueType::NotSet; }
-	bool IsWithExpression() const noexcept { return expression_ && !expression_->empty(); }
 	bool IsForAllItems() const noexcept { return index_ == ForAllItems; }
 
 	void MarkAllItems(bool enable) noexcept {
@@ -63,14 +52,6 @@ public:
 		}
 	}
 
-	void SetExpression(std::string_view v) {
-		if (expression_) {
-			expression_->assign(v.data(), v.length());
-		} else {
-			expression_ = make_key_string(v.data(), v.length());
-		}
-	}
-
 	void SetIndex(int32_t index) noexcept { index_ = index; }
 	void SetNameTag(int16_t nameTag) noexcept { nameTag_ = nameTag; }
 
@@ -78,7 +59,6 @@ private:
 	enum : int32_t { ForAllItems = -2 };
 	int16_t nameTag_ = 0;
 	int32_t index_ = IndexValueType::NotSet;
-	key_string expression_;
 };
 
 template <unsigned hvSize>

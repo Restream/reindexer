@@ -1,8 +1,11 @@
 #pragma once
 
+#include <variant>
+#include "core/rank_t.h"
 #include "core/selectfunc/functions/debugrank.h"
 #include "core/selectfunc/functions/highlight.h"
 #include "core/selectfunc/functions/snippet.h"
+#include "estl/intrusive_ptr.h"
 
 namespace reindexer {
 
@@ -40,8 +43,8 @@ enum class SelectFuncType {
 class BaseFunctionCtx : public intrusive_atomic_rc_base {
 public:
 	typedef intrusive_ptr<BaseFunctionCtx> Ptr;
-	enum class CtxType { kFtCtx = 1, kFtArea = 2, kFtAreaDebug = 3 };
-	BaseFunctionCtx(CtxType t) noexcept : type(t) {}
+	enum class [[nodiscard]] CtxType { kFtCtx = 1, kFtArea = 2, kFtAreaDebug = 3, kKnnCtx = 4, kNotSet = 5 };
+	BaseFunctionCtx(CtxType type) noexcept : type_{type} {}
 	virtual ~BaseFunctionCtx() = default;
 
 	void AddFunction(const std::string& name, SelectFuncType functionIndx) {
@@ -60,7 +63,8 @@ public:
 		}
 		return false;
 	}
-	CtxType type;
+	CtxType Type() const noexcept { return type_; }
+	virtual RankT Rank(size_t pos) const noexcept = 0;
 
 private:
 	struct FuncData {
@@ -73,6 +77,7 @@ private:
 		TypesArrayT types = {};
 	};
 	h_vector<FuncData, 2> functions_;
+	CtxType type_ = CtxType::kNotSet;
 };
 
 }  // namespace reindexer

@@ -5,8 +5,8 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/restream/reindexer/v3"
-	"github.com/restream/reindexer/v3/test/custom_struct_another"
+	"github.com/restream/reindexer/v5"
+	"github.com/restream/reindexer/v5/test/custom_struct_another"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

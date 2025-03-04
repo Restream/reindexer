@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v3"
-	"github.com/restream/reindexer/v3/dsl"
+	"github.com/restream/reindexer/v5"
+	"github.com/restream/reindexer/v5/dsl"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -476,8 +476,20 @@ func FillTestItemsWithFunc(ns string, start int, count int, pkgsCount int, fn te
 	tx.MustCommit()
 }
 
-func TestQueries(t *testing.T) {
+func FillTestItemsWithFuncParts(ns string, start int, count int, partSize int, pkgsCount int, fn testItemsCreator) {
+	last := count + start
+	for i := start; i < last; i += partSize {
+		tx := newTestTx(DB, ns)
+		curPartSize := partSize
+		if i+curPartSize > last {
+			curPartSize = last - i
+		}
+		FillTestItemsTxWithFunc(i, curPartSize, pkgsCount, tx, fn)
+		tx.MustCommit()
+	}
+}
 
+func TestQueries(t *testing.T) {
 	t.Run("Common indexed queries", func(t *testing.T) {
 		t.Parallel()
 
@@ -500,6 +512,7 @@ func TestQueries(t *testing.T) {
 		CheckTestItemsJsonQueries()
 
 		CheckAggregateQueries(t)
+		CheckAggByNonExistFieldQuery(t)
 
 		CheckTestItemsQueries(t, testCaseWithCommonIndexes)
 		CheckTestItemsSQLQueries(t)
@@ -636,7 +649,8 @@ func TestWALQueries(t *testing.T) {
 	}
 
 	t.Run("JSON WAL query with GT", func(t *testing.T) {
-		jsonIt := DBD.Query(ns).Where("#lsn", reindexer.GT, 1).ExecToJson()
+		lsn := reindexer.LsnT{Counter: 1, ServerId: DB.leaderServerID}
+		jsonIt := DBD.Query(ns).Where("#lsn", reindexer.GT, reindexer.CreateInt64FromLSN(lsn)).ExecToJson()
 		validateJson(t, jsonIt)
 	})
 
@@ -646,7 +660,8 @@ func TestWALQueries(t *testing.T) {
 	})
 
 	t.Run("CJSON WAL query with GT (expecting error)", func(t *testing.T) {
-		it := DBD.Query(ns).Where("#lsn", reindexer.GT, 1).Exec()
+		lsn := reindexer.LsnT{Counter: 1, ServerId: DB.leaderServerID}
+		it := DBD.Query(ns).Where("#lsn", reindexer.GT, reindexer.CreateInt64FromLSN(lsn)).Exec()
 		assert.Error(t, it.Error())
 	})
 
@@ -785,6 +800,22 @@ func CheckAggregateQueries(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, count, facet.Count)
 	}
+}
+
+func CheckAggByNonExistFieldQuery(t *testing.T) {
+	nonExistenField := "NonExistenField"
+
+	q := DB.Query("test_items")
+	q.AggregateSum(nonExistenField)
+	q.q.Strict(reindexer.QueryStrictModeNone)
+	it := q.Exec(t)
+	require.NoError(t, it.Error())
+	defer it.Close()
+
+	aggregations := it.AggResults()
+
+	assert.Equal(t, len(aggregations), 1)
+	assert.Empty(t, aggregations[0].Value)
 }
 
 func CheckTestItemsJsonQueries() {
@@ -1141,7 +1172,7 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 		ExecAndVerify(t)
 
 	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
-		Where("id", reindexer.SET, newTestQuery(DB, namespace).Select("id").Where("id", reindexer.GT, mkID(rand.Int()%5000)).Limit(10)).
+		Where("id", reindexer.SET, newTestQuery(DB, namespace).Select("id").Where("id", reindexer.GT, mkID(rand.Int()%5000)).Sort("id", false).Limit(10)).
 		ExecAndVerify(t)
 
 	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().

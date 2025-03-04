@@ -31,9 +31,22 @@ While using docker, you may pass reindexer server config options via environment
 - `RX_PPROF` - if RX_PPROF is not empty, enables pprof api. Disabled by default.
 - `RX_SECURITY` - if RX_SECURITY is not empty, enables authorization. Disabled by default.
 - `RX_PROMETHEUS` - if RX_PROMETHEUS is not empty, enables prometheus metrics. Disabled by default.
-- `RX_RPC_QR_IDLE_TIMEOUT` - RPC query results idle timeout (in seconds). Default value is `0` (timeout disabled).
+- `RX_RPC_QR_IDLE_TIMEOUT` - RPC query results idle timeout (in seconds). Default value is 0 (timeout disabled).
 - `RX_DISABLE_NS_LEAK` - Disables namespaces memory leak on database destruction (will slow down server's termination).
 - `RX_MAX_HTTP_REQ` - allows to configure max HTTP request size (in bytes). Default value is `2097152` (= 2 MB). `0` means 'unlimited'.
+- `RX_IVF_OMP_THREADS` - number of threads, which will be used to build IVF index centroids (this option has effect only if docker image uses omp version of `libblas`).
+- `RX_HTTP_READ_TIMEOUT` - if RX_HTTP_READ_TIMEOUT is not empty, sets execution timeout for HTTP read operations in seconds. 0 mean no timeout. Default value is 0.
+- `RX_HTTP_WRITE_TIMEOUT` - if RX_HTTP_WRITE_TIMEOUT is not empty, sets execution timeout for HTTP write operations in seconds. 0 mean no timeout. Default value is 0 if cluster is disabled and 20 if cluster is enabled.
+- `RX_SSL_CERT` - path to ssl-certificate file. If it is not set Reindexer will be launched without TLS support.
+- `RX_SSL_KEY` - path to file with ssl private key. If it is not set Reindexer will be launched without TLS support.
+- `RX_IVF_OMP_THREADS` - sets number of OpenMP threads, which will be used during `IVF`-index building. Default value is 8.
+- `OPENBLAS_NUM_THREADS` - sets number of threads, which will be used during `IVF`-index building by `OpenBLAS` library. Default value is 8.
+
+To run Reindexer with TLS support, both of `RX_SSL_CERT` and `RX_SSL_KEY` must be set. Certificate/key files may be added into container by mounting external directory using `-v` or `--mount` options during container startup:
+
+```bash
+docker run -it -p 9088:9088 -p 6534:6534 -p 9089:9089 -p 6535:6535 -v<path_to_ssl_files_on_your_fs>:/cert -e RX_SSL_CERT=/cert/<your_cert>.pem -e RX_SSL_KEY=/cert/<your_key>.pem reindexer/reindexer
+```
 
 ### Image build
 
@@ -102,13 +115,14 @@ brew install reindexer
 
 ## Windows
 
-Download and install [64 bit](https://repo.reindexer.io/win/64/) or [32 bit](https://repo.reindexer.io/win/32/)
+Download and install [64 bit](https://repo.reindexer.io/win/64/) or [32 bit](https://repo.reindexer.io/win/32/). `32-bit` version is `HNSW-only` in terms of supported vector indexes subset.
 
 ## Installation from sources
 
 ### Dependencies
 
-Reindexer's core is written in C++17 and uses LevelDB as the storage backend, so the Cmake, C++17 toolchain and LevelDB must be installed before installing Reindexer. To build Reindexer, g++ 8+, clang 5+ or MSVC 2019+ is required.
+Reindexer's core is written in C++20 and uses LevelDB as the storage backend, so the Cmake, C++20 toolchain and LevelDB must be installed before installing Reindexer. Also FAISS-based vector indexes (`IVF` in particular) depend on OpenMP and BLAS/LAPACK libraries, but those dependecies are optional - you may build `HNWS-only` version by passing `-DBUILD_ANN_INDEXES=builtin` into `CMake`.
+
 Dependencies can be installed automatically by this script:
 
 ```bash
@@ -134,7 +148,7 @@ sudo make install
 - Start server
 
 ```
-service start reindexer
+sudo service start reindexer
 ```
 
 - open in web browser http://127.0.0.1:9088/swagger to see reindexer REST API interactive documentation
@@ -248,6 +262,8 @@ Restore database from backup file:
 reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --filename mydb.rxdump
 ```
 
+A bit more information about interactions between dump/restore commands and sharded namespaces may be found in [main reindexer_tool readme](cmd/reindexer_tool/readme.md)
+
 ### Replication
 
 Reindexer supports master slave replication. To create slave DB the following command can be used:
@@ -276,9 +292,50 @@ In dedicated mode server creates one thread per connection. This approach may be
 
 ## Security
 
-Reindexer server supports login/password authorization for http/rpc client with different access levels for each user/database. To enable this feature `security` flag should be set in server.yml.
-If security option is active reindexer will try to load users list from `users.yml` or `users.json`(deprecate) found in database path. If users-file was not found the default one
+### TLS support
+
+Reindexer hash TLS support for HTTP/1(HTTPS) and CPROTO(RPCS). In order to run Reindexer with TLS support, it is necessary that `openssl` and `libssl` libraries are installed in the system. 
+Reindexer will detect those libraries on startup if it was built with openssl support option (by default). Upon successful loading of `libssl` library symbols, a corresponding entry or error information should appear in the log.
+
+Paths to files with ssl-certificate (`ssl_cert`) and ssl private key (`ssl_key`) in `PEM`-format must be specified in `reindexer.conf` in `net`-section:
+```yaml
+net:
+  ssl_cert: <path_to_ssl_cert_file>
+  ssl_key:  <path_to_ssl_key_file>
+```
+Alternatively options `--ssl-cert` and `--ssl-key` may be used when running from CLI.
+
+By default, Reindexer uses port `6535` for `RPCS`-server and `9089` for `HTTPS`-server. Those ports may be reconfigured via `rpcsaddr` and `httpsaddr` options in config file or `CLI`.
+Any of the servers (HTTP, HTTPS, RPC, RPCS) may be disabled by passing `none` into corresponding port config.
+
+### Authentication
+
+Reindexer server supports login/password authorization for http(s)/rpc(s) client with different access levels for each user/database. To enable this feature `security` flag should be set in server.yml.
+If security option is active Reindexer will try to load users list from `users.yml` or `users.json`(deprecate) found in database path. If users-file was not found the default one
 will be created automatically (default login/password are `reindexer`/`reindexer`)
+
+Along with the `MD5` algorithm, the `SHA256`-based `SHA512`-based password hashing algorithm can also be used for authentication. To use them, it is necessary that `openssl` and the `libcrypto` library are installed in the system, which is connected dynamically if the Reindexer is built with the `openssl` support option (by default). 
+
+Upon successful loading of `libcrypto` library symbols, a corresponding entry or error information should appear in the log.
+
+#### MacOS
+
+By default, OpenSSL support is disabled for MacOS. To enable support for functions from the OpenSSL-library, you can configure and build a project from source code by explicitly passing the `ENABLE_OPENSSL` option:
+```bash
+cmake -DENABLE_OPENSSL=On ..
+cmake --build . -j6
+```
+
+If, when starting the server, you find the Reindexer crash with a warning like
+```
+"WARNING: reindexer_server is loading libcrypto in an unsafe way"
+```
+then to solve this problem, it will most likely be enough to set the environment variable `DYLD_LIBRARY_PATH` with the value of the path where cmake found the OpenSSL-library, for example:
+
+```bash
+export DYLD_LIBRARY_PATH=/usr/local/Cellar/openssl@3/3.3.1/lib:$DYLD_LIBRARY_PATH
+```
+and restart the Reindexer.
 
 ## Alternative storages
 

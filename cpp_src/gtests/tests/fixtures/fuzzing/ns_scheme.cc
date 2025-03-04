@@ -181,7 +181,7 @@ void NsScheme::fillChildren(Node::Children& children, RandomGenerator& rnd, unsi
 		auto fName = rnd.FieldName(generatedNames_);
 		const auto type = rnd.RndFieldType(level);
 		if (type == FieldType::Struct) {
-			children.emplace_back(Node{std::move(fName), Node::Children{}});
+			children.emplace_back(std::move(fName), Node::Children{});
 			fillChildren(std::get<Node::Children>(children.back().content), rnd, level + 1, canBeArray, canBeSparse);
 			if (canBeArray || rnd.RndErr()) {
 				children.back().array = rnd.RndArrayField();

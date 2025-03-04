@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/lsn.h"
 #include "fmt/format.h"
+#include "tools/lsn.h"
 
 template <>
 struct fmt::printf_formatter<reindexer::lsn_t> {

@@ -11,3 +11,4 @@ inline constexpr int format_as(OpType v) noexcept { return int(v); }
 inline constexpr int format_as(QueryType v) noexcept { return int(v); }
 inline constexpr int format_as(TagType v) noexcept { return int(v); }
 inline constexpr int format_as(DataFormat v) noexcept { return int(v); }
+inline constexpr int format_as(ErrorCode v) noexcept { return int(v); }

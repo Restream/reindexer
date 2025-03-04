@@ -23,9 +23,9 @@ public:
 		abort();
 	}
 
-	std::unique_ptr<Index> Clone() const override final { return std::make_unique<FuzzyIndexText<T>>(*this); }
-	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses&&,
-					  FtUseExternStatuses withExternSt, const RdxContext&) override final;
+	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override final { return std::make_unique<FuzzyIndexText<T>>(*this); }
+	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&, FtUseExternStatuses,
+					  const RdxContext&) override final;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final {
 		this->isBuilt_ = false;
 		return Base::Upsert(key, id, clearCache);

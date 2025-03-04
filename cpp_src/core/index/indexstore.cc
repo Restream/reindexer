@@ -29,8 +29,9 @@ void IndexStore<key_string>::Delete(const Variant& key, IdType /*id*/, StringsHo
 	}
 	assertrx_dbg(keyIt->second > 0);
 	if ((keyIt->second--) == 1) {
-		const auto strSize = sizeof(*keyIt->first.get()) + keyIt->first->heap_size();
-		memStat_.dataSize -= sizeof(unordered_str_map<int>::value_type) + strSize;
+		const auto strSize = keyIt->first.heap_size();
+		const auto staticSizeApproximate = size_t(float(sizeof(unordered_str_map<int>::value_type)) / str_map.max_load_factor());
+		memStat_.dataSize -= staticSizeApproximate + strSize;
 		strHolder.Add(std::move(keyIt->first), strSize);
 		str_map.template erase<no_deep_clean>(keyIt);
 	}
@@ -70,11 +71,11 @@ Variant IndexStore<key_string>::Upsert(const Variant& key, IdType id, bool& /*cl
 		keyIt = str_map.find(std::string_view(key));
 		if (keyIt == str_map.end()) {
 			keyIt = str_map.emplace(static_cast<key_string>(key), 0).first;
-			// sizeof(key_string) + heap of string
-			memStat_.dataSize += sizeof(unordered_str_map<int>::value_type) + sizeof(*keyIt->first.get()) + keyIt->first->heap_size();
+			const auto staticSizeApproximate = size_t(float(sizeof(unordered_str_map<int>::value_type)) / str_map.max_load_factor());
+			memStat_.dataSize += staticSizeApproximate + keyIt->first.heap_size();
 		}
 		++(keyIt->second);
-		val = (*keyIt->first);
+		val = keyIt->first;
 	} else {
 		val = std::string_view(key);
 	}
@@ -186,7 +187,7 @@ bool IndexStore<T>::shouldHoldValueInStrMap() const noexcept {
 }
 
 std::unique_ptr<Index> IndexStore_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields) {
-	switch (idef.Type()) {
+	switch (idef.IndexType()) {
 		case IndexBool:
 			return std::make_unique<IndexStore<bool>>(idef, std::move(payloadType), std::move(fields));
 		case IndexIntStore:
@@ -215,9 +216,13 @@ std::unique_ptr<Index> IndexStore_New(const IndexDef& idef, PayloadType&& payloa
 		case IndexTtl:
 		case IndexRTree:
 		case IndexUuidHash:
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+		case IndexDummy:
 			break;
 	}
-	std::abort();
+	throw_as_assert;
 }
 
 template class IndexStore<bool>;

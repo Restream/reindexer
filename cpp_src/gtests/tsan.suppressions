@@ -1,0 +1,10 @@
+# False-positive race between leveldb::MemTable::Add and leveldb::Slice::compare
+race:leveldb::MemTable::Add
+race:leveldb::Arena::AllocateNewBlock
+
+# False-positives related to uninstrumented OpenMP library
+race:IndexIVFFlat::add_core
+race:IndexIVF::add_with_ids
+race:exhaustive_L2sqr_blas
+race:compute_centroids
+race:exhaustive_L2sqr_fused_cmax

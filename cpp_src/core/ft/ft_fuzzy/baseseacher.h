@@ -16,7 +16,7 @@ namespace search_engine {
 
 class BaseSearcher {
 public:
-	void AddSeacher(ITokenFilter::Ptr&& seacher);
+	void AddSeacher(reindexer::ITokenFilter::Ptr&& seacher);
 	void AddIndex(BaseHolder::Ptr& holder, std::string_view src_data, const IdType id, int field, const std::string& extraWordSymbols);
 	SearchResult Compare(const BaseHolder::Ptr& holder, const reindexer::FtDSLQuery& dsl, bool inTransaction, const reindexer::RdxContext&);
 
@@ -30,10 +30,10 @@ private:
 	std::pair<bool, size_t> GetData(const BaseHolder::Ptr& holder, unsigned int i, wchar_t* buf, const wchar_t* src_data, size_t data_size);
 
 	size_t ParseData(const BaseHolder::Ptr& holder, const std::wstring& src_data, int& max_id, int& min_id,
-					 std::vector<FirstResult>& rusults, const FtDslOpts& opts, double proc);
+					 std::vector<FirstResult>& rusults, const reindexer::FtDslOpts& opts, double proc);
 
 	void AddIdToInfo(Info* info, const IdType id, std::pair<PosType, ProcType> pos, uint32_t total_size);
 	uint32_t FindHash(const std::wstring& data);
-	std::vector<std::unique_ptr<ITokenFilter>> searchers_;
+	std::vector<std::unique_ptr<reindexer::ITokenFilter>> searchers_;
 };
 }  // namespace search_engine

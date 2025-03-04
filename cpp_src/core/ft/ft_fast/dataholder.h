@@ -1,17 +1,14 @@
 #pragma once
 #include <memory>
 #include <unordered_map>
-#include "core/ft/areaholder.h"
 #include "core/ft/config/ftfastconfig.h"
 #include "core/ft/filters/itokenfilter.h"
-#include "core/ft/ft_fast/frisosplitter.h"
 #include "core/ft/ft_fast/splitter.h"
 #include "core/ft/idrelset.h"
 #include "core/ft/limits.h"
 #include "core/ft/stemmer.h"
 #include "core/ft/typos.h"
 #include "core/ft/usingcontainer.h"
-#include "core/index/ft_preselect.h"
 #include "core/index/indextext/ftkeyentry.h"
 #include "estl/flat_str_map.h"
 #include "estl/suffix_map.h"

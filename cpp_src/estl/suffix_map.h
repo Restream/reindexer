@@ -24,12 +24,6 @@ class suffix_map {
 	public:
 		iterator(size_type idx, const suffix_map* m) noexcept : idx_(idx), m_(m) {}
 		iterator(const iterator& other) noexcept : idx_(other.idx_), m_(other.m_) {}
-		// NOLINTNEXTLINE(bugprone-unhandled-self-assignment)
-		iterator& operator=(const iterator& other) noexcept {
-			idx_ = other.idx;
-			m_ = other.m_;
-			return *this;
-		}
 		value_type operator->() {
 			auto* p = &m_->text_[m_->sa_[idx_]];
 			return value_type(std::make_pair(p, m_->mapped_[m_->sa_[idx_]]));

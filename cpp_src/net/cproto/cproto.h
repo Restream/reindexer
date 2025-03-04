@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 #include <string_view>
+#include "estl/h_vector.h"
+#include "tools/masking.h"
 
 namespace reindexer {
 namespace net {
@@ -30,7 +32,7 @@ enum CmdCode : uint16_t {
 	kCmdDeleteQueryTx = 30,
 	kCmdUpdateQueryTx = 31,
 
-	kCmdCommit = 32,
+	kCmdCommit = 32,  // Deprecated
 	kCmdModifyItem = 33,
 	kCmdDeleteQuery = 34,
 	kCmdUpdateQuery = 35,
@@ -40,6 +42,8 @@ enum CmdCode : uint16_t {
 	kCmdFetchResults = 50,
 	kCmdCloseResults = 51,
 
+	kShardingControlRequest = 55,
+
 	kCmdDeleteMeta = 63,
 	kCmdGetMeta = 64,
 	kCmdPutMeta = 65,
@@ -47,18 +51,40 @@ enum CmdCode : uint16_t {
 
 	kCmdSetSchema = 67,
 
-	kCmdSubscribeUpdates = 90,
-	kCmdUpdates = 91,
+	kCmdGetReplState = 68,
+	kCmdCreateTmpNamespace = 69,
+	kCmdGetSnapshot = 70,
+	kCmdFetchSnapshot = 71,
+	kCmdApplySnapshotCh = 72,
+	kCmdSetClusterizationStatus = 73,
+
+	kCmdPutTxMeta = 74,
+	kCmdSetTagsMatcherTx = 75,
+
+	kCmdSubscribeUpdates = 90,	// Deprecated
+	kCmdUpdates = 91,			// Deprecated
 
 	kCmdGetSQLSuggestions = 92,
 
-	kCmdCodeMax = 128
+	kCmdSuggestLeader = 100,
+	kCmdLeadersPing = 101,
+	kCmdGetRaftInfo = 102,
+	kCmdClusterControlRequest = 103,
+	kCmdSetTagsMatcher = 104,
+
+	kCmdGetSchema = 110,
+
+	kCmdCodeMax = 128,
+
 };
 
 std::string_view CmdName(uint16_t cmd) noexcept;
 
 // Maximum number of active queries per client
-const uint32_t kMaxConcurentQueries = 256;
+const uint32_t kMaxConcurrentQueries = 256;
+
+// Maximum number of active snapshots per client
+const uint32_t kMaxConcurentSnapshots = 8;
 
 const uint32_t kCprotoMagic = 0xEEDD1132;
 const uint32_t kCprotoVersion = 0x104;
@@ -79,6 +105,8 @@ struct CProtoHeader {
 };
 
 #pragma pack(pop)
+
+const h_vector<MaskingFunc, 2>& GetMaskArgs(CmdCode);
 
 }  // namespace cproto
 }  // namespace net

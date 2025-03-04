@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v3"
-	_ "github.com/restream/reindexer/v3/bindings/builtinserver"
-	"github.com/restream/reindexer/v3/bindings/builtinserver/config"
+	"github.com/restream/reindexer/v5"
+	_ "github.com/restream/reindexer/v5/bindings/builtinserver"
+	"github.com/restream/reindexer/v5/bindings/builtinserver/config"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,6 +16,10 @@ type ScvTestItem struct {
 }
 
 func TestBuiltinServer(t *testing.T) {
+	if len(DB.slaveList) > 0 || len(DB.clusterList) > 0 {
+		t.Skip()
+	}
+
 	cfg1 := config.DefaultServerConfig()
 	cfg1.Net.HTTPAddr = "0:29088"
 	cfg1.Net.RPCAddr = "0:26534"

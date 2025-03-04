@@ -18,6 +18,7 @@ using namespace reindexer::net;
 
 class HTTPServer;
 class RPCServer;
+class ClusterManagementServer;
 class DBManager;
 struct IDBManagerStatsCollector;
 struct IRPCServerStatsCollector;
@@ -51,7 +52,6 @@ private:
 	void initCoreLogger();
 
 private:
-	std::vector<std::string> args_;
 	ServerConfig config_;
 	LoggerWrapper logger_;
 	int coreLogLevel_;

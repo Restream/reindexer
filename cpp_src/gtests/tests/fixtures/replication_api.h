@@ -16,10 +16,10 @@ const auto kMaxForceSyncCmdTime = std::chrono::seconds(10);
 
 class ReplicationApi : public ::testing::Test {
 public:
-	static const std::string kConfigNs;
+	ReplicationApi();
 
-	void SetUp();
-	void TearDown();
+	void SetUp() override;
+	void TearDown() override;
 
 	// stop is sync
 	bool StopServer(size_t id);
@@ -30,11 +30,13 @@ public:
 	// get server
 	ServerControl::Interface::Ptr GetSrv(size_t id);
 	// wait sync for ns
-	void WaitSync(std::string_view ns);
+	void WaitSync(std::string_view ns, reindexer::lsn_t expectedLsn = reindexer::lsn_t());
 	// force resync
 	void ForceSync();
 	// Switch master
-	void SwitchMaster(size_t id, const ReplicationConfigTest::NsSet& namespaces);
+	void SwitchMaster(
+		size_t id, const AsyncReplicationConfigTest::NsSet& namespaces,
+		std::string replMode = reindexer::cluster::AsyncReplConfigData::Mode2str(reindexer::cluster::AsyncReplicationMode::Default));
 	// Set WAL size
 	void SetWALSize(size_t id, int64_t size, std::string_view nsName);
 	// Get servers count
@@ -46,7 +48,7 @@ public:
 	reindexer::shared_timed_mutex restartMutex_;
 
 private:
-	const std::string kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex_repl_test/");
+	const std::string kStoragePath;
 	std::vector<ServerControl> svc_;
 	mutable std::mutex m_;
 };

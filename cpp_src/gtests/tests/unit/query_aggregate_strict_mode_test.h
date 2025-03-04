@@ -2,10 +2,10 @@
 #include <gtest/gtest.h>
 #include "client/cororeindexer.h"
 #include "client/queryresults.h"
-#include "client/rpcclientmock.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/indexdef.h"
-#include "core/reindexer.h"
+#include "core/type_consts.h"
+#include "rpc_test_client.h"
 
 template <typename Client>
 struct QueryResType {
@@ -20,7 +20,6 @@ struct QueryResType<reindexer::client::CoroReindexer> {
 template <typename Client>
 void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 	using QueryResType = typename QueryResType<Client>::type;
-	constexpr bool isMockClient = std::is_same_v<Client, reindexer::client::RPCClientMock>;
 
 	const reindexer::client::InternalRdxContext ctx;
 
@@ -29,20 +28,10 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 	const std::string kNonIndexedField = "NonIndexedField";
 	const std::string kNonExistentField = "nonExistentField";
 
-	reindexer::Error err;
-	if constexpr (isMockClient) {
-		err = client->OpenNamespace(kNsName, ctx);
-	} else {
-		err = client->OpenNamespace(kNsName);
-	}
+	auto err = client->OpenNamespace(kNsName, StorageOpts().CreateIfMissing());
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	if constexpr (isMockClient) {
-		err = client->AddIndex(kNsName, reindexer::IndexDef(kFieldId, "hash", "int", IndexOpts().PK()), ctx);
-	} else {
-		err = client->AddIndex(kNsName, reindexer::IndexDef(kFieldId, "hash", "int", IndexOpts().PK()));
-	}
-
+	err = client->AddIndex(kNsName, reindexer::IndexDef(kFieldId, "hash", "int", IndexOpts().PK()));
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	for (size_t i = 0; i < 1000; ++i) {
@@ -58,8 +47,8 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 		auto err = item.FromJSON(wrser.Slice(), &endp);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		if constexpr (isMockClient) {
-			err = client->Upsert(kNsName, item, ctx);
+		if constexpr (std::is_same_v<Client, reindexer::client::RPCTestClient>) {
+			err = client->Upsert(kNsName, item, reindexer::client::RPCDataFormat::MsgPack);
 		} else {
 			err = client->Upsert(kNsName, item);
 		}
@@ -109,12 +98,7 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 				query.Aggregate(type, {field});
 		}
 
-		reindexer::Error err;
-		if constexpr (isMockClient) {
-			err = client->Select(query, qr, ctx, nullptr, FormatMsgPack);
-		} else {
-			err = client->Select(query, qr);
-		}
+		auto err = client->Select(query, qr);
 
 		switch (type) {
 			case AggCount:

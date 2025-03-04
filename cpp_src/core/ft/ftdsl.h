@@ -2,7 +2,6 @@
 
 #include <climits>
 #include <functional>
-#include <vector>
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
 #include "stopwords/types.h"
@@ -38,6 +37,10 @@ struct FtDSLEntry {
 	FtDslOpts opts;
 };
 
+#if !defined(__clang__) && !defined(_MSC_VER)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 struct FtDSLVariant {
 	FtDSLVariant() = default;
 	FtDSLVariant(std::wstring p, int pr) noexcept : pattern{std::move(p)}, proc{pr} {}
@@ -45,6 +48,9 @@ struct FtDSLVariant {
 	std::wstring pattern;
 	int proc = 0;
 };
+#if !defined(__clang__) && !defined(_MSC_VER)
+#pragma GCC diagnostic pop
+#endif
 
 struct StopWord;
 

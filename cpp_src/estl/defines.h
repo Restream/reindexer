@@ -49,3 +49,15 @@
 #define RX_PRE_LMBD_ALWAYS_INLINE
 #define RX_POST_LMBD_ALWAYS_INLINE
 #endif
+
+// Targets
+#if defined(_MSC_VER) || !defined(REINDEXER_WITH_SSE)
+#define RX_AVX_TARGET_ATTR
+#define RX_AVX2_TARGET_ATTR
+#define RX_AVX512_TARGET_ATTR
+#else
+#define RX_AVX_TARGET_ATTR __attribute__((target("sse,sse2,sse3,ssse3,sse4,avx")))
+#define RX_AVX2_TARGET_ATTR __attribute__((target("sse,sse2,sse3,ssse3,sse4,avx,avx2,fma")))
+#define RX_AVX512_TARGET_ATTR __attribute__((target("sse,sse2,sse3,ssse3,sse4,avx,avx2,avx512f")))
+#endif
+

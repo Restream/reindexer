@@ -1,15 +1,14 @@
 #pragma once
 
-#include <atomic>
-#include <condition_variable>
-#include <thread>
-#include <vector>
+#include <optional>
 #include "args.h"
 #include "core/keyvalue/p_string.h"
 #include "coroutine/channel.h"
 #include "coroutine/waitgroup.h"
 #include "cproto.h"
 #include "net/manualconnection.h"
+#include "tools/lsn.h"
+#include "tools/serializer.h"
 #include "urlparser/urlparser.h"
 
 namespace reindexer {
@@ -27,8 +26,10 @@ public:
 	Error Status() const { return status_; }
 	Args GetArgs(int minArgs = 0) const {
 		cproto::Args ret;
-		Serializer ser(data_.data(), data_.size());
-		ret.Unpack(ser);
+		if (!data_.empty()) {
+			Serializer ser(data_.data(), data_.size());
+			ret.Unpack(ser);
+		}
 		if (int(ret.size()) < minArgs) {
 			throw Error(errParams, "Server returned %d args, but expected %d", int(ret.size()), minArgs);
 		}
@@ -50,27 +51,26 @@ public:
 
 protected:
 	Error status_;
-	span<const uint8_t> data_;
+	std::span<const uint8_t> data_;
 	chunk storage_;
 	friend class CoroClientConnection;
 };
 
-struct CommandParams {
-	CommandParams(CmdCode c, seconds n, milliseconds e, const IRdxCancelContext* ctx)
-		: cmd(c), netTimeout(n), execTimeout(e), cancelCtx(ctx) {}
-	CmdCode cmd;
-	seconds netTimeout;
-	milliseconds execTimeout;
-	const IRdxCancelContext* cancelCtx;
-};
+constexpr int64_t kShardingParallelExecutionBit = int64_t{1} << 62;
+constexpr int64_t kShardingFlagsMask = int64_t{0x7FFFFFFF} << 32;
+
+struct CommandParams;
 
 class CoroClientConnection {
 public:
 	using UpdatesHandlerT = std::function<void(const CoroRPCAnswer& ans)>;
-	using FatalErrorHandlerT = std::function<void(const Error& err)>;
+	using FatalErrorHandlerT = std::function<void(Error err)>;
+	using ClockT = steady_clock_w;
+	using TimePointT = ClockT::time_point;
+	using ConnectionStateHandlerT = std::function<void(const Error&)>;
 
 	struct Options {
-		Options()
+		Options() noexcept
 			: loginTimeout(0),
 			  keepAliveTimeout(0),
 			  createDB(false),
@@ -79,8 +79,9 @@ public:
 			  reconnectAttempts(),
 			  enableCompression(false),
 			  requestDedicatedThread(false) {}
-		Options(seconds _loginTimeout, seconds _keepAliveTimeout, bool _createDB, bool _hasExpectedClusterID, int _expectedClusterID,
-				int _reconnectAttempts, bool _enableCompression, bool _requestDedicatedThread, std::string _appName)
+		Options(milliseconds _loginTimeout, milliseconds _keepAliveTimeout, bool _createDB, bool _hasExpectedClusterID,
+				int _expectedClusterID, int _reconnectAttempts, bool _enableCompression, bool _requestDedicatedThread,
+				std::string _appName) noexcept
 			: loginTimeout(_loginTimeout),
 			  keepAliveTimeout(_keepAliveTimeout),
 			  createDB(_createDB),
@@ -91,8 +92,8 @@ public:
 			  requestDedicatedThread(_requestDedicatedThread),
 			  appName(std::move(_appName)) {}
 
-		seconds loginTimeout;
-		seconds keepAliveTimeout;
+		milliseconds loginTimeout;
+		milliseconds keepAliveTimeout;
 		bool createDB;
 		bool hasExpectedClusterID;
 		int expectedClusterID;
@@ -107,15 +108,18 @@ public:
 	};
 
 	CoroClientConnection();
-	~CoroClientConnection();
+	~CoroClientConnection() { Stop(); }
 
 	void Start(ev::dynamic_loop& loop, ConnectData&& connectData);
 	void Stop();
 	bool IsRunning() const noexcept { return isRunning_; }
-	Error Status(seconds netTimeout, milliseconds execTimeout, const IRdxCancelContext* ctx);
-	seconds Now() const noexcept { return seconds(now_); }
-	void SetUpdatesHandler(UpdatesHandlerT handler) noexcept { updatesHandler_ = std::move(handler); }
-	void SetFatalErrorHandler(FatalErrorHandlerT handler) noexcept { fatalErrorHandler_ = std::move(handler); }
+	Error Status(bool forceCheck, milliseconds netTimeout, milliseconds execTimeout, const IRdxCancelContext* ctx);
+	bool RequiresStatusCheck() const noexcept { return !loggedIn_; }
+	TimePointT Now() const noexcept { return now_; }
+	std::optional<TimePointT> LoginTs() const noexcept {
+		return (isRunning_ && loggedIn_) ? std::optional<TimePointT>{loginTs_} : std::nullopt;
+	}
+	void SetConnectionStateHandler(ConnectionStateHandlerT handler) noexcept { connectionStateHandler_ = std::move(handler); }
 
 	template <typename... Argss>
 	CoroRPCAnswer Call(const CommandParams& opts, const Argss&... argss) {
@@ -124,18 +128,23 @@ public:
 		return call(opts, args, argss...);
 	}
 
+	std::optional<std::string> RxServerVersion() const noexcept { return rxVersion_; }
+
 private:
 	struct RPCData {
-		RPCData() : seq(0), used(false), deadline(0), cancelCtx(nullptr), rspCh(1) {}
+		RPCData() noexcept : seq(0), used(false), system(false), cancelCtx(nullptr), rspCh(1) {}
 		uint32_t seq;
 		bool used;
-		seconds deadline;
+		bool system;
+		TimePointT deadline;
 		const reindexer::IRdxCancelContext* cancelCtx;
 		coroutine::channel<CoroRPCAnswer> rspCh;
 	};
 
 	struct MarkedChunk {
 		uint32_t seq;
+		bool noReply;
+		std::optional<TimePointT> requiredLoginTs;
 		chunk data;
 	};
 
@@ -158,11 +167,13 @@ private:
 	CoroRPCAnswer call(const CommandParams& opts, const Args& args);
 	Error callNoReply(const CommandParams& opts, uint32_t seq, const Args& args);
 
-	MarkedChunk packRPC(CmdCode cmd, uint32_t seq, const Args& args, const Args& ctxArgs);
+	MarkedChunk packRPC(CmdCode cmd, uint32_t seq, bool noReply, const Args& args, const Args& ctxArgs,
+						std::optional<TimePointT> requiredLoginTs);
 	void appendChunck(std::vector<char>& buf, chunk&& ch);
 	Error login(std::vector<char>& buf);
-	void closeConn(const Error& err) noexcept;
-	void handleFatalError(const Error& err) noexcept;
+	void handleFatalErrorFromReader(const Error& err) noexcept;
+	void handleFatalErrorImpl(const Error& err) noexcept;
+	void handleFatalErrorFromWriter(const Error& err) noexcept;
 	chunk getChunk() noexcept;
 	void recycleChunk(chunk&&) noexcept;
 	void sendCloseResults(const CProtoHeader&, const CoroRPCAnswer&);
@@ -171,9 +182,14 @@ private:
 	void readerRoutine();
 	void deadlineRoutine();
 	void pingerRoutine();
-	void updatesRoutine();
+	void setLoggedIn(bool val) noexcept {
+		loggedIn_ = val;
+		if (val) {
+			loginTs_ = ClockT::now();
+		}
+	}
 
-	uint32_t now_;
+	TimePointT now_;
 	bool terminate_ = false;
 	bool isRunning_ = false;
 	ev::dynamic_loop* loop_ = nullptr;
@@ -181,22 +197,48 @@ private:
 	// seq -> rpc data
 	std::vector<RPCData> rpcCalls_;
 
-	bool enableSnappy_ = false;
 	bool requestDedicatedThread_ = false;
 	bool enableCompression_ = false;
 	std::vector<chunk> recycledChuncks_;
 	coroutine::channel<MarkedChunk> wrCh_;
 	coroutine::channel<uint32_t> seqNums_;
 	ConnectData connectData_;
-	UpdatesHandlerT updatesHandler_;
-	FatalErrorHandlerT fatalErrorHandler_;
-	coroutine::channel<CoroRPCAnswer> updatesCh_;
+	ConnectionStateHandlerT connectionStateHandler_;
 	coroutine::wait_group wg_;
 	coroutine::wait_group readWg_;
 	bool loggedIn_ = false;
-	Error lastError_ = errOK;
 	coroutine::channel<bool> errSyncCh_;
 	manual_connection conn_;
+	TimePointT loginTs_;
+	std::string compressedBuffer_;
+	std::optional<std::string> rxVersion_;
+};
+
+struct CommandParams {
+	CommandParams(CmdCode c, milliseconds n, milliseconds e, lsn_t l, int sId, int shId, const IRdxCancelContext* ctx,
+				  bool parallel) noexcept
+		: cmd(c),
+		  netTimeout(n),
+		  execTimeout(e),
+		  lsn(l),
+		  serverId(sId),
+		  shardId(shId),
+		  cancelCtx(ctx),
+		  shardingParallelExecution(parallel) {}
+	CommandParams(CmdCode c, milliseconds n, milliseconds e, lsn_t l, int sId, int shId, const IRdxCancelContext* ctx, bool parallel,
+				  CoroClientConnection::TimePointT loginTs) noexcept
+		: CommandParams(c, n, e, l, sId, shId, ctx, parallel) {
+		requiredLoginTs.emplace(loginTs);
+	}
+	CmdCode cmd;
+	milliseconds netTimeout;
+	milliseconds execTimeout;
+	lsn_t lsn;
+	int serverId;
+	int shardId;
+	const IRdxCancelContext* cancelCtx;
+	bool shardingParallelExecution;
+	std::optional<CoroClientConnection::TimePointT> requiredLoginTs;
 };
 
 }  // namespace cproto

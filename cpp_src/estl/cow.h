@@ -32,7 +32,6 @@ private:
 		}
 	}
 
-private:
 	intrusive_ptr<intrusive_atomic_rc_wrapper<T>> payload_;
 };
 

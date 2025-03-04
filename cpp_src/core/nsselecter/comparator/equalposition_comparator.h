@@ -23,7 +23,7 @@ public:
 	[[nodiscard]] int FieldsCount() const noexcept { return ctx_.size(); }
 	[[nodiscard]] const std::string& Name() const& noexcept { return name_; }
 	[[nodiscard]] const std::string& Dump() const& noexcept { return Name(); }
-	[[nodiscard]] double Cost(int expectedIterations) const noexcept {
+	[[nodiscard]] double Cost(double expectedIterations) const noexcept {
 		const auto jsonPathComparators = fields_.getTagsPathsLength();
 		// Comparatos with non index fields must have much higher cost, than comparators with index fields
 		return jsonPathComparators
@@ -45,6 +45,7 @@ private:
 		EqualPositionComparatorTypeImpl<bool> cmpBool;
 		EqualPositionComparatorTypeImpl<int> cmpInt;
 		EqualPositionComparatorTypeImpl<int64_t> cmpInt64;
+		EqualPositionComparatorTypeImpl<float> cmpFloat;
 		EqualPositionComparatorTypeImpl<double> cmpDouble;
 		EqualPositionComparatorTypeImpl<key_string> cmpString;
 		EqualPositionComparatorTypeImpl<Uuid> cmpUuid;

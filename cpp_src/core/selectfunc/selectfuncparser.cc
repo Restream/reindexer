@@ -1,6 +1,5 @@
 #include "core/selectfunc/selectfuncparser.h"
 #include <ctime>
-#include <set>
 #include <string>
 #include "tools/errors.h"
 

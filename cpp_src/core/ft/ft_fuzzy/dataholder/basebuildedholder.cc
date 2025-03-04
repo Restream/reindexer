@@ -1,5 +1,7 @@
 #include "basebuildedholder.h"
 
+using namespace reindexer;
+
 namespace search_engine {
 
 DIt BaseHolder::GetData(const wchar_t* key) {

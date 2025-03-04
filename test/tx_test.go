@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v3"
-	"github.com/restream/reindexer/v3/bindings"
+	"github.com/restream/reindexer/v5"
+	"github.com/restream/reindexer/v5/bindings"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -231,11 +231,28 @@ func callTxMethod(t *testing.T, method func(interface{}, bindings.Completion) er
 	assert.Equal(t, rerr.Code(), reindexer.ErrCodeParams)
 }
 
+func callTxMethodP(t *testing.T, method func(interface{}, bindings.Completion, ...string) error) {
+	type OtherItem struct {
+		Id   int64
+		Data int64
+	}
+
+	err := method(OtherItem{
+		Id:   0,
+		Data: 0,
+	}, func(err error) {})
+
+	assert.NotNil(t, err)
+	rerr, ok := err.(bindings.Error)
+	assert.True(t, ok)
+	assert.Equal(t, rerr.Code(), reindexer.ErrCodeParams)
+}
+
 func TestRollbackAsyncOpWithIncorrectItem(t *testing.T) {
 	tx := newTestTx(DB, testTxItemNs)
 
 	callTxMethod(t, tx.UpdateAsync)
-	callTxMethod(t, tx.UpsertAsync)
+	callTxMethodP(t, tx.UpsertAsync)
 	callTxMethod(t, tx.InsertAsync)
 	callTxMethod(t, tx.DeleteAsync)
 

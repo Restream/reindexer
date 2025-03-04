@@ -3,9 +3,8 @@ package cproto
 import (
 	"context"
 	"sync"
-	"time"
 
-	"github.com/restream/reindexer/v3/bindings"
+	"github.com/restream/reindexer/v5/bindings"
 	"github.com/golang/snappy"
 )
 
@@ -13,7 +12,7 @@ var bufPool sync.Pool
 
 type NetBuffer struct {
 	buf   []byte
-	conn  *connection
+	conn  connection
 	reqID int
 	uid   int64
 	args  []interface{}
@@ -27,10 +26,7 @@ func (buf *NetBuffer) Fetch(ctx context.Context, offset, limit int, asJson bool)
 		flags |= bindings.ResultsCJson | bindings.ResultsWithItemID
 	}
 	flags |= bindings.ResultsSupportIdleTimeout
-	// fmt.Printf("cmdFetchResults(reqId=%d, offset=%d, limit=%d, json=%v, flags=%v)\n", buf.reqID, offset, limit, asJson, flags)
-	netTimeout := uint32(buf.conn.owner.timeouts.RequestTimeout / time.Second)
-
-	fetchBuf, err := buf.conn.rpcCall(ctx, cmdFetchResults, netTimeout, buf.reqID, flags, offset, limit, buf.uid)
+	fetchBuf, err := buf.conn.rpcCall(ctx, cmdFetchResults, buf.conn.getRequestTimeout(), buf.reqID, flags, offset, limit, buf.uid)
 	defer fetchBuf.Free()
 	if err != nil {
 		buf.close()
@@ -97,14 +93,11 @@ func (buf *NetBuffer) parseArgs() (err error) {
 
 func (buf *NetBuffer) close() {
 	if buf.needClose() {
-		netTimeout := uint32(buf.conn.owner.timeouts.RequestTimeout / time.Second)
-		closeBuf, err := buf.conn.rpcCall(context.TODO(), cmdCloseResults, netTimeout, buf.reqID, buf.uid)
+		closeBuf, err := buf.conn.rpcCall(context.TODO(), cmdCloseResults, buf.conn.getRequestTimeout(), buf.reqID, buf.uid)
 		buf.reqID = -1
 		buf.uid = -1
 		if err != nil {
-			if logger := buf.conn.owner.GetLogger(); logger != nil {
-				logger.Printf(bindings.ERROR, "rq: query close error: %v\n", err)
-			}
+			buf.conn.logMsg(bindings.ERROR, "rq: query close error: %v\n", err)
 		}
 		closeBuf.Free()
 	}
@@ -112,15 +105,13 @@ func (buf *NetBuffer) close() {
 
 func (buf *NetBuffer) closeNoReply(seq uint32) {
 	if buf.needClose() {
-		netTimeout := uint32(buf.conn.owner.timeouts.RequestTimeout / time.Second)
-		buf.conn.rpcCallNoReply(context.TODO(), cmdCloseResults, netTimeout, seq, buf.reqID, buf.uid, true)
+		buf.conn.rpcCallNoReply(context.TODO(), cmdCloseResults, buf.conn.getRequestTimeout(), seq, buf.reqID, buf.uid, true)
 		buf.reqID = -1
 		buf.uid = -1
 	}
 }
 
-func newNetBuffer(size int, conn *connection) (buf *NetBuffer) {
-
+func newNetBuffer(size int, conn connection) (buf *NetBuffer) {
 	obj := bufPool.Get()
 	if obj != nil {
 		buf = obj.(*NetBuffer)

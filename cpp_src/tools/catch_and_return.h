@@ -1,11 +1,8 @@
 #pragma once
 
 #define CATCH_AND_RETURN                                 \
-	catch (Error & err) {                                \
-		return std::move(err);                           \
-	}                                                    \
-	catch (const std::exception& err) {                  \
-		return Error{err};                               \
+	catch (std::exception & err) {                       \
+		return Error{std::move(err)};                    \
 	}                                                    \
 	catch (...) {                                        \
 		return Error{errAssert, "Unexpected exception"}; \

@@ -1,7 +1,6 @@
 #include "btree_idsets_api.h"
 #include "core/index/index.h"
 #include "core/index/string_map.h"
-#include "core/indexopts.h"
 #include "core/nsselecter/btreeindexiterator.h"
 #include "core/queryresults/joinresults.h"
 
@@ -62,10 +61,10 @@ TEST_F(BtreeIdsetsApi, SortByStringField) {
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	Variant prev;
-	for (size_t i = 0; i < qr.Count(); ++i) {
-		Item item = qr[i].GetItem(false);
+	for (auto& it : qr) {
+		Item item = it.GetItem(false);
 		Variant curr = item[kFieldOne];
-		if (i != 0) {
+		if (it != qr.begin()) {
 			EXPECT_TRUE(prev >= curr);
 		}
 		prev = curr;
@@ -78,10 +77,10 @@ TEST_F(BtreeIdsetsApi, SortByIntField) {
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	Variant prev;
-	for (size_t i = 0; i < qr.Count(); ++i) {
-		Item item = qr[i].GetItem(false);
+	for (auto& it : qr) {
+		Item item = it.GetItem(false);
 		Variant curr = item[kFieldTwo];
-		if (i != 0) {
+		if (it != qr.begin()) {
 			EXPECT_TRUE(prev.As<int>() <= curr.As<int>());
 		}
 		prev = curr;
@@ -96,21 +95,21 @@ TEST_F(BtreeIdsetsApi, JoinSimpleNs) {
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	Variant prevFieldTwo;
-	for (size_t i = 0; i < qr.Count(); ++i) {
-		Item item = qr[i].GetItem(false);
+	for (auto& it : qr) {
+		Item item = it.GetItem(false);
 		Variant currFieldTwo = item[kFieldTwo];
-		if (i != 0) {
+		if (it != qr.begin()) {
 			EXPECT_TRUE(currFieldTwo.As<int>() >= prevFieldTwo.As<int>());
 		}
 		prevFieldTwo = currFieldTwo;
 
 		Variant prevJoinedFk;
-		auto itemIt = qr[i].GetJoined();
+		auto itemIt = it.GetJoined();
 		reindexer::joins::JoinedFieldIterator joinedFieldIt = itemIt.begin();
 		EXPECT_TRUE(joinedFieldIt.ItemsCount() > 0);
 		for (int j = 0; j < joinedFieldIt.ItemsCount(); ++j) {
-			reindexer::ItemImpl joinedItem = joinedFieldIt.GetItem(j, qr.getPayloadType(1), qr.getTagsMatcher(1));
-			Variant joinedFkCurr = joinedItem.GetField(qr.getPayloadType(1).FieldByName(kFieldIdFk));
+			reindexer::ItemImpl joinedItem = joinedFieldIt.GetItem(j, qr.GetPayloadType(1), qr.GetTagsMatcher(1));
+			Variant joinedFkCurr = joinedItem.GetField(qr.GetPayloadType(1).FieldByName(kFieldIdFk));
 			EXPECT_TRUE(joinedFkCurr == item[kFieldId]);
 			if (j != 0) {
 				EXPECT_TRUE(joinedFkCurr >= prevJoinedFk);

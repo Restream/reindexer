@@ -2,12 +2,13 @@
 
 #include <condition_variable>
 #include <unordered_map>
+#include "core/namespacedef.h"
 #include "core/rdxcontext.h"
 #include "coroutine/channel.h"
+#include "dumpoptions.h"
 #include "iotools.h"
 #include "net/ev/ev.h"
-#include "replicator/updatesobserver.h"
-#include "tools/clock.h"
+#include "tools/dsn.h"
 #include "vendor/urlparser/urlparser.h"
 
 namespace reindexer_tool {
@@ -22,6 +23,7 @@ public:
 
 	bool IsCancelable() const noexcept override final { return true; }
 	reindexer::CancelType GetCancelType() const noexcept override final { return cancelType_.load(std::memory_order_acquire); }
+	std::optional<std::chrono::milliseconds> GetRemainingTimeout() const noexcept override { return std::nullopt; }
 
 	bool IsCancelled() const { return cancelType_.load(std::memory_order_acquire) == reindexer::CancelType::Explicit; }
 	void Cancel() noexcept { cancelType_.store(reindexer::CancelType::Explicit, std::memory_order_release); }
@@ -32,7 +34,7 @@ private:
 };
 
 template <typename DBInterface>
-class CommandsExecutor : public reindexer::IUpdatesObserver {
+class CommandsExecutor {
 public:
 	struct Status {
 		bool running = false;
@@ -54,9 +56,12 @@ public:
 	Error Process(const std::string& command);
 	Error FromFile(std::istream& in);
 	Status GetStatus();
+	Error SetDumpMode(const std::string& mode);
 
 protected:
 	void setStatus(Status&& status);
+	bool isHavingReplicationConfig();
+	bool isHavingReplicationConfig(reindexer::WrSerializer& wser, std::string_view type);
 	Error fromFileImpl(std::istream& in);
 	Error execCommand(IExecutorsCommand& cmd);
 	template <typename... Args>
@@ -69,7 +74,7 @@ protected:
 	typename std::enable_if<!std::is_default_constructible<T>::value, T>::type createDB(typename T::ConfigT config) {
 		return T(loop_, config);
 	}
-	std::string getCurrentDsn(bool withPath = false) const;
+	reindexer::DSN getCurrentDsn(bool withPath = false) const;
 	Error queryResultsToJson(std::ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery, bool fstream);
 	Error getAvailableDatabases(std::vector<std::string>&);
 
@@ -90,20 +95,21 @@ protected:
 	Error commandNamespaces(const std::string& command);
 	Error commandMeta(const std::string& command);
 	Error commandHelp(const std::string& command);
+	Error commandVersion(const std::string& command);
 	Error commandQuit(const std::string& command);
 	Error commandSet(const std::string& command);
 	Error commandBench(const std::string& command);
-	Error commandSubscribe(const std::string& command);
 	Error commandProcessDatabases(const std::string& command);
 
 	Error seedBenchItems();
 	std::function<void(reindexer::system_clock_w::time_point)> getBenchWorkerFn(std::atomic<int>& count, std::atomic<int>& errCount);
 
-	void OnWALUpdate(reindexer::LSNPair LSNs, std::string_view nsName, const reindexer::WALRecord& wrec) override final;
-	void OnConnectionState(const Error& err) override;
-	void OnUpdatesLost(std::string_view nsName) override final;
-
 	DBInterface db() { return db_.WithContext(&cancelCtx_); }
+	DBInterface parametrizedDb() {
+		return (!fromFile_ || dumpMode_ == DumpOptions::Mode::ShardedOnly) ? db() : db().WithShardId(ShardingKeyType::ProxyOff, false);
+	}
+	Error filterNamespacesByDumpMode(std::vector<reindexer::NamespaceDef>& defs, DumpOptions::Mode mode);
+	Error getMergedSerialMeta(DBInterface& db, std::string_view nsName, const std::string& key, std::string& result);
 
 	struct commandDefinition {
 		std::string command;
@@ -183,25 +189,25 @@ protected:
 		)help"},
 		{"\\set",		"Set configuration variables values",&CommandsExecutor::commandSet,R"help(
 	Syntax:
-		\set output <format>
-		Format can be one of the following:
-		- 'json' Unformatted JSON
-		- 'pretty' Pretty printed JSON
-		- 'table' Table view
+		\set <variable> <value>
+		Variable can be one of the following:
+			-'output'
+				possible values:
+					- 'json' Unformatted JSON
+					- 'pretty' Pretty printed JSON
+					- 'table' Table view
+			-'with_shard_ids'
+				possible values:
+					- 'on'  Add '#shard_id' field to items from sharded namespaces
+					- 'off'
 		)help"},
 		{"\\bench",		"Run benchmark",&CommandsExecutor::commandBench,R"help(
 	Syntax:
 		\bench <time>
 		)help"},
-		{"\\subscribe",	"Subscribe to upstream updates",&CommandsExecutor::commandSubscribe,R"help(
-	Syntax:
-		\subscribe <on|off>
-		Subscribe/unsubscribe to any updates
-		\subscribe <namespace>[ <namespace>[ ...]]
-		Subscribe to specific namespaces updates
-		)help"},
 		{"\\quit",		"Exit from tool",&CommandsExecutor::commandQuit,""},
 		{"\\help",		"Show help",&CommandsExecutor::commandHelp,""},
+		{"\\version",	"Show Reindexer server version when connected to it via [u]cproto://, or the rx-tool version when using built-in",&CommandsExecutor::commandVersion, ""},
 		{"\\databases", "Works with available databases",&CommandsExecutor::commandProcessDatabases, R"help(
 	Syntax:
 		 \databases list
@@ -216,13 +222,34 @@ protected:
     };
 	// clang-format on
 
+	class URI {
+	public:
+		bool parse(const std::string& dsn) { return uri_.parse(dsn); }
+		const std::string& scheme() const { return uri_.scheme(); }
+		const std::string& path() const { return uri_.path(); }
+		const std::string& username() const { return uri_.username(); }
+		const std::string& password() const { return uri_.password(); }
+		const std::string& hostname() const { return uri_.hostname(); }
+		const std::string& port() const { return uri_.port(); }
+		std::string db() const {
+			if (uri_.scheme() == "ucproto") {
+				return getDBFromUCproto();
+			}
+			return uri_.db();
+		}
+		std::string getDBFromUCproto() const;
+
+	private:
+		httpparser::UrlParser uri_;
+	};
+
 	reindexer::net::ev::dynamic_loop loop_;
 	CancelContext cancelCtx_;
 	DBInterface db_;
 	Output output_;
 	unsigned numThreads_ = 1;
 	std::unordered_map<std::string, std::string> variables_;
-	httpparser::UrlParser uri_;
+	URI uri_;
 	reindexer::net::ev::async cmdAsync_;
 	std::mutex mtx_;
 	std::condition_variable condVar_;
@@ -231,6 +258,8 @@ protected:
 	reindexer::coroutine::channel<bool> stopCh_;
 	std::thread executorThr_;
 	bool fromFile_ = {false};
+	bool targetHasReplicationConfig_ = {false};
+	std::atomic<DumpOptions::Mode> dumpMode_ = {DumpOptions::Mode::FullNode};
 };
 
 }  // namespace reindexer_tool

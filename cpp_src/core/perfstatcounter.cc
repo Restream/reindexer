@@ -14,13 +14,13 @@ PerfStatCounter<Mutex>::PerfStatCounter() {
 
 template <typename Mutex>
 void PerfStatCounter<Mutex>::Hit(std::chrono::microseconds time) {
-	std::unique_lock<Mutex> lck(mtx_);
+	std::lock_guard<Mutex> lck(mtx_);
 	totalTime += time;
 	calcTime += time;
-	calcHitCount++;
-	totalHitCount++;
+	++calcHitCount;
+	++totalHitCount;
 	if (lastValuesUs.size() < kMaxValuesCountForStddev) {
-		lastValuesUs.push_back(std::chrono::duration_cast<std::chrono::microseconds>(calcTime).count());
+		lastValuesUs.emplace_back(std::chrono::duration_cast<std::chrono::microseconds>(calcTime).count());
 		posInValuesUs = kMaxValuesCountForStddev - 1;
 	} else {
 		posInValuesUs = (posInValuesUs + 1) % kMaxValuesCountForStddev;
@@ -32,7 +32,7 @@ void PerfStatCounter<Mutex>::Hit(std::chrono::microseconds time) {
 
 template <typename Mutex>
 void PerfStatCounter<Mutex>::LockHit(std::chrono::microseconds time) {
-	std::unique_lock<Mutex> lck(mtx_);
+	std::lock_guard<Mutex> lck(mtx_);
 	calcLockTime += time;
 	totalLockTime += time;
 	doCalculations();
@@ -41,7 +41,7 @@ void PerfStatCounter<Mutex>::LockHit(std::chrono::microseconds time) {
 template <typename Mutex>
 void PerfStatCounter<Mutex>::Reset() {
 	static const PerfStatCounter<Mutex> defaultCounter;
-	std::unique_lock<Mutex> lck(mtx_);
+	std::lock_guard<Mutex> lck(mtx_);
 	totalHitCount = defaultCounter.totalHitCount;
 	totalTime = defaultCounter.totalTime;
 	totalLockTime = defaultCounter.totalLockTime;

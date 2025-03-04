@@ -2,28 +2,161 @@ package reindexer
 
 import (
 	"fmt"
+	"os"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/restream/reindexer/v5/bindings"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/restream/reindexer/v3"
-	"github.com/restream/reindexer/v3/test/helpers"
+	"github.com/restream/reindexer/v5"
+	"github.com/restream/reindexer/v5/test/helpers"
 )
 
+type MultiDSNItem struct {
+	Name string `json:"name" reindex:"name,,pk"`
+}
+
+var multiDSNNS = "multi_dsn_items"
+
+const ghEnv = "REINDEXER_GH_CI_ASAN"
+
+func TestReconnectWithStrategy(t *testing.T) {
+	t.Run("raft cluster", func(t *testing.T) {
+		t.Run("reconnect use OptionReconnectionStrategy", func(t *testing.T) {
+			if os.Getenv(ghEnv) != "" {
+				t.Skip() // Skip this test on github CI due to asan and coroutines conflict
+			}
+			t.Parallel()
+			servers := []*helpers.TestServer{
+				{T: t, RpcPort: "6691", HttpPort: "9991", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin},
+				{T: t, RpcPort: "6692", HttpPort: "9992", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin},
+				{T: t, RpcPort: "6693", HttpPort: "9993", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin},
+			}
+			dsn := []string{servers[0].GetDSN(), servers[1].GetDSN(), servers[2].GetDSN()}
+			defer servers[0].Clean()
+			defer servers[1].Clean()
+			defer servers[2].Clean()
+			helpers.CreateCluster(t, servers, multiDSNNS, MultiDSNItem{})
+
+			db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing(), reindexer.WithReconnectionStrategy(reindexer.ReconnectStrategySynchronized, true))
+			require.NotNil(t, db)
+
+			require.NoError(t, db.OpenNamespace(multiDSNNS, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{}))
+			itemExp := MultiDSNItem{Name: "some_name"}
+			require.NoError(t, db.Upsert(multiDSNNS, itemExp))
+
+			item, err := db.Query(multiDSNNS).Exec().FetchAll()
+			require.NoError(t, err)
+			assert.Equal(t, itemExp, *item[0].(*MultiDSNItem))
+			require.Equal(t, servers[0].GetRpcAddr(), db.Status().CProto.ConnAddr)
+
+			require.NoError(t, servers[0].Stop())
+
+			// Await explicit connections drop to avoid connection error on the first call
+			time.Sleep(5 * time.Second)
+			// check change dsn to second or third address
+			err = db.OpenNamespace(multiDSNNS, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
+			require.NoError(t, err)
+			_, err = db.Insert(multiDSNNS, itemExp)
+			require.NoError(t, err)
+
+			item, err = db.Query(multiDSNNS).Exec().FetchAll()
+			require.NoError(t, err)
+			assert.Equal(t, itemExp, *item[0].(*MultiDSNItem))
+			require.Contains(t, []string{servers[1].GetRpcAddr(), servers[2].GetRpcAddr()}, db.Status().CProto.ConnAddr)
+
+			require.NoError(t, servers[1].Stop())
+			require.NoError(t, servers[2].Stop())
+		})
+	})
+
+	t.Run("async replication", func(t *testing.T) {
+		t.Run("reconnect with reconnectStrategyPrefferRead", func(t *testing.T) {
+			if os.Getenv(ghEnv) != "" {
+				t.Skip() // Skip this test on github CI due to asan and coroutines conflict
+			}
+			t.Parallel()
+			servers := []*helpers.TestServer{
+				{T: t, RpcPort: "6631", HttpPort: "9931", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin},
+				{T: t, RpcPort: "6632", HttpPort: "9932", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin},
+				{T: t, RpcPort: "6633", HttpPort: "9933", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin},
+			}
+			dsn := []string{servers[0].GetDSN(), servers[1].GetDSN(), servers[2].GetDSN()}
+			defer servers[0].Clean()
+			defer servers[1].Clean()
+			defer servers[2].Clean()
+
+			helpers.CreateReplication(t, servers[0], servers[1:], multiDSNNS, MultiDSNItem{})
+			db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing(), reindexer.WithReconnectionStrategy(reindexer.ReconnectStrategyPrefferRead, true))
+			require.NotNil(t, db)
+
+			err := db.OpenNamespace(multiDSNNS, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
+			require.NoError(t, err)
+			itemExp := MultiDSNItem{Name: "some_name"}
+			err = db.Upsert(multiDSNNS, itemExp)
+			require.NoError(t, err)
+
+			item, err := db.Query(multiDSNNS).Exec().FetchAll()
+			require.NoError(t, err)
+			assert.Equal(t, itemExp, *item[0].(*MultiDSNItem))
+			require.Equal(t, servers[0].GetRpcAddr(), db.Status().CProto.ConnAddr)
+
+			require.NoError(t, servers[0].Stop())
+
+			// check change dsn to follower, while leader offline
+			_, err = db.Insert(multiDSNNS, itemExp)
+			require.Equal(t, "can't use WithReconnectionStrategy without configured cluster or async replication", err.Error())
+
+			require.NoError(t, servers[1].Stop())
+			require.NoError(t, servers[0].Run())
+
+			// check change dsn to leader
+			_, err = db.Insert(multiDSNNS, itemExp)
+			require.NoError(t, err)
+
+			require.NoError(t, servers[0].Stop())
+			require.NoError(t, servers[2].Stop())
+		})
+	})
+
+	t.Run("should error if use strategy and not configured cluster or replication", func(t *testing.T) {
+		t.Parallel()
+		servers := []*helpers.TestServer{
+			{T: t, RpcPort: "6621", HttpPort: "9921", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin},
+			{T: t, RpcPort: "6622", HttpPort: "9922", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin},
+		}
+		dsn := []string{servers[0].GetDSN(), servers[1].GetDSN()}
+		defer servers[0].Clean()
+		defer servers[1].Clean()
+		servers[0].Run()
+		servers[1].Run()
+
+		db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing(), reindexer.WithReconnectionStrategy(reindexer.ReconnectStrategyPrefferRead, true))
+		require.NotNil(t, db)
+		err := db.OpenNamespace(multiDSNNS, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
+		require.NoError(t, err)
+		require.Equal(t, servers[0].GetRpcAddr(), db.Status().CProto.ConnAddr)
+		require.NoError(t, servers[0].Stop())
+
+		err = db.OpenNamespace(multiDSNNS, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
+		errExp := bindings.NewError("can't use WithReconnectionStrategy without configured cluster or async replication", bindings.ErrParams)
+		require.Equal(t, errExp, err)
+	})
+}
+
 func TestMultipleDSN(t *testing.T) {
-	ns := "items"
-	type Item struct {
-		Name string `json:"name" reindex:"name,,pk"`
+	if len(DB.slaveList) > 0 || len(DB.clusterList) > 0 {
+		t.Skip()
 	}
 
 	t.Run("connect to next dsn if current not available", func(t *testing.T) {
 		t.Parallel()
-		srv1 := helpers.TestServer{T: t, RpcPort: "6661", HttpPort: "9961", DbName: "reindex_test_multi_dsn"}
-		srv2 := helpers.TestServer{T: t, RpcPort: "6662", HttpPort: "9962", DbName: "reindex_test_multi_dsn"}
-		srv3 := helpers.TestServer{T: t, RpcPort: "6663", HttpPort: "9963", DbName: "reindex_test_multi_dsn"}
+		srv1 := helpers.TestServer{T: t, RpcPort: "6661", HttpPort: "9961", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin}
+		srv2 := helpers.TestServer{T: t, RpcPort: "6662", HttpPort: "9962", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin}
+		srv3 := helpers.TestServer{T: t, RpcPort: "6663", HttpPort: "9963", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin}
 		dsn := []string{
 			fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv1.RpcPort, srv1.DbName, srv1.RpcPort),
 			fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv2.RpcPort, srv2.DbName, srv2.RpcPort),
@@ -44,51 +177,51 @@ func TestMultipleDSN(t *testing.T) {
 		db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
 		require.NotNil(t, db)
 
-		err = db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), Item{})
+		err = db.OpenNamespace(multiDSNNS, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
 		require.NoError(t, err)
 
-		itemExp := Item{Name: "some_name"}
-		err = db.Upsert(ns, itemExp)
+		itemExp := MultiDSNItem{Name: "some_name"}
+		err = db.Upsert(multiDSNNS, itemExp)
 		require.NoError(t, err)
 
-		item, err := db.Query(ns).Exec().FetchAll()
+		item, err := db.Query(multiDSNNS).Exec().FetchAll()
 		require.NoError(t, err)
-		assert.Equal(t, itemExp, *item[0].(*Item))
-		require.Equal(t, srv1.Addr(), db.Status().CProto.ConnAddr)
+		assert.Equal(t, itemExp, *item[0].(*MultiDSNItem))
+		require.Equal(t, srv1.GetRpcAddr(), db.Status().CProto.ConnAddr)
 
 		srv1.Stop()
 		srv2.Stop()
 
 		// check change dsn to third address, with skip second stopped
-		err = db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), Item{})
+		err = db.OpenNamespace(multiDSNNS, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
 		require.NoError(t, err)
-		_, err = db.Insert(ns, itemExp)
+		_, err = db.Insert(multiDSNNS, itemExp)
 		require.NoError(t, err)
 
-		item, err = db.Query(ns).Exec().FetchAll()
+		item, err = db.Query(multiDSNNS).Exec().FetchAll()
 		require.NoError(t, err)
-		assert.Equal(t, itemExp, *item[0].(*Item))
-		require.Equal(t, srv3.Addr(), db.Status().CProto.ConnAddr)
+		assert.Equal(t, itemExp, *item[0].(*MultiDSNItem))
+		require.Equal(t, srv3.GetRpcAddr(), db.Status().CProto.ConnAddr)
 
 		srv3.Stop()
 		err = srv1.Run()
 		require.NoError(t, err)
 
 		// check reconnect to first
-		err = db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), Item{})
+		err = db.OpenNamespace(multiDSNNS, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
 		require.NoError(t, err)
-		item, err = db.Query(ns).Exec().FetchAll()
+		item, err = db.Query(multiDSNNS).Exec().FetchAll()
 		require.NoError(t, err)
-		assert.Equal(t, itemExp, *item[0].(*Item))
-		require.Equal(t, srv1.Addr(), db.Status().CProto.ConnAddr)
+		assert.Equal(t, itemExp, *item[0].(*MultiDSNItem))
+		require.Equal(t, srv1.GetRpcAddr(), db.Status().CProto.ConnAddr)
 		srv1.Stop()
 	})
 
 	t.Run("return err if all srv stopped", func(t *testing.T) {
 		t.Parallel()
-		srv1 := helpers.TestServer{T: t, RpcPort: "6671", HttpPort: "9971", DbName: "reindex_test_multi_dsn"}
-		srv2 := helpers.TestServer{T: t, RpcPort: "6672", HttpPort: "9972", DbName: "reindex_test_multi_dsn"}
-		srv3 := helpers.TestServer{T: t, RpcPort: "6673", HttpPort: "9973", DbName: "reindex_test_multi_dsn"}
+		srv1 := helpers.TestServer{T: t, RpcPort: "6671", HttpPort: "9971", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin}
+		srv2 := helpers.TestServer{T: t, RpcPort: "6672", HttpPort: "9972", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin}
+		srv3 := helpers.TestServer{T: t, RpcPort: "6673", HttpPort: "9973", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin}
 		dsn := []string{
 			fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv1.RpcPort, srv1.DbName, srv1.RpcPort),
 			fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv2.RpcPort, srv2.DbName, srv2.RpcPort),
@@ -99,7 +232,7 @@ func TestMultipleDSN(t *testing.T) {
 		db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
 		require.NotNil(t, db)
 
-		err := db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), Item{})
+		err := db.OpenNamespace(multiDSNNS, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
 		require.Error(t, err)
 		assert.Equal(t, errExp, err.Error())
 	})
@@ -107,8 +240,8 @@ func TestMultipleDSN(t *testing.T) {
 	t.Run("should be possible Close(), after all srv stopped", func(t *testing.T) {
 		t.Parallel()
 
-		srv1 := helpers.TestServer{T: t, RpcPort: "6681", HttpPort: "9981", DbName: "reindex_test_multi_dsn"}
-		srv2 := helpers.TestServer{T: t, RpcPort: "6682", HttpPort: "9982", DbName: "reindex_test_multi_dsn"}
+		srv1 := helpers.TestServer{T: t, RpcPort: "6681", HttpPort: "9981", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin}
+		srv2 := helpers.TestServer{T: t, RpcPort: "6682", HttpPort: "9982", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin}
 		dsn := []string{
 			fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv1.RpcPort, srv1.DbName, srv1.RpcPort),
 			fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv2.RpcPort, srv2.DbName, srv2.RpcPort),
@@ -120,11 +253,11 @@ func TestMultipleDSN(t *testing.T) {
 		db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
 		require.NotNil(t, db)
 
-		err = db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), Item{})
+		err = db.OpenNamespace(multiDSNNS, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
 		require.NoError(t, err)
 
-		itemExp := Item{Name: "some_name"}
-		_, err = db.Insert(ns, itemExp)
+		itemExp := MultiDSNItem{Name: "some_name"}
+		_, err = db.Insert(multiDSNNS, itemExp)
 		require.NoError(t, err)
 
 		done := make(chan bool)
@@ -138,42 +271,38 @@ func TestMultipleDSN(t *testing.T) {
 				case <-done:
 					return
 				default:
-					db.Query(ns).Exec().FetchOne()
+					db.Query(multiDSNNS).Exec().FetchOne()
 				}
 			}
 		}()
 
 		srv1.Stop()
 		srv2.Stop()
-
-		db.Close()
 	})
 
 	t.Run("should reset cache after restart server and reconnect", func(t *testing.T) {
 		t.Parallel()
 
-		srv := helpers.TestServer{T: t, RpcPort: "6683", HttpPort: "9983", DbName: "reindex_test_multi_dsn"}
-		dsn := []string{
-			fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv.RpcPort, srv.DbName, srv.RpcPort),
-		}
+		srv := helpers.TestServer{T: t, RpcPort: "6683", HttpPort: "9983", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin}
+		dsn := []string{srv.GetDSN()}
 		err := srv.Run()
 		require.NoError(t, err)
 		db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
 		require.NotNil(t, db)
 
-		err = db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), NamespaceCacheItem{})
+		err = db.OpenNamespace(multiDSNNS, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), NamespaceCacheItem{})
 		require.NoError(t, err)
 
 		// fill cache
 		itemExp := NamespaceCacheItem{ID: 1}
-		err = db.Upsert(ns, itemExp)
+		err = db.Upsert(multiDSNNS, itemExp)
 		require.NoError(t, err)
 
 		itemExp = NamespaceCacheItem{ID: 2}
-		err = db.Upsert(ns, itemExp)
+		err = db.Upsert(multiDSNNS, itemExp)
 		require.NoError(t, err)
 
-		_, err = db.Query(ns).Exec().FetchAll()
+		_, err = db.Query(multiDSNNS).Exec().FetchAll()
 		require.NoError(t, err)
 
 		status := db.Status()
@@ -186,7 +315,7 @@ func TestMultipleDSN(t *testing.T) {
 		require.NoError(t, err)
 
 		// check after reset
-		it := db.Query(ns).Exec()
+		it := db.Query(multiDSNNS).Exec()
 
 		status = db.Status()
 		assert.Equal(t, int64(0), status.Cache.CurSize)
@@ -206,15 +335,15 @@ func TestMultipleDSN(t *testing.T) {
 }
 
 func TestRaceConditionsMultiDSN(t *testing.T) {
-	srv1 := helpers.TestServer{T: t, RpcPort: "6651", HttpPort: "9951", DbName: "reindex_test_multi_dsn"}
-	srv2 := helpers.TestServer{T: t, RpcPort: "6652", HttpPort: "9952", DbName: "reindex_test_multi_dsn"}
+	if len(DB.slaveList) > 0 || len(DB.clusterList) > 0 {
+		t.Skip()
+	}
 
 	t.Run("on reconnect to next dsn", func(t *testing.T) {
 		t.Parallel()
-		ns := "items"
-		type Item struct {
-			Name string `json:"name" reindex:"name,,pk"`
-		}
+
+		srv1 := helpers.TestServer{T: t, RpcPort: "6651", HttpPort: "9951", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin}
+		srv2 := helpers.TestServer{T: t, RpcPort: "6652", HttpPort: "9952", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin}
 
 		err := srv1.Run()
 		require.NoError(t, err)
@@ -231,23 +360,15 @@ func TestRaceConditionsMultiDSN(t *testing.T) {
 		db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
 		require.NotNil(t, db)
 
-		err = db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), Item{})
+		err = db.OpenNamespace(multiDSNNS, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
 		require.NoError(t, err)
+		require.Equal(t, srv1.GetRpcAddr(), db.Status().CProto.ConnAddr)
 
-		itemExp := Item{Name: "some_name"}
-		_, err = db.Insert(ns, itemExp)
+		itemExp := MultiDSNItem{Name: "some_name"}
+		_, err = db.Insert(multiDSNNS, itemExp)
 		require.NoError(t, err)
 
 		srv1.Stop()
-
-		dbTmp := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
-		require.NotNil(t, db)
-		err = dbTmp.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), Item{})
-		require.NoError(t, err)
-		itemExp = Item{Name: "some_name"}
-		_, err = dbTmp.Insert(ns, itemExp)
-		require.NoError(t, err)
-		dbTmp.Close()
 
 		cnt := 100
 		wg := sync.WaitGroup{}
@@ -255,12 +376,53 @@ func TestRaceConditionsMultiDSN(t *testing.T) {
 		for i := 0; i < cnt; i++ {
 			go func() {
 				defer wg.Done()
-				db.Query(ns).Exec().FetchOne()
-				db.Status()
+				db.Query(multiDSNNS).Exec().FetchOne()
 			}()
 		}
 		wg.Wait()
+		srv2.Stop()
+	})
 
+	t.Run("on reconnect to next dsn with strategy", func(t *testing.T) {
+		t.Parallel()
+		srv1 := helpers.TestServer{T: t, RpcPort: "6653", HttpPort: "9953", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin}
+		srv2 := helpers.TestServer{T: t, RpcPort: "6654", HttpPort: "9954", DbName: "reindex_test_multi_dsn", SrvType: helpers.ServerTypeBuiltin}
+
+		err := srv1.Run()
+		require.NoError(t, err)
+		err = srv2.Run()
+		require.NoError(t, err)
+		dsn := []string{
+			fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv1.RpcPort, srv1.DbName, srv1.RpcPort),
+			fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv2.RpcPort, srv2.DbName, srv2.RpcPort),
+		}
+
+		defer srv1.Clean()
+		defer srv2.Clean()
+
+		db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing(), reindexer.WithReconnectionStrategy(reindexer.ReconnectStrategyPrefferRead, true))
+		require.NotNil(t, db)
+
+		err = db.OpenNamespace(multiDSNNS, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
+		require.NoError(t, err)
+		require.Equal(t, srv1.GetRpcAddr(), db.Status().CProto.ConnAddr)
+
+		itemExp := MultiDSNItem{Name: "some_name"}
+		_, err = db.Insert(multiDSNNS, itemExp)
+		require.NoError(t, err)
+
+		srv1.Stop()
+
+		cnt := 100
+		wg := sync.WaitGroup{}
+		wg.Add(cnt)
+		for i := 0; i < cnt; i++ {
+			go func() {
+				defer wg.Done()
+				db.Query(multiDSNNS).Exec().FetchOne()
+			}()
+		}
+		wg.Wait()
 		srv2.Stop()
 	})
 }

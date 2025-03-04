@@ -1,13 +1,7 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.18)
 
 # Configure cmake options
-if(MSVC)
-  # Enable C++20 for windows build to be able to use designated initializers.
-  # GCC/Clang support them even with C++17.
-  set(CMAKE_CXX_STANDARD 20)
-else()
-  set(CMAKE_CXX_STANDARD 17)
-endif()
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(CMakeToolsHelpers OPTIONAL)
 include(ExternalProject)
@@ -31,8 +25,30 @@ option(ENABLE_JEMALLOC "Enable jemalloc extensions" ON)
 option(ENABLE_ROCKSDB "Enable rocksdb storage" ON)
 option(ENABLE_GRPC "Enable GRPC service" OFF)
 option(ENABLE_SSE "Enable SSE instructions" ON)
-option(ENABLE_SERVER_AS_PROCESS_IN_TEST "Enable server as process" OFF)
+option(ENABLE_SERVER_AS_PROCESS_IN_TEST "Run reindexer servers as separate processes in tests" OFF)
+option(ENABLE_V3_FOLLOWERS "Enable compatibility mode with reindexer v3 followers. This is temporary flag and will be removed in further releases" OFF)
+option(ENABLE_PCH "Enable precompiled headers for the build" OFF)
+set(BUILD_ANN_INDEXES "all" CACHE STRING "Enable ANN indexes build: none, builtin, all. 'All' builds both builtin and FAISS-based indexes")
+set_property(CACHE BUILD_ANN_INDEXES PROPERTY STRINGS none builtin all)
 
+if(APPLE)
+  option(ENABLE_OPENSSL "Enable OpenSSL" OFF)
+else()
+  option(ENABLE_OPENSSL "Enable OpenSSL" ON)
+endif()
+
+if(APPLE AND NOT DEFINED ENV{OpenMP_ROOT})
+    execute_process(COMMAND brew --prefix OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE BREW_PRFIX)
+    message("OpenMP_ROOT is not defined. Setting OMP root to: ${BREW_PRFIX}/opt/libomp")
+    set(ENV{OpenMP_ROOT} "${BREW_PRFIX}/opt/libomp")
+endif()
+
+if(ENABLE_PCH)
+  if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    message("Disabling PCH for Clang - there are some compatibility problems")
+    set(ENABLE_PCH OFF CACHE INTERNAL "" FORCE)
+  endif()
+endif()
 
 if(NOT GRPC_PACKAGE_PROVIDER)
   set(GRPC_PACKAGE_PROVIDER "CONFIG")
@@ -44,7 +60,7 @@ else()
   option(LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set(REINDEXER_VERSION_DEFAULT "3.31.0")
+set (REINDEXER_VERSION_DEFAULT "5.0.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -66,6 +82,13 @@ if(MSVC)
   set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -Zi")
   set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG -Zi")
   set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG -Zi")
+elseif(WITH_ASAN OR WITH_STDLIB_DEBUG)
+  # Using O2 instead of O3 to build a bit faster
+  # Also this allows to avoid SEGFAULT in libasan.so during coroutines interaction on CentOS7 (gcc-12).
+  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g1")
+  set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -g1")
+  set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG")
+  set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG")
 else()
   set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 -g1")
   set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O3 -g1")
@@ -90,8 +113,8 @@ if(MSVC)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -wd4800 -wd4396 -wd4503 -MP -MD /bigobj")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -SAFESEH:NO")
 else()
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror -Wswitch-enum")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wall -Wextra -Werror -Wswitch-enum -Wold-style-cast -fexceptions")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror -Wswitch-enum -Winvalid-pch")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++20 -Wall -Wextra -Werror -Wswitch-enum -Wold-style-cast -Winvalid-pch -fexceptions")
   if(${COMPILER_TARGET_ARCH} STREQUAL "e2k")
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -gline -fverbose-asm")
     set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-parameter")
@@ -106,6 +129,10 @@ set(EXTRA_FLAGS "")
 
 if(WITH_ASAN AND WITH_TSAN)
   message(FATAL_ERROR "You cannot use the ASAN and TSAN options at the same time, CMake will exit.")
+endif()
+
+if(ENABLE_V3_FOLLOWERS)
+  add_definitions(-DREINDEX_WITH_V3_FOLLOWERS)
 endif()
 
 if(WITH_ASAN)
@@ -139,8 +166,8 @@ set(REINDEXER_SOURCE_PATH ${PROJECT_SOURCE_DIR})
 set(REINDEXER_BINARY_PATH ${PROJECT_BINARY_DIR})
 
 file (
-  GLOB_RECURSE 
-  SRCS 
+  GLOB_RECURSE
+  SRCS
   ${REINDEXER_SOURCE_PATH}/client/*
   ${REINDEXER_SOURCE_PATH}/core/*
   ${REINDEXER_SOURCE_PATH}/estl/*
@@ -148,8 +175,11 @@ file (
   ${REINDEXER_SOURCE_PATH}/vendor/*
   ${REINDEXER_SOURCE_PATH}/debug/*
   ${REINDEXER_SOURCE_PATH}/net/*
-  ${REINDEXER_SOURCE_PATH}/replicator/*
+  ${REINDEXER_SOURCE_PATH}/wal/*
   ${REINDEXER_SOURCE_PATH}/coroutine/*
+  ${REINDEXER_SOURCE_PATH}/cluster/*
+  ${REINDEXER_SOURCE_PATH}/events/*
+  ${REINDEXER_SOURCE_PATH}/updates/*
 )
 
 string (REGEX REPLACE "([][+*()^])" "\\\\\\1" BASE_CORO_CONTEXT_DIR "${REINDEXER_SOURCE_PATH}/vendor/koishi")
@@ -250,6 +280,18 @@ if(ENABLE_SSE)
     message("Building with SSE support...")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -msse -msse2 -msse3 -mssse3 -msse4 -msse4.1 -msse4.2 -mpopcnt")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse -msse2 -msse3 -mssse3 -msse4 -msse4.1 -msse4.2 -mpopcnt")
+  elseif(MSVC AND (${COMPILER_TARGET_ARCH} STREQUAL "x86_64" OR ${COMPILER_TARGET_ARCH} STREQUAL "i386"))
+    add_definitions(-DREINDEXER_WITH_SSE=1)
+    # MSVC does not define __SSE__ by itself
+    # https://docs.microsoft.com/en-us/cpp/preprocessor/predefined-macros
+    add_definitions(-D__SSE__=1)
+    add_definitions(-D__SSE2__=1)
+    add_definitions(-D__SSE3__=1)
+    add_definitions(-D__SSE4_1__=1)
+    add_definitions(-D__SSE4_2__=1)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /arch:SSE4.2")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /arch:SSE4.2")
+    message("Building with SSE support...")
   else()
     message("SSE compiler flags were disabled for the current platform")
   endif()
@@ -257,6 +299,7 @@ endif()
 
 include_directories(${REINDEXER_SOURCE_PATH})
 include_directories(${REINDEXER_SOURCE_PATH}/vendor)
+include_directories(${REINDEXER_SOURCE_PATH}/vendor_subdirs)
 
 set(MSGPACK_INCLUDE_PATH ${REINDEXER_SOURCE_PATH}/vendor/msgpack)
 include_directories(${MSGPACK_INCLUDE_PATH})
@@ -267,17 +310,16 @@ if(CMAKE_GENERATOR MATCHES "Visual Studio")
 else()
   add_definitions(-DKOISHI_THREAD_LOCAL=_Thread_local)
 endif()
-add_definitions(-DKOISHI_HAVE_MMAP)
-add_definitions(-DKOISHI_MAP_ANONYMOUS=MAP_ANONYMOUS)
 add_definitions(-DKOISHI_HAVE_SYSCONF)
 add_definitions(-DKOISHI_SC_PAGE_SIZE=_SC_PAGE_SIZE)
 add_definitions(-DKOISHI_HAVE_GETPAGESIZE)
-add_definitions(-DKOISHI_HAVE_ALIGNED_ALLOC)
-add_definitions(-DKOISHI_HAVE_POSIX_MEMALIGN)
+if(NOT APPLE)
+  add_definitions(-DKOISHI_HAVE_POSIX_MEMALIGN)
+endif()
 add_definitions(-DBUILDING_KOISHI)
-add_definitions(-DFCONTEXT_CALL=)
 add_definitions(-DYAML_CPP_STATIC_DEFINE)
 include_directories(${KOISHI_PATH}/include)
+add_definitions(-DFINTEGER=int)
 
 list(APPEND SRCS ${KOISHI_PATH}/include/koishi.h
         ${KOISHI_PATH}/fiber.h
@@ -294,17 +336,80 @@ endif()
 if(MSVC)
   set_source_files_properties (${REINDEXER_SOURCE_PATH}/core/storage/leveldblogger.cc PROPERTIES COMPILE_FLAGS "/GR-")
 else()
-  set_source_files_properties (${REINDEXER_SOURCE_PATH}/core/storage/leveldblogger.cc PROPERTIES COMPILE_FLAGS "-fno-rtti")
+  set_source_files_properties (${REINDEXER_SOURCE_PATH}/core/storage/leveldblogger.cc PROPERTIES COMPILE_FLAGS "-fno-rtti -Wno-invalid-pch")
 endif()
 
 list(APPEND REINDEXER_LIBRARIES reindexer)
-add_library(${TARGET} STATIC ${HDRS} ${SRCS} ${VENDORS})
+add_library(${TARGET}_obj OBJECT ${SRCS})
+
+if(ENABLE_PCH)
+  set(PREC_HDRS
+    $<$<COMPILE_LANGUAGE:CXX>:<algorithm$<ANGLE-R>>
+    $<$<COMPILE_LANGUAGE:CXX>:<vector$<ANGLE-R>>
+    $<$<COMPILE_LANGUAGE:CXX>:<map$<ANGLE-R>>
+    $<$<COMPILE_LANGUAGE:CXX>:<unordered_map$<ANGLE-R>>
+    $<$<COMPILE_LANGUAGE:CXX>:<set$<ANGLE-R>>
+    $<$<COMPILE_LANGUAGE:CXX>:<unordered_set$<ANGLE-R>>
+    $<$<COMPILE_LANGUAGE:CXX>:<deque$<ANGLE-R>>
+    $<$<COMPILE_LANGUAGE:CXX>:<memory$<ANGLE-R>>
+    $<$<COMPILE_LANGUAGE:CXX>:<string$<ANGLE-R>>
+    $<$<COMPILE_LANGUAGE:CXX>:<string_view$<ANGLE-R>>
+    $<$<COMPILE_LANGUAGE:CXX>:<optional$<ANGLE-R>>
+    $<$<COMPILE_LANGUAGE:CXX>:<chrono$<ANGLE-R>>
+    $<$<COMPILE_LANGUAGE:CXX>:<functional$<ANGLE-R>>
+    $<$<COMPILE_LANGUAGE:CXX>:<variant$<ANGLE-R>>
+    $<$<COMPILE_LANGUAGE:CXX>:<thread$<ANGLE-R>>
+    $<$<COMPILE_LANGUAGE:CXX>:<chrono$<ANGLE-R>>
+    $<$<COMPILE_LANGUAGE:CXX>:<atomic$<ANGLE-R>>
+
+    $<$<COMPILE_LANGUAGE:CXX>:estl/h_vector.h>
+    $<$<COMPILE_LANGUAGE:CXX>:estl/fast_hash_set.h>
+    $<$<COMPILE_LANGUAGE:CXX>:estl/fast_hash_map.h>
+    $<$<COMPILE_LANGUAGE:CXX>:estl/intrusive_ptr.h>
+    $<$<COMPILE_LANGUAGE:CXX>:estl/mutex.h>
+    $<$<COMPILE_LANGUAGE:CXX>:estl/one_of.h>
+    $<$<COMPILE_LANGUAGE:CXX>:estl/shared_mutex.h>
+    $<$<COMPILE_LANGUAGE:CXX>:estl/smart_lock.h>
+    $<$<COMPILE_LANGUAGE:CXX>:estl/tokenizer.h>
+    $<$<COMPILE_LANGUAGE:CXX>:estl/contexted_locks.h>
+    $<$<COMPILE_LANGUAGE:CXX>:estl/cow.h>
+    $<$<COMPILE_LANGUAGE:CXX>:tools/errors.h>
+    $<$<COMPILE_LANGUAGE:CXX>:tools/logger.h>
+    $<$<COMPILE_LANGUAGE:CXX>:tools/lsn.h>
+    $<$<COMPILE_LANGUAGE:CXX>:tools/serializer.h>
+    $<$<COMPILE_LANGUAGE:CXX>:tools/stringstools.h>
+    $<$<COMPILE_LANGUAGE:CXX>:tools/varint.h>
+    $<$<COMPILE_LANGUAGE:CXX>:vendor/sort/pdqsort.hpp>
+
+    $<$<COMPILE_LANGUAGE:CXX>:updates/updaterecord.h>
+    $<$<COMPILE_LANGUAGE:CXX>:updates/updatesqueue.h>
+
+    $<$<COMPILE_LANGUAGE:CXX>:cluster/config.h>
+
+    $<$<COMPILE_LANGUAGE:CXX>:core/expressiontree.h>
+    $<$<COMPILE_LANGUAGE:CXX>:core/keyvalue/variant.h>
+    $<$<COMPILE_LANGUAGE:CXX>:core/keyvalue/p_string.h>
+    $<$<COMPILE_LANGUAGE:CXX>:core/keyvalue/key_string.h>
+    $<$<COMPILE_LANGUAGE:CXX>:core/payload/payloadiface.h>
+    $<$<COMPILE_LANGUAGE:CXX>:core/rdxcontext.h>
+    $<$<COMPILE_LANGUAGE:CXX>:core/ft/usingcontainer.h>
+    $<$<COMPILE_LANGUAGE:CXX>:vendor/sparse-map/sparse_map.h>
+    $<$<COMPILE_LANGUAGE:CXX>:vendor/sparse-map/sparse_set.h>
+
+    $<$<COMPILE_LANGUAGE:CXX>:net/ev/ev.h>
+  )
+  target_precompile_headers(${TARGET}_obj PRIVATE ${PREC_HDRS})
+endif()
+
 add_definitions(-DREINDEX_CORE_BUILD=1)
 add_definitions(-DFMT_HEADER_ONLY=1)
 add_definitions(-DSPDLOG_FMT_EXTERNAL=1)
 add_definitions(-DFMT_USE_FULL_CACHE_DRAGONBOX=1)
 
 # add_definitions(-DREINDEX_FT_EXTRA_DEBUG=1)
+if (ENABLE_SERVER_AS_PROCESS_IN_TEST)
+  add_definitions(-DRX_ENABLE_CLUSTERPROXY_LOGS=1)
+endif()
 
 add_subdirectory(server/contrib)
 
@@ -359,6 +464,32 @@ else()
   link_directories(${CMAKE_CURRENT_BINARY_DIR})
   list(APPEND REINDEXER_LIBRARIES snappy)
 endif()
+
+set(OBJ_LIBRARIES ${TARGET}_obj)
+if(BUILD_ANN_INDEXES STREQUAL "all")
+  message("Building with full ANN-indexes support...")
+  find_package(OpenMP REQUIRED)
+  include_directories(SYSTEM ${OpenMP_CXX_INCLUDE_DIR})
+  list(APPEND REINDEXER_LIBRARIES ${OpenMP_CXX_LIBRARIES})
+  if(NOT APPLE AND NOT MSVC)
+    set(EXTRA_FLAGS "${EXTRA_FLAGS} -fopenmp")
+    list(APPEND REINDEXER_LIBRARIES ${OpenMP_CXX_LIBRARIES} gomp)
+  endif()
+
+  set(BUILD_FAISS_GLOBAL ON)
+  add_definitions(-DRX_WITH_FAISS_ANN_INDEXES=1)
+  add_definitions(-DRX_WITH_BUILTIN_ANN_INDEXES=1)
+  add_subdirectory(vendor_subdirs/faiss)
+  list(APPEND OBJ_LIBRARIES faiss_obj)
+elseif(BUILD_ANN_INDEXES STREQUAL "builtin")
+  message("Building with builtin ANN-indexes only...")
+  add_definitions(-DRX_WITH_BUILTIN_ANN_INDEXES=1)
+else()
+  message("Building without ANN-indexes...")
+endif()
+
+add_library(${TARGET})
+target_link_libraries(${TARGET} PUBLIC ${OBJ_LIBRARIES})
 
 # storage
 #########
@@ -452,7 +583,7 @@ if(NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR OR WITH_TSAN)
   link_directories(${CMAKE_CURRENT_BINARY_DIR})
   list(APPEND REINDEXER_LINK_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
   list(INSERT REINDEXER_LIBRARIES 1 leveldb)
-  add_dependencies(reindexer leveldb_lib)
+  add_dependencies(${TARGET}_obj leveldb_lib)
 else()
   message(STATUS "Found LevelDB: ${LevelDB_LIBRARY}")
   include_directories(SYSTEM ${LevelDB_INCLUDE_DIR})
@@ -477,15 +608,15 @@ if(WITH_CPPTRACE)
     cpptrace_lib
     GIT_REPOSITORY "https://github.com/jeremy-rifkin/cpptrace.git"
     GIT_TAG "v0.3.1"
-    CMAKE_ARGS -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}	
+    CMAKE_ARGS -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}
       -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
       -DCPPTRACE_BUILD_SHARED=Off
       -DCPPTRACE_GET_SYMBOLS_WITH_DBGHELP=On
       -DCPPTRACE_UNWIND_WITH_DBGHELP=On
-      -DCPPTRACE_DEMANGLE_WITH_WINAPI=On	
+      -DCPPTRACE_DEMANGLE_WITH_WINAPI=On
   )
   add_definitions(-DREINDEX_WITH_CPPTRACE)
-  add_dependencies(reindexer cpptrace_lib)
+  add_dependencies(${TARGET}_obj cpptrace_lib)
   list(APPEND REINDEXER_LIBRARIES cpptrace ${REINDEXER_LIBRARIES})
 endif()
 
@@ -497,11 +628,9 @@ endif()
 
 if(NOT WIN32)
   # libdl
-  find_library(LIBDL dl)
-  if(LIBDL)
-    list(APPEND REINDEXER_LIBRARIES ${LIBDL})
-    add_definitions(-DREINDEX_WITH_LIBDL=1)
-  endif()
+  find_library(LIBDL dl REQUIRED)
+  list(APPEND REINDEXER_LIBRARIES ${LIBDL})
+  add_definitions(-DREINDEX_WITH_LIBDL=1)
 endif()
 
 # Unwind from libgcc or clang
@@ -513,9 +642,9 @@ list(REMOVE_ITEM CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
 if(HAVE_BACKTRACE AND HAVE_GETIPINFO)
   set(SYSUNWIND On)
   message("-- Found system unwind")
-  add_definitions(-DREINDEX_WITH_UNWIND=1) 
+  add_definitions(-DREINDEX_WITH_UNWIND=1)
 endif()
-  
+
 # libunwind
 if(ENABLE_LIBUNWIND)
   find_library(LIBUNWIND unwind)
@@ -556,6 +685,18 @@ endif()
 
 if(WIN32)
   list(APPEND REINDEXER_LIBRARIES shlwapi dbghelp ws2_32)
+endif()
+
+if (MSVC)
+    add_definitions(-DNOMINMAX)
+endif()
+
+if(ENABLE_OPENSSL)
+  find_package(OpenSSL)
+  if(OPENSSL_FOUND)
+    include_directories(SYSTEM ${OPENSSL_INCLUDE_DIR})
+    add_definitions(-DWITH_OPENSSL)
+  endif()
 endif()
 
 set(REINDEXER_LIBRARIES_GLOBAL ${REINDEXER_LIBRARIES} PARENT_SCOPE)
@@ -602,6 +743,7 @@ add_subdirectory(doc)
 # Tests and benchmarks
 find_package(GTest)
 if(GTEST_FOUND)
+    add_definitions(-DRX_SRC="${REINDEXER_SOURCE_PATH}")
     include_directories(SYSTEM ${GTEST_INCLUDE_DIR})
     add_subdirectory(gtests/tests)
 endif()

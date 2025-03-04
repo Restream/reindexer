@@ -1,23 +1,27 @@
 #pragma once
 
-#include "client/internalrdxcontext.h"
-#include "client/rpcclientmock.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/objtype.h"
 #include "core/indexopts.h"
 #include "core/type_consts.h"
 #include "reindexer_api.h"
-#include "server/dbmanager.h"
+#include "rpc_test_client.h"
 #include "server/server.h"
+#include "tools/dsn.h"
 #include "tools/fsops.h"
 #include "yaml-cpp/yaml.h"
 
 class MsgPackCprotoApi : public ReindexerApi {
 public:
-	MsgPackCprotoApi() {}
-	~MsgPackCprotoApi() {}
+	using Reindexer = reindexer::client::Reindexer;
+	using QueryResults = reindexer::client::QueryResults;
+	using Item = reindexer::client::Item;
+
+	MsgPackCprotoApi() = default;
+	~MsgPackCprotoApi() = default;
 
 	void SetUp() {
+		using reindexer::client::RPCDataFormat;
 		reindexer::fs::RmDirAll(kDbPath);
 		YAML::Node y;
 		y["storage"]["path"] = kDbPath;
@@ -39,27 +43,28 @@ public:
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 
-		client_.reset(new reindexer::client::RPCClientMock());
-		err = client_->Connect("cproto://127.0.0.1:25677/" + kDbName, reindexer::client::ConnectOpts().CreateDBIfMissing());
+		client_.reset(new reindexer::client::RPCTestClient());
+		err = client_->Connect(reindexer::DSN("cproto://127.0.0.1:25677/" + kDbName), reindexer::client::ConnectOpts().CreateDBIfMissing());
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = client_->OpenNamespace(default_namespace, ctx_, StorageOpts().CreateIfMissing());
+		err = client_->OpenNamespace(default_namespace, StorageOpts().CreateIfMissing());
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = client_->AddIndex(default_namespace, reindexer::IndexDef(kFieldId, "hash", "int", IndexOpts().PK()), ctx_);
+		err = client_->AddIndex(default_namespace, reindexer::IndexDef(kFieldId, "hash", "int", IndexOpts().PK()));
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = client_->AddIndex(default_namespace, reindexer::IndexDef(kFieldA1, "hash", "int", IndexOpts()), ctx_);
+		err = client_->AddIndex(default_namespace, reindexer::IndexDef(kFieldA1, "hash", "int", IndexOpts()));
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = client_->AddIndex(default_namespace, reindexer::IndexDef(kFieldA2, "hash", "int", IndexOpts()), ctx_);
+		err = client_->AddIndex(default_namespace, reindexer::IndexDef(kFieldA2, "hash", "int", IndexOpts()));
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = client_->AddIndex(default_namespace, reindexer::IndexDef(kFieldA3, "hash", "int", IndexOpts()), ctx_);
+		err = client_->AddIndex(default_namespace, reindexer::IndexDef(kFieldA3, "hash", "int", IndexOpts()));
 		ASSERT_TRUE(err.ok()) << err.what();
 
+		reindexer::WrSerializer wrser;
 		for (size_t i = 0; i < 1000; ++i) {
-			reindexer::WrSerializer wrser;
+			wrser.Reset();
 			reindexer::JsonBuilder jsonBuilder(wrser, reindexer::ObjType::TypeObject);
 			jsonBuilder.Put(kFieldId, i);
 			jsonBuilder.Put(kFieldA1, i * 2);
@@ -73,7 +78,7 @@ public:
 			err = item.FromJSON(wrser.Slice(), &endp);
 			ASSERT_TRUE(err.ok()) << err.what();
 
-			err = client_->Upsert(default_namespace, item, ctx_);
+			err = client_->Upsert(default_namespace, item, RPCDataFormat::CJSON);
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
 	}
@@ -115,6 +120,5 @@ protected:
 
 	reindexer_server::Server server_;
 	std::unique_ptr<std::thread> serverThread_;
-	std::unique_ptr<reindexer::client::RPCClientMock> client_;
-	reindexer::client::InternalRdxContext ctx_;
+	std::unique_ptr<reindexer::client::RPCTestClient> client_;
 };

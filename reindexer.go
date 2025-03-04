@@ -3,8 +3,9 @@ package reindexer
 import (
 	"context"
 
-	"github.com/restream/reindexer/v3/bindings"
-	"github.com/restream/reindexer/v3/dsl"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/dsl"
+	"github.com/restream/reindexer/v5/events"
 )
 
 // Condition types
@@ -88,6 +89,8 @@ type Reindexer struct {
 // IndexDef - Inddex  definition struct
 type IndexDef bindings.IndexDef
 
+type FloatVectorIndexOpts bindings.FloatVectorIndexOpts
+
 // Error - reindexer Error interface
 type Error interface {
 	Error() string
@@ -158,6 +161,7 @@ type AggregationResult struct {
 
 // NewReindex Create new instanse of Reindexer DB
 // Returns pointer to created instance
+// The absolute path for Windows builtin should look like 'builtin://C:/my/folder/db'
 func NewReindex(dsn interface{}, options ...interface{}) *Reindexer {
 	rx := &Reindexer{
 		impl: newReindexImpl(dsn, options...),
@@ -387,12 +391,6 @@ func (db *Reindexer) ResetStats() {
 	db.impl.resetStats()
 }
 
-// EnableStorage enables persistent storage of data
-// Deprecated: storage path should be passed as DSN part to reindexer.NewReindex (""), e.g. reindexer.NewReindexer ("builtin:///tmp/reindex").
-func (db *Reindexer) EnableStorage(storagePath string) error {
-	return db.impl.enableStorage(db.ctx, storagePath)
-}
-
 // EnumMeta - get list of all metadata keys
 func (db *Reindexer) EnumMeta(namespace string) ([]string, error) {
 	return db.impl.enumMeta(db.ctx, namespace)
@@ -411,6 +409,11 @@ func (db *Reindexer) GetMeta(namespace, key string) ([]byte, error) {
 // DeleteMeta - delete metadata from storage by key
 func (db *Reindexer) DeleteMeta(namespace, key string) error {
 	return db.impl.deleteMeta(db.ctx, namespace, key)
+}
+
+// Subscribe to the database's events stream
+func (db *Reindexer) Subscribe(opts *events.EventsStreamOptions) *events.EventsStream {
+	return db.impl.subscribe(db.ctx, opts)
 }
 
 // WithContext Add context to next method call

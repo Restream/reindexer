@@ -151,16 +151,20 @@ int PayloadTypeImpl::FieldByJsonPath(std::string_view jsonPath) const noexcept {
 }
 
 void PayloadTypeImpl::serialize(WrSerializer& ser) const {
-	ser.PutVarUint(base_key_string::export_hdr_offset());
+	ser.PutVarUint(key_string_impl::export_hdr_offset());
 	ser.PutVarUint(NumFields());
 	for (int i = 0; i < NumFields(); i++) {
-		ser.PutKeyValueType(Field(i).Type());
-		ser.PutVString(Field(i).Name());
-		ser.PutVarUint(Field(i).Offset());
-		ser.PutVarUint(Field(i).ElemSizeof());
-		ser.PutVarUint(Field(i).IsArray());
-		ser.PutVarUint(Field(i).JsonPaths().size());
-		for (auto& jp : Field(i).JsonPaths()) {
+		const auto& field = Field(i);
+		ser.PutKeyValueType(field.Type());
+		if (field.Type().Is<KeyValueType::FloatVector>()) {
+			ser.PutVarUint(field.FloatVectorDimension().Value());
+		}
+		ser.PutVString(field.Name());
+		ser.PutVarUint(field.Offset());
+		ser.PutVarUint(field.ElemSizeof());
+		ser.PutVarUint(field.IsArray());
+		ser.PutVarUint(field.JsonPaths().size());
+		for (auto& jp : field.JsonPaths()) {
 			ser.PutVString(jp);
 		}
 	}
@@ -172,33 +176,34 @@ void PayloadTypeImpl::deserialize(Serializer& ser) {
 	fieldsByJsonPath_.clear();
 	strFields_.clear();
 
-	ser.GetVarUint();
+	ser.GetVarUInt();
 
-	auto count = ser.GetVarUint();
+	uint64_t count = ser.GetVarUInt();
 
 	for (uint64_t i = 0; i < count; i++) {
 		const auto t = ser.GetKeyValueType();
+		const FloatVectorDimension floatVectorDimension =
+			t.Is<KeyValueType::FloatVector>() ? FloatVectorDimension(ser.GetVarUInt()) : FloatVectorDimension{};
 		std::string name(ser.GetVString());
 		std::vector<std::string> jsonPaths;
-		uint64_t offset = ser.GetVarUint();
-		uint64_t elemSizeof = ser.GetVarUint();
-		bool isArray = ser.GetVarUint();
-		uint64_t jsonPathsCount = ser.GetVarUint();
+		const uint64_t offset = ser.GetVarUInt();
+		[[maybe_unused]] const uint64_t elemSizeof = ser.GetVarUInt();
+		const bool isArray = ser.GetVarUInt();
+		uint64_t jsonPathsCount = ser.GetVarUInt();
+		jsonPaths.reserve(jsonPathsCount);
 
 		while (jsonPathsCount--) {
-			jsonPaths.push_back(std::string(ser.GetVString()));
+			jsonPaths.emplace_back(ser.GetVString());
 		}
 
-		(void)elemSizeof;
-
-		PayloadFieldType ft(t, name, jsonPaths, isArray);
+		PayloadFieldType ft(t, name, std::move(jsonPaths), isArray, floatVectorDimension);
 
 		ft.SetOffset(offset);
-		fieldsByName_.emplace(name, fields_.size());
+		fieldsByName_.emplace(std::move(name), fields_.size());
 		if (t.Is<KeyValueType::String>()) {
 			strFields_.push_back(fields_.size());
 		}
-		fields_.push_back(ft);
+		fields_.push_back(std::move(ft));
 	}
 }
 
@@ -207,18 +212,18 @@ PayloadType::PayloadType(const std::string& name, std::initializer_list<PayloadF
 PayloadType::PayloadType(const PayloadTypeImpl& impl)
 	: shared_cow_ptr<PayloadTypeImpl>(make_intrusive<intrusive_atomic_rc_wrapper<PayloadTypeImpl>>(impl)) {}
 PayloadType::~PayloadType() = default;
-const PayloadFieldType& PayloadType::Field(int field) const { return get()->Field(field); }
-const std::string& PayloadType::Name() const { return get()->Name(); }
-void PayloadType::SetName(const std::string& name) { clone()->SetName(name); }
-int PayloadType::NumFields() const { return get()->NumFields(); }
+const PayloadFieldType& PayloadType::Field(int field) const& noexcept { return get()->Field(field); }
+const std::string& PayloadType::Name() const& noexcept { return get()->Name(); }
+void PayloadType::SetName(std::string_view name) { clone()->SetName(name); }
+int PayloadType::NumFields() const noexcept { return get()->NumFields(); }
 void PayloadType::Add(PayloadFieldType f) { clone()->Add(std::move(f)); }
 bool PayloadType::Drop(std::string_view field) { return clone()->Drop(field); }
 int PayloadType::FieldByName(std::string_view field) const { return get()->FieldByName(field); }
-bool PayloadType::FieldByName(std::string_view name, int& field) const { return get()->FieldByName(name, field); }
-bool PayloadType::Contains(std::string_view field) const { return get()->Contains(field); }
-int PayloadType::FieldByJsonPath(std::string_view jsonPath) const { return get()->FieldByJsonPath(jsonPath); }
-const std::vector<int>& PayloadType::StrFields() const { return get()->StrFields(); }
-size_t PayloadType::TotalSize() const { return get()->TotalSize(); }
+bool PayloadType::FieldByName(std::string_view name, int& field) const noexcept { return get()->FieldByName(name, field); }
+bool PayloadType::Contains(std::string_view field) const noexcept { return get()->Contains(field); }
+int PayloadType::FieldByJsonPath(std::string_view jsonPath) const noexcept { return get()->FieldByJsonPath(jsonPath); }
+const std::vector<int>& PayloadType::StrFields() const& noexcept { return get()->StrFields(); }
+size_t PayloadType::TotalSize() const noexcept { return get()->TotalSize(); }
 std::string PayloadType::ToString() const { return get()->ToString(); }
 
 void PayloadType::Dump(std::ostream& os, std::string_view step, std::string_view offset) const {

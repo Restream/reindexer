@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/restream/reindexer/v3"
+	"github.com/restream/reindexer/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -100,6 +100,7 @@ type TestItemComplexObject struct {
 	ID        int              `reindex:"id,,pk" json:"id"`
 	Code      int64            `reindex:"code" json:"code"`
 	IsEnabled bool             `reindex:"is_enabled" json:"is_enabled"`
+	Vec       []float32        `reindex:"vec,hnsw,m=16,ef_construction=200,metric=inner_product,dimension=16"`
 	Desc      string           `reindex:"desc" json:"desc"`
 	MainObj   testItemObject   `reindex:"main_obj" json:"main_obj"`
 	Size      int              `json:"size"`
@@ -177,6 +178,7 @@ func newTestItemComplexObject(id int) *TestItemComplexObject {
 	return &TestItemComplexObject{
 		ID:        id,
 		Code:      rand.Int63() % 10000000,
+		Vec:       randVect(16),
 		IsEnabled: (rand.Int() % 2) == 0,
 		Desc:      randString(),
 		Size:      rand.Int()%200000 + 100,
@@ -196,9 +198,15 @@ func newTestItemComplexObject(id int) *TestItemComplexObject {
 	}
 }
 
+func selectAndFetchAll(t *testing.T, ns string) {
+	_, err := DBD.Query(ns).Exec().FetchAll()
+	require.NoError(t, err)
+}
+
 func TestUpdate(t *testing.T) {
-	FillTestItemsForInsertUpdate(t)
-	CheckTestItemsInsertUpdate(t)
+	fillTestItemsForInsertUpdate(t, "test_items_insert_update")
+	checkTestItemsInsertUpdate(t, "test_items_insert_update")
+	selectAndFetchAll(t, "test_items_insert_update")
 }
 
 func TestUpdateFields(t *testing.T) {
@@ -210,35 +218,65 @@ func TestUpdateFields(t *testing.T) {
 
 	RemoveDummyItems(t)
 
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckIndexedArrayItemUpdate1(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckIndexedArrayItemUpdate2(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckNonIndexedArrayItemUpdate1(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckNonIndexedArrayItemUpdate2(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckNonIndexedArrayItemUpdate3(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckNonIndexedArrayAppend1(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckNonIndexedArrayAppend2(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckUpdateArrayObject(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckFieldsDrop(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckIndexedFieldUpdate(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckNonIndexedFieldUpdate(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckNonIndexedEmptyArrayFieldUpdate(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckNonIndexedArrayWithSingleElementFieldUpdate(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckNonIndexedArrayFieldUpdate(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckIndexedArrayFieldUpdate(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckUpdateObject(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckUpdateObject2(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckAddObject(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckAddObject2(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckUpdateArrayOfObjects(t, 10)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckUpdateArrayOfObjects(t, 1)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckUpdateArrayOfObjects(t, 0)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckNestedFieldUpdate(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckNestedFieldUpdate2(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckAddSimpleFields(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckAddComplexField(t, "nested2.nested3.nested4.val", []string{"nested2", "nested3", "nested4", "val"})
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckAddComplexField(t, "main_obj.main.nested.val", []string{"main_obj", "main", "nested", "val"})
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckUpdateWithExpressions1(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 	CheckUpdateWithExpressions2(t)
+	selectAndFetchAll(t, fieldsUpdateNs)
 }
 
 func RemoveDummyItems(t *testing.T) {
@@ -787,7 +825,6 @@ func CheckNonIndexedArrayItemUpdate3(t *testing.T) {
 			}
 		}
 		require.True(t, equal, "Update of field 'objects[0].nested[0].fourth[0]' has shown wrong results")
-
 	}
 }
 
@@ -934,8 +971,8 @@ func CheckAddComplexField(t *testing.T, path string, subfields []string) {
 	}
 }
 
-func FillTestItemsForInsertUpdate(t *testing.T) {
-	tx := newTestTx(DB, "test_items_insert_update")
+func fillTestItemsForInsertUpdate(t *testing.T, ns string) {
+	tx := newTestTx(DB, ns)
 
 	for _, item := range checkInsertUpdateExistsData {
 		require.NoError(t, tx.Insert(item))
@@ -943,7 +980,7 @@ func FillTestItemsForInsertUpdate(t *testing.T) {
 	require.Equal(t, tx.MustCommit(), len(checkInsertUpdateExistsData), "Could not commit testSortModeDataCustomSource")
 }
 
-func CheckTestItemsInsertUpdate(t *testing.T) {
+func checkTestItemsInsertUpdate(t *testing.T, ns string) {
 	actionMap := map[string]func(string, interface{}, ...string) (int, error){
 		"INSERT": DB.Insert,
 		"UPDATE": DB.Update,
@@ -971,7 +1008,7 @@ func CheckTestItemsInsertUpdate(t *testing.T) {
 				t.Run(fmt.Sprintf("%s %s ITEMS %s", actionName, exists, preceptsText), func(t *testing.T) {
 					for _, item := range dataset {
 						var originalYear int = item.Year
-						cnt, err := doAction("test_items_insert_update", item, precepts...)
+						cnt, err := doAction(ns, item, precepts...)
 						require.NoError(t, err)
 
 						act := actionName + " " + exists
@@ -1062,14 +1099,17 @@ func TestUpdateSparseArrayIndex(t *testing.T) {
 	require.NoError(t, DB.Upsert(sparseArrItemNs, emptyItem))
 	results := DB.ExecSQL("SELECT * FROM " + sparseArrItemNs + " WHERE id = 2")
 	checkResultItem(t, results, emptyItem)
+	selectAndFetchAll(t, sparseArrItemNs)
 
 	require.NoError(t, DB.Upsert(sparseArrItemNs, item))
 	results = DB.ExecSQL("SELECT * FROM " + sparseArrItemNs + " WHERE id = 2")
 	checkResultItem(t, results, item)
+	selectAndFetchAll(t, sparseArrItemNs)
 
 	require.NoError(t, DB.Upsert(sparseArrItemNs, emptyItem))
 	results = DB.ExecSQL("SELECT * FROM " + sparseArrItemNs + " WHERE id = 2")
 	checkResultItem(t, results, emptyItem)
+	selectAndFetchAll(t, sparseArrItemNs)
 }
 
 func TestUpdateExpressionWithArrayRemove(t *testing.T) {
@@ -1088,6 +1128,7 @@ func TestUpdateExpressionWithArrayRemove(t *testing.T) {
 		res := res_slice[0].(*ItemWithSparseArray)
 		expected := []int64{1, 4, 5, 1, 4, 5, 50}
 		require.EqualValues(t, expected, res.Array)
+		selectAndFetchAll(t, ns)
 	})
 
 	t.Run("update with array_remove_once delete elements from array", func(t *testing.T) {
@@ -1098,6 +1139,7 @@ func TestUpdateExpressionWithArrayRemove(t *testing.T) {
 		res := res_slice[0].(*ItemWithSparseArray)
 		expected := []int64{4, 4, 5, 50}
 		require.EqualValues(t, expected, res.Array)
+		selectAndFetchAll(t, ns)
 	})
 
 	t.Run("update with array_remove delete by single value (scalar) from array", func(t *testing.T) {
@@ -1108,6 +1150,7 @@ func TestUpdateExpressionWithArrayRemove(t *testing.T) {
 		res := res_slice[0].(*ItemWithSparseArray)
 		expected := []int64{5, 50}
 		require.EqualValues(t, expected, res.Array)
+		selectAndFetchAll(t, ns)
 	})
 
 }
@@ -1134,6 +1177,8 @@ func TestUpdateSetHeterogeneousArray(t *testing.T) {
 		arrayIdxExpected := []int64{777, 333, 555}
 		expected := &ItemWithHeteroArrays{ID: 1, ArrayIdx: arrayIdxExpected, ArrayNon: updateArrNon}
 		checkResultItem(t, DB.ExecSQL(selectText), expected)
+
+		selectAndFetchAll(t, ns)
 	})
 
 	t.Run("update with heterogeneous objects array", func(t *testing.T) {
@@ -1164,5 +1209,7 @@ func TestUpdateSetHeterogeneousArray(t *testing.T) {
 			ArrayNon: []interface{}{map[string]interface{}{"field": 111}, map[string]interface{}{"field": "abc"}},
 		}
 		checkResultItem(t, DB.ExecSQL(selectText), expected)
+
+		selectAndFetchAll(t, ns)
 	})
 }

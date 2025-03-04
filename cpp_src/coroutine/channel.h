@@ -135,7 +135,7 @@ private:
 	}
 	static void remove_waiter(waiters_container& waiters) { waiters.erase(std::find(waiters.begin(), waiters.end(), current())); }
 
-	h_vector<T, 1> buf_;
+	h_vector<T, 2> buf_;
 	size_t r_ptr_ = 0;
 	size_t w_ptr_ = 0;
 	size_t data_size_ = 0;

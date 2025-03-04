@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.18)
 
 project(tests)
 
@@ -7,15 +7,18 @@ SET(FUZZING_TARGET fuzzing)
 list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer ${REINDEXER_LIBRARIES})
 
 option(XML_REPORT "Enable XML xUnit report" OFF)
+option(GH_CI_OSX "Option for Github CI on OSX" OFF)
+option(GTEST_SKIP_SHARDING "Skips Sharding-related tests. Option for Github tests with ASAN - free runners run out of memory" OFF)
+set(GTEST_WORKERS "6" CACHE STRING "Number of workers for gtest_parallel")
 
 include_directories(fixtures mocks)
 include_directories(${GTEST_INCLUDE_DIRS})
 include_directories(${REINDEXER_SOURCE_PATH})
 
 set(GENERATED_PROTO_DIR "${PROJECT_BINARY_DIR}")
-if (ENABLE_GRPC)
+if(ENABLE_GRPC)
     find_package(Protobuf)
-    if (PROTOBUF_FOUND)
+    if(PROTOBUF_FOUND)
         INCLUDE_DIRECTORIES(SYSTEM ${PROTOBUF_INCLUDE_DIR})
         list(APPEND REINDEXER_LIBRARIES ${PROTOBUF_LIBRARIES})
         file(GLOB PROTOBUF_SOURCE_FILES ${REINDEXER_SOURCE_PATH}/gtests/tests/proto/*.proto)
@@ -46,6 +49,65 @@ list(REMOVE_ITEM SRCS ${FUZZING_SRCS})
 add_executable(${TARGET} ${SRCS})
 add_executable(${FUZZING_TARGET} ${FUZZING_SRCS})
 
+if(ENABLE_PCH)
+  set(PREC_HDRS
+    <vector>
+    <map>
+    <unordered_map>
+    <set>
+    <unordered_set>
+    <deque>
+    <memory>
+    <string>
+    <string_view>
+    <optional>
+    <chrono>
+    <functional>
+    <thread>
+    <chrono>
+    <atomic>
+    <fstream>
+
+    ${REINDEXER_SOURCE_PATH}/estl/h_vector.h
+    ${REINDEXER_SOURCE_PATH}/estl/fast_hash_set.h
+    ${REINDEXER_SOURCE_PATH}/estl/fast_hash_map.h
+    ${REINDEXER_SOURCE_PATH}/estl/intrusive_ptr.h
+    ${REINDEXER_SOURCE_PATH}/estl/mutex.h
+    ${REINDEXER_SOURCE_PATH}/estl/shared_mutex.h
+    ${REINDEXER_SOURCE_PATH}/estl/cow.h
+    ${REINDEXER_SOURCE_PATH}/tools/errors.h
+    ${REINDEXER_SOURCE_PATH}/tools/logger.h
+    ${REINDEXER_SOURCE_PATH}/tools/lsn.h
+    ${REINDEXER_SOURCE_PATH}/tools/serializer.h
+    ${REINDEXER_SOURCE_PATH}/tools/stringstools.h
+    ${REINDEXER_SOURCE_PATH}/tools/fsops.h
+
+    ${REINDEXER_SOURCE_PATH}/core/reindexer.h
+    ${REINDEXER_SOURCE_PATH}/core/query/query.h
+    ${REINDEXER_SOURCE_PATH}/core/queryresults/queryresults.h
+    ${REINDEXER_SOURCE_PATH}/core/item.h
+    ${REINDEXER_SOURCE_PATH}/core/system_ns_names.h
+    ${REINDEXER_SOURCE_PATH}/client/reindexer.h
+    ${REINDEXER_SOURCE_PATH}/client/queryresults.h
+    ${REINDEXER_SOURCE_PATH}/client/item.h
+    ${REINDEXER_SOURCE_PATH}/cluster/config.h
+    ${REINDEXER_SOURCE_PATH}/vendor/gason/gason.h
+    ${REINDEXER_SOURCE_PATH}/vendor/yaml-cpp/yaml.h
+    ${REINDEXER_SOURCE_PATH}/core/cjson/jsonbuilder.h
+
+    gtest_cout.h
+    fixtures/reindexer_api.h
+    fixtures/ft_api.h
+    fixtures/clusterization_api.h
+    fixtures/servercontrol.h
+
+    <gtest/gtest.h>
+    <gtest/gtest-param-test.h>
+  )
+
+  target_precompile_headers(${TARGET} PRIVATE ${PREC_HDRS})
+endif()
+
 # Enable export to provide readable stacktraces
 set_property(TARGET ${TARGET} PROPERTY ENABLE_EXPORTS 1)
 set_property(TARGET ${FUZZING_TARGET} PROPERTY ENABLE_EXPORTS 1)
@@ -57,20 +119,27 @@ if (ENABLE_GRPC)
     target_link_libraries(${TARGET} reindexer_grpc_library)
 endif()
 
-set(GTEST_TIMEOUT 600)
+if(GH_CI_OSX)
+    add_definitions(-DRX_LONG_REPLICATION_TIMEOUT)
+endif()
+
+set(GTEST_TIMEOUT 800)
 if (WITH_ASAN OR WITH_TSAN OR WITH_STDLIB_DEBUG)
     set(GTEST_TIMEOUT 2000)
 endif()
 
+if(GTEST_SKIP_SHARDING)
+    set(GTEST_EXTRA_OPTIONS "--gtest_filter=-Sharding*:SnapshotTestApi.ForceSyncFromRemoteToLocal")
+endif()
 find_program(GTEST_PARALLEL "gtest-parallel")
 if (GTEST_PARALLEL)
-    if (XML_REPORT)
-        add_test(NAME gtests COMMAND gtest-parallel --gtest_color=no --serialize_test_cases --print_test_times --timeout ${GTEST_TIMEOUT} --gtest_output=xml:${REINDEXER_SOURCE_PATH}/testReport.xml "./${TARGET}")
+    if(XML_REPORT)
+        add_test(NAME gtests COMMAND gtest-parallel --gtest_color=no --serialize_test_cases --print_test_times --timeout ${GTEST_TIMEOUT} --gtest_output=xml:${REINDEXER_SOURCE_PATH}/testReport.xml ${GTEST_EXTRA_OPTIONS} "./${TARGET}")
     else()
-        add_test(NAME gtests COMMAND gtest-parallel --serialize_test_cases --print_test_times --timeout ${GTEST_TIMEOUT} "./${TARGET}")
+        add_test(NAME gtests COMMAND gtest-parallel --serialize_test_cases --print_test_times --timeout ${GTEST_TIMEOUT} ${GTEST_EXTRA_OPTIONS} "./${TARGET}")
     endif()
 else()
-    add_test(NAME gtests COMMAND ${TARGET} --gtest_color=yes)
+    add_test(NAME gtests COMMAND ${TARGET} --gtest_color=yes ${GTEST_EXTRA_OPTIONS})
 endif()
 
 if (WITH_TSAN)
@@ -82,6 +151,15 @@ if (ENABLE_SERVER_AS_PROCESS_IN_TEST)
     if (CMAKE_SYSTEM_NAME MATCHES "Linux")
         add_definitions(-DREINDEXER_WITH_SC_AS_PROCESS)
         add_definitions(-DREINDEXER_SERVER_PATH="$<TARGET_FILE:reindexer_server>")
+    else()
+        message(WARNING "\nENABLE_SERVER_AS_PROCESS_IN_TEST is set but the OS is not linux. Option disabled!\n")
+    endif()
+endif()
+
+if(ENABLE_SERVER_AS_PROCESS_IN_TEST)
+    if(CMAKE_SYSTEM_NAME MATCHES "Linux")	
+        add_definitions(-DREINDEXER_WITH_SC_AS_PROCESS)    	
+	    add_definitions(-DREINDEXER_SERVER_PATH="$<TARGET_FILE:reindexer_server>")
     else()
         message(WARNING "\nENABLE_SERVER_AS_PROCESS_IN_TEST is set but the OS is not linux. Option disabled!\n")
     endif()

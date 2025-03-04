@@ -2,7 +2,7 @@
 #include <sstream>
 #include "core/nsselecter/explaincalc.h"
 #include "core/query/query.h"
-#include "core/transactionimpl.h"
+#include "core/transaction/localtransaction.h"
 #include "logger.h"
 
 namespace reindexer::long_actions {
@@ -123,7 +123,7 @@ void Logger<QueryEnum2Type<QueryType::QueryDelete>>::Dump(std::chrono::microseco
 }
 
 template <>
-void Logger<Transaction>::Dump(std::chrono::microseconds time) {
+void Logger<LocalTransaction>::Dump(std::chrono::microseconds time) {
 	int64_t avg_time = 0;
 	bool longAvgStep = false;
 	if (wrapper_.thresholds.avgTxStepThresholdUs >= 0) {
@@ -137,7 +137,7 @@ void Logger<Transaction>::Dump(std::chrono::microseconds time) {
 		std::ostringstream os;
 		fillStorageInfo(os, wrapper_.durationStorage);
 
-		logPrintf(LogWarning, "[slowlog] Long tx apply: namespace - %s; was%scopied; %d steps;%s%s\n%s", wrapper_.tx.GetName(),
+		logPrintf(LogWarning, "[slowlog] Long tx apply: namespace - %s; was%scopied; %d steps;%s%s\n%s", wrapper_.tx.GetNsName(),
 				  wrapper_.wasCopied ? " " : " not ", wrapper_.tx.GetSteps().size(),
 				  longAvgStep ? fmt::sprintf(" Exceeded the average step execution time limit (%dus);", avg_time) : "",
 				  longTotal ? fmt::sprintf(" Exceeded the total time limit (%dus);", time.count()) : "", os.str());
@@ -154,7 +154,7 @@ void ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>>::Add(const ExplainCal
 		&ExplainCalc::Sort>(explain);
 }
 
-template struct Logger<Transaction>;
+template struct Logger<LocalTransaction>;
 template struct Logger<QueryEnum2Type<QueryType::QuerySelect>>;
 template struct Logger<QueryEnum2Type<QueryType::QueryUpdate>>;
 template struct Logger<QueryEnum2Type<QueryType::QueryDelete>>;

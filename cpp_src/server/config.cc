@@ -2,6 +2,7 @@
 
 #include "args/args.hpp"
 #include "core/storage/storagefactory.h"
+#include "reindexer_version.h"
 #include "tools/fsops.h"
 #include "yaml-cpp/yaml.h"
 
@@ -13,7 +14,9 @@ void ServerConfig::Reset() {
 	StorageEngine = "leveldb";
 	HTTPAddr = "0.0.0.0:9088";
 	RPCAddr = "0.0.0.0:6534";
-	RPCUnixAddr = "";
+	HTTPsAddr = "0.0.0.0:9089";
+	RPCsAddr = "0.0.0.0:6535";
+	RPCUnixAddr = "none";
 	GRPCAddr = "0.0.0.0:16534";
 	RPCThreadingMode = kSharedThreading;
 	RPCUnixThreadingMode = kSharedThreading;
@@ -46,10 +49,10 @@ void ServerConfig::Reset() {
 	TxIdleTimeout = std::chrono::seconds(600);
 	RPCQrIdleTimeout = std::chrono::seconds(600);
 	HttpReadTimeout = std::chrono::seconds(0);
-	HttpWriteTimeout = std::chrono::seconds(0);
+	httpWriteTimeout_ = kDefaultHttpWriteTimeout;
 	MaxUpdatesSize = 1024 * 1024 * 1024;
 	EnableGRPC = false;
-	MaxHttpReqSize = 2 * 1024 * 1024;
+	MaxHttpReqSize = 8 * 1024 * 1024;
 	AllocatorCacheLimit = -1;
 	AllocatorCachePart = -1;
 }
@@ -60,7 +63,7 @@ reindexer::Error ServerConfig::ParseYaml(const std::string& yaml) {
 		YAML::Node root = YAML::Load(yaml);
 		err = fromYaml(root);
 	} catch (const YAML::Exception& ex) {
-		err = Error(errParams, "Error with config string. Reason: '%s'", ex.what());
+		err = Error(errParseYAML, "Error with config string. Reason: '%s'", ex.what());
 	}
 	return err;
 }
@@ -71,7 +74,7 @@ Error ServerConfig::ParseFile(const std::string& filePath) {
 		YAML::Node root = YAML::LoadFile(filePath);
 		err = fromYaml(root);
 	} catch (const YAML::Exception& ex) {
-		err = Error(errParams, "Error with config file '%s'. Reason: %s", filePath, ex.what());
+		err = Error(errParseYAML, "Error with config file '%s'. Reason: %s", filePath, ex.what());
 	}
 	return err;
 }
@@ -85,6 +88,8 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 
 	args::ArgumentParser parser("reindexer server");
 	args::HelpFlag help(parser, "help", "Show this message", {'h', "help"});
+	args::ActionFlag version(parser, "", "Reindexer version", {'v', "version"},
+							 []() { throw Error(errLogic, fmt::format("Reindexer version: {}", REINDEX_VERSION)); });
 	args::Flag securityF(parser, "", "Enable per-user security", {"security"});
 	args::ValueFlag<std::string> configF(parser, "CONFIG", "Path to reindexer config file", {'c', "config"}, args::Options::Single);
 	args::Flag startWithErrorsF(parser, "", "Allow to start reindexer with DB's load erros", {"startwitherrors"});
@@ -107,11 +112,20 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 
 	args::Group netGroup(parser, "Network options");
 	args::ValueFlag<std::string> httpAddrF(netGroup, "PORT", "http listen host:port", {'p', "httpaddr"}, HTTPAddr, args::Options::Single);
+	args::ValueFlag<std::string> httpsAddrF(netGroup, "TLS-PORT", "https listen host:port", {"httpsaddr"}, HTTPsAddr,
+											args::Options::Single);
 	args::ValueFlag<std::string> rpcAddrF(netGroup, "RPORT", "RPC listen host:port", {'r', "rpcaddr"}, RPCAddr, args::Options::Single);
+	args::ValueFlag<std::string> rpcsAddrF(netGroup, "RPC-TLS-PORT", "RPC with TLS support listen host:port", {"rpcsaddr"}, RPCsAddr,
+										   args::Options::Single);
+	args::ValueFlag<std::string> sslCertPathF(netGroup, "SSL Certificate PATH", "path to ssl certificate", {"ssl-cert"}, SslCertPath,
+											  args::Options::Single);
+	args::ValueFlag<std::string> sslKeyPathF(netGroup, "SSL Private Key PATH", "path to ssl key", {"ssl-key"}, SslKeyPath,
+											 args::Options::Single);
 #ifndef _WIN32
 	args::ValueFlag<std::string> rpcUnixAddrF(netGroup, "URPORT", "RPC listen path (unix domain socket)", {"urpcaddr"}, RPCUnixAddr,
 											  args::Options::Single);
 #endif	// !_WIN32
+	args::Flag enableClusterF(netGroup, "", "***deprecated***. Will be ignored by reindexer", {"enable-cluster"});
 	args::ValueFlag<std::string> httpThreadingModeF(netGroup, "HTHREADING", "HTTP connections threading mode: shared or dedicated",
 													{"http-threading"}, HttpThreadingMode, args::Options::Single);
 	args::ValueFlag<std::string> rpcThreadingModeF(netGroup, "RTHREADING", "RPC connections threading mode: shared or dedicated",
@@ -122,7 +136,7 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 													   {"urpc-threading"}, RPCUnixThreadingMode, args::Options::Single);
 #endif	// _WIN32
 	args::ValueFlag<size_t> MaxHttpReqSizeF(
-		netGroup, "", "Max HTTP request size in bytes. Default value is 2 MB. 0 is 'unlimited', hovewer, stream mode is not supported",
+		netGroup, "", "Max HTTP request size in bytes. Default value is 8 MB. 0 is 'unlimited', hovewer, stream mode is not supported",
 		{"max-http-req"}, MaxHttpReqSize, args::Options::Single);
 #if defined(WITH_GRPC)
 	args::ValueFlag<std::string> grpcAddrF(netGroup, "GPORT", "GRPC listen host:port", {'g', "grpcaddr"}, RPCAddr, args::Options::Single);
@@ -132,9 +146,9 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 										  WebRoot, args::Options::Single);
 	args::ValueFlag<int> httpReadTimeoutF(netGroup, "", "timeout (s) for HTTP read operations (i.e. selects, get meta and others)",
 										  {"http-read-timeout"}, HttpReadTimeout.count(), args::Options::Single);
-	args::ValueFlag<int> httpWriteTimeoutF(netGroup, "",
-										   "timeout (s) for HTTP write operations (i.e. update, delete, put meta, add index and others)",
-										   {"http-write-timeout"}, HttpWriteTimeout.count(), args::Options::Single);
+	args::ValueFlag<int> httpWriteTimeoutF(
+		netGroup, "", "timeout (s) for HTTP write operations (i.e. update, delete, put meta, add index and others). May not be set to 0",
+		{"http-write-timeout"}, kDefaultHttpWriteTimeout.count(), args::Options::Single);
 	args::ValueFlag<size_t> maxUpdatesSizeF(netGroup, "", "Maximum cached updates size", {"updatessize"}, MaxUpdatesSize,
 											args::Options::Single);
 	args::Flag pprofF(netGroup, "", "Enable pprof http handler", {'f', "pprof"});
@@ -194,6 +208,8 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 		parser.ParseCLI(argc, argv);
 	} catch (const args::Help&) {
 		return Error(errLogic, parser.Help());
+	} catch (const Error& v) {
+		return v;
 	} catch (const args::Error& e) {
 		return Error(errParams, "%s\n%s", e.what(), parser.Help());
 	}
@@ -207,6 +223,13 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 
 	if (storageF) {
 		StoragePath = args::get(storageF);
+	}
+
+	if (sslCertPathF) {
+		SslCertPath = args::get(sslCertPathF);
+	}
+	if (sslKeyPathF) {
+		SslKeyPath = args::get(sslKeyPathF);
 	}
 	if (storageEngineF) {
 		StorageEngine = args::get(storageEngineF);
@@ -228,6 +251,12 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	}
 	if (rpcAddrF) {
 		RPCAddr = args::get(rpcAddrF);
+	}
+	if (httpsAddrF) {
+		HTTPsAddr = args::get(httpsAddrF);
+	}
+	if (rpcsAddrF) {
+		RPCsAddr = args::get(rpcsAddrF);
 	}
 
 	if (rpcThreadingModeF) {
@@ -319,7 +348,7 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 		HttpReadTimeout = std::chrono::seconds(args::get(httpReadTimeoutF));
 	}
 	if (httpWriteTimeoutF) {
-		HttpWriteTimeout = std::chrono::seconds(args::get(httpWriteTimeoutF));
+		SetHttpWriteTimeout(std::chrono::seconds(args::get(httpWriteTimeoutF)));
 	}
 	if (logAllocsF) {
 		DebugAllocs = args::get(logAllocsF);
@@ -337,6 +366,16 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	return {};
 }
 
+void ServerConfig::SetHttpWriteTimeout(std::chrono::seconds val) noexcept {
+	if (val.count() > 0) {
+		httpWriteTimeout_ = val;
+		defaultHttpWriteTimeout_ = false;
+	} else {
+		httpWriteTimeout_ = kDefaultHttpWriteTimeout;
+		defaultHttpWriteTimeout_ = true;
+	}
+}
+
 reindexer::Error ServerConfig::fromYaml(YAML::Node& root) {
 	try {
 		AllowNamespaceLeak = root["db"]["ns_leak"].as<bool>(AllowNamespaceLeak);
@@ -349,8 +388,12 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node& root) {
 		CoreLog = root["logger"]["corelog"].as<std::string>(CoreLog);
 		HttpLog = root["logger"]["httplog"].as<std::string>(HttpLog);
 		RpcLog = root["logger"]["rpclog"].as<std::string>(RpcLog);
+		SslCertPath = root["net"]["ssl_cert"].as<std::string>(SslCertPath);
+		SslKeyPath = root["net"]["ssl_key"].as<std::string>(SslKeyPath);
 		HTTPAddr = root["net"]["httpaddr"].as<std::string>(HTTPAddr);
+		HTTPsAddr = root["net"]["httpsaddr"].as<std::string>(HTTPsAddr);
 		RPCAddr = root["net"]["rpcaddr"].as<std::string>(RPCAddr);
+		RPCsAddr = root["net"]["rpcsaddr"].as<std::string>(RPCsAddr);
 		RPCThreadingMode = root["net"]["rpc_threading"].as<std::string>(RPCThreadingMode);
 		HttpThreadingMode = root["net"]["http_threading"].as<std::string>(HttpThreadingMode);
 		WebRoot = root["net"]["webroot"].as<std::string>(WebRoot);
@@ -360,8 +403,9 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node& root) {
 		GRPCAddr = root["net"]["grpcaddr"].as<std::string>(GRPCAddr);
 		TxIdleTimeout = std::chrono::seconds(root["net"]["tx_idle_timeout"].as<int>(TxIdleTimeout.count()));
 		HttpReadTimeout = std::chrono::seconds(root["net"]["http_read_timeout"].as<int>(HttpReadTimeout.count()));
-		HttpWriteTimeout = std::chrono::seconds(root["net"]["http_write_timeout"].as<int>(HttpWriteTimeout.count()));
 		RPCQrIdleTimeout = std::chrono::seconds(root["net"]["rpc_qr_idle_timeout"].as<int>(RPCQrIdleTimeout.count()));
+		const auto httpWriteTimeout = root["net"]["http_write_timeout"].as<int>(-1);
+		SetHttpWriteTimeout(std::chrono::seconds(httpWriteTimeout));
 		MaxHttpReqSize = root["net"]["max_http_body_size"].as<std::size_t>(MaxHttpReqSize);
 		EnablePrometheus = root["metrics"]["prometheus"].as<bool>(EnablePrometheus);
 		PrometheusCollectPeriod = std::chrono::milliseconds(root["metrics"]["collect_period"].as<int>(PrometheusCollectPeriod.count()));
@@ -379,7 +423,7 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node& root) {
 		DebugAllocs = root["debug"]["allocs"].as<bool>(DebugAllocs);
 		DebugPprof = root["debug"]["pprof"].as<bool>(DebugPprof);
 	} catch (const YAML::Exception& ex) {
-		return Error(errParams, "Unable to parse YML server config: %s", ex.what());
+		return Error(errParseYAML, "Unable to parse YML server config: %s", ex.what());
 	}
 	return {};
 }

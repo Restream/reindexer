@@ -41,13 +41,13 @@ ItemImpl JoinedFieldIterator::GetItem(int itemIdx, const PayloadType& pt, const 
 	return ItemImpl(pt, constItemRef.Value(), tm);
 }
 
-QueryResults JoinedFieldIterator::ToQueryResults() const {
+LocalQueryResults JoinedFieldIterator::ToQueryResults() const {
 	if (ItemsCount() == 0) {
-		return QueryResults();
+		return LocalQueryResults();
 	}
-	ItemRefVector::const_iterator begin = joinRes_->items_.begin() + currOffset_;
-	ItemRefVector::const_iterator end = begin + ItemsCount();
-	return QueryResults(begin, end);
+	const auto begin = joinRes_->items_.begin() + currOffset_;
+	const auto end = begin + ItemsCount();
+	return LocalQueryResults(begin, end);
 }
 
 int JoinedFieldIterator::ItemsCount() const noexcept {
@@ -102,24 +102,29 @@ int ItemIterator::getJoinedItemsCount() const noexcept {
 	return joinedItemsCount_;
 }
 
-ItemIterator ItemIterator::CreateFrom(const QueryResults::Iterator& it) noexcept {
-	static NamespaceResults empty;
-	static ItemIterator ret(&empty, 0);
-	auto& itemRef = it.qr_->Items()[it.idx_];
+ItemIterator ItemIterator::CreateFrom(const LocalQueryResults::ConstIterator& it) noexcept {
+	auto ret = ItemIterator::CreateEmpty();
+	auto& itemRef = it.qr_->Items().GetItemRef(it.idx_);
 	if ((itemRef.Nsid() >= it.qr_->joined_.size())) {
 		return ret;
 	}
 	return ItemIterator(&(it.qr_->joined_[itemRef.Nsid()]), itemRef.Id());
 }
 
-void NamespaceResults::Insert(IdType rowid, uint32_t fieldIdx, QueryResults&& qr) {
+ItemIterator ItemIterator::CreateEmpty() noexcept {
+	static NamespaceResults empty;
+	static ItemIterator ret(&empty, 0);
+	return ret;
+}
+
+void NamespaceResults::Insert(IdType rowid, uint32_t fieldIdx, LocalQueryResults&& qr) {
 	assertrx_throw(fieldIdx < joinedSelectorsCount_);
 	ItemOffsets& offsets = offsets_[rowid];
 	if (offsets.empty()) {
 		offsets.reserve(joinedSelectorsCount_);
 	}
-	offsets.emplace_back(fieldIdx, items_.size(), qr.Count());
-	items_.insert(items_.end(), std::make_move_iterator(qr.Items().begin()), std::make_move_iterator(qr.Items().end()));
+	offsets.emplace_back(fieldIdx, items_.Size(), qr.Count());
+	items_.Insert(items_.end(), std::move(qr.Items()).mbegin(), std::move(qr.Items()).mend());
 }
 
 }  // namespace joins

@@ -1,17 +1,17 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.18)
 
 
 project(reindexer_server_library)
 
-set (SWAGGER_VERSION "2.x")
-set (GH_FACE_VERSION "3.31.0")
+set (SWAGGER_VERSION "3.x")
+set (GH_FACE_VERSION "5.0.0")
 set (GH_FACE_TAG "v${GH_FACE_VERSION}")
 set (TARGET reindexer_server_library)
 set (SERVER_LIB_DIR ${PROJECT_BINARY_DIR} PARENT_SCOPE)
 
 file(WRITE ${PROJECT_BINARY_DIR}/swagger_replace.cmake
     "file(READ ${PROJECT_BINARY_DIR}/swagger/index.html indexhtml)
-    STRING(REPLACE \"http://petstore.swagger.io/v2/swagger.json\" \"swagger.yml\" indexhtml \"\${indexhtml}\")
+    STRING(REPLACE \"https://petstore.swagger.io/v2/swagger.json\" \"swagger.yml\" indexhtml \"\${indexhtml}\")
     file(WRITE ${PROJECT_BINARY_DIR}/swagger/index.html \"\${indexhtml}\")"
 )
 
@@ -41,7 +41,6 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
      if (NOT \"\${ret}\" STREQUAL \"0\")
 	 message(FATAL_ERROR \"Could not copy '${PROJECT_SOURCE_DIR}/contrib/server.yml'\")
      endif()
-     file(RENAME \"${PROJECT_BINARY_DIR}/swagger/swagger-ui.min.js\" \"${PROJECT_BINARY_DIR}/swagger/swagger-ui.js\")
      execute_process(COMMAND \"${CMAKE_COMMAND}\" -P \"${PROJECT_BINARY_DIR}/swagger_replace.cmake\")
      execute_process(
        COMMAND ${CMAKE_COMMAND} -E remove_directory \"${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}\"
@@ -112,6 +111,7 @@ file(GLOB SRCS
   pprof/*
   statscollect/*
   cbinding/*
+  events/*
 )
 
 file(GLOB_RECURSE VNDR_SRCS
@@ -121,6 +121,35 @@ list(APPEND REINDEXER_LIBRARIES m)
 add_library(${TARGET} STATIC ${SRCS} ${VNDR_SRCS})
 include_directories(${PROJECT_SOURCE_DIR})
 include_directories(${PROJECT_SOURCE_DIR}/vendor)
+
+if(ENABLE_PCH)
+  set(PREC_HDRS
+    <vector>
+    <map>
+    <unordered_map>
+    <set>
+    <unordered_set>
+    <deque>
+    <memory>
+    <string>
+    <string_view>
+    <optional>
+    <chrono>
+    <functional>
+    <variant>
+    <thread>
+    <chrono>
+    <atomic>
+
+    ${REINDEXER_SOURCE_PATH}/estl/h_vector.h
+    ${REINDEXER_SOURCE_PATH}/core/reindexer.h
+    ${REINDEXER_SOURCE_PATH}/core/query/query.h
+    ${REINDEXER_SOURCE_PATH}/core/queryresults/queryresults.h
+    ${REINDEXER_SOURCE_PATH}/core/item.h
+  )
+
+  target_precompile_headers(${TARGET} PRIVATE ${PREC_HDRS})
+endif()
 
 if (LINK_RESOURCES)
     add_dependencies(${TARGET} reindexer_server_resources)

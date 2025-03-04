@@ -2,8 +2,9 @@
 
 #include "core/keyvalue/geometry.h"
 #include "core/keyvalue/variant.h"
-#include "estl/span.h"
+#include <span>
 #include "tools/errors.h"
+#include "tools/lsn.h"
 
 namespace reindexer {
 
@@ -14,8 +15,9 @@ class Namespace;
 
 class ItemImpl;
 class FieldRefImpl;
-class Replicator;
 class Schema;
+class TagsMatcher;
+class FieldsFilter;
 
 /// Item is the interface for data manipulating. It holds and control one database document (record)<br>
 /// *Lifetime*: Item is uses Copy-On-Write semantics, and have independent lifetime and state - e.g., aquired from Reindexer Item will
@@ -67,20 +69,20 @@ public:
 		/// @param p - point value, which will be setted to field
 		FieldRef& operator=(Point p) {
 			double arr[]{p.X(), p.Y()};
-			return operator=(span<const double>(arr, 2));
+			return operator=(std::span<const double>(arr, 2));
 		}
 
 		/// Set array of values to field
 		/// @tparam T - type. Must be one of: int, int64_t, double
 		/// @param arr - std::vector of T values, which will be setted to field
 		template <typename T>
-		FieldRef& operator=(span<const T> arr);
+		FieldRef& operator=(std::span<const T> arr);
 		/// Set array of values to field
 		/// @tparam T - type. Must be one of: int, int64_t, double
 		/// @param arr - std::vector of T values, which will be setted to field
 		template <typename T>
 		FieldRef& operator=(const std::vector<T>& arr) {
-			return operator=(span<const std::remove_const_t<T>>(arr));
+			return operator=(std::span<const std::remove_const_t<T>>(arr));
 		}
 		/// Set string value to field
 		/// If Item is in Unsafe Mode, then Item will not store str, but just keep pointer to str,
@@ -111,11 +113,15 @@ public:
 		FieldRef& operator=(const VariantArray& krs);
 
 	private:
-		FieldRef(int field, ItemImpl* itemImpl) noexcept : itemImpl_(itemImpl), field_(field) {}
-		FieldRef(std::string_view jsonPath, ItemImpl* itemImpl) noexcept : itemImpl_(itemImpl), jsonPath_(jsonPath), field_(-1) {}
+		void throwIfNotSet() const;
+
+		FieldRef(int field, ItemImpl* itemImpl, bool notSet) noexcept : itemImpl_(itemImpl), field_(field), notSet_(notSet) {}
+		FieldRef(std::string_view jsonPath, ItemImpl* itemImpl, bool notSet) noexcept
+			: itemImpl_(itemImpl), jsonPath_(jsonPath), field_(-1), notSet_(notSet) {}
 		ItemImpl* itemImpl_;
 		std::string_view jsonPath_;
 		int field_;
+		bool notSet_{false};
 	};
 
 	/// Build item from JSON<br>
@@ -157,8 +163,9 @@ public:
 	/// Serialize item to CJSON.<br>
 	/// If Item is in *Unsafe Mode*, then returned slice is allocated in temporary buffer, and can be invalidated by any next operation
 	/// with Item
+	/// @param withTagsMatcher - need to serialize TagsMatcher
 	/// @return data slice with CJSON
-	[[nodiscard]] std::string_view GetCJSON();
+	[[nodiscard]] std::string_view GetCJSON(bool withTagsMatcher = false);
 	/// Serialize item to JSON.<br>
 	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next
 	/// operation with Item
@@ -170,9 +177,12 @@ public:
 	/// Get internal ID of item
 	/// @return ID of item
 	[[nodiscard]] int GetID() const noexcept { return id_; }
+	/// Get internal shardId of item
+	/// @return shardId of item
+	[[nodiscard]] int GetShardID() const noexcept { return shardId_; }
 	/// Get internal version of item
 	/// @return version of item
-	[[nodiscard]] int64_t GetLSN();
+	[[nodiscard]] lsn_t GetLSN();
 	/// Get count of indexed field
 	/// @return count of  field
 	[[nodiscard]] int NumFields() const;
@@ -183,16 +193,20 @@ public:
 	/// Get field by name
 	/// @param name - name of field
 	/// @return FieldRef which contains reference to indexed field
-	FieldRef operator[](std::string_view name) const { return FieldRefByName(name, *impl_); }
+	FieldRef operator[](std::string_view name) const noexcept { return FieldRefByName(name, *impl_); }
 	/// Get field's name tag
 	/// @param name - field name
 	/// @return name's numeric tag value
 	[[nodiscard]] int GetFieldTag(std::string_view name) const;
+	/// Get field's index by name
+	/// @param name - field name
+	/// @return name's numeric field value
+	[[nodiscard]] int GetFieldIndex(std::string_view name) const;
 	/// Get PK fields
 	[[nodiscard]] FieldsSet PkFields() const;
 	/// Set additional percepts for modify operation
 	/// @param precepts - strings in format "fieldName=Func()"
-	void SetPrecepts(const std::vector<std::string>& precepts) &;
+	void SetPrecepts(std::vector<std::string> precepts) &;
 	/// Check was names tags updated while modify operation
 	/// @return true: tags was updated.
 	[[nodiscard]] bool IsTagsUpdated() const noexcept;
@@ -214,27 +228,39 @@ public:
 	/// @param name - field name
 	/// @param itemImpl - item
 	/// @return field's ref
-	static FieldRef FieldRefByName(std::string_view name, ItemImpl& itemImpl);
+	static FieldRef FieldRefByName(std::string_view name, ItemImpl& itemImpl) noexcept;
 
 private:
 	explicit Item(ItemImpl* impl) : impl_(impl) {}
+	Item(ItemImpl*, const FieldsFilter&);
 	explicit Item(const Error& err) : impl_(nullptr), status_(err) {}
-	void setID(int id) { id_ = id; }
-	void setLSN(int64_t lsn);
+	Item(PayloadType, PayloadValue, const TagsMatcher&, std::shared_ptr<const Schema>, const FieldsFilter&);
+	void setID(int id) noexcept { id_ = id; }
+	void setLSN(lsn_t lsn);
+	void setShardID(int id) noexcept { shardId_ = id; }
+	void setFieldsFilter(const FieldsFilter&) noexcept;
 
 	ItemImpl* impl_;
 	Error status_;
 	int id_ = -1;
+	int shardId_ = ShardingKeyType::ProxyOff;
 	friend class NamespaceImpl;
-	friend class TransactionImpl;
 	friend class ItemModifier;
 
+	friend class Transaction;
+	friend class LocalTransaction;
+	friend class TransactionImpl;
+	friend class ProxiedTransaction;
+
 	friend class QueryResults;
+	friend class LocalQueryResults;
 	friend class ReindexerImpl;
-	friend class Replicator;
 	friend class TransactionStep;
 	friend class client::ReindexerImpl;
 	friend class client::Namespace;
+	friend class SnapshotHandler;
+	friend class ClusterProxy;
+	friend class ShardingProxy;
 };
 
 }  // namespace reindexer

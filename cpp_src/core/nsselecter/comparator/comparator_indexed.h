@@ -1,7 +1,5 @@
 #pragma once
 
-#include <unordered_map>
-#include <unordered_set>
 #include <variant>
 
 #include "comparator_indexed_distinct.h"
@@ -29,7 +27,7 @@ template <CondType Cond>
 struct ValuesHolder<key_string, Cond> {
 	struct Type {
 		Type() noexcept = default;
-		Type(key_string v) noexcept : value_{std::move(v)}, valueView_{value_ ? std::string_view{*value_} : std::string_view{}} {}
+		Type(key_string v) noexcept : value_{std::move(v)}, valueView_{value_} {}
 		Type(const Type& other) noexcept : Type{other.value_} {}
 		Type(Type&& other) noexcept : Type{std::move(other.value_)} { other.valueView_ = {}; }
 		Type& operator=(const Type& other) noexcept {
@@ -52,7 +50,7 @@ struct ValuesHolder<key_string, Cond> {
 
 template <typename T>
 struct ValuesHolder<T, CondRange> {
-	using Type = std::pair<T, T>;
+	// Empty
 };
 
 template <typename T>
@@ -152,6 +150,7 @@ public:
 			case CondEmpty:
 			case CondLike:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -194,6 +193,7 @@ public:
 			case CondEmpty:
 			case CondLike:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -237,6 +237,7 @@ public:
 			case CondEmpty:
 			case CondLike:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -283,6 +284,7 @@ public:
 			case CondEmpty:
 			case CondLike:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -361,6 +363,7 @@ public:
 				case CondAny:
 				case CondEmpty:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -442,6 +445,7 @@ public:
 				case CondAny:
 				case CondEmpty:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -536,6 +540,7 @@ public:
 				case CondAny:
 				case CondDWithin:
 				case CondLike:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -628,6 +633,7 @@ public:
 				case CondAny:
 				case CondDWithin:
 				case CondLike:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -685,6 +691,7 @@ public:
 			case CondAny:
 			case CondEmpty:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -730,6 +737,7 @@ public:
 			case CondAny:
 			case CondEmpty:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -775,6 +783,7 @@ public:
 			case CondAny:
 			case CondEmpty:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -823,6 +832,7 @@ public:
 			case CondAny:
 			case CondEmpty:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -906,6 +916,7 @@ public:
 				case CondAny:
 				case CondEmpty:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -993,6 +1004,7 @@ public:
 				case CondAny:
 				case CondEmpty:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -1086,6 +1098,7 @@ public:
 				case CondEmpty:
 				case CondAny:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -1176,6 +1189,7 @@ public:
 				case CondEmpty:
 				case CondAny:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -1238,6 +1252,7 @@ public:
 			case CondEmpty:
 			case CondDWithin:
 			case CondLike:
+			case CondKnn:
 			default:
 				abort();
 		}

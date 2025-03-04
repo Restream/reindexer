@@ -5,7 +5,7 @@
 
 namespace reindexer {
 
-Variant FunctionExecutor::Execute(SelectFuncStruct& funcData) {
+Variant FunctionExecutor::Execute(SelectFuncStruct& funcData, const NsContext& ctx) {
 	if (funcData.funcName == "now") {
 		std::string_view mode = "sec";
 		if (!funcData.funcArgs.empty() && !funcData.funcArgs.front().empty()) {
@@ -13,7 +13,7 @@ Variant FunctionExecutor::Execute(SelectFuncStruct& funcData) {
 		}
 		return Variant(getTimeNow(mode));
 	} else if (funcData.funcName == "serial") {
-		return Variant(ns_.GetSerial(funcData.field));
+		return Variant(ns_.GetSerial(funcData.field, replUpdates_, ctx));
 	}
 	throw Error(errParams, "Unknown function '%s'. Field: '%s'", funcData.funcName, funcData.field);
 }

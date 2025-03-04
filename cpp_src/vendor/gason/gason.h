@@ -3,30 +3,24 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <iostream>
 #include <limits>
+#include <ostream>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
-#include "estl/span.h"
+#include "core/enums.h"
+#include "tools/assertrx.h"
 #include "tools/jsonstring.h"
 
 namespace gason {
 
-using reindexer::span;
+using std::span;
 
-enum JsonTag : uint8_t {
-	JSON_STRING = 0,
-	JSON_NUMBER,
-	JSON_DOUBLE,
-	JSON_ARRAY,
-	JSON_OBJECT,
-	JSON_TRUE,
-	JSON_FALSE,
-	JSON_NULL = 0xF,
-	JSON_EMPTY = 0xFF
-};
+// MinGW is unable to declare 'TRUE'/'FALSE' enum members
+enum class JsonTag : uint8_t { STRING = 0, NUMBER, DOUBLE, ARRAY, OBJECT, JTRUE, JFALSE, JSON_NULL = 0xF, EMPTY = 0xFF };
 constexpr inline int format_as(JsonTag v) noexcept { return int(v); }
+[[nodiscard]] std::string_view JsonTagToTypeStr(JsonTag) noexcept;
 
 struct JsonNode;
 
@@ -43,7 +37,7 @@ struct JsonString {
 		}
 		reindexer::json_string::encode(reinterpret_cast<uint8_t*>(end), l, largeStrings);
 	}
-	JsonString(const char* end = nullptr) : ptr(end) {}
+	JsonString(const char* end = nullptr) noexcept : ptr(end) {}
 
 	size_t length() const noexcept {
 		assertrx(ptr);
@@ -68,55 +62,73 @@ inline static std::ostream& operator<<(std::ostream& o, const gason::JsonString&
 	return o;
 }
 
-union JsonValue {
-	JsonValue(double x) : fval(x) { u.tag = JSON_DOUBLE; }
-	JsonValue(int64_t x) : ival(x) { u.tag = JSON_NUMBER; }
-	JsonValue(JsonString x) : sval(x) { u.tag = JSON_STRING; }
+struct JsonValue {
+	JsonValue(double x) noexcept : fval(x), tag(JsonTag::DOUBLE) {}
+	JsonValue(int64_t x, bool neg) noexcept : ival(x), tag(JsonTag::NUMBER), negative(neg) {}
+	JsonValue(JsonString x) noexcept : sval(x), tag(JsonTag::STRING) {}
 
-	JsonValue(JsonTag tag = JSON_NULL, void* payload = nullptr) {
-		u.tag = tag;
-		ival = uintptr_t(payload);
-	}
-	// TODO: Remove NOLINT after pyreindexer update. Issue #1736
-	JsonTag getTag() const noexcept { return JsonTag(u.tag); }	// NOLINT(*EnumCastOutOfRange)
+	JsonValue(JsonTag t = JsonTag::JSON_NULL, void* payload = nullptr) noexcept : ival(uintptr_t(payload)), tag(t) {}
+	JsonTag getTag() const noexcept { return tag; }
+	bool isNegative() const noexcept { return (getTag() == JsonTag::NUMBER && negative) || (getTag() == JsonTag::DOUBLE && fval < 0.0); }
 
 	int64_t toNumber() const {
-		assertrx(getTag() == JSON_NUMBER || getTag() == JSON_DOUBLE);
-		if (getTag() == JSON_NUMBER) {
-			return ival;
+		switch (getTag()) {
+			case JsonTag::NUMBER:
+				return ival;
+			case JsonTag::DOUBLE:
+				return int64_t(fval);
+			case JsonTag::JSON_NULL:
+			case JsonTag::JTRUE:
+			case JsonTag::JFALSE:
+			case JsonTag::ARRAY:
+			case JsonTag::OBJECT:
+			case JsonTag::STRING:
+			case JsonTag::EMPTY:
+				break;
 		}
-		return fval;
+		throw_as_assert;
 	}
 	double toDouble() const {
-		assertrx(getTag() == JSON_NUMBER || getTag() == JSON_DOUBLE);
-		if (getTag() == JSON_DOUBLE) {
-			return fval;
+		switch (getTag()) {
+			case JsonTag::NUMBER:
+				return ival;
+			case JsonTag::DOUBLE:
+				return fval;
+			case JsonTag::JSON_NULL:
+			case JsonTag::JTRUE:
+			case JsonTag::JFALSE:
+			case JsonTag::ARRAY:
+			case JsonTag::OBJECT:
+			case JsonTag::STRING:
+			case JsonTag::EMPTY:
+				break;
 		}
-		return ival;
+		throw_as_assert;
 	}
-	std::string_view toString() const {
-		assertrx(getTag() == JSON_STRING);
+	std::string_view toString() const noexcept {
+		assertrx(getTag() == JsonTag::STRING);
 		return sval;
 	}
-	JsonNode* toNode() const {
-		assertrx(getTag() == JSON_ARRAY || getTag() == JSON_OBJECT);
+	JsonNode* toNode() const noexcept {
+		assertrx(getTag() == JsonTag::ARRAY || getTag() == JsonTag::OBJECT);
 		return node;
 	}
 
-	struct {
-		uint8_t dummy[8];
-		uint8_t tag;
-	} u;
-	int64_t ival;
-	double fval;
-	JsonString sval;
-	JsonNode* node;
+	union {
+		int64_t ival;
+		double fval;
+		JsonString sval;
+		JsonNode* node;
+	};
+	JsonTag tag;
+	bool negative{false};
 };
 
 struct JsonNode {
 	JsonValue value;
 	JsonNode* next;
 	JsonString key;
+	static JsonNode Empty() { return JsonNode{{JsonTag::EMPTY}, nullptr, {}}; }
 
 	template <typename T, typename std::enable_if<(std::is_integral<T>::value || std::is_floating_point<T>::value) &&
 												  !std::is_same<T, bool>::value>::type* = nullptr>
@@ -124,11 +136,43 @@ struct JsonNode {
 		if (empty()) {
 			return defval;
 		}
-		if (value.getTag() != JSON_DOUBLE && value.getTag() != JSON_NUMBER) {
+		if (value.getTag() != JsonTag::DOUBLE && value.getTag() != JsonTag::NUMBER) {
 			throw Exception(std::string("Can't convert json field '") + std::string(key) + "' to number");
 		}
 		T v;
-		if (std::is_integral<T>::value) {
+		if constexpr (std::is_integral<T>::value) {
+			v = value.toNumber();
+		} else {
+			v = value.toDouble();
+		}
+
+		if (v < minv || v > maxv) {
+			throw Exception(std::string("Value of '") + std::string(key) + "' - " + std::to_string(v) + " is out of bounds: [" +
+							std::to_string(minv) + "," + std::to_string(maxv) + "]");
+		}
+		return v;
+	}
+	template <typename T, typename std::enable_if<(std::is_integral<T>::value || std::is_floating_point<T>::value) &&
+												  !std::is_same<T, bool>::value>::type* = nullptr>
+	T As(reindexer::CheckUnsigned checkUnsigned, T defval = T(), T minv = std::numeric_limits<T>::lowest(),
+		 T maxv = std::numeric_limits<T>::max()) const {
+		if (empty()) {
+			return defval;
+		}
+		if (value.getTag() != JsonTag::DOUBLE && value.getTag() != JsonTag::NUMBER) {
+			throw Exception(std::string("Can't convert json field '") + std::string(key) + "' to number");
+		}
+		T v;
+		if constexpr (std::is_integral<T>::value) {
+			if (std::is_unsigned_v<T> && checkUnsigned && value.isNegative()) {
+				if (value.getTag() == JsonTag::NUMBER) {
+					throw Exception(std::string("Value of '") + std::string(key) + "' - " + std::to_string(value.ival) +
+									" is out of bounds: [" + std::to_string(minv) + "," + std::to_string(maxv) + "]");
+				} else {
+					throw Exception(std::string("Value of '") + std::string(key) + "' - " + std::to_string(value.fval) +
+									" is out of bounds: [" + std::to_string(minv) + "," + std::to_string(maxv) + "]");
+				}
+			}
 			v = value.toNumber();
 		} else {
 			v = value.toDouble();
@@ -146,7 +190,7 @@ struct JsonNode {
 		if (empty()) {
 			return defval;
 		}
-		if (value.getTag() != JSON_STRING) {
+		if (value.getTag() != JsonTag::STRING) {
 			throw Exception(std::string("Can't convert json field '") + std::string(key) + "' to string");
 		}
 		return T(value.toString());
@@ -157,45 +201,60 @@ struct JsonNode {
 			return defval;
 		}
 		switch (value.getTag()) {
-			case JSON_TRUE:
+			case JsonTag::JTRUE:
 				return true;
-			case JSON_FALSE:
+			case JsonTag::JFALSE:
 				return false;
-			case JSON_STRING:
-			case JSON_NUMBER:
-			case JSON_DOUBLE:
-			case JSON_ARRAY:
-			case JSON_OBJECT:
-			case JSON_NULL:
-			case JSON_EMPTY:
+			case JsonTag::STRING:
+			case JsonTag::NUMBER:
+			case JsonTag::DOUBLE:
+			case JsonTag::ARRAY:
+			case JsonTag::OBJECT:
+			case JsonTag::JSON_NULL:
+			case JsonTag::EMPTY:
 			default:
 				throw Exception(std::string("Can't convert json field '") + std::string(key) + "' to bool");
 		}
 	}
 
 	const JsonNode& operator[](std::string_view sv) const;
-	bool empty() const noexcept { return value.getTag() == JSON_EMPTY; }
-	bool isObject() const noexcept { return value.getTag() == JSON_OBJECT; }
+	const JsonNode& findCaseInsensitive(std::string_view key) const;
+	bool empty() const noexcept { return value.getTag() == JsonTag::EMPTY; }
+	bool isObject() const noexcept { return value.getTag() == JsonTag::OBJECT; }
 	JsonNode* toNode() const;
+	static JsonNode EmptyNode() noexcept;
 };
 
 struct JsonIterator {
+	using difference_type = long;
+	using value_type = JsonNode;
+	using pointer = JsonNode*;
+	using reference = JsonNode&;
+	using iterator_category = std::input_iterator_tag;
 	JsonNode* p;
 
 	void operator++() noexcept { p = p->next; }
-	bool operator!=(const JsonIterator& x) const noexcept { return p != x.p; }
+	bool operator==(const JsonIterator& x) const noexcept { return p == x.p; }
+	bool operator!=(const JsonIterator& x) const noexcept { return !operator==(x); }
 	JsonNode& operator*() const noexcept { return *p; }
 	JsonNode* operator->() const noexcept { return p; }
 };
 
-inline JsonIterator begin(const JsonValue o) { return JsonIterator{o.toNode()}; }
+inline JsonIterator begin(JsonValue o) { return JsonIterator{o.toNode()}; }
 inline JsonIterator end(JsonValue) noexcept { return JsonIterator{nullptr}; }
 
 struct JsonNodeIterator {
+	using difference_type = long;
+	using value_type = JsonNode;
+	using pointer = const JsonNode*;
+	using reference = const JsonNode&;
+	using iterator_category = std::input_iterator_tag;
+
 	const JsonNode* p;
 
 	void operator++() noexcept { p = p->next; }
 	bool operator!=(const JsonNodeIterator& x) const noexcept { return p != x.p; }
+	bool operator==(const JsonNodeIterator& x) const noexcept { return p == x.p; }
 	const JsonNode& operator*() const noexcept { return *p; }
 	const JsonNode* operator->() const noexcept { return p; }
 };
@@ -222,7 +281,7 @@ enum JsonErrno {
 #undef XX
 };
 
-const char* jsonStrError(int err);
+const char* jsonStrError(int err) noexcept;
 
 class JsonAllocator {
 	struct Zone {
@@ -231,7 +290,7 @@ class JsonAllocator {
 	}* head;
 
 public:
-	JsonAllocator() : head(nullptr) {}
+	JsonAllocator() noexcept : head(nullptr) {}
 	JsonAllocator(const JsonAllocator&) = delete;
 	JsonAllocator& operator=(const JsonAllocator&) = delete;
 	JsonAllocator(JsonAllocator&& x) : head(x.head) { x.head = nullptr; }
@@ -244,8 +303,8 @@ public:
 		return *this;
 	}
 	~JsonAllocator() { deallocate(); }
-	void* allocate(size_t size);
-	void deallocate();
+	void* allocate(size_t size) noexcept;
+	void deallocate() noexcept;
 };
 
 bool isHomogeneousArray(const JsonValue& v) noexcept;
@@ -255,7 +314,7 @@ class JsonParser {
 public:
 	JsonParser(LargeStringStorageT* strings = nullptr) : largeStrings_(strings ? strings : &internalLargeStrings_) {}
 	// Inplace parse. Buffer pointed by str will be changed
-	JsonNode Parse(span<char> str, size_t* length = nullptr) &;
+	JsonNode Parse(std::span<char> str, size_t* length = nullptr) &;
 	// Copy str. Buffer pointed by str will be copied
 	JsonNode Parse(std::string_view str, size_t* length = nullptr) &;
 

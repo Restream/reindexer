@@ -7,25 +7,10 @@
 #include <string_view>
 #include <unordered_set>
 #include <vector>
+#include "activity.h"
 #include "estl/mutex.h"
-#include "tools/clock.h"
 
 namespace reindexer {
-
-class WrSerializer;
-
-struct Activity {
-	unsigned id;
-	std::string activityTracer;
-	std::string user;
-	std::string query;
-	int connectionId;
-	enum State : unsigned { InProgress = 0, WaitLock, Sending, IndexesLookup, SelectLoop } state;
-	system_clock_w::time_point startTime;
-	std::string_view description;
-	void GetJSON(WrSerializer&) const;
-	static std::string_view DescribeState(State) noexcept;
-};
 
 class RdxActivityContext;
 
@@ -34,9 +19,17 @@ public:
 	void Register(const RdxActivityContext*);
 	void Unregister(const RdxActivityContext*);
 	void Reregister(const RdxActivityContext* oldCtx, const RdxActivityContext* newCtx);
-	std::vector<Activity> List();
+	std::vector<Activity> List(int serverId);
 	std::optional<std::string> QueryForIpConnection(int id);
 
+	void Reset();
+
+#ifdef RX_LOGACTIVITY
+	void AddOperation(const RdxActivityContext* ctx, Activity::State st, bool start);
+
+private:
+	ActivityContainerLog log_;
+#endif
 private:
 	std::mutex mtx_;
 	std::unordered_set<const RdxActivityContext*> cont_;
@@ -61,6 +54,11 @@ class RdxActivityContext {
 #ifndef NDEBUG
 				context_->refCount_.fetch_add(1u, std::memory_order_relaxed);
 #endif
+#ifdef RX_LOGACTIVITY
+				if (context_->parent_) {
+					context_->parent_->AddOperation(context_, state, true);
+				}
+#endif
 			}
 		}
 		Ward(RdxActivityContext* cont, MutexMark mutexMark) noexcept : context_(cont) {
@@ -69,14 +67,29 @@ class RdxActivityContext {
 #ifndef NDEBUG
 				context_->refCount_.fetch_add(1u, std::memory_order_relaxed);
 #endif
+#ifdef RX_LOGACTIVITY
+				if (context_->parent_) {
+					context_->parent_->AddOperation(context_, Activity::WaitLock, true);
+				}
+#endif
 			}
 		}
 		Ward(Ward&& other) noexcept : context_(other.context_), prevState_(other.prevState_) { other.context_ = nullptr; }
 		~Ward() {
 			if (context_) {
+#ifdef RX_LOGACTIVITY
+				auto [state, mark] = deserializeState(context_->state_);
+				(void)mark;
+#endif
+
 				context_->state_.store(prevState_, std::memory_order_relaxed);
 				[[maybe_unused]] const auto refs = context_->refCount_.fetch_sub(1u, std::memory_order_relaxed);
 				assertrx(refs != 0u);
+#ifdef RX_LOGACTIVITY
+				if (context_->parent_) {
+					context_->parent_->AddOperation(context_, state, false);
+				}
+#endif
 			}
 		}
 
@@ -104,8 +117,11 @@ public:
 	/// returning value of these functions should be assined to a local variable which will be destroyed after the waiting work complete
 	/// lifetime of the local variable should not exceed of the activityContext's
 	Ward BeforeLock(MutexMark mutexMark) noexcept { return Ward(this, mutexMark); }
+	Ward BeforeState(Activity::State st) noexcept { return Ward(this, st); }
 	Ward BeforeIndexWork() noexcept { return Ward(this, Activity::IndexesLookup); }
 	Ward BeforeSelectLoop() noexcept { return Ward(this, Activity::SelectLoop); }
+	Ward BeforeClusterProxy() noexcept { return Ward(this, Activity::ProxiedViaClusterProxy); }
+	Ward BeforeShardingProxy() noexcept { return Ward(this, Activity::ProxiedViaShardingProxy); }
 
 	bool CheckConnectionId(int connectionId) const noexcept { return data_.connectionId == connectionId; }
 
@@ -117,8 +133,8 @@ private:
 
 	const Activity data_;
 	std::atomic<unsigned> state_ = {serializeState(Activity::InProgress)};	// kStateShift lower bits for state, other for details
-	ActivityContainer* parent_ = nullptr;
 	std::atomic<unsigned> refCount_ = {0};
+	ActivityContainer* parent_ = nullptr;
 };
 
 }  // namespace reindexer

@@ -1,5 +1,4 @@
 #include "jschemachecker.h"
-#include <map>
 #include <string>
 #include <vector>
 #include "core/formatters/jsonstring_fmt.h"
@@ -9,7 +8,7 @@
 
 namespace reindexer {
 
-JsonSchemaChecker::JsonSchemaChecker(const std::string& json, std::string rootTypeName) : rootTypeName_(std::move(rootTypeName)) {
+JsonSchemaChecker::JsonSchemaChecker(std::string_view json, std::string rootTypeName) : rootTypeName_(std::move(rootTypeName)) {
 	Error err = createTypeTable(json);
 	if (!err.ok()) {
 		throw err;
@@ -17,7 +16,7 @@ JsonSchemaChecker::JsonSchemaChecker(const std::string& json, std::string rootTy
 	isInit = true;
 }
 
-Error JsonSchemaChecker::Init(const std::string& json, std::string rootTypeName) {
+Error JsonSchemaChecker::Init(std::string_view json, std::string rootTypeName) {
 	if (isInit) {
 		return Error(errLogic, "JsonSchemaChecker already initialized.");
 	}
@@ -80,8 +79,8 @@ void JsonSchemaChecker::addSimpleType(std::string tpName) {
 	indexes_.emplace(std::move(tpName), typesTable_.size() - 1);
 }
 
-Error JsonSchemaChecker::createTypeTable(const std::string& json) {
-	auto err = schema_.FromJSON(std::string_view(json));
+Error JsonSchemaChecker::createTypeTable(std::string_view json) {
+	auto err = schema_.FromJSON(json);
 	if (!err.ok()) {
 		return err;
 	}
@@ -112,7 +111,7 @@ Error JsonSchemaChecker::createTypeTable(const std::string& json) {
 }
 
 Error JsonSchemaChecker::Check(gason::JsonNode node) {
-	if (node.value.getTag() != gason::JSON_OBJECT) {
+	if (node.value.getTag() != gason::JsonTag::OBJECT) {
 		return Error(errParseJson, "Node [%s] should JSON_OBJECT.", node.key);
 	}
 
@@ -155,7 +154,7 @@ Error JsonSchemaChecker::checkScheme(const gason::JsonNode& node, int typeIndex,
 		if (!err.ok()) {
 			return err;
 		}
-		if (elem.value.getTag() == gason::JSON_OBJECT) {
+		if (elem.value.getTag() == gason::JsonTag::OBJECT) {
 			if (descr.subElementsTable[subElemIndex->second].second.typeName != "any") {
 				err = checkScheme(elem, descr.subElementsTable[subElemIndex->second].second.typeIndex, path,
 								  descr.subElementsTable[subElemIndex->second].first);
@@ -163,13 +162,13 @@ Error JsonSchemaChecker::checkScheme(const gason::JsonNode& node, int typeIndex,
 					return err;
 				}
 			}
-		} else if (elem.value.getTag() == gason::JSON_ARRAY) {
+		} else if (elem.value.getTag() == gason::JsonTag::ARRAY) {
 			if (descr.subElementsTable[subElemIndex->second].second.typeName != "any") {
 				if (!descr.subElementsTable[subElemIndex->second].second.array) {
 					return Error(errParseJson, "Element [%s] should array in [%s].", elem.key, path);
 				}
 				for (const auto& entry : elem.value) {
-					if (entry.value.getTag() == gason::JSON_ARRAY || entry.value.getTag() == gason::JSON_OBJECT) {
+					if (entry.value.getTag() == gason::JsonTag::ARRAY || entry.value.getTag() == gason::JsonTag::OBJECT) {
 						err = checkScheme(entry, descr.subElementsTable[subElemIndex->second].second.typeIndex, path,
 										  descr.subElementsTable[subElemIndex->second].first);
 						if (!err.ok()) {

@@ -178,7 +178,8 @@ int RmDirAll(const std::string& path) noexcept {
 
 std::string GetCwd() {
 	char buff[FILENAME_MAX];
-	return std::string(getcwd(buff, FILENAME_MAX));
+	auto cwd = getcwd(buff, FILENAME_MAX);
+	return cwd ? std::string(cwd) : std::string();
 }
 
 static std::string tmpDir;

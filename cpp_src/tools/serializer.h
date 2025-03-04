@@ -3,11 +3,12 @@
 #include <memory>
 #include <string_view>
 #include "core/cjson/ctag.h"
+#include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/uuid.h"
 #include "core/keyvalue/variant.h"
+#include "core/rank_t.h"
 #include "estl/chunk.h"
 #include "estl/one_of.h"
-#include "estl/span.h"
 #include "tools/stringstools.h"
 #include "tools/varint.h"
 
@@ -28,17 +29,19 @@ public:
 	Serializer(const void* buf, size_t len) noexcept : buf_(static_cast<const uint8_t*>(buf)), len_(len), pos_(0) {}
 	explicit Serializer(std::string_view buf) noexcept : buf_(reinterpret_cast<const uint8_t*>(buf.data())), len_(buf.length()), pos_(0) {}
 	bool Eof() const noexcept { return pos_ >= len_; }
-	[[nodiscard]] RX_ALWAYS_INLINE KeyValueType GetKeyValueType() { return KeyValueType::fromNumber(GetVarUint()); }
+	[[nodiscard]] RX_ALWAYS_INLINE KeyValueType GetKeyValueType() { return KeyValueType::fromNumber(GetVarUInt()); }
 	[[nodiscard]] Variant GetVariant() {
 		const KeyValueType type = GetKeyValueType();
 		if (type.Is<KeyValueType::Tuple>()) {
 			VariantArray compositeValues;
-			uint64_t count = GetVarUint();
+			uint64_t count = GetVarUInt();
 			compositeValues.reserve(count);
 			for (size_t i = 0; i < count; ++i) {
 				compositeValues.emplace_back(GetVariant());
 			}
 			return Variant(compositeValues);
+		} else if (type.Is<KeyValueType::FloatVector>()) {
+			return Variant(GetFloatVectorView());
 		} else {
 			return GetRawVariant(type);
 		}
@@ -46,22 +49,23 @@ public:
 	[[nodiscard]] Variant GetRawVariant(KeyValueType type) {
 		return type.EvaluateOneOf(
 			[this](KeyValueType::Int) { return Variant(int(GetVarint())); },
-			[this](KeyValueType::Bool) { return Variant(bool(GetVarUint())); },
+			[this](KeyValueType::Bool) { return Variant(bool(GetVarUInt())); },
 			[this](KeyValueType::Int64) { return Variant(int64_t(GetVarint())); },
 			[this](KeyValueType::Double) { return Variant(GetDouble()); }, [this](KeyValueType::String) { return getPVStringVariant(); },
 			[](KeyValueType::Null) noexcept { return Variant(); }, [this](KeyValueType::Uuid) { return Variant{GetUuid()}; },
-			[this, &type](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined>) -> Variant {
-				throwUnknownTypeError(type.Name());
-			});
+			[this](KeyValueType::Float) { return Variant(GetFloat()); },
+			[this, &type](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>)
+				-> Variant { throwUnknownTypeError(type.Name()); });
 	}
 	void SkipRawVariant(KeyValueType type) {
-		type.EvaluateOneOf([this](KeyValueType::Int) { GetVarint(); }, [this](KeyValueType::Bool) { GetVarUint(); },
-						   [this](KeyValueType::Int64) { GetVarint(); }, [this](KeyValueType::Double) { GetDouble(); },
-						   [this](KeyValueType::String) { getPVStringPtr(); }, [](KeyValueType::Null) noexcept {},
-						   [this](KeyValueType::Uuid) { GetUuid(); },
-						   [this, &type](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined>) {
-							   throwUnknownTypeError(type.Name());
-						   });
+		type.EvaluateOneOf(
+			[this](KeyValueType::Int) { GetVarint(); }, [this](KeyValueType::Bool) { GetVarUInt(); },
+			[this](KeyValueType::Int64) { GetVarint(); }, [this](KeyValueType::Double) { GetDouble(); },
+			[this](KeyValueType::String) { getPVStringPtr(); }, [](KeyValueType::Null) noexcept {},
+			[this](KeyValueType::Uuid) { GetUuid(); }, [this](KeyValueType::Float) { GetFloat(); },
+			[this, &type](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) {
+				throwUnknownTypeError(type.Name());
+			});
 	}
 	RX_ALWAYS_INLINE std::string_view GetSlice() {
 		auto l = GetUInt32();
@@ -69,6 +73,13 @@ public:
 		checkbound(pos_, b.size(), len_);
 		pos_ += b.size();
 		return b;
+	}
+	RX_ALWAYS_INLINE uint8_t GetUInt8() {
+		uint8_t ret;
+		checkbound(pos_, sizeof(ret), len_);
+		memcpy(&ret, buf_ + pos_, sizeof(ret));
+		pos_ += sizeof(ret);
+		return ret;
 	}
 	RX_ALWAYS_INLINE uint32_t GetUInt32() {
 		uint32_t ret;
@@ -91,6 +102,33 @@ public:
 		pos_ += sizeof(ret);
 		return ret;
 	}
+	RX_ALWAYS_INLINE float GetFloat() {
+		float ret;
+		checkbound(pos_, sizeof(ret), len_);
+		memcpy(&ret, buf_ + pos_, sizeof(ret));
+		pos_ += sizeof(ret);
+		return ret;
+	}
+	RX_ALWAYS_INLINE RankT GetRank() { return GetFloat(); }
+	ConstFloatVectorView GetFloatVectorView() {
+		using Float = ConstFloatVectorView::DataType;
+		unsigned dim = GetVarUInt();
+		if (dim == 0) {
+			return {};
+		} else {
+			const bool isStripped = dim & 1;
+			dim >>= 1;
+			if (isStripped) {
+				return ConstFloatVectorView::CreateStripped(FloatVectorDimension(dim));
+			} else {
+				const size_t memSize = dim * sizeof(Float);
+				checkbound(pos_, memSize, len_);
+				const auto position = pos_;
+				pos_ += memSize;
+				return ConstFloatVectorView{std::span{reinterpret_cast<Float*>(buf_ + position), dim}};
+			}
+		}
+	}
 	Uuid GetUuid() {
 		const uint64_t v1 = GetUInt64();
 		const uint64_t v2 = GetUInt64();
@@ -107,7 +145,7 @@ public:
 		pos_ += l;
 		return unzigzag64(parse_uint64(l, buf_ + pos_ - l));
 	}
-	RX_ALWAYS_INLINE uint64_t GetVarUint() {  // -V1071
+	RX_ALWAYS_INLINE uint64_t GetVarUInt() {  // -V1071
 		auto l = scan_varint(len_ - pos_, buf_ + pos_);
 		if (l == 0) {
 			using namespace std::string_view_literals;
@@ -117,10 +155,10 @@ public:
 		pos_ += l;
 		return parse_uint64(l, buf_ + pos_ - l);
 	}
-	[[nodiscard]] RX_ALWAYS_INLINE ctag GetCTag() { return ctag{GetVarUint()}; }
+	[[nodiscard]] RX_ALWAYS_INLINE ctag GetCTag() { return ctag{GetVarUInt()}; }
 	[[nodiscard]] RX_ALWAYS_INLINE carraytag GetCArrayTag() { return carraytag{GetUInt32()}; }
 	RX_ALWAYS_INLINE std::string_view GetVString() {
-		auto l = GetVarUint();
+		auto l = GetVarUInt();
 		checkbound(pos_, l, len_);
 		pos_ += l;
 		return {reinterpret_cast<const char*>(buf_ + pos_ - l), std::string_view::size_type(l)};
@@ -128,7 +166,7 @@ public:
 	p_string GetPVString();
 	p_string GetPSlice();
 	[[nodiscard]] Uuid GetStrUuid() { return Uuid{GetVString()}; }
-	RX_ALWAYS_INLINE bool GetBool() { return bool(GetVarUint()); }
+	RX_ALWAYS_INLINE bool GetBool() { return bool(GetVarUInt()); }
 	size_t Pos() const noexcept { return pos_; }
 	void SetPos(size_t p) noexcept { pos_ = p; }
 	const uint8_t* Buf() const noexcept { return buf_; }
@@ -173,8 +211,6 @@ public:
 			buf_ = other.buf_;
 			other.buf_ = other.inBuf_;
 		}
-
-		hasExternalBuf_ = other.hasExternalBuf_;
 		other.len_ = 0;
 		other.cap_ = 0;
 		other.hasExternalBuf_ = false;
@@ -188,7 +224,7 @@ public:
 	WrSerializer& operator=(WrSerializer&& other) noexcept {
 		if (this != &other) {
 			if (HasAllocatedBuffer()) {
-				delete[] buf_;
+				delete[] buf_;	// NOLINT(*.NewDelete) False positive
 			}
 
 			len_ = other.len_;
@@ -225,8 +261,9 @@ public:
 			},
 			[&](KeyValueType::Bool) { PutBool(bool(kv)); }, [&](KeyValueType::Int64) { PutVarint(int64_t(kv)); },
 			[&](KeyValueType::Int) { PutVarint(int(kv)); }, [&](KeyValueType::Double) { PutDouble(double(kv)); },
-			[&](KeyValueType::String) { PutVString(std::string_view(kv)); }, [&](KeyValueType::Null) noexcept {},
-			[&](KeyValueType::Uuid) { PutUuid(Uuid{kv}); },
+			[&](KeyValueType::Float) { PutFloat(float(kv)); }, [&](KeyValueType::String) { PutVString(std::string_view(kv)); },
+			[&](KeyValueType::Null) noexcept {}, [&](KeyValueType::Uuid) { PutUuid(Uuid{kv}); },
+			[&](KeyValueType::FloatVector) { PutFloatVectorView(ConstFloatVectorView{kv}); },
 			[&](OneOf<KeyValueType::Composite, /*KeyValueType::Tuple,*/ KeyValueType::Undefined>) {
 				fprintf(stderr, "Unknown keyType %s\n", kv.Type().Name().data());
 				abort();
@@ -301,6 +338,11 @@ public:
 	VStringHelper StartVString() noexcept { return {this, len_}; }
 
 	// Put raw data
+	RX_ALWAYS_INLINE void PutUInt8(uint8_t v) {
+		grow(sizeof(v));
+		memcpy(&buf_[len_], &v, sizeof(v));
+		len_ += sizeof(v);
+	}
 	RX_ALWAYS_INLINE void PutUInt32(uint32_t v) {
 		grow(sizeof(v));
 		memcpy(&buf_[len_], &v, sizeof(v));
@@ -317,9 +359,30 @@ public:
 		memcpy(&buf_[len_], &v, sizeof(v));
 		len_ += sizeof(v);
 	}
-	void PutDoubleStrNoTrailing(double v) {
+	RX_ALWAYS_INLINE void PutFloat(float v) {
+		grow(sizeof(v));
+		memcpy(&buf_[len_], &v, sizeof(v));
+		len_ += sizeof(v);
+	}
+	RX_ALWAYS_INLINE void PutRank(RankT v) { PutFloat(v); }
+	void PutFloatVectorView(ConstFloatVectorView v) {
+		using Float = ConstFloatVectorView::DataType;
+		static_assert(alignof(Float) <= sizeof(Float));
+		PutVarUint((uint64_t(v.Dimension()) << 1) | (v.IsStripped() ? 1 : 0));
+		if (!v.IsStrippedOrEmpty()) {
+			const uint64_t memSize = sizeof(Float) * v.Dimension().Value();
+			grow(memSize);
+			memcpy(&buf_[len_], v.Data(), memSize);
+			len_ += memSize;
+		}
+	}
+	void PutFPStrNoTrailing(double v) {
 		grow(32);
 		len_ += double_to_str_no_trailing(v, reinterpret_cast<char*>(buf_ + len_), 32);
+	}
+	void PutFPStrNoTrailing(float v) {
+		grow(32);
+		len_ += float_to_str_no_trailing(v, reinterpret_cast<char*>(buf_ + len_), 32);
 	}
 
 	template <typename T, typename std::enable_if<sizeof(T) == 8 && std::is_integral<T>::value>::type* = nullptr>
@@ -362,11 +425,16 @@ public:
 		len_ += double_to_str(v, reinterpret_cast<char*>(buf_ + len_), 32);
 		return *this;
 	}
+	WrSerializer& operator<<(float v) {
+		grow(32);
+		len_ += float_to_str(v, reinterpret_cast<char*>(buf_ + len_), 32);
+		return *this;
+	}
 	WrSerializer& operator<<(Uuid uuid) {
 		grow(Uuid::kStrFormLen + 2);
 		buf_[len_] = '\'';
 		++len_;
-		uuid.PutToStr(span<char>{reinterpret_cast<char*>(&buf_[len_]), Uuid::kStrFormLen});
+		uuid.PutToStr(std::span<char>{reinterpret_cast<char*>(&buf_[len_]), Uuid::kStrFormLen});
 		len_ += Uuid::kStrFormLen;
 		buf_[len_] = '\'';
 		++len_;
@@ -375,8 +443,8 @@ public:
 
 	enum class PrintJsonStringMode { Default = 0, QuotedQuote = 1 };
 	void PrintJsonString(std::string_view str, PrintJsonStringMode mode = PrintJsonStringMode::Default);
-
 	void PrintJsonUuid(Uuid);
+
 	void PrintHexDump(std::string_view str);
 	void Fill(char c, size_t count) {
 		grow(count);
@@ -405,9 +473,9 @@ public:
 	}
 	template <typename T, typename std::enable_if_t<std::is_enum_v<T>>* = nullptr>
 	RX_ALWAYS_INLINE void PutVarUint(T v) {
-		assertrx(v >= 0 && v < 128);
+		assertrx(int64_t(v) >= 0 && int64_t(v) < 128);
 		grow(1);
-		buf_[len_++] = v;
+		buf_[len_++] = uint8_t(v);
 	}
 	RX_ALWAYS_INLINE void PutCTag(ctag tag) { PutVarUint(tag.asNumber()); }
 	RX_ALWAYS_INLINE void PutBool(bool v) {
@@ -481,6 +549,7 @@ public:
 		buf_[len_] = 0;
 		return reinterpret_cast<const char*>(buf_);
 	}
+	bool HasHeap() const noexcept { return buf_ != inBuf_ && cap_; }
 
 protected:
 	RX_ALWAYS_INLINE void grow(size_t sz) {

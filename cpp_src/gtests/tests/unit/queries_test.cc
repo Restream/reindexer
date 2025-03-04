@@ -19,7 +19,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 		FillTestJoinNamespace(0, 300);
 		FillGeomNamespace();
 
-		CheckStandartQueries();
+		CheckStandardQueries();
 		CheckAggregationQueries();
 		CheckSqlQueries();
 		CheckDslQueries();
@@ -86,7 +86,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 		FillComparatorsNamespace();
 		FillGeomNamespace();
 
-		CheckStandartQueries();
+		CheckStandardQueries();
 		CheckAggregationQueries();
 		CheckSqlQueries();
 		CheckDslQueries();
@@ -104,14 +104,12 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 		ASSERT_TRUE(false);
 	}
 }
-#endif
 
 TEST_F(QueriesApi, QueriesConditions) {
 	FillConditionsNs();
 	CheckConditions();
 }
 
-#if !defined(REINDEX_WITH_TSAN)
 TEST_F(QueriesApi, UuidQueries) {
 	FillUUIDNs();
 	// hack to obtain not index not string uuid fields
@@ -121,7 +119,7 @@ TEST_F(QueriesApi, UuidQueries) {
 	ASSERT_TRUE(err.ok()) << err.what();*/
 	CheckUUIDQueries();
 }
-#endif
+#endif	// !defined(REINDEX_WITH_TSAN)
 
 TEST_F(QueriesApi, IndexCacheInvalidationTest) {
 	std::vector<std::pair<int, int>> data{{0, 10}, {1, 9}, {2, 8}, {3, 7}, {4, 6},	{5, 5},
@@ -163,7 +161,9 @@ TEST_F(QueriesApi, TransactionStress) {
 	current_size = 350;
 	uint32_t stepSize = 1000;
 
-	for (size_t i = 0; i < 4; i++) {
+	constexpr size_t kThreads = 4;
+	pool.reserve(kThreads);
+	for (size_t i = 0; i < kThreads; i++) {
 		pool.push_back(std::thread([this, i, &current_size, stepSize]() {
 			size_t start_pos = i * stepSize;
 			if (i % 2 == 0) {
@@ -337,7 +337,7 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 				Query parsed = Query::FromSQL(sql);
 				ADD_FAILURE() << "Expected error: " << expectedErr.what() << "\nSQL: " << sql;
 			} catch (const Error& err) {
-				EXPECT_EQ(err.what(), expectedErr.what()) << "\nSQL: " << sql;
+				EXPECT_STREQ(err.what(), expectedErr.what()) << "\nSQL: " << sql;
 			}
 		}
 	}
@@ -638,29 +638,25 @@ TEST_F(QueriesApi, DslGenerateParse) {
 			const Query& q = std::get<Query>(expected);
 			if (direction & GEN) {
 				reindexer::WrSerializer ser;
-				reindexer::prettyPrintJSON(q.GetJSON(), ser, 3);
+				reindexer::prettyPrintJSON(std::string_view(q.GetJSON()), ser, 3);
 				EXPECT_EQ(ser.Slice(), dsl);
 			}
 			if (direction & PARSE) {
-				Query parsed;
 				try {
-					const auto err = parsed.FromJSON(dsl);
-					ASSERT_TRUE(err.ok()) << err.what() << "\nDSL: " << dsl;
+					Query parsed = Query::FromJSON(dsl);
+					EXPECT_EQ(parsed, q) << dsl;
 				} catch (const Error& err) {
 					ADD_FAILURE() << "Unexpected error: " << err.what() << "\nDSL: " << dsl;
 					continue;
 				}
-				EXPECT_EQ(parsed, q) << dsl;
 			}
 		} else {
 			const Error& expectedErr = std::get<Error>(expected);
-			Query parsed;
 			try {
-				const auto err = parsed.FromJSON(dsl);
-				ASSERT_TRUE(err.ok()) << err.what();
+				Query parsed = Query::FromJSON(dsl);
 				ADD_FAILURE() << "Expected error: " << expectedErr.what() << "\nDSL: " << dsl;
 			} catch (const Error& err) {
-				EXPECT_EQ(err.what(), expectedErr.what()) << "\nDSL: " << dsl;
+				EXPECT_STREQ(err.what(), expectedErr.what()) << "\nDSL: " << dsl;
 			}
 		}
 	}
@@ -716,10 +712,10 @@ TEST_F(QueriesApi, StrictModeTest) {
 	{
 		Query query = Query(testSimpleNs).Where(kNotExistingField, CondEmpty, VariantArray{});
 		Error err = rt.reindexer->Select(query.Strict(StrictModeNames), qr);
-		EXPECT_EQ(err.code(), errQueryExec);
+		EXPECT_EQ(err.code(), errStrictMode);
 		qr.Clear();
 		err = rt.reindexer->Select(query.Strict(StrictModeIndexes), qr);
-		EXPECT_EQ(err.code(), errQueryExec);
+		EXPECT_EQ(err.code(), errStrictMode);
 		qr.Clear();
 		err = rt.reindexer->Select(query.Strict(StrictModeNone), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -730,10 +726,10 @@ TEST_F(QueriesApi, StrictModeTest) {
 	{
 		Query query = Query(testSimpleNs).Where(kNotExistingField, CondEq, 0);
 		Error err = rt.reindexer->Select(query.Strict(StrictModeNames), qr);
-		EXPECT_EQ(err.code(), errQueryExec);
+		EXPECT_EQ(err.code(), errStrictMode);
 		qr.Clear();
 		err = rt.reindexer->Select(query.Strict(StrictModeIndexes), qr);
-		EXPECT_EQ(err.code(), errQueryExec);
+		EXPECT_EQ(err.code(), errStrictMode);
 		qr.Clear();
 		err = rt.reindexer->Select(query.Strict(StrictModeNone), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -767,7 +763,7 @@ TEST_F(QueriesApi, SQLLeftJoinSerialize) {
 				std::string sqlQCmp = createQuery(tLeft, tRight, iLeft, iRight, c.first);
 				reindexer::WrSerializer wrSer;
 				q.GetSQL(wrSer);
-				ASSERT_EQ(sqlQCmp, std::string(wrSer.c_str()));
+				ASSERT_EQ(sqlQCmp, wrSer.Slice());
 			}
 
 			{
@@ -776,7 +772,7 @@ TEST_F(QueriesApi, SQLLeftJoinSerialize) {
 
 				reindexer::WrSerializer wrSer;
 				qSql.GetSQL(wrSer);
-				ASSERT_EQ(sqlQ, std::string(wrSer.c_str()));
+				ASSERT_EQ(sqlQ, wrSer.Slice());
 			}
 			{
 				std::string sqlQ = createQuery(tRight, tLeft, iRight, iLeft, c.second);
@@ -784,7 +780,7 @@ TEST_F(QueriesApi, SQLLeftJoinSerialize) {
 				ASSERT_EQ(q.GetJSON(), qSql.GetJSON());
 				reindexer::WrSerializer wrSer;
 				qSql.GetSQL(wrSer);
-				ASSERT_EQ(sqlQ, std::string(wrSer.c_str()));
+				ASSERT_EQ(sqlQ, wrSer.Slice());
 			}
 		} catch (const Error& e) {
 			ASSERT_TRUE(e.ok()) << e.what();
@@ -825,12 +821,13 @@ TEST_F(QueriesApi, JoinByNotIndexField) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	const int expectedIds[] = {5, 7, 9};
 	ASSERT_EQ(qr.Count(), sizeof(expectedIds) / sizeof(int));
-	for (size_t i = 0; i < qr.Count(); ++i) {
-		Item item = qr[i].GetItem(false);
+	unsigned i = 0;
+	for (auto& it : qr) {
+		Item item = it.GetItem(false);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		VariantArray values = item["id"];
 		ASSERT_EQ(values.size(), 1);
-		EXPECT_EQ(values[0].As<int>(), expectedIds[i]);
+		EXPECT_EQ(values[0].As<int>(), expectedIds[i++]);
 	}
 }
 
@@ -882,9 +879,9 @@ TEST_F(QueriesApi, SetByTreeIndex) {
 		QueryResults qr;
 		ExecuteAndVerifyWithSql(q, qr);
 		// Expecting no sort index and filtering by index
-		EXPECT_NE(qr.explainResults.find(",\"sort_index\":\"-\","), std::string::npos);
-		EXPECT_NE(qr.explainResults.find(",\"method\":\"index\","), std::string::npos);
-		EXPECT_EQ(qr.explainResults.find("\"scan\""), std::string::npos);
+		EXPECT_NE(qr.GetExplainResults().find(",\"sort_index\":\"-\","), std::string::npos);
+		EXPECT_NE(qr.GetExplainResults().find(",\"method\":\"index\","), std::string::npos);
+		EXPECT_EQ(qr.GetExplainResults().find("\"scan\""), std::string::npos);
 	}
 
 	{
@@ -893,9 +890,9 @@ TEST_F(QueriesApi, SetByTreeIndex) {
 		QueryResults qr;
 		ExecuteAndVerifyWithSql(q, qr);
 		// Expecting 'id' as a sort index and filtering by index
-		EXPECT_NE(qr.explainResults.find(",\"sort_index\":\"id\","), std::string::npos);
-		EXPECT_NE(qr.explainResults.find(",\"method\":\"index\","), std::string::npos);
-		EXPECT_EQ(qr.explainResults.find("\"scan\""), std::string::npos);
+		EXPECT_NE(qr.GetExplainResults().find(",\"sort_index\":\"id\","), std::string::npos);
+		EXPECT_NE(qr.GetExplainResults().find(",\"method\":\"index\","), std::string::npos);
+		EXPECT_EQ(qr.GetExplainResults().find("\"scan\""), std::string::npos);
 	}
 }
 
@@ -1068,12 +1065,12 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 	err = rt.reindexer->Select(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	for (auto& ordering : std::array<reindexer::CsvOrdering, 2>{qr.getSchema(0)->MakeCsvTagOrdering(qr.getTagsMatcher(0)),
-																qr.MakeCSVTagOrdering(std::numeric_limits<int>::max(), 0)}) {
+	for (auto& ordering : std::array<reindexer::CsvOrdering, 2>{qr.GetSchema(0)->MakeCsvTagOrdering(qr.GetTagsMatcher(0)),
+																qr.ToLocalQr().MakeCSVTagOrdering(std::numeric_limits<int>::max(), 0)}) {
 		auto csv2jsonSchema = [&ordering, &qr] {
 			std::vector<std::string> res;
 			for (auto tag : ordering) {
-				res.emplace_back(qr.getTagsMatcher(0).tag2name(tag));
+				res.emplace_back(qr.GetTagsMatcher(0).tag2name(tag));
 			}
 			res.emplace_back("joined_nss_map");
 			return res;
@@ -1091,43 +1088,62 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 			auto converted = parserCsv.Parse(std::string_view(reindexer::csv2json(serCsv.Slice(), csv2jsonSchema)));
 			auto orig = parserJson.Parse(serJson.Slice());
 
+			// for check that all tags related to joined nss from json-result are present in csv-result
+			std::set<std::string_view> checkJoinedNssTags;
+			for (const auto& node : orig) {
+				if (std::string_view(node.key).substr(0, 7) == "joined_") {
+					checkJoinedNssTags.insert(node.key);
+				}
+			}
+
 			for (const auto& fieldName : csv2jsonSchema) {
 				if (fieldName == "joined_nss_map" && !converted[fieldName].empty()) {
-					EXPECT_EQ(converted[fieldName].value.getTag(), gason::JSON_OBJECT);
+					EXPECT_EQ(converted[fieldName].value.getTag(), gason::JsonTag::OBJECT);
 					for (auto& node : converted[fieldName]) {
 						EXPECT_TRUE(!orig[node.key].empty()) << "not found joined data: " << node.key;
 						auto origStr = reindexer::stringifyJson(orig[node.key]);
 						auto convertedStr = reindexer::stringifyJson(node);
 						EXPECT_EQ(origStr, convertedStr);
+						checkJoinedNssTags.erase(node.key);
 					}
 					continue;
 				}
-
 				if (converted[fieldName].empty() || orig[fieldName].empty()) {
 					EXPECT_TRUE(converted[fieldName].empty() && orig[fieldName].empty()) << "fieldName: " << fieldName;
 					continue;
 				}
-
-				if (orig[fieldName].value.getTag() == gason::JSON_NUMBER) {
-					EXPECT_EQ(orig[fieldName].As<int>(), converted[fieldName].As<int>());
-				} else if (orig[fieldName].value.getTag() == gason::JSON_STRING) {
-					EXPECT_EQ(orig[fieldName].As<std::string>(), converted[fieldName].As<std::string>());
-				} else if (orig[fieldName].value.getTag() == gason::JSON_OBJECT || orig[fieldName].value.getTag() == gason::JSON_ARRAY) {
-					auto origStr = reindexer::stringifyJson(orig[fieldName]);
-					auto convertedStr = reindexer::stringifyJson(converted[fieldName]);
-					EXPECT_EQ(origStr, convertedStr);
+				switch (orig[fieldName].value.getTag()) {
+					case gason::JsonTag::NUMBER:
+						EXPECT_EQ(orig[fieldName].As<int>(), converted[fieldName].As<int>());
+						break;
+					case gason::JsonTag::STRING:
+						EXPECT_EQ(orig[fieldName].As<std::string>(), converted[fieldName].As<std::string>());
+						break;
+					case gason::JsonTag::OBJECT:
+					case gason::JsonTag::ARRAY: {
+						auto origStr = reindexer::stringifyJson(orig[fieldName]);
+						auto convertedStr = reindexer::stringifyJson(converted[fieldName]);
+						EXPECT_EQ(origStr, convertedStr);
+					} break;
+					case gason::JsonTag::DOUBLE:
+					case gason::JsonTag::JFALSE:
+					case gason::JsonTag::JTRUE:
+					case gason::JsonTag::JSON_NULL:
+					case gason::JsonTag::EMPTY:
+						break;
 				}
 			}
 
+			EXPECT_TRUE(checkJoinedNssTags.empty());
 			serCsv.Reset();
 			serJson.Reset();
 		}
 	}
 }
 
-TEST_F(QueriesApi, ConvertationStringToDoubleDuringSorting) {
+TEST_F(QueriesApi, ConvertStringToDoubleDuringSorting) {
 	using namespace std::string_literals;
-	const std::string nsName = "ns_convertation_string_to_double_during_sorting";
+	const std::string nsName = "ns_convert_string_to_double_during_sorting";
 	Error err = rt.reindexer->OpenNamespace(nsName);
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
@@ -1206,7 +1222,7 @@ std::string print(const reindexer::Query& q, reindexer::QueryResults::Iterator& 
 }
 
 void QueriesApi::sortByNsDifferentTypesImpl(std::string_view fillingNs, const reindexer::Query& qTemplate, const std::string& sortPrefix) {
-	const auto addItem = [&](int id, auto v) {
+	const auto addItem = [&](int id, const auto& v) {
 		reindexer::WrSerializer ser;
 		{
 			reindexer::JsonBuilder json{ser};
@@ -1253,7 +1269,7 @@ void QueriesApi::sortByNsDifferentTypesImpl(std::string_view fillingNs, const re
 				const auto err = rt.reindexer->Select(q, qr);
 				if (expectedErr) {
 					EXPECT_FALSE(err.ok()) << q.GetSQL();
-					EXPECT_EQ(err.what(), expectedErr) << q.GetSQL();
+					EXPECT_STREQ(err.what(), expectedErr) << q.GetSQL();
 				} else {
 					ASSERT_TRUE(err.ok()) << err.what() << '\n' << q.GetSQL();
 					switch (cond) {
@@ -1273,6 +1289,7 @@ void QueriesApi::sortByNsDifferentTypesImpl(std::string_view fillingNs, const re
 						case CondGt:
 						case CondGe:
 						case CondAllSet:
+						case CondKnn:
 							assert(0);
 					}
 					int prevId = 10000 * (desc ? 1 : -1);
@@ -1343,6 +1360,9 @@ TEST_F(QueriesApi, SortByFieldWithDifferentTypes) {
 }
 
 TEST_F(QueriesApi, SerializeDeserialize) {
+	Query q = Query(default_namespace).Where(Query(default_namespace), CondAny, {});
+	(void)q;
+
 	Query queries[]{
 		Query(default_namespace).Where(Query(default_namespace), CondAny, {}),
 		Query(default_namespace).Where(kFieldNameUuidArr, CondRange, randHeterogeneousUuidArray(2, 2)),
@@ -1415,7 +1435,6 @@ TEST_F(QueriesApi, DistinctWithDuplicatesWhereCondTest) {
 	for (int id = 0; id < 10; ++id) {
 		auto item = GenerateDefaultNsItem(id, 0);
 		item[kFieldNameAge] = id / 4;
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		Upsert(default_namespace, item);
 	}
 
@@ -1473,5 +1492,55 @@ TEST_F(QueriesApi, ExtraSpacesUpdateSQL) {
 		QueryResults qrUpdate;
 		Error err = rt.reindexer->Update(updateQuery, qrUpdate);
 		ASSERT_TRUE(err.ok()) << err.what() << "ExtraSpacesUpdateSQL Step 3";
+	}
+}
+
+TEST_F(QueriesApi, EmptyResultForceSortedWithLimitTest) {
+	for (int id = 0; id < 10; ++id) {
+		auto item = GenerateDefaultNsItem(id, 0);
+		item[kFieldNameIsDeleted] = true;
+		Upsert(default_namespace, item);
+	}
+
+	auto check = [this](Query& q, int expected) {
+		QueryResults qr = rt.Select(q);
+		ASSERT_EQ(qr.Count(), expected);
+	};
+
+	auto query = Query(default_namespace).Where(kFieldNameIsDeleted, CondEq, {true}).Sort(kFieldNameGenre, false, {1, 2, 3}).Limit(10);
+	check(query, 10);
+	query.Where(kFieldNameIsDeleted, CondEq, {false});
+	check(query, 0);
+}
+
+TEST_F(QueriesApi, DistinctWithForcedSortAndLimitTest) {
+	std::vector<Item> items;
+	for (int id = 0; id < 10; ++id) {
+		items.emplace_back(GenerateDefaultNsItem(id, 0));
+		auto& item = items.back();
+		item[kFieldNameAge] = id / 3;
+		Upsert(default_namespace, item);
+	}
+
+	VariantArray forceSortOrder{Variant{5}, Variant{7}, Variant{1}};
+
+	auto query = Query(default_namespace).Distinct(kFieldNameAge).Sort(kFieldNameId, false, forceSortOrder).Limit(5);
+
+	int expectedCnt = 4;
+	QueryResults qr = rt.Select(query);
+	ASSERT_EQ(qr.Count(), expectedCnt);
+
+	auto distincts = qr.GetAggregationResults().front().distincts;
+	ASSERT_EQ(distincts.size(), expectedCnt);
+
+	size_t order = 0;
+	for (auto it : qr) {
+		auto item = it.GetItem();
+		gason::JsonParser parser;
+		auto root = parser.Parse(item.GetJSON());
+		int id = root[kFieldNameId].As<int>();
+		ASSERT_EQ(id, order < forceSortOrder.size() ? int(forceSortOrder[order]) : 9) << fmt::format("order: {}", order);
+		ASSERT_EQ(root[kFieldNameAge].As<int>(), items[id][kFieldNameAge].As<int>()) << fmt::format("Id: {}; order: {}", id, order);
+		order++;
 	}
 }

@@ -1,66 +1,87 @@
-#include "transaction.h"
-#include "client/itemimpl.h"
-#include "client/rpcclient.h"
-#include "core/keyvalue/p_string.h"
-#include "net/cproto/clientconnection.h"
+#include "client/transaction.h"
+#include "client/reindexerimpl.h"
+#include "core/cjson/tagsmatcher.h"
 
 namespace reindexer {
 namespace client {
 
-void Transaction::Modify(Query&& query) {
-	if (conn_) {
-		WrSerializer ser;
-		query.Serialize(ser);
-		auto ret = conn_->Call({cproto::kCmdUpdateQueryTx, RequestTimeout_, execTimeout_, nullptr}, ser.Slice(), txId_).Status();
-		if (!ret.ok()) {
-			throw ret;
-		}
-	}
-	throw Error(errLogic, "Connection pointer in transaction is nullptr.");
-}
-
-void Transaction::addTxItem(Item&& item, ItemModifyMode mode) {
-	auto itData = item.GetJSON();
-	p_string itemData(&itData);
-	if (conn_) {
-		for (int tryCount = 0;; tryCount++) {
-			auto ret =
-				conn_->Call({net::cproto::kCmdAddTxItem, RequestTimeout_, execTimeout_, nullptr}, FormatJson, itemData, mode, "", 0, txId_);
-
-			if (!ret.Status().ok()) {
-				if (ret.Status().code() != errStateInvalidated || tryCount > 2) {
-					throw ret.Status();
-				}
-
-				QueryResults qr;
-				InternalRdxContext ctx;
-				ctx = ctx.WithTimeout(execTimeout_);
-				auto err = rpcClient_->Select(Query(nsName_).Limit(0), qr, ctx, conn_);
-				if (!err.ok()) {
-					throw Error(errLogic, "Can't update TagsMatcher");
-				}
-
-				auto newItem = NewItem();
-				char* endp = nullptr;
-				err = newItem.FromJSON(item.impl_->GetJSON(), &endp);
-				if (!err.ok()) {
-					throw err;
-				}
-				item = std::move(newItem);
-			} else {
-				break;
-			}
-		}
-	} else {
-		throw Error(errLogic, "Connection pointer in transaction is nullptr.");
-	}
-}
+static const auto kBadTxStatus = Error(errBadTransaction, "Transaction is free");
 
 Item Transaction::NewItem() {
-	if (!rpcClient_) {
-		throw Error(errLogic, "rpcClient not set for client transaction");
+	if (!Status().ok()) {
+		return Item(Status());
 	}
-	return rpcClient_->NewItem(nsName_);
+	if (!IsFree()) {
+		return rx_->newItemTx(tr_);
+	}
+	return Item(kBadTxStatus);
 }
+
+Transaction::~Transaction() {
+	if (!IsFree()) {
+		auto err = rx_->RollBackTransaction(*this, InternalRdxContext(lsn_t{0}, nullptr, 0));
+		(void)err;	// ignore
+	}
+	tr_.clear();
+}
+
+PayloadType Transaction::GetPayloadType() const { return tr_.GetPayloadType(); }
+TagsMatcher Transaction::GetTagsMatcher() const { return tr_.GetTagsMatcher(); }
+
+int64_t Transaction::GetTransactionId() const noexcept { return tr_.i_.txId_; }
+
+Error Transaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
+	return modify(std::move(item), mode, InternalRdxContext(std::move(lsn)));
+}
+Error Transaction::PutMeta(std::string_view key, std::string_view value, lsn_t lsn) {
+	return putMeta(key, value, InternalRdxContext(std::move(lsn)));
+}
+Error Transaction::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) { return setTagsMatcher(std::move(tm), InternalRdxContext(std::move(lsn))); }
+Error Transaction::Modify(Query&& query, lsn_t lsn) { return modify(std::move(query), InternalRdxContext(std::move(lsn))); }
+
+Error Transaction::modify(Item&& item, ItemModifyMode mode, InternalRdxContext&& ctx) {
+	if (!IsFree()) {
+		auto err = rx_->addTxItem(*this, std::move(item), mode, ctx.WithEmmiterServerId(tr_.i_.emmiterServerId_));
+		if (!err.ok()) {
+			setStatus(std::move(err));
+		}
+		return Status();
+	}
+	return Status().ok() ? kBadTxStatus : Status();
+}
+
+Error Transaction::modify(Query&& query, InternalRdxContext&& ctx) {
+	if (!IsFree()) {
+		auto err = rx_->modifyTx(*this, std::move(query), ctx.WithEmmiterServerId(tr_.i_.emmiterServerId_));
+		if (!err.ok()) {
+			setStatus(std::move(err));
+		}
+		return Status();
+	}
+	return Status().ok() ? kBadTxStatus : Status();
+}
+
+Error Transaction::putMeta(std::string_view key, std::string_view value, InternalRdxContext&& ctx) {
+	if (!IsFree()) {
+		auto err = rx_->putTxMeta(*this, key, value, ctx.WithEmmiterServerId(tr_.i_.emmiterServerId_));
+		if (!err.ok()) {
+			setStatus(std::move(err));
+		}
+		return Status();
+	}
+	return Status().ok() ? kBadTxStatus : Status();
+}
+
+Error Transaction::setTagsMatcher(TagsMatcher&& tm, InternalRdxContext&& ctx) {
+	if (!IsFree()) {
+		auto err = rx_->setTxTm(*this, std::move(tm), ctx.WithEmmiterServerId(tr_.i_.emmiterServerId_));
+		if (!err.ok()) {
+			setStatus(std::move(err));
+		}
+		return Status();
+	}
+	return Status().ok() ? kBadTxStatus : Status();
+}
+
 }  // namespace client
 }  // namespace reindexer

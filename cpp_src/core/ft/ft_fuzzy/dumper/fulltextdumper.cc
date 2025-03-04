@@ -12,7 +12,7 @@ FullTextDumper& FullTextDumper::Init() {
 	return dumper;
 }
 
-void FullTextDumper::LogFinalData(const reindexer::QueryResults& result) {
+void FullTextDumper::LogFinalData(const reindexer::LocalQueryResults& result) {
 	if (!std::getenv(env.c_str())) {
 		return;
 	}
@@ -21,8 +21,9 @@ void FullTextDumper::LogFinalData(const reindexer::QueryResults& result) {
 	std::vector<std::string> tmp_buffer;
 	tmp_buffer.push_back("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
 	tmp_buffer.push_back("Returned ids: ");
-	for (const auto& res : result.Items()) {
-		tmp_buffer.push_back("id: " + std::to_string(res.Id()) + " | lsn: " + std::to_string(res.Value().GetLSN()));
+	for (const auto& it : result.Items()) {
+		const auto& res = it.GetItemRef();
+		tmp_buffer.push_back("id: " + std::to_string(res.Id()) + " | lsn: " + std::to_string(int64_t(res.Value().GetLSN())));
 	}
 	tmp_buffer.push_back("_______________________________________");
 

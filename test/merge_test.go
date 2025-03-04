@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/restream/reindexer/v3"
+	"github.com/restream/reindexer/v5"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -157,18 +157,18 @@ func TestMerge(t *testing.T) {
 
 type SortFullText struct {
 	ID   int
-	Proc int
+	Rank float32
 }
 type ByProc []SortFullText
 
 func (a ByProc) Len() int      { return len(a) }
 func (a ByProc) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 func (a ByProc) Less(i, j int) bool {
-	return a[i].Proc > a[j].Proc
+	return a[i].Rank > a[j].Rank
 }
 
-func CreateSort(t *testing.T, result []interface{}, procList []int) (res ByProc) {
-	assert.Equal(t, len(result), len(procList), "Procent Count form query is wrong")
+func CreateSort(t *testing.T, result []interface{}, rankList []float32) (res ByProc) {
+	assert.Equal(t, len(result), len(rankList), "Procent Count form query is wrong")
 
 	for i, item := range result {
 		id := 0
@@ -183,7 +183,7 @@ func CreateSort(t *testing.T, result []interface{}, procList []int) (res ByProc)
 		default:
 			assert.Fail(t, "[%d] Unknown type after merge: %T", i, item)
 		}
-		res = append(res, SortFullText{id, procList[i]})
+		res = append(res, SortFullText{id, rankList[i]})
 	}
 	return res
 }
@@ -217,7 +217,7 @@ func CheckTestItemsMergeQueries(t *testing.T) {
 	sort.Sort(ByProc(sorted))
 	//After Sort result with same proc can be not in same order (smart oreder in c++) that why no use reflect.DeepEqual
 	for i := 0; i < len(merge); i++ {
-		assert.Equal(t, usorted[i].Proc, sorted[i].Proc, "Merge sort in go not equual to c sort simple")
+		assert.Equal(t, usorted[i].Rank, sorted[i].Rank, "Merge sort in go not equual to c sort simple")
 	}
 	qs1 := DB.Query("test_full_text_simple_item").Where("name", reindexer.EQ, strings.ToUpper(first)).
 		Join(DB.Query("merge_join_item1"), "joined").
@@ -290,6 +290,6 @@ func CheckTestItemsMergeQueries(t *testing.T) {
 
 	//In second read result can not directly same
 	for i := 0; i < len(usorted); i++ {
-		assert.Equal(t, usorted[i].Proc, sortedNew[i].Proc, "Merge sort in go not equual to c sort simple")
+		assert.Equal(t, usorted[i].Rank, sortedNew[i].Rank, "Merge sort in go not equual to c sort simple")
 	}
 }

@@ -110,12 +110,10 @@ TEST_F(Fuzzing, BaseTest) {
 			auto err = rx_.Select(query, qr);
 			EXPECT_TRUE(err.ok()) << err.what();
 			if (err.ok()) {
-				Verify(qr, std::move(query), rx_);
+				Verify(qr.ToLocalQr(), std::move(query), rx_);
 			}
 		}
 	} catch (const std::exception& err) {
-		FAIL() << err.what();
-	} catch (const reindexer::Error& err) {
 		FAIL() << err.what();
 	}
 }

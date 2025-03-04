@@ -1,7 +1,5 @@
-#ifndef TRANSACTION_H
-#define TRANSACTION_H
+#pragma once
 
-#include <thread>
 #include "reindexer_api.h"
 
 class TransactionApi : public ReindexerApi {
@@ -21,12 +19,14 @@ public:
 	void OpenNamespace(Reindexer& reindexer) {
 		Error err = reindexer.OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
-		DefineNamespaceDataset(
-			reindexer, default_namespace,
-			{IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0},
-			 IndexDeclaration{kFieldData, "text", "string", IndexOpts().SetConfig(R"xxx({"enable_warmup_on_ns_copy":false})xxx"), 0},
-			 IndexDeclaration{kFieldData1, "text", "string", IndexOpts().SetConfig(R"xxx({"enable_warmup_on_ns_copy":true})xxx"), 0},
-			 IndexDeclaration{kFieldData2, "text", "string", IndexOpts().SetConfig(R"xxx({"enable_warmup_on_ns_copy":true})xxx"), 0}});
+		DefineNamespaceDataset(reindexer, default_namespace,
+							   {IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0},
+								IndexDeclaration{kFieldData, "text", "string",
+												 IndexOpts().SetConfig(IndexFastFT, R"xxx({"enable_warmup_on_ns_copy":false})xxx"), 0},
+								IndexDeclaration{kFieldData1, "text", "string",
+												 IndexOpts().SetConfig(IndexFastFT, R"xxx({"enable_warmup_on_ns_copy":true})xxx"), 0},
+								IndexDeclaration{kFieldData2, "text", "string",
+												 IndexOpts().SetConfig(IndexFastFT, R"xxx({"enable_warmup_on_ns_copy":true})xxx"), 0}});
 	}
 
 	Item MakeItem(Reindexer& reindexer, int id, const std::string& baseData) {
@@ -41,7 +41,8 @@ public:
 	void AddDataToNsTx(Reindexer& reindexer, int from, int count, const std::string& data) {
 		auto tx = reindexer.NewTransaction(default_namespace);
 		for (int i = from; i < from + count; ++i) {
-			tx.Insert(MakeItem(reindexer, i, data));
+			auto err = tx.Insert(MakeItem(reindexer, i, data));
+			ASSERT_TRUE(err.ok()) << err.what();
 		}
 		QueryResults result;
 		Error err = reindexer.CommitTransaction(tx, result);
@@ -50,9 +51,9 @@ public:
 
 	int GetItemsCount(Reindexer& reindexer) {
 		QueryResults qr;
-		Error err = reindexer.Select(Query(default_namespace), qr);
+		Error err = reindexer.Select(Query(default_namespace).CachedTotal().Limit(0), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
-		return qr.Count();
+		return qr.TotalCount();
 	}
 
 	void SelectData(Reindexer& reindexer, int fromMax, int tillMax) {
@@ -74,5 +75,3 @@ protected:
 	const char* kFieldData1 = "data1";
 	const char* kFieldData2 = "data2";
 };
-
-#endif	// TRANSACTION_H

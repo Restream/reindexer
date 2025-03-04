@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v3"
+	"github.com/restream/reindexer/v5"
 	"github.com/stretchr/testify/assert"
 )
 

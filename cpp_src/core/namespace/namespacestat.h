@@ -3,15 +3,14 @@
 #include <stdlib.h>
 #include <string>
 #include <vector>
-#include "core/lsn.h"
-#include "estl/span.h"
-#include "gason/gason.h"
+#include <span>
+#include "namespacename.h"
 #include "tools/errors.h"
+#include "tools/lsn.h"
 
 namespace reindexer {
 
 class WrSerializer;
-class JsonBuilder;
 
 struct LRUCacheMemStat {
 	void GetJSON(JsonBuilder& builder);
@@ -30,31 +29,42 @@ struct IndexMemStat {
 	size_t idsetBTreeSize = 0;
 	size_t idsetPlainSize = 0;
 	size_t sortOrdersSize = 0;
-	size_t fulltextSize = 0;
+	size_t indexingStructSize = 0;
 	size_t columnSize = 0;
 	size_t trackedUpdatesCount = 0;
 	size_t trackedUpdatesBuckets = 0;
 	size_t trackedUpdatesSize = 0;
 	size_t trackedUpdatesOverflow = 0;
+	std::optional<bool> isBuilt;  // KNN-indexes|fast-text indexes only
 	LRUCacheMemStat idsetCache;
-	size_t GetIndexStructSize() const noexcept {
-		return idsetPlainSize + idsetBTreeSize + sortOrdersSize + fulltextSize + columnSize + trackedUpdatesSize;
+	size_t GetFullIndexStructSize() const noexcept {
+		return idsetPlainSize + idsetBTreeSize + sortOrdersSize + columnSize + trackedUpdatesSize + indexingStructSize;
 	}
 };
 
-struct MasterState {
-	void GetJSON(JsonBuilder& builder);
-	void FromJSON(span<char>);
+struct ClusterizationStatus {
+	void GetJSON(WrSerializer& ser) const;
+	void GetJSON(JsonBuilder& builder) const;
+	Error FromJSON(std::span<char> json);
 	void FromJSON(const gason::JsonNode& root);
 
-	// LSN of last change
-	lsn_t lastUpstreamLSNm;
-	// Data hash
-	uint64_t dataHash = 0;
-	// Data count
-	int dataCount = 0;
-	// Data updated
-	uint64_t updatedUnixNano = 0;
+	enum class Role { None, ClusterReplica, SimpleReplica };
+
+	std::string_view RoleStr() const noexcept {
+		using namespace std::string_view_literals;
+		switch (role) {
+			case Role::None:
+				return "none"sv;
+			case Role::ClusterReplica:
+				return "cluster_replica"sv;
+			case Role::SimpleReplica:
+				return "simple_replica"sv;
+		}
+		return "<unknown>"sv;
+	}
+
+	int leaderId = -1;
+	Role role = Role::None;
 };
 
 struct ReplicationState {
@@ -63,19 +73,13 @@ struct ReplicationState {
 	virtual ~ReplicationState() = default;
 
 	virtual void GetJSON(JsonBuilder& builder);
-	void FromJSON(span<char>);
+	void FromJSON(std::span<char>);
 
 	// LSN of last change
 	// updated from WAL when querying the structure
 	lsn_t lastLsn;
-	// Slave mode flag (only read operation enabled)
-	bool slaveMode = false;
-	// enable replication
-	bool replicatorEnabled = false;
 	// Temporary namespace flag
 	bool temporary = false;
-	// Replication error
-	Error replError = errOK;
 	// Incarnation counter
 	int incarnationCounter = 0;
 	// Data hash
@@ -84,14 +88,32 @@ struct ReplicationState {
 	int dataCount = 0;
 	// Data updated
 	uint64_t updatedUnixNano = 0;
-	// Current replication status
-	Status status = Status::None;
-	// Current master state
-	MasterState masterState;
+	// Namespace version
+	lsn_t nsVersion;
+	// Clusterization status
+	ClusterizationStatus clusterStatus;
+	// Shows, that namespaces was replicated in v3.
+	// Required for the transition process only
+	bool wasV3ReplicatedNS = false;
+};
 
-	lsn_t originLSN;
-	lsn_t lastSelfLSN;
-	lsn_t lastUpstreamLSN;
+// TODO: Rename this
+struct ReplicationStateV2 {
+	constexpr static int64_t kNoDataCount = -1;
+
+	bool HasDataCount() const noexcept { return dataCount != kNoDataCount; }
+	void GetJSON(JsonBuilder& builder);
+	void FromJSON(std::span<char>);
+
+	// LSN of last change
+	// updated from WAL when querying the structure
+	lsn_t lastLsn;
+	uint64_t dataHash = 0;
+	// This field is optional - older rx versions do not have it
+	int64_t dataCount = kNoDataCount;
+	lsn_t nsVersion;
+	//
+	ClusterizationStatus clusterStatus;
 };
 
 struct ReplicationStat final : public ReplicationState {
@@ -99,17 +121,17 @@ struct ReplicationStat final : public ReplicationState {
 
 	size_t walCount = 0;
 	size_t walSize = 0;
+	int16_t serverId = 0;
 };
 
 struct NamespaceMemStat {
 	void GetJSON(WrSerializer& ser);
 
-	std::string name;
+	NamespaceName name;
 	std::string storagePath;
 	bool storageOK = false;
 	bool storageEnabled = false;
 	std::string storageStatus;
-	bool storageLoaded = true;
 	bool optimizationCompleted = false;
 	size_t itemsCount = 0;
 	size_t emptyItemsCount = 0;
@@ -186,7 +208,7 @@ struct IndexPerfStat {
 struct NamespacePerfStat {
 	void GetJSON(WrSerializer& ser);
 
-	std::string name;
+	NamespaceName name;
 	PerfStat updates;
 	PerfStat selects;
 	TxPerfStat transactions;

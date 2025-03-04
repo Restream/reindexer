@@ -22,17 +22,9 @@ uint8_t* PayloadValue::alloc(size_t cap) {
 	if (p_) {
 		nheader->lsn = header()->lsn;
 	} else {
-		nheader->lsn = -1;
+		nheader->lsn = lsn_t();
 	}
 	return pn;
-}
-
-void PayloadValue::release() noexcept {
-	if (p_ && header()->refcount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-		header()->~dataHeader();
-		operator delete(p_);
-	}
-	p_ = nullptr;
 }
 
 void PayloadValue::Clone(size_t size) {

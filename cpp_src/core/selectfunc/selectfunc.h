@@ -1,11 +1,12 @@
 #pragma once
 #include "core/query/query.h"
-#include "core/queryresults/queryresults.h"
 #include "nsselectfuncinterface.h"
 #include "selectfuncparser.h"
 
 namespace reindexer {
+
 class NamespaceImpl;
+class LocalQueryResults;
 
 /// Represents sql function in a query
 /// (like avg(x) or sum(x)).
@@ -54,7 +55,7 @@ public:
 	SelectFunction::Ptr AddNamespace(const Query& q, const NamespaceImpl& nm, uint32_t nsid, bool force);
 	/// Processing of results of an executed query.
 	/// @param res - results of query execution.
-	void Process(QueryResults& res);
+	void Process(LocalQueryResults& res);
 
 private:
 	using MapT = h_vector<SelectFunction::Ptr, 4>;

@@ -1,5 +1,6 @@
 #include "manualconnection.h"
 #include <errno.h>
+#include "tools/catch_and_return.h"
 
 namespace reindexer {
 namespace net {
@@ -70,6 +71,22 @@ void manual_connection::restart(socket&& s) {
 	}
 }
 
+Error manual_connection::with_tls(bool enable) {
+	try {
+		if (enable) {
+			if (!sslCtx_) {
+				sslCtx_ = openssl::create_client_context();
+			}
+			sock_.ssl = openssl::create_ssl(sslCtx_);
+		} else {
+			sslCtx_ = nullptr;
+			sock_.ssl = nullptr;
+		}
+	}
+	CATCH_AND_RETURN
+	return {};
+}
+
 int manual_connection::async_connect(std::string_view addr, socket_domain type) noexcept {
 	connect_timer_.stop();
 	if (state_ == conn_state::connected || state_ == conn_state::connecting) {
@@ -93,7 +110,7 @@ int manual_connection::async_connect(std::string_view addr, socket_domain type) 
 	return 0;
 }
 
-ssize_t manual_connection::write(span<char> wr_buf, transfer_data& transfer, int& err_ref) {
+ssize_t manual_connection::write(std::span<char> wr_buf, transfer_data& transfer, int& err_ref) {
 	err_ref = 0;
 	ssize_t written = -1;
 	auto cur_buf = wr_buf.subspan(transfer.transfered_size());
@@ -129,7 +146,7 @@ ssize_t manual_connection::write(span<char> wr_buf, transfer_data& transfer, int
 	return written;
 }
 
-ssize_t manual_connection::read(span<char> rd_buf, transfer_data& transfer, int& err_ref) {
+ssize_t manual_connection::read(std::span<char> rd_buf, transfer_data& transfer, int& err_ref) {
 	bool need_read = !transfer.expected_size();
 	ssize_t nread = 0;
 	ssize_t read_this_time = 0;
@@ -229,6 +246,20 @@ void manual_connection::io_callback(ev::io&, int revents) {
 		return;
 	}
 
+	if (state_ == conn_state::connecting && sock_.ssl) {
+		if (int(openssl::SSL_get_fd(*sock_.ssl)) == -1) {
+			openssl::SSL_set_fd(*sock_.ssl, sock_.fd());
+		}
+
+		if (int ssl_events = openssl::ssl_handshake<&openssl::SSL_connect>(sock_.ssl); ssl_events < 0) {
+			close_conn(ssl_events == -SSL_ERROR_SYSCALL ? k_sock_closed_err : k_connect_ssl_err);
+			return;
+		} else if (ssl_events > 0) {
+			set_io_events(ssl_events);
+			return;
+		}
+	}
+
 	const auto conn_id = conn_id_;
 	if (revents & ev::READ) {
 		int err = read_cb();
@@ -276,7 +307,7 @@ int manual_connection::read_cb() {
 	return err;
 }
 
-bool manual_connection::read_from_buf(span<char> rd_buf, transfer_data& transfer, bool read_full) noexcept {
+bool manual_connection::read_from_buf(std::span<char> rd_buf, transfer_data& transfer, bool read_full) noexcept {
 	auto cur_buf = rd_buf.subspan(transfer.transfered_size());
 	const bool will_read_full = read_full && buffered_data_.size() >= cur_buf.size();
 	const bool will_read_any = !read_full && buffered_data_.size();

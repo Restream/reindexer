@@ -51,8 +51,14 @@ int main(int argc, char* argv[]) {
 		return EXIT_FAILURE;
 	}
 
+	struct Version : std::runtime_error {
+		using std::runtime_error::runtime_error;
+	};
+
 	args::ArgumentParser parser("Reindexer client tool");
 	args::HelpFlag help(parser, "help", "show this message", {'h', "help"});
+	args::ActionFlag version(parser, "", "Reindexer tool version", {'v', "version"},
+							 []() { throw Version(fmt::format("Reindexer tool version: {}", REINDEX_VERSION)); });
 
 	args::Group progOptions("options");
 #ifdef _WIN32
@@ -67,10 +73,13 @@ int main(int argc, char* argv[]) {
 #endif	// _WIN32
 	args::ValueFlag<std::string> fileName(progOptions, "FILENAME", "Execute commands from file, then exit", {'f', "filename"}, "",
 										  Options::Single | Options::Global);
-	args::ValueFlag<std::string> command(progOptions, "COMMAND", "Run single command (SQL or internal) and exit'", {'c', "command"}, "",
+	args::ValueFlag<std::string> command(progOptions, "COMMAND", "Run single command (SQL or internal) and exit", {'c', "command"}, "",
 										 Options::Single | Options::Global);
 	args::ValueFlag<std::string> outFileName(progOptions, "FILENAME", "Send query results to file", {'o', "output"}, "",
 											 Options::Single | Options::Global);
+	args::ValueFlag<std::string> dumpMode(progOptions, "DUMP_MODE",
+										  "Dump mode for sharded databases: 'full_node' (default), 'sharded_only', 'local_only'",
+										  {"dump-mode"}, "", Options::Single | Options::Global);
 
 	args::ValueFlag<unsigned> connThreads(progOptions, "INT=1..65535", "Number of threads(connections) used by db connector",
 										  {'t', "threads"}, 1, Options::Single | Options::Global);
@@ -98,6 +107,9 @@ int main(int argc, char* argv[]) {
 		std::cerr << "ERROR: " << e.what() << std::endl;
 		std::cout << parser.Help() << std::endl;
 		return 1;
+	} catch (Version& v) {
+		std::cout << v.what() << std::endl;
+		return 0;
 	} catch (reindexer::Error& re) {
 		std::cerr << "ERROR: " << re.what() << std::endl;
 		return 1;
@@ -120,7 +132,8 @@ int main(int argc, char* argv[]) {
 			return 2;
 		}
 
-		if (checkIfStartsWithCS("cproto://"sv, db) || checkIfStartsWithCS("ucproto://"sv, db) || checkIfStartsWithCS("builtin://"sv, db)) {
+		if (checkIfStartsWithCS("cproto://"sv, db) || checkIfStartsWithCS("ucproto://"sv, db) || checkIfStartsWithCS("cprotos://"sv, db) ||
+			checkIfStartsWithCS("builtin://"sv, db)) {
 #ifdef _WIN32
 			if (checkIfStartsWithCS("ucproto://"sv, db) == 0) {
 				std::cerr << "Invalid DSN: ucproto:// is not supported on the Windows platform. Use cproto:// or builtin:// instead"
@@ -147,7 +160,7 @@ int main(int argc, char* argv[]) {
 		std::cout << "Reindexer command line tool version " << REINDEX_VERSION << std::endl;
 	}
 
-	if (checkIfStartsWithCS("cproto://"sv, dsn) || checkIfStartsWithCS("ucproto://"sv, dsn)) {
+	if (checkIfStartsWithCS("cproto://"sv, dsn) || checkIfStartsWithCS("cprotos://"sv, dsn) || checkIfStartsWithCS("ucproto://"sv, dsn)) {
 #ifdef _WIN32
 		if (checkIfStartsWithCS("ucproto://"sv, dsn)) {
 			std::cerr << "Invalid DSN: ucproto:// is not supported on the Windows platform. Use cproto:// or builtin:// instead"
@@ -162,13 +175,13 @@ int main(int argc, char* argv[]) {
 																			  args::get(connThreads), config);
 		err = commandsProcessor.Connect(dsn, reindexer::client::ConnectOpts().CreateDBIfMissing(createDBF && args::get(createDBF)));
 		if (err.ok()) {
-			ok = commandsProcessor.Run(args::get(command));
+			ok = commandsProcessor.Run(args::get(command), args::get(dumpMode));
 		}
 	} else if (checkIfStartsWithCS("builtin://"sv, dsn)) {
 		CommandsProcessor<reindexer::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName), args::get(connThreads));
 		err = commandsProcessor.Connect(dsn, ConnectOpts().DisableReplication());
 		if (err.ok()) {
-			ok = commandsProcessor.Run(args::get(command));
+			ok = commandsProcessor.Run(args::get(command), args::get(dumpMode));
 		}
 	} else {
 #ifdef _WIN32

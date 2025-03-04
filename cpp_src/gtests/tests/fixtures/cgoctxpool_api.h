@@ -1,7 +1,7 @@
 #pragma once
 
 #include <gtest/gtest.h>
-#include "core/cbinding/cgocancelcontextpool.h"
+#include "core/cancelcontextpool.h"
 
 using std::unique_ptr;
 using reindexer::ContextsPoolImpl;
@@ -15,15 +15,8 @@ std::ostream& operator<<(std::ostream& os, const CancelType& cancel) { return os
 namespace CGOCtxPoolTests {
 
 class CGOCtxPoolApi : public ::testing::Test {
-public:
-	CGOCtxPoolApi() {}
-	virtual ~CGOCtxPoolApi() {}
-
 protected:
 	enum class MultiThreadTestMode { Simple, Synced };
-
-	void SetUp() {}
-	void TearDown() {}
 
 	unique_ptr<ContextsPoolImpl<CancelContextImpl>> createCtxPool(size_t baseSize) {
 		return unique_ptr<ContextsPoolImpl<CancelContextImpl>>(new ContextsPoolImpl<CancelContextImpl>(baseSize));

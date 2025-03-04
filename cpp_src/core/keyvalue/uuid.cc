@@ -1,6 +1,6 @@
 #include "uuid.h"
 
-#include "estl/span.h"
+#include <span>
 
 namespace reindexer {
 
@@ -203,7 +203,13 @@ Uuid::operator std::string() const {
 	return res;
 }
 
-void Uuid::PutToStr(span<char> str) const noexcept {
+Uuid::operator key_string() const {
+	char res[kStrFormLen];
+	PutToStr({res, kStrFormLen});
+	return make_key_string(std::string_view(res, kStrFormLen));
+}
+
+void Uuid::PutToStr(std::span<char> str) const noexcept {
 	assertrx(str.size() >= kStrFormLen);
 	static constexpr char hexChars[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 	str[0] = hexChars[(data_[0] >> 60) & 0xF];

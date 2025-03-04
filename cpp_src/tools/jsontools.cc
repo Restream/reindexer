@@ -1,6 +1,4 @@
 #include "jsontools.h"
-#include <string.h>
-#include <cmath>
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -9,20 +7,20 @@ void jsonValueToString(gason::JsonValue o, WrSerializer& ser, int shift, int ind
 	using namespace std::string_view_literals;
 	bool enableEol = (shift != 0) || (indent != 0);
 	switch (o.getTag()) {
-		case gason::JSON_NUMBER:
-			ser << int64_t(o.toNumber());
+		case gason::JsonTag::NUMBER:
+			ser << o.toNumber();
 			break;
-		case gason::JSON_DOUBLE:
+		case gason::JsonTag::DOUBLE:
 			ser << o.toDouble();
 			break;
-		case gason::JSON_STRING:
+		case gason::JsonTag::STRING:
 			if (escapeStrings) {
 				ser.PrintJsonString(o.toString());
 			} else {
 				ser << o.toString();
 			}
 			break;
-		case gason::JSON_ARRAY:
+		case gason::JsonTag::ARRAY:
 			if (!o.toNode()) {
 				ser << "[]";
 				break;
@@ -45,7 +43,7 @@ void jsonValueToString(gason::JsonValue o, WrSerializer& ser, int shift, int ind
 			ser.Fill(' ', indent);
 			ser << ']';
 			break;
-		case gason::JSON_OBJECT:
+		case gason::JsonTag::OBJECT:
 			if (!o.toNode()) {
 				ser << "{}";
 				break;
@@ -70,30 +68,35 @@ void jsonValueToString(gason::JsonValue o, WrSerializer& ser, int shift, int ind
 			ser.Fill(' ', indent);
 			ser << '}';
 			break;
-		case gason::JSON_TRUE:
+		case gason::JsonTag::JTRUE:
 			ser << true;
 			break;
-		case gason::JSON_FALSE:
+		case gason::JsonTag::JFALSE:
 			ser << false;
 			break;
-		case gason::JSON_NULL:
+		case gason::JsonTag::JSON_NULL:
 			ser << "null"sv;
 			break;
-		case gason::JSON_EMPTY:
+		case gason::JsonTag::EMPTY:
 			break;	// do nothing
 		default:
 			throw Error(errLogic, "Unexpected json tag: %d", int(o.getTag()));
 	}
 }
 
-void prettyPrintJSON(span<char> json, WrSerializer& ser, int shift) {
+void prettyPrintJSON(std::span<char> json, WrSerializer& ser, int shift) {
 	gason::JsonParser parser;
 	jsonValueToString(parser.Parse(json).value, ser, shift, 0);
 }
 
-std::string stringifyJson(const gason::JsonNode& elem) {
+void prettyPrintJSON(std::string_view json, WrSerializer& ser, int shift) {
+	gason::JsonParser parser;
+	jsonValueToString(parser.Parse(json).value, ser, shift, 0);
+}
+
+std::string stringifyJson(const gason::JsonNode& elem, bool escapeStrings) {
 	WrSerializer ser;
-	jsonValueToString(elem.value, ser, 0, 0);
+	jsonValueToString(elem.value, ser, 0, 0, escapeStrings);
 
 	return std::string(ser.Slice());
 }

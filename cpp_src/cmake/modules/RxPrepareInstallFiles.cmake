@@ -24,13 +24,17 @@ endif()
       if (${lib} MATCHES "jemalloc" OR ${lib} MATCHES "tcmalloc")
       elseif(${lib} STREQUAL "-pthread")
         list(APPEND flibs " -lpthread")
-      elseif("${lib}" MATCHES "^\\-.*")
+      elseif(${lib} MATCHES "^\\-.*")
         list(APPEND flibs " ${lib}")
       else()
         if (NOT "${lib}" STREQUAL "snappy" OR SNAPPY_FOUND)
-          get_filename_component(lib ${lib} NAME_WE)
-          string(REGEX REPLACE "^lib" "" lib ${lib})
-          list(APPEND flibs " -l${lib}")
+          get_filename_component(lib_name ${lib} NAME_WE)
+          string(REGEX REPLACE "^lib" "" lib_name ${lib_name})
+          if (${lib} MATCHES "framework")
+            list(APPEND flibs " -framework ${lib_name}")
+          else()
+            list(APPEND flibs " -l${lib_name}")
+          endif()
         else()
           list(APPEND flibs " -l${lib}")
         endif()
@@ -65,17 +69,23 @@ if (NOT WIN32)
     "tools/verifying_updater.h" "tools/customlocal.h" "tools/clock.h"
     "core/reindexer.h" "core/type_consts.h" "core/type_formats.h" "core/item.h" "core/payload/payloadvalue.h" "core/payload/payloadiface.h" "core/indexopts.h"
     "core/namespacedef.h" "core/keyvalue/variant.h" "core/keyvalue/geometry.h" "core/sortingprioritiestable.h"
-    "core/rdxcontext.h" "core/activity_context.h" "core/type_consts_helpers.h" "core/payload/fieldsset.h" "core/payload/payloadtype.h"
-    "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" "core/transaction.h" "core/payload/payloadfieldtype.h" "core/reindexerconfig.h"
-    "core/query/query.h" "core/query/queryentry.h" "core/queryresults/queryresults.h" "core/indexdef.h" "core/queryresults/aggregationresult.h"
-    "core/queryresults/itemref.h" "core/namespace/stringsholder.h" "core/keyvalue/key_string.h" "core/key_value_type.h" "core/keyvalue/uuid.h"
-    "core/expressiontree.h" "core/lsn.h" "core/cjson/tagspath.h" "core/cjson/ctag.h" "core/keyvalue/p_string.h"
-    "estl/cow.h" "estl/overloaded.h" "estl/one_of.h" "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h"
-    "estl/span.h" "estl/chunk.h" "estl/fast_hash_traits.h" "estl/debug_macros.h" "estl/defines.h" "estl/template.h" "estl/comparation_result.h"
-    "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h"
-    "client/internalrdxcontext.h" "client/transaction.h"
-    "client/cororeindexer.h" "client/coroqueryresults.h" "client/corotransaction.h"
+    "core/rdxcontext.h" "core/activity_context.h" "core/activity.h" "core/activitylog.h" "core/type_consts_helpers.h" "core/payload/fieldsset.h" "core/payload/payloadtype.h"
+    "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" "core/transaction/transaction.h" "core/payload/payloadfieldtype.h" "core/reindexerconfig.h"
+    "core/query/query.h" "core/query/queryentry.h" "core/queryresults/queryresults.h" "core/query/knn_search_params.h" "core/indexdef.h" "core/queryresults/aggregationresult.h"
+    "core/queryresults/itemref.h" "core/namespace/stringsholder.h" "core/keyvalue/key_string.h" "core/keyvalue/uuid.h" "core/key_value_type.h"
+    "core/namespace/incarnationtags.h" "core/keyvalue/p_string.h" "core/keyvalue/float_vector.h" "core/enums.h" "core/keyvalue/float_vectors_holder.h" "core/namespace/float_vectors_indexes.h"
+    "core/itemimplrawdata.h" "core/expressiontree.h" "tools/lsn.h" "core/cjson/tagspath.h" "core/cjson/ctag.h" "core/rank_t.h" "core/system_ns_names.h"
+    "estl/cow.h" "core/shardedmeta.h" "estl/overloaded.h" "estl/one_of.h"
+    "core/queryresults/localqueryresults.h" "core/query/fields_names_filter.h" "core/queryresults/fields_filter.h"
+    "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/chunk.h" "estl/expected.h" "estl/gift_str.h"
+    "estl/fast_hash_map.h" "vendor/hopscotch/hopscotch_map.h" "vendor/hopscotch/hopscotch_sc_map.h" "vendor/hopscotch/hopscotch_hash.h" "estl/elist.h"
+    "estl/fast_hash_traits.h" "estl/debug_macros.h" "estl/defines.h" "estl/template.h" "estl/comparation_result.h" "estl/sparse_hash_int.h"
+    "client/item.h" "client/resultserializer.h"
+    "client/internalrdxcontext.h" "client/reindexer.h" "client/reindexerconfig.h"
+    "client/cororeindexer.h" "client/coroqueryresults.h" "client/corotransaction.h" "client/connectopts.h"
+    "client/queryresults.h" "client/transaction.h"
     "net/ev/ev.h" "vendor/koishi/include/koishi.h" "coroutine/coroutine.h" "coroutine/channel.h" "coroutine/waitgroup.h"
+    "vendor/expected/expected.h"
     "debug/backtrace.h" "debug/allocdebug.h" "debug/resolver.h" "vendor/gason/gason.h"
   )
 

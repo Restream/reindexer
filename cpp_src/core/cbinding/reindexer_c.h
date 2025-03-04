@@ -13,10 +13,10 @@ uintptr_t init_reindexer_with_config(reindexer_config config);
 
 void destroy_reindexer(uintptr_t rx);
 
-reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpts opts, reindexer_string client_vers);
+reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpts opts, reindexer_string client_vers,
+								  BindingCapabilities caps);
 reindexer_error reindexer_ping(uintptr_t rx);
 
-reindexer_error reindexer_enable_storage(uintptr_t rx, reindexer_string path, reindexer_ctx_info ctx_info);
 reindexer_error reindexer_init_system_namespaces(uintptr_t rx);
 
 reindexer_error reindexer_open_namespace(uintptr_t rx, reindexer_string nsName, StorageOpts opts, reindexer_ctx_info ctx_info);
@@ -55,13 +55,16 @@ void reindexer_free_cjson(reindexer_buffer b);
 reindexer_error reindexer_free_buffer(reindexer_resbuffer in);
 reindexer_error reindexer_free_buffers(reindexer_resbuffer* in, int count);
 
-reindexer_error reindexer_commit(uintptr_t rx, reindexer_string nsName);
-
 reindexer_ret reindexer_enum_meta(uintptr_t rx, reindexer_string ns, reindexer_ctx_info ctx_info);
 reindexer_error reindexer_put_meta(uintptr_t rx, reindexer_string ns, reindexer_string key, reindexer_string data,
 								   reindexer_ctx_info ctx_info);
 reindexer_ret reindexer_get_meta(uintptr_t rx, reindexer_string ns, reindexer_string key, reindexer_ctx_info ctx_info);
 reindexer_error reindexer_delete_meta(uintptr_t rx, reindexer_string ns, reindexer_string key, reindexer_ctx_info ctx_info);
+
+reindexer_error reindexer_subscribe(uintptr_t rx, reindexer_string optsJSON);
+reindexer_error reindexer_unsubscribe(uintptr_t rx);
+reindexer_array_ret reindexer_read_events(uintptr_t rx, reindexer_buffer* out_buffers, uint32_t buffers_count);
+reindexer_error reindexer_erase_events(uintptr_t rx, uint32_t events_count);
 
 reindexer_error reindexer_cancel_context(reindexer_ctx_info ctx_info, ctx_cancel_type how);
 

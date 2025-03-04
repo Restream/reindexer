@@ -2,12 +2,28 @@ package bindings
 
 import (
 	"context"
+	"crypto/tls"
 	"net/url"
 	"time"
 
-	"github.com/restream/reindexer/v3/bindings/builtinserver/config"
-	"github.com/restream/reindexer/v3/jsonschema"
+	"github.com/restream/reindexer/v5/bindings/builtinserver/config"
+	"github.com/restream/reindexer/v5/jsonschema"
 )
+
+const (
+	MultithreadingMode_SingleThread            = 0
+	MultithreadingMode_MultithreadTransactions = 1
+)
+
+type FloatVectorIndexOpts struct {
+	Metric             string `json:"metric"`
+	Dimension          int    `json:"dimension"`
+	M                  int    `json:"m,omitempty"`
+	EfConstruction     int    `json:"ef_construction,omitempty"`
+	StartSize          int    `json:"start_size,omitempty"`
+	CentroidsCount     int    `json:"centroids_count,omitempty"`
+	MultithreadingMode int    `json:"multithreading,omitempty"`
+}
 
 type IndexDef struct {
 	Name        string      `json:"name"`
@@ -107,6 +123,55 @@ func (so *ConnectOptions) StorageType(value uint16) *ConnectOptions {
 	return so
 }
 
+// Capabilties of chosen binding. This value will affect some of the serverside functions and serialization logic
+type BindingCapabilities struct {
+	Value int64
+}
+
+func DefaultBindingCapabilities() *BindingCapabilities {
+	return &BindingCapabilities{Value: 0}
+}
+
+// Enable Query results idle timeouts support
+func (bc *BindingCapabilities) WithQrIdleTimeouts(value bool) *BindingCapabilities {
+	if value {
+		bc.Value |= int64(BindingCapabilityQrIdleTimeouts)
+	} else {
+		bc.Value &= ^int64(BindingCapabilityQrIdleTimeouts)
+	}
+	return bc
+}
+
+// Enable shard IDs support
+func (bc *BindingCapabilities) WithResultsWithShardIDs(value bool) *BindingCapabilities {
+	if value {
+		bc.Value |= int64(BindingCapabilityResultsWithShardIDs)
+	} else {
+		bc.Value &= ^int64(BindingCapabilityResultsWithShardIDs)
+	}
+	return bc
+}
+
+// Enable namespaces timestamps support
+func (bc *BindingCapabilities) WithIncarnationTags(value bool) *BindingCapabilities {
+	if value {
+		bc.Value |= int64(BindingCapabilityNamespaceIncarnations)
+	} else {
+		bc.Value &= ^int64(BindingCapabilityNamespaceIncarnations)
+	}
+	return bc
+}
+
+// Enable float rank format
+func (bc *BindingCapabilities) WithFloatRank(value bool) *BindingCapabilities {
+	if value {
+		bc.Value |= int64(BindingCapabilityComplexRank)
+	} else {
+		bc.Value &= ^int64(BindingCapabilityComplexRank)
+	}
+	return bc
+}
+
 // go interface to reindexer_c.h interface
 type RawBuffer interface {
 	GetBuf() []byte
@@ -172,14 +237,13 @@ type Stats struct {
 
 // Raw binding to reindexer
 type RawBinding interface {
-	Init(u []url.URL, options ...interface{}) error
+	Init(u []url.URL, eh EventsHandler, options ...interface{}) error
 	Clone() RawBinding
 	OpenNamespace(ctx context.Context, namespace string, enableStorage, dropOnFileFormatError bool) error
 	CloseNamespace(ctx context.Context, namespace string) error
 	DropNamespace(ctx context.Context, namespace string) error
 	TruncateNamespace(ctx context.Context, namespace string) error
 	RenameNamespace(ctx context.Context, srcNs string, dstNs string) error
-	EnableStorage(ctx context.Context, namespace string) error
 	AddIndex(ctx context.Context, namespace string, indexDef IndexDef) error
 	SetSchema(ctx context.Context, namespace string, schema SchemaDef) error
 	UpdateIndex(ctx context.Context, namespace string, indexDef IndexDef) error
@@ -201,7 +265,6 @@ type RawBinding interface {
 	SelectQuery(ctx context.Context, rawQuery []byte, asJson bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
 	DeleteQuery(ctx context.Context, rawQuery []byte) (RawBuffer, error)
 	UpdateQuery(ctx context.Context, rawQuery []byte) (RawBuffer, error)
-	Commit(ctx context.Context, namespace string) error
 	EnableLogger(logger Logger)
 	DisableLogger()
 	GetLogger() Logger
@@ -209,10 +272,17 @@ type RawBinding interface {
 	Ping(ctx context.Context) error
 	Finalize() error
 	Status(ctx context.Context) Status
+	GetDSNs() []url.URL
+	Subscribe(ctx context.Context, opts *SubscriptionOptions) error
+	Unsubscribe(ctx context.Context) error
 }
 
 type RawBindingChanging interface {
 	OnChangeCallback(f func())
+}
+
+type GetReplicationStat interface {
+	GetReplicationStat(f func(ctx context.Context) (*ReplicationStat, error))
 }
 
 var availableBindings = make(map[string]RawBinding)
@@ -236,6 +306,11 @@ type OptionReindexerInstance struct {
 type OptionBuiltinAllocatorConfig struct {
 	AllocatorCacheLimit   int64
 	AllocatorMaxCachePart float32
+}
+
+// MaxUpdatesSizeBytes for the internal replication/events queues
+type OptionBuiltinMaxUpdatesSize struct {
+	MaxUpdatesSizeBytes uint
 }
 
 type OptionCgoLimit struct {
@@ -328,6 +403,17 @@ type OptionStrictJoinHandlers struct {
 	EnableStrictJoinHandlers bool
 }
 
+// Strategy - Strategy used for reconnect to server on connection error
+// AllowUnknownNodes - Allow add dsn from cluster node, that not exist in original dsn list
+type OptionReconnectionStrategy struct {
+	Strategy          string
+	AllowUnknownNodes bool
+}
+
+type OptionTLS struct {
+	Config *tls.Config
+}
+
 type Status struct {
 	Err     error
 	CProto  StatusCProto
@@ -356,3 +442,15 @@ type StatusBuiltin struct {
 type Completion func(err error)
 
 type RawCompletion func(buf RawBuffer, err error)
+
+type ReplicationStat struct {
+	Type  string                `json:"type"`
+	Nodes []ReplicationNodeStat `json:"nodes"`
+}
+
+type ReplicationNodeStat struct {
+	DSN            string `json:"dsn"`
+	Status         string `json:"status"`
+	Role           string `json:"role"`
+	IsSynchronized bool   `json:"is_synchronized"`
+}

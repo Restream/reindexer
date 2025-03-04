@@ -27,8 +27,7 @@ AsyncStorage::AsyncStorage(const AsyncStorage& o, AsyncStorage::FullLockT& stora
 	// Do not copying lastFlushError_ and reopenTs_, because copied storage does not performs actual writes
 }
 
-Error AsyncStorage::Open(datastorage::StorageType storageType, const std::string& nsName, const std::string& path,
-						 const StorageOpts& opts) {
+Error AsyncStorage::Open(datastorage::StorageType storageType, std::string_view nsName, const std::string& path, const StorageOpts& opts) {
 	auto lck = FullLock();
 
 	throwOnStorageCopy();
@@ -58,10 +57,16 @@ void AsyncStorage::Destroy() {
 	}
 }
 
-AsyncStorage::Cursor AsyncStorage::GetCursor(StorageOpts& opts) const {
+AsyncStorage::Cursor AsyncStorage::GetCursor(StorageOpts& opts) {
 	std::unique_lock lck(storageMtx_);
 	throwOnStorageCopy();
-	return Cursor(std::move(lck), std::unique_ptr<datastorage::Cursor>(storage_->GetCursor(opts)));
+	return Cursor(std::move(lck), std::unique_ptr<datastorage::Cursor>(storage_->GetCursor(opts)), *this);
+}
+
+AsyncStorage::ConstCursor AsyncStorage::GetCursor(StorageOpts& opts) const {
+	std::unique_lock lck(storageMtx_);
+	throwOnStorageCopy();
+	return ConstCursor(std::move(lck), std::unique_ptr<datastorage::Cursor>(storage_->GetCursor(opts)));
 }
 
 void AsyncStorage::WriteSync(const StorageOpts& opts, std::string_view key, std::string_view value) {
@@ -76,12 +81,7 @@ void AsyncStorage::WriteSync(const StorageOpts& opts, std::string_view key, std:
 
 void AsyncStorage::RemoveSync(const StorageOpts& opts, std::string_view key) {
 	std::lock_guard lck(storageMtx_);
-	syncOp(
-		[this, &opts](std::string_view k) {
-			throwOnStorageCopy();
-			return storage_->Delete(opts, k);
-		},
-		[this](std::string_view k) { remove(true, k); }, key);
+	removeSync(opts, key);
 }
 
 void AsyncStorage::Flush(const StorageFlushOpts& opts) {

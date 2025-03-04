@@ -23,14 +23,14 @@ public:
 		: mtx_(&mtx), unique_(unique), locked_(false) {
 		using namespace std::string_view_literals;
 		const auto lockWard = context.BeforeLock(Mutex::mark);
-		if (chkTimeout.count() > 0 && context.isCancelable()) {
+		if (chkTimeout.count() > 0 && context.IsCancelable()) {
 			if (unique_) {
 				do {
-					ThrowOnCancel(context, "Write lock (smart_lock) was canceled on condition"sv);
+					ThrowOnCancel(context, "Write lock (smart_lock) was canceled or timed out (mutex)"sv);
 				} while (!mtx_->try_lock_for(chkTimeout));
 			} else {
 				do {
-					ThrowOnCancel(context, "Read lock (smart_lock) was canceled on condition"sv);
+					ThrowOnCancel(context, "Read lock (smart_lock) was canceled or timed out (mutex)"sv);
 				} while (!mtx_->try_lock_shared_for(chkTimeout));
 			}
 		} else {

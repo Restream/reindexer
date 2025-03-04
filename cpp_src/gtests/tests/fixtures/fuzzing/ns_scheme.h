@@ -27,6 +27,9 @@ class NsScheme {
 			std::vector<size_t> indexes;
 		};
 
+		Node(std::string&& _name, Child&& child) : name(std::move(_name)), content(std::move(child)) {}
+		Node(std::string&& _name, Children&& children) : name(std::move(_name)), content(std::move(children)) {}
+
 		std::string name;
 		std::variant<Child, Children> content;
 		IsSparseT sparse{IsSparseT::Yes};

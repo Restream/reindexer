@@ -1,4 +1,5 @@
 #include "clientsstats.h"
+#include "tools/stringstools.h"
 
 namespace reindexer_server {
 
@@ -14,18 +15,15 @@ void ClientsStats::GetClientInfo(std::vector<reindexer::ClientStat>& datas) {
 			d.recvBytes = c.second.connectionStat->recv_bytes.load(std::memory_order_relaxed);
 			d.sentBytes = c.second.connectionStat->sent_bytes.load(std::memory_order_relaxed);
 			d.sendBufBytes = c.second.connectionStat->send_buf_bytes.load(std::memory_order_relaxed);
-			d.pendedUpdates = c.second.connectionStat->pended_updates.load(std::memory_order_relaxed);
 			d.sendRate = c.second.connectionStat->send_rate.load(std::memory_order_relaxed);
 			d.recvRate = c.second.connectionStat->recv_rate.load(std::memory_order_relaxed);
 			d.lastSendTs = c.second.connectionStat->last_send_ts.load(std::memory_order_relaxed);
 			d.lastRecvTs = c.second.connectionStat->last_recv_ts.load(std::memory_order_relaxed);
 			d.startTime = c.second.connectionStat->start_time;
-			d.updatesLost = c.second.connectionStat->updates_lost.load(std::memory_order_relaxed);
 		}
 		if (c.second.txStats) {
 			d.txCount = c.second.txStats->txCount.load();
 		}
-		d.updatesPusher = c.second.updatesPusher;
 		reindexer::deepCopy(d.dbName, c.second.dbName);
 		reindexer::deepCopy(d.ip, c.second.ip);
 		reindexer::deepCopy(d.userName, c.second.userName);

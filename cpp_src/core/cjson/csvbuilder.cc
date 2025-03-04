@@ -168,7 +168,7 @@ void CsvBuilder::postProcessing() {
 	*ser_ << buf_->Slice();
 }
 
-CsvBuilder& CsvBuilder::Put(std::string_view name, std::string_view arg, [[maybe_unused]] int offset) {
+CsvBuilder& CsvBuilder::Put(std::string_view name, std::string_view arg, int /*offset*/) {
 	putName(name);
 
 	std::string_view optQuote = level_ > 0 ? "\"" : "";
@@ -179,7 +179,7 @@ CsvBuilder& CsvBuilder::Put(std::string_view name, std::string_view arg, [[maybe
 	return *this;
 }
 
-CsvBuilder& CsvBuilder::Put(std::string_view name, Uuid arg, [[maybe_unused]] int offset) {
+CsvBuilder& CsvBuilder::Put(std::string_view name, Uuid arg, int /*offset*/) {
 	putName(name);
 	ser_->PrintJsonUuid(arg);
 	return *this;
@@ -199,16 +199,18 @@ CsvBuilder& CsvBuilder::Null(std::string_view name) {
 
 CsvBuilder& CsvBuilder::Put(std::string_view name, const Variant& kv, int offset) {
 	kv.Type().EvaluateOneOf(
-		[&](KeyValueType::Int) { Put(name, int(kv)); }, [&](KeyValueType::Int64) { Put(name, int64_t(kv), offset); },
-		[&](KeyValueType::Double) { Put(name, double(kv)); }, [&](KeyValueType::String) { Put(name, std::string_view(kv), offset); },
-		[&](KeyValueType::Null) { Null(name); }, [&](KeyValueType::Bool) { Put(name, bool(kv), offset); },
+		[&](KeyValueType::Int) { Put(name, int(kv), offset); }, [&](KeyValueType::Int64) { Put(name, int64_t(kv), offset); },
+		[&](KeyValueType::Double) { Put(name, double(kv), offset); }, [&](KeyValueType::Float) { Put(name, float(kv), offset); },
+		[&](KeyValueType::String) { Put(name, std::string_view(kv), offset); }, [&](KeyValueType::Null) { Null(name); },
+		[&](KeyValueType::Bool) { Put(name, bool(kv), offset); },
 		[&](KeyValueType::Tuple) {
 			auto arrNode = Array(name);
 			for (auto& val : kv.getCompositeValues()) {
-				arrNode.Put({nullptr, 0}, val, offset);
+				arrNode.Put({nullptr, 0}, val);
 			}
 		},
-		[&](KeyValueType::Uuid) { Put(name, Uuid{kv}, offset); }, [](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) noexcept {});
+		[&](KeyValueType::Uuid) { Put(name, Uuid{kv}, offset); },
+		[](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) noexcept { assertrx_throw(false); });
 	return *this;
 }
 

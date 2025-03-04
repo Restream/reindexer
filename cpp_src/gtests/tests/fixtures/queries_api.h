@@ -1,19 +1,14 @@
 #pragma once
 
-#include <cmath>
 #include <limits>
 #include <map>
-#include <mutex>
-#include <random>
 #include <unordered_map>
 #include <unordered_set>
 #include "core/cjson/jsonbuilder.h"
 #include "core/keyvalue/geometry.h"
-#include "core/queryresults/joinresults.h"
 #include "gtests/tools.h"
 #include "queries_verifier.h"
 #include "reindexer_api.h"
-#include "tools/randompoint.h"
 
 class QueriesApi : public ReindexerApi, public QueriesVerifier {
 public:
@@ -34,8 +29,7 @@ public:
 						   {kFieldNameTemp, CollateOpts{CollateASCII}},
 						   {kFieldNameNumeric, CollateOpts{CollateNumeric}}};
 
-		err = rt.reindexer->OpenNamespace(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(default_namespace);
 		DefineNamespaceDataset(
 			default_namespace,
 			{
@@ -92,8 +86,7 @@ public:
 					   {{kFieldNameUuid, reindexer::KeyValueType::Uuid{}}, {kFieldNameName, reindexer::KeyValueType::String{}}});
 		addIndexFields(default_namespace, kFieldNameYearSparse, {{kFieldNameYearSparse, reindexer::KeyValueType::String{}}});
 
-		err = rt.reindexer->OpenNamespace(joinNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(joinNs);
 		DefineNamespaceDataset(joinNs, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
 										IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts(), 0},
 										IndexDeclaration{kFieldNameAge, "tree", "int", IndexOpts(), 0},
@@ -109,8 +102,7 @@ public:
 		addIndexFields(joinNs, kFieldNameYearSparse, {{kFieldNameYearSparse, reindexer::KeyValueType::String{}}});
 		addIndexFields(joinNs, kFieldNameRegion, {{kFieldNameRegion, reindexer::KeyValueType::Int{}}});
 
-		err = rt.reindexer->OpenNamespace(testSimpleNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(testSimpleNs);
 		DefineNamespaceDataset(testSimpleNs, {
 												 IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
 												 IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts(), 0},
@@ -122,8 +114,7 @@ public:
 		addIndexFields(testSimpleNs, kFieldNameName, {{kFieldNameName, reindexer::KeyValueType::String{}}});
 		addIndexFields(testSimpleNs, kFieldNamePhone, {{kFieldNamePhone, reindexer::KeyValueType::String{}}});
 
-		err = rt.reindexer->OpenNamespace(compositeIndexesNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(compositeIndexesNs);
 		DefineNamespaceDataset(compositeIndexesNs,
 							   {IndexDeclaration{kFieldNameBookid, "hash", "int", IndexOpts(), 0},
 								IndexDeclaration{kFieldNameBookid2, "hash", "int", IndexOpts(), 0},
@@ -153,17 +144,16 @@ public:
 		addIndexFields(compositeIndexesNs, kCompositeFieldBookidBookid2,
 					   {{kFieldNameBookid, reindexer::KeyValueType::Int{}}, {kFieldNameBookid2, reindexer::KeyValueType::Int{}}});
 
-		err = rt.reindexer->OpenNamespace(comparatorsNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(comparatorsNs);
 		DefineNamespaceDataset(
-			comparatorsNs,
-			{IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts(), 0},
-			 IndexDeclaration{kFieldNameColumnInt, "hash", "int", IndexOpts(), 0},
-			 IndexDeclaration{kFieldNameColumnInt64, "hash", "int64", IndexOpts().PK(), 0},
-			 IndexDeclaration{kFieldNameColumnDouble, "tree", "double", IndexOpts(), 0},
-			 IndexDeclaration{kFieldNameColumnString, "-", "string", IndexOpts(), 0},
-			 IndexDeclaration{kFieldNameColumnFullText, "text", "string", IndexOpts().SetConfig(R"xxx({"stemmers":[]})xxx"), 0},
-			 IndexDeclaration{kFieldNameColumnStringNumeric, "-", "string", IndexOpts().SetCollateMode(CollateNumeric), 0}});
+			comparatorsNs, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts(), 0},
+							IndexDeclaration{kFieldNameColumnInt, "hash", "int", IndexOpts(), 0},
+							IndexDeclaration{kFieldNameColumnInt64, "hash", "int64", IndexOpts().PK(), 0},
+							IndexDeclaration{kFieldNameColumnDouble, "tree", "double", IndexOpts(), 0},
+							IndexDeclaration{kFieldNameColumnString, "-", "string", IndexOpts(), 0},
+							IndexDeclaration{kFieldNameColumnFullText, "text", "string",
+											 IndexOpts().SetConfig(IndexFastFT, R"xxx({"stemmers":[]})xxx"), 0},
+							IndexDeclaration{kFieldNameColumnStringNumeric, "-", "string", IndexOpts().SetCollateMode(CollateNumeric), 0}});
 		addIndexFields(comparatorsNs, kFieldNameId, {{kFieldNameId, reindexer::KeyValueType::Int{}}});
 		addIndexFields(comparatorsNs, kFieldNameColumnInt, {{kFieldNameColumnInt, reindexer::KeyValueType::Int{}}});
 		addIndexFields(comparatorsNs, kFieldNameColumnInt64, {{kFieldNameColumnInt64, reindexer::KeyValueType::Int64{}}});
@@ -172,8 +162,7 @@ public:
 		addIndexFields(comparatorsNs, kFieldNameColumnFullText, {{kFieldNameColumnFullText, reindexer::KeyValueType::String{}}});
 		addIndexFields(comparatorsNs, kFieldNameColumnStringNumeric, {{kFieldNameColumnStringNumeric, reindexer::KeyValueType::String{}}});
 
-		err = rt.reindexer->OpenNamespace(forcedSortOffsetNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(forcedSortOffsetNs);
 		DefineNamespaceDataset(forcedSortOffsetNs, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
 													IndexDeclaration{kFieldNameColumnHash, "hash", "int", IndexOpts(), 0},
 													IndexDeclaration{kFieldNameColumnTree, "tree", "int", IndexOpts(), 0}});
@@ -181,8 +170,7 @@ public:
 		addIndexFields(forcedSortOffsetNs, kFieldNameColumnHash, {{kFieldNameColumnHash, reindexer::KeyValueType::Int{}}});
 		addIndexFields(forcedSortOffsetNs, kFieldNameColumnTree, {{kFieldNameColumnTree, reindexer::KeyValueType::Int{}}});
 
-		err = rt.reindexer->OpenNamespace(geomNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(geomNs);
 		DefineNamespaceDataset(
 			geomNs, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
 					 IndexDeclaration{kFieldNamePointQuadraticRTree, "rtree", "point", IndexOpts{}.RTreeType(IndexOpts::Quadratic), 0},
@@ -195,8 +183,7 @@ public:
 		addIndexFields(geomNs, kFieldNamePointGreeneRTree, {{kFieldNamePointGreeneRTree, reindexer::KeyValueType::Double{}}});
 		addIndexFields(geomNs, kFieldNamePointRStarRTree, {{kFieldNamePointRStarRTree, reindexer::KeyValueType::Double{}}});
 
-		err = rt.reindexer->OpenNamespace(btreeIdxOptNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(btreeIdxOptNs);
 		DefineNamespaceDataset(btreeIdxOptNs, {IndexDeclaration{kFieldNameId, "tree", "int", IndexOpts().PK(), 0},
 											   IndexDeclaration{kFieldNameStartTime, "tree", "int", IndexOpts(), 0}});
 		addIndexFields(btreeIdxOptNs, kFieldNameId, {{kFieldNameId, reindexer::KeyValueType::Int{}}});
@@ -213,7 +200,7 @@ public:
 	void initUUIDNs();
 	void FillUUIDNs();
 	void CheckUUIDQueries();
-	void CheckStandartQueries();
+	void CheckStandardQueries();
 	void CheckDslQueries();
 	void checkDslQuery(std::string_view dsl, Query&& checkQuery);
 	void CheckSqlQueries();
@@ -237,7 +224,7 @@ public:
 	void ExecuteAndVerifyWithSql(Q&& query) {
 		ExecuteAndVerify(query);
 		Query queryFromSql = Query::FromSQL(query.GetSQL()).Strict(query.GetStrictMode()).Debug(query.GetDebugLevel());
-		ASSERT_EQ(query, queryFromSql);
+		ASSERT_EQ(query, queryFromSql) << "query: " << query.GetSQL() << "\nqueryFromSql: " << queryFromSql.GetSQL();
 		ExecuteAndVerify(std::move(queryFromSql));
 	}
 
@@ -264,9 +251,14 @@ public:
 	}
 
 	void Verify(const reindexer::QueryResults&) const noexcept {}
+	void Verify(const LocalQueryResults&) const noexcept {}
 
 	template <typename... Args>
-	void Verify(const reindexer::QueryResults& qr, const char* fieldName, const std::vector<reindexer::Variant>& expectedValues,
+	void Verify(const QueryResults& qr, const char* fieldName, const std::vector<Variant>& expectedValues, Args&&... args) {
+		Verify(qr.ToLocalQr(), fieldName, expectedValues, std::forward<Args>(args)...);
+	}
+	template <typename... Args>
+	void Verify(const reindexer::LocalQueryResults& qr, const char* fieldName, const std::vector<reindexer::Variant>& expectedValues,
 				Args&&... args) {
 		reindexer::WrSerializer ser;
 		if (qr.Count() != expectedValues.size()) {
@@ -320,7 +312,6 @@ protected:
 			item[this->kFieldNameName] = kFieldNameName + RandString();
 
 			Upsert(compositeIndexesNs, item);
-			Commit(compositeIndexesNs);
 
 			saveItem(std::move(item), compositeIndexesNs);
 		}
@@ -333,7 +324,6 @@ protected:
 		lastItem[this->kFieldNamePrice] = 77777;
 		lastItem[this->kFieldNameName] = "test book1 name";
 		Upsert(compositeIndexesNs, lastItem);
-		Commit(compositeIndexesNs);
 
 		saveItem(std::move(lastItem), compositeIndexesNs);
 	}
@@ -350,7 +340,6 @@ protected:
 			Upsert(forcedSortOffsetNs, item);
 			saveItem(std::move(item), forcedSortOffsetNs);
 		}
-		Commit(forcedSortOffsetNs);
 	}
 
 	void FillTestJoinNamespace(int start, int count) {
@@ -369,7 +358,6 @@ protected:
 			Upsert(joinNs, item);
 			saveItem(std::move(item), joinNs);
 		}
-		Commit(testSimpleNs);
 	}
 
 	void FillTestSimpleNamespace() {
@@ -388,8 +376,6 @@ protected:
 		Upsert(testSimpleNs, item2);
 
 		saveItem(std::move(item2), testSimpleNs);
-
-		Commit(testSimpleNs);
 	}
 
 	void FillGeomNamespace() {
@@ -403,19 +389,19 @@ protected:
 				const size_t id = i + lastId;
 				bld.Put(kFieldNameId, id);
 
-				reindexer::Point point{reindexer::randPoint(10)};
+				reindexer::Point point{randPoint(10)};
 				bld.Array(kFieldNamePointQuadraticRTree, {point.X(), point.Y()});
 
-				point = reindexer::randPoint(10);
+				point = randPoint(10);
 				bld.Array(kFieldNamePointLinearRTree, {point.X(), point.Y()});
 
-				point = reindexer::randPoint(10);
+				point = randPoint(10);
 				bld.Array(kFieldNamePointGreeneRTree, {point.X(), point.Y()});
 
-				point = reindexer::randPoint(10);
+				point = randPoint(10);
 				bld.Array(kFieldNamePointRStarRTree, {point.X(), point.Y()});
 
-				point = reindexer::randPoint(10);
+				point = randPoint(10);
 				bld.Array(kFieldNamePointNonIndex, {point.X(), point.Y()});
 			}
 			auto item = NewItem(geomNs);
@@ -425,7 +411,6 @@ protected:
 
 			saveItem(std::move(item), geomNs);
 		}
-		Commit(geomNs);
 		lastId += geomNsSize;
 	}
 
@@ -437,8 +422,6 @@ protected:
 		Upsert(btreeIdxOptNs, item);
 
 		saveItem(std::move(item), btreeIdxOptNs);
-
-		Commit(btreeIdxOptNs);
 	}
 
 	enum Column { First, Second };
@@ -547,8 +530,6 @@ protected:
 
 			saveItem(std::move(item), comparatorsNs);
 		}
-
-		Commit(comparatorsNs);
 	}
 
 	void FillDefaultNamespace(int start, int count, int packagesCount) {
@@ -558,7 +539,6 @@ protected:
 
 			saveItem(std::move(item), default_namespace);
 		}
-		Commit(default_namespace);
 	}
 
 	void AddToDefaultNamespace(int start, int count, int packagesCount) {
@@ -566,7 +546,6 @@ protected:
 			Item item(GenerateDefaultNsItem(start + i, static_cast<size_t>(packagesCount)));
 			Upsert(default_namespace, item);
 		}
-		Commit(default_namespace);
 	}
 
 	void FillDefaultNamespaceTransaction(int start, int count, int packagesCount) {
@@ -574,12 +553,12 @@ protected:
 
 		for (int i = 0; i < count; ++i) {
 			Item item(GenerateDefaultNsItem(start + i, static_cast<size_t>(packagesCount)));
-			tr.Insert(std::move(item));
+			auto err = tr.Insert(std::move(item));
+			ASSERT_TRUE(err.ok()) << err.what();
 		}
 		QueryResults res;
 		auto err = rt.reindexer->CommitTransaction(tr, res);
 		ASSERT_TRUE(err.ok()) << err.what();
-		Commit(default_namespace);
 	}
 
 	int GetcurrBtreeIdsetsValue(int id) {
@@ -674,27 +653,25 @@ protected:
 	void CheckMergeQueriesWithAggregation();
 
 	void CheckGeomQueries() {
-		using reindexer::randPoint;
-		using reindexer::randBinDouble;
 		for (size_t i = 0; i < 10; ++i) {
 			// Checks that DWithin and sort by Distance work and verifies the result
-			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointQuadraticRTree, randPoint(10), randBinDouble(0, 1)));
-			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointLinearRTree, randPoint(10), randBinDouble(0, 1)));
-			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointGreeneRTree, randPoint(10), randBinDouble(0, 1)));
-			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointRStarRTree, randPoint(10), randBinDouble(0, 1)));
-			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointNonIndex, randPoint(10), randBinDouble(0, 1)));
+			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointQuadraticRTree, randPoint(10), randBin<double>(0, 1)));
+			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointLinearRTree, randPoint(10), randBin<double>(0, 1)));
+			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointGreeneRTree, randPoint(10), randBin<double>(0, 1)));
+			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointRStarRTree, randPoint(10), randBin<double>(0, 1)));
+			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointNonIndex, randPoint(10), randBin<double>(0, 1)));
 			ExecuteAndVerify(Query(geomNs)
-								 .DWithin(kFieldNamePointLinearRTree, randPoint(10), randBinDouble(0, 1))
+								 .DWithin(kFieldNamePointLinearRTree, randPoint(10), randBin<double>(0, 1))
 								 .SortStDistance(kFieldNamePointNonIndex, kFieldNamePointLinearRTree, false));
 			ExecuteAndVerify(
 				Query(geomNs)
-					.DWithin(kFieldNamePointLinearRTree, randPoint(10), randBinDouble(0, 1))
+					.DWithin(kFieldNamePointLinearRTree, randPoint(10), randBin<double>(0, 1))
 					.SortStDistance(kFieldNamePointNonIndex, randPoint(10), false)
 					.Sort(std::string("ST_Distance(") + pointToSQL(randPoint(10)) + ", " + kFieldNamePointGreeneRTree + ')', false));
 			ExecuteAndVerify(Query(geomNs)
-								 .DWithin(kFieldNamePointQuadraticRTree, randPoint(10), randBinDouble(0, 1))
+								 .DWithin(kFieldNamePointQuadraticRTree, randPoint(10), randBin<double>(0, 1))
 								 .Or()
-								 .DWithin(kFieldNamePointRStarRTree, randPoint(10), randBinDouble(0, 1))
+								 .DWithin(kFieldNamePointRStarRTree, randPoint(10), randBin<double>(0, 1))
 								 .Sort(std::string("ST_Distance(") + pointToSQL(randPoint(10)) + ", " + kFieldNamePointQuadraticRTree +
 										   ") + 3 * ST_Distance(" + kFieldNamePointLinearRTree + ", " + kFieldNamePointNonIndex +
 										   ") + ST_Distance(" + kFieldNamePointRStarRTree + ", " + kFieldNamePointGreeneRTree + ')',
@@ -884,7 +861,6 @@ protected:
 			ASSERT_TRUE(err.ok()) << err.what();
 			Upsert(nsWithObject, item);
 		}
-		Commit(nsWithObject);
 	}
 
 	void CheckAggregationQueries() {
@@ -904,20 +880,20 @@ protected:
 		reindexer::QueryResults wrongQr1;
 		auto err = rt.reindexer->Select(wrongQuery1, wrongQr1);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "The aggregation facet cannot provide sort by 'name'");
+		EXPECT_STREQ(err.what(), "The aggregation facet cannot provide sort by 'name'");
 
 		const Query wrongQuery2{Query(default_namespace).Aggregate(AggFacet, {kFieldNameCountries, kFieldNameYear})};
 		reindexer::QueryResults wrongQr2;
 		err = rt.reindexer->Select(wrongQuery2, wrongQr2);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Multifield facet cannot contain an array field");
+		EXPECT_STREQ(err.what(), "Multifield facet cannot contain an array field");
 
 		InitNSObj();
 		const Query wrongQuery3{Query(nsWithObject).Distinct(kFieldNameObjectField)};
 		reindexer::QueryResults wrongQr3;
 		err = rt.reindexer->Select(wrongQuery3, wrongQr3);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Cannot aggregate object field");
+		EXPECT_STREQ(err.what(), "Cannot aggregate object field");
 
 		Query testQuery{Query(default_namespace)
 							.Aggregate(AggAvg, {kFieldNameYear})
@@ -987,21 +963,25 @@ protected:
 		frameFacet(arrayFacetByName, facetOffset, facetLimit);
 		frameFacet(arrayFacetByCount, facetOffset, facetLimit);
 
-		ASSERT_EQ(testQr.aggregationResults.size(), 10);
-		EXPECT_DOUBLE_EQ(testQr.aggregationResults[0].GetValueOrZero(), yearSum / checkQr.Count())
+		ASSERT_EQ(testQr.GetAggregationResults().size(), 10);
+		EXPECT_DOUBLE_EQ(testQr.GetAggregationResults()[0].GetValueOrZero(), yearSum / checkQr.Count())
 			<< "Aggregation Avg result is incorrect!";
-		EXPECT_DOUBLE_EQ(testQr.aggregationResults[1].GetValueOrZero(), yearSum) << "Aggregation Sum result is incorrect!";
-		EXPECT_DOUBLE_EQ(testQr.aggregationResults[2].GetValueOrZero(), packagesMin) << "Aggregation Min result is incorrect!";
-		checkFacetUnordered(testQr.aggregationResults[3].facets, singlefieldFacetUnordered, "SinglefieldUnordered");
-		checkFacet(testQr.aggregationResults[4].facets, singlefieldFacetByName, "SinglefieldName");
-		checkFacet(testQr.aggregationResults[5].facets, singlefieldFacetByCount, "SinglefieldCount");
-		checkFacetUnordered(testQr.aggregationResults[6].facets, arrayFacetUnordered, "ArrayUnordered");
-		checkFacet(testQr.aggregationResults[7].facets, arrayFacetByCount, "ArrayByCount");
-		checkFacet(testQr.aggregationResults[8].facets, arrayFacetByName, "ArrayByName");
-		checkFacet(testQr.aggregationResults[9].facets, multifieldFacet, "Multifield");
+		EXPECT_DOUBLE_EQ(testQr.GetAggregationResults()[1].GetValueOrZero(), yearSum) << "Aggregation Sum result is incorrect!";
+		EXPECT_DOUBLE_EQ(testQr.GetAggregationResults()[2].GetValueOrZero(), packagesMin) << "Aggregation Min result is incorrect!";
+		checkFacetUnordered(testQr.GetAggregationResults()[3].facets, singlefieldFacetUnordered, "SinglefieldUnordered");
+		checkFacet(testQr.GetAggregationResults()[4].facets, singlefieldFacetByName, "SinglefieldName");
+		checkFacet(testQr.GetAggregationResults()[5].facets, singlefieldFacetByCount, "SinglefieldCount");
+		checkFacetUnordered(testQr.GetAggregationResults()[6].facets, arrayFacetUnordered, "ArrayUnordered");
+		checkFacet(testQr.GetAggregationResults()[7].facets, arrayFacetByCount, "ArrayByCount");
+		checkFacet(testQr.GetAggregationResults()[8].facets, arrayFacetByName, "ArrayByName");
+		checkFacet(testQr.GetAggregationResults()[9].facets, multifieldFacet, "Multifield");
 	}
 
 	void CompareQueryResults(std::string_view serializedQuery, const QueryResults& lhs, const QueryResults& rhs) {
+		CompareQueryResults(serializedQuery, lhs.ToLocalQr(), rhs.ToLocalQr());
+	}
+
+	void CompareQueryResults(std::string_view serializedQuery, const LocalQueryResults& lhs, const LocalQueryResults& rhs) {
 		EXPECT_EQ(lhs.Count(), rhs.Count());
 		if (lhs.Count() == rhs.Count()) {
 			for (size_t i = 0; i < lhs.Count(); ++i) {
@@ -1107,8 +1087,10 @@ protected:
 		ExecuteAndVerify(Query(compositeIndexesNs)
 							 .WhereComposite(kCompositeFieldTitleName.c_str(), CondLe,
 											 {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
+		constexpr size_t kStringKeysCnt = 1010;
 		std::vector<VariantArray> stringKeys;
-		for (size_t i = 0; i < 1010; ++i) {
+		stringKeys.reserve(kStringKeysCnt);
+		for (size_t i = 0; i < kStringKeysCnt; ++i) {
 			stringKeys.emplace_back(VariantArray{Variant(RandString()), Variant(RandString())});
 		}
 		ExecuteAndVerify(Query(compositeIndexesNs).WhereComposite(kCompositeFieldTitleName.c_str(), CondSet, stringKeys));

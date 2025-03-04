@@ -24,6 +24,7 @@ namespace reindexer {
 		case CondEmpty:
 		case CondLike:
 		case CondDWithin:
+		case CondKnn:
 			break;
 	}
 	throw Error(errForbidden, "Not invertible conditional operator '%s(%s)' in query", CondTypeToStr(cond), CondTypeToStrShort(cond));
@@ -47,6 +48,7 @@ namespace reindexer {
 		case CondEmpty:
 		case CondLike:
 		case CondDWithin:
+		case CondKnn:
 			break;
 	}
 	throw Error(errForbidden, "Not invertible conditional operator '%s(%s)' in query", CondTypeToStr(cond), CondTypeToStrShort(cond));
@@ -79,8 +81,10 @@ namespace reindexer {
 			return "CondLike"sv;
 		case CondDWithin:
 			return "CondDWithin"sv;
+		case CondKnn:
+			return "CondKnn"sv;
 	}
-	throw Error{errNotValid, "Invalid condition type: %d", t};
+	throw Error{errNotValid, "Invalid condition type: %d", int(t)};
 }
 
 [[nodiscard]] std::string_view CondTypeToStrShort(CondType cond) {
@@ -110,8 +114,10 @@ namespace reindexer {
 			return "LIKE"sv;
 		case CondDWithin:
 			return "DWITHIN"sv;
+		case CondKnn:
+			return "KNN"sv;
 	}
-	throw Error{errNotValid, "Invalid condition type: %d", cond};
+	throw Error{errNotValid, "Invalid condition type: %d", int(cond)};
 }
 
 [[nodiscard]] std::string_view TagTypeToStr(TagType t) {
@@ -135,8 +141,10 @@ namespace reindexer {
 			return "<null>"sv;
 		case TAG_UUID:
 			return "<uuid>"sv;
+		case TAG_FLOAT:
+			return "<float>"sv;
 	}
-	throw Error{errNotValid, "Invalid tag type: %d", t};
+	throw Error{errNotValid, "Invalid tag type: %d", int(t)};
 }
 
 [[nodiscard]] std::string_view AggTypeToStr(AggType t) noexcept {
@@ -164,8 +172,6 @@ namespace reindexer {
 	return "unknown"sv;
 }
 
-}  // namespace reindexer
-
 [[nodiscard]] std::string_view JoinTypeName(JoinType type) {
 	using namespace std::string_view_literals;
 
@@ -182,3 +188,33 @@ namespace reindexer {
 	assertrx(false);
 	return "unknown"sv;
 }
+
+RankOrdering ToRankOrdering(RankedTypeQuery type) {
+	switch (type) {
+		case RankedTypeQuery::No:
+			return RankOrdering::Off;
+		case RankedTypeQuery::FullText:
+		case RankedTypeQuery::KnnIP:
+		case RankedTypeQuery::KnnCos:
+			return RankOrdering::Desc;
+		case RankedTypeQuery::KnnL2:
+			return RankOrdering::Asc;
+		case RankedTypeQuery::NotSet:
+			break;
+	}
+	throw_as_assert;
+}
+
+RankedTypeQuery ToRankedTypeQuery(VectorMetric metric) {
+	switch (metric) {
+		case VectorMetric::L2:
+			return RankedTypeQuery::KnnL2;
+		case VectorMetric::Cosine:
+			return RankedTypeQuery::KnnCos;
+		case VectorMetric::InnerProduct:
+			return RankedTypeQuery::KnnIP;
+	}
+	throw_as_assert;
+}
+
+}  // namespace reindexer

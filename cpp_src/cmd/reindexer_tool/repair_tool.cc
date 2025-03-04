@@ -2,8 +2,8 @@
 #include <cctype>
 #include "core/namespace/namespaceimpl.h"
 #include "core/storage/storagefactory.h"
+#include "events/observer.h"
 #include "iotools.h"
-#include "replicator/updatesobserver.h"
 #include "tools/fsops.h"
 
 namespace reindexer_tool {
@@ -62,8 +62,21 @@ Error RepairTool::repairNamespace(IDataStorage* storage, const std::string& stor
 		if (!reindexer::validateObjectName(name, true)) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
 		}
-		reindexer::UpdatesObservers emptyObserversList;
-		reindexer::NamespaceImpl ns(name, emptyObserversList);
+		class DummyClusterizator final : public reindexer::cluster::IDataReplicator, public reindexer::cluster::IDataSyncer {
+			Error Replicate(reindexer::cluster::UpdatesContainer&&, std::function<void()> f, const reindexer::RdxContext&) override {
+				f();
+				return {};
+			}
+			Error ReplicateAsync(reindexer::cluster::UpdatesContainer&&, const reindexer::RdxContext&) override { return {}; }
+			void AwaitInitialSync(const reindexer::NamespaceName&, const reindexer::RdxContext&) const override {}
+			void AwaitInitialSync(const reindexer::RdxContext&) const override {}
+			bool IsInitialSyncDone(const reindexer::NamespaceName&) const override { return true; }
+			bool IsInitialSyncDone() const override { return true; }
+		};
+		DummyClusterizator dummyClusterizator;
+
+		reindexer::UpdatesObservers observers("repair_db", dummyClusterizator, 0);
+		reindexer::NamespaceImpl ns(name, {}, dummyClusterizator, observers);
 		StorageOpts storageOpts;
 		reindexer::RdxContext dummyCtx;
 		std::cout << "Loading " << name << std::endl;

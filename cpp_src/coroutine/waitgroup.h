@@ -19,11 +19,23 @@ public:
 	}
 	/// Await coroutines
 	void wait() {
+		assertrx(waiter_ == 0);
 		waiter_ = current();
 		while (wait_cnt_) {
 			assertrx(waiter_);
 			suspend();
 		}
+		waiter_ = 0;
+	}
+	/// Await next coroutine
+	void wait_next() {
+		assertrx(waiter_ == 0);
+		waiter_ = current();
+		if (wait_cnt_) {
+			assertrx(waiter_);
+			suspend();
+		}
+		waiter_ = 0;
 	}
 	/// Get await count
 	size_t wait_count() const noexcept { return wait_cnt_; }

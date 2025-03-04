@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <string>
-#include <tuple>
 #include <type_traits>
 
 #include "helpers.h"

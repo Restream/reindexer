@@ -1,7 +1,6 @@
 #pragma once
 
 #include <gtest/gtest.h>
-#include <deque>
 #include <map>
 #include "gason/gason.h"
 #include "reindexer_api.h"
@@ -29,8 +28,6 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 		err = rt.reindexer->AddIndex(default_namespace, {"authorid_fk", "hash", "int", IndexOpts()});
 		ASSERT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->Commit(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	void prepareItems() {
@@ -54,8 +51,6 @@ protected:
 			gason::JsonParser parser;
 			ASSERT_NO_THROW(parser.Parse(item.GetJSON()));
 		}
-		const auto err = rt.reindexer->Commit(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	Item getItemById(int id) {

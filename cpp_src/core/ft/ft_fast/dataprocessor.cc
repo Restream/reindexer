@@ -5,6 +5,7 @@
 
 #include "frisosplitter.h"
 #include "tools/clock.h"
+#include "tools/hardware_concurrency.h"
 #include "tools/logger.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
@@ -120,8 +121,12 @@ size_t DataProcessor<IdCont>::commitIdRelSets(const WordsVector& preprocWords, w
 			idsetcnt += sizeof(*wIt);
 		}
 
-		word->vids.insert(word->vids.end(), std::make_move_iterator(keyIt->second.vids_.begin()),
-						  std::make_move_iterator(keyIt->second.vids_.end()));
+		if constexpr (std::is_same_v<IdCont, PackedIdRelVec>) {
+			word->vids.insert(word->vids.end(), keyIt->second.vids_.begin(), keyIt->second.vids_.end());
+		} else {
+			word->vids.insert(word->vids.end(), std::make_move_iterator(keyIt->second.vids_.begin()),
+							  std::make_move_iterator(keyIt->second.vids_.end()));
+		}
 		keyIt->second.vids_ = IdRelSet();
 		word->vids.shrink_to_fit();
 		idsetcnt += word->vids.heap_size();
@@ -133,6 +138,7 @@ static uint32_t getMaxBuildWorkers(bool multithread) noexcept {
 	if (!multithread) {
 		return 1;
 	}
+	// using std's hardware_concurrency instead of reindexer's hardware_concurrency here
 	auto maxIndexWorkers = std::thread::hardware_concurrency();
 	if (!maxIndexWorkers) {
 		return 4;

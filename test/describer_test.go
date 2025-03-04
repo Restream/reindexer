@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/restream/reindexer/v3"
+	"github.com/restream/reindexer/v5"
 )
 
 type TestDescribeStruct struct {
@@ -31,11 +31,6 @@ func init() {
 	tnamespaces["test_describe"] = TestDescribeStruct{}
 
 }
-
-var hashIdxConds = []string{"SET", "EQ", "ANY", "EMPTY", "LT", "LE", "GT", "GE", "RANGE"}
-var treeIdxConds = []string{"SET", "EQ", "ANY", "EMPTY", "LT", "LE", "GT", "GE", "RANGE"}
-var boolIdxConds = []string{"SET", "EQ", "ANY", "EMPTY"}
-var textIdxConds = []string{"MATCH"}
 
 func TestDescribe(t *testing.T) {
 	testDescribeStruct := TestDescribeStruct{ID: 42}
@@ -76,22 +71,8 @@ func TestDescribe(t *testing.T) {
 		panic(fmt.Sprintf("field 'id' must be PK %#v", desc.Indexes[0]))
 	}
 
-	if !desc.Indexes[0].IsSortable {
-		panic(fmt.Sprint("index must  be sortable"))
-	}
-
-	if desc.Indexes[0].IsFulltext {
-		panic(fmt.Sprint("index must not be fulltext"))
-	}
-
 	if desc.Indexes[0].FieldType != reflect.Int64.String() {
 		panic(fmt.Sprintf("wait field type %s, got %s", reflect.Int64, desc.Indexes[0].FieldType))
-	}
-
-	for i, cond := range desc.Indexes[0].Conditions {
-		if cond != treeIdxConds[i] {
-			panic(fmt.Sprintf("wait conditions %s, got %s", treeIdxConds, desc.Indexes[0].Conditions))
-		}
 	}
 
 	if desc.Indexes[1].Name != "foo" {
@@ -99,25 +80,11 @@ func TestDescribe(t *testing.T) {
 	}
 
 	if desc.Indexes[1].IsPK {
-		panic(fmt.Sprint("field 'foo' must not be PK"))
-	}
-
-	if !desc.Indexes[1].IsSortable {
-		panic(fmt.Sprint("index must be sortable"))
-	}
-
-	if desc.Indexes[1].IsFulltext {
-		panic(fmt.Sprint("index must not be fulltext"))
+		panic("field 'foo' must not be PK")
 	}
 
 	if desc.Indexes[1].FieldType != reflect.String.String() {
 		panic(fmt.Sprintf("wait field type %s, got %s", reflect.String, desc.Indexes[1].FieldType))
-	}
-
-	for i, cond := range desc.Indexes[1].Conditions {
-		if cond != hashIdxConds[i] {
-			panic(fmt.Sprintf("wait conditions %s, got %s", hashIdxConds, desc.Indexes[1].Conditions))
-		}
 	}
 
 	if desc.Indexes[2].Name != "qwe" {
@@ -125,25 +92,11 @@ func TestDescribe(t *testing.T) {
 	}
 
 	if desc.Indexes[2].IsPK {
-		panic(fmt.Sprint("field 'qwe' must not be PK"))
-	}
-
-	if !desc.Indexes[2].IsSortable {
-		panic(fmt.Sprint("index must be sortable"))
-	}
-
-	if desc.Indexes[2].IsFulltext {
-		panic(fmt.Sprint("index must not be fulltext"))
+		panic("field 'qwe' must not be PK")
 	}
 
 	if desc.Indexes[2].FieldType != reflect.String.String() {
 		panic(fmt.Sprintf("wait field type %s, got %s", reflect.String, desc.Indexes[2].FieldType))
-	}
-
-	for i, cond := range desc.Indexes[2].Conditions {
-		if cond != treeIdxConds[i] {
-			panic(fmt.Sprintf("wait conditions %s, got %s", treeIdxConds, desc.Indexes[2].Conditions))
-		}
 	}
 
 	if desc.Indexes[3].Name != "bar" {
@@ -151,15 +104,7 @@ func TestDescribe(t *testing.T) {
 	}
 
 	if desc.Indexes[3].IsPK {
-		panic(fmt.Sprint("field 'bar' must not be PK"))
-	}
-
-	if !desc.Indexes[3].IsSortable {
-		panic(fmt.Sprint("index must  be sortable"))
-	}
-
-	if desc.Indexes[3].IsFulltext {
-		panic(fmt.Sprint("index must not be fulltext"))
+		panic("field 'bar' must not be PK")
 	}
 
 	if desc.Indexes[3].FieldType != reflect.Int.String() {
@@ -170,36 +115,16 @@ func TestDescribe(t *testing.T) {
 		panic("wait field is array, got not")
 	}
 
-	for i, cond := range desc.Indexes[3].Conditions {
-		if cond != treeIdxConds[i] {
-			panic(fmt.Sprintf("wait conditions %s, got %s", treeIdxConds, desc.Indexes[3].Conditions))
-		}
-	}
-
 	if desc.Indexes[4].Name != "search" {
 		panic(fmt.Sprintf("wait field's name '%s', got '%s'", "search", desc.Indexes[4].Name))
 	}
 
 	if desc.Indexes[4].IsPK {
-		panic(fmt.Sprint("field 'search' must not be PK"))
-	}
-
-	if desc.Indexes[4].IsSortable {
-		panic(fmt.Sprint("index must not be sortable"))
-	}
-
-	if !desc.Indexes[4].IsFulltext {
-		panic(fmt.Sprint("index must be fulltext"))
+		panic("field 'search' must not be PK")
 	}
 
 	if desc.Indexes[4].FieldType != reflect.String.String() {
 		panic(fmt.Sprintf("wait field type %s, got %s", reflect.String, desc.Indexes[4].FieldType))
-	}
-
-	for i, cond := range desc.Indexes[4].Conditions {
-		if cond != textIdxConds[i] {
-			panic(fmt.Sprintf("wait conditions %s, got %s", textIdxConds, desc.Indexes[4].Conditions))
-		}
 	}
 
 	if desc.Indexes[5].Name != "name" {
@@ -215,7 +140,7 @@ func TestDescribe(t *testing.T) {
 		panic(err)
 	}
 
-	ksystemNamespaceCount := 7
+	ksystemNamespaceCount := 8
 	if len(results) != len(tnamespaces)+ksystemNamespaceCount {
 		panic(fmt.Sprintf("wait %d namespaces, got %d", len(tnamespaces)+ksystemNamespaceCount, len(results)))
 	}

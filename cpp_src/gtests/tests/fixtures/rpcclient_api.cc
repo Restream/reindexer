@@ -4,8 +4,10 @@
 #include "tools/stringstools.h"
 #include "yaml-cpp/yaml.h"
 
+const std::string RPCClientTestApi::kDefaultRPCServerAddr = "127.0.0.1:" + std::to_string(RPCClientTestApi::kDefaultRPCPort);
+
 void RPCClientTestApi::TestServer::Start(const std::string& addr, Error errOnLogin) {
-	dsn_ = addr;
+	dsn_ = DSN(addr);
 	serverThread_.reset(new std::thread([this, addr, errOnLogin = std::move(errOnLogin)]() {
 		server_.reset(new RPCServerFake(conf_));
 		stop_.set(loop_);
@@ -40,12 +42,12 @@ void RPCClientTestApi::TestServer::Stop() {
 		}
 		serverThread_.reset();
 		terminate_ = false;
-		dsn_.clear();
+		dsn_ = {};
 	}
 }
 
 void RPCClientTestApi::StartDefaultRealServer() {
-	const std::string dbPath = std::string(kDbPrefix) + "/" + kDefaultRPCPort;
+	const std::string dbPath = std::string(kDbPrefix) + "/" + std::to_string(kDefaultRPCPort);
 	reindexer::fs::RmDirAll(dbPath);
 	AddRealServer(dbPath);
 	StartServer();
@@ -153,18 +155,6 @@ Error RPCClientTestApi::StopAllServers() {
 	return res;
 }
 
-client::Item RPCClientTestApi::CreateItem(client::Reindexer& rx, std::string_view nsName, int id) {
-	reindexer::WrSerializer wrser;
-	reindexer::JsonBuilder jb(wrser);
-	jb.Put("id", id);
-	jb.End();
-	auto item = rx.NewItem(nsName);
-	EXPECT_TRUE(item.Status().ok()) << item.Status().what();
-	auto err = item.FromJSON(wrser.Slice());
-	EXPECT_TRUE(err.ok()) << err.what();
-	return item;
-}
-
 client::Item RPCClientTestApi::CreateItem(client::CoroReindexer& rx, std::string_view nsName, int id) {
 	reindexer::WrSerializer wrser;
 	reindexer::JsonBuilder jb(wrser);
@@ -177,27 +167,11 @@ client::Item RPCClientTestApi::CreateItem(client::CoroReindexer& rx, std::string
 	return item;
 }
 
-void RPCClientTestApi::CreateNamespace(reindexer::client::Reindexer& rx, std::string_view nsName) {
-	auto err = rx.OpenNamespace(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rx.AddIndex(nsName, {"id", "hash", "int", IndexOpts().PK()});
-	EXPECT_TRUE(err.ok()) << err.what();
-}
-
 void RPCClientTestApi::CreateNamespace(client::CoroReindexer& rx, std::string_view nsName) {
 	auto err = rx.OpenNamespace(nsName);
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = rx.AddIndex(nsName, {"id", "hash", "int", IndexOpts().PK()});
 	EXPECT_TRUE(err.ok()) << err.what();
-}
-
-void RPCClientTestApi::FillData(client::Reindexer& rx, std::string_view nsName, int from, int count) {
-	int to = from + count;
-	for (int id = from; id < to; ++id) {
-		auto item = CreateItem(rx, nsName, id);
-		auto err = rx.Upsert(nsName, item);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
 }
 
 void RPCClientTestApi::FillData(client::CoroReindexer& rx, std::string_view nsName, int from, int count) {
@@ -207,57 +181,4 @@ void RPCClientTestApi::FillData(client::CoroReindexer& rx, std::string_view nsNa
 		auto err = rx.Upsert(nsName, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
-}
-
-void RPCClientTestApi::UpdatesReciever::OnWALUpdate(LSNPair, std::string_view nsName, const WALRecord&) {
-	auto found = updatesCounters_.find(nsName);
-	if (found != updatesCounters_.end()) {
-		++(found->second);
-	} else {
-		updatesCounters_.emplace(std::string(nsName), 1);
-	}
-}
-
-const RPCClientTestApi::UpdatesReciever::map& RPCClientTestApi::UpdatesReciever::Counters() const { return updatesCounters_; }
-
-void RPCClientTestApi::UpdatesReciever::Reset() { updatesCounters_.clear(); }
-
-void RPCClientTestApi::UpdatesReciever::Dump() const {
-	std::cerr << "Reciever dump: " << std::endl;
-	for (auto& it : Counters()) {
-		std::cerr << it.first << ": " << it.second << std::endl;
-	}
-}
-
-bool RPCClientTestApi::UpdatesReciever::AwaitNamespaces(size_t count) {
-	std::chrono::milliseconds time{0};
-	auto cycleTime = std::chrono::milliseconds(50);
-	while (Counters().size() != count) {
-		time += cycleTime;
-		if (time >= std::chrono::seconds(5)) {
-			Dump();
-			return false;
-		}
-		loop_.sleep(cycleTime);
-	}
-	return true;
-}
-
-bool RPCClientTestApi::UpdatesReciever::AwaitItems(std::string_view ns, size_t count) {
-	std::chrono::milliseconds time{0};
-	auto cycleTime = std::chrono::milliseconds(50);
-	do {
-		auto counters = Counters();
-		time += cycleTime;
-		if (time >= std::chrono::seconds(5)) {
-			Dump();
-			return false;
-		}
-
-		auto found = counters.find(ns);
-		if (found != counters.end() && found->second == count) {
-			return true;
-		}
-		loop_.sleep(cycleTime);
-	} while (true);
 }

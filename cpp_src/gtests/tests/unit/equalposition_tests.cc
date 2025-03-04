@@ -1,4 +1,9 @@
 #include "equalpositionapi.h"
+#include "gtests/tests/gtest_cout.h"
+
+using QueryResults = ReindexerApi::QueryResults;
+using Item = ReindexerApi::Item;
+using Reindexer = ReindexerApi::Reindexer;
 
 bool Compare(const Variant& key1, const Variant& key2, CondType condType) {
 	const auto res = key1.Compare<reindexer::NotComparable::Return>(key2);
@@ -20,6 +25,7 @@ bool Compare(const Variant& key1, const Variant& key2, CondType condType) {
 		case CondEmpty:
 		case CondLike:
 		case CondDWithin:
+		case CondKnn:
 			throw std::runtime_error("Do not support this operation yet!");
 	}
 	return false;
@@ -65,7 +71,7 @@ void VerifyQueryResult(const QueryResults& qr, const std::vector<std::string>& f
 			++j;
 		}
 		if (!equal) {
-			TEST_COUT << it.GetJSON() << std::endl;
+			TestCout() << it.GetJSON() << std::endl;
 		}
 	}
 	EXPECT_TRUE(totalFound == qr.Count()) << " totalFound=" << totalFound << ", qr.Count()=" << qr.Count();
@@ -147,9 +153,6 @@ TEST_F(EqualPositionApi, SelectNonIndexedArrays) {
 	err = rt.reindexer->AddIndex(ns, {"id", "hash", "string", IndexOpts().PK()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = rt.reindexer->Commit(ns);
-	EXPECT_TRUE(err.ok()) << err.what();
-
 	const char jsonPattern[] = R"xxx({"id": "%s", "nested": {"a1": [%d, %d, %d], "a2": [%d, %d, %d], "a3": [%d, %d, %d]}})xxx";
 
 	for (int i = 0; i < 100; ++i) {
@@ -165,9 +168,6 @@ TEST_F(EqualPositionApi, SelectNonIndexedArrays) {
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		err = rt.reindexer->Upsert(ns, item);
-		EXPECT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->Commit(ns);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
@@ -192,9 +192,6 @@ TEST_F(EqualPositionApi, SelectMixedArrays) {
 	err = rt.reindexer->AddIndex(ns, {"a1", "hash", "int64", IndexOpts().Array()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = rt.reindexer->Commit(ns);
-	EXPECT_TRUE(err.ok()) << err.what();
-
 	const char jsonPattern[] = R"xxx({"id": "%s", "a1": [%d, %d, %d], "nested": {"a2": [%d, %d, %d], "a3": [%d, %d, %d]}})xxx";
 
 	for (int i = 0; i < 100; ++i) {
@@ -210,9 +207,6 @@ TEST_F(EqualPositionApi, SelectMixedArrays) {
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		err = rt.reindexer->Upsert(ns, item);
-		EXPECT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->Commit(ns);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
@@ -256,24 +250,21 @@ TEST_F(EqualPositionApi, EmptyCompOpErr) {
 		QueryResults qr;
 		Query q = Query::FromSQL("SELECT * FROM ns2 WHERE a1 IS NULL AND a2=20 equal_position(a1, a2)");
 		err = rt.reindexer->Select(q, qr);
-		EXPECT_TRUE(err.what() == "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!")
-			<< err.what();
+		EXPECT_STREQ(err.what(), "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
 		EXPECT_FALSE(err.ok());
 	}
 	{
 		QueryResults qr;
 		Query q = Query::FromSQL("SELECT * FROM ns2 WHERE a1 =10 AND a2 IS EMPTY equal_position(a1, a2)");
 		err = rt.reindexer->Select(q, qr);
-		EXPECT_TRUE(err.what() == "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!")
-			<< err.what();
+		EXPECT_STREQ(err.what(), "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
 		EXPECT_FALSE(err.ok());
 	}
 	{
 		QueryResults qr;
 		Query q = Query::FromSQL("SELECT * FROM ns2 WHERE a1 IN () AND a2 IS EMPTY equal_position(a1, a2)");
 		err = rt.reindexer->Select(q, qr);
-		EXPECT_TRUE(err.what() == "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!")
-			<< err.what();
+		EXPECT_STREQ(err.what(), "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
 		EXPECT_FALSE(err.ok());
 	}
 }
@@ -289,7 +280,7 @@ TEST_F(EqualPositionApi, SamePosition) {
 	// Make sure processing this query leads to error
 	const Error err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "equal positions fields should be unique: [a1, a1]");
+	EXPECT_STREQ(err.what(), "equal positions fields should be unique: [a1, a1]");
 }
 
 // Make sure equal_position() works only with unique fields
@@ -302,7 +293,7 @@ TEST_F(EqualPositionApi, SamePositionFromSql) {
 	// Make sure processing this query leads to error
 	const Error err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "equal positions fields should be unique: [a1, a1]");
+	EXPECT_STREQ(err.what(), "equal positions fields should be unique: [a1, a1]");
 }
 
 TEST_F(EqualPositionApi, SelectBrackets) {
@@ -321,4 +312,42 @@ TEST_F(EqualPositionApi, SelectBrackets) {
 	Error err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	VerifyQueryResult(qr, {kFieldA1, kFieldA2, kFieldA3}, {key1, key2, key3}, {CondEq, CondEq, CondEq});
+}
+
+TEST_F(EqualPositionApi, EqualPositionBrackets) {
+	const std::string_view ns{"ns2"};
+	rt.OpenNamespace(ns, StorageOpts().Enabled(false));
+	rt.AddIndex(ns, {"id", "hash", "int", IndexOpts().PK()});
+	rt.UpsertJSON(ns, R"#({"id": 0, "id1":11, "id2":21 "a1": [10, 20, 30], "a2": [20, 30, 40]}})#");
+	rt.UpsertJSON(ns, R"#({"id": 1, "id1":11, "id2":21 "a1": [20, 10, 30], "a2": [10, 30, 40]}})#");
+	rt.UpsertJSON(ns, R"#({"id": 2, "id1":11, "id2":21 "a1": [30, 10, 30], "a2": [30, 60, 40]}})#");
+
+	auto check = [this](std::string_view sql, std::string_view resJson) {
+		try {
+			auto qr = rt.Select(Query::FromSQL(sql));
+			auto jsonVec = rt.GetSerializedQrItems(qr);
+			ASSERT_EQ(jsonVec.size(), 1);
+			ASSERT_EQ(jsonVec[0], resJson);
+		} catch (const Error& e) {
+			ASSERT_TRUE(false) << e.what();
+		}
+	};
+	check("SELECT id FROM ns2 WHERE a1=10 AND a2=20 equal_position(a1, a2)", R"#({"id":0})#");
+	check("SELECT id FROM ns2 WHERE a1=10 AND a2=20 equal_position(a1, a2) equal_position(a1, a2)", R"#({"id":0})#");
+	check("SELECT id FROM ns2 WHERE a1=10 AND a2=20 equal_position(a1, a2) equal_position(a1, a2) equal_position(a1, a2)", R"#({"id":0})#");
+
+	check("SELECT id FROM ns2 WHERE equal_position(a1, a2) a1=10 AND a2=30", R"#({"id":1})#");
+	check("SELECT id FROM ns2 WHERE equal_position(a1, a2) equal_position(a1, a2) a1=10 AND a2=30", R"#({"id":1})#");
+	check("SELECT id FROM ns2 WHERE equal_position(a1, a2) equal_position(a1, a2) equal_position(a1, a2) a1=10 AND a2=30", R"#({"id":1})#");
+
+	check("SELECT id FROM ns2 WHERE a1=10 equal_position(a1, a2) AND a2=20", R"#({"id":0})#");
+	check("SELECT id FROM ns2 WHERE a1=10 equal_position(a1, a2) equal_position(a1, a2) AND a2=20", R"#({"id":0})#");
+	check("SELECT id FROM ns2 WHERE a1=10 equal_position(a1, a2) equal_position(a1, a2) equal_position(a1, a2) AND a2=20", R"#({"id":0})#");
+
+	check("SELECT id FROM ns2 WHERE a1=10 AND equal_position(a1, a2) a2=20", R"#({"id":0})#");
+	check("SELECT id FROM ns2 WHERE a1=10 AND equal_position(a1, a2) equal_position(a1, a2) a2=20", R"#({"id":0})#");
+	check("SELECT id FROM ns2 WHERE a1=10 AND equal_position(a1, a2) equal_position(a1, a2) equal_position(a1, a2) a2=20", R"#({"id":0})#");
+
+	check("SELECT id FROM ns2 WHERE a1=10 AND  a2=20  AND (id1=11 or id1=12) equal_position(a1, a2)", R"#({"id":0})#");
+	check("SELECT id FROM ns2 WHERE a1=10 AND  a2=20  AND equal_position(a1, a2) (id1=11 or id1=12)", R"#({"id":0})#");
 }

@@ -2,14 +2,15 @@ package reindexer
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
 	otelattr "go.opentelemetry.io/otel/attribute"
 
-	"github.com/restream/reindexer/v3/bindings"
-	"github.com/restream/reindexer/v3/cjson"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/cjson"
 )
 
 const maxAsyncRequests = 500
@@ -441,6 +442,10 @@ func (tx *Tx) finalize() {
 }
 
 func (tx *Tx) modifyInternal(item interface{}, json []byte, mode int, precepts ...string) (err error) {
+	if item == nil && json == nil {
+		return fmt.Errorf("rq: nil value in transaction item modify call for '%s' namespace", tx.namespace)
+	}
+
 	for tryCount := 0; tryCount < 2; tryCount++ {
 		ser := cjson.NewPoolSerializer()
 		defer ser.Close()
@@ -529,6 +534,12 @@ func (tx *Tx) modifyInternalAsync(item interface{}, json []byte, mode int, cmpl 
 		}
 	}
 
+	if item == nil && json == nil {
+		err := fmt.Errorf("rq: nil value in transaction item modify async call for '%s' namespace", tx.namespace)
+		internalCmpl(nil, err)
+		return err
+	}
+
 	ser := cjson.NewPoolSerializer()
 	defer ser.Close()
 	format := 0
@@ -605,10 +616,9 @@ func (tx *Tx) commitInternal() (count int, err error) {
 		return
 	}
 
+	count = rawQueryParams.count
 	for i := 0; i < rawQueryParams.count; i++ {
-		count++
-		item := rdSer.readRawtItemParams()
-		tx.ns.cacheItems.Remove(item.id)
+		_ = rdSer.readRawtItemParams(rawQueryParams.shardId)
 	}
 
 	return

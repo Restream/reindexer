@@ -53,19 +53,37 @@ public:
 		return impl_->getValue();
 	}
 	size_t GetMaxIterations(size_t limitIters) noexcept final {
-		if (cachedIters_ != std::numeric_limits<size_t>::max()) {
-			return cachedIters_;
+		auto limit = std::min(kMaxBTreeIterations, limitIters);
+		if (!cachedIters_.Valid(limit)) {
+			auto [iters, fullyScanned] = BtreeIndexForwardIteratorImpl<T>(idxMap_, first_, last_).getMaxIterations(limit);
+
+			if (iters >= kMaxBTreeIterations && !fullyScanned) {
+				cachedIters_ = CachedIters{std::numeric_limits<size_t>::max(), true};
+			} else if (fullyScanned || iters > cachedIters_.value || cachedIters_.value == std::numeric_limits<size_t>::max()) {
+				cachedIters_ = CachedIters{iters, fullyScanned};
+			}
 		}
-		return BtreeIndexForwardIteratorImpl<T>(idxMap_, first_, last_).getMaxIterations(limitIters);
+
+		return std::min(cachedIters_.value, limitIters);
 	}
-	void SetMaxIterations(size_t iters) noexcept final { cachedIters_ = iters; }
+	void SetMaxIterations(size_t iters) noexcept final { cachedIters_ = CachedIters{iters, true}; }
 
 private:
+	static constexpr size_t kMaxBTreeIterations = 200'000;
+
 	std::shared_ptr<BtreeIndexIteratorImpl<T>> impl_;
 	const T& idxMap_;
 	const typename T::const_iterator first_;
 	const typename T::const_iterator last_;
-	size_t cachedIters_ = std::numeric_limits<size_t>::max();
+
+	struct CachedIters {
+		bool Valid(size_t limitIters) const noexcept {
+			return fullyScanned || (limitIters <= value && value != std::numeric_limits<size_t>::max());
+		}
+
+		size_t value = std::numeric_limits<size_t>::max();
+		bool fullyScanned = false;
+	} cachedIters_;
 };
 
 }  // namespace reindexer

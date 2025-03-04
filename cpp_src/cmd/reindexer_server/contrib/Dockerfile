@@ -7,12 +7,18 @@ RUN cd /tmp && apk update && \
     sed -i s/_sigev_un\._tid/sigev_notify_thread_id/ src/profile-handler.cc && \
     ./autogen.sh && ./configure --disable-dependency-tracking && make -j6 && make install
 
+RUN git clone https://github.com/OpenMathLib/OpenBLAS.git && cd OpenBLAS && \
+    make TARGET=NEHALEM USE_THREAD=1 NUM_THREADS=16 NO_STATIC=1 NO_WARMUP=1 COMMON_OPT=-O2 DYNAMIC_ARCH=1 USE_OPENMP=0 && \
+    make PREFIX=/usr/local install TARGET=NEHALEM USE_THREAD=1 NUM_THREADS=16 NO_STATIC=1 NO_WARMUP=1 COMMON_OPT=-O2 DYNAMIC_ARCH=1 USE_OPENMP=0
+
 ADD . /src
 
 WORKDIR /src
 
-RUN ./dependencies.sh && \
-    mkdir build && \
+# Install reindexer dependecies, except lapack/openblas
+RUN apk add snappy-dev leveldb-dev libunwind-dev make curl cmake unzip git openssl-dev
+
+RUN mkdir build && \
     cd build && \
     cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo .. -DENABLE_GRPC=On -DGRPC_PACKAGE_PROVIDER="" && \
     make -j6 reindexer_server reindexer_tool && \
@@ -27,7 +33,10 @@ FROM alpine:3.20
 
 COPY --from=build /usr/local /usr/local
 COPY --from=build /entrypoint.sh /entrypoint.sh
-RUN apk update && apk add libstdc++ libunwind snappy leveldb c-ares libprotobuf xz-libs grpc-cpp && rm -rf /var/cache/apk/*
+RUN apk update && apk add libstdc++ libunwind snappy leveldb c-ares libgomp libprotobuf xz-libs grpc-cpp && rm -rf /var/cache/apk/*
+
+RUN ln -s /usr/lib/libcrypto.so.3 /usr/lib/libcrypto.so && \
+    ln -s /usr/lib/libssl.so.3 /usr/lib/libssl.so
 
 ENV RX_DATABASE=/db
 ENV RX_CORELOG=stdout
@@ -35,6 +44,9 @@ ENV RX_HTTPLOG=stdout
 ENV RX_RPCLOG=stdout
 ENV RX_SERVERLOG=stdout
 ENV RX_LOGLEVEL=info
+# Number of thread to build IVF's centroids
+ENV RX_IVF_OMP_THREADS=8
+ENV OPENBLAS_NUM_THREADS=8
 
 RUN chmod +x /entrypoint.sh
 

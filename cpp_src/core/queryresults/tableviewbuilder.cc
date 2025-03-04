@@ -3,8 +3,7 @@
 #include <wchar.h>
 #include <iomanip>
 
-#include "client/coroqueryresults.h"
-#include "core/queryresults/queryresults.h"
+#include "estl/gift_str.h"
 #include "tools/jsontools.h"
 #include "tools/serializer.h"
 #include "tools/terminalutils.h"
@@ -17,36 +16,28 @@ namespace reindexer {
 const std::string kSeparator = " | ";
 const int kSuppositiveScreenWidth = 100;
 
-bool ColumnData::IsNumber() const { return (type == gason::JSON_NUMBER) || (type == gason::JSON_DOUBLE); }
-
-bool ColumnData::IsBoolean() const { return (type == gason::JSON_TRUE) || (type == gason::JSON_FALSE); }
-
-bool ColumnData::PossibleToBreakTheLine() const {
-	return IsBoolean() || (type == gason::JSON_STRING) /*|| (type == gason::JSON_OBJECT) */ || (type == gason::JSON_ARRAY);
+bool ColumnData::IsNumber() const noexcept {
+	return (gason::JsonTag(type) == gason::JsonTag::NUMBER) || (gason::JsonTag(type) == gason::JsonTag::DOUBLE);
 }
 
-template <typename QueryResultsT>
-TableCalculator<QueryResultsT>::TableCalculator(const QueryResultsT& r, int outputWidth, size_t limit) : r_(r), outputWidth_(outputWidth) {
-	calculate(limit);
+bool ColumnData::IsBoolean() const noexcept {
+	return (gason::JsonTag(type) == gason::JsonTag::JTRUE) || (gason::JsonTag(type) == gason::JsonTag::JFALSE);
 }
 
-template <typename QueryResultsT>
-void TableCalculator<QueryResultsT>::calculate(size_t limit) {
-	size_t i = 0;
-	WrSerializer ser;
-	const size_t size = std::min(limit, r_.Count());
-	rows_.reserve(size);
-	for (auto it : r_) {
-		if (it.IsRaw()) {
-			continue;
-		}
-		Error err = it.GetJSON(ser, false);
-		if (!err.ok()) {
-			continue;
-		}
+bool ColumnData::PossibleToBreakTheLine() const noexcept {
+	return IsBoolean() || (gason::JsonTag(type) == gason::JsonTag::STRING) /*|| (gason::JsonTag(type) == gason::JsonTag::OBJECT) */ ||
+		   (gason::JsonTag(type) == gason::JsonTag::ARRAY);
+}
 
+TableCalculator::TableCalculator(std::vector<std::string>&& jsonData, int outputWidth) : outputWidth_(outputWidth) {
+	calculate(std::move(jsonData));
+}
+
+void TableCalculator::calculate(std::vector<std::string>&& jsonData) {
+	rows_.reserve(jsonData.size());
+	for (auto&& json : jsonData) {
 		gason::JsonParser parser;
-		gason::JsonNode root = parser.Parse(reindexer::giftStr(ser.Slice()));
+		gason::JsonNode root = parser.Parse(reindexer::giftStr(json));
 		Row rowData;
 
 		for (auto& elem : root) {
@@ -56,7 +47,7 @@ void TableCalculator<QueryResultsT>::calculate(size_t limit) {
 			std::string fieldName = std::string(elem.key);
 			ColumnData& columnData = columnsData_[fieldName];
 
-			columnData.type = elem.value.getTag();
+			columnData.type = int(elem.value.getTag());
 			columnData.maxWidthCh = std::max(columnData.maxWidthCh, reindexer::getStringTerminalWidth(fieldValue));
 			if (columnData.entries == 0) {
 				header_.push_back(fieldName);
@@ -71,11 +62,12 @@ void TableCalculator<QueryResultsT>::calculate(size_t limit) {
 		}
 
 		rows_.emplace_back(std::move(rowData));
-
-		if (++i == size) {
-			break;
-		}
-		ser.Reset();
+		std::string empty;
+		json.swap(empty);
+	}
+	{
+		std::vector<std::string> empty;
+		jsonData.swap(empty);
 	}
 
 	int currentLength = 0;
@@ -124,43 +116,17 @@ void TableCalculator<QueryResultsT>::calculate(size_t limit) {
 	}
 }
 
-template <typename QueryResultsT>
-int TableCalculator<QueryResultsT>::GetOutputWidth() const {
-	return outputWidth_;
-}
-
-template <typename QueryResultsT>
-typename TableCalculator<QueryResultsT>::ColumnsData& TableCalculator<QueryResultsT>::GetColumnsSettings() {
-	return columnsData_;
-}
-
-template <typename QueryResultsT>
-typename TableCalculator<QueryResultsT>::Header& TableCalculator<QueryResultsT>::GetHeader() {
-	return header_;
-}
-
-template <typename QueryResultsT>
-typename TableCalculator<QueryResultsT>::Rows& TableCalculator<QueryResultsT>::GetRows() {
-	return rows_;
-}
-
-template <typename QueryResultsT>
-TableViewBuilder<QueryResultsT>::TableViewBuilder(const QueryResultsT& r) : r_(r) {}
-
-template <typename QueryResultsT>
-void TableViewBuilder<QueryResultsT>::Build(std::ostream& o, const std::function<bool(void)>& isCanceled) {
+void TableViewBuilder::Build(std::ostream& o, std::vector<std::string>&& jsonData, const std::function<bool(void)>& isCanceled) {
 	if (isCanceled()) {
 		return;
 	}
 	TerminalSize terminalSize = reindexer::getTerminalSize();
-	TableCalculator<QueryResultsT> tableCalculator(r_, terminalSize.width);
+	TableCalculator tableCalculator(std::move(jsonData), terminalSize.width);
 	BuildHeader(o, tableCalculator, isCanceled);
 	BuildTable(o, tableCalculator, isCanceled);
 }
 
-template <typename QueryResultsT>
-void TableViewBuilder<QueryResultsT>::BuildHeader(std::ostream& o, TableCalculator<QueryResultsT>& tableCalculator,
-												  const std::function<bool(void)>& isCanceled) {
+void TableViewBuilder::BuildHeader(std::ostream& o, TableCalculator& tableCalculator, const std::function<bool(void)>& isCanceled) {
 	if (isCanceled()) {
 		return;
 	}
@@ -185,16 +151,14 @@ void TableViewBuilder<QueryResultsT>::BuildHeader(std::ostream& o, TableCalculat
 	o << std::endl << headerLine << std::endl;
 }
 
-template <typename QueryResultsT>
-bool TableViewBuilder<QueryResultsT>::isValueMultiline(std::string_view value, bool breakingTheLine, const ColumnData& columnData,
-													   int symbolsTillTheEOFLine) {
+bool TableViewBuilder::isValueMultiline(std::string_view value, bool breakingTheLine, const ColumnData& columnData,
+										int symbolsTillTheEOFLine) {
 	return (breakingTheLine && columnData.PossibleToBreakTheLine() &&
 			((symbolsTillTheEOFLine >= 4) || (symbolsTillTheEOFLine >= 2 && columnData.IsBoolean())) &&
 			(double(getStringTerminalWidth(value)) / symbolsTillTheEOFLine <= 3));
 }
 
-template <typename QueryResultsT>
-void TableViewBuilder<QueryResultsT>::startLine(std::ostream& o, const int& currLineWidth) {
+void TableViewBuilder::startLine(std::ostream& o, const int& currLineWidth) {
 	o << std::endl;
 	for (size_t i = 0; i < currLineWidth - kSeparator.length(); ++i) {
 		o << " ";
@@ -202,8 +166,7 @@ void TableViewBuilder<QueryResultsT>::startLine(std::ostream& o, const int& curr
 	o << kSeparator;
 }
 
-template <typename QueryResultsT>
-void TableViewBuilder<QueryResultsT>::BuildRow(std::ostream& o, int idx, TableCalculator<QueryResultsT>& tableCalculator) {
+void TableViewBuilder::BuildRow(std::ostream& o, int idx, TableCalculator& tableCalculator) {
 	auto& columnsData = tableCalculator.GetColumnsSettings();
 	auto& header = tableCalculator.GetHeader();
 
@@ -279,9 +242,7 @@ void TableViewBuilder<QueryResultsT>::BuildRow(std::ostream& o, int idx, TableCa
 	o << std::endl;
 }
 
-template <typename QueryResultsT>
-void TableViewBuilder<QueryResultsT>::BuildTable(std::ostream& o, TableCalculator<QueryResultsT>& tableCalculator,
-												 const std::function<bool(void)>& isCanceled) {
+void TableViewBuilder::BuildTable(std::ostream& o, TableCalculator& tableCalculator, const std::function<bool(void)>& isCanceled) {
 	if (isCanceled()) {
 		return;
 	}
@@ -294,8 +255,7 @@ void TableViewBuilder<QueryResultsT>::BuildTable(std::ostream& o, TableCalculato
 	}
 }
 
-template <typename QueryResultsT>
-int TableViewBuilder<QueryResultsT>::computeFieldWidth(std::string_view str, int maxWidth) {
+int TableViewBuilder::computeFieldWidth(std::string_view str, int maxWidth) {
 	int terminalWidth = getStringTerminalWidth(str) + (maxWidth - str.length());
 	int delta = maxWidth - terminalWidth;
 	if (delta > 0) {
@@ -304,8 +264,7 @@ int TableViewBuilder<QueryResultsT>::computeFieldWidth(std::string_view str, int
 	return maxWidth;
 }
 
-template <typename QueryResultsT>
-void TableViewBuilder<QueryResultsT>::ensureFieldWidthIsOk(std::string& str, int maxWidth) {
+void TableViewBuilder::ensureFieldWidthIsOk(std::string& str, int maxWidth) {
 	int width = getStringTerminalWidth(str);
 	if (width > maxWidth) {
 		int n = 0;
@@ -334,11 +293,5 @@ void TableViewBuilder<QueryResultsT>::ensureFieldWidthIsOk(std::string& str, int
 		}
 	}
 }
-
-template class TableCalculator<reindexer::QueryResults>;
-template class TableCalculator<reindexer::client::CoroQueryResults>;
-
-template class TableViewBuilder<reindexer::QueryResults>;
-template class TableViewBuilder<reindexer::client::CoroQueryResults>;
 
 }  // namespace reindexer

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <algorithm>
 #include <atomic>
+#include <functional>
 #include "tools/assertrx.h"
 
 namespace reindexer {
@@ -16,42 +16,23 @@ public:
 
 	constexpr intrusive_ptr() noexcept = default;
 	constexpr intrusive_ptr(std::nullptr_t) noexcept {}
-
-	intrusive_ptr(T* p, bool add_ref = true) noexcept : px(p) {
-		if (px != 0 && add_ref) {
+	intrusive_ptr(T* p) noexcept : px(p) { intrusive_ptr_add_ref(px); }
+	intrusive_ptr(T* p, bool add_ref) noexcept : px(p) {
+		if (add_ref) {
 			intrusive_ptr_add_ref(px);
 		}
 	}
-
 	template <typename U>
 	intrusive_ptr(const intrusive_ptr<U>& rhs) noexcept : px(rhs.get()) {
-		if (px != 0) {
-			intrusive_ptr_add_ref(px);
-		}
+		intrusive_ptr_add_ref(px);
 	}
-
-	intrusive_ptr(const intrusive_ptr& rhs) noexcept : px(rhs.px) {
-		if (px != 0) {
-			intrusive_ptr_add_ref(px);
-		}
-	}
-
-	~intrusive_ptr() {
-		if (px != 0) {
-			intrusive_ptr_release(px);
-		}
-	}
+	intrusive_ptr(const intrusive_ptr& rhs) noexcept : px(rhs.px) { intrusive_ptr_add_ref(px); }
+	intrusive_ptr(intrusive_ptr&& rhs) noexcept : px(rhs.px) { rhs.px = 0; }
+	~intrusive_ptr() { intrusive_ptr_release(px); }
 
 	template <typename U>
 	intrusive_ptr& operator=(const intrusive_ptr<U>& rhs) noexcept {
 		this_type(rhs).swap(*this);
-		return *this;
-	}
-
-	intrusive_ptr(intrusive_ptr&& rhs) noexcept : px(rhs.px) { rhs.px = 0; }
-
-	intrusive_ptr& operator=(intrusive_ptr&& rhs) noexcept {
-		this_type(static_cast<intrusive_ptr&&>(rhs)).swap(*this);
 		return *this;
 	}
 	// NOLINTNEXTLINE(bugprone-unhandled-self-assignment)
@@ -59,43 +40,33 @@ public:
 		this_type(rhs).swap(*this);
 		return *this;
 	}
-
+	intrusive_ptr& operator=(intrusive_ptr&& rhs) noexcept {
+		this_type(std::move(rhs)).swap(*this);
+		return *this;
+	}
 	intrusive_ptr& operator=(T* rhs) noexcept {
 		this_type(rhs).swap(*this);
 		return *this;
 	}
 
 	void reset() noexcept { this_type().swap(*this); }
-
 	void reset(T* rhs) noexcept { this_type(rhs).swap(*this); }
-	bool unique() const noexcept {
-		if (px == 0) {
-			return true;
-		}
-		return intrusive_ptr_is_unique(px);
-	}
+	bool unique() const noexcept { return intrusive_ptr_is_unique(px); }
 
 	T* get() const noexcept { return px; }
-
 	T& operator*() const noexcept {
-		assertrx(px != 0);
+		assertrx_dbg(px != 0);
 		return *px;
 	}
-
 	T* operator->() const noexcept {
-		assertrx(px != 0);
+		assertrx_dbg(px != 0);
 		return px;
 	}
 
-	typedef T* this_type::*unspecified_bool_type;
+	typedef T* this_type::* unspecified_bool_type;
 
 	operator unspecified_bool_type() const noexcept { return px == 0 ? 0 : &this_type::px; }
-
-	void swap(intrusive_ptr& rhs) noexcept {
-		T* tmp = px;
-		px = rhs.px;
-		rhs.px = tmp;
-	}
+	void swap(intrusive_ptr& rhs) noexcept { std::swap(px, rhs.px); }
 
 private:
 	T* px{nullptr};
@@ -276,7 +247,7 @@ private:
 
 	friend void intrusive_ptr_add_ref(intrusive_rc_base* x) noexcept;
 	friend void intrusive_ptr_release(intrusive_rc_base* x) noexcept;
-	friend bool intrusive_ptr_is_unique(intrusive_rc_base* x) noexcept;
+	friend bool intrusive_ptr_is_unique(const intrusive_rc_base* x) noexcept;
 };
 
 inline void intrusive_ptr_add_ref(intrusive_rc_base* x) noexcept {
@@ -291,7 +262,7 @@ inline void intrusive_ptr_release(intrusive_rc_base* x) noexcept {
 	}
 }
 
-inline bool intrusive_ptr_is_unique(intrusive_rc_base* x) noexcept { return !x || (x->refcount == 1); }
+inline bool intrusive_ptr_is_unique(const intrusive_rc_base* x) noexcept { return !x || (x->refcount == 1); }
 
 template <typename T, typename... Args>
 intrusive_ptr<T> make_intrusive(Args&&... args) {

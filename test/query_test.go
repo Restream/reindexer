@@ -16,8 +16,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/restream/reindexer/v3"
-	"github.com/restream/reindexer/v3/bindings"
+	"github.com/restream/reindexer/v5"
+	"github.com/restream/reindexer/v5/bindings"
 	"github.com/stretchr/testify/require"
 )
 
@@ -168,6 +168,9 @@ func newTestQuery(db *ReindexerWrapper, namespace string, needVerify ...bool) *q
 	qt.db = db
 	qt.nextOp = opAND
 	qt.handClose = false
+
+	testNamespacesMtx.RLock()
+	defer testNamespacesMtx.RUnlock()
 	qt.ns = testNamespaces[strings.ToLower(namespace)]
 	return qt
 }
@@ -180,10 +183,14 @@ type txTest struct {
 }
 
 func removeTestNamespce(namespace string) {
+	testNamespacesMtx.Lock()
+	defer testNamespacesMtx.Unlock()
 	delete(testNamespaces, namespace)
 }
 
 func newTestNamespace(namespace string, item interface{}) {
+	testNamespacesMtx.Lock()
+	defer testNamespacesMtx.Unlock()
 
 	if _, ok := testNamespaces[strings.ToLower(namespace)]; ok {
 		return
@@ -198,6 +205,9 @@ func newTestNamespace(namespace string, item interface{}) {
 }
 
 func renameTestNamespace(namespace string, dstName string) {
+	testNamespacesMtx.Lock()
+	defer testNamespacesMtx.Unlock()
+
 	ns, ok := testNamespaces[namespace]
 	if !ok {
 		return
@@ -262,10 +272,10 @@ func (tx *txTest) UpdateAsync(s interface{}, cmpl bindings.Completion) error {
 	return tx.tx.UpdateAsync(s, cmpl)
 }
 
-func (tx *txTest) UpsertAsync(s interface{}, cmpl bindings.Completion) error {
+func (tx *txTest) UpsertAsync(s interface{}, cmpl bindings.Completion, precepts ...string) error {
 	val := reflect.Indirect(reflect.ValueOf(s))
 	tx.ns.items[getPK(tx.ns, val)] = s
-	return tx.tx.UpsertAsync(s, cmpl)
+	return tx.tx.UpsertAsync(s, cmpl, precepts...)
 }
 
 func (tx *txTest) DeleteAsync(s interface{}, cmpl bindings.Completion) error {
@@ -548,6 +558,11 @@ func (qt *queryTest) WhereUuid(index string, condition int, keys ...string) *que
 	return qt.where(index, condition, keys)
 }
 
+func (qt *queryTest) WhereKnn(index string, vec []float32, params reindexer.KnnSearchParam) *queryTest {
+	qt.q.WhereKnn(index, vec, params)
+	return qt.where(index, bindings.QueryKnnCondition, nil)
+}
+
 func (qt *queryTest) subQueryToString(subQuery *queryTest, condition int, keys interface{}) string {
 	qte := qt.newQueryTestEntry("("+subQuery.toString()+")", condition, keys)
 	return qte.toString()
@@ -795,7 +810,14 @@ func (qt *queryTest) Explain() *queryTest {
 // SelectFilter
 func (qt *queryTest) Select(filters ...string) *queryTest {
 	qt.q.Select(filters...)
-	qt.selectFilters = filters
+	qt.selectFilters = append(qt.selectFilters, filters...)
+	return qt
+}
+
+// Select all vectors
+func (qt *queryTest) SelectAllFields() *queryTest {
+	qt.q.SelectAllFields()
+	qt.selectFilters = append(qt.selectFilters, "*", "vectors()")
 	return qt
 }
 
@@ -929,6 +951,7 @@ func (qt *queryTest) ExecToJsonCtx(ctx context.Context, jsonRoots ...string) *re
 }
 
 var testNamespaces = make(map[string]*testNamespace, 100)
+var testNamespacesMtx sync.RWMutex
 
 const (
 	containField = iota
@@ -1165,9 +1188,7 @@ func (qt *queryTest) Verify(t *testing.T, items []interface{}, aggResults []rein
 
 	// Check returned items for match query conditions
 	for i, item := range items {
-		if item == nil {
-			panic(fmt.Errorf("Got nil value: %d (%d)", i, len(items)))
-		}
+		require.NotNil(t, item, "Got nil value: %d (%d)", i, len(items))
 		pk := getPK(qt.ns, reflect.Indirect(reflect.ValueOf(item)))
 
 		if _, ok := foundIds[pk]; ok {
@@ -1179,9 +1200,7 @@ func (qt *queryTest) Verify(t *testing.T, items []interface{}, aggResults []rein
 			json1, _ := json.Marshal(item)
 			json2, _ := json.Marshal(qt.ns.items[pk])
 
-			if string(json1) != string(json2) {
-				panic(fmt.Errorf("found item not equal to original \n%#v\n%#v", item, qt.ns.items[pk]))
-			}
+			require.Equalf(t, string(json1), string(json2), "found item not equal to original \n%#v\n%#v", item, qt.ns.items[pk])
 		}
 		if !qt.entries.verifyConditions(t, qt.ns, item) {
 			json1, _ := json.Marshal(item)

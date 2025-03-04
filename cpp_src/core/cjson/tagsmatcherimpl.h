@@ -15,14 +15,21 @@
 
 namespace reindexer {
 
+enum class NeedChangeTmVersion { Increment, Decrement, No };
+
 class TagsMatcherImpl {
 public:
+	using TmListT = h_vector<const TagsMatcherImpl*, 10>;
+
 	TagsMatcherImpl() : version_(0), stateToken_(tools::RandomGenerator::gets32()) {}
-	TagsMatcherImpl(PayloadType&& payloadType) : version_(0), stateToken_(tools::RandomGenerator::gets32()) {
+	TagsMatcherImpl(PayloadType&& payloadType, int32_t stateToken = tools::RandomGenerator::gets32())
+		: version_(0), stateToken_(stateToken) {
 		bool updated = false;
-		updatePayloadType(std::move(payloadType), updated, false);
+		updatePayloadType(std::move(payloadType), updated, NeedChangeTmVersion::No);
 		(void)updated;	// No update check required
 	}
+	TagsMatcherImpl(const TmListT& tmList) : version_(0), stateToken_(tools::RandomGenerator::gets32()) { createMergedTagsMatcher(tmList); }
+	~TagsMatcherImpl() = default;
 
 	TagsPath path2tag(std::string_view jsonPath) const {
 		bool updated = false;
@@ -162,7 +169,7 @@ public:
 			}
 		}
 	}
-	void updatePayloadType(PayloadType payloadType, bool& updated, bool incVersion) {
+	void updatePayloadType(PayloadType payloadType, bool& updated, NeedChangeTmVersion changeVersion) {
 		if (!payloadType && !payloadType_) {
 			return;
 		}
@@ -181,7 +188,16 @@ public:
 			}
 		}
 		updated = updated || newType;
-		version_ += int(newType && incVersion);
+		switch (changeVersion) {
+			case NeedChangeTmVersion::Increment:
+				++version_;
+				break;
+			case NeedChangeTmVersion::Decrement:
+				--version_;
+				break;
+			case NeedChangeTmVersion::No:
+				break;
+		}
 	}
 
 	void serialize(WrSerializer& ser) const {
@@ -193,7 +209,7 @@ public:
 
 	void deserialize(Serializer& ser) {
 		clear();
-		size_t cnt = ser.GetVarUint();
+		size_t cnt = ser.GetVarUInt();
 		validateTagSize(cnt);
 		tags2names_.resize(cnt);
 		for (size_t tag = 0; tag < tags2names_.size(); ++tag) {
@@ -201,7 +217,6 @@ public:
 			names2tags_.emplace(name, tag);
 			tags2names_[tag] = name;
 		}
-		// assert(ser.Eof());
 	}
 	void deserialize(Serializer& ser, int version, int stateToken) {
 		deserialize(ser);
@@ -234,8 +249,24 @@ public:
 		}
 		return contains(tm);
 	}
+	// Check if this tagsmatcher includes all of the tags from the other tagsmatcher
 	bool contains(const TagsMatcherImpl& tm) const noexcept {
 		return tags2names_.size() >= tm.tags2names_.size() && std::equal(tm.tags2names_.begin(), tm.tags2names_.end(), tags2names_.begin());
+	}
+	// Check if other tagsmatcher includes all of the tags from this tagsmatcher
+	bool isSubsetOf(const TagsMatcherImpl& tm) const noexcept { return tm.contains(*this); }
+	bool add_names_from(const TagsMatcherImpl& tm) {
+		bool modified = false;
+		for (auto it = tm.names2tags_.begin(), end = tm.names2tags_.end(); it != end; ++it) {
+			auto res = names2tags_.emplace(it.key(), tags2names_.size());
+			if (res.second) {
+				tags2names_.emplace_back(it.key());
+				++version_;
+				modified = true;
+			}
+		}
+
+		return modified;
 	}
 
 	size_t size() const noexcept { return tags2names_.size(); }
@@ -283,6 +314,33 @@ public:
 		return res + "]";
 	}
 
+protected:
+	void createMergedTagsMatcher(const TmListT& tmList) {
+		// Create unique state token
+		auto found = tmList.end();
+		do {
+			found = std::find_if(tmList.begin(), tmList.end(),
+								 [this](const TagsMatcherImpl* tm) { return tm && tm->stateToken() == stateToken(); });
+			if (found != tmList.end()) {
+				stateToken_ = tools::RandomGenerator::gets32();
+			}
+		} while (found != tmList.end());
+
+		// Create merged tags list
+		for (const auto& tm : tmList) {
+			if (!tm) {
+				continue;
+			}
+
+			for (unsigned tag = 0; tag < tm->tags2names_.size(); ++tag) {
+				auto resp = names2tags_.try_emplace(tm->tags2names_[tag], tags2names_.size());
+				if (resp.second) {	// New tag
+					tags2names_.emplace_back(tm->tags2names_[tag]);
+				}
+			}
+		}
+	}
+
 	void validateTagSize(size_t sz) {
 		if (sz > ctag::kNameMax) {
 			throw Error(errParams, "Exceeded the maximum allowed number (%d) of tags for TagsMatcher. Attempt to place %d tags",
@@ -290,7 +348,6 @@ public:
 		}
 	}
 
-protected:
 	fast_hash_map<std::string, int, hash_str, equal_str, less_str> names2tags_;
 	std::vector<std::string> tags2names_;
 	PayloadType payloadType_;

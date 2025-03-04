@@ -36,16 +36,11 @@ public:
 		item[this->kFieldNamePrice] = price;
 		item[this->kFieldNameName] = name;
 		Upsert(default_namespace, item);
-		Commit(default_namespace);
 	}
 
 	Error tryAddCompositeIndex(std::initializer_list<std::string> indexes, CompositeIndexType type, const IndexOpts& opts) {
-		reindexer::IndexDef indexDeclr;
-		indexDeclr.name_ = getCompositeIndexName(indexes);
-		indexDeclr.indexType_ = indexTypeToName(type);
-		indexDeclr.fieldType_ = "composite";
-		indexDeclr.opts_ = opts;
-		indexDeclr.jsonPaths_ = reindexer::JsonPaths(indexes);
+		reindexer::IndexDef indexDeclr{getCompositeIndexName(indexes), reindexer::JsonPaths(indexes), indexTypeToName(type), "composite",
+									   opts};
 		return rt.reindexer->AddIndex(default_namespace, indexDeclr);
 	}
 
@@ -55,10 +50,7 @@ public:
 	}
 
 	void dropIndex(const std::string& name) {
-		reindexer::IndexDef idef(name);
-		Error err = rt.reindexer->DropIndex(default_namespace, idef);
-		EXPECT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->Commit(default_namespace);
+		Error err = rt.reindexer->DropIndex(default_namespace, reindexer::IndexDef{name});
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 

@@ -1,3 +1,6 @@
+//go:build !unittest
+// +build !unittest
+
 package cproto
 
 import (
@@ -12,15 +15,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/restream/reindexer/v3"
-	"github.com/restream/reindexer/v3/bindings"
-	"github.com/restream/reindexer/v3/test/helpers"
+	"github.com/restream/reindexer/v5"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/test/helpers"
 )
 
 var benchmarkSeed = flag.Int64("seed", time.Now().Unix(), "seed number for random")
 
 func BenchmarkGetConn(b *testing.B) {
-	srv1 := helpers.TestServer{T: nil, RpcPort: "6651", HttpPort: "9951", DbName: "cproto"}
+	srv1 := helpers.TestServer{T: nil, RpcPort: "6651", HttpPort: "9951", DbName: "cproto", SrvType: helpers.ServerTypeBuiltin}
 	if err := srv1.Run(); err != nil {
 		panic(err)
 	}
@@ -29,13 +32,13 @@ func BenchmarkGetConn(b *testing.B) {
 	binding := NetCProto{}
 	u, _ := url.Parse(fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv1.RpcPort, srv1.DbName, srv1.RpcPort))
 	dsn := []url.URL{*u}
-	err := binding.Init(dsn, bindings.OptionConnect{CreateDBIfMissing: true})
+	err := binding.Init(dsn, nil, bindings.OptionConnect{CreateDBIfMissing: true})
 	if err != nil {
 		panic(err)
 	}
 
 	b.Run("getConn", func(b *testing.B) {
-		var conn *connection
+		var conn connection
 		ctx := context.Background()
 		for i := 0; i < b.N; i++ {
 			conn, err = binding.getConnection(ctx)
@@ -57,14 +60,14 @@ func TestCprotoPool(t *testing.T) {
 		defer serv.Close()
 
 		c := new(NetCProto)
-		err = c.Init([]url.URL{*addr})
+		err = c.Init([]url.URL{*addr}, nil)
 		require.NoError(t, err)
 
 		assert.Equal(t, defConnPoolSize, len(serv.conns))
 	})
 
 	t.Run("rotate connections on each getConn", func(t *testing.T) {
-		srv1 := helpers.TestServer{T: t, RpcPort: "6661", HttpPort: "9961", DbName: "cproto"}
+		srv1 := helpers.TestServer{T: t, RpcPort: "6661", HttpPort: "9961", DbName: "cproto", SrvType: helpers.ServerTypeBuiltin}
 		dsn := fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv1.RpcPort, srv1.DbName, srv1.RpcPort)
 
 		err := srv1.Run()
@@ -74,10 +77,10 @@ func TestCprotoPool(t *testing.T) {
 		u, err := url.Parse(dsn)
 		require.NoError(t, err)
 		c := new(NetCProto)
-		err = c.Init([]url.URL{*u}, reindexer.WithConnPoolLoadBalancing(bindings.LBRoundRobin))
+		err = c.Init([]url.URL{*u}, nil, reindexer.WithConnPoolLoadBalancing(bindings.LBRoundRobin))
 		require.NoError(t, err)
 
-		conns := make(map[*connection]bool)
+		conns := make(map[connection]bool)
 		for i := 0; i < defConnPoolSize; i++ {
 			conn, err := c.getConnection(context.Background())
 			require.NoError(t, err)
@@ -98,8 +101,8 @@ func TestCprotoPool(t *testing.T) {
 
 func TestCprotoStatus(t *testing.T) {
 	t.Run("check error status", func(t *testing.T) {
-		srv := helpers.TestServer{T: t, RpcPort: "6661", HttpPort: "9961", DbName: "cproto"}
-		dsn := fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv.RpcPort, srv.DbName, srv.RpcPort)
+		srv := helpers.TestServer{T: t, RpcPort: "6661", HttpPort: "9961", DbName: "cproto", SrvType: helpers.ServerTypeBuiltin}
+		dsn := srv.GetDSN()
 
 		err := srv.Run()
 		assert.NoError(t, err)
@@ -108,7 +111,7 @@ func TestCprotoStatus(t *testing.T) {
 		u, err := url.Parse(dsn)
 		assert.NoError(t, err)
 		c := new(NetCProto)
-		err = c.Init([]url.URL{*u})
+		err = c.Init([]url.URL{*u}, nil)
 		assert.NoError(t, err)
 
 		status := c.Status(context.Background())
@@ -162,7 +165,7 @@ func (s *testServer) Close() {
 func TestStatusError(t *testing.T) {
 	expectedError := "failed to connect with provided dsn; dial tcp 127.0.0.1:6661: connect: connection refused"
 
-	srv1 := helpers.TestServer{T: t, RpcPort: "6661", HttpPort: "9961", DbName: "reindex_test_status_db"}
+	srv1 := helpers.TestServer{T: t, RpcPort: "6661", HttpPort: "9961", DbName: "reindex_test_status_db", SrvType: helpers.ServerTypeBuiltin}
 	defer srv1.Clean()
 
 	dsn := fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv1.RpcPort, srv1.DbName, srv1.RpcPort)

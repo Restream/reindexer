@@ -1,19 +1,23 @@
 #pragma once
 
 #include "core/keyvalue/variant.h"
+#include "updates/updaterecord.h"
 
 namespace reindexer {
 
 class NamespaceImpl;
 struct SelectFuncStruct;
+class NsContext;
 
 class FunctionExecutor {
 public:
-	explicit FunctionExecutor(NamespaceImpl& ns) noexcept : ns_(ns) {}
-	Variant Execute(SelectFuncStruct& funcData);
+	explicit FunctionExecutor(NamespaceImpl& ns, h_vector<updates::UpdateRecord, 2>& replUpdates) noexcept
+		: ns_(ns), replUpdates_(replUpdates) {}
+	Variant Execute(SelectFuncStruct& funcData, const NsContext& ctx);
 
 private:
 	NamespaceImpl& ns_;
+	h_vector<updates::UpdateRecord, 2>& replUpdates_;
 };
 
 }  // namespace reindexer

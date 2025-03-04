@@ -104,22 +104,28 @@ RX_NO_INLINE static std::string buildPreselectDescription(const JoinPreResult& r
 						return fmt::sprintf(
 							"using preselected_rows, because joined query contains composite index condition in the ON-clause and "
 							"joined query's expected max iterations count of %d is less than max_iterations_idset_preresult limit of %d",
-							props.qresMaxIteratios, props.maxIterationsIdSetPreResult);
+							props.qresMaxIterations, props.maxIterationsIdSetPreResult);
 					case StoredValuesOptimizationStatus::DisabledByFullTextIndex:
 						return fmt::sprintf(
 							"using preselected_rows, because joined query contains fulltext index condition in the ON-clause and joined "
 							"query's expected max iterations count of %d is less than max_iterations_idset_preresult limit of %d",
-							props.qresMaxIteratios, props.maxIterationsIdSetPreResult);
+							props.qresMaxIterations, props.maxIterationsIdSetPreResult);
 					case StoredValuesOptimizationStatus::DisabledByJoinedFieldSort:
 						return fmt::sprintf(
 							"using preselected_rows, because sort by joined field was requested and joined query's "
 							"expected max iterations count of %d is less than max_iterations_idset_preresult limit of %d",
-							props.qresMaxIteratios, props.maxIterationsIdSetPreResult);
+							props.qresMaxIterations, props.maxIterationsIdSetPreResult);
+					case StoredValuesOptimizationStatus::DisabledByFloatVectorIndex:
+						return fmt::sprintf(
+							"using preselected_rows, because joined query contains float vector index condition in the ON-clause and "
+							"joined "
+							"query's expected max iterations count of %d is less than max_iterations_idset_preresult limit of %d",
+							props.qresMaxIterations, props.maxIterationsIdSetPreResult);
 					case StoredValuesOptimizationStatus::Enabled:
 						return fmt::sprintf(
 							"using preselected_rows, because joined query's expected max iterations count of %d is less than "
 							"max_iterations_idset_preresult limit of %d and larger then max copied values count of %d",
-							props.qresMaxIteratios, props.maxIterationsIdSetPreResult,
+							props.qresMaxIterations, props.maxIterationsIdSetPreResult,
 							JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization());
 					default:
 						throw_as_assert;
@@ -131,7 +137,7 @@ RX_NO_INLINE static std::string buildPreselectDescription(const JoinPreResult& r
 					return fmt::sprintf(
 						"using no_preselect, because joined query's expected max iterations count of %d is larger than "
 						"max_iterations_idset_preresult limit of %d",
-						props.qresMaxIteratios, props.maxIterationsIdSetPreResult);
+						props.qresMaxIterations, props.maxIterationsIdSetPreResult);
 				} else if (props.isUnorderedIndexSort) {
 					return "using no_preselect, because there is a sorted query on an unordered index";
 				}
@@ -140,7 +146,7 @@ RX_NO_INLINE static std::string buildPreselectDescription(const JoinPreResult& r
 			},
 			[&](const JoinPreResult::Values&) {
 				return fmt::sprintf("using preselected_values, because the namespace's max iterations count is very small of %d",
-									result.properties->qresMaxIteratios);
+									result.properties->qresMaxIterations);
 			}},
 		result.payload);
 }
@@ -159,7 +165,7 @@ static std::string addToJSON(JsonBuilder& builder, const JoinedSelector& js, OpT
 		case JoinType::LeftJoin:
 			std::visit(overloaded{[&](const JoinPreResult::Values& values) {
 									  jsonSel.Put("method"sv, "preselected_values"sv);
-									  jsonSel.Put("keys"sv, values.size());
+									  jsonSel.Put("keys"sv, values.Size());
 								  },
 								  [&](const IdSet& ids) {
 									  jsonSel.Put("method"sv, "preselected_rows"sv);

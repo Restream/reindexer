@@ -1,4 +1,5 @@
 #include "index.h"
+#include "float_vector/float_vector_index.h"
 #include "indexordered.h"
 #include "indextext/fastindextext.h"
 #include "indextext/fuzzyindextext.h"
@@ -7,17 +8,24 @@
 #include "ttlindex.h"
 #include "uuid_index.h"
 
+#if RX_WITH_BUILTIN_ANN_INDEXES
+#include "float_vector/hnsw_index.h"
+#endif
+#if RX_WITH_FAISS_ANN_INDEXES
+#include "float_vector/ivf_index.h"
+#endif
+
 namespace reindexer {
 
 Index::Index(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields)
-	: type_(idef.Type()), name_(idef.name_), opts_(idef.opts_), payloadType_(std::move(payloadType)), fields_(std::move(fields)) {
-	logPrintf(LogTrace, "Index::Index ('%s',%s,%s)  %s%s%s", idef.name_, idef.indexType_, idef.fieldType_, idef.opts_.IsPK() ? ",pk" : "",
-			  idef.opts_.IsDense() ? ",dense" : "", idef.opts_.IsArray() ? ",array" : "");
+	: type_(idef.IndexType()), opts_(idef.Opts()), payloadType_(std::move(payloadType)), fields_(std::move(fields)) {
+	reindexer::deepCopy(name_, idef.Name());  // Avoiding false positive TSAN-warning for COW strings on centos7
+	logPrintf(LogTrace, "Index::Index ('%s',%s,%s)  %s%s%s", idef.Name(), idef.IndexTypeStr(), idef.FieldType(),
+			  idef.Opts().IsPK() ? ",pk" : "", idef.Opts().IsDense() ? ",dense" : "", idef.Opts().IsArray() ? ",array" : "");
 }
 
 Index::Index(const Index& obj)
 	: type_(obj.type_),
-	  name_(obj.name_),
 	  sortOrders_(obj.sortOrders_),
 	  sortId_(obj.sortId_),
 	  opts_(obj.opts_),
@@ -25,11 +33,48 @@ Index::Index(const Index& obj)
 	  fields_(obj.fields_),
 	  keyType_(obj.keyType_),
 	  selectKeyType_(obj.selectKeyType_),
-	  sortedIdxCount_(obj.sortedIdxCount_) {}
+	  sortedIdxCount_(obj.sortedIdxCount_) {
+	reindexer::deepCopy(name_, obj.name_);	// Avoiding false positive TSAN-warning for COW strings on centos7
+}
+
+static std::unique_ptr<Index> createANNIfAvailable(const IndexDef& idef, [[maybe_unused]] PayloadType&& payloadType,
+												   [[maybe_unused]] FieldsSet&& fields, [[maybe_unused]] size_t currentNsSize,
+												   [[maybe_unused]] Index::CreationLog log) {
+	const auto itype = idef.IndexType();
+	if (itype == IndexHnsw) {
+#if RX_WITH_BUILTIN_ANN_INDEXES
+		return HnswIndex_New(idef, std::move(payloadType), std::move(fields), currentNsSize, log);
+#else	// RX_WITH_BUILTIN_ANN_INDEXES
+		throw Error(errParams,
+					"Reindexer was built without builtin ANN-indexes support and unable to create '%s' HNSW index (check BUILD_ANN_INDEXES "
+					"cmake option)",
+					idef.Name());
+#endif	// RX_WITH_BUILTIN_ANN_INDEXES
+	} else if (itype == IndexVectorBruteforce) {
+#if RX_WITH_BUILTIN_ANN_INDEXES
+		return BruteForceVectorIndex_New(idef, std::move(payloadType), std::move(fields), currentNsSize, log);
+#else	// RX_WITH_BUILTIN_ANN_INDEXES
+		throw Error(errParams,
+					"Reindexer was built without builtin ANN-indexes support and unable to create '%s' bruteforce index (check "
+					"BUILD_ANN_INDEXES cmake option)",
+					idef.Name());
+#endif	// RX_WITH_BUILTIN_ANN_INDEXES
+	} else if (itype == IndexIvf) {
+#if RX_WITH_FAISS_ANN_INDEXES
+		return IvfIndex_New(idef, std::move(payloadType), std::move(fields), log);
+#else	// RX_WITH_FAISS_ANN_INDEXES
+		throw Error(errParams,
+					"Reindexer was built without FAISS ANN-indexes support and unable to create '%s' IVF index (check BUILD_ANN_INDEXES "
+					"cmake option)",
+					idef.Name());
+#endif	// RX_WITH_FAISS_ANN_INDEXES
+	}
+	throw Error(errLogic, "Unexpected ANN index type: %d for '%s'", int(itype), idef.Name());
+}
 
 std::unique_ptr<Index> Index::New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
-								  const NamespaceCacheConfigData& cacheCfg) {
-	switch (idef.Type()) {
+								  const NamespaceCacheConfigData& cacheCfg, size_t currentNsSize, CreationLog log) {
+	switch (idef.IndexType()) {
 		case IndexStrBTree:
 		case IndexIntBTree:
 		case IndexDoubleBTree:
@@ -60,8 +105,19 @@ std::unique_ptr<Index> Index::New(const IndexDef& idef, PayloadType&& payloadTyp
 			return IndexRTree_New(idef, std::move(payloadType), std::move(fields), cacheCfg);
 		case IndexUuidHash:
 			return IndexUuid_New(idef, std::move(payloadType), std::move(fields), cacheCfg);
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+			return createANNIfAvailable(idef, std::move(payloadType), std::move(fields), currentNsSize, log);
+		case IndexDummy:
+			throw Error(errParams, "'Dummy' index type can not be used to create index ('%s')", idef.Name());
 	}
-	throw Error(errParams, "Invalid index type %d for index '%s'", idef.Type(), idef.name_);
+	throw Error(errParams, "Invalid index type %d for index '%s'", int(idef.IndexType()), idef.Name());
+}
+
+bool Index::IsFloatVector() const noexcept {
+	assertrx_dbg(bool(dynamic_cast<const FloatVectorIndex*>(this)) == opts_.IsFloatVector());
+	return opts_.IsFloatVector();
 }
 
 IndexPerfStat Index::GetIndexPerfStat() {
@@ -95,7 +151,7 @@ void Index::dump(S& os, std::string_view step, std::string_view offset) const {
 	payloadType_.Dump(os, step, newOffset);
 	if (IsComposite(type_)) {
 		os << ",\n" << newOffset << "fields: ";
-		fields_.Dump(os, FieldsSet::DumpWithMask::Yes);
+		fields_.Dump(os, DumpWithMask_True);
 	}
 	os << ",\n"
 	   << newOffset << "sortedIdxCount: " << sortedIdxCount_ << ",\n"

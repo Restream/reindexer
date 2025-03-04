@@ -21,7 +21,7 @@ Reindexer command line tool is an client utility to work with database.
 reindexer_tool {OPTIONS}
 
 Options
-  -d[DSN],      --dsn=[DSN]              DSN to 'reindexer', like 'cproto://127.0.0.1:6534/dbname', 'builtin:///var/lib/reindexer/dbname' or `ucproto://user@password:/tmp/reindexer.sock:/dbname`
+  -d[DSN],      --dsn=[DSN]              DSN to 'reindexer', like 'cproto://127.0.0.1:6534/dbname', 'cprotos://127.0.0.1:6535/dbname', 'builtin:///var/lib/reindexer/dbname' or `ucproto://user@password:/tmp/reindexer.sock:/dbname`
   -f[FILENAME], --filename=[FILENAME]    Execute commands from file, then exit
   -c[COMMAND],  --command=[COMMAND]      Run single command (SQL or internal) and exit
   -o[FILENAME], --output=[FILENAME]      Send query results to file
@@ -31,6 +31,7 @@ Options
   --createdb                             Creates target database if it is missing
   -a[Application name],
   --appname=[Application name]           Application name which will be used in login info
+  --dump-mode=[DUMP_MODE]                Dump mode for sharded databases: 'full_node' (default), 'sharded_only', 'local_only'
 ```
 
 ## Commands
@@ -65,6 +66,15 @@ Options
 ```
 \dump [namespace1 [namespace2]...]
 ```
+
+### Dump modes
+
+There are few different dump modes to interract with sharded databases:
+1. full_node - Default mode. Dumps all data of chosen node, including sharded namespaces. However, does not dump data from other shards.
+2. sharded_only - Dumps data from sharded namespaces only (including the data from all other shards). May be usefull for resharding.
+3. local_only - Dumps data from local namespaces, excluding sharded namespaces.
+
+Dump mode is saved in the output file and will be used during restoration process.
 
 ### Manipulate namespaces
 
@@ -120,13 +130,6 @@ Format can be one of the following:
 Run benchmark for `<time>` seconds
 ```
 
-### Subscribe to upstream WAL updates
-*Syntax:*
-```
-\subscribe <on|off>
-On or off subscrbibtion to WAL updates
-```
-
 
 ## Examples
 
@@ -141,4 +144,9 @@ reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --createdb --filename mydb.rxd
 ```
 
 Option `createdb` in example above allows to automatically create `mydb` if it does not exist. By default `reindexer_tool` requires an existing database to connect.
+
+Backup only sharded namespaces from all of the shards into single backup file:
+```sh
+reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --command '\dump' --dump-mode=sharded_only --output mydb.rxdump
+```
 

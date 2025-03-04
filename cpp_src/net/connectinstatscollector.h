@@ -19,11 +19,9 @@ struct connection_stat {
 	std::atomic_int_fast64_t sent_bytes{0};
 	std::atomic_int_fast64_t last_send_ts{0};
 	std::atomic_int_fast64_t send_buf_bytes{0};
-	std::atomic_int_fast64_t pended_updates{0};
 	std::atomic<uint32_t> send_rate{0};
 	std::atomic<uint32_t> recv_rate{0};
 	int64_t start_time{0};
-	std::atomic_int_fast64_t updates_lost{0};
 };
 
 class connection_stats_collector {
@@ -47,7 +45,6 @@ public:
 		stat_->last_send_ts.store(now.count(), std::memory_order_relaxed);
 		stat_->send_buf_bytes.store(send_buf_size, std::memory_order_relaxed);
 	}
-	void update_pended_updates(size_t count) noexcept { stat_->pended_updates.store(count, std::memory_order_relaxed); }
 	void update_send_buf_size(size_t size) noexcept { stat_->send_buf_bytes.store(size, std::memory_order_relaxed); }
 
 protected:

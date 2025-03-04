@@ -48,15 +48,16 @@ public:
 		Error err;
 	};
 
-	class Cursor {
+	class ConstCursor {
 	public:
-		Cursor(std::unique_lock<Mutex>&& lck, std::unique_ptr<datastorage::Cursor>&& c) noexcept : lck_(std::move(lck)), c_(std::move(c)) {
+		ConstCursor(std::unique_lock<Mutex>&& lck, std::unique_ptr<datastorage::Cursor>&& c) noexcept
+			: lck_(std::move(lck)), c_(std::move(c)) {
 			assertrx(lck_.owns_lock());
 			assertrx(c_);
 		}
 		datastorage::Cursor* operator->() noexcept { return c_.get(); }
 
-	private:
+	protected:
 		// NOTE: Cursor owns unique storage lock. I.e. nobody is able to read stroage or write into it, while cursor exists.
 		// Currently the only place, where it matter is EnumMeta method. However, we should to consider switching to shared_mutex, if
 		// the number of such concurrent Cursors will grow.
@@ -64,24 +65,44 @@ public:
 		std::unique_ptr<datastorage::Cursor> c_;
 	};
 
+	class Cursor : public ConstCursor {
+	public:
+		Cursor(std::unique_lock<Mutex>&& lck, std::unique_ptr<datastorage::Cursor>&& c, AsyncStorage& storage) noexcept
+			: ConstCursor(std::move(lck), std::move(c)), storage_(&storage) {}
+
+		void RemoveThisKey(const StorageOpts& opts) {
+			assertrx(ConstCursor::lck_.owns_lock());
+			storage_->removeSync(opts, ConstCursor::c_->Key());
+		}
+
+	private:
+		AsyncStorage* storage_ = nullptr;
+	};
+
 	class FullLockT {
 	public:
 		using MutexType = Mutex;
-		FullLockT(Mutex& flushMtx, Mutex& updatesMtx) : flushLck_(flushMtx), storageLck_(updatesMtx) {}
-		bool OwnsThisFlushMutex(Mutex& mtx) const noexcept { return flushLck_.owns_lock() && flushLck_.mutex() == &mtx; }
-		bool OwnsThisStorageMutex(Mutex& mtx) const noexcept { return storageLck_.owns_lock() && storageLck_.mutex() == &mtx; }
+		FullLockT(MutexType& flushMtx, MutexType& updatesMtx) : flushLck_(flushMtx), storageLck_(updatesMtx) {}
+		void unlock() {
+			// Specify unlock order
+			storageLck_.unlock();
+			flushLck_.unlock();
+		}
+		bool OwnsThisFlushMutex(MutexType& mtx) const noexcept { return flushLck_.owns_lock() && flushLck_.mutex() == &mtx; }
+		bool OwnsThisStorageMutex(MutexType& mtx) const noexcept { return storageLck_.owns_lock() && storageLck_.mutex() == &mtx; }
 
 	private:
-		std::unique_lock<Mutex> flushLck_;
-		std::unique_lock<Mutex> storageLck_;
+		std::unique_lock<MutexType> flushLck_;
+		std::unique_lock<MutexType> storageLck_;
 	};
 
 	AsyncStorage() = default;
 	AsyncStorage(const AsyncStorage& o, AsyncStorage::FullLockT& storageLock);
 
-	Error Open(datastorage::StorageType storageType, const std::string& nsName, const std::string& path, const StorageOpts& opts);
+	Error Open(datastorage::StorageType storageType, std::string_view nsName, const std::string& path, const StorageOpts& opts);
 	void Destroy();
-	Cursor GetCursor(StorageOpts& opts) const;
+	Cursor GetCursor(StorageOpts& opts);
+	ConstCursor GetCursor(StorageOpts& opts) const;
 	// Tries to write synchronously, hovewer will perform an async write for copied namespace and in case of storage errors
 	void WriteSync(const StorageOpts& opts, std::string_view key, std::string_view value);
 	// Tries to remove synchronously, hovewer will perform an async deletion for copied namespace and in case of storage errors
@@ -165,6 +186,14 @@ private:
 	void beginNewUpdatesChunk();
 	void write(bool fromSyncCall, std::string_view key, std::string_view value) {
 		asyncOp(fromSyncCall, [this](std::string_view k, std::string_view v) { curUpdatesChunck_->Put(k, v); }, key, value);
+	}
+	void removeSync(const StorageOpts& opts, std::string_view key) {
+		syncOp(
+			[this, &opts](std::string_view k) {
+				throwOnStorageCopy();
+				return storage_->Delete(opts, k);
+			},
+			[this](std::string_view k) { remove(true, k); }, key);
 	}
 	void remove(bool fromSyncCall, std::string_view key) {
 		asyncOp(fromSyncCall, [this](std::string_view k) { curUpdatesChunck_->Remove(k); }, key);

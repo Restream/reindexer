@@ -16,13 +16,13 @@ namespace reindexer {
 
 using namespace std::string_view_literals;
 
-std::string_view Parameters::Value() noexcept { return "value"; }
-std::string_view Parameters::Type() noexcept { return "type"; }
-std::string_view Parameters::Facets() noexcept { return "facets"; }
-std::string_view Parameters::Count() noexcept { return "count"; }
-std::string_view Parameters::Values() noexcept { return "values"; }
-std::string_view Parameters::Distincts() noexcept { return "distincts"; }
-std::string_view Parameters::Fields() noexcept { return "fields"; }
+constexpr std::string_view Parameters::Value() noexcept { return "value"sv; }
+constexpr std::string_view Parameters::Type() noexcept { return "type"sv; }
+constexpr std::string_view Parameters::Facets() noexcept { return "facets"sv; }
+constexpr std::string_view Parameters::Count() noexcept { return "count"sv; }
+constexpr std::string_view Parameters::Values() noexcept { return "values"sv; }
+constexpr std::string_view Parameters::Distincts() noexcept { return "distincts"sv; }
+constexpr std::string_view Parameters::Fields() noexcept { return "fields"sv; }
 
 using ParametersFieldsNumbers = const std::unordered_map<std::string_view, int>;
 ParametersFieldsNumbers kParametersFieldNumbers = {{Parameters::Value(), 1},  {Parameters::Type(), 2},	 {Parameters::Count(), 1},
@@ -81,31 +81,69 @@ void AggregationResult::GetProtobuf(WrSerializer& wrser) const {
 	get(builder, ParametersFields<ParametersFieldsNumbers, int>(kParametersFieldNumbers));
 }
 
-Error AggregationResult::FromMsgPack(span<char> msgpack) {
+template <typename Node>
+AggregationResult AggregationResult::from(Node root) {
+	const Node& node = root[Parameters::Value()];
+	bool isValid = false;
+	if constexpr (std::is_same_v<MsgPackValue, Node>) {
+		isValid = node.isValid();
+	}
+	if constexpr (std::is_same_v<gason::JsonNode, Node>) {
+		isValid = !node.empty();
+	}
+	AggregationResult ret;
+	if (isValid) {
+		ret.value_ = node.template As<double>();
+	}
+
+	ret.type = strToAggType(root[Parameters::Type()].template As<std::string>());
+
+	for (const auto& subElem : root[Parameters::Fields()]) {
+		ret.fields.emplace_back(subElem.template As<std::string>());
+	}
+
+	for (const auto& facetNode : root[Parameters::Facets()]) {
+		FacetResult facet;
+		facet.count = facetNode[Parameters::Count()].template As<int>();
+		for (const auto& subElem : facetNode[Parameters::Values()]) {
+			facet.values.emplace_back(subElem.template As<std::string>());
+		}
+		ret.facets.emplace_back(std::move(facet));
+	}
+
+	for (const auto& distinctNode : root[Parameters::Distincts()]) {
+		ret.distincts.emplace_back(distinctNode.template As<std::string>());
+	}
+	return ret;
+}
+
+Expected<AggregationResult> AggregationResult::FromMsgPack(std::string_view msgpack) {
 	try {
 		size_t offset = 0;
 		MsgPackParser parser;
 		MsgPackValue root = parser.Parse(msgpack, offset);
 		if (!root.p) {
-			return Error(errLogic, "Error unpacking aggregation data in msgpack");
+			return Unexpected{Error{errLogic, "Error unpacking aggregation data in msgpack"}};
 		}
-		from(root);
+		return from(root);
 	} catch (const Error& err) {
-		return err;
+		return Unexpected(err);
 	}
-	return errOK;
 }
 
-Error AggregationResult::FromJSON(span<char> json) {
+template <typename T>
+Expected<AggregationResult> AggregationResult::FromJSON(T json) {
 	try {
 		gason::JsonParser parser;
 		auto root = parser.Parse(json);
-		from(root);
+		return from(root);
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "AggregationResult: %s", ex.what());
+		return Unexpected{Error{errParseJson, "AggregationResult: %s", ex.what()}};
 	}
-	return errOK;
 }
+
+template Expected<AggregationResult> AggregationResult::FromJSON<std::string_view>(std::string_view json);
+template Expected<AggregationResult> AggregationResult::FromJSON<std::span<char>>(std::span<char> json);
 
 void AggregationResult::GetProtobufSchema(ProtobufSchemaBuilder& builder) {
 	ParametersFields<ParametersFieldsNumbers, int> fields(kParametersFieldNumbers);

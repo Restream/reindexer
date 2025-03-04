@@ -147,7 +147,7 @@ UpdatesCollection* LevelDbStorage::GetUpdatesCollection() { return new LevelDbBa
 
 Error LevelDbStorage::doOpen(const std::string& path, const StorageOpts& opts) {
 	if (path.empty()) {
-		throw Error(errParams, "Cannot enable storage: the path is empty '%s'", path);
+		return Error(errParams, "Cannot enable storage: the path is empty '%s'", path);
 	}
 
 	leveldb::Options options;
@@ -155,7 +155,7 @@ Error LevelDbStorage::doOpen(const std::string& path, const StorageOpts& opts) {
 	options.max_open_files = 50;
 	SetDummyLogger(options);
 
-	leveldb::DB* db;
+	leveldb::DB* db = nullptr;
 	leveldb::Status status = leveldb::DB::Open(options, path, &db);
 	if (status.ok()) {
 		db_.reset(db);

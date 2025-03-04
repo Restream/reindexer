@@ -1,6 +1,5 @@
-#include "tcmallocheapwathcher.h"
-
 #if REINDEX_WITH_GPERFTOOLS
+#include "tcmallocheapwathcher.h"
 
 #include <gperftools/malloc_extension.h>
 #include <cmath>
@@ -26,9 +25,9 @@ TCMallocHeapWathcher::TCMallocHeapWathcher(MallocExtension* mallocExtention, int
 	: TCMallocHeapWathcher(mallocExtention, cacheLimit, maxCacheRatio, nullptr) {}
 
 template <typename... Args>
-void TCMallocHeapWathcher::logDebug(Args&&... args) {
+void TCMallocHeapWathcher::logDebug(spdlog::format_string_t<Args...> fmt, Args&&... args) {
 	if (logger_) {
-		logger_->debug(std::forward<Args>(args)...);
+		logger_->debug(fmt, std::forward<Args>(args)...);
 	}
 }
 

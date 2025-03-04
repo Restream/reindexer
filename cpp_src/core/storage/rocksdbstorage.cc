@@ -146,7 +146,7 @@ UpdatesCollection* RocksDbStorage::GetUpdatesCollection() { return new RocksDbBa
 
 Error RocksDbStorage::doOpen(const std::string& path, const StorageOpts& opts) {
 	if (path.empty()) {
-		throw Error(errParams, "Cannot enable storage: the path is empty '%s'", path);
+		return Error(errParams, "Cannot enable storage: the path is empty '%s'", path);
 	}
 
 	rocksdb::Options options;

@@ -2,6 +2,7 @@
 #include <thread>
 #include <vector>
 
+#include "core/dbconfig.h"
 #include "core/query/query.h"
 #include "core/querycache.h"
 #include "debug/allocdebug.h"

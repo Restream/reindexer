@@ -23,6 +23,7 @@ static const std::thread::id kMainThreadID = std::this_thread::get_id();
 pid_t StartProcess(const std::string& program, const std::vector<std::string>& params) {
 #ifdef __linux__
 	std::vector<char*> paramsPointers;
+	paramsPointers.reserve(params.size());
 	for (size_t i = 0; i < params.size(); i++) {
 		paramsPointers.push_back(const_cast<char*>(params[i].c_str()));
 	}

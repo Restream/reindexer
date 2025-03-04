@@ -2,7 +2,6 @@
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <fstream>
-#include "core/payload/fieldsset.h"
 #include "core/query/query.h"
 #include "index.h"
 #include "ns_scheme.h"

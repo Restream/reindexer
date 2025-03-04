@@ -65,7 +65,7 @@ public:
 	/// @param loop - ev::loop of caller's thread, listener's socket will be binded to that loop.
 	/// @param connFactory - Connection factory, will create objects with IServerConnection interface implementation.
 	/// @param maxListeners - Maximum number of threads, which listener will utilize. std::thread::hardware_concurrency() by default
-	Listener(ev::dynamic_loop& loop, ConnectionFactory&& connFactory, int maxListeners = 0);
+	Listener(ev::dynamic_loop& loop, ConnectionFactory&& connFactory, openssl::SslCtxPtr SslCtx, int maxListeners = 0);
 	~Listener() override;
 	/// Bind listener to specified host:port
 	/// @param addr - tcp host:port for bind or file path for the unix domain socket
@@ -104,8 +104,9 @@ protected:
 			ev::async* async;
 		};
 
-		Shared(ConnectionFactory&& connFactory, int maxListeners);
+		Shared(ConnectionFactory&& connFactory, int maxListeners, openssl::SslCtxPtr SslCtx);
 		~Shared();
+		openssl::SslCtxPtr sslCtx_;
 		lst_socket sock_;
 		const int maxListeners_;
 		std::atomic<int> listenersCount_ = {0};
@@ -159,7 +160,7 @@ public:
 	/// Constructs new listner object.
 	/// @param loop - ev::loop of caller's thread, listener's socket will be binded to that loop.
 	/// @param connFactory - Connection factory, will create objects with IServerConnection interface implementation.
-	ForkedListener(ev::dynamic_loop& loop, ConnectionFactory&& connFactory);
+	ForkedListener(ev::dynamic_loop& loop, ConnectionFactory&& connFactory, openssl::SslCtxPtr SslCtx);
 	~ForkedListener() override;
 	/// Bind listener to specified host:port
 	/// @param addr - tcp host:port for bind or file path for the unix domain socket
@@ -188,6 +189,7 @@ protected:
 		ev::async* async;
 	};
 
+	openssl::SslCtxPtr sslCtx_;
 	lst_socket sock_;
 	std::mutex mtx_;
 	ConnectionFactory connFactory_;

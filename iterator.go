@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	otelattr "go.opentelemetry.io/otel/attribute"
 
-	"github.com/restream/reindexer/v3/bindings"
+	"github.com/restream/reindexer/v5/bindings"
 )
 
 type ExplainSelector struct {
@@ -29,10 +29,10 @@ type ExplainSelector struct {
 	// Count of processed documents, matched this selector
 	Matched int `json:"matched"`
 	// Count of scanned documents by this selector
-	Items int `json:"items"`
+	Items     int    `json:"items"`
 	Condition string `json:"condition"`
 	// Select iterator type
-	Type string `json:"type,omitempty"`
+	Type        string `json:"type,omitempty"`
 	Description string `json:"description,omitempty"`
 	// Preselect in joined namespace execution explainings
 	ExplainPreselect *ExplainResults `json:"explain_preselect,omitempty"`
@@ -42,10 +42,10 @@ type ExplainSelector struct {
 }
 
 type ExplainSubQuery struct {
-	Namespace string `json:"namespace"`
-	Explain ExplainResults `json:"explain"`
-	Keys int `json:"keys,omitempty"`
-	Field string `json:"field,omitempty"`
+	Namespace string         `json:"namespace"`
+	Explain   ExplainResults `json:"explain"`
+	Keys      int            `json:"keys,omitempty"`
+	Field     string         `json:"field,omitempty"`
 }
 
 // ExplainResults presents query plan
@@ -205,7 +205,7 @@ type Iterator struct {
 	current        struct {
 		obj     interface{}
 		joinObj [][]interface{}
-		rank    int
+		rank    float32
 	}
 	err     error
 	userCtx context.Context
@@ -272,10 +272,10 @@ func (it *Iterator) joinedNsIndexOffset(parentNsID int) int {
 	return offset
 }
 
-func (it *Iterator) readItem(toObj interface{}) (item interface{}, rank int) {
-	params := it.ser.readRawtItemParams()
-	if (it.rawQueryParams.flags & bindings.ResultsWithPercents) != 0 {
-		rank = params.proc
+func (it *Iterator) readItem(toObj interface{}) (item interface{}, rank float32) {
+	params := it.ser.readRawtItemParams(it.rawQueryParams.shardId)
+	if (it.rawQueryParams.flags & bindings.ResultsWithRank) != 0 {
+		rank = params.rank
 	}
 
 	subNSRes := 0
@@ -283,7 +283,10 @@ func (it *Iterator) readItem(toObj interface{}) (item interface{}, rank int) {
 	if (it.rawQueryParams.flags & bindings.ResultsWithJoined) != 0 {
 		subNSRes = int(it.ser.GetVarUInt())
 	}
-	item, it.err = unpackItem(it.db.binding, &it.nsArray[params.nsid], &params, it.allowUnsafe && (subNSRes == 0), (it.rawQueryParams.flags&bindings.ResultsWithItemID) == 0, toObj)
+	nonCacheble := ((it.rawQueryParams.flags & bindings.ResultsWithItemID) == 0) ||
+		(len(it.rawQueryParams.nsIncarnationTags) == 0)
+	item, it.err = unpackItem(it.db.binding, &it.nsArray[params.nsid], &it.rawQueryParams, &params,
+		it.allowUnsafe && (subNSRes == 0), nonCacheble, toObj)
 	if it.err != nil {
 		return
 	}
@@ -297,8 +300,9 @@ func (it *Iterator) readItem(toObj interface{}) (item interface{}, rank int) {
 		}
 		subitems := make([]interface{}, siRes)
 		for i := 0; i < siRes; i++ {
-			subparams := it.ser.readRawtItemParams()
-			subitems[i], it.err = unpackItem(it.db.binding, &it.nsArray[nsIndex+nsIndexOffset], &subparams, it.allowUnsafe, (it.rawQueryParams.flags&bindings.ResultsWithItemID) == 0, toObj)
+			subparams := it.ser.readRawtItemParams(it.rawQueryParams.shardId)
+			subitems[i], it.err = unpackItem(it.db.binding, &it.nsArray[nsIndex+nsIndexOffset],
+				&it.rawQueryParams, &subparams, it.allowUnsafe, nonCacheble, toObj)
 			if it.err != nil {
 				return
 			}
@@ -416,7 +420,7 @@ func (it *Iterator) Object() interface{} {
 
 // Rank returns current object search rank.
 // Will panic when pointer was not moved, Next() must be called before.
-func (it *Iterator) Rank() int {
+func (it *Iterator) Rank() float32 {
 	if it.resPtr == 0 {
 		panic(errIteratorNotReady)
 	}
@@ -487,13 +491,13 @@ func (it *Iterator) FetchOne() (item interface{}, err error) {
 
 // FetchAllWithRank returns resulting slice of objects and slice of objects ranks.
 // Closes iterator after use.
-func (it *Iterator) FetchAllWithRank() (items []interface{}, ranks []int, err error) {
+func (it *Iterator) FetchAllWithRank() (items []interface{}, ranks []float32, err error) {
 	defer it.Close()
 	if !it.Next() {
 		return nil, nil, it.err
 	}
 	items = make([]interface{}, it.rawQueryParams.qcount)
-	ranks = make([]int, it.rawQueryParams.qcount)
+	ranks = make([]float32, it.rawQueryParams.qcount)
 	for i := range items {
 		items[i] = it.Object()
 		ranks[i] = it.Rank()
@@ -509,7 +513,7 @@ func (it *Iterator) FetchAllWithRank() (items []interface{}, ranks []int, err er
 
 // HasRank indicates if this iterator has info about search ranks.
 func (it *Iterator) HasRank() bool {
-	return (it.rawQueryParams.flags & bindings.ResultsWithPercents) != 0
+	return (it.rawQueryParams.flags & bindings.ResultsWithRank) != 0
 }
 
 // AggResults returns aggregation results (if present)
@@ -563,6 +567,20 @@ func (it *Iterator) Close() {
 			it.query.close()
 		}
 	}
+}
+
+// Get namespace's tagsmatcher info
+func (it *Iterator) GetTagsMatcherInfo(nsName string) (stateToken int32, version int32) {
+	version = -1
+	for _, ns := range it.nsArray {
+		if nsName == ns.name {
+			st := ns.localCjsonState.Copy()
+			stateToken = st.StateToken
+			version = st.Version
+			return
+		}
+	}
+	return
 }
 
 func (it *Iterator) findJoinFieldIndex(field string) (index int) {

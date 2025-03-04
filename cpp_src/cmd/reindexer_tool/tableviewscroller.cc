@@ -55,19 +55,16 @@ void WaitEnterToContinue(std::ostream& o, int terminalWidth, const std::function
 	}
 }
 
-template <typename QueryResultsT>
-TableViewScroller<QueryResultsT>::TableViewScroller(const QueryResultsT& r, reindexer::TableViewBuilder<QueryResultsT>& tableBuilder,
-													int linesOnPage)
-	: r_(r), tableBuilder_(tableBuilder), linesOnPage_(linesOnPage) {}
+TableViewScroller::TableViewScroller(reindexer::TableViewBuilder& tableBuilder, int linesOnPage)
+	: tableBuilder_(tableBuilder), linesOnPage_(linesOnPage) {}
 
-template <typename QueryResultsT>
-void TableViewScroller<QueryResultsT>::Scroll(Output& output, const std::function<bool(void)>& isCanceled) {
+void TableViewScroller::Scroll(Output& output, std::vector<std::string>&& jsonData, const std::function<bool(void)>& isCanceled) {
 	if (isCanceled()) {
 		return;
 	}
 
 	reindexer::TerminalSize terminalSize = reindexer::getTerminalSize();
-	reindexer::TableCalculator<QueryResultsT> tableCalculator(r_, terminalSize.width);
+	reindexer::TableCalculator tableCalculator(std::move(jsonData), terminalSize.width);
 	auto& rows = tableCalculator.GetRows();
 	bool viaMoreCmd = (int(rows.size()) > linesOnPage_);
 
@@ -106,6 +103,4 @@ void TableViewScroller<QueryResultsT>::Scroll(Output& output, const std::functio
 #endif
 }
 
-template class TableViewScroller<reindexer::QueryResults>;
-template class TableViewScroller<reindexer::client::CoroQueryResults>;
 }  // namespace reindexer_tool

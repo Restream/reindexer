@@ -163,7 +163,7 @@ void Synonyms::SetConfig(BaseFTConfig* cfg) {
 					for (const std::wstring& singleAlt : *singleAlternatives) {
 						multAlt->push_back({singleAlt});
 					}
-					many2any_.push_back({{resultOfSplit.begin(), resultOfSplit.end()}, std::move(multAlt)});
+					many2any_.emplace_back(RVector<std::wstring, 2>{resultOfSplit.begin(), resultOfSplit.end()}, std::move(multAlt));
 				}
 				if (!multipleAlternatives->empty()) {
 					if (singleAlternatives->empty()) {

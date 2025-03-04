@@ -1,7 +1,5 @@
 #include "cgoctxpool_api.h"
 
-#include <future>
-
 namespace CGOCtxPoolTests {
 
 using reindexer::CancelType;

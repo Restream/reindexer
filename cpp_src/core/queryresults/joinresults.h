@@ -4,7 +4,7 @@
 #include "core/itemimpl.h"
 #include "estl/fast_hash_map.h"
 #include "itemref.h"
-#include "queryresults.h"
+#include "localqueryresults.h"
 
 namespace reindexer {
 
@@ -34,12 +34,12 @@ using ItemOffsets = h_vector<ItemOffset, 1>;
 /// Result of joining entire NamespaceImpl
 class NamespaceResults {
 public:
-	/// Move-insertion of QueryResults (for n-th joined field)
+	/// Move-insertion of LocalQueryResults (for n-th joined field)
 	/// ItemRefs into our results container
 	/// @param rowid - rowid of item
 	/// @param fieldIdx - index of joined field
 	/// @param qr - QueryResults reference
-	void Insert(IdType rowid, uint32_t fieldIdx, QueryResults&& qr);
+	void Insert(IdType rowid, uint32_t fieldIdx, LocalQueryResults&& qr);
 
 	/// Gets/sets amount of joined selectors
 	/// @param joinedSelectorsCount - joinedSelectors.size()
@@ -48,7 +48,14 @@ public:
 
 	/// @returns total amount of joined items for
 	/// all the joined fields
-	size_t TotalItems() const noexcept { return items_.size(); }
+	size_t TotalItems() const noexcept { return items_.Size(); }
+
+	/// Clear all internal data
+	void Clear() {
+		offsets_.clear();
+		items_.Clear();
+		joinedSelectorsCount_ = 0;
+	}
 
 private:
 	friend class ItemIterator;
@@ -82,12 +89,12 @@ public:
 	bool operator!=(const JoinedFieldIterator& other) const { return !operator==(other); }
 
 	const_reference operator[](size_t idx) const noexcept {
-		assertrx(currOffset_ + idx < joinRes_->items_.size());
-		return joinRes_->items_[currOffset_ + idx];
+		assertrx(currOffset_ + idx < joinRes_->items_.Size());
+		return joinRes_->items_.GetItemRef(currOffset_ + idx);
 	}
 	reference operator[](size_t idx) noexcept {
-		assertrx(currOffset_ + idx < joinRes_->items_.size());
-		return const_cast<reference>(joinRes_->items_[currOffset_ + idx]);
+		assertrx(currOffset_ + idx < joinRes_->items_.Size());
+		return const_cast<reference>(joinRes_->items_.GetItemRef(currOffset_ + idx));
 	}
 	JoinedFieldIterator& operator++() noexcept {
 		++order_;
@@ -96,7 +103,7 @@ public:
 	}
 
 	ItemImpl GetItem(int itemIdx, const PayloadType& pt, const TagsMatcher& tm) const;
-	QueryResults ToQueryResults() const;
+	LocalQueryResults ToQueryResults() const;
 
 	int ItemsCount() const noexcept;
 
@@ -122,7 +129,8 @@ public:
 	int getJoinedFieldsCount() const noexcept { return joinRes_->GetJoinedSelectorsCount(); }
 	int getJoinedItemsCount() const noexcept;
 
-	static ItemIterator CreateFrom(const QueryResults::Iterator& it) noexcept;
+	static ItemIterator CreateFrom(const LocalQueryResults::ConstIterator& it) noexcept;
+	static ItemIterator CreateEmpty() noexcept;
 
 private:
 	const NamespaceResults* joinRes_;

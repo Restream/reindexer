@@ -34,7 +34,7 @@ protected:
 		}
 		if (!::testing::Test::HasFailure()) {
 			EXPECT_EQ(res.Count(), expected.size())
-				<< description << "; expected(values): " << DumpStrings(expected) << "; got(IDs): " << res.Dump();
+				<< description << "; expected(values): " << DumpStrings(expected) << "; got(IDs): " << res.ToLocalQr().Dump();
 		}
 	}
 };

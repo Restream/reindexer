@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/enums.h"
 #include "core/ft/config/baseftconfig.h"
 #include "core/ft/filters/itokenfilter.h"
 #include "core/ft/ft_fast/dataholder.h"
@@ -12,29 +13,21 @@
 
 namespace reindexer {
 
-template <typename T>
-class IndexText : public IndexUnordered<T> {
-	using Base = IndexUnordered<T>;
+template <typename Map>
+class IndexText : public IndexUnordered<Map> {
+	using Base = IndexUnordered<Map>;
 
 public:
-	IndexText(const IndexText<T>& other);
-	IndexText(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg)
-		: IndexUnordered<T>(idef, std::move(payloadType), std::move(fields), cacheCfg),
-		  cache_ft_(cacheCfg.ftIdxCacheSize, cacheCfg.ftIdxHitsToCache),
-		  cacheMaxSize_(cacheCfg.ftIdxCacheSize),
-		  hitsToCache_(cacheCfg.ftIdxHitsToCache) {
-		this->selectKeyType_ = KeyValueType::String{};
-		initSearchers();
-	}
+	IndexText(const IndexText<Map>& other);
+	IndexText(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg);
 
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType, SortType, Index::SelectOpts, const BaseFunctionCtx::Ptr&,
 							   const RdxContext&) override final;
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType, Index::SelectOpts, const BaseFunctionCtx::Ptr&, FtPreselectT&&,
 							   const RdxContext&) override;
-	void UpdateSortedIds(const UpdateSortedContext&) override {}
-	virtual IdSet::Ptr Select(FtCtx::Ptr ctx, FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses&&,
-							  FtUseExternStatuses, const RdxContext&) = 0;
-
+	void UpdateSortedIds(const UpdateSortedContext&) noexcept override {}
+	virtual IdSet::Ptr Select(FtCtx::Ptr ctx, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&, FtUseExternStatuses,
+							  const RdxContext&) = 0;
 	void SetOpts(const IndexOpts& opts) override;
 	void Commit() override final {
 		// Do nothing
@@ -60,14 +53,15 @@ public:
 	void ReconfigureCache(const NamespaceCacheConfigData& cacheCfg) override final;
 	IndexPerfStat GetIndexPerfStat() override final;
 	void ResetIndexPerfStat() override final;
+	RankedTypeQuery RankedType() const noexcept override final { return RankedTypeQuery::FullText; }
 
 protected:
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::IndexText>;
 
 	virtual void commitFulltextImpl() = 0;
 	SelectKeyResults doSelectKey(const VariantArray& keys, const std::optional<IdSetCacheKey>&, FtMergeStatuses&&,
-								 FtUseExternStatuses useExternSt, bool inTransaction, FtSortType ftSortType,
-								 const BaseFunctionCtx::Ptr& ctx, const RdxContext&);
+								 FtUseExternStatuses useExternSt, bool inTransaction, RankSortType, const BaseFunctionCtx::Ptr& ctx,
+								 const RdxContext&);
 
 	SelectKeyResults resultFromCache(const VariantArray& keys, FtIdSetCache::Iterator&&, const BaseFunctionCtx::Ptr&);
 	void build(const RdxContext& rdxCtx);

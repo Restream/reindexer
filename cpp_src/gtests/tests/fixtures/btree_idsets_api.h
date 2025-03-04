@@ -1,7 +1,6 @@
 #pragma once
 
 #include "reindexer_api.h"
-#include "tools/logger.h"
 
 class BtreeIdsetsApi : public ReindexerApi {
 public:
@@ -48,8 +47,6 @@ protected:
 		}
 
 		lastStrValue = currStrValue;
-
-		Commit(default_namespace);
 	}
 
 	void FillJoinedNs() {
@@ -69,7 +66,6 @@ protected:
 				currValue = rand() % 10000;
 			}
 		}
-		Commit(joinedNsName);
 	}
 
 	const char* kFieldId = "id";

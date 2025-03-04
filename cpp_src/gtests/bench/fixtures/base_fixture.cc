@@ -1,10 +1,10 @@
 #include "base_fixture.h"
 
 #include <benchmark/benchmark.h>
-#include <functional>
-#include <random>
 #include <string>
 #include <thread>
+#include "allocs_tracker.h"
+#include "core/system_ns_names.h"
 
 reindexer::Error BaseFixture::Initialize() {
 	assertrx(db_);
@@ -37,20 +37,15 @@ void BaseFixture::Insert(State& state) {
 		for (int i = 0; i < id_seq_->Count(); ++i) {
 			auto item = MakeItem(state);
 			if (!item.Status().ok()) {
-				state.SkipWithError(item.Status().what().c_str());
+				state.SkipWithError(item.Status().what());
 			}
 
 			auto err = db_->Insert(nsdef_.name, item);
 			if (!err.ok()) {
-				state.SkipWithError(err.what().c_str());
+				state.SkipWithError(err.what());
 			}
 			state.SetItemsProcessed(state.items_processed() + 1);
 		}
-	}
-
-	auto err = db_->Commit(nsdef_.name);
-	if (!err.ok()) {
-		state.SkipWithError(err.what().c_str());
 	}
 }
 
@@ -60,35 +55,32 @@ void BaseFixture::Update(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto item = MakeItem(state);
 		if (!item.Status().ok()) {
-			state.SkipWithError(item.Status().what().c_str());
+			state.SkipWithError(item.Status().what());
 		}
 
 		auto err = db_->Update(nsdef_.name, item);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 
 		if (item.GetID() < 0) {
 			auto e = reindexer::Error(errConflict, "Item not exists [id = '%d']", item["id"].As<int>());
-			state.SkipWithError(e.what().c_str());
+			state.SkipWithError(e.what());
 		}
 		state.SetItemsProcessed(state.items_processed() + 1);
-	}
-	auto err = db_->Commit(nsdef_.name);
-	if (!err.ok()) {
-		state.SkipWithError(err.what().c_str());
 	}
 }
 
 void BaseFixture::WaitForOptimization() {
+	reindexer::Query q(reindexer::kMemStatsNamespace);
+	q.Where("name", CondEq, nsdef_.name);
 	for (;;) {
-		reindexer::Query q("#memstats");
-		q.Where("name", CondEq, nsdef_.name);
 		reindexer::QueryResults res;
 		auto e = db_->Select(q, res);
 		assertrx(e.ok());
 		assertrx(res.Count() == 1);
-		auto item = res[0].GetItem(false);
+		assertrx(res.IsLocal());
+		auto item = res.ToLocalQr().begin().GetItem(false);
 		if (item["optimization_completed"].As<bool>() == true) {
 			break;
 		}

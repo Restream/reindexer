@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 #include "core/indexopts.h"
+#include "core/keyvalue/variant.h"
 #include "core/type_consts.h"
 #include "estl/comparation_result.h"
 #include "tools/customhash.h"
@@ -18,6 +19,8 @@ namespace reindexer {
 
 std::string escapeString(std::string_view str);
 std::string unescapeString(std::string_view str);
+KeyValueType detectValueType(std::string_view value);
+Variant stringToVariant(std::string_view value);
 
 [[nodiscard]] RX_ALWAYS_INLINE constexpr bool isalpha(char c) noexcept { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
 [[nodiscard]] RX_ALWAYS_INLINE constexpr bool isdigit(char c) noexcept { return (c >= '0' && c <= '9'); }
@@ -152,11 +155,17 @@ int64_t stoll(std::string_view sl);
 int double_to_str(double v, char* buf, int capacity);
 int double_to_str_no_trailing(double v, char* buf, int capacity);
 std::string double_to_str(double v);
+int float_to_str(float v, char* buf, int capacity);
+int float_to_str_no_trailing(float v, char* buf, int capacity);
+std::string float_to_str(float v);
+void float_vector_to_str(ConstFloatVectorView view, WrSerializer& ser);
+std::string float_vector_to_str(ConstFloatVectorView view);
 
-bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept;
-bool validateUserNsName(std::string_view name) noexcept;
+[[nodiscard]] bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept;
+[[nodiscard]] bool validateUserNsName(std::string_view name) noexcept;
 RX_ALWAYS_INLINE bool isSystemNamespaceNameFast(std::string_view name) noexcept { return !name.empty() && name[0] == '#'; }
-LogLevel logLevelFromString(std::string_view strLogLevel);
+LogLevel logLevelFromString(std::string_view strLogLevel) noexcept;
+std::string_view logLevelToString(LogLevel level) noexcept;
 StrictMode strictModeFromString(std::string_view strStrictMode);
 std::string_view strictModeToString(StrictMode mode);
 
@@ -199,6 +208,8 @@ RX_ALWAYS_INLINE bool checkIfEndsWith(std::string_view pattern, std::string_view
 
 bool isPrintable(std::string_view str) noexcept;
 bool isBlank(std::string_view token) noexcept;
+bool endsWith(const std::string& source, std::string_view ending) noexcept;
+std::string& ensureEndsWith(std::string& source, std::string_view ending);
 
 Error cursosPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos);
 

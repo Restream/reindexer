@@ -118,7 +118,7 @@ private:
 
 	/// Private constructor to create singletone object
 	ordinator();
-	~ordinator();
+	~ordinator() = default;
 
 	/// Add "parent" coroutine to coroutines call stack.
 	/// If new "parent" has id == 0, than the stack will be cleared, because main routine is unable to call suspend anyway

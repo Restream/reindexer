@@ -27,6 +27,7 @@ void EqualPositionComparator::bindField(const std::string& name, F field, const 
 	ctx.cmpInt64.SetValues(cond, values);
 	ctx.cmpString.SetValues(cond, values);
 	ctx.cmpDouble.SetValues(cond, values);
+	ctx.cmpFloat.SetValues(cond, values);
 	ctx.cmpUuid.SetValues(cond, values);
 	assertrx_throw(ctx_.size() == fields_.size());
 
@@ -77,9 +78,11 @@ bool EqualPositionComparator::compareField(size_t field, const Variant& v) {
 		[&](KeyValueType::Int) { return ctx_[field].cmpInt.Compare(ctx_[field].cond, static_cast<int>(v)); },
 		[&](KeyValueType::Int64) { return ctx_[field].cmpInt64.Compare(ctx_[field].cond, static_cast<int64_t>(v)); },
 		[&](KeyValueType::Double) { return ctx_[field].cmpDouble.Compare(ctx_[field].cond, static_cast<double>(v)); },
+		[&](KeyValueType::Float) { return ctx_[field].cmpFloat.Compare(ctx_[field].cond, static_cast<float>(v)); },
 		[&](KeyValueType::String) { return ctx_[field].cmpString.Compare(ctx_[field].cond, static_cast<p_string>(v)); },
 		[&](KeyValueType::Uuid) { return ctx_[field].cmpUuid.Compare(ctx_[field].cond, Uuid{v}); },
-		[](OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple>) noexcept { return false; });
+		[](OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
+				 KeyValueType::FloatVector>) noexcept { return false; });
 }
 
 }  // namespace reindexer

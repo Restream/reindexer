@@ -1,18 +1,13 @@
 #pragma once
 
-#include <climits>
-#include <functional>
-#include <memory>
-#include <optional>
-#include <string>
-#include <string_view>
-#include <type_traits>
-#include <vector>
 #include "args.h"
+#include "core/keyvalue/p_string.h"
 #include "cproto.h"
+#include "estl/chunk.h"
 #include "net/connectinstatscollector.h"
 #include "net/stat.h"
 #include "tools/errors.h"
+#include "tools/lsn.h"
 
 namespace reindexer {
 namespace net {
@@ -21,10 +16,25 @@ namespace cproto {
 using std::chrono::milliseconds;
 
 struct RPCCall {
+	RPCCall(CmdCode cmd_, uint32_t seq_, Args args_, milliseconds execTimeout_, lsn_t lsn_, int emmiterServerId_, int shardId_,
+			bool shardingParallelExecution_)
+		: cmd{cmd_},
+		  seq{seq_},
+		  args{args_},
+		  execTimeout{execTimeout_},
+		  lsn{lsn_},
+		  emmiterServerId{emmiterServerId_},
+		  shardId{shardId_},
+		  shardingParallelExecution{shardingParallelExecution_} {}
+
 	CmdCode cmd;
 	uint32_t seq;
 	Args args;
-	milliseconds execTimeout_;
+	milliseconds execTimeout;
+	lsn_t lsn;
+	int emmiterServerId;
+	int shardId;
+	bool shardingParallelExecution;
 };
 
 struct ClientData {
@@ -40,6 +50,8 @@ struct IRPCCall {
 class Writer {
 public:
 	virtual ~Writer() = default;
+	virtual size_t AvailableEventsSpace() noexcept = 0;
+	virtual void SendEvent(chunk&& ch) = 0;
 	virtual void WriteRPCReturn(Context& ctx, const Args& args, const Error& status) = 0;
 	virtual void CallRPC(const IRPCCall& call) = 0;
 	virtual void SetClientData(std::unique_ptr<ClientData>&& data) noexcept = 0;
@@ -48,7 +60,7 @@ public:
 };
 
 struct Context {
-	void Return(const Args& args, const Error& status = errOK) { writer->WriteRPCReturn(*this, args, status); }
+	void Return(const Args& args, const Error& status = Error()) { writer->WriteRPCReturn(*this, args, status); }
 	void SetClientData(std::unique_ptr<ClientData>&& data) noexcept { writer->SetClientData(std::move(data)); }
 	ClientData* GetClientData() noexcept { return writer->GetClientData(); }
 
@@ -140,14 +152,34 @@ private:
 
 	template <typename T, std::enable_if_t<!is_optional<T>::value, int> = 0>
 	static T get_arg(const Args& args, size_t index, const Context& ctx) {
-		if (index >= args.size()) {
-			throw Error(errParams, "Invalid args of %s call; argument %d is not submitted", CmdName(ctx.call->cmd), static_cast<int>(index));
+		if rx_unlikely (index >= args.size()) {
+			throw Error(errParams, "Invalid args of %s call; argument %d is not submitted", CmdName(ctx.call->cmd),
+						static_cast<int>(index));
+		}
+		if rx_unlikely (!args[index].Type().IsSame(KeyValueType::From<T>())) {
+			throw Error(errLogic, "Incorrect variant type of %s call, argument index %d, type '%s', expected type '%s'",
+						CmdName(ctx.call->cmd), static_cast<int>(index), args[index].Type().Name(), KeyValueType::From<T>().Name());
 		}
 		return T(args[index]);
 	}
 	template <typename T, std::enable_if_t<is_optional<T>::value, int> = 0>
-	static T get_arg(const Args& args, size_t index, const Context&) {
-		return index < args.size() ? T(typename T::value_type(args[index])) : T();
+	static T get_arg(const Args& args, size_t index, const Context& ctx) {
+		if rx_unlikely (index >= args.size()) {
+#if !defined(__clang__) && defined(__GNUC__) && __GNUC__ == 9
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+			return T();
+#if !defined(__clang__) && defined(__GNUC__) && __GNUC__ == 9
+#pragma GCC diagnostic pop
+#endif
+		}
+		if rx_unlikely (!args[index].Type().IsSame(KeyValueType::From<typename T::value_type>())) {
+			throw Error(errLogic, "Incorrect variant type of %s call, argument index %d, type '%s', optional expected type '%s'",
+						CmdName(ctx.call->cmd), static_cast<int>(index), args[index].Type().Name(),
+						KeyValueType::From<typename T::value_type>().Name());
+		}
+		return T(typename T::value_type(args[index]));
 	}
 
 	template <typename K, typename... Args>
@@ -168,7 +200,7 @@ private:
 	using Handler = std::function<Error(Context&)>;
 
 	std::array<Handler, kCmdCodeMax> handlers_;
-	std::vector<Handler> middlewares_;
+	h_vector<Handler, 1> middlewares_;
 
 	std::function<void(Context& ctx, const Error& err, const Args& args)> logger_;
 	std::function<void(Context& ctx, const Error& err)> onClose_;

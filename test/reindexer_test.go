@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v3"
-	_ "github.com/restream/reindexer/v3/bindings/builtin"
-	_ "github.com/restream/reindexer/v3/bindings/cproto"
-	// _ "github.com/restream/reindexer/v3/pprof"
+	"github.com/restream/reindexer/v5"
+	_ "github.com/restream/reindexer/v5/bindings/builtin"
+	_ "github.com/restream/reindexer/v5/bindings/cproto"
+	// _ "github.com/restream/reindexer/v5/pprof"
 )
 
 var DB *ReindexerWrapper
@@ -22,18 +22,32 @@ var DBD *reindexer.Reindexer
 
 var tnamespaces map[string]interface{} = make(map[string]interface{}, 100)
 
+type arrayFlags []string
+
+func (i *arrayFlags) String() string {
+	return "my string representation"
+}
+
+func (i *arrayFlags) Set(value string) error {
+	*i = append(*i, value)
+	return nil
+}
+
+var cluster arrayFlags
+
 var dsn = flag.String("dsn", "builtin:///tmp/reindex_test/", "reindex db dsn")
 var dsnSlave = flag.String("dsnslave", "", "reindex slave db dsn")
 var slaveCount = flag.Int("slavecount", 1, "reindex slave db count")
-
 var benchmarkSeedCount = flag.Int("seedcount", 500000, "count of items for benchmark seed")
 var benchmarkSeedCPU = flag.Int("seedcpu", 1, "number threads of for seeding")
 var benchmarkSeed = flag.Int64("seed", time.Now().Unix(), "seed number for random")
+var legacyServerBinary = flag.String("legacyserver", "", "legacy server binary for compatibility check")
 
 var testLogger *TestLogger
 
 func TestMain(m *testing.M) {
 
+	flag.Var(&cluster, "cluster", "array of reindex db dsn")
 	flag.Parse()
 
 	udsn, err := url.Parse(*dsn)
@@ -48,20 +62,40 @@ func TestMain(m *testing.M) {
 	opts := []interface{}{}
 	if udsn.Scheme == "builtin" {
 		os.RemoveAll("/tmp/reindex_test/")
-	} else if udsn.Scheme == "cproto" {
+	} else if udsn.Scheme == "cproto" || udsn.Scheme == "cprotos" {
 		opts = []interface{}{reindexer.WithCreateDBIfMissing(), reindexer.WithNetCompression(), reindexer.WithAppName("RxTestInstance")}
 	} else if udsn.Scheme == "ucproto" {
 		opts = []interface{}{reindexer.WithCreateDBIfMissing(), reindexer.WithAppName("RxTestInstance")}
 	}
 
-	DB = NewReindexWrapper(*dsn, opts...)
+	DB = NewReindexWrapper(*dsn, cluster, 0, opts...)
 	DBD = &DB.Reindexer
+	if cluster != nil {
+		dsnFollower, _, err := GetNodeForRole(DBD, "follower")
+		if err != nil {
+			panic(err)
+		}
+		_, leaderServeID, err := GetNodeForRole(DBD, "leader")
+		if err != nil {
+			panic(err)
+		}
+		DB = NewReindexWrapper(dsnFollower, cluster, leaderServeID, opts...)
+		DBD = &DB.Reindexer
+	}
 	if err = DB.Status().Err; err != nil {
 		panic(err)
 	}
 
 	if *dsnSlave != "" {
 		DB.AddSlave(*dsnSlave, *slaveCount, reindexer.WithCreateDBIfMissing())
+	}
+
+	if cluster != nil {
+		clusterDsns := make([]string, 0)
+		for _, v := range cluster {
+			clusterDsns = append(clusterDsns, v)
+		}
+		DB.AddClusterNodes(clusterDsns)
 	}
 
 	DB.SetLogger(testLogger)
@@ -121,15 +155,27 @@ func (TestLogger) Printf(level int, format string, msg ...interface{}) {
 func randString() string {
 	return adjectives[rand.Int()%len(adjectives)] + "_" + names[rand.Int()%len(names)]
 }
+
 func randLangString() string {
 	return adjectives[rand.Int()%len(adjectives)] + "_" + cyrillic[rand.Int()%len(cyrillic)]
 }
+
 func randSearchString() string {
 	if rand.Int()%2 == 0 {
 		return adjectives[rand.Int()%len(adjectives)]
 	}
 	return names[rand.Int()%len(names)]
+}
 
+const charset = "abcdefghijklmnopqrstuvwxyz" +
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+func trueRandWord(length int) string {
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = charset[rand.Intn(len(charset))]
+	}
+	return string(b)
 }
 
 func randStringArr(cnt int) []string {
@@ -141,6 +187,14 @@ func randStringArr(cnt int) []string {
 		arr = append(arr, randString())
 	}
 	return arr
+}
+
+func randVect(dimension int) []float32 {
+	result := make([]float32, dimension)
+	for i := 0; i < dimension; i++ {
+		result[i] = rand.Float32()
+	}
+	return result
 }
 
 func randDevice() string {

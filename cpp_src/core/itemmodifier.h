@@ -2,23 +2,25 @@
 
 #include <optional>
 #include "core/keyvalue/p_string.h"
+#include "core/namespace/float_vectors_indexes.h"
 #include "core/payload/payloadiface.h"
+#include "updates/updaterecord.h"
 
 namespace reindexer {
 
-struct NsContext;
+class NsContext;
 class NamespaceImpl;
 class UpdateEntry;
 
 class ItemModifier {
 public:
-	ItemModifier(const std::vector<UpdateEntry>&, NamespaceImpl& ns);
+	ItemModifier(const std::vector<UpdateEntry>&, NamespaceImpl& ns, h_vector<updates::UpdateRecord, 2>& replUpdates, const NsContext& ctx);
 	ItemModifier(const ItemModifier&) = delete;
 	ItemModifier& operator=(const ItemModifier&) = delete;
 	ItemModifier(ItemModifier&&) = delete;
 	ItemModifier& operator=(ItemModifier&&) = delete;
 
-	[[nodiscard]] bool Modify(IdType itemId, const NsContext& ctx);
+	[[nodiscard]] bool Modify(IdType itemId, const NsContext& ctx, h_vector<updates::UpdateRecord, 2>& pendedRepl);
 	PayloadValue& GetPayloadValueBackup() { return rollBackIndexData_.GetPayloadValueBackup(); }
 
 private:
@@ -66,7 +68,8 @@ private:
 	};
 
 	void modifyField(IdType itemId, FieldData& field, Payload& pl, VariantArray& values);
-	void modifyCJSON(IdType itemId, FieldData& field, VariantArray& values);
+	void modifyCJSON(IdType itemId, FieldData& field, VariantArray& values, h_vector<updates::UpdateRecord, 2>& pendedRepl,
+					 const NsContext&);
 	void modifyIndexValues(IdType itemId, const FieldData& field, VariantArray& values, Payload& pl);
 
 	void deleteItemFromComposite(IdType itemId);
@@ -113,6 +116,7 @@ private:
 
 	IndexRollBack rollBackIndexData_;
 	CompositeFlags affectedComposites_;
+	const FloatVectorsIndexes vectorIndexes_;
 };
 
 }  // namespace reindexer

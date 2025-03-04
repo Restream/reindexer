@@ -9,12 +9,12 @@
 
 namespace reindexer {
 
-Error JsonDecoder::Decode(Payload& pl, WrSerializer& wrser, const gason::JsonValue& v) {
+Error JsonDecoder::Decode(Payload& pl, WrSerializer& wrser, const gason::JsonValue& v, FloatVectorsHolderVector& floatVectorsHolder) {
 	try {
 		objectScalarIndexes_.reset();
 		tagsPath_.clear();
 		CJsonBuilder builder(wrser, ObjType::TypePlain, &tagsMatcher_);
-		decodeJson(&pl, builder, v, 0, true);
+		decodeJson(&pl, builder, v, 0, floatVectorsHolder, true);
 	}
 
 	catch (const Error& err) {
@@ -23,7 +23,9 @@ Error JsonDecoder::Decode(Payload& pl, WrSerializer& wrser, const gason::JsonVal
 	return {};
 }
 
-void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gason::JsonValue& v, bool match) {
+void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gason::JsonValue& v,
+								   FloatVectorsHolderVector& floatVectorsHolder, bool match) {
+	using namespace std::string_view_literals;
 	for (const auto& elem : v) {
 		int tagName = tagsMatcher_.name2tag(elem.key, true);
 		assertrx(tagName);
@@ -38,46 +40,57 @@ void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gas
 		}
 
 		if (field < 0) {
-			decodeJson(&pl, builder, elem.value, tagName, match);
+			decodeJson(&pl, builder, elem.value, tagName, floatVectorsHolder, match);
 		} else if (match) {
 			// Indexed field. extract it
 			const auto& f = pl.Type().Field(field);
 			switch (elem.value.getTag()) {
-				case gason::JSON_ARRAY: {
-					if rx_unlikely (!f.IsArray()) {
-						throw Error(errLogic, "Error parsing json field '%s' - got array, expected scalar %s", f.Name(), f.Type().Name());
-					}
-					int count = 0;
-					for (auto& subelem : elem.value) {
-						(void)subelem;
-						++count;
-					}
-					validateArrayFieldRestrictions(f, count, "json");
-					int pos = pl.ResizeArray(field, count, true);
-					for (auto& subelem : elem.value) {
-						pl.Set(field, pos++, jsonValue2Variant(subelem.value, f.Type(), f.Name()));
-					}
-					builder.ArrayRef(tagName, field, count);
-				} break;
-				case gason::JSON_NULL:
+				case gason::JsonTag::JSON_NULL:
 					validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, field, isInArray(), "json");
 					objectScalarIndexes_.set(field);
 					builder.Null(tagName);
 					break;
-				case gason::JSON_NUMBER:
-				case gason::JSON_DOUBLE:
-				case gason::JSON_OBJECT:
-				case gason::JSON_STRING:
-				case gason::JSON_TRUE:
-				case gason::JSON_FALSE: {
+				case gason::JsonTag::ARRAY:
+					if (f.Type().Is<KeyValueType::FloatVector>()) {
+						validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, field, isInArray(), "json");
+						validateArrayFieldRestrictions(f, 1, "json");
+						objectScalarIndexes_.set(field);
+						Variant value = jsonValue2Variant(elem.value, f.Type(), f.Name(), &floatVectorsHolder);
+						assertrx_dbg(value.Type().Is<KeyValueType::FloatVector>());
+						const auto count = ConstFloatVectorView(value).Dimension().Value();
+						pl.Set(field, std::move(value));
+						builder.ArrayRef(tagName, field, int(count));
+					} else {
+						if rx_unlikely (!f.IsArray()) {
+							throwUnexpectedArrayError("json"sv, f);
+						}
+						int count = 0;
+						for (auto& subelem : elem.value) {
+							(void)subelem;
+							++count;
+						}
+						validateArrayFieldRestrictions(f, count, "json");
+						int pos = pl.ResizeArray(field, count, true);
+						for (auto& subelem : elem.value) {
+							pl.Set(field, pos++, jsonValue2Variant(subelem.value, f.Type(), f.Name(), nullptr));
+						}
+						builder.ArrayRef(tagName, field, count);
+					}
+					break;
+				case gason::JsonTag::NUMBER:
+				case gason::JsonTag::DOUBLE:
+				case gason::JsonTag::OBJECT:
+				case gason::JsonTag::STRING:
+				case gason::JsonTag::JTRUE:
+				case gason::JsonTag::JFALSE: {
 					validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, field, isInArray(), "json");
 					validateArrayFieldRestrictions(f, 1, "json");
 					objectScalarIndexes_.set(field);
-					Variant value = jsonValue2Variant(elem.value, f.Type(), f.Name());
-					builder.Ref(tagName, value, field);
+					Variant value = jsonValue2Variant(elem.value, f.Type(), f.Name(), nullptr);
+					builder.Ref(tagName, value.Type(), field);
 					pl.Set(field, std::move(value), true);
 				} break;
-				case gason::JSON_EMPTY:
+				case gason::JsonTag::EMPTY:
 				default:
 					throw Error(errLogic, "Unexpected '%d' tag", elem.value.getTag());
 			}
@@ -91,51 +104,52 @@ void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gas
 // Split original JSON into 2 parts:
 // 1. PayloadFields - fields from json found by 'jsonPath' tags
 // 2. stripped binary packed JSON without fields values found by 'jsonPath' tags
-void JsonDecoder::decodeJson(Payload* pl, CJsonBuilder& builder, const gason::JsonValue& v, int tagName, bool match) {
+void JsonDecoder::decodeJson(Payload* pl, CJsonBuilder& builder, const gason::JsonValue& v, int tagName,
+							 FloatVectorsHolderVector& floatVectorsHolder, bool match) {
 	auto jsonTag = v.getTag();
-	if (!match && jsonTag != gason::JSON_OBJECT) {
+	if (!match && jsonTag != gason::JsonTag::OBJECT) {
 		return;
 	}
 	switch (jsonTag) {
-		case gason::JSON_NUMBER: {
+		case gason::JsonTag::NUMBER: {
 			int64_t value = v.toNumber();
 			builder.Put(tagName, int64_t(value));
 		} break;
-		case gason::JSON_DOUBLE: {
+		case gason::JsonTag::DOUBLE: {
 			double value = v.toDouble();
 			builder.Put(tagName, value);
 		} break;
-		case gason::JSON_STRING:
+		case gason::JsonTag::STRING:
 			builder.Put(tagName, v.toString());
 			break;
-		case gason::JSON_TRUE:
+		case gason::JsonTag::JTRUE:
 			builder.Put(tagName, true);
 			break;
-		case gason::JSON_FALSE:
+		case gason::JsonTag::JFALSE:
 			builder.Put(tagName, false);
 			break;
-		case gason::JSON_NULL:
+		case gason::JsonTag::JSON_NULL:
 			builder.Null(tagName);
 			break;
-		case gason::JSON_ARRAY: {
+		case gason::JsonTag::ARRAY: {
 			CounterGuardIR32 g(arrayLevel_);
 			ObjType type = (gason::isHomogeneousArray(v)) ? ObjType::TypeArray : ObjType::TypeObjectArray;
 			auto arrNode = builder.Array(tagName, type);
 			for (const auto& elem : v) {
-				decodeJson(pl, arrNode, elem.value, 0, match);
+				decodeJson(pl, arrNode, elem.value, 0, floatVectorsHolder, match);
 			}
 			break;
 		}
-		case gason::JSON_OBJECT: {
+		case gason::JsonTag::OBJECT: {
 			auto objNode = builder.Object(tagName);
 			if (pl) {
-				decodeJsonObject(*pl, objNode, v, match);
+				decodeJsonObject(*pl, objNode, v, floatVectorsHolder, match);
 			} else {
-				decodeJsonObject(v, objNode);
+				decodeJsonObject(v, objNode, floatVectorsHolder);
 			}
 			break;
 		}
-		case gason::JSON_EMPTY:
+		case gason::JsonTag::EMPTY:
 		default:
 			throw Error(errLogic, "Unexpected '%d' tag", jsonTag);
 	}
@@ -150,24 +164,25 @@ public:
 	TagsPath& tagsPath_;
 };
 
-void JsonDecoder::decodeJsonObject(const gason::JsonValue& root, CJsonBuilder& builder) {
+void JsonDecoder::decodeJsonObject(const gason::JsonValue& root, CJsonBuilder& builder, FloatVectorsHolderVector& floatVectorsHolder) {
 	for (const auto& elem : root) {
 		const int tagName = tagsMatcher_.name2tag(elem.key, true);
 		if (tagName == 0) {
 			throw Error(errParseJson, "Unsupported JSON format. Unnamed field detected");
 		}
 		TagsPathGuard tagsPathGuard(tagsPath_, tagName);
-		decodeJson(nullptr, builder, elem.value, tagName, true);
+		decodeJson(nullptr, builder, elem.value, tagName, floatVectorsHolder, true);
 	}
 }
 
-void JsonDecoder::Decode(std::string_view json, CJsonBuilder& builder, const TagsPath& fieldPath) {
+void JsonDecoder::Decode(std::string_view json, CJsonBuilder& builder, const TagsPath& fieldPath,
+						 FloatVectorsHolderVector& floatVectorsHolder) {
 	try {
 		objectScalarIndexes_.reset();
 		tagsPath_ = fieldPath;
 		gason::JsonParser jsonParser;
 		gason::JsonNode root = jsonParser.Parse(json);
-		decodeJsonObject(root.value, builder);
+		decodeJsonObject(root.value, builder, floatVectorsHolder);
 	} catch (gason::Exception& e) {
 		throw Error(errParseJson, "JSONDecoder: %s", e.what());
 	}

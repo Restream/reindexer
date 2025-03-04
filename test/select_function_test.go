@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/restream/reindexer/v3"
+	"github.com/restream/reindexer/v5"
 	"github.com/stretchr/testify/require"
 )
 

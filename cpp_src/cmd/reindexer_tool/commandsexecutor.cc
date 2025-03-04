@@ -1,15 +1,19 @@
 #include "commandsexecutor.h"
 #include <iomanip>
 #include "client/cororeindexer.h"
+#include "cluster/config.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/reindexer.h"
+#include "core/system_ns_names.h"
 #include "coroutine/waitgroup.h"
+#include "estl/gift_str.h"
 #include "executorscommand.h"
 #include "tableviewscroller.h"
 #include "tools/catch_and_return.h"
 #include "tools/fsops.h"
 #include "tools/jsontools.h"
 #include "tools/stringstools.h"
+#include "wal/walrecord.h"
 
 namespace reindexer_tool {
 
@@ -25,8 +29,10 @@ const std::string kVariableOutput = "output";
 const std::string kOutputModeJson = "json";
 const std::string kOutputModeTable = "table";
 const std::string kOutputModePretty = "pretty";
+const std::string kVariableWithShardId = "with_shard_ids";
 const std::string kBenchNamespace = "rxtool_bench";
 const std::string kBenchIndex = "id";
+const std::string kDumpModePrefix = "-- __dump_mode:";
 
 constexpr int kSingleThreadCoroCount = 200;
 constexpr int kBenchItemsCount = 10000;
@@ -91,9 +97,68 @@ typename CommandsExecutor<DBInterface>::Status CommandsExecutor<DBInterface>::Ge
 }
 
 template <typename DBInterface>
+reindexer::Error CommandsExecutor<DBInterface>::SetDumpMode(const std::string& mode) {
+	try {
+		dumpMode_ = DumpOptions::ModeFromStr(mode);
+	} catch (Error& err) {
+		return err;
+	}
+	return Error();
+}
+
+template <typename DBInterface>
 void CommandsExecutor<DBInterface>::setStatus(CommandsExecutor::Status&& status) {
 	std::lock_guard<std::mutex> lck(mtx_);
 	status_ = std::move(status);
+}
+
+template <typename DBInterface>
+bool CommandsExecutor<DBInterface>::isHavingReplicationConfig() {
+	using namespace std::string_view_literals;
+	if (uri_.db().empty()) {
+		return false;
+	}
+	WrSerializer wser;
+	if (isHavingReplicationConfig(wser, "cluster"sv)) {
+		return true;
+	}
+	if (isHavingReplicationConfig(wser, "async"sv)) {
+		return true;
+	}
+	return false;
+}
+
+template <typename DBInterface>
+bool CommandsExecutor<DBInterface>::isHavingReplicationConfig(WrSerializer& wser, std::string_view type) {
+	try {
+		Query q;
+		typename DBInterface::QueryResultsT results(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
+
+		auto err = db().Select(Query(reindexer::kReplicationStatsNamespace).Where("type", CondEq, type), results);
+		if (!err.ok()) {
+			throw err;
+		}
+
+		if (results.Count() == 1) {
+			wser.Reset();
+			err = results.begin().GetJSON(wser, false);
+			if (!err.ok()) {
+				throw err;
+			}
+
+			gason::JsonParser parser;
+			auto root = parser.Parse(reindexer::giftStr(wser.Slice()));
+			const auto& nodesArray = root["nodes"];
+			if (gason::begin(nodesArray) != gason::end(nodesArray)) {
+				return true;
+			}
+		}
+	} catch (const gason::Exception&) {
+		std::cerr << "Gason exception" << std::endl;
+	} catch (const Error& err) {
+		std::cerr << "Error ex: " << err.what() << std::endl;
+	}
+	return false;
 }
 
 template <typename DBInterface>
@@ -146,6 +211,11 @@ Error CommandsExecutor<DBInterface>::fromFileImpl(std::istream& in) {
 		}
 	};
 
+	targetHasReplicationConfig_ = isHavingReplicationConfig();
+	if (targetHasReplicationConfig_) {
+		output_() << "Target DB has configured replication, so corresponding configs will not be overriden" << std::endl;
+	}
+
 	wait_group wg;
 	wg.add(kSingleThreadCoroCount);
 	for (size_t i = 0; i < kSingleThreadCoroCount; ++i) {
@@ -173,6 +243,7 @@ Error CommandsExecutor<DBInterface>::fromFileImpl(std::istream& in) {
 	}
 	cmdCh.close();
 	wg.wait();
+	targetHasReplicationConfig_ = false;
 
 	return lastErr;
 }
@@ -198,22 +269,26 @@ Error CommandsExecutor<DBInterface>::runImpl(const std::string& dsn, Args&&... a
 	assertrx(!executorThr_.joinable());
 
 	auto fnLoop = [this](const std::string& dsn, Args&&... args) {
-		std::string outputMode;
 		Error err;
-		if (reindexer::fs::ReadFile(reindexer::fs::JoinPath(reindexer::fs::GetHomeDir(), kConfigFile), outputMode) > 0) {
+		std::string config;
+		if (reindexer::fs::ReadFile(reindexer::fs::JoinPath(reindexer::fs::GetHomeDir(), kConfigFile), config) > 0) {
 			try {
 				gason::JsonParser jsonParser;
-				gason::JsonNode value = jsonParser.Parse(reindexer::giftStr(outputMode));
+				gason::JsonNode value = jsonParser.Parse(reindexer::giftStr(config));
 				for (auto node : value) {
 					WrSerializer ser;
 					reindexer::jsonValueToString(node.value, ser, 0, 0, false);
-					variables_[kVariableOutput] = std::string(ser.Slice());
+					if (std::string_view(node.key) == kVariableOutput) {
+						variables_[kVariableOutput] = std::string(ser.Slice());
+					} else if (std::string_view(node.key) == kVariableWithShardId) {
+						variables_[kVariableWithShardId] = std::string(ser.Slice());
+					}
 				}
 			} catch (const gason::Exception& e) {
 				err = Error(errParseJson, "Unable to parse output mode: %s", e.what());
 			}
 		}
-		if (err.ok() && variables_.empty()) {
+		if (err.ok() && variables_.find(kVariableOutput) == variables_.end()) {
 			variables_[kVariableOutput] = kOutputModeJson;
 		}
 		if (err.ok() && !uri_.parse(dsn)) {
@@ -259,7 +334,6 @@ Error CommandsExecutor<DBInterface>::runImpl(const std::string& dsn, Args&&... a
 		});
 		cmdAsync_.start();
 		loop_.spawn(std::bind(fnLoop, std::cref(dsn), std::forward<Args>(args)...));
-
 		loop_.run();
 	};
 
@@ -283,7 +357,7 @@ Error CommandsExecutor<DBInterface>::runImpl(const std::string& dsn, Args&&... a
 }
 
 template <typename DBInterface>
-std::string CommandsExecutor<DBInterface>::getCurrentDsn(bool withPath) const {
+reindexer::DSN CommandsExecutor<DBInterface>::getCurrentDsn(bool withPath) const {
 	using namespace std::string_view_literals;
 	std::string dsn(uri_.scheme() + "://");
 	if (!uri_.password().empty() && !uri_.username().empty()) {
@@ -303,7 +377,7 @@ std::string CommandsExecutor<DBInterface>::getCurrentDsn(bool withPath) const {
 	} else {
 		dsn += uri_.hostname() + ':' + uri_.port() + (withPath ? uri_.path() : "/");
 	}
-	return dsn;
+	return reindexer::DSN(dsn);
 }
 
 template <typename DBInterface>
@@ -332,12 +406,11 @@ Error CommandsExecutor<DBInterface>::queryResultsToJson(std::ostream& o, const t
 			ser << '#';
 			{
 				JsonBuilder lsnObj(ser);
-				const reindexer::lsn_t lsn(it.GetLSN());
-				lsn.GetJSON(lsnObj);
+				it.GetLSN().GetJSON(lsnObj);
 			}
 			ser << ' ';
 		}
-		if (it.IsRaw()) {
+		if (isWALQuery && it.IsRaw()) {
 			reindexer::WALRecord rec(it.GetRaw());
 			try {
 				rec.Dump(ser, [this, &r](std::string_view cjson) {
@@ -485,8 +558,19 @@ Error CommandsExecutor<DBInterface>::processImpl(const std::string& command) noe
 	LineParser parser(command);
 	auto token = parser.NextToken();
 
-	if (!token.length() || token.substr(0, 2) == "--") {
-		return errOK;
+	if (!token.length()) {
+		return Error();
+	}
+	if (fromFile_ && reindexer::checkIfStartsWith<reindexer::CaseSensitive::Yes>(kDumpModePrefix, command)) {
+		DumpOptions opts;
+		auto err = opts.FromJSON(reindexer::giftStr(command.substr(kDumpModePrefix.size())));
+		if (!err.ok()) {
+			return Error(errParams, "Unable to parse dump mode from cmd: %s", err.what());
+		}
+		dumpMode_ = opts.mode;
+	}
+	if (token.substr(0, 2) == "--") {
+		return Error();
 	}
 
 	Error ret;
@@ -542,10 +626,36 @@ Error CommandsExecutor<DBInterface>::getSuggestions(const std::string& input, st
 	return {};
 }
 
+template <typename QueryResultsT>
+std::vector<std::string> ToJSONVector(const QueryResultsT& r) {
+	std::vector<std::string> vec;
+	vec.reserve(r.Count());
+	reindexer::WrSerializer ser;
+	for (auto& it : r) {
+		if (!it.Status().ok()) {
+			continue;
+		}
+		ser.Reset();
+		if (it.IsRaw()) {
+			continue;
+		}
+		Error err = it.GetJSON(ser, false);
+		if (!err.ok()) {
+			continue;
+		}
+		vec.emplace_back(ser.Slice());
+	}
+	return vec;
+}
+
 template <typename DBInterface>
 Error CommandsExecutor<DBInterface>::commandSelect(const std::string& command) noexcept {
 	try {
-		typename DBInterface::QueryResultsT results(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		int flags = kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw;
+		if (variables_[kVariableWithShardId] == "on") {
+			flags |= kResultsNeedOutputShardId | kResultsWithShardId;
+		}
+		typename DBInterface::QueryResultsT results(flags);
 		const auto q = Query::FromSQL(command);
 
 		auto err = db().Select(q, results);
@@ -554,14 +664,15 @@ Error CommandsExecutor<DBInterface>::commandSelect(const std::string& command) n
 			if (results.Count()) {
 				auto& outputType = variables_[kVariableOutput];
 				if (outputType == kOutputModeTable) {
+					auto jsonData = ToJSONVector(results);
 					auto isCanceled = [this]() -> bool { return cancelCtx_.IsCancelled(); };
-					reindexer::TableViewBuilder<typename DBInterface::QueryResultsT> tableResultsBuilder(results);
+
+					reindexer::TableViewBuilder tableResultsBuilder;
 					if (output_.IsCout() && !reindexer::isStdoutRedirected()) {
-						TableViewScroller<typename DBInterface::QueryResultsT> resultsScroller(results, tableResultsBuilder,
-																							   reindexer::getTerminalSize().height - 1);
-						resultsScroller.Scroll(output_, isCanceled);
+						TableViewScroller resultsScroller(tableResultsBuilder, reindexer::getTerminalSize().height - 1);
+						resultsScroller.Scroll(output_, std::move(jsonData), isCanceled);
 					} else {
-						tableResultsBuilder.Build(output_(), isCanceled);
+						tableResultsBuilder.Build(output_(), std::move(jsonData), isCanceled);
 					}
 				} else {
 					if (!cancelCtx_.IsCancelled()) {
@@ -664,7 +775,11 @@ Error CommandsExecutor<DBInterface>::commandUpsert(const std::string& command) {
 	LineParser parser(command);
 	parser.NextToken();
 
-	std::string nsName = reindexer::unescapeString(parser.NextToken());
+	const std::string nsName = reindexer::unescapeString(parser.NextToken());
+
+	if (!parser.CurPtr().empty() && (parser.CurPtr())[0] == '[') {
+		return Error(errParams, "Impossible to update entire item with array - only objects are allowed");
+	}
 
 	auto item = db().NewItem(nsName);
 
@@ -673,13 +788,32 @@ Error CommandsExecutor<DBInterface>::commandUpsert(const std::string& command) {
 		return status;
 	}
 
+	using namespace std::string_view_literals;
+	if (fromFile_ && std::string_view(nsName) == reindexer::kConfigNamespace) {
+		try {
+			gason::JsonParser p;
+			auto root = p.Parse(parser.CurPtr());
+			const std::string type = root["type"].As<std::string>();
+			if (type == "action"sv) {
+				return Error();
+			}
+			if (type == "async_replication"sv || type == "replication"sv) {
+				if (targetHasReplicationConfig_) {
+					output_() << "Skipping #config item: " << type << std::endl;
+					return Error();
+				}
+			} else if (type == "sharding"sv) {
+				output_() << "Skipping #config item: " << type << " (sharding config is read-only)" << std::endl;
+				return Error();
+			}
+		} catch (const gason::Exception& ex) {
+			return Error(errParseJson, "Unable to parse JSON for #config item: %s", ex.what());
+		}
+	}
+
 	status = item.Unsafe().FromJSON(parser.CurPtr());
 	if (!status.ok()) {
 		return status;
-	}
-
-	if (!parser.CurPtr().empty() && (parser.CurPtr())[0] == '[') {
-		return Error(errParams, "Impossible to update entire item with array - only objects are allowed");
 	}
 
 	status = db().Upsert(nsName, item);
@@ -746,8 +880,14 @@ Error CommandsExecutor<DBInterface>::commandDump(const std::string& command) {
 	parser.NextToken();
 
 	std::vector<NamespaceDef> allNsDefs, doNsDefs;
+	const auto dumpMode = dumpMode_.load();
 
-	auto err = db().WithContext(&cancelCtx_).EnumNamespaces(allNsDefs, reindexer::EnumNamespacesOpts());
+	auto err = db().EnumNamespaces(allNsDefs, reindexer::EnumNamespacesOpts().HideTemporary());
+	if (err) {
+		return err;
+	}
+
+	err = filterNamespacesByDumpMode(allNsDefs, dumpMode);
 	if (err) {
 		return err;
 	}
@@ -771,11 +911,18 @@ Error CommandsExecutor<DBInterface>::commandDump(const std::string& command) {
 	reindexer::WrSerializer wrser;
 
 	wrser << "-- Reindexer DB backup file" << '\n';
-	wrser << "-- VERSION 1.0" << '\n';
+	wrser << "-- VERSION 1.1" << '\n';
+	wrser << kDumpModePrefix;
+	DumpOptions opts;
+	opts.mode = dumpMode;
+	opts.GetJSON(wrser);
+	wrser << '\n';
+
+	auto parametrizedDb = (dumpMode == DumpOptions::Mode::ShardedOnly) ? db() : db().WithShardId(ShardingKeyType::ProxyOff, false);
 
 	for (auto& nsDef : doNsDefs) {
 		// skip system namespaces, except #config
-		if (reindexer::isSystemNamespaceNameFast(nsDef.name) && nsDef.name != "#config") {
+		if (reindexer::isSystemNamespaceNameFast(nsDef.name) && nsDef.name != reindexer::kConfigNamespace) {
 			continue;
 		}
 
@@ -786,14 +933,20 @@ Error CommandsExecutor<DBInterface>::commandDump(const std::string& command) {
 		wrser << '\n';
 
 		std::vector<std::string> meta;
-		err = db().WithContext(&cancelCtx_).EnumMeta(nsDef.name, meta);
+		err = parametrizedDb.EnumMeta(nsDef.name, meta);
 		if (err) {
 			return err;
 		}
 
+		std::string mdata;
 		for (auto& mkey : meta) {
-			std::string mdata;
-			err = db().WithContext(&cancelCtx_).GetMeta(nsDef.name, mkey, mdata);
+			mdata.clear();
+			const bool isSerial = reindexer::checkIfStartsWith<reindexer::CaseSensitive::Yes>(kSerialPrefix, mkey);
+			if (isSerial) {
+				err = getMergedSerialMeta(parametrizedDb, nsDef.name, mkey, mdata);
+			} else {
+				err = parametrizedDb.GetMeta(nsDef.name, mkey, mdata);
+			}
 			if (err) {
 				return err;
 			}
@@ -803,7 +956,7 @@ Error CommandsExecutor<DBInterface>::commandDump(const std::string& command) {
 		}
 
 		typename DBInterface::QueryResultsT itemResults;
-		err = db().WithContext(&cancelCtx_).Select(Query(nsDef.name), itemResults);
+		err = parametrizedDb.Select(Query(nsDef.name).SelectAllFields(), itemResults);
 
 		if (!err.ok()) {
 			return err;
@@ -901,7 +1054,7 @@ Error CommandsExecutor<DBInterface>::commandMeta(const std::string& command) {
 		std::string nsName = reindexer::unescapeString(parser.NextToken());
 		std::string metaKey = reindexer::unescapeString(parser.NextToken());
 		std::string metaData = reindexer::unescapeString(parser.NextToken());
-		return db().PutMeta(nsName, metaKey, metaData);
+		return parametrizedDb().PutMeta(nsName, metaKey, metaData);
 	} else if (iequals(subCommand, "delete")) {
 		std::string nsName = reindexer::unescapeString(parser.NextToken());
 		std::string metaKey = reindexer::unescapeString(parser.NextToken());
@@ -951,6 +1104,16 @@ Error CommandsExecutor<DBInterface>::commandHelp(const std::string& command) {
 }
 
 template <typename DBInterface>
+Error CommandsExecutor<DBInterface>::commandVersion(const std::string&) {
+	std::string version;
+	auto err = db().Version(version);
+	if (err.ok()) {
+		output_() << "Reindexer version: " << version << std::endl;
+	}
+	return err;
+}
+
+template <typename DBInterface>
 Error CommandsExecutor<DBInterface>::commandQuit(const std::string&) {
 	stop(true);
 	setStatus(Status());
@@ -968,7 +1131,7 @@ Error CommandsExecutor<DBInterface>::commandSet(const std::string& command) {
 	variables_[std::string(variableName)] = std::string(variableValue);
 
 	WrSerializer wrser;
-	reindexer::JsonBuilder configBuilder(wrser);
+	JsonBuilder configBuilder(wrser);
 	for (auto it = variables_.begin(); it != variables_.end(); ++it) {
 		configBuilder.Put(it->first, it->second);
 	}
@@ -1029,63 +1192,13 @@ Error CommandsExecutor<DBInterface>::commandBench(const std::string& command) {
 	return err;
 }
 
-template <typename DBInterface>
-Error CommandsExecutor<DBInterface>::commandSubscribe(const std::string& command) {
-	LineParser parser(command);
-	parser.NextToken();
-
-	reindexer::UpdatesFilters filters;
-	auto token = parser.NextToken();
-	if (iequals(token, "off")) {
-		return db().UnsubscribeUpdates(this);
-	} else if (token.empty() || iequals(token, "on")) {
-		return db().SubscribeUpdates(this, filters);
-	}
-	std::vector<std::string> nsInSubscription;
-	while (!token.empty()) {
-		filters.AddFilter(token, reindexer::UpdatesFilters::Filter());
-		nsInSubscription.emplace_back(token);
-		token = parser.NextToken();
-	}
-
-	auto err = db().SubscribeUpdates(this, filters);
-	if (!err.ok()) {
-		return err;
-	}
-	std::vector<NamespaceDef> allNsDefs;
-	err = db().EnumNamespaces(allNsDefs, reindexer::EnumNamespacesOpts().WithClosed());
-	if (!err.ok()) {
-		return err;
-	}
-	for (auto& ns : allNsDefs) {
-		for (auto it = nsInSubscription.begin(); it != nsInSubscription.end();) {
-			if (*it == ns.name) {
-				it = nsInSubscription.erase(it);
-			} else {
-				++it;
-			}
-		}
-	}
-	if (!nsInSubscription.empty()) {
-		output_() << "WARNING: You have subscribed for non-existing namespace updates: ";
-		for (auto it = nsInSubscription.begin(); it != nsInSubscription.end(); ++it) {
-			if (it != nsInSubscription.begin()) {
-				output_() << ", ";
-			}
-			output_() << *it;
-		}
-		output_() << std::endl;
-	}
-	return errOK;
-}
-
 template <>
 Error CommandsExecutor<reindexer::client::CoroReindexer>::commandProcessDatabases(const std::string& command) {
 	using namespace std::string_view_literals;
 	LineParser parser(command);
 	parser.NextToken();
 	std::string_view subCommand = parser.NextToken();
-	assertrx(uri_.scheme() == "cproto"sv || uri_.scheme() == "ucproto"sv);
+	assertrx(uri_.scheme() == "cproto"sv || uri_.scheme() == "cprotos"sv || uri_.scheme() == "ucproto"sv);
 	if (subCommand == "list"sv) {
 		std::vector<std::string> dbList;
 		Error err = getAvailableDatabases(dbList);
@@ -1097,7 +1210,7 @@ Error CommandsExecutor<reindexer::client::CoroReindexer>::commandProcessDatabase
 		}
 		return Error();
 	} else if (subCommand == "use"sv) {
-		std::string currentDsn = getCurrentDsn() + std::string(parser.NextToken());
+		reindexer::DSN currentDsn = getCurrentDsn().WithDb(std::string(parser.NextToken()));
 		stop(false);
 		auto err = db().Connect(currentDsn, loop_);
 		if (err.ok()) {
@@ -1109,7 +1222,7 @@ Error CommandsExecutor<reindexer::client::CoroReindexer>::commandProcessDatabase
 		return err;
 	} else if (subCommand == "create"sv) {
 		auto dbName = parser.NextToken();
-		std::string currentDsn = getCurrentDsn() + std::string(dbName);
+		reindexer::DSN currentDsn = getCurrentDsn().WithDb(std::string(dbName));
 		stop(false);
 		output_() << "Creating database '" << dbName << "'" << std::endl;
 		auto err = db().Connect(currentDsn, loop_, reindexer::client::ConnectOpts().CreateDBIfMissing());
@@ -1208,8 +1321,7 @@ std::function<void(reindexer::system_clock_w::time_point)> CommandsExecutor<rein
 			auto selectFn = [&rx, deadline, &count, &errCount](wait_group& wg) {
 				reindexer::coroutine::wait_group_guard wgg(wg);
 				for (; reindexer::system_clock_w::now_coarse() < deadline; ++count) {
-					Query q(kBenchNamespace);
-					q.Where(kBenchIndex, CondEq, count % kBenchItemsCount);
+					Query q = Query(kBenchNamespace).Where(kBenchIndex, CondEq, count % kBenchItemsCount);
 					reindexer::client::CoroReindexer::QueryResultsT results;
 					auto err = rx.Select(q, results);
 					if (!err.ok()) {
@@ -1254,34 +1366,93 @@ std::function<void(reindexer::system_clock_w::time_point)> CommandsExecutor<rein
 }
 
 template <typename DBInterface>
-void CommandsExecutor<DBInterface>::OnWALUpdate(reindexer::LSNPair LSNs, std::string_view nsName, const reindexer::WALRecord& wrec) {
+reindexer::Error CommandsExecutor<DBInterface>::filterNamespacesByDumpMode(std::vector<NamespaceDef>& defs, DumpOptions::Mode mode) {
+	if (mode == DumpOptions::Mode::FullNode) {
+		return Error();
+	}
+
+	typename DBInterface::QueryResultsT qr;
+	auto err = db().Select(Query(reindexer::kConfigNamespace).Where("type", CondEq, "sharding"), qr);
+	if (!err.ok()) {
+		return err;
+	}
+	if (qr.Count() != 1) {
+		output_() << "Sharding is not enabled, hovewer non-default dump mode is detected. That's weird...";
+		return Error();
+	}
+	using reindexer::cluster::ShardingConfig;
+	ShardingConfig cfg;
 	WrSerializer ser;
-	ser << "# LSN " << int64_t(LSNs.upstreamLSN_) << " originLSN " << int64_t(LSNs.originLSN_) << " " << nsName << " ";
+	err = qr.begin().GetJSON(ser, false);
+	if (!err.ok()) {
+		return err;
+	}
+
+	auto json = reindexer::giftStr(ser.Slice());
 	try {
-		wrec.Dump(ser, [this, nsName](std::string_view cjson) {
-			auto item = db().NewItem(nsName);
-			item.FromCJSONImpl(cjson);
-			return std::string(item.GetJSON());
-		});
-	} catch (const Error& err) {
-		std::cerr << "[OnWALUpdate] " << err.what() << std::endl;
-		return;
+		gason::JsonParser parser;
+		auto root = parser.Parse(json);
+		err = cfg.FromJSON(root["sharding"]);
+		if (!err.ok()) {
+			return err;
+		}
+	} catch (const gason::Exception& ex) {
+		return Error(errParseJson, "Unable to parse sharding config: %s", ex.what());
 	}
-	output_() << ser.Slice() << std::endl;
-}
 
-template <typename DBInterface>
-void CommandsExecutor<DBInterface>::OnConnectionState(const Error& err) {
-	if (err.ok()) {
-		output_() << "[OnConnectionState] connected" << std::endl;
+	if (mode == DumpOptions::Mode::LocalOnly) {
+		for (auto& shNs : cfg.namespaces) {
+			const auto found = std::find_if(defs.begin(), defs.end(), [&shNs](const NamespaceDef& nsDef) {
+				return reindexer::toLower(nsDef.name) == reindexer::toLower(shNs.ns);
+			});
+			if (found != defs.end()) {
+				defs.erase(found);
+			}
+		}
 	} else {
-		output_() << "[OnConnectionState] closed, reason: " << err.what() << std::endl;
+		defs.erase(std::remove_if(defs.begin(), defs.end(),
+								  [&cfg](const NamespaceDef& nsDef) {
+									  const auto found = std::find_if(
+										  cfg.namespaces.begin(), cfg.namespaces.end(), [&nsDef](const ShardingConfig::Namespace& shNs) {
+											  return reindexer::toLower(nsDef.name) == reindexer::toLower(shNs.ns);
+										  });
+									  return found == cfg.namespaces.end();
+								  }),
+				   defs.end());
 	}
+	return Error();
 }
 
 template <typename DBInterface>
-void CommandsExecutor<DBInterface>::OnUpdatesLost(std::string_view nsName) {
-	output_() << "[OnUpdatesLost] " << nsName << std::endl;
+reindexer::Error CommandsExecutor<DBInterface>::getMergedSerialMeta(DBInterface& db, std::string_view nsName, const std::string& key,
+																	std::string& result) {
+	std::vector<reindexer::ShardedMeta> meta;
+	auto err = db.GetMeta(nsName, key, meta);
+	if (!err.ok()) {
+		return err;
+	}
+
+	int64_t maxVal = 0;
+	for (auto& sm : meta) {
+		try {
+			const int64_t val = std::stoll(sm.data);
+			if (val > maxVal) {
+				maxVal = val;
+			}
+			// NOLINTBEGIN(bugprone-empty-catch)
+		} catch (std::exception&) {
+		}
+		// NOLINTEND(bugprone-empty-catch)
+	}
+	result = std::to_string(maxVal);
+	return Error();
+}
+
+template <typename DBInterface>
+std::string CommandsExecutor<DBInterface>::URI::getDBFromUCproto() const {
+	std::vector<std::string_view> pathParts;
+	reindexer::split(std::string_view(uri_.path()), ":", true, pathParts);
+	return pathParts.size() >= 2 ? std::string(pathParts.back()) : std::string();
 }
 
 template class CommandsExecutor<reindexer::client::CoroReindexer>;

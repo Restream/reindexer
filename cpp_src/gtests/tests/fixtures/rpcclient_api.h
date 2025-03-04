@@ -2,26 +2,15 @@
 
 #include <gtest/gtest.h>
 #include <thread>
-#include "rpcserver_fake.h"
-
-#include "client/reindexer.h"
-#include "replicator/updatesobserver.h"
-#include "server/server.h"
-#include "tools/fsops.h"
-
 #include "client/cororeindexer.h"
-
-inline const std::string kDefaultRPCPort = "25673";
-inline const std::string kDefaultRPCServerAddr = "127.0.0.1:" + kDefaultRPCPort;
-constexpr uint16_t kDefaultHttpPort = 33333;
+#include "rpcserver_fake.h"
+#include "server/server.h"
+#include "tools/dsn.h"
+#include "tools/fsops.h"
 
 class RPCClientTestApi : public ::testing::Test {
 public:
-	RPCClientTestApi() {}
-	virtual ~RPCClientTestApi() {
-		[[maybe_unused]] auto err = StopAllServers();
-		assertf(err.ok(), "%s", err.what());
-	}
+	virtual ~RPCClientTestApi() = default;
 
 protected:
 	class CancelRdxContext : public reindexer::IRdxCancelContext {
@@ -30,6 +19,7 @@ protected:
 			return canceld_.load() ? reindexer::CancelType::Explicit : reindexer::CancelType::None;
 		}
 		bool IsCancelable() const noexcept override { return true; }
+		std::optional<std::chrono::milliseconds> GetRemainingTimeout() const noexcept override { return std::nullopt; }
 		void Cancel() { canceld_ = true; }
 
 	private:
@@ -41,7 +31,7 @@ protected:
 		TestServer(const RPCServerConfig& conf) : terminate_(false), serverIsReady_(false), conf_(conf) {}
 		void Start(const std::string& addr, Error errOnLogin = Error());
 		void Stop();
-		const std::string& GetDsn() const { return dsn_; }
+		const DSN& GetDsn() const { return dsn_; }
 		RPCServerStatus Status() const { return server_->Status(); }
 		const Error& ErrorStatus() const { return err_; }
 		size_t CloseQRRequestsCount() const { return server_->CloseQRRequestsCount(); }
@@ -53,50 +43,20 @@ protected:
 		net::ev::async stop_;
 		std::atomic<bool> terminate_;
 		std::atomic<bool> serverIsReady_;
-		std::string dsn_;
+		DSN dsn_;
 		RPCServerConfig conf_;
 		Error err_{errOK};
 	};
 
-	class UpdatesReciever : public IUpdatesObserver {
-	public:
-		UpdatesReciever(ev::dynamic_loop& loop) : loop_(loop) {}
-
-		void OnWALUpdate(LSNPair, std::string_view nsName, const WALRecord&) override final;
-		void OnConnectionState(const Error&) override final {}
-		void OnUpdatesLost(std::string_view) override final {}
-
-		using map = tsl::hopscotch_map<std::string, size_t, nocase_hash_str, nocase_equal_str>;
-		// using map = std::unordered_map<std::string, size_t>;
-
-		const map& Counters() const;
-		void Reset();
-		void Dump() const;
-		bool AwaitNamespaces(size_t count);
-		bool AwaitItems(std::string_view ns, size_t count);
-
-	private:
-		map updatesCounters_;
-		ev::dynamic_loop& loop_;
-	};
-
 	void SetUp() {}
 	void TearDown() {
-		for (auto& fs : fakeServers_) {
-			fs.second->Stop();
-		}
-		for (auto& s : realServers_) {
-			if (s.second.serverThread) {
-				s.second.server->Stop();
-				assertrx(s.second.serverThread->joinable());
-				s.second.serverThread->join();
-				s.second.serverThread.reset();
-			}
-		}
+		[[maybe_unused]] auto err = StopAllServers();
+		assertf(err.ok(), "%s", err.what());
 		fakeServers_.clear();
 		realServers_.clear();
 	}
 
+public:
 	void StartDefaultRealServer();
 	TestServer& AddFakeServer(const std::string& addr = kDefaultRPCServerAddr, const RPCServerConfig& conf = RPCServerConfig());
 	void AddRealServer(const std::string& dbPath, const std::string& addr = kDefaultRPCServerAddr, uint16_t httpPort = kDefaultHttpPort);
@@ -106,12 +66,13 @@ protected:
 	Error StopAllServers();
 	client::Item CreateItem(reindexer::client::Reindexer& rx, std::string_view nsName, int id);
 	client::Item CreateItem(reindexer::client::CoroReindexer& rx, std::string_view nsName, int id);
-	void CreateNamespace(reindexer::client::Reindexer& rx, std::string_view nsName);
 	void CreateNamespace(reindexer::client::CoroReindexer& rx, std::string_view nsName);
-	void FillData(reindexer::client::Reindexer& rx, std::string_view nsName, int from, int count);
 	void FillData(reindexer::client::CoroReindexer& rx, std::string_view nsName, int from, int count);
 
 	const std::string kDbPrefix{reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/rpc_client_test")};
+	static const uint16_t kDefaultRPCPort = 25673;
+	static const std::string kDefaultRPCServerAddr;
+	static const uint16_t kDefaultHttpPort = 33333;
 
 private:
 	struct ServerData {

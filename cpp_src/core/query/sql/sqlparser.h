@@ -3,6 +3,7 @@
 #include <unordered_set>
 #include <vector>
 #include "core/keyvalue/variant.h"
+#include "core/query/knn_search_params.h"
 #include "estl/tokenizer.h"
 #include "sqltokentype.h"
 
@@ -103,10 +104,13 @@ protected:
 	void parseJoinEntries(tokenizer& parser, const std::string& mainNs, JoinedQuery& jquery);
 
 	/// Parse equal_positions
-	void parseEqualPositions(tokenizer& parser, std::vector<std::pair<size_t, EqualPosition_t>>& equalPositions, size_t openBracketsCount);
+	void parseEqualPositions(tokenizer& parser);
 
 	Point parseGeomFromText(tokenizer& parser) const;
 	void parseDWithin(tokenizer& parser, OpType nextOp);
+	void parseKnn(tokenizer& parser, OpType nextOp);
+	KnnSearchParams parseKnnParams(tokenizer&);
+	void parseSingleKnnParam(tokenizer&, std::optional<size_t>& param, std::string_view paramName);
 
 	/// Parse update field entries
 	UpdateEntry parseUpdateField(tokenizer& parser);

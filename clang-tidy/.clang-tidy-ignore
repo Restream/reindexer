@@ -8,3 +8,5 @@
 */murmurhash/MurmurHash3.cc
 # Backtrace library
 */libbacktrace/*
+# Faiss (TODO: probably should remove this line before merge)
+*/faiss/*

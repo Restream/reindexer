@@ -1,9 +1,8 @@
 #include "ftfastconfig.h"
 #include <string.h>
-#include <limits>
 #include <set>
 #include "core/cjson/jsonbuilder.h"
-#include "core/ft/typos.h"
+#include "core/ft/limits.h"
 #include "tools/errors.h"
 #include "tools/jsontools.h"
 
@@ -52,7 +51,7 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 			maxTypos = 2 * root["max_typos_in_word"].As<>(MaxTyposInWord(), 0, kMaxTyposInWord);
 		} else {
 			const auto& maxTyposNode = root["max_typos"];
-			if (!maxTyposNode.empty() && maxTyposNode.value.getTag() != gason::JSON_NUMBER) {
+			if (!maxTyposNode.empty() && maxTyposNode.value.getTag() != gason::JsonTag::NUMBER) {
 				throw Error(errParseDSL, "Fulltext configuration field 'max_typos' should be integer");
 			}
 			maxTypos = maxTyposNode.As<>(maxTypos, 0, 2 * kMaxTyposInWord);
@@ -143,7 +142,7 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 	}
 }
 
-std::string FtFastConfig::GetJson(const fast_hash_map<std::string, int>& fields) const {
+std::string FtFastConfig::GetJSON(const fast_hash_map<std::string, int>& fields) const {
 	WrSerializer wrser;
 	JsonBuilder jsonBuilder(wrser);
 	BaseFTConfig::getJson(jsonBuilder);

@@ -5,6 +5,7 @@
 #include <string>
 #include "estl/comparation_result.h"
 #include "tools/assertrx.h"
+#include "tools/errors.h"
 #include "variant.h"
 
 namespace reindexer {
@@ -21,10 +22,6 @@ struct hash<reindexer::Uuid> {
 }  // namespace std
 
 namespace reindexer {
-
-struct hash_uuid;
-template <typename>
-class span;
 
 class Uuid {
 	friend std::hash<Uuid>;
@@ -60,6 +57,7 @@ public:
 	template <typename... Ts>
 	explicit Uuid(Ts...) = delete;
 	[[nodiscard]] explicit operator std::string() const;
+	[[nodiscard]] explicit operator key_string() const;
 	[[nodiscard]] ComparationResult Compare(const Uuid& other) const noexcept {
 		if (data_[0] == other.data_[0]) {
 			return data_[1] == other.data_[1] ? ComparationResult::Eq
@@ -78,7 +76,7 @@ public:
 	[[nodiscard]] bool operator>=(Uuid other) const noexcept { return !operator<(other); }
 
 	[[nodiscard]] static std::optional<Uuid> TryParse(std::string_view) noexcept;
-	void PutToStr(span<char>) const noexcept;
+	void PutToStr(std::span<char>) const noexcept;
 
 private:
 	explicit Uuid(uint64_t v1, uint64_t v2) noexcept : data_{v1, v2} {}

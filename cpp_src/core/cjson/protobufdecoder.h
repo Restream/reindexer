@@ -9,6 +9,7 @@ namespace reindexer {
 class Schema;
 struct ProtobufValue;
 struct ProtobufObject;
+class FloatVectorsHolderVector;
 
 class ArraysStorage {
 public:
@@ -75,13 +76,13 @@ public:
 	ProtobufDecoder& operator=(const ProtobufDecoder&) = delete;
 	ProtobufDecoder& operator=(ProtobufDecoder&&) = delete;
 
-	Error Decode(std::string_view buf, Payload& pl, WrSerializer& wrser);
+	Error Decode(std::string_view buf, Payload& pl, WrSerializer& wrser, FloatVectorsHolderVector&);
 
 private:
 	void setValue(Payload& pl, CJsonBuilder& builder, ProtobufValue item);
-	Error decode(Payload& pl, CJsonBuilder& builder, const ProtobufValue& val);
-	Error decodeObject(Payload& pl, CJsonBuilder& builder, ProtobufObject& object);
-	Error decodeArray(Payload& pl, CJsonBuilder& builder, const ProtobufValue& val);
+	Error decode(Payload& pl, CJsonBuilder& builder, const ProtobufValue& val, FloatVectorsHolderVector&);
+	Error decodeObject(Payload& pl, CJsonBuilder& builder, ProtobufObject& object, FloatVectorsHolderVector&);
+	Error decodeArray(Payload& pl, CJsonBuilder& builder, const ProtobufValue& val, FloatVectorsHolderVector&);
 
 	TagsMatcher& tm_;
 	std::shared_ptr<const Schema> schema_;

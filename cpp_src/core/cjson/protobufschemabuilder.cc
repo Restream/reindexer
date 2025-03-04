@@ -90,13 +90,13 @@ void ProtobufSchemaBuilder::Field(std::string_view name, int tagName, const Fiel
 		}
 		writeField(name, typeName, tagName);
 		type.EvaluateOneOf(
-			[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) {
+			[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) {
 				if (ser_) {
 					ser_->Write(" [packed=true]");
 				}
 			},
 			[](OneOf<KeyValueType::String, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null,
-					 KeyValueType::Uuid>) noexcept {});
+					 KeyValueType::Uuid, KeyValueType::FloatVector>) noexcept {});
 	} else {
 		writeField(name, typeName, tagName);
 	}

@@ -24,6 +24,7 @@ public:
 
 	bool IsCancelable() const noexcept override final { return true; }
 	CancelType GetCancelType() const noexcept override final { return cancelType_.load(std::memory_order_acquire); }
+	std::optional<std::chrono::milliseconds> GetRemainingTimeout() const noexcept override final { return std::nullopt; }
 
 	bool IsCancelled() const { return cancelType_.load(std::memory_order_acquire) == CancelType::Explicit; }
 	void Cancel(CancelType type = CancelType::Explicit) noexcept { cancelType_.store(type, std::memory_order_release); }

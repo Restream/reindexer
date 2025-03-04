@@ -1,6 +1,7 @@
 #include <gtest/gtest-param-test.h>
 #include <algorithm>
 #include "ft_api.h"
+#include "gtests/tests/gtest_cout.h"
 
 using namespace std::string_view_literals;
 
@@ -33,7 +34,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Incorrect count of position arguments. Found 5 required 4.");
+		EXPECT_STREQ(err.what(), "snippet_n: Incorrect count of position arguments. Found 5 required 4.");
 	}
 	{  // check other case, error on not last argument
 		reindexer::Query q("nm1");
@@ -41,7 +42,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token ','.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token ','.");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -49,7 +50,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Argument already added 'pre_delim'.");
+		EXPECT_STREQ(err.what(), "snippet_n: Argument already added 'pre_delim'.");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -57,7 +58,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Argument already added 'pre_delim'.");
+		EXPECT_STREQ(err.what(), "snippet_n: Argument already added 'pre_delim'.");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -65,7 +66,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Incorrect count of position arguments. Found 3 required 4.");
+		EXPECT_STREQ(err.what(), "snippet_n: Incorrect count of position arguments. Found 3 required 4.");
 	}
 	{  // check other case, error on not last argument
 		reindexer::Query q("nm1");
@@ -73,7 +74,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token ',', expecting positional argument (1 more positional args required)");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token ',', expecting positional argument (1 more positional args required)");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -81,7 +82,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected character `g` after closing parenthesis.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected character `g` after closing parenthesis.");
 	}
 
 	{
@@ -90,7 +91,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token ',', expecting positional argument (2 more positional args required)");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token ',', expecting positional argument (2 more positional args required)");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -98,7 +99,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token ','.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token ','.");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -106,7 +107,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token ','.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token ','.");
 	}
 
 	{
@@ -115,7 +116,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token 'n'.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token 'n'.");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -123,7 +124,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token 'n'.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token 'n'.");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -131,7 +132,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token '5'.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token '5'.");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -139,7 +140,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token 'v'.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token 'v'.");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -147,7 +148,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token 'pre_delim'.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token 'pre_delim'.");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -155,7 +156,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token '='.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token '='.");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -163,7 +164,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token '8'.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token '8'.");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -171,7 +172,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token 'pre_delim'.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token 'pre_delim'.");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -179,7 +180,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unknown argument name 'not_delim'.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unknown argument name 'not_delim'.");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -187,7 +188,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unknown argument name 'not_delim'.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unknown argument name 'not_delim'.");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -195,7 +196,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: The closing parenthesis is required, but found `5`");
+		EXPECT_STREQ(err.what(), "snippet_n: The closing parenthesis is required, but found `5`");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -203,7 +204,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: An open parenthesis is required, but found `{`");
+		EXPECT_STREQ(err.what(), "snippet_n: An open parenthesis is required, but found `{`");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -211,7 +212,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token 'v'.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token 'v'.");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -219,7 +220,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token '<>'");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token '<>'");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -227,7 +228,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Argument name is empty.");
+		EXPECT_STREQ(err.what(), "snippet_n: Argument name is empty.");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -235,7 +236,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Invalid snippet param before - 5a is not a number");
+		EXPECT_STREQ(err.what(), "Invalid snippet param before - 5a is not a number");
 	}
 	{
 		reindexer::Query q("nm1");
@@ -243,7 +244,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Invalid snippet param after - 5b is not a number");
+		EXPECT_STREQ(err.what(), "Invalid snippet param after - 5b is not a number");
 	}
 
 	{
@@ -256,7 +257,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::WrSerializer wrSer;
 		err = res.begin().GetJSON(wrSer, false);
 		EXPECT_TRUE(err.ok()) << err.what();
-		EXPECT_EQ(std::string(wrSer.Slice()), R"S({"ft1":", two <b>three</b> gg <b>three</b> empt ,mpty <b>three</b> "})S");
+		EXPECT_EQ(wrSer.Slice(), R"S({"ft1":", two <b>three</b> gg <b>three</b> empt ,mpty <b>three</b> "})S");
 	}
 
 	{
@@ -270,7 +271,7 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::WrSerializer wrSer;
 		err = res.begin().GetJSON(wrSer, false);
 		EXPECT_TRUE(err.ok()) << err.what();
-		EXPECT_EQ(std::string(wrSer.Slice()), R"S({"ft1":", two <b>three</b> gg <b>three</b> empt ,mpty <b>three</b> "})S");
+		EXPECT_EQ(wrSer.Slice(), R"S({"ft1":", two <b>three</b> gg <b>three</b> empt ,mpty <b>three</b> "})S");
 	}
 
 	{

@@ -19,13 +19,14 @@
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "statscollect/prometheus.h"
 #include "statscollect/statscollector.h"
+#if REINDEX_WITH_JEMALLOC
 #include "tools/alloc_ext/je_malloc_extension.h"
+#endif	// REINDEX_WITH_JEMALLOC
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
 #include "tools/stringstools.h"
 #include "tools/tcmallocheapwathcher.h"
-#include "yaml-cpp/yaml.h"
 #ifdef _WIN32
 #include "winservice.h"
 #endif
@@ -66,7 +67,7 @@ ServerImpl::ServerImpl(ServerMode mode)
 Error ServerImpl::InitFromCLI(int argc, char* argv[]) {
 	Error err = config_.ParseCmd(argc, argv);
 	if (!err.ok()) {
-		if (err.code() == errParams) {
+		if ((err.code() == errParseYAML) || (err.code() == errParams)) {
 			std::cerr << err.what() << std::endl;
 			exit(EXIT_FAILURE);
 		} else if (err.code() == errLogic) {
@@ -80,7 +81,7 @@ Error ServerImpl::InitFromCLI(int argc, char* argv[]) {
 Error ServerImpl::InitFromFile(const char* filePath) {
 	Error err = config_.ParseFile(filePath);
 	if (!err.ok()) {
-		if (err.code() == errParams) {
+		if ((err.code() == errParseYAML) || (err.code() == errParams)) {
 			std::cerr << err.what() << std::endl;
 			exit(EXIT_FAILURE);
 		} else if (err.code() == errLogic) {
@@ -311,24 +312,96 @@ int ServerImpl::run() {
 
 	initCoreLogger();
 	logger_.info("Initializing databases...");
+	if (config_.HasDefaultHttpWriteTimeout()) {
+		logger_.info("HTTP write timeout was not set explicitly. The default value will be used: {0} seconds",
+					 config_.HttpWriteTimeout().count());
+	}
 	const auto clientsStats = config_.EnableConnectionsStats ? std::make_unique<ClientsStats>() : std::unique_ptr<ClientsStats>();
 	try {
-		dbMgr_ = std::make_unique<DBManager>(config_.StoragePath, !config_.EnableSecurity, clientsStats.get());
+		dbMgr_ = std::make_unique<DBManager>(config_, clientsStats.get());
 
-		auto status = dbMgr_->Init(config_.StorageEngine, config_.StartWithErrors, config_.Autorepair);
+		auto status = dbMgr_->Init();
 		if (!status.ok()) {
 			logger_.error("Error init database manager: {0}", status.what());
 			return EXIT_FAILURE;
 		}
 		storageLoaded_ = true;
 
-		if (config_.RPCUnixAddr.empty()) {
-			logger_.info("Starting reindexer_server ({0}) on {1} HTTP, {2} RPC(TCP), with db '{3}'", REINDEX_VERSION, config_.HTTPAddr,
-						 config_.RPCAddr, config_.StoragePath);
-		} else {
-			logger_.info("Starting reindexer_server ({0}) on {1} HTTP, {2} RPC(TCP), {3} RPC(Unix), with db '{4}'", REINDEX_VERSION,
-						 config_.HTTPAddr, config_.RPCAddr, config_.RPCUnixAddr, config_.StoragePath);
+		bool withTLS = [this]() {
+			const bool opensslAvailable = openssl::LibSSLAvailable() && openssl::LibCryptoAvailable();
+
+			if (!config_.SslCertPath.size() && !config_.SslKeyPath.size()) {
+				if (opensslAvailable) {
+					logger_.info(
+						"OpenSSL is available, but the certificate and the private key have not been passed. Reindexer will be launched "
+						"without TLS support");
+				}
+				return false;
+			}
+
+			if (opensslAvailable) {
+				std::string content;
+				constexpr auto message = "The {0} file was not found on the path '{1}'. Reindexer will be launched without TLS support";
+				if (fs::ReadFile(config_.SslCertPath, content) == -1) {
+					logger_.error(message, "TLS certificate", config_.SslCertPath);
+					return false;
+				}
+				if (fs::ReadFile(config_.SslKeyPath, content) == -1) {
+					logger_.error(message, "private key", config_.SslKeyPath);
+					return false;
+				}
+				return true;
+			} else {
+				logger_.error("The {} has been passed but {}",
+							  config_.SslCertPath.size() ? "certificate file" : "file with the private key",
+							  openssl::IsBuiltWithOpenSSL() ? "the OpenSSL library is currently unavailable on the system. For more "
+															  "information about the error occurred during "
+															  "the OpenSSL library loading see the log above."
+															: "Reindexer was built without the support of the TLS library.");
+				return false;
+			}
+		}();
+
+		if (!withTLS) {
+			config_.HTTPsAddr = "none";
+			config_.RPCsAddr = "none";
 		}
+
+		const bool withHTTP = config_.HTTPAddr != "none";
+		const bool withRPC = config_.RPCAddr != "none";
+		const bool withHTTPs = config_.HTTPsAddr != "none";
+		const bool withRPCs = config_.RPCsAddr != "none";
+#ifndef _WIN32
+		const bool withRPCUnix = !config_.RPCUnixAddr.empty() && config_.RPCUnixAddr != "none";
+#else
+		if (config_.RPCUnixAddr != "none") {
+			logger_.warn("Unable to startup RPC(Unix) on '{0}' (unix domain socket are not supported on Windows platforms)",
+						 config_.RPCUnixAddr);
+		}
+		constexpr bool withRPCUnix = false;
+#endif
+
+		if (!withHTTP && !withRPC && !withHTTPs && !withRPCs && !withRPCUnix) {
+			logger_.error("There are no running server instances");
+			return EXIT_FAILURE;
+		}
+
+		logger_.info(
+			"Starting reindexer_server ({0}) on {1}, with db '{2}'", REINDEX_VERSION,
+			[&]() {
+				using tuple = std::tuple<bool, std::string_view, std::string_view>;
+				std::string res;
+				for (const auto& [withPort, addr, name] :
+					 {tuple{withHTTP, config_.HTTPAddr, "HTTP"}, tuple{withRPC, config_.RPCAddr, "RPC(TCP)"},
+					  tuple{withHTTPs, config_.HTTPsAddr, "HTTPs"}, tuple{withRPCs, config_.RPCsAddr, "RPC-TLS(TCP)"},
+					  tuple{withRPCUnix, config_.RPCUnixAddr, "RPC(Unix)"}}) {
+					if (withPort) {
+						res += fmt::format("{}{} {}", res.empty() ? "" : ", ", addr, name);
+					}
+				}
+				return res;
+			}(),
+			config_.StoragePath);
 
 		std::unique_ptr<Prometheus> prometheus;
 		std::unique_ptr<StatsCollector> statsCollector;
@@ -338,32 +411,55 @@ int ServerImpl::run() {
 		}
 
 		LoggerWrapper httpLogger("http");
-		HTTPServer httpServer(*dbMgr_, httpLogger, config_, prometheus.get(), statsCollector.get());
-		if (!httpServer.Start(config_.HTTPAddr, loop_)) {
-			logger_.error("Can't listen HTTP on '{0}'", config_.HTTPAddr);
-			return EXIT_FAILURE;
-		}
-
 		LoggerWrapper rpcLogger("rpc");
-		auto rpcServerTCP = std::make_unique<RPCServer>(*dbMgr_, rpcLogger, clientsStats.get(), config_, statsCollector.get());
+
+		std::unique_ptr<HTTPServer> httpServer;
+		std::unique_ptr<HTTPServer> httpsServer;
+		std::unique_ptr<RPCServer> rpcServerTCP;
+		std::unique_ptr<RPCServer> rpcsServerTCP;
 		std::unique_ptr<RPCServer> rpcServerUnix;
-		if (!config_.RPCUnixAddr.empty()) {
-#ifdef _WIN32
-			logger_.warn("Unable to startup RPC(Unix) on '{0}' (unix domain socket are not supported on Windows platforms)",
-						 config_.RPCUnixAddr);
-#else	// _WIN32
-			rpcServerUnix = std::make_unique<RPCServer>(*dbMgr_, rpcLogger, clientsStats.get(), config_, statsCollector.get());
-			if (!rpcServerUnix->Start(config_.RPCUnixAddr, loop_, RPCSocketT::Unx, config_.RPCUnixThreadingMode)) {
-				logger_.error("Can't listen RPC(Unix) on '{0}'", config_.RPCUnixAddr);
+
+		if (withHTTP) {
+			httpServer = std::make_unique<HTTPServer>(*dbMgr_, httpLogger, config_, prometheus.get(), statsCollector.get());
+			if (!httpServer->Start(config_.HTTPAddr, loop_)) {
+				logger_.error("Can't listen HTTP on '{}'", config_.HTTPAddr);
 				return EXIT_FAILURE;
 			}
-#endif	// _WIN32
 		}
-		if (!rpcServerTCP->Start(config_.RPCAddr, loop_, RPCSocketT::TCP, config_.RPCThreadingMode)) {
-			logger_.error("Can't listen RPC(TCP) on '{0}'", config_.RPCAddr);
-			return EXIT_FAILURE;
+
+		if (withHTTPs) {
+			httpsServer = std::make_unique<HTTPServer>(*dbMgr_, httpLogger, config_, prometheus.get(), statsCollector.get());
+			if (!httpsServer->Start(config_.HTTPsAddr, loop_)) {
+				logger_.error("Can't listen HTTPs on '{}'", config_.HTTPsAddr);
+				return EXIT_FAILURE;
+			}
 		}
-#if defined(WITH_GRPC)
+
+		if (withRPC) {
+			rpcServerTCP = std::make_unique<RPCServer>(*dbMgr_, rpcLogger, clientsStats.get(), config_, statsCollector.get());
+			if (!rpcServerTCP->Start(config_.RPCAddr, loop_, RPCSocketT::TCP, config_.RPCThreadingMode)) {
+				logger_.error("Can't listen RPC(TCP) on '{}'", config_.RPCAddr);
+				return EXIT_FAILURE;
+			}
+		}
+
+		if (withRPCs) {
+			rpcsServerTCP = std::make_unique<RPCServer>(*dbMgr_, rpcLogger, clientsStats.get(), config_, statsCollector.get());
+			if (!rpcsServerTCP->Start(config_.RPCsAddr, loop_, RPCSocketT::TCP, config_.RPCThreadingMode)) {
+				logger_.error("Can't listen RPC-TLS(TCP) on '{}'", config_.RPCsAddr);
+				return EXIT_FAILURE;
+			}
+		}
+
+		if (withRPCUnix) {
+			rpcServerUnix = std::make_unique<RPCServer>(*dbMgr_, rpcLogger, clientsStats.get(), config_, statsCollector.get());
+			if (!rpcServerUnix->Start(config_.RPCUnixAddr, loop_, RPCSocketT::Unx, config_.RPCUnixThreadingMode)) {
+				logger_.error("Can't listen RPC(Unix) on '{}'", config_.RPCUnixAddr);
+				return EXIT_FAILURE;
+			}
+		}
+
+#ifdef WITH_GRPC
 		void* hGRPCService = nullptr;
 		if (config_.EnableGRPC) {
 #if REINDEX_WITH_LIBDL
@@ -430,14 +526,32 @@ int ServerImpl::run() {
 			statsCollector->Stop();
 		}
 		logger_.info("Stats collector shutdown completed.");
-		if (rpcServerUnix) {
-			rpcServerUnix->Stop();
-			logger_.info("RPC Server(Unix) shutdown completed.");
+		dbMgr_->ShutdownClusters();
+		logger_.info("Clusterization shutdown completed.");
+
+		auto stop = [this](auto& serverPtr, std::string_view addr) {
+			return std::async(
+				std::launch::async,
+				[this](auto serverRW, std::string_view addr) {
+					auto& server = serverRW.get();
+					if (server) {
+						server->Stop();
+						logger_.info("{} Server shutdown completed.", addr);
+					}
+				},
+				std::ref(serverPtr), addr);
+		};
+
+		using namespace std::string_view_literals;
+		for (auto& f : {
+				 stop(httpServer, "HTTP"sv),
+				 stop(httpsServer, "HTTPs"sv),
+				 stop(rpcServerTCP, "RPC Server(TCP)"sv),
+				 stop(rpcsServerTCP, "RPCs Server(TCP)"sv),
+				 stop(rpcServerUnix, "RPC Server(Unix) "sv),
+			 }) {
+			f.wait();
 		}
-		rpcServerTCP->Stop();
-		logger_.info("RPC Server(TCP) shutdown completed.");
-		httpServer.Stop();
-		logger_.info("HTTP Server shutdown completed.");
 #ifdef WITH_GRPC
 		if (config_.EnableGRPC) {
 #if REINDEX_WITH_LIBDL
@@ -452,7 +566,7 @@ int ServerImpl::run() {
 #endif	// REINDEX_WITH_LIBDL
 		}
 #endif	// WITH_GRPC
-	} catch (const Error& err) {
+	} catch (const std::exception& err) {
 		logger_.error("Unhandled exception occurred: {0}", err.what());
 	}
 	logger_.info("Reindexer server shutdown completed.");

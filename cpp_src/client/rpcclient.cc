@@ -1,377 +1,324 @@
 #include "client/rpcclient.h"
-#include <functional>
-#include "client/itemimpl.h"
+#include "client/connectopts.h"
+#include "client/itemimplbase.h"
+#include "client/snapshot.h"
+#include "cluster/clustercontrolrequest.h"
+#include "cluster/sharding/shardingcontrolrequest.h"
+#include "core/namespace/namespacestat.h"
 #include "core/namespacedef.h"
 #include "core/schema.h"
+#include "estl/gift_str.h"
 #include "gason/gason.h"
+#include "tools/catch_and_return.h"
 #include "tools/cpucheck.h"
 #include "tools/errors.h"
-#include "tools/logger.h"
 
 namespace reindexer {
 namespace client {
 
-using reindexer::net::cproto::RPCAnswer;
-
-RPCClient::RPCClient(const ReindexerConfig& config) : workers_(config.WorkerThreads), config_(config), updatesConn_(nullptr) {
+RPCClient::RPCClient(const ReindexerConfig& config, INamespaces::PtrT sharedNamespaces)
+	: namespaces_(sharedNamespaces ? std::move(sharedNamespaces) : INamespaces::PtrT(new NamespacesImpl<dummy_mutex>())), config_(config) {
 	reindexer::CheckRequiredSSESupport();
 
-	if (config_.ConnectTimeout > config_.RequestTimeout) {
-		config_.RequestTimeout = config_.ConnectTimeout;
-	}
-	curConnIdx_ = 0;
+	conn_.SetConnectionStateHandler([this](Error err) { onConnectionState(std::move(err)); });
 }
 
 RPCClient::~RPCClient() { Stop(); }
 
-Error RPCClient::startWorkers() {
-	connections_.resize(config_.ConnPoolSize);
-	for (size_t i = 0; i < workers_.size(); i++) {
-		workers_[i].thread_ = std::thread([this](size_t id) { this->run(id); }, i);
-		while (!workers_[i].running) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
-		}
-	}
-	return errOK;
-}
+Error RPCClient::Connect(const DSN& dsn, ev::dynamic_loop& loop, const client::ConnectOpts& opts) {
+	using namespace std::string_view_literals;
 
-Error RPCClient::addConnectEntry(const std::string& dsn, const client::ConnectOpts& opts, size_t idx) {
-	assertrx(idx < connectData_.entries.size());
-	cproto::ClientConnection::ConnectData::Entry& connectEntry = connectData_.entries[idx];
-	if (!connectEntry.uri.parse(dsn)) {
+	std::lock_guard lck(mtx_);
+	if (conn_.IsRunning()) {
+		return Error(errLogic, "Client is already started (%s)", dsn);
+	}
+
+	cproto::CoroClientConnection::ConnectData connectData{.uri = dsn.Parser(), .opts = {}};
+	if (!connectData.uri.isValid()) {
 		return Error(errParams, "%s is not valid uri", dsn);
 	}
-	if (connectEntry.uri.scheme() != "cproto") {
-		return Error(errParams, "Scheme must be cproto");
+#ifdef _WIN32
+	if (connectData.uri.scheme() != "cproto"sv && connectData.uri.scheme() != "cprotos"sv) {
+		return Error(errParams, "Scheme must be cproto or cprotos");
 	}
-	connectEntry.opts = cproto::ClientConnection::Options(config_.ConnectTimeout, config_.RequestTimeout, opts.IsCreateDBIfMissing(),
-														  opts.HasExpectedClusterID(), opts.ExpectedClusterID(), config_.ReconnectAttempts,
-														  config_.EnableCompression, config_.AppName);
+#else
+	if (connectData.uri.scheme() != "cproto"sv && connectData.uri.scheme() != "ucproto"sv && connectData.uri.scheme() != "cprotos"sv) {
+		return Error(errParams, "Scheme must be either cproto, cprotos or ucproto");
+	}
+#endif
+
+	connectData.opts = cproto::CoroClientConnection::Options(
+		config_.NetTimeout, config_.NetTimeout, opts.IsCreateDBIfMissing(), opts.HasExpectedClusterID(), opts.ExpectedClusterID(),
+		config_.ReconnectAttempts, config_.EnableCompression, config_.RequestDedicatedThread, config_.AppName);
+	conn_.Start(loop, std::move(connectData));
+	loop_ = &loop;
 	return errOK;
-}
-
-Error RPCClient::Connect(const std::string& dsn, const client::ConnectOpts& opts) {
-	if (connections_.size()) {
-		return Error(errLogic, "Client is already started");
-	}
-	std::vector<cproto::ClientConnection::ConnectData::Entry> tmpConnectData(1);
-	connectData_.entries.swap(tmpConnectData);
-	Error err = addConnectEntry(dsn, opts, 0);
-	if (err.ok()) {
-		return startWorkers();
-	}
-	return err;
-}
-
-Error RPCClient::Connect(const std::vector<std::pair<std::string, client::ConnectOpts>>& connectData) {
-	if (connections_.size()) {
-		return Error(errLogic, "Client is already started");
-	}
-	if (connectData.empty()) {
-		return Error(errLogic, "Connections data is empty!");
-	}
-	std::vector<cproto::ClientConnection::ConnectData::Entry> tmpConnectData(connectData.size());
-	connectData_.entries.swap(tmpConnectData);
-	for (size_t i = 0; i < connectData.size(); ++i) {
-		Error err = addConnectEntry(connectData[i].first, connectData[i].second, i);
-		if (!err.ok()) {
-			return err;
-		}
-	}
-	return startWorkers();
 }
 
 void RPCClient::Stop() {
-	if (!connections_.size()) {
-		return;
+	if (conn_.IsRunning()) {
+		std::lock_guard lck(mtx_);
+		terminate_ = true;
+		conn_.Stop();
+		loop_ = nullptr;
+		terminate_ = false;
 	}
-	for (auto& worker : workers_) {
-		worker.stop_.send();
-		if (worker.thread_.joinable()) {
-			worker.thread_.join();
-		}
-	}
-	connections_.clear();
 }
 
-void RPCClient::run(size_t thIdx) {
-	bool terminate = false;
-
-	workers_[thIdx].stop_.set(workers_[thIdx].loop_);
-	workers_[thIdx].stop_.set([&](ev::async& sig) {
-		terminate = true;
-		sig.loop.break_loop();
-	});
-
-	workers_[thIdx].stop_.start();
-	delayedUpdates_.clear();
-	serialDelays_ = 0;
-
-	for (size_t i = thIdx; int(i) < config_.ConnPoolSize; i += config_.WorkerThreads) {
-		connections_[i].reset(new cproto::ClientConnection(workers_[thIdx].loop_, &connectData_,
-														   std::bind(&RPCClient::onConnectionFail, this, std::placeholders::_1)));
-	}
-
-	ev::periodic checker;
-	if (thIdx == 0) {
-		checker.set(workers_[thIdx].loop_);
-		checker.set([this](ev::periodic&, int) { checkSubscribes(); });
-		checker.start(5, 5);
-	}
-
-	workers_[thIdx].running.store(true);
-	for (;;) {
-		workers_[thIdx].loop_.run();
-		bool doTerminate = terminate;
-		if (doTerminate) {
-			for (size_t i = thIdx; int(i) < config_.ConnPoolSize; i += config_.WorkerThreads) {
-				connections_[i]->SetTerminateFlag();
-				if (connections_[i]->PendingCompletions()) {
-					doTerminate = false;
-				}
-			}
-		}
-		if (doTerminate) {
-			break;
-		}
-	}
-	for (size_t i = thIdx; int(i) < config_.ConnPoolSize; i += config_.WorkerThreads) {
-		connections_[i].reset();
-	}
-	workers_[thIdx].running.store(false);
-}
-
-Error RPCClient::AddNamespace(const NamespaceDef& nsDef, const InternalRdxContext& ctx) {
-	WrSerializer ser;
+Error RPCClient::AddNamespace(const NamespaceDef& nsDef, const InternalRdxContext& ctx, const NsReplicationOpts& replOpts) {
+	WrSerializer ser, serReplOpts;
 	nsDef.GetJSON(ser);
-	auto status = getConn()->Call(mkCommand(cproto::kCmdOpenNamespace, &ctx), ser.Slice()).Status();
+	replOpts.GetJSON(serReplOpts);
+	auto status = conn_.Call(mkCommand(cproto::kCmdOpenNamespace, &ctx), ser.Slice(), serReplOpts.Slice()).Status();
 
 	if (!status.ok()) {
 		return status;
 	}
 
-	std::unique_lock<shared_timed_mutex> lock(nsMutex_);
-	namespaces_.emplace(nsDef.name, Namespace::Ptr(new Namespace(nsDef.name)));
-
+	namespaces_->Add(nsDef.name);
 	return errOK;
 }
 
-Error RPCClient::OpenNamespace(std::string_view nsName, const InternalRdxContext& ctx, const StorageOpts& sopts) {
+Error RPCClient::OpenNamespace(std::string_view nsName, const InternalRdxContext& ctx, const StorageOpts& sopts,
+							   const NsReplicationOpts& replOpts) {
 	NamespaceDef nsDef(std::string(nsName), sopts);
-	return AddNamespace(nsDef, ctx);
+	return AddNamespace(nsDef, ctx, replOpts);
 }
 
 Error RPCClient::CloseNamespace(std::string_view nsName, const InternalRdxContext& ctx) {
-	return getConn()->Call(mkCommand(cproto::kCmdCloseNamespace, &ctx), nsName).Status();
+	return conn_.Call(mkCommand(cproto::kCmdCloseNamespace, &ctx), nsName).Status();
 }
 
 Error RPCClient::DropNamespace(std::string_view nsName, const InternalRdxContext& ctx) {
-	return getConn()->Call(mkCommand(cproto::kCmdDropNamespace, &ctx), nsName).Status();
+	auto status = conn_.Call(mkCommand(cproto::kCmdDropNamespace, &ctx), nsName).Status();
+	if (status.ok()) {
+		namespaces_->Erase(nsName);
+	}
+	return status;
+}
+
+Error RPCClient::CreateTemporaryNamespace(std::string_view baseName, std::string& resultName, const InternalRdxContext& ctx,
+										  const StorageOpts& opts, lsn_t version) {
+	try {
+		NamespaceDef nsDef(std::string(baseName), opts);
+		WrSerializer ser;
+		nsDef.GetJSON(ser);
+		auto ans = conn_.Call(mkCommand(cproto::kCmdCreateTmpNamespace, &ctx), ser.Slice(), int64_t(version));
+
+		if (ans.Status().ok()) {
+			resultName = ans.GetArgs(1)[0].As<std::string>();
+			namespaces_->Add(resultName);
+		}
+		return ans.Status();
+	} catch (const Error& err) {
+		return err;
+	}
 }
 
 Error RPCClient::TruncateNamespace(std::string_view nsName, const InternalRdxContext& ctx) {
-	return getConn()->Call(mkCommand(cproto::kCmdTruncateNamespace, &ctx), nsName).Status();
+	return conn_.Call(mkCommand(cproto::kCmdTruncateNamespace, &ctx), nsName).Status();
 }
 
-Error RPCClient::RenameNamespace(std::string_view srcNsName, const std::string& dstNsName, const InternalRdxContext& ctx) {
-	auto status = getConn()->Call(mkCommand(cproto::kCmdRenameNamespace, &ctx), srcNsName, dstNsName).Status();
-
-	if (!status.ok()) {
+Error RPCClient::RenameNamespace(std::string_view srcNsName, std::string_view dstNsName, const InternalRdxContext& ctx) {
+	auto status = conn_.Call(mkCommand(cproto::kCmdRenameNamespace, &ctx), srcNsName, dstNsName).Status();
+	if (!status.ok() && status.code() != errTimeout) {
 		return status;
 	}
-
 	if (srcNsName != dstNsName) {
-		std::unique_lock<shared_timed_mutex> lock(nsMutex_);
-
-		auto namespacePtr = namespaces_.find(srcNsName);
-		auto namespacePtrDst = namespaces_.find(dstNsName);
-		if (namespacePtr != namespaces_.end()) {
-			if (namespacePtrDst == namespaces_.end()) {
-				namespaces_.emplace(dstNsName, namespacePtr->second);
-			} else {
-				namespacePtrDst->second = namespacePtr->second;
-			}
-			namespaces_.erase(namespacePtr);
-		} else {
-			namespaces_.erase(namespacePtrDst);
-		}
+		namespaces_->Erase(srcNsName);
+		namespaces_->Erase(dstNsName);
 	}
-	return errOK;
+	return status;
 }
 
-Error RPCClient::Insert(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {
-	return modifyItem(nsName, item, ModeInsert, config_.RequestTimeout, ctx);
+Error RPCClient::Insert(std::string_view nsName, Item& item, RPCDataFormat format, const InternalRdxContext& ctx) {
+	return (format == RPCDataFormat::CJSON) ? modifyItemCJSON(nsName, item, nullptr, ModeInsert, config_.NetTimeout, ctx)
+											: modifyItemFormat(nsName, item, format, ModeInsert, config_.NetTimeout, ctx);
 }
 
-Error RPCClient::Update(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {
-	return modifyItem(nsName, item, ModeUpdate, config_.RequestTimeout, ctx);
+Error RPCClient::Insert(std::string_view nsName, client::Item& item, CoroQueryResults& result, const InternalRdxContext& ctx) {
+	return modifyItemCJSON(nsName, item, &result, ModeInsert, config_.NetTimeout, ctx);
 }
 
-Error RPCClient::Upsert(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {
-	return modifyItem(nsName, item, ModeUpsert, config_.RequestTimeout, ctx);
+Error RPCClient::Update(std::string_view nsName, Item& item, RPCDataFormat format, const InternalRdxContext& ctx) {
+	return (format == RPCDataFormat::CJSON) ? modifyItemCJSON(nsName, item, nullptr, ModeUpdate, config_.NetTimeout, ctx)
+											: modifyItemFormat(nsName, item, format, ModeUpdate, config_.NetTimeout, ctx);
+}
+Error RPCClient::Update(std::string_view nsName, client::Item& item, CoroQueryResults& result, const InternalRdxContext& ctx) {
+	return modifyItemCJSON(nsName, item, &result, ModeUpdate, config_.NetTimeout, ctx);
 }
 
-Error RPCClient::Delete(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {
-	return modifyItem(nsName, item, ModeDelete, config_.RequestTimeout, ctx);
+Error RPCClient::Upsert(std::string_view nsName, Item& item, RPCDataFormat format, const InternalRdxContext& ctx) {
+	return (format == RPCDataFormat::CJSON) ? modifyItemCJSON(nsName, item, nullptr, ModeUpsert, config_.NetTimeout, ctx)
+											: modifyItemFormat(nsName, item, format, ModeUpsert, config_.NetTimeout, ctx);
+}
+Error RPCClient::Upsert(std::string_view nsName, client::Item& item, CoroQueryResults& result, const InternalRdxContext& ctx) {
+	return modifyItemCJSON(nsName, item, &result, ModeUpsert, config_.NetTimeout, ctx);
 }
 
-Error RPCClient::modifyItem(std::string_view nsName, Item& item, int mode, seconds netTimeout, const InternalRdxContext& ctx) {
-	if (ctx.cmpl()) {
-		return modifyItemAsync(nsName, &item, mode, nullptr, netTimeout, ctx);
-	}
+Error RPCClient::Delete(std::string_view nsName, Item& item, RPCDataFormat format, const InternalRdxContext& ctx) {
+	return (format == RPCDataFormat::CJSON) ? modifyItemCJSON(nsName, item, nullptr, ModeDelete, config_.NetTimeout, ctx)
+											: modifyItemFormat(nsName, item, format, ModeDelete, config_.NetTimeout, ctx);
+}
+Error RPCClient::Delete(std::string_view nsName, client::Item& item, CoroQueryResults& result, const InternalRdxContext& ctx) {
+	return modifyItemCJSON(nsName, item, &result, ModeDelete, config_.NetTimeout, ctx);
+}
 
+Error RPCClient::modifyItemCJSON(std::string_view nsName, Item& item, CoroQueryResults* results, int mode, milliseconds netTimeout,
+								 const InternalRdxContext& ctx) {
 	WrSerializer ser;
-	if (item.impl_->GetPrecepts().size()) {
-		ser.PutVarUint(item.impl_->GetPrecepts().size());
-		for (auto& p : item.impl_->GetPrecepts()) {
-			ser.PutVString(p);
-		}
-	}
+	item.impl_->GetPrecepts(ser);
 
 	bool withNetTimeout = (netTimeout.count() > 0);
 	for (int tryCount = 0;; tryCount++) {
-		auto conn = getConn();
-		auto netDeadline = conn->Now() + netTimeout;
-		auto ret = conn->Call(mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), nsName, int(FormatCJson), item.GetCJSON(), mode,
-							  ser.Slice(), item.GetStateToken(), 0);
-		if (!ret.Status().ok()) {
+		auto netDeadline = conn_.Now() + netTimeout;
+		auto ret = conn_.Call(mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), nsName, int(DataFormat::FormatCJson), item.GetCJSON(),
+							  mode, ser.Slice(), item.GetStateToken(), 0);
+		if (ret.Status().ok()) {
+			try {
+				const auto args = ret.GetArgs(2);
+				CoroQueryResults qr(nullptr, &conn_, {getNamespace(nsName)}, p_string(args[0]),
+									RPCQrId{int(args[1]), args.size() > 2 ? int64_t(args[2]) : -1}, 0, config_.FetchAmount,
+									config_.NetTimeout, false);
+				assertrx(qr.IsBound());	 // Bind must always happens inside QR's constructor. Just extra check
+				if (results) {
+					*results = std::move(qr);
+					return results->Status();
+				}
+				if (qr.Count() == 1) {
+					auto it = qr.begin();
+					if ((qr.i_.queryParams_.flags & kResultsFormatMask) != kResultsPure) {
+						item = it.GetItem();
+					} else {
+						item.setID(it.GetID());
+						item.setShardID(it.GetShardID());
+						item.setLSN(it.GetLSN());
+						item.impl_->setTagsMatcher(qr.GetTagsMatcher(0));
+					}
+				}
+				return qr.Status();
+			} catch (const Error& err) {
+				return err;
+			}
+		} else {
 			if (ret.Status().code() != errStateInvalidated || tryCount > 2) {
 				return ret.Status();
 			}
 			if (withNetTimeout) {
-				netTimeout = netDeadline - conn->Now();
+				netTimeout = std::chrono::duration_cast<std::chrono::milliseconds>(netDeadline - conn_.Now());
 			}
-			QueryResults qr;
-			InternalRdxContext ctxCompl = ctx.WithCompletion(nullptr);
-			Error err = selectImpl(Query(std::string(nsName)).Limit(0), qr, nullptr, netTimeout, ctxCompl);
+			CoroQueryResults qr;
+			InternalRdxContext ctxCompl = ctx.WithCompletion(nullptr).WithShardId(ShardingKeyType::ProxyOff, false);
+			auto err = selectImpl(Query(std::string(nsName)).Limit(0), qr, netTimeout, ctxCompl);
 			if (err.code() == errTimeout) {
 				return Error(errTimeout, "Request timeout");
 			}
 			if (withNetTimeout) {
-				netTimeout = netDeadline - conn->Now();
+				netTimeout = std::chrono::duration_cast<std::chrono::milliseconds>(netDeadline - conn_.Now());
 			}
 			auto newItem = NewItem(nsName);
-			char* endp = nullptr;
-			err = newItem.FromJSON(item.impl_->GetJSON(), &endp);
+			if (!newItem.Status().ok()) {
+				return newItem.Status();
+			}
+			err = newItem.FromJSON(item.impl_->GetJSON());
 			if (!err.ok()) {
 				return err;
 			}
+			if (item.impl_->tagsMatcher().isUpdated()) {
+				// Add new names missing in JSON from tm
+				newItem.impl_->addTagNamesFrom(item.impl_->tagsMatcher());
+			}
 			item = std::move(newItem);
-			continue;
 		}
+	}
+}
+
+Error RPCClient::modifyItemFormat(std::string_view nsName, Item& item, RPCDataFormat format, int mode, milliseconds netTimeout,
+								  const InternalRdxContext& ctx) {
+	WrSerializer ser;
+	item.impl_->GetPrecepts(ser);
+
+	std::string_view data;
+	switch (format) {
+		case RPCDataFormat::MsgPack:
+			data = item.GetMsgPack();
+			break;
+		case RPCDataFormat::CJSON:
+			return Error(errParams, "Unsupported format: %d", int(format));
+	}
+	auto ret = conn_.Call(mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), nsName, int(format), data, mode, ser.Slice(),
+						  item.GetStateToken(), 0);
+	if (ret.Status().ok()) {
 		try {
-			auto args = ret.GetArgs(2);
-			NsArray nsArray{getNamespace(nsName)};
-			return QueryResults(conn, std::move(nsArray), nullptr, p_string(args[0]), int(args[1]), 0, config_.FetchAmount,
-								config_.RequestTimeout)
-				.Status();
+			const auto args = ret.GetArgs(2);
+			CoroQueryResults qr(nullptr, &conn_, {getNamespace(nsName)}, p_string(args[0]),
+								RPCQrId{int(args[1]), args.size() > 2 ? int64_t(args[2]) : -1}, 0, config_.FetchAmount, config_.NetTimeout,
+								false);
+			if (qr.Count() == 1) {
+				auto it = qr.begin();
+				if ((qr.i_.queryParams_.flags & kResultsFormatMask) != kResultsPure) {
+					item = it.GetItem();
+				} else {
+					item.setID(it.GetID());
+					item.setShardID(it.GetShardID());
+					item.setLSN(it.GetLSN());
+					item.impl_->setTagsMatcher(qr.GetTagsMatcher(0));
+				}
+			}
+			return qr.Status();
 		} catch (const Error& err) {
 			return err;
 		}
 	}
-
-	return errOK;
+	return ret.Status();
 }
 
-Error RPCClient::modifyItemAsync(std::string_view nsName, Item* item, int mode, cproto::ClientConnection* conn, seconds netTimeout,
-								 const InternalRdxContext& ctx) {
-	WrSerializer ser;
-	if (item->impl_->GetPrecepts().size()) {
-		ser.PutVarUint(item->impl_->GetPrecepts().size());
-		for (auto& p : item->impl_->GetPrecepts()) {
-			ser.PutVString(p);
+Error RPCClient::modifyItemRaw(std::string_view nsName, std::string_view cjson, int mode, std::chrono::milliseconds netTimeout,
+							   const InternalRdxContext& ctx) {
+	if (ItemImplBase::HasBundledTm(cjson)) {
+		return Error(errParams, "Raw CJSON interface does not support CJSON with bundled tags matcher");
+	}
+
+	const auto stateToken = getNamespace(nsName)->GetStateToken();
+	const auto ret = conn_.Call(mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), nsName, int(DataFormat::FormatCJson), cjson, mode,
+								std::string_view(), stateToken, 0);
+
+	if (!ret.Status().ok()) {
+		return ret.Status();
+	}
+
+	try {
+		const auto args = ret.GetArgs(2);
+		const auto rawResult = std::string_view(args[0]);
+		ResultSerializer ser(rawResult);
+		if (ser.ContainsPayloads()) {
+			ResultSerializer::QueryParams qdata;
+			ResultSerializer::ParsingData pdata;
+			auto nsPtr = getNamespace(nsName);
+			ser.GetRawQueryParams(
+				qdata,
+				[&ser, nsPtr = std::move(nsPtr)](int nsIdx) {
+					const uint32_t stateToken = ser.GetVarUInt();
+					const int version = ser.GetVarUInt();
+					TagsMatcher newTm;
+					newTm.deserialize(ser, version, stateToken);
+					if (nsIdx != 0) {
+						throw Error(errLogic, "Unexpected namespace index in item modification response: %d", nsIdx);
+					}
+					nsPtr->TryReplaceTagsMatcher(std::move(newTm));
+					PayloadType("tmp").clone()->deserialize(ser);
+				},
+				ResultSerializer::Options{ResultSerializer::LazyMode | ResultSerializer::ClearAggregations}, pdata);
 		}
+	} catch (const Error& err) {
+		return err;
 	}
-	if (!conn) {
-		conn = getConn();
-	}
-
-	std::string ns(nsName);
-	auto deadline = netTimeout.count() ? conn->Now() + netTimeout : seconds(0);
-	conn->Call(
-		[this, ns, mode, item, deadline, ctx](const net::cproto::RPCAnswer& ret, cproto::ClientConnection* conn) -> void {
-			if (!ret.Status().ok()) {
-				if (ret.Status().code() != errStateInvalidated) {
-					return ctx.cmpl()(ret.Status());
-				}
-				seconds netTimeout(0);
-				if (deadline.count()) {
-					netTimeout = deadline - conn->Now();
-				}
-				// State invalidated - make select to update state
-				QueryResults* qr = new QueryResults;
-				InternalRdxContext ctxCmpl = ctx.WithCompletion([=](const Error& ret) {
-					delete qr;
-					if (!ret.ok()) {
-						return ctx.cmpl()(ret);
-					}
-
-					seconds timeout(0);
-					if (deadline.count()) {
-						timeout = deadline - conn->Now();
-					}
-
-					// Rebuild item with new state
-					auto newItem = NewItem(ns);
-					Error err = newItem.FromJSON(item->impl_->GetJSON());
-					if (err.ok()) {
-						return ctx.cmpl()(err);
-					}
-					newItem.SetPrecepts(item->impl_->GetPrecepts());
-					*item = std::move(newItem);
-					err = modifyItemAsync(ns, item, mode, conn, timeout, ctx);
-					if (err.ok()) {
-						return ctx.cmpl()(err);
-					}
-				});
-				auto err = selectImpl(Query(ns).Limit(0), *qr, conn, netTimeout, ctxCmpl);
-				if (err.ok()) {
-					return ctx.cmpl()(err);
-				}
-			} else {
-				try {
-					auto args = ret.GetArgs(2);
-					ctx.cmpl()(QueryResults(conn, {getNamespace(ns)}, nullptr, p_string(args[0]), int(args[1]), 0, config_.FetchAmount,
-											config_.RequestTimeout)
-								   .Status());
-				} catch (const Error& err) {
-					ctx.cmpl()(err);
-				}
-			}
-		},
-		mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), ns, int(FormatCJson), item->GetCJSON(), mode, ser.Slice(),
-		item->GetStateToken(), 0);
-	return errOK;
-}
-
-Error RPCClient::subscribeImpl(bool subscribe) {
-	Error err;
-	auto updatesConn = updatesConn_.load();
-	if (subscribe) {
-		UpdatesFilters filter = observers_.GetMergedFilter();
-		WrSerializer ser;
-		filter.GetJSON(ser);
-		if (updatesConn) {
-			err = updatesConn->Call(mkCommand(cproto::kCmdSubscribeUpdates), 1, ser.Slice()).Status();
-		} else {
-			auto conn = getConn();
-			err = conn->Call(mkCommand(cproto::kCmdSubscribeUpdates), 1, ser.Slice()).Status();
-			if (err.ok()) {
-				updatesConn_ = conn;
-			}
-			conn->SetUpdatesHandler([this](RPCAnswer&& ans, cproto::ClientConnection* conn) { onUpdates(ans, conn); });
-		}
-	} else if (updatesConn) {
-		err = updatesConn->Call(mkCommand(cproto::kCmdSubscribeUpdates), 0).Status();
-		updatesConn_ = nullptr;
-	}
-	return err;
+	return Error();
 }
 
 Item RPCClient::NewItem(std::string_view nsName) {
 	try {
-		auto ns = getNamespace(nsName);
-		return ns->NewItem();
+		return getNamespace(nsName)->NewItem();
 	} catch (const Error& err) {
 		return Item(err);
 	}
@@ -379,7 +326,7 @@ Item RPCClient::NewItem(std::string_view nsName) {
 
 Error RPCClient::GetMeta(std::string_view nsName, const std::string& key, std::string& data, const InternalRdxContext& ctx) {
 	try {
-		auto ret = getConn()->Call(mkCommand(cproto::kCmdGetMeta, &ctx), nsName, key);
+		auto ret = conn_.Call(mkCommand(cproto::kCmdGetMeta, &ctx), nsName, key);
 		if (ret.Status().ok()) {
 			data = ret.GetArgs(1)[0].As<std::string>();
 		}
@@ -389,19 +336,41 @@ Error RPCClient::GetMeta(std::string_view nsName, const std::string& key, std::s
 	}
 }
 
+Error RPCClient::GetMeta(std::string_view nsName, const std::string& key, std::vector<ShardedMeta>& data, const InternalRdxContext& ctx) {
+	try {
+		const int flags = 1;
+		auto ret = conn_.Call(mkCommand(cproto::kCmdGetMeta, &ctx), nsName, key, flags);
+		if (ret.Status().ok()) {
+			auto args = ret.GetArgs();
+			data.reserve(args.size());
+			for (auto& k : args) {
+				auto json = k.As<std::string>();
+				data.emplace_back();
+				auto err = data.back().FromJSON(giftStr(json));
+				if (!err.ok()) {
+					return err;
+				}
+			}
+		}
+		return ret.Status();
+	} catch (const Error& err) {
+		return err;
+	}
+}
+
 Error RPCClient::PutMeta(std::string_view nsName, const std::string& key, std::string_view data, const InternalRdxContext& ctx) {
-	return getConn()->Call(mkCommand(cproto::kCmdPutMeta, &ctx), nsName, key, data).Status();
+	return conn_.Call(mkCommand(cproto::kCmdPutMeta, &ctx), nsName, key, data).Status();
 }
 
 Error RPCClient::EnumMeta(std::string_view nsName, std::vector<std::string>& keys, const InternalRdxContext& ctx) {
 	try {
-		auto ret = getConn()->Call(mkCommand(cproto::kCmdEnumMeta, &ctx), nsName);
+		auto ret = conn_.Call(mkCommand(cproto::kCmdEnumMeta, &ctx), nsName);
 		if (ret.Status().ok()) {
 			auto args = ret.GetArgs();
 			keys.clear();
 			keys.reserve(args.size());
 			for (auto& k : args) {
-				keys.push_back(k.As<std::string>());
+				keys.emplace_back(k.As<std::string>());
 			}
 		}
 		return ret.Status();
@@ -411,181 +380,151 @@ Error RPCClient::EnumMeta(std::string_view nsName, std::vector<std::string>& key
 }
 
 Error RPCClient::DeleteMeta(std::string_view nsName, const std::string& key, const InternalRdxContext& ctx) {
-	return getConn()->Call(mkCommand(cproto::kCmdDeleteMeta, &ctx), nsName, key).Status();
+	return conn_.Call(mkCommand(cproto::kCmdDeleteMeta, &ctx), nsName, key).Status();
 }
 
-Error RPCClient::Delete(const Query& query, QueryResults& result, const InternalRdxContext& ctx) {
+Error RPCClient::Delete(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	query.Serialize(ser);
-	auto conn = getConn();
 
-	NsArray nsArray;
-	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
+	CoroQueryResults::NsArray nsArray;
+	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.emplace_back(getNamespace(q.NsName())); });
 
-	result = QueryResults(conn, std::move(nsArray), nullptr, 0, config_.FetchAmount, config_.RequestTimeout);
-
-	auto icompl = [&result](const RPCAnswer& ret, cproto::ClientConnection*) {
-		try {
-			if (ret.Status().ok()) {
-				auto args = ret.GetArgs(2);
-				result.Bind(p_string(args[0]), int(args[1]));
-			}
-			result.completion(ret.Status());
-		} catch (const Error& err) {
-			result.completion(err);
+	const int flags = result.i_.fetchFlags_ ? result.i_.fetchFlags_ : (kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
+	result = CoroQueryResults(&conn_, std::move(nsArray), flags, config_.FetchAmount, config_.NetTimeout, result.i_.lazyMode_);
+	auto ret = conn_.Call(mkCommand(cproto::kCmdDeleteQuery, &ctx), ser.Slice(), flags);
+	try {
+		if (ret.Status().ok()) {
+			const auto args = ret.GetArgs(2);
+			result.Bind(p_string(args[0]), RPCQrId{int(args[1]), -1}, &query);
 		}
-	};
-
-	auto ret = conn->Call(mkCommand(cproto::kCmdDeleteQuery, &ctx), ser.Slice(), kResultsWithItemID);
-	icompl(ret, conn);
+	} catch (const Error& err) {
+		return err;
+	}
 	return ret.Status();
 }
 
-Error RPCClient::Update(const Query& query, QueryResults& result, const InternalRdxContext& ctx) {
+Error RPCClient::Update(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	query.Serialize(ser);
-	auto conn = getConn();
 
-	NsArray nsArray;
+	CoroQueryResults::NsArray nsArray;
 	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 
-	result = QueryResults(conn, std::move(nsArray), nullptr, 0, config_.FetchAmount, config_.RequestTimeout);
-
-	auto icompl = [&result](const RPCAnswer& ret, cproto::ClientConnection*) {
-		try {
-			if (ret.Status().ok()) {
-				auto args = ret.GetArgs(2);
-				result.Bind(p_string(args[0]), int(args[1]));
-			}
-			result.completion(ret.Status());
-		} catch (const Error& err) {
-			result.completion(err);
+	const int flags = result.i_.fetchFlags_ ? result.i_.fetchFlags_ : (kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
+	result = CoroQueryResults(&conn_, std::move(nsArray), flags, config_.FetchAmount, config_.NetTimeout, result.i_.lazyMode_);
+	auto ret = conn_.Call(mkCommand(cproto::kCmdUpdateQuery, &ctx), ser.Slice(), flags);
+	try {
+		if (ret.Status().ok()) {
+			const auto args = ret.GetArgs(2);
+			result.Bind(p_string(args[0]), RPCQrId{int(args[1]), -1}, &query);
 		}
-	};
-
-	auto ret =
-		conn->Call(mkCommand(cproto::kCmdUpdateQuery, &ctx), ser.Slice(), kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
-	icompl(ret, conn);
+	} catch (const Error& err) {
+		return err;
+	}
 	return ret.Status();
 }
 
-Error RPCClient::selectImpl(std::string_view query, QueryResults& result, cproto::ClientConnection* conn, seconds netTimeout,
-							const InternalRdxContext& ctx) {
-	int flags = result.fetchFlags_ ? (result.fetchFlags_ & ~kResultsFormatMask) | kResultsJson : kResultsJson;
-
-	WrSerializer pser;
-	h_vector<int32_t, 4> vers;
-	vec2pack(vers, pser);
-
-	if (!conn) {
-		conn = getConn();
-	}
-
-	result = QueryResults(conn, {}, ctx.cmpl(), result.fetchFlags_, config_.FetchAmount, config_.RequestTimeout);
-
-	auto icompl = [&result](const RPCAnswer& ret, cproto::ClientConnection* /*conn*/) {
-		try {
-			if (ret.Status().ok()) {
-				auto args = ret.GetArgs(2);
-				result.Bind(p_string(args[0]), int(args[1]));
-			}
-
-			result.completion(ret.Status());
-		} catch (const Error& err) {
-			result.completion(err);
-		}
-	};
-
-	if (!ctx.cmpl()) {
-		auto ret = conn->Call(mkCommand(cproto::kCmdSelectSQL, netTimeout, &ctx), query, flags, config_.FetchAmount, pser.Slice());
-		icompl(ret, conn);
-		return ret.Status();
-	} else {
-		conn->Call(icompl, mkCommand(cproto::kCmdSelectSQL, netTimeout, &ctx), query, flags, config_.FetchAmount, pser.Slice());
-		return errOK;
+void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
+	// Get array of payload Type Versions
+	ser.PutVarUint(vec.size());
+	for (auto v : vec) {
+		ser.PutVarUint(v);
 	}
 }
 
-Error RPCClient::selectImpl(const Query& query, QueryResults& result, cproto::ClientConnection* conn, seconds netTimeout,
-							const InternalRdxContext& ctx) {
-	WrSerializer qser, pser;
-	int flags = result.fetchFlags_ ? result.fetchFlags_ : (kResultsWithPayloadTypes | kResultsCJson);
-	bool hasJoins = !query.GetJoinQueries().empty();
-	if (!hasJoins) {
-		for (auto& mq : query.GetMergeQueries()) {
-			if (!mq.GetJoinQueries().empty()) {
-				hasJoins = true;
-				break;
-			}
+Error RPCClient::Select(std::string_view querySQL, CoroQueryResults& result, const InternalRdxContext& ctx) {
+	try {
+		auto query = Query::FromSQL(querySQL);
+		switch (query.type_) {
+			case QuerySelect:
+				return Select(query, result, ctx);
+			case QueryDelete:
+				return Delete(query, result, ctx);
+			case QueryUpdate:
+				return Update(query, result, ctx);
+			case QueryTruncate:
+				return TruncateNamespace(query.NsName(), ctx);
+			default:
+				return Error(errParams, "Incorrect qyery type");
 		}
+	} catch (const Error& err) {
+		return err;
 	}
-	if (hasJoins) {
-		flags &= ~kResultsFormatMask;
-		flags |= kResultsJson;
-	}
-	NsArray nsArray;
+}
+
+Error RPCClient::selectImpl(const Query& query, CoroQueryResults& result, milliseconds netTimeout, const InternalRdxContext& ctx) {
+	const int flags = result.i_.fetchFlags_ ? (result.i_.fetchFlags_) : (kResultsWithPayloadTypes | kResultsCJson);
+	CoroQueryResults::NsArray nsArray;
+	WrSerializer qser;
 	query.Serialize(qser);
 	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 	h_vector<int32_t, 4> vers;
 	for (auto& ns : nsArray) {
-		shared_lock<shared_timed_mutex> lck(ns->lck_);
-		vers.push_back(ns->tagsMatcher_.version() ^ ns->tagsMatcher_.stateToken());
+		auto tm = ns->GetTagsMatcher();
+		vers.push_back(tm.version() ^ tm.stateToken());
 	}
+	WrSerializer pser;
 	vec2pack(vers, pser);
+	const int kInitialFetchAmount = result.FetchAmount() > 0 ? result.FetchAmount() : config_.FetchAmount;
+	result =
+		CoroQueryResults(&conn_, std::move(nsArray), result.i_.fetchFlags_, kInitialFetchAmount, config_.NetTimeout, result.i_.lazyMode_);
 
-	if (!conn) {
-		conn = getConn();
-	}
-
-	result = QueryResults(conn, std::move(nsArray), ctx.cmpl(), result.fetchFlags_, config_.FetchAmount, config_.RequestTimeout);
-
-	auto icompl = [&result](const RPCAnswer& ret, cproto::ClientConnection* /*conn*/) {
-		try {
-			if (ret.Status().ok()) {
-				auto args = ret.GetArgs(2);
-				result.Bind(p_string(args[0]), int(args[1]));
+	auto ret = conn_.Call(mkCommand(cproto::kCmdSelect, netTimeout, &ctx), qser.Slice(), flags, kInitialFetchAmount, pser.Slice());
+	try {
+		if (ret.Status().ok()) {
+			const auto args = ret.GetArgs(2);
+			if (result.i_.sessionTs_.time_since_epoch().count() == 0) {
+				auto ts = conn_.LoginTs();
+				if (ts.has_value()) {
+					result.i_.sessionTs_ = ts.value();
+				} else {
+					return Error(errLogic, "LoginTs must contain value.");
+				}
 			}
-			result.completion(ret.Status());
-		} catch (const Error& err) {
-			result.completion(err);
+			result.Bind(p_string(args[0]), RPCQrId{int(args[1]), args.size() > 2 ? int64_t(args[2]) : -1}, &query);
 		}
-	};
-
-	if (!ctx.cmpl()) {
-		auto ret = conn->Call(mkCommand(cproto::kCmdSelect, netTimeout, &ctx), qser.Slice(), flags, config_.FetchAmount, pser.Slice());
-		icompl(ret, conn);
-		return ret.Status();
-	} else {
-		conn->Call(icompl, mkCommand(cproto::kCmdSelect, netTimeout, &ctx), qser.Slice(), flags, config_.FetchAmount, pser.Slice());
-		return errOK;
+	} catch (const Error& err) {
+		return err;
 	}
+	return ret.Status();
 }
-
-Error RPCClient::Commit(std::string_view nsName) { return getConn()->Call(mkCommand(cproto::kCmdCommit), nsName).Status(); }
 
 Error RPCClient::AddIndex(std::string_view nsName, const IndexDef& iDef, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	iDef.GetJSON(ser);
-	return getConn()->Call(mkCommand(cproto::kCmdAddIndex, &ctx), nsName, ser.Slice()).Status();
+	return conn_.Call(mkCommand(cproto::kCmdAddIndex, &ctx), nsName, ser.Slice()).Status();
 }
 
 Error RPCClient::UpdateIndex(std::string_view nsName, const IndexDef& iDef, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	iDef.GetJSON(ser);
-	return getConn()->Call(mkCommand(cproto::kCmdUpdateIndex, &ctx), nsName, ser.Slice()).Status();
+	return conn_.Call(mkCommand(cproto::kCmdUpdateIndex, &ctx), nsName, ser.Slice()).Status();
 }
 
 Error RPCClient::DropIndex(std::string_view nsName, const IndexDef& idx, const InternalRdxContext& ctx) {
-	return getConn()->Call(mkCommand(cproto::kCmdDropIndex, &ctx), nsName, idx.name_).Status();
+	return conn_.Call(mkCommand(cproto::kCmdDropIndex, &ctx), nsName, idx.Name()).Status();
 }
 
 Error RPCClient::SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext& ctx) {
-	return getConn()->Call(mkCommand(cproto::kCmdSetSchema, &ctx), nsName, schema).Status();
+	return conn_.Call(mkCommand(cproto::kCmdSetSchema, &ctx), nsName, schema).Status();
+}
+
+Error RPCClient::GetSchema(std::string_view nsName, int format, std::string& schema, const InternalRdxContext& ctx) {
+	try {
+		auto ret = conn_.Call(mkCommand(cproto::kCmdGetSchema, &ctx), nsName, format);
+		if (ret.Status().ok()) {
+			schema = ret.GetArgs(1)[0].As<std::string>();
+		}
+		return ret.Status();
+	} catch (const Error& err) {
+		return err;
+	}
 }
 
 Error RPCClient::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const InternalRdxContext& ctx) {
 	try {
-		auto ret = getConn()->Call(mkCommand(cproto::kCmdEnumNamespaces, &ctx), int(opts.options_), p_string(&opts.filter_));
+		auto ret = conn_.Call(mkCommand(cproto::kCmdEnumNamespaces, &ctx), int(opts.options_), p_string(&opts.filter_));
 		if (ret.Status().ok()) {
 			gason::JsonParser parser;
 			auto json = ret.GetArgs(1)[0].As<std::string>();
@@ -607,7 +546,7 @@ Error RPCClient::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesO
 
 Error RPCClient::EnumDatabases(std::vector<std::string>& dbList, const InternalRdxContext& ctx) {
 	try {
-		auto ret = getConn()->Call(mkCommand(cproto::kCmdEnumDatabases, &ctx), 0);
+		auto ret = conn_.Call(mkCommand(cproto::kCmdEnumDatabases, &ctx), 0);
 		if (ret.Status().ok()) {
 			gason::JsonParser parser;
 			auto json = ret.GetArgs(1)[0].As<std::string>();
@@ -624,21 +563,9 @@ Error RPCClient::EnumDatabases(std::vector<std::string>& dbList, const InternalR
 	}
 }
 
-Error RPCClient::SubscribeUpdates(IUpdatesObserver* observer, const UpdatesFilters& filters, SubscriptionOpts opts) {
-	observers_.Add(observer, filters, opts);
-	return subscribeImpl(true);
-}
-
-Error RPCClient::UnsubscribeUpdates(IUpdatesObserver* observer) {
-	if (auto err = observers_.Delete(observer); !err.ok()) {
-		return err;
-	}
-	return subscribeImpl(!observers_.Empty());
-}
-
 Error RPCClient::GetSqlSuggestions(std::string_view query, int pos, std::vector<std::string>& suggests) {
 	try {
-		auto ret = getConn()->Call(mkCommand(cproto::kCmdGetSQLSuggestions), query, pos);
+		auto ret = conn_.Call(mkCommand(cproto::kCmdGetSQLSuggestions), query, pos);
 		if (ret.Status().ok()) {
 			auto rargs = ret.GetArgs();
 			suggests.clear();
@@ -654,234 +581,248 @@ Error RPCClient::GetSqlSuggestions(std::string_view query, int pos, std::vector<
 	}
 }
 
-Error RPCClient::Status() { return getConn()->CheckConnection(); }
-
-void RPCClient::checkSubscribes() {
-	bool subscribe = !observers_.Empty();
-
-	auto updatesConn = updatesConn_.load();
-	if (subscribe && !updatesConn_) {
-		getConn()->Call(
-			[this](const RPCAnswer& ans, cproto::ClientConnection* conn) {
-				if (ans.Status().ok()) {
-					updatesConn_ = conn;
-					observers_.OnConnectionState(errOK);
-					conn->SetUpdatesHandler([this](RPCAnswer&& ans, cproto::ClientConnection* conn) { onUpdates(ans, conn); });
-				}
-			},
-			mkCommand(cproto::kCmdSubscribeUpdates), 1);
-	} else if (!subscribe && updatesConn) {
-		updatesConn->Call([](const RPCAnswer&, cproto::ClientConnection*) {}, mkCommand(cproto::kCmdSubscribeUpdates), 0);
-		updatesConn_ = nullptr;
+Error RPCClient::Status(bool forceCheck, const InternalRdxContext& ctx) {
+	if (!conn_.IsRunning()) {
+		return Error(errParams, "Client is not running");
 	}
+	return conn_.Status(forceCheck, std::max(config_.NetTimeout, ctx.execTimeout()), ctx.execTimeout(), ctx.getCancelCtx());
 }
 
-Namespace* RPCClient::getNamespace(std::string_view nsName) {
-	nsMutex_.lock_shared();
-	auto nsIt = namespaces_.find(nsName);
-	if (nsIt != namespaces_.end()) {
-		nsMutex_.unlock_shared();
-		return nsIt->second.get();
+Error RPCClient::Version(std::string& version, const InternalRdxContext& ctx) {
+	if (!conn_.IsRunning()) {
+		return Error(errParams, "Client is not running");
 	}
-	nsMutex_.unlock_shared();
 
-	nsMutex_.lock();
-	nsIt = namespaces_.find(nsName);
-	if (nsIt == namespaces_.end()) {
-		std::string nsNames(nsName);
-		nsIt = namespaces_.emplace(nsNames, Namespace::Ptr(new Namespace(nsNames))).first;
+	if (auto err = Status(true, ctx); !err.ok()) {
+		return err;
 	}
-	nsMutex_.unlock();
-	return nsIt->second.get();
+
+	auto versionOpt = conn_.RxServerVersion();
+	if (!versionOpt) {
+		return Error(errLogic, "Unable to detect the version of the connection server");
+	}
+	version = std::move(*versionOpt);
+
+	return {};
 }
 
-net::cproto::ClientConnection* RPCClient::getConn() {
-	assertrx(connections_.size());
-	auto conn = connections_.at(curConnIdx_++ % connections_.size()).get();
-	assertrx(conn);
-	return conn;
-}
+std::shared_ptr<Namespace> RPCClient::getNamespace(std::string_view nsName) { return namespaces_->Get(nsName); }
 
 cproto::CommandParams RPCClient::mkCommand(cproto::CmdCode cmd, const InternalRdxContext* ctx) const noexcept {
-	return mkCommand(cmd, config_.RequestTimeout, ctx);
+	return mkCommand(cmd, config_.NetTimeout, ctx);
 }
 
-cproto::CommandParams RPCClient::mkCommand(cproto::CmdCode cmd, std::chrono::seconds reqTimeout, const InternalRdxContext* ctx) noexcept {
+cproto::CommandParams RPCClient::mkCommand(cproto::CmdCode cmd, cproto::CoroClientConnection::TimePointT requiredTs,
+										   const InternalRdxContext* ctx) const noexcept {
+	auto params = mkCommand(cmd, config_.NetTimeout, ctx);
+	params.requiredLoginTs.emplace(requiredTs);
+	return params;
+}
+
+cproto::CommandParams RPCClient::mkCommand(cproto::CmdCode cmd, milliseconds netTimeout, const InternalRdxContext* ctx) noexcept {
 	if (ctx) {
-		return {cmd, reqTimeout, ctx->execTimeout(), ctx->getCancelCtx()};
+		return {cmd,
+				std::max(netTimeout, ctx->execTimeout()),
+				ctx->execTimeout(),
+				ctx->lsn(),
+				ctx->emmiterServerId(),
+				ctx->shardId(),
+				ctx->getCancelCtx(),
+				ctx->IsShardingParallelExecution()};
 	}
-	return {cmd, reqTimeout, std::chrono::milliseconds(0), nullptr};
+	return {cmd, netTimeout, std::chrono::milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, nullptr, false};
 }
 
-void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection* conn) {
-	if (!ans.Status().ok()) {
-		updatesConn_ = nullptr;
-		observers_.OnConnectionState(ans.Status());
-		return;
+CoroTransaction RPCClient::NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) {
+	auto ret = conn_.Call(mkCommand(cproto::kCmdStartTransaction, &ctx), nsName);
+	auto err = ret.Status();
+	if (err.ok()) {
+		try {
+			auto args = ret.GetArgs(1);
+			return CoroTransaction(this, int64_t(args[0]), config_.NetTimeout, ctx.execTimeout(), getNamespace(nsName),
+								   ctx.emmiterServerId());
+		} catch (Error& e) {
+			err = std::move(e);
+		}
 	}
+	return CoroTransaction(std::move(err));
+}
 
-	if (!delayedUpdates_.empty()) {
-		ans.EnsureHold();
-		delayedUpdates_.emplace_back(std::move(ans));
-		return;
-	}
-	cproto::Args args;
-	try {
-		args = ans.GetArgs();
-	} catch (const Error& err) {
-		logPrintf(LogError, "Parsing updates error: %s", err.what());
-		return;
-	}
-	if (args.size() == 1) {
-		std::string_view nsName(args[0]);
-		observers_.OnUpdatesLost(nsName);
-		return;
-	}
-	if (args.size() < 3) {
-		logPrintf(LogError, "Parsing updates error: args count %d", args.size());
-		return;
-	}
-	lsn_t lsn{int64_t(args[0])};
-	std::string_view nsName(args[1]);
-	std::string_view pwalRec(args[2]);
-	lsn_t originLSN;
-	if (args.size() >= 4) {
-		originLSN = lsn_t(args[3].As<int64_t>());
-	}
-	WALRecord wrec(pwalRec);
-
-	if (wrec.type == WalItemModify) {
-		// Special process for Item Modify
-		auto ns = getNamespace(nsName);
-
-		// Check if cjson with bundled tagsMatcher
-		const bool bundledTagsMatcher =
-			wrec.itemModify.itemCJson.length() > 0 && Serializer{wrec.itemModify.itemCJson}.GetCTag() == kCTagEnd;
-
-		ns->lck_.lock_shared();
-		auto tmVersion = ns->tagsMatcher_.version();
-		ns->lck_.unlock_shared();
-
-		if (tmVersion < wrec.itemModify.tmVersion && !bundledTagsMatcher) {
-			// If tagsMatcher has been updated but there is no bundled tagsMatcher in cjson
-			// then we need to ask server to send tagsMatcher.
-
-			++serialDelays_;
-			// Postpone this update and all subsequent updates until we receive response from the server.
-			ans.EnsureHold();
-			delayedUpdates_.emplace_back(std::move(ans));
-
-			QueryResults* qr = new QueryResults;
-			auto err = Select(
-				Query(std::string(nsName)).Limit(0), *qr,
-				InternalRdxContext(
-					nullptr,
-					[this, qr, conn](const Error& err) {
-						delete qr;
-						// If there are delayed updates then send them to client
-						auto uq = std::move(delayedUpdates_);
-						delayedUpdates_.clear();
-
-						if (!err.ok() || serialDelays_ > 1) {
-							// This update was already delayed, but was not able to synchronize tagsmatcher.
-							// Such situation usually means, that master's namespace was recreated and must be synchronized via force
-							// sync.
-							// Current fix is suboptimal and in some cases even incorrect (but still better, than previous
-							// implementation) - proper fix requires some versioning info about namespaces, which exists
-							// in v4 only
-							std::string_view nsName(std::string_view(uq.front().GetArgs(1)[1]));
-							logPrintf(
-								LogWarning,
-								"[repl:%s] Unable to sync tags matcher via online-replication (err: '%s'). Calling UpdatesLost fallback",
-								nsName, err.what());
-							serialDelays_ = 0;
-							observers_.OnUpdatesLost(nsName);
-						} else {
-							for (auto& a1 : uq) {
-								onUpdates(a1, conn);
-							}
-						}
-					}),
-				conn);
-			if (!err.ok()) {
-				logPrintf(LogWarning,
-						  "[repl:%s] Unable to sync tags matcher via online-replication (select err: '%s'). Calling UpdatesLost fallback",
-						  err.what());
-				observers_.OnUpdatesLost(nsName);
+Error RPCClient::CommitTransaction(CoroTransaction& tr, CoroQueryResults& result, const InternalRdxContext& ctx) {
+	Error returnErr;
+	auto conn = tr.getConn();
+	if (conn) {
+		const int flags = result.i_.fetchFlags_ ? result.i_.fetchFlags_ : (kResultsWithItemID | kResultsWithPayloadTypes);
+		result = CoroQueryResults(conn, {tr.i_.ns_}, flags, config_.FetchAmount, config_.NetTimeout, false);
+		auto ret = conn->Call(mkCommand(cproto::kCmdCommitTx, tr.i_.sessionTs_, &ctx), tr.i_.txId_, flags);
+		returnErr = ret.Status();
+		try {
+			if (ret.Status().ok()) {
+				auto args = ret.GetArgs(2);
+				result.Bind(p_string(args[0]), RPCQrId{int(args[1]), args.size() > 2 ? int64_t(args[2]) : -1}, nullptr);
+				tr.i_.ns_->TryReplaceTagsMatcher(result.GetTagsMatcher(0));
 			}
-			return;
-		} else {
-			// We have bundled tagsMatcher
-			if (bundledTagsMatcher) {
-				// printf("%s bundled tm %d to %d\n", ns->name_.c_str(), ns->tagsMatcher_.version(), wrec.itemModify.tmVersion);
-				Serializer rdser(wrec.itemModify.itemCJson);
-				[[maybe_unused]] const ctag tag = rdser.GetCTag();
-				uint32_t tmOffset = rdser.GetUInt32();
-				// read tags matcher update
-				rdser.SetPos(tmOffset);
-				std::unique_lock<shared_timed_mutex> lck(ns->lck_);
-				ns->tagsMatcher_ = TagsMatcher();
-				ns->tagsMatcher_.deserialize(rdser, wrec.itemModify.tmVersion, ns->tagsMatcher_.stateToken());
+		} catch (const Error& err) {
+			returnErr = err;
+		}
+	} else {
+		returnErr = Error(errLogic, "connection is nullptr");
+	}
+	tr.clear();
+	return returnErr;
+}
+
+Error RPCClient::RollBackTransaction(CoroTransaction& tr, const InternalRdxContext& ctx) {
+	Error ret;
+	auto conn = tr.getConn();
+	if (conn) {
+		ret = conn->Call(mkCommand(cproto::kCmdRollbackTx, tr.i_.sessionTs_, &ctx), tr.i_.txId_).Status();
+	} else {
+		ret = Error(errLogic, "connection is nullptr");
+	}
+	tr.clear();
+	return ret;
+}
+
+Error RPCClient::GetReplState(std::string_view nsName, ReplicationStateV2& state, const InternalRdxContext& ctx) {
+	WrSerializer ser;
+	auto ret = conn_.Call(mkCommand(cproto::kCmdGetReplState, &ctx), nsName);
+	if (ret.Status().ok()) {
+		try {
+			auto json = ret.GetArgs(1)[0].As<std::string>();
+			state.FromJSON(giftStr(json));
+		} catch (Error& err) {
+			return err;
+		}
+	}
+	return ret.Status();
+}
+
+Error RPCClient::SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus& status, const InternalRdxContext& ctx) {
+	WrSerializer ser;
+	status.GetJSON(ser);
+	return conn_.Call(mkCommand(cproto::kCmdSetClusterizationStatus, &ctx), nsName, ser.Slice()).Status();
+}
+
+Error RPCClient::GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, Snapshot& snapshot, const InternalRdxContext& ctx) {
+	WrSerializer ser;
+	opts.GetJSON(ser);
+	auto ret = conn_.Call(mkCommand(cproto::kCmdGetSnapshot, &ctx), nsName, ser.Slice());
+	try {
+		if (ret.Status().ok()) {
+			auto args = ret.GetArgs(3);
+			int64_t count = int64_t(args[1]);
+			snapshot = Snapshot(&conn_, int(args[0]), count, int64_t(args[2]), lsn_t(int64_t(args[3])),
+								count > 0 ? p_string(args[4]) : p_string(), config_.NetTimeout);
+			const unsigned nextArgNum = count > 0 ? 5 : 4;
+			if (args.size() >= nextArgNum + 1) {
+				snapshot.ClusterizationStat(ClusterizationStatus{.leaderId = int(args[nextArgNum]),
+																 .role = reindexer::ClusterizationStatus::Role(int(args[nextArgNum + 1]))});
 			}
 		}
-	} else if (wrec.type == WalTagsMatcher) {
-		TagsMatcher tm;
-		Serializer ser(wrec.data.data(), wrec.data.size());
-		const auto version = int(ser.GetVarint());
-		const auto stateToken = int(ser.GetVarint());
-		tm.deserialize(ser, version, stateToken);
-		auto ns = getNamespace(nsName);
-		std::lock_guard lck(ns->lck_);
-		ns->tagsMatcher_ = std::move(tm);
+	} catch (const Error& err) {
+		return err;
 	}
-	serialDelays_ = 0;
-	observers_.OnWALUpdate(LSNPair(lsn, originLSN), nsName, wrec);
+	return ret.Status();
 }
 
-bool RPCClient::onConnectionFail(int failedDsnIndex) {
-	if (!connectData_.ThereAreReconnectOptions()) {
-		return false;
-	}
-	if (!connectData_.CurrDsnFailed(failedDsnIndex)) {
-		return false;
-	}
-
-	connectData_.lastFailedEntryIdx = failedDsnIndex;
-	connectData_.validEntryIdx.store(connectData_.GetNextDsnIndex(), std::memory_order_release);
-
-	for (size_t i = 0; i < connections_.size(); ++i) {
-		connections_[i]->Reconnect();
-	}
-	return true;
+Error RPCClient::ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk& ch, const InternalRdxContext& ctx) {
+	WrSerializer ser;
+	ch.Serilize(ser);
+	return conn_.Call(mkCommand(cproto::kCmdApplySnapshotCh, &ctx), nsName, ser.Slice()).Status();
 }
 
-Transaction RPCClient::NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) {
-	net::cproto::ClientConnection* conn = getConn();
-	auto res = conn->Call(mkCommand(cproto::kCmdStartTransaction, &ctx), nsName);
-	auto err = res.Status();
+Error RPCClient::SetTagsMatcher(std::string_view nsName, TagsMatcher&& tm, const InternalRdxContext& ctx) {
+	WrSerializer ser;
+	tm.serialize(ser);
+	auto err = conn_.Call(mkCommand(cproto::kCmdSetTagsMatcher, &ctx), nsName, int64_t(tm.stateToken()), int64_t(tm.version()), ser.Slice())
+				   .Status();
 	if (err.ok()) {
-		auto args = res.GetArgs(1);
-		return Transaction(this, conn, int64_t(args[0]), config_.RequestTimeout, ctx.execTimeout(),
-						   std::string(nsName.data(), nsName.size()));
+		getNamespace(nsName)->TryReplaceTagsMatcher(std::move(tm), false);
 	}
-	return Transaction(std::move(err));
+	return err;
 }
 
-Error RPCClient::CommitTransaction(Transaction& tr, const InternalRdxContext& ctx) {
-	if (tr.conn_) {
-		auto ret = tr.conn_->Call(mkCommand(cproto::kCmdCommitTx, &ctx), tr.txId_).Status();
-		tr.clear();
-		return ret;
+Error RPCClient::SuggestLeader(const NodeData& suggestion, NodeData& response, const InternalRdxContext& ctx) {
+	WrSerializer ser;
+	suggestion.GetJSON(ser);
+	auto ret = conn_.Call(mkCommand(cproto::kCmdSuggestLeader, &ctx), ser.Slice());
+	if (ret.Status().ok()) {
+		try {
+			gason::JsonParser parser;
+			auto json = ret.GetArgs(1)[0].As<std::string>();
+			auto root = parser.Parse(giftStr(json));
+			return response.FromJSON(root);
+		} catch (Error& err) {
+			return err;
+		}
 	}
-	return Error(errLogic, "connection is nullptr");
+	return ret.Status();
 }
-Error RPCClient::RollBackTransaction(Transaction& tr, const InternalRdxContext& ctx) {
-	if (tr.conn_) {
-		auto ret = tr.conn_->Call(mkCommand(cproto::kCmdRollbackTx, &ctx), tr.txId_).Status();
-		tr.clear();
-		return ret;
+
+Error RPCClient::ClusterControlRequest(const ClusterControlRequestData& request, const InternalRdxContext& ctx) {
+	WrSerializer ser;
+	request.GetJSON(ser);
+	return conn_.Call(mkCommand(cproto::kCmdClusterControlRequest, &ctx), ser.Slice()).Status();
+}
+
+int64_t RPCClient::AddConnectionStateObserver(ConnectionStateHandlerT callback) {
+	do {
+		const auto tm = steady_clock_w::now().time_since_epoch().count();
+		if (observers_.find(tm) == observers_.end()) {
+			observers_.emplace(std::make_pair(tm, std::move(callback)));
+			return tm;
+		}
+	} while (true);
+}
+
+Error RPCClient::RemoveConnectionStateObserver(int64_t id) {
+	return observers_.erase(id) ? Error() : Error(errNotFound, "Callback with id %d does not exist", id);
+}
+
+Error RPCClient::LeadersPing(const RPCClient::NodeData& leader, const InternalRdxContext& ctx) {
+	WrSerializer ser;
+	leader.GetJSON(ser);
+	return conn_.Call(mkCommand(cproto::kCmdLeadersPing, &ctx), ser.Slice()).Status();
+}
+
+Error RPCClient::GetRaftInfo(RaftInfo& info, const InternalRdxContext& ctx) {
+	auto ret = conn_.Call(mkCommand(cproto::kCmdGetRaftInfo, &ctx));
+	if (ret.Status().ok()) {
+		try {
+			gason::JsonParser parser;
+			auto json = ret.GetArgs(1)[0].As<std::string>();
+			auto root = parser.Parse(giftStr(json));
+			return info.FromJSON(root);
+		} catch (Error& err) {
+			return err;
+		}
 	}
-	return Error(errLogic, "connection is nullptr");
+	return ret.Status();
+}
+
+Error RPCClient::ShardingControlRequest(const sharding::ShardingControlRequestData& request,
+										sharding::ShardingControlResponseData& response, const InternalRdxContext& ctx) noexcept {
+	try {
+		WrSerializer ser;
+		request.GetJSON(ser);
+		auto ret = conn_.Call(mkCommand(cproto::kShardingControlRequest, &ctx), ser.Slice());
+		if (ret.Status().ok()) {
+			try {
+				if (auto args = ret.GetArgs(); args.size() == 1) {
+					auto json = args[0].As<std::string>();
+					auto err = response.FromJSON(giftStr(json));
+					if (!err.ok()) {
+						return err;
+					}
+				}
+			} catch (Error& err) {
+				return err;
+			}
+		}
+		return ret.Status();
+	}
+	CATCH_AND_RETURN
 }
 
 }  // namespace client

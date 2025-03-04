@@ -6,6 +6,7 @@
 #include "core/expressiontree.h"
 #include "core/keyvalue/variant.h"
 #include "core/payload/fieldsset.h"
+#include "core/query/knn_search_params.h"
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
 #include "tools/serializer.h"
@@ -98,14 +99,14 @@ public:
 		Verify();
 	}
 	template <typename Str>
-	QueryEntry(Str&& fieldName, DistinctTag) : QueryField{std::forward<Str>(fieldName)}, condition_{CondAny}, distinct_{true} {
+	QueryEntry(Str&& fieldName, DistinctTag) : QueryField(std::forward<Str>(fieldName)), condition_(CondAny), distinct_(true) {
 		Verify();
 	}
 	template <typename VA, std::enable_if_t<std::is_constructible_v<VariantArray, VA>>* = nullptr>
 	QueryEntry(QueryField&& field, CondType cond, VA&& v) : QueryField{std::move(field)}, values_{std::forward<VA>(v)}, condition_{cond} {
 		Verify();
 	}
-	QueryEntry(QueryField&& field, CondType cond, IgnoreEmptyValues) : QueryField{std::move(field)}, condition_{cond} {
+	QueryEntry(QueryField&& field, CondType cond, IgnoreEmptyValues) : QueryField(std::move(field)), condition_(cond) {
 		verifyIgnoringEmptyValues();
 	}
 	[[nodiscard]] CondType Condition() const noexcept { return condition_; }
@@ -173,6 +174,10 @@ private:
 	size_t injectedFrom_{NotInjected};
 };
 
+class ForcedSortOptimizationQueryEntry : public QueryEntry {
+	using QueryEntry::QueryEntry;
+};
+
 class BetweenFieldsQueryEntry {
 public:
 	template <typename StrL, typename StrR>
@@ -229,8 +234,6 @@ struct AlwaysFalse {};
 constexpr bool operator==(AlwaysFalse, AlwaysFalse) noexcept { return true; }
 struct AlwaysTrue {};
 constexpr bool operator==(AlwaysTrue, AlwaysTrue) noexcept { return true; }
-
-class JsonBuilder;
 
 using EqualPosition_t = h_vector<std::string, 2>;
 using EqualPositions_t = std::vector<EqualPosition_t>;
@@ -321,8 +324,10 @@ private:
 
 class QueryJoinEntry {
 public:
-	QueryJoinEntry(OpType op, CondType cond, std::string&& leftFld, std::string&& rightFld, bool reverseNs = false) noexcept
-		: leftField_{std::move(leftFld)}, rightField_{std::move(rightFld)}, op_{op}, condition_{cond}, reverseNamespacesOrder_{reverseNs} {}
+	QueryJoinEntry(OpType op, CondType cond, std::string&& leftFld, std::string&& rightFld, bool reverseNs = false)
+		: leftField_{std::move(leftFld)}, rightField_{std::move(rightFld)}, op_{op}, condition_{cond}, reverseNamespacesOrder_{reverseNs} {
+		verify();
+	}
 	[[nodiscard]] bool operator==(const QueryJoinEntry&) const noexcept;
 	[[nodiscard]] bool operator!=(const QueryJoinEntry& other) const noexcept { return !operator==(other); }
 	[[nodiscard]] bool IsLeftFieldIndexed() const noexcept { return leftField_.IsFieldIndexed(); }
@@ -348,16 +353,6 @@ public:
 	[[nodiscard]] QueryField& LeftFieldData() & noexcept { return leftField_; }
 	[[nodiscard]] const QueryField& RightFieldData() const& noexcept { return rightField_; }
 	[[nodiscard]] QueryField& RightFieldData() & noexcept { return rightField_; }
-	void SetLeftIndexData(int idxNo, FieldsSet&& fields, KeyValueType fieldType, KeyValueType selectType,
-						  QueryField::CompositeTypesVecT&& compositeFieldsTypes) & {
-		leftField_.SetIndexData(idxNo, std::move(fields), fieldType, selectType, std::move(compositeFieldsTypes));
-	}
-	void SetRightIndexData(int idxNo, FieldsSet&& fields, KeyValueType fieldType, KeyValueType selectType,
-						   QueryField::CompositeTypesVecT&& compositeFieldsTypes) & {
-		rightField_.SetIndexData(idxNo, std::move(fields), fieldType, selectType, std::move(compositeFieldsTypes));
-	}
-	void SetLeftField(FieldsSet&& fields) & { leftField_.SetField(std::move(fields)); }
-	void SetRightField(FieldsSet&& fields) & { rightField_.SetField(std::move(fields)); }
 	[[nodiscard]] bool FieldsHaveBeenSet() const noexcept { return leftField_.FieldsHaveBeenSet() && rightField_.FieldsHaveBeenSet(); }
 
 	template <typename JS>
@@ -373,6 +368,8 @@ public:
 	auto RightFieldData() const&& = delete;
 
 private:
+	void verify() const;
+
 	QueryField leftField_;
 	QueryField rightField_;
 	const OpType op_{OpOr};
@@ -382,13 +379,42 @@ private:
 												///< true:  joinNs.joinIndex Invert(Condition) mainNs.index
 };
 
+class KnnQueryEntry {
+public:
+	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	KnnQueryEntry(Str&& fldName, ConstFloatVectorView v, KnnSearchParams params)
+		: KnnQueryEntry{std::forward<Str>(fldName), ConstFloatVector{v.Span()}, params} {}
+	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	KnnQueryEntry(Str&& fldName, ConstFloatVector v, KnnSearchParams params)
+		: fieldName_{std::forward<Str>(fldName)}, value_{std::move(v)}, params_{params} {}
+	[[nodiscard]] int IndexNo() const noexcept { return idxNo_; }
+	ConstFloatVectorView Value() const& noexcept { return ConstFloatVectorView{value_}; }
+	[[nodiscard]] KnnSearchParams Params() const noexcept { return params_; }
+	[[nodiscard]] bool FieldsHaveBeenSet() const noexcept { return idxNo_ != IndexValueType::NotSet; }
+	[[nodiscard]] const std::string& FieldName() const& noexcept { return fieldName_; }
+	void SetIndexNo(int idx) noexcept { idxNo_ = idx; }
+	[[nodiscard]] std::string Dump() const;
+	[[nodiscard]] bool operator==(const KnnQueryEntry&) const noexcept;
+	[[nodiscard]] bool operator!=(const KnnQueryEntry& other) const noexcept { return !operator==(other); }
+
+	auto Value() const&& = delete;
+	auto FieldName() const&& = delete;
+
+private:
+	std::string fieldName_;
+	int idxNo_{IndexValueType::NotSet};
+	ConstFloatVector value_;
+	KnnSearchParams params_;
+};
+
 enum class InjectionDirection : bool { IntoMain, FromMain };
 class Index;
 
-class QueryEntries : public ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse,
-										   AlwaysTrue, SubQueryEntry, SubQueryFieldEntry> {
-	using Base = ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse,
-								AlwaysTrue, SubQueryEntry, SubQueryFieldEntry>;
+class QueryEntries
+	: public ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, ForcedSortOptimizationQueryEntry, JoinQueryEntry,
+							BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, SubQueryEntry, SubQueryFieldEntry, KnnQueryEntry> {
+	using Base = ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, ForcedSortOptimizationQueryEntry, JoinQueryEntry,
+								BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, SubQueryEntry, SubQueryFieldEntry, KnnQueryEntry>;
 	explicit QueryEntries(Base&& b) : Base{std::move(b)} {}
 
 public:

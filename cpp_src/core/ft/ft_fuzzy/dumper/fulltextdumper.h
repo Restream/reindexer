@@ -15,7 +15,7 @@ public:
 
 	void Log(const std::string& data);
 
-	void LogFinalData(const reindexer::QueryResults& result);
+	void LogFinalData(const reindexer::LocalQueryResults& result);
 	void AddResultData(const std::string& reqest);
 
 private:

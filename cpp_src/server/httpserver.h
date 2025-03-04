@@ -77,29 +77,30 @@ public:
 	int GetMemInfo(http::Context& ctx);
 	void Logger(http::Context& ctx);
 	void OnResponse(http::Context& ctx);
+	int GetRole(http::Context& ctx);
 
 protected:
 	Error modifyItem(Reindexer& db, std::string& nsName, Item& item, ItemModifyMode mode);
 	Error modifyItem(Reindexer& db, std::string& nsName, Item& item, QueryResults&, ItemModifyMode mode);
 	int modifyItems(http::Context& ctx, ItemModifyMode mode);
 	int modifyItemsTx(http::Context& ctx, ItemModifyMode mode);
-	int modifyItemsProtobuf(http::Context& ctx, std::string& nsName, const std::vector<std::string>& precepts, ItemModifyMode mode);
-	int modifyItemsMsgPack(http::Context& ctx, std::string& nsName, const std::vector<std::string>& precepts, ItemModifyMode mode);
-	int modifyItemsJSON(http::Context& ctx, std::string& nsName, const std::vector<std::string>& precepts, ItemModifyMode mode);
-	int modifyItemsTxMsgPack(http::Context& ctx, Transaction& tx, const std::vector<std::string>& precepts, ItemModifyMode mode);
-	int modifyItemsTxJSON(http::Context& ctx, Transaction& tx, const std::vector<std::string>& precepts, ItemModifyMode mode);
+	int modifyItemsProtobuf(http::Context& ctx, std::string& nsName, std::vector<std::string>&& precepts, ItemModifyMode mode);
+	int modifyItemsMsgPack(http::Context& ctx, std::string& nsName, std::vector<std::string>&& precepts, ItemModifyMode mode);
+	int modifyItemsJSON(http::Context& ctx, std::string& nsName, std::vector<std::string>&& precepts, ItemModifyMode mode);
+	int modifyItemsTxMsgPack(http::Context& ctx, Transaction& tx, std::vector<std::string>&& precepts, ItemModifyMode mode);
+	int modifyItemsTxJSON(http::Context& ctx, Transaction& tx, std::vector<std::string>&& precepts, ItemModifyMode mode);
 	int queryResults(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults = false, unsigned limit = kDefaultLimit,
 					 unsigned offset = kDefaultOffset);
-	int queryResultsMsgPack(http::Context& ctx, const reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
+	int queryResultsMsgPack(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
 							bool withColumns, int width = 0);
-	int queryResultsProtobuf(http::Context& ctx, const reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
+	int queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
 							 bool withColumns, int width = 0);
-	int queryResultsJSON(http::Context& ctx, const reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
+	int queryResultsJSON(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
 						 bool withColumns, int width = 0);
 	int queryResultsCSV(http::Context& ctx, reindexer::QueryResults& res, unsigned limit, unsigned offset);
 	template <typename Builder>
-	void queryResultParams(Builder& builder, const reindexer::QueryResults& res, bool isQueryResults, unsigned limit, bool withColumns,
-						   int width);
+	void queryResultParams(Builder& builder, reindexer::QueryResults& res, std::vector<std::string>&& jsonData, bool isQueryResults,
+						   unsigned limit, bool withColumns, int width);
 	int status(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
 	int jsonStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
 	int msgpackStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
@@ -151,6 +152,8 @@ protected:
 
 private:
 	Error execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults& res, http::Context& ctx);
+	bool isParameterSetOn(std::string_view val) const noexcept;
+	int getAuth(http::Context& ctx, AuthContext& auth, const std::string& dbName) const;
 };
 
 }  // namespace reindexer_server

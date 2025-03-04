@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.12)
 
 project(reindexer_grpc_library)
 set (TARGET reindexer_grpc_library)

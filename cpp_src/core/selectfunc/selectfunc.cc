@@ -1,8 +1,10 @@
 #include "selectfunc.h"
 #include <cctype>
-#include <memory>
 #include "core/payload/fieldsset.h"
+#include "core/queryresults/localqueryresults.h"
+#include "core/type_consts_helpers.h"
 #include "ctx/ftctx.h"
+#include "ctx/knn_ctx.h"
 #include "functions/highlight.h"
 #include "functions/snippet.h"
 
@@ -110,16 +112,17 @@ BaseFunctionCtx::Ptr SelectFunction::createFuncForProc(int indexNo) {
 }
 
 BaseFunctionCtx::Ptr SelectFunction::CreateCtx(int indexNo) {
-	// we use this hack because ft always needs ctx to generate proc in response
-	if (functions_.empty() && IsFullText(nm_.getIndexType(indexNo))) {
-		return createFuncForProc(indexNo);
-	} else if (functions_.empty()) {
-		return nullptr;
+	const auto indexType = nm_.getIndexType(indexNo);
+	// we use this hack because ft and knn always needs ctx to generate proc in response
+	if (functions_.empty()) {
+		if (IsFullText(indexType) || IsFloatVector(indexType)) {
+			return createFuncForProc(indexNo);
+		} else {
+			return nullptr;
+		}
 	}
 
 	BaseFunctionCtx::Ptr ctx;
-	const IndexType indexType = nm_.getIndexType(indexNo);
-
 	if (IsComposite(indexType)) {
 		int fieldNo = 0;
 		int cjsonFieldIdx = nm_.getIndexesCount();
@@ -141,12 +144,15 @@ BaseFunctionCtx::Ptr SelectFunction::CreateCtx(int indexNo) {
 			ctx = createCtx(it->second, ctx, indexType);
 		}
 	}
-	if (!ctx && IsFullText(indexType)) {
-		return createFuncForProc(indexNo);
+	if (!ctx) {
+		if (IsFullText(indexType) || IsFloatVector(indexType)) {
+			return createFuncForProc(indexNo);
+		}
 	}
 	return ctx;
 }
-void SelectFunctionsHolder::Process(QueryResults& res) {
+
+void SelectFunctionsHolder::Process(LocalQueryResults& res) {
 	if (queries_.empty() || force_only_) {
 		return;
 	}
@@ -162,7 +168,8 @@ void SelectFunctionsHolder::Process(QueryResults& res) {
 	}
 
 	bool changed = false;
-	for (auto& item : res.Items()) {
+	for (auto& it : res) {
+		ItemRef& item = it.GetItemRef();
 		const auto nsid = item.Nsid();
 		if (queries_.size() <= nsid) {
 			continue;
@@ -173,6 +180,7 @@ void SelectFunctionsHolder::Process(QueryResults& res) {
 	}
 	res.nonCacheableData = changed;
 }
+
 bool SelectFunction::ProcessItem(ItemRef& res, PayloadType& pl_type, std::vector<key_string>& stringsHolder) {
 	bool changed = false;
 	for (auto& func : functions_) {
@@ -205,23 +213,23 @@ BaseFunctionCtx::Ptr SelectFunction::createCtx(SelectFuncStruct& data, BaseFunct
 		} else {
 			switch (SelectFuncType(data.func.index())) {
 				case SelectFuncType::None:
-					if (ctx->type != BaseFunctionCtx::CtxType::kFtCtx) {
+					if (ctx->Type() != BaseFunctionCtx::CtxType::kFtCtx) {
 						throw reindexer::Error(errLogic, "The existing calling context type '%d' does not allow this function",
-											   int(ctx->type));
+											   int(ctx->Type()));
 					}
 					break;
 				case SelectFuncType::Snippet:
 				case SelectFuncType::Highlight:
 				case SelectFuncType::SnippetN:
-					if (ctx->type != BaseFunctionCtx::CtxType::kFtArea) {
+					if (ctx->Type() != BaseFunctionCtx::CtxType::kFtArea) {
 						throw reindexer::Error(errLogic, "The existing calling context type '%d' does not allow this function",
-											   int(ctx->type));
+											   int(ctx->Type()));
 					}
 					break;
 				case SelectFuncType::DebugRank:
-					if (ctx->type != BaseFunctionCtx::CtxType::kFtAreaDebug) {
+					if (ctx->Type() != BaseFunctionCtx::CtxType::kFtAreaDebug) {
 						throw reindexer::Error(errLogic, "The existing calling context type '%d' does not allow this function",
-											   int(ctx->type));
+											   int(ctx->Type()));
 					}
 					break;
 				case SelectFuncType::Max:
@@ -231,6 +239,12 @@ BaseFunctionCtx::Ptr SelectFunction::createCtx(SelectFuncStruct& data, BaseFunct
 		}
 		const std::string& indexName = (data.indexNo >= nm_.getIndexesCount()) ? data.field : nm_.getIndexName(data.indexNo);
 		data.ctx->AddFunction(indexName, SelectFuncType(data.func.index()));
+	} else if (IsFloatVector(index_type)) {
+		if (!ctx) {
+			data.ctx = make_intrusive<KnnCtx>();
+		} else {
+			data.ctx = std::move(ctx);
+		}
 	}
 	return data.ctx;
 }

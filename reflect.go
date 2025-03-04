@@ -7,9 +7,9 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/restream/reindexer/v3/bindings"
-	"github.com/restream/reindexer/v3/cjson"
-	"github.com/restream/reindexer/v3/jsonschema"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/cjson"
+	"github.com/restream/reindexer/v5/jsonschema"
 )
 
 const (
@@ -89,6 +89,36 @@ func parseSchema(st reflect.Type) *bindings.SchemaDef {
 
 }
 
+func parseNamedOptions(options *[]string) map[string]string {
+	result := make(map[string]string)
+	for i := 0; i < len(*options); {
+		values := strings.Split((*options)[i], "=")
+		if len(values) == 2 {
+			result[values[0]] = values[1]
+			*options = append((*options)[:i], (*options)[i+1:]...)
+		} else {
+			i++
+		}
+	}
+	return result
+}
+
+func getOptionalValue(name string, values map[string]string) (int, error) {
+	if v, ok := values[name]; ok {
+		intValue, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, err
+		}
+		return intValue, nil
+	} else {
+		return 0, nil
+	}
+}
+
+func isIndexFloatVector(idxType string) bool {
+	return idxType == "hnsw" || idxType == "vec_bf" || idxType == "ivf"
+}
+
 func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reindexBasePath, jsonBasePath string, joined *map[string][]int, parsed *map[string]bool) (err error) {
 	if len(jsonBasePath) != 0 && !strings.HasSuffix(jsonBasePath, ".") {
 		jsonBasePath = jsonBasePath + "."
@@ -156,13 +186,57 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 			continue
 		}
 
-		if opts.isComposite {
+		if isIndexFloatVector(idxType) {
+			if subArray {
+				return fmt.Errorf("array float_vector index is not supported")
+			}
+			if (t.Kind() != reflect.Array && t.Kind() != reflect.Slice) || t.Elem().Kind() != reflect.Float32 {
+				return fmt.Errorf("float_vector index allowed only for float32 array/slice field type")
+			}
+			opts.isArray = false
+			namedOpts := parseNamedOptions(&idxSettings)
+
+			var fvOpts bindings.FloatVectorIndexOpts
+			fvOpts.Metric = namedOpts["metric"]
+			if t.Kind() == reflect.Array {
+				fvOpts.Dimension = t.Len()
+			} else {
+				fvOpts.Dimension, err = strconv.Atoi(namedOpts["dimension"])
+				if err != nil {
+					return err
+				}
+			}
+			fvOpts.StartSize, err = getOptionalValue("start_size", namedOpts)
+			if err != nil {
+				return err
+			}
+			fvOpts.M, err = getOptionalValue("m", namedOpts)
+			if err != nil {
+				return err
+			}
+			fvOpts.EfConstruction, err = getOptionalValue("ef_construction", namedOpts)
+			if err != nil {
+				return err
+			}
+			fvOpts.CentroidsCount, err = getOptionalValue("centroids_count", namedOpts)
+			if err != nil {
+				return err
+			}
+			fvOpts.MultithreadingMode, err = getOptionalValue("multithreading", namedOpts)
+			if err != nil {
+				return err
+			}
+			indexDef := makeIndexDef(reindexPath, []string{jsonPath}, idxType, "float_vector", opts, CollateNone, "", 0, &fvOpts)
+			if err := indexDefAppend(indexDefs, indexDef, opts.isAppenable); err != nil {
+				return err
+			}
+		} else if opts.isComposite {
 			if t.Kind() != reflect.Struct || t.NumField() != 0 {
 				return fmt.Errorf("'composite' tag allowed only on empty on structs: Invalid tags '%v' on field '%s'",
 					strings.SplitN(field.Tag.Get("reindex"), ",", 3), field.Name)
 			}
 
-			indexDef := makeIndexDef(parseCompositeName(reindexPath), parseCompositeJsonPaths(reindexPath), idxType, "composite", opts, CollateNone, "", parseExpireAfter(expireAfter))
+			indexDef := makeIndexDef(parseCompositeName(reindexPath), parseCompositeJsonPaths(reindexPath), idxType, "composite", opts, CollateNone, "", parseExpireAfter(expireAfter), nil)
 			if err := indexDefAppend(indexDefs, indexDef, opts.isAppenable); err != nil {
 				return err
 			}
@@ -201,7 +275,7 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 				return fmt.Errorf("joined index must be a slice of objects/pointers, but it is a scalar value (index name: '%s', field name: '%s', jsonpath: '%s')",
 					reindexPath, field.Name, jsonPath)
 			}
-			indexDef := makeIndexDef(reindexPath, []string{jsonPath}, idxType, fieldType, opts, collateMode, sortOrderLetters, parseExpireAfter(expireAfter))
+			indexDef := makeIndexDef(reindexPath, []string{jsonPath}, idxType, fieldType, opts, collateMode, sortOrderLetters, parseExpireAfter(expireAfter), nil)
 			if err := indexDefAppend(indexDefs, indexDef, opts.isAppenable); err != nil {
 				return err
 			}
@@ -360,7 +434,15 @@ func getJoinedField(val reflect.Value, joined map[string][]int, name string) (re
 	return ret
 }
 
-func makeIndexDef(index string, jsonPaths []string, indexType, fieldType string, opts indexOptions, collateMode int, sortOrder string, expireAfter int) bindings.IndexDef {
+func makeFieldDef(JSONPath string, fieldType string, isArray bool) bindings.FieldDef {
+	return bindings.FieldDef{
+		JSONPath: JSONPath,
+		Type:     fieldType,
+		IsArray:  isArray,
+	}
+}
+
+func makeIndexDef(index string, jsonPaths []string, indexType, fieldType string, opts indexOptions, collateMode int, sortOrder string, expireAfter int, fv *bindings.FloatVectorIndexOpts) bindings.IndexDef {
 	cm := ""
 	switch collateMode {
 	case bindings.CollateASCII:
@@ -385,6 +467,7 @@ func makeIndexDef(index string, jsonPaths []string, indexType, fieldType string,
 		CollateMode: cm,
 		SortOrder:   sortOrder,
 		ExpireAfter: expireAfter,
+		Config:      fv,
 		RTreeType:   opts.rtreeType,
 	}
 }

@@ -1,74 +1,91 @@
 #pragma once
 
-#include "client/synccororeindexer.h"
+#include "auth_tools.h"
+
+#include "cluster/stats/replicationstats.h"
 #include "estl/shared_mutex.h"
 #include "reindexertestapi.h"
 #include "server/server.h"
-#include "tools/fsops.h"
 
 #ifdef REINDEXER_WITH_SC_AS_PROCESS
-const bool kAsServerProcess = true;
+const bool kTestServersInSeparateProcesses = true;
 #else
-const bool kAsServerProcess = false;
+const bool kTestServersInSeparateProcesses = false;
 #endif
 
-struct ReplicationConfigTest {
+struct AsyncReplicationConfigTest {
 	using NsSet = std::unordered_set<std::string, reindexer::nocase_hash_str, reindexer::nocase_equal_str>;
 
-	ReplicationConfigTest(std::string role)
-		: role_(std::move(role)), forceSyncOnLogicError_(false), forceSyncOnWrongDataHash_(true), serverId_(0) {}
-	ReplicationConfigTest(std::string role, std::string appName)
-		: role_(std::move(role)),
-		  forceSyncOnLogicError_(false),
-		  forceSyncOnWrongDataHash_(true),
-		  appName_(std::move(appName)),
-		  serverId_(0) {}
-	ReplicationConfigTest(std::string role, bool forceSyncOnLogicError, bool forceSyncOnWrongDataHash, int serverId = 0,
-						  std::string dsn = std::string(), std::string appName = std::string(), NsSet namespaces = NsSet())
-		: role_(std::move(role)),
-		  forceSyncOnLogicError_(forceSyncOnLogicError),
-		  forceSyncOnWrongDataHash_(forceSyncOnWrongDataHash),
-		  dsn_(std::move(dsn)),
-		  appName_(std::move(appName)),
-		  namespaces_(std::move(namespaces)),
-		  serverId_(serverId) {}
+	struct Node {
+		Node(reindexer::DSN _dsn, std::optional<NsSet> _nsList = std::optional<NsSet>());
+		bool operator==(const Node& node) const noexcept { return dsn == node.dsn && nsList == node.nsList; }
+		bool operator!=(const Node& node) const noexcept { return !(*this == node); }
 
-	bool operator==(const ReplicationConfigTest& config) const {
-		return role_ == config.role_ && forceSyncOnLogicError_ == config.forceSyncOnLogicError_ &&
-			   forceSyncOnWrongDataHash_ == config.forceSyncOnWrongDataHash_ && dsn_ == config.dsn_ && appName_ == config.appName_ &&
-			   namespaces_ == config.namespaces_ && serverId_ == config.serverId_;
-	}
+		void GetJSON(reindexer::JsonBuilder& jb) const;
+
+		reindexer::DSN dsn;
+		std::optional<NsSet> nsList;
+	};
+
+	AsyncReplicationConfigTest(std::string _role, std::vector<Node> _followers = std::vector<Node>(), std::string _appName = std::string(),
+							   std::string _mode = std::string());
+	AsyncReplicationConfigTest(std::string _role, std::vector<Node> _followers, bool _forceSyncOnLogicError, bool _forceSyncOnWrongDataHash,
+							   int _serverId = 0, std::string _appName = std::string(), NsSet _namespaces = NsSet(),
+							   std::string _mode = std::string(), int _onlineUpdatesDelayMSec = 100);
+
+	bool operator==(const AsyncReplicationConfigTest& config) const;
+	bool operator!=(const AsyncReplicationConfigTest& config) const { return !(this->operator==(config)); }
 
 	std::string GetJSON() const;
+	void GetJSON(reindexer::JsonBuilder& jb) const;
 
-	std::string role_;
-	bool forceSyncOnLogicError_;
-	bool forceSyncOnWrongDataHash_;
-	std::string dsn_;
-	std::string appName_;
-	NsSet namespaces_;
-	int serverId_;
+	std::string role;
+	std::string mode;
+	std::vector<Node> nodes;
+	bool forceSyncOnLogicError;
+	bool forceSyncOnWrongDataHash;
+	int syncThreads = 2;
+	int concurrentSyncsPerThread = 2;
+	std::string appName;
+	NsSet namespaces;
+	int serverId;
+	int onlineUpdatesDelayMSec = 100;
 };
 
-using BaseApi = ReindexerTestApi<reindexer::client::SyncCoroReindexer>;
+using BaseApi = ReindexerTestApi<reindexer::client::Reindexer>;
+
+void WriteConfigFile(const std::string& path, const std::string& configYaml);
+
+struct ServerControlConfig {
+	ServerControlConfig(size_t _id, unsigned short _rpcPort, unsigned short _httpPort, std::string _storagePath, std::string _dbName,
+						bool _enableStats = true, size_t _maxUpdatesSize = 0, bool _asServerProcess = kTestServersInSeparateProcesses)
+		: id(_id),
+		  storagePath(std::move(_storagePath)),
+		  httpPort(_httpPort),
+		  rpcPort(_rpcPort),
+		  dbName(std::move(_dbName)),
+		  enableStats(_enableStats),
+		  maxUpdatesSize(_maxUpdatesSize),
+		  asServerProcess(_asServerProcess) {}
+	size_t id;
+	std::string storagePath;
+	unsigned short httpPort;
+	unsigned short rpcPort;
+	std::string dbName;
+	bool enableStats = true;
+	size_t maxUpdatesSize = 0;
+	bool asServerProcess = kTestServersInSeparateProcesses;
+	bool disableNetworkTimeout = false;
+};
 
 class ServerControl {
 public:
-	const std::string kReplicationConfigFilename = "replication.conf";
-	const std::string kConfigNs = "#config";
-	const std::string kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex_repl_test");
 	const unsigned short kDefaultHttpPort = 5555;
 
 	const size_t kMaxServerStartTimeSec = 20;
 	enum class ConfigType { File, Namespace };
 
-	static std::string getTestLogPath() {
-		const char* testSetName = ::testing::UnitTest::GetInstance()->current_test_info()->test_case_name();
-		const char* testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
-		std::string name;
-		name = name + "logs/" + testSetName + "/" + testName + "/";
-		return name;
-	}
+	static std::string getTestLogPath();
 
 	ServerControl(ServerControl&& rhs) noexcept;
 	ServerControl& operator=(ServerControl&&) noexcept;
@@ -80,66 +97,106 @@ public:
 
 	struct Interface {
 		typedef std::shared_ptr<Interface> Ptr;
-		Interface(size_t id, std::atomic_bool& stopped, const std::string& ReplicationConfigFilename, const std::string& StoragePath,
-				  unsigned short httpPort, unsigned short rpcPort, const std::string& dbName, bool enableStats, size_t maxUpdatesSize = 0);
+
+		Interface(std::atomic_bool& stopped, ServerControlConfig config);
+		Interface(std::atomic_bool& stopped, ServerControlConfig config, const YAML::Node& ReplicationConfig,
+				  const YAML::Node& ClusterConfig, const YAML::Node& ShardingConfig, const YAML::Node& AsyncReplicationConfig);
 		~Interface();
 		void Init();
 		// Stop server
 		void Stop();
 
-		// Make this server master
-		void MakeMaster(const ReplicationConfigTest& config = ReplicationConfigTest("master"));
-		// Make this server slave
-		void MakeSlave(const ReplicationConfigTest& config);
+		void MakeLeader(const AsyncReplicationConfigTest& config = AsyncReplicationConfigTest("leader"));
+		void MakeFollower();
+
+		void SetReplicationConfig(const AsyncReplicationConfigTest& config);
+		void AddFollower(const reindexer::DSN& dsn,
+						 std::optional<std::vector<std::string>>&& nsList = std::optional<std::vector<std::string>>(),
+						 reindexer::cluster::AsyncReplicationMode replMode = reindexer::cluster::AsyncReplicationMode::Default);
 		// check with master or slave that sync complete
 		ReplicationTestState GetState(std::string_view ns) { return api.GetReplicationState(ns); }
-		// Force sync (restart slave's replicator)
+		// Force sync (restart leader's replicator)
 		void ForceSync();
+		// Reset replication role for the node
+		void ResetReplicationRole(const std::string& ns = std::string());
+		reindexer::Error TryResetReplicationRole(const std::string& ns);
+		// Set cluster leader
+		void SetClusterLeader(int leaderId);
+		void SetReplicationLogLevel(LogLevel, std::string_view type);
+		BaseApi::ItemType CreateClusterChangeLeaderItem(int leaderId);
 		// get server config from file
-		ReplicationConfigTest GetServerConfig(ConfigType type);
-		// write server config to file
-		void WriteServerConfig(const std::string& configYaml);
+		AsyncReplicationConfigTest GetServerConfig(ConfigType type);
+		// write general replication config file
+		void WriteReplicationConfig(const std::string& configYaml);
+		// write async replication config to file
+		void WriteAsyncReplicationConfig(const std::string& configYaml);
+		// write cluster config to file
+		void WriteClusterConfig(const std::string& configYaml);
+		// write sharding config to file
+		void WriteShardingConfig(const std::string& configYaml);
+		// write user auth data to file
+		void WriteUsersYAMLFile(const std::string& usersYml);
 		// set server's WAL size
 		void SetWALSize(int64_t size, std::string_view nsName);
-		void SetTxAlwaysCopySize(int64_t size, std::string_view nsName);
+		// set optimization sort workers count
 		void SetOptmizationSortWorkers(size_t cnt, std::string_view nsName);
+		void SetTxAlwaysCopySize(int64_t size, std::string_view nsName);
 		void EnableAllProfilings();
+		// get replication stats for specified replication type
+		reindexer::cluster::ReplicationStats GetReplicationStats(std::string_view type);
+
+		size_t Id() const noexcept { return config_.id; }
+		unsigned short RpcPort() const noexcept { return config_.rpcPort; }
+		unsigned short HttpPort() const noexcept { return config_.httpPort; }
+		std::string DbName() const noexcept { return config_.dbName; }
+		std::string GetReplicationConfigFilePath() const;
+		std::string GetAsyncReplicationConfigFilePath() const;
+		std::string GetClusterConfigFilePath() const;
+		std::string GetShardingConfigFilePath() const;
+		std::string GetUsersYAMLFilePath() const;
 
 		reindexer_server::Server srv;
 #ifndef _WIN32
 		pid_t reindexerServerPID = -1;
 		pid_t reindexerServerPIDWait = -1;
 #endif
-		bool asServerProcess = kAsServerProcess;
 		BaseApi api;
 
 	private:
 		template <typename ValueT>
 		void setNamespaceConfigItem(std::string_view nsName, std::string_view paramName, ValueT&& value);
-		void setReplicationConfig(const ReplicationConfigTest& config);
+		template <typename ValueT>
+		void upsertConfigItemFromObject(std::string_view type, const ValueT& object);
 
-		std::string getLogName(const std::string& log, bool core = false);
 		std::vector<std::string> getCLIParamArray(bool enableStats, size_t maxUpdatesSize);
+		std::string getLogName(const std::string& log, bool core = false);
 
-		size_t id_;
 		std::unique_ptr<std::thread> tr;
 		std::atomic_bool& stopped_;
 
-		const std::string kReplicationConfigFilename;
-		const std::string kConfigNs = "#config";
-		const std::string kStoragePath;
-		const unsigned short kRpcPort;
-		const unsigned short kHttpPort;
-		const std::string dbName_;
-		const bool enableStats_;
-		const size_t maxUpdatesSize_;
+		const ServerControlConfig config_;
+		std::string dumpUserRecYAML() const noexcept;
+
+	public:
+		const reindexer::DSN kRPCDsn;
+		constexpr static std::string_view kAsyncReplicationConfigFilename = "async_replication.conf";
+		constexpr static std::string_view kStorageTypeFilename = ".reindexer.storage";
+		constexpr static std::string_view kReplicationConfigFilename = "replication.conf";
+		constexpr static std::string_view kClusterConfigFilename = "cluster.conf";
+		constexpr static std::string_view kClusterShardingFilename = "sharding.conf";
+		constexpr static std::string_view kUsersYAMLFilename = "users.yml";
 	};
 	// Get server - wait means wait until server starts if no server
 	Interface::Ptr Get(bool wait = true);
-	void InitServer(size_t id, unsigned short rpcPort, unsigned short httpPort, const std::string& storagePath, const std::string& dbName,
-					bool enableStats, size_t maxUpdatesSize = 0);
+	void InitServer(ServerControlConfig config);
+	void InitServerWithConfig(ServerControlConfig config, const YAML::Node& ReplicationConfig, const YAML::Node& ClusterConfig,
+							  const YAML::Node& ShardingConfig, const YAML::Node& AsyncReplicationConfig);
 	void Drop();
 	bool IsRunning();
+	bool DropAndWaitStop();
+	static void WaitSync(const Interface::Ptr& s1, const Interface::Ptr& s2, const std::string& nsName);
+
+	static constexpr std::chrono::seconds kMaxSyncTime = std::chrono::seconds(15);
 
 private:
 	typedef reindexer::shared_lock<reindexer::shared_timed_mutex> RLock;

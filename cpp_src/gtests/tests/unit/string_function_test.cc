@@ -1,4 +1,5 @@
-#if defined(__GNUC__) && (__GNUC__ == 12) && defined(REINDEX_WITH_ASAN)
+#if defined(__GNUC__) && ((__GNUC__ == 12) || (__GNUC__ == 13)) && defined(REINDEX_WITH_ASAN)
+// regex header is broken in GCC 12.0-13.3 with ASAN
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #include <regex>

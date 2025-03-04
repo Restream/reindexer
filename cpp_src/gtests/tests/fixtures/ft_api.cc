@@ -64,8 +64,10 @@ reindexer::Error FTApi::SetFTConfig(const reindexer::FtFastConfig& ftCfg, std::s
 		return err;
 	}
 	const auto it = std::find_if(nses[0].indexes.begin(), nses[0].indexes.end(),
-								 [&index](const reindexer::IndexDef& idef) { return idef.name_ == index; });
-	it->opts_.SetConfig(ftCfg.GetJson(fieldsMap));
+								 [&index](const reindexer::IndexDef& idef) { return idef.Name() == index; });
+	auto opts = it->Opts();
+	opts.SetConfig(IndexFastFT, ftCfg.GetJSON(fieldsMap));
+	it->SetOpts(std::move(opts));
 
 	return rt.reindexer->UpdateIndex(ns, *it);
 }
@@ -78,7 +80,6 @@ void FTApi::FillData(int64_t count) {
 		counter_++;
 		item["ft1"] = ft1;
 		rt.Upsert(GetDefaultNamespace(), item);
-		rt.Commit(GetDefaultNamespace());
 	}
 }
 
@@ -99,7 +100,6 @@ std::pair<std::string_view, int> FTApi::Add(std::string_view ft1) {
 	item["ft1"] = std::string{ft1};
 
 	rt.Upsert("nm1", item);
-	rt.Commit("nm1");
 	return make_pair(ft1, counter_ - 1);
 }
 
@@ -111,7 +111,6 @@ void FTApi::Add(std::string_view ns, std::string_view ft1, std::string_view ft2)
 	item["ft2"] = std::string{ft2};
 
 	rt.Upsert(ns, item);
-	rt.Commit(ns);
 }
 
 void FTApi::Add(std::string_view ns, std::string_view ft1, std::string_view ft2, std::string_view ft3) {
@@ -123,7 +122,6 @@ void FTApi::Add(std::string_view ns, std::string_view ft1, std::string_view ft2,
 	item["ft3"] = std::string{ft3};
 
 	rt.Upsert(ns, item);
-	rt.Commit(ns);
 }
 
 void FTApi::AddInBothFields(std::string_view w1, std::string_view w2, unsigned nses) {
@@ -150,8 +148,6 @@ void FTApi::AddInBothFields(std::string_view ns, std::string_view w1, std::strin
 	item["ft1"] = std::string{w2};
 	item["ft2"] = std::string{w2};
 	rt.Upsert(ns, item);
-
-	rt.Commit(ns);
 }
 
 reindexer::QueryResults FTApi::SimpleSelect(std::string_view ns, std::string_view index, std::string_view dsl, bool withHighlight) {
@@ -173,10 +169,10 @@ reindexer::Error FTApi::Delete(int id) {
 	return this->rt.reindexer->Delete("nm1", item);
 }
 
-reindexer::QueryResults FTApi::SimpleCompositeSelect(std::string word) {
+reindexer::QueryResults FTApi::SimpleCompositeSelect(std::string_view word) {
 	auto qr{reindexer::Query("nm1").Where("ft3", CondEq, word)};
 	reindexer::QueryResults res;
-	auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, std::move(word))};
+	auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, word)};
 	mqr.AddFunction("ft1 = snippet(<b>,\"\"</b>,3,2,,d)");
 
 	qr.Merge(std::move(mqr));
@@ -187,11 +183,11 @@ reindexer::QueryResults FTApi::SimpleCompositeSelect(std::string word) {
 	return res;
 }
 
-reindexer::QueryResults FTApi::CompositeSelectField(const std::string& field, std::string word) {
-	word = '@' + field + ' ' + word;
-	auto qr{reindexer::Query("nm1").Where("ft3", CondEq, word)};
+reindexer::QueryResults FTApi::CompositeSelectField(const std::string& field, std::string_view word) {
+	const auto query = fmt::format("@{} {}", field, word);
+	auto qr{reindexer::Query("nm1").Where("ft3", CondEq, query)};
 	reindexer::QueryResults res;
-	auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, std::move(word))};
+	auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, query)};
 	mqr.AddFunction(field + " = snippet(<b>,\"\"</b>,3,2,,d)");
 
 	qr.Merge(std::move(mqr));
@@ -202,8 +198,8 @@ reindexer::QueryResults FTApi::CompositeSelectField(const std::string& field, st
 	return res;
 }
 
-reindexer::QueryResults FTApi::StressSelect(std::string word) {
-	const auto qr{reindexer::Query("nm1").Where("ft3", CondEq, std::move(word))};
+reindexer::QueryResults FTApi::StressSelect(std::string_view word) {
+	const auto qr{reindexer::Query("nm1").Where("ft3", CondEq, word)};
 	reindexer::QueryResults res;
 	auto err = rt.reindexer->Select(qr, res);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -260,4 +256,52 @@ std::vector<std::tuple<std::string, std::string>>& FTApi::DelHighlightSign(std::
 		v2.erase(std::remove(v2.begin(), v2.end(), '!'), v2.end());
 	}
 	return in;
+}
+
+template<typename ResType>
+void FTApi::CheckResults(const std::string &query, const reindexer::QueryResults &qr, std::vector<ResType> &expectedResults, bool withOrder) {
+	constexpr bool kTreeFields = std::tuple_size<ResType>{} == 3;
+	EXPECT_EQ(qr.Count(), expectedResults.size()) << "Query: " << query;
+	for (auto itRes : qr) {
+		const auto item = itRes.GetItem(false);
+		const auto it = std::find_if(expectedResults.begin(), expectedResults.end(), [&item](const ResType& p) {
+			if constexpr (kTreeFields) {
+				return std::get<0>(p) == item["ft1"].As<std::string>() && std::get<1>(p) == item["ft2"].As<std::string>() &&
+					   std::get<2>(p) == item["ft3"].As<std::string>();
+			}
+			return std::get<0>(p) == item["ft1"].As<std::string>() && std::get<1>(p) == item["ft2"].As<std::string>();
+		});
+		if (it == expectedResults.end()) {
+			if constexpr (kTreeFields) {
+				ADD_FAILURE() << "Found not expected: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>()
+				<< "\" \"" << item["ft3"].As<std::string>() << "\"\nQuery: " << query;
+			} else {
+				ADD_FAILURE() << "Found not expected: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>()
+				<< "\"\nQuery: " << query;
+			}
+		} else {
+			if (withOrder) {
+				if constexpr (kTreeFields) {
+					EXPECT_EQ(it, expectedResults.begin())
+					<< "Found not in order: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>()
+					<< "\" \"" << item["ft3"].As<std::string>() << "\"\nQuery: " << query;
+				} else {
+					EXPECT_EQ(it, expectedResults.begin()) << "Found not in order: \"" << item["ft1"].As<std::string>() << "\" \""
+														   << item["ft2"].As<std::string>() << "\"\nQuery: " << query;
+				}
+			}
+			expectedResults.erase(it);
+		}
+	}
+	for (const auto& expected : expectedResults) {
+		if constexpr (kTreeFields) {
+			ADD_FAILURE() << "Not found: \"" << std::get<0>(expected) << "\" \"" << std::get<1>(expected) << "\" \""
+						  << std::get<2>(expected) << "\"\nQuery: " << query;
+		} else {
+			ADD_FAILURE() << "Not found: \"" << std::get<0>(expected) << "\" \"" << std::get<1>(expected) << "\"\nQuery: " << query;
+		}
+	}
+	if (!expectedResults.empty()) {
+		ADD_FAILURE() << "Query: " << query;
+	}
 }

@@ -4,8 +4,11 @@
 #include <bitset>
 #include <variant>
 #include "core/cjson/tagspath.h"
+#include "core/enums.h"
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
+#include "estl/overloaded.h"
+#include "tools/assertrx.h"
 
 namespace reindexer {
 
@@ -92,6 +95,12 @@ public:
 		}
 	}
 
+	void push_front(const TagsPath& tagsPath) {
+		if (!contains(tagsPath)) {
+			base_fields_set::insert(begin(), IndexValueType::SetByJsonPath);
+			tagsPaths_.emplace(tagsPaths_.begin(), tagsPath);
+		}
+	}
 	void push_back(const IndexedTagsPath& tagsPath) { pushBack(tagsPath); }
 	void push_back(IndexedTagsPath&& tagsPath) { pushBack(std::move(tagsPath)); }
 	void push_back(const FieldsPath& fieldPath) { pushBack(fieldPath); }
@@ -218,8 +227,6 @@ public:
 	}
 	bool operator!=(const FieldsSet& f) const noexcept { return !(*this == f); }
 
-	enum class DumpWithMask { No, Yes };
-
 	template <typename T>
 	void Dump(T& os, DumpWithMask withMask) const {
 		const DumpFieldsPath fieldsPathDumper{os};
@@ -231,7 +238,7 @@ public:
 			os << *it;
 		}
 		os << "], ";
-		if (withMask == DumpWithMask::Yes) {
+		if (withMask == DumpWithMask_True) {
 			os << "mask: " << mask_ << ", ";
 		}
 		os << "tagsPaths: [";

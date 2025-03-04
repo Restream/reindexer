@@ -3,11 +3,13 @@ package reindexer
 import (
 	"context"
 	"fmt"
+	"hash/crc32"
 	"log"
 	"net/url"
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/prometheus/client_golang/prometheus"
@@ -15,9 +17,10 @@ import (
 	otelattr "go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
-	"github.com/restream/reindexer/v3/bindings"
-	"github.com/restream/reindexer/v3/cjson"
-	"github.com/restream/reindexer/v3/dsl"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/cjson"
+	"github.com/restream/reindexer/v5/dsl"
+	"github.com/restream/reindexer/v5/events"
 )
 
 type reindexerNamespace struct {
@@ -74,11 +77,39 @@ type reindexerImpl struct {
 
 	otelTracer           oteltrace.Tracer
 	otelCommonTraceAttrs []otelattr.KeyValue
+
+	events *events.EventsHandler
 }
 
 type cacheItems struct {
 	// cached items
 	items *lru.Cache
+}
+
+// Motivation:
+// Key:
+// - id + shardID - unique logic identifier of the document in the sharded cluster;
+// - nsTag - required to handled FORCE-syncs in the clusters. Int64 representation of the LsnT. Contains server ID and timestamp part. Using it as the part of the key to avoid
+// recaching during force-sync (those syncs could apear under the heavy load). Timestamp is required to hadn;e nodes' restarts in the sharded cluster (currenty items' IDs are not consistant between restarts)
+// Item:
+// - itemVersion - LSN's counter (does not contain server ID). Represents incremental document's version. Outdated documents will be removed from cache
+// and will not be cached multiple times.
+// - shardingVersion - source ID of the sharding config. It is not incremental, so it can not work as version. Multiple recaching of the same item is possible,
+// but expecting, that sharding config version should be changed very rarelly and probably even in some kind of the maintenance mode.
+
+type cacheKey struct {
+	id      int
+	shardID int
+	nsTag   int64
+}
+
+type cacheItem struct {
+	// cached data
+	item interface{}
+	// version of the item
+	itemVersion int64
+	// version of the sharding config
+	shardingVersion int64
 }
 
 func (ci *cacheItems) Reset() {
@@ -88,14 +119,14 @@ func (ci *cacheItems) Reset() {
 	ci.items.Purge()
 }
 
-func (ci *cacheItems) Remove(key int) {
+func (ci *cacheItems) Remove(key cacheKey) {
 	if ci.items == nil {
 		return
 	}
 	ci.items.Remove(key)
 }
 
-func (ci *cacheItems) Add(key int, item *cacheItem) {
+func (ci *cacheItems) Add(key cacheKey, item *cacheItem) {
 	if ci.items == nil {
 		return
 	}
@@ -109,7 +140,7 @@ func (ci *cacheItems) Len() int {
 	return ci.items.Len()
 }
 
-func (ci *cacheItems) Get(key int) (*cacheItem, bool) {
+func (ci *cacheItems) Get(key cacheKey) (*cacheItem, bool) {
 	if ci.items == nil {
 		return nil, false
 	}
@@ -119,13 +150,6 @@ func (ci *cacheItems) Get(key int) (*cacheItem, bool) {
 		return item.(*cacheItem), ok
 	}
 	return nil, false
-}
-
-type cacheItem struct {
-	// cached data
-	item interface{}
-	// version of item
-	version int
 }
 
 func newCacheItems(count uint64) (*cacheItems, error) {
@@ -153,6 +177,7 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 	rx := &reindexerImpl{
 		ns:      make(map[string]*reindexerNamespace, 100),
 		binding: binding,
+		events:  events.NewEventsHandler(binding),
 	}
 
 	for _, opt := range options {
@@ -164,7 +189,7 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 		case bindings.OptionOpenTelemetry:
 			if v.EnableTracing {
 				rx.otelTracer = otel.Tracer(
-					"reindexer/v3",
+					"reindexer/v4",
 					oteltrace.WithInstrumentationVersion(bindings.ReindexerVersion),
 				)
 				rx.otelCommonTraceAttrs = []otelattr.KeyValue{
@@ -176,12 +201,16 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 		}
 	}
 
-	if err := binding.Init(dsnParsed, options...); err != nil {
+	if err := binding.Init(dsnParsed, rx.events, options...); err != nil {
 		rx.status = err
 	}
 
 	if changing, ok := binding.(bindings.RawBindingChanging); ok {
 		changing.OnChangeCallback(rx.resetCaches)
+	}
+
+	if replicationStat, ok := binding.(bindings.GetReplicationStat); ok {
+		replicationStat.GetReplicationStat(rx.getReplicationStat)
 	}
 
 	opts := &NamespaceOptions{
@@ -193,7 +222,94 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 	rx.registerNamespaceImpl(QueriesperfstatsNamespaceName, opts, QueryPerfStat{})
 	rx.registerNamespaceImpl(ConfigNamespaceName, opts, DBConfigItem{})
 	rx.registerNamespaceImpl(ClientsStatsNamespaceName, opts, ClientConnectionStat{})
+	rx.registerNamespaceImpl(ReplicationStatsNamespaceName, opts, ReplicationStat{})
 	return rx
+}
+
+func (db *reindexerImpl) getReplicationStat(ctx context.Context) (*bindings.ReplicationStat, error) {
+	var stat *bindings.ReplicationStat
+
+	stat, err := db.getClusterStat(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if stat == nil {
+		stat, err = db.getAsyncReplicationStat(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if stat == nil {
+		return nil, bindings.NewError("can't use WithReconnectionStrategy without configured cluster or async replication", bindings.ErrParams)
+	}
+
+	return stat, nil
+}
+
+func (db *reindexerImpl) getAsyncReplicationStat(ctx context.Context) (*bindings.ReplicationStat, error) {
+	dsns := db.binding.GetDSNs()
+	var stat *bindings.ReplicationStat
+
+	for _, dsn := range dsns {
+		dsn := fmt.Sprintf("%s://%s%s", dsn.Scheme, dsn.Host, dsn.Path)
+		db := NewReindex(dsn)
+		defer db.Close()
+		resp, err := db.Query("#config").
+			WhereString("type", EQ, bindings.ReplicationTypeAsync).
+			ExecCtx(ctx).
+			FetchOne()
+		if err != nil {
+			continue
+		}
+		statRx := resp.(*DBConfigItem).AsyncReplication
+		if statRx.Role == "leader" {
+			stat = &bindings.ReplicationStat{
+				Type:  bindings.ReplicationTypeAsync,
+				Nodes: make([]bindings.ReplicationNodeStat, 0, len(statRx.Nodes)),
+			}
+			stat.Nodes = append(stat.Nodes, bindings.ReplicationNodeStat{
+				DSN:  dsn,
+				Role: statRx.Role,
+			})
+
+			break
+		}
+	}
+
+	return stat, nil
+}
+
+func (db *reindexerImpl) getClusterStat(ctx context.Context) (*bindings.ReplicationStat, error) {
+	resp, err := db.query("#replicationstats").
+		WhereString("type", EQ, "cluster").
+		ExecCtx(ctx).
+		FetchOne()
+	if err != nil {
+		return nil, err
+	}
+
+	statRx := resp.(*ReplicationStat)
+	if len(statRx.ReplicationNodeStat) == 0 {
+		return nil, nil
+	}
+
+	stat := &bindings.ReplicationStat{
+		Type:  statRx.Type,
+		Nodes: make([]bindings.ReplicationNodeStat, 0, len(statRx.ReplicationNodeStat)),
+	}
+
+	for _, node := range statRx.ReplicationNodeStat {
+		stat.Nodes = append(stat.Nodes, bindings.ReplicationNodeStat{
+			DSN:            node.DSN,
+			Status:         node.Status,
+			IsSynchronized: node.IsSynchronized,
+			Role:           node.Role,
+		})
+	}
+
+	return stat, nil
 }
 
 // getStatus will return current db status
@@ -282,25 +398,51 @@ func (db *reindexerImpl) openNamespace(ctx context.Context, namespace string, op
 		return err
 	}
 
-	for retry := 0; retry < 2; retry++ {
+	awaitReplication := false
+	const defaultMaxTries = 2
+	maxTries := defaultMaxTries
+	for retry := 0; retry < maxTries; retry++ {
+		if awaitReplication {
+			// Try to await concurrent indexes replication
+			log.Printf("Awaiting concurrent replication for '%s'\n", namespace) // TODO: Remove this log, once race in replicated ns will be fixed
+			err = nil
+			awaitReplication = false
+			time.Sleep(time.Millisecond * 300)
+		} else {
+			maxTries = defaultMaxTries
+		}
+
 		if err = db.binding.OpenNamespace(ctx, namespace, opts.enableStorage, opts.dropOnFileFormatError); err != nil {
 			break
 		}
 
 		for _, indexDef := range ns.indexes {
 			if err = db.binding.AddIndex(ctx, namespace, indexDef); err != nil {
+				if rerr, ok := err.(bindings.Error); ok && rerr.Code() == bindings.ErrWrongReplicationData {
+					awaitReplication = true
+					maxTries = 15
+					log.Printf("Replication error in '%s' during '%s' index creation\n", namespace, indexDef.Name) // TODO: Remove this log, once race in replicated ns will be fixed
+				}
 				break
 			}
+		}
+		if awaitReplication {
+			continue
 		}
 
 		if err == nil {
 			if err = db.binding.SetSchema(ctx, namespace, ns.schema); err != nil {
-				if rerr, ok := err.(bindings.Error); ok && rerr.Code() == bindings.ErrParams {
+				rerr, ok := err.(bindings.Error)
+				if ok && rerr.Code() == bindings.ErrParams {
 					// Ignore error from old server which doesn't support SetSchema
 					err = nil
-				} else {
-					break
+				} else if ok && rerr.Code() == bindings.ErrWrongReplicationData {
+					awaitReplication = true
+					maxTries = 15
+					log.Printf("Replication error in '%s' during schema setting\n", namespace) // TODO: Remove this log, once race in replicated ns will be fixed
+					continue
 				}
+				break
 			}
 		}
 
@@ -314,7 +456,6 @@ func (db *reindexerImpl) openNamespace(ctx context.Context, namespace string, op
 			db.binding.CloseNamespace(ctx, namespace)
 			break
 		}
-
 		break
 	}
 
@@ -822,7 +963,7 @@ func (db *reindexerImpl) execSQLToJSON(ctx context.Context, query string) *JSONI
 
 	defer result.Free()
 
-	json, jsonOffsets, explain, err := db.rawResultToJson(result.GetBuf(), namespace, "total", nil, nil)
+	json, jsonOffsets, explain, err := db.rawResultToJson(result.GetBuf(), namespace, "total", nil, nil, namespace)
 	if err != nil {
 		return errJSONIterator(err)
 	}
@@ -1263,7 +1404,20 @@ func dsnParse(dsn interface{}) (string, []url.URL) {
 			panic(fmt.Errorf("Can't parse DB DSN '%s'", dsn))
 		}
 		if scheme != "" && scheme != u.Scheme {
-			panic(fmt.Sprintf("DSN has a different schemas. %s", dsn))
+			maskDsn := func(u *url.URL) string {
+				if password, ok := u.User.Password(); ok {
+					maskLogin := func(username string) string {
+						if len(username) > 4 {
+							return username[2:] + "..." + username[len(username)-2:]
+						} else {
+							return "..."
+						}
+					}
+					u.User = url.UserPassword(maskLogin(u.User.Username()), fmt.Sprintf("%08x", crc32.ChecksumIEEE([]byte(password))))
+				}
+				return u.String()
+			}
+			panic(fmt.Sprintf("DSN has a different schemas. %s", maskDsn(u)))
 		}
 		dsnParsed = append(dsnParsed, *u)
 		scheme = u.Scheme
@@ -1281,6 +1435,10 @@ func dsnString(dsnParsed []url.URL) string {
 	return strings.Join(dsnLabelParts, ",")
 }
 
+func (db *reindexerImpl) subscribe(ctx context.Context, opts *events.EventsStreamOptions) *events.EventsStream {
+	return db.events.CreateStream(ctx, opts)
+}
+
 // GetStats Get local thread reindexer usage stats
 // Deprecated: Use SELECT * FROM '#perfstats' to get performance statistics.
 func (db *reindexerImpl) getStats() bindings.Stats {
@@ -1291,11 +1449,4 @@ func (db *reindexerImpl) getStats() bindings.Stats {
 // ResetStats Reset local thread reindexer usage stats
 // Deprecated: no longer used.
 func (db *reindexerImpl) resetStats() {
-}
-
-// enableStorage enables persistent storage of data
-// Deprecated: storage path should be passed as DSN part to reindexer.NewReindex (""), e.g. reindexer.NewReindexer ("builtin:///tmp/reindex").
-func (db *reindexerImpl) enableStorage(ctx context.Context, storagePath string) error {
-	log.Println("Deprecated function reindexer.EnableStorage call")
-	return db.binding.EnableStorage(ctx, storagePath)
 }

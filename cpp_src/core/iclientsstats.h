@@ -2,8 +2,7 @@
 
 #include <string>
 #include <vector>
-#include "net/connectinstatscollector.h"
-#include "replicator/updatesobserver.h"
+#include "net/connection.h"
 
 namespace reindexer {
 
@@ -24,19 +23,14 @@ struct ClientStat {
 	int64_t sentBytes = 0;
 	int64_t recvBytes = 0;
 	int64_t sendBufBytes = 0;
-	int64_t pendedUpdates = 0;
 	uint32_t sendRate = 0;
 	uint32_t recvRate = 0;
 	int64_t lastSendTs = 0;
 	int64_t lastRecvTs = 0;
-	int64_t updatesLost = 0;
 	std::string userRights;
 	std::string clientVersion;
 	std::string appName;
 	uint32_t txCount = 0;
-	IUpdatesObserver* updatesPusher = nullptr;
-	bool isSubscribed = false;
-	UpdatesFilters updatesFilters;
 };
 
 struct TxStats {
@@ -53,7 +47,6 @@ struct ClientConnectionStat {
 	std::string userRights;
 	std::string clientVersion;
 	std::string appName;
-	IUpdatesObserver* updatesPusher = nullptr;
 };
 
 class IClientsStats {

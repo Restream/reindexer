@@ -1,9 +1,10 @@
 #pragma once
 
 #include <functional>
+#include <ostream>
 #include <string>
+#include "cluster/config.h"
 #include "estl/fast_hash_map.h"
-#include "estl/fast_hash_set.h"
 #include "estl/shared_mutex.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
@@ -13,13 +14,13 @@ struct JsonNode;
 }
 
 namespace reindexer {
-class JsonBuilder;
 class RdxContext;
 class WrSerializer;
 
 enum ConfigType {
 	ProfilingConf = 0,
 	NamespaceDataConf,
+	AsyncReplicationConf,
 	ReplicationConf,
 	//
 	kConfigTypesTotalCount
@@ -59,6 +60,8 @@ public:
 		longTxLoggingParams.store(d.longTxLoggingParams, std::memory_order_relaxed);
 		return *this;
 	}
+
+	Error FromJSON(const gason::JsonNode& v);
 
 	std::atomic<size_t> queriesThresholdUS = {10};
 	std::atomic<bool> queriesPerfStats = {false};
@@ -104,6 +107,7 @@ struct NamespaceConfigData {
 	int startCopyPolicyTxSize = 10'000;
 	int copyPolicyMultiplier = 5;
 	int txSizeToAlwaysCopy = 100'000;
+	int txVecInsertionThreads = 4;
 	int optimizationTimeout = 800;
 	int optimizationSortWorkers = 4;
 	int64_t walSize = 4'000'000;
@@ -113,47 +117,35 @@ struct NamespaceConfigData {
 	int64_t maxIterationsIdSetPreResult = 20'000;
 	bool idxUpdatesCountingMode = false;
 	int syncStorageFlushLimit = 20'000;
+	int annStorageCacheBuildTimeout = 5'000;
 	NamespaceCacheConfigData cacheConfig;
+
+	Error FromJSON(const gason::JsonNode& v);
 };
 
-enum ReplicationRole { ReplicationNone, ReplicationMaster, ReplicationSlave, ReplicationReadOnly };
-inline constexpr int format_as(ReplicationRole v) noexcept { return int(v); }
-
 struct ReplicationConfigData {
-	Error FromYML(const std::string& yml);
+	static constexpr int16_t kMinServerIDValue = 0;
+	static constexpr int16_t kMaxServerIDValue = 999;
+
+	int serverID = 0;
+	int clusterID = 1;
+
+	Error FromYAML(const std::string& yml);
+	Error FromJSON(std::string_view json);
 	Error FromJSON(const gason::JsonNode& v);
+	void FromJSONWithCorrection(const gason::JsonNode& v, Error& fixedErrors);
+	Error Validate() const;
+
 	void GetJSON(JsonBuilder& jb) const;
 	void GetYAML(WrSerializer& ser) const;
 
-	ReplicationRole role = ReplicationNone;
-	std::string masterDSN;
-	std::string appName = "rx_slave";
-	int connPoolSize = 1;
-	int workerThreads = 1;
-	int clusterID = 1;
-	int timeoutSec = 60;
-	int retrySyncIntervalSec = 20;
-	int onlineReplErrorsThreshold = 100;
-	bool forceSyncOnLogicError = false;
-	bool forceSyncOnWrongDataHash = false;
-	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> namespaces;
-	bool enableCompression = true;
-	int serverId = 0;
-
 	bool operator==(const ReplicationConfigData& rdata) const noexcept {
-		return (role == rdata.role) && (connPoolSize == rdata.connPoolSize) && (workerThreads == rdata.workerThreads) &&
-			   (clusterID == rdata.clusterID) && (forceSyncOnLogicError == rdata.forceSyncOnLogicError) &&
-			   (forceSyncOnWrongDataHash == rdata.forceSyncOnWrongDataHash) && (masterDSN == rdata.masterDSN) &&
-			   (retrySyncIntervalSec == rdata.retrySyncIntervalSec) && (onlineReplErrorsThreshold == rdata.onlineReplErrorsThreshold) &&
-			   (timeoutSec == rdata.timeoutSec) && (namespaces == rdata.namespaces) && (enableCompression == rdata.enableCompression) &&
-			   (serverId == rdata.serverId) && (appName == rdata.appName);
+		return (clusterID == rdata.clusterID) && (serverID == rdata.serverID);
 	}
 	bool operator!=(const ReplicationConfigData& rdata) const noexcept { return !operator==(rdata); }
-
-protected:
-	static ReplicationRole str2role(const std::string&);
-	static std::string role2str(ReplicationRole) noexcept;
 };
+
+std::ostream& operator<<(std::ostream& os, const ReplicationConfigData& data);
 
 class DBConfigProvider {
 public:
@@ -161,10 +153,31 @@ public:
 	~DBConfigProvider() = default;
 	DBConfigProvider(DBConfigProvider& obj) = delete;
 	DBConfigProvider& operator=(DBConfigProvider& obj) = delete;
+	/**
+	 * @brief Safely reads config or config part from JSON
+	 * @param root JSON node, that contain config data for one or multiple sections
+	 * @param autoCorrect - fail-safe switch.
+	 *   - If \c true - function will try to read as much as possible from \c root, replacing failed
+	 * values with default-ones and logging every fail section-wise. Final config read in this mode will be in a consistent state in any
+	 * case.
+	 *   - If \c false - function will try to parse whole JSON. If the read is successful, config will be applied at once. In case of read
+	 * errors, all of them will be recorded section-wise and then joined to one composite error of type \c errParseJSON and returned to
+	 * caller; the entire configuration will not be changed and will remain in the state prior to this call.
+	 * @returns Error
+	 * - If Error.ok() - either read is successful and configuration is updated, either JSON is correct, but nothing to read and
+	 * nothing to change.
+	 * Otherwise - read errors occured, config is not changed.
+	 */
+	Error FromJSON(const gason::JsonNode& root, bool autoCorrect = false);
 
-	Error FromJSON(const gason::JsonNode& root);
+	/// @brief Returns aggregated error state generated by previous calls to FromJSON
+	Error GetConfigParseErrors() const;
+
 	void setHandler(ConfigType cfgType, std::function<void()> handler);
+	int setHandler(std::function<void(const ReplicationConfigData&)> handler);
+	void unsetHandler(int id);
 
+	cluster::AsyncReplConfigData GetAsyncReplicationConfig();
 	ReplicationConfigData GetReplicationConfig();
 	bool GetNamespaceConfig(std::string_view nsName, NamespaceConfigData& data);
 	LongQueriesLoggingParams GetSelectLoggingParams() const noexcept {
@@ -182,10 +195,17 @@ public:
 
 private:
 	ProfilingConfigData profilingData_;
+	cluster::AsyncReplConfigData asyncReplicationData_;
 	ReplicationConfigData replicationData_;
+	Error profilingDataLoadResult_;
+	Error namespacesDataLoadResult_;
+	Error asyncReplicationDataLoadResult_;
+	Error replicationDataLoadResult_;
 	fast_hash_map<std::string, NamespaceConfigData, hash_str, equal_str, less_str> namespacesData_;
 	std::array<std::function<void()>, kConfigTypesTotalCount> handlers_;
-	shared_timed_mutex mtx_;
+	fast_hash_map<int, std::function<void(const ReplicationConfigData&)>> replicationConfigDataHandlers_;
+	int handlersCounter_ = 0;
+	mutable shared_timed_mutex mtx_;
 };
 
 }  // namespace reindexer

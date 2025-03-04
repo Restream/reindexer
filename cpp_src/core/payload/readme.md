@@ -59,18 +59,25 @@ Strings are stored as `reindexer::p_string`, which is 8-byte weak pointer to str
 
 
 ### key_string
-`reindexer::key_string` is derived from std::string, and in addition contains reference count and exported header with pointer + size fields
+`key_string` is immutable string with reference counter and exported header containing `size`-field. String data are *NOT* null-terminated.
 
-| Size in bytes          | Field                          |
-|------------------------|--------------------------------|
-| Vary <br> (depends on stl) | std::string                    |
-| 8                      | exported pointer to string's<br> char array |
-| 4                      | exported string len                     |
-| 4                      | alignment                      |
-| 8                      | ref counter                    |
+| Size in bytes          | Field                                        |
+|------------------------|----------------------------------------------|
+| 4                      | alignment / ref_counter                      |
+| 4                      | exported string length                       |
+| N                      | string data, emplaced right after the header |
 
-Exported header is used for direct payload access from non c++ application (e.g. golang binding to reindexer)
-Data in key_string is mutable.
+Exported header is used for direct payload access from non C++ application (e.g. golang binding to reindexer).
+
+### FloatVector
+
+`FloatVector`/`ConstFloatVector` - are the separete types to store float32-vectors. From implementation standpoint it is a simple `std::unique_ptr<float32[]` and vector's dimension value.
+
+`PayloadValue` itself does not store/own `FloatVector`. It holds `FloatVectorView/ConstFloatVectorView` instead, which are a simple views, implemented as a single uint64 value. This value contains optional 48-bit pointer to the actual vector value and 16-bit dimanesion value.
+
+`FloatVectorView` also have `striped`-state. In this state the view does not points to the actual vector and the only way to get vector's data is to request it from the corresponding index structure by appropriate document ID. The idea is to avoid vector data duplication and at the same time do not break linear index structure.
+
+In cases, when vector's data is requested by some kind of query, real vector values will be copied into `FloatVectorsHolderMap` or `FloatVectorsHolderVector` container and `ConstFloatVectorView` in the `PayloadValue` will be changed to it's unstripped version, pointing to the copied data.
 
 ### Embeded arrays in PayloadValue
 

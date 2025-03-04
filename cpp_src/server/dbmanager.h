@@ -1,12 +1,14 @@
 #pragma once
 
-#include <string>
-#include <thread>
 #include <unordered_map>
+#include "authmanager.h"
 #include "core/reindexer.h"
 #include "core/storage/storagetype.h"
 #include "estl/mutex.h"
 #include "estl/shared_mutex.h"
+#include "server/config.h"
+#include "tools/crypt.h"
+#include "tools/masking.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
@@ -21,13 +23,16 @@ using namespace reindexer;
 
 /// Possible user roles
 enum UserRole {
-	kUnauthorized,	 /// User is not authorized
-	kRoleNone,		 /// User is authenticaTed, but has no any righs
-	kRoleDataRead,	 /// User can read data from database
-	kRoleDataWrite,	 /// User can write data to database
-	kRoleDBAdmin,	 /// User can manage database: kRoleDataWrite + create & delete namespaces, modify indexes
-	kRoleOwner,		 /// User has all privilegies on database: kRoleDBAdmin + create & drop database
-	kRoleSystem,	 /// Special role for internal usage
+	kUnauthorized,	   /// User is not authorized
+	kRoleNone,		   /// User is authenticated, but has no any rights
+	kRoleDataRead,	   /// User can read data from database
+	kRoleDataWrite,	   /// User can write data to database
+	kRoleDBAdmin,	   /// User can manage database: kRoleDataWrite + create & delete namespaces, modify indexes
+	kRoleReplication,  /// Same as kRoleDBAdmin but with restrictions on use in various protocols and additional context checks for
+					   /// replication
+	kRoleSharding,	   /// Same as kRoleDBAdmin but with restrictions on use in various protocols and additional context checks for sharding
+	kRoleOwner,		   /// User has all privileges on database: kRoleDBAdmin + create & drop database
+	kRoleSystem,	   /// Special role for internal usage
 };
 
 std::string_view UserRoleName(UserRole role) noexcept;
@@ -38,6 +43,7 @@ struct UserRecord {
 	std::string hash;								  /// User's password or hash
 	std::string salt;								  /// Password salt
 	std::unordered_map<std::string, UserRole> roles;  /// map of user's roles on databases
+	HashAlgorithm algorithm;						  /// Hash calculation algorithm
 };
 
 class DBManager;
@@ -51,29 +57,69 @@ class AuthContext {
 	friend AuthContext MakeSystemAuthContext();
 
 public:
+	class UserLogin {
+	public:
+		UserLogin() noexcept = default;
+
+		UserLogin(std::string login) noexcept : login_(std::move(login)) {}
+		UserLogin(const char* login) noexcept : login_(login) {}
+
+		const std::string& Str() const& noexcept { return login_; }
+		const std::string& Str() const&& = delete;
+
+	private:
+		std::string login_;
+	};
+
 	/// Constuct empty context
 	AuthContext() = default;
 	/// Construct context with user credentials
 	/// @param login - User's login
 	/// @param password - User's password
 	AuthContext(const std::string& login, const std::string& password) : login_(login), password_(password) {}
-	/// Set expected master's replication clusted ID
+	/// Set expected leader's replication clusted ID
 	/// @param clusterID - Expected cluster ID value
 	void SetExpectedClusterID(int clusterID) noexcept {
 		checkClusterID_ = true;
 		expectedClusterID_ = clusterID;
 	}
+
+	enum class CalledFrom { Core, RPCServer, HTTPServer, GRPC };
+
 	/// Check if reqired role meets role from context, and get pointer to Reindexer DB object
 	/// @param role - Requested role one of UserRole enum
 	/// @param ret - Pointer to returned database pointer
 	/// @return Error - error object
-	Error GetDB(UserRole role, Reindexer** ret) noexcept {
+	template <CalledFrom caller, typename... Args>
+	Error GetDB(UserRole role, Reindexer** ret, Args&&... args) noexcept {
 		if (role > role_) {
 			return Error(errForbidden, "Forbidden: need role %s of db '%s' user '%s' have role=%s", UserRoleName(role), dbName_, login_,
 						 UserRoleName(role_));
 		}
+
+		const bool shardingRole = role_ == UserRole::kRoleSharding;
+		const bool replicationRole = role_ == UserRole::kRoleReplication;
+
+		if constexpr (caller == CalledFrom::RPCServer) {
+			if (role > kRoleDataRead) {
+				return [&](lsn_t lsn, int emmiterServerId, int shardId) -> Error {
+					if rx_unlikely ((replicationRole && lsn.isEmpty() && emmiterServerId < 0) || (shardingRole && shardId < 0)) {
+						return Error(errForbidden, "Forbidden: %s is required to perform modify operation with the role '%s'",
+									 replicationRole ? "a non-empty lsn or emmiter server id" : "a non-negative shardId",
+									 UserRoleName(role_));
+					}
+					*ret = db_;
+					return {};
+				}(std::forward<Args>(args)...);
+			}
+		} else {
+			if rx_unlikely (shardingRole || replicationRole) {
+				return Error(errForbidden, "Forbidden: incorrect role%s: '%s'",
+							 caller == CalledFrom::HTTPServer ? " in the HTTP protocol" : "", UserRoleName(role_));
+			}
+		}
 		*ret = db_;
-		return errOK;
+		return {};
 	}
 	/// Reset Reindexer DB object pointer in context
 	void ResetDB() noexcept {
@@ -85,10 +131,12 @@ public:
 	bool HaveDB() const noexcept { return db_ != nullptr; }
 	/// Get user login
 	/// @return user login
-	const std::string& Login() const noexcept { return login_; }
+	const UserLogin& Login() const& noexcept { return login_; }
+	const UserLogin& Login() const&& = delete;
 	/// Get database name
 	/// @return db name
-	const std::string& DBName() const noexcept { return dbName_; }
+	const std::string& DBName() const& noexcept { return dbName_; }
+	const std::string& DBName() const&& = delete;
 	/// Get user rights
 	/// @return user rights
 	UserRole UserRights() const noexcept { return role_; }
@@ -96,7 +144,7 @@ public:
 protected:
 	AuthContext(UserRole role) noexcept : role_(role) {}
 
-	std::string login_;
+	UserLogin login_;
 	std::string password_;
 	UserRole role_ = kUnauthorized;
 	std::string dbName_;
@@ -111,10 +159,9 @@ static inline AuthContext MakeSystemAuthContext() { return AuthContext(kRoleSyst
 class DBManager {
 public:
 	/// Construct DBManager
-	/// @param dbpath - path to database on file system
-	/// @param noSecurity - if true, then disable all security validations and users authentication
+	/// @param config - server config reference
 	/// @param clientsStats - object for receiving clients statistics
-	DBManager(const std::string& dbpath, bool noSecurity, IClientsStats* clientsStats = nullptr);
+	DBManager(const ServerConfig& config, IClientsStats* clientsStats = nullptr);
 	/// Initialize database:
 	/// Read all found databases to RAM
 	/// Read user's database
@@ -122,7 +169,7 @@ public:
 	/// @param allowDBErrors - true: Ignore errors during existing DBs load; false: Return error if error occures during DBs load
 	/// @param withAutorepair - true: Enable storage autorepair feature for this DB; false: Disable storage autorepair feature for this DB
 	/// @return Error - error object
-	Error Init(const std::string& storageEngine, bool allowDBErrors, bool withAutorepair);
+	Error Init();
 	/// Authenticate user, and grant roles to database with specified dbName
 	/// @param dbName - database name. Can be empty.
 	/// @param auth - AuthContext with user credentials
@@ -140,12 +187,15 @@ public:
 	Error DropDatabase(AuthContext& auth);
 	/// Check if security disabled
 	/// @return bool - true: security checks are disabled; false: security checks are enabled
-	bool IsNoSecurity() { return noSecurity_; }
+	bool IsNoSecurity() { return !config_.EnableSecurity; }
 	/// Enum list of available databases
 	/// @return names of available databases
 	std::vector<std::string> EnumDatabases();
 
+	void ShutdownClusters();
+
 private:
+	friend class AuthManager;
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::DbManager>;
 	Error readUsers() noexcept;
 	Error readUsersYAML() noexcept;
@@ -156,12 +206,37 @@ private:
 
 	std::unordered_map<std::string, std::unique_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_;
 	std::unordered_map<std::string, UserRecord> users_;
-	std::string dbpath_;
+	const ServerConfig& config_;
 	Mutex mtx_;
-	bool noSecurity_;
 	datastorage::StorageType storageType_;
 
 	IClientsStats* clientsStats_ = nullptr;
+	bool clustersShutDown_ = false;
+
+	bool authorized(const AuthContext& auth);
+
+	AuthManager authManager_;
 };
 
+template <typename Cout, typename UserLoginT>
+std::enable_if_t<std::is_same_v<UserLoginT, AuthContext::UserLogin>, Cout>& operator<<(Cout& cout, const UserLoginT& login) {
+	cout << maskLogin(login.Str());
+	return cout;
+}
+
 }  // namespace reindexer_server
+
+template <>
+struct fmt::printf_formatter<reindexer_server::AuthContext::UserLogin> {
+	template <typename ContextT>
+	constexpr auto parse(ContextT& ctx) {
+		return ctx.begin();
+	}
+	template <typename ContextT>
+	auto format(const reindexer_server::AuthContext::UserLogin& login, ContextT& ctx) const {
+		return fmt::format_to(ctx.out(), "{}", reindexer::maskLogin(login.Str()));
+	}
+};
+
+template <>
+struct fmt::formatter<reindexer_server::AuthContext::UserLogin> : public fmt::printf_formatter<reindexer_server::AuthContext::UserLogin> {};

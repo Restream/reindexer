@@ -1,5 +1,5 @@
 #include "core/nsselecter/joinedselectormock.h"
-#include "core/nsselecter/sortexpression.h"
+#include "core/sorting/sortexpression.h"
 #include "gtest/gtest.h"
 
 namespace {

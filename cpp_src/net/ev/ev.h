@@ -6,7 +6,7 @@
 #include <thread>
 #include <vector>
 
-#include "coroutine/coroutine.h"
+#include "coroutine/waitgroup.h"
 #include "estl/h_vector.h"
 #include "tools/clock.h"
 
@@ -166,11 +166,28 @@ public:
 		auto id = coroutine::create(std::move(func), stack_size);
 		new_tasks_.emplace_back(id);
 	}
+	void spawn(coroutine::wait_group& wg, std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit) {
+		wg.add(1);
+		spawn(
+			[f = std::move(func), &wg]() {	// NOLINT(*.NewDeleteLeaks) False positive
+				coroutine::wait_group_guard wgg(wg);
+				f();
+			},
+			stack_size);
+	}
 	template <typename Rep, typename Period>
 	void sleep(std::chrono::duration<Rep, Period> dur);
-	template <typename Rep1, typename Period1, typename Rep2, typename Period2, typename Terminater>
+	template <typename Rep1, typename Period1, typename Rep2, typename Period2, typename TerminateT>
 	void granular_sleep(std::chrono::duration<Rep1, Period1> dur, std::chrono::duration<Rep2, Period2> granularity,
-						const Terminater& terminate);
+						const TerminateT& terminate);
+	void yield() {
+		// Yield is allowed for loop-thread only
+		assertrx(coroTid_ == std::thread::id() || coroTid_ == std::this_thread::get_id());
+		auto id = coroutine::current();
+		assertrx(id);
+		yielded_tasks_.emplace_back(id);
+		coroutine::suspend();
+	}
 
 protected:
 	void set(int fd, io* watcher, int events);
@@ -207,6 +224,7 @@ protected:
 	using tasks_container = h_vector<coroutine::routine_t, 64>;
 	tasks_container new_tasks_;
 	tasks_container running_tasks_;
+	h_vector<coroutine::routine_t, 5> yielded_tasks_;
 	std::thread::id coroTid_;
 
 #ifdef HAVE_EPOLL_LOOP
@@ -245,6 +263,16 @@ public:
 		}
 	}
 	bool is_valid() const noexcept { return loop_; }
+	void spawn(coroutine::wait_group& wg, std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit) {
+		if (loop_) {
+			loop_->spawn(wg, std::move(func), stack_size);
+		}
+	}
+	void spawn(std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit) {
+		if (loop_) {
+			loop_->spawn(std::move(func), stack_size);
+		}
+	}
 
 protected:
 	template <typename... Args>
@@ -372,7 +400,7 @@ void dynamic_loop::sleep(std::chrono::duration<Rep, Period> dur) {
 		timer tm(timer::coro_t{});
 		tm.set([id](timer&, int) { coroutine::resume(id); });
 		tm.set(*this);
-		double awaitTime = std::chrono::duration_cast<std::chrono::microseconds>(dur).count();
+		const double awaitTime = std::chrono::duration_cast<std::chrono::microseconds>(dur).count();
 		tm.start(awaitTime / 1e6);
 		do {
 			coroutine::suspend();
@@ -383,9 +411,9 @@ void dynamic_loop::sleep(std::chrono::duration<Rep, Period> dur) {
 	}
 }
 
-template <typename Rep1, typename Period1, typename Rep2, typename Period2, typename Terminater>
+template <typename Rep1, typename Period1, typename Rep2, typename Period2, typename TerminateT>
 void dynamic_loop::granular_sleep(std::chrono::duration<Rep1, Period1> dur, std::chrono::duration<Rep2, Period2> granularity,
-								  const Terminater& terminate) {
+								  const TerminateT& terminate) {
 	for (std::chrono::nanoseconds t = dur; t.count() > 0; t -= granularity) {
 		if (terminate()) {
 			return;

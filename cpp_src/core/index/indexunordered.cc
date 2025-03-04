@@ -1,4 +1,5 @@
 #include "indexunordered.h"
+#include "core/dbconfig.h"
 #include "core/index/indextext/ftkeyentry.h"
 #include "core/index/payload_map.h"
 #include "core/index/string_map.h"
@@ -30,7 +31,7 @@ template <>
 IndexUnordered<str_map<Index::KeyEntryPlain>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 															  const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
-	  idx_map(idef.opts_.collateOpts_),
+	  idx_map(idef.Opts().collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
@@ -38,7 +39,7 @@ template <>
 IndexUnordered<str_map<Index::KeyEntry>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 														 const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
-	  idx_map(idef.opts_.collateOpts_),
+	  idx_map(idef.Opts().collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
@@ -46,7 +47,7 @@ template <>
 IndexUnordered<unordered_str_map<Index::KeyEntry>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 																   const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
-	  idx_map(idef.opts_.collateOpts_),
+	  idx_map(idef.Opts().collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
@@ -54,7 +55,7 @@ template <>
 IndexUnordered<unordered_str_map<Index::KeyEntryPlain>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 																		const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
-	  idx_map(idef.opts_.collateOpts_),
+	  idx_map(idef.Opts().collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
@@ -62,7 +63,7 @@ template <>
 IndexUnordered<unordered_str_map<FtKeyEntry>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 															  const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
-	  idx_map(idef.opts_.collateOpts_),
+	  idx_map(idef.Opts().collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
@@ -134,12 +135,12 @@ size_t heap_size(const key_type& /*kt*/) {
 
 template <>
 size_t heap_size<key_string>(const key_string& kt) {
-	return kt->heap_size() + sizeof(*kt.get());
+	return kt.heap_size();
 }
 
 template <>
 size_t heap_size<key_string_with_hash>(const key_string_with_hash& kt) {
-	return kt->heap_size() + sizeof(*kt.get());
+	return kt.heap_size();
 }
 
 struct DeepClean {
@@ -401,7 +402,8 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 		case CondLike:
 			return Base::SelectKey(keys, condition, sortId, opts, funcCtx, rdxCtx);
 		case CondDWithin:
-			throw Error(errQueryExec, "DWithin query on index '%s'", this->name_);
+		case CondKnn:
+			throw Error(errQueryExec, "%s query on index '%s'", CondTypeToStrShort(condition), this->name_);
 	}
 
 	return SelectKeyResults(std::move(res));
@@ -530,7 +532,7 @@ void IndexUnordered<T>::ReconfigureCache(const NamespaceCacheConfigData& cacheCf
 template <typename KeyEntryT>
 static std::unique_ptr<Index> IndexUnordered_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 												 const NamespaceCacheConfigData& cacheCfg) {
-	switch (idef.Type()) {
+	switch (idef.IndexType()) {
 		case IndexIntHash:
 			return std::make_unique<IndexUnordered<unordered_number_map<int, KeyEntryT>>>(idef, std::move(payloadType), std::move(fields),
 																						  cacheCfg);
@@ -561,15 +563,19 @@ static std::unique_ptr<Index> IndexUnordered_New(const IndexDef& idef, PayloadTy
 		case IndexRTree:
 		case IndexUuidHash:
 		case IndexUuidStore:
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+		case IndexDummy:
 			break;
 	}
-	std::abort();
+	throw_as_assert;
 }
 
 // NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 std::unique_ptr<Index> IndexUnordered_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 										  const NamespaceCacheConfigData& cacheCfg) {
-	return (idef.opts_.IsPK() || idef.opts_.IsDense())
+	return (idef.Opts().IsPK() || idef.Opts().IsDense())
 			   ? IndexUnordered_New<Index::KeyEntryPlain>(idef, std::move(payloadType), std::move(fields), cacheCfg)
 			   : IndexUnordered_New<Index::KeyEntry>(idef, std::move(payloadType), std::move(fields), cacheCfg);
 }

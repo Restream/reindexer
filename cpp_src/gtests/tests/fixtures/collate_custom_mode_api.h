@@ -5,7 +5,7 @@
 class CollateCustomModeAPI : public ReindexerApi {
 protected:
 	void PrepareNs(const std::shared_ptr<Reindexer>& reindexer, const std::string& nsName, const std::string& sortOrder,
-				   const std::vector<std::string>& sourceTable) {
+				   const std::vector<std::string_view>& sourceTable) {
 		auto err = reindexer->OpenNamespace(nsName, StorageOpts().Enabled(false));
 		EXPECT_TRUE(err.ok()) << err.what();
 
@@ -13,9 +13,6 @@ protected:
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		err = reindexer->AddIndex(nsName, {kFieldName, "hash", "string", IndexOpts(sortOrder).SetCollateMode(CollateCustom)});
-		EXPECT_TRUE(err.ok()) << err.what();
-
-		err = reindexer->Commit(nsName);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		for (size_t i = 0; i < sourceTable.size(); ++i) {
@@ -29,9 +26,6 @@ protected:
 			err = rt.reindexer->Upsert(nsName, item);
 			EXPECT_TRUE(err.ok()) << err.what();
 		}
-
-		err = reindexer->Commit(nsName);
-		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
 	void SortByName(QueryResults& qr) {
@@ -41,17 +35,13 @@ protected:
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
-	void CompareResults(const QueryResults& qr, const std::vector<std::string>& sortedTable) {
+	void CompareResults(const QueryResults& qr, const std::vector<std::string_view>& sortedTable) {
 		ASSERT_TRUE(qr.Count() == sortedTable.size());
 		for (size_t i = 0; i < qr.Count(); ++i) {
 			Item item = (qr.begin() + i).GetItem(false);
 
-			std::string gotten = item["name"].As<std::string>();
-			size_t l1 = gotten.length();
-			size_t l2 = sortedTable[i].length();
-
-			ASSERT_TRUE(l1 == l2);
-			ASSERT_TRUE(memcmp(gotten.c_str(), sortedTable[i].c_str(), l1) == 0);
+			std::string got = item["name"].As<std::string>();
+			ASSERT_EQ(std::string_view(got), sortedTable[i]);
 		}
 	}
 

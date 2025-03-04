@@ -1,16 +1,16 @@
 #include <gtest/gtest.h>
+#include "core/cjson/jsonbuilder.h"
 #include "core/reindexer.h"
-
-using reindexer::Error;
-using reindexer::Item;
+#include "estl/gift_str.h"
+#include "vendor/gason/gason.h"
 
 TEST(JSONParsingTest, EmptyDocument) {
 	reindexer::Reindexer rx;
 	constexpr std::string_view kNsName("json_empty_doc_test");
-	Error err = rx.OpenNamespace(kNsName);
+	auto err = rx.OpenNamespace(kNsName);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	Item item(rx.NewItem(kNsName));
+	reindexer::Item item(rx.NewItem(kNsName));
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 	err = item.FromJSON("\n");
@@ -26,6 +26,24 @@ TEST(JSONParsingTest, EmptyDocument) {
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 }
 
+TEST(JSONParsingTest, NestedNodesRead) {
+	constexpr std::string_view jsonTest{R"json({
+								"type":"replication",
+								"replication":{
+									"server_id":  10,
+									"cluster_id": 11
+								}
+							})json"};
+
+	// Parse json and check keys
+	gason::JsonParser parser;
+	auto root = parser.Parse(jsonTest);
+
+	EXPECT_EQ(root["replication"]["server_id"].As<int>(), 10);
+	EXPECT_EQ(root["replication"]["cluster_id"].As<int>(), 11);
+	EXPECT_ANY_THROW(root["no-node"]["server_id"].As<int>());
+}
+
 TEST(JSONParsingTest, Strings) {
 	const std::vector<unsigned> lens = {0, 100, 8 < 10, 2 << 20, 8 << 20, 16 << 20, 32 << 20, 60 << 20};
 	for (auto len : lens) {
@@ -36,7 +54,7 @@ TEST(JSONParsingTest, Strings) {
 		std::fill(strs[1].begin(), strs[1].end(), 'b');
 
 		std::string d("{\"id\":1,\"str0\":\"" + strs[0] + "\",\"str1\":\"" + strs[1] + "\",\"val\":999}");
-		reindexer::span<char> data(d);
+		std::span<char> data(d);
 		try {
 			gason::JsonParser parser;
 			auto root = parser.Parse(data, nullptr);
@@ -49,5 +67,28 @@ TEST(JSONParsingTest, Strings) {
 		} catch (gason::Exception& e) {
 			EXPECT_TRUE(false) << e.what();
 		}
+	}
+}
+
+TEST(JSONParsingTest, LargeAllocations) {
+	constexpr int64_t kArrElemsCnt = 50000;
+	// Create json
+	reindexer::WrSerializer ser;
+	reindexer::JsonBuilder jb(ser);
+	jb.Put("mode", "mode");
+	auto arr = jb.Array("array");
+	for (int64_t i = 0; i < kArrElemsCnt; ++i) {
+		arr.Put(nullptr, reindexer::Variant{i});
+	}
+	arr.End();
+	jb.End();
+
+	// Parse json and check keys
+	gason::JsonParser parser;
+	auto root = parser.Parse(reindexer::giftStr(ser.Slice()));
+	ASSERT_EQ(std::string_view(root["mode"].key), "mode");
+	for (auto el : root["array"]) {
+		ASSERT_EQ(std::string_view(el.key), std::string_view());
+		ASSERT_EQ(el.value.getTag(), gason::JsonTag::NUMBER);
 	}
 }

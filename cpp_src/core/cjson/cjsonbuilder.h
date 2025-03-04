@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/keyvalue/p_string.h"
-#include "estl/span.h"
+#include <span>
 #include "objtype.h"
 #include "tagsmatcher.h"
 
@@ -34,40 +34,47 @@ public:
 	}
 	CJsonBuilder Object(std::nullptr_t) { return Object(0); }
 
-	void Array(int tagName, span<const p_string> data, int /*offset*/ = 0) {
+	void Array(int tagName, std::span<const p_string> data, int /*offset*/ = 0) {
 		ser_->PutCTag(ctag{TAG_ARRAY, tagName});
 		ser_->PutCArrayTag(carraytag(data.size(), TAG_STRING));
 		for (auto d : data) {
 			ser_->PutVString(d);
 		}
 	}
-	void Array(int tagName, span<const Uuid> data, int offset = 0);
-	void Array(int tagName, span<const int> data, int /*offset*/ = 0) {
+	void Array(int tagName, std::span<const Uuid> data, int offset = 0);
+	void Array(int tagName, std::span<const int> data, int /*offset*/ = 0) {
 		ser_->PutCTag(ctag{TAG_ARRAY, tagName});
 		ser_->PutCArrayTag(carraytag(data.size(), TAG_VARINT));
 		for (auto d : data) {
 			ser_->PutVarint(d);
 		}
 	}
-	void Array(int tagName, span<const int64_t> data, int /*offset*/ = 0) {
+	void Array(int tagName, std::span<const int64_t> data, int /*offset*/ = 0) {
 		ser_->PutCTag(ctag{TAG_ARRAY, tagName});
 		ser_->PutCArrayTag(carraytag(data.size(), TAG_VARINT));
 		for (auto d : data) {
 			ser_->PutVarint(d);
 		}
 	}
-	void Array(int tagName, span<const bool> data, int /*offset*/ = 0) {
+	void Array(int tagName, std::span<const bool> data, int /*offset*/ = 0) {
 		ser_->PutCTag(ctag{TAG_ARRAY, tagName});
 		ser_->PutCArrayTag(carraytag(data.size(), TAG_BOOL));
 		for (auto d : data) {
 			ser_->PutBool(d);
 		}
 	}
-	void Array(int tagName, span<const double> data, int /*offset*/ = 0) {
+	void Array(int tagName, std::span<const double> data, int /*offset*/ = 0) {
 		ser_->PutCTag(ctag{TAG_ARRAY, tagName});
 		ser_->PutCArrayTag(carraytag(data.size(), TAG_DOUBLE));
 		for (auto d : data) {
 			ser_->PutDouble(d);
+		}
+	}
+	void Array(int tagName, std::span<const float> data, int /*offset*/ = 0) {
+		ser_->PutCTag(ctag{TAG_ARRAY, tagName});
+		ser_->PutCArrayTag(carraytag(data.size(), TAG_FLOAT));
+		for (auto d : data) {
+			ser_->PutFloat(d);
 		}
 	}
 	void Array(int tagName, Serializer& ser, TagType tagType, int count) {
@@ -91,9 +98,10 @@ public:
 	CJsonBuilder& Put(int tagName, int arg, int offset = 0);
 	CJsonBuilder& Put(int tagName, int64_t arg, int offset = 0);
 	CJsonBuilder& Put(int tagName, double arg, int offset = 0);
+	CJsonBuilder& Put(int tagName, float arg, int offset = 0);
 	CJsonBuilder& Put(int tagName, std::string_view arg, int offset = 0);
 	CJsonBuilder& Put(int tagName, Uuid arg, int offset = 0);
-	CJsonBuilder& Ref(int tagName, const Variant& v, int field);
+	CJsonBuilder& Ref(int tagName, const KeyValueType& type, int field);
 	CJsonBuilder& ArrayRef(int tagName, int field, int count);
 	CJsonBuilder& Null(int tagName);
 	CJsonBuilder& Put(int tagName, const Variant& kv, int offset = 0);

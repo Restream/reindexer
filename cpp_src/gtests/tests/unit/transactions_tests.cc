@@ -1,4 +1,5 @@
 #include <condition_variable>
+#include "core/system_ns_names.h"
 #include "tools/fsops.h"
 #include "transaction_api.h"
 
@@ -161,11 +162,11 @@ TEST_F(TransactionApi, IndexesOptimizeTest) {
 	AddDataToNsTx(*rt.reindexer, 0, 15000, "data");
 	// Fetch optimization state
 	qr.Clear();
-	err = rt.reindexer->Select(Query("#memstats").Where("name", CondEq, default_namespace), qr);
+	err = rt.reindexer->Select(Query(reindexer::kMemStatsNamespace).Where("name", CondEq, default_namespace), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(1, qr.Count());
 
 	// Ensure, that ns indexes is in optimized state immediately after tx done
-	bool optimization_completed = qr[0].GetItem(false)["optimization_completed"].Get<bool>();
+	bool optimization_completed = qr.begin().GetItem(false)["optimization_completed"].Get<bool>();
 	ASSERT_EQ(true, optimization_completed);
 }

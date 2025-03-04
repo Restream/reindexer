@@ -1,0 +1,103 @@
+#pragma once
+
+#include "fmt/printf.h"
+#include "urlparser/urlparser.h"
+#include "yaml-cpp/node/node.h"
+
+namespace reindexer {
+
+namespace cluster {
+struct ShardingConfig;
+class AsyncReplNodeConfig;
+}  // namespace cluster
+
+class DSN {
+public:
+	DSN() noexcept = default;
+	explicit DSN(std::string dsn) : dsn_(std::move(dsn)) { processDSN(); }
+
+	const httpparser::UrlParser& Parser() const& noexcept { return parsed_; }
+	const httpparser::UrlParser& Parser() const&& = delete;
+
+	DSN& WithDb(std::string&& db) &;
+	DSN&& WithDb(std::string&& db) &&;
+
+	struct RefWrapperCompare {
+		bool operator()(const std::reference_wrapper<const DSN>& lhs, const std::reference_wrapper<const DSN>& rhs) const noexcept {
+			return lhs.get().dsn_ < rhs.get().dsn_;
+		}
+	};
+
+private:
+	friend bool Compare(const DSN& lhs, const DSN& rhs) noexcept;
+	friend bool RelaxCompare(const DSN& lhs, const DSN& rhs) noexcept;
+
+	friend struct cluster::ShardingConfig;
+	friend class cluster::AsyncReplNodeConfig;
+
+	template <typename Cout>
+	friend Cout& operator<<(Cout& cout, const DSN& dsn);
+
+	template <typename T>
+	friend struct ::YAML::convert;
+	friend struct std::hash<reindexer::DSN>;
+
+	template <typename T>
+	friend struct fmt::printf_formatter;
+
+	void processDSN();
+	std::string dsn_, masked_;
+	httpparser::UrlParser parsed_;
+};
+
+template <typename Cout>
+Cout& operator<<(Cout& cout, const reindexer::DSN& dsn) {
+	cout << dsn.masked_;
+	return cout;
+}
+
+inline bool Compare(const DSN& lhs, const DSN& rhs) noexcept { return lhs.dsn_ == rhs.dsn_; }
+inline bool RelaxCompare(const DSN& lhs, const DSN& rhs) noexcept {
+	return lhs.parsed_.hostname() == rhs.parsed_.hostname() && lhs.parsed_.port() == rhs.parsed_.port() &&
+		   lhs.parsed_.path() == rhs.parsed_.path();
+}
+
+// The comparison operator is made a template to ensure that in gtests it loses to a less strict,
+// but necessary in tests, non-template implementation
+template <typename DsnT>
+inline std::enable_if_t<std::is_convertible_v<DsnT, DSN>, bool> operator==(const DsnT& lhs, const DsnT& rhs) noexcept {
+	if constexpr (std::is_same_v<DsnT, DSN>) {
+		return Compare(lhs, rhs);
+	} else {
+		return RelaxCompare(lhs, rhs);
+	}
+}
+
+}  // namespace reindexer
+
+template <>
+struct std::hash<reindexer::DSN> {
+	auto operator()(const reindexer::DSN& dsn) const noexcept { return std::hash<std::string>{}(dsn.dsn_); }
+};
+
+template <>
+struct fmt::printf_formatter<reindexer::DSN> {
+	template <typename ContextT>
+	constexpr auto parse(ContextT& ctx) {
+		return ctx.begin();
+	}
+	template <typename ContextT>
+	auto format(const reindexer::DSN& dsn, ContextT& ctx) const {
+		return fmt::format_to(ctx.out(), "{}", dsn.masked_);
+	}
+};
+
+template <>
+struct fmt::formatter<reindexer::DSN> : public fmt::printf_formatter<reindexer::DSN> {};
+
+namespace YAML {
+template <>
+struct convert<reindexer::DSN> {
+	static Node encode(const reindexer::DSN& dsn) { return Node(dsn.dsn_); }
+};
+}  // namespace YAML

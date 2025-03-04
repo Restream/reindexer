@@ -11,23 +11,29 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/restream/reindexer/v3"
-	_ "github.com/restream/reindexer/v3/bindings/cproto"
-	"github.com/restream/reindexer/v3/test/helpers"
+	"github.com/restream/reindexer/v5"
+	_ "github.com/restream/reindexer/v5/bindings/cproto"
+	"github.com/restream/reindexer/v5/test/helpers"
 )
 
 type ReindexerWrapper struct {
 	reindexer.Reindexer
-	isMaster     bool
-	slaveList    []*ReindexerWrapper
-	master       *ReindexerWrapper
-	dsn          string
-	syncedStatus int32
-	syncMutex    sync.RWMutex
+	isMaster       bool
+	slaveList      []*ReindexerWrapper
+	master         *ReindexerWrapper
+	dsn            string
+	syncedStatus   int32
+	syncMutex      sync.RWMutex
+	clusterList    []*ReindexerWrapper
+	leaderServerID int
 }
 
-func NewReindexWrapper(dsn string, options ...interface{}) *ReindexerWrapper {
-	return &ReindexerWrapper{Reindexer: *reindexer.NewReindex(dsn, options...), isMaster: true, dsn: dsn, syncedStatus: 0}
+func NewReindexWrapper(dsn string, cluster arrayFlags, leaderServerID int, options ...interface{}) *ReindexerWrapper {
+	if cluster != nil {
+		return &ReindexerWrapper{Reindexer: *reindexer.NewReindex(dsn, options...), isMaster: false, dsn: dsn, syncedStatus: 0, leaderServerID: leaderServerID}
+	} else {
+		return &ReindexerWrapper{Reindexer: *reindexer.NewReindex(dsn, options...), isMaster: true, dsn: dsn, syncedStatus: 0, leaderServerID: 0}
+	}
 }
 
 func (dbw *ReindexerWrapper) setSynced() {
@@ -52,7 +58,7 @@ func (dbw *ReindexerWrapper) addSlave(dsn string, options ...interface{}) *Reind
 	if dbw.dsn == dsn {
 		return nil
 	}
-	slaveDb := NewReindexWrapper(dsn, options...)
+	slaveDb := NewReindexWrapper(dsn, cluster, dbw.leaderServerID, options...)
 	slaveDb.isMaster = false
 	slaveDb.master = dbw
 	slaveDb.SetSyncRequired()
@@ -67,6 +73,9 @@ func (dbw *ReindexerWrapper) AddSlave(dsn string, count int, options ...interfac
 	if err != nil {
 		panic(err)
 	}
+	if u.Scheme != "cproto" {
+		panic("Follower must have dsn with cproto-scheme")
+	}
 	for count > 0 {
 		db := dbw.addSlave(dsn, options...)
 		if db == nil {
@@ -78,6 +87,35 @@ func (dbw *ReindexerWrapper) AddSlave(dsn string, count int, options ...interfac
 		count--
 	}
 	return dbw.slaveList
+}
+
+func (dbw *ReindexerWrapper) addClusterNode(clusterNodeDsn string, options ...interface{}) *ReindexerWrapper {
+	nodeDb := NewReindexWrapper(clusterNodeDsn, cluster, dbw.leaderServerID, options...)
+	nodeDb.isMaster = false
+	nodeDb.SetSyncRequired()
+	dbw.clusterList = append(dbw.clusterList, nodeDb)
+
+	return nodeDb
+}
+
+func (dbw *ReindexerWrapper) AddClusterNodes(clusterDsns []string, options ...interface{}) []*ReindexerWrapper {
+	count := len(clusterDsns)
+	if count == 1 {
+		return nil
+	}
+	if count >= 2 {
+		for _, v := range clusterDsns {
+			u, err := url.Parse(v)
+			if err != nil {
+				panic(err)
+			}
+			dbw.addClusterNode(v, options...)
+			us := u
+			v = us.String()
+			count--
+		}
+	}
+	return dbw.clusterList
 }
 
 func (dbw *ReindexerWrapper) SetLogger(log reindexer.Logger) {
@@ -120,28 +158,31 @@ func (dbw *ReindexerWrapper) Query(namespace string) *queryTest {
 
 func (dbw *ReindexerWrapper) GetBaseQuery(namespace string) *reindexer.Query {
 	return dbw.Reindexer.Query(namespace)
-
 }
 
 func (dbw *ReindexerWrapper) execQuery(t *testing.T, qt *queryTest) *reindexer.Iterator {
 	return dbw.execQueryCtx(t, context.Background(), qt)
 }
 
-func (dbw *ReindexerWrapper) waitSyncAll(t *testing.T) {
-	dbw.syncMutex.Lock()
-	defer dbw.syncMutex.Unlock()
-	for _, db := range dbw.slaveList {
-		db.WaitForSyncWithMaster(t)
+func (dbw *ReindexerWrapper) waitSyncWithSingleDb(t *testing.T, sdb *ReindexerWrapper) {
+	if !dbw.IsSynced() {
+		dbw.syncMutex.Lock()
+		defer dbw.syncMutex.Unlock()
+		sdb.WaitForSyncWithMaster(t)
+		dbw.setSynced()
+		sdb.ResetCaches()
 	}
-	dbw.setSynced()
 }
 
-func (dbw *ReindexerWrapper) waitSyncOne(t *testing.T, sdb *ReindexerWrapper) {
-	dbw.syncMutex.Lock()
-	defer dbw.syncMutex.Unlock()
-	sdb.WaitForSyncWithMaster(t)
-	dbw.setSynced()
-	sdb.ResetCaches()
+func (dbw *ReindexerWrapper) waitSyncFull(t *testing.T) {
+	if !dbw.IsSynced() {
+		dbw.syncMutex.Lock()
+		defer dbw.syncMutex.Unlock()
+		for _, db := range dbw.slaveList {
+			db.WaitForSyncWithMaster(t)
+		}
+		dbw.setSynced()
+	}
 }
 
 func (dbw *ReindexerWrapper) execQueryCtx(t *testing.T, ctx context.Context, qt *queryTest) *reindexer.Iterator {
@@ -153,9 +194,7 @@ func (dbw *ReindexerWrapper) execQueryCtx(t *testing.T, ctx context.Context, qt 
 	}
 	if !qt.deepReplEqual {
 		sdb := dbw.slaveList[rand.Intn(len(dbw.slaveList))]
-		if !dbw.IsSynced() {
-			dbw.waitSyncOne(t, sdb)
-		}
+		dbw.waitSyncWithSingleDb(t, sdb)
 		slaveQuery := qt.q.MakeCopy(&sdb.Reindexer)
 		return slaveQuery.ExecCtx(ctx)
 	}
@@ -171,9 +210,7 @@ func (dbw *ReindexerWrapper) execQueryCtx(t *testing.T, ctx context.Context, qt 
 		m[pk+reflect.TypeOf(item).String()] = item
 	}
 
-	if !dbw.IsSynced() {
-		dbw.waitSyncAll(t)
-	}
+	dbw.waitSyncFull(t)
 	for _, db := range dbw.slaveList {
 		slaveQuery := qt.q.MakeCopy(&db.Reindexer)
 		rs, err := slaveQuery.ExecCtx(ctx).FetchAll()
@@ -200,18 +237,51 @@ func (dbw *ReindexerWrapper) execQueryCtx(t *testing.T, ctx context.Context, qt 
 	return qt.q.MustExecCtx(ctx)
 }
 
+func GetNodeForRole(nodeDb *reindexer.Reindexer, role string) (dsn string, serverID int, err error) {
+	serverID = -1
+	nodeStat, err := nodeDb.Query("#replicationstats").Where("type", reindexer.EQ, "cluster").Exec().FetchAll()
+	if err != nil {
+		return
+	}
+	replStat := nodeStat[0].(*reindexer.ReplicationStat)
+	for _, v := range replStat.ReplicationNodeStat {
+		if v.Role == role {
+			return v.DSN, v.ServerID, nil
+		}
+	}
+	err = fmt.Errorf("Can not find node for role [%s]", role)
+	return
+}
+
 func (dbw *ReindexerWrapper) setSlaveConfig(slaveDb *ReindexerWrapper) {
-	err := dbw.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
+	nodes := []reindexer.DBAsyncReplicationNode{}
+	for _, node := range dbw.slaveList {
+		nodes = append(nodes, reindexer.DBAsyncReplicationNode{DSN: node.dsn})
+	}
+	err := slaveDb.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
 		Type:        "replication",
-		Replication: &reindexer.DBReplicationConfig{Namespaces: []string{}, Role: "master", ClusterID: 1, ForceSyncOnLogicError: false, ForceSyncOnWrongDataHash: true},
+		Replication: &reindexer.DBReplicationConfig{ServerID: 1, ClusterID: 1},
 	})
 	if err != nil {
 		panic(err)
 	}
-
 	err = slaveDb.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
+		Type:             "async_replication",
+		AsyncReplication: &reindexer.DBAsyncReplicationConfig{Namespaces: []string{}},
+	})
+	if err != nil {
+		panic(err)
+	}
+	err = dbw.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
 		Type:        "replication",
-		Replication: &reindexer.DBReplicationConfig{Namespaces: []string{}, Role: "slave", MasterDSN: *dsn, ClusterID: 1, ForceSyncOnLogicError: false, ForceSyncOnWrongDataHash: true},
+		Replication: &reindexer.DBReplicationConfig{ServerID: 0, ClusterID: 1},
+	})
+	if err != nil {
+		panic(err)
+	}
+	err = dbw.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
+		Type:             "async_replication",
+		AsyncReplication: &reindexer.DBAsyncReplicationConfig{Role: "leader", Namespaces: []string{}, RetrySyncInterval: 1000000, Nodes: nodes},
 	})
 	if err != nil {
 		panic(err)
@@ -295,9 +365,7 @@ func (dbw *ReindexerWrapper) Delete(namespace string, item interface{}, precepts
 func (dbw *ReindexerWrapper) EnumMeta(t *testing.T, namespace string) ([]string, error) {
 	if len(dbw.slaveList) != 0 {
 		sdb := dbw.slaveList[rand.Intn(len(dbw.slaveList))]
-		if !dbw.IsSynced() {
-			dbw.waitSyncOne(t, sdb)
-		}
+		dbw.waitSyncWithSingleDb(t, sdb)
 		return sdb.Reindexer.EnumMeta(namespace)
 	}
 	return dbw.Reindexer.EnumMeta(namespace)
@@ -312,9 +380,7 @@ func (dbw *ReindexerWrapper) PutMeta(namespace string, key string, data []byte) 
 func (dbw *ReindexerWrapper) GetMeta(t *testing.T, namespace string, key string) ([]byte, error) {
 	if len(dbw.slaveList) != 0 {
 		sdb := dbw.slaveList[rand.Intn(len(dbw.slaveList))]
-		if !dbw.IsSynced() {
-			dbw.waitSyncOne(t, sdb)
-		}
+		dbw.waitSyncWithSingleDb(t, sdb)
 		return sdb.Reindexer.GetMeta(namespace, key)
 	}
 	return dbw.Reindexer.GetMeta(namespace, key)

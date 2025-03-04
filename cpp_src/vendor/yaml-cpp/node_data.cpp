@@ -85,6 +85,12 @@ void node_data::set_scalar(const std::string& scalar) {
 	m_scalar = scalar;
 }
 
+void node_data::set_scalar(std::string_view scalar) {
+	m_isDefined = true;
+	m_type = NodeType::Scalar;
+	m_scalar = scalar;
+}
+
 // size/iterator
 std::size_t node_data::size() const {
 	if (!m_isDefined) return 0;

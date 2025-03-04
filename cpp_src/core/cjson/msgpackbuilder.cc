@@ -96,6 +96,9 @@ void MsgPackBuilder::packCJsonValue(TagType tagType, Serializer& rdser) {
 		case TAG_UUID:
 			packValue(rdser.GetUuid());
 			break;
+		case TAG_FLOAT:
+			packValue(rdser.GetFloat());
+			break;
 		case TAG_NULL:
 			packNil();
 			break;
@@ -109,26 +112,25 @@ void MsgPackBuilder::packCJsonValue(TagType tagType, Serializer& rdser) {
 void MsgPackBuilder::appendJsonObject(std::string_view name, const gason::JsonNode& obj) {
 	auto type = obj.value.getTag();
 	switch (type) {
-		case gason::JSON_STRING: {
+		case gason::JsonTag::STRING: {
 			Put(name, obj.As<std::string_view>(), 0);
 			break;
 		}
-		case gason::JSON_NUMBER: {
+		case gason::JsonTag::NUMBER:
 			Put(name, obj.As<int64_t>(), 0);
 			break;
-		}
-		case gason::JSON_DOUBLE: {
+		case gason::JsonTag::DOUBLE: {
 			Put(name, obj.As<double>(), 0);
 			break;
 		}
-		case gason::JSON_OBJECT:
-		case gason::JSON_ARRAY: {
+		case gason::JsonTag::OBJECT:
+		case gason::JsonTag::ARRAY: {
 			int size = 0;
 			for (const auto& node : obj) {
 				(void)node;
 				++size;
 			}
-			if (type == gason::JSON_OBJECT) {
+			if (type == gason::JsonTag::OBJECT) {
 				auto pack = Object(name, size);
 				for (const auto& node : obj) {
 					pack.appendJsonObject(std::string_view(node.key), node);
@@ -141,19 +143,19 @@ void MsgPackBuilder::appendJsonObject(std::string_view name, const gason::JsonNo
 			}
 			break;
 		}
-		case gason::JSON_TRUE: {
+		case gason::JsonTag::JTRUE: {
 			Put(std::string_view(obj.key), true, 0);
 			break;
 		}
-		case gason::JSON_FALSE: {
+		case gason::JsonTag::JFALSE: {
 			Put(std::string_view(obj.key), false, 0);
 			break;
 		}
-		case gason::JSON_NULL: {
+		case gason::JsonTag::JSON_NULL: {
 			Null(std::string_view(obj.key));
 			break;
 		}
-		case gason::JSON_EMPTY:
+		case gason::JsonTag::EMPTY:
 		default:
 			throw(Error(errLogic, "Unexpected json tag for Object: %d", int(obj.value.getTag())));
 	}

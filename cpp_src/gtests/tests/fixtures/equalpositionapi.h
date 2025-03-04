@@ -34,7 +34,6 @@ protected:
 			}
 			Upsert(default_namespace, item);
 		}
-		Commit(default_namespace);
 	}
 
 	std::vector<int> randIntVec(int length, int initVal, int multipleCond) {

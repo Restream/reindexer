@@ -5,6 +5,7 @@
 #include "gason.h"
 #include <stdlib.h>
 #include <string>
+#include "tools/stringstools.h"
 #include "vendor/atoi/atoi.h"
 #include "vendor/double-conversion/double-conversion.h"
 
@@ -15,7 +16,7 @@ namespace gason {
 
 using double_conversion::StringToDoubleConverter;
 
-const char* jsonStrError(int err) {
+const char* jsonStrError(int err) noexcept {
 	switch (err) {
 #define XX(no, str) \
 	case JSON_##no: \
@@ -27,7 +28,7 @@ const char* jsonStrError(int err) {
 	}
 }
 
-void* JsonAllocator::allocate(size_t size) {
+void* JsonAllocator::allocate(size_t size) noexcept {
 	size = (size + 7) & ~7;
 
 	if (head && head->used + size <= JSON_ZONE_SIZE) {
@@ -52,7 +53,7 @@ void* JsonAllocator::allocate(size_t size) {
 	return (char*)zone + sizeof(Zone);
 }
 
-void JsonAllocator::deallocate() {
+void JsonAllocator::deallocate() noexcept {
 	while (head) {
 		Zone* next = head->next;
 		free(head);
@@ -76,7 +77,7 @@ static inline int char2int(char c) {
 	return (c & ~' ') - 'A' + 10;
 }
 
-bool isDouble(char* s, size_t& size) {
+static bool isDouble(char* s, size_t& size) {
 	size = 0;
 
 	if (*s == '-') {
@@ -141,7 +142,7 @@ static inline JsonValue listToValue(JsonTag tag, JsonNode* tail) {
 	return JsonValue(tag, nullptr);
 }
 
-static int jsonParse(span<char> str, char** endptr, JsonValue* value, JsonAllocator& allocator, LargeStringStorageT& largeStrings) {
+static int jsonParse(std::span<char> str, char** endptr, JsonValue* value, JsonAllocator& allocator, LargeStringStorageT& largeStrings) {
 	JsonNode* tails[JSON_STACK_SIZE];
 	JsonTag tags[JSON_STACK_SIZE];
 	JsonString keys[JSON_STACK_SIZE];
@@ -189,11 +190,11 @@ static int jsonParse(span<char> str, char** endptr, JsonValue* value, JsonAlloca
 					o = JsonValue(string2double(*endptr, &s, size));
 				} else if (negative) {
 					bool tmpb;
-					o = JsonValue(jsteemann::atoi<int64_t>(*endptr, *endptr + size, tmpb));
+					o = JsonValue(jsteemann::atoi<int64_t>(*endptr, *endptr + size, tmpb), true);
 					s = s + size - 1;
 				} else {
 					bool tmpb;
-					o = JsonValue(int64_t(jsteemann::atoi<uint64_t>(*endptr, *endptr + size, tmpb)));
+					o = JsonValue(jsteemann::atoi<uint64_t>(*endptr, *endptr + size, tmpb), false);
 					s = s + size - 1;
 				}
 
@@ -272,50 +273,50 @@ static int jsonParse(span<char> str, char** endptr, JsonValue* value, JsonAlloca
 				if (!(s[0] == 'r' && s[1] == 'u' && s[2] == 'e' && isdelim(s[3]))) {
 					return JSON_BAD_IDENTIFIER;
 				}
-				o = JsonValue(JSON_TRUE);
+				o = JsonValue(JsonTag::JTRUE);
 				s += 3, l -= 3;
 				break;
 			case 'f':
 				if (!(s[0] == 'a' && s[1] == 'l' && s[2] == 's' && s[3] == 'e' && isdelim(s[4]))) {
 					return JSON_BAD_IDENTIFIER;
 				}
-				o = JsonValue(JSON_FALSE);
+				o = JsonValue(JsonTag::JFALSE);
 				s += 4, l -= 4;
 				break;
 			case 'n':
 				if (!(s[0] == 'u' && s[1] == 'l' && s[2] == 'l' && isdelim(s[3]))) {
 					return JSON_BAD_IDENTIFIER;
 				}
-				o = JsonValue(JSON_NULL);
+				o = JsonValue(JsonTag::JSON_NULL);
 				s += 3, l -= 3;
 				break;
 			case ']':
 				if (pos == -1) {
 					return JSON_STACK_UNDERFLOW;
 				}
-				if (tags[pos] != JSON_ARRAY) {
+				if (tags[pos] != JsonTag::ARRAY) {
 					return JSON_MISMATCH_BRACKET;
 				}
-				o = listToValue(JSON_ARRAY, tails[pos--]);
+				o = listToValue(JsonTag::ARRAY, tails[pos--]);
 				break;
 			case '}':
 				if (pos == -1) {
 					return JSON_STACK_UNDERFLOW;
 				}
-				if (tags[pos] != JSON_OBJECT) {
+				if (tags[pos] != JsonTag::OBJECT) {
 					return JSON_MISMATCH_BRACKET;
 				}
 				if (keys[pos].ptr != nullptr) {
 					return JSON_UNEXPECTED_CHARACTER;
 				}
-				o = listToValue(JSON_OBJECT, tails[pos--]);
+				o = listToValue(JsonTag::OBJECT, tails[pos--]);
 				break;
 			case '[':
 				if (++pos == JSON_STACK_SIZE) {
 					return JSON_STACK_OVERFLOW;
 				}
 				tails[pos] = nullptr;
-				tags[pos] = JSON_ARRAY;
+				tags[pos] = JsonTag::ARRAY;
 				keys[pos] = JsonString();
 				separator = true;
 				continue;
@@ -324,7 +325,7 @@ static int jsonParse(span<char> str, char** endptr, JsonValue* value, JsonAlloca
 					return JSON_STACK_OVERFLOW;
 				}
 				tails[pos] = nullptr;
-				tags[pos] = JSON_OBJECT;
+				tags[pos] = JsonTag::OBJECT;
 				keys[pos] = JsonString();
 				separator = true;
 				continue;
@@ -354,9 +355,9 @@ static int jsonParse(span<char> str, char** endptr, JsonValue* value, JsonAlloca
 			return JSON_OK;
 		}
 
-		if (tags[pos] == JSON_OBJECT) {
+		if (tags[pos] == JsonTag::OBJECT) {
 			if (!keys[pos].ptr) {
-				if (o.getTag() != JSON_STRING) {
+				if (o.getTag() != JsonTag::STRING) {
 					return JSON_UNQUOTED_KEY;
 				}
 				keys[pos] = o.sval;
@@ -381,17 +382,17 @@ static int jsonParse(span<char> str, char** endptr, JsonValue* value, JsonAlloca
 }
 
 JsonNode* JsonNode::toNode() const {
-	if (empty() || value.getTag() == JSON_NULL) {
+	if (empty() || value.getTag() == JsonTag::JSON_NULL) {
 		return nullptr;
 	}
-	if (value.getTag() != JSON_OBJECT && value.getTag() != JSON_ARRAY) {
+	if (value.getTag() != JsonTag::OBJECT && value.getTag() != JsonTag::ARRAY) {
 		throw Exception(std::string("Can't convert json field '") + std::string(key) + "' to object or array");
 	}
 	return value.toNode();
 }
 
 const JsonNode& JsonNode::operator[](std::string_view key) const {
-	if (value.getTag() != JSON_OBJECT && value.getTag() != JSON_NULL) {
+	if (value.getTag() != JsonTag::OBJECT && value.getTag() != JsonTag::JSON_NULL) {
 		throw Exception(std::string("Can't obtain json field '") + std::string(key) + "' from non-object json node");
 	}
 	for (auto& v : (*this)) {
@@ -399,11 +400,28 @@ const JsonNode& JsonNode::operator[](std::string_view key) const {
 			return v;
 		}
 	}
-	static JsonNode empty_node{JSON_EMPTY, nullptr, {}};
+	static const JsonNode empty_node = JsonNode::Empty();
 	return empty_node;
 }
 
-JsonNode JsonParser::Parse(span<char> str, size_t* length) & {
+const JsonNode& JsonNode::findCaseInsensitive(std::string_view key) const {
+	if (value.getTag() != JsonTag::OBJECT && value.getTag() != JsonTag::JSON_NULL) {
+		throw Exception(std::string("Can't obtain json field '") + std::string(key) + "' from non-object json node");
+	}
+	const auto keyLower = reindexer::toLower(key);
+	for (auto& v : (*this)) {
+		if (reindexer::toLower(v.key) == keyLower) {
+			return v;
+		}
+	}
+	static JsonNode empty_node = JsonNode::Empty();
+	return empty_node;
+}
+
+// TODO: Remove NOLINT after pyreindexer update. Issue #1736
+JsonNode JsonNode::EmptyNode() noexcept { return {{JsonTag::EMPTY}, nullptr, {}}; }	 // NOLINT(*EnumCastOutOfRange)
+
+JsonNode JsonParser::Parse(std::span<char> str, size_t* length) & {
 	largeStrings_->clear();
 	char* endp = nullptr;
 	JsonNode val{{}, nullptr, {}};
@@ -422,11 +440,11 @@ JsonNode JsonParser::Parse(span<char> str, size_t* length) & {
 JsonNode JsonParser::Parse(std::string_view str, size_t* length) & {
 	tmp_.reserve(str.size());
 	tmp_.assign(str.begin(), str.end());
-	return Parse(span<char>(&tmp_[0], tmp_.size()), length);
+	return Parse(std::span<char>(&tmp_[0], tmp_.size()), length);
 }
 
 static inline bool haveEqualType(JsonTag lt, JsonTag rt) noexcept {
-	return lt == rt || (lt == JSON_TRUE && rt == JSON_FALSE) || (lt == JSON_FALSE && rt == JSON_TRUE);
+	return lt == rt || (lt == JsonTag::JTRUE && rt == JsonTag::JFALSE) || (lt == JsonTag::JFALSE && rt == JsonTag::JTRUE);
 }
 
 bool isHomogeneousArray(const gason::JsonValue& v) noexcept {
@@ -443,6 +461,30 @@ bool isHomogeneousArray(const gason::JsonValue& v) noexcept {
 		prevTag = elem.value.getTag();
 	}
 	return true;
+}
+
+std::string_view JsonTagToTypeStr(JsonTag tag) noexcept {
+	using namespace std::string_view_literals;
+	switch (tag) {
+		case JsonTag::STRING:
+			return "STRING"sv;
+		case JsonTag::NUMBER:
+			return "NUMBER"sv;
+		case JsonTag::DOUBLE:
+			return "DOUBLE"sv;
+		case JsonTag::ARRAY:
+			return "ARRAY"sv;
+		case JsonTag::OBJECT:
+			return "OBJECT"sv;
+		case JsonTag::JTRUE:
+		case JsonTag::JFALSE:
+			return "BOOL"sv;
+		case JsonTag::JSON_NULL:
+			return "NULL"sv;
+		case JsonTag::EMPTY:
+			return "EMPTY"sv;
+	}
+	return "<UNKNOWN>"sv;
 }
 
 }  // namespace gason

@@ -8,6 +8,7 @@
 namespace reindexer {
 
 class WrSerializer;
+class Query;
 
 class SQLEncoder {
 public:

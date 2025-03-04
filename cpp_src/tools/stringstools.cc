@@ -1,16 +1,17 @@
 #include <memory.h>
 #include <algorithm>
-#include <cctype>
-#include <locale>
-#include <string>
-#include <vector>
 
 #include "atoi/atoi.h"
+#include "core/keyvalue/key_string.h"
+#include "core/keyvalue/uuid.h"
+#include "estl/one_of.h"
 #include "fmt/compile.h"
 #include "frozen_str_tools.h"
 #include "itoa/itoa.h"
+#include "stringstools.h"
 #include "tools/assertrx.h"
 #include "tools/randomgenerator.h"
+#include "tools/serializer.h"
 #include "tools/stringstools.h"
 #include "utf8cpp/utf8.h"
 #include "vendor/double-conversion/double-conversion.h"
@@ -69,6 +70,10 @@ inline static char* strappend(char* dst, const char* src) noexcept {
 	return dst;
 }
 
+constexpr static auto kLogLevels = frozen::make_unordered_map<std::string_view, LogLevel>(
+	{{"none", LogNone}, {"warning", LogWarning}, {"error", LogError}, {"info", LogInfo}, {"trace", LogTrace}}, frozen::nocase_hash_str{},
+	frozen::nocase_equal_str{});
+
 constexpr static auto kStrictModes = frozen::make_unordered_map<std::string_view, StrictMode>(
 	{{"", StrictModeNotSet}, {"none", StrictModeNone}, {"names", StrictModeNames}, {"indexes", StrictModeIndexes}},
 	frozen::nocase_hash_str{}, frozen::nocase_equal_str{});
@@ -114,6 +119,76 @@ std::string unescapeString(std::string_view str) {
 		}
 	}
 	return dst;
+}
+
+KeyValueType detectValueType(std::string_view value) {
+	if (value.empty()) {
+		return KeyValueType::Undefined{};
+	}
+	static std::string_view trueToken = "true", falseToken = "false";
+	size_t i = 0;
+	bool isDouble = false, isDigit = false, isBool = false;
+	if (isdigit(value[i])) {
+		isDigit = true;
+	} else if (value.size() > 1) {
+		if (value[i] == '-' || value[i] == '+') {
+			isDigit = value[i + 1] != '.';
+		} else {
+			isBool = (value[i] == trueToken[i] || value[i] == falseToken[i]);
+		}
+	} else {
+		return KeyValueType::String{};
+	}
+	for (++i; i < value.length() && (isDouble || isDigit || isBool); i++) {
+		if (isDigit || isDouble) {
+			if (!isdigit(value[i])) {
+				if (value[i] == '.') {
+					if (isDouble) {
+						return KeyValueType::String{};
+					}
+					isDouble = true;
+				} else {
+					return KeyValueType::String{};
+				}
+			}
+		} else if (isBool) {
+			isBool &= (i < trueToken.size() && trueToken[i] == value[i]) || (i < falseToken.size() && falseToken[i] == value[i]);
+		}
+	}
+	if (isDigit) {
+		if (isDouble) {
+			return KeyValueType::Double{};
+		}
+		return KeyValueType::Int64{};
+	} else if (isBool) {
+		return KeyValueType::Bool{};
+	} else {
+		return KeyValueType::String{};
+	}
+}
+
+Variant stringToVariant(std::string_view value) {
+	const auto kvt = detectValueType(value);
+	return kvt.EvaluateOneOf(
+		[value](KeyValueType::Int64) { return Variant(int64_t(stoll(value))); },
+		[value](KeyValueType::Int) { return Variant(int(stoi(value))); },
+		[value](KeyValueType::Double) {
+			using double_conversion::StringToDoubleConverter;
+			static const StringToDoubleConverter converter{StringToDoubleConverter::NO_FLAGS, NAN, NAN, nullptr, nullptr};
+			int countOfCharsParsedAsDouble = 0;
+			return Variant(converter.StringToDouble(value.data(), value.size(), &countOfCharsParsedAsDouble));
+		},
+		[value](KeyValueType::Float) {
+			using double_conversion::StringToDoubleConverter;
+			static const StringToDoubleConverter converter{StringToDoubleConverter::NO_FLAGS, NAN, NAN, nullptr, nullptr};
+			int countOfCharsParsedAsDouble = 0;
+			return Variant(converter.StringToFloat(value.data(), value.size(), &countOfCharsParsedAsDouble));
+		},
+		[value](KeyValueType::String) { return Variant(make_key_string(value.data(), value.length())); },
+		[value](KeyValueType::Bool) noexcept { return (value.size() == 4) ? Variant(true) : Variant(false); },
+		[value](KeyValueType::Uuid) { return Variant{Uuid{value}}; },
+		[](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
+				 KeyValueType::FloatVector>) noexcept { return Variant(); });
 }
 
 std::wstring& utf8_to_utf16(std::string_view src, std::wstring& dst) {
@@ -352,13 +427,38 @@ ComparationResult collateCompare<CollateUTF8>(std::string_view lhs, std::string_
 	return ComparationResult::Eq;
 }
 
+static long int strntol(std::string_view str, const char** end, int base) noexcept {
+	char buf[24];
+	long int ret;
+	const char* beg = str.data();
+	auto sz = str.size();
+	for (; beg && sz && *beg == ' '; beg++, sz--);
+	assertrx_dbg(end);
+
+	if (!sz || sz >= sizeof(buf)) {
+		*end = str.data();
+		return 0;
+	}
+
+	// beg can not be null if sz != 0
+	// NOLINTNEXTLINE(clang-analyzer-core.NonNullParamChecker)
+	std::memcpy(buf, beg, sz);
+	buf[sz] = '\0';
+	ret = std::strtol(buf, const_cast<char**>(end), base);
+	if (ret == LONG_MIN || ret == LONG_MAX) {
+		return ret;
+	}
+	*end = str.data() + (*end - buf);
+	return ret;
+}
+
 template <>
 ComparationResult collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept {
-	char* posl = nullptr;
-	char* posr = nullptr;
+	const char* posl = nullptr;
+	const char* posr = nullptr;
 
-	int numl = strtol(lhs.data(), &posl, 10);
-	int numr = strtol(rhs.data(), &posr, 10);
+	int numl = strntol(lhs, &posl, 10);
+	int numr = strntol(rhs, &posr, 10);
 
 	if (numl == numr) {
 		auto minlen = std::min(lhs.size() - (posl - lhs.data()), rhs.size() - (posr - rhs.data()));
@@ -447,7 +547,7 @@ int fast_strftime(char* buf, const tm* tm) {
 	return d - buf;
 }
 
-bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept {
+[[nodiscard]] bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept {
 	if (!name.length()) {
 		return false;
 	}
@@ -459,7 +559,7 @@ bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept 
 	return true;
 }
 
-bool validateUserNsName(std::string_view name) noexcept {
+[[nodiscard]] bool validateUserNsName(std::string_view name) noexcept {
 	if (!name.length()) {
 		return false;
 	}
@@ -471,16 +571,22 @@ bool validateUserNsName(std::string_view name) noexcept {
 	return true;
 }
 
-LogLevel logLevelFromString(std::string_view strLogLevel) {
-	constexpr static auto levels = frozen::make_unordered_map<std::string_view, LogLevel>(
-		{{"none", LogNone}, {"warning", LogWarning}, {"error", LogError}, {"info", LogInfo}, {"trace", LogTrace}},
-		frozen::nocase_hash_str{}, frozen::nocase_equal_str{});
-
-	auto configLevelIt = levels.find(strLogLevel);
-	if (configLevelIt != levels.end()) {
+LogLevel logLevelFromString(std::string_view strLogLevel) noexcept {
+	auto configLevelIt = stringtools_impl::kLogLevels.find(strLogLevel);
+	if (configLevelIt != stringtools_impl::kLogLevels.end()) {
 		return configLevelIt->second;
 	}
 	return LogNone;
+}
+
+std::string_view logLevelToString(LogLevel level) noexcept {
+	for (auto& it : stringtools_impl::kLogLevels) {
+		if (it.second == level) {
+			return it.first;
+		}
+	}
+	constexpr static std::string_view kNone("none");
+	return kNone;
 }
 
 StrictMode strictModeFromString(std::string_view strStrictMode) {
@@ -524,6 +630,21 @@ bool isBlank(std::string_view str) noexcept {
 	return true;
 }
 
+bool endsWith(const std::string& source, std::string_view ending) noexcept {
+	if (source.length() >= ending.length()) {
+		return (0 == source.compare(source.length() - ending.length(), ending.length(), ending));
+	} else {
+		return false;
+	}
+}
+
+std::string& ensureEndsWith(std::string& source, std::string_view ending) {
+	if (!source.empty() && !endsWith(source, ending)) {
+		source += ending;
+	}
+	return source;
+}
+
 int getUTF8StringCharactersCount(std::string_view str) noexcept {
 	int len = 0;
 	try {
@@ -563,7 +684,8 @@ int64_t stoll(std::string_view sl) {
 	return ret;
 }
 
-int double_to_str(double v, char* buf, int capacity) {
+template <typename FPT>
+int fp_to_str_impl(FPT v, char* buf, int capacity) {
 	(void)capacity;
 	auto end = fmt::format_to(buf, FMT_COMPILE("{}"), v);
 	auto p = buf;
@@ -582,19 +704,53 @@ int double_to_str(double v, char* buf, int capacity) {
 	return end - buf;
 }
 
-int double_to_str_no_trailing(double v, char* buf, int capacity) {
+template <typename FPT>
+int fp_to_str_no_trailing_impl(FPT v, char* buf, int capacity) {
 	(void)capacity;
 	auto end = fmt::format_to(buf, FMT_COMPILE("{}"), v);
 	assertrx_dbg(end - buf < capacity);
 	return end - buf;
 }
 
-std::string double_to_str(double v) {
+template <typename FPT>
+std::string fp_to_str_impl(FPT v) {
 	std::string res;
 	res.resize(32);
-	auto len = double_to_str(v, res.data(), res.size());
+	auto len = fp_to_str_impl(v, res.data(), res.size());
 	res.resize(len);
 	return res;
+}
+
+int double_to_str(double v, char* buf, int capacity) { return fp_to_str_impl(v, buf, capacity); }
+int double_to_str_no_trailing(double v, char* buf, int capacity) { return fp_to_str_no_trailing_impl(v, buf, capacity); }
+std::string double_to_str(double v) { return fp_to_str_impl(v); }
+
+int float_to_str(float v, char* buf, int capacity) { return fp_to_str_impl(v, buf, capacity); }
+int float_to_str_no_trailing(float v, char* buf, int capacity) { return fp_to_str_no_trailing_impl(v, buf, capacity); }
+std::string float_to_str(float v) { return fp_to_str_impl(v); }
+
+void float_vector_to_str(ConstFloatVectorView view, WrSerializer& ser) {
+	ser << '[';
+	if (view.IsStripped()) {
+		throw Error(errLogic, "Unable to serialize stripped float_vector");
+	}
+	auto span = view.Span();
+	std::string res;
+	res.resize(32);
+	for (auto it = span.begin(), end = span.end(); it != end; ++it) {
+		auto len = float_to_str(*it, res.data(), res.size());
+		ser << std::string_view(res.data(), len);
+		if (it + 1 != end) {
+			ser << ',';
+		}
+	}
+	ser << ']';
+}
+
+std::string float_vector_to_str(ConstFloatVectorView view) {
+	WrSerializer ser;
+	float_vector_to_str(std::move(view), ser);
+	return std::string(ser.Slice());
 }
 
 std::string randStringAlph(size_t len) {

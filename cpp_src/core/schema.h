@@ -135,8 +135,8 @@ public:
 	Error BuildProtobufSchema(TagsMatcher& tm, PayloadType& pt);
 	Error GetProtobufSchema(WrSerializer& schema) const;
 	int GetProtobufNsNumber() const noexcept { return protobufNsNumber_; }
-	const PrefixTree::PrefixTreeNode* GetRoot() const { return &paths_.root_; }
-	static std::string AppendProtobufNumber(std::string_view j, int protobufNsNumber);
+	const PrefixTree::PrefixTreeNode* GetRoot() const noexcept { return &paths_.root_; }
+	static std::string AppendProtobufNumber(std::string_view json, int protobufNsNumber);
 
 	std::vector<int> MakeCsvTagOrdering(const TagsMatcher& tm) const;
 	bool IsEmpty() const noexcept;
@@ -145,7 +145,7 @@ private:
 	void parseJsonNode(const gason::JsonNode& node, PrefixTree::PathT& splittedPath, bool isRequired);
 
 	PrefixTree paths_;
-	std::string originalJson_;
+	std::string originalJson_ = "{}";
 	std::string protobufSchema_;
 	Error protobufSchemaStatus_;
 	int protobufNsNumber_;

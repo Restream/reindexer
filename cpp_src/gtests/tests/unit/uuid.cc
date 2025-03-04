@@ -212,9 +212,6 @@ static void init(reindexer::Reindexer& rx, std::vector<Values<T, T>>& values, bo
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	}
-
-	err = rx.Commit(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 template <typename T>
@@ -236,9 +233,6 @@ static void initWithoutIndexes(reindexer::Reindexer& rx, std::vector<Values<T, T
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	}
-
-	err = rx.Commit(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 template <typename>
@@ -266,8 +260,9 @@ static void test(reindexer::Reindexer& rx, const std::vector<Values<T1, T2>>& va
 	EXPECT_EQ(qr.Count(), kItemsCount);
 	assert(values.size() == kItemsCount);
 	assert(values.size() >= qr.Count());
-	for (size_t i = 0, s = qr.Count(); i < s; ++i) {
-		const auto item = qr[i].GetItem(false);
+	size_t i = 0;
+	for (auto it = qr.begin(), end = qr.end(); it != end; ++it, ++i) {
+		const auto item = it.GetItem(false);
 		const reindexer::VariantArray v = item["uuid"];
 		if (values[i].scalar || emptyValue != EmptyValues::ShouldBeEmpty) {
 			if (emptyValue == EmptyValues::ShouldBeFilled || !v.empty()) {
@@ -332,9 +327,6 @@ TEST(UUID, UpdateItem) {
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		}
 
-		const auto err = rx.Commit(nsName);
-		ASSERT_TRUE(err.ok()) << err.what();
-
 		test(rx, values);
 	} catch (const reindexer::Error& e) {
 		ASSERT_TRUE(false) << e.what() << std::endl;
@@ -352,11 +344,11 @@ TEST(UUID, DropIndex) {
 		init(rx, uuidValues);
 		test(rx, uuidValues);
 
-		auto err = rx.DropIndex(nsName, {"id_uuid"});
+		auto err = rx.DropIndex(nsName, reindexer::IndexDef{"id_uuid"});
 		ASSERT_TRUE(err.ok()) << err.what();
 		test(rx, uuidValues);
 
-		err = rx.DropIndex(nsName, {"uuid"});
+		err = rx.DropIndex(nsName, reindexer::IndexDef{"uuid"});
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		std::vector<Values<std::string, reindexer::Uuid>> testValues1;
@@ -366,7 +358,7 @@ TEST(UUID, DropIndex) {
 		}
 		test(rx, testValues1, EmptyValues::CouldBeEmpty);
 
-		err = rx.DropIndex(nsName, {"uuid_a"});
+		err = rx.DropIndex(nsName, reindexer::IndexDef{"uuid_a"});
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		std::vector<Values<std::string, std::string>> testValues2;
@@ -566,14 +558,10 @@ TEST(UUID, AddNotArrayUuidIndexOnArrayField) {
 
 		const auto err = rx.AddIndex(nsName, reindexer::IndexDef{"uuid_a", "hash", "uuid", IndexOpts()});
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Cannot convert array field to not array UUID");
+		EXPECT_STREQ(err.what(), "Cannot convert array field to not array UUID");
 
 		test(rx, strUuidValues);
-	} catch (const reindexer::Error& e) {
-		ASSERT_TRUE(false) << e.what() << std::endl;
 	} catch (const std::exception& e) {
 		ASSERT_TRUE(false) << e.what() << std::endl;
-	} catch (...) {
-		ASSERT_TRUE(false);
 	}
 }

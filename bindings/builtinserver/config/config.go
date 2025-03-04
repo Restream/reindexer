@@ -27,6 +27,7 @@ type NetConf struct {
 	Security            bool   `yaml:"security"`
 	HttpReadTimeoutSec  int    `yaml:"http_read_timeout,omitempty"`
 	HttpWriteTimeoutSec int    `yaml:"http_write_timeout,omitempty"`
+	MaxUpdatesSizeBytes uint   `yaml:"maxupdatessize,omitempty"`
 }
 
 type LoggerConf struct {
@@ -48,9 +49,10 @@ type DebugConf struct {
 	Allocs bool `yaml:"allocs"`
 }
 type MetricsConf struct {
-	Prometheus    bool  `yaml:"prometheus"`
-	CollectPeriod int64 `yaml:"collect_period"`
-	ClientsStats  bool  `yaml:"clientsstats"`
+	Prometheus       bool  `yaml:"prometheus"`
+	CollectPeriod    int64 `yaml:"collect_period"`
+	ClientsStats     bool  `yaml:"clientsstats"`
+	ReplicationStats bool  `yaml:"replicationstats"`
 }
 type ServerConfig struct {
 	Storage StorageConf `yaml:"storage"`
@@ -82,6 +84,7 @@ func DefaultServerConfig() *ServerConfig {
 			HTTPThreading: "shared",
 			RPCAddr:       "0.0.0.0:6534",
 			RPCThreading:  "shared",
+			UnixRPCAddr:   "none",
 			Security:      false,
 		},
 		Logger: LoggerConf{

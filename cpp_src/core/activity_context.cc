@@ -1,8 +1,5 @@
 #include "activity_context.h"
-#include <iomanip>
-#include <sstream>
-#include "activity_context.h"
-#include "cjson/jsonbuilder.h"
+#include "activitylog.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
@@ -16,6 +13,9 @@ void ActivityContainer::Register(const RdxActivityContext* context) {
 
 	assertrx(res.second);
 	(void)res;
+#ifdef RX_LOGACTIVITY
+	log_.Register(context);
+#endif
 }
 
 void ActivityContainer::Unregister(const RdxActivityContext* context) {
@@ -25,6 +25,9 @@ void ActivityContainer::Unregister(const RdxActivityContext* context) {
 
 	assertrx(count == 1u);
 	(void)count;
+#ifdef RX_LOGACTIVITY
+	log_.Unregister(context);
+#endif
 }
 
 void ActivityContainer::Reregister(const RdxActivityContext* oldCtx, const RdxActivityContext* newCtx) {
@@ -41,12 +44,34 @@ void ActivityContainer::Reregister(const RdxActivityContext* oldCtx, const RdxAc
 	assertrx(insertRes.second);
 	(void)eraseCount;
 	(void)insertRes;
+#ifdef RX_LOGACTIVITY
+	log_.Reregister(oldCtx, newCtx);
+#endif
 }
 
-std::vector<Activity> ActivityContainer::List() {
+void ActivityContainer::Reset() {
+#ifdef RX_LOGACTIVITY
+	std::lock_guard lck(mtx_);
+	log_.Reset();
+#endif
+}
+
+#ifdef RX_LOGACTIVITY
+void ActivityContainer::AddOperation(const RdxActivityContext* ctx, Activity::State st, bool start) {
+	std::unique_lock<std::mutex> lck(mtx_);
+	log_.AddOperation(ctx, st, start);
+}
+#endif
+
+std::vector<Activity> ActivityContainer::List([[maybe_unused]] int serverId) {
 	std::vector<Activity> ret;
 	{
 		std::lock_guard lck(mtx_);
+
+#ifdef RX_LOGACTIVITY
+		log_.Dump(serverId);
+#endif
+
 		ret.reserve(cont_.size());
 		for (const RdxActivityContext* ctx : cont_) {
 			ret.emplace_back(*ctx);
@@ -69,49 +94,10 @@ std::optional<std::string> ActivityContainer::QueryForIpConnection(int id) {
 	return std::nullopt;
 }
 
-std::string_view Activity::DescribeState(State st) noexcept {
-	switch (st) {
-		case InProgress:
-			return "in_progress";
-		case WaitLock:
-			return "wait_lock";
-		case Sending:
-			return "sending";
-		case IndexesLookup:
-			return "indexes_lookup";
-		case SelectLoop:
-			return "select_loop";
-		default:
-			abort();
-	}
-}
-
-void Activity::GetJSON(WrSerializer& ser) const {
-	using namespace std::chrono;
-	JsonBuilder builder(ser);
-	builder.Put("client", activityTracer);
-	if (!user.empty()) {
-		builder.Put("user", user);
-	}
-	builder.Put("query", query);
-	builder.Put("query_id", id);
-	std::time_t t = system_clock_w::to_time_t(startTime);
-	char buffer[80];
-	std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
-	std::stringstream ss;
-	ss << buffer << '.' << std::setw(3) << std::setfill('0') << (duration_cast<milliseconds>(startTime.time_since_epoch()).count() % 1000);
-	builder.Put("query_start", ss.str());
-	builder.Put("state", DescribeState(state));
-	if (state == WaitLock) {
-		builder.Put("lock_description", "Wait lock for " + std::string(description));
-	}
-	builder.End();
-}
-
 RdxActivityContext::RdxActivityContext(std::string_view activityTracer, std::string_view user, std::string_view query,
 									   ActivityContainer& parent, int ipConnectionId, bool clientState)
-	: data_{nextId(),		std::string(activityTracer), std::string(user),		std::string(query),
-			ipConnectionId, Activity::InProgress,		 system_clock_w::now(), ""sv},
+	: data_{nextId(),			ipConnectionId,		   std::string(activityTracer), std::string(user),
+			std::string(query), system_clock_w::now(), Activity::InProgress,		""sv},
 	  state_(serializeState(clientState ? Activity::Sending : Activity::InProgress)),
 	  parent_(&parent) {
 	parent_->Register(this);

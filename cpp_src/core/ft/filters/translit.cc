@@ -1,7 +1,7 @@
 #include "translit.h"
 #include <assert.h>
 #include <memory.h>
-#include "estl/span.h"
+#include <span>
 
 namespace reindexer {
 

@@ -1,5 +1,5 @@
 #pragma once
-#include <chrono>
+
 #include <optional>
 #include "core/dbconfig.h"
 #include "estl/mutex.h"
@@ -8,7 +8,7 @@
 namespace reindexer {
 
 class Query;
-class Transaction;
+class LocalTransaction;
 class ExplainCalc;
 
 namespace long_actions {
@@ -76,13 +76,13 @@ struct QueryParams {
 };
 
 struct TransactionParams {
-	const Transaction& tx;
+	const LocalTransaction& tx;
 	LongTxLoggingParams thresholds;
 	const bool& wasCopied;
 };
 
 template <>
-struct ActionWrapper<Transaction> : TransactionParams, LockDurationStorage {
+struct ActionWrapper<LocalTransaction> : TransactionParams, LockDurationStorage {
 	template <typename... Args>
 	ActionWrapper(Args&&... args) : TransactionParams{std::forward<Args>(args)...}, LockDurationStorage() {}
 };
@@ -140,7 +140,7 @@ private:
 
 template <typename... Args>
 auto MakeLogger(Args&&... args) {
-	return Logger<Transaction>{std::forward<Args>(args)...};
+	return Logger<LocalTransaction>{std::forward<Args>(args)...};
 }
 
 template <QueryType queryType, typename... Args>
@@ -155,9 +155,9 @@ void Logger<QueryEnum2Type<QueryType::QueryUpdate>>::Dump(std::chrono::microseco
 template <>
 void Logger<QueryEnum2Type<QueryType::QueryDelete>>::Dump(std::chrono::microseconds);
 template <>
-void Logger<Transaction>::Dump(std::chrono::microseconds);
+void Logger<LocalTransaction>::Dump(std::chrono::microseconds);
 
-extern template struct Logger<Transaction>;
+extern template struct Logger<LocalTransaction>;
 extern template struct Logger<QueryEnum2Type<QueryType::QuerySelect>>;
 extern template struct Logger<QueryEnum2Type<QueryType::QueryUpdate>>;
 extern template struct Logger<QueryEnum2Type<QueryType::QueryDelete>>;

@@ -2,7 +2,6 @@
 
 #include <gtest/gtest.h>
 #include "reindexer_api.h"
-#include "tools/timetools.h"
 
 class NsApi : public ReindexerApi {
 protected:
@@ -65,15 +64,10 @@ protected:
 			},
 			"nested2":{"bonus2":%ld}})json";
 		for (size_t i = 1000; i < 2000; ++i) {
-			Item item = NewItem(default_namespace);
-			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
-
 			std::string serial = std::to_string(i);
 			snprintf(sourceJson, sizeof(sourceJson) - 1, jsonPattern, serial.c_str(), serial.c_str(), i, i * 2, i * 3);
 
-			Error err = item.FromJSON(sourceJson);
-			EXPECT_TRUE(err.ok()) << err.what();
-			Upsert(default_namespace, item);
+			rt.UpsertJSON(default_namespace, sourceJson);
 		}
 	}
 
@@ -94,15 +88,10 @@ protected:
 			})json";
 
 		for (size_t i = 1000; i < 2000; ++i) {
-			Item item = NewItem(default_namespace);
-			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
-
 			std::string serial = std::to_string(i);
 			snprintf(sourceJson, sizeof(sourceJson) - 1, jsonPattern, serial.c_str(), serial.c_str(), i, i * 2, i * 3);
 
-			Error err = item.FromJSON(sourceJson);
-			EXPECT_TRUE(err.ok()) << err.what();
-			Upsert(default_namespace, item);
+			rt.UpsertJSON(default_namespace, sourceJson);
 		}
 	}
 
@@ -152,24 +141,18 @@ protected:
 		}
 
 		const static Query q{truncate_namespace};
-		QueryResults qr1;
-		auto err = rt.reindexer->Select(q, qr1);
-		ASSERT_TRUE(err.ok()) << err.what();
+		QueryResults qr1 = rt.Select(q);
 		ASSERT_EQ(itemsCount, qr1.Count());
 
-		err = truncate(truncate_namespace);
+		auto err = truncate(truncate_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		QueryResults qr2;
-		err = rt.reindexer->Select(q, qr2);
-		ASSERT_TRUE(err.ok()) << err.what();
+		QueryResults qr2 = rt.Select(q);
 		ASSERT_EQ(0, qr2.Count());
 
 		InsertNewTruncateItem(1);
 
-		QueryResults qr3;
-		err = rt.reindexer->Select(q, qr3);
-		ASSERT_TRUE(err.ok()) << err.what();
+		QueryResults qr3 = rt.Select(q);
 		ASSERT_EQ(1, qr3.Count());
 	}
 

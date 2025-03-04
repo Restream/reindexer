@@ -1,5 +1,6 @@
 #pragma once
 #include <stdio.h>
+#include <sstream>
 
 #define PRINTF(...)              \
 	do {                         \
@@ -7,7 +8,8 @@
 		printf(__VA_ARGS__);     \
 	} while (0)
 
-// C++ stream interface
+/** @brief C++ Gtest log stream interface.
+ * If you need your strings to be displayed in Tests execution log then they shall always end with "<<std::endl;" */
 class TestCout : public std::stringstream {
 public:
 	void BoldOn() { printf("\e[1m"); }
@@ -29,4 +31,6 @@ public:
 	}
 };
 
+/** @brief GTest log stream helper. If you need your strings to be displayed in Tests execution log then they shall always end with
+ * "<<std::endl;" */
 #define TEST_COUT TestCout()

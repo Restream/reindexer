@@ -4,6 +4,8 @@
 #include "gtests/tests/tests_data.h"
 #include "query_aggregate_strict_mode_test.h"
 
+using reindexer::client::RPCDataFormat;
+
 TEST_F(MsgPackCprotoApi, MsgPackDecodeTest) {
 	using namespace reindexer;
 	auto testDataPath = reindexer::fs::JoinPath(std::string(kTestsDataPath), "MsgPack");
@@ -34,21 +36,23 @@ TEST_F(MsgPackCprotoApi, MsgPackDecodeTest) {
 }
 
 TEST_F(MsgPackCprotoApi, SelectTest) {
-	reindexer::client::QueryResults qr;
-	Error err = client_->Select(Query(default_namespace), qr, ctx_, nullptr, FormatMsgPack);
+	QueryResults qr(kResultsMsgPack | kResultsWithItemID);
+	Error err = client_->Select(Query(default_namespace), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	EXPECT_EQ(qr.Count(), 1000);
+	ASSERT_EQ(qr.GetFlags() & kResultsFormatMask, kResultsMsgPack) << qr.GetFlags();
 	for (auto it : qr) {
 		checkItem(it);
 	}
 }
 
 TEST_F(MsgPackCprotoApi, AggregationSelectTest) {
-	reindexer::client::QueryResults qr;
-	Error err =
-		client_->Select("select distinct(id), facet(a1, a2), sum(id) from test_namespace limit 100000", qr, ctx_, nullptr, FormatMsgPack);
+	QueryResults qr(kResultsMsgPack | kResultsWithItemID);
+	Error err = client_->Select(
+		Query(default_namespace).Distinct("id").Aggregate(AggFacet, {"a1", "a2"}).Aggregate(AggSum, {"id"}).Limit(100000), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.GetAggregationResults().size(), 3);
+	ASSERT_EQ(qr.GetFlags() & kResultsFormatMask, kResultsMsgPack) << qr.GetFlags();
 
 	const reindexer::AggregationResult& distinct = qr.GetAggregationResults()[0];
 	EXPECT_EQ(distinct.type, AggDistinct);
@@ -90,7 +94,7 @@ TEST_F(MsgPackCprotoApi, AggregationSelectTest) {
 TEST_F(MsgPackCprotoApi, AggregationsWithStrictModeTest) { QueryAggStrictModeTest(client_); }
 
 TEST_F(MsgPackCprotoApi, ModifyItemsTest) {
-	reindexer::client::Item item = client_->NewItem(default_namespace);
+	auto item = client_->NewItem(default_namespace);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 	reindexer::WrSerializer wrser;
@@ -107,29 +111,29 @@ TEST_F(MsgPackCprotoApi, ModifyItemsTest) {
 	Error err = item.FromJSON(wrser.Slice(), &endp);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	err = client_->Upsert(default_namespace, item, ctx_, FormatMsgPack);
+	err = client_->Upsert(default_namespace, item, RPCDataFormat::MsgPack);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	reindexer::client::QueryResults qr;
-	err = client_->Select(Query(default_namespace).Where(kFieldId, CondEq, Variant(int(7))), qr, ctx_, nullptr, FormatMsgPack);
+	QueryResults qr(kResultsMsgPack | kResultsWithItemID);
+	err = client_->Select(Query(default_namespace).Where(kFieldId, CondEq, Variant(int(7))), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1);
+	ASSERT_EQ(qr.GetFlags() & kResultsFormatMask, kResultsMsgPack) << qr.GetFlags();
 
 	for (auto it : qr) {
 		checkItem(it);
-		reindexer::client::Item item = it.GetItem();
+		auto item = it.GetItem();
 		ASSERT_TRUE(itemSrcJson == std::string(item.GetJSON()));
 	}
 }
 
 TEST_F(MsgPackCprotoApi, UpdateTest) {
-	const std::string_view sql = "update test_namespace set a1 = 7 where id >= 10 and id <= 100";
-	Query q = Query::FromSQL(sql);
-
-	reindexer::client::QueryResults qr;
-	Error err = client_->Update(q, qr, ctx_, FormatMsgPack);
+	Query q = Query(default_namespace).Set("a1", {7}).Where("id", CondGe, {10}).Where("id", CondLe, {100});
+	QueryResults qr(kResultsMsgPack | kResultsWithItemID);
+	Error err = client_->Update(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 91);
+	ASSERT_EQ(qr.GetFlags() & kResultsFormatMask, kResultsMsgPack) << qr.GetFlags();
 
 	int id = 10;
 	for (auto it : qr) {
@@ -151,13 +155,12 @@ TEST_F(MsgPackCprotoApi, UpdateTest) {
 }
 
 TEST_F(MsgPackCprotoApi, DeleteTest) {
-	const std::string_view sql = "delete from test_namespace where id >= 100 and id <= 110";
-	Query q = Query::FromSQL(sql);
-
-	reindexer::client::QueryResults qr;
-	Error err = client_->Delete(q, qr, ctx_, FormatMsgPack);
+	Query q = Query(default_namespace).Where("id", CondGe, {100}).Where("id", CondLe, {110});
+	QueryResults qr(kResultsMsgPack | kResultsWithItemID);
+	Error err = client_->Delete(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 11);
+	ASSERT_EQ(qr.GetFlags() & kResultsFormatMask, kResultsMsgPack) << qr.GetFlags();
 
 	int id = 100;
 	for (auto it : qr) {
@@ -171,7 +174,7 @@ TEST_F(MsgPackCprotoApi, DeleteTest) {
 		jsonBuilder.Put(kFieldA3, id * 4);
 		jsonBuilder.End();
 
-		reindexer::client::Item item = it.GetItem();
+		auto item = it.GetItem();
 		ASSERT_TRUE(item.GetJSON() == json.Slice());
 
 		++id;

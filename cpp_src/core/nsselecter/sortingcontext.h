@@ -2,8 +2,8 @@
 
 #include "core/index/index.h"
 #include "core/indexopts.h"
+#include "core/sorting/sortexpression.h"
 #include "estl/h_vector.h"
-#include "sortexpression.h"
 
 namespace reindexer {
 
@@ -27,10 +27,16 @@ struct SortingContext {
 		const CollateOpts* opts = nullptr;
 	};
 	struct JoinedFieldEntry {
+		JoinedFieldEntry(const SortingEntry& d, unsigned nsI, std::string&& f, int i)
+			: data(d), nsIdx(nsI), index(i), field(std::move(f)) {}
+		JoinedFieldEntry(const JoinedFieldEntry&) = delete;
+		JoinedFieldEntry(JoinedFieldEntry&&) = default;
+		JoinedFieldEntry& operator=(const JoinedFieldEntry&) = delete;
+
 		const SortingEntry& data;
-		size_t nsIdx;
-		std::string_view field;
-		int index = IndexValueType::NotSet;
+		unsigned nsIdx;
+		int index;	// = IndexValueType::NotSet;
+		std::string field;
 	};
 	struct ExpressionEntry {
 		const SortingEntry& data;

@@ -9,9 +9,6 @@ TEST_F(SparseIndexesApi, SparseIndexConsistencyWithRuntimeIndexes) {
 	Error err = rt.reindexer->AddIndex(default_namespace, {rtIndexName, "tree", "int64", IndexOpts().Sparse()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = rt.reindexer->Commit(default_namespace);
-	EXPECT_TRUE(err.ok()) << err.what();
-
 	CheckSelectAll();
 
 	constexpr int64_t kCount = 10;

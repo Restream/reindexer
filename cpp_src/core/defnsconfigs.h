@@ -1,17 +1,12 @@
 #pragma once
 
 #include "namespacedef.h"
+#include "system_ns_names.h"
 
 namespace reindexer {
 
-constexpr char kPerfStatsNamespace[] = "#perfstats";
-constexpr char kQueriesPerfStatsNamespace[] = "#queriesperfstats";
-constexpr char kMemStatsNamespace[] = "#memstats";
-constexpr char kNamespacesNamespace[] = "#namespaces";
-constexpr char kConfigNamespace[] = "#config";
-constexpr char kActivityStatsNamespace[] = "#activitystats";
-constexpr char kClientsStatsNamespace[] = "#clientsstats";
 constexpr char kNsNameField[] = "name";
+
 constexpr std::string_view kDefDBConfig[] = {
 	R"json({
 		"type":"profiling",
@@ -49,6 +44,7 @@ constexpr std::string_view kDefDBConfig[] = {
 				"start_copy_policy_tx_size":10000,
 				"copy_policy_multiplier":5,
 				"tx_size_to_always_copy":100000,
+				"tx_vec_insertion_threads":4,
 				"optimization_timeout_ms":800,
 				"optimization_sort_workers":4,
 				"wal_size":4000000,
@@ -58,6 +54,7 @@ constexpr std::string_view kDefDBConfig[] = {
 				"max_iterations_idset_preresult":20000,
 				"index_updates_counting_mode":false,
 				"sync_storage_flush_limit":20000,
+				"strict_mode":"names",
 				"cache":{
 					"index_idset_cache_size":134217728,
 					"index_idset_hits_to_cache":2,
@@ -67,20 +64,35 @@ constexpr std::string_view kDefDBConfig[] = {
 					"joins_preselect_hit_to_cache":2,
 					"query_count_cache_size":134217728,
 					"query_count_hit_to_cache":2
-				}
+				},
+				"ann_storage_cache_build_timeout_ms": 5000
 			}
 		]
 	})json",
 	R"json({
 		"type":"replication",
 		"replication":{
-			"role":"none",
-			"master_dsn":"cproto://127.0.0.1:6534/db",
 			"server_id":0,
-			"cluster_id":2,
+			"cluster_id":1,
+		}
+	})json",
+	R"json({
+		"type":"async_replication",
+		"async_replication":{
+			"role": "none",
+			"log_level":"none",
+			"sync_threads":4,
+			"syncs_per_thread":2,
+			"online_updates_timeout_sec":20,
+			"sync_timeout_sec":60,
+			"retry_sync_interval_msec":30000,
+			"enable_compression":true,
+			"batching_routines_count":100,
 			"force_sync_on_logic_error": false,
 			"force_sync_on_wrong_data_hash": false,
+			"max_wal_depth_on_force_sync":1000,
 			"namespaces":[]
+			"nodes": []
 		}
 	})json",
 	R"json({
@@ -137,7 +149,6 @@ const NamespaceDef kSystemNsDefs[] = {
 		.AddIndex("storage_enabled", "-", "bool", IndexOpts().Dense())
 		.AddIndex("storage_status", "-", "string", IndexOpts().Dense())
 		.AddIndex("storage_path", "-", "string", IndexOpts().Dense())
-		.AddIndex("storage_loaded", "-", "bool", IndexOpts().Dense())
 		.AddIndex("optimization_completed", "-", "bool", IndexOpts().Dense())
 		.AddIndex("query_cache.total_size", "-", "int64", IndexOpts().Dense())
 		.AddIndex("query_cache.items_count", "-", "int64", IndexOpts().Dense())
@@ -158,15 +169,30 @@ const NamespaceDef kSystemNsDefs[] = {
 		.AddIndex("sent_bytes", "-", "int64", IndexOpts().Dense())
 		.AddIndex("recv_bytes", "-", "int64", IndexOpts().Dense())
 		.AddIndex("send_buf_bytes", "-", "int64", IndexOpts().Dense())
-		.AddIndex("pended_updates", "-", "int64", IndexOpts().Dense())
 		.AddIndex("send_rate", "-", "int64", IndexOpts().Dense())
 		.AddIndex("recv_rate", "-", "int64", IndexOpts().Dense())
 		.AddIndex("last_send_ts", "-", "int64", IndexOpts().Dense())
 		.AddIndex("last_recv_ts", "-", "int64", IndexOpts().Dense())
 		.AddIndex("client_version", "-", "string", IndexOpts().Dense())
 		.AddIndex("app_name", "-", "string", IndexOpts().Dense())
-		.AddIndex("tx_count", "-", "int64", IndexOpts().Dense())
-		.AddIndex("is_subscribed", "-", "bool", IndexOpts().Dense())
-		.AddIndex("updates_lost", "-", "int64", IndexOpts().Dense())};
+		.AddIndex("tx_count", "-", "int64", IndexOpts().Dense()),
+	NamespaceDef(kReplicationStatsNamespace, StorageOpts())
+		.AddIndex("type", "hash", "string", IndexOpts().PK())
+		.AddIndex("update_drops", "-", "int64", IndexOpts().Dense())
+		.AddIndex("pending_updates_count", "-", "int64", IndexOpts().Dense())
+		.AddIndex("pending_updates_size", "-", "int64", IndexOpts().Dense())
+		.AddIndex("wal_sync.count", "-", "int64", IndexOpts().Dense())
+		.AddIndex("wal_sync.avg_time_us", "-", "int64", IndexOpts().Dense())
+		.AddIndex("wal_sync.max_time_us", "-", "int64", IndexOpts().Dense())
+		.AddIndex("force_sync.count", "-", "int64", IndexOpts().Dense())
+		.AddIndex("force_sync.avg_time_us", "-", "int64", IndexOpts().Dense())
+		.AddIndex("force_sync.max_time_us", "-", "int64", IndexOpts().Dense())
+		.AddIndex("initial_sync.total_time_us", "-", "int64", IndexOpts().Dense())
+		.AddIndex("initial_sync.wal_sync.count", "-", "int64", IndexOpts().Dense())
+		.AddIndex("initial_sync.wal_sync.avg_time_us", "-", "int64", IndexOpts().Dense())
+		.AddIndex("initial_sync.wal_sync.max_time_us", "-", "int64", IndexOpts().Dense())
+		.AddIndex("initial_sync.force_sync.count", "-", "int64", IndexOpts().Dense())
+		.AddIndex("initial_sync.force_sync.avg_time_us", "-", "int64", IndexOpts().Dense())
+		.AddIndex("initial_sync.force_sync.max_time_us", "-", "int64", IndexOpts().Dense())};
 
 }  // namespace reindexer

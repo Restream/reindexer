@@ -130,7 +130,7 @@ void ApiTvComposite::GetByCompositePK(State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 
 		if (!qres.Count()) {
@@ -151,7 +151,7 @@ void ApiTvComposite::RangeTreeInt(State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -166,7 +166,7 @@ void ApiTvComposite::RangeTreeStrCollateNumeric(State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -183,7 +183,7 @@ void ApiTvComposite::RangeTreeDouble(State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 
 		if (!qres.Count()) {
@@ -207,7 +207,7 @@ void ApiTvComposite::RangeTreeCompositeIntInt(State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -228,7 +228,7 @@ void ApiTvComposite::RangeTreeCompositeIntStr(State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -244,7 +244,7 @@ void ApiTvComposite::RangeHashInt(State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -261,7 +261,7 @@ void ApiTvComposite::RangeHashStringCollateASCII(State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -279,7 +279,7 @@ void ApiTvComposite::RangeHashStringCollateUTF8(State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -300,7 +300,7 @@ void ApiTvComposite::RangeHashCompositeIntInt(State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -321,7 +321,7 @@ void ApiTvComposite::RangeHashCompositeIntStr(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -339,7 +339,7 @@ void ApiTvComposite::RangeTreeIntSortByHashInt(State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -357,7 +357,7 @@ void ApiTvComposite::RangeTreeIntSortByTreeInt(State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -375,7 +375,7 @@ void ApiTvComposite::RangeTreeStrSortByHashInt(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -393,7 +393,7 @@ void ApiTvComposite::RangeTreeStrSortByTreeInt(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -412,7 +412,7 @@ void ApiTvComposite::RangeTreeDoubleSortByTreeInt(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -431,7 +431,7 @@ void ApiTvComposite::RangeTreeDoubleSortByHashInt(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -449,7 +449,7 @@ void ApiTvComposite::RangeTreeStrSortByHashStrCollateASCII(benchmark::State& sta
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -467,7 +467,7 @@ void ApiTvComposite::RangeTreeStrSortByHashStrCollateUTF8(benchmark::State& stat
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -483,7 +483,7 @@ void ApiTvComposite::SortByHashInt(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -499,7 +499,7 @@ void ApiTvComposite::ForcedSortByHashInt(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -515,7 +515,7 @@ void ApiTvComposite::ForcedSortWithSecondCondition(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -531,7 +531,7 @@ void ApiTvComposite::Query2CondIdSetComposite(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -547,7 +547,7 @@ void ApiTvComposite::SortByHashStrCollateASCII(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -563,7 +563,7 @@ void ApiTvComposite::SortByHashStrCollateUTF8(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -579,7 +579,7 @@ void ApiTvComposite::SortByHashCompositeIntInt(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -595,7 +595,7 @@ void ApiTvComposite::SortByHashCompositeIntStr(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -611,7 +611,7 @@ void ApiTvComposite::SortByTreeCompositeIntInt(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -627,7 +627,7 @@ void ApiTvComposite::SortByTreeCompositeIntStrCollateUTF8(benchmark::State& stat
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }

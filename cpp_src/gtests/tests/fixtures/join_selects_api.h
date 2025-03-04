@@ -1,12 +1,13 @@
 #pragma once
 
 #include <gmock/gmock.h>
-#include <gtest/gtest.h>
 #include <map>
 #include <sstream>
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
 #include "core/queryresults/joinresults.h"
+#include "core/system_ns_names.h"
+#include "estl/gift_str.h"
 #include "estl/shared_mutex.h"
 #include "gason/gason.h"
 #include "reindexer_api.h"
@@ -27,17 +28,10 @@ protected:
 		err = rt.reindexer->Connect("builtin://" + dbName);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = rt.reindexer->OpenNamespace(authors_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->OpenNamespace(books_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->OpenNamespace(genres_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->OpenNamespace(location_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(authors_namespace);
+		rt.OpenNamespace(books_namespace);
+		rt.OpenNamespace(genres_namespace);
+		rt.OpenNamespace(location_namespace);
 
 		DefineNamespaceDataset(location_namespace, {IndexDeclaration{locationid, "hash", "int", IndexOpts().PK(), 0},
 													IndexDeclaration{code, "hash", "int", IndexOpts(), 0},
@@ -94,7 +88,6 @@ protected:
 			item[locationid_fk] = int(rand() % locations.size());
 
 			Upsert(authors_namespace, item);
-			Commit(authors_namespace);
 
 			{
 				std::unique_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
@@ -107,7 +100,6 @@ protected:
 		bestItem[name] = "Fedor Dostoevsky";
 		bestItem[age] = 60;
 		Upsert(authors_namespace, bestItem);
-		Commit(authors_namespace);
 
 		{
 			std::unique_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
@@ -150,7 +142,6 @@ protected:
 
 			item[genreId_fk] = genres[rand() % genres.size()].id;
 			Upsert(books_namespace, item);
-			Commit(books_namespace);
 
 			{
 				reindexer::shared_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
@@ -164,17 +155,7 @@ protected:
 		json << "{" << addQuotes(bookid) << ":" << ++count << "," << addQuotes(title) << ":" << addQuotes("Crime and Punishment") << ","
 			 << addQuotes(pages) << ":" << 100500 << "," << addQuotes(price) << ":" << 5000 << "," << addQuotes(authorid_fk) << ":"
 			 << DostoevskyAuthorId << "," << addQuotes(genreId_fk) << ":" << 4 << "," << addQuotes(rating) << ":" << 100 << "}";
-		Item bestItem = NewItem(books_namespace);
-		ASSERT_TRUE(bestItem.Status().ok()) << bestItem.Status().what();
-
-		Error err = bestItem.FromJSON(json.str());
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->Upsert(books_namespace, bestItem);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->Commit(books_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.UpsertJSON(books_namespace, json.str());
 	}
 
 	void FillGenresNamespace() {
@@ -198,7 +179,6 @@ protected:
 		Item item = NewItem(genres_namespace);
 		item[genreid] = id;
 		Delete(genres_namespace, item);
-		Commit(genres_namespace);
 		genres.erase(std::remove_if(genres.begin(), genres.end(), [id](const Genre& g) { return g.id == id; }), genres.end());
 	}
 
@@ -229,7 +209,7 @@ protected:
 	}
 
 	void PrintResultRows(QueryResults& qr) {
-		for (auto rowIt : qr) {
+		for (auto rowIt : qr.ToLocalQr()) {
 			Item item(rowIt.GetItem(false));
 			std::cout << "ROW: " << item.GetJSON() << std::endl;
 
@@ -238,7 +218,7 @@ protected:
 			for (auto joinedFieldIt = itemIt.begin(); joinedFieldIt != itemIt.end(); ++joinedFieldIt) {
 				std::cout << "JOINED: " << idx << std::endl;
 				for (int i = 0; i < joinedFieldIt.ItemsCount(); ++i) {
-					reindexer::ItemImpl joinItem(joinedFieldIt.GetItem(i, qr.getPayloadType(1), qr.getTagsMatcher(1)));
+					reindexer::ItemImpl joinItem(joinedFieldIt.GetItem(i, qr.GetPayloadType(1), qr.GetTagsMatcher(1)));
 					std::cout << joinItem.GetJSON() << std::endl;
 				}
 				std::cout << std::endl;
@@ -260,8 +240,9 @@ protected:
 			FillQueryResultFromItem(item, resultRow);
 			auto itemIt = rowIt.GetJoined();
 			auto joinedFieldIt = itemIt.begin();
-			QueryResults jres = joinedFieldIt.ToQueryResults();
-			jres.addNSContext(qr.getPayloadType(1), qr.getTagsMatcher(1), qr.getFieldsFilter(1), qr.getSchema(1));
+			LocalQueryResults jres = joinedFieldIt.ToQueryResults();
+			auto& lqr = qr.ToLocalQr();
+			jres.addNSContext(lqr.getPayloadType(1), lqr.getTagsMatcher(1), lqr.getFieldsFilter(1), lqr.getSchema(1), reindexer::lsn_t());
 			for (auto it : jres) {
 				Item joinedItem = it.GetItem(false);
 				FillQueryResultFromItem(joinedItem, resultRow);
@@ -321,14 +302,7 @@ protected:
 		nsArray.End();
 		jb.End();
 
-		auto item = rt.NewItem(config_namespace);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
-		auto err = item.FromJSON(ser.Slice());
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		rt.Upsert(config_namespace, item);
-		rt.Commit(config_namespace);
+		rt.UpsertJSON(reindexer::kConfigNamespace, ser.Slice());
 	}
 
 	void TurnOnJoinCache(const std::string& nsName) {
@@ -348,14 +322,7 @@ protected:
 		nsArray.End();
 		jb.End();
 
-		auto item = rt.NewItem(config_namespace);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
-		auto err = item.FromJSON(ser.Slice());
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		rt.Upsert(config_namespace, item);
-		rt.Commit(config_namespace);
+		rt.UpsertJSON(reindexer::kConfigNamespace, ser.Slice());
 	}
 
 	void CheckJoinsInComplexWhereCondition(const QueryResults& qr) {
@@ -376,8 +343,8 @@ protected:
 						Variant authorIdFieldValue = item[authorid_fk];
 						EXPECT_TRUE((static_cast<int>(authorIdFieldValue) >= 10) && (static_cast<int>(authorIdFieldValue) <= 25));
 						for (int i = 0; i < authorNsFieldIt.ItemsCount(); ++i) {
-							reindexer::ItemImpl itemimpl = authorNsFieldIt.GetItem(i, qr.getPayloadType(1), qr.getTagsMatcher(1));
-							Variant authorIdFkFieldValue = itemimpl.GetField(qr.getPayloadType(1).FieldByName(authorid));
+							reindexer::ItemImpl itemimpl = authorNsFieldIt.GetItem(i, qr.GetPayloadType(1), qr.GetTagsMatcher(1));
+							Variant authorIdFkFieldValue = itemimpl.GetField(qr.GetPayloadType(1).FieldByName(authorid));
 							EXPECT_TRUE(authorIdFieldValue == authorIdFkFieldValue);
 						}
 					}
@@ -385,8 +352,8 @@ protected:
 						Variant genreIdFieldValue = item[genreId_fk];
 						EXPECT_TRUE(static_cast<int>(genreIdFieldValue) != 1);
 						for (int i = 0; i < genreNsFieldIt.ItemsCount(); ++i) {
-							reindexer::ItemImpl itemimpl = genreNsFieldIt.GetItem(i, qr.getPayloadType(2), qr.getTagsMatcher(2));
-							Variant genreIdFkFieldValue = itemimpl.GetField(qr.getPayloadType(2).FieldByName(genreid));
+							reindexer::ItemImpl itemimpl = genreNsFieldIt.GetItem(i, qr.GetPayloadType(2), qr.GetTagsMatcher(2));
+							Variant genreIdFkFieldValue = itemimpl.GetField(qr.GetPayloadType(2).FieldByName(genreid));
 							EXPECT_TRUE(genreIdFieldValue == genreIdFkFieldValue);
 						}
 					}
@@ -406,8 +373,8 @@ protected:
 				Variant authorIdFieldValue = item[authorid_fk];
 				EXPECT_TRUE((static_cast<int>(authorIdFieldValue) >= 300) && (static_cast<int>(authorIdFieldValue) <= 400));
 				for (int i = 0; i < authorNsFieldIt.ItemsCount(); ++i) {
-					reindexer::ItemImpl itemimpl = authorNsFieldIt.GetItem(i, qr.getPayloadType(3), qr.getTagsMatcher(3));
-					Variant authorIdFkFieldValue = itemimpl.GetField(qr.getPayloadType(3).FieldByName(authorid));
+					reindexer::ItemImpl itemimpl = authorNsFieldIt.GetItem(i, qr.GetPayloadType(3), qr.GetTagsMatcher(3));
+					Variant authorIdFkFieldValue = itemimpl.GetField(qr.GetPayloadType(3).FieldByName(authorid));
 					EXPECT_TRUE(authorIdFieldValue == authorIdFkFieldValue);
 				}
 				joinsNoBracketConditionsResult = true;
@@ -417,13 +384,14 @@ protected:
 		}
 	}
 	void ValidateQueryError(std::string_view sql, ErrorCode expectedCode, std::string_view expectedText) {
-		QueryResults qr;
 		{
+			QueryResults qr;
 			auto err = rt.reindexer->Select(sql, qr);
 			EXPECT_EQ(err.code(), expectedCode) << sql;
 			EXPECT_EQ(err.what(), expectedText) << sql;
 		}
 		{
+			QueryResults qr;
 			const Query q = Query::FromSQL(sql);
 			auto err = rt.reindexer->Select(q, qr);
 			EXPECT_EQ(err.code(), expectedCode) << sql;
@@ -449,7 +417,7 @@ protected:
 	}
 
 	void SetQueriesCacheHitsCount(unsigned hitsCount) {
-		auto q = reindexer::Query("#config")
+		auto q = reindexer::Query(reindexer::kConfigNamespace)
 					 .Set("namespaces.cache.query_count_hit_to_cache", int64_t(hitsCount))
 					 .Where("type", CondEq, "namespaces");
 		auto updated = Update(q);
@@ -481,7 +449,6 @@ protected:
 	const std::string authors_namespace = "authors_namespace";
 	const std::string genres_namespace = "genres_namespace";
 	const std::string location_namespace = "location_namespace";
-	const std::string config_namespace = "#config";
 
 	struct Genre {
 		int id;
@@ -492,7 +459,7 @@ protected:
 	std::vector<Genre> genres;
 
 	// clang-format off
-	const std::vector<std::string> locations = {
+	const std::vector<std::string_view> locations = {
 		"Москва",
 		"Тамбов",
 		"Казань",

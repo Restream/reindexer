@@ -1,10 +1,13 @@
 #pragma once
-#include "core/item.h"
-#include "core/queryresults/queryresults.h"
+
+#include <vector>
 
 namespace reindexer {
 
 struct SelectFuncStruct;
+class PayloadType;
+class key_string;
+class ItemRef;
 
 class DebugRank {
 public:

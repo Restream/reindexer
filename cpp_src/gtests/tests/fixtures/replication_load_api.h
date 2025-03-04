@@ -1,49 +1,13 @@
 #pragma once
 
+#include "cluster/consts.h"
 #include "core/cjson/tagsmatcher.h"
+#include "gtests/tests/gtest_cout.h"
 #include "gtests/tools.h"
 #include "replication_api.h"
-#include "replicator/updatesobserver.h"
 
 class ReplicationLoadApi : public ReplicationApi {
 public:
-	class UpdatesReciever : public reindexer::IUpdatesObserver {
-	public:
-		void OnWALUpdate(reindexer::LSNPair, std::string_view nsName, const reindexer::WALRecord&) override final {
-			std::lock_guard<std::mutex> lck(mtx_);
-			auto found = updatesCounters_.find(nsName);
-			if (found != updatesCounters_.end()) {
-				++(found.value());
-			} else {
-				updatesCounters_.emplace(std::string(nsName), 1);
-			}
-		}
-		void OnConnectionState(const Error&) override final {}
-		void OnUpdatesLost(std::string_view) override final {}
-
-		using map = tsl::hopscotch_map<std::string, size_t, reindexer::nocase_hash_str, reindexer::nocase_equal_str>;
-
-		map Counters() const {
-			std::lock_guard<std::mutex> lck(mtx_);
-			return updatesCounters_;
-		}
-		void Reset() {
-			std::lock_guard<std::mutex> lck(mtx_);
-			updatesCounters_.clear();
-		}
-		void Dump() const {
-			std::cerr << "Reciever dump: " << std::endl;
-			auto counters = Counters();
-			for (auto& it : counters) {
-				std::cerr << it.first << ": " << it.second << std::endl;
-			}
-		}
-
-	private:
-		map updatesCounters_;
-		mutable std::mutex mtx_;
-	};
-
 	void InitNs() {
 		counter_ = 0;
 		auto opt = StorageOpts().Enabled(true).LazyLoad(true);
@@ -73,6 +37,7 @@ public:
 	}
 
 	void FillData(size_t count) {
+		SCOPED_TRACE("Fill data " + std::to_string(count));
 		// untill we use shared ptr it will be not destroyed
 		auto srv = GetSrv(masterId_);
 		auto& api = srv->api;
@@ -80,70 +45,66 @@ public:
 		reindexer::shared_lock<reindexer::shared_timed_mutex> lk(restartMutex_);
 
 		for (size_t i = 0; i < count; ++i) {
-			BaseApi::ItemType item = api.NewItem("some");
-			auto json = fmt::sprintf(R"json({"id":"%d", "int":"%d", "string":"%s", "uuid":"%s"})json", counter_, rand(), api.RandString(),
-									 randStrUuid());
-			Error err = item.Unsafe(true).FromJSON(json);
-			++counter_;
-			api.Upsert("some", item);
-
-			BaseApi::ItemType item1 = api.NewItem("some1");
-			json = fmt::sprintf(R"json({"id":"%d", "int":"%d", "string":"%s", "uuid":"%s"})json", counter_, rand(), api.RandString(),
-								randStrUuid());
-			err = item1.Unsafe(true).FromJSON(json);
-			++counter_;
-			api.Upsert("some1", item1);
+			api.UpsertJSON("some", fmt::sprintf(R"json({"id":%d,"int":%d,"string":"%s","uuid":"%s"})json", counter_++, rand(),
+												api.RandString(), randStrUuid()));
+			api.UpsertJSON("some1", fmt::sprintf(R"json({"id":%d,"int":%d,"string":"%s","uuid":"%s"})json", counter_++, rand(),
+												 api.RandString(), randStrUuid()));
 		}
 	}
 	BaseApi::QueryResultsType SimpleSelect(size_t num) {
-		reindexer::Query qr("some");
-		auto srv = GetSrv(num);
-		auto& api = srv->api;
-		BaseApi::QueryResultsType res(api.reindexer.get());
-		auto err = api.reindexer->Select(qr, res);
-		EXPECT_TRUE(err.ok()) << err.what();
-
-		return res;
+		SCOPED_TRACE("Selecting some");
+		return GetSrv(num)->api.Select(reindexer::Query("some"));
 	}
 	BaseApi::QueryResultsType DeleteFromMaster() {
+		SCOPED_TRACE("Deleting some from master");
 		auto srv = GetSrv(masterId_);
-		auto& api = srv->api;
-		BaseApi::QueryResultsType res(api.reindexer.get());
-		auto err = api.reindexer->Delete(reindexer::Query("some"), res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		BaseApi::QueryResultsType res;
+		srv->api.Delete(reindexer::Query("some"), res);
 		return res;
 	}
-	void RestartWithConfigFile(size_t num, const std::string& configYaml) {
-		GetSrv(num)->WriteServerConfig(configYaml);
-		StopServer(num);
-		StartServer(num);
+	auto GetReplicationStats(size_t num) { return GetSrv(num)->GetReplicationStats(reindexer::cluster::kAsyncReplStatsType); }
+	void SetReplicationLogLevel(size_t num, LogLevel level) {
+		SCOPED_TRACE("SetReplicationLogLevel");
+		GetSrv(num)->SetReplicationLogLevel(level, "async_replication");
 	}
-	void SetServerConfig(size_t num, const ReplicationConfigTest& config) {
+	void ForceSync() {
+		SCOPED_TRACE("ForceSync");
+		GetSrv(masterId_)->ForceSync();
+	}
+	void RestartWithReplicationConfigFiles(size_t num, const std::string& asyncReplConfigYaml, const std::string& replConfigYaml) {
+		SCOPED_TRACE("RestartWithReplicationConfigFiles");
+		GetSrv(num)->WriteAsyncReplicationConfig(asyncReplConfigYaml);
+		GetSrv(num)->WriteReplicationConfig(replConfigYaml);
+		ASSERT_TRUE(StopServer(num));
+		ASSERT_TRUE(StartServer(num));
+	}
+	void SetServerConfig(size_t num, const AsyncReplicationConfigTest& config) {
+		SCOPED_TRACE("SetServerConfig");
 		auto srv = GetSrv(num);
-		if (num) {
-			srv->MakeSlave(config);
-		} else {
-			srv->MakeMaster(config);
-		}
+		srv->SetReplicationConfig(config);
 	}
-	void CheckSlaveConfigFile(size_t num, const ReplicationConfigTest& config) {
-		assertrx(num);
+	void CheckReplicationConfigFile(size_t num, const AsyncReplicationConfigTest& expConfig) {
+		SCOPED_TRACE("Checking config from file");
 		auto srv = GetSrv(num);
 		auto curConfig = srv->GetServerConfig(ServerControl::ConfigType::File);
-		EXPECT_TRUE(config == curConfig) << "config:\n" << config.GetJSON() << "\ncurConfig:\n" << curConfig.GetJSON();
+		EXPECT_EQ(expConfig, curConfig) << "expConfig:\n" << expConfig.GetJSON() << "\ncurConfig:\n" << curConfig.GetJSON();
 	}
-	void CheckSlaveConfigNamespace(size_t num, const ReplicationConfigTest& config, std::chrono::seconds awaitTime) {
-		assertrx(num);
+	void CheckReplicationConfigNamespace(size_t num, const AsyncReplicationConfigTest& expConfig, std::chrono::seconds awaitTime) {
+		SCOPED_TRACE("Checking config from namespace with timeout");
 		auto srv = GetSrv(num);
 		for (int i = 0; i < awaitTime.count(); ++i) {
 			auto curConfig = srv->GetServerConfig(ServerControl::ConfigType::Namespace);
-			if (config == curConfig) {
+			if (expConfig == curConfig) {
 				return;
 			}
 			std::this_thread::sleep_for(std::chrono::seconds(1));
 		}
 		auto curConfig = srv->GetServerConfig(ServerControl::ConfigType::Namespace);
-		EXPECT_TRUE(config == curConfig) << "config:\n" << config.GetJSON() << "\ncurConfig:\n" << curConfig.GetJSON();
+		EXPECT_EQ(expConfig, curConfig) << "config:\n" << expConfig.GetJSON() << "\ncurConfig:\n" << curConfig.GetJSON();
+	}
+	void CheckReplicationConfigNamespace(size_t num, const AsyncReplicationConfigTest& expConfig) {
+		SCOPED_TRACE("Checking config from namespace");
+		EXPECT_EQ(expConfig, GetSrv(num)->GetServerConfig(ServerControl::ConfigType::Namespace));
 	}
 	int32_t ValidateTagsmatchersVersions(std::string_view ns, std::optional<int32_t> minVersion = std::optional<int32_t>()) {
 		std::vector<int32_t> versions;
@@ -151,10 +112,10 @@ public:
 		for (size_t i = 0; i < GetServersCount(); i++) {
 			auto srv = GetSrv(i);
 			auto& api = srv->api;
-			BaseApi::QueryResultsType res(api.reindexer.get());
+			BaseApi::QueryResultsType res;
 			auto err = api.reindexer->Select(reindexer::Query(ns), res);
 			EXPECT_TRUE(err.ok()) << err.what();
-			versions.emplace_back(res.getTagsMatcher(0).version());
+			versions.emplace_back(res.GetTagsMatcher(0).version());
 		}
 		for (size_t i = 1; i < versions.size(); ++i) {
 			if (versions[i] != versions[i - 1]) {

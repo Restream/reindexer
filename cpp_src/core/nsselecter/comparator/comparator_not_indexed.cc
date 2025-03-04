@@ -133,6 +133,8 @@ ComparatorNotIndexed::ImplVariantType ComparatorNotIndexed::createImpl(CondType 
 				return ComparatorNotIndexedImpl<CondAny, true>{payloadType, fieldPath};
 			case CondEmpty:
 				return ComparatorNotIndexedImpl<CondEmpty, true>{payloadType, fieldPath};
+			case CondKnn:
+				throw_as_assert;
 		}
 	} else {
 		switch (cond) {
@@ -164,9 +166,11 @@ ComparatorNotIndexed::ImplVariantType ComparatorNotIndexed::createImpl(CondType 
 				return ComparatorNotIndexedImpl<CondAny, false>{payloadType, fieldPath};
 			case CondEmpty:
 				return ComparatorNotIndexedImpl<CondEmpty, false>{payloadType, fieldPath};
+			case CondKnn:
+				throw_as_assert;
 		}
 	}
-	abort();
+	throw_as_assert;
 }
 
 }  // namespace reindexer

@@ -4,8 +4,9 @@
 #include "reindexer.grpc.pb.h"
 
 #include <unordered_map>
-#include "core/transaction.h"
+#include "core/transaction/transaction.h"
 #include "net/ev/ev.h"
+#include "tools/serializer.h"
 
 namespace reindexer_server {
 class DBManager;
@@ -74,17 +75,17 @@ private:
 	};
 
 	Error execSqlQueryByType(QueryResults& res, const SelectSqlRequest& request);
-	static ::grpc::Status buildQueryResults(const reindexer::QueryResults& qr, ::grpc::ServerWriter<QueryResultsResponse>* writer,
-											const OutputFlags& opts);
-	static Error buildItems(WrSerializer& wrser, const reindexer::QueryResults& qr, const OutputFlags& opts);
+	static ::grpc::Status buildQueryResults(QueryResults& qr, ::grpc::ServerWriter<QueryResultsResponse>* writer, const OutputFlags& opts);
+	static Error buildItems(WrSerializer& wrser, QueryResults& qr, const OutputFlags& opts);
 
 	template <typename Builder>
-	static Error buildAggregation(Builder& builder, WrSerializer& wrser, const reindexer::QueryResults& qr, const OutputFlags& opts);
+	static Error buildAggregation(Builder& builder, WrSerializer& wrser, reindexer::QueryResults& qr, const OutputFlags& opts);
 
 	Error getDB(const std::string& dbName, int userRole, reindexer::Reindexer** rx);
 	void removeExpiredTxCb(reindexer::net::ev::periodic&, int);
 
-	static Error packCJSONItem(WrSerializer& wrser, reindexer::QueryResults::Iterator& it, const OutputFlags& opts);
+	template <typename ItT>
+	static Error packCJSONItem(WrSerializer& wrser, ItT& it, const OutputFlags& opts);
 	static void packPayloadTypes(WrSerializer& wrser, const reindexer::QueryResults& qr);
 
 	Error executeQuery(const std::string& dbName, const Query& q, QueryType type, reindexer::QueryResults& qr);

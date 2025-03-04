@@ -25,7 +25,7 @@ public:
 
 private:
 	template <typename Inserter>
-	void bindOne(const SortingContext::Entry& sortingCtx, Inserter insert, bool multiSort);
+	void bindOne(const SortingContext::Entry& sortingCtx, Inserter insert);
 	ComparationResult compareFields(IdType lId, IdType rId, size_t& firstDifferentFieldIdx) const;
 
 	class BackInserter;

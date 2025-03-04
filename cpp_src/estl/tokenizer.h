@@ -1,8 +1,8 @@
 #pragma once
 
 #include <string>
+#include "core/ft/usingcontainer.h"
 #include "core/keyvalue/variant.h"
-#include "estl/h_vector.h"
 
 namespace reindexer {
 
@@ -17,14 +17,9 @@ public:
 	token& operator=(token&&) noexcept = default;
 
 	[[nodiscard]] RX_ALWAYS_INLINE std::string_view text() const noexcept { return std::string_view(text_.data(), text_.size()); }
-	void to_lower() noexcept {
-		for (auto& c : text_) {
-			c = tolower(c);
-		}
-	}
 
 	token_type type = TokenSymbol;
-	h_vector<char, 20> text_;
+	RVector<char, 20> text_;
 };
 
 class tokenizer {

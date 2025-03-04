@@ -2,6 +2,7 @@ package reindexer
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -10,9 +11,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	otelattr "go.opentelemetry.io/otel/attribute"
 
-	"github.com/restream/reindexer/v3/bindings"
-	"github.com/restream/reindexer/v3/bindings/builtinserver/config"
-	"github.com/restream/reindexer/v3/cjson"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/bindings/builtinserver/config"
+	"github.com/restream/reindexer/v5/cjson"
 )
 
 const (
@@ -29,6 +30,10 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 		if err != nil {
 			return 0, err
 		}
+	}
+
+	if item == nil {
+		return 0, fmt.Errorf("rq: nil value in item modify call for '%s' namespace", namespace)
 	}
 
 	for tryCount := 0; tryCount < 2; tryCount++ {
@@ -65,13 +70,11 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 			return 0, err
 		}
 
-		resultp := rdSer.readRawtItemParams()
-
-		ns.cacheItems.Remove(resultp.id)
+		resultp := rdSer.readRawtItemParams(rawQueryParams.shardId)
 
 		if len(precepts) > 0 && (resultp.cptr != 0 || resultp.data != nil) && reflect.TypeOf(item).Kind() == reflect.Ptr {
 			nsArrEntry := nsArrayEntry{ns, ns.cjsonState.Copy()}
-			if _, err := unpackItem(db.binding, &nsArrEntry, &resultp, false, true, item); err != nil {
+			if _, err := unpackItem(db.binding, &nsArrEntry, &rawQueryParams, &resultp, false, true, item); err != nil {
 				return 0, err
 			}
 		}
@@ -118,17 +121,27 @@ func (db *reindexerImpl) getNS(namespace string) (*reindexerNamespace, error) {
 	if !ok {
 		return nil, errNsNotFound
 	}
-
 	return ns, nil
 }
 
-func unpackItem(bin bindings.RawBinding, ns *nsArrayEntry, params *rawResultItemParams, allowUnsafe bool, nonCacheableData bool, item interface{}) (interface{}, error) {
+func unpackItem(bin bindings.RawBinding, ns *nsArrayEntry, rqparams *rawResultQueryParams, params *rawResultItemParams, allowUnsafe bool, nonCacheableData bool, item interface{}) (interface{}, error) {
 	useCache := item == nil && (ns.deepCopyIface || allowUnsafe) && !nonCacheableData
 	needCopy := ns.deepCopyIface && !allowUnsafe
 	var err error
+	useCache = useCache && ns.cacheItems != nil && !params.version.IsEmpty()
+	var nsTag int64
+	if useCache {
+		if nsTagData, ok := rqparams.nsIncarnationTags[params.shardid]; ok && len(nsTagData) > params.nsid {
+			nsTag = nsTagData[params.nsid]
+		} else {
+			useCache = false
+		}
+	}
 
-	if useCache && ns.cacheItems != nil {
-		if citem, ok := ns.cacheItems.Get(params.id); ok && citem.version == params.version {
+	if useCache {
+		cacheKey := cacheKey{id: params.id, shardID: params.shardid, nsTag: nsTag}
+		citem, found := ns.cacheItems.Get(cacheKey)
+		if found && citem.itemVersion == params.version.Counter && citem.shardingVersion == rqparams.shardingConfigVersion {
 			item = citem.item
 		} else {
 			item = reflect.New(ns.rtype).Interface()
@@ -139,20 +152,18 @@ func unpackItem(bin bindings.RawBinding, ns *nsArrayEntry, params *rawResultItem
 			} else if params.data != nil {
 				err = dec.Decode(params.data, item)
 			} else {
-				panic(fmt.Errorf("Internal error while decoding item id %d from ns %s: cptr and data are both null", params.id, ns.name))
+				panic(fmt.Errorf("rq: internal error while decoding item id %d from ns %s: cptr and data are both null", params.id, ns.name))
 			}
 			if err != nil {
 				return item, err
 			}
 
-			if citem, ok := ns.cacheItems.Get(params.id); ok {
-				if citem.version == params.version {
-					item = citem.item
-				} else if citem.version < params.version {
-					ns.cacheItems.Add(params.id, &cacheItem{item: item, version: params.version})
-				}
-			} else {
-				ns.cacheItems.Add(params.id, &cacheItem{item: item, version: params.version})
+			if !found || params.version.Counter > citem.itemVersion || citem.shardingVersion != rqparams.shardingConfigVersion {
+				ns.cacheItems.Add(cacheKey, &cacheItem{
+					item:            item,
+					itemVersion:     params.version.Counter,
+					shardingVersion: rqparams.shardingConfigVersion,
+				})
 			}
 		}
 	} else {
@@ -166,7 +177,7 @@ func unpackItem(bin bindings.RawBinding, ns *nsArrayEntry, params *rawResultItem
 		} else if params.data != nil {
 			err = dec.Decode(params.data, item)
 		} else {
-			panic(fmt.Errorf("Internal error while decoding item id %d from ns %s: cptr and data are both null", params.id, ns.name))
+			panic(fmt.Errorf("rq: internal error while decoding item id %d from ns %s: cptr and data are both null", params.id, ns.name))
 		}
 		if err != nil {
 			return item, err
@@ -179,17 +190,20 @@ func unpackItem(bin bindings.RawBinding, ns *nsArrayEntry, params *rawResultItem
 		if deepCopy, ok := item.(DeepCopy); ok {
 			item = deepCopy.DeepCopy()
 		} else {
-			panic(fmt.Errorf("Internal error %s must implement DeepCopy interface", reflect.TypeOf(item).Name()))
+			panic(fmt.Errorf("rq: internal error %s must implement DeepCopy interface", reflect.TypeOf(item).Name()))
 		}
 	}
 
 	return item, err
 }
 
-func (db *reindexerImpl) rawResultToJson(rawResult []byte, jsonName string, totalName string, initJson []byte, initOffsets []int) (json []byte, offsets []int, explain []byte, err error) {
+func (db *reindexerImpl) rawResultToJson(rawResult []byte, jsonName string, totalName string, initJson []byte, initOffsets []int, namespace string) (json []byte, offsets []int, explain []byte, err error) {
 
 	ser := newSerializer(rawResult)
-	rawQueryParams := ser.readRawQueryParams()
+	rawQueryParams := ser.readRawQueryParams(func(nsid int) {
+		var state cjson.State
+		state.ReadPayloadType(&ser.Serializer, db.binding, namespace)
+	})
 	explain = rawQueryParams.explainResults
 
 	jsonReserveLen := len(rawResult) + len(totalName) + len(jsonName) + 20
@@ -219,7 +233,7 @@ func (db *reindexerImpl) rawResultToJson(rawResult []byte, jsonName string, tota
 	jsonBuf.WriteString("\":[")
 
 	for i := 0; i < rawQueryParams.count; i++ {
-		item := ser.readRawtItemParams()
+		item := ser.readRawtItemParams(rawQueryParams.shardId)
 		if i != 0 {
 			jsonBuf.WriteString(",")
 		}
@@ -227,7 +241,7 @@ func (db *reindexerImpl) rawResultToJson(rawResult []byte, jsonName string, tota
 		jsonBuf.Write(item.data)
 
 		if (rawQueryParams.flags&bindings.ResultsWithJoined) != 0 && ser.GetVarUInt() != 0 {
-			panic("Sorry, not implemented: Can't return join query results as json")
+			panic("rq: sorry, not implemented: can not return join query results as json")
 		}
 	}
 	jsonBuf.WriteString("]}")
@@ -295,7 +309,7 @@ func (db *reindexerImpl) prepareQuery(ctx context.Context, q *Query, asJson bool
 	result, err = db.binding.SelectQuery(ctx, ser.Bytes(), asJson, q.ptVersions, fetchCount)
 
 	if err == nil && result.GetBuf() == nil {
-		panic(fmt.Errorf("result.Buffer is nil"))
+		panic(fmt.Errorf("rq: result.Buffer is nil"))
 	}
 	return
 }
@@ -333,7 +347,7 @@ func (db *reindexerImpl) execToJsonQuery(ctx context.Context, q *Query, jsonRoot
 	}
 	defer result.Free()
 	var explain []byte
-	q.json, q.jsonOffsets, explain, err = db.rawResultToJson(result.GetBuf(), jsonRoot, q.totalName, q.json, q.jsonOffsets)
+	q.json, q.jsonOffsets, explain, err = db.rawResultToJson(result.GetBuf(), jsonRoot, q.totalName, q.json, q.jsonOffsets, q.Namespace)
 	if err != nil {
 		return errJSONIterator(err)
 	}
@@ -382,15 +396,15 @@ func (db *reindexerImpl) deleteQuery(ctx context.Context, q *Query) (int, error)
 
 	ser := newSerializer(result.GetBuf())
 	// skip total count
-	rawQueryParams := ser.readRawQueryParams()
+	rawQueryParams := ser.readRawQueryParams(func(nsid int) {
+		ns.cjsonState.ReadPayloadType(&ser.Serializer, db.binding, ns.name)
+	})
 
 	for i := 0; i < rawQueryParams.count; i++ {
-		params := ser.readRawtItemParams()
+		_ = ser.readRawtItemParams(rawQueryParams.shardId)
 		if (rawQueryParams.flags&bindings.ResultsWithJoined) != 0 && ser.GetVarUInt() != 0 {
 			panic("Internal error: joined items in delete query result")
 		}
-		// Update cache
-		ns.cacheItems.Remove(params.id)
 	}
 	if !ser.Eof() {
 		panic("Internal error: data after end of delete query result")
@@ -426,12 +440,10 @@ func (db *reindexerImpl) updateQuery(ctx context.Context, q *Query) *Iterator {
 	})
 
 	for i := 0; i < rawQueryParams.count; i++ {
-		params := ser.readRawtItemParams()
+		_ = ser.readRawtItemParams(rawQueryParams.shardId)
 		if (rawQueryParams.flags&bindings.ResultsWithJoined) != 0 && ser.GetVarUInt() != 0 {
 			panic("Internal error: joined items in update query result")
 		}
-		// Update cache
-		ns.cacheItems.Remove(params.id)
 	}
 
 	if !ser.Eof() {
@@ -492,6 +504,10 @@ func (db *reindexerImpl) resetCaches() {
 	db.resetCachesCtx(context.Background())
 }
 
+func WithMaxUpdatesSize(maxUpdatesSizeBytes uint) interface{} {
+	return bindings.OptionBuiltinMaxUpdatesSize{MaxUpdatesSizeBytes: maxUpdatesSizeBytes}
+}
+
 func WithCgoLimit(cgoLimit int) interface{} {
 	return bindings.OptionCgoLimit{CgoLimit: cgoLimit}
 }
@@ -542,4 +558,17 @@ func WithOpenTelemetry() interface{} {
 
 func WithStrictJoinHandlers() interface{} {
 	return bindings.OptionStrictJoinHandlers{EnableStrictJoinHandlers: true}
+}
+
+// Enables connection to Reindexer using TLS. If tls.Config is nil TLS is disabled
+func WithTLSConfig(config *tls.Config) interface{} {
+	return bindings.OptionTLS{Config: config}
+}
+
+// WithReconnectionStrategy allows to configure the behavior during reconnect after error.
+// Strategy used for reconnect to server on connection error
+// AllowUnknownNodes allows to add dsn from cluster node, that was not set in client dsn list
+// Warning: you should not mix async and sync nodes' DSNs in initial DSNs' list, unless you really know what you are doing
+func WithReconnectionStrategy(strategy ReconnectStrategy, allowUnknownNodes bool) interface{} {
+	return bindings.OptionReconnectionStrategy{Strategy: string(strategy), AllowUnknownNodes: allowUnknownNodes}
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "aggregator.h"
+#include "core/enums.h"
 #include "core/index/ft_preselect.h"
 #include "core/query/queryentry.h"
 #include "estl/h_vector.h"
@@ -15,15 +16,16 @@ struct SelectCtxWithJoinPreSelect;
 
 class QueryPreprocessor : private QueryEntries {
 public:
-	enum class ValuesType : bool { Scalar, Composite };
+	enum class [[nodiscard]] ValuesType : bool { Scalar, Composite };
 
-	QueryPreprocessor(QueryEntries&&, NamespaceImpl*, const SelectCtx&);
+	QueryPreprocessor(QueryEntries&&, const h_vector<Aggregator, 4>&, NamespaceImpl*, const SelectCtx&);
 	const QueryEntries& GetQueryEntries() const noexcept { return *this; }
 	bool LookupQueryIndexes() {
-		const unsigned lookupEnd = queryEntryAddedByForcedSortOptimization_ ? container_.size() - 1 : container_.size();
+		bool forcedSortOptimization = hasForcedSortOptimizationQueryEntry();
+		const unsigned lookupEnd = container_.size() - size_t(forcedSortOptimization);
 		assertrx_throw(lookupEnd <= uint32_t(std::numeric_limits<uint16_t>::max() - 1));
 		const size_t merged = lookupQueryIndexes(0, 0, lookupEnd);
-		if (queryEntryAddedByForcedSortOptimization_) {
+		if (forcedSortOptimization) {
 			container_[container_.size() - merged - 1] = std::move(container_.back());
 		}
 		if (merged != 0) {
@@ -32,27 +34,25 @@ public:
 		}
 		return false;
 	}
-	bool ContainsFullTextIndexes() const;
+	RankedTypeQuery GetRankedTypeQuery() const;
 	bool ContainsForcedSortOrder() const noexcept {
-		if (queryEntryAddedByForcedSortOptimization_) {
+		if (hasForcedSortOptimizationQueryEntry()) {
 			return forcedStage();
 		}
 		return forcedSortOrder_;
 	}
-	void CheckUniqueFtQuery() const;
 	bool SubstituteCompositeIndexes() {
-		return substituteCompositeIndexes(0, container_.size() - queryEntryAddedByForcedSortOptimization_) != 0;
+		return substituteCompositeIndexes(0, container_.size() - hasForcedSortOptimizationQueryEntry()) != 0;
 	}
 	void InitIndexedQueries() { initIndexedQueries(0, Size()); }
-	void AddDistinctEntries(const h_vector<Aggregator, 4>&);
 	bool NeedNextEvaluation(unsigned start, unsigned count, bool& matchedAtLeastOnce, QresExplainHolder& qresHolder) noexcept;
 	unsigned Start() const noexcept { return start_; }
 	unsigned Count() const noexcept { return count_; }
-	bool MoreThanOneEvaluation() const noexcept { return queryEntryAddedByForcedSortOptimization_; }
-	bool AvailableSelectBySortIndex() const noexcept { return !queryEntryAddedByForcedSortOptimization_ || !forcedStage(); }
-	void InjectConditionsFromJoins(JoinedSelectors& js, OnConditionInjections& expalainOnInjections, LogLevel, bool inTransaction,
+	bool MoreThanOneEvaluation() const noexcept { return hasForcedSortOptimizationQueryEntry(); }
+	bool AvailableSelectBySortIndex() const noexcept { return !hasForcedSortOptimizationQueryEntry() || !forcedStage(); }
+	void InjectConditionsFromJoins(JoinedSelectors& js, OnConditionInjections& explainOnInjections, LogLevel, bool inTransaction,
 								   bool enableSortOrders, const RdxContext& rdxCtx);
-	void Reduce(bool isFt);
+	void Reduce();
 	using QueryEntries::Size;
 	using QueryEntries::Dump;
 	using QueryEntries::ToDsl;
@@ -62,13 +62,13 @@ public:
 			return {};
 		}
 		// DO NOT use deducted sort order in the following cases:
-		// - query contains explicity specified sort order
-		// - query contains FullText query.
+		// - query contains explicit specified sort order
+		// - query contains ranked query.
 		const bool disableOptimizedSortOrder =
-			!query_.sortingEntries_.empty() || ContainsFullTextIndexes() || !std::is_same_v<JoinPreResultCtx, void>;
+			!query_.sortingEntries_.empty() || GetRankedTypeQuery() != RankedTypeQuery::No || !std::is_same_v<JoinPreResultCtx, void>;
 		// Queries with ordered indexes may have different selection plan depending on filters' values.
 		// This may lead to items reordering when SingleRange becomes main selection method.
-		// By default all the results are ordereb by internal IDs, but with SingleRange results will be ordered by values first.
+		// By default, all the results are ordered by internal IDs, but with SingleRange results will be ordered by values first.
 		// So we're trying to order results by values in any case, even if there are no SingleRange in selection plan.
 		return disableOptimizedSortOrder ? query_.sortingEntries_ : detectOptimalSortOrder();
 	}
@@ -85,6 +85,7 @@ public:
 	}
 	bool IsFtPreselected() const noexcept { return ftPreselect_ && !ftEntry_; }
 	static void SetQueryField(QueryField&, const NamespaceImpl&);
+	static void VerifyOnStatementField(const QueryField&, const NamespaceImpl&);
 
 private:
 	enum class NeedSwitch : bool { Yes = true, No = false };
@@ -157,7 +158,8 @@ private:
 	[[nodiscard]] std::pair<CondType, VariantArray> queryValuesFromOnCondition(CondType condition, const QueryJoinEntry&,
 																			   const JoinedSelector&, const CollateOpts&);
 	void checkStrictMode(const QueryField&) const;
-	[[nodiscard]] int calculateMaxIterations(const size_t from, const size_t to, int maxMaxIters, span<int>& maxIterations,
+	void checkAllowedCondition(const QueryField&, CondType) const;
+	[[nodiscard]] int calculateMaxIterations(const size_t from, const size_t to, int maxMaxIters, std::span<int>& maxIterations,
 											 bool inTransaction, bool enableSortOrders, const RdxContext&) const;
 	[[nodiscard]] bool removeBrackets();
 	[[nodiscard]] size_t removeBrackets(size_t begin, size_t end);
@@ -171,10 +173,12 @@ private:
 	template <typename JS>
 	void briefDump(size_t from, size_t to, const std::vector<JS>& joinedSelectors, WrSerializer& ser) const;
 
+	bool hasForcedSortOptimizationQueryEntry() const noexcept { return Size() && container_.back().Is<ForcedSortOptimizationQueryEntry>(); }
+	void addDistinctEntries(const h_vector<Aggregator, 4>&);
+
 	NamespaceImpl& ns_;
 	const Query& query_;
 	StrictMode strictMode_;
-	bool queryEntryAddedByForcedSortOptimization_ = false;
 	bool desc_ = false;
 	bool forcedSortOrder_ = false;
 	bool reqMatchedOnce_ = false;
@@ -184,6 +188,7 @@ private:
 	std::optional<QueryEntry> ftEntry_;
 	std::optional<FtPreselectT> ftPreselect_;
 	const bool isMergeQuery_ = false;
+	FloatVectorsHolderMap* floatVectorsHolder_;
 };
 
 }  // namespace reindexer

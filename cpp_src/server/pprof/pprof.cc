@@ -11,7 +11,9 @@
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 
+#if REINDEX_WITH_GPERFTOOLS || REINDEX_WITH_JEMALLOC
 static const std::string kProfileNamePrefix = "reindexer_server";
+#endif // REINDEX_WITH_GPERFTOOLS || REINDEX_WITH_JEMALLOC
 
 namespace reindexer_server {
 using namespace reindexer;

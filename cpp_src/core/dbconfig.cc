@@ -1,11 +1,15 @@
 #include "dbconfig.h"
-#include <limits.h>
-#include <fstream>
+
+#include <bitset>
+
 #include "cjson/jsonbuilder.h"
 #include "estl/smart_lock.h"
 #include "gason/gason.h"
+#include "tools/jsontools.h"
+#include "tools/logger.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
+#include "type_consts.h"
 #include "vendor/yaml-cpp/yaml.h"
 
 namespace reindexer {
@@ -25,107 +29,155 @@ static CacheMode str2cacheMode(std::string_view mode) {
 	throw Error(errParams, "Unknown cache mode %s", mode);
 }
 
-Error DBConfigProvider::FromJSON(const gason::JsonNode& root) {
+Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) {
+	std::bitset<kConfigTypesTotalCount> typesChanged;
+
+	std::string errLogString;
 	try {
 		smart_lock<shared_timed_mutex> lk(mtx_, true);
 
+		ProfilingConfigData profilingDataSafe;
 		auto& profilingNode = root["profiling"];
 		if (!profilingNode.empty()) {
-			profilingData_ = ProfilingConfigData{};
-			profilingData_.queriesPerfStats = profilingNode["queriesperfstats"].As<bool>();
-			profilingData_.queriesThresholdUS = profilingNode["queries_threshold_us"].As<size_t>();
-			profilingData_.perfStats = profilingNode["perfstats"].As<bool>();
-			profilingData_.memStats = profilingNode["memstats"].As<bool>();
-			profilingData_.activityStats = profilingNode["activitystats"].As<bool>();
-			if (auto longQueriesNode = profilingNode["long_queries_logging"]; longQueriesNode.isObject()) {
-				if (auto selectNode = longQueriesNode["select"]; selectNode.isObject()) {
-					profilingData_.longSelectLoggingParams.store(
-						LongQueriesLoggingParams{selectNode["threshold_us"].As<int32_t>(), selectNode["normalized"].As<bool>()});
-				}
-				if (auto udNode = longQueriesNode["update_delete"]; udNode.isObject()) {
-					profilingData_.longUpdDelLoggingParams.store(
-						LongQueriesLoggingParams{udNode["threshold_us"].As<int32_t>(), udNode["normalized"].As<bool>()});
-				}
-				if (auto transactionNode = longQueriesNode["transaction"]; transactionNode.isObject()) {
-					profilingData_.longTxLoggingParams.store(LongTxLoggingParams{transactionNode["threshold_us"].As<int32_t>(),
-																				 transactionNode["avg_step_threshold_us"].As<int32_t>()});
-				}
-			}
-			if (handlers_[ProfilingConf]) {
-				(handlers_[ProfilingConf])();
+			profilingDataLoadResult_ = profilingDataSafe.FromJSON(profilingNode);
+
+			if (profilingDataLoadResult_.ok()) {
+				typesChanged.set(ProfilingConf);
+			} else {
+				errLogString += profilingDataLoadResult_.whatStr();
 			}
 		}
 
+		fast_hash_map<std::string, NamespaceConfigData, hash_str, equal_str, less_str> namespacesData;
 		auto& namespacesNode = root["namespaces"];
 		if (!namespacesNode.empty()) {
-			namespacesData_.clear();
+			std::string namespacesErrLogString;
+			bool nssHaveErrors = false;
 			for (auto& nsNode : namespacesNode) {
+				std::string nsName;
+				if (auto err = tryReadRequiredJsonValue(&errLogString, nsNode, "namespace", nsName)) {
+					ensureEndsWith(namespacesErrLogString, "\n") += err.whatStr();
+					nssHaveErrors = true;
+					continue;
+				}
+
 				NamespaceConfigData data;
-				data.lazyLoad = nsNode["lazyload"].As<bool>();
-				data.noQueryIdleThreshold = nsNode["unload_idle_threshold"].As<int>();
-				data.logLevel = logLevelFromString(nsNode["log_level"].As<std::string>("none"));
-				data.strictMode = strictModeFromString(nsNode["strict_mode"].As<std::string>("names"));
-				data.cacheMode = str2cacheMode(nsNode["join_cache_mode"].As<std::string_view>("off"));
-				data.startCopyPolicyTxSize = nsNode["start_copy_policy_tx_size"].As<int>(data.startCopyPolicyTxSize);
-				data.copyPolicyMultiplier = nsNode["copy_policy_multiplier"].As<int>(data.copyPolicyMultiplier);
-				data.txSizeToAlwaysCopy = nsNode["tx_size_to_always_copy"].As<int>(data.txSizeToAlwaysCopy);
-				data.optimizationTimeout = nsNode["optimization_timeout_ms"].As<int>(data.optimizationTimeout);
-				data.optimizationSortWorkers = nsNode["optimization_sort_workers"].As<int>(data.optimizationSortWorkers);
-				int64_t walSize = nsNode["wal_size"].As<int64_t>(0);
-				if (walSize > 0) {
-					data.walSize = walSize;
+				auto err = data.FromJSON(nsNode);
+				if (err.ok()) {
+					namespacesData.emplace(std::move(nsName),
+										   std::move(data));  // NOLINT(performance-move-const-arg)
+				} else {
+					ensureEndsWith(namespacesErrLogString, "\n") += err.whatStr();
+					nssHaveErrors = true;
 				}
-				data.minPreselectSize = nsNode["min_preselect_size"].As<int64_t>(data.minPreselectSize, 0);
-				data.maxPreselectSize = nsNode["max_preselect_size"].As<int64_t>(data.maxPreselectSize, 0);
-				data.maxPreselectPart = nsNode["max_preselect_part"].As<double>(data.maxPreselectPart, 0.0, 1.0);
-				data.maxIterationsIdSetPreResult =
-					nsNode["max_iterations_idset_preresult"].As<int64_t>(data.maxIterationsIdSetPreResult, 0);
-				data.idxUpdatesCountingMode = nsNode["index_updates_counting_mode"].As<bool>(data.idxUpdatesCountingMode);
-				data.syncStorageFlushLimit = nsNode["sync_storage_flush_limit"].As<int>(data.syncStorageFlushLimit, 0);
-
-				auto cacheConfig = nsNode["cache"];
-				if (!cacheConfig.empty()) {
-					data.cacheConfig.idxIdsetCacheSize =
-						cacheConfig["index_idset_cache_size"].As<size_t>(data.cacheConfig.idxIdsetCacheSize, 0);
-					data.cacheConfig.idxIdsetHitsToCache =
-						cacheConfig["index_idset_hits_to_cache"].As<size_t>(data.cacheConfig.idxIdsetHitsToCache, 0);
-					data.cacheConfig.ftIdxCacheSize = cacheConfig["ft_index_cache_size"].As<size_t>(data.cacheConfig.ftIdxCacheSize, 0);
-					data.cacheConfig.ftIdxHitsToCache =
-						cacheConfig["ft_index_hits_to_cache"].As<size_t>(data.cacheConfig.ftIdxHitsToCache, 0);
-					data.cacheConfig.joinCacheSize =
-						cacheConfig["joins_preselect_cache_size"].As<size_t>(data.cacheConfig.joinCacheSize, 0);
-					data.cacheConfig.joinHitsToCache =
-						cacheConfig["joins_preselect_hit_to_cache"].As<size_t>(data.cacheConfig.joinHitsToCache, 0);
-					data.cacheConfig.queryCountCacheSize =
-						cacheConfig["query_count_cache_size"].As<size_t>(data.cacheConfig.queryCountCacheSize, 0);
-					data.cacheConfig.queryCountHitsToCache =
-						cacheConfig["query_count_hit_to_cache"].As<size_t>(data.cacheConfig.queryCountHitsToCache, 0);
-				}
-
-				namespacesData_.emplace(nsNode["namespace"].As<std::string>(), std::move(data));  // NOLINT(performance-move-const-arg)
 			}
-			if (handlers_[NamespaceDataConf]) {
-				(handlers_[NamespaceDataConf])();
+
+			if (!nssHaveErrors) {
+				namespacesDataLoadResult_ = errOK;
+				typesChanged.set(NamespaceDataConf);
+			} else {
+				namespacesDataLoadResult_ = Error(errParseJson, namespacesErrLogString);
+				ensureEndsWith(errLogString, "\n") += "NamespacesConfig: JSON parsing error: " + namespacesErrLogString;
 			}
 		}
 
+		cluster::AsyncReplConfigData asyncReplConfigDataSafe;
+		auto& asyncReplicationNode = root["async_replication"];
+		if (!asyncReplicationNode.empty()) {
+			asyncReplicationDataLoadResult_ = asyncReplConfigDataSafe.FromJSON(asyncReplicationNode);
+
+			if (asyncReplicationDataLoadResult_.ok()) {
+				typesChanged.set(AsyncReplicationConf);
+			} else {
+				ensureEndsWith(errLogString, "\n") += asyncReplicationDataLoadResult_.whatStr();
+			}
+		}
+
+		ReplicationConfigData replicationDataSafe;
 		auto& replicationNode = root["replication"];
 		if (!replicationNode.empty()) {
-			auto err = replicationData_.FromJSON(replicationNode);
-			if (!err.ok()) {
-				return err;
-			}
+			if (!autoCorrect) {
+				replicationDataLoadResult_ = replicationDataSafe.FromJSON(replicationNode);
 
-			if (handlers_[ReplicationConf]) {
-				(handlers_[ReplicationConf])();
+				if (replicationDataLoadResult_.ok()) {
+					typesChanged.set(ReplicationConf);
+				} else {
+					ensureEndsWith(errLogString, "\n") += replicationDataLoadResult_.whatStr();
+				}
+			} else {
+				replicationDataSafe.FromJSONWithCorrection(replicationNode, replicationDataLoadResult_);
+				typesChanged.set(ReplicationConf);
 			}
 		}
-		return errOK;
-	} catch (const Error& err) {
-		return err;
-	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "DBConfigProvider: %s", ex.what());
+
+		// Applying entire configuration only if no read errors
+		if (errLogString.empty()) {
+			if (typesChanged.test(ProfilingConf)) {
+				profilingData_ = profilingDataSafe;
+			}
+			if (typesChanged.test(NamespaceDataConf)) {
+				namespacesData_ = std::move(namespacesData);
+			}
+			if (typesChanged.test(AsyncReplicationConf)) {
+				asyncReplicationData_ = std::move(asyncReplConfigDataSafe);
+			}
+			if (typesChanged.test(ReplicationConf)) {
+				replicationData_ = std::move(replicationDataSafe);
+			}
+		}
+	} catch (const std::exception& ex) {
+		ensureEndsWith(errLogString, "\n") += ex.what();
 	}
+
+	Error result;
+	if (!errLogString.empty()) {
+		result = Error(errParseJson, "DBConfigProvider: %s", errLogString);
+	} else if (typesChanged.size() > 0) {
+		// notifying handlers under shared_lock so none of them go out of scope
+		smart_lock<shared_timed_mutex> lk(mtx_, false);
+
+		for (unsigned changedType = 0; changedType < typesChanged.size(); ++changedType) {
+			if (!typesChanged.test(changedType)) {
+				continue;
+			}
+			if (handlers_[changedType]) {
+				try {
+					handlers_[changedType]();
+				} catch (const Error& err) {
+					logPrintf(LogError, "DBConfigProvider: Error processing event handler: '%s'", err.whatStr());
+				}
+			}
+
+			if (ReplicationConf == changedType) {
+				for (auto& f : replicationConfigDataHandlers_) {
+					try {
+						f.second(replicationData_);
+					} catch (const Error& err) {
+						logPrintf(LogError, "DBConfigProvider: Error processing replication config event handler: '%s'", err.whatStr());
+					}
+				}
+			}
+		}
+	}
+
+	return result;
+}
+
+Error DBConfigProvider::GetConfigParseErrors() const {
+	using namespace std::string_view_literals;
+	smart_lock<shared_timed_mutex> lk(mtx_, false);
+	if (!profilingDataLoadResult_.ok() || !namespacesDataLoadResult_.ok() || !asyncReplicationDataLoadResult_.ok() ||
+		!replicationDataLoadResult_.ok()) {
+		std::string errLogString;
+		errLogString += profilingDataLoadResult_.whatStr();
+		ensureEndsWith(errLogString, "\n"sv) += namespacesDataLoadResult_.whatStr();
+		ensureEndsWith(errLogString, "\n"sv) += asyncReplicationDataLoadResult_.whatStr();
+		ensureEndsWith(errLogString, "\n"sv) += replicationDataLoadResult_.whatStr();
+
+		return Error(errParseJson, "DBConfigProvider: %s", errLogString);
+	}
+
+	return Error();
 }
 
 void DBConfigProvider::setHandler(ConfigType cfgType, std::function<void()> handler) {
@@ -133,9 +185,25 @@ void DBConfigProvider::setHandler(ConfigType cfgType, std::function<void()> hand
 	handlers_[cfgType] = std::move(handler);
 }
 
+int DBConfigProvider::setHandler(std::function<void(const ReplicationConfigData&)> handler) {
+	smart_lock<shared_timed_mutex> lk(mtx_, true);
+	replicationConfigDataHandlers_[++handlersCounter_] = std::move(handler);
+	return handlersCounter_;
+}
+
+void DBConfigProvider::unsetHandler(int id) {
+	smart_lock<shared_timed_mutex> lk(mtx_, true);
+	replicationConfigDataHandlers_.erase(id);
+}
+
 ReplicationConfigData DBConfigProvider::GetReplicationConfig() {
 	shared_lock<shared_timed_mutex> lk(mtx_);
 	return replicationData_;
+}
+
+cluster::AsyncReplConfigData DBConfigProvider::GetAsyncReplicationConfig() {
+	smart_lock<shared_timed_mutex> lk(mtx_, false);
+	return asyncReplicationData_;
 }
 
 bool DBConfigProvider::GetNamespaceConfig(std::string_view nsName, NamespaceConfigData& data) {
@@ -152,155 +220,221 @@ bool DBConfigProvider::GetNamespaceConfig(std::string_view nsName, NamespaceConf
 	return true;
 }
 
-Error ReplicationConfigData::FromYML(const std::string& yaml) {
+Error ProfilingConfigData::FromJSON(const gason::JsonNode& v) {
+	using namespace std::string_view_literals;
+	std::string errorString;
+	auto err = tryReadOptionalJsonValue(&errorString, v, "queriesperfstats"sv, queriesPerfStats);
+	err = tryReadOptionalJsonValue(&errorString, v, "queries_threshold_us"sv, queriesThresholdUS);
+	err = tryReadOptionalJsonValue(&errorString, v, "perfstats"sv, perfStats);
+	err = tryReadOptionalJsonValue(&errorString, v, "memstats"sv, memStats);
+	err = tryReadOptionalJsonValue(&errorString, v, "activitystats"sv, activityStats);
+	(void)err;	// ignored; Errors will be handled with errorString
+
+	auto& longQueriesLogging = v["long_queries_logging"sv];
+	if (longQueriesLogging.isObject()) {
+		auto& select = longQueriesLogging["select"sv];
+		if (select.isObject()) {
+			const auto p = longSelectLoggingParams.load(std::memory_order_relaxed);
+			int32_t thresholdUs = p.thresholdUs;
+			bool normalized = p.normalized;
+			err = tryReadOptionalJsonValue(&errorString, select, "threshold_us"sv, thresholdUs);
+			err = tryReadOptionalJsonValue(&errorString, select, "normalized"sv, normalized);
+			(void)err;	// ignored; Errors will be handled with errorString
+			longSelectLoggingParams.store(LongQueriesLoggingParams(thresholdUs, normalized), std::memory_order_relaxed);
+		}
+
+		auto& updateDelete = longQueriesLogging["update_delete"sv];
+		if (updateDelete.isObject()) {
+			const auto p = longUpdDelLoggingParams.load(std::memory_order_relaxed);
+			int32_t thresholdUs = p.thresholdUs;
+			bool normalized = p.normalized;
+			err = tryReadOptionalJsonValue(&errorString, updateDelete, "threshold_us"sv, thresholdUs);
+			err = tryReadOptionalJsonValue(&errorString, updateDelete, "normalized"sv, normalized);
+			(void)err;	// ignored; Errors will be handled with errorString
+			longUpdDelLoggingParams.store(LongQueriesLoggingParams(thresholdUs, normalized), std::memory_order_relaxed);
+		}
+
+		auto& transaction = longQueriesLogging["transaction"sv];
+		if (transaction.isObject()) {
+			const auto p = longTxLoggingParams.load(std::memory_order_relaxed);
+			int32_t thresholdUs = p.thresholdUs;
+			err = tryReadOptionalJsonValue(&errorString, transaction, "threshold_us"sv, thresholdUs);
+
+			int32_t avgTxStepThresholdUs = p.avgTxStepThresholdUs;
+			err = tryReadOptionalJsonValue(&errorString, transaction, "avg_step_threshold_us"sv, avgTxStepThresholdUs);
+			(void)err;	// ignored; Errors will be handled with errorString
+			longTxLoggingParams.store(LongTxLoggingParams(thresholdUs, avgTxStepThresholdUs), std::memory_order_relaxed);
+		}
+	}
+
+	if (!errorString.empty()) {
+		return Error(errParseJson, "ProfilingConfigData: JSON parsing error: '%s'", errorString);
+	}
+	return {};
+}
+
+Error ReplicationConfigData::FromYAML(const std::string& yaml) {
 	try {
 		YAML::Node root = YAML::Load(yaml);
-		masterDSN = root["master_dsn"].as<std::string>(masterDSN);
-		appName = root["app_name"].as<std::string>(appName);
-		connPoolSize = root["conn_pool_size"].as<int>(connPoolSize);
-		workerThreads = root["worker_threads"].as<int>(workerThreads);
-		timeoutSec = root["timeout_sec"].as<int>(timeoutSec);
 		clusterID = root["cluster_id"].as<int>(clusterID);
-		role = str2role(root["role"].as<std::string>(role2str(role)));
-		forceSyncOnLogicError = root["force_sync_on_logic_error"].as<bool>(forceSyncOnLogicError);
-		forceSyncOnWrongDataHash = root["force_sync_on_wrong_data_hash"].as<bool>(forceSyncOnWrongDataHash);
-		retrySyncIntervalSec = root["retry_sync_interval_sec"].as<int>(retrySyncIntervalSec);
-		onlineReplErrorsThreshold = root["online_repl_errors_threshold"].as<int>(onlineReplErrorsThreshold);
-		enableCompression = root["enable_compression"].as<bool>(enableCompression);
-		serverId = root["server_id"].as<int>(serverId);
-		auto node = root["namespaces"];
-		namespaces.clear();
-		for (const auto& it : node) {
-			namespaces.insert(it.as<std::string>());
+		serverID = root["server_id"].as<int>(serverID);
+		if (auto err = Validate(); !err.ok()) {
+			return Error(errParams, "ReplicationConfigData: YAML parsing error: '%s'", err.whatStr());
 		}
-		return errOK;
 	} catch (const YAML::Exception& ex) {
-		return Error(errParams, "yaml parsing error: '%s'", ex.what());
-	} catch (const Error& err) {
+		return Error(errParseYAML, "ReplicationConfigData: YAML parsing error: '%s'", ex.what());
+	} catch (const std::exception& err) {
+		return err;
+	}
+	return Error();
+}
+
+Error ReplicationConfigData::FromJSON(std::string_view json) {
+	try {
+		gason::JsonParser parser;
+		return FromJSON(parser.Parse(json));
+	} catch (const gason::Exception& ex) {
+		return Error(errParseJson, "ReplicationConfigData: %s\n", ex.what());
+	} catch (const std::exception& err) {
 		return err;
 	}
 }
 
 Error ReplicationConfigData::FromJSON(const gason::JsonNode& root) {
-	try {
-		masterDSN = root["master_dsn"].As<std::string>();
-		appName = root["app_name"].As<std::string>(std::move(appName));
-		connPoolSize = root["conn_pool_size"].As<int>(connPoolSize);
-		workerThreads = root["worker_threads"].As<int>(workerThreads);
-		timeoutSec = root["timeout_sec"].As<int>(timeoutSec);
-		clusterID = root["cluster_id"].As<int>(clusterID);
-		role = str2role(root["role"].As<std::string>("none"));
-		forceSyncOnLogicError = root["force_sync_on_logic_error"].As<bool>();
-		forceSyncOnWrongDataHash = root["force_sync_on_wrong_data_hash"].As<bool>();
-		retrySyncIntervalSec = root["retry_sync_interval_sec"].As<int>(retrySyncIntervalSec);
-		onlineReplErrorsThreshold = root["online_repl_errors_threshold"].As<int>(onlineReplErrorsThreshold);
-		enableCompression = root["enable_compression"].As<bool>(enableCompression);
-		serverId = root["server_id"].As<int>(serverId);
-		namespaces.clear();
-		for (auto& objNode : root["namespaces"]) {
-			namespaces.insert(objNode.As<std::string>());
+	using namespace std::string_view_literals;
+	std::string errorString;
+	auto err = tryReadOptionalJsonValue(&errorString, root, "cluster_id"sv, clusterID);
+	err = tryReadOptionalJsonValue(&errorString, root, "server_id"sv, serverID);
+	(void)err;	// ignored; Errors will be handled with errorString
+
+	if (errorString.empty()) {
+		if (auto err = Validate()) {
+			return Error(errParseJson, "ReplicationConfigData: JSON parsing error: '%s'", err.whatStr());
 		}
-	} catch (const Error& err) {
-		return err;
-	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "ReplicationConfigData: %s", ex.what());
+	} else {
+		return Error(errParseJson, "ProfilingConfigData: JSON parsing error: '%s'", errorString);
 	}
-	return errOK;
+
+	return Error();
 }
 
-ReplicationRole ReplicationConfigData::str2role(const std::string& role) {
-	if (role == "master") {
-		return ReplicationMaster;
-	}
-	if (role == "slave") {
-		return ReplicationSlave;
-	}
-	if (role == "none") {
-		return ReplicationNone;
+void ReplicationConfigData::FromJSONWithCorrection(const gason::JsonNode& root, Error& fixedErrors) {
+	using namespace std::string_view_literals;
+	fixedErrors = Error();
+	std::string errorString;
+
+	if (!tryReadOptionalJsonValue(&errorString, root, "cluster_id"sv, clusterID).ok()) {
+		clusterID = 1;
+		ensureEndsWith(errorString, "\n") += fmt::sprintf("Fixing to default: cluster_id = %d.", clusterID);
 	}
 
-	throw Error(errParams, "Unknown replication role %s", role);
-}
+	if (!tryReadOptionalJsonValue(&errorString, root, "server_id"sv, serverID, ReplicationConfigData::kMinServerIDValue,
+								  ReplicationConfigData::kMaxServerIDValue)
+			 .ok()) {
+		serverID = 0;
+		ensureEndsWith(errorString, "\n") += fmt::sprintf("Fixing to default: server_id = %d.", serverID);
+	}
 
-std::string ReplicationConfigData::role2str(ReplicationRole role) noexcept {
-	switch (role) {
-		case ReplicationMaster:
-			return "master";
-		case ReplicationSlave:
-			return "slave";
-		case ReplicationNone:
-			return "none";
-		case ReplicationReadOnly:
-		default:
-			std::abort();
+	if (!errorString.empty()) {
+		fixedErrors = Error(errParseJson, errorString);
 	}
 }
 
 void ReplicationConfigData::GetJSON(JsonBuilder& jb) const {
-	jb.Put("role", role2str(role));
-	jb.Put("master_dsn", masterDSN);
-	jb.Put("app_name", appName);
 	jb.Put("cluster_id", clusterID);
-	jb.Put("timeout_sec", timeoutSec);
-	jb.Put("enable_compression", enableCompression);
-	jb.Put("force_sync_on_logic_error", forceSyncOnLogicError);
-	jb.Put("force_sync_on_wrong_data_hash", forceSyncOnWrongDataHash);
-	jb.Put("retry_sync_interval_sec", retrySyncIntervalSec);
-	jb.Put("online_repl_errors_threshold", onlineReplErrorsThreshold);
-	jb.Put("server_id", serverId);
-	{
-		auto arrNode = jb.Array("namespaces");
-		for (const auto& ns : namespaces) {
-			arrNode.Put(nullptr, ns);
-		}
-	}
+	jb.Put("server_id", serverID);
 }
 
 void ReplicationConfigData::GetYAML(WrSerializer& ser) const {
-	YAML::Node nssYaml;
-	nssYaml["namespaces"] = YAML::Node(YAML::NodeType::Sequence);
-	for (const auto& ns : namespaces) {
-		nssYaml["namespaces"].push_back(ns);
-	}
 	// clang-format off
-	ser <<	"# Replication role. May be one of\n"
-			"# none - replication is disabled\n"
-			"# slave - replication as slave\n"
-			"# master - replication as master\n"
-			"# master_master - replication as master master\n"
-			"role: " + role2str(role) + "\n"
-			"\n"
-			"# DSN to master. Only cproto schema is supported\n"
-			"master_dsn: " + masterDSN + "\n"
-			"\n"
-			"# Application name used by replicator as login tag\n"
-			"app_name: " + appName + "\n"
-			"\n"
-			"# Cluser ID - must be same for client and for master\n"
+	ser <<	"# Cluser ID - must be same for client and for master\n"
 			"cluster_id: " + std::to_string(clusterID) + "\n"
 			"\n"
-			"# Server Id - must be unique for all nodes\n"
-			"server_id: " + std::to_string(serverId) + "\n"
-			"\n"
-			"# Force resync on logic error conditions\n"
-			"force_sync_on_logic_error: " + (forceSyncOnLogicError ? "true" : "false") + "\n"
-			"\n"
-			"# Master response timeout\n"
-			"timeout_sec: " + std::to_string(timeoutSec) + "\n"
-			"\n"
-			"# Force resync on wrong data hash conditions\n"
-			"force_sync_on_wrong_data_hash: " + (forceSyncOnWrongDataHash ? "true" : "false") + "\n"
-			"\n"
-			"# Resync timeout on network errors\n"
-			"retry_sync_interval_sec: " + std::to_string(retrySyncIntervalSec) + "\n"
-			"\n"
-			"# Count of online replication erros, which will be merged in single error message\n"
-			"online_repl_errors_threshold: " + std::to_string(onlineReplErrorsThreshold) + "\n"
-			"\n"
-			"# List of namespaces for replication. If emply, all namespaces\n"
-			"# All replicated namespaces will become read only for slave\n"
-			+ YAML::Dump(nssYaml) + '\n';
+			"# Server ID - must be unique for all nodes value in range [0, 999]\n"
+			"server_id: " + std::to_string(serverID) + "\n"
+			"\n";
 	// clang-format on
+}
+
+Error ReplicationConfigData::Validate() const {
+	using namespace std::string_view_literals;
+	if (serverID < ReplicationConfigData::kMinServerIDValue || serverID > ReplicationConfigData::kMaxServerIDValue) {
+		return Error(errParams, "Value of '%s' = %d is out of bounds: [%d, %d]", "server_Id"sv, serverID,
+					 ReplicationConfigData::kMinServerIDValue, ReplicationConfigData::kMaxServerIDValue);
+	}
+	return Error();
+}
+
+std::ostream& operator<<(std::ostream& os, const ReplicationConfigData& data) {
+	return os << "{ server_id: " << data.serverID << "; cluster_id: " << data.clusterID << "}";
+}
+
+Error NamespaceConfigData::FromJSON(const gason::JsonNode& v) {
+	using namespace std::string_view_literals;
+	std::string errorString;
+	auto err = tryReadOptionalJsonValue(&errorString, v, "lazyload"sv, lazyLoad);
+	err = tryReadOptionalJsonValue(&errorString, v, "unload_idle_threshold"sv, noQueryIdleThreshold);
+	(void)err;	// ignored; Errors will be handled with errorString
+
+	std::string stringVal(logLevelToString(logLevel));
+	if (tryReadOptionalJsonValue(&errorString, v, "log_level"sv, stringVal).ok()) {
+		logLevel = logLevelFromString(stringVal);
+	}
+
+	stringVal = strictModeToString(strictMode);
+	if (tryReadOptionalJsonValue(&errorString, v, "strict_mode"sv, stringVal).ok()) {
+		strictMode = strictModeFromString(stringVal);
+	}
+
+	std::string_view stringViewVal = "off"sv;
+	if (tryReadOptionalJsonValue(&errorString, v, "join_cache_mode"sv, stringViewVal).ok()) {
+		try {
+			cacheMode = str2cacheMode(stringViewVal);
+		} catch (Error& err) {
+			ensureEndsWith(errorString, "\n") += "errParams: " + err.whatStr();
+		}
+	}
+
+	err = tryReadOptionalJsonValue(&errorString, v, "start_copy_policy_tx_size"sv, startCopyPolicyTxSize);
+	err = tryReadOptionalJsonValue(&errorString, v, "copy_policy_multiplier"sv, copyPolicyMultiplier);
+	err = tryReadOptionalJsonValue(&errorString, v, "tx_size_to_always_copy"sv, txSizeToAlwaysCopy);
+	err = tryReadOptionalJsonValue(&errorString, v, "tx_vec_insertion_threads"sv, txVecInsertionThreads);
+	err = tryReadOptionalJsonValue(&errorString, v, "optimization_timeout_ms"sv, optimizationTimeout);
+	err = tryReadOptionalJsonValue(&errorString, v, "optimization_sort_workers"sv, optimizationSortWorkers);
+	(void)err;	// ignored; Errors will be handled with errorString
+
+	if (int64_t walSizeV = walSize; tryReadOptionalJsonValue(&errorString, v, "wal_size"sv, walSizeV, 0).ok()) {
+		if (walSizeV > 0) {
+			walSize = walSizeV;
+		}
+	}
+	err = tryReadOptionalJsonValue(&errorString, v, "min_preselect_size"sv, minPreselectSize, 0);
+	err = tryReadOptionalJsonValue(&errorString, v, "max_preselect_size"sv, maxPreselectSize, 0);
+	err = tryReadOptionalJsonValue(&errorString, v, "max_preselect_part"sv, maxPreselectPart, 0.0, 1.0);
+	err = tryReadOptionalJsonValue(&errorString, v, "max_iterations_idset_preresult"sv, maxIterationsIdSetPreResult, 0);
+	err = tryReadOptionalJsonValue(&errorString, v, "index_updates_counting_mode"sv, idxUpdatesCountingMode);
+	err = tryReadOptionalJsonValue(&errorString, v, "sync_storage_flush_limit"sv, syncStorageFlushLimit, 0);
+	(void)err;	// ignored; Errors will be handled with errorString
+
+	auto cacheNode = v["cache"];
+	if (!cacheNode.empty()) {
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "index_idset_cache_size"sv, cacheConfig.idxIdsetCacheSize, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "index_idset_hits_to_cache"sv, cacheConfig.idxIdsetHitsToCache, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "ft_index_cache_size"sv, cacheConfig.ftIdxCacheSize, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "ft_index_hits_to_cache"sv, cacheConfig.ftIdxHitsToCache, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "joins_preselect_cache_size"sv, cacheConfig.joinCacheSize, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "joins_preselect_hit_to_cache"sv, cacheConfig.joinHitsToCache, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "query_count_cache_size"sv, cacheConfig.queryCountCacheSize, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "query_count_hit_to_cache"sv, cacheConfig.queryCountHitsToCache, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "index_idset_cache_size"sv, cacheConfig.idxIdsetCacheSize, 0);
+		err = tryReadOptionalJsonValue(&errorString, cacheNode, "index_idset_cache_size"sv, cacheConfig.idxIdsetCacheSize, 0);
+		(void)err;	// ignored; Errors will be handled with errorString
+	}
+
+	if (!errorString.empty()) {
+		return Error(errParseJson, "NamespaceConfigData: JSON parsing error: '%s'", errorString);
+	}
+	return {};
 }
 
 }  // namespace reindexer

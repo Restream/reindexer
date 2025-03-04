@@ -18,7 +18,6 @@ public:
 	virtual ~FullTextMergeLimit() {}
 	FullTextMergeLimit(Reindexer* db, const std::string& name, size_t maxItems);
 
-	virtual reindexer::Error Initialize() override;
 	void RegisterAllCases();
 
 private:

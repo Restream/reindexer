@@ -1,6 +1,6 @@
 #pragma once
 
-#include <iosfwd>
+#include <iostream>
 #include "debug/backtrace.h"
 
 namespace reindexer {

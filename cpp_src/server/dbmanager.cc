@@ -1,13 +1,12 @@
-#include <fstream>
 #include <mutex>
 
-#include <thread>
 #include "dbmanager.h"
+#include "estl/gift_str.h"
 #include "estl/smart_lock.h"
 #include "gason/gason.h"
+#include "tools/crypt.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
-#include "tools/md5crypt.h"
 #include "tools/stringstools.h"
 #include "vendor/yaml-cpp/yaml.h"
 
@@ -15,38 +14,41 @@ namespace reindexer_server {
 
 using namespace std::string_view_literals;
 
-const std::string kUsersYAMLFilename = "users.yml";
-const std::string kUsersJSONFilename = "users.json";
+static const std::string kUsersYAMLFilename = "users.yml";
+static const std::string kUsersJSONFilename = "users.json";
 
-DBManager::DBManager(const std::string& dbpath, bool noSecurity, IClientsStats* clientsStats)
-	: dbpath_(dbpath), noSecurity_(noSecurity), storageType_(datastorage::StorageType::LevelDB), clientsStats_(clientsStats) {}
+DBManager::DBManager(const ServerConfig& config, IClientsStats* clientsStats)
+	: config_(config), storageType_(datastorage::StorageType::LevelDB), clientsStats_(clientsStats) {}
 
-Error DBManager::Init(const std::string& storageEngine, bool allowDBErrors, bool withAutorepair) {
-	if (!noSecurity_) {
+Error DBManager::Init() {
+	if (config_.EnableSecurity) {
 		auto status = readUsers();
 		if (!status.ok()) {
 			return status;
 		}
+
+		authManager_.Init(*this);
 	}
 
 	std::vector<fs::DirEntry> foundDb;
-	if (!dbpath_.empty() && fs::ReadDir(dbpath_, foundDb) < 0) {
-		return Error(errParams, "Can't read reindexer dir %s", dbpath_);
+	if (!config_.StoragePath.empty() && fs::ReadDir(config_.StoragePath, foundDb) < 0) {
+		return Error(errParams, "Can't read reindexer dir %s", config_.StoragePath);
 	}
 
 	try {
-		storageType_ = datastorage::StorageTypeFromString(storageEngine);
+		storageType_ = datastorage::StorageTypeFromString(config_.StorageEngine);
 	} catch (const Error& err) {
 		return err;
 	}
 
 	for (auto& de : foundDb) {
 		if (de.isDir && validateObjectName(de.name, false)) {
-			auto status = loadOrCreateDatabase(de.name, allowDBErrors, withAutorepair);
+			auto status = loadOrCreateDatabase(de.name, config_.StartWithErrors, config_.Autorepair);
 			if (!status.ok()) {
 				logPrintf(LogError, "Failed to open database '%s' - %s", de.name, status.what());
 				if (status.code() == errNotValid) {
-					logPrintf(LogError, "Try to run:\t`reindexer_tool --dsn \"builtin://%s\" --repair`  to restore data", dbpath_);
+					logPrintf(LogError, "Try to run:\t`reindexer_tool --dsn \"builtin://%s\" --repair`  to restore data",
+							  config_.StoragePath);
 					return status;
 				}
 			}
@@ -77,7 +79,7 @@ Error DBManager::OpenDatabase(const std::string& dbName, AuthContext& auth, bool
 			return status;
 		}
 		auth.db_ = it->second.get();
-		return errOK;
+		return Error();
 	}
 	lck.unlock();
 
@@ -85,10 +87,10 @@ Error DBManager::OpenDatabase(const std::string& dbName, AuthContext& auth, bool
 		return Error(errNotFound, "Database '%s' not found", dbName);
 	}
 	if (auth.role_ < kRoleOwner) {
-		return Error(errForbidden, "Forbidden to create database %s", dbName);
+		return Error(errForbidden, "Forbidden to create database '%s'", dbName);
 	}
 	if (!validateObjectName(dbName, false)) {
-		return Error(errParams, "Database name contains invalid character. Only alphas, digits,'_','-', are allowed");
+		return Error(errParams, "Database name '%s' contains invalid character. Only alphas, digits,'_','-', are allowed", dbName);
 	}
 
 	lck = smart_lock<Mutex>(mtx_, dummyCtx, true);
@@ -99,7 +101,7 @@ Error DBManager::OpenDatabase(const std::string& dbName, AuthContext& auth, bool
 			return status;
 		}
 		auth.db_ = it->second.get();
-		return errOK;
+		return Error();
 	}
 
 	status = loadOrCreateDatabase(dbName, true, true, auth);
@@ -110,14 +112,19 @@ Error DBManager::OpenDatabase(const std::string& dbName, AuthContext& auth, bool
 	it = dbs_.find(dbName);
 	assertrx(it != dbs_.end());
 	auth.db_ = it->second.get();
-	return errOK;
+	return Error();
 }
 
 Error DBManager::loadOrCreateDatabase(const std::string& dbName, bool allowDBErrors, bool withAutorepair, const AuthContext& auth) {
-	std::string storagePath = !dbpath_.empty() ? fs::JoinPath(dbpath_, dbName) : "";
+	if (clustersShutDown_) {
+		return Error(errTerminated, "DBManager is already preparing for shutdown");
+	}
+
+	std::string storagePath = !config_.StoragePath.empty() ? fs::JoinPath(config_.StoragePath, dbName) : "";
 
 	logPrintf(LogInfo, "Loading database %s", dbName);
-	auto db = std::make_unique<reindexer::Reindexer>(reindexer::ReindexerConfig().WithClientStats(clientsStats_));
+	auto db = std::make_unique<reindexer::Reindexer>(
+		reindexer::ReindexerConfig().WithClientStats(clientsStats_).WithUpdatesSize(config_.MaxUpdatesSize).WithDBName(dbName));
 	StorageTypeOpt storageType = kStorageTypeOptLevelDB;
 	switch (storageType_) {
 		case datastorage::StorageType::LevelDB:
@@ -142,7 +149,7 @@ Error DBManager::loadOrCreateDatabase(const std::string& dbName, bool allowDBErr
 Error DBManager::DropDatabase(AuthContext& auth) {
 	{
 		Reindexer* db = nullptr;
-		auto status = auth.GetDB(kRoleOwner, &db);
+		auto status = auth.GetDB<AuthContext::CalledFrom::Core>(kRoleOwner, &db);
 		if (!status.ok()) {
 			return status;
 		}
@@ -155,7 +162,7 @@ Error DBManager::DropDatabase(AuthContext& auth) {
 		return Error(errParams, "Database %s not found", dbName);
 	}
 	dbs_.erase(it);
-	fs::RmDirAll(fs::JoinPath(dbpath_, dbName));
+	fs::RmDirAll(fs::JoinPath(config_.StoragePath, dbName));
 	auth.ResetDB();
 
 	return {};
@@ -170,6 +177,16 @@ std::vector<std::string> DBManager::EnumDatabases() {
 		dbs.emplace_back(it.first);
 	}
 	return dbs;
+}
+
+void DBManager::ShutdownClusters() {
+	std::unique_lock lck(mtx_);
+	if (!clustersShutDown_) {
+		for (auto& db : dbs_) {
+			db.second->ShutdownCluster();
+		}
+		clustersShutDown_ = true;
+	}
 }
 
 Error DBManager::Login(const std::string& dbName, AuthContext& auth) {
@@ -188,17 +205,43 @@ Error DBManager::Login(const std::string& dbName, AuthContext& auth) {
 		return {};
 	}
 
-	auto it = users_.find(auth.login_);
+	auto it = users_.find(auth.login_.Str());
 	if (it == users_.end()) {
 		return Error(errForbidden, "Unauthorized");
 	}
-	// TODO change to SCRAM-RSA
-	if (!it->second.salt.empty()) {
-		if (it->second.hash != reindexer::MD5crypt(auth.password_, it->second.salt)) {
+
+	if (!authorized(auth)) {
+		// TODO change to SCRAM-RSA
+		if (!it->second.salt.empty()) {
+			std::string hash;
+			if (it->second.algorithm == reindexer::HashAlgorithm::MD5) {
+				hash = reindexer::MD5crypt(auth.password_, it->second.salt);
+			} else if (!auth.password_.empty()) {
+				if (!openssl::LibCryptoAvailable()) {
+					return Error(errSystem,
+								 "It is not possible to use some necessary functions from the installed openssl library. Try updating the "
+								 "library or installing last dev-package");
+				}
+				std::string dummySalt;
+				HashAlgorithm dummyAlg;
+				auto err =
+					ParseCryptString(shacrypt(auth.password_.data(), it->second.algorithm == reindexer::HashAlgorithm::SHA256 ? "5" : "6",
+											  it->second.salt.data()),
+									 hash, dummySalt, dummyAlg);
+
+				if (!err.ok()) {
+					return Error(errForbidden, "Unauthorized: %s", err.what());
+				}
+			}
+
+			if (it->second.hash != hash) {
+				return Error(errForbidden, "Unauthorized");
+			}
+
+			authManager_.Refresh(auth.login_.Str(), auth.password_);
+		} else if (it->second.hash != auth.password_) {
 			return Error(errForbidden, "Unauthorized");
 		}
-	} else if (it->second.hash != auth.password_) {
-		return Error(errForbidden, "Unauthorized");
 	}
 
 	auth.role_ = kRoleNone;
@@ -221,6 +264,8 @@ Error DBManager::Login(const std::string& dbName, AuthContext& auth) {
 	return {};
 }
 
+bool DBManager::authorized(const AuthContext& auth) { return authManager_.Check(auth.login_.Str(), auth.password_); }
+
 Error DBManager::readUsers() noexcept {
 	users_.clear();
 	Error jResult;
@@ -236,7 +281,7 @@ Error DBManager::readUsers() noexcept {
 
 Error DBManager::readUsersYAML() noexcept {
 	std::string content;
-	int res = fs::ReadFile(fs::JoinPath(dbpath_, kUsersYAMLFilename), content);
+	int res = fs::ReadFile(fs::JoinPath(config_.StoragePath, kUsersYAMLFilename), content);
 	if (res < 0) {
 		return Error(errNotFound, "Can't read '%s' file", kUsersYAMLFilename);
 	}
@@ -248,7 +293,7 @@ Error DBManager::readUsersYAML() noexcept {
 			UserRecord urec;
 			urec.login = user.first.as<std::string>();
 			auto userNode = user.second;
-			auto err = ParseMd5CryptString(userNode["hash"].as<std::string>(), urec.hash, urec.salt);
+			auto err = ParseCryptString(userNode["hash"].as<std::string>(), urec.hash, urec.salt, urec.algorithm);
 			if (!err.ok()) {
 				logPrintf(LogWarning, "Hash parsing error for user '%s': %s", urec.login, err.what());
 				continue;
@@ -273,14 +318,14 @@ Error DBManager::readUsersYAML() noexcept {
 			}
 		}
 	} catch (const YAML::Exception& ex) {
-		return Error(errParseJson, "Users: %s", ex.what());
+		return Error(errParseYAML, "Users: %s", ex.what());
 	}
 	return errOK;
 }
 
 Error DBManager::readUsersJSON() noexcept {
 	std::string content;
-	int res = fs::ReadFile(fs::JoinPath(dbpath_, kUsersJSONFilename), content);
+	int res = fs::ReadFile(fs::JoinPath(config_.StoragePath, kUsersJSONFilename), content);
 	if (res < 0) {
 		return Error(errNotFound, "Can't read '%s' file", kUsersJSONFilename);
 	}
@@ -291,7 +336,7 @@ Error DBManager::readUsersJSON() noexcept {
 		for (auto& userNode : root) {
 			UserRecord urec;
 			urec.login = std::string(userNode.key);
-			auto err = ParseMd5CryptString(userNode["hash"].As<std::string>(), urec.hash, urec.salt);
+			auto err = ParseCryptString(userNode["hash"].As<std::string>(), urec.hash, urec.salt, urec.algorithm);
 			if (!err.ok()) {
 				logPrintf(LogWarning, "Hash parsing error for user '%s': %s", urec.login, err.what());
 				continue;
@@ -319,27 +364,37 @@ Error DBManager::readUsersJSON() noexcept {
 
 Error DBManager::createDefaultUsersYAML() noexcept {
 	logPrintf(LogInfo, "Creating default %s file", kUsersYAMLFilename);
-	int res = fs::WriteFile(fs::JoinPath(dbpath_, kUsersYAMLFilename),
-							"# List of db's users, their's roles and privileges\n"
-							"# Anchors and aliases do not work here due to compatibility reasons\n\n"
-							"# Username\n"
-							"reindexer:\n"
-							"  # Hash type(right now '$1' is the only value), salt and hash in BSD MD5 Crypt format\n"
-							"  # Hash may be generated via openssl tool - `openssl passwd -1 -salt MySalt MyPassword`\n"
-							"  # If hash doesn't start with '$' sign it will be used as raw password itself\n"
-							"  hash: $1$rdxsalt$VIR.dzIB8pasIdmyVGV0E/\n"
-							"  # User's roles for specific databases, * in place of db name means any database\n"
-							"  # Allowed roles:\n"
-							"  # 1) data_read - user can read data from database\n"
-							"  # 2) data_write - user can write data to database\n"
-							"  # 3) db_admin - user can manage database: kRoleDataWrite + create & delete namespaces, modify indexes\n"
-							"  # 4) owner - user has all privilegies on database: kRoleDBAdmin + create & drop database\n"
-							"  roles:\n"
-							"    *: owner\n");
+	int64_t res = fs::WriteFile(
+		fs::JoinPath(config_.StoragePath, kUsersYAMLFilename),
+		"# List of db's users, their's roles and privileges\n\n"
+		"# Anchors and aliases do not work here due to compatibility reasons\n\n"
+		"# Username\n"
+		"reindexer:\n"
+		"  # Hash may be generated via openssl tool - `openssl passwd -<type> -salt MySalt MyPassword`\n"
+		"  # <type> can take one of the following values:\n"
+		"  #    1 - MD5-based password algorithm\n"
+		"  #    5 - SHA256-based password algorithm\n"
+		"  #    6 - SHA512-based password algorithm\n"
+		"  #    For values 5 and 6 of <type> to work correctly, you should have the openssl library dev-package installed in the system\n"
+		"  # If hash doesn't start with '$' sign it will be used as raw password itself\n"
+		"  hash: $1$rdxsalt$VIR.dzIB8pasIdmyVGV0E/\n"
+		"  # User's roles for specific databases, * in place of db name means any database\n"
+		"  # Allowed roles:\n"
+		"  # 1) data_read - user can read data from database\n"
+		"  # 2) data_write - user can write data to database\n"
+		"  # 3) db_admin - user can manage database: kRoleDataWrite + create & delete namespaces, modify indexes\n"
+		"  # 4) replication - same as db_admin but with restrictions on use in various protocols and "
+		"additional context checks for replication. This role should be used for the asynchronous and synchronous (RAFT-cluster) "
+		"replication instead of db_admin/owner\n"
+		"  # 5) sharding - same as db_admin but with restrictions on use in various protocols and additional "
+		"context checks for sharding. This role should be used for the sharding interconnections instead of db_admin/owner\n"
+		"  # 6) owner - user has all privileges on database: kRoleDBAdmin + create & drop database\n"
+		"  roles:\n"
+		"    *: owner\n");
 	if (res < 0) {
 		return Error(errParams, "Unable to write default config file: %s", strerror(errno));
 	}
-	users_.emplace("reindexer", UserRecord{"reindexer", "VIR.dzIB8pasIdmyVGV0E/", "rdxsalt", {{"*", kRoleOwner}}});
+	users_.emplace("reindexer", UserRecord{"reindexer", "VIR.dzIB8pasIdmyVGV0E/", "rdxsalt", {{"*", kRoleOwner}}, HashAlgorithm::MD5});
 	return errOK;
 }
 
@@ -350,6 +405,10 @@ UserRole DBManager::userRoleFromString(std::string_view strRole) {
 		return kRoleDataWrite;
 	} else if (strRole == "db_admin"sv) {
 		return kRoleDBAdmin;
+	} else if (strRole == "replication"sv) {
+		return kRoleReplication;
+	} else if (strRole == "sharding"sv) {
+		return kRoleSharding;
 	} else if (strRole == "owner"sv) {
 		return kRoleOwner;
 	}
@@ -368,6 +427,10 @@ std::string_view UserRoleName(UserRole role) noexcept {
 			return "data_write"sv;
 		case kRoleDBAdmin:
 			return "db_admin"sv;
+		case kRoleReplication:
+			return "replication"sv;
+		case kRoleSharding:
+			return "sharding"sv;
 		case kRoleOwner:
 			return "owner"sv;
 		case kRoleSystem:

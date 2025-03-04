@@ -1,4 +1,5 @@
 #include "statscollector.h"
+#include "core/system_ns_names.h"
 #include "dbmanager.h"
 #include "prometheus.h"
 #include "tools/alloc_ext/je_malloc_extension.h"
@@ -137,7 +138,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 		}
 
 		reindexer::Reindexer* db = nullptr;
-		status = ctx.GetDB(kRoleSystem, &db);
+		status = ctx.GetDB<AuthContext::CalledFrom::Core>(kRoleSystem, &db);
 		assertrx(status.ok());
 		assertrx(db);
 		(void)status;
@@ -152,9 +153,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 			collectedDBs.emplace(dbName, std::move(nsDefs));
 		}
 
-		constexpr static auto kPerfstatsNs = "#perfstats"sv;
-		constexpr static auto kMemstatsNs = "#memstats"sv;
-		static const auto kPerfstatsQuery = Query(std::string(kPerfstatsNs));
+		static const auto kPerfstatsQuery = Query(kPerfStatsNamespace);
 		QueryResults qr;
 		status = db->Select(kPerfstatsQuery, qr);
 		if (status.ok()) {
@@ -175,7 +174,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 		}
 
 		qr.Clear();
-		static const auto kMemstatsQuery = Query(std::string(kMemstatsNs));
+		static const auto kMemstatsQuery = Query(kMemStatsNamespace);
 		status = db->Select(kMemstatsQuery, qr);
 		if (status.ok()) {
 			for (auto it = qr.begin(); it != qr.end(); ++it) {

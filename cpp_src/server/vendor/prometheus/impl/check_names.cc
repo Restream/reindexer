@@ -4,8 +4,8 @@
 #if defined(__GLIBCXX__) && __GLIBCXX__ <= 20150623
 #define STD_REGEX_IS_BROKEN
 #endif
-#if defined(__GNUC__) && (__GNUC__ == 12) && (__GNUC_MINOR__ < 4) && defined(REINDEX_WITH_ASAN)
-// regex header is broken in GCC 12.0-12.3 with ASAN
+#if defined(__GNUC__) && ((__GNUC__ == 12) || (__GNUC__ == 13)) && defined(REINDEX_WITH_ASAN)
+// regex header is broken in GCC 12.0-13.3 with ASAN
 #define STD_REGEX_IS_BROKEN
 #endif
 #if defined(_MSC_VER) && _MSC_VER < 1900
@@ -20,7 +20,9 @@ namespace prometheus {
 bool CheckMetricName(const std::string& name) {
 	// see https://prometheus.io/docs/concepts/data_model/
 	auto reserved_for_internal_purposes = name.compare(0, 2, "__") == 0;
-	if (reserved_for_internal_purposes) return false;
+	if (reserved_for_internal_purposes) {
+		return false;
+	}
 #ifdef STD_REGEX_IS_BROKEN
 	return !name.empty();
 #else
@@ -32,7 +34,9 @@ bool CheckMetricName(const std::string& name) {
 bool CheckLabelName(const std::string& name) {
 	// see https://prometheus.io/docs/concepts/data_model/
 	auto reserved_for_internal_purposes = name.compare(0, 2, "__") == 0;
-	if (reserved_for_internal_purposes) return false;
+	if (reserved_for_internal_purposes) {
+		return false;
+	}
 #ifdef STD_REGEX_IS_BROKEN
 	return !name.empty();
 #else

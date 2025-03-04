@@ -8,9 +8,9 @@
 #include "core/payload/payloadtype.h"
 #include "core/type_consts.h"
 #include "core/type_consts_helpers.h"
+#include "estl/expected.h"
 #include "estl/h_vector.h"
-#include "estl/span.h"
-#include "tools/errors.h"
+#include <span>
 
 struct msgpack_object;
 struct MsgPackValue;
@@ -23,13 +23,13 @@ class WrSerializer;
 class ProtobufSchemaBuilder;
 
 struct Parameters {
-	static std::string_view Value() noexcept;
-	static std::string_view Type() noexcept;
-	static std::string_view Facets() noexcept;
-	static std::string_view Count() noexcept;
-	static std::string_view Values() noexcept;
-	static std::string_view Distincts() noexcept;
-	static std::string_view Fields() noexcept;
+	constexpr static std::string_view Value() noexcept;
+	constexpr static std::string_view Type() noexcept;
+	constexpr static std::string_view Facets() noexcept;
+	constexpr static std::string_view Count() noexcept;
+	constexpr static std::string_view Values() noexcept;
+	constexpr static std::string_view Distincts() noexcept;
+	constexpr static std::string_view Fields() noexcept;
 };
 
 template <typename T, typename K>
@@ -61,11 +61,16 @@ struct AggregationResult {
 	void GetJSON(WrSerializer& ser) const;
 	void GetMsgPack(WrSerializer& wrser) const;
 	void GetProtobuf(WrSerializer& wrser) const;
-	Error FromJSON(span<char> json);
-	Error FromMsgPack(span<char> msgpack);
+	template <typename T>
+	static Expected<AggregationResult> FromJSON(T json);
+	static Expected<AggregationResult> FromMsgPack(std::string_view msgpack);
+	static Expected<AggregationResult> FromMsgPack(std::span<char> msgpack) {
+		return FromMsgPack(std::string_view(msgpack.data(), msgpack.size()));
+	}
 	double GetValueOrZero() const noexcept { return value_ ? *value_ : 0; }
 	std::optional<double> GetValue() const noexcept { return value_; }
 	void SetValue(double value) { value_ = value; }
+
 	AggType type = AggSum;
 	h_vector<std::string, 1> fields;
 	std::vector<FacetResult> facets;
@@ -75,40 +80,6 @@ struct AggregationResult {
 
 	static AggType strToAggType(std::string_view type);
 	static void GetProtobufSchema(ProtobufSchemaBuilder&);
-
-	template <typename Node>
-	void from(Node root) {
-		const Node& node = root[Parameters::Value()];
-		bool isValid = false;
-		if constexpr (std::is_same_v<MsgPackValue, Node>) {
-			isValid = node.isValid();
-		}
-		if constexpr (std::is_same_v<gason::JsonNode, Node>) {
-			isValid = !node.empty();
-		}
-		if (isValid) {
-			value_ = node.template As<double>();
-		}
-
-		type = strToAggType(root[Parameters::Type()].template As<std::string>());
-
-		for (auto subElem : root[Parameters::Fields()]) {
-			fields.push_back(subElem.template As<std::string>());
-		}
-
-		for (auto facetNode : root[Parameters::Facets()]) {
-			FacetResult facet;
-			facet.count = facetNode[Parameters::Count()].template As<int>();
-			for (auto subElem : facetNode[Parameters::Values()]) {
-				facet.values.push_back(subElem.template As<std::string>());
-			}
-			facets.push_back(facet);
-		}
-
-		for (auto distinctNode : root[Parameters::Distincts()]) {
-			distincts.emplace_back(distinctNode.template As<std::string>());
-		}
-	}
 
 	template <typename Builder, typename Fields>
 	void get(Builder& builder, const Fields& parametersFields) const {
@@ -157,6 +128,9 @@ struct AggregationResult {
 	}
 
 private:
+	template <typename Node>
+	static AggregationResult from(Node root);
+
 	std::optional<double> value_ = std::nullopt;
 };
 

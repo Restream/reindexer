@@ -1,7 +1,6 @@
 #pragma once
 
 #include <chrono>
-#include <functional>
 #include <mutex>
 
 #include "tools/assertrx.h"
@@ -68,9 +67,9 @@ public:
 		_M_lockable();
 		assertrx(_M_context);
 		const auto lockWard = _M_context->BeforeLock(_Mutex::mark);
-		if (_M_chkTimeout.count() > 0 && _M_context->isCancelable()) {
+		if (_M_chkTimeout.count() > 0 && _M_context->IsCancelable()) {
 			do {
-				ThrowOnCancel(*_M_context, "Write lock (contexted_unique_lock) was canceled on condition"sv);
+				ThrowOnCancel(*_M_context, "Write lock (contexted_unique_lock) was canceled or timed out (mutex)"sv);
 			} while (!_M_mtx->try_lock_for(_M_chkTimeout));
 		} else {
 			_M_mtx->lock();
@@ -166,9 +165,9 @@ public:
 		_M_lockable();
 		assertrx(_M_context);
 		const auto lockWard = _M_context->BeforeLock(_Mutex::mark);
-		if (_M_chkTimeout.count() > 0 && _M_context->isCancelable()) {
+		if (_M_chkTimeout.count() > 0 && _M_context->IsCancelable()) {
 			do {
-				ThrowOnCancel(*_M_context, "Read lock (contexted_shared_lock) was canceled on condition"sv);
+				ThrowOnCancel(*_M_context, "Read lock (contexted_shared_lock) was canceled or timed out (mutex)"sv);
 			} while (!_M_mtx->try_lock_shared_for(_M_chkTimeout));
 		} else {
 			_M_mtx->lock_shared();

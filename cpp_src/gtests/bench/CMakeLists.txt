@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.18)
 
 project(benchmarking)
 
@@ -27,7 +27,28 @@ target_compile_definitions(${FT_TARGET} PRIVATE RX_BENCH_DICT_PATH="${BENCH_DICT
 
 # Enable export to provide readable stacktraces
 set_property(TARGET ${TARGET} PROPERTY ENABLE_EXPORTS 1)
+set_property(TARGET ${TARGET} PROPERTY DEFINE_SYMBOL "")
 set_property(TARGET ${FT_TARGET} PROPERTY ENABLE_EXPORTS 1)
+set_property(TARGET ${FT_TARGET} PROPERTY DEFINE_SYMBOL "")
+
+if(ENABLE_PCH)
+  set(PREC_HDRS
+    ${REINDEXER_SOURCE_PATH}/core/reindexer.h
+    ${REINDEXER_SOURCE_PATH}/core/query/query.h
+    ${REINDEXER_SOURCE_PATH}/core/queryresults/queryresults.h
+    ${REINDEXER_SOURCE_PATH}/core/item.h
+
+    fixtures/base_fixture.h
+
+    tools/allocs_tracker.h
+    tools/helpers.h
+    tools/reporter.h
+    tools/sequence.h
+  )
+
+  target_precompile_headers(${TARGET} PRIVATE ${PREC_HDRS})
+  target_precompile_headers(${FT_TARGET} REUSE_FROM ${TARGET})
+endif()
 
 if(BENCH_REPORT)
     message("Benchmark report flag is activated")

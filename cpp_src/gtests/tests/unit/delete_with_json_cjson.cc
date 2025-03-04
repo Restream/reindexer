@@ -1,8 +1,5 @@
-#include <iostream>
 #include <tuple>
-
 #include "get_pk_api.h"
-#include "tools/logger.h"
 
 #define SIMPLE_ITEM_NAMESPACE "test_extrack_pk_simple"
 #define NESTED_ITEM_NAMESPACE "test_extract_pk_nested"
@@ -82,13 +79,13 @@ TEST_F(ExtractPK, DeleteByPKOnlyJSON) {
 	CHECK_SUCCESS(err);
 	CHECK_SUCCESS(item.Status());
 	ASSERT_EQ(item["id"].As<int>(), data.id);
-	ASSERT_EQ(item["name"].As<string>(), data.name);
-	ASSERT_EQ(item["color"].As<string>(), data.color);
+	ASSERT_EQ(item["name"].As<std::string>(), data.name);
+	ASSERT_EQ(item["color"].As<std::string>(), data.color);
 	ASSERT_EQ(item["weight"].As<int>(), data.weight);
 	ASSERT_EQ(item["height"].As<int>(), data.height);
 	ASSERT_EQ(item["fk_id"].As<int>(), data.fk_id);
 
-	CHECK_SUCCESS(UpsertAndCommit(SIMPLE_ITEM_NAMESPACE, item));
+	CHECK_SUCCESS(Upsert(SIMPLE_ITEM_NAMESPACE, item));
 
 	for (int id = 1; id < 4; id++) {
 		for (int fk_id = 1; fk_id < 4; fk_id++) {
@@ -99,7 +96,7 @@ TEST_F(ExtractPK, DeleteByPKOnlyJSON) {
 			item["weight"] = rand() % 1000;
 			item["height"] = rand() % 1000;
 
-			CHECK_SUCCESS(UpsertAndCommit(SIMPLE_ITEM_NAMESPACE, item));
+			CHECK_SUCCESS(Upsert(SIMPLE_ITEM_NAMESPACE, item));
 		}
 	}
 
@@ -110,14 +107,12 @@ TEST_F(ExtractPK, DeleteByPKOnlyJSON) {
 	Item itemForDelete = db_->NewItem(SIMPLE_ITEM_NAMESPACE);
 	CHECK_SUCCESS(itemForDelete.FromJSON(json, nullptr, true));
 	CHECK_SUCCESS(db_->Delete(SIMPLE_ITEM_NAMESPACE, itemForDelete))
-	CHECK_SUCCESS(db_->Commit(SIMPLE_ITEM_NAMESPACE));
 
 	QueryResults deleteRes;
 	CHECK_SUCCESS(db_->Delete(Query(SIMPLE_ITEM_NAMESPACE).Where("id", CondEq, data.id), deleteRes));
 	ASSERT_TRUE(!deleteRes.Count()) << "Result of deletion must be empty";
 
 	QueryResults qres;
-	qres.Erase(qres.Items().begin(), qres.Items().end());
 	tie(err, qres) = Select(Query(SIMPLE_ITEM_NAMESPACE).Where("id", CondEq, data.id), false);
 	CHECK_SUCCESS(err);
 	ASSERT_TRUE(!qres.Count()) << "Result of selection must be empty";
@@ -150,7 +145,7 @@ TEST_F(ExtractPK, ChangedTypeJSON) {
 			item["weight"] = rand() % 1000;
 			item["height"] = rand() % 1000;
 
-			CHECK_SUCCESS(UpsertAndCommit(SIMPLE_ITEM_NAMESPACE, item));
+			CHECK_SUCCESS(Upsert(SIMPLE_ITEM_NAMESPACE, item));
 		}
 	}
 
@@ -185,7 +180,7 @@ TEST_F(ExtractPK, NestedJSON) {
 	tie(err, item, data) = NewItem(NESTED_ITEM_NAMESPACE, NESTED_JSON_PATTERN);
 	CHECK_SUCCESS(err);
 	CHECK_SUCCESS(item.Status());
-	CHECK_SUCCESS(UpsertAndCommit(NESTED_ITEM_NAMESPACE, item));
+	CHECK_SUCCESS(Upsert(NESTED_ITEM_NAMESPACE, item));
 
 	for (int id = 0; id < 3; id++) {
 		for (int fk_id = 0; fk_id < 3; fk_id++) {
@@ -196,7 +191,7 @@ TEST_F(ExtractPK, NestedJSON) {
 			item["weight"] = rand() % 1000;
 			item["height"] = rand() % 1000;
 
-			CHECK_SUCCESS(UpsertAndCommit(NESTED_ITEM_NAMESPACE, item));
+			CHECK_SUCCESS(Upsert(NESTED_ITEM_NAMESPACE, item));
 		}
 	}
 
@@ -231,7 +226,7 @@ TEST_F(ExtractPK, CJson2CJson_PrintJSON) {
 	tie(err, item, data) = NewItem(SIMPLE_ITEM_NAMESPACE, SIMPLE_JSON_PATTERN);
 	CHECK_SUCCESS(err);
 	CHECK_SUCCESS(item.Status());
-	CHECK_SUCCESS(UpsertAndCommit(SIMPLE_ITEM_NAMESPACE, item));
+	CHECK_SUCCESS(Upsert(SIMPLE_ITEM_NAMESPACE, item));
 
 	std::string originalJson(item.GetJSON());
 
@@ -259,7 +254,7 @@ TEST_F(ExtractPK, SimpleCJSON) {
 	tie(err, item, data) = NewItem(SIMPLE_ITEM_NAMESPACE, SIMPLE_JSON_PATTERN);
 	CHECK_SUCCESS(err);
 	CHECK_SUCCESS(item.Status());
-	CHECK_SUCCESS(UpsertAndCommit(SIMPLE_ITEM_NAMESPACE, item));
+	CHECK_SUCCESS(Upsert(SIMPLE_ITEM_NAMESPACE, item));
 
 	for (int id = 1; id < 4; id++) {
 		for (int fk_id = 1; fk_id < 4; fk_id++) {
@@ -269,7 +264,7 @@ TEST_F(ExtractPK, SimpleCJSON) {
 			item["color"] = colors_.at(rand() % names_.size());
 			item["weight"] = rand() % 1000;
 			item["height"] = rand() % 1000;
-			CHECK_SUCCESS(UpsertAndCommit(SIMPLE_ITEM_NAMESPACE, item));
+			CHECK_SUCCESS(Upsert(SIMPLE_ITEM_NAMESPACE, item));
 		}
 	}
 
@@ -307,7 +302,7 @@ TEST_F(ExtractPK, NestedCJSON) {
 	tie(err, item, data) = NewItem(NESTED_ITEM_NAMESPACE, NESTED_JSON_PATTERN);
 	CHECK_SUCCESS(err);
 	CHECK_SUCCESS(item.Status());
-	CHECK_SUCCESS(UpsertAndCommit(NESTED_ITEM_NAMESPACE, item));
+	CHECK_SUCCESS(Upsert(NESTED_ITEM_NAMESPACE, item));
 
 	for (int id = 1; id < 4; id++) {
 		for (int fk_id = 1; fk_id < 4; fk_id++) {
@@ -317,7 +312,7 @@ TEST_F(ExtractPK, NestedCJSON) {
 			item["color"] = colors_.at(rand() % names_.size());
 			item["weight"] = rand() % 1000;
 			item["height"] = rand() % 1000;
-			CHECK_SUCCESS(UpsertAndCommit(NESTED_ITEM_NAMESPACE, item));
+			CHECK_SUCCESS(Upsert(NESTED_ITEM_NAMESPACE, item));
 		}
 	}
 
@@ -355,7 +350,7 @@ TEST_F(ExtractPK, NestedCJSONWithObject) {
 	tie(err, item, data) = NewItem(NESTED_ITEM_WITH_OBJ_NAMESPACE, NESTED_JSON_WITH_OBJ_PATTERN);
 	CHECK_SUCCESS(err);
 	CHECK_SUCCESS(item.Status());
-	CHECK_SUCCESS(UpsertAndCommit(NESTED_ITEM_WITH_OBJ_NAMESPACE, item));
+	CHECK_SUCCESS(Upsert(NESTED_ITEM_WITH_OBJ_NAMESPACE, item));
 
 	for (int id = 1; id < 4; id++) {
 		for (int fk_id = 1; fk_id < 4; fk_id++) {
@@ -365,7 +360,7 @@ TEST_F(ExtractPK, NestedCJSONWithObject) {
 			item["color"] = colors_.at(rand() % names_.size());
 			item["weight"] = rand() % 1000;
 			item["height"] = rand() % 1000;
-			CHECK_SUCCESS(UpsertAndCommit(NESTED_ITEM_WITH_OBJ_NAMESPACE, item));
+			CHECK_SUCCESS(Upsert(NESTED_ITEM_WITH_OBJ_NAMESPACE, item));
 		}
 	}
 

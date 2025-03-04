@@ -2,6 +2,8 @@
 #include <optional>
 #include "core/joincache.h"
 #include "core/namespace/namespaceimpl.h"
+#include "core/queryresults/fields_filter.h"
+#include "core/queryresults/itemref.h"
 #include "explaincalc.h"
 #include "selectiteratorcontainer.h"
 
@@ -9,21 +11,21 @@ namespace reindexer {
 
 struct PreselectProperties {
 	PreselectProperties(int64_t qresMaxIts, int64_t maxItersIdSetPreResult) noexcept
-		: qresMaxIteratios{qresMaxIts}, maxIterationsIdSetPreResult{maxItersIdSetPreResult} {}
+		: qresMaxIterations{qresMaxIts}, maxIterationsIdSetPreResult{maxItersIdSetPreResult} {}
 
 	bool isLimitExceeded = false;
 	bool isUnorderedIndexSort = false;
 	bool btreeIndexOptimizationEnabled = false;
-	int64_t qresMaxIteratios;
+	int64_t qresMaxIterations;
 	const int64_t maxIterationsIdSetPreResult;
 };
 
 struct JoinPreResult {
-	class Values : public std::vector<ItemRef> {
+	class Values : public ItemRefVector {
 	public:
 		Values(const PayloadType& pt, const TagsMatcher& tm) noexcept : payloadType{pt}, tagsMatcher{tm} {}
 		Values(Values&& other) noexcept
-			: std::vector<ItemRef>(std::move(other)),
+			: ItemRefVector(std::move(other)),
 			  payloadType(std::move(other.payloadType)),
 			  tagsMatcher(std::move(other.tagsMatcher)),
 			  locked_(other.locked_) {
@@ -35,16 +37,16 @@ struct JoinPreResult {
 		Values& operator=(Values&&) = delete;
 		~Values() {
 			if (locked_) {
-				for (size_t i = 0; i < size(); ++i) {
-					Payload{payloadType, (*this)[i].Value()}.ReleaseStrings();
+				for (size_t i = 0; i < Size(); ++i) {
+					Payload{payloadType, GetItemRef(i).Value()}.ReleaseStrings();
 				}
 			}
 		}
-		bool Locked() const { return locked_; }
+		bool Locked() const noexcept { return locked_; }
 		void Lock() {
 			assertrx_throw(!locked_);
-			for (size_t i = 0; i < size(); ++i) {
-				Payload{payloadType, (*this)[i].Value()}.AddRefStrings();
+			for (size_t i = 0; i < Size(); ++i) {
+				Payload{payloadType, GetItemRef(i).Value()}.AddRefStrings();
 			}
 			locked_ = true;
 		}
@@ -53,6 +55,7 @@ struct JoinPreResult {
 
 		PayloadType payloadType;
 		TagsMatcher tagsMatcher;
+		NamespaceName nsName;
 
 	private:
 		bool locked_ = false;
@@ -131,8 +134,9 @@ class JoinedSelector {
 
 public:
 	JoinedSelector(JoinType joinType, NamespaceImpl::Ptr leftNs, NamespaceImpl::Ptr rightNs, JoinCacheRes&& joinRes, Query&& itemQuery,
-				   QueryResults& result, const JoinedQuery& joinQuery, JoinPreResultExecuteCtx&& preSelCtx, uint32_t joinedFieldIdx,
-				   SelectFunctionsHolder& selectFunctions, bool inTransaction, int64_t lastUpdateTime, const RdxContext& rdxCtx)
+				   FieldsFilter fieldsFilter, LocalQueryResults& result, const JoinedQuery& joinQuery, JoinPreResultExecuteCtx&& preSelCtx,
+				   uint32_t joinedFieldIdx, SelectFunctionsHolder& selectFunctions, bool inTransaction, int64_t lastUpdateTime,
+				   const RdxContext& rdxCtx)
 		: joinType_(joinType),
 		  called_(0),
 		  matched_(0),
@@ -140,6 +144,7 @@ public:
 		  rightNs_(std::move(rightNs)),
 		  joinRes_(std::move(joinRes)),
 		  itemQuery_(std::move(itemQuery)),
+		  fieldsFilter_(std::move(fieldsFilter)),
 		  result_(result),
 		  joinQuery_(joinQuery),
 		  preSelectCtx_(std::move(preSelCtx)),
@@ -161,7 +166,7 @@ public:
 	JoinedSelector(const JoinedSelector&) = delete;
 	JoinedSelector& operator=(const JoinedSelector&) = delete;
 
-	bool Process(IdType, int nsId, ConstPayload, bool match);
+	bool Process(IdType, int nsId, ConstPayload, FloatVectorsHolderMap*, bool match);
 	JoinType Type() const noexcept { return joinType_; }
 	void SetType(JoinType type) noexcept { joinType_ = type; }
 	const std::string& RightNsName() const noexcept { return itemQuery_.NsName(); }
@@ -188,8 +193,8 @@ private:
 	template <typename Cont, typename Fn>
 	[[nodiscard]] VariantArray readValuesOfRightNsFrom(const Cont& from, const Fn& createPayload, const QueryJoinEntry&,
 													   const PayloadType&) const;
-	void selectFromRightNs(QueryResults& joinItemR, const Query&, bool& found, bool& matchedAtLeastOnce);
-	void selectFromPreResultValues(QueryResults& joinItemR, const Query&, bool& found, bool& matchedAtLeastOnce) const;
+	void selectFromRightNs(LocalQueryResults& joinItemR, const Query&, FloatVectorsHolderMap*, bool& found, bool& matchedAtLeastOnce);
+	void selectFromPreResultValues(LocalQueryResults& joinItemR, const Query&, bool& found, bool& matchedAtLeastOnce) const;
 
 	JoinType joinType_;
 	int called_, matched_;
@@ -197,7 +202,8 @@ private:
 	NamespaceImpl::Ptr rightNs_;
 	JoinCacheRes joinRes_;
 	Query itemQuery_;
-	QueryResults& result_;
+	FieldsFilter fieldsFilter_;
+	LocalQueryResults& result_;
 	const JoinedQuery& joinQuery_;
 	JoinPreResultExecuteCtx preSelectCtx_;
 	std::string explainOneSelect_;

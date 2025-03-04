@@ -1,16 +1,18 @@
 #include "clientsstats_api.h"
+#include "core/system_ns_names.h"
 #include "coroutine/waitgroup.h"
+#include "tools/fsops.h"
+#include "vendor/gason/gason.h"
 #include "yaml-cpp/yaml.h"
 
 using reindexer::net::ev::dynamic_loop;
 using reindexer::client::CoroReindexer;
 using reindexer::client::CoroQueryResults;
 using reindexer::coroutine::wait_group;
-using reindexer::coroutine::wait_group_guard;
-
-void ClientsStatsApi::SetUp() {}
+using namespace reindexer;
 
 void ClientsStatsApi::RunServerInThread(bool statEnable) {
+	const std::string kdbPath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "clientstats_test");
 	reindexer::fs::RmDirAll(kdbPath);
 	YAML::Node y;
 	y["storage"]["path"] = kdbPath;
@@ -18,17 +20,18 @@ void ClientsStatsApi::RunServerInThread(bool statEnable) {
 	y["logger"]["loglevel"] = "none";
 	y["logger"]["rpclog"] = "none";
 	y["logger"]["serverlog"] = "none";
-	y["net"]["rpcaddr"] = kipaddress + ":" + kport;
+	y["net"]["rpcaddr"] = kipaddress + ":" + kRPCPort;
+	y["net"]["httpaddr"] = kipaddress + ":" + kHttpPort;
 	y["net"]["security"] = true;
 
 	auto err = server_.InitFromYAML(YAML::Dump(y));
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	serverThread_ = std::unique_ptr<std::thread>(new std::thread([this]() {
+	serverThread_ = std::make_unique<std::thread>([this]() {
 		auto res = this->server_.Start();
 		(void)res;
 		assertrx(res == EXIT_SUCCESS);
-	}));
+	});
 	while (!server_.IsRunning()) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
@@ -42,12 +45,12 @@ void ClientsStatsApi::TearDown() {
 }
 
 std::string ClientsStatsApi::GetConnectionString() {
-	std::string ret = "cproto://" + kUserName + ":" + kPassword + "@" + kipaddress + ":" + kport + "/" + kdbName;
+	std::string ret = "cproto://" + kUserName + ":" + kPassword + "@" + kipaddress + ":" + kRPCPort + "/" + kdbName;
 	return ret;
 }
 
 void ClientsStatsApi::SetProfilingFlag(bool val, const std::string& column, CoroReindexer& c) {
-	reindexer::Query qup{reindexer::Query("#config").Where("type", CondEq, "profiling").Set(column, val)};
+	Query qup{Query(kConfigNamespace).Where("type", CondEq, "profiling").Set(column, val)};
 	CoroQueryResults result;
 	auto err = c.Update(qup, result);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -64,7 +67,7 @@ void ClientsStatsApi::ClientLoopReconnect() {
 			auto err = rx.Connect(GetConnectionString(), loop);
 			ASSERT_TRUE(err.ok()) << err.what();
 			CoroQueryResults result;
-			err = rx.Select(reindexer::Query("#namespaces"), result);
+			err = rx.Select(Query(kNamespacesNamespace), result);
 			ASSERT_TRUE(err.ok()) << err.what();
 			std::string resString;
 			for (auto it = result.begin(); it != result.end(); ++it) {
@@ -83,7 +86,7 @@ void ClientsStatsApi::ClientLoopReconnect() {
 
 uint32_t ClientsStatsApi::StatsTxCount(CoroReindexer& rx) {
 	CoroQueryResults resultCs;
-	auto err = rx.Select("SELECT * FROM #clientsstats", resultCs);
+	auto err = rx.Select(Query(kClientsStatsNamespace), resultCs);
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_EQ(resultCs.Count(), 1);
 	auto it = resultCs.begin();
@@ -109,13 +112,11 @@ void ClientsStatsApi::ClientSelectLoop(size_t coroutines) {
 		auto err = rx.Connect(GetConnectionString(), loop);
 		ASSERT_TRUE(err.ok()) << err.what();
 		wait_group wg;
-		wg.add(coroutines);
 		for (size_t i = 0; i < coroutines; ++i) {
-			loop.spawn([this, &rx, &wg] {
-				wait_group_guard wgg(wg);
+			loop.spawn(wg, [this, &rx] {
 				while (!stop_) {
-					reindexer::client::CoroQueryResults result;
-					auto err = rx.Select(reindexer::Query("#clientsstats"), result);
+					client::CoroQueryResults result;
+					auto err = rx.Select(Query(kClientsStatsNamespace), result);
 					ASSERT_TRUE(err.ok()) << err.what();
 					std::string resString;
 					for (auto it = result.begin(); it != result.end(); ++it) {
@@ -137,14 +138,14 @@ void ClientsStatsApi::ClientSelectLoop(size_t coroutines) {
 
 void ClientsStatsApi::RunNSelectThread(size_t threads, size_t coroutines) {
 	for (size_t i = 0; i < threads; i++) {
-		auto thread_ = std::unique_ptr<std::thread>(new std::thread([this, coroutines]() { this->ClientSelectLoop(coroutines); }));
+		auto thread_ = std::make_unique<std::thread>([this, coroutines]() { this->ClientSelectLoop(coroutines); });
 		clientThreads_.push_back(std::move(thread_));
 	}
 }
 
 void ClientsStatsApi::RunNReconnectThread(size_t N) {
 	for (size_t i = 0; i < N; i++) {
-		auto thread_ = std::unique_ptr<std::thread>(new std::thread([this]() { this->ClientLoopReconnect(); }));
+		auto thread_ = std::make_unique<std::thread>([this]() { this->ClientLoopReconnect(); });
 		reconnectThreads_.push_back(std::move(thread_));
 	}
 }

@@ -8,12 +8,13 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string>
+#include "tools/assertrx.h"
 
 namespace httpparser {
 
 class UrlParser {
 public:
-	UrlParser() : valid(false) {}
+	UrlParser() noexcept : valid(false) {}
 
 	explicit UrlParser(const std::string& url) : valid(true) { parse(url); }
 
@@ -54,6 +55,15 @@ public:
 	const std::string& path() const {
 		assertrx(isValid());
 		return url.path;
+	}
+
+	std::string db() const {
+		assert(isValid());
+		std::string::size_type pos = 0;
+		while (pos != url.path.size() && (url.path[pos] == '\\' || url.path[pos] == '/')) {
+			++pos;
+		}
+		return url.path.substr(pos);
 	}
 
 	const std::string& query() const {
@@ -117,7 +127,14 @@ private:
 		std::string portOrPassword;
 
 		valid = true;
+#if !defined(_MSC_VER) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wrestrict"
+#endif
 		url.path = "/";
+#if !defined(_MSC_VER) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 		url.integerPort = 0;
 
 		for (size_t i = 0; i < str.size() && valid; ++i) {

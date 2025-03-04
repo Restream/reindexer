@@ -248,11 +248,5 @@ ordinator::ordinator() : current_(0), loop_completion_callback_{nullptr} {
 	koishi_active();
 }
 
-ordinator::~ordinator() {
-	routines_.clear();
-	finalized_indexes_.clear();
-	completion_callbacks_.clear();
-}
-
 }  // namespace coroutine
 }  // namespace reindexer
