@@ -20,7 +20,7 @@ about reindexer server and HTTP API refer to
   - [Performance](#performance)
   - [Memory Consumption](#memory-consumption)
   - [Full text search](#full-text-search)
-  - [Vector indexes (ANN/KNN)](#knn-search)
+  - [Vector indexes (ANN/KNN)](#vector-indexes-annknn)
   - [Disk Storage](#disk-storage)
   - [Replication](#replication)
   - [Sharding](#sharding)
