@@ -1,5 +1,5 @@
 #include "client/rpcclient.h"
-#include <functional>
+#include "client/connectopts.h"
 #include "client/itemimplbase.h"
 #include "client/snapshot.h"
 #include "cluster/clustercontrolrequest.h"
@@ -7,6 +7,7 @@
 #include "core/namespace/namespacestat.h"
 #include "core/namespacedef.h"
 #include "core/schema.h"
+#include "estl/gift_str.h"
 #include "gason/gason.h"
 #include "tools/catch_and_return.h"
 #include "tools/cpucheck.h"
@@ -14,8 +15,6 @@
 
 namespace reindexer {
 namespace client {
-
-using reindexer::net::cproto::CoroRPCAnswer;
 
 RPCClient::RPCClient(const ReindexerConfig& config, INamespaces::PtrT sharedNamespaces)
 	: namespaces_(sharedNamespaces ? std::move(sharedNamespaces) : INamespaces::PtrT(new NamespacesImpl<dummy_mutex>())), config_(config) {
@@ -299,8 +298,8 @@ Error RPCClient::modifyItemRaw(std::string_view nsName, std::string_view cjson, 
 			ser.GetRawQueryParams(
 				qdata,
 				[&ser, nsPtr = std::move(nsPtr)](int nsIdx) {
-					const uint32_t stateToken = ser.GetVarUint();
-					const int version = ser.GetVarUint();
+					const uint32_t stateToken = ser.GetVarUInt();
+					const int version = ser.GetVarUInt();
 					TagsMatcher newTm;
 					newTm.deserialize(ser, version, stateToken);
 					if (nsIdx != 0) {
@@ -504,7 +503,7 @@ Error RPCClient::UpdateIndex(std::string_view nsName, const IndexDef& iDef, cons
 }
 
 Error RPCClient::DropIndex(std::string_view nsName, const IndexDef& idx, const InternalRdxContext& ctx) {
-	return conn_.Call(mkCommand(cproto::kCmdDropIndex, &ctx), nsName, idx.name_).Status();
+	return conn_.Call(mkCommand(cproto::kCmdDropIndex, &ctx), nsName, idx.Name()).Status();
 }
 
 Error RPCClient::SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext& ctx) {
@@ -587,6 +586,24 @@ Error RPCClient::Status(bool forceCheck, const InternalRdxContext& ctx) {
 		return Error(errParams, "Client is not running");
 	}
 	return conn_.Status(forceCheck, std::max(config_.NetTimeout, ctx.execTimeout()), ctx.execTimeout(), ctx.getCancelCtx());
+}
+
+Error RPCClient::Version(std::string& version, const InternalRdxContext& ctx) {
+	if (!conn_.IsRunning()) {
+		return Error(errParams, "Client is not running");
+	}
+
+	if (auto err = Status(true, ctx); !err.ok()) {
+		return err;
+	}
+
+	auto versionOpt = conn_.RxServerVersion();
+	if (!versionOpt) {
+		return Error(errLogic, "Unable to detect the version of the connection server");
+	}
+	version = std::move(*versionOpt);
+
+	return {};
 }
 
 std::shared_ptr<Namespace> RPCClient::getNamespace(std::string_view nsName) { return namespaces_->Get(nsName); }

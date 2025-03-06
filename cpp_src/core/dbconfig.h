@@ -3,7 +3,6 @@
 #include <functional>
 #include <ostream>
 #include <string>
-#include <vector>
 #include "cluster/config.h"
 #include "estl/fast_hash_map.h"
 #include "estl/shared_mutex.h"
@@ -15,7 +14,6 @@ struct JsonNode;
 }
 
 namespace reindexer {
-class JsonBuilder;
 class RdxContext;
 class WrSerializer;
 
@@ -109,6 +107,7 @@ struct NamespaceConfigData {
 	int startCopyPolicyTxSize = 10'000;
 	int copyPolicyMultiplier = 5;
 	int txSizeToAlwaysCopy = 100'000;
+	int txVecInsertionThreads = 4;
 	int optimizationTimeout = 800;
 	int optimizationSortWorkers = 4;
 	int64_t walSize = 4'000'000;
@@ -118,6 +117,7 @@ struct NamespaceConfigData {
 	int64_t maxIterationsIdSetPreResult = 20'000;
 	bool idxUpdatesCountingMode = false;
 	int syncStorageFlushLimit = 20'000;
+	int annStorageCacheBuildTimeout = 5'000;
 	NamespaceCacheConfigData cacheConfig;
 
 	Error FromJSON(const gason::JsonNode& v);

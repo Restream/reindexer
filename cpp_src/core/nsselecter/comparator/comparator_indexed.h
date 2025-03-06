@@ -1,7 +1,5 @@
 #pragma once
 
-#include <unordered_map>
-#include <unordered_set>
 #include <variant>
 
 #include "comparator_indexed_distinct.h"
@@ -152,6 +150,7 @@ public:
 			case CondEmpty:
 			case CondLike:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -194,6 +193,7 @@ public:
 			case CondEmpty:
 			case CondLike:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -237,6 +237,7 @@ public:
 			case CondEmpty:
 			case CondLike:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -283,6 +284,7 @@ public:
 			case CondEmpty:
 			case CondLike:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -361,6 +363,7 @@ public:
 				case CondAny:
 				case CondEmpty:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -442,6 +445,7 @@ public:
 				case CondAny:
 				case CondEmpty:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -536,6 +540,7 @@ public:
 				case CondAny:
 				case CondDWithin:
 				case CondLike:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -628,6 +633,7 @@ public:
 				case CondAny:
 				case CondDWithin:
 				case CondLike:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -685,6 +691,7 @@ public:
 			case CondAny:
 			case CondEmpty:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -730,6 +737,7 @@ public:
 			case CondAny:
 			case CondEmpty:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -775,6 +783,7 @@ public:
 			case CondAny:
 			case CondEmpty:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -823,6 +832,7 @@ public:
 			case CondAny:
 			case CondEmpty:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -906,6 +916,7 @@ public:
 				case CondAny:
 				case CondEmpty:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -993,6 +1004,7 @@ public:
 				case CondAny:
 				case CondEmpty:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -1086,6 +1098,7 @@ public:
 				case CondEmpty:
 				case CondAny:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -1176,6 +1189,7 @@ public:
 				case CondEmpty:
 				case CondAny:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -1238,6 +1252,7 @@ public:
 			case CondEmpty:
 			case CondDWithin:
 			case CondLike:
+			case CondKnn:
 			default:
 				abort();
 		}

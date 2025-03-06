@@ -63,6 +63,7 @@ private:
 	class ItemsContainer {
 	public:
 		void AddItem(ItemRef&& item);
+		void SetVectorsHolder(FloatVectorsHolderMap&& map) noexcept { vectorsHolder_ = std::move(map); }
 		size_t Size() const noexcept { return data_.size(); }
 		size_t ItemsCount() const noexcept { return itemsCount_; }
 		const std::vector<Chunk>& Data() const noexcept { return data_; }
@@ -73,6 +74,7 @@ private:
 
 		std::vector<Chunk> data_;
 		size_t itemsCount_ = 0;
+		FloatVectorsHolderMap vectorsHolder_;
 	};
 
 	void addRawData(LocalQueryResults&&);

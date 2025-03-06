@@ -3,7 +3,6 @@
 #include <list>
 #include <mutex>
 #include <unordered_map>
-#include "dbconfig.h"
 #include "estl/atomic_unique_ptr.h"
 #include "namespace/namespacestat.h"
 
@@ -114,9 +113,9 @@ public:
 	LRUCache(Args&&... args) noexcept : ptr_(makePtr(std::forward<Args>(args)...)) {
 		(void)alignment1_;
 		(void)alignment2_;
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(_M_X64) || defined(_M_IX86)
 		static_assert(sizeof(LRUCache) == 128, "Unexpected size. Check alignment");
-#endif	// defined(__x86_64__)
+#endif	// defined(__x86_64__) || defined(_M_X64) || defined(_M_IX86)
 	}
 	virtual ~LRUCache() = default;
 

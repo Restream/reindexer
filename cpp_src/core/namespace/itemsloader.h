@@ -64,9 +64,9 @@ private:
 		bool IsFull() const noexcept { return ((placedHead_ + 1) % ring_.size()) == tail_; }
 		bool HasNoPlacedItems() const noexcept { return placedHead_ == tail_; }
 		bool HasNoWrittenItems() const noexcept { return writtenHead_ == tail_; }
-		span<T> Tail(size_t maxCount) noexcept {
+		std::span<T> Tail(size_t maxCount) noexcept {
 			const size_t cnt = std::min(maxCount, ((tail_ > writtenHead_) ? ring_.size() : writtenHead_) - tail_);
-			return span<T>(ring_.data() + tail_, cnt);
+			return std::span<T>(ring_.data() + tail_, cnt);
 		}
 		void Erase(size_t cnt) noexcept {
 			const size_t actualCnt = std::min(cnt, WrittenSize());
@@ -89,13 +89,20 @@ private:
 		ItemImpl impl;
 		PayloadValue preallocPl;  // Payload, which will be emplaced into namespace
 	};
+	struct ANNIndexInfo {
+		size_t field;
+		size_t dims;
+	};
 
+	void prepareANNData();
 	void reading();
 	void insertion();
+	void loadCachedANNIndexes();
+	void loadCachedANNIndexesFallback(const std::vector<unsigned>& indexes);
 	void clearIndexCache();
 	template <typename MutexT>
 	static void doInsertField(NamespaceImpl::IndexesStorage& indexes, unsigned field, IdType id, Payload& pl, Payload& plNew,
-							  VariantArray& krefs, VariantArray& skrefs, MutexT& mtx);
+							  VariantArray& krefs, VariantArray& skrefs, MutexT& mtx, const ann_storage_cache::Reader* annCache);
 
 	friend class IndexInserters;
 
@@ -107,23 +114,28 @@ private:
 	bool terminated_ = false;
 	LoadData loadingData_;
 	const unsigned indexInsertionThreads_;
+
+	// ANN-helpers
+	std::unique_ptr<ann_storage_cache::Reader> annCacheReader_;
+	std::vector<ANNIndexInfo> annIndexes_;
+	fast_hash_map<size_t, std::vector<std::unique_ptr<uint8_t[]>>> vectorsData_;
 };
 
 class IndexInserters {
 public:
-	IndexInserters(NamespaceImpl::IndexesStorage& indexes, PayloadType pt);
+	IndexInserters(NamespaceImpl::IndexesStorage& indexes, PayloadType pt, const ann_storage_cache::Reader* annCache);
 	~IndexInserters() { Stop(); }
 
 	void Run(unsigned threadsCnt);
 	void Stop();
 	void AwaitIndexesBuild();
-	void BuildSimpleIndexesAsync(unsigned startId, span<ItemsLoader::ItemData> newItems, span<PayloadValue> nsItems);
+	void BuildSimpleIndexesAsync(unsigned startId, std::span<ItemsLoader::ItemData> newItems, std::span<PayloadValue> nsItems);
 	void BuildCompositeIndexesAsync();
 
 private:
 	struct SharedData {
-		span<ItemsLoader::ItemData> newItems;
-		span<PayloadValue> nsItems;
+		std::span<ItemsLoader::ItemData> newItems;
+		std::span<PayloadValue> nsItems;
 		unsigned startId = 0;
 		bool terminate = false;
 		bool composite = false;
@@ -157,6 +169,7 @@ private:
 	bool hasArrayIndexes_ = false;
 	constexpr static unsigned kTIDOffset = 1;  // Thread ID offset to handle fields [1,n] based on TID
 	std::array<shared_timed_mutex, 10> plArrayMtxs_;
+	const ann_storage_cache::Reader* annCache_ = {nullptr};
 };
 
 }  // namespace reindexer

@@ -1,5 +1,6 @@
 #include "snapshotrecord.h"
 #include "core/cjson/jsonbuilder.h"
+#include "vendor/gason/gason.h"
 
 namespace reindexer {
 
@@ -16,8 +17,8 @@ void SnapshotRecord::Serilize(WrSerializer& ser) const {
 }
 
 void SnapshotChunk::Deserialize(Serializer& ser) {
-	opts_ = ser.GetVarUint();
-	auto size = ser.GetVarUint();
+	opts_ = ser.GetVarUInt();
+	auto size = ser.GetVarUInt();
 	records.resize(size);
 	for (auto& rec : records) {
 		rec.Deserialize(ser);
@@ -50,7 +51,7 @@ Error SnapshotOpts::FromJSON(const gason::JsonNode& root) {
 	return Error();
 }
 
-Error SnapshotOpts::FromJSON(span<char> json) {
+Error SnapshotOpts::FromJSON(std::span<char> json) {
 	try {
 		gason::JsonParser parser;
 		return FromJSON(parser.Parse(json));

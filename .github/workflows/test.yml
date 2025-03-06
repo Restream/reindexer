@@ -6,31 +6,27 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        compiler: ["Visual Studio 17 2022"]
+        compiler: ["Visual Studio 17 2022", "MinGW Makefiles"]
       fail-fast: false
+    env:
+      EXTRA_FLAGS: "${{ matrix.compiler == 'Visual Studio 17 2022' && '-Ax64' || '' }}"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Build Reindexer
         run: |
           mkdir build && cd build
-          cmake -G "${{matrix.compiler}}" .. -Ax64
+          cmake -G "${{matrix.compiler}}" -DBUILD_ANN_INDEXES=builtin .. $EXTRA_FLAGS
           cmake --build . --config Release
           cmake --build . --config Release --target face
           cmake --build . --config Release --target swagger
           cpack
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-latest
-          path: build/*.exe
-          if-no-files-found: error
 
   build-windows-2019:
     runs-on: windows-2019
     strategy:
       matrix:
-        compiler: ["Visual Studio 16 2019", "MinGW Makefiles"]
+        compiler: ["Visual Studio 16 2019"]
       fail-fast: false
     steps:
       - name: Checkout repository
@@ -38,7 +34,7 @@ jobs:
       - name: Build Reindexer
         run: |
           mkdir build && cd build
-          cmake -G "${{matrix.compiler}}" ..
+          cmake -G "${{matrix.compiler}}" -DBUILD_ANN_INDEXES=none ..
           cmake --build . --config Release
           cmake --build . --config Release --target face
           cmake --build . --config Release --target swagger
@@ -183,68 +179,72 @@ jobs:
             if [[ -z "$SANITIZER" ]]; then
               go test -timeout 15m ./test/... -bench . -benchmem -benchtime 100ms -seedcount 50000
             else
-              go test -timeout 35m ./test/... -bench . -benchmem -benchtime 100ms -seedcount 50000
+              export TSAN_OPTIONS="halt_on_error=1"
+              export RX_IVF_OMP_THREADS=1
+              export REINDEXER_GH_CI_TSAN=1
+              go test -timeout 35m ./test/... -bench . -benchmem -benchtime 100ms -seedcount 50000 -tags tiny_vectors
             fi
           else
             cd build
             ctest --verbose
           fi
 
-  test-pyreindexer:
-    strategy:
-      matrix:
-        os: [ubuntu-22.04, ubuntu-24.04]
-      fail-fast: false
-    runs-on: ${{matrix.os}}
-    needs: build
-    if: always()
-    env:
-      OS: ${{matrix.os}}
-    steps:
-      - name: Download ${{matrix.os}} Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{matrix.os}}
-      - name: 'Untar Artifacts'
-        run: tar -xvf artifacts.tar
-      - name: Prepare Environment
-        run: |
-          if [[ $OS == ubuntu* ]]; then
-            sudo ./dependencies.sh
-            python3 -m pip install setuptools build
-          else
-            ./dependencies.sh
-          fi
-      - name: Install Reindexer
-        run: |
-          cd build
-          if [[ $OS == ubuntu* ]]; then
-            sudo dpkg -i reindexer-4-dev*.deb
-            sudo apt-get install -f
-            sudo dpkg -i reindexer-4-server*.deb
-            sudo apt-get install -f
-          else
-            for f in reindexer-*.tar.gz; do tar -xvzf "$f"; done
-            cp -R ./usr/local/include/reindexer /usr/local/include/reindexer
-            cp -R ./usr/local/lib/reindexer /usr/local/lib/reindexer
-            cp ./usr/local/lib/libreindexer.a /usr/local/lib/libreindexer.a
-            cp ./usr/local/lib/libreindexer_server_library.a /usr/local/lib/libreindexer_server_library.a
-            cp ./usr/local/lib/libreindexer_server_resources.a /usr/local/lib/libreindexer_server_resources.a
-            cp ./usr/local/lib/pkgconfig/libreindexer.pc /usr/local/lib/pkgconfig/libreindexer.pc
-            cp ./usr/local/lib/pkgconfig/libreindexer_server.pc /usr/local/lib/pkgconfig/libreindexer_server.pc
-            cp ./usr/local/bin/reindexer_server /usr/local/bin/reindexer_server
-            cp ./usr/local/etc/reindexer.conf.pkg /usr/local/etc/reindexer.conf.pkg
-          fi
-      - name: Clone PyReindexer
-        uses: actions/checkout@v4
-        with:
-          repository: restream/reindexer-py
-      - name: Install PyReindexer
-        run: |
-          python -m build
-          python -m pip install .
-      - name: Test PyReindexer
-        run: |
-          cd pyreindexer
-          ../.github/workflows/test.sh
+# TODO: Reenable after binding's compatibility fix
+#  test-pyreindexer:
+#    strategy:
+#      matrix:
+#        os: [ubuntu-22.04, ubuntu-24.04]
+#      fail-fast: false
+#    runs-on: ${{matrix.os}}
+#    needs: build
+#    if: always()
+#    env:
+#      OS: ${{matrix.os}}
+#    steps:
+#      - name: Download ${{matrix.os}} Artifacts
+#        uses: actions/download-artifact@v4
+#        with:
+#          name: ${{matrix.os}}
+#      - name: 'Untar Artifacts'
+#        run: tar -xvf artifacts.tar
+#      - name: Prepare Environment
+#        run: |
+#          if [[ $OS == ubuntu* ]]; then
+#            sudo ./dependencies.sh
+#            python3 -m pip install setuptools build
+#          else
+#            ./dependencies.sh
+#          fi
+#      - name: Install Reindexer
+#        run: |
+#          cd build
+#          if [[ $OS == ubuntu* ]]; then
+#            sudo dpkg -i reindexer-4-dev*.deb
+#            sudo apt-get install -f
+#            sudo dpkg -i reindexer-4-server*.deb
+#            sudo apt-get install -f
+#          else
+#            for f in reindexer-*.tar.gz; do tar -xvzf "$f"; done
+#            cp -R ./usr/local/include/reindexer /usr/local/include/reindexer
+#            cp -R ./usr/local/lib/reindexer /usr/local/lib/reindexer
+#            cp ./usr/local/lib/libreindexer.a /usr/local/lib/libreindexer.a
+#            cp ./usr/local/lib/libreindexer_server_library.a /usr/local/lib/libreindexer_server_library.a
+#            cp ./usr/local/lib/libreindexer_server_resources.a /usr/local/lib/libreindexer_server_resources.a
+#            cp ./usr/local/lib/pkgconfig/libreindexer.pc /usr/local/lib/pkgconfig/libreindexer.pc
+#            cp ./usr/local/lib/pkgconfig/libreindexer_server.pc /usr/local/lib/pkgconfig/libreindexer_server.pc
+#            cp ./usr/local/bin/reindexer_server /usr/local/bin/reindexer_server
+#            cp ./usr/local/etc/reindexer.conf.pkg /usr/local/etc/reindexer.conf.pkg
+#          fi
+#      - name: Clone PyReindexer
+#        uses: actions/checkout@v4
+#        with:
+#          repository: restream/reindexer-py
+#      - name: Install PyReindexer
+#        run: |
+#          python -m build
+#          python -m pip install .
+#      - name: Test PyReindexer
+#        run: |
+#          cd pyreindexer
+#          ../.github/workflows/test.sh
 

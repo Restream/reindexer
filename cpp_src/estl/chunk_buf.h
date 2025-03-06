@@ -6,7 +6,7 @@
 #include <string_view>
 #include <vector>
 #include "chunk.h"
-#include "span.h"
+#include <span>
 #include "tools/assertrx.h"
 #include "tools/errors.h"
 
@@ -35,10 +35,10 @@ public:
 		chunk.append(sv);
 		write(std::move(chunk));
 	}
-	span<chunk> tail() noexcept {
+	std::span<chunk> tail() noexcept {
 		std::lock_guard lck(mtx_);
 		size_t cnt = ((tail_ > head_) ? ring_.size() : head_) - tail_;
-		return span<chunk>(ring_.data() + tail_, cnt);
+		return std::span<chunk>(ring_.data() + tail_, cnt);
 	}
 	void erase(size_t nread) {
 		std::lock_guard lck(mtx_);

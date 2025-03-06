@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string>
+#include "tools/assertrx.h"
 
 namespace httpparser {
 
@@ -126,7 +127,14 @@ private:
 		std::string portOrPassword;
 
 		valid = true;
+#if !defined(_MSC_VER) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wrestrict"
+#endif
 		url.path = "/";
+#if !defined(_MSC_VER) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 		url.integerPort = 0;
 
 		for (size_t i = 0; i < str.size() && valid; ++i) {

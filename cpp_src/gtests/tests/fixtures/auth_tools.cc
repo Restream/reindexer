@@ -1,5 +1,13 @@
 #include "auth_tools.h"
 
+bool WithSecurity() noexcept { return std::getenv("RX_TEST_SECURITY_REQUIRED"); }
+
+std::string TLSPath() noexcept {
+	auto path = std::getenv("RX_TEST_TLS_PATH");
+	assertrx(path);
+	return path;
+}
+
 reindexer::fast_hash_map<reindexer_server::UserRole, TestUserDataFactory::User>& TestUserDataFactory::Get(int serverId) noexcept {
 	using namespace reindexer_server;
 	if (auto it = users_.find(serverId); it != users_.end()) {
@@ -16,6 +24,19 @@ reindexer::fast_hash_map<reindexer_server::UserRole, TestUserDataFactory::User>&
 								  }});
 
 	return it->second;
+}
+
+std::string TestUserDataFactory::user(reindexer_server::UserRole role, int serverId) noexcept {
+	return fmt::sprintf(loginTmplt, reindexer_server::UserRoleName(role), serverId);
+}
+
+std::string TestUserDataFactory::passwd(reindexer_server::UserRole role, int serverId) noexcept {
+	return fmt::sprintf(passwdTmplt, int(role), serverId);
+}
+
+std::string TestUserDataFactory::dump(reindexer_server::UserRole role, int serverId) noexcept {
+	auto& user = Get(serverId)[role];
+	return fmt::sprintf("%s:%s@", user.login, user.password);
 }
 
 reindexer::DSN MakeDsn(reindexer_server::UserRole role, int serverId, int port, const std::string& db) {

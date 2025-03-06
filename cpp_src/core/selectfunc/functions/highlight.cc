@@ -1,10 +1,11 @@
 #include "highlight.h"
-#include "core/ft/ft_fast/frisosplitter.h"
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
+#include "core/queryresults/itemref.h"
 #include "core/selectfunc/ctx/ftctx.h"
 #include "core/selectfunc/selectfuncparser.h"
+#include "core/queryresults/itemref.h"
 
 namespace reindexer {
 
@@ -12,7 +13,7 @@ bool Highlight::Process(ItemRef& res, PayloadType& pl_type, const SelectFuncStru
 	if (func.funcArgs.size() < 2) {
 		throw Error(errParams, "Invalid highlight params need minimum 2 - have %d", func.funcArgs.size());
 	}
-	if (!func.ctx || func.ctx->type != BaseFunctionCtx::CtxType::kFtArea) {
+	if (!func.ctx || func.ctx->Type() != BaseFunctionCtx::CtxType::kFtArea) {
 		return false;
 	}
 	if (!func.tagsPath.empty()) {

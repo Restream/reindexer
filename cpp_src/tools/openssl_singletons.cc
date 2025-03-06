@@ -4,6 +4,7 @@
 #include <dlfcn.h>
 #else
 #include <windows.h>
+
 #include <errhandlingapi.h>
 #include <libloaderapi.h>
 #endif
@@ -58,7 +59,7 @@ namespace detail {
 				if (inst.status_.ok()) {                                                                                   \
 					logPrintf(LogInfo, "The %s library with the required symbols has been successfully loaded", LIB_NAME); \
 				} else {                                                                                                   \
-					logPrintf(LogError, inst.status_.what().c_str());                                                      \
+					logPrintf(LogError, inst.status_.what());                                                              \
 				}                                                                                                          \
 			});                                                                                                            \
 			return inst.status_.ok();                                                                                      \

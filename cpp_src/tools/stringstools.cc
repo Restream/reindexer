@@ -11,6 +11,7 @@
 #include "stringstools.h"
 #include "tools/assertrx.h"
 #include "tools/randomgenerator.h"
+#include "tools/serializer.h"
 #include "tools/stringstools.h"
 #include "utf8cpp/utf8.h"
 #include "vendor/double-conversion/double-conversion.h"
@@ -168,21 +169,26 @@ KeyValueType detectValueType(std::string_view value) {
 
 Variant stringToVariant(std::string_view value) {
 	const auto kvt = detectValueType(value);
-	return kvt.EvaluateOneOf([value](KeyValueType::Int64) { return Variant(int64_t(stoll(value))); },
-							 [value](KeyValueType::Int) { return Variant(int(stoi(value))); },
-							 [value](KeyValueType::Double) {
-								 using double_conversion::StringToDoubleConverter;
-								 static const StringToDoubleConverter converter{StringToDoubleConverter::NO_FLAGS, NAN, NAN, nullptr,
-																				nullptr};
-								 int countOfCharsParsedAsDouble = 0;
-								 return Variant(converter.StringToDouble(value.data(), value.size(), &countOfCharsParsedAsDouble));
-							 },
-							 [value](KeyValueType::String) { return Variant(make_key_string(value.data(), value.length())); },
-							 [value](KeyValueType::Bool) noexcept { return (value.size() == 4) ? Variant(true) : Variant(false); },
-							 [value](KeyValueType::Uuid) { return Variant{Uuid{value}}; },
-							 [](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple>) noexcept {
-								 return Variant();
-							 });
+	return kvt.EvaluateOneOf(
+		[value](KeyValueType::Int64) { return Variant(int64_t(stoll(value))); },
+		[value](KeyValueType::Int) { return Variant(int(stoi(value))); },
+		[value](KeyValueType::Double) {
+			using double_conversion::StringToDoubleConverter;
+			static const StringToDoubleConverter converter{StringToDoubleConverter::NO_FLAGS, NAN, NAN, nullptr, nullptr};
+			int countOfCharsParsedAsDouble = 0;
+			return Variant(converter.StringToDouble(value.data(), value.size(), &countOfCharsParsedAsDouble));
+		},
+		[value](KeyValueType::Float) {
+			using double_conversion::StringToDoubleConverter;
+			static const StringToDoubleConverter converter{StringToDoubleConverter::NO_FLAGS, NAN, NAN, nullptr, nullptr};
+			int countOfCharsParsedAsDouble = 0;
+			return Variant(converter.StringToFloat(value.data(), value.size(), &countOfCharsParsedAsDouble));
+		},
+		[value](KeyValueType::String) { return Variant(make_key_string(value.data(), value.length())); },
+		[value](KeyValueType::Bool) noexcept { return (value.size() == 4) ? Variant(true) : Variant(false); },
+		[value](KeyValueType::Uuid) { return Variant{Uuid{value}}; },
+		[](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
+				 KeyValueType::FloatVector>) noexcept { return Variant(); });
 }
 
 std::wstring& utf8_to_utf16(std::string_view src, std::wstring& dst) {
@@ -678,7 +684,8 @@ int64_t stoll(std::string_view sl) {
 	return ret;
 }
 
-int double_to_str(double v, char* buf, int capacity) {
+template <typename FPT>
+int fp_to_str_impl(FPT v, char* buf, int capacity) {
 	(void)capacity;
 	auto end = fmt::format_to(buf, FMT_COMPILE("{}"), v);
 	auto p = buf;
@@ -697,19 +704,53 @@ int double_to_str(double v, char* buf, int capacity) {
 	return end - buf;
 }
 
-int double_to_str_no_trailing(double v, char* buf, int capacity) {
+template <typename FPT>
+int fp_to_str_no_trailing_impl(FPT v, char* buf, int capacity) {
 	(void)capacity;
 	auto end = fmt::format_to(buf, FMT_COMPILE("{}"), v);
 	assertrx_dbg(end - buf < capacity);
 	return end - buf;
 }
 
-std::string double_to_str(double v) {
+template <typename FPT>
+std::string fp_to_str_impl(FPT v) {
 	std::string res;
 	res.resize(32);
-	auto len = double_to_str(v, res.data(), res.size());
+	auto len = fp_to_str_impl(v, res.data(), res.size());
 	res.resize(len);
 	return res;
+}
+
+int double_to_str(double v, char* buf, int capacity) { return fp_to_str_impl(v, buf, capacity); }
+int double_to_str_no_trailing(double v, char* buf, int capacity) { return fp_to_str_no_trailing_impl(v, buf, capacity); }
+std::string double_to_str(double v) { return fp_to_str_impl(v); }
+
+int float_to_str(float v, char* buf, int capacity) { return fp_to_str_impl(v, buf, capacity); }
+int float_to_str_no_trailing(float v, char* buf, int capacity) { return fp_to_str_no_trailing_impl(v, buf, capacity); }
+std::string float_to_str(float v) { return fp_to_str_impl(v); }
+
+void float_vector_to_str(ConstFloatVectorView view, WrSerializer& ser) {
+	ser << '[';
+	if (view.IsStripped()) {
+		throw Error(errLogic, "Unable to serialize stripped float_vector");
+	}
+	auto span = view.Span();
+	std::string res;
+	res.resize(32);
+	for (auto it = span.begin(), end = span.end(); it != end; ++it) {
+		auto len = float_to_str(*it, res.data(), res.size());
+		ser << std::string_view(res.data(), len);
+		if (it + 1 != end) {
+			ser << ',';
+		}
+	}
+	ser << ']';
+}
+
+std::string float_vector_to_str(ConstFloatVectorView view) {
+	WrSerializer ser;
+	float_vector_to_str(std::move(view), ser);
+	return std::string(ser.Slice());
 }
 
 std::string randStringAlph(size_t len) {

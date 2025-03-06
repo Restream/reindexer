@@ -1,10 +1,13 @@
 #include "sqlparser.h"
+#include <charconv>
 #include "core/keyvalue/geometry.h"
 #include "core/query/query.h"
 #include "core/queryresults/aggregationresult.h"
 #include "core/type_consts_helpers.h"
+#include "estl/gift_str.h"
 #include "sqltokentype.h"
 #include "tools/stringstools.h"
+#include "vendor/double-conversion/double-conversion.h"
 #include "vendor/gason/gason.h"
 
 namespace reindexer {
@@ -111,7 +114,6 @@ int SQLParser::selectParse(tokenizer& parser) {
 	// Get filter
 	token tok;
 	bool wasSelectFilter = false;
-	std::vector<std::string> selectFilters;
 	while (true) {
 		auto nameWithCase = peekSqlToken(parser, SingleSelectFieldSqlToken, false);
 		auto name = parser.next_token();
@@ -139,6 +141,13 @@ int SQLParser::selectParse(tokenizer& parser) {
 				}
 			} else if (name.text() == "rank"sv) {
 				query_.WithRank();
+			} else if (name.text() == "vectors"sv) {
+				if (!query_.CanAddSelectFilter()) {
+					throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
+				}
+				query_.Limit(QueryEntry::kDefaultLimit);
+				wasSelectFilter = true;
+				query_.Select(FieldsNamesFilter::kAllVectorFieldsName);
 			} else {
 				AggType agg = AggregationResult::strToAggType(name.text());
 				if (agg != AggUnknown) {
@@ -200,7 +209,7 @@ int SQLParser::selectParse(tokenizer& parser) {
 			if (!query_.CanAddSelectFilter()) {
 				throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 			}
-			selectFilters.emplace_back(nameWithCase.text());
+			query_.Select(nameWithCase.text());
 			query_.Limit(QueryEntry::kDefaultLimit);
 			wasSelectFilter = true;
 		} else if (name.text() == "*"sv) {
@@ -209,15 +218,12 @@ int SQLParser::selectParse(tokenizer& parser) {
 			}
 			query_.Limit(QueryEntry::kDefaultLimit);
 			wasSelectFilter = true;
-			selectFilters.clear();
+			query_.Select("*");
 		}
 		if (tok.text() != ","sv) {
 			break;
 		}
 		tok = parser.next_token();
-	}
-	if (wasSelectFilter) {
-		query_.Select(std::move(selectFilters));
 	}
 
 	peekSqlToken(parser, FromSqlToken);
@@ -852,8 +858,12 @@ int SQLParser::parseWhere(tokenizer& parser) {
 				continue;
 			}
 		} else if (tok.type == TokenName) {
-			if (iequals(tok.text(), "st_dwithin"sv)) {
+			const auto nextToken = parser.peek_token();
+			if (iequals(tok.text(), "st_dwithin"sv) && nextToken.text() == "("sv) {
 				parseDWithin(parser, nextOp);
+				nextOp = OpAnd;
+			} else if (iequals(tok.text(), "knn"sv) && nextToken.text() == "("sv) {
+				parseKnn(parser, nextOp);
 				nextOp = OpAnd;
 			} else if constexpr (nested == Nested::No) {
 				if (iequals(tok.text(), "join"sv)) {
@@ -1022,6 +1032,122 @@ Point SQLParser::parseGeomFromText(tokenizer& parser) const {
 	return Point{x, y};
 }
 
+void SQLParser::parseSingleKnnParam(tokenizer& parser, std::optional<size_t>& param, std::string_view paramName) {
+	if (param.has_value()) {
+		throw Error(errParseSQL, "Dublicate KNN parameter '%s': %s", paramName, parser.where());
+	}
+	auto tok = parser.next_token();
+	if (tok.text() != "="sv) {
+		throw Error(errParseSQL, "Expected '=', but found %s, %s", tok.text(), parser.where());
+	}
+	tok = parser.next_token();
+	if (tok.type != TokenNumber) {
+		throw Error(errParseSQL, "Expected number greater than 0, but found %s, %s", tok.text(), parser.where());
+	}
+	size_t paramValue;
+	const auto res = std::from_chars(tok.text().data(), tok.text().data() + tok.text().size(), paramValue);
+	if (res.ec != std::errc{}) {
+		throw Error(errParseSQL, "Expected number greater than 0, but found %s, %s", tok.text(), parser.where());
+	}
+
+	param = paramValue;
+}
+
+KnnSearchParams SQLParser::parseKnnParams(tokenizer& parser) {
+	std::optional<size_t> k, ef, nprobe;
+	do {
+		peekSqlToken(parser, KnnParamsToken);
+		auto tok = parser.next_token();
+		if (tok.text() == KnnSearchParams::kKName) {
+			parseSingleKnnParam(parser, k, KnnSearchParams::kKName);
+		} else if (tok.text() == KnnSearchParams::kEfName) {
+			if (nprobe) {
+				throw Error{errParseSQL, "Wrong SQL format: KNN query cannot contain both of '%s' and '%s'", KnnSearchParams::kEfName,
+							KnnSearchParams::kNProbeName};
+			}
+			parseSingleKnnParam(parser, ef, KnnSearchParams::kEfName);
+		} else if (tok.text() == KnnSearchParams::kNProbeName) {
+			if (ef) {
+				throw Error{errParseSQL, "Wrong SQL format: KNN query cannot contain both of '%s' and '%s'", KnnSearchParams::kEfName,
+							KnnSearchParams::kNProbeName};
+			}
+			parseSingleKnnParam(parser, nprobe, KnnSearchParams::kNProbeName);
+		} else {
+			throw Error(errParseSQL, "Expected KNN parameter, but found '%s', %s", tok.text(), parser.where());
+		}
+		tok = parser.next_token();
+		if (tok.text() == ")"sv) {
+			break;
+		} else if (tok.text() != ","sv) {
+			throw Error(errParseSQL, "Expected ',' or ')', but found '%s', %s", tok.text(), parser.where());
+		}
+	} while (true);
+	if (!k.has_value()) {
+		throw Error(errParseSQL, "Parameter '%s' in KNN query is mandatory; %s", KnnSearchParams::kKName, parser.where());
+	}
+	if (ef.has_value()) {
+		return KnnSearchParams::Hnsw(*k, *ef);
+	} else if (nprobe.has_value()) {
+		return KnnSearchParams::Ivf(*k, *nprobe);
+	} else {
+		return KnnSearchParamsBase(*k);
+	}
+}
+
+void SQLParser::parseKnn(tokenizer& parser, OpType nextOp) {
+	auto tok = parser.next_token();
+	if (tok.text() != "("sv) {
+		throw Error(errParseSQL, "Expected '(', but found '%s', %s", tok.text(), parser.where());
+	}
+	peekSqlToken(parser, GeomFieldSqlToken);
+	tok = parser.next_token();
+	if (tok.type != TokenName) {
+		throw Error(errParseSQL, "Expected field name, but found '%s', %s", tok.text(), parser.where());
+	}
+	std::string field(tok.text());
+	tok = parser.next_token();
+	if (tok.text() != ","sv) {
+		throw Error(errParseSQL, "Expected ',', but found '%s', %s", tok.text(), parser.where());
+	}
+	tok = parser.next_token();
+	if (tok.text() != "["sv) {
+		throw Error(errParseSQL, "Expected '[', but found '%s', %s", tok.text(), parser.where());
+	}
+	std::vector<float> vec;
+	using namespace double_conversion;
+	static const StringToDoubleConverter converter{StringToDoubleConverter::ALLOW_LEADING_SPACES |
+													   StringToDoubleConverter::ALLOW_TRAILING_SPACES |
+													   StringToDoubleConverter::ALLOW_SPACES_AFTER_SIGN,
+												   NAN, NAN, nullptr, nullptr};
+	do {
+		tok = parser.next_token();
+		if (tok.type != TokenNumber) {
+			throw Error(errParseSQL, "Expected number, but found '%s', %s", tok.text(), parser.where());
+		}
+		int countOfCharsParsedAsDouble;
+		vec.push_back(0);
+		try {
+			vec.back() = converter.StringToDouble(tok.text().data(), tok.text().size(), &countOfCharsParsedAsDouble);
+		} catch (...) {
+			throw Error(errParseSQL, "Expected number, but found '%s', %s", tok.text(), parser.where());
+		}
+		tok = parser.next_token();
+		if (tok.text() == "]"sv) {
+			break;
+		} else if (tok.text() != ","sv) {
+			throw Error(errParseSQL, "Expected ',' or ']', but found '%s', %s", tok.text(), parser.where());
+		}
+	} while (true);
+	const ConstFloatVectorView vecView{std::span<float>(vec)};
+
+	tok = parser.next_token();
+	if (tok.text() != ","sv) {
+		throw Error(errParseSQL, "Expected ',', but found '%s', %s", tok.text(), parser.where());
+	}
+
+	query_.NextOp(nextOp).WhereKNN(std::move(field), vecView, parseKnnParams(parser));
+}
+
 void SQLParser::parseDWithin(tokenizer& parser, OpType nextOp) {
 	Point point;
 	std::string field;
@@ -1065,23 +1191,18 @@ void SQLParser::parseDWithin(tokenizer& parser, OpType nextOp) {
 
 	tok = parser.next_token();
 	const auto distance = token2kv(tok, parser, CompositeAllowed::No, FieldAllowed::No);
-	distance.Type().EvaluateOneOf([](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) noexcept {},
-								  [&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Tuple,
-											KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Uuid>) {
-									  throw Error(errParseSQL, "Expected number, but found '%s', %s", tok.text(), parser.where());
-								  });
+	distance.Type().EvaluateOneOf(
+		[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) noexcept {},
+		[&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite,
+				  KeyValueType::Undefined, KeyValueType::Uuid, KeyValueType::FloatVector>) {
+			throw Error(errParseSQL, "Expected number, but found '%s', %s", tok.text(), parser.where());
+		});
 
 	tok = parser.next_token();
 	if (tok.text() != ")"sv) {
 		throw Error(errParseSQL, "Expected ')', but found '%s', %s", tok.text(), parser.where());
 	}
-
-	if (nextOp == OpOr) {
-		query_.Or();
-	} else if (nextOp == OpNot) {
-		query_.Not();
-	}
-	query_.DWithin(field, point, distance.As<double>());
+	query_.NextOp(nextOp).DWithin(field, point, distance.As<double>());
 }
 
 void SQLParser::parseJoin(JoinType type, tokenizer& parser) {

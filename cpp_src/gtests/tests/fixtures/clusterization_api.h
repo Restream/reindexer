@@ -1,17 +1,22 @@
-﻿#pragma once
+#pragma once
 
 #include "client/raftclient.h"
 #include "cluster/config.h"
-#include "net/ev/ev.h"
 #include "reindexer_api.h"
 #include "servercontrol.h"
-#include "tools/fsops.h"
 
-using namespace reindexer;
+using reindexer::lsn_t;
+using reindexer::client::RaftClient;
+using reindexer::cluster::AsyncReplicationMode;
+using reindexer::DSN;
+
+namespace reindexer::net::ev {
+class dynamic_loop;
+}
+using reindexer::net::ev::dynamic_loop;
 
 class ClusterizationApi : public ::testing::Test {
 public:
-	static constexpr std::string_view kConfigNs = "#config";
 	static constexpr auto kMaxServerStartTime = std::chrono::seconds(15);
 	static constexpr auto kMaxSyncTime = std::chrono::seconds(15);
 	static constexpr auto kMaxElectionsTime = std::chrono::seconds(12);
@@ -20,9 +25,11 @@ public:
 	static constexpr std::string_view kStringField = "string";
 	static constexpr std::string_view kIntField = "int";
 	static constexpr std::string_view kFTField = "ft_str";
+	static constexpr std::string_view kVectorField = "vec";
+	static constexpr unsigned kVectorDims = 8;
 
-	void SetUp() { fs::RmDirAll(GetDefaults().baseTestsetDbPath); }
-	void TearDown() { fs::RmDirAll(GetDefaults().baseTestsetDbPath); }
+	void SetUp() override;
+	void TearDown() override;
 
 	struct Defaults {
 		size_t defaultRpcPort;
@@ -30,10 +37,7 @@ public:
 		std::string baseTestsetDbPath;
 	};
 
-	virtual const Defaults& GetDefaults() const {
-		static Defaults defs{14000, 16000, fs::JoinPath(fs::GetTempDir(), "rx_test/ClusterizationApi")};
-		return defs;
-	}
+	virtual const Defaults& GetDefaults() const;
 	struct NamespaceData {
 		std::string name;
 		lsn_t expectedLsn;
@@ -42,9 +46,13 @@ public:
 
 	class Cluster {
 	public:
-		Cluster(net::ev::dynamic_loop& loop, size_t initialServerId, size_t count, Defaults ports, size_t maxUpdatesSize,
+		struct DataParam {
+			bool emptyVector = false;
+		};
+
+		Cluster(dynamic_loop& loop, size_t initialServerId, size_t count, Defaults ports, size_t maxUpdatesSize,
 				const YAML::Node& clusterConf);
-		Cluster(net::ev::dynamic_loop& loop, size_t initialServerId, size_t count, Defaults defaults,
+		Cluster(dynamic_loop& loop, size_t initialServerId, size_t count, Defaults defaults,
 				const std::vector<std::string>& nsList = std::vector<std::string>(),
 				std::chrono::milliseconds resyncTimeout = std::chrono::milliseconds(3000), int maxSyncCount = -1, int syncThreadsCount = 2,
 				size_t maxUpdatesSize = 0);
@@ -56,7 +64,7 @@ public:
 		void FillDataTx(size_t id, std::string_view nsName, size_t from, size_t count);
 		size_t InitServer(size_t id, const YAML::Node& clusterYml, const YAML::Node& replYml, size_t offset);
 		void AddRow(size_t id, std::string_view nsName, int pk);
-		Error AddRowWithErr(size_t id, std::string_view nsName, int pk, std::string* resultJson = nullptr);
+		Error AddRowWithErr(size_t id, std::string_view nsName, int pk, DataParam param, std::string* resultJson = nullptr);
 		bool StartServer(size_t id);
 		bool StopServer(size_t id);
 		void StopServers(size_t from, size_t to);
@@ -66,20 +74,20 @@ public:
 					  std::chrono::seconds maxSyncTime = std::chrono::seconds());
 		static void PrintClusterInfo(std::string_view ns, std::vector<ServerControl>& svc);
 		void PrintClusterNsList(const std::vector<NamespaceData>& expected);
-		client::RaftClient& GetClient(size_t id) {
+		RaftClient& GetClient(size_t id) {
 			assert(id < clients_.size());
 			return clients_[id];
 		}
 		void StopClients();
 		ServerControl::Interface::Ptr GetNode(size_t id);
-		void FillItem(BaseApi& api, BaseApi::ItemType& item, size_t id);
+		void FillItem(BaseApi& api, BaseApi::ItemType& item, size_t id, DataParam param = DataParam{.emptyVector = false});
 		void ValidateNamespaceList(const std::vector<NamespaceData>& namespaces);
 		static void doWaitSync(std::string_view ns, std::vector<ServerControl>& svc, lsn_t expectedLsn = lsn_t(),
 							   lsn_t expectedNsVersion = lsn_t(), std::chrono::seconds maxSyncTime = std::chrono::seconds());
 		size_t GetSynchronizedNodesCount(size_t nodeId);
 		void EnablePerfStats(size_t nodeId);
 		void ChangeLeader(int& curLeaderId, int newLeaderId);
-		void AddAsyncNode(size_t nodeId, const DSN& dsn, cluster::AsyncReplicationMode replMode,
+		void AddAsyncNode(size_t nodeId, const DSN& dsn, AsyncReplicationMode replMode,
 						  std::optional<std::vector<std::string> >&& nsList = {});
 		void AwaitLeaderBecomeAvailable(size_t nodeId, std::chrono::milliseconds awaitTime = std::chrono::milliseconds(5000));
 
@@ -104,23 +112,11 @@ public:
 
 	private:
 		std::vector<ServerControl> svc_;
-		std::vector<client::RaftClient> clients_;
-		net::ev::dynamic_loop& loop_;
+		std::vector<RaftClient> clients_;
+		dynamic_loop& loop_;
 		Defaults defaults_;
 		size_t maxUpdatesSize_ = 0;
 	};
 
-	std::function<void()> ExceptionWrapper(std::function<void()>&& func) {
-		return [f = std::move(func)] {	// NOLINT(*.NewDeleteLeaks) False positive
-			try {
-				f();
-			} catch (Error& e) {
-				ASSERT_TRUE(false) << e.what();
-			} catch (std::exception& e) {
-				ASSERT_TRUE(false) << e.what();
-			} catch (...) {
-				ASSERT_TRUE(false) << "Unknown exception";
-			}
-		};
-	}
+	std::function<void()> ExceptionWrapper(std::function<void()>&& func);
 };

@@ -1,6 +1,6 @@
 #include "serializer.h"
 #include "core/keyvalue/p_string.h"
-#include "estl/span.h"
+#include <span>
 #include "tools/errors.h"
 #include "vendor/itoa/itoa.h"
 
@@ -32,7 +32,7 @@ Variant Serializer::getPVStringVariant() { return Variant(GetPVString()); }
 
 const v_string_hdr* Serializer::getPVStringPtr() {
 	auto ret = reinterpret_cast<const v_string_hdr*>(buf_ + pos_);
-	auto l = GetVarUint();
+	auto l = GetVarUInt();
 	checkbound(pos_, l, len_);
 	pos_ += l;
 	return ret;

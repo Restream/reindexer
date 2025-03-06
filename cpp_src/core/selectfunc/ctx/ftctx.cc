@@ -1,4 +1,5 @@
 #include "ftctx.h"
+#include <span>
 
 namespace reindexer {
 
@@ -15,31 +16,34 @@ FtCtx::FtCtx(BaseFunctionCtx::CtxType t) : BaseFunctionCtx(t) {
 			data_ = make_intrusive<FtCtxAreaData<AreaDebug>>(t);
 			data_->holders.emplace();
 			break;
+		case BaseFunctionCtx::CtxType::kKnnCtx:
+		case BaseFunctionCtx::CtxType::kNotSet:
+			throw_as_assert;
 	}
 }
 
 template <typename InputIterator>
-void FtCtx::Add(InputIterator begin, InputIterator end, int16_t proc) {
+void FtCtx::Add(InputIterator begin, InputIterator end, RankT rank) {
 	auto& data = *data_;
 	for (; begin != end; ++begin) {
-		data.proc.emplace_back(proc);
+		data.rank.emplace_back(rank);
 	}
 }
 
 template <typename InputIterator>
-void FtCtx::Add(InputIterator begin, InputIterator end, int16_t proc, const std::vector<bool>& mask) {
+void FtCtx::Add(InputIterator begin, InputIterator end, RankT rank, const std::vector<bool>& mask) {
 	auto& data = *data_;
 	for (; begin != end; ++begin) {
 		assertrx(static_cast<size_t>(*begin) < mask.size());
 		if (!mask[*begin]) {
 			continue;
 		}
-		data.proc.emplace_back(proc);
+		data.rank.emplace_back(rank);
 	}
 }
 
 template <typename InputIterator, typename AreaType>
-void FtCtx::Add(InputIterator begin, InputIterator end, int16_t proc, AreasInDocument<AreaType>&& areas) {
+void FtCtx::Add(InputIterator begin, InputIterator end, RankT rank, AreasInDocument<AreaType>&& areas) {
 	intrusive_ptr<FtCtxAreaData<AreaType>> dataArea = static_ctx_pointer_cast<FtCtxAreaData<AreaType>>(data_);
 	assertrx_throw(dataArea);
 	dataArea->area.emplace_back(std::move(areas));
@@ -47,14 +51,14 @@ void FtCtx::Add(InputIterator begin, InputIterator end, int16_t proc, AreasInDoc
 	if (data.holders.has_value()) {
 		auto& holders = data.holders.value();
 		for (; begin != end; ++begin) {
-			data.proc.push_back(proc);
+			data.rank.push_back(rank);
 			holders.emplace(*begin, dataArea->area.size() - 1);
 		}
 	}
 }
 
 template <typename InputIterator, typename AreaType>
-void FtCtx::Add(InputIterator begin, InputIterator end, int16_t proc, const std::vector<bool>& mask, AreasInDocument<AreaType>&& areas) {
+void FtCtx::Add(InputIterator begin, InputIterator end, RankT rank, const std::vector<bool>& mask, AreasInDocument<AreaType>&& areas) {
 	intrusive_ptr<FtCtxAreaData<AreaType>> dataArea = static_ctx_pointer_cast<FtCtxAreaData<AreaType>>(data_);
 	assertrx_throw(dataArea);
 	auto& data = *data_;
@@ -66,24 +70,24 @@ void FtCtx::Add(InputIterator begin, InputIterator end, int16_t proc, const std:
 			if (!mask[*begin]) {
 				continue;
 			}
-			data.proc.push_back(proc);
+			data.rank.push_back(rank);
 			holders.emplace(*begin, dataArea->area.size() - 1);
 		}
 	}
 }
 
-template void FtCtx::Add<span<const IdType>::iterator, Area>(span<const IdType>::iterator begin, span<const IdType>::iterator end,
-															 int16_t proc, AreasInDocument<Area>&& holder);
-template void FtCtx::Add<span<const IdType>::iterator, Area>(span<const IdType>::iterator begin, span<const IdType>::iterator end,
-															 int16_t proc, const std::vector<bool>&, AreasInDocument<Area>&& holder);
+template void FtCtx::Add<std::span<const IdType>::iterator, Area>(std::span<const IdType>::iterator begin, std::span<const IdType>::iterator end, RankT,
+															 AreasInDocument<Area>&& holder);
+template void FtCtx::Add<std::span<const IdType>::iterator, Area>(std::span<const IdType>::iterator begin, std::span<const IdType>::iterator end, RankT,
+															 const std::vector<bool>&, AreasInDocument<Area>&& holder);
 
-template void FtCtx::Add<span<const IdType>::iterator>(span<const IdType>::iterator begin, span<const IdType>::iterator end, int16_t proc,
+template void FtCtx::Add<std::span<const IdType>::iterator>(std::span<const IdType>::iterator begin, std::span<const IdType>::iterator end, RankT,
 													   AreasInDocument<AreaDebug>&& holder);
-template void FtCtx::Add<span<const IdType>::iterator>(span<const IdType>::iterator begin, span<const IdType>::iterator end, int16_t proc,
+template void FtCtx::Add<std::span<const IdType>::iterator>(std::span<const IdType>::iterator begin, std::span<const IdType>::iterator end, RankT,
 													   const std::vector<bool>&, AreasInDocument<AreaDebug>&& holder);
 
-template void FtCtx::Add<span<const IdType>::iterator>(span<const IdType>::iterator begin, span<const IdType>::iterator end, int16_t proc);
-template void FtCtx::Add<span<const IdType>::iterator>(span<const IdType>::iterator begin, span<const IdType>::iterator end, int16_t proc,
+template void FtCtx::Add<std::span<const IdType>::iterator>(std::span<const IdType>::iterator begin, std::span<const IdType>::iterator end, RankT);
+template void FtCtx::Add<std::span<const IdType>::iterator>(std::span<const IdType>::iterator begin, std::span<const IdType>::iterator end, RankT,
 													   const std::vector<bool>&);
 
 }  // namespace reindexer

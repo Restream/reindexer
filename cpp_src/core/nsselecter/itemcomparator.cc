@@ -304,15 +304,19 @@ ComparationResult ItemComparator::compareFields(IdType lId, IdType rId, size_t& 
 										  Variant(*(static_cast<const double*>(rawData) + rId)));
 				},
 				[rawData, lId, rId](KeyValueType::String) noexcept {
-					return std::make_pair(Variant(p_string(static_cast<const std::string_view*>(rawData) + lId), Variant::no_hold_t{}),
-										  Variant(p_string(static_cast<const std::string_view*>(rawData) + rId), Variant::no_hold_t{}));
+					return std::make_pair(Variant(p_string(static_cast<const std::string_view*>(rawData) + lId), Variant::noHold),
+										  Variant(p_string(static_cast<const std::string_view*>(rawData) + rId), Variant::noHold));
 				},
 				[rawData, lId, rId](KeyValueType::Uuid) noexcept {
 					return std::make_pair(Variant(*(static_cast<const Uuid*>(rawData) + lId)),
 										  Variant(*(static_cast<const Uuid*>(rawData) + rId)));
 				},
-				[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>)
-					-> std::pair<Variant, Variant> { throw_as_assert; });
+				[](KeyValueType::Float) noexcept -> std::pair<Variant, Variant> {
+					// Indexed fields can not contain float
+					throw_as_assert;
+				},
+				[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
+						 KeyValueType::FloatVector>) -> std::pair<Variant, Variant> { throw_as_assert; });
 			cmpRes = values.first.template Compare<NotComparable::Throw>(values.second, opts ? *opts : CollateOpts());
 		} else {
 			cmpRes = ConstPayload(ns_.payloadType_, ns_.items_[lId])

@@ -155,6 +155,11 @@ int64_t stoll(std::string_view sl);
 int double_to_str(double v, char* buf, int capacity);
 int double_to_str_no_trailing(double v, char* buf, int capacity);
 std::string double_to_str(double v);
+int float_to_str(float v, char* buf, int capacity);
+int float_to_str_no_trailing(float v, char* buf, int capacity);
+std::string float_to_str(float v);
+void float_vector_to_str(ConstFloatVectorView view, WrSerializer& ser);
+std::string float_vector_to_str(ConstFloatVectorView view);
 
 [[nodiscard]] bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept;
 [[nodiscard]] bool validateUserNsName(std::string_view name) noexcept;

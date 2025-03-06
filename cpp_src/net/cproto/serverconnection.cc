@@ -1,5 +1,4 @@
 #include "serverconnection.h"
-#include <errno.h>
 #include <snappy.h>
 #include "coroclientconnection.h"
 #include "tools/serializer.h"
@@ -180,8 +179,8 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 		if (hdr.magic != kCprotoMagic) {
 			try {
 				responceRPC(ctx, Error(errParams, "Invalid cproto magic %08x", int(hdr.magic)), Args());
-			} catch (const Error& err) {
-				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what().c_str());
+			} catch (std::exception& err) {
+				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what());
 			}
 			BaseConnT::closeConn_ = true;
 			return BaseConnT::ReadResT::Default;
@@ -193,8 +192,8 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 					ctx,
 					Error(errParams, "Unsupported cproto version %04x. This server expects reindexer client v1.9.8+", int(hdr.version)),
 					Args());
-			} catch (const Error& err) {
-				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what().c_str());
+			} catch (std::exception& err) {
+				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what());
 			}
 			BaseConnT::closeConn_ = true;
 			return BaseConnT::ReadResT::Default;
@@ -342,7 +341,7 @@ static void packRPC(WrSerializer& ser, Context& ctx, const Error& status, const 
 	ser.Write(std::string_view(reinterpret_cast<char*>(&hdr), sizeof(hdr)));
 
 	ser.PutVarUint(status.code());
-	ser.PutVString(status.what());
+	ser.PutVString(status.whatStr());
 	args.Pack(ser);
 
 	if (hdr.compressed) {
@@ -394,15 +393,13 @@ void ServerConnection::responceRPC(Context& ctx, const Error& status, const Args
 
 void ServerConnection::handleException(Context& ctx, const Error& err) noexcept {
 	// Exception occurs on unrecoverable error. Send responce, and drop connection
-	fprintf(stderr, "Dropping RPC-connection. Reason: %s\n", err.what().c_str());
+	fprintf(stderr, "Dropping RPC-connection. Reason: %s\n", err.what());
 	try {
 		if (!ctx.respSent) {
 			responceRPC(ctx, err, Args());
 		}
-	} catch (const Error& e) {
-		fprintf(stderr, "responceRPC unexpected error: %s\n", e.what().c_str());
-	} catch (const std::exception& e) {
-		fprintf(stderr, "responceRPC unexpected error (std::exception): %s\n", e.what());
+	} catch (std::exception& e) {
+		fprintf(stderr, "responceRPC unexpected error: %s\n", e.what());
 	} catch (...) {
 		fprintf(stderr, "responceRPC unexpected error (unknow exception)\n");
 	}
@@ -538,7 +535,7 @@ void ServerConnection::sendUpdates() {
 		args.clear<false>();
 		auto& upd = updates[cnt];
 		std::string_view updateData(upd);
-		args.emplace_back(p_string(&updateData), Variant::no_hold_t{});
+		args.emplace_back(p_string(&updateData), Variant::noHold);
 		packRPC(ser, ctx, Error(), args, enableSnappy_);
 
 		len += ser.Len();

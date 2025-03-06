@@ -1,6 +1,7 @@
 #include <mutex>
 
 #include "dbmanager.h"
+#include "estl/gift_str.h"
 #include "estl/smart_lock.h"
 #include "gason/gason.h"
 #include "tools/crypt.h"

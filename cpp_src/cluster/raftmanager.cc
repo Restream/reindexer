@@ -384,7 +384,7 @@ Error RaftManager::DesiredLeaderIdSender::operator()() {
 				if (auto err = sendDesiredServerIdToNode(nodeId); err.ok()) {
 					++okCount;
 				} else {
-					errString += "[" + err.what() + "]";
+					errString += "[" + err.whatStr() + "]";
 				}
 			} catch (...) {
 				logInfo("%d: Unable to send desired leader: got unknonw exception", thisServerId_);

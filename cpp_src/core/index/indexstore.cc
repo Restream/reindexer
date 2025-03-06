@@ -187,7 +187,7 @@ bool IndexStore<T>::shouldHoldValueInStrMap() const noexcept {
 }
 
 std::unique_ptr<Index> IndexStore_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields) {
-	switch (idef.Type()) {
+	switch (idef.IndexType()) {
 		case IndexBool:
 			return std::make_unique<IndexStore<bool>>(idef, std::move(payloadType), std::move(fields));
 		case IndexIntStore:
@@ -216,9 +216,13 @@ std::unique_ptr<Index> IndexStore_New(const IndexDef& idef, PayloadType&& payloa
 		case IndexTtl:
 		case IndexRTree:
 		case IndexUuidHash:
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+		case IndexDummy:
 			break;
 	}
-	std::abort();
+	throw_as_assert;
 }
 
 template class IndexStore<bool>;

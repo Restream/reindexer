@@ -12,8 +12,7 @@
 
 using namespace std::string_view_literals;
 
-namespace reindexer {
-namespace cluster {
+namespace reindexer::cluster {
 
 static void ValidateDSN(const DSN& dsn) {
 	if (dsn.Parser().scheme() != "cproto" && dsn.Parser().scheme() != "cprotos") {
@@ -21,7 +20,7 @@ static void ValidateDSN(const DSN& dsn) {
 	}
 }
 
-Error NodeData::FromJSON(span<char> json) {
+Error NodeData::FromJSON(std::span<char> json) {
 	try {
 		gason::JsonParser parser;
 		return FromJSON(parser.Parse(json));
@@ -57,7 +56,7 @@ void NodeData::GetJSON(WrSerializer& ser) const {
 	GetJSON(jb);
 }
 
-Error RaftInfo::FromJSON(span<char> json) {
+Error RaftInfo::FromJSON(std::span<char> json) {
 	try {
 		gason::JsonParser parser;
 		return FromJSON(parser.Parse(json));
@@ -661,11 +660,11 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromYAML(const YAML::Node
 sharding::Segment<Variant> ShardingConfig::Key::SegmentFromJSON(const gason::JsonNode& json) {
 	const auto& jsonValue = json.value;
 	switch (jsonValue.getTag()) {
-		case gason::JsonTag::JSON_TRUE:
-		case gason::JsonTag::JSON_FALSE:
-		case gason::JsonTag::JSON_STRING:
-		case gason::JsonTag::JSON_DOUBLE:
-		case gason::JsonTag::JSON_NUMBER: {
+		case gason::JsonTag::JTRUE:
+		case gason::JsonTag::JFALSE:
+		case gason::JsonTag::STRING:
+		case gason::JsonTag::DOUBLE:
+		case gason::JsonTag::NUMBER: {
 			auto val = stringToVariant(stringifyJson(json, false));
 
 			if (val.Type().Is<KeyValueType::Null>()) {
@@ -674,7 +673,7 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromJSON(const gason::Jso
 
 			return sharding::Segment<Variant>{val, val};
 		}
-		case gason::JsonTag::JSON_OBJECT: {
+		case gason::JsonTag::OBJECT: {
 			algorithmType = ByRange;
 			const auto& range = json["range"];
 			if (auto dist = std::distance(begin(range), end(range)); dist != 2) {
@@ -691,9 +690,9 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromJSON(const gason::Jso
 
 			return sharding::Segment<Variant>{std::move(left), std::move(right)};
 		}
-		case gason::JsonTag::JSON_ARRAY:
+		case gason::JsonTag::ARRAY:
 		case gason::JsonTag::JSON_NULL:
-		case gason::JsonTag::JSON_EMPTY:
+		case gason::JsonTag::EMPTY:
 		default:
 			throw Error(errParams, "Incorrect JsonTag for sharding key: %d", int(jsonValue.getTag()));
 	}
@@ -907,7 +906,18 @@ Error ShardingConfig::FromYAML(const std::string& yaml) {
 	}
 }
 
-Error ShardingConfig::FromJSON(span<char> json) {
+Error ShardingConfig::FromJSON(std::string_view json) {
+	try {
+		gason::JsonParser parser;
+		return FromJSON(parser.Parse(json));
+	} catch (const gason::Exception& ex) {
+		return Error(errParseJson, "ShardingConfig: %s", ex.what());
+	} catch (const Error& err) {
+		return err;
+	}
+}
+
+Error ShardingConfig::FromJSON(std::span<char> json) {
 	try {
 		gason::JsonParser parser;
 		return FromJSON(parser.Parse(json));
@@ -1099,5 +1109,4 @@ Error ShardingConfig::Validate() const {
 	return {};
 }
 
-}  // namespace cluster
-}  // namespace reindexer
+}  // namespace reindexer::cluster

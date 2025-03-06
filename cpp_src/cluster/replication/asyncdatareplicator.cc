@@ -5,7 +5,7 @@
 namespace reindexer {
 namespace cluster {
 
-AsyncDataReplicator::AsyncDataReplicator(AsyncDataReplicator::UpdatesQueueT& q, SharedSyncState<>& syncState, ReindexerImpl& thisNode,
+AsyncDataReplicator::AsyncDataReplicator(AsyncDataReplicator::UpdatesQueueT& q, SharedSyncState& syncState, ReindexerImpl& thisNode,
 										 Clusterizator& clusterizator)
 	: statsCollector_(std::string(kAsyncReplStatsType)),
 	  updatesQueue_(q),
@@ -112,6 +112,10 @@ bool AsyncDataReplicator::NamespaceIsInAsyncConfig(std::string_view nsName) cons
 bool AsyncDataReplicator::isExpectingStartup() const noexcept {
 	return config_.has_value() && baseConfig_.has_value() && config_->nodes.size() && baseConfig_->serverID >= 0 && !isRunning() &&
 		   config_->role != AsyncReplConfigData::Role::None;
+}
+
+size_t AsyncDataReplicator::threadsCount() const noexcept {
+	return config_.has_value() && config_->replThreadsCount > 0 ? config_->replThreadsCount : kDefaultReplThreadCount;
 }
 
 void AsyncDataReplicator::stop() {

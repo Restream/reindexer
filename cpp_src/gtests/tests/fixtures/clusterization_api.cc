@@ -1,8 +1,38 @@
 #include "clusterization_api.h"
 
+#include "cluster/consts.h"
 #include "core/formatters/lsn_fmt.h"
+#include "core/system_ns_names.h"
 #include "gtests/tests/gtest_cout.h"
+#include "gtests/tools.h"
+#include "tools/fsops.h"
+#include "vendor/fmt/ranges.h"
 #include "yaml-cpp/yaml.h"
+
+using namespace reindexer;
+
+void ClusterizationApi::SetUp() { fs::RmDirAll(GetDefaults().baseTestsetDbPath); }
+
+void ClusterizationApi::TearDown() { fs::RmDirAll(GetDefaults().baseTestsetDbPath); }
+
+const ClusterizationApi::Defaults& ClusterizationApi::GetDefaults() const {
+	static Defaults defs{14000, 16000, fs::JoinPath(fs::GetTempDir(), "rx_test/ClusterizationApi")};
+	return defs;
+}
+
+std::function<void()> ClusterizationApi::ExceptionWrapper(std::function<void()>&& func) {
+	return [f = std::move(func)] {	// NOLINT(*.NewDeleteLeaks) False positive
+		try {
+			f();
+		} catch (Error& e) {
+			ASSERT_TRUE(false) << e.what();
+		} catch (std::exception& e) {
+			ASSERT_TRUE(false) << e.what();
+		} catch (...) {
+			ASSERT_TRUE(false) << "Unknown exception";
+		}
+	};
+}
 
 void ClusterizationApi::Cluster::initCluster(size_t count, size_t initialServerId, const YAML::Node& clusterConf) {
 	for (size_t i = 0; i < count; ++i) {
@@ -18,13 +48,13 @@ void ClusterizationApi::Cluster::initCluster(size_t count, size_t initialServerI
 	}
 }
 
-ClusterizationApi::Cluster::Cluster(net::ev::dynamic_loop& loop, size_t initialServerId, size_t count, Defaults ports,
-									size_t maxUpdatesSize, const YAML::Node& clusterConf)
+ClusterizationApi::Cluster::Cluster(dynamic_loop& loop, size_t initialServerId, size_t count, Defaults ports, size_t maxUpdatesSize,
+									const YAML::Node& clusterConf)
 	: loop_(loop), defaults_(std::move(ports)), maxUpdatesSize_(maxUpdatesSize) {
 	initCluster(count, initialServerId, clusterConf);
 }
 
-ClusterizationApi::Cluster::Cluster(net::ev::dynamic_loop& loop, size_t initialServerId, size_t count, Defaults ports,
+ClusterizationApi::Cluster::Cluster(dynamic_loop& loop, size_t initialServerId, size_t count, Defaults ports,
 									const std::vector<std::string>& nsList, std::chrono::milliseconds resyncTimeout, int maxSyncCount,
 									int syncThreadsCount, size_t maxUpdatesSize)
 	: loop_(loop), defaults_(std::move(ports)), maxUpdatesSize_(maxUpdatesSize) {
@@ -56,12 +86,18 @@ void ClusterizationApi::Cluster::InitNs(size_t id, std::string_view nsName) {
 	Error err = api.reindexer->OpenNamespace(nsName, StorageOpts().Enabled(true));
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	api.DefineNamespaceDataset(std::string(nsName), {
-														IndexDeclaration{kIdField, "hash", "int", IndexOpts().PK(), 0},
-														IndexDeclaration{kIntField, "tree", "int", IndexOpts(), 0},
-														IndexDeclaration{kStringField, "hash", "string", IndexOpts(), 0},
-														IndexDeclaration{kFTField, "text", "string", IndexOpts(), 0},
-													});
+	api.DefineNamespaceDataset(
+		std::string(nsName),
+		{IndexDeclaration{kIdField, "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{kIntField, "tree", "int", IndexOpts(), 0},
+		 IndexDeclaration{kStringField, "hash", "string", IndexOpts(), 0}, IndexDeclaration{kFTField, "text", "string", IndexOpts(), 0},
+		 IndexDeclaration{kVectorField, "hnsw", "float_vector",
+						  IndexOpts{}.SetFloatVector(IndexHnsw, FloatVectorIndexOpts{}
+																	.SetDimension(kVectorDims)
+																	.SetStartSize(100)
+																	.SetM(16)
+																	.SetEfConstruction(200)
+																	.SetMetric(VectorMetric::Cosine)),
+						  0}});
 }
 
 void ClusterizationApi::Cluster::DropNs(size_t id, std::string_view nsName) {
@@ -112,7 +148,7 @@ void ClusterizationApi::Cluster::AddRow(size_t id, std::string_view nsName, int 
 	api.Upsert(nsName, item);
 }
 
-Error ClusterizationApi::Cluster::AddRowWithErr(size_t id, std::string_view nsName, int pk, std::string* resultJson) {
+Error ClusterizationApi::Cluster::AddRowWithErr(size_t id, std::string_view nsName, int pk, DataParam param, std::string* resultJson) {
 	assert(id < svc_.size());
 	if (!svc_[id].IsRunning()) {
 		return Error(errNotValid, "Server is not running");
@@ -123,7 +159,7 @@ Error ClusterizationApi::Cluster::AddRowWithErr(size_t id, std::string_view nsNa
 	}
 	auto& api = srv->api;
 	auto item = api.NewItem(nsName);
-	FillItem(api, item, pk);
+	FillItem(api, item, pk, std::move(param));
 	if (resultJson) {
 		*resultJson = item.GetJSON();
 	}
@@ -201,16 +237,17 @@ void ClusterizationApi::Cluster::StopServers(const std::vector<size_t>& ids) {
 }
 
 int ClusterizationApi::Cluster::AwaitLeader(std::chrono::seconds timeout, bool fulltime) {
+	using cluster::RaftInfo;
 	auto beg = steady_clock_w::now();
 	auto end = beg;
 	int leaderId;
 	do {
 		leaderId = -1;
 		for (size_t i = 0; i < clients_.size(); ++i) {
-			cluster::RaftInfo info;
+			RaftInfo info;
 			auto err = clients_[i].GetRaftInfo(info);
 			if (err.ok()) {
-				if (info.role == cluster::RaftInfo::Role::Leader) {
+				if (info.role == RaftInfo::Role::Leader) {
 					EXPECT_EQ(leaderId, -1);
 					leaderId = i;
 				}
@@ -324,15 +361,19 @@ ServerControl::Interface::Ptr ClusterizationApi::Cluster::GetNode(size_t id) {
 	return svc_[id].Get(false);
 }
 
-void ClusterizationApi::Cluster::FillItem(BaseApi& api, BaseApi::ItemType& item, size_t id) {
-	// clang-format off
-	std::string json = "{\n"
-					   "\"id\":" + std::to_string(id)+",\n"
-					   "\"int\":" + std::to_string(rand())+",\n"
-					   "\"string\":\"" + api.RandString()+"\"\n"
-					   "\"ft_str\":\"" + api.RandString()+"\"\n"
-					   "}";
-	// clang-format on
+void ClusterizationApi::Cluster::FillItem(BaseApi& api, BaseApi::ItemType& item, size_t id, DataParam param) {
+	std::string json;
+	if (!param.emptyVector) {
+		std::array<float, kVectorDims> buf;
+		for (float& v : buf) {
+			v = randBin<float>(-10, 10);
+		}
+		json = fmt::format(R"json({{"id":{},"int":{},"string":"{}","ft_str":"{}","vec":[{:f}]}})json", id, rand(), api.RandString(),
+						   api.RandString(), fmt::join(buf, ","));
+	} else {
+		json = fmt::format(R"json({{"id":{},"int":{},"string":"{}","ft_str":"{}","vec":[]}})json", id, rand(), api.RandString(),
+						   api.RandString());
+	}
 	Error err = item.FromJSON(json);
 	ASSERT_TRUE(err.ok()) << err.what();
 }
@@ -393,14 +434,9 @@ size_t ClusterizationApi::Cluster::GetSynchronizedNodesCount(size_t nodeId) {
 }
 
 void ClusterizationApi::Cluster::EnablePerfStats(size_t nodeId) {
-	auto rx = GetNode(nodeId)->api.reindexer;
-	auto item = rx->NewItem(kConfigNs);
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-	auto err = item.FromJSON(
+	GetNode(nodeId)->api.UpsertJSON(
+		kConfigNamespace,
 		R"json({"type":"profiling","profiling":{"queriesperfstats":true,"queries_threshold_us":100,"perfstats":true,"memstats":true,"activitystats":true}})json");
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rx->Upsert(kConfigNs, item);
-	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 void ClusterizationApi::Cluster::ChangeLeader(int& curLeaderId, int newLeaderId) {
@@ -409,7 +445,7 @@ void ClusterizationApi::Cluster::ChangeLeader(int& curLeaderId, int newLeaderId)
 	ASSERT_EQ(curLeaderId, newLeaderId);
 }
 
-void ClusterizationApi::Cluster::AddAsyncNode(size_t nodeId, const DSN& dsn, cluster::AsyncReplicationMode replMode,
+void ClusterizationApi::Cluster::AddAsyncNode(size_t nodeId, const DSN& dsn, AsyncReplicationMode replMode,
 											  std::optional<std::vector<std::string>>&& nsList) {
 	assert(nodeId < svc_.size());
 	auto asyncLeader = svc_[nodeId].Get();
@@ -419,7 +455,7 @@ void ClusterizationApi::Cluster::AddAsyncNode(size_t nodeId, const DSN& dsn, clu
 void ClusterizationApi::Cluster::AwaitLeaderBecomeAvailable(size_t nodeId, std::chrono::milliseconds awaitTime) {
 	auto now = std::chrono::milliseconds(0);
 	const auto pause = std::chrono::milliseconds(100);
-	const Query q = Query("#replicationstats").Where("type", CondEq, "cluster");
+	const Query q = Query(kReplicationStatsNamespace).Where("type", CondEq, "cluster");
 	while (now < awaitTime) {
 		BaseApi::QueryResultsType qr;
 		auto err = GetNode(nodeId)->api.reindexer->WithTimeout(pause).Select(q, qr);

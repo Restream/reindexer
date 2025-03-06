@@ -59,7 +59,7 @@ public:
 				logFmt(LogError,
 					   "<assertion failed>: Unexpected field {} in composite index {}:{} during substitution attempt. Actual composite "
 					   "fields: {}",
-					   field, composite, compositePtr->Name(), idxFields.ToString(FieldsSet::DumpWithMask::No));
+					   field, composite, compositePtr->Name(), idxFields.ToString(DumpWithMask_False));
 				assertrx_dbg(false);
 				continue;
 			}
@@ -194,7 +194,7 @@ public:
 	Base::const_reverse_iterator rbegin() const noexcept { return Base::rbegin(); }
 	Base::const_reverse_iterator rend() const noexcept { return Base::rend(); }
 
-	void Add(span<const uint16_t> entries) {
+	void Add(std::span<const uint16_t> entries) {
 		for (auto entry : entries) {
 			auto insertionPos = Base::end();
 			bool wasMerged = false;

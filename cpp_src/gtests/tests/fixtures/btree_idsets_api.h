@@ -1,7 +1,6 @@
 #pragma once
 
 #include "reindexer_api.h"
-#include "tools/logger.h"
 
 class BtreeIdsetsApi : public ReindexerApi {
 public:

@@ -3,50 +3,22 @@
 #include "cluster/config.h"
 #include "core/namespace/namespacename.h"
 #include "estl/contexted_cond_var.h"
-#include "estl/fast_hash_set.h"
 #include "estl/shared_mutex.h"
 
-namespace reindexer {
-namespace cluster {
+namespace reindexer::cluster {
 
 static constexpr size_t k16kCoroStack = 16 * 1024;
 
-template <typename MtxT = shared_timed_mutex>
 class SharedSyncState {
+	using MtxT = shared_timed_mutex;
+
 public:
 	using GetNameF = std::function<std::string()>;
 	using ContainerT = NsNamesHashSetT;
 
-	void MarkSynchronized(NamespaceName name) {
-		std::unique_lock<MtxT> lck(mtx_);
-		assertrx_dbg(!name.empty());
-		if (current_.role == RaftInfo::Role::Leader) {
-			auto res = synchronized_.emplace(std::move(name));
-			lck.unlock();
-			if (res.second) {
-				cond_.notify_all();
-			}
-		}
-	}
-	void MarkSynchronized() {
-		std::unique_lock<MtxT> lck(mtx_);
-		if (current_.role == RaftInfo::Role::Leader) {
-			++initialSyncDoneCnt_;
-			lck.unlock();
-			cond_.notify_all();
-		}
-	}
-	void Reset(ContainerT requireSynchronization, size_t ReplThreadsCnt, bool enabled) {
-		std::lock_guard<MtxT> lck(mtx_);
-		requireSynchronization_ = std::move(requireSynchronization);
-		synchronized_.clear();
-		enabled_ = enabled;
-		terminated_ = false;
-		initialSyncDoneCnt_ = 0;
-		ReplThreadsCnt_ = ReplThreadsCnt;
-		next_ = current_ = RaftInfo();
-		assert(ReplThreadsCnt_);
-	}
+	void MarkSynchronized(NamespaceName name);
+	void MarkSynchronized();
+	void Reset(ContainerT requireSynchronization, size_t ReplThreadsCnt, bool enabled);
 	template <typename ContextT>
 	void AwaitInitialSync(const NamespaceName& name, const ContextT& ctx) const {
 		shared_lock<MtxT> lck(mtx_);
@@ -85,20 +57,7 @@ public:
 		shared_lock<MtxT> lck(mtx_);
 		return isInitialSyncDone();
 	}
-	RaftInfo TryTransitRole(RaftInfo expected) {
-		std::unique_lock<MtxT> lck(mtx_);
-		if (expected == next_) {
-			if (current_.role == RaftInfo::Role::Leader && current_.role != next_.role) {
-				synchronized_.clear();
-				initialSyncDoneCnt_ = 0;
-			}
-			current_ = next_;
-			lck.unlock();
-			cond_.notify_all();
-			return expected;
-		}
-		return next_;
-	}
+	RaftInfo TryTransitRole(RaftInfo expected);
 	template <typename ContextT>
 	RaftInfo AwaitRole(bool allowTransitState, const ContextT& ctx) const {
 		shared_lock<MtxT> lck(mtx_);
@@ -115,10 +74,7 @@ public:
 		}
 		return current_;
 	}
-	void SetRole(RaftInfo info) {
-		std::lock_guard<MtxT> lck(mtx_);
-		next_ = info;
-	}
+	void SetRole(RaftInfo info);
 	std::pair<RaftInfo, RaftInfo> GetRolesPair() const {
 		shared_lock<MtxT> lck(mtx_);
 		return std::make_pair(current_, next_);
@@ -127,14 +83,7 @@ public:
 		shared_lock<MtxT> lck(mtx_);
 		return current_;
 	}
-	void SetTerminated() {
-		{
-			std::lock_guard<MtxT> lck(mtx_);
-			terminated_ = true;
-			next_ = current_ = RaftInfo();
-		}
-		cond_.notify_all();
-	}
+	void SetTerminated();
 
 private:
 	bool isInitialSyncDone(const NamespaceName& name) const {
@@ -161,5 +110,4 @@ private:
 	size_t initialSyncDoneCnt_ = 0;
 	size_t ReplThreadsCnt_ = 0;
 };
-}  // namespace cluster
-}  // namespace reindexer
+}  // namespace reindexer::cluster

@@ -1,7 +1,5 @@
 #include "composite_indexes_api.h"
 #include "gmock/gmock.h"
-#include "yaml-cpp/node/node.h"
-#include "yaml-cpp/node/parse.h"
 #include "yaml-cpp/yaml.h"
 
 using QueryResults = ReindexerApi::QueryResults;
@@ -83,8 +81,7 @@ TEST_F(CompositeIndexesApi, DropTest2) {
 
 	selectAll(rt.reindexer.get(), test_ns);
 
-	reindexer::IndexDef idef("id");
-	err = rt.reindexer->DropIndex(test_ns, idef);
+	err = rt.reindexer->DropIndex(test_ns, reindexer::IndexDef{"id"});
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	selectAll(rt.reindexer.get(), test_ns);

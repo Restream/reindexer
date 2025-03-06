@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/restream/reindexer/v4"
-	"github.com/restream/reindexer/v4/bindings/builtin"
-	"github.com/restream/reindexer/v4/events"
+	"github.com/restream/reindexer/v5"
+	"github.com/restream/reindexer/v5/bindings/builtin"
+	"github.com/restream/reindexer/v5/events"
 )
 
 func init() {
@@ -75,11 +75,11 @@ func subscriberRaceRoutine(t *testing.T, subsWg *sync.WaitGroup, subsDone chan (
 	for {
 		select {
 		case <-subsDone:
-			require.Greater(t, events, 0)
-			require.NoError(t, stream.Error())
+			require.Greater(t, events, 0, "Opts: %v", opts)
+			require.NoError(t, stream.Error(), "Opts: %v", opts)
 			return
 		case <-stream.Chan():
-			require.NoError(t, stream.Error())
+			require.NoError(t, stream.Error(), "Opts: %v", opts)
 			events += 1
 		}
 	}
@@ -217,7 +217,7 @@ func TestRaceConditions(t *testing.T) {
 	subsDone := make(chan bool)
 	subsWg.Add(3)
 	go subUnsubRaceRoutine(t, &subsWg, subsDone, events.DefaultEventsStreamOptions().WithDocModifyEvents())
-	go subscriberRaceRoutine(t, &subsWg, subsDone, events.DefaultEventsStreamOptions().WithConfigNamespace())
+	go subscriberRaceRoutine(t, &subsWg, subsDone, events.DefaultEventsStreamOptions().WithTransactionCommitEvents().WithConfigNamespace())
 	if strings.HasPrefix(DB.dsn, "builtin://") {
 		go subscriberRaceRoutine(t, &subsWg, subsDone, events.DefaultEventsStreamOptions().WithIndexModifyEvents().WithNamespaceOperationEvents())
 	} else {

@@ -110,7 +110,7 @@ int manual_connection::async_connect(std::string_view addr, socket_domain type) 
 	return 0;
 }
 
-ssize_t manual_connection::write(span<char> wr_buf, transfer_data& transfer, int& err_ref) {
+ssize_t manual_connection::write(std::span<char> wr_buf, transfer_data& transfer, int& err_ref) {
 	err_ref = 0;
 	ssize_t written = -1;
 	auto cur_buf = wr_buf.subspan(transfer.transfered_size());
@@ -146,7 +146,7 @@ ssize_t manual_connection::write(span<char> wr_buf, transfer_data& transfer, int
 	return written;
 }
 
-ssize_t manual_connection::read(span<char> rd_buf, transfer_data& transfer, int& err_ref) {
+ssize_t manual_connection::read(std::span<char> rd_buf, transfer_data& transfer, int& err_ref) {
 	bool need_read = !transfer.expected_size();
 	ssize_t nread = 0;
 	ssize_t read_this_time = 0;
@@ -307,7 +307,7 @@ int manual_connection::read_cb() {
 	return err;
 }
 
-bool manual_connection::read_from_buf(span<char> rd_buf, transfer_data& transfer, bool read_full) noexcept {
+bool manual_connection::read_from_buf(std::span<char> rd_buf, transfer_data& transfer, bool read_full) noexcept {
 	auto cur_buf = rd_buf.subspan(transfer.transfered_size());
 	const bool will_read_full = read_full && buffered_data_.size() >= cur_buf.size();
 	const bool will_read_any = !read_full && buffered_data_.size();

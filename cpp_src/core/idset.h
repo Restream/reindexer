@@ -8,7 +8,7 @@
 #include "cpp-btree/btree_set.h"
 #include "estl/h_vector.h"
 #include "estl/intrusive_ptr.h"
-#include "estl/span.h"
+#include <span>
 #include "sort/pdqsort.hpp"
 
 namespace reindexer {
@@ -75,7 +75,6 @@ public:
 	void ReserveForSorted(int sortedIdxCount) { reserve(size() * (sortedIdxCount + 1)); }
 	std::string Dump() const;
 
-protected:
 	IdSetPlain(base_idset&& idset) noexcept : base_idset(std::move(idset)) {}
 };
 
@@ -146,6 +145,11 @@ public:
 	void AddUnordered(IdType id) {
 		assertrx(!set_);
 		push_back(id);
+	}
+
+	void SetUnordered(IdSetPlain&& other) {
+		assertrx(!set_);
+		IdSetPlain::operator=(std::move(other));
 	}
 
 	template <typename InputIt>
@@ -234,7 +238,7 @@ protected:
 	std::atomic<bool> usingBtree_;
 };
 
-using IdSetRef = span<IdType>;
-using IdSetCRef = span<const IdType>;
+using IdSetRef = std::span<IdType>;
+using IdSetCRef = std::span<const IdType>;
 
 }  // namespace reindexer

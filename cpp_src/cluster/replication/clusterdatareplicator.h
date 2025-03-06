@@ -16,7 +16,7 @@ public:
 	using UpdatesQueueT = UpdatesQueuePair<updates::UpdateRecord>;
 	using UpdatesQueueShardT = UpdatesQueueT::QueueT;
 
-	ClusterDataReplicator(UpdatesQueueT&, SharedSyncState<>&, ReindexerImpl&);
+	ClusterDataReplicator(UpdatesQueueT&, SharedSyncState&, ReindexerImpl&);
 
 	void Configure(ClusterConfigData config);
 	void Configure(ReplicationConfigData config);
@@ -98,7 +98,7 @@ private:
 	Logger log_;
 	RaftManager raftManager_;
 	UpdatesQueueT& updatesQueue_;
-	SharedSyncState<>& sharedSyncState_;
+	SharedSyncState& sharedSyncState_;
 	ReindexerImpl& thisNode_;
 	std::deque<ClusterReplThread> replThreads_;
 	std::function<void()> requestElectionsRestartCb_;

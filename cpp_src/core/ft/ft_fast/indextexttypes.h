@@ -1,6 +1,8 @@
 #pragma once
 
+#include <functional>
 #include "core/ft/limits.h"
+#include "tools/assertrx.h"
 
 namespace reindexer {
 

@@ -1,13 +1,10 @@
 #include "dbconfig.h"
 
-#include <limits.h>
 #include <bitset>
-#include <fstream>
 
 #include "cjson/jsonbuilder.h"
 #include "estl/smart_lock.h"
 #include "gason/gason.h"
-#include "spdlog/fmt/fmt.h"
 #include "tools/jsontools.h"
 #include "tools/logger.h"
 #include "tools/serializer.h"
@@ -47,7 +44,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 			if (profilingDataLoadResult_.ok()) {
 				typesChanged.set(ProfilingConf);
 			} else {
-				errLogString += profilingDataLoadResult_.what();
+				errLogString += profilingDataLoadResult_.whatStr();
 			}
 		}
 
@@ -59,7 +56,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 			for (auto& nsNode : namespacesNode) {
 				std::string nsName;
 				if (auto err = tryReadRequiredJsonValue(&errLogString, nsNode, "namespace", nsName)) {
-					ensureEndsWith(namespacesErrLogString, "\n") += err.what();
+					ensureEndsWith(namespacesErrLogString, "\n") += err.whatStr();
 					nssHaveErrors = true;
 					continue;
 				}
@@ -70,7 +67,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 					namespacesData.emplace(std::move(nsName),
 										   std::move(data));  // NOLINT(performance-move-const-arg)
 				} else {
-					ensureEndsWith(namespacesErrLogString, "\n") += err.what();
+					ensureEndsWith(namespacesErrLogString, "\n") += err.whatStr();
 					nssHaveErrors = true;
 				}
 			}
@@ -92,7 +89,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 			if (asyncReplicationDataLoadResult_.ok()) {
 				typesChanged.set(AsyncReplicationConf);
 			} else {
-				ensureEndsWith(errLogString, "\n") += asyncReplicationDataLoadResult_.what();
+				ensureEndsWith(errLogString, "\n") += asyncReplicationDataLoadResult_.whatStr();
 			}
 		}
 
@@ -105,7 +102,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 				if (replicationDataLoadResult_.ok()) {
 					typesChanged.set(ReplicationConf);
 				} else {
-					ensureEndsWith(errLogString, "\n") += replicationDataLoadResult_.what();
+					ensureEndsWith(errLogString, "\n") += replicationDataLoadResult_.whatStr();
 				}
 			} else {
 				replicationDataSafe.FromJSONWithCorrection(replicationNode, replicationDataLoadResult_);
@@ -128,10 +125,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 				replicationData_ = std::move(replicationDataSafe);
 			}
 		}
-
-	} catch (const Error& err) {
-		ensureEndsWith(errLogString, "\n") += err.what();
-	} catch (const gason::Exception& ex) {
+	} catch (const std::exception& ex) {
 		ensureEndsWith(errLogString, "\n") += ex.what();
 	}
 
@@ -150,7 +144,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 				try {
 					handlers_[changedType]();
 				} catch (const Error& err) {
-					logPrintf(LogError, "DBConfigProvider: Error processing event handler: '%s'", err.what());
+					logPrintf(LogError, "DBConfigProvider: Error processing event handler: '%s'", err.whatStr());
 				}
 			}
 
@@ -159,7 +153,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 					try {
 						f.second(replicationData_);
 					} catch (const Error& err) {
-						logPrintf(LogError, "DBConfigProvider: Error processing replication config event handler: '%s'", err.what());
+						logPrintf(LogError, "DBConfigProvider: Error processing replication config event handler: '%s'", err.whatStr());
 					}
 				}
 			}
@@ -175,10 +169,10 @@ Error DBConfigProvider::GetConfigParseErrors() const {
 	if (!profilingDataLoadResult_.ok() || !namespacesDataLoadResult_.ok() || !asyncReplicationDataLoadResult_.ok() ||
 		!replicationDataLoadResult_.ok()) {
 		std::string errLogString;
-		errLogString += profilingDataLoadResult_.what();
-		ensureEndsWith(errLogString, "\n"sv) += namespacesDataLoadResult_.what();
-		ensureEndsWith(errLogString, "\n"sv) += asyncReplicationDataLoadResult_.what();
-		ensureEndsWith(errLogString, "\n"sv) += replicationDataLoadResult_.what();
+		errLogString += profilingDataLoadResult_.whatStr();
+		ensureEndsWith(errLogString, "\n"sv) += namespacesDataLoadResult_.whatStr();
+		ensureEndsWith(errLogString, "\n"sv) += asyncReplicationDataLoadResult_.whatStr();
+		ensureEndsWith(errLogString, "\n"sv) += replicationDataLoadResult_.whatStr();
 
 		return Error(errParseJson, "DBConfigProvider: %s", errLogString);
 	}
@@ -285,11 +279,11 @@ Error ReplicationConfigData::FromYAML(const std::string& yaml) {
 		clusterID = root["cluster_id"].as<int>(clusterID);
 		serverID = root["server_id"].as<int>(serverID);
 		if (auto err = Validate(); !err.ok()) {
-			return Error(errParams, "ReplicationConfigData: YAML parsing error: '%s'", err.what());
+			return Error(errParams, "ReplicationConfigData: YAML parsing error: '%s'", err.whatStr());
 		}
 	} catch (const YAML::Exception& ex) {
 		return Error(errParseYAML, "ReplicationConfigData: YAML parsing error: '%s'", ex.what());
-	} catch (const Error& err) {
+	} catch (const std::exception& err) {
 		return err;
 	}
 	return Error();
@@ -299,10 +293,10 @@ Error ReplicationConfigData::FromJSON(std::string_view json) {
 	try {
 		gason::JsonParser parser;
 		return FromJSON(parser.Parse(json));
-	} catch (const Error& err) {
-		return err;
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "ReplicationConfigData: %s\n", ex.what());
+	} catch (const std::exception& err) {
+		return err;
 	}
 }
 
@@ -315,7 +309,7 @@ Error ReplicationConfigData::FromJSON(const gason::JsonNode& root) {
 
 	if (errorString.empty()) {
 		if (auto err = Validate()) {
-			return Error(errParseJson, "ReplicationConfigData: JSON parsing error: '%s'", err.what());
+			return Error(errParseJson, "ReplicationConfigData: JSON parsing error: '%s'", err.whatStr());
 		}
 	} else {
 		return Error(errParseJson, "ProfilingConfigData: JSON parsing error: '%s'", errorString);
@@ -397,13 +391,14 @@ Error NamespaceConfigData::FromJSON(const gason::JsonNode& v) {
 		try {
 			cacheMode = str2cacheMode(stringViewVal);
 		} catch (Error& err) {
-			ensureEndsWith(errorString, "\n") += "errParams: " + err.what();
+			ensureEndsWith(errorString, "\n") += "errParams: " + err.whatStr();
 		}
 	}
 
 	err = tryReadOptionalJsonValue(&errorString, v, "start_copy_policy_tx_size"sv, startCopyPolicyTxSize);
 	err = tryReadOptionalJsonValue(&errorString, v, "copy_policy_multiplier"sv, copyPolicyMultiplier);
 	err = tryReadOptionalJsonValue(&errorString, v, "tx_size_to_always_copy"sv, txSizeToAlwaysCopy);
+	err = tryReadOptionalJsonValue(&errorString, v, "tx_vec_insertion_threads"sv, txVecInsertionThreads);
 	err = tryReadOptionalJsonValue(&errorString, v, "optimization_timeout_ms"sv, optimizationTimeout);
 	err = tryReadOptionalJsonValue(&errorString, v, "optimization_sort_workers"sv, optimizationSortWorkers);
 	(void)err;	// ignored; Errors will be handled with errorString

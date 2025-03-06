@@ -19,12 +19,14 @@ public:
 	void OpenNamespace(Reindexer& reindexer) {
 		Error err = reindexer.OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
-		DefineNamespaceDataset(
-			reindexer, default_namespace,
-			{IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0},
-			 IndexDeclaration{kFieldData, "text", "string", IndexOpts().SetConfig(R"xxx({"enable_warmup_on_ns_copy":false})xxx"), 0},
-			 IndexDeclaration{kFieldData1, "text", "string", IndexOpts().SetConfig(R"xxx({"enable_warmup_on_ns_copy":true})xxx"), 0},
-			 IndexDeclaration{kFieldData2, "text", "string", IndexOpts().SetConfig(R"xxx({"enable_warmup_on_ns_copy":true})xxx"), 0}});
+		DefineNamespaceDataset(reindexer, default_namespace,
+							   {IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0},
+								IndexDeclaration{kFieldData, "text", "string",
+												 IndexOpts().SetConfig(IndexFastFT, R"xxx({"enable_warmup_on_ns_copy":false})xxx"), 0},
+								IndexDeclaration{kFieldData1, "text", "string",
+												 IndexOpts().SetConfig(IndexFastFT, R"xxx({"enable_warmup_on_ns_copy":true})xxx"), 0},
+								IndexDeclaration{kFieldData2, "text", "string",
+												 IndexOpts().SetConfig(IndexFastFT, R"xxx({"enable_warmup_on_ns_copy":true})xxx"), 0}});
 	}
 
 	Item MakeItem(Reindexer& reindexer, int id, const std::string& baseData) {

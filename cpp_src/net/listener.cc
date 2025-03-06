@@ -34,8 +34,9 @@ Listener<LT>::Listener(ev::dynamic_loop& loop, std::shared_ptr<Shared> shared)
 
 template <ListenerType LT>
 Listener<LT>::Listener(ev::dynamic_loop& loop, ConnectionFactory&& connFactory, openssl::SslCtxPtr sslCtx, int maxListeners)
-	: Listener(loop, std::make_shared<Shared>(std::move(connFactory), (maxListeners ? maxListeners : (double(hardware_concurrency()) * 1.2)) + 1,
-											  std::move(sslCtx))) {}
+	: Listener(loop,
+			   std::make_shared<Shared>(std::move(connFactory), (maxListeners ? maxListeners : (double(hardware_concurrency()) * 1.2)) + 1,
+										std::move(sslCtx))) {}
 
 template <ListenerType LT>
 Listener<LT>::~Listener() {
@@ -84,13 +85,14 @@ bool Listener<LT>::Bind(std::string addr, socket_domain type) {
 
 	try {
 		client.ssl = openssl::create_ssl(ctx);
-	} catch (Error& err) {
+	} catch (Error&) {
 		// Error has already been logged in create_ssl already
 		return -1;
 	}
 
 	auto logSslErr = [] {
-		logFmt(LogError, "{}: {}", openssl::ERR_get_error(), openssl::ERR_error_string(openssl::ERR_get_error(), NULL));
+		logFmt(LogError, "{}: {}", static_cast<unsigned long>(openssl::ERR_get_error()),
+			   static_cast<char*>(openssl::ERR_error_string(openssl::ERR_get_error(), NULL)));
 	};
 
 	if (int res = openssl::SSL_set_fd(*client.ssl, client.fd()); res == 0) {

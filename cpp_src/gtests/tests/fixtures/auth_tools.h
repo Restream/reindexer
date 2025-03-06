@@ -2,12 +2,8 @@
 #include "server/dbmanager.h"
 #include "tools/dsn.h"
 
-static inline bool WithSecurity() noexcept { return std::getenv("RX_TEST_SECURITY_REQUIRED"); }
-static inline std::string TLSPath() noexcept {
-	auto path = std::getenv("RX_TEST_TLS_PATH");
-	assertrx(path);
-	return path;
-}
+bool WithSecurity() noexcept;
+std::string TLSPath() noexcept;
 
 struct TestUserDataFactory {
 	struct User {
@@ -20,17 +16,9 @@ struct TestUserDataFactory {
 private:
 	friend reindexer::DSN MakeDsn(reindexer_server::UserRole role, int serverId, int port, const std::string& db);
 
-	static std::string user(reindexer_server::UserRole role, int serverId) noexcept {
-		return fmt::sprintf(loginTmplt, reindexer_server::UserRoleName(role), serverId);
-	}
-	static std::string passwd(reindexer_server::UserRole role, int serverId) noexcept {
-		return fmt::sprintf(passwdTmplt, int(role), serverId);
-	}
-
-	static std::string dump(reindexer_server::UserRole role, int serverId) noexcept {
-		auto& user = Get(serverId)[role];
-		return fmt::sprintf("%s:%s@", user.login, user.password);
-	}
+	static std::string user(reindexer_server::UserRole role, int serverId) noexcept;
+	static std::string passwd(reindexer_server::UserRole role, int serverId) noexcept;
+	static std::string dump(reindexer_server::UserRole role, int serverId) noexcept;
 
 	static constexpr auto loginTmplt = "Test_%s_user%i";
 	static constexpr auto passwdTmplt = "TestMaskingPassword%i%i";
@@ -56,5 +44,3 @@ inline bool operator==(const std::string& lhs, const reindexer::DSN& rhs) noexce
 
 inline bool operator!=(const reindexer::DSN& lhs, const reindexer::DSN& rhs) noexcept { return !(lhs == rhs); }
 }  // namespace reindexer
-
-// }

@@ -1,13 +1,14 @@
 #include "snippet.h"
-#include "core/ft/ft_fast/frisosplitter.h"
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
+#include "core/queryresults/itemref.h"
 #include "core/selectfunc/ctx/ftctx.h"
 #include "core/selectfunc/selectfuncparser.h"
 #include "highlight.h"
 #include "tools/errors.h"
 #include "utf8cpp/utf8.h"
+#include "core/queryresults/itemref.h"
 
 namespace reindexer {
 

@@ -3,6 +3,7 @@
 #include "core/cjson/tagsmatcher.h"
 #include "core/queryresults/joinresults.h"
 #include "core/queryresults/queryresults.h"
+#include "core/type_consts.h"
 #include "tools/logger.h"
 #include "wal/walrecord.h"
 
@@ -21,19 +22,19 @@ constexpr int kKnownResultsFlagsMask = int(GetKnownFlagsBitMask(kResultsFlagMaxV
 
 void WrResultSerializer::resetUnknownFlags() noexcept { opts_.flags &= kKnownResultsFlagsMask; }
 
-void WrResultSerializer::putQueryParams(const BindingCapabilities& caps, QueryResults* results) {
+void WrResultSerializer::putQueryParams(const BindingCapabilities& caps, QueryResults& results) {
 	// Flags of present objects
 	PutVarUint(opts_.flags);
 	// Total
-	PutVarUint(results->TotalCount());
+	PutVarUint(results.TotalCount());
 	// Count of returned items by query
-	PutVarUint(results->Count());
+	PutVarUint(results.Count());
 	// Count of serialized items
 	PutVarUint(opts_.fetchLimit);
 
 	if (opts_.flags & kResultsWithPayloadTypes) {
 		assertrx(opts_.ptVersions.data());
-		const auto mergedNsCount = results->GetMergedNSCount();
+		const auto mergedNsCount = results.GetMergedNSCount();
 		if (int(opts_.ptVersions.size()) != mergedNsCount) {
 			logPrintf(LogWarning, "ptVersionsCount != results->GetMergedNSCount: %d != %d. Client's metadata can become inconsistent.",
 					  opts_.ptVersions.size(), mergedNsCount);
@@ -45,9 +46,9 @@ void WrResultSerializer::putQueryParams(const BindingCapabilities& caps, QueryRe
 	putExtraParams(caps, results);
 }
 
-void WrResultSerializer::putExtraParams(const BindingCapabilities& caps, QueryResults* results) {
+void WrResultSerializer::putExtraParams(const BindingCapabilities& caps, QueryResults& results) {
 	if (opts_.withAggregations) {
-		for (const AggregationResult& aggregationRes : results->GetAggregationResults()) {
+		for (const AggregationResult& aggregationRes : results.GetAggregationResults()) {
 			PutVarUint(QueryResultAggregation);
 			auto slicePosSaver = StartSlice();
 			if ((opts_.flags & kResultsFormatMask) == kResultsMsgPack) {
@@ -57,28 +58,28 @@ void WrResultSerializer::putExtraParams(const BindingCapabilities& caps, QueryRe
 			}
 		}
 
-		if (!results->GetExplainResults().empty()) {
+		if (!results.GetExplainResults().empty()) {
 			PutVarUint(QueryResultExplain);
-			PutSlice(results->GetExplainResults());
+			PutSlice(results.GetExplainResults());
 		}
 	}
 
 	if (opts_.flags & kResultsWithShardId) {
-		if (!results->IsDistributed() && results->Count() > 0) {
+		if (!results.IsDistributed() && results.Count() > 0) {
 			PutVarUint(QueryResultShardId);
-			PutVarUint(results->GetCommonShardID());
+			PutVarUint(results.GetCommonShardID());
 			opts_.flags &= ~kResultsWithShardId;  // not set shardId for item
 		}
 	}
 
 	if (caps.HasIncarnationTags()) {
-		int64_t shardingConfVer = results->GetShardingConfigVersion();
+		int64_t shardingConfVer = results.GetShardingConfigVersion();
 		if (shardingConfVer != -1) {
 			PutVarUint(QueryResultShardingVersion);
 			PutVarUint(shardingConfVer);
 		}
 		PutVarUint(QueryResultIncarnationTags);
-		auto tags = results->GetIncarnationTags();
+		auto tags = results.GetIncarnationTags();
 		PutVarUint(tags.size());
 		for (auto& shardTags : tags) {
 			PutVarint(shardTags.shardId);
@@ -89,6 +90,11 @@ void WrResultSerializer::putExtraParams(const BindingCapabilities& caps, QueryRe
 		}
 	}
 
+	if (caps.HasComplexRank() && results.HaveRank() && (opts_.flags & kResultsWithRank)) {
+		PutVarUint(QueryResultRankFormat);
+		PutVarUint(RankFormat::SingleFloatValue);
+	}
+
 	PutVarUint(QueryResultEnd);
 }
 
@@ -97,7 +103,8 @@ static ItemRef GetItemRefWithStore(const LocalQueryResults::Iterator& it, QueryR
 static ItemRef GetItemRefWithStore(QueryResults::Iterator& it, QueryResults::ProxiedRefsStorage* storage) { return it.GetItemRef(storage); }
 
 template <typename ItT>
-void WrResultSerializer::putItemParams(ItT& it, int shardId, QueryResults::ProxiedRefsStorage* storage, const QueryResults* result) {
+void WrResultSerializer::putItemParams(ItT& it, int shardId, QueryResults::ProxiedRefsStorage* storage, const QueryResults* result,
+									   const BindingCapabilities& caps) {
 	const auto itemRef = GetItemRefWithStore(it, storage);
 
 	if (opts_.flags & kResultsWithItemID) {
@@ -110,7 +117,12 @@ void WrResultSerializer::putItemParams(ItT& it, int shardId, QueryResults::Proxi
 	}
 
 	if (opts_.flags & kResultsWithRank) {
-		PutVarUint(itemRef.Proc());
+		const RankT rank = it.IsRanked() ? it.GetItemRefRanked().Rank() : 0.0;
+		if (caps.HasComplexRank()) {
+			PutRank(rank);
+		} else {
+			PutVarUint(uint16_t(rank));
+		}
 	}
 
 	if (opts_.flags & kResultsWithRaw) {
@@ -174,15 +186,15 @@ void WrResultSerializer::putItemParams(ItT& it, int shardId, QueryResults::Proxi
 	}
 }
 
-void WrResultSerializer::putPayloadTypes(WrSerializer& ser, const QueryResults* results, const ResultFetchOpts& opts, int cnt,
+void WrResultSerializer::putPayloadTypes(WrSerializer& ser, const QueryResults& results, const ResultFetchOpts& opts, int cnt,
 										 int totalCnt) {
 	ser.PutVarUint(cnt);
 	for (int nsid = 0; nsid < totalCnt; ++nsid) {
-		const TagsMatcher& tm = results->GetTagsMatcher(nsid);
+		const TagsMatcher& tm = results.GetTagsMatcher(nsid);
 		if (int32_t(tm.version() ^ tm.stateToken()) != opts.ptVersions[nsid]) {
 			ser.PutVarUint(nsid);
-			ser.PutVString(results->GetPayloadType(nsid)->Name());
-			const PayloadType& t = results->GetPayloadType(nsid);
+			ser.PutVString(results.GetPayloadType(nsid)->Name());
+			const PayloadType& t = results.GetPayloadType(nsid);
 			// Serialize tags matcher
 			ser.PutVarUint(tm.stateToken());
 			ser.PutVarUint(tm.version());
@@ -193,10 +205,10 @@ void WrResultSerializer::putPayloadTypes(WrSerializer& ser, const QueryResults* 
 	}
 }
 
-std::pair<int, int> WrResultSerializer::getPtUpdatesCount(const QueryResults* results) {
+std::pair<int, int> WrResultSerializer::getPtUpdatesCount(const QueryResults& results) {
 	if (opts_.flags & kResultsWithPayloadTypes) {
 		assertrx(opts_.ptVersions.data());
-		const auto mergedNsCount = results->GetMergedNSCount();
+		const auto mergedNsCount = results.GetMergedNSCount();
 		if (int(opts_.ptVersions.size()) != mergedNsCount) {
 			logPrintf(LogWarning, "ptVersionsCount != results->GetMergedNSCount: %d != %d. Client's meta data can become incosistent.",
 					  opts_.ptVersions.size(), mergedNsCount);
@@ -204,7 +216,7 @@ std::pair<int, int> WrResultSerializer::getPtUpdatesCount(const QueryResults* re
 		int cnt = 0, totalCnt = std::min(mergedNsCount, int(opts_.ptVersions.size()));
 
 		for (int i = 0; i < totalCnt; i++) {
-			const TagsMatcher& tm = results->GetTagsMatcher(i);
+			const TagsMatcher& tm = results.GetTagsMatcher(i);
 			if (int32_t(tm.version() ^ tm.stateToken()) != opts_.ptVersions[i]) {
 				++cnt;
 			}
@@ -214,37 +226,37 @@ std::pair<int, int> WrResultSerializer::getPtUpdatesCount(const QueryResults* re
 	return std::make_pair(0, 0);
 }
 
-bool WrResultSerializer::PutResults(QueryResults* result, const BindingCapabilities& caps, QueryResults::ProxiedRefsStorage* storage) {
-	if (result->IsWALQuery() && !(opts_.flags & kResultsWithRaw) && (opts_.flags & kResultsFormatMask) != kResultsJson) {
+bool WrResultSerializer::PutResults(QueryResults& result, const BindingCapabilities& caps, QueryResults::ProxiedRefsStorage* storage) {
+	if (result.IsWALQuery() && !(opts_.flags & kResultsWithRaw) && (opts_.flags & kResultsFormatMask) != kResultsJson) {
 		throw Error(errParams,
 					"Query results contain WAL items. Query results from WAL must either be requested in JSON format or with client, "
 					"supporting RAW items");
 	}
-	if (opts_.fetchOffset > result->Count()) {
-		opts_.fetchOffset = result->Count();
+	if (opts_.fetchOffset > result.Count()) {
+		opts_.fetchOffset = result.Count();
 	}
 
-	if (opts_.fetchOffset + opts_.fetchLimit > result->Count()) {
-		opts_.fetchLimit = result->Count() - opts_.fetchOffset;
+	if (opts_.fetchOffset + opts_.fetchLimit > result.Count()) {
+		opts_.fetchLimit = result.Count() - opts_.fetchOffset;
 	}
 
 	// Result has items from multiple namespaces, so pass nsid to each item
-	if (result->GetMergedNSCount() > 1) {
+	if (result.GetMergedNSCount() > 1) {
 		opts_.flags |= kResultsWithNsID;
 	}
 	// Result has joined items, so pass them to client within items from main NS
-	if (result->HaveJoined()) {
+	if (result.HaveJoined()) {
 		opts_.flags |= kResultsWithJoined;
 	}
 
-	if (result->HaveRank()) {
+	if (result.HaveRank()) {
 		opts_.flags |= kResultsWithRank;
 	}
-	if (result->NeedOutputRank()) {
+	if (result.NeedOutputRank()) {
 		opts_.flags |= kResultsNeedOutputRank;
 	}
 	// If data is not cacheable, just do not pass item's ID and LSN. Clients should not cache this data
-	if (!result->IsCacheEnabled()) {
+	if (!result.IsCacheEnabled()) {
 		opts_.flags &= ~kResultsWithItemID;
 	}
 	// MsgPack items contain fields names so there is no need to transfer payload types
@@ -254,26 +266,30 @@ bool WrResultSerializer::PutResults(QueryResults* result, const BindingCapabilit
 	}
 
 	// client with version 'compareVersionShardId' not support shardId
-	if (result->HaveShardIDs() && (opts_.flags & kResultsWithItemID) && !(opts_.flags & kResultsWithShardId)) {
+	const bool resultsHaveShardIDs = result.HaveShardIDs();
+	if (resultsHaveShardIDs && (opts_.flags & kResultsWithItemID) && !(opts_.flags & kResultsWithShardId)) {
 		if (caps.HasResultsWithShardIDs()) {
 			opts_.flags |= kResultsWithShardId;
 		} else {
 			opts_.flags &= ~kResultsWithItemID;
 		}
 	}
+	if (!resultsHaveShardIDs) {
+		opts_.flags &= ~kResultsWithShardId;
+	}
 
 	putQueryParams(caps, result);
 	size_t saveLen = len_;
 	const bool storeAsPointers = (opts_.flags & kResultsFormatMask) == kResultsPtrs;
 	auto ptrStorage = storeAsPointers ? storage : nullptr;
-	if (ptrStorage && result->HasProxiedResults()) {
-		storage->reserve(result->HaveJoined() ? 2 * opts_.fetchLimit : opts_.fetchLimit);
+	if (ptrStorage && result.HasProxiedResults()) {
+		storage->reserve(result.HaveJoined() ? 2 * opts_.fetchLimit : opts_.fetchLimit);
 	}
 
-	auto rowIt = result->begin() + opts_.fetchOffset;
+	auto rowIt = result.begin() + opts_.fetchOffset;
 	for (unsigned i = 0, limit = opts_.fetchLimit; i < limit; ++i, ++rowIt) {
 		// Put Item ID and version
-		putItemParams(rowIt, rowIt.GetShardId(), storage, result);
+		putItemParams(rowIt, rowIt.GetShardId(), storage, &result, caps);
 		if (opts_.flags & kResultsWithJoined) {
 			auto jIt = rowIt.GetJoined(storage);
 			PutVarUint(jIt.getJoinedItemsCount() > 0 ? jIt.getJoinedFieldsCount() : 0);
@@ -285,9 +301,9 @@ bool WrResultSerializer::PutResults(QueryResults* result, const BindingCapabilit
 						continue;
 					}
 					LocalQueryResults qr = it.ToQueryResults();
-					qr.addNSContext(*result, joinedField, lsn_t());
+					qr.addNSContext(result, joinedField, lsn_t());
 					for (auto& jit : qr) {
-						putItemParams(jit, rowIt.GetShardId(), storage, nullptr);
+						putItemParams(jit, rowIt.GetShardId(), storage, nullptr, caps);
 					}
 				}
 			}
@@ -296,22 +312,22 @@ bool WrResultSerializer::PutResults(QueryResults* result, const BindingCapabilit
 			grow((opts_.fetchLimit - 1) * (len_ - saveLen));
 		}
 	}
-	return opts_.fetchOffset + opts_.fetchLimit >= result->Count();
+	return opts_.fetchOffset + opts_.fetchLimit >= result.Count();
 }
 
-bool WrResultSerializer::PutResultsRaw(QueryResults* result, std::string_view* rawBufOut) {
-	if (opts_.fetchOffset > result->Count()) {
-		opts_.fetchOffset = result->Count();
+bool WrResultSerializer::PutResultsRaw(QueryResults& result, std::string_view* rawBufOut) {
+	if (opts_.fetchOffset > result.Count()) {
+		opts_.fetchOffset = result.Count();
 	}
 
-	if (opts_.fetchOffset + opts_.fetchLimit > result->Count()) {
-		opts_.fetchLimit = result->Count() - opts_.fetchOffset;
+	if (opts_.fetchOffset + opts_.fetchLimit > result.Count()) {
+		opts_.fetchLimit = result.Count() - opts_.fetchOffset;
 	}
 
-	result->FetchRawBuffer(opts_.flags, opts_.fetchOffset, opts_.fetchLimit);
+	result.FetchRawBuffer(opts_.flags, opts_.fetchOffset, opts_.fetchLimit);
 
 	client::ParsedQrRawBuffer raw;
-	const bool holdsRemoteData = result->GetRawProxiedBuffer(raw);
+	const bool holdsRemoteData = result.GetRawProxiedBuffer(raw);
 	auto cntP = getPtUpdatesCount(result);
 	auto& buf = *raw.buf;
 	if (cntP.first) {

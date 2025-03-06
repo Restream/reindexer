@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/keyvalue/float_vectors_holder.h"
 #include "core/keyvalue/key_string.h"
 #include "estl/h_vector.h"
 #include "payload/payloadvalue.h"
@@ -24,6 +25,7 @@ struct ItemImplRawData {
 	std::vector<std::unique_ptr<char[]>> largeJSONStrings_;
 	std::vector<std::string> precepts_;
 	std::unique_ptr<HolderT> holder_;
+	FloatVectorsHolderVector floatVectorsHolder_;
 };
 
 }  // namespace reindexer

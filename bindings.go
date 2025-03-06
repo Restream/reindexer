@@ -11,9 +11,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	otelattr "go.opentelemetry.io/otel/attribute"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/bindings/builtinserver/config"
-	"github.com/restream/reindexer/v4/cjson"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/bindings/builtinserver/config"
+	"github.com/restream/reindexer/v5/cjson"
 )
 
 const (
@@ -30,6 +30,10 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 		if err != nil {
 			return 0, err
 		}
+	}
+
+	if item == nil {
+		return 0, fmt.Errorf("rq: nil value in item modify call for '%s' namespace", namespace)
 	}
 
 	for tryCount := 0; tryCount < 2; tryCount++ {

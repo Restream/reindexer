@@ -1,13 +1,14 @@
 #include "asyncreplthread.h"
+#include "cluster/consts.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
 #include "clusterreplthread.h"
-#include "core/defnsconfigs.h"
 #include "core/namespace/snapshot/snapshot.h"
 #include "core/reindexer_impl/reindexerimpl.h"
+#include "estl/gift_str.h"
+#include "sharedsyncstate.h"
 #include "tools/catch_and_return.h"
 #include "updates/updatesqueue.h"
 #include "updatesbatcher.h"
-#include "vendor/spdlog/common.h"
 
 namespace reindexer {
 namespace cluster {
@@ -27,6 +28,68 @@ using updates::NodeNetworkCheckRecord;
 using updates::SaveNewShardingCfgRecord;
 using updates::ApplyNewShardingCfgRecord;
 using updates::ResetShardingCfgRecord;
+
+ReplThreadConfig::ReplThreadConfig(const ReplicationConfigData& baseConfig, const AsyncReplConfigData& config) {
+	AppName = config.appName;
+	EnableCompression = config.enableCompression;
+	UpdatesTimeoutSec = config.onlineUpdatesTimeoutSec;
+	RetrySyncIntervalMSec = config.retrySyncIntervalMSec;
+	ParallelSyncsPerThreadCount = config.parallelSyncsPerThreadCount;
+	BatchingRoutinesCount = config.batchingRoutinesCount > 0 ? size_t(config.batchingRoutinesCount) : 100;
+	MaxWALDepthOnForceSync = config.maxWALDepthOnForceSync;
+	ForceSyncOnLogicError = config.forceSyncOnLogicError;
+	SyncTimeoutSec = std::max(config.syncTimeoutSec, config.onlineUpdatesTimeoutSec);
+	ClusterID = baseConfig.clusterID;
+	if (config.onlineUpdatesDelayMSec > 0) {
+		OnlineUpdatesDelaySec = double(config.onlineUpdatesDelayMSec) / 1000.;
+	} else if (config.onlineUpdatesDelayMSec == 0) {
+		OnlineUpdatesDelaySec = 0;
+	} else {
+		OnlineUpdatesDelaySec = 0.1;
+	}
+}
+
+ReplThreadConfig::ReplThreadConfig(const ReplicationConfigData& baseConfig, const ClusterConfigData& config) {
+	AppName = config.appName;
+	EnableCompression = config.enableCompression;
+	UpdatesTimeoutSec = config.onlineUpdatesTimeoutSec;
+	RetrySyncIntervalMSec = config.retrySyncIntervalMSec;
+	ParallelSyncsPerThreadCount = config.parallelSyncsPerThreadCount;
+	ClusterID = baseConfig.clusterID;
+	ForceSyncOnLogicError = true;  // Always true for sync cluster
+	MaxWALDepthOnForceSync = config.maxWALDepthOnForceSync;
+	SyncTimeoutSec = std::max(config.syncTimeoutSec, config.onlineUpdatesTimeoutSec);
+	BatchingRoutinesCount = config.batchingRoutinesCount > 0 ? size_t(config.batchingRoutinesCount) : 100;
+	OnlineUpdatesDelaySec = 0;
+}
+
+namespace repl_thread_impl {
+void NamespaceData::UpdateLsnOnRecord(const updates::UpdateRecord& rec) {
+	if (!rec.IsDbRecord()) {
+		// Updates with *Namespace types have fake lsn. Those updates should not be count in latestLsn
+		latestLsn = rec.ExtLSN();
+	} else if (rec.Type() == updates::URType::AddNamespace) {
+		if (latestLsn.NsVersion().isEmpty() || latestLsn.NsVersion().Counter() < rec.ExtLSN().NsVersion().Counter()) {
+			latestLsn = ExtendedLsn(rec.ExtLSN().NsVersion(), lsn_t());
+		}
+	} else if (rec.Type() == updates::URType::DropNamespace) {
+		latestLsn = ExtendedLsn();
+	}
+}
+
+void Node::Reconnect(net::ev::dynamic_loop& loop, const ReplThreadConfig& config) {
+	if (connObserverId.has_value()) {
+		auto err = client.RemoveConnectionStateObserver(*connObserverId);
+		(void)err;	// ignored
+		connObserverId.reset();
+	}
+	client.Stop();
+	client::ConnectOpts opts;
+	opts.CreateDBIfMissing().WithExpectedClusterID(config.ClusterID);
+	auto err = client.Connect(dsn, loop, opts);
+	(void)err;	// ignored; Error will be checked during the further requests
+}
+}  // namespace repl_thread_impl
 
 template <typename BehaviourParamT>
 bool UpdateApplyStatus::IsHaveToResync() const noexcept {
@@ -180,6 +243,25 @@ void ReplThread<BehaviourParamT>::SetTerminate(bool val) noexcept {
 }
 
 template <typename BehaviourParamT>
+void ReplThread<BehaviourParamT>::DisconnectNodes() {
+	coroutine::wait_group swg;
+	for (auto& node : nodes) {
+		loop.spawn(
+			swg,
+			[&node]() noexcept {
+				if (node.connObserverId.has_value()) {
+					auto err = node.client.RemoveConnectionStateObserver(*node.connObserverId);
+					(void)err;	// ignore
+					node.connObserverId.reset();
+				}
+				node.client.Stop();
+			},
+			k16kCoroStack);
+	}
+	swg.wait();
+}
+
+template <typename BehaviourParamT>
 constexpr bool ReplThread<BehaviourParamT>::isClusterReplThread() noexcept {
 	static_assert(std::is_same_v<BehaviourParamT, AsyncThreadParam> || std::is_same_v<BehaviourParamT, ClusterThreadParam>,
 				  "Unexpected param type");
@@ -208,7 +290,7 @@ void ReplThread<BehaviourParamT>::nodeReplicationRoutine(Node& node) {
 			break;
 		}
 		if (expectingReconnect && (!err.ok() || !node.client.WithTimeout(kStatusCmdTimeout).Status(true).ok())) {
-			logInfo("%d:%d Reconnecting... Reason: %s", serverId_, node.uid, err.ok() ? "Not connected yet" : ("Error: " + err.what()));
+			logInfo("%d:%d Reconnecting... Reason: %s", serverId_, node.uid, err.ok() ? "Not connected yet" : ("Error: " + err.whatStr()));
 			node.Reconnect(loop, config_);
 		}
 		LogLevel logLevel = LogTrace;
@@ -219,7 +301,7 @@ void ReplThread<BehaviourParamT>::nodeReplicationRoutine(Node& node) {
 			if (!node.connObserverId.has_value()) {
 				node.connObserverId = node.client.AddConnectionStateObserver([this, &node](const Error& err) noexcept {
 					if (!err.ok() && updates_ && !terminate_) {
-						logInfo("%d:%d Connection error: %s", serverId_, node.uid, err.what());
+						logInfo("%d:%d Connection error: %s", serverId_, node.uid, err.whatStr());
 						UpdatesContainer recs;
 						recs.emplace_back(updates::URType::NodeNetworkCheck, node.uid, false);
 						node.requireResync = true;
@@ -231,7 +313,7 @@ void ReplThread<BehaviourParamT>::nodeReplicationRoutine(Node& node) {
 			statsCollector_.SaveNodeError(node.uid, err);
 		} else {
 			expectingReconnect = false;
-			log_.Log(logLevel, [&] { rtfmt("%d:%d Replication is not allowed: %s", serverId_, node.uid, err.what()); });
+			log_.Log(logLevel, [&] { rtfmt("%d:%d Replication is not allowed: %s", serverId_, node.uid, err.whatStr()); });
 		}
 		// Wait before next sync retry
 		constexpr auto kGranularSleepInterval = std::chrono::milliseconds(150);
@@ -292,7 +374,7 @@ template <>
 			}
 
 			if (!err.ok()) {
-				logWarn("%d:%d Unable to get repl state: %s", serverId_, node.uid, err.what());
+				logWarn("%d:%d Unable to get repl state: %s", serverId_, node.uid, err.whatStr());
 				return err;
 			}
 
@@ -325,6 +407,11 @@ template <>
 }
 
 template <typename BehaviourParamT>
+bool ReplThread<BehaviourParamT>::needForceSyncOnLogicError(const Error& err) const noexcept {
+	return config_.ForceSyncOnLogicError && !isNetworkError(err) && !isTimeoutError(err);
+}
+
+template <typename BehaviourParamT>
 Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 	std::vector<NamespaceDef> nsList;
 	node.requireResync = false;
@@ -340,7 +427,7 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 		if (!nsDataIt->second.tx.IsFree()) {
 			auto err = node.client.WithLSN(lsn_t(0, serverId_)).RollBackTransaction(nsDataIt->second.tx);
 			logInfo("%d:%d Rollback transaction result: %s", serverId_, node.uid,
-					err.ok() ? "OK" : ("Error:" + std::to_string(err.code()) + ". " + err.what()));
+					err.ok() ? "OK" : ("Error:" + std::to_string(err.code()) + ". " + err.whatStr()));
 			nsDataIt->second.tx = client::CoroTransaction();
 		}
 		if (nsDataIt->second.isClosed) {
@@ -406,7 +493,7 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 						}
 					}
 				} else {
-					logWarn("%d:%d Unable to get repl state: %s", serverId_, node.uid, err.what());
+					logWarn("%d:%d Unable to get repl state: %s", serverId_, node.uid, err.whatStr());
 				}
 
 				if (err.ok()) {
@@ -416,16 +503,16 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 					const NamespaceName nsName(ns.name);
 					err = syncNamespace(node, nsName, replState);
 					if (!err.ok()) {
-						logWarn("%d:%d:%s Namespace sync error: %s", serverId_, node.uid, nsName, err.what());
+						logWarn("%d:%d:%s Namespace sync error: %s", serverId_, node.uid, nsName, err.whatStr());
 						if (err.code() == errNotFound) {
 							err = Error();
 							logWarn("%d:%d Expecting drop namespace record for '%s'", serverId_, node.uid, nsName);
-						} else if (err.code() == errDataHashMismatch) {
+						} else if (err.code() == errDataHashMismatch || needForceSyncOnLogicError(err)) {
 							replState = ReplicationStateV2();
 							err = syncNamespace(node, nsName, replState);
 							if (!err.ok()) {
-								logWarn("%d:%d:%s Namespace sync error (resync due to datahash missmatch): %s", serverId_, node.uid, nsName,
-										err.what());
+								logWarn("%d:%d:%s Namespace sync error (resync due to %s): %s", serverId_, node.uid, nsName,
+										err.code() == errDataHashMismatch ? "datahash missmatch" : "logic error", err.whatStr());
 							}
 						}
 					}
@@ -444,7 +531,7 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 	}
 	localWg.wait();
 	if (!integralError.ok()) {
-		logWarn("%d:%d Unable to sync remote namespaces: %s", serverId_, node.uid, integralError.what());
+		logError("%d:%d Unable to sync remote namespaces: %s", serverId_, node.uid, integralError.what());
 		return integralError;
 	}
 	updateNodeStatus(node.uid, NodeStats::Status::Online);
@@ -507,7 +594,7 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 					if (auto err = client_.WithLSN(lsn_t(0, serverId_)).DropNamespace(tmpNsName); err.ok()) {
 						logWarn("%d: '%s' was dropped", serverId_, tmpNsName);
 					} else {
-						logWarn("%d: '%s' drop error: %s", serverId_, tmpNsName, err.what());
+						logWarn("%d: '%s' drop error: %s", serverId_, tmpNsName, err.whatStr());
 					}
 				}
 			}
@@ -685,7 +772,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 		NamespaceData* nsData;
 		uint16_t offset;
 	};
-	UpdatesChT& updatesNotifier = *node.updateNotifier;
+	auto& updatesNotifier = *node.updateNotifier;
 	bool requireReelections = false;
 
 	auto applyUpdateF = [this, &node](const UpdatesQueueT::UpdateT::Value& upd, Context& ctx) {
@@ -708,7 +795,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 		log_.Trace([&] {
 			const auto counters = upd.GetCounters();
 			rtfmt("%d:%d:%s Apply update (lsn: %d, id: %d) result: %s. Replicas: %d", serverId_, node.uid, it.NsName(), it.ExtLSN().LSN(),
-				  ctx.updPtr->ID() + ctx.offset, (res.err.ok() ? "OK" : "ERROR:" + res.err.what()), counters.replicas + 1);
+				  ctx.updPtr->ID() + ctx.offset, (res.err.ok() ? "OK" : "ERROR:" + res.err.whatStr()), counters.replicas + 1);
 		});
 		const auto replRes = ctx.updPtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, ctx.offset,
 														 it.EmmiterServerID() == node.serverId, res.err);
@@ -832,7 +919,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 					res = applyUpdate(it, node, nsData);
 					logTrace("%d:%d:%s Apply update result (id: %d, ns version: %d, lsn: %d): %s. Replicas: %d", serverId_, node.uid,
 							 nsName, updatePtr->ID() + offset, it.ExtLSN().NsVersion(), it.ExtLSN().LSN(),
-							 (res.err.ok() ? "OK" : "ERROR:" + res.err.what()), upd.GetCounters().replicas + 1);
+							 (res.err.ok() ? "OK" : "ERROR:" + res.err.whatStr()), upd.GetCounters().replicas + 1);
 
 					const auto replRes = updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset,
 																	it.EmmiterServerID() == node.serverId, res.err);
@@ -862,7 +949,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 			}
 
 			if (requireReelections) {
-				logWarn("%d:%d Requesting leader reelection on error: %s", serverId_, node.uid, res.err.what());
+				logWarn("%d:%d Requesting leader reelection on error: %s", serverId_, node.uid, res.err.whatStr());
 				requireReelections = false;
 				bhvParam_.OnUpdateReplicationFailure();
 				return res;
@@ -886,7 +973,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 
 template <typename BehaviourParamT>
 bool ReplThread<BehaviourParamT>::handleUpdatesWithError(Node& node, const Error& err) {
-	UpdatesChT& updatesNotifier = *node.updateNotifier;
+	auto& updatesNotifier = *node.updateNotifier;
 	UpdatesQueueT::UpdatePtr updatePtr;
 	bool hadErrorOnLastUpdate = false;
 
@@ -940,11 +1027,11 @@ bool ReplThread<BehaviourParamT>::handleUpdatesWithError(Node& node, const Error
 			}
 			const auto replRes = updatePtr->OnUpdateHandled(
 				node.uid, consensusCnt_, requiredReplicas_, offset, isEmmiter,
-				Error(errUpdateReplication, "Unable to send update to enough amount of replicas. Last error: %s", err.what()));
+				Error(errUpdateReplication, "Unable to send update to enough amount of replicas. Last error: %s", err.whatStr()));
 
 			if (replRes == updates::ReplicationResult::Error && !hadErrorOnLastUpdate) {
 				hadErrorOnLastUpdate = true;
-				logWarn("%d:%d Requesting leader reelection on error: %s", serverId_, node.uid, err.what());
+				logWarn("%d:%d Requesting leader reelection on error: %s", serverId_, node.uid, err.whatStr());
 				bhvParam_.OnUpdateReplicationFailure();
 			}
 
@@ -955,7 +1042,7 @@ bool ReplThread<BehaviourParamT>::handleUpdatesWithError(Node& node, const Error
 					"Required: "
 					"%d, succeed: "
 					"%d, failed: %d, replicas: %d",
-					serverId_, node.uid, nsName, err.what(), int(it.Type()), it.ExtLSN().NsVersion(), it.ExtLSN().LSN(),
+					serverId_, node.uid, nsName, err.whatStr(), int(it.Type()), it.ExtLSN().NsVersion(), it.ExtLSN().LSN(),
 					(isEmmiter ? node.serverId : it.EmmiterServerID()), consensusCnt_, counters.approves, counters.errors,
 					counters.replicas + 1);
 			});
@@ -1266,12 +1353,8 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const updates::Update
 	} catch (std::bad_variant_access& e) {
 		assert(false);
 		return Error(errLogic, "Bad variant access: %s", e.what());
-	} catch (const spdlog::spdlog_ex& err) {
-		return Error(errLogic, err.what());
-	} catch (Error err) {
-		return UpdateApplyStatus(std::move(err));
 	} catch (const std::exception& err) {
-		return Error(errLogic, err.what());
+		return Error(err, errLogic);
 	} catch (...) {
 		assert(false);
 		return Error(errLogic, "Unknow exception during UpdateRecord handling");

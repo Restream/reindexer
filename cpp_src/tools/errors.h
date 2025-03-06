@@ -3,7 +3,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
-#include "core/type_formats.h"
+#include "core/type_consts.h"
 #include "estl/intrusive_ptr.h"
 
 #ifdef REINDEX_CORE_BUILD
@@ -43,19 +43,15 @@ std::string assertf_fmt(const char* fmt, const Args&... args) {
 
 #endif	// REINDEX_CORE_BUILD
 
-#if defined(REINDEX_CORE_BUILD)
-class [[nodiscard]] Error {
-#else	// !defined(REINDEX_CORE_BUILD)
-class Error {  // TODO: Enable nodiscard once python binding will be updated
-#endif	// defined(REINDEX_CORE_BUILD)
+class [[nodiscard]] Error final : public std::exception {
 	using WhatT = intrusive_atomic_rc_wrapper<std::string>;
 	using WhatPtr = intrusive_ptr<WhatT>;
 	const static WhatPtr defaultErrorText_;
 
 public:
-	constexpr Error() noexcept = default;
-	constexpr Error(ErrorCode code) noexcept : code_{code} {}
-	Error(ErrorCode code, std::string what) noexcept : code_{code} {
+	Error() noexcept = default;
+	Error(ErrorCode code) noexcept : std::exception(), code_{code} {}
+	Error(ErrorCode code, std::string what) noexcept : std::exception(), code_{code} {
 		if (code_ != errOK) {
 			try {
 				what_ = make_intrusive<WhatT>(std::move(what));
@@ -64,7 +60,7 @@ public:
 			}
 		}
 	}
-	Error(ErrorCode code, std::string_view what) noexcept : code_{code} {
+	Error(ErrorCode code, std::string_view what) noexcept : std::exception(), code_{code} {
 		if (code_ != errOK) {
 			try {
 				what_ = make_intrusive<WhatT>(what);
@@ -73,7 +69,7 @@ public:
 			}
 		}
 	}
-	Error(ErrorCode code, const char* what) noexcept : code_{code} {
+	Error(ErrorCode code, const char* what) noexcept : std::exception(), code_{code} {
 		if (code_ != errOK) {
 			try {
 				what_ = make_intrusive<WhatT>(what);
@@ -82,9 +78,26 @@ public:
 			}
 		}
 	}
-	Error(const std::exception& e) noexcept : code_{errSystem} {
+	Error(const std::exception& e, ErrorCode backoffCode = errSystem) noexcept : std::exception(), code_{backoffCode} {
 		try {
-			what_ = make_intrusive<WhatT>(e.what());
+			if (auto err = dynamic_cast<const Error*>(&e); err) {
+				code_ = err->code_;
+				what_ = err->what_;
+			} else {
+				what_ = make_intrusive<WhatT>(e.what());
+			}
+		} catch (...) {
+			what_ = defaultErrorText_;
+		}
+	}
+	Error(std::exception&& e, ErrorCode backoffCode = errSystem) noexcept : std::exception(), code_{backoffCode} {
+		try {
+			if (auto err = dynamic_cast<Error*>(&e); err) {
+				code_ = err->code_;
+				what_ = std::move(err->what_);
+			} else {
+				what_ = make_intrusive<WhatT>(e.what());
+			}
 		} catch (...) {
 			what_ = defaultErrorText_;
 		}
@@ -96,7 +109,7 @@ public:
 
 #ifdef REINDEX_CORE_BUILD
 	template <typename... Args>
-	Error(ErrorCode code, const char* fmt, const Args&... args) noexcept : code_{code} {
+	Error(ErrorCode code, const char* fmt, const Args&... args) noexcept : std::exception(), code_{code} {
 		if (code_ != errOK) {
 			try {
 				try {
@@ -112,11 +125,12 @@ public:
 	}
 #endif	// REINDEX_CORE_BUILD
 
-	[[nodiscard]] const std::string& what() const& noexcept {
-		static const std::string noerr;
+	[[nodiscard]] const char* what() const noexcept override { return whatStr().c_str(); }
+	[[nodiscard]] const std::string& whatStr() const& noexcept {
+		static const std::string noerr("");
 		return what_ ? *what_ : noerr;
 	}
-	[[nodiscard]] std::string what() && noexcept {
+	[[nodiscard]] std::string whatStr() && noexcept {
 		if (what_) {
 			return std::move(*what_);
 		} else {
@@ -127,7 +141,7 @@ public:
 	[[nodiscard]] bool ok() const noexcept { return code_ == errOK; }
 
 	explicit operator bool() const noexcept { return !ok(); }
-	[[nodiscard]] bool operator==(const Error& other) const noexcept { return code() == other.code() && what() == other.what(); }
+	[[nodiscard]] bool operator==(const Error& other) const noexcept { return code() == other.code() && whatStr() == other.whatStr(); }
 	[[nodiscard]] bool operator!=(const Error& other) const noexcept { return !(*this == other); }
 
 private:

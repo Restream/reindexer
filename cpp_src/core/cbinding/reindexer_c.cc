@@ -1,13 +1,13 @@
 #include "reindexer_c.h"
 
 #include <string.h>
-#include <clocale>
 #include <mutex>
-#include <shared_mutex>
 
 #include "cgocancelcontextpool.h"
 #include "core/cjson/baseencoder.h"
+#include "core/cjson/cjsonbuilder.h"
 #include "debug/crashqueryreporter.h"
+#include "estl/gift_str.h"
 #include "estl/syncpool.h"
 #include "events/subscriber_config.h"
 #include "reindexer_version.h"
@@ -31,7 +31,7 @@ static_assert(std::atomic<BindingCapabilities>::is_always_lock_free, "Expected l
 static reindexer_error error2c(const Error& err_) {
 	reindexer_error err;
 	err.code = err_.code();
-	err.what = err_.what().length() ? strdup(err_.what().c_str()) : nullptr;
+	err.what = err_.whatStr().length() ? strdup(err_.what()) : nullptr;
 	return err;
 }
 
@@ -40,7 +40,7 @@ static reindexer_ret ret2c(const Error& err_, const reindexer_resbuffer& out) {
 	ret.err_code = err_.code();
 	if (ret.err_code) {
 		ret.out.results_ptr = 0;
-		ret.out.data = uintptr_t(err_.what().length() ? strdup(err_.what().c_str()) : nullptr);
+		ret.out.data = uintptr_t(err_.whatStr().length() ? strdup(err_.what()) : nullptr);
 	} else {
 		ret.out = out;
 	}
@@ -53,7 +53,7 @@ static reindexer_array_ret arr_ret2c(const Error& err_, reindexer_buffer* out, u
 	if (ret.err_code) {
 		ret.out_buffers = 0;
 		ret.out_size = 0;
-		ret.data = uintptr_t(err_.what().length() ? strdup(err_.what().c_str()) : nullptr);
+		ret.data = uintptr_t(err_.whatStr().length() ? strdup(err_.what()) : nullptr);
 	} else {
 		ret.out_buffers = out;
 		ret.out_size = out_size;
@@ -62,7 +62,7 @@ static reindexer_array_ret arr_ret2c(const Error& err_, reindexer_buffer* out, u
 	return ret;
 }
 
-static uint32_t span2arr(span<chunk> d, reindexer_buffer* out, uint32_t out_size) {
+static uint32_t span2arr(std::span<chunk> d, reindexer_buffer* out, uint32_t out_size) {
 	const auto sz = std::min(d.size(), size_t(out_size));
 	for (uint32_t i = 0; i < sz; ++i) {
 		out[i].data = d[i].data();
@@ -130,11 +130,11 @@ static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reinde
 	std::string_view rawBufOut;
 	if (rawResProxying) {
 		result->ser.SetOpts({.flags = flags,
-							 .ptVersions = span<int32_t>(pt_versions, pt_versions_count),
+							 .ptVersions = std::span<int32_t>(pt_versions, pt_versions_count),
 							 .fetchOffset = 0,
 							 .fetchLimit = INT_MAX,
 							 .withAggregations = true});
-		result->ser.PutResultsRaw(result.get(), &rawBufOut);
+		result->ser.PutResultsRaw(*result, &rawBufOut);
 		out->len = rawBufOut.size() ? rawBufOut.size() : result->ser.Len();
 		out->data = rawBufOut.size() ? uintptr_t(rawBufOut.data()) : uintptr_t(result->ser.Buf());
 	} else {
@@ -143,11 +143,11 @@ static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reinde
 			flags |= kResultsWithPayloadTypes;
 		}
 		result->ser.SetOpts({.flags = flags,
-							 .ptVersions = span<int32_t>(pt_versions, pt_versions_count),
+							 .ptVersions = std::span<int32_t>(pt_versions, pt_versions_count),
 							 .fetchOffset = 0,
 							 .fetchLimit = INT_MAX,
 							 .withAggregations = true});
-		result->ser.PutResults(result.get(), bindingCaps.load(std::memory_order_relaxed), &result->proxiedRefsStorage);
+		result->ser.PutResults(*result, bindingCaps.load(std::memory_order_relaxed), &result->proxiedRefsStorage);
 		out->len = result->ser.Len();
 		out->data = uintptr_t(result->ser.Buf());
 	}
@@ -161,17 +161,16 @@ static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reinde
 uintptr_t init_reindexer() {
 	reindexer_init_locale();
 	static std::atomic<int64_t> dbsCounter = {0};
-	ReindexerWrapper* db = new ReindexerWrapper(std::move(ReindexerConfig().WithDBName(fmt::sprintf("builtin_db_%d", dbsCounter++))));
+	auto db = new ReindexerWrapper(std::move(ReindexerConfig().WithDBName(fmt::sprintf("builtin_db_%d", dbsCounter++))));
 	return reinterpret_cast<uintptr_t>(db);
 }
 
 uintptr_t init_reindexer_with_config(reindexer_config config) {
 	reindexer_init_locale();
-	ReindexerWrapper* db =
-		new ReindexerWrapper(std::move(ReindexerConfig()
-										   .WithAllocatorCacheLimits(config.allocator_cache_limit, config.allocator_max_cache_part)
-										   .WithDBName(str2c(config.sub_db_name))
-										   .WithUpdatesSize(config.max_updates_size)));
+	auto db = new ReindexerWrapper(std::move(ReindexerConfig()
+												 .WithAllocatorCacheLimits(config.allocator_cache_limit, config.allocator_max_cache_part)
+												 .WithDBName(str2c(config.sub_db_name))
+												 .WithUpdatesSize(config.max_updates_size)));
 	return reinterpret_cast<uintptr_t>(db);
 }
 
@@ -220,9 +219,9 @@ reindexer_error reindexer_modify_item_packed_tx(uintptr_t rx, uintptr_t tr, rein
 	}
 
 	Serializer ser(args.data, args.len);
-	int format = ser.GetVarUint();
-	int mode = ser.GetVarUint();
-	int state_token = ser.GetVarUint();
+	int format = ser.GetVarUInt();
+	int mode = ser.GetVarUInt();
+	int state_token = ser.GetVarUInt();
 	Error err = err_not_init;
 	auto item = trw->tr_.NewItem();
 	proccess_packed_item(item, mode, state_token, data, format, err);
@@ -234,7 +233,7 @@ reindexer_error reindexer_modify_item_packed_tx(uintptr_t rx, uintptr_t tr, rein
 		}
 	}
 	if (err.ok()) {
-		unsigned preceptsCount = ser.GetVarUint();
+		unsigned preceptsCount = ser.GetVarUInt();
 		std::vector<std::string> precepts;
 		precepts.reserve(preceptsCount);
 		while (preceptsCount--) {
@@ -252,9 +251,9 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 	try {
 		Serializer ser(args.data, args.len);
 		std::string_view ns = ser.GetVString();
-		int format = ser.GetVarUint();
-		int mode = ser.GetVarUint();
-		int state_token = ser.GetVarUint();
+		int format = ser.GetVarUInt();
+		int mode = ser.GetVarUInt();
+		int state_token = ser.GetVarUInt();
 
 		Error err = err_not_init;
 		if (rx) {
@@ -266,7 +265,7 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 
 			query_results_ptr res;
 			if (err.ok()) {
-				unsigned preceptsCount = ser.GetVarUint();
+				unsigned preceptsCount = ser.GetVarUInt();
 				const bool needSaveItemValueInQR = preceptsCount;
 				std::vector<std::string> precepts;
 				precepts.reserve(preceptsCount);
@@ -447,14 +446,12 @@ reindexer_error reindexer_add_index(uintptr_t rx, reindexer_string nsName, reind
 	if (rx) {
 		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 		std::string json(str2cv(indexDefJson));
-		IndexDef indexDef;
-
-		auto err = indexDef.FromJSON(giftStr(json));
-		if (!err.ok()) {
-			return error2c(err);
+		const auto indexDef = IndexDef::FromJSON(giftStr(json));
+		if (!indexDef) {
+			return error2c(indexDef.error());
 		}
 
-		res = rdxKeeper.db().AddIndex(str2cv(nsName), indexDef);
+		res = rdxKeeper.db().AddIndex(str2cv(nsName), *indexDef);
 	}
 	return error2c(res);
 }
@@ -464,14 +461,13 @@ reindexer_error reindexer_update_index(uintptr_t rx, reindexer_string nsName, re
 	if (rx) {
 		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 		std::string json(str2cv(indexDefJson));
-		IndexDef indexDef;
 
-		auto err = indexDef.FromJSON(giftStr(json));
-		if (!err.ok()) {
-			return error2c(err);
+		const auto indexDef = IndexDef::FromJSON(giftStr(json));
+		if (!indexDef) {
+			return error2c(indexDef.error());
 		}
 
-		res = rdxKeeper.db().UpdateIndex(str2cv(nsName), indexDef);
+		res = rdxKeeper.db().UpdateIndex(str2cv(nsName), *indexDef);
 	}
 	return error2c(res);
 }
@@ -494,9 +490,8 @@ reindexer_error reindexer_set_schema(uintptr_t rx, reindexer_string nsName, rein
 	return error2c(res);
 }
 
-// TODO: Rename this method, when all the connectors will support new version of connect
-reindexer_error reindexer_connect_v4(uintptr_t rx, reindexer_string dsn, ConnectOpts opts, reindexer_string client_vers,
-									 BindingCapabilities caps) {
+reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpts opts, reindexer_string client_vers,
+								  BindingCapabilities caps) {
 	SemVersion cliVersion(str2cv(client_vers));
 	if (opts.options & kConnectOptWarnVersion) {
 		SemVersion libVersion(REINDEX_VERSION);
@@ -516,11 +511,6 @@ reindexer_error reindexer_connect_v4(uintptr_t rx, reindexer_string dsn, Connect
 	}
 	bindingCaps.store(caps, std::memory_order_relaxed);
 	return error2c(err);
-}
-
-// TODO: Remove this wrapper, when all the connectors will support new version of connect
-reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpts opts, reindexer_string client_vers) {
-	return reindexer_connect_v4(rx, dsn, opts, client_vers, BindingCapabilities{0});
 }
 
 reindexer_error reindexer_init_system_namespaces(uintptr_t rx) {
@@ -576,7 +566,7 @@ reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, i
 
 			Query q = Query::Deserialize(ser);
 			while (!ser.Eof()) {
-				const auto joinType = JoinType(ser.GetVarUint());
+				const auto joinType = JoinType(ser.GetVarUInt());
 				JoinedQuery q1{joinType, Query::Deserialize(ser)};
 				if (q1.joinType == JoinType::Merge) {
 					q.Merge(std::move(q1));
@@ -728,7 +718,7 @@ reindexer_buffer reindexer_cptr2cjson(uintptr_t results_ptr, uintptr_t cptr, int
 	WrSerializer ser;
 	ConstPayload pl(payloadType, *pv);
 	CJsonBuilder builder(ser, ObjType::TypePlain);
-	CJsonEncoder cjsonEncoder(&tagsMatcher);
+	CJsonEncoder cjsonEncoder(&tagsMatcher, &qr->GetFieldsFilter(ns_id));
 
 	cjsonEncoder.Encode(pl, builder);
 	const int n = ser.Len();
