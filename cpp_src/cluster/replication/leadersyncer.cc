@@ -2,13 +2,14 @@
 #include "client/snapshot.h"
 #include "cluster/logger.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
-#include "core/defnsconfigs.h"
 #include "core/reindexer_impl/reindexerimpl.h"
+#include "estl/gift_str.h"
+#include "vendor/gason/gason.h"
 
 namespace reindexer {
 namespace cluster {
 
-Error LeaderSyncer::Sync(std::list<LeaderSyncQueue::Entry>&& entries, SharedSyncState<>& sharedSyncState, ReindexerImpl& thisNode,
+Error LeaderSyncer::Sync(elist<LeaderSyncQueue::Entry>&& entries, SharedSyncState& sharedSyncState, ReindexerImpl& thisNode,
 						 ReplicationStatsCollector statsCollector) {
 	Error err;
 	const LeaderSyncThread::Config thCfg{cfg_.dsns,		cfg_.maxWALDepthOnForceSync, cfg_.clusterId,

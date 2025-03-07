@@ -1,12 +1,14 @@
 #pragma once
 
 #include "core/cjson/baseencoder.h"
+#include "core/cjson/jsonbuilder.h"
+#include "core/rank_t.h"
 
 namespace reindexer {
 
 class AdditionalDatasource final : public IAdditionalDatasource<JsonBuilder> {
 public:
-	AdditionalDatasource(double r, IEncoderDatasourceWithJoins* jds) noexcept : joinsDs_(jds), withRank_(true), rank_(r) {}
+	AdditionalDatasource(RankT r, IEncoderDatasourceWithJoins* jds) noexcept : joinsDs_(jds), withRank_(true), rank_(r) {}
 	AdditionalDatasource(IEncoderDatasourceWithJoins* jds) noexcept : joinsDs_(jds) {}
 	void PutAdditionalFields(JsonBuilder& builder) const override {
 		if (withRank_) {
@@ -18,7 +20,7 @@ public:
 private:
 	IEncoderDatasourceWithJoins* joinsDs_ = nullptr;
 	bool withRank_ = false;
-	double rank_ = 0.0;
+	RankT rank_ = 0.0;
 };
 
 class AdditionalDatasourceShardId final : public IAdditionalDatasource<JsonBuilder> {

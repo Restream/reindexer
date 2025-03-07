@@ -1,9 +1,10 @@
 #include "sharding.h"
+#include "cluster/consts.h"
 #include "cluster/stats/replicationstats.h"
 #include "core/clusterproxy.h"
-#include "core/defnsconfigs.h"
 #include "core/item.h"
 #include "core/type_consts.h"
+#include "estl/gift_str.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -20,7 +21,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 	for (auto it = q.Entries().cbegin(), next = it, end = q.Entries().cend(); it != end; ++it) {
 		++next;
 		it->Visit(
-			Skip<AlwaysTrue, AlwaysFalse, JoinQueryEntry, SubQueryEntry>{},
+			Skip<AlwaysTrue, AlwaysFalse, JoinQueryEntry, SubQueryEntry, KnnQueryEntry>{},
 			[&](const QueryEntry& qe) {
 				if (containsKey) {
 					if (keys_.IsShardIndex(ns, qe.FieldName())) {
@@ -63,7 +64,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 			[&](const Bracket&) {
 				for (auto i = it.cbegin().PlainIterator(), end = it.cend().PlainIterator(); i != end; ++i) {
 					i->Visit(
-						Skip<AlwaysFalse, AlwaysTrue, JoinQueryEntry, Bracket, SubQueryEntry>{},
+						Skip<AlwaysFalse, AlwaysTrue, JoinQueryEntry, Bracket, SubQueryEntry, KnnQueryEntry>{},
 						[&](const QueryEntry& qe) {
 							if (keys_.IsShardIndex(ns, qe.FieldName())) {
 								throw Error(errLogic, "Shard key condition cannot be included in bracket");
@@ -355,8 +356,8 @@ LocatorService::LocatorService(ClusterProxy& rx, cluster::ShardingConfig config)
 
 Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vector<cluster::ShardingConfig::Key>& keys) {
 	return fieldType.EvaluateOneOf(
-		[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int,
-				  KeyValueType::Uuid>) -> Error {
+		[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::String, KeyValueType::Bool,
+				  KeyValueType::Int, KeyValueType::Uuid>) -> Error {
 			try {
 				for (auto& k : keys) {
 					for (auto& [l, r, _] : k.values) {
@@ -371,7 +372,7 @@ Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vec
 			return Error();
 		},
 		[](OneOf<KeyValueType::Composite, KeyValueType::Tuple>) { return Error{errLogic, "Sharding by composite index is unsupported"}; },
-		[fieldType](OneOf<KeyValueType::Undefined, KeyValueType::Null>) {
+		[fieldType](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>) {
 			return Error{errLogic, "Unsupported field type: %s", fieldType.Name()};
 		});
 }
@@ -592,6 +593,27 @@ std::shared_ptr<client::Reindexer> LocatorService::getShardConnection(int shardI
 		return {};
 	}
 	return peekHostForShard(hostsConnections_[shardId], shardId, status);
+}
+
+Connections::Connections(Connections&& obj) noexcept
+	: base(static_cast<base&&>(obj)),
+	  actualIndex(std::move(obj.actualIndex)),
+	  reconnectTs(obj.reconnectTs),
+	  status(std::move(obj.status)),
+	  shutdown(obj.shutdown) {}
+
+Connections::Connections(const Connections& obj) noexcept
+	: base(obj), actualIndex(obj.actualIndex), reconnectTs(obj.reconnectTs), status(obj.status), shutdown(obj.shutdown) {}
+
+void Connections::Shutdown() {
+	std::lock_guard lck(m);
+	if (!shutdown) {
+		for (auto& conn : *this) {
+			conn->Stop();
+		}
+		shutdown = true;
+		status = Error(errTerminated, "Sharding proxy is already shut down");
+	}
 }
 
 }  // namespace sharding

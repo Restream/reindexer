@@ -65,6 +65,7 @@ public:
 			case CondEmpty:
 			case CondLike:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				throw Error(errLogic, "Not supported condition!");
 		}
@@ -90,6 +91,7 @@ public:
 			case CondEmpty:
 			case CondLike:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				throw Error(errLogic, "Not supported condition!");
 		}

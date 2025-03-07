@@ -12,11 +12,11 @@ using namespace std::string_view_literals;
 
 std::string_view kvTypeToJsonSchemaType(KeyValueType type) {
 	return type.EvaluateOneOf([](OneOf<KeyValueType::Int, KeyValueType::Int64>) noexcept { return "integer"sv; },
-							  [](KeyValueType::Double) noexcept { return "number"sv; },
+							  [](OneOf<KeyValueType::Double, KeyValueType::Float>) noexcept { return "number"sv; },
 							  [](KeyValueType::Bool) noexcept { return "boolean"sv; },
 							  [](OneOf<KeyValueType::String, KeyValueType::Uuid>) noexcept { return "string"sv; },
 							  [](KeyValueType::Null) noexcept { return "null"sv; }, [](KeyValueType::Tuple) noexcept { return "object"sv; },
-							  [&](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) -> std::string_view {
+							  [&](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) -> std::string_view {
 								  throw Error(errParams, "Impossible to convert type [%s] to json schema type", type.Name());
 							  });
 }
@@ -365,7 +365,7 @@ std::vector<int> Schema::MakeCsvTagOrdering(const TagsMatcher& tm) const {
 	gason::JsonParser parser;
 	auto tags0lvl = parser.Parse(std::string_view(originalJson_))["required"];
 
-	if (tags0lvl.value.getTag() != gason::JsonTag::JSON_ARRAY) {
+	if (tags0lvl.value.getTag() != gason::JsonTag::ARRAY) {
 		throw Error(errParams, "Incorrect type of \"required\" tag in namespace json-schema");
 	}
 

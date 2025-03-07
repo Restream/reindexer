@@ -7,7 +7,6 @@
 #include <gtest/gtest.h>
 #include "core/cjson/cjsonbuilder.h"
 #include "core/cjson/cjsondecoder.h"
-#include "core/cjson/jsonbuilder.h"
 #include "core/payload/payloadiface.h"
 #include "reindexer_api.h"
 #include "server/server.h"
@@ -213,16 +212,16 @@ public:
 	using NsType = std::pair<reindexer::TagsMatcher, reindexer::PayloadTypeImpl>;
 
 	void checkPayloadTypes(reindexer::Serializer& rser, std::vector<NsType>& types, bool print = false) {
-		int ptCount = rser.GetVarUint();
+		int ptCount = rser.GetVarUInt();
 		for (int i = 0; i < ptCount; i++) {
-			uint64_t nsid = rser.GetVarUint();
+			uint64_t nsid = rser.GetVarUInt();
 			ASSERT_TRUE(nsid == 0 || nsid == 1) << nsid;
 			std::string nsName = std::string(rser.GetVString());
 			if (print) {
 				std::cout << "ns: " << nsName << " [" << nsid << "]" << std::endl;
 			}
-			uint64_t stateToken = rser.GetVarUint();
-			uint64_t version = rser.GetVarUint();
+			uint64_t stateToken = rser.GetVarUInt();
+			uint64_t version = rser.GetVarUInt();
 			if (print) {
 				std::cout << "version: " << version << "; stateToke: " << stateToken << std::endl;
 			}
@@ -266,7 +265,8 @@ public:
 
 		reindexer::h_vector<reindexer::key_string, 16> storage;
 		reindexer::CJsonDecoder decoder(const_cast<reindexer::TagsMatcher&>(nsTypes.first), storage);
-		ASSERT_NO_THROW(decoder.Decode<>(pl, rdser, wrser));
+		reindexer::FloatVectorsHolderVector floatVectorsHolder;
+		ASSERT_NO_THROW(decoder.Decode<>(pl, rdser, wrser, floatVectorsHolder, reindexer::CJsonDecoder::DefaultFilter{nullptr}));
 		ASSERT_TRUE(rdser.Eof());
 	}
 
@@ -274,14 +274,14 @@ public:
 				   bool joined = false, bool print = false) {
 		uint64_t nsId = 0;
 		if (flags->withnsid()) {
-			nsId = rser.GetVarUint();
+			nsId = rser.GetVarUInt();
 			if (print) {
 				std::cout << "nsid: " << nsId;
 			}
 		}
 		if (flags->withitemid()) {
-			uint64_t rowId = rser.GetVarUint();
-			uint64_t lsn = rser.GetVarUint();
+			uint64_t rowId = rser.GetVarUInt();
+			uint64_t lsn = rser.GetVarUInt();
 			if (print) {
 				std::cout << "; rowid: " << rowId;
 				std::cout << "; lsn: " << lsn;
@@ -296,7 +296,7 @@ public:
 			}
 		}
 		if (flags->withrank()) {
-			uint64_t rank = rser.GetVarUint();
+			reindexer::RankT rank = rser.GetFloat();
 			if (print) {
 				std::cout << "; rank: " << rank;
 			}
@@ -317,12 +317,12 @@ public:
 		while (rser.Pos() < rser.Len()) {
 			checkItem(rser, flags, nsTypes, false, print);
 			if (flags->withjoineditems()) {
-				uint64_t joinedFields = rser.GetVarUint();
+				uint64_t joinedFields = rser.GetVarUInt();
 				if (print) {
 					std::cout << "joined fields: " << joinedFields << std::endl;
 				}
 				for (uint64_t i = 0; i < joinedFields; ++i) {
-					uint64_t joinedItems = rser.GetVarUint();
+					uint64_t joinedItems = rser.GetVarUInt();
 					if (print) {
 						std::cout << "items joined: " << joinedItems << std::endl;
 					}

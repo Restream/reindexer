@@ -6,7 +6,7 @@
 #include "types.h"
 
 namespace reindexer {
-struct IndexDef;
+class IndexDef;
 }  // namespace reindexer
 
 namespace fuzzing {

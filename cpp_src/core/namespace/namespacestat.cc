@@ -86,11 +86,14 @@ void IndexMemStat::GetJSON(JsonBuilder& builder) {
 	if (sortOrdersSize) {
 		builder.Put("sort_orders_size", sortOrdersSize);
 	}
-	if (fulltextSize) {
-		builder.Put("fulltext_size", fulltextSize);
-	}
 	if (columnSize) {
 		builder.Put("column_size", columnSize);
+	}
+	if (indexingStructSize) {
+		builder.Put("indexing_struct_size", indexingStructSize);
+	}
+	if (isBuilt.has_value()) {
+		builder.Put("is_built", isBuilt.value());
 	}
 
 	if (idsetCache.totalSize || idsetCache.itemsCount || idsetCache.emptyCount || idsetCache.hitCountLimit) {
@@ -164,7 +167,7 @@ void IndexPerfStat::GetJSON(JsonBuilder& builder) {
 
 static bool LoadLsn(lsn_t& to, const gason::JsonNode& node) {
 	if (!node.empty()) {
-		if (node.value.getTag() == gason::JSON_OBJECT) {
+		if (node.value.getTag() == gason::JsonTag::OBJECT) {
 			to.FromJSON(node);
 		} else {
 			to = lsn_t(node.As<int64_t>());
@@ -196,7 +199,7 @@ void ReplicationState::GetJSON(JsonBuilder& builder) {
 	}
 }
 
-void ReplicationState::FromJSON(span<char> json) {
+void ReplicationState::FromJSON(std::span<char> json) {
 	try {
 		gason::JsonParser parser;
 		auto root = parser.Parse(json);
@@ -305,7 +308,7 @@ void ClusterizationStatus::GetJSON(JsonBuilder& builder) const {
 	builder.Put("role", nsClusterizationRoleToStr(role));
 }
 
-Error ClusterizationStatus::FromJSON(span<char> json) {
+Error ClusterizationStatus::FromJSON(std::span<char> json) {
 	try {
 		gason::JsonParser parser;
 		FromJSON(parser.Parse(json));
@@ -333,7 +336,7 @@ void ReplicationStateV2::GetJSON(JsonBuilder& builder) {
 	clusterStatus.GetJSON(clusterObj);
 }
 
-void ReplicationStateV2::FromJSON(span<char> json) {
+void ReplicationStateV2::FromJSON(std::span<char> json) {
 	try {
 		gason::JsonParser parser;
 		auto root = parser.Parse(json);

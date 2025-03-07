@@ -1,11 +1,13 @@
 #include <condition_variable>
 #include "client/cororeindexer.h"
 #include "client/reindexer.h"
+#include "core/system_ns_names.h"
 #include "coroutine/waitgroup.h"
 #include "gtest/gtest.h"
 #include "gtests/tests/fixtures/servercontrol.h"
 #include "net/ev/ev.h"
 #include "tools/fsops.h"
+#include "vendor/gason/gason.h"
 
 using namespace reindexer;
 
@@ -321,7 +323,7 @@ TEST(SyncCoroRx, RxClientNThread) {
 	}
 
 	client::QueryResults qr;
-	err = client.Select(Query("#clientsstats"), qr);
+	err = client.Select(Query(kClientsStatsNamespace), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	reindexer::WrSerializer wrser;
 	size_t resultConnsCount = 0;

@@ -1,4 +1,6 @@
 #include "key_value_type.h"
+#include "tools/errors.h"
+#include "type_consts_helpers.h"
 
 namespace reindexer {
 
@@ -9,6 +11,8 @@ std::string_view KeyValueType::Name() const noexcept {
 			return "int64"sv;
 		case KVT::Double:
 			return "double"sv;
+		case KVT::Float:
+			return "float"sv;
 		case KVT::String:
 			return "string"sv;
 		case KVT::Bool:
@@ -25,6 +29,8 @@ std::string_view KeyValueType::Name() const noexcept {
 			return "tuple"sv;
 		case KVT::Uuid:
 			return "uuid"sv;
+		case KVT::FloatVector:
+			return "float_vector"sv;
 	}
 	assertrx(0);
 	std::abort();

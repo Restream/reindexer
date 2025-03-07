@@ -1,5 +1,6 @@
 #include "clusterization_async_api.h"
 #include "gtests/tests/gtest_cout.h"
+#include "tools/fsops.h"
 
 using namespace reindexer;
 

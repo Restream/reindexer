@@ -25,6 +25,7 @@ bool Compare(const Variant& key1, const Variant& key2, CondType condType) {
 		case CondEmpty:
 		case CondLike:
 		case CondDWithin:
+		case CondKnn:
 			throw std::runtime_error("Do not support this operation yet!");
 	}
 	return false;
@@ -249,24 +250,21 @@ TEST_F(EqualPositionApi, EmptyCompOpErr) {
 		QueryResults qr;
 		Query q = Query::FromSQL("SELECT * FROM ns2 WHERE a1 IS NULL AND a2=20 equal_position(a1, a2)");
 		err = rt.reindexer->Select(q, qr);
-		EXPECT_TRUE(err.what() == "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!")
-			<< err.what();
+		EXPECT_STREQ(err.what(), "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
 		EXPECT_FALSE(err.ok());
 	}
 	{
 		QueryResults qr;
 		Query q = Query::FromSQL("SELECT * FROM ns2 WHERE a1 =10 AND a2 IS EMPTY equal_position(a1, a2)");
 		err = rt.reindexer->Select(q, qr);
-		EXPECT_TRUE(err.what() == "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!")
-			<< err.what();
+		EXPECT_STREQ(err.what(), "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
 		EXPECT_FALSE(err.ok());
 	}
 	{
 		QueryResults qr;
 		Query q = Query::FromSQL("SELECT * FROM ns2 WHERE a1 IN () AND a2 IS EMPTY equal_position(a1, a2)");
 		err = rt.reindexer->Select(q, qr);
-		EXPECT_TRUE(err.what() == "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!")
-			<< err.what();
+		EXPECT_STREQ(err.what(), "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
 		EXPECT_FALSE(err.ok());
 	}
 }
@@ -282,7 +280,7 @@ TEST_F(EqualPositionApi, SamePosition) {
 	// Make sure processing this query leads to error
 	const Error err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "equal positions fields should be unique: [a1, a1]");
+	EXPECT_STREQ(err.what(), "equal positions fields should be unique: [a1, a1]");
 }
 
 // Make sure equal_position() works only with unique fields
@@ -295,7 +293,7 @@ TEST_F(EqualPositionApi, SamePositionFromSql) {
 	// Make sure processing this query leads to error
 	const Error err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "equal positions fields should be unique: [a1, a1]");
+	EXPECT_STREQ(err.what(), "equal positions fields should be unique: [a1, a1]");
 }
 
 TEST_F(EqualPositionApi, SelectBrackets) {

@@ -114,8 +114,13 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(tokenizer
 								 }
 								 return {.value = Variant{}, .type = PrimaryToken::Type::Array};
 							 },
-							 [](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) noexcept
-							 -> PrimaryToken {
+							 [](KeyValueType::Float) noexcept -> PrimaryToken {
+								 // Indexed field type can not be float
+								 assertrx_throw(false);
+								 abort();
+							 },
+							 [](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
+									  KeyValueType::FloatVector>) noexcept -> PrimaryToken {
 								 assertrx_throw(false);
 								 abort();
 							 });
@@ -128,8 +133,13 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(tokenizer
 				}
 				return {.value = fieldValues.front(), .type = PrimaryToken::Type::Scalar};
 			},
-			[&, this](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Uuid>) -> PrimaryToken {
+			[&, this](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Uuid, KeyValueType::FloatVector>) -> PrimaryToken {
 				throwUnexpectedTokenError(parser, outTok);
+			},
+			[](KeyValueType::Float) noexcept -> PrimaryToken {
+				// Indexed field type can not be float
+				assertrx_throw(false);
+				abort();
 			},
 			[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) -> PrimaryToken {
 				assertrx_throw(false);
@@ -164,7 +174,7 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(tokenizer
 	if (fieldValues.size() == 1) {
 		const Variant* vptr = isArrayField ? &arrayValues_.back() : &fieldValues.front();
 		return vptr->Type().EvaluateOneOf(
-			[vptr, isArrayField](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) -> PrimaryToken {
+			[vptr, isArrayField](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) -> PrimaryToken {
 				return {.value = *vptr, .type = isArrayField ? PrimaryToken::Type::Array : PrimaryToken::Type::Scalar};
 			},
 			[&, this](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Uuid>) -> PrimaryToken {
@@ -173,7 +183,8 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(tokenizer
 				}
 				throwUnexpectedTokenError(parser, outTok);
 			},
-			[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) -> PrimaryToken {
+			[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null, KeyValueType::FloatVector>)
+				-> PrimaryToken {
 				assertrx_throw(0);
 				abort();
 			});

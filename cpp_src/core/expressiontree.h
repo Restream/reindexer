@@ -125,13 +125,17 @@ class ExpressionTree {
 		Node(Node&& other) noexcept : storage_{std::move(other.storage_)}, operation{std::move(other.operation)} {}
 		~Node() = default;
 		RX_ALWAYS_INLINE Node& operator=(const Node& other) {
-			storage_ = other.storage_;
-			operation = other.operation;
+			if (this != &other) {
+				storage_ = other.storage_;
+				operation = other.operation;
+			}
 			return *this;
 		}
 		RX_ALWAYS_INLINE Node& operator=(Node&& other) noexcept {
-			storage_ = std::move(other.storage_);
-			operation = std::move(other.operation);
+			if (this != &other) {
+				storage_ = std::move(other.storage_);
+				operation = std::move(other.operation);
+			}
 			return *this;
 		}
 		RX_ALWAYS_INLINE bool operator==(const Node& other) const {

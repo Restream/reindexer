@@ -1,3 +1,45 @@
+# Version 5.0.0 (04.03.2025)
+## Core
+- [fea] Added `HNSW`, `IVF` and `bruteforce` indexes for [ANN-search](float_vector.md)
+- [fea] Optimized internal memory layout for [key_strings](cpp_src/core/payload/readme.md#key_string) (allows to reduce memory consumation for each indexed string and each unique `-tuple`)
+- [fea] Added separate CJSON tag for float values for more effective memory consumation and JSON serialization (CPP/Go-bindings will use it automatically)
+- [fix] Fixed internal meta flush on namespace close (fixes false positive warning about datahash missmatch on database load)
+- [fix] Fixed incorrect `DISTINCT`, [force sort](readme.md#forced-sort) and `LIMIT` interaction
+- [fix] Fixed incorrect `force sort` and `always_false` virtual query entry interaction
+- [fix] Fixed possible `heap-use-after-free` error in documents with deep nested object-arrays
+- [fix] Fixed `segfault` on attempt to create array value with `precept`
+
+## Replication
+- [fix] Disabled buggy statement-based replication for `DELETE`-queries
+- [fix] Fixed WAL references cleanup for `TRUNCATE`-queries and `DELETE`-queries
+
+## Reindexer server
+- [fea] Added `--version` flag to output version information
+- [fea] Migrated to `openapi 3.0.1` in [REST API decription](cpp_src/server/contrib/server.yml)
+
+## Reindexer tool
+- [fea] Added `--version` flag to output local version information and `\version` command to outpute remote server version information
+- [fix] Fixed `with_shard_id` env behavior
+
+## Go connector
+- [fea] Added support for tags related to `vector indexes` configuration
+- [fix] Fixed nil-values handling in item modification operations (`Insert`, `Delete`, etc.)
+
+## Build
+- [upd] Updated to C++20
+
+## Deploy
+- [fea] Enabled `ENABLE_V3_FOLLOWERS` flag for all prebuilt pakacges (this flag allows to Reindexer v5 to be a `leader` for Reindexer v3 followers). This is temporary functionality
+- [upd] Deprecated deploy for `ubuntu:20.04` packages
+- [upd] Packages were renamed to `reindexer-dev` and `reindexer-server` (without explicit major version)
+
+## Face
+- [fea] Added new Field type: float_vector.
+- [fea] Renamed fulltext_size to indexing_struct_size on the Memstats page
+- [fea] Added the "Vector fields" toggle to get the Vector fields
+- [fix] Fixed the Index configuration filling for non-text and non-vector indexes
+- [fix] Fixed the namespace name position in the page title
+
 # Version 4.20.0 (04.02.2025)
 ## Core
 - [fea] Optimized indexed strings memory layout (each unique indexed string now requires 20-36 bytes less memery, depending on platform)

@@ -1,11 +1,12 @@
 #pragma once
 #include "core/query/query.h"
-#include "core/queryresults/queryresults.h"
 #include "nsselectfuncinterface.h"
 #include "selectfuncparser.h"
 
 namespace reindexer {
+
 class NamespaceImpl;
+class LocalQueryResults;
 
 /// Represents sql function in a query
 /// (like avg(x) or sum(x)).

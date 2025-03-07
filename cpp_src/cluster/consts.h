@@ -6,8 +6,8 @@
 namespace reindexer {
 namespace cluster {
 
-const std::string_view kAsyncReplStatsType = "async";
-const std::string_view kClusterReplStatsType = "cluster";
+constexpr std::string_view kAsyncReplStatsType = "async";
+constexpr std::string_view kClusterReplStatsType = "cluster";
 
 constexpr auto kLeaderPingInterval = std::chrono::milliseconds(200);
 constexpr auto kMinLeaderAwaitInterval = kLeaderPingInterval * 5;

@@ -1,6 +1,8 @@
 #include "client/queryresults.h"
+#include "cluster/consts.h"
 #include "clusterization_proxy.h"
 #include "core/cjson/jsonbuilder.h"
+#include "core/system_ns_names.h"
 #include "gtests/tests/gtest_cout.h"
 
 using namespace reindexer;
@@ -343,7 +345,7 @@ static void CheckAddUpdateDropIndex(ClusterizationApi::Cluster& cluster, int nod
 	IndexDef newDef{indxName, "tree", "int", IndexOpts()};
 	err = cluster.GetNode(node)->api.reindexer->UpdateIndex(kNsName, newDef);
 
-	auto getIndexDefByName = [&cluster](const std::string& nsName, int node, std::string& indxName) -> IndexDef {
+	auto getIndexDefByName = [&cluster](const std::string& nsName, int node, std::string& indxName) -> std::optional<IndexDef> {
 		std::vector<NamespaceDef> defs;
 		Error err = cluster.GetNode(node)->api.reindexer->EnumNamespaces(defs, EnumNamespacesOpts().HideSystem().HideTemporary());
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -352,31 +354,31 @@ static void CheckAddUpdateDropIndex(ClusterizationApi::Cluster& cluster, int nod
 				continue;
 			}
 			for (const auto& indxDef : def.indexes) {
-				if (indxDef.name_ == indxName) {
+				if (indxDef.Name() == indxName) {
 					return indxDef;
 				}
 			}
 		}
-		return IndexDef{};
+		return {};
 	};
 
 	{
 		// check index is correct on leader and follower node
-		IndexDef def = getIndexDefByName(kNsName, node, indxName);
-		ASSERT_TRUE(!def.name_.empty()) << "index not found";
-		ASSERT_EQ(def.indexType_, "tree");
-		IndexDef defL = getIndexDefByName(kNsName, leaderId, indxName);
-		ASSERT_TRUE(!defL.name_.empty()) << "index not found";
-		ASSERT_EQ(defL.indexType_, "tree");
+		const auto def = getIndexDefByName(kNsName, node, indxName);
+		ASSERT_TRUE(def.has_value()) << "index not found";
+		ASSERT_EQ(def->IndexTypeStr(), "tree");	 // NOLINT(bugprone-unchecked-optional-access)
+		const auto defL = getIndexDefByName(kNsName, leaderId, indxName);
+		ASSERT_TRUE(defL.has_value()) << "index not found";
+		ASSERT_EQ(defL->IndexTypeStr(), "tree");  // NOLINT(bugprone-unchecked-optional-access)
 	}
 	{
 		// drop index and check on leader and follower
 		err = cluster.GetNode(node)->api.reindexer->DropIndex(kNsName, newDef);
 		ASSERT_TRUE(err.ok()) << err.what();
-		IndexDef def = getIndexDefByName(kNsName, node, indxName);
-		ASSERT_TRUE(def.name_.empty()) << "index found";
-		IndexDef defL = getIndexDefByName(kNsName, leaderId, indxName);
-		ASSERT_TRUE(defL.name_.empty()) << "index found";
+		const auto def = getIndexDefByName(kNsName, node, indxName);
+		ASSERT_FALSE(def.has_value()) << "index found";
+		const auto defL = getIndexDefByName(kNsName, leaderId, indxName);
+		ASSERT_FALSE(defL.has_value()) << "index found";
 	}
 }
 
@@ -991,18 +993,18 @@ TEST_F(ClusterizationProxyApi, ClusterStatsErrorHandling) {
 	auto ports = GetDefaults();
 	loop.spawn(ExceptionWrapper([&loop, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
-		std::vector<Query> queries = {Query("#replicationstats"),
-									  Query("#replicationstats")
+		std::vector<Query> queries = {Query(kReplicationStatsNamespace),
+									  Query(kReplicationStatsNamespace)
 										  .Where("type", CondEq, cluster::kAsyncReplStatsType)
 										  .Or()
 										  .Where("type", CondEq, cluster::kClusterReplStatsType),
-									  Query("#replicationstats").Not().Where("type", CondEq, cluster::kAsyncReplStatsType)};
+									  Query(kReplicationStatsNamespace).Not().Where("type", CondEq, cluster::kAsyncReplStatsType)};
 		for (size_t nodeId = 0; nodeId < kClusterSize; ++nodeId) {
 			for (auto& q : queries) {
 				BaseApi::QueryResultsType qr;
 				Error err = cluster.GetNode(nodeId)->api.reindexer->Select(q, qr);
 				ASSERT_EQ(err.code(), errParams) << q.GetSQL();
-				ASSERT_EQ(err.what(),
+				ASSERT_STREQ(err.what(),
 						  "Query to #replicationstats has to contain one of the following conditions: type='async' or type='cluster'")
 					<< q.GetSQL();
 			}
@@ -1011,7 +1013,7 @@ TEST_F(ClusterizationProxyApi, ClusterStatsErrorHandling) {
 				BaseApi::QueryResultsType qr;
 				Error err = cluster.GetNode(nodeId)->api.reindexer->Select(sql, qr);
 				ASSERT_EQ(err.code(), errParams) << sql;
-				ASSERT_EQ(err.what(),
+				ASSERT_STREQ(err.what(),
 						  "Query to #replicationstats has to contain one of the following conditions: type='async' or type='cluster'")
 					<< sql;
 			}
@@ -1036,10 +1038,10 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderOfflineNodeAndNotExistNode) {
 		for (int v = 0; v < 10; v++) {
 			{
 				auto item = cluster.GetNode(leaderId)->CreateClusterChangeLeaderItem(kNotExistServerNode);
-				Error err = cluster.GetNode(leaderId)->api.reindexer->Update("#config", item);
+				Error err = cluster.GetNode(leaderId)->api.reindexer->Update(kConfigNamespace, item);
 				Error errPattern(errLogic, "Cluster config. Cannot find node index for ServerId(%d)", kNotExistServerNode);
 				ASSERT_EQ(err.code(), errPattern.code());
-				ASSERT_EQ(err.what(), errPattern.what());
+				ASSERT_EQ(err.whatStr(), errPattern.whatStr());
 				int leaderNew = cluster.AwaitLeader(kMaxElectionsTime);
 				ASSERT_EQ(leaderId, leaderNew);
 			}
@@ -1048,9 +1050,9 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderOfflineNodeAndNotExistNode) {
 				const auto stopDsn = MakeDsn(reindexer_server::UserRole::kRoleReplication, cluster.GetNode(stopFollowerId));
 				cluster.StopServer(stopFollowerId);
 				auto item = cluster.GetNode(leaderId)->CreateClusterChangeLeaderItem(stopFollowerId);
-				Error err = cluster.GetNode(leaderId)->api.reindexer->Update("#config", item);
+				Error err = cluster.GetNode(leaderId)->api.reindexer->Update(kConfigNamespace, item);
 				ASSERT_FALSE(err.ok());
-				ASSERT_EQ(err.what(), fmt::sprintf("Target node %s is not available.", stopDsn));
+				ASSERT_EQ(err.whatStr(), fmt::format("Target node {} is not available.", stopDsn));
 				int leaderNew = cluster.AwaitLeader(kMaxElectionsTime);
 				ASSERT_EQ(leaderId, leaderNew);
 				cluster.StartServer(stopFollowerId);
@@ -1116,7 +1118,7 @@ TEST_F(ClusterizationProxyApi, Shutdown) {
 
 		auto addItemFn = [&counter, &cluster, &done, kSleepTime](int nodeId, std::string_view nsName) noexcept {
 			while (!done) {
-				auto err = cluster.AddRowWithErr(nodeId, nsName, counter++);
+				auto err = cluster.AddRowWithErr(nodeId, nsName, counter++, Cluster::DataParam{});
 				(void)err;	// ignored; Error are expected)
 				std::this_thread::sleep_for(kSleepTime);
 			}
@@ -1164,7 +1166,8 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderAndWrite) {
 				int id = counter++;
 				std::string json;
 				ItemTracker::ItemInfo info(id, nodeId, threadName);
-				auto err = cluster.AddRowWithErr(nodeId, nsName, id, &json);
+				// Do not create float vectors here to simplify items comparsion
+				auto err = cluster.AddRowWithErr(nodeId, nsName, id, Cluster::DataParam{.emptyVector = true}, &json);
 				if (err.code() == errUpdateReplication) {
 					itemTracker.AddUnknown(std::move(json), std::move(info));
 				} else if (err.code() == errAlreadyProxied) {
@@ -1196,7 +1199,7 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderAndWrite) {
 					} else {
 						ASSERT_TRUE(err.ok()) << err.what();
 					}
-					cluster.FillItem(api, item, counter++);
+					cluster.FillItem(api, item, counter++, Cluster::DataParam{.emptyVector = true});
 					ItemTracker::ItemInfo info(counter, txNum, tx.GetTransactionId(), nodeId, txStart, threadName);
 					items.emplace_back(item.GetJSON(), info);
 					err = tx.Upsert(std::move(item));
@@ -1259,7 +1262,7 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderAndWrite) {
 			leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 			auto leaderClient = cluster.GetNode(leaderId)->api.reindexer;
 			reindexer::client::QueryResults qr;
-			auto err = leaderClient->Select("select * from ns1 order by id", qr);
+			auto err = leaderClient->Select("select *, vectors() from ns1 order by id", qr);
 			ASSERT_TRUE(err.ok()) << err.what();
 			itemTracker.Validate(qr);
 		}
@@ -1284,7 +1287,7 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderAndWriteSimple) {
 		auto addItemFun = [&counter, &stopInsert, &cluster](int nodeId, std::string_view nsName) {
 			while (!stopInsert) {
 				int id = counter++;
-				auto err = cluster.AddRowWithErr(nodeId, nsName, id);
+				auto err = cluster.AddRowWithErr(nodeId, nsName, id, Cluster::DataParam{});
 				if (err.code() == errUpdateReplication || err.code() == errAlreadyProxied) {
 				} else {
 					ASSERT_TRUE(err.ok()) << err.what();
@@ -1370,7 +1373,7 @@ TEST_F(ClusterizationProxyApi, SelectFromStatsTimeout) {
 		client::QueryResults qr;
 		auto err = cluster.GetNode(2)->api.reindexer->Select("select * from #replicationstats where type='cluster'", qr);
 		ASSERT_EQ(err.code(), errTimeout);
-		ASSERT_EQ(err.what(), "Unable to get cluster's leader: Context was canceled or timed out (condition variable)");
+		ASSERT_STREQ(err.what(), "Unable to get cluster's leader: Context was canceled or timed out (condition variable)");
 	}));
 
 	loop.run();

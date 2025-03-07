@@ -23,8 +23,8 @@ constexpr size_t kWrChannelSize = 30;
 constexpr size_t kCntToSendNow = 30;
 constexpr size_t kMaxSerializedSize = 8 * 1024 * 1024;
 constexpr size_t kDataToSendNow = 8192;
-constexpr BindingCapabilities kClientCaps =
-	BindingCapabilities(kBindingCapabilityQrIdleTimeouts | kBindingCapabilityResultsWithShardIDs | kBindingCapabilityIncarnationTags);
+constexpr BindingCapabilities kClientCaps = BindingCapabilities(kBindingCapabilityQrIdleTimeouts | kBindingCapabilityResultsWithShardIDs |
+																kBindingCapabilityIncarnationTags | kBindingCapabilityComplexRank);
 
 CoroClientConnection::CoroClientConnection()
 	: rpcCalls_(kMaxParallelRPCCalls), wrCh_(kWrChannelSize), seqNums_(kMaxParallelRPCCalls), conn_(kReadBufReserveSize, false) {
@@ -313,6 +313,7 @@ void CoroClientConnection::handleFatalErrorImpl(const Error& err) noexcept {
 	if (connectionStateHandler_) {
 		connectionStateHandler_(err);
 	}
+	rxVersion_ = std::nullopt;
 	errSyncCh_.close();
 }
 
@@ -460,12 +461,12 @@ void CoroClientConnection::readerRoutine() {
 				ser = Serializer(uncompressed);
 			}
 
-			const int errCode = ser.GetVarUint();
+			const int errCode = ser.GetVarUInt();
 			std::string_view errMsg = ser.GetVString();
 			if (errCode != errOK) {
 				ans.status_ = Error(static_cast<ErrorCode>(errCode), std::string{errMsg});
 			}
-			ans.data_ = span<const uint8_t>(ser.Buf() + ser.Pos(), ser.Len() - ser.Pos());
+			ans.data_ = std::span<const uint8_t>(ser.Buf() + ser.Pos(), ser.Len() - ser.Pos());
 		} catch (const Error& err) {
 			// disconnect
 			handleFatalErrorFromReader(err);
@@ -474,6 +475,9 @@ void CoroClientConnection::readerRoutine() {
 
 		if (hdr.cmd == kCmdLogin) {
 			if (ans.Status().ok()) {
+				if (!rxVersion_) {
+					rxVersion_ = ans.GetArgs(2)[0].As<std::string>();
+				}
 				setLoggedIn(true);
 				if (connectionStateHandler_) {
 					connectionStateHandler_(Error());
@@ -529,7 +533,7 @@ void CoroClientConnection::sendCloseResults(const CProtoHeader& hdr, const CoroR
 									  hdr.seq, {Arg{args[1].As<int>()}, Arg{reindexer_server::RPCQrWatcher::kDisabled}, Arg{true}});
 				}
 				if (!err.ok()) {
-					fprintf(stderr, "Unable to send 'CloseResults' command: %s\n", err.what().c_str());
+					fprintf(stderr, "Unable to send 'CloseResults' command: %s\n", err.what());
 				}
 			} else {
 				auto cmdSv = CmdName(hdr.cmd);

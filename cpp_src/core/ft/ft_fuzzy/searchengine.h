@@ -1,7 +1,5 @@
 #pragma once
 #include <memory>
-#include <unordered_map>
-#include <unordered_set>
 #include "baseseacher.h"
 #include "core/ft/config/ftfuzzyconfig.h"
 #include "core/ft/ftdsl.h"
@@ -18,12 +16,12 @@ public:
 	typedef std::shared_ptr<SearchEngine> Ptr;
 
 	SearchEngine();
-	void SetConfig(const std::unique_ptr<FtFuzzyConfig>& cfg);
+	void SetConfig(const std::unique_ptr<reindexer::FtFuzzyConfig>& cfg);
 	SearchEngine(const SearchEngine& rhs) = delete;
 
 	SearchEngine& operator=(const SearchEngine&) = delete;
 
-	SearchResult Search(const FtDSLQuery& dsl, bool inTransaction, const reindexer::RdxContext&);
+	SearchResult Search(const reindexer::FtDSLQuery& dsl, bool inTransaction, const reindexer::RdxContext&);
 	void Rebuild();
 	void AddData(std::string_view src_data, const IdType id, int field, const std::string& extraWordSymbols);
 	void Commit();

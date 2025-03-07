@@ -1,5 +1,4 @@
 #include "namespacedef.h"
-#include <unordered_map>
 #include "cjson/jsonbuilder.h"
 #include "core/namespace/namespace.h"
 #include "vendor/gason/gason.h"
@@ -8,7 +7,7 @@ namespace reindexer {
 
 using namespace std::string_view_literals;
 
-Error NamespaceDef::FromJSON(span<char> json) {
+Error NamespaceDef::FromJSON(std::span<char> json) {
 	try {
 		gason::JsonParser parser;
 		FromJSON(parser.Parse(json));
@@ -27,15 +26,13 @@ void NamespaceDef::FromJSON(const gason::JsonNode& root) {
 	storage.CreateIfMissing(root["storage"]["create_if_missing"].As<bool>(true));
 
 	for (auto& arrelem : root["indexes"]) {
-		IndexDef idx;
-		idx.FromJSON(arrelem);
-		indexes.push_back(idx);
+		indexes.emplace_back(IndexDef::FromJSON(arrelem));
 	}
 	isTemporary = root["temporary"].As<bool>(false);
 	schemaJson = root["schema"].As<std::string>(schemaJson);
 }
 
-void NamespaceDef::GetJSON(WrSerializer& ser, int formatFlags) const {
+void NamespaceDef::GetJSON(WrSerializer& ser) const {
 	JsonBuilder json(ser);
 	json.Put("name", name);
 	json.Object("storage").Put("enabled", storage.IsEnabled());
@@ -43,7 +40,7 @@ void NamespaceDef::GetJSON(WrSerializer& ser, int formatFlags) const {
 		auto arr = json.Array("indexes");
 		for (auto& idx : indexes) {
 			arr.Raw(nullptr, "");
-			idx.GetJSON(ser, formatFlags);
+			idx.GetJSON(ser);
 		}
 	}
 	json.Put("temporary", isTemporary);
@@ -56,7 +53,7 @@ bool EnumNamespacesOpts::MatchFilter(std::string_view nsName, const std::shared_
 	return MatchNameFilter(nsName) && (!IsHideTemporary() || !ns->IsTemporary(ctx));
 }
 
-Error NsReplicationOpts::FromJSON(span<char> json) {
+Error NsReplicationOpts::FromJSON(std::span<char> json) {
 	try {
 		gason::JsonParser parser;
 		FromJSON(parser.Parse(json));

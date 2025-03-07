@@ -1,7 +1,9 @@
 #include "snapshothandler.h"
 #include "core/namespace/namespace.h"
 #include "core/namespace/namespaceimpl.h"
-#include "core/nsselecter/nsselecter.h"
+#include "core/nsselecter/selectctx.h"
+#include "core/selectfunc/selectfunc.h"
+#include "estl/gift_str.h"
 #include "tools/logger.h"
 #include "wal/walselecter.h"
 
@@ -15,8 +17,8 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 			throw Error(errOutdatedWAL, "Requested LSN is not compatible by NS version (%d). Current namespace has %d", from.NsVersion(),
 						ns_.repl_.nsVersion);
 		}
-		Query q = Query(ns_.name_).Where("#lsn", CondGt, int64_t(from.LSN()));
-		SelectCtx selCtx(q, nullptr);
+		Query q = Query(ns_.name_).Where("#lsn", CondGt, int64_t(from.LSN())).SelectAllFields();
+		SelectCtx selCtx(q, nullptr, &walQr.GetFloatVectorsHolder());
 		SelectFunctionsHolder func;
 		selCtx.functions = &func;
 		selCtx.contextCollectingMode = true;
@@ -35,8 +37,8 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 			return Snapshot(ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.repl_.dataHash, ns_.itemsCount(), ns_.repl_.clusterStatus);
 		}
 		{
-			Query q = Query(ns_.name_).Where("#lsn", CondGe, int64_t(minLsn));
-			SelectCtx selCtx(q, nullptr);
+			Query q = Query(ns_.name_).Where("#lsn", CondGe, int64_t(minLsn)).SelectAllFields();
+			SelectCtx selCtx(q, nullptr, &walQr.GetFloatVectorsHolder());
 			SelectFunctionsHolder func;
 			selCtx.functions = &func;
 			selCtx.contextCollectingMode = true;
@@ -46,8 +48,9 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 
 		LocalQueryResults fullQr;
 		{
-			Query q = Query(ns_.name_).Where("#lsn", CondAny, VariantArray{});
-			SelectCtx selCtx(q, nullptr);
+			Query q = Query(ns_.name_).Where("#lsn", CondAny, VariantArray{}).SelectAllFields();
+			// Reusing walQr's FloatVectorsHolder here
+			SelectCtx selCtx(q, nullptr, &walQr.GetFloatVectorsHolder());
 			SelectFunctionsHolder func;
 			selCtx.functions = &func;
 			selCtx.contextCollectingMode = true;
@@ -125,7 +128,6 @@ Error SnapshotHandler::applyShallowRecord(lsn_t lsn, WALRecType type, const Pack
 Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, const ChunkContext& chCtx,
 									   h_vector<updates::UpdateRecord, 2>& pendedRepl) {
 	Error err;
-	IndexDef iDef;
 	Item item;
 	NsContext ctx(dummyCtx_);
 	ctx.InSnapshot(lsn, chCtx.wal, false, chCtx.initialLeaderSync);
@@ -146,29 +148,38 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 			break;
 		}
 		// Index added
-		case WalIndexAdd:
-			err = iDef.FromJSON(giftStr(rec.data));
-			if (err.ok()) {
-				ns_.doAddIndex(iDef, false, pendedRepl, ctx);
+		case WalIndexAdd: {
+			auto iDef = IndexDef::FromJSON(giftStr(rec.data));
+			if (iDef) {
+				ns_.doAddIndex(*iDef, false, pendedRepl, ctx);
 				ns_.saveIndexesToStorage();
+			} else {
+				err = std::move(iDef.error());
 			}
 			break;
+		}
 		// Index dropped
-		case WalIndexDrop:
-			err = iDef.FromJSON(giftStr(rec.data));
-			if (err.ok()) {
-				ns_.doDropIndex(iDef, pendedRepl, ctx);
+		case WalIndexDrop: {
+			auto iDef = IndexDef::FromJSON(giftStr(rec.data));
+			if (iDef) {
+				ns_.doDropIndex(*iDef, pendedRepl, ctx);
 				ns_.saveIndexesToStorage();
+			} else {
+				err = std::move(iDef.error());
 			}
 			break;
+		}
 		// Index updated
-		case WalIndexUpdate:
-			err = iDef.FromJSON(giftStr(rec.data));
-			if (err.ok()) {
-				ns_.doUpdateIndex(iDef, pendedRepl, ctx);
+		case WalIndexUpdate: {
+			auto iDef = IndexDef::FromJSON(giftStr(rec.data));
+			if (iDef) {
+				ns_.doUpdateIndex(*iDef, pendedRepl, ctx);
 				ns_.saveIndexesToStorage();
+			} else {
+				err = std::move(iDef.error());
 			}
 			break;
+		}
 		// Metadata updated
 		case WalPutMeta:
 			ns_.putMeta(std::string(rec.itemMeta.key), rec.itemMeta.value, pendedRepl, ctx);

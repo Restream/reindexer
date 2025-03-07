@@ -12,6 +12,7 @@
 #include "core/schema.h"
 #include "core/type_consts.h"
 #include "debug/crashqueryreporter.h"
+#include "estl/gift_str.h"
 #include "gason/gason.h"
 #include "itoa/itoa.h"
 #include "loggerwrapper.h"
@@ -74,7 +75,7 @@ Error HTTPServer::execSqlQueryByType(std::string_view sqlQuery, reindexer::Query
 				.TruncateNamespace(q.NsName());
 		}
 	}
-	throw Error(errParams, "unknown query type %d", q.Type());
+	throw Error(errParams, "unknown query type %d", int(q.Type()));
 }
 
 int HTTPServer::GetSQLQuery(http::Context& ctx) {
@@ -126,7 +127,7 @@ int HTTPServer::GetSQLSuggest(http::Context& ctx) {
 	size_t bytePos = 0;
 	Error err = cursosPosToBytePos(sqlQuery, line, pos, bytePos);
 	if (!err.ok()) {
-		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, err.what()));
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, err.whatStr()));
 	}
 
 	logPrintf(LogTrace, "GetSQLSuggest() incoming data: %s, %d", sqlQuery, bytePos);
@@ -134,7 +135,7 @@ int HTTPServer::GetSQLSuggest(http::Context& ctx) {
 	std::vector<std::string> suggestions;
 	err = getDB<kRoleDataRead>(ctx).GetSqlSuggestions(sqlQuery, bytePos, suggestions);
 	if (!err.ok()) {
-		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, err.what()));
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, err.whatStr()));
 	}
 
 	WrSerializer ser(ctx.writer->GetChunk());
@@ -306,7 +307,7 @@ int HTTPServer::DeleteDatabase(http::Context& ctx) {
 
 	auto status = dbMgr_.Login(dbName, *actx);
 	if (!status.ok()) {
-		return jsonStatus(ctx, http::HttpStatus(http::StatusUnauthorized, status.what()));
+		return jsonStatus(ctx, http::HttpStatus(http::StatusUnauthorized, status.whatStr()));
 	}
 
 	if (statsWatcher_) {
@@ -466,6 +467,7 @@ int HTTPServer::RenameNamespace(http::Context& ctx) {
 int HTTPServer::GetItems(http::Context& ctx) {
 	std::string_view sharding = ctx.request->params.Get("sharding"sv, "on"sv);
 	std::string_view shardIds = ctx.request->params.Get("with_shard_ids"sv);
+	std::string_view withVectors = ctx.request->params.Get("with_vectors"sv, "off"sv);
 
 	auto db =
 		!isParameterSetOn(sharding) ? getDB<kRoleDataRead>(ctx).WithShardId(ShardingKeyType::ProxyOff, false) : getDB<kRoleDataRead>(ctx);
@@ -485,6 +487,10 @@ int HTTPServer::GetItems(http::Context& ctx) {
 	}
 	if (fields.empty()) {
 		fields = "*";
+	}
+	if (isParameterSetOn(withVectors)) {
+		fields += ", ";
+		fields += FieldsNamesFilter::kAllVectorFieldsName;
 	}
 
 	reindexer::WrSerializer querySer;
@@ -713,22 +719,21 @@ int HTTPServer::PostIndex(http::Context& ctx) {
 		return jsonStatus(ctx, http::HttpStatus(err));
 	}
 
-	reindexer::IndexDef idxDef;
-	err = idxDef.FromJSON(giftStr(json));
-	if (!err.ok()) {
-		return jsonStatus(ctx, http::HttpStatus{err});
+	auto indexDef = reindexer::IndexDef::FromJSON(giftStr(json));
+	if (!indexDef) {
+		return jsonStatus(ctx, http::HttpStatus{indexDef.error()});
 	}
 
 	if (!nsDefs.empty()) {
 		auto& indexes = nsDefs[0].indexes;
 		auto foundIndexIt =
-			std::find_if(indexes.begin(), indexes.end(), [&newIdxName](const IndexDef& idx) { return idx.name_ == newIdxName; });
+			std::find_if(indexes.begin(), indexes.end(), [&newIdxName](const IndexDef& idx) { return idx.Name() == newIdxName; });
 		if (foundIndexIt != indexes.end()) {
 			return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Index already exists"));
 		}
 	}
 
-	err = db.AddIndex(nsName, idxDef);
+	err = db.AddIndex(nsName, *indexDef);
 	if (!err.ok()) {
 		return jsonStatus(ctx, http::HttpStatus{err});
 	}
@@ -744,13 +749,12 @@ int HTTPServer::PutIndex(http::Context& ctx) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
 
-	reindexer::IndexDef idxDef;
 	std::string body = ctx.body->Read();
-	auto err = idxDef.FromJSON(giftStr(body));
-	if (!err.ok()) {
-		return jsonStatus(ctx, http::HttpStatus{err});
+	auto indexDef = reindexer::IndexDef::FromJSON(giftStr(body));
+	if (!indexDef) {
+		return jsonStatus(ctx, http::HttpStatus{indexDef.error()});
 	}
-	err = db.UpdateIndex(nsName, idxDef);
+	auto err = db.UpdateIndex(nsName, *indexDef);
 	if (!err.ok()) {
 		return jsonStatus(ctx, http::HttpStatus{err});
 	}
@@ -819,7 +823,7 @@ int HTTPServer::DeleteIndex(http::Context& ctx) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
 
-	if (idef.name_.empty()) {
+	if (idef.Name().empty()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Index is not specified"));
 	}
 
@@ -1214,7 +1218,7 @@ int HTTPServer::modifyItemsProtobuf(http::Context& ctx, std::string& nsName, std
 			builder.Put(kProtoModifyResultsFields.at(kParamUpdated), int(items));
 			builder.Put(kProtoModifyResultsFields.at(kParamSuccess), err.ok());
 		} else {
-			builder.Put(kProtoErrorResultsFields.at(kParamDescription), err.what());
+			builder.Put(kProtoErrorResultsFields.at(kParamDescription), err.whatStr());
 			builder.Put(kProtoErrorResultsFields.at(kParamResponseCode), err.code());
 		}
 		return ctx.Protobuf(reindexer::net::http::HttpStatus::errCodeToHttpStatus(err.code()), wrSer.DetachChunk());
@@ -1381,7 +1385,7 @@ int HTTPServer::queryResultsJSON(http::Context& ctx, reindexer::QueryResults& re
 		auto item = db->NewItem(res.GetNamespaces()[0]);
 		auto err = item.FromCJSON(cjson);
 		if (!err.ok()) {
-			throw Error(err.code(), "Unable to parse CJSON for WAL item: %s", err.what());
+			throw Error(err.code(), "Unable to parse CJSON for WAL item: %s", err.whatStr());
 		}
 		return std::string(item.GetJSON());
 	};
@@ -1500,7 +1504,7 @@ int HTTPServer::queryResultsCSV(http::Context& ctx, reindexer::QueryResults& res
 	for (size_t i = 0; it != res.end() && i < limit; ++i, ++it) {
 		auto err = it.GetCSV(wrSerChunk, ordering);
 		if (!err.ok()) {
-			throw Error(err.code(), "Unable to get %d item as CSV: %s", i, err.what());
+			throw Error(err.code(), "Unable to get %d item as CSV: %s", i, err.whatStr());
 		}
 
 		wrSerChunk << '\n';
@@ -1957,7 +1961,7 @@ int HTTPServer::getAuth(http::Context& ctx, AuthContext& auth, const std::string
 	auto status = dbMgr_.Login(dbName, auth);
 	if (!status.ok()) {
 		ctx.writer->SetHeader({"WWW-Authenticate"sv, "Basic realm=\"reindexer\""sv});
-		ctx.String(http::StatusUnauthorized, status.what());
+		ctx.String(http::StatusUnauthorized, status.whatStr());
 		return -1;
 	}
 
@@ -2075,7 +2079,7 @@ int HTTPServer::GetSQLQueryTx(http::Context& ctx) {
 			case QueryTruncate:
 				return status(ctx, http::HttpStatus(http::StatusInternalServerError, "Transactions support update/delete queries only"));
 		}
-		return status(ctx, http::HttpStatus(Error(errLogic, "Unexpected query type: %d", q.type_)));
+		return status(ctx, http::HttpStatus(Error(errLogic, "Unexpected query type: %d", int(q.type_))));
 	} catch (const Error& e) {
 		return status(ctx, http::HttpStatus(e));
 	}

@@ -7,7 +7,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include "estl/span.h"
+#include <span>
 #include "tools/terminalutils.h"
 
 namespace reindexer {

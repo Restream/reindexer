@@ -31,7 +31,7 @@ std::string_view DumpOptions::StrFromMode(Mode mode) {
 	}
 }
 
-Error DumpOptions::FromJSON(reindexer::span<char> json) {
+Error DumpOptions::FromJSON(std::span<char> json) {
 	try {
 		gason::JsonParser parser;
 		auto root = parser.Parse(json);

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.18)
 
 project(reindexer_tool)
 
@@ -42,6 +42,7 @@ add_executable(${TARGET} ${SRCS})
 
 # Enable export to provide readable stacktraces
 set_property(TARGET ${TARGET} PROPERTY ENABLE_EXPORTS 1)
+set_property(TARGET ${TARGET} PROPERTY DEFINE_SYMBOL "")
 
 if (NOT MSVC AND NOT WITH_STDLIB_DEBUG)
   if (NOT ReplXX_LIBRARY OR NOT ReplXX_INCLUDE_DIR)

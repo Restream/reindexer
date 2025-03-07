@@ -51,8 +51,14 @@ int main(int argc, char* argv[]) {
 		return EXIT_FAILURE;
 	}
 
+	struct Version : std::runtime_error {
+		using std::runtime_error::runtime_error;
+	};
+
 	args::ArgumentParser parser("Reindexer client tool");
 	args::HelpFlag help(parser, "help", "show this message", {'h', "help"});
+	args::ActionFlag version(parser, "", "Reindexer tool version", {'v', "version"},
+							 []() { throw Version(fmt::format("Reindexer tool version: {}", REINDEX_VERSION)); });
 
 	args::Group progOptions("options");
 #ifdef _WIN32
@@ -101,6 +107,9 @@ int main(int argc, char* argv[]) {
 		std::cerr << "ERROR: " << e.what() << std::endl;
 		std::cout << parser.Help() << std::endl;
 		return 1;
+	} catch (Version& v) {
+		std::cout << v.what() << std::endl;
+		return 0;
 	} catch (reindexer::Error& re) {
 		std::cerr << "ERROR: " << re.what() << std::endl;
 		return 1;

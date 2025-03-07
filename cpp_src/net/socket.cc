@@ -7,6 +7,7 @@
 #include <string>
 #include "estl/h_vector.h"
 #include "tools/oscompat.h"
+#include "tools/assertrx.h"
 
 namespace reindexer {
 namespace net {
@@ -73,7 +74,7 @@ int socket::connect(std::string_view addr, socket_domain t) {
 	return ret;
 }
 
-ssize_t socket::recv(span<char> buf) {
+ssize_t socket::recv(std::span<char> buf) {
 	if (ssl) {
 		return reindexer::openssl::SSL_read(*ssl, buf.data(), buf.size());
 	} else {
@@ -81,7 +82,7 @@ ssize_t socket::recv(span<char> buf) {
 	}
 }
 
-ssize_t socket::send(span<char> buf) {
+ssize_t socket::send(std::span<char> buf) {
 	if (ssl) {
 		return reindexer::openssl::SSL_write(*ssl, buf.data(), buf.size());
 	} else {
@@ -89,7 +90,7 @@ ssize_t socket::send(span<char> buf) {
 	}
 }
 
-ssize_t socket::ssl_send(span<chunk> chunks) {
+ssize_t socket::ssl_send(std::span<chunk> chunks) {
 	constexpr size_t defaultBufCapacity = 0x1000;
 	constexpr size_t maxBufSize = 0x4000;
 
@@ -121,7 +122,7 @@ ssize_t socket::ssl_send(span<chunk> chunks) {
 }
 
 #ifdef _WIN32
-ssize_t socket::send(span<chunk> chunks) {
+ssize_t socket::send(std::span<chunk> chunks) {
 	if (ssl) {
 		return ssl_send(chunks);
 	} else {
@@ -139,7 +140,7 @@ ssize_t socket::send(span<chunk> chunks) {
 	}
 }
 #else	// _WIN32
-ssize_t socket::send(span<chunk> chunks) {
+ssize_t socket::send(std::span<chunk> chunks) {
 	if (ssl) {
 		return ssl_send(chunks);
 	} else {

@@ -1,8 +1,12 @@
-#include "events/observer.h"
-#include "core/cjson/jsonbuilder.h"
-#include "core/indexdef.h"
+#include "observer.h"
 #include "events/listener.h"
 #include "tools/logger.h"
+
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+#include <mutex>
+#include "core/cjson/jsonbuilder.h"
+#include "vendor/gason/gason.h"
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 
 using namespace std::string_view_literals;
 
@@ -67,7 +71,7 @@ bool UpdatesFilters::Check(std::string_view ns) const noexcept {
 	return found.value().empty();
 }
 
-Error UpdatesFilters::FromJSON(span<char> json) {
+Error UpdatesFilters::FromJSON(std::span<char> json) {
 	try {
 		gason::JsonParser parser;
 		FromJSON(parser.Parse(json));

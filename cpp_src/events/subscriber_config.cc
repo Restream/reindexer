@@ -1,21 +1,20 @@
 #include "events/subscriber_config.h"
 #include "core/cjson/jsonbuilder.h"
 #include "tools/catch_and_return.h"
+#include "vendor/gason/gason.h"
 
 namespace reindexer {
 
 using namespace std::string_view_literals;
 
-Error EventSubscriberConfig::FromJSON(span<char> json) noexcept {
+Error EventSubscriberConfig::FromJSON(std::span<char> json) noexcept {
 	try {
 		gason::JsonParser parser;
 		FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "UpdatesFilter: %s", ex.what());
-	} catch (const Error& err) {
-		return err;
 	}
-	CATCH_STD_AND_RETURN;
+	CATCH_AND_RETURN;
 	return {};
 }
 

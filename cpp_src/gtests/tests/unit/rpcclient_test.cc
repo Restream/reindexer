@@ -8,6 +8,7 @@
 #include "client/reindexer.h"
 #include "client/snapshot.h"
 #include "core/cjson/jsonbuilder.h"
+#include "core/system_ns_names.h"
 #include "coroutine/waitgroup.h"
 #include "gtests/tests/gtest_cout.h"
 #include "net/ev/ev.h"
@@ -612,7 +613,7 @@ TEST_F(RPCClientTestApi, UnknownResultsFlag) {
 		ASSERT_TRUE(err.ok()) << err.what();
 		const int kResultsUnknownFlag = 0x40000000;	 // Max available int flag
 		client::CoroQueryResults qr(kResultsCJson | kResultsWithItemID | kResultsUnknownFlag);
-		err = rx.Select(Query("#config").Where("type", CondEq, {"namespaces"}), qr);
+		err = rx.Select(Query(reindexer::kConfigNamespace).Where("type", CondEq, {"namespaces"}), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		// Check, that kResultsUnknownFlag was not sent back
 		ASSERT_EQ(qr.GetFlags(), kResultsCJson | kResultsWithItemID);
@@ -1297,14 +1298,14 @@ TEST_F(RPCClientTestApi, QuerySetObjectUpdate) {
 		reindexer::client::CoroReindexer rx;
 		auto err = rx.Connect(dsn, loop, opts);
 		ASSERT_TRUE(err.ok()) << err.what();
-		const std::string kNsName = "TestQuerySetObjectUpdate";
+		constexpr std::string_view kNsName = "TestQuerySetObjectUpdate";
 		CreateNamespace(rx, kNsName);
 		err = rx.AddIndex(kNsName, reindexer::IndexDef{"idx", {"nested.field"}, "hash", "int", IndexOpts{}});
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		constexpr unsigned kNsSize = 3;
 
-		auto insertFn = [&rx](const std::string& nsName, unsigned count) {
+		auto insertFn = [&rx](std::string_view nsName, unsigned count) {
 			auto tx = rx.NewTransaction(nsName);
 			ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
 
@@ -1337,13 +1338,13 @@ TEST_F(RPCClientTestApi, QuerySetObjectUpdate) {
 		{
 			err = rx.Update(Query(kNsName).Where("id", CondGe, "0").SetObject("nested", Variant(std::string(R"([{"field": 1240}])"))), qr);
 			ASSERT_FALSE(err.ok());
-			EXPECT_EQ(err.what(), "Error modifying field value: 'Unsupported JSON format. Unnamed field detected'");
+			EXPECT_STREQ(err.what(), "Error modifying field value: 'Unsupported JSON format. Unnamed field detected'");
 		}
 
 		{
 			err = rx.Update(Query(kNsName).Where("id", CondGe, "0").SetObject("nested", Variant(std::string(R"({{"field": 1240}})"))), qr);
 			ASSERT_FALSE(err.ok());
-			EXPECT_EQ(err.what(), "Error modifying field value: 'JSONDecoder: Error parsing json: unquoted key, pos 15'");
+			EXPECT_STREQ(err.what(), "Error modifying field value: 'JSONDecoder: Error parsing json: unquoted key, pos 15'");
 		}
 
 		{

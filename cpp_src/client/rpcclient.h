@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "client/coroqueryresults.h"
 #include "client/corotransaction.h"
@@ -28,6 +28,7 @@ struct ShardingControlResponseData;
 }  // namespace sharding
 namespace client {
 
+struct ConnectOpts;
 class Snapshot;
 
 template <typename MtxT>
@@ -143,6 +144,7 @@ public:
 	Error DeleteMeta(std::string_view nsName, const std::string& key, const InternalRdxContext& ctx);
 	Error GetSqlSuggestions(std::string_view query, int pos, std::vector<std::string>& suggests);
 	Error Status(bool forceCheck, const InternalRdxContext& ctx);
+	Error Version(std::string& version, const InternalRdxContext& ctx);
 	bool RequiresStatusCheck() const noexcept { return conn_.IsRunning() && conn_.RequiresStatusCheck(); }
 
 	CoroTransaction NewTransaction(std::string_view nsName, const InternalRdxContext& ctx);

@@ -251,6 +251,9 @@ public:
 	/// Get current connection status
 	Error Status() noexcept;
 
+	/// Get version of the Reindexer
+	Error Version(std::string&) const noexcept;
+
 	/// Init system namespaces, and load config from config namespace
 	/// Cancellation context doesn't affect this call
 	Error InitSystemNamespaces();

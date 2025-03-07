@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.18)
 
 project(tests)
 
@@ -48,6 +48,65 @@ list(REMOVE_ITEM SRCS ${FUZZING_SRCS})
 
 add_executable(${TARGET} ${SRCS})
 add_executable(${FUZZING_TARGET} ${FUZZING_SRCS})
+
+if(ENABLE_PCH)
+  set(PREC_HDRS
+    <vector>
+    <map>
+    <unordered_map>
+    <set>
+    <unordered_set>
+    <deque>
+    <memory>
+    <string>
+    <string_view>
+    <optional>
+    <chrono>
+    <functional>
+    <thread>
+    <chrono>
+    <atomic>
+    <fstream>
+
+    ${REINDEXER_SOURCE_PATH}/estl/h_vector.h
+    ${REINDEXER_SOURCE_PATH}/estl/fast_hash_set.h
+    ${REINDEXER_SOURCE_PATH}/estl/fast_hash_map.h
+    ${REINDEXER_SOURCE_PATH}/estl/intrusive_ptr.h
+    ${REINDEXER_SOURCE_PATH}/estl/mutex.h
+    ${REINDEXER_SOURCE_PATH}/estl/shared_mutex.h
+    ${REINDEXER_SOURCE_PATH}/estl/cow.h
+    ${REINDEXER_SOURCE_PATH}/tools/errors.h
+    ${REINDEXER_SOURCE_PATH}/tools/logger.h
+    ${REINDEXER_SOURCE_PATH}/tools/lsn.h
+    ${REINDEXER_SOURCE_PATH}/tools/serializer.h
+    ${REINDEXER_SOURCE_PATH}/tools/stringstools.h
+    ${REINDEXER_SOURCE_PATH}/tools/fsops.h
+
+    ${REINDEXER_SOURCE_PATH}/core/reindexer.h
+    ${REINDEXER_SOURCE_PATH}/core/query/query.h
+    ${REINDEXER_SOURCE_PATH}/core/queryresults/queryresults.h
+    ${REINDEXER_SOURCE_PATH}/core/item.h
+    ${REINDEXER_SOURCE_PATH}/core/system_ns_names.h
+    ${REINDEXER_SOURCE_PATH}/client/reindexer.h
+    ${REINDEXER_SOURCE_PATH}/client/queryresults.h
+    ${REINDEXER_SOURCE_PATH}/client/item.h
+    ${REINDEXER_SOURCE_PATH}/cluster/config.h
+    ${REINDEXER_SOURCE_PATH}/vendor/gason/gason.h
+    ${REINDEXER_SOURCE_PATH}/vendor/yaml-cpp/yaml.h
+    ${REINDEXER_SOURCE_PATH}/core/cjson/jsonbuilder.h
+
+    gtest_cout.h
+    fixtures/reindexer_api.h
+    fixtures/ft_api.h
+    fixtures/clusterization_api.h
+    fixtures/servercontrol.h
+
+    <gtest/gtest.h>
+    <gtest/gtest-param-test.h>
+  )
+
+  target_precompile_headers(${TARGET} PRIVATE ${PREC_HDRS})
+endif()
 
 # Enable export to provide readable stacktraces
 set_property(TARGET ${TARGET} PROPERTY ENABLE_EXPORTS 1)

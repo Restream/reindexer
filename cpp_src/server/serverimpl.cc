@@ -566,7 +566,7 @@ int ServerImpl::run() {
 #endif	// REINDEX_WITH_LIBDL
 		}
 #endif	// WITH_GRPC
-	} catch (const Error& err) {
+	} catch (const std::exception& err) {
 		logger_.error("Unhandled exception occurred: {0}", err.what());
 	}
 	logger_.info("Reindexer server shutdown completed.");

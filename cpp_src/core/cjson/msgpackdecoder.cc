@@ -1,8 +1,10 @@
 #include "msgpackdecoder.h"
 
+#include "core/cjson/cjsonbuilder.h"
 #include "core/cjson/cjsontools.h"
 #include "core/cjson/objtype.h"
 #include "core/cjson/tagsmatcher.h"
+#include "core/keyvalue/float_vectors_holder.h"
 #include "tools/flagguard.h"
 
 namespace reindexer {
@@ -17,7 +19,7 @@ void MsgPackDecoder::setValue(Payload& pl, CJsonBuilder& builder, const T& value
 			validateArrayFieldRestrictions(f, 1, "msgpack");
 		}
 		Variant val(value);
-		builder.Ref(tagName, val, field);
+		builder.Ref(tagName, val.Type(), field);
 		pl.Set(field, convertValueForPayload(pl, field, std::move(val), "msgpack"));
 		objectScalarIndexes_.set(field);
 	} else {
@@ -48,7 +50,9 @@ int MsgPackDecoder::decodeKeyToTag(const msgpack_object_kv& obj) {
 	throw Error(errParams, "Unsupported MsgPack map key type: %s(%d)", ToString(obj.key.type), int(obj.key.type));
 }
 
-void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_object& obj, int tagName) {
+void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_object& obj, int tagName,
+							FloatVectorsHolderVector& floatVectorsHolder) {
+	using namespace std::string_view_literals;
 	if (tagName) {
 		tagsPath_.emplace_back(tagName);
 	}
@@ -73,7 +77,7 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 			setValue(pl, builder, p_string(reinterpret_cast<const l_msgpack_hdr*>(&obj.via.str)), tagName);
 			break;
 		case MSGPACK_OBJECT_ARRAY: {
-			int count = 0;
+			size_t count = 0;
 			CounterGuardIR32 g(arrayLevel_);
 			const msgpack_object* begin = obj.via.array.ptr;
 			const msgpack_object* end = begin + obj.via.array.size;
@@ -89,46 +93,81 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 			}
 			int field = tm_.tags2field(tagsPath_.data(), tagsPath_.size());
 			if (field > 0) {
-				auto& f = pl.Type().Field(field);
-				if rx_unlikely (!f.IsArray()) {
-					throw Error(errLogic, "Error parsing msgpack field '%s' - got array, expected scalar %s", f.Name(), f.Type().Name());
-				}
-				validateArrayFieldRestrictions(f, count, "msgpack");
-				int pos = pl.ResizeArray(field, count, true);
-				for (const msgpack_object* p = begin; p != end; ++p) {
-					pl.Set(field, pos++,
-						   convertValueForPayload(
-							   pl, field,
-							   [&] {
-								   switch (p->type) {
-									   case MSGPACK_OBJECT_BOOLEAN:
-										   return Variant{p->via.boolean};
-									   case MSGPACK_OBJECT_POSITIVE_INTEGER:
-										   return Variant{int64_t(p->via.u64)};
-									   case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-										   return Variant{p->via.i64};
-									   case MSGPACK_OBJECT_FLOAT32:
-									   case MSGPACK_OBJECT_FLOAT64:
-										   return Variant{p->via.f64};
-									   case MSGPACK_OBJECT_STR:
-										   return Variant{p_string(reinterpret_cast<const l_msgpack_hdr*>(&p->via.str)), Variant::hold_t{}};
-									   case MSGPACK_OBJECT_NIL:
-									   case MSGPACK_OBJECT_ARRAY:
-									   case MSGPACK_OBJECT_MAP:
-									   case MSGPACK_OBJECT_BIN:
-									   case MSGPACK_OBJECT_EXT:
-									   default:
-										   throw Error(errParams, "Unsupported MsgPack array field type: %s(%d)", ToString(p->type),
-													   int(p->type));
-								   }
-							   }(),
-							   "msgpack"));
+				const auto& f = pl.Type().Field(field);
+				if (f.IsFloatVector()) {
+					ConstFloatVectorView vectView;
+					if (count != 0) {
+						if (count != f.FloatVectorDimension().Value()) {
+							throwUnexpectedArraySizeForFloatVectorError("msgpack"sv, f, count);
+						}
+						auto vect = FloatVector::CreateNotInitialized(f.FloatVectorDimension());
+						size_t pos = 0;
+						for (const msgpack_object* p = begin; p != end; ++p, ++pos) {
+							assertrx(pos < f.FloatVectorDimension().Value());
+							switch (p->type) {
+								case MSGPACK_OBJECT_FLOAT32:
+								case MSGPACK_OBJECT_FLOAT64:
+									vect.RawData()[pos] = p->via.f64;
+									break;
+								case MSGPACK_OBJECT_BOOLEAN:
+								case MSGPACK_OBJECT_POSITIVE_INTEGER:
+								case MSGPACK_OBJECT_NEGATIVE_INTEGER:
+								case MSGPACK_OBJECT_STR:
+								case MSGPACK_OBJECT_NIL:
+								case MSGPACK_OBJECT_ARRAY:
+								case MSGPACK_OBJECT_MAP:
+								case MSGPACK_OBJECT_BIN:
+								case MSGPACK_OBJECT_EXT:
+								default:
+									throwUnexpectedArrayTypeForFloatVectorError("msgpack"sv, f);
+							}
+						}
+						floatVectorsHolder.Add(std::move(vect));
+						vectView = floatVectorsHolder.Back();
+					}
+					pl.Set(field, Variant{vectView});
+				} else {
+					if rx_unlikely (!f.IsArray()) {
+						throwUnexpectedArrayError("msgpack"sv, f);
+					}
+					validateArrayFieldRestrictions(f, count, "msgpack");
+					int pos = pl.ResizeArray(field, count, true);
+					for (const msgpack_object* p = begin; p != end; ++p) {
+						pl.Set(field, pos++,
+							   convertValueForPayload(
+								   pl, field,
+								   [&] {
+									   switch (p->type) {
+										   case MSGPACK_OBJECT_BOOLEAN:
+											   return Variant{p->via.boolean};
+										   case MSGPACK_OBJECT_POSITIVE_INTEGER:
+											   return Variant{int64_t(p->via.u64)};
+										   case MSGPACK_OBJECT_NEGATIVE_INTEGER:
+											   return Variant{p->via.i64};
+										   case MSGPACK_OBJECT_FLOAT32:
+										   case MSGPACK_OBJECT_FLOAT64:
+											   return Variant{p->via.f64};
+										   case MSGPACK_OBJECT_STR:
+											   return Variant{p_string(reinterpret_cast<const l_msgpack_hdr*>(&p->via.str)),
+															  Variant::HoldT{}};
+										   case MSGPACK_OBJECT_NIL:
+										   case MSGPACK_OBJECT_ARRAY:
+										   case MSGPACK_OBJECT_MAP:
+										   case MSGPACK_OBJECT_BIN:
+										   case MSGPACK_OBJECT_EXT:
+										   default:
+											   throw Error(errParams, "Unsupported MsgPack array field type: %s(%d)", ToString(p->type),
+														   int(p->type));
+									   }
+								   }(),
+								   "msgpack"));
+					}
 				}
 				builder.ArrayRef(tagName, field, count);
 			} else {
 				auto array = builder.Array(tagName, type);
 				for (const msgpack_object* p = begin; p != end; ++p) {
-					decode(pl, array, *p, 0);
+					decode(pl, array, *p, 0, floatVectorsHolder);
 				}
 			}
 			break;
@@ -141,7 +180,7 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 				// MsgPack can have non-string type keys: https://github.com/msgpack/msgpack/issues/217
 				assertrx(p);
 				int tag = decodeKeyToTag(*p);
-				decode(pl, object, p->val, tag);
+				decode(pl, object, p->val, tag, floatVectorsHolder);
 			}
 			break;
 		}
@@ -155,7 +194,8 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 	}
 }
 
-Error MsgPackDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& wrser, size_t& offset) {
+Error MsgPackDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& wrser, size_t& offset,
+							 FloatVectorsHolderVector& floatVectorsHolder) {
 	try {
 		objectScalarIndexes_.reset();
 		tagsPath_.clear();
@@ -171,7 +211,7 @@ Error MsgPackDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& wr
 		}
 
 		CJsonBuilder cjsonBuilder(wrser, ObjType::TypePlain, &tm_, 0);
-		decode(pl, cjsonBuilder, *(data.p), 0);
+		decode(pl, cjsonBuilder, *(data.p), 0, floatVectorsHolder);
 	} catch (const Error& err) {
 		return err;
 	} catch (const std::exception& ex) {

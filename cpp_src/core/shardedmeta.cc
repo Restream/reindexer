@@ -1,11 +1,12 @@
 #include "shardedmeta.h"
 #include "core/cjson/jsonbuilder.h"
+#include "vendor/gason/gason.h"
 
 namespace reindexer {
 
 using namespace std::string_view_literals;
 
-Error ShardedMeta::FromJSON(span<char> json) {
+Error ShardedMeta::FromJSON(std::span<char> json) {
 	try {
 		gason::JsonParser parser;
 		auto root = parser.Parse(json);

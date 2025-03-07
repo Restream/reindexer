@@ -1,12 +1,6 @@
-#include <chrono>
-#include <thread>
-#include <unordered_map>
-#include <unordered_set>
-#include "core/itemimpl.h"
 #include "core/nsselecter/joinedselector.h"
-#include "core/type_consts_helpers.h"
+#include "core/queryresults/joinresults.h"
 #include "join_on_conditions_api.h"
-#include "join_selects_api.h"
 #include "test_helpers.h"
 
 TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest) {
@@ -336,7 +330,7 @@ TEST_F(JoinSelectsApi, TestSortingByJoinedNs) {
 	Error err = rt.reindexer->Select(query1, joinQueryRes1);
 	// several book to one author, cannot sort
 	ASSERT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "Not found value joined from ns books_namespace");
+	EXPECT_STREQ(err.what(), "Not found value joined from ns books_namespace");
 
 	Query joinedQuery2 = Query(authors_namespace);
 	Query query2{Query(books_namespace)
@@ -518,7 +512,7 @@ TEST_F(JoinSelectsApi, JoinPreResultStoreValuesOptimizationStressTest) {
 static void checkForAllowedJsonTags(const std::vector<std::string>& tags, gason::JsonValue jsonValue) {
 	size_t count = 0;
 	for (const auto& elem : jsonValue) {
-		ASSERT_NE(std::find(tags.begin(), tags.end(), std::string_view(elem.key)), tags.end());
+		ASSERT_NE(std::find(tags.begin(), tags.end(), std::string_view(elem.key)), tags.end()) << elem.key;
 		++count;
 	}
 	ASSERT_EQ(count, tags.size());

@@ -132,6 +132,7 @@ void initComparator(CondType cond, const reindexer::VariantArray& from, reindexe
 		case CondEmpty:
 		case CondLike:
 		case CondDWithin:
+		case CondKnn:
 			break;
 	}
 	to.cond_ = cond;
@@ -164,6 +165,7 @@ void initStringComparator(CondType cond, const reindexer::VariantArray& from, re
 		case CondAny:
 		case CondEmpty:
 		case CondDWithin:
+		case CondKnn:
 			break;
 	}
 	to.cond_ = cond;
@@ -236,6 +238,7 @@ template <typename T>
 		case CondAny:
 		case CondEmpty:
 		case CondDWithin:
+		case CondKnn:
 		default:
 			abort();
 	}
@@ -509,6 +512,7 @@ ComparatorIndexedComposite::ComparatorIndexedComposite(const VariantArray& value
 		case CondEmpty:
 		case CondLike:
 		case CondDWithin:
+		case CondKnn:
 			break;
 	}
 	cond_ = cond;
@@ -538,6 +542,7 @@ ComparatorIndexedComposite::ComparatorIndexedComposite(const VariantArray& value
 		case CondAny:
 		case CondEmpty:
 		case CondDWithin:
+		case CondKnn:
 		default:
 			abort();
 	}
@@ -641,7 +646,7 @@ template <typename T>
 				}
 			case CondDWithin:
 			case CondLike:
-			default:
+			case CondKnn:
 				throw Error{errQueryExec, "Condition %s with type %s", CondTypeToStr(cond), typeToStr<T>()};
 		}
 	} else {
@@ -690,7 +695,7 @@ template <typename T>
 					}
 				case CondDWithin:
 				case CondLike:
-				default:
+				case CondKnn:
 					throw Error{errQueryExec, "Condition %s with type %s", CondTypeToStr(cond), typeToStr<T>()};
 			}
 		} else {
@@ -758,11 +763,12 @@ template <typename T>
 				case CondEmpty:
 				case CondDWithin:
 				case CondLike:
-				default:
+				case CondKnn:
 					throw Error{errQueryExec, "Condition %s with type %s", CondTypeToStr(cond), typeToStr<T>()};
 			}
 		}
 	}
+	throw Error{errQueryExec, "Invalid condition %d with type %s", int(cond), typeToStr<T>()};
 }
 
 template comparators::ComparatorIndexedVariant<int> ComparatorIndexed<int>::createImpl(CondType, const VariantArray&, const void*, bool,
@@ -830,7 +836,7 @@ template <>
 					return ComparatorIndexedJsonPathString{fields.getTagsPath(0), payloadType, values, collate, cond};
 				}
 			case CondDWithin:
-			default:
+			case CondKnn:
 				throw Error{errQueryExec, "Condition %s with type %s", CondTypeToStr(cond), typeToStr<key_string>()};
 		}
 	} else {
@@ -879,7 +885,7 @@ template <>
 						return ComparatorIndexedOffsetArrayString{offset, values, collate, cond};
 					}
 				case CondDWithin:
-				default:
+				case CondKnn:
 					throw Error{errQueryExec, "Condition %s with type %s", CondTypeToStr(cond), typeToStr<key_string>()};
 			}
 		} else {
@@ -944,11 +950,12 @@ template <>
 					return ComparatorIndexedOffsetScalarString{offset, values, collate, cond};
 				case CondEmpty:
 				case CondDWithin:
-				default:
+				case CondKnn:
 					throw Error{errQueryExec, "Condition %s with type %s", CondTypeToStr(cond), typeToStr<key_string>()};
 			}
 		}
 	}
+	throw Error{errQueryExec, "Invalid condition %d with type %s", int(cond), typeToStr<key_string>()};
 }
 
 template <>
@@ -983,9 +990,10 @@ template <>
 		case CondEmpty:
 		case CondAny:
 		case CondDWithin:
-		default:
+		case CondKnn:
 			throw Error{errQueryExec, "Condition %s with type %s", CondTypeToStr(cond), typeToStr<PayloadValue>()};
 	}
+	throw Error{errQueryExec, "Invalid condition %d with type %s", int(cond), typeToStr<PayloadValue>()};
 }
 
 template <>
@@ -1012,8 +1020,10 @@ template <>
 			case CondGe:
 			case CondRange:
 			case CondLike:
-			default:
+			case CondKnn:
 				throw Error{errQueryExec, "Condition %s with type %s", CondTypeToStr(cond), typeToStr<Point>()};
+			default:
+				throw Error{errQueryExec, "Invalid condition %d with type %s", int(cond), typeToStr<Point>()};
 		}
 	} else if (isArray) {
 		const auto offset = payloadType->Field(fields[0]).Offset();
@@ -1039,12 +1049,13 @@ template <>
 			case CondGe:
 			case CondRange:
 			case CondLike:
-			default:
+			case CondKnn:
 				throw Error{errQueryExec, "Condition %s with type %s", CondTypeToStr(cond), typeToStr<Point>()};
+			default:
+				throw Error{errQueryExec, "Invalid condition %d with type %s", int(cond), typeToStr<Point>()};
 		}
-	} else {
-		throw Error{errQueryExec, "Condition %s with not array field", CondTypeToStr(cond)};
 	}
+	throw Error{errQueryExec, "Condition %s with non-array field", CondTypeToStr(cond)};
 }
 
 }  // namespace reindexer

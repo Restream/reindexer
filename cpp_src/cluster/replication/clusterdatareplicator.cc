@@ -1,12 +1,12 @@
 #include "clusterdatareplicator.h"
-#include "core/defnsconfigs.h"
 #include "core/reindexer_impl/reindexerimpl.h"
+#include "core/system_ns_names.h"
 #include "tools/randomgenerator.h"
 
 namespace reindexer {
 namespace cluster {
 
-ClusterDataReplicator::ClusterDataReplicator(ClusterDataReplicator::UpdatesQueueT& q, SharedSyncState<>& s, ReindexerImpl& thisNode)
+ClusterDataReplicator::ClusterDataReplicator(ClusterDataReplicator::UpdatesQueueT& q, SharedSyncState& s, ReindexerImpl& thisNode)
 	: statsCollector_(std::string(kClusterReplStatsType)),
 	  raftManager_(loop_, statsCollector_, log_,
 				   [this](uint32_t uid, bool online) {

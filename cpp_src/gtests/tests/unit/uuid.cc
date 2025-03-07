@@ -558,14 +558,10 @@ TEST(UUID, AddNotArrayUuidIndexOnArrayField) {
 
 		const auto err = rx.AddIndex(nsName, reindexer::IndexDef{"uuid_a", "hash", "uuid", IndexOpts()});
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Cannot convert array field to not array UUID");
+		EXPECT_STREQ(err.what(), "Cannot convert array field to not array UUID");
 
 		test(rx, strUuidValues);
-	} catch (const reindexer::Error& e) {
-		ASSERT_TRUE(false) << e.what() << std::endl;
 	} catch (const std::exception& e) {
 		ASSERT_TRUE(false) << e.what() << std::endl;
-	} catch (...) {
-		ASSERT_TRUE(false);
 	}
 }

@@ -120,8 +120,8 @@ void Selector<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, RV
 // RX_NO_INLINE just for build test purpose. Do not expect any effect here
 template <typename IdCont>
 template <FtUseExternStatuses useExternSt, typename MergeType>
-MergeType Selector<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses::Statuses&& mergeStatuses,
-									const RdxContext& rdxCtx) {
+MergeType Selector<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, RankSortType rankSortType,
+									FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext& rdxCtx) {
 	FtSelectContext ctx;
 	ctx.rawResults.reserve(dsl.size());
 	// STEP 2: Search dsl terms for each variant
@@ -213,10 +213,10 @@ MergeType Selector<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, FtSort
 
 	const auto maxMergedSize = std::min(size_t(holder_.cfg_->mergeLimit), ctx.totalORVids);
 	if (maxMergedSize < 0xFFFF) {
-		return mergeResultsBmType<uint16_t, MergeType>(std::move(results), ctx.totalORVids, synonymsBounds, inTransaction, ftSortType,
+		return mergeResultsBmType<uint16_t, MergeType>(std::move(results), ctx.totalORVids, synonymsBounds, inTransaction, rankSortType,
 													   std::move(mergeStatuses), rdxCtx);
 	} else if (maxMergedSize < 0xFFFFFFFF) {
-		return mergeResultsBmType<uint32_t, MergeType>(std::move(results), ctx.totalORVids, synonymsBounds, inTransaction, ftSortType,
+		return mergeResultsBmType<uint32_t, MergeType>(std::move(results), ctx.totalORVids, synonymsBounds, inTransaction, rankSortType,
 													   std::move(mergeStatuses), rdxCtx);
 	} else {
 		assertrx_throw(false);
@@ -227,18 +227,18 @@ MergeType Selector<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, FtSort
 template <typename IdCont>
 template <typename MergedOffsetT, typename MergeType>
 MergeType Selector<IdCont>::mergeResultsBmType(std::vector<TextSearchResults>&& results, size_t totalORVids,
-											   const std::vector<size_t>& synonymsBounds, bool inTransaction, FtSortType ftSortType,
+											   const std::vector<size_t>& synonymsBounds, bool inTransaction, RankSortType rankSortType,
 											   FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext& rdxCtx) {
 	switch (holder_.cfg_->bm25Config.bm25Type) {
 		case FtFastConfig::Bm25Config::Bm25Type::rx:
 			return mergeResults<Bm25Rx, MergedOffsetT, MergeType>(std::move(results), totalORVids, synonymsBounds, inTransaction,
-																  ftSortType, std::move(mergeStatuses), rdxCtx);
+																  rankSortType, std::move(mergeStatuses), rdxCtx);
 		case FtFastConfig::Bm25Config::Bm25Type::classic:
 			return mergeResults<Bm25Classic, MergedOffsetT, MergeType>(std::move(results), totalORVids, synonymsBounds, inTransaction,
-																	   ftSortType, std::move(mergeStatuses), rdxCtx);
+																	   rankSortType, std::move(mergeStatuses), rdxCtx);
 		case FtFastConfig::Bm25Config::Bm25Type::wordCount:
 			return mergeResults<TermCount, MergedOffsetT, MergeType>(std::move(results), totalORVids, synonymsBounds, inTransaction,
-																	 ftSortType, std::move(mergeStatuses), rdxCtx);
+																	 rankSortType, std::move(mergeStatuses), rdxCtx);
 	}
 	assertrx_throw(false);
 	return MergeType();
@@ -1364,7 +1364,7 @@ bool Selector<IdCont>::TyposHandler::isWordFitMaxLettPerm(const std::string_view
 template <typename IdCont>
 template <typename Bm25T, typename MergedOffsetT, typename MergedType>
 MergedType Selector<IdCont>::mergeResults(std::vector<TextSearchResults>&& rawResults, size_t maxMergedSize,
-										  const std::vector<size_t>& synonymsBounds, bool inTransaction, FtSortType ftSortType,
+										  const std::vector<size_t>& synonymsBounds, bool inTransaction, RankSortType rankSortType,
 										  FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext& rdxCtx) {
 	const auto& vdocs = holder_.vdocs_;
 
@@ -1471,17 +1471,17 @@ MergedType Selector<IdCont>::mergeResults(std::vector<TextSearchResults>&& rawRe
 			merged.maxRank = m.proc;
 		}
 	}
-	switch (ftSortType) {
-		case FtSortType::RankOnly: {
+	switch (rankSortType) {
+		case RankSortType::RankOnly: {
 			boost::sort::pdqsort_branchless(merged.begin(), merged.end(),
 											[](const MergeInfo& lhs, const MergeInfo& rhs) noexcept { return lhs.proc > rhs.proc; });
 			return merged;
 		}
-		case FtSortType::RankAndID: {
+		case RankSortType::RankAndID: {
 			return merged;
 		}
-		case FtSortType::ExternalExpression:
-			throw Error(errLogic, "FtSortType::ExternalExpression not implemented.");
+		case RankSortType::ExternalExpression:
+			throw Error(errLogic, "RankSortType::ExternalExpression not implemented.");
 			break;
 	}
 	return merged;
@@ -1524,37 +1524,37 @@ void Selector<IdCont>::printVariants(const FtSelectContext& ctx, const TextSearc
 }
 
 template class Selector<PackedIdRelVec>;
-template MergeDataBase Selector<PackedIdRelVec>::Process<FtUseExternStatuses::No, MergeDataBase>(FtDSLQuery&&, bool, FtSortType,
+template MergeDataBase Selector<PackedIdRelVec>::Process<FtUseExternStatuses::No, MergeDataBase>(FtDSLQuery&&, bool, RankSortType,
 																								 FtMergeStatuses::Statuses&&,
 																								 const RdxContext&);
-template MergeData<Area> Selector<PackedIdRelVec>::Process<FtUseExternStatuses::No, MergeData<Area>>(FtDSLQuery&&, bool, FtSortType,
+template MergeData<Area> Selector<PackedIdRelVec>::Process<FtUseExternStatuses::No, MergeData<Area>>(FtDSLQuery&&, bool, RankSortType,
 																									 FtMergeStatuses::Statuses&&,
 																									 const RdxContext&);
 template MergeData<AreaDebug> Selector<PackedIdRelVec>::Process<FtUseExternStatuses::No, MergeData<AreaDebug>>(FtDSLQuery&&, bool,
-																											   FtSortType,
+																											   RankSortType,
 																											   FtMergeStatuses::Statuses&&,
 																											   const RdxContext&);
 
-template MergeDataBase Selector<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType,
+template MergeDataBase Selector<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, RankSortType,
 																				   FtMergeStatuses::Statuses&&, const RdxContext&);
-template MergeData<Area> Selector<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType,
+template MergeData<Area> Selector<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, RankSortType,
 																					 FtMergeStatuses::Statuses&&, const RdxContext&);
-template MergeData<AreaDebug> Selector<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType,
+template MergeData<AreaDebug> Selector<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, RankSortType,
 																						  FtMergeStatuses::Statuses&&, const RdxContext&);
 
 template class Selector<IdRelVec>;
-template MergeDataBase Selector<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
+template MergeDataBase Selector<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, RankSortType, FtMergeStatuses::Statuses&&,
 																			const RdxContext&);
-template MergeData<Area> Selector<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
+template MergeData<Area> Selector<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, RankSortType, FtMergeStatuses::Statuses&&,
 																			  const RdxContext&);
-template MergeData<AreaDebug> Selector<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, FtSortType,
+template MergeData<AreaDebug> Selector<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, RankSortType,
 																				   FtMergeStatuses::Statuses&&, const RdxContext&);
 
-template MergeDataBase Selector<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
+template MergeDataBase Selector<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, RankSortType, FtMergeStatuses::Statuses&&,
 																			 const RdxContext&);
-template MergeData<Area> Selector<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
-																			   const RdxContext&);
-template MergeData<AreaDebug> Selector<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType,
+template MergeData<Area> Selector<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, RankSortType,
+																			   FtMergeStatuses::Statuses&&, const RdxContext&);
+template MergeData<AreaDebug> Selector<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, RankSortType,
 																					FtMergeStatuses::Statuses&&, const RdxContext&);
 
 }  // namespace reindexer

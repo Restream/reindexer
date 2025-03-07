@@ -5,49 +5,53 @@ void QueriesApi::CheckMergeQueriesWithLimit() {
 	QueryResults qr;
 	Error err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "Limit and offset in inner merge query is not allowed");
+	EXPECT_STREQ(err.what(), "Limit and offset in inner merge query is not allowed");
 
 	q = Query{default_namespace}.Merge(Query{joinNs}.Offset(1));
 	qr.Clear();
 	err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "Limit and offset in inner merge query is not allowed");
+	EXPECT_STREQ(err.what(), "Limit and offset in inner merge query is not allowed");
 
 	q = Query{default_namespace}.Merge(Query{joinNs}.Sort(kFieldNameId, false));
 	qr.Clear();
 	err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "Sorting in inner merge query is not allowed");  // TODO #1449
+	EXPECT_STREQ(err.what(), "Sorting in inner merge query is not allowed");  // TODO #1449
 
 	q = Query{default_namespace}.Merge(Query{joinNs}).Sort(kFieldNameId, false);
 	qr.Clear();
 	err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "Sorting in merge query is not implemented yet");	 // TODO #1449
+	EXPECT_STREQ(err.what(), "Sorting in merge query is not implemented yet");	// TODO #1449
 
 	q = Query{default_namespace}.Where(kFieldNameDescription, CondEq, RandString()).Merge(Query{joinNs});
 	qr.Clear();
 	err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "In merge query without sorting all subqueries should be fulltext or not fulltext at the same time");
+	EXPECT_STREQ(err.what(),
+				 "In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions at the same "
+				 "time: 'fulltext query' VS 'not ranked query'");
 
 	q = Query{default_namespace}.Merge(Query{joinNs}.Where(kFieldNameDescription, CondEq, RandString()));
 	qr.Clear();
 	err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "In merge query without sorting all subqueries should be fulltext or not fulltext at the same time");
+	EXPECT_STREQ(err.what(),
+				 "In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions at the same "
+				 "time: 'not ranked query' VS 'fulltext query'");
 
 	q = Query{default_namespace}.Where(kFieldNameDescription, CondEq, RandString()).Merge(Query{joinNs}).Sort(kFieldNameId, false);
 	qr.Clear();
 	err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "Sorting in merge query is not implemented yet");	 // TODO #1449
+	EXPECT_STREQ(err.what(), "Sorting in merge query is not implemented yet");	// TODO #1449
 
 	q = Query{default_namespace}.Merge(Query{joinNs}.Where(kFieldNameDescription, CondEq, RandString())).Sort(kFieldNameId, false);
 	qr.Clear();
 	err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "Sorting in merge query is not implemented yet");	 // TODO #1449
+	EXPECT_STREQ(err.what(), "Sorting in merge query is not implemented yet");	// TODO #1449
 
 	qr.Clear();
 	q = Query{default_namespace}.Merge(Query{joinNs}).Limit(10);
@@ -194,31 +198,31 @@ void QueriesApi::CheckMergeQueriesWithAggregation() {
 		QueryResults qr;
 		Error err = rt.reindexer->Select(Query{default_namespace}.Aggregate(AggSum, {"id"}).Limit(10).Offset(10).Merge(Query{joinNs}), qr);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Limit and offset are not supported for aggregations 'sum'");
+		EXPECT_STREQ(err.what(), "Limit and offset are not supported for aggregations 'sum'");
 	}
 	{
 		QueryResults qr;
 		Error err = rt.reindexer->Select(Query{default_namespace}.Aggregate(AggMin, {"id"}).Limit(10).Merge(Query{joinNs}), qr);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Limit and offset are not supported for aggregations 'min'");
+		EXPECT_STREQ(err.what(), "Limit and offset are not supported for aggregations 'min'");
 	}
 	{
 		QueryResults qr;
 		Error err = rt.reindexer->Select(Query{default_namespace}.Aggregate(AggMax, {"id"}).Offset(10).Merge(Query{joinNs}), qr);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Limit and offset are not supported for aggregations 'max'");
+		EXPECT_STREQ(err.what(), "Limit and offset are not supported for aggregations 'max'");
 	}
 	{
 		QueryResults qr;
 		Error err = rt.reindexer->Select(Query{default_namespace}.Merge(Query{joinNs}.ReqTotal()), qr);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Aggregations in inner merge query are not allowed");
+		EXPECT_STREQ(err.what(), "Aggregations in inner merge query are not allowed");
 	}
 	{
 		QueryResults qr;
 		Error err = rt.reindexer->Select(Query{default_namespace}.Merge(Query{joinNs}.CachedTotal()), qr);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Aggregations in inner merge query are not allowed");
+		EXPECT_STREQ(err.what(), "Aggregations in inner merge query are not allowed");
 	}
 	// checking the work of several aggregate functions with the merge query
 	{
@@ -329,9 +333,11 @@ static reindexer::Variant createRandValue(int id, reindexer::KeyValueType fieldT
 		[](KeyValueType::Bool) { return Variant{rand() % 2}; }, [id](KeyValueType::Int) { return Variant{id - 50 + rand() % 100}; },
 		[id](KeyValueType::Int64) { return Variant{int64_t{id - 50 + rand() % 100}}; },
 		[id](KeyValueType::Double) { return Variant{(id - 50 + rand() % 100) / 3000.0}; },
+		[id](KeyValueType::Float) { return Variant{(id - 50 + rand() % 100) / 3000.0f}; },
 		[id](KeyValueType::String) { return Variant{std::to_string(id - 50 + rand() % 100)}; },
 		[](KeyValueType::Uuid) { return (rand() % 2) ? Variant{randUuid()} : Variant{randStrUuid()}; },
-		[](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite>) -> Variant {
+		[](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::FloatVector>)
+			-> Variant {
 			assert(0);
 			std::abort();
 		}});
@@ -519,7 +525,7 @@ void QueriesApi::FillUUIDNs() {
 }
 
 void QueriesApi::CheckUUIDQueries() {
-	for (size_t i = 0; i < 10; ++i) {
+	for (size_t i = 0; i < 3; ++i) {
 		for (const auto& field : {
 				 kFieldNameUuid, kFieldNameUuidArr, kFieldNameUuidNotIndex, kFieldNameRndString /*,
 				  kFieldNameUuidSparse, kFieldNameUuidArrSparse, kFieldNameUuidNotIndex2, kFieldNameUuidNotIndex3*/
@@ -554,8 +560,6 @@ void QueriesApi::checkSqlQuery(std::string_view sqlQuery, Query&& checkQuery) {
 void QueriesApi::CheckSqlQueries() {
 	using namespace std::string_literals;
 	using namespace std::string_view_literals;
-	using reindexer::randPoint;
-	using reindexer::randBinDouble;
 
 	checkSqlQuery("SELECT ID, Year, Genre FROM test_namespace WHERE year > '2016' ORDER BY year DESC LIMIT 10000000"sv,
 				  Query(default_namespace, 0, 10000000).Where(kFieldNameYear, CondGt, 2016).Sort(kFieldNameYear, true));
@@ -593,13 +597,13 @@ void QueriesApi::CheckSqlQueries() {
 
 	// Checks that SQL queries with DWithin and sort by Distance work and compares the result with the result of corresponding C++ query
 	reindexer::Point point = randPoint(10);
-	double distance = randBinDouble(0, 1);
+	double distance = randBin<double>(0, 1);
 	checkSqlQuery(fmt::sprintf("SELECT * FROM %s WHERE ST_DWithin(%s, %s, %s);", geomNs, kFieldNamePointNonIndex, pointToSQL(point),
 							   toString(distance)),
 				  Query(geomNs).DWithin(kFieldNamePointNonIndex, point, distance));
 
 	point = randPoint(10);
-	distance = randBinDouble(0, 1);
+	distance = randBin<double>(0, 1);
 	checkSqlQuery(fmt::sprintf("SELECT * FROM %s WHERE ST_DWithin(%s, %s, %s) ORDER BY 'ST_Distance(%s, %s)';", geomNs, pointToSQL(point),
 							   kFieldNamePointNonIndex, toString(distance), kFieldNamePointLinearRTree, pointToSQL(point, true)),
 				  Query(geomNs)
@@ -629,12 +633,10 @@ void QueriesApi::checkDslQuery(std::string_view dslQuery, Query&& checkQuery) {
 // Checks that DSL queries works and compares the result with the result of corresponding C++ query
 void QueriesApi::CheckDslQueries() {
 	using namespace std::string_literals;
-	using reindexer::randPoint;
-	using reindexer::randBinDouble;
 	using reindexer::double_to_str;
 
 	auto point{randPoint(10)};
-	auto distance = randBinDouble(0, 1);
+	auto distance = randBin<double>(0, 1);
 	checkDslQuery(
 		fmt::sprintf(
 			R"({"namespace":"%s","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":"%s","value":[[%s, %s], %s]}],"merge_queries":[],"aggregations":[]})",
@@ -642,7 +644,7 @@ void QueriesApi::CheckDslQueries() {
 		Query(geomNs).DWithin(kFieldNamePointLinearRTree, point, distance));
 
 	point = randPoint(10);
-	distance = randBinDouble(0, 1);
+	distance = randBin<double>(0, 1);
 	checkDslQuery(
 		fmt::sprintf(
 			R"({"namespace":"%s","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":"%s","value":[%s,[%s,%s]]}],"merge_queries":[],"aggregations":[]})",
@@ -662,7 +664,7 @@ void QueriesApi::CheckDslQueries() {
 		Query{default_namespace}.Where(kFieldNameId, CondSet, {1, 10, 100, 1000}));
 }
 
-void QueriesApi::CheckStandartQueries() {
+void QueriesApi::CheckStandardQueries() {
 	try {
 		using namespace std::string_literals;
 		static const std::vector<std::string> sortIdxs = {

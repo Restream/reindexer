@@ -8,22 +8,21 @@
 
 namespace reindexer {
 
-template <typename T>
-using StoreIndexKeyType = typename std::conditional<
-	std::is_same_v<typename T::key_type, PayloadValueWithHash>, PayloadValue,
-	typename std::conditional<std::is_same_v<typename T::key_type, key_string_with_hash>, key_string, typename T::key_type>::type>::type;
+template <typename Map>
+using StoreIndexKeyType = std::conditional_t<
+	std::is_same_v<typename Map::key_type, PayloadValueWithHash>, PayloadValue,
+	std::conditional_t<std::is_same_v<typename Map::key_type, key_string_with_hash>, key_string, typename Map::key_type>>;
 
-template <typename T>
-class IndexUnordered : public IndexStore<StoreIndexKeyType<T>> {
-	using Base = IndexStore<StoreIndexKeyType<T>>;
+template <typename Map>
+class IndexUnordered : public IndexStore<StoreIndexKeyType<Map>> {
+	using Base = IndexStore<StoreIndexKeyType<Map>>;
 
 public:
-	using ref_type = typename std::conditional<
-		std::is_same<typename T::key_type, PayloadValueWithHash>::value, PayloadValue,
-		typename std::conditional<std::is_same_v<typename T::key_type, key_string>, std::string_view,
-								  typename std::conditional<std::is_same_v<typename T::key_type, key_string_with_hash>, std::string_view,
-															typename T::key_type>::type>::type>::type;
-	using key_type = StoreIndexKeyType<T>;
+	using ref_type = std::conditional_t<std::is_same<typename Map::key_type, PayloadValueWithHash>::value, PayloadValue,
+										std::conditional_t<std::is_same_v<typename Map::key_type, key_string>, std::string_view,
+														   std::conditional_t<std::is_same_v<typename Map::key_type, key_string_with_hash>,
+																			  std::string_view, typename Map::key_type>>>;
+	using key_type = StoreIndexKeyType<Map>;
 
 	IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg);
 	IndexUnordered(const IndexUnordered& other);
@@ -34,7 +33,7 @@ public:
 							   const BaseFunctionCtx::Ptr& ctx, const RdxContext&) override;
 	void Commit() override;
 	void UpdateSortedIds(const UpdateSortedContext&) override;
-	std::unique_ptr<Index> Clone() const override { return std::make_unique<IndexUnordered<T>>(*this); }
+	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::make_unique<IndexUnordered<Map>>(*this); }
 	IndexMemStat GetMemStat(const RdxContext&) override;
 	size_t Size() const noexcept override final { return idx_map.size(); }
 	void SetSortedIdxCount(int sortedIdxCount) override;
@@ -53,11 +52,11 @@ public:
 protected:
 	bool tryIdsetCache(const VariantArray& keys, CondType condition, SortType sortId,
 					   const std::function<bool(SelectKeyResult&, size_t&)>& selector, SelectKeyResult& res);
-	void addMemStat(typename T::iterator it);
-	void delMemStat(typename T::iterator it);
+	void addMemStat(typename Map::iterator it);
+	void delMemStat(typename Map::iterator it);
 
 	// Index map
-	T idx_map;
+	Map idx_map;
 	// Merged idsets cache
 	IdSetCache cache_;
 	size_t cacheMaxSize_;
@@ -65,7 +64,7 @@ protected:
 	// Empty ids
 	Index::KeyEntry empty_ids_;
 	// Tracker of updates
-	UpdateTracker<T> tracker_;
+	UpdateTracker<Map> tracker_;
 
 private:
 	template <typename S>

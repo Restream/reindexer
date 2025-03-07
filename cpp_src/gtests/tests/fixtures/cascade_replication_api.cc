@@ -1,5 +1,6 @@
 #include "cascade_replication_api.h"
-#include "core/defnsconfigs.h"
+#include "core/system_ns_names.h"
+#include "vendor/gason/gason.h"
 
 void CascadeReplicationApi::SetUp() { reindexer::fs::RmDirAll(kBaseTestsetDbPath); }
 

@@ -1,5 +1,4 @@
 #include "transactionimpl.h"
-#include "cluster/sharding/sharding.h"
 #include "core/reindexer_impl/reindexerimpl.h"
 
 namespace reindexer {

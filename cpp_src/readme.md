@@ -34,10 +34,13 @@ While using docker, you may pass reindexer server config options via environment
 - `RX_RPC_QR_IDLE_TIMEOUT` - RPC query results idle timeout (in seconds). Default value is 0 (timeout disabled).
 - `RX_DISABLE_NS_LEAK` - Disables namespaces memory leak on database destruction (will slow down server's termination).
 - `RX_MAX_HTTP_REQ` - allows to configure max HTTP request size (in bytes). Default value is `2097152` (= 2 MB). `0` means 'unlimited'.
+- `RX_IVF_OMP_THREADS` - number of threads, which will be used to build IVF index centroids (this option has effect only if docker image uses omp version of `libblas`).
 - `RX_HTTP_READ_TIMEOUT` - if RX_HTTP_READ_TIMEOUT is not empty, sets execution timeout for HTTP read operations in seconds. 0 mean no timeout. Default value is 0.
 - `RX_HTTP_WRITE_TIMEOUT` - if RX_HTTP_WRITE_TIMEOUT is not empty, sets execution timeout for HTTP write operations in seconds. 0 mean no timeout. Default value is 0 if cluster is disabled and 20 if cluster is enabled.
 - `RX_SSL_CERT` - path to ssl-certificate file. If it is not set Reindexer will be launched without TLS support.
 - `RX_SSL_KEY` - path to file with ssl private key. If it is not set Reindexer will be launched without TLS support.
+- `RX_IVF_OMP_THREADS` - sets number of OpenMP threads, which will be used during `IVF`-index building. Default value is 8.
+- `OPENBLAS_NUM_THREADS` - sets number of threads, which will be used during `IVF`-index building by `OpenBLAS` library. Default value is 8.
 
 To run Reindexer with TLS support, both of `RX_SSL_CERT` and `RX_SSL_KEY` must be set. Certificate/key files may be added into container by mounting external directory using `-v` or `--mount` options during container startup:
 
@@ -69,8 +72,6 @@ yum install reindexer-server
 
 Available distros: `centos-7`, `fedora-40`, `fedora-41`.
 
-To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
-
 ### Ubuntu/Debian
 
 ```bash
@@ -80,9 +81,7 @@ apt update
 apt install reindexer-server
 ```
 
-Available distros: `debian-bookworm`, `debian-bullseye`, `ubuntu-focal`, `ubuntu-jammy`, `ubuntu-noble`
-
-To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
+Available distros: `debian-bookworm`, `debian-bullseye`, `ubuntu-jammy`, `ubuntu-noble`
 
 ### Redos
 
@@ -107,8 +106,6 @@ apt-get install reindexer-server
 
 Available distros: `p10`.
 
-To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
-
 ## OSX brew
 
 ```bash
@@ -118,13 +115,14 @@ brew install reindexer
 
 ## Windows
 
-Download and install [64 bit](https://repo.reindexer.io/win/64/) or [32 bit](https://repo.reindexer.io/win/32/)
+Download and install [64 bit](https://repo.reindexer.io/win/64/) or [32 bit](https://repo.reindexer.io/win/32/). `32-bit` version is `HNSW-only` in terms of supported vector indexes subset.
 
 ## Installation from sources
 
 ### Dependencies
 
-Reindexer's core is written in C++17 and uses LevelDB as the storage backend, so the Cmake, C++17 toolchain and LevelDB must be installed before installing Reindexer. To build Reindexer, g++ 8+, clang 5+ or MSVC 2019+ is required.
+Reindexer's core is written in C++20 and uses LevelDB as the storage backend, so the Cmake, C++20 toolchain and LevelDB must be installed before installing Reindexer. Also FAISS-based vector indexes (`IVF` in particular) depend on OpenMP and BLAS/LAPACK libraries, but those dependecies are optional - you may build `HNWS-only` version by passing `-DBUILD_ANN_INDEXES=builtin` into `CMake`.
+
 Dependencies can be installed automatically by this script:
 
 ```bash
@@ -150,7 +148,7 @@ sudo make install
 - Start server
 
 ```
-service start reindexer
+sudo service reindexer start
 ```
 
 - open in web browser http://127.0.0.1:9088/swagger to see reindexer REST API interactive documentation

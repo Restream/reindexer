@@ -237,7 +237,7 @@ Error RPCServer::execSqlQueryByType(std::string_view sqlQuery, QueryResults& res
 			case QueryTruncate:
 				return getDB(ctx, kRoleDBAdmin).TruncateNamespace(q.NsName());
 		}
-		return Error(errParams, "unknown query type %d", q.Type());
+		return Error(errParams, "unknown query type %d", int(q.Type()));
 	}
 	CATCH_AND_RETURN;
 }
@@ -260,7 +260,7 @@ void RPCServer::Logger(cproto::Context& ctx, const Error& err, const cproto::Arg
 		ser << '-';
 	}
 
-	ser << " -> "sv << (err.ok() ? "OK"sv : err.what());
+	ser << " -> "sv << (err.ok() ? "OK"sv : err.whatStr());
 	if (ret.size()) {
 		ser << ' ';
 		ret.Dump(ser);
@@ -374,8 +374,7 @@ Error RPCServer::EnumDatabases(cproto::Context& ctx) {
 
 	WrSerializer ser;
 	JsonBuilder jb(ser);
-	// FIXME: !!!!!!!!!!!!!!Non-const to const span cats
-	span<const std::string> array(&dbList[0], dbList.size());
+	std::span<const std::string> array(&dbList[0], dbList.size());
 	jb.Array("databases"sv, array);
 	jb.End();
 
@@ -384,27 +383,24 @@ Error RPCServer::EnumDatabases(cproto::Context& ctx) {
 	return errOK;
 }
 
-Error RPCServer::AddIndex(cproto::Context& ctx, p_string ns, p_string indexDef) {
-	IndexDef iDef;
-	auto err = iDef.FromJSON(giftStr(indexDef));
-	if (!err.ok()) {
-		return err;
+Error RPCServer::AddIndex(cproto::Context& ctx, p_string ns, p_string indexDefStr) {
+	auto indexDef = IndexDef::FromJSON(giftStr(indexDefStr));
+	if (!indexDef) {
+		return indexDef.error();
 	}
-	return getDB(ctx, kRoleDBAdmin).AddIndex(ns, iDef);
+	return getDB(ctx, kRoleDBAdmin).AddIndex(ns, *indexDef);
 }
 
-Error RPCServer::UpdateIndex(cproto::Context& ctx, p_string ns, p_string indexDef) {
-	IndexDef iDef;
-	auto err = iDef.FromJSON(giftStr(indexDef));
-	if (!err.ok()) {
-		return err;
+Error RPCServer::UpdateIndex(cproto::Context& ctx, p_string ns, p_string indexDefStr) {
+	auto indexDef = IndexDef::FromJSON(giftStr(indexDefStr));
+	if (!indexDef) {
+		return indexDef.error();
 	}
-	return getDB(ctx, kRoleDBAdmin).UpdateIndex(ns, iDef);
+	return getDB(ctx, kRoleDBAdmin).UpdateIndex(ns, *indexDef);
 }
 
 Error RPCServer::DropIndex(cproto::Context& ctx, p_string ns, p_string index) {
-	IndexDef idef(index.toString());
-	return getDB(ctx, kRoleDBAdmin).DropIndex(ns, idef);
+	return getDB(ctx, kRoleDBAdmin).DropIndex(ns, IndexDef{index.toString()});
 }
 
 Error RPCServer::SetSchema(cproto::Context& ctx, p_string ns, p_string schema) {
@@ -456,7 +452,7 @@ Error RPCServer::AddTxItem(cproto::Context& ctx, int format, p_string itemData, 
 	}
 	if (perceptsPack.length()) {
 		Serializer ser(perceptsPack);
-		const uint64_t preceptsCount = ser.GetVarUint();
+		const uint64_t preceptsCount = ser.GetVarUInt();
 		std::vector<std::string> precepts;
 		precepts.reserve(preceptsCount);
 		for (unsigned prIndex = 0; prIndex < preceptsCount; ++prIndex) {
@@ -611,7 +607,7 @@ Error RPCServer::ModifyItem(cproto::Context& ctx, p_string ns, int format, p_str
 
 	if (perceptsPack.length()) {
 		Serializer ser(perceptsPack);
-		const uint64_t preceptsCount = ser.GetVarUint();
+		const uint64_t preceptsCount = ser.GetVarUInt();
 		std::vector<std::string> precepts;
 		precepts.reserve(preceptsCount);
 		for (unsigned prIndex = 0; prIndex < preceptsCount; ++prIndex) {
@@ -781,9 +777,9 @@ Error RPCServer::sendResults(cproto::Context& ctx, QueryResults& qres, RPCQrId i
 	try {
 		bool doClose = false;
 		if (qres.IsRawProxiedBufferAvailable(opts.flags) && rser.IsRawResultsSupported(data->caps, qres)) {
-			doClose = rser.PutResultsRaw(&qres);
+			doClose = rser.PutResultsRaw(qres);
 		} else {
-			doClose = rser.PutResults(&qres, data->caps);
+			doClose = rser.PutResults(qres, data->caps);
 		}
 		if (doClose && id.main >= 0) {
 			freeQueryResults(ctx, id);
@@ -826,7 +822,7 @@ Error RPCServer::processTxItem(DataFormat format, std::string_view itemData, Ite
 			return item.FromMsgPack(itemData, offset);
 		}
 		default:
-			return Error(errNotValid, "Invalid source item format %d", format);
+			return Error(errNotValid, "Invalid source item format %d", int(format));
 	}
 }
 
@@ -1008,10 +1004,10 @@ static h_vector<int32_t, 4> pack2vec(p_string pack) {
 	// Get array of payload Type Versions
 	Serializer ser(pack.data(), pack.size());
 	h_vector<int32_t, 4> vec;
-	int cnt = ser.GetVarUint();
+	int cnt = ser.GetVarUInt();
 	vec.reserve(cnt);
 	for (int i = 0; i < cnt; i++) {
-		vec.emplace_back(ser.GetVarUint());
+		vec.emplace_back(ser.GetVarUInt());
 	}
 	return vec;
 }

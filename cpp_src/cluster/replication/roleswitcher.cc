@@ -1,17 +1,14 @@
 #include "roleswitcher.h"
-#include "client/snapshot.h"
 #include "cluster/logger.h"
 #include "core/reindexer_impl/reindexerimpl.h"
-#include "coroutine/tokens_pool.h"
 #include "net/cproto/cproto.h"
-#include "tools/logger.h"
 
 namespace reindexer {
 namespace cluster {
 
 constexpr auto kLeaderNsResyncInterval = std::chrono::milliseconds(1000);
 
-RoleSwitcher::RoleSwitcher(SharedSyncState<>& syncState, SynchronizationList& syncList, ReindexerImpl& thisNode,
+RoleSwitcher::RoleSwitcher(SharedSyncState& syncState, SynchronizationList& syncList, ReindexerImpl& thisNode,
 						   const ReplicationStatsCollector& statsCollector, const Logger& l)
 	: sharedSyncState_(syncState), thisNode_(thisNode), statsCollector_(statsCollector), syncList_(syncList), log_(l) {
 	leaderResyncTimer_.set(loop_);
@@ -55,12 +52,39 @@ void RoleSwitcher::Run(std::vector<DSN>&& dsns, RoleSwitcher::Config&& cfg) {
 	roleSwitchAsync_.stop();
 }
 
+void RoleSwitcher::OnRoleChanged() {
+	std::lock_guard lck(mtx_);
+	if (syncer_) {
+		syncer_->Terminate();
+	}
+	roleSwitchAsync_.send();
+}
+
+void RoleSwitcher::SetTerminationFlag(bool val) noexcept {
+	std::lock_guard lck(mtx_);
+	terminate_ = val;
+	if (val) {
+		if (syncer_) {
+			syncer_->Terminate();
+		}
+		roleSwitchAsync_.send();
+	}
+}
+
 void RoleSwitcher::await() {
 	awaitCh_.pop();
 	if (!isTerminated()) {
 		handleRoleSwitch();
 	}
 }
+
+void RoleSwitcher::notify() {
+	if (!awaitCh_.full()) {
+		awaitCh_.push(true);
+	}
+}
+
+void RoleSwitcher::terminate() { awaitCh_.close(); }
 
 void RoleSwitcher::handleRoleSwitch() {
 	auto rolesPair = sharedSyncState_.GetRolesPair();
@@ -195,7 +219,7 @@ void RoleSwitcher::initialLeadersSync() {
 	Error lastErr;
 	coroutine::wait_group leaderSyncWg;
 	std::vector<int64_t> synchronizedNodes(nodes_.size(), SynchronizationList::kEmptyID);
-	std::list<LeaderSyncQueue::Entry> syncQueue;
+	elist<LeaderSyncQueue::Entry> syncQueue;
 
 	NsNamesHashSetT nsList;
 	if (cfg_.namespaces.size()) {
@@ -298,7 +322,7 @@ Error RoleSwitcher::awaitRoleSwitchForNamespace(client::CoroReindexer& client, c
 	} while (true);
 }
 
-Error RoleSwitcher::getNodesListForNs(const NamespaceName& nsName, std::list<LeaderSyncQueue::Entry>& syncQueue) {
+Error RoleSwitcher::getNodesListForNs(const NamespaceName& nsName, elist<LeaderSyncQueue::Entry>& syncQueue) {
 	// 1) Find most recent data among all the followers
 	LeaderSyncQueue::Entry nsEntry;
 	nsEntry.nsName = nsName;

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <chrono>
-#include <functional>
 #include <mutex>
 
 #include "tools/assertrx.h"

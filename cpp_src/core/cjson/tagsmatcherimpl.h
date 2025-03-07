@@ -209,7 +209,7 @@ public:
 
 	void deserialize(Serializer& ser) {
 		clear();
-		size_t cnt = ser.GetVarUint();
+		size_t cnt = ser.GetVarUInt();
 		validateTagSize(cnt);
 		tags2names_.resize(cnt);
 		for (size_t tag = 0; tag < tags2names_.size(); ++tag) {
@@ -217,7 +217,6 @@ public:
 			names2tags_.emplace(name, tag);
 			tags2names_[tag] = name;
 		}
-		// assert(ser.Eof());
 	}
 	void deserialize(Serializer& ser, int version, int stateToken) {
 		deserialize(ser);

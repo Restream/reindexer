@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/defnsconfigs.h"
 #include "core/formatters/namespacesname_fmt.h"
+#include "core/system_ns_names.h"
 #include "core/type_consts.h"
 #include "estl/shared_mutex.h"
 #include "events/subscriber_config.h"

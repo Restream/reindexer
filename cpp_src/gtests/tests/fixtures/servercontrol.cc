@@ -3,6 +3,8 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
 #include "core/formatters/lsn_fmt.h"
+#include "core/system_ns_names.h"
+#include "estl/gift_str.h"
 #include "systemhelpers.h"
 #include "tools/crypt.h"
 #include "tools/fsops.h"
@@ -23,6 +25,81 @@ void WriteConfigFile(const std::string& path, const std::string& configYaml) {
 
 static constexpr auto kDefaultSSLCertFile = "cert.pem";
 static constexpr auto kDefaultSSLKeyFile = "key.pem";
+
+AsyncReplicationConfigTest::Node::Node(reindexer::DSN _dsn, std::optional<NsSet> _nsList)
+	: dsn(std::move(_dsn)), nsList(std::move(_nsList)) {}
+
+void AsyncReplicationConfigTest::Node::GetJSON(reindexer::JsonBuilder& jb) const {
+	jb.Put("dsn", dsn);
+	auto arrNode = jb.Array("namespaces");
+	if (nsList) {
+		for (const auto& ns : *nsList) {
+			arrNode.Put(nullptr, ns);
+		}
+	}
+}
+
+AsyncReplicationConfigTest::AsyncReplicationConfigTest(std::string _role, std::vector<Node> _followers, std::string _appName,
+													   std::string _mode)
+	: role(std::move(_role)),
+	  mode(std::move(_mode)),
+	  nodes(std::move(_followers)),
+	  forceSyncOnLogicError(false),
+	  forceSyncOnWrongDataHash(true),
+	  appName(std::move(_appName)),
+	  serverId(0) {}
+
+AsyncReplicationConfigTest::AsyncReplicationConfigTest(std::string _role, std::vector<Node> _followers, bool _forceSyncOnLogicError,
+													   bool _forceSyncOnWrongDataHash, int _serverId, std::string _appName,
+													   NsSet _namespaces, std::string _mode, int _onlineUpdatesDelayMSec)
+	: role(std::move(_role)),
+	  mode(std::move(_mode)),
+	  nodes(std::move(_followers)),
+	  forceSyncOnLogicError(_forceSyncOnLogicError),
+	  forceSyncOnWrongDataHash(_forceSyncOnWrongDataHash),
+	  appName(std::move(_appName)),
+	  namespaces(std::move(_namespaces)),
+	  serverId(_serverId),
+	  onlineUpdatesDelayMSec(_onlineUpdatesDelayMSec) {}
+
+bool AsyncReplicationConfigTest::operator==(const AsyncReplicationConfigTest& config) const {
+	return role == config.role && mode == config.mode && nodes == config.nodes && forceSyncOnLogicError == config.forceSyncOnLogicError &&
+		   forceSyncOnWrongDataHash == config.forceSyncOnWrongDataHash && appName == config.appName && namespaces == config.namespaces &&
+		   serverId == config.serverId && syncThreads == config.syncThreads &&
+		   concurrentSyncsPerThread == config.concurrentSyncsPerThread && onlineUpdatesDelayMSec == config.onlineUpdatesDelayMSec;
+}
+
+std::string AsyncReplicationConfigTest::GetJSON() const {
+	reindexer::WrSerializer wser;
+	reindexer::JsonBuilder jb(wser);
+	GetJSON(jb);
+	return std::string(wser.Slice());
+}
+
+void AsyncReplicationConfigTest::GetJSON(reindexer::JsonBuilder& jb) const {
+	jb.Put("app_name", appName);
+	jb.Put("server_id", serverId);
+	jb.Put("role", role);
+	jb.Put("mode", mode);
+	jb.Put("force_sync_on_logic_error", forceSyncOnLogicError);
+	jb.Put("force_sync_on_wrong_data_hash", forceSyncOnWrongDataHash);
+	jb.Put("sync_threads", syncThreads);
+	jb.Put("syncs_per_thread", concurrentSyncsPerThread);
+	jb.Put("online_updates_delay_msec", onlineUpdatesDelayMSec);
+	{
+		auto arrNode = jb.Array("namespaces");
+		for (const auto& ns : namespaces) {
+			arrNode.Put(nullptr, ns);
+		}
+	}
+	{
+		auto arrNode = jb.Array("nodes");
+		for (const auto& node : nodes) {
+			auto obj = arrNode.Object();
+			node.GetJSON(obj);
+		}
+	}
+}
 
 ServerControl::Interface::~Interface() {
 	Stop();
@@ -57,6 +134,14 @@ ServerControl::~ServerControl() {
 }
 void ServerControl::Stop() { interface->Stop(); }
 
+std::string ServerControl::getTestLogPath() {
+	const char* testSetName = ::testing::UnitTest::GetInstance()->current_test_info()->test_case_name();
+	const char* testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
+	std::string name;
+	name = name + "logs/" + testSetName + "/" + testName + "/";
+	return name;
+}
+
 ServerControl::ServerControl(ServerControl&& rhs) noexcept {
 	WLock lock(rhs.mtx_);
 	interface = std::move(rhs.interface);
@@ -80,13 +165,14 @@ AsyncReplicationConfigTest ServerControl::Interface::GetServerConfig(ConfigType 
 	ReplicationConfigData replConf;
 	switch (type) {
 		case ConfigType::File: {
+			const auto dbPath = fs::JoinPath(config_.storagePath, config_.dbName);
 			std::string replConfYaml;
-			int read = fs::ReadFile(config_.storagePath + "/" + config_.dbName + "/" + kAsyncReplicationConfigFilename, replConfYaml);
+			int read = fs::ReadFile(fs::JoinPath(dbPath, kAsyncReplicationConfigFilename), replConfYaml);
 			EXPECT_TRUE(read > 0) << "Repl config read error";
 			auto err = asyncReplConf.FromYAML(replConfYaml);
 			EXPECT_TRUE(err.ok()) << err.what();
 			replConfYaml.clear();
-			read = fs::ReadFile(config_.storagePath + "/" + config_.dbName + "/" + kReplicationConfigFilename, replConfYaml);
+			read = fs::ReadFile(fs::JoinPath(dbPath, kReplicationConfigFilename), replConfYaml);
 			EXPECT_TRUE(read > 0) << "Repl config read error";
 			err = replConf.FromYAML(replConfYaml);
 			EXPECT_TRUE(err.ok()) << err.what();
@@ -95,7 +181,7 @@ AsyncReplicationConfigTest ServerControl::Interface::GetServerConfig(ConfigType 
 		case ConfigType::Namespace: {
 			BaseApi::QueryResultsType results;
 			auto err = api.reindexer->Select(
-				Query(kConfigNs).Where("type", CondEq, "async_replication").Or().Where("type", CondEq, "replication"), results);
+				Query(kConfigNamespace).Where("type", CondEq, "async_replication").Or().Where("type", CondEq, "replication"), results);
 			EXPECT_TRUE(err.ok()) << err.what();
 			EXPECT_TRUE(results.Status().ok()) << results.Status().what();
 			for (auto it : results) {
@@ -160,7 +246,8 @@ void ServerControl::Interface::WriteClusterConfig(const std::string& configYaml)
 }
 
 void ServerControl::Interface::WriteShardingConfig(const std::string& configYaml) {
-	std::ofstream file(config_.storagePath + "/" + config_.dbName + "/" + kClusterShardingFilename, std::ios_base::trunc);
+	const auto dbPath = fs::JoinPath(config_.storagePath, config_.dbName);
+	std::ofstream file(fs::JoinPath(dbPath, kClusterShardingFilename), std::ios_base::trunc);
 	file << configYaml;
 	file.flush();
 }
@@ -204,16 +291,16 @@ void ServerControl::Interface::EnableAllProfilings() {
 			"memstats":true
 		}
 	})json";
-	auto item = api.reindexer->NewItem(kConfigNs);
+	auto item = api.reindexer->NewItem(kConfigNamespace);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	auto err = item.FromJSON(kJsonCfgProfiling);
 	ASSERT_TRUE(err.ok()) << err.what();
-	err = api.reindexer->Upsert(kConfigNs, item);
+	err = api.reindexer->Upsert(kConfigNamespace, item);
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 cluster::ReplicationStats ServerControl::Interface::GetReplicationStats(std::string_view type) {
-	Query qr = Query("#replicationstats").Where("type", CondEq, Variant(type));
+	Query qr = Query(kReplicationStatsNamespace).Where("type", CondEq, Variant(type));
 	BaseApi::QueryResultsType res;
 	auto err = api.reindexer->Select(qr, res);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -226,6 +313,26 @@ cluster::ReplicationStats ServerControl::Interface::GetReplicationStats(std::str
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_EQ(stats.type, type);
 	return stats;
+}
+
+std::string ServerControl::Interface::GetReplicationConfigFilePath() const {
+	return reindexer::fs::JoinPath(reindexer::fs::JoinPath(config_.storagePath, config_.dbName), kReplicationConfigFilename);
+}
+
+std::string ServerControl::Interface::GetAsyncReplicationConfigFilePath() const {
+	return reindexer::fs::JoinPath(reindexer::fs::JoinPath(config_.storagePath, config_.dbName), kAsyncReplicationConfigFilename);
+}
+
+std::string ServerControl::Interface::GetClusterConfigFilePath() const {
+	return reindexer::fs::JoinPath(reindexer::fs::JoinPath(config_.storagePath, config_.dbName), kClusterConfigFilename);
+}
+
+std::string ServerControl::Interface::GetShardingConfigFilePath() const {
+	return reindexer::fs::JoinPath(reindexer::fs::JoinPath(config_.storagePath, config_.dbName), kClusterShardingFilename);
+}
+
+std::string ServerControl::Interface::GetUsersYAMLFilePath() const {
+	return reindexer::fs::JoinPath(config_.storagePath, kUsersYAMLFilename);
 }
 
 std::string ServerControl::Interface::getLogName(const std::string& log, bool core) {
@@ -402,7 +509,7 @@ void ServerControl::Interface::AddFollower(const DSN& dsn, std::optional<std::ve
 										   cluster::AsyncReplicationMode replMode) {
 	auto getCurConf = [this](cluster::AsyncReplConfigData& curConf) {
 		BaseApi::QueryResultsType qr;
-		auto err = api.reindexer->Select(Query(kConfigNs).Where("type", CondEq, "async_replication"), qr);
+		auto err = api.reindexer->Select(Query(kConfigNamespace).Where("type", CondEq, "async_replication"), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qr.Count(), 1);
 		WrSerializer ser;
@@ -460,13 +567,7 @@ void ServerControl::Interface::setNamespaceConfigItem(std::string_view nsName, s
 	nsArray.End();
 	jb.End();
 
-	auto item = api.NewItem(kConfigNs);
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
-	auto err = item.FromJSON(ser.Slice());
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	api.Upsert(kConfigNs, item);
+	api.UpsertJSON(kConfigNamespace, ser.Slice());
 }
 
 bool ServerControl::IsRunning() { return !stopped_->load(); }
@@ -554,11 +655,11 @@ void ServerControl::WaitSync(const ServerControl::Interface::Ptr& s1, const Serv
 
 void ServerControl::Interface::ForceSync() {
 	Error err;
-	auto item = api.NewItem("#config");
+	auto item = api.NewItem(kConfigNamespace);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	err = item.FromJSON(R"json({"type":"action","action":{"command":"restart_replication"}})json");
 	ASSERT_TRUE(err.ok()) << err.what();
-	api.Upsert("#config", item);
+	api.Upsert(kConfigNamespace, item);
 }
 
 void ServerControl::Interface::ResetReplicationRole(const std::string& ns) {
@@ -569,7 +670,7 @@ void ServerControl::Interface::ResetReplicationRole(const std::string& ns) {
 Error ServerControl::Interface::TryResetReplicationRole(const std::string& ns) {
 	BaseApi::QueryResultsType res;
 	Error err;
-	auto item = api.NewItem("#config");
+	auto item = api.NewItem(kConfigNamespace);
 	if (!item.Status().ok()) {
 		return item.Status();
 	}
@@ -582,29 +683,29 @@ Error ServerControl::Interface::TryResetReplicationRole(const std::string& ns) {
 	if (!err.ok()) {
 		return err;
 	}
-	return api.reindexer->Upsert("#config", item);
+	return api.reindexer->Upsert(kConfigNamespace, item);
 }
 
 void ServerControl::Interface::SetClusterLeader(int leaderId) {
 	auto item = CreateClusterChangeLeaderItem(leaderId);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-	api.Upsert("#config", item);
+	api.Upsert(kConfigNamespace, item);
 }
 
 void ServerControl::Interface::SetReplicationLogLevel(LogLevel level, std::string_view type) {
 	BaseApi::QueryResultsType res;
-	auto item = api.NewItem("#config");
+	auto item = api.NewItem(kConfigNamespace);
 	auto err = item.Status();
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = item.FromJSON(fmt::sprintf(R"json({"type":"action","action":{"command":"set_log_level","type":"%s","level":"%s"}})json", type,
 									 reindexer::logLevelToString(level)));
 	ASSERT_TRUE(err.ok()) << err.what();
-	err = api.reindexer->Upsert("#config", item);
+	err = api.reindexer->Upsert(kConfigNamespace, item);
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 BaseApi::ItemType ServerControl::Interface::CreateClusterChangeLeaderItem(int leaderId) {
-	auto item = api.NewItem("#config");
+	auto item = api.NewItem(kConfigNamespace);
 	if (item.Status().ok()) {
 		WrSerializer ser;
 		JsonBuilder jb(ser);
@@ -669,9 +770,5 @@ void ServerControl::Interface::upsertConfigItemFromObject(std::string_view type,
 	}
 	jb.End();
 
-	auto item = api.NewItem(kConfigNs);
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-	auto err = item.FromJSON(ser.Slice());
-	ASSERT_TRUE(err.ok()) << err.what();
-	api.Upsert(kConfigNs, item);
+	api.UpsertJSON(kConfigNamespace, ser.Slice());
 }

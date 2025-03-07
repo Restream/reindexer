@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/restream/reindexer/v4"
-	_ "github.com/restream/reindexer/v4/bindings/cproto"
+	"github.com/restream/reindexer/v5"
+	_ "github.com/restream/reindexer/v5/bindings/cproto"
 )
 
 const (

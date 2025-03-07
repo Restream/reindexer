@@ -707,7 +707,7 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 							break;
 						case QuerySelect:
 						case QueryTruncate:
-							err = Error(errParams, "Incorrect query type in transaction modify %d", std::get<1>(cd->arguments).type_);
+							err = Error(errParams, "Incorrect query type in transaction modify %d", int(std::get<1>(cd->arguments).type_));
 					}
 				}
 				if (cd->ctx.cmpl()) {

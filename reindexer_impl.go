@@ -17,10 +17,10 @@ import (
 	otelattr "go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/cjson"
-	"github.com/restream/reindexer/v4/dsl"
-	"github.com/restream/reindexer/v4/events"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/cjson"
+	"github.com/restream/reindexer/v5/dsl"
+	"github.com/restream/reindexer/v5/events"
 )
 
 type reindexerNamespace struct {

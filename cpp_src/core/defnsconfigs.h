@@ -1,18 +1,10 @@
 #pragma once
 
 #include "namespacedef.h"
+#include "system_ns_names.h"
 
 namespace reindexer {
 
-constexpr char kPerfStatsNamespace[] = "#perfstats";
-constexpr char kQueriesPerfStatsNamespace[] = "#queriesperfstats";
-constexpr char kMemStatsNamespace[] = "#memstats";
-constexpr char kNamespacesNamespace[] = "#namespaces";
-constexpr char kConfigNamespace[] = "#config";
-constexpr char kActivityStatsNamespace[] = "#activitystats";
-constexpr char kClientsStatsNamespace[] = "#clientsstats";
-constexpr char kClusterConfigNamespace[] = "#clusterconfig";
-const std::string_view kReplicationStatsNamespace = "#replicationstats";
 constexpr char kNsNameField[] = "name";
 
 constexpr std::string_view kDefDBConfig[] = {
@@ -52,6 +44,7 @@ constexpr std::string_view kDefDBConfig[] = {
 				"start_copy_policy_tx_size":10000,
 				"copy_policy_multiplier":5,
 				"tx_size_to_always_copy":100000,
+				"tx_vec_insertion_threads":4,
 				"optimization_timeout_ms":800,
 				"optimization_sort_workers":4,
 				"wal_size":4000000,
@@ -71,7 +64,8 @@ constexpr std::string_view kDefDBConfig[] = {
 					"joins_preselect_hit_to_cache":2,
 					"query_count_cache_size":134217728,
 					"query_count_hit_to_cache":2
-				}
+				},
+				"ann_storage_cache_build_timeout_ms": 5000
 			}
 		]
 	})json",
@@ -182,7 +176,7 @@ const NamespaceDef kSystemNsDefs[] = {
 		.AddIndex("client_version", "-", "string", IndexOpts().Dense())
 		.AddIndex("app_name", "-", "string", IndexOpts().Dense())
 		.AddIndex("tx_count", "-", "int64", IndexOpts().Dense()),
-	NamespaceDef(std::string(kReplicationStatsNamespace), StorageOpts())
+	NamespaceDef(kReplicationStatsNamespace, StorageOpts())
 		.AddIndex("type", "hash", "string", IndexOpts().PK())
 		.AddIndex("update_drops", "-", "int64", IndexOpts().Dense())
 		.AddIndex("pending_updates_count", "-", "int64", IndexOpts().Dense())

@@ -1,11 +1,11 @@
 #pragma once
 
+#include <span>
 #include "core/cjson/objtype.h"
 #include "core/cjson/tagslengths.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
-#include "estl/span.h"
 #include "vendor/msgpack/msgpack.h"
 
 namespace gason {
@@ -36,7 +36,7 @@ public:
 	MsgPackBuilder Raw(std::nullptr_t, std::string_view arg) { return Raw(std::string_view{}, arg); }
 
 	template <typename N, typename T>
-	void Array(N tagName, span<T> data, int /*offset*/ = 0) {
+	void Array(N tagName, std::span<T> data, int /*offset*/ = 0) {
 		checkIfCorrectArray(tagName);
 		skipTag();
 		packKeyName(tagName);
@@ -46,7 +46,7 @@ public:
 		}
 	}
 	template <typename N>
-	void Array(N tagName, span<Uuid> data, int /*offset*/ = 0) {
+	void Array(N tagName, std::span<Uuid> data, int /*offset*/ = 0) {
 		checkIfCorrectArray(tagName);
 		skipTag();
 		packKeyName(tagName);
@@ -57,7 +57,7 @@ public:
 	}
 
 	template <typename T>
-	void Array(T tagName, span<p_string> data, int /*offset*/ = 0) {
+	void Array(T tagName, std::span<p_string> data, int /*offset*/ = 0) {
 		checkIfCorrectArray(tagName);
 		skipTag();
 		packKeyName(tagName);
@@ -139,15 +139,17 @@ public:
 		packKeyName(tagName);
 		kv.Type().EvaluateOneOf(
 			[&](KeyValueType::Int) { packValue(int(kv)); }, [&](KeyValueType::Int64) { packValue(int64_t(kv)); },
-			[&](KeyValueType::Double) { packValue(double(kv)); }, [&](KeyValueType::String) { packValue(std::string_view(kv)); },
-			[&](KeyValueType::Null) { packNil(); }, [&](KeyValueType::Bool) { packValue(bool(kv)); },
+			[&](KeyValueType::Double) { packValue(double(kv)); }, [&](KeyValueType::Float) { packValue(float(kv)); },
+			[&](KeyValueType::String) { packValue(std::string_view(kv)); }, [&](KeyValueType::Null) { packNil(); },
+			[&](KeyValueType::Bool) { packValue(bool(kv)); },
 			[&](KeyValueType::Tuple) {
 				auto arrNode = Array(tagName);
 				for (auto& val : kv.getCompositeValues()) {
 					arrNode.Put(0, val, offset);
 				}
 			},
-			[&](KeyValueType::Uuid) { packValue(Uuid{kv}); }, [](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) noexcept {});
+			[&](KeyValueType::Uuid) { packValue(Uuid{kv}); },
+			[](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) noexcept { assertrx_throw(false); });
 		if (isArray()) {
 			skipTag();
 		}
@@ -168,6 +170,7 @@ private:
 	void packValue(int arg) { msgpack_pack_int(&packer_, arg); }
 	void packValue(int64_t arg) { msgpack_pack_int64(&packer_, arg); }
 	void packValue(double arg) { msgpack_pack_double(&packer_, arg); }
+	void packValue(float arg) { msgpack_pack_float(&packer_, arg); }
 
 	void packValue(std::string_view arg) {
 		msgpack_pack_str(&packer_, arg.size());
