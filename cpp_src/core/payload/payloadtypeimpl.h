@@ -28,7 +28,7 @@ public:
 
 	const std::string& Name() const& noexcept { return name_; }
 	const std::string& Name() const&& = delete;
-	void SetName(std::string_view name) noexcept { name_ = std::string(name); }
+	void SetName(std::string_view name) { name_ = std::string(name); }
 	int NumFields() const noexcept { return fields_.size(); }
 	void Add(PayloadFieldType f);
 	bool Drop(std::string_view field);

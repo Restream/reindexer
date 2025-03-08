@@ -621,7 +621,7 @@ template SortExpression SortExpression::Parse(std::string_view, const std::vecto
 template SortExpression SortExpression::Parse(std::string_view, const std::vector<JoinedQuery>&);
 
 double SortExpression::calculate(const_iterator it, const_iterator end, IdType rowId, ConstPayload pv,
-								 const joins::NamespaceResults* joinedResults, const std::vector<JoinedSelector>& js, uint8_t proc,
+								 const joins::NamespaceResults* joinedResults, const std::vector<JoinedSelector>& js, RankT rank,
 								 TagsMatcher& tagsMatcher) {
 	assertrx_throw(it != end);
 	assertrx_throw(it->operation.op == OpPlus);
@@ -629,7 +629,7 @@ double SortExpression::calculate(const_iterator it, const_iterator end, IdType r
 	for (; it != end; ++it) {
 		double value = it->Visit(
 			[&] RX_PRE_LMBD_ALWAYS_INLINE(const SortExpressionBracket& b) RX_POST_LMBD_ALWAYS_INLINE {
-				const double res = calculate(it.cbegin(), it.cend(), rowId, pv, joinedResults, js, proc, tagsMatcher);
+				const double res = calculate(it.cbegin(), it.cend(), rowId, pv, joinedResults, js, rank, tagsMatcher);
 				return (b.IsAbs() && res < 0) ? -res : res;
 			},
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const Value& v) RX_POST_LMBD_ALWAYS_INLINE { return v.value; },
@@ -639,7 +639,7 @@ double SortExpression::calculate(const_iterator it, const_iterator end, IdType r
 				assertrx_throw(joinedResults);
 				return i.GetValue(rowId, *joinedResults, js);
 			},
-			[proc] RX_PRE_LMBD_ALWAYS_INLINE(const Rank&) RX_POST_LMBD_ALWAYS_INLINE -> double { return proc; },
+			[rank] RX_PRE_LMBD_ALWAYS_INLINE(const Rank&) RX_POST_LMBD_ALWAYS_INLINE { return double(rank); },
 			[&pv, &tagsMatcher] RX_PRE_LMBD_ALWAYS_INLINE(const DistanceFromPoint& i)
 				RX_POST_LMBD_ALWAYS_INLINE { return i.GetValue(pv, tagsMatcher); },
 			[rowId, joinedResults, &js] RX_PRE_LMBD_ALWAYS_INLINE(const DistanceJoinedIndexFromPoint& i) RX_POST_LMBD_ALWAYS_INLINE {
@@ -684,7 +684,7 @@ double SortExpression::calculate(const_iterator it, const_iterator end, IdType r
 	return result;
 }
 
-double ProxiedSortExpression::calculate(const_iterator it, const_iterator end, IdType rowId, ConstPayload pv, uint8_t proc,
+double ProxiedSortExpression::calculate(const_iterator it, const_iterator end, IdType rowId, ConstPayload pv, RankT rank,
 										TagsMatcher& tagsMatcher) {
 	assertrx(it != end);
 	assertrx(it->operation.op == OpPlus);
@@ -692,12 +692,12 @@ double ProxiedSortExpression::calculate(const_iterator it, const_iterator end, I
 	for (; it != end; ++it) {
 		double value = it->Visit(
 			[&](const SortExpressionBracket& b) {
-				const double res = calculate(it.cbegin(), it.cend(), rowId, pv, proc, tagsMatcher);
+				const double res = calculate(it.cbegin(), it.cend(), rowId, pv, rank, tagsMatcher);
 				return (b.IsAbs() && res < 0) ? -res : res;
 			},
 			[](const Value& v) { return v.value; },
 			[&pv, &tagsMatcher](const SortExprFuncs::ProxiedField& f) { return f.GetValue(pv, tagsMatcher); },
-			[proc](const Rank&) -> double { return proc; },
+			[rank](const Rank&) -> double { return rank; },
 			[&pv, &tagsMatcher](const ProxiedDistanceFromPoint& f) { return f.GetValue(pv, tagsMatcher); },
 			[&pv, &tagsMatcher](const ProxiedDistanceBetweenFields& f) { return f.GetValue(pv, tagsMatcher); });
 		if (it->operation.negative) {
@@ -764,17 +764,23 @@ void SortExpression::PrepareIndexes(const NamespaceImpl& ns) {
 		});
 }
 
-void SortExpression::PrepareSortIndex(std::string& column, int& index, const NamespaceImpl& ns) {
+void SortExpression::PrepareSortIndex(std::string& column, int& indexNo, const NamespaceImpl& ns) {
 	assertrx(!column.empty());
-	index = IndexValueType::SetByJsonPath;
+	indexNo = IndexValueType::SetByJsonPath;
 	// FIXME: Sparse index will not be found if jsonpath does not equal to index name
-	if (ns.getIndexByNameOrJsonPath(column, index) && ns.indexes_[index]->Opts().IsSparse()) {
-		if (index < ns.indexes_.firstCompositePos()) {
-			const auto& fields = ns.indexes_[index]->Fields();
-			assert(fields.getJsonPathsLength() == 1);
-			column = fields.getJsonPath(0);
+	if (ns.getIndexByNameOrJsonPath(column, indexNo)) {
+		const auto& index = *ns.indexes_[indexNo];
+		if (index.IsFloatVector()) {
+			throw Error(errQueryExec, "Ordering by float vector index is not allowed: '%s'", column);
 		}
-		index = IndexValueType::SetByJsonPath;
+		if (index.Opts().IsSparse()) {
+			if (indexNo < ns.indexes_.firstCompositePos()) {
+				const auto& fields = index.Fields();
+				assert(fields.getJsonPathsLength() == 1);
+				column = fields.getJsonPath(0);
+			}
+			indexNo = IndexValueType::SetByJsonPath;
+		}
 	}
 }
 

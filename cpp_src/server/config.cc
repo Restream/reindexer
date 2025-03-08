@@ -2,6 +2,7 @@
 
 #include "args/args.hpp"
 #include "core/storage/storagefactory.h"
+#include "reindexer_version.h"
 #include "tools/fsops.h"
 #include "yaml-cpp/yaml.h"
 
@@ -51,7 +52,7 @@ void ServerConfig::Reset() {
 	httpWriteTimeout_ = kDefaultHttpWriteTimeout;
 	MaxUpdatesSize = 1024 * 1024 * 1024;
 	EnableGRPC = false;
-	MaxHttpReqSize = 2 * 1024 * 1024;
+	MaxHttpReqSize = 8 * 1024 * 1024;
 	AllocatorCacheLimit = -1;
 	AllocatorCachePart = -1;
 }
@@ -87,6 +88,8 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 
 	args::ArgumentParser parser("reindexer server");
 	args::HelpFlag help(parser, "help", "Show this message", {'h', "help"});
+	args::ActionFlag version(parser, "", "Reindexer version", {'v', "version"},
+							 []() { throw Error(errLogic, fmt::format("Reindexer version: {}", REINDEX_VERSION)); });
 	args::Flag securityF(parser, "", "Enable per-user security", {"security"});
 	args::ValueFlag<std::string> configF(parser, "CONFIG", "Path to reindexer config file", {'c', "config"}, args::Options::Single);
 	args::Flag startWithErrorsF(parser, "", "Allow to start reindexer with DB's load erros", {"startwitherrors"});
@@ -133,7 +136,7 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 													   {"urpc-threading"}, RPCUnixThreadingMode, args::Options::Single);
 #endif	// _WIN32
 	args::ValueFlag<size_t> MaxHttpReqSizeF(
-		netGroup, "", "Max HTTP request size in bytes. Default value is 2 MB. 0 is 'unlimited', hovewer, stream mode is not supported",
+		netGroup, "", "Max HTTP request size in bytes. Default value is 8 MB. 0 is 'unlimited', hovewer, stream mode is not supported",
 		{"max-http-req"}, MaxHttpReqSize, args::Options::Single);
 #if defined(WITH_GRPC)
 	args::ValueFlag<std::string> grpcAddrF(netGroup, "GPORT", "GRPC listen host:port", {'g', "grpcaddr"}, RPCAddr, args::Options::Single);
@@ -205,6 +208,8 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 		parser.ParseCLI(argc, argv);
 	} catch (const args::Help&) {
 		return Error(errLogic, parser.Help());
+	} catch (const Error& v) {
+		return v;
 	} catch (const args::Error& e) {
 		return Error(errParams, "%s\n%s", e.what(), parser.Help());
 	}

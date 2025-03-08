@@ -1,5 +1,6 @@
 #pragma once
 
+#include "client/connectopts.h"
 #include "client/queryresults.h"
 #include "client/reindexerconfig.h"
 #include "client/transaction.h"

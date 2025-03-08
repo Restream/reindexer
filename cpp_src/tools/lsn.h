@@ -1,8 +1,12 @@
 #pragma once
 
-#include <stdint.h>
 #include "tools/errors.h"
-#include "vendor/gason/gason.h"
+
+namespace gason {
+
+struct JsonNode;
+
+}  // namespace gason
 
 namespace reindexer {
 
@@ -19,7 +23,7 @@ struct LSNUnpacked {
 
 class lsn_t {
 private:
-	static constexpr int64_t kMaxCounter = 1000000000000000ll;
+	static constexpr int64_t kMaxCounter = 1'000'000'000'000'000ll;
 
 public:
 	static constexpr int16_t kMinServerIDValue = 0;
@@ -27,12 +31,7 @@ public:
 	static constexpr int64_t kDefaultCounter = kMaxCounter - 1;
 
 	void GetJSON(JsonBuilder& builder) const;
-
-	void FromJSON(const gason::JsonNode& root) {
-		const int server = root["server_id"].As<int>(0);
-		const int64_t counter = root["counter"].As<int64_t>(kDefaultCounter);
-		payload_ = int64_t(lsn_t(counter, server));
-	}
+	void FromJSON(const gason::JsonNode& root);
 
 	lsn_t() noexcept = default;
 	lsn_t(const lsn_t&) noexcept = default;
@@ -106,19 +105,19 @@ private:
 	int64_t payload_ = kDefaultCounter;
 	static void validateServerId(int16_t server) {
 		if (server < kMinServerIDValue) {
-			throwValidation(errLogic, "Server id < %d", kMinServerIDValue);
+			throwValidation(errLogic, "Server id (%d) < %d", server, kMinServerIDValue);
 		}
 		if (server > kMaxServerIDValue) {
-			throwValidation(errLogic, "Server id > %d", kMaxServerIDValue);
+			throwValidation(errLogic, "Server id (%d) > %d", server, kMaxServerIDValue);
 		}
 	}
 	static void validateCounter(int64_t counter) {
 		if (counter > kDefaultCounter) {
-			throwValidation(errLogic, "LSN Counter > Default LSN (%d)", kMaxCounter);
+			throwValidation(errLogic, "LSN Counter (%d) > Default LSN (%d)", counter, kMaxCounter);
 		}
 	}
 
-	[[noreturn]] static void throwValidation(ErrorCode, const char*, int64_t);
+	[[noreturn]] static void throwValidation(ErrorCode, const char*, int64_t, int64_t);
 };
 
 inline static std::ostream& operator<<(std::ostream& o, const reindexer::lsn_t& sv) {

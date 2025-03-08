@@ -1,12 +1,6 @@
-#include <chrono>
-#include <thread>
-#include <unordered_map>
-#include <unordered_set>
-#include "core/itemimpl.h"
 #include "core/nsselecter/joinedselector.h"
-#include "core/type_consts_helpers.h"
+#include "core/queryresults/joinresults.h"
 #include "join_on_conditions_api.h"
-#include "join_selects_api.h"
 #include "test_helpers.h"
 
 TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest) {
@@ -73,7 +67,7 @@ TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest2) {
 }
 
 TEST_F(JoinSelectsApi, SqlParsingTest) {
-	std::string sql =
+	constexpr std::string_view sql =
 		"select * from books_namespace where (pages > 0 and inner join (select * from authors_namespace limit 10) on "
 		"authors_namespace.authorid = "
 		"books_namespace.authorid_fk and price > 1000 or inner join (select * from genres_namespace limit 10) on "
@@ -94,10 +88,16 @@ TEST_F(JoinSelectsApi, SqlParsingTest) {
 	wrser.Reset();
 	srcQuery.Serialize(wrser);
 	reindexer::Serializer ser(wrser.Buf(), wrser.Len());
-	Query deserializedQuery = Query::Deserialize(ser);
-	ASSERT_EQ(srcQuery, deserializedQuery) << "Original query:\n"
-										   << srcQuery.GetSQL() << "\nDeserialized query:\n"
-										   << deserializedQuery.GetSQL();
+	Query deserializedQuery1 = Query::Deserialize(ser);
+	ASSERT_EQ(srcQuery, deserializedQuery1) << "Original query:\n"
+											<< srcQuery.GetSQL() << "\nDeserialized query:\n"
+											<< deserializedQuery1.GetSQL();
+
+	const auto json = srcQuery.GetJSON();
+	Query deserializedQuery2 = Query::FromJSON(json);
+	ASSERT_EQ(srcQuery, deserializedQuery2) << "Original query:\n"
+											<< srcQuery.GetSQL() << "\nDeserialized query:\n"
+											<< deserializedQuery2.GetSQL();
 }
 
 TEST_F(JoinSelectsApi, InnerJoinTest) {
@@ -336,7 +336,7 @@ TEST_F(JoinSelectsApi, TestSortingByJoinedNs) {
 	Error err = rt.reindexer->Select(query1, joinQueryRes1);
 	// several book to one author, cannot sort
 	ASSERT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "Not found value joined from ns books_namespace");
+	EXPECT_STREQ(err.what(), "Not found value joined from ns books_namespace");
 
 	Query joinedQuery2 = Query(authors_namespace);
 	Query query2{Query(books_namespace)
@@ -518,7 +518,7 @@ TEST_F(JoinSelectsApi, JoinPreResultStoreValuesOptimizationStressTest) {
 static void checkForAllowedJsonTags(const std::vector<std::string>& tags, gason::JsonValue jsonValue) {
 	size_t count = 0;
 	for (const auto& elem : jsonValue) {
-		ASSERT_NE(std::find(tags.begin(), tags.end(), std::string_view(elem.key)), tags.end());
+		ASSERT_NE(std::find(tags.begin(), tags.end(), std::string_view(elem.key)), tags.end()) << elem.key;
 		++count;
 	}
 	ASSERT_EQ(count, tags.size());

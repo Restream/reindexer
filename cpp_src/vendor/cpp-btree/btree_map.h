@@ -22,10 +22,8 @@
 #ifndef UTIL_BTREE_BTREE_MAP_H__
 #define UTIL_BTREE_BTREE_MAP_H__
 
-#include <algorithm>
 #include <functional>
 #include <memory>
-#include <string>
 #include <utility>
 
 #include "btree.h"

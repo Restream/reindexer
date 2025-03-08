@@ -15,9 +15,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/restream/reindexer/v4"
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/test/helpers"
+	"github.com/restream/reindexer/v5"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/test/helpers"
 )
 
 var benchmarkSeed = flag.Int64("seed", time.Now().Unix(), "seed number for random")

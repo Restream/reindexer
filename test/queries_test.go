@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v4"
-	"github.com/restream/reindexer/v4/dsl"
+	"github.com/restream/reindexer/v5"
+	"github.com/restream/reindexer/v5/dsl"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -474,6 +474,19 @@ func FillTestItemsWithFunc(ns string, start int, count int, pkgsCount int, fn te
 	tx := newTestTx(DB, ns)
 	FillTestItemsTxWithFunc(start, count, pkgsCount, tx, fn)
 	tx.MustCommit()
+}
+
+func FillTestItemsWithFuncParts(ns string, start int, count int, partSize int, pkgsCount int, fn testItemsCreator) {
+	last := count + start
+	for i := start; i < last; i += partSize {
+		tx := newTestTx(DB, ns)
+		curPartSize := partSize
+		if i+curPartSize > last {
+			curPartSize = last - i
+		}
+		FillTestItemsTxWithFunc(i, curPartSize, pkgsCount, tx, fn)
+		tx.MustCommit()
+	}
 }
 
 func TestQueries(t *testing.T) {

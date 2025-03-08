@@ -115,8 +115,6 @@ TEST_F(Fuzzing, BaseTest) {
 		}
 	} catch (const std::exception& err) {
 		FAIL() << err.what();
-	} catch (const reindexer::Error& err) {
-		FAIL() << err.what();
 	}
 }
 

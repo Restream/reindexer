@@ -25,7 +25,7 @@ lsn_t WALTracker::Add(const WALRecord& rec, lsn_t originLsn, lsn_t oldLsn) {
 
 lsn_t WALTracker::Add(WALRecType type, const PackedWALRecord& rec, lsn_t originLsn) {
 	return add(rec, originLsn, type != WalItemUpdate);
-}  // TODO: Check storage write condition
+}
 
 bool WALTracker::Set(const WALRecord& rec, lsn_t lsn, bool ignoreServer) {
 	if (!available(lsn, ignoreServer)) {
@@ -82,7 +82,7 @@ bool WALTracker::Resize(int64_t sz) {
 	initPositions(sz, minLSN, maxLSN);
 	for (auto lsn = minLSN; lsn <= maxLSN; ++lsn) {
 		auto pos = lsn % oldSz;
-		Set(WALRecord(span<uint8_t>(oldRecords[pos])), lsn_t(lsn, oldRecords[pos].server), true);
+		Set(WALRecord(std::span<uint8_t>(oldRecords[pos])), lsn_t(lsn, oldRecords[pos].server), true);
 	}
 	return true;
 }

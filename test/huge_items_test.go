@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/restream/reindexer/v4"
-	"github.com/restream/reindexer/v4/cjson"
+	"github.com/restream/reindexer/v5"
+	"github.com/restream/reindexer/v5/cjson"
 	"github.com/stretchr/testify/require"
 )
 

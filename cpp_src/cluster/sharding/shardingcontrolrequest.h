@@ -2,13 +2,10 @@
 #include <variant>
 #include "cluster/config.h"
 
-namespace reindexer {
-class JsonBuilder;
-}
-
 namespace gason {
 struct JsonNode;
-}
+}  // namespace gason
+
 namespace reindexer::sharding {
 
 struct EmptyCommand {
@@ -92,7 +89,7 @@ void assign_if_constructible(T& data, Args&&... args) {
 struct ShardingControlRequestData {
 	ShardingControlRequestData() noexcept = default;
 
-	Error FromJSON(span<char> json) noexcept;
+	Error FromJSON(std::span<char> json) noexcept;
 	void GetJSON(WrSerializer& ser) const;
 
 	template <typename... Args>
@@ -126,7 +123,7 @@ struct ShardingControlRequestData {
 struct ShardingControlResponseData {
 	ShardingControlResponseData() noexcept = default;
 
-	Error FromJSON(span<char> json) noexcept;
+	Error FromJSON(std::span<char> json) noexcept;
 	void GetJSON(WrSerializer& ser) const;
 
 	template <typename... Args>

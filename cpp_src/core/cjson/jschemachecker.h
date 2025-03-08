@@ -11,9 +11,9 @@ namespace reindexer {
 
 class JsonSchemaChecker {
 public:
-	explicit JsonSchemaChecker(const std::string& json, std::string rootTypeName);
+	explicit JsonSchemaChecker(std::string_view json, std::string rootTypeName);
 	JsonSchemaChecker() {};
-	Error Init(const std::string& json, std::string rootTypeName);
+	Error Init(std::string_view json, std::string rootTypeName);
 	Error Check(gason::JsonNode node);
 
 private:
@@ -45,7 +45,7 @@ private:
 
 	Error checkScheme(const gason::JsonNode& node, int typeIndex, std::string& path, const std::string& elementName);
 	std::string createType(const PrefixTree::PrefixTreeNode* node, const std::string& typeName = "");
-	Error createTypeTable(const std::string& json);
+	Error createTypeTable(std::string_view json);
 	static bool isSimpleType(std::string_view tp);
 	void addSimpleType(std::string tpName);
 	Error checkExists(std::string_view name, ValAppearance* element, const std::string& path);

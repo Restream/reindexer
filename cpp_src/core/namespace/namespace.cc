@@ -41,7 +41,9 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 				auto storageLock = statCalculator.CreateLock(nsl->storage_, &AsyncStorage::FullLock);
 
 				cg.Reset();
-				nsCopy_.reset(new NamespaceImpl(*nsl, storageLock));
+				auto lvectorIndexes = nsl->getVectorIndexes();
+				nsCopy_.reset(new NamespaceImpl(
+					*nsl, !lvectorIndexes.empty() ? tx.CalculateNewCapacity(nsl->itemsCount()) : nsl->itemsCount(), storageLock));
 				nsCopyCalc.HitManualy();
 				NsContext nsCtx(ctx);
 				nsCtx.CopiedNsRequest();

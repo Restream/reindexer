@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v4"
+	"github.com/restream/reindexer/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -175,11 +175,11 @@ func TestStorageChangeFormat(t *testing.T) {
 		assert.NoError(t, DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), TestItemV5{}))
 
 		iterator := DB.Query(ns).WhereInt("id", reindexer.EQ, 1).DeepReplEqual().Exec(t)
+		defer iterator.Close()
 		assert.NoError(t, iterator.Error())
 		assert.Equal(t, iterator.Count(), 1, "Expecting 1 item, found %d ", iterator.Count())
 		iterator.Next()
 		assert.Error(t, iterator.Error(), "expecting iterator error on wrong type cast, but it's ok")
-		iterator.Close()
 	})
 
 	t.Run("Check that NamespaceMemStat has 0 items after Open namespace", func(t *testing.T) {
@@ -272,6 +272,7 @@ func TestDenseIndexesCompatibility(t *testing.T) {
 	getJSONContent := func(t *testing.T, ns string) []string {
 		var ret []string
 		it := DB.Query(ns).Sort("id", false).MustExec(t)
+		defer it.Close()
 		require.NoError(t, it.Error())
 		for it.Next() {
 			require.NoError(t, it.Error())

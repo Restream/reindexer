@@ -4,7 +4,6 @@
 #include "client/queryresults.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/indexdef.h"
-#include "core/reindexer.h"
 #include "core/type_consts.h"
 #include "rpc_test_client.h"
 

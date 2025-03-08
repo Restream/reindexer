@@ -1,21 +1,15 @@
 #pragma once
 
+#if RX_ENABLE_CLUSTERPROXY_LOGS
 #include "tools/logger.h"
+#endif
 
 namespace reindexer {
 
-struct sinkArgs {
-	template <typename... Args>
-	sinkArgs(const Args&...) {}
-};
-
 template <typename... Args>
-void clusterProxyLog(int level, const char* fmt, const Args&... args) {
+void clusterProxyLog([[maybe_unused]] int level, [[maybe_unused]] const char* fmt, [[maybe_unused]] const Args&... args) {
 #if RX_ENABLE_CLUSTERPROXY_LOGS
-	auto str = fmt::sprintf(fmt, args...);
-	logPrint(level, &str[0]);
-#else
-	sinkArgs{level, fmt, args...};	// -V607
+	logPrintf(level, fmt, args...);
 #endif
 }
 

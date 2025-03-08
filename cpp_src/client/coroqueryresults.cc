@@ -4,11 +4,11 @@
 #include "core/cjson/csvbuilder.h"
 #include "core/keyvalue/p_string.h"
 #include "core/queryresults/additionaldatasource.h"
+#include "core/queryresults/fields_filter.h"
 #include "net/cproto/coroclientconnection.h"
 #include "tools/catch_and_return.h"
 
-namespace reindexer {
-namespace client {
+namespace reindexer::client {
 
 using namespace reindexer::net;
 
@@ -75,8 +75,8 @@ void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id, const Query*
 		ser.GetRawQueryParams(
 			i_.queryParams_,
 			[&ser, this](int nsIdx) {
-				const uint32_t stateToken = ser.GetVarUint();
-				const int version = ser.GetVarUint();
+				const uint32_t stateToken = ser.GetVarUInt();
+				const int version = ser.GetVarUInt();
 				TagsMatcher newTm;
 				newTm.deserialize(ser, version, stateToken);
 				i_.nsArray_[nsIdx]->TryReplaceTagsMatcher(std::move(newTm));
@@ -187,7 +187,7 @@ const std::string& CoroQueryResults::GetNsName(int nsid) const noexcept {
 	return i_.nsArray_[nsid]->payloadType.Name();
 }
 
-class EncoderDatasourceWithJoins final : public IEncoderDatasourceWithJoins {
+class [[nodiscard]] EncoderDatasourceWithJoins final : public IEncoderDatasourceWithJoins {
 public:
 	EncoderDatasourceWithJoins(const CoroQueryResults::Iterator::JoinedData& joinedData, const CoroQueryResults& qr)
 		: joinedData_(joinedData), qr_(qr), tm_(TagsMatcher::unsafe_empty_t()) {}
@@ -207,7 +207,7 @@ public:
 		itemimpl_.FromCJSON(dataIt.data);
 		return itemimpl_.GetConstPayload();
 	}
-	const TagsMatcher& GetJoinedItemTagsMatcher(size_t rowid) noexcept override {
+	const TagsMatcher& GetJoinedItemTagsMatcher(size_t rowid) & noexcept override {
 		auto& fieldIt = joinedData_.at(rowid);
 		if (fieldIt.empty()) {
 			static const TagsMatcher kEmptyTm;
@@ -216,11 +216,11 @@ public:
 		tm_ = qr_.GetTagsMatcher(getJoinedNsID(fieldIt[0].nsid));
 		return tm_;
 	}
-	virtual const FieldsSet& GetJoinedItemFieldsFilter(size_t /*rowid*/) noexcept override {
-		static const FieldsSet empty;
+	const FieldsFilter& GetJoinedItemFieldsFilter(size_t /*rowid*/) & noexcept override {
+		static const FieldsFilter empty;
 		return empty;
 	}
-	const std::string& GetJoinedItemNamespace(size_t rowid) noexcept override {
+	const std::string& GetJoinedItemNamespace(size_t rowid) & noexcept override {
 		static const std::string empty;
 		if (joinedData_.size() <= rowid) {
 			return empty;
@@ -266,7 +266,7 @@ private:
 
 void CoroQueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSerializer& wrser, bool withHdrLen) const {
 	auto tm = qr_->GetTagsMatcher(itemParams_.nsid);
-	JsonEncoder enc(&tm);
+	JsonEncoder enc(&tm, nullptr);
 	JsonBuilder builder(wrser, ObjType::TypePlain);
 	h_vector<IAdditionalDatasource<JsonBuilder>*, 2> dss;
 	int shardId = (const_cast<Iterator*>(this))->GetShardID();
@@ -276,7 +276,7 @@ void CoroQueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSeri
 	}
 	if (qr_->HaveJoined() && joinedData_.size()) {
 		EncoderDatasourceWithJoins joinsDs(joinedData_, *qr_);
-		AdditionalDatasource ds = qr_->NeedOutputRank() ? AdditionalDatasource(itemParams_.proc, &joinsDs) : AdditionalDatasource(&joinsDs);
+		AdditionalDatasource ds = qr_->NeedOutputRank() ? AdditionalDatasource(itemParams_.rank, &joinsDs) : AdditionalDatasource(&joinsDs);
 		dss.push_back(&ds);
 		if (withHdrLen) {
 			auto slicePosSaver = wrser.StartSlice();
@@ -285,7 +285,7 @@ void CoroQueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSeri
 		return;
 	}
 
-	AdditionalDatasource ds(itemParams_.proc, nullptr);
+	AdditionalDatasource ds(itemParams_.rank, nullptr);
 	AdditionalDatasource* dspPtr = qr_->NeedOutputRank() ? &ds : nullptr;
 	if (dspPtr) {
 		dss.push_back(dspPtr);
@@ -304,7 +304,7 @@ void CoroQueryResults::Iterator::checkIdx() const {
 }
 
 Error CoroQueryResults::Iterator::unavailableIdxError() const {
-	return Error(errNotValid, "Requested item's index [%d] in not available in this QueryResults. Avalibale indexes: [%d, %d)", idx_,
+	return Error(errNotValid, "Requested item's index [%d] in not available in this QueryResults. Available indexes: [%d, %d)", idx_,
 				 qr_->i_.fetchOffset_, qr_->i_.queryParams_.qcount);
 }
 
@@ -332,7 +332,7 @@ Error CoroQueryResults::Iterator::GetMsgPack(WrSerializer& wrser, bool withHdrLe
 void CoroQueryResults::Iterator::getCSVFromCJSON(std::string_view cjson, WrSerializer& wrser, CsvOrdering& ordering) const {
 	auto tm = qr_->GetTagsMatcher(itemParams_.nsid);
 	CsvBuilder builder(wrser, ordering);
-	CsvEncoder encoder(&tm);
+	CsvEncoder encoder(&tm, nullptr);
 
 	if (qr_->HaveJoined() && joinedData_.size()) {
 		EncoderDatasourceWithJoins joinsDs(joinedData_, *qr_);
@@ -487,10 +487,12 @@ int CoroQueryResults::Iterator::GetShardID() {
 	return ShardingKeyType::ProxyOff;
 }
 
-int16_t CoroQueryResults::Iterator::GetRank() {
+RankT CoroQueryResults::Iterator::GetRank() {
 	readNext();
-	return itemParams_.proc;
+	return itemParams_.rank;
 }
+
+bool CoroQueryResults::Iterator::IsRanked() noexcept { return qr_->HaveRank(); }
 
 bool CoroQueryResults::Iterator::IsRaw() {
 	readNext();
@@ -529,12 +531,12 @@ void CoroQueryResults::Iterator::readNext() {
 			int format = qr_->i_.queryParams_.flags & kResultsFormatMask;
 			(void)format;
 			assert(format == kResultsCJson);
-			int joinedFields = ser.GetVarUint();
-			for (int i = 0; i < joinedFields; ++i) {
-				int itemsCount = ser.GetVarUint();
+			auto joinedFields = ser.GetVarUInt();
+			for (uint64_t i = 0; i < joinedFields; ++i) {
+				auto itemsCount = ser.GetVarUInt();
 				h_vector<ResultSerializer::ItemParams, 1> joined;
 				joined.reserve(itemsCount);
-				for (int j = 0; j < itemsCount; ++j) {
+				for (uint64_t j = 0; j < itemsCount; ++j) {
 					// joined data shard id equals query shard id
 					joined.emplace_back(ser.GetItemData(qr_->i_.queryParams_.flags, qr_->i_.queryParams_.shardId));
 				}
@@ -580,5 +582,4 @@ CoroQueryResults::Impl::Impl(cproto::CoroClientConnection* conn, CoroQueryResult
 	InitLazyData();
 }
 
-}  // namespace client
-}  // namespace reindexer
+}  // namespace reindexer::client

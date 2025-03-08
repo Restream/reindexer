@@ -1,7 +1,7 @@
 #pragma once
 
 #include <optional>
-#include "estl/span.h"
+#include <span>
 #include "objtype.h"
 #include "tagslengths.h"
 #include "tagsmatcher.h"
@@ -51,14 +51,14 @@ public:
 	CsvBuilder Array(int tagName, int size = KUnknownFieldSize) { return Array(getNameByTag(tagName), size); }
 
 	template <typename T>
-	void Array(int tagName, span<T> data, int /*offset*/ = 0) {
+	void Array(int tagName, std::span<T> data, int /*offset*/ = 0) {
 		CsvBuilder node = Array(tagName);
 		for (const auto& d : data) {
 			node.Put({}, d);
 		}
 	}
 	template <typename T>
-	void Array(std::string_view n, span<T> data, int /*offset*/ = 0) {
+	void Array(std::string_view n, std::span<T> data, int /*offset*/ = 0) {
 		CsvBuilder node = Array(n);
 		for (const auto& d : data) {
 			node.Put({}, d);

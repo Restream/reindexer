@@ -11,12 +11,12 @@ EventsListener::EventsListener(const std::string& dbName, size_t maxUpdatesQueue
 		using VecT = std::vector<std::string>;
 		VecT container;
 
-#ifndef __clang__
+#if !defined(__clang__) && !defined(_MSC_VER)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 		updatesQueue_.Init<VecT>(std::move(container), nullptr);  // TODO: Add some logger #1724
-#ifndef __clang__
+#if !defined(__clang__) && !defined(_MSC_VER)
 #pragma GCC diagnostic pop
 #endif
 	}
@@ -127,7 +127,14 @@ void EventsListener::stop() {
 }
 
 void EventsListener::rebuildCommonFilter() {
+#if !defined(__clang__) && !defined(_MSC_VER)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 	commonFilter_ = DBNamespaces();
+#if !defined(__clang__) && !defined(_MSC_VER)
+#pragma GCC diagnostic pop
+#endif
 	for (const auto& sub : subs_) {
 		auto& streams = sub.second.cfg.Streams();
 		for (auto& stream : streams) {

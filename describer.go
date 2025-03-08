@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/restream/reindexer/v4/bindings"
+	"github.com/restream/reindexer/v5/bindings"
 )
 
 const (
@@ -77,10 +77,6 @@ var queryNames = map[int]string{
 
 type IndexDescription struct {
 	IndexDef
-
-	IsSortable bool     `json:"is_sortable"`
-	IsFulltext bool     `json:"is_fulltext"`
-	Conditions []string `json:"conditions"`
 }
 
 type NamespaceDescription struct {
@@ -187,8 +183,8 @@ type NamespaceMemStat struct {
 		IDSetPlainSize int64 `json:"idset_plain_size"`
 		// Total memory consumption of reverse index b-tree structures. For `dense` and `store` indexes always 0
 		IDSetBTreeSize int64 `json:"idset_btree_size"`
-		// Total memory consumption of fulltext search structures
-		FulltextSize int64 `json:"fulltext_size"`
+		// Total memory consumption of the main indexing structures (fulltext, ANN, etc.)
+		IndexingStructSize int64 `json:"indexing_struct_size"`
 		// Idset cache stats. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys
 		IDSetCache CacheMemStat `json:"idset_cache"`
 		// Updates count, pending in index updates tracker
@@ -199,6 +195,8 @@ type NamespaceMemStat struct {
 		TrackedUpdatesSize int64 `json:"tracked_updates_size"`
 		// Updates tracker map overflow (number of elements, stored outside of the main buckets)
 		TrackedUpdatesOverflow int64 `json:"tracked_updates_overflow"`
+		// Shows whether KNN/fulltext indexing structure is fully built. If this field is nil, index does not require any specific build steps
+		IsBuilt *bool `json:"is_built,omitempty"`
 	} `json:"indexes"`
 	// Join cache stats. Stores results of selects to right table by ON condition
 	JoinCache CacheMemStat `json:"join_cache"`
@@ -511,6 +509,8 @@ type DBNamespacesConfig struct {
 	CopyPolicyMultiplier int `json:"copy_policy_multiplier"`
 	// Force namespace copying for transaction with steps count greater than this value
 	TxSizeToAlwaysCopy int `json:"tx_size_to_always_copy"`
+	// Count of threads, that will be created during transaction's commit to insert data into multithread ANN-indexes
+	TxVecInsertionThreads int `json:"tx_vec_insertion_threads"`
 	// Timeout before background indexes optimization start after last update. 0 - disable optimizations
 	OptimizationTimeout int `json:"optimization_timeout_ms"`
 	// Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations
@@ -532,6 +532,10 @@ type DBNamespacesConfig struct {
 	// 0 - disables synchronous storage flush. In this case storage will be flushed in background thread only
 	// Default value is 20000
 	SyncStorageFlushLimit int `json:"sync_storage_flush_limit"`
+	// Delay between last namespace update background ANN-indexes storage cache creation. Storage cache is required for ANN-indexes for faster startup
+	// 0 - disables background cache creation (cache will still be created on the database shutdown)
+	// Default value is 5000 ms
+	ANNStorageCacheBuildTimeoutMs int `json:"ann_storage_cache_build_timeout_ms"`
 	// Strict mode for queries. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions"
 	// Default value - 'names'
 	// Possible values: 'indexes','names','none'

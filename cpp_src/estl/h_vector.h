@@ -7,6 +7,7 @@
 #include <limits>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include "debug_macros.h"
 #include "estl/defines.h"
 #include "trivial_reverse_iterator.h"
@@ -18,8 +19,30 @@ class h_vector : public std::vector<T> {};
 #else
 
 template <typename T, unsigned holdSize = 4, unsigned objSize = sizeof(T)>
-class h_vector {
+class [[nodiscard]] h_vector {
 	static_assert(holdSize > 0);
+
+	class [[nodiscard]] StolenHeap {
+	public:
+		StolenHeap() noexcept = default;
+		StolenHeap(T* ptr, size_t cap) noexcept : ptr_{ptr}, capacity_{cap} {}
+		StolenHeap(StolenHeap&& other) noexcept : ptr_{std::exchange(other.ptr_, nullptr)}, capacity_{std::exchange(other.capacity_, 0)} {}
+		~StolenHeap() { operator delete(ptr_); }
+
+		[[nodiscard]] size_t Capacity() const noexcept { return capacity_; }
+		[[nodiscard]] T* Release() && noexcept {
+			capacity_ = 0;
+			return std::exchange(ptr_, nullptr);
+		}
+
+		StolenHeap(const StolenHeap&) = delete;
+		StolenHeap& operator=(const StolenHeap&) = delete;
+		StolenHeap& operator=(StolenHeap&&) = delete;
+
+	private:
+		T* ptr_{nullptr};
+		size_t capacity_{0};
+	};
 
 public:
 	typedef T value_type;
@@ -33,10 +56,20 @@ public:
 	typedef trivial_reverse_iterator<iterator> reverse_iterator;
 	typedef unsigned size_type;
 	typedef std::ptrdiff_t difference_type;
+	static constexpr auto kElemSize = objSize;
+	static constexpr auto kHoldSize = holdSize;
 	static_assert(std::is_trivial_v<reverse_iterator>, "Expecting trivial reverse iterator");
 	static_assert(std::is_trivial_v<const_reverse_iterator>, "Expecting trivial const reverse iterator");
 
 	h_vector() noexcept : e_{0, 0}, size_(0), is_hdata_(1) {}
+	h_vector(StolenHeap&& heap) noexcept : h_vector() {
+		const auto cap = heap.Capacity();
+		if (cap > holdSize) {
+			e_.data_ = std::move(heap).Release();
+			e_.cap_ = cap;
+			is_hdata_ = 0;
+		}
+	}
 	explicit h_vector(size_type size) : h_vector() { resize(size); }
 	h_vector(size_type size, const T& v) : h_vector() {
 		reserve(size);
@@ -49,6 +82,16 @@ public:
 	}
 	template <typename InputIt>
 	h_vector(InputIt first, InputIt last) : e_{0, 0}, size_(0), is_hdata_(1) {
+		insert(begin(), first, last);
+	}
+	template <typename InputIt>
+	h_vector(StolenHeap&& heap, InputIt first, InputIt last) : h_vector() {
+		const auto cap = heap.Capacity();
+		if (cap > holdSize && cap > (last - first)) {
+			e_.data_ = std::move(heap).Release();
+			e_.cap_ = cap;
+			is_hdata_ = 0;
+		}
 		insert(begin(), first, last);
 	}
 	h_vector(const h_vector& other) : e_{0, 0}, size_(0), is_hdata_(1) {
@@ -489,6 +532,15 @@ public:
 	}
 	size_t heap_size() const noexcept { return is_hdata_ ? 0 : e_.cap_ * sizeof(T); }
 	bool is_hdata() const noexcept { return is_hdata_; }
+	StolenHeap steal_heap() && noexcept {
+		if (is_hdata()) {
+			return {};
+		}
+		clear<false>();
+		StolenHeap res{e_.data_, capacity()};
+		is_hdata_ = true;
+		return res;
+	}
 
 protected:
 	pointer ptr() noexcept { return is_hdata() ? reinterpret_cast<pointer>(hdata_) : e_.data_; }

@@ -1,0 +1,86 @@
+#include "transactionsteps.h"
+
+namespace reindexer {
+
+void TransactionSteps::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
+	switch (mode) {
+		case ModeUpdate:
+			break;
+		case ModeInsert:
+		case ModeUpsert:
+			++expectedInsertionsCount_;
+			break;
+		case ModeDelete:
+			++deletionsCount_;
+			break;
+	}
+	steps.emplace_back(std::move(item), mode, lsn);
+}
+
+void TransactionSteps::Modify(Query&& query, lsn_t lsn) {
+	if (query.Type() == QuerySelect) {
+		throw Error(errParams, "Transactions does not support SELECT queries");
+	}
+	if (!query.GetJoinQueries().empty()) {
+		throw Error(errParams, "Query in transaction can not contain JOINs");
+	}
+	if (!query.GetMergeQueries().empty()) {
+		throw Error(errParams, "Query in transaction can not contain MERGEs");
+	}
+	if (!query.GetSubQueries().empty()) {
+		throw Error(errParams, "Query in transaction can not contain subqueries");
+	}
+	updateQueriesCount_ += (query.Type() == QueryUpdate);
+	steps.emplace_back(std::move(query), lsn);
+}
+
+size_t TransactionSteps::CalculateNewCapacity(size_t currentSize) const noexcept {
+	size_t newCapacity = currentSize;
+	bool haveDeleteQuery = false;
+	bool haveTruncateQuery = false;
+	for (const auto& step : steps) {
+		std::visit(overloaded{[](OneOf<TransactionMetaStep, TransactionTmStep, TransactionNopStep>) noexcept {},
+							  [&](const TransactionItemStep& s) noexcept {
+								  if (haveDeleteQuery) {
+									  return;
+								  }
+								  switch (s.mode) {
+									  case ModeInsert:
+									  case ModeUpsert:
+										  ++newCapacity;
+										  break;
+									  case ModeDelete:
+										  if (newCapacity > 0) {
+											  --newCapacity;
+										  }
+										  break;
+									  case ModeUpdate:
+										  break;
+								  }
+							  },
+							  [&](const TransactionQueryStep& s) noexcept {
+								  if (s.query) {
+									  switch (s.query->Type()) {
+										  case QueryDelete:
+											  if (!haveTruncateQuery) {
+												  newCapacity = currentSize;
+											  }
+											  haveDeleteQuery = true;
+											  break;
+										  case QueryTruncate:
+											  newCapacity = 0;
+											  haveDeleteQuery = false;
+											  haveTruncateQuery = false;
+											  break;
+										  case QueryUpdate:
+										  case QuerySelect:
+											  break;
+									  }
+								  }
+							  }},
+				   step.data_);
+	}
+	return newCapacity;
+}
+
+}  // namespace reindexer

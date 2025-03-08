@@ -1,3 +1,4 @@
+#include "cluster/consts.h"
 #include "clusterization_extras_api.h"
 #include "core/cjson/jsonbuilder.h"
 #include "gtests/tests/gtest_cout.h"

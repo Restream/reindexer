@@ -7,6 +7,14 @@
 
 namespace reindexer {
 
+Item::Item(ItemImpl* impl, const FieldsFilter& fieldsFilter) : Item{impl} {
+	if (impl_) {
+		impl_->fieldsFilter_ = &fieldsFilter;
+	}
+}
+Item::Item(PayloadType pt, PayloadValue pv, const TagsMatcher& tm, std::shared_ptr<const Schema> schema, const FieldsFilter& fieldsFilter)
+	: Item(new ItemImpl(std::move(pt), std::move(pv), tm, std::move(schema), fieldsFilter)) {}
+
 Item& Item::operator=(Item&& other) noexcept {
 	if (&other != this) {
 		if (impl_) {
@@ -44,6 +52,7 @@ Point Item::FieldRef::As<Point>() const {
 }
 
 Item::FieldRef::operator Variant() const {
+	throwIfNotSet();
 	VariantArray kr;
 	if (field_ >= 0) {
 		itemImpl_->GetPayload().Get(field_, kr);
@@ -58,6 +67,7 @@ Item::FieldRef::operator Variant() const {
 }
 
 Item::FieldRef::operator VariantArray() const {
+	throwIfNotSet();
 	if (field_ >= 0) {
 		VariantArray kr;
 		itemImpl_->GetPayload().Get(field_, kr);
@@ -89,7 +99,7 @@ Item::FieldRef& Item::FieldRef::operator=(const VariantArray& krs) {
 }
 
 template <typename T>
-Item::FieldRef& Item::FieldRef::operator=(span<const T> arr) {
+Item::FieldRef& Item::FieldRef::operator=(std::span<const T> arr) {
 	constexpr static bool kIsStr = std::is_same_v<T, std::string> || std::is_same_v<T, key_string> || std::is_same_v<T, p_string> ||
 								   std::is_same_v<T, std::string_view> || std::is_same_v<T, const char*>;
 	if (field_ < 0) {
@@ -121,7 +131,7 @@ Item::FieldRef& Item::FieldRef::operator=(span<const T> arr) {
 				} else {
 					itemImpl_->holder_->emplace_back(make_key_string(elem));
 				}
-				pl.Set(field_, pos++, Variant(p_string{itemImpl_->holder_->back()}, Variant::no_hold_t{}));
+				pl.Set(field_, pos++, Variant(p_string{itemImpl_->holder_->back()}, Variant::noHold));
 			}
 		}
 	} else {
@@ -130,6 +140,12 @@ Item::FieldRef& Item::FieldRef::operator=(span<const T> arr) {
 		}
 	}
 	return *this;
+}
+
+void Item::FieldRef::throwIfNotSet() const {
+	if (notSet_) {
+		throw Error{errParams, "Field %s is not set", Name()};
+	}
 }
 
 Item::~Item() {
@@ -176,12 +192,20 @@ Item::FieldRef Item::operator[](int field) const {
 	if (rx_unlikely(field < 0 || field >= impl_->Type().NumFields())) {
 		throw Error(errLogic, "Item::operator[] requires indexed field. Values range: [0; %d]", impl_->Type().NumFields());
 	}
-	return FieldRef(field, impl_);
+	const bool notSet = impl_->Type().Field(field).Type().Is<KeyValueType::FloatVector>() && impl_->fieldsFilter_ &&
+						!impl_->fieldsFilter_->ContainsVector(field);
+	return FieldRef(field, impl_, notSet);
 }
 
 Item::FieldRef Item::FieldRefByName(std::string_view name, ItemImpl& impl) noexcept {
 	int field = 0;
-	return (impl.Type().FieldByName(name, field)) ? FieldRef(field, &impl) : FieldRef(name, &impl);
+	if (impl.Type().FieldByName(name, field)) {
+		const bool notSet = impl.Type().Field(field).Type().Is<KeyValueType::FloatVector>() && impl.fieldsFilter_ &&
+							!impl.fieldsFilter_->ContainsVector(field);
+		return FieldRef(field, &impl, notSet);
+	} else {
+		return FieldRef(name, &impl, false);
+	}
 }
 
 int Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name); }
@@ -198,11 +222,12 @@ Item& Item::Unsafe(bool enable) & noexcept {
 
 lsn_t Item::GetLSN() { return impl_->RealValue().IsFree() ? impl_->Value().GetLSN() : impl_->RealValue().GetLSN(); }
 void Item::setLSN(lsn_t lsn) { impl_->RealValue().IsFree() ? impl_->Value().SetLSN(lsn) : impl_->RealValue().SetLSN(lsn); }
+void Item::setFieldsFilter(const FieldsFilter& fieldsFilter) noexcept { impl_->fieldsFilter_ = &fieldsFilter; }
 
-template Item::FieldRef& Item::FieldRef::operator=(span<const int> arr);
-template Item::FieldRef& Item::FieldRef::operator=(span<const int64_t> arr);
-template Item::FieldRef& Item::FieldRef::operator=(span<const std::string> arr);
-template Item::FieldRef& Item::FieldRef::operator=(span<const double>);
-template Item::FieldRef& Item::FieldRef::operator=(span<const Uuid>);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const int> arr);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const int64_t> arr);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const std::string> arr);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const double>);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const Uuid>);
 
 }  // namespace reindexer

@@ -2,6 +2,7 @@
 
 #include "core/index/string_map.h"
 #include "core/keyvalue/key_string.h"
+#include "core/type_consts_helpers.h"
 #include "vendor/hopscotch/hopscotch_sc_map.h"
 #include "vendor/hopscotch/hopscotch_sc_set.h"
 

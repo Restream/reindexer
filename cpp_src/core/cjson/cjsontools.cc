@@ -31,12 +31,12 @@ void copyCJsonValue(TagType tagType, const Variant& value, WrSerializer& wrser) 
 			wrser.PutDouble(static_cast<double>(value.convert(KeyValueType::Double{})));
 			break;
 		case TAG_VARINT:
-			value.Type().EvaluateOneOf([&](KeyValueType::Int) { wrser.PutVarint(value.As<int>()); },
-									   [&](KeyValueType::Int64) { wrser.PutVarint(value.As<int64_t>()); },
-									   [&](OneOf<KeyValueType::Double, KeyValueType::Bool, KeyValueType::String, KeyValueType::Composite,
-												 KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Uuid>) {
-										   wrser.PutVarint(static_cast<int64_t>(value.convert(KeyValueType::Int64{})));
-									   });
+			value.Type().EvaluateOneOf(
+				[&](KeyValueType::Int) { wrser.PutVarint(value.As<int>()); },
+				[&](KeyValueType::Int64) { wrser.PutVarint(value.As<int64_t>()); },
+				[&](OneOf<KeyValueType::Double, KeyValueType::Float, KeyValueType::Bool, KeyValueType::String, KeyValueType::Composite,
+						  KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Uuid,
+						  KeyValueType::FloatVector>) { wrser.PutVarint(static_cast<int64_t>(value.convert(KeyValueType::Int64{}))); });
 			break;
 		case TAG_BOOL:
 			wrser.PutBool(static_cast<bool>(value.convert(KeyValueType::Bool{})));
@@ -46,6 +46,9 @@ void copyCJsonValue(TagType tagType, const Variant& value, WrSerializer& wrser) 
 			break;
 		case TAG_UUID:
 			wrser.PutUuid(value.convert(KeyValueType::Uuid{}).As<Uuid>());
+			break;
+		case TAG_FLOAT:
+			wrser.PutFloat(static_cast<float>(value.convert(KeyValueType::Float{})));
 			break;
 		case TAG_NULL:
 			break;
@@ -110,6 +113,9 @@ void copyCJsonValue(TagType tagType, Serializer& rdser, WrSerializer& wrser) {
 		case TAG_UUID:
 			wrser.PutUuid(rdser.GetUuid());
 			break;
+		case TAG_FLOAT:
+			wrser.PutFloat(rdser.GetFloat());
+			break;
 		case TAG_OBJECT:
 			wrser.PutVariant(rdser.GetVariant());
 			break;
@@ -138,7 +144,7 @@ void skipCjsonTag(ctag tag, Serializer& rdser, std::array<unsigned, kMaxIndexes>
 					}
 				}
 			} else {
-				const auto len = rdser.GetVarUint();
+				const auto len = rdser.GetVarUInt();
 				if (fieldsArrayOffsets) {
 					(*fieldsArrayOffsets)[field] += len;
 				}
@@ -155,7 +161,8 @@ void skipCjsonTag(ctag tag, Serializer& rdser, std::array<unsigned, kMaxIndexes>
 		case TAG_END:
 		case TAG_BOOL:
 		case TAG_NULL:
-		case TAG_UUID: {
+		case TAG_UUID:
+		case TAG_FLOAT: {
 			const auto field = tag.Field();
 			const bool embeddedField = (field < 0);
 			if (embeddedField) {
@@ -187,10 +194,14 @@ void buildPayloadTuple(const PayloadIface<T>& pl, const TagsMatcher* tagsMatcher
 		const int tagName = tagsMatcher->name2tag(fieldType.JsonPaths()[0]);
 		assertf(tagName != 0, "ns=%s, field=%s", pl.Type().Name(), fieldType.JsonPaths()[0]);
 
-		if (fieldType.IsArray()) {
+		if (fieldType.IsFloatVector()) {
+			const auto value = pl.Get(field, 0);
+			const auto count = ConstFloatVectorView(value).Dimension().Value();
+			builder.ArrayRef(tagName, field, int(count));
+		} else if (fieldType.IsArray()) {
 			builder.ArrayRef(tagName, field, pl.GetArrayLen(field));
 		} else {
-			builder.Ref(tagName, pl.Get(field, 0), field);
+			builder.Ref(tagName, pl.Get(field, 0).Type(), field);
 		}
 	}
 }
@@ -207,9 +218,52 @@ void throwScalarMultipleEncodesError(const Payload& pl, const PayloadFieldType& 
 	throw Error(errLogic, "Non-array field '%s' [%d] from '%s' can only be encoded once.", f.Name(), field, pl.Type().Name());
 }
 
+void throwUnexpectedArrayError(std::string_view parserName, const PayloadFieldType& fieldRef) {
+	throw Error(errLogic, "Error parsing %s field '%s' - got array, expected scalar %s", parserName, fieldRef.Name(),
+				fieldRef.Type().Name());
+}
+
+void throwUnexpectedArraySizeForFloatVectorError(std::string_view parserName, const PayloadFieldType& fieldRef, size_t size) {
+	throw Error(errLogic, "Error parsing %s field '%s' - got array of size %d, expected float_vector of size %d", parserName,
+				fieldRef.Name(), size, fieldRef.FloatVectorDimension().Value());
+}
+
+void throwUnexpectedArrayTypeForFloatVectorError(std::string_view parserName, const PayloadFieldType& fieldRef) {
+	throw Error(errLogic, "Error parsing %s field '%s' - got array of non-double values, expected array convertible to %s", parserName,
+				fieldRef.Name(), fieldRef.Type().Name());
+}
+
 void throwUnexpectedArraySizeError(std::string_view parserName, const PayloadFieldType& f, int arraySize) {
 	throw Error(errParams, "%s array field '%s' for this index type must contain %d elements, but got %d", parserName, f.Name(),
-				f.ArrayDim(), arraySize);
+				f.ArrayDims(), arraySize);
+}
+
+static void skipCjsonValue(TagType type, Serializer& cjson) {
+	switch (type) {
+		case TAG_VARINT:
+			cjson.GetVarint();
+			break;
+		case TAG_DOUBLE:
+			cjson.GetDouble();
+			break;
+		case TAG_STRING:
+			cjson.GetPVString();
+			break;
+		case TAG_BOOL:
+			cjson.GetVarUInt();
+			break;
+		case TAG_UUID:
+			cjson.GetUuid();
+			break;
+		case TAG_FLOAT:
+			cjson.GetFloat();
+			break;
+		case TAG_NULL:
+		case TAG_OBJECT:
+		case TAG_ARRAY:
+		case TAG_END:
+			assertrx(0);
+	}
 }
 
 static void dumpCjsonValue(TagType type, Serializer& cjson, std::ostream& dump) {
@@ -224,10 +278,13 @@ static void dumpCjsonValue(TagType type, Serializer& cjson, std::ostream& dump) 
 			dump << '"' << std::string_view{cjson.GetPVString()} << '"';
 			break;
 		case TAG_BOOL:
-			dump << std::boolalpha << bool(cjson.GetVarUint());
+			dump << std::boolalpha << bool(cjson.GetVarUInt());
 			break;
 		case TAG_UUID:
 			dump << std::string{cjson.GetUuid()};
+			break;
+		case TAG_FLOAT:
+			dump << cjson.GetFloat();
 			break;
 		case TAG_NULL:
 		case TAG_OBJECT:
@@ -240,6 +297,7 @@ static void dumpCjsonValue(TagType type, Serializer& cjson, std::ostream& dump) 
 template <typename PL>
 static void dumpCjsonObject(Serializer& cjson, std::ostream& dump, const TagsMatcher* tm, const PL* pl, std::string_view tab,
 							unsigned indentLevel) {
+	static constexpr uint32_t kMaxArrayOutput = 3;
 	const auto indent = [&dump, tab](unsigned indLvl) {
 		for (unsigned i = 0; i < indLvl; ++i) {
 			dump << tab;
@@ -266,6 +324,7 @@ static void dumpCjsonObject(Serializer& cjson, std::ostream& dump, const TagsMat
 			switch (type) {
 				case TAG_VARINT:
 				case TAG_DOUBLE:
+				case TAG_FLOAT:
 				case TAG_STRING:
 				case TAG_BOOL:
 				case TAG_UUID:
@@ -279,20 +338,50 @@ static void dumpCjsonObject(Serializer& cjson, std::ostream& dump, const TagsMat
 				case TAG_ARRAY: {
 					dump << '\n';
 					indent(indentLevel + 1);
-					const size_t count = cjson.GetVarUint();
+					const uint32_t count = cjson.GetVarUInt();
 					dump << "Count: " << count;
 					if (pl) {
 						dump << " -> [";
 						buf.clear<false>();
 						pl->Get(field, buf);
-						assertrx(buf.size() == count);
-						for (size_t i = 0; i < count; ++i) {
-							if (i != 0) {
-								dump << ", ";
+						if (pl->Type().Field(field).IsFloatVector()) {
+							assertrx(buf.size() == 1);
+							const ConstFloatVectorView vect{buf[0]};
+							if (vect.IsEmpty()) {
+								dump << " -> <empty>";
+							} else {
+								dump << " -> " << vect.Dimension().Value();
+								if (vect.IsStripped()) {
+									dump << "[<stripped>]";
+								} else {
+									dump << '[';
+									for (uint32_t i = 0; i < std::min(uint32_t(vect.Dimension()), kMaxArrayOutput); ++i) {
+										if (i != 0) {
+											dump << ", ";
+										}
+										dump << vect.Data()[i];
+									}
+									if (uint32_t(vect.Dimension()) > kMaxArrayOutput) {
+										dump << ", ...]";
+									} else {
+										dump << ']';
+									}
+								}
 							}
-							dump << buf[i].As<std::string>();
+						} else {
+							assertrx(buf.size() == count);
+							for (size_t i = 0; i < std::min(count, kMaxArrayOutput); ++i) {
+								if (i != 0) {
+									dump << ", ";
+								}
+								dump << buf[i].As<std::string>();
+							}
+							if (count > kMaxArrayOutput) {
+								dump << " ...]";
+							} else {
+								dump << ']';
+							}
 						}
-						dump << ']';
 					}
 				} break;
 				case TAG_NULL:
@@ -309,6 +398,7 @@ static void dumpCjsonObject(Serializer& cjson, std::ostream& dump, const TagsMat
 				case TAG_STRING:
 				case TAG_BOOL:
 				case TAG_UUID:
+				case TAG_FLOAT:
 					indent(indentLevel + 1);
 					dumpCjsonValue(type, cjson, dump);
 					dump << '\n';
@@ -317,11 +407,11 @@ static void dumpCjsonObject(Serializer& cjson, std::ostream& dump, const TagsMat
 					break;
 				case TAG_ARRAY: {
 					const carraytag arr = cjson.GetCArrayTag();
-					const size_t count = arr.Count();
+					const auto count = arr.Count();
 					if (arr.Type() == TAG_OBJECT) {
 						indent(indentLevel + 1);
 						dump << "<heterogeneous> count: " << count << '\n';
-						for (size_t i = 0; i < count; ++i) {
+						for (uint32_t i = 0; i < count; ++i) {
 							const ctag t = cjson.GetCTag();
 							assertrx(t.Name() == 0);
 							assertrx(t.Field() < 0);
@@ -352,11 +442,18 @@ static void dumpCjsonObject(Serializer& cjson, std::ostream& dump, const TagsMat
 							}
 							indent(indentLevel + 2);
 						} else {
-							for (size_t i = 0; i < count; ++i) {
+							uint32_t i = 0;
+							for (; i < std::min(count, kMaxArrayOutput); ++i) {
 								if (i != 0) {
 									dump << ", ";
 								}
 								dumpCjsonValue(arr.Type(), cjson, dump);
+							}
+							for (; i < count; ++i) {
+								skipCjsonValue(arr.Type(), cjson);
+							}
+							if (count > kMaxArrayOutput) {
+								dump << ", ...";
 							}
 						}
 						dump << "]\n";

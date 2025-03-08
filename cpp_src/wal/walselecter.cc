@@ -1,8 +1,9 @@
 #include "walselecter.h"
 #include "core/cjson/jsonbuilder.h"
-#include "core/formatters/lsn_fmt.h"
 #include "core/namespace/namespaceimpl.h"
-#include "core/nsselecter/nsselecter.h"
+#include "core/queryresults/fields_filter.h"
+#include "core/nsselecter/selectctx.h"
+#include "core/queryresults/localqueryresults.h"
 #include "tools/semversion.h"
 
 namespace reindexer {
@@ -22,8 +23,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 		throw Error(errLogic, "Query to WAL should contain only 1 condition '#lsn > number'");
 	}
 
-	result.addNSContext(ns_->payloadType_, ns_->tagsMatcher_, FieldsSet(ns_->tagsMatcher_, q.SelectFilters()), ns_->schema_,
-						ns_->incarnationTag_);
+	result.addNSContext(ns_->payloadType_, ns_->tagsMatcher_, FieldsFilter(q.SelectFilters(), *ns_), ns_->schema_, ns_->incarnationTag_);
 
 	int lsnIdx = -1;
 	int versionIdx = -1;
@@ -59,12 +59,12 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 		}
 
 		const auto walEnd = ns_->wal_.end();
-		auto putWalRecord = [&result](WALTracker::iterator it, const WALRecord& rec) {
+		auto putWalRecord = [&result](WALTracker::iterator it, IdType id) {
 			auto data = it.GetRaw();
 			// Put as ItemRef with raw container
 			PayloadValue pv(data.size(), data.data());
 			pv.SetLSN(it.GetLSN());
-			result.AddItemRef(rec.id, std::move(pv), 0, 0, true);
+			result.AddItemRef(id, std::move(pv), 0, true);
 		};
 		const auto firstIt = lsnEntry.Condition() == CondGt ? ns_->wal_.upper_bound(fromLSN) : ns_->wal_.inclusive_upper_bound(fromLSN);
 		if (firstIt != walEnd) {
@@ -82,7 +82,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 						if (snapshot) {
 							assertrx(!start);
 							assertrx(count < 0);
-							putWalRecord(it, rec);
+							putWalRecord(it, -1);
 						}
 						break;
 					}
@@ -123,7 +123,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 					if (start) {
 						start--;
 					} else if (count) {
-						putWalRecord(it, rec);
+						putWalRecord(it, -1);
 						count--;
 					}
 					result.totalCount++;
@@ -133,7 +133,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 						// We have to store empty records in snapshot to preserve original server IDs
 						assertrx(!start);
 						assertrx(count < 0);
-						putWalRecord(it, rec);
+						putWalRecord(it, -1);
 					}
 					break;
 				case WalReplState:
@@ -157,7 +157,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 				wr.Pack(wrec);
 				PayloadValue val(wr.size(), wr.data());
 				val.SetLSN(lsn_t());
-				result.AddItemRef(-1, std::move(val), 0, 0, true);
+				result.AddItemRef(-1, std::move(val), 0, true);
 			};
 			for (unsigned int i = 1; i < ns_->indexes_.size(); i++) {
 				auto indexDef = ns_->getIndexDefinition(i);
@@ -194,6 +194,10 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 	} else {
 		throw Error(errLogic, "Query to WAL should contain condition '#lsn > number' or '#lsn is not null'");
 	}
+	if (params.floatVectorsHolder) {
+		const FieldsFilter fieldsFilter{q.SelectFilters(), *ns_};
+		params.floatVectorsHolder->Add(*ns_, result.begin(), result.end(), fieldsFilter);
+	}
 	putReplState(result);
 }
 
@@ -211,6 +215,7 @@ void WALSelecter::putReplState(LocalQueryResults& result) {
 	// Put as ItemRef with raw container
 	PayloadValue pv(wr.size(), wr.data());
 	pv.SetLSN(lsn_t());
-	result.AddItemRef(-1, std::move(pv), 0, 0, true);
+	result.AddItemRef(-1, std::move(pv), 0, true);
 }
+
 }  // namespace reindexer

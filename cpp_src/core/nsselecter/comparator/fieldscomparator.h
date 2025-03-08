@@ -146,14 +146,14 @@ private:
 			return true;
 		}
 		return lType.EvaluateOneOf(
-			[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) noexcept {
+			[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) noexcept {
 				return rType.EvaluateOneOf(
-					[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) noexcept { return true; },
+					[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) noexcept { return true; },
 					[](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite,
-							 KeyValueType::Tuple, KeyValueType::Uuid>) noexcept { return false; });
+							 KeyValueType::Tuple, KeyValueType::Uuid, KeyValueType::FloatVector>) noexcept { return false; });
 			},
 			[](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite,
-					 KeyValueType::Tuple, KeyValueType::Uuid>) noexcept { return false; });
+					 KeyValueType::Tuple, KeyValueType::Uuid, KeyValueType::FloatVector>) noexcept { return false; });
 	}
 
 	std::string name_;

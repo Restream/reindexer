@@ -1,8 +1,10 @@
 #include "debugrank.h"
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
+#include "core/queryresults/itemref.h"
 #include "core/selectfunc/ctx/ftctx.h"
 #include "core/selectfunc/selectfuncparser.h"
+#include "core/queryresults/itemref.h"
 
 namespace reindexer {
 
@@ -10,7 +12,7 @@ bool DebugRank::Process(ItemRef& res, PayloadType& plType, const SelectFuncStruc
 	if (!func.funcArgs.empty()) {
 		throw Error(errParams, "'debug_rank()' does not expect any arguments, but got %d", func.funcArgs.size());
 	}
-	if (!func.ctx || func.ctx->type != BaseFunctionCtx::CtxType::kFtAreaDebug) {
+	if (!func.ctx || func.ctx->Type() != BaseFunctionCtx::CtxType::kFtAreaDebug) {
 		return false;
 	}
 	if (!func.tagsPath.empty()) {

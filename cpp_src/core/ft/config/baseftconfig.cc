@@ -29,9 +29,9 @@ void BaseFTConfig::parseBase(const gason::JsonNode& root) {
 		for (auto& sw : stopWordsNode) {
 			std::string word;
 			StopWord::Type type = StopWord::Type::Stop;
-			if (sw.value.getTag() == gason::JsonTag::JSON_STRING) {
+			if (sw.value.getTag() == gason::JsonTag::STRING) {
 				word = sw.As<std::string>();
-			} else if (sw.value.getTag() == gason::JsonTag::JSON_OBJECT) {
+			} else if (sw.value.getTag() == gason::JsonTag::OBJECT) {
 				word = sw["word"].As<std::string>();
 				type = sw["is_morpheme"].As<bool>() ? StopWord::Type::Morpheme : StopWord::Type::Stop;
 			}

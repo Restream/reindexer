@@ -1,5 +1,7 @@
 #include "core/reindexer.h"
 #include "core/shardingproxy.h"
+#include "reindexer_version.h"
+#include "tools/catch_and_return.h"
 #include "tools/cpucheck.h"
 
 namespace reindexer {
@@ -189,7 +191,7 @@ Error Reindexer::Update(const Query& q, QueryResults& result) {
 	return impl_->Update(q, result, rdxCtx);
 }
 Error Reindexer::AddIndex(std::string_view nsName, const IndexDef& idx) {
-	const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "CREATE INDEX "sv << idx.name_ << " ON "sv << nsName; });
+	const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "CREATE INDEX "sv << idx.Name() << " ON "sv << nsName; });
 	return impl_->AddIndex(nsName, idx, rdxCtx);
 }
 Error Reindexer::SetSchema(std::string_view nsName, std::string_view schema) {
@@ -201,11 +203,11 @@ Error Reindexer::GetSchema(std::string_view nsName, int format, std::string& sch
 	return impl_->GetSchema(nsName, format, schema, rdxCtx);
 }
 Error Reindexer::UpdateIndex(std::string_view nsName, const IndexDef& idx) {
-	const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "UPDATE INDEX "sv << idx.name_ << " ON "sv << nsName; });
+	const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "UPDATE INDEX "sv << idx.Name() << " ON "sv << nsName; });
 	return impl_->UpdateIndex(nsName, idx, rdxCtx);
 }
 Error Reindexer::DropIndex(std::string_view nsName, const IndexDef& index) {
-	const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "DROP INDEX "sv << index.name_ << " ON "sv << nsName; });
+	const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "DROP INDEX "sv << index.Name() << " ON "sv << nsName; });
 	return impl_->DropIndex(nsName, index, rdxCtx);
 }
 Error Reindexer::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesOpts opts) {
@@ -255,6 +257,14 @@ Error Reindexer::SetTagsMatcher(std::string_view nsName, TagsMatcher&& tm) {
 }
 void Reindexer::ShutdownCluster() { impl_->ShutdownCluster(); }
 Error Reindexer::Status() noexcept { return impl_->Status(); }
+Error Reindexer::Version(std::string& version) const noexcept {
+	try {
+		version = REINDEX_VERSION;
+	}
+	CATCH_AND_RETURN
+	return {};
+}
+
 Error Reindexer::DumpIndex(std::ostream& os, std::string_view nsName, std::string_view index) {
 	const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "DUMP INDEX " << index << " ON " << nsName; });
 	return impl_->DumpIndex(os, nsName, index, rdxCtx);

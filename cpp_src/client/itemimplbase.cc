@@ -1,9 +1,12 @@
-#include "itemimplbase.h"
+#include "client/itemimplbase.h"
 #include "core/cjson/baseencoder.h"
+#include "core/cjson/cjsonbuilder.h"
 #include "core/cjson/cjsondecoder.h"
+#include "core/cjson/jsonbuilder.h"
 #include "core/cjson/jsondecoder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/msgpackdecoder.h"
+#include "estl/gift_str.h"
 
 namespace reindexer {
 namespace client {
@@ -34,7 +37,7 @@ void ItemImplBase::FromCJSON(std::string_view slice) {
 	CJsonDecoder decoder(tagsMatcher_, holder_);
 	ser_.Reset();
 	try {
-		decoder.Decode(pl, rdser, ser_);
+		decoder.Decode(pl, rdser, ser_, floatVectorsHolder_, CJsonDecoder::DefaultFilter{nullptr});
 	} catch (const Error& e) {
 		if (!hasBundledTm) {
 			const auto err = tryToUpdateTagsMatcher();
@@ -43,8 +46,8 @@ void ItemImplBase::FromCJSON(std::string_view slice) {
 			}
 			ser_.Reset();
 			rdser.SetPos(0);
-			CJsonDecoder decoder(tagsMatcher_, holder_);
-			decoder.Decode(pl, rdser, ser_);
+			CJsonDecoder decoderSecondAttempt(tagsMatcher_, holder_);
+			decoderSecondAttempt.Decode(pl, rdser, ser_, floatVectorsHolder_, CJsonDecoder::DefaultFilter{nullptr});
 		}
 	}
 
@@ -55,7 +58,7 @@ void ItemImplBase::FromCJSON(std::string_view slice) {
 	const auto tupleSize = ser_.Len();
 	tupleHolder_ = ser_.DetachBuf();
 	tupleData_ = std::string_view(reinterpret_cast<char*>(tupleHolder_.get()), tupleSize);
-	pl.Set(0, Variant(p_string(&tupleData_), Variant::no_hold_t{}));
+	pl.Set(0, Variant{p_string(&tupleData_), Variant::noHold});
 }
 
 Error ItemImplBase::FromJSON(std::string_view slice, char** endp, bool /*pkOnly*/) {
@@ -72,7 +75,7 @@ Error ItemImplBase::FromJSON(std::string_view slice, char** endp, bool /*pkOnly*
 	gason::JsonParser parser(&largeJSONStrings_);
 	try {
 		node = parser.Parse(giftStr(data), &len);
-		if (node.value.getTag() != gason::JSON_OBJECT) {
+		if (node.value.getTag() != gason::JsonTag::OBJECT) {
 			return Error(errParseJson, "Expected json object");
 		}
 		if (unsafe_ && endp) {
@@ -86,14 +89,14 @@ Error ItemImplBase::FromJSON(std::string_view slice, char** endp, bool /*pkOnly*
 	JsonDecoder decoder(tagsMatcher_);
 	Payload pl = GetPayload();
 	ser_.Reset();
-	auto err = decoder.Decode(pl, ser_, node.value);
+	auto err = decoder.Decode(pl, ser_, node.value, floatVectorsHolder_);
 
 	if (err.ok()) {
 		// Put tuple to field[0]
 		const auto tupleSize = ser_.Len();
 		tupleHolder_ = ser_.DetachBuf();
 		tupleData_ = std::string_view(reinterpret_cast<char*>(tupleHolder_.get()), tupleSize);
-		pl.Set(0, Variant(p_string(&tupleData_), Variant::no_hold_t{}));
+		pl.Set(0, Variant(p_string(&tupleData_), Variant::noHold));
 	}
 	return err;
 }
@@ -109,12 +112,12 @@ Error ItemImplBase::FromMsgPack(std::string_view buf, size_t& offset) {
 	}
 
 	ser_.Reset();
-	Error err = decoder.Decode(data, pl, ser_, offset);
+	Error err = decoder.Decode(data, pl, ser_, offset, floatVectorsHolder_);
 	if (err.ok()) {
 		const auto tupleSize = ser_.Len();
 		tupleHolder_ = ser_.DetachBuf();
 		tupleData_ = std::string_view(reinterpret_cast<char*>(tupleHolder_.get()), tupleSize);
-		pl.Set(0, Variant(p_string(&tupleData_), Variant::no_hold_t{}));
+		pl.Set(0, Variant(p_string(&tupleData_), Variant::noHold));
 	}
 	return err;
 }
@@ -128,7 +131,7 @@ std::string_view ItemImplBase::GetMsgPack() {
 	int startTag = 0;
 	ConstPayload pl = GetConstPayload();
 
-	MsgPackEncoder msgpackEncoder(&tagsMatcher_);
+	MsgPackEncoder msgpackEncoder(&tagsMatcher_, nullptr);
 	const TagsLengths& tagsLengths = msgpackEncoder.GetTagsMeasures(pl);
 
 	ser_.Reset();
@@ -141,7 +144,7 @@ std::string_view ItemImplBase::GetMsgPack() {
 std::string_view ItemImplBase::GetJSON() {
 	ConstPayload pl(payloadType_, payloadValue_);
 	JsonBuilder builder(ser_, ObjType::TypePlain);
-	JsonEncoder encoder(&tagsMatcher_);
+	JsonEncoder encoder(&tagsMatcher_, nullptr);
 
 	ser_.Reset();
 	encoder.Encode(pl, builder);
@@ -152,7 +155,7 @@ std::string_view ItemImplBase::GetJSON() {
 std::string_view ItemImplBase::GetCJSON() {
 	ConstPayload pl(payloadType_, payloadValue_);
 	CJsonBuilder builder(ser_, ObjType::TypePlain);
-	CJsonEncoder encoder(&tagsMatcher_);
+	CJsonEncoder encoder(&tagsMatcher_, nullptr);
 
 	ser_.Reset();
 	ser_.PutCTag(kCTagEnd);

@@ -1,5 +1,9 @@
+#include "cluster/consts.h"
 #include "clusterization_api.h"
 #include "gtests/tests/gtest_cout.h"
+#include "yaml-cpp/yaml.h"
+
+using namespace reindexer;
 
 TEST_F(ClusterizationApi, LeaderElections) {
 	// Check leader election on deffirent conditions
@@ -186,6 +190,55 @@ TEST_F(ClusterizationApi, ForceAndWalSync) {
 			cluster.FillDataTx(leaderId, kNsSome, (i + 2) * kDataPortion + kDataPortion / 2, kDataPortion / 2);
 		}
 		TestCout() << "Wait sync 2" << std::endl;
+		cluster.WaitSync(kNsSome);
+	});
+
+	loop.run();
+}
+
+TEST_F(ClusterizationApi, TruncateForceAndWalSync) {
+	// Check for truncate WAL-replication
+	net::ev::dynamic_loop loop;
+	auto ports = GetDefaults();
+	loop.spawn([&loop, &ports]() noexcept {
+		constexpr size_t kClusterSize = 5;
+		Cluster cluster(loop, 0, kClusterSize, ports);
+		int leaderId = cluster.AwaitLeader(kMaxElectionsTime);
+		ASSERT_NE(leaderId, -1);
+		TestCout() << "Leader id is " << leaderId << std::endl;
+
+		const std::string kNsSome = "some";
+		constexpr size_t kDataPortion = 100;
+
+		// Stopping 1 server to initiate force sync later
+		cluster.StopServer(0);
+		leaderId = cluster.AwaitLeader(kMaxElectionsTime, false);
+		ASSERT_NE(leaderId, -1);
+		TestCout() << "Leader id is " << leaderId << std::endl;
+
+		TestCout() << "Fill data" << std::endl;
+		cluster.InitNs(leaderId, kNsSome);
+		cluster.FillData(leaderId, kNsSome, 0, kDataPortion);
+
+		TestCout() << "Wait sync 1" << std::endl;
+		cluster.WaitSync(kNsSome);
+
+		// Stopping another server to initiate WAL sync
+		cluster.StopServer(1);
+		leaderId = cluster.AwaitLeader(kMaxElectionsTime, false);
+		ASSERT_NE(leaderId, -1);
+		TestCout() << "Leader id is " << leaderId << std::endl;
+
+		TestCout() << "Wait sync 2" << std::endl;
+		cluster.WaitSync(kNsSome);
+
+		auto err = cluster.GetNode(leaderId)->api.reindexer->TruncateNamespace(kNsSome);
+		ASSERT_TRUE(err.ok());
+		TestCout() << "Wait sync on running nodes" << std::endl;
+		cluster.WaitSync(kNsSome);
+		cluster.StartServer(0);
+		cluster.StartServer(1);
+		TestCout() << "Wait final sync" << std::endl;
 		cluster.WaitSync(kNsSome);
 	});
 
@@ -387,7 +440,7 @@ TEST_F(ClusterizationApi, InitialLeaderSync) {
 
 		// Make sure, that our cluster didn't miss it's data in process
 		auto state = cluster.GetNode(kClusterSize - 1)->GetState(std::string(kNsSome));
-		ASSERT_EQ(state.lsn.Counter(), kDataPortion + 3);
+		ASSERT_EQ(state.lsn.Counter(), kDataPortion + 4);
 
 		// Check WAL initial sync for nodes from the first group
 		leaderId = cluster.AwaitLeader(kMaxElectionsTime);
@@ -416,7 +469,7 @@ TEST_F(ClusterizationApi, InitialLeaderSync) {
 		cluster.WaitSync(kNsSome);
 
 		state = cluster.GetNode(0)->GetState(std::string(kNsSome));
-		ASSERT_EQ(state.lsn.Counter(), 3 * kDataPortion + 3 + 2);  // Data + indexes + tx records
+		ASSERT_EQ(state.lsn.Counter(), 3 * kDataPortion + 4 + 2);  // Data + indexes + tx records
 
 		// Validate stats
 		leaderId = cluster.AwaitLeader(kMaxElectionsTime);
@@ -508,7 +561,7 @@ TEST_F(ClusterizationApi, InitialLeaderSyncWithConcurrentSnapshots) {
 		// Make sure, that our cluster didn't miss it's data in process
 		for (auto& ns : kNsNames) {
 			auto state = cluster.GetNode(kClusterSize - 1)->GetState(ns);
-			ASSERT_EQ(state.lsn.Counter(), kDataPortion + 3);
+			ASSERT_EQ(state.lsn.Counter(), kDataPortion + 4);
 		}
 	});
 
@@ -732,7 +785,7 @@ TEST_F(ClusterizationApi, NamespaceOperationsOnlineReplication) {
 				const auto state = cluster.GetNode(leaderId)->GetState(kNsName);
 				ASSERT_EQ(state.nsVersion.Server(), leaderId);
 				std::lock_guard<std::mutex> lck(mtx);
-				existingNamespaces.emplace_back(NamespaceData{kNsName, lsn_t(dataCount + 3, leaderId), state.nsVersion});
+				existingNamespaces.emplace_back(NamespaceData{kNsName, lsn_t(dataCount + 4, leaderId), state.nsVersion});
 			}
 			++id;
 			{
@@ -758,7 +811,7 @@ TEST_F(ClusterizationApi, NamespaceOperationsOnlineReplication) {
 				const auto state = cluster.GetNode(leaderId)->GetState(kNsName);
 				ASSERT_EQ(state.nsVersion.Server(), leaderId);
 				std::lock_guard<std::mutex> lck(mtx);
-				existingNamespaces.emplace_back(NamespaceData{kNsName, lsn_t(dataCount + 3, leaderId), state.nsVersion});
+				existingNamespaces.emplace_back(NamespaceData{kNsName, lsn_t(dataCount + 4, leaderId), state.nsVersion});
 			}
 		});
 

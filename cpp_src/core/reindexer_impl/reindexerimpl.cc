@@ -22,6 +22,7 @@
 #include "tools/fsops.h"
 #include "tools/hardware_concurrency.h"
 #include "tools/logger.h"
+#include "vendor/gason/gason.h"
 
 #include "debug/backtrace.h"
 #include "debug/terminate_handler.h"
@@ -97,6 +98,7 @@ ReindexerImpl::ReindexerImpl(ReindexerConfig cfg, ActivityContainer& activities,
 	}
 #endif
 
+	annCachingThread_.Run([this](net::ev::dynamic_loop& loop) { this->annCachingRoutine(loop); });
 	storageFlushingThread_.Run([this](net::ev::dynamic_loop& loop) { this->storageFlushingRoutine(loop); });
 	std::call_once(initTerminateHandlerFlag, []() {
 		debug::terminate_handler_init();
@@ -120,6 +122,7 @@ ReindexerImpl::~ReindexerImpl() {
 	dbDestroyed_ = true;
 	clusterizator_->Stop();
 	backgroundThread_.Stop();
+	annCachingThread_.Stop();
 	storageFlushingThread_.Stop();
 }
 
@@ -147,7 +150,7 @@ Error ReindexerImpl::enableStorage(const std::string& storagePath) {
 	}
 
 	if (storagePath.empty()) {
-		return errOK;
+		return {};
 	}
 	if (fs::MkDirAll(storagePath) < 0) {
 		return Error(errParams, "Can't create directory '%s' for reindexer storage - reason %s", storagePath, strerror(errno));
@@ -480,7 +483,7 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 		return err;
 	}
 
-	return errOK;
+	return {};
 }
 
 Error ReindexerImpl::OpenNamespace(std::string_view name, const StorageOpts& storageOpts, const NsReplicationOpts& replOpts,
@@ -649,7 +652,7 @@ Error ReindexerImpl::openNamespace(std::string_view name, bool skipNameCheck, co
 		return err;
 	}
 
-	return errOK;
+	return {};
 }
 
 Error ReindexerImpl::TruncateNamespace(std::string_view nsName, const RdxContext& rdxCtx) {
@@ -1078,18 +1081,6 @@ Error ReindexerImpl::Delete(const Query& q, LocalQueryResults& result, const Rdx
 	APPLY_NS_FUNCTION2(false, Delete, q, result);
 }
 
-struct ItemRefLess {
-	bool operator()(const ItemRef& lhs, const ItemRef& rhs) const {
-		if (lhs.Proc() == rhs.Proc()) {
-			if (lhs.Nsid() == rhs.Nsid()) {
-				return lhs.Id() < rhs.Id();
-			}
-			return lhs.Nsid() < rhs.Nsid();
-		}
-		return lhs.Proc() > rhs.Proc();
-	}
-};
-
 Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const RdxContext& rdxCtx) {
 	try {
 		RxSelector::NsLocker<const RdxContext> locks(rdxCtx);
@@ -1330,7 +1321,7 @@ Error ReindexerImpl::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespa
 	} catch (const Error& err) {
 		return err;
 	}
-	return errOK;
+	return {};
 }
 
 void ReindexerImpl::backgroundRoutine(net::ev::dynamic_loop& loop) {
@@ -1342,7 +1333,7 @@ void ReindexerImpl::backgroundRoutine(net::ev::dynamic_loop& loop) {
 			try {
 				auto ns = getNamespace(name, dummyCtx);
 				ns->BackgroundRoutine(nullptr);
-			} catch (Error err) {
+			} catch (std::exception& err) {
 				logPrintf(LogWarning, "backgroundRoutine() failed with ns '%s': %s", name, err.what());
 			} catch (...) {
 				logPrintf(LogWarning, "backgroundRoutine() failed with ns '%s': unknown exception", name);
@@ -1358,8 +1349,6 @@ void ReindexerImpl::backgroundRoutine(net::ev::dynamic_loop& loop) {
 	t.set([&nsBackground](net::ev::timer&, int) noexcept {
 		try {
 			nsBackground();
-		} catch (Error err) {
-			logPrintf(LogError, "Unexpected exception in background thread: %s", err.what());
 		} catch (std::exception& e) {
 			logPrintf(LogError, "Unexpected exception in background thread: %s", e.what());
 		} catch (...) {
@@ -1372,6 +1361,40 @@ void ReindexerImpl::backgroundRoutine(net::ev::dynamic_loop& loop) {
 		loop.run();
 	}
 	nsBackground();
+}
+
+void ReindexerImpl::annCachingRoutine(net::ev::dynamic_loop& loop) {
+	static const RdxContext dummyCtx;
+	auto updateAnnStorageCache = [&]() {
+		auto nsarray = getNamespacesNames(dummyCtx);
+		for (const auto& name : nsarray) {
+			try {
+				auto ns = getNamespace(name, dummyCtx);
+				ns->ANNCachingRoutine();
+			} catch (std::exception& err) {
+				logPrintf(LogWarning, "annCachingRoutine() failed: '%s'", err.what(), name);
+			} catch (...) {
+				logPrintf(LogWarning, "annCachingRoutine() failed with ns: '%s'", name);
+			}
+		}
+	};
+
+	net::ev::periodic t;
+	t.set(loop);
+	t.set([&updateAnnStorageCache](net::ev::timer&, int) noexcept {
+		try {
+			updateAnnStorageCache();
+		} catch (std::exception& e) {
+			logPrintf(LogError, "Unexpected exception in ann storage cache thread: %s", e.what());
+		} catch (...) {
+			logPrintf(LogError, "Unexpected exception in ann storage cache thread: ???");
+		}
+	});
+	t.start(1.0, 1.0);
+
+	while (!dbDestroyed_.load(std::memory_order_relaxed)) {
+		loop.run();
+	}
 }
 
 void ReindexerImpl::storageFlushingRoutine(net::ev::dynamic_loop& loop) {
@@ -1429,8 +1452,6 @@ void ReindexerImpl::storageFlushingRoutine(net::ev::dynamic_loop& loop) {
 #ifdef REINDEX_WITH_GPERFTOOLS
 			this->heapWatcher_.CheckHeapUsagePeriodic();
 #endif
-		} catch (Error err) {
-			logPrintf(LogError, "Unexpected exception in flushing thread: %s", err.what());
 		} catch (std::exception& e) {
 			logPrintf(LogError, "Unexpected exception in flushing thread: %s", e.what());
 		} catch (...) {
@@ -1477,6 +1498,43 @@ Error ReindexerImpl::tryLoadShardingConf(const RdxContext& ctx) noexcept {
 		return config ? Upsert(kConfigNamespace, item, ctx) : Delete(kConfigNamespace, item, ctx);
 	}
 	CATCH_AND_RETURN
+}
+
+void ReindexerImpl::handleDropANNCacheAction(const gason::JsonNode& action, const RdxContext& ctx) {
+	auto& nsNode = action["namespace"];
+	auto& indexNode = action["index"];
+	std::string_view indexName;
+	if (!indexNode.empty() && indexNode.As<std::string_view>() != "*") {
+		indexName = indexNode.As<std::string_view>();
+	}
+	if (nsNode.empty() || nsNode.As<std::string_view>() == "*") {
+		for (auto& ns : getNamespaces(ctx)) {
+			ns.second->DropANNStorageCache(indexName, ctx);
+		}
+	} else if (auto ns = getNamespaceNoThrow(nsNode.As<std::string_view>(), ctx); ns) {
+		ns->DropANNStorageCache(indexName, ctx);
+	}
+}
+
+void ReindexerImpl::handleRebuildIVFIndexAction(const gason::JsonNode& action, const RdxContext& ctx) {
+	auto& nsNode = action["namespace"];
+	auto& indexNode = action["index"];
+	auto& dataPartNode = action["data_part"];
+	std::string_view indexName;
+	float dataPart = 1.0;
+	if (!indexNode.empty() && indexNode.As<std::string_view>() != "*") {
+		indexName = indexNode.As<std::string_view>();
+	}
+	if (!dataPartNode.empty()) {
+		dataPart = dataPartNode.As<float>();
+	}
+	if (nsNode.empty() || nsNode.As<std::string_view>() == "*") {
+		for (auto& ns : getNamespaces(ctx)) {
+			ns.second->RebuildIVFIndex(indexName, dataPart, ctx);
+		}
+	} else if (auto ns = getNamespaceNoThrow(nsNode.As<std::string_view>(), ctx); ns) {
+		ns->RebuildIVFIndex(indexName, dataPart, ctx);
+	}
 }
 
 Error ReindexerImpl::InitSystemNamespaces() {
@@ -1601,7 +1659,7 @@ Error ReindexerImpl::InitSystemNamespaces() {
 			ns.second->OnConfigUpdated(configProvider_, ctx);
 		}
 	}
-	return errOK;
+	return {};
 }
 
 template <const char* type, typename ConfigT>
@@ -1781,6 +1839,10 @@ void ReindexerImpl::handleConfigAction(const gason::JsonNode& action, const std:
 			} else {
 				throw Error(errParams, "Unknow logs type in config-action: '%s'", type);
 			}
+		} else if (command == "drop_ann_storage_cache"sv) {
+			handleDropANNCacheAction(action, ctx);
+		} else if (command == "rebuild_ivf_index"sv) {
+			handleRebuildIVFIndexAction(action, ctx);
 		}
 
 		if (const auto it = proxyCallbacks_.find({command, CallbackT::Type::User}); it != proxyCallbacks_.end()) {
@@ -1799,7 +1861,7 @@ void ReindexerImpl::updateConfigProvider(const gason::JsonNode& config, bool aut
 
 	if (!err.ok()) {
 		if (autoCorrect) {
-			logPrintf(LogError, "DBConfigProvider: Non fatal error %d \"%s\"", err.code(), err.what());
+			logPrintf(LogError, "DBConfigProvider: Non fatal error %d \"%s\"", int(err.code()), err.what());
 			return;
 		}
 
@@ -1956,7 +2018,7 @@ ReindexerImpl::FilterNsNamesT ReindexerImpl::detectFilterNsNames(const Query& q)
 					  auto stats = nsPtr->GetDefinition(ctx);
 					  bool notRenamed = iequals(stats.name, nsName);
 					  if (notRenamed) {
-						  stats.GetJSON(ser, kIndexJSONWithDescribe);
+						  stats.GetJSON(ser);
 					  }
 					  return notRenamed;
 				  });
@@ -2076,7 +2138,7 @@ Error ReindexerImpl::GetSqlSuggestions(std::string_view sqlQuery, int pos, std::
 			}
 			return std::shared_ptr<const Schema>();
 		});
-	return errOK;
+	return {};
 }
 
 Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, std::vector<std::string>& namespaces) {
@@ -2179,7 +2241,7 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, std::vector<std::strin
 		obj.Field(kParamDescription, kProtoErrorResultsFields.at(kParamDescription), FieldProps{KeyValueType::String{}});
 	});
 	schemaBuilder.End();
-	return errOK;
+	return {};
 }
 
 Error ReindexerImpl::GetReplState(std::string_view nsName, ReplicationStateV2& state, const RdxContext& rdxCtx) noexcept {
@@ -2239,7 +2301,7 @@ Error ReindexerImpl::GetRaftInfo(bool allowTransitState, cluster::RaftInfo& info
 	} catch (const Error& err) {
 		return err;
 	}
-	return errOK;
+	return {};
 }
 
 Error ReindexerImpl::ClusterControlRequest(const ClusterControlRequestData& request) {
@@ -2259,12 +2321,12 @@ Error ReindexerImpl::getLeaderDsn(DSN& dsn, unsigned short serverId, const clust
 		}
 		if (serverId == info.leaderId) {
 			dsn = {};
-			return errOK;
+			return {};
 		}
 		for (const auto& node : clusterConfig_->nodes) {
 			if (node.serverId == info.leaderId) {
 				dsn = node.GetRPCDsn();
-				return errOK;
+				return {};
 			}
 		}
 	} catch (const Error& err) {
@@ -2303,7 +2365,7 @@ Error ReindexerImpl::shardingConfigReplAction(const RdxContext& ctx, updates::UR
 Error ReindexerImpl::saveShardingCfgCandidate(std::string_view config, int64_t sourceId, const RdxContext& ctx) noexcept {
 	auto preReplfunc = [this, &ctx](std::string_view config, int64_t sourceId) {
 		cluster::ShardingConfig conf;
-		auto err = conf.FromJSON(std::string(config));
+		auto err = conf.FromJSON(std::string_view(config));
 		if (!err.ok()) {
 			throw err;
 		}

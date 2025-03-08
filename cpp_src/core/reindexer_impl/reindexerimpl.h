@@ -43,7 +43,7 @@ struct RaftInfo;
 class ReindexerImpl {
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Reindexer>;
 	using StatsSelectMutex = MarkedMutex<std::timed_mutex, MutexMark::ReindexerStats>;
-	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg, typename... Args>
+	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::* MemFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const RdxContext& ctx, Arg arg, Args&&... args);
 	template <auto MemFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const RdxContext& ctx, Arg&&, Args&&...);
@@ -236,6 +236,8 @@ private:
 	FilterNsNamesT detectFilterNsNames(const Query& q);
 	[[nodiscard]] StatsLocker::StatsLockT syncSystemNamespaces(std::string_view sysNsName, const FilterNsNamesT&, const RdxContext& ctx);
 	void createSystemNamespaces();
+	void handleDropANNCacheAction(const gason::JsonNode& action, const RdxContext& ctx);
+	void handleRebuildIVFIndexAction(const gason::JsonNode& action, const RdxContext& ctx);
 	void updateToSystemNamespace(std::string_view nsName, Item&, const RdxContext& ctx);
 	void handleConfigAction(const gason::JsonNode& action, const std::vector<std::pair<std::string, Namespace::Ptr>>& namespaces,
 							const RdxContext& ctx);
@@ -251,6 +253,7 @@ private:
 
 	void backgroundRoutine(net::ev::dynamic_loop& loop);
 	void storageFlushingRoutine(net::ev::dynamic_loop& loop);
+	void annCachingRoutine(net::ev::dynamic_loop& loop);
 	Error closeNamespace(std::string_view nsName, const RdxContext& ctx, bool dropStorage);
 
 	PayloadType getPayloadType(std::string_view nsName);
@@ -294,6 +297,7 @@ private:
 
 	BackgroundThread backgroundThread_;
 	BackgroundThread storageFlushingThread_;
+	BackgroundThread annCachingThread_;
 	std::atomic<bool> dbDestroyed_ = {false};
 	BackgroundNamespaceDeleter bgDeleter_;
 

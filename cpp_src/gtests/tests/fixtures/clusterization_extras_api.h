@@ -1,17 +1,19 @@
 #pragma once
 
+#include "cluster/consts.h"
 #include "clusterization_api.h"
+#include "tools/fsops.h"
 
 class ClusterizationExtrasApi : public ClusterizationApi {
 public:
 	void SetUp() override {	 // -V524
-		fs::RmDirAll(GetDefaults().baseTestsetDbPath);
+		reindexer::fs::RmDirAll(GetDefaults().baseTestsetDbPath);
 	}
 	void TearDown() override {	// -V524
-		fs::RmDirAll(GetDefaults().baseTestsetDbPath);
+		reindexer::fs::RmDirAll(GetDefaults().baseTestsetDbPath);
 	}
 	const Defaults& GetDefaults() const override {
-		static Defaults defs{14300, 16300, fs::JoinPath(fs::GetTempDir(), "rx_test/ClusterizationExtrasApi")};
+		static Defaults defs{14300, 16300, reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "rx_test/ClusterizationExtrasApi")};
 		return defs;
 	}
 

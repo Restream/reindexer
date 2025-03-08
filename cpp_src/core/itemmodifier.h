@@ -2,6 +2,7 @@
 
 #include <optional>
 #include "core/keyvalue/p_string.h"
+#include "core/namespace/float_vectors_indexes.h"
 #include "core/payload/payloadiface.h"
 #include "updates/updaterecord.h"
 
@@ -115,6 +116,7 @@ private:
 
 	IndexRollBack rollBackIndexData_;
 	CompositeFlags affectedComposites_;
+	const FloatVectorsIndexes vectorIndexes_;
 };
 
 }  // namespace reindexer

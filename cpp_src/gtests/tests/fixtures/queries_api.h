@@ -1,20 +1,14 @@
 #pragma once
 
-#include <cmath>
 #include <limits>
 #include <map>
-#include <mutex>
-#include <random>
 #include <unordered_map>
 #include <unordered_set>
 #include "core/cjson/jsonbuilder.h"
 #include "core/keyvalue/geometry.h"
-#include "core/nsselecter/joinedselectormock.h"
-#include "core/queryresults/joinresults.h"
 #include "gtests/tools.h"
 #include "queries_verifier.h"
 #include "reindexer_api.h"
-#include "tools/randompoint.h"
 
 class QueriesApi : public ReindexerApi, public QueriesVerifier {
 public:
@@ -35,8 +29,7 @@ public:
 						   {kFieldNameTemp, CollateOpts{CollateASCII}},
 						   {kFieldNameNumeric, CollateOpts{CollateNumeric}}};
 
-		err = rt.reindexer->OpenNamespace(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(default_namespace);
 		DefineNamespaceDataset(
 			default_namespace,
 			{
@@ -93,8 +86,7 @@ public:
 					   {{kFieldNameUuid, reindexer::KeyValueType::Uuid{}}, {kFieldNameName, reindexer::KeyValueType::String{}}});
 		addIndexFields(default_namespace, kFieldNameYearSparse, {{kFieldNameYearSparse, reindexer::KeyValueType::String{}}});
 
-		err = rt.reindexer->OpenNamespace(joinNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(joinNs);
 		DefineNamespaceDataset(joinNs, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
 										IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts(), 0},
 										IndexDeclaration{kFieldNameAge, "tree", "int", IndexOpts(), 0},
@@ -110,8 +102,7 @@ public:
 		addIndexFields(joinNs, kFieldNameYearSparse, {{kFieldNameYearSparse, reindexer::KeyValueType::String{}}});
 		addIndexFields(joinNs, kFieldNameRegion, {{kFieldNameRegion, reindexer::KeyValueType::Int{}}});
 
-		err = rt.reindexer->OpenNamespace(testSimpleNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(testSimpleNs);
 		DefineNamespaceDataset(testSimpleNs, {
 												 IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
 												 IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts(), 0},
@@ -123,8 +114,7 @@ public:
 		addIndexFields(testSimpleNs, kFieldNameName, {{kFieldNameName, reindexer::KeyValueType::String{}}});
 		addIndexFields(testSimpleNs, kFieldNamePhone, {{kFieldNamePhone, reindexer::KeyValueType::String{}}});
 
-		err = rt.reindexer->OpenNamespace(compositeIndexesNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(compositeIndexesNs);
 		DefineNamespaceDataset(compositeIndexesNs,
 							   {IndexDeclaration{kFieldNameBookid, "hash", "int", IndexOpts(), 0},
 								IndexDeclaration{kFieldNameBookid2, "hash", "int", IndexOpts(), 0},
@@ -154,17 +144,16 @@ public:
 		addIndexFields(compositeIndexesNs, kCompositeFieldBookidBookid2,
 					   {{kFieldNameBookid, reindexer::KeyValueType::Int{}}, {kFieldNameBookid2, reindexer::KeyValueType::Int{}}});
 
-		err = rt.reindexer->OpenNamespace(comparatorsNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(comparatorsNs);
 		DefineNamespaceDataset(
-			comparatorsNs,
-			{IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts(), 0},
-			 IndexDeclaration{kFieldNameColumnInt, "hash", "int", IndexOpts(), 0},
-			 IndexDeclaration{kFieldNameColumnInt64, "hash", "int64", IndexOpts().PK(), 0},
-			 IndexDeclaration{kFieldNameColumnDouble, "tree", "double", IndexOpts(), 0},
-			 IndexDeclaration{kFieldNameColumnString, "-", "string", IndexOpts(), 0},
-			 IndexDeclaration{kFieldNameColumnFullText, "text", "string", IndexOpts().SetConfig(R"xxx({"stemmers":[]})xxx"), 0},
-			 IndexDeclaration{kFieldNameColumnStringNumeric, "-", "string", IndexOpts().SetCollateMode(CollateNumeric), 0}});
+			comparatorsNs, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts(), 0},
+							IndexDeclaration{kFieldNameColumnInt, "hash", "int", IndexOpts(), 0},
+							IndexDeclaration{kFieldNameColumnInt64, "hash", "int64", IndexOpts().PK(), 0},
+							IndexDeclaration{kFieldNameColumnDouble, "tree", "double", IndexOpts(), 0},
+							IndexDeclaration{kFieldNameColumnString, "-", "string", IndexOpts(), 0},
+							IndexDeclaration{kFieldNameColumnFullText, "text", "string",
+											 IndexOpts().SetConfig(IndexFastFT, R"xxx({"stemmers":[]})xxx"), 0},
+							IndexDeclaration{kFieldNameColumnStringNumeric, "-", "string", IndexOpts().SetCollateMode(CollateNumeric), 0}});
 		addIndexFields(comparatorsNs, kFieldNameId, {{kFieldNameId, reindexer::KeyValueType::Int{}}});
 		addIndexFields(comparatorsNs, kFieldNameColumnInt, {{kFieldNameColumnInt, reindexer::KeyValueType::Int{}}});
 		addIndexFields(comparatorsNs, kFieldNameColumnInt64, {{kFieldNameColumnInt64, reindexer::KeyValueType::Int64{}}});
@@ -173,8 +162,7 @@ public:
 		addIndexFields(comparatorsNs, kFieldNameColumnFullText, {{kFieldNameColumnFullText, reindexer::KeyValueType::String{}}});
 		addIndexFields(comparatorsNs, kFieldNameColumnStringNumeric, {{kFieldNameColumnStringNumeric, reindexer::KeyValueType::String{}}});
 
-		err = rt.reindexer->OpenNamespace(forcedSortOffsetNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(forcedSortOffsetNs);
 		DefineNamespaceDataset(forcedSortOffsetNs, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
 													IndexDeclaration{kFieldNameColumnHash, "hash", "int", IndexOpts(), 0},
 													IndexDeclaration{kFieldNameColumnTree, "tree", "int", IndexOpts(), 0}});
@@ -182,8 +170,7 @@ public:
 		addIndexFields(forcedSortOffsetNs, kFieldNameColumnHash, {{kFieldNameColumnHash, reindexer::KeyValueType::Int{}}});
 		addIndexFields(forcedSortOffsetNs, kFieldNameColumnTree, {{kFieldNameColumnTree, reindexer::KeyValueType::Int{}}});
 
-		err = rt.reindexer->OpenNamespace(geomNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(geomNs);
 		DefineNamespaceDataset(
 			geomNs, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
 					 IndexDeclaration{kFieldNamePointQuadraticRTree, "rtree", "point", IndexOpts{}.RTreeType(IndexOpts::Quadratic), 0},
@@ -196,8 +183,7 @@ public:
 		addIndexFields(geomNs, kFieldNamePointGreeneRTree, {{kFieldNamePointGreeneRTree, reindexer::KeyValueType::Double{}}});
 		addIndexFields(geomNs, kFieldNamePointRStarRTree, {{kFieldNamePointRStarRTree, reindexer::KeyValueType::Double{}}});
 
-		err = rt.reindexer->OpenNamespace(btreeIdxOptNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(btreeIdxOptNs);
 		DefineNamespaceDataset(btreeIdxOptNs, {IndexDeclaration{kFieldNameId, "tree", "int", IndexOpts().PK(), 0},
 											   IndexDeclaration{kFieldNameStartTime, "tree", "int", IndexOpts(), 0}});
 		addIndexFields(btreeIdxOptNs, kFieldNameId, {{kFieldNameId, reindexer::KeyValueType::Int{}}});
@@ -214,7 +200,7 @@ public:
 	void initUUIDNs();
 	void FillUUIDNs();
 	void CheckUUIDQueries();
-	void CheckStandartQueries();
+	void CheckStandardQueries();
 	void CheckDslQueries();
 	void checkDslQuery(std::string_view dsl, Query&& checkQuery);
 	void CheckSqlQueries();
@@ -238,7 +224,7 @@ public:
 	void ExecuteAndVerifyWithSql(Q&& query) {
 		ExecuteAndVerify(query);
 		Query queryFromSql = Query::FromSQL(query.GetSQL()).Strict(query.GetStrictMode()).Debug(query.GetDebugLevel());
-		ASSERT_EQ(query, queryFromSql);
+		ASSERT_EQ(query, queryFromSql) << "query: " << query.GetSQL() << "\nqueryFromSql: " << queryFromSql.GetSQL();
 		ExecuteAndVerify(std::move(queryFromSql));
 	}
 
@@ -403,19 +389,19 @@ protected:
 				const size_t id = i + lastId;
 				bld.Put(kFieldNameId, id);
 
-				reindexer::Point point{reindexer::randPoint(10)};
+				reindexer::Point point{randPoint(10)};
 				bld.Array(kFieldNamePointQuadraticRTree, {point.X(), point.Y()});
 
-				point = reindexer::randPoint(10);
+				point = randPoint(10);
 				bld.Array(kFieldNamePointLinearRTree, {point.X(), point.Y()});
 
-				point = reindexer::randPoint(10);
+				point = randPoint(10);
 				bld.Array(kFieldNamePointGreeneRTree, {point.X(), point.Y()});
 
-				point = reindexer::randPoint(10);
+				point = randPoint(10);
 				bld.Array(kFieldNamePointRStarRTree, {point.X(), point.Y()});
 
-				point = reindexer::randPoint(10);
+				point = randPoint(10);
 				bld.Array(kFieldNamePointNonIndex, {point.X(), point.Y()});
 			}
 			auto item = NewItem(geomNs);
@@ -667,27 +653,25 @@ protected:
 	void CheckMergeQueriesWithAggregation();
 
 	void CheckGeomQueries() {
-		using reindexer::randPoint;
-		using reindexer::randBinDouble;
 		for (size_t i = 0; i < 10; ++i) {
 			// Checks that DWithin and sort by Distance work and verifies the result
-			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointQuadraticRTree, randPoint(10), randBinDouble(0, 1)));
-			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointLinearRTree, randPoint(10), randBinDouble(0, 1)));
-			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointGreeneRTree, randPoint(10), randBinDouble(0, 1)));
-			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointRStarRTree, randPoint(10), randBinDouble(0, 1)));
-			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointNonIndex, randPoint(10), randBinDouble(0, 1)));
+			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointQuadraticRTree, randPoint(10), randBin<double>(0, 1)));
+			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointLinearRTree, randPoint(10), randBin<double>(0, 1)));
+			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointGreeneRTree, randPoint(10), randBin<double>(0, 1)));
+			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointRStarRTree, randPoint(10), randBin<double>(0, 1)));
+			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointNonIndex, randPoint(10), randBin<double>(0, 1)));
 			ExecuteAndVerify(Query(geomNs)
-								 .DWithin(kFieldNamePointLinearRTree, randPoint(10), randBinDouble(0, 1))
+								 .DWithin(kFieldNamePointLinearRTree, randPoint(10), randBin<double>(0, 1))
 								 .SortStDistance(kFieldNamePointNonIndex, kFieldNamePointLinearRTree, false));
 			ExecuteAndVerify(
 				Query(geomNs)
-					.DWithin(kFieldNamePointLinearRTree, randPoint(10), randBinDouble(0, 1))
+					.DWithin(kFieldNamePointLinearRTree, randPoint(10), randBin<double>(0, 1))
 					.SortStDistance(kFieldNamePointNonIndex, randPoint(10), false)
 					.Sort(std::string("ST_Distance(") + pointToSQL(randPoint(10)) + ", " + kFieldNamePointGreeneRTree + ')', false));
 			ExecuteAndVerify(Query(geomNs)
-								 .DWithin(kFieldNamePointQuadraticRTree, randPoint(10), randBinDouble(0, 1))
+								 .DWithin(kFieldNamePointQuadraticRTree, randPoint(10), randBin<double>(0, 1))
 								 .Or()
-								 .DWithin(kFieldNamePointRStarRTree, randPoint(10), randBinDouble(0, 1))
+								 .DWithin(kFieldNamePointRStarRTree, randPoint(10), randBin<double>(0, 1))
 								 .Sort(std::string("ST_Distance(") + pointToSQL(randPoint(10)) + ", " + kFieldNamePointQuadraticRTree +
 										   ") + 3 * ST_Distance(" + kFieldNamePointLinearRTree + ", " + kFieldNamePointNonIndex +
 										   ") + ST_Distance(" + kFieldNamePointRStarRTree + ", " + kFieldNamePointGreeneRTree + ')',
@@ -896,20 +880,20 @@ protected:
 		reindexer::QueryResults wrongQr1;
 		auto err = rt.reindexer->Select(wrongQuery1, wrongQr1);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "The aggregation facet cannot provide sort by 'name'");
+		EXPECT_STREQ(err.what(), "The aggregation facet cannot provide sort by 'name'");
 
 		const Query wrongQuery2{Query(default_namespace).Aggregate(AggFacet, {kFieldNameCountries, kFieldNameYear})};
 		reindexer::QueryResults wrongQr2;
 		err = rt.reindexer->Select(wrongQuery2, wrongQr2);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Multifield facet cannot contain an array field");
+		EXPECT_STREQ(err.what(), "Multifield facet cannot contain an array field");
 
 		InitNSObj();
 		const Query wrongQuery3{Query(nsWithObject).Distinct(kFieldNameObjectField)};
 		reindexer::QueryResults wrongQr3;
 		err = rt.reindexer->Select(wrongQuery3, wrongQr3);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Cannot aggregate object field");
+		EXPECT_STREQ(err.what(), "Cannot aggregate object field");
 
 		Query testQuery{Query(default_namespace)
 							.Aggregate(AggAvg, {kFieldNameYear})
