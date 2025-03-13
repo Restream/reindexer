@@ -160,7 +160,7 @@ class EntriesRange {
 public:
 	EntriesRange(uint16_t from, uint16_t to) : from_(from), to_(to) {
 		if (to_ <= from_) {
-			throw Error(errLogic, "Unexpected range boarders during indexes substitution: [%u,%u)", from_, to_);
+			throw Error(errLogic, "Unexpected range boarders during indexes substitution: [{},{})", from_, to_);
 		}
 	}
 	uint16_t From() const noexcept { return from_; }
@@ -168,7 +168,7 @@ public:
 	void ExtendRight() noexcept { ++to_; }
 	void ExtendLeft() {
 		if (!from_) {
-			throw Error(errLogic, "Unable to extend left range's bound during indexes substitution: [%u,%u)", from_, to_);
+			throw Error(errLogic, "Unable to extend left range's bound during indexes substitution: [{},{})", from_, to_);
 		}
 		--from_;
 	}

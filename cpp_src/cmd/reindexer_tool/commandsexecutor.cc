@@ -285,7 +285,7 @@ Error CommandsExecutor<DBInterface>::runImpl(const std::string& dsn, Args&&... a
 					}
 				}
 			} catch (const gason::Exception& e) {
-				err = Error(errParseJson, "Unable to parse output mode: %s", e.what());
+				err = Error(errParseJson, "Unable to parse output mode: {}", e.what());
 			}
 		}
 		if (err.ok() && variables_.find(kVariableOutput) == variables_.end()) {
@@ -565,7 +565,7 @@ Error CommandsExecutor<DBInterface>::processImpl(const std::string& command) noe
 		DumpOptions opts;
 		auto err = opts.FromJSON(reindexer::giftStr(command.substr(kDumpModePrefix.size())));
 		if (!err.ok()) {
-			return Error(errParams, "Unable to parse dump mode from cmd: %s", err.what());
+			return Error(errParams, "Unable to parse dump mode from cmd: {}", err.what());
 		}
 		dumpMode_ = opts.mode;
 	}
@@ -587,14 +587,14 @@ Error CommandsExecutor<DBInterface>::processImpl(const std::string& command) noe
 		} catch (Error& e) {
 			return e;
 		} catch (gason::Exception& e) {
-			return Error(errLogic, "JSON exception during command's execution: %s", e.what());
+			return Error(errLogic, "JSON exception during command's execution: {}", e.what());
 		} catch (std::exception& e) {
-			return Error(errLogic, "std::exception during command's execution: %s", e.what());
+			return Error(errLogic, "std::exception during command's execution: {}", e.what());
 		} catch (...) {
 			return Error(errLogic, "Unknown exception during command's execution");
 		}
 	}
-	return Error(errParams, "Unknown command '%s'. Type '\\help' to list of available commands", token);
+	return Error(errParams, "Unknown command '{}'. Type '\\help' to list of available commands", token);
 }
 
 template <>
@@ -807,7 +807,7 @@ Error CommandsExecutor<DBInterface>::commandUpsert(const std::string& command) {
 				return Error();
 			}
 		} catch (const gason::Exception& ex) {
-			return Error(errParseJson, "Unable to parse JSON for #config item: %s", ex.what());
+			return Error(errParseJson, "Unable to parse JSON for #config item: {}", ex.what());
 		}
 	}
 
@@ -999,7 +999,7 @@ Error CommandsExecutor<DBInterface>::commandNamespaces(const std::string& comman
 		NamespaceDef def("");
 		Error err = def.FromJSON(reindexer::giftStr(parser.CurPtr()));
 		if (!err.ok()) {
-			return Error(errParseJson, "Namespace structure is not valid - %s", err.what());
+			return Error(errParseJson, "Namespace structure is not valid - {}", err.what());
 		}
 
 		def.storage.DropOnFileFormatError(true);
@@ -1041,7 +1041,7 @@ Error CommandsExecutor<DBInterface>::commandNamespaces(const std::string& comman
 		auto nsNewName = reindexer::unescapeString(parser.NextToken());
 		return db().RenameNamespace(nsName, nsNewName);
 	}
-	return Error(errParams, "Unknown sub command '%s' of namespaces command", subCommand);
+	return Error(errParams, "Unknown sub command '{}' of namespaces command", subCommand);
 }
 
 template <typename DBInterface>
@@ -1076,7 +1076,7 @@ Error CommandsExecutor<DBInterface>::commandMeta(const std::string& command) {
 		}
 		return err;
 	}
-	return Error(errParams, "Unknown sub command '%s' of meta command", subCommand);
+	return Error(errParams, "Unknown sub command '{}' of meta command", subCommand);
 }
 
 template <typename DBInterface>
@@ -1095,7 +1095,7 @@ Error CommandsExecutor<DBInterface>::commandHelp(const std::string& command) {
 							   [&subCommand](const commandDefinition& def) { return iequals(def.command, subCommand); });
 
 		if (it == cmds_.end()) {
-			return Error(errParams, "Unknown command '%s' to help. To list of available command type '\\help'", subCommand);
+			return Error(errParams, "Unknown command '{}' to help. To list of available command type '\\help'", subCommand);
 		}
 		output_() << it->command << " - " << it->description << ":" << std::endl << it->help << std::endl;
 	}
@@ -1139,7 +1139,7 @@ Error CommandsExecutor<DBInterface>::commandSet(const std::string& command) {
 	const auto cfgPath = reindexer::fs::JoinPath(reindexer::fs::GetHomeDir(), kConfigFile);
 	const int writeRes = reindexer::fs::WriteFile(cfgPath, wrser.Slice());
 	if (writeRes < 0) {
-		return Error(errLogic, "Unable to write config file: '%s'", cfgPath);
+		return Error(errLogic, "Unable to write config file: '{}'", cfgPath);
 	}
 	return Error();
 }
@@ -1397,7 +1397,7 @@ reindexer::Error CommandsExecutor<DBInterface>::filterNamespacesByDumpMode(std::
 			return err;
 		}
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "Unable to parse sharding config: %s", ex.what());
+		return Error(errParseJson, "Unable to parse sharding config: {}", ex.what());
 	}
 
 	if (mode == DumpOptions::Mode::LocalOnly) {

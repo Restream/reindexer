@@ -24,7 +24,7 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 				[&](KeyValueType::Int64) noexcept { return Variant(static_cast<int64_t>(v.toNumber())); },
 				[&](OneOf<KeyValueType::String, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Uuid,
 						  KeyValueType::FloatVector>) -> Variant {
-					throw Error(errLogic, "Error parsing json field '%s' - got number, expected %s", fieldName, t.Name());
+					throw Error(errLogic, "Error parsing json field '{}' - got number, expected {}", fieldName, t.Name());
 				});
 		case gason::JsonTag::DOUBLE:
 			return t.EvaluateOneOf([&](OneOf<KeyValueType::Undefined, KeyValueType::Double>) noexcept { return Variant(v.toDouble()); },
@@ -34,7 +34,7 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 								   [&](KeyValueType::Bool) noexcept { return Variant(static_cast<bool>(v.toDouble())); },
 								   [&](OneOf<KeyValueType::String, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null,
 											 KeyValueType::Uuid, KeyValueType::FloatVector>) -> Variant {
-									   throw Error(errLogic, "Error parsing json field '%s' - got number, expected %s", fieldName,
+									   throw Error(errLogic, "Error parsing json field '{}' - got number, expected {}", fieldName,
 												   t.Name());
 								   });
 		case gason::JsonTag::STRING:
@@ -45,7 +45,7 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 				[&](KeyValueType::Uuid) { return Variant{Uuid{v.toString()}}; },
 				[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
 						  KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::FloatVector>) -> Variant {
-					throw Error(errLogic, "Error parsing json field '%s' - got string, expected %s", fieldName, t.Name());
+					throw Error(errLogic, "Error parsing json field '{}' - got string, expected {}", fieldName, t.Name());
 				});
 		case gason::JsonTag::JFALSE:
 			return t.EvaluateOneOf([&](OneOf<KeyValueType::Undefined, KeyValueType::Bool>) noexcept { return Variant(false); },
@@ -55,7 +55,7 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 								   [&](KeyValueType::Float) noexcept { return Variant(0.0f); },
 								   [&](OneOf<KeyValueType::String, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null,
 											 KeyValueType::Uuid, KeyValueType::FloatVector>) -> Variant {
-									   throw Error(errLogic, "Error parsing json field '%s' - got bool, expected %s", fieldName, t.Name());
+									   throw Error(errLogic, "Error parsing json field '{}' - got bool, expected {}", fieldName, t.Name());
 								   });
 		case gason::JsonTag::JTRUE:
 			return t.EvaluateOneOf([&](OneOf<KeyValueType::Undefined, KeyValueType::Bool>) noexcept { return Variant(true); },
@@ -65,7 +65,7 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 								   [&](KeyValueType::Float) noexcept { return Variant(1.0f); },
 								   [&](OneOf<KeyValueType::String, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null,
 											 KeyValueType::Uuid, KeyValueType::FloatVector>) -> Variant {
-									   throw Error(errLogic, "Error parsing json field '%s' - got bool, expected %s", fieldName, t.Name());
+									   throw Error(errLogic, "Error parsing json field '{}' - got bool, expected {}", fieldName, t.Name());
 								   });
 		case gason::JsonTag::JSON_NULL:
 			return t.EvaluateOneOf(
@@ -76,10 +76,10 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 				[](KeyValueType::Uuid) noexcept { return Variant{Uuid{}}; },
 				[&](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null,
 						  KeyValueType::FloatVector>) -> Variant {
-					throw Error(errLogic, "Error parsing json field '%s' - got null, expected %s", fieldName, t.Name());
+					throw Error(errLogic, "Error parsing json field '{}' - got null, expected {}", fieldName, t.Name());
 				});
 		case gason::JsonTag::OBJECT:
-			throw Error(errLogic, "Error parsing json field '%s' - unable to use object in this context", fieldName);
+			throw Error(errLogic, "Error parsing json field '{}' - unable to use object in this context", fieldName);
 		case gason::JsonTag::ARRAY:
 			if (t.Is<KeyValueType::FloatVector>()) {
 				thread_local static std::vector<float> vect;
@@ -105,7 +105,7 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 						case gason::JsonTag::JFALSE:
 						case gason::JsonTag::STRING:
 						case gason::JsonTag::EMPTY:
-							throw Error(errLogic, "Error parsing json field '%s' - got value of unexpected type in array: %s", fieldName,
+							throw Error(errLogic, "Error parsing json field '{}' - got value of unexpected type in array: {}", fieldName,
 										JsonTagToTypeStr(elem.value.getTag()));
 					}
 				}
@@ -128,7 +128,7 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 			}
 		case gason::JsonTag::EMPTY:
 		default:
-			throw Error(errLogic, "Error parsing json field '%s' - got value of unexpected type: %s", fieldName,
+			throw Error(errLogic, "Error parsing json field '{}' - got value of unexpected type: {}", fieldName,
 						JsonTagToTypeStr(v.getTag()));
 	}
 }

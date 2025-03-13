@@ -388,11 +388,11 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 		}
 		it->Visit(
 			[&ser](const AlwaysTrue&) {
-				logPrintf(LogTrace, "Not normalized query to dsl"sv);
+				logFmt(LogTrace, "Not normalized query to dsl"sv);
 				ser << "true"sv;
 			},
 			[&ser](const AlwaysFalse&) {
-				logPrintf(LogTrace, "Not normalized query to dsl"sv);
+				logFmt(LogTrace, "Not normalized query to dsl"sv);
 				ser << "false"sv;
 			},
 			[&](const SubQueryEntry& sqe) {

@@ -23,7 +23,7 @@ struct typos_context {
 
 		void emplace_back(value_type v) {
 			if (size_ >= kMaxTyposInWord) {
-				throw Error(errLogic, "TyposVec's overwhelming (max size is %d)", kMaxTyposInWord);
+				throw Error(errLogic, "TyposVec's overwhelming (max size is {})", kMaxTyposInWord);
 			}
 			arr_[size_++] = v;
 		}

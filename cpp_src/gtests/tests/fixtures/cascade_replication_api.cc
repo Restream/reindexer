@@ -109,8 +109,8 @@ CascadeReplicationApi::TestNamespace1::TestNamespace1(const ServerPtr& srv, std:
 void CascadeReplicationApi::TestNamespace1::AddRows(const ServerPtr& srv, int from, unsigned int count, size_t dataLen) {
 	for (unsigned int i = 0; i < count; i++) {
 		auto item = srv->api.NewItem(nsName_);
-		auto err = item.FromJSON(dataLen ? fmt::sprintf(R"json({"id":%d, "data":"%s"})json", from + i, reindexer::randStringAlph(dataLen))
-										 : fmt::sprintf(R"json({"id":%d})json", from + i));
+		auto err = item.FromJSON(dataLen ? fmt::format(R"json({{"id":{}, "data":"{}"}})json", from + i, reindexer::randStringAlph(dataLen))
+										 : fmt::format(R"json({{"id":{}}})json", from + i));
 		ASSERT_TRUE(err.ok()) << err.what();
 		srv->api.Upsert(nsName_, item);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -123,8 +123,8 @@ void CascadeReplicationApi::TestNamespace1::AddRowsTx(const ServerPtr& srv, int 
 	ASSERT_TRUE(tr.Status().ok()) << tr.Status().what();
 	for (unsigned int i = 0; i < count; i++) {
 		reindexer::client::Item item = tr.NewItem();
-		auto err = item.FromJSON(dataLen ? fmt::sprintf(R"json({"id":%d, "data":"%s"})json", from + i, reindexer::randStringAlph(dataLen))
-										 : fmt::sprintf(R"json({"id":%d})json", from + i));
+		auto err = item.FromJSON(dataLen ? fmt::format(R"json({{"id":{}, "data":"{}"}})json", from + i, reindexer::randStringAlph(dataLen))
+										 : fmt::format(R"json({{"id":{}}})json", from + i));
 		ASSERT_TRUE(err.ok()) << err.what();
 		err = tr.Upsert(std::move(item));
 		ASSERT_TRUE(err.ok()) << err.what();

@@ -52,7 +52,7 @@ void PayloadTypeImpl::Add(PayloadFieldType f) {
 	if (it != fieldsByName_.end()) {
 		// Non unique name -> check type, and upgrade to array if types are the same
 		auto& oldf = fields_[it->second];
-		throw Error(errLogic, "Cannot add field with name '%s' and type '%s' to namespace '%s'. It already exists with type '%s'", f.Name(),
+		throw Error(errLogic, "Cannot add field with name '{}' and type '{}' to namespace '{}'. It already exists with type '{}'", f.Name(),
 					f.Type().Name(), Name(), oldf.Type().Name());
 	} else {
 		// Unique name -> just add field
@@ -63,7 +63,7 @@ void PayloadTypeImpl::Add(PayloadFieldType f) {
 			}
 			auto res = fieldsByJsonPath_.emplace(jp, int(fields_.size()));
 			if (!res.second && res.first->second != int(fields_.size())) {
-				throw Error(errLogic, "Cannot add field with name '%s' to namespace '%s'. Json path '%s' already used in field '%s'",
+				throw Error(errLogic, "Cannot add field with name '{}' to namespace '{}'. Json path '{}' already used in field '{}'",
 							f.Name(), Name(), jp, Field(res.first->second).Name());
 			}
 
@@ -128,7 +128,7 @@ bool PayloadTypeImpl::Drop(std::string_view field) {
 int PayloadTypeImpl::FieldByName(std::string_view field) const {
 	auto it = fieldsByName_.find(field);
 	if (it == fieldsByName_.end()) {
-		throw Error(errLogic, "Field '%s' not found in namespace '%s'", field, Name());
+		throw Error(errLogic, "Field '{}' not found in namespace '{}'", field, Name());
 	}
 	return it->second;
 }
@@ -242,8 +242,8 @@ void PayloadTypeImpl::checkNewJsonPathBeforeAdd(const PayloadFieldType& f, const
 				// new field total overwrites existing one
 				if ((jsonPath.rfind(jpfld, 0) == 0) && (jsonPath[jpfld.length()] == '.')) {
 					throw Error(errLogic,
-								"Cannot add field with name '%s' (jsonpath '%s') and type '%s' to namespace '%s'."
-								" Already exists json path '%s' with type '%s' in field '%s'. Rewriting is impossible",
+								"Cannot add field with name '{}' (jsonpath '{}') and type '{}' to namespace '{}'."
+								" Already exists json path '{}' with type '{}' in field '{}'. Rewriting is impossible",
 								f.Name(), jsonPath, f.Type().Name(), Name(), jpfld, fld.Type().Name(), fld.Name());
 				}
 			}

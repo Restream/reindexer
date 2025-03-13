@@ -86,7 +86,7 @@ void FastIndexText<T>::Delete(const Variant& key, IdType id, StringsHolder& strH
 	int delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
-	assertf(this->opts_.IsArray() || this->Opts().IsSparse() || delcnt, "Delete non-existent id from index '%s' id=%d,key=%s", this->name_,
+	assertf(this->opts_.IsArray() || this->Opts().IsSparse() || delcnt, "Delete non-existent id from index '{}' id={},key={}", this->name_,
 			id, key.As<std::string>());
 
 	if (keyIt->second.Unsorted().IsEmpty()) {
@@ -241,7 +241,7 @@ IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& fctx, MergeType&& mergeData, Ran
 	}
 
 	if rx_unlikely (getConfig()->logLevel >= LogInfo) {
-		logPrintf(LogInfo, "Total merge out: %d ids", mergedIds->size());
+		logFmt(LogInfo, "Total merge out: {} ids", mergedIds->size());
 		std::string str;
 		for (size_t i = 0; i < fctx.Size();) {
 			size_t j = i;
@@ -255,7 +255,7 @@ IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& fctx, MergeType&& mergeData, Ran
 			str += ' ';
 			i = j;
 		}
-		logPrintf(LogInfo, "Relevancy(%d): %s", fctx.Size(), str);
+		logFmt(LogInfo, "Relevancy({}): {}", fctx.Size(), str);
 	}
 	assertrx_throw(mergedIds->size() == fctx.Size());
 	if (rankSortType == RankSortType::RankAndID) {
@@ -401,20 +401,20 @@ void FastIndexText<T>::commitFulltextImpl() {
 		}
 		if rx_unlikely (getConfig()->logLevel >= LogInfo) {
 			auto tm2 = system_clock_w::now();
-			logPrintf(LogInfo, "FastIndexText::Commit elapsed %d ms total [ build vdocs %d ms,  process data %d ms ]",
+			logFmt(LogInfo, "FastIndexText::Commit elapsed {} ms total [ build vdocs {} ms,  process data {} ms ]",
 					  duration_cast<milliseconds>(tm2 - tm0).count(), duration_cast<milliseconds>(tm1 - tm0).count(),
 					  duration_cast<milliseconds>(tm2 - tm1).count());
 		}
 	} catch (Error& e) {
-		logPrintf(LogError, "FastIndexText::Commit exception: '%s'. Index will be rebuilt on the next query", e.what());
+		logFmt(LogError, "FastIndexText::Commit exception: '{}'. Index will be rebuilt on the next query", e.what());
 		this->holder_->steps.clear();
 		throw;
 	} catch (std::exception& e) {
-		logPrintf(LogError, "FastIndexText::Commit exception: '%s'. Index will be rebuilt on the next query", e.what());
+		logFmt(LogError, "FastIndexText::Commit exception: '{}'. Index will be rebuilt on the next query", e.what());
 		this->holder_->steps.clear();
 		throw;
 	} catch (...) {
-		logPrintf(LogError, "FastIndexText::Commit exception: <unknown error>. Index will be rebuilt on the next query");
+		logFmt(LogError, "FastIndexText::Commit exception: <unknown error>. Index will be rebuilt on the next query");
 		this->holder_->steps.clear();
 		throw;
 	}
@@ -513,7 +513,7 @@ void FastIndexText<T>::SetOpts(const IndexOpts& opts) {
 		oldCfg.enableNumbersSearch != newCfg.enableNumbersSearch || oldCfg.extraWordSymbols != newCfg.extraWordSymbols ||
 		oldCfg.synonyms != newCfg.synonyms || oldCfg.maxTypos != newCfg.maxTypos || oldCfg.optimization != newCfg.optimization ||
 		oldCfg.splitterType != newCfg.splitterType) {
-		logPrintf(LogInfo, "FulltextIndex config changed, it will be rebuilt on next search");
+		logFmt(LogInfo, "FulltextIndex config changed, it will be rebuilt on next search");
 		this->isBuilt_ = false;
 		if (oldCfg.optimization != newCfg.optimization || oldCfg.splitterType != newCfg.splitterType ||
 			oldCfg.extraWordSymbols != newCfg.extraWordSymbols) {
@@ -527,7 +527,7 @@ void FastIndexText<T>::SetOpts(const IndexOpts& opts) {
 			idx.second.SetVDocID(FtKeyEntryData::ndoc);
 		}
 	} else {
-		logPrintf(LogInfo, "FulltextIndex config changed, cache cleared");
+		logFmt(LogInfo, "FulltextIndex config changed, cache cleared");
 		this->cache_ft_.Clear();
 	}
 	this->holder_->synonyms_->SetConfig(&newCfg);

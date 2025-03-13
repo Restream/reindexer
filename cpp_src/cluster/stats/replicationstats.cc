@@ -142,7 +142,7 @@ Error ReplicationStats::FromJSON(std::span<char> json) {
 		gason::JsonParser parser;
 		return FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "RaftInfo: %s", ex.what());
+		return Error(errParseJson, "RaftInfo: {}", ex.what());
 	} catch (const Error& err) {
 		return err;
 	}
@@ -170,7 +170,7 @@ Error ReplicationStats::FromJSON(const gason::JsonNode& root) {
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "RaftInfo: %s", ex.what());
+		return Error(errParseJson, "RaftInfo: {}", ex.what());
 	}
 	return errOK;
 }

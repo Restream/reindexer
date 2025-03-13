@@ -119,7 +119,7 @@ WALRecord::WALRecord(std::span<const uint8_t> packed) {
 		case WalResetLocalWal:
 			return;
 	}
-	logPrintf(LogError, "Unexpected WAL rec type %d\n", int(type));
+	logFmt(LogError, "Unexpected WAL rec type {}\n", int(type));
 }
 
 static std::string_view wrecType2Str(WALRecType t) {

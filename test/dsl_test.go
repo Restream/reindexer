@@ -78,7 +78,7 @@ func fillTestDSLItems(t *testing.T, ns string, start int, count int) {
 func fillTestDSLFtItems(t *testing.T, ns string) {
 	descriptions := []string{"test", "word", "worm", "sword", "www"}
 	tx := newTestTx(DB, ns)
-	for i := 0; i < 5; i++ {
+	for i := 0; i < len(descriptions); i++ {
 		testItem := newTestDSLFtItem(i, descriptions[i])
 		if err := tx.Upsert(testItem); err != nil {
 			require.NoError(t, err)

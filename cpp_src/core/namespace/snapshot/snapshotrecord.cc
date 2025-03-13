@@ -46,7 +46,7 @@ Error SnapshotOpts::FromJSON(const gason::JsonNode& root) {
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "SnapshotOpts: %s", ex.what());
+		return Error(errParseJson, "SnapshotOpts: {}", ex.what());
 	}
 	return Error();
 }
@@ -58,7 +58,7 @@ Error SnapshotOpts::FromJSON(std::span<char> json) {
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "SnapshotOpts: %s", ex.what());
+		return Error(errParseJson, "SnapshotOpts: {}", ex.what());
 	}
 }
 

@@ -23,7 +23,7 @@ protected:
 	}
 	void TearDown() {
 		[[maybe_unused]] auto err = RPCClientTestApi::StopAllServers();
-		assertf(err.ok(), "%s", err.what());
+		assertf(err.ok(), "{}", err.what());
 		fs::RmDirAll(kBaseTestsetDbPath);
 	}
 

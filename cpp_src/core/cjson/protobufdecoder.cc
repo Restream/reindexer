@@ -48,7 +48,7 @@ void ProtobufDecoder::setValue(Payload& pl, CJsonBuilder& builder, ProtobufValue
 	if (field > 0) {
 		const auto& f = pl.Type().Field(field);
 		if rx_unlikely (!f.IsArray() && objectScalarIndexes_.test(field)) {
-			throw Error(errLogic, "Non-array field '%s' [%d] from '%s' can only be encoded once.", f.Name(), field, pl.Type().Name());
+			throw Error(errLogic, "Non-array field '{}' [{}] from '{}' can only be encoded once.", f.Name(), field, pl.Type().Name());
 		}
 		if (item.isArray) {
 			arraysStorage_.UpdateArraySize(item.tagName, field);
@@ -162,14 +162,14 @@ Error ProtobufDecoder::decode(Payload& pl, CJsonBuilder& builder, const Protobuf
 					[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Double, KeyValueType::Float,
 							  KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Uuid,
 							  KeyValueType::FloatVector>) {
-						return Error(errParseProtobuf, "Error parsing length-encoded type: [%s] for field [%s]", item.itemType.Name(),
+						return Error(errParseProtobuf, "Error parsing length-encoded type: [{}] for field [{}]", item.itemType.Name(),
 									 tm_.tag2name(item.tagName));
 					});
 			}
 		},
 		[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Uuid,
 				  KeyValueType::FloatVector>) {
-			return Error(errParseProtobuf, "Unknown field type [%s] while parsing Protobuf", item.value.Type().Name());
+			return Error(errParseProtobuf, "Unknown field type [{}] while parsing Protobuf", item.value.Type().Name());
 		});
 }
 

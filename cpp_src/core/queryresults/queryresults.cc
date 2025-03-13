@@ -82,7 +82,7 @@ void QueryResults::AddQr(LocalQueryResults&& local, int shardID, bool buildMerge
 	if (lastSeenIdx_ > 0) {
 		throw Error(
 			errLogic,
-			"Unable to add new local query results to general query results, because it was already read by someone (last seen idx: %d)",
+			"Unable to add new local query results to general query results, because it was already read by someone (last seen idx: {})",
 			lastSeenIdx_);
 	}
 	if (type_ == Type::None || local.Count() != 0 || local.TotalCount() != 0 || !local.GetAggregationResults().empty()) {
@@ -116,7 +116,7 @@ void QueryResults::AddQr(client::QueryResults&& remote, int shardID, bool buildM
 	if (lastSeenIdx_ > 0) {
 		throw Error(
 			errLogic,
-			"Unable to add new remote query results to general query results, because it was already read by someone (last seen idx: %d)",
+			"Unable to add new remote query results to general query results, because it was already read by someone (last seen idx: {})",
 			lastSeenIdx_);
 	}
 	if (type_ == Type::None || remote.Count() != 0 || remote.TotalCount() != 0 || !remote.GetAggregationResults().empty()) {
@@ -160,7 +160,7 @@ void QueryResults::RebuildMergedData() {
 			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			const auto nss = local_->qr.GetNamespaces();
 			if (nss.size() > 1) {
-				throw Error(errLogic, "Local query result has %d namespaces, but distributed query results may have only 1", nss.size());
+				throw Error(errLogic, "Local query result has {} namespaces, but distributed query results may have only 1", nss.size());
 			}
 			mergedData_ = std::make_unique<MergedData>(std::string(nss[0]), local_->qr.haveRank, local_->qr.needOutputRank);
 			const auto& agg = local_->qr.GetAggregationResults();
@@ -180,7 +180,7 @@ void QueryResults::RebuildMergedData() {
 			const auto& agg = qrp->qr.GetAggregationResults();
 			if (mergedData_) {
 				if (!iequals(mergedData_->pt.Name(), nss[0])) {
-					throw Error(errLogic, "Query results in distributed query have different ns names: '%s' vs '%s'",
+					throw Error(errLogic, "Query results in distributed query have different ns names: '{}' vs '{}'",
 								mergedData_->pt.Name(), nss[0]);
 				}
 				if (mergedData_->haveRank != qrp->qr.HaveRank() || mergedData_->needOutputRank != qrp->qr.NeedOutputRank()) {
@@ -359,7 +359,7 @@ int QueryResults::GetCommonShardID() const {
 	for (auto& qrp : remote_) {
 		if (shardId.has_value()) {
 			if (qrp->shardID != *shardId) {
-				throw Error(errLogic, "Distributed query results does not have common shard id (%d vs %d)", qrp->shardID, *shardId);
+				throw Error(errLogic, "Distributed query results does not have common shard id ({} vs {})", qrp->shardID, *shardId);
 			}
 		} else {
 			shardId = qrp->shardID;

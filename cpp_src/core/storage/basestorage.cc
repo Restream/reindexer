@@ -32,9 +32,9 @@ Error BaseStorage::Open(const std::string& path, const StorageOpts& opts) {
 	if (opts.IsAutorepair() && !info_->repaired) {
 		info_->repaired = true;
 		lck.unlock();
-		logPrintf(LogWarning, "Calling repair for '%s'", path);
+		logFmt(LogWarning, "Calling repair for '{}'", path);
 		if (auto err = Repair(path); !err.ok()) {
-			logPrintf(LogError, "Rapir error: %s", err.what());
+			logFmt(LogError, "Rapir error: {}", err.what());
 		}
 	} else {
 		lck.unlock();
@@ -84,7 +84,7 @@ void BaseStorage::DirectoryInfo::RemovePlaceholder() noexcept {
 void BaseStorage::DirectoryInfo::CreatePaceholder() noexcept {
 	if (fs::Stat(path_) == fs::StatError) {
 		if (fs::MkDirAll(path_) < 0) {
-			logPrintf(LogWarning, "Unable to create directory for shutdown placeholder: %s", placeholderPath_);
+			logFmt(LogWarning, "Unable to create directory for shutdown placeholder: {}", placeholderPath_);
 		}
 	}
 	FILE* f = fopen(placeholderPath_.c_str(), "w");
@@ -92,7 +92,7 @@ void BaseStorage::DirectoryInfo::CreatePaceholder() noexcept {
 		fclose(f);
 		requireRemove_ = true;
 	} else {
-		logPrintf(LogWarning, "Unable to create shutdown placeholder: %s", placeholderPath_);
+		logFmt(LogWarning, "Unable to create shutdown placeholder: {}", placeholderPath_);
 	}
 }
 

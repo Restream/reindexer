@@ -73,7 +73,7 @@ static inline Variant convertValueForPayload(Payload& pl, int field, Variant&& v
 			   (plFieldType.Is<KeyValueType::Uuid>() && value.Type().Is<KeyValueType::String>())) {
 		return value.convert(pl.Type().Field(field).Type());
 	} else {
-		throw Error(errLogic, "Error parsing %s field '%s' - got %s, expected %s", source, pl.Type().Field(field).Name(),
+		throw Error(errLogic, "Error parsing {} field '{}' - got {}, expected {}", source, pl.Type().Field(field).Name(),
 					value.Type().Name(), plFieldType.Name());
 	}
 }

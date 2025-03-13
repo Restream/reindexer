@@ -15,7 +15,7 @@ DumpOptions::Mode DumpOptions::ModeFromStr(std::string_view mode) {
 	} else if (mode == "local_only"sv) {
 		return Mode::LocalOnly;
 	}
-	throw Error(errParams, "Unknown dump mode: '%s'", mode);
+	throw Error(errParams, "Unknown dump mode: '{}'", mode);
 }
 
 std::string_view DumpOptions::StrFromMode(Mode mode) {
@@ -27,7 +27,7 @@ std::string_view DumpOptions::StrFromMode(Mode mode) {
 		case Mode::LocalOnly:
 			return "local_only"sv;
 		default:
-			throw Error(errParams, "Unknown dump mode: '%d'", int(mode));
+			throw Error(errParams, "Unknown dump mode: '{}'", int(mode));
 	}
 }
 
@@ -37,7 +37,7 @@ Error DumpOptions::FromJSON(std::span<char> json) {
 		auto root = parser.Parse(json);
 		mode = ModeFromStr(root["mode"].As<std::string_view>());
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "DumpOptions: %s", ex.what());
+		return Error(errParseJson, "DumpOptions: {}", ex.what());
 	} catch (const Error& err) {
 		return err;
 	}

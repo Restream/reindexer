@@ -79,12 +79,14 @@ public:
 	[[nodiscard]] unsigned DeletionsCount() const noexcept { return deletionsCount_; }
 	[[nodiscard]] unsigned ExpectedInsertionsCount() const noexcept { return expectedInsertionsCount_; }
 	[[nodiscard]] unsigned UpdateQueriesCount() const noexcept { return updateQueriesCount_; }
+	[[nodiscard]] unsigned DeleteQueriesCount() const noexcept { return deleteQueriesCount_; }
 
 	std::vector<TransactionStep> steps;
 
 private:
 	unsigned updateQueriesCount_{0};
 	unsigned deletionsCount_{0};
+	unsigned deleteQueriesCount_{0};
 	unsigned expectedInsertionsCount_{0};
 };
 

@@ -12,7 +12,7 @@ Error EventSubscriberConfig::FromJSON(std::span<char> json) noexcept {
 		gason::JsonParser parser;
 		FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "UpdatesFilter: %s", ex.what());
+		return Error(errParseJson, "UpdatesFilter: {}", ex.what());
 	}
 	CATCH_AND_RETURN;
 	return {};
@@ -22,7 +22,7 @@ static SubscriptionDataType SubDataTypeFromStr(std::string_view t) {
 	if (t == "none"sv) {
 		return kSubscriptionDataTypeNone;
 	}
-	throw Error(errParams, "Unsupported subscription data type: '%s'", t);
+	throw Error(errParams, "Unsupported subscription data type: '{}'", t);
 }
 
 static std::string_view SubDataTypeToStr(SubscriptionDataType t) {
@@ -32,7 +32,7 @@ static std::string_view SubDataTypeToStr(SubscriptionDataType t) {
 		default:
 			break;
 	}
-	throw Error(errParams, "Unsupported subscription data type: '%d'", int(t));
+	throw Error(errParams, "Unsupported subscription data type: '{}'", int(t));
 }
 
 static updates::URType EventTypeFromStr(std::string_view t) {
@@ -116,7 +116,7 @@ static updates::URType EventTypeFromStr(std::string_view t) {
 	} else if (t == "DeleteMeta") {
 		return updates::URType::DeleteMeta;
 	}
-	throw Error(errParams, "Unknown event type: '%s'", t);
+	throw Error(errParams, "Unknown event type: '{}'", t);
 }
 
 static std::string_view EventTypeToStr(updates::URType t) {
@@ -201,7 +201,7 @@ static std::string_view EventTypeToStr(updates::URType t) {
 		case updates::URType::DeleteMeta:
 			return "DeleteMeta"sv;
 		default:
-			throw Error(errParams, "Unknown event type: '%d'", int(t));
+			throw Error(errParams, "Unknown event type: '{}'", int(t));
 	}
 }
 
@@ -209,7 +209,7 @@ void EventSubscriberConfig::FromJSON(const gason::JsonNode& root) {
 	formatVersion_ = root["version"sv].As<int>(-1);
 	if (formatVersion_ < kMinSubscribersConfigFormatVersion) {
 		throw Error(errParams,
-					"EventSubscriberConfig: min supported subscribers config format version is %d, but %d version was found in JSON",
+					"EventSubscriberConfig: min supported subscribers config format version is {}, but {} version was found in JSON",
 					kMinSubscribersConfigFormatVersion, formatVersion_);
 	}
 	withDBName_ = root["with_db_name"sv].As<bool>(false);
@@ -224,10 +224,10 @@ void EventSubscriberConfig::FromJSON(const gason::JsonNode& root) {
 	for (const auto& stream : root["streams"sv]) {
 		const int id = stream["id"].As<int>(-1);
 		if (id < 0 || unsigned(id) >= kMaxStreamsPerSub) {
-			throw Error(errParams, "Stream ID %d is out of range [0, %d]", id, kMaxStreamsPerSub - 1);
+			throw Error(errParams, "Stream ID {} is out of range [0, {}]", id, kMaxStreamsPerSub - 1);
 		}
 		if (std::find_if(streams_.begin(), streams_.end(), [id](const StreamConfig& s) noexcept { return s.id == id; }) != streams_.end()) {
-			throw Error(errParams, "Stream ID %d is duplicated", id);
+			throw Error(errParams, "Stream ID {} is duplicated", id);
 		}
 
 		auto& s = streams_.emplace_back(id);

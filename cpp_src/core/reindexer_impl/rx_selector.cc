@@ -56,7 +56,7 @@ void RxSelector::DoSelect(const Query& q, LocalQueryResults& result, NsLocker<T>
 						  QueryStatCalculator<QueryType>& queryStatCalculator) {
 	auto ns = locks.Get(q.NsName());
 	if rx_unlikely (!ns) {
-		throw Error(errParams, "Namespace '%s' does not exist", q.NsName());
+		throw Error(errParams, "Namespace '{}' does not exist", q.NsName());
 	}
 	std::vector<LocalQueryResults> queryResultsHolder;
 	std::optional<Query> queryCopy;
@@ -64,7 +64,7 @@ void RxSelector::DoSelect(const Query& q, LocalQueryResults& result, NsLocker<T>
 	std::vector<SubQueryExplain> subQueryExplains;
 	if (!q.GetSubQueries().empty()) {
 		if (q.GetDebugLevel() >= LogInfo || ns->config_.logLevel >= LogInfo) {
-			logPrintf(LogInfo, "Query before subqueries substitution: %s", q.GetSQL());
+			logFmt(LogInfo, "Query before subqueries substitution: {}", q.GetSQL());
 		}
 		queryCopy.emplace(q);
 		const auto preselectStartTime = ExplainCalc::Clock::now();
@@ -117,7 +117,7 @@ void RxSelector::DoSelect(const Query& q, LocalQueryResults& result, NsLocker<T>
 					case AggFacet:
 					case AggDistinct:
 					case AggUnknown:
-						throw Error{errNotValid, "Aggregation '%s' in merge query is not implemented yet",
+						throw Error{errNotValid, "Aggregation '{}' in merge query is not implemented yet",
 									AggTypeToStr(a.Type())};  // TODO #1506
 				}
 			}
@@ -148,11 +148,11 @@ void RxSelector::DoSelect(const Query& q, LocalQueryResults& result, NsLocker<T>
 		};
 		AggType errType;
 		if (rx_unlikely((query.HasLimit() || query.HasOffset()) && hasUnsupportedAggregations(query.aggregations_, errType))) {
-			throw Error(errParams, "Limit and offset are not supported for aggregations '%s'", AggTypeToStr(errType));
+			throw Error(errParams, "Limit and offset are not supported for aggregations '{}'", AggTypeToStr(errType));
 		}
 		for (const JoinedQuery& mq : query.GetMergeQueries()) {
 			if rx_unlikely (isSystemNamespaceNameFast(mq.NsName())) {
-				throw Error(errParams, "Queries to system namespaces ('%s') are not supported inside MERGE statement", mq.NsName());
+				throw Error(errParams, "Queries to system namespaces ('{}') are not supported inside MERGE statement", mq.NsName());
 			}
 			if rx_unlikely (!mq.sortingEntries_.empty()) {
 				throw Error(errParams, "Sorting in inner merge query is not allowed");
@@ -399,14 +399,14 @@ VariantArray RxSelector::selectSubQuery(const Query& subQuery, const Query& main
 				switch (mainQuery.GetStrictMode()) {
 					case StrictModeIndexes:
 						throw Error(errParams,
-									"Current query strict mode allows aggregate index fields only. There are no indexes with name '%s' in "
-									"namespace '%s'",
+									"Current query strict mode allows aggregate index fields only. There are no indexes with name '{}' in "
+									"namespace '{}'",
 									field, subQuery.NsName());
 					case StrictModeNames:
 						if (ns->tagsMatcher_.path2tag(field).empty()) {
 							throw Error(errParams,
 										"Current query strict mode allows aggregate existing fields only. There are no fields with name "
-										"'%s' in namespace '%s'",
+										"'{}' in namespace '{}'",
 										field, subQuery.NsName());
 						}
 						break;
@@ -455,7 +455,7 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, LocalQueryRes
 	for (size_t i = 0, jqCount = q.GetJoinQueries().size(); i < jqCount; ++i) {
 		const auto& jq = q.GetJoinQueries()[i];
 		if rx_unlikely (isSystemNamespaceNameFast(jq.NsName())) {
-			throw Error(errParams, "Queries to system namespaces ('%s') are not supported inside JOIN statement", jq.NsName());
+			throw Error(errParams, "Queries to system namespaces ('{}') are not supported inside JOIN statement", jq.NsName());
 		}
 		if rx_unlikely (!jq.GetJoinQueries().empty()) {
 			throw Error(errParams, "JOINs nested into the other JOINs are not supported");

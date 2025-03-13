@@ -63,7 +63,7 @@ reindexer::Error ServerConfig::ParseYaml(const std::string& yaml) {
 		YAML::Node root = YAML::Load(yaml);
 		err = fromYaml(root);
 	} catch (const YAML::Exception& ex) {
-		err = Error(errParseYAML, "Error with config string. Reason: '%s'", ex.what());
+		err = Error(errParseYAML, "Error with config string. Reason: '{}'", ex.what());
 	}
 	return err;
 }
@@ -74,7 +74,7 @@ Error ServerConfig::ParseFile(const std::string& filePath) {
 		YAML::Node root = YAML::LoadFile(filePath);
 		err = fromYaml(root);
 	} catch (const YAML::Exception& ex) {
-		err = Error(errParseYAML, "Error with config file '%s'. Reason: %s", filePath, ex.what());
+		err = Error(errParseYAML, "Error with config file '{}'. Reason: {}", filePath, ex.what());
 	}
 	return err;
 }
@@ -211,7 +211,7 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	} catch (const Error& v) {
 		return v;
 	} catch (const args::Error& e) {
-		return Error(errParams, "%s\n%s", e.what(), parser.Help());
+		return Error(errParams, "{}\n{}", e.what(), parser.Help());
 	}
 
 	if (configF) {
@@ -423,7 +423,7 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node& root) {
 		DebugAllocs = root["debug"]["allocs"].as<bool>(DebugAllocs);
 		DebugPprof = root["debug"]["pprof"].as<bool>(DebugPprof);
 	} catch (const YAML::Exception& ex) {
-		return Error(errParseYAML, "Unable to parse YML server config: %s", ex.what());
+		return Error(errParseYAML, "Unable to parse YML server config: {}", ex.what());
 	}
 	return {};
 }

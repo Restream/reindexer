@@ -1,3 +1,22 @@
+# Version 5.0.1 (13.03.2025)
+## Core
+- [fix] Fixed incorrect aggregations (`min`, `max`, `avg`, `sum`) interaction with [force sort](readme.md#forced-sort)/`hash`-index sort and `LIMIT`
+- [fix] Fixed undefined behaviour in one of the background threads (it was the reason of the stalls on `Windows`-platform)
+- [fix] Fixed OSX build for `python` connector
+
+## Vector indexes
+- [fix] Fixed `cosine` normalization coefficient update in `HNSW` after corresponding vector reuse
+- [fix] Fixed multithread `HNSW` transactions with empty/null vector values
+- [fix] Fixed multithread `HNSW` transactions with multiple updates of the same item
+- [fix] Fixed possible incorrect `DELETE`-queries handling in multithread `HNSW` transactions
+- [fix] Fixed data race in multithread `HNSW` transactions after deleted vector reuse
+
+## Face
+- [fix] Fixed issue on the item list getting with checked `with_vectors` field
+- [fix] Changed disabled selectors background
+- [fix] Changed some column titles on the `Statistics` -> `Memory` -> `NS` (RU version)
+- [fix] Fixed displaying of aggregation fields view
+
 # Version 5.0.0 (04.03.2025)
 ## Core
 - [fea] Added `HNSW`, `IVF` and `bruteforce` indexes for [ANN-search](float_vector.md)

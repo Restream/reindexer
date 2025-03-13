@@ -66,7 +66,7 @@ template Variant::Variant(const std::tuple<std::string, int>&);
 
 template <typename T>
 inline static void assertKeyType([[maybe_unused]] KeyValueType got) noexcept {
-	assertf(got.Is<T>(), "Expected value '%s', but got '%s'", KeyValueType{T{}}.Name(), got.Name());
+	assertf(got.Is<T>(), "Expected value '{}', but got '{}'", KeyValueType{T{}}.Name(), got.Name());
 }
 
 Variant::operator int() const noexcept {
@@ -117,7 +117,7 @@ template <>
 Point Variant::As<Point>() const {
 	assertrx(!isUuid());
 	if (!variant_.type.Is<KeyValueType::Tuple>()) {
-		throw Error(errParams, "Can't convert %s to Point", variant_.type.Name());
+		throw Error(errParams, "Can't convert {} to Point", variant_.type.Name());
 	}
 	return static_cast<Point>(getCompositeValues());
 }
@@ -130,17 +130,17 @@ Uuid Variant::As<Uuid>() const {
 		[&](KeyValueType::Uuid) { return Uuid{*this}; }, [&](KeyValueType::String) { return Uuid{this->As<std::string>()}; },
 		[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Double, KeyValueType::Float,
 				  KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::FloatVector>)
-			-> Uuid { throw Error(errParams, "Can't convert %s to UUID", variant_.type.Name()); });
+			-> Uuid { throw Error(errParams, "Can't convert {} to UUID", variant_.type.Name()); });
 }
 template <>
 ConstFloatVectorView Variant::As<ConstFloatVectorView>() const {
 	if (isUuid()) {
-		throw Error(errParams, "Can't convert %s to Float Vector", KeyValueType{KeyValueType::Uuid{}}.Name());
+		throw Error(errParams, "Can't convert {} to Float Vector", KeyValueType{KeyValueType::Uuid{}}.Name());
 	}
 	if (variant_.type.Is<KeyValueType::FloatVector>()) {
 		return ConstFloatVectorView{*this};
 	} else {
-		throw Error(errParams, "Can't convert %s to Float Vector", variant_.type.Name());
+		throw Error(errParams, "Can't convert {} to Float Vector", variant_.type.Name());
 	}
 }
 
@@ -206,7 +206,7 @@ std::string Variant::As<std::string>() const {
 			[&](KeyValueType::String) { return this->operator p_string().toString(); }, [&](KeyValueType::Null) { return "null"s; },
 			[&](KeyValueType::FloatVector) { return float_vector_to_str(ConstFloatVectorView::FromUint64(variant_.value_uint64)); },
 			[this](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) -> std::string {
-				throw Error(errParams, "Can't convert '%s'-value to string", variant_.type.Name());
+				throw Error(errParams, "Can't convert '{}'-value to string", variant_.type.Name());
 			},
 			[&](KeyValueType::Tuple) {
 				auto va = getCompositeValues();
@@ -240,7 +240,7 @@ key_string Variant::As<key_string>() const {
 				return kNullKeyString;
 			},
 			[this](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) -> key_string {
-				throw Error(errParams, "Can't convert '%s'-value to string", variant_.type.Name());
+				throw Error(errParams, "Can't convert '{}'-value to string", variant_.type.Name());
 			},
 			[&](KeyValueType::Tuple) {
 				auto va = getCompositeValues();
@@ -332,14 +332,14 @@ T parseAs(std::string_view str) {
 	if (res) {
 		return *res;
 	} else {
-		throw Error(errParams, "Can't convert '%s' to number", str);
+		throw Error(errParams, "Can't convert '{}' to number", str);
 	}
 }
 
 template <>
 int Variant::As<int>() const {
 	if (isUuid()) {
-		throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}});
+		throw Error(errParams, "Can't convert '{}' to number", std::string{Uuid{*this}});
 	}
 	return variant_.type.EvaluateOneOf(
 		[&](KeyValueType::Bool) noexcept -> int { return variant_.value_bool; },
@@ -349,8 +349,8 @@ int Variant::As<int>() const {
 		[&](KeyValueType::Float) noexcept -> int { return variant_.value_float; },
 		[&](KeyValueType::String) { return parseAs<int>(this->operator p_string()); },
 		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>)
-			-> int { throw Error(errParams, "Can't convert '%s'-value to number", Type().Name()); },
-		[&](KeyValueType::Uuid) -> int { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}); });
+			-> int { throw Error(errParams, "Can't convert '{}'-value to number", Type().Name()); },
+		[&](KeyValueType::Uuid) -> int { throw Error(errParams, "Can't convert '{}' to number", std::string{Uuid{*this}}); });
 }
 
 static std::optional<bool> tryConvertToBool(const p_string& str) {
@@ -378,7 +378,7 @@ template <>
 bool Variant::As<bool>() const {
 	using namespace std::string_view_literals;
 	if (isUuid()) {
-		throw Error(errParams, "Can't convert '%s' to bool", std::string{Uuid{*this}});
+		throw Error(errParams, "Can't convert '{}' to bool", std::string{Uuid{*this}});
 	}
 	return variant_.type.EvaluateOneOf(
 		[&](KeyValueType::Bool) noexcept { return variant_.value_bool; },
@@ -392,18 +392,18 @@ bool Variant::As<bool>() const {
 			if (res.has_value()) {
 				return *res;
 			} else {
-				throw Error(errParams, "Can't convert '%s' to bool", std::string_view(p_str));
+				throw Error(errParams, "Can't convert '{}' to bool", std::string_view(p_str));
 			}
 		},
 		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>)
-			-> bool { throw Error(errParams, "Can't convert '%s'-value to bool", Type().Name()); },
-		[&](KeyValueType::Uuid) -> bool { throw Error(errParams, "Can't convert '%s' to bool", std::string{Uuid{*this}}); });
+			-> bool { throw Error(errParams, "Can't convert '{}'-value to bool", Type().Name()); },
+		[&](KeyValueType::Uuid) -> bool { throw Error(errParams, "Can't convert '{}' to bool", std::string{Uuid{*this}}); });
 }
 
 template <>
 int64_t Variant::As<int64_t>() const {
 	if (isUuid()) {
-		throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}});
+		throw Error(errParams, "Can't convert '{}' to number", std::string{Uuid{*this}});
 	}
 	return variant_.type.EvaluateOneOf(
 		[&](KeyValueType::Bool) noexcept -> int64_t { return variant_.value_bool; },
@@ -413,14 +413,14 @@ int64_t Variant::As<int64_t>() const {
 		[&](KeyValueType::Float) noexcept -> int64_t { return variant_.value_float; },
 		[&](KeyValueType::String) { return parseAs<int64_t>(this->operator p_string()); },
 		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>)
-			-> int64_t { throw Error(errParams, "Can't convert '%s'-value to number", Type().Name()); },
-		[&](KeyValueType::Uuid) -> int64_t { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}); });
+			-> int64_t { throw Error(errParams, "Can't convert '{}'-value to number", Type().Name()); },
+		[&](KeyValueType::Uuid) -> int64_t { throw Error(errParams, "Can't convert '{}' to number", std::string{Uuid{*this}}); });
 }
 
 template <>
 double Variant::As<double>() const {
 	if (isUuid()) {
-		throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}});
+		throw Error(errParams, "Can't convert '{}' to number", std::string{Uuid{*this}});
 	}
 	return variant_.type.EvaluateOneOf(
 		[&](KeyValueType::Bool) noexcept -> double { return variant_.value_bool; },
@@ -430,14 +430,14 @@ double Variant::As<double>() const {
 		[&](KeyValueType::Float) noexcept -> double { return variant_.value_float; },
 		[&](KeyValueType::String) { return parseAs<double>(this->operator p_string()); },
 		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>)
-			-> double { throw Error(errParams, "Can't convert '%s'-value to number", Type().Name()); },
-		[&](KeyValueType::Uuid) -> double { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}); });
+			-> double { throw Error(errParams, "Can't convert '{}'-value to number", Type().Name()); },
+		[&](KeyValueType::Uuid) -> double { throw Error(errParams, "Can't convert '{}' to number", std::string{Uuid{*this}}); });
 }
 
 template <>
 float Variant::As<float>() const {
 	if (isUuid()) {
-		throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}});
+		throw Error(errParams, "Can't convert '{}' to number", std::string{Uuid{*this}});
 	}
 	return variant_.type.EvaluateOneOf(
 		[&](KeyValueType::Bool) noexcept -> float { return variant_.value_bool; },
@@ -447,8 +447,8 @@ float Variant::As<float>() const {
 		[&](KeyValueType::Float) noexcept { return variant_.value_float; },
 		[&](KeyValueType::String) -> float { return parseAs<double>(this->operator p_string()); },
 		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>)
-			-> float { throw Error(errParams, "Can't convert '%s'-value to number", Type().Name()); },
-		[&](KeyValueType::Uuid) -> float { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}); });
+			-> float { throw Error(errParams, "Can't convert '{}'-value to number", Type().Name()); },
+		[&](KeyValueType::Uuid) -> float { throw Error(errParams, "Can't convert '{}' to number", std::string{Uuid{*this}}); });
 }
 
 template <NotComparable notComparable>
@@ -485,6 +485,12 @@ ComparationResult Variant::Compare(const Variant& other, const CollateOpts& coll
 																			 : ComparationResult::Lt;
 			},
 			[&](KeyValueType::Tuple) -> ComparationResult {
+				auto lhs = cast<key_string>();
+				auto rhs = other.cast<key_string>();
+				if (std::string_view(*lhs) == std::string_view(*rhs)) {
+					return ComparationResult::Eq;
+				}
+				// Less/Greater comparison is not implemented for Tuple values here
 				if constexpr (notComparable == NotComparable::Return) {
 					return ComparationResult::NotComparable;
 				} else {
@@ -634,7 +640,7 @@ ComparationResult Variant::relaxCompareWithString(std::string_view str) const no
 				if constexpr (notComparable == NotComparable::Return) {
 					return ComparationResult::NotComparable;
 				} else {
-					throw Error(errParams, "Not comparable types: %s and %s", KeyValueType{KeyValueType::String{}}.Name(), Type().Name());
+					throw Error(errParams, "Not comparable types: {} and {}", KeyValueType{KeyValueType::String{}}.Name(), Type().Name());
 				}
 			});
 	}
@@ -770,7 +776,7 @@ ComparationResult Variant::RelaxCompare(const Variant& other, const CollateOpts&
 			if constexpr (notComparable == NotComparable::Return) {
 				return ComparationResult::NotComparable;
 			} else {
-				throw Error(errParams, "Not comparable types: %s and %s", Type().Name(), other.Type().Name());
+				throw Error(errParams, "Not comparable types: {} and {}", Type().Name(), other.Type().Name());
 			}
 		}
 	} else if (other.isUuid() || other.variant_.type.Is<KeyValueType::Uuid>()) {
@@ -789,7 +795,7 @@ ComparationResult Variant::RelaxCompare(const Variant& other, const CollateOpts&
 			if constexpr (notComparable == NotComparable::Return) {
 				return ComparationResult::NotComparable;
 			} else {
-				throw Error(errParams, "Not comparable types: %s and %s", Type().Name(), other.Type().Name());
+				throw Error(errParams, "Not comparable types: {} and {}", Type().Name(), other.Type().Name());
 			}
 		}
 	} else {
@@ -812,7 +818,7 @@ ComparationResult Variant::RelaxCompare(const Variant& other, const CollateOpts&
 			if constexpr (notComparable == NotComparable::Return) {
 				return ComparationResult::NotComparable;
 			} else {
-				throw Error(errParams, "Not comparable types: %s and %s", Type().Name(), other.Type().Name());
+				throw Error(errParams, "Not comparable types: {} and {}", Type().Name(), other.Type().Name());
 			}
 		}
 	}
@@ -841,7 +847,7 @@ size_t Variant::Hash() const noexcept {
 #ifdef NDEBUG
 				abort();
 #else
-				assertf(false, "Unexpected variant type: %s", variant_.type.Name());
+				assertf(false, "Unexpected variant type: {}", variant_.type.Name());
 #endif
 			});
 	}
@@ -877,7 +883,7 @@ Variant& Variant::convert(KeyValueType type, const PayloadType* payloadType, con
 			},
 			[type](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Double, KeyValueType::Float,
 						 KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>) {
-				throw Error(errParams, "Can't convert Variant from type '%s' to type '%s'", KeyValueType{KeyValueType::Uuid{}}.Name(),
+				throw Error(errParams, "Can't convert Variant from type '{}' to type '{}'", KeyValueType{KeyValueType::Uuid{}}.Name(),
 							type.Name());
 			});
 		return *this;
@@ -904,12 +910,12 @@ Variant& Variant::convert(KeyValueType type, const PayloadType* payloadType, con
 					*this = std::move(tmp);
 				},
 				[&](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>) {
-					throw Error(errParams, "Can't convert Variant from type '%s' to type '%s'", variant_.type.Name(), type.Name());
+					throw Error(errParams, "Can't convert Variant from type '{}' to type '{}'", variant_.type.Name(), type.Name());
 				});
 		},
 		[&](KeyValueType::Uuid) { *this = Variant{As<Uuid>()}; },
 		[&](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>) {
-			throw Error(errParams, "Can't convert Variant from type '%s' to type '%s'", variant_.type.Name(), type.Name());
+			throw Error(errParams, "Can't convert Variant from type '{}' to type '{}'", variant_.type.Name(), type.Name());
 		});
 	return *this;
 }
@@ -1225,7 +1231,7 @@ void Variant::convertToComposite(const PayloadType& payloadType, const FieldsSet
 
 	size_t count = ser.GetVarUInt();
 	if (count != fields.size()) {
-		throw Error(errLogic, "Invalid count of arguments for composite index, expected %d, got %d", fields.size(), count);
+		throw Error(errLogic, "Invalid count of arguments for composite index, expected {}, got {}", fields.size(), count);
 	}
 
 	Payload pl(payloadType, pv);
@@ -1337,7 +1343,7 @@ std::string VariantArray::Dump(CheckIsStringPrintable checkPrintableString) cons
 
 VariantArray::operator Point() const {
 	if (size() != 2) {
-		throw Error(errParams, "Can't convert array of %d elements to Point", size());
+		throw Error(errParams, "Can't convert array of {} elements to Point", size());
 	}
 	return Point{(*this)[0].As<double>(), (*this)[1].As<double>()};
 }

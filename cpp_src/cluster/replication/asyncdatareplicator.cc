@@ -45,7 +45,7 @@ void AsyncDataReplicator::Run() {
 
 		// NOLINTBEGIN (bugprone-unchecked-optional-access) Optionals were checked in isExpectingStartup()
 		if (config_->nodes.size() > UpdatesQueueT::kMaxReplicas) {
-			throw Error(errParams, "Async replication nodes limit was reached: %d", UpdatesQueueT::kMaxReplicas);
+			throw Error(errParams, "Async replication nodes limit was reached: {}", UpdatesQueueT::kMaxReplicas);
 		}
 		statsCollector_.Init(config_->nodes);
 		log_.SetLevel(config_->logLevel);
@@ -72,7 +72,7 @@ void AsyncDataReplicator::Run() {
 				auto err = thisNode_.SetClusterizationStatus(
 					ns, ClusterizationStatus{baseConfig_->serverID, ClusterizationStatus::Role::None}, RdxContext());
 				if (!err.ok()) {
-					logWarn("SetClusterizationStatus for the local '%s' namespace error: %s", ns, err.what());
+					logWarn("SetClusterizationStatus for the local '{}' namespace error: {}", ns, err.what());
 				}
 			}
 		}
@@ -138,7 +138,7 @@ NsNamesHashSetT AsyncDataReplicator::getLocalNamespaces() {
 	NsNamesHashSetT namespaces;
 	auto err = thisNode_.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideSystem().HideTemporary().WithClosed(), RdxContext());
 	if (!err.ok()) {
-		throw Error(errNotValid, "Unable to enum local namespaces on async repl configuration: %s", err.what());
+		throw Error(errNotValid, "Unable to enum local namespaces on async repl configuration: {}", err.what());
 	}
 	for (auto& ns : nsDefs) {
 		namespaces.emplace(std::move(ns.name));

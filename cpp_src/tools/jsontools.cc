@@ -80,7 +80,7 @@ void jsonValueToString(gason::JsonValue o, WrSerializer& ser, int shift, int ind
 		case gason::JsonTag::EMPTY:
 			break;	// do nothing
 		default:
-			throw Error(errLogic, "Unexpected json tag: %d", int(o.getTag()));
+			throw Error(errLogic, "Unexpected json tag: {}", int(o.getTag()));
 	}
 }
 

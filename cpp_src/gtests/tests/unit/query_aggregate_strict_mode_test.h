@@ -66,8 +66,8 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 		{AggType::AggCount, 1000},	{AggType::AggCountCached, 1000}};
 
 	const std::map<StrictError, std::string> errors{
-		{ErrName, "Current query strict mode allows aggregate existing fields only. There are no fields with name '%s' in namespace '%s'"},
-		{ErrIndex, "Current query strict mode allows aggregate index fields only. There are no indexes with name '%s' in namespace '%s'"}};
+		{ErrName, "Current query strict mode allows aggregate existing fields only. There are no fields with name '{}' in namespace '{}'"},
+		{ErrIndex, "Current query strict mode allows aggregate index fields only. There are no indexes with name '{}' in namespace '{}'"}};
 
 	const std::map<std::string, std::map<StrictMode, StrictError>> scenarios{
 		{kFieldId, {{StrictMode::StrictModeNone, Ok}, {StrictMode::StrictModeNames, Ok}, {StrictMode::StrictModeIndexes, Ok}}},
@@ -133,11 +133,11 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 						break;
 					}
 					case ErrName:
-						ASSERT_EQ(err.what(), fmt::sprintf(errors.at(ErrName), field, kNsName))
+						ASSERT_EQ(err.what(), fmt::format(fmt::runtime(errors.at(ErrName)), field, kNsName))
 							<< "AggType: " << type << "; " << err.what();
 						break;
 					case ErrIndex:
-						ASSERT_EQ(err.what(), fmt::sprintf(errors.at(ErrIndex), field, kNsName))
+						ASSERT_EQ(err.what(), fmt::format(fmt::runtime(errors.at(ErrIndex)), field, kNsName))
 							<< "AggType: " << type << "; " << err.what();
 						break;
 				}

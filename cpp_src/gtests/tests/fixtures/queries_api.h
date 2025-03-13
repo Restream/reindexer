@@ -645,8 +645,8 @@ protected:
 	}
 
 	static std::string pointToSQL(reindexer::Point point, bool escape = false) {
-		return escape ? fmt::sprintf("ST_GeomFromText(\\'point(%.12f %.12f)\\')", point.X(), point.Y())
-					  : fmt::sprintf("ST_GeomFromText('point(%.12f %.12f)')", point.X(), point.Y());
+		return escape ? fmt::format("ST_GeomFromText(\\'point({:.12f} {:.12f})\\')", point.X(), point.Y())
+					  : fmt::format("ST_GeomFromText('point({:.12f} {:.12f})')", point.X(), point.Y());
 	}
 
 	void CheckMergeQueriesWithLimit();

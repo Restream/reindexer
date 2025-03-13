@@ -1,5 +1,6 @@
 #if RX_WITH_FAISS_ANN_INDEXES
 
+#include <iostream>
 #include "tools/errors.h"
 
 #ifndef _WIN32
@@ -136,13 +137,13 @@ static LIB_TYPE getLAPACKPtr() {
 
 void checkIfBLASAvailable() {
 	if (!getBLASPtr()) {
-		throw Error(errLogic, "Unable to link BLAS/MKL library: %s", LOAD_ERR());
+		throw Error(errLogic, "Unable to link BLAS/MKL library: {}", LOAD_ERR());
 	}
 }
 
 void checkIfLAPACKAvailable() {
 	if (!getLAPACKPtr()) {
-		throw Error(errLogic, "Unable to link LAPACK library: %s", LOAD_ERR());
+		throw Error(errLogic, "Unable to link LAPACK library: {}", LOAD_ERR());
 	}
 }
 

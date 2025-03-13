@@ -74,17 +74,17 @@ public:
 	static std::string GetSql(const std::string& sql, CondType condType) {
 		switch (condType) {
 			case CondLt:
-				return fmt::sprintf(sql, "<");
+				return fmt::format(fmt::runtime(sql), "<");
 			case CondLe:
-				return fmt::sprintf(sql, "<=");
+				return fmt::format(fmt::runtime(sql), "<=");
 			case CondGt:
-				return fmt::sprintf(sql, ">");
+				return fmt::format(fmt::runtime(sql), ">");
 			case CondGe:
-				return fmt::sprintf(sql, ">=");
+				return fmt::format(fmt::runtime(sql), ">=");
 			case CondEq:
-				return fmt::sprintf(sql, "=");
+				return fmt::format(fmt::runtime(sql), "=");
 			case CondSet:
-				return fmt::sprintf(sql, "in");
+				return fmt::format(fmt::runtime(sql), "in");
 			case CondAny:
 			case CondRange:
 			case CondAllSet:

@@ -188,7 +188,7 @@ void ShardingApi::runDeleteTest(std::string_view nsName) {
 		for (size_t shard = 0; shard < kShards; ++shard) {
 			const std::string key = "key" + std::to_string(shard + 1);
 			client::QueryResults qr;
-			Error err = rx->Delete(Query::FromSQL(fmt::sprintf("delete from %s where %s = '%s'", nsName, kFieldLocation, key)), qr);
+			Error err = rx->Delete(Query::FromSQL(fmt::format("delete from {} where {} = '{}'", nsName, kFieldLocation, key)), qr);
 			ASSERT_TRUE(err.ok()) << err.what() << "; location = " << key;
 			ASSERT_EQ(qr.Count(), 40) << "location = " << key;
 			ASSERT_NE(qr.GetShardingConfigVersion(), ShardingSourceId::NotSet) << "location = " << key;
@@ -608,16 +608,15 @@ TEST_F(ShardingApi, CheckMaskingTest) {
 	ss << dsn;
 	ASSERT_EQ(masked, ss.str());
 
-	Error err(errParams, "%s", dsn);
+	Error err(errParams, "{}", dsn);
 	ASSERT_EQ(err.whatStr(), masked);
 
-	ASSERT_EQ(fmt::sprintf("%s", dsn), masked);
 	ASSERT_EQ(fmt::format("{}", dsn), masked);
 
 	ASSERT_TRUE(RelaxCompare(dsn, DSN(masked)));
 	auto maskedDsn = DSN(masked);
 
-	ASSERT_EQ(fmt::sprintf("%s", dsn), fmt::sprintf("%s", maskedDsn));
+	ASSERT_EQ(fmt::format("{}", dsn), fmt::format("{}", maskedDsn));
 }
 
 TEST_F(ShardingApi, BaseApiTestset) {
@@ -813,11 +812,11 @@ TEST_F(ShardingApi, ShardingInvalidTxTest) {
 	cfg.nodesInCluster = 1;	 // Only one node in the cluster is needed for the test
 	cfg.additionalNss.emplace_back(kNsName);
 	cfg.additionalNss[0].indexName = kSharingIdx;
-	const char* kShardKeyTmplt = "Shard%dKey%d";
+	constexpr auto kShardKeyTmplt = "Shard{}Key{}";
 	cfg.additionalNss[0].keyValuesNodeCreation = [kShardKeyTmplt](int shard) {
 		ShardingConfig::Key key;
 		for (int i = 0; i < 3; ++i) {
-			key.values.emplace_back(Variant(fmt::sprintf(kShardKeyTmplt, shard, i)));
+			key.values.emplace_back(Variant(fmt::format(kShardKeyTmplt, shard, i)));
 		}
 		key.shardId = shard;
 		return key;
@@ -837,7 +836,8 @@ TEST_F(ShardingApi, ShardingInvalidTxTest) {
 	reindexer::client::Transaction tr = rx->NewTransaction(kNsName);
 	ASSERT_TRUE(tr.Status().ok()) << tr.Status().what();
 
-	auto itemTmplt = fmt::sprintf("{\"%s\": %s, \"%s\": \"%s\"}", kFieldId, "%d", kSharingIdx, kShardKeyTmplt);
+	const auto itemTmpltBase = fmt::format("{{{{\"{}\": {{}}, \"{}\": \"{}\"}}}}", kFieldId, kSharingIdx, kShardKeyTmplt);
+	const auto itemTmplt = fmt::runtime(itemTmpltBase);
 	auto makeItem = [&tr](std::string_view rawItem) {
 		client::Item item = tr.NewItem();
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
@@ -849,16 +849,16 @@ TEST_F(ShardingApi, ShardingInvalidTxTest) {
 		return item;
 	};
 
-	for (const auto& rawItem : {fmt::sprintf(itemTmplt, 0, 2, 0), fmt::sprintf(itemTmplt, 1, 2, 1), fmt::sprintf(itemTmplt, 2, 2, 2)}) {
+	for (const auto& rawItem : {fmt::format(itemTmplt, 0, 2, 0), fmt::format(itemTmplt, 1, 2, 1), fmt::format(itemTmplt, 2, 2, 2)}) {
 		err = tr.Upsert(makeItem(rawItem));
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	err = tr.Upsert(makeItem(fmt::sprintf(itemTmplt, 3, 1, 1)));
+	err = tr.Upsert(makeItem(fmt::format(itemTmplt, 3, 1, 1)));
 	ASSERT_FALSE(err.ok()) << err.what();
 	ASSERT_STREQ(err.what(),
-			  "Transaction query to a different shard: 1 (2 is expected); First tx shard key - 'Shard2Key0', current tx shard key - "
-			  "'Shard1Key1'");
+				 "Transaction query to a different shard: 1 (2 is expected); First tx shard key - 'Shard2Key0', current tx shard key - "
+				 "'Shard1Key1'");
 }
 
 TEST_F(ShardingApi, BaseApiTestsetForRanges) {
@@ -1043,7 +1043,7 @@ void ShardingApi::checkMaskedDSNsInConfig(int shardId) {
 			auto serverId = shard * kNodesInCluster + nodeId++;
 			auto expected = MakeDsn(reindexer_server::UserRole::kRoleSharding, serverId, GetDefaults().defaultRpcPort + serverId,
 									"shard" + std::to_string(serverId));
-			EXPECT_EQ(fmt::sprintf("%s", expected), dsn);
+			EXPECT_EQ(fmt::format("{}", expected), dsn);
 		}
 	}
 }
@@ -1263,8 +1263,8 @@ void ShardingApi::checkConfigThrow(const ServerControl::Interface::Ptr& server, 
 	assertrx(fromConfigNs.has_value());
 	if (!CompareShardingConfigs(config, *fromConfigNs)) {
 		throw std::logic_error(
-			fmt::sprintf("The equality of config and fromConfigNs is expected, but:\nconfig:\n\t%s\nfromConfigNs:\n\t%s\n",
-						 config.GetJSON(cluster::MaskingDSN::Disabled), fromConfigNs->GetJSON(cluster::MaskingDSN::Disabled)));
+			fmt::format("The equality of config and fromConfigNs is expected, but:\nconfig:\n\t{}\nfromConfigNs:\n\t{}\n",
+						config.GetJSON(cluster::MaskingDSN::Disabled), fromConfigNs->GetJSON(cluster::MaskingDSN::Disabled)));
 	}
 
 	std::string configYAML;
@@ -1275,8 +1275,8 @@ void ShardingApi::checkConfigThrow(const ServerControl::Interface::Ptr& server, 
 	ASSERT_TRUE(err.ok()) << err.what();
 	if (!CompareShardingConfigs(config, fromFileConfig)) {
 		throw std::logic_error(
-			fmt::sprintf("The equality of config and fromFileConfig is expected, but:\nconfig:\n\t%s\nfromFileConfig:\n\t%s\n",
-						 config.GetJSON(cluster::MaskingDSN::Disabled), fromFileConfig.GetJSON(cluster::MaskingDSN::Disabled)));
+			fmt::format("The equality of config and fromFileConfig is expected, but:\nconfig:\n\t{}\nfromFileConfig:\n\t{}\n",
+						config.GetJSON(cluster::MaskingDSN::Disabled), fromFileConfig.GetJSON(cluster::MaskingDSN::Disabled)));
 	}
 }
 
@@ -1703,7 +1703,10 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithFilledNssTest) {
 	InitShardingConfig cfg;
 	cfg.shards = shardsCount;
 	Init(std::move(cfg));
-	auto oldConfig = config_;
+	auto oldConfigOpt = getShardingConfigFrom(*svc_[0][0].Get()->api.reindexer);
+	ASSERT_TRUE(oldConfigOpt);
+	// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+	ShardingConfig oldConfig = *oldConfigOpt;
 
 	auto config = makeShardingConfigByDistrib(kNsName, shardDataDistribBySegment, shardsCount);
 
@@ -1739,7 +1742,7 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithFilledNssTest) {
 		err = applyNewShardingConfig(*rx, config, ApplyType::Shared);
 		ASSERT_FALSE(err.ok());
 
-		ASSERT_EQ(fmt::sprintf("Namespace 'ns' on the shard %d contains keys unrelated to the config(e.g. %d)", shardId, val), err.what())
+		ASSERT_EQ(fmt::format("Namespace 'ns' on the shard {} contains keys unrelated to the config(e.g. {})", shardId, val), err.what())
 			<< err.what();
 
 		err = rx->Delete(kNsName, deleteItem);
@@ -1748,8 +1751,8 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithFilledNssTest) {
 
 	// Checking that the original config has not changed on all nodes
 	for (size_t shard = 0; shard < kShards; ++shard) {
+		oldConfig.thisShardId = shard;
 		for (size_t node = 0; node < kNodesInCluster; ++node) {
-			oldConfig.thisShardId = shard;
 			checkConfig(svc_[shard][node].Get(), oldConfig);
 		}
 	}
@@ -1945,13 +1948,13 @@ TEST_F(ShardingApi, DISABLED_SelectProxyBench) {
 		const auto beg = steady_clock_w::now();
 		cv.notify_all();
 		lck.unlock();
-		TestCout() << fmt::sprintf("Start with %d threads", thCnt) << std::endl;
+		TestCout() << fmt::format("Start with {} threads", thCnt) << std::endl;
 		for (auto& th : threads) {
 			th.join();
 		}
 		// <Stop profiling here>
 		const auto diff = steady_clock_w::now() - beg;
-		TestCout() << fmt::sprintf("Done with %d threads in %d usec", thCnt, diff.count() / 1000) << std::endl;
+		TestCout() << fmt::format("Done with {} threads in {} usec", thCnt, diff.count() / 1000) << std::endl;
 	}
 }
 
@@ -2409,7 +2412,7 @@ TEST_F(ShardingApi, ConfigYaml) {
 	auto substRangesInTemplate = [](const std::vector<std::string>& values) {
 		std::string res(kConfigTemplate);
 		for (size_t i = 0; i < 3; ++i) {
-			auto tmplt = fmt::sprintf("${%d}", i);
+			auto tmplt = fmt::format("${{{}}}", i);
 			res.replace(res.find(tmplt), tmplt.size(), values[i]);
 		}
 		return res;
@@ -3014,7 +3017,7 @@ TEST_F(ShardingApi, ConfigKeyValues) {
 			Key(const char* c_str) : left(std::string(c_str)) {}
 			Key(std::string&& left, std::string&& right) : left(std::move(left)), right(std::move(right)) {}
 			std::string left, right;
-			operator std::string() const { return right.empty() ? left : fmt::sprintf("{\"range\": [%s, %s]}", left, right); }
+			operator std::string() const { return right.empty() ? left : fmt::format("{{\"range\": [{}, {}]}}", left, right); }
 		};
 		using ShardKeys = std::vector<Key>;
 		std::vector<ShardKeys> shards;
@@ -3056,7 +3059,7 @@ TEST_F(ShardingApi, ConfigKeyValues) {
 		for (size_t i = 0; i <= info.shards.size(); i++) {
 			YAML::Node sY;
 			sY["shard_id"] = i;
-			sY["dsns"].push_back(fmt::sprintf("cproto://127.0.0.1:1900%d/shard%d", i, i));
+			sY["dsns"].push_back(fmt::format("cproto://127.0.0.1:1900{}/shard{}", i, i));
 			y["shards"].push_back(std::move(sY));
 		}
 		return YAML::Dump(y);
@@ -3173,30 +3176,30 @@ TEST_F(ShardingApi, RestrictionOnRequest) {
 	std::shared_ptr<client::Reindexer> rx = svc_[0][0].Get()->api.reindexer;
 	{
 		client::QueryResults qr;
-		auto err = rx->Select(Query::FromSQL(fmt::sprintf("select * from %s where %s<'key3'", default_namespace, kFieldLocation)), qr);
+		auto err = rx->Select(Query::FromSQL(fmt::format("select * from {} where {}<'key3'", default_namespace, kFieldLocation)), qr);
 		ASSERT_EQ(err.code(), errLogic);
 	}
 	{
 		client::QueryResults qr;
 		// key3 - proxy node
-		auto err = rx->Select(Query::FromSQL(fmt::sprintf("select * from %s where %s='key3' and %s='key2'", default_namespace,
-														  kFieldLocation, kFieldLocation)),
+		auto err = rx->Select(Query::FromSQL(fmt::format("select * from {} where {}='key3' and {}='key2'", default_namespace,
+														 kFieldLocation, kFieldLocation)),
 							  qr);
 		ASSERT_EQ(err.code(), errLogic);
 	}
 	{
 		client::QueryResults qr;
-		auto err = rx->Select(Query::FromSQL(fmt::sprintf("select * from %s where %s='key1' and %s='key2'", default_namespace,
-														  kFieldLocation, kFieldLocation)),
+		auto err = rx->Select(Query::FromSQL(fmt::format("select * from {} where {}='key1' and {}='key2'", default_namespace,
+														 kFieldLocation, kFieldLocation)),
 							  qr);
 		ASSERT_EQ(err.code(), errLogic);
 	}
 
 	{
 		client::QueryResults qr;
-		auto err = rx->Select(Query::FromSQL(fmt::sprintf("select * from %s where %s='key1' or %s='key2'", default_namespace,
-														  kFieldLocation, kFieldLocation)),
-							  qr);
+		auto err = rx->Select(
+			Query::FromSQL(fmt::format("select * from {} where {}='key1' or {}='key2'", default_namespace, kFieldLocation, kFieldLocation)),
+			qr);
 		ASSERT_EQ(err.code(), errLogic);
 	}
 	{

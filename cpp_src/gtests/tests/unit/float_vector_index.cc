@@ -3,6 +3,7 @@
 #include <gtest/gtest-param-test.h>
 #include <random>
 #include "core/cjson/jsonbuilder.h"
+#include "gtests/tests/gtest_cout.h"
 #include "tools/errors.h"
 #include "tools/fsops.h"
 #include "vendor/fmt/ranges.h"
@@ -251,6 +252,141 @@ TEST_P(FloatVector, HnswIndex) try {
 	const auto deleted = deleteSomeItems(kNsName, kMaxElements, emptyVectors);
 	runMultithreadQueries<kDimension>(4, 20, kNsName, kFieldNameHnsw, [&] { return reindexer::KnnSearchParams::Hnsw(rand() % 500 + 10); });
 	checkIndexMemstat(rt, kNsName, kFieldNameHnsw, kDimension, kMaxElements - deleted, emptyVectors);
+}
+CATCH_AND_ASSERT
+
+TEST_F(FloatVector, HnswIndexMTRace) try {
+	constexpr static auto kNsName = "hnsw_mt_race_ns"sv;
+	constexpr static auto kFieldNameHnsw = "hnsw"sv;
+	constexpr static size_t kDimension = 8;
+	constexpr static size_t kM = 16;
+	constexpr static size_t kSelectThreads = 2;
+#if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN) || defined(RX_WITH_STDLIB_DEBUG)
+	constexpr static size_t kTransactions = 4;
+	constexpr static size_t kEfConsruction = 100;
+#else
+	constexpr static size_t kTransactions = 20;
+	constexpr static size_t kEfConsruction = 200;
+#endif
+
+	rt.OpenNamespace(kNsName);
+	rt.DefineNamespaceDataset(
+		kNsName,
+		{
+			IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
+			IndexDeclaration{kFieldNameHnsw, "hnsw", "float_vector",
+							 IndexOpts{}.SetFloatVector(IndexHnsw, FloatVectorIndexOpts{}
+																	   .SetDimension(kDimension)
+																	   .SetMultithreading(MultithreadingMode::MultithreadTransactions)
+																	   .SetM(kM)
+																	   .SetEfConstruction(kEfConsruction)
+																	   .SetMetric(reindexer::VectorMetric::Cosine)),
+							 0},
+		});
+
+	unsigned id = 0;
+	std::unordered_map<IdType, std::string> expectedData;
+
+	std::atomic_bool terminate{false};
+	std::vector<std::thread> selectThreads;
+	selectThreads.reserve(kSelectThreads);
+	auto selectFn = [this, &terminate] {
+		while (!terminate) {
+			std::array<float, kDimension> buf;
+			rndFloatVector(buf);
+			const auto result = rt.Select(reindexer::Query{kNsName}.WhereKNN(kFieldNameHnsw, reindexer::ConstFloatVectorView{buf},
+																			 reindexer::KnnSearchParams::Hnsw(rand() % 20 + 10)));
+			checkOrdering(result, reindexer::VectorMetric::Cosine);
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+	};
+
+	// Deletes + updates + upserts
+	for (size_t i = 0; i < kTransactions; ++i) {
+		if (i == 1) {
+			for (size_t j = 0; j < kSelectThreads; ++j) {
+				selectThreads.emplace_back(selectFn);
+			}
+		}
+
+		auto tx = rt.reindexer->NewTransaction(kNsName);
+		ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
+		std::unordered_set<int> emptyVectors;
+		int totalNewItems = 0;
+		for (size_t j = 0; j < unsigned(rand() % 50 + 250); ++j) {
+			if (id < 10 || rand() % 10) {
+				// Insert new item
+				auto item = newItem<kDimension>(kNsName, kFieldNameHnsw, id, emptyVectors);
+				expectedData[id] = std::string(item.GetJSON());
+				auto err = tx.Upsert(std::move(item));
+				ASSERT_TRUE(err.ok()) << err.what();
+				++id;
+				++totalNewItems;
+			}
+			if (id > 10 && rand() % 8 == 0) {
+				// Update existing id
+				auto updID = rand() % id;
+				auto item = newItem<kDimension>(kNsName, kFieldNameHnsw, updID, emptyVectors);
+				if (auto found = expectedData.find(updID); found != expectedData.end()) {
+					found->second = std::string(item.GetJSON());
+				}
+				auto err = tx.Update(std::move(item));
+				ASSERT_TRUE(err.ok()) << err.what();
+			}
+			if (id > 10 && rand() % 8 == 0) {
+				// Delete existing id
+				auto delID = rand() % id;
+				auto item = newItem<kDimension>(kNsName, kFieldNameHnsw, delID, emptyVectors);
+				if (expectedData.erase(delID)) {
+					--totalNewItems;
+				}
+				auto err = tx.Delete(std::move(item));
+				ASSERT_TRUE(err.ok()) << err.what();
+				--totalNewItems;
+			}
+			if (rand() % 20 == 0) {
+				// Delete non existing id
+				auto delID = id + rand() % 1000 + 1000;
+				auto item = newItem<kDimension>(kNsName, kFieldNameHnsw, delID, emptyVectors);
+				ASSERT_EQ(expectedData.erase(delID), 0);
+				auto err = tx.Delete(std::move(item));
+				ASSERT_TRUE(err.ok()) << err.what();
+			}
+		}
+		while (totalNewItems < 201) {
+			// Insert more items to force multithreading insertion
+			auto item = newItem<kDimension>(kNsName, kFieldNameHnsw, id, emptyVectors);
+			expectedData[id] = std::string(item.GetJSON());
+			auto err = tx.Insert(std::move(item));
+			ASSERT_TRUE(err.ok()) << err.what();
+			++id;
+			++totalNewItems;
+		}
+		reindexer::QueryResults qr;
+		auto err = rt.reindexer->CommitTransaction(tx, qr);
+	}
+
+	std::this_thread::sleep_for(std::chrono::seconds(1));
+	for (auto& th : selectThreads) {
+		terminate = true;
+		th.join();
+	}
+
+	auto qr = rt.Select(reindexer::Query(kNsName).SelectAllFields());
+	EXPECT_EQ(qr.Count(), expectedData.size());
+	for (auto& it : qr) {
+		auto item = it.GetItem(false);
+		auto id = item["id"].As<int>();
+		auto json = item.GetJSON();
+		auto found = expectedData.find(id);
+		EXPECT_NE(found, expectedData.end()) << "Item with unexpected ID in namespace: " << json;
+		EXPECT_EQ(found->second, json) << "Unexpected item's content in namespace";
+		expectedData.erase(found);
+	}
+	EXPECT_EQ(expectedData.size(), 0);
+	for (auto& item : expectedData) {
+		TestCout() << "Missing item: " << item.second << std::endl;
+	}
 }
 CATCH_AND_ASSERT
 

@@ -11,7 +11,7 @@
 namespace {
 
 static RX_NO_INLINE void throwParseError(std::string_view sortExpr, const char* const pos, std::string_view message) {
-	throw reindexer::Error(errParams, "'%s' is not valid sort expression. Parser failed at position %d.%s%s", sortExpr,
+	throw reindexer::Error(errParams, "'{}' is not valid sort expression. Parser failed at position {}.{}{}", sortExpr,
 						   pos - sortExpr.data(), message.empty() ? "" : " ", message);
 }
 
@@ -62,10 +62,10 @@ const PayloadValue& SortExpression::getJoinedValue(IdType rowId, const joins::Na
 	const joins::ItemIterator jIt{&joinResults, rowId};
 	const auto jfIt = jIt.at(nsIdx);
 	if (jfIt == jIt.end() || jfIt.ItemsCount() == 0) {
-		throw Error(errQueryExec, "Not found value joined from ns %s", js.RightNsName());
+		throw Error(errQueryExec, "Not found value joined from ns {}", js.RightNsName());
 	}
 	if (jfIt.ItemsCount() > 1) {
-		throw Error(errQueryExec, "Found more than 1 value joined from ns %s", js.RightNsName());
+		throw Error(errQueryExec, "Found more than 1 value joined from ns {}", js.RightNsName());
 	}
 	return jfIt[0].Value();
 }
@@ -111,7 +111,7 @@ SortExprFuncs::JoinedIndex& SortExpression::GetJoinedIndex() noexcept {
 double SortExprFuncs::Index::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
 	const VariantArray values = getFieldValues(pv, tagsMatcher, index, column);
 	if (values.empty()) {
-		throw Error(errQueryExec, "Empty field in sort expression: %s", column);
+		throw Error(errQueryExec, "Empty field in sort expression: {}", column);
 	}
 	if (values.size() > 1 || values[0].Type().Is<KeyValueType::Composite>() || values[0].Type().Is<KeyValueType::Tuple>()) {
 		throw Error(errQueryExec, "Array, composite or tuple field in sort expression");
@@ -122,7 +122,7 @@ double SortExprFuncs::Index::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher)
 double SortExprFuncs::ProxiedField::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
 	const VariantArray values = getJsonFieldValues(pv, tagsMatcher, json);
 	if (values.empty()) {
-		throw Error(errQueryExec, "Empty field in sort expression: %s", json);
+		throw Error(errQueryExec, "Empty field in sort expression: {}", json);
 	}
 	if (values.size() > 1 || values[0].Type().Is<KeyValueType::Composite>() || values[0].Type().Is<KeyValueType::Tuple>()) {
 		throw Error(errQueryExec, "Array, composite or tuple field in sort expression are not supported");
@@ -144,7 +144,7 @@ double JoinedIndex::GetValue(IdType rowId, const joins::NamespaceResults& joinRe
 							 const std::vector<JoinedSelector>& joinedSelectors) const {
 	const VariantArray values = SortExpression::GetJoinedFieldValues(rowId, joinResults, joinedSelectors, nsIdx, column, index);
 	if (values.empty()) {
-		throw Error(errQueryExec, "Empty field in sort expression: %s %s", joinedSelectors[nsIdx].RightNsName(), column);
+		throw Error(errQueryExec, "Empty field in sort expression: {} {}", joinedSelectors[nsIdx].RightNsName(), column);
 	}
 	if (values.size() > 1 || values[0].Type().Is<KeyValueType::Composite>() || values[0].Type().Is<KeyValueType::Tuple>()) {
 		throw Error(errQueryExec, "Array, composite or tuple field in sort expression");
@@ -771,7 +771,7 @@ void SortExpression::PrepareSortIndex(std::string& column, int& indexNo, const N
 	if (ns.getIndexByNameOrJsonPath(column, indexNo)) {
 		const auto& index = *ns.indexes_[indexNo];
 		if (index.IsFloatVector()) {
-			throw Error(errQueryExec, "Ordering by float vector index is not allowed: '%s'", column);
+			throw Error(errQueryExec, "Ordering by float vector index is not allowed: '{}'", column);
 		}
 		if (index.Opts().IsSparse()) {
 			if (indexNo < ns.indexes_.firstCompositePos()) {

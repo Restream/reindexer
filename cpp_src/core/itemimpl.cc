@@ -143,12 +143,12 @@ void ItemImpl::ModifyField(const IndexedTagsPath& tagsPath, const VariantArray& 
 				break;
 			case FieldModeArrayPushBack:
 			case FieldModeArrayPushFront:
-				throw Error(errLogic, "Update mode is not supported: %d", int(mode));
+				throw Error(errLogic, "Update mode is not supported: {}", int(mode));
 		}
 	} catch (const Error& e) {
-		throw Error(e.code(), "Error modifying field value: '%s'", e.what());
+		throw Error(e.code(), "Error modifying field value: '{}'", e.what());
 	} catch (std::exception& e) {
-		throw Error(errLogic, "Error modifying field value: '%s'", e.what());
+		throw Error(errLogic, "Error modifying field value: '{}'", e.what());
 	}
 
 	initTupleFrom(std::move(pl), ser_);
@@ -288,7 +288,7 @@ void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder* recoder) 
 	}
 
 	if (!rdser.Eof()) {
-		throw Error(errParseJson, "Internal error - left unparsed data %d", rdser.Pos());
+		throw Error(errParseJson, "Internal error - left unparsed data {}", rdser.Pos());
 	}
 
 	initTupleFrom(std::move(pl), ser_);
@@ -310,7 +310,7 @@ Error ItemImpl::FromJSON(std::string_view slice, char** endp, bool pkOnly) {
 				std::copy(data.begin(), data.begin() + len, sourceData_.get());
 				data = std::string_view(sourceData_.get(), len);
 			} catch (const gason::Exception& e) {
-				return Error(errParseJson, "Error parsing json: '%s'", e.what());
+				return Error(errParseJson, "Error parsing json: '{}'", e.what());
 			}
 		} else {
 			sourceData_.reset(new char[slice.size()]);
@@ -331,7 +331,7 @@ Error ItemImpl::FromJSON(std::string_view slice, char** endp, bool pkOnly) {
 			*endp = const_cast<char*>(data.data()) + len;
 		}
 	} catch (gason::Exception& e) {
-		return Error(errParseJson, "Error parsing json: '%s', pos: %d", e.what(), len);
+		return Error(errParseJson, "Error parsing json: '{}', pos: {}", e.what(), len);
 	}
 
 	// Split parsed json into indexes and tuple
@@ -457,7 +457,7 @@ void ItemImpl::BuildTupleIfEmpty() {
 
 void ItemImpl::CopyIndexedVectorsValuesFrom(IdType id, const FloatVectorsIndexes& indexes) {
 	if (id < 0) {
-		throw Error(errLogic, "Unable to set vector values with incorrect ID: %d", id);
+		throw Error(errLogic, "Unable to set vector values with incorrect ID: {}", id);
 	}
 	if (indexes.empty()) {
 		return;

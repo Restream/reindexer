@@ -22,15 +22,17 @@ class TagsMatcher;
 
 struct JoinQueryEntry {
 	explicit JoinQueryEntry(size_t joinIdx) noexcept : joinIndex{joinIdx} {}
-	size_t joinIndex{std::numeric_limits<size_t>::max()};
-	bool operator==(const JoinQueryEntry& other) const noexcept { return joinIndex == other.joinIndex; }
-	bool operator!=(const JoinQueryEntry& other) const noexcept { return !operator==(other); }
+
+	bool operator==(const JoinQueryEntry& other) const noexcept = default;
+	bool operator!=(const JoinQueryEntry& other) const noexcept = default;
 
 	template <typename JS>
 	std::string Dump(const std::vector<JS>& joinedSelectors) const;
 
 	template <typename JS>
 	std::string DumpOnCondition(const std::vector<JS>& joinedSelectors) const;
+
+	size_t joinIndex{std::numeric_limits<size_t>::max()};
 };
 
 class QueryField {
@@ -186,8 +188,8 @@ public:
 		checkCondition(cond);
 	}
 
-	[[nodiscard]] bool operator==(const BetweenFieldsQueryEntry&) const noexcept;
-	[[nodiscard]] bool operator!=(const BetweenFieldsQueryEntry& other) const noexcept { return !operator==(other); }
+	[[nodiscard]] bool operator==(const BetweenFieldsQueryEntry&) const noexcept = default;
+	[[nodiscard]] bool operator!=(const BetweenFieldsQueryEntry& other) const noexcept = default;
 
 	[[nodiscard]] CondType Condition() const noexcept { return condition_; }
 	[[nodiscard]] int LeftIdxNo() const noexcept { return leftField_.IndexNo(); }
@@ -255,7 +257,8 @@ public:
 	[[nodiscard]] size_t QueryIndex() const noexcept { return queryIndex_; }
 	[[nodiscard]] const VariantArray& Values() const& noexcept { return values_; }
 	[[nodiscard]] bool operator==(const SubQueryEntry& other) const noexcept {
-		return condition_ == other.condition_ && queryIndex_ == other.queryIndex_;
+		return condition_ == other.condition_ && queryIndex_ == other.queryIndex_ &&
+			   values_.RelaxCompare<WithString::Yes, NotComparable::Return>(other.values_) == ComparationResult::Eq;
 	}
 	[[nodiscard]] bool operator!=(const SubQueryEntry& other) const noexcept { return !operator==(other); }
 	[[nodiscard]] std::string Dump(const std::vector<Query>& subQueries) const;
@@ -279,10 +282,8 @@ public:
 	[[nodiscard]] std::string&& FieldName() && noexcept { return std::move(field_); }
 	[[nodiscard]] CondType Condition() const noexcept { return condition_; }
 	[[nodiscard]] size_t QueryIndex() const noexcept { return queryIndex_; }
-	[[nodiscard]] bool operator==(const SubQueryFieldEntry& other) const noexcept {
-		return field_ == other.field_ && condition_ == other.condition_ && queryIndex_ == other.queryIndex_;
-	}
-	[[nodiscard]] bool operator!=(const SubQueryFieldEntry& other) const noexcept { return !operator==(other); }
+	[[nodiscard]] bool operator==(const SubQueryFieldEntry& other) const noexcept = default;
+	[[nodiscard]] bool operator!=(const SubQueryFieldEntry& other) const noexcept = default;
 	[[nodiscard]] std::string Dump(const std::vector<Query>& subQueries) const;
 
 	auto FieldName() const&& = delete;
@@ -305,7 +306,10 @@ public:
 			throw Error{errParams, "Empty update column name"};
 		}
 	}
-	bool operator==(const UpdateEntry&) const noexcept;
+	bool operator==(const UpdateEntry& other) const noexcept {
+		return column_ == other.column_ && mode_ == other.mode_ && isExpression_ == other.isExpression_ &&
+			   values_.CompareNoExcept(other.values_) == ComparationResult::Eq;
+	}
 	bool operator!=(const UpdateEntry& obj) const noexcept { return !operator==(obj); }
 	std::string_view Column() const noexcept { return column_; }
 	const VariantArray& Values() const noexcept { return values_; }
@@ -326,9 +330,15 @@ class QueryJoinEntry {
 public:
 	QueryJoinEntry(OpType op, CondType cond, std::string&& leftFld, std::string&& rightFld, bool reverseNs = false)
 		: leftField_{std::move(leftFld)}, rightField_{std::move(rightFld)}, op_{op}, condition_{cond}, reverseNamespacesOrder_{reverseNs} {
-		verify();
+		if (condition_ == CondKnn) {
+			throw Error(errLogic, "Condition KNN cannot be used in ON statement");
+		}
 	}
-	[[nodiscard]] bool operator==(const QueryJoinEntry&) const noexcept;
+	[[nodiscard]] bool operator==(const QueryJoinEntry& other) const noexcept {
+		// reverseNamespacesOrder_ is intetionally ignored - it affects serialization order in SQL, but does not make any difference
+		// from query standpoint
+		return condition_ == other.condition_ && leftField_ == other.leftField_ && rightField_ == other.rightField_;
+	}
 	[[nodiscard]] bool operator!=(const QueryJoinEntry& other) const noexcept { return !operator==(other); }
 	[[nodiscard]] bool IsLeftFieldIndexed() const noexcept { return leftField_.IsFieldIndexed(); }
 	[[nodiscard]] bool IsRightFieldIndexed() const noexcept { return rightField_.IsFieldIndexed(); }
@@ -368,8 +378,6 @@ public:
 	auto RightFieldData() const&& = delete;
 
 private:
-	void verify() const;
-
 	QueryField leftField_;
 	QueryField rightField_;
 	const OpType op_{OpOr};
@@ -468,8 +476,9 @@ struct SortingEntry {
 	SortingEntry() noexcept = default;
 	template <typename Str>
 	SortingEntry(Str&& e, bool d) noexcept : expression(std::forward<Str>(e)), desc(d) {}
-	bool operator==(const SortingEntry&) const noexcept;
-	bool operator!=(const SortingEntry& se) const noexcept { return !operator==(se); }
+	bool operator==(const SortingEntry&) const noexcept = default;
+	bool operator!=(const SortingEntry& se) const noexcept = default;
+
 	std::string expression;
 	bool desc = false;
 	int index = IndexValueType::NotSet;
@@ -481,16 +490,16 @@ class AggregateEntry {
 public:
 	AggregateEntry(AggType type, h_vector<std::string, 1>&& fields, SortingEntries&& sort = {}, unsigned limit = QueryEntry::kDefaultLimit,
 				   unsigned offset = QueryEntry::kDefaultOffset);
-	[[nodiscard]] bool operator==(const AggregateEntry&) const noexcept;
-	[[nodiscard]] bool operator!=(const AggregateEntry& ae) const noexcept { return !operator==(ae); }
+	[[nodiscard]] bool operator==(const AggregateEntry&) const noexcept = default;
+	[[nodiscard]] bool operator!=(const AggregateEntry& ae) const noexcept = default;
 	[[nodiscard]] AggType Type() const noexcept { return type_; }
 	[[nodiscard]] const h_vector<std::string, 1>& Fields() const noexcept { return fields_; }
 	[[nodiscard]] const SortingEntries& Sorting() const noexcept { return sortingEntries_; }
 	[[nodiscard]] unsigned Limit() const noexcept { return limit_; }
 	[[nodiscard]] unsigned Offset() const noexcept { return offset_; }
-	void AddSortingEntry(SortingEntry&&);
-	void SetLimit(unsigned);
-	void SetOffset(unsigned);
+	void AddSortingEntry(SortingEntry&& sorting);
+	void SetLimit(unsigned l);
+	void SetOffset(unsigned o);
 
 private:
 	AggType type_{AggUnknown};

@@ -242,7 +242,7 @@ Error CoroClientConnection::login(std::vector<char>& buf) {
 		}
 		if (ret < 0) {
 			// unable to connect
-			return Error(errNetwork, "Connect error: %s", strerror(conn_.socket_last_error()));
+			return Error(errNetwork, "Connect error: {}", strerror(conn_.socket_last_error()));
 		}
 
 		std::string userName = connectData_.uri.username();
@@ -277,7 +277,7 @@ Error CoroClientConnection::login(std::vector<char>& buf) {
 		if (err != 0) {
 			// TODO: handle reconnects
 			if (err > 0) {
-				return Error(errNetwork, "Connection error: %s", strerror(err));
+				return Error(errNetwork, "Connection error: {}", strerror(err));
 			} else if (err == k_connect_ssl_err) {
 				return Error(errConnectSSL, "SSL handshake/connection error");
 			} else {
@@ -394,7 +394,7 @@ void CoroClientConnection::writerRoutine() {
 		auto written = conn_.async_write(buf, err, sendNow);
 		if (err) {
 			// disconnected
-			handleFatalErrorFromWriter(Error(errNetwork, "Write error: %s", err > 0 ? strerror(err) : "Connection closed"));
+			handleFatalErrorFromWriter(Error(errNetwork, "Write error: {}", err > 0 ? strerror(err) : "Connection closed"));
 			buf.clear();
 			continue;
 		}
@@ -415,7 +415,7 @@ void CoroClientConnection::readerRoutine() {
 		auto read = conn_.async_read(buf, sizeof(CProtoHeader), err);
 		if (err) {
 			// disconnected
-			handleFatalErrorFromReader(err > 0 ? Error(errNetwork, "Read error: %s", strerror(err))
+			handleFatalErrorFromReader(err > 0 ? Error(errNetwork, "Read error: {}", strerror(err))
 											   : Error(errNetwork, "Connection closed"));
 			break;
 		}
@@ -425,14 +425,14 @@ void CoroClientConnection::readerRoutine() {
 
 		if (hdr.magic != kCprotoMagic) {
 			// disconnect
-			handleFatalErrorFromReader(Error(errNetwork, "Invalid cproto magic=%08x", hdr.magic));
+			handleFatalErrorFromReader(Error(errNetwork, "Invalid cproto magic={:08x}", hdr.magic));
 			break;
 		}
 
 		if (hdr.version < kCprotoMinCompatVersion) {
 			// disconnect
 			handleFatalErrorFromReader(
-				Error(errParams, "Unsupported cproto version %04x. This client expects reindexer server v1.9.8+", int(hdr.version)));
+				Error(errParams, "Unsupported cproto version {:04x}. This client expects reindexer server v1.9.8+", int(hdr.version)));
 			break;
 		}
 		if (hdr.version < kCprotoMinSnappyVersion) {
@@ -443,7 +443,7 @@ void CoroClientConnection::readerRoutine() {
 		read = conn_.async_read(buf, size_t(hdr.len), err);
 		if (err) {
 			// disconnected
-			handleFatalErrorFromReader(err > 0 ? Error(errNetwork, "Read error: %s", strerror(err))
+			handleFatalErrorFromReader(err > 0 ? Error(errNetwork, "Read error: {}", strerror(err))
 											   : Error(errNetwork, "Connection closed"));
 			break;
 		}
@@ -464,7 +464,7 @@ void CoroClientConnection::readerRoutine() {
 			const int errCode = ser.GetVarUInt();
 			std::string_view errMsg = ser.GetVString();
 			if (errCode != errOK) {
-				ans.status_ = Error(static_cast<ErrorCode>(errCode), std::string{errMsg});
+				ans.status_ = Error(static_cast<ErrorCode>(errCode), errMsg);
 			}
 			ans.data_ = std::span<const uint8_t>(ser.Buf() + ser.Pos(), ser.Len() - ser.Pos());
 		} catch (const Error& err) {
@@ -490,7 +490,7 @@ void CoroClientConnection::readerRoutine() {
 			auto& rpcData = rpcCalls_[hdr.seq % rpcCalls_.size()];
 			if (!rpcData.used || rpcData.seq != hdr.seq) {
 				auto cmdSv = CmdName(hdr.cmd);
-				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%d(%.*s)\n", int(hdr.seq), hdr.cmd, int(cmdSv.size()), cmdSv.data());
+				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%u(%.*s)\n", int(hdr.seq), hdr.cmd, int(cmdSv.size()), cmdSv.data());
 				sendCloseResults(hdr, ans);
 				continue;
 			}
@@ -537,7 +537,7 @@ void CoroClientConnection::sendCloseResults(const CProtoHeader& hdr, const CoroR
 				}
 			} else {
 				auto cmdSv = CmdName(hdr.cmd);
-				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%d(%.*s); do not have reqId\n", int(hdr.seq), hdr.cmd, int(cmdSv.size()),
+				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%u(%.*s); do not have reqId\n", int(hdr.seq), hdr.cmd, int(cmdSv.size()),
 						cmdSv.data());
 			}
 		} break;

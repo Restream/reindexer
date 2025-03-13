@@ -81,7 +81,7 @@ apt update
 apt install reindexer-server
 ```
 
-Available distros: `debian-bookworm`, `debian-bullseye`, `ubuntu-focal`, `ubuntu-jammy`, `ubuntu-noble`
+Available distros: `debian-bookworm`, `debian-bullseye`, `ubuntu-jammy`, `ubuntu-noble`
 
 ### Redos
 
@@ -148,7 +148,7 @@ sudo make install
 - Start server
 
 ```
-sudo service start reindexer
+sudo service reindexer start
 ```
 
 - open in web browser http://127.0.0.1:9088/swagger to see reindexer REST API interactive documentation

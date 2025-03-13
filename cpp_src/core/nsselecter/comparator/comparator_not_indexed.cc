@@ -56,11 +56,11 @@ reindexer::comparators::ComparatorNotIndexedImpl<CondAllSet, false>::ComparatorN
 
 template <CondType Cond>
 [[nodiscard]] std::string ComparatorNotIndexedImplBase<Cond>::ConditionStr() const {
-	return fmt::sprintf("%s %s", CondToStr<Cond>(), value_.As<std::string>());
+	return fmt::format("{} {}", CondToStr<Cond>(), value_.As<std::string>());
 }
 
 [[nodiscard]] std::string ComparatorNotIndexedImplBase<CondRange>::ConditionStr() const {
-	return fmt::sprintf("RANGE(%s %s)", value1_.As<std::string>(), value2_.As<std::string>());
+	return fmt::format("RANGE({} {})", value1_.As<std::string>(), value2_.As<std::string>());
 }
 
 [[nodiscard]] std::string ComparatorNotIndexedImplBase<CondSet>::ConditionStr() const {
@@ -68,11 +68,11 @@ template <CondType Cond>
 	if (values_.empty()) {
 		return "IN []"s;
 	} else {
-		return fmt::sprintf("IN [%s ...]", values_.cbegin()->As<std::string>());
+		return fmt::format("IN [{} ...]", values_.cbegin()->As<std::string>());
 	}
 }
 
-[[nodiscard]] std::string ComparatorNotIndexedImplBase<CondLike>::ConditionStr() const { return fmt::sprintf("LIKE \"%s\"", valueView_); }
+[[nodiscard]] std::string ComparatorNotIndexedImplBase<CondLike>::ConditionStr() const { return fmt::format("LIKE \"{}\"", valueView_); }
 
 [[nodiscard]] std::string ComparatorNotIndexedImpl<CondAny, false>::ConditionStr() const { return anyComparatorCondStr(); }
 
@@ -81,14 +81,14 @@ template <CondType Cond>
 [[nodiscard]] std::string ComparatorNotIndexedImpl<CondEmpty, false>::ConditionStr() const { return emptyComparatorCondStr(); }
 
 [[nodiscard]] std::string ComparatorNotIndexedImpl<CondDWithin, false>::ConditionStr() const {
-	return fmt::sprintf("DWITHIN(POINT(%.4f %.4f), %.4f)", point_.X(), point_.Y(), distance_);
+	return fmt::format("DWITHIN(POINT({:.4f} {:.4f}), {:.4f})", point_.X(), point_.Y(), distance_);
 }
 
 [[nodiscard]] std::string ComparatorNotIndexedImpl<CondAllSet, false>::ConditionStr() const {
 	if (values_.empty()) {
-		return fmt::sprintf("ALLSET []");
+		return fmt::format("ALLSET []");
 	} else {
-		return fmt::sprintf("ALLSET [%s ...]", values_.cbegin()->first.As<std::string>());
+		return fmt::format("ALLSET [{} ...]", values_.cbegin()->first.As<std::string>());
 	}
 }
 

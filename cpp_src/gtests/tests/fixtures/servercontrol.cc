@@ -108,7 +108,7 @@ ServerControl::Interface::~Interface() {
 	}
 	if (reindexerServerPIDWait != -1) {
 		auto err = reindexer::WaitEndProcess(reindexerServerPIDWait);
-		assertf(err.ok(), "WaitEndProcess error: %s", err.what());
+		assertf(err.ok(), "WaitEndProcess error: {}", err.what());
 	}
 	stopped_ = true;
 }
@@ -117,7 +117,7 @@ void ServerControl::Interface::Stop() {
 	if (config_.asServerProcess) {
 		if (reindexerServerPID != -1) {
 			auto err = reindexer::EndProcess(reindexerServerPID);
-			assertf(err.ok(), "EndProcess error: %s", err.what());
+			assertf(err.ok(), "EndProcess error: {}", err.what());
 			reindexerServerPIDWait = reindexerServerPID;
 			reindexerServerPID = -1;
 		}
@@ -304,7 +304,7 @@ cluster::ReplicationStats ServerControl::Interface::GetReplicationStats(std::str
 	BaseApi::QueryResultsType res;
 	auto err = api.reindexer->Select(qr, res);
 	EXPECT_TRUE(err.ok()) << err.what();
-	assertf(res.Count() == 1, "Qr.Count()==%d\n", res.Count());
+	assertf(res.Count() == 1, "Qr.Count()=={}\n", res.Count());
 	WrSerializer wser;
 	err = res.begin().GetJSON(wser, false);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -355,7 +355,7 @@ ServerControl::Interface::Interface(std::atomic_bool& stopped, ServerControlConf
 	  kRPCDsn(MakeDsn(reindexer_server::UserRole::kRoleDBAdmin, config_.id, config_.rpcPort, config_.dbName)) {
 	std::string path = reindexer::fs::JoinPath(config_.storagePath, config_.dbName);
 	if (reindexer::fs::MkDirAll(path) < 0) {
-		assertf(false, "Unable to remove %s", path);
+		assertf(false, "Unable to remove {}", path);
 	}
 	WriteConfigFile(reindexer::fs::JoinPath(path, kStorageTypeFilename), "leveldb");
 	if (!ReplicationConfig.IsNull()) {
@@ -385,7 +385,7 @@ ServerControl::Interface::Interface(std::atomic_bool& stopped, ServerControlConf
 	if (WithSecurity()) {
 		std::string path = reindexer::fs::JoinPath(config_.storagePath, config_.dbName);
 		if (reindexer::fs::MkDirAll(path) < 0) {
-			assertf(false, "Unable to remove %s", path);
+			assertf(false, "Unable to remove {}", path);
 		}
 		WriteUsersYAMLFile(dumpUserRecYAML());
 	}
@@ -675,8 +675,8 @@ Error ServerControl::Interface::TryResetReplicationRole(const std::string& ns) {
 		return item.Status();
 	}
 	if (ns.size()) {
-		err =
-			item.FromJSON(fmt::sprintf(R"json({"type":"action","action":{"command":"reset_replication_role","namespace":"%s"}})json", ns));
+		err = item.FromJSON(
+			fmt::format(R"json({{"type":"action","action":{{"command":"reset_replication_role","namespace":"{}"}}}})json", ns));
 	} else {
 		err = item.FromJSON(R"json({"type":"action","action":{"command":"reset_replication_role"}})json");
 	}
@@ -697,8 +697,8 @@ void ServerControl::Interface::SetReplicationLogLevel(LogLevel level, std::strin
 	auto item = api.NewItem(kConfigNamespace);
 	auto err = item.Status();
 	ASSERT_TRUE(err.ok()) << err.what();
-	err = item.FromJSON(fmt::sprintf(R"json({"type":"action","action":{"command":"set_log_level","type":"%s","level":"%s"}})json", type,
-									 reindexer::logLevelToString(level)));
+	err = item.FromJSON(fmt::format(R"json({{"type":"action","action":{{"command":"set_log_level","type":"{}","level":"{}" }} }})json",
+									type, reindexer::logLevelToString(level)));
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = api.reindexer->Upsert(kConfigNamespace, item);
 	ASSERT_TRUE(err.ok()) << err.what();

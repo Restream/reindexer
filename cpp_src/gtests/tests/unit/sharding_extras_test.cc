@@ -504,8 +504,8 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 			lsnsByShard.resize(kShards);
 			for (unsigned int l = 0; l < kShardCount; l++) {
 				client::QueryResults qr(flags);
-				err = rxSel.Select(
-					Query::FromSQL(fmt::sprintf("select * from %s where %s = 'key%d'", default_namespace, kFieldLocation, l)), qr);
+				err = rxSel.Select(Query::FromSQL(fmt::format("select * from {} where {} = 'key{}'", default_namespace, kFieldLocation, l)),
+								   qr);
 				ASSERT_TRUE(err.ok()) << err.what() << "; " << l;
 				for (auto& i : qr) {
 					auto item = i.GetItem();
@@ -530,8 +530,8 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 			auto& rxUpdate = *svc_[k][0].Get()->api.reindexer;
 			for (int l = 0; l < 3; l++) {
 				client::QueryResults qr(flags);
-				err = rxUpdate.Update(Query::FromSQL(fmt::sprintf("update %s set %s='datanew' where %s='key%d'", default_namespace,
-																  kFieldData, kFieldLocation, l)),
+				err = rxUpdate.Update(Query::FromSQL(fmt::format("update {} set {}='datanew' where {}='key{}'", default_namespace,
+																 kFieldData, kFieldLocation, l)),
 									  qr);
 				ASSERT_TRUE(err.ok()) << err.what();
 				for (auto& i : qr) {
@@ -560,7 +560,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 			for (unsigned int l = 0; l < kShardCount; l++) {
 				client::QueryResults qr(flags);
 				err = rxDelete.Delete(
-					Query::FromSQL(fmt::sprintf("Delete from %s where %s = 'key%d'", default_namespace, kFieldLocation, l)), qr);
+					Query::FromSQL(fmt::format("Delete from {} where {} = 'key{}'", default_namespace, kFieldLocation, l)), qr);
 				ASSERT_TRUE(err.ok()) << err.what();
 				ASSERT_EQ(qr.Count(), kMaxCountOnShard);
 				for (auto& i : qr) {

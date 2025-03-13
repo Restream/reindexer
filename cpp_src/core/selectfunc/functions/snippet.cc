@@ -43,26 +43,26 @@ void Snippet::init(const SelectFuncStruct& func) {
 		return;
 	}
 	if (func.funcArgs.size() < 4) {
-		throw Error(errParams, "Invalid snippet params need minimum 4 - have %d", func.funcArgs.size());
+		throw Error(errParams, "Invalid snippet params need minimum 4 - have {}", func.funcArgs.size());
 	}
 	try {
 		std::size_t pos;
 		before_ = stoul(func.funcArgs[2], &pos);
 		if (pos != func.funcArgs[2].size()) {
-			throw Error(errParams, "Invalid snippet param before - %s is not a number", func.funcArgs[2]);
+			throw Error(errParams, "Invalid snippet param before - {} is not a number", func.funcArgs[2]);
 		}
 	} catch (std::exception&) {
-		throw Error(errParams, "Invalid snippet param before - %s is not a number", func.funcArgs[2]);
+		throw Error(errParams, "Invalid snippet param before - {} is not a number", func.funcArgs[2]);
 	}
 
 	try {
 		std::size_t pos;
 		after_ = stoul(func.funcArgs[3], &pos);
 		if (pos != func.funcArgs[3].size()) {
-			throw Error(errParams, "Invalid snippet param after - %s is not a number", func.funcArgs[3]);
+			throw Error(errParams, "Invalid snippet param after - {} is not a number", func.funcArgs[3]);
 		}
 	} catch (std::exception&) {
-		throw Error(errParams, "Invalid snippet param after - %s is not a number", func.funcArgs[3]);
+		throw Error(errParams, "Invalid snippet param after - {} is not a number", func.funcArgs[3]);
 	}
 	if (std::holds_alternative<Snippet>(func.func)) {
 		if (func.funcArgs.size() > 4) {
@@ -295,7 +295,7 @@ bool Snippet::Process(ItemRef& res, PayloadType& plType, const SelectFuncStruct&
 	VariantArray kr;
 	pl.Get(func.field, kr);
 	if (kr.empty() || !kr[0].Type().IsSame(KeyValueType::String{})) {
-		throw Error(errLogic, "Unable to apply snippet function to the non-string field '%s'", func.field);
+		throw Error(errLogic, "Unable to apply snippet function to the non-string field '{}'", func.field);
 	}
 
 	const std::string_view data = std::string_view(p_string(kr[0]));

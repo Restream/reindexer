@@ -12,7 +12,7 @@ Error NamespaceDef::FromJSON(std::span<char> json) {
 		gason::JsonParser parser;
 		FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "NamespaceDef: %s", ex.what());
+		return Error(errParseJson, "NamespaceDef: {}", ex.what());
 	} catch (const Error& err) {
 		return err;
 	}
@@ -58,7 +58,7 @@ Error NsReplicationOpts::FromJSON(std::span<char> json) {
 		gason::JsonParser parser;
 		FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "NamespaceDef: %s", ex.what());
+		return Error(errParseJson, "NamespaceDef: {}", ex.what());
 	} catch (const Error& err) {
 		return err;
 	}

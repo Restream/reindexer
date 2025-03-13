@@ -91,36 +91,7 @@ public:
 	/// @param ret - Pointer to returned database pointer
 	/// @return Error - error object
 	template <CalledFrom caller, typename... Args>
-	Error GetDB(UserRole role, Reindexer** ret, Args&&... args) noexcept {
-		if (role > role_) {
-			return Error(errForbidden, "Forbidden: need role %s of db '%s' user '%s' have role=%s", UserRoleName(role), dbName_, login_,
-						 UserRoleName(role_));
-		}
-
-		const bool shardingRole = role_ == UserRole::kRoleSharding;
-		const bool replicationRole = role_ == UserRole::kRoleReplication;
-
-		if constexpr (caller == CalledFrom::RPCServer) {
-			if (role > kRoleDataRead) {
-				return [&](lsn_t lsn, int emmiterServerId, int shardId) -> Error {
-					if rx_unlikely ((replicationRole && lsn.isEmpty() && emmiterServerId < 0) || (shardingRole && shardId < 0)) {
-						return Error(errForbidden, "Forbidden: %s is required to perform modify operation with the role '%s'",
-									 replicationRole ? "a non-empty lsn or emmiter server id" : "a non-negative shardId",
-									 UserRoleName(role_));
-					}
-					*ret = db_;
-					return {};
-				}(std::forward<Args>(args)...);
-			}
-		} else {
-			if rx_unlikely (shardingRole || replicationRole) {
-				return Error(errForbidden, "Forbidden: incorrect role%s: '%s'",
-							 caller == CalledFrom::HTTPServer ? " in the HTTP protocol" : "", UserRoleName(role_));
-			}
-		}
-		*ret = db_;
-		return {};
-	}
+	Error GetDB(UserRole role, Reindexer** ret, Args&&... args) noexcept;
 	/// Reset Reindexer DB object pointer in context
 	void ResetDB() noexcept {
 		db_ = nullptr;
@@ -227,7 +198,7 @@ std::enable_if_t<std::is_same_v<UserLoginT, AuthContext::UserLogin>, Cout>& oper
 }  // namespace reindexer_server
 
 template <>
-struct fmt::printf_formatter<reindexer_server::AuthContext::UserLogin> {
+struct fmt::formatter<reindexer_server::AuthContext::UserLogin> {
 	template <typename ContextT>
 	constexpr auto parse(ContextT& ctx) {
 		return ctx.begin();
@@ -238,5 +209,37 @@ struct fmt::printf_formatter<reindexer_server::AuthContext::UserLogin> {
 	}
 };
 
-template <>
-struct fmt::formatter<reindexer_server::AuthContext::UserLogin> : public fmt::printf_formatter<reindexer_server::AuthContext::UserLogin> {};
+namespace reindexer_server {
+
+template <AuthContext::CalledFrom caller, typename... Args>
+Error AuthContext::GetDB(UserRole role, Reindexer** ret, Args&&... args) noexcept {
+	if (role > role_) {
+		return Error(errForbidden, "Forbidden: need role {} of db '{}' user '{}' have role={}", UserRoleName(role), dbName_, login_,
+					 UserRoleName(role_));
+	}
+
+	const bool shardingRole = role_ == UserRole::kRoleSharding;
+	const bool replicationRole = role_ == UserRole::kRoleReplication;
+
+	if constexpr (caller == CalledFrom::RPCServer) {
+		if (role > kRoleDataRead) {
+			return [&](lsn_t lsn, int emmiterServerId, int shardId) -> Error {
+				if rx_unlikely ((replicationRole && lsn.isEmpty() && emmiterServerId < 0) || (shardingRole && shardId < 0)) {
+					return Error(errForbidden, "Forbidden: {} is required to perform modify operation with the role '{}'",
+								 replicationRole ? "a non-empty lsn or emmiter server id" : "a non-negative shardId", UserRoleName(role_));
+				}
+				*ret = db_;
+				return {};
+			}(std::forward<Args>(args)...);
+		}
+	} else {
+		if rx_unlikely (shardingRole || replicationRole) {
+			return Error(errForbidden, "Forbidden: incorrect role{}: '{}'", caller == CalledFrom::HTTPServer ? " in the HTTP protocol" : "",
+						 UserRoleName(role_));
+		}
+	}
+	*ret = db_;
+	return {};
+}
+
+}  // namespace reindexer_server

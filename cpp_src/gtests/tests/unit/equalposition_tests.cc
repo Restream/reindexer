@@ -153,18 +153,17 @@ TEST_F(EqualPositionApi, SelectNonIndexedArrays) {
 	err = rt.reindexer->AddIndex(ns, {"id", "hash", "string", IndexOpts().PK()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	const char jsonPattern[] = R"xxx({"id": "%s", "nested": {"a1": [%d, %d, %d], "a2": [%d, %d, %d], "a3": [%d, %d, %d]}})xxx";
+	constexpr auto jsonPattern = R"xxx({{"id": "{}", "nested": {{"a1": [{}, {}, {}], "a2": [{}, {}, {}], "a3": [{}, {}, {}]}}}})xxx";
 
 	for (int i = 0; i < 100; ++i) {
 		Item item = rt.reindexer->NewItem(ns);
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
-		char json[1024];
 		std::string pk("pk" + std::to_string(i));
-		snprintf(json, sizeof(json) - 1, jsonPattern, pk.c_str(), rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10,
-				 rand() % 10, rand() % 10, rand() % 10, rand() % 10);
+		auto json = fmt::format(jsonPattern, pk, rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10,
+								rand() % 10, rand() % 10);
 
-		err = item.FromJSON(json);
+		err = item.Unsafe(true).FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		err = rt.reindexer->Upsert(ns, item);
@@ -192,18 +191,17 @@ TEST_F(EqualPositionApi, SelectMixedArrays) {
 	err = rt.reindexer->AddIndex(ns, {"a1", "hash", "int64", IndexOpts().Array()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	const char jsonPattern[] = R"xxx({"id": "%s", "a1": [%d, %d, %d], "nested": {"a2": [%d, %d, %d], "a3": [%d, %d, %d]}})xxx";
+	constexpr auto jsonPattern = R"xxx({{"id": "{}", "a1": [{}, {}, {}], "nested": {{"a2": [{}, {}, {}], "a3": [{}, {}, {}]}}}})xxx";
 
 	for (int i = 0; i < 100; ++i) {
 		Item item = rt.reindexer->NewItem(ns);
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
-		char json[1024];
 		std::string pk("pk" + std::to_string(i));
-		snprintf(json, sizeof(json) - 1, jsonPattern, pk.c_str(), rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10,
-				 rand() % 10, rand() % 10, rand() % 10, rand() % 10);
+		auto json = fmt::format(jsonPattern, pk, rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10,
+								rand() % 10, rand() % 10);
 
-		err = item.FromJSON(json);
+		err = item.Unsafe(true).FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		err = rt.reindexer->Upsert(ns, item);
@@ -226,15 +224,14 @@ TEST_F(EqualPositionApi, EmptyCompOpErr) {
 	EXPECT_TRUE(err.ok()) << err.what();
 	err = rt.reindexer->AddIndex(ns, {"id", "hash", "int", IndexOpts().PK()});
 	EXPECT_TRUE(err.ok()) << err.what();
-	const char jsonPattern[] = R"xxx({"id": %d, "a1": [10, 20, 30], "a2": [20, 30, 40]}})xxx";
+	constexpr auto jsonPattern = R"xxx({{"id": {}, "a1": [10, 20, 30], "a2": [20, 30, 40]}})xxx";
 	for (int i = 0; i < 10; ++i) {
 		Item item = rt.reindexer->NewItem(ns);
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
-		char json[1024];
-		snprintf(json, sizeof(json) - 1, jsonPattern, i);
+		auto json = fmt::format(jsonPattern, i);
 
-		err = item.FromJSON(json);
+		err = item.Unsafe(true).FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		err = rt.reindexer->Upsert(ns, item);

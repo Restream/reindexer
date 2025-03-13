@@ -1039,7 +1039,7 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderOfflineNodeAndNotExistNode) {
 			{
 				auto item = cluster.GetNode(leaderId)->CreateClusterChangeLeaderItem(kNotExistServerNode);
 				Error err = cluster.GetNode(leaderId)->api.reindexer->Update(kConfigNamespace, item);
-				Error errPattern(errLogic, "Cluster config. Cannot find node index for ServerId(%d)", kNotExistServerNode);
+				Error errPattern(errLogic, "Cluster config. Cannot find node index for ServerId({})", kNotExistServerNode);
 				ASSERT_EQ(err.code(), errPattern.code());
 				ASSERT_EQ(err.whatStr(), errPattern.whatStr());
 				int leaderNew = cluster.AwaitLeader(kMaxElectionsTime);

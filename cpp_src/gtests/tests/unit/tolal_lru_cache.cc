@@ -47,34 +47,33 @@ TEST(LruCache, SimpleTest) {
 	PRINTF("preparing queries for caching ...\n");
 	int i = 0;
 	for (int j = 0; j < kNsCount; ++j, ++i) {
-		qs.emplace_back(QueryCacheData{.q = Query(fmt::sprintf("namespace_%d", i))});
+		qs.emplace_back(QueryCacheData{.q = Query(fmt::format("namespace_{}", i))});
 	}
 	for (int j = 0; j < kSingleJoinNsCount; ++j, ++i) {
-		const std::string kJoinedNsName = fmt::sprintf("joined_namespace_%d", j);
+		const std::string kJoinedNsName = fmt::format("joined_namespace_{}", j);
 		qs.emplace_back(QueryCacheData{
-			.q = Query(fmt::sprintf("namespace_%d", i))
-					 .InnerJoin(fmt::sprintf("joined_field_%d", j), fmt::sprintf("main_field_%d", j % 2), CondEq, Query(kJoinedNsName)),
+			.q = Query(fmt::format("namespace_{}", i))
+					 .InnerJoin(fmt::format("joined_field_{}", j), fmt::format("main_field_{}", j % 2), CondEq, Query(kJoinedNsName)),
 			.joinedSelectors = {CacheJoinedSelectorMock{kJoinedNsName, 123}}});
 	}
 	for (int j = 0; j < kDoubleJoinNsCount; ++j, ++i) {
-		const std::string kJoinedNsName1 = fmt::sprintf("second_joined_namespace_%d", j);
-		const std::string kJoinedNsName2 = fmt::sprintf("third_joined_namespace_%d", j);
+		const std::string kJoinedNsName1 = fmt::format("second_joined_namespace_{}", j);
+		const std::string kJoinedNsName2 = fmt::format("third_joined_namespace_{}", j);
 		constexpr int64_t kUpdateTime1 = 123;
 		constexpr int64_t kUpdateTime2 = 321;
 		if (j % 3 == 0) {
 			qs.emplace_back(QueryCacheData{
-				.q = Query(fmt::sprintf("namespace_%d", i))
-						 .InnerJoin(fmt::sprintf("joined_field_%d", j), fmt::sprintf("main_field_%d", j % 2), CondEq, Query(kJoinedNsName1))
-						 .OrInnerJoin(fmt::sprintf("joined_field_%d", j), fmt::sprintf("main_field_%d", j % 2), CondEq,
-									  Query(kJoinedNsName2)),
+				.q =
+					Query(fmt::format("namespace_{}", i))
+						.InnerJoin(fmt::format("joined_field_{}", j), fmt::format("main_field_{}", j % 2), CondEq, Query(kJoinedNsName1))
+						.OrInnerJoin(fmt::format("joined_field_{}", j), fmt::format("main_field_{}", j % 2), CondEq, Query(kJoinedNsName2)),
 				.joinedSelectors = {CacheJoinedSelectorMock{kJoinedNsName1, kUpdateTime1},
 									CacheJoinedSelectorMock{kJoinedNsName2, kUpdateTime2}}});
 		} else {
 			qs.emplace_back(QueryCacheData{
-				.q =
-					Query(fmt::sprintf("namespace_%d", i))
-						.InnerJoin(fmt::sprintf("joined_field_%d", j), fmt::sprintf("main_field_%d", j % 2), CondEq, Query(kJoinedNsName1))
-						.InnerJoin(fmt::sprintf("joined_field_%d", j), fmt::sprintf("main_field_%d", j % 2), CondEq, Query(kJoinedNsName2)),
+				.q = Query(fmt::format("namespace_{}", i))
+						 .InnerJoin(fmt::format("joined_field_{}", j), fmt::format("main_field_{}", j % 2), CondEq, Query(kJoinedNsName1))
+						 .InnerJoin(fmt::format("joined_field_{}", j), fmt::format("main_field_{}", j % 2), CondEq, Query(kJoinedNsName2)),
 				.joinedSelectors = {CacheJoinedSelectorMock{kJoinedNsName1, kUpdateTime1},
 									CacheJoinedSelectorMock{kJoinedNsName2, kUpdateTime2}}});
 		}

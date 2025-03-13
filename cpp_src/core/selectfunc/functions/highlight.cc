@@ -11,7 +11,7 @@ namespace reindexer {
 
 bool Highlight::Process(ItemRef& res, PayloadType& pl_type, const SelectFuncStruct& func, std::vector<key_string>& stringsHolder) {
 	if (func.funcArgs.size() < 2) {
-		throw Error(errParams, "Invalid highlight params need minimum 2 - have %d", func.funcArgs.size());
+		throw Error(errParams, "Invalid highlight params need minimum 2 - have {}", func.funcArgs.size());
 	}
 	if (!func.ctx || func.ctx->Type() != BaseFunctionCtx::CtxType::kFtArea) {
 		return false;
@@ -36,7 +36,7 @@ bool Highlight::Process(ItemRef& res, PayloadType& pl_type, const SelectFuncStru
 	pl.Get(func.field, kr);
 
 	if (kr.empty() || !kr[0].Type().IsSame(KeyValueType::String{})) {
-		throw Error(errLogic, "Unable to apply highlight function to the non-string field '%s'", func.field);
+		throw Error(errLogic, "Unable to apply highlight function to the non-string field '{}'", func.field);
 	}
 
 	const std::string_view data = std::string_view(p_string(kr[0]));

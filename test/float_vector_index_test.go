@@ -109,7 +109,7 @@ func newTestItemVecBF(id int, pkgsCount int) interface{} {
 
 func newTestItemMultiIndexVec(id int, pkgsCount int) interface{} {
 	result := &TestItemMultiIndexVec{
-		ID: mkID(id),
+		ID:   mkID(id),
 		Vec1: make([]float32, kMultiIndexVecDimension),
 		Vec2: make([]float32, kMultiIndexVecDimension),
 		Vec3: make([]float32, kMultiIndexVecDimension),
@@ -267,92 +267,92 @@ func TestIvf(t *testing.T) {
 	log.Println("IVF", it.Count())
 }
 
-func TestAddKnnIndex(t* testing.T) {
+func TestAddKnnIndex(t *testing.T) {
 	const kMaxElements = kMultiIndexMaxElems / 5
 	currentSize := 0
-	FillTestItemsWithFuncParts(kMultiIndexVecNs, currentSize, currentSize + kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
+	FillTestItemsWithFuncParts(kMultiIndexVecNs, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
 	currentSize += kMaxElements
 	removeSomeItems(t, kMultiIndexVecNs, newTestItemMultiIndexVec, currentSize)
 
-	bfOpts := reindexer.FloatVectorIndexOpts { Metric: "l2", Dimension: kMultiIndexVecDimension, StartSize: kMultiIndexMaxElems }
-	indexDef := reindexer.IndexDef {
-		Name: "vec1",
+	bfOpts := reindexer.FloatVectorIndexOpts{Metric: "l2", Dimension: kMultiIndexVecDimension, StartSize: kMultiIndexMaxElems}
+	indexDef := reindexer.IndexDef{
+		Name:      "vec1",
 		JSONPaths: []string{"vec1"},
 		IndexType: "vec_bf",
 		FieldType: "float_vector",
-		Config: bfOpts,
+		Config:    bfOpts,
 	}
 	err := DB.AddIndex(kMultiIndexVecNs, indexDef)
 	require.NoError(t, err)
 	defer DB.DropIndex(kMultiIndexVecNs, "vec1") // Deallocate index
 
-	FillTestItemsWithFuncParts(kMultiIndexVecNs, currentSize, currentSize + kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
+	FillTestItemsWithFuncParts(kMultiIndexVecNs, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
 	currentSize += kMaxElements
 	removeSomeItems(t, kMultiIndexVecNs, newTestItemMultiIndexVec, currentSize)
 
-	hnswSTOpts := reindexer.FloatVectorIndexOpts {
-		Metric: "inner_product",
-		Dimension: kMultiIndexVecDimension,
-		M: 32,
-		EfConstruction: 100,
-		StartSize: kMultiIndexMaxElems,
+	hnswSTOpts := reindexer.FloatVectorIndexOpts{
+		Metric:             "inner_product",
+		Dimension:          kMultiIndexVecDimension,
+		M:                  32,
+		EfConstruction:     100,
+		StartSize:          kMultiIndexMaxElems,
 		MultithreadingMode: 0,
 	}
-	indexDef = reindexer.IndexDef {
-		Name: "vec2",
+	indexDef = reindexer.IndexDef{
+		Name:      "vec2",
 		JSONPaths: []string{"vec2"},
 		IndexType: "hnsw",
 		FieldType: "float_vector",
-		Config: hnswSTOpts,
+		Config:    hnswSTOpts,
 	}
 	err = DB.AddIndex(kMultiIndexVecNs, indexDef)
 	require.NoError(t, err)
 	defer DB.DropIndex(kMultiIndexVecNs, "vec2") // Deallocate index
 
-	FillTestItemsWithFuncParts(kMultiIndexVecNs, currentSize, currentSize + kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
+	FillTestItemsWithFuncParts(kMultiIndexVecNs, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
 	currentSize += kMaxElements
 	removeSomeItems(t, kMultiIndexVecNs, newTestItemMultiIndexVec, currentSize)
 
-	hnswMTOpts := reindexer.FloatVectorIndexOpts {
-		Metric: "cosine",
-		Dimension: kMultiIndexVecDimension,
-		M: 8,
-		EfConstruction: 300,
-		StartSize: kMultiIndexMaxElems,
+	hnswMTOpts := reindexer.FloatVectorIndexOpts{
+		Metric:             "cosine",
+		Dimension:          kMultiIndexVecDimension,
+		M:                  8,
+		EfConstruction:     300,
+		StartSize:          kMultiIndexMaxElems,
 		MultithreadingMode: 1,
 	}
-	indexDef = reindexer.IndexDef {
-		Name: "vec3",
+	indexDef = reindexer.IndexDef{
+		Name:      "vec3",
 		JSONPaths: []string{"vec3"},
 		IndexType: "hnsw",
 		FieldType: "float_vector",
-		Config: hnswMTOpts,
+		Config:    hnswMTOpts,
 	}
 	err = DB.AddIndex(kMultiIndexVecNs, indexDef)
 	require.NoError(t, err)
 	defer DB.DropIndex(kMultiIndexVecNs, "vec3") // Deallocate index
 
-	FillTestItemsWithFuncParts(kMultiIndexVecNs, currentSize, currentSize + kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
+	FillTestItemsWithFuncParts(kMultiIndexVecNs, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
 	currentSize += kMaxElements
 	removeSomeItems(t, kMultiIndexVecNs, newTestItemMultiIndexVec, currentSize)
 
-	ivfOpts := reindexer.FloatVectorIndexOpts {
-		Metric: "l2",
-		Dimension: kMultiIndexVecDimension,
+	ivfOpts := reindexer.FloatVectorIndexOpts{
+		Metric:         "l2",
+		Dimension:      kMultiIndexVecDimension,
 		CentroidsCount: 32,
 	}
-	indexDef = reindexer.IndexDef {
-		Name: "vec4",
+	indexDef = reindexer.IndexDef{
+		Name:      "vec4",
 		JSONPaths: []string{"vec4"},
 		IndexType: "ivf",
 		FieldType: "float_vector",
-		Config: ivfOpts,
+		Config:    ivfOpts,
 	}
 	err = DB.AddIndex(kMultiIndexVecNs, indexDef)
 	require.NoError(t, err)
 	defer DB.DropIndex(kMultiIndexVecNs, "vec4") // Deallocate index
 
-	FillTestItemsWithFuncParts(kMultiIndexVecNs, currentSize, currentSize + kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
+	FillTestItemsWithFuncParts(kMultiIndexVecNs, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
 	currentSize += kMaxElements
 	removeSomeItems(t, kMultiIndexVecNs, newTestItemMultiIndexVec, currentSize)
 }

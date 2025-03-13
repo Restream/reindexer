@@ -65,7 +65,7 @@ public:
 				Field(field).Set(Variant{ConstFloatVectorView{}});
 			} else {
 				if (keys.size() != 1) {
-					throw Error(errLogic, "Set array of %d size to not array field '%s'", keys.size(), t_.Field(field).Name());
+					throw Error(errLogic, "Set array of {} size to not array field '{}'", keys.size(), t_.Field(field).Name());
 				}
 				Field(field).Set(keys[0]);
 			}

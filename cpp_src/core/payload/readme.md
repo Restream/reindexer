@@ -152,9 +152,9 @@ Untyped typle of nonidexed fields is stored in `CJSON` format in 1-st field (nam
     // Dump all fields to stdout
     for (int i = 0; i < payload.NumFields(); i++) {
 		auto &field = payload.Type().Field(i);
-		printf("\n%s=", field.Name().c_str());
+		printf("\n{}=", field.Name().c_str());
 		for (auto &elem : payload.Get (i,keyRefs)) {
-			printf("%s", Variant(elem).toString().c_str());
+			printf("{}", Variant(elem).toString().c_str());
 		}
 	}
 

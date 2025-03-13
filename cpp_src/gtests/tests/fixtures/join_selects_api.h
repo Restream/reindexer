@@ -203,7 +203,7 @@ protected:
 				parser.Parse(reindexer::giftStr(wrSer.Slice()));
 			}
 		} catch (const gason::Exception& ex) {
-			return Error(errParseJson, "VerifyResJSON: %s", ex.what());
+			return Error(errParseJson, "VerifyResJSON: {}", ex.what());
 		}
 		return err;
 	}

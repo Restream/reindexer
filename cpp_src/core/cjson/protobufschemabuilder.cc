@@ -81,7 +81,7 @@ void ProtobufSchemaBuilder::Field(std::string_view name, int tagName, const Fiel
 	TagsPathScope<TagsPath> tagScope(fieldsTypes_->tagsPath_, tagName);
 	const auto [typeName, type] = jsonSchemaTypeToProtobufType(props);
 	if (type.Is<KeyValueType::Undefined>() || typeName.empty()) {
-		throw Error(errLogic, "Can't get protobuf schema - field [%s] is of unsupported type [%s] (%s)", name, props.type, props.xGoType);
+		throw Error(errLogic, "Can't get protobuf schema - field [{}] is of unsupported type [{}] ({})", name, props.type, props.xGoType);
 	}
 	if (props.isArray) {
 		assertrx(type_ != ObjType::TypeArray && type_ != ObjType::TypeObjectArray);

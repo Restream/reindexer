@@ -26,7 +26,7 @@ TEST_F(NsApi, TupleColumnSize) {
 
 	constexpr int kDataCount = 500;
 	for (int i = 0; i < kDataCount; ++i) {
-		rt.UpsertJSON(default_namespace, fmt::sprintf(R"j({"%s":%d,"date":%d,"dense":%d})j", idIdxName, i, rand(), rand()));
+		rt.UpsertJSON(default_namespace, fmt::format(R"j({{"{}":{},"date":{},"dense":{} }})j", idIdxName, i, rand(), rand()));
 	}
 
 	auto memstats = getMemStat(*rt.reindexer, default_namespace);
@@ -1533,13 +1533,11 @@ TEST_F(NsApi, ArrayRemoveSeveralJsonPathsField) {
 	}
 
 	const Query query =
-		Query(kBaseQuery)
-			.Set(multiPathArrayField, Variant(std::string(fmt::sprintf(R"(array_remove_once(%s, ['99']))", multiPathArrayField))), true);
+		Query(kBaseQuery).Set(multiPathArrayField, Variant(fmt::format("array_remove_once({}, ['99'])", multiPathArrayField)), true);
 	QueryResults qr;
 	auto err = rt.reindexer->Update(query, qr);
 	ASSERT_FALSE(err.ok());
-	ASSERT_EQ(err.what(),
-			  fmt::sprintf(R"(Ambiguity when updating field with several json paths by index name: '%s')", multiPathArrayField));
+	ASSERT_EQ(err.what(), fmt::format("Ambiguity when updating field with several json paths by index name: '{}'", multiPathArrayField));
 }
 
 TEST_F(NsApi, ArrayRemoveWithSql) {
@@ -1957,7 +1955,7 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 						reindexer::IndexDef(kIndexName, {kIndexName}, "hash", "int64", IndexOpts().Array().Sparse(index == "sparse")));
 		}
 
-		SCOPED_TRACE(fmt::sprintf("Index type is '%s' ", index));
+		SCOPED_TRACE(fmt::format("Index type is '{}' ", index));
 		{
 			const auto description = "Update array field, nested into objects array with explicit index (1 element)";
 			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[0].field[4]", {777}, false);
@@ -2139,8 +2137,8 @@ TEST_F(NsApi, UpdateArrayIndexFieldWithSeveralJsonPaths) {
 	std::vector<Values> fieldsValues(fieldsCnt);
 	for (int i = 0; i < fieldsCnt; ++i) {
 		for (int j = 0; j < valsPerFieldCnt; ++j) {
-			fieldsValues[i].valsList.emplace_back(fmt::sprintf("data%d%d", i, j));
-			fieldsValues[i].newValsList.emplace_back(fmt::sprintf("data%d%d", i, j + i));
+			fieldsValues[i].valsList.emplace_back(fmt::format("data{}{}", i, j));
+			fieldsValues[i].newValsList.emplace_back(fmt::format("data{}{}", i, j + i));
 		}
 	}
 
@@ -2149,25 +2147,25 @@ TEST_F(NsApi, UpdateArrayIndexFieldWithSeveralJsonPaths) {
 	auto makeFieldsList = [&fieldsValues](const reindexer::fast_hash_set<int>& indexes, OpT type) {
 		auto quote = type == OpT::Insert ? '"' : '\'';
 		std::vector<std::string> Values::* list = type == OpT::Insert ? &Values::valsList : &Values::newValsList;
-		const auto fieldsListTmplt = type == OpT::Insert ? R"("%sfield%d": [%s])" : R"(%sfield%d = [%s])";
+		const auto fieldsListTmplt = fmt::runtime(type == OpT::Insert ? R"("{}field{}": [{}])" : R"({}field{} = [{}])");
 		std::string fieldsList;
 		for (int idx : indexes) {
 			std::string fieldList;
 			for (const auto& data : fieldsValues[idx].*list) {
 				fieldList += std::string(fieldList.empty() ? "" : ", ") + quote + data + quote;
 			}
-			fieldsList += fmt::sprintf(fieldsListTmplt, fieldsList.empty() ? "" : ", ", idx, fieldList);
+			fieldsList += fmt::format(fieldsListTmplt, fieldsList.empty() ? "" : ", ", idx, fieldList);
 		}
 		return fieldsList;
 	};
 
 	auto makeItem = [&makeFieldsList](int id, const reindexer::fast_hash_set<int>& indexes) {
 		auto list = makeFieldsList(indexes, OpT::Insert);
-		return fmt::sprintf(R"({"id": %d%s})", id, (list.empty() ? "" : ", ") + list);
+		return fmt::format(R"({{"id": {}{}}})", id, (list.empty() ? "" : ", ") + list);
 	};
 
 	auto makeUpdate = [this, &makeFieldsList](int id, const reindexer::fast_hash_set<int>& indexes) {
-		return fmt::sprintf("UPDATE %s SET %s WHERE id = %d", default_namespace, makeFieldsList(indexes, OpT::Update), id);
+		return fmt::format("UPDATE {} SET {} WHERE id = {}", default_namespace, makeFieldsList(indexes, OpT::Update), id);
 	};
 
 	struct TestCase {
@@ -2215,7 +2213,7 @@ TEST_F(NsApi, UpdateArrayIndexFieldWithSeveralJsonPaths) {
 			auto item = qr.begin().GetItem(false);
 			for (auto idx : testCases[i].expected()) {
 				int varArrCnt = 0;
-				for (auto&& var : VariantArray(item[fmt::sprintf("field%d", idx)])) {
+				for (auto&& var : VariantArray(item[fmt::format("field{}", idx)])) {
 					const auto& data = testCases[i].updateIdxs.count(idx) ? fieldsValues[idx].newValsList : fieldsValues[idx].valsList;
 					ASSERT_EQ(var.As<std::string>(), data[varArrCnt++]);
 				}
@@ -2291,21 +2289,21 @@ TEST_F(NsApi, UpdateOutOfBoundsArrayField) {
 	};
 	const std::vector<Case> cases = {
 		{.name = "update-index-array-field",
-		 .baseUpdateExpr = "indexed_array_field[%d]",
+		 .baseUpdateExpr = "indexed_array_field[{}]",
 		 .arrayIdx = {9, 10, 100, 10000, 5000000},
 		 .createQueryF =
 			 [&](const std::string& path) {
 				 return Query(default_namespace).Where("id", CondEq, kTargetID).Set(path, static_cast<int>(777));
 			 }},
 		{.name = "update-non-indexed-array-field",
-		 .baseUpdateExpr = "array_field[%d]",
+		 .baseUpdateExpr = "array_field[{}]",
 		 .arrayIdx = {3, 4, 100, 10000, 5000000},
 		 .createQueryF =
 			 [&](const std::string& path) {
 				 return Query(default_namespace).Where("id", CondEq, kTargetID).Set(path, static_cast<int>(777));
 			 }},
 		{.name = "update-object-array-field",
-		 .baseUpdateExpr = "nested.nested_array[%d]",
+		 .baseUpdateExpr = "nested.nested_array[{}]",
 		 .arrayIdx = {3, 4, 100, 10000, 5000000},
 		 .createQueryF = [&](const std::string& path) {
 			 return Query(default_namespace)
@@ -2329,7 +2327,7 @@ TEST_F(NsApi, UpdateOutOfBoundsArrayField) {
 			}
 
 			// 4. Set item with out of bound index to specific value via Query builder
-			const auto path = fmt::sprintf(c.baseUpdateExpr, idx);
+			const auto path = fmt::format(fmt::runtime(c.baseUpdateExpr), idx);
 			SCOPED_TRACE(path);
 			QueryResults qrUpdate;
 			const auto updateQuery = c.createQueryF(path);
@@ -3267,7 +3265,7 @@ TEST_F(NsApi, MultiDimensionalArrayQueryErrors) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	auto testSet = [this](std::string_view field) {
-		SCOPED_TRACE(fmt::sprintf("Running tests for '%s'", field));
+		SCOPED_TRACE(fmt::format("Running tests for '{}'", field));
 
 		constexpr std::string_view kTupleErrorText =
 			"Unable to use 'tuple'-value (array of arrays, array of points, etc) in UPDATE-query. Only single dimensional arrays and "
@@ -3350,7 +3348,7 @@ TEST_F(NsApi, MultiDimensionalArrayItemsErrors) {
 							IndexDeclaration{indexedSparseArrayField, "tree", "double", IndexOpts().Array().Sparse(), 0}});
 
 	auto testSet = [this](std::string_view field) {
-		SCOPED_TRACE(fmt::sprintf("Running tests for '%s'", field));
+		SCOPED_TRACE(fmt::format("Running tests for '{}'", field));
 
 		constexpr std::string_view kCompositeErrorText("Unable to use 'composite'-value (object, array of objects, etc) to modify item");
 		constexpr std::string_view kTupleErrorText("Unable to use 'tuple'-value (array of arrays, array of points, etc) to modify item");

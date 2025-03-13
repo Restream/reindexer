@@ -53,6 +53,7 @@ private:
 		unsigned start = QueryEntry::kDefaultOffset;
 		unsigned count = QueryEntry::kDefaultLimit;
 		bool preselectForFt = false;
+		bool calcAggsImmediately = true;
 	};
 
 	template <bool reverse, bool haveComparators, bool aggregationsOnly, typename ResultsT, typename JoinPreResultCtx>
@@ -68,11 +69,11 @@ private:
 	void calculateSortExpressions(RankT, IdType rowId, IdType properRowId, SelectCtx&, const LocalQueryResults&);
 	template <bool aggregationsOnly, typename JoinPreResultCtx>
 	void addSelectResult(RankT, IdType rowId, IdType properRowId, SelectCtxWithJoinPreSelect<JoinPreResultCtx>& sctx,
-						 h_vector<Aggregator, 4>& aggregators, LocalQueryResults& result, bool preselectForFt);
+						 h_vector<Aggregator, 4>& aggregators, LocalQueryResults& result, bool needAggsCalc, bool preselectForFt);
 
 	h_vector<Aggregator, 4> getAggregators(const std::vector<AggregateEntry>& aggEntrys, StrictMode strictMode) const;
 	void setLimitAndOffset(ItemRefVector& result, size_t offset, size_t limit);
-	void prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, IsRanked, bool availableSelectBySortIndex);
+	void prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, IsRanked, bool availableSelectBySortIndex) const;
 	static void prepareSortIndex(const NamespaceImpl&, std::string& column, int& index, bool& skipSortingEntry, StrictMode);
 	static void prepareSortJoinedIndex(size_t nsIdx, std::string_view column, int& index, const std::vector<JoinedSelector>&,
 									   bool& skipSortingEntry, StrictMode);

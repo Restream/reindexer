@@ -14,9 +14,9 @@ namespace reindexer {
 
 void ExplainCalc::LogDump(int logLevel) {
 	if (logLevel >= LogInfo && enabled_) {
-		logPrintf(LogInfo,
-				  "Got %d items in %d µs [prepare %d µs, select %d µs, postprocess %d µs loop %d µs, general sort %d µs], sortindex %s",
-				  count_, To_us(total_), To_us(prepare_), To_us(select_), To_us(postprocess_), To_us(loop_), To_us(sort_), sortIndex_);
+		logFmt(LogInfo,
+			   "Got {} items in {} µs [prepare {} µs, select {} µs, postprocess {} µs loop {} µs, general sort {} µs], sortindex {}",
+			   count_, To_us(total_), To_us(prepare_), To_us(select_), To_us(postprocess_), To_us(loop_), To_us(sort_), sortIndex_);
 	}
 
 	if (logLevel >= LogTrace) {
@@ -24,27 +24,26 @@ void ExplainCalc::LogDump(int logLevel) {
 			selectors_->VisitForEach(
 				Skip<JoinSelectIterator, SelectIteratorsBracket>{},
 				[this](const SelectIterator& s) {
-					logPrintf(LogInfo, "%s: %d idsets, cost %g, matched %d, %s", s.name, s.size(), s.Cost(iters_), s.GetMatchedCount(),
-							  s.Dump());
+					logFmt(LogInfo, "{}: {} idsets, cost {}, matched {}, {}", s.name, s.size(), s.Cost(iters_), s.GetMatchedCount(),
+						   s.Dump());
 				},
 				[this](const FieldsComparator& c) {
-					logPrintf(LogInfo, "%s: cost %g, matched %d, %s", c.Name(), c.Cost(iters_), c.GetMatchedCount(), c.Dump());
+					logFmt(LogInfo, "{}: cost {}, matched {}, {}", c.Name(), c.Cost(iters_), c.GetMatchedCount(), c.Dump());
 				},
 				Restricted<FieldsComparator, EqualPositionComparator, ComparatorNotIndexed,
 						   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
 					[this](const auto& c) {
-						logPrintf(LogInfo, "%s: cost %g, matched %d, %s", c.Name(), c.Cost(iters_), c.GetMatchedCount(), c.Dump());
+						logFmt(LogInfo, "{}: cost {}, matched {}, {}", c.Name(), c.Cost(iters_), c.GetMatchedCount(), c.Dump());
 					}),
-				[](const AlwaysTrue&) { logPrintf(LogInfo, "AlwaysTrue"); });
+				[](const AlwaysTrue&) { logFmt(LogInfo, "AlwaysTrue"); });
 		}
 
 		if (jselectors_) {
 			for (auto& js : *jselectors_) {
 				if (js.Type() == JoinType::LeftJoin || js.Type() == JoinType::Merge) {
-					logPrintf(LogInfo, "%s %s: called %d", JoinTypeName(js.Type()), js.RightNsName(), js.Called());
+					logFmt(LogInfo, "{} {}: called {}", JoinTypeName(js.Type()), js.RightNsName(), js.Called());
 				} else {
-					logPrintf(LogInfo, "%s %s: called %d, matched %d", JoinTypeName(js.Type()), js.RightNsName(), js.Called(),
-							  js.Matched());
+					logFmt(LogInfo, "{} {}: called {}, matched {}", JoinTypeName(js.Type()), js.RightNsName(), js.Called(), js.Matched());
 				}
 			}
 		}
@@ -75,7 +74,7 @@ constexpr static inline const char* opName(OpType op, bool first = true) {
 		case OpNot:
 			return "not ";
 		default:
-			throw Error(errLogic, "Unexpected op type %d", int(op));
+			throw Error(errLogic, "Unexpected op type {}", int(op));
 	}
 }
 
@@ -89,7 +88,7 @@ constexpr std::string_view fieldKind(IteratorFieldKind fk) {
 		case IteratorFieldKind::None:
 			return ""sv;
 		default:
-			throw Error(errLogic, "Unexpected field type %d", int(fk));
+			throw Error(errLogic, "Unexpected field type {}", int(fk));
 	}
 }
 
@@ -101,30 +100,30 @@ RX_NO_INLINE static std::string buildPreselectDescription(const JoinPreResult& r
 				const PreselectProperties& props = *result.properties;
 				switch (result.storedValuesOptStatus) {
 					case StoredValuesOptimizationStatus::DisabledByCompositeIndex:
-						return fmt::sprintf(
+						return fmt::format(
 							"using preselected_rows, because joined query contains composite index condition in the ON-clause and "
-							"joined query's expected max iterations count of %d is less than max_iterations_idset_preresult limit of %d",
+							"joined query's expected max iterations count of {} is less than max_iterations_idset_preresult limit of {}",
 							props.qresMaxIterations, props.maxIterationsIdSetPreResult);
 					case StoredValuesOptimizationStatus::DisabledByFullTextIndex:
-						return fmt::sprintf(
+						return fmt::format(
 							"using preselected_rows, because joined query contains fulltext index condition in the ON-clause and joined "
-							"query's expected max iterations count of %d is less than max_iterations_idset_preresult limit of %d",
+							"query's expected max iterations count of {} is less than max_iterations_idset_preresult limit of {}",
 							props.qresMaxIterations, props.maxIterationsIdSetPreResult);
 					case StoredValuesOptimizationStatus::DisabledByJoinedFieldSort:
-						return fmt::sprintf(
+						return fmt::format(
 							"using preselected_rows, because sort by joined field was requested and joined query's "
-							"expected max iterations count of %d is less than max_iterations_idset_preresult limit of %d",
+							"expected max iterations count of {} is less than max_iterations_idset_preresult limit of {}",
 							props.qresMaxIterations, props.maxIterationsIdSetPreResult);
 					case StoredValuesOptimizationStatus::DisabledByFloatVectorIndex:
-						return fmt::sprintf(
+						return fmt::format(
 							"using preselected_rows, because joined query contains float vector index condition in the ON-clause and "
 							"joined "
-							"query's expected max iterations count of %d is less than max_iterations_idset_preresult limit of %d",
+							"query's expected max iterations count of {} is less than max_iterations_idset_preresult limit of {}",
 							props.qresMaxIterations, props.maxIterationsIdSetPreResult);
 					case StoredValuesOptimizationStatus::Enabled:
-						return fmt::sprintf(
-							"using preselected_rows, because joined query's expected max iterations count of %d is less than "
-							"max_iterations_idset_preresult limit of %d and larger then max copied values count of %d",
+						return fmt::format(
+							"using preselected_rows, because joined query's expected max iterations count of {} is less than "
+							"max_iterations_idset_preresult limit of {} and larger then max copied values count of {}",
 							props.qresMaxIterations, props.maxIterationsIdSetPreResult,
 							JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization());
 					default:
@@ -134,9 +133,9 @@ RX_NO_INLINE static std::string buildPreselectDescription(const JoinPreResult& r
 			[&](const SelectIteratorContainer&) -> std::string {
 				const PreselectProperties& props = *result.properties;
 				if (props.isLimitExceeded) {
-					return fmt::sprintf(
-						"using no_preselect, because joined query's expected max iterations count of %d is larger than "
-						"max_iterations_idset_preresult limit of %d",
+					return fmt::format(
+						"using no_preselect, because joined query's expected max iterations count of {} is larger than "
+						"max_iterations_idset_preresult limit of {}",
 						props.qresMaxIterations, props.maxIterationsIdSetPreResult);
 				} else if (props.isUnorderedIndexSort) {
 					return "using no_preselect, because there is a sorted query on an unordered index";
@@ -145,8 +144,8 @@ RX_NO_INLINE static std::string buildPreselectDescription(const JoinPreResult& r
 					   "(optimization of indexes for the target namespace is not complete)";
 			},
 			[&](const JoinPreResult::Values&) {
-				return fmt::sprintf("using preselected_values, because the namespace's max iterations count is very small of %d",
-									result.properties->qresMaxIterations);
+				return fmt::format("using preselected_values, because the namespace's max iterations count is very small of {}",
+								   result.properties->qresMaxIterations);
 			}},
 		result.payload);
 }

@@ -20,7 +20,7 @@ Error AsyncThreadParam::CheckReplicationMode(uint32_t nodeId) const noexcept {
 			const auto rp = syncState_.GetRolesPair();
 			if (rp.first.role != rp.second.role || (rp.first.role != RaftInfo::Role::Leader && rp.first.role != RaftInfo::Role::None)) {
 				return Error(errParams,
-							 "Current node has roles '%s:%s', but role 'leader' (or 'none') is required to replicate, when "
+							 "Current node has roles '{}:{}', but role 'leader' (or 'none') is required to replicate, when "
 							 "replication mode set to 'from_sync_leader'",
 							 RaftInfo::RoleToStr(rp.first.role), RaftInfo::RoleToStr(rp.second.role));
 			}

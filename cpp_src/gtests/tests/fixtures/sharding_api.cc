@@ -16,29 +16,31 @@ void ShardingApi::Init(InitShardingConfig c) {
 	for (auto& cluster : svc_) {
 		cluster.resize(kNodesInCluster);
 	}
-	config_.shardsAwaitingTimeout = c.awaitTimeout;
-	config_.namespaces.clear();
-	config_.namespaces.resize(namespaces.size());
+
+	ShardingConfig shardingConfig;
+	shardingConfig.shardsAwaitingTimeout = c.awaitTimeout;
+	shardingConfig.namespaces.clear();
+	shardingConfig.namespaces.resize(namespaces.size());
 	for (size_t i = 0; i < namespaces.size(); ++i) {
-		config_.namespaces[i].ns = namespaces[i].name;
-		config_.namespaces[i].index = namespaces[i].indexName;
-		config_.namespaces[i].defaultShard = 0;
+		shardingConfig.namespaces[i].ns = namespaces[i].name;
+		shardingConfig.namespaces[i].index = namespaces[i].indexName;
+		shardingConfig.namespaces[i].defaultShard = 0;
 	}
-	config_.shards.clear();
+	shardingConfig.shards.clear();
 
 	for (size_t shard = 0, id = 0; shard < kShards; ++shard) {
 		if (c.shardsMap) {
-			config_.shards[shard] = (*c.shardsMap).at(shard);
+			shardingConfig.shards[shard] = (*c.shardsMap).at(shard);
 		} else {
-			config_.shards[shard].reserve(kNodesInCluster);
+			shardingConfig.shards[shard].reserve(kNodesInCluster);
 			for (size_t node = 0; node < kNodesInCluster; ++node) {
-				config_.shards[shard].emplace_back(MakeDsn(reindexer_server::UserRole::kRoleSharding, id, GetDefaults().defaultRpcPort + id,
-														   "shard" + std::to_string(id)));
+				shardingConfig.shards[shard].emplace_back(MakeDsn(reindexer_server::UserRole::kRoleSharding, id,
+																  GetDefaults().defaultRpcPort + id, "shard" + std::to_string(id)));
 				id++;
 			}
 		}
 		for (size_t nsId = 0; nsId < namespaces.size(); ++nsId) {
-			config_.namespaces[nsId].keys.emplace_back(namespaces[nsId].keyValuesNodeCreation(shard));
+			shardingConfig.namespaces[nsId].keys.emplace_back(namespaces[nsId].keyValuesNodeCreation(shard));
 		}
 	}
 
@@ -72,17 +74,17 @@ void ShardingApi::Init(InitShardingConfig c) {
 			clusterConf["nodes"].push_back(node);
 		}
 
-		config_.thisShardId = shard;
-		config_.proxyConnCount = 4;
-		config_.proxyConnThreads = 3;
-		config_.proxyConnConcurrency = 8;
-		config_.reconnectTimeout = std::chrono::milliseconds(6000);
-		config_.sourceId = 999;	 // Some test value
+		shardingConfig.thisShardId = shard;
+		shardingConfig.proxyConnCount = 4;
+		shardingConfig.proxyConnThreads = 3;
+		shardingConfig.proxyConnConcurrency = 8;
+		shardingConfig.reconnectTimeout = std::chrono::milliseconds(6000);
+		shardingConfig.sourceId = 999;	// some initial test value
 		for (size_t idx = startId, node = 0; idx < startId + kNodesInCluster; ++idx, ++node) {
 			YAML::Node replConf;
 			replConf["cluster_id"] = shard;
 			replConf["server_id"] = idx;
-			clusterConf["app_name"] = fmt::sprintf("rx_node_%d", idx);
+			clusterConf["app_name"] = fmt::format("rx_node_{}", idx);
 
 			std::string pathToDb =
 				fs::JoinPath(GetDefaults().baseTestsetDbPath, "shard" + std::to_string(shard) + "/" + std::to_string(idx));
@@ -92,7 +94,7 @@ void ShardingApi::Init(InitShardingConfig c) {
 									std::move(dbName), true, 0, asProcess);
 			cfg.disableNetworkTimeout = c.disableNetworkTimeout;
 			svc_[shard][node].InitServerWithConfig(std::move(cfg), replConf, (kNodesInCluster > 1 ? clusterConf : YAML::Node()),
-												   config_.GetYAMLObj(), YAML::Node());
+												   shardingConfig.GetYAMLObj(), YAML::Node());
 		}
 	}
 
@@ -137,10 +139,17 @@ void ShardingApi::Init(InitShardingConfig c) {
 		}
 	}
 
+	while (!std::all_of(svc_.begin(), svc_.end(), [](auto& shard) {
+		auto replState = shard[0].Get()->GetReplicationStats("cluster");
+		return std::all_of(replState.nodeStats.begin(), replState.nodeStats.end(),
+						   [](const auto& nodeStat) { return nodeStat.isSynchronized; });
+	})) {
+	}
+
 	if (kNodesInCluster > 1) {
 		for (auto& ns : namespaces) {
 			if (ns.withData) {
-				waitSync(ns.name);
+				ASSERT_TRUE(checkSync(ns.name));
 			}
 		}
 	}
@@ -290,7 +299,7 @@ client::Item ShardingApi::CreateItem(std::string_view nsName, client::Reindexer&
 	}
 	jsonBuilder.End();
 	Error err = item.FromJSON(wrser.Slice());
-	assertf(err.ok(), "%s", err.what());
+	assertf(err.ok(), "{}", err.what());
 	return item;
 }
 
@@ -371,7 +380,7 @@ void ShardingApi::AwaitOnlineReplicationStatus(size_t idx) {
 	if (!isReady) {
 		WrSerializer ser;
 		stats.GetJSON(ser);
-		ASSERT_TRUE(isReady) << "Node on '" << fmt::sprintf("%s", getNode(idx)->kRPCDsn)
+		ASSERT_TRUE(isReady) << "Node on '" << fmt::format("{}", getNode(idx)->kRPCDsn)
 							 << "' does not have online replication status: " << ser.Slice();
 	}
 }
@@ -380,6 +389,16 @@ void ShardingApi::waitSync(std::string_view ns) {
 	for (auto& cluster : svc_) {
 		ClusterizationApi::Cluster::doWaitSync(ns, cluster);
 	}
+}
+
+bool ShardingApi::checkSync(std::string_view ns) {
+	for (auto& cluster : svc_) {
+		if (cluster.size() != ClusterizationApi::Cluster::getSyncCnt(ns, cluster)) {
+			ClusterizationApi::Cluster::PrintClusterInfo(ns, cluster);
+			return false;
+		}
+	}
+	return true;
 }
 
 void ShardingApi::waitSync(size_t shardId, std::string_view ns) {

@@ -46,26 +46,45 @@ func TestNextDSN(t *testing.T) {
 	t.Run("for reconnectStrategyRandom", func(t *testing.T) {
 		t.Run("should get random url", func(t *testing.T) {
 			fx := newFixture(t)
-			dsnsLocal := make([]url.URL, 0, 100)
-			for i := 1; i < 100; i++ {
+			dsnsLocal := make([]url.URL, 0, 1000)
+			for i := 1; i < 1000; i++ {
 				dsnsLocal = append(dsnsLocal, url.URL{Host: fmt.Sprintf("127.0.0.1:%d", i), Scheme: "cproto", Path: "db"})
 			}
 			fx.addDSNs(t, dsnsLocal)
 
-			fx.dsn.reconnectionStrategy = reconnectStrategyRandom
-			err := fx.nextDSN(ctx, fx.dsn.reconnectionStrategy, nil)
-			require.NoError(t, err)
-			host1 := fx.getActiveDSN().Host
+			findHost := func(targetHost string) int {
+				for i, cur := range dsnsLocal {
+					if cur.Host == targetHost {
+						return i
+					}
+				}
+				return -1
+			}
 
-			err = fx.nextDSN(ctx, fx.dsn.reconnectionStrategy, nil)
-			require.NoError(t, err)
-			host2 := fx.getActiveDSN().Host
+			var host1, host2, host3 string
+			for i := 0; i < 2; i++ {
+				fx.dsn.reconnectionStrategy = reconnectStrategyRandom
+				err := fx.nextDSN(ctx, fx.dsn.reconnectionStrategy, nil)
+				require.NoError(t, err)
+				host1 = fx.getActiveDSN().Host
+				assert.NotEqual(t, findHost(host1), -1, host1)
 
-			err = fx.nextDSN(ctx, fx.dsn.reconnectionStrategy, nil)
-			require.NoError(t, err)
-			host3 := fx.getActiveDSN().Host
+				err = fx.nextDSN(ctx, fx.dsn.reconnectionStrategy, nil)
+				require.NoError(t, err)
+				host2 = fx.getActiveDSN().Host
+				assert.NotEqual(t, findHost(host2), -1, host2)
 
-			assert.True(t, host1 != host2 && host1 != host3, host1, host2, host3)
+				err = fx.nextDSN(ctx, fx.dsn.reconnectionStrategy, nil)
+				require.NoError(t, err)
+				host3 = fx.getActiveDSN().Host
+				assert.NotEqual(t, findHost(host3), -1, host3)
+
+				if host1 != host2 && host1 != host3 {
+					break
+				}
+			}
+
+			assert.True(t, host1 != host2 && host1 != host3, "Hosts: %v, %v, %v", host1, host2, host3)
 		})
 	})
 

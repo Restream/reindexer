@@ -41,7 +41,7 @@ namespace detail {
 #define OPENSSL_INIT_SYM(sym)                                                                                            \
 	, sym##_([this] {                                                                                                    \
 		auto res = reinterpret_cast<decltype(::sym)*>(LOAD_SYM(lib_, #sym));                                             \
-		if (!res) throw reindexer::Error(errNotFound, "Symbol '%s' was not found in OpenSSL lib: %s", #sym, LOAD_ERR()); \
+		if (!res) throw reindexer::Error(errNotFound, "Symbol '{}' was not found in OpenSSL lib: {}", #sym, LOAD_ERR()); \
 		return res;                                                                                                      \
 	}())
 
@@ -50,56 +50,56 @@ namespace detail {
 #define OPENSSL_GET_SYM(sym) \
 	static auto sym() { return instance().impl_.sym##_; }
 
-#define OPENSSL_CREATE_CLASS(CLASS, LIB_NAME, EXPAND_MACRO)                                                                \
-	class CLASS {                                                                                                          \
-	public:                                                                                                                \
-		static bool available() {                                                                                          \
-			static auto& inst = instance();                                                                                \
-			std::call_once(inst.logStatus_, []() {                                                                         \
-				if (inst.status_.ok()) {                                                                                   \
-					logPrintf(LogInfo, "The %s library with the required symbols has been successfully loaded", LIB_NAME); \
-				} else {                                                                                                   \
-					logPrintf(LogError, inst.status_.what());                                                              \
-				}                                                                                                          \
-			});                                                                                                            \
-			return inst.status_.ok();                                                                                      \
-		}                                                                                                                  \
-                                                                                                                           \
-		EXPAND_MACRO(OPENSSL_GET_SYM)                                                                                      \
-                                                                                                                           \
-	private:                                                                                                               \
-		static CLASS& instance() noexcept {                                                                                \
-			static CLASS inst;                                                                                             \
-			return inst;                                                                                                   \
-		}                                                                                                                  \
-                                                                                                                           \
-		CLASS() noexcept                                                                                                   \
-			: impl_([this]() {                                                                                             \
-				  try {                                                                                                    \
-					  return Impl();                                                                                       \
-				  } catch (const reindexer::Error& err) {                                                                  \
-					  status_ = err;                                                                                       \
-					  return Impl(nullptr);                                                                                \
-				  }                                                                                                        \
-			  }()) {}                                                                                                      \
-                                                                                                                           \
-		reindexer::Error status_;                                                                                          \
-		struct Impl {                                                                                                      \
-			static constexpr auto load = [](const char* name) {                                                            \
-				auto res = ::LOAD_LIB(name);                                                                               \
-				if (!res) {                                                                                                \
-					throw reindexer::Error(errNotFound, "%s library could not be loaded: %s", name, LOAD_ERR());           \
-				}                                                                                                          \
-				return res;                                                                                                \
-			};                                                                                                             \
-                                                                                                                           \
-			Impl(std::nullptr_t) noexcept {}                                                                               \
-			Impl() : lib_(load(LIB_NAME)) EXPAND_MACRO(OPENSSL_INIT_SYM) {}                                                \
-                                                                                                                           \
-			LIB_TYPE lib_ = nullptr;                                                                                       \
-			EXPAND_MACRO(OPENSSL_DECL_SYM)                                                                                 \
-		} impl_;                                                                                                           \
-		std::once_flag logStatus_;                                                                                         \
+#define OPENSSL_CREATE_CLASS(CLASS, LIB_NAME, EXPAND_MACRO)                                                             \
+	class CLASS {                                                                                                       \
+	public:                                                                                                             \
+		static bool available() {                                                                                       \
+			static auto& inst = instance();                                                                             \
+			std::call_once(inst.logStatus_, []() {                                                                      \
+				if (inst.status_.ok()) {                                                                                \
+					logFmt(LogInfo, "The {} library with the required symbols has been successfully loaded", LIB_NAME); \
+				} else {                                                                                                \
+					reindexer::logPrint(LogError, inst.status_.what());                                                 \
+				}                                                                                                       \
+			});                                                                                                         \
+			return inst.status_.ok();                                                                                   \
+		}                                                                                                               \
+																														\
+		EXPAND_MACRO(OPENSSL_GET_SYM)                                                                                   \
+																														\
+	private:                                                                                                            \
+		static CLASS& instance() noexcept {                                                                             \
+			static CLASS inst;                                                                                          \
+			return inst;                                                                                                \
+		}                                                                                                               \
+																														\
+		CLASS() noexcept                                                                                                \
+			: impl_([this]() {                                                                                          \
+				  try {                                                                                                 \
+					  return Impl();                                                                                    \
+				  } catch (const reindexer::Error& err) {                                                               \
+					  status_ = err;                                                                                    \
+					  return Impl(nullptr);                                                                             \
+				  }                                                                                                     \
+			  }()) {}                                                                                                   \
+																														\
+		reindexer::Error status_;                                                                                       \
+		struct Impl {                                                                                                   \
+			static constexpr auto load = [](const char* name) {                                                         \
+				auto res = ::LOAD_LIB(name);                                                                            \
+				if (!res) {                                                                                             \
+					throw reindexer::Error(errNotFound, "{} library could not be loaded: {}", name, LOAD_ERR());        \
+				}                                                                                                       \
+				return res;                                                                                             \
+			};                                                                                                          \
+																														\
+			Impl(std::nullptr_t) noexcept {}                                                                            \
+			Impl() : lib_(load(LIB_NAME)) EXPAND_MACRO(OPENSSL_INIT_SYM) {}                                             \
+																														\
+			LIB_TYPE lib_ = nullptr;                                                                                    \
+			EXPAND_MACRO(OPENSSL_DECL_SYM)                                                                              \
+		} impl_;                                                                                                        \
+		std::once_flag logStatus_;                                                                                      \
 	};
 
 OPENSSL_CREATE_CLASS(_LibCryptoSingleton, LIBCRYPTO_NAME, LIBCRYPTO_EXPAND_MACRO_LIST)

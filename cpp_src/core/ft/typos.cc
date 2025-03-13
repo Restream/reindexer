@@ -60,7 +60,7 @@ void mktypos(typos_context* ctx, const std::wstring& word, int level, int maxTyp
 			mktyposInternal<2>(ctx, word, maxTyposLen, callback, positions);
 			return;
 		default:
-			throw Error(errLogic, "Unexpected level value for mktypo(): %d", level);
+			throw Error(errLogic, "Unexpected level value for mktypo(): {}", level);
 	}
 }
 
@@ -80,7 +80,7 @@ void mktypos(typos_context* ctx, std::string_view word, int level, int maxTyposL
 			mktyposInternal<2>(ctx, ctx->utf16Word, maxTyposLen, callback, positions);
 			return;
 		default:
-			throw Error(errLogic, "Unexpected level value for mktypo(): %d", level);
+			throw Error(errLogic, "Unexpected level value for mktypo(): {}", level);
 	}
 }
 

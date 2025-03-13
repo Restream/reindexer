@@ -1785,19 +1785,19 @@ TEST_F(ReindexerApi, LoggerWriteInterruptTest) {
 		reindexer::LoggerPolicy::WithLocks, int(LogTrace));
 	auto writeThread = std::thread([]() {
 		for (size_t i = 0; i < 10000; ++i) {
-			logPrintf(LogTrace, "Detailed and amazing description of this error: [%d]!", i);
+			logFmt(LogTrace, "Detailed and amazing description of this error: [{}]!", i);
 		}
 	});
 	auto reopenThread = std::thread([&instance]() {
 		for (size_t i = 0; i < 1000; ++i) {
 			instance.sinkPtr->reopen();
-			logPrintf(LogTrace, "REOPENED [%d]", i);
+			logFmt(LogTrace, "REOPENED [{}]", i);
 			std::this_thread::sleep_for(std::chrono::milliseconds(3));
 		}
 	});
 	writeThread.join();
 	reopenThread.join();
-	logPrintf(LogTrace, "FINISHED\n");
+	logFmt(LogTrace, "FINISHED\n");
 	reindexer::logInstallWriter(nullptr, reindexer::LoggerPolicy::WithLocks, int(LogTrace));
 }
 
@@ -1868,7 +1868,7 @@ TEST_F(ReindexerApi, SelectFilterWithAggregationConstraints) {
 	q = Query(default_namespace).Select({"id", "name"});
 	EXPECT_THROW(q.Aggregate(AggFacet, {"year"}, {}), Error);
 	try {
-		Query::FromJSON(fmt::sprintf(R"({"namespace":"%s",
+		Query::FromJSON(fmt::format(R"({{"namespace":"{}",
 	"limit":-1,
 	"offset":0,
 	"req_total":"disabled",
@@ -1884,13 +1884,13 @@ TEST_F(ReindexerApi, SelectFilterWithAggregationConstraints) {
 	"filters":[],
 	"merge_queries":[],
 	"aggregations":[
-		{
+		{{
 			"type":"facet",
 			"sort":[],
 			"fields":["year"]
-		}
-	]})",
-									 default_namespace));
+		}}
+	]}})",
+									default_namespace));
 	} catch (Error& err) {
 		EXPECT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), reindexer::kAggregationWithSelectFieldsMsgError);
@@ -2046,12 +2046,12 @@ TEST_F(ReindexerApi, IntFieldConvertToStringIndexTest) {
 	auto testImpl = [this](Order order) {
 		std::srand(std::time(0));
 		int value = std::rand();
-		auto indexName = fmt::sprintf("data_%d", id);
+		auto indexName = fmt::format("data_{}", id);
 		auto indexPaths = order == Order::AddIndexThenUpdate ? reindexer::JsonPaths{"n." + indexName} : reindexer::JsonPaths{indexName};
-		auto insert = [this](const char* tmplt, auto&&... args) {
+		auto insert = [this]<typename... Args>(fmt::format_string<Args...> tmplt, Args&&... args) {
 			Item item(rt.reindexer->NewItem(default_namespace));
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-			auto err = item.FromJSON(fmt::sprintf(tmplt, std::forward<decltype(args)>(args)...));
+			auto err = item.FromJSON(fmt::format(tmplt, std::forward<decltype(args)>(args)...));
 			ASSERT_TRUE(err.ok()) << err.what();
 			err = rt.reindexer->Insert(default_namespace, item);
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
@@ -2061,7 +2061,7 @@ TEST_F(ReindexerApi, IntFieldConvertToStringIndexTest) {
 		auto update = [&] {
 			QueryResults qr;
 			auto err = rt.reindexer->Select(
-				fmt::sprintf("UPDATE %s SET n = {\"%s\":%d} where id = %d", default_namespace, indexName, value, id), qr);
+				fmt::format("UPDATE {} SET n = {{\"{}\":{}}} where id = {}", default_namespace, indexName, value, id), qr);
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_EQ(qr.Count(), 1);
 		};
@@ -2086,13 +2086,13 @@ TEST_F(ReindexerApi, IntFieldConvertToStringIndexTest) {
 
 		switch (order) {
 			case Order::InsertThenAddIndex: {
-				insert("{\"id\":%d,\"%s\":%d})", id, indexName, value);
+				insert("{{\"id\":{},\"{}\":{}}})", id, indexName, value);
 				addIndex();
 				break;
 			}
 			case Order::AddIndexThenUpdate: {
 				addIndex();
-				insert("{\"id\":%d}", id);
+				insert("{{\"id\":{}}}", id);
 				update();
 				break;
 			}

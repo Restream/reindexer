@@ -350,9 +350,9 @@ TEST_F(QueriesApi, DslGenerateParse) {
 		std::string dsl;
 		std::variant<Query, Error> expected;
 		Direction direction = BOTH;
-	} cases[]{{fmt::sprintf(
-				   R"({
-   "namespace": "%s",
+	} cases[]{{fmt::format(
+				   R"({{
+   "namespace": "{}",
    "limit": -1,
    "offset": 0,
    "req_total": "disabled",
@@ -363,19 +363,19 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {
+      {{
          "op": "and",
          "always": true
-      }
+      }}
    ],
    "merge_queries": [],
    "aggregations": []
-})",
+}})",
 				   geomNs),
 			   Query{geomNs}.AppendQueryEntry<reindexer::AlwaysTrue>(OpAnd)},
-			  {fmt::sprintf(
-				   R"({
-   "namespace": "%s",
+			  {fmt::format(
+				   R"({{
+   "namespace": "{}",
    "limit": -1,
    "offset": 0,
    "req_total": "disabled",
@@ -386,10 +386,10 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {
+      {{
          "op": "and",
          "cond": "dwithin",
-         "field": "%s",
+         "field": "{}",
          "value": [
             [
                -9.2,
@@ -397,16 +397,16 @@ TEST_F(QueriesApi, DslGenerateParse) {
             ],
             0.581
          ]
-      }
+      }}
    ],
    "merge_queries": [],
    "aggregations": []
-})",
+}})",
 				   geomNs, kFieldNamePointLinearRTree),
 			   Query{geomNs}.DWithin(kFieldNamePointLinearRTree, reindexer::Point{-9.2, -0.145}, 0.581)},
-			  {fmt::sprintf(
-				   R"({
-   "namespace": "%s",
+			  {fmt::format(
+				   R"({{
+   "namespace": "{}",
    "limit": -1,
    "offset": 0,
    "req_total": "disabled",
@@ -417,21 +417,21 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {
+      {{
          "op": "and",
          "cond": "gt",
-         "first_field": "%s",
-         "second_field": "%s"
-      }
+         "first_field": "{}",
+         "second_field": "{}"
+      }}
    ],
    "merge_queries": [],
    "aggregations": []
-})",
+}})",
 				   default_namespace, kFieldNameStartTime, kFieldNamePackages),
 			   Query(default_namespace).WhereBetweenFields(kFieldNameStartTime, CondGt, kFieldNamePackages)},
-			  {fmt::sprintf(
-				   R"({
-   "namespace": "%s",
+			  {fmt::format(
+				   R"({{
+   "namespace": "{}",
    "limit": -1,
    "offset": 0,
    "req_total": "disabled",
@@ -442,11 +442,11 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {
+      {{
          "op": "and",
          "cond": "gt",
-         "subquery": {
-            "namespace": "%s",
+         "subquery": {{
+            "namespace": "{}",
             "limit": 10,
             "offset": 10,
             "req_total": "disabled",
@@ -454,25 +454,25 @@ TEST_F(QueriesApi, DslGenerateParse) {
             "sort": [],
             "filters": [],
             "aggregations": [
-               {
+               {{
                   "type": "max",
                   "fields": [
-                     "%s"
+                     "{}"
                   ]
-               }
+               }}
             ]
-         },
+         }},
          "value": 18
-      }
+      }}
    ],
    "merge_queries": [],
    "aggregations": []
-})",
+}})",
 				   default_namespace, joinNs, kFieldNameAge),
 			   Query(default_namespace).Where(Query(joinNs).Aggregate(AggMax, {kFieldNameAge}).Limit(10).Offset(10), CondGt, {18})},
-			  {fmt::sprintf(
-				   R"({
-   "namespace": "%s",
+			  {fmt::format(
+				   R"({{
+   "namespace": "{}",
    "limit": -1,
    "offset": 0,
    "req_total": "disabled",
@@ -483,36 +483,36 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {
+      {{
          "op": "and",
          "cond": "any",
-         "subquery": {
-            "namespace": "%s",
+         "subquery": {{
+            "namespace": "{}",
             "limit": 0,
             "offset": 0,
             "req_total": "disabled",
             "select_filter": [],
             "sort": [],
             "filters": [
-               {
+               {{
                   "op": "and",
                   "cond": "eq",
-                  "field": "%s",
+                  "field": "{}",
                   "value": 1
-               }
+               }}
             ],
             "aggregations": []
-         }
-      }
+         }}
+      }}
    ],
    "merge_queries": [],
    "aggregations": []
-})",
+}})",
 				   default_namespace, joinNs, kFieldNameId),
 			   Query(default_namespace).Where(Query(joinNs).Where(kFieldNameId, CondEq, 1), CondAny, {})},
-			  {fmt::sprintf(
-				   R"({
-   "namespace": "%s",
+			  {fmt::format(
+				   R"({{
+   "namespace": "{}",
    "limit": -1,
    "offset": 0,
    "req_total": "disabled",
@@ -523,44 +523,44 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {
+      {{
          "op": "and",
          "cond": "eq",
-         "field": "%s",
-         "subquery": {
-            "namespace": "%s",
+         "field": "{}",
+         "subquery": {{
+            "namespace": "{}",
             "limit": -1,
             "offset": 0,
             "req_total": "disabled",
             "select_filter": [
-               "%s"
+               "{}"
             ],
             "sort": [],
             "filters": [
-               {
+               {{
                   "op": "and",
                   "cond": "set",
-                  "field": "%s",
+                  "field": "{}",
                   "value": [
                      1,
                      10,
                      100
                   ]
-               }
+               }}
             ],
             "aggregations": []
-         }
-      }
+         }}
+      }}
    ],
    "merge_queries": [],
    "aggregations": []
-})",
+}})",
 				   default_namespace, kFieldNameName, joinNs, kFieldNameName, kFieldNameId),
 			   Query(default_namespace)
 				   .Where(kFieldNameName, CondEq, Query(joinNs).Select({kFieldNameName}).Where(kFieldNameId, CondSet, {1, 10, 100}))},
-			  {fmt::sprintf(
-				   R"({
-   "namespace": "%s",
+			  {fmt::format(
+				   R"({{
+   "namespace": "{}",
    "limit": -1,
    "offset": 0,
    "req_total": "disabled",
@@ -571,12 +571,12 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {
+      {{
          "op": "and",
          "cond": "gt",
-         "field": "%s",
-         "subquery": {
-            "namespace": "%s",
+         "field": "{}",
+         "subquery": {{
+            "namespace": "{}",
             "limit": -1,
             "offset": 0,
             "req_total": "disabled",
@@ -584,24 +584,24 @@ TEST_F(QueriesApi, DslGenerateParse) {
             "sort": [],
             "filters": [],
             "aggregations": [
-               {
+               {{
                   "type": "avg",
                   "fields": [
-                     "%s"
+                     "{}"
                   ]
-               }
+               }}
             ]
-         }
-      }
+         }}
+      }}
    ],
    "merge_queries": [],
    "aggregations": []
-})",
+}})",
 				   default_namespace, kFieldNameId, joinNs, kFieldNameId),
 			   Query(default_namespace).Where(kFieldNameId, CondGt, Query(joinNs).Aggregate(AggAvg, {kFieldNameId}))},
-			  {fmt::sprintf(
-				   R"({
-   "namespace": "%s",
+			  {fmt::format(
+				   R"({{
+   "namespace": "{}",
    "limit": -1,
    "offset": 0,
    "req_total": "disabled",
@@ -612,12 +612,12 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {
+      {{
          "op": "and",
          "cond": "gt",
-         "field": "%s",
-         "subquery": {
-            "namespace": "%s",
+         "field": "{}",
+         "subquery": {{
+            "namespace": "{}",
             "limit": 0,
             "offset": 0,
             "req_total": "enabled",
@@ -625,12 +625,12 @@ TEST_F(QueriesApi, DslGenerateParse) {
             "sort": [],
             "filters": [],
             "aggregations": []
-         }
-      }
+         }}
+      }}
    ],
    "merge_queries": [],
    "aggregations": []
-})",
+}})",
 				   default_namespace, kFieldNameId, joinNs, kFieldNameId),
 			   Query(default_namespace).Where(kFieldNameId, CondGt, Query(joinNs).ReqTotal())}};
 	for (const auto& [dsl, expected, direction] : cases) {
@@ -739,7 +739,7 @@ TEST_F(QueriesApi, StrictModeTest) {
 
 TEST_F(QueriesApi, SQLLeftJoinSerialize) {
 	const char* condNames[] = {"IS NOT NULL", "=", "<", "<=", ">", ">=", "RANGE", "IN", "ALLSET", "IS NULL", "LIKE"};
-	const std::string sqlTemplate = "SELECT * FROM tleft LEFT JOIN tright ON %s.%s %s %s.%s";
+	constexpr auto sqlTemplate = "SELECT * FROM tleft LEFT JOIN tright ON {}.{} {} {}.{}";
 
 	const std::string tLeft = "tleft";
 	const std::string tRight = "tright";
@@ -748,7 +748,7 @@ TEST_F(QueriesApi, SQLLeftJoinSerialize) {
 
 	auto createQuery = [&sqlTemplate, &condNames](const std::string& leftTable, const std::string& rightTable, const std::string& leftIndex,
 												  const std::string& rightIndex, CondType t) -> std::string {
-		return fmt::sprintf(sqlTemplate, leftTable, leftIndex, condNames[t], rightTable, rightIndex);
+		return fmt::format(sqlTemplate, leftTable, leftIndex, condNames[t], rightTable, rightIndex);
 	};
 
 	std::vector<std::pair<CondType, CondType>> conditions = {{CondLe, CondGe}, {CondGe, CondLe}, {CondLt, CondGt}, {CondGt, CondLt}};
@@ -1010,34 +1010,34 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 		{
 			reindexer::JsonBuilder json{ser};
 			json.Put("id", id);
-			json.Put(fmt::sprintf("Field%d", fieldNum), fmt::sprintf("field_%d_data", fieldNum));
+			json.Put(fmt::format("Field{}", fieldNum), fmt::format("field_{}_data", fieldNum));
 			++fieldNum;
-			json.Put(fmt::sprintf("Field%d", fieldNum), fmt::sprintf("field_%d_data", fieldNum));
+			json.Put(fmt::format("Field{}", fieldNum), fmt::format("field_{}_data", fieldNum));
 			++fieldNum;
-			json.Put(fmt::sprintf("Field%d", fieldNum), fmt::sprintf("field_%d_data", fieldNum));
+			json.Put(fmt::format("Field{}", fieldNum), fmt::format("field_{}_data", fieldNum));
 			++fieldNum;
-			json.Put(fmt::sprintf("Field%d", fieldNum), fmt::sprintf("field_%d_data", fieldNum));
+			json.Put(fmt::format("Field{}", fieldNum), fmt::format("field_{}_data", fieldNum));
 			json.Put("quoted_field", "\"field_with_\"quoted\"");
 			if (needJoinField) {
 				json.Put("join_field", id % 3);
 			}
 			{
-				auto data0 = json.Array(fmt::sprintf("Array_level0_id_%d", id));
+				auto data0 = json.Array(fmt::format("Array_level0_id_{}", id));
 				for (int i = 0; i < 5; ++i) {
-					data0.Put(nullptr, fmt::sprintf("array_data_0_%d", i));
+					data0.Put(nullptr, fmt::format("array_data_0_{}", i));
 				}
 				data0.Put(nullptr, std::string("\"arr_quoted_field(\"this is quoted too\")\""));
 			}
 			{
-				auto data0 = json.Object(fmt::sprintf("Object_level0_id_%d", id));
+				auto data0 = json.Object(fmt::format("Object_level0_id_{}", id));
 				for (int i = 0; i < 5; ++i) {
-					data0.Put(fmt::sprintf("Object_%d", i), fmt::sprintf("object_data_0_%d", i));
+					data0.Put(fmt::format("Object_{}", i), fmt::format("object_data_0_{}", i));
 				}
 				data0.Put("Quoted Field lvl0", std::string("\"obj_quoted_field(\"this is quoted too\")\""));
 				{
-					auto data1 = data0.Object(fmt::sprintf("Object_level1_id_%d", id));
+					auto data1 = data0.Object(fmt::format("Object_level1_id_{}", id));
 					for (int j = 0; j < 5; ++j) {
-						data1.Put(fmt::sprintf("objectData1 %d", j), fmt::sprintf("objectData1 %d", j));
+						data1.Put(fmt::format("objectData1 {}", j), fmt::format("objectData1 {}", j));
 					}
 					data1.Put("Quoted Field lvl1", std::string("\"obj_quoted_field(\"this is quoted too\")\""));
 				}

@@ -237,7 +237,7 @@ Error RPCServer::execSqlQueryByType(std::string_view sqlQuery, QueryResults& res
 			case QueryTruncate:
 				return getDB(ctx, kRoleDBAdmin).TruncateNamespace(q.NsName());
 		}
-		return Error(errParams, "unknown query type %d", int(q.Type()));
+		return Error(errParams, "unknown query type {}", int(q.Type()));
 	}
 	CATCH_AND_RETURN;
 }
@@ -584,7 +584,7 @@ Error RPCServer::ModifyItem(cproto::Context& ctx, p_string ns, int format, p_str
 			break;
 		case FormatCJson:
 			if (item.GetStateToken() != stateToken) {
-				err = Error(errStateInvalidated, "stateToken mismatch:  %08X, need %08X. Can't process item", stateToken,
+				err = Error(errStateInvalidated, "stateToken mismatch:  {:#08x}, need {:#08x}. Can't process item", stateToken,
 							item.GetStateToken());
 			} else {
 				// TODO: To delete an item with sharding you need
@@ -598,7 +598,7 @@ Error RPCServer::ModifyItem(cproto::Context& ctx, p_string ns, int format, p_str
 			break;
 		}
 		default:
-			err = Error(errNotValid, "Invalid source item format %d", format);
+			err = Error(errNotValid, "Invalid source item format {}", format);
 	}
 	if (!err.ok()) {
 		return err;
@@ -633,7 +633,7 @@ Error RPCServer::ModifyItem(cproto::Context& ctx, p_string ns, int format, p_str
 				err = db.WithTimeout(execTimeout).Delete(ns, item, qres);
 				break;
 			default:
-				return Error(errParams, "Unexpected ItemModifyMode: %d", mode);
+				return Error(errParams, "Unexpected ItemModifyMode: {}", mode);
 		}
 		if (!err.ok()) {
 			return err;
@@ -653,7 +653,7 @@ Error RPCServer::ModifyItem(cproto::Context& ctx, p_string ns, int format, p_str
 				err = db.WithTimeout(execTimeout).Delete(ns, item);
 				break;
 			default:
-				return Error(errParams, "Unexpected ItemModifyMode: %d", mode);
+				return Error(errParams, "Unexpected ItemModifyMode: {}", mode);
 		}
 		if (err.ok()) {
 			if (item.GetID() != -1) {
@@ -812,7 +812,7 @@ Error RPCServer::processTxItem(DataFormat format, std::string_view itemData, Ite
 			return item.FromJSON(itemData, nullptr, false);	 // TODO: for mode == ModeDelete deserialize PK and sharding key only
 		case FormatCJson:
 			if (item.GetStateToken() != stateToken) {
-				return Error(errStateInvalidated, "stateToken mismatch:  %08X, need %08X. Can't process tx item", stateToken,
+				return Error(errStateInvalidated, "stateToken mismatch:  {:#08x}, need {:#08x}. Can't process tx item", stateToken,
 							 item.GetStateToken());
 			} else {
 				return item.FromCJSON(itemData, false);	 // TODO: for mode == ModeDelete deserialize PK and sharding key only
@@ -822,7 +822,7 @@ Error RPCServer::processTxItem(DataFormat format, std::string_view itemData, Ite
 			return item.FromMsgPack(itemData, offset);
 		}
 		default:
-			return Error(errNotValid, "Invalid source item format %d", int(format));
+			return Error(errNotValid, "Invalid source item format {}", int(format));
 	}
 }
 
@@ -868,7 +868,7 @@ void RPCServer::freeQueryResults(cproto::Context& ctx, RPCQrId id) {
 					qrId.main = -1;	 // Qr is timed out
 					continue;
 				} else {
-					throw Error(errLogic, "Invalid query uid: %d vs %d", qrId.uid, id.uid);
+					throw Error(errLogic, "Invalid query uid: {} vs {}", qrId.uid, id.uid);
 				}
 			}
 			qrId.main = -1;
@@ -882,7 +882,7 @@ Transaction& RPCServer::getTx(cproto::Context& ctx, int64_t id) {
 	auto data = getClientDataSafe(ctx);
 
 	if (size_t(id) >= data->txs.size() || data->txs[id].IsFree()) {
-		throw Error(errLogic, "Invalid tx id %d", id);
+		throw Error(errLogic, "Invalid tx id {}", id);
 	}
 	return data->txs[id];
 }
@@ -918,7 +918,7 @@ int64_t RPCServer::addTx(cproto::Context& ctx, std::string_view nsName) {
 void RPCServer::clearTx(cproto::Context& ctx, uint64_t txId) {
 	auto data = getClientDataSafe(ctx);
 	if (txId >= data->txs.size()) {
-		throw Error(errLogic, "Invalid tx id %d", txId);
+		throw Error(errLogic, "Invalid tx id {}", txId);
 	}
 	assertrx(data->txStats);
 	data->txStats->txCount -= 1;

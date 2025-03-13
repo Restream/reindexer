@@ -189,62 +189,61 @@ jobs:
             ctest --verbose
           fi
 
-# TODO: Reenable after binding's compatibility fix
-#  test-pyreindexer:
-#    strategy:
-#      matrix:
-#        os: [ubuntu-22.04, ubuntu-24.04]
-#      fail-fast: false
-#    runs-on: ${{matrix.os}}
-#    needs: build
-#    if: always()
-#    env:
-#      OS: ${{matrix.os}}
-#    steps:
-#      - name: Download ${{matrix.os}} Artifacts
-#        uses: actions/download-artifact@v4
-#        with:
-#          name: ${{matrix.os}}
-#      - name: 'Untar Artifacts'
-#        run: tar -xvf artifacts.tar
-#      - name: Prepare Environment
-#        run: |
-#          if [[ $OS == ubuntu* ]]; then
-#            sudo ./dependencies.sh
-#            python3 -m pip install setuptools build
-#          else
-#            ./dependencies.sh
-#          fi
-#      - name: Install Reindexer
-#        run: |
-#          cd build
-#          if [[ $OS == ubuntu* ]]; then
-#            sudo dpkg -i reindexer-4-dev*.deb
-#            sudo apt-get install -f
-#            sudo dpkg -i reindexer-4-server*.deb
-#            sudo apt-get install -f
-#          else
-#            for f in reindexer-*.tar.gz; do tar -xvzf "$f"; done
-#            cp -R ./usr/local/include/reindexer /usr/local/include/reindexer
-#            cp -R ./usr/local/lib/reindexer /usr/local/lib/reindexer
-#            cp ./usr/local/lib/libreindexer.a /usr/local/lib/libreindexer.a
-#            cp ./usr/local/lib/libreindexer_server_library.a /usr/local/lib/libreindexer_server_library.a
-#            cp ./usr/local/lib/libreindexer_server_resources.a /usr/local/lib/libreindexer_server_resources.a
-#            cp ./usr/local/lib/pkgconfig/libreindexer.pc /usr/local/lib/pkgconfig/libreindexer.pc
-#            cp ./usr/local/lib/pkgconfig/libreindexer_server.pc /usr/local/lib/pkgconfig/libreindexer_server.pc
-#            cp ./usr/local/bin/reindexer_server /usr/local/bin/reindexer_server
-#            cp ./usr/local/etc/reindexer.conf.pkg /usr/local/etc/reindexer.conf.pkg
-#          fi
-#      - name: Clone PyReindexer
-#        uses: actions/checkout@v4
-#        with:
-#          repository: restream/reindexer-py
-#      - name: Install PyReindexer
-#        run: |
-#          python -m build
-#          python -m pip install .
-#      - name: Test PyReindexer
-#        run: |
-#          cd pyreindexer
-#          ../.github/workflows/test.sh
+  test-pyreindexer:
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+      fail-fast: false
+    runs-on: ${{matrix.os}}
+    needs: build
+    if: always()
+    env:
+      OS: ${{matrix.os}}
+    steps:
+      - name: Download ${{matrix.os}} Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{matrix.os}}
+      - name: 'Untar Artifacts'
+        run: tar -xvf artifacts.tar
+      - name: Prepare Environment
+        run: |
+          if [[ $OS == ubuntu* ]]; then
+            sudo ./dependencies.sh
+            python3 -m pip install setuptools build
+          else
+            ./dependencies.sh
+          fi
+      - name: Install Reindexer
+        run: |
+          cd build
+          if [[ $OS == ubuntu* ]]; then
+            sudo dpkg -i reindexer-dev*.deb
+            sudo apt-get install -f
+            sudo dpkg -i reindexer-server*.deb
+            sudo apt-get install -f
+          else
+            for f in reindexer-*.tar.gz; do tar -xvzf "$f"; done
+            cp -R ./usr/local/include/reindexer /usr/local/include/reindexer
+            cp -R ./usr/local/lib/reindexer /usr/local/lib/reindexer
+            cp ./usr/local/lib/libreindexer.a /usr/local/lib/libreindexer.a
+            cp ./usr/local/lib/libreindexer_server_library.a /usr/local/lib/libreindexer_server_library.a
+            cp ./usr/local/lib/libreindexer_server_resources.a /usr/local/lib/libreindexer_server_resources.a
+            cp ./usr/local/lib/pkgconfig/libreindexer.pc /usr/local/lib/pkgconfig/libreindexer.pc
+            cp ./usr/local/lib/pkgconfig/libreindexer_server.pc /usr/local/lib/pkgconfig/libreindexer_server.pc
+            cp ./usr/local/bin/reindexer_server /usr/local/bin/reindexer_server
+            cp ./usr/local/etc/reindexer.conf.pkg /usr/local/etc/reindexer.conf.pkg
+          fi
+      - name: Clone PyReindexer
+        uses: actions/checkout@v4
+        with:
+          repository: restream/reindexer-py
+      - name: Install PyReindexer
+        run: |
+          python -m build
+          python -m pip install .
+      - name: Test PyReindexer
+        run: |
+          cd pyreindexer
+          ../.github/workflows/test.sh
 

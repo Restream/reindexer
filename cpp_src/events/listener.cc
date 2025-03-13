@@ -42,7 +42,7 @@ Error EventsListener::AddOrUpdate(IEventsObserver& observer, EventSubscriberConf
 	bool emplaced = false;
 	if (it == subs_.end()) {
 		if (subs_.size() == UpdatesQueueT::kMaxReplicas) {
-			return Error(errParams, "Subscribers limit was reached: %d", UpdatesQueueT::kMaxReplicas);
+			return Error(errParams, "Subscribers limit was reached: {}", UpdatesQueueT::kMaxReplicas);
 		}
 		emplaced = true;
 		const auto uid = emptyUIDs_.empty() ? maxUID_++ : emptyUIDs_.back();
@@ -170,13 +170,13 @@ void EventsListener::eventsLoop() noexcept {
 				loop_.run();
 			}
 		} catch (const Error& e) {
-			logPrintf(LogError, "[events_manager]: fatal error in the event loop: '%s'", e.what());
+			logFmt(LogError, "[events_manager]: fatal error in the event loop: '{}'", e.what());
 			assertrx_dbg(false);
 		} catch (std::exception& e) {
-			logPrintf(LogError, "[events_manager]: fatal error in the event loop: '%s'", e.what());
+			logFmt(LogError, "[events_manager]: fatal error in the event loop: '{}'", e.what());
 			assertrx_dbg(false);
 		} catch (...) {
-			logPrintf(LogError, "[events_manager]: fatal error in the event loop: <unknown>");
+			logFmt(LogError, "[events_manager]: fatal error in the event loop: <unknown>");
 			assertrx_dbg(false);
 		}
 	}
@@ -237,15 +237,15 @@ void EventsListener::handleUpdates() {
 						subIface->SendEvent(mask, opts, upd);
 					} catch (const Error& e) {
 						--subInfo.nextUpdateId;
-						logPrintf(LogError, "[events_manager]: unable to send update: '%s'", e.what());
+						logFmt(LogError, "[events_manager]: unable to send update: '{}'", e.what());
 						break;
 					} catch (std::exception& e) {
 						--subInfo.nextUpdateId;
-						logPrintf(LogError, "[events_manager]: unable to send update: '%s'", e.what());
+						logFmt(LogError, "[events_manager]: unable to send update: '{}'", e.what());
 						break;
 					} catch (...) {
 						--subInfo.nextUpdateId;
-						logPrintf(LogError, "[events_manager]: unable to send update: <unknown>");
+						logFmt(LogError, "[events_manager]: unable to send update: <unknown>");
 						break;
 					}
 				}

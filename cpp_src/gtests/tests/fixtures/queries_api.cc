@@ -119,11 +119,11 @@ void QueriesApi::CheckMergeQueriesWithAggregation() {
 		double c4;
 		AggSelect(Query{testSimpleNs}.Aggregate(AggCount, {}), AggCount, c4);
 		double c3;
-		Query q3 = Query::FromSQL(fmt::sprintf("SELECT count(*) FROM %s MERGE (SELECT * FROM %s)", default_namespace, joinNs));
+		Query q3 = Query::FromSQL(fmt::format("SELECT count(*) FROM {} MERGE (SELECT * FROM {})", default_namespace, joinNs));
 		AggSelect(q3, AggCount, c3);
 		double c5;
-		Query q5 = Query::FromSQL(fmt::sprintf("SELECT count(*) FROM %s MERGE (SELECT * FROM %s) MERGE (SELECT * FROM %s)",
-											   default_namespace, joinNs, testSimpleNs));
+		Query q5 = Query::FromSQL(fmt::format("SELECT count(*) FROM {} MERGE (SELECT * FROM {}) MERGE (SELECT * FROM {})",
+											  default_namespace, joinNs, testSimpleNs));
 		AggSelect(q5, AggCount, c5);
 		{
 			QueryResults qr;
@@ -586,11 +586,11 @@ void QueriesApi::CheckSqlQueries() {
 					  .Or()
 					  .Where(kFieldNameAge, CondSet, {1, 2, 3, 4}));
 
-	checkSqlQuery(fmt::sprintf("SELECT ID FROM test_namespace ORDER BY '%s + %s * 5' DESC LIMIT 10000000", kFieldNameYear, kFieldNameId),
+	checkSqlQuery(fmt::format("SELECT ID FROM test_namespace ORDER BY '{} + {} * 5' DESC LIMIT 10000000", kFieldNameYear, kFieldNameId),
 				  Query(default_namespace, 0, 10000000).Sort(kFieldNameYear + std::string(" + ") + kFieldNameId + " * 5", true));
 
-	checkSqlQuery(fmt::sprintf("SELECT ID FROM test_namespace ORDER BY '%s + %s * 5' DESC ORDER BY '2 * %s / (1 + %s)' ASC LIMIT 10000000",
-							   kFieldNameYear, kFieldNameId, kFieldNameGenre, kFieldNameIsDeleted),
+	checkSqlQuery(fmt::format("SELECT ID FROM test_namespace ORDER BY '{} + {} * 5' DESC ORDER BY '2 * {} / (1 + {})' ASC LIMIT 10000000",
+							  kFieldNameYear, kFieldNameId, kFieldNameGenre, kFieldNameIsDeleted),
 				  Query(default_namespace, 0, 10000000)
 					  .Sort(kFieldNameYear + std::string(" + ") + kFieldNameId + " * 5", true)
 					  .Sort(std::string("2 * ") + kFieldNameGenre + " / (1 + " + kFieldNameIsDeleted + ')', false));
@@ -598,19 +598,19 @@ void QueriesApi::CheckSqlQueries() {
 	// Checks that SQL queries with DWithin and sort by Distance work and compares the result with the result of corresponding C++ query
 	reindexer::Point point = randPoint(10);
 	double distance = randBin<double>(0, 1);
-	checkSqlQuery(fmt::sprintf("SELECT * FROM %s WHERE ST_DWithin(%s, %s, %s);", geomNs, kFieldNamePointNonIndex, pointToSQL(point),
-							   toString(distance)),
+	checkSqlQuery(fmt::format("SELECT * FROM {} WHERE ST_DWithin({}, {}, {});", geomNs, kFieldNamePointNonIndex, pointToSQL(point),
+							  toString(distance)),
 				  Query(geomNs).DWithin(kFieldNamePointNonIndex, point, distance));
 
 	point = randPoint(10);
 	distance = randBin<double>(0, 1);
-	checkSqlQuery(fmt::sprintf("SELECT * FROM %s WHERE ST_DWithin(%s, %s, %s) ORDER BY 'ST_Distance(%s, %s)';", geomNs, pointToSQL(point),
-							   kFieldNamePointNonIndex, toString(distance), kFieldNamePointLinearRTree, pointToSQL(point, true)),
+	checkSqlQuery(fmt::format("SELECT * FROM {} WHERE ST_DWithin({}, {}, {}) ORDER BY 'ST_Distance({}, {})';", geomNs, pointToSQL(point),
+							  kFieldNamePointNonIndex, toString(distance), kFieldNamePointLinearRTree, pointToSQL(point, true)),
 				  Query(geomNs)
 					  .DWithin(kFieldNamePointNonIndex, point, distance)
 					  .Sort(std::string("ST_Distance(") + kFieldNamePointLinearRTree + ", " + pointToSQL(point) + ')', false));
 
-	checkSqlQuery(fmt::sprintf("SELECT * FROM %s WHERE %s >= %s;", default_namespace, kFieldNameGenre, kFieldNameRate),
+	checkSqlQuery(fmt::format("SELECT * FROM {} WHERE {} >= {};", default_namespace, kFieldNameGenre, kFieldNameRate),
 				  Query(default_namespace).WhereBetweenFields(kFieldNameGenre, CondGe, kFieldNameRate));
 }
 
@@ -638,28 +638,28 @@ void QueriesApi::CheckDslQueries() {
 	auto point{randPoint(10)};
 	auto distance = randBin<double>(0, 1);
 	checkDslQuery(
-		fmt::sprintf(
-			R"({"namespace":"%s","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":"%s","value":[[%s, %s], %s]}],"merge_queries":[],"aggregations":[]})",
+		fmt::format(
+			R"({{"namespace":"{}","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{{"op":"and","cond":"dwithin","field":"{}","value":[[{}, {}], {}]}}],"merge_queries":[],"aggregations":[]}})",
 			geomNs, kFieldNamePointLinearRTree, double_to_str(point.X()), double_to_str(point.Y()), double_to_str(distance)),
 		Query(geomNs).DWithin(kFieldNamePointLinearRTree, point, distance));
 
 	point = randPoint(10);
 	distance = randBin<double>(0, 1);
 	checkDslQuery(
-		fmt::sprintf(
-			R"({"namespace":"%s","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":"%s","value":[%s,[%s,%s]]}],"merge_queries":[],"aggregations":[]})",
+		fmt::format(
+			R"({{"namespace":"{}","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{{"op":"and","cond":"dwithin","field":"{}","value":[{},[{},{}]]}}],"merge_queries":[],"aggregations":[]}})",
 			geomNs, kFieldNamePointLinearRTree, double_to_str(distance), double_to_str(point.X()), double_to_str(point.Y())),
 		Query(geomNs).DWithin(kFieldNamePointLinearRTree, point, distance));
 
 	checkDslQuery(
-		fmt::sprintf(
-			R"({"namespace":"%s","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"gt","first_field":"%s","second_field":"%s"}],"merge_queries":[],"aggregations":[]})",
+		fmt::format(
+			R"({{"namespace":"{}","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{{"op":"and","cond":"gt","first_field":"{}","second_field":"{}"}}],"merge_queries":[],"aggregations":[]}})",
 			default_namespace, kFieldNameStartTime, kFieldNamePackages),
 		Query{default_namespace}.WhereBetweenFields(kFieldNameStartTime, CondGt, kFieldNamePackages));
 
 	checkDslQuery(
-		fmt::sprintf(
-			R"({"namespace":"%s","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"SET","field":"%s","Value":["1", " 10 ", "100 ", " 1000"]}],"merge_queries":[],"aggregations":[]})",
+		fmt::format(
+			R"({{"namespace":"{}","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{{"op":"and","cond":"SET","field":"{}","Value":["1", " 10 ", "100 ", " 1000"]}}],"merge_queries":[],"aggregations":[]}})",
 			default_namespace, kFieldNameId),
 		Query{default_namespace}.Where(kFieldNameId, CondSet, {1, 10, 100, 1000}));
 }

@@ -18,9 +18,6 @@ void TransactionSteps::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 }
 
 void TransactionSteps::Modify(Query&& query, lsn_t lsn) {
-	if (query.Type() == QuerySelect) {
-		throw Error(errParams, "Transactions does not support SELECT queries");
-	}
 	if (!query.GetJoinQueries().empty()) {
 		throw Error(errParams, "Query in transaction can not contain JOINs");
 	}
@@ -30,7 +27,19 @@ void TransactionSteps::Modify(Query&& query, lsn_t lsn) {
 	if (!query.GetSubQueries().empty()) {
 		throw Error(errParams, "Query in transaction can not contain subqueries");
 	}
-	updateQueriesCount_ += (query.Type() == QueryUpdate);
+	switch (query.Type()) {
+		case QueryUpdate:
+			updateQueriesCount_ += 1;
+			break;
+		case QueryDelete:
+			deleteQueriesCount_ += 1;
+			break;
+		case QuerySelect:
+			throw Error(errParams, "Transactions does not support SELECT queries");
+		case QueryTruncate:
+			throw Error(errParams, "Transactions does not support TRUNCATE queries");
+		default:;
+	}
 	steps.emplace_back(std::move(query), lsn);
 }
 

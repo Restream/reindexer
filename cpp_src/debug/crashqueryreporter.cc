@@ -94,7 +94,7 @@ ActiveQueryScope::~ActiveQueryScope() {
 			break;
 		case Type::CoreQueryTracker:
 			if (!g_queryDebugCtx.mainQuery) {
-				logPrintf(LogWarning, "~ActiveQueryScope: Empty query pointer in the ActiveQueryScope");
+				logFmt(LogWarning, "~ActiveQueryScope: Empty query pointer in the ActiveQueryScope");
 			}
 			g_queryDebugCtx.mainQuery = nullptr;
 			g_queryDebugCtx.parentQuery = nullptr;
@@ -106,14 +106,14 @@ ActiveQueryScope::~ActiveQueryScope() {
 			break;
 		case Type::ExternalQueryTracker:
 			if (!g_queryDebugCtx.externQuery) {
-				logPrintf(LogWarning, "~ActiveQueryScope: Empty external query pointer in the ActiveQueryScope");
+				logFmt(LogWarning, "~ActiveQueryScope: Empty external query pointer in the ActiveQueryScope");
 			}
 			g_queryDebugCtx.externQuery = nullptr;
 			g_queryDebugCtx.externRealQueryType = QuerySelect;
 			break;
 		case Type::ExternalSQLQueryTracker:
 			if (g_queryDebugCtx.externSql.empty()) {
-				logPrintf(LogWarning, "~ActiveQueryScope: Empty external query SQL in the ActiveQueryScope");
+				logFmt(LogWarning, "~ActiveQueryScope: Empty external query SQL in the ActiveQueryScope");
 			}
 			g_queryDebugCtx.externSql = std::string_view();
 			break;

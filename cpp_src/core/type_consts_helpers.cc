@@ -27,7 +27,7 @@ namespace reindexer {
 		case CondKnn:
 			break;
 	}
-	throw Error(errForbidden, "Not invertible conditional operator '%s(%s)' in query", CondTypeToStr(cond), CondTypeToStrShort(cond));
+	throw Error(errForbidden, "Not invertible conditional operator '{}({})' in query", CondTypeToStr(cond), CondTypeToStrShort(cond));
 }
 
 [[nodiscard]] CondType InvertNotCondition(CondType cond) {
@@ -51,7 +51,7 @@ namespace reindexer {
 		case CondKnn:
 			break;
 	}
-	throw Error(errForbidden, "Not invertible conditional operator '%s(%s)' in query", CondTypeToStr(cond), CondTypeToStrShort(cond));
+	throw Error(errForbidden, "Not invertible conditional operator '{}({})' in query", CondTypeToStr(cond), CondTypeToStrShort(cond));
 }
 
 [[nodiscard]] std::string_view CondTypeToStr(CondType t) {
@@ -84,7 +84,7 @@ namespace reindexer {
 		case CondKnn:
 			return "CondKnn"sv;
 	}
-	throw Error{errNotValid, "Invalid condition type: %d", int(t)};
+	throw Error{errNotValid, "Invalid condition type: {}", int(t)};
 }
 
 [[nodiscard]] std::string_view CondTypeToStrShort(CondType cond) {
@@ -117,7 +117,7 @@ namespace reindexer {
 		case CondKnn:
 			return "KNN"sv;
 	}
-	throw Error{errNotValid, "Invalid condition type: %d", int(cond)};
+	throw Error{errNotValid, "Invalid condition type: {}", int(cond)};
 }
 
 [[nodiscard]] std::string_view TagTypeToStr(TagType t) {
@@ -144,7 +144,7 @@ namespace reindexer {
 		case TAG_FLOAT:
 			return "<float>"sv;
 	}
-	throw Error{errNotValid, "Invalid tag type: %d", int(t)};
+	throw Error{errNotValid, "Invalid tag type: {}", int(t)};
 }
 
 [[nodiscard]] std::string_view AggTypeToStr(AggType t) noexcept {

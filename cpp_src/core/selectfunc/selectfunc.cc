@@ -214,7 +214,7 @@ BaseFunctionCtx::Ptr SelectFunction::createCtx(SelectFuncStruct& data, BaseFunct
 			switch (SelectFuncType(data.func.index())) {
 				case SelectFuncType::None:
 					if (ctx->Type() != BaseFunctionCtx::CtxType::kFtCtx) {
-						throw reindexer::Error(errLogic, "The existing calling context type '%d' does not allow this function",
+						throw reindexer::Error(errLogic, "The existing calling context type '{}' does not allow this function",
 											   int(ctx->Type()));
 					}
 					break;
@@ -222,13 +222,13 @@ BaseFunctionCtx::Ptr SelectFunction::createCtx(SelectFuncStruct& data, BaseFunct
 				case SelectFuncType::Highlight:
 				case SelectFuncType::SnippetN:
 					if (ctx->Type() != BaseFunctionCtx::CtxType::kFtArea) {
-						throw reindexer::Error(errLogic, "The existing calling context type '%d' does not allow this function",
+						throw reindexer::Error(errLogic, "The existing calling context type '{}' does not allow this function",
 											   int(ctx->Type()));
 					}
 					break;
 				case SelectFuncType::DebugRank:
 					if (ctx->Type() != BaseFunctionCtx::CtxType::kFtAreaDebug) {
-						throw reindexer::Error(errLogic, "The existing calling context type '%d' does not allow this function",
+						throw reindexer::Error(errLogic, "The existing calling context type '{}' does not allow this function",
 											   int(ctx->Type()));
 					}
 					break;

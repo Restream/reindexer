@@ -1,10 +1,8 @@
 #pragma once
 
 #include "reindexer_api.h"
-#include "tools/fsops.h"
-#include "estl/fast_hash_map.h"
-#include "cluster/config.h"
 #include "servercontrol.h"
+#include "tools/fsops.h"
 
 using reindexer::fast_hash_map;
 using reindexer::WrSerializer;
@@ -94,6 +92,7 @@ protected:
 	}
 
 	void waitSync(std::string_view ns);
+	bool checkSync(std::string_view ns);
 	void waitSync(size_t shardId, std::string_view ns);
 	std::pair<size_t, size_t> getSCIdxs(size_t id) { return std::make_pair(id / kNodesInCluster, id % kNodesInCluster); }
 	ServerControl::Interface::Ptr getNode(size_t idx);
@@ -164,6 +163,5 @@ protected:
 	const std::string kSparseFieldDataString = "sparse_data_string";
 	const std::string kSparseIndexDataString = "sparse_data_string_index";
 
-	ShardingConfig config_;
 	std::vector<std::vector<ServerControl>> svc_;  //[shard][nodeId]
 };

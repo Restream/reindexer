@@ -125,7 +125,7 @@ void Listener<LT>::io_accept(ev::io& /*watcher*/, int revents) {
 	}
 
 	if (shared_->terminating_) {
-		logPrintf(LogWarning, "Can't accept connection. Listener is terminating!");
+		logFmt(LogWarning, "Can't accept connection. Listener is terminating!");
 		return;
 	}
 
@@ -153,7 +153,7 @@ void Listener<LT>::io_accept(ev::io& /*watcher*/, int revents) {
 			const auto balancingType = conn->GetBalancingType();
 			switch (balancingType) {
 				case IServerConnection::BalancingType::None:
-					logPrintf(LogError, "Listener: BalancingType::None. Interpreting as 'shared'");
+					logFmt(LogError, "Listener: BalancingType::None. Interpreting as 'shared'");
 					[[fallthrough]];
 				case IServerConnection::BalancingType::Shared:
 					shared_->connCount_.fetch_add(1, std::memory_order_release);
@@ -216,14 +216,14 @@ void Listener<LT>::timeout_cb(ev::periodic&, int) {
 
 	// Clear all idle connections, after 300 sec
 	if (shared_->idle_.size() && steady_clock_w::now_coarse() - shared_->ts_ > std::chrono::seconds(300)) {
-		logPrintf(LogInfo, "Cleanup idle connections. %d cleared", shared_->idle_.size());
+		logFmt(LogInfo, "Cleanup idle connections. {} cleared", shared_->idle_.size());
 		shared_->idle_.clear();
 	}
 
 	rebalance();
 	const size_t curConnCount = connections_.size();
 	if (curConnCount != 0) {
-		logPrintf(LogTrace, "Listener(%s) %d stats: %d connections", shared_->addr_, id_, curConnCount);
+		logFmt(LogTrace, "Listener({}) {} stats: {} connections", shared_->addr_, id_, curConnCount);
 	}
 }
 
@@ -246,7 +246,7 @@ void Listener<LT>::rebalance() {
 			}
 
 			if (minIt != shared_->listeners_.end() && minConnCount + 1 < curConnCount) {
-				logPrintf(LogInfo, "Rebalance connection from listener %d to %d", id_, (*minIt)->id_);
+				logFmt(LogInfo, "Rebalance connection from listener {} to {}", id_, (*minIt)->id_);
 				auto conn = std::move(connections_.back());
 				conn->Detach();
 				(*minIt)->connections_.emplace_back(std::move(conn));
@@ -266,7 +266,7 @@ void Listener<LT>::rebalance_from_acceptor() {
 		return;
 	}
 	if (shared_->listeners_.size() < 2) {
-		logPrintf(LogError, "Unable to rebalance connections from acceptor: there are no other listeners");
+		logFmt(LogError, "Unable to rebalance connections from acceptor: there are no other listeners");
 		connections_.clear();
 		return;
 	}
@@ -296,7 +296,7 @@ void Listener<LT>::rebalance_conn(IServerConnection* c, IServerConnection::Balan
 	std::unique_lock lck(shared_->mtx_);
 	auto found = accepted_.find(c);
 	if (found == accepted_.end()) {
-		logPrintf(LogError, "Rebalance was requested for incorrect connection ptr: %08X", uint64_t(c));
+		logFmt(LogError, "Rebalance was requested for incorrect connection ptr: {:#08x}", uint64_t(c));
 		return;
 	}
 	auto fc = std::move(*found);
@@ -333,7 +333,7 @@ void Listener<LT>::run_dedicated_thread(std::unique_ptr<IServerConnection>&& con
 			auto pc = w.conn.get();
 			std::unique_lock lck(shared_->mtx_);
 			shared_->dedicatedWorkers_.emplace_back(std::move(w));
-			logPrintf(LogTrace, "Listener (%s) dedicated thread started. %d total", shared_->addr_, shared_->dedicatedWorkers_.size());
+			logFmt(LogTrace, "Listener ({}) dedicated thread started. {} total", shared_->addr_, shared_->dedicatedWorkers_.size());
 			lck.unlock();
 			pc->Attach(loop);
 			pc->HandlePendingData();
@@ -349,13 +349,13 @@ void Listener<LT>::run_dedicated_thread(std::unique_ptr<IServerConnection>&& con
 										 [&pc](const typename Shared::Worker& cw) { return cw.conn.get() == pc; });
 			assertrx(it != shared_->dedicatedWorkers_.end());
 			shared_->dedicatedWorkers_.erase(it);
-			logPrintf(LogTrace, "Listener (%s) dedicated thread finished. %d left", shared_->addr_, shared_->dedicatedWorkers_.size());
+			logFmt(LogTrace, "Listener ({}) dedicated thread finished. {} left", shared_->addr_, shared_->dedicatedWorkers_.size());
 		} catch (Error& e) {
-			logPrintf(LogError, "Unhandled excpetion in listener thread: %s", e.what());
+			logFmt(LogError, "Unhandled excpetion in listener thread: {}", e.what());
 		} catch (std::exception& e) {
-			logPrintf(LogError, "Unhandled excpetion in listener thread: %s", e.what());
+			logFmt(LogError, "Unhandled excpetion in listener thread: {}", e.what());
 		} catch (...) {
-			logPrintf(LogError, "Unhandled excpetion in listener thread");
+			logFmt(LogError, "Unhandled excpetion in listener thread");
 		}
 	});
 	th.detach();
@@ -366,7 +366,7 @@ void Listener<LT>::startup_shared_thread() {
 	int count = shared_->listenersCount_.load(std::memory_order_relaxed);
 	while (count < shared_->maxListeners_ && count <= (shared_->connCount_.load(std::memory_order_acquire) + 1)) {
 		if (shared_->listenersCount_.compare_exchange_weak(count, count + 1, std::memory_order_acq_rel)) {
-			logPrintf(LogTrace, "Listener (%s). Creating new shared thread (%d total)", shared_->addr_, count);
+			logFmt(LogTrace, "Listener ({}). Creating new shared thread ({} total)", shared_->addr_, count);
 			std::thread th(&Listener::clone, std::make_unique<ListeningThreadData>(shared_));
 			th.detach();
 			break;
@@ -376,7 +376,7 @@ void Listener<LT>::startup_shared_thread() {
 
 template <ListenerType LT>
 void Listener<LT>::async_cb(ev::async& watcher) {
-	logPrintf(LogInfo, "Listener(%s) %d async received", shared_->addr_, id_);
+	logFmt(LogInfo, "Listener({}) {} async received", shared_->addr_, id_);
 	h_vector<IServerConnection*, 32> conns;
 	{
 		std::lock_guard lck(shared_->mtx_);
@@ -435,11 +435,11 @@ void Listener<LT>::clone(std::unique_ptr<ListeningThreadData> d) noexcept {
 #endif
 		d->Loop();
 	} catch (Error& e) {
-		logPrintf(LogError, "Unhandled excpetion in listener thread (%s): %s", shared.addr_, e.what());
+		logFmt(LogError, "Unhandled excpetion in listener thread ({}): {}", shared.addr_, e.what());
 	} catch (std::exception& e) {
-		logPrintf(LogError, "Unhandled excpetion in listener thread (%s): %s", shared.addr_, e.what());
+		logFmt(LogError, "Unhandled excpetion in listener thread ({}): {}", shared.addr_, e.what());
 	} catch (...) {
-		logPrintf(LogError, "Unhandled excpetion in listener thread (%s): <unknown>", shared.addr_);
+		logFmt(LogError, "Unhandled excpetion in listener thread ({}): <unknown>", shared.addr_);
 	}
 
 	std::lock_guard lck(shared.mtx_);
@@ -528,7 +528,7 @@ void ForkedListener::io_accept(ev::io& /*watcher*/, int revents) {
 	}
 
 	if (terminating_) {
-		logPrintf(LogWarning, "Can't accept connection. Listener is terminating!");
+		logFmt(LogWarning, "Can't accept connection. Listener is terminating!");
 		return;
 	}
 
@@ -558,7 +558,7 @@ void ForkedListener::io_accept(ev::io& /*watcher*/, int revents) {
 			} else {
 				std::unique_lock lck(mtx_);
 				workers_.emplace_back(std::move(w));
-				logPrintf(LogTrace, "Listener (%s) dedicated thread started. %d total", addr_, workers_.size());
+				logFmt(LogTrace, "Listener ({}) dedicated thread started. {} total", addr_, workers_.size());
 				lck.unlock();
 				while (!terminating_) {
 					loop.run();
@@ -571,14 +571,14 @@ void ForkedListener::io_accept(ev::io& /*watcher*/, int revents) {
 				const auto it = std::find_if(workers_.begin(), workers_.end(), [&pc](const Worker& cw) { return cw.conn.get() == pc; });
 				assertrx(it != workers_.end());
 				workers_.erase(it);
-				logPrintf(LogTrace, "Listener (%s) dedicated thread finished. %d left", addr_, workers_.size());
+				logFmt(LogTrace, "Listener ({}) dedicated thread finished. {} left", addr_, workers_.size());
 			}
 		} catch (Error& e) {
-			logPrintf(LogError, "Unhandled excpetion in listener thread: %s", e.what());
+			logFmt(LogError, "Unhandled excpetion in listener thread: {}", e.what());
 		} catch (std::exception& e) {
-			logPrintf(LogError, "Unhandled excpetion in listener thread: %s", e.what());
+			logFmt(LogError, "Unhandled excpetion in listener thread: {}", e.what());
 		} catch (...) {
-			logPrintf(LogError, "Unhandled excpetion in listener thread");
+			logFmt(LogError, "Unhandled excpetion in listener thread");
 		}
 		--runningThreadsCount_;
 	});
@@ -586,7 +586,7 @@ void ForkedListener::io_accept(ev::io& /*watcher*/, int revents) {
 }
 
 void ForkedListener::async_cb(ev::async& watcher) {
-	logPrintf(LogInfo, "Listener(%s) async received", addr_);
+	logFmt(LogInfo, "Listener({}) async received", addr_);
 	watcher.loop.break_loop();
 }
 

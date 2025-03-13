@@ -76,7 +76,7 @@ Error UpdatesFilters::FromJSON(std::span<char> json) {
 		gason::JsonParser parser;
 		FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "UpdatesFilter: %s", ex.what());
+		return Error(errParseJson, "UpdatesFilter: {}", ex.what());
 	} catch (const Error& err) {
 		return err;
 	}
@@ -223,7 +223,7 @@ void UpdatesObservers::SendAsyncEventOnly(updates::UpdateRecord&& rec) {
 		events.emplace_back(std::move(rec));
 		auto err = eventsListener_.SendEvents(std::move(events));
 		if rx_unlikely (!err.ok()) {
-			logPrintf(LogError, "Unable to send update to EventsListener: '%s'", err.what());
+			logFmt(LogError, "Unable to send update to EventsListener: '{}'", err.what());
 		}
 	}
 }
@@ -242,7 +242,7 @@ Error UpdatesObservers::SendUpdates(cluster::UpdatesContainer&& recs, std::funct
 	if (eventsListener_.HasListenersFor(recs[0].NsName())) {
 		auto err = eventsListener_.SendEvents(convertUpdatesContainer(recs));
 		if rx_unlikely (!err.ok()) {
-			logPrintf(LogError, "Unable to send update to EventsListener: '%s'", err.what());
+			logFmt(LogError, "Unable to send update to EventsListener: '{}'", err.what());
 		}
 	}
 	return replicator_.Replicate(std::move(recs), std::move(beforeWaitF), ctx);
@@ -262,7 +262,7 @@ Error UpdatesObservers::SendAsyncUpdates(cluster::UpdatesContainer&& recs, const
 	if (eventsListener_.HasListenersFor(recs[0].NsName())) {
 		auto err = eventsListener_.SendEvents(convertUpdatesContainer(recs));
 		if rx_unlikely (!err.ok()) {
-			logPrintf(LogError, "Unable to send update to EventsListener: '%s'", err.what());
+			logFmt(LogError, "Unable to send update to EventsListener: '{}'", err.what());
 		}
 	}
 	return replicator_.ReplicateAsync(std::move(recs), ctx);

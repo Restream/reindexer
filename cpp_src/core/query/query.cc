@@ -33,7 +33,7 @@ void Query::checkSubQuery() const {
 		throw Error{errQueryExec, "Subquery cannot request rank"};
 	}
 	if rx_unlikely (isSystemNamespaceNameFast(NsName())) {
-		throw Error{errQueryExec, "Queries to system namespaces ('%s') are not supported inside subquery", NsName()};
+		throw Error{errQueryExec, "Queries to system namespaces ('{}') are not supported inside subquery", NsName()};
 	}
 	if rx_unlikely (IsWALQuery()) {
 		throw Error{errQueryExec, "WAL queries are not supported inside subquery"};
@@ -69,7 +69,7 @@ void Query::checkSubQueryWithData() const {
 			case AggDistinct:
 			case AggUnknown:
 			case AggFacet:
-				throw Error{errQueryExec, "Aggregation %s cannot be in subquery", AggTypeToStr(aggregations_[0].Type())};
+				throw Error{errQueryExec, "Aggregation {} cannot be in subquery", AggTypeToStr(aggregations_[0].Type())};
 			case AggMin:
 			case AggMax:
 			case AggAvg:
@@ -91,8 +91,8 @@ void Query::VerifyForUpdate() const {
 	}
 }
 
-Query::Query(Query &&other) noexcept = default;
-Query::Query(const Query &other) = default;
+Query::Query(Query&& other) noexcept = default;
+Query::Query(const Query& other) = default;
 Query::~Query() = default;
 
 bool Query::operator==(const Query& obj) const {
@@ -148,7 +148,7 @@ std::string Query::GetSQL(QueryType realType) const {
 
 Query& Query::EqualPositions(EqualPosition_t&& ep) & {
 	if (ep.size() < 2) {
-		throw Error(errParams, "EqualPosition must have at least 2 field. Fields: [%s]", ep.size() == 1 ? ep[0] : "");
+		throw Error(errParams, "EqualPosition must have at least 2 field. Fields: [{}]", ep.size() == 1 ? ep[0] : "");
 	}
 	QueryEntriesBracket* bracketPointer = entries_.LastOpenBracket();
 
@@ -164,18 +164,18 @@ void Query::Join(JoinedQuery&& jq) & {
 	switch (jq.joinType) {
 		case JoinType::Merge:
 			if (nextOp_ != OpAnd) {
-				throw Error(errParams, "Merge query with %s operation", OpTypeToStr(nextOp_));
+				throw Error(errParams, "Merge query with {} operation", OpTypeToStr(nextOp_));
 			}
 			mergeQueries_.emplace_back(std::move(jq));
 			return;
 		case JoinType::LeftJoin:
 			if (nextOp_ != OpAnd) {
-				throw Error(errParams, "Left join with %s operation", OpTypeToStr(nextOp_));
+				throw Error(errParams, "Left join with {} operation", OpTypeToStr(nextOp_));
 			}
 			break;
 		case JoinType::OrInnerJoin:
 			if (nextOp_ == OpNot) {
-				throw Error(errParams, "Or inner join with %s operation", OpTypeToStr(nextOp_));
+				throw Error(errParams, "Or inner join with {} operation", OpTypeToStr(nextOp_));
 			}
 			nextOp_ = OpOr;
 			[[fallthrough]];
@@ -190,7 +190,7 @@ void Query::Join(JoinedQuery&& jq) & {
 
 void Query::checkSetObjectValue(const Variant& value) const {
 	if (!value.Type().Is<KeyValueType::String>()) {
-		throw Error(errLogic, "Unexpected variant type in SetObject: %s. Expecting KeyValueType::String with JSON-content",
+		throw Error(errLogic, "Unexpected variant type in SetObject: {}. Expecting KeyValueType::String with JSON-content",
 					value.Type().Name());
 	}
 }
@@ -445,7 +445,7 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 			case QueryAggregationOffset:
 			case QueryAggregationLimit:
 			default:
-				throw Error(errParseBin, "Unknown type %d while parsing binary buffer", int(qtype));
+				throw Error(errParseBin, "Unknown type {} while parsing binary buffer", int(qtype));
 		}
 	}
 	for (auto&& eqPos : equalPositions) {
@@ -610,7 +610,7 @@ void Query::Serialize(WrSerializer& ser, uint8_t mode) const {
 				ser.PutVariant(val);
 			}
 		} else {
-			throw Error(errLogic, "Unsupported item modification mode = %d", int(field.Mode()));
+			throw Error(errLogic, "Unsupported item modification mode = {}", int(field.Mode()));
 		}
 	}
 
@@ -696,7 +696,7 @@ Query& Query::SortStDistance(std::string_view field, Point p, bool desc) & {
 	if (field.empty()) {
 		throw Error(errParams, "Field name for ST_Distance can not be empty");
 	}
-	sortingEntries_.emplace_back(fmt::sprintf("ST_Distance(%s,ST_GeomFromText('point(%.12f %.12f)'))", field, p.X(), p.Y()), desc);
+	sortingEntries_.emplace_back(fmt::format("ST_Distance({},ST_GeomFromText('point({:.12f} {:.12f})'))", field, p.X(), p.Y()), desc);
 	return *this;
 }
 
@@ -704,7 +704,7 @@ Query& Query::SortStDistance(std::string_view field1, std::string_view field2, b
 	if (field1.empty() || field2.empty()) {
 		throw Error(errParams, "Fields names for ST_Distance can not be empty");
 	}
-	sortingEntries_.emplace_back(fmt::sprintf("ST_Distance(%s,%s)", field1, field2), desc);
+	sortingEntries_.emplace_back(fmt::format("ST_Distance({},{})", field1, field2), desc);
 	return *this;
 }
 

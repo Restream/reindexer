@@ -32,7 +32,7 @@ Error DBManager::Init() {
 
 	std::vector<fs::DirEntry> foundDb;
 	if (!config_.StoragePath.empty() && fs::ReadDir(config_.StoragePath, foundDb) < 0) {
-		return Error(errParams, "Can't read reindexer dir %s", config_.StoragePath);
+		return Error(errParams, "Can't read reindexer dir {}", config_.StoragePath);
 	}
 
 	try {
@@ -45,9 +45,9 @@ Error DBManager::Init() {
 		if (de.isDir && validateObjectName(de.name, false)) {
 			auto status = loadOrCreateDatabase(de.name, config_.StartWithErrors, config_.Autorepair);
 			if (!status.ok()) {
-				logPrintf(LogError, "Failed to open database '%s' - %s", de.name, status.what());
+				logFmt(LogError, "Failed to open database '{}' - {}", de.name, status.what());
 				if (status.code() == errNotValid) {
-					logPrintf(LogError, "Try to run:\t`reindexer_tool --dsn \"builtin://%s\" --repair`  to restore data",
+					logFmt(LogError, "Try to run:\t`reindexer_tool --dsn \"builtin://{}\" --repair`  to restore data",
 							  config_.StoragePath);
 					return status;
 				}
@@ -84,13 +84,13 @@ Error DBManager::OpenDatabase(const std::string& dbName, AuthContext& auth, bool
 	lck.unlock();
 
 	if (!canCreate) {
-		return Error(errNotFound, "Database '%s' not found", dbName);
+		return Error(errNotFound, "Database '{}' not found", dbName);
 	}
 	if (auth.role_ < kRoleOwner) {
-		return Error(errForbidden, "Forbidden to create database '%s'", dbName);
+		return Error(errForbidden, "Forbidden to create database '{}'", dbName);
 	}
 	if (!validateObjectName(dbName, false)) {
-		return Error(errParams, "Database name '%s' contains invalid character. Only alphas, digits,'_','-', are allowed", dbName);
+		return Error(errParams, "Database name '{}' contains invalid character. Only alphas, digits,'_','-', are allowed", dbName);
 	}
 
 	lck = smart_lock<Mutex>(mtx_, dummyCtx, true);
@@ -122,7 +122,7 @@ Error DBManager::loadOrCreateDatabase(const std::string& dbName, bool allowDBErr
 
 	std::string storagePath = !config_.StoragePath.empty() ? fs::JoinPath(config_.StoragePath, dbName) : "";
 
-	logPrintf(LogInfo, "Loading database %s", dbName);
+	logFmt(LogInfo, "Loading database {}", dbName);
 	auto db = std::make_unique<reindexer::Reindexer>(
 		reindexer::ReindexerConfig().WithClientStats(clientsStats_).WithUpdatesSize(config_.MaxUpdatesSize).WithDBName(dbName));
 	StorageTypeOpt storageType = kStorageTypeOptLevelDB;
@@ -159,7 +159,7 @@ Error DBManager::DropDatabase(AuthContext& auth) {
 	std::unique_lock<shared_timed_mutex> lck(mtx_);
 	auto it = dbs_.find(dbName);
 	if (it == dbs_.end()) {
-		return Error(errParams, "Database %s not found", dbName);
+		return Error(errParams, "Database {} not found", dbName);
 	}
 	dbs_.erase(it);
 	fs::RmDirAll(fs::JoinPath(config_.StoragePath, dbName));
@@ -230,7 +230,7 @@ Error DBManager::Login(const std::string& dbName, AuthContext& auth) {
 									 hash, dummySalt, dummyAlg);
 
 				if (!err.ok()) {
-					return Error(errForbidden, "Unauthorized: %s", err.what());
+					return Error(errForbidden, "Unauthorized: {}", err.what());
 				}
 			}
 
@@ -283,7 +283,7 @@ Error DBManager::readUsersYAML() noexcept {
 	std::string content;
 	int res = fs::ReadFile(fs::JoinPath(config_.StoragePath, kUsersYAMLFilename), content);
 	if (res < 0) {
-		return Error(errNotFound, "Can't read '%s' file", kUsersYAMLFilename);
+		return Error(errNotFound, "Can't read '{}' file", kUsersYAMLFilename);
 	}
 	try {
 		YAML::ScannerOpts opts;
@@ -295,7 +295,7 @@ Error DBManager::readUsersYAML() noexcept {
 			auto userNode = user.second;
 			auto err = ParseCryptString(userNode["hash"].as<std::string>(), urec.hash, urec.salt, urec.algorithm);
 			if (!err.ok()) {
-				logPrintf(LogWarning, "Hash parsing error for user '%s': %s", urec.login, err.what());
+				logFmt(LogWarning, "Hash parsing error for user '{}': {}", urec.login, err.what());
 				continue;
 			}
 			auto userRoles = userNode["roles"];
@@ -305,20 +305,20 @@ Error DBManager::readUsersYAML() noexcept {
 					try {
 						urec.roles.emplace(db, userRoleFromString(role.second.as<std::string>()));
 					} catch (const Error& err) {
-						logPrintf(LogWarning, "Skipping user '%s' for db '%s': ", urec.login, db, err.what());
+						logFmt(LogWarning, "Skipping user '{}' for db '{}': ", urec.login, db, err.what());
 					}
 				}
 				if (urec.roles.empty()) {
-					logPrintf(LogWarning, "User '%s' doesn't have valid roles", urec.login);
+					logFmt(LogWarning, "User '{}' doesn't have valid roles", urec.login);
 				} else {
 					users_.emplace(urec.login, urec);
 				}
 			} else {
-				logPrintf(LogWarning, "Skipping user '%s': no 'roles' node found", urec.login);
+				logFmt(LogWarning, "Skipping user '{}': no 'roles' node found", urec.login);
 			}
 		}
 	} catch (const YAML::Exception& ex) {
-		return Error(errParseYAML, "Users: %s", ex.what());
+		return Error(errParseYAML, "Users: {}", ex.what());
 	}
 	return errOK;
 }
@@ -327,7 +327,7 @@ Error DBManager::readUsersJSON() noexcept {
 	std::string content;
 	int res = fs::ReadFile(fs::JoinPath(config_.StoragePath, kUsersJSONFilename), content);
 	if (res < 0) {
-		return Error(errNotFound, "Can't read '%s' file", kUsersJSONFilename);
+		return Error(errNotFound, "Can't read '{}' file", kUsersJSONFilename);
 	}
 
 	try {
@@ -338,7 +338,7 @@ Error DBManager::readUsersJSON() noexcept {
 			urec.login = std::string(userNode.key);
 			auto err = ParseCryptString(userNode["hash"].As<std::string>(), urec.hash, urec.salt, urec.algorithm);
 			if (!err.ok()) {
-				logPrintf(LogWarning, "Hash parsing error for user '%s': %s", urec.login, err.what());
+				logFmt(LogWarning, "Hash parsing error for user '{}': {}", urec.login, err.what());
 				continue;
 			}
 			for (auto& roleNode : userNode["roles"]) {
@@ -347,23 +347,23 @@ Error DBManager::readUsersJSON() noexcept {
 					UserRole role = userRoleFromString(roleNode.As<std::string_view>());
 					urec.roles.emplace(db, role);
 				} catch (const Error& err) {
-					logPrintf(LogWarning, "Skipping user '%s' for db '%s': ", urec.login, db, err.what());
+					logFmt(LogWarning, "Skipping user '{}' for db '{}': ", urec.login, db, err.what());
 				}
 			}
 			if (urec.roles.empty()) {
-				logPrintf(LogWarning, "User '%s' doesn't have valid roles", urec.login);
+				logFmt(LogWarning, "User '{}' doesn't have valid roles", urec.login);
 			} else {
 				users_.emplace(urec.login, urec);
 			}
 		}
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "Users: %s", ex.what());
+		return Error(errParseJson, "Users: {}", ex.what());
 	}
 	return errOK;
 }
 
 Error DBManager::createDefaultUsersYAML() noexcept {
-	logPrintf(LogInfo, "Creating default %s file", kUsersYAMLFilename);
+	logFmt(LogInfo, "Creating default {} file", kUsersYAMLFilename);
 	int64_t res = fs::WriteFile(
 		fs::JoinPath(config_.StoragePath, kUsersYAMLFilename),
 		"# List of db's users, their's roles and privileges\n\n"
@@ -392,7 +392,7 @@ Error DBManager::createDefaultUsersYAML() noexcept {
 		"  roles:\n"
 		"    *: owner\n");
 	if (res < 0) {
-		return Error(errParams, "Unable to write default config file: %s", strerror(errno));
+		return Error(errParams, "Unable to write default config file: {}", strerror(errno));
 	}
 	users_.emplace("reindexer", UserRecord{"reindexer", "VIR.dzIB8pasIdmyVGV0E/", "rdxsalt", {{"*", kRoleOwner}}, HashAlgorithm::MD5});
 	return errOK;
@@ -412,7 +412,7 @@ UserRole DBManager::userRoleFromString(std::string_view strRole) {
 	} else if (strRole == "owner"sv) {
 		return kRoleOwner;
 	}
-	throw Error(errParams, "Role \'%s\' is invalid", strRole);
+	throw Error(errParams, "Role \'{}\' is invalid", strRole);
 }
 
 std::string_view UserRoleName(UserRole role) noexcept {

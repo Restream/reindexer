@@ -34,7 +34,7 @@ void RaftManager::Configure(const ReplicationConfigData& baseConfig, const Clust
 }
 
 void RaftManager::SetDesiredLeaderId(int serverId) {
-	logInfo("%d Set (%d) as a desired leader", serverId_, serverId);
+	logInfo("{} Set ({}) as a desired leader", serverId_, serverId);
 	nextServerId_.SetNextServerId(serverId);
 	lastLeaderPingTs_ = {ClockT::time_point()};
 }
@@ -47,11 +47,11 @@ RaftInfo::Role RaftManager::Elections() {
 		const bool isDesiredLeader = (nextServerId == serverId_);
 		if (!isDesiredLeader && nextServerId != -1) {
 			endElections(GetTerm(), RaftInfo::Role::Follower);
-			logInfo("Skipping elections (desired leader id is %d)", serverId_, nextServerId);
+			logInfo("Skipping elections (desired leader id is {})", serverId_, nextServerId);
 			return RaftInfo::Role::Follower;
 		}
 		int32_t term = beginElectionsTerm(nextServerId);
-		logInfo("Starting new elections term for %d. Term number: %d", serverId_, term);
+		logInfo("Starting new elections term for {}. Term number: {}", serverId_, term);
 		coroutine::wait_group wg;
 		succeedRoutines.resize(0);
 		struct {
@@ -72,10 +72,10 @@ RaftInfo::Role RaftManager::Elections() {
 				auto err = node.client.SuggestLeader(suggestion, result);
 				bool succeed = err.ok() && serverId_ == result.serverId;
 				if (succeed) {
-					logInfo("%d: Suggested as leader for node %d", serverId_, nodeId);
+					logInfo("{}: Suggested as leader for node {}", serverId_, nodeId);
 					++electionsStat.succeedPhase1;
 				} else {
-					logInfo("%d: Error on leader suggest for node %d (response leader is %d): %s", serverId_, nodeId, result.serverId,
+					logInfo("{}: Error on leader suggest for node {} (response leader is {}): {}", serverId_, nodeId, result.serverId,
 							err.what());
 					++electionsStat.failed;
 				}
@@ -101,7 +101,7 @@ RaftInfo::Role RaftManager::Elections() {
 
 				const bool leaderIsAvailable = !isDesiredLeader && LeaderIsAvailable(ClockT::now());
 				if (leaderIsAvailable || !isConsensus(electionsStat.succeedPhase1)) {
-					logInfo("%d: Skip leaders ping. Elections are outdated. leaderIsAvailable: %d. Successfull responses: %d", serverId_,
+					logInfo("{}: Skip leaders ping. Elections are outdated. leaderIsAvailable: {}. Successfull responses: {}", serverId_,
 							leaderIsAvailable ? 1 : 0, electionsStat.succeedPhase1);
 					return;	 // This elections are outdated
 				}
@@ -109,7 +109,7 @@ RaftInfo::Role RaftManager::Elections() {
 				if (err.ok()) {
 					++electionsStat.succeedPhase2;
 				} else {
-					logInfo("%d: leader's ping error: %s", serverId_, err.what());
+					logInfo("{}: leader's ping error: {}", serverId_, err.what());
 				}
 			});
 		}
@@ -121,21 +121,21 @@ RaftInfo::Role RaftManager::Elections() {
 			if (isConsensus(electionsStat.succeedPhase2)) {
 				result = RaftInfo::Role::Leader;
 				if (endElections(term, result)) {
-					logInfo("%d: end elections with role: leader", serverId_);
+					logInfo("{}: end elections with role: leader", serverId_);
 					wg.wait();
 
 					return result;
 				}
 			}
 		}
-		logInfo("%d: votes stats: phase1: %d; phase2: %d; fails: %d", serverId_, electionsStat.succeedPhase1, electionsStat.succeedPhase2,
+		logInfo("{}: votes stats: phase1: {}; phase2: {}; fails: {}", serverId_, electionsStat.succeedPhase1, electionsStat.succeedPhase2,
 				electionsStat.failed);
 
 		if (endElections(term, result)) {
-			logInfo("[%d: end elections with role: %s(%d)", serverId_, RaftInfo::RoleToStr(result), GetLeaderId());
+			logInfo("[{}: end elections with role: {}({})", serverId_, RaftInfo::RoleToStr(result), GetLeaderId());
 			return result;
 		} else {
-			logInfo("%d: Failed to end elections with chosen role: %s", serverId_, RaftInfo::RoleToStr(result));
+			logInfo("{}: Failed to end elections with chosen role: {}", serverId_, RaftInfo::RoleToStr(result));
 		}
 	}
 	return RaftInfo::Role::Follower;
@@ -150,13 +150,13 @@ bool RaftManager::FollowersAreAvailable() {
 	for (auto& n : nodes_) {
 		n.isOk && ++aliveNodes;
 	}
-	logTrace("%d: Alive followers cnt: %d", serverId_, aliveNodes);
+	logTrace("{}: Alive followers cnt: {}", serverId_, aliveNodes);
 	return isConsensus(aliveNodes + 1);
 }
 
 Error RaftManager::SuggestLeader(const NodeData& suggestion, NodeData& response) {
 	const auto now = ClockT::now();
-	logTrace("%d Leader suggestion info. Local leaderId: %d; local term: %d; local time: %d; leader's ts: %d)", serverId_, GetLeaderId(),
+	logTrace("{} Leader suggestion info. Local leaderId: {}; local term: {}; local time: {}; leader's ts: {})", serverId_, GetLeaderId(),
 			 GetTerm(), now.time_since_epoch().count(), lastLeaderPingTs_.load().time_since_epoch().count());
 	while (true) {
 		int64_t oldVoteData = voteData_.load();
@@ -171,7 +171,7 @@ Error RaftManager::SuggestLeader(const NodeData& suggestion, NodeData& response)
 		}
 		response.electionsTerm = localTerm;
 		if (suggestion.electionsTerm > localTerm) {
-			logTrace("%d suggestion.electionsTerm > localTerm", serverId_);
+			logTrace("{} suggestion.electionsTerm > localTerm", serverId_);
 			const bool leaderIsAvailable = LeaderIsAvailable(now);
 			if (!leaderIsAvailable) {
 				int sId = suggestion.serverId;
@@ -200,7 +200,7 @@ Error RaftManager::SuggestLeader(const NodeData& suggestion, NodeData& response)
 		}
 	}
 
-	logTrace("%d Suggestion: servedId: %d; term: %d; Response: servedId: %d; term: %d; Local: servedId: %d; term: %d", serverId_,
+	logTrace("{} Suggestion: servedId: {}; term: {}; Response: servedId: {}; term: {}; Local: servedId: {}; term: {}", serverId_,
 			 suggestion.serverId, suggestion.electionsTerm, response.serverId, response.electionsTerm, GetLeaderId(), GetTerm());
 	return Error();
 }
@@ -212,13 +212,13 @@ Error RaftManager::LeadersPing(const NodeData& leader) {
 	do {
 		const auto nextServerId = nextServerId_.GetNextServerId();
 		if (nextServerId >= 0 && nextServerId != leader.serverId) {
-			return Error(errLogic, "This node has different desired leader: %d", nextServerId);
+			return Error(errLogic, "This node has different desired leader: {}", nextServerId);
 		}
 		if (getRole(oldVoteData) == RaftInfo::Role::Leader) {
 			return Error(errLogic, "This node is a leader itself");
 		}
 		if (getLeaderId(oldVoteData) != leader.serverId && LeaderIsAvailable(now)) {
-			return Error(errLogic, "This node has another leader: %d", getLeaderId(oldVoteData));
+			return Error(errLogic, "This node has another leader: {}", getLeaderId(oldVoteData));
 		}
 		newVoteData = setTerm(setLeaderId(oldVoteData, leader.serverId), leader.electionsTerm);
 	} while (!voteData_.compare_exchange_strong(oldVoteData, newVoteData));
@@ -262,7 +262,7 @@ void RaftManager::startPingRoutines() {
 						nodeId, node.isOk ? NodeStats::Status::Online
 										  : (isNetworkError ? NodeStats::Status::Offline : NodeStats::Status::RaftError));
 					if (isNetworkError != node.hasNetworkError) {
-						logTrace("%d Network status was changed for %d(%d). Status: %d, network: %d", serverId_, node.uid, node.serverId,
+						logTrace("{} Network status was changed for {}({}). Status: {}, network: {}", serverId_, node.uid, node.serverId,
 								 node.isOk ? 1 : 0, isNetworkError ? 0 : 1);
 						onNodeNetworkStatusChangedCb_(node.uid, !isNetworkError);
 					}
@@ -293,7 +293,7 @@ int32_t RaftManager::beginElectionsTerm(int presetLeader) {
 		newVoteData =
 			setLeaderId(setRole(setTerm(oldVoteData, term), RaftInfo::Role::Candidate), presetLeader >= 0 ? presetLeader : serverId_);
 	} while (!voteData_.compare_exchange_strong(oldVoteData, newVoteData));
-	logTrace("%d: Role has been switched to candidate from %s", serverId_, RaftInfo::RoleToStr(oldRole));
+	logTrace("{}: Role has been switched to candidate from {}", serverId_, RaftInfo::RoleToStr(oldRole));
 	if (oldRole == RaftInfo::Role::Leader) {
 		pingWg_.wait();
 	}
@@ -354,7 +354,7 @@ RaftManager::DesiredLeaderIdSender::DesiredLeaderIdSender(net::ev::dynamic_loop&
 			nextServerNodeIndex_ = i;
 			err = client.WithTimeout(kDesiredLeaderTimeout).Status(true);
 			if (!err.ok()) {
-				throw Error(err.code(), "Target node %s is not available.", nodes_[i].dsn);
+				throw Error(err.code(), "Target node {} is not available.", nodes_[i].dsn);
 			}
 		}
 	}
@@ -367,9 +367,9 @@ Error RaftManager::DesiredLeaderIdSender::operator()() {
 
 	const bool thisNodeIsNext = (nextServerNodeIndex_ == nodes_.size());
 	if (!thisNodeIsNext) {
-		logTrace("%d Checking if node with desired server ID (%d) is available", thisServerId_, nextServerId_);
+		logTrace("{} Checking if node with desired server ID ({}) is available", thisServerId_, nextServerId_);
 		if (auto err = clients_[nextServerNodeIndex_].WithTimeout(kDesiredLeaderTimeout).Status(true); !err.ok()) {
-			return Error(err.code(), "Target node %s is not available.", nodes_[nextServerNodeIndex_].dsn);
+			return Error(err.code(), "Target node {} is not available.", nodes_[nextServerNodeIndex_].dsn);
 		}
 	}
 	for (size_t nodeId = 0; nodeId < clients_.size(); ++nodeId) {
@@ -379,7 +379,7 @@ Error RaftManager::DesiredLeaderIdSender::operator()() {
 
 		loop_.spawn(wg, [this, nodeId, &errString, &okCount] {
 			try {
-				logTrace("%d Sending desired server ID (%d) to node with server ID %d", thisServerId_, nextServerId_,
+				logTrace("{} Sending desired server ID ({}) to node with server ID {}", thisServerId_, nextServerId_,
 						 nodes_[nodeId].serverId);
 				if (auto err = sendDesiredServerIdToNode(nodeId); err.ok()) {
 					++okCount;
@@ -387,14 +387,14 @@ Error RaftManager::DesiredLeaderIdSender::operator()() {
 					errString += "[" + err.whatStr() + "]";
 				}
 			} catch (...) {
-				logInfo("%d: Unable to send desired leader: got unknonw exception", thisServerId_);
+				logInfo("{}: Unable to send desired leader: got unknonw exception", thisServerId_);
 			}
 		});
 	}
 	wg.wait();
 
 	if (!thisNodeIsNext) {
-		logTrace("%d Sending desired server ID (%d) to node with server ID %d", thisServerId_, nextServerId_,
+		logTrace("{} Sending desired server ID ({}) to node with server ID {}", thisServerId_, nextServerId_,
 				 nodes_[nextServerNodeIndex_].serverId);
 		if (auto err = sendDesiredServerIdToNode(nextServerNodeIndex_); !err.ok()) {
 			return err;
@@ -403,7 +403,7 @@ Error RaftManager::DesiredLeaderIdSender::operator()() {
 	}
 
 	if (okCount < GetConsensusForN(nodes_.size() + 1)) {
-		return Error(errNetwork, "Can't send nextLeaderId to servers okCount %d err: %s", okCount, errString);
+		return Error(errNetwork, "Can't send nextLeaderId to servers okCount {} err: {}", okCount, errString);
 	}
 	return Error();
 }

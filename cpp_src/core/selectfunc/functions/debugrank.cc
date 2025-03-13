@@ -10,7 +10,7 @@ namespace reindexer {
 
 bool DebugRank::Process(ItemRef& res, PayloadType& plType, const SelectFuncStruct& func, std::vector<key_string>& stringsHolder) {
 	if (!func.funcArgs.empty()) {
-		throw Error(errParams, "'debug_rank()' does not expect any arguments, but got %d", func.funcArgs.size());
+		throw Error(errParams, "'debug_rank()' does not expect any arguments, but got {}", func.funcArgs.size());
 	}
 	if (!func.ctx || func.ctx->Type() != BaseFunctionCtx::CtxType::kFtAreaDebug) {
 		return false;
@@ -39,7 +39,7 @@ bool DebugRank::Process(ItemRef& res, PayloadType& plType, const SelectFuncStruc
 	pl.Get(func.field, kr);
 
 	if (kr.empty() || !kr[0].Type().IsSame(KeyValueType::String{})) {
-		throw Error(errLogic, "Unable to apply debug_rank function to the non-string field '%s'", func.field);
+		throw Error(errLogic, "Unable to apply debug_rank function to the non-string field '{}'", func.field);
 	}
 
 	const std::string_view data = std::string_view(p_string(kr[0]));
@@ -82,7 +82,7 @@ bool DebugRank::Process(ItemRef& res, PayloadType& plType, const SelectFuncStruc
 			id++;
 			if (id < areaVector.size() && areaVector[id].start == areaVector[id - 1].start) {
 				if (areaVector[id].end != areaVector[id - 1].end) {
-					throw Error(errLogic, "areas not equals start=%d ends(%d %d)", areaVector[id].start, areaVector[id].end,
+					throw Error(errLogic, "areas not equals start={} ends({} {})", areaVector[id].start, areaVector[id].end,
 								areaVector[id - 1].end);
 				}
 				next = true;

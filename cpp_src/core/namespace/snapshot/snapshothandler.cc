@@ -14,7 +14,7 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 	const auto from = opts.from;
 	try {
 		if (!from.IsCompatibleByNsVersion(ExtendedLsn(ns_.repl_.nsVersion, ns_.wal_.LastLSN()))) {
-			throw Error(errOutdatedWAL, "Requested LSN is not compatible by NS version (%d). Current namespace has %d", from.NsVersion(),
+			throw Error(errOutdatedWAL, "Requested LSN is not compatible by NS version ({}). Current namespace has {}", from.NsVersion(),
 						ns_.repl_.nsVersion);
 		}
 		Query q = Query(ns_.name_).Where("#lsn", CondGt, int64_t(from.LSN())).SelectAllFields();
@@ -122,7 +122,7 @@ Error SnapshotHandler::applyShallowRecord(lsn_t lsn, WALRecType type, const Pack
 			break;
 	}
 
-	return Error(errParams, "Unexpected record type for shallow record: %d", type);
+	return Error(errParams, "Unexpected record type for shallow record: {}", type);
 }
 
 Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, const ChunkContext& chCtx,
@@ -231,7 +231,7 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 			const auto version = ser.GetVarint();
 			const auto stateToken = ser.GetVarint();
 			tm.deserialize(ser, version, stateToken);
-			logPrintf(LogInfo, "[%s]: Changing tm's statetoken on %d: %08X->%08X", ns_.name_, ns_.wal_.GetServer(),
+			logFmt(LogInfo, "[{}]: Changing tm's statetoken on {}: {:#08x}->{:#08x}", ns_.name_, ns_.wal_.GetServer(),
 					  ns_.tagsMatcher_.stateToken(), stateToken);
 			ns_.tagsMatcher_ = std::move(tm);
 			ns_.tagsMatcher_.UpdatePayloadType(ns_.payloadType_, NeedChangeTmVersion::No);
@@ -242,7 +242,7 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 		case WalInitTransaction:
 		case WalCommitTransaction:
 			if (chCtx.wal) {
-				err = Error(errLogic, "Unexpected tx WAL record %d\n", int(rec.type));
+				err = Error(errLogic, "Unexpected tx WAL record {}\n", int(rec.type));
 			}
 			break;
 		case WalEmpty:
@@ -258,7 +258,7 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 		case WalItemUpdate:
 		case WalShallowItem:
 		default:
-			err = Error(errLogic, "Unexpected WAL rec type %d\n", int(rec.type));
+			err = Error(errLogic, "Unexpected WAL rec type {}\n", int(rec.type));
 			break;
 	}
 	return err;
@@ -274,14 +274,14 @@ void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeader
 	}
 	WALRecord initRec(records.front().Record());
 	if (initRec.type != WalInitTransaction) {
-		throw Error(errParams, "Unexpected tx chunk init record type: %d. LSN: %d", initRec.type, records.front().LSN());
+		throw Error(errParams, "Unexpected tx chunk init record type: {}. LSN: {}", initRec.type, records.front().LSN());
 	}
 	if (records.size() == 1) {
 		throw Error(errParams, "Unexpected tx chunk size: 1 (at least 2 required)");
 	}
 	WALRecord commitRecord(records.back().Record());
 	if (commitRecord.type != WalCommitTransaction) {
-		throw Error(errParams, "Unexpected tx chunk commit record type: %d. LSN: %d", commitRecord.type, records.back().LSN());
+		throw Error(errParams, "Unexpected tx chunk commit record type: {}. LSN: {}", commitRecord.type, records.back().LSN());
 	}
 	auto tx = Transaction(ns_.NewTransaction(RdxContext(ch.Records().front().LSN())));
 	for (size_t i = 1; i < records.size() - 1; ++i) {
@@ -344,7 +344,7 @@ void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeader
 			case WalTagsMatcher:
 			case WalResetLocalWal:
 			case WalShallowItem:
-				throw Error(errLogic, "Unexpected tx WAL rec type %d\n", wrec.type);
+				throw Error(errLogic, "Unexpected tx WAL rec type {}\n", wrec.type);
 		}
 	}
 

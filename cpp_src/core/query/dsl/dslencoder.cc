@@ -159,10 +159,10 @@ static void encodeAggregationFunctions(const Query& query, JsonBuilder& builder)
 }
 
 static void encodeJoinEntry(const QueryJoinEntry& joinEntry, JsonBuilder& builder) {
+	builder.Put("op"sv, get(kOpMap, joinEntry.Operation()));
 	builder.Put("left_field"sv, joinEntry.LeftFieldName());
 	builder.Put("right_field"sv, joinEntry.RightFieldName());
 	builder.Put("cond"sv, get(kCondMap, joinEntry.Condition()));
-	builder.Put("op"sv, get(kOpMap, joinEntry.Operation()));
 }
 
 static void encodeSingleJoinQuery(const JoinedQuery& joinQuery, JsonBuilder& builder) {
@@ -335,11 +335,11 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 		node.Put("op"sv, dsl::get(dsl::kOpMap, it->operation));
 		it->Visit(
 			[&node](const AlwaysFalse&) {
-				logPrintf(LogTrace, "Not normalized query to dsl"sv);
+				logFmt(LogTrace, "Not normalized query to dsl"sv);
 				node.Put("always"sv, false);
 			},
 			[&node](const AlwaysTrue&) {
-				logPrintf(LogTrace, "Not normalized query to dsl"sv);
+				logFmt(LogTrace, "Not normalized query to dsl"sv);
 				node.Put("always"sv, true);
 			},
 			[&node, &parentQuery](const SubQueryEntry& sqe) {

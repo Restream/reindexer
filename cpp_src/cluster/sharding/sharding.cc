@@ -53,7 +53,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 			},
 			[&](const SubQueryFieldEntry& sqe) {
 				if (keys_.IsShardIndex(ns, sqe.FieldName())) {
-					throw Error(errLogic, "Subqueries can not be used in the conditions with sharding key (%s)", sqe.FieldName());
+					throw Error(errLogic, "Subqueries can not be used in the conditions with sharding key ({})", sqe.FieldName());
 				}
 			},
 			[&](const BetweenFieldsQueryEntry& qe) {
@@ -72,7 +72,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 						},
 						[&](const SubQueryFieldEntry& sqe) {
 							if (keys_.IsShardIndex(ns, sqe.FieldName())) {
-								throw Error(errLogic, "Subqueries can not be used in the conditions with sharding key (%s)",
+								throw Error(errLogic, "Subqueries can not be used in the conditions with sharding key ({})",
 											sqe.FieldName());
 							}
 						},
@@ -160,7 +160,7 @@ std::pair<int, Variant> RoutingStrategy::GetHostIdKeyPair(std::string_view ns, c
 
 		return {keys_.GetShardId(ns, v[0]), Variant(v[0]).EnsureHold()};
 	}
-	throw Error(errLogic, "Item does not contain proper sharding key for '%s' (key with name '%s' is expected)", ns, nsIndex.name);
+	throw Error(errLogic, "Item does not contain proper sharding key for '{}' (key with name '{}' is expected)", ns, nsIndex.name);
 }
 
 ConnectStrategy::ConnectStrategy(const cluster::ShardingConfig& config, Connections& connections, int thisShard) noexcept
@@ -190,12 +190,12 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::Connect(int shardId, Error& 
 		return {};
 	}
 	if (reconnectTs == connections_.reconnectTs) {
-		logPrintf(LogInfo, "[sharding proxy] Performing reconnect...");
+		logFmt(LogInfo, "[sharding proxy] Performing reconnect...");
 		auto conn = doReconnect(shardId, reconnectStatus);
 		connections_.status = reconnectStatus;
 		connections_.reconnectTs = steady_clock_w::now();
 		const auto reconnectTs = connections_.reconnectTs;
-		logPrintf(LogInfo, "[sharding proxy] Reconnect result: %s", reconnectStatus.ok() ? "OK" : reconnectStatus.what());
+		logFmt(LogInfo, "[sharding proxy] Reconnect result: {}", reconnectStatus.ok() ? "OK" : reconnectStatus.what());
 
 		if (reconnectStatus.ok()) {
 			wlk.unlock();
@@ -263,7 +263,7 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 	if (err.code() == errNetwork) {
 		conn.Stop();
 
-		logPrintf(LogTrace, "[sharding proxy] Shard %d reconnects to shard %d via %s", thisShard_, shardID, dsns[idx]);
+		logFmt(LogTrace, "[sharding proxy] Shard {} reconnects to shard {} via {}", thisShard_, shardID, dsns[idx]);
 		err = conn.Connect(dsns[idx]);
 		qr = client::QueryResults();
 		if (err.ok()) {
@@ -292,9 +292,9 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 			if (stats.nodeStats.size()) {
 				auto res = tryConnectToLeader(dsns, stats, reconnectStatus);
 				if (reconnectStatus.ok()) {
-					logPrintf(
-						LogTrace, "[sharding proxy] Shard %d will proxy data to shard %d (cluster) via %s", thisShard_, shardID,
-						connections_.actualIndex.has_value() ? fmt::sprintf("%s", dsns[connections_.actualIndex.value()]) : "'Unknow DSN'");
+					logFmt(
+						LogTrace, "[sharding proxy] Shard {} will proxy data to shard {} (cluster) via {}", thisShard_, shardID,
+						connections_.actualIndex.has_value() ? fmt::format("{}", dsns[connections_.actualIndex.value()]) : "'Unknow DSN'");
 					return res;
 				}
 				break;
@@ -305,11 +305,11 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 			// Single node without cluster
 			connections_.actualIndex = idx;
 			reconnectStatus = Error();
-			logPrintf(LogTrace, "[sharding proxy] Shard %d will proxy data to shard %d (single node) via %s", thisShard_, shardID,
-					  dsns[connections_.actualIndex.value()]);
+			logFmt(LogTrace, "[sharding proxy] Shard {} will proxy data to shard {} (single node) via {}", thisShard_, shardID,
+				   dsns[connections_.actualIndex.value()]);
 			return connections_[idx];
 		default:
-			reconnectStatus = Error(errLogic, "Unexpected results count for #replicationstats: %d", qr.Count());
+			reconnectStatus = Error(errLogic, "Unexpected results count for #replicationstats: {}", qr.Count());
 	}
 
 	return {};
@@ -373,7 +373,7 @@ Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vec
 		},
 		[](OneOf<KeyValueType::Composite, KeyValueType::Tuple>) { return Error{errLogic, "Sharding by composite index is unsupported"}; },
 		[fieldType](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>) {
-			return Error{errLogic, "Unsupported field type: %s", fieldType.Name()};
+			return Error{errLogic, "Unsupported field type: {}", fieldType.Name()};
 		});
 }
 
@@ -381,7 +381,7 @@ Error LocatorService::validateConfig() {
 	for (auto& ns : config_.namespaces) {
 		const auto ftIndexes = rx_.GetFTIndexes(ns.ns);
 		if (ftIndexes.find(ns.index) != ftIndexes.cend()) {
-			return Error(errLogic, "Sharding by full text index is not supported: %s", ns.index);
+			return Error(errLogic, "Sharding by full text index is not supported: {}", ns.index);
 		}
 		int field = ShardingKeyType::NotSetShard;
 		PayloadType pt = rx_.GetPayloadType(ns.ns);
@@ -395,7 +395,7 @@ Error LocatorService::validateConfig() {
 				return err;
 			}
 		} else {
-			return Error(errLogic, "Sharding field is supposed to have index: '%s:%s'", ns.ns, ns.index);
+			return Error(errLogic, "Sharding field is supposed to have index: '{}:{}'", ns.ns, ns.index);
 		}
 	}
 	return errOK;
@@ -444,11 +444,11 @@ Error LocatorService::Start() {
 			auto& connection = connections.emplace_back(std::make_shared<client::Reindexer>(
 				client::Reindexer(cfg, proxyConnCount, proxyConnThreads).WithShardId(int(shardId), true)));
 
-			logPrintf(LogInfo, "[sharding proxy] Shard %d connects to shard %d via %s. Conns count: %d, threads count: %d", ActualShardId(),
-					  shardId, dsn, proxyConnCount, proxyConnThreads);
+			logFmt(LogInfo, "[sharding proxy] Shard {} connects to shard {} via {}. Conns count: {}, threads count: {}", ActualShardId(),
+				   shardId, dsn, proxyConnCount, proxyConnThreads);
 			status = connection->Connect(dsn, client::ConnectOpts().CreateDBIfMissing());
 			if (!status.ok()) {
-				return Error(errLogic, "Error connecting to shard [%s]: %s", dsn, status.what());
+				return Error(errLogic, "Error connecting to shard [{}]: {}", dsn, status.what());
 			}
 		}
 

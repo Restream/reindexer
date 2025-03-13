@@ -193,16 +193,12 @@ class [[nodiscard]] ItemRefVector {
 		IteratorImpl(IteratorImpl<NotRankedVec::iterator, RankedVec::iterator>&& other) noexcept
 			: Base{std::visit([](auto& it) { return Base{std::move(it)}; }, other.asVariant())} {}
 		IteratorImpl& operator=(const IteratorImpl<NotRankedVec::iterator, RankedVec::iterator>& other) noexcept {
-#ifdef REINDEX_CORE_BUILD
-			/*TODO*/ assertf(this->index() == other.index(), "%d %d", this->index(), other.index());
-#endif	// REINDEX_CORE_BUILD
+			assertf_dbg(this->index() == other.index(), "{} {}", this->index(), other.index());
 			Base::operator=(other.asVariant());
 			return *this;
 		}
 		IteratorImpl& operator=(IteratorImpl<NotRankedVec::iterator, RankedVec::iterator>&& other) noexcept {
-#ifdef REINDEX_CORE_BUILD
-			/*TODO*/ assertf(this->index() == other.index(), "%d %d", this->index(), other.index());
-#endif	// REINDEX_CORE_BUILD
+			assertf_dbg(this->index() == other.index(), "{} {}", this->index(), other.index());
 			Base::operator=(std::move(other).asVariant());
 			return *this;
 		}
@@ -260,17 +256,13 @@ class [[nodiscard]] ItemRefVector {
 		}
 
 		std::ptrdiff_t operator-(IteratorImpl other) const noexcept {
-#ifdef REINDEX_CORE_BUILD
-			/*TODO*/ assertf(this->index() == other.index(), "%d %d", this->index(), other.index());
-#endif	// REINDEX_CORE_BUILD
+			assertf_dbg(this->index() == other.index(), "{} {}", this->index(), other.index());
 			return std::visit([other](auto lhs) noexcept { return lhs - std::get<decltype(lhs)>(other); }, asVariant());
 		}
 
 		template <typename I, typename IR>
 		[[nodiscard]] bool operator==(IteratorImpl<I, IR> other) const noexcept {
-#ifdef REINDEX_CORE_BUILD
-			/*TODO*/ assertf(this->index() == other.index(), "%d %d", this->index(), other.index());
-#endif	// REINDEX_CORE_BUILD
+			assertf_dbg(this->index() == other.index(), "{} {}", this->index(), other.index());
 			return std::visit([other](auto lhs) noexcept { return lhs == std::get<decltype(lhs)>(other); }, asVariant());
 		}
 		template <typename I, typename IR>
@@ -279,9 +271,7 @@ class [[nodiscard]] ItemRefVector {
 		}
 		template <typename I, typename IR>
 		[[nodiscard]] bool operator<(IteratorImpl<I, IR> other) const noexcept {
-#ifdef REINDEX_CORE_BUILD
-			/*TODO*/ assertf(this->index() == other.index(), "%d %d", this->index(), other.index());
-#endif	// REINDEX_CORE_BUILD
+			assertf_dbg(this->index() == other.index(), "{} {}", this->index(), other.index());
 			return std::visit([other](auto lhs) noexcept { return lhs < std::get<decltype(lhs)>(other); }, asVariant());
 		}
 		template <typename I, typename IR>
@@ -319,9 +309,7 @@ public:
 	ItemRefVector(std::initializer_list<ItemRef> l) : variant_{l} {}
 	ItemRefVector(std::initializer_list<ItemRefRanked> l) : variant_{l} {}
 	ItemRefVector(ConstIterator b, ConstIterator e) {
-#ifdef REINDEX_CORE_BUILD
-		/*TODO*/ assertf(b.index() == e.index(), "%d %d", b.index(), e.index());
-#endif	// REINDEX_CORE_BUILD
+		assertf_dbg(b.index() == e.index(), "{} {}", b.index(), e.index());
 		std::visit(overloaded{
 					   [e, this](NotRankedVec::const_iterator b) { variant_.emplace<NotRankedVec>(b, e.NotRanked()); },
 					   [e, this](RankedVec::const_iterator b) { variant_.emplace<RankedVec>(b, e.Ranked()); },
@@ -436,12 +424,10 @@ public:
 	}
 
 	void Insert(ConstIterator it, MoveIterator b, MoveIterator e) {
-#ifdef REINDEX_CORE_BUILD
-		/*TODO*/ assertf(b.index() == e.index(), "%d %d", b.index(), e.index());
-		/*TODO*/ assertf(variant_.index() == it.index(), "%d %d", variant_.index(), it.index());
-#endif	// REINDEX_CORE_BUILD
+		assertf_dbg(b.index() == e.index(), "{} {}", b.index(), e.index());
+		assertf_dbg(variant_.index() == it.index(), "{} {}", variant_.index(), it.index());
 		if (Empty() && this->IsRanked() != b.IsRanked()) {
-			/*TODO*/ assertrx(it == cbegin());
+			assertrx_dbg(it == cbegin());
 			std::visit(overloaded{
 						   [e, this](std::move_iterator<NotRankedVec::iterator> b) {
 							   variant_.emplace<NotRankedVec>(std::make_move_iterator(b), std::make_move_iterator(e.NotRanked()));
@@ -452,9 +438,7 @@ public:
 					   },
 					   b.asVariant());
 		} else {
-#ifdef REINDEX_CORE_BUILD
-			/*TODO*/ assertf(variant_.index() == b.index(), "%d %d", variant_.index(), b.index());
-#endif	// REINDEX_CORE_BUILD
+			assertf_dbg(variant_.index() == b.index(), "{} {}", variant_.index(), b.index());
 			std::visit(overloaded{[it, b, e](NotRankedVec& v) {
 									  v.insert(it.NotRanked(), std::make_move_iterator(b.NotRanked()),
 											   std::make_move_iterator(e.NotRanked()));
@@ -467,10 +451,8 @@ public:
 	}
 
 	void Erase(ConstIterator b, ConstIterator e) {
-#ifdef REINDEX_CORE_BUILD
-		/*TODO*/ assertf(b.index() == e.index(), "%d %d", b.index(), e.index());
-		/*TODO*/ assertf(variant_.index() == b.index(), "%d %d", variant_.index(), b.index());
-#endif	// REINDEX_CORE_BUILD
+		assertf_dbg(b.index() == e.index(), "{} {}", b.index(), e.index());
+		assertf_dbg(variant_.index() == b.index(), "{} {}", variant_.index(), b.index());
 		std::visit(overloaded{[b, e](NotRankedVec& v) { v.erase(b.NotRanked(), e.NotRanked()); },
 							  [b, e](RankedVec& v) { v.erase(b.Ranked(), e.Ranked()); }},
 				   variant_);

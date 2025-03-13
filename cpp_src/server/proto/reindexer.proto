@@ -183,7 +183,7 @@ message Query {
 	// Query can be encoded as following:
 	// 1. JSON # Using DSL-query format, described here: https://github.com/Restream/reindexer/blob/v3.23.0/cpp_src/server/contrib/server.yml#L2420
 	// 2. MSGPACK # Not supported yet
-	EncodingType encdoingType = 1;
+	EncodingType encodingType = 1;
 	bytes data = 2;
 }
 

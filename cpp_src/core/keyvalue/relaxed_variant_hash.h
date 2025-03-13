@@ -30,7 +30,7 @@ struct RelaxedHasher {
 				if constexpr (notComparable == NotComparable::Return) {
 					return {indexesCount - 1, v.Hash()};
 				} else {
-					throw Error{errQueryExec, "Cannot compare value of '%s' type with number, string or uuid", v.Type().Name()};
+					throw Error{errQueryExec, "Cannot compare value of '{}' type with number, string or uuid", v.Type().Name()};
 				}
 			});
 	}
@@ -56,7 +56,7 @@ struct RelaxedHasher {
 						if constexpr (notComparable == NotComparable::Return) {
 							return v.Hash();
 						} else {
-							throw Error{errQueryExec, "Cannot compare value of '%s' type with bool", v.Type().Name()};
+							throw Error{errQueryExec, "Cannot compare value of '{}' type with bool", v.Type().Name()};
 						}
 					});
 			case 1:
@@ -79,7 +79,7 @@ struct RelaxedHasher {
 						if constexpr (notComparable == NotComparable::Return) {
 							return v.Hash();
 						} else {
-							throw Error{errQueryExec, "Cannot compare value of '%s' type with number", v.Type().Name()};
+							throw Error{errQueryExec, "Cannot compare value of '{}' type with number", v.Type().Name()};
 						}
 					});
 			case 2:
@@ -102,7 +102,7 @@ struct RelaxedHasher {
 						if constexpr (notComparable == NotComparable::Return) {
 							return v.Hash();
 						} else {
-							throw Error{errQueryExec, "Cannot compare value of '%s' type with number", v.Type().Name()};
+							throw Error{errQueryExec, "Cannot compare value of '{}' type with number", v.Type().Name()};
 						}
 					});
 			case 3:
@@ -125,7 +125,7 @@ struct RelaxedHasher {
 						if constexpr (notComparable == NotComparable::Return) {
 							return v.Hash();
 						} else {
-							throw Error{errQueryExec, "Cannot compare value of '%s' type with number", v.Type().Name()};
+							throw Error{errQueryExec, "Cannot compare value of '{}' type with number", v.Type().Name()};
 						}
 					});
 			case 4:
@@ -148,7 +148,7 @@ struct RelaxedHasher {
 												  if constexpr (notComparable == NotComparable::Return) {
 													  return v.Hash();
 												  } else {
-													  throw Error{errQueryExec, "Cannot compare value of '%s' type with string",
+													  throw Error{errQueryExec, "Cannot compare value of '{}' type with string",
 																  v.Type().Name()};
 												  }
 											  });
@@ -173,7 +173,7 @@ struct RelaxedHasher {
 						if constexpr (notComparable == NotComparable::Return) {
 							return v.Hash();
 						} else {
-							throw Error{errQueryExec, "Cannot compare value of '%s' type with uuid", v.Type().Name()};
+							throw Error{errQueryExec, "Cannot compare value of '{}' type with uuid", v.Type().Name()};
 						}
 					});
 			case 6:
@@ -196,7 +196,7 @@ struct RelaxedHasher {
 						if constexpr (notComparable == NotComparable::Return) {
 							return v.Hash();
 						} else {
-							throw Error{errQueryExec, "Cannot compare value of '%s' type with number", v.Type().Name()};
+							throw Error{errQueryExec, "Cannot compare value of '{}' type with number", v.Type().Name()};
 						}
 					});
 			default:

@@ -57,14 +57,14 @@ void ClusterDataReplicator::Run() {
 	// NOLINTBEGIN (bugprone-unchecked-optional-access) Optionals were checked in isExpectingStartup()
 	bool serverIsInCluster = config_->nodes.empty();
 	if (config_->nodes.size() && config_->nodes.size() < 3) {
-		throw Error(errParams, "Minimal cluster size is 3, but only %d nodes were in config", config_->nodes.size());
+		throw Error(errParams, "Minimal cluster size is 3, but only {} nodes were in config", config_->nodes.size());
 	}
 	if (config_->nodes.size() > UpdatesQueueT::kMaxReplicas) {
-		throw Error(errParams, "Sync cluster nodes limit was reached: %d", UpdatesQueueT::kMaxReplicas);
+		throw Error(errParams, "Sync cluster nodes limit was reached: {}", UpdatesQueueT::kMaxReplicas);
 	}
 	for (auto& node : config_->nodes) {
 		if (ids.count(node.serverId)) {
-			throw Error(errParams, "Duplicated server id in cluster config: %d", node.serverId);
+			throw Error(errParams, "Duplicated server id in cluster config: {}", node.serverId);
 		} else {
 			ids.emplace(node.serverId);
 		}
@@ -73,7 +73,7 @@ void ClusterDataReplicator::Run() {
 		}
 	}
 	if (!serverIsInCluster) {
-		throw Error(errParams, "Server id %d is not in cluster", baseConfig_->serverID);
+		throw Error(errParams, "Server id {} is not in cluster", baseConfig_->serverID);
 	}
 
 	log_.SetLevel(config_->logLevel);
@@ -186,7 +186,7 @@ Error ClusterDataReplicator::SetDesiredLeaderId(int nextServerId, bool sendToOth
 	if (!isRunning()) {
 		return Error(errNotValid, "Cluster replicator is not running");
 	}
-	logInfo("%d Setting desired leader ID: %d. Sending to other nodes: %s", serverID(), nextServerId, sendToOtherNodes ? "true" : "false");
+	logInfo("{} Setting desired leader ID: {}. Sending to other nodes: {}", serverID(), nextServerId, sendToOtherNodes ? "true" : "false");
 	std::promise<Error> promise;
 	std::future<Error> future = promise.get_future();
 	ClusterCommand c = ClusterCommand(kCmdSetDesiredLeader, nextServerId, sendToOtherNodes, std::move(promise));
@@ -254,7 +254,7 @@ bool ClusterDataReplicator::isExpectingStartup() const noexcept {
 }
 
 void ClusterDataReplicator::clusterControlRoutine(int serverId) {
-	logInfo("%d Beginning control routine", serverId);
+	logInfo("{} Beginning control routine", serverId);
 
 	RaftInfo raftInfo;
 	while (!terminate_) {
@@ -280,10 +280,10 @@ void ClusterDataReplicator::clusterControlRoutine(int serverId) {
 		raftInfo = newRaftInfo;
 		std::function<bool()> condPredicat;
 		if (raftInfo.role == RaftInfo::Role::Leader) {
-			logInfo("%d Became leader", serverId);
+			logInfo("{} Became leader", serverId);
 			condPredicat = [this] { return raftManager_.FollowersAreAvailable(); };
 		} else if (raftInfo.role == RaftInfo::Role::Follower) {
-			logInfo("%d Became follower (%d)", serverId, raftInfo.leaderId);
+			logInfo("{} Became follower ({})", serverId, raftInfo.leaderId);
 			condPredicat = [this] { return raftManager_.LeaderIsAvailable(RaftManager::ClockT::now()); };
 		} else {
 			assertrx(false);
@@ -309,20 +309,20 @@ void ClusterDataReplicator::clusterControlRoutine(int serverId) {
 							onRoleChanged(RaftInfo::Role::Candidate,
 										  raftInfo.role == RaftInfo::Role::Leader ? serverId : raftManager_.GetLeaderId());
 						} else {
-							logInfo("%d Error send desired leader (%s)", serverId, err.what());
+							logInfo("{} Error send desired leader ({})", serverId, err.what());
 						}
 						c.result.set_value(std::move(err));
 					}
 				}
 
 				if (restartElections_) {
-					logWarn("%d Elections restart on request", serverId);
+					logWarn("{} Elections restart on request", serverId);
 					break;
 				}
 
 				int curLeaderId = raftManager_.GetLeaderId();
 				if (raftInfo.leaderId != curLeaderId && raftInfo.role == RaftInfo::Role::Follower) {
-					logWarn("%d Leader was changed: %d -> %d", serverId, raftInfo.leaderId, curLeaderId);
+					logWarn("{} Leader was changed: {} -> {}", serverId, raftInfo.leaderId, curLeaderId);
 					raftInfo.leaderId = curLeaderId;
 					onRoleChanged(RaftInfo::Role::Follower, raftInfo.leaderId);
 				}
@@ -355,7 +355,7 @@ void ClusterDataReplicator::onRoleChanged(RaftInfo::Role to, int leaderId) {
 			updatesQueue_.GetSyncQueue()->SetWritable(true, Error());
 		} else {
 			updatesQueue_.GetSyncQueue()->SetWritable(false,
-													  Error(errUpdateReplication, "Role was switched to %s", RaftInfo::RoleToStr(to)));
+													  Error(errUpdateReplication, "Role was switched to {}", RaftInfo::RoleToStr(to)));
 		}
 	}
 	sharedSyncState_.SetRole(info);

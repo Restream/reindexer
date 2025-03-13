@@ -102,28 +102,25 @@ public:
 	bool operator>=(lsn_t o) const { return compare(o) >= 0; }
 
 private:
-	int64_t payload_ = kDefaultCounter;
 	static void validateServerId(int16_t server) {
 		if (server < kMinServerIDValue) {
-			throwValidation(errLogic, "Server id (%d) < %d", server, kMinServerIDValue);
+			throwValidation(errLogic, "Server id ({}) < {}", server, kMinServerIDValue);
 		}
 		if (server > kMaxServerIDValue) {
-			throwValidation(errLogic, "Server id (%d) > %d", server, kMaxServerIDValue);
+			throwValidation(errLogic, "Server id ({}) > {}", server, kMaxServerIDValue);
 		}
 	}
 	static void validateCounter(int64_t counter) {
 		if (counter > kDefaultCounter) {
-			throwValidation(errLogic, "LSN Counter (%d) > Default LSN (%d)", counter, kMaxCounter);
+			throwValidation(errLogic, "LSN Counter ({}) > Default LSN ({})", counter, kMaxCounter);
 		}
 	}
+	[[noreturn]] static void throwValidation(ErrorCode, std::string_view, int64_t, int64_t);
 
-	[[noreturn]] static void throwValidation(ErrorCode, const char*, int64_t, int64_t);
+	int64_t payload_ = kDefaultCounter;
 };
 
-inline static std::ostream& operator<<(std::ostream& o, const reindexer::lsn_t& sv) {
-	o << sv.Server() << ":" << sv.Counter();
-	return o;
-}
+std::ostream& operator<<(std::ostream& o, const reindexer::lsn_t& sv);
 
 class ExtendedLsn {
 public:

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "vendor/fmt/base.h"
+
 #if RX_ENABLE_CLUSTERPROXY_LOGS
 #include "tools/logger.h"
 #endif
@@ -7,9 +9,9 @@
 namespace reindexer {
 
 template <typename... Args>
-void clusterProxyLog([[maybe_unused]] int level, [[maybe_unused]] const char* fmt, [[maybe_unused]] const Args&... args) {
+void clusterProxyLog([[maybe_unused]] int level, [[maybe_unused]] fmt::format_string<Args...> fmt, [[maybe_unused]] Args&&... args) {
 #if RX_ENABLE_CLUSTERPROXY_LOGS
-	logPrintf(level, fmt, args...);
+	logFmt(level, fmt, std::forward<Args>(args)...);
 #endif
 }
 

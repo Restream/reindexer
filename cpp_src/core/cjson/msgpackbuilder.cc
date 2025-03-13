@@ -105,7 +105,7 @@ void MsgPackBuilder::packCJsonValue(TagType tagType, Serializer& rdser) {
 		case TAG_END:
 		case TAG_ARRAY:
 		case TAG_OBJECT:
-			throw Error(errParseJson, "Unexpected cjson typeTag '%s' while parsing value", TagTypeToStr(tagType));
+			throw Error(errParseJson, "Unexpected cjson typeTag '{}' while parsing value", TagTypeToStr(tagType));
 	}
 }
 
@@ -157,7 +157,7 @@ void MsgPackBuilder::appendJsonObject(std::string_view name, const gason::JsonNo
 		}
 		case gason::JsonTag::EMPTY:
 		default:
-			throw(Error(errLogic, "Unexpected json tag for Object: %d", int(obj.value.getTag())));
+			throw(Error(errLogic, "Unexpected json tag for Object: {}", int(obj.value.getTag())));
 	}
 }
 

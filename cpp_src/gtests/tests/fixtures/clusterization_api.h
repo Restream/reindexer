@@ -84,6 +84,8 @@ public:
 		void ValidateNamespaceList(const std::vector<NamespaceData>& namespaces);
 		static void doWaitSync(std::string_view ns, std::vector<ServerControl>& svc, lsn_t expectedLsn = lsn_t(),
 							   lsn_t expectedNsVersion = lsn_t(), std::chrono::seconds maxSyncTime = std::chrono::seconds());
+		static size_t getSyncCnt(std::string_view ns, std::vector<ServerControl>& svc, lsn_t expectedLsn = lsn_t(),
+								 lsn_t expectedNsVersion = lsn_t());
 		size_t GetSynchronizedNodesCount(size_t nodeId);
 		void EnablePerfStats(size_t nodeId);
 		void ChangeLeader(int& curLeaderId, int newLeaderId);

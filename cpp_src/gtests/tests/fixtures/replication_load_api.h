@@ -45,10 +45,10 @@ public:
 		reindexer::shared_lock<reindexer::shared_timed_mutex> lk(restartMutex_);
 
 		for (size_t i = 0; i < count; ++i) {
-			api.UpsertJSON("some", fmt::sprintf(R"json({"id":%d,"int":%d,"string":"%s","uuid":"%s"})json", counter_++, rand(),
+			api.UpsertJSON("some", fmt::format(R"json({{"id":{},"int":{},"string":"{}","uuid":"{}"}})json", counter_++, rand(),
+											   api.RandString(), randStrUuid()));
+			api.UpsertJSON("some1", fmt::format(R"json({{"id":{},"int":{},"string":"{}","uuid":"{}"}})json", counter_++, rand(),
 												api.RandString(), randStrUuid()));
-			api.UpsertJSON("some1", fmt::sprintf(R"json({"id":%d,"int":%d,"string":"%s","uuid":"%s"})json", counter_++, rand(),
-												 api.RandString(), randStrUuid()));
 		}
 	}
 	BaseApi::QueryResultsType SimpleSelect(size_t num) {
@@ -119,9 +119,9 @@ public:
 		}
 		for (size_t i = 1; i < versions.size(); ++i) {
 			if (versions[i] != versions[i - 1]) {
-				TestCout() << fmt::sprintf("TagsMatcher versions are different for the '%s':\n", ns);
+				TestCout() << fmt::format("TagsMatcher versions are different for the '{}':\n", ns);
 				for (size_t j = 0; j < versions.size(); ++j) {
-					TestCout() << fmt::sprintf("%d: %d\n", j, versions[j]);
+					TestCout() << fmt::format("{}: {}\n", j, versions[j]);
 				}
 				TestCout() << std::endl;
 				EXPECT_TRUE(false);

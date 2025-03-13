@@ -153,7 +153,7 @@ Writer::StorageCacheWriteResult Writer::writeSingleIndexCache(FloatVectorIndex& 
 	auto getPKSingle = [this, pkField](IdType id) {
 		VariantArray ret;
 		if rx_unlikely (size_t(id) >= ns_.items_.size() || ns_.items_[id].IsFree()) {
-			throw Error(errLogic, "Item ID %d does not exist", id);
+			throw Error(errLogic, "Item ID {} does not exist", id);
 		}
 		ConstPayload pl(ns_.payloadType_, ns_.items_[id]);
 		pl.Get(pkField, ret);
@@ -162,7 +162,7 @@ Writer::StorageCacheWriteResult Writer::writeSingleIndexCache(FloatVectorIndex& 
 	auto getPKComposite = [this, &pkFields](IdType id) {
 		VariantArray ret, tmp;
 		if rx_unlikely (size_t(id) >= ns_.items_.size() || ns_.items_[id].IsFree()) {
-			throw Error(errLogic, "Item ID %d does not exist", id);
+			throw Error(errLogic, "Item ID {} does not exist", id);
 		}
 		ConstPayload pl(ns_.payloadType_, ns_.items_[id]);
 		for (const int f : pkFields) {
@@ -203,7 +203,7 @@ Reader::Reader(std::string_view nsName, nanoseconds lastUpdate, unsigned int pkF
 	assertrx(nameToField);
 	if (!storage_.IsValid()) {
 		assertrx_dbg(false);  // Do not expecting this error in test scenarious
-		throw Error(errParams, "Storage for '%s' is not valid. Unable to read ANN cache");
+		throw Error(errParams, "Storage for '{}' is not valid. Unable to read ANN cache");
 	}
 
 	if (!IsANNCacheEnabledByEnv()) {

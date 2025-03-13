@@ -41,7 +41,7 @@ static void PrintVecInstrcutionsLevel(std::string_view indexType, std::string_vi
 			}
 			break;
 		default:
-			throw Error(errLogic, "Attempt to construct %s index '%s' with unknow metric: %d", indexType, name, int(metric));
+			throw Error(errLogic, "Attempt to construct {} index '{}' with unknow metric: {}", indexType, name, int(metric));
 	}
 	if (log == Index::CreationLog::Yes) {
 		logFmt(LogInfo, "Creating {} index '{}'; Vector instructions level: {}", indexType, name, vecInstructions);
@@ -274,7 +274,7 @@ FloatVectorIndex::StorageCacheWriteResult HnswIndexBase<Map>::WriteIndexCache(Wr
 																			  const std::atomic_int32_t& cancel) noexcept {
 	auto res = StorageCacheWriteResult{.err = {}, .isCacheable = true};
 	if rx_unlikely (!getPK) {
-		res.err = Error(errParams, "HNSWIndex::WriteIndexCache:%s: PK getter is nullptr", Name());
+		res.err = Error(errParams, "HNSWIndex::WriteIndexCache:{}: PK getter is nullptr", Name());
 		return res;
 	}
 
@@ -291,7 +291,7 @@ FloatVectorIndex::StorageCacheWriteResult HnswIndexBase<Map>::WriteIndexCache(Wr
 		void AppendPKByID(hnswlib::labeltype label) override {
 			static_assert(std::numeric_limits<hnswlib::labeltype>::min() >= 0, "Unexpected labeltype limit. Extra check is required");
 			if rx_unlikely (label > size_t(std::numeric_limits<IdType>::max())) {
-				throw Error(errLogic, "HNSWIndex::WriteIndexCache:%s: internal id %d is out of range", name_, label);
+				throw Error(errLogic, "HNSWIndex::WriteIndexCache:{}: internal id {} is out of range", name_, label);
 			}
 			writePK(IdType(label));
 		}
@@ -304,7 +304,7 @@ FloatVectorIndex::StorageCacheWriteResult HnswIndexBase<Map>::WriteIndexCache(Wr
 
 	try {
 		if (map_->getDeletedCount() > map_->getCurrentElementCount() / 2) {
-			res.err = Error{errParams, "Too many deleted elements: %d/%d. Do not creating cache (full rebuild is recommended)",
+			res.err = Error{errParams, "Too many deleted elements: {}/{}. Do not creating cache (full rebuild is recommended)",
 							map_->getDeletedCount(), map_->getCurrentElementCount()};
 			return res;
 		}
@@ -327,13 +327,13 @@ FloatVectorIndex::StorageCacheWriteResult HnswIndexBase<Map>::WriteIndexCache(Wr
 template <>
 Error HnswIndexBase<hnswlib::BruteforceSearch>::LoadIndexCache(std::string_view /*data*/, bool /*isCompositePK*/,
 															   VecDataGetterF&& /*getVectorData*/) {
-	return Error(errLogic, "%s:Bruteforce index can not be loaded from binary cache", Name());
+	return Error(errLogic, "{}:Bruteforce index can not be loaded from binary cache", Name());
 }
 
 template <template <typename> typename Map>
 Error HnswIndexBase<Map>::LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVectorData) {
 	if rx_unlikely (!getVectorData) {
-		return Error(errParams, "HNSWIndex::LoadIndexCache:%s: vector data getter is nullptr", Name());
+		return Error(errParams, "HNSWIndex::LoadIndexCache:{}: vector data getter is nullptr", Name());
 	}
 
 	class Reader final : public hnswlib::IReader, private LoaderBase {
@@ -363,20 +363,20 @@ Error HnswIndexBase<Map>::LoadIndexCache(std::string_view data, bool isComposite
 		}
 		map_->loadIndex(reader, space_.get());
 		if (reader.RemainingSize()) {
-			throw Error(errLogic, "HNSWIndex::LoadIndexCache:%s has unparsed data: %d bytes", Name(), reader.RemainingSize());
+			throw Error(errLogic, "HNSWIndex::LoadIndexCache:{} has unparsed data: {} bytes", Name(), reader.RemainingSize());
 		}
 	} catch (Error& err) {
 		clearMap();
-		assertf_dbg(false, "Unexpected error: %s", err.what());	 // Do not expecting this error in test scenarious
+		assertf_dbg(false, "Unexpected error: {}", err.what());	 // Do not expecting this error in test scenarious
 		return std::move(err);
 	} catch (const std::exception& err) {
 		clearMap();
-		assertf_dbg(false, "Unexpected std::exception: %s", err.what());  // Do not expecting this error in test scenarious
-		return Error{errLogic, "HNSWIndex::LoadIndexCache:%s: %s", Name(), err.what()};
+		assertf_dbg(false, "Unexpected std::exception: {}", err.what());  // Do not expecting this error in test scenarious
+		return Error{errLogic, "HNSWIndex::LoadIndexCache:{}: {}", Name(), err.what()};
 	} catch (...) {
 		clearMap();
 		assertrx_dbg(false);  // Do not expecting this error in test scenarious
-		return Error{errLogic, "HNSWIndex::LoadIndexCache:%s: unexpected exception", Name()};
+		return Error{errLogic, "HNSWIndex::LoadIndexCache:{}: unexpected exception", Name()};
 	}
 	return {};
 }
@@ -402,7 +402,7 @@ std::unique_ptr<Index> HnswIndex_New(const IndexDef& idef, PayloadType&& payload
 		case MultithreadingMode::MultithreadTransactions:
 			return std::make_unique<HnswIndexMT>(idef, std::move(payloadType), std::move(fields), currentNsSize, log);
 		default:
-			throw Error(errLogic, "Unsupported multithreading mode: %d", int(idef.Opts().FloatVector().Multithreading()));
+			throw Error(errLogic, "Unsupported multithreading mode: {}", int(idef.Opts().FloatVector().Multithreading()));
 	}
 }
 

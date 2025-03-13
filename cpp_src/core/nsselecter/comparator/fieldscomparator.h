@@ -75,11 +75,11 @@ public:
 	void SetRightField(const FieldsSet& fset, KeyValueType type, bool isArray) {
 		assertrx_throw(leftFieldSet_);
 		if ((ctx_.size() > 1) != type.Is<KeyValueType::Composite>()) {
-			throw Error{errQueryExec, "A composite index cannot be compared with a non-composite one: %s", name_};
+			throw Error{errQueryExec, "A composite index cannot be compared with a non-composite one: {}", name_};
 		}
 		if (type.Is<KeyValueType::Composite>()) {
 			if (ctx_.size() != fset.size()) {
-				throw Error{errQueryExec, "Comparing composite indexes should be the same size: %s", name_};
+				throw Error{errQueryExec, "Comparing composite indexes should be the same size: {}", name_};
 			}
 			setCompositeField<false>(fset);
 		} else {

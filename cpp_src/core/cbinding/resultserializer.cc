@@ -36,7 +36,7 @@ void WrResultSerializer::putQueryParams(const BindingCapabilities& caps, QueryRe
 		assertrx(opts_.ptVersions.data());
 		const auto mergedNsCount = results.GetMergedNSCount();
 		if (int(opts_.ptVersions.size()) != mergedNsCount) {
-			logPrintf(LogWarning, "ptVersionsCount != results->GetMergedNSCount: %d != %d. Client's metadata can become inconsistent.",
+			logFmt(LogWarning, "ptVersionsCount != results->GetMergedNSCount: {} != {}. Client's metadata can become inconsistent.",
 					  opts_.ptVersions.size(), mergedNsCount);
 		}
 		auto cntP = getPtUpdatesCount(results);
@@ -149,7 +149,7 @@ void WrResultSerializer::putItemParams(ItT& it, int shardId, QueryResults::Proxi
 			obj.Raw(kWALParamItem, "");
 			auto err = it.GetJSON(*this, false);
 			if (!err.ok()) {
-				throw Error(err.code(), "Unable to get JSON for WAL item: %s", err.what());
+				throw Error(err.code(), "Unable to get JSON for WAL item: {}", err.what());
 			}
 		} else {
 			reindexer::WALRecord rec(it.GetRaw());
@@ -179,10 +179,10 @@ void WrResultSerializer::putItemParams(ItT& it, int shardId, QueryResults::Proxi
 			err = it.GetMsgPack(*this);
 			break;
 		default:
-			throw Error(errParams, "Can't serialize query results: unknown format %d", int((opts_.flags & kResultsFormatMask)));
+			throw Error(errParams, "Can't serialize query results: unknown format {}", int((opts_.flags & kResultsFormatMask)));
 	}
 	if (!err.ok()) {
-		throw Error(errParseBin, "Internal error serializing query results: %s", err.what());
+		throw Error(errParseBin, "Internal error serializing query results: {}", err.what());
 	}
 }
 
@@ -210,7 +210,7 @@ std::pair<int, int> WrResultSerializer::getPtUpdatesCount(const QueryResults& re
 		assertrx(opts_.ptVersions.data());
 		const auto mergedNsCount = results.GetMergedNSCount();
 		if (int(opts_.ptVersions.size()) != mergedNsCount) {
-			logPrintf(LogWarning, "ptVersionsCount != results->GetMergedNSCount: %d != %d. Client's meta data can become incosistent.",
+			logFmt(LogWarning, "ptVersionsCount != results->GetMergedNSCount: {} != {}. Client's meta data can become incosistent.",
 					  opts_.ptVersions.size(), mergedNsCount);
 		}
 		int cnt = 0, totalCnt = std::min(mergedNsCount, int(opts_.ptVersions.size()));
@@ -333,7 +333,7 @@ bool WrResultSerializer::PutResultsRaw(QueryResults& result, std::string_view* r
 	if (cntP.first) {
 		Serializer ser(buf.data(), buf.size());
 		if (!raw.parsingData.pts.begin || !raw.parsingData.pts.end) {
-			throw Error(errLogic, "Unexpected payload types offset in proxied RAW query results. [%d, %d]", raw.parsingData.pts.begin,
+			throw Error(errLogic, "Unexpected payload types offset in proxied RAW query results. [{}, {}]", raw.parsingData.pts.begin,
 						raw.parsingData.pts.end);
 		}
 

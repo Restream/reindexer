@@ -36,7 +36,7 @@ inline StorageType StorageTypeFromString(std::string_view str) {
 	} else if (str.substr(0, sizeof(kRocksDBName) - 1) == kRocksDBName && HasSpacesOnly(str.substr(sizeof(kRocksDBName) - 1))) {
 		return StorageType::RocksDB;
 	} else {
-		throw Error(errParams, "Invalid storage type string: '%s'", str);
+		throw Error(errParams, "Invalid storage type string: '{}'", str);
 	}
 }
 

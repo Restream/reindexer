@@ -257,7 +257,7 @@ TEST_F(ClusterizationExtrasApi, RestrictUpdates) {
 		auto leader = cluster.GetNode(leaderId);
 		for (unsigned int i = 0; i < count; i++) {
 			reindexer::client::Item item = leader->api.NewItem(kNsName);
-			std::string itemJson = fmt::sprintf(R"json({"id": %d, "string": "%s" })json", i + from, dataString);
+			std::string itemJson = fmt::format(R"json({{"id": {}, "string": "{}" }})json", i + from, dataString);
 			auto err = item.Unsafe().FromJSON(itemJson);
 			ASSERT_TRUE(err.ok()) << err.what();
 			leader->api.Upsert(kNsName, item);
@@ -358,7 +358,7 @@ TEST_F(ClusterizationExtrasApi, LogLevel) {
 			// Simple insertion thread for race check
 			for (unsigned i = 0; !stop; ++i) {
 				auto item = leader->api.NewItem(kNsSome);
-				auto err = item.Unsafe().FromJSON(fmt::sprintf(R"json({"id": %d, "string": "%s" })json", i, randStringAlph(8)));
+				auto err = item.Unsafe().FromJSON(fmt::format(R"json({{"id": {}, "string": "{}" }})json", i, randStringAlph(8)));
 				ASSERT_TRUE(err.ok()) << err.what();
 				leader->api.Upsert(kNsSome, item);
 				ASSERT_TRUE(err.ok()) << err.what();

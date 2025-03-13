@@ -20,8 +20,8 @@ private:
 	static std::string passwd(reindexer_server::UserRole role, int serverId) noexcept;
 	static std::string dump(reindexer_server::UserRole role, int serverId) noexcept;
 
-	static constexpr auto loginTmplt = "Test_%s_user%i";
-	static constexpr auto passwdTmplt = "TestMaskingPassword%i%i";
+	static constexpr auto loginTmplt = "Test_{}_user{}";
+	static constexpr auto passwdTmplt = "TestMaskingPassword{}{}";
 	static reindexer::fast_hash_map<int, reindexer::fast_hash_map<reindexer_server::UserRole, User>> users_;
 };
 
@@ -34,12 +34,12 @@ reindexer::DSN MakeDsn(reindexer_server::UserRole role, const ServerControlInter
 
 namespace reindexer {
 inline bool operator==(const reindexer::DSN& lhs, const reindexer::DSN& rhs) noexcept {
-	return (&reindexer::operator== <reindexer::DSN>)(lhs, rhs) || fmt::sprintf("%s", lhs) == fmt::sprintf("%s", rhs);
+	return (&reindexer::operator== <reindexer::DSN>)(lhs, rhs) || fmt::format("{}", lhs) == fmt::format("{}", rhs);
 }
 
 inline bool operator==(const std::string& lhs, const reindexer::DSN& rhs) noexcept {
 	const auto& DsnFromStr = reindexer::DSN(lhs);
-	return (&reindexer::operator== <reindexer::DSN>)(DsnFromStr, rhs) || fmt::sprintf("%s", DsnFromStr) == fmt::sprintf("%s", rhs);
+	return (&reindexer::operator== <reindexer::DSN>)(DsnFromStr, rhs) || fmt::format("{}", DsnFromStr) == fmt::format("{}", rhs);
 }
 
 inline bool operator!=(const reindexer::DSN& lhs, const reindexer::DSN& rhs) noexcept { return !(lhs == rhs); }

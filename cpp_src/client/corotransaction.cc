@@ -66,7 +66,7 @@ Error CoroTransaction::Modify(Query&& query, lsn_t lsn) {
 		case QuerySelect:
 		case QueryTruncate:
 		default:
-			return Error(errParams, "Incorrect query type in transaction modify %d", int(query.type_));
+			return Error(errParams, "Incorrect query type in transaction modify {}", int(query.type_));
 	}
 }
 

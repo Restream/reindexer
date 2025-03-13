@@ -218,7 +218,7 @@ void ApiEncDec::ExtractField(benchmark::State& state) {
 		const auto& fieldName = fieldsToExtract_[rand() % fieldsToExtract_.size()];
 		const auto va = VariantArray((*itemForCjsonBench_)[fieldName]);
 		if (va.size() != 1) {
-			state.SkipWithError(fmt::sprintf("Unexpected result size: %d", va.size()).c_str());
+			state.SkipWithError(fmt::format("Unexpected result size: {}", va.size()).c_str());
 		}
 	}
 }

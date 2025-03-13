@@ -19,6 +19,8 @@ public:
 	using PKGetterF = std::function<VariantArray(IdType)>;
 
 protected:
+	FloatVectorIndex(const FloatVectorIndex&);
+
 	class WriterBase {
 	protected:
 		WriterBase(WrSerializer& ser, PKGetterF&& getPK, bool isCompositePK) noexcept
@@ -45,7 +47,7 @@ protected:
 			} else {
 				const auto len = ser.GetVarUInt();
 				if rx_unlikely (!len) {
-					throw Error(errLogic, "%s::LoadIndexCache:%s: serialized PK array is empty", idxType, name);
+					throw Error(errLogic, "{}::LoadIndexCache:{}: serialized PK array is empty", idxType, name);
 				}
 				keys.reserve(len);
 				for (size_t i = 0; i < len; ++i) {
@@ -54,7 +56,7 @@ protected:
 			}
 			const IdType itemID = getVectorData_(keys, destBuf);
 			if rx_unlikely (itemID < 0) {
-				throw Error(errLogic, "%s::LoadIndexCache:%s: unable to find indexed item with requested PK", idxType, name);
+				throw Error(errLogic, "{}::LoadIndexCache:{}: unable to find indexed item with requested PK", idxType, name);
 			}
 			return itemID;
 		}
@@ -105,8 +107,10 @@ private:
 	virtual ConstFloatVectorView getFloatVectorView(IdType) const = 0;
 
 	IndexMemStat memStat_;
-	tsl::sparse_set<IdType, hash_int<IdType>, std::equal_to<IdType>, std::allocator<IdType>,
-					tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low> emptyValues_;
+	tsl::sparse_set<IdType, hash_int<IdType>, std::equal_to<IdType>, std::allocator<IdType>, tsl::sh::power_of_two_growth_policy<2>,
+					tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>
+		emptyValues_;
+	std::mutex emptyValuesInsertionMtx_;  // Mutex for multithreading insertion into emptyValues_
 
 protected:
 	VectorMetric metric_;

@@ -14,7 +14,7 @@ ProtobufValue ProtobufParser::ReadValue() {
 	currPath.push_back(tagName);
 	KeyValueType itemType = object_.schema.GetFieldType(currPath, isArray);
 	if (itemType.Is<KeyValueType::Undefined>()) {
-		throw Error(errParseProtobuf, "Field [%d] type is unknown: [%s]", tagName, itemType.Name());
+		throw Error(errParseProtobuf, "Field [{}] type is unknown: [{}]", tagName, itemType.Name());
 	}
 	switch (tagType) {
 		case PBUF_TYPE_VARINT:
@@ -29,7 +29,7 @@ ProtobufValue ProtobufParser::ReadValue() {
 		case PBUF_TYPE_LENGTHENCODED:
 			return {Variant(p_string(object_.ser.GetPVString())), tagName, itemType, isArray};
 		default:
-			throw Error(errParseProtobuf, "Type [%d] unexpected while decoding Protobuf", tagType);
+			throw Error(errParseProtobuf, "Type [{}] unexpected while decoding Protobuf", tagType);
 	}
 }
 
@@ -41,7 +41,7 @@ Variant ProtobufParser::ReadArrayItem(KeyValueType fieldType) {
 								   [&](KeyValueType::Bool) { return Variant(object_.ser.GetBool()); },
 								   [&](OneOf<KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined,
 											 KeyValueType::String, KeyValueType::Uuid, KeyValueType::FloatVector>) -> Variant {
-									   throw Error(errParseProtobuf, "Error parsing packed indexed array: unexpected type [%s]",
+									   throw Error(errParseProtobuf, "Error parsing packed indexed array: unexpected type [{}]",
 												   fieldType.Name());
 								   });
 }

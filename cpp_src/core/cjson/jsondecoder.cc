@@ -92,7 +92,7 @@ void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gas
 				} break;
 				case gason::JsonTag::EMPTY:
 				default:
-					throw Error(errLogic, "Unexpected '%d' tag", elem.value.getTag());
+					throw Error(errLogic, "Unexpected '{}' tag", elem.value.getTag());
 			}
 		} else {
 			// objectScalarIndexes_.set(field); - do not change objectScalarIndexes_ value for the filtered out fields
@@ -151,7 +151,7 @@ void JsonDecoder::decodeJson(Payload* pl, CJsonBuilder& builder, const gason::Js
 		}
 		case gason::JsonTag::EMPTY:
 		default:
-			throw Error(errLogic, "Unexpected '%d' tag", jsonTag);
+			throw Error(errLogic, "Unexpected '{}' tag", jsonTag);
 	}
 }
 
@@ -184,7 +184,7 @@ void JsonDecoder::Decode(std::string_view json, CJsonBuilder& builder, const Tag
 		gason::JsonNode root = jsonParser.Parse(json);
 		decodeJsonObject(root.value, builder, floatVectorsHolder);
 	} catch (gason::Exception& e) {
-		throw Error(errParseJson, "JSONDecoder: %s", e.what());
+		throw Error(errParseJson, "JSONDecoder: {}", e.what());
 	}
 }
 

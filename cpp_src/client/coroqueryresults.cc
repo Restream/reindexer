@@ -90,8 +90,8 @@ void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id, const Query*
 		if (const auto rawResLen = std::distance(copyStart, rawResult.end()); rx_unlikely(rawResLen > int64_t(QrRawBuffer::max_size()))) {
 			throw Error(
 				errLogic,
-				"client::QueryResults::Bind: rawResult buffer overflow. Max size if %d bytes, but %d bytes requested. Try to reduce "
-				"fetch limit (current limit is %d)",
+				"client::QueryResults::Bind: rawResult buffer overflow. Max size if {} bytes, but {} bytes requested. Try to reduce "
+				"fetch limit (current limit is {})",
 				QrRawBuffer::max_size(), rawResLen, i_.fetchAmount_);
 		}
 
@@ -126,8 +126,8 @@ void CoroQueryResults::handleFetchedBuf(net::cproto::CoroRPCAnswer& ans) {
 	const auto copyStart = i_.lazyMode_ ? rawResult.begin() : (rawResult.begin() + ser.Pos());
 	if (const auto rawResLen = std::distance(copyStart, rawResult.end()); rx_unlikely(rawResLen > int64_t(QrRawBuffer::max_size()))) {
 		throw Error(errLogic,
-					"client::QueryResults::fetchNextResults: rawResult buffer overflow. Max size if %d bytes, but %d bytes requested. Try "
-					"to reduce fetch limit (current limit is %d)",
+					"client::QueryResults::fetchNextResults: rawResult buffer overflow. Max size if {} bytes, but {} bytes requested. Try "
+					"to reduce fetch limit (current limit is {})",
 					QrRawBuffer::max_size(), rawResLen, i_.fetchAmount_);
 	}
 	i_.rawResult_.assign(copyStart, rawResult.end());
@@ -298,13 +298,13 @@ void CoroQueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSeri
 
 void CoroQueryResults::Iterator::checkIdx() const {
 	if (!isAvailable()) {
-		throw Error(errNotValid, "QueryResults iterator refers to unavailable item index (%d). Current fetch offset is %d", idx_,
+		throw Error(errNotValid, "QueryResults iterator refers to unavailable item index ({}). Current fetch offset is {}", idx_,
 					qr_->i_.fetchOffset_);
 	}
 }
 
 Error CoroQueryResults::Iterator::unavailableIdxError() const {
-	return Error(errNotValid, "Requested item's index [%d] in not available in this QueryResults. Available indexes: [%d, %d)", idx_,
+	return Error(errNotValid, "Requested item's index [{}] in not available in this QueryResults. Available indexes: [{}, {})", idx_,
 				 qr_->i_.fetchOffset_, qr_->i_.queryParams_.qcount);
 }
 
@@ -320,7 +320,7 @@ Error CoroQueryResults::Iterator::GetMsgPack(WrSerializer& wrser, bool withHdrLe
 				wrser.Write(itemParams_.data);
 			}
 		} else {
-			return Error(errParseBin, "Impossible to get data in MsgPack because of a different format: %d", type);
+			return Error(errParseBin, "Impossible to get data in MsgPack because of a different format: {}", type);
 		}
 	} catch (const Error& err) {
 		return err;
@@ -355,7 +355,7 @@ void CoroQueryResults::Iterator::getCSVFromCJSON(std::string_view cjson, WrSeria
 				return {};
 			}
 			default:
-				return Error(errParseBin, "Server returned data in unexpected format %d", qr_->i_.queryParams_.flags & kResultsFormatMask);
+				return Error(errParseBin, "Server returned data in unexpected format {}", qr_->i_.queryParams_.flags & kResultsFormatMask);
 		}
 	}
 	CATCH_AND_RETURN
@@ -388,7 +388,7 @@ Error CoroQueryResults::Iterator::GetJSON(WrSerializer& wrser, bool withHdrLen) 
 				break;
 			}
 			default:
-				return Error(errParseBin, "Server returned data in unknown format %d", qr_->i_.queryParams_.flags & kResultsFormatMask);
+				return Error(errParseBin, "Server returned data in unknown format {}", qr_->i_.queryParams_.flags & kResultsFormatMask);
 		}
 	} catch (const Error& err) {
 		return err;
@@ -413,7 +413,7 @@ Error CoroQueryResults::Iterator::GetCJSON(WrSerializer& wrser, bool withHdrLen)
 			case kResultsJson:
 				return Error(errParseBin, "Server returned data in json format, can't process");
 			default:
-				return Error(errParseBin, "Server returned data in unknown format %d", qr_->i_.queryParams_.flags & kResultsFormatMask);
+				return Error(errParseBin, "Server returned data in unknown format {}", qr_->i_.queryParams_.flags & kResultsFormatMask);
 		}
 	} catch (const Error& err) {
 		return err;

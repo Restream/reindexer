@@ -162,7 +162,7 @@ constexpr static auto kUpdateFieldTypeMap = MakeFastStrMap<UpdateFieldType>({
 template <typename... JsonTags>
 void checkJsonValueType(const JsonValue& val, std::string_view name, JsonTags... possibleTags) {
 	if (((val.getTag() != possibleTags) && ...)) {
-		throw Error(errParseJson, "Wrong type of field '%s'", name);
+		throw Error(errParseJson, "Wrong type of field '{}'", name);
 	}
 }
 
@@ -171,7 +171,7 @@ T get(const frozen::unordered_map<std::string_view, T, N, frozen::nocase_hash_st
 	  std::string_view mapName) {
 	auto it = m.find(name);
 	if (it == m.end()) {
-		throw Error(errParseDSL, "Element [%s] not allowed in object of type [%s]", name, mapName);
+		throw Error(errParseDSL, "Element [{}] not allowed in object of type [{}]", name, mapName);
 	}
 	return it->second;
 }
@@ -222,7 +222,7 @@ static void parseSortEntry(const JsonValue& entry, SortingEntries& sortingEntrie
 		switch (get<Sort>(kSortMap, name, "sort"sv)) {
 			case Sort::Desc:
 				if ((v.getTag() != JsonTag::JTRUE) && (v.getTag() != JsonTag::JFALSE)) {
-					throw Error(errParseJson, "Wrong type of field '%s'", name);
+					throw Error(errParseJson, "Wrong type of field '{}'", name);
 				}
 				sortingEntry.desc = (v.getTag() == JsonTag::JTRUE);
 				break;
@@ -309,17 +309,17 @@ static KnnSearchParams parseKnnParams(const JsonNode& json) {
 	if (const auto kJson = paramsJson.findCaseInsensitive(KnnSearchParams::kKName); !kJson.empty()) {
 		k = kJson.As<size_t>(CheckUnsigned_True, 0, 1);
 	} else {
-		throw Error{errParseDSL, "Wrong DSL format: KNN query should contain 'params.%s'", KnnSearchParams::kKName};
+		throw Error{errParseDSL, "Wrong DSL format: KNN query should contain 'params.{}'", KnnSearchParams::kKName};
 	}
 	if (const auto efJson = paramsJson.findCaseInsensitive(KnnSearchParams::kEfName); !efJson.empty()) {
 		if (const auto nprobeJson = paramsJson.findCaseInsensitive(KnnSearchParams::kNProbeName); !nprobeJson.empty()) {
-			throw Error{errParseDSL, "Wrong DSL format: KNN query cannot contain both of 'params.%s' and 'params.%s",
+			throw Error{errParseDSL, "Wrong DSL format: KNN query cannot contain both of 'params.{}' and 'params.{}",
 						KnnSearchParams::kEfName, KnnSearchParams::kNProbeName};
 		}
 		return HnswSearchParams{k, efJson.As<size_t>(CheckUnsigned_True, 0, k)};
 	} else if (const auto nprobeJson = paramsJson.findCaseInsensitive(KnnSearchParams::kNProbeName); !nprobeJson.empty()) {
 		if (nprobeJson.value.isNegative()) {
-			throw Error{errParseDSL, "Wrong DSL format: KNN query parameter 'params.%s' cannot be negative", KnnSearchParams::kNProbeName};
+			throw Error{errParseDSL, "Wrong DSL format: KNN query parameter 'params.{}' cannot be negative", KnnSearchParams::kNProbeName};
 		}
 		return IvfSearchParams{k, nprobeJson.As<size_t>(CheckUnsigned_True, 0, 1)};
 	} else {
@@ -477,7 +477,7 @@ static void parseSingleJoinQuery(const JsonValue& join, Query& query, const Json
 	OpType op = parseOptionalOperation(parent);
 	if (qjoin.joinType == JoinType::LeftJoin) {
 		if (op != OpAnd) {
-			throw Error(errParseJson, "Operation %s is not allowed with LeftJoin", OpTypeToStr(op));
+			throw Error(errParseJson, "Operation {} is not allowed with LeftJoin", OpTypeToStr(op));
 		}
 		query.AddJoinQuery(std::move(qjoin));
 	} else {
@@ -625,7 +625,7 @@ static void parseUpdateFields(const JsonValue& updateFields, Query& query) {
 
 void parse(const JsonValue& root, Query& q) {
 	if (root.getTag() != JsonTag::OBJECT) {
-		throw Error(errParseJson, "Json is malformed: %d", root.getTag());
+		throw Error(errParseJson, "Json is malformed: {}", root.getTag());
 	}
 	for (const auto& elem : root) {
 		auto& v = elem.value;
@@ -702,7 +702,7 @@ void parse(const JsonValue& root, Query& q) {
 				checkJsonValueType(v, name, JsonTag::STRING);
 				q.Strict(strictModeFromString(std::string(v.toString())));
 				if (q.GetStrictMode() == StrictModeNotSet) {
-					throw Error(errParseDSL, "Unexpected strict mode value: %s", v.toString());
+					throw Error(errParseDSL, "Unexpected strict mode value: {}", v.toString());
 				}
 				break;
 			case Root::EqualPositions:
@@ -740,11 +740,11 @@ void Parse(std::string_view str, Query& q) {
 		}
 		dsl::parse(root.value, q);
 	} catch (const gason::Exception& ex) {
-		throw Error(errParseJson, "Query: %s", ex.what());
+		throw Error(errParseJson, "Query: {}", ex.what());
 	} catch (const Error& err) {
 		throw err;
 	} catch (const std::exception& ex) {
-		throw Error(errParseJson, "Exception: %s", ex.what());
+		throw Error(errParseJson, "Exception: {}", ex.what());
 	} catch (...) {
 		throw Error(errParseJson, "Unknown Exception");
 	}

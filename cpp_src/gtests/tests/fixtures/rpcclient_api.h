@@ -51,7 +51,7 @@ protected:
 	void SetUp() {}
 	void TearDown() {
 		[[maybe_unused]] auto err = StopAllServers();
-		assertf(err.ok(), "%s", err.what());
+		assertf(err.ok(), "{}", err.what());
 		fakeServers_.clear();
 		realServers_.clear();
 	}

@@ -167,22 +167,22 @@ CJsonModifier::UpdateTagType CJsonModifier::determineUpdateTagType(const Context
 		if (!fieldType.IsArray() || ctx.updateArrayElements || !ctx.value.IsNullValue()) {
 			for (auto& v : ctx.value) {
 				if (!fieldType.Type().IsSame(v.Type())) {
-					throw Error(errParams, "Inserted field %s type [%s] doesn't match it's index type [%s]", fieldType.Name(),
+					throw Error(errParams, "Inserted field {} type [{}] doesn't match it's index type [{}]", fieldType.Name(),
 								v.Type().Name(), fieldType.Type().Name());
 				}
 			}
 		}
 		if (fieldType.IsFloatVector() && !ctx.value.IsNullValue()) {
 			if (ctx.value.empty()) {
-				throw Error(errParams, "Attempt to insert empty VariantArray into single float vector field [%s]", fieldType.Name());
+				throw Error(errParams, "Attempt to insert empty VariantArray into single float vector field [{}]", fieldType.Name());
 			}
 			if (ctx.value.size() != 1) {
-				throw Error(errParams, "Attempt to insert multiple (%d) float vectors into single float vector field [%s]",
+				throw Error(errParams, "Attempt to insert multiple ({}) float vectors into single float vector field [{}]",
 							ctx.value.size(), fieldType.Name());
 			}
 			auto vec = ConstFloatVectorView(ctx.value[0]);
 			if (!vec.Dimension().IsZero() && vec.Dimension() != fieldType.FloatVectorDimension()) {
-				throw Error(errParams, "Float vector field [%s] expects %d dimensions, but got %d", fieldType.Name(),
+				throw Error(errParams, "Float vector field [{}] expects {} dimensions, but got {}", fieldType.Name(),
 							fieldType.FloatVectorDimension().Value(), vec.Dimension().Value());
 			}
 			return UpdateTagType{TAG_ARRAY, vec.Dimension()};
@@ -436,7 +436,7 @@ bool CJsonModifier::updateFieldInTuple(Context& ctx) {
 					copyCJsonValue(type, item, ctx.wrser);
 				}
 			} else if (ctx.value.empty()) {
-				throw Error(errLogic, "Update value for field [%s] cannot be empty", tagsMatcher_.tag2name(tagName));
+				throw Error(errLogic, "Update value for field [{}] cannot be empty", tagsMatcher_.tag2name(tagName));
 			} else if (ctx.value.size() == 1) {
 				const auto item = ctx.value.front();
 				copyCJsonValue(item.Type().ToTagType(), item, ctx.wrser);

@@ -178,7 +178,7 @@ SnapshotChunk Snapshot::Iterator::Chunk() const {
 	bool wal = false;
 	size_t idx = idx_;
 	if (idx >= sn_->Size()) {
-		throw Error(errLogic, "Index out of range: %d", idx);
+		throw Error(errLogic, "Index out of range: {}", idx);
 	}
 
 	const auto* dataPtr = &sn_->rawData_;

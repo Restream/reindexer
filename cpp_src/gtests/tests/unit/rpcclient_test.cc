@@ -46,8 +46,8 @@ static std::chrono::seconds GetMaxTimeForCoroSelectTimeout(unsigned requests, st
 	const auto kBase = std::max(requests * delay.count() / 16, delay.count());
 	const std::chrono::seconds kDefaultMaxTime(kBase + 10);
 	if (cpus == 0) {
-		TestCout() << fmt::sprintf("Unable to get CPUs count. Using test max time %d seconds Test may flack in this case",
-								   4 * kDefaultMaxTime.count())
+		TestCout() << fmt::format("Unable to get CPUs count. Using test max time {} seconds Test may flack in this case",
+								  4 * kDefaultMaxTime.count())
 				   << std::endl;
 		return 4 * kDefaultMaxTime;
 	}
@@ -61,8 +61,8 @@ static std::chrono::seconds GetMaxTimeForCoroSelectTimeout(unsigned requests, st
 	} else if (cpus >= 8 && cpus < 16) {
 		resultMaxTime = 2 * kDefaultMaxTime;
 	}
-	TestCout() << fmt::sprintf("Test max time: %d seconds for %d total requests on %d CPUs with %d seconds of delay for each request",
-							   resultMaxTime.count(), requests, cpus, delay.count())
+	TestCout() << fmt::format("Test max time: {} seconds for {} total requests on {} CPUs with {} seconds of delay for each request",
+							  resultMaxTime.count(), requests, cpus, delay.count())
 			   << std::endl;
 	return resultMaxTime;
 }
@@ -83,8 +83,8 @@ TEST_F(RPCClientTestApi, CoroSelectTimeout) {
 	ev::timer testTimer;
 	testTimer.set([&](ev::timer&, int) {
 		// Just to print output on CI
-		ASSERT_TRUE(false) << fmt::sprintf("Test deadline exceeded. Closed count: %d. Expected: %d. %d|", server.CloseQRRequestsCount(),
-										   kCorCount * kQueriesCount, reindexer::steady_clock_w::now().time_since_epoch().count());
+		ASSERT_TRUE(false) << fmt::format("Test deadline exceeded. Closed count: {}. Expected: {}. {}|", server.CloseQRRequestsCount(),
+										  kCorCount * kQueriesCount, reindexer::steady_clock_w::now().time_since_epoch().count());
 	});
 	testTimer.set(loop);
 	const auto kMaxTime = GetMaxTimeForCoroSelectTimeout(kCorCount * kQueriesCount, kSelectDelay);
@@ -770,7 +770,7 @@ TEST_F(RPCClientTestApi, FetchingWithJoin) {
 			ASSERT_TRUE(it.Status().ok()) << it.Status().what();
 			err = it.GetJSON(ser, false);
 			ASSERT_TRUE(err.ok()) << err.what();
-			const auto expected = fmt::sprintf(R"json({"id":%d,"joined_%s":[{"id":%d,"value":"value_%d"}]})json", i, kRightNsName, i, i);
+			const auto expected = fmt::format(R"json({{"id":{},"joined_{}":[{{"id":{},"value":"value_{}"}}]}})json", i, kRightNsName, i, i);
 			EXPECT_EQ(ser.Slice(), expected);
 			i++;
 		}
@@ -826,7 +826,7 @@ TEST_F(RPCClientTestApi, QRWithMultipleIterationLoops) {
 				ASSERT_TRUE(it.Status().ok()) << it.Status().what();
 				err = it.GetJSON(ser, false);
 				ASSERT_TRUE(err.ok()) << err.what();
-				EXPECT_EQ(fmt::sprintf("{\"id\":%d}", id), ser.Slice());
+				EXPECT_EQ(fmt::format("{{\"id\":{}}}", id), ser.Slice());
 			} else {
 				EXPECT_FALSE(it.Status().ok()) << it.Status().what();
 				err = it.GetJSON(ser, false);
@@ -1195,7 +1195,7 @@ TEST_F(RPCClientTestApi, QuerySelectDWithin) {
 				ASSERT_TRUE(it.Status().ok()) << it.Status().what();
 				err = it.GetJSON(ser, false);
 				ASSERT_TRUE(err.ok()) << err.what();
-				const auto expected = fmt::sprintf(R"json({"id":%d,"point":[%0.1f,%0.1f]})json", i, float(i), float(i));
+				const auto expected = fmt::format(R"json({{"id":{},"point":[{:.1f},{:.1f}]}})json", i, float(i), float(i));
 				EXPECT_EQ(ser.Slice(), expected);
 				++i;
 			}

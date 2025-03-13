@@ -19,9 +19,9 @@ static_assert(false, "GET_NUM is already defined");
 	num = hexCharToNum[static_cast<unsigned char>(str[i])];                                \
 	if (rx_unlikely(num > 15)) {                                                           \
 		if (str[i] == '-') {                                                               \
-			return Error(errNotValid, "Invalid UUID format: '%s'", str);                   \
+			return Error(errNotValid, "Invalid UUID format: '{}'", str);                   \
 		} else {                                                                           \
-			return Error(errNotValid, "UUID cannot contain char '%c': '%s'", str[i], str); \
+			return Error(errNotValid, "UUID cannot contain char '{}': '{}'", str[i], str); \
 		}                                                                                  \
 	}
 
@@ -108,7 +108,7 @@ Error Uuid::tryParse(std::string_view str, uint64_t (&data)[2]) noexcept {
 			break;
 		case kStrFormLen:
 			if (rx_unlikely(str[8] != '-' || str[13] != '-' || str[18] != '-' || str[23] != '-')) {
-				return Error(errNotValid, "Invalid UUID format: '%s'", str);
+				return Error(errNotValid, "Invalid UUID format: '{}'", str);
 			}
 			GET_NUM(0)
 			data[0] = num << 60;
@@ -176,10 +176,10 @@ Error Uuid::tryParse(std::string_view str, uint64_t (&data)[2]) noexcept {
 			data[1] |= num;
 			break;
 		default:
-			return Error(errNotValid, "UUID should consist of 32 hexadecimal digits: '%s'", str);
+			return Error(errNotValid, "UUID should consist of 32 hexadecimal digits: '{}'", str);
 	}
 	if (rx_unlikely((data[0] != 0 || data[1] != 0) && (data[1] >> 63) == 0)) {
-		return Error(errNotValid, "Variant 0 of UUID is unsupported: '%s'", str);
+		return Error(errNotValid, "Variant 0 of UUID is unsupported: '{}'", str);
 	}
 	return {};
 }

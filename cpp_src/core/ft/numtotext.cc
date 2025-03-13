@@ -52,7 +52,7 @@ static std::vector<std::string_view>& formTextString(std::string_view str, std::
 				numIndex = ansiCharacterToDigit(str[baseOffset + 2]);
 				break;
 			default:
-				throw Error(errLogic, "Incorrect orderDigitCount %d", orderDigitCount);
+				throw Error(errLogic, "Incorrect orderDigitCount {}", orderDigitCount);
 		}
 		if (hundreadsIndx != 0) {
 			words.emplace_back(hundreads[hundreadsIndx]);

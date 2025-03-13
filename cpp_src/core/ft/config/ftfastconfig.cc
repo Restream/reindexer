@@ -100,11 +100,11 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 				const std::string fieldName = fldCfg["field_name"].As<std::string>();
 				const auto fldIt = fields.find(fieldName);
 				if (fldIt == fields.end()) {
-					throw Error(errParseDSL, "Field '%s' is not included to full text index", fieldName);
+					throw Error(errParseDSL, "Field '{}' is not included to full text index", fieldName);
 				}
 				assertrx(fldIt->second < static_cast<int>(fieldsCfg.size()));
 				if (modifiedFields.count(fldIt->second) != 0) {
-					throw Error(errParseDSL, "Field '%s' is dublicated in fulltext configuration", fieldName);
+					throw Error(errParseDSL, "Field '{}' is dublicated in fulltext configuration", fieldName);
 				}
 				modifiedFields.insert(fldIt->second);
 				FtFastFieldConfig& curFieldCfg = fieldsCfg[fldIt->second];
@@ -123,7 +123,7 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 		} else if (opt == "cpu") {
 			optimization = Optimization::CPU;
 		} else {
-			throw Error(errParseJson, "FtFastConfig: unknown optimization value: %s", opt);
+			throw Error(errParseJson, "FtFastConfig: unknown optimization value: {}", opt);
 		}
 		enablePreselectBeforeFt = root["enable_preselect_before_ft"].As<>(enablePreselectBeforeFt);
 
@@ -133,12 +133,12 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 		} else if (splitterStr == "friso" || splitterStr == "mmseg_cn") {
 			splitterType = Splitter::MMSegCN;
 		} else {
-			throw Error(errParseJson, "FtFastConfig: unknown splitter value: %s", splitterStr);
+			throw Error(errParseJson, "FtFastConfig: unknown splitter value: {}", splitterStr);
 		}
 
 		parseBase(root);
 	} catch (const gason::Exception& ex) {
-		throw Error(errParseJson, "FtFastConfig: %s", ex.what());
+		throw Error(errParseJson, "FtFastConfig: {}", ex.what());
 	}
 }
 
@@ -243,7 +243,7 @@ void FtFastConfig::Bm25Config::parse(const gason::JsonNode& node) {
 	} else if (bm25TypeStr == "word_count") {
 		bm25Type = Bm25Type::wordCount;
 	} else {
-		throw Error(errParseJson, "FtFastConfig: unknown bm25Type value: %s", bm25TypeStr);
+		throw Error(errParseJson, "FtFastConfig: unknown bm25Type value: {}", bm25TypeStr);
 	}
 }
 

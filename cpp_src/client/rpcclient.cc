@@ -30,12 +30,12 @@ Error RPCClient::Connect(const DSN& dsn, ev::dynamic_loop& loop, const client::C
 
 	std::lock_guard lck(mtx_);
 	if (conn_.IsRunning()) {
-		return Error(errLogic, "Client is already started (%s)", dsn);
+		return Error(errLogic, "Client is already started ({})", dsn);
 	}
 
 	cproto::CoroClientConnection::ConnectData connectData{.uri = dsn.Parser(), .opts = {}};
 	if (!connectData.uri.isValid()) {
-		return Error(errParams, "%s is not valid uri", dsn);
+		return Error(errParams, "{} is not valid uri", dsn);
 	}
 #ifdef _WIN32
 	if (connectData.uri.scheme() != "cproto"sv && connectData.uri.scheme() != "cprotos"sv) {
@@ -244,7 +244,7 @@ Error RPCClient::modifyItemFormat(std::string_view nsName, Item& item, RPCDataFo
 			data = item.GetMsgPack();
 			break;
 		case RPCDataFormat::CJSON:
-			return Error(errParams, "Unsupported format: %d", int(format));
+			return Error(errParams, "Unsupported format: {}", int(format));
 	}
 	auto ret = conn_.Call(mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), nsName, int(format), data, mode, ser.Slice(),
 						  item.GetStateToken(), 0);
@@ -303,7 +303,7 @@ Error RPCClient::modifyItemRaw(std::string_view nsName, std::string_view cjson, 
 					TagsMatcher newTm;
 					newTm.deserialize(ser, version, stateToken);
 					if (nsIdx != 0) {
-						throw Error(errLogic, "Unexpected namespace index in item modification response: %d", nsIdx);
+						throw Error(errLogic, "Unexpected namespace index in item modification response: {}", nsIdx);
 					}
 					nsPtr->TryReplaceTagsMatcher(std::move(newTm));
 					PayloadType("tmp").clone()->deserialize(ser);
@@ -540,7 +540,7 @@ Error RPCClient::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesO
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& err) {
-		return Error(errParseJson, "EnumNamespaces: %s", err.what());
+		return Error(errParseJson, "EnumNamespaces: {}", err.what());
 	}
 }
 
@@ -559,7 +559,7 @@ Error RPCClient::EnumDatabases(std::vector<std::string>& dbList, const InternalR
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& err) {
-		return Error(errParseJson, "EnumDatabases: %s", err.what());
+		return Error(errParseJson, "EnumDatabases: {}", err.what());
 	}
 }
 
@@ -777,7 +777,7 @@ int64_t RPCClient::AddConnectionStateObserver(ConnectionStateHandlerT callback) 
 }
 
 Error RPCClient::RemoveConnectionStateObserver(int64_t id) {
-	return observers_.erase(id) ? Error() : Error(errNotFound, "Callback with id %d does not exist", id);
+	return observers_.erase(id) ? Error() : Error(errNotFound, "Callback with id {} does not exist", id);
 }
 
 Error RPCClient::LeadersPing(const RPCClient::NodeData& leader, const InternalRdxContext& ctx) {

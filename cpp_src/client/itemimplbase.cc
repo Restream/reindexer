@@ -42,7 +42,7 @@ void ItemImplBase::FromCJSON(std::string_view slice) {
 		if (!hasBundledTm) {
 			const auto err = tryToUpdateTagsMatcher();
 			if (!err.ok()) {
-				throw Error(errParseJson, "Error parsing CJSON: [%s]; [%s]", e.what(), err.what());
+				throw Error(errParseJson, "Error parsing CJSON: [{}]; [{}]", e.what(), err.what());
 			}
 			ser_.Reset();
 			rdser.SetPos(0);
@@ -52,7 +52,7 @@ void ItemImplBase::FromCJSON(std::string_view slice) {
 	}
 
 	if (!rdser.Eof() && rdser.Pos() != tmOffset) {
-		throw Error(errParseJson, "Internal error - left unparsed data %d", rdser.Pos());
+		throw Error(errParseJson, "Internal error - left unparsed data {}", rdser.Pos());
 	}
 
 	const auto tupleSize = ser_.Len();
@@ -82,7 +82,7 @@ Error ItemImplBase::FromJSON(std::string_view slice, char** endp, bool /*pkOnly*
 			*endp = const_cast<char*>(data.data()) + len;
 		}
 	} catch (gason::Exception& e) {
-		return Error(errParseJson, "Error parsing json: '%s', pos: %d", e.what(), len);
+		return Error(errParseJson, "Error parsing json: '{}', pos: {}", e.what(), len);
 	}
 
 	// Split parsed json into indexes and tuple

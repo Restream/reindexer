@@ -114,12 +114,13 @@ void ResultSerializer::GetExtraParams(ResultSerializer::QueryParams& ret, Option
 			case QueryResultRankFormat: {
 				const auto format = GetVarUInt();
 				if (format != RankFormat::SingleFloatValue) {
-					throw Error(errLogic, "Unexpected rank format value tag: %d - only supported format is 0 (single float rank)", format);
+					throw Error(errLogic, "Unexpected rank format value tag: {} - only supported format is 0 (single float rank)",
+								int(format));
 				}
 				break;
 			}
 			default:
-				throw Error(errLogic, "Unexpected Query tag: %d", tag);
+				throw Error(errLogic, "Unexpected Query tag: {}", tag);
 		}
 	}
 }
@@ -159,7 +160,7 @@ ResultSerializer::ItemParams ResultSerializer::GetItemData(int flags, int shardI
 		case kResultsPure:
 			break;
 		default:
-			throw Error(errParseBin, "Server returned data in unknown format %d", flags & kResultsFormatMask);
+			throw Error(errParseBin, "Server returned data in unknown format {}", flags & kResultsFormatMask);
 	}
 
 	return ret;

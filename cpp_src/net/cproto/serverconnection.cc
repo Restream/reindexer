@@ -96,7 +96,7 @@ void ServerConnection::CallRPC(const IRPCCall& call) {
 								 ns = std::string_view(args[0]);
 							 },
 							 make_intrusive<intrusive_atomic_rc_wrapper<chunk>>(ser.DetachChunk())};
-		logPrintf(LogWarning, "Call updates lost clientAddr = %s updatesSize = %d", clientAddr_, updatesSize_);
+		logFmt(LogWarning, "Call updates lost clientAddr = {} updatesSize = {}", clientAddr_, updatesSize_);
 
 		updatesSize_ = callLost.data_->size();
 		updatesV3_.emplace_back(std::move(callLost));
@@ -178,7 +178,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 
 		if (hdr.magic != kCprotoMagic) {
 			try {
-				responceRPC(ctx, Error(errParams, "Invalid cproto magic %08x", int(hdr.magic)), Args());
+				responceRPC(ctx, Error(errParams, "Invalid cproto magic {:08x}", int(hdr.magic)), Args());
 			} catch (std::exception& err) {
 				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what());
 			}
@@ -190,7 +190,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 			try {
 				responceRPC(
 					ctx,
-					Error(errParams, "Unsupported cproto version %04x. This server expects reindexer client v1.9.8+", int(hdr.version)),
+					Error(errParams, "Unsupported cproto version {:04x}. This server expects reindexer client v1.9.8+", int(hdr.version)),
 					Args());
 			} catch (std::exception& err) {
 				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what());
@@ -259,7 +259,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 				ctxArgs.Unpack(ser);
 				if (ctxArgs.size() > 0) {
 					if (!ctxArgs[0].Type().IsSame(KeyValueType::From<int64_t>())) {
-						throw Error(errLogic, "Incorrect variant type for 'execTimeout' type='%s'", ctxArgs[0].Type().Name());
+						throw Error(errLogic, "Incorrect variant type for 'execTimeout' type='{}'", ctxArgs[0].Type().Name());
 					}
 					ctx.call->execTimeout = milliseconds(int64_t(ctxArgs[0]));
 				} else {
@@ -267,7 +267,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 				}
 				if (ctxArgs.size() > 1) {
 					if (!ctxArgs[1].Type().IsSame(KeyValueType::From<int64_t>())) {
-						throw Error(errLogic, "Incorrect variant type for 'lsn' type='%s'", ctxArgs[1].Type().Name());
+						throw Error(errLogic, "Incorrect variant type for 'lsn' type='{}'", ctxArgs[1].Type().Name());
 					}
 					ctx.call->lsn = lsn_t(int64_t(ctxArgs[1]));
 				} else {
@@ -275,7 +275,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 				}
 				if (ctxArgs.size() > 2) {
 					if (!ctxArgs[2].Type().IsSame(KeyValueType::From<int64_t>())) {
-						throw Error(errLogic, "Incorrect variant type for 'emmiterServerId' type='%s'", ctxArgs[2].Type().Name());
+						throw Error(errLogic, "Incorrect variant type for 'emmiterServerId' type='{}'", ctxArgs[2].Type().Name());
 					}
 					ctx.call->emmiterServerId = int64_t(ctxArgs[2]);
 				} else {
@@ -283,12 +283,12 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 				}
 				if (ctxArgs.size() > 3) {
 					if (!ctxArgs[3].Type().IsSame(KeyValueType::From<int64_t>())) {
-						throw Error(errLogic, "Incorrect variant type for 'shardIdValue' type='%s'", ctxArgs[3].Type().Name());
+						throw Error(errLogic, "Incorrect variant type for 'shardIdValue' type='{}'", ctxArgs[3].Type().Name());
 					}
 					const int64_t shardIdValue = int64_t(ctxArgs[3]);
 					if (shardIdValue < 0) {
 						if (shardIdValue < std::numeric_limits<int>::min()) {
-							throw Error(errLogic, "Unexpected shard ID values: %d", shardIdValue);
+							throw Error(errLogic, "Unexpected shard ID values: {}", shardIdValue);
 						}
 						ctx.call->shardId = shardIdValue;
 						ctx.call->shardingParallelExecution = false;
@@ -352,7 +352,7 @@ static void packRPC(WrSerializer& ser, Context& ctx, const Error& status, const 
 		ser.Write(compressed);
 	}
 	if (ser.Len() - savePos >= size_t(std::numeric_limits<int32_t>::max())) {
-		throw Error(errNetwork, "Too large RPC message(%d), size: %d bytes", hdr.cmd, ser.Len());
+		throw Error(errNetwork, "Too large RPC message({}), size: {} bytes", hdr.cmd, ser.Len());
 	}
 	reinterpret_cast<CProtoHeader*>(ser.Buf() + savePos)->len = ser.Len() - savePos - sizeof(hdr);
 }
@@ -457,7 +457,7 @@ void ServerConnection::sendUpdatesV3() {
 			updatesSize_ = 0;
 			updateLostFlag_ = false;
 
-			logPrintf(LogWarning, "Call updates lost clientAddr = %s (wrBuf error)", clientAddr_);
+			logFmt(LogWarning, "Call updates lost clientAddr = {} (wrBuf error)", clientAddr_);
 			wrBuf_.clear();
 			ser.Reset();
 			packRPC(ser, ctxLost, Error(), {Arg(std::string(""))}, enableSnappy_);

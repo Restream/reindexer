@@ -22,12 +22,12 @@ public:
 	IdSetT& Unsorted() noexcept { return ids_; }
 	const IdSetT& Unsorted() const noexcept { return ids_; }
 	IdSetRef Sorted(unsigned sortId) noexcept {
-		assertf(ids_.capacity() >= (sortId + 1) * ids_.size(), "error ids_.capacity()=%d,sortId=%d,ids_.size()=%d", ids_.capacity(), sortId,
+		assertf(ids_.capacity() >= (sortId + 1) * ids_.size(), "error ids_.capacity()={},sortId={},ids_.size()={}", ids_.capacity(), sortId,
 				ids_.size());
 		return IdSetRef(ids_.data() + sortId * ids_.size(), ids_.size());
 	}
 	IdSetCRef Sorted(unsigned sortId) const noexcept {
-		assertf(ids_.capacity() >= (sortId + 1) * ids_.size(), "error ids_.capacity()=%d,sortId=%d,ids_.size()=%d", ids_.capacity(), sortId,
+		assertf(ids_.capacity() >= (sortId + 1) * ids_.size(), "error ids_.capacity()={},sortId={},ids_.size()={}", ids_.capacity(), sortId,
 				ids_.size());
 		return IdSetCRef(ids_.data() + sortId * ids_.size(), ids_.size());
 	}
@@ -42,7 +42,7 @@ public:
 		[[maybe_unused]] const IdType maxRowId = IdType(ids2Sorts.size());
 		// For all ids of current key
 		for (auto rowid : ids_) {
-			assertf(rowid < maxRowId, "id=%d,ctx.ids2Sorts().size()=%d", rowid, maxRowId);
+			assertf(rowid < maxRowId, "id={},ctx.ids2Sorts().size()={}", rowid, maxRowId);
 			idsAsc[idx++] = ids2Sorts[rowid];
 		}
 		boost::sort::pdqsort_branchless(idsAsc.begin(), idsAsc.end());

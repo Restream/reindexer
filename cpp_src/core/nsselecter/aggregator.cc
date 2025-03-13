@@ -265,7 +265,7 @@ Aggregator::Aggregator(const PayloadType& payloadType, const FieldsSet& fields, 
 		case AggCount:
 		case AggCountCached:
 		case AggUnknown:
-			throw Error(errParams, "Unknown aggregation type %d", int(aggType_));
+			throw Error(errParams, "Unknown aggregation type {}", int(aggType_));
 	}
 }
 

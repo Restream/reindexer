@@ -27,16 +27,16 @@ reindexer::fast_hash_map<reindexer_server::UserRole, TestUserDataFactory::User>&
 }
 
 std::string TestUserDataFactory::user(reindexer_server::UserRole role, int serverId) noexcept {
-	return fmt::sprintf(loginTmplt, reindexer_server::UserRoleName(role), serverId);
+	return fmt::format(loginTmplt, reindexer_server::UserRoleName(role), serverId);
 }
 
 std::string TestUserDataFactory::passwd(reindexer_server::UserRole role, int serverId) noexcept {
-	return fmt::sprintf(passwdTmplt, int(role), serverId);
+	return fmt::format(passwdTmplt, int(role), serverId);
 }
 
 std::string TestUserDataFactory::dump(reindexer_server::UserRole role, int serverId) noexcept {
 	auto& user = Get(serverId)[role];
-	return fmt::sprintf("%s:%s@", user.login, user.password);
+	return fmt::format("{}:{}@", user.login, user.password);
 }
 
 reindexer::DSN MakeDsn(reindexer_server::UserRole role, int serverId, int port, const std::string& db) {

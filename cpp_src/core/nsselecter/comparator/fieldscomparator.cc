@@ -44,7 +44,7 @@ public:
 			[&](KeyValueType::Int) noexcept { return Variant{*reinterpret_cast<const int*>(ptr_ + sizeof_ * i)}; },
 			[&](KeyValueType::Uuid) noexcept { return Variant{*reinterpret_cast<const Uuid*>(ptr_ + sizeof_ * i)}; },
 			[&](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>)
-				-> Variant { throw Error{errQueryExec, "Field type %s is not supported for two field comparing", type_.Name()}; });
+				-> Variant { throw Error{errQueryExec, "Field type {} is not supported for two field comparing", type_.Name()}; });
 	}
 	ConstIterator begin() const noexcept { return {*this, 0}; }
 	ConstIterator end() const noexcept { return {*this, len_}; }
@@ -77,7 +77,7 @@ FieldsComparator::FieldsComparator(std::string_view lField, CondType cond, std::
 		case CondEmpty:
 		case CondDWithin:
 		case CondKnn:
-			throw Error{errQueryExec, "Condition %s is not supported for two field comparing", CondTypeToStr(condition_)};
+			throw Error{errQueryExec, "Condition {} is not supported for two field comparing", CondTypeToStr(condition_)};
 	}
 	ctx_.resize(1);
 	std::stringstream nameStream;
@@ -197,7 +197,7 @@ bool FieldsComparator::compare(const LArr& lhs, const RArr& rhs) const {
 						case CondAny:
 						case CondEmpty:
 						case CondDWithin:
-							throw Error{errQueryExec, "Condition %s is not supported for two field comparing", CondTypeToStr(condition_)};
+							throw Error{errQueryExec, "Condition {} is not supported for two field comparing", CondTypeToStr(condition_)};
 						case CondRange:
 						case CondAllSet:
 						case CondLike:
@@ -263,17 +263,17 @@ void FieldsComparator::validateTypes(KeyValueType lType, KeyValueType rType) con
 		return;
 	}
 	lType.EvaluateOneOf(
-		[&](KeyValueType::String) { throw Error{errQueryExec, "Cannot compare a string field with a non-string one: %s", name_}; },
+		[&](KeyValueType::String) { throw Error{errQueryExec, "Cannot compare a string field with a non-string one: {}", name_}; },
 		[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) {
 			if (!rType.Is<KeyValueType::Int>() && !rType.Is<KeyValueType::Int64>() && !rType.Is<KeyValueType::Double>() &&
 				!rType.Is<KeyValueType::Float>()) {
-				throw Error{errQueryExec, "Cannot compare a numeric field with a non-numeric one: %s", name_};
+				throw Error{errQueryExec, "Cannot compare a numeric field with a non-numeric one: {}", name_};
 			}
 		},
-		[&](KeyValueType::Bool) { throw Error{errQueryExec, "Cannot compare a boolean field with a non-boolean one: %s", name_}; },
+		[&](KeyValueType::Bool) { throw Error{errQueryExec, "Cannot compare a boolean field with a non-boolean one: {}", name_}; },
 		[&](OneOf<KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Uuid,
 				  KeyValueType::FloatVector>) {
-			throw Error{errQueryExec, "Field of type %s cannot be compared with another field: %s", lType.Name(), name_};
+			throw Error{errQueryExec, "Field of type {} cannot be compared with another field: {}", lType.Name(), name_};
 		});
 }
 

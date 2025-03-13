@@ -101,7 +101,7 @@ public:
 	}
 
 	size_t erase(size_t s_erase) noexcept {
-		assertf(s_erase <= size(), "s_erase=%d, size()=%d, tail=%d,head=%d,full=%d", int(s_erase), int(size()), int(tail_), int(head_),
+		assertf(s_erase <= size(), "s_erase={}, size()={}, tail={},head={},full={}", int(s_erase), int(size()), int(tail_), int(head_),
 				int(full_));
 
 		tail_ = (tail_ + s_erase) % buf_size_;

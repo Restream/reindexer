@@ -25,7 +25,7 @@ Error ClusterControlRequestData::FromJSON(std::span<char> json) {
 				break;
 			}
 			case Type::Empty:
-				return Error(errParams, "Unknown cluster command request. Command type [%d].", int(commandType));
+				return Error(errParams, "Unknown cluster command request. Command type [{}].", int(commandType));
 		}
 		type = commandType;
 	} catch (Error& e) {

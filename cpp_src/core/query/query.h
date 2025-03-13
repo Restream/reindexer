@@ -306,7 +306,7 @@ public:
 	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
 	Query& WhereKNN(Str&& field, ConstFloatVector vec, KnnSearchParams params) & {
 		if (nextOp_ != OpAnd) {
-			throw Error(errLogic, "%s operation is not allowed with knn condition", OpTypeToStr(nextOp_));
+			throw Error(errLogic, std::string(OpTypeToStr(nextOp_)) + " operation is not allowed with knn condition");
 		}
 		entries_.Append<KnnQueryEntry>(nextOp_, std::forward<Str>(field), std::move(vec), std::move(params));
 		nextOp_ = OpAnd;

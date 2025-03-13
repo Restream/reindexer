@@ -505,11 +505,11 @@ TEST_F(FTSelectFunctionsApiF, TotalOrVids) {
 	const std::vector<std::string_view> testWord = {"test", "mest", "nest", "sest", "vest", "best"};
 
 	auto generateStr = [&](int num, unsigned int posW, unsigned int posT, bool adding) {
-		std::string res = fmt::sprintf("%d ", num), resSnippet = res;
+		std::string res = fmt::format("{} ", num), resSnippet = res;
 		for (unsigned int i = 0; i < words.size(); i++) {
 			if (i == posW) {
-				res += fmt::sprintf("%s empty ", testWord[posT]);
-				resSnippet += fmt::sprintf("!%s! empty ", testWord[posT]);
+				res += fmt::format("{} empty ", testWord[posT]);
+				resSnippet += fmt::format("!{}! empty ", testWord[posT]);
 			} else {
 				res.append(words[i]).append(" ");
 				resSnippet.append(words[i]).append(" ");
@@ -524,8 +524,8 @@ TEST_F(FTSelectFunctionsApiF, TotalOrVids) {
 			}
 		}
 		const auto& w = testWord[std::rand() % testWord.size()];
-		res += fmt::sprintf("empty %s ", w);
-		resSnippet += fmt::sprintf("empty !%s! ", w);
+		res += fmt::format("empty {} ", w);
+		resSnippet += fmt::format("empty !{}! ", w);
 		return std::make_pair(res, resSnippet);
 	};
 

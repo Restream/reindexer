@@ -256,7 +256,7 @@ void FullText::BuildInsertIncremental(State& state) {
 	auto err = BaseFixture::Initialize();
 	if (!err.ok()) {
 		state.SkipWithError(err.what());
-		assertf(err.ok(), "%s", err.what());
+		assertf(err.ok(), "{}", err.what());
 	}
 
 	constexpr int kMaxStepsCount = 50;
@@ -284,12 +284,12 @@ void FullText::BuildInsertIncremental(State& state) {
 		auto item = MakeItem(state);
 		if (!item.Status().ok()) {
 			state.SkipWithError(item.Status().what());
-			assertf(item.Status().ok(), "%s", item.Status().what());
+			assertf(item.Status().ok(), "{}", item.Status().what());
 		}
 		err = db_->Insert(nsdef_.name, item);
 		if (!err.ok()) {
 			state.SkipWithError(err.what());
-			assertf(err.ok(), "%s", err.what());
+			assertf(err.ok(), "{}", err.what());
 		}
 
 		if ((++i) >= itemsWithoutRebuild && i % itemsPerStep == 0) {
@@ -471,7 +471,7 @@ void FullText::Fast2AndWordLowDiversity(State& state) {
 }
 
 void FullText::Fast3PhraseWithAreasLowDiversity(State& state) {
-	const auto hilightStr = fmt::sprintf("%s = highlight(!,!)", kLowDiversityIndexName_);
+	const auto hilightStr = fmt::format("{} = highlight(!,!)", kLowDiversityIndexName_);
 
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
@@ -499,7 +499,7 @@ void FullText::Fast3PhraseWithAreasLowDiversity(State& state) {
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
 void FullText::Fast1WordWithAreaHighDiversity(State& state) {
-	const auto hilightStr = fmt::sprintf("%s = highlight(!,!)", kFastIndexTextName_);
+	const auto hilightStr = fmt::format("{} = highlight(!,!)", kFastIndexTextName_);
 
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
@@ -520,7 +520,7 @@ void FullText::Fast1WordWithAreaHighDiversity(State& state) {
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
 void FullText::Fast3WordsWithAreasLowDiversity(State& state) {
-	const auto hilightStr = fmt::sprintf("%s = highlight(!,!)", kLowDiversityIndexName_);
+	const auto hilightStr = fmt::format("{} = highlight(!,!)", kLowDiversityIndexName_);
 
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
@@ -979,7 +979,7 @@ void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
 		auto err = db_->AddNamespace(nsDef);
 		if (!err.ok()) {
 			state.SkipWithError(err.what());
-			assertf(err.ok(), "%s", err.what());
+			assertf(err.ok(), "{}", err.what());
 		}
 		values_.clear();
 		values_.reserve(kNsSize);
@@ -1143,7 +1143,7 @@ reindexer::Error FullText::readDictFile(const std::string& fileName, std::vector
 	std::ifstream file;
 	file.open(fileName);
 	if (!file) {
-		return reindexer::Error(errNotValid, "%s", strerror(errno));
+		return reindexer::Error(errNotValid, "{}", strerror(errno));
 	}
 	std::copy(std::istream_iterator<std::string>(file), std::istream_iterator<std::string>(), std::back_inserter(words));
 	return reindexer::Error();
@@ -1158,7 +1158,7 @@ void FullText::setIndexConfig(NamespaceDef& nsDef, std::string_view indexName, c
 	it->SetOpts(std::move(opts));
 	const auto err = db_->UpdateIndex(nsDef.name, *it);
 	(void)err;
-	assertf(err.ok(), "err: %s", err.what());
+	assertf(err.ok(), "err: {}", err.what());
 }
 
 unsigned FullText::initStepsConfig(int maxStepsCount, NamespaceDef& nsDef, std::string_view indexName, benchmark::IterationCount iters) {
@@ -1179,7 +1179,7 @@ void FullText::dropNamespace(std::string_view name, benchmark::State& state) {
 	if (!err.ok()) {
 		if (err.code() != errNotFound || err.what() != "Namespace '" + alternatingNs_ + "' does not exist") {
 			state.SkipWithError(err.what());
-			assertf(err.ok(), "%s", err.what());
+			assertf(err.ok(), "{}", err.what());
 		}
 	}
 }

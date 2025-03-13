@@ -257,7 +257,7 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry& qe
 	} else {
 		throw Error(
 			errStrictMode,
-			"Current query strict mode allows filtering by existing fields only. There are no fields with name '%s' in namespace '%s'",
+			"Current query strict mode allows filtering by existing fields only. There are no fields with name '{}' in namespace '{}'",
 			qe.FieldName(), ns.name_);
 	}
 }
@@ -272,7 +272,7 @@ void SelectIteratorContainer::processField(FieldsComparator& fc, const QueryFiel
 			fc.SetRightField(field.Fields(), field.FieldType(), index->Opts().IsArray());
 		}
 	} else if (field.HaveEmptyField()) {
-		throw Error{errQueryExec, "Only existing fields can be compared. There are no fields with name '%s' in namespace '%s'",
+		throw Error{errQueryExec, "Only existing fields can be compared. There are no fields with name '{}' in namespace '{}'",
 					field.FieldName(), ns.name_};
 	} else {
 		if constexpr (left) {
@@ -412,7 +412,7 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults&& select
 							}
 							break;
 						default:
-							throw Error(errQueryExec, "Unknown operator (code %d) in condition", int(op));
+							throw Error(errQueryExec, "Unknown operator (code {}) in condition", int(op));
 					}
 					if (isRanked) {
 						// last appended is always a SelectIterator
@@ -471,7 +471,7 @@ std::vector<SelectIteratorContainer::EqualPositions> SelectIteratorContainer::pr
 		std::unordered_set<std::string_view> epFields{eqPos[i].begin(), eqPos[i].end()};
 		const auto getEpFieldsStr = [&eqPos, i]() { return getFieldsStr(eqPos[i].cbegin(), eqPos[i].cend()); };
 		if (eqPos[i].size() != epFields.size()) {
-			throw Error(errParams, "equal positions fields should be unique: [%s]", getEpFieldsStr());
+			throw Error(errParams, "equal positions fields should be unique: [{}]", getEpFieldsStr());
 		}
 		std::unordered_set<std::string_view> foundFields;
 		result[i].reserve(eqPos[i].size());
@@ -482,7 +482,7 @@ std::vector<SelectIteratorContainer::EqualPositions> SelectIteratorContainer::pr
 				[](OneOf<SubQueryEntry, SubQueryFieldEntry>) { throw_as_assert; },
 				[&](const QueryEntry& eq) {
 					if (foundFields.find(eq.FieldName()) != foundFields.end()) {
-						throw Error(errParams, "Equal position field '%s' found twice in enclosing bracket; equal position fields: [%s]",
+						throw Error(errParams, "Equal position field '{}' found twice in enclosing bracket; equal position fields: [{}]",
 									eq.FieldName(), getEpFieldsStr());
 					}
 					const auto it = epFields.find(eq.FieldName());
@@ -491,8 +491,8 @@ std::vector<SelectIteratorContainer::EqualPositions> SelectIteratorContainer::pr
 					}
 					if (queries.GetOperation(j) != OpAnd || (next < end && queries.GetOperation(next) == OpOr)) {
 						throw Error(errParams,
-									"Only AND operation allowed for equal position; equal position field with not AND operation: '%s'; "
-									"equal position fields: [%s]",
+									"Only AND operation allowed for equal position; equal position field with not AND operation: '{}'; "
+									"equal position fields: [{}]",
 									eq.FieldName(), getEpFieldsStr());
 					}
 					result[i].push_back(j);
@@ -502,19 +502,19 @@ std::vector<SelectIteratorContainer::EqualPositions> SelectIteratorContainer::pr
 					if (epFields.find(eq.LeftFieldName()) != epFields.end()) {
 						throw Error(
 							errParams,
-							"Equal positions for conditions between fields are not supported; field: '%s'; equal position fields: [%s]",
+							"Equal positions for conditions between fields are not supported; field: '{}'; equal position fields: [{}]",
 							eq.LeftFieldName(), getEpFieldsStr());
 					}
 					if (epFields.find(eq.RightFieldName()) != epFields.end()) {
 						throw Error(
 							errParams,
-							"Equal positions for conditions between fields are not supported; field: '%s'; equal position fields: [%s]",
+							"Equal positions for conditions between fields are not supported; field: '{}'; equal position fields: [{}]",
 							eq.RightFieldName(), getEpFieldsStr());
 					}
 				});
 		}
 		if (!epFields.empty()) {
-			throw Error(errParams, "Equal position fields [%s] are not found in enclosing bracket; equal position fields: [%s]",
+			throw Error(errParams, "Equal position fields [{}] are not found in enclosing bracket; equal position fields: [{}]",
 						getFieldsStr(epFields.cbegin(), epFields.cend()), getEpFieldsStr());
 		}
 	}

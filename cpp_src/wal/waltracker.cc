@@ -8,7 +8,7 @@
 
 namespace reindexer {
 
-WALTracker::WALTracker(int64_t sz) : walSize_(sz) { logPrintf(LogTrace, "[WALTracker] Create LSN=%ld", lsnCounter_); }
+WALTracker::WALTracker(int64_t sz) : walSize_(sz) { logFmt(LogTrace, "[WALTracker] Create LSN={}", lsnCounter_); }
 
 WALTracker::WALTracker(const WALTracker& wal, AsyncStorage& storage)
 	: records_(wal.records_),
@@ -39,7 +39,7 @@ bool WALTracker::Set(const WALRecord& rec, lsn_t lsn, bool ignoreServer) {
 	put(lsn, rec);
 	return true;
 	// } else {
-	// logPrintf(LogWarning, "WALRecord for LSN = %d is not empty", lsn);
+	// logFmt(LogWarning, "WALRecord for LSN = {} is not empty", lsn);
 	// }
 	// return false;
 }
@@ -112,7 +112,7 @@ void WALTracker::Init(int64_t sz, int64_t minLSN, int64_t maxLSN, AsyncStorage& 
 	// input maxLSN of namespace Item or -1 if namespace is empty
 	auto data = readFromStorage(maxLSN);  // return maxLSN of wal record or input value
 										  // new table
-	logPrintf(LogTrace, "WALTracker::Init minLSN=%ld, maxLSN=%ld, size=%ld", minLSN, maxLSN, sz);
+	logFmt(LogTrace, "WALTracker::Init minLSN={}, maxLSN={}, size={}", minLSN, maxLSN, sz);
 	initPositions(sz, minLSN, maxLSN);
 	// Fill records from storage
 	for (auto& rec : data) {
@@ -224,7 +224,7 @@ lsn_t WALTracker::add(RecordT&& rec, lsn_t originLsn, bool toStorage, lsn_t oldL
 	if (lsn.isEmpty()) {
 		lsn = lsnCounter_++;
 	} else if (lsnCounter_.Counter() > originLsn.Counter()) {
-		throw Error(errLogic, "Unexpected origin LSN count: %d. Expecting at least %d", int64_t(lsn.Counter()),
+		throw Error(errLogic, "Unexpected origin LSN count: {}. Expecting at least {}", int64_t(lsn.Counter()),
 					int64_t(lsnCounter_.Counter()));
 	} else {
 		auto newCounter = lsn.Counter();

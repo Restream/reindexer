@@ -67,7 +67,7 @@ TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest2) {
 }
 
 TEST_F(JoinSelectsApi, SqlParsingTest) {
-	std::string sql =
+	constexpr std::string_view sql =
 		"select * from books_namespace where (pages > 0 and inner join (select * from authors_namespace limit 10) on "
 		"authors_namespace.authorid = "
 		"books_namespace.authorid_fk and price > 1000 or inner join (select * from genres_namespace limit 10) on "
@@ -88,10 +88,16 @@ TEST_F(JoinSelectsApi, SqlParsingTest) {
 	wrser.Reset();
 	srcQuery.Serialize(wrser);
 	reindexer::Serializer ser(wrser.Buf(), wrser.Len());
-	Query deserializedQuery = Query::Deserialize(ser);
-	ASSERT_EQ(srcQuery, deserializedQuery) << "Original query:\n"
-										   << srcQuery.GetSQL() << "\nDeserialized query:\n"
-										   << deserializedQuery.GetSQL();
+	Query deserializedQuery1 = Query::Deserialize(ser);
+	ASSERT_EQ(srcQuery, deserializedQuery1) << "Original query:\n"
+											<< srcQuery.GetSQL() << "\nDeserialized query:\n"
+											<< deserializedQuery1.GetSQL();
+
+	const auto json = srcQuery.GetJSON();
+	Query deserializedQuery2 = Query::FromJSON(json);
+	ASSERT_EQ(srcQuery, deserializedQuery2) << "Original query:\n"
+											<< srcQuery.GetSQL() << "\nDeserialized query:\n"
+											<< deserializedQuery2.GetSQL();
 }
 
 TEST_F(JoinSelectsApi, InnerJoinTest) {
@@ -613,12 +619,12 @@ TEST_F(JoinSelectsApi, TestMergeWithJoins) {
 
 // Check JOINs nested into the other JOINs (expecting errors)
 TEST_F(JoinSelectsApi, TestNestedJoinsError) {
-	constexpr char sqlPattern[] =
-		R"(select * from books_namespace %s (select * from authors_namespace %s (select * from books_namespace) on authors_namespace.authorid = books_namespace.authorid_fk) on authors_namespace.authorid = books_namespace.authorid_fk)";
+	constexpr auto sqlPattern =
+		R"(select * from books_namespace {} (select * from authors_namespace {} (select * from books_namespace) on authors_namespace.authorid = books_namespace.authorid_fk) on authors_namespace.authorid = books_namespace.authorid_fk)";
 	auto joinTypes = {"inner join", "join", "left join"};
 	for (auto& firstJoin : joinTypes) {
 		for (auto& secondJoin : joinTypes) {
-			auto sql = fmt::sprintf(sqlPattern, firstJoin, secondJoin);
+			auto sql = fmt::format(sqlPattern, firstJoin, secondJoin);
 			ValidateQueryThrow(sql, errParseSQL, "Expected ')', but found .*, line: 1 column: .*");
 		}
 	}
@@ -626,11 +632,11 @@ TEST_F(JoinSelectsApi, TestNestedJoinsError) {
 
 // Check MERGEs nested into the JOINs (expecting errors)
 TEST_F(JoinSelectsApi, TestNestedMergesInJoinsError) {
-	constexpr char sqlPattern[] =
-		R"(select * from books_namespace %s (select * from authors_namespace  merge (select * from books_namespace)) on authors_namespace.authorid = books_namespace.authorid_fk)";
+	constexpr auto sqlPattern =
+		R"(select * from books_namespace {} (select * from authors_namespace  merge (select * from books_namespace)) on authors_namespace.authorid = books_namespace.authorid_fk)";
 	auto joinTypes = {"inner join", "join", "left join"};
 	for (auto& join : joinTypes) {
-		auto sql = fmt::sprintf(sqlPattern, join);
+		auto sql = fmt::format(sqlPattern, join);
 		ValidateQueryThrow(sql, errParseSQL, "Expected ')', but found 'merge', line: 1 column: .*");
 	}
 }
@@ -750,7 +756,7 @@ TEST_F(JoinSelectsApi, CountCachedWithJoinNsUpdates) {
 
 TEST_F(JoinOnConditionsApi, TestGeneralConditions) {
 	const std::string sqlTemplate =
-		R"(select * from books_namespace inner join books_namespace on (books_namespace.authorid_fk = books_namespace.authorid_fk and books_namespace.pages %s books_namespace.pages);)";
+		R"(select * from books_namespace inner join books_namespace on (books_namespace.authorid_fk = books_namespace.authorid_fk and books_namespace.pages {} books_namespace.pages);)";
 	for (CondType condition : {CondLt, CondLe, CondGt, CondGe, CondEq}) {
 		Query queryBooks = Query::FromSQL(GetSql(sqlTemplate, condition));
 		QueryResults qr;
@@ -782,8 +788,8 @@ TEST_F(JoinOnConditionsApi, TestGeneralConditions) {
 
 TEST_F(JoinOnConditionsApi, TestComparisonConditions) {
 	const std::vector<std::pair<std::string, std::string>> sqlTemplates = {
-		{R"(select * from books_namespace inner join authors_namespace on (books_namespace.authorid_fk %s authors_namespace.authorid);)",
-		 R"(select * from books_namespace inner join authors_namespace on (authors_namespace.authorid %s books_namespace.authorid_fk);)"}};
+		{R"(select * from books_namespace inner join authors_namespace on (books_namespace.authorid_fk {} authors_namespace.authorid);)",
+		 R"(select * from books_namespace inner join authors_namespace on (authors_namespace.authorid {} books_namespace.authorid_fk);)"}};
 	const std::vector<std::pair<CondType, CondType>> conditions = {{CondLt, CondGt}, {CondLe, CondGe}, {CondGt, CondLt},
 																   {CondGe, CondLe}, {CondEq, CondEq}, {CondSet, CondSet}};
 	for (size_t i = 0; i < sqlTemplates.size(); ++i) {
@@ -883,10 +889,10 @@ TEST_F(JoinOnConditionsApi, TestLeftJoinOnCondSet) {
 		execQuery(q);
 	};
 
-	sqlTestCase(fmt::sprintf("select * from %s left join %s on %s.id IN %s.set order by id", leftNs, rightNs, leftNs, rightNs));
-	sqlTestCase(fmt::sprintf("select * from %s left join %s on %s.set IN %s.id order by id", leftNs, rightNs, rightNs, leftNs));
-	sqlTestCase(fmt::sprintf("select * from %s left join %s on %s.id = %s.set order by id", leftNs, rightNs, leftNs, rightNs));
-	sqlTestCase(fmt::sprintf("select * from %s left join %s on %s.set = %s.id order by id", leftNs, rightNs, rightNs, leftNs));
+	sqlTestCase(fmt::format("select * from {} left join {} on {}.id IN {}.set order by id", leftNs, rightNs, leftNs, rightNs));
+	sqlTestCase(fmt::format("select * from {} left join {} on {}.set IN {}.id order by id", leftNs, rightNs, rightNs, leftNs));
+	sqlTestCase(fmt::format("select * from {} left join {} on {}.id = {}.set order by id", leftNs, rightNs, leftNs, rightNs));
+	sqlTestCase(fmt::format("select * from {} left join {} on {}.set = {}.id order by id", leftNs, rightNs, rightNs, leftNs));
 }
 
 TEST_F(JoinOnConditionsApi, TestInvalidConditions) {

@@ -154,14 +154,14 @@ static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reinde
 
 	out->results_ptr = uintptr_t(result.release());
 	if (const auto count{serializedResultsCount.fetch_add(1, std::memory_order_relaxed)}; count > kMaxConcurrentQueries) {
-		logPrintf(LogWarning, "Too many serialized results: count=%d, alloced=%d", count, res_pool.Alloced());
+		logFmt(LogWarning, "Too many serialized results: count={}, alloced={}", count, res_pool.Alloced());
 	}
 }
 
 uintptr_t init_reindexer() {
 	reindexer_init_locale();
 	static std::atomic<int64_t> dbsCounter = {0};
-	auto db = new ReindexerWrapper(std::move(ReindexerConfig().WithDBName(fmt::sprintf("builtin_db_%d", dbsCounter++))));
+	auto db = new ReindexerWrapper(std::move(ReindexerConfig().WithDBName(fmt::format("builtin_db_{}", dbsCounter++))));
 	return reinterpret_cast<uintptr_t>(db);
 }
 
@@ -193,7 +193,7 @@ static void proccess_packed_item(Item& item, int /*mode*/, int state_token, rein
 				break;
 			case FormatCJson:
 				if (item.GetStateToken() != state_token) {
-					err = Error(errStateInvalidated, "stateToken mismatch:  %08X, need %08X. Can't process item", state_token,
+					err = Error(errStateInvalidated, "stateToken mismatch: {:#08x}, need {:#08x}. Can't process item", state_token,
 								item.GetStateToken());
 				} else {
 					err = item.FromCJSON(std::string_view(reinterpret_cast<const char*>(data.data), data.len),
@@ -201,7 +201,7 @@ static void proccess_packed_item(Item& item, int /*mode*/, int state_token, rein
 				}
 				break;
 			default:
-				err = Error(errNotValid, "Invalid source item format %d", format);
+				err = Error(errNotValid, "Invalid source item format {}", format);
 		}
 	} else {
 		err = item.Status();
@@ -293,7 +293,7 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 							err = rdxKeeper.db().Delete(ns, item, *res);
 							break;
 						default:
-							err = Error(errParams, "Unexpected ItemModifyMode: %d", mode);
+							err = Error(errParams, "Unexpected ItemModifyMode: {}", mode);
 							break;
 					}
 				} else {
@@ -311,7 +311,7 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 							err = rdxKeeper.db().Delete(ns, item);
 							break;
 						default:
-							err = Error(errParams, "Unexpected ItemModifyMode: %d", mode);
+							err = Error(errParams, "Unexpected ItemModifyMode: {}", mode);
 							break;
 					}
 					if (err.ok()) {
@@ -544,7 +544,7 @@ reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int as_json
 				const auto count = result->Count(), len = result->ser.Len(), cap = result->ser.Cap();
 				results2c(std::move(result), &out, as_json, pt_versions, pt_versions_count);
 				if (cap >= kWarnLargeResultsLimit) {
-					logPrintf(LogWarning, "Query too large results: count=%d size=%d,cap=%d, q=%s", count, len, cap, str2cv(query));
+					logFmt(LogWarning, "Query too large results: count={} size={},cap={}, q={}", count, len, cap, str2cv(query));
 				}
 			}
 		}
@@ -583,14 +583,14 @@ reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, i
 			ActiveQueryScope scope(q, QuerySelect);
 			err = rdxKeeper.db().Select(q, *result);
 			if (q.GetDebugLevel() >= LogError && err.code() != errOK) {
-				logPrintf(LogError, "Query error %s", err.what());
+				logFmt(LogError, "Query error {}", err.what());
 			}
 			if (err.ok()) {
 				results2c(std::move(result), &out, as_json, pt_versions, pt_versions_count);
 			} else {
 				if (result->ser.Cap() >= kWarnLargeResultsLimit) {
-					logPrintf(LogWarning, "Query too large results: count=%d size=%d,cap=%d, q=%s", result->Count(), result->ser.Len(),
-							  result->ser.Cap(), q.GetSQL());
+					logFmt(LogWarning, "Query too large results: count={} size={},cap={}, q={}", result->Count(), result->ser.Len(),
+						   result->ser.Cap(), q.GetSQL());
 				}
 			}
 		}
@@ -620,7 +620,7 @@ reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in, reindexe
 			ActiveQueryScope scope(q, QueryDelete);
 			res = rdxKeeper.db().Delete(q, *result);
 			if (q.GetDebugLevel() >= LogError && res.code() != errOK) {
-				logPrintf(LogError, "Query error %s", res.what());
+				logFmt(LogError, "Query error {}", res.what());
 			}
 			if (res.ok()) {
 				results2c(std::move(result), &out);
@@ -651,7 +651,7 @@ reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in, reindexe
 			ActiveQueryScope scope(q, QueryUpdate);
 			res = rdxKeeper.db().Update(q, *result);
 			if (q.GetDebugLevel() >= LogError && res.code() != errOK) {
-				logPrintf(LogError, "Query error %s", res.what());
+				logFmt(LogError, "Query error {}", res.what());
 			}
 			if (res.ok()) {
 				int32_t ptVers = -1;
@@ -751,7 +751,7 @@ reindexer_ret reindexer_enum_meta(uintptr_t rx, reindexer_string ns, reindexer_c
 		out.data = uintptr_t(ser.Buf());
 		out.results_ptr = uintptr_t(results.release());
 		if (const auto count{serializedResultsCount.fetch_add(1, std::memory_order_relaxed)}; count > kMaxConcurrentQueries) {
-			logPrintf(LogWarning, "Too many serialized results: count=%d, alloced=%d", count, res_pool.Alloced());
+			logFmt(LogWarning, "Too many serialized results: count={}, alloced={}", count, res_pool.Alloced());
 		}
 	}
 	return ret2c(res, out);
@@ -784,7 +784,7 @@ reindexer_ret reindexer_get_meta(uintptr_t rx, reindexer_string ns, reindexer_st
 		out.data = uintptr_t(results->ser.Buf());
 		out.results_ptr = uintptr_t(results.release());
 		if (const auto count{serializedResultsCount.fetch_add(1, std::memory_order_relaxed)}; count > kMaxConcurrentQueries) {
-			logPrintf(LogWarning, "Too many serialized results: count=%d, alloced=%d", count, res_pool.Alloced());
+			logFmt(LogWarning, "Too many serialized results: count={}, alloced={}", count, res_pool.Alloced());
 		}
 	}
 	return ret2c(res, out);
@@ -807,7 +807,7 @@ reindexer_error reindexer_free_buffer(reindexer_resbuffer in) {
 	constexpr static put_results_to_pool putResultsToPool;
 	putResultsToPool(reinterpret_cast<QueryResultsWrapper*>(in.results_ptr));
 	if (const auto count{serializedResultsCount.fetch_sub(1, std::memory_order_relaxed)}; count < 1) {
-		logPrintf(LogWarning, "Too many deserialized results: count=%d, alloced=%d", count, res_pool.Alloced());
+		logFmt(LogWarning, "Too many deserialized results: count={}, alloced={}", count, res_pool.Alloced());
 	}
 	return error2c(Error());
 }

@@ -44,10 +44,10 @@ void IndexText<T>::initSearchers() {
 			}
 		}
 		if rx_unlikely (ftFields_.size() != fields.size()) {
-			throw Error(errParams, "Composite fulltext index '%s' contains duplicated fields", this->name_);
+			throw Error(errParams, "Composite fulltext index '{}' contains duplicated fields", this->name_);
 		}
 		if rx_unlikely (ftFields_.size() > kMaxFtCompositeFields) {
-			throw Error(errParams, "Unable to create composite fulltext '%s' index with %d fields. Fields count limit is %d", this->name_,
+			throw Error(errParams, "Unable to create composite fulltext '{}' index with {} fields. Fields count limit is {}", this->name_,
 						ftFields_.size(), kMaxFtCompositeFields);
 		}
 	}
@@ -114,7 +114,7 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType cond
 										 const BaseFunctionCtx::Ptr& ctx, const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 	if rx_unlikely (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
-		throw Error(errParams, "Full text index (%s) support only EQ or SET condition with 1 or 2 parameter", Index::Name());
+		throw Error(errParams, "Full text index ({}) support only EQ or SET condition with 1 or 2 parameter", Index::Name());
 	}
 
 	auto mergeStatuses = this->GetFtMergeStatuses(rdxCtx);
@@ -139,7 +139,7 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType cond
 template <typename T>
 SelectKeyResults IndexText<T>::resultFromCache(const VariantArray& keys, FtIdSetCache::Iterator&& it, const BaseFunctionCtx::Ptr& ctx) {
 	if rx_unlikely (cfg_->logLevel >= LogInfo) {
-		logPrintf(LogInfo, "Get search results for '%s' in '%s' from cache", keys[0].As<std::string>(),
+		logFmt(LogInfo, "Get search results for '{}' in '{}' from cache", keys[0].As<std::string>(),
 				  this->payloadType_ ? this->payloadType_->Name() : "");
 	}
 	assertrx(it.val.ctx);
@@ -153,7 +153,7 @@ SelectKeyResults IndexText<T>::doSelectKey(const VariantArray& keys, const std::
 										   FtMergeStatuses&& mergeStatuses, FtUseExternStatuses useExternSt, bool inTransaction,
 										   RankSortType rankSortType, const BaseFunctionCtx::Ptr& bctx, const RdxContext& rdxCtx) {
 	if rx_unlikely (cfg_->logLevel >= LogInfo) {
-		logPrintf(LogInfo, "Searching for '%s' in '%s' %s", keys[0].As<std::string>(), this->payloadType_ ? this->payloadType_->Name() : "",
+		logFmt(LogInfo, "Searching for '{}' in '{}' {}", keys[0].As<std::string>(), this->payloadType_ ? this->payloadType_->Name() : "",
 				  ckey ? "(will cache)" : "");
 	}
 
@@ -207,7 +207,7 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType cond
 										 const BaseFunctionCtx::Ptr& ctx, FtPreselectT&& preselect, const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 	if rx_unlikely (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
-		throw Error(errParams, "Full text index (%s) support only EQ or SET condition with 1 or 2 parameter", Index::Name());
+		throw Error(errParams, "Full text index ({}) support only EQ or SET condition with 1 or 2 parameter", Index::Name());
 	}
 	return doSelectKey(keys, std::nullopt, std::move(preselect), FtUseExternStatuses::Yes, opts.inTransaction,
 					   RankSortType(opts.rankSortType), ctx, rdxCtx);

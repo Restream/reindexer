@@ -78,28 +78,29 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 		if (cached.valid && cached.val.IsInitialized()) {
 			result.totalCount += cached.val.totalCount;
 			if (logLevel >= LogTrace) {
-				logPrintf(LogInfo, "[%s] using total count value from cache: %d", ns_->name_, result.totalCount);
+				logFmt(LogInfo, "[{}] using total count value from cache: {}", ns_->name_, result.totalCount);
 			}
 		} else {
 			needPutCachedTotal = cached.valid;
 			needCalcTotal = true;
 			if (logLevel >= LogTrace) {
-				logPrintf(LogTrace, "[%s] total count value for cache will be calculated by query", ns_->name_);
+				logFmt(LogTrace, "[{}] total count value for cache will be calculated by query", ns_->name_);
 			}
 		}
 	}
 
-	OnConditionInjections explainInjectedOnConditions;
 	auto aggregators = getAggregators(aggregationQueryRef.aggregations_, aggregationQueryRef.GetStrictMode());
 	QueryPreprocessor qPreproc(QueryEntries{ctx.query.Entries()}, aggregators, ns_, ctx);
 	qPreproc.InitIndexedQueries();
+
+	OnConditionInjections explainInjectedOnConditions;
 	if (ctx.joinedSelectors) {
 		qPreproc.InjectConditionsFromJoins(*ctx.joinedSelectors, explainInjectedOnConditions, logLevel, ctx.inTransaction,
 										   ctx.sortingContext.enableSortOrders, rdxCtx);
 		explain.PutOnConditionInjections(&explainInjectedOnConditions);
 	}
 
-	const bool aggregationsOnly = aggregators.size() > 1 || (aggregators.size() == 1 && aggregators[0].Type() != AggDistinct);
+	bool aggregationsOnly = aggregators.size() > 1 || (aggregators.size() == 1 && aggregators[0].Type() != AggDistinct);
 	auto rankedTypeQuery = qPreproc.GetRankedTypeQuery();
 	if (rankedTypeQuery != RankedTypeQuery::No && rdxCtx.IsShardingParallelExecution()) {
 		throw Error{errLogic, "Full text or float vector query by several sharding hosts"};
@@ -111,7 +112,7 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 			if (rankedTypeQuery != ctx.rankedTypeQuery) {
 				throw Error{errNotValid,
 							"In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions "
-							"at the same time: '%s' VS '%s'",
+							"at the same time: '{}' VS '{}'",
 							rankedTypeToErr(ctx.rankedTypeQuery), rankedTypeToErr(rankedTypeQuery)};
 			}
 		}
@@ -154,6 +155,9 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 		ctx.isForceAll = true;
 	}
 	const bool isForceAll = ctx.isForceAll;
+	const bool aggregationsOnlyOrig = aggregationsOnly;
+	const bool hasOnlyDistinctAgg = aggregators.size() == 1 && aggregators[0].Type() == AggDistinct;
+	const bool hasNoLimits = !ctx.query.HasOffset() && !ctx.query.HasLimit();
 	do {
 		rankedTypeQuery = qPreproc.GetRankedTypeQuery();
 		const IsRanked isRanked{rankedTypeQuery != RankedTypeQuery::No};
@@ -253,7 +257,7 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 					preResult.payload.template emplace<SelectIteratorContainer>();
 					std::get<SelectIteratorContainer>(preResult.payload).Append(qres.cbegin(), qres.cend());
 					if rx_unlikely (logLevel >= LogInfo) {
-						logPrintf(LogInfo, "Built preResult (expected %d iterations) with %d iterators, q='%s'",
+						logFmt(LogInfo, "Built preResult (expected {} iterations) with {} iterators, q='{}'",
 								  preselectProps.qresMaxIterations, qres.Size(), ctx.query.GetSQL());
 					}
 					return;
@@ -366,6 +370,16 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 		lctx.calcTotal = needCalcTotal &&
 						 (hasComparators || qPreproc.MoreThanOneEvaluation() || qres.Size() > 1 || qres.Get<SelectIterator>(0).size() > 1);
 
+		// Aggregations can be calculated correctly in a single pass over the items array
+		// only if there is no limit and offset in the query,
+		// or items are already ordered according to the sorting from the query.
+		// At the same time, for a single Distinct-aggregation we must select
+		// items with unique values, and recalculate the values of Distinct-aggregation
+		// on a correctly formed set of items after applying a select loop.
+		lctx.calcAggsImmediately =
+			hasOnlyDistinctAgg || hasNoLimits || ctx.sortingContext.isOptimizationEnabled() || ctx.sortingContext.sortId();
+		aggregationsOnly = aggregationsOnlyOrig && lctx.calcAggsImmediately;
+
 		if (qPreproc.IsFtExcluded()) {
 			if (reverse && hasComparators) {
 				selectLoop<true, true, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
@@ -410,7 +424,23 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 		if (!ctx.inTransaction) {
 			ThrowOnCancel(rdxCtx);
 		}
-	} while (qPreproc.NeedNextEvaluation(lctx.start, lctx.count, ctx.matchedAtLeastOnce, qresHolder));
+	} while (qPreproc.NeedNextEvaluation(lctx.start, lctx.count, ctx.matchedAtLeastOnce, qresHolder, needCalcTotal));
+
+	const bool needRecalcDistincts = hasOnlyDistinctAgg && !hasNoLimits;
+	if ((aggregationsOnlyOrig && !lctx.calcAggsImmediately) || needRecalcDistincts) {
+		if (needRecalcDistincts) {
+			aggregators.front().ResetDistinctSet();
+		}
+		for (auto it = result.begin() + initTotalCount; it != result.end(); ++it) {
+			auto& pl = ns_->items_[it.GetItemRef().Id()];
+			for (auto& aggregator : aggregators) {
+				aggregator.Aggregate(pl);
+			}
+		}
+		if (!needRecalcDistincts) {
+			result.Erase(result.Items().begin() + initTotalCount, result.Items().end());
+		}
+	}
 
 	processLeftJoins(result, ctx, resultInitSize, rdxCtx);
 	if (!ctx.sortingContext.expressions.empty()) {
@@ -474,7 +504,7 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 	explain.PutJoinedSelectors(ctx.joinedSelectors);
 
 	if rx_unlikely (logLevel >= LogInfo) {
-		logPrintf(LogInfo, "%s", ctx.query.GetSQL());
+		logFmt(LogInfo, "{}", ctx.query.GetSQL());
 		explain.LogDump(logLevel);
 	}
 	if (ctx.query.NeedExplain()) {
@@ -485,23 +515,23 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 		}
 	}
 	if rx_unlikely (logLevel >= LogTrace) {
-		logPrintf(LogInfo, "Query returned: [%s]; total=%d", result.Dump(), result.totalCount);
+		logFmt(LogInfo, "Query returned: [{}]; total={}", result.Dump(), result.totalCount);
 	}
 
 	if (needPutCachedTotal) {
 		if rx_unlikely (logLevel >= LogTrace) {
-			logPrintf(LogInfo, "[%s] put totalCount value into query cache: %d ", ns_->name_, result.totalCount);
+			logFmt(LogInfo, "[{}] put totalCount value into query cache: {} ", ns_->name_, result.totalCount);
 		}
 		ns_->queryCountCache_.Put(ckey, {static_cast<size_t>(result.totalCount - initTotalCount)});
 	}
 	if constexpr (std::is_same_v<JoinPreResultCtx, JoinPreResultBuildCtx>) {
 		if rx_unlikely (logLevel >= LogTrace) {
 			std::visit(overloaded{[&](const IdSet& ids) {
-									  logPrintf(LogInfo, "Built idset preResult (expected %d iterations) with %d ids, q = '%s'",
+									  logFmt(LogInfo, "Built idset preResult (expected {} iterations) with {} ids, q = '{}'",
 												explain.Iterations(), ids.size(), ctx.query.GetSQL());
 								  },
 								  [&](const JoinPreResult::Values& values) {
-									  logPrintf(LogInfo, "Built values preResult (expected %d iterations) with %d values, q = '%s'",
+									  logFmt(LogInfo, "Built values preResult (expected {} iterations) with {} values, q = '{}'",
 												explain.Iterations(), values.Size(), ctx.query.GetSQL());
 								  },
 								  [](const SelectIteratorContainer&) { throw_as_assert; }},
@@ -574,10 +604,10 @@ public:
 		const joins::ItemIterator it{&joinedResults_, itemRef.Id()};
 		const auto jfIt = it.at(nsIdx_);
 		if (jfIt == it.end() || jfIt.ItemsCount() == 0) {
-			throw Error(errQueryExec, "Not found value joined from ns %s", ns_.name_);
+			throw Error(errQueryExec, "Not found value joined from ns {}", ns_.name_);
 		}
 		if (jfIt.ItemsCount() > 1) {
-			throw Error(errQueryExec, "Found more than 1 value joined from ns %s", ns_.name_);
+			throw Error(errQueryExec, "Found more than 1 value joined from ns {}", ns_.name_);
 		}
 		return jfIt[0].Value();
 	}
@@ -706,13 +736,13 @@ public:
 		if (const auto [iter, success] = map_.emplace(std::forward<V>(value), cost_); success) {
 			++cost_;
 		} else if (iter->second != cost_ - 1) {
-			static constexpr auto errMsg = "Forced sort value '%s' is duplicated. Deduplicated by the first occurrence.";
+			static constexpr auto errMsg = "Forced sort value '{}' is duplicated. Deduplicated by the first occurrence.";
 			if constexpr (std::is_same_v<V, Variant>) {
 				// NOLINTNEXTLINE (bugprone-use-after-move,-warnings-as-errors)
-				logPrintf(LogInfo, errMsg, value.template As<std::string>());
+				logFmt(LogInfo, errMsg, value.template As<std::string>());
 			} else {
 				// NOLINTNEXTLINE (bugprone-use-after-move,-warnings-as-errors)
-				logPrintf(LogInfo, errMsg, Variant{std::forward<V>(value)}.template As<std::string>());
+				logFmt(LogInfo, errMsg, Variant{std::forward<V>(value)}.template As<std::string>());
 			}
 		}
 	}
@@ -1194,7 +1224,8 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 						}
 					}
 					if (!multiSortFinished) {
-						addSelectResult<aggregationsOnly>(rank, rowId, properRowId, sctx, ctx.aggregators, result, ctx.preselectForFt);
+						addSelectResult<aggregationsOnly>(rank, rowId, properRowId, sctx, ctx.aggregators, result, ctx.calcAggsImmediately,
+														  ctx.preselectForFt);
 					}
 					if (lastResSize < result.Count()) {
 						if (ctx.start) {
@@ -1205,7 +1236,8 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 				if (ctx.start) {
 					--ctx.start;
 				} else if (ctx.count) {
-					addSelectResult<aggregationsOnly>(rank, rowId, properRowId, sctx, ctx.aggregators, result, ctx.preselectForFt);
+					addSelectResult<aggregationsOnly>(rank, rowId, properRowId, sctx, ctx.aggregators, result, ctx.calcAggsImmediately,
+													  ctx.preselectForFt);
 					--ctx.count;
 					if (!ctx.count && sortingOptions.multiColumn && !multiSortFinished) {
 						getSortIndexValue(sctx.sortingContext, properRowId, prevValues, rank,
@@ -1218,7 +1250,7 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 				result.totalCount += int(ctx.calcTotal);
 			} else {
 				assertf(static_cast<size_t>(properRowId) < result.rowId2Vdoc->size(),
-						"properRowId = %d; rowId = %d; result.rowId2Vdoc->size() = %d", properRowId, rowId, result.rowId2Vdoc->size());
+						"properRowId = {}; rowId = {}; result.rowId2Vdoc->size() = {}", properRowId, rowId, result.rowId2Vdoc->size());
 				result.statuses[(*result.rowId2Vdoc)[properRowId]] = 0;
 				result.rowIds[properRowId] = true;
 			}
@@ -1347,19 +1379,23 @@ void NsSelecter::calculateSortExpressions(RankT rank, IdType rowId, IdType prope
 
 template <bool aggregationsOnly, typename JoinPreResultCtx>
 void NsSelecter::addSelectResult(RankT rank, IdType rowId, IdType properRowId, SelectCtxWithJoinPreSelect<JoinPreResultCtx>& sctx,
-								 h_vector<Aggregator, 4>& aggregators, LocalQueryResults& result, bool preselectForFt) {
+								 h_vector<Aggregator, 4>& aggregators, LocalQueryResults& result, bool needCalcAggs, bool preselectForFt) {
 	if (preselectForFt) {
 		return;
 	}
-	for (auto& aggregator : aggregators) {
-		aggregator.Aggregate(ns_->items_[properRowId]);
+
+	if (needCalcAggs) {
+		for (auto& aggregator : aggregators) {
+			aggregator.Aggregate(ns_->items_[properRowId]);
+		}
 	}
 	if constexpr (aggregationsOnly) {
 		return;
 	}
-	// Due to how aggregationsOnly is calculated the aggregators here can either be empty or contain only one value with the Distinct type
-	if (!aggregators.empty() && !aggregators.front().DistinctChanged()) {
-		return;
+	if (needCalcAggs) {
+		if (!aggregators.empty() && aggregators.front().Type() == AggType::AggDistinct && !aggregators.front().DistinctChanged()) {
+			return;
+		}
 	}
 
 	if constexpr (std::is_same_v<JoinPreResultCtx, JoinPreResultBuildCtx>) {
@@ -1401,7 +1437,7 @@ void NsSelecter::addSelectResult(RankT rank, IdType rowId, IdType properRowId, S
 		const int kLimitItems = 10000000;
 		size_t sz = result.Count();
 		if (sz >= kLimitItems && !(sz % kLimitItems)) {
-			logPrintf(LogWarning, "Too big query results ns='%s',count='%d',rowId='%d',q='%s'", ns_->name_, sz, properRowId,
+			logFmt(LogWarning, "Too big query results ns='{}',count='{}',rowId='{}',q='{}'", ns_->name_, sz, properRowId,
 					  sctx.query.GetSQL());
 		}
 	}
@@ -1415,14 +1451,14 @@ void NsSelecter::checkStrictModeAgg(StrictMode strictMode, std::string_view name
 
 	if (strictMode == StrictModeIndexes) {
 		throw Error(errParams,
-					"Current query strict mode allows aggregate index fields only. There are no indexes with name '%s' in namespace '%s'",
+					"Current query strict mode allows aggregate index fields only. There are no indexes with name '{}' in namespace '{}'",
 					name, nsName);
 	}
 	if (strictMode == StrictModeNames) {
 		if (tagsMatcher.path2tag(name).empty()) {
 			throw Error(
 				errParams,
-				"Current query strict mode allows aggregate existing fields only. There are no fields with name '%s' in namespace '%s'",
+				"Current query strict mode allows aggregate existing fields only. There are no fields with name '{}' in namespace '{}'",
 				name, nsName);
 		}
 	}
@@ -1457,7 +1493,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const std::vector<AggregateEn
 			}
 			if (ns_->getIndexByNameOrJsonPath(ag.Fields()[i], idx)) {
 				if (ns_->indexes_[idx]->IsFloatVector()) {
-					throw Error(errQueryExec, "Aggregation by float vector index is not allowed: %s", ag.Fields()[i]);
+					throw Error(errQueryExec, "Aggregation by float vector index is not allowed: {}", ag.Fields()[i]);
 				}
 				if (ag.Type() == AggFacet && ag.Fields().size() > 1 && ns_->indexes_[idx]->Opts().IsArray()) {
 					throw Error(errQueryExec, "Multifield facet cannot contain an array field");
@@ -1482,7 +1518,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const std::vector<AggregateEn
 		}
 		for (size_t i = 0; i < sortingEntries.size(); ++i) {
 			if (sortingEntries[i].field == NotFilled) {
-				throw Error(errQueryExec, "The aggregation %s cannot provide sort by '%s'", AggTypeToStr(ag.Type()),
+				throw Error(errQueryExec, "The aggregation {} cannot provide sort by '{}'", AggTypeToStr(ag.Type()),
 							ag.Sorting()[i].expression);
 			}
 		}
@@ -1502,7 +1538,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const std::vector<AggregateEn
 		for (const std::string& name : agg.Names()) {
 			if (std::find_if(distinctIndexes.cbegin(), distinctIndexes.cend(),
 							 [&ret, &name](size_t idx) { return ret[idx].Names()[0] == name; }) == distinctIndexes.cend()) {
-				throw Error(errQueryExec, "Cannot be combined several distinct and non distinct aggregator on index %s", name);
+				throw Error(errQueryExec, "Cannot be combined several distinct and non distinct aggregator on index {}", name);
 			}
 		}
 	}
@@ -1541,14 +1577,14 @@ void NsSelecter::prepareSortJoinedIndex(size_t nsIdx, std::string_view column, i
 bool NsSelecter::validateField(StrictMode strictMode, std::string_view name, const NamespaceName& nsName, const TagsMatcher& tagsMatcher) {
 	if (strictMode == StrictModeIndexes) {
 		throw Error(errStrictMode,
-					"Current query strict mode allows sort by index fields only. There are no indexes with name '%s' in namespace '%s'",
+					"Current query strict mode allows sort by index fields only. There are no indexes with name '{}' in namespace '{}'",
 					name, nsName);
 	}
 	if (tagsMatcher.path2tag(name).empty()) {
 		if (strictMode == StrictModeNames) {
 			throw Error(
 				errStrictMode,
-				"Current query strict mode allows sort by existing fields only. There are no fields with name '%s' in namespace '%s'", name,
+				"Current query strict mode allows sort by existing fields only. There are no fields with name '{}' in namespace '{}'", name,
 				nsName);
 		}
 		return false;
@@ -1560,7 +1596,7 @@ static void removeQuotesFromExpression(std::string& expression) {
 	expression.erase(std::remove(expression.begin(), expression.end(), '"'), expression.end());
 }
 
-void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, IsRanked isRanked, bool availableSelectBySortIndex) {
+void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, IsRanked isRanked, bool availableSelectBySortIndex) const {
 	using namespace SortExprFuncs;
 	const auto strictMode = ctx.inTransaction
 								? StrictModeNone
@@ -1581,7 +1617,7 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, I
 			if (sortingEntry.index >= 0) {
 				reindexer::Index* sortIndex = ns_->indexes_[sortingEntry.index].get();
 				if (sortIndex->IsFloatVector()) {
-					throw Error(errQueryExec, "Ordering by float vector index is not allowed: '%s'", sortingEntry.expression);
+					throw Error(errQueryExec, "Ordering by float vector index is not allowed: '{}'", sortingEntry.expression);
 				}
 				entry.index = sortIndex;
 				entry.rawData = SortingContext::RawDataParams(sortIndex->ColumnData(), ns_->payloadType_, sortingEntry.index);
@@ -1759,7 +1795,7 @@ public:
 				return false;
 			}
 		}
-		throw Error(errLogic, "Unexpected op value: %d", int(op));
+		throw Error(errLogic, "Unexpected op value: {}", int(op));
 	}
 
 private:
@@ -1924,7 +1960,7 @@ bool NsSelecter::isSortOptimizationEffective(const QueryEntries& qentries, Selec
 
 void NsSelecter::writeAggregationResultMergeSubQuery(LocalQueryResults& result, h_vector<Aggregator, 4>& aggregators, SelectCtx& ctx) {
 	if (result.aggregationResults.size() < aggregators.size()) {
-		throw Error(errQueryExec, "Merged query(%s) aggregators count (%d) does not match to the parent query aggregations (%d)",
+		throw Error(errQueryExec, "Merged query({}) aggregators count ({}) does not match to the parent query aggregations ({})",
 					ctx.query.GetSQL(false), aggregators.size(), result.aggregationResults.size());
 	}
 	for (size_t i = 0; i < aggregators.size(); i++) {
@@ -1933,7 +1969,7 @@ void NsSelecter::writeAggregationResultMergeSubQuery(LocalQueryResults& result, 
 		if (r.type != parentRes.type || r.fields != parentRes.fields) {
 			std::stringstream strParentRes;
 			std::stringstream strR;
-			throw Error(errQueryExec, "Aggregation incorrect ns %s type of parent %s type of query %s parent field %s query field %s",
+			throw Error(errQueryExec, "Aggregation incorrect ns {} type of parent {} type of query {} parent field {} query field {}",
 						ns_->name_, AggTypeToStr(parentRes.type), AggTypeToStr(r.type), parentRes.DumpFields(strParentRes).str(),
 						r.DumpFields(strR).str());
 		}
@@ -1982,7 +2018,7 @@ void NsSelecter::writeAggregationResultMergeSubQuery(LocalQueryResults& result, 
 }
 
 RX_NO_INLINE void NsSelecter::throwIncorrectRowIdInSortOrders(int rowId, const Index& firstSortIndex, const SelectIterator& firstIterator) {
-	throw Error(errLogic, "FirstIterator: %s, firstSortIndex: %s, firstSortIndex size: %d, rowId: %d", firstIterator.name,
+	throw Error(errLogic, "FirstIterator: {}, firstSortIndex: {}, firstSortIndex size: {}, rowId: {}", firstIterator.name,
 				firstSortIndex.Name(), static_cast<int>(firstSortIndex.SortOrders().size()), rowId);
 }
 

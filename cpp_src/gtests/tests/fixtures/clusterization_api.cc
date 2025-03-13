@@ -44,7 +44,7 @@ void ClusterizationApi::Cluster::initCluster(size_t count, size_t initialServerI
 		InitServer(i, clusterConf, replConf, initialServerId);
 
 		[[maybe_unused]] auto err = clients_.emplace_back().Connect(svc_.back().Get(false)->kRPCDsn, loop_);
-		assertf(err.ok(), "%s", err.what());
+		assertf(err.ok(), "{}", err.what());
 	}
 }
 
@@ -274,34 +274,40 @@ void ClusterizationApi::Cluster::doWaitSync(std::string_view ns, std::vector<Ser
 			PrintClusterInfo(ns, svc);
 		}
 		ASSERT_TRUE(now < syncTime);
-		bool empty = true;
-		ReplicationTestState state;
-		syncedCnt = 0;
-		for (auto& node : svc) {
-			if (node.IsRunning()) {
-				auto xstate = node.Get(false)->GetState(std::string(ns));
-				if (empty) {
-					state = xstate;
-					empty = false;
-				}
-				if (!state.tmStatetoken.has_value() || !xstate.tmStatetoken.has_value() || !xstate.tmVersion.has_value() ||
-					!state.tmVersion.has_value()) {
-					continue;
-				}
-				const bool hasSameTms =
-					xstate.tmStatetoken.value() == state.tmStatetoken.value() && xstate.tmVersion.value() == state.tmVersion.value();
-				const bool hasSameLSN = xstate.lsn == state.lsn && xstate.nsVersion == state.nsVersion;
-				if (hasSameLSN && hasSameTms && (expectedLsn.isEmpty() || state.lsn == expectedLsn) &&
-					(expectedNsVersion.isEmpty() || state.nsVersion == expectedNsVersion)) {
-					ASSERT_EQ(xstate.dataHash, state.dataHash);
-					++syncedCnt;
-				}
-			} else {
-				++syncedCnt;
-			}
-		}
+		syncedCnt = getSyncCnt(ns, svc, expectedLsn, expectedNsVersion);
 		std::this_thread::sleep_for(pause);
 	}
+}
+
+size_t ClusterizationApi::Cluster::getSyncCnt(std::string_view ns, std::vector<ServerControl>& svc, lsn_t expectedLsn,
+											  lsn_t expectedNsVersion) {
+	size_t syncedCnt = 0;
+	bool empty = true;
+	ReplicationTestState state;
+	for (auto& node : svc) {
+		if (node.IsRunning()) {
+			auto xstate = node.Get(false)->GetState(std::string(ns));
+			if (empty) {
+				state = xstate;
+				empty = false;
+			}
+			if (!state.tmStatetoken.has_value() || !xstate.tmStatetoken.has_value() || !xstate.tmVersion.has_value() ||
+				!state.tmVersion.has_value()) {
+				continue;
+			}
+			const bool hasSameTms =
+				xstate.tmStatetoken.value() == state.tmStatetoken.value() && xstate.tmVersion.value() == state.tmVersion.value();
+			const bool hasSameLSN = xstate.lsn == state.lsn && xstate.nsVersion == state.nsVersion;
+			if (hasSameLSN && hasSameTms && (expectedLsn.isEmpty() || state.lsn == expectedLsn) &&
+				(expectedNsVersion.isEmpty() || state.nsVersion == expectedNsVersion)) {
+				EXPECT_EQ(xstate.dataHash, state.dataHash);
+				++syncedCnt;
+			}
+		} else {
+			++syncedCnt;
+		}
+	}
+	return syncedCnt;
 }
 
 void ClusterizationApi::Cluster::WaitSync(std::string_view ns, lsn_t expectedLsn, lsn_t expectedNsVersion,

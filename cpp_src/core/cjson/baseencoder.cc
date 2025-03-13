@@ -150,7 +150,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 
 	if (tagField >= 0) {
 		if (!pl) {
-			throw Error(errParams, "Trying to encode index field %d without payload", tagField);
+			throw Error(errParams, "Trying to encode index field {} without payload", tagField);
 		}
 		assertrx(tagField < pl->NumFields());
 	}
@@ -168,7 +168,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 	if (tagField >= 0) {
 		const auto& f = pl->Type().Field(tagField);
 		if (!f.IsArray() && objectScalarIndexes_.test(tagField)) {
-			throw Error(errParams, "Non-array field '%s' [%d] from '%s' can only be encoded once.", f.Name(), tagField, pl->Type().Name());
+			throw Error(errParams, "Non-array field '{}' [{}] from '{}' can only be encoded once.", f.Name(), tagField, pl->Type().Name());
 		}
 		int& cnt = fieldsoutcnt_[tagField];
 		switch (tagType) {

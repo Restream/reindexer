@@ -75,7 +75,7 @@ Error HTTPServer::execSqlQueryByType(std::string_view sqlQuery, reindexer::Query
 				.TruncateNamespace(q.NsName());
 		}
 	}
-	throw Error(errParams, "unknown query type %d", int(q.Type()));
+	throw Error(errParams, "unknown query type {}", int(q.Type()));
 }
 
 int HTTPServer::GetSQLQuery(http::Context& ctx) {
@@ -130,7 +130,7 @@ int HTTPServer::GetSQLSuggest(http::Context& ctx) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, err.whatStr()));
 	}
 
-	logPrintf(LogTrace, "GetSQLSuggest() incoming data: %s, %d", sqlQuery, bytePos);
+	logFmt(LogTrace, "GetSQLSuggest() incoming data: {}, {}", sqlQuery, bytePos);
 
 	std::vector<std::string> suggestions;
 	err = getDB<kRoleDataRead>(ctx).GetSqlSuggestions(sqlQuery, bytePos, suggestions);
@@ -651,7 +651,7 @@ int HTTPServer::PutMetaByKey(http::Context& ctx) {
 			return jsonStatus(ctx, http::HttpStatus(err));
 		}
 	} catch (const gason::Exception& ex) {
-		return jsonStatus(ctx, http::HttpStatus(Error(errParseJson, "Meta: %s", ex.what())));
+		return jsonStatus(ctx, http::HttpStatus(Error(errParseJson, "Meta: {}", ex.what())));
 	}
 	return jsonStatus(ctx);
 }
@@ -1385,7 +1385,7 @@ int HTTPServer::queryResultsJSON(http::Context& ctx, reindexer::QueryResults& re
 		auto item = db->NewItem(res.GetNamespaces()[0]);
 		auto err = item.FromCJSON(cjson);
 		if (!err.ok()) {
-			throw Error(err.code(), "Unable to parse CJSON for WAL item: %s", err.whatStr());
+			throw Error(err.code(), "Unable to parse CJSON for WAL item: {}", err.whatStr());
 		}
 		return std::string(item.GetJSON());
 	};
@@ -1504,7 +1504,7 @@ int HTTPServer::queryResultsCSV(http::Context& ctx, reindexer::QueryResults& res
 	for (size_t i = 0; it != res.end() && i < limit; ++i, ++it) {
 		auto err = it.GetCSV(wrSerChunk, ordering);
 		if (!err.ok()) {
-			throw Error(err.code(), "Unable to get %d item as CSV: %s", i, err.whatStr());
+			throw Error(err.code(), "Unable to get {} item as CSV: {}", i, err.whatStr());
 		}
 
 		wrSerChunk << '\n';
@@ -1728,7 +1728,7 @@ int HTTPServer::queryResults(http::Context& ctx, reindexer::QueryResults& res, b
 	} else if (format == "csv-file"sv) {
 		CounterGuardAIRL32 cg(currentCsvDownloads_);
 		if (currentCsvDownloads_.load() > kMaxConcurrentCsvDownloads) {
-			throw Error(errForbidden, "Unable to start new CSV download. Limit of concurrent downloads is %d", kMaxConcurrentCsvDownloads);
+			throw Error(errForbidden, "Unable to start new CSV download. Limit of concurrent downloads is {}", kMaxConcurrentCsvDownloads);
 		}
 		return queryResultsCSV(ctx, res, limit, offset);
 	} else {
@@ -1851,7 +1851,7 @@ Reindexer HTTPServer::getDB(http::Context& ctx, std::string* dbNameOut) {
 	if (!timeoutHeader.empty()) {
 		timeoutSec = try_stoi(timeoutHeader);
 		if rx_unlikely (!timeoutSec.has_value()) {
-			logger_.warn("Unable to get integer value from 'Request-Timeout'-header('%s'). Using default value", timeoutHeader);
+			logger_.warn("Unable to get integer value from 'Request-Timeout'-header('{}'). Using default value", timeoutHeader);
 		}
 	}
 	std::chrono::seconds timeout;
@@ -1874,7 +1874,7 @@ std::string HTTPServer::getNameFromJson(std::string_view json) {
 		auto root = parser.Parse(json);
 		return root["name"].As<std::string>();
 	} catch (const gason::Exception& ex) {
-		throw Error(errParseJson, "getNameFromJson: %s", ex.what());
+		throw Error(errParseJson, "getNameFromJson: {}", ex.what());
 	}
 }
 
@@ -2079,7 +2079,7 @@ int HTTPServer::GetSQLQueryTx(http::Context& ctx) {
 			case QueryTruncate:
 				return status(ctx, http::HttpStatus(http::StatusInternalServerError, "Transactions support update/delete queries only"));
 		}
-		return status(ctx, http::HttpStatus(Error(errLogic, "Unexpected query type: %d", int(q.type_))));
+		return status(ctx, http::HttpStatus(Error(errLogic, "Unexpected query type: {}", int(q.type_))));
 	} catch (const Error& e) {
 		return status(ctx, http::HttpStatus(e));
 	}

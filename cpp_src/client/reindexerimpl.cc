@@ -36,7 +36,7 @@ ReindexerImpl::~ReindexerImpl() { stop(); }
 Error ReindexerImpl::Connect(const DSN& dsn, const client::ConnectOpts& opts) {
 	std::lock_guard lock(workersMtx_);
 	if (workers_.size() && workers_[0].th.joinable()) {
-		return Error(errLogic, "Client is already started (%s)", dsn);
+		return Error(errLogic, "Client is already started ({})", dsn);
 	}
 	lastError_.Set(Error());
 	runningWorkers_ = 0;
@@ -707,7 +707,7 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 							break;
 						case QuerySelect:
 						case QueryTruncate:
-							err = Error(errParams, "Incorrect query type in transaction modify %d", int(std::get<1>(cd->arguments).type_));
+							err = Error(errParams, "Incorrect query type in transaction modify {}", int(std::get<1>(cd->arguments).type_));
 					}
 				}
 				if (cd->ctx.cmpl()) {

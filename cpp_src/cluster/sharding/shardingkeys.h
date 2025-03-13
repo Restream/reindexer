@@ -35,7 +35,7 @@ public:
 		}
 		void ValidateTypes(const Variant& lhs, const Variant& rhs) const {
 			if (!lhs.Type().IsSame(rhs.Type())) {
-				throw Error(errLogic, "Comparator internal error. Different compared types. Left - %s. Right - %s", lhs.Type().Name(),
+				throw Error(errLogic, "Comparator internal error. Different compared types. Left - {}. Right - {}", lhs.Type().Name(),
 							rhs.Type().Name());
 			}
 		}

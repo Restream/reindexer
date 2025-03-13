@@ -16,7 +16,7 @@ namespace reindexer::cluster {
 
 static void ValidateDSN(const DSN& dsn) {
 	if (dsn.Parser().scheme() != "cproto" && dsn.Parser().scheme() != "cprotos") {
-		throw Error(errParams, "DSN must start with cproto:// or cprotos://. Actual DSN is %s", dsn);
+		throw Error(errParams, "DSN must start with cproto:// or cprotos://. Actual DSN is {}", dsn);
 	}
 }
 
@@ -25,7 +25,7 @@ Error NodeData::FromJSON(std::span<char> json) {
 		gason::JsonParser parser;
 		return FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "NodeData: %s", ex.what());
+		return Error(errParseJson, "NodeData: {}", ex.what());
 	} catch (const Error& err) {
 		return err;
 	}
@@ -40,7 +40,7 @@ Error NodeData::FromJSON(const gason::JsonNode& root) {
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "NodeData: %s", ex.what());
+		return Error(errParseJson, "NodeData: {}", ex.what());
 	}
 	return {};
 }
@@ -61,7 +61,7 @@ Error RaftInfo::FromJSON(std::span<char> json) {
 		gason::JsonParser parser;
 		return FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "RaftInfo: %s", ex.what());
+		return Error(errParseJson, "RaftInfo: {}", ex.what());
 	} catch (const Error& err) {
 		return err;
 	}
@@ -75,7 +75,7 @@ Error RaftInfo::FromJSON(const gason::JsonNode& root) {
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "RaftInfo: %s", ex.what());
+		return Error(errParseJson, "RaftInfo: {}", ex.what());
 	}
 	return {};
 }
@@ -239,7 +239,7 @@ Error ClusterConfigData::FromYAML(const std::string& yaml) {
 		}
 		return Error();
 	} catch (const YAML::Exception& ex) {
-		return Error(errParseYAML, "ClusterConfigData: yaml parsing error: '%s'", ex.what());
+		return Error(errParseYAML, "ClusterConfigData: yaml parsing error: '{}'", ex.what());
 	} catch (const Error& err) {
 		return err;
 	}
@@ -285,7 +285,7 @@ Error AsyncReplConfigData::FromYAML(const std::string& yaml) {
 		}
 		return Error();
 	} catch (const YAML::Exception& ex) {
-		return Error(errParseYAML, "AsyncReplConfigData: yaml parsing error: '%s'", ex.what());
+		return Error(errParseYAML, "AsyncReplConfigData: yaml parsing error: '{}'", ex.what());
 	} catch (const Error& err) {
 		return err;
 	}
@@ -298,7 +298,7 @@ Error AsyncReplConfigData::FromJSON(std::string_view json) {
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "AsyncReplConfigData: %s", ex.what());
+		return Error(errParseJson, "AsyncReplConfigData: {}", ex.what());
 	}
 }
 
@@ -369,7 +369,7 @@ Error AsyncReplConfigData::FromJSON(const gason::JsonNode& root) {
 	}
 
 	if (!errorString.empty()) {
-		return Error(errParseJson, "AsyncReplConfigData: JSON parsing error: '%s'", errorString);
+		return Error(errParseJson, "AsyncReplConfigData: JSON parsing error: '{}'", errorString);
 	}
 	return Error();
 }
@@ -517,7 +517,7 @@ AsyncReplicationMode AsyncReplConfigData::Str2mode(std::string_view mode) {
 	if (mode == "default"sv || mode.empty()) {
 		return AsyncReplicationMode::Default;
 	}
-	throw Error(errParams, "Unexpected replication mode value: '%s'", mode);
+	throw Error(errParams, "Unexpected replication mode value: '{}'", mode);
 }
 
 std::string AsyncReplConfigData::Mode2str(AsyncReplicationMode mode) noexcept {
@@ -538,7 +538,7 @@ Error ShardingConfig::Namespace::FromYAML(const YAML::Node& yaml, const std::map
 
 	ns = yaml["namespace"].as<std::string>();
 	if (!validateObjectName(ns, false)) {
-		return Error(errParams, "Namespace name incorrect '%s'.", ns);
+		return Error(errParams, "Namespace name incorrect '{}'.", ns);
 	}
 	if (!yaml["index"].IsScalar()) {
 		return Error(errParams, "'index' node must be scalar.");
@@ -546,11 +546,11 @@ Error ShardingConfig::Namespace::FromYAML(const YAML::Node& yaml, const std::map
 
 	index = yaml["index"].as<std::string>();
 	if (!validateIndexName(index, IndexCompositeHash)) {
-		return Error(errParams, "Index name incorrect '%s'.", index);
+		return Error(errParams, "Index name incorrect '{}'.", index);
 	}
 	const auto defaultShardNode = yaml["default_shard"];
 	if (!defaultShardNode.IsDefined()) {
-		return Error(errParams, "Default shard id is not specified for namespace '%s'", ns);
+		return Error(errParams, "Default shard id is not specified for namespace '{}'", ns);
 	}
 	defaultShard = defaultShardNode.as<int>();
 	auto keysNode = yaml["keys"];
@@ -571,12 +571,12 @@ Error ShardingConfig::Namespace::FromJSON(const gason::JsonNode& root) {
 	try {
 		ns = root["namespace"].As<std::string>();
 		if (!validateObjectName(ns, false)) {
-			return Error(errParams, "Namespace name incorrect '%s'.", ns);
+			return Error(errParams, "Namespace name incorrect '{}'.", ns);
 		}
 		defaultShard = root["default_shard"].As<int>();
 		index = root["index"].As<std::string>();
 		if (!validateIndexName(index, IndexCompositeHash)) {
-			return Error(errParams, "Index name incorrect '%s'.", index);
+			return Error(errParams, "Index name incorrect '{}'.", index);
 		}
 		const auto& keysNode = root["keys"];
 		keys.clear();
@@ -592,7 +592,7 @@ Error ShardingConfig::Namespace::FromJSON(const gason::JsonNode& root) {
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "ShardingConfig::Namespace: %s", ex.what());
+		return Error(errParseJson, "ShardingConfig::Namespace: {}", ex.what());
 	}
 	return errOK;
 }
@@ -602,13 +602,13 @@ Error ShardingConfig::Key::checkValue(const sharding::Segment<Variant>& val, Key
 	if (valuesType.Is<KeyValueType::Null>()) {
 		valuesType = val.left.Type();
 	} else if (!valuesType.IsSame(val.left.Type())) {
-		return Error(errParams, "Incorrect value '%s'. Type of first value is '%s', current type is '%s'", val.left.As<std::string>(),
+		return Error(errParams, "Incorrect value '{}'. Type of first value is '{}', current type is '{}'", val.left.As<std::string>(),
 					 valuesType.Name(), val.left.Type().Name());
 	}
 	if (sharding::intersected(checkVal, val)) {
-		return Error(errParams, "Incorrect value '%s'. Value already in use.",
+		return Error(errParams, "Incorrect value '{}'. Value already in use.",
 					 val.left == val.right ? val.left.As<std::string>()
-										   : fmt::sprintf("[%s, %s]", val.left.As<std::string>(), val.right.As<std::string>()));
+										   : fmt::format("[{}, {}]", val.left.As<std::string>(), val.right.As<std::string>()));
 	}
 	return Error();
 }
@@ -619,7 +619,7 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromYAML(const YAML::Node
 			auto val = stringToVariant(yaml.as<std::string>());
 
 			if (val.Type().Is<KeyValueType::Null>()) {
-				throw Error(errParams, "Incorrect value '%s'. Type is equal to 'KeyValueNull'", yaml.as<std::string>());
+				throw Error(errParams, "Incorrect value '{}'. Type is equal to 'KeyValueNull'", yaml.as<std::string>());
 			}
 
 			return sharding::Segment<Variant>{val, val};
@@ -627,14 +627,14 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromYAML(const YAML::Node
 		case YAML::NodeType::Sequence: {
 			algorithmType = ByRange;
 			if (auto dist = std::distance(std::begin(yaml), std::end(yaml)); dist != 2) {
-				throw Error(errParams, "Incorrect range for sharding key. Should contain 2 numbers but %d are received", dist);
+				throw Error(errParams, "Incorrect range for sharding key. Should contain 2 numbers but {} are received", dist);
 			}
 
 			Variant left, right;
 			auto getVariant = [&yaml](const std::string& str) {
 				auto val = stringToVariant(str);
 				if (val.Type().Is<KeyValueType::Null>()) {
-					throw Error(errParams, "Incorrect value '%s'. Type is equal to 'KeyValueNull'", yaml.as<std::string>());
+					throw Error(errParams, "Incorrect value '{}'. Type is equal to 'KeyValueNull'", yaml.as<std::string>());
 				}
 				return val;
 			};
@@ -643,7 +643,7 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromYAML(const YAML::Node
 			right = getVariant(std::next(std::begin(yaml))->as<std::string>());
 
 			if (!left.Type().IsSame(right.Type())) {
-				throw Error(errParams, "Incorrect segment '[%s, %s]'. Type of left value is '%s', right type is '%s'",
+				throw Error(errParams, "Incorrect segment '[{}, {}]'. Type of left value is '{}', right type is '{}'",
 							left.As<std::string>(), right.As<std::string>(), left.Type().Name(), right.Type().Name());
 			}
 
@@ -668,7 +668,7 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromJSON(const gason::Jso
 			auto val = stringToVariant(stringifyJson(json, false));
 
 			if (val.Type().Is<KeyValueType::Null>()) {
-				throw Error(errParams, "Incorrect value '%s'. Type is equal to 'KeyValueNull'", stringifyJson(json, false));
+				throw Error(errParams, "Incorrect value '{}'. Type is equal to 'KeyValueNull'", stringifyJson(json, false));
 			}
 
 			return sharding::Segment<Variant>{val, val};
@@ -677,14 +677,14 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromJSON(const gason::Jso
 			algorithmType = ByRange;
 			const auto& range = json["range"];
 			if (auto dist = std::distance(begin(range), end(range)); dist != 2) {
-				throw Error(errParams, "Incorrect range for sharding key. Should contain 2 numbers but %d are received", dist);
+				throw Error(errParams, "Incorrect range for sharding key. Should contain 2 numbers but {} are received", dist);
 			}
 
 			auto left = stringToVariant(stringifyJson(*begin(range), false));
 			auto right = stringToVariant(stringifyJson(*begin(range)->next, false));
 
 			if (!left.Type().IsSame(right.Type())) {
-				throw Error(errParams, "Incorrect segment '[%s, %s]'. Type of left value is '%s', right type is '%s'",
+				throw Error(errParams, "Incorrect segment '[{}, {}]'. Type of left value is '{}', right type is '{}'",
 							left.As<std::string>(), right.As<std::string>(), left.Type().Name(), right.Type().Name());
 			}
 
@@ -694,7 +694,7 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromJSON(const gason::Jso
 		case gason::JsonTag::JSON_NULL:
 		case gason::JsonTag::EMPTY:
 		default:
-			throw Error(errParams, "Incorrect JsonTag for sharding key: %d", int(jsonValue.getTag()));
+			throw Error(errParams, "Incorrect JsonTag for sharding key: {}", int(jsonValue.getTag()));
 	}
 }
 
@@ -707,7 +707,7 @@ Error ShardingConfig::Key::FromYAML(const YAML::Node& yaml, const std::map<int, 
 	}
 	shardId = shardIdNode.as<int>();
 	if (_shards.find(shardId) == _shards.cend()) {
-		return Error(errParams, "Shard id %d is not specified in the config but it is used in namespace keys", shardId);
+		return Error(errParams, "Shard id {} is not specified in the config but it is used in namespace keys", shardId);
 	}
 
 	auto valuesNode = yaml["values"];
@@ -763,7 +763,7 @@ Error ShardingConfig::Key::FromJSON(const gason::JsonNode& root, KeyValueType& v
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "ShardingConfig::Key: %s", ex.what());
+		return Error(errParseJson, "ShardingConfig::Key: {}", ex.what());
 	}
 	return Error();
 }
@@ -860,14 +860,14 @@ Error ShardingConfig::FromYAML(const std::string& yaml) {
 			return Error(errParams, "Version of sharding config file is not specified");
 		}
 		if (const int v{versionNode.as<int>()}; v != 1) {
-			return Error(errParams, "Unsupported version of sharding config file: %d", v);
+			return Error(errParams, "Unsupported version of sharding config file: {}", v);
 		}
 
 		auto shardsNode = root["shards"];
 		for (size_t i = 0; i < shardsNode.size(); ++i) {
 			size_t shardId = shardsNode[i]["shard_id"].as<int>();
 			if (shards.find(shardId) != shards.end()) {
-				return Error{errParams, "Dsns for shard id %u are specified twice", shardId};
+				return Error{errParams, "Dsns for shard id {} are specified twice", shardId};
 			}
 			auto hostsNode = shardsNode[i]["dsns"];
 			shards[shardId].reserve(hostsNode.size());
@@ -886,7 +886,7 @@ Error ShardingConfig::FromYAML(const std::string& yaml) {
 			const std::string& newNsName = namespaces[i].ns;
 			if (i > 0 && std::find_if(namespaces.begin(), namespaces.begin() + i,
 									  [&newNsName](const Namespace& v) { return iequals(v.ns, newNsName); }) != namespaces.begin() + i) {
-				return Error(errParams, "Namespace '%s' already specified in the config.", newNsName);
+				return Error(errParams, "Namespace '{}' already specified in the config.", newNsName);
 			}
 		}
 
@@ -900,7 +900,7 @@ Error ShardingConfig::FromYAML(const std::string& yaml) {
 		sourceId = root["source_id"].as<int64_t>(ShardingSourceId::NotSet);
 		return Validate();
 	} catch (const YAML::Exception& ex) {
-		return Error(errParseYAML, "yaml parsing error: '%s'", ex.what());
+		return Error(errParseYAML, "yaml parsing error: '{}'", ex.what());
 	} catch (const Error& err) {
 		return err;
 	}
@@ -911,7 +911,7 @@ Error ShardingConfig::FromJSON(std::string_view json) {
 		gason::JsonParser parser;
 		return FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "ShardingConfig: %s", ex.what());
+		return Error(errParseJson, "ShardingConfig: {}", ex.what());
 	} catch (const Error& err) {
 		return err;
 	}
@@ -922,7 +922,7 @@ Error ShardingConfig::FromJSON(std::span<char> json) {
 		gason::JsonParser parser;
 		return FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "ShardingConfig: %s", ex.what());
+		return Error(errParseJson, "ShardingConfig: {}", ex.what());
 	} catch (const Error& err) {
 		return err;
 	}
@@ -932,7 +932,7 @@ Error ShardingConfig::FromJSON(const gason::JsonNode& root) {
 	try {
 		const int v = root["version"].As<int>();
 		if (v != 1) {
-			return Error(errParams, "Unsupported version of sharding config file: %d", v);
+			return Error(errParams, "Unsupported version of sharding config file: {}", v);
 		}
 		namespaces.clear();
 		const auto& namespacesNode = root["namespaces"];
@@ -946,7 +946,7 @@ Error ShardingConfig::FromJSON(const gason::JsonNode& root) {
 			if (namespaces.size() > 1 && std::find_if(namespaces.begin(), namespaces.end() - 1, [&newNsName](const Namespace& v) {
 											 return iequals(v.ns, newNsName);
 										 }) != namespaces.end() - 1) {
-				return Error(errParams, "Namespace '%s' already specified in the config.", newNsName);
+				return Error(errParams, "Namespace '{}' already specified in the config.", newNsName);
 			}
 		}
 		shards.clear();
@@ -954,7 +954,7 @@ Error ShardingConfig::FromJSON(const gason::JsonNode& root) {
 		for (const auto& shrdNode : shardsNode) {
 			const int shardId = shrdNode["shard_id"].As<int>();
 			if (shards.find(shardId) != shards.end()) {
-				return Error{errParams, "Dsns for shard id %u are specified twice", shardId};
+				return Error{errParams, "Dsns for shard id {} are specified twice", shardId};
 			}
 			const auto& dsnsNode = shrdNode["dsns"];
 			for (const auto& dNode : dsnsNode) {
@@ -972,7 +972,7 @@ Error ShardingConfig::FromJSON(const gason::JsonNode& root) {
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "NodeData: %s", ex.what());
+		return Error(errParseJson, "NodeData: {}", ex.what());
 	}
 	return Validate();
 }
@@ -1084,24 +1084,24 @@ Error ShardingConfig::Validate() const {
 		}
 		for (const auto& dsn : s.second) {
 			if (!dsns.insert(std::cref(dsn)).second) {
-				return Error(errParams, "DSNs in shard's config should be unique. Dublicated dsn: %s", dsn);
+				return Error(errParams, "DSNs in shard's config should be unique. Dublicated dsn: {}", dsn);
 			}
 			if (!dsn.Parser().isValid()) {
-				return Error(errParams, "%s is not valid uri", dsn);
+				return Error(errParams, "{} is not valid uri", dsn);
 			}
 			if (dsn.Parser().scheme() != "cproto" && dsn.Parser().scheme() != "cprotos") {
-				return Error(errParams, "Scheme of sharding dsn must be cproto or cprotos: %s", dsn);
+				return Error(errParams, "Scheme of sharding dsn must be cproto or cprotos: {}", dsn);
 			}
 		}
 	}
 	for (const auto& ns : namespaces) {
 		if (shards.find(ns.defaultShard) == shards.end()) {
-			return Error(errParams, "Default shard id should be defined in shards list. Undefined default shard id: %d, for namespace: %s",
+			return Error(errParams, "Default shard id should be defined in shards list. Undefined default shard id: {}, for namespace: {}",
 						 ns.defaultShard, ns.ns);
 		}
 		for (const auto& k : ns.keys) {
 			if (shards.find(k.shardId) == shards.end()) {
-				return Error(errParams, "Shard id should be defined in shards list. Undefined shard id: %d, for namespace: %s", k.shardId,
+				return Error(errParams, "Shard id should be defined in shards list. Undefined shard id: {}, for namespace: {}", k.shardId,
 							 ns.ns);
 			}
 		}

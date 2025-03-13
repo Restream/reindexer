@@ -30,7 +30,7 @@ void TransactionConcurrentInserter::operator()(const TransactionContext& ctx) no
 	}
 }
 
-#define kThreadErrorFormat "[%s] Unable to concurrently index item: '%s'"
+#define kThreadErrorFormat "[{}] Unable to concurrently index item: '{}'"
 
 void TransactionConcurrentInserter::threadFn(std::atomic<size_t>& nextId, const TransactionContext& ctx) noexcept {
 	VariantArray krefs, skrefs;
@@ -56,15 +56,15 @@ void TransactionConcurrentInserter::threadFn(std::atomic<size_t>& nextId, const 
 				// Possible solution is to set an empty vector view and throw exception, but we do nos support empty vector view currently
 				// (those views will crash on assertion at any call)
 				assertf(false, kThreadErrorFormat, ns_.name_, e.what());
-				logPrintf(LogError, kThreadErrorFormat, ns_.name_, e.what());
+				logFmt(LogError, kThreadErrorFormat, ns_.name_, e.what());
 				std::terminate();
 			} catch (std::exception& e) {
 				assertf(false, kThreadErrorFormat, ns_.name_, e.what());
-				logPrintf(LogError, kThreadErrorFormat, ns_.name_, e.what());
+				logFmt(LogError, kThreadErrorFormat, ns_.name_, e.what());
 				std::terminate();
 			} catch (...) {
 				assertf(false, kThreadErrorFormat, ns_.name_, "<unknown exception>");
-				logPrintf(LogError, kThreadErrorFormat, ns_.name_, "<unknown exception>");
+				logFmt(LogError, kThreadErrorFormat, ns_.name_, "<unknown exception>");
 				std::terminate();
 			}
 		}

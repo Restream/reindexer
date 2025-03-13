@@ -523,7 +523,7 @@ void vprintf(buffer<Char>& buf, basic_string_view<Char> format,
     }
     bool upper = false;
     specs.set_type(parse_printf_presentation_type(type, arg.type(), upper));
-	if (specs.type() == presentation_type::none && arg.type() != type::custom_type)
+        if (specs.type() == presentation_type::none)
       report_error("invalid format specifier");
     if (upper) specs.set_upper();
 

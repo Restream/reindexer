@@ -47,7 +47,7 @@ int MsgPackDecoder::decodeKeyToTag(const msgpack_object_kv& obj) {
 		case MSGPACK_OBJECT_EXT:
 			break;
 	}
-	throw Error(errParams, "Unsupported MsgPack map key type: %s(%d)", ToString(obj.key.type), int(obj.key.type));
+	throw Error(errParams, "Unsupported MsgPack map key type: {}({})", ToString(obj.key.type), int(obj.key.type));
 }
 
 void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_object& obj, int tagName,
@@ -156,7 +156,7 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 										   case MSGPACK_OBJECT_BIN:
 										   case MSGPACK_OBJECT_EXT:
 										   default:
-											   throw Error(errParams, "Unsupported MsgPack array field type: %s(%d)", ToString(p->type),
+											   throw Error(errParams, "Unsupported MsgPack array field type: {}({})", ToString(p->type),
 														   int(p->type));
 									   }
 								   }(),
@@ -187,7 +187,7 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 		case MSGPACK_OBJECT_BIN:
 		case MSGPACK_OBJECT_EXT:
 		default:
-			throw Error(errParams, "Unsupported MsgPack type: %s(%d)", ToString(obj.type), int(obj.type));
+			throw Error(errParams, "Unsupported MsgPack type: {}({})", ToString(obj.type), int(obj.type));
 	}
 	if (tagName) {
 		tagsPath_.pop_back();
@@ -206,7 +206,7 @@ Error MsgPackDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& wr
 		}
 		if rx_unlikely (data.p->type != MSGPACK_OBJECT_MAP) {
 			std::string_view slice = buf.substr(baseOffset, 16);
-			return Error(errNotValid, "Unexpected MsgPack value. Expected %s, but got %s(%d) at %d(~>\"%s\"...)",
+			return Error(errNotValid, "Unexpected MsgPack value. Expected {}, but got {}({}) at {}(~>\"{}\"...)",
 						 ToString(MSGPACK_OBJECT_MAP), ToString(data.p->type), int(data.p->type), baseOffset, slice);
 		}
 
@@ -215,7 +215,7 @@ Error MsgPackDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& wr
 	} catch (const Error& err) {
 		return err;
 	} catch (const std::exception& ex) {
-		return {errNotValid, "%s", ex.what()};
+		return {errNotValid, "{}", ex.what()};
 	} catch (...) {
 		// all internal errors shall be handled and converted to Error
 		return {errNotValid, "Unexpected exception"};

@@ -138,7 +138,7 @@ Expected<AggregationResult> AggregationResult::FromJSON(T json) {
 		auto root = parser.Parse(json);
 		return from(root);
 	} catch (const gason::Exception& ex) {
-		return Unexpected{Error{errParseJson, "AggregationResult: %s", ex.what()}};
+		return Unexpected{Error{errParseJson, "AggregationResult: {}", ex.what()}};
 	}
 }
 

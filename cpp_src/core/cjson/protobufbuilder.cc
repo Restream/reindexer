@@ -63,7 +63,7 @@ void ProtobufBuilder::packItem(int fieldIdx, TagType tagType, Serializer& rdser,
 		case TAG_ARRAY:
 		case TAG_OBJECT:
 		case TAG_END:
-			throw Error(errParseJson, "Unexpected cjson typeTag '%s' while parsing value", TagTypeToStr(tagType));
+			throw Error(errParseJson, "Unexpected cjson typeTag '{}' while parsing value", TagTypeToStr(tagType));
 	}
 }
 
@@ -105,7 +105,7 @@ void ProtobufBuilder::put(int fieldIdx, int val) {
 								},
 								[&](OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
 										  KeyValueType::Undefined, KeyValueType::Uuid, KeyValueType::FloatVector>) {
-									throw Error(errParams, "Expected type '%s' for field '%s'", res.first.Name(), tm_->tag2name(fieldIdx));
+									throw Error(errParams, "Expected type '{}' for field '{}'", res.first.Name(), tm_->tag2name(fieldIdx));
 								});
 	}
 	if (!done) {
@@ -134,7 +134,7 @@ void ProtobufBuilder::put(int fieldIdx, int64_t val) {
 								},
 								[&](OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
 										  KeyValueType::Undefined, KeyValueType::Uuid, KeyValueType::FloatVector>) {
-									throw Error(errParams, "Expected type '%s' for field '%s'", res.first.Name(), tm_->tag2name(fieldIdx));
+									throw Error(errParams, "Expected type '{}' for field '{}'", res.first.Name(), tm_->tag2name(fieldIdx));
 								});
 	}
 	if (!done) {
@@ -163,7 +163,7 @@ void ProtobufBuilder::put(int fieldIdx, double val) {
 								},
 								[&](OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
 										  KeyValueType::Undefined, KeyValueType::Uuid, KeyValueType::FloatVector>) {
-									throw Error(errParams, "Expected type '%s' for field '%s'", res.first.Name(), tm_->tag2name(fieldIdx));
+									throw Error(errParams, "Expected type '{}' for field '{}'", res.first.Name(), tm_->tag2name(fieldIdx));
 								});
 	}
 	if (!done) {
@@ -193,7 +193,7 @@ void ProtobufBuilder::put(int fieldIdx, float val) {
 			},
 			[&](OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined,
 					  KeyValueType::Uuid, KeyValueType::FloatVector>) {
-				throw Error(errParams, "Expected type '%s' for field '%s'", res.first.Name(), tm_->tag2name(fieldIdx));
+				throw Error(errParams, "Expected type '{}' for field '{}'", res.first.Name(), tm_->tag2name(fieldIdx));
 			});
 	}
 	if (!done) {
@@ -207,7 +207,7 @@ void ProtobufBuilder::put(int fieldIdx, float val) {
 void ProtobufBuilder::put(int fieldIdx, std::string_view val) {
 	if (const auto res = getExpectedFieldType(); res.second) {
 		if (!res.first.Is<KeyValueType::String>()) {
-			throw Error(errParams, "Expected type 'String' for field '%s'", tm_->tag2name(fieldIdx));
+			throw Error(errParams, "Expected type 'String' for field '{}'", tm_->tag2name(fieldIdx));
 		}
 	}
 	if (type_ != ObjType::TypeArray) {
@@ -219,7 +219,7 @@ void ProtobufBuilder::put(int fieldIdx, std::string_view val) {
 void ProtobufBuilder::put(int fieldIdx, Uuid val) {
 	if (const auto res = getExpectedFieldType(); res.second) {
 		if (!res.first.Is<KeyValueType::String>()) {
-			throw Error(errParams, "Expected type 'String' for field '%s'", tm_->tag2name(fieldIdx));
+			throw Error(errParams, "Expected type 'String' for field '{}'", tm_->tag2name(fieldIdx));
 		}
 	}
 	if (type_ != ObjType::TypeArray) {

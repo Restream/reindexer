@@ -46,7 +46,7 @@ template <>
 Point Item::FieldRef::As<Point>() const {
 	auto va = (operator VariantArray());
 	if (va.size() != 2) {
-		throw Error(errParams, "Unable to convert field with %d scalar values to 2D Point", va.size());
+		throw Error(errParams, "Unable to convert field with {} scalar values to 2D Point", va.size());
 	}
 	return Point(va[0].As<double>(), va[1].As<double>());
 }
@@ -144,7 +144,7 @@ Item::FieldRef& Item::FieldRef::operator=(std::span<const T> arr) {
 
 void Item::FieldRef::throwIfNotSet() const {
 	if (notSet_) {
-		throw Error{errParams, "Field %s is not set", Name()};
+		throw Error{errParams, "Field {} is not set", Name()};
 	}
 }
 
@@ -190,7 +190,7 @@ int Item::NumFields() const { return impl_->Type().NumFields(); }
 
 Item::FieldRef Item::operator[](int field) const {
 	if (rx_unlikely(field < 0 || field >= impl_->Type().NumFields())) {
-		throw Error(errLogic, "Item::operator[] requires indexed field. Values range: [0; %d]", impl_->Type().NumFields());
+		throw Error(errLogic, "Item::operator[] requires indexed field. Values range: [0; {}]", impl_->Type().NumFields());
 	}
 	const bool notSet = impl_->Type().Field(field).Type().Is<KeyValueType::FloatVector>() && impl_->fieldsFilter_ &&
 						!impl_->fieldsFilter_->ContainsVector(field);

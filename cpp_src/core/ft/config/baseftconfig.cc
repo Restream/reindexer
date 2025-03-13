@@ -37,12 +37,12 @@ void BaseFTConfig::parseBase(const gason::JsonNode& root) {
 			}
 
 			if (std::find_if(word.begin(), word.end(), [](const auto& symbol) { return std::isspace(symbol); }) != word.end()) {
-				throw Error(errParams, "Stop words can't contain spaces: %s", word);
+				throw Error(errParams, "Stop words can't contain spaces: {}", word);
 			}
 
 			auto [it, inserted] = stopWords.emplace(std::move(word), type);
 			if (!inserted && it->type != type) {
-				throw Error(errParams, "Duplicate stop-word with different morpheme attribute: %s", *it);
+				throw Error(errParams, "Duplicate stop-word with different morpheme attribute: {}", *it);
 			}
 		}
 	}

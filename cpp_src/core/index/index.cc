@@ -20,7 +20,7 @@ namespace reindexer {
 Index::Index(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields)
 	: type_(idef.IndexType()), opts_(idef.Opts()), payloadType_(std::move(payloadType)), fields_(std::move(fields)) {
 	reindexer::deepCopy(name_, idef.Name());  // Avoiding false positive TSAN-warning for COW strings on centos7
-	logPrintf(LogTrace, "Index::Index ('%s',%s,%s)  %s%s%s", idef.Name(), idef.IndexTypeStr(), idef.FieldType(),
+	logFmt(LogTrace, "Index::Index ('{}',{},{})  {}{}{}", idef.Name(), idef.IndexTypeStr(), idef.FieldType(),
 			  idef.Opts().IsPK() ? ",pk" : "", idef.Opts().IsDense() ? ",dense" : "", idef.Opts().IsArray() ? ",array" : "");
 }
 
@@ -46,7 +46,7 @@ static std::unique_ptr<Index> createANNIfAvailable(const IndexDef& idef, [[maybe
 		return HnswIndex_New(idef, std::move(payloadType), std::move(fields), currentNsSize, log);
 #else	// RX_WITH_BUILTIN_ANN_INDEXES
 		throw Error(errParams,
-					"Reindexer was built without builtin ANN-indexes support and unable to create '%s' HNSW index (check BUILD_ANN_INDEXES "
+					"Reindexer was built without builtin ANN-indexes support and unable to create '{}' HNSW index (check BUILD_ANN_INDEXES "
 					"cmake option)",
 					idef.Name());
 #endif	// RX_WITH_BUILTIN_ANN_INDEXES
@@ -55,7 +55,7 @@ static std::unique_ptr<Index> createANNIfAvailable(const IndexDef& idef, [[maybe
 		return BruteForceVectorIndex_New(idef, std::move(payloadType), std::move(fields), currentNsSize, log);
 #else	// RX_WITH_BUILTIN_ANN_INDEXES
 		throw Error(errParams,
-					"Reindexer was built without builtin ANN-indexes support and unable to create '%s' bruteforce index (check "
+					"Reindexer was built without builtin ANN-indexes support and unable to create '{}' bruteforce index (check "
 					"BUILD_ANN_INDEXES cmake option)",
 					idef.Name());
 #endif	// RX_WITH_BUILTIN_ANN_INDEXES
@@ -64,12 +64,12 @@ static std::unique_ptr<Index> createANNIfAvailable(const IndexDef& idef, [[maybe
 		return IvfIndex_New(idef, std::move(payloadType), std::move(fields), log);
 #else	// RX_WITH_FAISS_ANN_INDEXES
 		throw Error(errParams,
-					"Reindexer was built without FAISS ANN-indexes support and unable to create '%s' IVF index (check BUILD_ANN_INDEXES "
+					"Reindexer was built without FAISS ANN-indexes support and unable to create '{}' IVF index (check BUILD_ANN_INDEXES "
 					"cmake option)",
 					idef.Name());
 #endif	// RX_WITH_FAISS_ANN_INDEXES
 	}
-	throw Error(errLogic, "Unexpected ANN index type: %d for '%s'", int(itype), idef.Name());
+	throw Error(errLogic, "Unexpected ANN index type: {} for '{}'", int(itype), idef.Name());
 }
 
 std::unique_ptr<Index> Index::New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
@@ -110,9 +110,9 @@ std::unique_ptr<Index> Index::New(const IndexDef& idef, PayloadType&& payloadTyp
 		case IndexIvf:
 			return createANNIfAvailable(idef, std::move(payloadType), std::move(fields), currentNsSize, log);
 		case IndexDummy:
-			throw Error(errParams, "'Dummy' index type can not be used to create index ('%s')", idef.Name());
+			throw Error(errParams, "'Dummy' index type can not be used to create index ('{}')", idef.Name());
 	}
-	throw Error(errParams, "Invalid index type %d for index '%s'", int(idef.IndexType()), idef.Name());
+	throw Error(errParams, "Invalid index type {} for index '{}'", int(idef.IndexType()), idef.Name());
 }
 
 bool Index::IsFloatVector() const noexcept {

@@ -33,7 +33,7 @@ static constexpr size_t kIvfNCentroidsMax = 2 << 16;
 
 void FloatVectorIndexOpts::Validate(IndexType idxType) {
 	if (dimension_ < kFVDimensionMin) {
-		throw reindexer::Error{errParams, "Float vector index dimension should not be less then %d", kFVDimensionMin};
+		throw reindexer::Error{errParams, "Float vector index dimension should not be less then {}", kFVDimensionMin};
 	}
 	switch (idxType) {
 		case IndexHnsw:
@@ -43,10 +43,10 @@ void FloatVectorIndexOpts::Validate(IndexType idxType) {
 				startSize_ = kFVStartSizeMin;
 			}
 			if (M_ < kHnswMMin || M_ > kHnswMMax) {
-				throw reindexer::Error{errParams, "Hnsw index parameter M = %d is out of bounds [%d, %d]", M_, kHnswMMin, kHnswMMax};
+				throw reindexer::Error{errParams, "Hnsw index parameter M = {} is out of bounds [{}, {}]", M_, kHnswMMin, kHnswMMax};
 			}
 			if (efConstruction_ < kHnswEfConstrMin || efConstruction_ > kHnswEfConstrMax) {
-				throw reindexer::Error{errParams, "Hnsw index parameter efConstruction = %d is out of bounds [%d, %d]", efConstruction_,
+				throw reindexer::Error{errParams, "Hnsw index parameter efConstruction = {} is out of bounds [{}, {}]", efConstruction_,
 									   kHnswEfConstrMin, kHnswEfConstrMax};
 			}
 			if (nCentroids_ != 0) {
@@ -71,7 +71,7 @@ void FloatVectorIndexOpts::Validate(IndexType idxType) {
 			break;
 		case IndexIvf:
 			if (nCentroids_ < kIvfNCentroidsMin || nCentroids_ > kIvfNCentroidsMax) {
-				throw reindexer::Error{errParams, "Ivf index centroids count = %d is out of bounds [%d, %d]", nCentroids_,
+				throw reindexer::Error{errParams, "Ivf index centroids count = {} is out of bounds [{}, {}]", nCentroids_,
 									   kIvfNCentroidsMin, kIvfNCentroidsMax};
 			}
 			if (M_ != 0) {
@@ -127,7 +127,7 @@ FloatVectorIndexOpts FloatVectorIndexOpts::ParseJson(IndexType idxType, std::str
 	} else if (reindexer::iequals(metricStr, "cosine"sv)) {
 		result.SetMetric(reindexer::VectorMetric::Cosine);
 	} else {
-		throw reindexer::Error{errParams, "Unknown vector metric '%s'", metricStr};
+		throw reindexer::Error{errParams, "Unknown vector metric '{}'", metricStr};
 	}
 	if (const auto startSize = root["start_size"sv]; !startSize.empty()) {
 		result.SetStartSize(startSize.As<size_t>(reindexer::CheckUnsigned_True, 0, 0, std::numeric_limits<IdType>::max()));

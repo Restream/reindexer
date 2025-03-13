@@ -21,11 +21,11 @@ struct ProtobufValue {
 		value.Type().EvaluateOneOf([&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) noexcept { v = T(value); },
 								   [&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Composite, KeyValueType::Undefined,
 											 KeyValueType::Null, KeyValueType::Tuple>) {
-									   throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%s] to number",
+									   throw reindexer::Error(errParseMsgPack, "Impossible to convert type [{}] to number",
 															  value.Type().Name());
 								   });
 		if (v < minv || v > maxv) {
-			throw reindexer::Error(errParams, "Value is out of bounds: [%d,%d]", minv, maxv);
+			throw reindexer::Error(errParams, "Value is out of bounds: [{},{}]", minv, maxv);
 		}
 		return v;
 	}
@@ -34,7 +34,7 @@ struct ProtobufValue {
 			  typename std::enable_if<std::is_same<std::string, T>::value || std::is_same<std::string_view, T>::value>::type* = nullptr>
 	T As() const {
 		if (!value.Type().Is<KeyValueType::String>()) {
-			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%s] to string", value.Type().Name());
+			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [{}] to string", value.Type().Name());
 		}
 		return T(value);
 	}
@@ -42,7 +42,7 @@ struct ProtobufValue {
 	template <typename T, typename std::enable_if<std::is_same<T, bool>::value>::type* = nullptr>
 	T As() const {
 		if (!value.Type().Is<KeyValueType::Bool>()) {
-			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%s] to bool", value.Type().Name());
+			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [{}] to bool", value.Type().Name());
 		}
 		return T(value);
 	}

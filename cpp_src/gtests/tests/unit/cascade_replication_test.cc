@@ -865,7 +865,7 @@ static int64_t AwaitUpdatesReplication(const ServerControl::Interface::Ptr& node
 		}
 		std::this_thread::sleep_for(step);
 	}
-	assertf(false, "Stats: %s", ser.Slice());
+	assertf(false, "Stats: {}", ser.Slice());
 	return 0;
 }
 
@@ -902,7 +902,7 @@ TEST_F(CascadeReplicationApi, RestrictUpdates) {
 
 	for (unsigned int i = 0; i < count; i++) {
 		reindexer::client::Item item = master->api.NewItem("ns1");
-		std::string itemJson = fmt::sprintf(R"json({"id": %d, "data": "%s" })json", i + from, dataString);
+		std::string itemJson = fmt::format(R"json({{"id": {}, "data": "{}" }})json", i + from, dataString);
 		auto err = item.Unsafe().FromJSON(itemJson);
 		ASSERT_TRUE(err.ok()) << err.what();
 		master->api.Upsert(nsName, item);
@@ -1267,7 +1267,7 @@ TEST_F(CascadeReplicationApi, DisabledStatementBaseWALDelete) {
 	auto makeItemsWithData = [&](int data) {
 		for (int id = 0; id < kWALStatementItemsCount; ++id) {
 			auto item = leader->api.NewItem(nsName);
-			auto err = item.FromJSON(fmt::sprintf("{\"id\": %d, \"data\": %d}", id, data));
+			auto err = item.FromJSON(fmt::format("{{\"id\": {}, \"data\": {} }}", id, data));
 			ASSERT_TRUE(err.ok()) << err.what();
 
 			leader->api.Upsert(nsName, item);

@@ -21,7 +21,7 @@ public:
 			std::lock_guard lck(mtx_);
 			const auto new_head = (head_ + 1) % ring_.size();
 			if (new_head == tail_) {
-				throw Error(errLogic, "Chain buffer overflow (max size is %d)", ring_.size());
+				throw Error(errLogic, "Chain buffer overflow (max size is {})", ring_.size());
 			}
 			data_size_ += ch.size();
 			ring_[head_] = std::move(ch);

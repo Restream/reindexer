@@ -62,7 +62,7 @@ IvfIndex::IvfIndex(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& 
 			}
 			break;
 		default:
-			throw Error(errLogic, "Attempt to construct IVF index '%s' with unknow metric: %d", Base::Name(),
+			throw Error(errLogic, "Attempt to construct IVF index '{}' with unknow metric: {}", Base::Name(),
 						int(Base::Opts().FloatVector().Metric()));
 	}
 	if (log == Index::CreationLog::Yes) {
@@ -258,7 +258,7 @@ FloatVectorIndex::StorageCacheWriteResult IvfIndex::WriteIndexCache(WrSerializer
 	auto res = StorageCacheWriteResult{.err = {}, .isCacheable = map_ ? true : false};
 
 	if rx_unlikely (!getPK) {
-		res.err = Error(errParams, "IvfIndex::WriteIndexCache:%s: PK getter is nullptr", Name());
+		res.err = Error(errParams, "IvfIndex::WriteIndexCache:{}: PK getter is nullptr", Name());
 		return res;
 	}
 
@@ -276,12 +276,12 @@ FloatVectorIndex::StorageCacheWriteResult IvfIndex::WriteIndexCache(WrSerializer
 		}
 		void AppendPKByID(faiss::idx_t id) override {
 			if rx_unlikely (id < 0 || id > std::numeric_limits<IdType>::max()) {
-				throw Error(errLogic, "IvfIndex::WriteIndexCache:%s: internal id %d is out of range", name, id);
+				throw Error(errLogic, "IvfIndex::WriteIndexCache:{}: internal id {} is out of range", name, id);
 			}
 			writePK(IdType(id));
 		}
 		int filedescriptor() override {
-			throw Error(errLogic, "Unexpcted call to SerializerWriter::filedescriptor(). Serializer name is '%s'", name);
+			throw Error(errLogic, "Unexpcted call to SerializerWriter::filedescriptor(). Serializer name is '{}'", name);
 		}
 		void PutVarUInt(uint64_t v) { ser_.PutVarUint(v); }
 		size_t Size() const noexcept { return ser_.Len(); }
@@ -309,7 +309,7 @@ FloatVectorIndex::StorageCacheWriteResult IvfIndex::WriteIndexCache(WrSerializer
 
 Error IvfIndex::LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVectorData) {
 	if rx_unlikely (!getVectorData) {
-		return Error(errParams, "IvfIndex::LoadIndexCache:%s: vector data getter is nullptr", Name());
+		return Error(errParams, "IvfIndex::LoadIndexCache:{}: vector data getter is nullptr", Name());
 	}
 
 	class ViewReader final : public faiss::IOReader, private LoaderBase {
@@ -340,7 +340,7 @@ Error IvfIndex::LoadIndexCache(std::string_view data, bool isCompositePK, VecDat
 			return faiss::idx_t(itemID);
 		}
 		int filedescriptor() override {
-			throw Error(errLogic, "IVFFlat::LoadIndexCache:%s: unexpcted call to ViewReader::filedescriptor()", name);
+			throw Error(errLogic, "IVFFlat::LoadIndexCache:{}: unexpcted call to ViewReader::filedescriptor()", name);
 		}
 		uint64_t GetVarUInt() {
 			Serializer ser(view_);
@@ -370,13 +370,13 @@ Error IvfIndex::LoadIndexCache(std::string_view data, bool isCompositePK, VecDat
 				map_->own_fields = false;
 				space_ = std::unique_ptr<faiss::IndexFlat>(space);
 			} else {
-				throw Error(errLogic, "IVFFlat::LoadIndexCache:%s has unexpected quantizer type", Name());
+				throw Error(errLogic, "IVFFlat::LoadIndexCache:{} has unexpected quantizer type", Name());
 			}
 		} else {
-			throw Error(errLogic, "IVFFlat::LoadIndexCache:%s has unexpected index type", Name());
+			throw Error(errLogic, "IVFFlat::LoadIndexCache:{} has unexpected index type", Name());
 		}
 		if (reader.RemainingSize()) {
-			throw Error(errLogic, "IVFFlat::LoadIndexCache:%s has unparsed data: %d bytes", Name(), reader.RemainingSize());
+			throw Error(errLogic, "IVFFlat::LoadIndexCache:{} has unparsed data: {} bytes", Name(), reader.RemainingSize());
 		}
 	} catch (Error& err) {
 		clearMap();
@@ -385,11 +385,11 @@ Error IvfIndex::LoadIndexCache(std::string_view data, bool isCompositePK, VecDat
 	} catch (const std::exception& err) {
 		clearMap();
 		assertrx_dbg(false);  // Do not expecting this error in test scenarious
-		return Error{errLogic, "IVFFlat::LoadIndexCache:%s: %s", Name(), err.what()};
+		return Error{errLogic, "IVFFlat::LoadIndexCache:{}: {}", Name(), err.what()};
 	} catch (...) {
 		clearMap();
 		assertrx_dbg(false);  // Do not expecting this error in test scenarious
-		return Error{errLogic, "IVFFlat::LoadIndexCache:%s: unexpected exception", Name()};
+		return Error{errLogic, "IVFFlat::LoadIndexCache:{}: unexpected exception", Name()};
 	}
 	return {};
 }

@@ -30,7 +30,7 @@ public:
 	CJsonBuilder Array(int tagName, ObjType type = ObjType::TypeObjectArray);
 
 	[[noreturn]] CJsonBuilder Array(std::string_view name, ObjType type = ObjType::TypeObjectArray) {
-		throw Error(errLogic, "CJSON builder doesn't work with string tags [%s, %d]!", name.data(), int(type));
+		throw Error(errLogic, "CJSON builder doesn't work with string tags [{}, {}]!", name.data(), int(type));
 	}
 	CJsonBuilder Object(std::nullptr_t) { return Object(0); }
 

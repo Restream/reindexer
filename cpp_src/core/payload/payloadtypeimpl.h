@@ -21,7 +21,7 @@ public:
 	PayloadTypeImpl(std::string name, std::initializer_list<PayloadFieldType> fields = {}) : fields_(fields), name_(std::move(name)) {}
 
 	const PayloadFieldType& Field(int field) const& noexcept {
-		assertf(field < NumFields(), "%s: %d, %d", name_, field, NumFields());
+		assertf(field < NumFields(), "{}: {}, {}", name_, field, NumFields());
 		return fields_[field];
 	}
 	const PayloadFieldType& Field(int) const&& = delete;

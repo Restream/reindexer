@@ -18,12 +18,12 @@ public:
 
 	std::ostream& operator()() {
 		if (!isCout_ && !f_.is_open()) {
-			throw Error(errLogic, "%s", strerror(errState_));
+			throw Error(errLogic, "{}", strerror(errState_));
 		}
 		return isCout_ ? std::cout : f_;
 	}
 
-	Error Status() const { return errState_ ? Error(errLogic, "%s", strerror(errState_)) : Error{}; }
+	Error Status() const { return errState_ ? Error(errLogic, "{}", strerror(errState_)) : Error{}; }
 	bool IsCout() const { return isCout_; }
 
 private:

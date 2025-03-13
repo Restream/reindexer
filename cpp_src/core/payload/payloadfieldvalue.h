@@ -53,7 +53,7 @@ public:
 									ConstFloatVectorView vect{kv};
 									if (!vect.IsEmpty() && t_.FloatVectorDimension() != vect.Dimension()) {
 										throw Error{errNotValid,
-													"Attempt to write vector of dimension %d in a float vector field of dimension %d",
+													"Attempt to write vector of dimension {} in a float vector field of dimension {}",
 													vect.Dimension().Value(), t_.FloatVectorDimension().Value()};
 									}
 									*reinterpret_cast<uint64_t*>(p_) = vect.Payload();

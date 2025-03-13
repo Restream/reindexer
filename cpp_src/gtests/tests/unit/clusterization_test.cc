@@ -360,24 +360,25 @@ static bool ValidateStatsOnTestEnding(int leaderId, int kTransitionServer, const
 			const DSN kExpectedDsn = MakeDsn(reindexer_server::UserRole::kRoleReplication, nodeStat.serverId,
 											 ports.defaultRpcPort + nodeStat.serverId, "node" + std::to_string(nodeStat.serverId));
 			O_EXPECT_EQ(withAssertion, nodeStat.dsn, kExpectedDsn)
-			O_EXPECT_TRUE(withAssertion,
-						  nodeStat.updatesCount == 0 || nodeStat.updatesCount == 1)	 // (may contain "initial leader resync" update record
+			O_EXPECT_EQ(withAssertion, nodeStat.updatesCount, 0)
 			if (onlineNodes.count(nodeStat.serverId)) {
 				O_EXPECT_EQ(withAssertion, onlineNodes.count(nodeStat.serverId), 1)
 				O_EXPECT_EQ(withAssertion, nodeStat.status, cluster::NodeStats::Status::Online)
 				O_EXPECT_EQ(withAssertion, nodeStat.syncState, cluster::NodeStats::SyncState::OnlineReplication)
-				onlineNodes.erase(nodeStat.serverId);
+				O_EXPECT_EQ(withAssertion, nodeStat.isSynchronized, true)
 				if (nodeStat.serverId == leaderId) {
 					O_EXPECT_EQ(withAssertion, nodeStat.role, cluster::RaftInfo::Role::Leader)
 				} else {
 					O_EXPECT_EQ(withAssertion, nodeStat.role, cluster::RaftInfo::Role::Follower)
 				}
+				onlineNodes.erase(nodeStat.serverId);
 			} else if (offlineNodes.count(nodeStat.serverId)) {
 				O_EXPECT_EQ(withAssertion, offlineNodes.count(nodeStat.serverId), 1)
 				O_EXPECT_EQ(withAssertion, nodeStat.status, cluster::NodeStats::Status::Offline)
 				O_EXPECT_EQ(withAssertion, nodeStat.syncState, cluster::NodeStats::SyncState::AwaitingResync)
-				offlineNodes.erase(nodeStat.serverId);
 				O_EXPECT_EQ(withAssertion, nodeStat.role, cluster::RaftInfo::Role::None)
+				O_EXPECT_EQ(withAssertion, nodeStat.isSynchronized, false)
+				offlineNodes.erase(nodeStat.serverId);
 			} else {
 				EXPECT_TRUE(false) << "Unexpected server id: " << nodeStat.serverId << "; json: " << wser.Slice();
 				return false;
@@ -484,17 +485,20 @@ TEST_F(ClusterizationApi, InitialLeaderSync) {
 			}
 			std::this_thread::sleep_for(std::chrono::milliseconds(250));
 		}
+		WrSerializer serLeader, serFollower;
+		stats.GetJSON(serLeader);
+		SCOPED_TRACE(fmt::format("Leader's stats: {}", serLeader.Slice()));
 		{
-			WrSerializer wser;
-			stats.GetJSON(wser);
 			ASSERT_TRUE(ValidateStatsOnTestEnding(leaderId, kTransitionServer, kFirstNodesGroup, kSecondNodesGroup, kClusterSize, ports,
-												  stats, true))
-				<< "json: " << wser.Slice();
+												  stats, true));
 		}
 		// Validate stats, recieved via followers (this request has to be proxied)
 		for (auto nodeId : kFirstNodesGroup) {
+			serFollower.Reset();
 			auto followerStats = cluster.GetNode(nodeId)->GetReplicationStats(cluster::kClusterReplStatsType);
-			ASSERT_EQ(stats, followerStats) << "Server id: " << nodeId;
+			SCOPED_TRACE(fmt::format("Follower's stats: {}", serFollower.Slice()));
+			followerStats.GetJSON(serFollower);
+			EXPECT_EQ(stats, followerStats) << "Server id: " << nodeId;
 		}
 	});
 

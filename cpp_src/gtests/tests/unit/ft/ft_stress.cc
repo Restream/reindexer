@@ -157,13 +157,13 @@ TEST_P(FTStressApi, LargeMergeLimit) {
 		}
 	}
 	{
-		auto qr = SimpleSelect(fmt::sprintf("%s* %s*", kBase1, kBase2));
+		auto qr = SimpleSelect(fmt::format("{}* {}*", kBase1, kBase2));
 		ASSERT_EQ(qr.Count(), ftCfg.mergeLimit);
 	}
 	ftCfg.mergeLimit = 60'000;
 	SetFTConfig(ftCfg);
 	{
-		auto qr = SimpleSelect(fmt::sprintf("%s* %s*", kBase1, kBase2));
+		auto qr = SimpleSelect(fmt::format("{}* {}*", kBase1, kBase2));
 		ASSERT_EQ(qr.Count(), ftCfg.mergeLimit);
 	}
 }

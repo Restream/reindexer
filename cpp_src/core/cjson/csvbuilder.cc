@@ -119,11 +119,11 @@ void CsvBuilder::tmProcessing(std::string_view name) {
 			curTagPos_ = std::distance(ordering_->begin(), it);
 			positions_[curTagPos_].first = prevFinishPos + (count_ > 0 ? 1 : 0);
 		} else {
-			throw Error(errParams, "Tag %s from tagsmatcher was not passed with the schema", name);
+			throw Error(errParams, "Tag {} from tagsmatcher was not passed with the schema", name);
 		}
 	} else {
 		if (name.substr(0, 7) != "joined_") {
-			throw Error(errParams, "The \"joined_*\"-like tag for joined namespaced is expected, but received %d", name);
+			throw Error(errParams, "The \"joined_*\"-like tag for joined namespaced is expected, but received {}", name);
 		}
 
 		if (curTagPos_ > -1) {

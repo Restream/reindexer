@@ -5,7 +5,7 @@
 namespace reindexer {
 
 ItemsLoader::LoadData ItemsLoader::Load() {
-	logPrintf(LogTrace, "Loading items to '%s' from storage", ns_.name_);
+	logFmt(LogTrace, "Loading items to '{}' from storage", ns_.name_);
 
 	prepareANNData();
 
@@ -78,7 +78,7 @@ void ItemsLoader::reading() {
 		std::string_view dataSlice = dbIter->Value();
 		if (dataSlice.size() > 0) {
 			if (!ns_.pkFields().size()) {
-				throw Error(errLogic, "Can't load data storage of '%s' - there are no PK fields in ns", ns_.name_);
+				throw Error(errLogic, "Can't load data storage of '{}' - there are no PK fields in ns", ns_.name_);
 			}
 			if (dataSlice.size() < sizeof(int64_t)) {
 				lastErr = Error(errParseBin, "Not enough data in data slice");
@@ -90,7 +90,7 @@ void ItemsLoader::reading() {
 			// Read LSN
 			int64_t lsn = *reinterpret_cast<const int64_t*>(dataSlice.data());
 			if (lsn < 0) {
-				lastErr = Error(errParseBin, "Invalid LSN value: %d", lsn);
+				lastErr = Error(errParseBin, "Invalid LSN value: {}", lsn);
 				logFmt(LogTrace, "Error load item to '{}' from storage: '{}'", ns_.name_, lastErr.what());
 				++errCount;
 				continue;

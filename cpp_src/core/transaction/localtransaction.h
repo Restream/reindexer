@@ -57,6 +57,7 @@ public:
 	[[nodiscard]] unsigned DeletionsCount() const noexcept { return tx_ ? tx_->DeletionsCount() : 0; }
 	[[nodiscard]] unsigned ExpectedInsertionsCount() const noexcept { return tx_ ? tx_->ExpectedInsertionsCount() : 0; }
 	[[nodiscard]] unsigned UpdateQueriesCount() const noexcept { return tx_ ? tx_->UpdateQueriesCount() : 0; }
+	[[nodiscard]] unsigned DeleteQueriesCount() const noexcept { return tx_ ? tx_->DeleteQueriesCount() : 0; }
 
 private:
 	LocalTransaction(std::unique_ptr<SharedTransactionData>&& d, std::unique_ptr<TransactionSteps>&& tx, Error&& e)

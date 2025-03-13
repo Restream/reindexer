@@ -620,7 +620,7 @@ Error ReindexerService::buildAggregation(Builder& builder, WrSerializer& wrser, 
 Error ReindexerService::executeQuery(const std::string& dbName, const Query& query, QueryType type, reindexer::QueryResults& qr) {
 	Error status;
 	reindexer::Query q;
-	switch (query.encdoingtype()) {
+	switch (query.encodingtype()) {
 		case EncodingType::JSON:
 			try {
 				q = reindexer::Query::FromJSON(query.data());

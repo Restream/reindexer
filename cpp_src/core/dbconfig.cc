@@ -26,7 +26,7 @@ static CacheMode str2cacheMode(std::string_view mode) {
 		return CacheModeAggressive;
 	}
 
-	throw Error(errParams, "Unknown cache mode %s", mode);
+	throw Error(errParams, "Unknown cache mode {}", mode);
 }
 
 Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) {
@@ -131,7 +131,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 
 	Error result;
 	if (!errLogString.empty()) {
-		result = Error(errParseJson, "DBConfigProvider: %s", errLogString);
+		result = Error(errParseJson, "DBConfigProvider: {}", errLogString);
 	} else if (typesChanged.size() > 0) {
 		// notifying handlers under shared_lock so none of them go out of scope
 		smart_lock<shared_timed_mutex> lk(mtx_, false);
@@ -144,7 +144,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 				try {
 					handlers_[changedType]();
 				} catch (const Error& err) {
-					logPrintf(LogError, "DBConfigProvider: Error processing event handler: '%s'", err.whatStr());
+					logFmt(LogError, "DBConfigProvider: Error processing event handler: '{}'", err.whatStr());
 				}
 			}
 
@@ -153,7 +153,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 					try {
 						f.second(replicationData_);
 					} catch (const Error& err) {
-						logPrintf(LogError, "DBConfigProvider: Error processing replication config event handler: '%s'", err.whatStr());
+						logFmt(LogError, "DBConfigProvider: Error processing replication config event handler: '{}'", err.whatStr());
 					}
 				}
 			}
@@ -174,7 +174,7 @@ Error DBConfigProvider::GetConfigParseErrors() const {
 		ensureEndsWith(errLogString, "\n"sv) += asyncReplicationDataLoadResult_.whatStr();
 		ensureEndsWith(errLogString, "\n"sv) += replicationDataLoadResult_.whatStr();
 
-		return Error(errParseJson, "DBConfigProvider: %s", errLogString);
+		return Error(errParseJson, "DBConfigProvider: {}", errLogString);
 	}
 
 	return Error();
@@ -268,7 +268,7 @@ Error ProfilingConfigData::FromJSON(const gason::JsonNode& v) {
 	}
 
 	if (!errorString.empty()) {
-		return Error(errParseJson, "ProfilingConfigData: JSON parsing error: '%s'", errorString);
+		return Error(errParseJson, "ProfilingConfigData: JSON parsing error: '{}'", errorString);
 	}
 	return {};
 }
@@ -279,10 +279,10 @@ Error ReplicationConfigData::FromYAML(const std::string& yaml) {
 		clusterID = root["cluster_id"].as<int>(clusterID);
 		serverID = root["server_id"].as<int>(serverID);
 		if (auto err = Validate(); !err.ok()) {
-			return Error(errParams, "ReplicationConfigData: YAML parsing error: '%s'", err.whatStr());
+			return Error(errParams, "ReplicationConfigData: YAML parsing error: '{}'", err.whatStr());
 		}
 	} catch (const YAML::Exception& ex) {
-		return Error(errParseYAML, "ReplicationConfigData: YAML parsing error: '%s'", ex.what());
+		return Error(errParseYAML, "ReplicationConfigData: YAML parsing error: '{}'", ex.what());
 	} catch (const std::exception& err) {
 		return err;
 	}
@@ -294,7 +294,7 @@ Error ReplicationConfigData::FromJSON(std::string_view json) {
 		gason::JsonParser parser;
 		return FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "ReplicationConfigData: %s\n", ex.what());
+		return Error(errParseJson, "ReplicationConfigData: {}\n", ex.what());
 	} catch (const std::exception& err) {
 		return err;
 	}
@@ -309,10 +309,10 @@ Error ReplicationConfigData::FromJSON(const gason::JsonNode& root) {
 
 	if (errorString.empty()) {
 		if (auto err = Validate()) {
-			return Error(errParseJson, "ReplicationConfigData: JSON parsing error: '%s'", err.whatStr());
+			return Error(errParseJson, "ReplicationConfigData: JSON parsing error: '{}'", err.whatStr());
 		}
 	} else {
-		return Error(errParseJson, "ProfilingConfigData: JSON parsing error: '%s'", errorString);
+		return Error(errParseJson, "ProfilingConfigData: JSON parsing error: '{}'", errorString);
 	}
 
 	return Error();
@@ -325,14 +325,14 @@ void ReplicationConfigData::FromJSONWithCorrection(const gason::JsonNode& root, 
 
 	if (!tryReadOptionalJsonValue(&errorString, root, "cluster_id"sv, clusterID).ok()) {
 		clusterID = 1;
-		ensureEndsWith(errorString, "\n") += fmt::sprintf("Fixing to default: cluster_id = %d.", clusterID);
+		ensureEndsWith(errorString, "\n") += fmt::format("Fixing to default: cluster_id = {}.", clusterID);
 	}
 
 	if (!tryReadOptionalJsonValue(&errorString, root, "server_id"sv, serverID, ReplicationConfigData::kMinServerIDValue,
 								  ReplicationConfigData::kMaxServerIDValue)
 			 .ok()) {
 		serverID = 0;
-		ensureEndsWith(errorString, "\n") += fmt::sprintf("Fixing to default: server_id = %d.", serverID);
+		ensureEndsWith(errorString, "\n") += fmt::format("Fixing to default: server_id = {}.", serverID);
 	}
 
 	if (!errorString.empty()) {
@@ -359,7 +359,7 @@ void ReplicationConfigData::GetYAML(WrSerializer& ser) const {
 Error ReplicationConfigData::Validate() const {
 	using namespace std::string_view_literals;
 	if (serverID < ReplicationConfigData::kMinServerIDValue || serverID > ReplicationConfigData::kMaxServerIDValue) {
-		return Error(errParams, "Value of '%s' = %d is out of bounds: [%d, %d]", "server_Id"sv, serverID,
+		return Error(errParams, "Value of '{}' = {} is out of bounds: [{}, {}]", "server_Id"sv, serverID,
 					 ReplicationConfigData::kMinServerIDValue, ReplicationConfigData::kMaxServerIDValue);
 	}
 	return Error();
@@ -432,7 +432,7 @@ Error NamespaceConfigData::FromJSON(const gason::JsonNode& v) {
 	}
 
 	if (!errorString.empty()) {
-		return Error(errParseJson, "NamespaceConfigData: JSON parsing error: '%s'", errorString);
+		return Error(errParseJson, "NamespaceConfigData: JSON parsing error: '{}'", errorString);
 	}
 	return {};
 }

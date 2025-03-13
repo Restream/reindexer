@@ -1,13 +1,15 @@
 #include "errors.h"
+#include <iostream>
 #include "debug/backtrace.h"
 
 namespace reindexer {
 
-void print_backtrace_and_abort(std::string&& msg) {
-	std::cerr << msg;
+void print_backtrace_and_abort(const char* assertion, const char* file, unsigned int line, const std::string &description) noexcept {
+	auto msg = fmt::format("{}:{}: failed assertion '{}':\n{}", file, line, assertion, description);
+	std::cerr << msg << "\n";
 	reindexer::debug::print_backtrace(std::cerr, nullptr, -1);
 	reindexer::debug::print_crash_query(std::cerr);
-	reindexer::debug::backtrace_set_assertion_message(std::move(msg));
+	reindexer::debug::backtrace_set_assertion_message(std::move(assertion));
 	abort();
 }
 

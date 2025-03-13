@@ -152,7 +152,7 @@ bool IndexDef::IsEqual(const IndexDef& other, IndexComparison cmpType) const {
 		}
 	}
 
-	throw Error(errParams, "Unsupported combination of field '%s' type '%s' and index type '%s'", indexName, fieldType, indexType);
+	throw Error(errParams, "Unsupported combination of field '{}' type '{}' and index type '{}'", indexName, fieldType, indexType);
 }
 
 void IndexDef::Validate() const { validate(IndexType(), jsonPaths_.size(), opts_); }
@@ -172,7 +172,7 @@ Expected<IndexDef> IndexDef::FromJSON(std::string_view json) try {
 	gason::JsonParser parser;
 	return IndexDef::FromJSON(parser.Parse(json));
 } catch (const gason::Exception& ex) {
-	return Unexpected{Error{errParseJson, "IndexDef: %s", ex.what()}};
+	return Unexpected{Error{errParseJson, "IndexDef: {}", ex.what()}};
 } catch (const Error& err) {
 	return Unexpected{err};
 }
@@ -181,7 +181,7 @@ Expected<IndexDef> IndexDef::FromJSON(std::span<char> json) try {
 	gason::JsonParser parser;
 	return IndexDef::FromJSON(parser.Parse(json));
 } catch (const gason::Exception& ex) {
-	return Unexpected{Error{errParseJson, "IndexDef: %s", ex.what()}};
+	return Unexpected{Error{errParseJson, "IndexDef: {}", ex.what()}};
 } catch (const Error& err) {
 	return Unexpected{err};
 }
@@ -219,7 +219,7 @@ IndexDef IndexDef::FromJSON(const gason::JsonNode& root) {
 		} else if (rtreeType == kRTreeRStar) {
 			opts.RTreeType(IndexOpts::RStar);
 		} else {
-			throw Error(errParams, "Unknown RTree type %s", rtreeType);
+			throw Error(errParams, "Unknown RTree type {}", rtreeType);
 		}
 	}
 
@@ -228,7 +228,7 @@ IndexDef IndexDef::FromJSON(const gason::JsonNode& root) {
 		auto collateIt = find_if(begin(kAvailableCollates), end(kAvailableCollates),
 								 [&collateStr](const std::pair<CollateMode, std::string_view>& p) { return collateStr == p.second; });
 		if (collateIt == end(kAvailableCollates)) {
-			throw Error(errParams, "Unknown collate mode %s", collateStr);
+			throw Error(errParams, "Unknown collate mode {}", collateStr);
 		}
 		CollateMode collateValue = collateIt->first;
 		opts.SetCollateMode(collateValue);

@@ -57,7 +57,7 @@ void copyCJsonValue(TagType tagType, const Variant& value, WrSerializer& wrser) 
 			break;
 		case TAG_ARRAY:
 		case TAG_END:
-			throw Error(errParseJson, "Unexpected cjson typeTag '%s' while parsing value", TagTypeToStr(tagType));
+			throw Error(errParseJson, "Unexpected cjson typeTag '{}' while parsing value", TagTypeToStr(tagType));
 	}
 }
 
@@ -122,7 +122,7 @@ void copyCJsonValue(TagType tagType, Serializer& rdser, WrSerializer& wrser) {
 		case TAG_END:
 		case TAG_ARRAY:
 		default:
-			throw Error(errParseJson, "Unexpected cjson typeTag '%d' while parsing value", int(tagType));
+			throw Error(errParseJson, "Unexpected cjson typeTag '{}' while parsing value", int(tagType));
 	}
 }
 
@@ -172,7 +172,7 @@ void skipCjsonTag(ctag tag, Serializer& rdser, std::array<unsigned, kMaxIndexes>
 			}
 		} break;
 		default:
-			throw Error(errParseJson, "skipCjsonTag: unexpected ctag type value: %d", int(tag.Type()));
+			throw Error(errParseJson, "skipCjsonTag: unexpected ctag type value: {}", int(tag.Type()));
 	}
 }
 
@@ -192,7 +192,7 @@ void buildPayloadTuple(const PayloadIface<T>& pl, const TagsMatcher* tagsMatcher
 		}
 
 		const int tagName = tagsMatcher->name2tag(fieldType.JsonPaths()[0]);
-		assertf(tagName != 0, "ns=%s, field=%s", pl.Type().Name(), fieldType.JsonPaths()[0]);
+		assertf(tagName != 0, "ns={}, field={}", pl.Type().Name(), fieldType.JsonPaths()[0]);
 
 		if (fieldType.IsFloatVector()) {
 			const auto value = pl.Get(field, 0);
@@ -210,31 +210,31 @@ template void buildPayloadTuple<const PayloadValue>(const PayloadIface<const Pay
 template void buildPayloadTuple<PayloadValue>(const PayloadIface<PayloadValue>&, const TagsMatcher*, WrSerializer&);
 
 void throwUnexpectedNestedArrayError(std::string_view parserName, const PayloadFieldType& f) {
-	throw Error(errLogic, "Error parsing %s field '%s' - got value nested into the array, but expected scalar %s", parserName, f.Name(),
+	throw Error(errLogic, "Error parsing {} field '{}' - got value nested into the array, but expected scalar {}", parserName, f.Name(),
 				f.Type().Name());
 }
 
 void throwScalarMultipleEncodesError(const Payload& pl, const PayloadFieldType& f, int field) {
-	throw Error(errLogic, "Non-array field '%s' [%d] from '%s' can only be encoded once.", f.Name(), field, pl.Type().Name());
+	throw Error(errLogic, "Non-array field '{}' [{}] from '{}' can only be encoded once.", f.Name(), field, pl.Type().Name());
 }
 
 void throwUnexpectedArrayError(std::string_view parserName, const PayloadFieldType& fieldRef) {
-	throw Error(errLogic, "Error parsing %s field '%s' - got array, expected scalar %s", parserName, fieldRef.Name(),
+	throw Error(errLogic, "Error parsing {} field '{}' - got array, expected scalar {}", parserName, fieldRef.Name(),
 				fieldRef.Type().Name());
 }
 
 void throwUnexpectedArraySizeForFloatVectorError(std::string_view parserName, const PayloadFieldType& fieldRef, size_t size) {
-	throw Error(errLogic, "Error parsing %s field '%s' - got array of size %d, expected float_vector of size %d", parserName,
+	throw Error(errLogic, "Error parsing {} field '{}' - got array of size {}, expected float_vector of size {}", parserName,
 				fieldRef.Name(), size, fieldRef.FloatVectorDimension().Value());
 }
 
 void throwUnexpectedArrayTypeForFloatVectorError(std::string_view parserName, const PayloadFieldType& fieldRef) {
-	throw Error(errLogic, "Error parsing %s field '%s' - got array of non-double values, expected array convertible to %s", parserName,
+	throw Error(errLogic, "Error parsing {} field '{}' - got array of non-double values, expected array convertible to {}", parserName,
 				fieldRef.Name(), fieldRef.Type().Name());
 }
 
 void throwUnexpectedArraySizeError(std::string_view parserName, const PayloadFieldType& f, int arraySize) {
-	throw Error(errParams, "%s array field '%s' for this index type must contain %d elements, but got %d", parserName, f.Name(),
+	throw Error(errParams, "{} array field '{}' for this index type must contain {} elements, but got {}", parserName, f.Name(),
 				f.ArrayDims(), arraySize);
 }
 

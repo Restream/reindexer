@@ -185,12 +185,12 @@ ItemModifier::FieldData::FieldData(const UpdateEntry& entry, NamespaceImpl& ns, 
 								 : ns.payloadType_.Field(fieldIndex_).JsonPaths().size();
 
 		if (jsonPathsSize != 1) {
-			throw Error(errParams, "Ambiguity when updating field with several json paths by index name: '%s'", entry_.Column());
+			throw Error(errParams, "Ambiguity when updating field with several json paths by index name: '{}'", entry_.Column());
 		}
 
 		const auto& fields{idx.Fields()};
 		if (fields.size() != 1) {
-			throw Error(errParams, "Cannot update composite index: '%s'", entry_.Column());
+			throw Error(errParams, "Cannot update composite index: '{}'", entry_.Column());
 		}
 		if (fields[0] == IndexValueType::SetByJsonPath) {
 			if (fields.isTagsPathIndexed(0)) {
@@ -203,7 +203,7 @@ ItemModifier::FieldData::FieldData(const UpdateEntry& entry, NamespaceImpl& ns, 
 			tagsPath_ = ns.tagsMatcher_.path2indexedtag(ns.payloadType_.Field(fieldIndex_).JsonPaths()[0], true);
 		}
 		if (tagsPath_.empty()) {
-			throw Error(errParams, "Cannot find field by json: '%s'", entry_.Column());
+			throw Error(errParams, "Cannot find field by json: '{}'", entry_.Column());
 		}
 		if (tagsPath_.back().IsWithIndex()) {
 			arrayIndex_ = tagsPath_.back().Index();
@@ -213,7 +213,7 @@ ItemModifier::FieldData::FieldData(const UpdateEntry& entry, NamespaceImpl& ns, 
 		isIndex_ = true;
 		tagsPath_ = ns.tagsMatcher_.path2indexedtag(entry_.Column(), true);
 		if (tagsPath_.empty()) {
-			throw Error(errParams, "Cannot find field by json: '%s'", entry_.Column());
+			throw Error(errParams, "Cannot find field by json: '{}'", entry_.Column());
 		}
 	} else {
 		TagsPath tp;
@@ -236,7 +236,7 @@ ItemModifier::FieldData::FieldData(const UpdateEntry& entry, NamespaceImpl& ns, 
 		}
 		tagsPath_ = std::move(tagsPath);
 		if (tagsPath_.empty()) {
-			throw Error(errParams, "Cannot find field by json: '%s'", entry_.Column());
+			throw Error(errParams, "Cannot find field by json: '{}'", entry_.Column());
 		}
 		if (isIndex_) {
 			auto& lastTag = tagsPath_.back();
@@ -482,7 +482,7 @@ void convertToFloatVector(FloatVectorDimension dim, VariantArray& values) {
 		return;
 	}
 	if (values.size() != dim.Value()) {
-		throw Error(errParams, "It's not possible to Update float vector index of dimension %d with array of size %d", dim.Value(),
+		throw Error(errParams, "It's not possible to Update float vector index of dimension {} with array of size {}", dim.Value(),
 					values.size());
 	}
 	auto vect = FloatVector::CreateNotInitialized(dim);
@@ -607,10 +607,10 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData& field, Vari
 					indexesStr.append(std::to_string(p.Index()));
 				}
 			}
-			throw Error(errParams, "Requested array's index was not found: [%s]", indexesStr);
+			throw Error(errParams, "Requested array's index was not found: [{}]", indexesStr);
 		}
 		if (field.ArrayIndex() != IndexValueType::NotSet && field.ArrayIndex() >= length) {
-			throw Error(errLogic, "Array index is out of range: [%d/%d]", field.ArrayIndex(), length);
+			throw Error(errLogic, "Array index is out of range: [{}/{}]", field.ArrayIndex(), length);
 		}
 
 		if (ns_.skrefs.CompareNoExcept(values) == ComparationResult::Eq) {

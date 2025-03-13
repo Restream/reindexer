@@ -31,7 +31,7 @@ public:
 			ret.Unpack(ser);
 		}
 		if (int(ret.size()) < minArgs) {
-			throw Error(errParams, "Server returned %d args, but expected %d", int(ret.size()), minArgs);
+			throw Error(errParams, "Server returned {} args, but expected {}", int(ret.size()), minArgs);
 		}
 
 		return ret;

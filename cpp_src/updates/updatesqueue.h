@@ -15,7 +15,7 @@ namespace updates {
 
 enum class ReplicationResult { None, Approved, Error };
 
-#define uq_rtfmt(f, ...) return fmt::sprintf("[updates:%s] " f, logModuleName(), __VA_ARGS__)
+#define uq_rtfmt(f, ...) return fmt::format("[updates:{}] " f, logModuleName(), __VA_ARGS__)
 
 template <typename T, typename StatsCollectorT, typename LoggerT>
 class UpdatesQueue {
@@ -87,7 +87,7 @@ public:
 						if (!repl.replicatedToEmmiter) {
 							std::this_thread::sleep_for(std::chrono::seconds(2));
 						}
-						assertf(repl.replicatedToEmmiter, "Required replicas: %d", requiredReplicas);
+						assertf(repl.replicatedToEmmiter, "Required replicas: {}", requiredReplicas);
 					}
 				} while (!replication_.compare_exchange_strong(expected, repl, std::memory_order_acquire));
 				status.hasEnoughApproves = (repl.approves >= consensusCnt);
@@ -129,7 +129,7 @@ public:
 										  bool isEmmiter, Error err) {
 			ReplicationResult res = ReplicationResult::None;
 			if (offset >= count_.load(std::memory_order_acquire)) {
-				throw Error(errParams, "Unexpected offset: %d", offset);
+				throw Error(errParams, "Unexpected offset: {}", offset);
 			}
 			auto status = data_[offset].replicated(consensusCnt, requiredReplicas, isEmmiter, std::move(err));
 			stats_.OnUpdateApplied(nodeId, id_ + offset);
@@ -150,7 +150,7 @@ public:
 		}
 		void OnUpdateHandledSimple(uint32_t nodeId, uint32_t requiredReplicas, uint16_t offset) {
 			if (offset >= count_.load(std::memory_order_acquire)) {
-				throw Error(errParams, "Unexpected offset: %d", offset);
+				throw Error(errParams, "Unexpected offset: {}", offset);
 			}
 			auto status = data_[offset].handledNoResult(requiredReplicas);
 			stats_.OnUpdateApplied(nodeId, id_ + offset);
@@ -164,7 +164,7 @@ public:
 		}
 		const Value& GetUpdate(uint16_t offset) const {
 			if (offset >= count_.load(std::memory_order_acquire)) {
-				throw Error(errParams, "Unexpected offset: %d", offset);
+				throw Error(errParams, "Unexpected offset: {}", offset);
 			}
 			return data_[offset];
 		}
@@ -322,7 +322,7 @@ public:
 			return std::make_pair(invalidationErr_, false);
 		}
 		try {
-			logTraceW([&] { uq_rtfmt("Push new sync updates (%d) for %s", localData.dataSize, data[0].NsName()); });
+			logTraceW([&] { uq_rtfmt("Push new sync updates ({}) for {}", localData.dataSize, data[0].NsName()); });
 
 			entriesRange = addDataToQueue(std::move(data), &onResult, dropped);
 
@@ -360,7 +360,7 @@ public:
 				return std::make_pair(invalidationErr_, false);
 			}
 
-			logTraceW([&] { uq_rtfmt("Push new async updates (%d) for %s", data.size(), data[0].NsName()); });
+			logTraceW([&] { uq_rtfmt("Push new async updates ({}) for {}", data.size(), data[0].NsName()); });
 
 			addDataToQueue<skipResultCounting>(std::move(data), dropped);
 		}
@@ -463,9 +463,9 @@ private:
 		updPtr->addSentResult();
 		logTraceW([&] {
 			if (entry.onResult_) {
-				uq_rtfmt("Sending result for update with ID %d", id);
+				uq_rtfmt("Sending result for update with ID {}", id);
 			} else {
-				uq_rtfmt("Trying to send result for update with ID %d, but it doesn't have result handler", id);
+				uq_rtfmt("Trying to send result for update with ID {}, but it doesn't have result handler", id);
 			}
 		});
 		onResult(entry, std::move(err));
@@ -525,7 +525,7 @@ private:
 
 			if (lastChunckId >= 0) {
 				const auto updateId = lastChunckId + kBatchSize - 1;
-				logWarnW([&] { uq_rtfmt("Dropping updates: %d-%d. %d bytes", dropped.front()->ID(), updateId, droppedUpdatesSize); });
+				logWarnW([&] { uq_rtfmt("Dropping updates: {}-{}. {} bytes", dropped.front()->ID(), updateId, droppedUpdatesSize); });
 				updatedDropRecord_ =
 					make_intrusive<intrusive_atomic_rc_wrapper<UpdateT>>(updateId, *this, typename UpdateT::DroppedUpdatesT{});
 				stats_.OnUpdatesDrop(updateId, droppedUpdatesSize);

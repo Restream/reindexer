@@ -34,10 +34,10 @@ Snapshot::Snapshot(net::cproto::CoroClientConnection* conn, int id, int64_t coun
 				   std::chrono::milliseconds timeout)
 	: i_(conn, id, count, rawCount, nsVersion, timeout) {
 	if (id < 0) {
-		throw Error(errLogic, "Unexpectd snapshot id: %d", id);
+		throw Error(errLogic, "Unexpectd snapshot id: {}", id);
 	}
 	if (count < 0) {
-		throw Error(errLogic, "Unexpectd snapshot size: %d", count);
+		throw Error(errLogic, "Unexpectd snapshot size: {}", count);
 	}
 
 	if (i_.count_ > 0) {

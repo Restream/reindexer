@@ -1,6 +1,6 @@
 #pragma once
 
-#include "fmt/printf.h"
+#include "fmt/format.h"
 #include "urlparser/urlparser.h"
 #include "yaml-cpp/node/node.h"
 
@@ -42,8 +42,8 @@ private:
 	friend struct ::YAML::convert;
 	friend struct std::hash<reindexer::DSN>;
 
-	template <typename T>
-	friend struct fmt::printf_formatter;
+	template <typename, typename, typename>
+	friend struct fmt::formatter;
 
 	void processDSN();
 	std::string dsn_, masked_;
@@ -81,19 +81,12 @@ struct std::hash<reindexer::DSN> {
 };
 
 template <>
-struct fmt::printf_formatter<reindexer::DSN> {
-	template <typename ContextT>
-	constexpr auto parse(ContextT& ctx) {
-		return ctx.begin();
-	}
+struct fmt::formatter<reindexer::DSN> : public fmt::formatter<std::string_view> {
 	template <typename ContextT>
 	auto format(const reindexer::DSN& dsn, ContextT& ctx) const {
-		return fmt::format_to(ctx.out(), "{}", dsn.masked_);
+		return fmt::formatter<std::string_view>::format(dsn.masked_, ctx);
 	}
 };
-
-template <>
-struct fmt::formatter<reindexer::DSN> : public fmt::printf_formatter<reindexer::DSN> {};
 
 namespace YAML {
 template <>

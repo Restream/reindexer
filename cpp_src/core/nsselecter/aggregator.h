@@ -37,6 +37,11 @@ public:
 
 	bool DistinctChanged() noexcept { return distinctChecker_(); }
 
+	void ResetDistinctSet() {
+		assertrx_throw(this->Type() == AggType::AggDistinct);
+		distincts_->clear();
+	}
+
 private:
 	enum Direction { Desc = -1, Asc = 1 };
 	class MultifieldComparator;

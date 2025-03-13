@@ -24,14 +24,14 @@ public:
 	using Base::resize;
 
 	void Add(FloatVector&& vect) {
-		assertrx(!vect.IsEmpty());	// TODO _dbg
+		assertrx_dbg(!vect.IsEmpty());
 		if (vect.IsEmpty()) {
 			return;
 		}
 		emplace_back(std::move(vect));
 	}
 	void Add(ConstFloatVectorView vect) {
-		assertrx(!vect.IsEmpty());	// TODO _dbg
+		assertrx_dbg(!vect.IsEmpty());
 		if (vect.IsEmpty()) {
 			return;
 		}

@@ -96,7 +96,7 @@ Error ParallelExecutor::ExecSelect(const Query& query, QueryResults& result, con
 			if rx_likely (!hasError) {
 				if rx_unlikely (clientData.results.GetShardingConfigVersion() != shardingVersion) {
 					return Error(errLogic,
-								 "Distributed parallel query: local and remote sharding versions (source IDs) are different: %d vs %d",
+								 "Distributed parallel query: local and remote sharding versions (source IDs) are different: {} vs {}",
 								 shardingVersion, clientData.results.GetShardingConfigVersion());
 				}
 				result.AddQr(std::move(clientData.results), clientData.shardId, (i + 1) == clientResults.size());

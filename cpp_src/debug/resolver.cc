@@ -1,5 +1,6 @@
 
 #include <iomanip>
+#include <iostream>
 
 #if REINDEX_WITH_LIBDL
 #ifndef _GNU_SOURCE

@@ -100,7 +100,7 @@ void KnnSearchParamsBase::Serialize(WrSerializer& ser) const {
 
 KnnSearchParamsBase KnnSearchParamsBase::Deserialize(Serializer& ser, size_t version) {
 	if rx_unlikely (version != kKnnParamsBinProtocolVersion) {
-		throw Error(errVersion, "Unexpected binary protocol version for KnnSearchParamsBase: %d", version);
+		throw Error(errVersion, "Unexpected binary protocol version for KnnSearchParamsBase: {}", version);
 	}
 	return KnnSearchParamsBase{size_t(ser.GetVarUInt())};
 }
@@ -113,7 +113,7 @@ void BruteForceSearchParams::Serialize(WrSerializer& ser) const {
 
 BruteForceSearchParams BruteForceSearchParams::Deserialize(Serializer& ser, size_t version) {
 	if rx_unlikely (version != kKnnParamsBinProtocolVersion) {
-		throw Error(errVersion, "Unexpected binary protocol version for BruteForceSearchParams: %d", version);
+		throw Error(errVersion, "Unexpected binary protocol version for BruteForceSearchParams: {}", version);
 	}
 	return BruteForceSearchParams{size_t(ser.GetVarUInt())};
 }
@@ -127,7 +127,7 @@ void HnswSearchParams::Serialize(WrSerializer& ser) const {
 
 HnswSearchParams HnswSearchParams::Deserialize(Serializer& ser, size_t version) {
 	if rx_unlikely (version != kKnnParamsBinProtocolVersion) {
-		throw Error(errVersion, "Unexpected binary protocol version for HnswSearchParams: %d", version);
+		throw Error(errVersion, "Unexpected binary protocol version for HnswSearchParams: {}", version);
 	}
 	const size_t k = ser.GetVarUInt();
 	return HnswSearchParams{k, size_t(ser.GetVarUInt())};
@@ -142,7 +142,7 @@ void IvfSearchParams::Serialize(WrSerializer& ser) const {
 
 IvfSearchParams IvfSearchParams::Deserialize(Serializer& ser, size_t version) {
 	if rx_unlikely (version != kKnnParamsBinProtocolVersion) {
-		throw Error(errVersion, "Unexpected binary protocol version for IvfSearchParams: %d", version);
+		throw Error(errVersion, "Unexpected binary protocol version for IvfSearchParams: {}", version);
 	}
 	const size_t k = ser.GetVarUInt();
 	return IvfSearchParams{k, size_t(ser.GetVarUInt())};

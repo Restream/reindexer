@@ -661,7 +661,7 @@ int stoi(std::string_view sl) {
 	bool valid;
 	const int res = jsteemann::atoi<int>(sl.data(), sl.data() + sl.size(), valid);
 	if (!valid) {
-		throw Error(errParams, "Can't convert '%s' to number", sl);
+		throw Error(errParams, "Can't convert '{}' to number", sl);
 	}
 	return res;
 }
@@ -679,7 +679,7 @@ int64_t stoll(std::string_view sl) {
 	bool valid;
 	auto ret = jsteemann::atoi<int64_t>(sl.data(), sl.data() + sl.size(), valid);
 	if (!valid) {
-		throw Error(errParams, "Can't convert '%s' to number", sl);
+		throw Error(errParams, "Can't convert '{}' to number", sl);
 	}
 	return ret;
 }
@@ -797,7 +797,7 @@ Error getBytePosInMultilineString(std::string_view str, const size_t line, const
 		bytePos = it - str.begin() - 1;
 		return Error();
 	}
-	return Error(errNotValid, "Wrong cursor position: line=%d, pos=%d", line, charPos);
+	return Error(errNotValid, "Wrong cursor position: line={}, pos={}", line, charPos);
 }
 
 Error cursosPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos) {

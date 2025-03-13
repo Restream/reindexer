@@ -36,25 +36,25 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 				} else if ("#slave_version"sv == qe.FieldName()) {
 					versionIdx = i;
 				} else {
-					throw Error(errLogic, "Unexpected index in WAL select query: %s", qe.FieldName());
+					throw Error(errLogic, "Unexpected index in WAL select query: {}", qe.FieldName());
 				}
 			},
-			[&q](const auto&) { throw Error(errLogic, "Unexpected WAL select query: %s", q.GetSQL()); });
+			[&q](const auto&) { throw Error(errLogic, "Unexpected WAL select query: {}", q.GetSQL()); });
 	}
 	auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.Entries().Get<QueryEntry>(versionIdx).Values()[0].As<std::string>());
 	auto& lsnEntry = q.Entries().Get<QueryEntry>(lsnIdx);
 	if (lsnEntry.Values().size() == 1 && (lsnEntry.Condition() == CondGt || lsnEntry.Condition() == CondGe)) {
 		lsn_t fromLSN = lsn_t(std::min(lsnEntry.Values()[0].As<int64_t>(), std::numeric_limits<int64_t>::max() - 1));
 		if (fromLSN.isEmpty()) {
-			throw Error(errOutdatedWAL, "Query to WAL with empty LSN, LSN counter %ld", ns_->wal_.LSNCounter());
+			throw Error(errOutdatedWAL, "Query to WAL with empty LSN, LSN counter {}", ns_->wal_.LSNCounter());
 		}
 		if (lsnEntry.Condition() == CondGt && ns_->wal_.LSNCounter() != (fromLSN.Counter() + 1) && ns_->wal_.is_outdated(fromLSN) &&
 			count) {
-			throw Error(errOutdatedWAL, "Query (gt) to WAL with outdated LSN %ld, LSN counter %ld, walSize = %d, count = %d",
+			throw Error(errOutdatedWAL, "Query (gt) to WAL with outdated LSN {}, LSN counter {}, walSize = {}, count = {}",
 						int64_t(fromLSN), ns_->wal_.LSNCounter(), ns_->wal_.size(), count);
 		}
 		if (lsnEntry.Condition() == CondGe && ns_->wal_.is_outdated(fromLSN) && count) {
-			throw Error(errOutdatedWAL, "Query (ge) to WAL with outdated LSN %ld, LSN counter %ld, walSize = %d, count = %d",
+			throw Error(errOutdatedWAL, "Query (ge) to WAL with outdated LSN {}, LSN counter {}, walSize = {}, count = {}",
 						int64_t(fromLSN), ns_->wal_.LSNCounter(), ns_->wal_.size(), count);
 		}
 
@@ -70,7 +70,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 		if (firstIt != walEnd) {
 			WALRecord firstRec = *firstIt;
 			if (!allowTxWithoutBegining_ && firstRec.inTransaction && firstRec.type != WalInitTransaction) {
-				throw Error(errOutdatedWAL, "WAL starts from tx record, which is not 'init tx'. LSN: %d, type: %d", firstIt.GetLSN(),
+				throw Error(errOutdatedWAL, "WAL starts from tx record, which is not 'init tx'. LSN: {}, type: {}", firstIt.GetLSN(),
 							firstRec.type);
 			}
 		}
@@ -91,7 +91,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 					} else if (count) {
 						// Put as usual ItemRef
 						[[maybe_unused]] const auto iLSN = lsn_t(ns_->items_[rec.id].GetLSN());
-						assertf(iLSN.Counter() == (lsn_t(it.GetLSN()).Counter()), "lsn %s != %s, ns=%s", iLSN, it.GetLSN(), ns_->name_);
+						assertf(iLSN.Counter() == (lsn_t(it.GetLSN()).Counter()), "lsn {} != {}, ns={}", iLSN, it.GetLSN(), ns_->name_);
 						result.AddItemRef(rec.id, ns_->items_[rec.id]);
 						count--;
 					}

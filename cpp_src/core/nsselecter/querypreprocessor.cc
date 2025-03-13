@@ -85,8 +85,8 @@ void QueryPreprocessor::ExcludeFtQuery(const RdxContext& rdxCtx) {
 	}
 }
 
-bool QueryPreprocessor::NeedNextEvaluation(unsigned start, unsigned count, bool& matchedAtLeastOnce,
-										   QresExplainHolder& qresHolder) noexcept {
+bool QueryPreprocessor::NeedNextEvaluation(unsigned start, unsigned count, bool& matchedAtLeastOnce, QresExplainHolder& qresHolder,
+										   bool needCalcTotal) noexcept {
 	if (evaluationsCount_++) {
 		return false;
 	}
@@ -96,7 +96,7 @@ bool QueryPreprocessor::NeedNextEvaluation(unsigned start, unsigned count, bool&
 		start_ = start;
 		assertrx_throw(count <= count_);
 		count_ = count;
-		return count_ || (reqMatchedOnce_ && !matchedAtLeastOnce);
+		return count_ || needCalcTotal || (reqMatchedOnce_ && !matchedAtLeastOnce);
 	} else if (ftEntry_) {
 		if (!matchedAtLeastOnce) {
 			return false;
@@ -131,13 +131,13 @@ void QueryPreprocessor::checkStrictMode(const QueryField& field) const {
 	switch (strictMode_) {
 		case StrictModeIndexes:
 			throw Error(errStrictMode,
-						"Current query strict mode allows filtering by indexes only. There are no indexes with name '%s' in namespace '%s'",
+						"Current query strict mode allows filtering by indexes only. There are no indexes with name '{}' in namespace '{}'",
 						field.FieldName(), ns_.name_);
 		case StrictModeNames:
 			if (field.HaveEmptyField()) {
 				throw Error(errStrictMode,
-							"Current query strict mode allows filtering by existing fields only. There are no fields with name '%s' in "
-							"namespace '%s'",
+							"Current query strict mode allows filtering by existing fields only. There are no fields with name '{}' in "
+							"namespace '{}'",
 							field.FieldName(), ns_.name_);
 			}
 		case StrictModeNotSet:
@@ -150,9 +150,9 @@ void QueryPreprocessor::checkAllowedCondition(const QueryField& field, CondType 
 	if (!field.IsFieldIndexed()) {
 		return;
 	}
-	assertrx(cond != CondKnn);	// TODO _dbg
+	assertrx_dbg(cond != CondKnn);
 	if (ns_.indexes_[field.IndexNo()]->IsFloatVector()) {
-		throw Error{errParams, "The only allowed condition for float vector index is KNN; attempt to use '%s' on field '%s'",
+		throw Error{errParams, "The only allowed condition for float vector index is KNN; attempt to use '{}' on field '{}'",
 					CondTypeToStrShort(cond), field.FieldName()};
 	}
 }
@@ -690,11 +690,11 @@ void QueryPreprocessor::initIndexedQueries(size_t begin, size_t end) {
 					int idxNo = NotSet;
 					if (ns_.getIndexByNameOrJsonPath(qe.FieldName(), idxNo)) {
 						if (!ns_.indexes_[idxNo]->IsFloatVector()) {
-							throw Error{errParams, "KNN allowed only for float vector index; %s is not float vector index", qe.FieldName()};
+							throw Error{errParams, "KNN allowed only for float vector index; {} is not float vector index", qe.FieldName()};
 						}
 						qe.SetIndexNo(idxNo);
 					} else {
-						throw Error{errParams, "KNN allowed only for float vector index; %s is not indexed field", qe.FieldName()};
+						throw Error{errParams, "KNN allowed only for float vector index; {} is not indexed field", qe.FieldName()};
 					}
 				}
 			});
@@ -1560,7 +1560,7 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 		case CondLike:
 		case CondDWithin:
 		case CondKnn:
-			throw Error(errQueryExec, "Unsupported condition in ON statement: %s", CondTypeToStr(condition));
+			throw Error(errQueryExec, "Unsupported condition in ON statement: {}", CondTypeToStr(condition));
 	}
 
 	LocalQueryResults qr;
@@ -1606,7 +1606,7 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 		case CondDWithin:
 		case CondKnn:
 		default:
-			throw Error(errQueryExec, "Unsupported condition in ON statement: %s", CondTypeToStr(condition));
+			throw Error(errQueryExec, "Unsupported condition in ON statement: {}", CondTypeToStr(condition));
 	}
 }
 
@@ -1655,7 +1655,7 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 		case CondDWithin:
 		case CondKnn:
 		default:
-			throw Error(errQueryExec, "Unsupported condition in ON statement: %s", CondTypeToStr(condition));
+			throw Error(errQueryExec, "Unsupported condition in ON statement: {}", CondTypeToStr(condition));
 	}
 }
 
@@ -1811,7 +1811,7 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 								case CondLike:
 								case CondDWithin:
 								case CondKnn:
-									throw Error(errQueryExec, "Unsupported condition in ON statement: %s", CondTypeToStr(condition));
+									throw Error(errQueryExec, "Unsupported condition in ON statement: {}", CondTypeToStr(condition));
 							}
 							operation = OpAnd;
 							break;
@@ -2084,7 +2084,7 @@ void QueryPreprocessor::VerifyOnStatementField(const QueryField& qField, const N
 		return;
 	}
 	if (ns.indexes_[qField.IndexNo()]->IsFloatVector()) {
-		throw Error(errLogic, "Float vector indexes is not allowed in ON statement: %s", qField.FieldName());
+		throw Error(errLogic, "Float vector indexes is not allowed in ON statement: {}", qField.FieldName());
 	}
 }
 

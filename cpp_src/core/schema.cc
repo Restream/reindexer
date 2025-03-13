@@ -17,7 +17,7 @@ std::string_view kvTypeToJsonSchemaType(KeyValueType type) {
 							  [](OneOf<KeyValueType::String, KeyValueType::Uuid>) noexcept { return "string"sv; },
 							  [](KeyValueType::Null) noexcept { return "null"sv; }, [](KeyValueType::Tuple) noexcept { return "object"sv; },
 							  [&](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) -> std::string_view {
-								  throw Error(errParams, "Impossible to convert type [%s] to json schema type", type.Name());
+								  throw Error(errParams, "Impossible to convert type [{}] to json schema type", type.Name());
 							  });
 }
 
@@ -80,7 +80,7 @@ Error PrefixTree::AddPath(FieldProps props, const PathT& splittedPath) noexcept 
 					return Error();
 				}
 
-				return Error(errLogic, "Field with path '%s' already exists and has different type", pathToStr(splittedPath));
+				return Error(errLogic, "Field with path '{}' already exists and has different type", pathToStr(splittedPath));
 			}
 		} else {
 			try {
@@ -91,7 +91,7 @@ Error PrefixTree::AddPath(FieldProps props, const PathT& splittedPath) noexcept 
 				[[maybe_unused]] bool res;
 				std::tie(nextNodeIt, res) = node->children.emplace(*fieldIt, std::make_unique<PrefixTreeNode>(FieldProps("object")));
 			} catch (...) {
-				return Error(errLogic, "PrefixTree.AddPath: Unexpected exception for path: '%s'", pathToStr(splittedPath));	 // For PVS
+				return Error(errLogic, "PrefixTree.AddPath: Unexpected exception for path: '{}'", pathToStr(splittedPath));	 // For PVS
 			}
 		}
 		node = nextNodeIt.value().get();
@@ -276,7 +276,7 @@ Error Schema::FromJSON(std::string_view json) {
 			originalJson_.assign(json);
 		}
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "Schema: %s\nJson: %s", ex.what(), originalJson_);
+		return Error(errParseJson, "Schema: {}\nJson: {}", ex.what(), originalJson_);
 	} catch (const Error& err) {
 		return err;
 	}
@@ -374,7 +374,7 @@ std::vector<int> Schema::MakeCsvTagOrdering(const TagsMatcher& tm) const {
 		const auto& tagName = tagNode.As<std::string_view>();
 		auto tag = tm.name2tag(tagName);
 		if (tag == 0) {
-			throw Error(errParams, "Tag %s not found in tagsmatcher", tagName);
+			throw Error(errParams, "Tag {} not found in tagsmatcher", tagName);
 		}
 		result.emplace_back(tag);
 	}

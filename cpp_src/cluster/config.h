@@ -165,7 +165,7 @@ struct ClusterConfigData {
 				return i;
 			}
 		}
-		throw Error(errLogic, "Cluster config. Cannot find node index for ServerId(%d)", serverId);
+		throw Error(errLogic, "Cluster config. Cannot find node index for ServerId({})", serverId);
 	}
 
 	std::vector<ClusterNodeConfig> nodes;

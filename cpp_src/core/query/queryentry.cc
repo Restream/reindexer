@@ -119,7 +119,7 @@ void VerifyQueryEntryValues(CondType cond, const VariantArray& values) {
 	}
 	const auto checkArgsCount = [&](size_t argsCountReq) {
 		if (values.size() != argsCountReq) {
-			throw Error{errLogic, "Condition %s must have exact %d argument, but %d arguments was provided", CondTypeToStr(cond),
+			throw Error{errLogic, "Condition {} must have exact {} argument, but {} arguments was provided", CondTypeToStr(cond),
 						argsCountReq, values.size()};
 		}
 	};
@@ -131,7 +131,7 @@ void VerifyQueryEntryValues(CondType cond, const VariantArray& values) {
 		case CondAny:
 		case CondEmpty:
 			if (!values.empty() && !(values.size() == 1 && values[0].Type().Is<KeyValueType::Null>())) {
-				throw Error{errLogic, "Condition %s must have no argument or single null argument, but %d not null arguments was provided",
+				throw Error{errLogic, "Condition {} must have no argument or single null argument, but {} not null arguments was provided",
 							CondTypeToStr(cond), values.size()};
 			}
 			break;
@@ -144,7 +144,7 @@ void VerifyQueryEntryValues(CondType cond, const VariantArray& values) {
 		case CondLike:
 			checkArgsCount(1);
 			if (!values[0].Type().Is<KeyValueType::String>()) {
-				throw Error{errLogic, "Condition %s must have string argument, but %s argument was provided", CondTypeToStr(cond),
+				throw Error{errLogic, "Condition {} must have string argument, but {} argument was provided", CondTypeToStr(cond),
 							values[0].Type().Name()};
 			}
 			break;
@@ -200,7 +200,7 @@ AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1>&& fields, 
 	switch (type_) {
 		case AggFacet:
 			if (fields_.empty()) {
-				throw Error(errQueryExec, "Empty set of fields for aggregation %s", AggTypeToStr(type_));
+				throw Error(errQueryExec, "Empty set of fields for aggregation {}", AggTypeToStr(type_));
 			}
 			break;
 		case AggDistinct:
@@ -209,13 +209,13 @@ AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1>&& fields, 
 		case AggSum:
 		case AggAvg:
 			if (fields_.size() != 1) {
-				throw Error{errQueryExec, "For aggregation %s is available exactly one field", AggTypeToStr(type_)};
+				throw Error{errQueryExec, "For aggregation {} is available exactly one field", AggTypeToStr(type_)};
 			}
 			break;
 		case AggCount:
 		case AggCountCached:
 			if (!fields_.empty()) {
-				throw Error(errQueryExec, "Not empty set of fields for aggregation %s", AggTypeToStr(type_));
+				throw Error(errQueryExec, "Not empty set of fields for aggregation {}", AggTypeToStr(type_));
 			}
 			break;
 		case AggUnknown:
@@ -230,10 +230,10 @@ AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1>&& fields, 
 		case AggCount:
 		case AggCountCached:
 			if (limit_ != QueryEntry::kDefaultLimit || offset_ != QueryEntry::kDefaultOffset) {
-				throw Error(errQueryExec, "Limit or offset are not available for aggregation %s", AggTypeToStr(type_));
+				throw Error(errQueryExec, "Limit or offset are not available for aggregation {}", AggTypeToStr(type_));
 			}
 			if (!sortingEntries_.empty()) {
-				throw Error(errQueryExec, "Sort is not available for aggregation %s", AggTypeToStr(type_));
+				throw Error(errQueryExec, "Sort is not available for aggregation {}", AggTypeToStr(type_));
 			}
 			break;
 		case AggUnknown:
@@ -245,27 +245,23 @@ AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1>&& fields, 
 
 void AggregateEntry::AddSortingEntry(SortingEntry&& sorting) {
 	if (type_ != AggFacet) {
-		throw Error(errQueryExec, "Sort is not available for aggregation %s", AggTypeToStr(type_));
+		throw Error(errQueryExec, "Sort is not available for aggregation {}", AggTypeToStr(type_));
 	}
 	sortingEntries_.emplace_back(std::move(sorting));
 }
 
 void AggregateEntry::SetLimit(unsigned l) {
 	if (type_ != AggFacet) {
-		throw Error(errQueryExec, "Limit or offset are not available for aggregation %s", AggTypeToStr(type_));
+		throw Error(errQueryExec, "Limit or offset are not available for aggregation {}", AggTypeToStr(type_));
 	}
 	limit_ = l;
 }
 
 void AggregateEntry::SetOffset(unsigned o) {
 	if (type_ != AggFacet) {
-		throw Error(errQueryExec, "Limit or offset are not available for aggregation %s", AggTypeToStr(type_));
+		throw Error(errQueryExec, "Limit or offset are not available for aggregation {}", AggTypeToStr(type_));
 	}
 	offset_ = o;
-}
-
-bool BetweenFieldsQueryEntry::operator==(const BetweenFieldsQueryEntry& other) const noexcept {
-	return leftField_ == other.leftField_ && rightField_ == other.rightField_ && Condition() == other.Condition();
 }
 
 std::string BetweenFieldsQueryEntry::Dump() const {
@@ -276,7 +272,7 @@ std::string BetweenFieldsQueryEntry::Dump() const {
 
 void BetweenFieldsQueryEntry::checkCondition(CondType cond) const {
 	if (cond == CondAny || cond == CondEmpty || cond == CondDWithin || cond == CondKnn) {
-		throw Error{errLogic, "Condition '%s' is inapplicable between two fields", CondTypeToStr(cond)};
+		throw Error{errLogic, "Condition '{}' is inapplicable between two fields", CondTypeToStr(cond)};
 	}
 }
 
@@ -370,38 +366,6 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer&
 				qe.Params().Serialize(ser);
 			});
 	}
-}
-
-bool UpdateEntry::operator==(const UpdateEntry& obj) const noexcept {
-	return isExpression_ == obj.isExpression_ && column_ == obj.column_ && mode_ == obj.mode_ && values_ == obj.values_;
-}
-
-bool QueryJoinEntry::operator==(const QueryJoinEntry& other) const noexcept {
-	return op_ == other.op_ && condition_ == other.condition_ && leftField_ == other.leftField_ && rightField_ == other.rightField_;
-}
-
-void QueryJoinEntry::verify() const {
-	if (condition_ == CondKnn) {
-		throw Error(errLogic, "Condition KNN cannot be used in ON statement");
-	}
-}
-
-bool AggregateEntry::operator==(const AggregateEntry& obj) const noexcept {
-	return fields_ == obj.fields_ && type_ == obj.type_ && sortingEntries_ == obj.sortingEntries_ && limit_ == obj.limit_ &&
-		   offset_ == obj.offset_;
-}
-
-bool SortingEntry::operator==(const SortingEntry& obj) const noexcept {
-	if (expression != obj.expression) {
-		return false;
-	}
-	if (desc != obj.desc) {
-		return false;
-	}
-	if (index != obj.index) {
-		return false;
-	}
-	return true;
 }
 
 bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator end, const ConstPayload& pl) {
@@ -525,7 +489,7 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 		case CondLike:
 			for (const auto& v : lValues) {
 				if (!v.Type().Is<KeyValueType::String>()) {
-					throw Error(errLogic, "Condition LIKE must be applied to data of string type, but %s was provided", v.Type().Name());
+					throw Error(errLogic, "Condition LIKE must be applied to data of string type, but {} was provided", v.Type().Name());
 				}
 				if (matchLikePattern(std::string_view(v), std::string_view(rValues[0]))) {
 					return true;
@@ -954,9 +918,10 @@ std::string SubQueryFieldEntry::Dump(const std::vector<Query>& subQueries) const
 
 void SubQueryFieldEntry::checkCondition(CondType cond) const {
 	if (cond == CondAny || cond == CondEmpty || cond == CondKnn) {
-		throw Error{errQueryExec, "Condition %s with field and subquery", CondTypeToStr(cond)};
+		throw Error{errQueryExec, "Condition {} with field and subquery", CondTypeToStr(cond)};
 	}
 }
+
 template <typename JS>
 void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS>& joinedSelectors,
 						const std::vector<Query>& subQueries, WrSerializer& ser) {

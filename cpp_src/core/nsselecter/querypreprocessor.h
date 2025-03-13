@@ -45,7 +45,8 @@ public:
 		return substituteCompositeIndexes(0, container_.size() - hasForcedSortOptimizationQueryEntry()) != 0;
 	}
 	void InitIndexedQueries() { initIndexedQueries(0, Size()); }
-	bool NeedNextEvaluation(unsigned start, unsigned count, bool& matchedAtLeastOnce, QresExplainHolder& qresHolder) noexcept;
+	bool NeedNextEvaluation(unsigned start, unsigned count, bool& matchedAtLeastOnce, QresExplainHolder& qresHolder,
+							bool needCalcTotal) noexcept;
 	unsigned Start() const noexcept { return start_; }
 	unsigned Count() const noexcept { return count_; }
 	bool MoreThanOneEvaluation() const noexcept { return hasForcedSortOptimizationQueryEntry(); }

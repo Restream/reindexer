@@ -87,7 +87,7 @@ public:
 					} else {
 						auto index = try_stoi(content);
 						if (!index) {
-							throw Error(errParams, "Can't convert '%s' to number", content);
+							throw Error(errParams, "Can't convert '{}' to number", content);
 						}
 						if (index < 0) {
 							throw Error(errLogic, "Array index value cannot be negative");
@@ -137,7 +137,7 @@ public:
 		}
 
 		if (tag - 1 >= tags2names_.size()) {
-			throw Error(errTagsMissmatch, "Unknown tag %d in cjson", tag);
+			throw Error(errTagsMissmatch, "Unknown tag {} in cjson", tag);
 		}
 
 		return tags2names_[tag - 1];
@@ -343,7 +343,7 @@ protected:
 
 	void validateTagSize(size_t sz) {
 		if (sz > ctag::kNameMax) {
-			throw Error(errParams, "Exceeded the maximum allowed number (%d) of tags for TagsMatcher. Attempt to place %d tags",
+			throw Error(errParams, "Exceeded the maximum allowed number ({}) of tags for TagsMatcher. Attempt to place {} tags",
 						ctag::kNameMax, sz);
 		}
 	}

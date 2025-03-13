@@ -13,7 +13,7 @@ Error ShardedMeta::FromJSON(std::span<char> json) {
 		shardId = root["shard_id"sv].As<int>(shardId);
 		data = root["data"sv].As<std::string>();
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "ShardedMeta: %s", ex.what());
+		return Error(errParseJson, "ShardedMeta: {}", ex.what());
 	} catch (const Error& err) {
 		return err;
 	}

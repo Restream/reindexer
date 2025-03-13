@@ -73,12 +73,12 @@ void FtDSLQuery::parse(std::wstring& utf16str) {
 							throw Error(errParseDSL, "Expected digit after '~' operator in phrase, but found nothing");
 						}
 						if (!std::isdigit(*it)) {
-							throw Error(errParseDSL, "Expected digit after '~' operator in phrase, but found '%c' ", char(*it));
+							throw Error(errParseDSL, "Expected digit after '~' operator in phrase, but found '{}' ", char(*it));
 						}
 						wchar_t *end = nullptr, *start = &*it;
 						distance = wcstoul(start, &end, 10);
 						if (*end != 0 && !std::isspace(*end)) {
-							throw Error(errParseDSL, "Expected space after '~digit' operator in phrase, but found '%c' ", char(*it));
+							throw Error(errParseDSL, "Expected space after '~digit' operator in phrase, but found '{}' ", char(*it));
 						}
 						if (distance == 0) {
 							throw Error(errParseDSL, "Expected positive integer after '~', but found '0'");
@@ -137,7 +137,7 @@ void FtDSLQuery::parse(std::wstring& utf16str) {
 				wchar_t *end = nullptr, *start = &*it;
 				fte.opts.boost = wcstod(start, &end);
 				if (end == start) {
-					throw Error(errParseDSL, "Expected digit after '^' operator in search query DSL, but found '%c' ", char(*start));
+					throw Error(errParseDSL, "Expected digit after '^' operator in search query DSL, but found '{}' ", char(*start));
 				}
 				it += end - start - 1;
 			} else {
@@ -212,7 +212,7 @@ void FtDSLQuery::parseFields(std::wstring& utf16str, std::wstring::iterator& it,
 			wchar_t *end = nullptr, *start = &*it;
 			boost = wcstof(start, &end);
 			if (end == start) {
-				throw Error(errParseDSL, "Expected digit after '^' operator in search query DSL, but found '%c' ", char(*start));
+				throw Error(errParseDSL, "Expected digit after '^' operator in search query DSL, but found '{}' ", char(*start));
 			}
 			it += end - start;
 		}
@@ -223,9 +223,9 @@ void FtDSLQuery::parseFields(std::wstring& utf16str, std::wstring::iterator& it,
 			std::string fname = utf16_to_utf8(std::wstring(&*begIt, endIt - begIt));
 			auto f = fields_.find(fname);
 			if (f == fields_.end()) {
-				throw Error(errLogic, "Field '%s',is not included to full text index", fname);
+				throw Error(errLogic, "Field '{}',is not included to full text index", fname);
 			}
-			assertf(f->second < int(fieldsOpts.size()), "f=%d,fieldsOpts.size()=%d", f->second, fieldsOpts.size());
+			assertf(f->second < int(fieldsOpts.size()), "f={},fieldsOpts.size()={}", f->second, fieldsOpts.size());
 			fieldsOpts[f->second] = {boost, needSumRank};
 		}
 		if (it == utf16str.end() || *it++ != ',') {

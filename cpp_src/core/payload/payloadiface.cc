@@ -69,12 +69,12 @@ Variant PayloadIface<T>::get(int field, int idx, HoldT h) const {
 
 	if (t_.Field(field).IsArray()) {
 		auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-		assertf(idx < arr->len, "Field '%s.%s' bound exceed idx %d > len %d", Type().Name(), Type().Field(field).Name(), idx, arr->len);
+		assertf(idx < arr->len, "Field '{}.{}' bound exceed idx {} > len {}", Type().Name(), Type().Field(field).Name(), idx, arr->len);
 
 		PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + idx * t_.Field(field).ElemSizeof());
 		return pv.Get(h);
 	} else {
-		assertf(idx == 0, "Field '%s.%s' is not array, can't get idx %d", Type().Name(), Type().Field(field).Name(), idx);
+		assertf(idx == 0, "Field '{}.{}' is not array, can't get idx {}", Type().Name(), Type().Field(field).Name(), idx);
 		return Field(field).Get(h);
 	}
 }
@@ -291,10 +291,10 @@ void PayloadIface<T>::SerializeFields(WrSerializer& ser, const FieldsSet& fields
 				GetByJsonPath(tagsPath, varr, KeyValueType::Undefined{});
 			}
 			if (varr.empty()) {
-				throw Error(errParams, "PK serializing error: field [%s] cannot not be empty", fields.getJsonPath(tagPathIdx));
+				throw Error(errParams, "PK serializing error: field [{}] cannot not be empty", fields.getJsonPath(tagPathIdx));
 			}
 			if (varr.size() > 1) {
-				throw Error(errParams, "PK serializing error: field [%s] cannot not be array", fields.getJsonPath(tagPathIdx));
+				throw Error(errParams, "PK serializing error: field [{}] cannot not be array", fields.getJsonPath(tagPathIdx));
 			}
 			ser.PutVariant(varr[0]);
 			++tagPathIdx;

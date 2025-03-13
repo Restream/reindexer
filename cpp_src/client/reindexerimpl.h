@@ -275,7 +275,7 @@ private:
 					return R(Error(errNetwork, "Request for invalid connection (probably this connection was broken and invalidated)"));
 				}
 			}
-			return R(Error(errTerminated, "Client is not connected: %s", err.what()));
+			return R(Error(errTerminated, "Client is not connected: {}", err.what()));
 		}
 		if constexpr (std::is_same_v<R, Error>) {
 			DatabaseCommandData<R, Args...> cmd(c, ctx, std::forward<Args>(args)...);
@@ -287,7 +287,7 @@ private:
 				err = commandsQueue_.Push(DatabaseCommand(std::move(cmd)));
 			}
 			if (!err.ok()) {
-				return R(Error(errTerminated, "Client is not connected: %s", err.what()));
+				return R(Error(errTerminated, "Client is not connected: {}", err.what()));
 			}
 			return R();
 		}

@@ -226,7 +226,7 @@ void ReplicationState::FromJSON(std::span<char> json) {
 		}
 
 	} catch (const gason::Exception& ex) {
-		throw Error(errParseJson, "ReplicationState: %s", ex.what());
+		throw Error(errParseJson, "ReplicationState: {}", ex.what());
 	}
 }
 
@@ -313,7 +313,7 @@ Error ClusterizationStatus::FromJSON(std::span<char> json) {
 		gason::JsonParser parser;
 		FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "ClusterizationStatus: %s", ex.what());
+		return Error(errParseJson, "ClusterizationStatus: {}", ex.what());
 	} catch (const Error& err) {
 		return err;
 	}
@@ -346,7 +346,7 @@ void ReplicationStateV2::FromJSON(std::span<char> json) {
 		nsVersion = lsn_t(root["ns_version"].As<int64_t>());
 		clusterStatus.FromJSON(root["cluster_status"]);
 	} catch (const gason::Exception& ex) {
-		throw Error(errParseJson, "ReplicationState: %s", ex.what());
+		throw Error(errParseJson, "ReplicationState: {}", ex.what());
 	}
 }
 

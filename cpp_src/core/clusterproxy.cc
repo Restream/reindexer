@@ -14,14 +14,14 @@ namespace reindexer {
 template <typename R, typename std::enable_if<std::is_same<R, Error>::value>::type* = nullptr>
 static void printErr(const R& r) {
 	if (!r.ok()) {
-		clusterProxyLog(LogTrace, "[cluster proxy] Err: %s", r.what());
+		clusterProxyLog(LogTrace, "[cluster proxy] Err: {}", r.what());
 	}
 }
 
 template <typename R, typename std::enable_if<std::is_same<R, Transaction>::value>::type* = nullptr>
 static void printErr(const R& r) {
 	if (!r.Status().ok()) {
-		clusterProxyLog(LogTrace, "[cluster proxy] Tx err: %s", r.Status().what());
+		clusterProxyLog(LogTrace, "[cluster proxy] Tx err: {}", r.Status().what());
 	}
 }
 #endif
@@ -141,7 +141,7 @@ std::shared_ptr<client::Reindexer> ClusterProxy::getLeader(const cluster::RaftIn
 		throw err;
 	}
 	if (!leaderDsn.Parser().isValid()) {
-		throw Error(errLogic, "Leader dsn is not valid. %s", leaderDsn);
+		throw Error(errLogic, "Leader dsn is not valid. {}", leaderDsn);
 	}
 	leader_ = clusterConns_.Get(leaderDsn);
 	leaderId_ = info.leaderId;
@@ -191,70 +191,70 @@ Error ClusterProxy::OpenNamespace(std::string_view nsName, const StorageOpts& op
 								  const RdxContext& ctx) {
 	using namespace std::placeholders;
 	DefFunctor3(std::string_view, const StorageOpts&, const NsReplicationOpts&, OpenNamespace, baseFollowerAction);
-	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::OpenNamespace", getServerIDRel());
+	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::OpenNamespace", getServerIDRel());
 	return CallProxyFunction(OpenNamespace)(ctx, nsName, action, nsName, opts, replOpts);
 }
 
 Error ClusterProxy::AddNamespace(const NamespaceDef& nsDef, const NsReplicationOpts& replOpts, const RdxContext& ctx) {
 	using namespace std::placeholders;
 	DefFunctor2(const NamespaceDef&, const NsReplicationOpts&, AddNamespace, baseFollowerAction);
-	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::AddNamespace", getServerIDRel());
+	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::AddNamespace", getServerIDRel());
 	return CallProxyFunction(AddNamespace)(ctx, nsDef.name, action, nsDef, replOpts);
 }
 
 Error ClusterProxy::CloseNamespace(std::string_view nsName, const RdxContext& ctx) {
 	using namespace std::placeholders;
 	DefFunctor1(std::string_view, CloseNamespace, baseFollowerAction);
-	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::DropNamespace", getServerIDRel());
+	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::DropNamespace", getServerIDRel());
 	return CallProxyFunction(CloseNamespace)(ctx, nsName, action, nsName);
 }
 
 Error ClusterProxy::DropNamespace(std::string_view nsName, const RdxContext& ctx) {
 	using namespace std::placeholders;
 	DefFunctor1(std::string_view, DropNamespace, baseFollowerAction);
-	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::DropNamespace", getServerIDRel());
+	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::DropNamespace", getServerIDRel());
 	return CallProxyFunction(DropNamespace)(ctx, nsName, action, nsName);
 }
 
 Error ClusterProxy::TruncateNamespace(std::string_view nsName, const RdxContext& ctx) {
 	using namespace std::placeholders;
 	DefFunctor1(std::string_view, TruncateNamespace, baseFollowerAction);
-	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::TruncateNamespace", getServerIDRel());
+	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::TruncateNamespace", getServerIDRel());
 	return CallProxyFunction(TruncateNamespace)(ctx, nsName, action, nsName);
 }
 
 Error ClusterProxy::RenameNamespace(std::string_view srcNsName, const std::string& dstNsName, const RdxContext& ctx) {
 	using namespace std::placeholders;
 	DefFunctor2(std::string_view, const std::string&, RenameNamespace, baseFollowerAction);
-	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::RenameNamespace", getServerIDRel());
+	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::RenameNamespace", getServerIDRel());
 	return CallProxyFunction(RenameNamespace)(ctx, std::string_view(), action, srcNsName, dstNsName);
 }
 
 Error ClusterProxy::AddIndex(std::string_view nsName, const IndexDef& index, const RdxContext& ctx) {
 	using namespace std::placeholders;
 	DefFunctor2(std::string_view, const IndexDef&, AddIndex, baseFollowerAction);
-	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::AddIndex", getServerIDRel());
+	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::AddIndex", getServerIDRel());
 	return CallProxyFunction(AddIndex)(ctx, nsName, action, nsName, index);
 }
 
 Error ClusterProxy::UpdateIndex(std::string_view nsName, const IndexDef& index, const RdxContext& ctx) {
 	using namespace std::placeholders;
 	DefFunctor2(std::string_view, const IndexDef&, UpdateIndex, baseFollowerAction);
-	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::UpdateIndex", getServerIDRel());
+	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::UpdateIndex", getServerIDRel());
 	return CallProxyFunction(UpdateIndex)(ctx, nsName, action, nsName, index);
 }
 
 Error ClusterProxy::DropIndex(std::string_view nsName, const IndexDef& index, const RdxContext& ctx) {
 	using namespace std::placeholders;
 	DefFunctor2(std::string_view, const IndexDef&, DropIndex, baseFollowerAction);
-	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::DropIndex", getServerIDRel());
+	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::DropIndex", getServerIDRel());
 	return CallProxyFunction(DropIndex)(ctx, nsName, action, nsName, index);
 }
 
 Error ClusterProxy::SetSchema(std::string_view nsName, std::string_view schema, const RdxContext& ctx) {
 	using namespace std::placeholders;
 	DefFunctor2(std::string_view, std::string_view, SetSchema, baseFollowerAction);
-	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::SetSchema", getServerIDRel());
+	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::SetSchema", getServerIDRel());
 	return CallProxyFunction(SetSchema)(ctx, nsName, action, nsName, schema);
 }
 
@@ -298,7 +298,7 @@ Error ClusterProxy::Update(const Query& q, LocalQueryResults& qr, const RdxConte
 	auto action = [this](const RdxContext& ctx, LeaderRefT clientToLeader, const Query& q, LocalQueryResults& qr) {
 		return resultFollowerAction<&client::Reindexer::Update>(ctx, clientToLeader, q, qr);
 	};
-	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Update query", getServerIDRel());
+	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::Update query", getServerIDRel());
 	return proxyCall<LocalQueryActionFT, &ReindexerImpl::Update, Error>(ctx, q.NsName(), action, q, qr);
 }
 
@@ -320,7 +320,7 @@ Error ClusterProxy::Delete(std::string_view nsName, Item& item, const RdxContext
 	auto action = [this](const RdxContext& ctx, LeaderRefT clientToLeader, std::string_view nsName, Item& item) {
 		return itemFollowerAction<&client::Reindexer::Delete>(ctx, clientToLeader, nsName, item);
 	};
-	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Delete ITEM", getServerIDRel());
+	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::Delete ITEM", getServerIDRel());
 	return proxyCall<LocalItemSimpleActionFT, &ReindexerImpl::Delete, Error>(ctx, nsName, action, nsName, item);
 }
 
@@ -335,14 +335,14 @@ Error ClusterProxy::Delete(const Query& q, LocalQueryResults& qr, const RdxConte
 	auto action = [this](const RdxContext& ctx, LeaderRefT clientToLeader, const Query& q, LocalQueryResults& qr) {
 		return resultFollowerAction<&client::Reindexer::Delete>(ctx, clientToLeader, q, qr);
 	};
-	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Delete QUERY", getServerIDRel());
+	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::Delete QUERY", getServerIDRel());
 	return proxyCall<LocalQueryActionFT, &ReindexerImpl::Delete, Error>(ctx, q.NsName(), action, q, qr);
 }
 
 Error ClusterProxy::Select(const Query& q, LocalQueryResults& qr, const RdxContext& ctx) {
 	using namespace std::placeholders;
 	if (!shouldProxyQuery(q)) {
-		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Select query local", getServerIDRel());
+		clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::Select query local", getServerIDRel());
 		return impl_.Select(q, qr, ctx);
 	}
 	const RdxDeadlineContext deadlineCtx(kReplicationStatsTimeout, ctx.GetCancelCtx());
@@ -351,7 +351,7 @@ Error ClusterProxy::Select(const Query& q, LocalQueryResults& qr, const RdxConte
 	auto action = [this](const RdxContext& ctx, LeaderRefT clientToLeader, const Query& q, LocalQueryResults& qr) {
 		return resultFollowerAction<&client::Reindexer::Select>(ctx, clientToLeader, q, qr);
 	};
-	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Select query proxied", getServerIDRel());
+	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::Select query proxied", getServerIDRel());
 	return proxyCall<LocalQueryActionFT, &ReindexerImpl::Select, Error>(rdxDeadlineCtx, q.NsName(), action, q, qr);
 }
 
@@ -365,7 +365,7 @@ Transaction ClusterProxy::NewTransaction(std::string_view nsName, const RdxConte
 			return Transaction(err);
 		}
 	};
-	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::NewTransaction", getServerIDRel());
+	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::NewTransaction", getServerIDRel());
 	return proxyCall<LocalFT, &ReindexerImpl::NewTransaction, Transaction>(ctx, nsName, action, nsName);
 }
 
@@ -385,7 +385,7 @@ Error ClusterProxy::GetMeta(std::string_view nsName, const std::string& key, std
 Error ClusterProxy::PutMeta(std::string_view nsName, const std::string& key, std::string_view data, const RdxContext& ctx) {
 	using namespace std::placeholders;
 	DefFunctor3(std::string_view, const std::string&, std::string_view, PutMeta, baseFollowerAction);
-	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::PutMeta", getServerIDRel());
+	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::PutMeta", getServerIDRel());
 	return CallProxyFunction(PutMeta)(ctx, nsName, action, nsName, key, data);
 }
 
@@ -396,7 +396,7 @@ Error ClusterProxy::EnumMeta(std::string_view nsName, std::vector<std::string>& 
 Error ClusterProxy::DeleteMeta(std::string_view nsName, const std::string& key, const RdxContext& ctx) {
 	using namespace std::placeholders;
 	DefFunctor2(std::string_view, const std::string&, DeleteMeta, baseFollowerAction);
-	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::DeleteMeta", getServerIDRel());
+	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::DeleteMeta", getServerIDRel());
 	return CallProxyFunction(DeleteMeta)(ctx, nsName, action, nsName, key);
 }
 
@@ -572,7 +572,7 @@ Error ClusterProxy::shardingControlRequestAction(const RdxContext& ctx, Args&&..
 			return baseFollowerAction<decltype(ClientMethod), ClientMethod>(c, l, std::forward<Args>(aa)...);
 		};
 
-		clusterProxyLog(LogTrace, "[%d proxy] %s", getServerIDRel(), REINDEXER_FUNC_NAME);
+		clusterProxyLog(LogTrace, "[{} proxy] {}", getServerIDRel(), REINDEXER_FUNC_NAME);
 		// kReplicationStatsNamespace required for impl_.NamespaceIsInClusterConfig(nsName) in proxyCall was true always
 		return proxyCall<decltype(ImplMethod), ImplMethod, Error>(ctx, kReplicationStatsNamespace, action, std::forward<Args>(args)...);
 	}
@@ -698,7 +698,7 @@ R ClusterProxy::proxyCall(const RdxContext& ctx, std::string_view nsName, const 
 			err = impl_.GetRaftInfo(allowCandidateRole, info, ctx);
 			if (!err.ok()) {
 				if (err.code() == errTimeout || err.code() == errCanceled) {
-					err = Error(err.code(), "Unable to get cluster's leader: %s", err.what());
+					err = Error(err.code(), "Unable to get cluster's leader: {}", err.what());
 				}
 				setErrorCode(r, std::move(err));
 				return r;
@@ -717,7 +717,7 @@ R ClusterProxy::proxyCall(const RdxContext& ctx, std::string_view nsName, const 
 			}
 			const bool nsInClusterConf = impl_.NamespaceIsInClusterConfig(nsName);
 			if (!nsInClusterConf) {	 // ns is not in cluster
-				clusterProxyLog(LogTrace, "[%d proxy] proxyCall ns not in cluster config (local)", getServerIDRel());
+				clusterProxyLog(LogTrace, "[{} proxy] proxyCall ns not in cluster config (local)", getServerIDRel());
 				const bool firstError = (errCode == errOK);
 				r = localCall<Fn, fn, R, Args...>(ctx, args...);
 				errCode = getErrCode(err, r);
@@ -728,7 +728,7 @@ R ClusterProxy::proxyCall(const RdxContext& ctx, std::string_view nsName, const 
 			}
 			if (info.role == cluster::RaftInfo::Role::Leader) {
 				resetLeader();
-				clusterProxyLog(LogTrace, "[%d proxy] proxyCall RaftInfo::Role::Leader", getServerIDRel());
+				clusterProxyLog(LogTrace, "[{} proxy] proxyCall RaftInfo::Role::Leader", getServerIDRel());
 				r = localCall<Fn, fn, R, Args...>(ctx, args...);
 #if RX_ENABLE_CLUSTERPROXY_LOGS
 				printErr(r);
@@ -741,7 +741,7 @@ R ClusterProxy::proxyCall(const RdxContext& ctx, std::string_view nsName, const 
 				}
 				try {
 					auto clientToLeader = getLeader(info);
-					clusterProxyLog(LogTrace, "[%d proxy] proxyCall RaftInfo::Role::Follower", getServerIDRel());
+					clusterProxyLog(LogTrace, "[{} proxy] proxyCall RaftInfo::Role::Follower", getServerIDRel());
 					r = action(ctx, clientToLeader, args...);
 				} catch (Error& e) {
 					setErrorCode(r, std::move(e));
@@ -755,7 +755,7 @@ R ClusterProxy::proxyCall(const RdxContext& ctx, std::string_view nsName, const 
 			errCode = getErrCode(err, r);
 		} while (errCode == errWrongReplicationData);
 	} else {
-		clusterProxyLog(LogTrace, "[%d proxy] proxyCall LSN not empty (local call)", getServerIDRel());
+		clusterProxyLog(LogTrace, "[{} proxy] proxyCall LSN not empty (local call)", getServerIDRel());
 		r = localCall<Fn, fn, R, Args...>(ctx, args...);
 		// errWrongReplicationData means, that leader of the current node doesn't match leader from LSN
 		if (getErrCode(err, r) == errWrongReplicationData) {
@@ -763,7 +763,7 @@ R ClusterProxy::proxyCall(const RdxContext& ctx, std::string_view nsName, const 
 			err = impl_.GetRaftInfo(false, info, ctx);
 			if (!err.ok()) {
 				if (err.code() == errTimeout || err.code() == errCanceled) {
-					err = Error(err.code(), "Unable to get cluster's leader: %s", err.what());
+					err = Error(err.code(), "Unable to get cluster's leader: {}", err.what());
 				}
 				setErrorCode(r, std::move(err));
 				return r;

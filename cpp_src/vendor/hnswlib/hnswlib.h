@@ -104,6 +104,25 @@ public:
             normCoefs_ = std::make_unique<MTYPE[]>(maxElements);
         }
     }
+#if RX_WITH_STDLIB_DEBUG
+    DistCalculator(DistCalculator&& other) noexcept :
+      maxElements_{other.maxElements_},
+      param_{std::move(other.param_)},
+      normCoefs_{std::move(other.normCoefs_)},
+      initialized_{std::move(other.initialized_)}
+    { }
+
+    DistCalculator& operator=(DistCalculator&& other) noexcept {
+        if (&other != this) {
+            std::scoped_lock lck(mtx_, other.mtx_);
+            maxElements_ = other.maxElements_;
+            param_ = std::move(other.param_);
+            normCoefs_ = std::move(other.normCoefs_);
+            initialized_ = std::move(other.initialized_);
+        }
+        return *this;
+    }
+#endif // RX_WITH_STDLIB_DEBUG
 
     void Resize(size_t newSize) {
         if (maxElements_ != newSize) {
@@ -136,6 +155,7 @@ public:
             assertrx_dbg(normCoefs_);
             normCoefs_[id] = reindexer::ann::CalculateL2Module(static_cast<const MTYPE*>(v), int32_t(param_.dims));
 #if RX_WITH_STDLIB_DEBUG
+            std::lock_guard lck(mtx_);
             initialized_.emplace(id);
 #endif // RX_WITH_STDLIB_DEBUG
         } else {
@@ -149,6 +169,7 @@ public:
             assertrx_dbg(normCoefs_);
             normCoefs_.get()[newId] = normCoefs_.get()[oldId];
 #if RX_WITH_STDLIB_DEBUG
+            std::lock_guard lck(mtx_);
             assertrx_dbg(initialized_.find(oldId) != initialized_.end());
             initialized_.erase(oldId);
             initialized_.emplace(newId);
@@ -161,7 +182,8 @@ public:
         assertrx_dbg(id < maxElements_);
 #if RX_WITH_STDLIB_DEBUG
         if (param_.metric == MetricType::COSINE) {
-            assertrx(initialized_.find(id) != initialized_.end());
+            std::lock_guard lck(mtx_);
+            assertrx_dbg(initialized_.find(id) != initialized_.end());
             initialized_.erase(id);
         } else {
             assertrx_dbg(!normCoefs_);
@@ -174,12 +196,15 @@ public:
     RX_ALWAYS_INLINE MTYPE operator()(const void *v1, unsigned id1, const void *v2, unsigned id2) const noexcept {
         auto dist = param_.f(v1, v2, &param_.dims);
         if (param_.metric == MetricType::COSINE) {
-            assertrx_dbg(normCoefs_);
-            assertrx_dbg(id1 < maxElements_);
-            assertrx_dbg(id2 < maxElements_);
+            assertrx(normCoefs_);
+            assertrx(id1 < maxElements_);
+            assertrx(id2 < maxElements_);
 #if RX_WITH_STDLIB_DEBUG
-            assertrx_dbg(initialized_.find(id1) != initialized_.end());
-            assertrx_dbg(initialized_.find(id2) != initialized_.end());
+            {
+                std::lock_guard lck(mtx_);
+                assertrx_dbg(initialized_.find(id1) != initialized_.end());
+                assertrx_dbg(initialized_.find(id2) != initialized_.end());
+            }
 #endif // RX_WITH_STDLIB_DEBUG
             dist *= normCoefs_[id1];
             dist *= normCoefs_[id2];
@@ -194,7 +219,10 @@ public:
             assertrx_dbg(normCoefs_);
             assertrx_dbg(id < maxElements_);
 #if RX_WITH_STDLIB_DEBUG
-            assertrx_dbg(initialized_.find(id) != initialized_.end());
+            {
+                std::lock_guard lck(mtx_);
+                assertrx_dbg(initialized_.find(id) != initialized_.end());
+            }
 #endif // RX_WITH_STDLIB_DEBUG
             dist *= normCoefs_[id];
         } else {
@@ -208,6 +236,7 @@ private:
     DistCalculatorParam<MTYPE> param_;
     std::unique_ptr<MTYPE[]> normCoefs_;
 #if RX_WITH_STDLIB_DEBUG
+    mutable std::mutex mtx_;
     std::set<unsigned> initialized_;
 #endif // RX_WITH_STDLIB_DEBUG
 };

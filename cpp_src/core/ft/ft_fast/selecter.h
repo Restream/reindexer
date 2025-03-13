@@ -188,7 +188,7 @@ private:
 
 	private:
 		template <typename... Args>
-		void logTraceF(int level, const char* fmt, Args&&... args);
+		void logTraceF(int level, fmt::format_string<Args...> fmt, Args&&... args);
 		bool isWordFitMaxTyposDist(const WordTypo& found, const typos_context::TyposVec& current);
 		bool isWordFitMaxLettPerm(const std::string_view foundWord, const WordTypo& found, const std::wstring& currentWord,
 								  const typos_context::TyposVec& current);

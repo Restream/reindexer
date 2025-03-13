@@ -43,10 +43,10 @@ Error tryReadJsonValue(std::string* errLog, const gason::JsonNode& parent, std::
 		try {
 			value = parent[valueName].As<JsonT>(value, std::forward<Args>(args)...);
 		} catch (const gason::Exception& ex) {
-			result = Error(errParseJson, "%s", ex.what());
+			result = Error(errParseJson, "{}", ex.what());
 		}
 	} else if constexpr (required) {
-		result = Error(errParseJson, "Required paramenter '%s' is not found.\n", valueName);
+		result = Error(errParseJson, "Required paramenter '{}' is not found.\n", valueName);
 	}
 
 	if (errLog && !result.ok()) {

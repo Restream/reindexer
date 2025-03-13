@@ -3,7 +3,6 @@
 #include <core/keyvalue/variant.h>
 #include <vector>
 #include "core/formatters/lsn_fmt.h"
-#include "core/storage/idatastorage.h"
 #include "tools/errors.h"
 #include "tools/lsn.h"
 #include "walrecord.h"
@@ -78,7 +77,7 @@ public:
 		}
 		bool operator!=(const iterator& other) const noexcept { return idx_ != other.idx_; }
 		WALRecord operator*() const {
-			assertf(idx_ % wt_->walSize_ < int(wt_->records_.size()), "idx=%d,wt_->records_.size()=%d,lsnCounter=%d", idx_,
+			assertf(idx_ % wt_->walSize_ < int(wt_->records_.size()), "idx={},wt_->records_.size()={},lsnCounter={}", idx_,
 					wt_->records_.size(), wt_->lsnCounter_);
 
 			return WALRecord(std::span<const uint8_t>(wt_->records_[idx_ % wt_->walSize_]));

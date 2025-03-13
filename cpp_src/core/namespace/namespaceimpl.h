@@ -141,7 +141,7 @@ class NamespaceImpl final : public intrusive_atomic_rc_base {  // NOLINT(*perfor
 		IndexesCacheCleaner& operator=(IndexesCacheCleaner&&) = delete;
 		void Add(SortType s) {
 			if rx_unlikely (s >= sorts_.size()) {
-				throw Error(errLogic, "Index sort type overflow: %d. Limit is %d", s, sorts_.size() - 1);
+				throw Error(errLogic, "Index sort type overflow: {}. Limit is {}", s, sorts_.size() - 1);
 			}
 			if (s > 0) {
 				sorts_.set(s);
@@ -314,6 +314,9 @@ public:
 			return NamespaceImpl::InvalidationType(invalidation_.load(std::memory_order_acquire)) == InvalidationType::Valid;
 		}
 		const cluster::IDataSyncer& Syncer() const noexcept { return syncer_; }
+		bool IsInvalidated() const noexcept {
+			return NamespaceImpl::InvalidationType(invalidation_.load(std::memory_order_acquire)) != InvalidationType::Valid;
+		}
 
 	private:
 		void checkInvalidation() const {

@@ -13,7 +13,7 @@ constexpr unsigned kStorageLoadingThreads = 6;
 
 Error RepairTool::RepairStorage(const std::string& dsn) noexcept {
 	if (dsn.compare(0, 10, "builtin://") != 0) {
-		return Error(errParams, "Invalid DSN format for repair: %s. Must begin from builtin://", dsn);
+		return Error(errParams, "Invalid DSN format for repair: {}. Must begin from builtin://", dsn);
 	}
 
 	std::cout << "Starting database repair..." << std::endl;
@@ -27,11 +27,11 @@ Error RepairTool::RepairStorage(const std::string& dsn) noexcept {
 		try {
 			storage.reset(reindexer::datastorage::StorageFactory::create(storageType));
 		} catch (std::exception& ex) {
-			return Error(errParams, "Skiping DB at '%s' - ", path, ex.what());
+			return Error(errParams, "Skiping DB at '{}' - ", path, ex.what());
 		}
 		std::vector<reindexer::fs::DirEntry> foundNs;
 		if (reindexer::fs::ReadDir(path, foundNs) < 0) {
-			return Error(errParams, "Can't read dir to repair: %s", path);
+			return Error(errParams, "Can't read dir to repair: {}", path);
 		}
 		for (auto& ns : foundNs) {
 			if (ns.isDir && reindexer::validateObjectName(ns.name, true)) {
@@ -43,7 +43,7 @@ Error RepairTool::RepairStorage(const std::string& dsn) noexcept {
 			}
 		}
 	} else {
-		return Error(errParams, "'%s' - directory doesn't contain valid reindexer placeholder", path);
+		return Error(errParams, "'{}' - directory doesn't contain valid reindexer placeholder", path);
 	}
 
 	return hasErrors ? Error(errParams, "Some of namespaces had repair errors") : errOK;

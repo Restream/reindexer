@@ -56,11 +56,11 @@ std::string JsonSchemaChecker::createType(const PrefixTree::PrefixTreeNode* node
 		} else if (chProps.type == "object"sv) {
 			subElement.typeName = createType(ch.second.get());
 		} else {
-			throw Error(errLogic, "Incorrect schema type [%s]", chProps.type);
+			throw Error(errLogic, "Incorrect schema type [{}]", chProps.type);
 		}
 		auto typeIndexIt = indexes_.find(subElement.typeName);
 		if (typeIndexIt == indexes_.end()) {
-			throw Error(errLogic, "Incorrect type %s", subElement.typeName);
+			throw Error(errLogic, "Incorrect type {}", subElement.typeName);
 		}
 		subElement.typeIndex = typeIndexIt->second;
 		typeDescr.subElementsTable.emplace_back(ch.first, std::move(subElement));
@@ -112,12 +112,12 @@ Error JsonSchemaChecker::createTypeTable(std::string_view json) {
 
 Error JsonSchemaChecker::Check(gason::JsonNode node) {
 	if (node.value.getTag() != gason::JsonTag::OBJECT) {
-		return Error(errParseJson, "Node [%s] should JSON_OBJECT.", node.key);
+		return Error(errParseJson, "Node [{}] should JSON_OBJECT.", node.key);
 	}
 
 	auto indxIt = indexes_.find(rootTypeName_);
 	if (indxIt == indexes_.end()) {
-		return Error(errParseJson, "Type '%s' not found.", rootTypeName_);
+		return Error(errParseJson, "Type '{}' not found.", rootTypeName_);
 	}
 	int nType = indxIt->second;
 	std::string path;
@@ -145,7 +145,7 @@ Error JsonSchemaChecker::checkScheme(const gason::JsonNode& node, int typeIndex,
 		auto subElemIndex = descr.subElementsIndex.find(std::string_view(elem.key));
 		if (subElemIndex == descr.subElementsIndex.end()) {
 			if (!descr.allowAdditionalProps) {
-				return Error(errParseJson, "Key [%s] not allowed in [%s] object.", elem.key, path);
+				return Error(errParseJson, "Key [{}] not allowed in [{}] object.", elem.key, path);
 			} else {
 				continue;
 			}
@@ -165,7 +165,7 @@ Error JsonSchemaChecker::checkScheme(const gason::JsonNode& node, int typeIndex,
 		} else if (elem.value.getTag() == gason::JsonTag::ARRAY) {
 			if (descr.subElementsTable[subElemIndex->second].second.typeName != "any") {
 				if (!descr.subElementsTable[subElemIndex->second].second.array) {
-					return Error(errParseJson, "Element [%s] should array in [%s].", elem.key, path);
+					return Error(errParseJson, "Element [{}] should array in [{}].", elem.key, path);
 				}
 				for (const auto& entry : elem.value) {
 					if (entry.value.getTag() == gason::JsonTag::ARRAY || entry.value.getTag() == gason::JsonTag::OBJECT) {
@@ -185,7 +185,7 @@ Error JsonSchemaChecker::checkScheme(const gason::JsonNode& node, int typeIndex,
 
 Error JsonSchemaChecker::checkExists(std::string_view name, ValAppearance* element, const std::string& path) {
 	if (!element->notExist) {
-		return Error(errParseJson, "Key [%s] can occur only once in [%s] object.", std::string(name), path);
+		return Error(errParseJson, "Key [{}] can occur only once in [{}] object.", name, path);
 	}
 	element->notExist = false;
 	element->required = false;
@@ -195,7 +195,7 @@ Error JsonSchemaChecker::checkExists(std::string_view name, ValAppearance* eleme
 Error JsonSchemaChecker::checkRequired(const h_vector<ValAppearance, 16>& elementAppearances, int typeNum, const std::string& path) {
 	for (unsigned int k = 0; k < elementAppearances.size(); k++) {
 		if (elementAppearances[k].required) {
-			return Error(errParseJson, "Key [%s] must occur in [%s] object.", typesTable_[typeNum].subElementsTable[k].first, path);
+			return Error(errParseJson, "Key [{}] must occur in [{}] object.", typesTable_[typeNum].subElementsTable[k].first, path);
 		}
 	}
 	return Error();

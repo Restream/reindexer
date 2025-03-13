@@ -103,7 +103,7 @@ void RPCClientTestApi::StartServer(const std::string& addr, Error errOnLogin) {
 			return;
 		}
 	}
-	assertf(false, "Server with dsn %s was not found", addr);
+	assertf(false, "Server with dsn {} was not found", addr);
 }
 
 Error RPCClientTestApi::StopServer(const std::string& addr) {
@@ -125,7 +125,7 @@ Error RPCClientTestApi::StopServer(const std::string& addr) {
 			return errOK;
 		}
 	}
-	assertf(false, "Server with dsn %s was not found", addr);
+	assertf(false, "Server with dsn {} was not found", addr);
 	abort();
 }
 

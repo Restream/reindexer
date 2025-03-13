@@ -122,7 +122,7 @@ Error ParseCryptString(const std::string& input, std::string& outHash, std::stri
 		if (auto it = kHashOptions.find(hashParts[1]); it != kHashOptions.end()) {
 			hashAlgorithm = it->second;
 		} else {
-			return Error(errParams, "Unsupported hash magic: %s", hashParts[1].c_str());
+			return Error(errParams, "Unsupported hash magic: {}", hashParts[1].c_str());
 		}
 		outHash = std::move(hashParts[3]);
 		outSalt = std::move(hashParts[2]);
