@@ -2,8 +2,6 @@
 #include "core/cjson/tagsmatcher.h"
 #include "core/payload/payloadiface.h"
 
-#include <numeric>
-
 namespace reindexer {
 namespace joins {
 
@@ -47,8 +45,8 @@ LocalQueryResults JoinedFieldIterator::ToQueryResults() const {
 	if (ItemsCount() == 0) {
 		return LocalQueryResults();
 	}
-	ItemRefVector::const_iterator begin = joinRes_->items_.begin() + currOffset_;
-	ItemRefVector::const_iterator end = begin + ItemsCount();
+	const auto begin = joinRes_->items_.begin() + currOffset_;
+	const auto end = begin + ItemsCount();
 	return LocalQueryResults(begin, end);
 }
 
@@ -104,9 +102,9 @@ int ItemIterator::getJoinedItemsCount() const noexcept {
 	return joinedItemsCount_;
 }
 
-ItemIterator ItemIterator::CreateFrom(const LocalQueryResults::Iterator& it) noexcept {
+ItemIterator ItemIterator::CreateFrom(const LocalQueryResults::ConstIterator& it) noexcept {
 	auto ret = ItemIterator::CreateEmpty();
-	auto& itemRef = it.qr_->Items()[it.idx_];
+	auto& itemRef = it.qr_->Items().GetItemRef(it.idx_);
 	if ((itemRef.Nsid() >= it.qr_->joined_.size())) {
 		return ret;
 	}
@@ -125,8 +123,8 @@ void NamespaceResults::Insert(IdType rowid, uint32_t fieldIdx, LocalQueryResults
 	if (offsets.empty()) {
 		offsets.reserve(joinedSelectorsCount_);
 	}
-	offsets.emplace_back(fieldIdx, items_.size(), qr.Count());
-	items_.insert(items_.end(), std::make_move_iterator(qr.Items().begin()), std::make_move_iterator(qr.Items().end()));
+	offsets.emplace_back(fieldIdx, items_.Size(), qr.Count());
+	items_.Insert(items_.end(), std::move(qr.Items()).mbegin(), std::move(qr.Items()).mend());
 }
 
 }  // namespace joins

@@ -113,7 +113,7 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const Varia
 	delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
-	assertf(this->Opts().IsSparse() || delcnt, "Delete non-existent id from index '%s' id=%d,key=%s (%s)", this->name_, id,
+	assertf(this->Opts().IsSparse() || delcnt, "Delete non-existent id from index '{}' id={},key={} ({})", this->name_, id,
 			Variant(keys).template As<std::string>(this->payloadType_, this->Fields()),
 			Variant(keyIt->first).As<std::string>(this->payloadType_, this->Fields()));
 
@@ -128,9 +128,9 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const Varia
 
 std::unique_ptr<Index> IndexRTree_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 									  const NamespaceCacheConfigData& cacheCfg) {
-	switch (idef.opts_.RTreeType()) {
+	switch (idef.Opts().RTreeType()) {
 		case IndexOpts::Linear:
-			if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
+			if (idef.Opts().IsPK() || idef.Opts().IsDense()) {
 				return std::make_unique<IndexRTree<Index::KeyEntryPlain, LinearSplitter, 32, 4>>(idef, std::move(payloadType),
 																								 std::move(fields), cacheCfg);
 			} else {
@@ -138,14 +138,14 @@ std::unique_ptr<Index> IndexRTree_New(const IndexDef& idef, PayloadType&& payloa
 																							cacheCfg);
 			}
 		case IndexOpts::Quadratic:
-			if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
+			if (idef.Opts().IsPK() || idef.Opts().IsDense()) {
 				return std::make_unique<IndexRTree<Index::KeyEntryPlain, QuadraticSplitter, 32, 4>>(idef, std::move(payloadType),
 																									std::move(fields), cacheCfg);
 			}
 			return std::make_unique<IndexRTree<Index::KeyEntry, QuadraticSplitter, 32, 4>>(idef, std::move(payloadType), std::move(fields),
 																						   cacheCfg);
 		case IndexOpts::Greene:
-			if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
+			if (idef.Opts().IsPK() || idef.Opts().IsDense()) {
 				return std::make_unique<IndexRTree<Index::KeyEntryPlain, GreeneSplitter, 16, 4>>(idef, std::move(payloadType),
 																								 std::move(fields), cacheCfg);
 			} else {
@@ -153,7 +153,7 @@ std::unique_ptr<Index> IndexRTree_New(const IndexDef& idef, PayloadType&& payloa
 																							cacheCfg);
 			}
 		case IndexOpts::RStar:
-			if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
+			if (idef.Opts().IsPK() || idef.Opts().IsDense()) {
 				return std::make_unique<IndexRTree<Index::KeyEntryPlain, RStarSplitter, 32, 4>>(idef, std::move(payloadType),
 																								std::move(fields), cacheCfg);
 			} else {

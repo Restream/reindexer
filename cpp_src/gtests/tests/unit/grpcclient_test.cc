@@ -1,9 +1,9 @@
 #if defined(WITH_GRPC)
 
-#include "core/itemimpl.h"
 #include "grpcclient_api.h"
+#include "vendor/gason/gason.h"
 
-TEST_F(GrpcClientApi, SelectCJSON) {
+TEST_F(GrpcClientApi, SelectCJSON) try {
 	reindexer::Query q(default_namespace);
 	q.InnerJoin(kIdField, kIdField, CondEq, reindexer::Query(default_namespace + "2"));
 
@@ -27,6 +27,12 @@ TEST_F(GrpcClientApi, SelectCJSON) {
 		reindexer::Serializer rser(response.data());
 		checkCJSONItems(rser, flags);
 	}
+} catch (const Error& err) {
+	ASSERT_TRUE(false) << err.what();
+} catch (const std::exception& err) {
+	ASSERT_TRUE(false) << err.what();
+} catch (...) {
+	ASSERT_TRUE(false) << "Unknown exception";
 }
 
 // Perform Select with GRPC-service with
@@ -68,26 +74,24 @@ TEST_F(GrpcClientApi, SelectJSON) {
 			const auto& v(elem.value);
 			std::string_view name(elem.key);
 			if (name == "items") {
-				ASSERT_TRUE(v.getTag() == gason::JSON_ARRAY);
+				ASSERT_TRUE(v.getTag() == gason::JsonTag::ARRAY);
 				for (const auto& element : v) {
 					auto& object = element.value;
-					ASSERT_TRUE(object.getTag() == gason::JSON_OBJECT);
+					ASSERT_TRUE(object.getTag() == gason::JsonTag::OBJECT);
 					for (auto field : object) {
 						name = std::string_view(field.key);
 						const auto& fieldValue(field.value);
 						if (name == "id" || name == "age") {
-							ASSERT_TRUE(fieldValue.getTag() == gason::JSON_NUMBER);
+							ASSERT_TRUE(fieldValue.getTag() == gason::JsonTag::NUMBER);
 						} else if (name == "joined_test_namespace2") {
-							ASSERT_TRUE(fieldValue.getTag() == gason::JSON_ARRAY);
+							ASSERT_TRUE(fieldValue.getTag() == gason::JsonTag::ARRAY);
 							for (const auto& item : fieldValue) {
-								ASSERT_TRUE(item.value.getTag() == gason::JSON_OBJECT);
+								ASSERT_TRUE(item.value.getTag() == gason::JsonTag::OBJECT);
 								for (const auto& joinedField : item.value) {
 									name = std::string_view(joinedField.key);
 									const auto& joinedFieldValue(joinedField.value);
-									if (name == "id") {
-										ASSERT_TRUE(joinedFieldValue.getTag() == gason::JSON_NUMBER);
-									} else if (name == "price") {
-										ASSERT_TRUE(joinedFieldValue.getTag() == gason::JSON_NUMBER);
+									if (name == "id" || name == "price") {
+										ASSERT_TRUE(joinedFieldValue.getTag() == gason::JsonTag::NUMBER);
 									} else {
 										ASSERT_TRUE(false) << "Wrong JSON field: " << name;
 									}
@@ -99,25 +103,25 @@ TEST_F(GrpcClientApi, SelectJSON) {
 					}
 				}
 			} else if (name == "aggregations") {
-				ASSERT_TRUE(v.getTag() == gason::JSON_ARRAY);
+				ASSERT_TRUE(v.getTag() == gason::JsonTag::ARRAY);
 				for (const auto& element : v) {
 					auto& object = element.value;
-					ASSERT_TRUE(object.getTag() == gason::JSON_OBJECT);
+					ASSERT_TRUE(object.getTag() == gason::JsonTag::OBJECT);
 					for (const auto& field : object) {
 						name = std::string_view(field.key);
 						const auto& fieldValue(field.value);
 						if (name == "type") {
-							ASSERT_TRUE(fieldValue.getTag() == gason::JSON_STRING);
+							ASSERT_TRUE(fieldValue.getTag() == gason::JsonTag::STRING);
 							ASSERT_TRUE(fieldValue.toString() == "distinct");
 						} else if (name == "distincts") {
-							ASSERT_TRUE(fieldValue.getTag() == gason::JSON_ARRAY);
+							ASSERT_TRUE(fieldValue.getTag() == gason::JsonTag::ARRAY);
 							for (const auto& items : fieldValue) {
-								ASSERT_TRUE(items.value.getTag() == gason::JSON_STRING);
+								ASSERT_TRUE(items.value.getTag() == gason::JsonTag::STRING);
 							}
 						} else if (name == "fields") {
-							ASSERT_TRUE(fieldValue.getTag() == gason::JSON_ARRAY);
+							ASSERT_TRUE(fieldValue.getTag() == gason::JsonTag::ARRAY);
 							for (const auto& items : fieldValue) {
-								ASSERT_TRUE(items.value.getTag() == gason::JSON_STRING);
+								ASSERT_TRUE(items.value.getTag() == gason::JsonTag::STRING);
 								ASSERT_TRUE(items.value.toString() == "age");
 							}
 						}

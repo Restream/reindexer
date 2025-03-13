@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include "core/keyvalue/variant.h"
 
 namespace reindexer {

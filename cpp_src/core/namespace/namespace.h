@@ -57,9 +57,17 @@ class Namespace {
 					auto wlck = ns->dataWLock(nsCtx.rdxContext);
 					cg.Reset();
 					qr.AddNamespace(ns, true);
+					if (ns->haveFloatVectorsIndexes()) {
+						qr.addNSContext(ns->payloadType_, ns->tagsMatcher_, FieldsFilter::AllFields(), ns->schema_, ns->incarnationTag_);
+					}
 					added = true;
 					(*ns.*fn)(v, enumVal, pendedRepl, nsCtx);
 					qr.AddItem(v, true, false);
+					if constexpr (enumVal != ModeDelete) {
+						if (ns->haveFloatVectorsIndexes()) {
+							qr.GetFloatVectorsHolder().Add(*ns, qr.begin() + (qr.Count() - 1), qr.end(), FieldsFilter::AllFields());
+						}
+					}
 					ns->replicate(std::move(pendedRepl), std::move(wlck), true, nullptr, nsCtx);
 				} else {
 					auto params = longUpdDelLoggingParams_.load(std::memory_order_relaxed);
@@ -161,6 +169,12 @@ public:
 		}
 		nsFuncWrapper<&NamespaceImpl::StorageFlushingRoutine>();
 	}
+	void ANNCachingRoutine() {
+		if (hasCopy_.load(std::memory_order_acquire)) {
+			return;
+		}
+		nsFuncWrapper<&NamespaceImpl::ANNCachingRoutine>();
+	}
 	void CloseStorage(const RdxContext& ctx) { nsFuncWrapper<&NamespaceImpl::CloseStorage>(ctx); }
 	LocalTransaction NewTransaction(const RdxContext& ctx) { return nsFuncWrapper<&NamespaceImpl::NewTransaction>(ctx); }
 
@@ -217,6 +231,12 @@ public:
 	void ApplySnapshotChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, const RdxContext& ctx);
 	void SetTagsMatcher(TagsMatcher&& tm, const RdxContext& ctx) {
 		return nsFuncWrapper<&NamespaceImpl::SetTagsMatcher>(std::move(tm), ctx);
+	}
+	void DropANNStorageCache(std::string_view index, const RdxContext& ctx) {
+		return nsFuncWrapper<&NamespaceImpl::DropANNStorageCache>(index, ctx);
+	}
+	void RebuildIVFIndex(std::string_view index, float dataPart, const RdxContext& ctx) {
+		return nsFuncWrapper<&NamespaceImpl::RebuildIVFIndex>(index, dataPart, ctx);
 	}
 
 	std::set<std::string> GetFTIndexes(const RdxContext& ctx) const { return nsFuncWrapper<&NamespaceImpl::GetFTIndexes>(ctx); }

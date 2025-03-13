@@ -48,7 +48,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 	// Get set of keys or single key
 	if (!IsOrderedCondition(condition)) {
 		if (opts.unbuiltSortOrders && keys.size() > 1) {
-			throw Error(errLogic, "Attempt to use btree index '%s' for sort optimization with unordered multivalued condition (%s)",
+			throw Error(errLogic, "Attempt to use btree index '{}' for sort optimization with unordered multivalued condition ({})",
 						this->Name(), CondTypeToStr(condition));
 		}
 		return IndexUnordered<T>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
@@ -59,7 +59,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 	auto endIt = this->idx_map.end();
 	const auto& key1 = *keys.begin();
 	if (key1.IsNullValue() || (keys.size() > 1 && keys[1].IsNullValue())) {
-		throw Error(errParams, "Can not use 'null'-value with operators '>','<','<=','>=' and 'RANGE()' (index: '%s')", this->Name());
+		throw Error(errParams, "Can not use 'null'-value with operators '>','<','<=','>=' and 'RANGE()' (index: '{}')", this->Name());
 	}
 	switch (condition) {
 		case CondLt:
@@ -104,7 +104,8 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 		case CondEmpty:
 		case CondLike:
 		case CondDWithin:
-			throw Error(errParams, "Unknown query type %d", condition);
+		case CondKnn:
+			throw Error(errParams, "Unknown query type {}", int(condition));
 	}
 
 	if (endIt == startIt || startIt == this->idx_map.end() || endIt == this->idx_map.begin()) {
@@ -172,7 +173,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 
 template <typename T>
 void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext& ctx) {
-	logPrintf(LogTrace, "IndexOrdered::MakeSortOrders (%s)", this->name_);
+	logFmt(LogTrace, "IndexOrdered::MakeSortOrders ({})", this->name_);
 	auto& ids2Sorts = ctx.ids2Sorts();
 	size_t totalIds = 0;
 	for (auto it : ids2Sorts) {
@@ -188,9 +189,9 @@ void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext& ctx) {
 		// assert (keyIt.second.size());
 		for (auto id : keyIt.second.Unsorted()) {
 			if (id >= int(ids2Sorts.size()) || ids2Sorts[id] == SortIdUnexists) {
-				logPrintf(
+				logFmt(
 					LogError,
-					"Internal error: Index '%s' is broken. Item with key '%s' contains id=%d, which is not present in allIds,totalids=%d\n",
+					"Internal error: Index '{}' is broken. Item with key '{}' contains id={}, which is not present in allIds,totalids={}\n",
 					this->name_, Variant(keyIt.first).As<std::string>(), id, totalIds);
 				assertrx(0);
 			}
@@ -208,7 +209,7 @@ void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext& ctx) {
 		}
 	}
 
-	assertf(idx == totalIds, "Internal error: Index %s is broken. totalids=%d, but indexed=%d\n", this->name_, totalIds, idx);
+	assertf(idx == totalIds, "Internal error: Index {} is broken. totalids={}, but indexed={}\n", this->name_, totalIds, idx);
 }
 
 template <typename T>
@@ -219,7 +220,7 @@ IndexIterator::Ptr IndexOrdered<T>::CreateIterator() const {
 template <typename KeyEntryT>
 static std::unique_ptr<Index> IndexOrdered_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 											   const NamespaceCacheConfigData& cacheCfg) {
-	switch (idef.Type()) {
+	switch (idef.IndexType()) {
 		case IndexIntBTree:
 			return std::make_unique<IndexOrdered<number_map<int, KeyEntryT>>>(idef, std::move(payloadType), std::move(fields), cacheCfg);
 		case IndexInt64BTree:
@@ -248,15 +249,19 @@ static std::unique_ptr<Index> IndexOrdered_New(const IndexDef& idef, PayloadType
 		case IndexRTree:
 		case IndexUuidHash:
 		case IndexUuidStore:
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+		case IndexDummy:
 			break;
 	}
-	std::abort();
+	throw_as_assert;
 }
 
 // NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 std::unique_ptr<Index> IndexOrdered_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 										const NamespaceCacheConfigData& cacheCfg) {
-	return (idef.opts_.IsPK() || idef.opts_.IsDense())
+	return (idef.Opts().IsPK() || idef.Opts().IsDense())
 			   ? IndexOrdered_New<Index::KeyEntryPlain>(idef, std::move(payloadType), std::move(fields), cacheCfg)
 			   : IndexOrdered_New<Index::KeyEntry>(idef, std::move(payloadType), std::move(fields), cacheCfg);
 }

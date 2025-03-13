@@ -58,7 +58,7 @@ Error RPCServerFake::Stop() {
 	if (const int openedQR = OpenedQRCount(); openedQR == 0) {
 		return errOK;
 	} else {
-		return Error{errLogic, "There are %d opened QueryResults", openedQR};
+		return Error{errLogic, "There are {} opened QueryResults", openedQR};
 	}
 }
 
@@ -95,7 +95,7 @@ Error RPCServerFake::CloseResults(cproto::Context& ctx, int reqId, std::optional
 		std::lock_guard lock{qrMutex_};
 		const auto it = usedQrIds_.find(reqId);
 		if (it == usedQrIds_.end()) {
-			return Error(errLogic, "ReqId %d not found", reqId);
+			return Error(errLogic, "ReqId {} not found", reqId);
 		}
 		unusedQrIds_.insert(*it);
 		usedQrIds_.erase(it);

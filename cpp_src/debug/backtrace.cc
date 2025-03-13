@@ -34,7 +34,7 @@ static void print_assertion_message(std::ostream& sout) {
 #include <signal.h>
 #include <unistd.h>
 #include <limits>
-#include "estl/span.h"
+#include <span>
 #include "resolver.h"
 
 // There are 3 backtrace methods are available:
@@ -81,7 +81,7 @@ namespace debug {
 #if REINDEX_WITH_UNWIND
 class Unwinder {
 public:
-	size_t operator()(span<void*> trace) {
+	size_t operator()(std::span<void*> trace) {
 		trace_ = trace;
 		index_ = -1;
 		_Unwind_Backtrace(&this->backtrace_trampoline, this);
@@ -116,7 +116,7 @@ private:
 		return _URC_NO_REASON;
 	}
 	ssize_t index_;
-	span<void*> trace_;
+	std::span<void*> trace_;
 };
 #endif
 
@@ -151,7 +151,7 @@ int backtrace_internal(void** addrlist, size_t size, void* ctx, std::string_view
 	Unwinder unw;
 	if (addrlen < 3) {	// -V547
 		method = "unwind"sv;
-		addrlen = unw(span<void*>(addrlist, size));
+		addrlen = unw(std::span<void*>(addrlist, size));
 	}
 #endif
 #if REINDEX_WITH_EXECINFO

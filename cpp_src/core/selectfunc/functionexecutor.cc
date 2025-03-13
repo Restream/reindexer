@@ -15,7 +15,7 @@ Variant FunctionExecutor::Execute(SelectFuncStruct& funcData, const NsContext& c
 	} else if (funcData.funcName == "serial") {
 		return Variant(ns_.GetSerial(funcData.field, replUpdates_, ctx));
 	}
-	throw Error(errParams, "Unknown function '%s'. Field: '%s'", funcData.funcName, funcData.field);
+	throw Error(errParams, "Unknown function '{}'. Field: '{}'", funcData.funcName, funcData.field);
 }
 
 }  // namespace reindexer

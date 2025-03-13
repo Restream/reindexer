@@ -11,9 +11,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/restream/reindexer/v4"
-	_ "github.com/restream/reindexer/v4/bindings/cproto"
-	"github.com/restream/reindexer/v4/test/helpers"
+	"github.com/restream/reindexer/v5"
+	_ "github.com/restream/reindexer/v5/bindings/cproto"
+	"github.com/restream/reindexer/v5/test/helpers"
 )
 
 type ReindexerWrapper struct {

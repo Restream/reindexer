@@ -299,14 +299,14 @@ Error TryCreateDirectory(const std::string& dir) {
 	if (!dir.empty()) {
 		if (!DirectoryExists(dir) && dir != GetTempDir()) {
 			if (MkDirAll(dir) < 0) {
-				return Error(errLogic, "Could not create '%s'. Reason: %s\n", dir.c_str(), strerror(errno));
+				return Error(errLogic, "Could not create '{}'. Reason: {}\n", dir.c_str(), strerror(errno));
 			}
 #ifdef _WIN32
 		} else if (_access(dir.c_str(), 6) < 0) {
 #else
 		} else if (access(dir.c_str(), R_OK | W_OK) < 0) {
 #endif
-			return Error(errLogic, "Could not access dir '%s'. Reason: %s\n", dir.c_str(), strerror(errno));
+			return Error(errLogic, "Could not access dir '{}'. Reason: {}\n", dir.c_str(), strerror(errno));
 		}
 	}
 	return {};
@@ -326,16 +326,16 @@ Error ChownDir(const std::string& path, const std::string& user) {
 		int res = getpwnam_r(user.c_str(), &pwd, buf, sizeof(buf), &usr);
 		if (usr == nullptr) {
 			if (res == 0) {
-				return Error(errLogic, "Could get uid of user and gid for user `%s`. Reason: user `%s` not found", user.c_str(),
+				return Error(errLogic, "Could get uid of user and gid for user `{}`. Reason: user `{}` not found", user.c_str(),
 							 user.c_str());
 			} else {
-				return Error(errLogic, "Could not change user to `%s`. Reason: %s", user.c_str(), strerror(errno));
+				return Error(errLogic, "Could not change user to `{}`. Reason: {}", user.c_str(), strerror(errno));
 			}
 		}
 
 		if (getuid() != usr->pw_uid || getgid() != usr->pw_gid) {
 			if (chown(path.c_str(), usr->pw_uid, usr->pw_gid) < 0) {
-				return Error(errLogic, "Could not change ownership for directory '%s'. Reason: %s\n", path.c_str(), strerror(errno));
+				return Error(errLogic, "Could not change ownership for directory '{}'. Reason: {}\n", path.c_str(), strerror(errno));
 			}
 		}
 	}
@@ -354,18 +354,18 @@ Error ChangeUser(const char* userName) {
 	int res = getpwnam_r(userName, &pwd, buf, sizeof(buf), &result);
 	if (result == nullptr) {
 		if (res == 0) {
-			return Error(errLogic, "Could not change user to `%s`. Reason: user `%s` not found", userName, userName);
+			return Error(errLogic, "Could not change user to `{}`. Reason: user `{}` not found", userName, userName);
 		} else {
 			errno = res;
-			return Error(errLogic, "Could not change user to `%s`. Reason: %s", userName, strerror(errno));
+			return Error(errLogic, "Could not change user to `{}`. Reason: {}", userName, strerror(errno));
 		}
 	}
 
 	if (setgid(pwd.pw_gid) != 0) {
-		return Error(errLogic, "Could not change user to `%s`. Reason: %s", userName, strerror(errno));
+		return Error(errLogic, "Could not change user to `{}`. Reason: {}", userName, strerror(errno));
 	}
 	if (setuid(pwd.pw_uid) != 0) {
-		return Error(errLogic, "Could not change user to `%s`. Reason: %s", userName, strerror(errno));
+		return Error(errLogic, "Could not change user to `{}`. Reason: {}", userName, strerror(errno));
 	}
 #else
 	(void)userName;

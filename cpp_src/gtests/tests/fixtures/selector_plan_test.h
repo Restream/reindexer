@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/cjson/jsonbuilder.h"
+#include "core/system_ns_names.h"
 #include "reindexer_api.h"
 
 class SelectorPlanTest : public ReindexerApi {
@@ -155,15 +156,8 @@ private:
 		nsArray.End();
 		jb.End();
 
-		auto item = rt.NewItem(config_ns_);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
-		auto err = item.FromJSON(ser.Slice());
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		rt.Upsert(config_ns_, item);
+		rt.UpsertJSON(reindexer::kConfigNamespace, ser.Slice());
 	}
-	static constexpr const char* config_ns_ = "#config";
 };
 
 template <>

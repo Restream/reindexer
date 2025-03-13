@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/enums.h"
 #include "core/selectkeyresult.h"
 
 namespace reindexer {
@@ -23,10 +24,11 @@ public:
 		UnbuiltSortOrdersIndex,
 	};
 
-	SelectIterator(SelectKeyResult&& res, bool dist, std::string&& n, IteratorFieldKind fKind, bool forcedFirst = false) noexcept
+	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	SelectIterator(SelectKeyResult&& res, bool dist, Str&& n, IteratorFieldKind fKind, ForcedFirst forcedFirst = ForcedFirst_False) noexcept
 		: SelectKeyResult(std::move(res)),
 		  distinct(dist),
-		  name(std::move(n)),
+		  name(std::forward<Str>(n)),
 		  fieldKind(fKind),
 		  forcedFirst_(forcedFirst),
 		  type_(Forward) {}
@@ -157,8 +159,26 @@ public:
 	/// Current rowId index since the beginning
 	/// of current SingleKeyValue object.
 	int Pos() const noexcept {
-		assertrx_throw(!lastIt_->useBtree_ && (type_ != UnbuiltSortOrdersIndex));
-		return lastIt_->it_ - lastIt_->begin_ - 1;
+		switch (type_) {
+			case SingleIdset:
+			case SingleIdSetWithDeferedSort: {
+				const auto& it = *begin();
+				assertrx_throw(!it.useBtree_);
+				return it.it_ - it.begin_;
+			}
+			case Forward:
+			case Reverse:
+			case SingleRange:
+			case RevSingleRange:
+			case RevSingleIdset:
+			case RevSingleIdSetWithDeferedSort:
+			case OnlyComparator:
+			case Unsorted:
+			case UnbuiltSortOrdersIndex:
+			default:
+				assertrx_throw(!lastIt_->useBtree_ && (type_ != UnbuiltSortOrdersIndex));
+				return lastIt_->it_ - lastIt_->begin_ - 1;
+		}
 	}
 
 	/// @return amonut of matched items
@@ -200,7 +220,7 @@ public:
 			return -1;
 		}
 		if (forcedFirst_) {
-			return -GetMaxIterations();
+			return -static_cast<double>(GetMaxIterations());
 		}
 		double result{0.0};
 		const auto sz = size();
@@ -424,7 +444,7 @@ protected:
 
 	bool isUnsorted = false;
 	bool isReverse_ = false;
-	bool forcedFirst_ = false;
+	ForcedFirst forcedFirst_ = ForcedFirst_False;
 	bool isNotOperation_ = false;
 	int type_ = 0;
 	iterator lastIt_ = nullptr;

@@ -2,7 +2,7 @@
 
 #include "core/keyvalue/geometry.h"
 #include "core/keyvalue/variant.h"
-#include "estl/span.h"
+#include <span>
 #include "tools/errors.h"
 #include "tools/lsn.h"
 
@@ -17,6 +17,7 @@ class ItemImpl;
 class FieldRefImpl;
 class Schema;
 class TagsMatcher;
+class FieldsFilter;
 
 /// Item is the interface for data manipulating. It holds and control one database document (record)<br>
 /// *Lifetime*: Item is uses Copy-On-Write semantics, and have independent lifetime and state - e.g., aquired from Reindexer Item will
@@ -68,20 +69,20 @@ public:
 		/// @param p - point value, which will be setted to field
 		FieldRef& operator=(Point p) {
 			double arr[]{p.X(), p.Y()};
-			return operator=(span<const double>(arr, 2));
+			return operator=(std::span<const double>(arr, 2));
 		}
 
 		/// Set array of values to field
 		/// @tparam T - type. Must be one of: int, int64_t, double
 		/// @param arr - std::vector of T values, which will be setted to field
 		template <typename T>
-		FieldRef& operator=(span<const T> arr);
+		FieldRef& operator=(std::span<const T> arr);
 		/// Set array of values to field
 		/// @tparam T - type. Must be one of: int, int64_t, double
 		/// @param arr - std::vector of T values, which will be setted to field
 		template <typename T>
 		FieldRef& operator=(const std::vector<T>& arr) {
-			return operator=(span<const std::remove_const_t<T>>(arr));
+			return operator=(std::span<const std::remove_const_t<T>>(arr));
 		}
 		/// Set string value to field
 		/// If Item is in Unsafe Mode, then Item will not store str, but just keep pointer to str,
@@ -112,11 +113,15 @@ public:
 		FieldRef& operator=(const VariantArray& krs);
 
 	private:
-		FieldRef(int field, ItemImpl* itemImpl) noexcept : itemImpl_(itemImpl), field_(field) {}
-		FieldRef(std::string_view jsonPath, ItemImpl* itemImpl) noexcept : itemImpl_(itemImpl), jsonPath_(jsonPath), field_(-1) {}
+		void throwIfNotSet() const;
+
+		FieldRef(int field, ItemImpl* itemImpl, bool notSet) noexcept : itemImpl_(itemImpl), field_(field), notSet_(notSet) {}
+		FieldRef(std::string_view jsonPath, ItemImpl* itemImpl, bool notSet) noexcept
+			: itemImpl_(itemImpl), jsonPath_(jsonPath), field_(-1), notSet_(notSet) {}
 		ItemImpl* itemImpl_;
 		std::string_view jsonPath_;
 		int field_;
+		bool notSet_{false};
 	};
 
 	/// Build item from JSON<br>
@@ -227,10 +232,13 @@ public:
 
 private:
 	explicit Item(ItemImpl* impl) : impl_(impl) {}
+	Item(ItemImpl*, const FieldsFilter&);
 	explicit Item(const Error& err) : impl_(nullptr), status_(err) {}
+	Item(PayloadType, PayloadValue, const TagsMatcher&, std::shared_ptr<const Schema>, const FieldsFilter&);
 	void setID(int id) noexcept { id_ = id; }
 	void setLSN(lsn_t lsn);
 	void setShardID(int id) noexcept { shardId_ = id; }
+	void setFieldsFilter(const FieldsFilter&) noexcept;
 
 	ItemImpl* impl_;
 	Error status_;

@@ -16,6 +16,9 @@ void putCJsonValue(TagType tagType, int tagName, const VariantArray& values, WrS
 void skipCjsonTag(ctag tag, Serializer& rdser, std::array<unsigned, kMaxIndexes>* fieldsArrayOffsets = nullptr);
 [[nodiscard]] Variant cjsonValueToVariant(TagType tag, Serializer& rdser, KeyValueType dstType);
 
+[[noreturn]] void throwUnexpectedArrayError(std::string_view parserName, const PayloadFieldType&);
+[[noreturn]] void throwUnexpectedArraySizeForFloatVectorError(std::string_view parserName, const PayloadFieldType& fieldRef, size_t size);
+[[noreturn]] void throwUnexpectedArrayTypeForFloatVectorError(std::string_view parserName, const PayloadFieldType& fieldRef);
 [[noreturn]] void throwUnexpectedNestedArrayError(std::string_view parserName, const PayloadFieldType& f);
 [[noreturn]] void throwScalarMultipleEncodesError(const Payload& pl, const PayloadFieldType& f, int field);
 [[noreturn]] void throwUnexpectedArraySizeError(std::string_view parserName, const PayloadFieldType& f, int arraySize);
@@ -33,7 +36,7 @@ RX_ALWAYS_INLINE void validateNonArrayFieldRestrictions(const ScalarIndexesSetT&
 
 RX_ALWAYS_INLINE void validateArrayFieldRestrictions(const PayloadFieldType& f, int arraySize, std::string_view parserName) {
 	if (f.IsArray()) {
-		if rx_unlikely (arraySize && f.ArrayDim() > 0 && f.ArrayDim() != arraySize) {
+		if rx_unlikely (arraySize && f.ArrayDims() > 0 && int(f.ArrayDims()) != arraySize) {
 			throwUnexpectedArraySizeError(parserName, f, arraySize);
 		}
 	}
@@ -70,7 +73,7 @@ static inline Variant convertValueForPayload(Payload& pl, int field, Variant&& v
 			   (plFieldType.Is<KeyValueType::Uuid>() && value.Type().Is<KeyValueType::String>())) {
 		return value.convert(pl.Type().Field(field).Type());
 	} else {
-		throw Error(errLogic, "Error parsing %s field '%s' - got %s, expected %s", source, pl.Type().Field(field).Name(),
+		throw Error(errLogic, "Error parsing {} field '{}' - got {}, expected {}", source, pl.Type().Field(field).Name(),
 					value.Type().Name(), plFieldType.Name());
 	}
 }

@@ -3,6 +3,7 @@
 #include "core/expressiontree.h"
 #include "core/keyvalue/geometry.h"
 #include "core/payload/payloadiface.h"
+#include "core/rank_t.h"
 
 namespace reindexer {
 
@@ -202,7 +203,7 @@ public:
 	template <typename T>
 	static SortExpression Parse(std::string_view, const std::vector<T>& joinedSelectors);
 	[[nodiscard]] double Calculate(IdType rowId, ConstPayload pv, const joins::NamespaceResults* results,
-								   const std::vector<JoinedSelector>& js, uint8_t proc, TagsMatcher& tagsMatcher) const {
+								   const std::vector<JoinedSelector>& js, RankT proc, TagsMatcher& tagsMatcher) const {
 		return calculate(cbegin(), cend(), rowId, pv, results, js, proc, tagsMatcher);
 	}
 	[[nodiscard]] bool ByField() const noexcept;
@@ -229,7 +230,7 @@ private:
 	void parseDistance(std::string_view& expr, const std::vector<T>& joinedSelectors, std::string_view fullExpr, ArithmeticOpType,
 					   bool negative, const SkipSW& skipSpaces);
 	[[nodiscard]] static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload,
-										  const joins::NamespaceResults*, const std::vector<JoinedSelector>&, uint8_t proc, TagsMatcher&);
+										  const joins::NamespaceResults*, const std::vector<JoinedSelector>&, RankT, TagsMatcher&);
 
 	void openBracketBeforeLastAppended();
 	static void dump(const_iterator begin, const_iterator end, WrSerializer&);
@@ -243,14 +244,14 @@ class ProxiedSortExpression
 							SortExprFuncs::Rank, SortExprFuncs::ProxiedDistanceFromPoint, SortExprFuncs::ProxiedDistanceBetweenFields> {
 public:
 	ProxiedSortExpression(const SortExpression& se, const NamespaceImpl& ns) { fill(se.cbegin(), se.cend(), ns); }
-	double Calculate(IdType rowId, ConstPayload pv, uint8_t proc, TagsMatcher& tagsMatcher) const {
-		return calculate(cbegin(), cend(), rowId, pv, proc, tagsMatcher);
+	double Calculate(IdType rowId, ConstPayload pv, RankT rank, TagsMatcher& tagsMatcher) const {
+		return calculate(cbegin(), cend(), rowId, pv, rank, tagsMatcher);
 	}
 	std::string Dump() const;
 
 private:
 	void fill(SortExpression::const_iterator begin, SortExpression::const_iterator end, const NamespaceImpl&);
-	static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload, uint8_t proc, TagsMatcher&);
+	static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload, RankT, TagsMatcher&);
 	static void dump(const_iterator begin, const_iterator end, WrSerializer&);
 };
 std::ostream& operator<<(std::ostream&, const ProxiedSortExpression&);

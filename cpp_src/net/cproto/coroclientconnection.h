@@ -31,7 +31,7 @@ public:
 			ret.Unpack(ser);
 		}
 		if (int(ret.size()) < minArgs) {
-			throw Error(errParams, "Server returned %d args, but expected %d", int(ret.size()), minArgs);
+			throw Error(errParams, "Server returned {} args, but expected {}", int(ret.size()), minArgs);
 		}
 
 		return ret;
@@ -51,7 +51,7 @@ public:
 
 protected:
 	Error status_;
-	span<const uint8_t> data_;
+	std::span<const uint8_t> data_;
 	chunk storage_;
 	friend class CoroClientConnection;
 };
@@ -127,6 +127,8 @@ public:
 		args.reserve(sizeof...(argss));
 		return call(opts, args, argss...);
 	}
+
+	std::optional<std::string> RxServerVersion() const noexcept { return rxVersion_; }
 
 private:
 	struct RPCData {
@@ -209,6 +211,7 @@ private:
 	manual_connection conn_;
 	TimePointT loginTs_;
 	std::string compressedBuffer_;
+	std::optional<std::string> rxVersion_;
 };
 
 struct CommandParams {

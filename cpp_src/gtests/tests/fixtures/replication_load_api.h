@@ -1,5 +1,7 @@
 #pragma once
 
+#include "cluster/consts.h"
+#include "core/cjson/tagsmatcher.h"
 #include "gtests/tests/gtest_cout.h"
 #include "gtests/tools.h"
 #include "replication_api.h"
@@ -43,39 +45,21 @@ public:
 		reindexer::shared_lock<reindexer::shared_timed_mutex> lk(restartMutex_);
 
 		for (size_t i = 0; i < count; ++i) {
-			BaseApi::ItemType item = api.NewItem("some");
-			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-			Error err = item.Unsafe().FromJSON(fmt::sprintf(R"json({"id":%d,"int":%d,"string":"%s","uuid":"%s"})json", counter_++, rand(),
-															api.RandString(), randStrUuid()));
-			ASSERT_TRUE(err.ok()) << err.what();
-			api.Upsert("some", item);
-
-			item = api.NewItem("some1");
-			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-			err = item.Unsafe().FromJSON(fmt::sprintf(R"json({"id":%d,"int":%d,"string":"%s","uuid":"%s"})json", counter_++, rand(),
-													  api.RandString(), randStrUuid()));
-			ASSERT_TRUE(err.ok()) << err.what();
-			api.Upsert("some1", item);
+			api.UpsertJSON("some", fmt::format(R"json({{"id":{},"int":{},"string":"{}","uuid":"{}"}})json", counter_++, rand(),
+											   api.RandString(), randStrUuid()));
+			api.UpsertJSON("some1", fmt::format(R"json({{"id":{},"int":{},"string":"{}","uuid":"{}"}})json", counter_++, rand(),
+												api.RandString(), randStrUuid()));
 		}
 	}
 	BaseApi::QueryResultsType SimpleSelect(size_t num) {
 		SCOPED_TRACE("Selecting some");
-		reindexer::Query qr("some");
-		auto srv = GetSrv(num);
-		auto& api = srv->api;
-		BaseApi::QueryResultsType res;
-		auto err = api.reindexer->Select(qr, res);
-		EXPECT_TRUE(err.ok()) << err.what();
-
-		return res;
+		return GetSrv(num)->api.Select(reindexer::Query("some"));
 	}
 	BaseApi::QueryResultsType DeleteFromMaster() {
 		SCOPED_TRACE("Deleting some from master");
 		auto srv = GetSrv(masterId_);
-		auto& api = srv->api;
 		BaseApi::QueryResultsType res;
-		auto err = api.reindexer->Delete(reindexer::Query("some"), res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		srv->api.Delete(reindexer::Query("some"), res);
 		return res;
 	}
 	auto GetReplicationStats(size_t num) { return GetSrv(num)->GetReplicationStats(reindexer::cluster::kAsyncReplStatsType); }
@@ -135,9 +119,9 @@ public:
 		}
 		for (size_t i = 1; i < versions.size(); ++i) {
 			if (versions[i] != versions[i - 1]) {
-				TestCout() << fmt::sprintf("TagsMatcher versions are different for the '%s':\n", ns);
+				TestCout() << fmt::format("TagsMatcher versions are different for the '{}':\n", ns);
 				for (size_t j = 0; j < versions.size(); ++j) {
-					TestCout() << fmt::sprintf("%d: %d\n", j, versions[j]);
+					TestCout() << fmt::format("{}: {}\n", j, versions[j]);
 				}
 				TestCout() << std::endl;
 				EXPECT_TRUE(false);

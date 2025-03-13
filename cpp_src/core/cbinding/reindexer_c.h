@@ -13,9 +13,8 @@ uintptr_t init_reindexer_with_config(reindexer_config config);
 
 void destroy_reindexer(uintptr_t rx);
 
-reindexer_error reindexer_connect_v4(uintptr_t rx, reindexer_string dsn, ConnectOpts opts, reindexer_string client_vers,
-									 BindingCapabilities caps);
-reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpts opts, reindexer_string client_vers);
+reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpts opts, reindexer_string client_vers,
+								  BindingCapabilities caps);
 reindexer_error reindexer_ping(uintptr_t rx);
 
 reindexer_error reindexer_init_system_namespaces(uintptr_t rx);

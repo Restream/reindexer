@@ -1,5 +1,6 @@
 #include "clusterization_async_api.h"
 #include "gtests/tests/gtest_cout.h"
+#include "tools/fsops.h"
 
 using namespace reindexer;
 
@@ -234,7 +235,7 @@ TEST_F(ClusterizationAsyncApi, AsyncReplicationBetweenClustersLeaderMode) {
 		TestCout() << "Wait cluster2 sync" << std::endl;
 		cluster2.WaitSync(kNs1);
 		for (unsigned i = 0; i < kClusterSize; ++i) {
-			TestCout() << fmt::sprintf("Wait replication to async node (%d)", i) << std::endl;
+			TestCout() << fmt::format("Wait replication to async node ({})", i) << std::endl;
 			ServerControl::WaitSync(cluster1.GetNode(leaderId1), cluster2.GetNode(i), kNs2);
 		}
 
@@ -250,7 +251,7 @@ TEST_F(ClusterizationAsyncApi, AsyncReplicationBetweenClustersLeaderMode) {
 			}
 		}
 		for (unsigned i = 0; i < kClusterSize; ++i) {
-			TestCout() << fmt::sprintf("Wait replication to async node (%d)", i) << std::endl;
+			TestCout() << fmt::format("Wait replication to async node ({})", i) << std::endl;
 			ServerControl::WaitSync(cluster1.GetNode(leaderId1), cluster2.GetNode(i), kNs2);
 		}
 

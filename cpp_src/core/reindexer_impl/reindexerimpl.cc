@@ -22,6 +22,7 @@
 #include "tools/fsops.h"
 #include "tools/hardware_concurrency.h"
 #include "tools/logger.h"
+#include "vendor/gason/gason.h"
 
 #include "debug/backtrace.h"
 #include "debug/terminate_handler.h"
@@ -97,6 +98,7 @@ ReindexerImpl::ReindexerImpl(ReindexerConfig cfg, ActivityContainer& activities,
 	}
 #endif
 
+	annCachingThread_.Run([this](net::ev::dynamic_loop& loop) { this->annCachingRoutine(loop); });
 	storageFlushingThread_.Run([this](net::ev::dynamic_loop& loop) { this->storageFlushingRoutine(loop); });
 	std::call_once(initTerminateHandlerFlag, []() {
 		debug::terminate_handler_init();
@@ -120,6 +122,7 @@ ReindexerImpl::~ReindexerImpl() {
 	dbDestroyed_ = true;
 	clusterizator_->Stop();
 	backgroundThread_.Stop();
+	annCachingThread_.Stop();
 	storageFlushingThread_.Stop();
 }
 
@@ -147,17 +150,17 @@ Error ReindexerImpl::enableStorage(const std::string& storagePath) {
 	}
 
 	if (storagePath.empty()) {
-		return errOK;
+		return {};
 	}
 	if (fs::MkDirAll(storagePath) < 0) {
-		return Error(errParams, "Can't create directory '%s' for reindexer storage - reason %s", storagePath, strerror(errno));
+		return Error(errParams, "Can't create directory '{}' for reindexer storage - reason {}", storagePath, strerror(errno));
 	}
 
 	std::vector<fs::DirEntry> dirEntries;
 	bool isEmpty = true;
 	bool isHaveConfig = false;
 	if (fs::ReadDir(storagePath, dirEntries) < 0) {
-		return Error(errParams, "Can't read contents of directory '%s' for reindexer storage - reason %s", storagePath, strerror(errno));
+		return Error(errParams, "Can't read contents of directory '{}' for reindexer storage - reason {}", storagePath, strerror(errno));
 	}
 	for (auto& entry : dirEntries) {
 		if (entry.name != "." && entry.name != ".." && entry.name != kStoragePlaceholderFilename) {
@@ -177,16 +180,16 @@ Error ReindexerImpl::enableStorage(const std::string& storagePath) {
 				currentStorageType = reindexer::datastorage::StorageTypeFromString(content);
 			} catch (const Error&) {
 				return Error(errParams,
-							 "Cowadly refusing to use directory '%s' - it's not empty and contains reindexer placeholder with unexpected "
-							 "content: \"%s\"",
+							 "Cowadly refusing to use directory '{}' - it's not empty and contains reindexer placeholder with unexpected "
+							 "content: \"{}\"",
 							 storagePath, content);
 			}
 			if (storageType_ != currentStorageType) {
-				logPrintf(LogWarning, "Placeholder content doesn't correspond to chosen storage type. Forcing \"%s\"", content);
+				logFmt(LogWarning, "Placeholder content doesn't correspond to chosen storage type. Forcing \"{}\"", content);
 				storageType_ = currentStorageType;
 			}
 		} else {
-			return Error(errParams, "Cowadly refusing to use directory '%s' - it's not empty and doesn't contain reindexer placeholder",
+			return Error(errParams, "Cowadly refusing to use directory '{}' - it's not empty and doesn't contain reindexer placeholder",
 						 storagePath);
 		}
 	} else {
@@ -197,12 +200,12 @@ Error ReindexerImpl::enableStorage(const std::string& storagePath) {
 			int errnoSv = errno;
 			fclose(f);
 			if (res != 1) {
-				return Error(errParams, "Can't create placeholder in directory '%s' for reindexer storage - reason %s", storagePath,
+				return Error(errParams, "Can't create placeholder in directory '{}' for reindexer storage - reason {}", storagePath,
 							 strerror(errnoSv));
 			}
 
 		} else {
-			return Error(errParams, "Can't create placeholder in directory '%s' for reindexer storage - reason %s", storagePath,
+			return Error(errParams, "Can't create placeholder in directory '{}' for reindexer storage - reason {}", storagePath,
 						 strerror(errno));
 		}
 	}
@@ -218,11 +221,11 @@ Error ReindexerImpl::enableStorage(const std::string& storagePath) {
 	}
 	auto err = readClusterConfigFile();
 	if (!err.ok() && res.ok()) {
-		res = Error(err.code(), "Failed to read cluster config file: '%s'", err.what());
+		res = Error(err.code(), "Failed to read cluster config file: '{}'", err.what());
 	}
 	err = readShardingConfigFile();
 	if (!err.ok() && res.ok()) {
-		res = Error(err.code(), "Failed to read sharding config file: '%s'", err.what());
+		res = Error(err.code(), "Failed to read sharding config file: '{}'", err.what());
 	}
 
 	return res;
@@ -233,7 +236,7 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 		if (opts.HasExpectedClusterID()) {
 			auto replConfig = configProvider_.GetReplicationConfig();
 			if (replConfig.clusterID != opts.ExpectedClusterID()) {
-				return Error(errReplParams, "Expected leader's cluster ID(%d) is not equal to actual cluster ID(%d)",
+				return Error(errReplParams, "Expected leader's cluster ID({}) is not equal to actual cluster ID({})",
 							 opts.ExpectedClusterID(), replConfig.clusterID);
 			}
 		}
@@ -267,7 +270,7 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 			return err;
 		}
 		if (fs::ReadDir(path, foundNs) < 0) {
-			return Error(errParams, "Can't read database dir %s", path);
+			return Error(errParams, "Can't read database dir {}", path);
 		}
 	}
 
@@ -293,9 +296,9 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 					if (de.isDir && validateObjectName(de.name, true)) {
 						if (de.name[0] == kTmpNsPrefix) {
 							const std::string tmpPath = fs::JoinPath(storagePath_, de.name);
-							logPrintf(LogWarning, "Dropping tmp namespace '%s'", de.name);
+							logFmt(LogWarning, "Dropping tmp namespace '{}'", de.name);
 							if (fs::RmDirAll(tmpPath) < 0) {
-								logPrintf(LogWarning, "Failed to remove '%s' temporary namespace from filesystem, path: %s", de.name,
+								logFmt(LogWarning, "Failed to remove '{}' temporary namespace from filesystem, path: {}", de.name,
 										  tmpPath);
 								hasNsErrors.test_and_set(std::memory_order_relaxed);
 							}
@@ -314,7 +317,7 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 								}
 							} while (!maxNsVersion.compare_exchange_strong(maxVer, ver));
 						} else {
-							logPrintf(LogError, "Failed to open namespace '%s' - %s", de.name, status.what());
+							logFmt(LogError, "Failed to open namespace '{}' - {}", de.name, status.what());
 							hasNsErrors.test_and_set(std::memory_order_relaxed);
 						}
 					}
@@ -338,15 +341,15 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 				// Do not set version for the v3 follower namespaces to guarantee force sync for them
 				if (!replState.wasV3ReplicatedNS) {
 					const auto nsVersion = nsVersion_.GetNext();
-					logPrintf(LogTrace, "%s: Ns version was empty. Generating new one: %d", ns.first, nsVersion);
+					logFmt(LogTrace, "{}: Ns version was empty. Generating new one: {}", ns.first, nsVersion);
 					ns.second->SetNsVersion(nsVersion, dummyCtx);
 				} else {
-					logPrintf(LogTrace, "%s: Ns version was empty (namespaces was replicated in v3). Keeping empty value", ns.first);
+					logFmt(LogTrace, "{}: Ns version was empty (namespaces was replicated in v3). Keeping empty value", ns.first);
 				}
 			}
 		}
 
-		logPrintf(LogTrace, "%s: All of the namespaces were opened", storagePath_);
+		logFmt(LogTrace, "{}: All of the namespaces were opened", storagePath_);
 	}
 
 	if (replicationEnabled_) {
@@ -377,7 +380,7 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 		if (clusterConfig) {
 			clusterizator_->Configure(*clusterConfig);
 			if (clusterizator_->IsExpectingClusterStartup()) {
-				logPrintf(LogTrace, "%s: Clusterizator was started after connect", storagePath_);
+				logFmt(LogTrace, "{}: Clusterizator was started after connect", storagePath_);
 				err = clusterizator_->StartClusterRepl();
 			}
 			if (!err.ok()) {
@@ -396,7 +399,7 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 		{
 			auto rlck = nsLock_.RLock(rdxCtx);
 			if (namespaces_.find(nsDef.name) != namespaces_.end()) {
-				return Error(errParams, "Namespace '%s' already exists", nsDef.name);
+				return Error(errParams, "Namespace '{}' already exists", nsDef.name);
 			}
 		}
 		if (!validateObjectName(nsDef.name, nsDef.isTemporary)) {
@@ -434,7 +437,7 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 
 			auto [it, inserted] = namespaces_.insert({nsDef.name, ns});
 			if (!inserted) {
-				return Error(errParams, "Namespace '%s' already exists", nsDef.name);
+				return Error(errParams, "Namespace '{}' already exists", nsDef.name);
 			}
 
 			const lsn_t version = setNsVersion(ns, replOpts, rdxCtx);
@@ -480,7 +483,7 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 		return err;
 	}
 
-	return errOK;
+	return {};
 }
 
 Error ReindexerImpl::OpenNamespace(std::string_view name, const StorageOpts& storageOpts, const NsReplicationOpts& replOpts,
@@ -526,10 +529,10 @@ Error ReindexerImpl::closeNamespace(std::string_view nsName, const RdxContext& c
 
 		auto nsIt = namespaces_.find(nsName);
 		if (nsIt == namespaces_.end()) {
-			return Error(errNotFound, "Namespace '%s' does not exist", nsName);
+			return Error(errNotFound, "Namespace '{}' does not exist", nsName);
 		}
 		if (isSystemNamespaceNameStrict(nsName)) {
-			return Error(errLogic, "Can't delete system ns '%s'", nsName);
+			return Error(errLogic, "Can't delete system ns '{}'", nsName);
 		}
 		// Temporary save namespace. This will call destructor without lock
 		ns = nsIt->second;
@@ -649,7 +652,7 @@ Error ReindexerImpl::openNamespace(std::string_view name, bool skipNameCheck, co
 		return err;
 	}
 
-	return errOK;
+	return {};
 }
 
 Error ReindexerImpl::TruncateNamespace(std::string_view nsName, const RdxContext& rdxCtx) {
@@ -673,13 +676,13 @@ Error ReindexerImpl::RenameNamespace(std::string_view srcNsName, const std::stri
 			auto rlck = nsLock_.RLock(rdxCtx);
 			auto srcIt = namespaces_.find(srcNsName);
 			if (srcIt == namespaces_.end()) {
-				return Error(errParams, "Namespace '%s' doesn't exist", srcNsName);
+				return Error(errParams, "Namespace '{}' doesn't exist", srcNsName);
 			}
 			Namespace::Ptr srcNs = srcIt->second;
 			assertrx(srcNs != nullptr);
 
 			if (srcNs->IsTemporary(rdxCtx) && rdxCtx.GetOriginLSN().isEmpty()) {
-				return Error(errParams, "Can't rename temporary namespace '%s'", srcNsName);
+				return Error(errParams, "Can't rename temporary namespace '{}'", srcNsName);
 			}
 		}
 		err = renameNamespace(srcNsName, dstNsName, !rdxCtx.GetOriginLSN().isEmpty(), false, rdxCtx);
@@ -731,13 +734,13 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 			return {};
 		}
 		if (isSystemNamespaceNameStrict(srcNsName)) {
-			return Error(errParams, "Can't rename system namespace (%s)", srcNsName);
+			return Error(errParams, "Can't rename system namespace ({})", srcNsName);
 		}
 		if (dstNsName.empty()) {
 			return Error(errParams, "Can't rename namespace to empty name");
 		}
 		if (!validateUserNsName(dstNsName)) {
-			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed (%s)", dstNsName);
+			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed ({})", dstNsName);
 		}
 
 		{
@@ -753,7 +756,7 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 				auto err = nsPtr->FlushStorage(rdxCtx);
 				logFmt(LogInfo, "[rename] Flush done for '{}'", srcNsName);
 				if (!err.ok()) {
-					return Error(err.code(), "Unable to flush storage before rename: %s", err.what());
+					return Error(err.code(), "Unable to flush storage before rename: {}", err.what());
 				}
 				srcNs.reset();
 			}
@@ -767,7 +770,7 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 
 		auto srcIt = namespaces_.find(srcNsName);
 		if (srcIt == namespaces_.end()) {
-			return Error(errParams, "Namespace '%s' doesn't exist", srcNsName);
+			return Error(errParams, "Namespace '{}' doesn't exist", srcNsName);
 		}
 		srcNs = srcIt->second;
 		assertrx(srcNs != nullptr);
@@ -865,7 +868,7 @@ Error ReindexerImpl::readClusterConfigFile() {
 			clusterizator_->Configure(*clusterConfig_);
 		}
 	} else {
-		logPrintf(LogError, "Error parsing cluster config YML: %s", err.what());
+		logFmt(LogError, "Error parsing cluster config YML: {}", err.what());
 	}
 	return err;
 }
@@ -882,7 +885,7 @@ Error ReindexerImpl::readShardingConfigFile() {
 	if (err.ok()) {
 		shardingConfig_.Set(std::move(conf));
 	} else {
-		logPrintf(LogError, "Error parsing sharding config YML: %s", err.what());
+		logFmt(LogError, "Error parsing sharding config YML: {}", err.what());
 	}
 	return err;
 }
@@ -892,7 +895,7 @@ void ReindexerImpl::saveNewShardingConfigFile(const cluster::ShardingConfig& con
 
 	auto res = fs::WriteFile(path, config.GetYAML());
 	if (res < 0) {
-		throw Error(errParams, "Error during saving sharding config candidate file. Returned with code: %d", res);
+		throw Error(errParams, "Error during saving sharding config candidate file. Returned with code: {}", res);
 	}
 }
 
@@ -904,7 +907,7 @@ void ReindexerImpl::checkClusterRole(std::string_view nsName, lsn_t originLsn) c
 	switch (clusterStatus_.role) {
 		case ClusterizationStatus::Role::None:
 			if (!originLsn.isEmpty()) {
-				throw Error(errWrongReplicationData, "Can't modify database with 'None' replication status from node %d",
+				throw Error(errWrongReplicationData, "Can't modify database with 'None' replication status from node {}",
 							originLsn.Server());
 			}
 			break;
@@ -913,7 +916,7 @@ void ReindexerImpl::checkClusterRole(std::string_view nsName, lsn_t originLsn) c
 			break;
 		case ClusterizationStatus::Role::ClusterReplica:
 			if (originLsn.isEmpty() || originLsn.Server() != clusterStatus_.leaderId) {
-				throw Error(errWrongReplicationData, "Can't modify cluster database replica with incorrect origin LSN: (%d) (s1:%d s2:%d)",
+				throw Error(errWrongReplicationData, "Can't modify cluster database replica with incorrect origin LSN: ({}) (s1:{} s2:{})",
 							originLsn, originLsn.Server(), clusterStatus_.leaderId);
 			}
 			break;
@@ -1078,18 +1081,6 @@ Error ReindexerImpl::Delete(const Query& q, LocalQueryResults& result, const Rdx
 	APPLY_NS_FUNCTION2(false, Delete, q, result);
 }
 
-struct ItemRefLess {
-	bool operator()(const ItemRef& lhs, const ItemRef& rhs) const {
-		if (lhs.Proc() == rhs.Proc()) {
-			if (lhs.Nsid() == rhs.Nsid()) {
-				return lhs.Id() < rhs.Id();
-			}
-			return lhs.Nsid() < rhs.Nsid();
-		}
-		return lhs.Proc() > rhs.Proc();
-	}
-};
-
 Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const RdxContext& rdxCtx) {
 	try {
 		RxSelector::NsLocker<const RdxContext> locks(rdxCtx);
@@ -1198,7 +1189,7 @@ Namespace::Ptr ReindexerImpl::getNamespace(std::string_view nsName, const RdxCon
 	auto rlck = nsLock_.RLock(ctx);
 	auto nsIt = namespaces_.find(nsName);
 	if (nsIt == namespaces_.end()) {
-		throw Error(errNotFound, "Namespace '%s' does not exist", nsName);
+		throw Error(errNotFound, "Namespace '{}' does not exist", nsName);
 	}
 
 	assertrx(nsIt->second);
@@ -1223,7 +1214,7 @@ lsn_t ReindexerImpl::setNsVersion(Namespace::Ptr& ns, const std::optional<NsRepl
 			}
 		} else {
 			if (!curVer.isEmpty() && replOpts->nsVersion != curVer) {
-				throw Error(errWrongReplicationData, "Namespace version missmatch. Expected version: %s, actual version: %s",
+				throw Error(errWrongReplicationData, "Namespace version missmatch. Expected version: {}, actual version: {}",
 							replOpts->nsVersion, curVer);
 			}
 			nsVersion_.UpdateCounter(replOpts->nsVersion.Counter());
@@ -1282,7 +1273,7 @@ std::vector<std::string> ReindexerImpl::getNamespacesNames(const RdxContext& ctx
 }
 
 Error ReindexerImpl::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const RdxContext& rdxCtx) {
-	logPrintf(LogTrace, "ReindexerImpl::EnumNamespaces (%d,%s)", opts.options_, opts.filter_);
+	logFmt(LogTrace, "ReindexerImpl::EnumNamespaces ({},{})", opts.options_, opts.filter_);
 	try {
 		auto nsarray = getNamespaces(rdxCtx);
 		for (auto& nspair : nsarray) {
@@ -1330,7 +1321,7 @@ Error ReindexerImpl::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespa
 	} catch (const Error& err) {
 		return err;
 	}
-	return errOK;
+	return {};
 }
 
 void ReindexerImpl::backgroundRoutine(net::ev::dynamic_loop& loop) {
@@ -1342,10 +1333,10 @@ void ReindexerImpl::backgroundRoutine(net::ev::dynamic_loop& loop) {
 			try {
 				auto ns = getNamespace(name, dummyCtx);
 				ns->BackgroundRoutine(nullptr);
-			} catch (Error err) {
-				logPrintf(LogWarning, "backgroundRoutine() failed with ns '%s': %s", name, err.what());
+			} catch (std::exception& err) {
+				logFmt(LogWarning, "backgroundRoutine() failed with ns '{}': {}", name, err.what());
 			} catch (...) {
-				logPrintf(LogWarning, "backgroundRoutine() failed with ns '%s': unknown exception", name);
+				logFmt(LogWarning, "backgroundRoutine() failed with ns '{}': unknown exception", name);
 			}
 		}
 		for (auto& watcher : configWatchers_) {
@@ -1358,12 +1349,10 @@ void ReindexerImpl::backgroundRoutine(net::ev::dynamic_loop& loop) {
 	t.set([&nsBackground](net::ev::timer&, int) noexcept {
 		try {
 			nsBackground();
-		} catch (Error err) {
-			logPrintf(LogError, "Unexpected exception in background thread: %s", err.what());
 		} catch (std::exception& e) {
-			logPrintf(LogError, "Unexpected exception in background thread: %s", e.what());
+			logFmt(LogError, "Unexpected exception in background thread: {}", e.what());
 		} catch (...) {
-			logPrintf(LogError, "Unexpected exception in background thread: ???");
+			logFmt(LogError, "Unexpected exception in background thread: ???");
 		}
 	});
 	t.start(0.1, 0.1);
@@ -1372,6 +1361,40 @@ void ReindexerImpl::backgroundRoutine(net::ev::dynamic_loop& loop) {
 		loop.run();
 	}
 	nsBackground();
+}
+
+void ReindexerImpl::annCachingRoutine(net::ev::dynamic_loop& loop) {
+	static const RdxContext dummyCtx;
+	auto updateAnnStorageCache = [&]() {
+		auto nsarray = getNamespacesNames(dummyCtx);
+		for (const auto& name : nsarray) {
+			try {
+				auto ns = getNamespace(name, dummyCtx);
+				ns->ANNCachingRoutine();
+			} catch (std::exception& err) {
+				logFmt(LogWarning, "annCachingRoutine() failed: '{}'", err.what(), name);
+			} catch (...) {
+				logFmt(LogWarning, "annCachingRoutine() failed with ns: '{}'", name);
+			}
+		}
+	};
+
+	net::ev::periodic t;
+	t.set(loop);
+	t.set([&updateAnnStorageCache](net::ev::timer&, int) noexcept {
+		try {
+			updateAnnStorageCache();
+		} catch (std::exception& e) {
+			logFmt(LogError, "Unexpected exception in ann storage cache thread: {}", e.what());
+		} catch (...) {
+			logFmt(LogError, "Unexpected exception in ann storage cache thread: ???");
+		}
+	});
+	t.start(1.0, 1.0);
+
+	while (!dbDestroyed_.load(std::memory_order_relaxed)) {
+		loop.run();
+	}
 }
 
 void ReindexerImpl::storageFlushingRoutine(net::ev::dynamic_loop& loop) {
@@ -1407,14 +1430,14 @@ void ReindexerImpl::storageFlushingRoutine(net::ev::dynamic_loop& loop) {
 				}
 				if (printMsg) {
 					if (errInfo->skipedErrorMsgs) {
-						logPrintf(LogWarning, "storageFlushingRoutine() failed: '%s' (%d successive errors on ns '%s')",
+						logFmt(LogWarning, "storageFlushingRoutine() failed: '{}' ({} successive errors on ns '{}')",
 								  errInfo->lastError.what(), errInfo->skipedErrorMsgs + 1, name);
 					} else {
-						logPrintf(LogWarning, "storageFlushingRoutine() failed: '%s'", errInfo->lastError.what(), name);
+						logFmt(LogWarning, "storageFlushingRoutine() failed: '{}'", errInfo->lastError.what(), name);
 					}
 				}
 			} catch (...) {
-				logPrintf(LogWarning, "storageFlushingRoutine() failed with ns: '%s'", name);
+				logFmt(LogWarning, "storageFlushingRoutine() failed with ns: '{}'", name);
 			}
 		}
 		errors = std::move(newErrors);
@@ -1429,12 +1452,10 @@ void ReindexerImpl::storageFlushingRoutine(net::ev::dynamic_loop& loop) {
 #ifdef REINDEX_WITH_GPERFTOOLS
 			this->heapWatcher_.CheckHeapUsagePeriodic();
 #endif
-		} catch (Error err) {
-			logPrintf(LogError, "Unexpected exception in flushing thread: %s", err.what());
 		} catch (std::exception& e) {
-			logPrintf(LogError, "Unexpected exception in flushing thread: %s", e.what());
+			logFmt(LogError, "Unexpected exception in flushing thread: {}", e.what());
 		} catch (...) {
-			logPrintf(LogError, "Unexpected exception in flushing thread: ???");
+			logFmt(LogError, "Unexpected exception in flushing thread: ???");
 		}
 	});
 	t.start(0.1, 0.1);
@@ -1449,7 +1470,7 @@ void ReindexerImpl::createSystemNamespaces() {
 	for (const auto& nsDef : kSystemNsDefs) {
 		auto err = AddNamespace(nsDef);
 		if (!err.ok()) {
-			logPrintf(LogWarning, "Unable to create system namespace '%s': %s", nsDef.name, err.what());
+			logFmt(LogWarning, "Unable to create system namespace '{}': {}", nsDef.name, err.what());
 		}
 	}
 }
@@ -1479,6 +1500,43 @@ Error ReindexerImpl::tryLoadShardingConf(const RdxContext& ctx) noexcept {
 	CATCH_AND_RETURN
 }
 
+void ReindexerImpl::handleDropANNCacheAction(const gason::JsonNode& action, const RdxContext& ctx) {
+	auto& nsNode = action["namespace"];
+	auto& indexNode = action["index"];
+	std::string_view indexName;
+	if (!indexNode.empty() && indexNode.As<std::string_view>() != "*") {
+		indexName = indexNode.As<std::string_view>();
+	}
+	if (nsNode.empty() || nsNode.As<std::string_view>() == "*") {
+		for (auto& ns : getNamespaces(ctx)) {
+			ns.second->DropANNStorageCache(indexName, ctx);
+		}
+	} else if (auto ns = getNamespaceNoThrow(nsNode.As<std::string_view>(), ctx); ns) {
+		ns->DropANNStorageCache(indexName, ctx);
+	}
+}
+
+void ReindexerImpl::handleRebuildIVFIndexAction(const gason::JsonNode& action, const RdxContext& ctx) {
+	auto& nsNode = action["namespace"];
+	auto& indexNode = action["index"];
+	auto& dataPartNode = action["data_part"];
+	std::string_view indexName;
+	float dataPart = 1.0;
+	if (!indexNode.empty() && indexNode.As<std::string_view>() != "*") {
+		indexName = indexNode.As<std::string_view>();
+	}
+	if (!dataPartNode.empty()) {
+		dataPart = dataPartNode.As<float>();
+	}
+	if (nsNode.empty() || nsNode.As<std::string_view>() == "*") {
+		for (auto& ns : getNamespaces(ctx)) {
+			ns.second->RebuildIVFIndex(indexName, dataPart, ctx);
+		}
+	} else if (auto ns = getNamespaceNoThrow(nsNode.As<std::string_view>(), ctx); ns) {
+		ns->RebuildIVFIndex(indexName, dataPart, ctx);
+	}
+}
+
 Error ReindexerImpl::InitSystemNamespaces() {
 	createSystemNamespaces();
 
@@ -1495,28 +1553,28 @@ Error ReindexerImpl::InitSystemNamespaces() {
 	// Fail earlier
 	// Reading config files first
 	{
-		logPrintf(LogInfo, "Attempting to load replication config from '%s'", kReplicationConfFilename);
+		logFmt(LogInfo, "Attempting to load replication config from '{}'", kReplicationConfFilename);
 		err = tryLoadConfFromFile<kReplicationConfigType, ReplicationConfigData>(kReplicationConfFilename);
 		if (err.ok()) {
 			hasBaseReplicationConfig = true;
-			logPrintf(LogInfo, "Replication config loaded from '%s'", kReplicationConfFilename);
+			logFmt(LogInfo, "Replication config loaded from '{}'", kReplicationConfFilename);
 		} else if (err.code() == errNotFound) {
-			logPrintf(LogInfo, "Not found '%s'", kReplicationConfFilename);
+			logFmt(LogInfo, "Not found '{}'", kReplicationConfFilename);
 		} else {
-			return Error(err.code(), "Failed to load general replication config file: '%s'", err.what());
+			return Error(err.code(), "Failed to load general replication config file: '{}'", err.what());
 		}
 	}
 
 	{
-		logPrintf(LogInfo, "Attempting to load async replication config from '%s'", kAsyncReplicationConfFilename);
+		logFmt(LogInfo, "Attempting to load async replication config from '{}'", kAsyncReplicationConfFilename);
 		err = tryLoadConfFromFile<kAsyncReplicationConfigType, cluster::AsyncReplConfigData>(kAsyncReplicationConfFilename);
 		if (err.ok()) {
 			hasAsyncReplicationConfig = true;
-			logPrintf(LogInfo, "Async replication config loaded from '%s'", kAsyncReplicationConfFilename);
+			logFmt(LogInfo, "Async replication config loaded from '{}'", kAsyncReplicationConfFilename);
 		} else if (err.code() == errNotFound) {
-			logPrintf(LogInfo, "Not found '%s'", kAsyncReplicationConfFilename);
+			logFmt(LogInfo, "Not found '{}'", kAsyncReplicationConfFilename);
 		} else {
-			return Error(err.code(), "Failed to load async replication config file: '%s'", err.what());
+			return Error(err.code(), "Failed to load async replication config file: '{}'", err.what());
 		}
 	}
 
@@ -1530,7 +1588,7 @@ Error ReindexerImpl::InitSystemNamespaces() {
 
 	// Filling rest of default config
 	if (results.Count() == 0) {
-		logPrintf(LogInfo, "Initializing default DB config for missed sections");
+		logFmt(LogInfo, "Initializing default DB config for missed sections");
 		for (const auto& conf : kDefDBConfig) {
 			if (!hasBaseReplicationConfig || !hasAsyncReplicationConfig || !hasShardingConfig) {
 				gason::JsonParser parser;
@@ -1566,7 +1624,7 @@ Error ReindexerImpl::InitSystemNamespaces() {
 	}
 
 	{
-		logPrintf(LogInfo, "Reading configuration from namespace #config");
+		logFmt(LogInfo, "Reading configuration from namespace #config");
 		for (auto it : results) {
 			auto item = it.GetItem(false);
 			try {
@@ -1586,7 +1644,7 @@ Error ReindexerImpl::InitSystemNamespaces() {
 			}
 		}
 		if (auto configLoadErrors = configProvider_.GetConfigParseErrors()) {
-			logPrintf(LogError, "Config load errors:\n%s", configLoadErrors.what());
+			logFmt(LogError, "Config load errors:\n{}", configLoadErrors.what());
 		}
 	}
 
@@ -1601,7 +1659,7 @@ Error ReindexerImpl::InitSystemNamespaces() {
 			ns.second->OnConfigUpdated(configProvider_, ctx);
 		}
 	}
-	return errOK;
+	return {};
 }
 
 template <const char* type, typename ConfigT>
@@ -1623,8 +1681,8 @@ Error ReindexerImpl::tryLoadConfFromYAML(const std::string& yamlConf) {
 	ConfigT config;
 	Error err = config.FromYAML(yamlConf);
 	if (!err.ok()) {
-		logPrintf(LogError, "Error parsing config YML for %s: %s", type, err.what());
-		return Error(err.code(), "Error parsing config YML for %s: %s", type, err.what());
+		logFmt(LogError, "Error parsing config YML for {}: {}", type, err.what());
+		return Error(err.code(), "Error parsing config YML for {}: {}", type, err.what());
 	} else {
 		WrSerializer ser;
 		JsonBuilder jb(ser);
@@ -1708,7 +1766,7 @@ void ReindexerImpl::updateToSystemNamespace(std::string_view nsName, Item& item,
 				throw err;
 			}
 		} catch (gason::Exception& e) {
-			throw Error(errParseJson, "JSON parsing error: %s", e.what());
+			throw Error(errParseJson, "JSON parsing error: {}", e.what());
 		}
 	} else if (nsName == kQueriesPerfStatsNamespace) {
 		queriesStatTracker_.Reset();
@@ -1779,8 +1837,12 @@ void ReindexerImpl::handleConfigAction(const gason::JsonNode& action, const std:
 			} else if (type == "cluster"sv) {
 				clusterizator_->SetClusterReplicatonLogLevel(level);
 			} else {
-				throw Error(errParams, "Unknow logs type in config-action: '%s'", type);
+				throw Error(errParams, "Unknow logs type in config-action: '{}'", type);
 			}
+		} else if (command == "drop_ann_storage_cache"sv) {
+			handleDropANNCacheAction(action, ctx);
+		} else if (command == "rebuild_ivf_index"sv) {
+			handleRebuildIVFIndexAction(action, ctx);
 		}
 
 		if (const auto it = proxyCallbacks_.find({command, CallbackT::Type::User}); it != proxyCallbacks_.end()) {
@@ -1799,7 +1861,7 @@ void ReindexerImpl::updateConfigProvider(const gason::JsonNode& config, bool aut
 
 	if (!err.ok()) {
 		if (autoCorrect) {
-			logPrintf(LogError, "DBConfigProvider: Non fatal error %d \"%s\"", err.code(), err.what());
+			logFmt(LogError, "DBConfigProvider: Non fatal error {} \"{}\"", int(err.code()), err.what());
 			return;
 		}
 
@@ -1886,8 +1948,8 @@ ReindexerImpl::FilterNsNamesT ReindexerImpl::detectFilterNsNames(const Query& q)
 [[nodiscard]] ReindexerImpl::StatsLocker::StatsLockT ReindexerImpl::syncSystemNamespaces(std::string_view sysNsName,
 																						 const FilterNsNamesT& filterNsNames,
 																						 const RdxContext& ctx) {
-	logPrintf(
-		LogTrace, "ReindexerImpl::syncSystemNamespaces (%s,%s)", sysNsName,
+	logFmt(
+		LogTrace, "ReindexerImpl::syncSystemNamespaces ({},{})", sysNsName,
 		filterNsNames.has_value() ? (filterNsNames->size() == 1 ? (*filterNsNames)[0] : std::to_string(filterNsNames->size())) : "<all>");
 
 	StatsLocker::StatsLockT resultLock;
@@ -1956,7 +2018,7 @@ ReindexerImpl::FilterNsNamesT ReindexerImpl::detectFilterNsNames(const Query& q)
 					  auto stats = nsPtr->GetDefinition(ctx);
 					  bool notRenamed = iequals(stats.name, nsName);
 					  if (notRenamed) {
-						  stats.GetJSON(ser, kIndexJSONWithDescribe);
+						  stats.GetJSON(ser);
 					  }
 					  return notRenamed;
 				  });
@@ -2076,7 +2138,7 @@ Error ReindexerImpl::GetSqlSuggestions(std::string_view sqlQuery, int pos, std::
 			}
 			return std::shared_ptr<const Schema>();
 		});
-	return errOK;
+	return {};
 }
 
 Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, std::vector<std::string>& namespaces) {
@@ -2179,7 +2241,7 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, std::vector<std::strin
 		obj.Field(kParamDescription, kProtoErrorResultsFields.at(kParamDescription), FieldProps{KeyValueType::String{}});
 	});
 	schemaBuilder.End();
-	return errOK;
+	return {};
 }
 
 Error ReindexerImpl::GetReplState(std::string_view nsName, ReplicationStateV2& state, const RdxContext& rdxCtx) noexcept {
@@ -2239,7 +2301,7 @@ Error ReindexerImpl::GetRaftInfo(bool allowTransitState, cluster::RaftInfo& info
 	} catch (const Error& err) {
 		return err;
 	}
-	return errOK;
+	return {};
 }
 
 Error ReindexerImpl::ClusterControlRequest(const ClusterControlRequestData& request) {
@@ -2249,7 +2311,7 @@ Error ReindexerImpl::ClusterControlRequest(const ClusterControlRequestData& requ
 		case ClusterControlRequestData::Type::Empty:
 			break;
 	}
-	return Error(errParams, "Unknown cluster command request. Command type [%d].", int(request.type));
+	return Error(errParams, "Unknown cluster command request. Command type [{}].", int(request.type));
 }
 
 Error ReindexerImpl::getLeaderDsn(DSN& dsn, unsigned short serverId, const cluster::RaftInfo& info) {
@@ -2259,12 +2321,12 @@ Error ReindexerImpl::getLeaderDsn(DSN& dsn, unsigned short serverId, const clust
 		}
 		if (serverId == info.leaderId) {
 			dsn = {};
-			return errOK;
+			return {};
 		}
 		for (const auto& node : clusterConfig_->nodes) {
 			if (node.serverId == info.leaderId) {
 				dsn = node.GetRPCDsn();
-				return errOK;
+				return {};
 			}
 		}
 	} catch (const Error& err) {
@@ -2303,7 +2365,7 @@ Error ReindexerImpl::shardingConfigReplAction(const RdxContext& ctx, updates::UR
 Error ReindexerImpl::saveShardingCfgCandidate(std::string_view config, int64_t sourceId, const RdxContext& ctx) noexcept {
 	auto preReplfunc = [this, &ctx](std::string_view config, int64_t sourceId) {
 		cluster::ShardingConfig conf;
-		auto err = conf.FromJSON(std::string(config));
+		auto err = conf.FromJSON(std::string_view(config));
 		if (!err.ok()) {
 			throw err;
 		}
@@ -2312,7 +2374,7 @@ Error ReindexerImpl::saveShardingCfgCandidate(std::string_view config, int64_t s
 
 		auto nodeStats = clusterizator_->GetClusterReplicationStats().nodeStats;
 		if (!nodeStats.empty() && nodeStats.size() != hosts.size()) {
-			throw Error(errLogic, "Not equal count of dsns in cluster and sharding config. Shard - %d", conf.thisShardId);
+			throw Error(errLogic, "Not equal count of dsns in cluster and sharding config. Shard - {}", conf.thisShardId);
 		}
 
 		for (const auto& nodeStat : nodeStats) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "replicationstats.h"
+#include "tools/clock.h"
 
 namespace reindexer {
 namespace cluster {

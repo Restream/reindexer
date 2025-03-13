@@ -3,9 +3,9 @@ package reindexer
 import (
 	"context"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/dsl"
-	"github.com/restream/reindexer/v4/events"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/dsl"
+	"github.com/restream/reindexer/v5/events"
 )
 
 // Condition types
@@ -88,6 +88,8 @@ type Reindexer struct {
 
 // IndexDef - Inddex  definition struct
 type IndexDef bindings.IndexDef
+
+type FloatVectorIndexOpts bindings.FloatVectorIndexOpts
 
 // Error - reindexer Error interface
 type Error interface {

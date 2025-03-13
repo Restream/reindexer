@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <optional>
 #include <string>
@@ -17,9 +17,8 @@ class Namespace;
 
 struct NamespaceDef {
 	NamespaceDef() = default;
-
-	explicit NamespaceDef(std::string iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing())
-		: name(std::move(iname)), storage(istorage) {}
+	explicit NamespaceDef(std::string_view iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing())
+		: name(iname), storage(istorage) {}
 
 	NamespaceDef& AddIndex(const std::string& iname, const std::string& indexType, const std::string& fieldType,
 						   IndexOpts opts = IndexOpts()) {
@@ -38,9 +37,9 @@ struct NamespaceDef {
 		return *this;
 	}
 
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::span<char> json);
 	void FromJSON(const gason::JsonNode& root);
-	void GetJSON(WrSerializer&, int formatFlags = 0) const;
+	void GetJSON(WrSerializer&) const;
 	bool HasSchema() const noexcept { return !schemaJson.empty() && schemaJson != "{}"; }
 	size_t HeapSize() const noexcept {
 		size_t size = name.size() + indexes.size() * sizeof(IndexDef) + schemaJson.size();
@@ -108,7 +107,7 @@ struct EnumNamespacesOpts {
 };
 
 struct NsReplicationOpts {
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::span<char> json);
 	void FromJSON(const gason::JsonNode& root);
 	void GetJSON(WrSerializer&) const;
 

@@ -1,7 +1,5 @@
 #include "composite_indexes_api.h"
 #include "gmock/gmock.h"
-#include "yaml-cpp/node/node.h"
-#include "yaml-cpp/node/parse.h"
 #include "yaml-cpp/yaml.h"
 
 using QueryResults = ReindexerApi::QueryResults;
@@ -83,8 +81,7 @@ TEST_F(CompositeIndexesApi, DropTest2) {
 
 	selectAll(rt.reindexer.get(), test_ns);
 
-	reindexer::IndexDef idef("id");
-	err = rt.reindexer->DropIndex(test_ns, idef);
+	err = rt.reindexer->DropIndex(test_ns, reindexer::IndexDef{"id"});
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	selectAll(rt.reindexer.get(), test_ns);
@@ -233,7 +230,7 @@ TEST_F(CompositeIndexesApi, SelectsBySubIndexes) {
 }
 
 TEST_F(CompositeIndexesApi, CompositeOverCompositeTest) {
-	constexpr char kExpectedErrorPattern[] = "Cannot create composite index '%s' over the other composite '%s'";
+	constexpr auto kExpectedErrorPattern = "Cannot create composite index '{}' over the other composite '{}'";
 	constexpr size_t stepSize = 10;
 	size_t from = 0, to = stepSize;
 	auto addData = [this, &from, &to] {
@@ -246,13 +243,13 @@ TEST_F(CompositeIndexesApi, CompositeOverCompositeTest) {
 		auto compositeName = getCompositeIndexName(std::move(compositeFields));
 		auto err = tryAddCompositeIndex({compositeName, singleField}, type, IndexOpts());
 		EXPECT_EQ(err.code(), errParams) << compositeName;
-		EXPECT_EQ(err.what(), fmt::sprintf(kExpectedErrorPattern, getCompositeIndexName({compositeName, singleField}), compositeName))
+		EXPECT_EQ(err.what(), fmt::format(kExpectedErrorPattern, getCompositeIndexName({compositeName, singleField}), compositeName))
 			<< compositeName;
 		addData();
 
 		err = tryAddCompositeIndex({singleField, compositeName}, type, IndexOpts());
 		EXPECT_EQ(err.code(), errParams) << compositeName;
-		EXPECT_EQ(err.what(), fmt::sprintf(kExpectedErrorPattern, getCompositeIndexName({singleField, compositeName}), compositeName))
+		EXPECT_EQ(err.what(), fmt::format(kExpectedErrorPattern, getCompositeIndexName({singleField, compositeName}), compositeName))
 			<< compositeName;
 		addData();
 	};
@@ -276,7 +273,7 @@ TEST_F(CompositeIndexesApi, CompositeOverCompositeTest) {
 	const auto kComposite2 = getCompositeIndexName({kFieldNameTitle, kNewIdxName});
 	err = tryAddCompositeIndex({kComposite1, kComposite2}, CompositeIndexHash, IndexOpts());
 	EXPECT_EQ(err.code(), errParams);
-	EXPECT_EQ(err.what(), fmt::sprintf(kExpectedErrorPattern, getCompositeIndexName({kComposite1, kComposite2}), kComposite1));
+	EXPECT_EQ(err.what(), fmt::format(kExpectedErrorPattern, getCompositeIndexName({kComposite1, kComposite2}), kComposite1));
 	addData();
 }
 

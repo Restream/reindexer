@@ -1,5 +1,6 @@
 #pragma once
 
+#include "client/connectopts.h"
 #include "client/coroqueryresults.h"
 #include "client/corotransaction.h"
 #include "client/internalrdxcontext.h"
@@ -203,6 +204,8 @@ public:
 	/// Get current connection status
 	/// @param forceCheck - forces to check status immediately (otherwise result of periodic check will be returned)
 	Error Status(bool forceCheck = false);
+	/// Get version of the Reindexer server that is connected to
+	Error Version(std::string&);
 	/// Allocate new transaction for namespace
 	/// @param nsName - Name of namespace
 	CoroTransaction NewTransaction(std::string_view nsName);

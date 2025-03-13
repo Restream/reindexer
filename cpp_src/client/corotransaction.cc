@@ -66,7 +66,7 @@ Error CoroTransaction::Modify(Query&& query, lsn_t lsn) {
 		case QuerySelect:
 		case QueryTruncate:
 		default:
-			return Error(errParams, "Incorrect query type in transaction modify %d", query.type_);
+			return Error(errParams, "Incorrect query type in transaction modify {}", int(query.type_));
 	}
 }
 
@@ -220,6 +220,7 @@ CoroTransaction::Impl::Impl(RPCClient* rpcClient, int64_t txId, std::chrono::mil
 	}
 }
 
+// NOLINTNEXTLINE (bugprone-throw-keyword-missing)
 CoroTransaction::Impl::Impl(Error&& status) noexcept : status_(std::move(status)), localTm_(std::make_unique<TagsMatcher>()) {}
 
 CoroTransaction::Impl::Impl(CoroTransaction::Impl&&) noexcept = default;

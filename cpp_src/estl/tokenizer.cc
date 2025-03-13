@@ -52,12 +52,12 @@ token tokenizer::next_token(flags flgs) {
 		while (++cur_ != q_.end() && *cur_ != '"') {
 			if (pos_ == startPos) {
 				if (*cur_ != '#' && *cur_ != '_' && !isalpha(*cur_) && !isdigit(*cur_) && *cur_ != '@') {
-					throw Error{errParseSQL, "Identifier should starts with alpha, digit, '_', '#' or '@', but found '%c'; %s", *cur_,
+					throw Error{errParseSQL, "Identifier should starts with alpha, digit, '_', '#' or '@', but found '{}'; {}", *cur_,
 								where()};
 				}
 			} else if (*cur_ != '+' && *cur_ != '.' && *cur_ != '_' && *cur_ != '#' && *cur_ != '[' && *cur_ != ']' && *cur_ != '*' &&
 					   !isalpha(*cur_) && !isdigit(*cur_) && *cur_ != '@') {
-				throw Error{errParseSQL, "Identifier should not contain '%c'; %s", *cur_, where()};
+				throw Error{errParseSQL, "Identifier should not contain '{}'; {}", *cur_, where()};
 			}
 			res.text_.push_back(flgs.has_to_lower() ? tolower(*cur_) : *cur_);
 			++pos_;
@@ -66,7 +66,7 @@ token tokenizer::next_token(flags flgs) {
 			res.text_.push_back('"');
 		}
 		if (cur_ == q_.end()) {
-			throw Error{errParseSQL, "Not found close '\"'; %s", where()};
+			throw Error{errParseSQL, "Not found close '\"'; {}", where()};
 		}
 		++cur_;
 		++pos_;

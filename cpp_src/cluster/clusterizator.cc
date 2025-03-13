@@ -144,6 +144,14 @@ Error Clusterizator::ReplicateAsync(UpdatesContainer&& recs, const RdxContext& c
 	return {};	// This namespace is not taking part in any replication
 }
 
+ReplicationStats Clusterizator::GetAsyncReplicationStats() const { return asyncReplicator_.GetReplicationStats(); }
+
+ReplicationStats Clusterizator::GetClusterReplicationStats() const { return clusterReplicator_.GetReplicationStats(); }
+
+void Clusterizator::SetAsyncReplicatonLogLevel(LogLevel level) noexcept { asyncReplicator_.SetLogLevel(level); }
+
+void Clusterizator::SetClusterReplicatonLogLevel(LogLevel level) noexcept { clusterReplicator_.SetLogLevel(level); }
+
 bool Clusterizator::replicationIsNotRequired(const UpdatesContainer& recs) noexcept {
 	return recs.empty() || isSystemNamespaceNameFast(recs[0].NsName());
 }

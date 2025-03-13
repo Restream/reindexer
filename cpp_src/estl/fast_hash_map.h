@@ -2,8 +2,8 @@
 
 #if 1
 #include "fast_hash_traits.h"
-#include "hopscotch/hopscotch_map.h"
-#include "hopscotch/hopscotch_sc_map.h"
+#include "vendor/hopscotch/hopscotch_map.h"
+#include "vendor/hopscotch/hopscotch_sc_map.h"
 
 namespace reindexer {
 

@@ -1,7 +1,8 @@
 #include <gtest/gtest.h>
-#include "core/reindexer.h"
-
 #include "core/cjson/jsonbuilder.h"
+#include "core/reindexer.h"
+#include "estl/gift_str.h"
+#include "vendor/gason/gason.h"
 
 TEST(JSONParsingTest, EmptyDocument) {
 	reindexer::Reindexer rx;
@@ -53,7 +54,7 @@ TEST(JSONParsingTest, Strings) {
 		std::fill(strs[1].begin(), strs[1].end(), 'b');
 
 		std::string d("{\"id\":1,\"str0\":\"" + strs[0] + "\",\"str1\":\"" + strs[1] + "\",\"val\":999}");
-		reindexer::span<char> data(d);
+		std::span<char> data(d);
 		try {
 			gason::JsonParser parser;
 			auto root = parser.Parse(data, nullptr);
@@ -88,6 +89,6 @@ TEST(JSONParsingTest, LargeAllocations) {
 	ASSERT_EQ(std::string_view(root["mode"].key), "mode");
 	for (auto el : root["array"]) {
 		ASSERT_EQ(std::string_view(el.key), std::string_view());
-		ASSERT_EQ(el.value.getTag(), gason::JSON_NUMBER);
+		ASSERT_EQ(el.value.getTag(), gason::JsonTag::NUMBER);
 	}
 }

@@ -14,7 +14,7 @@ class AsyncDataReplicator {
 public:
 	using UpdatesQueueT = UpdatesQueuePair<updates::UpdateRecord>;
 
-	AsyncDataReplicator(UpdatesQueueT&, SharedSyncState<>&, ReindexerImpl&, Clusterizator&);
+	AsyncDataReplicator(UpdatesQueueT&, SharedSyncState&, ReindexerImpl&, Clusterizator&);
 
 	void Configure(AsyncReplConfigData config);
 	void Configure(ReplicationConfigData config);
@@ -29,9 +29,7 @@ public:
 private:
 	static constexpr std::string_view logModuleName() noexcept { return std::string_view("asyncreplicator"); }
 	bool isExpectingStartup() const noexcept;
-	size_t threadsCount() const noexcept {
-		return config_.has_value() && config_->replThreadsCount > 0 ? config_->replThreadsCount : kDefaultReplThreadCount;
-	}
+	size_t threadsCount() const noexcept;
 	bool isRunning() const noexcept { return replThreads_.size(); }
 	void stop();
 	NsNamesHashSetT getLocalNamespaces();
@@ -40,7 +38,7 @@ private:
 	ReplicationStatsCollector statsCollector_;
 	mutable std::mutex mtx_;
 	UpdatesQueueT& updatesQueue_;
-	SharedSyncState<>& syncState_;
+	SharedSyncState& syncState_;
 	ReindexerImpl& thisNode_;
 	Clusterizator& clusterizator_;
 	std::deque<AsyncReplThread> replThreads_;

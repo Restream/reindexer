@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/restream/reindexer/v4"
-	"github.com/restream/reindexer/v4/dsl"
+	"github.com/restream/reindexer/v5"
+	"github.com/restream/reindexer/v5/dsl"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -78,7 +78,7 @@ func fillTestDSLItems(t *testing.T, ns string, start int, count int) {
 func fillTestDSLFtItems(t *testing.T, ns string) {
 	descriptions := []string{"test", "word", "worm", "sword", "www"}
 	tx := newTestTx(DB, ns)
-	for i := 0; i < 5; i++ {
+	for i := 0; i < len(descriptions); i++ {
 		testItem := newTestDSLFtItem(i, descriptions[i])
 		if err := tx.Upsert(testItem); err != nil {
 			require.NoError(t, err)
@@ -529,7 +529,7 @@ func TestDSLQueries(t *testing.T) {
 			require.NoError(t, err)
 
 			expectedOrder := []string{"worm", "sword", "word"}
-			expectedRanks := []int{75, 75, 107}
+			expectedRanks := []float32{75, 75, 107}
 			assert.Equal(t, expectedOrder, getTesDSLFtItemsDescr(items))
 			assert.Equal(t, expectedRanks, ranks)
 		}, jsonDSL)

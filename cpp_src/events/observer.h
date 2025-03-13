@@ -1,21 +1,23 @@
 #pragma once
 
+#include "cluster/idatareplicator.h"
+#include "events/listener.h"
+#include "tools/errors.h"
+
+#ifdef REINDEX_WITH_V3_FOLLOWERS
 #include <string_view>
 #include <vector>
 #include "estl/h_vector.h"
 #include "estl/shared_mutex.h"
-#include "tools/errors.h"
 #include "tools/lsn.h"
 #include "tools/stringstools.h"
 #include "wal/walrecord.h"
-
-#include "cluster/idatareplicator.h"
-#include "events/listener.h"
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 
 namespace reindexer {
 
 class ItemImpl;
-struct IndexDef;
+class IndexDef;
 class IExternalEventsListener;
 
 #ifdef REINDEX_WITH_V3_FOLLOWERS
@@ -52,7 +54,7 @@ public:
 	/// Get current namespaces map
 	const MapT& Values() const noexcept { return filters_; }
 
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::span<char> json);
 	void FromJSON(const gason::JsonNode& root);
 	void GetJSON(WrSerializer& ser) const;
 	void GetJSON(JsonBuilder& builder) const;

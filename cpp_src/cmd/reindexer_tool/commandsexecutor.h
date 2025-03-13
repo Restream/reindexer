@@ -95,6 +95,7 @@ protected:
 	Error commandNamespaces(const std::string& command);
 	Error commandMeta(const std::string& command);
 	Error commandHelp(const std::string& command);
+	Error commandVersion(const std::string& command);
 	Error commandQuit(const std::string& command);
 	Error commandSet(const std::string& command);
 	Error commandBench(const std::string& command);
@@ -195,7 +196,7 @@ protected:
 					- 'json' Unformatted JSON
 					- 'pretty' Pretty printed JSON
 					- 'table' Table view
-			-'with_shard_id'
+			-'with_shard_ids'
 				possible values:
 					- 'on'  Add '#shard_id' field to items from sharded namespaces
 					- 'off'
@@ -206,6 +207,7 @@ protected:
 		)help"},
 		{"\\quit",		"Exit from tool",&CommandsExecutor::commandQuit,""},
 		{"\\help",		"Show help",&CommandsExecutor::commandHelp,""},
+		{"\\version",	"Show Reindexer server version when connected to it via [u]cproto://, or the rx-tool version when using built-in",&CommandsExecutor::commandVersion, ""},
 		{"\\databases", "Works with available databases",&CommandsExecutor::commandProcessDatabases, R"help(
 	Syntax:
 		 \databases list

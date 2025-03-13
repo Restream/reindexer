@@ -1,5 +1,4 @@
 #include "transactionimpl.h"
-#include "cluster/sharding/sharding.h"
 #include "core/reindexer_impl/reindexerimpl.h"
 
 namespace reindexer {
@@ -240,7 +239,7 @@ LocalTransaction TransactionImpl::Transform(TransactionImpl& tx) {
 void TransactionImpl::updateShardIdIfNecessary(int shardId, const Variant& curShardKey) {
 	if ((shardId_ != ShardingKeyType::NotSetShard) && (shardId != shardId_)) {
 		throw Error(errLogic,
-					"Transaction query to a different shard: %d (%d is expected); First tx shard key - %s, current tx shard key - %s",
+					"Transaction query to a different shard: {} ({} is expected); First tx shard key - {}, current tx shard key - {}",
 					shardId, shardId_, firstShardKey_.Dump(), curShardKey.Dump());
 	}
 	if (shardId_ == ShardingKeyType::NotSetShard) {
@@ -274,7 +273,7 @@ void TransactionImpl::lazyInit(const Query& q) {
 			firstShardKey_ = shardKey;
 		}
 		if (ids.size() != 1) {
-			Error status(errLogic, "Transaction query must correspond to exactly one shard (%d corresponding shards found)", ids.size());
+			Error status(errLogic, "Transaction query must correspond to exactly one shard ({} corresponding shards found)", ids.size());
 			status_ = status;
 			throw status;
 		}

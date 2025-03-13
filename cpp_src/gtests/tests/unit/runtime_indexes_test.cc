@@ -185,9 +185,6 @@ TEST_F(RuntimeIndexesApi, RuntimePKCompositeIndexesTest) {
 }
 
 TEST_F(RuntimeIndexesApi, RuntimeIndexesRemoveAndSelect) {
-	using reindexer::randPoint;
-	using reindexer::randBinDouble;
-
 	FillNamespaces(0, 100);
 
 	for (int i = 0; i < 5; ++i) {
@@ -242,10 +239,10 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesRemoveAndSelect) {
 		Query(default_namespace).Where(getRuntimeUuidArrayIndexName(1).c_str(), CondEq, {Variant{randUuid()}, Variant{randStrUuid()}}));
 
 	CheckSelectValidity(Query(geom_namespace)
-							.DWithin(getRuntimeQPointIndexName(2), randPoint(10), randBinDouble(0, 1))
+							.DWithin(getRuntimeQPointIndexName(2), randPoint(10), randBin<double>(0, 1))
 							.Or()
-							.DWithin(getRuntimeLPointIndexName(2), randPoint(10), randBinDouble(0, 1))
-							.DWithin(getRuntimeGPointIndexName(2), randPoint(10), randBinDouble(0, 1))
+							.DWithin(getRuntimeLPointIndexName(2), randPoint(10), randBin<double>(0, 1))
+							.DWithin(getRuntimeGPointIndexName(2), randPoint(10), randBin<double>(0, 1))
 							.Or()
-							.DWithin(getRuntimeSPointIndexName(2), randPoint(10), randBinDouble(0, 1)));
+							.DWithin(getRuntimeSPointIndexName(2), randPoint(10), randBin<double>(0, 1)));
 }

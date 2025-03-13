@@ -1,7 +1,7 @@
 ﻿#include "dataholder.h"
 #include <sstream>
+#include "core/ft/ft_fast/frisosplitter.h"
 #include "dataprocessor.h"
-#include "selecter.h"
 
 namespace reindexer {
 
@@ -58,11 +58,11 @@ std::string IDataHolder::Dump() const {
 }
 
 void IDataHolder::throwWordIdOverflow(uint32_t id) {
-	throw Error(errLogic, "Too large word ID value (%d). Fulltext index can not contain more than %d unique words", id, kWordIdMaxIdVal);
+	throw Error(errLogic, "Too large word ID value ({}). Fulltext index can not contain more than {} unique words", id, kWordIdMaxIdVal);
 }
 
 void IDataHolder::throwStepsOverflow() const {
-	throw Error(errLogic, "Too large index build step value (%d). Fulltext incremental build can not use more than %d steps",
+	throw Error(errLogic, "Too large index build step value ({}). Fulltext incremental build can not use more than {} steps",
 				steps.size() - 1, kWordIdMaxStepVal);
 }
 

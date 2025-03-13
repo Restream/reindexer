@@ -18,7 +18,7 @@ int check_server_ready(uintptr_t psvc) {
 static reindexer_error error2c(const Error& err_) {
 	reindexer_error err;
 	err.code = err_.code();
-	err.what = err_.what().length() ? strdup(err_.what().c_str()) : nullptr;
+	err.what = err_.whatStr().length() ? strdup(err_.what()) : nullptr;
 	return err;
 }
 
