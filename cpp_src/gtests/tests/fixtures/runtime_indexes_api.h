@@ -2,7 +2,6 @@
 
 #include "gtests/tools.h"
 #include "reindexer_api.h"
-#include "tools/randompoint.h"
 
 class RuntimeIndexesApi : public ReindexerApi {
 public:
@@ -32,7 +31,6 @@ public:
 
 protected:
 	void FillNamespaces(size_t since, size_t till) {
-		using reindexer::randPoint;
 		for (size_t i = since; i < till; ++i) {
 			int id = static_cast<int>(i);
 
@@ -208,7 +206,7 @@ protected:
 		std::string indexName = getRuntimeQPointIndexName(indexNumber);
 		for (size_t i = 0; i < 10; ++i) {
 			Item item = NewItem(geom_namespace);
-			item[indexName] = reindexer::randPoint(10);
+			item[indexName] = randPoint(10);
 			Upsert(geom_namespace, item);
 		}
 	}
@@ -217,7 +215,7 @@ protected:
 		std::string indexName = getRuntimeLPointIndexName(indexNumber);
 		for (size_t i = 0; i < 10; ++i) {
 			Item item = NewItem(geom_namespace);
-			item[indexName] = reindexer::randPoint(10);
+			item[indexName] = randPoint(10);
 			Upsert(geom_namespace, item);
 		}
 	}
@@ -226,7 +224,7 @@ protected:
 		std::string indexName = getRuntimeGPointIndexName(indexNumber);
 		for (size_t i = 0; i < 10; ++i) {
 			Item item = NewItem(geom_namespace);
-			item[indexName] = reindexer::randPoint(10);
+			item[indexName] = randPoint(10);
 			Upsert(geom_namespace, item);
 		}
 	}
@@ -235,7 +233,7 @@ protected:
 		std::string indexName = getRuntimeSPointIndexName(indexNumber);
 		for (size_t i = 0; i < 10; ++i) {
 			Item item = NewItem(geom_namespace);
-			item[indexName] = reindexer::randPoint(10);
+			item[indexName] = randPoint(10);
 			Upsert(geom_namespace, item);
 		}
 	}

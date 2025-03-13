@@ -2,9 +2,9 @@
 
 #include <chrono>
 #include <optional>
+#include <span>
 #include "core/keyvalue/variant.h"
 #include "core/namespace/namespacenamesets.h"
-#include "estl/span.h"
 #include "sharding/ranges.h"
 #include "tools/dsn.h"
 #include "tools/errors.h"
@@ -19,7 +19,6 @@ class Node;
 
 namespace reindexer {
 
-class JsonBuilder;
 class WrSerializer;
 
 namespace cluster {
@@ -34,7 +33,7 @@ struct NodeData {
 	int electionsTerm = 0;
 	DSN dsn;
 
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::span<char> json);
 	Error FromJSON(const gason::JsonNode& v);
 	void GetJSON(JsonBuilder& jb) const;
 	void GetJSON(WrSerializer& ser) const;
@@ -48,7 +47,7 @@ struct RaftInfo {
 	bool operator==(const RaftInfo& rhs) const noexcept { return role == rhs.role && leaderId == rhs.leaderId; }
 	bool operator!=(const RaftInfo& rhs) const noexcept { return !(*this == rhs); }
 
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::span<char> json);
 	Error FromJSON(const gason::JsonNode& root);
 	void GetJSON(JsonBuilder& jb) const;
 	void GetJSON(WrSerializer& ser) const;
@@ -166,7 +165,7 @@ struct ClusterConfigData {
 				return i;
 			}
 		}
-		throw Error(errLogic, "Cluster config. Cannot find node index for ServerId(%d)", serverId);
+		throw Error(errLogic, "Cluster config. Cannot find node index for ServerId({})", serverId);
 	}
 
 	std::vector<ClusterNodeConfig> nodes;
@@ -229,7 +228,8 @@ struct ShardingConfig {
 	};
 
 	Error FromYAML(const std::string& yaml);
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::string_view json);
+	Error FromJSON(std::span<char> json);
 	Error FromJSON(const gason::JsonNode&);
 	std::string GetYAML() const;
 	YAML::Node GetYAMLObj() const;

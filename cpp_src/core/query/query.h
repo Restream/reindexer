@@ -3,6 +3,8 @@
 #include <functional>
 #include <initializer_list>
 #include "core/keyvalue/geometry.h"
+#include "core/type_consts_helpers.h"
+#include "fields_names_filter.h"
 #include "queryentry.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
@@ -34,11 +36,11 @@ public:
 		: namespace_(std::forward<Str>(nsName)), start_(start), count_(count), calcTotal_(calcTotal) {}
 
 	Query() = default;
-	virtual ~Query() = default;
+	virtual ~Query();
 
-	Query(Query&& other) noexcept = default;
+	Query(Query&& other) noexcept;
 	Query& operator=(Query&& other) noexcept = default;
-	Query(const Query& other) = default;
+	Query(const Query& other);
 	Query& operator=(const Query& other) = delete;
 
 	/// Allows to compare 2 Query objects.
@@ -237,11 +239,11 @@ public:
 			q.Limit(0);
 		} else {
 			q.checkSubQueryWithData();
-			if (!q.selectFilter_.empty() && !q.HasLimit() && !q.HasOffset()) {
+			if (!q.selectFilter_.Fields().empty() && !q.HasLimit() && !q.HasOffset()) {
 				// Converts main query condition to subquery condition
 				q.sortingEntries_.clear();
-				q.Where(q.selectFilter_[0], cond, std::move(values));
-				q.selectFilter_.clear();
+				q.Where(std::move(q.selectFilter_.Fields()[0]), cond, std::move(values));
+				q.selectFilter_.Clear();
 				return Where(std::move(q), CondAny, {});
 			} else if (q.HasCalcTotal() || (!q.aggregations_.empty() &&
 											(q.aggregations_[0].Type() == AggCount || q.aggregations_[0].Type() == AggCountCached))) {
@@ -299,6 +301,28 @@ public:
 	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
 	[[nodiscard]] Query&& Where(Str&& field, CondType cond, Query&& q) && {
 		return std::move(Where(std::forward<Str>(field), cond, std::move(q)));
+	}
+
+	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	Query& WhereKNN(Str&& field, ConstFloatVector vec, KnnSearchParams params) & {
+		if (nextOp_ != OpAnd) {
+			throw Error(errLogic, std::string(OpTypeToStr(nextOp_)) + " operation is not allowed with knn condition");
+		}
+		entries_.Append<KnnQueryEntry>(nextOp_, std::forward<Str>(field), std::move(vec), std::move(params));
+		nextOp_ = OpAnd;
+		return *this;
+	}
+	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	[[nodiscard]] Query&& WhereKNN(Str&& field, ConstFloatVector vec, KnnSearchParams params) && {
+		return std::move(WhereKNN(std::move(field), std::move(vec), std::move(params)));
+	}
+	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	Query& WhereKNN(Str&& field, ConstFloatVectorView vec, KnnSearchParams params) & {
+		return WhereKNN(std::move(field), ConstFloatVector{vec.Span()}, std::move(params));
+	}
+	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	[[nodiscard]] Query&& WhereKNN(Str&& field, ConstFloatVectorView vec, KnnSearchParams params) && {
+		return std::move(WhereKNN(std::move(field), ConstFloatVector{vec.Span()}, std::move(params)));
 	}
 
 	/// Sets a new value for a field.
@@ -692,22 +716,36 @@ public:
 		return std::move(Select<std::initializer_list<Str>>(std::move(l)));
 	}
 
-	template <typename StrCont>
+	template <typename StrCont, std::enable_if_t<!std::is_constructible_v<std::string, StrCont>>* = nullptr>
 	Query& Select(StrCont&& l) & {
-		using namespace std::string_view_literals;
 		if (!CanAddSelectFilter()) {
 			throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 		}
-		selectFilter_.insert(selectFilter_.begin(), l.begin(), l.end());
-		selectFilter_.erase(
-			std::remove_if(selectFilter_.begin(), selectFilter_.end(), [](const auto& s) { return s == "*"sv || s.empty(); }),
-			selectFilter_.end());
+		selectFilter_.Add(l.begin(), l.end());
 		return *this;
 	}
-	template <typename StrCont>
+	template <typename StrCont, std::enable_if_t<!std::is_constructible_v<std::string, StrCont>>* = nullptr>
 	[[nodiscard]] Query&& Select(StrCont&& l) && {
 		return std::move(Select(std::forward<StrCont>(l)));
 	}
+	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	Query& Select(Str&& f) & {
+		if (!CanAddSelectFilter()) {
+			throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
+		}
+		selectFilter_.Add(std::forward<Str>(f));
+		return *this;
+	}
+	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	[[nodiscard]] Query&& Select(Str&& f) && {
+		return std::move(Select(std::forward<Str>(f)));
+	}
+	Query& SelectAllFields() & {
+		selectFilter_.SetAllRegularFields();
+		selectFilter_.SetAllVectorFields();
+		return *this;
+	}
+	[[nodiscard]] Query&& SelectAllFields() && { return std::move(SelectAllFields()); }
 
 	/// Adds an aggregate function for certain column.
 	/// Analog to sql aggregate functions (min, max, avg, etc).
@@ -834,7 +872,7 @@ public:
 
 	/// Can we add aggregation functions
 	/// or new select fields to a current query?
-	[[nodiscard]] bool CanAddAggregation(AggType type) const noexcept { return type == AggDistinct || (selectFilter_.empty()); }
+	[[nodiscard]] bool CanAddAggregation(AggType type) const noexcept { return type == AggDistinct || (selectFilter_.Fields().empty()); }
 	[[nodiscard]] bool CanAddSelectFilter() const noexcept {
 		return aggregations_.empty() || (aggregations_.size() == 1 && aggregations_.front().Type() == AggDistinct);
 	}
@@ -1003,8 +1041,8 @@ private:
 	std::vector<JoinedQuery> joinQueries_;	 /// List of queries for join.
 	std::vector<JoinedQuery> mergeQueries_;	 /// List of merge queries.
 	std::vector<Query> subQueries_;
-	h_vector<std::string, 1> selectFilter_;	 /// List of columns in a final result set.
-	bool local_ = false;					 /// Local query if true
+	FieldsNamesFilter selectFilter_;  /// List of columns in final result set.
+	bool local_ = false;			  /// Local query if true
 	bool withRank_ = false;
 	StrictMode strictMode_ = StrictModeNotSet;	/// Strict mode.
 	int debugLevel_ = 0;						/// Debug level.

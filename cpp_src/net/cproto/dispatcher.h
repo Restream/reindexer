@@ -140,7 +140,7 @@ public:
 				return handler(ctx);
 			}
 		}
-		return Error(errParams, "Invalid RPC call. CmdCode %08X\n", int(ctx.call->cmd));
+		return Error(errParams, "Invalid RPC call. CmdCode {:#08x}\n", int(ctx.call->cmd));
 	}
 
 private:
@@ -153,11 +153,11 @@ private:
 	template <typename T, std::enable_if_t<!is_optional<T>::value, int> = 0>
 	static T get_arg(const Args& args, size_t index, const Context& ctx) {
 		if rx_unlikely (index >= args.size()) {
-			throw Error(errParams, "Invalid args of %s call; argument %d is not submitted", CmdName(ctx.call->cmd),
+			throw Error(errParams, "Invalid args of {} call; argument {} is not submitted", CmdName(ctx.call->cmd),
 						static_cast<int>(index));
 		}
 		if rx_unlikely (!args[index].Type().IsSame(KeyValueType::From<T>())) {
-			throw Error(errLogic, "Incorrect variant type of %s call, argument index %d, type '%s', expected type '%s'",
+			throw Error(errLogic, "Incorrect variant type of {} call, argument index {}, type '{}', expected type '{}'",
 						CmdName(ctx.call->cmd), static_cast<int>(index), args[index].Type().Name(), KeyValueType::From<T>().Name());
 		}
 		return T(args[index]);
@@ -175,7 +175,7 @@ private:
 #endif
 		}
 		if rx_unlikely (!args[index].Type().IsSame(KeyValueType::From<typename T::value_type>())) {
-			throw Error(errLogic, "Incorrect variant type of %s call, argument index %d, type '%s', optional expected type '%s'",
+			throw Error(errLogic, "Incorrect variant type of {} call, argument index {}, type '{}', optional expected type '{}'",
 						CmdName(ctx.call->cmd), static_cast<int>(index), args[index].Type().Name(),
 						KeyValueType::From<typename T::value_type>().Name());
 		}

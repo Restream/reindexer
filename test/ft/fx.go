@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v4"
+	"github.com/restream/reindexer/v5"
 )
 
 var dsn = flag.String("dsn", "builtin://", "reindex db dsn")

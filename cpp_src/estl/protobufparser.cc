@@ -7,21 +7,21 @@ namespace reindexer {
 
 ProtobufValue ProtobufParser::ReadValue() {
 	bool isArray = false;
-	const uint64_t tag = object_.ser.GetVarUint();
+	const uint64_t tag = object_.ser.GetVarUInt();
 	int tagType = (tag & kTypeMask);
 	int tagName = (tag >> kTypeBit);
 	TagsPath currPath{object_.tagsPath};
 	currPath.push_back(tagName);
 	KeyValueType itemType = object_.schema.GetFieldType(currPath, isArray);
 	if (itemType.Is<KeyValueType::Undefined>()) {
-		throw Error(errParseProtobuf, "Field [%d] type is unknown: [%s]", tagName, itemType.Name());
+		throw Error(errParseProtobuf, "Field [{}] type is unknown: [{}]", tagName, itemType.Name());
 	}
 	switch (tagType) {
 		case PBUF_TYPE_VARINT:
 			if (itemType.Is<KeyValueType::Bool>()) {
-				return {Variant(bool(object_.ser.GetVarUint())), tagName, itemType, isArray};
+				return {Variant(bool(object_.ser.GetVarUInt())), tagName, itemType, isArray};
 			} else {
-				return {Variant(int64_t(object_.ser.GetVarUint())), tagName, itemType, isArray};
+				return {Variant(int64_t(object_.ser.GetVarUInt())), tagName, itemType, isArray};
 			}
 		case PBUF_TYPE_FLOAT32:
 		case PBUF_TYPE_FLOAT64:
@@ -29,18 +29,19 @@ ProtobufValue ProtobufParser::ReadValue() {
 		case PBUF_TYPE_LENGTHENCODED:
 			return {Variant(p_string(object_.ser.GetPVString())), tagName, itemType, isArray};
 		default:
-			throw Error(errParseProtobuf, "Type [%d] unexpected while decoding Protobuf", tagType);
+			throw Error(errParseProtobuf, "Type [{}] unexpected while decoding Protobuf", tagType);
 	}
 }
 
 Variant ProtobufParser::ReadArrayItem(KeyValueType fieldType) {
-	return fieldType.EvaluateOneOf([&](KeyValueType::Int64) { return Variant(int64_t(object_.ser.GetVarUint())); },
-								   [&](KeyValueType::Int) { return Variant(int(object_.ser.GetVarUint())); },
+	return fieldType.EvaluateOneOf([&](KeyValueType::Int64) { return Variant(int64_t(object_.ser.GetVarUInt())); },
+								   [&](KeyValueType::Int) { return Variant(int(object_.ser.GetVarUInt())); },
 								   [&](KeyValueType::Double) { return Variant(object_.ser.GetDouble()); },
+								   [&](KeyValueType::Float) { return Variant(object_.ser.GetFloat()); },
 								   [&](KeyValueType::Bool) { return Variant(object_.ser.GetBool()); },
 								   [&](OneOf<KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined,
-											 KeyValueType::String, KeyValueType::Uuid>) -> Variant {
-									   throw Error(errParseProtobuf, "Error parsing packed indexed array: unexpected type [%s]",
+											 KeyValueType::String, KeyValueType::Uuid, KeyValueType::FloatVector>) -> Variant {
+									   throw Error(errParseProtobuf, "Error parsing packed indexed array: unexpected type [{}]",
 												   fieldType.Name());
 								   });
 }

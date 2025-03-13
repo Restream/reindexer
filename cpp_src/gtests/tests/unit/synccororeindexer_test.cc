@@ -1,11 +1,13 @@
 #include <condition_variable>
 #include "client/cororeindexer.h"
 #include "client/reindexer.h"
+#include "core/system_ns_names.h"
 #include "coroutine/waitgroup.h"
 #include "gtest/gtest.h"
 #include "gtests/tests/fixtures/servercontrol.h"
 #include "net/ev/ev.h"
 #include "tools/fsops.h"
+#include "vendor/gason/gason.h"
 
 using namespace reindexer;
 
@@ -280,7 +282,7 @@ TEST(SyncCoroRx, RxClientNThread) {
 	client::ReindexerConfig cfg;
 	cfg.AppName = "MultiConnRxClient";
 	client::Reindexer client(cfg, kConns, kSyncCoroRxThreads);
-	auto err = client.Connect(fmt::sprintf("cproto://127.0.0.1:%d/%s", kSyncCoroRxTestDefaultRpcPort, kDbName));
+	auto err = client.Connect(fmt::format("cproto://127.0.0.1:{}/{}", kSyncCoroRxTestDefaultRpcPort, kDbName));
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = client.OpenNamespace(kNsName);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -321,7 +323,7 @@ TEST(SyncCoroRx, RxClientNThread) {
 	}
 
 	client::QueryResults qr;
-	err = client.Select(Query("#clientsstats"), qr);
+	err = client.Select(Query(kClientsStatsNamespace), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	reindexer::WrSerializer wrser;
 	size_t resultConnsCount = 0;
@@ -461,7 +463,7 @@ TEST(SyncCoroRx, AsyncCompletions) {
 		item = client->NewItem(kNsNames);  // NewItem can not be created async
 	}
 	for (size_t i = 0; i < kItemsCount; ++i) {
-		const std::string json = fmt::sprintf(R"#({"id": %d, "val": "aaaaaaaa"})#", i);
+		const std::string json = fmt::format(R"#({{"id": {}, "val": "aaaaaaaa"}})#", i);
 		auto err = items[i].FromJSON(json);
 		ASSERT_TRUE(err.ok()) << err.what();
 		err = client
@@ -514,7 +516,7 @@ TEST(SyncCoroRx, AsyncCompletionsStop) {
 		item = client->NewItem(kNsNames);  // NewItem can not be created async
 	}
 	for (size_t i = 0; i < kItemsCount; ++i) {
-		const std::string json = fmt::sprintf(R"#({"id": %d, "val": "aaaaaaaa"})#", i);
+		const std::string json = fmt::format(R"#({{"id": {}, "val": "aaaaaaaa"}})#", i);
 		err = items[i].FromJSON(json);
 		ASSERT_TRUE(err.ok()) << err.what();
 		err = client->WithCompletion([&](const Error&) { ++counter; }).Upsert(kNsNames, items[i]);
@@ -718,7 +720,7 @@ TEST(SyncCoroRx, QRWithMultipleIterationLoops) {
 			ASSERT_TRUE(it.Status().ok()) << it.Status().what();
 			err = it.GetJSON(ser, false);
 			ASSERT_TRUE(err.ok()) << err.what();
-			EXPECT_EQ(fmt::sprintf(R"js({"id":%d,"val":"aaaaaaaaaaaaaaa"})js", id), ser.Slice());
+			EXPECT_EQ(fmt::format(R"js({{"id":{},"val":"aaaaaaaaaaaaaaa"}})js", id), ser.Slice());
 		} else {
 			EXPECT_FALSE(it.Status().ok()) << it.Status().what();
 			err = it.GetJSON(ser, false);

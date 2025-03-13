@@ -3,6 +3,7 @@
 #include <unordered_set>
 #include <vector>
 #include "core/keyvalue/variant.h"
+#include "core/query/knn_search_params.h"
 #include "estl/tokenizer.h"
 #include "sqltokentype.h"
 
@@ -107,6 +108,9 @@ protected:
 
 	Point parseGeomFromText(tokenizer& parser) const;
 	void parseDWithin(tokenizer& parser, OpType nextOp);
+	void parseKnn(tokenizer& parser, OpType nextOp);
+	KnnSearchParams parseKnnParams(tokenizer&);
+	void parseSingleKnnParam(tokenizer&, std::optional<size_t>& param, std::string_view paramName);
 
 	/// Parse update field entries
 	UpdateEntry parseUpdateField(tokenizer& parser);

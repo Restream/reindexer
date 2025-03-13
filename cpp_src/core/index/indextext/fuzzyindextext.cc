@@ -5,11 +5,9 @@
 namespace reindexer {
 
 template <typename T>
-
-IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr bctx, FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses&&,
+IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr bctx, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&,
 									 FtUseExternStatuses withExternSt, const RdxContext& rdxCtx) {
 	assertrx_throw(withExternSt == FtUseExternStatuses::No);
-	(void)ftSortType;
 	(void)withExternSt;
 	auto result = engine_.Search(dsl, inTransaction, rdxCtx);
 
@@ -30,7 +28,7 @@ IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr bctx, FtDSLQuery&& dsl, bool inT
 		}
 		assertrx(it->id_ < this->vdocs_.size());
 		const auto& id_set = this->vdocs_[it->id_].keyEntry->Sorted(0);
-		fctx->Add(id_set.begin(), id_set.end(), it->proc_);
+		fctx->Add(id_set.begin(), id_set.end(), RankT(it->proc_));
 		mergedIds->Append(id_set.begin(), id_set.end(), IdSet::Unordered);
 		if ((counter & 0xFF) == 0 && !inTransaction) {
 			ThrowOnCancel(rdxCtx);
@@ -67,12 +65,12 @@ void FuzzyIndexText<T>::createConfig(const FtFuzzyConfig* cfg) {
 		return;
 	}
 	this->cfg_.reset(new FtFuzzyConfig());
-	this->cfg_->parse(this->opts_.config, this->ftFields_);
+	this->cfg_->parse(this->opts_.Config(), this->ftFields_);
 }
 
 std::unique_ptr<Index> FuzzyIndexText_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 										  const NamespaceCacheConfigData& cacheCfg) {
-	switch (idef.Type()) {
+	switch (idef.IndexType()) {
 		case IndexFuzzyFT:
 			return std::make_unique<FuzzyIndexText<unordered_str_map<FtKeyEntry>>>(idef, std::move(payloadType), std::move(fields),
 																				   cacheCfg);
@@ -99,9 +97,13 @@ std::unique_ptr<Index> FuzzyIndexText_New(const IndexDef& idef, PayloadType&& pa
 		case IndexRTree:
 		case IndexUuidHash:
 		case IndexUuidStore:
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+		case IndexDummy:
 			break;
 	}
-	std::abort();
+	throw_as_assert;
 }
 
 }  // namespace reindexer

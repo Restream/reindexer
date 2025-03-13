@@ -1,11 +1,10 @@
 #pragma once
 
 #include <deque>
-#include <list>
 #include "client/cororeindexer.h"
 #include "cluster/stats/relicationstatscollector.h"
-#include "cluster/stats/synchronizationlist.h"
 #include "core/namespace/namespacestat.h"
+#include "estl/elist.h"
 #include "net/ev/ev.h"
 #include "sharedsyncstate.h"
 #include "tools/lsn.h"
@@ -46,7 +45,7 @@ public:
 
 	LeaderSyncQueue(size_t maxSyncsPerNode) : maxSyncsPerNode_(maxSyncsPerNode) {}
 
-	void Refill(std::list<Entry>&& entries) {
+	void Refill(elist<Entry>&& entries) {
 		std::lock_guard lck(mtx_);
 		entries_ = std::move(entries);
 		currentSyncsPerNode_.clear();
@@ -107,7 +106,7 @@ public:
 private:
 	const size_t maxSyncsPerNode_;
 	std::mutex mtx_;
-	std::list<Entry> entries_;
+	elist<Entry> entries_;
 	std::map<uint32_t, int> currentSyncsPerNode_;
 };
 
@@ -122,7 +121,7 @@ public:
 		std::chrono::milliseconds netTimeout;
 	};
 
-	LeaderSyncThread(const Config& cfg, LeaderSyncQueue& syncQueue, SharedSyncState<>& sharedSyncState, ReindexerImpl& thisNode,
+	LeaderSyncThread(const Config& cfg, LeaderSyncQueue& syncQueue, SharedSyncState& sharedSyncState, ReindexerImpl& thisNode,
 					 ReplicationStatsCollector statsCollector, const Logger& l, std::once_flag& actShardingCfg)
 		: cfg_(cfg),
 		  syncQueue_(syncQueue),
@@ -156,7 +155,7 @@ private:
 	LeaderSyncQueue& syncQueue_;
 	Error lastError_;
 	std::atomic<bool> terminate_ = false;
-	SharedSyncState<>& sharedSyncState_;
+	SharedSyncState& sharedSyncState_;
 	ReindexerImpl& thisNode_;
 	ReplicationStatsCollector statsCollector_;
 	client::CoroReindexer client_;
@@ -188,7 +187,7 @@ public:
 			th.Terminate();
 		}
 	}
-	Error Sync(std::list<LeaderSyncQueue::Entry>&& entries, SharedSyncState<>& sharedSyncState, ReindexerImpl& thisNode,
+	Error Sync(elist<LeaderSyncQueue::Entry>&& entries, SharedSyncState& sharedSyncState, ReindexerImpl& thisNode,
 			   ReplicationStatsCollector statsCollector);
 
 private:

@@ -87,7 +87,7 @@ public:
 					} else {
 						auto index = try_stoi(content);
 						if (!index) {
-							throw Error(errParams, "Can't convert '%s' to number", content);
+							throw Error(errParams, "Can't convert '{}' to number", content);
 						}
 						if (index < 0) {
 							throw Error(errLogic, "Array index value cannot be negative");
@@ -137,7 +137,7 @@ public:
 		}
 
 		if (tag - 1 >= tags2names_.size()) {
-			throw Error(errTagsMissmatch, "Unknown tag %d in cjson", tag);
+			throw Error(errTagsMissmatch, "Unknown tag {} in cjson", tag);
 		}
 
 		return tags2names_[tag - 1];
@@ -209,7 +209,7 @@ public:
 
 	void deserialize(Serializer& ser) {
 		clear();
-		size_t cnt = ser.GetVarUint();
+		size_t cnt = ser.GetVarUInt();
 		validateTagSize(cnt);
 		tags2names_.resize(cnt);
 		for (size_t tag = 0; tag < tags2names_.size(); ++tag) {
@@ -217,7 +217,6 @@ public:
 			names2tags_.emplace(name, tag);
 			tags2names_[tag] = name;
 		}
-		// assert(ser.Eof());
 	}
 	void deserialize(Serializer& ser, int version, int stateToken) {
 		deserialize(ser);
@@ -344,7 +343,7 @@ protected:
 
 	void validateTagSize(size_t sz) {
 		if (sz > ctag::kNameMax) {
-			throw Error(errParams, "Exceeded the maximum allowed number (%d) of tags for TagsMatcher. Attempt to place %d tags",
+			throw Error(errParams, "Exceeded the maximum allowed number ({}) of tags for TagsMatcher. Attempt to place {} tags",
 						ctag::kNameMax, sz);
 		}
 	}

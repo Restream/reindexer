@@ -4,6 +4,7 @@
 #include <deque>
 #include <memory>
 #include <vector>
+#include "ann_storage_cache_helper.h"
 #include "asyncstorage.h"
 #include "cluster/idatareplicator.h"
 #include "core/cjson/tagsmatcher.h"
@@ -25,6 +26,7 @@
 #include "estl/shared_mutex.h"
 #include "estl/syncpool.h"
 #include "events/observer.h"
+#include "float_vectors_indexes.h"
 #include "namespacename.h"
 #include "stringsholder.h"
 #include "wal/waltracker.h"
@@ -47,6 +49,8 @@ class QueryPreprocessor;
 class RdxContext;
 class RdxActivityContext;
 class SortExpression;
+class FloatVectorIndex;
+class TransactionContext;
 class ProxiedSortExpression;
 class LocalQueryResults;
 class SnapshotRecord;
@@ -69,9 +73,10 @@ struct DistanceBetweenJoinedIndexesSameNs;
 class NsContext {
 public:
 	NsContext(const RdxContext& rdxCtx) noexcept : rdxContext(rdxCtx) {}
-	NsContext& InTransaction(lsn_t stepLsn) noexcept {
+	NsContext& InTransaction(lsn_t stepLsn, TransactionContext* _txCtx) noexcept {
 		inTransaction = true;
 		originLsn_ = stepLsn;
+		txCtx = _txCtx;
 		return *this;
 	}
 	NsContext& CopiedNsRequest() noexcept {
@@ -97,6 +102,7 @@ public:
 	bool isWal{false};
 	bool isRequireResync{false};
 	bool isInitialLeaderSync{false};
+	TransactionContext* txCtx{nullptr};
 
 private:
 	lsn_t originLsn_;
@@ -110,6 +116,7 @@ enum class StoredValuesOptimizationStatus : int8_t {
 	DisabledByCompositeIndex,
 	DisabledByFullTextIndex,
 	DisabledByJoinedFieldSort,
+	DisabledByFloatVectorIndex,
 	Enabled
 };
 
@@ -118,7 +125,9 @@ enum class IndexOptimization : int8_t { Partial, Full };
 class NamespaceImpl final : public intrusive_atomic_rc_base {  // NOLINT(*performance.Padding) Padding does not
 	// matter for this class
 	class RollBack_insertIndex;
+	template <typename>
 	class RollBack_addIndex;
+	class RollBack_dropIndex;
 	template <NeedRollBack needRollBack>
 	class RollBack_recreateCompositeIndexes;
 	template <NeedRollBack needRollBack>
@@ -132,7 +141,7 @@ class NamespaceImpl final : public intrusive_atomic_rc_base {  // NOLINT(*perfor
 		IndexesCacheCleaner& operator=(IndexesCacheCleaner&&) = delete;
 		void Add(SortType s) {
 			if rx_unlikely (s >= sorts_.size()) {
-				throw Error(errLogic, "Index sort type overflow: %d. Limit is %d", s, sorts_.size() - 1);
+				throw Error(errLogic, "Index sort type overflow: {}. Limit is {}", s, sorts_.size() - 1);
 			}
 			if (s > 0) {
 				sorts_.set(s);
@@ -155,17 +164,22 @@ class NamespaceImpl final : public intrusive_atomic_rc_base {  // NOLINT(*perfor
 	friend class ItemComparator;
 	friend class ItemModifier;
 	friend class Namespace;
-	friend SortExpression;
-	friend ProxiedSortExpression;
-	friend SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
+	friend class SortExpression;
+	friend class ProxiedSortExpression;
+	friend struct SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
 	friend class ReindexerImpl;
 	friend class RxSelector;
-	friend LocalQueryResults;
+	friend class LocalQueryResults;
 	friend class SnapshotHandler;
 	friend class FieldComparator;
 	friend class QueryResults;
 	friend class ItemsLoader;
 	friend class IndexInserters;
+	friend class TransactionContext;
+	friend class TransactionConcurrentInserter;
+	friend class ann_storage_cache::Writer;
+	friend class FloatVectorsHolderMap;
+	friend class FieldsFilter;
 
 	class NSUpdateSortedContext final : public UpdateSortedContext {
 	public:
@@ -258,6 +272,7 @@ public:
 		Locker(const cluster::IDataSyncer& syncer, const NamespaceImpl& owner) noexcept : syncer_(syncer), owner_(owner) {}
 
 		RLockT RLock(const RdxContext& ctx) const { return RLockT(mtx_, ctx); }
+		RLockT TryRLock(const RdxContext& ctx) const { return RLockT(mtx_, std::try_to_lock_t{}, ctx); }
 		WLockT DataWLock(const RdxContext& ctx, bool skipClusterStatusCheck) const {
 			WLockT lck(mtx_, ctx, true);
 			checkInvalidation();
@@ -288,6 +303,7 @@ public:
 			return lck;
 		}
 		bool IsNotLocked(const RdxContext& ctx) const { return WLockT(mtx_, std::try_to_lock_t{}, ctx, false).owns_lock(); }
+		bool IsMutexCorrect(const Mutex* mtx) const noexcept { return mtx == &mtx_; }
 		void MarkReadOnly() noexcept { invalidation_.store(int(InvalidationType::Readonly), std::memory_order_release); }
 		void MarkOverwrittenByUser() noexcept { invalidation_.store(int(InvalidationType::OverwrittenByUser), std::memory_order_release); }
 		void MarkOverwrittenByForceSync() noexcept {
@@ -298,6 +314,9 @@ public:
 			return NamespaceImpl::InvalidationType(invalidation_.load(std::memory_order_acquire)) == InvalidationType::Valid;
 		}
 		const cluster::IDataSyncer& Syncer() const noexcept { return syncer_; }
+		bool IsInvalidated() const noexcept {
+			return NamespaceImpl::InvalidationType(invalidation_.load(std::memory_order_acquire)) != InvalidationType::Valid;
+		}
 
 	private:
 		void checkInvalidation() const {
@@ -366,6 +385,10 @@ public:
 
 	void BackgroundRoutine(RdxActivityContext*);
 	void StorageFlushingRoutine();
+	void ANNCachingRoutine();
+	void UpdateANNStorageCache(bool skipTimeCheck, const RdxContext& ctx);
+	void DropANNStorageCache(std::string_view index, const RdxContext& ctx);
+	void RebuildIVFIndex(std::string_view index, float dataPart, const RdxContext& ctx);
 	void CloseStorage(const RdxContext&);
 
 	LocalTransaction NewTransaction(const RdxContext& ctx);
@@ -385,10 +408,11 @@ public:
 	int getIndexByName(std::string_view index) const;
 	int getIndexByNameOrJsonPath(std::string_view name) const;
 	int getScalarIndexByName(std::string_view name) const;
-	bool tryGetIndexByName(std::string_view name, int& index) const;
+	bool tryGetIndexByName(std::string_view name, int& index) const noexcept;
 	bool getIndexByNameOrJsonPath(std::string_view name, int& index) const;
-	bool getScalarIndexByName(std::string_view name, int& index) const;
-	bool getSparseIndexByJsonPath(std::string_view jsonPath, int& index) const;
+	bool getIndexByJsonPath(std::string_view jsonPath, int& index) const noexcept;
+	bool getScalarIndexByName(std::string_view name, int& index) const noexcept;
+	bool getSparseIndexByJsonPath(std::string_view jsonPath, int& index) const noexcept;
 	PayloadType getPayloadType(const RdxContext& ctx) const;
 
 	void FillResult(LocalQueryResults& result, const IdSet& ids) const;
@@ -431,6 +455,9 @@ private:
 
 	friend struct IndexFastUpdate;
 
+	FloatVectorsIndexes getVectorIndexes() const { return getVectorIndexes(payloadType_); }
+	FloatVectorsIndexes getVectorIndexes(const PayloadType& pt) const;
+	[[nodiscard]] bool haveFloatVectorsIndexes() const noexcept { return !floatVectorsIndexesPositions_.empty(); }
 	Error rebuildIndexesTagsPaths(const TagsMatcher& newTm);
 	ReplicationState getReplState() const;
 	std::string sysRecordName(std::string_view sysTag, uint64_t version);
@@ -447,19 +474,21 @@ private:
 	void initWAL(int64_t minLSN, int64_t maxLSN);
 
 	void markUpdated(IndexOptimization requestedOptimization);
-	void scheduleIndexOptimization(IndexOptimization requestedOptimization);
+	void scheduleIndexOptimization(IndexOptimization requestedOptimization) noexcept;
 	Item newItem();
 	void doUpdate(const Query& query, LocalQueryResults& result, UpdatesContainer& pendedRepl, const NsContext&);
 	void doDelete(const Query& query, LocalQueryResults& result, UpdatesContainer& pendedRepl, const NsContext&);
-	void doUpsert(ItemImpl* ritem, IdType id, bool doUpdate);
+	void doUpsert(ItemImpl* ritem, IdType id, bool doUpdate, TransactionContext* txCtx);
 	void modifyItem(Item& item, ItemModifyMode mode, UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void deleteItem(Item& item, UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void doModifyItem(Item& item, ItemModifyMode mode, UpdatesContainer& pendedRepl, const NsContext& ctx, IdType suggestedId = -1);
 	void updateTagsMatcherFromItem(ItemImpl* ritem, const NsContext& ctx);
+	void tryWriteItemIntoStorage(const FieldsSet& pkFields, ItemImpl& item, IdType rowId, const FloatVectorsIndexes& vectorIndexes,
+								 WrSerializer& pk, WrSerializer& data) noexcept;
 	template <NeedRollBack needRollBack, FieldChangeType fieldChangeType>
 	[[nodiscard]] RollBack_updateItems<needRollBack> updateItems(const PayloadType& oldPlType, int changedField);
 	void fillSparseIndex(Index&, std::string_view jsonPath);
-	void doDelete(IdType id);
+	void doDelete(IdType id, TransactionContext* txCtx);
 	void doTruncate(UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void optimizeIndexes(const NsContext&);
 	[[nodiscard]] RollBack_insertIndex insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const std::string& realName);
@@ -499,6 +528,7 @@ private:
 
 	std::pair<IdType, bool> findByPK(ItemImpl* ritem, bool inTransaction, const RdxContext& ctx);
 
+	std::pair<Index*, int> getPkIdx() const noexcept;
 	RX_ALWAYS_INLINE SelectKeyResult getPkDocs(const ConstPayload& cpl, bool inTransaction, const RdxContext& ctx);
 	RX_ALWAYS_INLINE VariantArray getPkKeys(const ConstPayload& cpl, Index* pkIndex, int fieldNum);
 	void checkUniquePK(const ConstPayload& cpl, bool inTransaction, const RdxContext& ctx);
@@ -534,6 +564,7 @@ private:
 	}
 	bool isNotLocked(const RdxContext& ctx) const { return locker_.IsNotLocked(ctx); }
 	Locker::RLockT rLock(const RdxContext& ctx) const { return locker_.RLock(ctx); }
+	Locker::RLockT tryRLock(const RdxContext& ctx) const { return locker_.TryRLock(ctx); }
 	void checkClusterRole(const RdxContext& ctx) const { checkClusterRole(ctx.GetOriginLSN()); }
 	void checkClusterRole(lsn_t originLsn) const;
 	void checkClusterStatus(const RdxContext& ctx) const { checkClusterStatus(ctx.GetOriginLSN()); }
@@ -544,6 +575,7 @@ private:
 
 	int64_t correctMaxIterationsIdSetPreResult(int64_t maxIterationsIdSetPreResult) const;
 	void rebuildIndexesToCompositeMapping() noexcept;
+	[[nodiscard]] uint64_t calculateItemHash(IdType rowId, int removedIdxId = -1) const noexcept;
 
 	IndexesStorage indexes_;
 	fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str, nocase_less_str> indexesNames_;
@@ -564,6 +596,7 @@ private:
 	std::unordered_map<std::string, std::string> meta_;
 
 	int sparseIndexesCount_{0};
+	std::vector<size_t> floatVectorsIndexesPositions_;
 	VariantArray krefs, skrefs;
 
 	SysRecordsVersions sysRecordsVersions_;
@@ -571,6 +604,8 @@ private:
 	Locker locker_;
 	std::shared_ptr<Schema> schema_;
 
+	void updateFloatVectorsIndexesPositionsInCaseOfDrop(const Index& indexToRemove, size_t positionToRemove, RollBack_dropIndex&);
+	void updateFloatVectorsIndexesPositionsInCaseOfInsert(size_t position, RollBack_insertIndex&);
 	StringsHolderPtr strHolder() const noexcept { return strHolder_; }
 	std::set<std::string> GetFTIndexes(const RdxContext&) const;
 	size_t itemsCount() const noexcept { return items_.size() - free_.size(); }
@@ -578,7 +613,7 @@ private:
 
 	void DumpIndex(std::ostream& os, std::string_view index, const RdxContext& ctx) const;
 
-	NamespaceImpl(const NamespaceImpl& src, AsyncStorage::FullLockT& storageLock);
+	NamespaceImpl(const NamespaceImpl& src, size_t newCapacity, AsyncStorage::FullLockT& storageLock);
 
 	bool isSystem() const noexcept { return isSystemNamespaceNameFast(name_); }
 	IdType createItem(size_t realSize, IdType suggestedId, const NsContext& ctx);
@@ -618,7 +653,7 @@ private:
 
 	void setTemporary() noexcept { repl_.temporary = true; }
 
-	void removeIndex(std::unique_ptr<Index>&);
+	void removeIndex(std::unique_ptr<Index>&&);
 	void dumpIndex(std::ostream& os, std::string_view index) const;
 	void tryForceFlush(Locker::WLockT&& wlck) {
 		if (wlck.owns_lock()) {
@@ -647,6 +682,7 @@ private:
 	sync_pool<ItemImpl, 1024> pool_;
 	std::atomic_int32_t cancelCommitCnt_{0};
 	std::atomic_int64_t lastUpdateTime_{0};
+	ann_storage_cache::UpdateInfo annStorageCacheState_;
 
 	std::atomic_uint32_t itemsCount_{0};
 	std::atomic_uint32_t itemsCapacity_{0};

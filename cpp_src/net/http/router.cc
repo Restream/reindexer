@@ -80,7 +80,7 @@ int Context::CSV(int code, chunk&& chunk) {
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/csv; charset=utf-8"sv});
 	if (auto filename = request->headers.Get("Save-CSV-To"sv); !filename.empty()) {
-		writer->SetHeader(http::Header{"Content-Disposition"sv, fmt::sprintf("attachment; filename=\"%s\"", filename)});
+		writer->SetHeader(http::Header{"Content-Disposition"sv, fmt::format("attachment; filename=\"{}\"", filename)});
 	}
 	writer->Write(std::move(chunk), Writer::WriteMode::PreChunkedBody);
 	return 0;

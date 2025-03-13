@@ -87,8 +87,8 @@ template <>
 void Logger<QueryEnum2Type<QueryType::QuerySelect>>::Dump(std::chrono::microseconds time) {
 	if (wrapper_.loggingParams.thresholdUs >= 0 && time.count() > wrapper_.loggingParams.thresholdUs) {
 		std::ostringstream os;
-		os << fmt::sprintf("[slowlog] Long execution query: sql - %s; (%dus)\n", wrapper_.query.GetSQL(wrapper_.loggingParams.normalized),
-						   time.count());
+		os << fmt::format("[slowlog] Long execution query: sql - {}; ({}us)\n", wrapper_.query.GetSQL(wrapper_.loggingParams.normalized),
+						  time.count());
 
 		if (wrapper_.durationStorage) {
 			os << "[slowlog] Explain statistics:\n";
@@ -105,8 +105,8 @@ template <>
 void Logger<QueryEnum2Type<QueryType::QueryUpdate>>::Dump(std::chrono::microseconds time) {
 	if (wrapper_.loggingParams.thresholdUs >= 0 && time.count() > wrapper_.loggingParams.thresholdUs) {
 		std::ostringstream os;
-		os << fmt::sprintf("[slowlog] Long execution query: sql - %s; (%dus)\n", wrapper_.query.GetSQL(wrapper_.loggingParams.normalized),
-						   time.count());
+		os << fmt::format("[slowlog] Long execution query: sql - {}; ({}us)\n", wrapper_.query.GetSQL(wrapper_.loggingParams.normalized),
+						  time.count());
 		fillStorageInfo(os, wrapper_.durationStorage);
 		logPrint(LogWarning, os.str().data());
 	}
@@ -115,8 +115,8 @@ template <>
 void Logger<QueryEnum2Type<QueryType::QueryDelete>>::Dump(std::chrono::microseconds time) {
 	if (wrapper_.loggingParams.thresholdUs >= 0 && time.count() > wrapper_.loggingParams.thresholdUs) {
 		std::ostringstream os;
-		os << fmt::sprintf("[slowlog] Long execution query: sql - %s; (%dus)\n", wrapper_.query.GetSQL(wrapper_.loggingParams.normalized),
-						   time.count());
+		os << fmt::format("[slowlog] Long execution query: sql - {}; ({}us)\n", wrapper_.query.GetSQL(wrapper_.loggingParams.normalized),
+						  time.count());
 		fillStorageInfo(os, wrapper_.durationStorage);
 		logPrint(LogWarning, os.str().data());
 	}
@@ -137,10 +137,10 @@ void Logger<LocalTransaction>::Dump(std::chrono::microseconds time) {
 		std::ostringstream os;
 		fillStorageInfo(os, wrapper_.durationStorage);
 
-		logPrintf(LogWarning, "[slowlog] Long tx apply: namespace - %s; was%scopied; %d steps;%s%s\n%s", wrapper_.tx.GetNsName(),
-				  wrapper_.wasCopied ? " " : " not ", wrapper_.tx.GetSteps().size(),
-				  longAvgStep ? fmt::sprintf(" Exceeded the average step execution time limit (%dus);", avg_time) : "",
-				  longTotal ? fmt::sprintf(" Exceeded the total time limit (%dus);", time.count()) : "", os.str());
+		logFmt(LogWarning, "[slowlog] Long tx apply: namespace - {}; was{}copied; {} steps;{}{}\n{}", wrapper_.tx.GetNsName(),
+			   wrapper_.wasCopied ? " " : " not ", wrapper_.tx.GetSteps().size(),
+			   longAvgStep ? fmt::format(" Exceeded the average step execution time limit ({}us);", avg_time) : "",
+			   longTotal ? fmt::format(" Exceeded the total time limit ({}us);", time.count()) : "", os.str());
 	}
 }
 

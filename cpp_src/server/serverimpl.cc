@@ -566,7 +566,7 @@ int ServerImpl::run() {
 #endif	// REINDEX_WITH_LIBDL
 		}
 #endif	// WITH_GRPC
-	} catch (const Error& err) {
+	} catch (const std::exception& err) {
 		logger_.error("Unhandled exception occurred: {0}", err.what());
 	}
 	logger_.info("Reindexer server shutdown completed.");
@@ -591,7 +591,7 @@ Error ServerImpl::daemonize() {
 			umask(0);
 			setsid();
 			if (chdir("/")) {
-				return Error(errLogic, "Could not change working directory. Reason: %s", strerror(errno));
+				return Error(errLogic, "Could not change working directory. Reason: {}", strerror(errno));
 			}
 
 			close(STDIN_FILENO);
@@ -601,7 +601,7 @@ Error ServerImpl::daemonize() {
 
 		// fork error ...
 		case -1:
-			return Error(errLogic, "Could not fork process. Reason: %s", strerror(errno));
+			return Error(errLogic, "Could not fork process. Reason: {}", strerror(errno));
 
 		// parent process
 		default:
@@ -641,7 +641,7 @@ Error ServerImpl::loggerConfigure() {
 				spdlog::initialize_logger(std::move(lptr));
 			}
 		} catch (const spdlog::spdlog_ex& e) {
-			return Error(errLogic, "Can't create logger for '%s' to file '%s': %s\n", logger.first, logger.second, e.what());
+			return Error(errLogic, "Can't create logger for '{}' to file '{}': {}\n", logger.first, logger.second, e.what());
 		}
 	}
 	logger_ = LoggerWrapper("server");

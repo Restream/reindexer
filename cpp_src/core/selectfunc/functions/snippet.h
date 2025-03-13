@@ -2,11 +2,13 @@
 
 #include "core/ft/areaholder.h"
 #include "core/ft/ft_fast/splitter.h"
-#include "core/queryresults/queryresults.h"
 
 namespace reindexer {
 
 struct SelectFuncStruct;
+class PayloadType;
+class ItemRef;
+class key_string;
 
 class Snippet {
 public:

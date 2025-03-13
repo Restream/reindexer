@@ -24,8 +24,8 @@ public:
 		ComparisonResult expectedResult;
 
 		friend std::ostream& operator<<(std::ostream& os, const StringTestCase& c) {
-			os << fmt::sprintf("{ str1: '%s', str2: '%s', expected comparison result: %s }", c.str1, c.str2,
-							   ComparisonResultToString(c.expectedResult));
+			os << fmt::format("{{ str1: '{}', str2: '{}', expected comparison result: {} }}", c.str1, c.str2,
+							  ComparisonResultToString(c.expectedResult));
 			return os;
 		}
 	};

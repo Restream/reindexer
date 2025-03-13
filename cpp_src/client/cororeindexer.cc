@@ -76,6 +76,7 @@ Error CoroReindexer::Delete(const Query& q, CoroQueryResults& result) { return i
 Error CoroReindexer::Delete(std::string_view nsName, std::string_view cjson) { return impl_->Delete(nsName, cjson, ctx_); }
 Error CoroReindexer::Select(std::string_view query, CoroQueryResults& result) { return impl_->Select(query, result, ctx_); }
 Error CoroReindexer::Select(const Query& q, CoroQueryResults& result) { return impl_->Select(q, result, ctx_); }
+Error CoroReindexer::Version(std::string& version) { return impl_->Version(version, ctx_); }
 Error CoroReindexer::Commit(std::string_view) {
 	// Empty
 	return {};

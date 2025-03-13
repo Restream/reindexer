@@ -1,4 +1,5 @@
 #include "indexunordered.h"
+#include "core/dbconfig.h"
 #include "core/index/indextext/ftkeyentry.h"
 #include "core/index/payload_map.h"
 #include "core/index/string_map.h"
@@ -30,7 +31,7 @@ template <>
 IndexUnordered<str_map<Index::KeyEntryPlain>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 															  const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
-	  idx_map(idef.opts_.collateOpts_),
+	  idx_map(idef.Opts().collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
@@ -38,7 +39,7 @@ template <>
 IndexUnordered<str_map<Index::KeyEntry>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 														 const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
-	  idx_map(idef.opts_.collateOpts_),
+	  idx_map(idef.Opts().collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
@@ -46,7 +47,7 @@ template <>
 IndexUnordered<unordered_str_map<Index::KeyEntry>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 																   const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
-	  idx_map(idef.opts_.collateOpts_),
+	  idx_map(idef.Opts().collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
@@ -54,7 +55,7 @@ template <>
 IndexUnordered<unordered_str_map<Index::KeyEntryPlain>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 																		const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
-	  idx_map(idef.opts_.collateOpts_),
+	  idx_map(idef.Opts().collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
@@ -62,7 +63,7 @@ template <>
 IndexUnordered<unordered_str_map<FtKeyEntry>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 															  const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
-	  idx_map(idef.opts_.collateOpts_),
+	  idx_map(idef.Opts().collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
@@ -222,7 +223,7 @@ void IndexUnordered<T>::Delete(const Variant& key, IdType id, StringsHolder& str
 		cache_.ResetImpl();
 		clearCache = true;
 	}
-	assertf(delcnt || this->opts_.IsArray() || this->Opts().IsSparse(), "Delete non-existing id from index '%s' id=%d,key=%s (%s)",
+	assertf(delcnt || this->opts_.IsArray() || this->Opts().IsSparse(), "Delete non-existing id from index '{}' id={},key={} ({})",
 			this->name_, id, key.As<std::string>(this->payloadType_, this->Fields()),
 			Variant(keyIt->first).As<std::string>(this->payloadType_, this->Fields()));
 	if (keyIt == idx_map.end()) {
@@ -305,7 +306,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 			for (const auto& key : keys) {
 				if (key.IsNullValue()) {
 					throw Error(errParams,
-								"Can not use 'null'-value with operators '=' and 'IN()' (index: '%s'). Use 'IS NULL'/'IS NOT NULL' instead",
+								"Can not use 'null'-value with operators '=' and 'IN()' (index: '{}'). Use 'IS NULL'/'IS NOT NULL' instead",
 								this->Name());
 				}
 			}
@@ -369,7 +370,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 			SelectKeyResults rslts;
 			for (const auto& key : keys) {
 				if (key.IsNullValue()) {
-					throw Error(errParams, "Can not use 'null'-value with operator 'allset' (index: '%s')", this->Name());
+					throw Error(errParams, "Can not use 'null'-value with operator 'allset' (index: '{}')", this->Name());
 				}
 				SelectKeyResult res1;
 				auto keyIt = this->idx_map.find(static_cast<ref_type>(key.convert(this->KeyType())));
@@ -401,7 +402,8 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 		case CondLike:
 			return Base::SelectKey(keys, condition, sortId, opts, funcCtx, rdxCtx);
 		case CondDWithin:
-			throw Error(errQueryExec, "DWithin query on index '%s'", this->name_);
+		case CondKnn:
+			throw Error(errQueryExec, "{} query on index '{}'", CondTypeToStrShort(condition), this->name_);
 	}
 
 	return SelectKeyResults(std::move(res));
@@ -419,7 +421,7 @@ void IndexUnordered<T>::Commit() {
 		return;
 	}
 
-	logPrintf(LogTrace, "IndexUnordered::Commit (%s) %d uniq keys, %d empty, %s", this->name_, this->idx_map.size(),
+	logFmt(LogTrace, "IndexUnordered::Commit ({}) {} uniq keys, {} empty, {}", this->name_, this->idx_map.size(),
 			  this->empty_ids_.Unsorted().size(), tracker_.isCompleteUpdated() ? "complete" : "partial");
 
 	if (tracker_.isCompleteUpdated()) {
@@ -435,7 +437,7 @@ void IndexUnordered<T>::Commit() {
 
 template <typename T>
 void IndexUnordered<T>::UpdateSortedIds(const UpdateSortedContext& ctx) {
-	logPrintf(LogTrace, "IndexUnordered::UpdateSortedIds (%s) %d uniq keys, %d empty", this->name_, this->idx_map.size(),
+	logFmt(LogTrace, "IndexUnordered::UpdateSortedIds ({}) {} uniq keys, {} empty", this->name_, this->idx_map.size(),
 			  this->empty_ids_.Unsorted().size());
 	// For all keys in index
 	for (auto& keyIt : this->idx_map) {
@@ -530,7 +532,7 @@ void IndexUnordered<T>::ReconfigureCache(const NamespaceCacheConfigData& cacheCf
 template <typename KeyEntryT>
 static std::unique_ptr<Index> IndexUnordered_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 												 const NamespaceCacheConfigData& cacheCfg) {
-	switch (idef.Type()) {
+	switch (idef.IndexType()) {
 		case IndexIntHash:
 			return std::make_unique<IndexUnordered<unordered_number_map<int, KeyEntryT>>>(idef, std::move(payloadType), std::move(fields),
 																						  cacheCfg);
@@ -561,15 +563,19 @@ static std::unique_ptr<Index> IndexUnordered_New(const IndexDef& idef, PayloadTy
 		case IndexRTree:
 		case IndexUuidHash:
 		case IndexUuidStore:
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+		case IndexDummy:
 			break;
 	}
-	std::abort();
+	throw_as_assert;
 }
 
 // NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 std::unique_ptr<Index> IndexUnordered_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 										  const NamespaceCacheConfigData& cacheCfg) {
-	return (idef.opts_.IsPK() || idef.opts_.IsDense())
+	return (idef.Opts().IsPK() || idef.Opts().IsDense())
 			   ? IndexUnordered_New<Index::KeyEntryPlain>(idef, std::move(payloadType), std::move(fields), cacheCfg)
 			   : IndexUnordered_New<Index::KeyEntry>(idef, std::move(payloadType), std::move(fields), cacheCfg);
 }

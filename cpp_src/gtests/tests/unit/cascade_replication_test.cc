@@ -1,7 +1,7 @@
 #include <thread>
 #include "auth_tools.h"
 #include "cascade_replication_api.h"
-#include "core/queryresults/queryresults.h"
+#include "cluster/consts.h"
 #include "gtests/tests/gtest_cout.h"
 #include "vendor/gason/gason.h"
 
@@ -865,7 +865,7 @@ static int64_t AwaitUpdatesReplication(const ServerControl::Interface::Ptr& node
 		}
 		std::this_thread::sleep_for(step);
 	}
-	assertf(false, "Stats: %s", ser.Slice());
+	assertf(false, "Stats: {}", ser.Slice());
 	return 0;
 }
 
@@ -902,7 +902,7 @@ TEST_F(CascadeReplicationApi, RestrictUpdates) {
 
 	for (unsigned int i = 0; i < count; i++) {
 		reindexer::client::Item item = master->api.NewItem("ns1");
-		std::string itemJson = fmt::sprintf(R"json({"id": %d, "data": "%s" })json", i + from, dataString);
+		std::string itemJson = fmt::format(R"json({{"id": {}, "data": "{}" }})json", i + from, dataString);
 		auto err = item.Unsafe().FromJSON(itemJson);
 		ASSERT_TRUE(err.ok()) << err.what();
 		master->api.Upsert(nsName, item);
@@ -1247,4 +1247,61 @@ TEST_F(CascadeReplicationApi, ManyLeadersOneFollowerTest) {
 		nss[serverId].AddRows(leaders[serverId].Get(), 10, 20);
 	}
 	sync();
+}
+
+TEST_F(CascadeReplicationApi, DisabledStatementBaseWALDelete) {
+	constexpr int kWALStatementItemsCount = 100;
+	const int kBasePort = 7770;
+	const std::string nsName = "ns_wal_delete_check";
+	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "DisabledStatementBaseWALDelete/node_"));
+
+	std::vector<int> clusterConfig = {-1, 0};
+	Cluster cluster = CreateConfiguration(clusterConfig, kBasePort, 0, kBaseDbPath);
+
+	auto leader = cluster.Get(0);
+
+	auto err = leader->api.reindexer->OpenNamespace(nsName, StorageOpts{}.Enabled(true));
+	ASSERT_TRUE(err.ok()) << err.what();
+	leader->api.DefineNamespaceDataset(nsName, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}});
+
+	auto makeItemsWithData = [&](int data) {
+		for (int id = 0; id < kWALStatementItemsCount; ++id) {
+			auto item = leader->api.NewItem(nsName);
+			auto err = item.FromJSON(fmt::format("{{\"id\": {}, \"data\": {} }}", id, data));
+			ASSERT_TRUE(err.ok()) << err.what();
+
+			leader->api.Upsert(nsName, item);
+		}
+	};
+
+	makeItemsWithData(0);
+
+	WaitSync(leader, cluster.Get(1), nsName);
+
+	const auto replState = cluster.Get(1)->GetState(nsName);
+	ASSERT_EQ(replState.role, ClusterizationStatus::Role::SimpleReplica);
+
+	cluster.ShutdownServer(1);
+
+	makeItemsWithData(1);
+
+	auto q = Query::FromSQL(fmt::format("DELETE FROM {} WHERE data = 1", nsName));
+	leader->api.Delete(q);
+
+	auto getForceSyncsCount = [&] {
+		auto res = cluster.Get(0)->api.Select(Query::FromSQL("SELECT * FROM #replicationstats WHERE type = 'async'"));
+		gason::JsonParser parser;
+		auto root = parser.Parse(res.begin().GetItem().GetJSON());
+		return root["force_syncs"]["count"].As<int>();
+	};
+
+	int forceSyncsBefore = getForceSyncsCount();
+
+	cluster.InitServer(1, kBasePort + 1, kBasePort + 1000 + 1, kBaseDbPath + std::to_string(1), "db", true);
+
+	WaitSync(leader, cluster.Get(1), nsName);
+	std::this_thread::sleep_for(std::chrono::seconds(1));  // waiting for potential force-sync to complete
+
+	int forceSyncsAfter = getForceSyncsCount();
+	ASSERT_EQ(forceSyncsBefore, forceSyncsAfter);
 }

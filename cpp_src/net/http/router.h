@@ -4,7 +4,6 @@
 #include <climits>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <string_view>
 #include "estl/h_vector.h"
@@ -66,7 +65,7 @@ typedef std::string_view UrlParam;
 struct HttpStatus {
 	HttpStatus() noexcept : code(StatusOK) {}
 	HttpStatus(HttpStatusCode httpcode, std::string httpwhat) : code(httpcode), what(std::move(httpwhat)) {}
-	explicit HttpStatus(const Error& err) : what(err.what()) { code = errCodeToHttpStatus(err.code()); }
+	explicit HttpStatus(const Error& err) : what(err.whatStr()) { code = errCodeToHttpStatus(err.code()); }
 
 	HttpStatusCode code;
 	std::string what;

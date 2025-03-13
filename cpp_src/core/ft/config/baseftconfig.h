@@ -12,8 +12,6 @@ struct JsonNode;
 
 namespace reindexer {
 
-class JsonBuilder;
-
 class BaseFTConfig {
 public:
 	struct Synonym {

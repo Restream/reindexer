@@ -119,11 +119,11 @@ void CsvBuilder::tmProcessing(std::string_view name) {
 			curTagPos_ = std::distance(ordering_->begin(), it);
 			positions_[curTagPos_].first = prevFinishPos + (count_ > 0 ? 1 : 0);
 		} else {
-			throw Error(errParams, "Tag %s from tagsmatcher was not passed with the schema", name);
+			throw Error(errParams, "Tag {} from tagsmatcher was not passed with the schema", name);
 		}
 	} else {
 		if (name.substr(0, 7) != "joined_") {
-			throw Error(errParams, "The \"joined_*\"-like tag for joined namespaced is expected, but received %d", name);
+			throw Error(errParams, "The \"joined_*\"-like tag for joined namespaced is expected, but received {}", name);
 		}
 
 		if (curTagPos_ > -1) {
@@ -200,7 +200,7 @@ CsvBuilder& CsvBuilder::Null(std::string_view name) {
 CsvBuilder& CsvBuilder::Put(std::string_view name, const Variant& kv, int offset) {
 	kv.Type().EvaluateOneOf(
 		[&](KeyValueType::Int) { Put(name, int(kv), offset); }, [&](KeyValueType::Int64) { Put(name, int64_t(kv), offset); },
-		[&](KeyValueType::Double) { Put(name, double(kv), offset); },
+		[&](KeyValueType::Double) { Put(name, double(kv), offset); }, [&](KeyValueType::Float) { Put(name, float(kv), offset); },
 		[&](KeyValueType::String) { Put(name, std::string_view(kv), offset); }, [&](KeyValueType::Null) { Null(name); },
 		[&](KeyValueType::Bool) { Put(name, bool(kv), offset); },
 		[&](KeyValueType::Tuple) {
@@ -209,7 +209,8 @@ CsvBuilder& CsvBuilder::Put(std::string_view name, const Variant& kv, int offset
 				arrNode.Put({nullptr, 0}, val);
 			}
 		},
-		[&](KeyValueType::Uuid) { Put(name, Uuid{kv}, offset); }, [](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) noexcept {});
+		[&](KeyValueType::Uuid) { Put(name, Uuid{kv}, offset); },
+		[](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) noexcept { assertrx_throw(false); });
 	return *this;
 }
 

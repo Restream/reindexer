@@ -61,7 +61,7 @@ struct SnapshotOpts {
 		: from(_from), maxWalDepthOnForceSync(_maxWalDepthOnForceSync) {}
 
 	Error FromJSON(const gason::JsonNode& root);
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::span<char> json);
 	void GetJSON(JsonBuilder& jb) const;
 	void GetJSON(WrSerializer& ser) const;
 

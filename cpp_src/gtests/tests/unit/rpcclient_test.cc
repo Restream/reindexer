@@ -8,6 +8,7 @@
 #include "client/reindexer.h"
 #include "client/snapshot.h"
 #include "core/cjson/jsonbuilder.h"
+#include "core/system_ns_names.h"
 #include "coroutine/waitgroup.h"
 #include "gtests/tests/gtest_cout.h"
 #include "net/ev/ev.h"
@@ -45,8 +46,8 @@ static std::chrono::seconds GetMaxTimeForCoroSelectTimeout(unsigned requests, st
 	const auto kBase = std::max(requests * delay.count() / 16, delay.count());
 	const std::chrono::seconds kDefaultMaxTime(kBase + 10);
 	if (cpus == 0) {
-		TestCout() << fmt::sprintf("Unable to get CPUs count. Using test max time %d seconds Test may flack in this case",
-								   4 * kDefaultMaxTime.count())
+		TestCout() << fmt::format("Unable to get CPUs count. Using test max time {} seconds Test may flack in this case",
+								  4 * kDefaultMaxTime.count())
 				   << std::endl;
 		return 4 * kDefaultMaxTime;
 	}
@@ -60,8 +61,8 @@ static std::chrono::seconds GetMaxTimeForCoroSelectTimeout(unsigned requests, st
 	} else if (cpus >= 8 && cpus < 16) {
 		resultMaxTime = 2 * kDefaultMaxTime;
 	}
-	TestCout() << fmt::sprintf("Test max time: %d seconds for %d total requests on %d CPUs with %d seconds of delay for each request",
-							   resultMaxTime.count(), requests, cpus, delay.count())
+	TestCout() << fmt::format("Test max time: {} seconds for {} total requests on {} CPUs with {} seconds of delay for each request",
+							  resultMaxTime.count(), requests, cpus, delay.count())
 			   << std::endl;
 	return resultMaxTime;
 }
@@ -82,8 +83,8 @@ TEST_F(RPCClientTestApi, CoroSelectTimeout) {
 	ev::timer testTimer;
 	testTimer.set([&](ev::timer&, int) {
 		// Just to print output on CI
-		ASSERT_TRUE(false) << fmt::sprintf("Test deadline exceeded. Closed count: %d. Expected: %d. %d|", server.CloseQRRequestsCount(),
-										   kCorCount * kQueriesCount, reindexer::steady_clock_w::now().time_since_epoch().count());
+		ASSERT_TRUE(false) << fmt::format("Test deadline exceeded. Closed count: {}. Expected: {}. {}|", server.CloseQRRequestsCount(),
+										  kCorCount * kQueriesCount, reindexer::steady_clock_w::now().time_since_epoch().count());
 	});
 	testTimer.set(loop);
 	const auto kMaxTime = GetMaxTimeForCoroSelectTimeout(kCorCount * kQueriesCount, kSelectDelay);
@@ -612,7 +613,7 @@ TEST_F(RPCClientTestApi, UnknownResultsFlag) {
 		ASSERT_TRUE(err.ok()) << err.what();
 		const int kResultsUnknownFlag = 0x40000000;	 // Max available int flag
 		client::CoroQueryResults qr(kResultsCJson | kResultsWithItemID | kResultsUnknownFlag);
-		err = rx.Select(Query("#config").Where("type", CondEq, {"namespaces"}), qr);
+		err = rx.Select(Query(reindexer::kConfigNamespace).Where("type", CondEq, {"namespaces"}), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		// Check, that kResultsUnknownFlag was not sent back
 		ASSERT_EQ(qr.GetFlags(), kResultsCJson | kResultsWithItemID);
@@ -769,7 +770,7 @@ TEST_F(RPCClientTestApi, FetchingWithJoin) {
 			ASSERT_TRUE(it.Status().ok()) << it.Status().what();
 			err = it.GetJSON(ser, false);
 			ASSERT_TRUE(err.ok()) << err.what();
-			const auto expected = fmt::sprintf(R"json({"id":%d,"joined_%s":[{"id":%d,"value":"value_%d"}]})json", i, kRightNsName, i, i);
+			const auto expected = fmt::format(R"json({{"id":{},"joined_{}":[{{"id":{},"value":"value_{}"}}]}})json", i, kRightNsName, i, i);
 			EXPECT_EQ(ser.Slice(), expected);
 			i++;
 		}
@@ -825,7 +826,7 @@ TEST_F(RPCClientTestApi, QRWithMultipleIterationLoops) {
 				ASSERT_TRUE(it.Status().ok()) << it.Status().what();
 				err = it.GetJSON(ser, false);
 				ASSERT_TRUE(err.ok()) << err.what();
-				EXPECT_EQ(fmt::sprintf("{\"id\":%d}", id), ser.Slice());
+				EXPECT_EQ(fmt::format("{{\"id\":{}}}", id), ser.Slice());
 			} else {
 				EXPECT_FALSE(it.Status().ok()) << it.Status().what();
 				err = it.GetJSON(ser, false);
@@ -1194,7 +1195,7 @@ TEST_F(RPCClientTestApi, QuerySelectDWithin) {
 				ASSERT_TRUE(it.Status().ok()) << it.Status().what();
 				err = it.GetJSON(ser, false);
 				ASSERT_TRUE(err.ok()) << err.what();
-				const auto expected = fmt::sprintf(R"json({"id":%d,"point":[%0.1f,%0.1f]})json", i, float(i), float(i));
+				const auto expected = fmt::format(R"json({{"id":{},"point":[{:.1f},{:.1f}]}})json", i, float(i), float(i));
 				EXPECT_EQ(ser.Slice(), expected);
 				++i;
 			}
@@ -1297,14 +1298,14 @@ TEST_F(RPCClientTestApi, QuerySetObjectUpdate) {
 		reindexer::client::CoroReindexer rx;
 		auto err = rx.Connect(dsn, loop, opts);
 		ASSERT_TRUE(err.ok()) << err.what();
-		const std::string kNsName = "TestQuerySetObjectUpdate";
+		constexpr std::string_view kNsName = "TestQuerySetObjectUpdate";
 		CreateNamespace(rx, kNsName);
 		err = rx.AddIndex(kNsName, reindexer::IndexDef{"idx", {"nested.field"}, "hash", "int", IndexOpts{}});
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		constexpr unsigned kNsSize = 3;
 
-		auto insertFn = [&rx](const std::string& nsName, unsigned count) {
+		auto insertFn = [&rx](std::string_view nsName, unsigned count) {
 			auto tx = rx.NewTransaction(nsName);
 			ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
 
@@ -1337,13 +1338,13 @@ TEST_F(RPCClientTestApi, QuerySetObjectUpdate) {
 		{
 			err = rx.Update(Query(kNsName).Where("id", CondGe, "0").SetObject("nested", Variant(std::string(R"([{"field": 1240}])"))), qr);
 			ASSERT_FALSE(err.ok());
-			EXPECT_EQ(err.what(), "Error modifying field value: 'Unsupported JSON format. Unnamed field detected'");
+			EXPECT_STREQ(err.what(), "Error modifying field value: 'Unsupported JSON format. Unnamed field detected'");
 		}
 
 		{
 			err = rx.Update(Query(kNsName).Where("id", CondGe, "0").SetObject("nested", Variant(std::string(R"({{"field": 1240}})"))), qr);
 			ASSERT_FALSE(err.ok());
-			EXPECT_EQ(err.what(), "Error modifying field value: 'JSONDecoder: Error parsing json: unquoted key, pos 15'");
+			EXPECT_STREQ(err.what(), "Error modifying field value: 'JSONDecoder: Error parsing json: unquoted key, pos 15'");
 		}
 
 		{

@@ -40,68 +40,55 @@ protected:
 																				  "int64", IndexOpts().Array(), 100000000000));
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		char sourceJson[1024];
-		const char jsonPattern[] =
-			R"json({"id": %s,
+		constexpr auto jsonPattern =
+			R"json({{"id": {},
 			"int_field":1,
 			"int_field2":88,
 			"indexed_array_field": [11,22,33,44,55,66,77,88,99],
-			"objects":[{"more":[{"array":[9,8,7,6,5]},{"array":[4,3,2,1,0]}]}],
-			"":{"empty_obj_field":"not empty"},
+			"objects":[{{"more":[{{"array":[9,8,7,6,5]}},{{"array":[4,3,2,1,0]}}]}}],
+			"":{{"empty_obj_field":"not empty"}},
 			"array_field": [1,2,3],
 			"string_array":["first", "second", "third"],
 			"bool_array":[true, false],
 			"bool_array2":[false, true],
-			"extra" : "%s",
-			"sparse_field": %ld,
-			"nested":{
-				"bonus":%ld,
+			"extra" : "{}",
+			"sparse_field": {},
+			"nested":{{
+				"bonus":{},
 				"nested_array":[
-					{"id":1,"name":"first", "prices":[1,2,3]},
-					{"id":2,"name":"second", "prices":[4,5,6]},
-					{"id":3,"name":"third", "nested":{"array":[0,0,0]}, "prices":[7,8,9]}
+					{{"id":1,"name":"first", "prices":[1,2,3]}},
+					{{"id":2,"name":"second", "prices":[4,5,6]}},
+					{{"id":3,"name":"third", "nested":{{"array":[0,0,0]}}, "prices":[7,8,9]}}
 				]
-			},
-			"nested2":{"bonus2":%ld}})json";
+			}},
+			"nested2":{{"bonus2":{}}}}})json";
 		for (size_t i = 1000; i < 2000; ++i) {
-			Item item = NewItem(default_namespace);
-			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
-
 			std::string serial = std::to_string(i);
-			snprintf(sourceJson, sizeof(sourceJson) - 1, jsonPattern, serial.c_str(), serial.c_str(), i, i * 2, i * 3);
-
-			Error err = item.FromJSON(sourceJson);
-			EXPECT_TRUE(err.ok()) << err.what();
-			Upsert(default_namespace, item);
+			auto json = fmt::format(jsonPattern, serial, serial, i, i * 2, i * 3);
+			rt.UpsertJSON(default_namespace, json);
 		}
 	}
 
 	void AddHeterogeneousNestedData() {
-		char sourceJson[4096];
-		const char jsonPattern[] =
-			R"json({
-			"id": %s,
+		constexpr auto jsonPattern =
+			R"json({{
+			"id": {},
 			"int_field":1,
 			"indexed_array_field": [11,22,33,44,55,66,77,88,99],
-			"objects":[{"array":[{"field":[9,8,7,6,5]},{"field":11},{"field":[4,3,2,1,0]},{"field":[99]}]}],
-			"":{"empty_obj_field":"not empty"},
+			"objects":[{{"array":[{{"field":[9,8,7,6,5]}},{{"field":11}},{{"field":[4,3,2,1,0]}},{{"field":[99]}}]}}],
+			"":{{"empty_obj_field":"not empty"}},
 			"array_field": [1,2,3],
 			"string_array":["first", "second", "third"],
-			"extra" : "%s",
-			"sparse_field": %ld,
-			"nested":{"bonus":%ld, "nested_array":[{"id":1,"name":"first", "prices":[1,2,3]},{"id":2,"name":"second","prices":[4,5,6]},{"id":3,"name":"third", "nested":{"array":[0,0,0]}, "prices":[7,8,9]}]}, "nested2":{"bonus2":%ld}
-			})json";
+			"extra" : "{}",
+			"sparse_field": {},
+			"nested":{{"bonus":{}, "nested_array":[{{"id":1,"name":"first", "prices":[1,2,3]}},{{"id":2,"name":"second","prices":[4,5,6]}},{{"id":3,"name":"third", "nested":{{"array":[0,0,0]}}, "prices":[7,8,9]}}]}}, "nested2":{{"bonus2":{}}}
+			}})json";
 
 		for (size_t i = 1000; i < 2000; ++i) {
-			Item item = NewItem(default_namespace);
-			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
-
 			std::string serial = std::to_string(i);
-			snprintf(sourceJson, sizeof(sourceJson) - 1, jsonPattern, serial.c_str(), serial.c_str(), i, i * 2, i * 3);
+			auto json = fmt::format(jsonPattern, serial, serial, i, i * 2, i * 3);
 
-			Error err = item.FromJSON(sourceJson);
-			EXPECT_TRUE(err.ok()) << err.what();
-			Upsert(default_namespace, item);
+			rt.UpsertJSON(default_namespace, json);
 		}
 	}
 
@@ -110,7 +97,7 @@ protected:
 		DefineNamespaceDataset(nsName, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK(), 0},
 										IndexDeclaration{indexedArrayField.c_str(), "hash", "int", IndexOpts().Array(), 0}});
 		for (size_t i = 100; i < 200; ++i) {
-			rt.UpsertJSON(nsName, fmt::sprintf(R"json({"id": %d, "indexed_array_field": [], "non_indexed_array_field": []})json", i));
+			rt.UpsertJSON(nsName, fmt::format(R"json({{"id": {}, "indexed_array_field": [], "non_indexed_array_field": []}})json", i));
 		}
 	}
 
@@ -151,24 +138,18 @@ protected:
 		}
 
 		const static Query q{truncate_namespace};
-		QueryResults qr1;
-		auto err = rt.reindexer->Select(q, qr1);
-		ASSERT_TRUE(err.ok()) << err.what();
+		QueryResults qr1 = rt.Select(q);
 		ASSERT_EQ(itemsCount, qr1.Count());
 
-		err = truncate(truncate_namespace);
+		auto err = truncate(truncate_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		QueryResults qr2;
-		err = rt.reindexer->Select(q, qr2);
-		ASSERT_TRUE(err.ok()) << err.what();
+		QueryResults qr2 = rt.Select(q);
 		ASSERT_EQ(0, qr2.Count());
 
 		InsertNewTruncateItem(1);
 
-		QueryResults qr3;
-		err = rt.reindexer->Select(q, qr3);
-		ASSERT_TRUE(err.ok()) << err.what();
+		QueryResults qr3 = rt.Select(q);
 		ASSERT_EQ(1, qr3.Count());
 	}
 

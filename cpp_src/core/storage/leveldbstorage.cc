@@ -147,7 +147,7 @@ UpdatesCollection* LevelDbStorage::GetUpdatesCollection() { return new LevelDbBa
 
 Error LevelDbStorage::doOpen(const std::string& path, const StorageOpts& opts) {
 	if (path.empty()) {
-		return Error(errParams, "Cannot enable storage: the path is empty '%s'", path);
+		return Error(errParams, "Cannot enable storage: the path is empty '{}'", path);
 	}
 
 	leveldb::Options options;

@@ -1,4 +1,5 @@
 #include "index.h"
+#include <iostream>
 #include "core/indexdef.h"
 #include "estl/overloaded.h"
 #include "ns_scheme.h"

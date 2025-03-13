@@ -294,8 +294,8 @@ ServerConnection::ReadResT ServerConnection::onRead() {
 		if (!rdBuf_.size() && !bodyLeft_) {
 			rdBuf_.clear();
 		}
-	} catch (const Error& e) {
-		fprintf(stderr, "Dropping HTTP-connection. Reason: %s\n", e.what().c_str());
+	} catch (std::exception& e) {
+		fprintf(stderr, "Dropping HTTP-connection. Reason: %s\n", e.what());
 		closeConn_ = true;
 	}
 	return ReadResT::Default;

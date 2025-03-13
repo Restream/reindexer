@@ -23,7 +23,7 @@ void IndexStore<key_string>::Delete(const Variant& key, IdType /*id*/, StringsHo
 		return;
 	}
 	auto keyIt = str_map.find(std::string_view(key));
-	// assertf(keyIt != str_map.end(), "Delete non-existent key from index '%s' id=%d", name_, id);
+	// assertf(keyIt != str_map.end(), "Delete non-existent key from index '{}' id={}", name_, id);
 	if (keyIt == str_map.end()) {
 		return;
 	}
@@ -120,7 +120,7 @@ void IndexStore<Point>::Upsert(VariantArray& /*result*/, const VariantArray& /*k
 
 template <typename T>
 void IndexStore<T>::Commit() {
-	logPrintf(LogTrace, "IndexStore::Commit (%s) %d uniq strings", name_, str_map.size());
+	logFmt(LogTrace, "IndexStore::Commit ({}) {} uniq strings", name_, str_map.size());
 }
 
 template <typename T>
@@ -187,7 +187,7 @@ bool IndexStore<T>::shouldHoldValueInStrMap() const noexcept {
 }
 
 std::unique_ptr<Index> IndexStore_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields) {
-	switch (idef.Type()) {
+	switch (idef.IndexType()) {
 		case IndexBool:
 			return std::make_unique<IndexStore<bool>>(idef, std::move(payloadType), std::move(fields));
 		case IndexIntStore:
@@ -216,9 +216,13 @@ std::unique_ptr<Index> IndexStore_New(const IndexDef& idef, PayloadType&& payloa
 		case IndexTtl:
 		case IndexRTree:
 		case IndexUuidHash:
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+		case IndexDummy:
 			break;
 	}
-	std::abort();
+	throw_as_assert;
 }
 
 template class IndexStore<bool>;

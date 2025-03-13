@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v4/bindings"
+	"github.com/restream/reindexer/v5/bindings"
 )
 
 type MockConnection struct {

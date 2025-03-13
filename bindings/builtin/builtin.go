@@ -18,8 +18,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/cjson"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/cjson"
 )
 
 const defCgoLimit = 2000
@@ -250,12 +250,13 @@ func (binding *Builtin) Init(u []url.URL, eh bindings.EventsHandler, options ...
 	caps := *bindings.DefaultBindingCapabilities().
 		WithResultsWithShardIDs(true).
 		WithQrIdleTimeouts(true).
-		WithIncarnationTags(true)
+		WithIncarnationTags(true).
+		WithFloatRank(true)
 	ccaps := C.BindingCapabilities{
 		caps: C.int64_t(caps.Value),
 	}
 
-	return err2go(C.reindexer_connect_v4(binding.rx, str2c(u[0].Host+u[0].Path), opts, str2c(bindings.ReindexerVersion), ccaps))
+	return err2go(C.reindexer_connect(binding.rx, str2c(u[0].Host+u[0].Path), opts, str2c(bindings.ReindexerVersion), ccaps))
 }
 
 func (binding *Builtin) StartWatchOnCtx(ctx context.Context) (CCtxWrapper, error) {

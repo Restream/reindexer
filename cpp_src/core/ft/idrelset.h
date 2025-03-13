@@ -2,8 +2,6 @@
 
 #include <limits.h>
 #include <algorithm>
-#include <map>
-#include <set>
 #include "estl/packed_vector.h"
 #include "sort/pdqsort.hpp"
 #include "usingcontainer.h"

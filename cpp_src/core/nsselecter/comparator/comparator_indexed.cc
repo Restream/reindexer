@@ -132,6 +132,7 @@ void initComparator(CondType cond, const reindexer::VariantArray& from, reindexe
 		case CondEmpty:
 		case CondLike:
 		case CondDWithin:
+		case CondKnn:
 			break;
 	}
 	to.cond_ = cond;
@@ -164,6 +165,7 @@ void initStringComparator(CondType cond, const reindexer::VariantArray& from, re
 		case CondAny:
 		case CondEmpty:
 		case CondDWithin:
+		case CondKnn:
 			break;
 	}
 	to.cond_ = cond;
@@ -236,6 +238,7 @@ template <typename T>
 		case CondAny:
 		case CondEmpty:
 		case CondDWithin:
+		case CondKnn:
 		default:
 			abort();
 	}
@@ -284,7 +287,7 @@ template <typename V>
 }
 
 [[nodiscard]] std::string pointComparatorCondStr(reindexer::Point point, double distance) {
-	return fmt::sprintf("DWITHIN(POINT(%.4f %.4f), %.4f)", point.X(), point.Y(), distance);
+	return fmt::format("DWITHIN(POINT({:.4f} {:.4f}), {:.4f})", point.X(), point.Y(), distance);
 }
 
 }  // namespace
@@ -509,6 +512,7 @@ ComparatorIndexedComposite::ComparatorIndexedComposite(const VariantArray& value
 		case CondEmpty:
 		case CondLike:
 		case CondDWithin:
+		case CondKnn:
 			break;
 	}
 	cond_ = cond;
@@ -538,6 +542,7 @@ ComparatorIndexedComposite::ComparatorIndexedComposite(const VariantArray& value
 		case CondAny:
 		case CondEmpty:
 		case CondDWithin:
+		case CondKnn:
 		default:
 			abort();
 	}
@@ -641,8 +646,8 @@ template <typename T>
 				}
 			case CondDWithin:
 			case CondLike:
-			default:
-				throw Error{errQueryExec, "Condition %s with type %s", CondTypeToStr(cond), typeToStr<T>()};
+			case CondKnn:
+				throw Error{errQueryExec, "Condition {} with type {}", CondTypeToStr(cond), typeToStr<T>()};
 		}
 	} else {
 		const auto offset = payloadType->Field(fields[0]).Offset();
@@ -690,14 +695,14 @@ template <typename T>
 					}
 				case CondDWithin:
 				case CondLike:
-				default:
-					throw Error{errQueryExec, "Condition %s with type %s", CondTypeToStr(cond), typeToStr<T>()};
+				case CondKnn:
+					throw Error{errQueryExec, "Condition {} with type {}", CondTypeToStr(cond), typeToStr<T>()};
 			}
 		} else {
 			switch (cond) {
 				case CondAny:
 					if (!distinct) {
-						throw Error{errQueryExec, "Condition %s with not array field", CondTypeToStr(cond)};
+						throw Error{errQueryExec, "Condition {} with not array field", CondTypeToStr(cond)};
 					}
 					if (rawData) {
 						return ComparatorIndexedColumnScalarAnyDistinct<T>{rawData};
@@ -758,11 +763,12 @@ template <typename T>
 				case CondEmpty:
 				case CondDWithin:
 				case CondLike:
-				default:
-					throw Error{errQueryExec, "Condition %s with type %s", CondTypeToStr(cond), typeToStr<T>()};
+				case CondKnn:
+					throw Error{errQueryExec, "Condition {} with type {}", CondTypeToStr(cond), typeToStr<T>()};
 			}
 		}
 	}
+	throw Error{errQueryExec, "Invalid condition {} with type {}", int(cond), typeToStr<T>()};
 }
 
 template comparators::ComparatorIndexedVariant<int> ComparatorIndexed<int>::createImpl(CondType, const VariantArray&, const void*, bool,
@@ -830,8 +836,8 @@ template <>
 					return ComparatorIndexedJsonPathString{fields.getTagsPath(0), payloadType, values, collate, cond};
 				}
 			case CondDWithin:
-			default:
-				throw Error{errQueryExec, "Condition %s with type %s", CondTypeToStr(cond), typeToStr<key_string>()};
+			case CondKnn:
+				throw Error{errQueryExec, "Condition {} with type {}", CondTypeToStr(cond), typeToStr<key_string>()};
 		}
 	} else {
 		const auto offset = payloadType->Field(fields[0]).Offset();
@@ -879,14 +885,14 @@ template <>
 						return ComparatorIndexedOffsetArrayString{offset, values, collate, cond};
 					}
 				case CondDWithin:
-				default:
-					throw Error{errQueryExec, "Condition %s with type %s", CondTypeToStr(cond), typeToStr<key_string>()};
+				case CondKnn:
+					throw Error{errQueryExec, "Condition {} with type {}", CondTypeToStr(cond), typeToStr<key_string>()};
 			}
 		} else {
 			switch (cond) {
 				case CondAny:
 					if (!distinct) {
-						throw Error{errQueryExec, "Condition %s with not array field", CondTypeToStr(cond)};
+						throw Error{errQueryExec, "Condition {} with not array field", CondTypeToStr(cond)};
 					}
 					return ComparatorIndexedOffsetScalarAnyStringDistinct{offset, collate};
 				case CondEq:
@@ -944,11 +950,12 @@ template <>
 					return ComparatorIndexedOffsetScalarString{offset, values, collate, cond};
 				case CondEmpty:
 				case CondDWithin:
-				default:
-					throw Error{errQueryExec, "Condition %s with type %s", CondTypeToStr(cond), typeToStr<key_string>()};
+				case CondKnn:
+					throw Error{errQueryExec, "Condition {} with type {}", CondTypeToStr(cond), typeToStr<key_string>()};
 			}
 		}
 	}
+	throw Error{errQueryExec, "Invalid condition {} with type {}", int(cond), typeToStr<key_string>()};
 }
 
 template <>
@@ -983,9 +990,10 @@ template <>
 		case CondEmpty:
 		case CondAny:
 		case CondDWithin:
-		default:
-			throw Error{errQueryExec, "Condition %s with type %s", CondTypeToStr(cond), typeToStr<PayloadValue>()};
+		case CondKnn:
+			throw Error{errQueryExec, "Condition {} with type {}", CondTypeToStr(cond), typeToStr<PayloadValue>()};
 	}
+	throw Error{errQueryExec, "Invalid condition {} with type {}", int(cond), typeToStr<PayloadValue>()};
 }
 
 template <>
@@ -1012,15 +1020,17 @@ template <>
 			case CondGe:
 			case CondRange:
 			case CondLike:
+			case CondKnn:
+				throw Error{errQueryExec, "Condition {} with type {}", CondTypeToStr(cond), typeToStr<Point>()};
 			default:
-				throw Error{errQueryExec, "Condition %s with type %s", CondTypeToStr(cond), typeToStr<Point>()};
+				throw Error{errQueryExec, "Invalid condition {} with type {}", int(cond), typeToStr<Point>()};
 		}
 	} else if (isArray) {
 		const auto offset = payloadType->Field(fields[0]).Offset();
 		switch (cond) {
 			case CondAny:
 				if (!distinct) {
-					throw Error{errQueryExec, "Condition %s with not array field", CondTypeToStr(cond)};
+					throw Error{errQueryExec, "Condition {} with not array field", CondTypeToStr(cond)};
 				}
 				return ComparatorIndexedOffsetArrayAnyDistinct<Point>{offset};
 			case CondDWithin:
@@ -1039,12 +1049,13 @@ template <>
 			case CondGe:
 			case CondRange:
 			case CondLike:
+			case CondKnn:
+				throw Error{errQueryExec, "Condition {} with type {}", CondTypeToStr(cond), typeToStr<Point>()};
 			default:
-				throw Error{errQueryExec, "Condition %s with type %s", CondTypeToStr(cond), typeToStr<Point>()};
+				throw Error{errQueryExec, "Invalid condition {} with type {}", int(cond), typeToStr<Point>()};
 		}
-	} else {
-		throw Error{errQueryExec, "Condition %s with not array field", CondTypeToStr(cond)};
 	}
+	throw Error{errQueryExec, "Condition {} with non-array field", CondTypeToStr(cond)};
 }
 
 }  // namespace reindexer
