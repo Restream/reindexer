@@ -1,34 +1,43 @@
 #pragma once
 
 #include <string_view>
-#include <unordered_map>
+#include "core/enums.h"
+#include "vendor/frozen/string.h"
+#include "vendor/frozen/unordered_map.h"
 
 namespace reindexer {
 
-const std::string_view kParamNamespaces = "namespaces";
-const std::string_view kParamItems = "items";
-const std::string_view kParamCacheEnabled = "cache_enabled";
-const std::string_view kParamAggregations = "aggregations";
-const std::string_view kParamExplain = "explain";
-const std::string_view kParamTotalItems = "total_items";
-const std::string_view kParamColumns = "columns";
-const std::string_view kParamName = "name";
-const std::string_view kParamWidthPercents = "width_percents";
-const std::string_view kParamMaxChars = "max_chars";
-const std::string_view kParamWidthChars = "width_chars";
-const std::string_view kParamSuccess = "success";
-const std::string_view kParamResponseCode = "response_code";
-const std::string_view kParamDescription = "description";
-const std::string_view kParamUpdated = "updated";
-const std::string_view kParamQueryTotalItems = "query_total_items";
-const std::string_view kTxId = "tx_id";
+constexpr std::string_view kParamNamespaces = "namespaces";
+constexpr std::string_view kParamItems = "items";
+constexpr std::string_view kParamCacheEnabled = "cache_enabled";
+constexpr std::string_view kParamAggregations = "aggregations";
+constexpr std::string_view kParamExplain = "explain";
+constexpr std::string_view kParamTotalItems = "total_items";
+constexpr std::string_view kParamColumns = "columns";
+constexpr std::string_view kParamName = "name";
+constexpr std::string_view kParamWidthPercents = "width_percents";
+constexpr std::string_view kParamMaxChars = "max_chars";
+constexpr std::string_view kParamWidthChars = "width_chars";
+constexpr std::string_view kParamSuccess = "success";
+constexpr std::string_view kParamResponseCode = "response_code";
+constexpr std::string_view kParamDescription = "description";
+constexpr std::string_view kParamUpdated = "updated";
+constexpr std::string_view kParamQueryTotalItems = "query_total_items";
+constexpr std::string_view kTxId = "tx_id";
 
-const std::unordered_map<std::string_view, int> kProtoQueryResultsFields = {
-	{kParamItems, 1},	   {kParamNamespaces, 2},	   {kParamCacheEnabled, 3}, {kParamExplain, 4},
-	{kParamTotalItems, 5}, {kParamQueryTotalItems, 6}, {kParamColumns, 7},		{kParamAggregations, 8}};
-const std::unordered_map<std::string_view, int> kProtoColumnsFields = {
-	{kParamName, 1}, {kParamWidthPercents, 2}, {kParamMaxChars, 3}, {kParamWidthChars, 4}};
-const std::unordered_map<std::string_view, int> kProtoModifyResultsFields = {{kParamItems, 1}, {kParamUpdated, 2}, {kParamSuccess, 3}};
-const std::unordered_map<std::string_view, int> kProtoErrorResultsFields = {
-	{kParamSuccess, 1}, {kParamResponseCode, 2}, {kParamDescription, 3}};
+// clang-format off
+constexpr auto kProtoQueryResultsFields = frozen::make_unordered_map<frozen::string, TagName>(
+																	{{kParamItems,        1_Tag}, {kParamNamespaces,      2_Tag},
+																	 {kParamCacheEnabled, 3_Tag}, {kParamExplain,         4_Tag},
+																	 {kParamTotalItems,   5_Tag}, {kParamQueryTotalItems, 6_Tag},
+																	 {kParamColumns,      7_Tag}, {kParamAggregations,    8_Tag}});
+// clang-format on
+
+constexpr auto kProtoColumnsFields = frozen::make_unordered_map<frozen::string, TagName>(
+	{{kParamName, 1_Tag}, {kParamWidthPercents, 2_Tag}, {kParamMaxChars, 3_Tag}, {kParamWidthChars, 4_Tag}});
+constexpr auto kProtoModifyResultsFields =
+	frozen::make_unordered_map<frozen::string, TagName>({{kParamItems, 1_Tag}, {kParamUpdated, 2_Tag}, {kParamSuccess, 3_Tag}});
+constexpr auto kProtoErrorResultsFields =
+	frozen::make_unordered_map<frozen::string, TagName>({{kParamSuccess, 1_Tag}, {kParamResponseCode, 2_Tag}, {kParamDescription, 3_Tag}});
+
 }  // namespace reindexer

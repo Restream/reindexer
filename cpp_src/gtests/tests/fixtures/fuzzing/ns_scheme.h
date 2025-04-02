@@ -4,6 +4,7 @@
 #include <unordered_set>
 #include <variant>
 #include <vector>
+#include "core/enums.h"
 #include "types.h"
 
 namespace reindexer {
@@ -27,10 +28,13 @@ class NsScheme {
 			std::vector<size_t> indexes;
 		};
 
+		Node(std::string&& _name, Child&& child) : name(std::move(_name)), content(std::move(child)) {}
+		Node(std::string&& _name, Children&& children) : name(std::move(_name)), content(std::move(children)) {}
+
 		std::string name;
 		std::variant<Child, Children> content;
-		IsSparseT sparse{IsSparseT::Yes};
-		IsArrayT array{IsArrayT::No};
+		reindexer::IsSparse sparse{reindexer::IsSparse_True};
+		reindexer::IsArray array{reindexer::IsArray_False};
 		void Dump(std::ostream&, size_t offset) const;
 	};
 
@@ -43,17 +47,17 @@ public:
 	bool IsStruct(const FieldPath&) const noexcept;
 	bool IsPoint(const FieldPath&) const noexcept;
 	bool IsTtl(const FieldPath&, const std::vector<Index>&) const noexcept;
-	IsArrayT IsArray(const FieldPath&) const noexcept;
+	reindexer::IsArray IsArray(const FieldPath&) const noexcept;
 	FieldType GetFieldType(const FieldPath&) const noexcept;
 	void SetFieldType(const FieldPath&, FieldType) noexcept;
 	std::string GetJsonPath(const FieldPath&) const noexcept;
-	void AddIndex(const FieldPath&, size_t index, IsSparseT);
+	void AddIndex(const FieldPath&, size_t index, reindexer::IsSparse);
 	void NewItem(reindexer::WrSerializer&, RandomGenerator&, const std::vector<Index>&);
 	void Dump(std::ostream& os, size_t offset) const { ns_.Dump(os, offset); }
 	FieldPath AddRndPkField(RandomGenerator&);
 
 private:
-	static void addIndex(Node&, size_t index, IsSparseT);
+	static void addIndex(Node&, size_t index, reindexer::IsSparse);
 	void fillChildren(Node::Children&, RandomGenerator&, unsigned level, bool& canBeArray, bool& canBeSparse);
 	const Node::Children& findLastContainer(const FieldPath&) const noexcept;
 	Node::Children& findLastContainer(const FieldPath&) noexcept;

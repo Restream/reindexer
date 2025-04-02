@@ -31,7 +31,7 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 			PerfStatCalculatorMT nsCopyCalc(copyStatsCounter_, enablePerfCounters);
 			calc.SetCounter(nsl->updatePerfCounter_);
 			calc.LockHit();
-			logPrintf(LogTrace, "Namespace::CommitTransaction creating copy for (%s)", nsl->name_);
+			logFmt(LogTrace, "Namespace::CommitTransaction creating copy for ({})", nsl->name_);
 			hasCopy_.store(true, std::memory_order_release);
 			CounterGuardAIR32 cg(nsl->cancelCommitCnt_);
 			try {
@@ -41,7 +41,9 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 				auto storageLock = statCalculator.CreateLock(nsl->storage_, &AsyncStorage::FullLock);
 
 				cg.Reset();
-				nsCopy_.reset(new NamespaceImpl(*nsl, storageLock));
+				auto lvectorIndexes = nsl->getVectorIndexes();
+				nsCopy_.reset(new NamespaceImpl(
+					*nsl, !lvectorIndexes.empty() ? tx.CalculateNewCapacity(nsl->itemsCount()) : nsl->itemsCount(), storageLock));
 				nsCopyCalc.HitManualy();
 				NsContext nsCtx(ctx);
 				nsCtx.CopiedNsRequest();
@@ -53,7 +55,7 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 														 storageLock);	// Updates can not be flushed until tx is commited into ns copy
 				} catch (Error& e) {
 					// This exception should never be seen - there are no good ways to recover from it
-					assertf(false, "Error during storage moving in namespace (%s) copying: %s", nsl->name_, e.what());
+					assertf(false, "Error during storage moving in namespace ({}) copying: {}", nsl->name_, e.what());
 				}
 
 				calc.SetCounter(nsCopy_->updatePerfCounter_);
@@ -77,20 +79,19 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 					}
 				}
 			} catch (Error& e) {
-				logPrintf(LogTrace, "Namespace::CommitTransaction copying tx for (%s) was terminated by exception:'%s'", nsl->name_,
-						  e.what());
+				logFmt(LogTrace, "Namespace::CommitTransaction copying tx for ({}) was terminated by exception:'{}'", nsl->name_, e.what());
 				calc.enable_ = false;
 				nsCopy_.reset();
 				hasCopy_.store(false, std::memory_order_release);
 				throw;
 			} catch (...) {
-				logPrintf(LogTrace, "Namespace::CommitTransaction copying tx for (%s) was terminated by unknown exception", nsl->name_);
+				logFmt(LogTrace, "Namespace::CommitTransaction copying tx for ({}) was terminated by unknown exception", nsl->name_);
 				calc.enable_ = false;
 				nsCopy_.reset();
 				hasCopy_.store(false, std::memory_order_release);
 				throw;
 			}
-			logPrintf(LogTrace, "Namespace::CommitTransaction copying tx for (%s) has succeed", nsl->name_);
+			logFmt(LogTrace, "Namespace::CommitTransaction copying tx for ({}) has succeed", nsl->name_);
 			if (clonerLck.owns_lock()) {
 				nsl = ns_;
 				clonerLck.unlock();
@@ -161,21 +162,22 @@ bool Namespace::isExpectingSelectsOnNamespace(const NamespaceImpl::Ptr& ns, cons
 void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, const std::string& storagePath,
 						 const std::function<void(std::function<void()>)>& replicateCb, const RdxContext& ctx) {
 	auto srcNsName = GetName(ctx);
-	logPrintf(LogInfo, "[rename] Trying to rename namespace '%s'...", srcNsName);
+	logFmt(LogInfo, "[rename] Trying to rename namespace '{}'...", srcNsName);
 	std::string dbpath;
 	const auto flushOpts = StorageFlushOpts().WithImmediateReopen();
 	auto lck = nsFuncWrapper<&NamespaceImpl::dataWLock>(ctx, true);
 	auto srcNsPtr = atomicLoadMainNs();
 	auto& srcNs = *srcNsPtr;
-	logPrintf(LogInfo, "[rename] Performing double check for unflushed data for '%s'...", srcNsName);
+	logFmt(LogInfo, "[rename] Performing double check for unflushed data for '{}'...", srcNsName);
 	srcNs.storage_.Flush(flushOpts);  // Repeat flush, to raise any disk errors before attempt to close storage
 	auto storageStatus = srcNs.storage_.GetStatusCached();
 	if (!storageStatus.err.ok()) {
-		throw Error(storageStatus.err.code(), "Unable to flush storage before rename: %s", storageStatus.err.what());
+		throw Error(storageStatus.err.code(), "Unable to flush storage before rename: {}", storageStatus.err.what());
 	}
-	logPrintf(LogInfo, "[rename] All data in '%s' were flushed succesfully", srcNsName);
+	logFmt(LogInfo, "[rename] All data in '{}' were flushed succesfully", srcNsName);
 	NamespaceImpl::Locker::WLockT dstLck;
 	NamespaceImpl::Ptr dstNs;
+	bool hadDstStorage = false;
 	if (dst) {
 		while (true) {
 			try {
@@ -192,7 +194,10 @@ void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, co
 		}
 		dstNs->checkClusterRole(ctx);
 		dbpath = dstNs->storage_.GetPath();
-	} else if (newName == srcNs.name_.OriginalName()) {
+		hadDstStorage = !dbpath.empty();
+	} else if (newName.empty()) {
+		throw Error(errParams, "Unable to rename {}: new name can not be empty", srcNs.name_);
+	} else if (iequals(newName, srcNs.name_)) {
 		return;
 	}
 	srcNs.checkClusterRole(ctx);
@@ -203,13 +208,15 @@ void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, co
 		dstNs->storage_.Destroy();
 	}
 
-	const bool hadStorage = (srcNs.storage_.IsValid());
-	auto storageType = StorageType::LevelDB;
 	const auto srcDbpath = srcNs.storage_.GetPath();
-	if (hadStorage) {
+	const bool requiresStorageMove = (srcNs.storage_.IsValid() && srcDbpath != dbpath);
+	auto storageType = StorageType::LevelDB;
+	if (requiresStorageMove) {
 		storageType = srcNs.storage_.GetType();
 		srcNs.storage_.Close();
-		fs::RmDirAll(dbpath);
+		if (hadDstStorage) {
+			fs::RmDirAll(dbpath);
+		}
 		int renameRes = fs::Rename(srcDbpath, dbpath);
 		if (renameRes < 0) {
 			if (dst) {
@@ -218,14 +225,14 @@ void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, co
 			}
 			auto err = srcNs.storage_.Open(storageType, srcNs.name_, srcDbpath, srcNs.storageOpts_);
 			if (!err.ok()) {
-				logPrintf(LogError, "Unable to reopen storage after unsuccesfull renaming: %s", err.what());
+				logFmt(LogError, "Unable to reopen storage after unsuccesfull renaming: {}", err.what());
 			}
-			throw Error(errParams, "Unable to rename '%s' to '%s'", srcDbpath, dbpath);
+			throw Error(errParams, "Unable to rename '{}' to '{}'", srcDbpath, dbpath);
 		}
 	}
 
 	if (dst) {
-		logPrintf(LogInfo, "[rename] Rename namespace '%s' to '%s'", srcNs.name_, dstNs->name_);
+		logFmt(LogInfo, "[rename] Rename namespace '{}' to '{}'", srcNs.name_, dstNs->name_);
 		srcNs.name_ = dstNs->name_;
 		if (srcNs.repl_.temporary) {
 			dstNs->markOverwrittenByForceSync();
@@ -235,17 +242,18 @@ void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, co
 		assertrx(dstLck.owns_lock());
 		dstLck.unlock();
 	} else {
-		logPrintf(LogInfo, "[rename] Rename namespace '%s' to '%s'", srcNs.name_, newName);
+		logFmt(LogInfo, "[rename] Rename namespace '{}' to '{}'", srcNs.name_, newName);
 		srcNs.name_ = NamespaceName(newName);
 	}
-	srcNs.payloadType_.SetName(srcNs.name_.OriginalName());
+	srcNs.payloadType_.SetName(srcNs.name_);
 	srcNs.tagsMatcher_.UpdatePayloadType(srcNs.payloadType_, NeedChangeTmVersion::No);
-	logPrintf(LogInfo, "[tm:%s]:%d: Rename done. TagsMatcher: { state_token: %08X, version: %d }", srcNs.name_, srcNs.wal_.GetServer(),
-			  srcNs.tagsMatcher_.stateToken(), srcNs.tagsMatcher_.version());
+	logFmt(LogInfo, "[tm:{}]:{}: Rename done. TagsMatcher: {{ state_token: {:#08x}, version: {} }}", srcNs.name_, srcNs.wal_.GetServer(),
+		   srcNs.tagsMatcher_.stateToken(), srcNs.tagsMatcher_.version());
 
-	if (hadStorage) {
-		logPrintf(LogInfo, "[rename] Storage was moved from '%s' to '%s'", srcDbpath, dbpath);
+	if (requiresStorageMove) {
+		logFmt(LogInfo, "[rename] Storage was moved from '{}' to '{}'", srcDbpath, dbpath);
 		auto status = srcNs.storage_.Open(storageType, srcNs.name_, dbpath, srcNs.storageOpts_);
+		logFmt(LogInfo, "[rename] Storage status on '{}': {}", dbpath, status.ok() ? "OK" : status.what());
 		if (!status.ok()) {
 			srcNs.storage_.Close();
 			throw status;

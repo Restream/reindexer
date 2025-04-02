@@ -5,7 +5,7 @@
 namespace reindexer {
 namespace cluster {
 
-AsyncDataReplicator::AsyncDataReplicator(AsyncDataReplicator::UpdatesQueueT& q, SharedSyncState<>& syncState, ReindexerImpl& thisNode,
+AsyncDataReplicator::AsyncDataReplicator(AsyncDataReplicator::UpdatesQueueT& q, SharedSyncState& syncState, ReindexerImpl& thisNode,
 										 Clusterizator& clusterizator)
 	: statsCollector_(std::string(kAsyncReplStatsType)),
 	  updatesQueue_(q),
@@ -45,7 +45,7 @@ void AsyncDataReplicator::Run() {
 
 		// NOLINTBEGIN (bugprone-unchecked-optional-access) Optionals were checked in isExpectingStartup()
 		if (config_->nodes.size() > UpdatesQueueT::kMaxReplicas) {
-			throw Error(errParams, "Async replication nodes limit was reached: %d", UpdatesQueueT::kMaxReplicas);
+			throw Error(errParams, "Async replication nodes limit was reached: {}", UpdatesQueueT::kMaxReplicas);
 		}
 		statsCollector_.Init(config_->nodes);
 		log_.SetLevel(config_->logLevel);
@@ -72,7 +72,7 @@ void AsyncDataReplicator::Run() {
 				auto err = thisNode_.SetClusterizationStatus(
 					ns, ClusterizationStatus{baseConfig_->serverID, ClusterizationStatus::Role::None}, RdxContext());
 				if (!err.ok()) {
-					logWarn("SetClusterizationStatus for the local '%s' namespace error: %s", ns, err.what());
+					logWarn("SetClusterizationStatus for the local '{}' namespace error: {}", ns, err.what());
 				}
 			}
 		}
@@ -114,6 +114,10 @@ bool AsyncDataReplicator::isExpectingStartup() const noexcept {
 		   config_->role != AsyncReplConfigData::Role::None;
 }
 
+size_t AsyncDataReplicator::threadsCount() const noexcept {
+	return config_.has_value() && config_->replThreadsCount > 0 ? config_->replThreadsCount : kDefaultReplThreadCount;
+}
+
 void AsyncDataReplicator::stop() {
 	if (isRunning()) {
 		for (auto& th : replThreads_) {
@@ -123,7 +127,7 @@ void AsyncDataReplicator::stop() {
 			th.AwaitTermination();
 		}
 		replThreads_.clear();
-		statsCollector_.Reset();
+		statsCollector_.Clear();
 		updatesQueue_.GetAsyncQueue()->SetWritable(false, Error());
 		updatesQueue_.ReinitAsyncQueue(statsCollector_, std::optional<NsNamesHashSetT>(), log_);
 	}
@@ -134,7 +138,7 @@ NsNamesHashSetT AsyncDataReplicator::getLocalNamespaces() {
 	NsNamesHashSetT namespaces;
 	auto err = thisNode_.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideSystem().HideTemporary().WithClosed(), RdxContext());
 	if (!err.ok()) {
-		throw Error(errNotValid, "Unable to enum local namespaces on async repl configuration: %s", err.what());
+		throw Error(errNotValid, "Unable to enum local namespaces on async repl configuration: {}", err.what());
 	}
 	for (auto& ns : nsDefs) {
 		namespaces.emplace(std::move(ns.name));

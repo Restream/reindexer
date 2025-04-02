@@ -1,6 +1,6 @@
 
 #include "walrecord.h"
-#include "core/cjson/baseencoder.h"
+#include "core/cjson/jsonbuilder.h"
 #include "tools/logger.h"
 #include "tools/serializer.h"
 
@@ -64,13 +64,13 @@ void WALRecord::Pack(WrSerializer& ser) const {
 	std::abort();
 }
 
-WALRecord::WALRecord(span<const uint8_t> packed) {
+WALRecord::WALRecord(std::span<const uint8_t> packed) {
 	if (!packed.size()) {
 		type = WalEmpty;
 		return;
 	}
 	Serializer ser(packed.data(), packed.size());
-	const unsigned unpackedType = ser.GetVarUint();
+	const unsigned unpackedType = ser.GetVarUInt();
 	if (unpackedType & kTxBit) {
 		inTransaction = true;
 		type = static_cast<WALRecType>(unpackedType ^ kTxBit);
@@ -104,8 +104,8 @@ WALRecord::WALRecord(span<const uint8_t> packed) {
 			return;
 		case WalItemModify:
 			itemModify.itemCJson = ser.GetVString();
-			itemModify.modifyMode = ItemModifyMode(ser.GetVarUint());
-			itemModify.tmVersion = ser.GetVarUint();
+			itemModify.modifyMode = ItemModifyMode(ser.GetVarUInt());
+			itemModify.tmVersion = ser.GetVarUInt();
 			return;
 		case WalRawItem:
 			rawItem.id = ser.GetUInt32();
@@ -119,7 +119,7 @@ WALRecord::WALRecord(span<const uint8_t> packed) {
 		case WalResetLocalWal:
 			return;
 	}
-	logPrintf(LogError, "Unexpected WAL rec type %d\n", int(type));
+	logFmt(LogError, "Unexpected WAL rec type {}\n", int(type));
 }
 
 static std::string_view wrecType2Str(WALRecType t) {
@@ -274,7 +274,8 @@ void WALRecord::GetJSON(JsonBuilder& jb, const std::function<std::string(std::st
 	std::abort();
 }
 
-WALRecord::WALRecord(std::string_view data) : WALRecord(span<const uint8_t>(reinterpret_cast<const uint8_t*>(data.data()), data.size())) {}
+WALRecord::WALRecord(std::string_view data)
+	: WALRecord(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(data.data()), data.size())) {}
 
 void MarkedPackedWALRecord::Pack(int16_t _server, const WALRecord& rec) {
 	server = _server;

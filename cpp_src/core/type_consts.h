@@ -12,9 +12,10 @@ typedef enum TagType {
 	TAG_OBJECT = 6,
 	TAG_END = 7,
 	TAG_UUID = 8,
+	TAG_FLOAT = 9,
 } TagType;
 
-static const uint8_t kMaxTagType = TAG_UUID;
+static const uint8_t kMaxTagType = TAG_FLOAT;
 
 typedef enum IndexType {
 	IndexStrHash = 0,
@@ -39,6 +40,10 @@ typedef enum IndexType {
 	IndexRTree = 19,
 	IndexUuidHash = 20,
 	IndexUuidStore = 21,
+	IndexHnsw = 22,
+	IndexVectorBruteforce = 23,
+	IndexIvf = 24,
+	IndexDummy = 25,  // Special index type for IndexDrop calls
 } IndexType;
 
 typedef enum QueryItemType {
@@ -74,6 +79,7 @@ typedef enum QueryItemType {
 	QuerySubQueryCondition = 29,
 	QueryFieldSubQueryCondition = 30,
 	QueryLocal = 31,
+	QueryKnnCondition = 32,
 } QueryItemType;
 
 typedef enum QuerySerializeMode {
@@ -101,6 +107,7 @@ typedef enum CondType {
 	CondEmpty = 9,
 	CondLike = 10,
 	CondDWithin = 11,
+	CondKnn = 12,
 } CondType;
 
 enum ErrorCode {
@@ -146,6 +153,7 @@ enum ErrorCode {
 	errParseYAML = 39,
 	errNamespaceOverwritten = 40,
 	errConnectSSL = 41,
+	errVersion = 42,
 };
 
 enum SchemaType { JsonSchemaType, ProtobufSchemaType };
@@ -171,11 +179,14 @@ enum QueryResultItemType {
 	QueryResultShardingVersion = 3,
 	QueryResultShardId = 4,
 	QueryResultIncarnationTags = 5,
+	QueryResultRankFormat = 6,
 };
 
 enum CacheMode { CacheModeOn = 0, CacheModeAggressive = 1, CacheModeOff = 2 };
 
 enum StrictMode { StrictModeNotSet = 0, StrictModeNone, StrictModeNames, StrictModeIndexes };
+
+enum RankFormat { SingleFloatValue = 0 };  // For the future hybrid queries
 
 typedef int IdType;
 typedef unsigned SortType;
@@ -212,6 +223,7 @@ typedef enum IndexOpt {
 	kIndexOptArray = 1 << 6,
 	kIndexOptDense = 1 << 5,
 	kIndexOptSparse = 1 << 3,
+	kIndexOptNoColumn = 1 << 2,
 } IndexOpt;
 
 typedef enum StotageOpt {
@@ -221,7 +233,7 @@ typedef enum StotageOpt {
 	kStorageOptVerifyChecksums = 1 << 3,
 	kStorageOptFillCache = 1 << 4,
 	kStorageOptSync = 1 << 5,
-	kStorageOptLazyLoad = 1 << 6,
+	// kStorageOptLazyLoad = 1 << 6, Deprecated
 	kStorageOptAutorepair = 1 << 9,
 } StorageOpt;
 
@@ -247,7 +259,6 @@ typedef struct StorageOpts {
 	bool IsVerifyChecksums() const noexcept { return options & kStorageOptVerifyChecksums; }
 	bool IsFillCache() const noexcept { return options & kStorageOptFillCache; }
 	bool IsSync() const noexcept { return options & kStorageOptSync; }
-	bool IsLazyLoad() const noexcept { return options & kStorageOptLazyLoad; }
 	bool IsAutorepair() const noexcept { return options & kStorageOptAutorepair; }
 
 	StorageOpts& Enabled(bool value = true) noexcept {
@@ -277,11 +288,6 @@ typedef struct StorageOpts {
 
 	StorageOpts& Sync(bool value = true) noexcept {
 		options = value ? options | kStorageOptSync : options & ~(kStorageOptSync);
-		return *this;
-	}
-
-	StorageOpts& LazyLoad(bool value = true) noexcept {
-		options = value ? options | kStorageOptLazyLoad : options & ~(kStorageOptLazyLoad);
 		return *this;
 	}
 
@@ -368,6 +374,7 @@ enum BindingCapability {
 	kBindingCapabilityQrIdleTimeouts = 1,
 	kBindingCapabilityResultsWithShardIDs = 1 << 1,
 	kBindingCapabilityIncarnationTags = 1 << 2,
+	kBindingCapabilityComplexRank = 1 << 3,
 };
 
 typedef struct BindingCapabilities {
@@ -377,6 +384,7 @@ typedef struct BindingCapabilities {
 	bool HasQrIdleTimeouts() const noexcept { return caps & kBindingCapabilityQrIdleTimeouts; }
 	bool HasResultsWithShardIDs() const noexcept { return caps & kBindingCapabilityResultsWithShardIDs; }
 	bool HasIncarnationTags() const noexcept { return caps & kBindingCapabilityIncarnationTags; }
+	bool HasComplexRank() const noexcept { return caps & kBindingCapabilityComplexRank; }
 #endif
 	int64_t caps;
 } BindingCapabilities;

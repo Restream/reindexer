@@ -41,8 +41,8 @@ void logInstallWriter(LogWriter writer, LoggerPolicy policy, int globalLogLevel)
 	const auto curPolicy = logger_details::g_MtLogger.load(std::memory_order_relaxed);
 	if (curPolicy != LoggerPolicy::NotInit && policy != curPolicy) {
 		errorText =
-			fmt::sprintf("Attempt to switch logger's lock policy, which was previously set. Current: %d; new: %d. Logger was not changed",
-						 int(curPolicy), int(policy));
+			fmt::format("Attempt to switch logger's lock policy, which was previously set. Current: {}; new: {}. Logger was not changed",
+						int(curPolicy), int(policy));
 		fputs(errorText.c_str(), stderr);
 		fputs("\n", stderr);
 		fflush(stderr);

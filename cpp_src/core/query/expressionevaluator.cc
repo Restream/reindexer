@@ -10,8 +10,8 @@ namespace reindexer {
 using namespace std::string_view_literals;
 
 namespace {
-constexpr char kWrongFieldTypeError[] = "Only integral type non-array fields are supported in arithmetical expressions: %s";
-constexpr char kScalarsInConcatenationError[] = "Unable to use scalar values in the arrays concatenation expressions: %s";
+constexpr char kWrongFieldTypeError[] = "Only integral type non-array fields are supported in arithmetical expressions: {}";
+constexpr char kScalarsInConcatenationError[] = "Unable to use scalar values in the arrays concatenation expressions: {}";
 
 enum class Command : int {
 	ArrayRemove = 1,
@@ -27,7 +27,7 @@ void ExpressionEvaluator::captureArrayContent(tokenizer& parser) {
 	}
 	for (;; tok = parser.next_token(tokenizer::flags::no_flags)) {
 		if rx_unlikely (tok.text() == "]"sv) {
-			throw Error(errParseSQL, "Expected field value, but found ']' in query, %s", parser.where());
+			throw Error(errParseSQL, "Expected field value, but found ']' in query, {}", parser.where());
 		}
 		arrayValues_.emplace_back(token2kv(tok, parser, CompositeAllowed::No, FieldAllowed::No));
 		tok = parser.next_token(tokenizer::flags::no_flags);
@@ -35,7 +35,7 @@ void ExpressionEvaluator::captureArrayContent(tokenizer& parser) {
 			break;
 		}
 		if rx_unlikely (tok.text() != ","sv) {
-			throw Error(errParseSQL, "Expected ']' or ',', but found '%s' in query, %s", tok.text(), parser.where());
+			throw Error(errParseSQL, "Expected ']' or ',', but found '{}' in query, {}", tok.text(), parser.where());
 		}
 	}
 }
@@ -66,7 +66,7 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::getPrimaryToken(tokenizer
 			try {
 				return {.value = getVariantFromToken(outTok), .type = PrimaryToken::Type::Scalar};
 			} catch (...) {
-				throw Error(errParams, "Unable to convert '%s' to numeric value", outTok.text());
+				throw Error(errParams, "Unable to convert '{}' to numeric value", outTok.text());
 			}
 		}
 		case TokenName:
@@ -85,7 +85,7 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::getPrimaryToken(tokenizer
 		case TokenSign:
 			break;
 	}
-	throw Error(errParams, "Unexpected token in expression: '%s'", outTok.text());
+	throw Error(errParams, "Unexpected token in expression: '{}'", outTok.text());
 }
 
 ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(tokenizer& parser, const PayloadValue& v,
@@ -114,8 +114,13 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(tokenizer
 								 }
 								 return {.value = Variant{}, .type = PrimaryToken::Type::Array};
 							 },
-							 [](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) noexcept
-							 -> PrimaryToken {
+							 [](KeyValueType::Float) noexcept -> PrimaryToken {
+								 // Indexed field type can not be float
+								 assertrx_throw(false);
+								 abort();
+							 },
+							 [](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
+									  KeyValueType::FloatVector>) noexcept -> PrimaryToken {
 								 assertrx_throw(false);
 								 abort();
 							 });
@@ -124,12 +129,17 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(tokenizer
 			[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) -> PrimaryToken {
 				pv.Get(field, fieldValues);
 				if rx_unlikely (fieldValues.empty()) {
-					throw Error(errParams, "Calculating value of an empty field is impossible: '%s'", outTok.text());
+					throw Error(errParams, "Calculating value of an empty field is impossible: '{}'", outTok.text());
 				}
 				return {.value = fieldValues.front(), .type = PrimaryToken::Type::Scalar};
 			},
-			[&, this](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Uuid>) -> PrimaryToken {
+			[&, this](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Uuid, KeyValueType::FloatVector>) -> PrimaryToken {
 				throwUnexpectedTokenError(parser, outTok);
+			},
+			[](KeyValueType::Float) noexcept -> PrimaryToken {
+				// Indexed field type can not be float
+				assertrx_throw(false);
+				abort();
 			},
 			[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) -> PrimaryToken {
 				assertrx_throw(false);
@@ -164,7 +174,7 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(tokenizer
 	if (fieldValues.size() == 1) {
 		const Variant* vptr = isArrayField ? &arrayValues_.back() : &fieldValues.front();
 		return vptr->Type().EvaluateOneOf(
-			[vptr, isArrayField](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) -> PrimaryToken {
+			[vptr, isArrayField](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) -> PrimaryToken {
 				return {.value = *vptr, .type = isArrayField ? PrimaryToken::Type::Array : PrimaryToken::Type::Scalar};
 			},
 			[&, this](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Uuid>) -> PrimaryToken {
@@ -173,7 +183,8 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(tokenizer
 				}
 				throwUnexpectedTokenError(parser, outTok);
 			},
-			[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) -> PrimaryToken {
+			[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null, KeyValueType::FloatVector>)
+				-> PrimaryToken {
 				assertrx_throw(0);
 				abort();
 			});
@@ -196,7 +207,7 @@ void ExpressionEvaluator::handleCommand(tokenizer& parser, const PayloadValue& v
 
 	token tok = parser.next_token();
 	if rx_unlikely (tok.text() != "("sv) {
-		throw Error(errParams, "Expected '(' after command name, not '%s'", tok.text());
+		throw Error(errParams, "Expected '(' after command name, not '{}'", tok.text());
 	}
 
 	// parse field name and read values from field
@@ -216,14 +227,14 @@ void ExpressionEvaluator::handleCommand(tokenizer& parser, const PayloadValue& v
 
 	tok = parser.next_token();
 	if rx_unlikely (tok.text() != ","sv) {
-		throw Error(errParams, "Expected ',' after field parameter, not '%s'", tok.text());
+		throw Error(errParams, "Expected ',' after field parameter, not '{}'", tok.text());
 	}
 
 	// parse list of delete items
 	auto val = getPrimaryToken(parser, v, StringAllowed::Yes, NonIntegralAllowed::Yes, valueToken, ctx);
 	if rx_unlikely (val.type != PrimaryToken::Type::Null) {
 		if ((val.type != PrimaryToken::Type::Array) && (val.type != PrimaryToken::Type::Scalar)) {
-			throw Error(errParams, "Expecting array or scalar as command parameter: '%s'", valueToken.text());
+			throw Error(errParams, "Expecting array or scalar as command parameter: '{}'", valueToken.text());
 		} else if ((val.type == PrimaryToken::Type::Scalar) && !val.value.IsNullValue()) {
 			arrayValues_.emplace_back(val.value);
 		}
@@ -231,7 +242,7 @@ void ExpressionEvaluator::handleCommand(tokenizer& parser, const PayloadValue& v
 
 	tok = parser.next_token();
 	if rx_unlikely (tok.text() != ")"sv) {
-		throw Error(errParams, "Expected ')' after command name and params, not '%s'", tok.text());
+		throw Error(errParams, "Expected ')' after command name and params, not '{}'", tok.text());
 	}
 
 	// do command
@@ -288,10 +299,10 @@ double ExpressionEvaluator::performArrayConcatenation(tokenizer& parser, const P
 		parser.next_token();
 		tok = parser.next_token();
 		if rx_unlikely (tok.text() != "|"sv) {
-			throw Error(errParams, "Expected '|', not '%s'", tok.text());
+			throw Error(errParams, "Expected '|', not '{}'", tok.text());
 		}
 		if rx_unlikely (state_ != StateArrayConcat && state_ != None) {
-			throw Error(errParams, "Unable to mix arrays concatenation and arithmetic operations. Got token: '%s'", tok.text());
+			throw Error(errParams, "Unable to mix arrays concatenation and arithmetic operations. Got token: '{}'", tok.text());
 		}
 		state_ = StateArrayConcat;
 		auto right = getPrimaryToken(parser, v, StringAllowed::No, NonIntegralAllowed::No, valueToken, ctx);
@@ -313,7 +324,7 @@ double ExpressionEvaluator::performMultiplicationAndDivision(tokenizer& parser, 
 	tok = parser.peek_token(tokenizer::flags::treat_sign_as_token);
 	while (tok.text() == "*"sv || tok.text() == "/"sv) {
 		if rx_unlikely (state_ == StateArrayConcat) {
-			throw Error(errParams, "Unable to mix arrays concatenation and arithmetic operations. Got token: '%s'", tok.text());
+			throw Error(errParams, "Unable to mix arrays concatenation and arithmetic operations. Got token: '{}'", tok.text());
 		}
 		state_ = StateMultiplyAndDivide;
 		if (tok.text() == "*"sv) {
@@ -338,7 +349,7 @@ double ExpressionEvaluator::performSumAndSubtracting(tokenizer& parser, const Pa
 	tok = parser.peek_token(tokenizer::flags::treat_sign_as_token);
 	while (tok.text() == "+"sv || tok.text() == "-"sv) {
 		if rx_unlikely (state_ == StateArrayConcat) {
-			throw Error(errParams, "Unable to mix arrays concatenation and arithmetic operations. Got token: '%s'", tok.text());
+			throw Error(errParams, "Unable to mix arrays concatenation and arithmetic operations. Got token: '{}'", tok.text());
 		}
 		state_ = StateSumAndSubtract;
 		if (tok.text() == "+"sv) {

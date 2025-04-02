@@ -1,6 +1,5 @@
 #pragma once
 
-#include "core/cjson/cjsonbuilder.h"
 #include "core/payload/payloadiface.h"
 #include "tools/errors.h"
 #include "vendor/msgpack/msgpackparser.h"
@@ -11,20 +10,22 @@ namespace reindexer {
 
 class TagsMatcher;
 class WrSerializer;
+class FloatVectorsHolderVector;
+class CJsonBuilder;
 
 class MsgPackDecoder {
 public:
 	explicit MsgPackDecoder(TagsMatcher& tagsMatcher) noexcept : tm_(tagsMatcher) {}
-	Error Decode(std::string_view buf, Payload& pl, WrSerializer& wrser, size_t& offset);
+	Error Decode(std::string_view buf, Payload& pl, WrSerializer& wrser, size_t& offset, FloatVectorsHolderVector&);
 
 private:
-	void decode(Payload& pl, CJsonBuilder& builder, const msgpack_object& obj, int tagName);
+	void decode(Payload&, CJsonBuilder&, const msgpack_object&, TagName, FloatVectorsHolderVector&);
 
-	int decodeKeyToTag(const msgpack_object_kv& obj);
+	TagName decodeKeyToTag(const msgpack_object_kv& obj);
 
 	template <typename T>
-	void setValue(Payload& pl, CJsonBuilder& builder, const T& value, int tagName);
-	bool isInArray() const noexcept { return arrayLevel_ > 0; }
+	void setValue(Payload&, CJsonBuilder&, const T& value, TagName);
+	InArray isInArray() const noexcept { return InArray(arrayLevel_ > 0); }
 
 	TagsMatcher& tm_;
 	TagsPath tagsPath_;

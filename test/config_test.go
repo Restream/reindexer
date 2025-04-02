@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/restream/reindexer/v4"
+	"github.com/restream/reindexer/v5"
 )
 
 type FtConfCheck struct {
@@ -32,9 +32,6 @@ func TestSetDefaultQueryDebug(t *testing.T) {
 			Namespace:               ns,
 			LogLevel:                "trace",
 			JoinCacheMode:           "on",
-			Lazyload:                true,
-			UnloadIdleThreshold:     rand.Int(),
-			StartCopyPolicyTxSize:   rand.Int(),
 			CopyPolicyMultiplier:    rand.Int(),
 			TxSizeToAlwaysCopy:      rand.Int(),
 			OptimizationTimeout:     rand.Int(),

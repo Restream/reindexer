@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/restream/reindexer/v4"
-	_ "github.com/restream/reindexer/v4/bindings/builtin"
+	"github.com/restream/reindexer/v5"
+	_ "github.com/restream/reindexer/v5/bindings/builtin"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -104,12 +104,14 @@ func doFTIndexCopy(t *testing.T, indexType string) {
 		MustExec()
 	assert.Equal(t, dataCount, dbItems.Count())
 	assert.NoError(t, dbItems.Error())
+	dbItems.Close()
 
 	dbItems = rx.Query(namespace).
 		WhereString("text_field", reindexer.EQ, "trash_*", "").
 		Exec()
 	assert.Equal(t, thrashCount, dbItems.Count())
 	assert.NoError(t, dbItems.Error())
+	dbItems.Close()
 }
 
 func TestFTFastSearch(t *testing.T) {

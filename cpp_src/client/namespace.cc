@@ -1,8 +1,6 @@
 
 #include "client/namespace.h"
-#include "client/coroqueryresults.h"
 #include "client/itemimpl.h"
-#include "client/reindexerimpl.h"
 #include "client/rpcclient.h"
 
 namespace reindexer {
@@ -10,7 +8,7 @@ namespace client {
 
 Namespace::Namespace(std::string _name)
 	: name(std::move(_name)),
-	  payloadType(name, {PayloadFieldType(KeyValueType::String{}, "-tuple", {}, false)}),
+	  payloadType(name, {PayloadFieldType(KeyValueType::String{}, "-tuple", {}, IsArray_False)}),
 	  tagsMatcher_(payloadType) {}
 
 Item Namespace::NewItem() {

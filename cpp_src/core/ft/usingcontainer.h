@@ -1,9 +1,12 @@
 #pragma once
-#include <vector>
-#include "estl/fast_hash_map.h"
-#include "estl/h_vector.h"
 
 // #define REINDEX_FT_EXTRA_DEBUG
+
+#ifdef REINDEX_FT_EXTRA_DEBUG
+#include <vector>
+#endif // REINDEX_FT_EXTRA_DEBUG
+#include "estl/fast_hash_map.h"
+#include "estl/h_vector.h"
 
 namespace reindexer {
 

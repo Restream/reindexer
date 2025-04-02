@@ -3,7 +3,6 @@
 #include <benchmark/benchmark.h>
 
 #include "helpers.h"
-#include "vendor/spdlog/spdlog.h"
 
 using benchmark::ConsoleReporter;
 

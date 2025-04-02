@@ -78,7 +78,6 @@ Operator `LOCAL` can be used only with `SELECT` queries.
 - Update/Delete requests can only be executed on the single shard with explicit sharding key in request.
 - Distributed requests for fulltext index are not supported.
 - The only allowed condition for sharding index in queries is '='. So each query must be executed either on the single node or on every node (when sharding key is not specified).
-- `ORDER BY` in distributed requests requires json paths and index names beind the same for sorted fields.
 - Distributed joins and aggregations AVG, Facet and Distinct are not supported.
 - Fulltext, array or composite indexes may not be used as sharding key.
 - `Explain` is unavailable for distributed queries.

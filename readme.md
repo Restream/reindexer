@@ -14,19 +14,13 @@ This document describes Go connector and its API. To get information
 about reindexer server and HTTP API refer to
 [reindexer documentation](cpp_src/readme.md)
 
-# Versions overview
-
-There are two LTS-versions of reindexer available: v3.x.x and v4.x.x.
-
-3.x.x is currently our mainstream branch and 4.x.x (release/4 branch) is experimental release-branch with RAFT-cluster and sharding support.
-Storages are compatible between those versions, however, replication configs are totally different. Versions 3 and 4 are getting all the same bugfixes and features (except replication-related ones).
-
 # Table of contents:
 
 - [Features](#features)
   - [Performance](#performance)
   - [Memory Consumption](#memory-consumption)
   - [Full text search](#full-text-search)
+  - [Vector indexes (ANN/KNN)](#vector-indexes-annknn)
   - [Disk Storage](#disk-storage)
   - [Replication](#replication)
   - [Sharding](#sharding)
@@ -45,6 +39,7 @@ Storages are compatible between those versions, however, replication configs are
   - [Index Types and Their Capabilities](#index-types-and-their-capabilities)
   - [Nested Structs](#nested-structs)
   - [Sort](#sort)
+    - [Forced sort](#forced-sort)
   - [Counting](#counting)
   - [Text pattern search with LIKE condition](#text-pattern-search-with-like-condition)
   - [Update queries](#update-queries)
@@ -144,6 +139,10 @@ To achieve that, several optimizations are employed, both on the C++ and Go leve
 
 Reindexer has internal full text search engine. Full text search usage documentation and examples are [here](fulltext.md)
 
+### Vector indexes (ANN/KNN)
+
+Reindexer has internal k-nearest neighbors search engine. k-nearest neighbors search usage documentation and examples are [here](float_vector.md)
+
 ### Disk Storage
 
 Reindexer can store documents to and load documents from disk via LevelDB. Documents are written to the storage backend asynchronously by large batches automatically in background.
@@ -152,7 +151,7 @@ When a namespace is created, all its documents are stored into RAM, so the queri
 
 ### Replication
 
-Reindexer supports synchronious and asynchronious replication. Check replication documentation [here](replication.md)
+Reindexer supports synchronous and asynchronous replication. Check replication documentation [here](replication.md)
 
 ### Sharding
 
@@ -170,16 +169,16 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/restream/reindexer/v4"
+	"github.com/restream/reindexer/v5"
 	// choose how the Reindexer binds to the app (in this case "builtin," which means link Reindexer as a static library)
-	_ "github.com/restream/reindexer/v4/bindings/builtin"
+	_ "github.com/restream/reindexer/v5/bindings/builtin"
 
 	// OR use Reindexer as standalone server and connect to it via TCP or unix domain socket (if available).
-	// _ "github.com/restream/reindexer/v4/bindings/cproto"
-	
+	// _ "github.com/restream/reindexer/v5/bindings/cproto"
+
 	// OR link Reindexer as static library with bundled server.
-	// _ "github.com/restream/reindexer/v4/bindings/builtinserver"
-	// "github.com/restream/reindexer/v4/bindings/builtinserver/config"
+	// _ "github.com/restream/reindexer/v5/bindings/builtinserver"
+	// "github.com/restream/reindexer/v5/bindings/builtinserver/config"
 
 )
 
@@ -352,7 +351,7 @@ Reindexer can run in 3 different modes:
 In this mode Reindexer's Go-binding does not depend on reindexer's static library.
 
 1.  [Install Reindexer Server](cpp_src/readme.md#installation)
-2.  go get -a github.com/restream/reindexer/v4
+2.  go get -a github.com/restream/reindexer/v5
 
 #### Official docker image
 
@@ -368,11 +367,11 @@ docker run -p9088:9088 -p6534:6534 -it reindexer/reindexer
 
 #### Prerequirements
 
-Reindexer's core is written in C++17 and uses LevelDB as the storage backend, so the Cmake, C++17 toolchain and LevelDB must be installed before installing Reindexer.
+Reindexer's core is written with C++20 and uses LevelDB as the storage backend, so Cmake, C++20 toolchain and LevelDB must be installed before installing Reindexer. Also, OpenMP and BLAS/LAPACK libraries may be required for full vector indexes support.
 
-To build Reindexer, g++ 8+, clang 7+ or [mingw64](https://sourceforge.net/projects/mingw-w64/) is required.
+To build Reindexer, g++ 10+, clang 15+ or [mingw64](https://sourceforge.net/projects/mingw-w64/) is required.
 
-In those modes Reindexer's Go-binding depends on reindexer's static libraries (core, server and resource).
+In embedded modes Reindexer's Go-binding depends on reindexer's static libraries (core, server and resource).
 
 #### Get Reindexer using go.mod
 
@@ -385,7 +384,7 @@ Reindexer's libraries must be either installed from [sources](cpp_src/readme.md#
 Then get the module:
 
 ```bash
-go get -a github.com/restream/reindexer/v4
+go get -a github.com/restream/reindexer/v5
 ```
 
 #### Get Reindexer using go.mod and replace
@@ -394,8 +393,8 @@ If you need modified Reindexer's sources, you can use `replace` like that.
 
 1. Download and build reindexer:
 ```bash
-# Clone reindexer via git. It's also possible to use 'go get -a github.com/restream/reindexer/v4', but it's behavior may vary depending on Go's version
-git clone --branch release/4 https://github.com/restream/reindexer.git $GOPATH/src/reindexer
+# Clone reindexer via git. It's also possible to use 'go get -a github.com/restream/reindexer/v5', but it's behavior may vary depending on Go's version
+git clone https://github.com/restream/reindexer.git $GOPATH/src/reindexer
 bash $GOPATH/src/reindexer/dependencies.sh
 # Generate builtin binding
 cd $GOPATH/src/reindexer
@@ -408,8 +407,8 @@ go generate ./bindings/builtinserver
 ```bash
 # Go to your app's directory
 cd /your/app/path
-go get -a github.com/restream/reindexer/v4
-go mod edit -replace github.com/restream/reindexer/v4=$GOPATH/src/reindexer
+go get -a github.com/restream/reindexer/v5
+go mod edit -replace github.com/restream/reindexer/v5=$GOPATH/src/reindexer
 ```
 
 In this case, Go-binding will generate explicit libraries' and paths' list and will not use pkg-config.
@@ -423,11 +422,11 @@ export GO111MODULE=off # Disable go1.11 modules
 # Go to your app's directory
 cd /your/app/path
 # Clone reindexer via git. It's also possible to use 'go get -a github.com/restream/reindexer', but it's behavior may vary depending on Go's version
-git clone --branch release/4 https://github.com/restream/reindexer.git vendor/github.com/restream/reindexer/v4
+git clone https://github.com/restream/reindexer.git vendor/github.com/restream/reindexer/v5
 # Generate builtin binding
-go generate -x ./vendor/github.com/restream/reindexer/v4/bindings/builtin
+go generate -x ./vendor/github.com/restream/reindexer/v5/bindings/builtin
 # Optional (build builtin server binding)
-go generate -x ./vendor/github.com/restream/reindexer/v4/bindings/builtinserver
+go generate -x ./vendor/github.com/restream/reindexer/v5/bindings/builtinserver
 ```
 
 #### Get Reindexer using go.mod (vendoring)
@@ -479,7 +478,7 @@ Fields with regular indexes are not nullable. Condition `is NULL` is supported o
 ### Nested Structs
 
 By default, Reindexer scans all nested structs and adds their fields to the namespace (as well as indexes specified).
-During indexes scan private (unexported fields), fields tagged with `reindex:"-"` and fields tagged with `json:"-"` will be skipped.
+During indexes scan private (non-exported fields), fields tagged with `reindex:"-"` and fields tagged with `json:"-"` will be skipped.
 
 ```go
 type Actor struct {
@@ -524,7 +523,7 @@ Fields of the joined namespaces must be written like this: `joined_namespace.fie
 
 `Abs()` means absolute value of an argument.
 
-`Rank()` means fulltext rank of match and is applicable only in fulltext query.
+`Rank()` means fulltext or knn rank of match and is applicable only in fulltext and knn query.
 
 `ST_Distance()` means distance between geometry points (see [geometry subsection](#geometry)). The points could be columns in current or joined namespaces or fixed point in format `ST_GeomFromText('point(1 -3)')`
 
@@ -566,7 +565,7 @@ query = db.Query("actors").
 query = db.Query("actors").Sort("person.age / -10 + price / 1000 * (id - 5)", true)
 ....
 query = db.Query("actors").Where("description", reindexer.EQ, "ququ").
-    Sort("rank() + id / 100", true)   // Sort with fulltext rank
+    Sort("rank() + id / 100", true)   // Sort with rank
 ....
 // Sort by geometry distance
 query = db.Query("actors").
@@ -604,9 +603,17 @@ type SortModeCustomItem struct {
 
 The very first character in this list has the highest priority, priority of the last character is the smallest one. It means that sorting algorithm will put items that start with the first character before others. If some characters are skipped their priorities would have their usual values (according to characters in the list).
 
+#### Forced sort
+
+It's possible to force sorting order by pulling some specific keys on the top of the selection results (works with `ASC` sort only):
+
+```go
+query := db.Query("actors").Sort("id", false, 10, 15, 17) // Documents with IDs 10, 15, 17 will be on the top (if corresponding documents exist)
+```
+
 ### Counting
 
-Reindexer supports 2 versiong of counting aggregration:
+Reindexer supports 2 version of counting aggregation:
 - `count()` - this aggregation counts all the documents, which match query's filters;
 - `count_cached()` - this allows reindexer to use cached count results. Generally this method is more fast (especially for queries with low `limit()` value), however may return outdated results, if cache was not invalidated after some documents' changes.
 
@@ -714,7 +721,7 @@ Example of using Update queries in golang code:
 ```go
 db.Query("items").Where("id", reindexer.EQ, 40).Set("field1", value1).Set("field2", value2).Update()
 ```
-- there can be multiple `.Set` expressoins - one for a field. Also, it is possible to combine several `Set...` expressions of different types in one query, like this: `Set().SetExpression().SetObject()...`
+- there can be multiple `.Set` expressions - one for a field. Also, it is possible to combine several `Set...` expressions of different types in one query, like this: `Set().SetExpression().SetObject()...`
 
 #### Update field with object
 
@@ -1168,7 +1175,7 @@ type Item struct {
 	query := db.Query("items").Sort("rating+year", true)
 
 	// Sort query results by rating first, then by year, and put item where rating == 5 and year == 2010 first
-	query := db.Query("items").Sort("rating+year", true,[]interface{}{5,2010})
+	query := db.Query("items").Sort("rating+year", true, []interface{}{5,2010})
 ```
 
 For make query to the composite index, pass []interface{} to `.WhereComposite` function of Query builder:
@@ -1512,11 +1519,11 @@ SELECT * FROM items WHERE ST_DWithin(point_non_indexed, ST_GeomFromText('point(1
 
 ## Events subscription
 
-When reindexer used as caching DB by mupltiple applications, it may be helpfull to subscribe on the database updates (for example, if you need to invalidate internal application cache on some database event):
+When reindexer used as caching DB by multiple applications, it may be helpful to subscribe on the database updates (for example, if you need to invalidate internal application cache on some database event):
 
 ```go
 
-import events "github.com/restream/reindexer/v4/events"
+import events "github.com/restream/reindexer/v5/events"
 
 // Create subscription options for the specific event types (any documents modifications + transactions commits)
 opts := events.DefaultEventsStreamOptions().WithDocModifyEvents().WithTransactionCommitEvents()
@@ -1551,7 +1558,7 @@ There are predefined events collections in [streamopts.go](#events/streamopts.go
 `EventsStreamOptions` also allow to configure events contents: LSN, database name, timestamps, etc. Currently events do not contain related documents' JSON/CJSON.
 
 Note: Reindexer's core is using internal queue to collect and send events to the subscribers. Events objects are shared between events queue and replication queue. Max size of those queues may be configured via `maxupdatessize`(standalone)/`MaxUpdatesSizeBytes`(builtinserver)/`WithMaxUpdatesSize()`(builtin) DB parameter (default size is 1 GB).
-In case of queue overflow some of the events may be dropped and `EventTypeUpdatesDrop` will be generated instead of them.
+In case of queue overflow some events may be dropped and `EventTypeUpdatesDrop` will be generated instead of them.
 
 ## Logging, debug, profiling and tracing
 
@@ -1623,10 +1630,10 @@ Usage of cgo profiler is very similar with usage of [go profiler](https://golang
 1. Add import:
 
 ```go
-import _ "github.com/restream/reindexer/v4/pprof"
+import _ "github.com/restream/reindexer/v5/pprof"
 ```
 
-2. If your application is not already running an http server, you need to start one. Add "net/http" and "log" to your imports and the following code to your main function:
+2. If your application is not already running a http server, you need to start one. Add "net/http" and "log" to your imports and the following code to your main function:
 
 ```go
 go func() {
@@ -1651,7 +1658,7 @@ Internal Reindexer's profiler is based on gperf_tools library and unable to get 
 import _ "net/http/pprof"
 ```
 
-2. If your application is not already running an http server, you need to start one. Add "net/http" and "log" to your imports and the following code to your main function:
+2. If your application is not already running a http server, you need to start one. Add "net/http" and "log" to your imports and the following code to your main function:
 
 ```go
 go func() {
@@ -1785,4 +1792,3 @@ Landing: https://reindexer.io/
 Packages repo: https://repo.reindexer.io/
 
 More documentation (RU): https://reindexer.io/reindexer-docs/
-

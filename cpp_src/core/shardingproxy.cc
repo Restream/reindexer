@@ -1,12 +1,16 @@
 #include "shardingproxy.h"
+#include <sstream>
+#include "client/itemimplbase.h"
+#include "cluster/consts.h"
 #include "cluster/sharding/locatorserviceadapter.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
 #include "cluster/stats/replicationstats.h"
-#include "core/defnsconfigs.h"
+#include "estl/gift_str.h"
 #include "estl/smart_lock.h"
 #include "parallelexecutor.h"
 #include "tools/catch_and_return.h"
 #include "tools/jsontools.h"
+#include "tools/logger.h"
 
 namespace reindexer {
 
@@ -198,7 +202,7 @@ void ShardingProxy::obtainConfigForResetRouting(std::optional<cluster::ShardingC
 			} else {
 				static constexpr auto errMessage =
 					"Sharding config rollback error: config candidate is not available. Unable to perform rollback";
-				logPrintf(LogInfo, errMessage);
+				logFmt(LogInfo, errMessage);
 				throw Error(errParams, errMessage);
 			}
 		} else {
@@ -212,7 +216,7 @@ void ShardingProxy::obtainConfigForResetRouting(std::optional<cluster::ShardingC
 	} else {
 		static constexpr auto errMessage =
 			"Sharding is initialized on this node, but the config for resetting it on others is not available";
-		logPrintf(LogInfo, errMessage);
+		logFmt(LogInfo, errMessage);
 		throw Error(errParams, errMessage);
 	}
 }
@@ -223,7 +227,7 @@ int64_t ShardingProxy::generateSourceId() const {
 	sourceId &= ~cluster::ShardingConfig::serverIdMask;
 	int64_t serverId = impl_.GetServerID();
 	if (serverId < 0 || serverId >= 1000) {
-		throw Error(errParams, "Incorrect serverId(%d) for sharding config sourceId generation.", serverId);
+		throw Error(errParams, "Incorrect serverId({}) for sharding config sourceId generation.", serverId);
 	}
 	sourceId |= (serverId << cluster::ShardingConfig::serverIdPos);
 	return sourceId;
@@ -268,7 +272,7 @@ Error ShardingProxy::handleNewShardingConfig(const gason::JsonNode& configJSON, 
 			return conn.SaveNewShardingConfig(cfgsStorage[shardId], sourceId);
 		};
 
-		logPrintf(LogInfo, "Start attempt applying new sharding config. Source - %d", sourceId);
+		logFmt(LogInfo, "Start attempt applying new sharding config. Source - {}", sourceId);
 
 		// Saving config candidates in shards obtained from received config
 		err = execNodes.Exec(
@@ -280,7 +284,7 @@ Error ShardingProxy::handleNewShardingConfig(const gason::JsonNode& configJSON, 
 			auto errReset = execNodes.Exec(
 				ctx, sharding::ConnectionsPtr(connections), &client::Reindexer::ResetShardingConfigCandidate,
 				[](int64_t) { return Error(); }, sourceId);
-			return Error(err.code(), err.what() + (!errReset.ok() ? ".\n" + errReset.what() : ""));
+			return Error(err.code(), err.whatStr() + (!errReset.ok() ? ".\n" + errReset.whatStr() : ""));
 		}
 
 		// Resetting existing shardings in case of successful saving of all candidates
@@ -295,7 +299,8 @@ Error ShardingProxy::handleNewShardingConfig(const gason::JsonNode& configJSON, 
 
 		// Rollback config candidates or applied configs if any errors occured on ApplyNewShardingConfig stage
 		if (!err.ok()) {
-			return Error(err.code(), err.what() + ".\n" + resetShardingConfigs<ConfigResetFlag::RollbackApplied>(sourceId, ctx).what());
+			return Error(err.code(),
+						 err.whatStr() + ".\n" + resetShardingConfigs<ConfigResetFlag::RollbackApplied>(sourceId, ctx).whatStr());
 		}
 
 		return Error();
@@ -309,7 +314,7 @@ Error ShardingProxy::handleNewShardingConfigLocally(const gason::JsonNode& confi
 		if (configJSON.empty()) {
 			if (auto lockedConfigCandidate = configCandidate_.SharedLock(ctx); lockedConfigCandidate.Config()) {
 				return Error(errParams,
-							 "Attempt to reset the config if there is an unprocessed config candidate with sourceId - %d. Try later.",
+							 "Attempt to reset the config if there is an unprocessed config candidate with sourceId - {}. Try later.",
 							 lockedConfigCandidate.SourceId());
 			}
 
@@ -317,7 +322,7 @@ Error ShardingProxy::handleNewShardingConfigLocally(const gason::JsonNode& confi
 			[[maybe_unused]] auto err = impl_.ResetShardingConfig();
 			lockedShardingRouter.Reset();
 			shardingInitialized_.store(false, std::memory_order_release);
-			logPrintf(LogInfo, "Sharding config successfully reseted locally");
+			logFmt(LogInfo, "Sharding config successfully reseted locally");
 			return Error();
 		}
 
@@ -339,10 +344,10 @@ Error ShardingProxy::handleNewShardingConfigLocally(const ConfigType& rawConfig,
 		int64_t sourceId;
 		if (externalSourceId.has_value()) {
 			sourceId = externalSourceId.value();
-			logPrintf(LogInfo, "Start attempt applying sharding config locally. Forced source id - %d", sourceId);
+			logFmt(LogInfo, "Start attempt applying sharding config locally. Forced source id - {}", sourceId);
 		} else {
 			sourceId = generateSourceId();
-			logPrintf(LogInfo, "Start attempt applying sharding config locally. Generated source id - %d", sourceId);
+			logFmt(LogInfo, "Start attempt applying sharding config locally. Generated source id - {}", sourceId);
 		}
 
 		saveShardingCfgCandidateImpl(std::move(config), sourceId, ctx);
@@ -361,7 +366,7 @@ bool ShardingProxy::needProxyWithinCluster(const RdxContext& ctx) {
 	auto err = impl_.GetRaftInfo(info, ctx);
 	if (!err.ok()) {
 		if (err.code() == errTimeout || err.code() == errCanceled) {
-			err = Error(err.code(), "Unable to get cluster's leader: %s", err.what());
+			err = Error(err.code(), "Unable to get cluster's leader: {}", err.what());
 			throw err;
 		}
 	}
@@ -418,19 +423,27 @@ Error ShardingProxy::ShardingControlRequest(const sharding::ShardingControlReque
 			case Type::ApplyLeaderConfig: {
 				assertrx(!ctx.GetOriginLSN().isEmpty());
 				const auto& data = std::get<sharding::ApplyLeaderConfigCommand>(request.data);
-				return data.config.empty() ? handleNewShardingConfigLocally(gason::JsonNode::EmptyNode(), std::optional<int64_t>(), ctx)
-										   : handleNewShardingConfigLocally<span<char>>(std::string(data.config), data.sourceId, ctx);
+				if (data.config.empty()) {
+					return handleNewShardingConfigLocally(gason::JsonNode::EmptyNode(), std::optional<int64_t>(), ctx);
+				}
+				return handleNewShardingConfigLocally<std::string_view>(data.config, data.sourceId, ctx);
 			}
 			default:
-				return Error(errLogic, "Unsupported sharding request command: %d", int(request.type));
+				return Error(errLogic, "Unsupported sharding request command: {}", int(request.type));
 		}
 	}
 	CATCH_AND_RETURN
 }
 
+Error ShardingProxy::SubscribeUpdates(IEventsObserver& observer, EventSubscriberConfig&& cfg) {
+	return impl_.SubscribeUpdates(observer, std::move(cfg));
+}
+
+Error ShardingProxy::UnsubscribeUpdates(IEventsObserver& observer) { return impl_.UnsubscribeUpdates(observer); }
+
 void ShardingProxy::saveShardingCfgCandidate(const sharding::SaveConfigCommand& data, const RdxContext& ctx) {
 	cluster::ShardingConfig config;
-	auto err = config.FromJSON(std::string(data.config));
+	auto err = config.FromJSON(std::string_view(data.config));
 	if (!err.ok()) {
 		throw err;
 	}
@@ -447,11 +460,11 @@ void ShardingProxy::saveShardingCfgCandidateImpl(cluster::ShardingConfig config,
 
 	if (lockedConfigCandidate.Config()) {
 		if (lockedConfigCandidate.SourceId() == sourceId) {
-			logPrintf(LogInfo, "This config candidate has already been saved previously. Source - %d.", sourceId);
+			logFmt(LogInfo, "This config candidate has already been saved previously. Source - {}.", sourceId);
 			return;
 		}
 		throw Error(errParams,
-					"Config candidate is busy already (when trying to save a new config). Received Source - %d. Current sourceId - %d",
+					"Config candidate is busy already (when trying to save a new config). Received Source - {}. Current sourceId - {}",
 					sourceId, lockedConfigCandidate.SourceId());
 	}
 	config.sourceId = sourceId;
@@ -461,7 +474,7 @@ void ShardingProxy::saveShardingCfgCandidateImpl(cluster::ShardingConfig config,
 	const auto cfgTimeout = config.configRollbackTimeout;
 	lockedConfigCandidate.Config() = std::move(config);
 
-	logPrintf(LogInfo, "New sharding config candidate saved. Source - %d", sourceId);
+	logFmt(LogInfo, "New sharding config candidate saved. Source - {}", sourceId);
 
 	lockedConfigCandidate.InitReseterThread([this, cfgTimeout]() {
 		using std::this_thread::sleep_for;
@@ -558,15 +571,15 @@ bool ShardingProxy::NamespaceDataChecker::needQueryCheck(const cluster::Sharding
 
 void ShardingProxy::NamespaceDataChecker::Check(ShardingProxy& proxy, const RdxContext& ctx) {
 	if (auto oldConfigPtr = proxy.impl_.GetShardingConfig(); oldConfigPtr && !needQueryCheck(*oldConfigPtr)) {
-		logPrintf(LogInfo, "Verification of the sharding keys for the namespace '%s' on shard %d is not required", ns_.ns, thisShardId_);
+		logFmt(LogInfo, "Verification of the sharding keys for the namespace '{}' on shard {} is not required", ns_.ns, thisShardId_);
 		return;
 	}
 	auto checkQuery = query();
 
 	WrSerializer wr;
 	checkQuery.GetSQL(wr);
-	logPrintf(LogInfo, "Checking namespace '%s' on the shard %d for the absence of irrelevant sharding keys using a query '%s'", ns_.ns,
-			  thisShardId_, wr.Slice());
+	logFmt(LogInfo, "Checking namespace '{}' on the shard {} for the absence of irrelevant sharding keys using a query '{}'", ns_.ns,
+		   thisShardId_, wr.Slice());
 
 	LocalQueryResults qr;
 	auto err = proxy.impl_.Select(checkQuery, qr, ctx);
@@ -577,7 +590,7 @@ void ShardingProxy::NamespaceDataChecker::Check(ShardingProxy& proxy, const RdxC
 	if (qr.Count() != 0) {
 		std::stringstream sstream;
 		qr.begin().GetItem()[ns_.index].operator Variant().Dump(sstream);
-		throw Error(errParams, "Namespace '%s' on the shard %d contains keys unrelated to the config(e.g. %s)", ns_.ns, thisShardId_,
+		throw Error(errParams, "Namespace '{}' on the shard {} contains keys unrelated to the config(e.g. {})", ns_.ns, thisShardId_,
 					sstream.str());
 	}
 }
@@ -602,7 +615,7 @@ void ShardingProxy::checkSyncCluster(const cluster::ShardingConfig& shardingConf
 
 		auto status = connection->Connect(dsn, client::ConnectOpts().CreateDBIfMissing());
 		if (!status.ok()) {
-			throw Error(errLogic, "Error connecting to node [%s]: %s", dsn, status.what());
+			throw Error(errLogic, "Error connecting to node [{}]: {}", dsn, status.what());
 		}
 
 		const Query q = Query(std::string(kReplicationStatsNamespace)).Where("type", CondEq, Variant(cluster::kClusterReplStatsType));
@@ -626,7 +639,7 @@ void ShardingProxy::checkSyncCluster(const cluster::ShardingConfig& shardingConf
 		}
 
 		if (!stats.nodeStats.empty() && stats.nodeStats.size() != hosts.size()) {
-			throw Error(errLogic, "Not equal count of dsns in cluster and sharding config[%s]", dsn);
+			throw Error(errLogic, "Not equal count of dsns in cluster and sharding config[{}]", dsn);
 		}
 
 		for (const auto& nodeStat : stats.nodeStats) {
@@ -645,21 +658,21 @@ void ShardingProxy::applyNewShardingConfig(const sharding::ApplyConfigCommand& d
 
 	if (!config) {
 		if (sourceId == lockedConfigCandidate.SourceId()) {
-			logPrintf(LogInfo, "Empty sharding config candidate. Probably it was already successfully applied. Source - %d", sourceId);
+			logFmt(LogInfo, "Empty sharding config candidate. Probably it was already successfully applied. Source - {}", sourceId);
 			return;
 		} else {
-			throw Error(errParams, "Attempt to apply empty sharding config candidate. Source - %d", sourceId);
+			throw Error(errParams, "Attempt to apply empty sharding config candidate. Source - {}", sourceId);
 		}
 	}
 
 	if (sourceId != lockedConfigCandidate.SourceId()) {
-		throw Error(errParams, "Attempt to apply a config with a different sourceId - %d. Current sourceId - %d", sourceId,
+		throw Error(errParams, "Attempt to apply a config with a different sourceId - {}. Current sourceId - {}", sourceId,
 					lockedConfigCandidate.SourceId());
 	}
 
 	if (auto oldConfig = impl_.GetShardingConfig()) {
 		if (*oldConfig == *config) {
-			logPrintf(LogInfo, "New sharding config is same as old sharding config. Source - %d", sourceId);
+			logFmt(LogInfo, "New sharding config is same as old sharding config. Source - {}", sourceId);
 			config = std::nullopt;
 			return;
 		}
@@ -670,18 +683,25 @@ void ShardingProxy::applyNewShardingConfig(const sharding::ApplyConfigCommand& d
 	impl_.SaveNewShardingConfigFile(*config);
 
 	auto err = impl_.ResetShardingConfig(std::move(config));
+#if 0
 	// TODO: after allowing actions to upsert #config namespace, make ApplyNewShardingConfig returned void, allow except here
 	// if (!err.ok()) return err;
-
+#else
+	// Skipping only a false positive exception when updating #config-namespace
+	if (!err.ok() && err.code() != errLogic && !err.whatStr().starts_with("Sharding configuration can not be updated directly")) {
+		logFmt(LogError, "ERROR during resetting sharding config: {}; Source - %d", err.what(), sourceId);
+		throw err;
+	}
+#endif
 	config = std::nullopt;
 	lockedShardingRouter = std::make_shared<sharding::LocatorService>(impl_, *impl_.GetShardingConfig());
 
 	err = lockedShardingRouter->Start();
 	if (err.ok()) {
 		shardingInitialized_.store(true, std::memory_order_release);
-		logPrintf(LogInfo, "New sharding config successfully applied. Source - %d", sourceId);
+		logFmt(LogInfo, "New sharding config successfully applied. Source - {}", sourceId);
 	} else {
-		logPrintf(LogError, "ERROR start sharding router:\n{}\nSource - %d", err.what(), sourceId);
+		logFmt(LogError, "ERROR start sharding router:\n{}\nSource - {}", err.what(), sourceId);
 		lockedShardingRouter.Reset();
 		shardingInitialized_.store(false, std::memory_order_release);
 		throw err;
@@ -693,7 +713,7 @@ void ShardingProxy::resetOrRollbackShardingConfig(const sharding::ResetConfigCom
 	int64_t sourceId = data.sourceId;
 	auto lockedConfigCandidate = configCandidate_.UniqueLock(ctx);
 	if (lockedConfigCandidate.Config() && sourceId != lockedConfigCandidate.SourceId()) {
-		throw Error(errParams, "Attempt to %s a config with a different sourceId - %d. Current sourceId - %d",
+		throw Error(errParams, "Attempt to {} a config with a different sourceId - {}. Current sourceId - {}",
 					resetFlag == ConfigResetFlag::RollbackApplied ? "rollback" : "reset", sourceId, lockedConfigCandidate.SourceId());
 	}
 
@@ -705,8 +725,8 @@ void ShardingProxy::resetOrRollbackShardingConfig(const sharding::ResetConfigCom
 
 	lockedShardingRouter.Reset();
 	shardingInitialized_.store(false, std::memory_order_release);
-	logPrintf(LogInfo, "%s sharding config successfully reseted. Source - %d",
-			  resetFlag == ConfigResetFlag::RollbackApplied ? "Candidate in" : "Old", sourceId);
+	logFmt(LogInfo, "{} sharding config successfully reseted. Source - {}",
+		   resetFlag == ConfigResetFlag::RollbackApplied ? "Candidate in" : "Old", sourceId);
 }
 
 void ShardingProxy::resetConfigCandidate(const sharding::ResetConfigCommand& data, const RdxContext& ctx) {
@@ -714,19 +734,19 @@ void ShardingProxy::resetConfigCandidate(const sharding::ResetConfigCommand& dat
 	auto lockedConfigCandidate = configCandidate_.UniqueLock(ctx);
 
 	if (!lockedConfigCandidate.Config()) {
-		logPrintf(LogInfo, "Sharding config candidate reset was skipped. Source - %d", sourceId);
+		logFmt(LogInfo, "Sharding config candidate reset was skipped. Source - {}", sourceId);
 		lockedConfigCandidate.ShutdownReseter();
 		return;
 	}
 
 	if (lockedConfigCandidate.SourceId() != sourceId) {
-		throw Error(errParams, "Attempt to reset candidate with a different sourceId - %d. Current sourceId - %d",
+		throw Error(errParams, "Attempt to reset candidate with a different sourceId - {}. Current sourceId - {}",
 					lockedConfigCandidate.SourceId(), sourceId);
 	}
 
 	lockedConfigCandidate.ShutdownReseter();
 	lockedConfigCandidate.Config() = std::nullopt;
-	logPrintf(LogInfo, "Sharding config candidate was reseted. Source - %d", sourceId);
+	logFmt(LogInfo, "Sharding config candidate was reseted. Source - {}", sourceId);
 }
 
 Error ShardingProxy::OpenNamespace(std::string_view nsName, const StorageOpts& opts, const NsReplicationOpts& replOpts,
@@ -931,6 +951,14 @@ Error ShardingProxy::SetSchema(std::string_view nsName, std::string_view schema,
 	}
 }
 
+Error ShardingProxy::GetSchema(std::string_view nsName, int format, std::string& schema, const RdxContext& ctx) {
+	return impl_.GetSchema(nsName, format, schema, ctx);
+}
+
+Error ShardingProxy::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const RdxContext& ctx) {
+	return impl_.EnumNamespaces(defs, opts, ctx);
+}
+
 Error ShardingProxy::Insert(std::string_view nsName, Item& item, const RdxContext& ctx) {
 	try {
 		auto insertFn = [this, &ctx](std::string_view nsName, Item& item) { return impl_.Insert(nsName, item, ctx); };
@@ -1100,7 +1128,7 @@ Error ShardingProxy::Select(std::string_view sql, QueryResults& result, unsigned
 				return TruncateNamespace(query.NsName(), ctx);
 			}
 			default:
-				return Error(errLogic, "Incorrect sql type %d", query.type_);
+				return Error(errLogic, "Incorrect sql type {}", int(query.type_));
 		}
 	} catch (const Error& err) {
 		return err;
@@ -1129,6 +1157,11 @@ Error ShardingProxy::Select(const Query& query, QueryResults& result, unsigned p
 	}
 }
 
+Item ShardingProxy::NewItem(std::string_view nsName, const RdxContext& ctx) {
+	//
+	return impl_.NewItem(nsName, ctx);
+}
+
 auto ShardingProxy::ShardingRouter::SharedPtr(const RdxContext& ctx) const {
 	auto lk = SharedLock(ctx);
 	return locatorService_;
@@ -1147,15 +1180,24 @@ Transaction ShardingProxy::NewTransaction(std::string_view nsName, const RdxCont
 
 Error ShardingProxy::CommitTransaction(Transaction& tr, QueryResults& result, const RdxContext& ctx) {
 	if (!tr.Status().ok()) {
-		return Error(tr.Status().code(), "Unable to commit tx with error status: '%s'", tr.Status().what());
+		return Error(tr.Status().code(), "Unable to commit tx with error status: '{}'", tr.Status().what());
 	}
 
 	try {
 		result.SetQuery(nullptr);
-		return impl_.CommitTransaction(tr, result, (bool)isWithSharding(tr.GetNsName(), ctx), ctx);
+		return impl_.CommitTransaction(tr, result, bool(isWithSharding(tr.GetNsName(), ctx)), ctx);
 	} catch (Error& e) {
 		return e;
 	}
+}
+
+Error ShardingProxy::RollBackTransaction(Transaction& tr, const RdxContext& ctx) {
+	//
+	return impl_.RollBackTransaction(tr, ctx);
+}
+
+Error ShardingProxy::GetMeta(std::string_view nsName, const std::string& key, std::string& data, const RdxContext& ctx) {
+	return impl_.GetMeta(nsName, key, data, ctx);
 }
 
 Error ShardingProxy::GetMeta(std::string_view nsName, const std::string& key, std::vector<ShardedMeta>& data, const RdxContext& ctx) {
@@ -1227,6 +1269,73 @@ Error ShardingProxy::DeleteMeta(std::string_view nsName, const std::string& key,
 	} catch (Error& e) {
 		return e;
 	}
+}
+
+Error ShardingProxy::GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions, const RdxContext& ctx) {
+	return impl_.GetSqlSuggestions(sqlQuery, pos, suggestions, ctx);
+}
+
+Error ShardingProxy::Status() noexcept {
+	if (connected_.load(std::memory_order_acquire)) {
+		return {};
+	}
+	auto st = impl_.Status();
+	if (st.ok()) {
+		return Error(errNotValid, "Reindexer's sharding proxy layer was not initialized properly");
+	}
+	return st;
+}
+
+Error ShardingProxy::GetProtobufSchema(WrSerializer& ser, std::vector<std::string>& namespaces) {
+	return impl_.GetProtobufSchema(ser, namespaces);
+}
+
+Error ShardingProxy::GetReplState(std::string_view nsName, ReplicationStateV2& state, const RdxContext& ctx) {
+	return impl_.GetReplState(nsName, state, ctx);
+}
+
+Error ShardingProxy::SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus& status, const RdxContext& ctx) {
+	return impl_.SetClusterizationStatus(nsName, status, ctx);
+}
+
+Error ShardingProxy::GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, Snapshot& snapshot, const RdxContext& ctx) {
+	return impl_.GetSnapshot(nsName, opts, snapshot, ctx);
+}
+
+Error ShardingProxy::ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk& ch, const RdxContext& ctx) {
+	return impl_.ApplySnapshotChunk(nsName, ch, ctx);
+}
+
+Error ShardingProxy::CreateTemporaryNamespace(std::string_view baseName, std::string& resultName, const StorageOpts& opts, lsn_t nsVersion,
+											  const RdxContext& ctx) {
+	return impl_.CreateTemporaryNamespace(baseName, resultName, opts, nsVersion, ctx);
+}
+
+Error ShardingProxy::SetTagsMatcher(std::string_view nsName, TagsMatcher&& tm, const RdxContext& ctx) {
+	return impl_.SetTagsMatcher(nsName, std::move(tm), ctx);
+}
+
+Error ShardingProxy::DumpIndex(std::ostream& os, std::string_view nsName, std::string_view index, const RdxContext& ctx) {
+	return impl_.DumpIndex(os, nsName, index, ctx);
+}
+
+Error ShardingProxy::ClusterControlRequest(const ClusterControlRequestData& request) {
+	//
+	return impl_.ClusterControlRequest(request);
+}
+
+Error ShardingProxy::SuggestLeader(const cluster::NodeData& suggestion, cluster::NodeData& response) {
+	return impl_.SuggestLeader(suggestion, response);
+}
+
+Error ShardingProxy::LeadersPing(const cluster::NodeData& leader) {
+	//
+	return impl_.LeadersPing(leader);
+}
+
+Error ShardingProxy::GetRaftInfo(cluster::RaftInfo& info, const RdxContext& ctx) {
+	//
+	return impl_.GetRaftInfo(info, ctx);
 }
 
 template <typename ShardingRouterLock>
@@ -1496,7 +1605,7 @@ Error ShardingProxy::executeQueryOnShard(LockedRouter& lockedShardingRouter, con
 				if (status.ok()) {
 					if (qrClient.GetShardingConfigVersion() != shardingVersion) {
 						return Error(errLogic,
-									 "Proxied query: local and remote sharding versions (config source IDs) are different: %d vs %d",
+									 "Proxied query: local and remote sharding versions (config source IDs) are different: {} vs {}",
 									 shardingVersion, qrClient.GetShardingConfigVersion());
 					}
 					result.AddQr(std::move(qrClient), connections[0].ShardId(), true);
@@ -1564,7 +1673,7 @@ Error ShardingProxy::executeQueryOnShard(LockedRouter& lockedShardingRouter, con
 						if (qrClient.GetShardingConfigVersion() != shardingVersion) {
 							return Error(
 								errLogic,
-								"Distributed query: local and remote sharding versions (config source IDs) are different: %d vs %d",
+								"Distributed query: local and remote sharding versions (config source IDs) are different: {} vs {}",
 								shardingVersion, qrClient.GetShardingConfigVersion());
 						}
 						result.AddQr(std::move(qrClient), connections[i].ShardId(), (i + 1) == connections.size());
@@ -1622,6 +1731,53 @@ Error ShardingProxy::executeQueryOnClient(client::Reindexer& connection, const Q
 			std::abort();
 	}
 	return status;
+}
+
+template <typename Locker, typename ConfigCandidateType>
+void ShardingProxy::ConfigCandidate::ConfigCandidateTSWrapper<Locker, ConfigCandidateType>::InitReseterThread(
+	std::function<void()>&& f) const {
+	if (configCandidate_.reseter_.joinable()) {
+		throw Error(errLogic, "Sharding config candidate's reset thread is already running");
+	}
+
+	configCandidate_.reseter_ = std::thread(std::move(f));
+}
+
+template <typename Locker, typename ConfigCandidateType>
+void ShardingProxy::ConfigCandidate::ConfigCandidateTSWrapper<Locker, ConfigCandidateType>::ShutdownReseter() noexcept {
+	if (configCandidate_.reseter_.joinable()) {
+		configCandidate_.reseterEnabled_ = false;
+		configCandidate_.reseter_.join();
+		configCandidate_.reseterEnabled_ = true;
+	}
+}
+
+bool ShardingProxy::ConfigCandidate::NeedStopReseter() const {
+	if (!reseterEnabled_) {
+		return true;
+	}
+	if (auto lock = std::unique_lock(mtx_, std::try_to_lock_t{})) {
+		return !config_;
+	}
+	return false;
+}
+
+bool ShardingProxy::ConfigCandidate::TryResetConfig() {
+	if (!reseterEnabled_) {
+		return true;
+	}
+	if (auto lock = std::unique_lock(mtx_, std::try_to_lock_t{})) {
+		config_ = std::nullopt;
+		logFmt(LogWarning, "Timeout for applying the new sharding config. Config candidate removed. Source - {}", sourceId_);
+		return true;
+	}
+	return false;
+}
+
+ShardingProxy::ConfigCandidate::~ConfigCandidate() {
+	if (reseter_.joinable()) {
+		reseter_.join();
+	}
 }
 
 }  // namespace reindexer

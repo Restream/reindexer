@@ -4,69 +4,74 @@
 #include <stdlib.h>
 #include <functional>
 #include <memory>
+#include <span>
+#include "core/enums.h"
 #include "estl/h_vector.h"
 
 namespace reindexer {
 
-class TagsPathCache {
+class [[nodiscard]] TagsPathCache {
 public:
-	void set(const int16_t* tagsPath, size_t len, int field) {
-		assertrx(len);
+	void Set(std::span<const TagName> path, int field) {
+		assertrx(!path.empty());
 		auto cache = this;
 		for (;;) {
-			int tag = *tagsPath++;
-			if (int(cache->entries_.size()) <= tag) {
+			const auto tag = path[0].AsNumber();
+			if (cache->entries_.size() <= tag) {
 				cache->entries_.resize(tag + 1);
 			}
-			if (len == 1) {
-				cache->entries_[tag].field_ = field;
+			auto& cacheEntry = cache->entries_[tag];
+			if (path.size() == 1) {
+				cacheEntry.field_ = field;
 				return;
 			}
 
-			if (!cache->entries_[tag].subCache_) {
-				cache->entries_[tag].subCache_ = std::make_shared<TagsPathCache>();
+			if (!cacheEntry.subCache_) {
+				cacheEntry.subCache_ = std::make_shared<TagsPathCache>();
 			}
-			cache = cache->entries_[tag].subCache_.get();
-			len--;
+			cache = cacheEntry.subCache_.get();
+			path = path.subspan(1);
 		}
 	}
-	int lookup(const int16_t* tagsPath, size_t len) const noexcept {
-		assertrx(len);
+	[[nodiscard]] int Lookup(std::span<const TagName> path) const noexcept {
+		assertrx(!path.empty());
 		auto cache = this;
 		for (;;) {
-			int tag = *tagsPath++;
-			if (int(cache->entries_.size()) <= tag) {
+			const auto tag = path[0].AsNumber();
+			if (cache->entries_.size() <= tag) {
 				return -1;
 			}
-			if (len == 1) {
-				return cache->entries_[tag].field_;
+			const auto& cacheEntry = cache->entries_[tag];
+			if (path.size() == 1) {
+				return cacheEntry.field_;
 			}
 
-			if (!cache->entries_[tag].subCache_) {
+			if (!cacheEntry.subCache_) {
 				return -1;
 			}
-			cache = cache->entries_[tag].subCache_.get();
-			len--;
+			cache = cacheEntry.subCache_.get();
+			path = path.subspan(1);
 		}
 	}
 
-	void walk(int16_t* path, int depth, const std::function<void(int, int)>& visitor) const {
-		int16_t& i = path[depth];
-		for (i = 0; i < int(entries_.size()); i++) {
-			if (entries_[i].field_ > 0) {
-				visitor(depth + 1, entries_[i].field_);
+	void Walk(std::vector<TagName>& path, const std::function<void(int)>& visitor) const {
+		for (size_t i = 0; i < entries_.size(); ++i) {
+			path.emplace_back(TagName(i));
+			const auto& cacheEntry = entries_[i];
+			if (cacheEntry.field_ > 0) {
+				visitor(cacheEntry.field_);
 			}
-			if (entries_[i].subCache_) {
-				entries_[i].subCache_->walk(path, depth + 1, visitor);
+			if (cacheEntry.subCache_) {
+				cacheEntry.subCache_->Walk(path, visitor);
 			}
 		}
 	}
 
-	void clear() noexcept { entries_.clear(); }
-	bool empty() const noexcept { return entries_.empty(); }
+	void Clear() noexcept { entries_.clear(); }
+	[[nodiscard]] bool Empty() const noexcept { return entries_.empty(); }
 
-protected:
-	struct CacheEntry {
+private:
+	struct [[nodiscard]] CacheEntry {
 		std::shared_ptr<TagsPathCache> subCache_;
 		int field_ = -1;
 	};

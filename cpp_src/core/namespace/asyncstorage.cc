@@ -33,7 +33,7 @@ Error AsyncStorage::Open(datastorage::StorageType storageType, std::string_view 
 	throwOnStorageCopy();
 
 	if (storage_) {
-		throw Error(errLogic, "Storage already enabled for namespace '%s' on path '%s'", nsName, path_);
+		throw Error(errLogic, "Storage already enabled for namespace '{}' on path '{}'", nsName, path_);
 	}
 	storage_.reset(datastorage::StorageFactory::create(storageType));
 	auto err = storage_->Open(path, opts);
@@ -188,7 +188,7 @@ void AsyncStorage::flush(const StorageFlushOpts& opts) {
 
 					totalUpdatesCount_.fetch_add(uptr.updatesCount, std::memory_order_release);
 					finishedUpdateChuncks_.emplace_front(std::move(uptr));
-					scheduleFilesReopen(Error(errLogic, "Error write to storage in '%s': %s", path_, status.what()));
+					scheduleFilesReopen(Error(errLogic, "Error write to storage in '{}': {}", path_, status.what()));
 					throw lastFlushError_;
 				}
 
@@ -264,11 +264,11 @@ void AsyncStorage::tryReopenStorage() {
 	if (!lastFlushError_.ok()) {
 		auto err = storage_->Reopen();
 		if (!err.ok()) {
-			logPrintf(LogInfo, "Atempt to reopen storage for '%s' failed: %s", path_, err.what());
+			logFmt(LogInfo, "Atempt to reopen storage for '{}' failed: {}", path_, err.what());
 			scheduleFilesReopen(std::move(lastFlushError_));
 			throw lastFlushError_;
 		}
-		logPrintf(LogInfo, "Storage was reopened for '%s'", path_);
+		logFmt(LogInfo, "Storage was reopened for '{}'", path_);
 		setLastFlushError(Error());
 		reopenTs_ = TimepointT();
 	}

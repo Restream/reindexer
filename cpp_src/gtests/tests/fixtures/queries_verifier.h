@@ -56,7 +56,7 @@ protected:
 			query.Entries().Visit(
 				i,
 				reindexer::Skip<reindexer::QueryEntry, reindexer::QueryEntriesBracket, reindexer::BetweenFieldsQueryEntry,
-								reindexer::JoinQueryEntry, reindexer::AlwaysTrue, reindexer::AlwaysFalse>{},
+								reindexer::JoinQueryEntry, reindexer::AlwaysTrue, reindexer::AlwaysFalse, reindexer::KnnQueryEntry>{},
 				[&](const reindexer::SubQueryEntry& sqe) {
 					auto subQuery = query.GetSubQuery(sqe.QueryIndex());
 					if (sqe.Condition() == CondAny || sqe.Condition() == CondEmpty) {
@@ -69,8 +69,9 @@ protected:
 					if (sqe.Condition() == CondAny || sqe.Condition() == CondEmpty) {
 						res = ((qr.Count() != 0) == (sqe.Condition() == CondAny));
 					} else if (qr.GetAggregationResults().empty()) {
-						assert(!subQuery.SelectFilters().empty());
-						reindexer::QueryEntry qe{subQuery.SelectFilters()[0], sqe.Condition(), reindexer::VariantArray(sqe.Values())};
+						assert(!subQuery.SelectFilters().AllRegularFields());
+						reindexer::QueryEntry qe{subQuery.SelectFilters().Fields()[0], sqe.Condition(),
+												 reindexer::VariantArray(sqe.Values())};
 						const auto& indexesFields = indexesFields_[subQuery.NsName()];
 						for (auto it : qr) {
 							ASSERT_TRUE(it.Status().ok()) << it.Status().what();
@@ -99,10 +100,10 @@ protected:
 					ASSERT_TRUE(err.ok()) << err.what();
 					reindexer::VariantArray values;
 					if (qr.GetAggregationResults().empty()) {
-						ASSERT_FALSE(subQuery.SelectFilters().empty());
+						ASSERT_FALSE(subQuery.SelectFilters().Fields().empty());
 						const auto& indexesFields = indexesFields_[subQuery.NsName()];
-						if (isIndexComposite(subQuery.SelectFilters()[0], indexesFields)) {
-							const auto fields = getCompositeFields(subQuery.SelectFilters()[0], indexesFields);
+						if (isIndexComposite(subQuery.SelectFilters().Fields()[0], indexesFields)) {
+							const auto fields = getCompositeFields(subQuery.SelectFilters().Fields()[0], indexesFields);
 							for (auto it : qr) {
 								ASSERT_TRUE(it.Status().ok()) << it.Status().what();
 								values.emplace_back(getValues(it.GetItem(), fields));
@@ -110,7 +111,7 @@ protected:
 						} else {
 							for (auto it : qr) {
 								ASSERT_TRUE(it.Status().ok()) << it.Status().what();
-								values.emplace_back(it.GetItem()[subQuery.SelectFilters()[0]]);
+								values.emplace_back(it.GetItem()[subQuery.SelectFilters().Fields()[0]]);
 							}
 						}
 					} else {
@@ -138,12 +139,14 @@ protected:
 			EXPECT_NE(itInsertedItem, insertedItemsByPk.end()) << "Item with such PK has not been inserted yet: " + getPkString(pk);
 			if (itInsertedItem != insertedItemsByPk.end()) {
 				reindexer::Item& insertedItem = itInsertedItem->second;
-				EXPECT_EQ(insertedItem.GetJSON(), itemr.GetJSON()) << "Items' jsons are different! pk: " << getPkString(pk) << std::endl
-																   << "expect json: " << insertedItem.GetJSON() << std::endl
-																   << "got json: " << itemr.GetJSON() << std::endl
-																   << "expect fields: " << PrintItem(insertedItem) << std::endl
-																   << "got fields: " << PrintItem(itemr) << std::endl
-																   << "explain: " << qr.GetExplainResults();
+				if (query.SelectFilters().AllRegularFields()) {
+					EXPECT_EQ(insertedItem.GetJSON(), itemr.GetJSON()) << "Items' jsons are different! pk: " << getPkString(pk) << std::endl
+																	   << "expect json: " << insertedItem.GetJSON() << std::endl
+																	   << "got json: " << itemr.GetJSON() << std::endl
+																	   << "expect fields: " << PrintItem(insertedItem) << std::endl
+																	   << "got fields: " << PrintItem(itemr) << std::endl
+																	   << "explain: " << qr.GetExplainResults();
+				}
 			}
 
 			bool conditionsSatisfied =
@@ -343,13 +346,8 @@ private:
 			}
 			bool skip = false;
 			const bool iterationResult = it->Visit(
-				[](const reindexer::SubQueryEntry&) -> bool {
-					assertrx(0);
-					std::abort();
-				},
-				[](const reindexer::SubQueryFieldEntry&) -> bool {
-					assertrx(0);
-					std::abort();
+				[](reindexer::OneOf<reindexer::SubQueryEntry, reindexer::SubQueryFieldEntry, reindexer::KnnQueryEntry>) -> bool {
+					throw_as_assert;
 				},
 				[&](const reindexer::QueryEntriesBracket&) {
 					if (op == OpOr && result && !containsJoins(it.cbegin(), it.cend())) {
@@ -539,6 +537,9 @@ private:
 							return true;
 						}
 					}
+					break;
+				case CondKnn:
+					assertrx(0);
 			}
 		}
 
@@ -635,6 +636,7 @@ private:
 				return !keyValues.empty();
 			case CondLike:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				std::abort();
 		}
@@ -726,6 +728,7 @@ private:
 							case CondLike:
 							case CondRange:
 							case CondAllSet:
+							case CondKnn:
 								assert(0);
 						}
 					}
@@ -753,6 +756,7 @@ private:
 				case CondAllSet:
 				case CondEmpty:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					std::abort();
 			}
@@ -829,6 +833,7 @@ private:
 					}
 				}
 				return false;
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -921,14 +926,14 @@ private:
 
 	static bool containsJoins(reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator end) noexcept {
 		for (; it != end; ++it) {
-			if (it->Visit([&it] RX_PRE_LMBD_ALWAYS_INLINE(const reindexer::QueryEntriesBracket&)
-							  RX_POST_LMBD_ALWAYS_INLINE { return containsJoins(it.cbegin(), it.cend()); },
-						  [] RX_PRE_LMBD_ALWAYS_INLINE(const reindexer::JoinQueryEntry&)
-							  RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
-						  [] RX_PRE_LMBD_ALWAYS_INLINE(
-							  reindexer::OneOf<const reindexer::QueryEntry, reindexer::BetweenFieldsQueryEntry, reindexer::AlwaysFalse,
-											   reindexer::AlwaysTrue, reindexer::SubQueryEntry, reindexer::SubQueryFieldEntry>)
-							  RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; })) {
+			if (it->Visit(
+					[&it] RX_PRE_LMBD_ALWAYS_INLINE(const reindexer::QueryEntriesBracket&)
+						RX_POST_LMBD_ALWAYS_INLINE { return containsJoins(it.cbegin(), it.cend()); },
+					[] RX_PRE_LMBD_ALWAYS_INLINE(const reindexer::JoinQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
+					[] RX_PRE_LMBD_ALWAYS_INLINE(reindexer::OneOf<const reindexer::QueryEntry, reindexer::BetweenFieldsQueryEntry,
+																  reindexer::AlwaysFalse, reindexer::AlwaysTrue, reindexer::SubQueryEntry,
+																  reindexer::SubQueryFieldEntry, reindexer::KnnQueryEntry>)
+						RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; })) {
 				return true;
 			}
 		}
@@ -1007,7 +1012,8 @@ private:
 									 << ')';
 					  },
 					  [](const reindexer::AlwaysFalse&) { TestCout() << "Always False"; },
-					  [](const reindexer::AlwaysTrue&) { TestCout() << "Always True"; });
+					  [](const reindexer::AlwaysTrue&) { TestCout() << "Always True"; },
+					  [](const reindexer::KnnQueryEntry& qe) { TestCout() << qe.Dump(); });
 		}
 		TestCout() << ")";
 	}

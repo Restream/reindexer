@@ -29,20 +29,20 @@ void BaseFTConfig::parseBase(const gason::JsonNode& root) {
 		for (auto& sw : stopWordsNode) {
 			std::string word;
 			StopWord::Type type = StopWord::Type::Stop;
-			if (sw.value.getTag() == gason::JsonTag::JSON_STRING) {
+			if (sw.value.getTag() == gason::JsonTag::STRING) {
 				word = sw.As<std::string>();
-			} else if (sw.value.getTag() == gason::JsonTag::JSON_OBJECT) {
+			} else if (sw.value.getTag() == gason::JsonTag::OBJECT) {
 				word = sw["word"].As<std::string>();
 				type = sw["is_morpheme"].As<bool>() ? StopWord::Type::Morpheme : StopWord::Type::Stop;
 			}
 
 			if (std::find_if(word.begin(), word.end(), [](const auto& symbol) { return std::isspace(symbol); }) != word.end()) {
-				throw Error(errParams, "Stop words can't contain spaces: %s", word);
+				throw Error(errParams, "Stop words can't contain spaces: {}", word);
 			}
 
 			auto [it, inserted] = stopWords.emplace(std::move(word), type);
 			if (!inserted && it->type != type) {
-				throw Error(errParams, "Duplicate stop-word with different morpheme attribute: %s", *it);
+				throw Error(errParams, "Duplicate stop-word with different morpheme attribute: {}", *it);
 			}
 		}
 	}
@@ -94,13 +94,13 @@ void BaseFTConfig::getJson(JsonBuilder& jsonBuilder) const {
 			{
 				auto tokensNode = synonymObj.Array("tokens");
 				for (const auto& token : synonym.tokens) {
-					tokensNode.Put(nullptr, token);
+					tokensNode.Put(TagName::Empty(), token);
 				}
 			}
 			{
 				auto alternativesNode = synonymObj.Array("alternatives");
 				for (const auto& token : synonym.alternatives) {
-					alternativesNode.Put(nullptr, token);
+					alternativesNode.Put(TagName::Empty(), token);
 				}
 			}
 		}
@@ -108,7 +108,7 @@ void BaseFTConfig::getJson(JsonBuilder& jsonBuilder) const {
 	{
 		auto stopWordsNode = jsonBuilder.Array("stop_words");
 		for (const auto& sw : stopWords) {
-			auto wordNode = stopWordsNode.Object(nullptr);
+			auto wordNode = stopWordsNode.Object();
 			wordNode.Put("word", sw);
 			wordNode.Put("is_morpheme", sw.type == StopWord::Type::Morpheme);
 		}

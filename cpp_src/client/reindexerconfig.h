@@ -2,7 +2,6 @@
 
 #include <chrono>
 #include <string>
-#include "connectopts.h"
 
 namespace reindexer {
 namespace client {

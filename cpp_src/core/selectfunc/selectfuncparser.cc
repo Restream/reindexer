@@ -18,13 +18,13 @@ SelectFuncStruct& SelectFuncParser::Parse(const std::string& query) {
 			if (tok.text() == ".") {
 				throw Error(errParams, "Unexpected space symbol before `.` (select function delimiter)");
 			}
-			throw Error(errParams, "Expected `=` or `.` as a select function delimiter, but found `%s`", tok.text());
+			throw Error(errParams, "Expected `=` or `.` as a select function delimiter, but found `{}`", tok.text());
 		}
 		token ftok;
 		ParseFunction(parser, false, ftok);
 	} else {
 		if (dotPos == tok.text_.size() - 1) {
-			throw Error(errParams, "Unexpected space symbol or token after `.` (select function delimiter): `%s`", tok.text());
+			throw Error(errParams, "Unexpected space symbol or token after `.` (select function delimiter): `{}`", tok.text());
 		}
 		selectFuncStruct_.field = std::string(tok.text_.begin(), tok.text_.begin() + dotPos);
 		token ftok(TokenName);
@@ -45,7 +45,7 @@ void SelectFuncParser::parsePositionalAndNamedArgs(tokenizer& parser, const Args
 	token tok;
 	tok = parser.next_token(tokenizer::flags::no_flags);
 	if (!(tok.type == TokenSymbol && tok.text() == "("sv)) {
-		throw Error(errParseDSL, "%s: An open parenthesis is required, but found `%s`", selectFuncStruct_.funcName, tok.text());
+		throw Error(errParseDSL, "{}: An open parenthesis is required, but found `{}`", selectFuncStruct_.funcName, tok.text());
 	}
 	std::string argFirstPart;
 	std::string argSecondPart;
@@ -59,7 +59,7 @@ void SelectFuncParser::parsePositionalAndNamedArgs(tokenizer& parser, const Args
 				if (tok.text() == ")"sv) {
 					token nextTok = parser.next_token(tokenizer::flags::no_flags);
 					if (nextTok.text().length() > 0) {
-						throw Error(errParseDSL, "%s: Unexpected character `%s` after closing parenthesis.", selectFuncStruct_.funcName,
+						throw Error(errParseDSL, "{}: Unexpected character `{}` after closing parenthesis.", selectFuncStruct_.funcName,
 									nextTok.text());
 					}
 
@@ -68,24 +68,24 @@ void SelectFuncParser::parsePositionalAndNamedArgs(tokenizer& parser, const Args
 							selectFuncStruct_.funcArgs.emplace_back(std::move(argFirstPart));
 							argFirstPart.clear();
 							if (selectFuncStruct_.funcArgs.size() != args.posArgsCount) {
-								throw Error(errParseDSL, "%s: Incorrect count of position arguments. Found %d required %d.",
+								throw Error(errParseDSL, "{}: Incorrect count of position arguments. Found {} required {}.",
 											selectFuncStruct_.funcName, selectFuncStruct_.funcArgs.size(), args.posArgsCount,
 											args.posArgsCount);
 							}
 							break;
 						case NamedArgState::End: {	// add last argument named
 							if (selectFuncStruct_.funcArgs.size() != args.posArgsCount) {
-								throw Error(errParseDSL, "%s: Incorrect count of position arguments. Found %d required %d.",
+								throw Error(errParseDSL, "{}: Incorrect count of position arguments. Found {} required {}.",
 											selectFuncStruct_.funcName, selectFuncStruct_.funcArgs.size(), args.posArgsCount,
 											args.posArgsCount);
 							}
 							if (args.namedArgs.find(argFirstPart) == args.namedArgs.end()) {
-								throw Error(errParseDSL, "%s: Unknown argument name '%s'.", selectFuncStruct_.funcName, argFirstPart);
+								throw Error(errParseDSL, "{}: Unknown argument name '{}'.", selectFuncStruct_.funcName, argFirstPart);
 							}
 							auto r = selectFuncStruct_.namedArgs.emplace(std::move(argFirstPart), "");
 							argFirstPart.clear();
 							if (!r.second) {
-								throw Error(errParseDSL, "%s: Argument already added '%s'.", selectFuncStruct_.funcName, r.first->first);
+								throw Error(errParseDSL, "{}: Argument already added '{}'.", selectFuncStruct_.funcName, r.first->first);
 							}
 							r.first->second = std::move(argSecondPart);
 							argSecondPart.clear();
@@ -93,7 +93,7 @@ void SelectFuncParser::parsePositionalAndNamedArgs(tokenizer& parser, const Args
 						case NamedArgState::Name:
 						case NamedArgState::Eq:
 						case NamedArgState::Val:
-							throw Error(errParseDSL, "%s: Unexpected token '%s'.", selectFuncStruct_.funcName, argFirstPart);
+							throw Error(errParseDSL, "{}: Unexpected token '{}'.", selectFuncStruct_.funcName, argFirstPart);
 					}
 
 					selectFuncStruct_.isFunction = true;
@@ -101,20 +101,20 @@ void SelectFuncParser::parsePositionalAndNamedArgs(tokenizer& parser, const Args
 				} else if (tok.text() == ","sv) {
 					if (selectFuncStruct_.funcArgs.size() >= args.posArgsCount) {
 						if (expectedToken != NamedArgState::End) {
-							throw Error(errParseDSL, "%s: Unexpected token '%s'.", selectFuncStruct_.funcName, tok.text());
+							throw Error(errParseDSL, "{}: Unexpected token '{}'.", selectFuncStruct_.funcName, tok.text());
 						}
 						if (args.namedArgs.find(argFirstPart) == args.namedArgs.end()) {
-							throw Error(errParseDSL, "%s: Unknown argument name '%s'.", selectFuncStruct_.funcName, argFirstPart);
+							throw Error(errParseDSL, "{}: Unknown argument name '{}'.", selectFuncStruct_.funcName, argFirstPart);
 						}
 						auto r = selectFuncStruct_.namedArgs.emplace(std::move(argFirstPart), "");
 						if (!r.second) {
-							throw Error(errParseDSL, "%s: Argument already added '%s'.", selectFuncStruct_.funcName, r.first->first);
+							throw Error(errParseDSL, "{}: Argument already added '{}'.", selectFuncStruct_.funcName, r.first->first);
 						}
 						r.first->second = std::move(argSecondPart);
 					} else {  // posible only posArgs
 						if (expectedToken != NamedArgState::End2) {
 							throw Error(errParseDSL,
-										"%s: Unexpected token '%s', expecting positional argument (%d more positional args required)",
+										"{}: Unexpected token '{}', expecting positional argument ({} more positional args required)",
 										selectFuncStruct_.funcName, tok.text(), args.posArgsCount - selectFuncStruct_.funcArgs.size());
 						}
 						selectFuncStruct_.funcArgs.emplace_back(std::move(argFirstPart));
@@ -123,19 +123,19 @@ void SelectFuncParser::parsePositionalAndNamedArgs(tokenizer& parser, const Args
 					argSecondPart.clear();
 					expectedToken = NamedArgState::Name;
 				} else {
-					throw Error(errParseDSL, "%s: Unexpected token '%s'", selectFuncStruct_.funcName, tok.text());
+					throw Error(errParseDSL, "{}: Unexpected token '{}'", selectFuncStruct_.funcName, tok.text());
 				}
 				break;
 			case TokenOp:
 				if (tok.text() == "="sv) {
 					if (argFirstPart.empty()) {
-						throw Error(errParseDSL, "%s: Argument name is empty.", selectFuncStruct_.funcName);
+						throw Error(errParseDSL, "{}: Argument name is empty.", selectFuncStruct_.funcName);
 					} else if (expectedToken != NamedArgState::Eq) {
-						throw Error(errParseDSL, "%s: Unexpected token '%s'.", selectFuncStruct_.funcName, tok.text());
+						throw Error(errParseDSL, "{}: Unexpected token '{}'.", selectFuncStruct_.funcName, tok.text());
 					}
 					expectedToken = NamedArgState::Val;
 				} else {
-					throw Error(errParseDSL, "%s: Unexpected token '%s'", selectFuncStruct_.funcName, tok.text());
+					throw Error(errParseDSL, "{}: Unexpected token '{}'", selectFuncStruct_.funcName, tok.text());
 				}
 				break;
 			case TokenNumber:
@@ -154,12 +154,12 @@ void SelectFuncParser::parsePositionalAndNamedArgs(tokenizer& parser, const Args
 					case NamedArgState::Eq:
 					case NamedArgState::End:
 					case NamedArgState::End2:
-						throw Error(errParseDSL, "%s: Unexpected token '%s'.", selectFuncStruct_.funcName, tok.text());
+						throw Error(errParseDSL, "{}: Unexpected token '{}'.", selectFuncStruct_.funcName, tok.text());
 				}
 				break;
 			case TokenName:
 				if (expectedToken != NamedArgState::Name) {
-					throw Error(errParseDSL, "%s: Unexpected token '%s'.", selectFuncStruct_.funcName, tok.text());
+					throw Error(errParseDSL, "{}: Unexpected token '{}'.", selectFuncStruct_.funcName, tok.text());
 				} else {
 					argFirstPart = tok.text();
 					expectedToken = NamedArgState::Eq;
@@ -167,11 +167,11 @@ void SelectFuncParser::parsePositionalAndNamedArgs(tokenizer& parser, const Args
 				break;
 			case TokenSign:
 			case TokenEnd:
-				throw Error(errParseDSL, "%s: Unexpected token '%s'", selectFuncStruct_.funcName, tok.text());
+				throw Error(errParseDSL, "{}: Unexpected token '{}'", selectFuncStruct_.funcName, tok.text());
 		}
 	}
 	if (!selectFuncStruct_.isFunction) {
-		throw Error(errParseDSL, "%s: The closing parenthesis is required, but found `%s`", selectFuncStruct_.funcName, tok.text());
+		throw Error(errParseDSL, "{}: The closing parenthesis is required, but found `{}`", selectFuncStruct_.funcName, tok.text());
 	}
 }
 
@@ -208,7 +208,7 @@ SelectFuncStruct& SelectFuncParser::ParseFunction(tokenizer& parser, bool partOf
 					if (!partOfExpression) {
 						token nextTok = parser.next_token(tokenizer::flags::no_flags);
 						if (nextTok.text().length() > 0) {
-							throw Error(errParseDSL, "%s: Unexpected character `%s` after closing parenthesis", selectFuncStruct_.funcName,
+							throw Error(errParseDSL, "{}: Unexpected character `{}` after closing parenthesis", selectFuncStruct_.funcName,
 										nextTok.text());
 						}
 					}
@@ -225,11 +225,11 @@ SelectFuncStruct& SelectFuncParser::ParseFunction(tokenizer& parser, bool partOf
 				}
 			}
 			if (!selectFuncStruct_.isFunction) {
-				throw Error(errParseDSL, "%s: The closing parenthesis is required, but found `%s`", selectFuncStruct_.funcName, tok.text());
+				throw Error(errParseDSL, "{}: The closing parenthesis is required, but found `{}`", selectFuncStruct_.funcName, tok.text());
 			}
 		}
 	} else {
-		throw Error(errParseDSL, "%s: An open parenthesis is required, but found `%s`. Select function name: `%s`",
+		throw Error(errParseDSL, "{}: An open parenthesis is required, but found `{}`. Select function name: `{}`",
 					selectFuncStruct_.funcName, tok.text(), selectFuncStruct_.funcName);
 	}
 

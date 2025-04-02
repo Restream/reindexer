@@ -18,17 +18,18 @@ class PayloadTypeImpl {
 	typedef fast_hash_map<std::string, int, hash_str, equal_str, less_str> JsonPathMap;
 
 public:
-	PayloadTypeImpl(std::string name, std::initializer_list<PayloadFieldType> fields = {}) : fields_(fields), name_(std::move(name)) {}
+	explicit PayloadTypeImpl(std::string name, std::initializer_list<PayloadFieldType> fields = {})
+		: fields_(fields), name_(std::move(name)) {}
 
 	const PayloadFieldType& Field(int field) const& noexcept {
-		assertf(field < NumFields(), "%s: %d, %d", name_, field, NumFields());
+		assertf(field < NumFields(), "{}: {}, {}", name_, field, NumFields());
 		return fields_[field];
 	}
 	const PayloadFieldType& Field(int) const&& = delete;
 
 	const std::string& Name() const& noexcept { return name_; }
 	const std::string& Name() const&& = delete;
-	void SetName(std::string_view name) noexcept { name_ = std::string(name); }
+	void SetName(std::string_view name) { name_ = std::string(name); }
 	int NumFields() const noexcept { return fields_.size(); }
 	void Add(PayloadFieldType f);
 	bool Drop(std::string_view field);

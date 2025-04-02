@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include "core/keyvalue/variant.h"
@@ -8,9 +9,8 @@
 #include "core/payload/payloadtype.h"
 #include "core/type_consts.h"
 #include "core/type_consts_helpers.h"
+#include "estl/expected.h"
 #include "estl/h_vector.h"
-#include "estl/span.h"
-#include "tools/errors.h"
 
 struct msgpack_object;
 struct MsgPackValue;
@@ -62,9 +62,11 @@ struct AggregationResult {
 	void GetMsgPack(WrSerializer& wrser) const;
 	void GetProtobuf(WrSerializer& wrser) const;
 	template <typename T>
-	Error FromJSON(T json);
-	Error FromMsgPack(std::string_view msgpack);
-	Error FromMsgPack(span<char> msgpack) { return FromMsgPack(std::string_view(msgpack.data(), msgpack.size())); }
+	static Expected<AggregationResult> FromJSON(T json);
+	static Expected<AggregationResult> FromMsgPack(std::string_view msgpack);
+	static Expected<AggregationResult> FromMsgPack(std::span<char> msgpack) {
+		return FromMsgPack(std::string_view(msgpack.data(), msgpack.size()));
+	}
 	double GetValueOrZero() const noexcept { return value_ ? *value_ : 0; }
 	std::optional<double> GetValue() const noexcept { return value_; }
 	void SetValue(double value) { value_ = value; }
@@ -79,40 +81,6 @@ struct AggregationResult {
 	static AggType strToAggType(std::string_view type);
 	static void GetProtobufSchema(ProtobufSchemaBuilder&);
 
-	template <typename Node>
-	void from(Node root) {
-		const Node& node = root[Parameters::Value()];
-		bool isValid = false;
-		if constexpr (std::is_same_v<MsgPackValue, Node>) {
-			isValid = node.isValid();
-		}
-		if constexpr (std::is_same_v<gason::JsonNode, Node>) {
-			isValid = !node.empty();
-		}
-		if (isValid) {
-			value_ = node.template As<double>();
-		}
-
-		type = strToAggType(root[Parameters::Type()].template As<std::string>());
-
-		for (const auto& subElem : root[Parameters::Fields()]) {
-			fields.emplace_back(subElem.template As<std::string>());
-		}
-
-		for (const auto& facetNode : root[Parameters::Facets()]) {
-			FacetResult facet;
-			facet.count = facetNode[Parameters::Count()].template As<int>();
-			for (const auto& subElem : facetNode[Parameters::Values()]) {
-				facet.values.emplace_back(subElem.template As<std::string>());
-			}
-			facets.emplace_back(std::move(facet));
-		}
-
-		for (const auto& distinctNode : root[Parameters::Distincts()]) {
-			distincts.emplace_back(distinctNode.template As<std::string>());
-		}
-	}
-
 	template <typename Builder, typename Fields>
 	void get(Builder& builder, const Fields& parametersFields) const {
 		if (value_) {
@@ -122,11 +90,11 @@ struct AggregationResult {
 		if (!facets.empty()) {
 			auto facetsArray = builder.Array(parametersFields.Facets(), facets.size());
 			for (auto& facet : facets) {
-				auto facetObj = facetsArray.Object(0, 2);
+				auto facetObj = facetsArray.Object(TagName::Empty(), 2);
 				facetObj.Put(parametersFields.Count(), facet.count);
 				auto valuesArray = facetObj.Array(parametersFields.Values(), facet.values.size());
 				for (const auto& v : facet.values) {
-					valuesArray.Put(0, v);
+					valuesArray.Put(TagName::Empty(), v);
 				}
 			}
 		}
@@ -134,13 +102,13 @@ struct AggregationResult {
 		if (!distincts.empty()) {
 			auto distinctsArray = builder.Array(parametersFields.Distincts(), distincts.size());
 			for (const Variant& v : distincts) {
-				distinctsArray.Put(0, v.As<std::string>(payloadType, distinctsFields));
+				distinctsArray.Put(TagName::Empty(), v.As<std::string>(payloadType, distinctsFields));
 			}
 		}
 
 		auto fieldsArray = builder.Array(parametersFields.Fields(), fields.size());
 		for (auto& v : fields) {
-			fieldsArray.Put(0, v);
+			fieldsArray.Put(TagName::Empty(), v);
 		}
 		fieldsArray.End();
 	}
@@ -160,6 +128,9 @@ struct AggregationResult {
 	}
 
 private:
+	template <typename Node>
+	static AggregationResult from(Node root);
+
 	std::optional<double> value_ = std::nullopt;
 };
 

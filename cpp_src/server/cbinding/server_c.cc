@@ -18,7 +18,7 @@ int check_server_ready(uintptr_t psvc) {
 static reindexer_error error2c(const Error& err_) {
 	reindexer_error err;
 	err.code = err_.code();
-	err.what = err_.what().length() ? strdup(err_.what().c_str()) : nullptr;
+	err.what = err_.whatStr().length() ? strdup(err_.what()) : nullptr;
 	return err;
 }
 
@@ -78,10 +78,10 @@ reindexer_error stop_reindexer_server(uintptr_t psvc) {
 	Error err = err_not_init;
 	auto svc = reinterpret_cast<Server*>(psvc);
 	if (svc) {
+		wrappersMap_.erase(svc);
 		svc->Stop();
-		err = Error(errOK);
+		err = Error();
 	}
-	wrappersMap_.erase(svc);
 	return error2c(err);
 }
 
@@ -90,7 +90,7 @@ reindexer_error reopen_log_files(uintptr_t psvc) {
 	auto svc = reinterpret_cast<Server*>(psvc);
 	if (svc) {
 		svc->ReopenLogFiles();
-		err = Error(errOK);
+		err = Error();
 	}
 	return error2c(err);
 }

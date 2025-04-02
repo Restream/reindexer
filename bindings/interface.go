@@ -6,9 +6,24 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/restream/reindexer/v4/bindings/builtinserver/config"
-	"github.com/restream/reindexer/v4/jsonschema"
+	"github.com/restream/reindexer/v5/bindings/builtinserver/config"
+	"github.com/restream/reindexer/v5/jsonschema"
 )
+
+const (
+	MultithreadingMode_SingleThread            = 0
+	MultithreadingMode_MultithreadTransactions = 1
+)
+
+type FloatVectorIndexOpts struct {
+	Metric             string `json:"metric"`
+	Dimension          int    `json:"dimension"`
+	M                  int    `json:"m,omitempty"`
+	EfConstruction     int    `json:"ef_construction,omitempty"`
+	StartSize          int    `json:"start_size,omitempty"`
+	CentroidsCount     int    `json:"centroids_count,omitempty"`
+	MultithreadingMode int    `json:"multithreading,omitempty"`
+}
 
 type IndexDef struct {
 	Name        string      `json:"name"`
@@ -18,6 +33,7 @@ type IndexDef struct {
 	IsPK        bool        `json:"is_pk"`
 	IsArray     bool        `json:"is_array"`
 	IsDense     bool        `json:"is_dense"`
+	IsNoColumn  bool        `json:"is_no_column"`
 	IsSparse    bool        `json:"is_sparse"`
 	CollateMode string      `json:"collate_mode"`
 	SortOrder   string      `json:"sort_order_letters"`
@@ -143,6 +159,16 @@ func (bc *BindingCapabilities) WithIncarnationTags(value bool) *BindingCapabilit
 		bc.Value |= int64(BindingCapabilityNamespaceIncarnations)
 	} else {
 		bc.Value &= ^int64(BindingCapabilityNamespaceIncarnations)
+	}
+	return bc
+}
+
+// Enable float rank format
+func (bc *BindingCapabilities) WithFloatRank(value bool) *BindingCapabilities {
+	if value {
+		bc.Value |= int64(BindingCapabilityComplexRank)
+	} else {
+		bc.Value &= ^int64(BindingCapabilityComplexRank)
 	}
 	return bc
 }

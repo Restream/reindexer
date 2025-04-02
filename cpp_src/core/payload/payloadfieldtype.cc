@@ -10,18 +10,22 @@ namespace reindexer {
 
 PayloadFieldType::PayloadFieldType(const Index& index, const IndexDef& indexDef) noexcept
 	: type_(index.KeyType()),
-	  name_(indexDef.name_),
-	  jsonPaths_(indexDef.jsonPaths_),
+	  name_(indexDef.Name()),
+	  jsonPaths_(indexDef.JsonPaths()),
 	  offset_(0),
-	  isArray_(index.Opts().IsArray()),
-	  arrayDim_(indexDef.Type() == IndexType::IndexRTree ? 2 : -1) {}
-
-size_t PayloadFieldType::Sizeof() const noexcept {
-	if (IsArray()) {
-		return sizeof(PayloadFieldValue::Array);
+	  arrayDims_(0),
+	  isArray_(index.Opts().IsArray()) {
+	// Float indexed fields are not supported (except for the float_vector for KNN indexes)
+	assertrx_throw(!type_.Is<KeyValueType::Float>());
+	if (index.IsFloatVector()) {
+		arrayDims_ = index.FloatVectorDimension().Value();
+		assertrx(type_.Is<KeyValueType::FloatVector>());
+	} else if (indexDef.IndexType() == IndexType::IndexRTree) {
+		arrayDims_ = 2;
 	}
-	return ElemSizeof();
 }
+
+size_t PayloadFieldType::Sizeof() const noexcept { return IsArray() ? sizeof(PayloadFieldValue::Array) : ElemSizeof(); }
 
 size_t PayloadFieldType::ElemSizeof() const noexcept {
 	return Type().EvaluateOneOf(
@@ -29,21 +33,9 @@ size_t PayloadFieldType::ElemSizeof() const noexcept {
 		[](OneOf<KeyValueType::Int64>) noexcept { return sizeof(int64_t); },
 		[](OneOf<KeyValueType::Uuid>) noexcept { return sizeof(Uuid); }, [](KeyValueType::Double) noexcept { return sizeof(double); },
 		[](KeyValueType::String) noexcept { return sizeof(p_string); },
-		[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) noexcept -> size_t {
-			assertrx(0);
-			abort();
-		});
-}
-
-size_t PayloadFieldType::Alignof() const noexcept {
-	if (IsArray()) {
-		return alignof(PayloadFieldValue::Array);
-	}
-	return Type().EvaluateOneOf(
-		[](KeyValueType::Bool) noexcept { return alignof(bool); }, [](KeyValueType::Int) noexcept { return alignof(int); },
-		[](KeyValueType::Int64) noexcept { return alignof(int64_t); }, [](KeyValueType::Uuid) noexcept { return alignof(Uuid); },
-		[](KeyValueType::Double) noexcept { return alignof(double); }, [](KeyValueType::String) noexcept { return alignof(p_string); },
-		[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) noexcept -> size_t {
+		[](KeyValueType::FloatVector) noexcept { return sizeof(ConstFloatVectorView); },
+		[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Float>) noexcept
+			-> size_t {
 			assertrx(0);
 			abort();
 		});

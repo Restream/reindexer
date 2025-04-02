@@ -1,6 +1,7 @@
 #include "shardingcontrolrequest.h"
 #include "core/cjson/jsonbuilder.h"
 #include "tools/catch_and_return.h"
+#include "vendor/gason/gason.h"
 
 namespace reindexer::sharding {
 
@@ -15,7 +16,7 @@ static void getJSON(const ControlDataT& shardingControl, WrSerializer& ser) {
 }
 
 template <typename ControlDataT>
-static Error fromJSON(ControlDataT& shardingControl, span<char> json) noexcept {
+static Error fromJSON(ControlDataT& shardingControl, std::span<char> json) noexcept {
 	try {
 		gason::JsonParser parser;
 		auto node = parser.Parse(json);
@@ -29,8 +30,8 @@ static Error fromJSON(ControlDataT& shardingControl, span<char> json) noexcept {
 void ShardingControlRequestData::GetJSON(WrSerializer& ser) const { return getJSON(*this, ser); }
 void ShardingControlResponseData::GetJSON(WrSerializer& ser) const { return getJSON(*this, ser); }
 
-Error ShardingControlRequestData::FromJSON(span<char> json) noexcept { return fromJSON(*this, json); }
-Error ShardingControlResponseData::FromJSON(span<char> json) noexcept { return fromJSON(*this, json); }
+Error ShardingControlRequestData::FromJSON(std::span<char> json) noexcept { return fromJSON(*this, json); }
+Error ShardingControlResponseData::FromJSON(std::span<char> json) noexcept { return fromJSON(*this, json); }
 
 void ApplyLeaderConfigCommand::GetJSON(JsonBuilder& json) const {
 	json.Put("config", config);
@@ -66,7 +67,8 @@ void ResetConfigCommand::FromJSON(const gason::JsonNode& payload) { sourceId = p
 void GetNodeConfigCommand::GetJSON(JsonBuilder& json) const { json.Put("config", config.GetJSON(cluster::MaskingDSN(masking))); }
 
 void GetNodeConfigCommand::FromJSON(const gason::JsonNode& payload) {
-	auto err = config.FromJSON(payload["config"].As<std::string>());
+	auto cfg = payload["config"].As<std::string>();
+	auto err = config.FromJSON(std::span(cfg));
 	if (!err.ok()) {
 		throw err;
 	}

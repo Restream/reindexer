@@ -1,14 +1,13 @@
 #pragma once
 
 #include <stdarg.h>
-#include <memory>
 #include <random>
 #include <string>
 #include <vector>
 
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/variant.h"
-#include "estl/span.h"
+#include <span>
 
 using reindexer::Variant;
 using reindexer::VariantArray;
@@ -51,9 +50,8 @@ static inline std::string randString(size_t size) {
 	return ret;
 }
 
-// FIXME: !!!!!!!!!!!!!!Non-const to const span cats
 template <size_t L>
-reindexer::span<const bool> randBoolArray() {
+std::span<const bool> randBoolArray() {
 	static bool ret[L];
 	for (size_t i = 0; i < L; ++i) {
 		ret[i] = rand() % 2;
@@ -62,7 +60,7 @@ reindexer::span<const bool> randBoolArray() {
 }
 
 template <size_t L>
-reindexer::span<const int> randIntArray() {
+std::span<const int> randIntArray() {
 	static int ret[L];
 	for (size_t i = 0; i < L; ++i) {
 		ret[i] = rand();
@@ -71,7 +69,7 @@ reindexer::span<const int> randIntArray() {
 }
 
 template <size_t L>
-reindexer::span<const int64_t> randInt64Array() {
+std::span<const int64_t> randInt64Array() {
 	static int64_t ret[L];
 	for (size_t i = 0; i < L; ++i) {
 		ret[i] = rand();
@@ -80,7 +78,7 @@ reindexer::span<const int64_t> randInt64Array() {
 }
 
 template <size_t L>
-reindexer::span<const double> randDoubleArray() {
+std::span<const double> randDoubleArray() {
 	static double ret[L];
 	for (size_t i = 0; i < L; ++i) {
 		ret[i] = double(rand()) / (rand() + 1);
@@ -89,7 +87,7 @@ reindexer::span<const double> randDoubleArray() {
 }
 
 template <size_t L>
-reindexer::span<const std::string> randStringArray() {
+std::span<const std::string> randStringArray() {
 	static std::string ret[L];
 	for (size_t i = 0; i < L; ++i) {
 		ret[i] = randString(L);

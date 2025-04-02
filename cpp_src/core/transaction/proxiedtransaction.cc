@@ -139,10 +139,10 @@ Error ProxiedTransaction::Commit(int serverId, QueryResults& result, const RdxCo
 
 	if (shardId_ < 0) {
 		c = client::InternalRdxContext(ctx.GetOriginLSN()).WithEmmiterServerId(serverId);
-		clusterProxyLog(LogTrace, "[proxy] Proxying commit to leader. SID: %d", serverId);
+		clusterProxyLog(LogTrace, "[proxy] Proxying commit to leader. SID: {}", serverId);
 	} else {
 		c = client::InternalRdxContext{}.WithShardId(shardId_, false);
-		clusterProxyLog(LogTrace, "[proxy] Proxying commit to shard %d. SID: %d", shardId_, serverId);
+		clusterProxyLog(LogTrace, "[proxy] Proxying commit to shard {}. SID: {}", shardId_, serverId);
 	}
 
 	client::QueryResults clientResults;

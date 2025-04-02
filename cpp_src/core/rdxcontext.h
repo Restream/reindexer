@@ -160,6 +160,9 @@ public:
 
 	/// lifetime of the returning value should not exceed of the context's
 	RdxContext OnlyActivity() const { return RdxContext{Activity(), originLsn_, nullptr, nullptr, -1, shardingParallelExecution_}; }
+	RdxContext NoCancel() const {
+		return RdxContext{Activity(), originLsn_, nullptr, cmpl_, emmiterServerId_, shardId_, shardingParallelExecution_, noWaitSync_};
+	}
 	RdxActivityContext* Activity() const noexcept;
 	Completion Compl() const noexcept { return cmpl_; }
 	bool NoWaitSync() const noexcept { return noWaitSync_; }

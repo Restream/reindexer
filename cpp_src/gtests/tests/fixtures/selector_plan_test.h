@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/cjson/jsonbuilder.h"
+#include "core/system_ns_names.h"
 #include "reindexer_api.h"
 
 class SelectorPlanTest : public ReindexerApi {
@@ -135,8 +136,6 @@ private:
 
 		ns1.Put("namespace", unbuiltBtreeNs);
 		ns1.Put("log_level", "none");
-		ns1.Put("lazyload", false);
-		ns1.Put("unload_idle_threshold", 0);
 		ns1.Put("join_cache_mode", "off");
 		ns1.Put("start_copy_policy_tx_size", 10000);
 		ns1.Put("optimization_timeout_ms", 0);
@@ -145,8 +144,6 @@ private:
 		auto ns2 = nsArray.Object();
 		ns2.Put("namespace", btreeNs);
 		ns2.Put("log_level", "none");
-		ns2.Put("lazyload", false);
-		ns2.Put("unload_idle_threshold", 0);
 		ns2.Put("join_cache_mode", "off");
 		ns2.Put("start_copy_policy_tx_size", 10000);
 		ns2.Put("optimization_timeout_ms", 800);
@@ -155,15 +152,8 @@ private:
 		nsArray.End();
 		jb.End();
 
-		auto item = rt.NewItem(config_ns_);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
-		auto err = item.FromJSON(ser.Slice());
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		rt.Upsert(config_ns_, item);
+		rt.UpsertJSON(reindexer::kConfigNamespace, ser.Slice());
 	}
-	static constexpr const char* config_ns_ = "#config";
 };
 
 template <>

@@ -7,20 +7,24 @@ namespace reindexer {
 template <typename T>
 void buildPayloadTuple(const PayloadIface<T>& pl, const TagsMatcher* tagsMatcher, WrSerializer& wrser);
 
-void copyCJsonValue(TagType tagType, Serializer& rdser, WrSerializer& wrser);
-void copyCJsonValue(TagType tagType, const Variant& value, WrSerializer& wrser);
-void putCJsonRef(TagType tagType, int tagName, int tagField, const VariantArray& values, WrSerializer& wrser);
-void putCJsonValue(TagType tagType, int tagName, const VariantArray& values, WrSerializer& wrser);
+void copyCJsonValue(TagType, Serializer&, WrSerializer&);
+void copyCJsonValue(TagType, const Variant& value, WrSerializer&);
+void putCJsonRef(TagType, TagName, int tagField, const VariantArray& values, WrSerializer&);
+void putCJsonValue(TagType, TagName, const VariantArray& values, WrSerializer&);
 
 [[nodiscard]] TagType arrayKvType2Tag(const VariantArray& values);
 void skipCjsonTag(ctag tag, Serializer& rdser, std::array<unsigned, kMaxIndexes>* fieldsArrayOffsets = nullptr);
 [[nodiscard]] Variant cjsonValueToVariant(TagType tag, Serializer& rdser, KeyValueType dstType);
 
+[[noreturn]] void throwUnexpectedArrayError(std::string_view parserName, const PayloadFieldType&);
+[[noreturn]] void throwUnexpectedArraySizeForFloatVectorError(std::string_view parserName, const PayloadFieldType& fieldRef, size_t size);
+[[noreturn]] void throwUnexpectedArrayTypeForFloatVectorError(std::string_view parserName, const PayloadFieldType& fieldRef);
 [[noreturn]] void throwUnexpectedNestedArrayError(std::string_view parserName, const PayloadFieldType& f);
 [[noreturn]] void throwScalarMultipleEncodesError(const Payload& pl, const PayloadFieldType& f, int field);
 [[noreturn]] void throwUnexpectedArraySizeError(std::string_view parserName, const PayloadFieldType& f, int arraySize);
 RX_ALWAYS_INLINE void validateNonArrayFieldRestrictions(const ScalarIndexesSetT& scalarIndexes, const Payload& pl,
-														const PayloadFieldType& f, int field, bool isInArray, std::string_view parserName) {
+														const PayloadFieldType& f, int field, InArray isInArray,
+														std::string_view parserName) {
 	if (!f.IsArray()) {
 		if rx_unlikely (isInArray) {
 			throwUnexpectedNestedArrayError(parserName, f);
@@ -33,7 +37,7 @@ RX_ALWAYS_INLINE void validateNonArrayFieldRestrictions(const ScalarIndexesSetT&
 
 RX_ALWAYS_INLINE void validateArrayFieldRestrictions(const PayloadFieldType& f, int arraySize, std::string_view parserName) {
 	if (f.IsArray()) {
-		if rx_unlikely (arraySize && f.ArrayDim() > 0 && f.ArrayDim() != arraySize) {
+		if rx_unlikely (arraySize && f.ArrayDims() > 0 && int(f.ArrayDims()) != arraySize) {
 			throwUnexpectedArraySizeError(parserName, f, arraySize);
 		}
 	}
@@ -70,7 +74,7 @@ static inline Variant convertValueForPayload(Payload& pl, int field, Variant&& v
 			   (plFieldType.Is<KeyValueType::Uuid>() && value.Type().Is<KeyValueType::String>())) {
 		return value.convert(pl.Type().Field(field).Type());
 	} else {
-		throw Error(errLogic, "Error parsing %s field '%s' - got %s, expected %s", source, pl.Type().Field(field).Name(),
+		throw Error(errLogic, "Error parsing {} field '{}' - got {}, expected {}", source, pl.Type().Field(field).Name(),
 					value.Type().Name(), plFieldType.Name());
 	}
 }

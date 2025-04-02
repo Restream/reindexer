@@ -41,7 +41,7 @@ private:
 	ClockT::time_point deadline_;
 
 	template <typename... Args>
-	void logDebug(Args&&... args);
+	void logDebug(spdlog::format_string_t<Args...>, Args&&... args);
 };
 
 }  // namespace reindexer

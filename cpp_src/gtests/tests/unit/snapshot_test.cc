@@ -6,6 +6,8 @@
 
 const std::string SnapshotTestApi::kDefaultRPCServerAddr = std::string("127.0.0.1:") + std::to_string(SnapshotTestApi::kDefaultRPCPort);
 
+// ASAN randomly breaks on coroutines here
+#ifndef REINDEX_WITH_ASAN
 TEST_F(SnapshotTestApi, ForceSyncFromLocalToRemote) {
 	// Check if we can apply snapshot from local rx instance to remote rx instance via RPC
 	ev::dynamic_loop loop;
@@ -122,6 +124,7 @@ TEST_F(SnapshotTestApi, ForceSyncFromRemoteToLocal) {
 	});
 	loop.run();
 }
+#endif	// REINDEX_WITH_ASAN
 
 TEST_F(SnapshotTestApi, ConcurrentSnapshotsLimit) {
 	// Check if concurrent snapshots limit is actually works
@@ -193,7 +196,7 @@ TEST_F(SnapshotTestApi, SnapshotInvalidation) {
 			EXPECT_TRUE(false) << "Exception was expected";
 		} catch (Error& e) {
 			EXPECT_EQ(e.code(), errNetwork);
-			EXPECT_EQ(e.what(), "Connection was broken and all corresponding snapshots, queryresults and transaction were invalidated");
+			EXPECT_STREQ(e.what(), "Connection was broken and all corresponding snapshots, queryresults and transaction were invalidated");
 		}
 	});
 	loop.run();

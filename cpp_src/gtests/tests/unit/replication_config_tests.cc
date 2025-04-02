@@ -2,15 +2,15 @@
 
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
-#include "core/item.h"
 #include "core/keyvalue/variant.h"
 #include "core/namespace/namespacestat.h"
 #include "core/reindexer.h"
+#include "core/system_ns_names.h"
 #include "core/type_consts.h"
-
 #include "tools/errors.h"
 #include "tools/fsops.h"
 #include "tools/serializer.h"
+#include "vendor/gason/gason.h"
 
 #include "gtest/gtest.h"
 
@@ -30,7 +30,6 @@ public:
 	const std::string kSimpleReplConfigStoragePath = fs::JoinPath(fs::GetTempDir(), "reindex/simple_replicationConf_tests/");
 	const std::string kStoragePath = kSimpleReplConfigStoragePath;
 	const std::string kBuiltin = "builtin://" + kStoragePath;
-	const std::string kConfigNs = "#config";
 	const std::string kReplicationConfigFilename = "replication.conf";
 	const std::string kReplFilePath = reindexer::fs::JoinPath(kStoragePath, kReplicationConfigFilename);
 
@@ -93,7 +92,7 @@ public:
 	bool CheckReplicationConfigNS(reindexer::Reindexer& rx, const ReplicationConfigData& expectedConf, bool expectErrorParseJSON = false) {
 		GTEST_TRACE_FUNCTION();
 		QueryResultsType results;
-		auto err = rx.Select(Query(kConfigNs).Where("type", CondEq, "replication"), results);
+		auto err = rx.Select(Query(kConfigNamespace).Where("type", CondEq, "replication"), results);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		ReplicationConfigData replConf;
@@ -203,11 +202,11 @@ protected:
 	void upsertConfigItemFromJSON(reindexer::Reindexer& rx, const std::string_view stringJSON) {
 		GTEST_TRACE_FUNCTION();
 
-		auto item = rx.NewItem(kConfigNs);
+		auto item = rx.NewItem(kConfigNamespace);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		auto err = item.FromJSON(stringJSON);
 		ASSERT_TRUE(err.ok()) << err.what();
-		err = rx.Upsert(kConfigNs, item);
+		err = rx.Upsert(kConfigNamespace, item);
 		if constexpr (ExpectErrorOnUpsert) {
 			ASSERT_FALSE(err.ok()) << err.what();
 		} else {
@@ -245,8 +244,6 @@ TEST(DBConfigTests, ReadValidJsonConfiguration) {
 			{
 				"namespace":"*",
 				"log_level":"none",
-				"lazyload":false,
-				"unload_idle_threshold":0,
 				"join_cache_mode":"off",
 				"start_copy_policy_tx_size":10000,
 				"copy_policy_multiplier":5,
@@ -319,8 +316,6 @@ TEST(DBConfigTests, ReadInvalidJsonConfiguration) {
 			{
 				"namespace":"*",
 				"log_level":"none",
-				"lazyload":false,
-				"unload_idle_threshold":0,
 				"join_cache_mode":"off",
 				"start_copy_policy_tx_size":10000,
 				"copy_policy_multiplier":5,

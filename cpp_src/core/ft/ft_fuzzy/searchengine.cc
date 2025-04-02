@@ -1,10 +1,11 @@
 #include "searchengine.h"
 #include <tools/stringstools.h>
-#include <locale>
 #include <string>
 #include <string_view>
 #include "core/ft/filters/kblayout.h"
 #include "core/ft/filters/translit.h"
+
+using namespace reindexer;
 
 namespace search_engine {
 

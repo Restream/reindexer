@@ -1,5 +1,6 @@
 #pragma once
 
+#include <variant>
 #include "core/namespace/namespaceimpl.h"
 #include "core/querystat.h"
 
@@ -84,6 +85,7 @@ public:
 
 private:
 	struct QueryResultsContext;
+
 	template <typename T>
 	static JoinedSelectors prepareJoinedSelectors(const Query& q, LocalQueryResults& result, NsLocker<T>& locks,
 												  SelectFunctionsHolder& func, std::vector<QueryResultsContext>&, const RdxContext& ctx);

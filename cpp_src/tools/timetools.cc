@@ -27,7 +27,7 @@ int64_t getTimeNow(std::string_view mode) {
 		return duration_cast<nanoseconds>(duration).count();
 	}
 
-	throw Error(errParams, "Unknown parameter '%s' in getTimeNow function.", mode);
+	throw Error(errParams, "Unknown parameter '{}' in getTimeNow function.", mode);
 }
 
 std::tm localtime(const std::time_t& time_tt) {

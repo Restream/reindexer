@@ -15,8 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/cjson"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/cjson"
 )
 
 const (
@@ -277,7 +277,8 @@ func (binding *NetCProto) Init(u []url.URL, eh bindings.EventsHandler, options .
 	binding.caps = *bindings.DefaultBindingCapabilities().
 		WithQrIdleTimeouts(true).
 		WithResultsWithShardIDs(true).
-		WithIncarnationTags(true)
+		WithIncarnationTags(true).
+		WithFloatRank(true)
 
 	for _, option := range options {
 		switch v := option.(type) {

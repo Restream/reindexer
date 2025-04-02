@@ -134,7 +134,7 @@ Pos SplitterTaskFast::wordToByteAndCharPos(std::string_view str, int wordPositio
 		}
 	}
 	if (wordPosition != 0) {
-		throw Error(errParams, "wordToByteAndCharPos: incorrect input string=%s wordPosition=%d", str, wordPosition);
+		throw Error(errParams, "wordToByteAndCharPos: incorrect input string={} wordPosition={}", str, wordPosition);
 	}
 	wp.SetBytePosition(wordStartIt - str.begin(), wordEndIt - str.begin());
 	return wp;

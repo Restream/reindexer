@@ -65,7 +65,7 @@ TEST_F(ReindexerApi, ProtobufConversionTest) {
 		auto nums = jsonBuilder.Array("numbers");
 		for (int i = 0; i < 10; ++i) {
 			numbers.emplace_back(double(rand() + 10 + i) + 0.11111f);
-			nums.Put(0, numbers.back());
+			nums.Put(reindexer::TagName::Empty(), numbers.back());
 		}
 	}
 	jsonBuilder.End();
@@ -153,7 +153,7 @@ TEST_F(ReindexerApi, ProtobufEasyArrayTest) {
 			auto nums = nested.Array("nums");
 			for (int i = 0; i < 10; ++i) {
 				numVals.emplace_back(rand() + 10 + i);
-				nums.Put(0, numVals.back());
+				nums.Put(reindexer::TagName::Empty(), numVals.back());
 			}
 		}
 
@@ -161,7 +161,7 @@ TEST_F(ReindexerApi, ProtobufEasyArrayTest) {
 			auto strings = nested.Array("strings");
 			for (int i = 0; i < 10; ++i) {
 				stringVals.emplace_back(RandString());
-				strings.Put(0, stringVals.back());
+				strings.Put(reindexer::TagName::Empty(), stringVals.back());
 			}
 		}
 	}
@@ -385,7 +385,7 @@ TEST_F(ReindexerApi, ProtobufSchemaFromNsSchema) {
 				{
 					auto four = oneMoreNested.Array("four");
 					for (size_t i = 0; i < 10; ++i) {
-						auto item = four.Object(0);
+						auto item = four.Object();
 						item.Put("bigField", RandString());
 						item.Put("biggerField", double(11.11 + rand()));
 						item.Put("hugeField", int(33 + rand()));
@@ -396,7 +396,7 @@ TEST_F(ReindexerApi, ProtobufSchemaFromNsSchema) {
 	}
 	auto collection = jsonBuilder.Array("Collection");
 	for (int i = 0; i < 10; ++i) {
-		collection.Put(0, i);
+		collection.Put(reindexer::TagName::Empty(), i);
 	}
 	collection.End();
 	jsonBuilder.End();
@@ -458,58 +458,58 @@ TEST_F(ReindexerApi, ProtobufEncodingTest) {
 
 	reindexer::WrSerializer wrser;
 	reindexer::ProtobufBuilder builder(&wrser);
-	builder.Put(person.kNameFieldNumber, kNameValue);
-	builder.Put(person.kIdFieldNumber, KIdValue);
-	builder.Put(person.kAgeFieldNumber, kAgeValue);
-	builder.Put(person.kWeightFieldNumber, kWeightValue);
-	builder.Put(person.kEmailFieldNumber, kEmailValue);
+	builder.Put(reindexer::TagName(person.kNameFieldNumber), kNameValue);
+	builder.Put(reindexer::TagName(person.kIdFieldNumber), KIdValue);
+	builder.Put(reindexer::TagName(person.kAgeFieldNumber), kAgeValue);
+	builder.Put(reindexer::TagName(person.kWeightFieldNumber), kWeightValue);
+	builder.Put(reindexer::TagName(person.kEmailFieldNumber), kEmailValue);
 
-	auto addressBuilder = builder.Object(person.kAddressFieldNumber);
-	auto phones = addressBuilder.ArrayNotPacked(address->kPhonesFieldNumber);
+	auto addressBuilder = builder.Object(reindexer::TagName(person.kAddressFieldNumber));
+	auto phones = addressBuilder.ArrayNotPacked(reindexer::TagName(address->kPhonesFieldNumber));
 	for (size_t i = 0; i < 10; ++i) {
-		auto phone = phones.Object(0);
-		phone.Put(Person_Address_PhoneNumber::kNumberFieldNumber, kNumberValue + std::to_string(i));
-		phone.Put(Person_Address_PhoneNumber::kTypeFieldNumber, int64_t(kTypeValue + i));
+		auto phone = phones.Object();
+		phone.Put(reindexer::TagName(Person_Address_PhoneNumber::kNumberFieldNumber), kNumberValue + std::to_string(i));
+		phone.Put(reindexer::TagName(Person_Address_PhoneNumber::kTypeFieldNumber), int64_t(kTypeValue + i));
 	}
 	phones.End();
-	auto homes = addressBuilder.ArrayNotPacked(address->kHomesFieldNumber);
+	auto homes = addressBuilder.ArrayNotPacked(reindexer::TagName(address->kHomesFieldNumber));
 	for (size_t i = 0; i < 20; ++i) {
-		auto home = homes.Object(0);
-		home.Put(Person_Address_Home::kCityFieldNumber, kCityValue + std::to_string(i));
-		home.Put(Person_Address_Home::kStreetFieldNumber, kStreetValue + std::to_string(i));
+		auto home = homes.Object();
+		home.Put(reindexer::TagName(Person_Address_Home::kCityFieldNumber), kCityValue + std::to_string(i));
+		home.Put(reindexer::TagName(Person_Address_Home::kStreetFieldNumber), kStreetValue + std::to_string(i));
 	}
 	homes.End();
-	auto postalCodes = addressBuilder.ArrayNotPacked(address->kPostalcodesFieldNumber);
+	auto postalCodes = addressBuilder.ArrayNotPacked(reindexer::TagName(address->kPostalcodesFieldNumber));
 	for (size_t i = 0; i < 20; ++i) {
-		postalCodes.Put(0, kPostalCodeValue + std::to_string(i));
+		postalCodes.Put(reindexer::TagName::Empty(), kPostalCodeValue + std::to_string(i));
 	}
 	postalCodes.End();
 	addressBuilder.End();
-	auto friends = builder.ArrayNotPacked(person.kFriendsFieldNumber);
+	auto friends = builder.ArrayNotPacked(reindexer::TagName(person.kFriendsFieldNumber));
 	for (int64_t i = 0; i < 5; ++i) {
-		friends.Put(0, i);
+		friends.Put(reindexer::TagName::Empty(), i);
 	}
 	friends.End();
-	builder.Put(person.kSalaryFieldNumber, kSalaryValue);
-	auto bonuses = builder.ArrayPacked(person.kBonusesFieldNumber);
+	builder.Put(reindexer::TagName(person.kSalaryFieldNumber), kSalaryValue);
+	auto bonuses = builder.ArrayPacked(reindexer::TagName(person.kBonusesFieldNumber));
 	for (int64_t i = 0; i < 10; ++i) {
-		bonuses.Put(person.kBonusesFieldNumber, i);
+		bonuses.Put(reindexer::TagName(person.kBonusesFieldNumber), i);
 	}
 	bonuses.End();
 
-	auto indexedPackedDouble = builder.ArrayPacked(person.kIndexedPackedDoubleFieldNumber);
+	auto indexedPackedDouble = builder.ArrayPacked(reindexer::TagName(person.kIndexedPackedDoubleFieldNumber));
 	for (int i = 0; i < 10; ++i) {
-		indexedPackedDouble.Put(person.kIndexedPackedDoubleFieldNumber, double(i) + 0.55f);
+		indexedPackedDouble.Put(reindexer::TagName(person.kIndexedPackedDoubleFieldNumber), double(i) + 0.55f);
 	}
 	indexedPackedDouble.End();
 
-	auto indexedUnpackedDouble = builder.ArrayNotPacked(person.kIndexedUnpackedDoubleFieldNumber);
+	auto indexedUnpackedDouble = builder.ArrayNotPacked(reindexer::TagName(person.kIndexedUnpackedDoubleFieldNumber));
 	for (int i = 0; i < 10; ++i) {
-		indexedUnpackedDouble.Put(0, std::to_string(5 + i));
+		indexedUnpackedDouble.Put(reindexer::TagName::Empty(), std::to_string(5 + i));
 	}
 	indexedUnpackedDouble.End();
 
-	builder.Put(person.kEnabledFieldNumber, true);
+	builder.Put(reindexer::TagName(person.kEnabledFieldNumber), true);
 
 	builder.End();
 
@@ -720,39 +720,39 @@ TEST_F(ReindexerApi, ProtobufDecodingTest) {
 	auto addressBuilder = builder.Object(nsItem.GetFieldTag("address"));
 	auto phones = addressBuilder.ArrayNotPacked(nsItem.GetFieldTag("phones"));
 	for (size_t i = 0; i < 10; ++i) {
-		auto phone = phones.Object(0);
+		auto phone = phones.Object();
 		phone.Put(nsItem.GetFieldTag("number"), kNumberValue + std::to_string(i));
 		phone.Put(nsItem.GetFieldTag("type"), int64_t(kTypeValue + i));
 	}
 	phones.End();
 	auto homes = addressBuilder.ArrayNotPacked(nsItem.GetFieldTag("homes"));
 	for (size_t i = 0; i < 20; ++i) {
-		auto home = homes.Object(0);
+		auto home = homes.Object();
 		home.Put(nsItem.GetFieldTag("city"), kCityValue + std::to_string(i));
 		home.Put(nsItem.GetFieldTag("street"), kStreetValue + std::to_string(i));
 	}
 	homes.End();
 	auto postalCodes = addressBuilder.ArrayNotPacked(nsItem.GetFieldTag("postalcodes"));
 	for (size_t i = 0; i < 20; ++i) {
-		postalCodes.Put(0, kPostalCodeValue + std::to_string(i));
+		postalCodes.Put(reindexer::TagName::Empty(), kPostalCodeValue + std::to_string(i));
 	}
 	postalCodes.End();
 	addressBuilder.End();
 	auto friends = builder.ArrayNotPacked(nsItem.GetFieldTag("friends"));
 	for (int64_t i = 0; i < 5; ++i) {
-		friends.Put(0, i);
+		friends.Put(reindexer::TagName::Empty(), i);
 	}
 	friends.End();
 	builder.Put(nsItem.GetFieldTag("salary"), kSalaryValue);
 	auto bonuses = builder.ArrayPacked(nsItem.GetFieldTag("bonuses"));
 	for (int64_t i = 0; i < 10; ++i) {
-		bonuses.Put(9, i);
+		bonuses.Put(reindexer::TagName(9), i);
 	}
 	bonuses.End();
 
 	auto indexedPackedDouble = builder.ArrayPacked(nsItem.GetFieldTag("indexedPackedDouble"));
 	for (int i = 0; i < 10; ++i) {
-		indexedPackedDouble.Put(0, double(i) + 0.55f);
+		indexedPackedDouble.Put(reindexer::TagName::Empty(), double(i) + 0.55f);
 	}
 	indexedPackedDouble.End();
 
@@ -760,7 +760,7 @@ TEST_F(ReindexerApi, ProtobufDecodingTest) {
 	auto indexedUnpackedDouble = builder.ArrayNotPacked(nsItem.GetFieldTag("indexedUnpackedDouble"));
 	for (int i = 0; i < 10; ++i) {
 		strings.emplace_back(std::string("BIG_DATA") + std::to_string(i + 1));
-		indexedUnpackedDouble.Put(0, strings.back());
+		indexedUnpackedDouble.Put(reindexer::TagName::Empty(), strings.back());
 	}
 	indexedUnpackedDouble.End();
 

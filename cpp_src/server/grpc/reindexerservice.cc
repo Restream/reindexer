@@ -65,7 +65,7 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 		status = rx->Connect(dsn, opts);
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.what());
+	response->set_what(status.whatStr());
 	return ::grpc::Status::OK;
 }
 
@@ -80,7 +80,7 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 	reindexer_server::AuthContext actx;
 	Error status = dbMgr_.OpenDatabase(request->dbname(), actx, true);
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.what());
+	response->set_what(status.whatStr());
 	return ::grpc::Status::OK;
 }
 
@@ -101,7 +101,7 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 		status = rx->OpenNamespace(request->storageoptions().nsname(), opts);
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.what());
+	response->set_what(status.whatStr());
 	return ::grpc::Status::OK;
 }
 
@@ -120,28 +120,27 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 		nsDef.storage.DropOnFileFormatError(request->namespace_().storageoptions().droponfileformaterror());
 		for (int i = 0; i < request->namespace_().indexesdefinitions().size(); ++i) {
 			Index index = request->namespace_().indexesdefinitions(i);
-			IndexDef indexDef;
-			indexDef.name_ = index.name();
-			indexDef.fieldType_ = index.fieldtype();
-			indexDef.indexType_ = index.indextype();
-			indexDef.expireAfter_ = index.expireafter();
-			indexDef.opts_.PK(index.options().ispk());
-			indexDef.opts_.Array(index.options().isarray());
-			indexDef.opts_.Dense(index.options().isdense());
-			indexDef.opts_.Sparse(index.options().issparse());
-			indexDef.opts_.SetConfig(index.options().config());
-			indexDef.opts_.RTreeType(static_cast<IndexOpts::RTreeIndexType>(index.options().rtreetype()));
-			indexDef.opts_.SetCollateMode(CollateMode(index.options().collatemode()));
+			IndexOpts opts;
+			opts.PK(index.options().ispk());
+			opts.Array(index.options().isarray());
+			opts.Dense(index.options().isdense());
+			opts.Sparse(index.options().issparse());
+			opts.SetConfig(IndexDef::DetermineIndexType(index.name(), index.indextype(), index.fieldtype()), index.options().config());
+			opts.RTreeType(static_cast<IndexOpts::RTreeIndexType>(index.options().rtreetype()));
+			opts.SetCollateMode(CollateMode(index.options().collatemode()));
+			JsonPaths jsonPaths;
+			jsonPaths.reserve(index.jsonpaths().size());
 			for (int j = 0; j < index.jsonpaths().size(); ++j) {
-				indexDef.jsonPaths_.emplace_back(index.jsonpaths(j));
+				jsonPaths.emplace_back(index.jsonpaths(j));
 			}
-			nsDef.indexes.emplace_back(indexDef);
+			nsDef.indexes.emplace_back(index.name(), std::move(jsonPaths), index.indextype(), index.fieldtype(), std::move(opts),
+									   index.expireafter());
 		}
 		assertrx(rx);
 		status = rx->AddNamespace(nsDef);
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.what());
+	response->set_what(status.whatStr());
 	return ::grpc::Status::OK;
 }
 
@@ -153,7 +152,7 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 		status = rx->CloseNamespace(request->nsname());
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.what());
+	response->set_what(status.whatStr());
 	return ::grpc::Status::OK;
 }
 
@@ -165,7 +164,7 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 		status = rx->DropNamespace(request->nsname());
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.what());
+	response->set_what(status.whatStr());
 	return ::grpc::Status::OK;
 }
 
@@ -178,31 +177,30 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 		status = rx->TruncateNamespace(request->nsname());
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.what());
+	response->set_what(status.whatStr());
 	return ::grpc::Status::OK;
 }
 
 static IndexDef toIndexDef(const Index& src) {
-	IndexDef indexDef;
-	indexDef.opts_.PK(src.options().ispk());
-	indexDef.opts_.Array(src.options().isarray());
-	indexDef.opts_.Dense(src.options().isdense());
-	indexDef.opts_.Sparse(src.options().issparse());
-	indexDef.opts_.RTreeType(static_cast<IndexOpts::RTreeIndexType>(src.options().rtreetype()));
+	IndexOpts opts;
+	opts.PK(src.options().ispk());
+	opts.Array(src.options().isarray());
+	opts.Dense(src.options().isdense());
+	opts.Sparse(src.options().issparse());
+	opts.RTreeType(static_cast<IndexOpts::RTreeIndexType>(src.options().rtreetype()));
 	if (src.options().sortorderstable().empty()) {
-		indexDef.opts_.SetCollateMode(CollateMode(src.options().collatemode()));
+		opts.SetCollateMode(CollateMode(src.options().collatemode()));
 	} else {
-		indexDef.opts_.collateOpts_ = CollateOpts(src.options().sortorderstable());
+		opts.collateOpts_ = CollateOpts(src.options().sortorderstable());
 	}
-	indexDef.opts_.config = src.options().config();
-	indexDef.name_ = src.name();
-	indexDef.fieldType_ = src.fieldtype();
-	indexDef.indexType_ = src.indextype();
-	indexDef.expireAfter_ = src.expireafter();
+	const auto indexType = IndexDef::DetermineIndexType(src.name(), src.indextype(), src.fieldtype());
+	opts.SetConfig(indexType, src.options().config());
+	JsonPaths jsonPaths;
+	jsonPaths.reserve(src.jsonpaths().size());
 	for (const std::string& jsonPath : src.jsonpaths()) {
-		indexDef.jsonPaths_.emplace_back(jsonPath);
+		jsonPaths.emplace_back(jsonPath);
 	}
-	return indexDef;
+	return {src.name(), std::move(jsonPaths), src.indextype(), src.fieldtype(), std::move(opts), src.expireafter()};
 }
 
 ::grpc::Status ReindexerService::AddIndex(::grpc::ServerContext*, const AddIndexRequest* request, ErrorResponse* response) {
@@ -214,7 +212,7 @@ static IndexDef toIndexDef(const Index& src) {
 		status = rx->AddIndex(request->nsname(), indexDef);
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.what());
+	response->set_what(status.whatStr());
 	return ::grpc::Status::OK;
 }
 
@@ -227,7 +225,7 @@ static IndexDef toIndexDef(const Index& src) {
 		status = rx->UpdateIndex(request->nsname(), indexDef);
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.what());
+	response->set_what(status.whatStr());
 	return ::grpc::Status::OK;
 }
 
@@ -240,7 +238,7 @@ static IndexDef toIndexDef(const Index& src) {
 		status = rx->DropIndex(request->nsname(), indexDef);
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.what());
+	response->set_what(status.whatStr());
 	return ::grpc::Status::OK;
 }
 
@@ -252,7 +250,7 @@ static IndexDef toIndexDef(const Index& src) {
 		status = rx->SetSchema(request->schemadefinitionrequest().nsname(), request->schemadefinitionrequest().jsondata());
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.what());
+	response->set_what(status.whatStr());
 	return ::grpc::Status::OK;
 }
 
@@ -275,7 +273,7 @@ static IndexDef toIndexDef(const Index& src) {
 		}
 	}
 	responseCode->set_code(ErrorResponse::ErrorCode(status.code()));
-	responseCode->set_what(status.what());
+	responseCode->set_what(status.whatStr());
 	response->set_allocated_errorresponse(responseCode);
 	return ::grpc::Status::OK;
 }
@@ -313,29 +311,29 @@ static IndexDef toIndexDef(const Index& src) {
 
 				for (const IndexDef& index : src.indexes) {
 					Index* indexDef = nsdef->add_indexesdefinitions();
-					indexDef->set_name(index.name_);
-					indexDef->set_fieldtype(index.fieldType_);
-					indexDef->set_indextype(index.indexType_);
-					indexDef->set_expireafter(index.expireAfter_);
-					for (const std::string& jsonPath : index.jsonPaths_) {
+					indexDef->set_name(index.Name());
+					indexDef->set_fieldtype(index.FieldType());
+					indexDef->set_indextype(index.IndexTypeStr());
+					indexDef->set_expireafter(index.ExpireAfter());
+					for (const std::string& jsonPath : index.JsonPaths()) {
 						indexDef->add_jsonpaths(jsonPath);
 					}
 
 					IndexOptions* indexOpts = indexDef->options().New();
-					indexOpts->set_ispk(index.opts_.IsPK());
-					indexOpts->set_config(index.opts_.config);
-					indexOpts->set_isarray(index.opts_.IsArray());
-					indexOpts->set_isdense(index.opts_.IsDense());
-					indexOpts->set_issparse(index.opts_.IsSparse());
-					indexOpts->set_collatemode(IndexOptions::CollateMode(index.opts_.GetCollateMode()));
-					indexOpts->set_rtreetype(static_cast<reindexer::grpc::IndexOptions_RTreeType>(index.opts_.RTreeType()));
+					indexOpts->set_ispk(*index.Opts().IsPK());
+					indexOpts->set_config(index.Opts().Config());
+					indexOpts->set_isarray(*index.Opts().IsArray());
+					indexOpts->set_isdense(*index.Opts().IsDense());
+					indexOpts->set_issparse(*index.Opts().IsSparse());
+					indexOpts->set_collatemode(IndexOptions::CollateMode(index.Opts().GetCollateMode()));
+					indexOpts->set_rtreetype(static_cast<reindexer::grpc::IndexOptions_RTreeType>(index.Opts().RTreeType()));
 					indexDef->set_allocated_options(indexOpts);
 				}
 			}
 		}
 	}
 	responseCode->set_code(ErrorResponse::ErrorCode(status.code()));
-	responseCode->set_what(status.what());
+	responseCode->set_what(status.whatStr());
 	response->set_allocated_errorresponse(responseCode);
 	return ::grpc::Status::OK;
 }
@@ -417,14 +415,14 @@ static IndexDef toIndexDef(const Index& src) {
 			break;
 		}
 		response.set_code(ErrorResponse::ErrorCode(status.code()));
-		response.set_what(status.what());
+		response.set_what(status.whatStr());
 		stream->Write(response);
 	}
 	if (status.ok()) {
 		return ::grpc::Status::OK;
 	} else {
 		response.set_code(ErrorResponse::ErrorCode(status.code()));
-		response.set_what(status.what());
+		response.set_what(status.whatStr());
 		stream->Write(response);
 		return ::grpc::Status::CANCELLED;
 	}
@@ -457,20 +455,21 @@ Error ReindexerService::packCJSONItem(WrSerializer& wrser, ItT& it, const Output
 		wrser.PutVarUint(int64_t(itemRef.Value().GetLSN()));
 	}
 	if (opts.withrank()) {
-		wrser.PutVarUint(itemRef.Proc());
+		wrser.PutRank(it.IsRanked() ? it.GetItemRefRanked().Rank() : 0.0f);
 	}
 	return it.GetCJSON(wrser);
 }
 
 Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults& qr, const OutputFlags& opts) {
+	using namespace std::string_view_literals;
 	Error status;
 	switch (opts.encodingtype()) {
 		case EncodingType::JSON: {
 			JsonBuilder builder(wrser, ObjType::TypeObject);
 			if (qr.Count() > 0) {
-				JsonBuilder array = builder.Array("items");
+				JsonBuilder array = builder.Array("items"sv);
 				for (auto& item : qr) {
-					array.Raw(nullptr, "");
+					array.Raw(""sv);
 					status = item.GetJSON(wrser, false);
 					if (!status.ok()) {
 						return status;
@@ -497,7 +496,7 @@ Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults&
 			}
 			MsgPackBuilder builder(wrser, ObjType::TypeObject, fields);
 			if (withItems) {
-				MsgPackBuilder array = builder.Array("items", qr.Count());
+				MsgPackBuilder array = builder.Array("items"sv, qr.Count());
 				for (auto& item : qr) {
 					status = item.GetMsgPack(wrser, false);
 					if (!status.ok()) {
@@ -549,7 +548,7 @@ Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults&
 						LocalQueryResults jqr = it.ToQueryResults();
 						jqr.addNSContext(qr, joinedField, lsn_t());
 						for (size_t i = 0, cnt = jqr.Count(); i < cnt; i++) {
-							status = packCJSONItem(wrser, jqr.begin() + i, opts);
+							status = packCJSONItem(wrser, jqr.cbegin() + i, opts);
 							if (!status.ok()) {
 								return status;
 							}
@@ -569,17 +568,18 @@ Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults&
 
 template <typename Builder>
 Error ReindexerService::buildAggregation(Builder& builder, WrSerializer& wrser, reindexer::QueryResults& qr, const OutputFlags& opts) {
+	using namespace std::string_view_literals;
 	switch (opts.encodingtype()) {
 		case EncodingType::JSON: {
-			auto array = builder.Array("aggregations");
+			auto array = builder.Array("aggregations"sv);
 			for (size_t i = 0, size = qr.GetAggregationResults().size(); i < size; ++i) {
-				array.Raw(nullptr, "");
+				array.Raw(""sv);
 				(qr.GetAggregationResults())[i].GetJSON(wrser);
 			}
 			break;
 		}
 		case EncodingType::MSGPACK: {
-			auto array = builder.Array("aggregations", qr.Count());
+			auto array = builder.Array("aggregations"sv, qr.Count());
 			for (size_t i = 0, size = qr.GetAggregationResults().size(); i < size; ++i) {
 				(qr.GetAggregationResults())[i].GetMsgPack(wrser);
 			}
@@ -590,7 +590,7 @@ Error ReindexerService::buildAggregation(Builder& builder, WrSerializer& wrser, 
 		case EncodingType_INT_MAX_SENTINEL_DO_NOT_USE_:
 		case EncodingType_INT_MIN_SENTINEL_DO_NOT_USE_:
 		default:
-			return Error(errParams, "Unsupported encoding type");
+			return Error(errParams, "Unsupported encoding type"sv);
 	}
 	return {};
 }
@@ -613,7 +613,7 @@ Error ReindexerService::buildAggregation(Builder& builder, WrSerializer& wrser, 
 	}
 	ErrorResponse* responseCode = response.errorresponse().New();
 	responseCode->set_code(ErrorResponse::ErrorCode(status.code()));
-	responseCode->set_what(status.what());
+	responseCode->set_what(status.whatStr());
 	response.set_allocated_errorresponse(responseCode);
 	writer->Write(response);
 	return status.ok() ? ::grpc::Status::OK : ::grpc::Status::CANCELLED;
@@ -622,7 +622,7 @@ Error ReindexerService::buildAggregation(Builder& builder, WrSerializer& wrser, 
 Error ReindexerService::executeQuery(const std::string& dbName, const Query& query, QueryType type, reindexer::QueryResults& qr) {
 	Error status;
 	reindexer::Query q;
-	switch (query.encdoingtype()) {
+	switch (query.encodingtype()) {
 		case EncodingType::JSON:
 			try {
 				q = reindexer::Query::FromJSON(query.data());
@@ -674,7 +674,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 	QueryResultsResponse response;
 	ErrorResponse* errResponse = response.errorresponse().New();
 	errResponse->set_code(ErrorResponse::ErrorCode(status.code()));
-	errResponse->set_what(status.what());
+	errResponse->set_what(status.whatStr());
 	response.set_allocated_errorresponse(errResponse);
 	writer->Write(response);
 	return ::grpc::Status::CANCELLED;
@@ -690,7 +690,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 		QueryResultsResponse response;
 		ErrorResponse* errResponse = response.errorresponse().New();
 		errResponse->set_code(ErrorResponse::ErrorCode(status.code()));
-		errResponse->set_what(status.what());
+		errResponse->set_what(status.whatStr());
 		response.set_allocated_errorresponse(errResponse);
 		writer->Write(response);
 		return ::grpc::Status::CANCELLED;
@@ -707,7 +707,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 		QueryResultsResponse response;
 		ErrorResponse* errResponse = response.errorresponse().New();
 		errResponse->set_code(ErrorResponse::ErrorCode(status.code()));
-		errResponse->set_what(status.what());
+		errResponse->set_what(status.whatStr());
 		response.set_allocated_errorresponse(errResponse);
 		writer->Write(response);
 		return ::grpc::Status::CANCELLED;
@@ -724,7 +724,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 		QueryResultsResponse response;
 		ErrorResponse* errResponse = response.errorresponse().New();
 		errResponse->set_code(ErrorResponse::ErrorCode(status.code()));
-		errResponse->set_what(status.what());
+		errResponse->set_what(status.whatStr());
 		response.set_allocated_errorresponse(errResponse);
 		writer->Write(response);
 		return ::grpc::Status::CANCELLED;
@@ -744,7 +744,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 	}
 	ErrorResponse* errResponse = response->errorresponse().New();
 	errResponse->set_code(ErrorResponse::ErrorCode(status.code()));
-	errResponse->set_what(status.what());
+	errResponse->set_what(status.whatStr());
 	response->set_allocated_errorresponse(errResponse);
 	return ::grpc::Status::OK;
 }
@@ -757,7 +757,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 		status = rx->PutMeta(request->metadata().nsname(), request->metadata().key(), request->metadata().value());
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.what());
+	response->set_what(status.whatStr());
 	return ::grpc::Status::OK;
 }
 
@@ -776,7 +776,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 	}
 	ErrorResponse* retStatus = response->errorresponse().New();
 	retStatus->set_code(ErrorResponse::ErrorCode(status.code()));
-	retStatus->set_what(status.what());
+	retStatus->set_what(status.whatStr());
 	response->set_allocated_errorresponse(retStatus);
 	return ::grpc::Status::OK;
 }
@@ -789,7 +789,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 		status = rx->DeleteMeta(request->metadata().nsname(), request->metadata().key());
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.what());
+	response->set_what(status.whatStr());
 	return ::grpc::Status::OK;
 }
 
@@ -815,7 +815,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 	}
 	ErrorResponse* retStatus = response->status().New();
 	retStatus->set_code(ErrorResponse::ErrorCode(status.code()));
-	retStatus->set_what(status.what());
+	retStatus->set_what(status.whatStr());
 	response->set_allocated_status(retStatus);
 	return ::grpc::Status::OK;
 }
@@ -924,14 +924,14 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 			break;
 		}
 		response.set_code(ErrorResponse::ErrorCode(status.code()));
-		response.set_what(status.what());
+		response.set_what(status.whatStr());
 		stream->Write(response);
 	}
 	if (status.ok()) {
 		return ::grpc::Status::OK;
 	} else {
 		response.set_code(ErrorResponse::ErrorCode(status.code()));
-		response.set_what(status.what());
+		response.set_what(status.whatStr());
 		stream->Write(response);
 		return ::grpc::Status::CANCELLED;
 	}
@@ -955,7 +955,7 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 		}
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.what());
+	response->set_what(status.whatStr());
 	return ::grpc::Status::OK;
 }
 
@@ -976,7 +976,7 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 		}
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.what());
+	response->set_what(status.whatStr());
 	return ::grpc::Status::OK;
 }
 
