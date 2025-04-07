@@ -37,7 +37,7 @@ else()
   option(ENABLE_OPENSSL "Enable OpenSSL" ON)
 endif()
 
-if(APPLE AND NOT DEFINED ENV{OpenMP_ROOT})
+if(APPLE AND NOT DEFINED ENV{OpenMP_ROOT} AND NOT WITH_TSAN)
     execute_process(COMMAND brew --prefix OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE BREW_PRFIX)
     message("OpenMP_ROOT is not defined. Setting OMP root to: ${BREW_PRFIX}/opt/libomp")
     set(ENV{OpenMP_ROOT} "${BREW_PRFIX}/opt/libomp")
@@ -60,7 +60,7 @@ else()
   option(LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "5.0.1")
+set (REINDEXER_VERSION_DEFAULT "5.1.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -151,6 +151,9 @@ if(WITH_STDLIB_DEBUG)
   if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     add_definitions(-D_GLIBCXX_DEBUG)
     add_definitions(-D_GLIBCXX_DEBUG_PEDANTIC)
+    # GCC on Ubuntu defines _FORTIFY_SOURCE=2 by default
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -fstack-protector-strong -fstack-clash-protection -fcf-protection=full")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -fstack-protector-strong -fstack-clash-protection -fcf-protection=full")
   else()
     message("Option 'WITH_STDLIB_DEBUG' was requested, but there is not such option for current toolcain: '${CMAKE_CXX_COMPILER_ID}'. Disabling...")
   endif()
@@ -313,7 +316,7 @@ endif()
 add_definitions(-DKOISHI_HAVE_SYSCONF)
 add_definitions(-DKOISHI_SC_PAGE_SIZE=_SC_PAGE_SIZE)
 add_definitions(-DKOISHI_HAVE_GETPAGESIZE)
-if(NOT APPLE)
+if(NOT APPLE AND NOT WITH_ASAN)
   add_definitions(-DKOISHI_HAVE_POSIX_MEMALIGN)
 endif()
 add_definitions(-DBUILDING_KOISHI)
@@ -455,7 +458,7 @@ else()
   ExternalProject_Add(
     snappy_lib
     GIT_REPOSITORY "https://github.com/google/snappy.git"
-    GIT_TAG "1.1.8"
+    GIT_TAG "1.2.2"
     CMAKE_ARGS -DSNAPPY_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
     -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
@@ -467,13 +470,18 @@ endif()
 
 set(OBJ_LIBRARIES ${TARGET}_obj)
 if(BUILD_ANN_INDEXES STREQUAL "all")
-  message("Building with full ANN-indexes support...")
-  find_package(OpenMP REQUIRED)
-  include_directories(SYSTEM ${OpenMP_CXX_INCLUDE_DIR})
-  list(APPEND REINDEXER_LIBRARIES ${OpenMP_CXX_LIBRARIES})
-  if(NOT APPLE AND NOT MSVC)
-    set(EXTRA_FLAGS "${EXTRA_FLAGS} -fopenmp")
-    list(APPEND REINDEXER_LIBRARIES ${OpenMP_CXX_LIBRARIES} gomp)
+    message("Building with full ANN-indexes support...")
+  if(WITH_TSAN)
+    set(WITH_TSAN_GLOBAL ON)
+  else()
+    find_package(OpenMP REQUIRED)
+    include_directories(SYSTEM ${OpenMP_CXX_INCLUDE_DIR})
+    list(APPEND REINDEXER_LIBRARIES ${OpenMP_CXX_LIBRARIES})
+    if(NOT APPLE AND NOT MSVC)
+      set(EXTRA_FLAGS "${EXTRA_FLAGS} -fopenmp")
+      list(APPEND REINDEXER_LIBRARIES ${OpenMP_CXX_LIBRARIES} gomp)
+    endif()
+    add_definitions(-DRX_WITH_OPENMP=1)
   endif()
 
   set(BUILD_FAISS_GLOBAL ON)

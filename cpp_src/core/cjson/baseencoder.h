@@ -49,13 +49,13 @@ public:
 
 	const TagsLengths& GetTagsMeasures(ConstPayload& pl, IEncoderDatasourceWithJoins* ds = nullptr);
 
-protected:
+private:
 	using IndexedTagsPathInternalT = IndexedTagsPathImpl<16>;
 	constexpr static bool kWithTagsPathTracking = std::is_same_v<ProtobufBuilder, Builder>;
 	constexpr static bool kWithFieldExtractor = std::is_same_v<FieldsExtractor, Builder>;
 
 	struct DummyTagsPathScope {
-		DummyTagsPathScope(TagsPath& /*tagsPath*/, int16_t /*tagName*/) noexcept {}
+		DummyTagsPathScope(TagsPath&, TagName) noexcept {}
 	};
 	using PathScopeT = std::conditional_t<kWithTagsPathTracking, TagsPathScope<TagsPath>, DummyTagsPathScope>;
 

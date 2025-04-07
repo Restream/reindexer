@@ -268,8 +268,14 @@ if(FAISS_USE_LTO)
   endif()
 endif()
 
-find_package(OpenMP REQUIRED)
-target_link_libraries(faiss_obj PRIVATE OpenMP::OpenMP_CXX)
+if(NOT WITH_TSAN_GLOBAL)
+  find_package(OpenMP REQUIRED)
+  target_link_libraries(faiss_obj PRIVATE OpenMP::OpenMP_CXX)
+  add_definitions(-DFAISS_WITH_OPENMP=1)
+else()
+  message("TSAN is enabled. Building without OpenMP support...")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unknown-pragmas")
+endif()
 
 # TODO: Support dlopen for MKL
 #find_package(MKL)

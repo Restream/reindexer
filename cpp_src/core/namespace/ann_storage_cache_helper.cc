@@ -91,7 +91,8 @@ bool Writer::TryUpdateNextPart(RLockT&& lock, AsyncStorage& storage, UpdateInfo&
 				return false;
 			}
 			if (!res.err.ok()) {
-				logFmt(LogWarning, "[{}] Unable to create storage cache for ANN index '{}'. Skipping this index", ns_.name_, ann->Name());
+				logFmt(LogWarning, "[{}] Unable to create storage cache for ANN index '{}': {}. Skipping this index", ns_.name_,
+					   ann->Name(), res.err.what());
 				updateInfo.Update(ann->Name(), lastUpdateTime_);  // Still performing time update
 				continue;
 			}

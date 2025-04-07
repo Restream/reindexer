@@ -39,7 +39,7 @@ void NamespaceDef::GetJSON(WrSerializer& ser) const {
 	{
 		auto arr = json.Array("indexes");
 		for (auto& idx : indexes) {
-			arr.Raw(nullptr, "");
+			arr.Raw("");
 			idx.GetJSON(ser);
 		}
 	}

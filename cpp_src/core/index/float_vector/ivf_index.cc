@@ -14,7 +14,10 @@
 #include "tools/logger.h"
 #include "tools/normalize.h"
 
+#ifdef RX_WITH_OPENMP
 #include <omp.h>
+#endif	// RX_WITH_OPENMP
+
 #ifdef __linux__
 #include <pthread.h>
 #include <sys/resource.h>
@@ -62,7 +65,7 @@ IvfIndex::IvfIndex(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& 
 			}
 			break;
 		default:
-			throw Error(errLogic, "Attempt to construct IVF index '{}' with unknow metric: {}", Base::Name(),
+			throw Error(errLogic, "Attempt to construct IVF index '{}' with unknown metric: {}", Base::Name(),
 						int(Base::Opts().FloatVector().Metric()));
 	}
 	if (log == Index::CreationLog::Yes) {
@@ -135,8 +138,6 @@ SelectKeyResult IvfIndex::select(ConstFloatVectorView key, const KnnSearchParams
 	const auto k = params.K();
 	h_vector<float, 128> dists(k);
 	h_vector<faiss::idx_t, 128> ids(k);
-	SelectKeyResult result;
-	IdSet::Ptr resSet = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 	base_idset idset;
 	idset.reserve(k);
 	h_vector<float, 2048> normalizedStorage;
@@ -186,8 +187,10 @@ SelectKeyResult IvfIndex::select(ConstFloatVectorView key, const KnnSearchParams
 	if (ctx.NeedSort()) {
 		std::sort(idset.begin() + firstSameDist, idset.end());
 	}
+	IdSet::Ptr resSet = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 	resSet->SetUnordered(std::move(idset));
 	ctx.Add(std::span<float>{dists.data(), resSet->size()});
+	SelectKeyResult result;
 	result.emplace_back(std::move(resSet));
 	return result;
 }
@@ -224,8 +227,10 @@ void IvfIndex::reconstruct(IdType rowId, FloatVector& vect) const {
 
 void IvfIndex::trainIdx(faiss::IndexIVFFlat& idx, const float* vecs, const float* norms, size_t vecsCount) {
 	idx.set_direct_map_type(faiss::DirectMap::Type::Hashtable);
+#ifdef RX_WITH_OPENMP
 	// omp_set_num_teams(kIVFOMPThreads);
 	omp_set_num_threads(kIVFOMPThreads);
+#endif	// RX_WITH_OPENMP
 #ifdef __linux__
 	const auto tid = gettid_ivf();
 	const int prio = getpriority(PRIO_PROCESS, tid);
@@ -281,7 +286,7 @@ FloatVectorIndex::StorageCacheWriteResult IvfIndex::WriteIndexCache(WrSerializer
 			writePK(IdType(id));
 		}
 		int filedescriptor() override {
-			throw Error(errLogic, "Unexpcted call to SerializerWriter::filedescriptor(). Serializer name is '{}'", name);
+			throw Error(errLogic, "Unexpected call to SerializerWriter::filedescriptor(). Serializer name is '{}'", name);
 		}
 		void PutVarUInt(uint64_t v) { ser_.PutVarUint(v); }
 		size_t Size() const noexcept { return ser_.Len(); }
@@ -295,13 +300,13 @@ FloatVectorIndex::StorageCacheWriteResult IvfIndex::WriteIndexCache(WrSerializer
 			faiss::write_index(map_.get(), &writer, cancel, true);
 		}
 	} catch (Error& err) {
-		assertrx_dbg(false);  // Do not expecting this error in test scenarious
+		assertrx_dbg(false);  // Don't expect this error in test scenarios
 		res.err = std::move(err);
 	} catch (const std::exception& err) {
-		assertrx_dbg(false);  // Do not expecting this error in test scenarious
+		assertrx_dbg(false);  // Don't expect this error in test scenarios
 		res.err = Error{errLogic, err.what()};
 	} catch (...) {
-		assertrx_dbg(false);  // Do not expecting this error in test scenarious
+		assertrx_dbg(false);  // Don't expect this error in test scenarios
 		res.err = Error{errLogic, "Unexpected exception"};
 	}
 	return res;
@@ -340,7 +345,7 @@ Error IvfIndex::LoadIndexCache(std::string_view data, bool isCompositePK, VecDat
 			return faiss::idx_t(itemID);
 		}
 		int filedescriptor() override {
-			throw Error(errLogic, "IVFFlat::LoadIndexCache:{}: unexpcted call to ViewReader::filedescriptor()", name);
+			throw Error(errLogic, "IVFFlat::LoadIndexCache:{}: unexpected call to ViewReader::filedescriptor()", name);
 		}
 		uint64_t GetVarUInt() {
 			Serializer ser(view_);
@@ -364,8 +369,8 @@ Error IvfIndex::LoadIndexCache(std::string_view data, bool isCompositePK, VecDat
 			throw std::runtime_error("Incorrect IVF storage magic");
 		}
 		std::unique_ptr<faiss::Index> idx(faiss::read_index(&reader));
-		if (faiss::IndexIVFFlat* map = dynamic_cast<faiss::IndexIVFFlat*>(idx.get()); map) {
-			if (faiss::IndexFlat* space = dynamic_cast<faiss::IndexFlat*>(map->quantizer); space) {
+		if (auto map = dynamic_cast<faiss::IndexIVFFlat*>(idx.get()); map) {
+			if (auto space = dynamic_cast<faiss::IndexFlat*>(map->quantizer); space) {
 				map_ = std::unique_ptr<faiss::IndexIVFFlat>(static_cast<faiss::IndexIVFFlat*>(idx.release()));
 				map_->own_fields = false;
 				space_ = std::unique_ptr<faiss::IndexFlat>(space);
@@ -380,15 +385,15 @@ Error IvfIndex::LoadIndexCache(std::string_view data, bool isCompositePK, VecDat
 		}
 	} catch (Error& err) {
 		clearMap();
-		assertrx_dbg(false);  // Do not expecting this error in test scenarious
+		assertrx_dbg(false);  // Don't expect this error in test scenarios
 		return err;
 	} catch (const std::exception& err) {
 		clearMap();
-		assertrx_dbg(false);  // Do not expecting this error in test scenarious
+		assertrx_dbg(false);  // Don't expect this error in test scenarios
 		return Error{errLogic, "IVFFlat::LoadIndexCache:{}: {}", Name(), err.what()};
 	} catch (...) {
 		clearMap();
-		assertrx_dbg(false);  // Do not expecting this error in test scenarious
+		assertrx_dbg(false);  // Don't expect this error in test scenarios
 		return Error{errLogic, "IVFFlat::LoadIndexCache:{}: unexpected exception", Name()};
 	}
 	return {};

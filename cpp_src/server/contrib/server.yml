@@ -8,7 +8,7 @@ info:
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  version: 5.0.1
+  version: 5.1.0
 servers:
 - url: /api/v1
 tags:
@@ -3756,6 +3756,12 @@ components:
             \ but for tree and hash indexes with low selectivity can seriously decrease\
             \ update performance;"
           default: false
+        is_no_column:
+          type: boolean
+          description: "Reduces the index size. Allows to save ~(`stored_type_size` * `namespace_items_count`) bytes,\
+            \ where `stored_type_size` is the size of the type stored in the index, and `namespace_items_count`\
+            \ is the number of items in the namespace. May reduce performance;"
+          default: false
         is_sparse:
           type: boolean
           description: "Value of index may not present in the document, and therefore,\
@@ -3927,7 +3933,7 @@ components:
           default: false
         select_with_rank:
           type: boolean
-          description: Output fulltext rank in QueryResult. Allowed only with fulltext
+          description: Output fulltext or KNN rank in QueryResult. Allowed only with fulltext or KNN queries
             query
           default: false
         strict_mode:
@@ -4291,6 +4297,99 @@ components:
           minimum: 1
           maximum: 65536
           description: Clusters count for construct IFV index. Required for IVF indexes. Allowed for IVF indexes only.
+        embedding:
+          type: object
+          required:
+            - upsert_embedder
+          description: Embedding configuration
+          properties:
+            upsert_embedder:
+              type: object
+              required:
+                - URL
+              description: Upsert embedding configuration
+              properties:
+                URL:
+                  type: string
+                  description: Embed service URL
+                cache_tag:
+                  type: string
+                  description: tag is used to cache results of injection
+                fields:
+                  type: array
+                  items:
+                    type: string
+                  description: List of index fields to calculate embedding
+                embedding_strategy:
+                  type: string
+                  enum:
+                    - 'always'
+                    - 'empty_only'
+                    - 'strict'
+                  default: 'strict'
+                  description: Embedding application strategy
+                pool:
+                  type: object
+                  description: Connection pool configuration
+                  properties:
+                    connections:
+                      type: integer
+                      minimum: 1
+                      maximum: 1024
+                      default: 10
+                      description: Number connections to service
+                    connect_timeout_ms:
+                      type: integer
+                      minimum: 100
+                      default: 300
+                      description: Connection\reconnection timeout to any embedding service (milliseconds)
+                    read_timeout_ms:
+                      type: integer
+                      minimum: 500
+                      default: 5000
+                      description: Timeout reading data from embedding service (milliseconds)
+                    write_timeout_ms:
+                      type: integer
+                      minimum: 500
+                      default: 5000
+                      description: Timeout writing data from embedding service (milliseconds)
+            query_embedder:
+              type: object
+              required:
+                - URL
+              description: Query embedding configuration
+              properties:
+                URL:
+                  type: string
+                  description: Embed service URL
+                cache_tag:
+                  type: string
+                  description: tag is used to cache results of injection
+                pool:
+                  type: object
+                  description: Connection pool configuration
+                  properties:
+                    connections:
+                      type: integer
+                      minimum: 1
+                      maximum: 1024
+                      default: 10
+                      description: Number connections to service
+                    connect_timeout_ms:
+                      type: integer
+                      minimum: 100
+                      default: 300
+                      description: Connection\reconnection timeout to any embedding service (milliseconds)
+                    read_timeout_ms:
+                      type: integer
+                      minimum: 500
+                      default: 5000
+                      description: Timeout reading data from embedding service (milliseconds)
+                    write_timeout_ms:
+                      type: integer
+                      minimum: 500
+                      default: 5000
+                      description: Timeout writing data from embedding service (milliseconds)
     FulltextConfig:
       type: object
       properties:
@@ -5556,46 +5655,49 @@ components:
           - trace
         join_cache_mode:
           type: string
+          default: "off"
           description: Join cache mode
           enum:
           - aggressive
-        lazyload:
-          type: boolean
-          description: "Enable namespace lazy load (namespace should be loaded from\
-            \ disk on first call, not at reindexer startup)"
-        unload_idle_threshold:
-          type: integer
-          description: "Unload namespace data from RAM after this idle timeout in\
-            \ seconds. If 0, then data should not be unloaded"
+          - "on"
+          - "off"
         start_copy_policy_tx_size:
           type: integer
+          default: 10000
           description: Enable namespace copying for transaction with steps count greater
             than this value (if copy_politics_multiplier also allows this)
         copy_policy_multiplier:
           type: integer
+          default: 5
           description: Disables copy policy if namespace size is greater than copy_policy_multiplier
             * start_copy_policy_tx_size
         tx_size_to_always_copy:
           type: integer
+          default: 100000
           description: Force namespace copying for transaction with steps count greater
             than this value
         tx_vec_insertion_threads:
           type: integer
+          default: 4
           description: "Count of threads, that will be created during transaction's\
             \ commit to insert data into multithread ANN-indexes"
         optimization_timeout_ms:
           type: integer
+          default: 800
           description: Timeout before background indexes optimization start after
             last update. 0 - disable optimizations
         optimization_sort_workers:
           type: integer
+          default: 4
           description: Maximum number of background threads of sort indexes optimization.
             0 - disable sort optimizations
         wal_size:
           type: integer
+          default: 4000000
           description: Maximum WAL size for this namespace (maximum count of WAL records)
         max_preselect_size:
           minimum: 0
+          default: 1000
           type: integer
           description: "Maximum preselect size for optimization of inner join by injection\
             \ of filters. If max_preselect_size is 0, then only max_preselect_part\
@@ -5606,6 +5708,7 @@ components:
         max_preselect_part:
           maximum: 1
           minimum: 0
+          default: 0.1
           type: number
           description: "Maximum preselect part of namespace's items for optimization\
             \ of inner join by injection of filters. If max_preselect_part is 0, then\
@@ -5614,9 +5717,9 @@ components:
             \ If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization\
             \ will always be applied"
           format: float
-          default: 0.1
         min_preselect_size:
           minimum: 0
+          default: 1000
           type: integer
           description: Minimum preselect size for optimization of inner join by injection
             of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part
@@ -5624,16 +5727,19 @@ components:
         max_iterations_idset_preresult:
           maximum: 2147483647
           minimum: 201
+          default: 20000
           type: integer
           description: Maximum number of IdSet iterations of namespace preliminary
             result size for optimization
         index_updates_counting_mode:
           type: boolean
+          default: false
           description: "Enables 'simple counting mode' for index updates tracker.\
             \ This will increase index optimization time, however may reduce insertion\
             \ time"
         sync_storage_flush_limit:
           minimum: 0
+          default: 20000
           type: integer
           description: "Enables synchronous storage flush inside write-calls, if async\
             \ updates count is more than sync_storage_flush_limit. 0 - disables synchronous\
@@ -5641,13 +5747,15 @@ components:
             \ only"
         ann_storage_cache_build_timeout_ms:
           minimum: 0
+          default: 5000
           type: integer
-          description: Delay between last namespace update background ANN-indexes
+          description: Delay between last and namespace update background ANN-indexes
             storage cache creation. Storage cache is required for ANN-indexes for
             faster startup. 0 - disables background cache creation (cache will still
             be created on the database shutdown)
         strict_mode:
           type: string
+          default: names
           description: Strict mode for queries. Adds additional check for fields('names')/indexes('indexes')
             existence in sorting and filtering conditions
           enum:
@@ -5659,6 +5767,7 @@ components:
           properties:
             index_idset_cache_size:
               minimum: 0
+              default: 134217728
               type: integer
               description: Max size of the index IdSets cache in bytes (per index).
                 Each index has it's own independent cache. This cache is used in any
@@ -5666,6 +5775,7 @@ components:
                 not stores documents' content itself)
             index_idset_hits_to_cache:
               minimum: 0
+              default: 2
               type: integer
               description: "Default 'hits to cache' for index IdSets caches. This\
                 \ value determines how many requests required to put results into\
@@ -5676,6 +5786,7 @@ components:
                 \ too fast"
             ft_index_cache_size:
               minimum: 0
+              default: 134217728
               type: integer
               description: "Max size of the fulltext indexes IdSets cache in bytes\
                 \ (per index). Each fulltext index has it's own independent cache.\
@@ -5684,6 +5795,7 @@ components:
                 \ stores documents' content itself)"
             ft_index_hits_to_cache:
               minimum: 0
+              default: 2
               type: integer
               description: "Default 'hits to cache' for fulltext index IdSets caches.\
                 \ This value determines how many requests required to put results\
@@ -5694,6 +5806,7 @@ components:
                 \ too fast"
             joins_preselect_cache_size:
               minimum: 0
+              default: 134217728
               type: integer
               description: "Max size of the index IdSets cache in bytes for each namespace.\
                 \ This cache will be enabled only if 'join_cache_mode' property is\
@@ -5702,6 +5815,7 @@ components:
                 \ namespace is right namespace of the JOIN)"
             joins_preselect_hit_to_cache:
               minimum: 0
+              default: 2
               type: integer
               description: "Default 'hits to cache' for joins preselect cache of the\
                 \ current namespace. This value determines how many requests required\
@@ -5712,12 +5826,14 @@ components:
                 \ is invalidation too fast"
             query_count_cache_size:
               minimum: 0
+              default: 134217728
               type: integer
               description: Max size of the cache for COUNT_CACHED() aggregation in
                 bytes for each namespace. This cache stores resulting COUNTs and serialized
                 queries for the COUNT_CACHED() aggregations
             query_count_hit_to_cache:
               minimum: 0
+              default: 2
               type: integer
               description: "Default 'hits to cache' for COUNT_CACHED() aggregation\
                 \ of the current namespace. This value determines how many requests\
@@ -5732,12 +5848,14 @@ components:
         server_id:
           maximum: 999
           minimum: 0
+          default: 0
           type: integer
           description: "Node identifier. Should be unique for each node in the replicated\
             \ cluster (non-unique IDs are also allowed, but may lead to the inconsistency\
             \ in some cases"
         cluster_id:
           type: integer
+          default: 2
           description: Cluster ID - must be same for client and for master
     AsyncReplicationConfig:
       required:

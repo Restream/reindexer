@@ -27,7 +27,7 @@ void BaseEncoder<Builder>::Encode(std::string_view tuple, Builder& builder, cons
 
 	[[maybe_unused]] const ctag begTag = rdser.GetCTag();
 	assertrx(begTag.Type() == TAG_OBJECT);
-	Builder objNode = builder.Object(nullptr);
+	Builder objNode = builder.Object();
 	while (encode(nullptr, rdser, objNode, true));
 	for (auto ds : dss) {
 		if (ds) {
@@ -56,7 +56,7 @@ void BaseEncoder<Builder>::Encode(ConstPayload& pl, Builder& builder, const h_ve
 	}
 	[[maybe_unused]] const ctag begTag = rdser.GetCTag();
 	assertrx(begTag.Type() == TAG_OBJECT);
-	Builder objNode = builder.Object(nullptr);
+	Builder objNode = builder.Object();
 	while (encode(&pl, rdser, objNode, true));
 	for (auto ds : dss) {
 		if (ds) {
@@ -143,9 +143,9 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 		return false;
 	}
 
-	const int tagName = tag.Name();
+	const TagName tagName = tag.Name();
 	PathScopeT pathScope(curTagsPath_, tagName);
-	TagsPathScope<IndexedTagsPathInternalT> indexedPathScope(indexedTagsPath_, visible ? tagName : 0);
+	TagsPathScope<IndexedTagsPathInternalT> indexedPathScope(indexedTagsPath_, visible ? tagName : TagName::Empty());
 	const int tagField = tag.Field();
 
 	if (tagField >= 0) {
@@ -155,7 +155,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 		assertrx(tagField < pl->NumFields());
 	}
 
-	if (visible && filter_ && tagName) {
+	if (visible && filter_ && !tagName.IsEmpty()) {
 		if (tagField >= 0 && pl->Field(tagField).t_.IsFloatVector()) {
 			visible = filter_->ContainsVector(tagField);
 		} else {
@@ -293,9 +293,9 @@ bool BaseEncoder<Builder>::collectTagsSizes(ConstPayload& pl, Serializer& rdser)
 		tagsLengths_.push_back(EndObject);
 		return false;
 	}
-	const int tagName = tag.Name();
+	const TagName tagName = tag.Name();
 
-	if (tagName && filter_) {
+	if (!tagName.IsEmpty() && filter_) {
 		curTagsPath_.push_back(tagName);
 	}
 
@@ -370,7 +370,7 @@ bool BaseEncoder<Builder>::collectTagsSizes(ConstPayload& pl, Serializer& rdser)
 				rdser.SkipRawVariant(KeyValueType{tagType});
 		}
 	}
-	if (tagName && filter_) {
+	if (!tagName.IsEmpty() && filter_) {
 		curTagsPath_.pop_back();
 	}
 

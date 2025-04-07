@@ -2357,3 +2357,67 @@ TEST_F(ReindexerApi, DefautlIndexDefJSON) {
 	ASSERT_TRUE(newDef) << newDef.error().what();
 	ASSERT_TRUE(empty.IsEqual(*newDef, IndexComparison::Full)) << ser.Slice();
 }
+
+TEST_F(ReindexerApi, NamespaceStorageRaceTest) {
+	const std::string kBaseTestsStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/ns_storage_race_test/");
+	reindexer::fs::RmDirAll(kBaseTestsStoragePath);
+	auto rx = std::make_unique<Reindexer>();
+	auto err = rx->Connect("builtin://" + kBaseTestsStoragePath);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	std::string_view kNamespaces[] = {"ns1", "ns2", "ns3", "ns4"};
+	const auto nsCnt = std::distance(std::begin(kNamespaces), std::end(kNamespaces));
+	std::atomic<bool> terminate{false};
+
+	auto openCloseFn = [&] {
+		while (!terminate.load()) {
+			auto targetNs = kNamespaces[rand() % nsCnt];
+			auto err = rx->OpenNamespace(targetNs, StorageOpts().Enabled().CreateIfMissing().DropOnFileFormatError(rand() % 2));
+			// Should never get errors on Open
+			ASSERT_TRUE(err.ok()) << err.what();
+
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			targetNs = kNamespaces[rand() % nsCnt];
+			if (rand() % 2) {
+				err = rx->CloseNamespace(targetNs);
+				ASSERT_TRUE(err.ok() || err.code() == errNotFound) << err.what();
+			} else {
+				err = rx->DropNamespace(targetNs);
+			}
+		}
+	};
+	auto addFn = [&] {
+		while (!terminate.load()) {
+			auto targetNs = kNamespaces[rand() % nsCnt];
+			reindexer::NamespaceDef def(targetNs);
+			def.storage = StorageOpts().Enabled().CreateIfMissing();
+			def.AddIndex("id", "hash", "int", IndexOpts().PK());
+			auto err = rx->AddNamespace(def);
+			ASSERT_TRUE(err.ok() || err.code() == errParams || err.code() == errNamespaceOverwritten) << err.what();
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		}
+	};
+	auto renameFn = [&] {
+		while (!terminate.load()) {
+			auto targetNs1 = kNamespaces[rand() % nsCnt];
+			auto targetNs2 = kNamespaces[rand() % nsCnt];
+			auto err = rx->RenameNamespace(targetNs1, std::string(targetNs2));
+			ASSERT_TRUE(err.ok() || err.code() == errParams) << err.what();
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		}
+	};
+
+	std::vector<std::thread> threads;
+	threads.emplace_back(openCloseFn);
+	threads.emplace_back(openCloseFn);
+	threads.emplace_back(openCloseFn);
+	threads.emplace_back(addFn);
+	threads.emplace_back(renameFn);
+	threads.emplace_back(renameFn);
+
+	std::this_thread::sleep_for(std::chrono::seconds(10));
+	terminate.store(true);
+	for (auto& th : threads) {
+		th.join();
+	}
+}

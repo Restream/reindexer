@@ -1,4 +1,6 @@
 #include "core/itemimpl.h"
+
+#include <span>
 #include "core/cjson/baseencoder.h"
 #include "core/cjson/cjsondecoder.h"
 #include "core/cjson/cjsonmodifier.h"
@@ -9,16 +11,18 @@
 #include "core/cjson/msgpackdecoder.h"
 #include "core/cjson/protobufbuilder.h"
 #include "core/cjson/protobufdecoder.h"
+#include "core/embedding/embedder.h"
 #include "core/index/float_vector/float_vector_index.h"
 #include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/p_string.h"
+#include "core/rdxcontext.h"
 #include "estl/gift_str.h"
 
 namespace reindexer {
 
 void ItemImpl::SetField(int field, const VariantArray& krs) {
 	validateModifyArray(krs);
-	cjson_ = std::string_view();
+	cjson_ = {};
 	payloadValue_.Clone();
 	auto& ptField = payloadType_.Field(field);
 
@@ -111,7 +115,7 @@ ItemImpl::ItemImpl(PayloadType type, PayloadValue v, const TagsMatcher& tagsMatc
 }
 
 void ItemImpl::ModifyField(std::string_view jsonPath, const VariantArray& keys, FieldModifyMode mode) {
-	ModifyField(tagsMatcher_.path2indexedtag(jsonPath, mode != FieldModeDrop), keys, mode);
+	ModifyField(tagsMatcher_.path2indexedtag(jsonPath, CanAddField(mode != FieldModeDrop)), keys, mode);
 }
 
 void ItemImpl::ModifyField(const IndexedTagsPath& tagsPath, const VariantArray& keys, FieldModifyMode mode) {
@@ -201,7 +205,7 @@ Error ItemImpl::GetMsgPack(WrSerializer& wrser) {
 
 	MsgPackBuilder msgpackBuilder(wrser, &tagsLengths, &startTag, ObjType::TypePlain, &tagsMatcher_);
 	msgpackEncoder.Encode(pl, msgpackBuilder);
-	return Error();
+	return {};
 }
 
 std::string_view ItemImpl::GetMsgPack() {
@@ -219,12 +223,12 @@ Error ItemImpl::GetProtobuf(WrSerializer& wrser) {
 	ProtobufBuilder protobufBuilder(&wrser, ObjType::TypePlain, schema_.get(), &tagsMatcher_);
 	ProtobufEncoder protobufEncoder(&tagsMatcher_, fieldsFilter_);
 	protobufEncoder.Encode(pl, protobufBuilder);
-	return Error();
+	return {};
 }
 
 void ItemImpl::Clear() {
-	static const TagsMatcher kEmptyTagsMaptcher;
-	tagsMatcher_ = kEmptyTagsMaptcher;
+	static const TagsMatcher kEmptyTagsMatcher;
+	tagsMatcher_ = kEmptyTagsMatcher;
 	precepts_.clear();
 	cjson_ = std::string_view();
 	holder_.reset();
@@ -368,7 +372,7 @@ std::string_view ItemImpl::GetJSON() {
 std::string_view ItemImpl::GetCJSON(bool withTagsMatcher) {
 	withTagsMatcher = withTagsMatcher && tagsMatcher_.isUpdated();
 
-	if (cjson_.size() && !withTagsMatcher) {
+	if (!cjson_.empty() && !withTagsMatcher) {
 		return cjson_;
 	}
 	ser_.Reset();
@@ -378,7 +382,7 @@ std::string_view ItemImpl::GetCJSON(bool withTagsMatcher) {
 std::string_view ItemImpl::GetCJSON(WrSerializer& ser, bool withTagsMatcher) {
 	withTagsMatcher = withTagsMatcher && tagsMatcher_.isUpdated();
 
-	if (cjson_.size() && !withTagsMatcher) {
+	if (!cjson_.empty() && !withTagsMatcher) {
 		ser.Write(cjson_);
 		return ser.Slice();
 	}
@@ -414,7 +418,7 @@ std::string_view ItemImpl::GetCJSONWithTm(WrSerializer& ser) {
 	CJsonEncoder encoder(&tagsMatcher_, fieldsFilter_);
 
 	ser.PutCTag(kCTagEnd);
-	int pos = ser.Len();
+	auto pos = ser.Len();
 	ser.PutUInt32(0);
 	encoder.Encode(pl, builder);
 	uint32_t tmOffset = ser.Len();
@@ -475,6 +479,87 @@ void ItemImpl::CopyIndexedVectorsValuesFrom(IdType id, const FloatVectorsIndexes
 			floatVectorsHolder_.Add(indexP.ptr->GetFloatVector(id));
 			pl.Set(indexP.ptField, Variant{floatVectorsHolder_.Back()});
 		}
+	}
+}
+
+namespace {
+bool isFieldEmpty(ItemImpl& item, const std::shared_ptr<Embedder>& embedder) {
+	Variant vecVar = item.GetField(embedder->Field());
+	assertrx_throw(vecVar.Type().Is<KeyValueType::FloatVector>());
+	ConstFloatVectorView vec = ConstFloatVectorView(vecVar);
+	return vec.IsEmpty();
+}
+
+bool checkEmbedderAllowed(ItemImpl& item, const std::shared_ptr<Embedder>& embedder) {
+	auto strategy = embedder->Strategy();
+
+	switch (strategy) {
+		case EmbedderConfig::Strategy::Always:
+			return true;
+		case EmbedderConfig::Strategy::EmptyOnly:
+			return isFieldEmpty(item, embedder);
+		case EmbedderConfig::Strategy::Strict:
+			if (!isFieldEmpty(item, embedder)) {
+				throw Error{errConflict, "Vector field '{}' must not contain a non-empty data if strict strategy for auto-embedding is configured", embedder->Name()};
+			}
+			return true;
+	}
+	return false;
+}
+} // namespace
+
+void ItemImpl::Embed(const RdxContext& ctx) {
+	const auto& embedders = payloadType_.Embedders();
+	if (embedders.empty()) {
+		return;	 // not needed, do nothing
+	}
+
+	payloadValue_.Clone();
+	Payload pl(payloadType_, payloadValue_);
+
+	try {
+		// one document - one input vector of VariantArray
+		std::vector<VariantArray> source;
+
+		VariantArray data;
+		for (const auto& embedder : embedders) {
+			ThrowOnCancel(ctx);
+
+			if (!checkEmbedderAllowed(*this, embedder)) {
+				continue; // skip embedder
+			}
+
+			source.resize(0);
+			for (const auto& fld : embedder->Fields()) {
+				pl.Get(fld, data);
+				source.push_back(std::move(data));
+			}
+
+			// ToDo in real life, work with several embedded devices requires asynchrony. Now we have only one, at all
+			h_vector<ConstFloatVector, 1> products;
+			auto err = embedder->Calculate(ctx, std::span{&source, 1}, products);
+			if (!err.ok()) {
+				throw err;
+			}
+			if (products.size() != 1) {
+				throw Error(errLogic, "Unable to set vector values with incorrect embedding result");
+			}
+
+			const ConstFloatVectorView vect{products.front()};
+			floatVectorsHolder_.Add(vect);
+
+			VariantArray krs;
+			krs.emplace_back(floatVectorsHolder_.Back());
+
+			SetField(embedder->Field(), krs);
+		}
+	} catch (Error& err) {
+		if (err.code() == errTimeout || err.code() == errCanceled) {
+			throw Error{err.code(), "Embedding service is unavailable (request was canceled/timed out)"};
+		}
+		throw err;
+	} catch (...) {
+		throw Error{errLogic, "Unknown error in embedders"};
 	}
 }
 

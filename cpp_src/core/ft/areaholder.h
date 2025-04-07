@@ -127,7 +127,7 @@ public:
 	[[nodiscard]] AreasInField<AreaType>* GetAreasRaw(int field) noexcept {
 		return (areas_.size() <= size_t(field)) ? nullptr : &areas_[field];
 	}
-	[[nodiscard]] bool IsCommited() const noexcept { return commited_; }
+	[[nodiscard]] bool IsCommitted() const noexcept { return commited_; }
 	[[nodiscard]] size_t GetAreasCount() const noexcept {
 		size_t size = 0;
 		for (const auto& aVec : areas_) {

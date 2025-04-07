@@ -35,7 +35,7 @@ public:
 			{
 				reindexer::JsonBuilder node = builder.Array("set");
 				for (auto d : rightNsData[i]) {
-					node.Put({}, d);
+					node.Put(reindexer::TagName::Empty(), d);
 				}
 			}
 			builder.End();

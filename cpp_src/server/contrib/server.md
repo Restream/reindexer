@@ -138,7 +138,7 @@
 
 <!-- tocstop -->
 
-> Version 5.0.1
+> Version 5.1.0
 
 ## Overview
 
@@ -748,6 +748,8 @@ If namespace is already exists, then operation do not nothing.
     is_array?: boolean
     // Reduces the index size. For hash and tree it will save ~8 bytes per unique key value. Useful for indexes with high selectivity, but for tree and hash indexes with low selectivity can seriously decrease update performance;
     is_dense?: boolean
+    // Reduces the index size. Allows to save ~(`stored_type_size` * `namespace_items_count`) bytes, where `stored_type_size` is the size of the type stored in the index, and `namespace_items_count` is the number of items in the namespace. May reduce performance;
+    is_no_column?: boolean
     // Value of index may not present in the document, and therefore, reduce data size but decreases speed operations on index
     is_sparse?: boolean
     // Algorithm to construct RTree index
@@ -891,6 +893,8 @@ This operation will return specified namespace description, including options of
     is_array?: boolean
     // Reduces the index size. For hash and tree it will save ~8 bytes per unique key value. Useful for indexes with high selectivity, but for tree and hash indexes with low selectivity can seriously decrease update performance;
     is_dense?: boolean
+    // Reduces the index size. Allows to save ~(`stored_type_size` * `namespace_items_count`) bytes, where `stored_type_size` is the size of the type stored in the index, and `namespace_items_count` is the number of items in the namespace. May reduce performance;
+    is_no_column?: boolean
     // Value of index may not present in the document, and therefore, reduce data size but decreases speed operations on index
     is_sparse?: boolean
     // Algorithm to construct RTree index
@@ -2351,6 +2355,8 @@ This operation will return list of available indexes, from specified database an
     is_array?: boolean
     // Reduces the index size. For hash and tree it will save ~8 bytes per unique key value. Useful for indexes with high selectivity, but for tree and hash indexes with low selectivity can seriously decrease update performance;
     is_dense?: boolean
+    // Reduces the index size. Allows to save ~(`stored_type_size` * `namespace_items_count`) bytes, where `stored_type_size` is the size of the type stored in the index, and `namespace_items_count` is the number of items in the namespace. May reduce performance;
+    is_no_column?: boolean
     // Value of index may not present in the document, and therefore, reduce data size but decreases speed operations on index
     is_sparse?: boolean
     // Algorithm to construct RTree index
@@ -2472,6 +2478,8 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
   is_array?: boolean
   // Reduces the index size. For hash and tree it will save ~8 bytes per unique key value. Useful for indexes with high selectivity, but for tree and hash indexes with low selectivity can seriously decrease update performance;
   is_dense?: boolean
+  // Reduces the index size. Allows to save ~(`stored_type_size` * `namespace_items_count`) bytes, where `stored_type_size` is the size of the type stored in the index, and `namespace_items_count` is the number of items in the namespace. May reduce performance;
+  is_no_column?: boolean
   // Value of index may not present in the document, and therefore, reduce data size but decreases speed operations on index
   is_sparse?: boolean
   // Algorithm to construct RTree index
@@ -2606,6 +2614,8 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
   is_array?: boolean
   // Reduces the index size. For hash and tree it will save ~8 bytes per unique key value. Useful for indexes with high selectivity, but for tree and hash indexes with low selectivity can seriously decrease update performance;
   is_dense?: boolean
+  // Reduces the index size. Allows to save ~(`stored_type_size` * `namespace_items_count`) bytes, where `stored_type_size` is the size of the type stored in the index, and `namespace_items_count` is the number of items in the namespace. May reduce performance;
+  is_no_column?: boolean
   // Value of index may not present in the document, and therefore, reduce data size but decreases speed operations on index
   is_sparse?: boolean
   // Algorithm to construct RTree index
@@ -3500,7 +3510,7 @@ This operation updates documents in namespace by DSL query.
     }[]
     // Add query execution explain information
     explain?: boolean
-    // Output fulltext rank in QueryResult. Allowed only with fulltext query
+    // Output fulltext or KNN rank in QueryResult. Allowed only with fulltext or KNN queries query
     select_with_rank?: boolean
     // Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions
     strict_mode?: enum[none, names, indexes] //default: names
@@ -3512,7 +3522,7 @@ This operation updates documents in namespace by DSL query.
   aggregations:AggregationsDef[]
   // Add query execution explain information
   explain?: boolean
-  // Output fulltext rank in QueryResult. Allowed only with fulltext query
+  // Output fulltext or KNN rank in QueryResult. Allowed only with fulltext or KNN queries query
   select_with_rank?: boolean
   // Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions
   strict_mode?: enum[none, names, indexes] //default: names
@@ -3775,7 +3785,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
     }[]
     // Add query execution explain information
     explain?: boolean
-    // Output fulltext rank in QueryResult. Allowed only with fulltext query
+    // Output fulltext or KNN rank in QueryResult. Allowed only with fulltext or KNN queries query
     select_with_rank?: boolean
     // Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions
     strict_mode?: enum[none, names, indexes] //default: names
@@ -3787,7 +3797,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
   aggregations:AggregationsDef[]
   // Add query execution explain information
   explain?: boolean
-  // Output fulltext rank in QueryResult. Allowed only with fulltext query
+  // Output fulltext or KNN rank in QueryResult. Allowed only with fulltext or KNN queries query
   select_with_rank?: boolean
   // Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions
   strict_mode?: enum[none, names, indexes] //default: names
@@ -4152,7 +4162,7 @@ This operation removes documents from namespace by DSL query.
     }[]
     // Add query execution explain information
     explain?: boolean
-    // Output fulltext rank in QueryResult. Allowed only with fulltext query
+    // Output fulltext or KNN rank in QueryResult. Allowed only with fulltext or KNN queries query
     select_with_rank?: boolean
     // Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions
     strict_mode?: enum[none, names, indexes] //default: names
@@ -4164,7 +4174,7 @@ This operation removes documents from namespace by DSL query.
   aggregations:AggregationsDef[]
   // Add query execution explain information
   explain?: boolean
-  // Output fulltext rank in QueryResult. Allowed only with fulltext query
+  // Output fulltext or KNN rank in QueryResult. Allowed only with fulltext or KNN queries query
   select_with_rank?: boolean
   // Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions
   strict_mode?: enum[none, names, indexes] //default: names
@@ -5310,7 +5320,7 @@ tx_id?: string
     }[]
     // Add query execution explain information
     explain?: boolean
-    // Output fulltext rank in QueryResult. Allowed only with fulltext query
+    // Output fulltext or KNN rank in QueryResult. Allowed only with fulltext or KNN queries query
     select_with_rank?: boolean
     // Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions
     strict_mode?: enum[none, names, indexes] //default: names
@@ -5322,7 +5332,7 @@ tx_id?: string
   aggregations:AggregationsDef[]
   // Add query execution explain information
   explain?: boolean
-  // Output fulltext rank in QueryResult. Allowed only with fulltext query
+  // Output fulltext or KNN rank in QueryResult. Allowed only with fulltext or KNN queries query
   select_with_rank?: boolean
   // Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions
   strict_mode?: enum[none, names, indexes] //default: names
@@ -6920,65 +6930,61 @@ This operation will update system configuration:
     // Log level of queries core logger
     log_level?: enum[none, error, warning, info, trace]
     // Join cache mode
-    join_cache_mode?: enum[aggressive]
-    // Enable namespace lazy load (namespace should be loaded from disk on first call, not at reindexer startup)
-    lazyload?: boolean
-    // Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded
-    unload_idle_threshold?: integer
+    join_cache_mode?: enum[aggressive, on, off] //default: off
     // Enable namespace copying for transaction with steps count greater than this value (if copy_politics_multiplier also allows this)
-    start_copy_policy_tx_size?: integer
+    start_copy_policy_tx_size?: integer //default: 10000
     // Disables copy policy if namespace size is greater than copy_policy_multiplier * start_copy_policy_tx_size
-    copy_policy_multiplier?: integer
+    copy_policy_multiplier?: integer //default: 5
     // Force namespace copying for transaction with steps count greater than this value
-    tx_size_to_always_copy?: integer
+    tx_size_to_always_copy?: integer //default: 100000
     // Count of threads, that will be created during transaction's commit to insert data into multithread ANN-indexes
-    tx_vec_insertion_threads?: integer
+    tx_vec_insertion_threads?: integer //default: 4
     // Timeout before background indexes optimization start after last update. 0 - disable optimizations
-    optimization_timeout_ms?: integer
+    optimization_timeout_ms?: integer //default: 800
     // Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations
-    optimization_sort_workers?: integer
+    optimization_sort_workers?: integer //default: 4
     // Maximum WAL size for this namespace (maximum count of WAL records)
-    wal_size?: integer
+    wal_size?: integer //default: 4000000
     // Maximum preselect size for optimization of inner join by injection of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
-    max_preselect_size?: integer
+    max_preselect_size?: integer //default: 1000
     // Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
     max_preselect_part?: number //default: 0.1
     // Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value
-    min_preselect_size?: integer
+    min_preselect_size?: integer //default: 1000
     // Maximum number of IdSet iterations of namespace preliminary result size for optimization
-    max_iterations_idset_preresult?: integer
+    max_iterations_idset_preresult?: integer //default: 20000
     // Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time
     index_updates_counting_mode?: boolean
     // Enables synchronous storage flush inside write-calls, if async updates count is more than sync_storage_flush_limit. 0 - disables synchronous storage flush, in this case storage will be flushed in background thread only
-    sync_storage_flush_limit?: integer
-    // Delay between last namespace update background ANN-indexes storage cache creation. Storage cache is required for ANN-indexes for faster startup. 0 - disables background cache creation (cache will still be created on the database shutdown)
-    ann_storage_cache_build_timeout_ms?: integer
+    sync_storage_flush_limit?: integer //default: 20000
+    // Delay between last and namespace update background ANN-indexes storage cache creation. Storage cache is required for ANN-indexes for faster startup. 0 - disables background cache creation (cache will still be created on the database shutdown)
+    ann_storage_cache_build_timeout_ms?: integer //default: 5000
     // Strict mode for queries. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions
-    strict_mode?: enum[none, names, indexes]
+    strict_mode?: enum[none, names, indexes] //default: names
     cache: {
       // Max size of the index IdSets cache in bytes (per index). Each index has it's own independent cache. This cache is used in any selections to store resulting sets of internal document IDs (it does not stores documents' content itself)
-      index_idset_cache_size?: integer
+      index_idset_cache_size?: integer //default: 134217728
       // Default 'hits to cache' for index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
-      index_idset_hits_to_cache?: integer
+      index_idset_hits_to_cache?: integer //default: 2
       // Max size of the fulltext indexes IdSets cache in bytes (per index). Each fulltext index has it's own independent cache. This cache is used in any selections to store resulting sets of internal document IDs, FT ranks and highlighted areas (it does not stores documents' content itself)
-      ft_index_cache_size?: integer
+      ft_index_cache_size?: integer //default: 134217728
       // Default 'hits to cache' for fulltext index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
-      ft_index_hits_to_cache?: integer
+      ft_index_hits_to_cache?: integer //default: 2
       // Max size of the index IdSets cache in bytes for each namespace. This cache will be enabled only if 'join_cache_mode' property is not 'off'. It stores resulting IDs, serialized JOINed queries and any other 'preselect' information for the JOIN queries (when target namespace is right namespace of the JOIN)
-      joins_preselect_cache_size?: integer
+      joins_preselect_cache_size?: integer //default: 134217728
       // Default 'hits to cache' for joins preselect cache of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
-      joins_preselect_hit_to_cache?: integer
+      joins_preselect_hit_to_cache?: integer //default: 2
       // Max size of the cache for COUNT_CACHED() aggregation in bytes for each namespace. This cache stores resulting COUNTs and serialized queries for the COUNT_CACHED() aggregations
-      query_count_cache_size?: integer
+      query_count_cache_size?: integer //default: 134217728
       // Default 'hits to cache' for COUNT_CACHED() aggregation of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
-      query_count_hit_to_cache?: integer
+      query_count_hit_to_cache?: integer //default: 2
     }
   }[]
   replication: {
     // Node identifier. Should be unique for each node in the replicated cluster (non-unique IDs are also allowed, but may lead to the inconsistency in some cases
     server_id?: integer
     // Cluster ID - must be same for client and for master
-    cluster_id?: integer
+    cluster_id?: integer //default: 2
   }
   async_replication: {
     // Replication role
@@ -7341,6 +7347,8 @@ This operation will update system configuration:
     is_array?: boolean
     // Reduces the index size. For hash and tree it will save ~8 bytes per unique key value. Useful for indexes with high selectivity, but for tree and hash indexes with low selectivity can seriously decrease update performance;
     is_dense?: boolean
+    // Reduces the index size. Allows to save ~(`stored_type_size` * `namespace_items_count`) bytes, where `stored_type_size` is the size of the type stored in the index, and `namespace_items_count` is the number of items in the namespace. May reduce performance;
+    is_no_column?: boolean
     // Value of index may not present in the document, and therefore, reduce data size but decreases speed operations on index
     is_sparse?: boolean
     // Algorithm to construct RTree index
@@ -7375,6 +7383,8 @@ This operation will update system configuration:
   is_array?: boolean
   // Reduces the index size. For hash and tree it will save ~8 bytes per unique key value. Useful for indexes with high selectivity, but for tree and hash indexes with low selectivity can seriously decrease update performance;
   is_dense?: boolean
+  // Reduces the index size. Allows to save ~(`stored_type_size` * `namespace_items_count`) bytes, where `stored_type_size` is the size of the type stored in the index, and `namespace_items_count` is the number of items in the namespace. May reduce performance;
+  is_no_column?: boolean
   // Value of index may not present in the document, and therefore, reduce data size but decreases speed operations on index
   is_sparse?: boolean
   // Algorithm to construct RTree index
@@ -7602,7 +7612,7 @@ This operation will update system configuration:
     }[]
     // Add query execution explain information
     explain?: boolean
-    // Output fulltext rank in QueryResult. Allowed only with fulltext query
+    // Output fulltext or KNN rank in QueryResult. Allowed only with fulltext or KNN queries query
     select_with_rank?: boolean
     // Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions
     strict_mode?: enum[none, names, indexes] //default: names
@@ -7614,7 +7624,7 @@ This operation will update system configuration:
   aggregations:AggregationsDef[]
   // Add query execution explain information
   explain?: boolean
-  // Output fulltext rank in QueryResult. Allowed only with fulltext query
+  // Output fulltext or KNN rank in QueryResult. Allowed only with fulltext or KNN queries query
   select_with_rank?: boolean
   // Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions
   strict_mode?: enum[none, names, indexes] //default: names
@@ -8055,6 +8065,48 @@ This operation will update system configuration:
   multithreading?: enum[0, 1]
   // Clusters count for construct IFV index. Required for IVF indexes. Allowed for IVF indexes only.
   centroids_count?: integer
+  // Embedding configuration
+  embedding: {
+    // Upsert embedding configuration
+    upsert_embedder: {
+      // Embed service URL
+      URL: string
+      // tag is used to cache results of injection
+      cache_tag?: string
+      fields?: string[]
+      // Embedding application strategy
+      embedding_strategy?: enum[always, empty_only, strict] //default: strict
+      // Connection pool configuration
+      pool: {
+        // Number connections to service
+        connections?: integer //default: 10
+        // Connection\reconnection timeout to any embedding service (milliseconds)
+        connect_timeout_ms?: integer //default: 300
+        // Timeout reading data from embedding service (milliseconds)
+        read_timeout_ms?: integer //default: 5000
+        // Timeout writing data from embedding service (milliseconds)
+        write_timeout_ms?: integer //default: 5000
+      }
+    }
+    // Query embedding configuration
+    query_embedder: {
+      // Embed service URL
+      URL: string
+      // tag is used to cache results of injection
+      cache_tag?: string
+      // Connection pool configuration
+      pool: {
+        // Number connections to service
+        connections?: integer //default: 10
+        // Connection\reconnection timeout to any embedding service (milliseconds)
+        connect_timeout_ms?: integer //default: 300
+        // Timeout reading data from embedding service (milliseconds)
+        read_timeout_ms?: integer //default: 5000
+        // Timeout writing data from embedding service (milliseconds)
+        write_timeout_ms?: integer //default: 5000
+      }
+    }
+  }
 }
 ```
 
@@ -8424,6 +8476,8 @@ This operation will update system configuration:
     is_array?: boolean
     // Reduces the index size. For hash and tree it will save ~8 bytes per unique key value. Useful for indexes with high selectivity, but for tree and hash indexes with low selectivity can seriously decrease update performance;
     is_dense?: boolean
+    // Reduces the index size. Allows to save ~(`stored_type_size` * `namespace_items_count`) bytes, where `stored_type_size` is the size of the type stored in the index, and `namespace_items_count` is the number of items in the namespace. May reduce performance;
+    is_no_column?: boolean
     // Value of index may not present in the document, and therefore, reduce data size but decreases speed operations on index
     is_sparse?: boolean
     // Algorithm to construct RTree index
@@ -9348,65 +9402,61 @@ This operation will update system configuration:
     // Log level of queries core logger
     log_level?: enum[none, error, warning, info, trace]
     // Join cache mode
-    join_cache_mode?: enum[aggressive]
-    // Enable namespace lazy load (namespace should be loaded from disk on first call, not at reindexer startup)
-    lazyload?: boolean
-    // Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded
-    unload_idle_threshold?: integer
+    join_cache_mode?: enum[aggressive, on, off] //default: off
     // Enable namespace copying for transaction with steps count greater than this value (if copy_politics_multiplier also allows this)
-    start_copy_policy_tx_size?: integer
+    start_copy_policy_tx_size?: integer //default: 10000
     // Disables copy policy if namespace size is greater than copy_policy_multiplier * start_copy_policy_tx_size
-    copy_policy_multiplier?: integer
+    copy_policy_multiplier?: integer //default: 5
     // Force namespace copying for transaction with steps count greater than this value
-    tx_size_to_always_copy?: integer
+    tx_size_to_always_copy?: integer //default: 100000
     // Count of threads, that will be created during transaction's commit to insert data into multithread ANN-indexes
-    tx_vec_insertion_threads?: integer
+    tx_vec_insertion_threads?: integer //default: 4
     // Timeout before background indexes optimization start after last update. 0 - disable optimizations
-    optimization_timeout_ms?: integer
+    optimization_timeout_ms?: integer //default: 800
     // Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations
-    optimization_sort_workers?: integer
+    optimization_sort_workers?: integer //default: 4
     // Maximum WAL size for this namespace (maximum count of WAL records)
-    wal_size?: integer
+    wal_size?: integer //default: 4000000
     // Maximum preselect size for optimization of inner join by injection of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
-    max_preselect_size?: integer
+    max_preselect_size?: integer //default: 1000
     // Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
     max_preselect_part?: number //default: 0.1
     // Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value
-    min_preselect_size?: integer
+    min_preselect_size?: integer //default: 1000
     // Maximum number of IdSet iterations of namespace preliminary result size for optimization
-    max_iterations_idset_preresult?: integer
+    max_iterations_idset_preresult?: integer //default: 20000
     // Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time
     index_updates_counting_mode?: boolean
     // Enables synchronous storage flush inside write-calls, if async updates count is more than sync_storage_flush_limit. 0 - disables synchronous storage flush, in this case storage will be flushed in background thread only
-    sync_storage_flush_limit?: integer
-    // Delay between last namespace update background ANN-indexes storage cache creation. Storage cache is required for ANN-indexes for faster startup. 0 - disables background cache creation (cache will still be created on the database shutdown)
-    ann_storage_cache_build_timeout_ms?: integer
+    sync_storage_flush_limit?: integer //default: 20000
+    // Delay between last and namespace update background ANN-indexes storage cache creation. Storage cache is required for ANN-indexes for faster startup. 0 - disables background cache creation (cache will still be created on the database shutdown)
+    ann_storage_cache_build_timeout_ms?: integer //default: 5000
     // Strict mode for queries. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions
-    strict_mode?: enum[none, names, indexes]
+    strict_mode?: enum[none, names, indexes] //default: names
     cache: {
       // Max size of the index IdSets cache in bytes (per index). Each index has it's own independent cache. This cache is used in any selections to store resulting sets of internal document IDs (it does not stores documents' content itself)
-      index_idset_cache_size?: integer
+      index_idset_cache_size?: integer //default: 134217728
       // Default 'hits to cache' for index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
-      index_idset_hits_to_cache?: integer
+      index_idset_hits_to_cache?: integer //default: 2
       // Max size of the fulltext indexes IdSets cache in bytes (per index). Each fulltext index has it's own independent cache. This cache is used in any selections to store resulting sets of internal document IDs, FT ranks and highlighted areas (it does not stores documents' content itself)
-      ft_index_cache_size?: integer
+      ft_index_cache_size?: integer //default: 134217728
       // Default 'hits to cache' for fulltext index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
-      ft_index_hits_to_cache?: integer
+      ft_index_hits_to_cache?: integer //default: 2
       // Max size of the index IdSets cache in bytes for each namespace. This cache will be enabled only if 'join_cache_mode' property is not 'off'. It stores resulting IDs, serialized JOINed queries and any other 'preselect' information for the JOIN queries (when target namespace is right namespace of the JOIN)
-      joins_preselect_cache_size?: integer
+      joins_preselect_cache_size?: integer //default: 134217728
       // Default 'hits to cache' for joins preselect cache of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
-      joins_preselect_hit_to_cache?: integer
+      joins_preselect_hit_to_cache?: integer //default: 2
       // Max size of the cache for COUNT_CACHED() aggregation in bytes for each namespace. This cache stores resulting COUNTs and serialized queries for the COUNT_CACHED() aggregations
-      query_count_cache_size?: integer
+      query_count_cache_size?: integer //default: 134217728
       // Default 'hits to cache' for COUNT_CACHED() aggregation of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
-      query_count_hit_to_cache?: integer
+      query_count_hit_to_cache?: integer //default: 2
     }
   }[]
   replication: {
     // Node identifier. Should be unique for each node in the replicated cluster (non-unique IDs are also allowed, but may lead to the inconsistency in some cases
     server_id?: integer
     // Cluster ID - must be same for client and for master
-    cluster_id?: integer
+    cluster_id?: integer //default: 2
   }
   async_replication: {
     // Replication role
@@ -9561,58 +9611,54 @@ This operation will update system configuration:
   // Log level of queries core logger
   log_level?: enum[none, error, warning, info, trace]
   // Join cache mode
-  join_cache_mode?: enum[aggressive]
-  // Enable namespace lazy load (namespace should be loaded from disk on first call, not at reindexer startup)
-  lazyload?: boolean
-  // Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded
-  unload_idle_threshold?: integer
+  join_cache_mode?: enum[aggressive, on, off] //default: off
   // Enable namespace copying for transaction with steps count greater than this value (if copy_politics_multiplier also allows this)
-  start_copy_policy_tx_size?: integer
+  start_copy_policy_tx_size?: integer //default: 10000
   // Disables copy policy if namespace size is greater than copy_policy_multiplier * start_copy_policy_tx_size
-  copy_policy_multiplier?: integer
+  copy_policy_multiplier?: integer //default: 5
   // Force namespace copying for transaction with steps count greater than this value
-  tx_size_to_always_copy?: integer
+  tx_size_to_always_copy?: integer //default: 100000
   // Count of threads, that will be created during transaction's commit to insert data into multithread ANN-indexes
-  tx_vec_insertion_threads?: integer
+  tx_vec_insertion_threads?: integer //default: 4
   // Timeout before background indexes optimization start after last update. 0 - disable optimizations
-  optimization_timeout_ms?: integer
+  optimization_timeout_ms?: integer //default: 800
   // Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations
-  optimization_sort_workers?: integer
+  optimization_sort_workers?: integer //default: 4
   // Maximum WAL size for this namespace (maximum count of WAL records)
-  wal_size?: integer
+  wal_size?: integer //default: 4000000
   // Maximum preselect size for optimization of inner join by injection of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
-  max_preselect_size?: integer
+  max_preselect_size?: integer //default: 1000
   // Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
   max_preselect_part?: number //default: 0.1
   // Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value
-  min_preselect_size?: integer
+  min_preselect_size?: integer //default: 1000
   // Maximum number of IdSet iterations of namespace preliminary result size for optimization
-  max_iterations_idset_preresult?: integer
+  max_iterations_idset_preresult?: integer //default: 20000
   // Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time
   index_updates_counting_mode?: boolean
   // Enables synchronous storage flush inside write-calls, if async updates count is more than sync_storage_flush_limit. 0 - disables synchronous storage flush, in this case storage will be flushed in background thread only
-  sync_storage_flush_limit?: integer
-  // Delay between last namespace update background ANN-indexes storage cache creation. Storage cache is required for ANN-indexes for faster startup. 0 - disables background cache creation (cache will still be created on the database shutdown)
-  ann_storage_cache_build_timeout_ms?: integer
+  sync_storage_flush_limit?: integer //default: 20000
+  // Delay between last and namespace update background ANN-indexes storage cache creation. Storage cache is required for ANN-indexes for faster startup. 0 - disables background cache creation (cache will still be created on the database shutdown)
+  ann_storage_cache_build_timeout_ms?: integer //default: 5000
   // Strict mode for queries. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions
-  strict_mode?: enum[none, names, indexes]
+  strict_mode?: enum[none, names, indexes] //default: names
   cache: {
     // Max size of the index IdSets cache in bytes (per index). Each index has it's own independent cache. This cache is used in any selections to store resulting sets of internal document IDs (it does not stores documents' content itself)
-    index_idset_cache_size?: integer
+    index_idset_cache_size?: integer //default: 134217728
     // Default 'hits to cache' for index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
-    index_idset_hits_to_cache?: integer
+    index_idset_hits_to_cache?: integer //default: 2
     // Max size of the fulltext indexes IdSets cache in bytes (per index). Each fulltext index has it's own independent cache. This cache is used in any selections to store resulting sets of internal document IDs, FT ranks and highlighted areas (it does not stores documents' content itself)
-    ft_index_cache_size?: integer
+    ft_index_cache_size?: integer //default: 134217728
     // Default 'hits to cache' for fulltext index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
-    ft_index_hits_to_cache?: integer
+    ft_index_hits_to_cache?: integer //default: 2
     // Max size of the index IdSets cache in bytes for each namespace. This cache will be enabled only if 'join_cache_mode' property is not 'off'. It stores resulting IDs, serialized JOINed queries and any other 'preselect' information for the JOIN queries (when target namespace is right namespace of the JOIN)
-    joins_preselect_cache_size?: integer
+    joins_preselect_cache_size?: integer //default: 134217728
     // Default 'hits to cache' for joins preselect cache of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
-    joins_preselect_hit_to_cache?: integer
+    joins_preselect_hit_to_cache?: integer //default: 2
     // Max size of the cache for COUNT_CACHED() aggregation in bytes for each namespace. This cache stores resulting COUNTs and serialized queries for the COUNT_CACHED() aggregations
-    query_count_cache_size?: integer
+    query_count_cache_size?: integer //default: 134217728
     // Default 'hits to cache' for COUNT_CACHED() aggregation of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
-    query_count_hit_to_cache?: integer
+    query_count_hit_to_cache?: integer //default: 2
   }
 }
 ```
@@ -9624,7 +9670,7 @@ This operation will update system configuration:
   // Node identifier. Should be unique for each node in the replicated cluster (non-unique IDs are also allowed, but may lead to the inconsistency in some cases
   server_id?: integer
   // Cluster ID - must be same for client and for master
-  cluster_id?: integer
+  cluster_id?: integer //default: 2
 }
 ```
 

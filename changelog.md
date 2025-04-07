@@ -1,3 +1,36 @@
+# Version 5.1.0 (07.04.2025)
+## Core
+- [fea] Added separate `is_no_column` index option, which allows to disable column subindex (previously this option was included into `is_dense`)
+- [fix] Fixed race on concurrent creation of the same namespace by multiple users/replication
+- [fix] Fixed crash in strings comparator for `sparse`-indexes
+- [fix] Fixed timeout handling in `UPDATE`-queries
+- [fix] Disallowed to create `sparse PK` indexes
+
+## Vector indexes
+- [fea] Allow to use empty/null vector values in `UPDATE`-queries with `set`
+- [fea] Added support for `IS NULL`/`IS NOT NULL` conditions with indexed vector fields
+- [fea] Added [autoembedding logic](float_vectors.md#embedding-configuration) with extrenal user's service for single documents insertion/modification, transactions and [SELECT-queries](float_vectors.md#knn-search-with-auto-embedding)
+- [fix] Fixed race in concurrent deleted point reusing in `HNSW` multithread transactions
+- [fix] Fixed vector index rebuild on config update
+
+## Replication
+- [fix] Fixed replicated `WAL` size on the `follower` after `force sync`
+
+## Reindexer server
+- [ref] Removed `autorepair` logic and related flags due to undesirable side effects. LevelDB's repair call could lead to sufficient storage slowdown, so any repair operations should be intentionally called via `reindexer_tool`
+
+## Go connector
+- [fix] Fixed possible `heap-use-after-free` in background results recycling logic afted database closing (in `builtin`/`builtinserver` modes)
+- [fix] Fixed possible `heap-use-after-free` in `UnsubscribeUpdated()`-call during `builtinserver` termination
+
+## Face
+- [fea] Added `sync_state` labels for async and sync replications
+- [fea] Added new NC config fields: `ann_storage_cache_build_timeout_ms` and `tx_vec_insertion_threads`
+- [fea] Added new parameters for the `float_vector` index
+- [fea] Added `is_no_column` field to Indexes
+- [fix] Added info message about exceeding the acceptable MAX_SAFE_INTEGER value
+- [fix] Blocked unnecessary scheme saving
+
 # Version 5.0.1 (13.03.2025)
 ## Core
 - [fix] Fixed incorrect aggregations (`min`, `max`, `avg`, `sum`) interaction with [force sort](readme.md#forced-sort)/`hash`-index sort and `LIMIT`

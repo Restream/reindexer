@@ -293,8 +293,6 @@ protected:
 		auto ns = nsArray.Object();
 		ns.Put("namespace", nsName.c_str());
 		ns.Put("log_level", "none");
-		ns.Put("lazyload", false);
-		ns.Put("unload_idle_threshold", 0);
 		ns.Put("join_cache_mode", "off");
 		ns.Put("start_copy_policy_tx_size", 10000);
 		ns.Put("optimization_timeout_ms", optimizationTimeout);
@@ -314,8 +312,6 @@ protected:
 		auto ns = nsArray.Object();
 		ns.Put("namespace", nsName.c_str());
 		ns.Put("log_level", "none");
-		ns.Put("lazyload", false);
-		ns.Put("unload_idle_threshold", 0);
 		ns.Put("join_cache_mode", "on");
 		ns.Put("start_copy_policy_tx_size", 10000);
 		ns.End();

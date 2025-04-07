@@ -180,7 +180,7 @@ Error ReindexerImpl::enableStorage(const std::string& storagePath) {
 				currentStorageType = reindexer::datastorage::StorageTypeFromString(content);
 			} catch (const Error&) {
 				return Error(errParams,
-							 "Cowadly refusing to use directory '{}' - it's not empty and contains reindexer placeholder with unexpected "
+							 "Cowardly refusing to use directory '{}' - it's not empty and contains reindexer placeholder with unexpected "
 							 "content: \"{}\"",
 							 storagePath, content);
 			}
@@ -189,7 +189,7 @@ Error ReindexerImpl::enableStorage(const std::string& storagePath) {
 				storageType_ = currentStorageType;
 			}
 		} else {
-			return Error(errParams, "Cowadly refusing to use directory '{}' - it's not empty and doesn't contain reindexer placeholder",
+			return Error(errParams, "Cowardly refusing to use directory '{}' - it's not empty and doesn't contain reindexer placeholder",
 						 storagePath);
 		}
 	} else {
@@ -214,7 +214,7 @@ Error ReindexerImpl::enableStorage(const std::string& storagePath) {
 
 	Error res;
 	if (isHaveConfig) {
-		res = openNamespace(kConfigNamespace, true, StorageOpts().Enabled().CreateIfMissing(), {}, RdxContext());
+		res = openNamespace(kConfigNamespace, IsDBInitCall_True, StorageOpts().Enabled().CreateIfMissing(), {}, RdxContext());
 	}
 	for (auto& watcher : configWatchers_) {
 		watcher.SetDirectory(storagePath_);
@@ -259,7 +259,6 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 			break;
 	}
 
-	autorepairEnabled_ = opts.IsAutorepair();
 	replicationEnabled_ = !opts.IsReplicationDisabled();
 
 	std::vector<reindexer::fs::DirEntry> foundNs;
@@ -298,14 +297,13 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 							const std::string tmpPath = fs::JoinPath(storagePath_, de.name);
 							logFmt(LogWarning, "Dropping tmp namespace '{}'", de.name);
 							if (fs::RmDirAll(tmpPath) < 0) {
-								logFmt(LogWarning, "Failed to remove '{}' temporary namespace from filesystem, path: {}", de.name,
-										  tmpPath);
+								logFmt(LogWarning, "Failed to remove '{}' temporary namespace from filesystem, path: {}", de.name, tmpPath);
 								hasNsErrors.test_and_set(std::memory_order_relaxed);
 							}
 							continue;
 						}
 						RdxContext dummyCtx;
-						auto status = openNamespace(de.name, true, StorageOpts().Enabled(), {}, dummyCtx);
+						auto status = openNamespace(de.name, IsDBInitCall_True, StorageOpts().Enabled(), {}, dummyCtx);
 						if (status.ok()) {
 							auto ns = getNamespace(de.name, dummyCtx);
 							auto replState = ns->GetReplStateV2(dummyCtx);
@@ -394,6 +392,7 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 }
 
 Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, std::optional<NsReplicationOpts> replOpts, const RdxContext& rdxCtx) {
+	NsCreationLockerT::Locks nsCreationLock;  // In case of error this lock should be destroyed after Namespace pointer
 	Namespace::Ptr ns;
 	try {
 		{
@@ -405,7 +404,6 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 		if (!validateObjectName(nsDef.name, nsDef.isTemporary)) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
 		}
-		const bool readyToLoadStorage = (nsDef.storage.IsEnabled() && !storagePath_.empty());
 		assertrx(clusterizator_);
 		ns = std::make_shared<Namespace>(nsDef.name, replOpts.has_value() ? replOpts->tmStateToken : std::optional<int32_t>(),
 										 *clusterizator_, bgDeleter_, observers_);
@@ -413,13 +411,22 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 			ns->awaitMainNs(rdxCtx)->setTemporary();
 		}
 
-		if (readyToLoadStorage) {
+		rdxCtx.WithNoWaitSync(nsDef.isTemporary || ns->IsSystem(rdxCtx) || !clusterizator_->NamespaceIsInClusterConfig(nsDef.name));
+		nsCreationLock = nsLock_.CreationLock(nsDef.name, rdxCtx);
+		if (nsDef.storage.IsEnabled() && !storagePath_.empty()) {
+			{
+				auto rlck = nsLock_.RLock(rdxCtx);
+				if (namespaces_.find(nsDef.name) != namespaces_.end()) {
+					return Error(errParams, "Namespace '{}' already exists", nsDef.name);
+				}
+			}
 			ns->EnableStorage(storagePath_, nsDef.storage, storageType_, rdxCtx);
-		}
-		ns->OnConfigUpdated(configProvider_, rdxCtx);
-		if (readyToLoadStorage) {
+			ns->OnConfigUpdated(configProvider_, rdxCtx);
 			ns->LoadFromStorage(kStorageLoadingThreads, rdxCtx);
+		} else {
+			ns->OnConfigUpdated(configProvider_, rdxCtx);
 		}
+
 		if (!rdxCtx.GetOriginLSN().isEmpty()) {
 			// TODO: It may be a simple replica
 			auto err = ns->SetClusterizationStatus(
@@ -428,7 +435,6 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 				return err;
 			}
 		}
-		rdxCtx.WithNoWaitSync(nsDef.isTemporary || ns->IsSystem(rdxCtx) || !clusterizator_->NamespaceIsInClusterConfig(nsDef.name));
 		const int64_t stateToken = ns->NewItem(rdxCtx).GetStateToken();
 		{
 			auto wlck = nsLock_.DataWLock(rdxCtx);
@@ -439,6 +445,8 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 			if (!inserted) {
 				return Error(errParams, "Namespace '{}' already exists", nsDef.name);
 			}
+			// Unlock, when all storage and namespace map operations are done
+			nsCreationLock.UnlockIfOwns();
 
 			const lsn_t version = setNsVersion(ns, replOpts, rdxCtx);
 			if (!nsDef.isTemporary) {
@@ -479,7 +487,7 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 			}
 			return err;
 		}
-	} catch (const Error& err) {
+	} catch (std::exception& err) {
 		return err;
 	}
 
@@ -488,7 +496,7 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 
 Error ReindexerImpl::OpenNamespace(std::string_view name, const StorageOpts& storageOpts, const NsReplicationOpts& replOpts,
 								   const RdxContext& ctx) {
-	return openNamespace(name, false, storageOpts, {replOpts}, ctx);
+	return openNamespace(name, IsDBInitCall_False, storageOpts, {replOpts}, ctx);
 }
 
 Error ReindexerImpl::DropNamespace(std::string_view nsName, const RdxContext& rdxCtx) {
@@ -497,7 +505,6 @@ Error ReindexerImpl::DropNamespace(std::string_view nsName, const RdxContext& rd
 }
 
 std::string ReindexerImpl::generateTemporaryNamespaceName(std::string_view baseName) {
-	constexpr size_t kTmpNsPostfixLen = 20;
 	return '@' + std::string(baseName) + "_tmp_" + randStringAlph(kTmpNsPostfixLen);
 }
 
@@ -525,6 +532,7 @@ Error ReindexerImpl::closeNamespace(std::string_view nsName, const RdxContext& c
 	Namespace::Ptr ns;
 	Error err;
 	try {
+		auto nsCreationLock = nsLock_.CreationLock(nsName, ctx);
 		auto wlck = nsLock_.DataWLock(ctx);
 
 		auto nsIt = namespaces_.find(nsName);
@@ -553,13 +561,17 @@ Error ReindexerImpl::closeNamespace(std::string_view nsName, const RdxContext& c
 		}
 
 		namespaces_.erase(nsIt);
+
+		// Unlock, when all storage and namespace map operations are done
+		nsCreationLock.UnlockIfOwns();
+
 		if (!isTemporary) {
 #ifdef REINDEX_WITH_V3_FOLLOWERS
 			if (dropStorage) {
 				observers_.OnWALUpdate(LSNPair(), nsName, WALRecord(WalNamespaceDrop));
 			}
 #endif	// REINDEX_WITH_V3_FOLLOWERS
-			auto err = observers_.SendUpdate(
+			err = observers_.SendUpdate(
 				{dropStorage ? updates::URType::DropNamespace : updates::URType::CloseNamespace, ns->GetName(RdxContext()), lsn_t(0, 0),
 				 lsn_t(0, 0), ctx.EmmiterServerId()},
 				[&wlck] {
@@ -571,8 +583,8 @@ Error ReindexerImpl::closeNamespace(std::string_view nsName, const RdxContext& c
 				return err;
 			}
 		}
-	} catch (const Error& e) {
-		err = e;
+	} catch (std::exception& e) {
+		err = std::move(e);
 	}
 	if (ns) {
 		bgDeleter_.Add(ns->atomicLoadMainNs());
@@ -580,32 +592,45 @@ Error ReindexerImpl::closeNamespace(std::string_view nsName, const RdxContext& c
 	return err;
 }
 
-Error ReindexerImpl::openNamespace(std::string_view name, bool skipNameCheck, const StorageOpts& storageOpts,
+Error ReindexerImpl::openNamespace(std::string_view name, IsDBInitCall isDBInitCall, const StorageOpts& storageOpts,
 								   std::optional<NsReplicationOpts> replOpts, const RdxContext& rdxCtx) {
+	NsCreationLockerT::Locks nsCreationLock;  // In case of error this lock should be destroyed after Namespace pointer
+	auto awaitReplication = [this, &rdxCtx, &nsCreationLock](const Namespace::Ptr& ns, auto&& lock) -> Error {
+		lock.unlock();
+		nsCreationLock.UnlockIfOwns();
+		if (rdxCtx.HasEmmiterServer()) {
+			return observers_.SendUpdate(UpdateRecord{updates::URType::EmptyUpdate, ns->GetName(rdxCtx), rdxCtx.EmmiterServerId()},
+										 std::function<void()>(), rdxCtx);
+		}
+		return {};
+	};
+
 	try {
 		{
 			auto rlck = nsLock_.RLock(rdxCtx);
-			auto nsIt = namespaces_.find(name);
-			if (nsIt != namespaces_.end() && nsIt->second) {
-				rlck.unlock();
-				if (rdxCtx.HasEmmiterServer()) {
-					return observers_.SendUpdate(
-						UpdateRecord{updates::URType::EmptyUpdate, nsIt.value()->GetName(rdxCtx), rdxCtx.EmmiterServerId()},
-						std::function<void()>(), rdxCtx);
-				}
-				return Error();
+			if (auto nsIt = namespaces_.find(name); nsIt != namespaces_.end() && nsIt->second) {
+				return awaitReplication(nsIt->second, std::move(rlck));
 			}
 		}
-		if (!skipNameCheck && !validateUserNsName(name)) {
+		if (!isDBInitCall && !validateUserNsName(name)) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
 		}
 		NamespaceDef nsDef(std::string(name), storageOpts);
 		assertrx(clusterizator_);
 		auto ns = std::make_shared<Namespace>(nsDef.name, replOpts.has_value() ? replOpts->tmStateToken : std::optional<int32_t>(),
 											  *clusterizator_, bgDeleter_, observers_);
+
+		rdxCtx.WithNoWaitSync(ns->IsSystem(rdxCtx) || !clusterizator_->NamespaceIsInClusterConfig(nsDef.name));
+		// Do not use this lock on database initialization
+		nsCreationLock = isDBInitCall ? NsCreationLockerT::Locks() : nsLock_.CreationLock(name, rdxCtx);
 		if (storageOpts.IsEnabled() && !storagePath_.empty()) {
-			auto opts = storageOpts;
-			ns->EnableStorage(storagePath_, opts.Autorepair(autorepairEnabled_), storageType_, rdxCtx);
+			{
+				auto rlck = nsLock_.RLock(rdxCtx);
+				if (auto nsIt = namespaces_.find(name); nsIt != namespaces_.end() && nsIt->second) {
+					return awaitReplication(nsIt->second, std::move(rlck));
+				}
+			}
+			ns->EnableStorage(storagePath_, storageOpts, storageType_, rdxCtx);
 			ns->OnConfigUpdated(configProvider_, rdxCtx);
 			ns->LoadFromStorage(kStorageLoadingThreads, rdxCtx);
 		} else {
@@ -620,10 +645,13 @@ Error ReindexerImpl::openNamespace(std::string_view name, bool skipNameCheck, co
 				return err;
 			}
 		}
-		rdxCtx.WithNoWaitSync(ns->IsSystem(rdxCtx) || !clusterizator_->NamespaceIsInClusterConfig(nsDef.name));
 		const int64_t stateToken = ns->NewItem(rdxCtx).GetStateToken();
 		{
 			auto wlck = nsLock_.DataWLock(rdxCtx);
+
+			if (auto nsIt = namespaces_.find(name); nsIt != namespaces_.end() && nsIt->second) {
+				return awaitReplication(nsIt->second, std::move(wlck));
+			}
 
 			checkClusterRole(name, rdxCtx.GetOriginLSN());
 
@@ -631,6 +659,8 @@ Error ReindexerImpl::openNamespace(std::string_view name, bool skipNameCheck, co
 
 			auto [nsIt, inserted] = namespaces_.insert({nsDef.name, std::move(ns)});
 			(void)inserted;
+			// Unlock, when all storage and namespace map operations are done
+			nsCreationLock.UnlockIfOwns();
 #ifdef REINDEX_WITH_V3_FOLLOWERS
 			if (!nsDef.isTemporary) {
 				observers_.OnWALUpdate(LSNPair(), nsDef.name, WALRecord(WalNamespaceAdd));
@@ -648,7 +678,7 @@ Error ReindexerImpl::openNamespace(std::string_view name, bool skipNameCheck, co
 				throw err;
 			}
 		}
-	} catch (const Error& err) {
+	} catch (std::exception& err) {
 		return err;
 	}
 
@@ -670,7 +700,6 @@ Error ReindexerImpl::TruncateNamespace(std::string_view nsName, const RdxContext
 }
 
 Error ReindexerImpl::RenameNamespace(std::string_view srcNsName, const std::string& dstNsName, const RdxContext& rdxCtx) {
-	Error err;
 	try {
 		{
 			auto rlck = nsLock_.RLock(rdxCtx);
@@ -685,11 +714,10 @@ Error ReindexerImpl::RenameNamespace(std::string_view srcNsName, const std::stri
 				return Error(errParams, "Can't rename temporary namespace '{}'", srcNsName);
 			}
 		}
-		err = renameNamespace(srcNsName, dstNsName, !rdxCtx.GetOriginLSN().isEmpty(), false, rdxCtx);
-	} catch (const Error& e) {
+		return renameNamespace(srcNsName, dstNsName, !rdxCtx.GetOriginLSN().isEmpty(), false, rdxCtx);
+	} catch (std::exception& e) {
 		return e;
 	}
-	return err;
 }
 
 Error ReindexerImpl::SetTagsMatcher(std::string_view nsName, TagsMatcher&& tm, const RdxContext& ctx) {
@@ -748,22 +776,30 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 			auto rlock = nsLock_.RLock(rdxCtx);
 			auto srcIt = namespaces_.find(srcNsName);
 			srcNs = (srcIt != namespaces_.end()) ? srcIt->second : Namespace::Ptr();
+			auto dstIt = namespaces_.find(dstNsName);
+			dstNs = (dstIt != namespaces_.end()) ? dstIt->second : Namespace::Ptr();
 			rlock.unlock();
 
-			if (srcNs) {
-				auto nsPtr = srcNs->awaitMainNs(rdxCtx);
-				logFmt(LogInfo, "[rename] Performing storage flush before namespace renaming ('{}' -> '{}')...", srcNsName, dstNsName);
-				auto err = nsPtr->FlushStorage(rdxCtx);
-				logFmt(LogInfo, "[rename] Flush done for '{}'", srcNsName);
-				if (!err.ok()) {
-					return Error(err.code(), "Unable to flush storage before rename: {}", err.what());
+			auto flushNs = [&rdxCtx, &srcNsName, &dstNsName](Namespace::Ptr& targetNs, std::string_view targetNsName) {
+				if (targetNs) {
+					auto nsPtr = targetNs->awaitMainNs(rdxCtx);
+					logFmt(LogInfo, "[rename] Performing '{}' storage flush before namespace renaming ('{}' -> '{}')...", targetNsName,
+						   srcNsName, dstNsName);
+					auto err = nsPtr->FlushStorage(rdxCtx);
+					logFmt(LogInfo, "[rename] Flush done for '{}'", targetNsName);
+					if (!err.ok()) {
+						throw Error(err.code(), "Unable to flush storage before rename: {}", err.what());
+					}
+					targetNs.reset();
 				}
-				srcNs.reset();
-			}
+			};
+			flushNs(srcNs, srcNsName);
+			flushNs(dstNs, dstNsName);
 		}
 
 		rdxCtx.WithNoWaitSync(fromReplication);
 
+		auto nsCreationLock = nsLock_.CreationLock(srcNsName, dstNsName, rdxCtx);
 		auto wlck = nsLock_.DataWLock(rdxCtx);
 
 		checkClusterRole(srcNsName, rdxCtx.GetOriginLSN());
@@ -807,7 +843,7 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 				//						throw err;
 				//					}
 
-				// Temporary solution. Do not replicating rename command, but still sending rename event
+				// Temporary solution. Don't replicate rename command, but still sending rename event
 				observers_.SendAsyncEventOnly({updates::URType::RenameNamespace, NamespaceName(srcNsName), lsn_t(0, 0), lsn_t(0, 0),
 											   rdxCtx.EmmiterServerId(), dstNsName});
 			};
@@ -822,6 +858,9 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 			};
 		}
 		try {
+			// unlocking namespace's map for concurrent reading/writing
+			wlck.unlock();
+
 			if (dstNs) {
 				srcNs->Rename(dstNs, storagePath_, replicateCb, rdxCtx);
 			} else {
@@ -839,14 +878,16 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 			}
 #endif	// REINDEX_WITH_V3_FOLLOWERS
 		} catch (...) {
-			auto actualName = srcNs->GetName(RdxContext());
-			if (std::string_view(actualName) != toLower(dstNsName)) {
+			if (auto actualName = srcNs->GetName(RdxContext()); !iequals(actualName, dstNsName)) {
+				// Can not cancel here
+				wlck.lock(ignore_cancel_ctx{});
+
 				namespaces_.erase(dstNsName);
 				namespaces_[std::string(actualName)] = srcNs;
 			}
 			throw;
 		}
-	} catch (const Error& err) {
+	} catch (std::exception& err) {
 		return err;
 	}
 	return {};
@@ -935,11 +976,12 @@ Error ReindexerImpl::applyNsFunction(std::string_view nsName, const RdxContext& 
 		auto ns = getNamespace(nsName, rdxCtx);
 		(*ns.*MemFn)(arg, std::forward<Args>(args)..., rdxCtx);
 		if constexpr (needUpdateSystemNs) {
-			rdxCtx.WithNoWaitSync(true);
-			updateToSystemNamespace(nsName, arg, rdxCtx);
+			RdxContext rdxCtxNoCancel = rdxCtx.NoCancel();
+			rdxCtxNoCancel.WithNoWaitSync(true);
+			updateToSystemNamespace(nsName, arg, rdxCtxNoCancel);
 		}
-	} catch (const Error& e) {
-		err = e;
+	} catch (std::exception& e) {
+		err = std::move(e);
 	}
 	if (rdxCtx.Compl()) {
 		rdxCtx.Compl()(err);
@@ -1001,15 +1043,15 @@ Error ReindexerImpl::Update(std::string_view nsName, Item& item, LocalQueryResul
 Error ReindexerImpl::Update(const Query& q, LocalQueryResults& result, const RdxContext& rdxCtx) {
 	try {
 		q.VerifyForUpdate();
-		auto ns = getNamespace(q.NsName(), rdxCtx);
+		const std::string& nsName = q.NsName();
+		auto ns = getNamespace(nsName, rdxCtx);
 		ns->Update(q, result, rdxCtx);
-		if (ns->IsSystem(rdxCtx)) {
-			const auto kNsNamePtr = ns->GetName(rdxCtx);
-			const std::string_view kNsName(kNsNamePtr);
-			rdxCtx.WithNoWaitSync(true);
+		if (isSystemNamespaceNameFast(nsName)) {
+			RdxContext rdxCtxNoCancel = rdxCtx.NoCancel();
+			rdxCtxNoCancel.WithNoWaitSync(true);
 			for (auto& it : result) {
 				auto item = it.GetItem(false);
-				updateToSystemNamespace(kNsName, item, rdxCtx);
+				updateToSystemNamespace(nsName, item, rdxCtxNoCancel);
 			}
 		}
 	} catch (const Error& err) {
@@ -1431,7 +1473,7 @@ void ReindexerImpl::storageFlushingRoutine(net::ev::dynamic_loop& loop) {
 				if (printMsg) {
 					if (errInfo->skipedErrorMsgs) {
 						logFmt(LogWarning, "storageFlushingRoutine() failed: '{}' ({} successive errors on ns '{}')",
-								  errInfo->lastError.what(), errInfo->skipedErrorMsgs + 1, name);
+							   errInfo->lastError.what(), errInfo->skipedErrorMsgs + 1, name);
 					} else {
 						logFmt(LogWarning, "storageFlushingRoutine() failed: '{}'", errInfo->lastError.what(), name);
 					}
@@ -1777,7 +1819,7 @@ void ReindexerImpl::updateToSystemNamespace(std::string_view nsName, Item& item,
 	} else if (nsName == kClusterConfigNamespace) {
 		//  TODO: reconfigure clusterization
 		// Separate namespace is required, because it has to be replicated into all cluster nodes
-		// and other system namespaces are not replicatable
+		// and other system namespaces are not replicable
 	}
 }
 
@@ -1819,7 +1861,7 @@ void ReindexerImpl::handleConfigAction(const gason::JsonNode& action, const std:
 				}
 			} else {
 				if (clusterizator_->NamespaceIsInClusterConfig(name)) {
-					throw Error(errLogic, "Role of the cluster namespace may not be reseted");
+					throw Error(errLogic, "Role of the cluster namespace may not be dropped");
 				}
 				auto ns = getNamespaceNoThrow(name, ctx);
 				if (ns) {
@@ -1837,7 +1879,7 @@ void ReindexerImpl::handleConfigAction(const gason::JsonNode& action, const std:
 			} else if (type == "cluster"sv) {
 				clusterizator_->SetClusterReplicatonLogLevel(level);
 			} else {
-				throw Error(errParams, "Unknow logs type in config-action: '{}'", type);
+				throw Error(errParams, "Unknown logs type in config-action: '{}'", type);
 			}
 		} else if (command == "drop_ann_storage_cache"sv) {
 			handleDropANNCacheAction(action, ctx);
@@ -2188,10 +2230,10 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, std::vector<std::strin
 	}
 
 	ser << "// Possible item schema variants in LocalQueryResults or in ModifyResults\n";
-	schemaBuilder.Object(0, "ItemsUnion", false, [&](ProtobufSchemaBuilder& obj) {
+	schemaBuilder.Object(TagName::Empty(), "ItemsUnion", false, [&](ProtobufSchemaBuilder& obj) {
 		ser << "oneof item {\n";
 		for (auto& ns : nses) {
-			obj.Field(ns.nsName, ns.nsNumber, FieldProps{KeyValueType::Tuple{}, false, false, false, ns.objName});
+			obj.Field(ns.nsName, TagName(ns.nsNumber), FieldProps{KeyValueType::Tuple{}, false, false, false, ns.objName});
 		}
 		ser << "}\n";
 	});
@@ -2200,7 +2242,7 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, std::vector<std::strin
 	ser << "// - GET api/v1/db/:db/namespaces/:ns/items\n";
 	ser << "// - GET/POST api/v1/db/:db/query\n";
 	ser << "// - GET/POST api/v1/db/:db/sqlquery\n";
-	schemaBuilder.Object(0, "QueryResults", false, [](ProtobufSchemaBuilder& obj) {
+	schemaBuilder.Object(TagName::Empty(), "QueryResults", false, [](ProtobufSchemaBuilder& obj) {
 		obj.Field(kParamItems, kProtoQueryResultsFields.at(kParamItems),
 				  FieldProps{KeyValueType::Tuple{}, true, false, false, "ItemsUnion"});
 		obj.Field(kParamNamespaces, kProtoQueryResultsFields.at(kParamNamespaces), FieldProps{KeyValueType::String{}, true});
@@ -2226,7 +2268,7 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, std::vector<std::strin
 
 	ser << "// The ModifyResults message is schema of http API methods response:\n";
 	ser << "// - PUT/POST/DELETE api/v1/db/:db/namespaces/:ns/items\n";
-	schemaBuilder.Object(0, "ModifyResults", false, [](ProtobufSchemaBuilder& obj) {
+	schemaBuilder.Object(TagName::Empty(), "ModifyResults", false, [](ProtobufSchemaBuilder& obj) {
 		obj.Field(kParamItems, kProtoModifyResultsFields.at(kParamItems),
 				  FieldProps{KeyValueType::Tuple{}, true, false, false, "ItemsUnion"});
 		obj.Field(kParamUpdated, kProtoModifyResultsFields.at(kParamUpdated), FieldProps{KeyValueType::Int{}});
@@ -2235,7 +2277,7 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, std::vector<std::strin
 
 	ser << "// The ErrorResponse message is schema of http API methods response on error condition \n";
 	ser << "// With non 200 http status code\n";
-	schemaBuilder.Object(0, "ErrorResponse", false, [](ProtobufSchemaBuilder& obj) {
+	schemaBuilder.Object(TagName::Empty(), "ErrorResponse", false, [](ProtobufSchemaBuilder& obj) {
 		obj.Field(kParamSuccess, kProtoErrorResultsFields.at(kParamSuccess), FieldProps{KeyValueType::Bool{}});
 		obj.Field(kParamResponseCode, kProtoErrorResultsFields.at(kParamResponseCode), FieldProps{KeyValueType::Int{}});
 		obj.Field(kParamDescription, kProtoErrorResultsFields.at(kParamDescription), FieldProps{KeyValueType::String{}});
@@ -2246,7 +2288,7 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, std::vector<std::strin
 
 Error ReindexerImpl::GetReplState(std::string_view nsName, ReplicationStateV2& state, const RdxContext& rdxCtx) noexcept {
 	try {
-		if (nsName.size()) {
+		if (!nsName.empty()) {
 			state = getNamespace(nsName, rdxCtx)->GetReplStateV2(rdxCtx);
 		} else {
 			state.lastLsn = lsn_t();

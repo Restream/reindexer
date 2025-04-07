@@ -2,8 +2,8 @@
 
 #include <functional>
 #include <string_view>
+#include "core/enums.h"
 #include "core/key_value_type.h"
-#include "objtype.h"
 
 namespace reindexer {
 
@@ -24,21 +24,21 @@ public:
 	ProtobufSchemaBuilder& operator=(const ProtobufSchemaBuilder&) = delete;
 	~ProtobufSchemaBuilder();
 
-	void Field(std::string_view name, int tagName, const FieldProps& props);
-	ProtobufSchemaBuilder Object(int tagName, std::string_view name, bool buildTypesOnly = false,
+	void Field(std::string_view name, TagName, const FieldProps& props);
+	ProtobufSchemaBuilder Object(TagName, std::string_view name, bool buildTypesOnly = false,
 								 const std::function<void(ProtobufSchemaBuilder& self)>& = nullptr);
 
 	void End();
 
 private:
-	void writeField(std::string_view name, std::string_view type, int number);
+	void writeField(std::string_view name, std::string_view type, TagName number);
 	std::pair<std::string_view, KeyValueType> jsonSchemaTypeToProtobufType(const FieldProps& props) const;
 
-	WrSerializer* ser_;
-	SchemaFieldsTypes* fieldsTypes_;
-	PayloadType* pt_;
-	TagsMatcher* tm_;
-	ObjType type_;
+	WrSerializer* ser_{nullptr};
+	SchemaFieldsTypes* fieldsTypes_{nullptr};
+	PayloadType* pt_{nullptr};
+	TagsMatcher* tm_{nullptr};
+	ObjType type_{ObjType::TypeObject};
 };
 
 }  // namespace reindexer

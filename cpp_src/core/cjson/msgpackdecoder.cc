@@ -2,7 +2,6 @@
 
 #include "core/cjson/cjsonbuilder.h"
 #include "core/cjson/cjsontools.h"
-#include "core/cjson/objtype.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/keyvalue/float_vectors_holder.h"
 #include "tools/flagguard.h"
@@ -10,34 +9,35 @@
 namespace reindexer {
 
 template <typename T>
-void MsgPackDecoder::setValue(Payload& pl, CJsonBuilder& builder, const T& value, int tagName) {
-	int field = tm_.tags2field(tagsPath_.data(), tagsPath_.size());
+void MsgPackDecoder::setValue(Payload& pl, CJsonBuilder& builder, const T& value, TagName tagName) {
+	using namespace std::string_view_literals;
+	const int field = tm_.tags2field(tagsPath_);
 	if (field > 0) {
 		const auto& f = pl.Type().Field(field);
-		validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, field, isInArray(), "msgpack");
+		validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, field, isInArray(), "msgpack"sv);
 		if (!isInArray()) {
-			validateArrayFieldRestrictions(f, 1, "msgpack");
+			validateArrayFieldRestrictions(f, 1, "msgpack"sv);
 		}
 		Variant val(value);
 		builder.Ref(tagName, val.Type(), field);
-		pl.Set(field, convertValueForPayload(pl, field, std::move(val), "msgpack"));
+		pl.Set(field, convertValueForPayload(pl, field, std::move(val), "msgpack"sv));
 		objectScalarIndexes_.set(field);
 	} else {
 		builder.Put(tagName, value);
 	}
 }
 
-int MsgPackDecoder::decodeKeyToTag(const msgpack_object_kv& obj) {
+TagName MsgPackDecoder::decodeKeyToTag(const msgpack_object_kv& obj) {
 	using namespace std::string_view_literals;
 	switch (obj.key.type) {
 		case MSGPACK_OBJECT_BOOLEAN:
-			return tm_.name2tag(obj.key.via.boolean ? "true"sv : "false"sv, true);
+			return tm_.name2tag(obj.key.via.boolean ? "true"sv : "false"sv, CanAddField_True);
 		case MSGPACK_OBJECT_POSITIVE_INTEGER:
-			return tm_.name2tag(std::to_string(obj.key.via.u64), true);
+			return tm_.name2tag(std::to_string(obj.key.via.u64), CanAddField_True);
 		case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-			return tm_.name2tag(std::to_string(obj.key.via.i64), true);
+			return tm_.name2tag(std::to_string(obj.key.via.i64), CanAddField_True);
 		case MSGPACK_OBJECT_STR:
-			return tm_.name2tag(std::string_view(obj.key.via.str.ptr, obj.key.via.str.size), true);
+			return tm_.name2tag(std::string_view(obj.key.via.str.ptr, obj.key.via.str.size), CanAddField_True);
 		case MSGPACK_OBJECT_FLOAT32:
 		case MSGPACK_OBJECT_FLOAT64:
 		case MSGPACK_OBJECT_NIL:
@@ -50,10 +50,10 @@ int MsgPackDecoder::decodeKeyToTag(const msgpack_object_kv& obj) {
 	throw Error(errParams, "Unsupported MsgPack map key type: {}({})", ToString(obj.key.type), int(obj.key.type));
 }
 
-void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_object& obj, int tagName,
+void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_object& obj, TagName tagName,
 							FloatVectorsHolderVector& floatVectorsHolder) {
 	using namespace std::string_view_literals;
-	if (tagName) {
+	if (!tagName.IsEmpty()) {
 		tagsPath_.emplace_back(tagName);
 	}
 	switch (obj.type) {
@@ -91,7 +91,7 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 					prevType = p->type;
 				}
 			}
-			int field = tm_.tags2field(tagsPath_.data(), tagsPath_.size());
+			const int field = tm_.tags2field(tagsPath_);
 			if (field > 0) {
 				const auto& f = pl.Type().Field(field);
 				if (f.IsFloatVector()) {
@@ -130,7 +130,7 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 					if rx_unlikely (!f.IsArray()) {
 						throwUnexpectedArrayError("msgpack"sv, f);
 					}
-					validateArrayFieldRestrictions(f, count, "msgpack");
+					validateArrayFieldRestrictions(f, count, "msgpack"sv);
 					int pos = pl.ResizeArray(field, count, true);
 					for (const msgpack_object* p = begin; p != end; ++p) {
 						pl.Set(field, pos++,
@@ -160,14 +160,14 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 														   int(p->type));
 									   }
 								   }(),
-								   "msgpack"));
+								   "msgpack"sv));
 					}
 				}
 				builder.ArrayRef(tagName, field, count);
 			} else {
 				auto array = builder.Array(tagName, type);
 				for (const msgpack_object* p = begin; p != end; ++p) {
-					decode(pl, array, *p, 0, floatVectorsHolder);
+					decode(pl, array, *p, TagName::Empty(), floatVectorsHolder);
 				}
 			}
 			break;
@@ -179,7 +179,7 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 			for (const msgpack_object_kv* p = begin; p != end; ++p) {
 				// MsgPack can have non-string type keys: https://github.com/msgpack/msgpack/issues/217
 				assertrx(p);
-				int tag = decodeKeyToTag(*p);
+				const TagName tag = decodeKeyToTag(*p);
 				decode(pl, object, p->val, tag, floatVectorsHolder);
 			}
 			break;
@@ -189,7 +189,7 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 		default:
 			throw Error(errParams, "Unsupported MsgPack type: {}({})", ToString(obj.type), int(obj.type));
 	}
-	if (tagName) {
+	if (!tagName.IsEmpty()) {
 		tagsPath_.pop_back();
 	}
 }
@@ -210,8 +210,8 @@ Error MsgPackDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& wr
 						 ToString(MSGPACK_OBJECT_MAP), ToString(data.p->type), int(data.p->type), baseOffset, slice);
 		}
 
-		CJsonBuilder cjsonBuilder(wrser, ObjType::TypePlain, &tm_, 0);
-		decode(pl, cjsonBuilder, *(data.p), 0, floatVectorsHolder);
+		CJsonBuilder cjsonBuilder(wrser, ObjType::TypePlain, &tm_, TagName::Empty());
+		decode(pl, cjsonBuilder, *(data.p), TagName::Empty(), floatVectorsHolder);
 	} catch (const Error& err) {
 		return err;
 	} catch (const std::exception& ex) {

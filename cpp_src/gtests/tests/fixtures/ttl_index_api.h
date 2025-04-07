@@ -58,11 +58,11 @@ public:
 	}
 
 	int WaitForVanishing() {
-#if !defined(REINDEX_WITH_TSAN) && !defined(REINDEX_WITH_ASAN)
+#if !defined(REINDEX_WITH_TSAN) && !defined(REINDEX_WITH_ASAN) && !defined(RX_WITH_STDLIB_DEBUG)
 		constexpr auto kStep = std::chrono::milliseconds(100);
-#else	// defined (REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN)
+#else	// defined (REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN) || defined(RX_WITH_STDLIB_DEBUG)
 		constexpr auto kStep = std::chrono::milliseconds(500);
-#endif	// defined (REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN)
+#endif	// defined (REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN) || defined(RX_WITH_STDLIB_DEBUG)
 		constexpr size_t kStepsCount = 20;
 		size_t count = GetItemsCount();
 		if (count > 0) {

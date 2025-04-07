@@ -60,6 +60,7 @@ const (
 	querySubQueryCondition      = bindings.QuerySubQueryCondition
 	queryFieldSubQueryCondition = bindings.QueryFieldSubQueryCondition
 	queryKnnCondition           = bindings.QueryKnnCondition
+	queryKnnConditionExt        = bindings.QueryKnnConditionExt
 )
 
 const (
@@ -69,6 +70,11 @@ const (
 	knnQueryTypeIvf        = bindings.KnnQueryTypeIvf
 
 	knnQueryParamsVersion = bindings.KnnQueryParamsVersion
+)
+
+const (
+	knnQueryDataFormatVector = bindings.KnnQueryDataFormatVector
+	knnQueryDataFormatString = bindings.KnnQueryDataFormatString
 )
 
 // Constants for calc total
@@ -577,8 +583,21 @@ func (q *Query) WhereUuid(index string, condition int, keys ...string) *Query {
 	return q
 }
 
+// WhereKnn - Add where condition to DB query with float-point vector args.
+// 'index' MUST be declared as "float_vector" index in this case
 func (q *Query) WhereKnn(index string, vec []float32, params KnnSearchParam) *Query {
 	q.ser.PutVarCUInt(queryKnnCondition).PutVString(index).PutVarCUInt(q.nextOp).PutFloatVector(vec)
+	params.serialize(&q.ser)
+	q.nextOp = opAND
+	q.queriesCount++
+	return q
+}
+
+// WhereKnnString - Add where condition to DB query with auto-embedded float-point vector args calculated from 'val'.
+// Before this need to configure "query_embedder".
+// 'index' MUST be declared as "float_vector" index in this case
+func (q *Query) WhereKnnString(index string, val string, params KnnSearchParam) *Query {
+	q.ser.PutVarCUInt(queryKnnConditionExt).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(knnQueryDataFormatString).PutVString(val)
 	params.serialize(&q.ser)
 	q.nextOp = opAND
 	q.queriesCount++
@@ -808,8 +827,8 @@ func (q *Query) Explain() *Query {
 	return q
 }
 
-// Output fulltext rank
-// Allowed only with fulltext query
+// Output fulltex or KNN rank
+// Allowed only with fulltext or KNN queries
 func (q *Query) WithRank() *Query {
 	q.ser.PutVarCUInt(queryWithRank)
 	return q

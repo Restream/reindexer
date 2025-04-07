@@ -244,8 +244,6 @@ TEST(DBConfigTests, ReadValidJsonConfiguration) {
 			{
 				"namespace":"*",
 				"log_level":"none",
-				"lazyload":false,
-				"unload_idle_threshold":0,
 				"join_cache_mode":"off",
 				"start_copy_policy_tx_size":10000,
 				"copy_policy_multiplier":5,
@@ -318,8 +316,6 @@ TEST(DBConfigTests, ReadInvalidJsonConfiguration) {
 			{
 				"namespace":"*",
 				"log_level":"none",
-				"lazyload":false,
-				"unload_idle_threshold":0,
 				"join_cache_mode":"off",
 				"start_copy_policy_tx_size":10000,
 				"copy_policy_multiplier":5,

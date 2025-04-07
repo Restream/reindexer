@@ -9,6 +9,7 @@
 
 namespace reindexer {
 
+class Embedder;
 class Serializer;
 class WrSerializer;
 
@@ -18,7 +19,8 @@ class PayloadTypeImpl {
 	typedef fast_hash_map<std::string, int, hash_str, equal_str, less_str> JsonPathMap;
 
 public:
-	PayloadTypeImpl(std::string name, std::initializer_list<PayloadFieldType> fields = {}) : fields_(fields), name_(std::move(name)) {}
+	explicit PayloadTypeImpl(std::string name, std::initializer_list<PayloadFieldType> fields = {})
+		: fields_(fields), name_(std::move(name)) {}
 
 	const PayloadFieldType& Field(int field) const& noexcept {
 		assertf(field < NumFields(), "{}: {}, {}", name_, field, NumFields());
@@ -46,10 +48,14 @@ public:
 	std::string ToString() const;
 	void Dump(std::ostream&, std::string_view step, std::string_view offset) const;
 
+	const h_vector<std::shared_ptr<Embedder>, 1>& Embedders() const& noexcept { return embedders_; }
+	std::string_view CheckAuxiliaryField(std::string_view fieldName) const;
+
 private:
 	void checkNewJsonPathBeforeAdd(const PayloadFieldType& f, const std::string& jsonPath) const;
 
 	std::vector<PayloadFieldType> fields_;
+	h_vector<std::shared_ptr<Embedder>, 1> embedders_;
 	FieldMap fieldsByName_;
 	JsonPathMap fieldsByJsonPath_;
 	std::string name_;

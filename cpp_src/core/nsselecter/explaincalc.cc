@@ -31,7 +31,7 @@ void ExplainCalc::LogDump(int logLevel) {
 					logFmt(LogInfo, "{}: cost {}, matched {}, {}", c.Name(), c.Cost(iters_), c.GetMatchedCount(), c.Dump());
 				},
 				Restricted<FieldsComparator, EqualPositionComparator, ComparatorNotIndexed,
-						   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
+						   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
 					[this](const auto& c) {
 						logFmt(LogInfo, "{}: cost {}, matched {}, {}", c.Name(), c.Cost(iters_), c.GetMatchedCount(), c.Dump());
 					}),
@@ -364,7 +364,7 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 				name << opName(it->operation, it == begin) << c.Name();
 			}),
 			Restricted<ComparatorNotIndexed,
-					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
+					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
 				[&](const auto& c) {
 					auto jsonSel = builder.Object();
 					jsonSel.Put("comparators"sv, 1);

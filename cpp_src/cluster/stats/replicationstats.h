@@ -13,8 +13,8 @@ namespace cluster {
 struct SyncStats {
 	void FromJSON(const gason::JsonNode&);
 	void GetJSON(JsonBuilder& builder) const;
-	bool operator==(const SyncStats& r) const noexcept { return count == r.count && maxTimeUs == r.maxTimeUs && avgTimeUs == r.avgTimeUs; }
-	bool operator!=(const SyncStats& r) const noexcept { return !(*this == r); }
+	bool operator==(const SyncStats& r) const noexcept = default;
+	bool operator!=(const SyncStats& r) const noexcept = default;
 
 	size_t count;
 	size_t maxTimeUs;
@@ -24,10 +24,8 @@ struct SyncStats {
 struct InitialSyncStats {
 	void FromJSON(const gason::JsonNode&);
 	void GetJSON(JsonBuilder& builder) const;
-	bool operator==(const InitialSyncStats& r) const noexcept {
-		return forceSyncs == r.forceSyncs && walSyncs == r.walSyncs && totalTimeUs == r.totalTimeUs;
-	}
-	bool operator!=(const InitialSyncStats& r) const noexcept { return !(*this == r); }
+	bool operator==(const InitialSyncStats& r) const noexcept = default;
+	bool operator!=(const InitialSyncStats& r) const noexcept = default;
 
 	SyncStats forceSyncs;
 	SyncStats walSyncs;
@@ -40,11 +38,8 @@ struct NodeStats {
 
 	void FromJSON(const gason::JsonNode&);
 	void GetJSON(JsonBuilder& builder) const;
-	bool operator==(const NodeStats& r) const noexcept {
-		return dsn == r.dsn && updatesCount == r.updatesCount && serverId == r.serverId && status == r.status && role == r.role &&
-			   isSynchronized == r.isSynchronized && syncState == r.syncState && namespaces == r.namespaces && lastError == r.lastError;
-	}
-	bool operator!=(const NodeStats& r) const noexcept { return !(*this == r); }
+	bool operator==(const NodeStats& r) const noexcept = default;
+	bool operator!=(const NodeStats& r) const noexcept = default;
 
 	DSN dsn;
 	int64_t updatesCount;
@@ -62,13 +57,8 @@ struct ReplicationStats {
 	Error FromJSON(const gason::JsonNode& root);
 	void GetJSON(JsonBuilder& builder) const;
 	void GetJSON(WrSerializer& ser) const;
-	bool operator==(const ReplicationStats& r) const noexcept {
-		return type == r.type && pendingUpdatesCount == r.pendingUpdatesCount && updateDrops == r.updateDrops &&
-			   allocatedUpdatesCount == r.allocatedUpdatesCount && allocatedUpdatesSizeBytes == r.allocatedUpdatesSizeBytes &&
-			   walSyncs == r.walSyncs && forceSyncs == r.forceSyncs && initialSync == r.initialSync && logLevel == r.logLevel &&
-			   nodeStats == r.nodeStats;
-	}
-	bool operator!=(const ReplicationStats& r) const noexcept { return !(*this == r); }
+	bool operator==(const ReplicationStats& r) const noexcept = default;
+	bool operator!=(const ReplicationStats& r) const noexcept = default;
 
 	std::string type;
 	int64_t updateDrops;
@@ -101,7 +91,6 @@ struct NodeStatsCounter {
 	void OnServerIdChanged(int sId) noexcept { serverId.store(sId, std::memory_order_relaxed); }
 	void SaveLastError(const Error& err) noexcept;
 	Error GetLastError() const;
-	void Reset() noexcept;
 	NodeStats Get() const;
 
 	const DSN dsn;
@@ -174,7 +163,7 @@ public:
 	void OnSyncStateChanged(size_t nodeId, NodeStats::SyncState state) noexcept;
 	void OnServerIdChanged(size_t nodeId, int serverId) const noexcept;
 	void SaveNodeError(size_t nodeId, const Error& lastError) noexcept;
-	void Reset() noexcept;
+	void Clear() noexcept;
 	ReplicationStats Get() const;
 
 private:

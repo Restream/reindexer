@@ -29,7 +29,7 @@ MsgPackBuilder::MsgPackBuilder(msgpack_packer& packer, const TagsLengths* tagsLe
 	init(KUnknownFieldSize);
 }
 
-void MsgPackBuilder::Array(int tagName, Serializer& ser, TagType tagType, int count) {
+void MsgPackBuilder::Array(TagName tagName, Serializer& ser, TagType tagType, int count) {
 	checkIfCorrectArray(tagName);
 	skipTag();
 	packKeyName(tagName);

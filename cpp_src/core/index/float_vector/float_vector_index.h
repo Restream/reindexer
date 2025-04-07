@@ -1,17 +1,11 @@
 #pragma once
 
 #include "core/index/index.h"
-#include "vendor/sparse-map/sparse_set.h"
 
 namespace reindexer {
 
 class KnnCtx;
 class KnnSearchParams;
-
-class IPKWirter {
-public:
-	virtual void AppendPKByID(IdType, WrSerializer&) = 0;
-};
 
 class FloatVectorIndex : public Index {
 public:
@@ -75,12 +69,12 @@ public:
 	FloatVectorIndex(const IndexDef&, PayloadType&&, FieldsSet&&);
 	void Delete(const VariantArray& keys, IdType, StringsHolder&, bool& clearCache) override final;
 	using Index::Delete;
-	[[noreturn]] SelectKeyResults SelectKey(const VariantArray&, CondType, SortType, SelectOpts, const BaseFunctionCtx::Ptr&,
-											const RdxContext&) override final;
+	SelectKeyResults SelectKey(const VariantArray&, CondType, SortType, SelectOpts, const BaseFunctionCtx::Ptr&,
+							   const RdxContext&) override final;
 	void Upsert(VariantArray& result, const VariantArray& keys, IdType, bool& clearCache) override final;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final;
-	SelectKeyResult Select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&) const;
-	void Commit() noexcept override final {}
+	SelectKeyResult Select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&, const RdxContext&) const;
+	void Commit() override final;
 	void UpdateSortedIds(const UpdateSortedContext&) noexcept override final {}
 	const void* ColumnData() const noexcept override final { return nullptr; }
 	bool HoldsStrings() const noexcept override final { return false; }
@@ -107,9 +101,7 @@ private:
 	virtual ConstFloatVectorView getFloatVectorView(IdType) const = 0;
 
 	IndexMemStat memStat_;
-	tsl::sparse_set<IdType, hash_int<IdType>, std::equal_to<IdType>, std::allocator<IdType>, tsl::sh::power_of_two_growth_policy<2>,
-					tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>
-		emptyValues_;
+	Index::KeyEntry emptyValues_;
 	std::mutex emptyValuesInsertionMtx_;  // Mutex for multithreading insertion into emptyValues_
 
 protected:

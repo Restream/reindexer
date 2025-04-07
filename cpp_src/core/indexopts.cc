@@ -1,10 +1,183 @@
 #include "indexopts.h"
 #include <ostream>
+#include <unordered_set>
 #include "cjson/jsonbuilder.h"
 #include "core/enums.h"
 #include "tools/errors.h"
 #include "type_consts_helpers.h"
 #include "vendor/gason/gason.h"
+
+namespace {
+constexpr size_t kFVDimensionMin = 1;
+constexpr size_t kFVStartSizeMin = 1'000;
+constexpr size_t kFVStartSizeDefault = kFVStartSizeMin;
+
+constexpr size_t kHnswMMin = 2;
+constexpr size_t kHnswMMax = 128;
+
+constexpr size_t kHnswEfConstrMin = 4;
+constexpr size_t kHnswEfConstrMax = 1'024;
+
+constexpr size_t kIvfNCentroidsMin = 1;
+constexpr size_t kIvfNCentroidsMax = 2 << 16;
+
+constexpr std::string_view kEmbedding{"embedding"};
+constexpr std::string_view kUpsertEmbedder{"upsert_embedder"};
+constexpr std::string_view kQueryEmbedder{"query_embedder"};
+constexpr std::string_view kEmbedderURL{"URL"};
+constexpr std::string_view kEmbedderCacheTag{"cache_tag"};
+constexpr std::string_view kEmbedderFields{"fields"};
+constexpr std::string_view kEmbedderStrategy{"embedding_strategy"};
+constexpr std::string_view kEmbedderStrategyAlways{"always"};
+constexpr std::string_view kEmbedderStrategyEmpty{"empty_only"};
+constexpr std::string_view kEmbedderStrategyStrict{"strict"};
+constexpr std::string_view kConnectorPool{"pool"};
+constexpr std::string_view kConnectorPoolConnections{"connections"};
+constexpr std::string_view kConnectorPoolConnectTO{"connect_timeout_ms"};
+constexpr std::string_view kConnectorPoolReadTO{"read_timeout_ms"};
+constexpr std::string_view kConnectorPoolWriteTO{"write_timeout_ms"};
+
+FloatVectorIndexOpts::EmbedderOpts::Strategy parseStrategy(std::string_view strategy, std::string_view name) {
+	if (strategy == kEmbedderStrategyAlways) {
+		return FloatVectorIndexOpts::EmbedderOpts::Strategy::Always;
+	}
+	if (strategy == kEmbedderStrategyEmpty) {
+		return FloatVectorIndexOpts::EmbedderOpts::Strategy::EmptyOnly;
+	}
+	if (strategy == kEmbedderStrategyStrict) {
+		return FloatVectorIndexOpts::EmbedderOpts::Strategy::Strict;
+	}
+	throw reindexer::Error{errParams,
+						   "Configuration '{}:{}' unexpected field value '{}'. Set '{}', but expected '{}', '{}' or '{}'",
+						   kEmbedding,
+						   name,
+						   kEmbedderStrategy,
+						   strategy,
+						   kEmbedderStrategyAlways,
+						   kEmbedderStrategyEmpty,
+						   kEmbedderStrategyStrict};
+}
+
+FloatVectorIndexOpts::PoolOpts parsePoolConfig(const gason::JsonNode& node) {
+	FloatVectorIndexOpts::PoolOpts opts;
+	if (!node[kConnectorPoolConnections].empty()) {
+		opts.connections = node[kConnectorPoolConnections].As<size_t>();
+	}
+	if (!node[kConnectorPoolConnectTO].empty()) {
+		opts.connect_timeout_ms = node[kConnectorPoolConnectTO].As<size_t>();
+	}
+	if (!node[kConnectorPoolReadTO].empty()) {
+		opts.read_timeout_ms = node[kConnectorPoolReadTO].As<size_t>();
+	}
+	if (!node[kConnectorPoolWriteTO].empty()) {
+		opts.write_timeout_ms = node[kConnectorPoolWriteTO].As<size_t>();
+	}
+	return opts;
+}
+
+FloatVectorIndexOpts::EmbedderOpts parseEmbedderConfig(const gason::JsonNode& node, std::string_view name) {
+	FloatVectorIndexOpts::EmbedderOpts opts;
+	opts.endpointUrl = node[kEmbedderURL].As<std::string>();
+	if (!node[kEmbedderCacheTag].empty()) {
+		opts.cacheTag = reindexer::toLower(node[kEmbedderCacheTag].As<std::string>());
+	}
+	if (name == kUpsertEmbedder) {
+		std::string field;
+		for (auto& fld : node[kEmbedderFields]) {
+			field = fld.As<std::string>();
+			if (field.empty()) {
+				throw reindexer::Error{errParams, "Configuration '{}:{}' does not support empty field names", kEmbedding, name};
+			}
+			if (std::find(opts.fields.cbegin(), opts.fields.cend(), field) != opts.fields.cend()) {
+				throw reindexer::Error{errParams, "Configuration '{}:{}' does not support duplicate field names. Duplicate '{}'",
+									   kEmbedding, name, field};
+			}
+			opts.fields.emplace_back(std::move(field));
+		}
+
+		if (!node[kEmbedderStrategy].empty()) {
+			auto strategy = node[kEmbedderStrategy].As<std::string_view>();
+			opts.strategy = parseStrategy(strategy, name);
+		}
+	}
+	if (!node[kConnectorPool].empty()) {
+		const auto& poolConf = node[kConnectorPool];
+		opts.pool = parsePoolConfig(poolConf);
+	}
+
+	return opts;
+}
+
+FloatVectorIndexOpts::EmbeddingOpts parseEmbeddingConfig(const gason::JsonNode& node) {
+	FloatVectorIndexOpts::EmbeddingOpts opts;
+
+	if (!node[kUpsertEmbedder].empty()) {
+		const auto& upsertConf = node[kUpsertEmbedder];
+		opts.upsertEmbedder = parseEmbedderConfig(upsertConf, kUpsertEmbedder);
+	}
+
+	if (!node[kQueryEmbedder].empty()) {
+		const auto& queryConf = node[kQueryEmbedder];
+		opts.queryEmbedder = parseEmbedderConfig(queryConf, kQueryEmbedder);
+	}
+
+	if (!opts.upsertEmbedder.has_value() && !opts.queryEmbedder.has_value()) {
+		throw reindexer::Error{errParams, "Configuration '{}' must contain object '{}' or '{}'", kEmbedding, kUpsertEmbedder, kQueryEmbedder};
+	}
+
+	return opts;
+}
+
+void validateEmbedderPollTMOpt(size_t tm, size_t limit, std::string_view embedderName, std::string_view optName) {
+	if (tm < limit) {
+		throw reindexer::Error{errParams, "Configuration '{}:{}:{}:{}' should not be less than {} ms, in config '{}'",
+							   kEmbedding, embedderName, kConnectorPool, optName, limit, tm};
+	}
+}
+
+void validateEmbedderOpts(const FloatVectorIndexOpts::EmbedderOpts& opts, std::string_view name) {
+	if (opts.endpointUrl.empty() || ((name == kUpsertEmbedder) && opts.fields.empty())) {
+		throw reindexer::Error{errParams, "Configuration '{}:{}' must contain field '{}' and '{}'", kEmbedding, name, kEmbedderURL,
+							   kEmbedderFields};
+	}
+	if (opts.pool.connections < 1) {
+		throw reindexer::Error{errParams, "Configuration '{}:{}:{}:{}' should not be less than 1",
+							   kEmbedding, name, kConnectorPool, kConnectorPoolConnections};
+	}
+	if (opts.pool.connections > 1024) {
+		throw reindexer::Error{errParams, "Configuration '{}:{}:{}:{}' should not be more than 1024",
+							   kEmbedding, name, kConnectorPool, kConnectorPoolConnections};
+	}
+	using namespace std::string_view_literals;
+	validateEmbedderPollTMOpt(opts.pool.connect_timeout_ms, 100, name, kConnectorPoolConnectTO);
+	validateEmbedderPollTMOpt(opts.pool.read_timeout_ms, 500, name, kConnectorPoolReadTO);
+	validateEmbedderPollTMOpt(opts.pool.write_timeout_ms, 500, name, kConnectorPoolWriteTO);
+}
+
+void getJsonEmbedderConfig(const FloatVectorIndexOpts::EmbedderOpts& opts, reindexer::JsonBuilder& json) {
+	json.Put(kEmbedderURL, opts.endpointUrl);
+	if (!opts.cacheTag.empty()) {
+		json.Put(kEmbedderCacheTag, opts.cacheTag);
+	}
+
+	{
+		auto fieldsNode = json.Array(kEmbedderFields);
+		for (const auto& fld : opts.fields) {
+			fieldsNode.Put(reindexer::TagName::Empty(), fld);
+		}
+	}
+
+	{
+		const auto& pool = opts.pool;
+		auto objNodePool = json.Object(kConnectorPool);
+		objNodePool.Put(kConnectorPoolConnections, pool.connections);
+		objNodePool.Put(kConnectorPoolConnectTO, pool.connect_timeout_ms);
+		objNodePool.Put(kConnectorPoolReadTO, pool.read_timeout_ms);
+		objNodePool.Put(kConnectorPoolWriteTO, pool.write_timeout_ms);
+	}
+}
+
+}  // namespace
 
 CollateOpts::CollateOpts(const std::string& sortOrderUTF8) : mode(CollateCustom), sortOrderTable(sortOrderUTF8) {}
 
@@ -17,19 +190,6 @@ void CollateOpts::Dump(T& os) const {
 	}
 }
 template void CollateOpts::Dump<std::ostream>(std::ostream&) const;
-
-static constexpr size_t kFVDimensionMin = 1;
-static constexpr size_t kFVStartSizeMin = 1'000;
-static constexpr size_t kFVStartSizeDefault = kFVStartSizeMin;
-
-static constexpr size_t kHnswMMin = 2;
-static constexpr size_t kHnswMMax = 128;
-
-static constexpr size_t kHnswEfConstrMin = 4;
-static constexpr size_t kHnswEfConstrMax = 1'024;
-
-static constexpr size_t kIvfNCentroidsMin = 1;
-static constexpr size_t kIvfNCentroidsMax = 2 << 16;
 
 void FloatVectorIndexOpts::Validate(IndexType idxType) {
 	if (dimension_ < kFVDimensionMin) {
@@ -109,6 +269,16 @@ void FloatVectorIndexOpts::Validate(IndexType idxType) {
 		case IndexDummy:
 			throw reindexer::Error{errParams, "Float vector index options used for not float vector index"};
 	}
+
+	if (embedding_.has_value()) {
+		const auto& opts = embedding_.value();
+		if (opts.upsertEmbedder.has_value()) {
+			validateEmbedderOpts(opts.upsertEmbedder.value(), kUpsertEmbedder);
+		}
+		if (opts.queryEmbedder.has_value()) {
+			validateEmbedderOpts(opts.queryEmbedder.value(), kQueryEmbedder);
+		}
+	}
 }
 
 FloatVectorIndexOpts FloatVectorIndexOpts::ParseJson(IndexType idxType, std::string_view json) {
@@ -143,6 +313,9 @@ FloatVectorIndexOpts FloatVectorIndexOpts::ParseJson(IndexType idxType, std::str
 	}
 	if (const auto multithreading = root["multithreading"sv]; !multithreading.empty()) {
 		result.SetMultithreading(static_cast<MultithreadingMode>(multithreading.As<int>()));
+	}
+	if (const auto embedding = root[kEmbedding]; !embedding.empty()) {
+		result.embedding_ = parseEmbeddingConfig(embedding);
 	}
 
 	result.Validate(idxType);
@@ -187,6 +360,18 @@ void FloatVectorIndexOpts::GetJson(reindexer::JsonBuilder& json) const {
 	if (multithreadingMode_ != MultithreadingMode::SingleThread) {
 		json.Put("multithreading"sv, static_cast<int>(multithreadingMode_));
 	}
+	if (embedding_.has_value()) {
+		const auto& embedding = embedding_.value();
+		auto obj = json.Object(kEmbedding);
+		if (embedding.upsertEmbedder.has_value()) {
+			auto objNode = obj.Object(kUpsertEmbedder);
+			getJsonEmbedderConfig(embedding.upsertEmbedder.value(), objNode);
+		}
+		if (embedding.queryEmbedder.has_value()) {
+			auto objNode = obj.Object(kQueryEmbedder);
+			getJsonEmbedderConfig(embedding.queryEmbedder.value(), objNode);
+		}
+	}
 }
 
 IndexOpts::IndexOpts(uint8_t flags, CollateMode mode, RTreeIndexType rtreeType)
@@ -197,9 +382,10 @@ IndexOpts::IndexOpts(const std::string& sortOrderUTF8, uint8_t flags, RTreeIndex
 
 bool IndexOpts::IsEqual(const IndexOpts& other, IndexComparison cmpType) const noexcept {
 	auto thisCopy = *this;
-	thisCopy.Dense(other.IsDense());
+	thisCopy.Dense(*other.IsDense());
+	thisCopy.NoIndexColumn(*other.IsNoIndexColumn());
 
-	// Compare without config and 'IsDense' option
+	// Compare without config and 'IsDense' and 'IsNoIndexColumn' options
 	const bool baseEqual =
 		thisCopy.options == other.options && collateOpts_.mode == other.collateOpts_.mode &&
 		collateOpts_.sortOrderTable.GetSortOrderCharacters() == other.collateOpts_.sortOrderTable.GetSortOrderCharacters() &&
@@ -211,10 +397,10 @@ bool IndexOpts::IsEqual(const IndexOpts& other, IndexComparison cmpType) const n
 		case IndexComparison::BasicCompatibilityOnly:
 			return true;
 		case IndexComparison::SkipConfig:
-			return IsDense() == other.IsDense();
+			return IsDense() == other.IsDense() && IsNoIndexColumn() == other.IsNoIndexColumn();
 		case IndexComparison::Full:
 		default:
-			return IsDense() == other.IsDense() && config_ == other.config_;
+			return IsDense() == other.IsDense() && IsNoIndexColumn() == other.IsNoIndexColumn() && config_ == other.config_;
 	}
 }
 
@@ -224,6 +410,9 @@ void IndexOpts::validateForFloatVector() const {
 	}
 	if (IsSparse()) {
 		throw reindexer::Error(errNotValid, "FloatVector index cannot be sparse");
+	}
+	if (IsDense()) {
+		throw reindexer::Error(errNotValid, "FloatVector index cannot be dense");
 	}
 	if (IsPK()) {
 		throw reindexer::Error(errNotValid, "FloatVector index cannot be PK");
@@ -247,6 +436,10 @@ IndexOpts& IndexOpts::SetFloatVector(IndexType idxType, FloatVectorIndexOpts fv)
 	return *this;
 }
 
+IndexOpts&& IndexOpts::SetFloatVector(IndexType idxType, FloatVectorIndexOpts fv) && {
+	return std::move(SetFloatVector(idxType, std::move(fv)));
+}
+
 IndexOpts& IndexOpts::PK(bool value) & {
 	if (value && floatVector_) {
 		throw reindexer::Error(errNotValid, "FloatVector index cannot be PK");
@@ -265,6 +458,10 @@ IndexOpts& IndexOpts::Array(bool value) & {
 
 IndexOpts& IndexOpts::Dense(bool value) & noexcept {
 	options = value ? options | kIndexOptDense : options & ~(kIndexOptDense);
+	return *this;
+}
+IndexOpts& IndexOpts::NoIndexColumn(bool value) & noexcept {
+	options = value ? options | kIndexOptNoColumn : options & ~(kIndexOptNoColumn);
 	return *this;
 }
 
@@ -311,6 +508,13 @@ void IndexOpts::Dump(T& os) const {
 			os << ", ";
 		}
 		os << "Dense";
+		needComma = true;
+	}
+	if (IsNoIndexColumn()) {
+		if (needComma) {
+			os << ", ";
+		}
+		os << "ColumnIndexDisabled";
 		needComma = true;
 	}
 	if (IsSparse()) {

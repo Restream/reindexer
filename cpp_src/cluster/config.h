@@ -87,10 +87,12 @@ public:
 	using NamespaceList = intrusive_atomic_rc_wrapper<NamespaceListImpl>;
 
 	AsyncReplNodeConfig() = default;
-	AsyncReplNodeConfig(DSN _dsn) : dsn(std::move(_dsn)) {}
+	AsyncReplNodeConfig(DSN dsn) : dsn_(std::move(dsn)) {}
 
 	int GetServerID() const noexcept { return -1; }
-	const DSN& GetRPCDsn() const { return dsn; }
+	const DSN& GetRPCDsn() const& { return dsn_; }
+	auto GetRPCDsn() const&& = delete;
+	void SetRPCDsn(const DSN& dsn) { dsn_ = dsn; }
 	void FromYAML(const YAML::Node& yaml);
 	void FromJSON(const gason::JsonNode& root);
 	void GetJSON(JsonBuilder& jb, MaskingDSN) const;
@@ -120,10 +122,8 @@ public:
 	const std::optional<AsyncReplicationMode>& GetReplicationMode() const noexcept { return replicationMode_; }
 
 	bool operator==(const AsyncReplNodeConfig& rdata) const noexcept {
-		return (dsn == rdata.dsn) && nsListsAreEqual(rdata) && replicationModesAreEqual(rdata);
+		return (dsn_ == rdata.dsn_) && nsListsAreEqual(rdata) && replicationModesAreEqual(rdata);
 	}
-
-	DSN dsn;
 
 private:
 	bool nsListsAreEqual(const AsyncReplNodeConfig& rdata) const noexcept {
@@ -134,6 +134,7 @@ private:
 		return (!replicationMode_.has_value() && !rdata.replicationMode_.has_value()) || replicationMode_ == rdata.replicationMode_;
 	}
 
+	DSN dsn_;
 	intrusive_ptr<NamespaceList> namespaces_;
 	bool hasOwnNsList_ = false;
 	std::optional<AsyncReplicationMode> replicationMode_;

@@ -136,8 +136,6 @@ private:
 
 		ns1.Put("namespace", unbuiltBtreeNs);
 		ns1.Put("log_level", "none");
-		ns1.Put("lazyload", false);
-		ns1.Put("unload_idle_threshold", 0);
 		ns1.Put("join_cache_mode", "off");
 		ns1.Put("start_copy_policy_tx_size", 10000);
 		ns1.Put("optimization_timeout_ms", 0);
@@ -146,8 +144,6 @@ private:
 		auto ns2 = nsArray.Object();
 		ns2.Put("namespace", btreeNs);
 		ns2.Put("log_level", "none");
-		ns2.Put("lazyload", false);
-		ns2.Put("unload_idle_threshold", 0);
 		ns2.Put("join_cache_mode", "off");
 		ns2.Put("start_copy_policy_tx_size", 10000);
 		ns2.Put("optimization_timeout_ms", 800);

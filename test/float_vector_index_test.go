@@ -3,7 +3,6 @@ package reindexer
 import (
 	"log"
 	"math/rand"
-	"os"
 	"reflect"
 	"testing"
 
@@ -239,10 +238,6 @@ func TestVecBF(t *testing.T) {
 }
 
 func TestIvf(t *testing.T) {
-	if os.Getenv("REINDEXER_GH_CI_TSAN") != "" {
-		t.Skip() // Skip this test on github CI(TSAN) due to TSAN false positives on OpenMP
-	}
-
 	const kMaxElements = kTestIVFFloatVectorMaxElements
 	FillTestItemsWithFuncParts(kIvfNs, 0, kMaxElements, kMaxElements/10, 0, newTestItemIvf)
 	removeSomeItems(t, kIvfNs, newTestItemIvf, kMaxElements)

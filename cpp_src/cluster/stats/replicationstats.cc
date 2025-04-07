@@ -132,7 +132,7 @@ void NodeStats::GetJSON(JsonBuilder& builder) const {
 	{
 		auto nsArray = builder.Array("namespaces"sv);
 		for (auto& ns : namespaces) {
-			nsArray.Put(nullptr, ns);
+			nsArray.Put(TagName::Empty(), ns);
 		}
 	}
 }
@@ -245,13 +245,6 @@ Error NodeStatsCounter::GetLastError() const {
 	return lastError;
 }
 
-void NodeStatsCounter::Reset() noexcept {
-	status.store(NodeStats::Status::None, std::memory_order_relaxed);
-	syncState.store(NodeStats::SyncState::None, std::memory_order_relaxed);
-	lastAppliedUpdateId_.store(-1, std::memory_order_relaxed);
-	SaveLastError(Error());
-}
-
 NodeStats NodeStatsCounter::Get() const {
 	NodeStats stats;
 	stats.dsn = dsn;
@@ -300,15 +293,21 @@ void ReplicationStatCounter::SaveNodeError(size_t nodeId, const Error& lastError
 	}
 }
 
-void ReplicationStatCounter::Reset() noexcept {
+void ReplicationStatCounter::Clear() noexcept {
 	walSyncs_.Reset();
 	forceSyncs_.Reset();
 	initialForceSyncs_.Reset();
 	initialWalSyncs_.Reset();
+
 	std::lock_guard lck(mtx_);
-	for (auto& node : nodeCounters_) {
-		node.second->Reset();
-	}
+	nodeCounters_.clear();
+	updatesDrops_.store(0, std::memory_order_relaxed);
+	lastPushedUpdateId_.store(-1, std::memory_order_relaxed);
+	lastErasedUpdateId_.store(-1, std::memory_order_relaxed);
+	lastReplicatedUpdateId_.store(-1, std::memory_order_relaxed);
+	allocatedUpdatesSizeBytes_.store(0, std::memory_order_relaxed);
+	initialSyncTotalTimeUs_.store(0, std::memory_order_relaxed);
+	thisNode_.reset();
 }
 
 ReplicationStats ReplicationStatCounter::Get() const {

@@ -187,7 +187,7 @@ SelectKeyResults IndexText<T>::doSelectKey(const VariantArray& keys, const std::
 			if (need_put && ftCtxDataArea->holders.has_value()) {
 				// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 				for (auto& area : ftCtxDataArea->holders.value()) {
-					if (auto& aData = ftCtxDataArea->area[area.second]; !aData.IsCommited()) {
+					if (auto& aData = ftCtxDataArea->area[area.second]; !aData.IsCommitted()) {
 						aData.Commit();
 					}
 				}

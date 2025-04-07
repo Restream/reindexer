@@ -65,7 +65,7 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 	for (size_t i = 0; i < idxCount; ++i) {
 		const bool uniqueName = rndGen_.UniqueName();
 		if (rndGen_.CompositeIndex(scalarIndexes.size())) {
-			bool array = false;
+			reindexer::IsArray array = reindexer::IsArray_False;
 			bool containsUuid = false;
 			std::string name;
 			Index::Children children;
@@ -103,8 +103,7 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 				usedIndexNames.insert(name);
 			}
 
-			indexes_.emplace_back(std::move(name), indexType, rndGen_.RndArrayField(array ? IsArrayT::Yes : IsArrayT::No), IsSparseT::No,
-								  std::move(children));
+			indexes_.emplace_back(std::move(name), indexType, rndGen_.RndArrayField(array), reindexer::IsSparse_False, std::move(children));
 		} else {
 			FieldPath fldPath;
 			size_t tryCounts = 0;
@@ -121,8 +120,8 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 				}
 				const auto fldType = rndGen_.RndFieldType();
 				indexes_.emplace_back(rndGen_.IndexName(usedIndexNames), rndGen_.RndIndexType({fldType}),
-									  rndGen_.RndBool(0.5) ? IsArrayT::Yes : IsArrayT::No,
-									  rndGen_.RndBool(0.5) ? IsSparseT::Yes : IsSparseT::No, Index::Child{fldType, std::move(fldPath)});
+									  reindexer::IsArray(rndGen_.RndBool(0.5)), reindexer::IsSparse(rndGen_.RndBool(0.5)),
+									  Index::Child{fldType, std::move(fldPath)});
 			} else {
 				const auto fldType = scheme_.GetFieldType(fldPath);
 				const auto isArray = scheme_.IsArray(fldPath);
@@ -140,7 +139,7 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 									  rndGen_.RndSparseIndex(fldType), Index::Child{fldType, std::move(fldPath)});
 			}
 			if (const auto& idx = indexes_.back();
-				!idx.IsArray() && idx.IsSparse() == IsSparseT::No &&
+				!idx.IsArray() && !idx.IsSparse() &&
 				std::get<Index::Child>(idx.Content()).type != FieldType::Point) {  // TODO remove point check after #1352
 				scalarIndexes.push_back(indexes_.size() - 1);
 			}
@@ -153,7 +152,7 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 	std::vector<size_t> ii;
 	for (size_t i = 0, s = indexes_.size(); i < s; ++i) {
 		const auto& idx = indexes_[i];
-		if (!idx.IsArray() && idx.IsSparse() == IsSparseT::No && availablePkIndexType(idx.Type()) &&
+		if (!idx.IsArray() && !idx.IsSparse() && availablePkIndexType(idx.Type()) &&
 			(std::holds_alternative<Index::Children>(idx.Content()) || availablePkFieldType(std::get<Index::Child>(idx.Content()).type))) {
 			ii.push_back(i);
 		}
@@ -171,7 +170,7 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 				usedIndexNames.insert(name);
 			}
 		}
-		indexes_.emplace_back(std::move(name), rndGen_.RndPkIndexType({fldType}), IsArrayT::No, IsSparseT::No,
+		indexes_.emplace_back(std::move(name), rndGen_.RndPkIndexType({fldType}), reindexer::IsArray_False, reindexer::IsSparse_False,
 							  Index::Child{fldType, std::move(path)});
 		indexes_.back().SetPk();
 	} else {

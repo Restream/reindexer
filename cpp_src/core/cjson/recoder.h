@@ -12,7 +12,7 @@ class Recoder {
 public:
 	[[nodiscard]] virtual TagType Type(TagType oldTagType) = 0;
 	virtual void Recode(Serializer&, WrSerializer&) const = 0;
-	virtual void Recode(Serializer&, Payload&, int tagName, WrSerializer&) = 0;
+	virtual void Recode(Serializer&, Payload&, TagName, WrSerializer&) = 0;
 	[[nodiscard]] virtual bool Match(int field) const noexcept = 0;
 	[[nodiscard]] virtual bool Match(const TagsPath&) const = 0;
 	virtual void Prepare(IdType rowId) noexcept = 0;

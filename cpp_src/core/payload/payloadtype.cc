@@ -1,5 +1,6 @@
 #include "payloadtype.h"
 #include <sstream>
+#include "core/embedding/embedder.h"
 #include "core/keyvalue/key_string.h"
 #include "payloadtypeimpl.h"
 #include "tools/serializer.h"
@@ -73,6 +74,19 @@ void PayloadTypeImpl::Add(PayloadFieldType f) {
 		if (f.Type().Is<KeyValueType::String>()) {
 			strFields_.push_back(int(fields_.size()));
 		}
+
+		auto embedder = f.Embedder();
+		if (embedder) {
+			for (const auto& field : embedder->Fields()) {
+				auto itFld = fieldsByName_.find(field);
+				if (itFld == fieldsByName_.end()) {
+					throw Error(errLogic, "Cannot add field with name '{}' to namespace '{}'. Auxiliary field '{}' not found", f.Name(),
+								Name(), field);
+				}
+			}
+			embedders_.push_back(embedder);
+		}
+
 		fields_.push_back(std::move(f));
 	}
 }
@@ -95,7 +109,14 @@ bool PayloadTypeImpl::Drop(std::string_view field) {
 		}
 	}
 
-	const auto fieldType = fields_[fieldIdx].Type();
+	const auto& payloadField = fields_[fieldIdx];
+	if (payloadField.Embedder()) {
+		const auto& name = payloadField.Embedder()->Name();
+		embedders_.erase(std::remove_if(embedders_.begin(), embedders_.end(), [&name](const auto& item) { return item->Name() == name; }),
+						 embedders_.end());
+	}
+
+	const auto fieldType = payloadField.Type();
 	for (auto it = strFields_.begin(); it != strFields_.end();) {
 		if ((*it == fieldIdx) && (fieldType.Is<KeyValueType::String>())) {
 			it = strFields_.erase(it);
@@ -106,7 +127,7 @@ bool PayloadTypeImpl::Drop(std::string_view field) {
 		++it;
 	}
 
-	for (auto& jp : fields_[fieldIdx].JsonPaths()) {
+	for (auto& jp : payloadField.JsonPaths()) {
 		fieldsByJsonPath_.erase(jp);
 	}
 
@@ -162,7 +183,7 @@ void PayloadTypeImpl::serialize(WrSerializer& ser) const {
 		ser.PutVString(field.Name());
 		ser.PutVarUint(field.Offset());
 		ser.PutVarUint(field.ElemSizeof());
-		ser.PutVarUint(field.IsArray());
+		ser.PutVarUint(*field.IsArray());
 		ser.PutVarUint(field.JsonPaths().size());
 		for (auto& jp : field.JsonPaths()) {
 			ser.PutVString(jp);
@@ -188,7 +209,7 @@ void PayloadTypeImpl::deserialize(Serializer& ser) {
 		std::vector<std::string> jsonPaths;
 		const uint64_t offset = ser.GetVarUInt();
 		[[maybe_unused]] const uint64_t elemSizeof = ser.GetVarUInt();
-		const bool isArray = ser.GetVarUInt();
+		const auto isArray = IsArray(ser.GetVarUInt());
 		uint64_t jsonPathsCount = ser.GetVarUInt();
 		jsonPaths.reserve(jsonPathsCount);
 
@@ -225,6 +246,8 @@ int PayloadType::FieldByJsonPath(std::string_view jsonPath) const noexcept { ret
 const std::vector<int>& PayloadType::StrFields() const& noexcept { return get()->StrFields(); }
 size_t PayloadType::TotalSize() const noexcept { return get()->TotalSize(); }
 std::string PayloadType::ToString() const { return get()->ToString(); }
+const h_vector<std::shared_ptr<Embedder>, 1>& PayloadType::Embedders() const noexcept { return get()->Embedders(); }
+std::string_view PayloadType::CheckAuxiliaryField(std::string_view fieldName) const { return get()->CheckAuxiliaryField(fieldName); }
 
 void PayloadType::Dump(std::ostream& os, std::string_view step, std::string_view offset) const {
 	std::string newOffset{offset};
@@ -249,6 +272,15 @@ void PayloadTypeImpl::checkNewJsonPathBeforeAdd(const PayloadFieldType& f, const
 			}
 		}
 	}
+}
+
+std::string_view PayloadTypeImpl::CheckAuxiliaryField(std::string_view fieldName) const {
+	for (const auto& embedder : embedders_) {
+		if (embedder->IsAuxiliaryField(fieldName)) {
+			return embedder->Name();
+		}
+	}
+	return {};
 }
 
 }  // namespace reindexer

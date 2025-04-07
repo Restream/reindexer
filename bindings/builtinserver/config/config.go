@@ -10,7 +10,6 @@ type StorageConf struct {
 	Path            string `yaml:"path"`
 	Engine          string `yaml:"engine"`
 	StartWithErrors bool   `yaml:"startwitherrors"`
-	Autorepair      bool   `yaml:"autorepair"`
 }
 
 const ServerThreadingDedicated = "dedicated"
@@ -77,7 +76,6 @@ func DefaultServerConfig() *ServerConfig {
 			Path:            "/tmp/reindex",
 			Engine:          "leveldb",
 			StartWithErrors: false,
-			Autorepair:      false,
 		},
 		Net: NetConf{
 			HTTPAddr:      "0.0.0.0:9088",

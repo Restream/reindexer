@@ -303,7 +303,7 @@ Error LocalQueryResults::IteratorImpl<QR>::GetProtobuf(WrSerializer& wrser, bool
 	ProtobufBuilder builder(&wrser, ObjType::TypePlain, ctx.schema_.get(), const_cast<TagsMatcher*>(&ctx.tagsMatcher_));
 
 	auto item = builder.Object(kProtoQueryResultsFields.at(kParamItems));
-	auto ItemImpl = item.Object(ctx.schema_->GetProtobufNsNumber() + 1);
+	auto ItemImpl = item.Object(TagName(ctx.schema_->GetProtobufNsNumber() + 1));
 
 	if (withHdrLen) {
 		auto slicePosSaver = wrser.StartSlice();
@@ -336,7 +336,7 @@ CsvOrdering LocalQueryResults::MakeCSVTagOrdering(unsigned limit, unsigned offse
 	const auto* regularFieldsFilter = fieldsFilter.TryRegularFields();
 	const auto* vectorFieldsFilter = fieldsFilter.TryVectorFields();
 	if (regularFieldsFilter && vectorFieldsFilter) {
-		std::vector<int> ordering;
+		std::vector<TagName> ordering;
 		ordering.reserve(regularFieldsFilter->size() + vectorFieldsFilter->size());
 		for (const auto& tag : *regularFieldsFilter) {
 			if (tag > 0) {
@@ -351,9 +351,9 @@ CsvOrdering LocalQueryResults::MakeCSVTagOrdering(unsigned limit, unsigned offse
 		return ordering;
 	}
 
-	std::vector<int> ordering;
+	std::vector<TagName> ordering;
 	ordering.reserve(128);
-	fast_hash_set<int> fieldsTmIds;
+	fast_hash_set<TagName, TagName::Hash> fieldsTmIds;
 	WrSerializer ser;
 	const auto& tm = getTagsMatcher(0);
 	Iterator::NsNamesCache nsNamesCache;
@@ -366,7 +366,7 @@ CsvOrdering LocalQueryResults::MakeCSVTagOrdering(unsigned limit, unsigned offse
 
 		for (const auto& child : jsonNode) {
 			auto [it, inserted] = fieldsTmIds.insert(tm.name2tag(child.key));
-			if (inserted && *it > 0) {
+			if (inserted && !it->IsEmpty()) {
 				ordering.emplace_back(*it);
 			}
 		}

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"sync"
 	"syscall"
 	"testing"
@@ -52,19 +53,20 @@ func (srv *TestServer) GetDbName() string {
 }
 
 func (srv *TestServer) GetFullStoragePath() string {
-	return fmt.Sprintf("/tmp/reindex_%s/%s_%s", srv.RpcPort, srv.DbName, srv.RpcPort)
+	dbSubPath := fmt.Sprintf("reindex_%s/%s_%s", srv.RpcPort, srv.DbName, srv.RpcPort)
+	return path.Join(GetTmpDBDir(), dbSubPath)
 }
 
 func (srv *TestServer) Run() error {
 	cfg := config.DefaultServerConfig()
 	cfg.Net.RPCAddr = "127.0.0.1:" + srv.RpcPort
 	cfg.Net.HTTPAddr = "127.0.0.1:" + srv.HttpPort
-	cfg.Storage.Path = "/tmp/reindex_" + srv.RpcPort
+	cfg.Storage.Path = path.Join(GetTmpDBDir(), "reindex_"+srv.RpcPort)
 	cfg.Logger.LogLevel = "error"
-	cfg.Logger.ServerLog = "/tmp/reindex_" + srv.RpcPort + "/server.log"
-	cfg.Logger.HTTPLog = "/tmp/reindex_" + srv.RpcPort + "/http.log"
-	cfg.Logger.RPCLog = "/tmp/reindex_" + srv.RpcPort + "/rpc.log"
-	cfg.Logger.CoreLog = "/tmp/reindex_" + srv.RpcPort + "/core.log"
+	cfg.Logger.ServerLog = path.Join(GetTmpDBDir(), "reindex_"+srv.RpcPort+"/server.log")
+	cfg.Logger.HTTPLog = path.Join(GetTmpDBDir(), "reindex_"+srv.RpcPort+"/http.log")
+	cfg.Logger.RPCLog = path.Join(GetTmpDBDir(), "reindex_"+srv.RpcPort+"/rpc.log")
+	cfg.Logger.CoreLog = path.Join(GetTmpDBDir(), "reindex_"+srv.RpcPort+"/core.log")
 	cfg.Metrics.ClientsStats = true
 
 	switch srv.SrvType {
@@ -74,7 +76,7 @@ func (srv *TestServer) Run() error {
 			require.NoError(srv.T, err)
 		}
 
-		f, err := os.Create("/tmp/reindex_cluster_" + srv.RpcPort + ".conf")
+		f, err := os.Create(path.Join(GetTmpDBDir(), "reindex_cluster_"+srv.RpcPort+".conf"))
 		if err != nil {
 			require.NoError(srv.T, err)
 		}
@@ -84,7 +86,8 @@ func (srv *TestServer) Run() error {
 			require.NoError(srv.T, err)
 		}
 
-		args := []string{"--config=/tmp/reindex_cluster_" + srv.RpcPort + ".conf"}
+		cfgPath := path.Join(GetTmpDBDir(), "reindex_cluster_"+srv.RpcPort+".conf")
+		args := []string{"--config=" + cfgPath}
 		cmd := exec.Command("../build/cpp_src/cmd/reindexer_server/reindexer_server", args...)
 		if err := cmd.Start(); err != nil {
 			require.NoError(srv.T, err)
@@ -132,7 +135,7 @@ func (srv *TestServer) Run() error {
 }
 
 func (srv *TestServer) Clean() error {
-	return os.RemoveAll("/tmp/reindex_" + srv.RpcPort)
+	return os.RemoveAll(path.Join(GetTmpDBDir(), "reindex_"+srv.RpcPort))
 }
 
 func (srv *TestServer) DB() *reindexer.Reindexer {
@@ -194,8 +197,8 @@ func CreateCluster(t *testing.T, servers []*TestServer, nsName string, nsItem in
 				ServerID:  i + 1,
 				ClusterID: 2,
 			}
-			require.NoError(t, replicationConf.ToFile("/tmp/reindex_"+srv.RpcPort+"/"+srv.DbName+"_"+srv.RpcPort, "replication.conf"))
-			require.NoError(t, clusterConf.ToFile("/tmp/reindex_"+srv.RpcPort+"/"+srv.DbName+"_"+srv.RpcPort, "cluster.conf"))
+			require.NoError(t, replicationConf.ToFile(path.Join(GetTmpDBDir(), "reindex_"+srv.RpcPort+"/"+srv.DbName+"_"+srv.RpcPort), "replication.conf"))
+			require.NoError(t, clusterConf.ToFile(path.Join(GetTmpDBDir(), "reindex_"+srv.RpcPort+"/"+srv.DbName+"_"+srv.RpcPort), "cluster.conf"))
 
 			require.NoError(t, srv.Stop())
 			require.NoError(t, srv.Run())

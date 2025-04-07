@@ -526,6 +526,7 @@ uint64_t hash_bytes(const uint8_t* bytes, int64_t n) {
 }
 
 bool check_openmp() {
+#ifdef FAISS_WITH_OPENMP
     omp_set_num_threads(10);
 
     if (omp_get_max_threads() != 10) {
@@ -562,6 +563,9 @@ bool check_openmp() {
     }
 
     return true;
+#else // !FAISS_WITH_OPENMP
+    return false;
+#endif // FAISS_WITH_OPENMP
 }
 
 namespace {

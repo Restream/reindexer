@@ -1,8 +1,8 @@
 #pragma once
 
+#include <span>
 #include "core/keyvalue/geometry.h"
 #include "core/keyvalue/variant.h"
-#include <span>
 #include "tools/errors.h"
 #include "tools/lsn.h"
 
@@ -14,13 +14,12 @@ class Namespace;
 }  // namespace client
 
 class ItemImpl;
-class FieldRefImpl;
 class Schema;
 class TagsMatcher;
 class FieldsFilter;
 
 /// Item is the interface for data manipulating. It holds and control one database document (record)<br>
-/// *Lifetime*: Item is uses Copy-On-Write semantics, and have independent lifetime and state - e.g., aquired from Reindexer Item will
+/// *Lifetime*: Item is uses Copy-On-Write semantics, and have independent lifetime and state - e.g., acquired from Reindexer Item will
 /// not changed externally, even in case, when data in database was changed, or deleted. *Thread safety*: Item is thread safe against
 /// Reindexer, but not thread safe itself. Usage of single Item from different threads will race
 
@@ -48,7 +47,7 @@ public:
 		const T Get() {
 			return static_cast<T>(operator Variant());
 		}
-		/// Get field value as specified type, convert type if neccesary. In case when convertion fails throws reindexer::Error
+		/// Get field value as specified type, convert type if necessary. In case when conversion fails throws reindexer::Error
 		/// If field is array, and not contains exact 1 element, then throws reindexer::Error
 		/// @tparam T - type. Must be one of: int, int64_t, double or std::string
 		/// @return value of field
@@ -60,13 +59,13 @@ public:
 		std::enable_if_t<std::is_same_v<T, Point>, Point> As() const;
 		/// Set single fundamental type value
 		/// @tparam T - type. Must be one of: int, int64_t, double
-		/// @param val - value, which will be setted to field
+		/// @param val - value, which will be set to field
 		template <typename T>
 		FieldRef& operator=(const T& val) {
 			return operator=(Variant(val));
 		}
 		/// Set single point type value
-		/// @param p - point value, which will be setted to field
+		/// @param p - point value, which will be set to field
 		FieldRef& operator=(Point p) {
 			double arr[]{p.X(), p.Y()};
 			return operator=(std::span<const double>(arr, 2));
@@ -74,12 +73,12 @@ public:
 
 		/// Set array of values to field
 		/// @tparam T - type. Must be one of: int, int64_t, double
-		/// @param arr - std::vector of T values, which will be setted to field
+		/// @param arr - std::vector of T values, which will be set to field
 		template <typename T>
 		FieldRef& operator=(std::span<const T> arr);
 		/// Set array of values to field
 		/// @tparam T - type. Must be one of: int, int64_t, double
-		/// @param arr - std::vector of T values, which will be setted to field
+		/// @param arr - std::vector of T values, which will be set to field
 		template <typename T>
 		FieldRef& operator=(const std::vector<T>& arr) {
 			return operator=(std::span<const std::remove_const_t<T>>(arr));
@@ -87,12 +86,12 @@ public:
 		/// Set string value to field
 		/// If Item is in Unsafe Mode, then Item will not store str, but just keep pointer to str,
 		/// application *MUST* hold str until end of life of Item
-		/// @param str - pointer to C null-terminated string, which will be setted to field
+		/// @param str - pointer to C null-terminated string, which will be set to field
 		FieldRef& operator=(const char* str);
 		/// Set string value<br>
 		/// If Item is in Unsafe Mode, then Item will not store str, but just keep pointer to str,
 		/// application *MUST* hold str until end of life of Item
-		/// @param str - std::string, which will be setted to field
+		/// @param str - std::string, which will be set to field
 		FieldRef& operator=(const std::string& str);
 
 		/// Get field index name
@@ -197,7 +196,7 @@ public:
 	/// Get field's name tag
 	/// @param name - field name
 	/// @return name's numeric tag value
-	[[nodiscard]] int GetFieldTag(std::string_view name) const;
+	[[nodiscard]] TagName GetFieldTag(std::string_view name) const;
 	/// Get field's index by name
 	/// @param name - field name
 	/// @return name's numeric field value
@@ -213,13 +212,13 @@ public:
 	/// Get state token
 	/// @return Current state token
 	[[nodiscard]] int GetStateToken() const noexcept;
-	/// Check is item valid. If is not valid, then any futher operations with item will raise nullptr dereference
+	/// Check is item valid. If is not valid, then any further operations with item will raise nullptr dereference
 	[[nodiscard]] bool operator!() const noexcept { return impl_ == nullptr; }
 	/// Enable Unsafe Mode<br>.
 	/// USE WITH CAUTION. In unsafe mode most of Item methods will not store  strings and slices, passed from/to application.<br>
 	/// The advantage of unsafe mode is speed. It does not call extra memory allocation from heap and copying data.<br>
-	/// The disadvantage of unsafe mode is potentially danger code. Most of C++ stl containters in many cases invalidates references -
-	/// and in unsafe mode caller is responsibe to guarantee, that all resources passed to Item will keep valid
+	/// The disadvantage of unsafe mode is potentially danger code. Most of C++ stl containers in many cases invalidates references -
+	/// and in unsafe mode caller is responsible to guarantee, that all resources passed to Item will keep valid
 	Item& Unsafe(bool enable = true) & noexcept;
 	/// Get index type by field id
 	/// @return either index type or Undefined (if index with this number does not exist or PayloadType is not available)
@@ -256,6 +255,7 @@ private:
 	friend class LocalQueryResults;
 	friend class ReindexerImpl;
 	friend class TransactionStep;
+	friend class TransactionSteps;
 	friend class client::ReindexerImpl;
 	friend class client::Namespace;
 	friend class SnapshotHandler;

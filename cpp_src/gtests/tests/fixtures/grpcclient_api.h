@@ -94,7 +94,6 @@ public:
 			storageOpts->set_nsname(default_namespace);
 			storageOpts->set_enabled(false);
 			storageOpts->set_fillcache(false);
-			storageOpts->set_autorepair(false);
 			storageOpts->set_createifmissing(true);
 			storageOpts->set_verifychecksums(false);
 			storageOpts->set_droponfileformaterror(true);
@@ -141,7 +140,6 @@ public:
 			storageOpts->set_nsname(default_namespace);
 			storageOpts->set_enabled(false);
 			storageOpts->set_fillcache(false);
-			storageOpts->set_autorepair(false);
 			storageOpts->set_createifmissing(true);
 			storageOpts->set_verifychecksums(false);
 			storageOpts->set_droponfileformaterror(true);
@@ -162,12 +160,12 @@ public:
 
 	void InsertData() {
 		reindexer::TagsMatcher tm1;
-		tm1.name2tag(kIdField, true);
-		tm1.name2tag(kAgeField, true);
+		auto _ = tm1.name2tag(kIdField, reindexer::CanAddField_True);
+		_ = tm1.name2tag(kAgeField, reindexer::CanAddField_True);
 
 		reindexer::TagsMatcher tm2;
-		tm2.name2tag(kIdField, true);
-		tm2.name2tag(kPriceField, true);
+		_ = tm2.name2tag(kIdField, reindexer::CanAddField_True);
+		_ = tm2.name2tag(kPriceField, reindexer::CanAddField_True);
 
 		grpc::ClientContext ctx;
 		std::unique_ptr<::grpc::ClientReaderWriter<reindexer::grpc::ModifyItemRequest, reindexer::grpc::ErrorResponse>> stream =
@@ -212,6 +210,7 @@ public:
 	using NsType = std::pair<reindexer::TagsMatcher, reindexer::PayloadTypeImpl>;
 
 	void checkPayloadTypes(reindexer::Serializer& rser, std::vector<NsType>& types, bool print = false) {
+		using namespace reindexer;
 		int ptCount = rser.GetVarUInt();
 		for (int i = 0; i < ptCount; i++) {
 			uint64_t nsid = rser.GetVarUInt();
@@ -225,31 +224,31 @@ public:
 			if (print) {
 				std::cout << "version: " << version << "; stateToke: " << stateToken << std::endl;
 			}
-			reindexer::TagsMatcher tm;
-			reindexer::PayloadTypeImpl pt(nsName);
+			TagsMatcher tm;
+			PayloadTypeImpl pt(nsName);
 			tm.deserialize(rser, version, stateToken);
 			pt.deserialize(rser);
-			int tag = 0;
+			auto tag = TagName::Empty();
 			ASSERT_NO_THROW(tag = tm.name2tag(kIdField));
-			ASSERT_TRUE(tag == 1);
+			ASSERT_TRUE(tag == 1_Tag);
 			if (nsid == 0) {
 				ASSERT_NO_THROW(tag = tm.name2tag(kAgeField));
-				ASSERT_TRUE(tag == 2) << tag;
+				ASSERT_EQ(tag, 2_Tag) << tag.AsNumber();
 			} else if (nsid == 1) {
 				ASSERT_NO_THROW(tag = tm.name2tag(kPriceField));
-				ASSERT_TRUE(tag == 2) << tag;
+				ASSERT_EQ(tag, 2_Tag) << tag.AsNumber();
 			} else {
 				std::abort();
 			}
 			ASSERT_NO_THROW(pt.FieldByName(kIdField));
 			ASSERT_TRUE(pt.Field(1).Name() == kIdField) << pt.Field(1).Name();
-			ASSERT_TRUE(pt.Field(1).Type().Is<reindexer::KeyValueType::Int>()) << reindexer::KeyValueType{pt.Field(1).Type()}.Name();
+			ASSERT_TRUE(pt.Field(1).Type().Is<KeyValueType::Int>()) << KeyValueType{pt.Field(1).Type()}.Name();
 			if (nsid == 0) {
 				ASSERT_TRUE(pt.Field(2).Name() == kAgeField) << pt.Field(2).Name();
-				ASSERT_TRUE(pt.Field(2).Type().Is<reindexer::KeyValueType::Int>()) << reindexer::KeyValueType{pt.Field(2).Type()}.Name();
+				ASSERT_TRUE(pt.Field(2).Type().Is<KeyValueType::Int>()) << KeyValueType{pt.Field(2).Type()}.Name();
 			} else if (nsid == 1) {
 				ASSERT_TRUE(pt.Field(2).Name() == kPriceField) << pt.Field(2).Name();
-				ASSERT_TRUE(pt.Field(2).Type().Is<reindexer::KeyValueType::Int>()) << reindexer::KeyValueType{pt.Field(2).Type()}.Name();
+				ASSERT_TRUE(pt.Field(2).Type().Is<KeyValueType::Int>()) << KeyValueType{pt.Field(2).Type()}.Name();
 			}
 			types.emplace_back(tm, pt);
 		}

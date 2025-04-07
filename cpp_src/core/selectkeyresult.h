@@ -25,7 +25,7 @@ public:
 	}
 	template <typename KeyEntryT>
 	explicit SingleSelectKeyResult(const KeyEntryT& ids, SortType sortId) noexcept {
-		if (ids.Unsorted().IsCommited()) {
+		if (ids.Unsorted().IsCommitted()) {
 			ids_ = ids.Sorted(sortId);
 		} else {
 			assertrx(ids.Unsorted().BTree());
@@ -426,10 +426,12 @@ using SelectKeyResultsVector = h_vector<SelectKeyResult, 1>;
 /// each key in a query.
 class SelectKeyResults : public std::variant<SelectKeyResultsVector, ComparatorNotIndexed, ComparatorIndexed<bool>, ComparatorIndexed<int>,
 											 ComparatorIndexed<int64_t>, ComparatorIndexed<double>, ComparatorIndexed<key_string>,
-											 ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>, ComparatorIndexed<Uuid>> {
-	using Base = std::variant<SelectKeyResultsVector, ComparatorNotIndexed, ComparatorIndexed<bool>, ComparatorIndexed<int>,
-							  ComparatorIndexed<int64_t>, ComparatorIndexed<double>, ComparatorIndexed<key_string>,
-							  ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>, ComparatorIndexed<Uuid>>;
+											 ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>, ComparatorIndexed<Uuid>,
+											 ComparatorIndexed<FloatVector>> {
+	using Base =
+		std::variant<SelectKeyResultsVector, ComparatorNotIndexed, ComparatorIndexed<bool>, ComparatorIndexed<int>,
+					 ComparatorIndexed<int64_t>, ComparatorIndexed<double>, ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>,
+					 ComparatorIndexed<Point>, ComparatorIndexed<Uuid>, ComparatorIndexed<FloatVector>>;
 
 public:
 	SelectKeyResults() noexcept : Base{SelectKeyResultsVector{}} {}

@@ -78,7 +78,7 @@ TEST(JSONParsingTest, LargeAllocations) {
 	jb.Put("mode", "mode");
 	auto arr = jb.Array("array");
 	for (int64_t i = 0; i < kArrElemsCnt; ++i) {
-		arr.Put(nullptr, reindexer::Variant{i});
+		arr.Put(reindexer::TagName::Empty(), reindexer::Variant{i});
 	}
 	arr.End();
 	jb.End();

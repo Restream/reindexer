@@ -62,8 +62,8 @@ public:
 	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, SelectOpts opts,
 									   const BaseFunctionCtx::Ptr&, const RdxContext&) = 0;
 	// NOLINTBEGIN(*-unnecessary-value-param)
-	virtual SelectKeyResults SelectKey(const VariantArray& /*keys*/, CondType, Index::SelectOpts, const BaseFunctionCtx::Ptr&,
-									   FtPreselectT&&, const RdxContext&) {
+	virtual SelectKeyResults SelectKey(const VariantArray&, CondType, Index::SelectOpts, const BaseFunctionCtx::Ptr&, FtPreselectT&&,
+									   const RdxContext&) {
 		assertrx(0);
 		std::abort();
 	}

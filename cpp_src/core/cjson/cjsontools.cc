@@ -61,7 +61,7 @@ void copyCJsonValue(TagType tagType, const Variant& value, WrSerializer& wrser) 
 	}
 }
 
-void putCJsonRef(TagType tagType, int tagName, int tagField, const VariantArray& values, WrSerializer& wrser) {
+void putCJsonRef(TagType tagType, TagName tagName, int tagField, const VariantArray& values, WrSerializer& wrser) {
 	if (values.IsArrayValue()) {
 		wrser.PutCTag(ctag{TAG_ARRAY, tagName, tagField});
 		wrser.PutVarUint(values.size());
@@ -70,7 +70,7 @@ void putCJsonRef(TagType tagType, int tagName, int tagField, const VariantArray&
 	}
 }
 
-void putCJsonValue(TagType tagType, int tagName, const VariantArray& values, WrSerializer& wrser) {
+void putCJsonValue(TagType tagType, TagName tagName, const VariantArray& values, WrSerializer& wrser) {
 	if (values.IsArrayValue()) {
 		const TagType elemType = arrayKvType2Tag(values);
 		wrser.PutCTag(ctag{TAG_ARRAY, tagName});
@@ -191,8 +191,8 @@ void buildPayloadTuple(const PayloadIface<T>& pl, const TagsMatcher* tagsMatcher
 			continue;
 		}
 
-		const int tagName = tagsMatcher->name2tag(fieldType.JsonPaths()[0]);
-		assertf(tagName != 0, "ns={}, field={}", pl.Type().Name(), fieldType.JsonPaths()[0]);
+		const TagName tagName = tagsMatcher->name2tag(fieldType.JsonPaths()[0]);
+		assertf(!tagName.IsEmpty(), "ns={}, field={}", pl.Type().Name(), fieldType.JsonPaths()[0]);
 
 		if (fieldType.IsFloatVector()) {
 			const auto value = pl.Get(field, 0);
@@ -315,9 +315,9 @@ static void dumpCjsonObject(Serializer& cjson, std::ostream& dump, const TagsMat
 		}
 		indent(indentLevel);
 		dump << std::left << std::setw(10) << TagTypeToStr(type);
-		dump << std::right << std::setw(4) << name;
+		dump << std::right << std::setw(4) << name.AsNumber();
 		dump << std::right << std::setw(4) << field;
-		if (tm && name > 0) {
+		if (tm && !name.IsEmpty()) {
 			dump << " \"" << tm->tag2name(name) << '"';
 		}
 		if (field >= 0) {
@@ -413,7 +413,7 @@ static void dumpCjsonObject(Serializer& cjson, std::ostream& dump, const TagsMat
 						dump << "<heterogeneous> count: " << count << '\n';
 						for (uint32_t i = 0; i < count; ++i) {
 							const ctag t = cjson.GetCTag();
-							assertrx(t.Name() == 0);
+							assertrx(t.Name().IsEmpty());
 							assertrx(t.Field() < 0);
 							indent(indentLevel + 2);
 							dump << TagTypeToStr(t.Type());

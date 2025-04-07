@@ -44,6 +44,8 @@ static MutexMark mutexMarkCast(DurationStorageIdx mark) {
 			return MutexMark::CloneNs;
 		case DurationStorageIdx::AsyncStorage:
 			return MutexMark::AsyncStorage;
+		case DurationStorageIdx::StorageDirOps:
+			return MutexMark::StorageDirOps;
 		case DurationStorageIdx::StorageSize:
 		case DurationStorageIdx::DataFlush:
 			break;
@@ -61,6 +63,7 @@ static std::string_view describeDurationStorageIdx(DurationStorageIdx idx) {
 		case DurationStorageIdx::ReindexerStats:
 		case DurationStorageIdx::CloneNs:
 		case DurationStorageIdx::AsyncStorage:
+		case DurationStorageIdx::StorageDirOps:
 			return DescribeMutexMark(mutexMarkCast(idx));
 		case DurationStorageIdx::DataFlush:
 			return "Data flush"sv;

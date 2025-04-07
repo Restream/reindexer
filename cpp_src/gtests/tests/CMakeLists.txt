@@ -8,7 +8,7 @@ list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer ${REINDEXER_L
 
 option(XML_REPORT "Enable XML xUnit report" OFF)
 option(GH_CI_OSX "Option for Github CI on OSX" OFF)
-option(GTEST_SKIP_SHARDING "Skips Sharding-related tests. Option for Github tests with ASAN - free runners run out of memory" OFF)
+option(GTEST_SKIP_ASAN_MEMORY_HEAVY "Skips tests with high memory consumation in ASAN-build (mostly sharding-related tests). Option for Github tests with ASAN - free runners run out of memory" OFF)
 set(GTEST_WORKERS "6" CACHE STRING "Number of workers for gtest_parallel")
 
 include_directories(fixtures mocks)
@@ -128,8 +128,8 @@ if (WITH_ASAN OR WITH_TSAN OR WITH_STDLIB_DEBUG)
     set(GTEST_TIMEOUT 2000)
 endif()
 
-if(GTEST_SKIP_SHARDING)
-    set(GTEST_EXTRA_OPTIONS "--gtest_filter=-Sharding*:SnapshotTestApi.ForceSyncFromRemoteToLocal")
+if(GTEST_SKIP_ASAN_MEMORY_HEAVY)
+    set(GTEST_EXTRA_OPTIONS "--gtest_filter=-Sharding*:ReplicationLoadApi.DynamicRoleSwitch")
 endif()
 find_program(GTEST_PARALLEL "gtest-parallel")
 if (GTEST_PARALLEL)

@@ -99,8 +99,6 @@ struct NamespaceCacheConfigData {
 };
 
 struct NamespaceConfigData {
-	bool lazyLoad = false;
-	int noQueryIdleThreshold = 0;
 	LogLevel logLevel = LogNone;
 	CacheMode cacheMode = CacheModeOff;
 	StrictMode strictMode = StrictModeNames;
@@ -201,7 +199,7 @@ private:
 	Error namespacesDataLoadResult_;
 	Error asyncReplicationDataLoadResult_;
 	Error replicationDataLoadResult_;
-	fast_hash_map<std::string, NamespaceConfigData, hash_str, equal_str, less_str> namespacesData_;
+	fast_hash_map<std::string, NamespaceConfigData, nocase_hash_str, nocase_equal_str, nocase_less_str> namespacesData_;
 	std::array<std::function<void()>, kConfigTypesTotalCount> handlers_;
 	fast_hash_map<int, std::function<void(const ReplicationConfigData&)>> replicationConfigDataHandlers_;
 	int handlersCounter_ = 0;

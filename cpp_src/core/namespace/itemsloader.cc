@@ -55,7 +55,7 @@ void ItemsLoader::prepareANNData() {
 			[this](std::string_view name) { return ns_.getIndexByName(name); },
 			[this](size_t field) { return ns_.getIndexDefinition(field); });
 	} else if (!annIndexes.empty()) {
-		assertrx_dbg(false);  // Do not expecting this error in test scenarious
+		assertrx_dbg(false);  // Do not expect this error in test scenarios
 		logFmt(LogError, "[{}] PK field does not exist. Unable to use ANN storage cache", ns_.name_);
 	}
 }
@@ -280,7 +280,7 @@ void ItemsLoader::loadCachedANNIndexes() {
 			}
 		});
 		if (!res.ok()) {
-			assertrx_dbg(false);  // Do not expecting this error in test scenarious
+			assertrx_dbg(false);  // Do not expect this error in test scenarios
 			logFmt(LogError, "[{}] Unable to restore ANN index '{}' from storage cache: {}", ns_.name_, cachedIndex->name, res.what());
 			indexesWithError.emplace_back(cachedIndex->field);
 			continue;
@@ -354,7 +354,7 @@ template <typename MutexT>
 void ItemsLoader::doInsertField(NamespaceImpl::IndexesStorage& indexes, unsigned field, IdType id, Payload& pl, Payload& plNew,
 								VariantArray& krefs, VariantArray& skrefs, MutexT& mtx, const ann_storage_cache::Reader* annCache) {
 	Index& index = *indexes[field];
-	const bool isIndexSparse = index.Opts().IsSparse();
+	const IsSparse isIndexSparse = index.Opts().IsSparse();
 	if (isIndexSparse) {
 		assertrx(index.Fields().getTagsPathsLength() > 0);
 		try {

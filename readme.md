@@ -394,7 +394,7 @@ If you need modified Reindexer's sources, you can use `replace` like that.
 1. Download and build reindexer:
 ```bash
 # Clone reindexer via git. It's also possible to use 'go get -a github.com/restream/reindexer/v5', but it's behavior may vary depending on Go's version
-git clone --branch release/4 https://github.com/restream/reindexer.git $GOPATH/src/reindexer
+git clone https://github.com/restream/reindexer.git $GOPATH/src/reindexer
 bash $GOPATH/src/reindexer/dependencies.sh
 # Generate builtin binding
 cd $GOPATH/src/reindexer
@@ -422,7 +422,7 @@ export GO111MODULE=off # Disable go1.11 modules
 # Go to your app's directory
 cd /your/app/path
 # Clone reindexer via git. It's also possible to use 'go get -a github.com/restream/reindexer', but it's behavior may vary depending on Go's version
-git clone --branch release/4 https://github.com/restream/reindexer.git vendor/github.com/restream/reindexer/v5
+git clone https://github.com/restream/reindexer.git vendor/github.com/restream/reindexer/v5
 # Generate builtin binding
 go generate -x ./vendor/github.com/restream/reindexer/v5/bindings/builtin
 # Optional (build builtin server binding)
@@ -1641,11 +1641,16 @@ go func() {
 }()
 ```
 
-3. Run application with environment variable `HEAPPROFILE=/tmp/pprof`
+3. Run application with environment variable `HEAPPROFILE=/tmp/pprof` or `TCMALLOC_SAMPLE_PARAMETER=512000`
 4. Then use the pprof tool to look at the heap profile:
 
 ```bash
 pprof -symbolize remote http://localhost:6060/debug/cgo/pprof/heap
+```
+
+In some cases remote symbolizer unable to resolve the symbols, so you may try the default:
+```bash
+pprof http://localhost:6060/debug/cgo/pprof/heap
 ```
 
 #### CPU profiling

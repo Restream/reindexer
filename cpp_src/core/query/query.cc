@@ -241,6 +241,27 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				entries_.Append<KnnQueryEntry>(op, std::string{fieldName}, vect, KnnSearchParams::Deserialize(ser));
 				break;
 			}
+			case QueryKnnConditionExt: {
+				const auto fieldName = ser.GetVString();
+				const auto op = OpType(ser.GetVarUInt());
+				const auto fmt = KnnQueryEntry::DataFormatType(ser.GetVarUInt());
+				switch (fmt) {
+					case KnnQueryEntry::DataFormatType::String: {
+						const auto text = ser.GetVString();
+						entries_.Append<KnnQueryEntry>(op, std::string{fieldName}, std::string(text), KnnSearchParams::Deserialize(ser));
+						break;
+					}
+					case KnnQueryEntry::DataFormatType::Vector: {
+						const auto vect = ser.GetFloatVectorView();
+						entries_.Append<KnnQueryEntry>(op, std::string{fieldName}, vect, KnnSearchParams::Deserialize(ser));
+						break;
+					}
+					case KnnQueryEntry::DataFormatType::None:
+					default:
+						throw Error(errParams, "Unexpected type for KNN condition: {}", int(fmt));
+				}
+				break;
+			}
 			case QueryBetweenFieldsCondition: {
 				OpType op = OpType(ser.GetVarUInt());
 				std::string firstField{ser.GetVString()};

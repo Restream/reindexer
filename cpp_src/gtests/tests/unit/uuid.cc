@@ -142,7 +142,7 @@ static void fillItemThroughJson(reindexer::Item& item, int id, Values<T1, T2>& v
 		if (value.array) {
 			auto arr = builder.Array("uuid_a");
 			for (const auto& uuid : *value.array) {
-				arr.Put(nullptr, std::string{uuid});
+				arr.Put(reindexer::TagName::Empty(), std::string{uuid});
 			}
 		} else if (rand() % 2 == 0) {
 			auto arr = builder.Array("uuid_a");

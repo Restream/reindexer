@@ -116,7 +116,11 @@ namespace {
 template <class BlockResultHandler>
 void exhaustive_inner_product_seq(const float* x, const float* y, size_t d, size_t nx, size_t ny, BlockResultHandler& res) {
 	using SingleResultHandler = typename BlockResultHandler::SingleResultHandler;
+#ifdef FAISS_WITH_OPENMP
 	[[maybe_unused]] int nt = std::min(int(nx), omp_get_max_threads());
+#else // !FAISS_WITH_OPENMP
+        [[maybe_unused]] int nt = 1;
+#endif // FAISS_WITH_OPENMP
 
 #pragma omp parallel num_threads(nt)
 	{
@@ -143,7 +147,11 @@ void exhaustive_inner_product_seq(const float* x, const float* y, size_t d, size
 template <class BlockResultHandler>
 void exhaustive_cosine_seq(const float* x, const float* y, const float* y_norms, size_t d, size_t nx, size_t ny, BlockResultHandler& res) {
     using SingleResultHandler = typename BlockResultHandler::SingleResultHandler;
+#ifdef FAISS_WITH_OPENMP
     [[maybe_unused]] int nt = std::min(int(nx), omp_get_max_threads());
+#else // !FAISS_WITH_OPENMP
+    [[maybe_unused]] int nt = 1;
+#endif // FAISS_WITH_OPENMP
     assert(!ny || y_norms);
 
 #pragma omp parallel num_threads(nt)
@@ -171,7 +179,11 @@ void exhaustive_cosine_seq(const float* x, const float* y, const float* y_norms,
 template <class BlockResultHandler>
 void exhaustive_L2sqr_seq(const float* x, const float* y, size_t d, size_t nx, size_t ny, BlockResultHandler& res) {
 	using SingleResultHandler = typename BlockResultHandler::SingleResultHandler;
-	[[maybe_unused]] int nt = std::min(int(nx), omp_get_max_threads());
+#ifdef FAISS_WITH_OPENMP
+    [[maybe_unused]] int nt = std::min(int(nx), omp_get_max_threads());
+#else // !FAISS_WITH_OPENMP
+    [[maybe_unused]] int nt = 1;
+#endif // FAISS_WITH_OPENMP
 
 #pragma omp parallel num_threads(nt)
 	{

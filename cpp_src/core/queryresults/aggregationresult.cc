@@ -1,4 +1,3 @@
-
 #include "aggregationresult.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/msgpackbuilder.h"
@@ -8,9 +7,9 @@
 #include "gason/gason.h"
 #include "tools/jsontools.h"
 #include "tools/serializer.h"
+#include "vendor/frozen/string.h"
+#include "vendor/frozen/unordered_map.h"
 #include "vendor/msgpack/msgpackparser.h"
-
-#include <unordered_map>
 
 namespace reindexer {
 
@@ -24,10 +23,14 @@ constexpr std::string_view Parameters::Values() noexcept { return "values"sv; }
 constexpr std::string_view Parameters::Distincts() noexcept { return "distincts"sv; }
 constexpr std::string_view Parameters::Fields() noexcept { return "fields"sv; }
 
-using ParametersFieldsNumbers = const std::unordered_map<std::string_view, int>;
-ParametersFieldsNumbers kParametersFieldNumbers = {{Parameters::Value(), 1},  {Parameters::Type(), 2},	 {Parameters::Count(), 1},
-												   {Parameters::Values(), 2}, {Parameters::Facets(), 3}, {Parameters::Distincts(), 4},
-												   {Parameters::Fields(), 5}};
+// clang-format off
+constexpr auto kParametersFieldNumbers = frozen::make_unordered_map<frozen::string, TagName>(
+															{{Parameters::Value(),  1_Tag}, {Parameters::Type(),      2_Tag},
+															 {Parameters::Count(),  1_Tag}, {Parameters::Values(),    2_Tag},
+															 {Parameters::Facets(), 3_Tag}, {Parameters::Distincts(), 4_Tag},
+															 {Parameters::Fields(), 5_Tag}});
+// clang-format on
+using ParametersFieldsNumbers = decltype(kParametersFieldNumbers);
 
 struct ParameterFieldGetter {
 	std::string_view at(std::string_view field) const { return field; }
@@ -78,7 +81,7 @@ void AggregationResult::GetMsgPack(WrSerializer& wrser) const {
 
 void AggregationResult::GetProtobuf(WrSerializer& wrser) const {
 	ProtobufBuilder builder(&wrser, ObjType::TypePlain);
-	get(builder, ParametersFields<ParametersFieldsNumbers, int>(kParametersFieldNumbers));
+	get(builder, ParametersFields<ParametersFieldsNumbers, TagName>(kParametersFieldNumbers));
 }
 
 template <typename Node>
@@ -146,8 +149,8 @@ template Expected<AggregationResult> AggregationResult::FromJSON<std::string_vie
 template Expected<AggregationResult> AggregationResult::FromJSON<std::span<char>>(std::span<char> json);
 
 void AggregationResult::GetProtobufSchema(ProtobufSchemaBuilder& builder) {
-	ParametersFields<ParametersFieldsNumbers, int> fields(kParametersFieldNumbers);
-	ProtobufSchemaBuilder results = builder.Object(0, "AggregationResults");
+	ParametersFields<ParametersFieldsNumbers, TagName> fields(kParametersFieldNumbers);
+	ProtobufSchemaBuilder results = builder.Object(TagName::Empty(), "AggregationResults");
 	results.Field(Parameters::Value(), fields.Value(), FieldProps{KeyValueType::Double{}});
 	results.Field(Parameters::Type(), fields.Type(), FieldProps{KeyValueType::String{}});
 	{

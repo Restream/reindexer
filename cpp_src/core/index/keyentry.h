@@ -87,6 +87,7 @@ public:
 		os << '}';
 	}
 
+private:
 	IdSetT ids_;
 };
 

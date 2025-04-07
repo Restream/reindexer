@@ -4,6 +4,7 @@
 #include "core/enums.h"
 #include "core/type_consts.h"
 #include "core/type_consts_helpers.h"
+#include "estl/h_vector.h"
 #include "sortingprioritiestable.h"
 
 namespace reindexer {
@@ -27,6 +28,32 @@ class [[nodiscard]] FloatVectorIndexOpts {
 	using FloatVectorDimensionInt = reindexer::FloatVectorDimension::value_type;
 
 public:
+	struct PoolOpts {
+		size_t connections{10};
+		size_t connect_timeout_ms{300};
+		size_t read_timeout_ms{5'000};
+		size_t write_timeout_ms{5'000};
+		bool operator==(const PoolOpts& o) const noexcept = default;
+		bool operator!=(const PoolOpts& o) const noexcept = default;
+	};
+	struct EmbedderOpts {
+		std::string endpointUrl;
+		std::string cacheTag;
+		reindexer::h_vector<std::string, 1> fields;
+		enum class Strategy : uint8_t { Always, EmptyOnly, Strict } strategy {Strategy::Always};
+		PoolOpts pool{};
+
+		bool operator==(const EmbedderOpts& o) const noexcept = default;
+		bool operator!=(const EmbedderOpts& o) const noexcept = default;
+	};
+	struct EmbeddingOpts {
+		std::optional<EmbedderOpts> upsertEmbedder;
+		std::optional<EmbedderOpts> queryEmbedder;
+
+		bool operator==(const EmbeddingOpts& o) const noexcept = default;
+		bool operator!=(const EmbeddingOpts& o) const noexcept = default;
+	};
+
 	FloatVectorIndexOpts() = default;
 	FloatVectorIndexOpts(IndexType type) {
 		// Set default for the index type
@@ -43,6 +70,7 @@ public:
 	size_t NCentroids() const noexcept { return nCentroids_; }
 	MultithreadingMode Multithreading() const noexcept { return multithreadingMode_; }
 	reindexer::VectorMetric Metric() const noexcept { return metric_; }
+	std::optional<EmbeddingOpts> Embedding() const noexcept { return embedding_; }
 	FloatVectorIndexOpts& SetDimension(FloatVectorDimensionInt dim) & noexcept {
 		dimension_ = dim;
 		return *this;
@@ -78,11 +106,13 @@ public:
 		return *this;
 	}
 	FloatVectorIndexOpts&& SetMetric(reindexer::VectorMetric metric) && noexcept { return std::move(SetMetric(metric)); }
-	bool operator==(const FloatVectorIndexOpts& o) const noexcept {
-		return dimension_ == o.dimension_ && startSize_ == o.startSize_ && M_ == o.M_ && efConstruction_ == o.efConstruction_ &&
-			   nCentroids_ == o.nCentroids_ && multithreadingMode_ == o.multithreadingMode_ && metric_ == o.metric_;
+	FloatVectorIndexOpts& SetEmbedding(EmbeddingOpts embedding) & noexcept {
+		embedding_ = embedding;
+		return *this;
 	}
-	bool operator!=(const FloatVectorIndexOpts& o) const noexcept { return !(*this == o); }
+	FloatVectorIndexOpts&& SetEmbedding(EmbeddingOpts embedding) && noexcept { return std::move(SetEmbedding(embedding)); }
+	bool operator==(const FloatVectorIndexOpts& o) const noexcept = default;
+	bool operator!=(const FloatVectorIndexOpts& o) const noexcept = default;
 	void Validate(IndexType);
 	static FloatVectorIndexOpts ParseJson(IndexType, std::string_view json);
 	std::string GetJson() const;
@@ -96,6 +126,7 @@ private:
 	size_t nCentroids_{0};
 	MultithreadingMode multithreadingMode_{MultithreadingMode::SingleThread};
 	reindexer::VectorMetric metric_{reindexer::VectorMetric::L2};
+	std::optional<EmbeddingOpts> embedding_;
 };
 
 /// Cpp version of IndexOpts: includes
@@ -107,10 +138,11 @@ struct IndexOpts {
 	explicit IndexOpts(uint8_t flags = 0, CollateMode mode = CollateNone, RTreeIndexType = RStar);
 	explicit IndexOpts(const std::string& sortOrderUTF8, uint8_t flags = 0, RTreeIndexType = RStar);
 
-	bool IsPK() const noexcept { return options & kIndexOptPK; }
-	bool IsArray() const noexcept { return options & kIndexOptArray; }
-	bool IsDense() const noexcept { return options & kIndexOptDense; }
-	bool IsSparse() const noexcept { return options & kIndexOptSparse; }
+	reindexer::IsPk IsPK() const noexcept { return reindexer::IsPk(options & kIndexOptPK); }
+	reindexer::IsArray IsArray() const noexcept { return reindexer::IsArray(options & kIndexOptArray); }
+	reindexer::IsDense IsDense() const noexcept { return reindexer::IsDense(options & kIndexOptDense); }
+	reindexer::IsSparse IsSparse() const noexcept { return reindexer::IsSparse(options & kIndexOptSparse); }
+	reindexer::IsNoIndexColumn IsNoIndexColumn() const noexcept { return reindexer::IsNoIndexColumn(options & kIndexOptNoColumn); }
 	RTreeIndexType RTreeType() const noexcept { return rtreeType_; }
 	bool HasConfig() const noexcept { return !config_.empty(); }
 
@@ -120,6 +152,8 @@ struct IndexOpts {
 	[[nodiscard]] IndexOpts&& Array(bool value = true) && { return std::move(Array(value)); }
 	IndexOpts& Dense(bool value = true) & noexcept;
 	[[nodiscard]] IndexOpts&& Dense(bool value = true) && noexcept { return std::move(Dense(value)); }
+	IndexOpts& NoIndexColumn(bool value = true) & noexcept;
+	[[nodiscard]] IndexOpts&& NoIndexColumn(bool value = true) && noexcept { return std::move(NoIndexColumn(value)); }
 	IndexOpts& Sparse(bool value = true) &;
 	[[nodiscard]] IndexOpts&& Sparse(bool value = true) && { return std::move(Sparse(value)); }
 	IndexOpts& RTreeType(RTreeIndexType) & noexcept;
@@ -155,7 +189,7 @@ struct IndexOpts {
 
 	IndexOpts& SetFloatVector(IndexType) &;
 	IndexOpts& SetFloatVector(IndexType, FloatVectorIndexOpts) &;
-	IndexOpts&& SetFloatVector(IndexType idxType, FloatVectorIndexOpts fv) && { return std::move(SetFloatVector(idxType, fv)); }
+	IndexOpts&& SetFloatVector(IndexType idxType, FloatVectorIndexOpts fv) &&;
 	IndexOpts&& SetFloatVector(IndexType idxType) && { return std::move(SetFloatVector(idxType)); }
 	const FloatVectorIndexOpts& FloatVector() const& {
 		assertrx_throw(floatVector_);

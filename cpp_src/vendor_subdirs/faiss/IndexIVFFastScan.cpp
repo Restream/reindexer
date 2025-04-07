@@ -458,8 +458,13 @@ int compute_search_nslice(
         const IndexIVFFastScan* index,
         size_t n,
         size_t nprobe) {
+#ifdef FAISS_WITH_OPENMP
+    const int ompMaxThreads = omp_get_max_threads();
+#else // !FAISS_WITH_OPENMP
+    const int ompMaxThreads = 1;
+#endif // FAISS_WITH_OPENMP
     int nslice;
-    if (n <= omp_get_max_threads()) {
+    if (n <= ompMaxThreads) {
         nslice = n;
     } else if (index->lookup_table_is_3d()) {
         // make sure we don't make too big LUT tables
@@ -470,10 +475,10 @@ int compute_search_nslice(
         // how many queries we can handle within mem budget
         size_t nq_ok = std::max(max_lut_size / lut_size_per_query, size_t(1));
         nslice = roundup(
-                std::max(size_t(n / nq_ok), size_t(1)), omp_get_max_threads());
+                std::max(size_t(n / nq_ok), size_t(1)), ompMaxThreads);
     } else {
         // LUTs unlikely to be a limiting factor
-        nslice = omp_get_max_threads();
+        nslice = ompMaxThreads;
     }
     return nslice;
 }
@@ -515,8 +520,12 @@ void IndexIVFFastScan::search_dispatch_implem(
         }
     }
 
+#ifdef FAISS_WITH_OPENMP
     bool multiple_threads =
             n > 1 && impl >= 10 && impl <= 13 && omp_get_max_threads() > 1;
+#else // !FAISS_WITH_OPENMP
+    bool multiple_threads = false;
+#endif // FAISS_WITH_OPENMP
     if (impl >= 100) {
         multiple_threads = false;
         impl -= 100;
@@ -664,8 +673,12 @@ void IndexIVFFastScan::range_search_dispatch_implem(
 
     CoarseQuantizedWithBuffer cq(cq_in);
 
+#ifdef FAISS_WITH_OPENMP
     bool multiple_threads =
             n > 1 && impl >= 10 && impl <= 13 && omp_get_max_threads() > 1;
+#else // !FAISS_WITH_OPENMP
+    bool multiple_threads = false;
+#endif // FAISS_WITH_OPENMP
     if (impl >= 100) {
         multiple_threads = false;
         impl -= 100;

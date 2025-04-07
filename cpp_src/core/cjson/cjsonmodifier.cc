@@ -82,13 +82,13 @@ CJsonModifier::Context CJsonModifier::initState(std::string_view tuple, const In
 	return ctx;
 }
 
-void CJsonModifier::updateObject(Context& ctx, int tagName) const {
+void CJsonModifier::updateObject(Context& ctx, TagName tagName) const {
 	ctx.fieldUpdated = true;
 	JsonDecoder jsonDecoder(tagsMatcher_);
 	if (ctx.value.IsArrayValue()) {
 		CJsonBuilder cjsonBuilder(ctx.wrser, ObjType::TypeArray, &tagsMatcher_, tagName);
 		for (const auto& item : ctx.value) {
-			auto objBuilder = cjsonBuilder.Object(nullptr);
+			auto objBuilder = cjsonBuilder.Object();
 			jsonDecoder.Decode(std::string_view(item), objBuilder, ctx.jsonPath, ctx.floatVectorsHolder);
 		}
 		return;
@@ -105,7 +105,7 @@ void CJsonModifier::insertField(Context& ctx) const {
 
 	int nestedObjects = 0;
 	for (size_t i = ctx.currObjPath.size(); i < fieldPath_.size(); ++i) {
-		const int tagName = fieldPath_[i].NameTag();
+		const TagName tagName = fieldPath_[i].NameTag();
 		const bool finalTag = (i == fieldPath_.size() - 1);
 		if (finalTag) {
 			if (ctx.mode == FieldModeSetJson) {
@@ -113,7 +113,7 @@ void CJsonModifier::insertField(Context& ctx) const {
 				continue;
 			}
 
-			const int field = tagsMatcher_.tags2field(ctx.jsonPath.data(), fieldPath_.size());
+			const int field = tagsMatcher_.tags2field(ctx.jsonPath);
 			const auto updateTagType = determineUpdateTagType(ctx, field);
 			if (updateTagType.isFloatVectorRef) {
 				ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName, field});
@@ -217,7 +217,7 @@ void CJsonModifier::writeCTag(const ctag& tag, Context& ctx) {
 	const TagType tagType = tag.Type();
 	bool tagMatched = checkIfFoundTag(ctx, tagType);
 	const int field = tag.Field();
-	const int tagName = tag.Name();
+	const TagName tagName = tag.Name();
 	if (tagType == TAG_ARRAY) {
 		const auto count = ctx.rdser.GetVarUInt();
 		if (!tagMatched || !ctx.fieldUpdated) {
@@ -268,7 +268,7 @@ void CJsonModifier::writeCTag(const ctag& tag, Context& ctx) {
 	}
 }
 
-void CJsonModifier::updateArray(TagType atagType, uint32_t count, int tagName, Context& ctx) {
+void CJsonModifier::updateArray(TagType atagType, uint32_t count, TagName tagName, Context& ctx) {
 	assertrx_throw(!ctx.value.IsArrayValue());	// Unable to update array's element with array-value
 
 	Variant value;
@@ -321,7 +321,7 @@ void CJsonModifier::updateArray(TagType atagType, uint32_t count, int tagName, C
 	assertrx_throw(ctx.fieldUpdated);
 }
 
-void CJsonModifier::copyArray(int tagName, Context& ctx) {
+void CJsonModifier::copyArray(TagName tagName, Context& ctx) {
 	const carraytag atag = ctx.rdser.GetCArrayTag();
 	const TagType atagType = atag.Type();
 	const auto count = atag.Count();
@@ -400,8 +400,8 @@ bool CJsonModifier::updateFieldInTuple(Context& ctx) {
 		return false;
 	}
 	const TagType tagType = tag.Type();
-	int field = tag.Field();
-	const int tagName = tag.Name();
+	const int field = tag.Field();
+	const TagName tagName = tag.Name();
 	TagsPathScope<IndexedTagsPath> pathScope(tagsPath_, tagName);
 
 	if (isIndexed(field)) {
@@ -470,7 +470,7 @@ bool CJsonModifier::dropFieldInTuple(Context& ctx) {
 		return false;
 	}
 
-	const int tagName = tag.Name();
+	const TagName tagName = tag.Name();
 	TagsPathScope<IndexedTagsPath> pathScope(tagsPath_, tagName);
 
 	bool tagMatched = (!ctx.fieldUpdated && fieldPath_.Compare(tagsPath_));
@@ -564,7 +564,7 @@ bool CJsonModifier::buildCJSON(Context& ctx) {
 		return false;
 	}
 	TagType tagType = tag.Type();
-	const int tagName = tag.Name();
+	const TagName tagName = tag.Name();
 	TagsPathScope<IndexedTagsPath> pathScope(tagsPath_, tagName);
 
 	bool tagMatched = fieldPath_.Compare(tagsPath_);
@@ -616,7 +616,7 @@ bool CJsonModifier::buildCJSON(Context& ctx) {
 				tagsPath_.back().SetIndex(i);
 				tagMatched = fieldPath_.Compare(tagsPath_);
 				if (tagMatched) {
-					updateObject(ctx, 0);
+					updateObject(ctx, TagName::Empty());
 					skipCjsonTag(ctx.rdser.GetCTag(), ctx.rdser, &ctx.fieldsArrayOffsets);
 					continue;
 				}

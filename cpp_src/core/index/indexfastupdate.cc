@@ -47,7 +47,8 @@ bool IndexFastUpdate::RelaxedEqual(const IndexDef& from, const IndexDef& to) {
 	auto comparisonIndex = from;
 	comparisonIndex.SetIndexTypeStr(to.IndexTypeStr());
 	auto opts = comparisonIndex.Opts();
-	opts.Dense(to.Opts().IsDense());
+	opts.Dense(*to.Opts().IsDense());
+	opts.NoIndexColumn(*to.Opts().IsNoIndexColumn());
 	opts.SetCollateMode(to.Opts().GetCollateMode());
 	opts.SetCollateSortOrder(to.Opts().GetCollateSortOrder());
 	comparisonIndex.SetOpts(std::move(opts));

@@ -142,14 +142,14 @@ class HierarchicalNSW final : public AlgorithmInterface<dist_t> {
 
     double mult_{0.0};
     int maxlevel_{0};
+    tableint enterpoint_node_{0};
+    update_lock_vec_t::mutex_t enterpoint_lock_; // Update mutex for enterpoint and maxlevel
 
     std::unique_ptr<VisitedListPool> visited_list_pool_{nullptr};
 
     typename lock_vec_t::mutex_t global;
     lock_vec_t link_list_locks_;
     update_lock_vec_t data_updates_locks_;
-
-    tableint enterpoint_node_{0};
 
     size_t size_links_level0_{0};
     size_t offsetData_{0}, label_offset_{ 0 };
@@ -180,10 +180,6 @@ class HierarchicalNSW final : public AlgorithmInterface<dist_t> {
 
     std::atomic<int32_t> concurrent_updates_counter_{0};
 
-
-    HierarchicalNSW(SpaceInterface<dist_t> *) {
-    }
-
     HierarchicalNSW(SpaceInterface<dist_t> *s, const HierarchicalNSW& other, size_t newMaxElements)
     :
         max_elements_(std::max(other.max_elements_, newMaxElements)),
@@ -196,8 +192,8 @@ class HierarchicalNSW final : public AlgorithmInterface<dist_t> {
         ef_construction_(other.ef_construction_),
         mult_(other.mult_),
         maxlevel_(other.maxlevel_),
-        visited_list_pool_(nullptr),
         enterpoint_node_(other.enterpoint_node_),
+        visited_list_pool_(nullptr),
         offsetData_(other.offsetData_),
         label_offset_(other.label_offset_),
         data_level0_memory_(nullptr),
@@ -228,10 +224,10 @@ class HierarchicalNSW final : public AlgorithmInterface<dist_t> {
     HierarchicalNSW(
         SpaceInterface<dist_t> *s,
         size_t max_elements,
-        size_t M = 16,
-        size_t ef_construction = 200,
-        size_t random_seed = 100,
-        reindexer::ReplaceDeleted allow_replace_deleted = reindexer::ReplaceDeleted_False)
+        size_t M,
+        size_t ef_construction,
+        size_t random_seed,
+        reindexer::ReplaceDeleted allow_replace_deleted)
         : link_list_locks_(max_elements),
             data_updates_locks_(max_elements),
             element_levels_(max_elements),
@@ -839,32 +835,7 @@ class HierarchicalNSW final : public AlgorithmInterface<dist_t> {
           return {data_level0_memory_old, data_level0_memory_new};
     }
 
-    size_t indexFileSize() const {
-        size_t size = 0;
-        size += sizeof(max_elements_);
-        size += sizeof(cur_element_count);
-        size += sizeof(size_data_per_element_);
-        size += sizeof(label_offset_);
-        size += sizeof(offsetData_);
-        size += sizeof(maxlevel_);
-        size += sizeof(enterpoint_node_);
-        size += sizeof(maxM_);
-
-        size += sizeof(maxM0_);
-        size += sizeof(M_);
-        size += sizeof(mult_);
-        size += sizeof(ef_construction_);
-
-        size += cur_element_count * size_data_per_element_;
-
-        for (size_t i = 0; i < cur_element_count; i++) {
-            unsigned int linkListSize = element_levels_[i] > 0 ? size_links_per_element_ * element_levels_[i] : 0;
-            size += sizeof(linkListSize);
-            size += linkListSize;
-        }
-        return size;
-    }
-
+    // Read-only concurrency expected
     void saveIndex(IWriter& writer, const std::atomic_int32_t& cancel) {
         constexpr size_t kCancelPeriod = 0x3FFFFF;
 
@@ -954,6 +925,7 @@ class HierarchicalNSW final : public AlgorithmInterface<dist_t> {
         }
     }
 
+    // *NOT* thread-safe
     void loadIndex(IReader& reader, SpaceInterface<dist_t> *s) {
         clear();
 
@@ -1025,10 +997,6 @@ class HierarchicalNSW final : public AlgorithmInterface<dist_t> {
     }
 
     tableint getInternalIdByLabel(labeltype label) const {
-        // lock all operations with element by label
-        // std::unique_lock <std::mutex> lock_label(getLabelOpMutex(label));
-
-        // std::unique_lock <std::mutex> lock_table(label_lookup_lock);
         auto search = label_lookup_.find(label);
         const bool found = (search != label_lookup_.end());
         if (!found || isMarkedDeleted(search->second)) {
@@ -1048,10 +1016,6 @@ class HierarchicalNSW final : public AlgorithmInterface<dist_t> {
     */
     // *NOT* thread-safe
     void markDelete(labeltype label) {
-        // lock all operations with element by label
-        // std::unique_lock <std::mutex> lock_label(getLabelOpMutex(label));
-
-        // std::unique_lock <std::mutex> lock_table(label_lookup_lock);
         auto search = label_lookup_.find(label);
         if (search == label_lookup_.end()) {
                 using namespace reindexer;
@@ -1059,9 +1023,11 @@ class HierarchicalNSW final : public AlgorithmInterface<dist_t> {
                 throw std::runtime_error("markDelete: Label not found: " + std::to_string(label));
         }
         tableint internalId = search->second;
-        // lock_table.unlock();
 
         markDeletedInternal(internalId);
+        if (allow_replace_deleted_) {
+            label_lookup_.erase(search);
+        }
     }
 
 
@@ -1081,6 +1047,7 @@ class HierarchicalNSW final : public AlgorithmInterface<dist_t> {
                 assertrx_dbg(num_deleted_ == deleted_elements.size());
             }
         } else {
+            assertrx_dbg(false);
             throw std::runtime_error("The requested to delete element is already deleted");
         }
     }
@@ -1105,6 +1072,7 @@ class HierarchicalNSW final : public AlgorithmInterface<dist_t> {
                 num_deleted_ -= 1;
             }
         } else {
+            assertrx_dbg(false);
             throw std::runtime_error("The requested to undelete element is not deleted");
         }
     }
@@ -1136,14 +1104,10 @@ class HierarchicalNSW final : public AlgorithmInterface<dist_t> {
     * Adds point. Updates the point if it is already in the index.
     * If replacement of deleted elements is enabled: replaces previously deleted point if any, updating it with new point
     */
-    void addPoint(const void *data_point, labeltype label, reindexer::ReplaceDeleted replace_deleted = reindexer::ReplaceDeleted_False) override {
-        if (!allow_replace_deleted_ && replace_deleted) {
-            throw std::runtime_error("Replacement of deleted elements is disabled in constructor");
-        }
-
+    void addPoint(const void *data_point, labeltype label) override {
         // lock all operations with element by label
         // std::unique_lock <std::mutex> lock_label(getLabelOpMutex(label));
-        if (!replace_deleted) {
+        if (!allow_replace_deleted_) {
             addPoint<false>(data_point, label, -1);
             return;
         }
@@ -1173,27 +1137,23 @@ class HierarchicalNSW final : public AlgorithmInterface<dist_t> {
                 addPoint<false>(data_point, label, -1);
             }
         } else {
-            // we assume that there are no concurrent operations on deleted element
-            labeltype label_replaced = getExternalLabel(internal_id_replaced);
             setExternalLabel(internal_id_replaced, label);
 
             {
                 std::lock_guard lock_table(label_lookup_lock);
-                auto foundReplaced = label_lookup_.find(label_replaced);
-                // Erase replced label from label_lookup, if it was not updated yet and still points to the our's new data
-                if (foundReplaced != label_lookup_.end() && foundReplaced.value() == internal_id_replaced) {
-                    label_lookup_.erase(foundReplaced);
-                }
                 label_lookup_[label] = internal_id_replaced;
             }
 
             try {
                 updatePoint(data_point, internal_id_replaced, 1.0);
             } catch(...) {
-                std::lock_guard lock_table(label_lookup_lock);
+                assertrx_dbg(false);
+
                 std::unique_lock lock_deleted_elements(deleted_elements_lock);
                 if (!isMarkedDeleted(internal_id_replaced)) {
                     markDeletedInternal(internal_id_replaced);
+                    std::lock_guard lock_table(label_lookup_lock);
+                    label_lookup_.erase(label);
                 }
                 // Handling direct deleted_elements.erase called above
                 auto [_, inserted] = deleted_elements.emplace(internal_id_replaced);
@@ -1219,8 +1179,13 @@ class HierarchicalNSW final : public AlgorithmInterface<dist_t> {
             }
         }
 
-        int maxLevelCopy = maxlevel_;
-        tableint entryPointCopy = enterpoint_node_;
+        int maxLevelCopy;
+        tableint entryPointCopy;
+        {
+            data_updates_shared_lock lck(enterpoint_lock_);
+            maxLevelCopy = maxlevel_;
+            entryPointCopy = enterpoint_node_;
+        }
         // If point to be updated is entry point and graph just contains single element then just return.
         if (entryPointCopy == internalId && cur_element_count == 1)
             return;
@@ -1427,20 +1392,25 @@ class HierarchicalNSW final : public AlgorithmInterface<dist_t> {
             fstdistfunc_.AddNorm(data_point, cur_c);
         }
 
-        int curlevel = getRandomLevel(mult_);
-        if (level > 0)
-            curlevel = level;
+        const int curlevel = (level > 0) ? level : getRandomLevel(mult_);
 
         std::unique_lock templock(global);
         std::lock_guard lock_el(link_list_locks_[cur_c]);
         element_levels_[cur_c] = curlevel;
 
-        int maxlevelcopy = maxlevel_;
-        if (curlevel <= maxlevelcopy) {
-            templock.unlock();
+        int maxlevelcopy;
+        tableint enterpoint_copy;
+        {
+            data_updates_shared_lock lck(enterpoint_lock_);
+            maxlevelcopy = maxlevel_;
+            enterpoint_copy = enterpoint_node_;
+            if (curlevel <= maxlevelcopy && enterpoint_node_ >= 0) {
+                lck.unlock();
+                templock.unlock();
+            }
         }
-        tableint currObj = enterpoint_node_;
-        tableint enterpoint_copy = enterpoint_node_;
+
+        tableint currObj = enterpoint_copy;
 
         memset(data_level0_memory_ + cur_c * size_data_per_element_, 0, size_data_per_element_);
 
@@ -1515,21 +1485,28 @@ class HierarchicalNSW final : public AlgorithmInterface<dist_t> {
                 }
                 currObj = mutuallyConnectNewElement<with_concurrent_updates>(cur_c, top_candidates, level, false);
             }
+
+            if (curlevel > maxlevelcopy) {
+                data_updates_unique_lock lck(enterpoint_lock_);
+                enterpoint_node_ = cur_c;
+                maxlevel_ = curlevel;
+            }
         } else {
+            data_updates_unique_lock lck(enterpoint_lock_);
             // Do nothing for the first element
-            enterpoint_node_ = 0;
             maxlevel_ = curlevel;
+            if (curlevel > maxlevelcopy) {
+                enterpoint_node_ = cur_c;
+            } else {
+                enterpoint_node_ = 0;
+            }
         }
 
-        // Releasing lock for the maximum level
-        if (curlevel > maxlevelcopy) {
-            enterpoint_node_ = cur_c;
-            maxlevel_ = curlevel;
-        }
         return cur_c;
     }
 
 
+    // Read-only concurrency expected
     std::priority_queue<std::pair<dist_t, labeltype >>
     searchKnn(const void *query_data, size_t k, size_t ef = 0, BaseFilterFunctor* isIdAllowed = nullptr) const override {
         std::vector<std::pair<dist_t, labeltype>> container;
@@ -1592,6 +1569,7 @@ class HierarchicalNSW final : public AlgorithmInterface<dist_t> {
     }
 
 
+    // Read-only concurrency expected
     std::vector<std::pair<dist_t, labeltype >>
     searchStopConditionClosest(
         const void *query_data,

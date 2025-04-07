@@ -37,7 +37,7 @@ void WrResultSerializer::putQueryParams(const BindingCapabilities& caps, QueryRe
 		const auto mergedNsCount = results.GetMergedNSCount();
 		if (int(opts_.ptVersions.size()) != mergedNsCount) {
 			logFmt(LogWarning, "ptVersionsCount != results->GetMergedNSCount: {} != {}. Client's metadata can become inconsistent.",
-					  opts_.ptVersions.size(), mergedNsCount);
+				   opts_.ptVersions.size(), mergedNsCount);
 		}
 		auto cntP = getPtUpdatesCount(results);
 		putPayloadTypes(*this, results, opts_, cntP.first, cntP.second);
@@ -140,7 +140,7 @@ void WrResultSerializer::putItemParams(ItT& it, int shardId, QueryResults::Proxi
 	if (result && result->IsWALQuery() && (opts_.flags & kResultsFormatMask) == kResultsJson) {
 		auto slicePosSaver = StartSlice();
 		JsonBuilder builder(*this, ObjType::TypePlain);
-		auto obj = builder.Object(nullptr);
+		auto obj = builder.Object();
 		{
 			auto lsnObj = obj.Object(kWALParamLsn);
 			itemRef.Value().GetLSN().GetJSON(lsnObj);
@@ -210,8 +210,8 @@ std::pair<int, int> WrResultSerializer::getPtUpdatesCount(const QueryResults& re
 		assertrx(opts_.ptVersions.data());
 		const auto mergedNsCount = results.GetMergedNSCount();
 		if (int(opts_.ptVersions.size()) != mergedNsCount) {
-			logFmt(LogWarning, "ptVersionsCount != results->GetMergedNSCount: {} != {}. Client's meta data can become incosistent.",
-					  opts_.ptVersions.size(), mergedNsCount);
+			logFmt(LogWarning, "ptVersionsCount != results->GetMergedNSCount: {} != {}. Client's meta data can become inconsistent.",
+				   opts_.ptVersions.size(), mergedNsCount);
 		}
 		int cnt = 0, totalCnt = std::min(mergedNsCount, int(opts_.ptVersions.size()));
 

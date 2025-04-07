@@ -48,12 +48,15 @@ template <typename HoldT>
 void PayloadIface<T>::get(int field, VariantArray& keys, HoldT h) const {
 	assertrx(field < NumFields());
 	keys.Clear();
-	if (t_.Field(field).IsArray()) {
+	const auto& fieldType = t_.Field(field);
+	if (fieldType.IsArray()) {
 		auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
 		keys.reserve(arr->len);
+		const auto elemSize = fieldType.ElemSizeof();
+		const auto arrPtr = v_->Ptr() + arr->offset;
 
-		for (int i = 0; i < arr->len; i++) {
-			PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
+		for (int i = 0, len = arr->len; i < len; i++) {
+			PayloadFieldValue pv(fieldType, arrPtr + i * elemSize);
 			keys.push_back(pv.Get(h));
 		}
 		keys.MarkArray();
@@ -67,14 +70,15 @@ template <typename HoldT>
 Variant PayloadIface<T>::get(int field, int idx, HoldT h) const {
 	assertrx(field < NumFields());
 
-	if (t_.Field(field).IsArray()) {
+	const auto& fieldType = t_.Field(field);
+	if (fieldType.IsArray()) {
 		auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-		assertf(idx < arr->len, "Field '{}.{}' bound exceed idx {} > len {}", Type().Name(), Type().Field(field).Name(), idx, arr->len);
+		assertf(idx < arr->len, "Field '{}.{}' bound exceed idx {} > len {}", Type().Name(), fieldType.Name(), idx, arr->len);
 
-		PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + idx * t_.Field(field).ElemSizeof());
+		PayloadFieldValue pv(fieldType, v_->Ptr() + arr->offset + idx * fieldType.ElemSizeof());
 		return pv.Get(h);
 	} else {
-		assertf(idx == 0, "Field '{}.{}' is not array, can't get idx {}", Type().Name(), Type().Field(field).Name(), idx);
+		assertf(idx == 0, "Field '{}.{}' is not array, can't get idx {}", Type().Name(), fieldType.Name(), idx);
 		return Field(field).Get(h);
 	}
 }
@@ -92,7 +96,7 @@ void PayloadIface<T>::GetByJsonPath(std::string_view jsonPath, TagsMatcher& tags
 			return;
 		}
 		if (t_.Field(fieldIdx).IsArray()) {
-			IndexedTagsPath tagsPath = tagsMatcher.path2indexedtag(jsonPath, false);
+			IndexedTagsPath tagsPath = tagsMatcher.path2indexedtag(jsonPath, CanAddField_False);
 			if (tagsPath.back().IsWithIndex()) {
 				kvs.Clear();
 				kvs.emplace_back(Get(fieldIdx, tagsPath.back().Index()));
@@ -102,7 +106,7 @@ void PayloadIface<T>::GetByJsonPath(std::string_view jsonPath, TagsMatcher& tags
 		}
 		return Get(fieldIdx, kvs);
 	}
-	GetByJsonPath(tagsMatcher.path2indexedtag(jsonPath, false), kvs, expectedType);
+	GetByJsonPath(tagsMatcher.path2indexedtag(jsonPath, CanAddField_False), kvs, expectedType);
 }
 
 template <typename T>
@@ -212,21 +216,23 @@ template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type*>
 void PayloadIface<T>::Set(int field, int idx, const Variant& v) {
 	assertrx(idx >= 0);
-	assertrx(t_.Field(field).IsArray());
+	const auto& fieldType = t_.Field(field);
+	assertrx(fieldType.IsArray());
 	const auto* const arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-	const auto elemSize = t_.Field(field).ElemSizeof();
+	const auto elemSize = fieldType.ElemSizeof();
 	assertrx(idx < arr->len);
-	PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + idx * elemSize);
+	PayloadFieldValue pv(fieldType, v_->Ptr() + arr->offset + idx * elemSize);
 	pv.Set(v);
 }
 
 template <>
 int PayloadIface<PayloadValue>::ResizeArray(int field, int count, bool append) {
-	assertrx(t_.Field(field).IsArray());
+	const auto& fieldType = t_.Field(field);
+	assertrx(fieldType.IsArray());
 
 	size_t realSize = RealSize();
 	auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-	auto elemSize = t_.Field(field).ElemSizeof();
+	auto elemSize = fieldType.ElemSizeof();
 
 	size_t grow = elemSize * count;
 	size_t strip = 0;
@@ -250,24 +256,24 @@ int PayloadIface<PayloadValue>::ResizeArray(int field, int count, bool append) {
 	// Move another arrays, after our
 	for (int f = 0; f < NumFields(); f++) {
 		if (f != field && t_.Field(f).IsArray()) {
-			auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(f).p_);
-			if (arr->offset >= insert) {
-				arr->offset += grow - strip;
+			auto* arrPtr = reinterpret_cast<PayloadFieldValue::Array*>(Field(f).p_);
+			if (arrPtr->offset >= insert) {
+				arrPtr->offset += grow - strip;
 			}
 		}
 	}
 	return arr->len - count;
 }
 
-// Calc real size of payload with embeded arrays
+// Calc real size of payload with embedded arrays
 template <typename T>
 size_t PayloadIface<T>::RealSize() const {
 	size_t sz = t_.TotalSize();
-	for (int field = 0; field < NumFields(); field++) {
-		if (t_.Field(field).IsArray()) {
+	for (int field = 0, numFields = NumFields(); field < numFields; field++) {
+		if (const auto& fieldType = t_.Field(field); fieldType.IsArray()) {
 			auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
 			if (arr->offset >= sz) {
-				sz = arr->offset + arr->len * t_.Field(field).ElemSizeof();
+				sz = arr->offset + arr->len * fieldType.ElemSizeof();
 			}
 		}
 	}
@@ -654,8 +660,10 @@ void PayloadIface<T>::copyOrMoveStrings(int field, StrHolder& dest, bool copy) {
 		dest.emplace_back(str.getBaseKeyString(), copy);
 	} else {
 		auto arr = reinterpret_cast<PayloadFieldValue::Array*>(v_->Ptr() + f.Offset());
-		for (int i = 0; i < arr->len; i++) {
-			auto str = *reinterpret_cast<const p_string*>(v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
+		const auto arrPtr = v_->Ptr() + arr->offset;
+		const auto elemSize = f.ElemSizeof();
+		for (int i = 0, arrLen = arr->len; i < arrLen; i++) {
+			auto str = *reinterpret_cast<const p_string*>(arrPtr + i * elemSize);
 			dest.emplace_back(str.getBaseKeyString(), copy);
 		}
 	}
@@ -671,10 +679,12 @@ void PayloadIface<T>::setArray(int field, const VariantArray& keys, bool append)
 
 	int pos = ResizeArray(field, keys.size(), append);
 	const auto* const arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-	const auto elemSize = t_.Field(field).ElemSizeof();
-
+	auto& fieldType = t_.Field(field);
+	const auto elemSize = fieldType.ElemSizeof();
+	auto arrElemPtr = v_->Ptr() + arr->offset + pos * elemSize;
 	for (const Variant& kv : keys) {
-		PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + (pos++) * elemSize);
+		PayloadFieldValue pv(fieldType, arrElemPtr);
+		arrElemPtr += elemSize;
 		pv.Set(kv);
 	}
 }
@@ -709,9 +719,9 @@ template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type*>
 T PayloadIface<T>::CopyTo(PayloadType modifiedType, bool newOrUpdatedFields) {
 	if (newOrUpdatedFields) {
-		return CopyWithNewOrUpdatedFields(modifiedType);
+		return CopyWithNewOrUpdatedFields(std::move(modifiedType));
 	} else {
-		return CopyWithRemovedFields(modifiedType);
+		return CopyWithRemovedFields(std::move(modifiedType));
 	}
 }
 
@@ -719,12 +729,12 @@ template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type*>
 T PayloadIface<T>::CopyWithNewOrUpdatedFields(PayloadType modifiedType) {
 	size_t totalGrow = 0;
-	for (int idx = 1; idx < modifiedType.NumFields(); ++idx) {
-		if (!t_.Contains(modifiedType.Field(idx).Name())) {
-			const PayloadFieldType& fieldType = modifiedType.Field(idx);
-			totalGrow += fieldType.IsArray() ? sizeof(PayloadFieldValue::Array) : fieldType.Sizeof();
+	for (int idx = 1, modNumFields = modifiedType.NumFields(); idx < modNumFields; ++idx) {
+		const auto& modifiedFieldType = modifiedType.Field(idx);
+		if (!t_.Contains(modifiedFieldType.Name())) {
+			totalGrow += modifiedFieldType.IsArray() ? sizeof(PayloadFieldValue::Array) : modifiedFieldType.Sizeof();
 		} else {
-			if (modifiedType.Field(idx).IsArray() && !t_.Field(idx).IsArray()) {
+			if (modifiedFieldType.IsArray() && !t_.Field(idx).IsArray()) {
 				totalGrow += sizeof(PayloadFieldValue::Array) - t_.Field(idx).Sizeof();
 			}
 		}
@@ -732,10 +742,11 @@ T PayloadIface<T>::CopyWithNewOrUpdatedFields(PayloadType modifiedType) {
 
 	T pv(RealSize() + totalGrow);
 	PayloadIface<T> copyValueInterface(modifiedType, pv);
-	for (int idx = 0; idx < t_.NumFields(); ++idx) {
-		VariantArray kr;
+	VariantArray kr;
+	for (int idx = 0, numFields = t_.NumFields(); idx < numFields; ++idx) {
 		Get(idx, kr);
 		copyValueInterface.Set(idx, kr, false);
+		kr.Clear();
 	}
 
 	return pv;
@@ -746,12 +757,12 @@ template <typename U, typename std::enable_if<!std::is_const<U>::value>::type*>
 T PayloadIface<T>::CopyWithRemovedFields(PayloadType modifiedType) {
 	size_t totalReduce = 0;
 	std::vector<std::string> fieldsLeft;
-	for (int idx = 0; idx < t_.NumFields(); ++idx) {
-		const std::string& fieldname(t_.Field(idx).Name());
-		if (modifiedType.Contains(fieldname)) {
-			fieldsLeft.emplace_back(fieldname);
+	for (int idx = 0, numFields = t_.NumFields(); idx < numFields; ++idx) {
+		const auto& fieldType = t_.Field(idx);
+		const auto& fieldName(fieldType.Name());
+		if (modifiedType.Contains(fieldName)) {
+			fieldsLeft.emplace_back(fieldName);
 		} else {
-			const PayloadFieldType& fieldType = t_.Field(idx);
 			totalReduce += fieldType.IsArray() ? sizeof(PayloadFieldValue::Array) : fieldType.Sizeof();
 		}
 	}

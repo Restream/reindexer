@@ -208,7 +208,7 @@ Item::FieldRef Item::FieldRefByName(std::string_view name, ItemImpl& impl) noexc
 	}
 }
 
-int Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name); }
+TagName Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name); }
 int Item::GetFieldIndex(std::string_view name) const { return impl_->FieldIndex(name); }
 FieldsSet Item::PkFields() const { return impl_->PkFields(); }
 void Item::SetPrecepts(std::vector<std::string> precepts) & { impl_->SetPrecepts(std::move(precepts)); }

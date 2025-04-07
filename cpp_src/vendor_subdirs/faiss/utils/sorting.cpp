@@ -142,7 +142,11 @@ void fvec_argsort_parallel(size_t n, const float* vals, size_t* perm) {
     // 2 result tables, during merging, flip between them
     size_t *permB = perm2, *permA = perm;
 
+#ifdef FAISS_WITH_OPENMP
     int nt = omp_get_max_threads();
+#else // !FAISS_WITH_OPENMP
+    int nt = 1;
+#endif // FAISS_WITH_OPENMP
     { // prepare correct permutation so that the result ends in perm
       // at final iteration
         int nseg = nt;
@@ -170,8 +174,10 @@ void fvec_argsort_parallel(size_t n, const float* vals, size_t* perm) {
         std::sort(permA + seg.i0, permA + seg.i1, comp);
         segs[t] = seg;
     }
+#ifdef FAISS_WITH_OPENMP
     int prev_nested = omp_get_nested();
     omp_set_nested(1);
+#endif // FAISS_WITH_OPENMP
 
     int nseg = nt;
     while (nseg > 1) {
@@ -200,7 +206,9 @@ void fvec_argsort_parallel(size_t n, const float* vals, size_t* perm) {
         std::swap(permA, permB);
     }
     assert(permA == perm);
+#ifdef FAISS_WITH_OPENMP
     omp_set_nested(prev_nested);
+#endif // FAISS_WITH_OPENMP
     delete[] perm2;
 }
 
@@ -262,8 +270,13 @@ void bucket_sort_parallel(
     memset(lims, 0, sizeof(*lims) * (vmax + 1));
 #pragma omp parallel num_threads(nt_in)
     {
-        int nt = omp_get_num_threads(); // might be different from nt_in
+#ifdef FAISS_WITH_OPENMP
+        int nt = omp_get_num_threads(); // might be different from nt_in (?)
         int rank = omp_get_thread_num();
+#else // !FAISS_WITH_OPENMP
+        int nt = 1;
+        int rank = 0;
+#endif // FAISS_WITH_OPENMP
         std::vector<int64_t> local_lims(vmax + 1);
 
         // range of indices handled by this thread
@@ -488,8 +501,13 @@ void bucket_sort_inplace_parallel(
 
 #pragma omp parallel num_threads(nt_in)
     {
+#ifdef FAISS_WITH_OPENMP
         int nt = omp_get_num_threads(); // might be different from nt_in (?)
         int rank = omp_get_thread_num();
+#else // !FAISS_WITH_OPENMP
+        int nt = 1;
+        int rank = 0;
+#endif // FAISS_WITH_OPENMP
         std::vector<int64_t> local_lims(nbucket + 1);
 
         // range of indices handled by this thread
@@ -740,13 +758,18 @@ void hashtable_int64_to_int64_add(
 
     std::vector<int64_t> lims(nbucket + 1);
     std::vector<int64_t> perm(n);
+#ifdef FAISS_WITH_OPENMP
+    const int ompMaxThreads = omp_get_max_threads();
+#else // !FAISS_WITH_OPENMP
+    const int ompMaxThreads = 0;
+#endif // FAISS_WITH_OPENMP
     bucket_sort(
             n,
             bucket_no.data(),
             nbucket,
             lims.data(),
             perm.data(),
-            omp_get_max_threads());
+            ompMaxThreads);
 
     int num_errors = 0;
 #pragma omp parallel for reduction(+ : num_errors)

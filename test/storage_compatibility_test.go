@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"runtime"
 	"strconv"
 	"testing"
@@ -127,7 +128,7 @@ func GetDataFromNodesNoSync(t *testing.T, rxLeader *reindexer.Reindexer, rxFollo
 
 func AwaitServerStartup(t *testing.T, dsn string) (*reindexer.Reindexer, error) {
 	var err error
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 20; i++ {
 		rx := reindexer.NewReindex(dsn)
 		status := rx.Status()
 		if status.Err == nil {
@@ -233,7 +234,7 @@ func TestStorageCompatibility(t *testing.T) {
 		t.Skip()
 	}
 
-	const baseStoragePath = "/tmp/reindex_test_storage_compatibility/"
+	baseStoragePath := path.Join(helpers.GetTmpDBDir(), "reindex_test_storage_compatibility/")
 	const dataCount = 100
 	const followerServerId = 2
 	cfgFollower := config.DefaultServerConfig()

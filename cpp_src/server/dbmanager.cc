@@ -43,12 +43,11 @@ Error DBManager::Init() {
 
 	for (auto& de : foundDb) {
 		if (de.isDir && validateObjectName(de.name, false)) {
-			auto status = loadOrCreateDatabase(de.name, config_.StartWithErrors, config_.Autorepair);
+			auto status = loadOrCreateDatabase(de.name, config_.StartWithErrors);
 			if (!status.ok()) {
 				logFmt(LogError, "Failed to open database '{}' - {}", de.name, status.what());
 				if (status.code() == errNotValid) {
-					logFmt(LogError, "Try to run:\t`reindexer_tool --dsn \"builtin://{}\" --repair`  to restore data",
-							  config_.StoragePath);
+					logFmt(LogError, "Try to run:\t`reindexer_tool --dsn \"builtin://{}\" --repair`  to restore data", config_.StoragePath);
 					return status;
 				}
 			}
@@ -104,7 +103,7 @@ Error DBManager::OpenDatabase(const std::string& dbName, AuthContext& auth, bool
 		return Error();
 	}
 
-	status = loadOrCreateDatabase(dbName, true, true, auth);
+	status = loadOrCreateDatabase(dbName, true, auth);
 	if (!status.ok()) {
 		return status;
 	}
@@ -115,7 +114,7 @@ Error DBManager::OpenDatabase(const std::string& dbName, AuthContext& auth, bool
 	return Error();
 }
 
-Error DBManager::loadOrCreateDatabase(const std::string& dbName, bool allowDBErrors, bool withAutorepair, const AuthContext& auth) {
+Error DBManager::loadOrCreateDatabase(const std::string& dbName, bool allowDBErrors, const AuthContext& auth) {
 	if (clustersShutDown_) {
 		return Error(errTerminated, "DBManager is already preparing for shutdown");
 	}
@@ -134,7 +133,7 @@ Error DBManager::loadOrCreateDatabase(const std::string& dbName, bool allowDBErr
 			storageType = kStorageTypeOptRocksDB;
 			break;
 	}
-	auto opts = ConnectOpts().AllowNamespaceErrors(allowDBErrors).WithStorageType(storageType).Autorepair(withAutorepair);
+	auto opts = ConnectOpts().AllowNamespaceErrors(allowDBErrors).WithStorageType(storageType);
 	if (auth.checkClusterID_) {
 		opts = opts.WithExpectedClusterID(auth.expectedClusterID_);
 	}

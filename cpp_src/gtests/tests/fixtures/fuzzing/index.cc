@@ -12,10 +12,10 @@ reindexer::IndexDef Index::IndexDef(RandomGenerator& rnd, const NsScheme& scheme
 		reindexer::overloaded{[](const Child& c) noexcept { return c.type; }, [](const Children&) noexcept { return FieldType::Struct; }},
 		content_);
 	IndexOpts opts;
-	const bool pk = rnd.PkIndex(isPk_);
+	const bool pk = rnd.PkIndex(*isPk_);
 	opts.PK(pk);
-	opts.Array(rnd.RndArrayField(isArray_) == IsArrayT::Yes);
-	opts.Sparse(rnd.RndSparseIndex(isSparse_));
+	opts.Array(*rnd.RndArrayField(isArray_));
+	opts.Sparse(*rnd.RndSparseIndex(isSparse_));
 	opts.Dense(rnd.DenseIndex());
 	opts.RTreeType(static_cast<IndexOpts::RTreeIndexType>(rnd.RndInt(IndexOpts::Linear, IndexOpts::RStar)));
 
@@ -63,15 +63,15 @@ void Index::Dump(std::ostream& os, const NsScheme& scheme, size_t offset) const 
 	for (size_t i = 0; i <= offset; ++i) {
 		os << "  ";
 	}
-	os << "pk: " << std::boolalpha << isPk_ << '\n';
+	os << "pk: " << std::boolalpha << *isPk_ << '\n';
 	for (size_t i = 0; i <= offset; ++i) {
 		os << "  ";
 	}
-	os << "array: " << std::boolalpha << IsArray() << '\n';
+	os << "array: " << std::boolalpha << *IsArray() << '\n';
 	for (size_t i = 0; i <= offset; ++i) {
 		os << "  ";
 	}
-	os << "sparse: " << std::boolalpha << (IsSparse() == IsSparseT::Yes) << '\n';
+	os << "sparse: " << std::boolalpha << *IsSparse() << '\n';
 	for (size_t i = 0; i <= offset; ++i) {
 		os << "  ";
 	}

@@ -18,7 +18,7 @@ using reindexer::net::ev::dynamic_loop;
 class ClusterizationApi : public ::testing::Test {
 public:
 	static constexpr auto kMaxServerStartTime = std::chrono::seconds(15);
-	static constexpr auto kMaxSyncTime = std::chrono::seconds(15);
+	static constexpr auto kMaxSyncTime = std::chrono::seconds(25);
 	static constexpr auto kMaxElectionsTime = std::chrono::seconds(12);
 
 	static constexpr std::string_view kIdField = "id";

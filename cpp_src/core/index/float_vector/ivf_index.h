@@ -27,9 +27,9 @@ public:
 	std::unique_ptr<Index> Clone(size_t newCapacity) const override;
 	IndexMemStat GetMemStat(const RdxContext&) noexcept override;
 	StorageCacheWriteResult WriteIndexCache(WrSerializer&, PKGetterF&&, bool isCompositePK,
-											const std::atomic_int32_t& cancel) noexcept override final;
-	Error LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&&) override final;
-	void RebuildCentroids(float dataPart) override final;
+											const std::atomic_int32_t& cancel) noexcept override;
+	Error LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&&) override;
+	void RebuildCentroids(float dataPart) override;
 
 private:
 	template <typename K, typename V>
@@ -50,7 +50,7 @@ private:
 	constexpr static ssize_t ivfTrainingSize(size_t nCentroids) noexcept { return nCentroids * 39; }
 	[[nodiscard]] faiss::MetricType faissMetric() const noexcept;
 	void reconstruct(IdType, FloatVector&) const;
-	static void trainIdx(faiss::IndexIVFFlat& idx, const float* vecs, const float *norms, size_t vecsCount);
+	static void trainIdx(faiss::IndexIVFFlat& idx, const float* vecs, const float* norms, size_t vecsCount);
 
 	size_t nCentroids_;
 	std::unique_ptr<faiss::IndexFlat> space_;

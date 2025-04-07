@@ -45,7 +45,12 @@ function CreateShardConf {
 DB_NAME=sharding_db
 
 # Clear directories for nodes
-rm -rf "/tmp/rx_shard_only"
+DB_TMP_DIR="/tmp"
+if [[ -n $REINDEXER_TEST_DB_ROOT ]]; then
+	DB_TMP_DIR=$REINDEXER_TEST_DB_ROOT
+fi
+DB_COMMON_PATH_PREFIX="$DB_TMP_DIR/rx_shard_only"
+rm -rf "$DB_COMMON_PATH_PREFIX"
 
 LOG_BASE_DIR="build/logs"
 rm -rf $LOG_BASE_DIR
@@ -55,7 +60,7 @@ shard=0
 
 while [[ $shard -lt $SHARD_COUNT ]]
 do
-	DB_PATH_BASE="/tmp/rx_shard_only/cluster_shard$(($shard+1))/"
+	DB_PATH_BASE="$DB_COMMON_PATH_PREFIX/cluster_shard$(($shard+1))/"
 	DB_PATH="$DB_PATH_BASE$DB_NAME"
 	mkdir -p $DB_PATH
 	REPL_CONF=$DB_PATH/replication.conf
@@ -79,9 +84,10 @@ do
 	shard=$((shard+1))
 done	
 
-#gotestsum --junitfile sharding_tests.xml ./test/sharding/... -run "TestShardingIDs|TestShardingBuiltin" -dsn cproto://127.0.0.1:6000/sharding_db -tags sharding_test -count=1
-
-go test ./test/sharding/... -run "TestShardingIDs|TestShardingBuiltin" -dsn cproto://127.0.0.1:6000/sharding_db -tags sharding_test -count=1
+mkdir gotests || true
+# Using preocompiled tests to get readable sanitizers backtraces from builtin C++ library
+go test ./test/sharding/... -c -o gotests/sharding.test -tags sharding_test
+./gotests/sharding.test -test.run "TestShardingIDs|TestShardingBuiltin" -dsn cproto://127.0.0.1:6000/sharding_db -test.count=1
 
 # Kill servers
 node=0

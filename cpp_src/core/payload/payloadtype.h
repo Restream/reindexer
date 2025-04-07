@@ -4,10 +4,12 @@
 #include <string>
 #include <vector>
 #include "estl/cow.h"
+#include "estl/h_vector.h"
 #include "payloadfieldtype.h"
 
 namespace reindexer {
 
+class Embedder;
 class PayloadTypeImpl;
 
 class PayloadType : public shared_cow_ptr<PayloadTypeImpl> {
@@ -36,6 +38,8 @@ public:
 	std::string ToString() const;
 
 	void Dump(std::ostream&, std::string_view step = "  ", std::string_view offset = "") const;
+	const h_vector<std::shared_ptr<Embedder>, 1>& Embedders() const noexcept;
+	std::string_view CheckAuxiliaryField(std::string_view fieldName) const;
 
 	auto Field(int field) const&& = delete;
 	auto Name() const&& = delete;

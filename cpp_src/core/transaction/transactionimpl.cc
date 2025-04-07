@@ -18,19 +18,20 @@ Error TransactionImpl::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 
 	try {
 		lazyInit(item);
+
+		data_->UpdateTagsMatcherIfNecessary(*item.impl_);
+		if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
+			status_ = (*proxiedTx)->Modify(std::move(item), mode, lsn);
+			return status_;
+		} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
+			(*localTx)->Modify(std::move(item), mode, lsn);
+			return {};
+		}
 	} catch (Error& err) {
 		status_ = err;
 		return err;
 	}
 
-	data_->UpdateTagsMatcherIfNecessary(*item.impl_);
-	if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
-		status_ = (*proxiedTx)->Modify(std::move(item), mode, lsn);
-		return status_;
-	} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
-		(*localTx)->Modify(std::move(item), mode, lsn);
-		return Error();
-	}
 	return kTxImplIsNotValid;
 }
 
@@ -52,7 +53,7 @@ Error TransactionImpl::Modify(Query&& query, lsn_t lsn) {
 		return status_;
 	} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
 		(*localTx)->Modify(std::move(query), lsn);
-		return Error();
+		return {};
 	}
 	return kTxImplIsNotValid;
 }
@@ -72,7 +73,7 @@ Error TransactionImpl::Nop(lsn_t lsn) {
 		return status_;
 	} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
 		(*localTx)->Nop(lsn);
-		return Error();
+		return {};
 	}
 	return kTxImplIsNotValid;
 }
@@ -96,7 +97,7 @@ Error TransactionImpl::PutMeta(std::string_view key, std::string_view value, lsn
 		return status_;
 	} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
 		(*localTx)->PutMeta(key, value, lsn);
-		return Error();
+		return {};
 	}
 	return kTxImplIsNotValid;
 }
@@ -129,7 +130,7 @@ Error TransactionImpl::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) {
 		return status_;
 	} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
 		(*localTx)->SetTagsMatcher(std::move(tm), lsn);
-		return Error();
+		return {};
 	}
 	return kTxImplIsNotValid;
 }
@@ -176,18 +177,18 @@ Error TransactionImpl::Rollback(int serverId, const RdxContext& ctx) {
 	tx_ = Empty{};
 	shardId_ = ShardingKeyType::NotSetShard;
 	status_ = Error(errNotValid, "Transaction was rolled back");
-	return Error();
+	return {};
 }
 
 Error TransactionImpl::Commit(int serverId, bool expectSharding, ReindexerImpl& rx, QueryResults& result, const RdxContext& ctx) {
-	const static Error kErrCommited(errNotValid, "Tx is already commited");
+	const static Error kErrCommitted(errNotValid, "Tx is already committed");
 
 	std::lock_guard lck(mtx_);
 	if (!status_.ok()) {
 		return status_;
 	}
 	if (expectSharding && shardId_ == ShardingKeyType::NotSetShard) {
-		return Error(errLogic, "Error commiting transaction with sharding: shard ID is not set");
+		return Error(errLogic, "Error committing transaction with sharding: shard ID is not set");
 	}
 
 	if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
@@ -196,7 +197,7 @@ Error TransactionImpl::Commit(int serverId, bool expectSharding, ReindexerImpl& 
 		if (res.ok() && shardingRouter_) {
 			result.SetShardingConfigVersion(shardingRouter_.SourceId());
 		}
-		status_ = kErrCommited;
+		status_ = kErrCommitted;
 		return res;
 	} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
 		try {
@@ -206,7 +207,7 @@ Error TransactionImpl::Commit(int serverId, bool expectSharding, ReindexerImpl& 
 			} else {
 				result.AddQr(LocalQueryResults(), shardingRouter_ ? shardingRouter_.ActualShardId() : ShardingKeyType::ProxyOff);
 			}
-			status_ = kErrCommited;
+			status_ = kErrCommitted;
 			LocalTransaction ltx(std::move(data_), std::move(*localTx), Error());
 			tx_ = Empty{};
 			auto res = rx.CommitTransaction(ltx, result.ToLocalQr(false), ctx);
@@ -217,7 +218,7 @@ Error TransactionImpl::Commit(int serverId, bool expectSharding, ReindexerImpl& 
 		}
 	} else if (std::holds_alternative<RxClientT>(tx_)) {
 		// Empty proxied transaction. Just skipping commit
-		return Error();
+		return {};
 	}
 	return kTxImplIsNotValid;
 }

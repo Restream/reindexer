@@ -25,6 +25,9 @@ done
 
 CLUSTER_DB_NAME=cluster_db
 BASE_DIR="/tmp/rx_go_cluster"
+if [[ -n $REINDEXER_TEST_DB_ROOT ]]; then
+	BASE_DIR=$REINDEXER_TEST_DB_ROOT/rx_go_cluster
+fi
 BASE_RPC=6000
 BASE_HTTP=7000
 RX_BIN=build/cpp_src/cmd/reindexer_server/reindexer_server

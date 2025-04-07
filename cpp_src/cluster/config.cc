@@ -121,13 +121,15 @@ RaftInfo::Role RaftInfo::RoleFromStr(std::string_view role) {
 
 void ClusterNodeConfig::FromYAML(const YAML::Node& root) {
 	serverId = root["server_id"].as<int>(serverId);
-	dsn = DSN(root["dsn"].as<std::string>());
-	ValidateDSN(dsn);
+	auto tmpDsn = DSN(root["dsn"].as<std::string>());
+	ValidateDSN(tmpDsn);
+	dsn = std::move(tmpDsn);
 }
 
 void AsyncReplNodeConfig::FromYAML(const YAML::Node& root) {
-	dsn = DSN(root["dsn"].as<std::string>());
-	ValidateDSN(dsn);
+	auto tmpDsn = DSN(root["dsn"].as<std::string>());
+	ValidateDSN(tmpDsn);
+	dsn_ = std::move(tmpDsn);
 	auto node = root["namespaces"];
 	namespaces_.reset();
 	if (node.IsSequence()) {
@@ -145,8 +147,9 @@ void AsyncReplNodeConfig::FromYAML(const YAML::Node& root) {
 }
 
 void AsyncReplNodeConfig::FromJSON(const gason::JsonNode& root) {
-	dsn = DSN(root["dsn"].As<std::string>());
-	ValidateDSN(dsn);
+	auto tmpDsn = DSN(root["dsn"].As<std::string>());
+	ValidateDSN(tmpDsn);
+	dsn_ = std::move(tmpDsn);
 	{
 		auto& node = root["namespaces"];
 		if (!node.empty()) {
@@ -166,14 +169,14 @@ void AsyncReplNodeConfig::FromJSON(const gason::JsonNode& root) {
 
 void AsyncReplNodeConfig::GetJSON(JsonBuilder& jb, MaskingDSN maskingDSN) const {
 	if (maskingDSN == MaskingDSN::Disabled) {
-		jb.Put("dsn", dsn.dsn_);
+		jb.Put("dsn", dsn_.dsn_);
 	} else if (maskingDSN == MaskingDSN::Enabled) {
-		jb.Put("dsn", dsn);
+		jb.Put("dsn", dsn_);
 	}
 	if (hasOwnNsList_) {
 		auto arrNode = jb.Array("namespaces");
 		for (const auto& ns : namespaces_->data) {
-			arrNode.Put(nullptr, ns);
+			arrNode.Put(TagName::Empty(), ns);
 		}
 	}
 	if (replicationMode_.has_value()) {
@@ -182,7 +185,7 @@ void AsyncReplNodeConfig::GetJSON(JsonBuilder& jb, MaskingDSN maskingDSN) const 
 }
 
 void AsyncReplNodeConfig::GetYAML(YAML::Node& yaml) const {
-	yaml["dsn"] = dsn;
+	yaml["dsn"] = dsn_;
 	if (hasOwnNsList_) {
 		yaml["namespaces"] = YAML::Node(YAML::NodeType::Sequence);
 		if (namespaces_ && !namespaces_->Empty()) {
@@ -393,7 +396,7 @@ void AsyncReplConfigData::GetJSON(JsonBuilder& jb, MaskingDSN maskingDSN) const 
 	{
 		auto arrNode = jb.Array("namespaces");
 		for (const auto& ns : namespaces->data) {
-			arrNode.Put(nullptr, ns);
+			arrNode.Put(TagName::Empty(), ns);
 		}
 	}
 	{
@@ -460,22 +463,22 @@ void AsyncReplConfigData::GetYAML(WrSerializer& ser) const {
 			"syncs_per_thread: " +  std::to_string(parallelSyncsPerThreadCount) + "\n"
 			"\n"
 			"# Number of coroutines for updates batching (per namespace). Higher value here may help to reduce\n"
-			"# networks triparound await time, but will require more RAM\n"
+			"# networks trip-around await time, but will require more RAM\n"
 			"batching_routines_count: " + std::to_string(batchingRoutinesCount) + "\n"
 			"\n"
 			"# Maximum number of WAL-records, which may be gained from force-sync.\n"
-			"# Increasing this value may help to avoid force-syncs after leader's switch, hovewer it also increases RAM consumetion during syncs\n"
+			"# Increasing this value may help to avoid force-syncs after leader's switch, however it also increases RAM consumption during syncs\n"
 			"max_wal_depth_on_force_sync: " + std::to_string(maxWALDepthOnForceSync) + "\n"
 			"\n"
 			"# Delay between write operation and replication. Larger values here will leader to higher replication latency and bufferization, but also will provide\n"
-			"# more effective network batching and CPU untilization\n"
+			"# more effective network batching and CPU utilization\n"
 			"# 0 - disables additional delay\n"
 			"online_updates_delay_msec: " + std::to_string(onlineUpdatesDelayMSec) + "\n"
 			"# Replication log level on replicator's startup. May be changed either via this config (with replication restart) or via config-action\n"
 			"# (upsert '{ \"type\":\"action\", \"action\": { \"command\": \"set_log_level\", \"type\": \"async_replication\", \"level\": \"info\" } }' into #config-namespace).\n"
 			"# Possible values: none, error, warning, info, trace.\n"
 			"log_level: " + std::string(logLevelToString(logLevel)) + "\n"
-			"# List of namespaces for replication. If emply, all namespaces\n"
+			"# List of namespaces for replication. If empty, all namespaces\n"
 			"# All replicated namespaces will become read only for followers\n"
 			"# It should be written as YAML sequence, JSON-style arrays are not supported\n"
 			+ YAML::Dump(nss) + "\n"
@@ -787,7 +790,7 @@ void ShardingConfig::Namespace::GetJSON(JsonBuilder& jb) const {
 	jb.Put("index", index);
 	auto keysNode = jb.Array("keys");
 	for (const auto& key : keys) {
-		auto kNode = keysNode.Object(0);
+		auto kNode = keysNode.Object();
 		key.GetJSON(kNode);
 	}
 }
@@ -818,12 +821,12 @@ void ShardingConfig::Key::GetJSON(JsonBuilder& jb) const {
 	for (const auto& [left, right, _] : values) {
 		(void)_;
 		if (left == right) {
-			valuesNode.Put(0, left);
+			valuesNode.Put(TagName::Empty(), left);
 		} else {
 			auto segmentNodeObj = valuesNode.Object();
 			auto segmentNodeArr = segmentNodeObj.Array("range");
-			segmentNodeArr.Put(0, left);
-			segmentNodeArr.Put(0, right);
+			segmentNodeArr.Put(TagName::Empty(), left);
+			segmentNodeArr.Put(TagName::Empty(), right);
 		}
 	}
 }
@@ -864,15 +867,16 @@ Error ShardingConfig::FromYAML(const std::string& yaml) {
 		}
 
 		auto shardsNode = root["shards"];
-		for (size_t i = 0; i < shardsNode.size(); ++i) {
-			size_t shardId = shardsNode[i]["shard_id"].as<int>();
+		for (const auto& shNode : shardsNode) {
+			const size_t shardId = shNode["shard_id"].as<int>();
 			if (shards.find(shardId) != shards.end()) {
 				return Error{errParams, "Dsns for shard id {} are specified twice", shardId};
 			}
-			auto hostsNode = shardsNode[i]["dsns"];
-			shards[shardId].reserve(hostsNode.size());
-			for (size_t i = 0; i < hostsNode.size(); ++i) {
-				shards[shardId].emplace_back(hostsNode[i].as<std::string>());
+			const auto& hostsNode = shNode["dsns"];
+			auto& shard = shards[shardId];
+			shard.reserve(hostsNode.size());
+			for (const auto& host : hostsNode) {
+				shard.emplace_back(host.as<std::string>());
 			}
 		}
 
@@ -1045,21 +1049,21 @@ void ShardingConfig::GetJSON(JsonBuilder& jb, MaskingDSN masking) const {
 	{
 		auto namespacesNode = jb.Array("namespaces");
 		for (const auto& ns : namespaces) {
-			auto nsNode = namespacesNode.Object(0);
+			auto nsNode = namespacesNode.Object();
 			ns.GetJSON(nsNode);
 		}
 	}
 	{
 		auto shardsNode = jb.Array("shards");
 		for (const auto& [id, dsns] : shards) {
-			auto shrdNode = shardsNode.Object(0);
+			auto shrdNode = shardsNode.Object();
 			shrdNode.Put("shard_id", id);
 			auto dsnsNode = shrdNode.Array("dsns");
 			for (const auto& d : dsns) {
 				if (masking == MaskingDSN::Disabled) {
-					dsnsNode.Put(0, d.dsn_);
+					dsnsNode.Put(TagName::Empty(), d.dsn_);
 				} else if (masking == MaskingDSN::Enabled) {
-					dsnsNode.Put(0, d);
+					dsnsNode.Put(TagName::Empty(), d);
 				}
 			}
 		}
@@ -1084,7 +1088,7 @@ Error ShardingConfig::Validate() const {
 		}
 		for (const auto& dsn : s.second) {
 			if (!dsns.insert(std::cref(dsn)).second) {
-				return Error(errParams, "DSNs in shard's config should be unique. Dublicated dsn: {}", dsn);
+				return Error(errParams, "DSNs in shard's config should be unique. Duplicated dsn: {}", dsn);
 			}
 			if (!dsn.Parser().isValid()) {
 				return Error(errParams, "{} is not valid uri", dsn);

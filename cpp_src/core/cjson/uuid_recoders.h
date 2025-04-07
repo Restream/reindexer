@@ -18,7 +18,7 @@ public:
 		}
 	}
 	void Recode(Serializer&, WrSerializer&) const override;
-	void Recode(Serializer&, Payload&, int, WrSerializer&) override { assertrx(false); }
+	void Recode(Serializer&, Payload&, TagName, WrSerializer&) override { assertrx(false); }
 	[[nodiscard]] bool Match(int) const noexcept override { return false; }
 	[[nodiscard]] bool Match(const TagsPath& tp) const noexcept override { return tagsPath_ == tp; }
 	void Prepare(IdType) noexcept override {}
@@ -56,7 +56,7 @@ public:
 	[[nodiscard]] bool Match(int f) const noexcept override { return f == field_; }
 	[[nodiscard]] bool Match(const TagsPath&) const noexcept override { return false; }
 	void Recode(Serializer&, WrSerializer&) const override { assertrx(false); }
-	void Recode(Serializer& rdser, Payload& pl, int tagName, WrSerializer& wrser) override {
+	void Recode(Serializer& rdser, Payload& pl, TagName tagName, WrSerializer& wrser) override {
 		if (fromNotArrayField_) {
 			pl.Set(field_, Variant{rdser.GetStrUuid()}, true);
 			wrser.PutCTag(ctag{TAG_ARRAY, tagName, field_});
@@ -99,7 +99,7 @@ public:
 	[[nodiscard]] bool Match(int f) const noexcept override { return f == field_; }
 	[[nodiscard]] bool Match(const TagsPath&) const noexcept override { return false; }
 	void Recode(Serializer&, WrSerializer&) const override { assertrx(false); }
-	void Recode(Serializer& rdser, Payload& pl, int tagName, WrSerializer& wrser) override {
+	void Recode(Serializer& rdser, Payload& pl, TagName tagName, WrSerializer& wrser) override {
 		pl.Set(field_, Variant{rdser.GetStrUuid()}, true);
 		wrser.PutCTag(ctag{TAG_UUID, tagName, field_});
 	}

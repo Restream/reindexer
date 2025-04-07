@@ -31,6 +31,7 @@ type indexOptions struct {
 	isArray     bool
 	isAppenable bool
 	isDense     bool
+	isNoColumn  bool
 	isPk        bool
 	isSparse    bool
 	rtreeType   string
@@ -300,6 +301,8 @@ func parseOpts(idxSettingsBuf *[]string) indexOptions {
 			opts.isPk = true
 		case "dense":
 			opts.isDense = true
+		case "is_no_column":
+			opts.isNoColumn = true
 		case "sparse":
 			opts.isSparse = true
 		case "appendable":
@@ -463,6 +466,7 @@ func makeIndexDef(index string, jsonPaths []string, indexType, fieldType string,
 		IsArray:     opts.isArray,
 		IsPK:        opts.isPk,
 		IsDense:     opts.isDense,
+		IsNoColumn:  opts.isNoColumn,
 		IsSparse:    opts.isSparse,
 		CollateMode: cm,
 		SortOrder:   sortOrder,

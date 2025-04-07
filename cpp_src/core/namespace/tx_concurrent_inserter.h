@@ -69,7 +69,7 @@ public:
 		return std::nullopt;
 	}
 	size_t Field() const noexcept { return field_; }
-	size_t Buckets() const noexcept { return mapping_.size(); }
+	size_t Buckets() const noexcept { return vectors_.size(); }
 	const Vector* operator[](size_t idx) const noexcept { return &vectors_[idx]; }
 
 private:

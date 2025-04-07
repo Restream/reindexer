@@ -3,10 +3,10 @@ package reindexer
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"net/url"
 	"os"
+	"path"
 	"testing"
 	"time"
 
@@ -84,7 +84,7 @@ type TestItemV6 struct {
 type TestIndexesCompatibilityRegularItem struct {
 	ID       int    `reindex:"id,,pk"`
 	StrField string `reindex:"str_field"`
-	IntField int    `reindexe:"int_field,tree"`
+	IntField int    `reindex:"int_field,tree"`
 }
 
 const testIndexesCompatibilityRegularNs = "indexes_compat_r_d"
@@ -93,7 +93,7 @@ const testIndexesCompatibilityRegularNs = "indexes_compat_r_d"
 type TestIndexesCompatibilityDenseItem struct {
 	ID       int    `reindex:"id,,pk"`
 	StrField string `reindex:"str_field,,dense"`
-	IntField int    `reindexe:"int_field,tree,dense"`
+	IntField int    `reindex:"int_field,tree,dense,is_no_column"`
 }
 
 const testIndexesCompatibilityDenseNs = "indexes_compat_d_r"
@@ -195,7 +195,7 @@ func TestStorageChangeFormat(t *testing.T) {
 		udsn, err := url.Parse(*dsn)
 		assert.NoError(t, err)
 		if udsn.Scheme == "builtin" {
-			ioutil.WriteFile(udsn.Path+"blocked_storage", []byte{}, os.ModePerm)
+			os.WriteFile(path.Join(udsn.Path, "blocked_storage"), []byte{}, os.ModePerm)
 			err = DB.OpenNamespace("blocked_storage", reindexer.DefaultNamespaceOptions(), TestItemV1{})
 			assert.Errorf(t, err, "Expecting storage error, but it's ok (path: %s)", udsn.Path+"blocked_storage")
 		}

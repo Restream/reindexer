@@ -189,7 +189,7 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 		case bindings.OptionOpenTelemetry:
 			if v.EnableTracing {
 				rx.otelTracer = otel.Tracer(
-					"reindexer/v4",
+					"reindexer/v5",
 					oteltrace.WithInstrumentationVersion(bindings.ReindexerVersion),
 				)
 				rx.otelCommonTraceAttrs = []otelattr.KeyValue{

@@ -1,6 +1,8 @@
 #include "queryentry.h"
 
 #include <cstdlib>
+#include <sstream>
+#include "core/cjson/jsonbuilder.h"
 #include "core/nsselecter/joinedselector.h"
 #include "core/nsselecter/joinedselectormock.h"
 #include "core/payload/payloadiface.h"
@@ -359,10 +361,16 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer&
 				ser.PutVarUint(op);
 			},
 			[&](const KnnQueryEntry& qe) {
-				ser.PutVarUint(QueryKnnCondition);
+				ser.PutVarUint(QueryKnnConditionExt);
 				ser.PutVString(qe.FieldName());
 				ser.PutVarUint(op);
-				ser.PutFloatVectorView(qe.Value());
+				auto format = qe.Format();
+				ser.PutVarUint(format);
+				if (format == KnnQueryEntry::DataFormatType::Vector) {
+					ser.PutFloatVectorView(qe.Value());
+				} else {
+					ser.PutVString(qe.Data());
+				}
 				qe.Params().Serialize(ser);
 			});
 	}
@@ -848,7 +856,7 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 }
 
 bool KnnQueryEntry::operator==(const KnnQueryEntry& other) const noexcept {
-	if (fieldName_ != other.fieldName_) {
+	if ((fieldName_ != other.fieldName_) || (format_ != other.format_) || (data_ != other.data_)) {
 		return false;
 	}
 	const auto values = value_.Span();
@@ -957,8 +965,35 @@ template void QueryEntries::dump(size_t, const_iterator, const_iterator, const s
 
 std::string KnnQueryEntry::Dump() const {
 	using namespace std::string_literals;
-	assertrx(!value_.Span().empty());
-	return fieldName_ + " KNN ["s + std::to_string(value_.Span()[0]) + "] k: "s + params_.Dump();
+	if (format_ == DataFormatType::Vector) {
+		assertrx_throw(!value_.Span().empty());
+		return fieldName_ + " KNN ["s + std::to_string(value_.Span()[0]) + "] k: "s + params_.Dump();
+	}
+
+	assertrx_throw(format_ == DataFormatType::String && !data_.empty());
+	return fieldName_ + " KNN ["s + data_ + "] k: "s + params_.Dump();
+}
+
+void KnnQueryEntry::ToDsl(JsonBuilder& builder) const {
+	using namespace std::string_view_literals;
+
+	builder.Put("cond"sv, "knn"sv);
+	builder.Put("field"sv, fieldName_);
+
+	if (format_ == KnnQueryEntry::DataFormatType::Vector) {
+		assertrx_throw(!value_.Span().empty());
+		auto valuesArray = builder.Array("value"sv);
+		const auto values = value_.Span();
+		for (const auto v : values) {
+			valuesArray.Put(TagName::Empty(), v);
+		}
+	} else {
+		assertrx_throw(format_ == KnnQueryEntry::DataFormatType::String && !data_.empty());
+		builder.Put("value"sv, data_);
+	}
+
+	auto params = builder.Object("params"sv);
+	params_.ToDsl(params);
 }
 
 }  // namespace reindexer

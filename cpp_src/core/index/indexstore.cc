@@ -79,7 +79,7 @@ Variant IndexStore<key_string>::Upsert(const Variant& key, IdType id, bool& /*cl
 	} else {
 		val = std::string_view(key);
 	}
-	if (!opts_.IsArray() && !opts_.IsDense() && !opts_.IsSparse() && !IsFulltext()) {
+	if (!IsColumnIndexDisabled() && !IsFulltext()) {
 		idx_data.resize(std::max(id + 1, IdType(idx_data.size())));
 		idx_data[id] = val;
 	}
@@ -94,7 +94,7 @@ Variant IndexStore<PayloadValue>::Upsert(const Variant& key, IdType /*id*/, bool
 
 template <typename T>
 Variant IndexStore<T>::Upsert(const Variant& key, IdType id, bool& /*clearCache*/) {
-	if (!opts_.IsArray() && !opts_.IsDense() && !opts_.IsSparse() && !key.Type().Is<KeyValueType::Null>()) {
+	if (!IsColumnIndexDisabled() && !key.Type().Is<KeyValueType::Null>()) {
 		idx_data.resize(std::max(id + 1, IdType(idx_data.size())));
 		idx_data[id] = static_cast<T>(key);
 	}
@@ -136,7 +136,7 @@ SelectKeyResults IndexStore<T>::SelectKey(const VariantArray& keys, CondType con
 	}
 
 	return ComparatorIndexed<T>{
-		Name(),	  condition,		 keys, idx_data.size() ? idx_data.data() : nullptr, opts_.IsArray(), bool(sopts.distinct), payloadType_,
+		Name(), condition, keys, idx_data.size() ? idx_data.data() : nullptr, opts_.IsArray(), bool(sopts.distinct), payloadType_,
 		Fields(), opts_.collateOpts_};
 }
 

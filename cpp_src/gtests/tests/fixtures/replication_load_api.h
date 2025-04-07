@@ -10,7 +10,7 @@ class ReplicationLoadApi : public ReplicationApi {
 public:
 	void InitNs() {
 		counter_ = 0;
-		auto opt = StorageOpts().Enabled(true).LazyLoad(true);
+		auto opt = StorageOpts().Enabled(true);
 		opt.noQueryIdleThresholdSec = 10;
 
 		// untill we use shared ptr it will be not destroyed

@@ -3,7 +3,7 @@
 #ifdef _MSC_VER
 #define REINDEX_USE_STD_SHARED_MUTEX 1
 #elif __cplusplus >= 201402
-// refuse to use std::shared_timed_mutex - it's much slower, than pthread_rwlock implementaion
+// refuse to use std::shared_timed_mutex - it's much slower, than pthread_rwlock implementaion on systems without VDSO
 // disable
 #define REINDEX_USE_STD_SHARED_MUTEX 0
 #else

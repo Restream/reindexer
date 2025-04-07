@@ -4,10 +4,10 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
-#include <memory>
 #include <mutex>
 
 #include "errors.h"
+#include "estl/shared_mutex.h"
 #include "tools/oscompat.h"
 
 namespace reindexer {
@@ -183,11 +183,11 @@ std::string GetCwd() {
 }
 
 static std::string tmpDir;
-static std::mutex tmpDirMtx;
+static shared_timed_mutex tmpDirMtx;
 
 std::string GetTempDir() {
 	{
-		std::lock_guard lck(tmpDirMtx);
+		shared_lock lck(tmpDirMtx);
 		if (!tmpDir.empty()) {
 			return tmpDir;
 		}

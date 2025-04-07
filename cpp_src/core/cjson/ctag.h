@@ -1,6 +1,7 @@
 #pragma once
 
 #include <limits>
+#include "core/enums.h"
 #include "core/type_consts.h"
 #include "tools/assertrx.h"
 
@@ -33,18 +34,18 @@ public:
 	static constexpr uint32_t kNameMask = (uint32_t(1) << kNameBits) - uint32_t(1);
 	static constexpr int kNameMax = (1 << kNameBits) - 1;
 
-	RX_ALWAYS_INLINE constexpr explicit ctag(TagType tagType) noexcept : ctag{tagType, 0} {}
-	RX_ALWAYS_INLINE constexpr ctag(TagType tagType, int tagName, int tagField = -1) noexcept
-		: tag_{(uint32_t(tagType) & kTypeMask) | (uint32_t(tagName) << kTypeBits) | (uint32_t(tagField + 1) << kFieldOffset) |
+	RX_ALWAYS_INLINE constexpr explicit ctag(TagType tagType) noexcept : ctag{tagType, TagName::Empty()} {}
+	RX_ALWAYS_INLINE constexpr ctag(TagType tagType, TagName tagName, int tagField = -1) noexcept
+		: tag_{(uint32_t(tagType) & kTypeMask) | (uint32_t(tagName.AsNumber()) << kTypeBits) | (uint32_t(tagField + 1) << kFieldOffset) |
 			   ((uint32_t(tagType) & kInvertedTypeMask) << kType1Offset)} {
-		assertrx(tagName >= 0);
-		assertrx(tagName <= kNameMax);
+		assertrx(tagName.AsNumber() >= 0);
+		assertrx(tagName.AsNumber() <= kNameMax);
 		assertrx(tagField >= -1);
 		assertrx(tagField + 1 < (1 << kFieldBits));
 	}
 
 	[[nodiscard]] RX_ALWAYS_INLINE constexpr TagType Type() const noexcept { return typeImpl(tag_); }
-	[[nodiscard]] RX_ALWAYS_INLINE constexpr int Name() const noexcept { return nameImpl(tag_); }
+	[[nodiscard]] RX_ALWAYS_INLINE constexpr TagName Name() const noexcept { return nameImpl(tag_); }
 	[[nodiscard]] RX_ALWAYS_INLINE constexpr int Field() const noexcept { return fieldImpl(tag_); }
 
 	[[nodiscard]] RX_ALWAYS_INLINE constexpr bool operator==(ctag other) const noexcept { return tag_ == other.tag_; }
@@ -60,7 +61,9 @@ private:
 	[[nodiscard]] RX_ALWAYS_INLINE constexpr static TagType typeImpl(uint32_t tag) noexcept {
 		return static_cast<TagType>((tag & kTypeMask) | ((tag >> kType1Offset) & kInvertedTypeMask));
 	}
-	[[nodiscard]] RX_ALWAYS_INLINE constexpr static int nameImpl(uint32_t tag) noexcept { return (tag >> kTypeBits) & kNameMask; }
+	[[nodiscard]] RX_ALWAYS_INLINE constexpr static TagName nameImpl(uint32_t tag) noexcept {
+		return TagName((tag >> kTypeBits) & kNameMask);
+	}
 	[[nodiscard]] RX_ALWAYS_INLINE constexpr static int fieldImpl(uint32_t tag) noexcept {
 		return int((tag >> kFieldOffset) & kFieldMask) - 1;
 	}

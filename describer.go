@@ -499,10 +499,6 @@ type DBNamespacesConfig struct {
 	LogLevel string `json:"log_level"`
 	// Join cache mode. Can be one of on, off, aggressive
 	JoinCacheMode string `json:"join_cache_mode"`
-	// Enable namespace lazy load (namespace shoud be loaded from disk on first call, not at reindexer startup)
-	Lazyload bool `json:"lazyload"`
-	// Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded
-	UnloadIdleThreshold int `json:"unload_idle_threshold"`
 	// Enable namespace copying for transaction with steps count greater than this value (if copy_politics_multiplier also allows this)
 	StartCopyPolicyTxSize int `json:"start_copy_policy_tx_size"`
 	// Disables copy policy if namespace size is greater than copy_policy_multiplier * start_copy_policy_tx_size
@@ -532,7 +528,7 @@ type DBNamespacesConfig struct {
 	// 0 - disables synchronous storage flush. In this case storage will be flushed in background thread only
 	// Default value is 20000
 	SyncStorageFlushLimit int `json:"sync_storage_flush_limit"`
-	// Delay between last namespace update background ANN-indexes storage cache creation. Storage cache is required for ANN-indexes for faster startup
+	// Delay between last namespace update and background ANN-indexes storage cache creation. Storage cache is required for ANN-indexes for faster startup
 	// 0 - disables background cache creation (cache will still be created on the database shutdown)
 	// Default value is 5000 ms
 	ANNStorageCacheBuildTimeoutMs int `json:"ann_storage_cache_build_timeout_ms"`

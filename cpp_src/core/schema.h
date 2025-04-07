@@ -138,7 +138,7 @@ public:
 	const PrefixTree::PrefixTreeNode* GetRoot() const noexcept { return &paths_.root_; }
 	static std::string AppendProtobufNumber(std::string_view json, int protobufNsNumber);
 
-	std::vector<int> MakeCsvTagOrdering(const TagsMatcher& tm) const;
+	std::vector<TagName> MakeCsvTagOrdering(const TagsMatcher& tm) const;
 	bool IsEmpty() const noexcept;
 
 private:

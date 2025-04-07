@@ -262,7 +262,7 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 	constexpr static size_t kM = 16;
 	constexpr static size_t kSelectThreads = 2;
 #if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN) || defined(RX_WITH_STDLIB_DEBUG)
-	constexpr static size_t kTransactions = 4;
+	constexpr static size_t kTransactions = 5;
 	constexpr static size_t kEfConsruction = 100;
 #else
 	constexpr static size_t kTransactions = 20;
@@ -317,7 +317,8 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 			if (id < 10 || rand() % 10) {
 				// Insert new item
 				auto item = newItem<kDimension>(kNsName, kFieldNameHnsw, id, emptyVectors);
-				expectedData[id] = std::string(item.GetJSON());
+				std::string json(item.GetJSON());
+				expectedData[id] = std::move(json);
 				auto err = tx.Upsert(std::move(item));
 				ASSERT_TRUE(err.ok()) << err.what();
 				++id;
@@ -327,8 +328,9 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 				// Update existing id
 				auto updID = rand() % id;
 				auto item = newItem<kDimension>(kNsName, kFieldNameHnsw, updID, emptyVectors);
+				std::string json(item.GetJSON());
 				if (auto found = expectedData.find(updID); found != expectedData.end()) {
-					found->second = std::string(item.GetJSON());
+					found->second = std::move(json);
 				}
 				auto err = tx.Update(std::move(item));
 				ASSERT_TRUE(err.ok()) << err.what();
@@ -356,7 +358,8 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 		while (totalNewItems < 201) {
 			// Insert more items to force multithreading insertion
 			auto item = newItem<kDimension>(kNsName, kFieldNameHnsw, id, emptyVectors);
-			expectedData[id] = std::string(item.GetJSON());
+			std::string json(item.GetJSON());
+			expectedData[id] = std::move(json);
 			auto err = tx.Insert(std::move(item));
 			ASSERT_TRUE(err.ok()) << err.what();
 			++id;
@@ -364,6 +367,7 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 		}
 		reindexer::QueryResults qr;
 		auto err = rt.reindexer->CommitTransaction(tx, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -610,11 +614,11 @@ TEST_F(FloatVector, SqlQuery) try {
 		Query query;
 		std::string sql;
 	} testData[]{{Query("ns"sv).WhereKNN("hnsw"sv, vec.View(), KnnSearchParams::Hnsw(4'291, 100'000)).SelectAllFields(),
-				  "SELECT *, vectors() FROM ns WHERE  KNN(hnsw, [" + vecStr + "], k=4291, ef=100000)"},
+				  "SELECT *, vectors() FROM ns WHERE KNN(hnsw, [" + vecStr + "], k=4291, ef=100000)"},
 				 {Query("ns"sv).WhereKNN("bf"sv, vec.View(), KnnSearchParams::BruteForce(8'184)).Select("vectors()"),
-				  "SELECT vectors() FROM ns WHERE  KNN(bf, [" + vecStr + "], k=8184)"},
+				  "SELECT vectors() FROM ns WHERE KNN(bf, [" + vecStr + "], k=8184)"},
 				 {Query("ns"sv).WhereKNN("ivf"sv, vec.View(), KnnSearchParams::Ivf(823, 5)).Select({"hnsw", "vectors()"}),
-				  "SELECT hnsw, vectors() FROM ns WHERE  KNN(ivf, [" + vecStr + "], k=823, nprobe=5)"}};
+				  "SELECT hnsw, vectors() FROM ns WHERE KNN(ivf, [" + vecStr + "], k=823, nprobe=5)"}};
 	for (const auto& [query, expectedSql] : testData) {
 		const auto generatedSql = query.GetSQL();
 		EXPECT_EQ(generatedSql, expectedSql);
@@ -1148,6 +1152,61 @@ TEST_P(FloatVector, UpdateIndex) try {
 			updateSomeData(HasIndex::No);
 			testQueryNoIndex();
 		}
+	}
+}
+CATCH_AND_ASSERT
+
+TEST_F(FloatVector, WhereCondIsNullIsNotNull) try {
+	const static std::string kNsName = "float_vector_cond_ns";
+	constexpr static size_t kDimension = 32;
+	constexpr static size_t kMaxElements = 1'000;
+
+	std::vector<std::pair<IndexType, IndexOpts>> indexOpts{
+		{IndexHnsw, IndexOpts{}.SetFloatVector(IndexHnsw, FloatVectorIndexOpts{}
+																.SetDimension(kDimension)
+																.SetM(16)
+																.SetEfConstruction(50)
+																.SetMetric(reindexer::VectorMetric::L2))},
+		{IndexVectorBruteforce, IndexOpts{}.SetFloatVector(IndexVectorBruteforce, FloatVectorIndexOpts{}
+																					.SetDimension(kDimension)
+																					.SetMetric(reindexer::VectorMetric::Cosine))},
+		{IndexIvf, IndexOpts{}.SetFloatVector(IndexIvf, FloatVectorIndexOpts{}
+															.SetDimension(kDimension)
+															.SetNCentroids(kMaxElements / 3)
+															.SetMetric(reindexer::VectorMetric::InnerProduct))}};
+	std::string nsName, idxName;
+	std::unordered_set<int> emptyVectors;
+	for (const auto& opts : indexOpts) {
+		idxName = indexName(opts.first);
+		nsName = kNsName + idxName;
+		rt.OpenNamespace(nsName);
+		rt.DefineNamespaceDataset(nsName, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0}});
+		rt.AddIndex(nsName, reindexer::IndexDef{idxName, {idxName}, opts.first, opts.second});
+
+		emptyVectors.clear();
+ 		upsertItems<kDimension>(nsName, idxName, 0, kMaxElements, emptyVectors);
+
+		auto qr = rt.Select(reindexer::Query(nsName).Where(idxName, CondEmpty, reindexer::VariantArray{}));
+		ASSERT_TRUE(qr.Count() > 0) << idxName;
+		ASSERT_EQ(emptyVectors.size(), qr.Count()) << idxName;
+		const auto deletedCount = deleteSomeItems(nsName, kMaxElements, emptyVectors);
+		ASSERT_TRUE(deletedCount > 0) << idxName;
+		qr = rt.Select(reindexer::Query(nsName).Where(idxName, CondEmpty, reindexer::VariantArray{}));
+		const auto isNullCount = qr.Count();
+		ASSERT_TRUE(isNullCount > 0) << idxName;
+		for (auto& it : qr) {
+			auto item = it.GetItem(false);
+			auto id = item["id"].As<int>();
+			ASSERT_TRUE(emptyVectors.end() != emptyVectors.find(id)) << idxName;
+		}
+		ASSERT_EQ(emptyVectors.size(), isNullCount) << idxName;
+		qr = rt.Select(reindexer::Query(nsName).Where(idxName, CondAny, reindexer::VariantArray{}));
+		for (auto& it : qr) {
+			auto item = it.GetItem(false);
+			auto id = item["id"].As<int>();
+			ASSERT_TRUE(emptyVectors.end() == emptyVectors.find(id)) << idxName;
+		}
+		ASSERT_EQ(qr.Count(), kMaxElements - isNullCount - deletedCount) << idxName;
 	}
 }
 CATCH_AND_ASSERT

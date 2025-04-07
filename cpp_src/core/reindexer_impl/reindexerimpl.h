@@ -14,10 +14,12 @@
 #include "estl/atomic_unique_ptr.h"
 #include "estl/fast_hash_map.h"
 #include "estl/h_vector.h"
+#include "estl/timed_mutex.h"
 #include "events/observer.h"
 #include "net/ev/ev.h"
 #include "tools/errors.h"
 #include "tools/filecontentwatcher.h"
+#include "tools/mutex_set.h"
 #include "tools/nsversioncounter.h"
 #include "tools/tcmallocheapwathcher.h"
 
@@ -31,7 +33,6 @@ class UpdatesFilters;
 namespace cluster {
 struct NodeData;
 class Clusterizator;
-class DataReplicator;
 class RoleSwitcher;
 class LeaderSyncThread;
 template <typename T>
@@ -42,7 +43,7 @@ struct RaftInfo;
 
 class ReindexerImpl {
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Reindexer>;
-	using StatsSelectMutex = MarkedMutex<std::timed_mutex, MutexMark::ReindexerStats>;
+	using StatsSelectMutex = MarkedMutex<timed_mutex, MutexMark::ReindexerStats>;
 	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::* MemFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const RdxContext& ctx, Arg arg, Args&&... args);
 	template <auto MemFn, typename Arg, typename... Args>
@@ -150,6 +151,7 @@ public:
 private:
 	using FilterNsNamesT = std::optional<h_vector<std::string, 6>>;
 	using ShardinConfigPtr = intrusive_ptr<intrusive_atomic_rc_wrapper<const cluster::ShardingConfig>>;
+	using NsCreationLockerT = MutexSet<RdxContext, MutexMark::StorageDirOps, 61>;
 
 	class BackgroundThread {
 	public:
@@ -194,6 +196,7 @@ private:
 		public:
 			NsWLock(Mutex& mtx, const RdxContext& ctx, bool isCL) : impl_(mtx, ctx), isClusterLck_(isCL) {}
 			void lock() { impl_.lock(); }
+			void lock(ignore_cancel_ctx flag) { impl_.lock(flag); }
 			void unlock() { impl_.unlock(); }
 			bool owns_lock() const { return impl_.owns_lock(); }
 			bool isClusterLck() const noexcept { return isClusterLck_; }
@@ -209,23 +212,42 @@ private:
 
 		RLockT RLock(const RdxContext& ctx) const { return RLockT(mtx_, ctx); }
 		WLockT DataWLock(const RdxContext& ctx) const {
-			const bool requireSync = !ctx.NoWaitSync() && ctx.GetOriginLSN().isEmpty();
 			WLockT lck(mtx_, ctx, true);
+			awaitSync(lck, ctx);
+			return lck;
+		}
+		WLockT SimpleWLock(const RdxContext& ctx) const { return WLockT(mtx_, ctx, false); }
+
+		NsCreationLockerT::Locks CreationLock(std::string_view name, const RdxContext& ctx) {
+			auto lck = nsCreationLocker_.Lock(name, ctx);
+			awaitSync(lck, ctx);
+			return lck;
+		}
+		NsCreationLockerT::Locks CreationLock(std::string_view name1, std::string_view name2, const RdxContext& ctx) {
+			auto lck = nsCreationLocker_.Lock(name1, name2, ctx);
+			awaitSync(lck, ctx);
+			return lck;
+		}
+
+	private:
+		template <typename LockT>
+		void awaitSync(LockT& lck, const RdxContext& ctx) const {
+			if (ctx.NoWaitSync() || !ctx.GetOriginLSN().isEmpty()) {
+				return;
+			}
 			auto clusterStatus = owner_.clusterStatus_;
 			const bool isFollowerDB = clusterStatus.role == ClusterizationStatus::Role::SimpleReplica ||
 									  clusterStatus.role == ClusterizationStatus::Role::ClusterReplica;
-			bool synchronized = isFollowerDB || !requireSync || syncer_.IsInitialSyncDone();
+			bool synchronized = isFollowerDB || syncer_.IsInitialSyncDone();
 			while (!synchronized) {
 				lck.unlock();
 				syncer_.AwaitInitialSync(ctx);
 				lck.lock();
 				synchronized = syncer_.IsInitialSyncDone();
 			}
-			return lck;
 		}
-		WLockT SimpleWLock(const RdxContext& ctx) const { return WLockT(mtx_, ctx, false); }
 
-	private:
+		NsCreationLockerT nsCreationLocker_;
 		mutable Mutex mtx_;
 		const cluster::IDataSyncer& syncer_;
 		ReindexerImpl& owner_;
@@ -263,8 +285,8 @@ private:
 	Namespace::Ptr getNamespaceNoThrow(std::string_view nsName, const RdxContext& ctx);
 	lsn_t setNsVersion(Namespace::Ptr& ns, const std::optional<NsReplicationOpts>& replOpts, const RdxContext& ctx);
 
-	Error openNamespace(std::string_view nsName, bool skipNameCheck, const StorageOpts& opts, std::optional<NsReplicationOpts> replOpts,
-						const RdxContext& ctx);
+	Error openNamespace(std::string_view nsName, IsDBInitCall isDBInitCall, const StorageOpts& opts,
+						std::optional<NsReplicationOpts> replOpts, const RdxContext& ctx);
 	std::vector<std::pair<std::string, Namespace::Ptr>> getNamespaces(const RdxContext& ctx);
 	std::vector<std::string> getNamespacesNames(const RdxContext& ctx);
 	Error renameNamespace(std::string_view srcNsName, const std::string& dstNsName, bool fromReplication = false, bool skipResync = false,
@@ -347,7 +369,6 @@ private:
 	ActivityContainer& activities_;
 
 	StorageType storageType_;
-	std::atomic<bool> autorepairEnabled_ = {false};
 	std::atomic<bool> replicationEnabled_ = {true};
 	std::atomic<bool> connected_ = {false};
 
@@ -359,7 +380,6 @@ private:
 	UpdatesObservers observers_;
 	std::optional<int> replCfgHandlerID_;
 
-	friend class cluster::DataReplicator;
 	friend class cluster::ReplThread<cluster::ClusterThreadParam>;
 	friend class ClusterProxy;
 	friend class sharding::LocatorServiceAdapter;

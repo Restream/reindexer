@@ -11,10 +11,11 @@
 
 namespace reindexer {
 
-class Namespace;
-class Schema;
-class Recoder;
 class MsgPackDecoder;
+class Namespace;
+class RdxContext;
+class Recoder;
+class Schema;
 
 class ItemImpl : public ItemImplRawData {
 	friend class Item;
@@ -42,7 +43,7 @@ public:
 	Variant GetField(int field);
 	void GetField(int field, VariantArray&);
 	FieldsSet PkFields() const { return pkFields_; }
-	int NameTag(std::string_view name) const { return tagsMatcher_.name2tag(name); }
+	TagName NameTag(std::string_view name) const { return tagsMatcher_.name2tag(name); }
 	int FieldIndex(std::string_view name) const {
 		int field = IndexValueType::NotSet;
 		payloadType_.FieldByName(name, field);
@@ -89,12 +90,14 @@ public:
 	static void validateModifyArray(const VariantArray& values);
 	void BuildTupleIfEmpty();
 	/**
-	 * @brief Copies vectros' values from indexes into ItemImpl::payloadValue.
+	 * @brief Copies vectors' values from indexes into ItemImpl::payloadValue.
 	 * Be default this method creates and stores full vector's data copy.
 	 * If item is marked 'unsafe', then resulting payload value will contain view, pointing into index structures directly
 	 * and any modification of those indexes may break the references.
 	 */
 	void CopyIndexedVectorsValuesFrom(IdType, const FloatVectorsIndexes&);
+
+	void Embed(const RdxContext& ctx);
 
 private:
 	ItemImpl(PayloadType, PayloadValue, const TagsMatcher&, std::shared_ptr<const Schema>, const FieldsFilter&);

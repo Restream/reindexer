@@ -1111,7 +1111,17 @@ void SQLParser::parseKnn(tokenizer& parser, OpType nextOp) {
 	}
 	tok = parser.next_token();
 	if (tok.text() != "["sv) {
-		throw Error(errParseSQL, "Expected '[', but found '{}', {}", tok.text(), parser.where());
+		if (tok.type == TokenString) {
+			std::string value(tok.text());
+			tok = parser.next_token();
+			if (tok.text() != ","sv) {
+				throw Error(errParseSQL, "Expected ',', but found '{}', {}", tok.text(), parser.where());
+			}
+			query_.NextOp(nextOp).WhereKNN(std::move(field), std::move(value), parseKnnParams(parser));
+			return; // NOTE: stop processing
+		}
+
+		throw Error(errParseSQL, "Expected '[' or ''', but found '{}', {}", tok.text(), parser.where());
 	}
 	std::vector<float> vec;
 	using namespace double_conversion;

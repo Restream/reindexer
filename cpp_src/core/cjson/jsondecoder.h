@@ -17,9 +17,9 @@ public:
 
 private:
 	void decodeJsonObject(const gason::JsonValue& root, CJsonBuilder&, FloatVectorsHolderVector&);
-	void decodeJsonObject(Payload& pl, CJsonBuilder&, const gason::JsonValue& v, FloatVectorsHolderVector&, bool match);
-	void decodeJson(Payload* pl, CJsonBuilder&, const gason::JsonValue& v, int tag, FloatVectorsHolderVector&, bool match);
-	bool isInArray() const noexcept { return arrayLevel_ > 0; }
+	void decodeJsonObject(Payload& pl, CJsonBuilder&, const gason::JsonValue& v, FloatVectorsHolderVector&, Matched);
+	void decodeJson(Payload* pl, CJsonBuilder&, const gason::JsonValue& v, TagName, FloatVectorsHolderVector&, Matched);
+	InArray isInArray() const noexcept { return InArray(arrayLevel_ > 0); }
 
 	TagsMatcher& tagsMatcher_;
 	TagsPath tagsPath_;

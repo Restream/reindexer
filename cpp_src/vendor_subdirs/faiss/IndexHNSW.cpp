@@ -148,8 +148,12 @@ void hnsw_add_vertices(
 
                 std::unique_ptr<DistanceComputer> dis(
                         storage_distance_computer(index_hnsw.storage));
+#ifdef FAISS_WITH_OPENMP
                 int prev_display =
                         verbose && omp_get_thread_num() == 0 ? 0 : -1;
+#else // !FAISS_WITH_OPENMP
+                int prev_display = -1;
+#endif // FAISS_WITH_OPENMP
                 size_t counter = 0;
 
                 // here we should do schedule(dynamic) but this segfaults for

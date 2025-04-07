@@ -27,7 +27,7 @@ type FtTyposDetailedConfig struct {
 	// Values range: [-1,100]
 	// Default: 0
 	MaxTypoDistance int `json:"max_typo_distance"`
-	// Maximum distance between same symbols in initial and target words to perform substitution (to handle cases, when two symbolws were switched with each other)
+	// Maximum distance between same symbols in initial and target words to perform substitution (to handle cases, when two symbols were switched with each other)
 	// Values range: [-1,100]
 	// Default: 1
 	MaxSymbolPermutationDistance int `json:"max_symbol_permutation_distance"`
@@ -46,11 +46,11 @@ type FtBaseRanking struct {
 	// Values range: [0,500]
 	// Default: 100
 	FullMatch int `json:"full_match_proc"`
-	// Mininum relevancy of prefix word match.
+	// Minimum relevancy of prefix word match.
 	// Values range: [0,500]
 	// Default: 50
 	PrefixMin int `json:"prefix_min_proc"`
-	// Mininum relevancy of suffix word match.
+	// Minimum relevancy of suffix word match.
 	// Values range: [0,500]
 	// Default: 10
 	SuffixMin int `json:"suffix_min_proc"`
@@ -94,7 +94,7 @@ type Bm25ConfigType struct {
 	Bm25Type string `json:"bm25_type"`
 }
 
-// FtFastConfig configurarion of FullText search index
+// FtFastConfig configuration of FullText search index
 type FtFastConfig struct {
 	// boost of bm25 ranking. default value 1.
 	Bm25Boost float64 `json:"bm25_boost"`
@@ -102,7 +102,7 @@ type FtFastConfig struct {
 	// 0: bm25 will not change final rank.
 	// 1: bm25 will affect to final rank in 0 - 100% range
 	Bm25Weight float64 `json:"bm25_weight"`
-	// boost of search query term distance in found document. default vaule 1
+	// boost of search query term distance in found document. default value 1
 	DistanceBoost float64 `json:"distance_boost"`
 	// weight of search query terms distance in found document in final rank.
 	// 0: distance will not change final rank.
@@ -132,7 +132,7 @@ type FtFastConfig struct {
 	// N: words with N possible typos will match
 	// Values range: [0,4]
 	// Default: 2
-	// It is not recommended to set more than 2 possible typo: It will serously increase RAM usage, and decrease search speed
+	// It is not recommended to set more than 2 possible typo: It will seriously increase RAM usage, and decrease search speed
 	MaxTypos int `json:"max_typos"`
 	// Maximum word length for building and matching variants with typos. Default value is 15
 	MaxTypoLen int `json:"max_typo_len"`
@@ -167,10 +167,10 @@ type FtFastConfig struct {
 	LogLevel int `json:"log_level"`
 	// Enable search by numbers as words and backwards
 	EnableNumbersSearch bool `json:"enable_numbers_search"`
-	// *DEPREEACTED* - all of the fulltex indexes will perform commit/warmup after copying transatcion
+	// *DEPRECATED* - all of the fulltex indexes will perform commit/warmup after copying transaction
 	// Enable auto index warmup after atomic namespace copy on transaction
 	EnableWarmupOnNsCopy bool `json:"enable_warmup_on_ns_copy"`
-	// Extra symbols, which will be threated as parts of word to addition to letters and digits
+	// Extra symbols, which will be treated as parts of word to addition to letters and digits
 	ExtraWordSymbols string `json:"extra_word_symbols"`
 	// Ratio of summation of ranks of match one term in several fields
 	SumRanksByFieldsRatio float64 `json:"sum_ranks_by_fields_ratio"`

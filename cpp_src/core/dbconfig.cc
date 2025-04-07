@@ -48,7 +48,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 			}
 		}
 
-		fast_hash_map<std::string, NamespaceConfigData, hash_str, equal_str, less_str> namespacesData;
+		fast_hash_map<std::string, NamespaceConfigData, nocase_hash_str, nocase_equal_str, nocase_less_str> namespacesData;
 		auto& namespacesNode = root["namespaces"];
 		if (!namespacesNode.empty()) {
 			std::string namespacesErrLogString;
@@ -372,9 +372,7 @@ std::ostream& operator<<(std::ostream& os, const ReplicationConfigData& data) {
 Error NamespaceConfigData::FromJSON(const gason::JsonNode& v) {
 	using namespace std::string_view_literals;
 	std::string errorString;
-	auto err = tryReadOptionalJsonValue(&errorString, v, "lazyload"sv, lazyLoad);
-	err = tryReadOptionalJsonValue(&errorString, v, "unload_idle_threshold"sv, noQueryIdleThreshold);
-	(void)err;	// ignored; Errors will be handled with errorString
+	Error err;
 
 	std::string stringVal(logLevelToString(logLevel));
 	if (tryReadOptionalJsonValue(&errorString, v, "log_level"sv, stringVal).ok()) {

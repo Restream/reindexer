@@ -36,11 +36,11 @@ class SelectIteratorContainer
 	: public ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysTrue,
 							ComparatorIndexed<bool>, ComparatorIndexed<int>, ComparatorIndexed<int64_t>, ComparatorIndexed<double>,
 							ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>,
-							ComparatorIndexed<Uuid>, EqualPositionComparator, ComparatorNotIndexed> {
+							ComparatorIndexed<Uuid>, ComparatorIndexed<FloatVector>, EqualPositionComparator, ComparatorNotIndexed> {
 	using Base = ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysTrue,
 								ComparatorIndexed<bool>, ComparatorIndexed<int>, ComparatorIndexed<int64_t>, ComparatorIndexed<double>,
 								ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>,
-								ComparatorIndexed<Uuid>, EqualPositionComparator, ComparatorNotIndexed>;
+								ComparatorIndexed<Uuid>, ComparatorIndexed<FloatVector>, EqualPositionComparator, ComparatorNotIndexed>;
 
 public:
 	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx* ctx = nullptr)
@@ -50,7 +50,7 @@ public:
 	bool HasIdsets() const;
 	// Check NOT or comparator must not be 1st
 	void CheckFirstQuery();
-	// Let iterators choose most effecive algorith
+	// Let iterators choose most effective algorith
 	void SetExpectMaxIterations(int expectedIterations);
 	void PrepareIteratorsForSelectLoop(QueryPreprocessor&, unsigned sortId, RankedTypeQuery, RankSortType, const NamespaceImpl&,
 									   SelectFunction::Ptr&, BaseFunctionCtx::Ptr&, const RdxContext&);
@@ -73,7 +73,7 @@ public:
 				RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIterator& sit) RX_POST_LMBD_ALWAYS_INLINE noexcept { return sit.distinct; },
 			Restricted<ComparatorNotIndexed,
-					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
+					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
 				[] RX_PRE_LMBD_ALWAYS_INLINE(const auto& comp) RX_POST_LMBD_ALWAYS_INLINE noexcept { return comp.IsDistinct(); }));
 	}
 	void ExplainJSON(int iters, JsonBuilder& builder, const std::vector<JoinedSelector>* js) const {
@@ -99,7 +99,7 @@ private:
 	double fullCost(std::span<unsigned> indexes, unsigned i, unsigned from, unsigned to, int expectedIterations) const noexcept;
 	double cost(std::span<unsigned> indexes, unsigned cur, int expectedIterations) const noexcept;
 	double cost(std::span<unsigned> indexes, unsigned from, unsigned to, int expectedIterations) const noexcept;
-	void moveJoinsToTheBeginingOfORs(std::span<unsigned> indexes, unsigned from, unsigned to);
+	void moveJoinsToTheBeginningOfORs(std::span<unsigned> indexes, unsigned from, unsigned to);
 	// Check idset must be 1st
 	static void checkFirstQuery(Container&);
 	template <bool reverse>
@@ -118,13 +118,14 @@ private:
 
 	SelectKeyResults processQueryEntry(const QueryEntry& qe, const NamespaceImpl& ns, StrictMode strictMode);
 	SelectKeyResults processQueryEntry(const QueryEntry& qe, bool enableSortIndexOptimize, const NamespaceImpl& ns, unsigned sortId,
-									   RankedTypeQuery, RankSortType, SelectFunction::Ptr& selectFnc, IsRanked&, bool& isIndexSparse,
+									   RankedTypeQuery, RankSortType, SelectFunction::Ptr& selectFnc, IsRanked&, IsSparse&,
 									   BaseFunctionCtx::Ptr&, QueryPreprocessor& qPreproc, const RdxContext&);
-	SelectKeyResult processKnnQueryEntry(const KnnQueryEntry& qe, const NamespaceImpl& ns, SelectFunction::Ptr&, BaseFunctionCtx::Ptr&);
+	SelectKeyResult processKnnQueryEntry(const KnnQueryEntry& qe, const NamespaceImpl& ns, SelectFunction::Ptr&, BaseFunctionCtx::Ptr&,
+										 const RdxContext& rdxCtx);
 	template <bool left>
 	void processField(FieldsComparator&, const QueryField&, const NamespaceImpl&) const;
 	void processJoinEntry(const JoinQueryEntry&, OpType);
-	void processQueryEntryResults(SelectKeyResults&&, OpType, const NamespaceImpl&, const QueryEntry&, IsRanked, bool isIndexSparse,
+	void processQueryEntryResults(SelectKeyResults&&, OpType, const NamespaceImpl&, const QueryEntry&, IsRanked, IsSparse,
 								  std::optional<OpType> nextOp);
 	using EqualPositions = h_vector<size_t, 4>;
 	void processEqualPositions(const std::vector<EqualPositions>& equalPositions, const NamespaceImpl& ns, const QueryEntries& queries);

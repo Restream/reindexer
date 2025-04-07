@@ -19,16 +19,16 @@ public:
 	ArraysStorage& operator=(const ArraysStorage&) = delete;
 	ArraysStorage& operator=(ArraysStorage&&) = delete;
 
-	CJsonBuilder& GetArray(int tagName, int field = IndexValueType::NotSet);
-	void UpdateArraySize(int tagName, int field);
+	CJsonBuilder& GetArray(TagName, int field = IndexValueType::NotSet);
+	void UpdateArraySize(TagName, int field);
 
 	void onAddObject();
 	void onObjectBuilt(CJsonBuilder& parent);
 
 private:
 	struct ArrayData {
-		ArrayData(TagsMatcher* _tm, int _tagName, int _field)
-			: field(_field), size(0), ser(), builder(ser, ObjType::TypeArray, _tm, _tagName) {}
+		ArrayData(TagsMatcher* tm, TagName tagName, int _field)
+			: field(_field), size(0), ser(), builder(ser, ObjType::TypeArray, tm, tagName) {}
 		ArrayData(const ArrayData&) = delete;
 		ArrayData(ArrayData&&) = delete;
 		ArrayData& operator=(const ArrayData&) = delete;
@@ -38,18 +38,19 @@ private:
 		WrSerializer ser;
 		CJsonBuilder builder;
 	};
-	h_vector<h_vector<int, 1>, 1> indexes_;
-	std::unordered_map<int, ArrayData> data_;
+	h_vector<h_vector<TagName, 1>, 1> indexes_;
+	std::unordered_map<TagName, ArrayData, TagName::Hash> data_;
 	TagsMatcher& tm_;
 };
 
 class CJsonProtobufObjectBuilder {
 public:
-	CJsonProtobufObjectBuilder(ArraysStorage& arraysStorage, WrSerializer& ser, TagsMatcher* tm = nullptr, int tagName = 0)
+	CJsonProtobufObjectBuilder(ArraysStorage& arraysStorage, WrSerializer& ser, TagsMatcher* tm = nullptr,
+							   TagName tagName = TagName::Empty())
 		: builder_(ser, ObjType::TypeObject, tm, tagName), arraysStorage_(arraysStorage) {
 		arraysStorage_.onAddObject();
 	}
-	CJsonProtobufObjectBuilder(CJsonBuilder& obj, int tagName, ArraysStorage& arraysStorage)
+	CJsonProtobufObjectBuilder(CJsonBuilder& obj, TagName tagName, ArraysStorage& arraysStorage)
 		: builder_(obj.Object(tagName)), arraysStorage_(arraysStorage) {
 		arraysStorage_.onAddObject();
 	}

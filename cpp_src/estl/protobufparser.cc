@@ -9,12 +9,12 @@ ProtobufValue ProtobufParser::ReadValue() {
 	bool isArray = false;
 	const uint64_t tag = object_.ser.GetVarUInt();
 	int tagType = (tag & kTypeMask);
-	int tagName = (tag >> kTypeBit);
+	TagName tagName = TagName(tag >> kTypeBit);
 	TagsPath currPath{object_.tagsPath};
 	currPath.push_back(tagName);
 	KeyValueType itemType = object_.schema.GetFieldType(currPath, isArray);
 	if (itemType.Is<KeyValueType::Undefined>()) {
-		throw Error(errParseProtobuf, "Field [{}] type is unknown: [{}]", tagName, itemType.Name());
+		throw Error(errParseProtobuf, "Field [{}] type is unknown: [{}]", tagName.AsNumber(), itemType.Name());
 	}
 	switch (tagType) {
 		case PBUF_TYPE_VARINT:
@@ -49,7 +49,7 @@ Variant ProtobufParser::ReadArrayItem(KeyValueType fieldType) {
 bool ProtobufParser::IsEof() const { return !(object_.ser.Pos() < object_.ser.Len()); }
 
 ProtobufValue::ProtobufValue() : value(), tagName(0), itemType(KeyValueType::Undefined{}), isArray(false) {}
-ProtobufValue::ProtobufValue(Variant&& _value, int _tagName, KeyValueType _itemType, bool _isArray)
+ProtobufValue::ProtobufValue(Variant&& _value, TagName _tagName, KeyValueType _itemType, bool _isArray)
 	: value(std::move(_value)), tagName(_tagName), itemType(_itemType), isArray(_isArray) {}
 
 }  // namespace reindexer

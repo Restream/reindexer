@@ -1,9 +1,9 @@
 #pragma once
 
 #include <span>
-#include "core/cjson/objtype.h"
 #include "core/cjson/tagslengths.h"
 #include "core/cjson/tagsmatcher.h"
+#include "core/enums.h"
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
 #include "vendor/msgpack/msgpack.h"
@@ -33,7 +33,7 @@ public:
 
 	void SetTagsMatcher(const TagsMatcher* tm) noexcept { tm_ = tm; }
 	MsgPackBuilder Raw(std::string_view, std::string_view) noexcept { return MsgPackBuilder(); }
-	MsgPackBuilder Raw(std::nullptr_t, std::string_view arg) { return Raw(std::string_view{}, arg); }
+	MsgPackBuilder Raw(std::string_view arg) noexcept { return Raw(std::string_view{}, arg); }
 
 	template <typename N, typename T>
 	void Array(N tagName, std::span<T> data, int /*offset*/ = 0) {
@@ -78,7 +78,7 @@ public:
 			return MsgPackBuilder(packer_, ObjType::TypeObjectArray, size);
 		}
 	}
-	void Array(int tagName, Serializer& ser, TagType, int count);
+	void Array(TagName, Serializer&, TagType, int count);
 
 	template <typename T>
 	MsgPackBuilder Object(T tagName, int size = KUnknownFieldSize) {
@@ -93,6 +93,7 @@ public:
 			return MsgPackBuilder(packer_, ObjType::TypeObject, size);
 		}
 	}
+	MsgPackBuilder Object() { return Object(std::string_view{}); }
 
 	template <typename T>
 	MsgPackBuilder& Null(T tagName) {
@@ -145,7 +146,7 @@ public:
 			[&](KeyValueType::Tuple) {
 				auto arrNode = Array(tagName);
 				for (auto& val : kv.getCompositeValues()) {
-					arrNode.Put(0, val, offset);
+					arrNode.Put(TagName::Empty(), val, offset);
 				}
 			},
 			[&](KeyValueType::Uuid) { packValue(Uuid{kv}); },
@@ -157,8 +158,34 @@ public:
 	}
 
 	MsgPackBuilder& Json(std::string_view name, std::string_view arg);
+	MsgPackBuilder& Json(std::string_view arg) { return Json(std::string_view{}, arg); }
 
 	MsgPackBuilder& End();
+
+	template <typename... Args>
+	void Object(int, Args...) = delete;
+	template <typename... Args>
+	void Object(std::nullptr_t, Args...) = delete;
+	template <typename... Args>
+	void Array(int, Args...) = delete;
+	template <typename... Args>
+	void Array(std::nullptr_t, Args...) = delete;
+	template <typename... Args>
+	void Put(int, Args...) = delete;
+	template <typename... Args>
+	void Put(std::nullptr_t, Args...) = delete;
+	template <typename... Args>
+	void Null(int, Args...) = delete;
+	template <typename... Args>
+	void Null(std::nullptr_t, Args...) = delete;
+	template <typename... Args>
+	void Raw(std::nullptr_t, Args...) = delete;
+	template <typename... Args>
+	void Raw(int, Args...) = delete;
+	template <typename... Args>
+	void Json(int, Args...) = delete;
+	template <typename... Args>
+	void Json(std::nullptr_t, Args...) = delete;
 
 private:
 	void init(int size);
@@ -193,8 +220,8 @@ private:
 
 	void checkIfCorrectArray(std::string_view) const {}
 
-	void checkIfCorrectArray(int tagName) const {
-		if (tagName == 0) {
+	void checkIfCorrectArray(TagName tagName) const {
+		if (tagName.IsEmpty()) {
 			throw Error(errLogic, "Arrays of arrays are not supported in cjson");
 		}
 	}
@@ -205,8 +232,8 @@ private:
 			packValue(name);
 		}
 	}
-	void packKeyName(int tagName) {
-		if (tagName != 0 && !isArray()) {
+	void packKeyName(TagName tagName) {
+		if (!tagName.IsEmpty() && !isArray()) {
 			packValue(tm_->tag2name(tagName));
 		}
 	}

@@ -89,6 +89,7 @@ type Reindexer struct {
 // IndexDef - Inddex  definition struct
 type IndexDef bindings.IndexDef
 
+// Float vector options
 type FloatVectorIndexOpts bindings.FloatVectorIndexOpts
 
 // Error - reindexer Error interface

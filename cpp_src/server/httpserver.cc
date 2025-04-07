@@ -1,11 +1,9 @@
 #include "httpserver.h"
 
-#include <sys/stat.h>
 #include "base64/base64.h"
 #include "core/cjson/csvbuilder.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/msgpackbuilder.h"
-#include "core/cjson/msgpackdecoder.h"
 #include "core/cjson/protobufbuilder.h"
 #include "core/cjson/protobufschemabuilder.h"
 #include "core/queryresults/tableviewbuilder.h"
@@ -125,7 +123,7 @@ int HTTPServer::GetSQLSuggest(http::Context& ctx) {
 	}
 
 	size_t bytePos = 0;
-	Error err = cursosPosToBytePos(sqlQuery, line, pos, bytePos);
+	Error err = cursorPosToBytePos(sqlQuery, line, pos, bytePos);
 	if (!err.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, err.whatStr()));
 	}
@@ -142,7 +140,7 @@ int HTTPServer::GetSQLSuggest(http::Context& ctx) {
 	reindexer::JsonBuilder builder(ser);
 	auto node = builder.Array("suggests");
 	for (auto& suggest : suggestions) {
-		node.Put(nullptr, suggest);
+		node.Put(reindexer::TagName::Empty(), suggest);
 	}
 	node.End();
 	builder.End();
@@ -261,7 +259,7 @@ int HTTPServer::GetDatabases(http::Context& ctx) {
 		builder.Put("total_items", dbs.size());
 		auto arrNode = builder.Array("items");
 		for (auto& db : dbs) {
-			arrNode.Put(nullptr, db);
+			arrNode.Put(reindexer::TagName::Empty(), db);
 		}
 	}
 
@@ -356,7 +354,7 @@ int HTTPServer::GetNamespaces(http::Context& ctx) {
 		builder.Put("total_items", nsDefs.size());
 		auto arrNode = builder.Array("items");
 		for (auto& nsDef : nsDefs) {
-			auto objNode = arrNode.Object(nullptr);
+			auto objNode = arrNode.Object();
 			objNode.Put("name", nsDef.name);
 		}
 	}
@@ -503,7 +501,7 @@ int HTTPServer::GetItems(http::Context& ctx) {
 
 		if (sortOrder == "desc") {
 			querySer << " DESC";
-		} else if ((sortOrder.size() > 0) && (sortOrder != "asc")) {
+		} else if (!sortOrder.empty() && (sortOrder != "asc")) {
 			return status(ctx, http::HttpStatus(http::StatusBadRequest, "Invalid `sort_order` parameter"));
 		}
 	}
@@ -570,7 +568,7 @@ int HTTPServer::GetMetaList(http::Context& ctx) {
 	unsigned offset = prepareOffset(offsetParam, 0);
 
 	std::vector<std::string> keys;
-	const Error err = db.EnumMeta(nsName, keys);
+	Error err = db.EnumMeta(nsName, keys);
 	if (!err.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(err));
 	}
@@ -600,7 +598,7 @@ int HTTPServer::GetMetaList(http::Context& ctx) {
 		objNode.Put("key", *keysIt);
 		if (withValues) {
 			std::string value;
-			const Error err = db.GetMeta(nsName, *keysIt, value);
+			err = db.GetMeta(nsName, *keysIt, value);
 			if (!err.ok()) {
 				return jsonStatus(ctx, http::HttpStatus(err));
 			}
@@ -695,7 +693,7 @@ int HTTPServer::GetIndexes(http::Context& ctx) {
 		builder.Put("total_items", nsDefs[0].indexes.size());
 		auto arrNode = builder.Array("items");
 		for (auto& idxDef : nsDefs[0].indexes) {
-			arrNode.Raw(nullptr, "");
+			arrNode.Raw("");
 			idxDef.GetJSON(ser);
 		}
 	}
@@ -1146,7 +1144,7 @@ int HTTPServer::modifyItemsJSON(http::Context& ctx, std::string& nsName, std::ve
 	if (!precepts.empty()) {
 		auto itemsArray = builder.Array(kParamItems);
 		for (const std::string& item : updatedItems) {
-			itemsArray.Raw(nullptr, item);
+			itemsArray.Raw(item);
 		}
 		itemsArray.End();
 	}
@@ -1392,7 +1390,7 @@ int HTTPServer::queryResultsJSON(http::Context& ctx, reindexer::QueryResults& re
 	const bool isWALQuery = res.IsWALQuery();
 	for (size_t i = 0; it != res.end() && i < limit; ++i, ++it) {
 		if (!isWALQuery) {
-			iarray.Raw(nullptr, "");
+			iarray.Raw("");
 			if (withColumns) {
 				itemSer.Reset();
 				const auto err = it.GetJSON(itemSer, false);
@@ -1408,7 +1406,7 @@ int HTTPServer::queryResultsJSON(http::Context& ctx, reindexer::QueryResults& re
 				}
 			}
 		} else {
-			auto obj = iarray.Object(nullptr);
+			auto obj = iarray.Object();
 			{
 				auto lsnObj = obj.Object(kWALParamLsn);
 				it.GetLSN().GetJSON(lsnObj);
@@ -1445,7 +1443,7 @@ int HTTPServer::queryResultsJSON(http::Context& ctx, reindexer::QueryResults& re
 	if (!aggs.empty()) {
 		auto arrNode = builder.Array(kParamAggregations);
 		for (auto& agg : aggs) {
-			arrNode.Raw(nullptr, "");
+			arrNode.Raw("");
 			agg.GetJSON(wrSer);
 		}
 	}
@@ -1606,13 +1604,13 @@ int HTTPServer::queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults
 	}
 	for (size_t i = offset; i < lres.Count() && i < offset + limit; i++) {
 		auto it = lres[i];
-		const auto err = it.GetProtobuf(wrSer, false);
+		auto err = it.GetProtobuf(wrSer, false);
 		if (!err.ok()) {
 			return ctx.Protobuf(err.code(), wrSer.DetachChunk());
 		}
 		if (withColumns) {
 			itemSer.Reset();
-			const auto err = it.GetJSON(itemSer, false);
+			err = it.GetJSON(itemSer, false);
 			if (!err.ok()) {
 				return ctx.Protobuf(err.code(), wrSer.DetachChunk());
 			}
@@ -1620,14 +1618,14 @@ int HTTPServer::queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults
 		}
 	}
 
-	int aggregationField = kProtoQueryResultsFields.at(kParamAggregations);
+	const TagName aggregationField = kProtoQueryResultsFields.at(kParamAggregations);
 	for (auto& agg : res.GetAggregationResults()) {
 		auto aggregation = protobufBuilder.Object(aggregationField);
 		agg.GetProtobuf(wrSer);
 		aggregation.End();
 	}
 
-	int nsField = kProtoQueryResultsFields.at(kParamNamespaces);
+	const TagName nsField = kProtoQueryResultsFields.at(kParamNamespaces);
 	h_vector<std::string_view, 1> namespaces(res.GetNamespaces());
 	for (auto ns : namespaces) {
 		protobufBuilder.Put(nsField, ns);
@@ -1657,12 +1655,12 @@ int HTTPServer::queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults
 		auto& columnsSettings = tableCalculator.GetColumnsSettings();
 		for (auto it = header.begin(); it != header.end(); ++it) {
 			ColumnData& data = columnsSettings[*it];
-			auto parameteresObj = protobufBuilder.Object(kProtoQueryResultsFields.at(kParamColumns));
-			parameteresObj.Put(kProtoColumnsFields.at(kParamName), *it);
-			parameteresObj.Put(kProtoColumnsFields.at(kParamWidthPercents), data.widthTerminalPercentage);
-			parameteresObj.Put(kProtoColumnsFields.at(kParamMaxChars), data.maxWidthCh);
-			parameteresObj.Put(kProtoColumnsFields.at(kParamWidthChars), data.widthCh);
-			parameteresObj.End();
+			auto parametersObj = protobufBuilder.Object(kProtoQueryResultsFields.at(kParamColumns));
+			parametersObj.Put(kProtoColumnsFields.at(kParamName), *it);
+			parametersObj.Put(kProtoColumnsFields.at(kParamWidthPercents), data.widthTerminalPercentage);
+			parametersObj.Put(kProtoColumnsFields.at(kParamMaxChars), data.maxWidthCh);
+			parametersObj.Put(kProtoColumnsFields.at(kParamWidthChars), data.widthCh);
+			parametersObj.End();
 		}
 	}
 
@@ -1676,7 +1674,7 @@ void HTTPServer::queryResultParams(Builder& builder, reindexer::QueryResults& re
 	h_vector<std::string_view, 1> namespaces(res.GetNamespaces());
 	auto namespacesArray = builder.Array(kParamNamespaces, namespaces.size());
 	for (auto ns : namespaces) {
-		namespacesArray.Put(nullptr, ns);
+		namespacesArray.Put(reindexer::TagName::Empty(), ns);
 	}
 	namespacesArray.End();
 
@@ -1704,11 +1702,11 @@ void HTTPServer::queryResultParams(Builder& builder, reindexer::QueryResults& re
 		auto headerArray = builder.Array(kParamColumns, header.size());
 		for (auto it = header.begin(); it != header.end(); ++it) {
 			ColumnData& data = columnsSettings[*it];
-			auto parameteresObj = headerArray.Object(nullptr, 4);
-			parameteresObj.Put(kParamName, *it);
-			parameteresObj.Put(kParamWidthPercents, data.widthTerminalPercentage);
-			parameteresObj.Put(kParamMaxChars, data.maxWidthCh);
-			parameteresObj.Put(kParamWidthChars, data.widthCh);
+			auto parametersObj = headerArray.Object(reindexer::TagName::Empty(), 4);
+			parametersObj.Put(kParamName, *it);
+			parametersObj.Put(kParamWidthPercents, data.widthTerminalPercentage);
+			parametersObj.Put(kParamMaxChars, data.maxWidthCh);
+			parametersObj.Put(kParamWidthChars, data.widthCh);
 		}
 	}
 }

@@ -1,5 +1,6 @@
 #include "payloadfieldtype.h"
 #include <sstream>
+#include "core/embedding/embedder.h"
 #include "core/index/index.h"
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/uuid.h"
@@ -8,7 +9,37 @@
 
 namespace reindexer {
 
-PayloadFieldType::PayloadFieldType(const Index& index, const IndexDef& indexDef) noexcept
+namespace {
+EmbedderConfig::Strategy convert(FloatVectorIndexOpts::EmbedderOpts::Strategy strategy) noexcept {
+	switch (strategy) {
+		case FloatVectorIndexOpts::EmbedderOpts::Strategy::Always:
+			return EmbedderConfig::Strategy::Always;
+		case FloatVectorIndexOpts::EmbedderOpts::Strategy::EmptyOnly:
+			return EmbedderConfig::Strategy::EmptyOnly;
+		case FloatVectorIndexOpts::EmbedderOpts::Strategy::Strict:
+			return EmbedderConfig::Strategy::Strict;
+	}
+	return {};
+}
+
+std::shared_ptr<Embedder> createEmbedder(std::string_view name, int idx, const FloatVectorIndexOpts::EmbedderOpts& opts) {
+	EmbedderConfig embedderCfg{
+		opts.cacheTag,
+		opts.fields,
+		convert(opts.strategy)
+	};
+	PoolConfig poolCfg{
+		opts.pool.connections,
+		opts.endpointUrl,
+		opts.pool.connect_timeout_ms,
+		opts.pool.read_timeout_ms,
+		opts.pool.write_timeout_ms
+	};
+	return std::make_shared<reindexer::Embedder>(name, idx, std::move(embedderCfg), std::move(poolCfg));
+}
+}
+
+PayloadFieldType::PayloadFieldType(int idx, const Index& index, const IndexDef& indexDef) noexcept
 	: type_(index.KeyType()),
 	  name_(indexDef.Name()),
 	  jsonPaths_(indexDef.JsonPaths()),
@@ -20,6 +51,17 @@ PayloadFieldType::PayloadFieldType(const Index& index, const IndexDef& indexDef)
 	if (index.IsFloatVector()) {
 		arrayDims_ = index.FloatVectorDimension().Value();
 		assertrx(type_.Is<KeyValueType::FloatVector>());
+
+		auto embedding = index.Opts().FloatVector().Embedding();
+		if (embedding.has_value()) {
+			const auto& cfg = embedding.value();
+			if (cfg.upsertEmbedder.has_value()) {
+				embedder_ = createEmbedder(name_, idx, cfg.upsertEmbedder.value());
+			}
+			if (cfg.queryEmbedder.has_value()) {
+				queryEmbedder_ = createEmbedder(name_, idx, cfg.queryEmbedder.value());
+			}
+		}
 	} else if (indexDef.IndexType() == IndexType::IndexRTree) {
 		arrayDims_ = 2;
 	}

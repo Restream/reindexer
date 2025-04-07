@@ -1,6 +1,5 @@
 #include "cjsondecoder.h"
 #include "cjsontools.h"
-#include "tagsmatcher.h"
 #include "tools/flagguard.h"
 #include "tools/serializer.h"
 
@@ -16,10 +15,10 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 		wrser.PutCTag(kCTagEnd);
 		return false;
 	}
-	int tagName = 0;
+	TagName tagName = TagName::Empty();
 	if constexpr (std::is_same_v<TagOptT, NamedTagOpt>) {
 		tagName = tag.Name();
-		assertrx_dbg(tagName);
+		assertrx_dbg(!tagName.IsEmpty());
 		// Check if tag exists
 		(void)tagsMatcher_.tag2name(tagName);
 		tagsPath_.emplace_back(tagName);
@@ -29,7 +28,7 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 		throwTagReferenceError(tag, pl);
 	}
 
-	const int field = tagsMatcher_.tags2field(tagsPath_.data(), tagsPath_.size());
+	const int field = tagsMatcher_.tags2field(tagsPath_);
 	if (field >= 0) {
 		const bool match = filter.contains(field);
 		if (match) {

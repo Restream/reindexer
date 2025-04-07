@@ -170,8 +170,13 @@ void compute_centroids(
 
 #pragma omp parallel
     {
+#ifdef FAISS_WITH_OPENMP
         int nt = omp_get_num_threads();
         int rank = omp_get_thread_num();
+#else
+        int nt = 1;
+        int rank = 0;
+#endif
 
         // this thread is taking care of centroids c0:c1
         size_t c0 = (k * rank) / nt;

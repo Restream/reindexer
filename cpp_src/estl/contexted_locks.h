@@ -14,6 +14,8 @@ namespace reindexer {
 
 constexpr milliseconds kDefaultCondChkTime = milliseconds(50);
 
+struct ignore_cancel_ctx {};
+
 template <typename _Mutex, typename Context>
 class [[nodiscard]] contexted_unique_lock {
 public:
@@ -74,6 +76,14 @@ public:
 		} else {
 			_M_mtx->lock();
 		}
+		_M_owns = true;
+	}
+	void lock(ignore_cancel_ctx) {
+		using namespace std::string_view_literals;
+		_M_lockable();
+		assertrx(_M_context);
+		const auto lockWard = _M_context->BeforeLock(_Mutex::mark);
+		_M_mtx->lock();
 		_M_owns = true;
 	}
 

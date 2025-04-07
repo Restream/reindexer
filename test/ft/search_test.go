@@ -104,12 +104,14 @@ func doFTIndexCopy(t *testing.T, indexType string) {
 		MustExec()
 	assert.Equal(t, dataCount, dbItems.Count())
 	assert.NoError(t, dbItems.Error())
+	dbItems.Close()
 
 	dbItems = rx.Query(namespace).
 		WhereString("text_field", reindexer.EQ, "trash_*", "").
 		Exec()
 	assert.Equal(t, thrashCount, dbItems.Count())
 	assert.NoError(t, dbItems.Error())
+	dbItems.Close()
 }
 
 func TestFTFastSearch(t *testing.T) {

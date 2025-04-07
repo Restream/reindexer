@@ -14,7 +14,7 @@ Error JsonDecoder::Decode(Payload& pl, WrSerializer& wrser, const gason::JsonVal
 		objectScalarIndexes_.reset();
 		tagsPath_.clear();
 		CJsonBuilder builder(wrser, ObjType::TypePlain, &tagsMatcher_);
-		decodeJson(&pl, builder, v, 0, floatVectorsHolder, true);
+		decodeJson(&pl, builder, v, TagName::Empty(), floatVectorsHolder, Matched_True);
 	}
 
 	catch (const Error& err) {
@@ -24,24 +24,24 @@ Error JsonDecoder::Decode(Payload& pl, WrSerializer& wrser, const gason::JsonVal
 }
 
 void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gason::JsonValue& v,
-								   FloatVectorsHolderVector& floatVectorsHolder, bool match) {
+								   FloatVectorsHolderVector& floatVectorsHolder, Matched matched) {
 	using namespace std::string_view_literals;
 	for (const auto& elem : v) {
-		int tagName = tagsMatcher_.name2tag(elem.key, true);
-		assertrx(tagName);
+		const TagName tagName = tagsMatcher_.name2tag(elem.key, CanAddField_True);
+		assertrx(!tagName.IsEmpty());
 		tagsPath_.emplace_back(tagName);
-		int field = tagsMatcher_.tags2field(tagsPath_.data(), tagsPath_.size());
+		const int field = tagsMatcher_.tags2field(tagsPath_);
 		if (filter_) {
 			if (field >= 0) {
-				match = filter_->contains(field);
+				matched = Matched(filter_->contains(field));
 			} else {
-				match = match && filter_->match(tagsPath_);
+				matched &= filter_->match(tagsPath_);
 			}
 		}
 
 		if (field < 0) {
-			decodeJson(&pl, builder, elem.value, tagName, floatVectorsHolder, match);
-		} else if (match) {
+			decodeJson(&pl, builder, elem.value, tagName, floatVectorsHolder, matched);
+		} else if (matched) {
 			// Indexed field. extract it
 			const auto& f = pl.Type().Field(field);
 			switch (elem.value.getTag()) {
@@ -104,10 +104,10 @@ void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gas
 // Split original JSON into 2 parts:
 // 1. PayloadFields - fields from json found by 'jsonPath' tags
 // 2. stripped binary packed JSON without fields values found by 'jsonPath' tags
-void JsonDecoder::decodeJson(Payload* pl, CJsonBuilder& builder, const gason::JsonValue& v, int tagName,
-							 FloatVectorsHolderVector& floatVectorsHolder, bool match) {
+void JsonDecoder::decodeJson(Payload* pl, CJsonBuilder& builder, const gason::JsonValue& v, TagName tagName,
+							 FloatVectorsHolderVector& floatVectorsHolder, Matched matched) {
 	auto jsonTag = v.getTag();
-	if (!match && jsonTag != gason::JsonTag::OBJECT) {
+	if (!matched && jsonTag != gason::JsonTag::OBJECT) {
 		return;
 	}
 	switch (jsonTag) {
@@ -136,14 +136,14 @@ void JsonDecoder::decodeJson(Payload* pl, CJsonBuilder& builder, const gason::Js
 			ObjType type = (gason::isHomogeneousArray(v)) ? ObjType::TypeArray : ObjType::TypeObjectArray;
 			auto arrNode = builder.Array(tagName, type);
 			for (const auto& elem : v) {
-				decodeJson(pl, arrNode, elem.value, 0, floatVectorsHolder, match);
+				decodeJson(pl, arrNode, elem.value, TagName::Empty(), floatVectorsHolder, matched);
 			}
 			break;
 		}
 		case gason::JsonTag::OBJECT: {
 			auto objNode = builder.Object(tagName);
 			if (pl) {
-				decodeJsonObject(*pl, objNode, v, floatVectorsHolder, match);
+				decodeJsonObject(*pl, objNode, v, floatVectorsHolder, matched);
 			} else {
 				decodeJsonObject(v, objNode, floatVectorsHolder);
 			}
@@ -157,7 +157,7 @@ void JsonDecoder::decodeJson(Payload* pl, CJsonBuilder& builder, const gason::Js
 
 class TagsPathGuard {
 public:
-	TagsPathGuard(TagsPath& tagsPath, int tagName) noexcept : tagsPath_(tagsPath) { tagsPath_.emplace_back(tagName); }
+	TagsPathGuard(TagsPath& tagsPath, TagName tagName) noexcept : tagsPath_(tagsPath) { tagsPath_.emplace_back(tagName); }
 	~TagsPathGuard() { tagsPath_.pop_back(); }
 
 public:
@@ -166,12 +166,12 @@ public:
 
 void JsonDecoder::decodeJsonObject(const gason::JsonValue& root, CJsonBuilder& builder, FloatVectorsHolderVector& floatVectorsHolder) {
 	for (const auto& elem : root) {
-		const int tagName = tagsMatcher_.name2tag(elem.key, true);
-		if (tagName == 0) {
+		const TagName tagName = tagsMatcher_.name2tag(elem.key, CanAddField_True);
+		if (tagName.IsEmpty()) {
 			throw Error(errParseJson, "Unsupported JSON format. Unnamed field detected");
 		}
 		TagsPathGuard tagsPathGuard(tagsPath_, tagName);
-		decodeJson(nullptr, builder, elem.value, tagName, floatVectorsHolder, true);
+		decodeJson(nullptr, builder, elem.value, tagName, floatVectorsHolder, Matched_True);
 	}
 }
 

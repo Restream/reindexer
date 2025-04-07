@@ -54,7 +54,6 @@ struct ServerConfig {
 	std::string SslCertPath;
 	std::string SslKeyPath;
 	bool StartWithErrors;
-	bool Autorepair;
 	bool AllowNamespaceLeak;
 #ifndef _WIN32
 	std::string UserName;

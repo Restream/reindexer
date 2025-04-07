@@ -1,6 +1,7 @@
 #include "variant.h"
 #include <charconv>
 #include <functional>
+#include <sstream>
 
 #include "core/payload/payloadiface.h"
 #include "estl/tuple_utils.h"
@@ -224,31 +225,35 @@ key_string Variant::As<key_string>() const {
 	if (isUuid()) {
 		return key_string{Uuid{*this}};
 	} else {
-		return variant_.type.EvaluateOneOf(
-			[&](KeyValueType::Int) { return make_key_string(std::to_string(variant_.value_int)); },
-			[&](KeyValueType::Bool) {
-				static const key_string kTrueKeyString = make_key_string("true");
-				static const key_string kFalseKeyString = make_key_string("false");
-				return variant_.value_bool ? kTrueKeyString : kFalseKeyString;
-			},
-			[&](KeyValueType::Int64) { return make_key_string(std::to_string(variant_.value_int64)); },
-			[&](KeyValueType::Double) { return make_key_string(double_to_str(variant_.value_double)); },
-			[&](KeyValueType::Float) { return make_key_string(float_to_str(variant_.value_float)); },
-			[&](KeyValueType::String) { return this->operator p_string().getKeyString(); },
-			[&](KeyValueType::Null) {
-				static const key_string kNullKeyString = make_key_string("null");
-				return kNullKeyString;
-			},
-			[this](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) -> key_string {
-				throw Error(errParams, "Can't convert '{}'-value to string", variant_.type.Name());
-			},
-			[&](KeyValueType::Tuple) {
-				auto va = getCompositeValues();
-				WrSerializer wrser;
-				va.Dump(wrser);
-				return make_key_string(wrser.Slice());
-			},
-			[&](KeyValueType::Uuid) { return key_string{Uuid{*this}}; });
+		return variant_.type.EvaluateOneOf([&](KeyValueType::Int) { return make_key_string(std::to_string(variant_.value_int)); },
+										   [&](KeyValueType::Bool) {
+											   static const key_string kTrueKeyString = make_key_string("true");
+											   static const key_string kFalseKeyString = make_key_string("false");
+											   return variant_.value_bool ? kTrueKeyString : kFalseKeyString;
+										   },
+										   [&](KeyValueType::Int64) { return make_key_string(std::to_string(variant_.value_int64)); },
+										   [&](KeyValueType::Double) { return make_key_string(double_to_str(variant_.value_double)); },
+										   [&](KeyValueType::Float) { return make_key_string(float_to_str(variant_.value_float)); },
+										   [&](KeyValueType::String) { return this->operator p_string().getKeyString(); },
+										   [&](KeyValueType::Null) {
+											   static const key_string kNullKeyString = make_key_string("null");
+											   return kNullKeyString;
+										   },
+										   [&](KeyValueType::FloatVector) {
+											   WrSerializer wser;
+											   float_vector_to_str(ConstFloatVectorView::FromUint64(variant_.value_uint64), wser);
+											   return make_key_string(wser.Slice());
+										   },
+										   [this](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) -> key_string {
+											   throw Error(errParams, "Can't convert '{}'-value to string", variant_.type.Name());
+										   },
+										   [&](KeyValueType::Tuple) {
+											   auto va = getCompositeValues();
+											   WrSerializer wrser;
+											   va.Dump(wrser);
+											   return make_key_string(wrser.Slice());
+										   },
+										   [&](KeyValueType::Uuid) { return key_string{Uuid{*this}}; });
 	}
 }
 
@@ -894,7 +899,7 @@ Variant& Variant::convert(KeyValueType type, const PayloadType* payloadType, con
 	type.EvaluateOneOf(
 		[&](KeyValueType::Int) { *this = Variant(As<int>()); }, [&](KeyValueType::Bool) { *this = Variant(As<bool>()); },
 		[&](KeyValueType::Int64) { *this = Variant(As<int64_t>()); }, [&](KeyValueType::Double) { *this = Variant(As<double>()); },
-		[&](KeyValueType::Float) { *this = Variant(As<float>()); }, [&](KeyValueType::String) { *this = Variant(As<std::string>()); },
+		[&](KeyValueType::Float) { *this = Variant(As<float>()); }, [&](KeyValueType::String) { *this = Variant(As<key_string>()); },
 		[&](KeyValueType::Composite) {
 			variant_.type.EvaluateOneOf(
 				[&](KeyValueType::Tuple) {

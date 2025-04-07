@@ -1,4 +1,5 @@
 #include "nsselecter.h"
+#include <sstream>
 
 #include "core/keyvalue/relaxed_variant_hash.h"
 #include "core/namespace/namespaceimpl.h"
@@ -258,7 +259,7 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 					std::get<SelectIteratorContainer>(preResult.payload).Append(qres.cbegin(), qres.cend());
 					if rx_unlikely (logLevel >= LogInfo) {
 						logFmt(LogInfo, "Built preResult (expected {} iterations) with {} iterators, q='{}'",
-								  preselectProps.qresMaxIterations, qres.Size(), ctx.query.GetSQL());
+							   preselectProps.qresMaxIterations, qres.Size(), ctx.query.GetSQL());
 					}
 					return;
 				} else {  // Build pre-result as single IdSet
@@ -298,13 +299,10 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 					   std::visit([](const auto& e) noexcept { return e.data.desc; }, ctx.sortingContext.entries[0]);
 
 		bool hasComparators = false;
-		qres.VisitForEach(
-			Skip<JoinSelectIterator, SelectIteratorsBracket, AlwaysTrue, SelectIterator>{},
-			[&hasComparators](
-				OneOf<FieldsComparator, EqualPositionComparator, ComparatorNotIndexed,
-					  Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>) noexcept {
-				hasComparators = true;
-			});
+		qres.VisitForEach(Skip<JoinSelectIterator, SelectIteratorsBracket, AlwaysTrue, SelectIterator>{},
+						  [&hasComparators](OneOf<FieldsComparator, EqualPositionComparator, ComparatorNotIndexed,
+												  Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point,
+														   Uuid, FloatVector>>) noexcept { hasComparators = true; });
 
 		if (!qres.HasIdsets()) {
 			SelectKeyResult scan;
@@ -354,11 +352,12 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 		qres.CheckFirstQuery();
 
 		// Rewind all results iterators
-		qres.VisitForEach(Skip<JoinSelectIterator, SelectIteratorsBracket, FieldsComparator, AlwaysTrue, EqualPositionComparator>{},
-						  Restricted<ComparatorNotIndexed,
-									 Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
-							  [](auto& comp) { comp.ClearDistinctValues(); }),
-						  [reverse, maxIterations](SelectIterator& it) { it.Start(reverse, maxIterations); });
+		qres.VisitForEach(
+			Skip<JoinSelectIterator, SelectIteratorsBracket, FieldsComparator, AlwaysTrue, EqualPositionComparator>{},
+			Restricted<ComparatorNotIndexed,
+					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
+				[](auto& comp) { comp.ClearDistinctValues(); }),
+			[reverse, maxIterations](SelectIterator& it) { it.Start(reverse, maxIterations); });
 
 		// Let iterators choose most efficient algorithm
 		assertrx_throw(qres.Size());
@@ -528,11 +527,11 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 		if rx_unlikely (logLevel >= LogTrace) {
 			std::visit(overloaded{[&](const IdSet& ids) {
 									  logFmt(LogInfo, "Built idset preResult (expected {} iterations) with {} ids, q = '{}'",
-												explain.Iterations(), ids.size(), ctx.query.GetSQL());
+											 explain.Iterations(), ids.size(), ctx.query.GetSQL());
 								  },
 								  [&](const JoinPreResult::Values& values) {
 									  logFmt(LogInfo, "Built values preResult (expected {} iterations) with {} values, q = '{}'",
-												explain.Iterations(), values.Size(), ctx.query.GetSQL());
+											 explain.Iterations(), values.Size(), ctx.query.GetSQL());
 								  },
 								  [](const SelectIteratorContainer&) { throw_as_assert; }},
 					   ctx.preSelect.Result().payload);
@@ -967,7 +966,7 @@ It NsSelecter::applyForcedSortImpl(NamespaceImpl& ns, It begin, It end, const It
 			for (const auto& value : forcedSortOrder) {
 				inserter.Insert(value.convert(fieldType));
 			}
-			// clang-tidy reports std::get_temporary_buffer as deprected
+			// clang-tidy reports std::get_temporary_buffer as deprecated
 			// NOLINTNEXTLINE (clang-diagnostic-deprecated-declarations)
 			const auto boundary = std::stable_partition(begin, end, ForcedPartitionerIndexed<desc, ValueGetter>{idx, valueGetter, sortMap});
 			const It from = desc ? boundary : begin;
@@ -984,7 +983,7 @@ It NsSelecter::applyForcedSortImpl(NamespaceImpl& ns, It begin, It end, const It
 				value.convert(fieldType, &payloadType, &fields);
 				inserter.Insert(static_cast<const PayloadValue&>(value));
 			}
-			// clang-tidy reports std::get_temporary_buffer as deprected
+			// clang-tidy reports std::get_temporary_buffer as deprecated
 			// NOLINTNEXTLINE (clang-diagnostic-deprecated-declarations)
 			const auto boundary = std::stable_partition(begin, end, ForcedPartitionerComposite<desc, ValueGetter>{valueGetter, sortMap});
 			const It from = desc ? boundary : begin;
@@ -998,7 +997,7 @@ It NsSelecter::applyForcedSortImpl(NamespaceImpl& ns, It begin, It end, const It
 		for (size_t i = 1, s = forcedSortOrder.size(); i < s; ++i) {
 			inserter.Insert(forcedSortOrder[i]);
 		}
-		// clang-tidy reports std::get_temporary_buffer as deprected
+		// clang-tidy reports std::get_temporary_buffer as deprecated
 		// NOLINTNEXTLINE (clang-diagnostic-deprecated-declarations)
 		const auto boundary = std::stable_partition(
 			begin, end, ForcedPartitionerNotIndexed<desc, ValueGetter>{fieldName, ns.tagsMatcher_, valueGetter, sortMap});
@@ -1116,7 +1115,7 @@ static void resultReserve(FtMergeStatuses&, size_t, IsRanked) {}
 
 template <bool reverse, bool hasComparators, bool aggregationsOnly, typename ResultsT, typename JoinPreResultCtx>
 void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, const RdxContext& rdxCtx) {
-	static constexpr bool kPreprocessingBeforFT = !std::is_same_v<ResultsT, LocalQueryResults>;
+	static constexpr bool kPreprocessingBeforeFT = !std::is_same_v<ResultsT, LocalQueryResults>;
 	static const JoinedSelectors emptyJoinedSelectors;
 	const auto selectLoopWard = rdxCtx.BeforeSelectLoop();
 	SelectCtxWithJoinPreSelect<JoinPreResultCtx>& sctx = ctx.sctx;
@@ -1124,7 +1123,7 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 	SelectIteratorContainer& qres = ctx.qres;
 	// Is not using during ft preprocessing
 	size_t initCount = 0;
-	if constexpr (!kPreprocessingBeforFT) {
+	if constexpr (!kPreprocessingBeforeFT) {
 		if constexpr (!std::is_same_v<JoinPreResultCtx, void>) {
 			if (auto* values = std::get_if<JoinPreResult::Values>(&sctx.preSelect.Result().payload); values) {
 				initCount = values->Size();
@@ -1200,9 +1199,9 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 					}
 				},
 				Restricted<ComparatorNotIndexed,
-						   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
+						   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
 					[&pv, properRowId](auto& comp) { comp.ExcludeDistinctValues(pv, properRowId); }));
-			if constexpr (!kPreprocessingBeforFT) {
+			if constexpr (!kPreprocessingBeforeFT) {
 				const RankT rank = rankedCtx_ ? rankedCtx_->Rank(firstIterator.Pos()) : 0.0;
 				if ((ctx.start || (ctx.count == 0)) && sortingOptions.multiColumnByBtreeIndex) {
 					VariantArray recentValues;
@@ -1257,7 +1256,7 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 		}
 	}
 
-	if constexpr (!kPreprocessingBeforFT) {
+	if constexpr (!kPreprocessingBeforeFT) {
 		bool toPreResultValues = false;
 		if constexpr (std::is_same_v<JoinPreResultCtx, JoinPreResultBuildCtx>) {
 			if (auto values = std::get_if<JoinPreResult::Values>(&sctx.preSelect.Result().payload); values) {
@@ -1438,7 +1437,7 @@ void NsSelecter::addSelectResult(RankT rank, IdType rowId, IdType properRowId, S
 		size_t sz = result.Count();
 		if (sz >= kLimitItems && !(sz % kLimitItems)) {
 			logFmt(LogWarning, "Too big query results ns='{}',count='{}',rowId='{}',q='{}'", ns_->name_, sz, properRowId,
-					  sctx.query.GetSQL());
+				   sctx.query.GetSQL());
 		}
 	}
 }
@@ -1751,19 +1750,20 @@ public:
 	}
 	void Add(const SelectKeyResults& results) noexcept {
 		std::visit(
-			overloaded{[this](const SelectKeyResultsVector& selRes) {
-						   for (const SelectKeyResult& res : selRes) {
-							   if (isInSequence_) {
-								   curCost_ += res.GetMaxIterations(totalCost_);
-							   } else {
-								   totalCost_ = res.GetMaxIterations(totalCost_);
-							   }
-						   }
-					   },
-					   [this](OneOf<ComparatorNotIndexed,
-									Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>) {
-						   hasInappositeEntries_ = true;
-					   }},
+			overloaded{
+				[this](const SelectKeyResultsVector& selRes) {
+					for (const SelectKeyResult& res : selRes) {
+						if (isInSequence_) {
+							curCost_ += res.GetMaxIterations(totalCost_);
+						} else {
+							totalCost_ = res.GetMaxIterations(totalCost_);
+						}
+					}
+				},
+				[this](OneOf<ComparatorNotIndexed,
+							 Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>) {
+					hasInappositeEntries_ = true;
+				}},
 			results.AsVariant());
 	}
 	size_t TotalCost() const noexcept { return totalCost_; }

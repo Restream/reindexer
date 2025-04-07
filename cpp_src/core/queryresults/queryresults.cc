@@ -1,10 +1,8 @@
 #include "queryresults.h"
-#include "core/index/index.h"
 #include "core/nsselecter/joinedselector.h"
 #include "core/query/query.h"
 #include "core/sorting/sortexpression.h"
 #include "core/type_consts.h"
-#include "estl/overloaded.h"
 #include "joinresults.h"
 #include "tools/catch_and_return.h"
 
@@ -12,7 +10,9 @@ namespace reindexer {
 
 struct QueryResults::MergedData {
 	MergedData(const std::string& ns, bool _haveRank, bool _needOutputRank)
-		: pt(ns, {PayloadFieldType(KeyValueType::String{}, "-tuple", {}, false)}), haveRank(_haveRank), needOutputRank(_needOutputRank) {}
+		: pt(ns, {PayloadFieldType(KeyValueType::String{}, "-tuple", {}, IsArray_False)}),
+		  haveRank(_haveRank),
+		  needOutputRank(_needOutputRank) {}
 
 	std::string nsName;
 	PayloadType pt;
@@ -593,27 +593,26 @@ Item QueryResults::Iterator::GetItem(bool enableHold) {
 			itemImpl.reset(new ItemImpl(remoteQr.GetPayloadType(nsId), remoteQr.GetTagsMatcher(nsId)));
 		}
 
-		Item item = std::visit(overloaded{[&](LocalQueryResults::ConstIterator& it) {
-											  assertrx_dbg(qr_->local_);
-											  // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-											  auto item =
-												  getItem(it, std::move(itemImpl), it.GetFieldsFilter(), !qr_->local_->hasCompatibleTm);
-											  item.setID(it.GetItemRef().Id());
-											  item.setLSN(it.GetItemRef().Value().GetLSN());
-											  item.setShardID(qr_->local_->shardID);
-											  return item;
-										  },
-										  [&](client::QueryResults::Iterator& it) {
-											  auto& remoteQr = *qr_->remote_[size_t(qr_->curQrId_)];
-											  auto item =
-												  getItem(it, std::move(itemImpl), !remoteQr.hasCompatibleTm || !remoteQr.qr.IsCJSON());
-											  item.setID(it.GetID());
-											  assertrx(!it.GetLSN().isEmpty());
-											  item.setLSN(it.GetLSN());
-											  item.setShardID(it.GetShardID());
-											  return item;
-										  }},
-							   vit);
+		Item item =
+			std::visit(overloaded{[&](LocalQueryResults::ConstIterator& it) {
+									  assertrx_dbg(qr_->local_);
+									  // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+									  auto item = getItem(it, std::move(itemImpl), it.GetFieldsFilter(), !qr_->local_->hasCompatibleTm);
+									  item.setID(it.GetItemRef().Id());
+									  item.setLSN(it.GetItemRef().Value().GetLSN());
+									  item.setShardID(qr_->local_->shardID);
+									  return item;
+								  },
+								  [&](client::QueryResults::Iterator& it) {
+									  auto& remoteQr = *qr_->remote_[size_t(qr_->curQrId_)];
+									  auto item = getItem(it, std::move(itemImpl), !remoteQr.hasCompatibleTm || !remoteQr.qr.IsCJSON());
+									  item.setID(it.GetID());
+									  assertrx(!it.GetLSN().isEmpty());
+									  item.setLSN(it.GetLSN());
+									  item.setShardID(it.GetShardID());
+									  return item;
+								  }},
+					   vit);
 		return item;
 	} catch (Error& e) {
 		return Item(e);
@@ -834,7 +833,7 @@ class QueryResults::CompositeFieldForceComparator {
 public:
 	CompositeFieldForceComparator(int index, const std::vector<Variant>& forcedSortOrder, const NamespaceImpl& ns) {
 		fields_.reserve(ns.indexes_[index]->Fields().size());
-		const auto& fields = ns.indexes_[index]->Fields();
+		const FieldsSet& fields = ns.indexes_[index]->Fields();
 		size_t jsonPathsIndex = 0;
 		for (size_t j = 0, s = fields.size(); j < s; ++j) {
 			const auto f = fields[j];
@@ -842,7 +841,7 @@ public:
 				fields_.emplace_back(ValuesByField{fields.getJsonPath(jsonPathsIndex++), f, {}});
 			} else {
 				assertrx(f < ns.indexes_.firstCompositePos());
-				fields_.emplace_back(ValuesByField{ns.tagsMatcher_.tag2name(f), f, {}});
+				fields_.emplace_back(ValuesByField{ns.indexes_[f]->Name(), f, {}});
 			}
 		}
 		assertrx(fields_.size() > 1);
@@ -1013,7 +1012,7 @@ public:
 							comparators_.emplace_back(FieldComparator{fields.getJsonPath(jsonPathsIndex++), f, ns, {}}, se.desc);
 						} else {
 							assertrx(f < ns.indexes_.firstCompositePos());
-							comparators_.emplace_back(FieldComparator{ns.tagsMatcher_.tag2name(f), f, ns, {}}, se.desc);
+							comparators_.emplace_back(FieldComparator{ns.indexes_[f]->Name(), f, ns, {}}, se.desc);
 						}
 					}
 				}

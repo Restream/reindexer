@@ -18,7 +18,7 @@ public:
 		if (opts.IsWithDBName()) {
 			ser_.PutVString(opts.DBName());
 		}
-		ser_.PutVString(std::string_view(rec.NsName()));
+		ser_.PutVString(rec.NsName());
 		ser_.PutVarint(int(rec.Type()));
 		if (opts.IsWithShardID()) {
 			ser_.PutVarint(opts.ShardID());

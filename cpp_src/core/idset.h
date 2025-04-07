@@ -67,20 +67,20 @@ public:
 	}
 
 	void Commit() const noexcept {}
-	bool IsCommited() const noexcept { return true; }
-	bool IsEmpty() const noexcept { return empty(); }
-	size_t Size() const noexcept { return size(); }
-	size_t BTreeSize() const noexcept { return 0; }
-	const base_idsetset* BTree() const noexcept { return nullptr; }
+	[[nodiscard]] bool IsCommitted() const noexcept { return true; }
+	[[nodiscard]] bool IsEmpty() const noexcept { return empty(); }
+	[[nodiscard]] size_t Size() const noexcept { return size(); }
+	[[nodiscard]] size_t BTreeSize() const noexcept { return 0; }
+	[[nodiscard]] const base_idsetset* BTree() const noexcept { return nullptr; }
 	void ReserveForSorted(int sortedIdxCount) { reserve(size() * (sortedIdxCount + 1)); }
-	std::string Dump() const;
+	[[nodiscard]] std::string Dump() const;
 
 	IdSetPlain(base_idset&& idset) noexcept : base_idset(std::move(idset)) {}
 };
 
 std::ostream& operator<<(std::ostream&, const IdSetPlain&);
 
-// maxmimum size of idset without building btree
+// maximum size of idset without building btree
 const int kMaxPlainIdsetSize = 16;
 
 class IdSet : public IdSetPlain {
@@ -88,7 +88,7 @@ class IdSet : public IdSetPlain {
 
 public:
 	using Ptr = intrusive_ptr<intrusive_atomic_rc_wrapper<IdSet>>;
-	IdSet() noexcept : usingBtree_(false) {}
+	IdSet() noexcept = default;
 	IdSet(const IdSet& other)
 		: IdSetPlain(other), set_(!other.set_ ? nullptr : new base_idsetset(*other.set_)), usingBtree_(other.usingBtree_.load()) {}
 	IdSet(IdSet&& other) noexcept : IdSetPlain(std::move(other)), set_(std::move(other.set_)), usingBtree_(other.usingBtree_.load()) {}
@@ -135,11 +135,11 @@ public:
 				return true;
 			}
 			return false;
-		} else {
-			resize(0);
-			usingBtree_.store(true, std::memory_order_release);
-			return set_->insert(id).second;
 		}
+
+		resize(0);
+		usingBtree_.store(true, std::memory_order_release);
+		return set_->insert(id).second;
 	}
 
 	void AddUnordered(IdType id) {
@@ -198,16 +198,24 @@ public:
 		}
 	}
 
+	[[nodiscard]] bool Find(IdType id) const {
+		if (!set_) {
+			return (std::find(begin(), end(), id) != end());
+		}
+
+		return (set_->find(id) != set_->end());
+	}
+
 	int Erase(IdType id) {
 		if (!set_) {
 			auto d = std::equal_range(begin(), end(), id);
 			base_idset::erase(d.first, d.second);
 			return d.second - d.first;
-		} else {
-			clear<false>();
-			usingBtree_.store(true, std::memory_order_release);
-			return set_->erase(id);
 		}
+
+		clear<false>();
+		usingBtree_.store(true, std::memory_order_release);
+		return set_->erase(id);
 	}
 	void Commit() {
 		if (!size() && set_) {
@@ -219,11 +227,11 @@ public:
 
 		usingBtree_.store(false, std::memory_order_release);
 	}
-	bool IsCommited() const noexcept { return !usingBtree_.load(std::memory_order_acquire); }
-	bool IsEmpty() const noexcept { return empty() && (!set_ || set_->empty()); }
-	size_t Size() const noexcept { return usingBtree_.load(std::memory_order_acquire) ? set_->size() : size(); }
-	size_t BTreeSize() const noexcept { return set_ ? sizeof(*set_.get()) + set_->size() * sizeof(int) : 0; }
-	const base_idsetset* BTree() const noexcept { return set_.get(); }
+	[[nodiscard]] bool IsCommitted() const noexcept { return !usingBtree_.load(std::memory_order_acquire); }
+	[[nodiscard]] bool IsEmpty() const noexcept { return empty() && (!set_ || set_->empty()); }
+	[[nodiscard]] size_t Size() const noexcept { return usingBtree_.load(std::memory_order_acquire) ? set_->size() : size(); }
+	[[nodiscard]] size_t BTreeSize() const noexcept { return set_ ? sizeof(*set_.get()) + set_->size() * sizeof(int) : 0; }
+	[[nodiscard]] const base_idsetset* BTree() const noexcept { return set_.get(); }
 	void ReserveForSorted(int sortedIdxCount) { reserve(((set_ ? set_->size() : size())) * (sortedIdxCount + 1)); }
 
 protected:
@@ -232,10 +240,10 @@ protected:
 	template <typename>
 	friend class BtreeIndexReverseIteratorImpl;
 
-	IdSet(base_idset&& idset) noexcept : IdSetPlain(std::move(idset)), usingBtree_(false) {}
+	explicit IdSet(base_idset&& idset) noexcept : IdSetPlain(std::move(idset)) {}
 
 	std::unique_ptr<base_idsetset> set_;
-	std::atomic<bool> usingBtree_;
+	std::atomic_bool usingBtree_{false};
 };
 
 using IdSetRef = std::span<IdType>;

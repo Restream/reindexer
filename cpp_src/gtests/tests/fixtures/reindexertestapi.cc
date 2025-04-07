@@ -208,11 +208,14 @@ ReplicationTestState ReindexerTestApi<DB>::GetReplicationState(std::string_view 
 				EXPECT_TRUE(false) << "Unable to parse cluster status: " << ser.Slice();
 			}
 
-			/*		TestCout() << "\n"
-						  << std::hex << "lsn = " << int64_t(state.lsn) << std::dec << " dataCount = " << state.dataCount
-						  << " dataHash = " << state.dataHash << " [" << ser.c_str() << "]\n"
-						  << std::endl;
-			*/
+#if 0
+			std::ostringstream os;
+			os << "\n"
+			   << "lsn = " << int64_t(state.lsn) << std::dec << " dataCount = " << state.dataCount << " dataHash = " << state.dataHash
+			   << " [" << ser.Slice() << "]\n"
+			   << std::endl;
+			TestCout() << os.str();
+#endif
 		}
 	}
 	{

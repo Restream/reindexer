@@ -1024,9 +1024,9 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 			{
 				auto data0 = json.Array(fmt::format("Array_level0_id_{}", id));
 				for (int i = 0; i < 5; ++i) {
-					data0.Put(nullptr, fmt::format("array_data_0_{}", i));
+					data0.Put(reindexer::TagName::Empty(), fmt::format("array_data_0_{}", i));
 				}
-				data0.Put(nullptr, std::string("\"arr_quoted_field(\"this is quoted too\")\""));
+				data0.Put(reindexer::TagName::Empty(), std::string("\"arr_quoted_field(\"this is quoted too\")\""));
 			}
 			{
 				auto data0 = json.Object(fmt::format("Object_level0_id_{}", id));

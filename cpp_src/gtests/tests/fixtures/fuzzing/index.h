@@ -3,6 +3,7 @@
 #include <string>
 #include <variant>
 #include <vector>
+#include "core/enums.h"
 #include "types.h"
 
 namespace reindexer {
@@ -22,9 +23,9 @@ public:
 	};
 	using Children = std::vector<Child>;
 
-	Index(std::string name, IndexType type, IsArrayT isArray, IsSparseT isSparse, Children content) noexcept
+	Index(std::string name, IndexType type, reindexer::IsArray isArray, reindexer::IsSparse isSparse, Children content) noexcept
 		: name_{std::move(name)}, type_{type}, content_{std::move(content)}, isArray_{isArray}, isSparse_{isSparse} {}
-	Index(std::string name, IndexType type, IsArrayT isArray, IsSparseT isSparse, Child content) noexcept
+	Index(std::string name, IndexType type, reindexer::IsArray isArray, reindexer::IsSparse isSparse, Child content) noexcept
 		: name_{std::move(name)}, type_{type}, content_{std::move(content)}, isArray_{isArray}, isSparse_{isSparse} {}
 
 	const std::string& Name() const& noexcept { return name_; }
@@ -32,10 +33,10 @@ public:
 	IndexType Type() const noexcept { return type_; }
 	const auto& Content() const& noexcept { return content_; }
 	const auto& Content() const&& = delete;
-	bool IsPk() const noexcept { return isPk_; }
-	void SetPk() noexcept { isPk_ = true; }
-	bool IsArray() const noexcept { return isArray_ == IsArrayT::Yes; }
-	auto IsSparse() const noexcept { return isSparse_; }
+	reindexer::IsPk IsPk() const noexcept { return isPk_; }
+	void SetPk() noexcept { isPk_ = reindexer::IsPk_True; }
+	reindexer::IsArray IsArray() const noexcept { return isArray_; }
+	reindexer::IsSparse IsSparse() const noexcept { return isSparse_; }
 
 	reindexer::IndexDef IndexDef(RandomGenerator&, const NsScheme&, const std::vector<Index>&) const;
 
@@ -45,9 +46,9 @@ private:
 	std::string name_;
 	IndexType type_;
 	std::variant<Child, Children> content_;
-	bool isPk_{false};
-	IsArrayT isArray_{IsArrayT::No};
-	IsSparseT isSparse_{IsSparseT::No};
+	reindexer::IsPk isPk_{reindexer::IsPk_False};
+	reindexer::IsArray isArray_{reindexer::IsArray_False};
+	reindexer::IsSparse isSparse_{reindexer::IsSparse_False};
 };
 
 }  // namespace fuzzing

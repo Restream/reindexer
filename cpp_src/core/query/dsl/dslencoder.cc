@@ -78,7 +78,7 @@ static void encodeEqualPositions(const EqualPositions_t& equalPositions, JsonBui
 		auto epNodePosition = epNodePositions.Object(std::string_view());
 		auto epNodePositionArr = epNodePosition.Array("positions"sv);
 		for (const auto& field : eqPos) {
-			epNodePositionArr.Put(nullptr, field);
+			epNodePositionArr.Put(TagName::Empty(), field);
 		}
 	}
 }
@@ -107,20 +107,20 @@ static void encodeSelectFilter(const FieldsNamesFilter& filter, JsonBuilder& bui
 		return;
 	}
 	if (filter.AllRegularFields() && !filter.OnlyAllRegularFields()) {
-		arrNode.Put(nullptr, FieldsNamesFilter::kAllRegularFieldsName);
+		arrNode.Put(TagName::Empty(), FieldsNamesFilter::kAllRegularFieldsName);
 	}
 	for (const auto& str : filter.Fields()) {
-		arrNode.Put(nullptr, str);
+		arrNode.Put(TagName::Empty(), str);
 	}
 	if (filter.AllVectorFields()) {
-		arrNode.Put(nullptr, FieldsNamesFilter::kAllVectorFieldsName);
+		arrNode.Put(TagName::Empty(), FieldsNamesFilter::kAllVectorFieldsName);
 	}
 }
 
 static void encodeSelectFunctions(const Query& query, JsonBuilder& builder) {
 	auto arrNode = builder.Array("select_functions"sv);
 	for (auto& str : query.selectFunctions_) {
-		arrNode.Put(nullptr, str);
+		arrNode.Put(TagName::Empty(), str);
 	}
 }
 
@@ -153,7 +153,7 @@ static void encodeAggregationFunctions(const Query& query, JsonBuilder& builder)
 		}
 		auto fldNode = aggNode.Array("fields"sv);
 		for (const auto& field : entry.Fields()) {
-			fldNode.Put(nullptr, field);
+			fldNode.Put(TagName::Empty(), field);
 		}
 	}
 }
@@ -193,7 +193,7 @@ static void putValues(JsonBuilder& builder, const VariantArray& values) {
 	} else if (values.size() > 1 || values[0].Type().Is<KeyValueType::Tuple>()) {
 		auto arrNode = builder.Array("value"sv);
 		for (const Variant& kv : values) {
-			arrNode.Put(nullptr, kv);
+			arrNode.Put(TagName::Empty(), kv);
 		}
 	} else {
 		builder.Put("value"sv, values[0]);
@@ -213,7 +213,7 @@ static void encodeDropFields(const Query& query, JsonBuilder& builder) {
 	auto dropFields = builder.Array("drop_fields"sv);
 	for (const UpdateEntry& updateEntry : query.UpdateFields()) {
 		if (updateEntry.Mode() == FieldModeDrop) {
-			dropFields.Put(0, updateEntry.Column());
+			dropFields.Put(TagName::Empty(), updateEntry.Column());
 		}
 	}
 }
@@ -223,7 +223,7 @@ static void encodeUpdateFields(const Query& query, JsonBuilder& builder) {
 	for (const UpdateEntry& updateEntry : query.UpdateFields()) {
 		if (updateEntry.Mode() == FieldModeSet || updateEntry.Mode() == FieldModeSetJson) {
 			bool isObject = (updateEntry.Mode() == FieldModeSetJson);
-			auto field = updateFields.Object(0);
+			auto field = updateFields.Object();
 			if (isObject) {
 				field.Put("type"sv, "object"sv);
 			} else if (updateEntry.IsExpression()) {
@@ -236,9 +236,9 @@ static void encodeUpdateFields(const Query& query, JsonBuilder& builder) {
 			auto values = field.Array("values"sv);
 			for (const Variant& v : updateEntry.Values()) {
 				if (isObject) {
-					values.Json(nullptr, p_string(v));
+					values.Json(p_string(v));
 				} else {
-					values.Put(0, v);
+					values.Put(TagName::Empty(), v);
 				}
 			}
 		}
@@ -285,14 +285,10 @@ static void toDsl(const Query& query, QueryScope scope, JsonBuilder& builder) {
 			bool withDropEntries = false, withUpdateEntries = false;
 			for (const UpdateEntry& updateEntry : query.UpdateFields()) {
 				if (updateEntry.Mode() == FieldModeDrop) {
-					if (!withDropEntries) {
-						withDropEntries = true;
-					}
+					withDropEntries = true;
 				}
 				if (updateEntry.Mode() == FieldModeSet || updateEntry.Mode() == FieldModeSetJson) {
-					if (!withUpdateEntries) {
-						withUpdateEntries = true;
-					}
+					withUpdateEntries = true;
 				}
 			}
 			if (withDropEntries) {
@@ -376,21 +372,7 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 				node.Put("first_field"sv, qe.LeftFieldName());
 				node.Put("second_field"sv, qe.RightFieldName());
 			},
-			[&node](const KnnQueryEntry& qe) {
-				node.Put("cond"sv, "knn"sv);
-				node.Put("field"sv, qe.FieldName());
-				{
-					auto valuesArray = node.Array("value"sv);
-					const auto values = qe.Value().Span();
-					for (const auto v : values) {
-						valuesArray.Put({}, v);
-					}
-				}
-				{
-					auto params = node.Object("params"sv);
-					qe.Params().ToDsl(params);
-				}
-			});
+			[&node](const KnnQueryEntry& qe) { qe.ToDsl(node); });
 	}
 }
 

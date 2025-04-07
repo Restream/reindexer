@@ -380,7 +380,7 @@ void ClusterDataReplicator::stop() {
 		updatesQueue_.ReinitSyncQueue(statsCollector_, std::optional<NsNamesHashSetT>(), log_);
 		sharedSyncState_.SetTerminated();
 		syncList_.Clear();
-		statsCollector_.Reset();
+		statsCollector_.Clear();
 
 		terminate_ = false;
 		raftManager_.SetTerminateFlag(false);

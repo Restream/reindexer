@@ -38,6 +38,9 @@ void ApiTvSimpleComparators::RegisterAllCases() {
 	Register("Query4CondRange", &ApiTvSimpleComparators::Query4CondRange, this);
 	Register("Query4CondRangeTotal", &ApiTvSimpleComparators::Query4CondRangeTotal, this);
 	Register("Query4CondRangeCachedTotal", &ApiTvSimpleComparators::Query4CondRangeCachedTotal, this);
+
+	Register("QueryDistinctOneField", &ApiTvSimpleComparators::QueryDistinctOneField, this);
+	Register("QueryDistinctOneFieldLimit", &ApiTvSimpleComparators::QueryDistinctOneFieldLimit, this);
 	// NOLINTEND(*cplusplus.NewDeleteLeaks)
 }
 
@@ -563,6 +566,32 @@ void ApiTvSimpleComparators::Query4CondRangeCachedTotal(benchmark::State& state)
 			.Where("end_time", CondLt, endTime)
 			.CachedTotal();
 
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+	}
+}
+
+void ApiTvSimpleComparators::QueryDistinctOneField(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Distinct("year");
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+	}
+}
+
+void ApiTvSimpleComparators::QueryDistinctOneFieldLimit(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Distinct("year").Limit(20);
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {

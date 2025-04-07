@@ -127,7 +127,7 @@ void AsyncDataReplicator::stop() {
 			th.AwaitTermination();
 		}
 		replThreads_.clear();
-		statsCollector_.Reset();
+		statsCollector_.Clear();
 		updatesQueue_.GetAsyncQueue()->SetWritable(false, Error());
 		updatesQueue_.ReinitAsyncQueue(statsCollector_, std::optional<NsNamesHashSetT>(), log_);
 	}

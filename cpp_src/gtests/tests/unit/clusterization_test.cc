@@ -366,6 +366,7 @@ static bool ValidateStatsOnTestEnding(int leaderId, int kTransitionServer, const
 				O_EXPECT_EQ(withAssertion, nodeStat.status, cluster::NodeStats::Status::Online)
 				O_EXPECT_EQ(withAssertion, nodeStat.syncState, cluster::NodeStats::SyncState::OnlineReplication)
 				O_EXPECT_EQ(withAssertion, nodeStat.isSynchronized, true)
+				O_EXPECT_EQ(withAssertion, nodeStat.lastError, Error())
 				if (nodeStat.serverId == leaderId) {
 					O_EXPECT_EQ(withAssertion, nodeStat.role, cluster::RaftInfo::Role::Leader)
 				} else {
@@ -378,6 +379,7 @@ static bool ValidateStatsOnTestEnding(int leaderId, int kTransitionServer, const
 				O_EXPECT_EQ(withAssertion, nodeStat.syncState, cluster::NodeStats::SyncState::AwaitingResync)
 				O_EXPECT_EQ(withAssertion, nodeStat.role, cluster::RaftInfo::Role::None)
 				O_EXPECT_EQ(withAssertion, nodeStat.isSynchronized, false)
+				O_EXPECT_EQ(withAssertion, nodeStat.lastError.code(), errNetwork);
 				offlineNodes.erase(nodeStat.serverId);
 			} else {
 				EXPECT_TRUE(false) << "Unexpected server id: " << nodeStat.serverId << "; json: " << wser.Slice();
@@ -388,6 +390,17 @@ static bool ValidateStatsOnTestEnding(int leaderId, int kTransitionServer, const
 		O_EXPECT_EQ(withAssertion, offlineNodes.size(), 0)
 	}
 	return true;
+}
+
+static cluster::ReplicationStats& nullifyUpdatesStats(cluster::ReplicationStats& stats) {
+	stats.pendingUpdatesCount = 0;
+	stats.allocatedUpdatesCount = 0;
+	stats.allocatedUpdatesSizeBytes = 0;
+	for (auto& node : stats.nodeStats) {
+		node.updatesCount = 0;
+		node.lastError = Error();
+	}
+	return stats;
 }
 
 TEST_F(ClusterizationApi, InitialLeaderSync) {
@@ -496,9 +509,9 @@ TEST_F(ClusterizationApi, InitialLeaderSync) {
 		for (auto nodeId : kFirstNodesGroup) {
 			serFollower.Reset();
 			auto followerStats = cluster.GetNode(nodeId)->GetReplicationStats(cluster::kClusterReplStatsType);
-			SCOPED_TRACE(fmt::format("Follower's stats: {}", serFollower.Slice()));
 			followerStats.GetJSON(serFollower);
-			EXPECT_EQ(stats, followerStats) << "Server id: " << nodeId;
+			SCOPED_TRACE(fmt::format("Follower's stats: {}", serFollower.Slice()));
+			EXPECT_EQ(nullifyUpdatesStats(stats), nullifyUpdatesStats(followerStats)) << "Server id: " << nodeId;
 		}
 	});
 
@@ -868,6 +881,7 @@ TEST_F(ClusterizationApi, NamespaceVersioning) {
 			if (awaitLeader) {
 				leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 				EXPECT_NE(leaderId, -1);
+				TestCout() << "Leader id is " << leaderId << std::endl;
 			}
 			if (drop) {
 				cluster.DropNs(leaderId, kNsName);

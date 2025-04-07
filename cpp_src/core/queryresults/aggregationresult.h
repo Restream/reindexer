@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include "core/keyvalue/variant.h"
@@ -10,7 +11,6 @@
 #include "core/type_consts_helpers.h"
 #include "estl/expected.h"
 #include "estl/h_vector.h"
-#include <span>
 
 struct msgpack_object;
 struct MsgPackValue;
@@ -90,11 +90,11 @@ struct AggregationResult {
 		if (!facets.empty()) {
 			auto facetsArray = builder.Array(parametersFields.Facets(), facets.size());
 			for (auto& facet : facets) {
-				auto facetObj = facetsArray.Object(0, 2);
+				auto facetObj = facetsArray.Object(TagName::Empty(), 2);
 				facetObj.Put(parametersFields.Count(), facet.count);
 				auto valuesArray = facetObj.Array(parametersFields.Values(), facet.values.size());
 				for (const auto& v : facet.values) {
-					valuesArray.Put(0, v);
+					valuesArray.Put(TagName::Empty(), v);
 				}
 			}
 		}
@@ -102,13 +102,13 @@ struct AggregationResult {
 		if (!distincts.empty()) {
 			auto distinctsArray = builder.Array(parametersFields.Distincts(), distincts.size());
 			for (const Variant& v : distincts) {
-				distinctsArray.Put(0, v.As<std::string>(payloadType, distinctsFields));
+				distinctsArray.Put(TagName::Empty(), v.As<std::string>(payloadType, distinctsFields));
 			}
 		}
 
 		auto fieldsArray = builder.Array(parametersFields.Fields(), fields.size());
 		for (auto& v : fields) {
-			fieldsArray.Put(0, v);
+			fieldsArray.Put(TagName::Empty(), v);
 		}
 		fieldsArray.End();
 	}

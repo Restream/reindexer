@@ -12,7 +12,7 @@ class TagsMatcher;
 
 struct ProtobufValue {
 	ProtobufValue();
-	ProtobufValue(Variant&& _value, int _tagName, KeyValueType itemType, bool isArray);
+	ProtobufValue(Variant&& _value, TagName _tagName, KeyValueType itemType, bool isArray);
 
 	template <typename T, typename std::enable_if<(std::is_integral<T>::value || std::is_floating_point<T>::value) &&
 												  !std::is_same<T, bool>::value>::type* = nullptr>
@@ -57,7 +57,7 @@ struct ProtobufValue {
 	}
 
 	Variant value;
-	int tagName;
+	TagName tagName;
 	KeyValueType itemType;
 	bool isArray;
 };

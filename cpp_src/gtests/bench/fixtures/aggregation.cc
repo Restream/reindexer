@@ -52,7 +52,7 @@ reindexer::Item Aggregation::MakeItem(benchmark::State& state) {
 	bld.Put("str_data", RandString());
 	auto arr = bld.Array("int_array_data");
 	for (size_t i = 0, s = rand() % 100 + 100; i < s; ++i) {
-		arr.Put({}, rand() % 1000);
+		arr.Put(reindexer::TagName::Empty(), rand() % 1000);
 	}
 	arr.End();
 	bld.End();

@@ -443,21 +443,27 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 				if (encodedEntries) {
 					ser << kOpNames[op] << ' ';
 				}
-				ser << " KNN("sv;
+				ser << "KNN("sv;
 				indexToSql<NeedQuote::Yes>(qe.FieldName(), ser);
 				ser << ", "sv;
 				if (stripArgs) {
 					ser << '?';
 				} else {
-					ser << '[';
-					const auto values{qe.Value().Span()};
-					for (size_t i = 0; i < values.size(); ++i) {
-						if (i != 0) {
-							ser << ", "sv;
+					if (qe.Format() == KnnQueryEntry::DataFormatType::String) {
+						ser << '\'';
+						ser << qe.Data();
+						ser << '\'';
+					} else {
+						ser << '[';
+						const auto values{qe.Value().Span()};
+						for (size_t i = 0; i < values.size(); ++i) {
+							if (i != 0) {
+								ser << ", "sv;
+							}
+							ser << values[i];  // TODO precision
 						}
-						ser << values[i];  // TODO precision
+						ser << ']';
 					}
-					ser << ']';
 				}
 				ser << ", "sv;
 				qe.Params().ToSql(ser);

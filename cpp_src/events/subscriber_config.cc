@@ -278,7 +278,7 @@ void EventSubscriberConfig::GetJSON(WrSerializer& ser) const {
 			{
 				auto eventTypesArr = builder.Array("event_types"sv);
 				for (auto& e : stream.eventTypes) {
-					eventTypesArr.Put(nullptr, EventTypeToStr(e));
+					eventTypesArr.Put(TagName::Empty(), EventTypeToStr(e));
 				}
 			}
 		}

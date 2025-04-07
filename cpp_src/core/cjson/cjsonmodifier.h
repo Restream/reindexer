@@ -37,10 +37,10 @@ private:
 	[[nodiscard]] bool needToInsertField(const Context& ctx) const;
 	void insertField(Context& ctx) const;
 	void embedFieldValue(TagType, int field, Context& ctx, size_t idx) const;
-	void updateObject(Context& ctx, int tagName) const;
+	void updateObject(Context&, TagName) const;
 	void writeCTag(const ctag& tag, Context& ctx);
-	void updateArray(TagType atagType, uint32_t count, int tagName, Context& ctx);
-	void copyArray(int TagName, Context& ctx);
+	void updateArray(TagType atagType, uint32_t count, TagName, Context&);
+	void copyArray(TagName, Context&);
 	UpdateTagType determineUpdateTagType(const Context& ctx, int field) const;
 	[[nodiscard]] bool checkIfFoundTag(Context& ctx, TagType tag, bool isLastItem = false) const;
 	[[nodiscard]] bool isIndexed(int field) const noexcept { return (field >= 0); }

@@ -270,28 +270,6 @@ VariantArray getValues(const JsonNode& dsl) {
 	return values;
 }
 
-ConstFloatVector getFloatVectorValues(const JsonNode& dsl) {
-	const auto valuesDsl = dsl.findCaseInsensitive("value"sv);
-	if (valuesDsl.empty()) {
-		throw Error{errParseDSL, "Wrong DSL format: Knn condition without value"};
-	}
-	if (valuesDsl.value.getTag() != JsonTag::ARRAY) {
-		throw Error{errParseDSL, "Wrong DSL format: Knn condition with not array value"};
-	}
-	thread_local static std::vector<float> values;
-	values.resize(0);
-	values.reserve(kMaxThreadLocalJSONVector);
-	auto guard = MakeScopeGuard([]() noexcept {
-		if (values.capacity() > kMaxThreadLocalJSONVector) {
-			values = std::vector<float>();
-		}
-	});
-	for (const auto vDsl : valuesDsl) {
-		values.push_back(vDsl.As<double>());
-	}
-	return ConstFloatVector{std::span<float>{values}};
-}
-
 static OpType parseOptionalOperation(const JsonNode& parser) {
 	if (const auto opJson = parser.findCaseInsensitive("op"sv); !opJson.empty()) {
 		return get<OpType>(kOpMap, opJson.As<std::string_view>(), "operation enum");
@@ -324,6 +302,43 @@ static KnnSearchParams parseKnnParams(const JsonNode& json) {
 		return IvfSearchParams{k, nprobeJson.As<size_t>(CheckUnsigned_True, 0, 1)};
 	} else {
 		return KnnSearchParamsBase{k};
+	}
+}
+
+void addWhereKNN(const JsonNode& fieldNode, const JsonNode& filter, Query& q) {
+	auto knnParams = parseKnnParams(filter);
+
+	const auto valuesDsl = filter.findCaseInsensitive("value"sv);
+	if (valuesDsl.empty()) {
+		throw Error{errParseDSL, "Wrong DSL format: Knn condition without value"};
+	}
+
+	if (valuesDsl.value.getTag() != JsonTag::ARRAY) {
+		auto value = valuesDsl.As<std::string>();
+		if (value.empty()) {
+			throw Error{errParseDSL, "Wrong DSL format: Knn condition with not array or string value"};
+		}
+
+		q.WhereKNN(fieldNode.As<std::string>(), std::move(value), std::move(knnParams));
+	} else {
+		thread_local static std::vector<float> values;
+		values.resize(0);
+		values.reserve(kMaxThreadLocalJSONVector);
+		auto guard = MakeScopeGuard([]() noexcept {
+			if (values.capacity() > kMaxThreadLocalJSONVector) {
+				values = std::vector<float>();
+			}
+		});
+		for (const auto vDsl : valuesDsl) {
+			values.push_back(vDsl.As<double>());
+		}
+
+		auto vector = ConstFloatVector{std::span<float>{values}};
+		if (vector.Span().empty()) {
+			throw Error{errParseDSL, "Wrong DSL format: Knn condition with empty vector"};
+		}
+
+		q.WhereKNN(fieldNode.As<std::string_view>(), std::move(vector), knnParams);
 	}
 }
 
@@ -382,8 +397,7 @@ static void parseFilter(const JsonNode& filter, Query& q) {
 		}
 	} else if (const auto fieldNode = filter.findCaseInsensitive("field"sv); !fieldNode.empty()) {
 		if (auto cond = getCondition(); cond == CondKnn) {
-			const auto knnParams = parseKnnParams(filter);
-			q.WhereKNN(fieldNode.As<std::string_view>(), getFloatVectorValues(filter), knnParams);
+			addWhereKNN(fieldNode, filter, q);
 		} else {
 			q.Where(fieldNode.As<std::string_view>(), cond, getValues(filter));
 		}

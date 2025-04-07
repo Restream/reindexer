@@ -70,7 +70,7 @@ Error ItemImplBase::FromJSON(std::string_view slice, char** endp, bool /*pkOnly*
 
 	payloadValue_.Clone();
 
-	size_t len;
+	size_t len = 0;
 	gason::JsonNode node;
 	gason::JsonParser parser(&largeJSONStrings_);
 	try {

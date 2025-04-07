@@ -34,7 +34,7 @@ void AsyncReplicationConfigTest::Node::GetJSON(reindexer::JsonBuilder& jb) const
 	auto arrNode = jb.Array("namespaces");
 	if (nsList) {
 		for (const auto& ns : *nsList) {
-			arrNode.Put(nullptr, ns);
+			arrNode.Put(reindexer::TagName::Empty(), ns);
 		}
 	}
 }
@@ -89,7 +89,7 @@ void AsyncReplicationConfigTest::GetJSON(reindexer::JsonBuilder& jb) const {
 	{
 		auto arrNode = jb.Array("namespaces");
 		for (const auto& ns : namespaces) {
-			arrNode.Put(nullptr, ns);
+			arrNode.Put(reindexer::TagName::Empty(), ns);
 		}
 	}
 	{
@@ -218,7 +218,7 @@ AsyncReplicationConfigTest ServerControl::Interface::GetServerConfig(ConfigType 
 	}
 	std::vector<AsyncReplicationConfigTest::Node> followers;
 	for (auto& node : asyncReplConf.nodes) {
-		followers.emplace_back(AsyncReplicationConfigTest::Node{std::move(node.dsn)});
+		followers.emplace_back(AsyncReplicationConfigTest::Node{node.GetRPCDsn()});
 		if (node.HasOwnNsList()) {
 			AsyncReplicationConfigTest::NsSet nss;
 			for (auto& ns : node.Namespaces()->data) {
@@ -527,7 +527,7 @@ void ServerControl::Interface::AddFollower(const DSN& dsn, std::optional<std::ve
 		getCurConf(curConf);
 	}
 	cluster::AsyncReplNodeConfig newNode;
-	newNode.dsn = dsn;
+	newNode.SetRPCDsn(dsn);
 	if (replMode != cluster::AsyncReplicationMode::Default) {
 		newNode.SetReplicationMode(replMode);
 	}

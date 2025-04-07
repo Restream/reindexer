@@ -55,7 +55,6 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 		dsn += request->dbname();
 
 		ConnectOpts opts;
-		opts.Autorepair(request->connectopts().autorepair());
 		opts.OpenNamespaces(request->connectopts().opennamespaces());
 		opts.WithStorageType(StorageTypeOpt(request->connectopts().storagetype()));
 		opts.DisableReplication(request->connectopts().disablereplication());
@@ -92,7 +91,6 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 		opts.Sync(request->storageoptions().sync());
 		opts.Enabled(request->storageoptions().enabled());
 		opts.FillCache(request->storageoptions().fillcache());
-		opts.Autorepair(request->storageoptions().autorepair());
 		opts.CreateIfMissing(request->storageoptions().createifmissing());
 		opts.VerifyChecksums(request->storageoptions().verifychecksums());
 		opts.DropOnFileFormatError(request->storageoptions().droponfileformaterror());
@@ -114,7 +112,6 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 		nsDef.storage.Sync(request->namespace_().storageoptions().sync());
 		nsDef.storage.Enabled(request->namespace_().storageoptions().enabled());
 		nsDef.storage.FillCache(request->namespace_().storageoptions().fillcache());
-		nsDef.storage.Autorepair(request->namespace_().storageoptions().autorepair());
 		nsDef.storage.CreateIfMissing(request->namespace_().storageoptions().createifmissing());
 		nsDef.storage.VerifyChecksums(request->namespace_().storageoptions().verifychecksums());
 		nsDef.storage.DropOnFileFormatError(request->namespace_().storageoptions().droponfileformaterror());
@@ -306,7 +303,6 @@ static IndexDef toIndexDef(const Index& src) {
 				storageOpts->set_verifychecksums(src.storage.IsVerifyChecksums());
 				storageOpts->set_fillcache(src.storage.IsFillCache());
 				storageOpts->set_sync(src.storage.IsSync());
-				storageOpts->set_autorepair(src.storage.IsAutorepair());
 				nsdef->set_allocated_storageoptions(storageOpts);
 
 				for (const IndexDef& index : src.indexes) {
@@ -320,11 +316,11 @@ static IndexDef toIndexDef(const Index& src) {
 					}
 
 					IndexOptions* indexOpts = indexDef->options().New();
-					indexOpts->set_ispk(index.Opts().IsPK());
+					indexOpts->set_ispk(*index.Opts().IsPK());
 					indexOpts->set_config(index.Opts().Config());
-					indexOpts->set_isarray(index.Opts().IsArray());
-					indexOpts->set_isdense(index.Opts().IsDense());
-					indexOpts->set_issparse(index.Opts().IsSparse());
+					indexOpts->set_isarray(*index.Opts().IsArray());
+					indexOpts->set_isdense(*index.Opts().IsDense());
+					indexOpts->set_issparse(*index.Opts().IsSparse());
 					indexOpts->set_collatemode(IndexOptions::CollateMode(index.Opts().GetCollateMode()));
 					indexOpts->set_rtreetype(static_cast<reindexer::grpc::IndexOptions_RTreeType>(index.Opts().RTreeType()));
 					indexDef->set_allocated_options(indexOpts);
@@ -461,14 +457,15 @@ Error ReindexerService::packCJSONItem(WrSerializer& wrser, ItT& it, const Output
 }
 
 Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults& qr, const OutputFlags& opts) {
+	using namespace std::string_view_literals;
 	Error status;
 	switch (opts.encodingtype()) {
 		case EncodingType::JSON: {
 			JsonBuilder builder(wrser, ObjType::TypeObject);
 			if (qr.Count() > 0) {
-				JsonBuilder array = builder.Array("items");
+				JsonBuilder array = builder.Array("items"sv);
 				for (auto& item : qr) {
-					array.Raw(nullptr, "");
+					array.Raw(""sv);
 					status = item.GetJSON(wrser, false);
 					if (!status.ok()) {
 						return status;
@@ -495,7 +492,7 @@ Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults&
 			}
 			MsgPackBuilder builder(wrser, ObjType::TypeObject, fields);
 			if (withItems) {
-				MsgPackBuilder array = builder.Array("items", qr.Count());
+				MsgPackBuilder array = builder.Array("items"sv, qr.Count());
 				for (auto& item : qr) {
 					status = item.GetMsgPack(wrser, false);
 					if (!status.ok()) {
@@ -567,17 +564,18 @@ Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults&
 
 template <typename Builder>
 Error ReindexerService::buildAggregation(Builder& builder, WrSerializer& wrser, reindexer::QueryResults& qr, const OutputFlags& opts) {
+	using namespace std::string_view_literals;
 	switch (opts.encodingtype()) {
 		case EncodingType::JSON: {
-			auto array = builder.Array("aggregations");
+			auto array = builder.Array("aggregations"sv);
 			for (size_t i = 0, size = qr.GetAggregationResults().size(); i < size; ++i) {
-				array.Raw(nullptr, "");
+				array.Raw(""sv);
 				(qr.GetAggregationResults())[i].GetJSON(wrser);
 			}
 			break;
 		}
 		case EncodingType::MSGPACK: {
-			auto array = builder.Array("aggregations", qr.Count());
+			auto array = builder.Array("aggregations"sv, qr.Count());
 			for (size_t i = 0, size = qr.GetAggregationResults().size(); i < size; ++i) {
 				(qr.GetAggregationResults())[i].GetMsgPack(wrser);
 			}
@@ -588,7 +586,7 @@ Error ReindexerService::buildAggregation(Builder& builder, WrSerializer& wrser, 
 		case EncodingType_INT_MAX_SENTINEL_DO_NOT_USE_:
 		case EncodingType_INT_MIN_SENTINEL_DO_NOT_USE_:
 		default:
-			return Error(errParams, "Unsupported encoding type");
+			return Error(errParams, "Unsupported encoding type"sv);
 	}
 	return {};
 }

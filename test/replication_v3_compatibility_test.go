@@ -1,6 +1,7 @@
 package reindexer
 
 import (
+	"path"
 	"strconv"
 	"testing"
 	"time"
@@ -141,7 +142,7 @@ func TestReplV3CompatibilitySingleV4Node(t *testing.T) {
 		follower3 (v3)
 	*/
 
-	const baseStoragePath = "/tmp/reindex_test_replv3_comp_single/"
+	baseStoragePath := path.Join(helpers.GetTmpDBDir(), "reindex_test_replv3_comp_single/")
 	const ns = "replv3ns"
 	const dataCount = 1000
 
@@ -253,7 +254,7 @@ func TestReplV3CompatibilityMultipleV4Nodes(t *testing.T) {
 		follower3 (v3)
 	*/
 
-	const baseStoragePath = "/tmp/reindex_test_replv3_comp_multi/"
+	baseStoragePath := path.Join(helpers.GetTmpDBDir(), "reindex_test_replv3_comp_multi/")
 	const ns = "replv3ns"
 	const dataCount = 1000
 
@@ -409,7 +410,7 @@ func TestReplV3CompatibilityChainTransition(t *testing.T) {
 		follower2 (v3)       follower2 (v3)       follower2 (v3)       follower2 (v4)
 	*/
 
-	const baseStoragePath = "/tmp/reindex_test_replv3_comp_chain/"
+	baseStoragePath := path.Join(helpers.GetTmpDBDir(), "reindex_test_replv3_comp_chain/")
 	const ns = "replv3ns"
 	const dataCount = 1000
 

@@ -21,6 +21,17 @@
 
 namespace faiss {
 
+#ifndef FAISS_WITH_OPENMP
+struct omp_lock_t {
+};
+
+inline void omp_init_lock(omp_lock_t*) {}
+inline void omp_destroy_lock(omp_lock_t*) {}
+inline void omp_set_lock(omp_lock_t*) {}
+inline void omp_unset_lock(omp_lock_t*) {}
+
+#endif // FAISS_WITH_OPENMP
+
 /** Implementation of the Hierarchical Navigable Small World
  * datastructure.
  *

@@ -1,4 +1,7 @@
 #include "itemmodifier.h"
+
+#include <span>
+#include "core/embedding/embedder.h"
 #include "core/itemimpl.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/query/expressionevaluator.h"
@@ -200,7 +203,7 @@ ItemModifier::FieldData::FieldData(const UpdateEntry& entry, NamespaceImpl& ns, 
 			}
 		} else {
 			fieldIndex_ = fields[0];  // 'Composite' index with single subindex
-			tagsPath_ = ns.tagsMatcher_.path2indexedtag(ns.payloadType_.Field(fieldIndex_).JsonPaths()[0], true);
+			tagsPath_ = ns.tagsMatcher_.path2indexedtag(ns.payloadType_.Field(fieldIndex_).JsonPaths()[0], CanAddField_True);
 		}
 		if (tagsPath_.empty()) {
 			throw Error(errParams, "Cannot find field by json: '{}'", entry_.Column());
@@ -211,13 +214,13 @@ ItemModifier::FieldData::FieldData(const UpdateEntry& entry, NamespaceImpl& ns, 
 		}
 	} else if (fieldIndex_ = ns.payloadType_.FieldByJsonPath(entry_.Column()); fieldIndex_ > 0) {
 		isIndex_ = true;
-		tagsPath_ = ns.tagsMatcher_.path2indexedtag(entry_.Column(), true);
+		tagsPath_ = ns.tagsMatcher_.path2indexedtag(entry_.Column(), CanAddField_True);
 		if (tagsPath_.empty()) {
 			throw Error(errParams, "Cannot find field by json: '{}'", entry_.Column());
 		}
 	} else {
 		TagsPath tp;
-		IndexedTagsPath tagsPath = ns.tagsMatcher_.path2indexedtag(entry_.Column(), true);
+		IndexedTagsPath tagsPath = ns.tagsMatcher_.path2indexedtag(entry_.Column(), CanAddField_True);
 		std::string jsonPath;
 		for (size_t i = 0; i < tagsPath.size(); ++i) {
 			if (i) {
@@ -227,7 +230,7 @@ ItemModifier::FieldData::FieldData(const UpdateEntry& entry, NamespaceImpl& ns, 
 			tp.emplace_back(tagName);
 			jsonPath += ns.tagsMatcher_.tag2name(tagName);
 		}
-		fieldIndex_ = ns.tagsMatcher_.tags2field(tp.data(), tp.size());
+		fieldIndex_ = ns.tagsMatcher_.tags2field(tp);
 		if (fieldIndex_ >= 0) {
 			isIndex_ = true;
 		} else {
@@ -285,6 +288,8 @@ ItemModifier::ItemModifier(const std::vector<UpdateEntry>& updateEntries, Namesp
 	Payload pl(ns_.payloadType_, pv);
 	pv.Clone(pl.RealSize());
 
+	auto embeddersData = getEmbeddersSourceData(pl);
+
 	rollBackIndexData_.Reset(pv);
 	RollBack_ModifiedPayload rollBack = RollBack_ModifiedPayload(*this, itemId);
 	FunctionExecutor funcExecutor(ns_, replUpdates);
@@ -312,6 +317,8 @@ ItemModifier::ItemModifier(const std::vector<UpdateEntry>& updateEntries, Namesp
 				modifyField(itemId, field, pl, values);
 			}
 		}
+
+		updateEmbedding(itemId, ctx.rdxContext, pl, embeddersData);
 	} catch (...) {
 		insertItemIntoComposite(itemId);
 		throw;
@@ -370,7 +377,7 @@ void ItemModifier::modifyCJSON(IdType id, FieldData& field, VariantArray& values
 		// update the indexes, and then tuple (1,2,...,0)
 		fieldIdx %= ns_.indexes_.firstCompositePos();
 		Index& index = *(ns_.indexes_[fieldIdx]);
-		bool isIndexSparse = index.Opts().IsSparse();
+		const IsSparse isIndexSparse = index.Opts().IsSparse();
 		assertrx(!isIndexSparse || (isIndexSparse && index.Fields().getTagsPathsLength() > 0));
 
 		if (isIndexSparse) {
@@ -479,6 +486,12 @@ void ItemModifier::insertItemIntoComposite(IdType itemId) {
 
 void convertToFloatVector(FloatVectorDimension dim, VariantArray& values) {
 	if (values.empty()) {
+		values.emplace_back(ConstFloatVectorView{});
+		values.MarkArray(false);
+		return;
+	} else if (values.IsNullValue()) {
+		assertrx_dbg(values.size() == 1);
+		values[0] = Variant{ConstFloatVectorView{}};
 		return;
 	}
 	if (values.size() != dim.Value()) {
@@ -501,7 +514,7 @@ void ItemModifier::modifyField(IdType itemId, FieldData& field, Payload& pl, Var
 		throw Error(errLogic, "It's only possible to drop sparse or non-index fields via UPDATE statement!");
 	}
 
-	if (index.IsFloatVector() && values.IsArrayValue()) {
+	if (index.IsFloatVector() && (values.IsArrayValue() || values.IsNullValue() || values.empty())) {
 		convertToFloatVector(static_cast<FloatVectorIndex&>(index).Dimension(), values);
 	}
 
@@ -705,6 +718,90 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData& field, Vari
 		}
 		if (!index.Opts().IsSparse()) {
 			pl.Set(field.Index(), ns_.krefs);
+		}
+	}
+}
+
+void ItemModifier::getEmbeddingData(const Payload& pl, const std::shared_ptr<Embedder>& embedder, std::vector<VariantArray>& data) const {
+	VariantArray fldData;
+	data.resize(0);
+	for (const auto& field : embedder->Fields()) {
+		auto itIdxName = ns_.indexesNames_.find(field);
+		if (itIdxName == ns_.indexesNames_.end()) {
+			throw Error{errConflict, "Configuration 'embedding:upsert_embedder' configured with invalid base field name '{}'", field};
+		}
+		pl.Get(itIdxName->second, fldData);
+		data.push_back(std::move(fldData));
+	}
+}
+
+std::vector<std::vector<VariantArray>> ItemModifier::getEmbeddersSourceData(const Payload& pl) const {
+	const auto& embedders = ns_.payloadType_.Embedders();
+
+	std::vector<std::vector<VariantArray>> data;
+	data.resize(embedders.size());
+	for (size_t i = 0, s = embedders.size(); i < s; ++i) {
+		getEmbeddingData(pl, embedders[i], data[i]);
+	}
+	return data;
+}
+
+bool ItemModifier::skipEmbedder(const std::shared_ptr<Embedder>& embedder) const {
+	// auto-embed disabled when requesting with special values for embedded field
+	const auto embedderIdx = embedder->Field();
+	for (const FieldData& field : fieldsToModify_)
+	{
+		if ((field.Index() == embedderIdx) && (field.Details().Mode() == FieldModeSet)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void ItemModifier::updateEmbedding(IdType itemId, const RdxContext& rdxContext, Payload& pl,
+								   const std::vector<std::vector<VariantArray>>& embeddersData) {
+	if (embeddersData.empty() ||
+		std::all_of(embeddersData.begin(), embeddersData.end(), [](const std::vector<VariantArray>& item) { return item.empty(); })) {
+		return;
+	}
+
+	VariantArray data;
+	std::vector<VariantArray> source;
+
+	std::vector<VariantArray> updatedEmbeddingData;
+	const auto& embedders = ns_.payloadType_.Embedders();
+	assertrx_dbg(embeddersData.size() == embedders.size());
+	for (size_t i = 0, s = embeddersData.size(); i < s; ++i) {
+		if (embeddersData[i].empty()) {
+			continue;
+		}
+
+		const auto& embedder = embedders[i];
+		if (skipEmbedder(embedder)) {
+			continue;
+		}
+
+		source.resize(0);
+		getEmbeddingData(pl, embedder, updatedEmbeddingData);
+		if (embeddersData[i] != updatedEmbeddingData) {
+			for (const auto& fld : embedder->Fields()) {
+				pl.Get(fld, data);
+				source.push_back(std::move(data));
+			}
+
+			// ToDo in real life, work with several embedded devices requires asynchrony. Now we have only one, at all
+			h_vector<ConstFloatVector, 1> products;
+			auto err = embedder->Calculate(rdxContext, std::span{&source, 1}, products);
+			if (!err.ok()) {
+				throw err;
+			}
+
+			VariantArray krs;
+			krs.emplace_back(ConstFloatVectorView{products.front()});
+
+			UpdateEntry entry(embedder->Name(), {}, FieldModifyMode::FieldModeSet);
+			FieldData fldData(entry, ns_, affectedComposites_);
+			modifyField(itemId, fldData, pl, krs);
 		}
 	}
 }

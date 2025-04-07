@@ -755,7 +755,7 @@ R ClusterProxy::proxyCall(const RdxContext& ctx, std::string_view nsName, const 
 			errCode = getErrCode(err, r);
 		} while (errCode == errWrongReplicationData);
 	} else {
-		clusterProxyLog(LogTrace, "[{} proxy] proxyCall LSN not empty (local call)", getServerIDRel());
+		clusterProxyLog(LogTrace, "[{} proxy] proxyCall LSN not empty: {} (local call)", getServerIDRel(), ctx.GetOriginLSN());
 		r = localCall<Fn, fn, R, Args...>(ctx, args...);
 		// errWrongReplicationData means, that leader of the current node doesn't match leader from LSN
 		if (getErrCode(err, r) == errWrongReplicationData) {

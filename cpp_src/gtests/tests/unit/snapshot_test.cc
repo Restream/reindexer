@@ -62,7 +62,6 @@ TEST_F(SnapshotTestApi, ForceSyncFromLocalToRemote) {
 	});
 	loop.run();
 }
-#endif	// REINDEX_WITH_ASAN
 
 TEST_F(SnapshotTestApi, ForceSyncFromRemoteToLocal) {
 	// Check if we can apply snapshot from remote rx instance to local rx instance via RPC
@@ -125,6 +124,7 @@ TEST_F(SnapshotTestApi, ForceSyncFromRemoteToLocal) {
 	});
 	loop.run();
 }
+#endif	// REINDEX_WITH_ASAN
 
 TEST_F(SnapshotTestApi, ConcurrentSnapshotsLimit) {
 	// Check if concurrent snapshots limit is actually works

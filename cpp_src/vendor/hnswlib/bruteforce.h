@@ -83,7 +83,7 @@ class BruteforceSearch final : public AlgorithmInterface<dist_t> {
         return ptrByIdx(search->second);
     }
 
-    void addPoint(const void *datapoint, labeltype label, reindexer::ReplaceDeleted replace_deleted = reindexer::ReplaceDeleted_False) override {
+    void addPoint(const void *datapoint, labeltype label) override {
         int idx;
         {
             // std::unique_lock<std::mutex> lock(index_lock);

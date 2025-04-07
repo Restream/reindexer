@@ -1,4 +1,5 @@
 #include "shardingproxy.h"
+#include <sstream>
 #include "client/itemimplbase.h"
 #include "cluster/consts.h"
 #include "cluster/sharding/locatorserviceadapter.h"
@@ -578,7 +579,7 @@ void ShardingProxy::NamespaceDataChecker::Check(ShardingProxy& proxy, const RdxC
 	WrSerializer wr;
 	checkQuery.GetSQL(wr);
 	logFmt(LogInfo, "Checking namespace '{}' on the shard {} for the absence of irrelevant sharding keys using a query '{}'", ns_.ns,
-			  thisShardId_, wr.Slice());
+		   thisShardId_, wr.Slice());
 
 	LocalQueryResults qr;
 	auto err = proxy.impl_.Select(checkQuery, qr, ctx);
@@ -682,9 +683,16 @@ void ShardingProxy::applyNewShardingConfig(const sharding::ApplyConfigCommand& d
 	impl_.SaveNewShardingConfigFile(*config);
 
 	auto err = impl_.ResetShardingConfig(std::move(config));
+#if 0
 	// TODO: after allowing actions to upsert #config namespace, make ApplyNewShardingConfig returned void, allow except here
 	// if (!err.ok()) return err;
-
+#else
+	// Skipping only a false positive exception when updating #config-namespace
+	if (!err.ok() && err.code() != errLogic && !err.whatStr().starts_with("Sharding configuration can not be updated directly")) {
+		logFmt(LogError, "ERROR during resetting sharding config: {}; Source - {}", err.what(), sourceId);
+		throw err;
+	}
+#endif
 	config = std::nullopt;
 	lockedShardingRouter = std::make_shared<sharding::LocatorService>(impl_, *impl_.GetShardingConfig());
 
@@ -718,7 +726,7 @@ void ShardingProxy::resetOrRollbackShardingConfig(const sharding::ResetConfigCom
 	lockedShardingRouter.Reset();
 	shardingInitialized_.store(false, std::memory_order_release);
 	logFmt(LogInfo, "{} sharding config successfully reseted. Source - {}",
-			  resetFlag == ConfigResetFlag::RollbackApplied ? "Candidate in" : "Old", sourceId);
+		   resetFlag == ConfigResetFlag::RollbackApplied ? "Candidate in" : "Old", sourceId);
 }
 
 void ShardingProxy::resetConfigCandidate(const sharding::ResetConfigCommand& data, const RdxContext& ctx) {

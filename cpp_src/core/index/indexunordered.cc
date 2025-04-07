@@ -317,7 +317,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 				std::string_view indexName;
 				SortType sortId;
 				Index::SelectOpts opts;
-				bool isSparse;
+				IsSparse isSparse;
 			} ctx = {&this->idx_map, keys, this->Name(), sortId, opts, this->opts_.IsSparse()};
 			bool selectorWasSkipped = false;
 			// should return true, if fallback to comparator required
@@ -422,7 +422,7 @@ void IndexUnordered<T>::Commit() {
 	}
 
 	logFmt(LogTrace, "IndexUnordered::Commit ({}) {} uniq keys, {} empty, {}", this->name_, this->idx_map.size(),
-			  this->empty_ids_.Unsorted().size(), tracker_.isCompleteUpdated() ? "complete" : "partial");
+		   this->empty_ids_.Unsorted().size(), tracker_.isCompleteUpdated() ? "complete" : "partial");
 
 	if (tracker_.isCompleteUpdated()) {
 		for (auto& keyIt : this->idx_map) {
@@ -438,7 +438,7 @@ void IndexUnordered<T>::Commit() {
 template <typename T>
 void IndexUnordered<T>::UpdateSortedIds(const UpdateSortedContext& ctx) {
 	logFmt(LogTrace, "IndexUnordered::UpdateSortedIds ({}) {} uniq keys, {} empty", this->name_, this->idx_map.size(),
-			  this->empty_ids_.Unsorted().size());
+		   this->empty_ids_.Unsorted().size());
 	// For all keys in index
 	for (auto& keyIt : this->idx_map) {
 		keyIt.second.UpdateSortedIds(ctx);

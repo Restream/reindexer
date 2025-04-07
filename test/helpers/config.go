@@ -78,3 +78,11 @@ func (rc *ReplicationConf) ToFile(path, filename string) error {
 
 	return nil
 }
+
+func GetTmpDBDir() string {
+	dir := os.Getenv("REINDEXER_TEST_DB_ROOT")
+	if len(dir) != 0 {
+		return dir
+	}
+	return os.TempDir()
+}

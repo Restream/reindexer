@@ -19,14 +19,15 @@ using Reindexer = ReindexerApi::Reindexer;
 
 TEST_F(NsApi, TupleColumnSize) {
 	// Check, that -tuple index does not have column subindex
+	constexpr auto kNoColumnIdx = "no_column_idx";
 	rt.OpenNamespace(default_namespace);
 	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName, "hash", "int", IndexOpts().PK(), 0},
 											   IndexDeclaration{"date", "-", "int64", IndexOpts(), 0},
-											   IndexDeclaration{"dense", "-", "int64", IndexOpts().Dense(), 0}});
+											   IndexDeclaration{kNoColumnIdx, "-", "int64", IndexOpts().NoIndexColumn(), 0}});
 
 	constexpr int kDataCount = 500;
 	for (int i = 0; i < kDataCount; ++i) {
-		rt.UpsertJSON(default_namespace, fmt::format(R"j({{"{}":{},"date":{},"dense":{} }})j", idIdxName, i, rand(), rand()));
+		rt.UpsertJSON(default_namespace, fmt::format(R"j({{"{}":{},"date":{},"{}":{}}})j", idIdxName, i, rand(), kNoColumnIdx, rand()));
 	}
 
 	auto memstats = getMemStat(*rt.reindexer, default_namespace);
@@ -41,7 +42,7 @@ TEST_F(NsApi, TupleColumnSize) {
 	EXPECT_GT(sizes[1].As<int>(), kDataCount);
 	EXPECT_EQ(names[2].As<std::string>(), "date");
 	EXPECT_GT(sizes[2].As<int>(), kDataCount);
-	EXPECT_EQ(names[3].As<std::string>(), "dense");
+	EXPECT_EQ(names[3].As<std::string>(), kNoColumnIdx);
 	EXPECT_LE(sizes[3].As<int>(), kMaxEmptyColumnSize);
 }
 
@@ -3028,19 +3029,19 @@ static void generateObject(reindexer::JsonBuilder& builder, const std::string& p
 	{
 		auto idsArray = builder.Array(prefix + "IDS");
 		for (auto id : rtapi->RandIntVector(10, 10, 1000)) {
-			idsArray.Put(0, id);
+			idsArray.Put(reindexer::TagName::Empty(), id);
 		}
 	}
 	{
 		auto homogeneousArray = builder.Array(prefix + "HomogeneousValues");
 		for (int i = 0; i < 20; ++i) {
 			if (i % 2 == 0) {
-				homogeneousArray.Put(0, rand());
+				homogeneousArray.Put(reindexer::TagName::Empty(), rand());
 			} else {
 				if (i % 5 == 0) {
-					homogeneousArray.Put(0, 234.778f);
+					homogeneousArray.Put(reindexer::TagName::Empty(), 234.778f);
 				} else {
-					homogeneousArray.Put(0, rtapi->RandString());
+					homogeneousArray.Put(reindexer::TagName::Empty(), rtapi->RandString());
 				}
 			}
 		}
@@ -3051,7 +3052,7 @@ void addObjectsArray(reindexer::JsonBuilder& builder, bool withInnerArray, Reind
 	size_t size = rand() % 10 + 5;
 	reindexer::JsonBuilder array = builder.Array("object");
 	for (size_t i = 0; i < size; ++i) {
-		reindexer::JsonBuilder obj = array.Object(0);
+		reindexer::JsonBuilder obj = array.Object();
 		generateObject(obj, "item", rtapi);
 		if (withInnerArray && i % 5 == 0) {
 			addObjectsArray(obj, false, rtapi);
@@ -3074,7 +3075,7 @@ TEST_F(NsApi, MsgPackEncodingTest) {
 		{
 			auto priceArray = jsonBuilder.Array("superPrices");
 			for (auto price : RandIntVector(10, 10, 1000)) {
-				priceArray.Put(0, price);
+				priceArray.Put(reindexer::TagName::Empty(), price);
 			}
 		}
 		{
@@ -3421,48 +3422,71 @@ TEST_F(NsApi, CompositeUpdateWithJSON) {
 }
 
 TEST_F(NsApi, TagsmatchersMerge) {
-	using reindexer::TagsMatcher;
-	using reindexer::PayloadType;
-	using reindexer::PayloadFieldType;
+	using namespace reindexer;
 
 	std::vector<TagsMatcher> tms;
 
 	tms.emplace_back();	 // -V760
-	auto _ = tms.back().path2tag("id", true);
-	_ = tms.back().path2tag("string", true);
-	_ = tms.back().path2tag("data", true);
-	_ = tms.back().path2tag("data.value", true);
+	auto _ = tms.back().path2tag("id", CanAddField_True);
+	_ = tms.back().path2tag("string", CanAddField_True);
+	_ = tms.back().path2tag("data", CanAddField_True);
+	_ = tms.back().path2tag("data.value", CanAddField_True);
 
 	tms.emplace_back();
-	_ = tms.back().path2tag("id", true);
-	_ = tms.back().path2tag("string", true);
-	_ = tms.back().path2tag("data", true);
-	_ = tms.back().path2tag("data.value", true);
-	_ = tms.back().path2tag("additional_data", true);
+	_ = tms.back().path2tag("id", CanAddField_True);
+	_ = tms.back().path2tag("string", CanAddField_True);
+	_ = tms.back().path2tag("data", CanAddField_True);
+	_ = tms.back().path2tag("data.value", CanAddField_True);
+	_ = tms.back().path2tag("additional_data", CanAddField_True);
 
 	tms.emplace_back();
-	_ = tms.back().path2tag("id", true);
-	_ = tms.back().path2tag("something_else", true);
+	_ = tms.back().path2tag("id", CanAddField_True);
+	_ = tms.back().path2tag("something_else", CanAddField_True);
 
 	tms.emplace_back();
-	_ = tms.back().path2tag("id", true);
-	_ = tms.back().path2tag("string", true);
-	_ = tms.back().path2tag("data", true);
-	_ = tms.back().path2tag("data.value", true);
-	_ = tms.back().path2tag("yet_another_additional_data", true);
+	_ = tms.back().path2tag("id", CanAddField_True);
+	_ = tms.back().path2tag("string", CanAddField_True);
+	_ = tms.back().path2tag("data", CanAddField_True);
+	_ = tms.back().path2tag("data.value", CanAddField_True);
+	_ = tms.back().path2tag("yet_another_additional_data", CanAddField_True);
 
 	auto resultTm = TagsMatcher::CreateMergedTagsMatcher(tms);
 
-	EXPECT_EQ(resultTm.name2tag("id"), 1);
-	EXPECT_EQ(resultTm.name2tag("string"), 2);
-	EXPECT_EQ(resultTm.name2tag("data"), 3);
-	EXPECT_EQ(resultTm.name2tag("value"), 4);
-	EXPECT_EQ(resultTm.name2tag("additional_data"), 5);
-	EXPECT_EQ(resultTm.name2tag("something_else"), 6);
-	EXPECT_EQ(resultTm.name2tag("yet_another_additional_data"), 7);
+	EXPECT_EQ(resultTm.name2tag("id"), 1_Tag);
+	EXPECT_EQ(resultTm.name2tag("string"), 2_Tag);
+	EXPECT_EQ(resultTm.name2tag("data"), 3_Tag);
+	EXPECT_EQ(resultTm.name2tag("value"), 4_Tag);
+	EXPECT_EQ(resultTm.name2tag("additional_data"), 5_Tag);
+	EXPECT_EQ(resultTm.name2tag("something_else"), 6_Tag);
+	EXPECT_EQ(resultTm.name2tag("yet_another_additional_data"), 7_Tag);
 
 	EXPECT_TRUE(tms[0].IsSubsetOf(resultTm));
 	EXPECT_TRUE(tms[1].IsSubsetOf(resultTm));
 	EXPECT_FALSE(tms[2].IsSubsetOf(resultTm));
 	EXPECT_FALSE(tms[3].IsSubsetOf(resultTm));
+}
+
+TEST_F(NsApi, SparseComparatorConversion) {
+	rt.OpenNamespace(default_namespace);
+	DefineNamespaceDataset(default_namespace,
+						   {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
+							IndexDeclaration{"sparse_field", "hash", "string", IndexOpts().Sparse().SetCollateMode(CollateNumeric), 0}});
+
+	rt.UpsertJSON(default_namespace, R"j({"id":0, "sparse_field":"100"})j");
+	rt.UpsertJSON(default_namespace, R"j({"id":1, "sparse_field":99}")j");
+	rt.UpsertJSON(default_namespace, R"j({"id":2, "sparse_field":null})j");
+	rt.UpsertJSON(default_namespace, R"j({"id":3}")j");
+	rt.UpsertJSON(default_namespace, R"j({"id":4, "sparse_field":"50"})j");
+
+	auto qr = rt.Select(reindexer::Query(default_namespace).Where("sparse_field", CondLt, "100").Sort("id", false));
+	// TODO: Sort("sparse_field", false)) does not works here #2039
+	auto results = rt.GetSerializedQrItems(qr);
+	ASSERT_EQ(results.size(), 2);
+	EXPECT_EQ(results[0], R"j({"id":1,"sparse_field":99})j");
+	EXPECT_EQ(results[1], R"j({"id":4,"sparse_field":"50"})j");
+
+	qr = rt.Select(reindexer::Query(default_namespace).Where("sparse_field", CondGe, "100").Sort("sparse_field", false));
+	results = rt.GetSerializedQrItems(qr);
+	ASSERT_EQ(results.size(), 1);
+	EXPECT_EQ(results[0], R"j({"id":0,"sparse_field":"100"})j");
 }

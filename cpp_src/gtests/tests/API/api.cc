@@ -2,7 +2,6 @@
 #include <time.h>
 #include "debug/backtrace.h"
 #include "gtest/gtest.h"
-#include "tools/assertrx.h"
 #include "tools/fsops.h"
 
 int main(int argc, char* argv[]) {

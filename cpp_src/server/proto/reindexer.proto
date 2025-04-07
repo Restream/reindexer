@@ -253,10 +253,10 @@ enum StorageType { StorageTypeLevelDB = 0; StorageTypeRocksDB = 1; };
 
 // message Connection options
 message ConnectOptions {
+	reserved 4;
 	int64 expectedClusterID = 1;
 	bool openNamespaces = 2;
 	bool allowNamespaceErrors = 3;
-	bool autorepair = 4;
 	bool disableReplication = 5;
 	StorageType storageType = 6;
 }
@@ -274,7 +274,7 @@ message ConnectRequest {
 
 // Storage options for a namespace.
 message StorageOptions {
-	reserved 8;
+	reserved 8, 9;
 	// Ns name.
 	string nsName = 1;
 	// To work with physical storage or not.
@@ -297,9 +297,6 @@ message StorageOptions {
 	// Note that if it is just the process that crashes (i.e., the machine
 	// does not reboot), no writes will be lost even if sync==false.
 	bool sync = 7;
-	// To allow LevelDB or RocksDB to repair storage file
-	// in case it is malfunctioned.
-	bool autorepair = 9;
 }
 
 message OpenNamespaceRequest {

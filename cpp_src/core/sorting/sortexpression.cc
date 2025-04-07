@@ -10,17 +10,17 @@
 
 namespace {
 
-static RX_NO_INLINE void throwParseError(std::string_view sortExpr, const char* const pos, std::string_view message) {
+RX_NO_INLINE void throwParseError(std::string_view sortExpr, const char* const pos, std::string_view message) {
 	throw reindexer::Error(errParams, "'{}' is not valid sort expression. Parser failed at position {}.{}{}", sortExpr,
 						   pos - sortExpr.data(), message.empty() ? "" : " ", message);
 }
 
-static inline double distance(reindexer::Point p1, reindexer::Point p2) noexcept {
+inline double distance(reindexer::Point p1, reindexer::Point p2) noexcept {
 	return std::sqrt((p1.X() - p2.X()) * (p1.X() - p2.X()) + (p1.Y() - p2.Y()) * (p1.Y() - p2.Y()));
 }
 
-static reindexer::VariantArray getFieldValues(reindexer::ConstPayload pv, reindexer::TagsMatcher& tagsMatcher, int index,
-											  std::string_view column) {
+reindexer::VariantArray getFieldValues(reindexer::ConstPayload pv, reindexer::TagsMatcher& tagsMatcher, int index,
+									   std::string_view column) {
 	reindexer::VariantArray values;
 	if (index == IndexValueType::SetByJsonPath) {
 		pv.GetByJsonPath(column, tagsMatcher, values, reindexer::KeyValueType::Undefined{});
@@ -33,7 +33,7 @@ static reindexer::VariantArray getFieldValues(reindexer::ConstPayload pv, reinde
 	return values;
 }
 
-static reindexer::VariantArray getJsonFieldValues(reindexer::ConstPayload pv, reindexer::TagsMatcher& tagsMatcher, std::string_view json) {
+reindexer::VariantArray getJsonFieldValues(reindexer::ConstPayload pv, reindexer::TagsMatcher& tagsMatcher, std::string_view json) {
 	reindexer::VariantArray values;
 	pv.GetByJsonPath(json, tagsMatcher, values, reindexer::KeyValueType::Undefined{});
 	return values;
@@ -724,31 +724,33 @@ double ProxiedSortExpression::calculate(const_iterator it, const_iterator end, I
 	return result;
 }
 
+std::string ProxiedSortExpression::getJsonPath(std::string_view columnName, int idx, const NamespaceImpl& ns) {
+	if (idx == SetByJsonPath) {
+		return std::string(columnName);
+	} else {
+		return ns.tagsMatcher_.tag2name(TagName(idx));	// FIXME idx is index number, but not tagname #2019
+	}
+}
+
 void ProxiedSortExpression::fill(SortExpression::const_iterator it, SortExpression::const_iterator endIt, const NamespaceImpl& ns) {
 	for (; it != endIt; ++it) {
-		it->Visit([](const auto&) { throw Error{errQueryExec, "JOIN is unsupported in proxied query"}; },
-				  [&](const SortExpressionBracket& b) {
-					  OpenBracket(it->operation, b.IsAbs());
-					  fill(it.cbegin(), it.cend(), ns);
-					  CloseBracket();
-				  },
-				  [&](const Value& v) { Append(it->operation, v); },
-				  [&](const SortExprFuncs::Index& i) {
-					  Append(it->operation, SortExprFuncs::ProxiedField{
-												i.index == IndexValueType::SetByJsonPath ? i.column : ns.tagsMatcher_.tag2name(i.index)});
-				  },
-				  [&](const Rank&) { Append(it->operation, Rank{}); },
-				  [&](const DistanceFromPoint& i) {
-					  Append(it->operation,
-							 ProxiedDistanceFromPoint{
-								 i.index == IndexValueType::SetByJsonPath ? i.column : ns.tagsMatcher_.tag2name(i.index), i.point});
-				  },
-				  [&](const DistanceBetweenIndexes& i) {
-					  Append(it->operation,
-							 ProxiedDistanceBetweenFields{
-								 i.index1 == IndexValueType::SetByJsonPath ? i.column1 : ns.tagsMatcher_.tag2name(i.index1),
-								 i.index2 == IndexValueType::SetByJsonPath ? i.column2 : ns.tagsMatcher_.tag2name(i.index2)});
-				  });
+		it->Visit(
+			[](const auto&) { throw Error{errQueryExec, "JOIN is unsupported in proxied query"}; },
+			[&](const SortExpressionBracket& b) {
+				OpenBracket(it->operation, b.IsAbs());
+				fill(it.cbegin(), it.cend(), ns);
+				CloseBracket();
+			},
+			[&](const Value& v) { Append(it->operation, v); },
+			[&](const SortExprFuncs::Index& i) { Append(it->operation, SortExprFuncs::ProxiedField{getJsonPath(i.column, i.index, ns)}); },
+			[&](const Rank&) { Append(it->operation, Rank{}); },
+			[&](const DistanceFromPoint& i) {
+				Append(it->operation, ProxiedDistanceFromPoint{getJsonPath(i.column, i.index, ns), i.point});
+			},
+			[&](const DistanceBetweenIndexes& i) {
+				Append(it->operation,
+					   ProxiedDistanceBetweenFields{getJsonPath(i.column1, i.index1, ns), getJsonPath(i.column2, i.index2, ns)});
+			});
 	}
 }
 

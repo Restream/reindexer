@@ -211,7 +211,7 @@ bool isBlank(std::string_view token) noexcept;
 bool endsWith(const std::string& source, std::string_view ending) noexcept;
 std::string& ensureEndsWith(std::string& source, std::string_view ending);
 
-Error cursosPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos);
+Error cursorPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos);
 
 std::string randStringAlph(size_t len);
 

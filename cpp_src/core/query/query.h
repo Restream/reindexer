@@ -4,6 +4,7 @@
 #include <initializer_list>
 #include "core/keyvalue/geometry.h"
 #include "core/type_consts_helpers.h"
+#include "estl/concepts.h"
 #include "fields_names_filter.h"
 #include "queryentry.h"
 #include "tools/errors.h"
@@ -30,7 +31,7 @@ public:
 	/// @param start - number of the first row to get from selected set. Analog to sql OFFSET Offset.
 	/// @param count - number of rows to get from result set. Analog to sql LIMIT RowsCount.
 	/// @param calcTotal - calculation mode.
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	explicit Query(Str&& nsName, unsigned start = QueryEntry::kDefaultOffset, unsigned count = QueryEntry::kDefaultLimit,
 				   CalcTotalMode calcTotal = ModeNoTotal)
 		: namespace_(std::forward<Str>(nsName)), start_(start), count_(count), calcTotal_(calcTotal) {}
@@ -71,7 +72,7 @@ public:
 	/// @return Query in SQL format
 	[[nodiscard]] std::string GetSQL(QueryType realType) const;
 
-	/// Parses JSON dsl set. Throws Error-exption on errors
+	/// Parses JSON dsl set. Throws Error-exception on errors
 	/// @param dsl - dsl set.
 	/// @return Result query
 	static Query FromJSON(std::string_view dsl);
@@ -158,13 +159,13 @@ public:
 	/// @param cond - type of condition.
 	/// @param l - vector of index values to be compared with.
 	/// @return Query object ready to be executed.
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	Query& Where(Str&& field, CondType cond, VariantArray l) & {
 		entries_.Append<QueryEntry>(nextOp_, std::forward<Str>(field), cond, std::move(l));
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	[[nodiscard]] Query&& Where(Str&& field, CondType cond, VariantArray l) && {
 		return std::move(Where(std::forward<Str>(field), cond, std::move(l)));
 	}
@@ -180,7 +181,7 @@ public:
 	/// in case of CondRange) belongs to "bookid" and l[0][1] (and l[1][1] in case of CondRange)
 	/// belongs to "price" indexes.
 	/// @return Query object ready to be executed.
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	Query& WhereComposite(Str&& idx, CondType cond, std::initializer_list<VariantArray> l) & {
 		VariantArray values;
 		values.reserve(l.size());
@@ -191,11 +192,11 @@ public:
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	[[nodiscard]] Query&& WhereComposite(Str&& idx, CondType cond, std::initializer_list<VariantArray> l) && {
 		return std::move(WhereComposite(std::forward<Str>(idx), cond, std::move(l)));
 	}
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	Query& WhereComposite(Str&& idx, CondType cond, const std::vector<VariantArray>& v) & {
 		VariantArray values;
 		values.reserve(v.size());
@@ -206,28 +207,28 @@ public:
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	[[nodiscard]] Query&& WhereComposite(Str&& idx, CondType cond, const std::vector<VariantArray>& v) && {
 		return std::move(WhereComposite(std::forward<Str>(idx), cond, v));
 	}
-	template <typename Str1, typename Str2>
+	template <concepts::ConvertibleToString Str1, concepts::ConvertibleToString Str2>
 	Query& WhereBetweenFields(Str1&& firstIdx, CondType cond, Str2&& secondIdx) & {
 		entries_.Append<BetweenFieldsQueryEntry>(nextOp_, std::forward<Str1>(firstIdx), cond, std::forward<Str2>(secondIdx));
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	template <typename Str1, typename Str2>
+	template <concepts::ConvertibleToString Str1, concepts::ConvertibleToString Str2>
 	[[nodiscard]] Query&& WhereBetweenFields(Str1&& firstIdx, CondType cond, Str2&& secondIdx) && {
 		return std::move(WhereBetweenFields(std::forward<Str1>(firstIdx), cond, std::forward<Str2>(secondIdx)));
 	}
 
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	Query& DWithin(Str&& field, Point p, double distance) & {
 		entries_.Append<QueryEntry>(nextOp_, std::forward<Str>(field), CondDWithin, VariantArray::Create(p, distance));
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	[[nodiscard]] Query&& DWithin(Str&& field, Point p, double distance) && {
 		return std::move(DWithin(std::forward<Str>(field), p, distance));
 	}
@@ -279,7 +280,7 @@ public:
 		return std::move(Where(std::move(q), cond, VariantArray{Variant{std::forward<Input>(val)}}));
 	}
 
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	Query& Where(Str&& field, CondType cond, Query&& q) & {
 		if (cond == CondDWithin) {
 			throw Error(errQueryExec, "DWithin between field and subquery");
@@ -298,12 +299,12 @@ public:
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	[[nodiscard]] Query&& Where(Str&& field, CondType cond, Query&& q) && {
 		return std::move(Where(std::forward<Str>(field), cond, std::move(q)));
 	}
 
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	Query& WhereKNN(Str&& field, ConstFloatVector vec, KnnSearchParams params) & {
 		if (nextOp_ != OpAnd) {
 			throw Error(errLogic, std::string(OpTypeToStr(nextOp_)) + " operation is not allowed with knn condition");
@@ -312,17 +313,30 @@ public:
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	[[nodiscard]] Query&& WhereKNN(Str&& field, ConstFloatVector vec, KnnSearchParams params) && {
-		return std::move(WhereKNN(std::move(field), std::move(vec), std::move(params)));
+		return std::move(WhereKNN(std::forward<Str>(field), std::move(vec), std::move(params)));
 	}
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	Query& WhereKNN(Str&& field, ConstFloatVectorView vec, KnnSearchParams params) & {
-		return WhereKNN(std::move(field), ConstFloatVector{vec.Span()}, std::move(params));
+		return WhereKNN(std::forward<Str>(field), ConstFloatVector{vec.Span()}, std::move(params));
 	}
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	[[nodiscard]] Query&& WhereKNN(Str&& field, ConstFloatVectorView vec, KnnSearchParams params) && {
-		return std::move(WhereKNN(std::move(field), ConstFloatVector{vec.Span()}, std::move(params)));
+		return std::move(WhereKNN(std::forward<Str>(field), ConstFloatVector{vec.Span()}, std::move(params)));
+	}
+	template <concepts::ConvertibleToString Str1, concepts::ConvertibleToString Str2>
+	Query& WhereKNN(Str1&& field, Str2&& data, KnnSearchParams params) & {
+		if (nextOp_ != OpAnd) {
+			throw Error(errLogic, std::string(OpTypeToStr(nextOp_)) + " operation is not allowed with knn condition");
+		}
+		entries_.Append<KnnQueryEntry>(nextOp_, std::forward<Str1>(field), std::forward<Str2>(data), std::move(params));
+		nextOp_ = OpAnd;
+		return *this;
+	}
+	template <concepts::ConvertibleToString Str1, concepts::ConvertibleToString Str2>
+	[[nodiscard]] Query&& WhereKNN(Str1&& field, Str2&& data, KnnSearchParams params) && {
+		return std::move(WhereKNN(std::forward<Str1>(field), std::forward<Str2>(data), std::move(params)));
 	}
 
 	/// Sets a new value for a field.

@@ -5,6 +5,8 @@
 
 namespace reindexer {
 
+using namespace std::string_view_literals;
+
 ProtobufSchemaBuilder::ProtobufSchemaBuilder()
 	: ser_(nullptr), fieldsTypes_(nullptr), pt_(nullptr), tm_(nullptr), type_(ObjType::TypePlain) {}
 
@@ -14,18 +16,18 @@ ProtobufSchemaBuilder::ProtobufSchemaBuilder(WrSerializer* ser, SchemaFieldsType
 	switch (type_) {
 		case ObjType::TypePlain:
 			if (ser_) {
-				ser_->Write("syntax = \"proto3\";\n\n");
+				ser_->Write("syntax = \"proto3\";\n\n"sv);
 			}
 			break;
 		case ObjType::TypeObject:
 			if (ser_) {
-				ser_->Write("message ");
+				ser_->Write("message "sv);
 			}
 			if (ser_) {
 				ser_->Write(name);
 			}
 			if (ser_) {
-				ser_->Write(" {\n");
+				ser_->Write(" {\n"sv);
 			}
 			break;
 		case ObjType::TypeObjectArray:
@@ -41,25 +43,24 @@ ProtobufSchemaBuilder::ProtobufSchemaBuilder(ProtobufSchemaBuilder&& obj) noexce
 ProtobufSchemaBuilder::~ProtobufSchemaBuilder() { End(); }
 
 std::pair<std::string_view, KeyValueType> ProtobufSchemaBuilder::jsonSchemaTypeToProtobufType(const FieldProps& props) const {
-	using namespace std::string_view_literals;
-	if (props.type == "string") {
+	if (props.type == "string"sv) {
 		return {"string"sv, KeyValueType::String{}};
-	} else if (props.type == "integer") {
+	} else if (props.type == "integer"sv) {
 		if (tm_ && pt_) {
 			TagsPath& tagsPath = fieldsTypes_->tagsPath_;
-			int field = tm_->tags2field(tagsPath.data(), tagsPath.size());
+			int field = tm_->tags2field(tagsPath);
 			if (field > 0 && pt_->Field(field).Type().Is<KeyValueType::Int>()) {
 				return {"int64"sv, KeyValueType::Int{}};
 			}
 		}
 		return {"int64"sv, KeyValueType::Int64{}};
-	} else if (props.type == "number") {
+	} else if (props.type == "number"sv) {
 		return {"double"sv, KeyValueType::Double{}};
-	} else if (props.type == "boolean") {
+	} else if (props.type == "boolean"sv) {
 		return {"bool"sv, KeyValueType::Bool{}};
-	} else if (props.type == "object") {
+	} else if (props.type == "object"sv) {
 		return {props.xGoType, KeyValueType::Composite{}};
-	} else if (props.type == "null") {
+	} else if (props.type == "null"sv) {
 		return {{}, KeyValueType::Null{}};
 	}
 	return {{}, KeyValueType::Undefined{}};
@@ -71,13 +72,13 @@ void ProtobufSchemaBuilder::End() {
 			fieldsTypes_->tagsPath_.pop_back();
 		}
 		if (ser_) {
-			ser_->Write("}\n");
+			ser_->Write("}\n"sv);
 		}
 	}
 	type_ = ObjType::TypePlain;
 }
 
-void ProtobufSchemaBuilder::Field(std::string_view name, int tagName, const FieldProps& props) {
+void ProtobufSchemaBuilder::Field(std::string_view name, TagName tagName, const FieldProps& props) {
 	TagsPathScope<TagsPath> tagScope(fieldsTypes_->tagsPath_, tagName);
 	const auto [typeName, type] = jsonSchemaTypeToProtobufType(props);
 	if (type.Is<KeyValueType::Undefined>() || typeName.empty()) {
@@ -86,7 +87,7 @@ void ProtobufSchemaBuilder::Field(std::string_view name, int tagName, const Fiel
 	if (props.isArray) {
 		assertrx(type_ != ObjType::TypeArray && type_ != ObjType::TypeObjectArray);
 		if (ser_) {
-			ser_->Write("repeated ");
+			ser_->Write("repeated "sv);
 		}
 		writeField(name, typeName, tagName);
 		type.EvaluateOneOf(
@@ -106,7 +107,7 @@ void ProtobufSchemaBuilder::Field(std::string_view name, int tagName, const Fiel
 	}
 }
 
-ProtobufSchemaBuilder ProtobufSchemaBuilder::Object(int tagName, std::string_view name, bool buildTypesOnly,
+ProtobufSchemaBuilder ProtobufSchemaBuilder::Object(TagName tagName, std::string_view name, bool buildTypesOnly,
 													const std::function<void(ProtobufSchemaBuilder& self)>& filler) {
 	fieldsTypes_->tagsPath_.emplace_back(tagName);
 	fieldsTypes_->AddObject(std::string{name});
@@ -118,13 +119,13 @@ ProtobufSchemaBuilder ProtobufSchemaBuilder::Object(int tagName, std::string_vie
 	return obj;
 }
 
-void ProtobufSchemaBuilder::writeField(std::string_view name, std::string_view type, int number) {
+void ProtobufSchemaBuilder::writeField(std::string_view name, std::string_view type, TagName number) {
 	if (ser_) {
 		ser_->Write(type);
 		ser_->Write(" ");
 		ser_->Write(name);
 		ser_->Write(" = ");
-		ser_->Write(std::to_string(number));
+		ser_->Write(std::to_string(number.AsNumber()));
 	}
 }
 

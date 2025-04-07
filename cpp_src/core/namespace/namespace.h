@@ -6,6 +6,7 @@
 #include "core/queryresults/queryresults.h"
 #include "core/querystat.h"
 #include "core/transaction/txstats.h"
+#include "estl/timed_mutex.h"
 #include "namespaceimpl.h"
 #include "tools/flagguard.h"
 
@@ -196,14 +197,14 @@ public:
 		if (this == dst.get() || dst == nullptr) {
 			return;
 		}
-		doRename(dst, std::string(), storagePath, replicateCb, ctx);
+		doRename(dst, std::string_view(), storagePath, replicateCb, ctx);
 	}
-	void Rename(const std::string& newName, const std::string& storagePath, std::function<void(std::function<void()>)> replicateCb,
+	void Rename(const std::string& newName, const std::string& storagePath, const std::function<void(std::function<void()>)>& replicateCb,
 				const RdxContext& ctx) {
 		if (newName.empty()) {
 			return;
 		}
-		doRename(nullptr, newName, storagePath, std::move(replicateCb), ctx);
+		doRename(nullptr, newName, storagePath, replicateCb, ctx);
 	}
 	void OnConfigUpdated(DBConfigProvider& configProvider, const RdxContext& ctx) {
 		NamespaceConfigData configData;
@@ -278,7 +279,7 @@ private:
 
 	NamespaceImpl::Ptr ns_;
 	std::unique_ptr<NamespaceImpl> nsCopy_;
-	using Mutex = MarkedMutex<std::timed_mutex, MutexMark::CloneNs>;
+	using Mutex = MarkedMutex<timed_mutex, MutexMark::CloneNs>;
 	mutable Mutex clonerMtx_;
 	mutable spinlock nsPtrSpinlock_;
 	std::atomic<bool> hasCopy_ = {false};

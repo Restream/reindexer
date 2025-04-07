@@ -1,4 +1,5 @@
 #include "fields_filter.h"
+#include <sstream>
 #include "core/index/index.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/query/fields_names_filter.h"

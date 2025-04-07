@@ -367,7 +367,7 @@ void QueriesApi::FillConditionsNs() {
 							if (isArray) {
 								auto arr = json.Array(indexName);
 								for (size_t i = 0, s = rand() % kMaxArraySize; i < s; ++i) {
-									arr.Put({}, createRandValue(id, fit.fieldType));
+									arr.Put(reindexer::TagName::Empty(), createRandValue(id, fit.fieldType));
 								}
 							} else {
 								json.Put(indexName, createRandValue(id, fit.fieldType));
@@ -381,7 +381,7 @@ void QueriesApi::FillConditionsNs() {
 				if (rand() % 2) {
 					auto arr = json.Array(fieldType + "_array");
 					for (size_t i = 0, s = rand() % kMaxArraySize; i < s; ++i) {
-						arr.Put({}, createRandValue(id, fit.fieldType));
+						arr.Put(reindexer::TagName::Empty(), createRandValue(id, fit.fieldType));
 					}
 				}
 			}
@@ -468,7 +468,7 @@ void QueriesApi::FillUUIDNs() {
 				{
 					auto arr = json.Array(kFieldNameUuidArr);
 					for (size_t j = 0, s = rand() % 10; j < s; ++j) {
-						arr.Put({}, randStrUuid());
+						arr.Put(reindexer::TagName::Empty(), randStrUuid());
 					}
 				}
 				/*if (rand() % 2) {

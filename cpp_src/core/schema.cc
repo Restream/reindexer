@@ -231,7 +231,7 @@ Error PrefixTree::buildProtobufSchema(ProtobufSchemaBuilder& builder, const Pref
 			}
 			path += name;
 
-			int fieldNumber = tm.name2tag(name, true);
+			const TagName fieldNumber = tm.name2tag(name, CanAddField_True);
 			if (node->props.type == "object") {
 				if (node->props.xGoType.empty()) {
 					node->props.xGoType = fieldsTypes_.GenerateObjectName();
@@ -357,7 +357,7 @@ void Schema::parseJsonNode(const gason::JsonNode& node, PrefixTree::PathT& split
 	}
 }
 
-std::vector<int> Schema::MakeCsvTagOrdering(const TagsMatcher& tm) const {
+std::vector<TagName> Schema::MakeCsvTagOrdering(const TagsMatcher& tm) const {
 	if (paths_.root_.children.empty()) {
 		return {};
 	}
@@ -369,11 +369,11 @@ std::vector<int> Schema::MakeCsvTagOrdering(const TagsMatcher& tm) const {
 		throw Error(errParams, "Incorrect type of \"required\" tag in namespace json-schema");
 	}
 
-	std::vector<int> result;
+	std::vector<TagName> result;
 	for (const auto& tagNode : tags0lvl.value) {
 		const auto& tagName = tagNode.As<std::string_view>();
-		auto tag = tm.name2tag(tagName);
-		if (tag == 0) {
+		const auto tag = tm.name2tag(tagName);
+		if (tag.IsEmpty()) {
 			throw Error(errParams, "Tag {} not found in tagsmatcher", tagName);
 		}
 		result.emplace_back(tag);

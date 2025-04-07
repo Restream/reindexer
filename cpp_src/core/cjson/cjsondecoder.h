@@ -10,7 +10,6 @@
 
 namespace reindexer {
 
-class TagsMatcher;
 class Serializer;
 class WrSerializer;
 
@@ -91,7 +90,7 @@ public:
 	public:
 		static RX_ALWAYS_INLINE DefaultRecoder MakeCleanCopy() noexcept { return DefaultRecoder(); }
 		RX_ALWAYS_INLINE bool Recode(Serializer&, WrSerializer&) const { return false; }
-		RX_ALWAYS_INLINE bool Recode(Serializer&, Payload&, int, WrSerializer&) const noexcept { return false; }
+		RX_ALWAYS_INLINE bool Recode(Serializer&, Payload&, TagName, WrSerializer&) const noexcept { return false; }
 		RX_ALWAYS_INLINE TagType RegisterTagType(TagType tagType, int) const noexcept {
 			// Do not recode index field
 			return tagType;
@@ -111,7 +110,7 @@ public:
 			}
 			return defaultRecoder_.Recode(ser, wser);
 		}
-		RX_ALWAYS_INLINE bool Recode(Serializer& ser, Payload& pl, int tagName, WrSerializer& wser) const {
+		RX_ALWAYS_INLINE bool Recode(Serializer& ser, Payload& pl, TagName tagName, WrSerializer& wser) const {
 			if (needToRecode_) {
 				r_->Recode(ser, pl, tagName, wser);
 				return true;
@@ -162,7 +161,7 @@ private:
 	template <typename FilterT, typename RecoderT, typename TagOptT>
 	bool decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrser, FilterT filter, RecoderT recoder, TagOptT,
 					 FloatVectorsHolderVector&);
-	bool isInArray() const noexcept { return arrayLevel_ > 0; }
+	InArray isInArray() const noexcept { return InArray(arrayLevel_ > 0); }
 	[[noreturn]] void throwTagReferenceError(ctag, const Payload&);
 
 	[[nodiscard]] Variant cjsonValueToVariant(TagType tag, Serializer& rdser, KeyValueType dstType);

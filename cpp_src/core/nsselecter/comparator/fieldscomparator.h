@@ -60,7 +60,7 @@ public:
 		assertrx_throw(leftFieldSet_);
 		setField(fields, ctx_[0].rCtx_);
 	}
-	void SetLeftField(const FieldsSet& fset, KeyValueType type, bool isArray, const CollateOpts& cOpts) {
+	void SetLeftField(const FieldsSet& fset, KeyValueType type, IsArray isArray, const CollateOpts& cOpts) {
 		assertrx_throw(!leftFieldSet_);
 		collateOpts_ = &cOpts;
 		if (type.Is<KeyValueType::Composite>()) {
@@ -72,7 +72,7 @@ public:
 		}
 		leftFieldSet_ = true;
 	}
-	void SetRightField(const FieldsSet& fset, KeyValueType type, bool isArray) {
+	void SetRightField(const FieldsSet& fset, KeyValueType type, IsArray isArray) {
 		assertrx_throw(leftFieldSet_);
 		if ((ctx_.size() > 1) != type.Is<KeyValueType::Composite>()) {
 			throw Error{errQueryExec, "A composite index cannot be compared with a non-composite one: {}", name_};
@@ -93,7 +93,7 @@ private:
 	struct FieldContext {
 		FieldsSet fields_;
 		KeyValueType type_ = KeyValueType::Undefined{};
-		bool isArray_ = false;
+		IsArray isArray_ = IsArray_False;
 		unsigned offset_ = 0;
 		unsigned sizeof_ = 0;
 	};
@@ -108,7 +108,7 @@ private:
 		assertrx_dbg(fields[0] == IndexValueType::SetByJsonPath);
 		setField(fields.getTagsPath(0), fctx);
 	}
-	void setField(FieldContext& fctx, FieldsSet fset, KeyValueType type, bool isArray) {
+	void setField(FieldContext& fctx, FieldsSet fset, KeyValueType type, IsArray isArray) {
 		fctx.fields_ = std::move(fset);
 		fctx.type_ = type;
 		fctx.isArray_ = isArray;

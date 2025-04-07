@@ -44,7 +44,6 @@ void ServerConfig::Reset() {
 	EnablePrometheus = false;
 	PrometheusCollectPeriod = std::chrono::milliseconds(1000);
 	DebugAllocs = false;
-	Autorepair = false;
 	EnableConnectionsStats = true;
 	TxIdleTimeout = std::chrono::seconds(600);
 	RPCQrIdleTimeout = std::chrono::seconds(600);
@@ -106,7 +105,7 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	}
 	args::ValueFlag<std::string> storageEngineF(dbGroup, "NAME", "'reindexer' storage engine (" + availabledStorages + ")", {'e', "engine"},
 												StorageEngine, args::Options::Single);
-	args::Flag autorepairF(dbGroup, "", "Enable autorepair for storages after unexpected shutdowns", {"autorepair"});
+	args::Flag autorepairF(dbGroup, "", "Deprecated. Does nothing", {"autorepair"});
 	args::Flag disableNamespaceLeakF(dbGroup, "", "Disable namespaces leak on database destruction (may slow down server's termination)",
 									 {"disable-ns-leak"});
 
@@ -236,9 +235,6 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	}
 	if (startWithErrorsF) {
 		StartWithErrors = args::get(startWithErrorsF);
-	}
-	if (autorepairF) {
-		Autorepair = args::get(autorepairF);
 	}
 	if (disableNamespaceLeakF) {
 		AllowNamespaceLeak = !args::get(disableNamespaceLeakF);
@@ -382,7 +378,6 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node& root) {
 		StoragePath = root["storage"]["path"].as<std::string>(StoragePath);
 		StorageEngine = root["storage"]["engine"].as<std::string>(StorageEngine);
 		StartWithErrors = root["storage"]["startwitherrors"].as<bool>(StartWithErrors);
-		Autorepair = root["storage"]["autorepair"].as<bool>(Autorepair);
 		LogLevel = root["logger"]["loglevel"].as<std::string>(LogLevel);
 		ServerLog = root["logger"]["serverlog"].as<std::string>(ServerLog);
 		CoreLog = root["logger"]["corelog"].as<std::string>(CoreLog);

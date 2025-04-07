@@ -1,8 +1,8 @@
 #pragma once
 
+#include <span>
 #include "core/type_consts.h"
 #include "estl/fast_hash_set.h"
-#include <span>
 #include "events/iexternal_listener.h"
 #include "tools/errors.h"
 

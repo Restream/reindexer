@@ -26,7 +26,9 @@ enum class DurationStorageIdx : unsigned {
 	CloneNs,
 	AsyncStorage,
 	DataFlush,
-	StorageSize
+	StorageDirOps,
+
+	StorageSize	 // This must be the last element
 };
 
 constexpr DurationStorageIdx DurationStorageIdxCast(MutexMark mark) {
@@ -45,6 +47,8 @@ constexpr DurationStorageIdx DurationStorageIdxCast(MutexMark mark) {
 			return DurationStorageIdx::CloneNs;
 		case MutexMark::AsyncStorage:
 			return DurationStorageIdx::AsyncStorage;
+		case MutexMark::StorageDirOps:
+			return DurationStorageIdx::StorageDirOps;
 	}
 }
 

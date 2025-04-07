@@ -46,9 +46,9 @@ type TestItem struct {
 	Genre         int64           `reindex:"genre,tree"`
 	Year          int             `reindex:"year,tree"`
 	Packages      []int           `reindex:"packages,hash"`
-	Name          string          `reindex:"name,tree"`
+	Name          string          `reindex:"name,tree,is_no_column"`
 	Countries     []string        `reindex:"countries,tree"`
-	Age           int             `reindex:"age,hash"`
+	Age           int             `reindex:"age,hash,is_no_column"`
 	AgeLimit      int64           `json:"age_limit" reindex:"age_limit,hash,sparse"`
 	CompanyName   string          `json:"company_name" reindex:"company_name,hash,sparse"`
 	Address       string          `json:"address"`
@@ -59,12 +59,12 @@ type TestItem struct {
 	ExchangeRate  float64         `json:"exchange_rate"`
 	PollutionRate float32         `json:"pollution_rate"`
 	IsDeleted     bool            `reindex:"isdeleted,-"`
-	Actor         Actor           `reindex:"actor"`
+	Actor         Actor           `reindex:"actor,-,is_no_column"`
 	PricesIDs     []int           `reindex:"price_id"`
 	LocationID    string          `reindex:"location"`
 	EndTime       int             `reindex:"end_time,-"`
 	StartTime     int             `reindex:"start_time,tree"`
-	Tmp           string          `reindex:"tmp,-"`
+	Tmp           string          `reindex:"tmp,-,is_no_column"`
 	Nested        StrictTestNest  `reindex:"-" json:"nested"`
 	Uuid          string          `reindex:"uuid,hash,uuid" json:"uuid"`
 	UuidStore     string          `reindex:"uuid_store,-,uuid" json:"uuid_store"`
@@ -118,7 +118,7 @@ type TestItemWithSparse struct {
 	Packages      []int           `reindex:"packages,hash,sparse"`
 	Name          string          `reindex:"name,tree,sparse"`
 	Countries     []string        `reindex:"countries,tree,sparse"`
-	Age           int             `reindex:"age,hash"`
+	Age           int             `reindex:"age,hash,is_no_column"`
 	AgeLimit      int64           `json:"age_limit" reindex:"age_limit,hash,sparse"`
 	CompanyName   string          `json:"company_name" reindex:"company_name,hash,sparse"`
 	Address       string          `json:"address"`
@@ -128,12 +128,12 @@ type TestItemWithSparse struct {
 	ExchangeRate  float64         `json:"exchange_rate"`
 	PollutionRate float32         `json:"pollution_rate"`
 	IsDeleted     bool            `reindex:"isdeleted,-"`
-	Actor         Actor           `reindex:"actor"`
+	Actor         Actor           `reindex:"actor,,is_no_column"`
 	PricesIDs     []int           `reindex:"price_id,,sparse"`
 	LocationID    string          `reindex:"location"`
 	EndTime       int             `reindex:"end_time,-"`
 	StartTime     int             `reindex:"start_time,tree"`
-	Tmp           string          `reindex:"tmp,-"`
+	Tmp           string          `reindex:"tmp,-,is_no_column"`
 	Uuid          string          `reindex:"uuid,hash,uuid" json:"uuid"`
 	UuidStore     string          `reindex:"uuid_store,-,uuid" json:"uuid_store"`
 	UuidArray     []string        `reindex:"uuid_array,hash,uuid" json:"uuid_array"`
@@ -146,7 +146,7 @@ type TestItemWithSparse struct {
 type TestItemSimple struct {
 	ID    int    `reindex:"id,,pk"`
 	Year  int    `reindex:"year,tree"`
-	Name  string `reindex:"name"`
+	Name  string `reindex:"name,,is_no_column"`
 	Phone string
 }
 

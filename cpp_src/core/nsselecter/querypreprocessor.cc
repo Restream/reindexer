@@ -150,9 +150,8 @@ void QueryPreprocessor::checkAllowedCondition(const QueryField& field, CondType 
 	if (!field.IsFieldIndexed()) {
 		return;
 	}
-	assertrx_dbg(cond != CondKnn);
-	if (ns_.indexes_[field.IndexNo()]->IsFloatVector()) {
-		throw Error{errParams, "The only allowed condition for float vector index is KNN; attempt to use '{}' on field '{}'",
+	if (ns_.indexes_[field.IndexNo()]->IsFloatVector() && ((cond != CondKnn) && (cond != CondAny) && (cond != CondEmpty))) {
+		throw Error{errParams, "Valid conditions for float vector index are KNN, Empty, Any; attempt to use '{}' on field '{}'",
 					CondTypeToStrShort(cond), field.FieldName()};
 	}
 }
@@ -520,14 +519,24 @@ RankedTypeQuery QueryPreprocessor::GetRankedTypeQuery() const {
 	auto it = cbegin().PlainIterator();
 	const auto end = cend().PlainIterator();
 	auto result = RankedTypeQuery::No;
+	bool floatVectorDetected = false;
 	for (; it != end; ++it) {
-		if (it->Is<QueryEntry>() && it->Value<QueryEntry>().IsFieldIndexed() &&
-			ns_.indexes_[it->Value<QueryEntry>().IndexNo()]->IsFulltext()) {
-			result = RankedTypeQuery::FullText;
-			++it;
-			break;
+		if (it->Is<QueryEntry>() && it->Value<QueryEntry>().IsFieldIndexed()) {
+			if (ns_.indexes_[it->Value<QueryEntry>().IndexNo()]->IsFulltext()) {
+				if (floatVectorDetected) {
+					throw Error(errNotValid, "FullText cannot be mixed with conditions for a floating-point vector field in a query");
+				}
+				result = RankedTypeQuery::FullText;
+				++it;
+				break;
+			} else if (ns_.indexes_[it->Value<QueryEntry>().IndexNo()]->IsFloatVector()) {
+				floatVectorDetected = true;
+			}
 		}
 		if (it->Is<KnnQueryEntry>()) {
+			if (floatVectorDetected) {
+				throw Error(errNotValid, "KNN cannot be mixed with conditions for a floating-point vector field in a query");
+			}
 			result = ns_.indexes_[it->Value<KnnQueryEntry>().IndexNo()]->RankedType();
 			++it;
 			break;
@@ -537,6 +546,8 @@ RankedTypeQuery QueryPreprocessor::GetRankedTypeQuery() const {
 		if (it->Is<KnnQueryEntry>() || (it->Is<QueryEntry>() && it->Value<QueryEntry>().IsFieldIndexed() &&
 										ns_.indexes_[it->Value<QueryEntry>().IndexNo()]->IsFulltext())) {
 			throw Error(errNotValid, "Single KNN or FullText condition is allowed in query only");
+		} else if (it->Is<QueryEntry>() && it->Value<QueryEntry>().IsFieldIndexed() && ns_.indexes_[it->Value<QueryEntry>().IndexNo()]->IsFloatVector()) {
+			throw Error(errNotValid, "KNN or FullText cannot be mixed with conditions for a floating-point vector field in a query");
 		}
 	}
 	return result;

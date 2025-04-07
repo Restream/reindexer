@@ -61,7 +61,7 @@ func TestMain(m *testing.M) {
 
 	opts := []interface{}{}
 	if udsn.Scheme == "builtin" {
-		os.RemoveAll("/tmp/reindex_test/")
+		os.RemoveAll(udsn.Path)
 	} else if udsn.Scheme == "cproto" || udsn.Scheme == "cprotos" {
 		opts = []interface{}{reindexer.WithCreateDBIfMissing(), reindexer.WithNetCompression(), reindexer.WithAppName("RxTestInstance")}
 	} else if udsn.Scheme == "ucproto" {

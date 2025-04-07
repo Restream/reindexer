@@ -251,6 +251,7 @@ public:
 
 private:
 	void fill(SortExpression::const_iterator begin, SortExpression::const_iterator end, const NamespaceImpl&);
+	static std::string getJsonPath(std::string_view columnName, int idx, const NamespaceImpl&);
 	static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload, RankT, TagsMatcher&);
 	static void dump(const_iterator begin, const_iterator end, WrSerializer&);
 };

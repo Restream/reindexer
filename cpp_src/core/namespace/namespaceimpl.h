@@ -500,7 +500,7 @@ private:
 	void createCompositeFieldsSet(const std::string& idxName, const PathsT& paths, FieldsSet& fields);
 	void verifyCompositeIndex(const IndexDef& indexDef) const;
 	template <typename GetNameF>
-	void verifyAddIndex(const IndexDef& indexDef, GetNameF&&) const;
+	void verifyUpsertIndex(std::string_view action, const IndexDef& indexDef, GetNameF&&) const;
 	void verifyUpdateIndex(const IndexDef& indexDef) const;
 	void verifyUpdateCompositeIndex(const IndexDef& indexDef) const;
 	bool updateIndex(const IndexDef& indexDef, bool disableTmVersionInc);

@@ -31,6 +31,8 @@ public:
 	virtual void ReconfigureCache(const NamespaceCacheConfigData&) override {}
 	const void* ColumnData() const noexcept override final { return idx_data.size() ? idx_data.data() : nullptr; }
 
+	bool IsColumnIndexDisabled() const noexcept { return opts_.IsArray() || opts_.IsSparse() || opts_.IsNoIndexColumn(); }
+
 	template <typename, typename = void>
 	struct HasAddTask : std::false_type {};
 	template <typename H>

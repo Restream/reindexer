@@ -83,7 +83,7 @@ size_t NsScheme::FieldsCount(const FieldPath& path) const noexcept {
 					  ref[path.back()].content);
 }
 
-IsArrayT NsScheme::IsArray(const FieldPath& path) const noexcept {
+reindexer::IsArray NsScheme::IsArray(const FieldPath& path) const noexcept {
 	if (path.empty()) {
 		return ns_.array;
 	}
@@ -91,8 +91,8 @@ IsArrayT NsScheme::IsArray(const FieldPath& path) const noexcept {
 	for (size_t i = 0, s = path.size() - 1; i < s; ++i) {
 		assertrx(ptr->size() > path[i]);
 		const auto& idx = (*ptr)[path[i]];
-		if (idx.array == IsArrayT::Yes) {
-			return IsArrayT::Yes;
+		if (idx.array) {
+			return reindexer::IsArray_True;
 		}
 		std::visit(
 			reindexer::overloaded{[&ptr](const Node::Children& c) noexcept { ptr = &c; }, [](const Node::Child&) noexcept { assertrx(0); }},
@@ -139,16 +139,16 @@ std::string NsScheme::GetJsonPath(const FieldPath& path) const noexcept {
 	return res;
 }
 
-void NsScheme::AddIndex(const FieldPath& path, size_t index, IsSparseT isSparse) {
+void NsScheme::AddIndex(const FieldPath& path, size_t index, reindexer::IsSparse isSparse) {
 	assertrx(!path.empty());
-	if (isSparse == IsSparseT::No) {
-		ns_.sparse = IsSparseT::No;
+	if (!isSparse) {
+		ns_.sparse = reindexer::IsSparse_False;
 	}
 	Node::Children* ptr = &std::get<Node::Children>(ns_.content);
 	for (size_t i = 0, s = path.size() - 1; i < s; ++i) {
 		assertrx(ptr->size() > path[i]);
-		if (isSparse == IsSparseT::No) {
-			(*ptr)[path[i]].sparse = IsSparseT::No;
+		if (!isSparse) {
+			(*ptr)[path[i]].sparse = reindexer::IsSparse_False;
 		}
 		std::visit(reindexer::overloaded{[&ptr](Node::Children& c) noexcept { ptr = &c; }, [](Node::Child&) noexcept { assertrx(0); }},
 				   (*ptr)[path[i]].content);
@@ -160,14 +160,14 @@ void NsScheme::AddIndex(const FieldPath& path, size_t index, IsSparseT isSparse)
 FieldPath NsScheme::AddRndPkField(RandomGenerator& rnd) {
 	auto& children = std::get<Node::Children>(ns_.content);
 	children.emplace_back(Node{rnd.FieldName(generatedNames_), Node::Child{rnd.RndPkIndexFieldType()}});
-	children.back().array = IsArrayT::No;
-	children.back().sparse = IsSparseT::No;
+	children.back().array = reindexer::IsArray_False;
+	children.back().sparse = reindexer::IsSparse_False;
 	return {children.size() - 1};
 }
 
-void NsScheme::addIndex(Node& node, size_t index, IsSparseT isSparse) {
-	if (isSparse == IsSparseT::No) {
-		node.sparse = IsSparseT::No;
+void NsScheme::addIndex(Node& node, size_t index, reindexer::IsSparse isSparse) {
+	if (!isSparse) {
+		node.sparse = reindexer::IsSparse_False;
 	}
 	std::visit(reindexer::overloaded{[index](Node::Child& c) noexcept { c.indexes.push_back(index); },
 									 [](Node::Children&) noexcept { assertrx(0); }},
@@ -187,14 +187,14 @@ void NsScheme::fillChildren(Node::Children& children, RandomGenerator& rnd, unsi
 				children.back().array = rnd.RndArrayField();
 			}
 			if (!canBeSparse && !rnd.RndErr()) {
-				children.back().sparse = IsSparseT::No;
+				children.back().sparse = reindexer::IsSparse_False;
 			}
 		} else {
 			children.emplace_back(Node{std::move(fName), Node::Child{type}});
 			if (type == FieldType::Point) {
 				canBeSparse = false;
 				canBeArray = false;
-				children.back().sparse = IsSparseT::No;
+				children.back().sparse = reindexer::IsSparse_False;
 			}
 			if (canBeArray || rnd.RndErr()) {
 				children.back().array = rnd.RndArrayField();
@@ -270,7 +270,7 @@ void NsScheme::toJson(reindexer::JsonBuilder& builder, const Node::Children& chi
 		if (!rnd.NeedThisNode(n.sparse)) {
 			continue;
 		}
-		if (rnd.RndArrayField(n.array) == IsArrayT::Yes) {
+		if (rnd.RndArrayField(n.array)) {
 			auto arr = builder.Array(n.name);
 			const size_t arrSize = rnd.ArraySize();
 			for (size_t i = 0; i < arrSize; ++i) {
@@ -314,11 +314,11 @@ void NsScheme::Node::Dump(std::ostream& os, size_t offset) const {
 	for (size_t i = 0; i <= offset; ++i) {
 		os << "  ";
 	}
-	os << "sparse: " << std::boolalpha << (sparse == IsSparseT::Yes) << '\n';
+	os << "sparse: " << std::boolalpha << *sparse << '\n';
 	for (size_t i = 0; i <= offset; ++i) {
 		os << "  ";
 	}
-	os << "array: " << std::boolalpha << (array == IsArrayT::Yes) << '\n';
+	os << "array: " << std::boolalpha << *array << '\n';
 	std::visit(reindexer::overloaded{[&](const Child& child) {
 										 for (size_t i = 0; i <= offset; ++i) {
 											 os << "  ";

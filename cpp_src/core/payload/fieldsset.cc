@@ -1,4 +1,5 @@
 #include "fieldsset.h"
+#include <sstream>
 #include "core/cjson/tagsmatcher.h"
 
 namespace reindexer {

@@ -1,4 +1,5 @@
-#include <memory.h>
+#include "tools/stringstools.h"
+
 #include <algorithm>
 
 #include "atoi/atoi.h"
@@ -8,11 +9,9 @@
 #include "fmt/compile.h"
 #include "frozen_str_tools.h"
 #include "itoa/itoa.h"
-#include "stringstools.h"
 #include "tools/assertrx.h"
 #include "tools/randomgenerator.h"
 #include "tools/serializer.h"
-#include "tools/stringstools.h"
 #include "utf8cpp/utf8.h"
 #include "vendor/double-conversion/double-conversion.h"
 #include "vendor/frozen/unordered_map.h"
@@ -92,13 +91,13 @@ std::string toLower(std::string_view src) {
 std::string escapeString(std::string_view str) {
 	std::string dst;
 	dst.reserve(str.length());
-	for (auto it = str.begin(); it != str.end(); it++) {
-		if (*it < 0x20 || unsigned(*it) >= 0x80 || *it == '\\') {
+	for (auto ch : str) {
+		if (ch < 0x20 || unsigned(ch) >= 0x80 || ch == '\\') {
 			char tmpbuf[16];
-			snprintf(tmpbuf, sizeof(tmpbuf), "\\%02X", unsigned(*it) & 0xFF);
+			snprintf(tmpbuf, sizeof(tmpbuf), "\\%02X", unsigned(ch) & 0xFF);
 			dst += tmpbuf;
 		} else {
-			dst.push_back(*it);
+			dst.push_back(ch);
 		}
 	}
 	return dst;
@@ -551,24 +550,16 @@ int fast_strftime(char* buf, const tm* tm) {
 	if (!name.length()) {
 		return false;
 	}
-	for (auto c : name) {
-		if (!(std::isalnum(c) || c == '_' || c == '-' || c == '#' || (c == '@' && allowSpecialChars))) {
-			return false;
-		}
-	}
-	return true;
+	return std::all_of(name.cbegin(), name.cend(), [allowSpecialChars](auto ch) {
+		return (std::isalnum(ch) || ch == '_' || ch == '-' || ch == '#' || (ch == '@' && allowSpecialChars));
+	});
 }
 
 [[nodiscard]] bool validateUserNsName(std::string_view name) noexcept {
 	if (!name.length()) {
 		return false;
 	}
-	for (auto c : name) {
-		if (!(std::isalnum(c) || c == '_' || c == '-')) {
-			return false;
-		}
-	}
-	return true;
+	return std::all_of(name.cbegin(), name.cend(), [](auto ch) { return (std::isalnum(ch) || ch == '_' || ch == '-'); });
 }
 
 LogLevel logLevelFromString(std::string_view strLogLevel) noexcept {
@@ -610,24 +601,14 @@ bool isPrintable(std::string_view str) noexcept {
 	if (str.length() > 256) {
 		return false;
 	}
-	for (auto c : str) {
-		if (c < 0x20) {
-			return false;
-		}
-	}
-	return true;
+	return std::all_of(str.cbegin(), str.cend(), [](auto ch) { return (ch >= 0x20); });
 }
 
 bool isBlank(std::string_view str) noexcept {
 	if (str.empty()) {
 		return true;
 	}
-	for (auto c : str) {
-		if (!isspace(c)) {
-			return false;
-		}
-	}
-	return true;
+	return std::all_of(str.cbegin(), str.cend(), [](auto ch) { return isspace(ch); });
 }
 
 bool endsWith(const std::string& source, std::string_view ending) noexcept {
@@ -800,7 +781,7 @@ Error getBytePosInMultilineString(std::string_view str, const size_t line, const
 	return Error(errNotValid, "Wrong cursor position: line={}, pos={}", line, charPos);
 }
 
-Error cursosPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos) {
+Error cursorPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos) {
 	try {
 		return getBytePosInMultilineString<true>(str, line, charPos, bytePos);
 	} catch (const utf8::exception&) {

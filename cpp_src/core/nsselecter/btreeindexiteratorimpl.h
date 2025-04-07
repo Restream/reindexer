@@ -84,7 +84,7 @@ public:
 
 	template <typename TIdSet>
 	void detectCurrentIdsetType(const TIdSet& idset) noexcept {
-		if (std::is_same<TIdSet, IdSet>() && !idset.IsCommited()) {
+		if (std::is_same<TIdSet, IdSet>() && !idset.IsCommitted()) {
 			currentIdsetType_ = IdsetType::Btree;
 		} else {
 			currentIdsetType_ = IdsetType::Plain;

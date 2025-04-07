@@ -93,8 +93,13 @@ void IndexIVFFlat::add_core(
 
 #pragma omp parallel reduction(+ : n_add)
     {
+#ifdef FAISS_WITH_OPENMP
         int nt = omp_get_num_threads();
         int rank = omp_get_thread_num();
+#else // !FAISS_WITH_OPENMP
+        int nt = 1;
+        int rank = 0;
+#endif // FAISS_WITH_OPENMP
 
         // each thread takes care of a subset of lists
         for (size_t i = 0; i < n; i++) {
@@ -346,8 +351,13 @@ void IndexIVFFlatDedup::add_with_ids(
 
 #pragma omp parallel reduction(+ : n_add, n_dup)
     {
+#ifdef FAISS_WITH_OPENMP
         int nt = omp_get_num_threads();
         int rank = omp_get_thread_num();
+#else // !FAISS_WITH_OPENMP
+        int nt = 1;
+        int rank = 0;
+#endif // FAISS_WITH_OPENMP
 
         // each thread takes care of a subset of lists
         for (size_t i = 0; i < na; i++) {

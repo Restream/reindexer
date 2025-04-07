@@ -121,8 +121,12 @@ void hnsw_add_vertices(
 
                 std::unique_ptr<DistanceComputer> dis(
                         index_hnsw.get_distance_computer());
+#ifdef FAISS_WITH_OPENMP
                 int prev_display =
                         verbose && omp_get_thread_num() == 0 ? 0 : -1;
+#else // !FAISS_WITH_OPENMP
+                int prev_display = -1;
+#endif // FAISS_WITH_OPENMP
 
 #pragma omp for schedule(dynamic)
                 for (int i = i0; i < i1; i++) {

@@ -1,5 +1,7 @@
 #include "float_vector_index.h"
+#include "core/rdxcontext.h"
 #include "tools/assertrx.h"
+#include "tools/logger.h"
 
 namespace reindexer {
 
@@ -17,19 +19,43 @@ FloatVectorIndex::FloatVectorIndex(const IndexDef& idef, PayloadType&& pt, Field
 
 void FloatVectorIndex::Delete(const VariantArray& keys, IdType id, StringsHolder& stringsHolder, bool& clearCache) {
 	assertrx_dbg(keys.size() == 1);
-	// Intentionally do not locking emptyValuesInsertionMtx_ here - only upserts may be multithreaded
-	const auto it = emptyValues_.find(id);
-	if (it == emptyValues_.end()) {
-		Delete(keys[0], id, stringsHolder, clearCache);
+	// Intentionally don't lock emptyValuesInsertionMtx_ here - only upserts may be multithreaded
+	if (emptyValues_.Unsorted().Find(id)) {
+		emptyValues_.Unsorted().Erase(id);	// ignore result
+		memStat_.uniqKeysCount = emptyValues_.Unsorted().IsEmpty() ? 0 : 1;
 	} else {
-		emptyValues_.erase(it);
-		memStat_.uniqKeysCount = emptyValues_.empty() ? 0 : 1;
+		Delete(keys[0], id, stringsHolder, clearCache);
 	}
 }
 
-SelectKeyResults FloatVectorIndex::SelectKey(const VariantArray&, CondType, SortType, SelectOpts, const BaseFunctionCtx::Ptr&,
-											 const RdxContext&) {
-	throw_as_assert;
+SelectKeyResults FloatVectorIndex::SelectKey(const VariantArray&, CondType condition, SortType sortId, SelectOpts opts,
+											 const BaseFunctionCtx::Ptr&, const RdxContext& rdxCtx) {
+	const auto indexWard(rdxCtx.BeforeIndexWork());
+	switch (condition) {
+		case CondEmpty: {
+			if (opts.forceComparator) {
+				throw Error(errLogic, "FloatVectorIndex({}): Comparator for 'IS NULL' vector index condition is not implemented", Name());
+			}
+			SelectKeyResult res;
+			res.emplace_back(emptyValues_, sortId);
+			return SelectKeyResults(std::move(res));
+		}
+		case CondAny:
+			return ComparatorIndexed<FloatVector>{Name(), condition, {}, nullptr, IsArray_False, false, payloadType_, Fields()};
+		case CondEq:
+		case CondSet:
+		case CondAllSet:
+		case CondGe:
+		case CondLe:
+		case CondRange:
+		case CondGt:
+		case CondLt:
+		case CondLike:
+		case CondDWithin:
+		case CondKnn:
+			throw Error(errQueryExec, "{} query on index '{}'", CondTypeToStrShort(condition), name_);
+	}
+	return {};
 }
 
 void FloatVectorIndex::Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) {
@@ -44,7 +70,7 @@ Variant FloatVectorIndex::Upsert(const Variant& key, IdType id, bool& clearCache
 		if (IsSupportMultithreadTransactions()) {
 			lck.lock();
 		}
-		emptyValues_.insert(id);
+		emptyValues_.Unsorted().Add(id, IdSet::Auto, sortedIdxCount_);	// ignore result
 		memStat_.uniqKeysCount = 1;
 		return Variant{ConstFloatVectorView{}};
 	}
@@ -55,7 +81,8 @@ Variant FloatVectorIndex::Upsert(const Variant& key, IdType id, bool& clearCache
 	return upsert(vect, id, clearCache);
 }
 
-SelectKeyResult FloatVectorIndex::Select(ConstFloatVectorView key, const KnnSearchParams& p, KnnCtx& ctx) const {
+SelectKeyResult FloatVectorIndex::Select(ConstFloatVectorView key, const KnnSearchParams& p, KnnCtx& ctx, const RdxContext& rdxCtx) const {
+	const auto indexWard(rdxCtx.BeforeIndexWork());
 	if (key.IsEmpty()) {
 		throw Error{errNotValid, "Attempt to search knn by empty float vector"};
 	}
@@ -66,30 +93,33 @@ SelectKeyResult FloatVectorIndex::Select(ConstFloatVectorView key, const KnnSear
 	return select(key, p, ctx);
 }
 
+void FloatVectorIndex::Commit() {
+	emptyValues_.Unsorted().Commit();
+	logFmt(LogTrace, "FloatVectorIndex::Commit ({}) {} empty", name_, emptyValues_.Unsorted().size());
+}
+
 IndexMemStat FloatVectorIndex::GetMemStat(const RdxContext&) noexcept {
-	// Intentionally do not locking emptyValuesInsertionMtx_ here - only upserts may be multithreaded
-	memStat_.indexingStructSize = size_t(float(emptyValues_.size()) / emptyValues_.load_factor()) * sizeof(IdType);
+	// Intentionally don't lock emptyValuesInsertionMtx_ here - only upserts may be multithreaded
+	memStat_.indexingStructSize = emptyValues_.Unsorted().Size() * sizeof(IdType);
 	return memStat_;
 }
 
 FloatVector FloatVectorIndex::GetFloatVector(IdType id) const {
-	// Intentionally do not locking emptyValuesInsertionMtx_ here - only upserts may be multithreaded
-	const auto it = emptyValues_.find(id);
-	if (it == emptyValues_.end()) {
-		return getFloatVector(id);
-	} else {
+	// Intentionally don't lock emptyValuesInsertionMtx_ here - only upserts may be multithreaded
+	if (emptyValues_.Unsorted().Find(id)) {
 		return {};
 	}
+
+	return getFloatVector(id);
 }
 
 ConstFloatVectorView FloatVectorIndex::GetFloatVectorView(IdType id) const {
-	// Intentionally do not locking emptyValuesInsertionMtx_ here - only upserts may be multithreaded
-	const auto it = emptyValues_.find(id);
-	if (it == emptyValues_.end()) {
-		return getFloatVectorView(id);
-	} else {
+	// Intentionally don't lock emptyValuesInsertionMtx_ here - only upserts may be multithreaded
+	if (emptyValues_.Unsorted().Find(id)) {
 		return {};
 	}
+
+	return getFloatVectorView(id);
 }
 
 void FloatVectorIndex::WriterBase::writePK(IdType id) {

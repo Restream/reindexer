@@ -343,7 +343,7 @@ TEST_F(CompositeIndexesApi, FastUpdateIndex) {
 			}
 			auto err = rt.reindexer->UpdateIndex(default_namespace, indexDef(kIndexNames[i], kFieldTypes[j], "tree"));
 			ASSERT_FALSE(err.ok()) << err.what();
-			auto err1Text = fmt::format("Cannot remove index {} : it's a part of a composite index .*", kIndexNames[i]);
+			auto err1Text = fmt::format("Cannot remove index '{}': it's a part of a composite index '.*'", kIndexNames[i]);
 			auto err2Text = fmt::format("Cannot convert key from type {} to {}", kFieldTypes[i], kFieldTypes[j]);
 			ASSERT_THAT(err.what(), testing::MatchesRegex(fmt::format("({}|{})", err1Text, err2Text)));
 		}

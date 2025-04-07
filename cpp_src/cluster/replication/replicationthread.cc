@@ -1359,7 +1359,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const updates::Update
 		return Error(err, errLogic);
 	} catch (...) {
 		assert(false);
-		return Error(errLogic, "Unknow exception during UpdateRecord handling");
+		return Error(errLogic, "Unknown exception during UpdateRecord handling");
 	}
 	return Error();
 }

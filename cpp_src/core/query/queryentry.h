@@ -8,6 +8,7 @@
 #include "core/payload/fieldsset.h"
 #include "core/query/knn_search_params.h"
 #include "core/type_consts.h"
+#include "estl/concepts.h"
 #include "estl/h_vector.h"
 #include "tools/serializer.h"
 #include "tools/verifying_updater.h"
@@ -15,6 +16,7 @@
 namespace reindexer {
 
 class Query;
+class JsonBuilder;
 template <typename T>
 class PayloadIface;
 using ConstPayload = PayloadIface<const PayloadValue>;
@@ -39,7 +41,7 @@ class QueryField {
 public:
 	using CompositeTypesVecT = h_vector<KeyValueType, 4>;
 
-	template <typename Str>
+	template <concepts::ConvertibleToString Str>
 	explicit QueryField(Str&& fieldName) noexcept : fieldName_{std::forward<Str>(fieldName)} {}
 	QueryField(QueryField&&) noexcept = default;
 	QueryField(const QueryField&) = default;
@@ -100,7 +102,7 @@ public:
 		: QueryField{std::forward<Str>(fieldName)}, values_{std::forward<VA>(v)}, condition_{cond}, injectedFrom_{injectedFrom} {
 		Verify();
 	}
-	template <typename Str>
+	template <concepts::ConvertibleToString Str>
 	QueryEntry(Str&& fieldName, DistinctTag) : QueryField(std::forward<Str>(fieldName)), condition_(CondAny), distinct_(true) {
 		Verify();
 	}
@@ -274,7 +276,7 @@ private:
 
 class SubQueryFieldEntry {
 public:
-	template <typename Str>
+	template <concepts::ConvertibleToString Str>
 	SubQueryFieldEntry(Str&& field, CondType cond, size_t qIdx) : field_{std::forward<Str>(field)}, condition_{cond}, queryIndex_{qIdx} {
 		checkCondition(cond);
 	}
@@ -299,7 +301,7 @@ private:
 
 class UpdateEntry {
 public:
-	template <typename Str>
+	template <concepts::ConvertibleToString Str>
 	UpdateEntry(Str&& c, VariantArray&& v, FieldModifyMode m = FieldModeSet, bool e = false)
 		: column_(std::forward<Str>(c)), values_(std::move(v)), mode_(m), isExpression_(e) {
 		if (column_.empty()) {
@@ -335,7 +337,7 @@ public:
 		}
 	}
 	[[nodiscard]] bool operator==(const QueryJoinEntry& other) const noexcept {
-		// reverseNamespacesOrder_ is intetionally ignored - it affects serialization order in SQL, but does not make any difference
+		// reverseNamespacesOrder_ is intentionally ignored - it affects serialization order in SQL, but does not make any difference
 		// from query standpoint
 		return condition_ == other.condition_ && leftField_ == other.leftField_ && rightField_ == other.rightField_;
 	}
@@ -389,29 +391,49 @@ private:
 
 class KnnQueryEntry {
 public:
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	enum class DataFormatType : int8_t { None = -1, Vector = 0, String = 1};
+
+	template <concepts::ConvertibleToString Str>
 	KnnQueryEntry(Str&& fldName, ConstFloatVectorView v, KnnSearchParams params)
 		: KnnQueryEntry{std::forward<Str>(fldName), ConstFloatVector{v.Span()}, params} {}
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	KnnQueryEntry(Str&& fldName, ConstFloatVector v, KnnSearchParams params)
-		: fieldName_{std::forward<Str>(fldName)}, value_{std::move(v)}, params_{params} {}
+		: fieldName_{std::forward<Str>(fldName)}, format_{DataFormatType::Vector}, value_{std::move(v)}, params_{params} {}
+	template <concepts::ConvertibleToString Str1, concepts::ConvertibleToString Str2>
+	KnnQueryEntry(Str1&& fldName, Str2&& data, KnnSearchParams params)
+		: fieldName_{std::forward<Str1>(fldName)}, format_{DataFormatType::String}, data_{std::forward<Str2>(data)}, params_{params} {}
 	[[nodiscard]] int IndexNo() const noexcept { return idxNo_; }
-	ConstFloatVectorView Value() const& noexcept { return ConstFloatVectorView{value_}; }
+	[[nodiscard]] ConstFloatVectorView Value() const& noexcept {
+		assertrx_throw(format_ == DataFormatType::Vector);
+		return ConstFloatVectorView{value_};
+	}
+	[[nodiscard]] const std::string& Data() const& noexcept {
+		assertrx_throw(format_ == DataFormatType::String);
+		return data_;
+	}
+	[[nodiscard]] DataFormatType Format() const noexcept {
+		assertrx_throw(format_ != DataFormatType::None);
+		return format_;
+	}
 	[[nodiscard]] KnnSearchParams Params() const noexcept { return params_; }
 	[[nodiscard]] bool FieldsHaveBeenSet() const noexcept { return idxNo_ != IndexValueType::NotSet; }
 	[[nodiscard]] const std::string& FieldName() const& noexcept { return fieldName_; }
 	void SetIndexNo(int idx) noexcept { idxNo_ = idx; }
 	[[nodiscard]] std::string Dump() const;
+	void ToDsl(JsonBuilder& builder) const;
 	[[nodiscard]] bool operator==(const KnnQueryEntry&) const noexcept;
 	[[nodiscard]] bool operator!=(const KnnQueryEntry& other) const noexcept { return !operator==(other); }
 
 	auto Value() const&& = delete;
+	auto Data() const&& = delete;
 	auto FieldName() const&& = delete;
 
 private:
 	std::string fieldName_;
 	int idxNo_{IndexValueType::NotSet};
+	DataFormatType format_{DataFormatType::None};
 	ConstFloatVector value_;
+	std::string data_;
 	KnnSearchParams params_;
 };
 
@@ -474,7 +496,7 @@ extern template size_t QueryEntries::InjectConditionsFromOnConditions<InjectionD
 
 struct SortingEntry {
 	SortingEntry() noexcept = default;
-	template <typename Str>
+	template <concepts::ConvertibleToString Str>
 	SortingEntry(Str&& e, bool d) noexcept : expression(std::forward<Str>(e)), desc(d) {}
 	bool operator==(const SortingEntry&) const noexcept = default;
 	bool operator!=(const SortingEntry& se) const noexcept = default;

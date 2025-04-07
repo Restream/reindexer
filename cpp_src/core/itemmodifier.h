@@ -75,6 +75,12 @@ private:
 	void deleteItemFromComposite(IdType itemId);
 	void insertItemIntoComposite(IdType itemId);
 
+	void getEmbeddingData(const Payload& pl, const std::shared_ptr<Embedder>& embedder, std::vector<VariantArray>& data) const;
+	std::vector<std::vector<VariantArray>> getEmbeddersSourceData(const Payload& pl) const;
+	bool skipEmbedder(const std::shared_ptr<Embedder>& embedder) const;
+	void updateEmbedding(IdType itemId, const RdxContext& rdxContext, Payload& pl,
+						 const std::vector<std::vector<VariantArray>>& embeddersData);
+
 	NamespaceImpl& ns_;
 	const std::vector<UpdateEntry>& updateEntries_;
 	std::vector<FieldData> fieldsToModify_;
@@ -92,11 +98,11 @@ private:
 			cjsonChanged_ = false;
 			pkModified_ = false;
 		}
-		void IndexChanged(size_t index, bool isPk) noexcept {
+		void IndexChanged(size_t index, IsPk isPk) noexcept {
 			data_[index] = true;
 			pkModified_ = pkModified_ || isPk;
 		}
-		void IndexAndCJsonChanged(size_t index, bool isPk) noexcept {
+		void IndexAndCJsonChanged(size_t index, IsPk isPk) noexcept {
 			data_[index] = true;
 			cjsonChanged_ = true;
 			pkModified_ = pkModified_ || isPk;

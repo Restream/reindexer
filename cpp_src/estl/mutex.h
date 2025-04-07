@@ -16,7 +16,7 @@ public:
 	void unlock_shared() const noexcept {}
 };
 
-enum class MutexMark : unsigned { DbManager = 0u, IndexText, Namespace, Reindexer, ReindexerStats, CloneNs, AsyncStorage };
+enum class MutexMark : unsigned { DbManager = 0u, IndexText, Namespace, Reindexer, ReindexerStats, CloneNs, AsyncStorage, StorageDirOps };
 inline std::string_view DescribeMutexMark(MutexMark mark) {
 	using namespace std::string_view_literals;
 	switch (mark) {
@@ -34,6 +34,8 @@ inline std::string_view DescribeMutexMark(MutexMark mark) {
 			return "Clone namespace"sv;
 		case MutexMark::AsyncStorage:
 			return "Async storage copy"sv;
+		case MutexMark::StorageDirOps:
+			return "Storage directories modification"sv;
 	}
 	throw Error(errLogic, "Unknown mutex type");
 }

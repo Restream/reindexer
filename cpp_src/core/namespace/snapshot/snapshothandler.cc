@@ -30,8 +30,7 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 		if (err.code() != errOutdatedWAL) {
 			throw err;
 		}
-		logFmt(LogInfo, "[repl:{}]:{} Creating RAW (force sync) snapshot. Reason: {}", ns_.name_.OriginalName(), ns_.wal_.GetServer(),
-			   err.what());
+		logFmt(LogInfo, "[repl:{}]:{} Creating RAW (force sync) snapshot. Reason: {}", ns_.name_, ns_.wal_.GetServer(), err.what());
 		const auto minLsn = ns_.wal_.LSNByOffset(opts.maxWalDepthOnForceSync);
 		if (minLsn.isEmpty()) {
 			return Snapshot(ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.repl_.dataHash, ns_.itemsCount(), ns_.repl_.clusterStatus);
@@ -232,7 +231,7 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 			const auto stateToken = ser.GetVarint();
 			tm.deserialize(ser, version, stateToken);
 			logFmt(LogInfo, "[{}]: Changing tm's statetoken on {}: {:#08x}->{:#08x}", ns_.name_, ns_.wal_.GetServer(),
-					  ns_.tagsMatcher_.stateToken(), stateToken);
+				   ns_.tagsMatcher_.stateToken(), stateToken);
 			ns_.tagsMatcher_ = std::move(tm);
 			ns_.tagsMatcher_.UpdatePayloadType(ns_.payloadType_, NeedChangeTmVersion::No);
 			ns_.tagsMatcher_.setUpdated();

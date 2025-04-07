@@ -264,7 +264,7 @@ class AlgorithmInterface {
 
  public:
     virtual ResizeResult resizeIndex(size_t newSize) = 0;
-    virtual void addPoint(const void *datapoint, labeltype label, reindexer::ReplaceDeleted replace_deleted = reindexer::ReplaceDeleted_False) = 0;
+    virtual void addPoint(const void *datapoint, labeltype label) = 0;
 
     virtual std::priority_queue<std::pair<dist_t, labeltype>>
         searchKnn(const void*, size_t k, size_t ef = 0, BaseFilterFunctor* isIdAllowed = nullptr) const = 0;

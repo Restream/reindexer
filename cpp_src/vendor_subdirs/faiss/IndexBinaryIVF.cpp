@@ -837,7 +837,12 @@ void IndexBinaryIVF::range_search_preassigned(
     bool store_pairs = false;
     size_t nlistv = 0, ndis = 0;
 
-    std::vector<RangeSearchPartialResult*> all_pres(omp_get_max_threads());
+#ifdef FAISS_WITH_OPENMP
+    const int nt = omp_get_max_threads();
+#else // !FAISS_WITH_OPENMP
+    const int nt = 1;
+#endif // FAISS_WITH_OPENMP
+    std::vector<RangeSearchPartialResult*> all_pres(nt);
 
 #pragma omp parallel reduction(+ : nlistv, ndis)
     {
@@ -846,7 +851,11 @@ void IndexBinaryIVF::range_search_preassigned(
                 get_InvertedListScanner(store_pairs));
         FAISS_THROW_IF_NOT(scanner.get());
 
+#ifdef FAISS_WITH_OPENMP
         all_pres[omp_get_thread_num()] = &pres;
+#else // !FAISS_WITH_OPENMP
+        all_pres[0] = &pres;
+#endif // FAISS_WITH_OPENMP
 
         auto scan_list_func = [&](size_t i, size_t ik, RangeQueryResult& qres) {
             idx_t key = assign[i * nprobe_2 + ik]; /* select the list  */

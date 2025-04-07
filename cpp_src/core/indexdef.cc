@@ -195,15 +195,23 @@ IndexDef IndexDef::FromJSON(const gason::JsonNode& root) {
 	auto fieldType = root["field_type"sv].As<std::string>();
 	auto indexType = root["index_type"sv].As<std::string>();
 	auto expireAfter = root["expire_after"sv].As<int64_t>();
+	const auto indexTypeEnum = DetermineIndexType(name, indexType, fieldType);
 	IndexOpts opts;
 	opts.PK(root["is_pk"sv].As<bool>());
 	opts.Array(root["is_array"sv].As<bool>());
 	opts.Dense(root["is_dense"sv].As<bool>());
 	opts.Sparse(root["is_sparse"sv].As<bool>());
+	auto isDisableColumnIndexNode = root["is_no_column"];
+	if (isDisableColumnIndexNode.empty()) {
+		opts.NoIndexColumn(*opts.IsDense() || *opts.IsSparse() || *opts.IsArray() || IsComposite(indexTypeEnum) ||
+						   IsFullText(indexTypeEnum) || IsFloatVector(indexTypeEnum));
+	} else {
+		opts.NoIndexColumn(isDisableColumnIndexNode.As<bool>());
+	}
 	if (fieldType == "uuid"sv && opts.IsSparse()) {
 		throw Error(errParams, "UUID index cannot be sparse");
 	}
-	opts.SetConfig(DetermineIndexType(name, indexType, fieldType), stringifyJson(root["config"sv]));
+	opts.SetConfig(indexTypeEnum, stringifyJson(root["config"sv]));
 	const std::string rtreeType = root["rtree_type"sv].As<std::string>();
 	if (rtreeType.empty()) {
 		if (indexType == "rtree"sv || fieldType == "point"sv) {
@@ -246,10 +254,11 @@ void IndexDef::GetJSON(WrSerializer& ser) const {
 	builder.Put("name"sv, name_)
 		.Put("field_type"sv, fieldType_)
 		.Put("index_type"sv, indexType_)
-		.Put("is_pk"sv, opts_.IsPK())
-		.Put("is_array"sv, opts_.IsArray())
-		.Put("is_dense"sv, opts_.IsDense())
-		.Put("is_sparse"sv, opts_.IsSparse());
+		.Put("is_pk"sv, *opts_.IsPK())
+		.Put("is_array"sv, *opts_.IsArray())
+		.Put("is_dense"sv, *opts_.IsDense())
+		.Put("is_no_column", *opts_.IsNoIndexColumn())
+		.Put("is_sparse"sv, *opts_.IsSparse());
 	if (indexType_ == "rtree"sv || fieldType_ == "point"sv) {
 		switch (opts_.RTreeType()) {
 			case IndexOpts::Linear:
@@ -281,7 +290,7 @@ void IndexDef::GetJSON(WrSerializer& ser) const {
 
 	auto arrNode = builder.Array("json_paths"sv);
 	for (auto& jsonPath : jsonPaths_) {
-		arrNode.Put(nullptr, jsonPath);
+		arrNode.Put(TagName::Empty(), jsonPath);
 	}
 }
 

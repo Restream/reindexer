@@ -315,7 +315,11 @@ void IndexFastScan::search_dispatch_implem(
         search_implem_234<Cfloat>(n, x, k, distances, labels, scaler);
     } else if (impl >= 12 && impl <= 15) {
         FAISS_THROW_IF_NOT(ntotal < INT_MAX);
+#ifdef FAISS_WITH_OPENMP
         int nt = std::min(omp_get_max_threads(), int(n));
+#else // !FAISS_WITH_OPENMP
+        int nt = 1;
+#endif // FAISS_WITH_OPENMP
         if (nt < 2) {
             if (impl == 12 || impl == 13) {
                 search_implem_12<C>(n, x, k, distances, labels, impl, scaler);

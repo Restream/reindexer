@@ -2,7 +2,7 @@ package bindings
 
 const CInt32Max = int(^uint32(0) >> 1)
 
-const ReindexerVersion = "v5.0.0"
+const ReindexerVersion = "v5.1.0"
 
 // public go consts from type_consts.h and reindexer_ctypes.h
 const (
@@ -92,6 +92,7 @@ const (
 	QueryFieldSubQueryCondition = 30
 	QueryLocal                  = 31
 	QueryKnnCondition           = 32
+	QueryKnnConditionExt        = 33
 
 	KnnQueryTypeBase       = 0
 	KnnQueryTypeBruteForce = 1
@@ -99,6 +100,9 @@ const (
 	KnnQueryTypeIvf        = 3
 
 	KnnQueryParamsVersion = 0
+
+	KnnQueryDataFormatVector = 0
+	KnnQueryDataFormatString = 1
 
 	LeftJoin    = 0
 	InnerJoin   = 1
@@ -153,6 +157,7 @@ const (
 	IndexOptDense      = 1 << 5
 	IndexOptAppendable = 1 << 4
 	IndexOptSparse     = 1 << 3
+	IndexOptNoColumn   = 1 << 2
 
 	StorageOptEnabled               = 1
 	StorageOptDropOnFileFormatError = 1 << 1
@@ -160,7 +165,6 @@ const (
 
 	ConnectOptOpenNamespaces       = 1
 	ConnectOptAllowNamespaceErrors = 1 << 1
-	ConnectOptAutorepair           = 1 << 2
 	ConnectOptWarnVersion          = 1 << 4
 
 	BindingCapabilityQrIdleTimeouts        = 1

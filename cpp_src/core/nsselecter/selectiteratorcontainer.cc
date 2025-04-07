@@ -1,7 +1,9 @@
 #include "selectiteratorcontainer.h"
 
 #include <numeric>
+#include <span>
 #include <sstream>
+#include "core/embedding/embedder.h"
 #include "core/index/float_vector/float_vector_index.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/rdxcontext.h"
@@ -66,7 +68,7 @@ void SelectIteratorContainer::sortByCost(std::span<unsigned> indexes, std::span<
 			costs[indexes[j]] = cst;
 		}
 	}
-	// GCC's std::stable_sort performs allocations even in the simpliest scenarios, so handling some of them explicitly
+	// GCC's std::stable_sort performs allocations even in the simplest scenarios, so handling some of them explicitly
 	switch (to - from) {
 		case 0:
 		case 1:
@@ -97,26 +99,26 @@ void SelectIteratorContainer::sortByCost(std::span<unsigned> indexes, std::span<
 			break;
 		}
 		default:
-			// clang-tidy reports std::get_temporary_buffer as deprected
+			// clang-tidy reports that std::get_temporary_buffer is deprecated
 			// NOLINTNEXTLINE (clang-diagnostic-deprecated-declarations)
 			std::stable_sort(indexes.begin() + from, indexes.begin() + to,
 							 [&costs](unsigned i1, unsigned i2) { return costs[i1] < costs[i2]; });
 	}
-	moveJoinsToTheBeginingOfORs(indexes, from, to);
+	moveJoinsToTheBeginningOfORs(indexes, from, to);
 }
 
 bool SelectIteratorContainer::markBracketsHavingJoins(iterator begin, iterator end) noexcept {
 	bool result = false;
 	for (iterator it = begin; it != end; ++it) {
-		result =
-			it->Visit([it] RX_PRE_LMBD_ALWAYS_INLINE(SelectIteratorsBracket & b)
-						  RX_POST_LMBD_ALWAYS_INLINE noexcept { return (b.haveJoins = markBracketsHavingJoins(it.begin(), it.end())); },
-					  [] RX_PRE_LMBD_ALWAYS_INLINE(
-						  OneOf<SelectIterator, FieldsComparator, AlwaysTrue, EqualPositionComparator, ComparatorNotIndexed,
-								Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>)
-						  RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
-					  [] RX_PRE_LMBD_ALWAYS_INLINE(JoinSelectIterator&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; }) ||
-			result;
+		result = it->Visit(
+					 [it] RX_PRE_LMBD_ALWAYS_INLINE(SelectIteratorsBracket & b)
+						 RX_POST_LMBD_ALWAYS_INLINE noexcept { return (b.haveJoins = markBracketsHavingJoins(it.begin(), it.end())); },
+					 [] RX_PRE_LMBD_ALWAYS_INLINE(
+						 OneOf<SelectIterator, FieldsComparator, AlwaysTrue, EqualPositionComparator, ComparatorNotIndexed,
+							   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>)
+						 RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
+					 [] RX_PRE_LMBD_ALWAYS_INLINE(JoinSelectIterator&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; }) ||
+				 result;
 	}
 	return result;
 }
@@ -124,13 +126,14 @@ bool SelectIteratorContainer::markBracketsHavingJoins(iterator begin, iterator e
 bool SelectIteratorContainer::haveJoins(size_t i) const noexcept {
 	return container_[i].Visit(
 		[] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket& b) RX_POST_LMBD_ALWAYS_INLINE noexcept { return b.haveJoins; },
-		[] RX_PRE_LMBD_ALWAYS_INLINE(OneOf<SelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed,
-										   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>)
+		[] RX_PRE_LMBD_ALWAYS_INLINE(
+			OneOf<SelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed,
+				  Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>)
 			RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
 		[] RX_PRE_LMBD_ALWAYS_INLINE(OneOf<JoinSelectIterator, AlwaysTrue>) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; });
 }
 
-void SelectIteratorContainer::moveJoinsToTheBeginingOfORs(std::span<unsigned> indexes, unsigned from, unsigned to) {
+void SelectIteratorContainer::moveJoinsToTheBeginningOfORs(std::span<unsigned> indexes, unsigned from, unsigned to) {
 	thread_local h_vector<unsigned, 16> buffer;
 	buffer.resize(indexes.size());
 	unsigned firstNotJoin = from;
@@ -170,7 +173,7 @@ double SelectIteratorContainer::cost(std::span<unsigned> indexes, unsigned cur, 
 		[&] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket&)
 			RX_POST_LMBD_ALWAYS_INLINE noexcept { return cost(indexes, cur + 1, cur + Size(indexes[cur]), expectedIterations); },
 		Restricted<SelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed,
-				   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
+				   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
 			[expectedIterations] RX_PRE_LMBD_ALWAYS_INLINE(const auto& c)
 				RX_POST_LMBD_ALWAYS_INLINE noexcept { return c.Cost(expectedIterations); }),
 		[] RX_PRE_LMBD_ALWAYS_INLINE(const JoinSelectIterator& jit) RX_POST_LMBD_ALWAYS_INLINE noexcept { return jit.Cost(); },
@@ -285,7 +288,7 @@ void SelectIteratorContainer::processField(FieldsComparator& fc, const QueryFiel
 
 SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry& qe, bool enableSortIndexOptimize, const NamespaceImpl& ns,
 															unsigned sortId, RankedTypeQuery rankedTypeQuery, RankSortType rankSortType,
-															SelectFunction::Ptr& selectFnc, IsRanked& isRanked, bool& isIndexSparse,
+															SelectFunction::Ptr& selectFnc, IsRanked& isRanked, IsSparse& isIndexSparse,
 															BaseFunctionCtx::Ptr& rankedCtx, QueryPreprocessor& qPreproc,
 															const RdxContext& rdxCtx) {
 	auto& index = ns.indexes_[qe.IndexNo()];
@@ -359,7 +362,7 @@ void SelectIteratorContainer::processJoinEntry(const JoinQueryEntry& jqe, OpType
 }
 
 void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults&& selectResults, OpType op, const NamespaceImpl& ns,
-													   const QueryEntry& qe, IsRanked isRanked, bool isIndexSparse,
+													   const QueryEntry& qe, IsRanked isRanked, IsSparse isIndexSparse,
 													   std::optional<OpType> nextOp) {
 	std::visit(
 		overloaded{
@@ -421,10 +424,11 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults&& select
 				}
 			},
 			Restricted<ComparatorNotIndexed,
-					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}([&](auto& c) {
-				c.SetNotOperationFlag(op == OpNot);
-				Append(op, std::move(c));
-			})},
+					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
+				[&](auto& c) {
+					c.SetNotOperationFlag(op == OpNot);
+					Append(op, std::move(c));
+				})},
 		selectResults.AsVariant());
 }
 
@@ -522,14 +526,41 @@ std::vector<SelectIteratorContainer::EqualPositions> SelectIteratorContainer::pr
 }
 
 SelectKeyResult SelectIteratorContainer::processKnnQueryEntry(const KnnQueryEntry& qe, const NamespaceImpl& ns,
-															  SelectFunction::Ptr& selectFnc, BaseFunctionCtx::Ptr& rankedCtx) {
+															  SelectFunction::Ptr& selectFnc, BaseFunctionCtx::Ptr& rankedCtx,
+															  const RdxContext& rdxCtx) {
 	const FloatVectorIndex& idx = static_cast<const FloatVectorIndex&>(*ns.indexes_[qe.IndexNo()]);
 	auto ctx = selectFnc ? selectFnc->CreateCtx(qe.IndexNo()) : BaseFunctionCtx::Ptr{};
 	assertrx_throw(ctx && ctx->Type() == BaseFunctionCtx::CtxType::kKnnCtx);
 	rankedCtx = ctx;
 	KnnCtx& knnCtx = *static_ctx_pointer_cast<KnnCtx>(ctx);
 	knnCtx.NeedSort(NeedSort(ctx_->sortingContext.entries.empty()));
-	return idx.Select(qe.Value(), qe.Params(), knnCtx);
+
+	if (qe.Format() == KnnQueryEntry::DataFormatType::Vector) {
+		return idx.Select(qe.Value(), qe.Params(), knnCtx, rdxCtx);
+	}
+
+	assertrx_throw(qe.Format() == KnnQueryEntry::DataFormatType::String);
+	auto type = ns.payloadType_.Field(qe.IndexNo());
+	const auto& embedder = type.QueryEmbedder();
+	if (!embedder) {
+		throw Error(errNotValid, "Trying to find knn by string. No Embedder configured for index '{}'", idx.Name());
+	}
+
+	std::vector<VariantArray> source;
+	source.push_back(VariantArray{1, Variant(qe.Data())});
+
+	h_vector<ConstFloatVector, 1> products;
+	auto err = embedder->Calculate(rdxCtx, std::span{&source, 1}, products);
+	if (!err.ok()) {
+		throw err;
+	}
+
+	if (products.size() != 1) {
+		throw Error(errNotValid, "Unable to generate vector values with incorrect embedding result for index '{}'", idx.Name());
+	}
+
+	const ConstFloatVectorView vect{products.front()};
+	return idx.Select(vect, qe.Params(), knnCtx, rdxCtx);
 }
 
 void SelectIteratorContainer::PrepareIteratorsForSelectLoop(QueryPreprocessor& qPreproc, unsigned sortId, RankedTypeQuery rankedTypeQuery,
@@ -573,7 +604,7 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 					SelectKeyResults selectResults;
 
 					IsRanked isRanked = IsRanked_False;
-					bool isIndexSparse = false;
+					IsSparse isIndexSparse = IsSparse_False;
 					if (qe.IsFieldIndexed()) {
 						bool enableSortIndexOptimize = (ctx_->sortingContext.uncommitedIndex == qe.IndexNo()) && !sortIndexFound &&
 													   (op == OpAnd) && !qe.Distinct() && (begin == 0) &&
@@ -630,7 +661,7 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 					if (op != OpAnd || (next < end && queries.GetOperation(next) == OpOr)) {
 						throw Error(errLogic, "OR and NOT operations are not allowed with knn condition");
 					}
-					Append<SelectIterator>(op, processKnnQueryEntry(qe, ns, selectFnc, rankedCtx), false, qe.FieldName(),
+					Append<SelectIterator>(op, processKnnQueryEntry(qe, ns, selectFnc, rankedCtx, rdxCtx), false, qe.FieldName(),
 										   IteratorFieldKind::Indexed, ForcedFirst_True);
 					lastAppendedOrClosed()->Value<SelectIterator>().SetUnsorted();
 					return ContainRanked_True;
@@ -682,13 +713,11 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 			// suggest that all JOINs in chain of OR ... OR ... OR ... OR will be before all not JOINs (see SortByCost)
 			if (result) {
 				// check what it does not holds join
-				if (it->Visit(
-						[](const SelectIteratorsBracket& b) noexcept { return !b.haveJoins; },
-						[](const JoinSelectIterator&) noexcept { return false; },
-						[](OneOf<SelectIterator, FieldsComparator, AlwaysTrue, EqualPositionComparator, ComparatorNotIndexed,
-								 Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>) noexcept {
-							return true;
-						})) {
+				if (it->Visit([](const SelectIteratorsBracket& b) noexcept { return !b.haveJoins; },
+							  [](const JoinSelectIterator&) noexcept { return false; },
+							  [](OneOf<SelectIterator, FieldsComparator, AlwaysTrue, EqualPositionComparator, ComparatorNotIndexed,
+									   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid,
+												FloatVector>>) noexcept { return true; })) {
 					continue;
 				}
 			}
@@ -708,7 +737,7 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 			[&] RX_PRE_LMBD_ALWAYS_INLINE(JoinSelectIterator & jit)
 				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(jit, pv, properRowId, match); },
 			Restricted<FieldsComparator, EqualPositionComparator, ComparatorNotIndexed,
-					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
+					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
 				[&pv, properRowId] RX_PRE_LMBD_ALWAYS_INLINE(auto& c) RX_POST_LMBD_ALWAYS_INLINE { return c.Compare(pv, properRowId); }),
 			[] RX_PRE_LMBD_ALWAYS_INLINE(AlwaysTrue&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; });
 		if (op == OpOr) {
@@ -756,8 +785,9 @@ IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterat
 						return from;
 					},
 					[from] RX_PRE_LMBD_ALWAYS_INLINE(
-						const OneOf<JoinSelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed, AlwaysTrue,
-									Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>)
+						const OneOf<
+							JoinSelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed, AlwaysTrue,
+							Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>)
 						RX_POST_LMBD_ALWAYS_INLINE { return from; },
 					[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse&) RX_POST_LMBD_ALWAYS_INLINE {
 						return reverse ? std::numeric_limits<IdType>::lowest() : std::numeric_limits<IdType>::max();
@@ -792,8 +822,9 @@ IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterat
 						return from;
 					},
 					[from] RX_PRE_LMBD_ALWAYS_INLINE(
-						const OneOf<JoinSelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed, AlwaysTrue,
-									Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>)
+						const OneOf<
+							JoinSelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed, AlwaysTrue,
+							Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>)
 						RX_POST_LMBD_ALWAYS_INLINE { return from; },
 					[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse&) RX_POST_LMBD_ALWAYS_INLINE {
 						return reverse ? std::numeric_limits<IdType>::lowest() : std::numeric_limits<IdType>::max();
@@ -845,7 +876,7 @@ void SelectIteratorContainer::dump(size_t level, const_iterator begin, const_ite
 				ser << ')';
 			},
 			Restricted<SelectIterator, FieldsComparator, EqualPositionComparator, ComparatorNotIndexed,
-					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
+					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
 				[&ser](const auto& c) { ser << c.Dump(); }),
 			[&ser, &joinedSelectors](const JoinSelectIterator& jit) { jit.Dump(ser, joinedSelectors); },
 			[&ser](const AlwaysTrue&) { ser << "Always True"; });

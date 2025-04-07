@@ -94,13 +94,13 @@ void BaseFTConfig::getJson(JsonBuilder& jsonBuilder) const {
 			{
 				auto tokensNode = synonymObj.Array("tokens");
 				for (const auto& token : synonym.tokens) {
-					tokensNode.Put(nullptr, token);
+					tokensNode.Put(TagName::Empty(), token);
 				}
 			}
 			{
 				auto alternativesNode = synonymObj.Array("alternatives");
 				for (const auto& token : synonym.alternatives) {
-					alternativesNode.Put(nullptr, token);
+					alternativesNode.Put(TagName::Empty(), token);
 				}
 			}
 		}
@@ -108,7 +108,7 @@ void BaseFTConfig::getJson(JsonBuilder& jsonBuilder) const {
 	{
 		auto stopWordsNode = jsonBuilder.Array("stop_words");
 		for (const auto& sw : stopWords) {
-			auto wordNode = stopWordsNode.Object(nullptr);
+			auto wordNode = stopWordsNode.Object();
 			wordNode.Put("word", sw);
 			wordNode.Put("is_morpheme", sw.type == StopWord::Type::Morpheme);
 		}

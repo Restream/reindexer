@@ -295,7 +295,7 @@ private:
 				if (it != b) {
 					os_ << ", ";
 				}
-				os_ << *it;
+				os_ << it->AsNumber();
 			}
 			os_ << ']';
 		}

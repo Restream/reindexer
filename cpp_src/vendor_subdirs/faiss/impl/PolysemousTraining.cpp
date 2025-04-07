@@ -764,7 +764,11 @@ void PolysemousTraining::optimize_reproduce_distances(
     int nbits = pq.nbits;
 
     size_t mem1 = memory_usage_per_thread(pq);
+#ifdef FAISS_WITH_OPENMP
     int nt = std::min(omp_get_max_threads(), int(pq.M));
+#else // !FAISS_WITH_OPENMP
+    int nt = 1;
+#endif // FAISS_WITH_OPENMP
     FAISS_THROW_IF_NOT_FMT(
             mem1 < max_memory,
             "Polysemous training will use %zd bytes per thread, while the max is set to %zd",

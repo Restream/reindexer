@@ -44,7 +44,7 @@ CsvBuilder::CsvBuilder(WrSerializer& ser, CsvOrdering& ordering)
 
 CsvBuilder::~CsvBuilder() { End(); }
 
-std::string_view CsvBuilder::getNameByTag(int tagName) { return tagName ? tm_->tag2name(tagName) : std::string_view(); }
+std::string_view CsvBuilder::getNameByTag(TagName tagName) { return tagName.IsEmpty() ? std::string_view{} : tm_->tag2name(tagName); }
 
 CsvBuilder& CsvBuilder::End() {
 	if (!positions_.empty()) {
@@ -106,10 +106,10 @@ void CsvBuilder::putName(std::string_view name) {
 }
 
 void CsvBuilder::tmProcessing(std::string_view name) {
-	int tag = tm_->name2tag(name);
+	const TagName tag = tm_->name2tag(name);
 
 	auto prevFinishPos = ser_->Len();
-	if (tag > 0) {
+	if (!tag.IsEmpty()) {
 		auto it = std::find_if(ordering_->begin(), ordering_->end(), [&tag](const auto& t) { return t == tag; });
 
 		if (it != ordering_->end()) {
@@ -210,7 +210,7 @@ CsvBuilder& CsvBuilder::Put(std::string_view name, const Variant& kv, int offset
 			}
 		},
 		[&](KeyValueType::Uuid) { Put(name, Uuid{kv}, offset); },
-		[](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) noexcept { assertrx_throw(false); });
+		[](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) { assertrx_throw(false); });
 	return *this;
 }
 

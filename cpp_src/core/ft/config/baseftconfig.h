@@ -40,9 +40,9 @@ public:
 		static constexpr int kMinProcAfterPenalty = 1;
 		// Relevancy of full word match
 		int fullMatch = 100;
-		// Mininum relevancy of prefix word match.
+		// Minimum relevancy of prefix word match.
 		int prefixMin = 50;
-		// Mininum relevancy of suffix word match.
+		// Minimum relevancy of suffix word match.
 		int suffixMin = 10;
 		// Base relevancy of typo match
 		int typo = 85;

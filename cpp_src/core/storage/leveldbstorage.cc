@@ -15,6 +15,7 @@ namespace datastorage {
 using namespace std::string_view_literals;
 
 constexpr auto kStorageNotInitialized = "Storage is not initialized"sv;
+constexpr auto kLostDirName = "lost"sv;
 
 static void toWriteOptions(const StorageOpts& opts, leveldb::WriteOptions& wopts) noexcept { wopts.sync = opts.IsSync(); }
 
@@ -24,6 +25,43 @@ static void toReadOptions(const StorageOpts& opts, leveldb::ReadOptions& ropts) 
 }
 
 LevelDbStorage::LevelDbStorage() = default;
+
+Error LevelDbStorage::Open(const std::string& path, const StorageOpts& opts) {
+	if (path.empty()) {
+		return Error(errParams, "Cannot enable storage: the path is empty");
+	}
+
+	leveldb::Options options;
+	options.create_if_missing = opts.IsCreateIfMissing();
+	options.max_open_files = 50;
+	SetDummyLogger(options);
+
+	leveldb::DB* db = nullptr;
+	leveldb::Status status = leveldb::DB::Open(options, path, &db);
+	if (status.ok()) {
+		db_.reset(db);
+		opts_ = opts;
+		dbpath_ = path;
+		return Error();
+	}
+
+	return Error(errLogic, status.ToString());
+}
+
+void LevelDbStorage::Destroy(const std::string& path) {
+	fs::RmDirAll(fs::JoinPath(path, std::string(kLostDirName)));
+	leveldb::Options options;
+	options.create_if_missing = true;
+	db_.reset();
+	leveldb::Status status = leveldb::DestroyDB(path.c_str(), options);
+	if (!status.ok()) {
+		fprintf(stderr, "Cannot destroy LevelDB's storage: %s, %s. Trying to remove files by the backup mechanism...\n", path.c_str(),
+				status.ToString().c_str());
+		if (fs::RmDirAll(path) != 0) {
+			fprintf(stderr, "Unable to remove LevelDB's storage: %s, %s", path.c_str(), strerror(errno));
+		}
+	}
+}
 
 Error LevelDbStorage::Read(const StorageOpts& opts, std::string_view key, std::string& value) {
 	if (!db_) {
@@ -60,7 +98,7 @@ Error LevelDbStorage::Write(const StorageOpts& opts, UpdatesCollection& buffer) 
 
 	leveldb::WriteOptions options;
 	toWriteOptions(opts, options);
-	LevelDbBatchBuffer* batchBuffer = static_cast<LevelDbBatchBuffer*>(&buffer);
+	auto batchBuffer = static_cast<LevelDbBatchBuffer*>(&buffer);
 	leveldb::Status status = db_->Write(options, &batchBuffer->batchWrite_);
 	if (status.ok()) {
 		return Error();
@@ -107,8 +145,8 @@ void LevelDbStorage::ReleaseSnapshot(Snapshot::Ptr snapshot) {
 	if (!snapshot) {
 		throw Error(errParams, "Storage pointer is null");
 	}
-	const LevelDbSnapshot* levelDbSnpshot = static_cast<const LevelDbSnapshot*>(snapshot.get());
-	db_->ReleaseSnapshot(levelDbSnpshot->snapshot_);
+	const LevelDbSnapshot* levelDbSnapshot = static_cast<const LevelDbSnapshot*>(snapshot.get());
+	db_->ReleaseSnapshot(levelDbSnapshot->snapshot_);
 	snapshot.reset();
 }
 
@@ -144,42 +182,6 @@ Cursor* LevelDbStorage::GetCursor(StorageOpts& opts) {
 }
 
 UpdatesCollection* LevelDbStorage::GetUpdatesCollection() { return new LevelDbBatchBuffer(); }
-
-Error LevelDbStorage::doOpen(const std::string& path, const StorageOpts& opts) {
-	if (path.empty()) {
-		return Error(errParams, "Cannot enable storage: the path is empty '{}'", path);
-	}
-
-	leveldb::Options options;
-	options.create_if_missing = opts.IsCreateIfMissing();
-	options.max_open_files = 50;
-	SetDummyLogger(options);
-
-	leveldb::DB* db = nullptr;
-	leveldb::Status status = leveldb::DB::Open(options, path, &db);
-	if (status.ok()) {
-		db_.reset(db);
-		opts_ = opts;
-		dbpath_ = path;
-		return Error();
-	}
-
-	return Error(errLogic, status.ToString());
-}
-
-void LevelDbStorage::doDestroy(const std::string& path) {
-	leveldb::Options options;
-	options.create_if_missing = true;
-	db_.reset();
-	leveldb::Status status = leveldb::DestroyDB(path.c_str(), options);
-	if (!status.ok()) {
-		fprintf(stderr, "Cannot destroy LevelDB's storage: %s, %s. Trying to remove files by the backup mechanism...\n", path.c_str(),
-				status.ToString().c_str());
-		if (fs::RmDirAll(path) != 0) {
-			fprintf(stderr, "Unable to remove LevelDB's storage: %s, %s", path.c_str(), strerror(errno));
-		}
-	}
-}
 
 std::string_view LevelDbIterator::Key() const {
 	leveldb::Slice key = iterator_->key();

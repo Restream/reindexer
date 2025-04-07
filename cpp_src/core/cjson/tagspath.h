@@ -2,22 +2,23 @@
 
 #include <cstdlib>
 #include <functional>
+#include "core/enums.h"
 #include "estl/h_vector.h"
 #include "tools/customhash.h"
 
 namespace reindexer {
 
-using TagsPath = h_vector<int16_t, 16>;
+using TagsPath = h_vector<TagName, 16>;
 
-class IndexedPathNode {
-	struct AllItemsType {};
+class [[nodiscard]] IndexedPathNode {
+	struct [[nodiscard]] AllItemsType {};
 
 public:
 	static constexpr AllItemsType AllItems{};
 	IndexedPathNode() = default;
 	IndexedPathNode(AllItemsType) noexcept : index_{ForAllItems} {}
-	IndexedPathNode(int16_t _nameTag) noexcept : nameTag_(_nameTag) {}
-	IndexedPathNode(int16_t _nameTag, int32_t _index) noexcept : nameTag_(_nameTag), index_(_index) {}
+	IndexedPathNode(TagName _nameTag) noexcept : nameTag_(_nameTag) {}
+	IndexedPathNode(TagName _nameTag, int32_t _index) noexcept : nameTag_(_nameTag), index_(_index) {}
 	bool operator==(const IndexedPathNode& obj) const noexcept {
 		if (nameTag_ != obj.nameTag_) {
 			return false;
@@ -33,11 +34,11 @@ public:
 		return true;
 	}
 	bool operator!=(const IndexedPathNode& obj) const noexcept { return !(operator==(obj)); }
-	bool operator==(int16_t _nameTag) const noexcept { return _nameTag == nameTag_; }
-	bool operator!=(int16_t _nameTag) const noexcept { return _nameTag != nameTag_; }
-	explicit operator int() const noexcept { return nameTag_; }
+	bool operator==(TagName _nameTag) const noexcept { return _nameTag == nameTag_; }
+	bool operator!=(TagName _nameTag) const noexcept { return _nameTag != nameTag_; }
+	explicit operator TagName() const noexcept { return nameTag_; }
 
-	int NameTag() const noexcept { return nameTag_; }
+	TagName NameTag() const noexcept { return nameTag_; }
 	int Index() const noexcept { return index_; }
 
 	bool IsArrayNode() const noexcept { return (IsForAllItems() || index_ != IndexValueType::NotSet); }
@@ -53,16 +54,16 @@ public:
 	}
 
 	void SetIndex(int32_t index) noexcept { index_ = index; }
-	void SetNameTag(int16_t nameTag) noexcept { nameTag_ = nameTag; }
+	void SetNameTag(TagName nameTag) noexcept { nameTag_ = nameTag; }
 
 private:
 	enum : int32_t { ForAllItems = -2 };
-	int16_t nameTag_ = 0;
+	TagName nameTag_{TagName::Empty()};
 	int32_t index_ = IndexValueType::NotSet;
 };
 
 template <unsigned hvSize>
-class IndexedTagsPathImpl : public h_vector<IndexedPathNode, hvSize> {
+class [[nodiscard]] IndexedTagsPathImpl : public h_vector<IndexedPathNode, hvSize> {
 public:
 	using Base = h_vector<IndexedPathNode, hvSize>;
 	using Base::Base;
@@ -131,20 +132,20 @@ public:
 using IndexedTagsPath = IndexedTagsPathImpl<6>;
 
 template <typename TagsPath>
-class TagsPathScope {
+class [[nodiscard]] TagsPathScope {
 public:
-	TagsPathScope(TagsPath& tagsPath, int16_t tagName) : tagsPath_(tagsPath), tagName_(tagName) {
-		if (tagName_) {
+	TagsPathScope(TagsPath& tagsPath, TagName tagName) : tagsPath_(tagsPath), tagName_(tagName) {
+		if (!tagName_.IsEmpty()) {
 			tagsPath_.emplace_back(tagName);
 		}
 	}
-	TagsPathScope(TagsPath& tagsPath, int16_t tagName, int32_t index) : tagsPath_(tagsPath), tagName_(tagName) {
-		if (tagName_) {
+	TagsPathScope(TagsPath& tagsPath, TagName tagName, int32_t index) : tagsPath_(tagsPath), tagName_(tagName) {
+		if (!tagName_.IsEmpty()) {
 			tagsPath_.emplace_back(tagName, index);
 		}
 	}
 	~TagsPathScope() {
-		if (tagName_ && !tagsPath_.empty()) {
+		if (!tagName_.IsEmpty() && !tagsPath_.empty()) {
 			tagsPath_.pop_back();
 		}
 	}
@@ -153,7 +154,7 @@ public:
 
 private:
 	TagsPath& tagsPath_;
-	const int16_t tagName_;
+	const TagName tagName_;
 };
 
 }  // namespace reindexer

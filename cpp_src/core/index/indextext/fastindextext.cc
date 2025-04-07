@@ -382,7 +382,7 @@ void FastIndexText<T>::commitFulltextImpl() {
 		}
 		auto tm1 = system_clock_w::now();
 
-		this->holder_->Process(this->Fields().size(), !this->opts_.IsDense());
+		this->holder_->Process(this->Fields().size(), *!this->opts_.IsDense());
 		if (this->holder_->NeedClear(this->tracker_.isCompleteUpdated())) {
 			this->tracker_.clear();
 		}
@@ -402,8 +402,8 @@ void FastIndexText<T>::commitFulltextImpl() {
 		if rx_unlikely (getConfig()->logLevel >= LogInfo) {
 			auto tm2 = system_clock_w::now();
 			logFmt(LogInfo, "FastIndexText::Commit elapsed {} ms total [ build vdocs {} ms,  process data {} ms ]",
-					  duration_cast<milliseconds>(tm2 - tm0).count(), duration_cast<milliseconds>(tm1 - tm0).count(),
-					  duration_cast<milliseconds>(tm2 - tm1).count());
+				   duration_cast<milliseconds>(tm2 - tm0).count(), duration_cast<milliseconds>(tm1 - tm0).count(),
+				   duration_cast<milliseconds>(tm2 - tm1).count());
 		}
 	} catch (Error& e) {
 		logFmt(LogError, "FastIndexText::Commit exception: '{}'. Index will be rebuilt on the next query", e.what());

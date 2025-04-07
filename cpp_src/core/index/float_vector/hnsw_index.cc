@@ -10,7 +10,7 @@ namespace reindexer {
 
 static_assert(sizeof(IdType) == sizeof(hnswlib::labeltype), "Expecting 1-to-1 mapping");
 
-static void PrintVecInstrcutionsLevel(std::string_view indexType, std::string_view name, VectorMetric metric, Index::CreationLog log) {
+static void PrintVecInstructionsLevel(std::string_view indexType, std::string_view name, VectorMetric metric, Index::CreationLog log) {
 	std::string vecInstructions = "disabled";
 	switch (metric) {
 		case VectorMetric::L2:
@@ -41,7 +41,7 @@ static void PrintVecInstrcutionsLevel(std::string_view indexType, std::string_vi
 			}
 			break;
 		default:
-			throw Error(errLogic, "Attempt to construct {} index '{}' with unknow metric: {}", indexType, name, int(metric));
+			throw Error(errLogic, "Attempt to construct {} index '{}' with unknown metric: {}", indexType, name, int(metric));
 	}
 	if (log == Index::CreationLog::Yes) {
 		logFmt(LogInfo, "Creating {} index '{}'; Vector instructions level: {}", indexType, name, vecInstructions);
@@ -49,6 +49,7 @@ static void PrintVecInstrcutionsLevel(std::string_view indexType, std::string_vi
 }
 
 constexpr static ReplaceDeleted kHNSWAllowReplaceDeleted = ReplaceDeleted_True;
+constexpr static int kHnswRandomSeed = 100;
 
 template <>
 HnswIndexBase<hnswlib::HierarchicalNSWST>::HnswIndexBase(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
@@ -57,9 +58,8 @@ HnswIndexBase<hnswlib::HierarchicalNSWST>::HnswIndexBase(const IndexDef& idef, P
 	  space_{newSpace(Dimension().Value(), metric_)},
 	  map_{std::make_unique<hnswlib::HierarchicalNSWST<FloatType>>(
 		  space_.get(), std::max(idef.Opts().FloatVector().StartSize(), currentNsSize), idef.Opts().FloatVector().M(),
-		  idef.Opts().FloatVector().EfConstruction())} {
-	map_->allow_replace_deleted_ = kHNSWAllowReplaceDeleted;
-	PrintVecInstrcutionsLevel("singlethread HNSW", idef.Name(), idef.Opts().FloatVector().Metric(), log);
+		  idef.Opts().FloatVector().EfConstruction(), kHnswRandomSeed, kHNSWAllowReplaceDeleted)} {
+	PrintVecInstructionsLevel("singlethread HNSW", idef.Name(), idef.Opts().FloatVector().Metric(), log);
 }
 
 template <>
@@ -69,9 +69,8 @@ HnswIndexBase<hnswlib::HierarchicalNSWMT>::HnswIndexBase(const IndexDef& idef, P
 	  space_{newSpace(Dimension().Value(), metric_)},
 	  map_{std::make_unique<hnswlib::HierarchicalNSWMT<FloatType>>(
 		  space_.get(), std::max(idef.Opts().FloatVector().StartSize(), currentNsSize), idef.Opts().FloatVector().M(),
-		  idef.Opts().FloatVector().EfConstruction())} {
-	map_->allow_replace_deleted_ = kHNSWAllowReplaceDeleted;
-	PrintVecInstrcutionsLevel("multithread HNSW", idef.Name(), idef.Opts().FloatVector().Metric(), log);
+		  idef.Opts().FloatVector().EfConstruction(), kHnswRandomSeed, kHNSWAllowReplaceDeleted)} {
+	PrintVecInstructionsLevel("multithread HNSW", idef.Name(), idef.Opts().FloatVector().Metric(), log);
 }
 
 template <>
@@ -81,7 +80,7 @@ HnswIndexBase<hnswlib::BruteforceSearch>::HnswIndexBase(const IndexDef& idef, Pa
 	  space_{newSpace(Dimension().Value(), metric_)},
 	  map_{std::make_unique<hnswlib::BruteforceSearch<FloatType>>(space_.get(),
 																  std::max(idef.Opts().FloatVector().StartSize(), currentNsSize))} {
-	PrintVecInstrcutionsLevel("bruteforce", idef.Name(), idef.Opts().FloatVector().Metric(), log);
+	PrintVecInstructionsLevel("bruteforce", idef.Name(), idef.Opts().FloatVector().Metric(), log);
 }
 
 template <template <typename> typename Map>
@@ -114,8 +113,8 @@ void HnswIndexBase<Map>::clearMap() noexcept {
 	if constexpr (std::is_same_v<Map<FloatType>, hnswlib::BruteforceSearch<FloatType>>) {
 		map_ = std::make_unique<Map<FloatType>>(space_.get(), fvOpts.StartSize());
 	} else {
-		map_ = std::make_unique<Map<FloatType>>(space_.get(), fvOpts.StartSize(), fvOpts.M(), fvOpts.EfConstruction());
-		map_->allow_replace_deleted_ = kHNSWAllowReplaceDeleted;
+		map_ = std::make_unique<Map<FloatType>>(space_.get(), fvOpts.StartSize(), fvOpts.M(), fvOpts.EfConstruction(), kHnswRandomSeed,
+												kHNSWAllowReplaceDeleted);
 	}
 }
 
@@ -125,7 +124,7 @@ Variant HnswIndexBase<Map>::upsert(ConstFloatVectorView vect, IdType id, bool& c
 		map_->resizeIndex(newSize(map_->getMaxElements()));
 	}
 	clearCache = true;
-	map_->addPoint(vect.Data(), id, kHNSWAllowReplaceDeleted);
+	map_->addPoint(vect.Data(), id);
 	vect.Strip();
 	return Variant{vect};
 }
@@ -170,7 +169,7 @@ IndexMemStat HnswIndexBase<Map>::GetMemStat(const RdxContext& ctx) noexcept {
 	stats.uniqKeysCount += uniqKeysCount;
 	stats.dataSize += uniqKeysCount * sizeof(FloatType) * Dimension().Value();
 	stats.indexingStructSize += map_->allocatedMemSize() + sizeof(Map<FloatType>);
-	stats.indexingStructSize -= stats.dataSize;	 // Do not calculate actual data size twice
+	stats.indexingStructSize -= stats.dataSize;	 // Don't calculate actual data size twice
 	return stats;
 }
 
@@ -203,8 +202,6 @@ SelectKeyResult HnswIndexBase<Map>::select(ConstFloatVectorView key, const KnnSe
 	}
 	auto knnRes = searchKnn(keyData, params);
 	std::vector<RankT> dists;
-	SelectKeyResult result;
-	IdSet::Ptr resSet = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 	base_idset idset;
 	if (!knnRes.empty()) {
 		dists.resize(knnRes.size());
@@ -242,8 +239,10 @@ SelectKeyResult HnswIndexBase<Map>::select(ConstFloatVectorView key, const KnnSe
 			std::sort(idset.begin(), idset.begin() + lastSameDist + 1);
 		}
 	}
+	IdSet::Ptr resSet = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 	resSet->SetUnordered(IdSetPlain{std::move(idset)});
 	ctx.Add(std::move(dists));
+	SelectKeyResult result;
 	result.emplace_back(std::move(resSet));
 	return result;
 }
@@ -312,13 +311,13 @@ FloatVectorIndex::StorageCacheWriteResult HnswIndexBase<Map>::WriteIndexCache(Wr
 		writer.PutVarUInt(kStorageMagic);
 		map_->saveIndex(writer, cancel);
 	} catch (Error& err) {
-		assertrx_dbg(false);  // Do not expecting this error in test scenarious
+		assertrx_dbg(false);  // Don't expect this error in test scenarios
 		res.err = std::move(err);
 	} catch (const std::exception& err) {
-		assertrx_dbg(false);  // Do not expecting this error in test scenarious
+		assertrx_dbg(false);  // Don't expect this error in test scenarios
 		res.err = Error{errLogic, err.what()};
 	} catch (...) {
-		assertrx_dbg(false);  // Do not expecting this error in test scenarious
+		assertrx_dbg(false);  // Don't expect this error in test scenarios
 		res.err = Error{errLogic, "Unexpected exception"};
 	}
 	return res;
@@ -367,15 +366,15 @@ Error HnswIndexBase<Map>::LoadIndexCache(std::string_view data, bool isComposite
 		}
 	} catch (Error& err) {
 		clearMap();
-		assertf_dbg(false, "Unexpected error: {}", err.what());	 // Do not expecting this error in test scenarious
+		assertf_dbg(false, "Unexpected error: {}", err.what());	 // Don't expect this error in test scenarios
 		return std::move(err);
 	} catch (const std::exception& err) {
 		clearMap();
-		assertf_dbg(false, "Unexpected std::exception: {}", err.what());  // Do not expecting this error in test scenarious
+		assertf_dbg(false, "Unexpected std::exception: {}", err.what());  // Don't expect this error in test scenarios
 		return Error{errLogic, "HNSWIndex::LoadIndexCache:{}: {}", Name(), err.what()};
 	} catch (...) {
 		clearMap();
-		assertrx_dbg(false);  // Do not expecting this error in test scenarious
+		assertrx_dbg(false);  // Don't expect this error in test scenarios
 		return Error{errLogic, "HNSWIndex::LoadIndexCache:{}: unexpected exception", Name()};
 	}
 	return {};

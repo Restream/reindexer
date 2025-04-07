@@ -6,9 +6,9 @@
 
 namespace reindexer {
 
-void ArraysStorage::UpdateArraySize(int tagName, int field) { GetArray(tagName, field); }
+void ArraysStorage::UpdateArraySize(TagName tagName, int field) { GetArray(tagName, field); }
 
-CJsonBuilder& ArraysStorage::GetArray(int tagName, int field) {
+CJsonBuilder& ArraysStorage::GetArray(TagName tagName, int field) {
 	assertrx(!indexes_.empty());
 	auto it = data_.find(tagName);
 	if (it == data_.end()) {
@@ -23,11 +23,11 @@ CJsonBuilder& ArraysStorage::GetArray(int tagName, int field) {
 	}
 }
 
-void ArraysStorage::onAddObject() { indexes_.emplace_back(h_vector<int, 1>()); }
+void ArraysStorage::onAddObject() { indexes_.emplace_back(h_vector<TagName, 1>()); }
 
 void ArraysStorage::onObjectBuilt(CJsonBuilder& parent) {
 	assertrx(!indexes_.empty());
-	for (int tagName : indexes_.back()) {
+	for (TagName tagName : indexes_.back()) {
 		auto it = data_.find(tagName);
 		assertrx(it != data_.end());
 		ArrayData& arrayData = it->second;
@@ -43,7 +43,8 @@ void ArraysStorage::onObjectBuilt(CJsonBuilder& parent) {
 }
 
 void ProtobufDecoder::setValue(Payload& pl, CJsonBuilder& builder, ProtobufValue item) {
-	int field = tm_.tags2field(tagsPath_.data(), tagsPath_.size());
+	using namespace std::string_view_literals;
+	const int field = tm_.tags2field(tagsPath_);
 	auto value = item.value.convert(item.itemType);
 	if (field > 0) {
 		const auto& f = pl.Type().Field(field);
@@ -53,15 +54,15 @@ void ProtobufDecoder::setValue(Payload& pl, CJsonBuilder& builder, ProtobufValue
 		if (item.isArray) {
 			arraysStorage_.UpdateArraySize(item.tagName, field);
 		} else {
-			validateArrayFieldRestrictions(f, 1, "protobuf");
+			validateArrayFieldRestrictions(f, 1, "protobuf"sv);
 			builder.Ref(item.tagName, value.Type(), field);
 		}
-		pl.Set(field, convertValueForPayload(pl, field, std::move(value), "protobuf"), true);
+		pl.Set(field, convertValueForPayload(pl, field, std::move(value), "protobuf"sv), true);
 		objectScalarIndexes_.set(field);
 	} else {
 		if (item.isArray) {
 			auto& array = arraysStorage_.GetArray(item.tagName);
-			array.Put(0, value);
+			array.Put(TagName::Empty(), value);
 		} else {
 			builder.Put(item.tagName, value);
 		}
@@ -74,7 +75,7 @@ Error ProtobufDecoder::decodeArray(Payload& pl, CJsonBuilder& builder, const Pro
 	ProtobufObject object(item.As<std::string_view>(), *schema_, tagsPath_, tm_);
 	ProtobufParser parser(object);
 	const bool packed = item.IsOfPrimitiveType();
-	const int field = tm_.tags2field(tagsPath_.data(), tagsPath_.size());
+	const int field = tm_.tags2field(tagsPath_);
 	if (field > 0) {
 		const auto& f = pl.Type().Field(field);
 		if (f.IsFloatVector()) {
@@ -108,25 +109,25 @@ Error ProtobufDecoder::decodeArray(Payload& pl, CJsonBuilder& builder, const Pro
 			if (packed) {
 				int count = 0;
 				while (!parser.IsEof()) {
-					pl.Set(field, convertValueForPayload(pl, field, parser.ReadArrayItem(item.itemType), "protobuf"), true);
+					pl.Set(field, convertValueForPayload(pl, field, parser.ReadArrayItem(item.itemType), "protobuf"sv), true);
 					++count;
 				}
 				builder.ArrayRef(item.tagName, field, count);
 			} else {
 				setValue(pl, builder, item);
 			}
-			validateArrayFieldRestrictions(f, reinterpret_cast<PayloadFieldValue::Array*>(pl.Field(field).p_)->len, "protobuf");
+			validateArrayFieldRestrictions(f, reinterpret_cast<PayloadFieldValue::Array*>(pl.Field(field).p_)->len, "protobuf"sv);
 		}
 	} else {
 		CJsonBuilder& array = arraysStorage_.GetArray(item.tagName);
 		if (packed) {
 			while (!parser.IsEof()) {
-				array.Put(0, parser.ReadArrayItem(item.itemType));
+				array.Put(TagName::Empty(), parser.ReadArrayItem(item.itemType));
 			}
 		} else {
 			if (item.itemType.Is<KeyValueType::Composite>()) {
 				Error status;
-				CJsonProtobufObjectBuilder obj(array, 0, arraysStorage_);
+				CJsonProtobufObjectBuilder obj(array, TagName::Empty(), arraysStorage_);
 				while (status.ok() && !parser.IsEof()) {
 					status = decode(pl, obj, parser.ReadValue(), floatVectorsHolder);
 				}
@@ -187,7 +188,7 @@ Error ProtobufDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& w
 	try {
 		tagsPath_.clear();
 		objectScalarIndexes_.reset();
-		CJsonProtobufObjectBuilder cjsonBuilder(arraysStorage_, wrser, &tm_, 0);
+		CJsonProtobufObjectBuilder cjsonBuilder(arraysStorage_, wrser, &tm_, TagName::Empty());
 		ProtobufObject object(buf, *schema_, tagsPath_, tm_);
 		return decodeObject(pl, cjsonBuilder, object, floatVectorsHolder);
 	} catch (Error& err) {

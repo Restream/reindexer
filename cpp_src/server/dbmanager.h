@@ -138,7 +138,6 @@ public:
 	/// Read user's database
 	/// @param storageEngine - underlying storage engine ("leveldb"/"rocksdb")
 	/// @param allowDBErrors - true: Ignore errors during existing DBs load; false: Return error if error occures during DBs load
-	/// @param withAutorepair - true: Enable storage autorepair feature for this DB; false: Disable storage autorepair feature for this DB
 	/// @return Error - error object
 	Error Init();
 	/// Authenticate user, and grant roles to database with specified dbName
@@ -173,7 +172,7 @@ private:
 	Error readUsersJSON() noexcept;
 	Error createDefaultUsersYAML() noexcept;
 	static UserRole userRoleFromString(std::string_view strRole);
-	Error loadOrCreateDatabase(const std::string& name, bool allowDBErrors, bool withAutorepair, const AuthContext& auth = AuthContext());
+	Error loadOrCreateDatabase(const std::string& name, bool allowDBErrors, const AuthContext& auth = AuthContext());
 
 	std::unordered_map<std::string, std::unique_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_;
 	std::unordered_map<std::string, UserRecord> users_;

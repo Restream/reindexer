@@ -14,6 +14,7 @@ namespace datastorage {
 using namespace std::string_view_literals;
 
 constexpr auto kStorageNotInitialized = "Storage is not initialized"sv;
+constexpr auto kLostDirName = "lost"sv;
 
 static void toWriteOptions(const StorageOpts& opts, rocksdb::WriteOptions& wopts) noexcept { wopts.sync = opts.IsSync(); }
 
@@ -23,6 +24,40 @@ static void toReadOptions(const StorageOpts& opts, rocksdb::ReadOptions& ropts) 
 }
 
 RocksDbStorage::RocksDbStorage() = default;
+
+Error RocksDbStorage::Open(const std::string& path, const StorageOpts& opts) {
+	if (path.empty()) {
+		return Error(errParams, "Cannot enable storage: the path is empty");
+	}
+
+	rocksdb::Options options;
+	options.create_if_missing = opts.IsCreateIfMissing();
+	options.max_open_files = 50;
+
+	rocksdb::DB* db;
+	rocksdb::Status status = rocksdb::DB::Open(options, path, &db);
+	if (status.ok()) {
+		db_.reset(db);
+		opts_ = opts;
+		dbpath_ = path;
+		return Error();
+	}
+
+	return Error(errLogic, status.ToString());
+}
+
+void RocksDbStorage::Destroy(const std::string& path) {
+	fs::RmDirAll(fs::JoinPath(path, std::string(kLostDirName)));
+	rocksdb::Options options;
+	options.create_if_missing = true;
+	db_.reset();
+	rocksdb::Status status = rocksdb::DestroyDB(path.c_str(), options);
+	fprintf(stderr, "Cannot destroy RocksDB's storage: %s, %s. Trying to remove files by the backup mechanism...\n", path.c_str(),
+			status.ToString().c_str());
+	if (fs::RmDirAll(path) != 0) {
+		fprintf(stderr, "Unable to remove RocksDB's storage: %s, %s", path.c_str(), strerror(errno));
+	}
+}
 
 Error RocksDbStorage::Read(const StorageOpts& opts, std::string_view key, std::string& value) {
 	if (!db_) {
@@ -59,7 +94,7 @@ Error RocksDbStorage::Write(const StorageOpts& opts, UpdatesCollection& buffer) 
 
 	rocksdb::WriteOptions options;
 	toWriteOptions(opts, options);
-	RocksDbBatchBuffer* batchBuffer = static_cast<RocksDbBatchBuffer*>(&buffer);
+	auto batchBuffer = static_cast<RocksDbBatchBuffer*>(&buffer);
 	rocksdb::Status status = db_->Write(options, &batchBuffer->batchWrite_);
 	if (status.ok()) {
 		return Error();
@@ -106,8 +141,8 @@ void RocksDbStorage::ReleaseSnapshot(Snapshot::Ptr snapshot) {
 	if (!snapshot) {
 		throw Error(errParams, "Storage pointer is null");
 	}
-	const RocksDbSnapshot* levelDbSnpshot = static_cast<const RocksDbSnapshot*>(snapshot.get());
-	db_->ReleaseSnapshot(levelDbSnpshot->snapshot_);
+	const RocksDbSnapshot* rocksDbSnapshot = static_cast<const RocksDbSnapshot*>(snapshot.get());
+	db_->ReleaseSnapshot(rocksDbSnapshot->snapshot_);
 	snapshot.reset();
 }
 
@@ -144,39 +179,6 @@ Cursor* RocksDbStorage::GetCursor(StorageOpts& opts) {
 
 UpdatesCollection* RocksDbStorage::GetUpdatesCollection() { return new RocksDbBatchBuffer(); }
 
-Error RocksDbStorage::doOpen(const std::string& path, const StorageOpts& opts) {
-	if (path.empty()) {
-		return Error(errParams, "Cannot enable storage: the path is empty '{}'", path);
-	}
-
-	rocksdb::Options options;
-	options.create_if_missing = opts.IsCreateIfMissing();
-	options.max_open_files = 50;
-
-	rocksdb::DB* db;
-	rocksdb::Status status = rocksdb::DB::Open(options, path, &db);
-	if (status.ok()) {
-		db_.reset(db);
-		opts_ = opts;
-		dbpath_ = path;
-		return Error();
-	}
-
-	return Error(errLogic, status.ToString());
-}
-
-void RocksDbStorage::doDestroy(const std::string& path) {
-	rocksdb::Options options;
-	options.create_if_missing = true;
-	db_.reset();
-	rocksdb::Status status = rocksdb::DestroyDB(path.c_str(), options);
-	fprintf(stderr, "Cannot destroy RocksDB's storage: %s, %s. Trying to remove files by the backup mechanism...\n", path.c_str(),
-			status.ToString().c_str());
-	if (fs::RmDirAll(path) != 0) {
-		fprintf(stderr, "Unable to remove RocksDB's storage: %s, %s", path.c_str(), strerror(errno));
-	}
-}
-
 std::string_view RocksDbIterator::Key() const {
 	rocksdb::Slice key = iterator_->key();
 	return std::string_view(key.data(), key.size());
@@ -197,7 +199,7 @@ RocksDbSnapshot::RocksDbSnapshot(const rocksdb::Snapshot* snapshot) noexcept : s
 }  // namespace datastorage
 }  // namespace reindexer
 #else
-// suppress clang warngig
+// suppress clang warning
 int ___rocksdbsrorage_dummy_suppress_warning;
 
 #endif	// REINDEX_WITH_ROCKSDB

@@ -12,7 +12,6 @@
 
 namespace reindexer {
 
-class TagsMatcher;
 class WrSerializer;
 class StringsHolder;
 class FieldsFilter;

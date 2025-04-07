@@ -1259,10 +1259,11 @@ static bool CompareShardingConfigs(const cluster::ShardingConfig& lhs, const clu
 }
 
 void ShardingApi::checkConfigThrow(const ServerControl::Interface::Ptr& server, const cluster::ShardingConfig& config) {
+	Error error;
 	auto fromConfigNs = getShardingConfigFrom(*server->api.reindexer);
 	assertrx(fromConfigNs.has_value());
 	if (!CompareShardingConfigs(config, *fromConfigNs)) {
-		throw std::logic_error(
+		error = std::logic_error(
 			fmt::format("The equality of config and fromConfigNs is expected, but:\nconfig:\n\t{}\nfromConfigNs:\n\t{}\n",
 						config.GetJSON(cluster::MaskingDSN::Disabled), fromConfigNs->GetJSON(cluster::MaskingDSN::Disabled)));
 	}
@@ -1274,9 +1275,14 @@ void ShardingApi::checkConfigThrow(const ServerControl::Interface::Ptr& server, 
 	auto err = fromFileConfig.FromYAML(configYAML);
 	ASSERT_TRUE(err.ok()) << err.what();
 	if (!CompareShardingConfigs(config, fromFileConfig)) {
-		throw std::logic_error(
-			fmt::format("The equality of config and fromFileConfig is expected, but:\nconfig:\n\t{}\nfromFileConfig:\n\t{}\n",
-						config.GetJSON(cluster::MaskingDSN::Disabled), fromFileConfig.GetJSON(cluster::MaskingDSN::Disabled)));
+		error = std::logic_error(
+			fmt::format("{}The equality of config and fromFileConfig is expected, but:\nconfig:\n\t{}\nfromFileConfig:\n\t{}\n",
+						!error.ok() ? error.whatStr() + '\n' : "", config.GetJSON(cluster::MaskingDSN::Disabled),
+						fromFileConfig.GetJSON(cluster::MaskingDSN::Disabled)));
+	}
+
+	if (!error.ok()) {
+		throw error;
 	}
 }
 
@@ -1383,6 +1389,8 @@ TEST_F(ShardingApi, RuntimeUpdateShardingCfgWithClusterTest) {
 	for (int shardId = 0; shardId < parallelSelectsCount; ++shardId) {
 		fillDataLocalNss(shardId);
 	}
+
+	waitSync(kNonShardedNs);
 
 	std::vector<std::thread> parallelSelectsPerShard;
 	parallelSelectsPerShard.reserve(parallelSelectsCount);
@@ -3875,11 +3883,11 @@ TEST_F(ShardingApi, TestCsvQrDistributedQuery) {
 
 	auto csv2jsonSchema = std::vector<std::string>{"id", "Field0", "Field1", "Field2", "Field3", "Field4", "Field5", "Field6", "Field7"};
 
-	std::vector<int> orderingVec;
+	std::vector<reindexer::TagName> orderingVec;
 	const auto& tm = qr.GetTagsMatcher(0);
 	for (const auto& tagName : csv2jsonSchema) {
 		auto tag = tm.name2tag(tagName);
-		EXPECT_TRUE(tag > 0);
+		EXPECT_FALSE(tag.IsEmpty());
 		orderingVec.emplace_back(tag);
 	}
 
