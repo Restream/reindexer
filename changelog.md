@@ -1,8 +1,8 @@
 # Version 5.2.0 (29.04.2025)
 ## Core
 - [fea] Added support for `distinct` with multiple fields (i.e. something like `distinct(field1, field2, field3)`)
-- [fea] Allowed `null`-values inside `IN()`-clause (they automatically will be transformed into `OR IS NOT NULL`)
-- [fea] Made `IS NULL`/`IS NOT NULL` behavior more consistant between `sparse`-indexes and `non-indexed`-fields. Check [readme](readme.md#null-values-filtration) for more details
+- [fea] Allowed `null`-values inside `IN()`-clause (they automatically will be transformed into `OR IS NULL`)
+- [fea] Made `IS NULL`/`IS NOT NULL` behavior more consistent between `sparse`-indexes and `non-indexed`-fields. Check [readme](readme.md#null-values-filtration) for more details
 - [fea] Added extra validation for `sprase` indexes. Previously incorrect values in those indexes were silently ignored and from now they will produce errors on insertion
 - [fix] Fixed crash in vector index during `index drop` operation
 - [fix] Fixed timings calculations in `#perfstats`/`#queriesperfstats`
@@ -21,7 +21,7 @@
 ## Go connector
 - [fea] Added `DBMSVersion`-method to get builtin/remote `reindexer` version
 - [fea] Added [events](readme.md#events-subscription) on `forced`/`WAL` synchronization
-- [fea] Added support for multifields `distinct`. `AggregationResult` struct was slightly changed. **This requires changes in Go code that uses Distinct: for the single field distinct just take values with 0 index in each slice**
+- [fea] Added support for multi-fields `distinct`. `AggregationResult` struct was slightly changed. **This requires changes in Go code that uses Distinct: for the single field distinct just take values with 0 index in each slice**
 - [fix] Fixed heap-user-after free in `DB.Close()`-call when `ActivityStats` flag was enabled
 
 ## Build
