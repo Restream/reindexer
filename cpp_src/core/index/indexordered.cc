@@ -8,7 +8,7 @@ namespace reindexer {
 
 template <typename T>
 Variant IndexOrdered<T>::Upsert(const Variant& key, IdType id, bool& clearCache) {
-	if (key.Type().Is<KeyValueType::Null>()) {
+	if (key.IsNullValue()) {
 		if (this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_)) {
 			this->cache_.ResetImpl();
 			clearCache = true;
@@ -38,29 +38,27 @@ Variant IndexOrdered<T>::Upsert(const Variant& key, IdType id, bool& clearCache)
 }
 
 template <typename T>
-SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType condition, SortType sortId, Index::SelectOpts opts,
-											const BaseFunctionCtx::Ptr& ctx, const RdxContext& rdxCtx) {
+SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType condition, SortType sortId,
+											const Index::SelectContext& selectCtx, const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
-	if (opts.forceComparator) {
-		return IndexStore<StoreIndexKeyType<T>>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
+	if (selectCtx.opts.forceComparator) {
+		return IndexStore<StoreIndexKeyType<T>>::SelectKey(keys, condition, sortId, selectCtx, rdxCtx);
 	}
 
 	// Get set of keys or single key
 	if (!IsOrderedCondition(condition)) {
-		if (opts.unbuiltSortOrders && keys.size() > 1) {
+		if (selectCtx.opts.unbuiltSortOrders && keys.size() > 1) {
 			throw Error(errLogic, "Attempt to use btree index '{}' for sort optimization with unordered multivalued condition ({})",
 						this->Name(), CondTypeToStr(condition));
 		}
-		return IndexUnordered<T>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
+		return IndexUnordered<T>::SelectKey(keys, condition, sortId, selectCtx, rdxCtx);
 	}
 
 	SelectKeyResult res;
 	auto startIt = this->idx_map.begin();
 	auto endIt = this->idx_map.end();
+	assertrx_dbg(std::none_of(keys.begin(), keys.end(), [](const auto& k) { return k.IsNullValue(); }));
 	const auto& key1 = *keys.begin();
-	if (key1.IsNullValue() || (keys.size() > 1 && keys[1].IsNullValue())) {
-		throw Error(errParams, "Can not use 'null'-value with operators '>','<','<=','>=' and 'RANGE()' (index: '{}')", this->Name());
-	}
 	switch (condition) {
 		case CondLt:
 			endIt = this->idx_map.lower_bound(static_cast<ref_type>(key1));
@@ -113,10 +111,10 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 		return SelectKeyResults(std::move(res));
 	}
 
-	if (opts.unbuiltSortOrders) {
+	if (selectCtx.opts.unbuiltSortOrders) {
 		IndexIterator::Ptr btreeIt(make_intrusive<BtreeIndexIterator<T>>(this->idx_map, startIt, endIt));
 		res.emplace_back(std::move(btreeIt));
-	} else if (sortId && this->sortId_ == sortId && !opts.distinct) {
+	} else if (sortId && this->sortId_ == sortId && !selectCtx.opts.distinct) {
 		assertrx(startIt->second.Sorted(this->sortId_).size());
 		IdType idFirst = startIt->second.Sorted(this->sortId_).front();
 
@@ -154,8 +152,8 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 				return false;
 			};
 
-			if (count > 1 && !opts.distinct && !opts.disableIdSetCache) {
-				// Using btree node pointers instead of the real values from the filter and range instead all of the conditions
+			if (count > 1 && !selectCtx.opts.distinct && !selectCtx.opts.disableIdSetCache) {
+				// Using btree node pointers instead of the real values from the filter and range instead all the conditions
 				// to increase cache hits count
 				VariantArray cacheKeys = {Variant{startIt == this->idx_map.end() ? int64_t(0) : int64_t(&(*startIt))},
 										  Variant{endIt == this->idx_map.end() ? int64_t(0) : int64_t(&(*endIt))}};
@@ -165,7 +163,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 				selector(res, idsCount);
 			}
 		} else {
-			return IndexStore<StoreIndexKeyType<T>>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
+			return IndexStore<StoreIndexKeyType<T>>::SelectKey(keys, condition, sortId, selectCtx, rdxCtx);
 		}
 	}
 	return SelectKeyResults(std::move(res));
@@ -201,7 +199,7 @@ void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext& ctx) {
 			}
 		}
 	}
-	// fill non-existent indexs
+	// fill non-existent indexes
 	for (auto it = ids2Sorts.begin(); it != ids2Sorts.end(); ++it) {
 		if (*it == SortIdUnfilled) {
 			*it = idx;

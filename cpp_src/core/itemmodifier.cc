@@ -4,8 +4,8 @@
 #include "core/embedding/embedder.h"
 #include "core/itemimpl.h"
 #include "core/namespace/namespaceimpl.h"
-#include "core/query/expressionevaluator.h"
-#include "core/selectfunc/functionexecutor.h"
+#include "core/query/expression/expression_evaluator.h"
+#include "core/query/expression/function_executor.h"
 #include "index/float_vector/float_vector_index.h"
 #include "index/index.h"
 
@@ -230,8 +230,9 @@ ItemModifier::FieldData::FieldData(const UpdateEntry& entry, NamespaceImpl& ns, 
 			tp.emplace_back(tagName);
 			jsonPath += ns.tagsMatcher_.tag2name(tagName);
 		}
-		fieldIndex_ = ns.tagsMatcher_.tags2field(tp);
-		if (fieldIndex_ >= 0) {
+		const auto field = ns.tagsMatcher_.tags2field(tp);
+		if (field.IsRegularIndex()) {
+			fieldIndex_ = field.IndexNumber();
 			isIndex_ = true;
 		} else {
 			fieldIndex_ = 0;
@@ -749,8 +750,7 @@ std::vector<std::vector<VariantArray>> ItemModifier::getEmbeddersSourceData(cons
 bool ItemModifier::skipEmbedder(const std::shared_ptr<Embedder>& embedder) const {
 	// auto-embed disabled when requesting with special values for embedded field
 	const auto embedderIdx = embedder->Field();
-	for (const FieldData& field : fieldsToModify_)
-	{
+	for (const FieldData& field : fieldsToModify_) {
 		if ((field.Index() == embedderIdx) && (field.Details().Mode() == FieldModeSet)) {
 			return true;
 		}
@@ -799,7 +799,7 @@ void ItemModifier::updateEmbedding(IdType itemId, const RdxContext& rdxContext, 
 			VariantArray krs;
 			krs.emplace_back(ConstFloatVectorView{products.front()});
 
-			UpdateEntry entry(embedder->Name(), {}, FieldModifyMode::FieldModeSet);
+			UpdateEntry entry(embedder->FieldName(), {}, FieldModifyMode::FieldModeSet);
 			FieldData fldData(entry, ns_, affectedComposites_);
 			modifyField(itemId, fldData, pl, krs);
 		}

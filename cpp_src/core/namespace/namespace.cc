@@ -10,7 +10,7 @@ namespace reindexer {
 
 void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& result, const NsContext& ctx) {
 	auto nsl = atomicLoadMainNs();
-	bool enablePerfCounters = nsl->enablePerfCounters_.load(std::memory_order_relaxed);
+	const bool enablePerfCounters = nsl->enablePerfCounters_.load(std::memory_order_relaxed);
 	if (enablePerfCounters) {
 		txStatsCounter_.Count(tx);
 	}
@@ -80,13 +80,13 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 				}
 			} catch (Error& e) {
 				logFmt(LogTrace, "Namespace::CommitTransaction copying tx for ({}) was terminated by exception:'{}'", nsl->name_, e.what());
-				calc.enable_ = false;
+				calc.Disable();
 				nsCopy_.reset();
 				hasCopy_.store(false, std::memory_order_release);
 				throw;
 			} catch (...) {
 				logFmt(LogTrace, "Namespace::CommitTransaction copying tx for ({}) was terminated by unknown exception", nsl->name_);
-				calc.enable_ = false;
+				calc.Disable();
 				nsCopy_.reset();
 				hasCopy_.store(false, std::memory_order_release);
 				throw;
@@ -100,6 +100,8 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 				statCalculator.LogFlushDuration(getMainNs()->storage_, &AsyncStorage::TryForceFlush);
 			}
 			return;
+		} else {
+			calc.Disable();
 		}
 	}
 	nsFuncWrapper<&NamespaceImpl::CommitTransaction>(tx, result, ctx, statCalculator);
@@ -112,12 +114,12 @@ NamespacePerfStat Namespace::GetPerfStat(const RdxContext& ctx) {
 	stats.transactions.totalCopyCount = copyStats.totalHitCount;
 	stats.transactions.minCopyTimeUs = copyStats.minTimeUs;
 	stats.transactions.maxCopyTimeUs = copyStats.maxTimeUs;
-	stats.transactions.avgCopyTimeUs = copyStats.totalTimeUs / (copyStats.totalHitCount ? copyStats.totalHitCount : 1);
+	stats.transactions.avgCopyTimeUs = copyStats.totalAvgTimeUs;
 	auto commitStats = commitStatsCounter_.Get<PerfStat>();
 	stats.transactions.totalCount = commitStats.totalHitCount;
 	stats.transactions.minCommitTimeUs = commitStats.minTimeUs;
 	stats.transactions.maxCommitTimeUs = commitStats.maxTimeUs;
-	stats.transactions.avgCommitTimeUs = commitStats.totalTimeUs / (commitStats.totalHitCount ? commitStats.totalHitCount : 1);
+	stats.transactions.avgCommitTimeUs = commitStats.totalAvgTimeUs;
 	return stats;
 }
 
@@ -229,7 +231,7 @@ void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, co
 			}
 			auto err = srcNs.storage_.Open(storageType, srcNs.name_, srcDbpath, srcNs.storageOpts_);
 			if (!err.ok()) {
-				logFmt(LogError, "Unable to reopen storage after unsuccessfull renaming: {}", err.whatStr());
+				logFmt(LogError, "Unable to reopen storage after unsuccessfully renaming: {}", err.whatStr());
 			}
 			throw Error(errParams, "Unable to rename '{}' to '{}'", srcDbpath, dbpath);
 		}
@@ -250,7 +252,7 @@ void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, co
 		srcNs.name_ = newNameObj;
 	}
 	srcNs.payloadType_.SetName(srcNs.name_);
-	srcNs.tagsMatcher_.UpdatePayloadType(srcNs.payloadType_, NeedChangeTmVersion::No);
+	srcNs.tagsMatcher_.UpdatePayloadType(srcNs.payloadType_, srcNs.indexes_.SparseIndexes(), NeedChangeTmVersion::No);
 	logFmt(LogInfo, "[tm:{}]:{}: Rename done. TagsMatcher: {{ state_token: {:#08x}, version: {} }}", srcNs.name_, srcNs.wal_.GetServer(),
 		   srcNs.tagsMatcher_.stateToken(), srcNs.tagsMatcher_.version());
 

@@ -63,7 +63,7 @@ void allocdebug_init() {
 		ismt = false;
 	} else {
 		logFmt(LogWarning,
-				  "Reindexer was compiled with GPerf tools, but tcmalloc was not successfully linked. Malloc new hook is unavailable");
+			   "Reindexer was compiled with GPerf tools, but tcmalloc was not successfully linked. Malloc new hook is unavailable");
 	}
 }
 
@@ -74,7 +74,7 @@ void allocdebug_init_mt() {
 		ismt = true;
 	} else {
 		logFmt(LogWarning,
-				  "Reindexer was compiled with GPerf tools, but tcmalloc was not successfully linked. Malloc delete hook is unavailable");
+			   "Reindexer was compiled with GPerf tools, but tcmalloc was not successfully linked. Malloc delete hook is unavailable");
 	}
 }
 
@@ -90,5 +90,5 @@ size_t get_alloc_cnt_total() { return ismt ? tracer_mt.alloced_cnt_total.load() 
 
 void allocdebug_show() {
 	logFmt(LogInfo, "meminfo (alloced {}M, {} total allocs, {} remain)", get_alloc_size() / (1024 * 1024), get_alloc_cnt_total(),
-			  get_alloc_cnt());
+		   get_alloc_cnt());
 }

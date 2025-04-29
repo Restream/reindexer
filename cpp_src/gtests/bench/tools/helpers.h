@@ -5,9 +5,9 @@
 #include <string>
 #include <vector>
 
+#include <span>
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/variant.h"
-#include <span>
 
 using reindexer::Variant;
 using reindexer::VariantArray;

@@ -69,8 +69,7 @@ public:
 	FloatVectorIndex(const IndexDef&, PayloadType&&, FieldsSet&&);
 	void Delete(const VariantArray& keys, IdType, StringsHolder&, bool& clearCache) override final;
 	using Index::Delete;
-	SelectKeyResults SelectKey(const VariantArray&, CondType, SortType, SelectOpts, const BaseFunctionCtx::Ptr&,
-							   const RdxContext&) override final;
+	SelectKeyResults SelectKey(const VariantArray&, CondType, SortType, const SelectContext&, const RdxContext&) override final;
 	void Upsert(VariantArray& result, const VariantArray& keys, IdType, bool& clearCache) override final;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final;
 	SelectKeyResult Select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&, const RdxContext&) const;

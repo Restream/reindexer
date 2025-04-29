@@ -1,9 +1,9 @@
 #pragma once
 
 #include <stdlib.h>
+#include <span>
 #include <string>
 #include <vector>
-#include <span>
 #include "namespacename.h"
 #include "tools/errors.h"
 #include "tools/lsn.h"
@@ -42,7 +42,7 @@ struct IndexMemStat {
 	}
 };
 
-struct ClusterizationStatus {
+struct ClusterOperationStatus {
 	void GetJSON(WrSerializer& ser) const;
 	void GetJSON(JsonBuilder& builder) const;
 	Error FromJSON(std::span<char> json);
@@ -90,11 +90,13 @@ struct ReplicationState {
 	uint64_t updatedUnixNano = 0;
 	// Namespace version
 	lsn_t nsVersion;
-	// Clusterization status
-	ClusterizationStatus clusterStatus;
+	// ClusterOperation status
+	ClusterOperationStatus clusterStatus;
 	// Shows, that namespaces was replicated in v3.
 	// Required for the transition process only
 	bool wasV3ReplicatedNS = false;
+	// Admissible synchronization token
+	std::string token;
 };
 
 // TODO: Rename this
@@ -113,7 +115,7 @@ struct ReplicationStateV2 {
 	int64_t dataCount = kNoDataCount;
 	lsn_t nsVersion;
 	//
-	ClusterizationStatus clusterStatus;
+	ClusterOperationStatus clusterStatus;
 };
 
 struct ReplicationStat final : public ReplicationState {
@@ -164,11 +166,11 @@ struct PerfStat {
 	void GetJSON(JsonBuilder& builder);
 
 	size_t totalHitCount;
-	size_t totalTimeUs;
-	size_t totalLockTimeUs;
-	size_t avgHitCount;
-	size_t avgTimeUs;
-	size_t avgLockTimeUs;
+	size_t totalAvgTimeUs;
+	size_t totalAvgLockTimeUs;
+	size_t lastSecHitCount;
+	size_t lastSecAvgTimeUs;
+	size_t lastSecAvgLockTimeUs;
 	double stddev;
 	size_t minTimeUs;
 	size_t maxTimeUs;
@@ -176,6 +178,7 @@ struct PerfStat {
 
 struct TxPerfStat {
 	void GetJSON(JsonBuilder& builder);
+	void FromJSON(const gason::JsonNode& node);
 
 	size_t totalCount;
 	size_t totalCopyCount;

@@ -57,9 +57,8 @@ public:
 	Error Status() noexcept;
 	Error GetProtobufSchema(WrSerializer& ser, std::vector<std::string>& namespaces);
 	Error GetReplState(std::string_view nsName, ReplicationStateV2& state, const RdxContext& ctx);
-	Error SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus& status, const RdxContext& ctx);
+	Error SetClusterOperationStatus(std::string_view nsName, const ClusterOperationStatus& status, const RdxContext& ctx);
 	bool NeedTraceActivity() const noexcept { return impl_.NeedTraceActivity(); }
-	Error InitSystemNamespaces() { return impl_.InitSystemNamespaces(); }
 	Error GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, Snapshot& snapshot, const RdxContext& ctx);
 	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk& ch, const RdxContext& ctx);
 	Error CreateTemporaryNamespace(std::string_view baseName, std::string& resultName, const StorageOpts& opts, lsn_t nsVersion,
@@ -111,9 +110,11 @@ public:
 	Error UnsubscribeUpdates(IUpdatesObserverV3* observer) { return impl_.UnsubscribeUpdates(observer); }
 	// REINDEX_WITH_V3_FOLLOWERS
 
+	RX_ALWAYS_INLINE bool IsConnected() const noexcept { return connected_.load(std::memory_order_relaxed); }
+
 private:
-	using ItemModifyFT = Error (client::Reindexer::*)(std::string_view, client::Item&);
-	using ItemModifyQrFT = Error (client::Reindexer::*)(std::string_view, client::Item&, client::QueryResults&);
+	using ItemModifyFT = Error (client::Reindexer::*)(std::string_view, client::Item&) noexcept;
+	using ItemModifyQrFT = Error (client::Reindexer::*)(std::string_view, client::Item&, client::QueryResults&) noexcept;
 
 	static WrSerializer& getActivitySerializer() noexcept {
 		thread_local static WrSerializer ser;

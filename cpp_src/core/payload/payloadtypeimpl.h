@@ -26,20 +26,17 @@ public:
 		assertf(field < NumFields(), "{}: {}, {}", name_, field, NumFields());
 		return fields_[field];
 	}
-	const PayloadFieldType& Field(int) const&& = delete;
 
 	const std::string& Name() const& noexcept { return name_; }
-	const std::string& Name() const&& = delete;
-	void SetName(std::string_view name) { name_ = std::string(name); }
+	void SetName(std::string name) noexcept { name_ = std::move(name); }
 	int NumFields() const noexcept { return fields_.size(); }
-	void Add(PayloadFieldType f);
+	void Add(PayloadFieldType);
 	bool Drop(std::string_view field);
 	int FieldByName(std::string_view field) const;
 	bool FieldByName(std::string_view name, int& field) const noexcept;
 	bool Contains(std::string_view field) const noexcept { return fieldsByName_.find(field) != fieldsByName_.end(); }
 	int FieldByJsonPath(std::string_view jsonPath) const noexcept;
 	const std::vector<int>& StrFields() const& noexcept { return strFields_; }
-	const std::vector<int>& StrFields() const&& = delete;
 
 	void serialize(WrSerializer& ser) const;
 	void deserialize(Serializer& ser);
@@ -51,8 +48,14 @@ public:
 	const h_vector<std::shared_ptr<Embedder>, 1>& Embedders() const& noexcept { return embedders_; }
 	std::string_view CheckAuxiliaryField(std::string_view fieldName) const;
 
+	auto Field(int) const&& = delete;
+	auto Name() const&& = delete;
+	auto StrFields() const&& = delete;
+	auto Embedders() const&& = delete;
+
 private:
-	void checkNewJsonPathBeforeAdd(const PayloadFieldType& f, const std::string& jsonPath) const;
+	void checkNewJsonPathBeforeAdd(const PayloadFieldType&, const std::string& jsonPath) const;
+	void checkNewNameBeforeAdd(const PayloadFieldType&) const;
 
 	std::vector<PayloadFieldType> fields_;
 	h_vector<std::shared_ptr<Embedder>, 1> embedders_;

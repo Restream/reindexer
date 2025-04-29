@@ -1,4 +1,3 @@
-
 #include "core/item.h"
 #include "core/itemimpl.h"
 #include "core/keyvalue/p_string.h"
@@ -18,7 +17,7 @@ Item::Item(PayloadType pt, PayloadValue pv, const TagsMatcher& tm, std::shared_p
 Item& Item::operator=(Item&& other) noexcept {
 	if (&other != this) {
 		if (impl_) {
-			auto ns = impl_->GetNamespace();
+			auto ns = impl_->GetNamespace().lock();
 			if (ns) {
 				ns->ToPool(impl_);
 				impl_ = nullptr;
@@ -112,7 +111,7 @@ Item::FieldRef& Item::FieldRef::operator=(std::span<const T> arr) {
 	}
 
 	auto pl(itemImpl_->GetPayload());
-	int pos = pl.ResizeArray(field_, arr.size(), false);
+	int pos = pl.ResizeArray(field_, arr.size(), Append_False);
 
 	if constexpr (kIsStr) {
 		if (itemImpl_->IsUnsafe() || itemImpl_->Type()->Field(field_).Type().Is<KeyValueType::Uuid>()) {
@@ -150,7 +149,7 @@ void Item::FieldRef::throwIfNotSet() const {
 
 Item::~Item() {
 	if (impl_) {
-		auto ns = impl_->GetNamespace();
+		auto ns = impl_->GetNamespace().lock();
 		if (ns) {
 			ns->ToPool(impl_);
 		} else {

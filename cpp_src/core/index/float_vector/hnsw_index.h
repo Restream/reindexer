@@ -13,7 +13,7 @@ class HnswIndexBase final : public FloatVectorIndex {
 	using FloatType = float;
 
 public:
-	HnswIndexBase(const IndexDef&, PayloadType&&, FieldsSet&&, size_t currentNsSize, CreationLog log);
+	HnswIndexBase(const IndexDef&, PayloadType&&, FieldsSet&&, size_t currentNsSize, LogCreation);
 
 	void Delete(const Variant& key, IdType id, StringsHolder&, bool& clearCache) override;
 	using FloatVectorIndex::Delete;
@@ -52,8 +52,8 @@ using HnswIndexST = HnswIndexBase<hnswlib::HierarchicalNSWST>;
 using HnswIndexMT = HnswIndexBase<hnswlib::HierarchicalNSWMT>;
 using BruteForceVectorIndex = HnswIndexBase<hnswlib::BruteforceSearch>;
 
-std::unique_ptr<Index> HnswIndex_New(const IndexDef&, PayloadType&&, FieldsSet&&, size_t currentNsSize, Index::CreationLog log);
-std::unique_ptr<Index> BruteForceVectorIndex_New(const IndexDef&, PayloadType&&, FieldsSet&&, size_t currentNsSize, Index::CreationLog log);
+std::unique_ptr<Index> HnswIndex_New(const IndexDef&, PayloadType&&, FieldsSet&&, size_t currentNsSize, LogCreation);
+std::unique_ptr<Index> BruteForceVectorIndex_New(const IndexDef&, PayloadType&&, FieldsSet&&, size_t currentNsSize, LogCreation);
 
 }  // namespace reindexer
 

@@ -60,4 +60,3 @@
 #define RX_AVX2_TARGET_ATTR __attribute__((target("sse,sse2,sse3,ssse3,sse4,avx,avx2,fma")))
 #define RX_AVX512_TARGET_ATTR __attribute__((target("sse,sse2,sse3,ssse3,sse4,avx,avx2,avx512f")))
 #endif
-

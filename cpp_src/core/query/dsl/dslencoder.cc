@@ -357,12 +357,7 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 				toDsl(it.cbegin(), it.cend(), parentQuery, arrNode);
 				dsl::encodeEqualPositions(bracket.equalPositions, arrNode);
 			},
-			[&node](const QueryEntry& qe) {
-				if (qe.Distinct()) {
-					return;
-				}
-				dsl::encodeFilter(qe, node);
-			},
+			[&node](const QueryEntry& qe) { dsl::encodeFilter(qe, node); },
 			[&node, &parentQuery](const JoinQueryEntry& jqe) {
 				assertrx(jqe.joinIndex < parentQuery.GetJoinQueries().size());
 				dsl::encodeSingleJoinQuery(parentQuery.GetJoinQueries()[jqe.joinIndex], node);
@@ -372,7 +367,7 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 				node.Put("first_field"sv, qe.LeftFieldName());
 				node.Put("second_field"sv, qe.RightFieldName());
 			},
-			[&node](const KnnQueryEntry& qe) { qe.ToDsl(node); });
+			[](const DistinctQueryEntry&) {}, [&node](const KnnQueryEntry& qe) { qe.ToDsl(node); });
 	}
 }
 

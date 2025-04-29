@@ -6,5 +6,4 @@
 namespace reindexer {
 
 using NsNamesHashSetT = fast_hash_set<NamespaceName, NamespaceNameHash, NamespaceNameEqual, NamespaceNameLess>;
-
-}
+}  // namespace reindexer

@@ -59,7 +59,10 @@ protected:
 		FillAuthorsNamespace(10);
 	}
 
-	void SetUp() override { Init(); }
+	void SetUp() override {
+		ReindexerApi::SetUp();
+		Init();
+	}
 
 	void FillLocationsNamespace() {
 		for (size_t i = 0; i < locations.size(); ++i) {

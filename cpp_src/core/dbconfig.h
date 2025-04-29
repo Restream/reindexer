@@ -4,6 +4,7 @@
 #include <ostream>
 #include <string>
 #include "cluster/config.h"
+#include "core/namespace/namespacenamemap.h"
 #include "estl/fast_hash_map.h"
 #include "estl/shared_mutex.h"
 #include "tools/errors.h"
@@ -61,7 +62,9 @@ public:
 		return *this;
 	}
 
+	Error FromDefault() noexcept;
 	Error FromJSON(const gason::JsonNode& v);
+	void GetJSON(JsonBuilder& jb) const;
 
 	std::atomic<size_t> queriesThresholdUS = {10};
 	std::atomic<bool> queriesPerfStats = {false};
@@ -119,6 +122,12 @@ struct NamespaceConfigData {
 	NamespaceCacheConfigData cacheConfig;
 
 	Error FromJSON(const gason::JsonNode& v);
+	void GetJSON(JsonBuilder& jb) const;
+
+	static Error FromDefault(std::vector<std::string>& defaultNamespacesNames,
+							 std::vector<NamespaceConfigData>& defaultNamespacesConfs) noexcept;
+	static Error GetJSON(const std::vector<std::string>& namespacesNames, const std::vector<NamespaceConfigData>& namespacesConfs,
+						 JsonBuilder& jb) noexcept;
 };
 
 struct ReplicationConfigData {
@@ -127,7 +136,9 @@ struct ReplicationConfigData {
 
 	int serverID = 0;
 	int clusterID = 1;
+	NsNamesHashMapT<std::string> admissibleTokens;
 
+	Error FromDefault() noexcept;
 	Error FromYAML(const std::string& yml);
 	Error FromJSON(std::string_view json);
 	Error FromJSON(const gason::JsonNode& v);
@@ -137,10 +148,7 @@ struct ReplicationConfigData {
 	void GetJSON(JsonBuilder& jb) const;
 	void GetYAML(WrSerializer& ser) const;
 
-	bool operator==(const ReplicationConfigData& rdata) const noexcept {
-		return (clusterID == rdata.clusterID) && (serverID == rdata.serverID);
-	}
-	bool operator!=(const ReplicationConfigData& rdata) const noexcept { return !operator==(rdata); }
+	[[nodiscard]] bool operator==(const ReplicationConfigData& rdata) const noexcept = default;
 };
 
 std::ostream& operator<<(std::ostream& os, const ReplicationConfigData& data);
@@ -175,9 +183,9 @@ public:
 	int setHandler(std::function<void(const ReplicationConfigData&)> handler);
 	void unsetHandler(int id);
 
-	cluster::AsyncReplConfigData GetAsyncReplicationConfig();
-	ReplicationConfigData GetReplicationConfig();
-	bool GetNamespaceConfig(std::string_view nsName, NamespaceConfigData& data);
+	cluster::AsyncReplConfigData GetAsyncReplicationConfig() const;
+	ReplicationConfigData GetReplicationConfig() const;
+	bool GetNamespaceConfig(std::string_view nsName, NamespaceConfigData& data) const;
 	LongQueriesLoggingParams GetSelectLoggingParams() const noexcept {
 		return profilingData_.longSelectLoggingParams.load(std::memory_order_relaxed);
 	}
@@ -190,6 +198,9 @@ public:
 	bool PerfStatsEnabled() const noexcept { return profilingData_.perfStats.load(std::memory_order_relaxed); }
 	bool QueriesPerfStatsEnabled() const noexcept { return profilingData_.queriesPerfStats.load(std::memory_order_relaxed); }
 	unsigned QueriesThresholdUS() const noexcept { return profilingData_.queriesThresholdUS.load(std::memory_order_relaxed); }
+
+	Error CheckAsyncReplicationToken(std::string_view nsName, std::string_view token) const;
+	std::string GetAsyncReplicationToken(std::string_view nsName) const;
 
 private:
 	ProfilingConfigData profilingData_;
@@ -205,5 +216,7 @@ private:
 	int handlersCounter_ = 0;
 	mutable shared_timed_mutex mtx_;
 };
+
+Error GetDefaultConfigs(std::string_view type, JsonBuilder& builder) noexcept;
 
 }  // namespace reindexer

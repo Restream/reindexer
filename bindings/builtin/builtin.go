@@ -718,6 +718,10 @@ func (binding *Builtin) Unsubscribe(ctx context.Context) error {
 	return binding.eventsHandler.Unsubscribe(binding.rx)
 }
 
+func (binding *Builtin) DBMSVersion() (string, error) {
+	return C.GoString(C.reindexer_version()), nil
+}
+
 func newBufFreeBatcher() (bf *bufFreeBatcher) {
 	bf = &bufFreeBatcher{
 		bufs:   make([]*RawCBuffer, 0, 100),

@@ -787,7 +787,7 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 		case reflect.String:
 			mv.SetMapIndex(reflect.ValueOf(name), v)
 		default:
-			panic(fmt.Errorf("unsuported map key type '%s'", mv.Type().Key().Kind().String()))
+			panic(fmt.Errorf("unsupported map key type '%s'", mv.Type().Key().Kind().String()))
 		}
 	}
 

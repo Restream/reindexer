@@ -8,13 +8,13 @@
 namespace reindexer {
 namespace cluster {
 
-class Clusterizator;
+class ClusterManager;
 
 class AsyncDataReplicator {
 public:
 	using UpdatesQueueT = UpdatesQueuePair<updates::UpdateRecord>;
 
-	AsyncDataReplicator(UpdatesQueueT&, SharedSyncState&, ReindexerImpl&, Clusterizator&);
+	AsyncDataReplicator(UpdatesQueueT&, SharedSyncState&, ReindexerImpl&, ClusterManager&);
 
 	void Configure(AsyncReplConfigData config);
 	void Configure(ReplicationConfigData config);
@@ -40,7 +40,7 @@ private:
 	UpdatesQueueT& updatesQueue_;
 	SharedSyncState& syncState_;
 	ReindexerImpl& thisNode_;
-	Clusterizator& clusterizator_;
+	ClusterManager& clusterManager_;
 	std::deque<AsyncReplThread> replThreads_;
 	std::optional<AsyncReplConfigData> config_;
 	std::optional<ReplicationConfigData> baseConfig_;

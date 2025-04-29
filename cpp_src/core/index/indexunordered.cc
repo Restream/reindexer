@@ -175,7 +175,8 @@ void IndexUnordered<T>::delMemStat(typename T::iterator it) {
 template <typename T>
 Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCache) {
 	// reset cache
-	if (key.Type().Is<KeyValueType::Null>()) {	// TODO maybe error or default value if the index is not sparse
+	if (key.IsNullValue()) {
+		assertrx_dbg(this->Opts().IsSparse() || this->Opts().IsArray());
 		if (this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_)) {
 			cache_.ResetImpl();
 			clearCache = true;
@@ -206,7 +207,7 @@ Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCach
 
 template <typename T>
 void IndexUnordered<T>::Delete(const Variant& key, IdType id, StringsHolder& strHolder, bool& clearCache) {
-	if (key.Type().Is<KeyValueType::Null>()) {
+	if (key.IsNullValue()) {
 		this->empty_ids_.Unsorted().Erase(id);	// ignore result
 		this->isBuilt_ = false;
 		cache_.ResetImpl();
@@ -284,11 +285,11 @@ bool IndexUnordered<T>::tryIdsetCache(const VariantArray& keys, CondType conditi
 }
 
 template <typename T>
-SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType condition, SortType sortId, Index::SelectOpts opts,
-											  const BaseFunctionCtx::Ptr& funcCtx, const RdxContext& rdxCtx) {
+SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType condition, SortType sortId,
+											  const Index::SelectContext& selectCtx, const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
-	if (opts.forceComparator) {
-		return Base::SelectKey(keys, condition, sortId, opts, funcCtx, rdxCtx);
+	if (selectCtx.opts.forceComparator) {
+		return Base::SelectKey(keys, condition, sortId, selectCtx, rdxCtx);
 	}
 
 	SelectKeyResult res;
@@ -303,22 +304,15 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 		// Get set of keys or single key
 		case CondEq:
 		case CondSet: {
-			for (const auto& key : keys) {
-				if (key.IsNullValue()) {
-					throw Error(errParams,
-								"Can not use 'null'-value with operators '=' and 'IN()' (index: '{}'). Use 'IS NULL'/'IS NOT NULL' instead",
-								this->Name());
-				}
-			}
+			assertrx_dbg(std::none_of(keys.cbegin(), keys.cend(), [](const auto& key) { return key.IsNullValue(); }));
 
 			struct {
 				T* i_map;
 				const VariantArray& keys;
-				std::string_view indexName;
 				SortType sortId;
 				Index::SelectOpts opts;
 				IsSparse isSparse;
-			} ctx = {&this->idx_map, keys, this->Name(), sortId, opts, this->opts_.IsSparse()};
+			} ctx = {&this->idx_map, keys, sortId, selectCtx.opts, this->opts_.IsSparse()};
 			bool selectorWasSkipped = false;
 			// should return true, if fallback to comparator required
 			auto selector = [&ctx, &selectorWasSkipped](SelectKeyResult& res, size_t& idsCount) -> bool {
@@ -353,25 +347,23 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 
 			bool scanWin = false;
 			// Get from cache
-			if (!opts.distinct && !opts.disableIdSetCache && keys.size() > 1) {
+			if (!selectCtx.opts.distinct && !selectCtx.opts.disableIdSetCache && keys.size() > 1) {
 				scanWin = tryIdsetCache(keys, condition, sortId, std::move(selector), res);
 			} else {
 				size_t idsCount;
 				scanWin = selector(res, idsCount);
 			}
 
-			if ((scanWin || selectorWasSkipped) && !opts.distinct) {
+			if ((scanWin || selectorWasSkipped) && !selectCtx.opts.distinct) {
 				// fallback to comparator, due to expensive idset
-				return Base::SelectKey(keys, condition, sortId, opts, funcCtx, rdxCtx);
+				return Base::SelectKey(keys, condition, sortId, selectCtx, rdxCtx);
 			}
 		} break;
 		case CondAllSet: {
 			// Get set of key, where all request keys are present
 			SelectKeyResults rslts;
 			for (const auto& key : keys) {
-				if (key.IsNullValue()) {
-					throw Error(errParams, "Can not use 'null'-value with operator 'allset' (index: '{}')", this->Name());
-				}
+				assertrx_dbg(!key.IsNullValue());
 				SelectKeyResult res1;
 				auto keyIt = this->idx_map.find(static_cast<ref_type>(key.convert(this->KeyType())));
 				if (keyIt == this->idx_map.end()) {
@@ -386,7 +378,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 		}
 
 		case CondAny:
-			if (opts.distinct && this->idx_map.size() < kMaxIdsForDistinct) {  // TODO change to more clever condition
+			if (selectCtx.opts.distinct && this->idx_map.size() < kMaxIdsForDistinct) {	 // TODO change to more clever condition
 				// Get set of any keys
 				res.reserve(this->idx_map.size());
 				for (auto& keyIt : this->idx_map) {
@@ -400,7 +392,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 		case CondGt:
 		case CondLt:
 		case CondLike:
-			return Base::SelectKey(keys, condition, sortId, opts, funcCtx, rdxCtx);
+			return Base::SelectKey(keys, condition, sortId, selectCtx, rdxCtx);
 		case CondDWithin:
 		case CondKnn:
 			throw Error(errQueryExec, "{} query on index '{}'", CondTypeToStrShort(condition), this->name_);

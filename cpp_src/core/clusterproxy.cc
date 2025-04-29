@@ -82,7 +82,7 @@ void ClusterProxy::clientToCoreQueryResults(client::QueryResults& clientResults,
 		}
 		if (!item) {
 			Item itemServer = impl_.NewItem(cNamespaces[0], dummyCtx);
-			result.AddItem(itemServer);
+			result.AddItemNoHold(itemServer, lsn_t());
 			continue;
 		}
 
@@ -424,13 +424,8 @@ Error ClusterProxy::GetReplState(std::string_view nsName, ReplicationStateV2& st
 	return impl_.GetReplState(nsName, state, ctx);
 }
 
-Error ClusterProxy::SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus& status, const RdxContext& ctx) {
-	return impl_.SetClusterizationStatus(nsName, status, ctx);
-}
-
-Error ClusterProxy::InitSystemNamespaces() {
-	//
-	return impl_.InitSystemNamespaces();
+Error ClusterProxy::SetClusterOperationStatus(std::string_view nsName, const ClusterOperationStatus& status, const RdxContext& ctx) {
+	return impl_.SetClusterOperationStatus(nsName, status, ctx);
 }
 
 Error ClusterProxy::ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk& ch, const RdxContext& ctx) {

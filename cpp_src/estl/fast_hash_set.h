@@ -64,7 +64,7 @@ public:
 	using iterator = typename Base::const_iterator;	 // hs_sc_set_prime does not have non-const iterator
 
 	explicit fast_hash_set_s(typename Base::size_type bucket_count, const H& hash, const P& equal, const L& comp)
-		: Base(bucket_count, hash, equal, typename Base::Allocator(), comp) {}
+		: Base(bucket_count, hash, equal, std::allocator<K>(), comp) {}
 };
 
 template <typename K>

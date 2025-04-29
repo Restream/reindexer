@@ -65,7 +65,7 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 	for (size_t i = 0; i < idxCount; ++i) {
 		const bool uniqueName = rndGen_.UniqueName();
 		if (rndGen_.CompositeIndex(scalarIndexes.size())) {
-			reindexer::IsArray array = reindexer::IsArray_False;
+			reindexer::IsArray isArray = reindexer::IsArray_False;
 			bool containsUuid = false;
 			std::string name;
 			Index::Children children;
@@ -76,7 +76,7 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 				if (f < indexes_.size()) {
 					const auto& idx = indexes_[f];
 					fieldData = std::get<Index::Child>(idx.Content());
-					array |= idx.IsArray();
+					isArray |= idx.IsArray();
 				} else {
 					fieldData.fieldPath = rndGen_.RndScalarField(scheme_);
 					if (scheme_.IsStruct(fieldData.fieldPath)) {
@@ -103,7 +103,8 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 				usedIndexNames.insert(name);
 			}
 
-			indexes_.emplace_back(std::move(name), indexType, rndGen_.RndArrayField(array), reindexer::IsSparse_False, std::move(children));
+			indexes_.emplace_back(std::move(name), indexType, rndGen_.RndArrayField(isArray), reindexer::IsSparse_False,
+								  std::move(children));
 		} else {
 			FieldPath fldPath;
 			size_t tryCounts = 0;

@@ -95,22 +95,22 @@ void RoleSwitcher::handleRoleSwitch() {
 				RaftInfo::RoleToStr(newState.role), newState.leaderId);
 
 		// Set DB status
-		ClusterizationStatus status;
+		ClusterOperationStatus status;
 		switch (newState.role) {
 			case RaftInfo::Role::None:
 			case RaftInfo::Role::Leader:
-				status.role = ClusterizationStatus::Role::None;	 // -V1048
+				status.role = ClusterOperationStatus::Role::None;	 // -V1048
 				break;
 			case RaftInfo::Role::Follower:
-				status.role = ClusterizationStatus::Role::ClusterReplica;
+				status.role = ClusterOperationStatus::Role::ClusterReplica;
 				break;
 			case RaftInfo::Role::Candidate:
-				status.role = (curState.role == RaftInfo::Role::Leader) ? ClusterizationStatus::Role::None
-																		: ClusterizationStatus::Role::ClusterReplica;
+				status.role = (curState.role == RaftInfo::Role::Leader) ? ClusterOperationStatus::Role::None
+																		: ClusterOperationStatus::Role::ClusterReplica;
 				break;
 		}
 		status.leaderId = newState.leaderId;
-		thisNode_.setClusterizationStatus(std::move(status), ctx_);
+		thisNode_.setClusterOperationStatus(std::move(status), ctx_);
 
 		if (cfg_.namespaces.empty()) {
 			std::vector<std::string> namespaces;
@@ -145,25 +145,25 @@ void RoleSwitcher::switchNamespaces(const RaftInfo& newState, const ContainerT& 
 		// 0) Mark local namespaces with new leader data
 		auto nsPtr = thisNode_.getNamespaceNoThrow(nsName, ctx_);
 		if (nsPtr) {
-			ClusterizationStatus status;
+			ClusterOperationStatus status;
 			switch (newState.role) {
 				case RaftInfo::Role::None:
 				case RaftInfo::Role::Leader:
-					status.role = ClusterizationStatus::Role::None;	 // -V1048
+					status.role = ClusterOperationStatus::Role::None;	 // -V1048
 					break;
 				case RaftInfo::Role::Follower:
-					status.role = ClusterizationStatus::Role::ClusterReplica;
+					status.role = ClusterOperationStatus::Role::ClusterReplica;
 					break;
 				case RaftInfo::Role::Candidate:
-					status.role = (curRole_ == RaftInfo::Role::Leader) ? ClusterizationStatus::Role::None
-																	   : ClusterizationStatus::Role::ClusterReplica;
+					status.role = (curRole_ == RaftInfo::Role::Leader) ? ClusterOperationStatus::Role::None
+																	   : ClusterOperationStatus::Role::ClusterReplica;
 					break;
 			}
 			status.leaderId = newState.leaderId;
 			logInfo("{}: Setting new role '{}' and leader id {} for '{}'", cfg_.serverId, RaftInfo::RoleToStr(newState.role),
 					status.leaderId, nsName);
-			if (auto err = nsPtr->SetClusterizationStatus(std::move(status), ctx_); !err.ok()) {
-				logWarn("SetClusterizationStatus for the '{}' namespace error: {}", nsName, err.what());
+			if (auto err = nsPtr->SetClusterOperationStatus(std::move(status), ctx_); !err.ok()) {
+				logWarn("SetClusterOperationStatus for the '{}' namespace error: {}", nsName, err.what());
 			}
 		}
 	}
@@ -301,7 +301,7 @@ Error RoleSwitcher::awaitRoleSwitchForNamespace(client::CoroReindexer& client, c
 		if (!err.ok()) {
 			return err;
 		}
-		if (st.clusterStatus.role == ClusterizationStatus::Role::ClusterReplica && st.clusterStatus.leaderId == cfg_.serverId) {
+		if (st.clusterStatus.role == ClusterOperationStatus::Role::ClusterReplica && st.clusterStatus.leaderId == cfg_.serverId) {
 			return {};
 		}
 		if (step++ >= kMaxRetriesOnRoleSwitchAwait) {

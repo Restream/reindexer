@@ -702,18 +702,24 @@ public:
 		return std::move(Sort<Str, T>(std::forward<Str>(sort), desc, forcedSortOrder));
 	}
 
-	/// Performs distinct for a certain index.
-	/// @param indexName - name of index for distinct operation.
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
-	Query& Distinct(Str&& indexName) & {
-		if (!strEmpty(indexName)) {
-			aggregations_.emplace_back(AggDistinct, h_vector<std::string, 1>{std::forward<Str>(indexName)});
+	/// Performs 'distinct' for a indexes or fields.
+	/// @param names - names of indexes or fields for distinct operation.
+	template <concepts::ConvertibleToString... Str>
+	Query& Distinct(Str&&... names) & {
+		static_assert(sizeof...(names) > 0);
+		if ((strEmpty(names) || ...)) {
+			throw Error(errParams, "Distincts name empty");
 		}
+		h_vector<std::string, 1> v;
+		v.reserve(sizeof...(names));
+		(v.emplace_back(std::forward<Str>(names)), ...);
+		aggregations_.emplace_back(AggDistinct, std::move(v));
 		return *this;
 	}
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
-	[[nodiscard]] Query&& Distinct(Str&& indexName) && {
-		return std::move(Distinct(std::forward<Str>(indexName)));
+
+	template <concepts::ConvertibleToString... Str>
+	[[nodiscard]] Query&& Distinct(Str&&... names) && {
+		return std::move(Distinct(std::forward<Str>(names)...));
 	}
 
 	/// Sets list of columns in this namespace to be finally selected.
@@ -956,10 +962,10 @@ public:
 	}
 	void SetLastOperation(OpType op) & { entries_.SetLastOperation(op); }
 	[[nodiscard]] const Query& GetSubQuery(size_t i) const& noexcept { return subQueries_.at(i); }
-	[[nodiscard]] const auto& GetSubQueries() const& noexcept { return subQueries_; }
-	[[nodiscard]] const auto& GetJoinQueries() const& noexcept { return joinQueries_; }
-	[[nodiscard]] const auto& GetMergeQueries() const& noexcept { return mergeQueries_; }
-	[[nodiscard]] const auto& SelectFilters() const& noexcept { return selectFilter_; }
+	[[nodiscard]] const std::vector<Query>& GetSubQueries() const& noexcept { return subQueries_; }
+	[[nodiscard]] const std::vector<JoinedQuery>& GetJoinQueries() const& noexcept { return joinQueries_; }
+	[[nodiscard]] const std::vector<JoinedQuery>& GetMergeQueries() const& noexcept { return mergeQueries_; }
+	[[nodiscard]] const FieldsNamesFilter& SelectFilters() const& noexcept { return selectFilter_; }
 	void AddJoinQuery(JoinedQuery&&);
 	void VerifyForUpdate() const;
 	template <InjectionDirection injectionDirection>
@@ -969,6 +975,10 @@ public:
 		return entries_.InjectConditionsFromOnConditions<injectionDirection>(position, joinEntries, joinedQueryEntries, joinedQueryNo,
 																			 indexesFrom);
 	}
+
+	void ReplaceSubQuery(size_t i, Query&& query);
+	void ReplaceJoinQuery(size_t i, JoinedQuery&& query);
+	void ReplaceMergeQuery(size_t i, JoinedQuery&& query);
 
 	auto GetSubQuery(size_t) const&& = delete;
 	auto GetSubQueries() const&& = delete;

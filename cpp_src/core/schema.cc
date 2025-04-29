@@ -365,7 +365,7 @@ std::vector<TagName> Schema::MakeCsvTagOrdering(const TagsMatcher& tm) const {
 	gason::JsonParser parser;
 	auto tags0lvl = parser.Parse(std::string_view(originalJson_))["required"];
 
-	if (tags0lvl.value.getTag() != gason::JsonTag::ARRAY) {
+	if (!tags0lvl.isArray()) {
 		throw Error(errParams, "Incorrect type of \"required\" tag in namespace json-schema");
 	}
 

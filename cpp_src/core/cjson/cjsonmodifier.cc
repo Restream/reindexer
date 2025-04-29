@@ -2,10 +2,13 @@
 #include "cjsonbuilder.h"
 #include "cjsontools.h"
 #include "jsondecoder.h"
+#include "sparse_validator.h"
 #include "tagsmatcher.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
+
+using namespace item_fields_validator;
 
 const std::string_view kWrongFieldsAmountMsg = "Number of fields for update should be > 0";
 
@@ -113,13 +116,13 @@ void CJsonModifier::insertField(Context& ctx) const {
 				continue;
 			}
 
-			const int field = tagsMatcher_.tags2field(ctx.jsonPath);
-			const auto updateTagType = determineUpdateTagType(ctx, field);
+			const auto field = tagsMatcher_.tags2field(ctx.jsonPath);
+			const auto updateTagType = determineUpdateTagType(ctx, field.IndexNumber());
 			if (updateTagType.isFloatVectorRef) {
-				ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName, field});
+				ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName, field.IndexNumber()});
 				ctx.wrser.PutVarUint(uint32_t(updateTagType.valueDims));
-			} else if (isIndexed(field)) {
-				putCJsonRef(updateTagType.rawType, tagName, field, ctx.value, ctx.wrser);
+			} else if (field.IsRegularIndex()) {
+				putCJsonRef(updateTagType.rawType, tagName, field.IndexNumber(), ctx.value, ctx.wrser);
 			} else {
 				putCJsonValue(updateTagType.rawType, tagName, ctx.value, ctx.wrser);
 			}
@@ -313,7 +316,7 @@ void CJsonModifier::updateArray(TagType atagType, uint32_t count, TagName tagNam
 			case TAG_FLOAT:
 				// array tag type updated (need store as object)
 				ctx.wrser.PutCTag(ctag{atagType});
-				copyCJsonValue(atagType, ctx.rdser, ctx.wrser);
+				copyCJsonValue(atagType, ctx.rdser, ctx.wrser, kNoValidation);
 				break;
 		}
 	}
@@ -383,7 +386,7 @@ void CJsonModifier::copyArray(TagName tagName, Context& ctx) {
 			case TAG_END:
 			case TAG_UUID:
 			case TAG_FLOAT:
-				copyCJsonValue(atagType, ctx.rdser, ctx.wrser);
+				copyCJsonValue(atagType, ctx.rdser, ctx.wrser, kNoValidation);
 				break;
 		}
 	}
@@ -399,9 +402,10 @@ bool CJsonModifier::updateFieldInTuple(Context& ctx) {
 		ctx.wrser.PutCTag(kCTagEnd);
 		return false;
 	}
-	const TagType tagType = tag.Type();
-	const int field = tag.Field();
 	const TagName tagName = tag.Name();
+	const int field = tag.Field();
+	const TagType tagType = tag.Type();
+
 	TagsPathScope<IndexedTagsPath> pathScope(tagsPath_, tagName);
 
 	if (isIndexed(field)) {
@@ -426,7 +430,7 @@ bool CJsonModifier::updateFieldInTuple(Context& ctx) {
 				ctx.wrser.PutCArrayTag(carraytag{uint32_t(resultTagType.valueDims), TAG_FLOAT});
 			} else if (resultTagType.rawType == TAG_ARRAY) {
 				auto type = arrayKvType2Tag(ctx.value);
-				ctx.wrser.PutCArrayTag(carraytag{ctx.value.size(), type});
+				ctx.wrser.PutCArrayTag(carraytag{uint32_t(ctx.value.size()), type});
 				const bool isObjsArr = (type == TAG_OBJECT);
 				for (const auto& item : ctx.value) {
 					if (isObjsArr) {
@@ -458,7 +462,7 @@ bool CJsonModifier::updateFieldInTuple(Context& ctx) {
 	if (tagType == TAG_ARRAY) {
 		copyArray(tagName, ctx);
 	} else {
-		copyCJsonValue(tagType, ctx.rdser, ctx.wrser);
+		copyCJsonValue(tagType, ctx.rdser, ctx.wrser, kNoValidation);
 	}
 	return true;
 }
@@ -532,14 +536,14 @@ bool CJsonModifier::dropFieldInTuple(Context& ctx) {
 				case TAG_END:
 				case TAG_UUID:
 				case TAG_FLOAT:
-					copyCJsonValue(atagType, ctx.rdser, ctx.wrser);
+					copyCJsonValue(atagType, ctx.rdser, ctx.wrser, kNoValidation);
 					break;
 			}
 		}
 		return true;
 	}
 
-	copyCJsonValue(tagType, ctx.rdser, ctx.wrser);
+	copyCJsonValue(tagType, ctx.rdser, ctx.wrser, kNoValidation);
 	return true;
 }
 
@@ -551,7 +555,7 @@ void CJsonModifier::embedFieldValue(TagType type, int field, Context& ctx, size_
 		return;
 	}
 
-	copyCJsonValue(type, ctx.rdser, ctx.wrser);
+	copyCJsonValue(type, ctx.rdser, ctx.wrser, kNoValidation);
 }
 
 bool CJsonModifier::buildCJSON(Context& ctx) {

@@ -28,8 +28,10 @@ public:
 
 	static ptrdiff_t export_hdr_offset() noexcept {
 		const static key_string_impl sample(std::string_view{});
+		// NOLINTBEGIN (*PointerSub)
 		const static ptrdiff_t offset =
 			ptrdiff_t(reinterpret_cast<const char*>(&sample.export_hdr_) - reinterpret_cast<const char*>(&sample));
+		// NOLINTEND (*PointerSub)
 		return offset;
 	}
 	const char* data() const noexcept { return data_; }

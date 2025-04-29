@@ -182,7 +182,10 @@ void DBManager::ShutdownClusters() {
 	std::unique_lock lck(mtx_);
 	if (!clustersShutDown_) {
 		for (auto& db : dbs_) {
-			db.second->ShutdownCluster();
+			auto err = db.second->ShutdownCluster();
+			if (!err.ok()) {
+				logFmt(LogError, "Error on cluster shutdown: %s", err.whatStr());
+			}
 		}
 		clustersShutDown_ = true;
 	}
@@ -417,7 +420,7 @@ UserRole DBManager::userRoleFromString(std::string_view strRole) {
 std::string_view UserRoleName(UserRole role) noexcept {
 	switch (role) {
 		case kUnauthorized:
-			return "unauthoried"sv;
+			return "unauthorized"sv;
 		case kRoleNone:
 			return "none"sv;
 		case kRoleDataRead:

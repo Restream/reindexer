@@ -48,15 +48,28 @@ public:
 		auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
 		return arr->len;
 	}
+	// Get array or scalar as span of typed elements
+	template <typename Elem>
+	std::span<const Elem> GetSpan(int field) const& {
+		assertrx(field < Type().NumFields());
+		if (Type().Field(field).IsArray()) {
+			auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
+			return std::span<const Elem>(reinterpret_cast<const Elem*>(v_->Ptr() + arr->offset), arr->len);
+		} else {
+			return std::span<const Elem>(reinterpret_cast<const Elem*>(Field(field).p_), 1);
+		}
+	}
+	template <typename>
+	auto GetSpan(int) const&& = delete;
 
 	// Resize array (grow)
 	// return index of 1-st position
 	// template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
-	int ResizeArray(int field, int grow, bool append);
+	int ResizeArray(int field, int grow, Append);
 
 	// Set element or array by field index
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
-	void Set(int field, const VariantArray& keys, bool append = false) {
+	void Set(int field, const VariantArray& keys, Append append = Append_False) {
 		if (t_.Field(field).IsArray()) {
 			setArray(field, keys, append);
 		} else {
@@ -71,7 +84,7 @@ public:
 		}
 	}
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
-	void Set(int field, const Variant& key, bool append = false) {
+	void Set(int field, const Variant& key, Append append = Append_False) {
 		if (t_.Field(field).IsArray()) {
 			Set(field, VariantArray{key}, append);
 			return;
@@ -79,7 +92,7 @@ public:
 		Field(field).Set(key);
 	}
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
-	void Set(int field, Variant&& key, bool append = false) {
+	void Set(int field, Variant&& key, Append append = Append_False) {
 		if (t_.Field(field).IsArray()) {
 			Set(field, VariantArray{std::move(key)}, append);
 			return;
@@ -93,15 +106,15 @@ public:
 
 	// Set element or array by index path
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
-	void Set(std::string_view field, const VariantArray& keys, bool append = false) {
+	void Set(std::string_view field, const VariantArray& keys, Append append = Append_False) {
 		return Set(t_.FieldByName(field), keys, append);
 	}
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
-	void Set(std::string_view field, const Variant& key, bool append = false) {
+	void Set(std::string_view field, const Variant& key, Append append = Append_False) {
 		return Set(t_.FieldByName(field), key, append);
 	}
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
-	void Set(std::string_view field, Variant&& key, bool append = false) {
+	void Set(std::string_view field, Variant&& key, Append append = Append_False) {
 		return Set(t_.FieldByName(field), std::move(key), append);
 	}
 
@@ -192,7 +205,7 @@ private:
 	template <typename P>
 	void getByJsonPath(const P& path, VariantArray&, KeyValueType expectedType) const;
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
-	void setArray(int field, const VariantArray& keys, bool append);
+	void setArray(int field, const VariantArray& keys, Append);
 	template <typename HoldT>
 	void get(int field, VariantArray&, HoldT h) const;
 	template <typename HoldT>
@@ -207,9 +220,9 @@ private:
 };
 
 template <>
-int PayloadIface<PayloadValue>::ResizeArray(int, int, bool);
+int PayloadIface<PayloadValue>::ResizeArray(int, int, Append);
 template <>
-int PayloadIface<const PayloadValue>::ResizeArray(int, int, bool) = delete;
+int PayloadIface<const PayloadValue>::ResizeArray(int, int, Append) = delete;
 
 template <>
 void PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher&, WrSerializer&, const FieldsFilter&);
@@ -220,8 +233,8 @@ void PayloadIface<PayloadValue>::GetJSON(const TagsMatcher&, WrSerializer&, cons
 template <>
 std::string PayloadIface<PayloadValue>::GetJSON(const TagsMatcher&, const FieldsFilter&) = delete;
 
-extern template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(std::string_view, const VariantArray&, bool);
-extern template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(int, const VariantArray&, bool);
+extern template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(std::string_view, const VariantArray&, Append);
+extern template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(int, const VariantArray&, Append);
 extern template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(int, int, const Variant&);
 extern template void PayloadIface<PayloadValue>::SetSingleElement<PayloadValue, static_cast<void*>(0)>(int, const Variant&);
 

@@ -1294,8 +1294,8 @@ Error ShardingProxy::GetReplState(std::string_view nsName, ReplicationStateV2& s
 	return impl_.GetReplState(nsName, state, ctx);
 }
 
-Error ShardingProxy::SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus& status, const RdxContext& ctx) {
-	return impl_.SetClusterizationStatus(nsName, status, ctx);
+Error ShardingProxy::SetClusterOperationStatus(std::string_view nsName, const ClusterOperationStatus& status, const RdxContext& ctx) {
+	return impl_.SetClusterOperationStatus(nsName, status, ctx);
 }
 
 Error ShardingProxy::GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, Snapshot& snapshot, const RdxContext& ctx) {

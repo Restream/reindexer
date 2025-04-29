@@ -11,21 +11,20 @@ namespace reindexer {
 template <typename KeyEntryT, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
 		  size_t MinEntries>
 SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::SelectKey(const VariantArray& keys, CondType condition,
-																					SortType sortId, Index::SelectOpts opts,
-																					const BaseFunctionCtx::Ptr& funcCtx,
+																					SortType sortId, const Index::SelectContext& selectCtx,
 																					const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
-	if (opts.forceComparator) {
-		return IndexStore<typename Map::key_type>::SelectKey(keys, condition, sortId, opts, funcCtx, rdxCtx);
+	if (selectCtx.opts.forceComparator) {
+		return IndexStore<typename Map::key_type>::SelectKey(keys, condition, sortId, selectCtx, rdxCtx);
 	}
 
 	SelectKeyResult res;
 
 	if (condition != CondDWithin) {
-		throw Error(errQueryExec, "Only CondDWithin available for RTree index");
+		throw Error(errQueryExec, "Only DWithin condition is available for RTree index");
 	}
 	if (keys.size() != 2) {
-		throw Error(errQueryExec, "CondDWithin expects two arguments");
+		throw Error(errQueryExec, "DWithin condition expects two arguments");
 	}
 	Point point;
 	double distance;
@@ -54,11 +53,11 @@ SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Select
 		unsigned itemsCountInNs_;
 		SelectKeyResult& res_;
 		size_t idsCount_ = 0;
-	} visitor{sortId, opts.distinct, opts.itemsCountInNamespace, res};
+	} visitor{sortId, selectCtx.opts.distinct, selectCtx.opts.itemsCountInNamespace, res};
 	this->idx_map.DWithin(point, distance, visitor);
 	if (visitor.ScanWin()) {
 		// fallback to comparator, due to expensive idset
-		return IndexStore<typename Map::key_type>::SelectKey(keys, condition, sortId, opts, funcCtx, rdxCtx);
+		return IndexStore<typename Map::key_type>::SelectKey(keys, condition, sortId, selectCtx, rdxCtx);
 	}
 	return SelectKeyResults(std::move(res));
 }
@@ -71,7 +70,10 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArra
 		Upsert(Variant{}, id, clearCache);
 		return;
 	}
-	const Point point = static_cast<Point>(keys);
+	if rx_unlikely (keys.size() != 2) {
+		[[maybe_unused]] Point p{keys};
+	}
+	const Point point{keys[0].IsNullValue() ? 0.0 : keys[0].As<double>(), keys[1].IsNullValue() ? 0.0 : keys[1].As<double>()};
 	typename Map::iterator keyIt = this->idx_map.find(point);
 	if (keyIt == this->idx_map.end()) {
 		keyIt = this->idx_map.insert_without_test({point, typename Map::mapped_type()});

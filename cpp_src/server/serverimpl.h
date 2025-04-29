@@ -34,7 +34,7 @@ public:
 	Error InitFromYAML(const std::string& yaml);
 	Error InitFromFile(const char* filepath);
 	int Start();
-	void Stop();
+	void Stop() noexcept;
 	void EnableHandleSignals(bool enable = true) noexcept { enableHandleSignals_ = enable; }
 	DBManager& GetDBManager() noexcept { return *dbMgr_; }
 	bool IsReady() const noexcept { return storageLoaded_.load(); }

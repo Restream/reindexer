@@ -3,26 +3,40 @@
 #include "core/cjson/cjsonbuilder.h"
 #include "core/cjson/cjsontools.h"
 #include "core/cjson/tagsmatcher.h"
+#include "core/enums.h"
 #include "core/keyvalue/float_vectors_holder.h"
+#include "sparse_validator.h"
+#include "tools/catch_and_return.h"
 #include "tools/flagguard.h"
 
 namespace reindexer {
 
-template <typename T>
-void MsgPackDecoder::setValue(Payload& pl, CJsonBuilder& builder, const T& value, TagName tagName) {
+using namespace item_fields_validator;
+
+template <typename T, typename Validator>
+void MsgPackDecoder::setValue(Payload& pl, CJsonBuilder& builder, const T& value, TagName tagName, const Validator& validator) {
 	using namespace std::string_view_literals;
-	const int field = tm_.tags2field(tagsPath_);
-	if (field > 0) {
-		const auto& f = pl.Type().Field(field);
-		validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, field, isInArray(), "msgpack"sv);
+	const auto field = tm_.tags2field(tagsPath_);
+	if (field.IsRegularIndex()) {
+		const auto indexNumber = field.IndexNumber();
+		const auto& f = pl.Type().Field(indexNumber);
+		validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, indexNumber, isInArray(), "msgpack"sv);
 		if (!isInArray()) {
-			validateArrayFieldRestrictions(f, 1, "msgpack"sv);
+			validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), 1, "msgpack"sv);
 		}
 		Variant val(value);
-		builder.Ref(tagName, val.Type(), field);
-		pl.Set(field, convertValueForPayload(pl, field, std::move(val), "msgpack"sv));
-		objectScalarIndexes_.set(field);
+		convertValueForIndexField(pl.Type().Field(indexNumber).Type(), pl.Type().Field(indexNumber).Name(), val, "msgpack"sv,
+								  ConvertToString_False, ConvertNull_True);
+		builder.Ref(tagName, val.Type(), indexNumber);
+		pl.Set(indexNumber, std::move(val), Append_True);
+		objectScalarIndexes_.set(indexNumber);
+	} else if (field.IsIndexed()) {	 // sparse index
+		Variant val(value);
+		convertValueForIndexField(validator.Type(), validator.Name(), val, "msgpack"sv, ConvertToString_True, ConvertNull_False);
+		validator(val);
+		builder.Put(tagName, val);
 	} else {
+		validator(value);
 		builder.Put(tagName, value);
 	}
 }
@@ -55,45 +69,67 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 	using namespace std::string_view_literals;
 	if (!tagName.IsEmpty()) {
 		tagsPath_.emplace_back(tagName);
+		const auto field = tm_.tags2field(tagsPath_);
+		if (field.IsSparseIndex()) {
+			decode(
+				pl, builder, obj, tagName, floatVectorsHolder,
+				SparseValidator{field.ValueType(), field.IsArray(), field.ArrayDim(), field.SparseNumber(), tm_, isInArray(), "msgpack"sv});
+		} else {
+			decode(pl, builder, obj, tagName, floatVectorsHolder, kNoValidation);
+		}
+		tagsPath_.pop_back();
+	} else {
+		decode(pl, builder, obj, tagName, floatVectorsHolder, kNoValidation);
 	}
+}
+
+template <typename Validator>
+void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_object& obj, TagName tagName,
+							FloatVectorsHolderVector& floatVectorsHolder, const Validator& validator) {
+	using namespace std::string_view_literals;
 	switch (obj.type) {
-		case MSGPACK_OBJECT_NIL:
-			builder.Null(tagName);
+		case MSGPACK_OBJECT_NIL: {
+			const auto field = tm_.tags2field(tagsPath_);
+			if (field.IsRegularIndex() && field.ValueType().Is<KeyValueType::FloatVector>()) {
+				pl.Set(field.IndexNumber(), Variant{ConstFloatVectorView{}});
+				builder.ArrayRef(tagName, field.IndexNumber(), 0);
+			} else {
+				setValue(pl, builder, Variant{}, tagName, validator);
+			}
 			break;
+		}
 		case MSGPACK_OBJECT_BOOLEAN:
-			setValue(pl, builder, obj.via.boolean, tagName);
+			setValue(pl, builder, obj.via.boolean, tagName, validator);
 			break;
 		case MSGPACK_OBJECT_POSITIVE_INTEGER:
-			setValue(pl, builder, int64_t(obj.via.u64), tagName);
+			setValue(pl, builder, int64_t(obj.via.u64), tagName, validator);
 			break;
 		case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-			setValue(pl, builder, obj.via.i64, tagName);
+			setValue(pl, builder, obj.via.i64, tagName, validator);
 			break;
 		case MSGPACK_OBJECT_FLOAT32:
 		case MSGPACK_OBJECT_FLOAT64:
-			setValue(pl, builder, double(obj.via.f64), tagName);
+			setValue(pl, builder, double(obj.via.f64), tagName, validator);
 			break;
 		case MSGPACK_OBJECT_STR:
-			setValue(pl, builder, p_string(reinterpret_cast<const l_msgpack_hdr*>(&obj.via.str)), tagName);
+			setValue(pl, builder, p_string(reinterpret_cast<const l_msgpack_hdr*>(&obj.via.str)), tagName, validator);
 			break;
 		case MSGPACK_OBJECT_ARRAY: {
 			size_t count = 0;
 			CounterGuardIR32 g(arrayLevel_);
-			const msgpack_object* begin = obj.via.array.ptr;
-			const msgpack_object* end = begin + obj.via.array.size;
-			msgpack_object_type prevType = MSGPACK_OBJECT_NIL;
+			const msgpack_object* const begin = obj.via.array.ptr;
+			const msgpack_object* const end = begin + obj.via.array.size;
+			msgpack_object_type beginType = begin == end ? MSGPACK_OBJECT_NIL : begin->type;
 			ObjType type = ObjType::TypeArray;
 			for (const msgpack_object* p = begin; p != end; ++p, ++count) {
-				if (type != ObjType::TypeObjectArray) {
-					if (p != begin && prevType != p->type) {
-						type = ObjType::TypeObjectArray;
-					}
-					prevType = p->type;
+				if (beginType != p->type) {
+					type = ObjType::TypeObjectArray;
 				}
 			}
-			const int field = tm_.tags2field(tagsPath_);
-			if (field > 0) {
-				const auto& f = pl.Type().Field(field);
+			const auto field = tm_.tags2field(tagsPath_);
+			if (field.IsRegularIndex()) {
+				const auto indexNumber = field.IndexNumber();
+				const auto& f = pl.Type().Field(indexNumber);
 				if (f.IsFloatVector()) {
 					ConstFloatVectorView vectView;
 					if (count != 0) {
@@ -125,49 +161,48 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 						floatVectorsHolder.Add(std::move(vect));
 						vectView = floatVectorsHolder.Back();
 					}
-					pl.Set(field, Variant{vectView});
+					pl.Set(indexNumber, Variant{vectView});
 				} else {
 					if rx_unlikely (!f.IsArray()) {
-						throwUnexpectedArrayError("msgpack"sv, f);
+						throwUnexpectedArrayError(f.Name(), f.Type(), "msgpack"sv);
 					}
-					validateArrayFieldRestrictions(f, count, "msgpack"sv);
-					int pos = pl.ResizeArray(field, count, true);
+					validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), count, "msgpack"sv);
+					int pos = pl.ResizeArray(indexNumber, count, Append_True);
 					for (const msgpack_object* p = begin; p != end; ++p) {
-						pl.Set(field, pos++,
-							   convertValueForPayload(
-								   pl, field,
-								   [&] {
-									   switch (p->type) {
-										   case MSGPACK_OBJECT_BOOLEAN:
-											   return Variant{p->via.boolean};
-										   case MSGPACK_OBJECT_POSITIVE_INTEGER:
-											   return Variant{int64_t(p->via.u64)};
-										   case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-											   return Variant{p->via.i64};
-										   case MSGPACK_OBJECT_FLOAT32:
-										   case MSGPACK_OBJECT_FLOAT64:
-											   return Variant{p->via.f64};
-										   case MSGPACK_OBJECT_STR:
-											   return Variant{p_string(reinterpret_cast<const l_msgpack_hdr*>(&p->via.str)),
-															  Variant::HoldT{}};
-										   case MSGPACK_OBJECT_NIL:
-										   case MSGPACK_OBJECT_ARRAY:
-										   case MSGPACK_OBJECT_MAP:
-										   case MSGPACK_OBJECT_BIN:
-										   case MSGPACK_OBJECT_EXT:
-										   default:
-											   throw Error(errParams, "Unsupported MsgPack array field type: {}({})", ToString(p->type),
-														   int(p->type));
-									   }
-								   }(),
-								   "msgpack"sv));
+						auto val = [&] {
+							switch (p->type) {
+								case MSGPACK_OBJECT_BOOLEAN:
+									return Variant{p->via.boolean};
+								case MSGPACK_OBJECT_POSITIVE_INTEGER:
+									return Variant{int64_t(p->via.u64)};
+								case MSGPACK_OBJECT_NEGATIVE_INTEGER:
+									return Variant{p->via.i64};
+								case MSGPACK_OBJECT_FLOAT32:
+								case MSGPACK_OBJECT_FLOAT64:
+									return Variant{p->via.f64};
+								case MSGPACK_OBJECT_STR:
+									return Variant{p_string(reinterpret_cast<const l_msgpack_hdr*>(&p->via.str)), Variant::HoldT{}};
+								case MSGPACK_OBJECT_NIL:
+									return Variant{};
+								case MSGPACK_OBJECT_ARRAY:
+								case MSGPACK_OBJECT_MAP:
+								case MSGPACK_OBJECT_BIN:
+								case MSGPACK_OBJECT_EXT:
+								default:
+									throw Error(errLogic, "Unsupported MsgPack array field type: {}({})", ToString(p->type), int(p->type));
+							}
+						}();
+						convertValueForIndexField(pl.Type().Field(indexNumber).Type(), pl.Type().Field(indexNumber).Name(), val,
+												  "msgpack"sv, ConvertToString_False, ConvertNull_True);
+						pl.Set(indexNumber, pos++, std::move(val));
 					}
 				}
-				builder.ArrayRef(tagName, field, count);
+				builder.ArrayRef(tagName, indexNumber, count);
 			} else {
 				auto array = builder.Array(tagName, type);
+				auto arrayValidator = validator.Array();
 				for (const msgpack_object* p = begin; p != end; ++p) {
-					decode(pl, array, *p, TagName::Empty(), floatVectorsHolder);
+					decode(pl, array, *p, TagName::Empty(), floatVectorsHolder, arrayValidator.Elem());
 				}
 			}
 			break;
@@ -189,13 +224,10 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 		default:
 			throw Error(errParams, "Unsupported MsgPack type: {}({})", ToString(obj.type), int(obj.type));
 	}
-	if (!tagName.IsEmpty()) {
-		tagsPath_.pop_back();
-	}
 }
 
 Error MsgPackDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& wrser, size_t& offset,
-							 FloatVectorsHolderVector& floatVectorsHolder) {
+							 FloatVectorsHolderVector& floatVectorsHolder) noexcept {
 	try {
 		objectScalarIndexes_.reset();
 		tagsPath_.clear();
@@ -209,22 +241,14 @@ Error MsgPackDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& wr
 			return Error(errNotValid, "Unexpected MsgPack value. Expected {}, but got {}({}) at {}(~>\"{}\"...)",
 						 ToString(MSGPACK_OBJECT_MAP), ToString(data.p->type), int(data.p->type), baseOffset, slice);
 		}
-
 		CJsonBuilder cjsonBuilder(wrser, ObjType::TypePlain, &tm_, TagName::Empty());
 		decode(pl, cjsonBuilder, *(data.p), TagName::Empty(), floatVectorsHolder);
-	} catch (const Error& err) {
-		return err;
-	} catch (const std::exception& ex) {
-		return {errNotValid, "{}", ex.what()};
-	} catch (...) {
-		// all internal errors shall be handled and converted to Error
-		return {errNotValid, "Unexpected exception"};
 	}
-
+	CATCH_AND_RETURN
 	return {};
 }
 
-constexpr std::string_view ToString(msgpack_object_type type) {
+constexpr std::string_view ToString(msgpack_object_type type) noexcept {
 	using namespace std::string_view_literals;
 
 	switch (type) {

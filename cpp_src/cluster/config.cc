@@ -1,9 +1,11 @@
 #include "cluster/config.h"
 
 #include "core/cjson/jsonbuilder.h"
+#include "core/defnsconfigs.h"
 #include "core/indexdef.h"
 #include "core/type_consts.h"
 #include "gason/gason.h"
+#include "tools/catch_and_return.h"
 #include "tools/jsontools.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
@@ -223,6 +225,7 @@ Error ClusterConfigData::FromYAML(const std::string& yaml) {
 		proxyConnCount = root["proxy_conn_count"].as<int>(proxyConnCount);
 		proxyConnConcurrency = root["proxy_conn_concurrency"].as<int>(proxyConnConcurrency);
 		proxyConnThreads = root["proxy_conn_threads"].as<int>(proxyConnThreads);
+		selfReplToken = root["self_replication_token"].as<std::string>();
 		logLevel = logLevelFromString(root["log_level"].as<std::string>("info"));
 		{
 			auto node = root["namespaces"];
@@ -248,6 +251,25 @@ Error ClusterConfigData::FromYAML(const std::string& yaml) {
 	}
 }
 
+Error AsyncReplConfigData::FromDefault() noexcept {
+	try {
+		gason::JsonParser parser;
+		gason::JsonNode configJson = parser.Parse(kDefAsyncReplicationConfig);
+		auto& asyncReplicationJson = configJson["async_replication"];
+		if (!asyncReplicationJson.isObject()) {
+			return Error(ErrorCode::errInvalidDefConfigs, "Incorrect kDefAsyncReplicationConfig");
+		}
+
+		Error err = FromJSON(asyncReplicationJson);
+		if (!err.ok()) {
+			return Error(ErrorCode::errInvalidDefConfigs, "Incorrect kDefAsyncReplicationConfig: {}", err.what());
+		}
+	}
+	CATCH_AND_RETURN
+
+	return ErrorCode::errOK;
+}
+
 Error AsyncReplConfigData::FromYAML(const std::string& yaml) {
 	try {
 		YAML::Node root = YAML::Load(yaml);
@@ -266,6 +288,7 @@ Error AsyncReplConfigData::FromYAML(const std::string& yaml) {
 		maxWALDepthOnForceSync = root["max_wal_depth_on_force_sync"].as<int>(maxWALDepthOnForceSync);
 		onlineUpdatesDelayMSec = root["online_updates_delay_msec"].as<int>(onlineUpdatesDelayMSec);
 		logLevel = logLevelFromString(root["log_level"].as<std::string>("info"));
+		selfReplToken = root["self_replication_token"].as<std::string>();
 		{
 			auto node = root["namespaces"];
 			NsNamesHashSetT nss;
@@ -335,6 +358,7 @@ Error AsyncReplConfigData::FromJSON(const gason::JsonNode& root) {
 		err = tryReadOptionalJsonValue(&errorString, root, "batching_routines_count"sv, batchingRoutinesCount);
 		err = tryReadOptionalJsonValue(&errorString, root, "max_wal_depth_on_force_sync"sv, maxWALDepthOnForceSync);
 		err = tryReadOptionalJsonValue(&errorString, root, "online_updates_delay_msec"sv, onlineUpdatesDelayMSec);
+		err = tryReadOptionalJsonValue(&errorString, root, "self_replication_token"sv, selfReplToken);
 		(void)err;	// Read errors do not matter here
 
 		if (std::string_view levelStr = logLevelToString(logLevel);
@@ -392,6 +416,7 @@ void AsyncReplConfigData::GetJSON(JsonBuilder& jb, MaskingDSN maskingDSN) const 
 	jb.Put("batching_routines_count", batchingRoutinesCount);
 	jb.Put("max_wal_depth_on_force_sync", maxWALDepthOnForceSync);
 	jb.Put("online_updates_delay_msec", onlineUpdatesDelayMSec);
+	jb.Put("self_replication_token", selfReplToken);
 	jb.Put("log_level", logLevelToString(logLevel));
 	{
 		auto arrNode = jb.Array("namespaces");
@@ -478,6 +503,8 @@ void AsyncReplConfigData::GetYAML(WrSerializer& ser) const {
 			"# (upsert '{ \"type\":\"action\", \"action\": { \"command\": \"set_log_level\", \"type\": \"async_replication\", \"level\": \"info\" } }' into #config-namespace).\n"
 			"# Possible values: none, error, warning, info, trace.\n"
 			"log_level: " + std::string(logLevelToString(logLevel)) + "\n"
+			"# Synchronization token for asynchronous replication\n"
+			+ selfReplToken + "\n"
 			"# List of namespaces for replication. If empty, all namespaces\n"
 			"# All replicated namespaces will become read only for followers\n"
 			"# It should be written as YAML sequence, JSON-style arrays are not supported\n"

@@ -94,8 +94,8 @@ std::string_view CmdName(uint16_t cmd) noexcept {
 			return "FetchSnapshot"sv;
 		case kCmdApplySnapshotCh:
 			return "ApplySnapshotChunk"sv;
-		case kCmdSetClusterizationStatus:
-			return "SetClusterizationStatus"sv;
+		case kCmdSetClusterOperationStatus:
+			return "SetClusterOperationStatus"sv;
 		case kCmdSuggestLeader:
 			return "SuggestLeader"sv;
 		case kCmdLeadersPing:

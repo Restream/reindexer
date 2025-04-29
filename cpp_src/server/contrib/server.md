@@ -56,7 +56,9 @@
   * [Get memory stats information](#get-memory-stats-information)
   * [Get performance stats information](#get-performance-stats-information)
   * [Get SELECT queries performance stats information](#get-select-queries-performance-stats-information)
+  * [Get system configs](#get-system-configs)
   * [Update system config](#update-system-config)
+  * [Get default system configs](#get-default-system-configs)
 - [References](#references)
   * [SysInfo](#sysinfo)
   * [ActivityStats](#activitystats)
@@ -117,6 +119,7 @@
   * [QueriesPerfStats](#queriesperfstats)
   * [QueryPerfStats](#queryperfstats)
   * [LRUCachePerfStats](#lrucacheperfstats)
+  * [SystemConfigItems](#systemconfigitems)
   * [SystemConfigItem](#systemconfigitem)
   * [ProfilingConfig](#profilingconfig)
   * [LongQueriesLogging](#longquerieslogging)
@@ -138,7 +141,7 @@
 
 <!-- tocstop -->
 
-> Version 5.1.0
+> Version 5.2.0
 
 ## Overview
 
@@ -203,7 +206,9 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 | GET | [/db/{database}/namespaces/%23memstats/items](#getdbdatabasenamespaces23memstatsitems) | Get memory stats information |
 | GET | [/db/{database}/namespaces/%23perfstats/items](#getdbdatabasenamespaces23perfstatsitems) | Get performance stats information |
 | GET | [/db/{database}/namespaces/%23queriesperfstats/items](#getdbdatabasenamespaces23queriesperfstatsitems) | Get SELECT queries performance stats information |
+| GET | [/db/{database}/namespaces/%23config/items](#getdbdatabasenamespaces23configitems) | Get system configs |
 | PUT | [/db/{database}/namespaces/%23config/items](#putdbdatabasenamespaces23configitems) | Update system config |
+| GET | [/db/default_configs](#getdbdefault_configs) | Get default system configs |
 
 ## Reference Table
 
@@ -268,6 +273,7 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 | QueriesPerfStats | [QueriesPerfStats](#queriesperfstats) |  |
 | QueryPerfStats | [QueryPerfStats](#queryperfstats) | Performance statistics per each query |
 | LRUCachePerfStats | [LRUCachePerfStats](#lrucacheperfstats) | Performance statistics for specific LRU-cache instance |
+| SystemConfigItems | [SystemConfigItems](#systemconfigitems) |  |
 | SystemConfigItem | [SystemConfigItem](#systemconfigitem) |  |
 | ProfilingConfig | [ProfilingConfig](#profilingconfig) |  |
 | LongQueriesLogging | [LongQueriesLogging](#longquerieslogging) | Parameters for logging long queries and transactions |
@@ -6872,6 +6878,247 @@ This operation will return detailed information about database memory consumptio
 
 ***
 
+### Get system configs
+
+```
+[GET]/db/{database}/namespaces/%23config/items
+```
+
+
+This operation will return system configs
+
+#### Responses
+
+- 200 successful operation
+
+`application/json`
+
+```ts
+{
+  items: {
+    type: enum[profiling, namespaces, replication, action] //default: profiling
+    profiling: {
+      // Enables tracking activity statistics
+      activitystats?: boolean
+      // Enables tracking memory statistics
+      memstats?: boolean //default: true
+      // Enables tracking overall performance statistics
+      perfstats?: boolean
+      // Enables record queries performance statistics
+      queriesperfstats?: boolean
+      // Minimum query execution time to be recorded in #queriesperfstats namespace
+      queries_threshold_us?: integer
+      // Parameters for logging long queries and transactions
+      long_queries_logging: {
+        select: {
+          // Threshold value for logging SELECT queries, if -1 logging is disabled
+          threshold_us?: integer
+          // Output the query in a normalized form
+          normalized?: boolean
+        }
+        update_delete: {
+          // Threshold value for logging UPDATE and DELETE queries, if -1 logging is disabled
+          threshold_us?: integer
+          // Output the query in a normalized form
+          normalized?: boolean
+        }
+        transaction: {
+          // Threshold value for total transaction commit time, if -1 logging is disabled
+          threshold_us?: integer
+          // Threshold value for the average step duration time in a transaction, if -1 logging is disabled
+          avg_step_threshold_us?: integer
+        }
+      }
+    }
+    namespaces: {
+      // Name of namespace, or `*` for setting to all namespaces
+      namespace?: string
+      // Log level of queries core logger
+      log_level?: enum[none, error, warning, info, trace]
+      // Join cache mode
+      join_cache_mode?: enum[aggressive, on, off] //default: off
+      // Enable namespace copying for transaction with steps count greater than this value (if copy_politics_multiplier also allows this)
+      start_copy_policy_tx_size?: integer //default: 10000
+      // Disables copy policy if namespace size is greater than copy_policy_multiplier * start_copy_policy_tx_size
+      copy_policy_multiplier?: integer //default: 5
+      // Force namespace copying for transaction with steps count greater than this value
+      tx_size_to_always_copy?: integer //default: 100000
+      // Count of threads, that will be created during transaction's commit to insert data into multithread ANN-indexes
+      tx_vec_insertion_threads?: integer //default: 4
+      // Timeout before background indexes optimization start after last update. 0 - disable optimizations
+      optimization_timeout_ms?: integer //default: 800
+      // Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations
+      optimization_sort_workers?: integer //default: 4
+      // Maximum WAL size for this namespace (maximum count of WAL records)
+      wal_size?: integer //default: 4000000
+      // Maximum preselect size for optimization of inner join by injection of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
+      max_preselect_size?: integer //default: 1000
+      // Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
+      max_preselect_part?: number //default: 0.1
+      // Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value
+      min_preselect_size?: integer //default: 1000
+      // Maximum number of IdSet iterations of namespace preliminary result size for optimization
+      max_iterations_idset_preresult?: integer //default: 20000
+      // Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time
+      index_updates_counting_mode?: boolean
+      // Enables synchronous storage flush inside write-calls, if async updates count is more than sync_storage_flush_limit. 0 - disables synchronous storage flush, in this case storage will be flushed in background thread only
+      sync_storage_flush_limit?: integer //default: 20000
+      // Delay between last and namespace update background ANN-indexes storage cache creation. Storage cache is required for ANN-indexes for faster startup. 0 - disables background cache creation (cache will still be created on the database shutdown)
+      ann_storage_cache_build_timeout_ms?: integer //default: 5000
+      // Strict mode for queries. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions
+      strict_mode?: enum[none, names, indexes] //default: names
+      cache: {
+        // Max size of the index IdSets cache in bytes (per index). Each index has it's own independent cache. This cache is used in any selections to store resulting sets of internal document IDs (it does not stores documents' content itself)
+        index_idset_cache_size?: integer //default: 134217728
+        // Default 'hits to cache' for index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
+        index_idset_hits_to_cache?: integer //default: 2
+        // Max size of the fulltext indexes IdSets cache in bytes (per index). Each fulltext index has it's own independent cache. This cache is used in any selections to store resulting sets of internal document IDs, FT ranks and highlighted areas (it does not stores documents' content itself)
+        ft_index_cache_size?: integer //default: 134217728
+        // Default 'hits to cache' for fulltext index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
+        ft_index_hits_to_cache?: integer //default: 2
+        // Max size of the index IdSets cache in bytes for each namespace. This cache will be enabled only if 'join_cache_mode' property is not 'off'. It stores resulting IDs, serialized JOINed queries and any other 'preselect' information for the JOIN queries (when target namespace is right namespace of the JOIN)
+        joins_preselect_cache_size?: integer //default: 134217728
+        // Default 'hits to cache' for joins preselect cache of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
+        joins_preselect_hit_to_cache?: integer //default: 2
+        // Max size of the cache for COUNT_CACHED() aggregation in bytes for each namespace. This cache stores resulting COUNTs and serialized queries for the COUNT_CACHED() aggregations
+        query_count_cache_size?: integer //default: 134217728
+        // Default 'hits to cache' for COUNT_CACHED() aggregation of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
+        query_count_hit_to_cache?: integer //default: 2
+      }
+    }[]
+    replication: {
+      // Node identifier. Should be unique for each node in the replicated cluster (non-unique IDs are also allowed, but may lead to the inconsistency in some cases
+      server_id?: integer
+      // Cluster ID - must be same for client and for master
+      cluster_id?: integer //default: 2
+      admissible_replication_tokens: {
+        token?: string
+        namespaces: {
+        }[]
+      }[]
+    }
+    async_replication: {
+      // Replication role
+      role: enum[none, follower, leader]
+      // Allows to configure async replication from sync raft-cluster (replicate either from each node, or from synchronous cluster leader)
+      mode?: enum[default, from_sync_leader]
+      // Application name, used by replicator as a login tag
+      app_name?: string
+      // Node response timeout for online-replication (seconds)
+      online_updates_timeout_sec?: integer
+      // Network timeout for communication with followers (for force and wal synchronization), in seconds
+      sync_timeout_sec?: integer
+      // Resync timeout on network errors
+      retry_sync_interval_msec?: integer
+      // Number of data replication threads
+      sync_threads?: integer
+      // Max number of concurrent force/wal sync's per thread
+      syncs_per_thread?: integer
+      // Number of coroutines for updates batching (per namespace). Higher value here may help to reduce networks triparound await time, but will require more RAM
+      batching_routines_count?: integer
+      // Delay between write operation and replication. Larger values here will leader to higher replication latency and buffering, but also will provide more effective network batching and CPU utilization
+      online_updates_delay_msec?: integer
+      // Enable network traffic compression
+      enable_compression?: boolean
+      // Maximum number of WAL records, which will be copied after force-sync
+      max_wal_depth_on_force_sync?: integer
+      // force resync on logic error conditions
+      force_sync_on_logic_error?: boolean
+      // force resync on wrong data hash conditions
+      force_sync_on_wrong_data_hash?: boolean
+      // Replication log level on replicator's startup
+      log_level?: enum[none, error, warning, info, trace]
+      namespaces?: string[]
+      // Token of the current node that it sends to the follower for verification
+      self_replication_token?: string
+      nodes: {
+        // Follower's DSN. Must have cproto-scheme
+        dsn: string
+        namespaces?: string[]
+      }[]
+    }
+    action: {
+      // Command to execute
+      command: enum[restart_replication, reset_replication_role]
+      // Namespace name for reset_replication_role. May be empty
+      namespace?: string
+    }
+  }[]
+}
+```
+
+- 400 Invalid arguments supplied
+
+`application/json`
+
+```ts
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 403 Forbidden
+
+`application/json`
+
+```ts
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 404 Entry not found
+
+`application/json`
+
+```ts
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 408 Context timeout
+
+`application/json`
+
+```ts
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 500 Unexpected internal error
+
+`application/json`
+
+```ts
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+***
+
 ### Update system config
 
 ```
@@ -6985,6 +7232,11 @@ This operation will update system configuration:
     server_id?: integer
     // Cluster ID - must be same for client and for master
     cluster_id?: integer //default: 2
+    admissible_replication_tokens: {
+      token?: string
+      namespaces: {
+      }[]
+    }[]
   }
   async_replication: {
     // Replication role
@@ -7018,6 +7270,8 @@ This operation will update system configuration:
     // Replication log level on replicator's startup
     log_level?: enum[none, error, warning, info, trace]
     namespaces?: string[]
+    // Token of the current node that it sends to the follower for verification
+    self_replication_token?: string
     nodes: {
       // Follower's DSN. Must have cproto-scheme
       dsn: string
@@ -7075,6 +7329,237 @@ This operation will update system configuration:
 ```
 
 - 404 Entry not found
+
+`application/json`
+
+```ts
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 408 Context timeout
+
+`application/json`
+
+```ts
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 500 Unexpected internal error
+
+`application/json`
+
+```ts
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+***
+
+### Get default system configs
+
+```
+[GET]/db/default_configs
+```
+
+
+This operation will return default system configs.
+
+#### Parameters(Query)
+
+```ts
+type: enum[namespaces, replication, async_replication, profiling] //default: namespaces
+```
+
+#### Responses
+
+- 200 successful operation
+
+`application/json`
+
+```ts
+{
+  type: enum[profiling, namespaces, replication, action] //default: profiling
+  profiling: {
+    // Enables tracking activity statistics
+    activitystats?: boolean
+    // Enables tracking memory statistics
+    memstats?: boolean //default: true
+    // Enables tracking overall performance statistics
+    perfstats?: boolean
+    // Enables record queries performance statistics
+    queriesperfstats?: boolean
+    // Minimum query execution time to be recorded in #queriesperfstats namespace
+    queries_threshold_us?: integer
+    // Parameters for logging long queries and transactions
+    long_queries_logging: {
+      select: {
+        // Threshold value for logging SELECT queries, if -1 logging is disabled
+        threshold_us?: integer
+        // Output the query in a normalized form
+        normalized?: boolean
+      }
+      update_delete: {
+        // Threshold value for logging UPDATE and DELETE queries, if -1 logging is disabled
+        threshold_us?: integer
+        // Output the query in a normalized form
+        normalized?: boolean
+      }
+      transaction: {
+        // Threshold value for total transaction commit time, if -1 logging is disabled
+        threshold_us?: integer
+        // Threshold value for the average step duration time in a transaction, if -1 logging is disabled
+        avg_step_threshold_us?: integer
+      }
+    }
+  }
+  namespaces: {
+    // Name of namespace, or `*` for setting to all namespaces
+    namespace?: string
+    // Log level of queries core logger
+    log_level?: enum[none, error, warning, info, trace]
+    // Join cache mode
+    join_cache_mode?: enum[aggressive, on, off] //default: off
+    // Enable namespace copying for transaction with steps count greater than this value (if copy_politics_multiplier also allows this)
+    start_copy_policy_tx_size?: integer //default: 10000
+    // Disables copy policy if namespace size is greater than copy_policy_multiplier * start_copy_policy_tx_size
+    copy_policy_multiplier?: integer //default: 5
+    // Force namespace copying for transaction with steps count greater than this value
+    tx_size_to_always_copy?: integer //default: 100000
+    // Count of threads, that will be created during transaction's commit to insert data into multithread ANN-indexes
+    tx_vec_insertion_threads?: integer //default: 4
+    // Timeout before background indexes optimization start after last update. 0 - disable optimizations
+    optimization_timeout_ms?: integer //default: 800
+    // Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations
+    optimization_sort_workers?: integer //default: 4
+    // Maximum WAL size for this namespace (maximum count of WAL records)
+    wal_size?: integer //default: 4000000
+    // Maximum preselect size for optimization of inner join by injection of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
+    max_preselect_size?: integer //default: 1000
+    // Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
+    max_preselect_part?: number //default: 0.1
+    // Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value
+    min_preselect_size?: integer //default: 1000
+    // Maximum number of IdSet iterations of namespace preliminary result size for optimization
+    max_iterations_idset_preresult?: integer //default: 20000
+    // Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time
+    index_updates_counting_mode?: boolean
+    // Enables synchronous storage flush inside write-calls, if async updates count is more than sync_storage_flush_limit. 0 - disables synchronous storage flush, in this case storage will be flushed in background thread only
+    sync_storage_flush_limit?: integer //default: 20000
+    // Delay between last and namespace update background ANN-indexes storage cache creation. Storage cache is required for ANN-indexes for faster startup. 0 - disables background cache creation (cache will still be created on the database shutdown)
+    ann_storage_cache_build_timeout_ms?: integer //default: 5000
+    // Strict mode for queries. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions
+    strict_mode?: enum[none, names, indexes] //default: names
+    cache: {
+      // Max size of the index IdSets cache in bytes (per index). Each index has it's own independent cache. This cache is used in any selections to store resulting sets of internal document IDs (it does not stores documents' content itself)
+      index_idset_cache_size?: integer //default: 134217728
+      // Default 'hits to cache' for index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
+      index_idset_hits_to_cache?: integer //default: 2
+      // Max size of the fulltext indexes IdSets cache in bytes (per index). Each fulltext index has it's own independent cache. This cache is used in any selections to store resulting sets of internal document IDs, FT ranks and highlighted areas (it does not stores documents' content itself)
+      ft_index_cache_size?: integer //default: 134217728
+      // Default 'hits to cache' for fulltext index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
+      ft_index_hits_to_cache?: integer //default: 2
+      // Max size of the index IdSets cache in bytes for each namespace. This cache will be enabled only if 'join_cache_mode' property is not 'off'. It stores resulting IDs, serialized JOINed queries and any other 'preselect' information for the JOIN queries (when target namespace is right namespace of the JOIN)
+      joins_preselect_cache_size?: integer //default: 134217728
+      // Default 'hits to cache' for joins preselect cache of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
+      joins_preselect_hit_to_cache?: integer //default: 2
+      // Max size of the cache for COUNT_CACHED() aggregation in bytes for each namespace. This cache stores resulting COUNTs and serialized queries for the COUNT_CACHED() aggregations
+      query_count_cache_size?: integer //default: 134217728
+      // Default 'hits to cache' for COUNT_CACHED() aggregation of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
+      query_count_hit_to_cache?: integer //default: 2
+    }
+  }[]
+  replication: {
+    // Node identifier. Should be unique for each node in the replicated cluster (non-unique IDs are also allowed, but may lead to the inconsistency in some cases
+    server_id?: integer
+    // Cluster ID - must be same for client and for master
+    cluster_id?: integer //default: 2
+    admissible_replication_tokens: {
+      token?: string
+      namespaces: {
+      }[]
+    }[]
+  }
+  async_replication: {
+    // Replication role
+    role: enum[none, follower, leader]
+    // Allows to configure async replication from sync raft-cluster (replicate either from each node, or from synchronous cluster leader)
+    mode?: enum[default, from_sync_leader]
+    // Application name, used by replicator as a login tag
+    app_name?: string
+    // Node response timeout for online-replication (seconds)
+    online_updates_timeout_sec?: integer
+    // Network timeout for communication with followers (for force and wal synchronization), in seconds
+    sync_timeout_sec?: integer
+    // Resync timeout on network errors
+    retry_sync_interval_msec?: integer
+    // Number of data replication threads
+    sync_threads?: integer
+    // Max number of concurrent force/wal sync's per thread
+    syncs_per_thread?: integer
+    // Number of coroutines for updates batching (per namespace). Higher value here may help to reduce networks triparound await time, but will require more RAM
+    batching_routines_count?: integer
+    // Delay between write operation and replication. Larger values here will leader to higher replication latency and buffering, but also will provide more effective network batching and CPU utilization
+    online_updates_delay_msec?: integer
+    // Enable network traffic compression
+    enable_compression?: boolean
+    // Maximum number of WAL records, which will be copied after force-sync
+    max_wal_depth_on_force_sync?: integer
+    // force resync on logic error conditions
+    force_sync_on_logic_error?: boolean
+    // force resync on wrong data hash conditions
+    force_sync_on_wrong_data_hash?: boolean
+    // Replication log level on replicator's startup
+    log_level?: enum[none, error, warning, info, trace]
+    namespaces?: string[]
+    // Token of the current node that it sends to the follower for verification
+    self_replication_token?: string
+    nodes: {
+      // Follower's DSN. Must have cproto-scheme
+      dsn: string
+      namespaces?: string[]
+    }[]
+  }
+  action: {
+    // Command to execute
+    command: enum[restart_replication, reset_replication_role]
+    // Namespace name for reset_replication_role. May be empty
+    namespace?: string
+  }
+}
+```
+
+- 400 Invalid arguments supplied
+
+`application/json`
+
+```ts
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 403 Forbidden
 
 `application/json`
 
@@ -8069,6 +8554,8 @@ This operation will update system configuration:
   embedding: {
     // Upsert embedding configuration
     upsert_embedder: {
+      // Embedder name. Optional
+      name?: string
       // Embed service URL
       URL: string
       // tag is used to cache results of injection
@@ -9358,6 +9845,162 @@ This operation will update system configuration:
 }
 ```
 
+### SystemConfigItems
+
+```ts
+{
+  items: {
+    type: enum[profiling, namespaces, replication, action] //default: profiling
+    profiling: {
+      // Enables tracking activity statistics
+      activitystats?: boolean
+      // Enables tracking memory statistics
+      memstats?: boolean //default: true
+      // Enables tracking overall performance statistics
+      perfstats?: boolean
+      // Enables record queries performance statistics
+      queriesperfstats?: boolean
+      // Minimum query execution time to be recorded in #queriesperfstats namespace
+      queries_threshold_us?: integer
+      // Parameters for logging long queries and transactions
+      long_queries_logging: {
+        select: {
+          // Threshold value for logging SELECT queries, if -1 logging is disabled
+          threshold_us?: integer
+          // Output the query in a normalized form
+          normalized?: boolean
+        }
+        update_delete: {
+          // Threshold value for logging UPDATE and DELETE queries, if -1 logging is disabled
+          threshold_us?: integer
+          // Output the query in a normalized form
+          normalized?: boolean
+        }
+        transaction: {
+          // Threshold value for total transaction commit time, if -1 logging is disabled
+          threshold_us?: integer
+          // Threshold value for the average step duration time in a transaction, if -1 logging is disabled
+          avg_step_threshold_us?: integer
+        }
+      }
+    }
+    namespaces: {
+      // Name of namespace, or `*` for setting to all namespaces
+      namespace?: string
+      // Log level of queries core logger
+      log_level?: enum[none, error, warning, info, trace]
+      // Join cache mode
+      join_cache_mode?: enum[aggressive, on, off] //default: off
+      // Enable namespace copying for transaction with steps count greater than this value (if copy_politics_multiplier also allows this)
+      start_copy_policy_tx_size?: integer //default: 10000
+      // Disables copy policy if namespace size is greater than copy_policy_multiplier * start_copy_policy_tx_size
+      copy_policy_multiplier?: integer //default: 5
+      // Force namespace copying for transaction with steps count greater than this value
+      tx_size_to_always_copy?: integer //default: 100000
+      // Count of threads, that will be created during transaction's commit to insert data into multithread ANN-indexes
+      tx_vec_insertion_threads?: integer //default: 4
+      // Timeout before background indexes optimization start after last update. 0 - disable optimizations
+      optimization_timeout_ms?: integer //default: 800
+      // Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations
+      optimization_sort_workers?: integer //default: 4
+      // Maximum WAL size for this namespace (maximum count of WAL records)
+      wal_size?: integer //default: 4000000
+      // Maximum preselect size for optimization of inner join by injection of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
+      max_preselect_size?: integer //default: 1000
+      // Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
+      max_preselect_part?: number //default: 0.1
+      // Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value
+      min_preselect_size?: integer //default: 1000
+      // Maximum number of IdSet iterations of namespace preliminary result size for optimization
+      max_iterations_idset_preresult?: integer //default: 20000
+      // Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time
+      index_updates_counting_mode?: boolean
+      // Enables synchronous storage flush inside write-calls, if async updates count is more than sync_storage_flush_limit. 0 - disables synchronous storage flush, in this case storage will be flushed in background thread only
+      sync_storage_flush_limit?: integer //default: 20000
+      // Delay between last and namespace update background ANN-indexes storage cache creation. Storage cache is required for ANN-indexes for faster startup. 0 - disables background cache creation (cache will still be created on the database shutdown)
+      ann_storage_cache_build_timeout_ms?: integer //default: 5000
+      // Strict mode for queries. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions
+      strict_mode?: enum[none, names, indexes] //default: names
+      cache: {
+        // Max size of the index IdSets cache in bytes (per index). Each index has it's own independent cache. This cache is used in any selections to store resulting sets of internal document IDs (it does not stores documents' content itself)
+        index_idset_cache_size?: integer //default: 134217728
+        // Default 'hits to cache' for index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
+        index_idset_hits_to_cache?: integer //default: 2
+        // Max size of the fulltext indexes IdSets cache in bytes (per index). Each fulltext index has it's own independent cache. This cache is used in any selections to store resulting sets of internal document IDs, FT ranks and highlighted areas (it does not stores documents' content itself)
+        ft_index_cache_size?: integer //default: 134217728
+        // Default 'hits to cache' for fulltext index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
+        ft_index_hits_to_cache?: integer //default: 2
+        // Max size of the index IdSets cache in bytes for each namespace. This cache will be enabled only if 'join_cache_mode' property is not 'off'. It stores resulting IDs, serialized JOINed queries and any other 'preselect' information for the JOIN queries (when target namespace is right namespace of the JOIN)
+        joins_preselect_cache_size?: integer //default: 134217728
+        // Default 'hits to cache' for joins preselect cache of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
+        joins_preselect_hit_to_cache?: integer //default: 2
+        // Max size of the cache for COUNT_CACHED() aggregation in bytes for each namespace. This cache stores resulting COUNTs and serialized queries for the COUNT_CACHED() aggregations
+        query_count_cache_size?: integer //default: 134217728
+        // Default 'hits to cache' for COUNT_CACHED() aggregation of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
+        query_count_hit_to_cache?: integer //default: 2
+      }
+    }[]
+    replication: {
+      // Node identifier. Should be unique for each node in the replicated cluster (non-unique IDs are also allowed, but may lead to the inconsistency in some cases
+      server_id?: integer
+      // Cluster ID - must be same for client and for master
+      cluster_id?: integer //default: 2
+      admissible_replication_tokens: {
+        token?: string
+        namespaces: {
+        }[]
+      }[]
+    }
+    async_replication: {
+      // Replication role
+      role: enum[none, follower, leader]
+      // Allows to configure async replication from sync raft-cluster (replicate either from each node, or from synchronous cluster leader)
+      mode?: enum[default, from_sync_leader]
+      // Application name, used by replicator as a login tag
+      app_name?: string
+      // Node response timeout for online-replication (seconds)
+      online_updates_timeout_sec?: integer
+      // Network timeout for communication with followers (for force and wal synchronization), in seconds
+      sync_timeout_sec?: integer
+      // Resync timeout on network errors
+      retry_sync_interval_msec?: integer
+      // Number of data replication threads
+      sync_threads?: integer
+      // Max number of concurrent force/wal sync's per thread
+      syncs_per_thread?: integer
+      // Number of coroutines for updates batching (per namespace). Higher value here may help to reduce networks triparound await time, but will require more RAM
+      batching_routines_count?: integer
+      // Delay between write operation and replication. Larger values here will leader to higher replication latency and buffering, but also will provide more effective network batching and CPU utilization
+      online_updates_delay_msec?: integer
+      // Enable network traffic compression
+      enable_compression?: boolean
+      // Maximum number of WAL records, which will be copied after force-sync
+      max_wal_depth_on_force_sync?: integer
+      // force resync on logic error conditions
+      force_sync_on_logic_error?: boolean
+      // force resync on wrong data hash conditions
+      force_sync_on_wrong_data_hash?: boolean
+      // Replication log level on replicator's startup
+      log_level?: enum[none, error, warning, info, trace]
+      namespaces?: string[]
+      // Token of the current node that it sends to the follower for verification
+      self_replication_token?: string
+      nodes: {
+        // Follower's DSN. Must have cproto-scheme
+        dsn: string
+        namespaces?: string[]
+      }[]
+    }
+    action: {
+      // Command to execute
+      command: enum[restart_replication, reset_replication_role]
+      // Namespace name for reset_replication_role. May be empty
+      namespace?: string
+    }
+  }[]
+}
+```
+
 ### SystemConfigItem
 
 ```ts
@@ -9457,6 +10100,11 @@ This operation will update system configuration:
     server_id?: integer
     // Cluster ID - must be same for client and for master
     cluster_id?: integer //default: 2
+    admissible_replication_tokens: {
+      token?: string
+      namespaces: {
+      }[]
+    }[]
   }
   async_replication: {
     // Replication role
@@ -9490,6 +10138,8 @@ This operation will update system configuration:
     // Replication log level on replicator's startup
     log_level?: enum[none, error, warning, info, trace]
     namespaces?: string[]
+    // Token of the current node that it sends to the follower for verification
+    self_replication_token?: string
     nodes: {
       // Follower's DSN. Must have cproto-scheme
       dsn: string
@@ -9671,6 +10321,11 @@ This operation will update system configuration:
   server_id?: integer
   // Cluster ID - must be same for client and for master
   cluster_id?: integer //default: 2
+  admissible_replication_tokens: {
+    token?: string
+    namespaces: {
+    }[]
+  }[]
 }
 ```
 
@@ -9709,6 +10364,8 @@ This operation will update system configuration:
   // Replication log level on replicator's startup
   log_level?: enum[none, error, warning, info, trace]
   namespaces?: string[]
+  // Token of the current node that it sends to the follower for verification
+  self_replication_token?: string
   nodes: {
     // Follower's DSN. Must have cproto-scheme
     dsn: string

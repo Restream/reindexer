@@ -135,7 +135,7 @@ class JoinedSelector {
 public:
 	JoinedSelector(JoinType joinType, NamespaceImpl::Ptr leftNs, NamespaceImpl::Ptr rightNs, JoinCacheRes&& joinRes, Query&& itemQuery,
 				   FieldsFilter fieldsFilter, LocalQueryResults& result, const JoinedQuery& joinQuery, JoinPreResultExecuteCtx&& preSelCtx,
-				   uint32_t joinedFieldIdx, SelectFunctionsHolder& selectFunctions, bool inTransaction, int64_t lastUpdateTime,
+				   uint32_t joinedFieldIdx, FtFunctionsHolder& selectFunctions, bool inTransaction, int64_t lastUpdateTime,
 				   const RdxContext& rdxCtx)
 		: joinType_(joinType),
 		  called_(0),
@@ -174,7 +174,7 @@ public:
 	const JoinedQuery& JoinQuery() const noexcept { return joinQuery_; }
 	int Called() const noexcept { return called_; }
 	int Matched() const noexcept { return matched_; }
-	void AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer&, int* maxIterations, unsigned sortId, const SelectFunction::Ptr&,
+	void AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer&, int* maxIterations, unsigned sortId, const FtFunction::Ptr&,
 											 const RdxContext&);
 	static constexpr int MaxIterationsForPreResultStoreValuesOptimization() noexcept { return 200; }
 	const JoinPreResult& PreResult() const& noexcept { return preSelectCtx_.Result(); }
@@ -208,7 +208,7 @@ private:
 	JoinPreResultExecuteCtx preSelectCtx_;
 	std::string explainOneSelect_;
 	uint32_t joinedFieldIdx_;
-	SelectFunctionsHolder& selectFunctions_;
+	FtFunctionsHolder& selectFunctions_;
 	const RdxContext& rdxCtx_;
 	bool optimized_ = false;
 	bool inTransaction_ = false;

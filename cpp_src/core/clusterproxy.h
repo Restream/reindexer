@@ -55,9 +55,8 @@ public:
 	Error Status() noexcept;
 	Error GetProtobufSchema(WrSerializer& ser, std::vector<std::string>& namespaces);
 	Error GetReplState(std::string_view nsName, ReplicationStateV2& state, const RdxContext& ctx);
-	Error SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus& status, const RdxContext& ctx);
+	Error SetClusterOperationStatus(std::string_view nsName, const ClusterOperationStatus& status, const RdxContext& ctx);
 	bool NeedTraceActivity() const noexcept { return impl_.NeedTraceActivity(); }
-	Error InitSystemNamespaces();
 	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk& ch, const RdxContext& ctx);
 
 	Error SuggestLeader(const cluster::NodeData& suggestion, cluster::NodeData& response);
@@ -104,11 +103,11 @@ private:
 
 	using LeaderRefT = const std::shared_ptr<client::Reindexer>&;
 	using LocalItemSimpleActionFT = Error (ReindexerImpl::*)(std::string_view, Item&, const RdxContext&);
-	using ProxiedItemSimpleActionFT = Error (client::Reindexer::*)(std::string_view, client::Item&);
+	using ProxiedItemSimpleActionFT = Error (client::Reindexer::*)(std::string_view, client::Item&) noexcept;
 	using LocalItemQrActionFT = Error (ReindexerImpl::*)(std::string_view, Item&, LocalQueryResults&, const RdxContext&);
-	using ProxiedItemQrActionFT = Error (client::Reindexer::*)(std::string_view, client::Item&, client::QueryResults&);
+	using ProxiedItemQrActionFT = Error (client::Reindexer::*)(std::string_view, client::Item&, client::QueryResults&) noexcept;
 	using LocalQueryActionFT = Error (ReindexerImpl::*)(const Query&, LocalQueryResults&, const RdxContext&);
-	using ProxiedQueryActionFT = Error (client::Reindexer::*)(const Query&, client::QueryResults&);
+	using ProxiedQueryActionFT = Error (client::Reindexer::*)(const Query&, client::QueryResults&) noexcept;
 
 	class ConnectionsMap {
 	public:

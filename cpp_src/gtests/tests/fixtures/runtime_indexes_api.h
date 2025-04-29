@@ -7,6 +7,8 @@ class RuntimeIndexesApi : public ReindexerApi {
 public:
 	void SetUp() override {
 		using namespace std::string_literals;
+		ReindexerApi::SetUp();
+
 		Error err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 

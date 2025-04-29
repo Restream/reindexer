@@ -1,6 +1,6 @@
 #include "key_value_type.h"
+#include "core/type_consts_helpers.h"
 #include "tools/errors.h"
-#include "type_consts_helpers.h"
 
 namespace reindexer {
 

@@ -15,7 +15,7 @@ namespace reindexer {
 class TagsMatcher;
 static constexpr int kMaxIndexes = 256;	 // 'tuple'-index always occupies 1 slot
 
-using base_fields_set = h_vector<int16_t, 6>;
+using base_fields_set = RVector<int16_t, 6>;
 static_assert(std::numeric_limits<base_fields_set::value_type>::max() >= kMaxIndexes,
 			  "base_fields_set must be able to store any indexed field number");
 static_assert(std::numeric_limits<base_fields_set::value_type>::min() <= SetByJsonPath,
@@ -208,7 +208,7 @@ public:
 
 	size_t getTagsPathsLength() const noexcept { return tagsPaths_.size(); }
 	size_t getJsonPathsLength() const noexcept { return jsonPaths_.size(); }
-	const h_vector<std::string, 1>& getJsonPaths() const noexcept { return jsonPaths_; }
+	const RVector<std::string, 1>& getJsonPaths() const noexcept { return jsonPaths_; }
 	bool isTagsPathIndexed(size_t idx) const noexcept {
 		assertrx(idx < tagsPaths_.size());
 		return std::visit(overloaded{[](const TagsPath&) { return false; }, [](const IndexedTagsPath&) { return true; }}, tagsPaths_[idx]);
@@ -278,12 +278,12 @@ private:
 	[[noreturn]] void throwMaxValueError(int f);
 
 	std::bitset<kMaxIndexes> mask_;
-	h_vector<FieldsPath, 1> tagsPaths_;
+	RVector<FieldsPath, 1> tagsPaths_;
 	/// Json paths to non indexed fields.
 	/// Necessary only for composite full text
 	/// indexes. There is a connection with
 	/// tagsPaths_: order and amount of elements.
-	h_vector<std::string, 1> jsonPaths_;
+	RVector<std::string, 1> jsonPaths_;
 
 	template <typename T>
 	class DumpFieldsPath {

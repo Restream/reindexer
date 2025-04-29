@@ -155,6 +155,7 @@ enum ErrorCode {
 	errNamespaceOverwritten = 40,
 	errConnectSSL = 41,
 	errVersion = 42,
+	errInvalidDefConfigs = 43,
 };
 
 enum SchemaType { JsonSchemaType, ProtobufSchemaType };

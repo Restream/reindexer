@@ -17,13 +17,17 @@ include_directories(${REINDEXER_SOURCE_PATH})
 
 set(GENERATED_PROTO_DIR "${PROJECT_BINARY_DIR}")
 if(ENABLE_GRPC)
-    find_package(Protobuf)
+    set(protobuf_MODULE_COMPATIBLE TRUE)
+    find_package(Protobuf CONFIG)
+    if(NOT PROTOBUF_FOUND)
+        find_package(Protobuf)
+    endif()
     if(PROTOBUF_FOUND)
-        INCLUDE_DIRECTORIES(SYSTEM ${PROTOBUF_INCLUDE_DIR})
-        list(APPEND REINDEXER_LIBRARIES ${PROTOBUF_LIBRARIES})
+        include_directories(SYSTEM ${PROTOBUF_INCLUDE_DIR})
+        list(APPEND REINDEXER_LIBRARIES protobuf::libprotobuf)
         file(GLOB PROTOBUF_SOURCE_FILES ${REINDEXER_SOURCE_PATH}/gtests/tests/proto/*.proto)
 
-        SET(PROTOBUF_PROTOC_EXECUTABLE protoc)
+        set(PROTOBUF_PROTOC_EXECUTABLE protoc)
 
         foreach (CUR_PROTO_FILE ${PROTOBUF_SOURCE_FILES})
             get_filename_component(PROTOBUF_INPUT_DIRECTORY "${CUR_PROTO_FILE}" DIRECTORY)
@@ -37,7 +41,7 @@ if(ENABLE_GRPC)
         add_definitions(-DWITH_PROTOBUF=1)
         include_directories(${REINDEXER_BINARY_PATH}/server/grpc ${GENERATED_PROTO_DIR})
     else()
-        message("Protobuf not found")
+        message("tests: Protobuf not found")
     endif()
 endif()
 
@@ -98,7 +102,7 @@ if(ENABLE_PCH)
     gtest_cout.h
     fixtures/reindexer_api.h
     fixtures/ft_api.h
-    fixtures/clusterization_api.h
+    fixtures/cluster_operation_api.h
     fixtures/servercontrol.h
 
     <gtest/gtest.h>
@@ -129,7 +133,7 @@ if (WITH_ASAN OR WITH_TSAN OR WITH_STDLIB_DEBUG)
 endif()
 
 if(GTEST_SKIP_ASAN_MEMORY_HEAVY)
-    set(GTEST_EXTRA_OPTIONS "--gtest_filter=-Sharding*:ReplicationLoadApi.DynamicRoleSwitch")
+    set(GTEST_EXTRA_OPTIONS "--gtest_filter=-Sharding*:ReplicationLoadApi.DynamicRoleSwitch:CascadeReplicationApi.ForceSyncStress")
 endif()
 find_program(GTEST_PARALLEL "gtest-parallel")
 if (GTEST_PARALLEL)

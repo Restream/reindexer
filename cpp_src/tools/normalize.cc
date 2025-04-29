@@ -35,14 +35,9 @@ FAISS_PRAGMA_IMPRECISE_FUNCTION_END
 #if REINDEXER_WITH_SSE
 
 FAISS_PRAGMA_IMPRECISE_FUNCTION_BEGIN
-RX_AVX_TARGET_ATTR static float calculateL2ModuleAVX(const float* x, int32_t d) noexcept {
-	return calculateL2Module(x, d);
-}
+RX_AVX_TARGET_ATTR static float calculateL2ModuleAVX(const float* x, int32_t d) noexcept { return calculateL2Module(x, d); }
 
-RX_AVX512_TARGET_ATTR static float calculateL2ModuleAVX512(const float* x,
-																										  int32_t d) noexcept {
-	return calculateL2Module(x, d);
-}
+RX_AVX512_TARGET_ATTR static float calculateL2ModuleAVX512(const float* x, int32_t d) noexcept { return calculateL2Module(x, d); }
 
 RX_AVX_TARGET_ATTR static float normalizeVectorAVX(float* x, int32_t d) noexcept {
 	const auto normL2K = calculateL2ModuleAVX(x, d);

@@ -1,7 +1,7 @@
 #pragma once
 
+#include "core/ft/ftctx.h"
 #include "core/idsetcache.h"
-#include "core/selectfunc/ctx/ftctx.h"
 
 namespace reindexer {
 

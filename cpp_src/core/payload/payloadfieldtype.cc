@@ -22,7 +22,7 @@ EmbedderConfig::Strategy convert(FloatVectorIndexOpts::EmbedderOpts::Strategy st
 	return {};
 }
 
-std::shared_ptr<Embedder> createEmbedder(std::string_view name, int idx, const FloatVectorIndexOpts::EmbedderOpts& opts) {
+std::shared_ptr<Embedder> createEmbedder(std::string_view nsName, std::string_view idxName, int idx, const FloatVectorIndexOpts::EmbedderOpts& opts) {
 	EmbedderConfig embedderCfg{
 		opts.cacheTag,
 		opts.fields,
@@ -35,11 +35,13 @@ std::shared_ptr<Embedder> createEmbedder(std::string_view name, int idx, const F
 		opts.pool.read_timeout_ms,
 		opts.pool.write_timeout_ms
 	};
-	return std::make_shared<reindexer::Embedder>(name, idx, std::move(embedderCfg), std::move(poolCfg));
-}
-}
 
-PayloadFieldType::PayloadFieldType(int idx, const Index& index, const IndexDef& indexDef) noexcept
+	const auto embedderName = opts.name.empty() ? std::string{nsName} + "_" + toLower(idxName) : toLower(opts.name);
+	return std::make_shared<reindexer::Embedder>(embedderName, idxName, idx, std::move(embedderCfg), std::move(poolCfg));
+}
+}  // namespace
+
+PayloadFieldType::PayloadFieldType(std::string_view nsName, int idx, const Index& index, const IndexDef& indexDef) noexcept
 	: type_(index.KeyType()),
 	  name_(indexDef.Name()),
 	  jsonPaths_(indexDef.JsonPaths()),
@@ -56,10 +58,10 @@ PayloadFieldType::PayloadFieldType(int idx, const Index& index, const IndexDef& 
 		if (embedding.has_value()) {
 			const auto& cfg = embedding.value();
 			if (cfg.upsertEmbedder.has_value()) {
-				embedder_ = createEmbedder(name_, idx, cfg.upsertEmbedder.value());
+				embedder_ = createEmbedder(nsName, name_, idx, cfg.upsertEmbedder.value());
 			}
 			if (cfg.queryEmbedder.has_value()) {
-				queryEmbedder_ = createEmbedder(name_, idx, cfg.queryEmbedder.value());
+				queryEmbedder_ = createEmbedder(nsName, name_, idx, cfg.queryEmbedder.value());
 			}
 		}
 	} else if (indexDef.IndexType() == IndexType::IndexRTree) {
@@ -77,7 +79,7 @@ size_t PayloadFieldType::ElemSizeof() const noexcept {
 		[](KeyValueType::String) noexcept { return sizeof(p_string); },
 		[](KeyValueType::FloatVector) noexcept { return sizeof(ConstFloatVectorView); },
 		[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Float>) noexcept
-			-> size_t {
+		-> size_t {
 			assertrx(0);
 			abort();
 		});

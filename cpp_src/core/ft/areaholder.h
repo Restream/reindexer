@@ -1,7 +1,7 @@
 #pragma once
 
 #include "sort/pdqsort.hpp"
-#include "usingcontainer.h"
+#include "tools/rvector.h"
 
 namespace reindexer {
 

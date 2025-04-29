@@ -61,7 +61,7 @@ void LRUCacheImpl<K, V, HashT, EqualT>::Put(const K& key, V&& v) {
 
 	if rx_unlikely (putCount_ * 16 > getCount_ && eraseCount_) {
 		logFmt(LogWarning, "IdSetCache::eraseLRU () cache invalidates too fast eraseCount={},putCount={},getCount={},hitCountToCache={}",
-				  eraseCount_, putCount_, eraseCount_, hitCountToCache_);
+			   eraseCount_, putCount_, eraseCount_, hitCountToCache_);
 		eraseCount_ = 0;
 		hitCountToCache_ = hitCountToCache_ ? std::min(hitCountToCache_ * 2, kMaxHitCountToCache) : 2;
 		putCount_ = 0;
@@ -90,7 +90,7 @@ RX_ALWAYS_INLINE bool LRUCacheImpl<K, V, HashT, EqualT>::eraseLRU() {
 		if rx_unlikely (oldSize > totalCacheSize_) {
 			clearAll();
 			logFmt(LogError, "IdSetCache::eraseLRU () Cache restarted because wrong cache size totalCacheSize_={},oldSize={}",
-					  totalCacheSize_, oldSize);
+				   totalCacheSize_, oldSize);
 			return false;
 		}
 		totalCacheSize_ = totalCacheSize_ - oldSize;

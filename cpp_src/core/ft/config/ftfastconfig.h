@@ -1,6 +1,7 @@
 #pragma once
 
 #include "baseftconfig.h"
+#include "tools/rvector.h"
 
 namespace reindexer {
 

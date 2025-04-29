@@ -27,12 +27,20 @@ public:
 
 	void SetTagsMatcher(const TagsMatcher*) noexcept {}
 
-	FieldsExtractor Object(TagName) noexcept { return FieldsExtractor(values_, expectedType_, expectedPathDepth_ - 1, filter_, params_); }
+	FieldsExtractor Object(TagName) noexcept {
+		if rx_unlikely (expectedPathDepth_ == 0) {
+			values_->MarkObject();
+		}
+		return FieldsExtractor(values_, expectedType_, expectedPathDepth_ - 1, filter_, params_);
+	}
 	FieldsExtractor Array(TagName) noexcept {
 		assertrx_throw(values_);
 		return FieldsExtractor(&values_->MarkArray(), expectedType_, expectedPathDepth_, filter_, params_);
 	}
 	FieldsExtractor Object(std::string_view = {}) noexcept {
+		if rx_unlikely (expectedPathDepth_ == 0) {
+			values_->MarkObject();
+		}
 		return FieldsExtractor(values_, expectedType_, expectedPathDepth_ - 1, filter_, params_);
 	}
 	FieldsExtractor Array(std::string_view) noexcept {
@@ -180,9 +188,6 @@ private:
 			[](OneOf<KeyValueType::Undefined, KeyValueType::Composite>) noexcept {});
 		assertrx_throw(values_);
 		values_->emplace_back(std::move(arg));
-		if (expectedPathDepth_ < 0) {
-			values_->MarkObject();
-		}
 		return *this;
 	}
 

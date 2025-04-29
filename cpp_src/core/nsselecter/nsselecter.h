@@ -42,13 +42,13 @@ private:
 	template <typename JoinPreResultCtx>
 	struct LoopCtx {
 		LoopCtx(SelectIteratorContainer& sIt, SelectCtxWithJoinPreSelect<JoinPreResultCtx>& ctx, const QueryPreprocessor& qpp,
-				h_vector<Aggregator, 4>& agg, ExplainCalc& expl)
+				RVector<Aggregator, 4>& agg, ExplainCalc& expl)
 			: qres(sIt), sctx(ctx), qPreproc(qpp), aggregators(agg), explain(expl) {}
 		SelectIteratorContainer& qres;
 		bool calcTotal = false;
 		SelectCtxWithJoinPreSelect<JoinPreResultCtx>& sctx;
 		const QueryPreprocessor& qPreproc;
-		h_vector<Aggregator, 4>& aggregators;
+		RVector<Aggregator, 4>& aggregators;
 		ExplainCalc& explain;
 		unsigned start = QueryEntry::kDefaultOffset;
 		unsigned count = QueryEntry::kDefaultLimit;
@@ -69,9 +69,9 @@ private:
 	void calculateSortExpressions(RankT, IdType rowId, IdType properRowId, SelectCtx&, const LocalQueryResults&);
 	template <bool aggregationsOnly, typename JoinPreResultCtx>
 	void addSelectResult(RankT, IdType rowId, IdType properRowId, SelectCtxWithJoinPreSelect<JoinPreResultCtx>& sctx,
-						 h_vector<Aggregator, 4>& aggregators, LocalQueryResults& result, bool needAggsCalc, bool preselectForFt);
+						 RVector<Aggregator, 4>& aggregators, LocalQueryResults& result, bool needAggsCalc, bool preselectForFt);
 
-	h_vector<Aggregator, 4> getAggregators(const std::vector<AggregateEntry>& aggEntrys, StrictMode strictMode) const;
+	RVector<Aggregator, 4> getAggregators(const std::vector<AggregateEntry>& aggEntrys, StrictMode strictMode) const;
 	void setLimitAndOffset(ItemRefVector& result, size_t offset, size_t limit);
 	void prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, IsRanked, bool availableSelectBySortIndex) const;
 	static void prepareSortIndex(const NamespaceImpl&, std::string& column, int& index, bool& skipSortingEntry, StrictMode);
@@ -92,13 +92,13 @@ private:
 	void checkStrictModeAgg(StrictMode strictMode, std::string_view name, const NamespaceName& nsName,
 							const TagsMatcher& tagsMatcher) const;
 
-	void writeAggregationResultMergeSubQuery(LocalQueryResults& result, h_vector<Aggregator, 4>& aggregators, SelectCtx& ctx);
+	void writeAggregationResultMergeSubQuery(LocalQueryResults& result, RVector<Aggregator, 4>&& aggregators, SelectCtx& ctx);
 	[[noreturn]] RX_NO_INLINE void throwIncorrectRowIdInSortOrders(int rowId, const Index& firstSortIndex,
 																   const SelectIterator& firstIterator);
 	template <typename JoinPreResultCtx>
 	void holdFloatVectors(LocalQueryResults&, SelectCtxWithJoinPreSelect<JoinPreResultCtx>&, size_t offset, const FieldsFilter&) const;
 	NamespaceImpl* ns_;
-	SelectFunction::Ptr fnc_;
-	BaseFunctionCtx::Ptr rankedCtx_;
+	FtFunction::Ptr ftFunc_;
 };
+
 }  // namespace reindexer

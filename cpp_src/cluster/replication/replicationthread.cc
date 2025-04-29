@@ -13,8 +13,10 @@
 namespace reindexer {
 namespace cluster {
 
-constexpr auto kAwaitNsCopyInterval = std::chrono::milliseconds(2000);
-constexpr auto kCoro32KStackSize = 32 * 1024;
+constexpr static auto kAwaitNsCopyInterval = std::chrono::milliseconds(2000);
+constexpr static auto kCoro32KStackSize = 32 * 1024;
+// Some large value to avoid endless replicator lock in case of some core issues
+constexpr static auto kLocalCallsTimeout = std::chrono::seconds(300);
 
 using updates::ItemReplicationRecord;
 using updates::TagsMatcherReplicationRecord;
@@ -40,6 +42,7 @@ ReplThreadConfig::ReplThreadConfig(const ReplicationConfigData& baseConfig, cons
 	ForceSyncOnLogicError = config.forceSyncOnLogicError;
 	SyncTimeoutSec = std::max(config.syncTimeoutSec, config.onlineUpdatesTimeoutSec);
 	ClusterID = baseConfig.clusterID;
+	LeaderReplToken = config.selfReplToken;
 	if (config.onlineUpdatesDelayMSec > 0) {
 		OnlineUpdatesDelaySec = double(config.onlineUpdatesDelayMSec) / 1000.;
 	} else if (config.onlineUpdatesDelayMSec == 0) {
@@ -179,6 +182,7 @@ void ReplThread<BehaviourParamT>::Run(ReplThreadConfig config, const std::vector
 		rpcCfg.AppName = config_.AppName;
 		rpcCfg.NetTimeout = std::chrono::seconds(config_.UpdatesTimeoutSec);
 		rpcCfg.EnableCompression = config_.EnableCompression;
+		rpcCfg.ReplToken = config_.LeaderReplToken;
 		for (const auto& nodeP : nodesList) {
 			nodes.emplace_back(nodeP.second.GetServerID(), nodeP.first, rpcCfg);
 			nodes.back().dsn = nodeP.second.GetRPCDsn();
@@ -299,7 +303,7 @@ void ReplThread<BehaviourParamT>::nodeReplicationRoutine(Node& node) {
 		if (err.ok()) {
 			expectingReconnect = true;
 			if (!node.connObserverId.has_value()) {
-				node.connObserverId = node.client.AddConnectionStateObserver([this, &node](const Error& err) noexcept {
+				auto connObserverId = node.client.AddConnectionStateObserver([this, &node](const Error& err) noexcept {
 					if (!err.ok() && updates_ && !terminate_) {
 						logInfo("{}:{} Connection error: {}", serverId_, node.uid, err.whatStr());
 						UpdatesContainer recs;
@@ -308,8 +312,15 @@ void ReplThread<BehaviourParamT>::nodeReplicationRoutine(Node& node) {
 						updates_->template PushAsync<true>(std::move(recs));
 					}
 				});
+				if (connObserverId.has_value()) {
+					node.connObserverId = connObserverId.value();
+				} else {
+					err = connObserverId.error();
+				}
 			}
-			err = nodeReplicationImpl(node);
+			if (err.ok()) {
+				err = nodeReplicationImpl(node);
+			}
 			statsCollector_.SaveNodeError(node.uid, err);
 		} else {
 			expectingReconnect = false;
@@ -380,7 +391,7 @@ template <>
 
 			statsCollector_.OnSyncStateChanged(node.uid, NodeStats::SyncState::Syncing);
 			updateNodeStatus(node.uid, NodeStats::Status::Online);
-			if (replState.clusterStatus.role != ClusterizationStatus::Role::ClusterReplica ||
+			if (replState.clusterStatus.role != ClusterOperationStatus::Role::ClusterReplica ||
 				replState.clusterStatus.leaderId != serverId_) {
 				// Await transition
 				logTrace("{}:{} Awaiting role switch on the remote node", serverId_, node.uid);
@@ -416,7 +427,9 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 	std::vector<NamespaceDef> nsList;
 	node.requireResync = false;
 	logTrace("{}:{} Trying to collect local namespaces...", serverId_, node.uid);
-	auto integralError = thisNode.EnumNamespaces(nsList, EnumNamespacesOpts().OnlyNames().HideSystem().HideTemporary(), RdxContext());
+	const RdxDeadlineContext deadlineCtx(kLocalCallsTimeout);
+	auto integralError = thisNode.EnumNamespaces(nsList, EnumNamespacesOpts().OnlyNames().HideSystem().HideTemporary(),
+												 RdxContext().WithCancelCtx(deadlineCtx));
 	if (!integralError.ok()) {
 		logWarn("{}:{} Unable to enum local namespaces in node replication routine: {}", serverId_, node.uid, integralError.what());
 		return integralError;
@@ -476,7 +489,7 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 					statsCollector_.OnSyncStateChanged(node.uid, NodeStats::SyncState::Syncing);
 					updateNodeStatus(node.uid, NodeStats::Status::Online);
 					if constexpr (isClusterReplThread()) {
-						if (replState.clusterStatus.role != ClusterizationStatus::Role::ClusterReplica ||
+						if (replState.clusterStatus.role != ClusterOperationStatus::Role::ClusterReplica ||
 							replState.clusterStatus.leaderId != serverId_) {
 							// Await transition
 							logTrace("{}:{} Awaiting NS role switch on remote node", serverId_, node.uid);
@@ -485,11 +498,11 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 							continue;
 						}
 					} else {
-						if (nsExists && (replState.clusterStatus.role != ClusterizationStatus::Role::SimpleReplica ||
+						if (nsExists && (replState.clusterStatus.role != ClusterOperationStatus::Role::SimpleReplica ||
 										 replState.clusterStatus.leaderId != serverId_)) {
 							logTrace("{}:{} Switching role for '{}' on remote node", serverId_, node.uid, ns.name);
-							err = node.client.WithEmmiterServerId(serverId_).SetClusterizationStatus(
-								ns.name, ClusterizationStatus{serverId_, ClusterizationStatus::Role::SimpleReplica});
+							err = node.client.WithEmmiterServerId(serverId_).SetClusterOperationStatus(
+								ns.name, ClusterOperationStatus{serverId_, ClusterOperationStatus::Role::SimpleReplica});
 						}
 					}
 				} else {
@@ -625,7 +638,8 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 		auto client = node.client.WithTimeout(std::chrono::seconds(config_.SyncTimeoutSec));
 		TmpNsGuard tmpNsGuard{client, serverId_, log_};
 
-		auto err = thisNode.GetReplState(nsName, localState, RdxContext());
+		RdxDeadlineContext deadlineCtx(kLocalCallsTimeout);
+		auto err = thisNode.GetReplState(nsName, localState, RdxContext().WithCancelCtx(deadlineCtx));
 		if (!err.ok()) {
 			if (err.code() == errNotFound) {
 				if (requiredLsn.IsEmpty()) {
@@ -676,7 +690,9 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 			}
 		}
 
-		err = thisNode.GetSnapshot(nsName, SnapshotOpts(requiredLsn, config_.MaxWALDepthOnForceSync), snapshot, RdxContext());
+		deadlineCtx = RdxDeadlineContext(kLocalCallsTimeout);
+		err = thisNode.GetSnapshot(nsName, SnapshotOpts(requiredLsn, config_.MaxWALDepthOnForceSync), snapshot,
+								   RdxContext().WithCancelCtx(deadlineCtx));
 		if (!err.ok()) {
 			return err;
 		}
@@ -700,8 +716,8 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 				return err;
 			}
 			if constexpr (std::is_same_v<BehaviourParamT, AsyncThreadParam>) {
-				err = client.WithEmmiterServerId(serverId_).SetClusterizationStatus(
-					tmpNsGuard.tmpNsName, ClusterizationStatus{serverId_, ClusterizationStatus::Role::SimpleReplica});
+				err = client.WithEmmiterServerId(serverId_).SetClusterOperationStatus(
+					tmpNsGuard.tmpNsName, ClusterOperationStatus{serverId_, ClusterOperationStatus::Role::SimpleReplica});
 				if (!err.ok()) {
 					return err;
 				}
@@ -1275,8 +1291,8 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const updates::Update
 				nsData.isClosed = false;
 				if constexpr (!isClusterReplThread()) {
 					if (err.ok()) {
-						err = client.WithEmmiterServerId(serverId_).SetClusterizationStatus(
-							nsName, ClusterizationStatus{serverId_, ClusterizationStatus::Role::SimpleReplica});
+						err = client.WithEmmiterServerId(serverId_).SetClusterOperationStatus(
+							nsName, ClusterOperationStatus{serverId_, ClusterOperationStatus::Role::SimpleReplica});
 					}
 				}
 				return UpdateApplyStatus(std::move(err), rec.Type());

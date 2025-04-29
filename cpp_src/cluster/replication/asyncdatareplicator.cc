@@ -6,12 +6,12 @@ namespace reindexer {
 namespace cluster {
 
 AsyncDataReplicator::AsyncDataReplicator(AsyncDataReplicator::UpdatesQueueT& q, SharedSyncState& syncState, ReindexerImpl& thisNode,
-										 Clusterizator& clusterizator)
+										 ClusterManager& clusterManager)
 	: statsCollector_(std::string(kAsyncReplStatsType)),
 	  updatesQueue_(q),
 	  syncState_(syncState),
 	  thisNode_(thisNode),
-	  clusterizator_(clusterizator) {}
+	  clusterManager_(clusterManager) {}
 
 void AsyncDataReplicator::Configure(AsyncReplConfigData config) {
 	std::lock_guard lck(mtx_);
@@ -25,7 +25,7 @@ void AsyncDataReplicator::Configure(ReplicationConfigData config) {
 	std::lock_guard lck(mtx_);
 	if ((baseConfig_.has_value() && baseConfig_.value() != config) || !baseConfig_.has_value()) {
 		stop();
-		baseConfig_ = config;
+		baseConfig_ = std::move(config);
 	}
 }
 
@@ -68,11 +68,11 @@ void AsyncDataReplicator::Run() {
 	}
 	if (config_->role == AsyncReplConfigData::Role::Leader) {
 		for (auto& ns : localNamespaces) {
-			if (!clusterizator_.NamespaceIsInClusterConfig(ns)) {
-				auto err = thisNode_.SetClusterizationStatus(
-					ns, ClusterizationStatus{baseConfig_->serverID, ClusterizationStatus::Role::None}, RdxContext());
+			if (!clusterManager_.NamespaceIsInClusterConfig(ns)) {
+				auto err = thisNode_.SetClusterOperationStatus(
+					ns, ClusterOperationStatus{baseConfig_->serverID, ClusterOperationStatus::Role::None}, RdxContext());
 				if (!err.ok()) {
-					logWarn("SetClusterizationStatus for the local '{}' namespace error: {}", ns, err.what());
+					logWarn("SetClusterOperationStatus for the local '{}' namespace error: {}", ns, err.what());
 				}
 			}
 		}

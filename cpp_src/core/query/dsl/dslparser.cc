@@ -195,7 +195,7 @@ void parseValues(const JsonValue& values, Array& kvs, std::string_view fieldName
 				kv = Variant(stringifyJson(elem));
 				++objectsCount;
 			} else if (elem.value.getTag() != JsonTag::JSON_NULL) {
-				kv = jsonValue2Variant(elem.value, KeyValueType::Undefined{}, fieldName, nullptr);
+				kv = jsonValue2Variant(elem.value, KeyValueType::Undefined{}, fieldName, nullptr, ConvertToString_False, ConvertNull_False);
 				kv.EnsureHold();
 			}
 			kvs.emplace_back(std::move(kv));
@@ -205,7 +205,7 @@ void parseValues(const JsonValue& values, Array& kvs, std::string_view fieldName
 			throw Error(errParseJson, "Array with objects must be homogeneous");
 		}
 	} else if (values.getTag() != JsonTag::JSON_NULL) {
-		Variant kv(jsonValue2Variant(values, KeyValueType::Undefined{}, fieldName, nullptr));
+		Variant kv(jsonValue2Variant(values, KeyValueType::Undefined{}, fieldName, nullptr, ConvertToString_False, ConvertNull_False));
 		kv.EnsureHold();
 		kvs.emplace_back(std::move(kv));
 	}
@@ -519,7 +519,7 @@ static void parseMergeQueries(const JsonValue& mergeQueries, Query& query) {
 
 static void parseAggregation(const JsonValue& aggregation, Query& query) {
 	checkJsonValueType(aggregation, "Aggregation"sv, JsonTag::OBJECT);
-	h_vector<std::string, 1> fields;
+	RVector<std::string, 1> fields;
 	AggType type = AggUnknown;
 	SortingEntries sortingEntries;
 	unsigned limit{QueryEntry::kDefaultLimit};

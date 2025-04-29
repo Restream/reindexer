@@ -65,7 +65,7 @@ public:
 	using const_iterator = typename Base::const_iterator;
 
 	explicit fast_hash_map_s(typename Base::size_type bucket_count, const H& hash, const P& equal, const L& comp)
-		: Base(bucket_count, hash, equal, typename Base::Allocator(), comp) {}
+		: Base(bucket_count, hash, equal, std::allocator<K>(), comp) {}
 };
 
 template <typename K, typename E>

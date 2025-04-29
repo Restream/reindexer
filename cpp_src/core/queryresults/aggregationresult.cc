@@ -36,7 +36,7 @@ struct ParameterFieldGetter {
 	std::string_view at(std::string_view field) const { return field; }
 };
 
-AggType AggregationResult::strToAggType(std::string_view type) {
+AggType AggregationResult::StrToAggType(std::string_view type) {
 	if (type == "avg"sv) {
 		return AggAvg;
 	} else if (type == "facet"sv) {
@@ -57,6 +57,26 @@ AggType AggregationResult::strToAggType(std::string_view type) {
 	return AggUnknown;
 }
 
+AggregationResult::AggregationResult() noexcept = default;
+
+AggregationResult::AggregationResult(AggType tp, h_vector<std::string, 1>&& names) noexcept : type_(tp), fields_(std::move(names)) {}
+
+AggregationResult::AggregationResult(AggType tp, h_vector<std::string, 1>&& names, double val) noexcept
+	: type_(tp), fields_(std::move(names)), value_(val) {}
+
+AggregationResult::AggregationResult(AggType tp, h_vector<std::string, 1>&& names, PayloadType&& pt, FieldsSet&& fset,
+									 std::vector<Variant>&& _distincts) noexcept
+	: type_(tp),
+	  fields_(std::move(names)),
+	  distincts_(std::move(_distincts)),
+	  distinctsFields_(std::move(fset)),
+	  payloadType_(std::move(pt)) {}
+
+AggregationResult::AggregationResult(AggType tp, h_vector<std::string, 1>&& names, std::vector<FacetResult>&& facets) noexcept
+	: type_(tp), fields_(std::move(names)), facets_(std::move(facets)) {}
+
+AggregationResult::~AggregationResult() = default;
+
 void AggregationResult::GetJSON(WrSerializer& ser) const {
 	JsonBuilder builder(ser);
 	ParameterFieldGetter fieldsGetter;
@@ -68,10 +88,10 @@ void AggregationResult::GetMsgPack(WrSerializer& wrser) const {
 	if (value_) {
 		++elements;
 	}
-	if (!facets.empty()) {
+	if (!facets_.empty()) {
 		++elements;
 	}
-	if (!distincts.empty()) {
+	if (!distincts_.empty()) {
 		++elements;
 	}
 	MsgPackBuilder msgpackBuilder(wrser, ObjType::TypeObject, elements);
@@ -84,7 +104,7 @@ void AggregationResult::GetProtobuf(WrSerializer& wrser) const {
 	get(builder, ParametersFields<ParametersFieldsNumbers, TagName>(kParametersFieldNumbers));
 }
 
-template <typename Node>
+template <concepts::OneOf<gason::JsonNode, MsgPackValue> Node>
 AggregationResult AggregationResult::from(Node root) {
 	const Node& node = root[Parameters::Value()];
 	bool isValid = false;
@@ -99,10 +119,10 @@ AggregationResult AggregationResult::from(Node root) {
 		ret.value_ = node.template As<double>();
 	}
 
-	ret.type = strToAggType(root[Parameters::Type()].template As<std::string>());
+	ret.type_ = StrToAggType(root[Parameters::Type()].template As<std::string>());
 
 	for (const auto& subElem : root[Parameters::Fields()]) {
-		ret.fields.emplace_back(subElem.template As<std::string>());
+		ret.fields_.emplace_back(subElem.template As<std::string>());
 	}
 
 	for (const auto& facetNode : root[Parameters::Facets()]) {
@@ -111,11 +131,28 @@ AggregationResult AggregationResult::from(Node root) {
 		for (const auto& subElem : facetNode[Parameters::Values()]) {
 			facet.values.emplace_back(subElem.template As<std::string>());
 		}
-		ret.facets.emplace_back(std::move(facet));
+		ret.facets_.emplace_back(std::move(facet));
 	}
 
 	for (const auto& distinctNode : root[Parameters::Distincts()]) {
-		ret.distincts.emplace_back(distinctNode.template As<std::string>());
+		bool isArray = false;
+		if constexpr (std::is_same_v<gason::JsonNode, Node>) {
+			isArray = distinctNode.value.getTag() == gason::JsonTag::ARRAY ? true : false;
+		} else if constexpr (std::is_same_v<MsgPackValue, Node>) {
+			isArray = distinctNode.getTag() == MsgPackTag::MSGPACK_ARRAY ? true : false;
+		}
+		if (isArray) {
+			unsigned column = 0;
+			for (const auto& v : distinctNode) {
+				ret.distincts_.emplace_back(v.template As<std::string>());
+				column++;
+			}
+			if (column != ret.fields_.size()) {
+				throw Error(errParseJson, "Incorrect distinct column count {} ({})", column, ret.fields_.size());
+			}
+		} else {
+			ret.distincts_.emplace_back(distinctNode.template As<std::string>());
+		}
 	}
 	return ret;
 }
@@ -162,6 +199,54 @@ void AggregationResult::GetProtobufSchema(ProtobufSchemaBuilder& builder) {
 	results.Field(Parameters::Distincts(), fields.Distincts(), FieldProps{KeyValueType::String{}, true});
 	results.Field(Parameters::Fields(), fields.Fields(), FieldProps{KeyValueType::String{}, true});
 	results.End();
+}
+
+template <typename Builder, typename Fields>
+void AggregationResult::get(Builder& builder, const Fields& parametersFields) const {
+	if (value_) {
+		builder.Put(parametersFields.Value(), *value_);
+	}
+	builder.Put(parametersFields.Type(), AggTypeToStr(type_));
+	if (!facets_.empty()) {
+		auto facetsArray = builder.Array(parametersFields.Facets(), facets_.size());
+		for (auto& facet : facets_) {
+			auto facetObj = facetsArray.Object(TagName::Empty(), 2);
+			facetObj.Put(parametersFields.Count(), facet.count);
+			auto valuesArray = facetObj.Array(parametersFields.Values(), facet.values.size());
+			for (const auto& v : facet.values) {
+				valuesArray.Put(TagName::Empty(), v);
+			}
+		}
+	}
+
+	if (!distincts_.empty()) {
+		if (std::is_same_v<ProtobufBuilder, Builder> && GetDistinctColumnCount() > 1) {
+			throw Error(errParseProtobuf, "protobuf is not supported for distinct with multiple fields");
+		}
+		auto distinctsArray = builder.Array(parametersFields.Distincts(), GetDistinctRowCount());
+		const unsigned dc = GetDistinctRowCount();
+
+		if (GetDistinctColumnCount() == 1) {
+			for (unsigned i = 0; i < dc; i++) {
+				std::span<const Variant> row = GetDistinctRow(i);
+				distinctsArray.Put(TagName::Empty(), row[0].As<std::string>(payloadType_, distinctsFields_));
+			}
+		} else {
+			for (unsigned i = 0; i < dc; i++) {
+				std::span<const Variant> row = GetDistinctRow(i);
+				auto distinctsSubArray = distinctsArray.Array(std::string_view{}, row.size());
+				for (const auto& vv : row) {
+					distinctsSubArray.Put(TagName::Empty(), vv.As<std::string>());
+				}
+			}
+		}
+	}
+
+	auto fieldsArray = builder.Array(parametersFields.Fields(), fields_.size());
+	for (auto& v : fields_) {
+		fieldsArray.Put(TagName::Empty(), v);
+	}
+	fieldsArray.End();
 }
 
 }  // namespace reindexer

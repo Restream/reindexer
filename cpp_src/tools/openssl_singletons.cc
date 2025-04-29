@@ -64,15 +64,15 @@ namespace detail {
 			});                                                                                                         \
 			return inst.status_.ok();                                                                                   \
 		}                                                                                                               \
-																														\
+                                                                                                                        \
 		EXPAND_MACRO(OPENSSL_GET_SYM)                                                                                   \
-																														\
+                                                                                                                        \
 	private:                                                                                                            \
 		static CLASS& instance() noexcept {                                                                             \
 			static CLASS inst;                                                                                          \
 			return inst;                                                                                                \
 		}                                                                                                               \
-																														\
+                                                                                                                        \
 		CLASS() noexcept                                                                                                \
 			: impl_([this]() {                                                                                          \
 				  try {                                                                                                 \
@@ -82,7 +82,7 @@ namespace detail {
 					  return Impl(nullptr);                                                                             \
 				  }                                                                                                     \
 			  }()) {}                                                                                                   \
-																														\
+                                                                                                                        \
 		reindexer::Error status_;                                                                                       \
 		struct Impl {                                                                                                   \
 			static constexpr auto load = [](const char* name) {                                                         \
@@ -92,10 +92,10 @@ namespace detail {
 				}                                                                                                       \
 				return res;                                                                                             \
 			};                                                                                                          \
-																														\
+                                                                                                                        \
 			Impl(std::nullptr_t) noexcept {}                                                                            \
 			Impl() : lib_(load(LIB_NAME)) EXPAND_MACRO(OPENSSL_INIT_SYM) {}                                             \
-																														\
+                                                                                                                        \
 			LIB_TYPE lib_ = nullptr;                                                                                    \
 			EXPAND_MACRO(OPENSSL_DECL_SYM)                                                                              \
 		} impl_;                                                                                                        \

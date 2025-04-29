@@ -848,7 +848,7 @@ size_t Variant::Hash() const noexcept {
 			[&](KeyValueType::Uuid) noexcept { return std::hash<Uuid>()(Uuid{*this}); },
 			[](KeyValueType::Null) noexcept { return std::hash<int>()(0); },
 			[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) noexcept
-				-> size_t {
+			-> size_t {
 #ifdef NDEBUG
 				abort();
 #else

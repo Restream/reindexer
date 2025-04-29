@@ -1,5 +1,6 @@
 #include "tagsmatcherimpl.h"
 #include <sstream>
+#include "core/index/index.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -87,30 +88,76 @@ TagName TagsMatcherImpl::name2tag(std::string_view n, CanAddField canAdd, WasUpd
 }
 
 void TagsMatcherImpl::BuildTagsCache(WasUpdated& wasUpdated) {
-	if (!payloadType_) {
+	pathCache_.Clear();
+	if (!payloadType_ && sparseIndexes_.empty()) {
 		return;
 	}
-	pathCache_.Clear();
 	std::vector<std::string> pathParts;
 	std::vector<TagName> pathIdx;
 	for (int i = 1, s = payloadType_->NumFields(); i < s; ++i) {
-		for (const auto& jsonPath : payloadType_->Field(i).JsonPaths()) {
-			if (!jsonPath.length()) {
+		const auto& field = payloadType_->Field(i);
+		for (const auto& jsonPath : field.JsonPaths()) {
+			if (jsonPath.empty()) {
 				continue;
 			}
 			pathIdx.clear();
 			for (const auto& name : split(jsonPath, ".", true, pathParts)) {
 				pathIdx.emplace_back(name2tag(name, CanAddField_True, wasUpdated));
 			}
-			pathCache_.Set(pathIdx, i);
+			pathCache_.Set(pathIdx, FieldProperties{i, field.ArrayDims(), field.IsArray(), field.Type(), IsSparse_False});
+		}
+	}
+	for (int i = 0, s = sparseIndexes_.size(); i < s; ++i) {
+		const auto& sparse = sparseIndexes_[i];
+		for (const auto& path : sparse.paths) {
+			if (path.empty()) {
+				continue;
+			}
+			pathCache_.Set(path, FieldProperties{i, sparse.ArrayDim(), sparse.isArray, sparse.dataType, IsSparse_True});
 		}
 	}
 }
 
-void TagsMatcherImpl::UpdatePayloadType(PayloadType payloadType, WasUpdated& wasUpdated, NeedChangeTmVersion changeVersion) {
-	if (!payloadType && !payloadType_) {
+void TagsMatcherImpl::UpdatePayloadType(PayloadType payloadType, const std::vector<SparseIndexData>& sparseIndexes, WasUpdated& wasUpdated,
+										NeedChangeTmVersion changeVersion) {
+	if (!payloadType && !payloadType_ && sparseIndexes.empty() && sparseIndexes_.empty()) {
 		return;
 	}
+	const bool newSparse = sparseIndexes != sparseIndexes_;
+	if (newSparse) {
+		sparseIndexes_ = sparseIndexes;
+	}
+	updatePayloadType(std::move(payloadType), wasUpdated, newSparse, changeVersion);
+}
+
+void TagsMatcherImpl::UpdatePayloadType(PayloadType payloadType, std::span<std::unique_ptr<Index>> sparseIndexes, WasUpdated& wasUpdated,
+										NeedChangeTmVersion changeVersion) {
+	if (!payloadType && !payloadType_ && sparseIndexes.empty() && sparseIndexes_.empty()) {
+		return;
+	}
+	bool newSparse = sparseIndexes_.size() != sparseIndexes.size();
+	for (size_t i = 0, s = sparseIndexes_.size(); !newSparse && i < s; ++i) {
+		const auto& lhs = sparseIndexes_[i];
+		const auto& rhs = *sparseIndexes[i];
+		newSparse = !lhs.dataType.IsSame(rhs.KeyType()) || lhs.indexType != rhs.Type() || lhs.isArray != rhs.Opts().IsArray() ||
+					lhs.name != rhs.Name() || lhs.paths.size() != rhs.Fields().size();
+		for (size_t j = 0, fs = lhs.paths.size(); !newSparse && j < fs; ++j) {
+			assertrx(rhs.Fields()[j] == SetByJsonPath);
+			newSparse = lhs.paths[j] != rhs.Fields().getTagsPath(j);
+		}
+	}
+	if (newSparse) {
+		sparseIndexes_.clear();
+		sparseIndexes_.reserve(sparseIndexes.size());
+		for (const auto& idx : sparseIndexes) {
+			addSparseIndex(*idx);
+		}
+	}
+	updatePayloadType(std::move(payloadType), wasUpdated, newSparse, changeVersion);
+}
+
+void TagsMatcherImpl::updatePayloadType(PayloadType payloadType, WasUpdated& wasUpdated, bool sparseWasUpdated,
+										NeedChangeTmVersion changeVersion) {
 	std::swap(payloadType_, payloadType);
 	WasUpdated newType = WasUpdated_False;
 	BuildTagsCache(newType);
@@ -125,7 +172,7 @@ void TagsMatcherImpl::UpdatePayloadType(PayloadType payloadType, WasUpdated& was
 			}
 		}
 	}
-	wasUpdated |= newType;
+	wasUpdated |= (newType || sparseWasUpdated);
 	switch (changeVersion) {
 		case NeedChangeTmVersion::Increment:
 			++version_;
@@ -135,6 +182,29 @@ void TagsMatcherImpl::UpdatePayloadType(PayloadType payloadType, WasUpdated& was
 			break;
 		case NeedChangeTmVersion::No:
 			break;
+	}
+}
+
+void TagsMatcherImpl::addSparseIndex(const Index& idx) {
+	sparseIndexes_.emplace_back(idx.Name(), idx.Type(), idx.KeyType(), idx.Opts().IsArray(), idx.Fields());
+}
+
+void TagsMatcherImpl::AddSparseIndex(const Index& idx) {
+	addSparseIndex(idx);
+	const auto& sparse = sparseIndexes_.back();
+	for (const auto& path : sparse.paths) {
+		pathCache_.Set(path, FieldProperties(sparseIndexes_.size() - 1, sparse.ArrayDim(), sparse.isArray, sparse.dataType, IsSparse_True));
+	}
+}
+
+void TagsMatcherImpl::DropSparseIndex(std::string_view name) {
+	for (auto it = sparseIndexes_.begin(), end = sparseIndexes_.end(); it != end; ++it) {
+		if (it->name == name) {
+			sparseIndexes_.erase(it);
+			WasUpdated wasUpdated = WasUpdated_False;
+			BuildTagsCache(wasUpdated);
+			return;
+		}
 	}
 }
 
@@ -241,14 +311,21 @@ std::string TagsMatcherImpl::DumpNames() const {
 std::string TagsMatcherImpl::DumpPaths() const {
 	std::string res = "paths: [";
 	std::vector<TagName> path;
-	pathCache_.Walk(path, [&path, &res, this](int field) {
-		for (size_t i = 0; i < path.size(); i++) {
+	pathCache_.Walk(path, [&path, &res, this](const FieldProperties& field) {
+		assertrx(field.IsIndexed());
+		for (size_t i = 0; i < path.size(); ++i) {
 			if (i) {
 				res += '.';
 			}
 			res += tag2name(path[i]) + '(' + std::to_string(path[i].AsNumber()) + ')';
 		}
-		res += ':' + payloadType_->Field(field).Name() + '(' + std::to_string(field) + ") ";
+		res += ':';
+		if (field.IsSparse()) {
+			res += sparseIndexes_[field.SparseNumber()].name + "(sparse";
+		} else {
+			res += payloadType_.Field(field.IndexNumber()).Name() + '(' + std::to_string(field.IndexNumber());
+		}
+		res += (field.IsArray() ? ",array," : ",") + std::string(field.ValueType().Name()) + ") ";
 	});
 	return res + ']';
 }

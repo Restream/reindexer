@@ -447,16 +447,18 @@ func (tx *Tx) modifyInternal(item interface{}, json []byte, mode int, precepts .
 	}
 
 	for tryCount := 0; tryCount < 2; tryCount++ {
-		ser := cjson.NewPoolSerializer()
-		defer ser.Close()
-		format := 0
-		stateToken := 0
+		err := func() error {
+			ser := cjson.NewPoolSerializer()
+			defer ser.Close()
+			format := 0
+			stateToken := 0
 
-		if format, stateToken, err = packItem(tx.ns, item, json, ser); err != nil {
-			return err
-		}
+			if format, stateToken, err = packItem(tx.ns, item, json, ser); err != nil {
+				return err
+			}
 
-		err := tx.db.binding.ModifyItemTx(&tx.ctx, format, ser.Bytes(), mode, precepts, stateToken)
+			return tx.db.binding.ModifyItemTx(&tx.ctx, format, ser.Bytes(), mode, precepts, stateToken)
+		}()
 
 		if err != nil {
 			rerr, ok := err.(bindings.Error)

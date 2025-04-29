@@ -265,7 +265,8 @@ Error CoroClientConnection::login(std::vector<char>& buf) {
 					 Arg{connectData_.opts.expectedClusterID},
 					 Arg{p_string(REINDEX_VERSION)},
 					 Arg{p_string(&connectData_.opts.appName)},
-					 Arg{kClientCaps.caps}};
+					 Arg{kClientCaps.caps},
+					 Arg{connectData_.opts.replToken}};
 		constexpr uint32_t seq = 0;	 // login's seq num is always 0
 		assertrx(buf.size() == 0);
 		appendChunck(

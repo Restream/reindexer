@@ -1,12 +1,13 @@
 # ASM files
 */asm/*.S
+# Vendored
 *yaml.cc
 # Generated stemmer files
-*/libstemmer/*/stem_UTF_8_*.c
-*/libstemmer/*/stem_UTF_8_*.h
+*/libstemmer/*
+*/libstemmer/*
 # Murmurhash
 */murmurhash/MurmurHash3.cc
 # Backtrace library
 */libbacktrace/*
-# Faiss (TODO: probably should remove this line before merge)
+# Faiss
 */faiss/*

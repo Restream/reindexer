@@ -57,9 +57,9 @@ private:
 		int32_t _cpuinfo[4];
 		__cpuid(_cpuinfo, int32_t(info));
 		std::memcpy(cpuinfo, _cpuinfo, sizeof(_cpuinfo));
-#else // _MSC_VER
+#else	// _MSC_VER
 		__cpuid(info, cpuinfo[0], cpuinfo[1], cpuinfo[2], cpuinfo[3]);
-#endif // _MSC_VER
+#endif	// _MSC_VER
 #else	// defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
 		(void)info;
 		(void)cpuinfo;

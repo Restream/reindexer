@@ -106,11 +106,11 @@ void IndexMemStat::GetJSON(JsonBuilder& builder) {
 
 void PerfStat::GetJSON(JsonBuilder& builder) {
 	builder.Put("total_queries_count", totalHitCount);
-	builder.Put("total_avg_latency_us", totalTimeUs);
-	builder.Put("total_avg_lock_time_us", totalLockTimeUs);
-	builder.Put("last_sec_qps", avgHitCount);
-	builder.Put("last_sec_avg_lock_time_us", avgLockTimeUs);
-	builder.Put("last_sec_avg_latency_us", avgTimeUs);
+	builder.Put("total_avg_latency_us", totalAvgTimeUs);
+	builder.Put("total_avg_lock_time_us", totalAvgLockTimeUs);
+	builder.Put("last_sec_qps", lastSecHitCount);
+	builder.Put("last_sec_avg_lock_time_us", lastSecAvgLockTimeUs);
+	builder.Put("last_sec_avg_latency_us", lastSecAvgTimeUs);
 	builder.Put("latency_stddev", stddev);
 	builder.Put("min_latency_us", minTimeUs);
 	builder.Put("max_latency_us", maxTimeUs);
@@ -189,6 +189,7 @@ void ReplicationState::GetJSON(JsonBuilder& builder) {
 	builder.Put("data_hash", dataHash);
 	builder.Put("data_count", dataCount);
 	builder.Put("updated_unix_nano", int64_t(updatedUnixNano));
+	builder.Put("admissible_token", token);
 	{
 		auto nsVersionObj = builder.Object("ns_version");
 		nsVersion.GetJSON(nsVersionObj);
@@ -213,6 +214,7 @@ void ReplicationState::FromJSON(std::span<char> json) {
 		dataHash = root["data_hash"].As<uint64_t>();
 		dataCount = root["data_count"].As<int>();
 		updatedUnixNano = root["updated_unix_nano"].As<uint64_t>();
+		token = root["admissible_token"].As<std::string>();
 		LoadLsn(nsVersion, root["ns_version"]);
 		auto clStatusNode = root["clusterization_status"];
 		if (!clStatusNode.empty()) {
@@ -254,6 +256,23 @@ void TxPerfStat::GetJSON(JsonBuilder& builder) {
 	builder.Put("max_copy_time_us", maxCopyTimeUs);
 }
 
+void TxPerfStat::FromJSON(const gason::JsonNode& node) {
+	totalCount = node["total_count"].As<size_t>(totalCount);
+	totalCopyCount = node["total_copy_count"].As<size_t>(totalCopyCount);
+	avgStepsCount = node["avg_steps_count"].As<size_t>(avgStepsCount);
+	minStepsCount = node["min_steps_count"].As<size_t>(minStepsCount);
+	maxStepsCount = node["max_steps_count"].As<size_t>(maxStepsCount);
+	avgPrepareTimeUs = node["avg_prepare_time_us"].As<size_t>(avgPrepareTimeUs);
+	minPrepareTimeUs = node["min_prepare_time_us"].As<size_t>(minPrepareTimeUs);
+	maxPrepareTimeUs = node["max_prepare_time_us"].As<size_t>(maxPrepareTimeUs);
+	avgCommitTimeUs = node["avg_commit_time_us"].As<size_t>(avgCommitTimeUs);
+	minCommitTimeUs = node["min_commit_time_us"].As<size_t>(minCommitTimeUs);
+	maxCommitTimeUs = node["max_commit_time_us"].As<size_t>(maxCommitTimeUs);
+	avgCopyTimeUs = node["avg_copy_time_us"].As<size_t>(avgCopyTimeUs);
+	minCopyTimeUs = node["min_copy_time_us"].As<size_t>(minCopyTimeUs);
+	maxCopyTimeUs = node["max_copy_time_us"].As<size_t>(maxCopyTimeUs);
+}
+
 void LRUCachePerfStat::GetJSON(JsonBuilder& builder) {
 	switch (state) {
 		case State::DoesNotExist:
@@ -277,52 +296,52 @@ double LRUCachePerfStat::HitRate() const noexcept {
 	return tq ? (double(hits) / double(tq)) : 0.0;
 }
 
-static constexpr std::string_view nsClusterizationRoleToStr(ClusterizationStatus::Role role) noexcept {
+static constexpr std::string_view nsClusterOperationRoleToStr(ClusterOperationStatus::Role role) noexcept {
 	switch (role) {
-		case ClusterizationStatus::Role::ClusterReplica:
+		case ClusterOperationStatus::Role::ClusterReplica:
 			return "cluster_replica"sv;
-		case ClusterizationStatus::Role::SimpleReplica:
+		case ClusterOperationStatus::Role::SimpleReplica:
 			return "simple_replica"sv;
-		case ClusterizationStatus::Role::None:
+		case ClusterOperationStatus::Role::None:
 		default:
 			return "none"sv;
 	}
 }
 
-static constexpr ClusterizationStatus::Role strToNsClusterizationRole(std::string_view role) noexcept {
+static constexpr ClusterOperationStatus::Role strToNsClusterOperationRole(std::string_view role) noexcept {
 	if (role == "cluster_replica"sv) {
-		return ClusterizationStatus::Role::ClusterReplica;
+		return ClusterOperationStatus::Role::ClusterReplica;
 	} else if (role == "simple_replica"sv) {
-		return ClusterizationStatus::Role::SimpleReplica;
+		return ClusterOperationStatus::Role::SimpleReplica;
 	}
-	return ClusterizationStatus::Role::None;
+	return ClusterOperationStatus::Role::None;
 }
 
-void ClusterizationStatus::GetJSON(WrSerializer& ser) const {
+void ClusterOperationStatus::GetJSON(WrSerializer& ser) const {
 	JsonBuilder builder(ser);
 	GetJSON(builder);
 }
 
-void ClusterizationStatus::GetJSON(JsonBuilder& builder) const {
+void ClusterOperationStatus::GetJSON(JsonBuilder& builder) const {
 	builder.Put("leader_id", leaderId);
-	builder.Put("role", nsClusterizationRoleToStr(role));
+	builder.Put("role", nsClusterOperationRoleToStr(role));
 }
 
-Error ClusterizationStatus::FromJSON(std::span<char> json) {
+Error ClusterOperationStatus::FromJSON(std::span<char> json) {
 	try {
 		gason::JsonParser parser;
 		FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "ClusterizationStatus: {}", ex.what());
+		return Error(errParseJson, "ClusterOperationStatus: {}", ex.what());
 	} catch (const Error& err) {
 		return err;
 	}
 	return errOK;
 }
 
-void ClusterizationStatus::FromJSON(const gason::JsonNode& root) {
+void ClusterOperationStatus::FromJSON(const gason::JsonNode& root) {
 	leaderId = root["leader_id"].As<int>();
-	role = strToNsClusterizationRole(root["role"].As<std::string_view>());
+	role = strToNsClusterOperationRole(root["role"].As<std::string_view>());
 }
 
 void ReplicationStateV2::GetJSON(JsonBuilder& builder) {

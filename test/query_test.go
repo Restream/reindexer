@@ -1239,9 +1239,9 @@ func (qt *queryTest) Verify(t *testing.T, items []interface{}, aggResults []rein
 		require.Equal(t, len(agg.Fields), 1)
 		require.Equal(t, agg.Fields[0], qt.distinctIndexes[i])
 		for _, v := range agg.Distincts {
-			_, ok := distinctsByAggRes[i][v]
+			_, ok := distinctsByAggRes[i][v[0]]
 			require.Falsef(t, ok, "Duplicate distinct value '%s' by index '%s'", v, agg.Fields[0])
-			distinctsByAggRes[i][v] = 0
+			distinctsByAggRes[i][v[0]] = 0
 		}
 	}
 

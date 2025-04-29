@@ -30,7 +30,7 @@ void ItemImpl::SetField(int field, const VariantArray& krs) {
 		auto pl = GetPayload();
 		VariantArray oldValues;
 		pl.Get(field, oldValues);
-		pl.Set(field, newValue, false);
+		pl.Set(field, newValue, Append_False);
 		try {
 			// TODO: We should modify CJSON for any default value or array size change #1837
 			bool modifyCjson = false;
@@ -45,7 +45,7 @@ void ItemImpl::SetField(int field, const VariantArray& krs) {
 				ModifyField(ptField.JsonPaths()[0], newValue, FieldModeSet);
 			}
 		} catch (...) {
-			pl.Set(field, oldValues, false);
+			pl.Set(field, oldValues, Append_False);
 			throw;
 		}
 	};
@@ -181,7 +181,6 @@ Error ItemImpl::FromMsgPack(std::string_view buf, size_t& offset) {
 }
 
 Error ItemImpl::FromProtobuf(std::string_view buf) {
-	assertrx(ns_);
 	payloadValue_.Clone();
 	Payload pl = GetPayload();
 	ProtobufDecoder decoder(tagsMatcher_, schema_);
@@ -218,7 +217,6 @@ std::string_view ItemImpl::GetMsgPack() {
 }
 
 Error ItemImpl::GetProtobuf(WrSerializer& wrser) {
-	assertrx(ns_);
 	ConstPayload pl = GetConstPayload();
 	ProtobufBuilder protobufBuilder(&wrser, ObjType::TypePlain, schema_.get(), &tagsMatcher_);
 	ProtobufEncoder protobufEncoder(&tagsMatcher_, fieldsFilter_);
@@ -500,13 +498,15 @@ bool checkEmbedderAllowed(ItemImpl& item, const std::shared_ptr<Embedder>& embed
 			return isFieldEmpty(item, embedder);
 		case EmbedderConfig::Strategy::Strict:
 			if (!isFieldEmpty(item, embedder)) {
-				throw Error{errConflict, "Vector field '{}' must not contain a non-empty data if strict strategy for auto-embedding is configured", embedder->Name()};
+				throw Error{errConflict,
+							"Vector field '{}' must not contain a non-empty data if strict strategy for auto-embedding is configured",
+							embedder->FieldName()};
 			}
 			return true;
 	}
 	return false;
 }
-} // namespace
+}  // namespace
 
 void ItemImpl::Embed(const RdxContext& ctx) {
 	const auto& embedders = payloadType_.Embedders();
@@ -526,7 +526,7 @@ void ItemImpl::Embed(const RdxContext& ctx) {
 			ThrowOnCancel(ctx);
 
 			if (!checkEmbedderAllowed(*this, embedder)) {
-				continue; // skip embedder
+				continue;  // skip embedder
 			}
 
 			source.resize(0);

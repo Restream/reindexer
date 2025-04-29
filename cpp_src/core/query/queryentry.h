@@ -100,17 +100,21 @@ public:
 			  std::enable_if_t<std::is_constructible_v<std::string, Str> && std::is_constructible_v<VariantArray, VA>>* = nullptr>
 	QueryEntry(Str&& fieldName, CondType cond, VA&& v, size_t injectedFrom = NotInjected)
 		: QueryField{std::forward<Str>(fieldName)}, values_{std::forward<VA>(v)}, condition_{cond}, injectedFrom_{injectedFrom} {
+		adjust();
 		Verify();
 	}
 	template <concepts::ConvertibleToString Str>
 	QueryEntry(Str&& fieldName, DistinctTag) : QueryField(std::forward<Str>(fieldName)), condition_(CondAny), distinct_(true) {
+		adjust();
 		Verify();
 	}
 	template <typename VA, std::enable_if_t<std::is_constructible_v<VariantArray, VA>>* = nullptr>
 	QueryEntry(QueryField&& field, CondType cond, VA&& v) : QueryField{std::move(field)}, values_{std::forward<VA>(v)}, condition_{cond} {
+		adjust();
 		Verify();
 	}
 	QueryEntry(QueryField&& field, CondType cond, IgnoreEmptyValues) : QueryField(std::move(field)), condition_(cond) {
+		adjust();
 		verifyIgnoringEmptyValues();
 	}
 	[[nodiscard]] CondType Condition() const noexcept { return condition_; }
@@ -164,6 +168,8 @@ public:
 	[[nodiscard]] std::string Dump() const;
 	[[nodiscard]] std::string DumpBrief() const;
 	[[nodiscard]] bool IsInjectedFrom(size_t joinedQueryNo) const noexcept { return injectedFrom_ == joinedQueryNo; }
+	[[nodiscard]] bool NeedIsNull() const noexcept { return needIsNull_; }
+	void ResetNeedIsNull() noexcept { needIsNull_ = false; }
 
 	auto Values() const&& = delete;
 	auto FieldData() const&& = delete;
@@ -171,11 +177,13 @@ public:
 private:
 	void verifyIgnoringEmptyValues() const { VerifyQueryEntryValues<VerifyQueryEntryFlags::ignoreEmptyValues>(condition_, values_); }
 	void verifyNotIgnoringEmptyValues() const { VerifyQueryEntryValues(condition_, values_); }
+	void adjust() noexcept;
 
 	VariantArray values_;
 	CondType condition_{CondAny};
-	bool distinct_{false};
 	size_t injectedFrom_{NotInjected};
+	bool distinct_{false};
+	bool needIsNull_{false};
 };
 
 class ForcedSortOptimizationQueryEntry : public QueryEntry {
@@ -262,7 +270,6 @@ public:
 		return condition_ == other.condition_ && queryIndex_ == other.queryIndex_ &&
 			   values_.RelaxCompare<WithString::Yes, NotComparable::Return>(other.values_) == ComparationResult::Eq;
 	}
-	[[nodiscard]] bool operator!=(const SubQueryEntry& other) const noexcept { return !operator==(other); }
 	[[nodiscard]] std::string Dump(const std::vector<Query>& subQueries) const;
 
 	auto Values() const&& = delete;
@@ -285,7 +292,6 @@ public:
 	[[nodiscard]] CondType Condition() const noexcept { return condition_; }
 	[[nodiscard]] size_t QueryIndex() const noexcept { return queryIndex_; }
 	[[nodiscard]] bool operator==(const SubQueryFieldEntry& other) const noexcept = default;
-	[[nodiscard]] bool operator!=(const SubQueryFieldEntry& other) const noexcept = default;
 	[[nodiscard]] std::string Dump(const std::vector<Query>& subQueries) const;
 
 	auto FieldName() const&& = delete;
@@ -297,6 +303,22 @@ private:
 	CondType condition_{CondAny};
 	// index of Query in Query::subQueries_
 	size_t queryIndex_{std::numeric_limits<size_t>::max()};
+};
+
+class [[nodiscard]] DistinctQueryEntry {
+public:
+	DistinctQueryEntry(FieldsSet&& fields) noexcept : fields_(std::move(fields)) {}
+
+	void Verify() const noexcept {}
+
+	[[nodiscard]] bool operator==(const DistinctQueryEntry& other) const noexcept = default;
+
+	[[nodiscard]] std::string Dump() const { return fields_.ToString(DumpWithMask_True); }
+	const FieldsSet& FieldNames() const& noexcept { return fields_; }
+	auto FieldNames() const&& = delete;
+
+private:
+	FieldsSet fields_;
 };
 
 class UpdateEntry {
@@ -391,7 +413,7 @@ private:
 
 class KnnQueryEntry {
 public:
-	enum class DataFormatType : int8_t { None = -1, Vector = 0, String = 1};
+	enum class DataFormatType : int8_t { None = -1, Vector = 0, String = 1 };
 
 	template <concepts::ConvertibleToString Str>
 	KnnQueryEntry(Str&& fldName, ConstFloatVectorView v, KnnSearchParams params)
@@ -440,11 +462,28 @@ private:
 enum class InjectionDirection : bool { IntoMain, FromMain };
 class Index;
 
-class QueryEntries
-	: public ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, ForcedSortOptimizationQueryEntry, JoinQueryEntry,
-							BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, SubQueryEntry, SubQueryFieldEntry, KnnQueryEntry> {
-	using Base = ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, ForcedSortOptimizationQueryEntry, JoinQueryEntry,
-								BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, SubQueryEntry, SubQueryFieldEntry, KnnQueryEntry>;
+using QueryEntriesTree =
+	ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, ForcedSortOptimizationQueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry,
+				   AlwaysFalse, AlwaysTrue, SubQueryEntry, SubQueryFieldEntry, KnnQueryEntry, DistinctQueryEntry>;
+
+template <>
+template <>
+class QueryEntriesTree::PostProcessor<QueryEntry> {
+public:
+	static constexpr bool NoOp = false;
+	[[nodiscard]] RX_ALWAYS_INLINE static bool RequiresProcess(const QueryEntry& qe) noexcept { return qe.NeedIsNull(); }
+	static void Process(QueryEntry& qe, QueryEntriesTree& tree, size_t pos) {
+		assertrx_dbg(RequiresProcess(qe));
+		tree.Emplace<QueryEntry>(pos + 1, qe.Condition() == CondAllSet ? OpAnd : OpOr, qe.FieldName(), CondEmpty, VariantArray{});
+		const OpType op = tree.GetOperation(pos);
+		tree.SetOperation(OpAnd, pos);
+		qe.ResetNeedIsNull();
+		tree.EncloseInBracket(pos, pos + 2, op);
+	}
+};
+
+class QueryEntries : public QueryEntriesTree {
+	using Base = QueryEntriesTree;
 	explicit QueryEntries(Base&& b) : Base{std::move(b)} {}
 
 public:
@@ -506,7 +545,7 @@ struct SortingEntry {
 	int index = IndexValueType::NotSet;
 };
 
-struct SortingEntries : public h_vector<SortingEntry, 1> {};
+struct SortingEntries : public RVector<SortingEntry, 1> {};
 
 class AggregateEntry {
 public:

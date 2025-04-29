@@ -3,6 +3,7 @@
 #include "auth_tools.h"
 
 #include "cluster/stats/replicationstats.h"
+#include "core/namespace/namespacenamemap.h"
 #include "estl/shared_mutex.h"
 #include "reindexertestapi.h"
 #include "server/server.h"
@@ -50,6 +51,8 @@ struct AsyncReplicationConfigTest {
 	NsSet namespaces;
 	int serverId;
 	int onlineUpdatesDelayMSec = 100;
+	std::string selfReplicationToken;
+	reindexer::NsNamesHashMapT<std::string> admissibleTokens;
 };
 
 using BaseApi = ReindexerTestApi<reindexer::client::Reindexer>;
@@ -110,7 +113,7 @@ public:
 		void MakeFollower();
 
 		void SetReplicationConfig(const AsyncReplicationConfigTest& config);
-		void AddFollower(const reindexer::DSN& dsn,
+		void AddFollower(const ServerControl::Interface::Ptr& follower,
 						 std::optional<std::vector<std::string>>&& nsList = std::optional<std::vector<std::string>>(),
 						 reindexer::cluster::AsyncReplicationMode replMode = reindexer::cluster::AsyncReplicationMode::Default);
 		// check with master or slave that sync complete
@@ -155,6 +158,9 @@ public:
 		std::string GetShardingConfigFilePath() const;
 		std::string GetUsersYAMLFilePath() const;
 
+		template <typename T>
+		void UpdateConfigReplTokens(const T&);
+
 		reindexer_server::Server srv;
 #ifndef _WIN32
 		pid_t reindexerServerPID = -1;
@@ -166,7 +172,7 @@ public:
 		template <typename ValueT>
 		void setNamespaceConfigItem(std::string_view nsName, std::string_view paramName, ValueT&& value);
 		template <typename ValueT>
-		void upsertConfigItemFromObject(std::string_view type, const ValueT& object);
+		void upsertConfigItemFromObject(const ValueT& object);
 
 		std::vector<std::string> getCLIParamArray(bool enableStats, size_t maxUpdatesSize);
 		std::string getLogName(const std::string& log, bool core = false);
@@ -176,6 +182,11 @@ public:
 
 		const ServerControlConfig config_;
 		std::string dumpUserRecYAML() const noexcept;
+
+		template <typename T>
+		T getConfigByType() const;
+		Error mergeAdmissibleTokens(reindexer::NsNamesHashMapT<std::string>&) const;
+		Error checkSelfToken(const std::string&) const;
 
 	public:
 		const reindexer::DSN kRPCDsn;
@@ -206,3 +217,6 @@ private:
 	std::shared_ptr<Interface> interface;
 	std::atomic_bool* stopped_;
 };
+
+extern template void ServerControl::Interface::UpdateConfigReplTokens(const std::string&);
+extern template void ServerControl::Interface::UpdateConfigReplTokens(const reindexer::NsNamesHashMapT<std::string>&);

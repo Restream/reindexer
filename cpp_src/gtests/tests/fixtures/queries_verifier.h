@@ -13,6 +13,8 @@
 #endif	// REINDEX_WITH_ASAN
 
 #include <unordered_map>
+#include "core/enums.h"
+#include "core/nsselecter/distincthelpers.h"
 #include "core/nsselecter/joinedselectormock.h"
 #include "core/query/query.h"
 #include "core/queryresults/joinresults.h"
@@ -43,10 +45,34 @@ protected:
 	void Verify(const reindexer::QueryResults& qr, reindexer::Query&& q, reindexer::Reindexer& rx) {
 		Verify(qr.ToLocalQr(), std::move(q), rx);
 	}
+
+	struct DistinctData {
+		DistinctData(std::vector<std::string> fn) : values(), fieldNames(std::move(fn)) {}
+		std::unordered_set<reindexer::DistinctHelpers::FieldsValue,
+						   reindexer::DistinctHelpers::DistinctHasher<reindexer::DistinctHelpers::IsCompositeSupported::No>,
+						   reindexer::DistinctHelpers::CompareVariantVector<reindexer::DistinctHelpers::IsCompositeSupported::No>>
+			values;
+		std::vector<std::string> fieldNames;
+	};
+
 	void Verify(const reindexer::LocalQueryResults& qr, reindexer::Query&& q, reindexer::Reindexer& rx) {
+#if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN) || defined(RX_WITH_STDLIB_DEBUG)
+		(void)qr;
+		(void)q;
+		(void)rx;
+		return;
+#else
 		auto query = std::move(q);
 		std::unordered_set<std::vector<reindexer::VariantArray>, PkHash> pks;
-		std::unordered_map<std::string, std::unordered_set<std::string>> distincts;
+		std::vector<DistinctData> distincts;
+		distincts.reserve(query.aggregations_.size());
+		for (unsigned int i = 0; i < query.aggregations_.size(); i++) {
+			const reindexer::AggregateEntry& a = query.aggregations_[i];
+			if (a.Type() != AggDistinct) {
+				continue;
+			}
+			distincts.emplace_back(std::move(getFieldsName(a.Fields(), indexesFields_[query.NsName()]).second));
+		}
 		QueryWatcher watcher{query};
 
 		reindexer::VariantArray lastSortedColumnValues;
@@ -56,7 +82,8 @@ protected:
 			query.Entries().Visit(
 				i,
 				reindexer::Skip<reindexer::QueryEntry, reindexer::QueryEntriesBracket, reindexer::BetweenFieldsQueryEntry,
-								reindexer::JoinQueryEntry, reindexer::AlwaysTrue, reindexer::AlwaysFalse, reindexer::KnnQueryEntry>{},
+								reindexer::JoinQueryEntry, reindexer::AlwaysTrue, reindexer::AlwaysFalse, reindexer::KnnQueryEntry,
+								reindexer::DistinctQueryEntry>{},
 				[&](const reindexer::SubQueryEntry& sqe) {
 					auto subQuery = query.GetSubQuery(sqe.QueryIndex());
 					if (sqe.Condition() == CondAny || sqe.Condition() == CondEmpty) {
@@ -169,7 +196,7 @@ protected:
 				TEST_COUT << query.GetSQL() << std::endl;
 				printFailedQueryEntries(query.Entries(), joinedSelectors, query.GetSubQueries());
 			}
-			EXPECT_TRUE(checkDistincts(itemr, query, distincts, indexesFields)) << "Distinction check failed";
+			EXPECT_FALSE(checkDistincts(itemr, query, distincts, reindexer::Invert_False)) << "Distinction check failed";
 
 			std::vector<reindexer::ComparationResult> cmpRes(query.sortingEntries_.size());
 			std::fill(cmpRes.begin(), cmpRes.end(), reindexer::ComparationResult::Lt);
@@ -243,13 +270,6 @@ protected:
 			return;
 		}
 
-		// If query has distinct, skip verification
-		for (const auto& agg : query.aggregations_) {
-			if (agg.Type() == AggDistinct) {
-				return;
-			}
-		}
-
 		for (auto& insertedItem : insertedItems_[query.NsName()]) {
 			if (pks.find(insertedItem.first) != pks.end()) {
 				continue;
@@ -257,10 +277,13 @@ protected:
 			bool conditionsSatisfied =
 				checkConditions(insertedItem.second, query.Entries().cbegin(), query.Entries().cend(), joinedSelectors, indexesFields);
 
-			EXPECT_FALSE(conditionsSatisfied) << "Item match conditions (found " << qr.Count()
-											  << " items), but not found: " << insertedItem.second.GetJSON() << std::endl
-											  << "query:" << query.GetSQL() << std::endl
-											  << "explain: " << qr.GetExplainResults() << std::endl;
+			if (conditionsSatisfied) {
+				bool hasErr = checkDistincts(insertedItem.second, query, distincts, reindexer::Invert_True);
+				EXPECT_FALSE(hasErr) << "Item match conditions (found " << qr.Count()
+									 << " items), but not found: " << insertedItem.second.GetJSON() << std::endl
+									 << "query:" << query.GetSQL() << std::endl
+									 << "explain: " << qr.GetExplainResults() << std::endl;
+			}
 		}
 
 		auto aggResults = qr.GetAggregationResults();
@@ -274,16 +297,18 @@ protected:
 
 		if (aggResults.size() == query.aggregations_.size()) {
 			for (size_t i = 0; i < aggResults.size(); ++i) {
-				EXPECT_EQ(aggResults[i].type, query.aggregations_[i].Type()) << "i = " << i;
-				EXPECT_EQ(aggResults[i].fields.size(), query.aggregations_[i].Fields().size()) << "i = " << i;
-				if (aggResults[i].fields.size() == query.aggregations_[i].Fields().size()) {
-					for (size_t j = 0; j < aggResults[i].fields.size(); ++j) {
-						EXPECT_EQ(aggResults[i].fields[j], query.aggregations_[i].Fields()[j]) << "i = " << i << ", j = " << j;
+				EXPECT_EQ(aggResults[i].GetType(), query.aggregations_[i].Type()) << "i = " << i;
+				EXPECT_EQ(aggResults[i].GetFields().size(), query.aggregations_[i].Fields().size()) << "i = " << i;
+				const auto& fields = aggResults[i].GetFields();
+				if (fields.size() == query.aggregations_[i].Fields().size()) {
+					for (size_t j = 0; j < fields.size(); ++j) {
+						EXPECT_EQ(fields[j], query.aggregations_[i].Fields()[j]) << "i = " << i << ", j = " << j;
 					}
 				}
-				EXPECT_LE(aggResults[i].facets.size(), query.aggregations_[i].Limit()) << "i = " << i;
+				EXPECT_LE(aggResults[i].GetFacets().size(), query.aggregations_[i].Limit()) << "i = " << i;
 			}
 		}
+#endif
 	}
 
 private:
@@ -380,7 +405,11 @@ private:
 					}
 					return checkCondition(item, qe, indexesFields);
 				},
-				[](const reindexer::AlwaysFalse&) noexcept { return false; }, [](const reindexer::AlwaysTrue&) noexcept { return true; });
+				[](const reindexer::AlwaysFalse&) noexcept { return false; }, [](const reindexer::AlwaysTrue&) noexcept { return true; },
+				[](const reindexer::DistinctQueryEntry&) -> bool {
+					assertrx(false);
+					std::abort();
+				});
 			if (skip) {
 				continue;
 			}
@@ -399,45 +428,81 @@ private:
 		return result;
 	}
 
-	static std::string getFieldName(const std::string& indexName, const IndexesData& indexesFields) {
-		if (const auto it = indexesFields.find(indexName); it == indexesFields.end()) {
-			return indexName;
-		} else {
-			EXPECT_EQ(it->second.size(), 1);
-			assertrx(!it->second.empty());
-			return it->second[0].name;
+	static std::pair<std::string, std::vector<std::string>> getFieldsName(const reindexer::h_vector<std::string, 1>& indexNames,
+																		  const IndexesData& indexesFields) {
+		std::pair<std::string, std::vector<std::string>> ret;
+		for (const auto& indexName : indexNames) {
+			if (const auto it = indexesFields.find(indexName); it == indexesFields.end()) {
+				if (!ret.first.empty()) {
+					ret.first += '+';
+				}
+				ret.first += indexName;
+				ret.second.emplace_back(indexName);
+			} else {
+				EXPECT_FALSE(it->second.empty());
+				assertrx(!it->second.empty());
+				for (const auto& n : it->second) {
+					if (!ret.first.empty()) {
+						ret.first += '+';
+					}
+					ret.first += n.name;
+					ret.second.emplace_back(n.name);
+				}
+			}
 		}
+		return ret;
 	}
 
-	static bool checkDistincts(reindexer::Item& item, const reindexer::Query& qr,
-							   std::unordered_map<std::string, std::unordered_set<std::string>>& distincts,
-							   const IndexesData& indexesFields) {
-		bool result = true;
-		// check only on root level
-		for (auto it = qr.Entries().cbegin(); it != qr.Entries().cend(); ++it) {
-			if (!it->Is<reindexer::QueryEntry>()) {
+	static bool checkDistincts(reindexer::Item& item, const reindexer::Query& query, std::vector<DistinctData>& distincts,
+							   reindexer::Invert invert) {
+		bool hasErr = false;
+		std::vector<reindexer::DistinctHelpers::DataType> fieldValues;
+		reindexer::DistinctHelpers::FieldsValue value;
+		for (unsigned int i = 0; i < query.aggregations_.size(); i++) {
+			const reindexer::AggregateEntry& a = query.aggregations_[i];
+			if (a.Type() != AggDistinct) {
 				continue;
 			}
-			const reindexer::QueryEntry& qentry = it->Value<reindexer::QueryEntry>();
-			if (!qentry.Distinct()) {
-				continue;
+			auto& values = distincts[i].values;
+			fieldValues.clear();
+			value.clear();
+			size_t maxIndex = 0;
+			for (const auto& v : distincts[i].fieldNames) {
+				reindexer::VariantArray fieldValue = item[v];
+				maxIndex = std::max(maxIndex, size_t(fieldValue.size()));
+				fieldValues.emplace_back(fieldValue);
 			}
-
-			const std::string fieldName = getFieldName(qentry.FieldName(), indexesFields);
-			reindexer::VariantArray fieldValue = item[fieldName];
-			EXPECT_EQ(fieldValue.size(), 1) << "Distinct field's size cannot be > 1";
-			if (fieldValue.empty()) {
+			if (maxIndex == 0) {
 				return false;
 			}
-
-			std::unordered_set<std::string>& values = distincts[fieldName];
-			reindexer::Variant keyValue(fieldValue[0]);
-			bool inserted = values.insert(keyValue.As<std::string>()).second;
-			EXPECT_TRUE(inserted) << "Duplicate distinct item for index: " << keyValue.As<std::string>() << ", " << qentry.FieldName()
-								  << " (" << qentry.IndexNo() << ')';
-			result &= inserted;
+			bool isOneDistinct = false;
+			bool isOneNotDistinct = false;
+			for (unsigned int j = 0; j < maxIndex; j++) {
+				value.clear();
+				[[maybe_unused]] auto _ = reindexer::DistinctHelpers::GetMultiFieldValue(fieldValues, j, fieldValues.size(), value);
+				const auto it = values.find(value);
+				if (it == values.end()) {
+					if (!invert) {
+						values.insert(value);
+						isOneDistinct = true;
+					} else {
+						isOneNotDistinct = true;
+					}
+				}
+			}
+			if (invert) {
+				if (isOneNotDistinct) {
+					EXPECT_TRUE(false) << "Distinct value";
+					hasErr = true;
+				}
+			} else {
+				if (!isOneDistinct) {
+					EXPECT_TRUE(false) << "Not Distinct";
+					hasErr = true;
+				}
+			}
 		}
-		return result;
+		return hasErr;
 	}
 
 	bool checkCondition(const reindexer::Item& item, const JoinedSelectorMock& joinedSelector, const IndexesData& leftIndexesFields,
@@ -483,8 +548,9 @@ private:
 						  const std::string& rightIndexName, CondType cond, const IndexesData& leftIndexesFields,
 						  const IndexesData& rightIndexesFields) {
 		const CollateOpts& collate = indexesCollates[leftIndexName];
-		const std::string leftFieldName = getFieldName(leftIndexName, leftIndexesFields);
-		const std::string rightFieldName = getFieldName(rightIndexName, rightIndexesFields);
+		// TODO Composite
+		const std::string leftFieldName = getFieldsName({leftIndexName}, leftIndexesFields).second[0];
+		const std::string rightFieldName = getFieldsName({rightIndexName}, rightIndexesFields).second[0];
 		const reindexer::VariantArray lFieldValues = leftItem[leftFieldName];
 		const reindexer::VariantArray rFieldValues = rightItem[rightFieldName];
 		for (const reindexer::Variant& lFieldValue : lFieldValues) {
@@ -550,7 +616,9 @@ private:
 
 	static bool checkGeomConditions(const reindexer::Item& item, const reindexer::QueryEntry& qentry, const IndexesData& indexesFields) {
 		assertrx(qentry.Values().size() == 2);
-		const reindexer::VariantArray coordinates = item[getFieldName(qentry.FieldName(), indexesFields)];
+		auto fn = getFieldsName({qentry.FieldName()}, indexesFields);
+		EXPECT_EQ(fn.second.size(), 1);
+		const reindexer::VariantArray coordinates = item[fn.second[0]];
 		if (coordinates.empty()) {
 			return false;
 		}
@@ -809,8 +877,8 @@ private:
 			return checkCompositeCondition(item, qentry, indexesFields);
 		}
 
-		const std::string firstField = getFieldName(qentry.LeftFieldName(), indexesFields);
-		const std::string secondField = getFieldName(qentry.RightFieldName(), indexesFields);
+		const std::string firstField = getFieldsName({qentry.LeftFieldName()}, indexesFields).second[0];
+		const std::string secondField = getFieldsName({qentry.RightFieldName()}, indexesFields).second[0];
 		reindexer::VariantArray lValues = item[firstField];
 		reindexer::VariantArray rValues = item[secondField];
 		switch (qentry.Condition()) {
@@ -926,14 +994,16 @@ private:
 
 	static bool containsJoins(reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator end) noexcept {
 		for (; it != end; ++it) {
-			if (it->Visit(
-					[&it] RX_PRE_LMBD_ALWAYS_INLINE(const reindexer::QueryEntriesBracket&)
-						RX_POST_LMBD_ALWAYS_INLINE { return containsJoins(it.cbegin(), it.cend()); },
-					[] RX_PRE_LMBD_ALWAYS_INLINE(const reindexer::JoinQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
-					[] RX_PRE_LMBD_ALWAYS_INLINE(reindexer::OneOf<const reindexer::QueryEntry, reindexer::BetweenFieldsQueryEntry,
-																  reindexer::AlwaysFalse, reindexer::AlwaysTrue, reindexer::SubQueryEntry,
-																  reindexer::SubQueryFieldEntry, reindexer::KnnQueryEntry>)
-						RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; })) {
+			if (it->Visit([&it] RX_PRE_LMBD_ALWAYS_INLINE(const reindexer::QueryEntriesBracket&)
+							  RX_POST_LMBD_ALWAYS_INLINE { return containsJoins(it.cbegin(), it.cend()); },
+						  [] RX_PRE_LMBD_ALWAYS_INLINE(const reindexer::JoinQueryEntry&)
+							  RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
+						  [] RX_PRE_LMBD_ALWAYS_INLINE(
+							  reindexer::OneOf<const reindexer::QueryEntry, reindexer::BetweenFieldsQueryEntry, reindexer::AlwaysFalse,
+											   reindexer::AlwaysTrue, reindexer::SubQueryEntry, reindexer::SubQueryFieldEntry,
+											   reindexer::KnnQueryEntry, reindexer::DistinctQueryEntry>)
+
+							  RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; })) {
 				return true;
 			}
 		}
@@ -1013,6 +1083,7 @@ private:
 					  },
 					  [](const reindexer::AlwaysFalse&) { TestCout() << "Always False"; },
 					  [](const reindexer::AlwaysTrue&) { TestCout() << "Always True"; },
+					  [](const reindexer::DistinctQueryEntry& qe) { TestCout() << qe.Dump(); },
 					  [](const reindexer::KnnQueryEntry& qe) { TestCout() << qe.Dump(); });
 		}
 		TestCout() << ")";

@@ -196,7 +196,7 @@ int ServerImpl::Start() {
 	return run();
 }
 
-void ServerImpl::Stop() {
+void ServerImpl::Stop() noexcept {
 	if (running_) {
 		running_ = false;
 		async_.send();
@@ -527,7 +527,7 @@ int ServerImpl::run() {
 		}
 		logger_.info("Stats collector shutdown completed.");
 		dbMgr_->ShutdownClusters();
-		logger_.info("Clusterization shutdown completed.");
+		logger_.info("ClusterOperation shutdown completed.");
 
 		auto stop = [this](auto& serverPtr, std::string_view addr) {
 			return std::async(

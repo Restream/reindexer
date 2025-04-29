@@ -29,7 +29,7 @@ public:
 	Serializer(const void* buf, size_t len) noexcept : buf_(static_cast<const uint8_t*>(buf)), len_(len), pos_(0) {}
 	explicit Serializer(std::string_view buf) noexcept : buf_(reinterpret_cast<const uint8_t*>(buf.data())), len_(buf.length()), pos_(0) {}
 	bool Eof() const noexcept { return pos_ >= len_; }
-	[[nodiscard]] RX_ALWAYS_INLINE KeyValueType GetKeyValueType() { return KeyValueType::fromNumber(GetVarUInt()); }
+	[[nodiscard]] RX_ALWAYS_INLINE KeyValueType GetKeyValueType() { return KeyValueType::FromNumber(GetVarUInt()); }
 	[[nodiscard]] Variant GetVariant() {
 		const KeyValueType type = GetKeyValueType();
 		if (type.Is<KeyValueType::Tuple>()) {
@@ -248,7 +248,7 @@ public:
 	}
 	bool HasAllocatedBuffer() const noexcept { return buf_ != inBuf_ && !hasExternalBuf_; }
 
-	RX_ALWAYS_INLINE void PutKeyValueType(KeyValueType t) { PutVarUint(t.toNumber()); }
+	RX_ALWAYS_INLINE void PutKeyValueType(KeyValueType t) { PutVarUint(t.ToNumber()); }
 	void PutVariant(const Variant& kv) {
 		PutKeyValueType(kv.Type());
 		kv.Type().EvaluateOneOf(

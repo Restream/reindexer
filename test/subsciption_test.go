@@ -351,6 +351,7 @@ func testSubscriptionEventTypesInit(t *testing.T, nsInitial string, nsRenamed st
 			events.EventTypeItemUpdate, events.EventTypeItemUpdate, events.EventTypeItemUpdate, // Update query
 			events.EventTypeItemDelete, events.EventTypeItemDelete, // Delete query
 			// Tx events
+			events.EventTypeBeginTx,
 			events.EventTypeItemUpsertTx, events.EventTypePutMetaTx, events.EventTypeItemInsertTx,
 			events.EventTypeItemUpdateTx, events.EventTypeItemDeleteTx,
 			events.EventTypeItemUpdateTx, // Update query in tx
@@ -368,6 +369,7 @@ func testSubscriptionEventTypesInit(t *testing.T, nsInitial string, nsRenamed st
 			events.EventTypeItemUpdate, events.EventTypeItemUpdate, events.EventTypeItemUpdate, // Update query
 			events.EventTypeItemDelete, events.EventTypeItemDelete, // Delete query
 			// Tx events
+			events.EventTypeBeginTx,
 			events.EventTypeItemUpsertTx, events.EventTypePutMetaTx, events.EventTypeItemInsertTx,
 			events.EventTypeItemUpdateTx, events.EventTypeItemDeleteTx,
 			events.EventTypeItemUpdateTx, // Update query in tx
@@ -399,6 +401,7 @@ func testSubscriptionEventTypesInit(t *testing.T, nsInitial string, nsRenamed st
 			events.EventTypeIndexUpdate, events.EventTypeIndexDrop,
 		},
 		"all_tx_ops": {
+			events.EventTypeBeginTx,
 			events.EventTypeItemUpsertTx, events.EventTypePutMetaTx, events.EventTypeItemInsertTx,
 			events.EventTypeItemUpdateTx, events.EventTypeItemDeleteTx,
 			events.EventTypeItemUpdateTx, // Update query in tx
@@ -420,6 +423,7 @@ func testSubscriptionEventTypesInit(t *testing.T, nsInitial string, nsRenamed st
 			events.EventTypeItemUpdate, events.EventTypeItemUpdate, events.EventTypeItemUpdate, // Update query
 			events.EventTypeItemDelete, events.EventTypeItemDelete, // Delete query
 			// Tx events
+			events.EventTypeBeginTx,
 			events.EventTypeItemUpsertTx, events.EventTypePutMetaTx, events.EventTypeItemInsertTx,
 			events.EventTypeItemUpdateTx, events.EventTypeItemDeleteTx,
 			events.EventTypeItemUpdateTx, // Update query in tx

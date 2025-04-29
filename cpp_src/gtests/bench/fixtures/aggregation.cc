@@ -1,7 +1,6 @@
 #include "aggregation.h"
 #include "allocs_tracker.h"
 #include "core/cjson/jsonbuilder.h"
-#include "gtests/tools.h"
 
 template <size_t N>
 void Aggregation::Insert(State& state) {

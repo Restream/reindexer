@@ -7,6 +7,7 @@
 #include "core/reindexer.h"
 #include "core/type_consts.h"
 #include "server/dbmanager.h"
+#include "tools/logger.h"
 
 #include <grpcpp/grpcpp.h>
 
@@ -1049,6 +1050,13 @@ extern "C" void* start_reindexer_grpc(reindexer_server::DBManager& dbMgr, std::c
 
 extern "C" void stop_reindexer_grpc(void* pdata) {
 	auto data = reinterpret_cast<grpc_data*>(pdata);
+	logFmt(LogTrace, "Stopping GRPC server...");
 	data->grpcServer_->Shutdown();
+	logFmt(LogTrace, "Deleting RX GRPC service...");
+	data->service_.reset();
+	logFmt(LogTrace, "Deleting GRPC server...");
+	data->grpcServer_.reset();
+	logFmt(LogTrace, "GRPC final cleanup...");
 	delete data;
+	logFmt(LogTrace, "GRPC shutdown completed");
 }

@@ -49,8 +49,8 @@ void NamespaceDef::GetJSON(WrSerializer& ser) const {
 	}
 }
 
-bool EnumNamespacesOpts::MatchFilter(std::string_view nsName, const std::shared_ptr<Namespace>& ns, const RdxContext& ctx) const {
-	return MatchNameFilter(nsName) && (!IsHideTemporary() || !ns->IsTemporary(ctx));
+bool EnumNamespacesOpts::MatchFilter(std::string_view nsName, const Namespace& ns, const RdxContext& ctx) const {
+	return MatchNameFilter(nsName) && (!IsHideTemporary() || !ns.IsTemporary(ctx));
 }
 
 Error NsReplicationOpts::FromJSON(std::span<char> json) {

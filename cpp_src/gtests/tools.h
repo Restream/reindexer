@@ -180,7 +180,7 @@ inline const gason::JsonNode& findJsonField(const gason::JsonNode& json, std::st
 		ASSERT_JSON_FIELD_IS_NULL(json, fieldName);                                                             \
 	} else {                                                                                                    \
 		const auto& node = findJsonField(json, fieldName);                                                      \
-		ASSERT_EQ(node.value.getTag(), gason::JsonTag::ARRAY) << JsonTagToTypeStr(node.value.getTag());         \
+		ASSERT_TRUE(node.isArray()) << JsonTagToTypeStr(node.value.getTag());                                   \
 		auto expectedIt = expectedVal.begin();                                                                  \
 		const auto expectedEnd = expectedVal.end();                                                             \
 		auto it = begin(node.value);                                                                            \

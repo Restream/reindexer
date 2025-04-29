@@ -162,13 +162,13 @@ Error JsonSchemaChecker::checkScheme(const gason::JsonNode& node, int typeIndex,
 					return err;
 				}
 			}
-		} else if (elem.value.getTag() == gason::JsonTag::ARRAY) {
+		} else if (elem.isArray()) {
 			if (descr.subElementsTable[subElemIndex->second].second.typeName != "any") {
 				if (!descr.subElementsTable[subElemIndex->second].second.array) {
 					return Error(errParseJson, "Element [{}] should array in [{}].", elem.key, path);
 				}
 				for (const auto& entry : elem.value) {
-					if (entry.value.getTag() == gason::JsonTag::ARRAY || entry.value.getTag() == gason::JsonTag::OBJECT) {
+					if (entry.isArray() || entry.isObject()) {
 						err = checkScheme(entry, descr.subElementsTable[subElemIndex->second].second.typeIndex, path,
 										  descr.subElementsTable[subElemIndex->second].first);
 						if (!err.ok()) {

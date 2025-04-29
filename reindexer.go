@@ -2,6 +2,9 @@ package reindexer
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"reflect"
 
 	"github.com/restream/reindexer/v5/bindings"
 	"github.com/restream/reindexer/v5/dsl"
@@ -149,15 +152,62 @@ var (
 	ErrDeepCopyType        = bindings.NewError("rq: DeepCopy() returns wrong type", ErrCodeParams)
 )
 
+type Facet struct {
+	Values []string `json:"values"`
+	Count  int      `json:"count"`
+}
+
+type aggregationResultSer struct {
+	Fields    []string      `json:"fields"`
+	Type      string        `json:"type"`
+	Value     *float64      `json:"value,omitempty"`
+	Facets    []Facet       `json:"facets,omitempty"`
+	Distincts []interface{} `json:"distincts,omitempty"`
+}
+
 type AggregationResult struct {
-	Fields []string `json:"fields"`
-	Type   string   `json:"type"`
-	Value  *float64 `json:"value,omitempty"`
-	Facets []struct {
-		Values []string `json:"values"`
-		Count  int      `json:"count"`
-	} `json:"facets,omitempty"`
-	Distincts []string `json:"distincts,omitempty"`
+	Fields    []string
+	Type      string
+	Value     *float64
+	Facets    []Facet
+	Distincts [][]string
+}
+
+func (v *AggregationResult) UnmarshalJSON(bytes []byte) error {
+	resSer := aggregationResultSer{}
+	err := json.Unmarshal(bytes, &resSer)
+	if err != nil {
+		return err
+	}
+	v.Fields = resSer.Fields
+	v.Type = resSer.Type
+	v.Value = resSer.Value
+	v.Facets = resSer.Facets
+
+	if len(resSer.Distincts) == 0 {
+		return nil
+	}
+	v.Distincts = make([][]string, len(resSer.Distincts))
+	if reflect.TypeOf(resSer.Distincts[0]).Kind() == reflect.Slice {
+		for i := 0; i < len(resSer.Distincts); i++ {
+			a1 := resSer.Distincts[i].([]interface{})
+			as := make([]string, len(a1))
+			for j := 0; j < len(a1); j++ {
+				if reflect.TypeOf(a1[j]).Kind() != reflect.String {
+					return errors.New("Distinct value type must be string")
+				}
+				as[j] = a1[j].(string)
+			}
+			v.Distincts[i] = as
+		}
+	} else {
+		for i := 0; i < len(resSer.Distincts); i++ {
+			as := make([]string, 1)
+			as[0] = resSer.Distincts[i].(string)
+			v.Distincts[i] = as
+		}
+	}
+	return nil
 }
 
 // NewReindex Create new instanse of Reindexer DB
@@ -424,4 +474,9 @@ func (db *Reindexer) WithContext(ctx context.Context) *Reindexer {
 		ctx:  ctx,
 	}
 	return dbC
+}
+
+// DBMSVersion return current DBMS version or error
+func (db *Reindexer) DBMSVersion() (string, error) {
+	return db.impl.dbmsVersion()
 }

@@ -1,12 +1,21 @@
 #include "indextext.h"
 #include <memory>
 #include "core/dbconfig.h"
+#include "core/ft/functions/ft_function.h"
 #include "core/rdxcontext.h"
 #include "estl/smart_lock.h"
 #include "tools/errors.h"
 #include "tools/logger.h"
 
 namespace reindexer {
+
+static FtCtx::Ptr createFtCtx(const Index::SelectContext selectCtx) {
+	if (selectCtx.selectFuncCtx) {
+		return selectCtx.selectFuncCtx->selectFunc.CreateCtx(selectCtx.selectFuncCtx->indexNo, selectCtx.selectFuncCtx->ranks);
+	} else {
+		return nullptr;
+	}
+}
 
 template <typename T>
 IndexText<T>::IndexText(const IndexText<T>& other)
@@ -110,8 +119,8 @@ void IndexText<T>::build(const RdxContext& rdxCtx) {
 
 // Generic implementation for string index
 template <typename T>
-SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType condition, SortType, Index::SelectOpts opts,
-										 const BaseFunctionCtx::Ptr& ctx, const RdxContext& rdxCtx) {
+SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType condition, SortType, const Index::SelectContext& selectCtx,
+										 const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 	if rx_unlikely (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
 		throw Error(errParams, "Full text index ({}) support only EQ or SET condition with 1 or 2 parameter", Index::Name());
@@ -121,54 +130,52 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType cond
 	bool needPutCache = false;
 	IdSetCacheKey ckey{keys, condition, 0};
 	auto cache_ft = cache_ft_.Get(ckey);
+	FtCtx::Ptr ftCtx = createFtCtx(selectCtx);
 	if (cache_ft.valid) {
 		if (!cache_ft.val.IsInitialized()) {
 			needPutCache = true;
-		} else if (ctx->Type() == BaseFunctionCtx::CtxType::kFtArea &&
-				   (!cache_ft.val.ctx || cache_ft.val.ctx->type != BaseFunctionCtx::CtxType::kFtArea)) {
+		} else if (ftCtx->Type() == FtCtxType::kFtArea && (!cache_ft.val.ctx || cache_ft.val.ctx->type != FtCtxType::kFtArea)) {
 			needPutCache = true;
 		} else {
-			return resultFromCache(keys, std::move(cache_ft), ctx);
+			return resultFromCache(keys, std::move(cache_ft), *ftCtx);
 		}
 	}
 
 	return doSelectKey(keys, needPutCache ? std::optional{std::move(ckey)} : std::nullopt, std::move(mergeStatuses),
-					   FtUseExternStatuses::No, opts.inTransaction, RankSortType(opts.rankSortType), ctx, rdxCtx);
+					   FtUseExternStatuses::No, selectCtx.opts.inTransaction, RankSortType(selectCtx.opts.rankSortType), *ftCtx, rdxCtx);
 }
 
 template <typename T>
-SelectKeyResults IndexText<T>::resultFromCache(const VariantArray& keys, FtIdSetCache::Iterator&& it, const BaseFunctionCtx::Ptr& ctx) {
+SelectKeyResults IndexText<T>::resultFromCache(const VariantArray& keys, FtIdSetCache::Iterator&& it, FtCtx& ftCtx) {
 	if rx_unlikely (cfg_->logLevel >= LogInfo) {
 		logFmt(LogInfo, "Get search results for '{}' in '{}' from cache", keys[0].As<std::string>(),
-				  this->payloadType_ ? this->payloadType_->Name() : "");
+			   this->payloadType_ ? this->payloadType_->Name() : "");
 	}
 	assertrx(it.val.ctx);
-	FtCtx::Ptr ftctx = static_ctx_pointer_cast<FtCtx>(ctx);
-	ftctx->SetData(std::move(it.val.ctx));
+	ftCtx.SetData(std::move(it.val.ctx));
 	return SelectKeyResult{{SingleSelectKeyResult{std::move(it.val.ids)}}};
 }
 
 template <typename T>
 SelectKeyResults IndexText<T>::doSelectKey(const VariantArray& keys, const std::optional<IdSetCacheKey>& ckey,
 										   FtMergeStatuses&& mergeStatuses, FtUseExternStatuses useExternSt, bool inTransaction,
-										   RankSortType rankSortType, const BaseFunctionCtx::Ptr& bctx, const RdxContext& rdxCtx) {
+										   RankSortType rankSortType, FtCtx& ftCtx, const RdxContext& rdxCtx) {
 	if rx_unlikely (cfg_->logLevel >= LogInfo) {
 		logFmt(LogInfo, "Searching for '{}' in '{}' {}", keys[0].As<std::string>(), this->payloadType_ ? this->payloadType_->Name() : "",
-				  ckey ? "(will cache)" : "");
+			   ckey ? "(will cache)" : "");
 	}
 
 	// STEP 1: Parse search query dsl
 	FtDSLQuery dsl(this->ftFields_, this->cfg_->stopWords, this->cfg_->extraWordSymbols);
 	dsl.parse(keys[0].As<p_string>());
 
-	auto ftCtx = static_ctx_pointer_cast<FtCtx>(bctx);
 	IdSet::Ptr mergedIds = Select(ftCtx, std::move(dsl), inTransaction, rankSortType, std::move(mergeStatuses), useExternSt, rdxCtx);
 	SelectKeyResult res;
 	if (mergedIds) {
-		auto ftCtxDataBase = ftCtx->GetData();
+		auto ftCtxDataBase = ftCtx.GetData();
 		bool need_put = (useExternSt == FtUseExternStatuses::No) && ckey.has_value();
 		// count the number of Areas and determine whether the request should be cached
-		if (bctx->Type() == BaseFunctionCtx::CtxType::kFtArea && need_put && mergedIds->size()) {
+		if (ftCtx.Type() == FtCtxType::kFtArea && need_put && mergedIds->size()) {
 			auto config = dynamic_cast<FtFastConfig*>(cfg_.get());
 			auto ftCtxDataArea = static_ctx_pointer_cast<FtCtxAreaData<Area>>(ftCtxDataBase);
 
@@ -203,14 +210,15 @@ SelectKeyResults IndexText<T>::doSelectKey(const VariantArray& keys, const std::
 }
 
 template <typename T>
-SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType condition, Index::SelectOpts opts,
-										 const BaseFunctionCtx::Ptr& ctx, FtPreselectT&& preselect, const RdxContext& rdxCtx) {
+SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType condition, const Index::SelectContext& selectCtx,
+										 FtPreselectT&& preselect, const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 	if rx_unlikely (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
 		throw Error(errParams, "Full text index ({}) support only EQ or SET condition with 1 or 2 parameter", Index::Name());
 	}
-	return doSelectKey(keys, std::nullopt, std::move(preselect), FtUseExternStatuses::Yes, opts.inTransaction,
-					   RankSortType(opts.rankSortType), ctx, rdxCtx);
+	FtCtx::Ptr ftCtx = createFtCtx(selectCtx);
+	return doSelectKey(keys, std::nullopt, std::move(preselect), FtUseExternStatuses::Yes, selectCtx.opts.inTransaction,
+					   RankSortType(selectCtx.opts.rankSortType), *ftCtx, rdxCtx);
 }
 
 template <typename T>

@@ -3,11 +3,6 @@
 
 using namespace reindexer;
 
-void ReindexerApi::SetUp() {
-	auto err = rt.reindexer->Connect("builtin://");
-	ASSERT_TRUE(err.ok()) << err.what();
-}
-
 void ReindexerApi::AwaitIndexOptimization(std::string_view nsName) {
 	bool optimization_completed = false;
 	unsigned waitForIndexOptimizationCompleteIterations = 0;

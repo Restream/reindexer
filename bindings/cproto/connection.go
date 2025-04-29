@@ -83,12 +83,12 @@ const (
 )
 
 type connFactory interface {
-	newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (connection, int64, error)
+	newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (connection, string, int64, error)
 }
 
 type connFactoryImpl struct{}
 
-func (cf *connFactoryImpl) newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (connection, int64, error) {
+func (cf *connFactoryImpl) newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (connection, string, int64, error) {
 	return newConnection(ctx, params, loggerOwner, eventsHandler)
 }
 
@@ -164,6 +164,7 @@ func newConnection(
 	ctx context.Context,
 	params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (
 	connection,
+	string,
 	int64,
 	error,
 ) {
@@ -195,16 +196,16 @@ func newConnection(
 
 	if err := c.connect(intCtx, params.dsn); err != nil {
 		c.onError(err)
-		return c, 0, err
+		return c, "", 0, err
 	}
 
-	serverStartTS, err := c.login(intCtx, params.dsn, params.createDBIfMissing, params.appName, params.caps)
+	serverReindexerVersion, serverStartTS, err := c.login(intCtx, params.dsn, params.createDBIfMissing, params.appName, params.caps)
 	if err != nil {
 		c.onError(err)
-		return c, 0, err
+		return c, "", 0, err
 	}
 
-	return c, serverStartTS, nil
+	return c, serverReindexerVersion, serverStartTS, nil
 }
 
 func seqNumIsValid(seqNum uint32) bool {
@@ -290,7 +291,7 @@ func (c *connectionImpl) connect(ctx context.Context, dsn *url.URL) (err error) 
 	return
 }
 
-func (c *connectionImpl) login(ctx context.Context, dsn *url.URL, createDBIfMissing bool, appName string, caps bindings.BindingCapabilities) (int64, error) {
+func (c *connectionImpl) login(ctx context.Context, dsn *url.URL, createDBIfMissing bool, appName string, caps bindings.BindingCapabilities) (string, int64, error) {
 	password, username, path := "", "", dsn.Path
 	if dsn.User != nil {
 		username = dsn.User.Username()
@@ -302,16 +303,18 @@ func (c *connectionImpl) login(ctx context.Context, dsn *url.URL, createDBIfMiss
 
 	buf, err := c.rpcCall(ctx, cmdLogin, 0, username, password, path, createDBIfMissing, false, -1, bindings.ReindexerVersion, appName, caps.Value)
 	if err != nil {
-		return 0, err
+		return "", 0, err
 	}
 	defer buf.Free()
 
+	var serverReindexerVersion string
 	var serverStartTS int64
 	if len(buf.args) > 1 {
+		serverReindexerVersion = string(buf.args[0].([]byte))
 		serverStartTS = buf.args[1].(int64)
 	}
 
-	return serverStartTS, nil
+	return serverReindexerVersion, serverStartTS, nil
 }
 
 func (c *connectionImpl) readLoop() {

@@ -4,7 +4,5 @@
 
 class EmbeddingTest : public ReindexerApi {
 protected:
-	void SetUp() override;
-
 	ReindexerTestApi<reindexer::Reindexer> rt;
 };

@@ -1,0 +1,2 @@
+# False-positive warning in CGO interaction (issue #2031)
+race:^proccess_packed_item$

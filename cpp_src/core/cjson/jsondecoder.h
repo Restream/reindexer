@@ -8,6 +8,12 @@ namespace reindexer {
 
 class CJsonBuilder;
 
+namespace item_fields_validator {
+
+class SparseValidator;
+
+}  // namespace item_fields_validator
+
 class JsonDecoder {
 public:
 	explicit JsonDecoder(TagsMatcher& tagsMatcher, const FieldsSet* filter = nullptr) noexcept
@@ -17,8 +23,10 @@ public:
 
 private:
 	void decodeJsonObject(const gason::JsonValue& root, CJsonBuilder&, FloatVectorsHolderVector&);
-	void decodeJsonObject(Payload& pl, CJsonBuilder&, const gason::JsonValue& v, FloatVectorsHolderVector&, Matched);
-	void decodeJson(Payload* pl, CJsonBuilder&, const gason::JsonValue& v, TagName, FloatVectorsHolderVector&, Matched);
+	void decodeJsonObject(Payload&, CJsonBuilder&, const gason::JsonValue&, FloatVectorsHolderVector&, Matched);
+	void decodeJson(Payload*, CJsonBuilder&, const gason::JsonValue&, TagName, FloatVectorsHolderVector&, Matched);
+	void decodeJsonSparse(Payload*, CJsonBuilder&, const gason::JsonValue&, TagName, FloatVectorsHolderVector&, Matched,
+						  const item_fields_validator::SparseValidator&);
 	InArray isInArray() const noexcept { return InArray(arrayLevel_ > 0); }
 
 	TagsMatcher& tagsMatcher_;

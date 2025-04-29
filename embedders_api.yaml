@@ -1,0 +1,126 @@
+openapi: "3.0.0"
+info:
+  title: "Swagger Embedder endpoint REST API - OpenAPI 3.0"
+  description: |
+    **Reindexer** Embedder endpoint REST API
+  version: "1.0.0"
+tags:
+  - name: "embedder"
+    description: "Everything about your Embedders"
+
+paths:
+  /api/v1/embedder/{name}/produce:
+    post:
+      tags:
+        - "embedder"
+      summary: "Calculate embedder result"
+      description: |
+        This operation will calculate the result of the embedding
+      operationId: postProduct
+      parameters:
+        - name: "format"
+          in: query
+          description: "Encoding data format"
+          required: true
+          schema:
+            type: string
+            enum:
+              - json
+              - base64
+              - text
+        - name: "name"
+          in: path
+          description: "Embedder's name"
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          'application/json':
+            schema:
+              type: object
+              required:
+                - format
+                - data
+              properties:
+                data:
+                  oneOf:
+                    - $ref: "#/components/schemas/JSONDataArray"
+                    - $ref: "#/components/schemas/Base64DataArray"
+                    - $ref: "#/components/schemas/TextDataArray"
+                  discriminator:
+                    propertyName: format
+                    mapping:
+                      json: JSONDataArray
+                      base64: Base64DataArray
+                      text: TextDataArray
+      responses:
+        200:
+          description: "Successful operation"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedderProduceResponse"
+        400:
+          description: "Invalid arguments supplied"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+        500:
+          description: "Unexpected internal error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+        
+
+components:
+  schemas:    
+    StatusResponse:
+      type: "object"
+      properties:
+        success:
+          type: boolean
+        response_code:
+          type: integer
+          description: "Duplicates HTTP response code"
+        description:
+          type: string
+          description: "Text description of error details"
+
+    TextDataArray:
+      description: "Raw text data for embedding"
+      type: array
+      items:
+        type: string
+
+    Base64DataArray:
+      description: "Base64-encoded binary data for embedding"
+      type: array
+      items:
+        type: string
+
+    JSONDataArray:
+      description: "JSON with target fields for embedding"
+      type: array
+      items:
+        type: object
+
+    EmbedderProduceResponse:
+      type: object
+      required:
+        - database
+        - product
+      description: "Products arrya created by Embedder"
+      properties:
+        products:
+          type: array
+          items:
+            type: array
+            description: "Single embedder calculation result"
+            items:
+              type: number
+              format: float
+              example: -1.7
+

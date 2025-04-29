@@ -9,7 +9,7 @@ namespace client {
 Namespace::Namespace(std::string _name)
 	: name(std::move(_name)),
 	  payloadType(name, {PayloadFieldType(KeyValueType::String{}, "-tuple", {}, IsArray_False)}),
-	  tagsMatcher_(payloadType) {}
+	  tagsMatcher_(payloadType, {}) {}
 
 Item Namespace::NewItem() {
 	shared_lock<shared_timed_mutex> lk(lck_);

@@ -5,6 +5,7 @@
 
 #include "core/reindexer.h"
 #include "estl/fast_hash_map.h"
+#include "fmt/printf.h"
 #include "gtests/tests/gtest_cout.h"
 
 using std::string;
@@ -23,21 +24,13 @@ public:
 	struct Data {
 		int id;
 		int fk_id;
-		const char* name;
-		const char* color;
+		std::string_view name;
+		std::string_view color;
 		int weight;
 		int height;
 	};
 
 	typedef fast_hash_map<std::string, NamespaceDef> DefsCacheType;
-
-	template <typename... Args>
-	static string StringFormat(const std::string& format, Args... args) {
-		size_t size = snprintf(nullptr, 0, format.c_str(), args...) + 1;  // extra symbol for '\n'
-		std::unique_ptr<char[]> buf(new char[size]);
-		snprintf(buf.get(), size, format.c_str(), args...);
-		return std::string(buf.get(), buf.get() + size - 1);
-	}
 
 public:
 	Error CreateNamespace(const NamespaceDef& nsDef) {
@@ -63,17 +56,18 @@ public:
 
 		Item item = db_->NewItem(ns);
 		if (!item.Status().ok()) {
-			return ResultType(item.Status(), std::move(item), Data{0, 0, nullptr, nullptr, 0, 0});
+			return ResultType(item.Status(), std::move(item), Data{0, 0, {}, {}, 0, 0});
 		}
 
 		Data data = (d == nullptr) ? randomItemData() : *d;
-		std::string json = StringFormat(jsonPattern, data.id, data.name, data.color, data.weight, data.height, data.fk_id);
+		std::string json = fmt::sprintf(jsonPattern, data.id, data.name, data.color, data.weight, data.height, data.fk_id);
 
 		return ResultType(item.FromJSON(json), std::move(item), data);
 	}
 
 	Item ItemFromData(const std::string& ns, const Data& data) {
 		Item item = db_->NewItem(ns);
+		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 		item["id"] = data.id;
 		item["fk_id"] = data.fk_id;
 		item["name"] = data.name;
@@ -101,9 +95,9 @@ public:
 
 protected:
 	void SetUp() {
-		colors_ = {"red", "green", "blue", "yellow", "purple", "orange"};
-		names_ = {"bubble", "dog", "tomorrow", "car", "dinner", "dish"};
-		db_ = std::make_shared<Reindexer>();
+		db_ = std::make_unique<Reindexer>();
+		auto err = db_->Connect("builtin://");
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	Data randomItemData() {
@@ -118,6 +112,7 @@ protected:
 	void printQueryResults(const std::string& ns, QueryResults& res) {
 		{
 			Item rdummy(db_->NewItem(ns));
+			ASSERT_TRUE(rdummy.Status().ok()) << rdummy.Status().what();
 			std::string outBuf;
 			for (auto idx = 1; idx < rdummy.NumFields(); idx++) {
 				outBuf += "\t";
@@ -140,8 +135,8 @@ protected:
 	}
 
 protected:
-	std::shared_ptr<Reindexer> db_;
+	std::unique_ptr<Reindexer> db_;
 
-	reindexer::h_vector<const char*> colors_;
-	reindexer::h_vector<const char*> names_;
+	reindexer::h_vector<std::string_view> colors_ = {"red", "green", "blue", "yellow", "purple", "orange"};
+	reindexer::h_vector<std::string_view> names_ = {"bubble", "dog", "tomorrow", "car", "dinner", "dish"};
 };

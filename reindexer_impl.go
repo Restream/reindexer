@@ -1329,7 +1329,7 @@ func (db *reindexerImpl) addAggregationsDSL(q *Query, aggs []dsl.Aggregation) er
 		case dsl.AggMax:
 			q.AggregateMax(agg.Fields[0])
 		case dsl.AggDistinct:
-			q.Distinct(agg.Fields[0])
+			q.Distinct(agg.Fields...)
 		case dsl.AggCount:
 			if len(agg.Fields) == 1 && (agg.Fields[0] == "" || agg.Fields[0] == "*") {
 				q.ReqTotal()
@@ -1449,4 +1449,8 @@ func (db *reindexerImpl) getStats() bindings.Stats {
 // ResetStats Reset local thread reindexer usage stats
 // Deprecated: no longer used.
 func (db *reindexerImpl) resetStats() {
+}
+
+func (db *reindexerImpl) dbmsVersion() (string, error) {
+	return db.binding.DBMSVersion()
 }

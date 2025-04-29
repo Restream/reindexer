@@ -165,7 +165,7 @@ void QueryResults::RebuildMergedData() {
 			mergedData_ = std::make_unique<MergedData>(std::string(nss[0]), local_->qr.haveRank, local_->qr.needOutputRank);
 			const auto& agg = local_->qr.GetAggregationResults();
 			for (const auto& a : agg) {
-				if (a.type == AggAvg || a.type == AggFacet || a.type == AggDistinct || a.type == AggUnknown) {
+				if (a.GetType() == AggAvg || a.GetType() == AggFacet || a.GetType() == AggDistinct || a.GetType() == AggUnknown) {
 					throw Error(errLogic, "Local query result (within distributed results) has unsupported aggregations");
 				}
 			}
@@ -192,7 +192,7 @@ void QueryResults::RebuildMergedData() {
 				for (size_t i = 0, s = agg.size(); i < s; ++i) {
 					auto& mergedAgg = mergedData_->aggregationResults[i];
 					const auto& newAgg = agg[i];
-					if (newAgg.type != mergedAgg.type) {
+					if (newAgg.GetType() != mergedAgg.GetType()) {
 						throw Error(errLogic, "Aggregations are incompatible between query results inside distributed query results");
 					}
 
@@ -203,21 +203,21 @@ void QueryResults::RebuildMergedData() {
 
 					auto value = mergedAgg.GetValue();
 
-					switch (newAgg.type) {
+					switch (newAgg.GetType()) {
 						case AggMin:
 							if (!value || *value > *newValue) {
-								mergedAgg.SetValue(*newValue);
+								mergedAgg.UpdateValue(*newValue);
 							}
 							break;
 						case AggMax:
 							if (!value || *value < *newValue) {
-								mergedAgg.SetValue(*newValue);
+								mergedAgg.UpdateValue(*newValue);
 							}
 							break;
 						case AggSum:
 						case AggCount:
 						case AggCountCached:
-							mergedAgg.SetValue(*newValue + mergedAgg.GetValueOrZero());
+							mergedAgg.UpdateValue(*newValue + mergedAgg.GetValueOrZero());
 							break;
 						case AggUnknown:
 						case AggAvg:
@@ -229,7 +229,7 @@ void QueryResults::RebuildMergedData() {
 			} else {
 				mergedData_ = std::make_unique<MergedData>(std::string(nss[0]), qrp->qr.HaveRank(), qrp->qr.NeedOutputRank());
 				for (const auto& a : agg) {
-					if (a.type == AggAvg || a.type == AggFacet || a.type == AggDistinct || a.type == AggUnknown) {
+					if (a.GetType() == AggAvg || a.GetType() == AggFacet || a.GetType() == AggDistinct || a.GetType() == AggUnknown) {
 						throw Error(errLogic, "Remote query result (within distributed results) has unsupported aggregations");
 					}
 				}
@@ -706,8 +706,8 @@ joins::ItemIterator QueryResults::Iterator::GetJoined(std::vector<ItemRefCache>*
 template <>
 QueryResults::ItemDataStorage<QueryResults::ItemRefCache>& QueryResults::QrMetaData<client::QueryResults>::ItemRefData(int64_t idx) {
 	ItemImpl itemimpl(qr.GetPayloadType(0), qr.GetTagsMatcher(0));
-	const bool converViaJSON = !hasCompatibleTm || !qr.IsCJSON();
-	Error err = fillItemImpl(it, itemimpl, converViaJSON);
+	const bool convertViaJSON = !hasCompatibleTm || !qr.IsCJSON();
+	Error err = fillItemImpl(it, itemimpl, convertViaJSON);
 	if (!err.ok()) {
 		throw err;
 	}

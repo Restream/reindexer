@@ -36,10 +36,10 @@ public:
 								int emmiterServerId = -1, milliseconds execTimeout = milliseconds(0)) noexcept
 		: InternalRdxContext(std::move(cmpl), std::move(execTimeout), std::move(lsn), emmiterServerId, shardId, parallel) {}
 
-	InternalRdxContext WithCancelContext(const IRdxCancelContext* cancelCtx) noexcept {
+	InternalRdxContext WithCancelContext(const IRdxCancelContext* cancelCtx) const noexcept {
 		return InternalRdxContext(cancelCtx, cmpl_, execTimeout_, lsn_, emmiterServerId_, shardId_, shardingParallelExecution_);
 	}
-	InternalRdxContext WithCompletion(Completion cmpl, InternalRdxContext&) noexcept {
+	InternalRdxContext WithCompletion(Completion cmpl, InternalRdxContext&) const noexcept {
 		return InternalRdxContext(std::move(cmpl), execTimeout_, lsn_, emmiterServerId_, shardId_, shardingParallelExecution_);
 	}
 	InternalRdxContext WithCompletion(Completion cmpl) const noexcept {

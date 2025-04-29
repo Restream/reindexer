@@ -261,6 +261,7 @@ private:
 	friend class SnapshotHandler;
 	friend class ClusterProxy;
 	friend class ShardingProxy;
+	friend class Reindexer;
 };
 
 }  // namespace reindexer

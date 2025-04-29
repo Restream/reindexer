@@ -13,21 +13,35 @@ using namespace std::string_view_literals;
 
 namespace reindexer {
 
-int64_t getTimeNow(std::string_view mode) {
+TimeUnit ToTimeUnit(std::string_view unit) {
+	if (iequals(unit, "sec"sv)) {
+		return TimeUnit::sec;
+	} else if (iequals(unit, "msec"sv)) {
+		return TimeUnit::msec;
+	} else if (iequals(unit, "usec"sv)) {
+		return TimeUnit::usec;
+	} else if (iequals(unit, "nsec"sv)) {
+		return TimeUnit::nsec;
+	}
+	throw Error(errParams, "Unknown time unit parameter '{}'", unit);
+}
+
+int64_t getTimeNow(TimeUnit unit) {
 	const auto tm = system_clock_w::now();
 	const auto duration = tm.time_since_epoch();
 
-	if (iequals(mode, "sec"sv)) {
-		return duration_cast<seconds>(duration).count();
-	} else if (iequals(mode, "msec"sv)) {
-		return duration_cast<milliseconds>(duration).count();
-	} else if (iequals(mode, "usec"sv)) {
-		return duration_cast<microseconds>(duration).count();
-	} else if (iequals(mode, "nsec"sv)) {
-		return duration_cast<nanoseconds>(duration).count();
+	switch (unit) {
+		case TimeUnit::sec:
+			return duration_cast<seconds>(duration).count();
+		case TimeUnit::msec:
+			return duration_cast<milliseconds>(duration).count();
+		case TimeUnit::usec:
+			return duration_cast<microseconds>(duration).count();
+		case TimeUnit::nsec:
+			return duration_cast<nanoseconds>(duration).count();
+		default:
+			throw_as_assert;
 	}
-
-	throw Error(errParams, "Unknown parameter '{}' in getTimeNow function.", mode);
 }
 
 std::tm localtime(const std::time_t& time_tt) {

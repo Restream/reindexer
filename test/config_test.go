@@ -2,6 +2,7 @@ package reindexer
 
 import (
 	"math/rand"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,6 +21,19 @@ const (
 
 func init() {
 	tnamespaces[ftCfgNsName] = FtConfCheck{}
+}
+
+func TestDBMSVersion(t *testing.T) {
+	t.Run("checking DBMSVersion returns correct value", func(t *testing.T) {
+
+		version, err := DB.Reindexer.DBMSVersion()
+		assert.NoError(t, err)
+
+		versionPattern := `^v\d+\.\d+\.\d+(\-\d+\-g[0-9a-f]{9,9})?$`
+		re := regexp.MustCompile(versionPattern)
+		match := re.MatchString(version)
+		assert.True(t, match, version)
+	})
 }
 
 func TestSetDefaultQueryDebug(t *testing.T) {

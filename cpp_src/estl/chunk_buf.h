@@ -3,10 +3,10 @@
 #include <algorithm>
 #include <cstdlib>
 #include <mutex>
+#include <span>
 #include <string_view>
 #include <vector>
 #include "chunk.h"
-#include <span>
 #include "tools/assertrx.h"
 #include "tools/errors.h"
 

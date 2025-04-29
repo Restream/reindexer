@@ -1,5 +1,6 @@
 #include "queryentry.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <sstream>
 #include "core/cjson/jsonbuilder.h"
@@ -7,6 +8,7 @@
 #include "core/nsselecter/joinedselectormock.h"
 #include "core/payload/payloadiface.h"
 #include "core/type_consts.h"
+#include "estl/algorithm.h"
 #include "query.h"
 #include "tools/serializer.h"
 #include "tools/string_regexp_functions.h"
@@ -106,6 +108,7 @@ bool QueryField::HaveEmptyField() const noexcept {
 
 bool QueryEntry::operator==(const QueryEntry& other) const noexcept {
 	return QueryField::operator==(other) && condition_ == other.condition_ && distinct_ == other.distinct_ &&
+		   needIsNull_ == other.needIsNull_ &&
 		   values_.RelaxCompare<WithString::Yes, NotComparable::Return>(other.values_) == ComparationResult::Eq;
 }
 
@@ -121,7 +124,7 @@ void VerifyQueryEntryValues(CondType cond, const VariantArray& values) {
 	}
 	const auto checkArgsCount = [&](size_t argsCountReq) {
 		if (values.size() != argsCountReq) {
-			throw Error{errLogic, "Condition {} must have exact {} argument, but {} arguments was provided", CondTypeToStr(cond),
+			throw Error{errLogic, "Condition {} must have exact {} argument, but {} arguments were provided", CondTypeToStr(cond),
 						argsCountReq, values.size()};
 		}
 	};
@@ -132,8 +135,8 @@ void VerifyQueryEntryValues(CondType cond, const VariantArray& values) {
 			break;
 		case CondAny:
 		case CondEmpty:
-			if (!values.empty() && !(values.size() == 1 && values[0].Type().Is<KeyValueType::Null>())) {
-				throw Error{errLogic, "Condition {} must have no argument or single null argument, but {} not null arguments was provided",
+			if (std::any_of(values.begin(), values.end(), [](const Variant& v) noexcept { return !v.IsNullValue(); })) {
+				throw Error{errLogic, "Condition {} must have no argument or single null argument, but {} not null arguments were provided",
 							CondTypeToStr(cond), values.size()};
 			}
 			break;
@@ -142,6 +145,9 @@ void VerifyQueryEntryValues(CondType cond, const VariantArray& values) {
 		case CondLt:
 		case CondLe:
 			checkArgsCount(1);
+			if (values[0].IsNullValue()) {
+				throw Error{errLogic, "Condition {} cannot have null argument", CondTypeToStr(cond)};
+			}
 			break;
 		case CondLike:
 			checkArgsCount(1);
@@ -153,6 +159,9 @@ void VerifyQueryEntryValues(CondType cond, const VariantArray& values) {
 		case CondRange:
 		case CondDWithin:
 			checkArgsCount(2);
+			if (values[0].IsNullValue() || values[1].IsNullValue()) {
+				throw Error{errLogic, "Condition {} cannot have null argument", CondTypeToStr(cond)};
+			}
 			break;
 		case CondKnn:
 			throw Error{errLogic, "Use KNN query instead of regular query with KNN condition"};
@@ -160,6 +169,42 @@ void VerifyQueryEntryValues(CondType cond, const VariantArray& values) {
 }
 template void VerifyQueryEntryValues<VerifyQueryEntryFlags::null>(CondType, const VariantArray&);
 template void VerifyQueryEntryValues<VerifyQueryEntryFlags::ignoreEmptyValues>(CondType, const VariantArray&);
+
+void QueryEntry::adjust() noexcept {
+	switch (condition_) {
+		case CondEq:
+		case CondSet:
+		case CondAllSet: {
+			if (values_.empty()) {
+				break;
+			}
+			const auto it = unstable_remove_if(values_.begin(), values_.end(), [](const Variant& v) noexcept { return v.IsNullValue(); });
+			if (it == values_.end()) {
+				break;
+			} else if (it == values_.begin()) {
+				values_.clear();
+				condition_ = CondEmpty;
+			} else {
+				values_.erase(it, values_.end());
+				if (values_.size() == 1) {
+					condition_ = CondEq;
+				}
+				needIsNull_ = true;
+			}
+		}
+		case CondAny:
+		case CondEmpty:
+		case CondGe:
+		case CondGt:
+		case CondLe:
+		case CondLt:
+		case CondLike:
+		case CondDWithin:
+		case CondRange:
+		case CondKnn:
+			break;
+	}
+}
 
 std::string QueryEntry::Dump() const {
 	WrSerializer ser;
@@ -200,12 +245,13 @@ std::string QueryEntry::DumpBrief() const {
 AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1>&& fields, SortingEntries&& sort, unsigned limit, unsigned offset)
 	: type_(type), fields_(std::move(fields)), sortingEntries_{std::move(sort)}, limit_(limit), offset_(offset) {
 	switch (type_) {
+		case AggDistinct:
 		case AggFacet:
 			if (fields_.empty()) {
 				throw Error(errQueryExec, "Empty set of fields for aggregation {}", AggTypeToStr(type_));
 			}
 			break;
-		case AggDistinct:
+
 		case AggMin:
 		case AggMax:
 		case AggSum:
@@ -332,14 +378,12 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer&
 				ser.PutVarUint(QueryCloseBracket);
 			},
 			[&ser, op](const QueryEntry& entry) {
-				entry.Distinct() ? ser.PutVarUint(QueryDistinct) : ser.PutVarUint(QueryCondition);
+				ser.PutVarUint(QueryCondition);
 				ser.PutVString(entry.FieldName());
-				if (entry.Distinct()) {
-					return;
-				}
 				ser.PutVarUint(op);
 				serialize(entry.Condition(), entry.Values(), ser);
 			},
+			[](const DistinctQueryEntry&) { assertrx_throw(false); },
 			[&ser, op](const JoinQueryEntry& jqe) {
 				ser.PutVarUint(QueryJoinCondition);
 				ser.PutVarUint((op == OpAnd) ? JoinType::InnerJoin : JoinType::OrInnerJoin);
@@ -397,6 +441,7 @@ bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator
 				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(qe, pl); },
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysTrue&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const DistinctQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const KnnQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE noexcept -> bool { throw_as_assert; }	 // TODO
 		);
 		result = (lastResult != (it->operation == OpNot));
@@ -955,6 +1000,7 @@ void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, 
 				  [&joinedSelectors, &ser](const JoinQueryEntry& jqe) { ser << jqe.Dump(joinedSelectors) << '\n'; },
 				  [&ser](const BetweenFieldsQueryEntry& qe) { ser << qe.Dump() << '\n'; },
 				  [&ser](const AlwaysFalse&) { ser << "AlwaysFalse\n"; }, [&ser](const AlwaysTrue&) { ser << "AlwaysTrue\n"; },
+				  [&ser](const DistinctQueryEntry& qe) { ser << qe.Dump() << "\n"; },
 				  [&ser](const KnnQueryEntry& qe) { ser << qe.Dump() << '\n'; });
 	}
 }

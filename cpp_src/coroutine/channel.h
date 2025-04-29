@@ -33,6 +33,14 @@ public:
 	void push(U&& obj) {
 		assertrx(current());  // For now channels should not be used from main routine dew to current resume/suspend logic
 		bool await = false;
+
+#ifdef RX_WITH_STDLIB_DEBUG
+		if (!full() && !closed_) {
+			// Extra ordering check
+			assertrx_dbg(writers_.empty());
+		}
+#endif	// RX_WITH_STDLIB_DEBUG
+
 		while (full() || closed_) {
 			if (closed_) {
 				if (await) {

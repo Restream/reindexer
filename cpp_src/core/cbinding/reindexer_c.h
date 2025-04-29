@@ -17,8 +17,6 @@ reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpt
 								  BindingCapabilities caps);
 reindexer_error reindexer_ping(uintptr_t rx);
 
-reindexer_error reindexer_init_system_namespaces(uintptr_t rx);
-
 reindexer_error reindexer_open_namespace(uintptr_t rx, reindexer_string nsName, StorageOpts opts, reindexer_ctx_info ctx_info);
 reindexer_error reindexer_drop_namespace(uintptr_t rx, reindexer_string nsName, reindexer_ctx_info ctx_info);
 reindexer_error reindexer_truncate_namespace(uintptr_t rx, reindexer_string nsName, reindexer_ctx_info ctx_info);
@@ -72,6 +70,8 @@ void reindexer_enable_logger(void (*logWriter)(int level, char* msg));
 void reindexer_disable_logger(void);
 
 void reindexer_init_locale(void);
+
+const char* reindexer_version();
 
 #ifdef __cplusplus
 }

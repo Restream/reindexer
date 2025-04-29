@@ -221,6 +221,7 @@ struct JsonNode {
 	const JsonNode& findCaseInsensitive(std::string_view key) const;
 	bool empty() const noexcept { return value.getTag() == JsonTag::EMPTY; }
 	bool isObject() const noexcept { return value.getTag() == JsonTag::OBJECT; }
+	bool isArray() const noexcept { return value.getTag() == JsonTag::ARRAY; }
 	JsonNode* toNode() const;
 	static JsonNode EmptyNode() noexcept;
 };

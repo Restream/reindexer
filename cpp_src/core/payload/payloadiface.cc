@@ -226,7 +226,7 @@ void PayloadIface<T>::Set(int field, int idx, const Variant& v) {
 }
 
 template <>
-int PayloadIface<PayloadValue>::ResizeArray(int field, int count, bool append) {
+int PayloadIface<PayloadValue>::ResizeArray(int field, int count, Append append) {
 	const auto& fieldType = t_.Field(field);
 	assertrx(fieldType.IsArray());
 
@@ -671,7 +671,7 @@ void PayloadIface<T>::copyOrMoveStrings(int field, StrHolder& dest, bool copy) {
 
 template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type*>
-void PayloadIface<T>::setArray(int field, const VariantArray& keys, bool append) {
+void PayloadIface<T>::setArray(int field, const VariantArray& keys, Append append) {
 	if (keys.IsNullValue()) {
 		ResizeArray(field, 0, append);
 		return;
@@ -745,7 +745,7 @@ T PayloadIface<T>::CopyWithNewOrUpdatedFields(PayloadType modifiedType) {
 	VariantArray kr;
 	for (int idx = 0, numFields = t_.NumFields(); idx < numFields; ++idx) {
 		Get(idx, kr);
-		copyValueInterface.Set(idx, kr, false);
+		copyValueInterface.Set(idx, kr, Append_False);
 		kr.Clear();
 	}
 
@@ -772,7 +772,7 @@ T PayloadIface<T>::CopyWithRemovedFields(PayloadType modifiedType) {
 	PayloadIface<T> copyValueInterface(modifiedType, pv);
 	for (const auto& fieldname : fieldsLeft) {
 		Get(fieldname, kr);
-		copyValueInterface.Set(fieldname, kr, false);
+		copyValueInterface.Set(fieldname, kr, Append_False);
 	}
 
 	return pv;
@@ -782,8 +782,8 @@ T PayloadIface<T>::CopyWithRemovedFields(PayloadType modifiedType) {
 #pragma warning(disable : 5037)
 #endif
 
-template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(std::string_view, const VariantArray&, bool);
-template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(int, const VariantArray&, bool);
+template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(std::string_view, const VariantArray&, Append);
+template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(int, const VariantArray&, Append);
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(int, int, const Variant&);
 template void PayloadIface<PayloadValue>::SetSingleElement<PayloadValue, static_cast<void*>(0)>(int, const Variant&);
 

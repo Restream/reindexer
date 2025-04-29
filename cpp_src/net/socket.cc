@@ -6,8 +6,8 @@
 #include <numeric>
 #include <string>
 #include "estl/h_vector.h"
-#include "tools/oscompat.h"
 #include "tools/assertrx.h"
+#include "tools/oscompat.h"
 
 namespace reindexer {
 namespace net {

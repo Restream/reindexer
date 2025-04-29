@@ -17,7 +17,7 @@
 namespace reindexer {
 
 struct ReplicationStateV2;
-struct ClusterizationStatus;
+struct ClusterOperationStatus;
 class SnapshotChunk;
 struct SnapshotOpts;
 struct ClusterControlRequestData;
@@ -128,13 +128,15 @@ public:
 	Error Select(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx) {
 		return selectImpl(query, result, config_.NetTimeout, ctx);
 	}
-	Item NewItem(std::string_view nsName);
-	template <typename C>
-	Item NewItem(std::string_view nsName, C& client, std::chrono::milliseconds execTimeout) {
+	// This method must be noexcept for public API
+	template <typename... Args>
+	Item NewItem(std::string_view nsName, Args&&... args) noexcept {
 		try {
-			return getNamespace(nsName)->NewItem(client, execTimeout);
-		} catch (const Error& err) {
-			return Item(err);
+			return getNamespace(nsName)->NewItem(std::forward<Args>(args)...);
+		} catch (std::exception& err) {
+			return Item(std::move(err));
+		} catch (...) {
+			return Item(Error(errSystem, "Unknow exception in Reindexer client"));
 		}
 	}
 	Error GetMeta(std::string_view nsName, const std::string& key, std::string& data, const InternalRdxContext& ctx);
@@ -147,11 +149,12 @@ public:
 	Error Version(std::string& version, const InternalRdxContext& ctx);
 	bool RequiresStatusCheck() const noexcept { return conn_.IsRunning() && conn_.RequiresStatusCheck(); }
 
-	CoroTransaction NewTransaction(std::string_view nsName, const InternalRdxContext& ctx);
+	// This method must be noexcept for public API
+	CoroTransaction NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) noexcept;
 	Error CommitTransaction(CoroTransaction& tr, CoroQueryResults& result, const InternalRdxContext& ctx);
 	Error RollBackTransaction(CoroTransaction& tr, const InternalRdxContext& ctx);
 	Error GetReplState(std::string_view nsName, ReplicationStateV2& state, const InternalRdxContext& ctx);
-	Error SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus& status, const InternalRdxContext& ctx);
+	Error SetClusterOperationStatus(std::string_view nsName, const ClusterOperationStatus& status, const InternalRdxContext& ctx);
 	Error GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, Snapshot& snapshot, const InternalRdxContext& ctx);
 	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk& ch, const InternalRdxContext& ctx);
 	Error SetTagsMatcher(std::string_view nsName, TagsMatcher&& tm, const InternalRdxContext& ctx);

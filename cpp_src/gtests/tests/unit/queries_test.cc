@@ -6,6 +6,7 @@
 #include "core/schema.h"
 #include "csv2jsonconverter.h"
 #include "queries_api.h"
+#include "server/pprof/gperf_profiler.h"
 #include "tools/jsontools.h"
 
 #if !defined(REINDEX_WITH_TSAN)
@@ -1070,7 +1071,8 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 		auto csv2jsonSchema = [&ordering, &qr] {
 			std::vector<std::string> res;
 			for (auto tag : ordering) {
-				res.emplace_back(qr.GetTagsMatcher(0).tag2name(tag));
+				const auto tm = qr.GetTagsMatcher(0);
+				res.emplace_back(tm.tag2name(tag));
 			}
 			res.emplace_back("joined_nss_map");
 			return res;
@@ -1450,9 +1452,14 @@ TEST_F(QueriesApi, DistinctWithDuplicatesWhereCondTest) {
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qr.Count(), values.size());
 
-		auto distincts = qr.GetAggregationResults().front().distincts;
-		ASSERT_EQ(distincts.size(), values.size());
-
+		unsigned int rows = qr.GetAggregationResults().front().GetDistinctRowCount();
+		ASSERT_EQ(rows, values.size());
+		VariantArray distincts;
+		for (size_t i = 0; i < rows; ++i) {
+			auto d = qr.GetAggregationResults().front().GetDistinctRow(i);
+			ASSERT_EQ(d.size(), 1);
+			distincts.emplace_back(d[0]);
+		}
 		std::sort(distincts.begin(), distincts.end());
 		for (size_t i = 0; i < distincts.size(); ++i) {
 			ASSERT_EQ(distincts[i], values[i]);
@@ -1530,8 +1537,7 @@ TEST_F(QueriesApi, DistinctWithForcedSortAndLimitTest) {
 	QueryResults qr = rt.Select(query);
 	ASSERT_EQ(qr.Count(), expectedCnt);
 
-	auto distincts = qr.GetAggregationResults().front().distincts;
-	ASSERT_EQ(distincts.size(), expectedCnt);
+	ASSERT_EQ(qr.GetAggregationResults().front().GetDistinctRowCount(), expectedCnt);
 
 	size_t order = 0;
 	for (auto it : qr) {

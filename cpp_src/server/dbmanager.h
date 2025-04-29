@@ -51,7 +51,7 @@ class DBManager;
 class AuthContext;
 static AuthContext MakeSystemAuthContext();
 
-/// Context of user authentification
+/// Context of user authentication
 class AuthContext {
 	friend DBManager;
 	friend AuthContext MakeSystemAuthContext();
@@ -71,13 +71,13 @@ public:
 		std::string login_;
 	};
 
-	/// Constuct empty context
+	/// Construct empty context
 	AuthContext() = default;
 	/// Construct context with user credentials
 	/// @param login - User's login
 	/// @param password - User's password
 	AuthContext(const std::string& login, const std::string& password) : login_(login), password_(password) {}
-	/// Set expected leader's replication clusted ID
+	/// Set expected leader's replication cluster ID
 	/// @param clusterID - Expected cluster ID value
 	void SetExpectedClusterID(int clusterID) noexcept {
 		checkClusterID_ = true;
@@ -86,7 +86,7 @@ public:
 
 	enum class CalledFrom { Core, RPCServer, HTTPServer, GRPC };
 
-	/// Check if reqired role meets role from context, and get pointer to Reindexer DB object
+	/// Check if required role meets role from context, and get pointer to Reindexer DB object
 	/// @param role - Requested role one of UserRole enum
 	/// @param ret - Pointer to returned database pointer
 	/// @return Error - error object
@@ -137,7 +137,7 @@ public:
 	/// Read all found databases to RAM
 	/// Read user's database
 	/// @param storageEngine - underlying storage engine ("leveldb"/"rocksdb")
-	/// @param allowDBErrors - true: Ignore errors during existing DBs load; false: Return error if error occures during DBs load
+	/// @param allowDBErrors - true: Ignore errors during existing DBs load; false: Return error if error occurs during DBs load
 	/// @return Error - error object
 	Error Init();
 	/// Authenticate user, and grant roles to database with specified dbName
@@ -145,14 +145,14 @@ public:
 	/// @param auth - AuthContext with user credentials
 	/// @return Error - error object
 	Error Login(const std::string& dbName, AuthContext& auth);
-	/// Open database and authentificate user
+	/// Open database and authenticate user
 	/// @param dbName - database name, Can't be empty
 	/// @param auth - AuthContext filled with user credentials or already authorized AuthContext
 	/// @param canCreate - true: Create database, if not exists; false: return error, if database not exists
 	/// @return Error - error object
 	Error OpenDatabase(const std::string& dbName, AuthContext& auth, bool canCreate);
 	/// Drop database from disk storage and memory. Reindexer DB object will be destroyed
-	/// @param auth - Authorized AuthContext, with valid Reindexer DB object and reasonale role
+	/// @param auth - Authorized AuthContext, with valid Reindexer DB object and reasonable role
 	/// @return Error - error object
 	Error DropDatabase(AuthContext& auth);
 	/// Check if security disabled
@@ -225,7 +225,7 @@ Error AuthContext::GetDB(UserRole role, Reindexer** ret, Args&&... args) noexcep
 			return [&](lsn_t lsn, int emmiterServerId, int shardId) -> Error {
 				if rx_unlikely ((replicationRole && lsn.isEmpty() && emmiterServerId < 0) || (shardingRole && shardId < 0)) {
 					return Error(errForbidden, "Forbidden: {} is required to perform modify operation with the role '{}'",
-								 replicationRole ? "a non-empty lsn or emmiter server id" : "a non-negative shardId", UserRoleName(role_));
+								 replicationRole ? "a non-empty lsn or emitter server id" : "a non-negative shardId", UserRoleName(role_));
 				}
 				*ret = db_;
 				return {};

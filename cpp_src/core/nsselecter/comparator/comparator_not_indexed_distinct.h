@@ -19,7 +19,6 @@ public:
 
 private:
 	using SetType = fast_hash_set<Variant>;
-
 	SetType values_;
 };
 

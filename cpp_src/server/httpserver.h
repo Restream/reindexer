@@ -78,6 +78,7 @@ public:
 	void Logger(http::Context& ctx);
 	void OnResponse(http::Context& ctx);
 	int GetRole(http::Context& ctx);
+	int GetDefaultConfigs(http::Context& ctx);
 
 protected:
 	Error modifyItem(Reindexer& db, std::string& nsName, Item& item, ItemModifyMode mode);

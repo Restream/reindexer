@@ -38,9 +38,10 @@ public:
 	};
 	struct EmbedderOpts {
 		std::string endpointUrl;
+		std::string name;
 		std::string cacheTag;
 		reindexer::h_vector<std::string, 1> fields;
-		enum class Strategy : uint8_t { Always, EmptyOnly, Strict } strategy {Strategy::Always};
+		enum class Strategy : uint8_t { Always, EmptyOnly, Strict } strategy{Strategy::Always};
 		PoolOpts pool{};
 
 		bool operator==(const EmbedderOpts& o) const noexcept = default;

@@ -172,16 +172,17 @@ All the available stemmers are in this [directory].(cpp_src/vendor/libstemmer/sr
 It is possible to merge multiple queries results and sort final result by relevancy.
 
 ```go
-    query := db.Query ("items").
-        Match ("description","text query1")
-    q2 := db.Query ("another_items").
-        Match ("description","text query2")
-    query.Merge (q2)
-    iterator = query.Exec ()
+    query := db.Query("items").
+        Match("description","text query1")
+    q2 := db.Query("another_items").
+        Match("description","text query2")
+    query.Merge(q2)
+    iterator = query.Exec()
     // Check the error
     if err := iterator.Error(); err != nil {
         panic(err)
     }
+    defer iterator.Close()
     // Iterate over results
     for iterator.Next() {
         // Get the next document and cast it to a pointer

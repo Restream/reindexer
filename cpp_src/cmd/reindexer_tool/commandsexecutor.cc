@@ -706,16 +706,17 @@ Error CommandsExecutor<DBInterface>::commandSelect(const std::string& command) n
 			if (aggResults.size() && !cancelCtx_.IsCancelled()) {
 				output_() << "Aggregations: " << std::endl;
 				for (auto& agg : aggResults) {
-					switch (agg.type) {
+					switch (agg.GetType()) {
 						case AggFacet: {
-							assertrx(!agg.fields.empty());
+							const auto& fields = agg.GetFields();
+							assertrx(!fields.empty());
 							reindexer::h_vector<int, 1> maxW;
-							maxW.reserve(agg.fields.size());
-							for (const auto& field : agg.fields) {
+							maxW.reserve(fields.size());
+							for (const auto& field : fields) {
 								maxW.emplace_back(field.length());
 							}
-							for (auto& row : agg.facets) {
-								assertrx(row.values.size() == agg.fields.size());
+							for (auto& row : agg.GetFacets()) {
+								assertrx(row.values.size() == fields.size());
 								for (size_t i = 0; i < row.values.size(); ++i) {
 									maxW.at(i) = std::max(maxW.at(i), int(row.values[i].length()));
 								}
@@ -725,15 +726,15 @@ Error CommandsExecutor<DBInterface>::commandSelect(const std::string& command) n
 								mW += 3;
 								rowWidth += mW;
 							}
-							for (size_t i = 0; i < agg.fields.size(); ++i) {
+							for (size_t i = 0; i < fields.size(); ++i) {
 								if (i != 0) {
 									output_() << "| ";
 								}
-								output_() << std::left << std::setw(maxW.at(i)) << agg.fields[i];
+								output_() << std::left << std::setw(maxW.at(i)) << fields[i];
 							}
 							output_() << "| count" << std::endl;
 							output_() << std::left << std::setw(rowWidth) << std::setfill('-') << "" << std::endl << std::setfill(' ');
-							for (auto& row : agg.facets) {
+							for (auto& row : agg.GetFacets()) {
 								for (size_t i = 0; i < row.values.size(); ++i) {
 									if (i != 0) {
 										output_() << "| ";
@@ -743,14 +744,26 @@ Error CommandsExecutor<DBInterface>::commandSelect(const std::string& command) n
 								output_() << "| " << row.count << std::endl;
 							}
 						} break;
-						case AggDistinct:
-							assertrx(agg.fields.size() == 1);
-							output_() << "Distinct (" << agg.fields.front() << ")" << std::endl;
-							for (auto& v : agg.distincts) {
-								output_() << v.template As<std::string>(agg.payloadType, agg.distinctsFields) << std::endl;
+						case AggDistinct: {
+							output_() << "Distinct (";
+							bool comma = false;
+							for (const auto& f : agg.GetFields()) {
+								output_() << (comma ? ", " : "") << f;
+								comma = true;
 							}
-							output_() << "Returned " << agg.distincts.size() << " values" << std::endl;
-							break;
+							output_() << ')' << std::endl;
+							const unsigned int nRows = agg.GetDistinctRowCount();
+							const unsigned int nColumn = agg.GetDistinctColumnCount();
+							for (unsigned int i = 0; i < nRows; i++) {
+								bool comma = false;
+								for (unsigned j = 0; j < nColumn; j++) {
+									output_() << (comma ? ", " : "") << agg.template As<std::string>(i, j);
+									comma = true;
+								}
+								output_() << std::endl;
+							}
+							output_() << "Returned " << nRows << " values" << std::endl;
+						} break;
 						case AggSum:
 						case AggAvg:
 						case AggMin:
@@ -758,9 +771,9 @@ Error CommandsExecutor<DBInterface>::commandSelect(const std::string& command) n
 						case AggCount:
 						case AggCountCached:
 						case AggUnknown:
-							assertrx(agg.fields.size() == 1);
-							output_() << reindexer::AggTypeToStr(agg.type) << "(" << agg.fields.front() << ") = " << agg.GetValueOrZero()
-									  << std::endl;
+							assertrx(agg.GetFields().size() == 1);
+							output_() << reindexer::AggTypeToStr(agg.GetType()) << '(' << agg.GetFields().front()
+									  << ") = " << agg.GetValueOrZero() << std::endl;
 					}
 				}
 			}

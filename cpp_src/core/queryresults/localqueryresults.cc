@@ -461,25 +461,15 @@ Item LocalQueryResults::IteratorImpl<QR>::GetItem(bool enableHold) {
 	return item;
 }
 
-void LocalQueryResults::AddItem(Item& item, bool withData, bool enableHold) {
-	auto ritem = item.impl_;
+void LocalQueryResults::AddItemNoHold(Item& item, lsn_t nsIncarnationTag, bool withData) {
 	if (item.GetID() != -1) {
-		auto ns = ritem->GetNamespace();
+		auto ritem = item.impl_;
 		if (ctxs.empty()) {
-			ctxs.emplace_back(ritem->Type(), ritem->tagsMatcher(), FieldsFilter(), ritem->GetSchema(),
-							  ns ? ns->ns_->incarnationTag_ : lsn_t());
+			ctxs.emplace_back(ritem->Type(), ritem->tagsMatcher(), FieldsFilter(), ritem->GetSchema(), nsIncarnationTag);
 		}
 		if (withData) {
 			auto& value = ritem->RealValue().IsFree() ? ritem->Value() : ritem->RealValue();
 			AddItemRef(item.GetID(), value);
-			if (enableHold) {
-				if (ns) {
-					Payload{ns->ns_->payloadType_, value}.CopyStrings(stringsHolder_);
-				} else {
-					assertrx(ctxs.size() == 1);
-					Payload{ctxs.back().type_, value}.CopyStrings(stringsHolder_);
-				}
-			}
 		} else {
 			AddItemRef(item.GetID(), PayloadValue());
 		}

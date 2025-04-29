@@ -1,13 +1,13 @@
 #pragma once
 
 #include <cstdlib>
+#include <span>
 #include <string>
 #include <string_view>
 #include "estl/chunk.h"
-#include <span>
+#include "estl/defines.h"
 #include "tools/ssize_t.h"
 #include "tools/tls.h"
-#include "estl/defines.h"
 
 struct addrinfo;
 namespace reindexer {

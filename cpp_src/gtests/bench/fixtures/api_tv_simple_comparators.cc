@@ -40,7 +40,12 @@ void ApiTvSimpleComparators::RegisterAllCases() {
 	Register("Query4CondRangeCachedTotal", &ApiTvSimpleComparators::Query4CondRangeCachedTotal, this);
 
 	Register("QueryDistinctOneField", &ApiTvSimpleComparators::QueryDistinctOneField, this);
+	Register("QueryDistinctTwoField", &ApiTvSimpleComparators::QueryDistinctTwoField, this);
+	Register("QueryDistinctTwoFieldArray", &ApiTvSimpleComparators::QueryDistinctTwoFieldArray, this);
+
 	Register("QueryDistinctOneFieldLimit", &ApiTvSimpleComparators::QueryDistinctOneFieldLimit, this);
+	Register("QueryDistinctTwoFieldLimit", &ApiTvSimpleComparators::QueryDistinctTwoFieldLimit, this);
+	Register("QueryDistinctTwoFieldArrayLimit", &ApiTvSimpleComparators::QueryDistinctTwoFieldArrayLimit, this);
 	// NOLINTEND(*cplusplus.NewDeleteLeaks)
 }
 
@@ -587,11 +592,63 @@ void ApiTvSimpleComparators::QueryDistinctOneField(benchmark::State& state) {
 	}
 }
 
+void ApiTvSimpleComparators::QueryDistinctTwoField(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Distinct("year", "location");
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+	}
+}
+
+void ApiTvSimpleComparators::QueryDistinctTwoFieldArray(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Distinct("packages", "countries");
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+	}
+}
+
 void ApiTvSimpleComparators::QueryDistinctOneFieldLimit(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		q.Distinct("year").Limit(20);
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+	}
+}
+
+void ApiTvSimpleComparators::QueryDistinctTwoFieldLimit(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Distinct("year", "location").Limit(20);
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+	}
+}
+
+void ApiTvSimpleComparators::QueryDistinctTwoFieldArrayLimit(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Distinct("packages", "countries").Limit(20);
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {

@@ -171,24 +171,26 @@ TEST_F(NsApi, UpsertWithPrecepts) {
 
 			if (field == updatedTimeSecFieldName) {
 				int64_t value = item[field].Get<int64_t>();
-				ASSERT_TRUE(reindexer::getTimeNow("sec") - value < 1) << "Precept function `now()/now(sec)` doesn't work properly";
+				ASSERT_LE(reindexer::getTimeNow(reindexer::TimeUnit::sec) - value, 1)
+					<< "Precept function `now()/now(sec)` doesn't work properly";
 			} else if (field == updatedTimeMSecFieldName) {
 				int64_t value = item[field].Get<int64_t>();
-				ASSERT_TRUE(reindexer::getTimeNow("msec") - value < 1000) << "Precept function `now(msec)` doesn't work properly";
+				ASSERT_LT(reindexer::getTimeNow(reindexer::TimeUnit::msec) - value, 1000)
+					<< "Precept function `now(msec)` doesn't work properly";
 			} else if (field == updatedTimeUSecFieldName) {
 				int64_t value = item[field].Get<int64_t>();
-				ASSERT_TRUE(reindexer::getTimeNow("usec") - value < 1000000) << "Precept function `now(usec)` doesn't work properly";
+				ASSERT_LT(reindexer::getTimeNow(reindexer::TimeUnit::usec) - value, 1000000)
+					<< "Precept function `now(usec)` doesn't work properly";
 			} else if (field == updatedTimeNSecFieldName) {
 				int64_t value = item[field].Get<int64_t>();
-				ASSERT_TRUE(reindexer::getTimeNow("nsec") - value < 1000000000) << "Precept function `now(nsec)` doesn't work properly";
+				ASSERT_LT(reindexer::getTimeNow(reindexer::TimeUnit::nsec) - value, 1000000000)
+					<< "Precept function `now(nsec)` doesn't work properly";
 			} else if (field == serialFieldName) {
 				int64_t value = item[field].Get<int64_t>();
-				ASSERT_TRUE(value == upsertTimes) << "Precept function `serial()` didn't increment a value to " << upsertTimes << " after "
-												  << upsertTimes << " upsert times";
+				ASSERT_EQ(value, upsertTimes) << "Precept function `serial()` didn't increment a value";
 			} else if (field == stringField) {
 				auto value = item[field].Get<std::string_view>();
-				ASSERT_TRUE(value == std::to_string(upsertTimes)) << "Precept function `serial()` didn't increment a value to "
-																  << upsertTimes << " after " << upsertTimes << " upsert times";
+				ASSERT_EQ(value, std::to_string(upsertTimes)) << "Precept function `serial()` didn't increment a value";
 			}
 		}
 	}
@@ -247,8 +249,6 @@ TEST_F(NsApi, ReturnOfItemChange) {
 }
 
 TEST_F(NsApi, UpdateIndex) try {
-	Error err = rt.reindexer->InitSystemNamespaces();
-	ASSERT_TRUE(err.ok()) << err.what();
 	rt.OpenNamespace(default_namespace);
 	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName, "hash", "int", IndexOpts().PK(), 0}});
 
@@ -260,7 +260,7 @@ TEST_F(NsApi, UpdateIndex) try {
 	}
 
 	auto newIdx = reindexer::IndexDef(idIdxName, "tree", "int64", IndexOpts().PK().Dense());
-	err = rt.reindexer->UpdateIndex(default_namespace, newIdx);
+	auto err = rt.reindexer->UpdateIndex(default_namespace, newIdx);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	std::vector<reindexer::NamespaceDef> nsDefs;
@@ -291,8 +291,6 @@ TEST_F(NsApi, UpdateIndex) try {
 CATCH_AND_ASSERT
 
 TEST_F(NsApi, QueryperfstatsNsDummyTest) {
-	Error err = rt.reindexer->InitSystemNamespaces();
-	ASSERT_TRUE(err.ok()) << err.what();
 	rt.OpenNamespace(default_namespace);
 	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName, "hash", "int", IndexOpts().PK(), 0}});
 
@@ -882,18 +880,6 @@ TEST_F(NsApi, DropArrayField3) {
 	AddUnindexedData();
 	dropArrayItem(rt.reindexer, default_namespace, "nested.nested_array[*].prices[*]", "nested.nested_array.prices");
 }
-
-#if (0)	 // #1500
-TEST_F(NsApi, DropArrayField4) {
-	// 1. Define NS
-	// 2. Fill NS
-	// 3. Drop array item(s) and check it was properly removed
-	DefineDefaultNamespace();
-	AddUnindexedData();
-	DropArrayItem(rt.reindexer, default_namespace, "nested.nested_array[0].prices[((2+4)*2)/6]", "nested.nested_array.prices", 0,
-				  ((2 + 4) * 2) / 6);
-}
-#endif
 
 TEST_F(NsApi, SetArrayFieldWithSql) {
 	// 1. Define NS
@@ -2147,7 +2133,7 @@ TEST_F(NsApi, UpdateArrayIndexFieldWithSeveralJsonPaths) {
 
 	auto makeFieldsList = [&fieldsValues](const reindexer::fast_hash_set<int>& indexes, OpT type) {
 		auto quote = type == OpT::Insert ? '"' : '\'';
-		std::vector<std::string> Values::* list = type == OpT::Insert ? &Values::valsList : &Values::newValsList;
+		std::vector<std::string> Values::*list = type == OpT::Insert ? &Values::valsList : &Values::newValsList;
 		const auto fieldsListTmplt = fmt::runtime(type == OpT::Insert ? R"("{}field{}": [{}])" : R"({}field{} = [{}])");
 		std::string fieldsList;
 		for (int idx : indexes) {
@@ -2647,8 +2633,6 @@ TEST_F(NsApi, TestUpdateIndexArrayWithNull) {
 }
 
 TEST_F(NsApi, TestUpdateIndexToSparse) {
-	Error err = rt.reindexer->InitSystemNamespaces();
-	ASSERT_TRUE(err.ok()) << err.what();
 	rt.OpenNamespace(default_namespace);
 	const std::string compIndexName = idIdxName + "+" + stringField;
 
@@ -2672,7 +2656,7 @@ TEST_F(NsApi, TestUpdateIndexToSparse) {
 	ASSERT_EQ(qr.Count(), 1);
 
 	auto newIdx = reindexer::IndexDef(intField, "hash", "int", IndexOpts().Sparse());
-	err = rt.reindexer->UpdateIndex(default_namespace, newIdx);
+	auto err = rt.reindexer->UpdateIndex(default_namespace, newIdx);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	qr = rt.Select(Query(default_namespace).Where(intField, CondEq, i));
@@ -3482,7 +3466,7 @@ TEST_F(NsApi, SparseComparatorConversion) {
 	// TODO: Sort("sparse_field", false)) does not works here #2039
 	auto results = rt.GetSerializedQrItems(qr);
 	ASSERT_EQ(results.size(), 2);
-	EXPECT_EQ(results[0], R"j({"id":1,"sparse_field":99})j");
+	EXPECT_EQ(results[0], R"j({"id":1,"sparse_field":"99"})j");
 	EXPECT_EQ(results[1], R"j({"id":4,"sparse_field":"50"})j");
 
 	qr = rt.Select(reindexer::Query(default_namespace).Where("sparse_field", CondGe, "100").Sort("sparse_field", false));

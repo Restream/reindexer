@@ -1522,7 +1522,7 @@ public:
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
 		const p_string* ptr = reinterpret_cast<const p_string*>(item.Ptr() + arr.offset);
-		for (const auto* const end = ptr + arr.len; ptr != end; ++ptr) {
+		for (const p_string* const end = ptr + arr.len; ptr != end; ++ptr) {
 			distinct_.ExcludeValues(std::string_view(*ptr));
 		}
 	}
@@ -1650,12 +1650,15 @@ public:
 	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::Undefined{});
+		if rx_unlikely (buffer_.IsObjectValue()) {
+			return false;
+		}
 		for (Variant& value : buffer_) {
-			if (!value.IsNullValue()) {
-				return false;
+			if (value.IsNullValue()) {
+				return true;
 			}
 		}
-		return true;
+		return buffer_.empty();
 	}
 	[[nodiscard]] std::string ConditionStr() const;
 	[[nodiscard]] bool IsDistinct() const noexcept { return false; }

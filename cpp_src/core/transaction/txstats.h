@@ -3,7 +3,6 @@
 #include "core/namespace/namespacestat.h"
 #include "core/perfstatcounter.h"
 #include "localtransaction.h"
-#include "tools/stringstools.h"
 
 namespace reindexer {
 

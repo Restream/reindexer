@@ -66,7 +66,7 @@ public:
 
 	static LocalTransaction Transform(Transaction&& tx);
 
-protected:
+private:
 	Transaction(Error err);
 	Transaction();
 	Transaction(Transaction&& tr, sharding::LocatorServiceAdapter shardingRouter);
@@ -79,6 +79,7 @@ protected:
 
 	friend class ClusterProxy;
 	friend class ShardingProxy;
+	friend class Reindexer;
 	friend class reindexer_server::RPCServer;
 };
 

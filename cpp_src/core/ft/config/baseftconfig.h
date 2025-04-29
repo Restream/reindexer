@@ -3,8 +3,8 @@
 #include <string_view>
 #include <vector>
 #include "core/ft/stopwords/types.h"
-#include "core/ft/usingcontainer.h"
 #include "estl/fast_hash_map.h"
+#include "tools/rhashmap.h"
 
 namespace gason {
 struct JsonNode;

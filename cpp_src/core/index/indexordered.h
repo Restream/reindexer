@@ -13,8 +13,8 @@ public:
 	IndexOrdered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg)
 		: IndexUnordered<T>(idef, std::move(payloadType), std::move(fields), cacheCfg) {}
 
-	SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, Index::SelectOpts opts,
-							   const BaseFunctionCtx::Ptr& ctx, const RdxContext&) override;
+	SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, const Index::SelectContext&,
+							   const RdxContext&) override;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override;
 	void MakeSortOrders(UpdateSortedContext& ctx) override;
 	IndexIterator::Ptr CreateIterator() const override;

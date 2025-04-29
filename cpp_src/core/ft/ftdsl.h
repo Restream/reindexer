@@ -5,7 +5,8 @@
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
 #include "stopwords/types.h"
-#include "usingcontainer.h"
+#include "tools/rhashmap.h"
+#include "tools/rvector.h"
 
 namespace reindexer {
 

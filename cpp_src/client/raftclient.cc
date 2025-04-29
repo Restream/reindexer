@@ -1,6 +1,7 @@
 #include "client/raftclient.h"
 #include "client/rpcclient.h"
 #include "cluster/clustercontrolrequest.h"
+#include "tools/catch_and_return.h"
 
 namespace reindexer {
 namespace client {
@@ -22,28 +23,40 @@ RaftClient& RaftClient::operator=(RaftClient&& rdx) noexcept {
 	return *this;
 }
 
-Error RaftClient::Connect(const DSN& dsn, net::ev::dynamic_loop& loop, const client::ConnectOpts& opts) {
-	return impl_->Connect(dsn, loop, opts);
+Error RaftClient::Connect(const DSN& dsn, net::ev::dynamic_loop& loop, const client::ConnectOpts& opts) noexcept {
+	RETURN_RESULT_NOEXCEPT(impl_->Connect(dsn, loop, opts));
 }
-void RaftClient::Stop() { impl_->Stop(); }
-
-Error RaftClient::SuggestLeader(const NodeData& suggestion, NodeData& response) {
-	return impl_->SuggestLeader(suggestion, response, ctx_.WithLSN(lsn_t{0}));
+void RaftClient::Stop() noexcept {
+	try {
+		impl_->Stop();
+		// Do not excepting any exceptions here
+	} catch (std::exception& e) {
+		fprintf(stderr, "Unexpceted system error in RaftClient::Stop: %s", e.what());
+	} catch (...) {
+		fprintf(stderr, "Unexpceted system error in RaftClient::Stop: <no description available>");
+	}
 }
 
-Error RaftClient::SetDesiredLeaderId(int nextLeaderId) {
-	return impl_->ClusterControlRequest(ClusterControlRequestData{SetClusterLeaderCommand{nextLeaderId}}, ctx_.WithLSN(lsn_t{0}));
+Error RaftClient::SuggestLeader(const NodeData& suggestion, NodeData& response) noexcept {
+	RETURN_RESULT_NOEXCEPT(impl_->SuggestLeader(suggestion, response, ctx_.WithLSN(lsn_t{0})));
 }
 
-Error RaftClient::LeadersPing(const NodeData& leader) { return impl_->LeadersPing(leader, ctx_.WithLSN(lsn_t{0})); }
+Error RaftClient::SetDesiredLeaderId(int nextLeaderId) noexcept {
+	RETURN_RESULT_NOEXCEPT(
+		impl_->ClusterControlRequest(ClusterControlRequestData{SetClusterLeaderCommand{nextLeaderId}}, ctx_.WithLSN(lsn_t{0})));
+}
 
-Error RaftClient::GetRaftInfo(RaftClient::RaftInfo& info) { return impl_->GetRaftInfo(info, ctx_); }
+Error RaftClient::LeadersPing(const NodeData& leader) noexcept {
+	RETURN_RESULT_NOEXCEPT(impl_->LeadersPing(leader, ctx_.WithLSN(lsn_t{0})));
+}
+
+Error RaftClient::GetRaftInfo(RaftClient::RaftInfo& info) noexcept { RETURN_RESULT_NOEXCEPT(impl_->GetRaftInfo(info, ctx_)); }
 
 // Error RaftClient::GetClusterConfig() {}
 
 // Error RaftClient::SetClusterConfig() {}
 
-Error RaftClient::Status(bool forceCheck) { return impl_->Status(forceCheck, ctx_); }
+Error RaftClient::Status(bool forceCheck) noexcept { return impl_->Status(forceCheck, ctx_); }
 
 }  // namespace client
 }  // namespace reindexer

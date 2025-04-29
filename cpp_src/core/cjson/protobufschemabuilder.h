@@ -31,7 +31,7 @@ public:
 	void End();
 
 private:
-	void writeField(std::string_view name, std::string_view type, TagName number);
+	void writeField(std::string_view name, std::string_view type, TagName);
 	std::pair<std::string_view, KeyValueType> jsonSchemaTypeToProtobufType(const FieldProps& props) const;
 
 	WrSerializer* ser_{nullptr};

@@ -6,7 +6,6 @@
 
 #include "base_fixture.h"
 #include "core/ft/config/ftfastconfig.h"
-#include "core/ft/usingcontainer.h"
 #include "helpers.h"
 #include "tools/clock.h"
 #include "tools/fsops.h"

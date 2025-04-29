@@ -1,5 +1,5 @@
 #include "sharding_api.h"
-#include "clusterization_api.h"
+#include "cluster_operation_api.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/system_ns_names.h"
 #include "gtests/tests/gtest_cout.h"
@@ -387,14 +387,14 @@ void ShardingApi::AwaitOnlineReplicationStatus(size_t idx) {
 
 void ShardingApi::waitSync(std::string_view ns) {
 	for (auto& cluster : svc_) {
-		ClusterizationApi::Cluster::doWaitSync(ns, cluster);
+		ClusterOperationApi::Cluster::doWaitSync(ns, cluster);
 	}
 }
 
 bool ShardingApi::checkSync(std::string_view ns) {
 	for (auto& cluster : svc_) {
-		if (cluster.size() != ClusterizationApi::Cluster::getSyncCnt(ns, cluster)) {
-			ClusterizationApi::Cluster::PrintClusterInfo(ns, cluster);
+		if (cluster.size() != ClusterOperationApi::Cluster::getSyncCnt(ns, cluster)) {
+			ClusterOperationApi::Cluster::PrintClusterInfo(ns, cluster);
 			return false;
 		}
 	}
@@ -403,7 +403,7 @@ bool ShardingApi::checkSync(std::string_view ns) {
 
 void ShardingApi::waitSync(size_t shardId, std::string_view ns) {
 	assert(shardId < svc_.size());
-	ClusterizationApi::Cluster::doWaitSync(ns, svc_[shardId]);
+	ClusterOperationApi::Cluster::doWaitSync(ns, svc_[shardId]);
 }
 
 ServerControl::Interface::Ptr ShardingApi::getNode(size_t idx) {

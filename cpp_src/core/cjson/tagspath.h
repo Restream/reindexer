@@ -2,14 +2,15 @@
 
 #include <cstdlib>
 #include <functional>
+
 #include "core/enums.h"
 #include "estl/h_vector.h"
 #include "tools/customhash.h"
+#include "tools/rvector.h"
 
 namespace reindexer {
 
-using TagsPath = h_vector<TagName, 16>;
-
+using TagsPath = RVector<TagName, 16>;
 class [[nodiscard]] IndexedPathNode {
 	struct [[nodiscard]] AllItemsType {};
 
@@ -63,9 +64,9 @@ private:
 };
 
 template <unsigned hvSize>
-class [[nodiscard]] IndexedTagsPathImpl : public h_vector<IndexedPathNode, hvSize> {
+class [[nodiscard]] IndexedTagsPathImpl : public RVector<IndexedPathNode, hvSize> {
 public:
-	using Base = h_vector<IndexedPathNode, hvSize>;
+	using Base = RVector<IndexedPathNode, hvSize>;
 	using Base::Base;
 	explicit IndexedTagsPathImpl(const TagsPath& tp) {
 		this->reserve(tp.size());

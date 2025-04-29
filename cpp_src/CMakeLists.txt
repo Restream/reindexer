@@ -60,7 +60,7 @@ else()
   option(LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "5.1.0")
+set (REINDEXER_VERSION_DEFAULT "5.2.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -382,6 +382,7 @@ if(ENABLE_PCH)
     $<$<COMPILE_LANGUAGE:CXX>:tools/serializer.h>
     $<$<COMPILE_LANGUAGE:CXX>:tools/stringstools.h>
     $<$<COMPILE_LANGUAGE:CXX>:tools/varint.h>
+    $<$<COMPILE_LANGUAGE:CXX>:tools/usingcontainer.h>
     $<$<COMPILE_LANGUAGE:CXX>:vendor/sort/pdqsort.hpp>
 
     $<$<COMPILE_LANGUAGE:CXX>:updates/updaterecord.h>
@@ -395,7 +396,6 @@ if(ENABLE_PCH)
     $<$<COMPILE_LANGUAGE:CXX>:core/keyvalue/key_string.h>
     $<$<COMPILE_LANGUAGE:CXX>:core/payload/payloadiface.h>
     $<$<COMPILE_LANGUAGE:CXX>:core/rdxcontext.h>
-    $<$<COMPILE_LANGUAGE:CXX>:core/ft/usingcontainer.h>
     $<$<COMPILE_LANGUAGE:CXX>:vendor/sparse-map/sparse_map.h>
     $<$<COMPILE_LANGUAGE:CXX>:vendor/sparse-map/sparse_set.h>
 
@@ -716,7 +716,7 @@ if(EXISTS ${PROJECT_SOURCE_DIR}/.git OR EXISTS ${PROJECT_SOURCE_DIR}/../.git )
 endif()
 
 if(NOT REINDEXER_VERSION_FULL)
-set(REINDEXER_VERSION_FULL ${REINDEXER_VERSION_DEFAULT})
+  set(REINDEXER_VERSION_FULL "v${REINDEXER_VERSION_DEFAULT}")
 endif()
 
 set(REINDEXER_VERSION_H "#pragma once\n#define REINDEX_VERSION \"${REINDEXER_VERSION_FULL}\"\n")

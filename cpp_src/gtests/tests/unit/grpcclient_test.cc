@@ -71,22 +71,20 @@ TEST_F(GrpcClientApi, SelectJSON) {
 		ASSERT_TRUE(len > 0);
 
 		for (const auto& elem : root) {
-			const auto& v(elem.value);
 			std::string_view name(elem.key);
 			if (name == "items") {
-				ASSERT_TRUE(v.getTag() == gason::JsonTag::ARRAY);
-				for (const auto& element : v) {
-					auto& object = element.value;
-					ASSERT_TRUE(object.getTag() == gason::JsonTag::OBJECT);
-					for (auto field : object) {
+				ASSERT_TRUE(elem.isArray());
+				for (const auto& element : elem.value) {
+					ASSERT_TRUE(element.isObject());
+					for (auto field : element.value) {
 						name = std::string_view(field.key);
 						const auto& fieldValue(field.value);
 						if (name == "id" || name == "age") {
 							ASSERT_TRUE(fieldValue.getTag() == gason::JsonTag::NUMBER);
 						} else if (name == "joined_test_namespace2") {
-							ASSERT_TRUE(fieldValue.getTag() == gason::JsonTag::ARRAY);
+							ASSERT_TRUE(field.isArray());
 							for (const auto& item : fieldValue) {
-								ASSERT_TRUE(item.value.getTag() == gason::JsonTag::OBJECT);
+								ASSERT_TRUE(item.isObject());
 								for (const auto& joinedField : item.value) {
 									name = std::string_view(joinedField.key);
 									const auto& joinedFieldValue(joinedField.value);
@@ -103,23 +101,22 @@ TEST_F(GrpcClientApi, SelectJSON) {
 					}
 				}
 			} else if (name == "aggregations") {
-				ASSERT_TRUE(v.getTag() == gason::JsonTag::ARRAY);
-				for (const auto& element : v) {
-					auto& object = element.value;
-					ASSERT_TRUE(object.getTag() == gason::JsonTag::OBJECT);
-					for (const auto& field : object) {
+				ASSERT_TRUE(elem.isArray());
+				for (const auto& element : elem.value) {
+					ASSERT_TRUE(element.isObject());
+					for (const auto& field : element.value) {
 						name = std::string_view(field.key);
 						const auto& fieldValue(field.value);
 						if (name == "type") {
 							ASSERT_TRUE(fieldValue.getTag() == gason::JsonTag::STRING);
 							ASSERT_TRUE(fieldValue.toString() == "distinct");
 						} else if (name == "distincts") {
-							ASSERT_TRUE(fieldValue.getTag() == gason::JsonTag::ARRAY);
+							ASSERT_TRUE(field.isArray());
 							for (const auto& items : fieldValue) {
 								ASSERT_TRUE(items.value.getTag() == gason::JsonTag::STRING);
 							}
 						} else if (name == "fields") {
-							ASSERT_TRUE(fieldValue.getTag() == gason::JsonTag::ARRAY);
+							ASSERT_TRUE(field.isArray());
 							for (const auto& items : fieldValue) {
 								ASSERT_TRUE(items.value.getTag() == gason::JsonTag::STRING);
 								ASSERT_TRUE(items.value.toString() == "age");

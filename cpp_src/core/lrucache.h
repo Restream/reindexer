@@ -32,7 +32,7 @@ public:
 		bool valid;
 		V val;
 	};
-	// Get cached val. Create new entry in cache if does not exist
+	// Get cached val. Create new entry in cache if it does not exist
 	Iterator Get(const K& k);
 	// Put cached val
 	void Put(const K& k, V&& v);
@@ -200,7 +200,7 @@ private:
 		std::atomic_uint64_t misses;
 	};
 
-	// Cache line alignment to avoid contention betwee atomic cache ptr and cache stats (alignas would be better, but it does not work
+	// Cache line alignment to avoid contention between atomic cache ptr and cache stats (alignas would be better, but it does not work
 	// properly with tcmalloc on CentOS7)
 	uint8_t alignment1_[48];
 	CachePtrT ptr_;

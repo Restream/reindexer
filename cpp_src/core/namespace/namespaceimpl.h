@@ -41,6 +41,7 @@ namespace reindexer {
 using reindexer::datastorage::StorageType;
 
 class Index;
+class Embedder;
 template <typename>
 struct SelectCtxWithJoinPreSelect;
 struct JoinPreResult;
@@ -157,7 +158,7 @@ class NamespaceImpl final : public intrusive_atomic_rc_base {  // NOLINT(*perfor
 	friend class NsSelecter;
 	friend class JoinedSelector;
 	friend class WALSelecter;
-	friend class NsSelectFuncInterface;
+	friend class NsFtFuncInterface;
 	friend class QueryPreprocessor;
 	friend class composite_substitution_helpers::CompositeSearcher;
 	friend class SelectIteratorContainer;
@@ -206,7 +207,7 @@ class NamespaceImpl final : public intrusive_atomic_rc_base {  // NOLINT(*perfor
 		int64_t ids2SortsMemSize_{0};
 	};
 
-	class IndexesStorage final : public std::vector<std::unique_ptr<Index>> {
+	class [[nodiscard]] IndexesStorage final : public std::vector<std::unique_ptr<Index>> {
 	public:
 		using Base = std::vector<std::unique_ptr<Index>>;
 
@@ -225,6 +226,10 @@ class NamespaceImpl final : public intrusive_atomic_rc_base {  // NOLINT(*perfor
 		int firstCompositePos() const noexcept { return ns_.payloadType_.NumFields() + ns_.sparseIndexesCount_; }
 		int firstCompositePos(const PayloadType& pt, int sparseIndexes) const noexcept { return pt.NumFields() + sparseIndexes; }
 		int totalSize() const noexcept { return size(); }
+		std::span<std::unique_ptr<Index>> SparseIndexes() & noexcept {
+			return ns_.sparseIndexesCount_ ? std::span(&(*this)[firstSparsePos()], ns_.sparseIndexesCount_)
+										   : std::span<std::unique_ptr<Index>>{};
+		}
 
 	private:
 		const NamespaceImpl& ns_;
@@ -277,8 +282,15 @@ public:
 			WLockT lck(mtx_, ctx, true);
 			checkInvalidation();
 			const bool requireSync = !ctx.NoWaitSync() && ctx.GetOriginLSN().isEmpty() && !owner_.isSystem();
-			const bool isFollowerNS = owner_.repl_.clusterStatus.role == ClusterizationStatus::Role::SimpleReplica ||
-									  owner_.repl_.clusterStatus.role == ClusterizationStatus::Role::ClusterReplica;
+			const bool isFollowerNS = owner_.repl_.clusterStatus.role == ClusterOperationStatus::Role::SimpleReplica ||
+									  owner_.repl_.clusterStatus.role == ClusterOperationStatus::Role::ClusterReplica;
+
+			if (!ctx.GetOriginLSN().isEmpty() && !owner_.repl_.token.empty() && owner_.repl_.token != ctx.LeaderReplicationToken()) {
+				throw Error(errReplParams,
+							"Different replication tokens on leader and follower for namespace '{}'. Expected '{}', but got '{}'",
+							owner_.name_, owner_.repl_.token, ctx.LeaderReplicationToken());
+			}
+
 			bool synchronized = isFollowerNS || !requireSync || syncer_.IsInitialSyncDone(owner_.name_);
 			while (!synchronized) {
 				// This is required in case of rename during sync wait
@@ -397,36 +409,22 @@ public:
 
 	Item NewItem(const RdxContext& ctx);
 	void ToPool(ItemImpl* item);
-	// Get metadata from storage by key
 	std::string GetMeta(const std::string& key, const RdxContext& ctx);
-	// Put metadata to storage by key
 	void PutMeta(const std::string& key, std::string_view data, const RdxContext& ctx);
-	// Delete metadata from storage by key
 	void DeleteMeta(const std::string& key, const RdxContext& ctx);
-	int64_t GetSerial(const std::string& field, UpdatesContainer& replUpdates, const NsContext& ctx);
+	int64_t GetSerial(std::string_view field, UpdatesContainer& replUpdates, const NsContext& ctx);
 
-	int getIndexByName(std::string_view index) const;
-	int getIndexByNameOrJsonPath(std::string_view name) const;
-	int getScalarIndexByName(std::string_view name) const;
-	bool tryGetIndexByName(std::string_view name, int& index) const noexcept;
-	bool getIndexByNameOrJsonPath(std::string_view name, int& index) const;
-	bool getIndexByJsonPath(std::string_view jsonPath, int& index) const noexcept;
-	bool getScalarIndexByName(std::string_view name, int& index) const noexcept;
-	bool getSparseIndexByJsonPath(std::string_view jsonPath, int& index) const noexcept;
-	PayloadType getPayloadType(const RdxContext& ctx) const;
+	PayloadType GetPayloadType(const RdxContext& ctx) const;
 
 	void FillResult(LocalQueryResults& result, const IdSet& ids) const;
-
-	void EnablePerfCounters(bool enable = true) { enablePerfCounters_ = enable; }
 
 	ReplicationState GetReplState(const RdxContext&) const;
 	ReplicationStateV2 GetReplStateV2(const RdxContext&) const;
 
-	void OnConfigUpdated(DBConfigProvider& configProvider, const RdxContext& ctx);
-	StorageOpts GetStorageOpts(const RdxContext&);
+	void OnConfigUpdated(const DBConfigProvider& configProvider, const RdxContext& ctx);
 	std::shared_ptr<const Schema> GetSchemaPtr(const RdxContext& ctx) const;
 	IndexesCacheCleaner GetIndexesCacheCleaner() { return IndexesCacheCleaner{*this}; }
-	Error SetClusterizationStatus(ClusterizationStatus&& status, const RdxContext& ctx);
+	Error SetClusterOperationStatus(ClusterOperationStatus&& status, const RdxContext& ctx);
 	void ApplySnapshotChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, const RdxContext& ctx);
 	void GetSnapshot(Snapshot& snapshot, const SnapshotOpts& opts, const RdxContext& ctx);
 	void SetTagsMatcher(TagsMatcher&& tm, const RdxContext& ctx);
@@ -438,6 +436,7 @@ public:
 		return storage_.GetStatusCached().err;
 	}
 	void RebuildFreeItemsStorage(const RdxContext& ctx);
+	std::shared_ptr<reindexer::Embedder> QueryEmbedder(std::string_view fieldName, const RdxContext& ctx) const;
 
 private:
 	struct SysRecordsVersions {
@@ -455,10 +454,16 @@ private:
 
 	friend struct IndexFastUpdate;
 
-	FloatVectorsIndexes getVectorIndexes() const { return getVectorIndexes(payloadType_); }
+	int getIndexByName(std::string_view index) const;
+	int getScalarIndexByName(std::string_view name) const;
+	bool tryGetIndexByName(std::string_view name, int& index) const noexcept;
+	bool getIndexByNameOrJsonPath(std::string_view name, int& index) const;
+	bool getIndexByJsonPath(std::string_view jsonPath, int& index) const noexcept;
+	bool getScalarIndexByName(std::string_view name, int& index) const noexcept;
+	bool getSparseIndexByJsonPath(std::string_view jsonPath, int& index) const noexcept;
+	FloatVectorsIndexes getVectorIndexes() const;
 	FloatVectorsIndexes getVectorIndexes(const PayloadType& pt) const;
 	[[nodiscard]] bool haveFloatVectorsIndexes() const noexcept { return !floatVectorsIndexesPositions_.empty(); }
-	Error rebuildIndexesTagsPaths(const TagsMatcher& newTm);
 	ReplicationState getReplState() const;
 	std::string sysRecordName(std::string_view sysTag, uint64_t version);
 	void writeSysRecToStorage(std::string_view data, std::string_view sysTag, uint64_t& version, bool direct);
@@ -499,8 +504,7 @@ private:
 	template <typename PathsT, typename JsonPathsContainerT>
 	void createCompositeFieldsSet(const std::string& idxName, const PathsT& paths, FieldsSet& fields);
 	void verifyCompositeIndex(const IndexDef& indexDef) const;
-	template <typename GetNameF>
-	void verifyUpsertIndex(std::string_view action, const IndexDef& indexDef, GetNameF&&) const;
+	void verifyUpsertIndex(std::string_view action, const IndexDef& indexDef) const;
 	void verifyUpdateIndex(const IndexDef& indexDef) const;
 	void verifyUpdateCompositeIndex(const IndexDef& indexDef) const;
 	bool updateIndex(const IndexDef& indexDef, bool disableTmVersionInc);

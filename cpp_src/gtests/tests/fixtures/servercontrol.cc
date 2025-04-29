@@ -485,6 +485,9 @@ void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfig
 	asyncReplConf.onlineUpdatesDelayMSec = config.onlineUpdatesDelayMSec;
 	asyncReplConf.retrySyncIntervalMSec = 1000;
 	asyncReplConf.logLevel = LogTrace;
+	asyncReplConf.selfReplToken = config.selfReplicationToken;
+	auto err = checkSelfToken(asyncReplConf.selfReplToken);
+	ASSERT_TRUE(err.ok()) << err.what();
 	asyncReplConf.mode = cluster::AsyncReplConfigData::Str2mode(config.mode);
 	for (auto& node : config.nodes) {
 		asyncReplConf.nodes.emplace_back(cluster::AsyncReplNodeConfig{node.dsn});
@@ -500,39 +503,95 @@ void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfig
 	ReplicationConfigData replConf;
 	replConf.serverID = config.serverId;
 	replConf.clusterID = 2;
+	replConf.admissibleTokens = config.admissibleTokens;
+	err = mergeAdmissibleTokens(replConf.admissibleTokens);
+	ASSERT_TRUE(err.ok()) << err.what();
 
-	upsertConfigItemFromObject("replication", replConf);
-	upsertConfigItemFromObject("async_replication", asyncReplConf);
+	upsertConfigItemFromObject(replConf);
+	upsertConfigItemFromObject(asyncReplConf);
 }
 
-void ServerControl::Interface::AddFollower(const DSN& dsn, std::optional<std::vector<std::string>>&& nsList,
+template <typename T>
+T ServerControl::Interface::getConfigByType() const {
+	const std::string type = std::is_same_v<T, reindexer::cluster::AsyncReplConfigData> ? "async_replication" : "replication";
+	BaseApi::QueryResultsType qr;
+	auto err = api.reindexer->Select(reindexer::Query(reindexer::kConfigNamespace).Where("type", CondEq, type), qr);
+	EXPECT_TRUE(err.ok()) << err.what();
+	EXPECT_EQ(qr.Count(), 1);
+	reindexer::WrSerializer ser;
+	err = qr.begin().GetJSON(ser, false);
+	EXPECT_TRUE(err.ok()) << err.what();
+	T config;
+	gason::JsonParser parser;
+	err = config.FromJSON(parser.Parse(ser.Slice())[type]);
+	EXPECT_TRUE(err.ok()) << err.what();
+	return config;
+}
+
+template <typename T>
+void ServerControl::Interface::UpdateConfigReplTokens(const T& tok) {
+	constexpr bool isAdmissibleTokens = std::is_same_v<T, NsNamesHashMapT<std::string>>;
+	using ConfigT = std::conditional_t<isAdmissibleTokens, ReplicationConfigData, reindexer::cluster::AsyncReplConfigData>;
+
+	auto config = getConfigByType<ConfigT>();
+	if constexpr (isAdmissibleTokens) {
+		config.admissibleTokens = tok;
+		auto err = mergeAdmissibleTokens(config.admissibleTokens);
+		ASSERT_TRUE(err.ok()) << err.what();
+	} else {
+		config.selfReplToken = tok;
+		auto err = checkSelfToken(config.selfReplToken);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
+	upsertConfigItemFromObject(config);
+}
+template void ServerControl::Interface::UpdateConfigReplTokens(const NsNamesHashMapT<std::string>&);
+template void ServerControl::Interface::UpdateConfigReplTokens(const std::string&);
+
+Error ServerControl::Interface::mergeAdmissibleTokens(reindexer::NsNamesHashMapT<std::string>& tokens) const {
+	auto curConfig = getConfigByType<ReplicationConfigData>();
+
+	for (const auto& [ns, token] : curConfig.admissibleTokens) {
+		if (tokens.count(ns) != 0) {
+			auto newToken = tokens.at(ns);
+			if (newToken != token) {
+				return Error(errParams, "Replication config contain another token '{}' for namespace '{}'. Got - '{}'", token,
+							 std::string_view(ns), newToken);
+			}
+			continue;
+		}
+		tokens.insert({ns, token});
+	}
+	return {};
+}
+
+Error ServerControl::Interface::checkSelfToken(const std::string& token) const {
+	auto config = getConfigByType<cluster::AsyncReplConfigData>();
+	if (config.selfReplToken.empty()) {
+		return {};
+	}
+
+	if (config.selfReplToken != token) {
+		return Error(errParams, "Replication config contain another self replication token '{}'. Got - '{}'", config.selfReplToken, token);
+	}
+	return {};
+}
+
+void ServerControl::Interface::AddFollower(const ServerControl::Interface::Ptr& follower, std::optional<std::vector<std::string>>&& nsList,
 										   cluster::AsyncReplicationMode replMode) {
-	auto getCurConf = [this](cluster::AsyncReplConfigData& curConf) {
-		BaseApi::QueryResultsType qr;
-		auto err = api.reindexer->Select(Query(kConfigNamespace).Where("type", CondEq, "async_replication"), qr);
-		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_EQ(qr.Count(), 1);
-		WrSerializer ser;
-		err = qr.begin().GetJSON(ser, false);
-		ASSERT_TRUE(err.ok()) << err.what();
-		curConf = cluster::AsyncReplConfigData();
-		gason::JsonParser parser;
-		err = curConf.FromJSON(parser.Parse(ser.Slice())["async_replication"]);
-		ASSERT_TRUE(err.ok()) << err.what();
-	};
-	cluster::AsyncReplConfigData curConf;
-	getCurConf(curConf);
+	cluster::AsyncReplConfigData curConf = getConfigByType<cluster::AsyncReplConfigData>();
 	if (curConf.role != cluster::AsyncReplConfigData::Role::Leader) {
 		MakeLeader();
-		getCurConf(curConf);
+		curConf = getConfigByType<cluster::AsyncReplConfigData>();
 	}
 	cluster::AsyncReplNodeConfig newNode;
-	newNode.SetRPCDsn(dsn);
+	newNode.SetRPCDsn(MakeDsn(reindexer_server::UserRole::kRoleReplication, follower));
 	if (replMode != cluster::AsyncReplicationMode::Default) {
 		newNode.SetReplicationMode(replMode);
 	}
 	auto found = std::find_if(curConf.nodes.begin(), curConf.nodes.end(),
-							  [&dsn](const cluster::AsyncReplNodeConfig& node) { return node.GetRPCDsn() == dsn; });
+							  [&newNode](const cluster::AsyncReplNodeConfig& node) { return node.GetRPCDsn() == newNode.GetRPCDsn(); });
 	ASSERT_TRUE(found == curConf.nodes.end());
 	curConf.nodes.emplace_back(std::move(newNode));
 	if (nsList.has_value()) {
@@ -549,7 +608,7 @@ void ServerControl::Interface::AddFollower(const DSN& dsn, std::optional<std::ve
 	curConf.logLevel = LogTrace;
 	curConf.mode = cluster::AsyncReplicationMode::Default;
 
-	upsertConfigItemFromObject("async_replication", curConf);
+	upsertConfigItemFromObject(curConf);
 }
 
 template <typename ValueT>
@@ -755,7 +814,9 @@ std::vector<std::string> ServerControl::Interface::getCLIParamArray(bool enableS
 }
 
 template <typename ValueT>
-void ServerControl::Interface::upsertConfigItemFromObject(std::string_view type, const ValueT& object) {
+void ServerControl::Interface::upsertConfigItemFromObject(const ValueT& object) {
+	const std::string type = std::is_same_v<ValueT, reindexer::cluster::AsyncReplConfigData> ? "async_replication" : "replication";
+
 	WrSerializer ser;
 	JsonBuilder jb(ser);
 	jb.Put("type", type);

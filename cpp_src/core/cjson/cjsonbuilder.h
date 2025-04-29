@@ -7,8 +7,6 @@
 
 namespace reindexer {
 
-void copyCJsonValue(TagType tagType, Serializer& rdser, WrSerializer& wrser);
-
 class CJsonBuilder {
 public:
 	CJsonBuilder(WrSerializer& ser, ObjType = ObjType::TypeObject, const TagsMatcher* tm = nullptr, TagName tagName = TagName::Empty());
@@ -76,13 +74,7 @@ public:
 			ser_->PutFloat(d);
 		}
 	}
-	void Array(TagName tagName, Serializer& ser, TagType tagType, int count) {
-		ser_->PutCTag(ctag{TAG_ARRAY, tagName});
-		ser_->PutCArrayTag(carraytag(count, tagType));
-		while (count--) {
-			copyCJsonValue(tagType, ser, *ser_);
-		}
-	}
+	void Array(TagName, Serializer&, TagType, int count);
 
 	void Write(std::string_view data) { ser_->Write(data); }
 

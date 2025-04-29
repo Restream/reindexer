@@ -14,8 +14,7 @@ public:
 	IndexRTree(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg)
 		: IndexUnordered<Map>{idef, std::move(payloadType), std::move(fields), cacheCfg} {}
 
-	SelectKeyResults SelectKey(const VariantArray& keys, CondType, SortType, Index::SelectOpts, const BaseFunctionCtx::Ptr&,
-							   const RdxContext&) override;
+	SelectKeyResults SelectKey(const VariantArray& keys, CondType, SortType, const Index::SelectContext&, const RdxContext&) override;
 	using IndexUnordered<Map>::Upsert;
 	void Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) override;
 	using IndexUnordered<Map>::Delete;

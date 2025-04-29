@@ -18,7 +18,6 @@ class WrSerializer;
 class NsContext;
 struct ResultFetchOpts;
 struct ItemImplRawData;
-class SelectFunctionsHolder;
 class NamespaceImpl;
 struct CsvOrdering;
 class FieldsFilter;
@@ -30,7 +29,7 @@ class ItemIterator;
 
 /// LocalQueryResults is an interface for iterating over documents, returned by Query from Reindexer.<br>
 /// *Lifetime*: LocalQueryResults uses Copy-On-Write semantics, so it has independent lifetime and state - e.g., acquired from Reindexer.
-/// LocalQueryResults cannot be externaly changed or deleted even in case of changing origin data in DB.<br>
+/// LocalQueryResults cannot be externally changed or deleted even in case of changing origin data in DB.<br>
 /// *Thread safety*: LocalQueryResults is thread safe.
 
 class LocalQueryResults {
@@ -122,16 +121,15 @@ public:
 		items_.EmplaceBack(r, std::forward<Args>(args)...);
 	}
 
-	// use enableHold = false only if you are sure that the LocalQueryResults will be destroyed before the item
+	// Make sure that the LocalQueryResults will be destroyed before the item
 	// or if data from the item are contained in namespace added to the LocalQueryResults
-	// enableHold is ignored when withData = false
-	void AddItem(Item& item, bool withData = false, bool enableHold = true);
+	void AddItemNoHold(Item& item, lsn_t nsIncarnationTag, bool withData = false);
 	std::string Dump() const;
 	void Erase(const ItemRefVector::Iterator& begin, const ItemRefVector::Iterator& end) { items_.Erase(begin, end); }
 	size_t Count() const noexcept { return items_.Size(); }
 	size_t TotalCount() const noexcept { return totalCount; }
 	const std::string& GetExplainResults() const& noexcept { return explainResults; }
-	const std::string& GetExplainResults() const&&;
+	auto GetExplainResults() const&& = delete;
 	std::string&& MoveExplainResults() & noexcept { return std::move(explainResults); }
 	const std::vector<AggregationResult>& GetAggregationResults() const& noexcept { return aggregationResults; }
 	const std::vector<AggregationResult>& GetAggregationResults() const&& = delete;
@@ -189,10 +187,10 @@ public:
 	void SaveRawData(ItemImplRawData&&);
 
 	// Add owning ns pointer
-	// noLock has always to be 'true' (i.e. this method can only be called unders Namespace's lock)
+	// noLock has always to be 'true' (i.e. this method can only be called under Namespace's lock)
 	void AddNamespace(NamespaceImplPtr, bool noLock);
 	// Add non-owning ns pointer
-	// noLock has always to be 'true' (i.e. this method can only be called unders Namespace's lock)
+	// noLock has always to be 'true' (i.e. this method can only be called under Namespace's lock)
 	void AddNamespace(NamespaceImpl*, bool noLock);
 	void RemoveNamespace(const NamespaceImpl* ns);
 	bool IsNamespaceAdded(const NamespaceImpl* ns) const noexcept {
@@ -210,7 +208,7 @@ private:
 	void encodeJSON(int idx, WrSerializer& ser, ConstIterator::NsNamesCache&) const;
 	ItemRefVector items_;
 	std::vector<ItemImplRawData> rawDataHolder_;
-	friend SelectFunctionsHolder;
+	friend class FtFunctionsHolder;
 
 	class NsDataHolder {
 	public:
@@ -225,7 +223,7 @@ private:
 		NamespaceImplPtr nsPtr_;
 
 	public:
-		NamespaceImpl* ns;
+		const NamespaceImpl* ns;
 		StringsHolderPtr strHolder;
 	};
 

@@ -8,7 +8,7 @@ info:
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  version: 5.1.0
+  version: 5.2.0
 servers:
 - url: /api/v1
 tags:
@@ -3292,6 +3292,56 @@ paths:
               schema:
                 $ref: '#/components/schemas/StatusResponse'
   /db/{database}/namespaces/%23config/items:
+    get:
+      tags:
+      - system
+      summary: Get system configs
+      description: This operation will return system configs
+      operationId: getSystemConfigs
+      parameters:
+      - name: database
+        in: path
+        description: Database name
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemConfigItems'
+        "400":
+          description: Invalid arguments supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        "404":
+          description: Entry not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        "408":
+          description: Context timeout
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        "500":
+          description: Unexpected internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'  
     put:
       tags:
       - system
@@ -3335,6 +3385,57 @@ paths:
                 $ref: '#/components/schemas/StatusResponse'
         "404":
           description: Entry not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        "408":
+          description: Context timeout
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        "500":
+          description: Unexpected internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+  /db/default_configs:
+    get:
+      tags:
+      - system
+      summary: Get default system configs
+      description: This operation will return default system configs.
+      operationId: getDefaultSystemConfigs
+      parameters:
+      - name: type
+        in: query
+        description: Config type
+        required: true
+        schema:
+          type: string
+          default: namespaces
+          enum:
+          - namespaces
+          - replication
+          - async_replication
+          - profiling
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemConfigItem'
+        "400":
+          description: Invalid arguments supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        "403":
+          description: Forbidden
           content:
             application/json:
               schema:
@@ -4309,6 +4410,9 @@ components:
                 - URL
               description: Upsert embedding configuration
               properties:
+                name:
+                  type: string
+                  description: Embedder name. Optional
                 URL:
                   type: string
                   description: Embed service URL
@@ -5117,7 +5221,19 @@ components:
           type: array
           description: List of distinct values of the field
           items:
+            oneOf:
+              - $ref: '#/components/schemas/DistincOneItemDef'
+              - $ref: '#/components/schemas/DistinctMultiItemDef'
+
+    DistincOneItemDef:
             type: string
+
+    DistinctMultiItemDef:
+      type: array
+      description: Distinct fields values
+      items:
+        type: string
+
     QueryColumnDef:
       type: object
       properties:
@@ -5543,6 +5659,14 @@ components:
           description: Determines if cache is currently in use. Usually it has 'false'
             value for uncommitted indexes
       description: Performance statistics for specific LRU-cache instance
+    SystemConfigItems:
+      type: object
+      properties:
+        items:
+          type: array
+          description: "Documents, matched specified filters"
+          items:
+            $ref: '#/components/schemas/SystemConfigItem'
     SystemConfigItem:
       required:
       - type
@@ -5857,6 +5981,19 @@ components:
           type: integer
           default: 2
           description: Cluster ID - must be same for client and for master
+        admissible_replication_tokens:
+          description: Lists of namespaces with their admissible tokens
+          type: array
+          items:
+            type: object
+            properties:
+              token:
+                type: string
+              namespaces:
+                type: array
+                description: Namespaces which can only be replicated by a leader with the same token
+                items:
+                  type: object
     AsyncReplicationConfig:
       required:
       - namespaces
@@ -5936,6 +6073,9 @@ components:
             followers
           items:
             type: string
+        self_replication_token:
+          type: string
+          description: Token of the current node that it sends to the follower for verification
         nodes:
           type: array
           description: Followers list

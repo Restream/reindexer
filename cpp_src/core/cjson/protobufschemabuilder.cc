@@ -43,13 +43,14 @@ ProtobufSchemaBuilder::ProtobufSchemaBuilder(ProtobufSchemaBuilder&& obj) noexce
 ProtobufSchemaBuilder::~ProtobufSchemaBuilder() { End(); }
 
 std::pair<std::string_view, KeyValueType> ProtobufSchemaBuilder::jsonSchemaTypeToProtobufType(const FieldProps& props) const {
+	using namespace std::string_view_literals;
 	if (props.type == "string"sv) {
 		return {"string"sv, KeyValueType::String{}};
 	} else if (props.type == "integer"sv) {
 		if (tm_ && pt_) {
 			TagsPath& tagsPath = fieldsTypes_->tagsPath_;
-			int field = tm_->tags2field(tagsPath);
-			if (field > 0 && pt_->Field(field).Type().Is<KeyValueType::Int>()) {
+			const auto field = tm_->tags2field(tagsPath);
+			if (field.IsRegularIndex() && field.ValueType().Is<KeyValueType::Int>()) {
 				return {"int64"sv, KeyValueType::Int{}};
 			}
 		}
@@ -119,13 +120,13 @@ ProtobufSchemaBuilder ProtobufSchemaBuilder::Object(TagName tagName, std::string
 	return obj;
 }
 
-void ProtobufSchemaBuilder::writeField(std::string_view name, std::string_view type, TagName number) {
+void ProtobufSchemaBuilder::writeField(std::string_view name, std::string_view type, TagName tagName) {
 	if (ser_) {
 		ser_->Write(type);
 		ser_->Write(" ");
 		ser_->Write(name);
 		ser_->Write(" = ");
-		ser_->Write(std::to_string(number.AsNumber()));
+		ser_->Write(std::to_string(tagName.AsNumber()));
 	}
 }
 

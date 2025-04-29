@@ -4,10 +4,10 @@
 #include "core/ft/config/baseftconfig.h"
 #include "core/ft/filters/itokenfilter.h"
 #include "core/ft/ft_fast/dataholder.h"
+#include "core/ft/ftctx.h"
 #include "core/ft/ftdsl.h"
 #include "core/ft/ftsetcashe.h"
 #include "core/index/indexunordered.h"
-#include "core/selectfunc/ctx/ftctx.h"
 #include "estl/shared_mutex.h"
 #include "fieldsgetter.h"
 
@@ -21,12 +21,10 @@ public:
 	IndexText(const IndexText<Map>& other);
 	IndexText(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg);
 
-	SelectKeyResults SelectKey(const VariantArray& keys, CondType, SortType, Index::SelectOpts, const BaseFunctionCtx::Ptr&,
-							   const RdxContext&) override final;
-	SelectKeyResults SelectKey(const VariantArray& keys, CondType, Index::SelectOpts, const BaseFunctionCtx::Ptr&, FtPreselectT&&,
-							   const RdxContext&) override;
+	SelectKeyResults SelectKey(const VariantArray& keys, CondType, SortType, const Index::SelectContext&, const RdxContext&) override final;
+	SelectKeyResults SelectKey(const VariantArray& keys, CondType, const Index::SelectContext&, FtPreselectT&&, const RdxContext&) override;
 	void UpdateSortedIds(const UpdateSortedContext&) noexcept override {}
-	virtual IdSet::Ptr Select(FtCtx::Ptr ctx, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&, FtUseExternStatuses,
+	virtual IdSet::Ptr Select(FtCtx&, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&, FtUseExternStatuses,
 							  const RdxContext&) = 0;
 	void SetOpts(const IndexOpts& opts) override;
 	void Commit() override final {
@@ -60,10 +58,9 @@ protected:
 
 	virtual void commitFulltextImpl() = 0;
 	SelectKeyResults doSelectKey(const VariantArray& keys, const std::optional<IdSetCacheKey>&, FtMergeStatuses&&,
-								 FtUseExternStatuses useExternSt, bool inTransaction, RankSortType, const BaseFunctionCtx::Ptr& ctx,
-								 const RdxContext&);
+								 FtUseExternStatuses useExternSt, bool inTransaction, RankSortType, FtCtx&, const RdxContext&);
 
-	SelectKeyResults resultFromCache(const VariantArray& keys, FtIdSetCache::Iterator&&, const BaseFunctionCtx::Ptr&);
+	SelectKeyResults resultFromCache(const VariantArray& keys, FtIdSetCache::Iterator&&, FtCtx&);
 	void build(const RdxContext& rdxCtx);
 
 	void initSearchers();

@@ -7,11 +7,13 @@
 
 #include "cluster/config.h"
 #include "core/dbconfig.h"
+#include "core/namespace/bgnamespacedeleter.h"
 #include "core/namespace/namespace.h"
 #include "core/rdxcontext.h"
 #include "core/reindexerconfig.h"
 #include "core/transaction/transaction.h"
 #include "estl/atomic_unique_ptr.h"
+#include "estl/concepts.h"
 #include "estl/fast_hash_map.h"
 #include "estl/h_vector.h"
 #include "estl/timed_mutex.h"
@@ -32,7 +34,7 @@ class UpdatesFilters;
 
 namespace cluster {
 struct NodeData;
-class Clusterizator;
+class ClusterManager;
 class RoleSwitcher;
 class LeaderSyncThread;
 template <typename T>
@@ -44,7 +46,7 @@ struct RaftInfo;
 class ReindexerImpl {
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Reindexer>;
 	using StatsSelectMutex = MarkedMutex<timed_mutex, MutexMark::ReindexerStats>;
-	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::* MemFn, typename Arg, typename... Args>
+	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const RdxContext& ctx, Arg arg, Args&&... args);
 	template <auto MemFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const RdxContext& ctx, Arg&&, Args&&...);
@@ -115,18 +117,17 @@ public:
 	Error PutMeta(std::string_view nsName, const std::string& key, std::string_view data, const RdxContext& ctx);
 	Error EnumMeta(std::string_view nsName, std::vector<std::string>& keys, const RdxContext& ctx);
 	Error DeleteMeta(std::string_view nsName, const std::string& key, const RdxContext& ctx);
-	Error InitSystemNamespaces();
 	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions, const RdxContext& ctx);
 	Error GetProtobufSchema(WrSerializer& ser, std::vector<std::string>& namespaces);
 	Error GetReplState(std::string_view nsName, ReplicationStateV2& state, const RdxContext& ctx) noexcept;
-	Error SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus& status, const RdxContext& ctx) noexcept;
+	Error SetClusterOperationStatus(std::string_view nsName, const ClusterOperationStatus& status, const RdxContext& ctx) noexcept;
 	Error GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, Snapshot& snapshot, const RdxContext& ctx) noexcept;
 	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk& ch, const RdxContext& ctx) noexcept;
 	Error Status() noexcept {
 		if rx_likely (connected_.load(std::memory_order_acquire)) {
 			return {};
 		}
-		return Error(errNotValid, "DB is not connected");
+		return {errNotValid, "DB is not connected"};
 	}
 	Error SuggestLeader(const cluster::NodeData& suggestion, cluster::NodeData& response);
 	Error LeadersPing(const cluster::NodeData&);
@@ -208,10 +209,11 @@ private:
 		typedef contexted_shared_lock<Mutex, const RdxContext> RLockT;
 		typedef NsWLock WLockT;
 
-		Locker(const cluster::IDataSyncer& clusterizator, ReindexerImpl& owner) noexcept : syncer_(clusterizator), owner_(owner) {}
+		Locker(const cluster::IDataSyncer& clusterManager, ReindexerImpl& owner) noexcept : syncer_(clusterManager), owner_(owner) {}
 
 		RLockT RLock(const RdxContext& ctx) const { return RLockT(mtx_, ctx); }
-		WLockT DataWLock(const RdxContext& ctx) const {
+		WLockT DataWLock(const RdxContext& ctx, std::string_view nsName) const {
+			checkReplTokens(nsName, ctx);
 			WLockT lck(mtx_, ctx, true);
 			awaitSync(lck, ctx);
 			return lck;
@@ -219,11 +221,13 @@ private:
 		WLockT SimpleWLock(const RdxContext& ctx) const { return WLockT(mtx_, ctx, false); }
 
 		NsCreationLockerT::Locks CreationLock(std::string_view name, const RdxContext& ctx) {
+			checkReplTokens(name, ctx);
 			auto lck = nsCreationLocker_.Lock(name, ctx);
 			awaitSync(lck, ctx);
 			return lck;
 		}
 		NsCreationLockerT::Locks CreationLock(std::string_view name1, std::string_view name2, const RdxContext& ctx) {
+			checkReplTokens(name1, ctx);
 			auto lck = nsCreationLocker_.Lock(name1, name2, ctx);
 			awaitSync(lck, ctx);
 			return lck;
@@ -236,14 +240,25 @@ private:
 				return;
 			}
 			auto clusterStatus = owner_.clusterStatus_;
-			const bool isFollowerDB = clusterStatus.role == ClusterizationStatus::Role::SimpleReplica ||
-									  clusterStatus.role == ClusterizationStatus::Role::ClusterReplica;
+			const bool isFollowerDB = clusterStatus.role == ClusterOperationStatus::Role::SimpleReplica ||
+									  clusterStatus.role == ClusterOperationStatus::Role::ClusterReplica;
 			bool synchronized = isFollowerDB || syncer_.IsInitialSyncDone();
+
 			while (!synchronized) {
 				lck.unlock();
 				syncer_.AwaitInitialSync(ctx);
 				lck.lock();
 				synchronized = syncer_.IsInitialSyncDone();
+			}
+		}
+
+		void checkReplTokens(std::string_view nsName, const RdxContext& ctx) const {
+			if (ctx.GetOriginLSN().isEmpty()) {
+				return;
+			}
+
+			if (auto err = owner_.configProvider_.CheckAsyncReplicationToken(nsName, ctx.LeaderReplicationToken()); !err.ok()) {
+				throw Error(err.code(), "Modification operation cannot be performed for namespace '{}': {}", nsName, err.what());
 			}
 		}
 
@@ -266,7 +281,8 @@ private:
 	void updateConfigProvider(const gason::JsonNode& config, bool autoCorrect = false);
 	template <typename ConfigT>
 	void updateConfFile(const ConfigT& newConf, std::string_view filename);
-	void onProfiligConfigLoad();
+	void onProfilingConfigLoad();
+	Error initSystemNamespaces();
 	template <const char* type, typename ConfigT>
 	Error tryLoadConfFromFile(const std::string& filename);
 	template <const char* type, typename ConfigT>
@@ -296,7 +312,7 @@ private:
 	Error readShardingConfigFile();
 	void saveNewShardingConfigFile(const cluster::ShardingConfig& config) const;
 	void checkClusterRole(std::string_view nsName, lsn_t originLsn) const;
-	void setClusterizationStatus(ClusterizationStatus&& status, const RdxContext& ctx);
+	void setClusterOperationStatus(ClusterOperationStatus&& status, const RdxContext& ctx);
 	std::string generateTemporaryNamespaceName(std::string_view baseName);
 	Error enableStorage(const std::string& storagePath);
 
@@ -312,6 +328,15 @@ private:
 	template <typename... Args>
 	[[nodiscard]] Error shardingConfigReplAction(const RdxContext& ctx, updates::URType type, Args&&... args) noexcept;
 
+	template <concepts::OneOf<Query, JoinedQuery> Q>
+	std::optional<Q> embedKNNQueries(const Q& query, const RdxContext& ctx);
+
+	template <concepts::OneOf<Query, JoinedQuery> Q>
+	void embedNestedQueries(const Query& q, const std::vector<Q>& nestedQueries, std::invocable<Query&, size_t, Q&&> auto replacer,
+							const RdxContext& ctx, std::optional<Query>& queryCopy);
+
+	std::optional<Query> embedQuery(const Query& query, const RdxContext& ctx);
+
 	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str, nocase_less_str> namespaces_;
 
 	StatsLocker statsLocker_;
@@ -324,8 +349,8 @@ private:
 	BackgroundNamespaceDeleter bgDeleter_;
 
 	QueriesStatTracer queriesStatTracker_;
-	std::unique_ptr<cluster::Clusterizator> clusterizator_;
-	ClusterizationStatus clusterStatus_;
+	std::unique_ptr<cluster::ClusterManager> clusterManager_;
+	ClusterOperationStatus clusterStatus_;
 	DBConfigProvider configProvider_;
 	atomic_unique_ptr<cluster::ClusterConfigData> clusterConfig_;
 	struct {
@@ -342,7 +367,7 @@ private:
 			}
 		}
 
-		operator bool() const noexcept {
+		explicit operator bool() const noexcept {
 			std::lock_guard lk(m_);
 			return config_;
 		}

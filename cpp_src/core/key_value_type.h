@@ -9,10 +9,7 @@
 
 namespace reindexer {
 
-class KeyValueType {
-	friend class Serializer;
-	friend class WrSerializer;
-
+class [[nodiscard]] KeyValueType {
 public:
 	// When add new type change name of function Is<> and update ForAllTypes and ForAnyType
 	struct Int64 {};
@@ -74,7 +71,7 @@ private:
 		Visitor& visitor_;
 	};
 
-	enum class KVT {
+	enum class KVT : uint8_t {
 		Int64 = TAG_VARINT,
 		Double = TAG_DOUBLE,
 		String = TAG_STRING,
@@ -89,27 +86,6 @@ private:
 		Float
 	} value_{KVT::Undefined};
 	RX_ALWAYS_INLINE constexpr explicit KeyValueType(KVT v) noexcept : value_{v} {}
-
-	[[nodiscard]] RX_ALWAYS_INLINE static KeyValueType fromNumber(int n) {
-		switch (n) {
-			case static_cast<int>(KVT::Int64):
-			case static_cast<int>(KVT::Double):
-			case static_cast<int>(KVT::String):
-			case static_cast<int>(KVT::Bool):
-			case static_cast<int>(KVT::Null):
-			case static_cast<int>(KVT::Int):
-			case static_cast<int>(KVT::Undefined):
-			case static_cast<int>(KVT::Composite):
-			case static_cast<int>(KVT::Tuple):
-			case static_cast<int>(KVT::Uuid):
-			case static_cast<int>(KVT::FloatVector):
-			case static_cast<int>(KVT::Float):
-				return KeyValueType{static_cast<KVT>(n)};
-			default:
-				throwKVTException("Invalid int value for KeyValueType", n);
-		}
-	}
-	[[nodiscard]] RX_ALWAYS_INLINE int toNumber() const noexcept { return static_cast<int>(value_); }
 
 public:
 	RX_ALWAYS_INLINE constexpr KeyValueType(Int64) noexcept : value_{KVT::Int64} {}
@@ -304,6 +280,27 @@ public:
 
 	template <typename T>
 	static KeyValueType From();
+
+	[[nodiscard]] RX_ALWAYS_INLINE static KeyValueType FromNumber(int n) {
+		switch (n) {
+			case static_cast<int>(KVT::Int64):
+			case static_cast<int>(KVT::Double):
+			case static_cast<int>(KVT::String):
+			case static_cast<int>(KVT::Bool):
+			case static_cast<int>(KVT::Null):
+			case static_cast<int>(KVT::Int):
+			case static_cast<int>(KVT::Undefined):
+			case static_cast<int>(KVT::Composite):
+			case static_cast<int>(KVT::Tuple):
+			case static_cast<int>(KVT::Uuid):
+			case static_cast<int>(KVT::FloatVector):
+			case static_cast<int>(KVT::Float):
+				return KeyValueType{static_cast<KVT>(n)};
+			default:
+				throwKVTException("Invalid int value for KeyValueType", n);
+		}
+	}
+	[[nodiscard]] RX_ALWAYS_INLINE int ToNumber() const noexcept { return static_cast<int>(value_); }
 
 private:
 	[[noreturn]] static void throwKVTException(std::string_view msg, std::string_view param);

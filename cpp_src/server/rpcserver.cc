@@ -45,10 +45,10 @@ RPCServer::RPCServer(DBManager& dbMgr, LoggerWrapper& logger, IClientsStats* cli
 	  qrWatcher_(serverConfig_.RPCQrIdleTimeout) {}
 
 RPCServer::~RPCServer() {
+	listener_.reset();
 	if (qrWatcherThread_.joinable()) {
 		Stop();
 	}
-	listener_.reset();
 }
 
 Error RPCServer::Ping(cproto::Context&) {
@@ -60,7 +60,7 @@ static std::atomic<int> connCounter = {0};
 
 Error RPCServer::Login(cproto::Context& ctx, p_string login, p_string password, p_string db, std::optional<bool> createDBIfMissing,
 					   std::optional<bool> checkClusterID, std::optional<int> expectedClusterID, std::optional<p_string> clientRxVersion,
-					   std::optional<p_string> appName, std::optional<int64_t> bindingCaps) {
+					   std::optional<p_string> appName, std::optional<int64_t> bindingCaps, std::optional<p_string> replToken) {
 	if (ctx.GetClientData()) {
 		return Error(errParams, "Already logged in");
 	}
@@ -85,6 +85,9 @@ Error RPCServer::Login(cproto::Context& ctx, p_string login, p_string password, 
 
 	clientData->rxVersion = clientRxVersion ? SemVersion(std::string_view(clientRxVersion.value())) : SemVersion();
 	clientData->pusher.SetWriter(ctx.writer);
+	if (replToken) {
+		clientData->replToken = make_key_string(std::move(*replToken));
+	}
 
 #ifdef REINDEX_WITH_V3_FOLLOWERS
 	static const reindexer::SemVersion kMinUnknownReplSupportRxVersion("2.6.0");
@@ -658,7 +661,7 @@ Error RPCServer::ModifyItem(cproto::Context& ctx, p_string ns, int format, p_str
 		if (err.ok()) {
 			if (item.GetID() != -1) {
 				LocalQueryResults lqr;
-				lqr.AddItem(item);
+				lqr.AddItemNoHold(item, lsn_t());
 				qres.AddQr(std::move(lqr), item.GetShardID());
 			}
 		} else {
@@ -742,11 +745,12 @@ Reindexer RPCServer::getDB(cproto::Context& ctx, UserRole role) {
 		}
 
 		if (rx_likely(db != nullptr)) {
-			return db->NeedTraceActivity() ? db->WithContextParams(ctx.call->execTimeout, ctx.call->lsn, ctx.call->emmiterServerId,
-																   ctx.call->shardId, ctx.call->shardingParallelExecution, ctx.clientAddr,
-																   clientData->auth.Login().Str(), clientData->connID)
-										   : db->WithContextParams(ctx.call->execTimeout, ctx.call->lsn, ctx.call->emmiterServerId,
-																   ctx.call->shardId, ctx.call->shardingParallelExecution);
+			return db->NeedTraceActivity()
+					   ? db->WithContextParams(ctx.call->execTimeout, ctx.call->lsn, ctx.call->emmiterServerId, ctx.call->shardId,
+											   ctx.call->shardingParallelExecution, clientData->replToken, ctx.clientAddr,
+											   clientData->auth.Login().Str(), clientData->connID)
+					   : db->WithContextParams(ctx.call->execTimeout, ctx.call->lsn, ctx.call->emmiterServerId, ctx.call->shardId,
+											   ctx.call->shardingParallelExecution, clientData->replToken);
 		}
 	}
 	throw Error(errParams, "Database is not opened, you should open it first");
@@ -980,7 +984,7 @@ Error RPCServer::fetchSnapshotRecords(cproto::Context& ctx, int id, int64_t offs
 	}
 	if (putHeaders) {
 		// Put extra opts at the end for backwards compatibility
-		const auto st = snapshot->ClusterizationStat();
+		const auto st = snapshot->ClusterOperationStat();
 		args.emplace_back(st.leaderId);
 		args.emplace_back(int(st.role));
 	}
@@ -1136,13 +1140,13 @@ Error RPCServer::GetReplState(cproto::Context& ctx, p_string ns) {
 	return err;
 }
 
-Error RPCServer::SetClusterizationStatus(cproto::Context& ctx, p_string ns, p_string serStatus) {
-	ClusterizationStatus status;
+Error RPCServer::SetClusterOperationStatus(cproto::Context& ctx, p_string ns, p_string serStatus) {
+	ClusterOperationStatus status;
 	auto err = status.FromJSON(giftStr(serStatus));
 	if (!err.ok()) {
 		return err;
 	}
-	return getDB(ctx, kRoleDBAdmin).SetClusterizationStatus(ns, status);
+	return getDB(ctx, kRoleDBAdmin).SetClusterOperationStatus(ns, status);
 }
 
 Error RPCServer::GetSnapshot(cproto::Context& ctx, p_string ns, p_string optsJson) {
@@ -1416,7 +1420,7 @@ bool RPCServer::Start(const std::string& addr, ev::dynamic_loop& loop, RPCSocket
 	dispatcher_.Register(cproto::kCmdSubscribeUpdates, this, &RPCServer::SubscribeUpdates);
 	dispatcher_.Register(cproto::kCmdGetReplState, this, &RPCServer::GetReplState);
 	dispatcher_.Register(cproto::kCmdCreateTmpNamespace, this, &RPCServer::CreateTemporaryNamespace);
-	dispatcher_.Register(cproto::kCmdSetClusterizationStatus, this, &RPCServer::SetClusterizationStatus);
+	dispatcher_.Register(cproto::kCmdSetClusterOperationStatus, this, &RPCServer::SetClusterOperationStatus);
 	dispatcher_.Register(cproto::kCmdGetSnapshot, this, &RPCServer::GetSnapshot);
 	dispatcher_.Register(cproto::kCmdFetchSnapshot, this, &RPCServer::FetchSnapshot);
 	dispatcher_.Register(cproto::kCmdApplySnapshotCh, this, &RPCServer::ApplySnapshotChunk);

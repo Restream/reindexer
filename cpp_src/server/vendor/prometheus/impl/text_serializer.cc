@@ -40,7 +40,7 @@ const std::string& EscapeLabelValue(const std::string& value, std::string* tmp) 
 			tmp->push_back(c);
 		}
 	}
-	return copy ? *tmp : value;
+	return copy ? *tmp : value;	 // NOLINT(bugprone-return-const-ref-from-parameter)
 }
 
 // Write a line header: metric name and labels

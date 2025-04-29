@@ -56,6 +56,10 @@ public:
 		put(tagName, val);
 		return *this;
 	}
+	template <typename T>
+	ProtobufBuilder& Put(int tagName, const T& val, int offset = 0) {
+		return Put(TagName(tagName), val, offset);
+	}
 
 	template <typename T>
 	ProtobufBuilder& Put(std::string_view tagName, const T& val, int /*offset*/ = 0) {
@@ -117,6 +121,7 @@ public:
 			}
 		}
 	}
+	void Array(int tagName, Serializer& rdser, TagType tagType, int count) { return Array(TagName(tagName), rdser, tagType, count); }
 
 	ProtobufBuilder Object(TagName = TagName::Empty(), int = KUnknownFieldSize);
 	ProtobufBuilder Object(std::string_view tagName, int size = KUnknownFieldSize) { return Object(tm_->name2tag(tagName), size); }
@@ -126,11 +131,21 @@ public:
 	template <typename... Args>
 	void Object(std::nullptr_t, Args...) = delete;
 	template <typename... Args>
+	void Object(int, Args...) = delete;
+	template <typename... Args>
 	void Array(std::nullptr_t, Args...) = delete;
+	template <typename... Args>
+	void Array(int, Args...) = delete;
 	template <typename... Args>
 	void Put(std::nullptr_t, Args...) = delete;
 	template <typename... Args>
+	void Put(int, Args...) = delete;
+	template <typename... Args>
 	void Null(std::nullptr_t, Args...) = delete;
+	template <typename... Args>
+	void Null(int, Args...) = delete;
+	void ArrayPacked(int) = delete;
+	void ArrayNotPacked(int) = delete;
 
 private:
 	std::pair<KeyValueType, bool> getExpectedFieldType() const;

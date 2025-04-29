@@ -1,6 +1,7 @@
 package reindexer
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/restream/reindexer/v5"
 	rxConfig "github.com/restream/reindexer/v5/bindings/builtinserver/config"
+	"github.com/restream/reindexer/v5/events"
 	"github.com/restream/reindexer/v5/test/helpers"
 
 	"github.com/stretchr/testify/assert"
@@ -27,7 +29,21 @@ func TestSlaveEmptyStorage(t *testing.T) {
 	if len(DB.slaveList) > 0 || len(DB.clusterList) > 0 {
 		t.Skip()
 	}
+	const nsName = "items"
 
+	// Start follower
+	cfgSlave := rxConfig.DefaultServerConfig()
+	cfgSlave.Net.HTTPAddr = "0:29089"
+	cfgSlave.Net.RPCAddr = "0:26535"
+	cfgSlave.Storage.Path = path.Join(helpers.GetTmpDBDir(), "reindex_slave2")
+	os.RemoveAll(cfgSlave.Storage.Path)
+	rxSlave := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgSlave))
+
+	stream := rxSlave.Subscribe(events.DefaultEventsStreamOptions().
+		WithNamespaceOperationEvents())
+	defer stream.Close(context.Background())
+
+	// Start leader
 	const masterServerId = 1
 	cfgMaster := rxConfig.DefaultServerConfig()
 	cfgMaster.Net.HTTPAddr = "0:29088"
@@ -61,40 +77,54 @@ nodes:
 		assert.NoError(t, err)
 	}
 
-	cfgSlave := rxConfig.DefaultServerConfig()
-	cfgSlave.Net.HTTPAddr = "0:29089"
-	cfgSlave.Net.RPCAddr = "0:26535"
-	cfgSlave.Storage.Path = path.Join(helpers.GetTmpDBDir(), "reindex_slave2")
-	os.RemoveAll(cfgSlave.Storage.Path)
-	rxSlave := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgSlave))
-
 	nsOption := reindexer.DefaultNamespaceOptions()
 	nsOption.NoStorage()
 
-	err := rxMaster.OpenNamespace("items", nsOption, TestItemStorage{})
+	err := rxMaster.OpenNamespace(nsName, nsOption, TestItemStorage{})
 	assert.NoError(t, err)
-	err = rxSlave.OpenNamespace("items", nsOption, TestItemStorage{})
+	err = rxSlave.OpenNamespace(nsName, nsOption, TestItemStorage{})
 	assert.NoError(t, err)
 	for i := 0; i < 1000; i++ {
 		testItem := TestItemStorage{ID: i, Name: "test_" + strconv.Itoa(i)}
-		err := rxMaster.Upsert("items", &testItem)
+		err := rxMaster.Upsert(nsName, &testItem)
 		if err != nil {
 			panic(err)
 		}
 	}
-	qMaster := rxMaster.Query("items")
+	// Check leader's data
+	qMaster := rxMaster.Query(nsName)
 	itMaster := qMaster.Exec()
 	defer itMaster.Close()
 	testDataMaster, errfm := itMaster.FetchAll()
 	assert.NoError(t, errfm)
 	helpers.WaitForSyncWithMaster(t, rxMaster, rxSlave)
-
-	qSlave := rxSlave.Query("items")
+	// Check follower's data
+	qSlave := rxSlave.Query(nsName)
 	itSlave := qSlave.Exec()
 	defer itSlave.Close()
 	testDataSlave, errfs := itSlave.FetchAll()
 	assert.NoError(t, errfs)
 	assert.Equal(t, testDataSlave, testDataMaster, "Data in tables are not equal\n%s\n%s", testDataSlave, testDataMaster)
+	// Check sync events
+	syncEvents := 0
+for_loop:
+	for {
+		tm := time.NewTicker(3 * time.Second)
+		select {
+		case event, ok := <-stream.Chan():
+			require.NoError(t, stream.Error())
+			require.True(t, ok)
+
+			if event.Type() == events.EventTypeNamespaceSync {
+				syncEvents += 1
+				require.Equal(t, event.Namespace(), nsName)
+			}
+		case <-tm.C:
+			// No new events for some time
+			break for_loop
+		}
+	}
+	assert.Equal(t, syncEvents, 1)
 }
 
 type Data struct {

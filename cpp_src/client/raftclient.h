@@ -35,34 +35,36 @@ public:
 	/// @param dsn - uri of server and database, like: `cproto://user@password:127.0.0.1:6534/dbname`
 	/// @param loop - event loop for connections and coroutines handling
 	/// @param opts - Connect options. May contaion any of <br>
-	Error Connect(const DSN& dsn, net::ev::dynamic_loop& loop, const client::ConnectOpts& opts = client::ConnectOpts());
+	Error Connect(const DSN& dsn, net::ev::dynamic_loop& loop, const client::ConnectOpts& opts = client::ConnectOpts()) noexcept;
 	/// Stop - shutdown connector
-	void Stop();
+	void Stop() noexcept;
 	/// SuggestLeader - send cluster leader suggestion
 	/// @param suggestion - node, suggested as a leader
 	/// @param response - node, which has to be come leader according to remote server
-	Error SuggestLeader(const NodeData& suggestion, NodeData& response);
+	Error SuggestLeader(const NodeData& suggestion, NodeData& response) noexcept;
 	/// LeadersPing - send ping from cluster leader to follower
 	/// @param leader - info about current node (leader)
-	Error LeadersPing(const NodeData& leader);
+	Error LeadersPing(const NodeData& leader) noexcept;
 	/// GetRaftInfo - get raft status of the remote node
 	/// @param info - status of the remote node
-	Error GetRaftInfo(RaftInfo& info);
+	Error GetRaftInfo(RaftInfo& info) noexcept;
 	/// Get curret connection status
 	/// @param forceCheck - forces to check status immediatlly (otherwise result of periodic check will be returned)
-	Error Status(bool forceCheck = false);
+	Error Status(bool forceCheck = false) noexcept;
 
-	Error SetDesiredLeaderId(int leaderId);
+	Error SetDesiredLeaderId(int leaderId) noexcept;
 	/// Add cancelable context
 	/// @param cancelCtx - context pointer
-	RaftClient WithContext(const IRdxCancelContext* cancelCtx) { return RaftClient(impl_, ctx_.WithCancelContext(cancelCtx)); }
+	RaftClient WithContext(const IRdxCancelContext* cancelCtx) const noexcept {
+		return RaftClient(impl_, ctx_.WithCancelContext(cancelCtx));
+	}
 
 	/// Add execution timeout to the next query
 	/// @param timeout - Optional server-side execution timeout for each subquery
-	RaftClient WithTimeout(milliseconds timeout) { return RaftClient(impl_, ctx_.WithTimeout(timeout)); }
+	RaftClient WithTimeout(milliseconds timeout) const noexcept { return RaftClient(impl_, ctx_.WithTimeout(timeout)); }
 
 private:
-	RaftClient(RPCClient* impl, InternalRdxContext&& ctx) : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}
+	RaftClient(RPCClient* impl, InternalRdxContext&& ctx) noexcept : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}
 	RPCClient* impl_;
 	bool owner_;
 	InternalRdxContext ctx_;

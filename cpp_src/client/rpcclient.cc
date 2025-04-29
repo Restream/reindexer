@@ -28,9 +28,13 @@ RPCClient::~RPCClient() { Stop(); }
 Error RPCClient::Connect(const DSN& dsn, ev::dynamic_loop& loop, const client::ConnectOpts& opts) {
 	using namespace std::string_view_literals;
 
+	if (coroutine::current() == 0) {
+		return Error(errLogic, "Coroutine client's Connect can't be called from main routine (coroutine ID is 0). DSN: {}", dsn);
+	}
+
 	std::lock_guard lck(mtx_);
 	if (conn_.IsRunning()) {
-		return Error(errLogic, "Client is already started ({})", dsn);
+		return Error(errLogic, "Client is already started. DSN: {}", dsn);
 	}
 
 	cproto::CoroClientConnection::ConnectData connectData{.uri = dsn.Parser(), .opts = {}};
@@ -49,7 +53,7 @@ Error RPCClient::Connect(const DSN& dsn, ev::dynamic_loop& loop, const client::C
 
 	connectData.opts = cproto::CoroClientConnection::Options(
 		config_.NetTimeout, config_.NetTimeout, opts.IsCreateDBIfMissing(), opts.HasExpectedClusterID(), opts.ExpectedClusterID(),
-		config_.ReconnectAttempts, config_.EnableCompression, config_.RequestDedicatedThread, config_.AppName);
+		config_.ReconnectAttempts, config_.EnableCompression, config_.RequestDedicatedThread, config_.AppName, config_.ReplToken);
 	conn_.Start(loop, std::move(connectData));
 	loop_ = &loop;
 	return errOK;
@@ -314,14 +318,6 @@ Error RPCClient::modifyItemRaw(std::string_view nsName, std::string_view cjson, 
 		return err;
 	}
 	return Error();
-}
-
-Item RPCClient::NewItem(std::string_view nsName) {
-	try {
-		return getNamespace(nsName)->NewItem();
-	} catch (const Error& err) {
-		return Item(err);
-	}
 }
 
 Error RPCClient::GetMeta(std::string_view nsName, const std::string& key, std::string& data, const InternalRdxContext& ctx) {
@@ -623,27 +619,34 @@ cproto::CommandParams RPCClient::mkCommand(cproto::CmdCode cmd, milliseconds net
 	if (ctx) {
 		return {cmd,
 				std::max(netTimeout, ctx->execTimeout()),
-				ctx->execTimeout(),
+				ctx->execTimeout().count() ? ctx->execTimeout() : netTimeout,
 				ctx->lsn(),
 				ctx->emmiterServerId(),
 				ctx->shardId(),
 				ctx->getCancelCtx(),
 				ctx->IsShardingParallelExecution()};
 	}
-	return {cmd, netTimeout, std::chrono::milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, nullptr, false};
+	return {cmd, netTimeout, netTimeout, lsn_t(), -1, ShardingKeyType::NotSetShard, nullptr, false};
 }
 
-CoroTransaction RPCClient::NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) {
-	auto ret = conn_.Call(mkCommand(cproto::kCmdStartTransaction, &ctx), nsName);
-	auto err = ret.Status();
-	if (err.ok()) {
-		try {
-			auto args = ret.GetArgs(1);
-			return CoroTransaction(this, int64_t(args[0]), config_.NetTimeout, ctx.execTimeout(), getNamespace(nsName),
-								   ctx.emmiterServerId());
-		} catch (Error& e) {
-			err = std::move(e);
+CoroTransaction RPCClient::NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) noexcept {
+	Error err;
+	try {
+		auto ret = conn_.Call(mkCommand(cproto::kCmdStartTransaction, &ctx), nsName);
+		err = ret.Status();
+		if (err.ok()) {
+			try {
+				auto args = ret.GetArgs(1);
+				return CoroTransaction(this, int64_t(args[0]), config_.NetTimeout, ctx.execTimeout(), getNamespace(nsName),
+									   ctx.emmiterServerId());
+			} catch (Error& e) {
+				err = std::move(e);
+			}
 		}
+	} catch (std::exception& e) {
+		err = std::move(e);
+	} catch (...) {
+		err = Error(errSystem, "Unknow exception in Reindexer client");
 	}
 	return CoroTransaction(std::move(err));
 }
@@ -698,10 +701,10 @@ Error RPCClient::GetReplState(std::string_view nsName, ReplicationStateV2& state
 	return ret.Status();
 }
 
-Error RPCClient::SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus& status, const InternalRdxContext& ctx) {
+Error RPCClient::SetClusterOperationStatus(std::string_view nsName, const ClusterOperationStatus& status, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	status.GetJSON(ser);
-	return conn_.Call(mkCommand(cproto::kCmdSetClusterizationStatus, &ctx), nsName, ser.Slice()).Status();
+	return conn_.Call(mkCommand(cproto::kCmdSetClusterOperationStatus, &ctx), nsName, ser.Slice()).Status();
 }
 
 Error RPCClient::GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, Snapshot& snapshot, const InternalRdxContext& ctx) {
@@ -716,8 +719,8 @@ Error RPCClient::GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, 
 								count > 0 ? p_string(args[4]) : p_string(), config_.NetTimeout);
 			const unsigned nextArgNum = count > 0 ? 5 : 4;
 			if (args.size() >= nextArgNum + 1) {
-				snapshot.ClusterizationStat(ClusterizationStatus{.leaderId = int(args[nextArgNum]),
-																 .role = reindexer::ClusterizationStatus::Role(int(args[nextArgNum + 1]))});
+				snapshot.ClusterOperationStat(ClusterOperationStatus{.leaderId = int(args[nextArgNum]),
+																 .role = reindexer::ClusterOperationStatus::Role(int(args[nextArgNum + 1]))});
 			}
 		}
 	} catch (const Error& err) {

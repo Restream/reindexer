@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-class SelectFunctionsHolder;
+class FtFunctionsHolder;
 
 class RxSelector {
 	struct NsLockerItem {
@@ -80,25 +80,25 @@ public:
 	};
 
 	template <typename T, typename QueryType>
-	static void DoSelect(const Query& q, LocalQueryResults& result, NsLocker<T>& locks, SelectFunctionsHolder& func, const RdxContext& ctx,
-						 QueryStatCalculator<QueryType>& queryStatCalculator);
+	static void DoSelect(const Query& q, std::optional<Query>& queryCopy, LocalQueryResults& result, NsLocker<T>& locks,
+						 FtFunctionsHolder& func, const RdxContext& ctx, QueryStatCalculator<QueryType>& queryStatCalculator);
 
 private:
 	struct QueryResultsContext;
 
 	template <typename T>
-	static JoinedSelectors prepareJoinedSelectors(const Query& q, LocalQueryResults& result, NsLocker<T>& locks,
-												  SelectFunctionsHolder& func, std::vector<QueryResultsContext>&, const RdxContext& ctx);
+	static JoinedSelectors prepareJoinedSelectors(const Query& q, LocalQueryResults& result, NsLocker<T>& locks, FtFunctionsHolder& func,
+												  std::vector<QueryResultsContext>&, const RdxContext& ctx);
 	template <typename T>
 	[[nodiscard]] static std::vector<SubQueryExplain> preselectSubQueries(Query& mainQuery,
 																		  std::vector<LocalQueryResults>& queryResultsHolder, NsLocker<T>&,
-																		  SelectFunctionsHolder&, const RdxContext&);
+																		  FtFunctionsHolder&, const RdxContext&);
 	template <typename T>
-	[[nodiscard]] static bool selectSubQuery(const Query& subQuery, const Query& mainQuery, NsLocker<T>&, SelectFunctionsHolder&,
+	[[nodiscard]] static bool selectSubQuery(const Query& subQuery, const Query& mainQuery, NsLocker<T>&, FtFunctionsHolder&,
 											 std::vector<SubQueryExplain>&, const RdxContext&);
 	template <typename T>
 	[[nodiscard]] static VariantArray selectSubQuery(const Query& subQuery, const Query& mainQuery, NsLocker<T>&, LocalQueryResults&,
-													 SelectFunctionsHolder&, std::variant<std::string, size_t> fieldOrKeys,
+													 FtFunctionsHolder&, std::variant<std::string, size_t> fieldOrKeys,
 													 std::vector<SubQueryExplain>&, const RdxContext&);
 	static StoredValuesOptimizationStatus isPreResultValuesModeOptimizationAvailable(const Query& jItemQ, const NamespaceImpl::Ptr& jns,
 																					 const Query& mainQ);

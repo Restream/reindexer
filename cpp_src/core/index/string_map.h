@@ -4,9 +4,9 @@
 #include "core/keyvalue/uuid.h"
 #include "core/namespace/stringsholder.h"
 #include "cpp-btree/btree_map.h"
+#include "estl/sparse_hash_int.h"
 #include "sparse-map/sparse_map.h"
 #include "tools/stringstools.h"
-#include "estl/sparse_hash_int.h"
 
 namespace reindexer {
 

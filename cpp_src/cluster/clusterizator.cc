@@ -4,21 +4,21 @@
 namespace reindexer {
 namespace cluster {
 
-Clusterizator::Clusterizator(ReindexerImpl& thisNode, size_t maxUpdatesSize)
+ClusterManager::ClusterManager(ReindexerImpl& thisNode, size_t maxUpdatesSize)
 	: updatesQueue_(maxUpdatesSize),
 	  clusterReplicator_(updatesQueue_, sharedSyncState_, thisNode),
 	  asyncReplicator_(updatesQueue_, sharedSyncState_, thisNode, *this) {}
 
-void Clusterizator::Configure(ReplicationConfigData replConfig) {
+void ClusterManager::Configure(ReplicationConfigData replConfig) {
 	std::unique_lock<std::mutex> lck(mtx_);
 	if (!enabled_.load(std::memory_order_acquire)) {
 		return;
 	}
 	clusterReplicator_.Configure(replConfig);
-	asyncReplicator_.Configure(replConfig);
+	asyncReplicator_.Configure(std::move(replConfig));
 }
 
-void Clusterizator::Configure(ClusterConfigData clusterConfig) {
+void ClusterManager::Configure(ClusterConfigData clusterConfig) {
 	std::unique_lock<std::mutex> lck(mtx_);
 	if (!enabled_.load(std::memory_order_acquire)) {
 		return;
@@ -26,7 +26,7 @@ void Clusterizator::Configure(ClusterConfigData clusterConfig) {
 	clusterReplicator_.Configure(std::move(clusterConfig));
 }
 
-void Clusterizator::Configure(AsyncReplConfigData asyncConfig) {
+void ClusterManager::Configure(AsyncReplConfigData asyncConfig) {
 	std::lock_guard lck(mtx_);
 	if (!enabled_.load(std::memory_order_acquire)) {
 		return;
@@ -34,21 +34,21 @@ void Clusterizator::Configure(AsyncReplConfigData asyncConfig) {
 	asyncReplicator_.Configure(std::move(asyncConfig));
 }
 
-bool Clusterizator::IsExpectingAsyncReplStartup() const noexcept {
+bool ClusterManager::IsExpectingAsyncReplStartup() const noexcept {
 	std::lock_guard lck(mtx_);
 	return enabled_.load(std::memory_order_acquire) && asyncReplicator_.IsExpectingStartup();
 }
 
-bool Clusterizator::IsExpectingClusterStartup() const noexcept {
+bool ClusterManager::IsExpectingClusterStartup() const noexcept {
 	std::lock_guard lck(mtx_);
 	return enabled_.load(std::memory_order_acquire) && clusterReplicator_.IsExpectingStartup();
 }
 
-Error Clusterizator::StartClusterRepl() {
+Error ClusterManager::StartClusterRepl() {
 	std::lock_guard lck(mtx_);
 	try {
 		if (!enabled_.load(std::memory_order_acquire)) {
-			return Error(errLogic, "Clusterization is disabled");
+			return Error(errLogic, "ClusterManager is disabled");
 		}
 		validateConfig();
 		clusterReplicator_.Run();
@@ -58,11 +58,11 @@ Error Clusterizator::StartClusterRepl() {
 	return Error();
 }
 
-Error Clusterizator::StartAsyncRepl() {
+Error ClusterManager::StartAsyncRepl() {
 	std::lock_guard lck(mtx_);
 	try {
 		if (!enabled_.load(std::memory_order_acquire)) {
-			return Error(errLogic, "Clusterization is disabled");
+			return Error(errLogic, "ClusterManager is disabled");
 		}
 		validateConfig();
 		asyncReplicator_.Run();
@@ -72,17 +72,17 @@ Error Clusterizator::StartAsyncRepl() {
 	return Error();
 }
 
-void Clusterizator::StopCluster() noexcept {
+void ClusterManager::StopCluster() noexcept {
 	std::lock_guard lck(mtx_);
 	clusterReplicator_.Stop();
 }
 
-void Clusterizator::StopAsyncRepl() noexcept {
+void ClusterManager::StopAsyncRepl() noexcept {
 	std::lock_guard lck(mtx_);
 	asyncReplicator_.Stop();
 }
 
-void Clusterizator::Stop(bool disable) noexcept {
+void ClusterManager::Stop(bool disable) noexcept {
 	std::lock_guard lck(mtx_);
 	clusterReplicator_.Stop(disable);
 	asyncReplicator_.Stop(disable);
@@ -91,27 +91,27 @@ void Clusterizator::Stop(bool disable) noexcept {
 	}
 }
 
-Error Clusterizator::SuggestLeader(const NodeData& suggestion, NodeData& response) {
+Error ClusterManager::SuggestLeader(const NodeData& suggestion, NodeData& response) {
 	return clusterReplicator_.SuggestLeader(suggestion, response);
 }
 
-Error Clusterizator::SetDesiredLeaderId(int leaderId, bool sendToOtherNodes) {
+Error ClusterManager::SetDesiredLeaderId(int leaderId, bool sendToOtherNodes) {
 	return clusterReplicator_.SetDesiredLeaderId(leaderId, sendToOtherNodes);
 }
 
-Error Clusterizator::LeadersPing(const NodeData& leader) { return clusterReplicator_.LeadersPing(leader); }
+Error ClusterManager::LeadersPing(const NodeData& leader) { return clusterReplicator_.LeadersPing(leader); }
 
-RaftInfo Clusterizator::GetRaftInfo(bool allowTransitState, const RdxContext& ctx) const {
+RaftInfo ClusterManager::GetRaftInfo(bool allowTransitState, const RdxContext& ctx) const {
 	return clusterReplicator_.GetRaftInfo(allowTransitState, ctx);
 }
 
-bool Clusterizator::NamespaceIsInClusterConfig(std::string_view nsName) { return clusterReplicator_.NamespaceIsInClusterConfig(nsName); }
+bool ClusterManager::NamespaceIsInClusterConfig(std::string_view nsName) { return clusterReplicator_.NamespaceIsInClusterConfig(nsName); }
 
-bool Clusterizator::NamesapceIsInReplicationConfig(std::string_view nsName) {
+bool ClusterManager::NamesapceIsInReplicationConfig(std::string_view nsName) {
 	return clusterReplicator_.NamespaceIsInClusterConfig(nsName) || asyncReplicator_.NamespaceIsInAsyncConfig(nsName);
 }
 
-Error Clusterizator::Replicate(UpdatesContainer&& recs, std::function<void()> beforeWaitF, const RdxContext& ctx) {
+Error ClusterManager::Replicate(UpdatesContainer&& recs, std::function<void()> beforeWaitF, const RdxContext& ctx) {
 	if (replicationIsNotRequired(recs)) {
 		return {};
 	}
@@ -129,7 +129,7 @@ Error Clusterizator::Replicate(UpdatesContainer&& recs, std::function<void()> be
 	return {};	// This namespace is not taking part in any replication
 }
 
-Error Clusterizator::ReplicateAsync(UpdatesContainer&& recs, const RdxContext& ctx) {
+Error ClusterManager::ReplicateAsync(UpdatesContainer&& recs, const RdxContext& ctx) {
 	if (replicationIsNotRequired(recs)) {
 		return {};
 	}
@@ -144,19 +144,19 @@ Error Clusterizator::ReplicateAsync(UpdatesContainer&& recs, const RdxContext& c
 	return {};	// This namespace is not taking part in any replication
 }
 
-ReplicationStats Clusterizator::GetAsyncReplicationStats() const { return asyncReplicator_.GetReplicationStats(); }
+ReplicationStats ClusterManager::GetAsyncReplicationStats() const { return asyncReplicator_.GetReplicationStats(); }
 
-ReplicationStats Clusterizator::GetClusterReplicationStats() const { return clusterReplicator_.GetReplicationStats(); }
+ReplicationStats ClusterManager::GetClusterReplicationStats() const { return clusterReplicator_.GetReplicationStats(); }
 
-void Clusterizator::SetAsyncReplicatonLogLevel(LogLevel level) noexcept { asyncReplicator_.SetLogLevel(level); }
+void ClusterManager::SetAsyncReplicatonLogLevel(LogLevel level) noexcept { asyncReplicator_.SetLogLevel(level); }
 
-void Clusterizator::SetClusterReplicatonLogLevel(LogLevel level) noexcept { clusterReplicator_.SetLogLevel(level); }
+void ClusterManager::SetClusterReplicatonLogLevel(LogLevel level) noexcept { clusterReplicator_.SetLogLevel(level); }
 
-bool Clusterizator::replicationIsNotRequired(const UpdatesContainer& recs) noexcept {
+bool ClusterManager::replicationIsNotRequired(const UpdatesContainer& recs) noexcept {
 	return recs.empty() || isSystemNamespaceNameFast(recs[0].NsName());
 }
 
-void Clusterizator::validateConfig() const {
+void ClusterManager::validateConfig() const {
 	auto& clusterConf = clusterReplicator_.Config();
 	auto& asyncConf = asyncReplicator_.Config();
 	if (!asyncConf.has_value() && !clusterConf.has_value()) {

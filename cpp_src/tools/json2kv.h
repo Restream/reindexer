@@ -8,6 +8,7 @@ namespace reindexer {
 
 constexpr size_t kMaxThreadLocalJSONVector = 8 * 1024;
 
-Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string_view fieldName, FloatVectorsHolderVector*);
+Variant jsonValue2Variant(const gason::JsonValue&, KeyValueType, std::string_view fieldName, FloatVectorsHolderVector*, ConvertToString,
+						  ConvertNull);
 
 }  // namespace reindexer

@@ -19,7 +19,7 @@ class IvfIndex final : public FloatVectorIndex {
 	using Base = FloatVectorIndex;
 
 public:
-	IvfIndex(const IndexDef&, PayloadType&&, FieldsSet&&, CreationLog log);
+	IvfIndex(const IndexDef&, PayloadType&&, FieldsSet&&, LogCreation);
 
 	void Delete(const Variant& key, IdType id, StringsHolder&, bool& clearCache) override;
 	using Base::Delete;
@@ -60,7 +60,7 @@ private:
 	std::unique_ptr<faiss::IndexIVFFlat> map_;
 };
 
-std::unique_ptr<Index> IvfIndex_New(const IndexDef&, PayloadType&&, FieldsSet&&, Index::CreationLog log);
+std::unique_ptr<Index> IvfIndex_New(const IndexDef&, PayloadType&&, FieldsSet&&, LogCreation);
 
 }  // namespace reindexer
 

@@ -134,12 +134,12 @@ public:
 	struct NamedTagOpt {};
 	struct NamelessTagOpt {};
 
-	template <typename FilterT, typename RecoderT = DefaultRecoder>
-	void Decode(Payload& pl, Serializer& rdSer, WrSerializer& wrSer, FloatVectorsHolderVector& floatVectorsHolder,
-				FilterT filter = FilterT(), RecoderT recoder = RecoderT()) {
-		static_assert(std::is_same_v<FilterT, DefaultFilter> || std::is_same_v<FilterT, RestrictingFilter>,
+	template <typename Filter, typename Recoder = DefaultRecoder>
+	void Decode(Payload& pl, Serializer& rdSer, WrSerializer& wrSer, FloatVectorsHolderVector& floatVectorsHolder, Filter filter = Filter(),
+				Recoder recoder = Recoder()) {
+		static_assert(std::is_same_v<Filter, DefaultFilter> || std::is_same_v<Filter, RestrictingFilter>,
 					  "Other filter types are not allowed for the public API");
-		static_assert(std::is_same_v<RecoderT, DefaultRecoder> || std::is_same_v<RecoderT, CustomRecoder>,
+		static_assert(std::is_same_v<Recoder, DefaultRecoder> || std::is_same_v<Recoder, CustomRecoder>,
 					  "Other recoder types are not allowed for the public API");
 		objectScalarIndexes_.reset();
 		if rx_likely (!filter.HasArraysFields(pl.Type())) {
@@ -158,9 +158,11 @@ public:
 	}
 
 private:
-	template <typename FilterT, typename RecoderT, typename TagOptT>
-	bool decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrser, FilterT filter, RecoderT recoder, TagOptT,
-					 FloatVectorsHolderVector&);
+	template <typename Filter, typename Recoder, typename TagOptT>
+	bool decodeCJson(Payload&, Serializer&, WrSerializer&, Filter, Recoder, TagOptT, FloatVectorsHolderVector&);
+	template <typename Filter, typename Recoder, typename Validator>
+	void decodeCJson(Payload&, Serializer&, WrSerializer&, Filter, Recoder, TagType, TagName, ctag, FloatVectorsHolderVector&,
+					 const Validator&);
 	InArray isInArray() const noexcept { return InArray(arrayLevel_ > 0); }
 	[[noreturn]] void throwTagReferenceError(ctag, const Payload&);
 

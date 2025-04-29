@@ -2,13 +2,13 @@
 
 #include <core/type_consts.h>
 #include <functional>
+#include <span>
 #include <string>
 #include <string_view>
 #include "core/keyvalue/p_string.h"
 #include "estl/chunk.h"
 #include "estl/h_vector.h"
 #include "estl/intrusive_ptr.h"
-#include <span>
 #include "tools/lsn.h"
 
 namespace reindexer {

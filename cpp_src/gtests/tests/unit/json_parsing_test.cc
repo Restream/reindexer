@@ -7,7 +7,9 @@
 TEST(JSONParsingTest, EmptyDocument) {
 	reindexer::Reindexer rx;
 	constexpr std::string_view kNsName("json_empty_doc_test");
-	auto err = rx.OpenNamespace(kNsName);
+	auto err = rx.Connect("builtin://");
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rx.OpenNamespace(kNsName);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	reindexer::Item item(rx.NewItem(kNsName));

@@ -255,7 +255,10 @@ Aggregator::Aggregator(const PayloadType& payloadType, const FieldsSet& fields, 
 			}
 			break;
 		case AggDistinct:
-			distincts_.reset(new HashSetVariantRelax(16, DistinctHasher(payloadType, fields), RelaxVariantCompare(payloadType, fields)));
+			distincts_.reset(new HashSetVariantRelax(
+				16, DistinctHelpers::DistinctHasher<DistinctHelpers::IsCompositeSupported::Yes>(payloadType, fields),
+				DistinctHelpers::CompareVariantVector<DistinctHelpers::IsCompositeSupported::Yes>(payloadType, fields),
+				DistinctHelpers::LessDistinctVector<DistinctHelpers::IsCompositeSupported::Yes>(payloadType, fields)));
 			break;
 		case AggMin:
 		case AggMax:
@@ -306,50 +309,56 @@ static void fillUnorderedFacetResult(std::vector<FacetResult>& result, const Fac
 	copy(begin, end, result, args...);
 }
 
-AggregationResult Aggregator::GetResult() const {
-	AggregationResult ret;
-	ret.fields = names_;
-	ret.type = aggType_;
-
+AggregationResult Aggregator::MoveResult() && {
+	assertrx_throw(isValid_);
+	isValid_ = false;
 	switch (aggType_) {
 		case AggAvg:
 			if (result_) {
-				ret.SetValue(double(hitCount_ == 0 ? 0 : (*result_ / hitCount_)));
+				return AggregationResult{aggType_, std::move(names_), double(hitCount_ == 0 ? 0 : (*result_ / hitCount_))};
 			}
 			break;
 		case AggSum:
 		case AggMin:
 		case AggMax:
 			if (result_) {
-				ret.SetValue(*result_);
+				return AggregationResult{aggType_, std::move(names_), *result_};
 			}
 			break;
-		case AggFacet:
-			std::visit(overloaded{[&](const SinglefieldOrderedMap& fm) { fillOrderedFacetResult(ret.facets, fm, offset_, limit_); },
-								  [&](const SinglefieldUnorderedMap& fm) { fillUnorderedFacetResult(ret.facets, fm, offset_, limit_); },
+		case AggFacet: {
+			std::vector<FacetResult> facets;
+			std::visit(overloaded{[&](const SinglefieldOrderedMap& fm) { fillOrderedFacetResult(facets, fm, offset_, limit_); },
+								  [&](const SinglefieldUnorderedMap& fm) { fillUnorderedFacetResult(facets, fm, offset_, limit_); },
 								  [&](const MultifieldOrderedMap& fm) {
-									  fillOrderedFacetResult(ret.facets, fm, offset_, limit_, fields_, payloadType_);
+									  fillOrderedFacetResult(facets, fm, offset_, limit_, fields_, payloadType_);
 								  },
 								  [&](const MultifieldUnorderedMap& fm) {
-									  fillUnorderedFacetResult(ret.facets, fm, offset_, limit_, fields_, payloadType_);
+									  fillUnorderedFacetResult(facets, fm, offset_, limit_, fields_, payloadType_);
 								  }},
 					   *facets_);
-			break;
-		case AggDistinct:
+			return AggregationResult{aggType_, std::move(names_), std::move(facets)};
+		}
+		case AggDistinct: {
 			assertrx_dbg(distincts_);
-			ret.payloadType = payloadType_;
-			ret.distinctsFields = fields_;
-			ret.distincts.reserve(distincts_->size());
-			for (const Variant& value : *distincts_) {
-				ret.distincts.push_back(value);
+			std::vector<Variant> d;
+			if (!distincts_->empty()) {
+				size_t columnCount = names_.size();
+				d.reserve(distincts_->size() * columnCount);
+				for (const auto& r : *distincts_) {
+					assertf_dbg(r.size() == columnCount, "Incorrect column count size={} columnCount={}", r.size(), columnCount);
+					for (unsigned int k = 0; k < columnCount; k++) {
+						d.emplace_back(r[k]);
+					}
+				}
 			}
-			break;
+			return AggregationResult{aggType_, std::move(names_), std::move(payloadType_), std::move(fields_), std::move(d)};
+		}
 		case AggCount:
 		case AggCountCached:
 		case AggUnknown:
 			throw_as_assert;
 	}
-	return ret;
+	return AggregationResult{aggType_, std::move(names_)};
 }
 
 void Aggregator::Aggregate(const PayloadValue& data) {
@@ -374,29 +383,40 @@ void Aggregator::Aggregate(const PayloadValue& data) {
 		return;
 	}
 
-	assertrx_dbg(fields_.size() == 1);
-	if (fields_[0] == IndexValueType::SetByJsonPath) {
-		ConstPayload pl(payloadType_, data);
-		VariantArray va;
-		const TagsPath& tagsPath = fields_.getTagsPath(0);
-		pl.GetByJsonPath(tagsPath, va, KeyValueType::Undefined{});
-		if (va.IsObjectValue()) {
-			throw Error(errQueryExec, "Cannot aggregate object field");
+	if (fields_.size() == 1) {
+		if (fields_[0] == IndexValueType::SetByJsonPath) {
+			ConstPayload pl(payloadType_, data);
+			VariantArray va;
+			const TagsPath& tagsPath = fields_.getTagsPath(0);
+			pl.GetByJsonPath(tagsPath, va, KeyValueType::Undefined{});
+			if (va.IsObjectValue()) {
+				throw Error(errQueryExec, "Cannot aggregate object field");
+			}
+			for (const Variant& v : va) {
+				aggregate(v);
+			}
+			return;
 		}
-		for (const Variant& v : va) {
-			aggregate(v);
-		}
-		return;
-	}
 
-	const auto& fieldType = payloadType_.Field(fields_[0]);
-	if (!fieldType.IsArray()) {
-		aggregate(PayloadFieldValue(fieldType, data.Ptr() + fieldType.Offset()).Get());
+		const auto& fieldType = payloadType_.Field(fields_[0]);
+		if (!fieldType.IsArray()) {
+			aggregate(PayloadFieldValue(fieldType, data.Ptr() + fieldType.Offset()).Get());
+		} else {
+			PayloadFieldValue::Array* arr = reinterpret_cast<PayloadFieldValue::Array*>(data.Ptr() + fieldType.Offset());
+			uint8_t* ptr = data.Ptr() + arr->offset;
+			for (int i = 0; i < arr->len; i++, ptr += fieldType.ElemSizeof()) {
+				aggregate(PayloadFieldValue(fieldType, ptr).Get());
+			}
+		}
 	} else {
-		PayloadFieldValue::Array* arr = reinterpret_cast<PayloadFieldValue::Array*>(data.Ptr() + fieldType.Offset());
-		uint8_t* ptr = data.Ptr() + arr->offset;
-		for (int i = 0; i < arr->len; i++, ptr += fieldType.ElemSizeof()) {
-			aggregate(PayloadFieldValue(fieldType, ptr).Get());
+		assertrx_throw(aggType_ == AggDistinct);
+		size_t maxIndex = 0;
+		getData(data, distinctDataVector_, maxIndex);
+		for (unsigned int i = 0; i < maxIndex; i++) {
+			DistinctHelpers::FieldsValue values;
+			if (!DistinctHelpers::GetMultiFieldValue(distinctDataVector_, i, fields_.size(), values)) {
+				distincts_->insert(std::move(values));
+			}
 		}
 	}
 }
@@ -421,7 +441,7 @@ void Aggregator::aggregate(const Variant& v) {
 			break;
 		case AggDistinct:
 			assertrx_dbg(distincts_);
-			distincts_->insert(v);
+			distincts_->insert({v});
 			break;
 		case AggUnknown:
 		case AggCount:

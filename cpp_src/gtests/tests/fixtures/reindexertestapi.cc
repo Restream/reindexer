@@ -8,10 +8,22 @@
 static constexpr auto kBasicTimeout = std::chrono::seconds(200);
 
 template <typename DB>
-ReindexerTestApi<DB>::ReindexerTestApi() : reindexer(std::make_shared<DB>()) {}
+ReindexerTestApi<DB>::ReindexerTestApi() : reindexer(std::make_shared<DB>()) {
+	if constexpr (std::is_same_v<DB, reindexer::Reindexer>) {
+		auto err = reindexer->Connect("builtin://");
+		EXPECT_TRUE(err.ok()) << err.what();
+		assertrx(err.ok());
+	}
+}
 
 template <typename DB>
-ReindexerTestApi<DB>::ReindexerTestApi(const typename DB::ConfigT& cfg) : reindexer(std::make_shared<DB>(cfg)) {}
+ReindexerTestApi<DB>::ReindexerTestApi(const typename DB::ConfigT& cfg) : reindexer(std::make_shared<DB>(cfg)) {
+	if constexpr (std::is_same_v<DB, reindexer::Reindexer>) {
+		auto err = reindexer->Connect("builtin://");
+		EXPECT_TRUE(err.ok()) << err.what();
+		assertrx(err.ok());
+	}
+}
 
 template <typename DB>
 void ReindexerTestApi<DB>::DefineNamespaceDataset(DB& rx, std::string_view ns, std::span<const IndexDeclaration> fields) {
@@ -201,7 +213,7 @@ ReplicationTestState ReindexerTestApi<DB>::GetReplicationState(std::string_view 
 			state.nsVersion.FromJSON(root["replication"]["ns_version"]);
 			state.updateUnixNano = root["replication"]["updated_unix_nano"].As<uint64_t>();
 			try {
-				reindexer::ClusterizationStatus clStatus;
+				reindexer::ClusterOperationStatus clStatus;
 				clStatus.FromJSON(root["replication"]["clusterization_status"]);
 				state.role = clStatus.role;
 			} catch (...) {
@@ -335,6 +347,17 @@ std::vector<int> ReindexerTestApi<DB>::RandIntVector(size_t size, int start, int
 		vec.push_back(start + rand() % range);
 	}
 	return vec;
+}
+
+template <typename DB>
+void ReindexerTestApi<DB>::EnablePerfStats(DB& rx) {
+	auto item = rx.NewItem(reindexer::kConfigNamespace);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	auto err = item.FromJSON(
+		R"json({"type":"profiling","profiling":{"queriesperfstats":true,"queries_threshold_us":100,"perfstats":true,"memstats":true,"activitystats":true}})json");
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rx.Upsert(reindexer::kConfigNamespace, item);
+	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 template <typename DB>

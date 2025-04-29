@@ -149,16 +149,22 @@ int SQLParser::selectParse(tokenizer& parser) {
 				wasSelectFilter = true;
 				query_.Select(FieldsNamesFilter::kAllVectorFieldsName);
 			} else {
-				AggType agg = AggregationResult::strToAggType(name.text());
+				AggType agg = AggregationResult::StrToAggType(name.text());
 				if (agg != AggUnknown) {
 					if (!query_.CanAddAggregation(agg) || (wasSelectFilter && agg != AggDistinct)) {
 						throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 					}
-					h_vector<std::string, 1> fields{{std::string(tok.text())}};
+					if (tok.type != TokenName) {
+						throw Error(errParseSQL, "Expected field name, but found '{}' in query, {}", tok.text(), parser.where());
+					}
+					RVector<std::string, 1> fields{{std::string(tok.text())}};
 					tok = parser.next_token();
-					for (tok = parser.peek_token(); tok.text() == ","sv; tok = parser.peek_token()) {
+					for (tok = parser.peek_token(); tok.type == TokenSymbol && tok.text() == ","sv; tok = parser.peek_token()) {
 						parser.next_token();
 						tok = peekSqlToken(parser, SingleSelectFieldSqlToken);
+						if (tok.type != TokenName) {
+							throw Error(errParseSQL, "Expected field name, but found '{}' in query, {}", tok.text(), parser.where());
+						}
 						fields.emplace_back(tok.text());
 						tok = parser.next_token();
 					}
@@ -320,16 +326,16 @@ private:
 	SqlParsingCtx& nestedCtx_;
 };
 
-Variant token2kv(const token& tok, tokenizer& parser, CompositeAllowed allowComposite, FieldAllowed allowField) {
+Variant token2kv(const token& tok, tokenizer& parser, CompositeAllowed allowComposite, FieldAllowed allowField, NullAllowed allowNull) {
 	if (tok.text() == "{"sv) {
 		// Composite value parsing
-		if (allowComposite == CompositeAllowed::No) {
+		if (!allowComposite) {
 			throw Error(errParseSQL, "Unexpected '{{' in query, {}", parser.where());
 		}
 		VariantArray compositeValues;
 		for (;;) {
 			auto nextTok = parser.next_token();
-			compositeValues.push_back(token2kv(nextTok, parser, CompositeAllowed::No, FieldAllowed::No));
+			compositeValues.push_back(token2kv(nextTok, parser, CompositeAllowed_False, FieldAllowed_False, allowNull));
 			nextTok = parser.next_token();
 			if (nextTok.text() == "}"sv) {
 				return Variant(compositeValues);  // end process
@@ -348,7 +354,11 @@ Variant token2kv(const token& tok, tokenizer& parser, CompositeAllowed allowComp
 		if (iequals(value, "false"sv)) {
 			return Variant{false};
 		}
-		if (allowField == FieldAllowed::Yes) {
+		if (iequals(value, "null"sv)) {
+			if (allowNull) {
+				return Variant{};
+			}
+		} else if (allowField) {
 			return Variant();
 		}
 	}
@@ -397,7 +407,7 @@ int SQLParser::parseOrderBy(tokenizer& parser, SortingEntries& sortingEntries, s
 					throw Error(errParseSQL, "Forced sort order is allowed for the first sorting entry only, '{}', {}", tok.text(),
 								parser.where());
 				}
-				forcedSortOrder_.push_back(token2kv(tok, parser, CompositeAllowed::Yes, FieldAllowed::No));
+				forcedSortOrder_.push_back(token2kv(tok, parser, CompositeAllowed_True, FieldAllowed_False, NullAllowed_False));
 			}
 			tok = parser.peek_token();
 		}
@@ -437,7 +447,7 @@ int SQLParser::deleteParse(tokenizer& parser) {
 
 static void addUpdateValue(const token& tok, tokenizer& parser, UpdateEntry& updateField) {
 	if (tok.type == TokenString) {
-		updateField.Values().push_back(token2kv(tok, parser, CompositeAllowed::No, FieldAllowed::No));
+		updateField.Values().push_back(token2kv(tok, parser, CompositeAllowed_False, FieldAllowed_False, NullAllowed_True));
 	} else {
 		if (tok.text() == "null"sv) {
 			updateField.Values().push_back(Variant());
@@ -484,7 +494,7 @@ static void addUpdateValue(const token& tok, tokenizer& parser, UpdateEntry& upd
 				updateField.SetIsExpression(true);
 			} else {
 				try {
-					Variant val = token2kv(tok, parser, CompositeAllowed::No, FieldAllowed::No);
+					Variant val = token2kv(tok, parser, CompositeAllowed_False, FieldAllowed_False, NullAllowed_True);
 					updateField.Values().push_back(val);
 				} catch (const Error&) {
 					updateField.Values().push_back(Variant(expression));
@@ -552,7 +562,7 @@ void SQLParser::parseCommand(tokenizer& parser) const {
 	tok = parser.next_token();
 	// try parse as scalar value
 	if ((tok.type == TokenNumber) || (tok.type == TokenString) || (tok.type == TokenName)) {
-		token2kv(tok, parser, CompositeAllowed::No, FieldAllowed::Yes);	 // ignore result
+		token2kv(tok, parser, CompositeAllowed_False, FieldAllowed_True, NullAllowed_False);  // ignore result
 	} else {
 		parseArray(parser, tok.text(), nullptr);
 	}
@@ -790,7 +800,7 @@ void SQLParser::parseWhereCondition(tokenizer& parser, T&& firstArg, OpType op) 
 			if (tok.text() == ")"sv && tok.type == TokenSymbol) {
 				break;
 			}
-			values.push_back(token2kv(tok, parser, CompositeAllowed::Yes, FieldAllowed::No));
+			values.push_back(token2kv(tok, parser, CompositeAllowed_True, FieldAllowed_False, NullAllowed_True));
 			tok = parser.next_token();
 			if (tok.text() == ")"sv) {
 				break;
@@ -801,7 +811,8 @@ void SQLParser::parseWhereCondition(tokenizer& parser, T&& firstArg, OpType op) 
 		}
 		query_.NextOp(op).Where(std::forward<T>(firstArg), condition, std::move(values));
 	} else if (tok.type != TokenName || iequals(tok.text(), "true"sv) || iequals(tok.text(), "false"sv)) {
-		query_.NextOp(op).Where(std::forward<T>(firstArg), condition, {token2kv(tok, parser, CompositeAllowed::Yes, FieldAllowed::No)});
+		query_.NextOp(op).Where(std::forward<T>(firstArg), condition,
+								{token2kv(tok, parser, CompositeAllowed_True, FieldAllowed_False, NullAllowed_True)});
 	} else {
 		if constexpr (std::is_same_v<T, Query>) {
 			throw Error(errParseSQL, "Field cannot be after subquery. (text = '{}'  location = {})", tok.text(), parser.where());
@@ -1118,7 +1129,7 @@ void SQLParser::parseKnn(tokenizer& parser, OpType nextOp) {
 				throw Error(errParseSQL, "Expected ',', but found '{}', {}", tok.text(), parser.where());
 			}
 			query_.NextOp(nextOp).WhereKNN(std::move(field), std::move(value), parseKnnParams(parser));
-			return; // NOTE: stop processing
+			return;	 // NOTE: stop processing
 		}
 
 		throw Error(errParseSQL, "Expected '[' or ''', but found '{}', {}", tok.text(), parser.where());
@@ -1200,7 +1211,7 @@ void SQLParser::parseDWithin(tokenizer& parser, OpType nextOp) {
 	}
 
 	tok = parser.next_token();
-	const auto distance = token2kv(tok, parser, CompositeAllowed::No, FieldAllowed::No);
+	const auto distance = token2kv(tok, parser, CompositeAllowed_False, FieldAllowed_False, NullAllowed_False);
 	distance.Type().EvaluateOneOf(
 		[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) noexcept {},
 		[&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite,

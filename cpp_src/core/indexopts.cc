@@ -1,6 +1,5 @@
 #include "indexopts.h"
 #include <ostream>
-#include <unordered_set>
 #include "cjson/jsonbuilder.h"
 #include "core/enums.h"
 #include "tools/errors.h"
@@ -24,6 +23,7 @@ constexpr size_t kIvfNCentroidsMax = 2 << 16;
 constexpr std::string_view kEmbedding{"embedding"};
 constexpr std::string_view kUpsertEmbedder{"upsert_embedder"};
 constexpr std::string_view kQueryEmbedder{"query_embedder"};
+constexpr std::string_view kEmbedderName{"name"};
 constexpr std::string_view kEmbedderURL{"URL"};
 constexpr std::string_view kEmbedderCacheTag{"cache_tag"};
 constexpr std::string_view kEmbedderFields{"fields"};
@@ -58,6 +58,20 @@ FloatVectorIndexOpts::EmbedderOpts::Strategy parseStrategy(std::string_view stra
 						   kEmbedderStrategyStrict};
 }
 
+static std::string_view strategyToStr(FloatVectorIndexOpts::EmbedderOpts::Strategy strategy) {
+	switch (strategy) {
+		case FloatVectorIndexOpts::EmbedderOpts::Strategy::Always:
+			return kEmbedderStrategyAlways;
+		case FloatVectorIndexOpts::EmbedderOpts::Strategy::EmptyOnly:
+			return kEmbedderStrategyEmpty;
+		case FloatVectorIndexOpts::EmbedderOpts::Strategy::Strict:
+			return kEmbedderStrategyStrict;
+		default:
+			throw reindexer::Error{errParams, "Configuration '{}' unexpected field value '{}'. Value '{}'", kEmbedding, kEmbedderStrategy,
+								   int(strategy)};
+	}
+}
+
 FloatVectorIndexOpts::PoolOpts parsePoolConfig(const gason::JsonNode& node) {
 	FloatVectorIndexOpts::PoolOpts opts;
 	if (!node[kConnectorPoolConnections].empty()) {
@@ -78,6 +92,9 @@ FloatVectorIndexOpts::PoolOpts parsePoolConfig(const gason::JsonNode& node) {
 FloatVectorIndexOpts::EmbedderOpts parseEmbedderConfig(const gason::JsonNode& node, std::string_view name) {
 	FloatVectorIndexOpts::EmbedderOpts opts;
 	opts.endpointUrl = node[kEmbedderURL].As<std::string>();
+	if (!node[kEmbedderName].empty()) {
+		opts.name = reindexer::toLower(node[kEmbedderName].As<std::string>());
+	}
 	if (!node[kEmbedderCacheTag].empty()) {
 		opts.cacheTag = reindexer::toLower(node[kEmbedderCacheTag].As<std::string>());
 	}
@@ -122,7 +139,8 @@ FloatVectorIndexOpts::EmbeddingOpts parseEmbeddingConfig(const gason::JsonNode& 
 	}
 
 	if (!opts.upsertEmbedder.has_value() && !opts.queryEmbedder.has_value()) {
-		throw reindexer::Error{errParams, "Configuration '{}' must contain object '{}' or '{}'", kEmbedding, kUpsertEmbedder, kQueryEmbedder};
+		throw reindexer::Error{errParams, "Configuration '{}' must contain object '{}' or '{}'", kEmbedding, kUpsertEmbedder,
+							   kQueryEmbedder};
 	}
 
 	return opts;
@@ -130,25 +148,28 @@ FloatVectorIndexOpts::EmbeddingOpts parseEmbeddingConfig(const gason::JsonNode& 
 
 void validateEmbedderPollTMOpt(size_t tm, size_t limit, std::string_view embedderName, std::string_view optName) {
 	if (tm < limit) {
-		throw reindexer::Error{errParams, "Configuration '{}:{}:{}:{}' should not be less than {} ms, in config '{}'",
-							   kEmbedding, embedderName, kConnectorPool, optName, limit, tm};
+		throw reindexer::Error{errParams,	   "Configuration '{}:{}:{}:{}' should not be less than {} ms, in config '{}'",
+							   kEmbedding,	   embedderName,
+							   kConnectorPool, optName,
+							   limit,		   tm};
 	}
 }
 
 void validateEmbedderOpts(const FloatVectorIndexOpts::EmbedderOpts& opts, std::string_view name) {
 	if (opts.endpointUrl.empty() || ((name == kUpsertEmbedder) && opts.fields.empty())) {
-		throw reindexer::Error{errParams, "Configuration '{}:{}' must contain field '{}' and '{}'", kEmbedding, name, kEmbedderURL,
+		throw reindexer::Error{errParams,	   "Configuration '{}:{}' must contain field '{}' and '{}'", kEmbedding, name, kEmbedderURL,
 							   kEmbedderFields};
 	}
 	if (opts.pool.connections < 1) {
-		throw reindexer::Error{errParams, "Configuration '{}:{}:{}:{}' should not be less than 1",
-							   kEmbedding, name, kConnectorPool, kConnectorPoolConnections};
+		throw reindexer::Error{errParams,	   "Configuration '{}:{}:{}:{}' should not be less than 1",
+							   kEmbedding,	   name,
+							   kConnectorPool, kConnectorPoolConnections};
 	}
 	if (opts.pool.connections > 1024) {
-		throw reindexer::Error{errParams, "Configuration '{}:{}:{}:{}' should not be more than 1024",
-							   kEmbedding, name, kConnectorPool, kConnectorPoolConnections};
+		throw reindexer::Error{errParams,	   "Configuration '{}:{}:{}:{}' should not be more than 1024",
+							   kEmbedding,	   name,
+							   kConnectorPool, kConnectorPoolConnections};
 	}
-	using namespace std::string_view_literals;
 	validateEmbedderPollTMOpt(opts.pool.connect_timeout_ms, 100, name, kConnectorPoolConnectTO);
 	validateEmbedderPollTMOpt(opts.pool.read_timeout_ms, 500, name, kConnectorPoolReadTO);
 	validateEmbedderPollTMOpt(opts.pool.write_timeout_ms, 500, name, kConnectorPoolWriteTO);
@@ -160,7 +181,13 @@ void getJsonEmbedderConfig(const FloatVectorIndexOpts::EmbedderOpts& opts, reind
 		json.Put(kEmbedderCacheTag, opts.cacheTag);
 	}
 
-	{
+	json.Put(kEmbedderStrategy, strategyToStr(opts.strategy));
+
+	if (!opts.name.empty()) {
+		json.Put(kEmbedderName, opts.name);
+	}
+
+	if (!opts.fields.empty()) {
 		auto fieldsNode = json.Array(kEmbedderFields);
 		for (const auto& fld : opts.fields) {
 			fieldsNode.Put(reindexer::TagName::Empty(), fld);
@@ -283,6 +310,7 @@ void FloatVectorIndexOpts::Validate(IndexType idxType) {
 
 FloatVectorIndexOpts FloatVectorIndexOpts::ParseJson(IndexType idxType, std::string_view json) {
 	using namespace std::string_view_literals;
+
 	FloatVectorIndexOpts result(idxType);
 	gason::JsonParser parser;
 	auto root = parser.Parse(json);
@@ -333,6 +361,7 @@ std::string FloatVectorIndexOpts::GetJson() const {
 
 void FloatVectorIndexOpts::GetJson(reindexer::JsonBuilder& json) const {
 	using namespace std::string_view_literals;
+
 	json.Put("dimension"sv, uint32_t(dimension_));
 	switch (metric_) {
 		case reindexer::VectorMetric::L2:

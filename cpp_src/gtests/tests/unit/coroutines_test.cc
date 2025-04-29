@@ -14,14 +14,14 @@ using reindexer::coroutine::channel;
 
 template <typename T>
 static void OutputVector(const std::vector<T>& vec) {
+	std::cerr << "{ ";
 	for (auto it = vec.begin(); it != vec.end(); ++it) {
 		std::cerr << *it;
-		if (it + 1 == vec.end()) {
-			std::cerr << " }" << std::endl;
-		} else {
+		if (it + 1 != vec.end()) {
 			std::cerr << ", ";
 		}
 	}
+	std::cerr << " }" << std::endl;
 }
 
 TEST(Coroutines, Timers) {
@@ -348,10 +348,82 @@ TEST(Coroutines, SchedulingOrder) {
 	order.emplace_back(current());
 
 	if (order != kExpectedOrder) {
-		std::cerr << "Expected order is:\n{ ";
+		std::cerr << "Expected order is:\n";
 		OutputVector(kExpectedOrder);
-		std::cerr << "Actual order is:\n{ ";
+		std::cerr << "Actual order is:\n";
 		OutputVector(order);
+		ASSERT_TRUE(false);
+	}
+}
+
+TEST(Coroutines, FIFOChannels) {
+	// Check FIFO coroutines ordering for channels
+
+	using reindexer::coroutine::create;
+	using reindexer::coroutine::current;
+	using reindexer::coroutine::channel;
+	using reindexer::coroutine::routine_t;
+
+	auto storage_size = reindexer::coroutine::shrink_storage();
+	ASSERT_EQ(storage_size, 0);
+
+	std::vector<routine_t> launchOrder, terminationOrder;
+	std::vector<int> read;
+	const std::vector<routine_t> kExpectedOrder = {2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+	dynamic_loop loop;
+	channel<int> ch(3), chEnd;
+	constexpr int kValue = -999;
+	auto pushRoutine = [&]() noexcept {
+		launchOrder.emplace_back(current());
+		ch.push(kValue);
+		terminationOrder.emplace_back(current());
+		chEnd.pop();
+	};
+	constexpr unsigned kPushRountinesBatch = 5;
+	constexpr unsigned kIntermediateReadSize = 2;
+	ASSERT_GT(ch.capacity(), kIntermediateReadSize);  // Particular read is essential test condition
+	ASSERT_LT(ch.capacity(), kPushRountinesBatch);	  // Channel overflow is essential test condition
+
+	loop.spawn([&]() noexcept {
+		read.reserve(kPushRountinesBatch * 2);
+		for (unsigned i = 0; i < kPushRountinesBatch; ++i) {
+			loop.spawn(pushRoutine);
+		}
+		loop.yield();
+		loop.spawn([&]() noexcept {
+			EXPECT_EQ(ch.size(), ch.capacity());
+			for (unsigned i = 0; i < kIntermediateReadSize; ++i) {
+				auto res = ch.pop();
+				EXPECT_EQ(res.first, kValue);
+				EXPECT_TRUE(res.second);
+				read.emplace_back(res.first);
+			}
+		});
+		loop.yield();
+		for (unsigned i = 0; i < kPushRountinesBatch; ++i) {
+			loop.spawn(pushRoutine);
+		}
+		loop.yield();
+		EXPECT_EQ(ch.size(), ch.capacity());
+		EXPECT_EQ(ch.writers(), kPushRountinesBatch * 2 - kIntermediateReadSize - ch.size());
+		while (read.size() != kPushRountinesBatch * 2) {
+			auto res = ch.pop();
+			EXPECT_EQ(res.first, kValue);
+			EXPECT_TRUE(res.second);
+			read.emplace_back(res.first);
+		}
+		chEnd.close();
+	});
+
+	loop.run();
+
+	if (launchOrder != kExpectedOrder || terminationOrder != kExpectedOrder) {
+		std::cerr << "Expected order (both launch and termination) is:\n";
+		OutputVector(kExpectedOrder);
+		std::cerr << "Actual launch order is:\n";
+		OutputVector(launchOrder);
+		std::cerr << "Actual termination order is:\n";
+		OutputVector(launchOrder);
 		ASSERT_TRUE(false);
 	}
 }

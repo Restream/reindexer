@@ -62,7 +62,7 @@ Error RepairTool::repairNamespace(IDataStorage* storage, const std::string& stor
 		if (!reindexer::validateObjectName(name, true)) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
 		}
-		class DummyClusterizator final : public reindexer::cluster::IDataReplicator, public reindexer::cluster::IDataSyncer {
+		class DummyClusterManager final : public reindexer::cluster::IDataReplicator, public reindexer::cluster::IDataSyncer {
 			Error Replicate(reindexer::cluster::UpdatesContainer&&, std::function<void()> f, const reindexer::RdxContext&) override {
 				f();
 				return {};
@@ -73,10 +73,10 @@ Error RepairTool::repairNamespace(IDataStorage* storage, const std::string& stor
 			bool IsInitialSyncDone(const reindexer::NamespaceName&) const override { return true; }
 			bool IsInitialSyncDone() const override { return true; }
 		};
-		DummyClusterizator dummyClusterizator;
+		DummyClusterManager dummyClusterManager;
 
-		reindexer::UpdatesObservers observers("repair_db", dummyClusterizator, 0);
-		reindexer::NamespaceImpl ns(name, {}, dummyClusterizator, observers);
+		reindexer::UpdatesObservers observers("repair_db", dummyClusterManager, 0);
+		reindexer::NamespaceImpl ns(name, {}, dummyClusterManager, observers);
 		StorageOpts storageOpts;
 		reindexer::RdxContext dummyCtx;
 		std::cout << "Loading " << name << std::endl;

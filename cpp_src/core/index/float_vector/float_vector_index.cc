@@ -28,12 +28,12 @@ void FloatVectorIndex::Delete(const VariantArray& keys, IdType id, StringsHolder
 	}
 }
 
-SelectKeyResults FloatVectorIndex::SelectKey(const VariantArray&, CondType condition, SortType sortId, SelectOpts opts,
-											 const BaseFunctionCtx::Ptr&, const RdxContext& rdxCtx) {
+SelectKeyResults FloatVectorIndex::SelectKey(const VariantArray&, CondType condition, SortType sortId, const SelectContext& selectCtx,
+											 const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 	switch (condition) {
 		case CondEmpty: {
-			if (opts.forceComparator) {
+			if (selectCtx.opts.forceComparator) {
 				throw Error(errLogic, "FloatVectorIndex({}): Comparator for 'IS NULL' vector index condition is not implemented", Name());
 			}
 			SelectKeyResult res;

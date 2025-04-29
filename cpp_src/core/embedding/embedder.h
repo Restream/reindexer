@@ -15,7 +15,7 @@ class RdxContext;
 
 class Embedder final {
 public:
-	Embedder(std::string_view name, int field, EmbedderConfig&& config, PoolConfig&& poolConfig);
+	Embedder(std::string_view name, std::string_view fieldName, int field, EmbedderConfig&& config, PoolConfig&& poolConfig);
 	~Embedder() noexcept = default;
 
 	Embedder() = delete;
@@ -26,6 +26,8 @@ public:
 
 	std::string_view Name() const& noexcept { return name_; }
 	auto Name() const&& noexcept = delete;
+	std::string_view FieldName() const& noexcept { return fieldName_; }
+	auto FieldName() const&& noexcept = delete;
 
 	int Field() const noexcept { return field_; }
 
@@ -43,6 +45,7 @@ private:
 	std::string getJson(std::span<const std::vector<VariantArray>> sources) const;
 
 	const std::string name_;
+	const std::string fieldName_;
 	const int field_{0};
 	std::string path_;
 	const EmbedderConfig config_;

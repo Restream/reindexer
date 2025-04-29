@@ -879,8 +879,8 @@ TEST_F(RPCClientTestApi, AggregationsFetching) {
 			ASSERT_EQ(qr.Count(), kItemsCount);
 			const auto initialAggs = qr.GetAggregationResults();
 			ASSERT_EQ(initialAggs.size(), 2);
-			ASSERT_EQ(initialAggs[0].type, AggDistinct);
-			ASSERT_EQ(initialAggs[1].type, AggCount);
+			ASSERT_EQ(initialAggs[0].GetType(), AggDistinct);
+			ASSERT_EQ(initialAggs[1].GetType(), AggCount);
 			const std::string explain = qr.GetExplainResults();
 			ASSERT_GT(explain.size(), 0);
 			WrSerializer wser;
@@ -940,8 +940,8 @@ TEST_F(RPCClientTestApi, AggregationsFetchingWithLazyMode) {
 			ASSERT_EQ(qr.Count(), kItemsCount);
 			const auto initialAggs = qr.GetAggregationResults();
 			ASSERT_EQ(initialAggs.size(), 2);
-			ASSERT_EQ(initialAggs[0].type, AggDistinct);
-			ASSERT_EQ(initialAggs[1].type, AggCount);
+			ASSERT_EQ(initialAggs[0].GetType(), AggDistinct);
+			ASSERT_EQ(initialAggs[1].GetType(), AggCount);
 			const std::string explain = qr.GetExplainResults();
 			ASSERT_GT(explain.size(), 0);
 			WrSerializer wser;

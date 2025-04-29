@@ -286,3 +286,7 @@ func (server *BuiltinServer) Subscribe(ctx context.Context, opts *bindings.Subsc
 func (server *BuiltinServer) Unsubscribe(ctx context.Context) error {
 	return server.builtin.Unsubscribe(ctx)
 }
+
+func (server *BuiltinServer) DBMSVersion() (string, error) {
+	return server.builtin.DBMSVersion()
+}

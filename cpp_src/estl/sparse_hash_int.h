@@ -1,7 +1,7 @@
 #pragma once
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 
 namespace reindexer {
 
@@ -25,4 +25,4 @@ struct hash_int<int32_t> {
 	size_t operator()(int32_t k) const noexcept { return (k ^ 2166136261U) * 16777619UL; }
 };
 
-}
+}  // namespace reindexer

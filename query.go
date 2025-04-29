@@ -777,8 +777,12 @@ func (q *Query) Not() *Query {
 }
 
 // Distinct - Return only items with uniq value of field
-func (q *Query) Distinct(distinctIndex string) *Query {
-	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggDistinct).PutVarCUInt(1).PutVString(distinctIndex)
+func (q *Query) Distinct(distinctFields ...string) *Query {
+	l := len(distinctFields)
+	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggDistinct).PutVarCUInt(l)
+	for i := 0; i < l; i++ {
+		q.ser.PutVString(distinctFields[i])
+	}
 	return q
 }
 

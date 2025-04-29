@@ -2,6 +2,10 @@
 #include "gtest/gtest.h"
 #include "reindexer_api.h"
 
+#include "cluster/config.h"
+#include "core/cjson/jsonbuilder.h"
+#include "core/dbconfig.h"
+#include "core/defnsconfigs.h"
 #include "core/keyvalue/variant.h"
 #include "core/queryresults/joinresults.h"
 #include "tools/fsops.h"
@@ -243,7 +247,7 @@ TEST_F(ReindexerApi, DistinctDiffType) {
 		ASSERT_TRUE(err.ok()) << err.what();
 		Vals.insert(ser.c_str());
 	}
-	ASSERT_TRUE(bool(BaseVals == Vals));
+	ASSERT_EQ(BaseVals, Vals);
 }
 
 TEST_F(ReindexerApi, DistinctCompositeIndex) {
@@ -352,6 +356,179 @@ TEST_F(ReindexerApi, DistinctCompositeIndex) {
 		err = rt.reindexer->Select(q, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), 5);
+	}
+}
+
+TEST_F(ReindexerApi, DistinctMultiColumn) {
+	Error err = rt.reindexer->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	struct row {
+		std::vector<reindexer::Variant> vals;
+		row(std::span<const reindexer::Variant> d) : vals(d.begin(), d.end()) {}
+		bool operator<(const row& other) const {
+			assertrx(other.vals.size() == vals.size());
+			for (unsigned int k = 0; k < vals.size(); k++) {
+				if (!vals[k].Type().IsSame(other.vals[k].Type())) {
+					return vals[k].Type().ToTagType() < other.vals[k].Type().ToTagType();
+				}
+				if (vals[k].Type().Is<reindexer::KeyValueType::Null>()) {
+					continue;
+				}
+				if (vals[k] != other.vals[k]) {
+					return vals[k] < other.vals[k];
+				}
+			}
+			return false;
+		}
+	};
+	std::set<row> data;
+
+	auto insertItem = [&data, this](int id, const std::vector<std::vector<reindexer::Variant>>& rows, bool asVal = true) {
+		if (rows.empty()) {
+			return;
+		}
+		Item item = NewItem(default_namespace);
+		std::vector<std::vector<reindexer::Variant>> arrays;
+		arrays.resize(rows[0].size());
+		std::vector<bool> mask;
+		mask.resize(arrays.size(), true);
+		int maxArraySize = 0;
+		for (const auto& r : rows) {
+			bool isAdd = false;
+			for (unsigned int i = 0; i < r.size(); i++) {
+				if (r[i].Type().Is<reindexer::KeyValueType::Null>()) {
+					mask[i] = false;
+				}
+				if (mask[i]) {
+					arrays[i].emplace_back(r[i]);
+					isAdd = true;
+				}
+			}
+			if (isAdd) {
+				maxArraySize++;
+			}
+		}
+
+		reindexer::WrSerializer ser;
+		reindexer::JsonBuilder builder(ser);
+		builder.Put("id", id);
+		if (maxArraySize) {
+			for (unsigned int i = 0; i < arrays.size(); i++) {
+				if (arrays[i].size() > 0) {
+					if (asVal && arrays[i].size() == 1) {
+						builder.Put("v" + std::to_string(i), arrays[i][0]);
+					} else {
+						auto a = builder.Array("v" + std::to_string(i));
+						for (const auto& p : arrays[i]) {
+							a.Put(reindexer::TagName::Empty(), p);
+						}
+					}
+				}
+			}
+		}
+		builder.End();
+		Error err = item.FromJSON(ser.Slice());
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->Upsert(default_namespace, item);
+		ASSERT_TRUE(err.ok()) << err.what();
+		if (maxArraySize > 0) {
+			for (const auto& r : rows) {
+				data.insert(row{r});
+			}
+		}
+	};
+
+	using namespace std::string_view_literals;
+	std::initializer_list<std::string_view> distinctFields{"v0"sv, "v1"sv, "v2"sv};
+
+	auto check = [this, &distinctFields, &data](int count, int distinctCount) {
+		Query q{default_namespace};
+
+		q.Distinct("v0"sv, "v1"sv, "v2"sv);
+		QueryResults qr;
+		Error err = rt.reindexer->Select(q, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), count);
+		const std::vector<reindexer::AggregationResult>& agr = qr.GetAggregationResults();
+		ASSERT_EQ(agr.size(), 1);
+		const reindexer::AggregationResult& agr0 = agr[0];
+		ASSERT_EQ(agr0.GetType(), AggDistinct);
+		{
+			const auto& f = agr0.GetFields();
+			reindexer::RVector<std::string, 1> fieldsToCompare{distinctFields.begin(), distinctFields.end()};
+			ASSERT_EQ(f, fieldsToCompare);
+			ASSERT_EQ(agr0.GetDistinctRowCount(), distinctCount);
+			std::set<row> q;
+			for (unsigned int m = 0; m < agr0.GetDistinctRowCount(); m++) {
+				const auto& r = agr0.GetDistinctRow(m);
+				q.insert(row{r});
+			}
+			std::vector<row> diff;
+			std::set_difference(data.begin(), data.end(), q.begin(), q.end(), std::back_inserter(diff));
+			ASSERT_TRUE(diff.empty());
+		}
+	};
+
+	{
+		insertItem(0, {std::vector{Variant{int64_t(1)}, Variant{2.12}, Variant{"string"}}});
+		check(1, 1);
+	}
+	{
+		insertItem(1, {std::vector{Variant{int64_t(3)}, Variant{3.12}, Variant{"string"}}});
+		check(2, 2);
+	}
+	{
+		insertItem(2, {std::vector{Variant{int64_t(4)}, Variant{3.12}, Variant{"string"}}});
+		check(3, 3);
+	}
+	{
+		insertItem(3, {std::vector{Variant{int64_t(4)}, Variant{3.12}, Variant{}}});
+		check(4, 4);
+	}
+	{
+		insertItem(4, {std::vector{Variant{}, Variant{3.12}, Variant{}}});
+		check(5, 5);
+	}
+	{
+		insertItem(5, {std::vector{Variant{}, Variant{}, Variant{}}});
+		check(5, 5);
+	}
+	{
+		insertItem(6, {std::vector{Variant{"4"}, Variant{3.12}, Variant{}}});
+		check(6, 6);
+	}
+	{
+		insertItem(7, {std::vector{Variant{"45"}, Variant{4.12}, Variant{}}}, false);
+		check(7, 7);
+	}
+	{
+		insertItem(8,
+				   {std::vector{Variant{"47"}, Variant{5.12}, Variant{"100"}}, std::vector{Variant{"48"}, Variant{5.14}, Variant{"101"}}},
+				   false);
+		check(8, 9);
+	}
+	{
+		insertItem(9,
+				   {std::vector{Variant{"47"}, Variant{5.12}, Variant{"102"}}, std::vector{Variant{"48"}, Variant{5.14}, Variant{"101"}}},
+				   false);
+		check(9, 10);
+	}
+	{
+		insertItem(10,
+				   {std::vector{Variant{"47"}, Variant{5.12}, Variant{"102"}}, std::vector{Variant{"48"}, Variant{5.14}, Variant{"101"}}},
+				   false);
+		check(9, 10);
+	}
+	{
+		insertItem(11,
+				   {std::vector{Variant{"50"}, Variant{6.12}, Variant{"202"}}, std::vector{Variant{"51"}, Variant{}, Variant{"201"}},
+					std::vector{Variant{"52"}, Variant{}, Variant{}}},
+				   false);
+		check(10, 13);
 	}
 }
 
@@ -2309,41 +2486,28 @@ TEST_F(ReindexerApi, SelectNull) {
 	for (unsigned i = 0; i < 3; ++i) {
 		QueryResults qr;
 		auto err = rt.reindexer->Select(Query(default_namespace).Not().Where("id", CondEq, Variant()), qr);
-		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.code(), errParams) << err.what();
-		EXPECT_STREQ(err.what(),
-					 "Can not use 'null'-value with operators '=' and 'IN()' (index: 'id'). Use 'IS NULL'/'IS NOT NULL' instead");
+		EXPECT_STREQ(err.what(), "The 'is NULL' condition is supported only by 'sparse' or 'array' indexes");
 
 		qr.Clear();
 		err = rt.reindexer->Select(Query(default_namespace).Where("id", CondSet, VariantArray{Variant(1234), Variant()}), qr);
-		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.code(), errParams) << err.what();
-		EXPECT_STREQ(err.what(),
-					 "Can not use 'null'-value with operators '=' and 'IN()' (index: 'id'). Use 'IS NULL'/'IS NOT NULL' instead");
+		EXPECT_STREQ(err.what(), "The 'is NULL' condition is supported only by 'sparse' or 'array' indexes");
 
-		qr.Clear();
-		err = rt.reindexer->Select(Query(default_namespace).Where("value", CondLt, Variant()), qr);
-		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.code(), errParams) << err.what();
-		EXPECT_STREQ(err.what(), "Can not use 'null'-value with operators '>','<','<=','>=' and 'RANGE()' (index: 'value')");
+		EXPECT_THROW(err = rt.reindexer->Select(Query(default_namespace).Where("value", CondLt, Variant()), qr), Error);
 
 		qr.Clear();
 		err = rt.reindexer->Select(Query(default_namespace).Where("store", CondEq, Variant()), qr);
-		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.code(), errParams) << err.what();
-		EXPECT_STREQ(err.what(), "Can not use 'null'-value directly with 'CondEq' condition in comparator");
+		EXPECT_STREQ(err.what(), "The 'is NULL' condition is supported only by 'sparse' or 'array' indexes");
 
 		qr.Clear();
 		err = rt.reindexer->Select(Query(default_namespace).Where("store_num", CondSet, Variant()), qr);
-		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.code(), errParams) << err.what();
-		EXPECT_STREQ(err.what(), "Can not use 'null'-value directly with 'CondEq' condition in comparator");
+		EXPECT_TRUE(err.ok()) << err.what();
 
 		qr.Clear();
 		err = rt.reindexer->Select(Query(default_namespace).Where("not_indexed", CondSet, VariantArray{Variant(1234), Variant()}), qr);
-		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.code(), errParams) << err.what();
-		EXPECT_STREQ(err.what(), "Can not use 'null'-value directly with 'CondSet' condition in comparator");
+		EXPECT_TRUE(err.ok()) << err.what();
 
 		AwaitIndexOptimization(default_namespace);
 	}
@@ -2420,4 +2584,101 @@ TEST_F(ReindexerApi, NamespaceStorageRaceTest) {
 	for (auto& th : threads) {
 		th.join();
 	}
+}
+
+TEST_F(ReindexerApi, AlignedPayload) {
+	// Tests TSAN's warning with specific payload's alignment.
+	// Check issue #2061 for details.
+	const std::string kBaseTestsStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/payload_race_test/");
+	reindexer::fs::RmDirAll(kBaseTestsStoragePath);
+	auto rx = std::make_unique<Reindexer>();
+	auto err = rx->Connect("builtin://" + kBaseTestsStoragePath);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	const std::string_view kNsName = "ns";
+	const std::string_view kJson =
+		R"j({"idx1":"some string content","idx2":13448911603,"idx3":true,"uuid":"d9e8be28-f2e5-11ef-8143-0242ac110005","idx4":448911603})j";
+	reindexer::NamespaceDef def(kNsName);
+	def.storage = StorageOpts().Enabled().CreateIfMissing();
+	def.AddIndex("idx1", "hash", "string");
+	def.AddIndex("idx2", "hash", "int64");
+	def.AddIndex("idx3", "-", "bool");
+	def.AddIndex("uuid", "hash", "uuid", IndexOpts().PK());
+	def.AddIndex("idx4", "hash", "int");
+	err = rx->AddNamespace(def);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	auto item = rx->NewItem(kNsName);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	err = item.FromJSON(kJson);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rx->Upsert(kNsName, item);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	rx.reset();
+
+	rx = std::make_unique<Reindexer>();
+	err = rx->Connect("builtin://" + kBaseTestsStoragePath);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	QueryResults qr;
+	err = rx->Select(Query(kNsName), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+	ASSERT_EQ(qr.begin().GetItem().GetJSON(), kJson);
+}
+
+static void DefaultConfigTest(std::string_view configType, ErrorCode expectedCode, std::string_view expectedJson) {
+	auto cleanString = [](std::string_view input) {
+		std::string result;
+		result.reserve(input.size());
+		for (char c : input) {
+			if (!std::isspace(c)) {
+				result.push_back(c);
+			}
+		}
+		return result;
+	};
+
+	reindexer::WrSerializer ser;
+	reindexer::JsonBuilder jb(ser);
+
+	Error err = reindexer::GetDefaultConfigs(configType, jb);
+	ASSERT_EQ(err.code(), expectedCode);
+	if (err.ok()) {
+		ASSERT_EQ(cleanString(std::string(ser.Slice())), cleanString(expectedJson));
+	}
+}
+
+TEST_F(ReindexerApi, DefaultsConfigsTest) {
+	DefaultConfigTest("profiling", ErrorCode::errOK, reindexer::kDefProfilingConfig);
+	DefaultConfigTest("namespaces", ErrorCode::errOK, reindexer::kDefNamespacesConfig);
+	DefaultConfigTest("replication", ErrorCode::errOK, reindexer::kDefReplicationConfig);
+	DefaultConfigTest("async_replication", ErrorCode::errOK, reindexer::kDefAsyncReplicationConfig);
+	DefaultConfigTest("incorrect_type", ErrorCode::errNotFound, "");
+}
+
+TEST_F(ReindexerApi, UnableToCallApiWithoutConnect) {
+	auto rx = std::make_unique<Reindexer>();
+
+	auto err = rx->Status();
+	EXPECT_EQ(err.code(), errNotValid);
+
+	err = rx->OpenNamespace("ns");
+	EXPECT_EQ(err.code(), errNotValid);
+
+	err = rx->DropNamespace("ns");
+	EXPECT_EQ(err.code(), errNotValid);
+
+	err = rx->CloseNamespace("ns");
+	EXPECT_EQ(err.code(), errNotValid);
+
+	err = rx->PutMeta("ns", "key", "value");
+	EXPECT_EQ(err.code(), errNotValid);
+
+	auto item = rx->NewItem("ns");
+	EXPECT_EQ(item.Status().code(), errNotValid);
+
+	auto tx = rx->NewTransaction("ns");
+	EXPECT_EQ(tx.Status().code(), errNotValid);
 }

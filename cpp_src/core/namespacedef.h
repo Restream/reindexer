@@ -71,7 +71,7 @@ struct EnumNamespacesOpts {
 	bool IsOnlyNames() const noexcept { return options_ & kEnumNamespacesOnlyNames; }
 	bool IsHideSystem() const noexcept { return options_ & kEnumNamespacesHideSystem; }
 	bool IsHideTemporary() const noexcept { return options_ & kEnumNamespacesHideTemporary; }
-	bool MatchFilter(std::string_view nsName, const std::shared_ptr<Namespace>& ns, const RdxContext& ctx) const;
+	bool MatchFilter(std::string_view nsName, const Namespace& ns, const RdxContext& ctx) const;
 	bool MatchNameFilter(std::string_view nsName) const noexcept {
 		return (filter_.empty() || iequals(filter_, nsName)) && (!IsHideSystem() || (!nsName.empty() && nsName[0] != '#')) &&
 			   (!IsHideTemporary() || (!nsName.empty() && nsName[0] != '@'));

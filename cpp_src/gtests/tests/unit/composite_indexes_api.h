@@ -8,6 +8,7 @@ public:
 
 public:
 	void SetUp() override {
+		ReindexerApi::SetUp();
 		Error err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 

@@ -2063,6 +2063,38 @@ TEST_P(FTGenericApi, FrisoTextPostprocess) {
 	}
 }
 
+TEST_F(FTGenericApi, BetweenFieldsIsNotSupported) {
+	// Fulltext index can not be used as a part of 'between fields' condition
+
+	Init(reindexer::FtFastConfig(2), NS1);
+	rt.AddIndex("nm1", reindexer::IndexDef{"str_idx", {"str_idx"}, "hash", "string", IndexOpts()});
+	rt.UpsertJSON("nm1", R"j({"id":0, "ft1":"ft1_str", "ft2": "ft2_str", "str_idx": "str_idx_value", "non_idx": "non_idx_value"})j");
+
+	auto& rx = *rt.reindexer;
+	reindexer::QueryResults qr;
+	auto err = rx.Select(Query("nm1").WhereBetweenFields("ft2", CondEq, "ft1"), qr);
+	EXPECT_EQ(err.code(), errQueryExec) << err.whatStr();
+	EXPECT_STREQ(err.what(), "Can't use fulltext field 'ft2' in between fields condition");
+	qr.Clear();
+
+	constexpr char kExpctedErrText[] = "Can't use fulltext field 'ft1' in between fields condition";
+	err = rx.Select(Query("nm1").WhereBetweenFields("str_idx", CondEq, "ft1"), qr);
+	EXPECT_EQ(err.code(), errQueryExec) << err.whatStr();
+	EXPECT_STREQ(err.what(), kExpctedErrText);
+	qr.Clear();
+	err = rx.Select(Query("nm1").WhereBetweenFields("ft1", CondEq, "str_idx"), qr);
+	EXPECT_EQ(err.code(), errQueryExec) << err.whatStr();
+	EXPECT_STREQ(err.what(), kExpctedErrText);
+	qr.Clear();
+	err = rx.Select(Query("nm1").WhereBetweenFields("ft1", CondEq, "non_idx"), qr);
+	EXPECT_EQ(err.code(), errQueryExec) << err.whatStr();
+	EXPECT_STREQ(err.what(), kExpctedErrText);
+	qr.Clear();
+	err = rx.Select(Query("nm1").WhereBetweenFields("non_idx", CondEq, "ft1"), qr);
+	EXPECT_EQ(err.code(), errQueryExec) << err.whatStr();
+	EXPECT_STREQ(err.what(), kExpctedErrText);
+}
+
 INSTANTIATE_TEST_SUITE_P(, FTGenericApi,
 						 ::testing::Values(reindexer::FtFastConfig::Optimization::Memory, reindexer::FtFastConfig::Optimization::CPU),
 						 [](const auto& info) {

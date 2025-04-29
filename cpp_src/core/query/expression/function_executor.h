@@ -1,0 +1,53 @@
+#pragma once
+
+#include "tools/timetools.h"
+#include "updates/updaterecord.h"
+
+namespace reindexer {
+
+class NamespaceImpl;
+class NsContext;
+struct ParsedQueryFunction;
+
+class [[nodiscard]] QueryFunctionNow {
+public:
+	explicit QueryFunctionNow(TimeUnit unit) noexcept : unit_{unit} {}
+	TimeUnit Unit() const noexcept { return unit_; }
+
+private:
+	TimeUnit unit_;
+};
+
+struct [[nodiscard]] QueryFunctionSerial {};
+
+class [[nodiscard]] QueryFunction : private std::variant<QueryFunctionSerial, QueryFunctionNow> {
+	using Base = std::variant<QueryFunctionSerial, QueryFunctionNow>;
+
+public:
+	explicit QueryFunction(const ParsedQueryFunction&);
+	explicit QueryFunction(ParsedQueryFunction&&);
+
+	[[nodiscard]] Base& AsVariant() & { return *this; }
+	[[nodiscard]] const Base& AsVariant() const& { return *this; }
+
+	[[nodiscard]] std::string_view FieldName() const& noexcept { return fieldName_; }
+
+	auto AsVariant() const&& = delete;
+	auto FieldName() const&& = delete;
+
+private:
+	std::string fieldName_;
+};
+
+class [[nodiscard]] FunctionExecutor {
+public:
+	explicit FunctionExecutor(NamespaceImpl& ns, h_vector<updates::UpdateRecord, 2>& replUpdates) noexcept
+		: ns_(ns), replUpdates_(replUpdates) {}
+	Variant Execute(const QueryFunction& funcData, const NsContext& ctx);
+
+private:
+	NamespaceImpl& ns_;
+	h_vector<updates::UpdateRecord, 2>& replUpdates_;
+};
+
+}  // namespace reindexer

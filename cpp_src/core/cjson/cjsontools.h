@@ -7,7 +7,8 @@ namespace reindexer {
 template <typename T>
 void buildPayloadTuple(const PayloadIface<T>& pl, const TagsMatcher* tagsMatcher, WrSerializer& wrser);
 
-void copyCJsonValue(TagType, Serializer&, WrSerializer&);
+template <typename Validator>
+void copyCJsonValue(TagType, Serializer&, WrSerializer&, const Validator&);
 void copyCJsonValue(TagType, const Variant& value, WrSerializer&);
 void putCJsonRef(TagType, TagName, int tagField, const VariantArray& values, WrSerializer&);
 void putCJsonValue(TagType, TagName, const VariantArray& values, WrSerializer&);
@@ -16,18 +17,26 @@ void putCJsonValue(TagType, TagName, const VariantArray& values, WrSerializer&);
 void skipCjsonTag(ctag tag, Serializer& rdser, std::array<unsigned, kMaxIndexes>* fieldsArrayOffsets = nullptr);
 [[nodiscard]] Variant cjsonValueToVariant(TagType tag, Serializer& rdser, KeyValueType dstType);
 
-[[noreturn]] void throwUnexpectedArrayError(std::string_view parserName, const PayloadFieldType&);
+[[noreturn]] void throwUnexpectedArrayError(std::string_view fieldName, KeyValueType fieldType, std::string_view parserName);
 [[noreturn]] void throwUnexpectedArraySizeForFloatVectorError(std::string_view parserName, const PayloadFieldType& fieldRef, size_t size);
 [[noreturn]] void throwUnexpectedArrayTypeForFloatVectorError(std::string_view parserName, const PayloadFieldType& fieldRef);
-[[noreturn]] void throwUnexpectedNestedArrayError(std::string_view parserName, const PayloadFieldType& f);
+[[noreturn]] void throwUnexpectedNestedArrayError(std::string_view parserName, std::string_view fieldName, KeyValueType fieldType);
 [[noreturn]] void throwScalarMultipleEncodesError(const Payload& pl, const PayloadFieldType& f, int field);
-[[noreturn]] void throwUnexpectedArraySizeError(std::string_view parserName, const PayloadFieldType& f, int arraySize);
+[[noreturn]] void throwUnexpectedArraySizeError(std::string_view parserName, std::string_view fieldName, size_t fieldArrayDim,
+												size_t arraySize);
+[[noreturn]] void throwUnexpected(std::string_view fieldName, KeyValueType expectedType, KeyValueType obtianedType,
+								  std::string_view parserName);
+[[noreturn]] void throwUnexpected(std::string_view fieldName, KeyValueType expectedType, std::string_view obtianedType,
+								  std::string_view parserName);
+[[noreturn]] void throwUnexpectedArrayInIndex(std::string_view fieldName, KeyValueType type, std::string_view parserName);
+[[noreturn]] void throwUnexpectedObjectInIndex(std::string_view fieldName, std::string_view parserName);
+
 RX_ALWAYS_INLINE void validateNonArrayFieldRestrictions(const ScalarIndexesSetT& scalarIndexes, const Payload& pl,
 														const PayloadFieldType& f, int field, InArray isInArray,
 														std::string_view parserName) {
 	if (!f.IsArray()) {
 		if rx_unlikely (isInArray) {
-			throwUnexpectedNestedArrayError(parserName, f);
+			throwUnexpectedNestedArrayError(parserName, f.Name(), f.Type());
 		}
 		if rx_unlikely (scalarIndexes.test(field)) {
 			throwScalarMultipleEncodesError(pl, f, field);
@@ -35,10 +44,11 @@ RX_ALWAYS_INLINE void validateNonArrayFieldRestrictions(const ScalarIndexesSetT&
 	}
 }
 
-RX_ALWAYS_INLINE void validateArrayFieldRestrictions(const PayloadFieldType& f, int arraySize, std::string_view parserName) {
-	if (f.IsArray()) {
-		if rx_unlikely (arraySize && f.ArrayDims() > 0 && int(f.ArrayDims()) != arraySize) {
-			throwUnexpectedArraySizeError(parserName, f, arraySize);
+RX_ALWAYS_INLINE void validateArrayFieldRestrictions(std::string_view fieldName, IsArray isArray, size_t fieldArrayDim, size_t arraySize,
+													 std::string_view parserName) {
+	if (isArray) {
+		if rx_unlikely (arraySize > 0 && fieldArrayDim > 0 && fieldArrayDim != arraySize) {
+			throwUnexpectedArraySizeError(parserName, fieldName, fieldArrayDim, arraySize);
 		}
 	}
 }
@@ -62,20 +72,43 @@ inline void DumpCjson(Serializer&& cjson, std::ostream& dump, const TagsMatcher*
 	DumpCjson(cjson, dump, tm, tab);
 }
 
-static inline Variant convertValueForPayload(Payload& pl, int field, Variant&& value, std::string_view source) {
-	if (field < 0) {
-		return value;
-	}
-
-	auto plFieldType = pl.Type().Field(field).Type();
-	if (plFieldType.IsSame(value.Type())) {
-		return value;
-	} else if ((plFieldType.IsNumeric() && value.Type().IsNumeric()) ||
-			   (plFieldType.Is<KeyValueType::Uuid>() && value.Type().Is<KeyValueType::String>())) {
-		return value.convert(pl.Type().Field(field).Type());
+static inline Variant convertNullToIndexField(KeyValueType fieldType, std::string_view fieldName, std::string_view parserName,
+											  ConvertNull convertNull) {
+	using namespace std::string_view_literals;
+	if (convertNull) {
+		return fieldType.EvaluateOneOf(
+			[](KeyValueType::Double) noexcept { return Variant(0.0); }, [](KeyValueType::Float) noexcept { return Variant(0.0f); },
+			[](KeyValueType::Bool) noexcept { return Variant(false); }, [](KeyValueType::Int) noexcept { return Variant(0); },
+			[](KeyValueType::Int64) noexcept { return Variant(static_cast<int64_t>(0)); },
+			[](KeyValueType::String) { return Variant(static_cast<const char*>(nullptr)); },
+			[](KeyValueType::Uuid) noexcept { return Variant{Uuid{}}; },
+			[](KeyValueType::FloatVector) noexcept { return Variant{ConstFloatVectorView{}}; },
+			[&](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null>) -> Variant {
+				throwUnexpected(fieldName, fieldType, "null"sv, parserName);
+			});
 	} else {
-		throw Error(errLogic, "Error parsing {} field '{}' - got {}, expected {}", source, pl.Type().Field(field).Name(),
-					value.Type().Name(), plFieldType.Name());
+		return fieldType.EvaluateOneOf(
+			[](OneOf<KeyValueType::Double, KeyValueType::Float, KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64,
+					 KeyValueType::String, KeyValueType::Uuid>) noexcept { return Variant{}; },
+			[](KeyValueType::FloatVector) noexcept { return Variant{ConstFloatVectorView{}}; },
+			[&](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null>) -> Variant {
+				throwUnexpected(fieldName, fieldType, "null"sv, parserName);
+			});
+	}
+}
+
+static inline void convertValueForIndexField(KeyValueType fieldType, std::string_view fieldName, Variant& value,
+											 std::string_view parserName, ConvertToString convertToString, ConvertNull convertNull) {
+	if (fieldType.IsSame(value.Type()) || fieldType.Is<KeyValueType::Undefined>()) {
+		return;
+	} else if (value.IsNullValue()) {
+		value = convertNullToIndexField(fieldType, fieldName, parserName, convertNull);
+	} else if ((fieldType.IsNumeric() && value.Type().IsNumeric()) ||
+			   (fieldType.Is<KeyValueType::Uuid>() && value.Type().Is<KeyValueType::String>()) ||
+			   (convertToString && fieldType.Is<KeyValueType::String>() && value.Type().IsNumeric())) {
+		value.convert(fieldType);
+	} else {
+		throwUnexpected(fieldName, fieldType, value.Type().Name(), parserName);
 	}
 }
 

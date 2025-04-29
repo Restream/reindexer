@@ -1,8 +1,8 @@
 #include "walselecter.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/namespace/namespaceimpl.h"
-#include "core/queryresults/fields_filter.h"
 #include "core/nsselecter/selectctx.h"
+#include "core/queryresults/fields_filter.h"
 #include "core/queryresults/localqueryresults.h"
 #include "tools/semversion.h"
 

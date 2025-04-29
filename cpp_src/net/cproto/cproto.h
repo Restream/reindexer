@@ -56,7 +56,7 @@ enum CmdCode : uint16_t {
 	kCmdGetSnapshot = 70,
 	kCmdFetchSnapshot = 71,
 	kCmdApplySnapshotCh = 72,
-	kCmdSetClusterizationStatus = 73,
+	kCmdSetClusterOperationStatus = 73,
 
 	kCmdPutTxMeta = 74,
 	kCmdSetTagsMatcherTx = 75,

@@ -27,8 +27,7 @@ public:
 
 private:
 	struct ArrayData {
-		ArrayData(TagsMatcher* tm, TagName tagName, int _field)
-			: field(_field), size(0), ser(), builder(ser, ObjType::TypeArray, tm, tagName) {}
+		ArrayData(TagsMatcher* tm, TagName tagName, int _field) : field(_field), size(0), builder(ser, ObjType::TypeArray, tm, tagName) {}
 		ArrayData(const ArrayData&) = delete;
 		ArrayData(ArrayData&&) = delete;
 		ArrayData& operator=(const ArrayData&) = delete;
@@ -60,8 +59,8 @@ public:
 	CJsonProtobufObjectBuilder& operator=(const CJsonProtobufObjectBuilder&) = delete;
 	CJsonProtobufObjectBuilder& operator=(CJsonProtobufObjectBuilder&&) = delete;
 
-	operator CJsonBuilder&() { return builder_; }
-	CJsonBuilder* operator->() { return &builder_; }
+	operator CJsonBuilder&() noexcept { return builder_; }
+	CJsonBuilder* operator->() noexcept { return &builder_; }
 
 private:
 	CJsonBuilder builder_;
@@ -77,19 +76,25 @@ public:
 	ProtobufDecoder& operator=(const ProtobufDecoder&) = delete;
 	ProtobufDecoder& operator=(ProtobufDecoder&&) = delete;
 
-	Error Decode(std::string_view buf, Payload& pl, WrSerializer& wrser, FloatVectorsHolderVector&);
+	Error Decode(std::string_view buf, Payload& pl, WrSerializer& wrser, FloatVectorsHolderVector&) noexcept;
 
 private:
-	void setValue(Payload& pl, CJsonBuilder& builder, ProtobufValue item);
-	Error decode(Payload& pl, CJsonBuilder& builder, const ProtobufValue& val, FloatVectorsHolderVector&);
-	Error decodeObject(Payload& pl, CJsonBuilder& builder, ProtobufObject& object, FloatVectorsHolderVector&);
-	Error decodeArray(Payload& pl, CJsonBuilder& builder, const ProtobufValue& val, FloatVectorsHolderVector&);
+	template <typename Validator>
+	void setValue(Payload&, CJsonBuilder&, ProtobufValue, const Validator&);
+	void decode(Payload&, CJsonBuilder&, const ProtobufValue&, FloatVectorsHolderVector&);
+	template <typename Validator>
+	void decode(Payload&, CJsonBuilder&, const ProtobufValue&, FloatVectorsHolderVector&, const Validator&);
+	void decodeObject(Payload&, CJsonBuilder&, ProtobufObject&, FloatVectorsHolderVector&);
+	template <typename Validator>
+	void decodeArray(Payload&, CJsonBuilder&, const ProtobufValue&, FloatVectorsHolderVector&, Validator&&);
+	InArray isInArray() const noexcept { return InArray(arrayLevel_ > 0); }
 
 	TagsMatcher& tm_;
 	std::shared_ptr<const Schema> schema_;
 	TagsPath tagsPath_;
 	ArraysStorage arraysStorage_;
 	ScalarIndexesSetT objectScalarIndexes_;
+	int32_t arrayLevel_ = 0;
 };
 
 }  // namespace reindexer

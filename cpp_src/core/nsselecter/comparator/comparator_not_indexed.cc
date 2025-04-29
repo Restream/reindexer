@@ -27,7 +27,7 @@ ComparatorNotIndexedImplBase<CondRange>::ComparatorNotIndexedImplBase(const Vari
 
 ComparatorNotIndexedImplBase<CondSet>::ComparatorNotIndexedImplBase(const VariantArray& values) : values_{values.size()} {
 	for (const Variant& v : values) {
-		throwOnNull(v, CondSet);
+		assertrx_dbg(!v.IsNullValue());
 		values_.insert(v);
 	}
 }
@@ -48,7 +48,7 @@ reindexer::comparators::ComparatorNotIndexedImpl<CondAllSet, false>::ComparatorN
 	: payloadType_{payloadType}, fieldPath_{fieldPath}, values_{values.size()} {
 	int i = 0;
 	for (const Variant& v : values) {
-		throwOnNull(v, CondAllSet);
+		assertrx_dbg(!v.IsNullValue());
 		values_.emplace(v, i);
 		++i;
 	}

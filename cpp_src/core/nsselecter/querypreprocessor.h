@@ -18,7 +18,7 @@ class QueryPreprocessor : private QueryEntries {
 public:
 	enum class [[nodiscard]] ValuesType : bool { Scalar, Composite };
 
-	QueryPreprocessor(QueryEntries&&, const h_vector<Aggregator, 4>&, NamespaceImpl*, const SelectCtx&);
+	QueryPreprocessor(QueryEntries&&, const RVector<Aggregator, 4>&, NamespaceImpl*, const SelectCtx&);
 	const QueryEntries& GetQueryEntries() const noexcept { return *this; }
 	bool LookupQueryIndexes() {
 		bool forcedSortOptimization = hasForcedSortOptimizationQueryEntry();
@@ -45,6 +45,7 @@ public:
 		return substituteCompositeIndexes(0, container_.size() - hasForcedSortOptimizationQueryEntry()) != 0;
 	}
 	void InitIndexedQueries() { initIndexedQueries(0, Size()); }
+	void AddDistinctEntries(const RVector<Aggregator, 4>&);
 	bool NeedNextEvaluation(unsigned start, unsigned count, bool& matchedAtLeastOnce, QresExplainHolder& qresHolder,
 							bool needCalcTotal) noexcept;
 	unsigned Start() const noexcept { return start_; }

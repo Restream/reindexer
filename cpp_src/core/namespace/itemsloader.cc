@@ -270,7 +270,7 @@ void ItemsLoader::loadCachedANNIndexes() {
 		assertrx(vectorsDataIt != vectorsData_.end());
 		auto& vectorsData = vectorsDataIt->second;
 		auto res = idxPtr->LoadIndexCache(cachedIndex->data, IsComposite(pkIdx->Type()), [&](const VariantArray& keys, void* targetVec) {
-			auto res = pkIdx->SelectKey(keys, CondEq, 0, Index::SelectOpts(), nullptr, dummyCtx).Front();
+			auto res = pkIdx->SelectKey(keys, CondEq, 0, Index::SelectContext{}, dummyCtx).Front();
 			if (!res[0].ids_.empty()) {
 				const IdType id = res[0].ids_[0];
 				std::memcpy(targetVec, vectorsData[id].get(), vecSizeBytes);

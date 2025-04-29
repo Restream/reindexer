@@ -1,6 +1,6 @@
 #pragma once
-#include "core/queryresults/queryresults.h"
 #include <span>
+#include "core/queryresults/queryresults.h"
 #include "tools/serializer.h"
 
 namespace reindexer {

@@ -21,7 +21,7 @@ Index::Index(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields
 	: type_(idef.IndexType()), opts_(idef.Opts()), payloadType_(std::move(payloadType)), fields_(std::move(fields)) {
 	reindexer::deepCopy(name_, idef.Name());  // Avoiding false positive TSAN-warning for COW strings on centos7
 	logFmt(LogTrace, "Index::Index ('{}',{},{})  {}{}{}", idef.Name(), idef.IndexTypeStr(), idef.FieldType(),
-			  idef.Opts().IsPK() ? ",pk" : "", idef.Opts().IsDense() ? ",dense" : "", idef.Opts().IsArray() ? ",array" : "");
+		   idef.Opts().IsPK() ? ",pk" : "", idef.Opts().IsDense() ? ",dense" : "", idef.Opts().IsArray() ? ",array" : "");
 }
 
 Index::Index(const Index& obj)
@@ -39,7 +39,7 @@ Index::Index(const Index& obj)
 
 static std::unique_ptr<Index> createANNIfAvailable(const IndexDef& idef, [[maybe_unused]] PayloadType&& payloadType,
 												   [[maybe_unused]] FieldsSet&& fields, [[maybe_unused]] size_t currentNsSize,
-												   [[maybe_unused]] Index::CreationLog log) {
+												   [[maybe_unused]] LogCreation log) {
 	const auto itype = idef.IndexType();
 	if (itype == IndexHnsw) {
 #if RX_WITH_BUILTIN_ANN_INDEXES
@@ -73,7 +73,7 @@ static std::unique_ptr<Index> createANNIfAvailable(const IndexDef& idef, [[maybe
 }
 
 std::unique_ptr<Index> Index::New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
-								  const NamespaceCacheConfigData& cacheCfg, size_t currentNsSize, CreationLog log) {
+								  const NamespaceCacheConfigData& cacheCfg, size_t currentNsSize, LogCreation log) {
 	switch (idef.IndexType()) {
 		case IndexStrBTree:
 		case IndexIntBTree:

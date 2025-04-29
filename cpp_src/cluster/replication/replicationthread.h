@@ -34,6 +34,7 @@ struct ReplThreadConfig {
 	bool ForceSyncOnLogicError = false;
 	bool EnableCompression = true;
 	double OnlineUpdatesDelaySec = 0;
+	std::string LeaderReplToken;
 };
 
 struct UpdateApplyStatus {

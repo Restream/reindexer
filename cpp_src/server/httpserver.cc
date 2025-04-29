@@ -6,6 +6,7 @@
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/protobufbuilder.h"
 #include "core/cjson/protobufschemabuilder.h"
+#include "core/dbconfig.h"
 #include "core/queryresults/tableviewbuilder.h"
 #include "core/schema.h"
 #include "core/type_consts.h"
@@ -140,7 +141,7 @@ int HTTPServer::GetSQLSuggest(http::Context& ctx) {
 	reindexer::JsonBuilder builder(ser);
 	auto node = builder.Array("suggests");
 	for (auto& suggest : suggestions) {
-		node.Put(reindexer::TagName::Empty(), suggest);
+		node.Put(TagName::Empty(), suggest);
 	}
 	node.End();
 	builder.End();
@@ -259,7 +260,7 @@ int HTTPServer::GetDatabases(http::Context& ctx) {
 		builder.Put("total_items", dbs.size());
 		auto arrNode = builder.Array("items");
 		for (auto& db : dbs) {
-			arrNode.Put(reindexer::TagName::Empty(), db);
+			arrNode.Put(TagName::Empty(), db);
 		}
 	}
 
@@ -1025,6 +1026,8 @@ bool HTTPServer::Start(const std::string& addr, ev::dynamic_loop& loop) {
 
 	router_.GET<HTTPServer, &HTTPServer::GetRole>("/api/v1/user/role", this);
 
+	router_.GET<HTTPServer, &HTTPServer::GetDefaultConfigs>("/api/v1/db/default_configs", this);
+
 	router_.OnResponse(this, &HTTPServer::OnResponse);
 	router_.Middleware<HTTPServer, &HTTPServer::CheckAuth>(this);
 
@@ -1674,7 +1677,7 @@ void HTTPServer::queryResultParams(Builder& builder, reindexer::QueryResults& re
 	h_vector<std::string_view, 1> namespaces(res.GetNamespaces());
 	auto namespacesArray = builder.Array(kParamNamespaces, namespaces.size());
 	for (auto ns : namespaces) {
-		namespacesArray.Put(reindexer::TagName::Empty(), ns);
+		namespacesArray.Put(TagName::Empty(), ns);
 	}
 	namespacesArray.End();
 
@@ -1702,7 +1705,7 @@ void HTTPServer::queryResultParams(Builder& builder, reindexer::QueryResults& re
 		auto headerArray = builder.Array(kParamColumns, header.size());
 		for (auto it = header.begin(); it != header.end(); ++it) {
 			ColumnData& data = columnsSettings[*it];
-			auto parametersObj = headerArray.Object(reindexer::TagName::Empty(), 4);
+			auto parametersObj = headerArray.Object(TagName::Empty(), 4);
 			parametersObj.Put(kParamName, *it);
 			parametersObj.Put(kParamWidthPercents, data.widthTerminalPercentage);
 			parametersObj.Put(kParamMaxChars, data.maxWidthCh);
@@ -2186,6 +2189,17 @@ bool HTTPServer::isParameterSetOn(std::string_view val) const noexcept {
 		return true;
 	}
 	return false;
+}
+
+int HTTPServer::GetDefaultConfigs(http::Context& ctx) {
+	std::string_view configType = ctx.request->params.Get("type");
+	WrSerializer ser(ctx.writer->GetChunk());
+	reindexer::JsonBuilder builder(ser);
+
+	if (Error ret = reindexer::GetDefaultConfigs(configType, builder); !ret.ok()) {
+		return jsonStatus(ctx, http::HttpStatus(ret));
+	}
+	return ctx.JSON(http::StatusOK, ser.DetachChunk());
 }
 
 }  // namespace reindexer_server

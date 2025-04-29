@@ -2,7 +2,7 @@
 
 #include "hnsw_index.h"
 #include "core/query/knn_search_params.h"
-#include "core/selectfunc/ctx/knn_ctx.h"
+#include "knn_ctx.h"
 #include "tools/logger.h"
 #include "tools/normalize.h"
 
@@ -10,7 +10,7 @@ namespace reindexer {
 
 static_assert(sizeof(IdType) == sizeof(hnswlib::labeltype), "Expecting 1-to-1 mapping");
 
-static void PrintVecInstructionsLevel(std::string_view indexType, std::string_view name, VectorMetric metric, Index::CreationLog log) {
+static void PrintVecInstructionsLevel(std::string_view indexType, std::string_view name, VectorMetric metric, LogCreation log) {
 	std::string vecInstructions = "disabled";
 	switch (metric) {
 		case VectorMetric::L2:
@@ -43,7 +43,7 @@ static void PrintVecInstructionsLevel(std::string_view indexType, std::string_vi
 		default:
 			throw Error(errLogic, "Attempt to construct {} index '{}' with unknown metric: {}", indexType, name, int(metric));
 	}
-	if (log == Index::CreationLog::Yes) {
+	if (log) {
 		logFmt(LogInfo, "Creating {} index '{}'; Vector instructions level: {}", indexType, name, vecInstructions);
 	}
 }
@@ -53,7 +53,7 @@ constexpr static int kHnswRandomSeed = 100;
 
 template <>
 HnswIndexBase<hnswlib::HierarchicalNSWST>::HnswIndexBase(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
-														 size_t currentNsSize, CreationLog log)
+														 size_t currentNsSize, LogCreation log)
 	: Base{idef, std::move(payloadType), std::move(fields)},
 	  space_{newSpace(Dimension().Value(), metric_)},
 	  map_{std::make_unique<hnswlib::HierarchicalNSWST<FloatType>>(
@@ -64,7 +64,7 @@ HnswIndexBase<hnswlib::HierarchicalNSWST>::HnswIndexBase(const IndexDef& idef, P
 
 template <>
 HnswIndexBase<hnswlib::HierarchicalNSWMT>::HnswIndexBase(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
-														 size_t currentNsSize, CreationLog log)
+														 size_t currentNsSize, LogCreation log)
 	: Base{idef, std::move(payloadType), std::move(fields)},
 	  space_{newSpace(Dimension().Value(), metric_)},
 	  map_{std::make_unique<hnswlib::HierarchicalNSWMT<FloatType>>(
@@ -75,7 +75,7 @@ HnswIndexBase<hnswlib::HierarchicalNSWMT>::HnswIndexBase(const IndexDef& idef, P
 
 template <>
 HnswIndexBase<hnswlib::BruteforceSearch>::HnswIndexBase(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
-														size_t currentNsSize, CreationLog log)
+														size_t currentNsSize, LogCreation log)
 	: Base{idef, std::move(payloadType), std::move(fields)},
 	  space_{newSpace(Dimension().Value(), metric_)},
 	  map_{std::make_unique<hnswlib::BruteforceSearch<FloatType>>(space_.get(),
@@ -394,7 +394,7 @@ size_t HnswIndexBase<Map>::newSize(size_t currentSize) noexcept {
 }
 
 std::unique_ptr<Index> HnswIndex_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, size_t currentNsSize,
-									 Index::CreationLog log) {
+									 LogCreation log) {
 	switch (idef.Opts().FloatVector().Multithreading()) {
 		case MultithreadingMode::SingleThread:
 			return std::make_unique<HnswIndexST>(idef, std::move(payloadType), std::move(fields), currentNsSize, log);
@@ -406,7 +406,7 @@ std::unique_ptr<Index> HnswIndex_New(const IndexDef& idef, PayloadType&& payload
 }
 
 std::unique_ptr<Index> BruteForceVectorIndex_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, size_t currentNsSize,
-												 Index::CreationLog log) {
+												 LogCreation log) {
 	return std::make_unique<BruteForceVectorIndex>(idef, std::move(payloadType), std::move(fields), currentNsSize, log);
 }
 

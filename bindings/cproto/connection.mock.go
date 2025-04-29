@@ -58,15 +58,16 @@ func NewMockConnection(t *testing.T) *MockConnection {
 	return mock
 }
 
-func (mcf *MockConnFactory) newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eh bindings.EventsHandler) (connection, int64, error) {
+func (mcf *MockConnFactory) newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eh bindings.EventsHandler) (connection, string, int64, error) {
 	c, ok := mcf.expCalls["newConnection"]
 	if !ok {
 		mcf.t.Fatalf("unexpected call newConnection")
 	}
 	ret0, _ := c.rets[0].(connection)
-	ret1, _ := c.rets[1].(int64)
-	ret2, _ := c.rets[2].(error)
-	return ret0, ret1, ret2
+	ret1, _ := c.rets[1].(string)
+	ret2, _ := c.rets[2].(int64)
+	ret3, _ := c.rets[3].(error)
+	return ret0, ret1, ret2, ret3
 }
 
 func (rec *recMockConnFactory) newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner) *call {

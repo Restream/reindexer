@@ -8,11 +8,11 @@
 #include "core/ft/limits.h"
 #include "core/ft/stemmer.h"
 #include "core/ft/typos.h"
-#include "core/ft/usingcontainer.h"
 #include "core/index/indextext/ftkeyentry.h"
 #include "estl/flat_str_map.h"
 #include "estl/suffix_map.h"
 #include "indextexttypes.h"
+#include "tools/rvector.h"
 
 namespace reindexer {
 

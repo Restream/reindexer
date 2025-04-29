@@ -1206,6 +1206,9 @@ template <typename T, typename Context,
 using stored_type_constant = std::integral_constant<
     type, Context::builtin_types || TYPE == type::int_type ? TYPE
                                                            : type::custom_type>;
+
+// NOLINTBEGIN (*)
+
 // A parse context with extra data used only in compile-time checks.
 template <typename Char>
 class compile_parse_context : public parse_context<Char> {
@@ -1241,6 +1244,7 @@ class compile_parse_context : public parse_context<Char> {
       report_error("width/precision is not integer");
   }
 };
+// NOLINTEND (*)
 
 // An argument reference.
 template <typename Char> union arg_ref {

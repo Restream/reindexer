@@ -33,7 +33,7 @@ public:
 
 	void SetTagsMatcher(const TagsMatcher* tm) noexcept { tm_ = tm; }
 	MsgPackBuilder Raw(std::string_view, std::string_view) noexcept { return MsgPackBuilder(); }
-	MsgPackBuilder Raw(std::string_view arg) noexcept { return Raw(std::string_view{}, arg); }
+	MsgPackBuilder Raw(std::string_view v) noexcept { return Raw(std::string_view{}, v); }
 
 	template <typename N, typename T>
 	void Array(N tagName, std::span<T> data, int /*offset*/ = 0) {
@@ -226,7 +226,7 @@ private:
 		}
 	}
 
-	void packKeyName(std::nullptr_t) {}
+	void packKeyName(std::nullptr_t) = delete;
 	void packKeyName(std::string_view name) {
 		if (!name.empty() && !isArray()) {
 			packValue(name);

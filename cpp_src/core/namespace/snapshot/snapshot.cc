@@ -8,22 +8,22 @@ namespace reindexer {
 static constexpr size_t kDefaultChunkSize = 500;
 
 Snapshot::Snapshot(TagsMatcher tm, lsn_t nsVersion, uint64_t expectedDataHash, uint64_t expectedDataCount,
-				   ClusterizationStatus clusterStatus)
+				   ClusterOperationStatus clusterStatus)
 	: tm_(std::move(tm)),
 	  expectedDataHash_(expectedDataHash),
 	  expectedDataCount_(expectedDataCount),
-	  clusterizationStatus_(std::move(clusterStatus)),
+	  clusterOperationStatus_(std::move(clusterStatus)),
 	  nsVersion_(nsVersion) {
 	walData_.AddItem(ItemRef(-1, createTmItem(), 0, true));
 }
 
 Snapshot::Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, uint64_t expectedDataHash, uint64_t expectedDataCount,
-				   ClusterizationStatus clusterStatus, LocalQueryResults&& wal, LocalQueryResults&& raw)
+				   ClusterOperationStatus clusterStatus, LocalQueryResults&& wal, LocalQueryResults&& raw)
 	: pt_(std::move(pt)),
 	  tm_(std::move(tm)),
 	  expectedDataHash_(expectedDataHash),
 	  expectedDataCount_(expectedDataCount),
-	  clusterizationStatus_(std::move(clusterStatus)),
+	  clusterOperationStatus_(std::move(clusterStatus)),
 	  lastLsn_(lastLsn),
 	  nsVersion_(nsVersion) {
 	if (raw.Items().Size()) {
@@ -45,7 +45,7 @@ Snapshot& Snapshot::operator=(Snapshot&& other) noexcept {
 	walData_ = std::move(other.walData_);
 	expectedDataHash_ = other.expectedDataHash_;
 	expectedDataCount_ = other.expectedDataCount_;
-	clusterizationStatus_ = other.clusterizationStatus_;
+	clusterOperationStatus_ = other.clusterOperationStatus_;
 	lastLsn_ = other.lastLsn_;
 	nsVersion_ = other.nsVersion_;
 	return *this;

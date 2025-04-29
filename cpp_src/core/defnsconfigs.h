@@ -7,8 +7,7 @@ namespace reindexer {
 
 constexpr char kNsNameField[] = "name";
 
-constexpr std::string_view kDefDBConfig[] = {
-	R"json({
+constexpr std::string_view kDefProfilingConfig = R"json({
 		"type":"profiling",
 		"profiling":{
 			"queriesperfstats":false,
@@ -31,13 +30,15 @@ constexpr std::string_view kDefDBConfig[] = {
 				}
 			}
 		}
-	})json",
-	R"json({
+	})json";
+
+constexpr std::string_view kDefNamespacesConfig = R"json({
 		"type":"namespaces",
 		"namespaces":[
 			{
 				"namespace":"*",
 				"log_level":"none",
+				"strict_mode":"names",
 				"join_cache_mode":"off",
 				"start_copy_policy_tx_size":10000,
 				"copy_policy_multiplier":5,
@@ -52,7 +53,7 @@ constexpr std::string_view kDefDBConfig[] = {
 				"max_iterations_idset_preresult":20000,
 				"index_updates_counting_mode":false,
 				"sync_storage_flush_limit":20000,
-				"strict_mode":"names",
+				"ann_storage_cache_build_timeout_ms": 5000,
 				"cache":{
 					"index_idset_cache_size":134217728,
 					"index_idset_hits_to_cache":2,
@@ -62,43 +63,52 @@ constexpr std::string_view kDefDBConfig[] = {
 					"joins_preselect_hit_to_cache":2,
 					"query_count_cache_size":134217728,
 					"query_count_hit_to_cache":2
-				},
-				"ann_storage_cache_build_timeout_ms": 5000
+				}
 			}
 		]
-	})json",
-	R"json({
+	})json";
+
+constexpr std::string_view kDefReplicationConfig = R"json({
 		"type":"replication",
 		"replication":{
-			"server_id":0,
 			"cluster_id":1,
+			"server_id":0	
 		}
-	})json",
-	R"json({
+	})json";
+
+constexpr std::string_view kDefAsyncReplicationConfig = R"json({
 		"type":"async_replication",
 		"async_replication":{
 			"role": "none",
-			"log_level":"none",
+			"replication_mode": "default",
+			"app_name": "rx_repl_leader",
 			"sync_threads":4,
 			"syncs_per_thread":2,
-			"online_updates_timeout_sec":20,
 			"sync_timeout_sec":60,
-			"retry_sync_interval_msec":30000,
+			"online_updates_timeout_sec":20,
 			"enable_compression":true,
-			"batching_routines_count":100,
 			"force_sync_on_logic_error": false,
 			"force_sync_on_wrong_data_hash": false,
+			"retry_sync_interval_msec":30000,
+			"batching_routines_count":100,
 			"max_wal_depth_on_force_sync":1000,
-			"namespaces":[]
+			"online_updates_delay_msec":100,
+			"self_replication_token": "",
+			"log_level":"none",
+			"namespaces":[],
 			"nodes": []
 		}
-	})json",
-	R"json({
+	})json";
+
+constexpr std::string_view kDefActionConfig = R"json({
 		"type":"action",
 		"action":{
 			"command":""
 		}
-	})json"};
+	})json";
+
+constexpr std::string_view kDefDBConfig[] = {kDefProfilingConfig, kDefNamespacesConfig, kDefReplicationConfig, kDefAsyncReplicationConfig,
+											 kDefActionConfig};
 
 const NamespaceDef kSystemNsDefs[] = {
 	NamespaceDef(kConfigNamespace, StorageOpts().Enabled().CreateIfMissing().DropOnFileFormatError())

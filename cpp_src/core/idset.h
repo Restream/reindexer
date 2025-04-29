@@ -3,17 +3,16 @@
 #include <core/type_consts.h>
 #include <algorithm>
 #include <atomic>
+#include <span>
 #include <string>
-#include "core/ft/usingcontainer.h"
 #include "cpp-btree/btree_set.h"
 #include "estl/h_vector.h"
 #include "estl/intrusive_ptr.h"
-#include <span>
 #include "sort/pdqsort.hpp"
 
 namespace reindexer {
 
-using base_idset = RVector<IdType, 3>;
+using base_idset = h_vector<IdType, 3>;	 // const_iterator must be trivial (used in union)
 using base_idsetset = btree::btree_set<int>;
 
 class IdSetPlain : protected base_idset {

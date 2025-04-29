@@ -7,6 +7,8 @@
 class SelectorPlanTest : public ReindexerApi {
 public:
 	void SetUp() override {
+		ReindexerApi::SetUp();
+
 		Error err = rt.reindexer->OpenNamespace(btreeNs);
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(
@@ -19,8 +21,6 @@ public:
 			unbuiltBtreeNs,
 			{IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{kFieldTree1, "tree", "int", IndexOpts(), 0},
 			 IndexDeclaration{kFieldTree2, "tree", "int", IndexOpts(), 0}, IndexDeclaration{kFieldHash, "hash", "int", IndexOpts(), 0}});
-		err = rt.reindexer->InitSystemNamespaces();
-		ASSERT_TRUE(err.ok()) << err.what();
 		changeNsOptimizationTimeout();
 	}
 

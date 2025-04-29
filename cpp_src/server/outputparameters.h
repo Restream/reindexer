@@ -31,13 +31,18 @@ constexpr auto kProtoQueryResultsFields = frozen::make_unordered_map<frozen::str
 																	 {kParamCacheEnabled, 3_Tag}, {kParamExplain,         4_Tag},
 																	 {kParamTotalItems,   5_Tag}, {kParamQueryTotalItems, 6_Tag},
 																	 {kParamColumns,      7_Tag}, {kParamAggregations,    8_Tag}});
-// clang-format on
 
 constexpr auto kProtoColumnsFields = frozen::make_unordered_map<frozen::string, TagName>(
-	{{kParamName, 1_Tag}, {kParamWidthPercents, 2_Tag}, {kParamMaxChars, 3_Tag}, {kParamWidthChars, 4_Tag}});
-constexpr auto kProtoModifyResultsFields =
-	frozen::make_unordered_map<frozen::string, TagName>({{kParamItems, 1_Tag}, {kParamUpdated, 2_Tag}, {kParamSuccess, 3_Tag}});
-constexpr auto kProtoErrorResultsFields =
-	frozen::make_unordered_map<frozen::string, TagName>({{kParamSuccess, 1_Tag}, {kParamResponseCode, 2_Tag}, {kParamDescription, 3_Tag}});
+																	{{kParamName,         1_Tag}, {kParamWidthPercents,   2_Tag},
+																	 {kParamMaxChars,     3_Tag}, {kParamWidthChars,      4_Tag}});
+
+constexpr auto kProtoModifyResultsFields = frozen::make_unordered_map<frozen::string, TagName>(
+																	{{kParamItems,        1_Tag}, {kParamUpdated,         2_Tag},
+																	 {kParamSuccess,      3_Tag}});
+
+constexpr auto kProtoErrorResultsFields = frozen::make_unordered_map<frozen::string, TagName>(
+																	{{kParamSuccess,      1_Tag}, {kParamResponseCode,    2_Tag},
+																	 {kParamDescription,  3_Tag}});
+// clang-format on
 
 }  // namespace reindexer

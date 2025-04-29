@@ -10,11 +10,28 @@
 #include "queries_verifier.h"
 #include "reindexer_api.h"
 
+class [[nodiscard]] TestQuery : private reindexer::Query {
+public:
+	using Query::Query;
+	template <reindexer::concepts::ConvertibleToString Str>
+	reindexer::Query& Distinct(Str&& name) & {
+		if (!reindexer::strEmpty(name)) {
+			reindexer::Query::Distinct(std::forward<Str>(name));
+		}
+		return *this;
+	}
+	template <reindexer::concepts::ConvertibleToString Str>
+	[[nodiscard]] reindexer::Query&& Distinct(Str&& name) && {
+		return std::move(Distinct(std::forward<Str>(name)));
+	}
+	using Query::Distinct;
+};
+
 class QueriesApi : public ReindexerApi, public QueriesVerifier {
 public:
 	void SetUp() override {
-		Error err = rt.reindexer->InitSystemNamespaces();
-		ASSERT_TRUE(err.ok()) << err.what();
+		ReindexerApi::SetUp();
+
 		setPkFields(default_namespace, {kFieldNameId, kFieldNameTemp});
 		setPkFields(testSimpleNs, {kFieldNameId});
 		setPkFields(joinNs, {kFieldNameId});
@@ -686,43 +703,51 @@ protected:
 			const int randomAge = rand() % 50;
 			const int randomGenre = rand() % 50;
 
-			ExecuteAndVerifyWithSql(
-				Query(default_namespace).Where(kFieldNameGenre, CondEq, randomGenre).Distinct(distinct.c_str()).Sort(kFieldNameYear, true));
-
-			ExecuteAndVerifyWithSql(
-				Query(default_namespace).Where(kFieldNameName, CondEq, RandString()).Distinct(distinct.c_str()).Sort(kFieldNameYear, true));
-
-			ExecuteAndVerifyWithSql(Query(default_namespace)
-										.Where(kFieldNameRate, CondEq, static_cast<double>(rand() % 100) / 10)
+			ExecuteAndVerifyWithSql(TestQuery(default_namespace)
 										.Distinct(distinct.c_str())
+										.Where(kFieldNameGenre, CondEq, randomGenre)
 										.Sort(kFieldNameYear, true));
 
-			ExecuteAndVerifyWithSql(Query(default_namespace)
-										.Where(kFieldNameGenre, CondGt, randomGenre)
+			ExecuteAndVerifyWithSql(TestQuery(default_namespace)
 										.Distinct(distinct.c_str())
+										.Where(kFieldNameName, CondEq, RandString())
+										.Sort(kFieldNameYear, true));
+
+			ExecuteAndVerifyWithSql(TestQuery(default_namespace)
+										.Distinct(distinct.c_str())
+										.Where(kFieldNameRate, CondEq, static_cast<double>(rand() % 100) / 10)
+										.Sort(kFieldNameYear, true));
+
+			ExecuteAndVerifyWithSql(TestQuery(default_namespace)
+										.Distinct(distinct.c_str())
+										.Where(kFieldNameGenre, CondGt, randomGenre)
 										.Sort(kFieldNameYear, true)
 										.Debug(LogTrace));
 
-			ExecuteAndVerifyWithSql(
-				Query(default_namespace).Where(kFieldNameName, CondGt, RandString()).Distinct(distinct.c_str()).Sort(kFieldNameYear, true));
-
-			ExecuteAndVerifyWithSql(Query(default_namespace)
-										.Where(kFieldNameRate, CondGt, static_cast<double>(rand() % 100) / 10)
+			ExecuteAndVerifyWithSql(TestQuery(default_namespace)
 										.Distinct(distinct.c_str())
+										.Where(kFieldNameName, CondGt, RandString())
 										.Sort(kFieldNameYear, true));
 
-			ExecuteAndVerifyWithSql(
-				Query(default_namespace).Where(kFieldNameGenre, CondLt, randomGenre).Distinct(distinct.c_str()).Sort(kFieldNameYear, true));
+			ExecuteAndVerifyWithSql(TestQuery(default_namespace)
+										.Distinct(distinct.c_str())
+										.Where(kFieldNameRate, CondGt, static_cast<double>(rand() % 100) / 10)
+										.Sort(kFieldNameYear, true));
 
-			ExecuteAndVerifyWithSql(Query(default_namespace)
+			ExecuteAndVerifyWithSql(TestQuery(default_namespace)
+										.Distinct(distinct.c_str())
+										.Where(kFieldNameGenre, CondLt, randomGenre)
+										.Sort(kFieldNameYear, true));
+
+			ExecuteAndVerifyWithSql(TestQuery(default_namespace)
+										.Distinct(distinct.c_str())
 										.Where(kFieldNameAge, CondEq, randomAge)
 										.Where(kFieldNameGenre, CondEq, randomGenre)
-										.Distinct(distinct.c_str())
 										.Sort(kFieldNameYear, true));
 
-			ExecuteAndVerifyWithSql(Query(default_namespace)
-										.Select({distinct.c_str()})
+			ExecuteAndVerifyWithSql(TestQuery(default_namespace)
 										.Distinct(distinct.c_str())
+										.Select({distinct.c_str()})
 										.Where(kFieldNameGenre, CondEq, randomGenre)
 										.Sort(kFieldNameYear, true));
 		}
@@ -968,13 +993,13 @@ protected:
 			<< "Aggregation Avg result is incorrect!";
 		EXPECT_DOUBLE_EQ(testQr.GetAggregationResults()[1].GetValueOrZero(), yearSum) << "Aggregation Sum result is incorrect!";
 		EXPECT_DOUBLE_EQ(testQr.GetAggregationResults()[2].GetValueOrZero(), packagesMin) << "Aggregation Min result is incorrect!";
-		checkFacetUnordered(testQr.GetAggregationResults()[3].facets, singlefieldFacetUnordered, "SinglefieldUnordered");
-		checkFacet(testQr.GetAggregationResults()[4].facets, singlefieldFacetByName, "SinglefieldName");
-		checkFacet(testQr.GetAggregationResults()[5].facets, singlefieldFacetByCount, "SinglefieldCount");
-		checkFacetUnordered(testQr.GetAggregationResults()[6].facets, arrayFacetUnordered, "ArrayUnordered");
-		checkFacet(testQr.GetAggregationResults()[7].facets, arrayFacetByCount, "ArrayByCount");
-		checkFacet(testQr.GetAggregationResults()[8].facets, arrayFacetByName, "ArrayByName");
-		checkFacet(testQr.GetAggregationResults()[9].facets, multifieldFacet, "Multifield");
+		checkFacetUnordered(testQr.GetAggregationResults()[3].GetFacets(), singlefieldFacetUnordered, "SinglefieldUnordered");
+		checkFacet(testQr.GetAggregationResults()[4].GetFacets(), singlefieldFacetByName, "SinglefieldName");
+		checkFacet(testQr.GetAggregationResults()[5].GetFacets(), singlefieldFacetByCount, "SinglefieldCount");
+		checkFacetUnordered(testQr.GetAggregationResults()[6].GetFacets(), arrayFacetUnordered, "ArrayUnordered");
+		checkFacet(testQr.GetAggregationResults()[7].GetFacets(), arrayFacetByCount, "ArrayByCount");
+		checkFacet(testQr.GetAggregationResults()[8].GetFacets(), arrayFacetByName, "ArrayByName");
+		checkFacet(testQr.GetAggregationResults()[9].GetFacets(), multifieldFacet, "Multifield");
 	}
 
 	void CompareQueryResults(std::string_view serializedQuery, const QueryResults& lhs, const QueryResults& rhs) {
@@ -1008,25 +1033,30 @@ protected:
 				for (size_t i = 0; i < rhs.aggregationResults.size(); ++i) {
 					const auto& aggRes1 = rhs.aggregationResults[i];
 					const auto& aggRes2 = lhs.aggregationResults[i];
-					EXPECT_EQ(aggRes1.type, aggRes2.type);
+					EXPECT_EQ(aggRes1.GetType(), aggRes2.GetType());
 					EXPECT_DOUBLE_EQ(aggRes1.GetValueOrZero(), aggRes2.GetValueOrZero());
-					EXPECT_EQ(aggRes1.fields.size(), aggRes2.fields.size());
-					if (aggRes1.fields.size() == aggRes2.fields.size()) {
-						for (size_t j = 0; j < aggRes1.fields.size(); ++j) {
-							EXPECT_EQ(aggRes1.fields[j], aggRes2.fields[j]);
+					EXPECT_EQ(aggRes1.GetFields().size(), aggRes2.GetFields().size());
+					const auto& fieldsRes1 = aggRes1.GetFields();
+					const auto& fieldsRes2 = aggRes2.GetFields();
+					if (fieldsRes1.size() == fieldsRes2.size()) {
+						for (size_t j = 0; j < fieldsRes1.size(); ++j) {
+							EXPECT_EQ(fieldsRes1[j], fieldsRes1[j]);
 						}
 					}
-					EXPECT_EQ(aggRes1.facets.size(), aggRes2.facets.size());
-					if (aggRes1.facets.size() == aggRes2.facets.size()) {
-						for (size_t j = 0; j < aggRes1.facets.size(); ++j) {
-							EXPECT_EQ(aggRes1.facets[j].count, aggRes2.facets[j].count);
-							EXPECT_EQ(aggRes1.facets[j].values.size(), aggRes2.facets[j].values.size());
-							if (aggRes1.facets[j].values.size() == aggRes2.facets[j].values.size()) {
-								for (size_t k = 0; k < aggRes1.facets[j].values.size(); ++k) {
-									if (aggRes1.facets[j].values[k] != aggRes2.facets[j].values[k]) {
+					const auto fasetsRes1 = aggRes1.GetFacets();
+					const auto fasetsRes2 = aggRes2.GetFacets();
+					EXPECT_EQ(fasetsRes1.size(), fasetsRes2.size());
+					if (fasetsRes1.size() == fasetsRes2.size()) {
+						for (size_t j = 0; j < fasetsRes1.size(); ++j) {
+							EXPECT_EQ(fasetsRes1[j].count, fasetsRes2[j].count);
+							EXPECT_EQ(fasetsRes1[j].values.size(), fasetsRes2[j].values.size());
+							if (fasetsRes1[j].values.size() == fasetsRes2[j].values.size()) {
+								for (size_t k = 0; k < fasetsRes1[j].values.size(); ++k) {
+									if (fasetsRes1[j].values[k] != fasetsRes1[j].values[k]) {
 										assertrx(0);
 									}
-									EXPECT_EQ(aggRes1.facets[j].values[k], aggRes2.facets[j].values[k]) << aggRes1.facets[j].values[0];
+									EXPECT_EQ(aggRes1.GetFacets()[j].values[k], aggRes2.GetFacets()[j].values[k])
+										<< aggRes1.GetFacets()[j].values[0];
 								}
 							}
 						}

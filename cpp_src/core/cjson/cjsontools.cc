@@ -2,8 +2,11 @@
 #include <iomanip>
 #include "cjsonbuilder.h"
 #include "core/type_consts_helpers.h"
+#include "sparse_validator.h"
 
 namespace reindexer {
+
+using namespace item_fields_validator;
 
 TagType arrayKvType2Tag(const VariantArray& values) {
 	if (values.empty()) {
@@ -74,7 +77,7 @@ void putCJsonValue(TagType tagType, TagName tagName, const VariantArray& values,
 	if (values.IsArrayValue()) {
 		const TagType elemType = arrayKvType2Tag(values);
 		wrser.PutCTag(ctag{TAG_ARRAY, tagName});
-		wrser.PutCArrayTag(carraytag{values.size(), elemType});
+		wrser.PutCArrayTag(carraytag{uint32_t(values.size()), elemType});
 		if (elemType == TAG_OBJECT) {
 			for (const Variant& value : values) {
 				auto itemType = value.Type().ToTagType();
@@ -94,28 +97,41 @@ void putCJsonValue(TagType tagType, TagName tagName, const VariantArray& values,
 	}
 }
 
-void copyCJsonValue(TagType tagType, Serializer& rdser, WrSerializer& wrser) {
+template <typename Validator>
+void copyCJsonValue(TagType tagType, Serializer& rdser, WrSerializer& wrser, const Validator& validator) {
 	switch (tagType) {
-		case TAG_DOUBLE:
-			wrser.PutDouble(rdser.GetDouble());
-			break;
-		case TAG_VARINT:
-			wrser.PutVarint(rdser.GetVarint());
-			break;
-		case TAG_BOOL:
-			wrser.PutBool(rdser.GetBool());
-			break;
-		case TAG_STRING:
-			wrser.PutVString(rdser.GetVString());
-			break;
+		case TAG_DOUBLE: {
+			const double val = rdser.GetDouble();
+			validator(val);
+			wrser.PutDouble(val);
+		} break;
+		case TAG_VARINT: {
+			const int64_t val = rdser.GetVarint();
+			validator(val);
+			wrser.PutVarint(val);
+		} break;
+		case TAG_BOOL: {
+			const bool val = rdser.GetBool();
+			validator(val);
+			wrser.PutBool(val);
+		} break;
+		case TAG_STRING: {
+			const auto val = rdser.GetVString();
+			validator(val);
+			wrser.PutVString(val);
+		} break;
 		case TAG_NULL:
 			break;
-		case TAG_UUID:
-			wrser.PutUuid(rdser.GetUuid());
-			break;
-		case TAG_FLOAT:
-			wrser.PutFloat(rdser.GetFloat());
-			break;
+		case TAG_UUID: {
+			const auto val = rdser.GetUuid();
+			validator(val);
+			wrser.PutUuid(val);
+		} break;
+		case TAG_FLOAT: {
+			const auto val = rdser.GetFloat();
+			validator(val);
+			wrser.PutFloat(val);
+		} break;
 		case TAG_OBJECT:
 			wrser.PutVariant(rdser.GetVariant());
 			break;
@@ -125,6 +141,8 @@ void copyCJsonValue(TagType tagType, Serializer& rdser, WrSerializer& wrser) {
 			throw Error(errParseJson, "Unexpected cjson typeTag '{}' while parsing value", int(tagType));
 	}
 }
+template void copyCJsonValue(TagType, Serializer&, WrSerializer&, const NoValidation&);
+template void copyCJsonValue(TagType, Serializer&, WrSerializer&, const SparseValidator&);
 
 void skipCjsonTag(ctag tag, Serializer& rdser, std::array<unsigned, kMaxIndexes>* fieldsArrayOffsets) {
 	switch (tag.Type()) {
@@ -209,18 +227,17 @@ void buildPayloadTuple(const PayloadIface<T>& pl, const TagsMatcher* tagsMatcher
 template void buildPayloadTuple<const PayloadValue>(const PayloadIface<const PayloadValue>&, const TagsMatcher*, WrSerializer&);
 template void buildPayloadTuple<PayloadValue>(const PayloadIface<PayloadValue>&, const TagsMatcher*, WrSerializer&);
 
-void throwUnexpectedNestedArrayError(std::string_view parserName, const PayloadFieldType& f) {
-	throw Error(errLogic, "Error parsing {} field '{}' - got value nested into the array, but expected scalar {}", parserName, f.Name(),
-				f.Type().Name());
+void throwUnexpectedNestedArrayError(std::string_view parserName, std::string_view fieldName, KeyValueType fieldType) {
+	throw Error(errLogic, "Error parsing {} field '{}' - got value nested into the array, but expected scalar {}", parserName, fieldName,
+				fieldType.Name());
 }
 
 void throwScalarMultipleEncodesError(const Payload& pl, const PayloadFieldType& f, int field) {
 	throw Error(errLogic, "Non-array field '{}' [{}] from '{}' can only be encoded once.", f.Name(), field, pl.Type().Name());
 }
 
-void throwUnexpectedArrayError(std::string_view parserName, const PayloadFieldType& fieldRef) {
-	throw Error(errLogic, "Error parsing {} field '{}' - got array, expected scalar {}", parserName, fieldRef.Name(),
-				fieldRef.Type().Name());
+void throwUnexpectedArrayError(std::string_view fieldName, KeyValueType fieldType, std::string_view parserName) {
+	throw Error(errLogic, "Error parsing {} field '{}' - got array, expected scalar {}", parserName, fieldName, fieldType.Name());
 }
 
 void throwUnexpectedArraySizeForFloatVectorError(std::string_view parserName, const PayloadFieldType& fieldRef, size_t size) {
@@ -233,9 +250,25 @@ void throwUnexpectedArrayTypeForFloatVectorError(std::string_view parserName, co
 				fieldRef.Name(), fieldRef.Type().Name());
 }
 
-void throwUnexpectedArraySizeError(std::string_view parserName, const PayloadFieldType& f, int arraySize) {
-	throw Error(errParams, "{} array field '{}' for this index type must contain {} elements, but got {}", parserName, f.Name(),
-				f.ArrayDims(), arraySize);
+void throwUnexpectedArraySizeError(std::string_view parserName, std::string_view fieldName, size_t fieldArrayDim, size_t arraySize) {
+	throw Error(errParams, "{} array field '{}' for this index type must contain {} elements, but got {}", parserName, fieldName,
+				fieldArrayDim, arraySize);
+}
+
+void throwUnexpectedArrayInIndex(std::string_view fieldName, KeyValueType type, std::string_view parserName) {
+	throw Error(errLogic, "Error parsing {} field '{}' - got array, expected scalar {}", parserName, fieldName, type.Name());
+}
+
+void throwUnexpectedObjectInIndex(std::string_view fieldName, std::string_view parserName) {
+	throw Error(errLogic, "Error parsing {} field '{}' - unable to use object in this context", parserName, fieldName);
+}
+
+void throwUnexpected(std::string_view fieldName, KeyValueType expectedType, KeyValueType obtainedType, std::string_view parserName) {
+	throwUnexpected(fieldName, expectedType, obtainedType.Name(), parserName);
+}
+
+void throwUnexpected(std::string_view fieldName, KeyValueType expectedType, std::string_view obtainedType, std::string_view parserName) {
+	throw Error(errLogic, "Error parsing {} field '{}' - got {}, expected {}", parserName, fieldName, obtainedType, expectedType.Name());
 }
 
 static void skipCjsonValue(TagType type, Serializer& cjson) {
@@ -259,6 +292,7 @@ static void skipCjsonValue(TagType type, Serializer& cjson) {
 			cjson.GetFloat();
 			break;
 		case TAG_NULL:
+			break;
 		case TAG_OBJECT:
 		case TAG_ARRAY:
 		case TAG_END:
@@ -287,6 +321,7 @@ static void dumpCjsonValue(TagType type, Serializer& cjson, std::ostream& dump) 
 			dump << cjson.GetFloat();
 			break;
 		case TAG_NULL:
+			break;
 		case TAG_OBJECT:
 		case TAG_ARRAY:
 		case TAG_END:
@@ -295,8 +330,9 @@ static void dumpCjsonValue(TagType type, Serializer& cjson, std::ostream& dump) 
 }
 
 template <typename PL>
-static void dumpCjsonObject(Serializer& cjson, std::ostream& dump, const TagsMatcher* tm, const PL* pl, std::string_view tab,
-							unsigned indentLevel) {
+static void dumpCjsonObject(Serializer& cjson, std::ostream& dump, std::array<size_t, kMaxIndexes>& fieldsOutCnt, const TagsMatcher* tm,
+							const PL* pl, std::string_view tab, unsigned indentLevel) {
+	using namespace std::string_view_literals;
 	static constexpr uint32_t kMaxArrayOutput = 3;
 	const auto indent = [&dump, tab](unsigned indLvl) {
 		for (unsigned i = 0; i < indLvl; ++i) {
@@ -310,7 +346,7 @@ static void dumpCjsonObject(Serializer& cjson, std::ostream& dump, const TagsMat
 		const auto name = tag.Name();
 		const auto field = tag.Field();
 		if (type == TAG_END) {
-			assertrx(indentLevel > 0);
+			assertf(indentLevel > 0, "{}", indentLevel);
 			--indentLevel;
 		}
 		indent(indentLevel);
@@ -318,9 +354,10 @@ static void dumpCjsonObject(Serializer& cjson, std::ostream& dump, const TagsMat
 		dump << std::right << std::setw(4) << name.AsNumber();
 		dump << std::right << std::setw(4) << field;
 		if (tm && !name.IsEmpty()) {
-			dump << " \"" << tm->tag2name(name) << '"';
+			dump << " \""sv << tm->tag2name(name) << '"';
 		}
 		if (field >= 0) {
+			auto& cnt = fieldsOutCnt[field];
 			switch (type) {
 				case TAG_VARINT:
 				case TAG_DOUBLE:
@@ -331,56 +368,59 @@ static void dumpCjsonObject(Serializer& cjson, std::ostream& dump, const TagsMat
 					if (pl) {
 						buf.clear<false>();
 						pl->Get(field, buf);
-						assertrx(buf.size() == 1);
-						dump << " -> " << buf[0].As<std::string>();
+						assertf(buf.size() > cnt, "{} > {}", buf.size(), cnt);
+						dump << " -> "sv << buf[cnt++].As<std::string>();
 					}
 					break;
 				case TAG_ARRAY: {
 					dump << '\n';
 					indent(indentLevel + 1);
 					const uint32_t count = cjson.GetVarUInt();
-					dump << "Count: " << count;
+					dump << "Count: "sv << count;
 					if (pl) {
-						dump << " -> [";
+						dump << " -> ["sv;
 						buf.clear<false>();
 						pl->Get(field, buf);
 						if (pl->Type().Field(field).IsFloatVector()) {
-							assertrx(buf.size() == 1);
+							assertf(buf.size() == 1, "{}", buf.size());
+							++cnt;
+							assertf(cnt == 1, "{}", cnt);
 							const ConstFloatVectorView vect{buf[0]};
 							if (vect.IsEmpty()) {
-								dump << " -> <empty>";
+								dump << " -> <empty>"sv;
 							} else {
 								dump << " -> " << vect.Dimension().Value();
 								if (vect.IsStripped()) {
-									dump << "[<stripped>]";
+									dump << "[<stripped>]"sv;
 								} else {
 									dump << '[';
 									for (uint32_t i = 0; i < std::min(uint32_t(vect.Dimension()), kMaxArrayOutput); ++i) {
 										if (i != 0) {
-											dump << ", ";
+											dump << ", "sv;
 										}
 										dump << vect.Data()[i];
 									}
 									if (uint32_t(vect.Dimension()) > kMaxArrayOutput) {
-										dump << ", ...]";
+										dump << ", ...]"sv;
 									} else {
 										dump << ']';
 									}
 								}
 							}
 						} else {
-							assertrx(buf.size() == count);
+							assertf(buf.size() >= cnt + count, "{} >= {} + {}", buf.size(), cnt, count);
 							for (size_t i = 0; i < std::min(count, kMaxArrayOutput); ++i) {
 								if (i != 0) {
-									dump << ", ";
+									dump << ", "sv;
 								}
-								dump << buf[i].As<std::string>();
+								dump << buf[cnt + i].As<std::string>();
 							}
 							if (count > kMaxArrayOutput) {
-								dump << " ...]";
+								dump << " ...]"sv;
 							} else {
 								dump << ']';
 							}
+							cnt += count;
 						}
 					}
 				} break;
@@ -410,19 +450,19 @@ static void dumpCjsonObject(Serializer& cjson, std::ostream& dump, const TagsMat
 					const auto count = arr.Count();
 					if (arr.Type() == TAG_OBJECT) {
 						indent(indentLevel + 1);
-						dump << "<heterogeneous> count: " << count << '\n';
+						dump << "<heterogeneous> count: "sv << count << '\n';
 						for (uint32_t i = 0; i < count; ++i) {
 							const ctag t = cjson.GetCTag();
 							assertrx(t.Name().IsEmpty());
 							assertrx(t.Field() < 0);
 							indent(indentLevel + 2);
 							dump << TagTypeToStr(t.Type());
-							dump << ": ";
+							dump << ": "sv;
 							if (t.Type() == TAG_OBJECT) {
-								dump << "{\n";
-								dumpCjsonObject(cjson, dump, tm, pl, tab, indentLevel + 3);
+								dump << "{\n"sv;
+								dumpCjsonObject(cjson, dump, fieldsOutCnt, tm, pl, tab, indentLevel + 3);
 								indent(indentLevel + 2);
-								dump << "}\n";
+								dump << "}\n"sv;
 							} else {
 								dumpCjsonValue(t.Type(), cjson, dump);
 								dump << '\n';
@@ -430,7 +470,7 @@ static void dumpCjsonObject(Serializer& cjson, std::ostream& dump, const TagsMat
 						}
 					} else {
 						indent(indentLevel + 1);
-						dump << TagTypeToStr(arr.Type()) << " count: " << count << '\n';
+						dump << TagTypeToStr(arr.Type()) << " count: "sv << count << '\n';
 						indent(indentLevel + 2);
 						dump << '[';
 						if (arr.Type() == TAG_OBJECT && count > 0) {
@@ -438,14 +478,14 @@ static void dumpCjsonObject(Serializer& cjson, std::ostream& dump, const TagsMat
 							for (size_t i = 0; i < count; ++i) {
 								indent(indentLevel + 3);
 								dump << TagTypeToStr(arr.Type()) << '\n';
-								dumpCjsonObject(cjson, dump, tm, pl, tab, indentLevel + 4);
+								dumpCjsonObject(cjson, dump, fieldsOutCnt, tm, pl, tab, indentLevel + 4);
 							}
 							indent(indentLevel + 2);
 						} else {
 							uint32_t i = 0;
 							for (; i < std::min(count, kMaxArrayOutput); ++i) {
 								if (i != 0) {
-									dump << ", ";
+									dump << ", "sv;
 								}
 								dumpCjsonValue(arr.Type(), cjson, dump);
 							}
@@ -453,14 +493,14 @@ static void dumpCjsonObject(Serializer& cjson, std::ostream& dump, const TagsMat
 								skipCjsonValue(arr.Type(), cjson);
 							}
 							if (count > kMaxArrayOutput) {
-								dump << ", ...";
+								dump << ", ..."sv;
 							}
 						}
-						dump << "]\n";
+						dump << "]\n"sv;
 					}
 				} break;
 				case TAG_OBJECT:
-					dumpCjsonObject(cjson, dump, tm, pl, tab, indentLevel + 1);
+					dumpCjsonObject(cjson, dump, fieldsOutCnt, tm, pl, tab, indentLevel + 1);
 					break;
 				case TAG_END:
 					return;
@@ -470,18 +510,22 @@ static void dumpCjsonObject(Serializer& cjson, std::ostream& dump, const TagsMat
 }
 
 void DumpCjson(Serializer& cjson, std::ostream& dump, const Payload* pl, const TagsMatcher* tm, std::string_view tab) {
+	using namespace std::string_view_literals;
 	const auto osFlags = dump.flags();
 	dump.exceptions(std::ostream::failbit | std::ostream::badbit);
-	dump << "TAG_TYPE NAME FIELD\n";
-	dumpCjsonObject(cjson, dump, tm, pl, tab, 0);
+	dump << "TAG_TYPE NAME FIELD\n"sv;
+	std::array<size_t, kMaxIndexes> fieldsOutCnt{};
+	dumpCjsonObject(cjson, dump, fieldsOutCnt, tm, pl, tab, 0);
 	dump.flags(osFlags);
 }
 
 void DumpCjson(Serializer& cjson, std::ostream& dump, const ConstPayload* pl, const TagsMatcher* tm, std::string_view tab) {
+	using namespace std::string_view_literals;
 	const auto osFlags = dump.flags();
 	dump.exceptions(std::ostream::failbit | std::ostream::badbit);
-	dump << "TAG_TYPE NAME FIELD\n";
-	dumpCjsonObject(cjson, dump, tm, pl, tab, 0);
+	dump << "TAG_TYPE NAME FIELD\n"sv;
+	std::array<size_t, kMaxIndexes> fieldsOutCnt{};
+	dumpCjsonObject(cjson, dump, fieldsOutCnt, tm, pl, tab, 0);
 	dump.flags(osFlags);
 }
 

@@ -29,8 +29,10 @@ func TestBuiltinServer(t *testing.T) {
 	cfg1.Storage.Path = path.Join(helpers.GetTmpDBDir(), "reindex_builtinserver_test1")
 
 	os.RemoveAll(cfg1.Storage.Path)
+
 	rx1 := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfg1))
 	defer rx1.Close()
+
 	assert.NoError(t, rx1.Status().Err)
 	assert.NoError(t, rx1.OpenNamespace("testns", reindexer.DefaultNamespaceOptions(), &ScvTestItem{}))
 

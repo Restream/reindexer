@@ -51,9 +51,7 @@ HttpConnector::Response HttpConnector::Send(const std::string& path, std::string
 	return response;
 }
 
-bool HttpConnector::Connected() const {
-	return (client_)? client_->is_valid() : false;
-}
+bool HttpConnector::Connected() const { return (client_) ? client_->is_valid() : false; }
 
 void HttpConnector::Disconnect() {
 	if (client_) {

@@ -1,3 +1,42 @@
+# Version 5.2.0 (29.04.2025)
+## Core
+- [fea] Added support for `distinct` with multiple fields (i.e. something like `distinct(field1, field2, field3)`)
+- [fea] Allowed `null`-values inside `IN()`-clause (they automatically will be transformed into `OR IS NOT NULL`)
+- [fea] Made `IS NULL`/`IS NOT NULL` behavior more consistant between `sparse`-indexes and `non-indexed`-fields. Check [readme](readme.md#null-values-filtration) for more details
+- [fea] Added extra validation for `sprase` indexes. Previously incorrect values in those indexes were silently ignored and from now they will produce errors on insertion
+- [fix] Fixed crash in vector index during `index drop` operation
+- [fix] Fixed timings calculations in `#perfstats`/`#queriesperfstats`
+- [ref] Changed `Connect()`-method behavior. Now this call is required before any other database calls. **This may require changes in C++ code, that uses Reindexer**
+
+## Replication
+- [fea] Added optional [replication_token](replication.md#configuration) mechanism for extra validation
+- [fea] Added execution timeouts for all replication's queries
+- [fix] Fixed possible transaction's steps reordering in synchronous cluster proxy
+
+## Reindexer server
+- [fea] Added `GET /api/v1/db/default_configs` method to get default config JSONs
+- [fix] Fixed possible heap-use-after-free during RPC server termination
+- [fix] Fixed segfault in case of incorrect items format
+
+## Go connector
+- [fea] Added `DBMSVersion`-method to get builtin/remote `reindexer` version
+- [fea] Added [events](readme.md#events-subscription) on `forced`/`WAL` synchronization
+- [fea] Added support for multifields `distinct`. `AggregationResult` struct was slightly changed. **This requires changes in Go code that uses Distinct: for the single field distinct just take values with 0 index in each slice**
+- [fix] Fixed heap-user-after free in `DB.Close()`-call when `ActivityStats` flag was enabled
+
+## Build
+- [fix] Updated min cmake versions to fix build with lates `cmake`
+
+## Deploy
+- [fea] Added prebuilt package for `fedora:42`
+- [upd] Deprecated `fedora:40` repository
+
+## Face
+- [fea] Added embedding settings for the `float_vector` index types
+- [fea] Disabled the `is_no_column` flag for `sparse`-indexes
+- [fea] Changed the `is_no_column` flag visibility from disappearing to disabling
+- [fix] Fixed the Save button on the Config form after switching to the Schema tab
+
 # Version 5.1.0 (07.04.2025)
 ## Core
 - [fea] Added separate `is_no_column` index option, which allows to disable column subindex (previously this option was included into `is_dense`)

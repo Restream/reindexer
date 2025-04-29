@@ -425,6 +425,7 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 				}
 				dumpCondWithValues<NeedQuote::Yes>(ser, entry.FieldName(), entry.Condition(), entry.Values(), stripArgs);
 			},
+			[&](const DistinctQueryEntry&) {},
 			[&](const JoinQueryEntry& jqe) {
 				if (encodedEntries && query_.GetJoinQueries()[jqe.joinIndex].joinType != JoinType::OrInnerJoin) {
 					ser << kOpNames[op] << ' ';

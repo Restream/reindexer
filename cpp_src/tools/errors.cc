@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-void print_backtrace_and_abort(const char* assertion, const char* file, unsigned int line, const std::string &description) noexcept {
+void print_backtrace_and_abort(const char* assertion, const char* file, unsigned int line, const std::string& description) noexcept {
 	auto msg = fmt::format("{}:{}: failed assertion '{}':\n{}", file, line, assertion, description);
 	std::cerr << msg << "\n";
 	reindexer::debug::print_backtrace(std::cerr, nullptr, -1);

@@ -354,8 +354,12 @@ func TestAggregationsWithMultipleJsonPaths(t *testing.T) {
 
 		aggResults := it.AggResults()
 		require.Equal(t, 1, len(aggResults))
-		sort.Strings(aggResults[0].Distincts)
-		require.Equal(t, fieldValues, aggResults[0].Distincts)
+		var distincts []string
+		for i := 0; i < len(aggResults[0].Distincts); i++ {
+			distincts = append(distincts, aggResults[0].Distincts[i][0])
+		}
+		sort.Strings(distincts)
+		require.Equal(t, fieldValues, distincts)
 	})
 
 	t.Run("test facet with index multiple json paths", func(t *testing.T) {
@@ -441,8 +445,12 @@ func TestAggregationsWithMultipleJsonPaths(t *testing.T) {
 
 		aggResults := it.AggResults()
 		require.Equal(t, 1, len(aggResults))
-		sort.Strings(aggResults[0].Distincts)
-		require.Equal(t, fieldValues2, aggResults[0].Distincts)
+		var distincts []string
+		for i := 0; i < len(aggResults[0].Distincts); i++ {
+			distincts = append(distincts, aggResults[0].Distincts[i][0])
+		}
+		sort.Strings(distincts)
+		require.Equal(t, fieldValues2, distincts)
 	})
 
 	t.Run("test facet with array index multiple json paths", func(t *testing.T) {

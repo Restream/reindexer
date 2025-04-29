@@ -31,7 +31,9 @@ public:
 
 	void Init(const reindexer::FtFastConfig& ftCfg) {
 		rt.reindexer = std::make_shared<reindexer::Reindexer>();
-		auto err = rt.reindexer->OpenNamespace(GetDefaultNamespace());
+		auto err = rt.reindexer->Connect("builtin://");
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->OpenNamespace(GetDefaultNamespace());
 		ASSERT_TRUE(err.ok()) << err.what();
 		rt.DefineNamespaceDataset(GetDefaultNamespace(), {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
 														  IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},

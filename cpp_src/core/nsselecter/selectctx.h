@@ -7,7 +7,7 @@
 namespace reindexer {
 
 class Query;
-class SelectFunctionsHolder;
+class FtFunctionsHolder;
 class FloatVectorsHolderMap;
 
 struct SelectCtx {
@@ -15,7 +15,7 @@ struct SelectCtx {
 		: query(query_), parentQuery(parentQuery_), floatVectorsHolder(fvHolder) {}
 	const Query& query;
 	JoinedSelectors* joinedSelectors = nullptr;
-	SelectFunctionsHolder* functions = nullptr;
+	FtFunctionsHolder* functions = nullptr;
 
 	ExplainCalc::Duration preResultTimeTotal = ExplainCalc::Duration::zero();
 	SortingContext sortingContext;

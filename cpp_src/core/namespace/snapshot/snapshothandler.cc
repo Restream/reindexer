@@ -1,8 +1,8 @@
 #include "snapshothandler.h"
+#include "core/ft/functions/ft_function.h"
 #include "core/namespace/namespace.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/selectctx.h"
-#include "core/selectfunc/selectfunc.h"
 #include "estl/gift_str.h"
 #include "tools/logger.h"
 #include "wal/walselecter.h"
@@ -19,7 +19,7 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 		}
 		Query q = Query(ns_.name_).Where("#lsn", CondGt, int64_t(from.LSN())).SelectAllFields();
 		SelectCtx selCtx(q, nullptr, &walQr.GetFloatVectorsHolder());
-		SelectFunctionsHolder func;
+		FtFunctionsHolder func;
 		selCtx.functions = &func;
 		selCtx.contextCollectingMode = true;
 		WALSelecter selecter(&ns_, false);
@@ -38,7 +38,7 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 		{
 			Query q = Query(ns_.name_).Where("#lsn", CondGe, int64_t(minLsn)).SelectAllFields();
 			SelectCtx selCtx(q, nullptr, &walQr.GetFloatVectorsHolder());
-			SelectFunctionsHolder func;
+			FtFunctionsHolder func;
 			selCtx.functions = &func;
 			selCtx.contextCollectingMode = true;
 			WALSelecter selecter(&ns_, true);
@@ -50,7 +50,7 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 			Query q = Query(ns_.name_).Where("#lsn", CondAny, VariantArray{}).SelectAllFields();
 			// Reusing walQr's FloatVectorsHolder here
 			SelectCtx selCtx(q, nullptr, &walQr.GetFloatVectorsHolder());
-			SelectFunctionsHolder func;
+			FtFunctionsHolder func;
 			selCtx.functions = &func;
 			selCtx.contextCollectingMode = true;
 			WALSelecter selecter(&ns_, true);
@@ -233,7 +233,7 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 			logFmt(LogInfo, "[{}]: Changing tm's statetoken on {}: {:#08x}->{:#08x}", ns_.name_, ns_.wal_.GetServer(),
 				   ns_.tagsMatcher_.stateToken(), stateToken);
 			ns_.tagsMatcher_ = std::move(tm);
-			ns_.tagsMatcher_.UpdatePayloadType(ns_.payloadType_, NeedChangeTmVersion::No);
+			ns_.tagsMatcher_.UpdatePayloadType(ns_.payloadType_, ns_.indexes_.SparseIndexes(), NeedChangeTmVersion::No);
 			ns_.tagsMatcher_.setUpdated();
 			ns_.saveTagsMatcherToStorage(false);
 			break;

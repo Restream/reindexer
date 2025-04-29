@@ -86,7 +86,7 @@ public:
 	bool IsUnsafe() const noexcept { return unsafe_; }
 	void Clear();
 	void SetNamespace(std::shared_ptr<Namespace> ns) noexcept { ns_ = std::move(ns); }
-	std::shared_ptr<Namespace> GetNamespace() const noexcept { return ns_; }
+	std::weak_ptr<Namespace> GetNamespace() const noexcept { return ns_; }
 	static void validateModifyArray(const VariantArray& values);
 	void BuildTupleIfEmpty();
 	/**
@@ -115,7 +115,7 @@ private:
 
 	bool unsafe_ = false;
 	std::string_view cjson_;
-	std::shared_ptr<Namespace> ns_;
+	std::weak_ptr<Namespace> ns_;
 	std::unique_ptr<MsgPackDecoder> msgPackDecoder_;
 	const FieldsFilter* fieldsFilter_{nullptr};
 };

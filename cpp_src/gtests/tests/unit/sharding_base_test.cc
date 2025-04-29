@@ -1977,13 +1977,13 @@ TEST_F(ShardingApi, Aggregations) {
 	Error err = rx->Select(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.GetAggregationResults().size(), 3);
-	EXPECT_EQ(qr.GetAggregationResults()[0].type, AggSum);
+	EXPECT_EQ(qr.GetAggregationResults()[0].GetType(), AggSum);
 	EXPECT_TRUE(qr.GetAggregationResults()[0].GetValue());
 	EXPECT_EQ(qr.GetAggregationResults()[0].GetValueOrZero(), (itemsCount - 1) * itemsCount / 2);
-	EXPECT_EQ(qr.GetAggregationResults()[1].type, AggMin);
+	EXPECT_EQ(qr.GetAggregationResults()[1].GetType(), AggMin);
 	EXPECT_TRUE(qr.GetAggregationResults()[1].GetValue());
 	EXPECT_EQ(qr.GetAggregationResults()[1].GetValueOrZero(), 0);
-	EXPECT_EQ(qr.GetAggregationResults()[2].type, AggMax);
+	EXPECT_EQ(qr.GetAggregationResults()[2].GetType(), AggMax);
 	EXPECT_TRUE(qr.GetAggregationResults()[2].GetValue());
 	EXPECT_EQ(qr.GetAggregationResults()[2].GetValueOrZero(), itemsCount - 1);
 }
@@ -3240,7 +3240,7 @@ static void CheckCachedCountAggregations(client::Reindexer& rx, const std::strin
 		ASSERT_EQ(qr.TotalCount(), shardsCount * dataPerShard);
 		auto& agg = qr.GetAggregationResults();
 		ASSERT_EQ(agg.size(), 1);
-		ASSERT_EQ(agg[0].type, AggCountCached);
+		ASSERT_EQ(agg[0].GetType(), AggCountCached);
 		ASSERT_TRUE(agg[0].GetValue());
 		ASSERT_EQ(agg[0].GetValueOrZero(), qr.TotalCount());
 	}
@@ -3252,7 +3252,7 @@ static void CheckCachedCountAggregations(client::Reindexer& rx, const std::strin
 		ASSERT_EQ(qr.TotalCount(), shardsCount * dataPerShard);
 		auto& agg = qr.GetAggregationResults();
 		ASSERT_EQ(agg.size(), 1);
-		ASSERT_EQ(agg[0].type, AggCount);  // Here agg type was change to 'AggCount' by internal proxy
+		ASSERT_EQ(agg[0].GetType(), AggCount);	// Here agg type was change to 'AggCount' by internal proxy
 		ASSERT_TRUE(agg[0].GetValue());
 		ASSERT_EQ(agg[0].GetValueOrZero(), qr.TotalCount());
 	}
@@ -3264,7 +3264,7 @@ static void CheckCachedCountAggregations(client::Reindexer& rx, const std::strin
 		ASSERT_EQ(qr.TotalCount(), dataPerShard);
 		auto& agg = qr.GetAggregationResults();
 		ASSERT_EQ(agg.size(), 1);
-		ASSERT_EQ(agg[0].type, AggCountCached);
+		ASSERT_EQ(agg[0].GetType(), AggCountCached);
 		ASSERT_TRUE(agg[0].GetValue());
 		ASSERT_EQ(agg[0].GetValueOrZero(), qr.TotalCount());
 	}
@@ -3276,7 +3276,7 @@ static void CheckCachedCountAggregations(client::Reindexer& rx, const std::strin
 		ASSERT_EQ(qr.TotalCount(), dataPerShard);
 		auto& agg = qr.GetAggregationResults();
 		ASSERT_EQ(agg.size(), 1);
-		ASSERT_EQ(agg[0].type, AggCountCached);
+		ASSERT_EQ(agg[0].GetType(), AggCountCached);
 		ASSERT_TRUE(agg[0].GetValue());
 		ASSERT_EQ(agg[0].GetValueOrZero(), qr.TotalCount());
 	}

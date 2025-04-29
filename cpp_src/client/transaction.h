@@ -46,8 +46,8 @@ private:
 	friend class ReindexerImpl;
 	friend class reindexer::ClusterProxy;
 	friend class reindexer::ProxiedTransaction;
-	Transaction(std::shared_ptr<ReindexerImpl> rx, CoroTransaction&& tr) noexcept : tr_(std::move(tr)), rx_(rx) {}
-	Transaction(Error status) noexcept : tr_(status) {}
+	Transaction(std::shared_ptr<ReindexerImpl> rx, CoroTransaction&& tr) noexcept : tr_(std::move(tr)), rx_(std::move(rx)) {}
+	Transaction(Error status) noexcept : tr_(std::move(status)) {}
 	void setStatus(Error&& status) noexcept { tr_.setStatus(std::move(status)); }
 	const net::cproto::CoroClientConnection* coroConnection() const noexcept { return tr_.getConn(); }
 

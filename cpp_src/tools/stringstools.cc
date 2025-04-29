@@ -1,7 +1,4 @@
 #include "tools/stringstools.h"
-
-#include <algorithm>
-
 #include "atoi/atoi.h"
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/uuid.h"

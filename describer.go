@@ -577,10 +577,19 @@ type DBAsyncReplicationConfig struct {
 	LogLevel string `json:"log_level,omitempty"`
 	// List of namespaces for replication. If emply, all namespaces. All replicated namespaces will become read only for slave
 	Namespaces []string `json:"namespaces"`
+	// Replication token of the current node that it sends to the follower for verification
+	SelfReplicationToken string `json:"self_replication_token,omitempty"`
 	// Reconnect interval after replication error (ms)
 	RetrySyncInterval int `json:"retry_sync_interval_msec"`
 	// List of follower-nodes for async replication
 	Nodes []DBAsyncReplicationNode `json:"nodes"`
+}
+
+type AdmissibleToken struct {
+	// Admissible token
+	Token string `json:"token"`
+	// Namespaces which can only be replicated by a leader with the same token
+	Namespaces []string `json:"namespaces,omitempty"`
 }
 
 // DBReplicationConfig is part of reindexer configuration contains general node settings for replication
@@ -589,6 +598,8 @@ type DBReplicationConfig struct {
 	ServerID int `json:"server_id"`
 	// Cluster ID - must be same for client and for master
 	ClusterID int `json:"cluster_id"`
+	//  Lists of namespaces with their admissible tokens
+	AdmissibleTokens []AdmissibleToken `json:"admissible_replication_tokens,omitempty"`
 }
 
 // DescribeNamespaces makes a 'SELECT * FROM #namespaces' query to database.

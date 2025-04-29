@@ -34,13 +34,13 @@ public:
 	const std::string kReplFilePath = reindexer::fs::JoinPath(kStoragePath, kReplicationConfigFilename);
 
 	// defining test data
-	const reindexer::ReplicationConfigData initialReplConf{0, 2};
-	const reindexer::ReplicationConfigData correctReplConf{10, 2};
-	const reindexer::ReplicationConfigData updatedReplConf{100, 3};
+	const reindexer::ReplicationConfigData initialReplConf{0, 2, {}};
+	const reindexer::ReplicationConfigData correctReplConf{10, 2, {}};
+	const reindexer::ReplicationConfigData updatedReplConf{100, 3, {}};
 
-	const reindexer::ReplicationConfigData invalidReplConf{-10, 2};
-	const reindexer::ReplicationConfigData invalidReplConf1000{1000, 2};
-	const reindexer::ReplicationConfigData fallbackReplConf{0, 2};
+	const reindexer::ReplicationConfigData invalidReplConf{-10, 2, {}};
+	const reindexer::ReplicationConfigData invalidReplConf1000{1000, 2, {}};
+	const reindexer::ReplicationConfigData fallbackReplConf{0, 2, {}};
 
 	void SetUp() override { fs::RmDirAll(kStoragePath); }
 	void TearDown() override {}

@@ -218,20 +218,21 @@ func (dbw *ReindexerWrapper) execQueryCtx(t *testing.T, ctx context.Context, qt 
 			panic(err)
 		}
 		if len(rs) != len(rm) {
-			panic(fmt.Errorf("Slave answer not equal to master"))
+			panic(fmt.Errorf("Follower's response length not equal to leader's: %v != %v", len(rs), len(rm)))
 		}
 		for _, item := range rs {
 			pk := getPK(qt.ns, reflect.Indirect(reflect.ValueOf(item)))
 			if mitem, ok := m[pk+reflect.TypeOf(item).String()]; ok {
 				if !reflect.DeepEqual(mitem, item) {
-					panic("Slave answer not equal to master")
+					panic(fmt.Errorf("Follower's response not equal to leader's. Items are different: %v vs %v", mitem, item))
 				}
 			} else {
-				panic(fmt.Errorf("Slave answer not equal to master"))
+				panic(fmt.Errorf("Follower's response not equal to leader's. Item '%v' is missing", pk+reflect.TypeOf(item).String()))
 			}
 		}
-		//TODO NOT GOOD - can be not equal do something
-		//reflect.DeepEqual(rm, rs)
+		if !reflect.DeepEqual(rm, rs) {
+			panic(fmt.Errorf("Follower's response not equal to leader's: %v vs %v", rm, rs))
+		}
 	}
 
 	return qt.q.MustExecCtx(ctx)

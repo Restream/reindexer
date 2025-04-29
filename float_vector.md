@@ -100,6 +100,7 @@ To configure automatic embedding you should set `config` field in the target vec
 "config": {
   "embedding": {
     "upsert_embedder": {
+      "name": <Embedder name>
       "URL": <URL service>,
       "cache_tag": <name, used to access the cache>,
       "fields": [ "idx1", "idx2" ]
@@ -112,6 +113,7 @@ To configure automatic embedding you should set `config` field in the target vec
       }
     },
     "query_embedder": {
+      "name": <Embedder name>
       "URL": <URL service>,
       "cache_tag": <name, used to access the cache>,
       "pool": {
@@ -124,6 +126,7 @@ To configure automatic embedding you should set `config` field in the target vec
   }
 }
 ```
+- `name` - Embedder name. Optional
 - `URL` - Embed service URL. The address of the service where embedding requests will be sent. Required
 - `cache_tag` - Name, used to access the cache. Optional, if not specified, caching is not used
 - `fields` - List of index fields to calculate embedding. Required
@@ -155,6 +158,7 @@ embeddingPoolOpts := reindexer.EmbedderConnectionPool{
 	ConnectTimeout: 100,
 }
 upsertEmbedderOpts := reindexer.UpsertEmbedder{
+	Name:                   "UpsertEmbedder",
 	URL:                    "http://127.0.0.1:7777/embedder",
 	Fields:                 []string{"strIdxField1", "strIdxField2"},
 	EmbeddingStrategy:      "empty_only",

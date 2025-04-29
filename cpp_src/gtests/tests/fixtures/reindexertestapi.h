@@ -22,7 +22,7 @@ struct ReplicationTestState {
 	std::optional<int> tmVersion;
 	std::optional<int> tmStatetoken;
 	uint64_t updateUnixNano = 0;
-	reindexer::ClusterizationStatus::Role role = reindexer::ClusterizationStatus::Role::None;
+	reindexer::ClusterOperationStatus::Role role = reindexer::ClusterOperationStatus::Role::None;
 };
 
 template <typename DB>
@@ -69,6 +69,8 @@ public:
 	std::string RuRandString();
 	std::vector<int> RandIntVector(size_t size, int start, int range);
 	void SetVerbose(bool v) noexcept { verbose_ = v; }
+	static void EnablePerfStats(DB& rx);
+
 	std::shared_ptr<DB> reindexer;
 
 	static std::vector<std::string> GetSerializedQrItems(reindexer::QueryResults& qr);

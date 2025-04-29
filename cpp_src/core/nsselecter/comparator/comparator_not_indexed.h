@@ -255,12 +255,15 @@ public:
 	[[nodiscard]] std::string ConditionStr() const;
 	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer_, KeyValueType::Undefined{});
+		if rx_unlikely (buffer_.IsObjectValue()) {
+			return false;
+		}
 		for (const Variant& v : buffer_) {
-			if rx_unlikely (!v.IsNullValue()) {
-				return false;
+			if rx_unlikely (v.IsNullValue()) {
+				return true;
 			}
 		}
-		return true;
+		return buffer_.empty();
 	}
 	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
 	void ClearDistinctValues() const noexcept {}

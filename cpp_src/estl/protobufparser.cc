@@ -1,5 +1,4 @@
 #include "protobufparser.h"
-#include <tuple>
 #include "core/cjson/protobufbuilder.h"
 #include "core/schema.h"
 
@@ -9,7 +8,7 @@ ProtobufValue ProtobufParser::ReadValue() {
 	bool isArray = false;
 	const uint64_t tag = object_.ser.GetVarUInt();
 	int tagType = (tag & kTypeMask);
-	TagName tagName = TagName(tag >> kTypeBit);
+	const TagName tagName = TagName(tag >> kTypeBit);
 	TagsPath currPath{object_.tagsPath};
 	currPath.push_back(tagName);
 	KeyValueType itemType = object_.schema.GetFieldType(currPath, isArray);

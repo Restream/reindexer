@@ -4,10 +4,10 @@
 
 namespace reindexer::cluster {
 
-AsyncThreadParam::AsyncThreadParam(const std::vector<AsyncReplNodeConfig> *n, AsyncReplicationMode replMode, SharedSyncState &syncState)
-		: nodes_(n), replMode_(replMode), syncState_(syncState) {
-		assert(nodes_);
-	}
+AsyncThreadParam::AsyncThreadParam(const std::vector<AsyncReplNodeConfig>* n, AsyncReplicationMode replMode, SharedSyncState& syncState)
+	: nodes_(n), replMode_(replMode), syncState_(syncState) {
+	assert(nodes_);
+}
 
 Error AsyncThreadParam::CheckReplicationMode(uint32_t nodeId) const noexcept {
 	try {

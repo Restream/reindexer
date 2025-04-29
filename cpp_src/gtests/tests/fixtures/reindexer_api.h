@@ -10,9 +10,6 @@ using reindexer::QueryEntry;
 using reindexer::LocalQueryResults;
 
 class ReindexerApi : public virtual ::testing::Test {
-protected:
-	void SetUp() override;
-
 public:
 	using Reindexer = reindexer::Reindexer;
 	using QueryResults = reindexer::QueryResults;

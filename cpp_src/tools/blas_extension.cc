@@ -84,6 +84,7 @@ static LIB_TYPE findBLASPtr() {
 	LIB_TYPE ptr = nullptr;
 	const auto kEnvPtr = std::getenv("RX_CUSTOM_BLAS_LIB_NAME");
 	if (kEnvPtr) {
+		// NOLINTNEXTLINE (*GenericTaint)
 		ptr = ::LOAD_LIB(kEnvPtr);
 	} else {
 		for (auto name : kPossibleBlasNames) {
@@ -112,6 +113,7 @@ static LIB_TYPE findLAPACKPtr() {
 	LIB_TYPE ptr = nullptr;
 	const auto kEnvPtr = std::getenv("RX_CUSTOM_LAPACK_LIB_NAME");
 	if (kEnvPtr) {
+		// NOLINTNEXTLINE (*GenericTaint)
 		ptr = ::LOAD_LIB(kEnvPtr);
 	} else {
 		for (auto name : kPossibleLapackNames) {

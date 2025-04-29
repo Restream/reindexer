@@ -1,6 +1,9 @@
 #include "cjsonbuilder.h"
+#include "sparse_validator.h"
 
 namespace reindexer {
+
+using namespace item_fields_validator;
 
 CJsonBuilder::CJsonBuilder(WrSerializer& ser, ObjType type, const TagsMatcher* tm, TagName tagName) : tm_(tm), ser_(&ser), type_(type) {
 	switch (type_) {
@@ -154,6 +157,14 @@ CJsonBuilder& CJsonBuilder::Put(TagName tagName, const Variant& kv, int offset) 
 		[&](KeyValueType::Uuid) { Put(tagName, Uuid{kv}, offset); },
 		[](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) noexcept { assertrx_throw(false); });
 	return *this;
+}
+
+void CJsonBuilder::Array(TagName tagName, Serializer& ser, TagType tagType, int count) {
+	ser_->PutCTag(ctag{TAG_ARRAY, tagName});
+	ser_->PutCArrayTag(carraytag(count, tagType));
+	while (count--) {
+		copyCJsonValue(tagType, ser, *ser_, kNoValidation);
+	}
 }
 
 }  // namespace reindexer

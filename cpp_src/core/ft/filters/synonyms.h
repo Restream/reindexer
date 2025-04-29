@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/ft/usingcontainer.h"
 #include "itokenfilter.h"
+#include "tools/rvector.h"
 
 namespace reindexer {
 

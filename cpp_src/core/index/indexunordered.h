@@ -29,8 +29,8 @@ public:
 
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override;
 	void Delete(const Variant& key, IdType id, StringsHolder&, bool& clearCache) override;
-	SelectKeyResults SelectKey(const VariantArray& keys, CondType cond, SortType stype, Index::SelectOpts opts,
-							   const BaseFunctionCtx::Ptr& ctx, const RdxContext&) override;
+	SelectKeyResults SelectKey(const VariantArray& keys, CondType cond, SortType stype, const Index::SelectContext&,
+							   const RdxContext&) override;
 	void Commit() override;
 	void UpdateSortedIds(const UpdateSortedContext&) override;
 	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::make_unique<IndexUnordered<Map>>(*this); }

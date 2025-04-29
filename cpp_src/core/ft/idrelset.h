@@ -4,7 +4,7 @@
 #include <algorithm>
 #include "estl/packed_vector.h"
 #include "sort/pdqsort.hpp"
-#include "usingcontainer.h"
+#include "tools/rvector.h"
 
 namespace reindexer {
 

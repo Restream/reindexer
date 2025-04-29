@@ -48,8 +48,8 @@ Error FromJSON(std::span<char> json, h_vector<ConstFloatVector, 1>& vector) {
 
 }  // namespace
 
-Embedder::Embedder(std::string_view name, int field, EmbedderConfig&& config, PoolConfig&& poolConfig)
-	: name_(name), field_(field), config_(std::move(config)) {
+Embedder::Embedder(std::string_view name, std::string_view fieldName, int field, EmbedderConfig&& config, PoolConfig&& poolConfig)
+	: name_(name), fieldName_(fieldName), field_(field), config_(std::move(config)) {
 	pool_ = std::make_unique<ConnectorPool>(std::move(poolConfig));
 	path_ = fmt::format(kServerPathFormat, name);
 }
@@ -66,7 +66,7 @@ Error Embedder::Calculate(const RdxContext& ctx, std::span<const std::vector<Var
 				return {
 					errLogic,
 					"Failed to get embedding for '{}'. Not all required data was requested. Requesting {}, expecting {}, source {}",
-					name_, src.size(), fldSize, idx};
+					fieldName_, src.size(), fldSize, idx};
 			}
 			++idx;
 		}
@@ -75,7 +75,7 @@ Error Embedder::Calculate(const RdxContext& ctx, std::span<const std::vector<Var
 	products.clear();
 
 	auto sourcesJson = getJson(sources);
-	logFmt(LogTrace, "Embedding src: {}", sourcesJson);
+	logFmt(LogTrace, "'{}' embedding src: {}", name_, sourcesJson);
 
 	auto res = pool_->GetConnector(ctx);
 	if (!res.first.ok()) {
@@ -84,11 +84,11 @@ Error Embedder::Calculate(const RdxContext& ctx, std::span<const std::vector<Var
 
 	auto response = (*res.second).Send(path_, sourcesJson);
 	if (response.ok) {
-		logFmt(LogTrace, "Embedding data: {}", response.content);
+		logFmt(LogTrace, "'{}' embedding data: {}", name_, response.content);
 		return FromJSON(giftStr(response.content), products);
 	}
 
-	return {errNetwork, "Failed to get embedding for '{}'. Problem with client: {}", name_, response.content};
+	return {errNetwork, "Failed to get embedding for '{}'. Problem with client: {}", fieldName_, response.content};
 }
 
 bool Embedder::IsAuxiliaryField(std::string_view fieldName) const noexcept {

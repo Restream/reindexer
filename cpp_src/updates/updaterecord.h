@@ -171,10 +171,10 @@ struct UpdateRecord {
 		WithoutEmmiter = 0,
 		WithEmmiter = 1,
 	};
-	using ImplT = intrusive_atomic_rc_wrapper<
-		const std::variant<ItemReplicationRecord, IndexReplicationRecord, MetaReplicationRecord, QueryReplicationRecord,
-						   SchemaReplicationRecord, AddNamespaceReplicationRecord, RenameNamespaceReplicationRecord, NodeNetworkCheckRecord,
-						   TagsMatcherReplicationRecord, SaveNewShardingCfgRecord, ApplyNewShardingCfgRecord, ResetShardingCfgRecord>>;
+	using ImplT = const intrusive_atomic_rc_wrapper<
+		std::variant<ItemReplicationRecord, IndexReplicationRecord, MetaReplicationRecord, QueryReplicationRecord, SchemaReplicationRecord,
+					 AddNamespaceReplicationRecord, RenameNamespaceReplicationRecord, NodeNetworkCheckRecord, TagsMatcherReplicationRecord,
+					 SaveNewShardingCfgRecord, ApplyNewShardingCfgRecord, ResetShardingCfgRecord>>;
 	struct UpdatesDropT {};
 
 	UpdateRecord() = default;

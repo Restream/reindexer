@@ -12,7 +12,7 @@ public:
 		if (i >= queue_.size()) {
 			return nullptr;
 		}
-		return queue_[i];
+		return std::move(queue_[i]);
 	}
 
 private:

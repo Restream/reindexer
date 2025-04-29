@@ -15,6 +15,7 @@ static constexpr std::string_view kFieldNameRegular = "regular_field"sv;
 void FloatVector::SetUp() {
 	auto dir = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "/FloatVectorTest");
 	reindexer::fs::RmDirAll(dir);
+	rt.reindexer = std::make_shared<reindexer::Reindexer>();
 	auto err = rt.reindexer->Connect("builtin://" + dir);
 	ASSERT_TRUE(err.ok()) << err.what();
 }
@@ -721,6 +722,39 @@ TEST_P(FloatVector, Queries) try {
 }
 CATCH_AND_ASSERT
 
+TEST_F(FloatVector, DeleteIndex) try {
+	constexpr static auto kNsName = "fv_delete_index_ns"sv;
+	constexpr static auto kFieldNameBool = "bool"sv;
+	constexpr static auto kFieldNameIvf = "ivf"sv;
+	constexpr static size_t kDimension = 10;
+	constexpr static size_t kItemCount = 10;
+
+	rt.OpenNamespace(kNsName);
+	rt.DefineNamespaceDataset(
+		kNsName,
+		{
+			IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
+			IndexDeclaration{kFieldNameBool, "hash", "int", IndexOpts{}, 0},
+			IndexDeclaration{
+				kFieldNameIvf, "ivf", "float_vector",
+				IndexOpts{}.SetFloatVector(
+					IndexIvf,
+					FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(5).SetMetric(reindexer::VectorMetric::InnerProduct)),
+				0},
+		});
+
+	std::unordered_set<int> emptyVectors;
+	for (size_t i = 0; i < kItemCount; ++i) {
+		auto item = newItem<kDimension>(kNsName, kFieldNameIvf, i, emptyVectors);
+		item[kFieldNameBool] = rand() % 100;
+		rt.Upsert(kNsName, item);
+	}
+
+	rt.DropIndex(kNsName, kFieldNameBool);
+	rt.DropIndex(kNsName, kFieldNameIvf);
+}
+CATCH_AND_ASSERT
+
 static std::string indexName(size_t idxNumber) {
 	constexpr static const char* kIndexNameBase = "fv_";
 	return kIndexNameBase + std::to_string(idxNumber);
@@ -1162,14 +1196,13 @@ TEST_F(FloatVector, WhereCondIsNullIsNotNull) try {
 	constexpr static size_t kMaxElements = 1'000;
 
 	std::vector<std::pair<IndexType, IndexOpts>> indexOpts{
-		{IndexHnsw, IndexOpts{}.SetFloatVector(IndexHnsw, FloatVectorIndexOpts{}
-																.SetDimension(kDimension)
-																.SetM(16)
-																.SetEfConstruction(50)
-																.SetMetric(reindexer::VectorMetric::L2))},
-		{IndexVectorBruteforce, IndexOpts{}.SetFloatVector(IndexVectorBruteforce, FloatVectorIndexOpts{}
-																					.SetDimension(kDimension)
-																					.SetMetric(reindexer::VectorMetric::Cosine))},
+		{IndexHnsw,
+		 IndexOpts{}.SetFloatVector(
+			 IndexHnsw,
+			 FloatVectorIndexOpts{}.SetDimension(kDimension).SetM(16).SetEfConstruction(50).SetMetric(reindexer::VectorMetric::L2))},
+		{IndexVectorBruteforce,
+		 IndexOpts{}.SetFloatVector(IndexVectorBruteforce,
+									FloatVectorIndexOpts{}.SetDimension(kDimension).SetMetric(reindexer::VectorMetric::Cosine))},
 		{IndexIvf, IndexOpts{}.SetFloatVector(IndexIvf, FloatVectorIndexOpts{}
 															.SetDimension(kDimension)
 															.SetNCentroids(kMaxElements / 3)
@@ -1184,7 +1217,7 @@ TEST_F(FloatVector, WhereCondIsNullIsNotNull) try {
 		rt.AddIndex(nsName, reindexer::IndexDef{idxName, {idxName}, opts.first, opts.second});
 
 		emptyVectors.clear();
- 		upsertItems<kDimension>(nsName, idxName, 0, kMaxElements, emptyVectors);
+		upsertItems<kDimension>(nsName, idxName, 0, kMaxElements, emptyVectors);
 
 		auto qr = rt.Select(reindexer::Query(nsName).Where(idxName, CondEmpty, reindexer::VariantArray{}));
 		ASSERT_TRUE(qr.Count() > 0) << idxName;

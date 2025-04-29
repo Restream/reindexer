@@ -36,7 +36,7 @@ ReindexerImpl::~ReindexerImpl() { stop(); }
 Error ReindexerImpl::Connect(const DSN& dsn, const client::ConnectOpts& opts) {
 	std::lock_guard lock(workersMtx_);
 	if (workers_.size() && workers_[0].th.joinable()) {
-		return Error(errLogic, "Client is already started ({})", dsn);
+		return Error(errLogic, "Client is already started. DSN: {}", dsn);
 	}
 	lastError_.Set(Error());
 	runningWorkers_ = 0;
@@ -160,8 +160,14 @@ Error ReindexerImpl::Select(const Query& query, QueryResults& result, const Inte
 	return sendCommand<Error>(DbCmdSelectQ, ctx, query, result.results_);
 }
 
-Item ReindexerImpl::NewItem(std::string_view nsName, const InternalRdxContext& ctx) {
-	return sendCommand<Item>(DbCmdNewItem, ctx, std::move(nsName));
+Item ReindexerImpl::NewItem(std::string_view nsName, const InternalRdxContext& ctx) noexcept {
+	try {
+		return sendCommand<Item>(DbCmdNewItem, ctx, std::move(nsName));
+	} catch (std::exception& e) {
+		return Item(e);
+	} catch (...) {
+		return Item(Error{errSystem, "Unexpected error in client::Reindexer"});
+	}
 }
 
 Error ReindexerImpl::GetMeta(std::string_view nsName, const std::string& key, std::string& data, const InternalRdxContext& ctx) {
@@ -195,8 +201,14 @@ Error ReindexerImpl::Status(bool forceCheck, const InternalRdxContext& ctx) {
 	return Error();
 }
 
-CoroTransaction ReindexerImpl::NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) {
-	return sendCommand<CoroTransaction>(DbCmdNewTransaction, ctx, std::move(nsName));
+CoroTransaction ReindexerImpl::NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) noexcept {
+	try {
+		return sendCommand<CoroTransaction>(DbCmdNewTransaction, ctx, std::move(nsName));
+	} catch (std::exception& e) {
+		return CoroTransaction(e);
+	} catch (...) {
+		return CoroTransaction(Error{errSystem, "Unexpected error in client::Reindexer"});
+	}
 }
 
 Error ReindexerImpl::CommitTransaction(Transaction& tr, QueryResults& results, const InternalRdxContext& ctx) {
@@ -294,8 +306,11 @@ void ReindexerImpl::threadLoopFun(uint32_t tid, std::promise<Error>& isRunning, 
 					commandsQueue_.Get(thData.tid, q);
 					readMore = q.size();
 					for (auto&& cmd : q) {
-						auto& conn = thData.connPool.GetConn();
-						assert(conn.IsChOpened());
+						auto connIdx = cmd.connIdx;
+						assertrx_dbg(connIdx < 0 || uint32_t(connIdx) < thData.connPool.Size());
+						auto& conn = (connIdx >= 0 && uint32_t(connIdx) < thData.connPool.Size()) ? thData.connPool.GetConn(connIdx)
+																								  : thData.connPool.GetConn();
+						assertrx(conn.IsChOpened());
 						conn.PushCmd(std::move(cmd));
 					}
 					q.clear();
@@ -305,12 +320,13 @@ void ReindexerImpl::threadLoopFun(uint32_t tid, std::promise<Error>& isRunning, 
 	});
 
 	uint32_t runningCount = 0;
-	for (auto& conn : connPool) {
-		th.loop.spawn([this, dsn, opts, &isRunning, &conn, &thData, &runningCount]() noexcept {
+	for (size_t connIdx = 0; connIdx < connPool.Size(); ++connIdx) {
+		auto& conn = connPool.GetConn(connIdx);
+		th.loop.spawn([this, dsn, opts, &isRunning, &conn, connIdx, &thData, &runningCount]() noexcept {
 			auto& th = workers_[thData.tid];
 			auto err = conn.rx.Connect(dsn, th.loop, opts);
 			if (err.ok()) {
-				commandsQueue_.RegisterConn(thData.tid, conn.rx.GetConnPtr());
+				commandsQueue_.RegisterConn(thData.tid, conn.rx.GetConnPtr(), connIdx);
 			} else {
 				lastError_.Set(err);
 			}
@@ -595,18 +611,23 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 			}
 			case DbCmdCommitTransaction: {
 				execCommand(cmd, [&conn, &cmd](CoroTransaction& tr, CoroQueryResults& result) {
+					assertrx_dbg(conn.rx.GetConnPtr() == tr.getConn());
 					return conn.rx.CommitTransaction(tr, result, cmd->ctx);
 				});
 				break;
 			}
 			case DbCmdRollBackTransaction: {
-				execCommand(cmd, [&conn, &cmd](CoroTransaction& tr) { return conn.rx.RollBackTransaction(tr, cmd->ctx); });
+				execCommand(cmd, [&conn, &cmd](CoroTransaction& tr) {
+					assertrx_dbg(!tr.getConn() || conn.rx.GetConnPtr() == tr.getConn());
+					return conn.rx.RollBackTransaction(tr, cmd->ctx);
+				});
 				break;
 			}
 			case DbCmdFetchResults: {
 				auto cd = dynamic_cast<DatabaseCommandData<Error, int, CoroQueryResults&>*>(cmd);
 				assertrx(cd);
 				CoroQueryResults& coroResults = std::get<1>(cd->arguments);
+				assertrx_dbg(conn.rx.GetConnPtr() == coroResults.i_.conn_);
 				auto err = fetchResultsImpl(std::get<0>(cd->arguments), coroResults.i_.queryParams_.count + coroResults.i_.fetchOffset_,
 											coroResults.i_.fetchAmount_, coroResults);
 
@@ -616,8 +637,10 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 			case DbCmdFetchResultsParametrized: {
 				auto cd = dynamic_cast<DatabaseCommandData<Error, int, int, int, CoroQueryResults&>*>(cmd);
 				assertrx(cd);
-				auto err = fetchResultsImpl(std::get<0>(cd->arguments), std::get<1>(cd->arguments), std::get<2>(cd->arguments),
-											std::get<3>(cd->arguments));
+				CoroQueryResults& coroResults = std::get<3>(cd->arguments);
+				assertrx_dbg(conn.rx.GetConnPtr() == coroResults.i_.conn_);
+				auto err =
+					fetchResultsImpl(std::get<0>(cd->arguments), std::get<1>(cd->arguments), std::get<2>(cd->arguments), coroResults);
 				cd->ret.set_value(std::move(err));
 				break;
 			}
@@ -627,6 +650,7 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 				CoroQueryResults& coroResults = std::get<0>(cd->arguments);
 				Error err;
 				if (coroResults.holdsRemoteData()) {
+					assertrx_dbg(conn.rx.GetConnPtr() == coroResults.i_.conn_);
 					err = coroResults.i_.conn_
 							  ->Call({reindexer::net::cproto::kCmdCloseResults, coroResults.i_.requestTimeout_, milliseconds(0), lsn_t(),
 									  -1, ShardingKeyType::NotSetShard, nullptr, false, coroResults.i_.sessionTs_},
@@ -649,8 +673,9 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 			case DbCmdAddTxItem: {
 				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction&, Item, ItemModifyMode>*>(cmd);
 				assertrx(cd);
-				Error err =
-					std::get<0>(cd->arguments).Modify(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments), cmd->ctx.lsn());
+				auto& tr = std::get<0>(cd->arguments);
+				assertrx_dbg(conn.rx.GetConnPtr() == tr.getConn());
+				Error err = tr.Modify(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments), cmd->ctx.lsn());
 				if (cd->ctx.cmpl()) {
 					cd->ctx.cmpl()(err);
 				} else {
@@ -661,8 +686,9 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 			case DbCmdPutTxMeta: {
 				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction&, std::string_view, std::string_view>*>(cmd);
 				assertrx(cd);
-				Error err =
-					std::get<0>(cd->arguments).PutMeta(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments), cd->ctx.lsn());
+				auto& tr = std::get<0>(cd->arguments);
+				assertrx_dbg(conn.rx.GetConnPtr() == tr.getConn());
+				Error err = tr.PutMeta(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments), cd->ctx.lsn());
 				if (cd->ctx.cmpl()) {
 					cd->ctx.cmpl()(err);
 				} else {
@@ -673,7 +699,9 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 			case DbCmdSetTxTagsMatcher: {
 				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction&, TagsMatcher>*>(cmd);
 				assertrx(cd);
-				Error err = std::get<0>(cd->arguments).SetTagsMatcher(std::move(std::get<1>(cd->arguments)), cd->ctx.lsn());
+				auto& tr = std::get<0>(cd->arguments);
+				assertrx_dbg(conn.rx.GetConnPtr() == tr.getConn());
+				Error err = tr.SetTagsMatcher(std::move(std::get<1>(cd->arguments)), cd->ctx.lsn());
 				if (cd->ctx.cmpl()) {
 					cd->ctx.cmpl()(err);
 				} else {
@@ -688,6 +716,7 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 				Error err(errLogic, "Connection pointer in transaction is nullptr.");
 				auto txConn = tr.getConn();
 				if (txConn) {
+					assertrx_dbg(conn.rx.GetConnPtr() == txConn);
 					WrSerializer ser;
 					std::get<1>(cd->arguments).Serialize(ser);
 					switch (std::get<1>(cd->arguments).type_) {
@@ -850,11 +879,11 @@ void ReindexerImpl::CommandsQueue::ClearConnectionsMapping() {
 	thByConns_.clear();
 }
 
-void ReindexerImpl::CommandsQueue::RegisterConn(uint32_t tid, const void* conn) {
+void ReindexerImpl::CommandsQueue::RegisterConn(uint32_t tid, const void* conn, uint32_t connIdx) {
 	assertrx(tid < thData_.size());
 	auto& thD = thData_[tid];
 	std::lock_guard<std::mutex> lock(mtx_);
-	const auto res = thByConns_.emplace(conn, &thD);
+	const auto res = thByConns_.emplace(conn, ConnMeta{.threadData = &thD, .connIdx = connIdx});
 	assertrx(res.second);
 	(void)res;
 }

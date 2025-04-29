@@ -66,7 +66,7 @@ if (NOT WIN32)
   SET(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "server")
   SET(DIST_INCLUDE_FILES
     "tools/errors.h" "tools/serializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h" "tools/assertrx.h" "tools/jsonstring.h"
-    "tools/verifying_updater.h" "tools/customlocal.h" "tools/clock.h"
+    "tools/verifying_updater.h" "tools/customlocal.h" "tools/clock.h" "tools/rvector.h"
     "estl/concepts.h"
     "core/reindexer.h" "core/type_consts.h" "core/type_formats.h" "core/item.h" "core/payload/payloadvalue.h" "core/payload/payloadiface.h" "core/indexopts.h"
     "core/namespacedef.h" "core/keyvalue/variant.h" "core/keyvalue/geometry.h" "core/sortingprioritiestable.h"
@@ -79,7 +79,8 @@ if (NOT WIN32)
     "estl/cow.h" "core/shardedmeta.h" "estl/overloaded.h" "estl/one_of.h"
     "core/queryresults/localqueryresults.h" "core/query/fields_names_filter.h" "core/queryresults/fields_filter.h"
     "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/chunk.h" "estl/expected.h" "estl/gift_str.h"
-    "estl/fast_hash_map.h" "vendor/hopscotch/hopscotch_map.h" "vendor/hopscotch/hopscotch_sc_map.h" "vendor/hopscotch/hopscotch_hash.h" "estl/elist.h"
+    "estl/fast_hash_map.h" "vendor/hopscotch/hopscotch_map.h" "vendor/hopscotch/hopscotch_sc_map.h" 
+    "vendor/hopscotch/hopscotch_hash.h" "estl/elist.h"
     "estl/fast_hash_traits.h" "estl/debug_macros.h" "estl/defines.h" "estl/template.h" "estl/comparation_result.h" "estl/sparse_hash_int.h"
     "client/item.h" "client/resultserializer.h"
     "client/internalrdxcontext.h" "client/reindexer.h" "client/reindexerconfig.h"

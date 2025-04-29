@@ -8,7 +8,7 @@
 #include "core/payload/fieldsset.h"
 #include "core/payload/payloadtype.h"
 #include "core/type_consts.h"
-#include "core/type_consts_helpers.h"
+#include "estl/concepts.h"
 #include "estl/expected.h"
 #include "estl/h_vector.h"
 
@@ -57,7 +57,15 @@ struct FacetResult {
 	int count;
 };
 
-struct AggregationResult {
+class [[nodiscard]] AggregationResult {
+public:
+	AggregationResult() noexcept;
+	explicit AggregationResult(AggType tp, h_vector<std::string, 1>&& names) noexcept;
+	explicit AggregationResult(AggType tp, h_vector<std::string, 1>&& names, double val) noexcept;
+	explicit AggregationResult(AggType tp, h_vector<std::string, 1>&& names, PayloadType&& pt, FieldsSet&& fset,
+							   std::vector<Variant>&& _distincts) noexcept;
+	explicit AggregationResult(AggType tp, h_vector<std::string, 1>&& names, std::vector<FacetResult>&& facets) noexcept;
+	~AggregationResult();
 	void GetJSON(WrSerializer& ser) const;
 	void GetMsgPack(WrSerializer& wrser) const;
 	void GetProtobuf(WrSerializer& wrser) const;
@@ -67,60 +75,51 @@ struct AggregationResult {
 	static Expected<AggregationResult> FromMsgPack(std::span<char> msgpack) {
 		return FromMsgPack(std::string_view(msgpack.data(), msgpack.size()));
 	}
-	double GetValueOrZero() const noexcept { return value_ ? *value_ : 0; }
-	std::optional<double> GetValue() const noexcept { return value_; }
-	void SetValue(double value) { value_ = value; }
+	[[nodiscard]] double GetValueOrZero() const noexcept { return value_ ? *value_ : 0; }
+	[[nodiscard]] std::optional<double> GetValue() const noexcept { return value_; }
+	[[nodiscard]] AggType GetType() const noexcept { return type_; }
+	void UpdateValue(double value) noexcept { value_ = value; }
 
-	AggType type = AggSum;
-	h_vector<std::string, 1> fields;
-	std::vector<FacetResult> facets;
-	VariantArray distincts;
-	FieldsSet distinctsFields;
-	PayloadType payloadType;
+	[[nodiscard]] const std::vector<FacetResult>& GetFacets() const& noexcept { return facets_; }
+	auto GetFacets() const&& = delete;
 
-	static AggType strToAggType(std::string_view type);
+	[[nodiscard]] static AggType StrToAggType(std::string_view type);
 	static void GetProtobufSchema(ProtobufSchemaBuilder&);
 
-	template <typename Builder, typename Fields>
-	void get(Builder& builder, const Fields& parametersFields) const {
-		if (value_) {
-			builder.Put(parametersFields.Value(), *value_);
-		}
-		builder.Put(parametersFields.Type(), AggTypeToStr(type));
-		if (!facets.empty()) {
-			auto facetsArray = builder.Array(parametersFields.Facets(), facets.size());
-			for (auto& facet : facets) {
-				auto facetObj = facetsArray.Object(TagName::Empty(), 2);
-				facetObj.Put(parametersFields.Count(), facet.count);
-				auto valuesArray = facetObj.Array(parametersFields.Values(), facet.values.size());
-				for (const auto& v : facet.values) {
-					valuesArray.Put(TagName::Empty(), v);
-				}
-			}
-		}
+	[[nodiscard]] bool IsEquals(const AggregationResult& other) { return (type_ == other.type_ && fields_ == other.fields_); }
 
-		if (!distincts.empty()) {
-			auto distinctsArray = builder.Array(parametersFields.Distincts(), distincts.size());
-			for (const Variant& v : distincts) {
-				distinctsArray.Put(TagName::Empty(), v.As<std::string>(payloadType, distinctsFields));
-			}
-		}
+	[[nodiscard]] const PayloadType& GetPayloadType() const& noexcept { return payloadType_; }
+	auto GetPayloadType() const&& = delete;
+	[[nodiscard]] const FieldsSet& GetDistinctFields() const& noexcept { return distinctsFields_; }
+	auto GetDistinctFields() const&& = delete;
 
-		auto fieldsArray = builder.Array(parametersFields.Fields(), fields.size());
-		for (auto& v : fields) {
-			fieldsArray.Put(TagName::Empty(), v);
+	[[nodiscard]] std::span<const Variant> GetDistinctRow(unsigned index) const {
+		if ((index + 1) * fields_.size() > distincts_.size()) {
+			throw Error(errLogic, std::string("Incorrect distinct index ") + std::to_string(index));
 		}
-		fieldsArray.End();
+		return std::span{distincts_.begin() + index * fields_.size(), fields_.size()};
 	}
+	[[nodiscard]] unsigned int GetDistinctRowCount() const { return distincts_.size() / fields_.size(); }
+	[[nodiscard]] unsigned int GetDistinctColumnCount() const noexcept { return fields_.size(); }
+
+	template <typename T>
+	[[nodiscard]] T As(unsigned int row, unsigned int column) const {
+		return distincts_[row * fields_.size() + column].As<T>(payloadType_, distinctsFields_);
+	}
+
+	[[nodiscard]] const h_vector<std::string, 1>& GetFields() const& noexcept { return fields_; }
+	auto GetFields() const&& = delete;
+
 	template <typename S>
-	S& DumpFields(S& os) {
+	[[nodiscard]] S& DumpFields(S& os) {
 		os << '[';
 		bool first = true;
-		for (const auto& f : fields) {
+		for (const auto& f : fields_) {
 			if (!first) {
 				os << ", ";
+			} else {
+				first = false;
 			}
-			first = false;
 			os << f;
 		}
 		os << ']';
@@ -128,7 +127,17 @@ struct AggregationResult {
 	}
 
 private:
-	template <typename Node>
+	AggType type_ = AggSum;
+	h_vector<std::string, 1> fields_;
+	std::vector<FacetResult> facets_;
+	std::vector<Variant> distincts_;
+	FieldsSet distinctsFields_;
+	PayloadType payloadType_;
+
+	template <typename Builder, typename Fields>
+	void get(Builder& builder, const Fields& parametersFields) const;
+
+	template <concepts::OneOf<gason::JsonNode, MsgPackValue> Node>
 	static AggregationResult from(Node root);
 
 	std::optional<double> value_ = std::nullopt;

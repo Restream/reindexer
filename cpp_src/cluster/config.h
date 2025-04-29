@@ -147,18 +147,7 @@ constexpr size_t kDefaultClusterProxyConnThreads = 2;
 struct ClusterConfigData {
 	Error FromYAML(const std::string& yaml);
 
-	bool operator==(const ClusterConfigData& rdata) const noexcept {
-		return (nodes == rdata.nodes) && (retrySyncIntervalMSec == rdata.retrySyncIntervalMSec) &&
-			   (onlineUpdatesTimeoutSec == rdata.onlineUpdatesTimeoutSec) && (enableCompression == rdata.enableCompression) &&
-			   (appName == rdata.appName) && (replThreadsCount == rdata.replThreadsCount) &&
-			   (parallelSyncsPerThreadCount == rdata.parallelSyncsPerThreadCount) &&
-			   (batchingRoutinesCount == rdata.batchingRoutinesCount) && (leaderSyncThreads == rdata.leaderSyncThreads) &&
-			   (leaderSyncConcurrentSnapshotsPerNode == rdata.leaderSyncConcurrentSnapshotsPerNode) &&
-			   (syncTimeoutSec == rdata.syncTimeoutSec) && (proxyConnCount == rdata.proxyConnCount) &&
-			   (proxyConnConcurrency == rdata.proxyConnConcurrency) && (proxyConnThreads == rdata.proxyConnThreads) &&
-			   (logLevel == rdata.logLevel);
-	}
-	bool operator!=(const ClusterConfigData& rdata) const noexcept { return !operator==(rdata); }
+	[[nodiscard]] bool operator==(const ClusterConfigData& rdata) const noexcept = default;
 
 	unsigned int GetNodeIndexForServerId(int serverId) const {
 		for (unsigned int i = 0; i < nodes.size(); ++i) {
@@ -186,6 +175,7 @@ struct ClusterConfigData {
 	int proxyConnConcurrency = kDefaultClusterProxyCoroPerConn;
 	int proxyConnThreads = kDefaultClusterProxyConnThreads;
 	LogLevel logLevel = LogInfo;
+	std::string selfReplToken;
 };
 
 constexpr uint32_t kDefaultShardingProxyConnCount = 8;
@@ -259,6 +249,7 @@ struct AsyncReplConfigData {
 	using NamespaceList = AsyncReplNodeConfig::NamespaceList;
 	enum class Role { None, Leader, Follower };
 
+	Error FromDefault() noexcept;
 	Error FromYAML(const std::string& yml);
 	Error FromJSON(std::string_view json);
 	Error FromJSON(const gason::JsonNode& v);
@@ -286,6 +277,7 @@ struct AsyncReplConfigData {
 	std::vector<AsyncReplNodeConfig> nodes;
 	int onlineUpdatesDelayMSec = 100;
 	LogLevel logLevel = LogNone;
+	std::string selfReplToken;
 
 	bool operator==(const AsyncReplConfigData& rdata) const noexcept {
 		return (role == rdata.role) && (mode == rdata.mode) && (replThreadsCount == rdata.replThreadsCount) &&
@@ -296,7 +288,7 @@ struct AsyncReplConfigData {
 			   (enableCompression == rdata.enableCompression) && (appName == rdata.appName) &&
 			   (batchingRoutinesCount == rdata.batchingRoutinesCount) && (maxWALDepthOnForceSync == rdata.maxWALDepthOnForceSync) &&
 			   (syncTimeoutSec == rdata.syncTimeoutSec) && (onlineUpdatesDelayMSec == rdata.onlineUpdatesDelayMSec) &&
-			   (logLevel == rdata.logLevel) && (nodes == rdata.nodes);
+			   (logLevel == rdata.logLevel) && (nodes == rdata.nodes) && (selfReplToken == rdata.selfReplToken);
 	}
 	bool operator!=(const AsyncReplConfigData& rdata) const noexcept { return !operator==(rdata); }
 };

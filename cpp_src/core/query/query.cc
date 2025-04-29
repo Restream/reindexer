@@ -292,7 +292,7 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 			case QueryAggregation: {
 				const AggType type = static_cast<AggType>(ser.GetVarUInt());
 				size_t fieldsCount = ser.GetVarUInt();
-				h_vector<std::string, 1> fields;
+				RVector<std::string, 1> fields;
 				fields.reserve(fieldsCount);
 				while (fieldsCount--) {
 					fields.emplace_back(std::string(ser.GetVString()));
@@ -807,6 +807,10 @@ bool Query::IsWALQuery() const noexcept {
 	}
 	return false;
 }
+
+void Query::ReplaceSubQuery(size_t i, Query&& query) { subQueries_.at(i) = std::move(query); }
+void Query::ReplaceJoinQuery(size_t i, JoinedQuery&& query) { joinQueries_.at(i) = std::move(query); }
+void Query::ReplaceMergeQuery(size_t i, JoinedQuery&& query) { mergeQueries_.at(i) = std::move(query); }
 
 void JoinedQuery::deserializeJoinOn(Serializer& ser) {
 	const OpType op = static_cast<OpType>(ser.GetVarUInt());

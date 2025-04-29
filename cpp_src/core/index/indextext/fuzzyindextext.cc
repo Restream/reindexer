@@ -5,7 +5,7 @@
 namespace reindexer {
 
 template <typename T>
-IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr bctx, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&,
+IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx& ftCtx, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&,
 									 FtUseExternStatuses withExternSt, const RdxContext& rdxCtx) {
 	assertrx_throw(withExternSt == FtUseExternStatuses::No);
 	(void)withExternSt;
@@ -14,21 +14,20 @@ IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr bctx, FtDSLQuery&& dsl, bool inT
 	auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 
 	mergedIds->reserve(result.data_->size() * 2);
-	intrusive_ptr<FtCtx> fctx = static_ctx_pointer_cast<FtCtx>(bctx);
-	fctx->Reserve(result.data_->size() * 2);
+	ftCtx.Ranks().Reserve(result.data_->size() * 2);
 	double coof = 1;
 	if (result.max_proc_ > 100) {
 		coof = 100 / result.max_proc_;
 	}
 	size_t counter = 0;
 	for (auto it = result.data_->begin(); it != result.data_->end(); ++it, ++counter) {
-		it->proc_ *= coof;
-		if (it->proc_ < getConfig()->minOkProc) {
+		it->rank_ *= coof;
+		if (it->rank_ < getConfig()->minOkProc) {
 			continue;
 		}
 		assertrx(it->id_ < this->vdocs_.size());
 		const auto& id_set = this->vdocs_[it->id_].keyEntry->Sorted(0);
-		fctx->Add(id_set.begin(), id_set.end(), RankT(it->proc_));
+		ftCtx.Add(id_set.begin(), id_set.end(), RankT(it->rank_));
 		mergedIds->Append(id_set.begin(), id_set.end(), IdSet::Unordered);
 		if ((counter & 0xFF) == 0 && !inTransaction) {
 			ThrowOnCancel(rdxCtx);

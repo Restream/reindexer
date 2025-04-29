@@ -52,21 +52,22 @@ struct RxSelector::QueryResultsContext {
 };
 
 template <typename T, typename QueryType>
-void RxSelector::DoSelect(const Query& q, LocalQueryResults& result, NsLocker<T>& locks, SelectFunctionsHolder& func, const RdxContext& ctx,
-						  QueryStatCalculator<QueryType>& queryStatCalculator) {
+void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, LocalQueryResults& result, NsLocker<T>& locks,
+						  FtFunctionsHolder& func, const RdxContext& ctx, QueryStatCalculator<QueryType>& queryStatCalculator) {
 	auto ns = locks.Get(q.NsName());
 	if rx_unlikely (!ns) {
 		throw Error(errParams, "Namespace '{}' does not exist", q.NsName());
 	}
 	std::vector<LocalQueryResults> queryResultsHolder;
-	std::optional<Query> queryCopy;
 	ExplainCalc::Duration preselectTimeTotal{0};
 	std::vector<SubQueryExplain> subQueryExplains;
 	if (!q.GetSubQueries().empty()) {
 		if (q.GetDebugLevel() >= LogInfo || ns->config_.logLevel >= LogInfo) {
 			logFmt(LogInfo, "Query before subqueries substitution: {}", q.GetSQL());
 		}
-		queryCopy.emplace(q);
+		if (!queryCopy) {
+			queryCopy.emplace(q);
+		}
 		const auto preselectStartTime = ExplainCalc::Clock::now();
 		subQueryExplains = preselectSubQueries(*queryCopy, queryResultsHolder, locks, func, ctx);
 		preselectTimeTotal += ExplainCalc::Clock::now() - preselectStartTime;
@@ -279,7 +280,7 @@ StoredValuesOptimizationStatus RxSelector::isPreResultValuesModeOptimizationAvai
 																					  const Query& mainQ) {
 	auto status = StoredValuesOptimizationStatus::Enabled;
 	jItemQ.Entries().VisitForEach([](OneOf<SubQueryEntry, SubQueryFieldEntry>) { assertrx_throw(0); },
-								  Skip<JoinQueryEntry, QueryEntriesBracket, AlwaysFalse, AlwaysTrue>{},
+								  Skip<JoinQueryEntry, QueryEntriesBracket, AlwaysFalse, AlwaysTrue, DistinctQueryEntry>{},
 								  [&jns, &status](const QueryEntry& qe) {
 									  if (qe.IsFieldIndexed()) {
 										  assertrx_throw(jns->indexes_.size() > static_cast<size_t>(qe.IndexNo()));
@@ -320,7 +321,7 @@ StoredValuesOptimizationStatus RxSelector::isPreResultValuesModeOptimizationAvai
 }
 
 template <typename T>
-bool RxSelector::selectSubQuery(const Query& subQuery, const Query& mainQuery, NsLocker<T>& locks, SelectFunctionsHolder& func,
+bool RxSelector::selectSubQuery(const Query& subQuery, const Query& mainQuery, NsLocker<T>& locks, FtFunctionsHolder& func,
 								std::vector<SubQueryExplain>& explain, const RdxContext& rdxCtx) {
 	auto ns = locks.Get(subQuery.NsName());
 	assertrx_throw(ns);
@@ -343,7 +344,7 @@ bool RxSelector::selectSubQuery(const Query& subQuery, const Query& mainQuery, N
 
 template <typename T>
 VariantArray RxSelector::selectSubQuery(const Query& subQuery, const Query& mainQuery, NsLocker<T>& locks, LocalQueryResults& qr,
-										SelectFunctionsHolder& func, std::variant<std::string, size_t> fieldOrKeys,
+										FtFunctionsHolder& func, std::variant<std::string, size_t> fieldOrKeys,
 										std::vector<SubQueryExplain>& explain, const RdxContext& rdxCtx) {
 	NamespaceImpl::Ptr ns = locks.Get(subQuery.NsName());
 	assertrx_throw(ns);
@@ -441,9 +442,8 @@ VariantArray RxSelector::selectSubQuery(const Query& subQuery, const Query& main
 }
 
 template <typename T>
-JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, LocalQueryResults& result, NsLocker<T>& locks,
-												   SelectFunctionsHolder& func, std::vector<QueryResultsContext>& queryResultsContexts,
-												   const RdxContext& rdxCtx) {
+JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, LocalQueryResults& result, NsLocker<T>& locks, FtFunctionsHolder& func,
+												   std::vector<QueryResultsContext>& queryResultsContexts, const RdxContext& rdxCtx) {
 	JoinedSelectors joinedSelectors;
 	if (q.GetJoinQueries().empty()) {
 		return joinedSelectors;
@@ -554,14 +554,16 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, LocalQueryRes
 
 template <typename T>
 std::vector<SubQueryExplain> RxSelector::preselectSubQueries(Query& mainQuery, std::vector<LocalQueryResults>& queryResultsHolder,
-															 NsLocker<T>& locks, SelectFunctionsHolder& func, const RdxContext& ctx) {
+															 NsLocker<T>& locks, FtFunctionsHolder& func, const RdxContext& ctx) {
 	std::vector<SubQueryExplain> explains;
 	if (mainQuery.NeedExplain() || mainQuery.GetDebugLevel() >= LogInfo) {
 		explains.reserve(mainQuery.GetSubQueries().size());
 	}
 	for (size_t i = 0, s = mainQuery.Entries().Size(); i < s; ++i) {
 		mainQuery.Entries().Visit(
-			i, Skip<QueryEntriesBracket, QueryEntry, BetweenFieldsQueryEntry, JoinQueryEntry, AlwaysTrue, AlwaysFalse, KnnQueryEntry>{},
+			i,
+			Skip<QueryEntriesBracket, QueryEntry, BetweenFieldsQueryEntry, JoinQueryEntry, AlwaysTrue, AlwaysFalse, KnnQueryEntry,
+				 DistinctQueryEntry>{},
 			[&](const SubQueryEntry& sqe) {
 				try {
 					const CondType cond = sqe.Condition();
@@ -604,7 +606,7 @@ std::vector<SubQueryExplain> RxSelector::preselectSubQueries(Query& mainQuery, s
 }
 
 template void RxSelector::DoSelect<const RdxContext, long_actions::QueryEnum2Type<QueryType::QuerySelect>>(
-	const Query&, LocalQueryResults&, NsLocker<const RdxContext>&, SelectFunctionsHolder&, const RdxContext&,
+	const Query&, std::optional<Query>&, LocalQueryResults&, NsLocker<const RdxContext>&, FtFunctionsHolder&, const RdxContext&,
 	QueryStatCalculator<long_actions::QueryEnum2Type<QueryType::QuerySelect>, long_actions::Logger>&);
 
 }  // namespace reindexer

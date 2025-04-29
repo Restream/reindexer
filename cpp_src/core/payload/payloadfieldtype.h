@@ -19,7 +19,7 @@ class Embedder;
 // Type of field
 class PayloadFieldType {
 public:
-	PayloadFieldType(int, const Index&, const IndexDef&) noexcept;
+	PayloadFieldType(std::string_view nsName, int idx, const Index& index, const IndexDef& indexDef) noexcept;
 	PayloadFieldType(KeyValueType t, std::string n, std::vector<std::string> j, IsArray a,
 					 reindexer::FloatVectorDimension dims = reindexer::FloatVectorDimension()) noexcept
 		: type_(t), name_(std::move(n)), jsonPaths_(std::move(j)), offset_(0), arrayDims_(dims.Value()), isArray_(a) {
@@ -41,13 +41,14 @@ public:
 	KeyValueType Type() const noexcept { return type_; }
 	bool IsFloatVector() const noexcept { return type_.Is<KeyValueType::FloatVector>(); }
 	const std::string& Name() const& noexcept { return name_; }
-	const std::string& Name() && = delete;
 	const std::vector<std::string>& JsonPaths() const& noexcept { return jsonPaths_; }
-	const std::vector<std::string>& JsonPaths() && = delete;
 	void AddJsonPath(const std::string& jsonPath) { jsonPaths_.push_back(jsonPath); }
 	std::string ToString() const;
 	std::shared_ptr<reindexer::Embedder> Embedder() const { return embedder_; }
 	std::shared_ptr<reindexer::Embedder> QueryEmbedder() const { return queryEmbedder_; }
+
+	const std::string& Name() const&& = delete;
+	const std::vector<std::string>& JsonPaths() const&& = delete;
 
 private:
 	KeyValueType type_;

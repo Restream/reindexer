@@ -1,19 +1,10 @@
 #include "gtests/tests/fixtures/embedding_test.h"
 #include <gmock/gmock.h>
-#include "core/cjson/jsonbuilder.h"
 #include "gtests/tools.h"
 #include "tools/errors.h"
-#include "tools/fsops.h"
 
 using namespace std::string_view_literals;
 static constexpr std::string_view kFieldNameId = "id"sv;
-
-void EmbeddingTest::SetUp() {
-	auto dir = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "/EmbeddingTest");
-	reindexer::fs::RmDirAll(dir);
-	auto err = rt.reindexer->Connect("builtin://" + dir);
-	ASSERT_TRUE(err.ok()) << err.what();
-}
 
 TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbedding) try {
 	using namespace std::string_literals;
@@ -391,7 +382,8 @@ TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativeFieldsDuplicate) try 
 	}
 }
 )json"sv);
-	ASSERT_STREQ(indexDef.error().what(), "Configuration 'embedding:upsert_embedder' does not support duplicate field names. Duplicate 'Fld1'");
+	ASSERT_STREQ(indexDef.error().what(),
+				 "Configuration 'embedding:upsert_embedder' does not support duplicate field names. Duplicate 'Fld1'");
 }
 CATCH_AND_ASSERT
 

@@ -60,7 +60,7 @@ public:
 	Error Delete(const Query& query, QueryResults& result, const InternalRdxContext& ctx);
 	Error Select(std::string_view query, QueryResults& result, const InternalRdxContext& ctx);
 	Error Select(const Query& query, QueryResults& result, const InternalRdxContext& ctx);
-	Item NewItem(std::string_view nsName, const InternalRdxContext& ctx);
+	Item NewItem(std::string_view nsName, const InternalRdxContext& ctx) noexcept;
 	Error GetMeta(std::string_view nsName, const std::string& key, std::string& data, const InternalRdxContext& ctx);
 	Error GetMeta(std::string_view nsName, const std::string& key, std::vector<ShardedMeta>& data, const InternalRdxContext& ctx);
 	Error PutMeta(std::string_view nsName, const std::string& key, std::string_view data, const InternalRdxContext& ctx);
@@ -68,7 +68,7 @@ public:
 	Error DeleteMeta(std::string_view nsName, const std::string& key, const InternalRdxContext& ctx);
 	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions);
 	Error Status(bool forceCheck, const InternalRdxContext& ctx);
-	CoroTransaction NewTransaction(std::string_view nsName, const InternalRdxContext& ctx);
+	CoroTransaction NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) noexcept;
 	Error CommitTransaction(Transaction& tr, QueryResults& results, const InternalRdxContext& ctx);
 	Error RollBackTransaction(Transaction& tr, const InternalRdxContext& ctx);
 	Error GetReplState(std::string_view nsName, ReplicationStateV2& state, const InternalRdxContext& ctx);
@@ -213,10 +213,10 @@ private:
 
 	class DatabaseCommand {
 	public:
-		DatabaseCommand(DatabaseCommandDataBase* cmd = nullptr) : cmd_(cmd) {}
+		DatabaseCommand(DatabaseCommandDataBase* cmd = nullptr) noexcept : cmd_(cmd) {}
 		template <typename DatabaseCommandDataT>
 		DatabaseCommand(DatabaseCommandDataT&& cmd) : owns_(true), cmd_(new DatabaseCommandData(std::forward<DatabaseCommandDataT>(cmd))) {}
-		DatabaseCommand(DatabaseCommand&& r) noexcept : owns_(r.owns_), cmd_(r.cmd_) { r.owns_ = false; }
+		DatabaseCommand(DatabaseCommand&& r) noexcept : connIdx(r.connIdx), owns_(r.owns_), cmd_(r.cmd_) { r.owns_ = false; }
 		DatabaseCommand(const DatabaseCommand& r) = delete;
 		DatabaseCommand& operator=(DatabaseCommand&& r) {
 			if (this != &r) {
@@ -224,6 +224,7 @@ private:
 					delete cmd_;
 				}
 				owns_ = r.owns_;
+				connIdx = r.connIdx;
 				cmd_ = r.cmd_;
 				r.owns_ = false;
 			}
@@ -238,9 +239,11 @@ private:
 
 		DatabaseCommandDataBase* Data() noexcept { return cmd_; }
 
+		int32_t connIdx = -1;
+
 	private:
 		bool owns_ = false;
-		DatabaseCommandDataBase* cmd_;
+		DatabaseCommandDataBase* cmd_ = nullptr;
 	};
 
 	template <typename R, typename... Args>
@@ -357,6 +360,7 @@ private:
 			}
 			const bool notify = !targetTh->isReading;
 			targetTh->isReading = true;
+			cmd.connIdx = -1;
 			sharedQueue_.emplace_back(std::move(cmd));
 			lck.unlock();
 
@@ -374,7 +378,9 @@ private:
 			if (found == thByConns_.end()) {
 				return Error(errParams, "Request for incorrect connection");
 			}
-			auto& th = *found->second;
+			auto connMeta = found->second;
+			cmd.connIdx = connMeta.connIdx;
+			auto& th = *connMeta.threadData;
 			const bool notify = !th.isReading && (th.personalQueue.empty());
 			th.isReading = true;
 			th.personalQueue.emplace_back(std::move(cmd));
@@ -391,7 +397,7 @@ private:
 		void Init(std::deque<WorkerThread>& threads);
 		void SetValid();
 		void ClearConnectionsMapping();
-		void RegisterConn(uint32_t tid, const void* conn);
+		void RegisterConn(uint32_t tid, const void* conn, uint32_t connIdx);
 
 	private:
 		struct ThreadData {
@@ -401,10 +407,14 @@ private:
 			net::ev::async& commandAsync;
 			bool isReading = false;
 		};
+		struct ConnMeta {
+			ThreadData* threadData = nullptr;
+			uint32_t connIdx = std::numeric_limits<uint32_t>::max();
+		};
 
 		bool isValid_ = false;
 		RecyclingList<DatabaseCommand, 64> sharedQueue_;
-		fast_hash_map<const void*, ThreadData*> thByConns_;
+		fast_hash_map<const void*, ConnMeta> thByConns_;
 		std::deque<ThreadData> thData_;
 		std::mutex mtx_;
 	};

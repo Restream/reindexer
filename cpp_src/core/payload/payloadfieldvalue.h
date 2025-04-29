@@ -42,12 +42,12 @@ public:
 			throwSetTypeMissmatch(kv);
 		}
 
-		t_.Type().EvaluateOneOf([&](KeyValueType::Int) noexcept { *reinterpret_cast<int*>(p_) = int(kv); },
-								[&](KeyValueType::Bool) noexcept { *reinterpret_cast<bool*>(p_) = bool(kv); },
-								[&](KeyValueType::Int64) noexcept { *reinterpret_cast<int64_t*>(p_) = int64_t(kv); },
-								[&](KeyValueType::Double) noexcept { *reinterpret_cast<double*>(p_) = double(kv); },
-								[&](KeyValueType::String) noexcept { *reinterpret_cast<p_string*>(p_) = p_string(kv); },
-								[&](KeyValueType::Uuid) noexcept { *reinterpret_cast<Uuid*>(p_) = Uuid{kv}; },
+		t_.Type().EvaluateOneOf([&](KeyValueType::Int) noexcept { copyVariantToPtr<int>(kv); },
+								[&](KeyValueType::Bool) noexcept { copyVariantToPtr<bool>(kv); },
+								[&](KeyValueType::Int64) noexcept { copyVariantToPtr<int64_t>(kv); },
+								[&](KeyValueType::Double) noexcept { copyVariantToPtr<double>(kv); },
+								[&](KeyValueType::String) noexcept { copyVariantToPtr<p_string>(kv); },
+								[&](KeyValueType::Uuid) noexcept { copyVariantToPtr<Uuid>(kv); },
 								[&](KeyValueType::FloatVector) {
 									assertrx(!kv.DoHold());
 									ConstFloatVectorView vect{kv};
@@ -56,7 +56,8 @@ public:
 													"Attempt to write vector of dimension {} in a float vector field of dimension {}",
 													vect.Dimension().Value(), t_.FloatVectorDimension().Value()};
 									}
-									*reinterpret_cast<uint64_t*>(p_) = vect.Payload();
+									uint64_t v = vect.Payload();
+									std::memcpy(p_, &v, sizeof(uint64_t));
 								},
 								[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
 										 KeyValueType::Float>) noexcept {
@@ -67,16 +68,20 @@ public:
 	Variant Get() noexcept { return Get(Variant::noHold); }
 	template <typename HoldT>
 	Variant Get(HoldT h) const noexcept(noexcept(Variant(std::declval<p_string>(), h))) {
-		return t_.Type().EvaluateOneOf([&](KeyValueType::Bool) noexcept { return Variant(*reinterpret_cast<const bool*>(p_)); },
-									   [&](KeyValueType::Int) noexcept { return Variant(*reinterpret_cast<const int*>(p_)); },
-									   [&](KeyValueType::Int64) noexcept { return Variant(*reinterpret_cast<const int64_t*>(p_)); },
-									   [&](KeyValueType::Double) noexcept { return Variant(*reinterpret_cast<const double*>(p_)); },
+		return t_.Type().EvaluateOneOf([&](KeyValueType::Bool) noexcept { return getVariantFromPtr<bool>(); },
+									   [&](KeyValueType::Int) noexcept { return getVariantFromPtr<int>(); },
+									   [&](KeyValueType::Int64) noexcept { return getVariantFromPtr<int64_t>(); },
+									   [&](KeyValueType::Double) noexcept { return getVariantFromPtr<double>(); },
 									   [&](KeyValueType::String) noexcept(noexcept(Variant(std::declval<p_string>(), h))) {
-										   return Variant(*reinterpret_cast<const p_string*>(p_), h);
+										   p_string v;
+										   std::memcpy(&v, p_, sizeof(p_string));
+										   return Variant(v, h);
 									   },
-									   [&](KeyValueType::Uuid) noexcept { return Variant(*reinterpret_cast<const Uuid*>(p_)); },
+									   [&](KeyValueType::Uuid) noexcept { return getVariantFromPtr<Uuid>(); },
 									   [&](KeyValueType::FloatVector) noexcept {
-										   return Variant{ConstFloatVectorView::FromUint64(*reinterpret_cast<const uint64_t*>(p_))};
+										   uint64_t v;
+										   std::memcpy(&v, p_, sizeof(uint64_t));
+										   return Variant{ConstFloatVectorView::FromUint64(v)};
 									   },
 									   [](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
 												KeyValueType::Float>) noexcept -> Variant {
@@ -85,44 +90,44 @@ public:
 									   });
 	}
 	size_t Hash() const noexcept {
-		return t_.Type().EvaluateOneOf(
-			[&](KeyValueType::Bool) noexcept -> uint64_t { return std::hash<bool>()(*reinterpret_cast<const bool*>(p_)); },
-			[&](KeyValueType::Int) noexcept -> uint64_t { return std::hash<int>()(*reinterpret_cast<const int*>(p_)); },
-			[&](KeyValueType::Int64) noexcept -> uint64_t { return std::hash<int64_t>()(*reinterpret_cast<const int64_t*>(p_)); },
-			[&](KeyValueType::Double) noexcept -> uint64_t { return std::hash<double>()(*reinterpret_cast<const double*>(p_)); },
-			[&](KeyValueType::String) noexcept -> uint64_t { return std::hash<p_string>()(*reinterpret_cast<const p_string*>(p_)); },
-			[&](KeyValueType::Uuid) noexcept -> uint64_t { return std::hash<Uuid>()(*reinterpret_cast<const Uuid*>(p_)); },
-			[&](KeyValueType::FloatVector) noexcept {
-				return ConstFloatVectorView::FromUint64(*reinterpret_cast<const uint64_t*>(p_)).Hash();
-			},
-			[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
-					 KeyValueType::Float>) noexcept -> uint64_t {
-				assertrx(0);
-				abort();
-			});
+		return t_.Type().EvaluateOneOf([&](KeyValueType::Bool) noexcept -> uint64_t { return getHashFromPtr<bool>(); },
+									   [&](KeyValueType::Int) noexcept -> uint64_t { return getHashFromPtr<int>(); },
+									   [&](KeyValueType::Int64) noexcept -> uint64_t { return getHashFromPtr<int64_t>(); },
+									   [&](KeyValueType::Double) noexcept -> uint64_t { return getHashFromPtr<double>(); },
+									   [&](KeyValueType::String) noexcept -> uint64_t { return getHashFromPtr<p_string>(); },
+									   [&](KeyValueType::Uuid) noexcept -> uint64_t { return getHashFromPtr<Uuid>(); },
+									   [&](KeyValueType::FloatVector) noexcept {
+										   uint64_t v;
+										   std::memcpy(&v, p_, sizeof(uint64_t));
+										   return ConstFloatVectorView::FromUint64(v).Hash();
+									   },
+									   [](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
+												KeyValueType::Float>) noexcept -> uint64_t {
+										   assertrx(0);
+										   abort();
+									   });
 	}
 	bool IsEQ(const PayloadFieldValue& o) const {
 		if (!t_.Type().IsSame(o.t_.Type())) {
 			return false;
 		}
-		return t_.Type().EvaluateOneOf(
-			[&](KeyValueType::Bool) noexcept { return *reinterpret_cast<const bool*>(p_) == *reinterpret_cast<const bool*>(o.p_); },
-			[&](KeyValueType::Int) noexcept { return *reinterpret_cast<const int*>(p_) == *reinterpret_cast<const int*>(o.p_); },
-			[&](KeyValueType::Int64) noexcept { return *reinterpret_cast<const int64_t*>(p_) == *reinterpret_cast<const int64_t*>(o.p_); },
-			[&](KeyValueType::Double) noexcept { return *reinterpret_cast<const double*>(p_) == *reinterpret_cast<const double*>(o.p_); },
-			[&](KeyValueType::String) {
-				return collateCompare<CollateNone>(*reinterpret_cast<const p_string*>(p_), *reinterpret_cast<const p_string*>(o.p_),
-												   SortingPrioritiesTable()) == ComparationResult::Eq;
-			},
-			[&](KeyValueType::Uuid) noexcept { return *reinterpret_cast<const Uuid*>(p_) == *reinterpret_cast<const Uuid*>(o.p_); },
-			[&](KeyValueType::FloatVector) noexcept {
-				return *reinterpret_cast<const uint64_t*>(p_) == *reinterpret_cast<const uint64_t*>(o.p_);
-			},
-			[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
-					 KeyValueType::Float>) noexcept -> bool {
-				assertrx(0);
-				abort();
-			});
+		return t_.Type().EvaluateOneOf([&](KeyValueType::Bool) noexcept { return (std::memcmp(p_, o.p_, sizeof(bool)) == 0); },
+									   [&](KeyValueType::Int) noexcept { return (std::memcmp(p_, o.p_, sizeof(int)) == 0); },
+									   [&](KeyValueType::Int64) noexcept { return (std::memcmp(p_, o.p_, sizeof(int64_t)) == 0); },
+									   [&](KeyValueType::Double) noexcept { return (std::memcmp(p_, o.p_, sizeof(double)) == 0); },
+									   [&](KeyValueType::String) {
+										   p_string v1, v2;
+										   std::memcpy(&v1, p_, sizeof(p_string));
+										   std::memcpy(&v2, o.p_, sizeof(p_string));
+										   return collateCompare<CollateNone>(v1, v2, SortingPrioritiesTable()) == ComparationResult::Eq;
+									   },
+									   [&](KeyValueType::Uuid) noexcept { return (std::memcmp(p_, o.p_, sizeof(Uuid)) == 0); },
+									   [&](KeyValueType::FloatVector) noexcept { return (std::memcmp(p_, o.p_, sizeof(uint64_t)) == 0); },
+									   [](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
+												KeyValueType::Float>) noexcept -> bool {
+										   assertrx(0);
+										   abort();
+									   });
 	}
 
 	// Type of value, not owning
@@ -131,6 +136,26 @@ public:
 	uint8_t* p_;
 
 private:
+	template <typename T>
+	void copyVariantToPtr(const Variant& kv) noexcept {
+		auto v = T(kv);
+		std::memcpy(p_, &v, sizeof(T));
+	}
+
+	template <typename T>
+	Variant getVariantFromPtr() const noexcept {
+		T v;
+		std::memcpy(&v, p_, sizeof(T));
+		return Variant(v);
+	}
+
+	template <typename T>
+	uint64_t getHashFromPtr() const noexcept {
+		T v;
+		std::memcpy(&v, p_, sizeof(T));
+		return std::hash<T>()(v);
+	}
+
 	[[noreturn]] void throwSetTypeMissmatch(const Variant& kv);
 };
 

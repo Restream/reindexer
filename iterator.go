@@ -520,7 +520,6 @@ func (it *Iterator) HasRank() bool {
 func (it *Iterator) AggResults() (v []AggregationResult) {
 	l := len(it.rawQueryParams.aggResults)
 	v = make([]AggregationResult, l)
-
 	for i := 0; i < l; i++ {
 		json.Unmarshal(it.rawQueryParams.aggResults[i], &v[i])
 	}

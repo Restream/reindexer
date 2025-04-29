@@ -2,12 +2,12 @@
 
 #include "ivf_index.h"
 #include "core/query/knn_search_params.h"
-#include "core/selectfunc/ctx/knn_ctx.h"
 #include "faiss/IndexFlat.h"
 #include "faiss/IndexIVFFlat.h"
 #include "faiss/clone_index.h"
 #include "faiss/impl/io.h"
 #include "faiss/index_io.h"
+#include "knn_ctx.h"
 #include "tools/blas_extension.h"
 #include "tools/distances/ip_dist.h"
 #include "tools/distances/l2_dist.h"
@@ -33,7 +33,7 @@ static uint64_t gettid_ivf() noexcept {
 
 namespace reindexer {
 
-IvfIndex::IvfIndex(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, CreationLog log)
+IvfIndex::IvfIndex(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, LogCreation log)
 	: Base{idef, PayloadType{payloadType}, FieldsSet{fields}},
 	  nCentroids_{Base::Opts().FloatVector().NCentroids()},
 	  space_{newSpace(Dimension().Value(), metric_)} {
@@ -68,7 +68,7 @@ IvfIndex::IvfIndex(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& 
 			throw Error(errLogic, "Attempt to construct IVF index '{}' with unknown metric: {}", Base::Name(),
 						int(Base::Opts().FloatVector().Metric()));
 	}
-	if (log == Index::CreationLog::Yes) {
+	if (log) {
 		logFmt(LogInfo, "Creating IVF index '{}'; Vector instructions level: {}", Base::Name(), vecInstructions);
 	}
 }
@@ -478,7 +478,7 @@ faiss::MetricType IvfIndex::faissMetric() const noexcept {
 	throw_as_assert;
 }
 
-std::unique_ptr<Index> IvfIndex_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, Index::CreationLog log) {
+std::unique_ptr<Index> IvfIndex_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, LogCreation log) {
 	return std::make_unique<IvfIndex>(idef, std::move(payloadType), std::move(fields), log);
 }
 

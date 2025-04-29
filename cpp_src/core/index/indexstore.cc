@@ -103,6 +103,9 @@ Variant IndexStore<T>::Upsert(const Variant& key, IdType id, bool& /*clearCache*
 
 template <typename T>
 void IndexStore<T>::Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) {
+	if (keys.IsObjectValue()) {
+		return;
+	}
 	if (keys.empty()) {
 		Upsert(Variant{}, id, clearCache);
 	} else {
@@ -124,20 +127,26 @@ void IndexStore<T>::Commit() {
 }
 
 template <typename T>
-SelectKeyResults IndexStore<T>::SelectKey(const VariantArray& keys, CondType condition, SortType /*sortId*/, Index::SelectOpts sopts,
-										  const BaseFunctionCtx::Ptr& /*ctx*/, const RdxContext& rdxCtx) {
+SelectKeyResults IndexStore<T>::SelectKey(const VariantArray& keys, CondType condition, SortType /*sortId*/,
+										  const Index::SelectContext& selectCtx, const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 	if (condition == CondEmpty && !this->opts_.IsArray() && !this->opts_.IsSparse()) {
 		throw Error(errParams, "The 'is NULL' condition is supported only by 'sparse' or 'array' indexes");
 	}
 
-	if (condition == CondAny && !this->opts_.IsArray() && !this->opts_.IsSparse() && !sopts.distinct) {
+	if (condition == CondAny && !this->opts_.IsArray() && !this->opts_.IsSparse() && !selectCtx.opts.distinct) {
 		throw Error(errParams, "The 'NOT NULL' condition is supported only by 'sparse' or 'array' indexes");
 	}
 
-	return ComparatorIndexed<T>{
-		Name(), condition, keys, idx_data.size() ? idx_data.data() : nullptr, opts_.IsArray(), bool(sopts.distinct), payloadType_,
-		Fields(), opts_.collateOpts_};
+	return ComparatorIndexed<T>{Name(),
+								condition,
+								keys,
+								idx_data.size() ? idx_data.data() : nullptr,
+								opts_.IsArray(),
+								bool(selectCtx.opts.distinct),
+								payloadType_,
+								Fields(),
+								opts_.collateOpts_};
 }
 
 template <typename T>

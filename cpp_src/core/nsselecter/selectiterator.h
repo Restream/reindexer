@@ -181,7 +181,7 @@ public:
 		}
 	}
 
-	/// @return amonut of matched items
+	/// @return number of matching items
 	int GetMatchedCount() const noexcept { return matchedCount_; }
 
 	/// Excludes last set of ids from each result
@@ -430,12 +430,13 @@ protected:
 		return true;
 	}
 
-	/// Performs ID sets merge and sort in case, when this sort was defered earlier and still effective with current maxIterations value
+	/// Performs ID sets merge and sort in case, when this sort was deferred earlier and still effective with current maxIterations value
 	bool applyDeferedSort(int maxIterations) {
 		if (deferedExplicitSort && maxIterations > 0 && !distinct) {
 			const auto idsCount = GetMaxIterations();
 			if (IsGenericSortRecommended(size(), idsCount, size_t(maxIterations))) {
-				MergeIdsets(SelectKeyResult::MergeOptions{.genericSort = true, .shrinkResult = false}, idsCount);
+				[[maybe_unused]] auto merged =
+					MergeIdsets(SelectKeyResult::MergeOptions{.genericSort = true, .shrinkResult = false}, idsCount);
 				return true;
 			}
 		}

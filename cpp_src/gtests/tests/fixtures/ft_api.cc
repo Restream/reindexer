@@ -2,10 +2,10 @@
 
 void FTApi::Init(const reindexer::FtFastConfig& ftCfg, unsigned nses, const std::string& storage) {
 	rt.reindexer = std::make_shared<reindexer::Reindexer>();
-	if (!storage.empty()) {
-		auto err = rt.reindexer->Connect("builtin://" + storage);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
+
+	auto err = rt.reindexer->Connect("builtin://" + storage);
+	ASSERT_TRUE(err.ok()) << err.what();
+
 	if (nses & NS1) {
 		const reindexer::Error err = rt.reindexer->OpenNamespace("nm1");
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -258,8 +258,9 @@ std::vector<std::tuple<std::string, std::string>>& FTApi::DelHighlightSign(std::
 	return in;
 }
 
-template<typename ResType>
-void FTApi::CheckResults(const std::string &query, const reindexer::QueryResults &qr, std::vector<ResType> &expectedResults, bool withOrder) {
+template <typename ResType>
+void FTApi::CheckResults(const std::string& query, const reindexer::QueryResults& qr, std::vector<ResType>& expectedResults,
+						 bool withOrder) {
 	constexpr bool kTreeFields = std::tuple_size<ResType>{} == 3;
 	EXPECT_EQ(qr.Count(), expectedResults.size()) << "Query: " << query;
 	for (auto itRes : qr) {
@@ -274,17 +275,17 @@ void FTApi::CheckResults(const std::string &query, const reindexer::QueryResults
 		if (it == expectedResults.end()) {
 			if constexpr (kTreeFields) {
 				ADD_FAILURE() << "Found not expected: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>()
-				<< "\" \"" << item["ft3"].As<std::string>() << "\"\nQuery: " << query;
+							  << "\" \"" << item["ft3"].As<std::string>() << "\"\nQuery: " << query;
 			} else {
 				ADD_FAILURE() << "Found not expected: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>()
-				<< "\"\nQuery: " << query;
+							  << "\"\nQuery: " << query;
 			}
 		} else {
 			if (withOrder) {
 				if constexpr (kTreeFields) {
 					EXPECT_EQ(it, expectedResults.begin())
-					<< "Found not in order: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>()
-					<< "\" \"" << item["ft3"].As<std::string>() << "\"\nQuery: " << query;
+						<< "Found not in order: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>() << "\" \""
+						<< item["ft3"].As<std::string>() << "\"\nQuery: " << query;
 				} else {
 					EXPECT_EQ(it, expectedResults.begin()) << "Found not in order: \"" << item["ft1"].As<std::string>() << "\" \""
 														   << item["ft2"].As<std::string>() << "\"\nQuery: " << query;

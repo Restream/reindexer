@@ -251,7 +251,7 @@ Error UpdatesObservers::SendUpdates(cluster::UpdatesContainer&& recs, std::funct
 Error UpdatesObservers::SendAsyncUpdate(updates::UpdateRecord&& rec, const RdxContext& ctx) {
 	cluster::UpdatesContainer recs(1);
 	recs[0] = std::move(rec);
-	return replicator_.ReplicateAsync(std::move(recs), ctx);
+	return SendAsyncUpdates(std::move(recs), ctx);
 }
 
 Error UpdatesObservers::SendAsyncUpdates(cluster::UpdatesContainer&& recs, const RdxContext& ctx) {

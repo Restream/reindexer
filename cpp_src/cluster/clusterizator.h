@@ -13,9 +13,9 @@ class ReindexerImpl;
 
 namespace cluster {
 
-class Clusterizator : public IDataReplicator, public IDataSyncer {
+class ClusterManager : public IDataReplicator, public IDataSyncer {
 public:
-	Clusterizator(ReindexerImpl& thisNode, size_t maxUpdatesSize);
+	ClusterManager(ReindexerImpl& thisNode, size_t maxUpdatesSize);
 
 	void Configure(ReplicationConfigData replConfig);
 	void Configure(ClusterConfigData clusterConfig);

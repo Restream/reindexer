@@ -13,6 +13,7 @@ using std::chrono::microseconds;
 namespace reindexer {
 
 void ExplainCalc::LogDump(int logLevel) {
+	using namespace std::string_view_literals;
 	if (logLevel >= LogInfo && enabled_) {
 		logFmt(LogInfo,
 			   "Got {} items in {} µs [prepare {} µs, select {} µs, postprocess {} µs loop {} µs, general sort {} µs], sortindex {}",
@@ -35,7 +36,8 @@ void ExplainCalc::LogDump(int logLevel) {
 					[this](const auto& c) {
 						logFmt(LogInfo, "{}: cost {}, matched {}, {}", c.Name(), c.Cost(iters_), c.GetMatchedCount(), c.Dump());
 					}),
-				[](const AlwaysTrue&) { logFmt(LogInfo, "AlwaysTrue"); });
+				[](const ComparatorDistinctMulti&) { logPrint(LogInfo, "ComparatorDistinctMulti"sv); },
+				[](const AlwaysTrue&) { logPrint(LogInfo, "AlwaysTrue"sv); });
 		}
 
 		if (jselectors_) {
@@ -379,6 +381,7 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 																										  : IteratorFieldKind::Indexed));
 					name << opName(it->operation, it == begin) << c.Name();
 				}),
+			[&](const ComparatorDistinctMulti& c) { name << c.Name(); },
 			[&](const AlwaysTrue&) {
 				auto jsonSkipped = builder.Object();
 				jsonSkipped.Put("type"sv, "Skipped"sv);

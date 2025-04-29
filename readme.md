@@ -37,6 +37,7 @@ about reindexer server and HTTP API refer to
     - [Get Reindexer using go.mod (vendoring)](#get-reindexer-using-gomod-vendoring)
 - [Advanced Usage](#advanced-usage)
   - [Index Types and Their Capabilities](#index-types-and-their-capabilities)
+    - [NULL-values filtration](#null-values-filtration)
   - [Nested Structs](#nested-structs)
   - [Sort](#sort)
     - [Forced sort](#forced-sort)
@@ -474,6 +475,68 @@ Queries are possible only on the indexed fields, marked with `reindex` tag. The 
   - `uuid` - store this value as UUID. This is much more effective from the RAM/network consummation standpoint for UUIDs, than strings. Only `hash` and `-` index types are supported for UUIDs. Can be used with any UUID variant, except variant 0
 
 Fields with regular indexes are not nullable. Condition `is NULL` is supported only by `sparse` and `array` indexes.
+
+#### NULL-values filtration
+
+Conditions `IS NULL`/`IS NOT NULL` may have different behavior depending on target index type.
+In the tables below you can find results of `IS NULL` for different values/indexes/jsonpaths (`IS NOT NULL` will have the opposite value).
+
+Shortcuts:
+- `+` - document will be in the results;
+- `-` - document will not be in the results;
+- `n` - document is not valid.
+
+Non-nested fields. Index has `json_paths: ["f"]` or `json_paths: ["obj"]` depending on context:
+| Documents                      | Non-indexed | Indexed array  | Sparse | Sparse array  |
+|--------------------------------|-------------|----------------|--------|---------------|
+| `{}`                           | +           | +              | +      | +             |
+| `{"f": null}`                  | +           | +              | +      | +             |
+| `{"f": []}`                    | +           | +              | +      | +             |
+| `{"f": [null]}`                | +           | -              | +      | +             |
+| `{"f": [1, null]}`             | +           | -              | +      | +             |
+| `{"f": 0}`                     | -           | -              | -      | -             |
+| `{"f": [0]}`                   | -           | -              | -      | -             |
+| `{"obj": {}}`                  | -           | n              | -      | -             |
+| `{"obj": {"f": null}}`         | -           | n              | -      | -             |
+| `{"obj": {"f": null, "a": 0}}` | -           | n              | -      | -             |
+
+Non-nested fields. Index has `json_paths: ["f1", "f2"]` or `json_paths: ["obj1", "obj2"]` depending on context:
+| Documents                                                        | Array with multiple jsonpaths |
+|------------------------------------------------------------------|-------------------------------|
+| `{}`, `{}`                                                       | +                             |
+| `{"f1": 1}`, `{}`                                                | -                             |
+| `{"f1": null}`, `{"f2": null}`                                   | +                             |
+| `{"f1": 1}`, `{"f2": null}`                                      | -                             |
+| `{"f1": []}`, `{"f2": []}`                                       | +                             |
+| `{"f1": [1]}`, `{"f2": []}`                                      | -                             |
+| `{"f1": [null]}`, `{"f2": [null]}`                               | -                             |
+| `{"f1": [1, null]}`, `{"f2": [1, null]}`                         | -                             |
+| `{"f1": 0}`, `{"f2": 0}`                                         | -                             |
+| `{"f1": [0]}`, `{"f2": [0]}`                                     | -                             |
+| `{"obj1": {}}`, `{"obj2": {}}`                                   | n                             |
+| `{"obj1": {"f": null}}`, `{"obj2": {"f": null}}`                 | n                             |
+| `{"obj1": {"f": null, "a": 0}}`, `{"obj2": {"f": null, "a": 0}}` | n                             |
+
+Nested fields. Index has `json_paths: ["obj.f"]`:
+| Documents                      | Indexed array | Sparse | Sparse array |
+|--------------------------------|---------------|--------|--------------|
+| `{"obj": {}}`                  | +             | +      | +            |
+| `{"obj": {"f": null}}`         | +             | +      | +            |
+| `{"obj": {"f": null, "a": 0}}` | +             | +      | +            |
+| `{"obj": {"f": [null]}}`       | -             | n      | +            |
+| `{"obj": {"f": [1, null]}}`    | -             | n      | +            |
+
+Nested fields. Index has `json_paths: ["obj1.f", "obj2.f"]`:
+| Documents                                                        | Array with multiple jsonpaths |
+|------------------------------------------------------------------|-------------------------------|
+| `{"obj1": {}}`, `{"obj2": {}}`                                   | +                             |
+| `{"obj1": {"f": 1}}`, `{"obj2": {}}`                             | -                             |
+| `{"obj1": {"f": null}}`, `{"obj2": {"f": null}}`                 | +                             |
+| `{"obj1": {"f": 1}}`, `{"obj2": {"f": null}}`                    | -                             |
+| `{"obj1": {"f": null, "a": 0}}`, `{"obj2": {"f": null, "a": 0}}` | +                             |
+| `{"obj1": {"f": 1, "a": 0}}`, `{"obj2": {"f": null, "a": 0}}`    | -                             |
+| `{"obj1": {"f": [null]}}`, `{"obj2": {"f": [null]}}`             | -                             |
+| `{"obj1": {"f": [1, null]}}`, `{"obj2": {"f": [1, null]}}`       | -                             |
 
 ### Nested Structs
 
@@ -982,6 +1045,7 @@ query := db.Query("items_with_join").Join(
 ).On("actors_ids", reindexer.SET, "id")
 
 it := query.Exec()
+defer it.Close()
 ```
 
 In this example, Reindexer uses reflection under the hood to create Actor slice and copy Actor struct.
@@ -1129,7 +1193,7 @@ query2 := db.Query("main_ns").
 ### Complex Primary Keys and Composite Indexes
 
 A Document can have multiple fields as a primary key. To enable this feature add composite index to struct.
-Composite index is an index that involves multiple fields, it can be used instead of several separate indexes.
+Composite index is an index that involves multiple fields, it can be used instead of multiple separate indexes.
 
 ```go
 type Item struct {
@@ -1270,20 +1334,35 @@ Example code for aggregate `items` by `price` and `name`
 	distNames := aggResults[0]
 	fmt.Println ("names:")
 	for _, name := range distNames.Distincts {
-		fmt.Println(name)
+		fmt.Println(name[0])
 	}
 
 	distPrices := aggResults[1]
 	fmt.Println ("prices:")
 	for _, price := range distPrices.Distincts {
-		fmt.Println(price)
+		fmt.Println(price[0])
 	}
 ```
 
-Sorting by aggregated`FACET`'s fields has distinct syntax in it's SQL version:
+Sorting by aggregated`FACET`'s fields has distinct syntax in its SQL version:
 ```sql
 SELECT FACET(name, price ORDER BY "name" ASC, "count" DESC) FROM items
 ```
+
+`Distinct(field1,field2,...)`  works as follows
+1. If a single field is specified (Scalar fields, arrays, and composite indexes are supported)
+A namespace row is considered unique if 
+- The scalar is unique 
+- One of the array values is unique
+- Composite value `v1+v2+..` is unique
+All unique values (including all array values) are added to the distinct aggregation result
+2. If multiple fields are specified (Scalar fields and arrays are supported. The fields must be all arrays or scalars)
+A table row is considered unique if 
+- Scalar `v1+v2+..` is unique
+- Arrays are padded with empty values up to the same length. It turns out to be a rectangular table. Each row of the `v1[i]+v2[i]+...` table is taken, and it checks whether there is such a value in the list of unique values.
+ If at least one of these values is unique, then the string is considered unique.
+The aggregation result adds up all the unique values `v1[i]+v2[i]+...`. It is worth noting that for non-index values, the sameness of the type (array or scalar) is checked within a single row of the namespace.
+
 
 ### Search in array fields with matching array indexes
 
@@ -1553,7 +1632,7 @@ Single Go binding supports up to 32 simultaneous streams. All the streams are ha
 In case of critical errors `Chan()` will be closed automatically. New stream must be created to renew events subscription in this case.
 
 To configure subscription `EventsStreamOptions`-object should be used. It is possible to subscribe for the specific operations types and namespaces.
-There are predefined events collections in [streamopts.go](#events/streamopts.go), but any required types may also be specified via `WithEvents`-option. With default options events stream will recieve all the events from all the namespaces (except `#config`-namespace).
+There are predefined events collections in [streamopts.go](#events/streamopts.go), but any required types may also be specified via `WithEvents`-option. With default options events stream will receive all the events from all the namespaces (except `#config`-namespace).
 
 `EventsStreamOptions` also allow to configure events contents: LSN, database name, timestamps, etc. Currently events do not contain related documents' JSON/CJSON.
 

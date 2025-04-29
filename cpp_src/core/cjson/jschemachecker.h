@@ -12,7 +12,7 @@ namespace reindexer {
 class JsonSchemaChecker {
 public:
 	explicit JsonSchemaChecker(std::string_view json, std::string rootTypeName);
-	JsonSchemaChecker() {};
+	JsonSchemaChecker(){};
 	Error Init(std::string_view json, std::string rootTypeName);
 	Error Check(gason::JsonNode node);
 

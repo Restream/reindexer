@@ -4,10 +4,10 @@
 #include <iostream>
 #include <limits>
 #include <list>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <span>
 #include "tools/terminalutils.h"
 
 namespace reindexer {

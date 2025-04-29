@@ -125,6 +125,21 @@ void LeaderSyncThread::actualizeShardingConfig() {
 	}
 }
 
+LeaderSyncThread::LeaderSyncThread(const Config& cfg, LeaderSyncQueue& syncQueue, SharedSyncState& sharedSyncState, ReindexerImpl& thisNode,
+								   ReplicationStatsCollector statsCollector, const Logger& l, std::once_flag& actShardingCfg)
+	: cfg_(cfg),
+	  syncQueue_(syncQueue),
+	  sharedSyncState_(sharedSyncState),
+	  thisNode_(thisNode),
+	  statsCollector_(statsCollector),
+	  client_(client::ReindexerConfig{10000, 0, cfg_.netTimeout, cfg_.enableCompression, true, "cluster_leader_syncer"}),
+	  log_(l),
+	  actShardingCfg_(actShardingCfg) {
+	terminateAsync_.set(loop_);
+	terminateAsync_.set([this](net::ev::async&) noexcept { client_.Stop(); });
+	thread_ = std::thread([this]() noexcept { sync(); });
+}
+
 void LeaderSyncThread::sync() {
 	std::call_once(actShardingCfg_, &LeaderSyncThread::actualizeShardingConfig, this);
 
@@ -220,8 +235,8 @@ void LeaderSyncThread::syncNamespaceImpl(bool forced, const LeaderSyncQueue::Ent
 	if (!err.ok()) {
 		throw err;
 	}
-	if (const auto clStat = snapshot.ClusterizationStat(); clStat.has_value()) {
-		if (clStat->role != ClusterizationStatus::Role::ClusterReplica) {
+	if (const auto clStat = snapshot.ClusterOperationStat(); clStat.has_value()) {
+		if (clStat->role != ClusterOperationStatus::Role::ClusterReplica) {
 			throw Error(errReplParams, "Unable to sync leader's namespace {} via snapshot - target namespace has unexpected role: '{}'",
 						syncEntry.nsName, clStat->RoleStr());
 		}

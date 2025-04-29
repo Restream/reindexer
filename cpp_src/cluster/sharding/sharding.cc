@@ -21,7 +21,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 	for (auto it = q.Entries().cbegin(), next = it, end = q.Entries().cend(); it != end; ++it) {
 		++next;
 		it->Visit(
-			Skip<AlwaysTrue, AlwaysFalse, JoinQueryEntry, SubQueryEntry, KnnQueryEntry>{},
+			Skip<AlwaysTrue, AlwaysFalse, JoinQueryEntry, SubQueryEntry, DistinctQueryEntry, KnnQueryEntry>{},
 			[&](const QueryEntry& qe) {
 				if (containsKey) {
 					if (keys_.IsShardIndex(ns, qe.FieldName())) {
@@ -64,7 +64,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 			[&](const Bracket&) {
 				for (auto i = it.cbegin().PlainIterator(), end = it.cend().PlainIterator(); i != end; ++i) {
 					i->Visit(
-						Skip<AlwaysFalse, AlwaysTrue, JoinQueryEntry, Bracket, SubQueryEntry, KnnQueryEntry>{},
+						Skip<AlwaysFalse, AlwaysTrue, JoinQueryEntry, Bracket, SubQueryEntry, DistinctQueryEntry, KnnQueryEntry>{},
 						[&](const QueryEntry& qe) {
 							if (keys_.IsShardIndex(ns, qe.FieldName())) {
 								throw Error(errLogic, "Shard key condition cannot be included in bracket");

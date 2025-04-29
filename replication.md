@@ -113,12 +113,49 @@ First of all general replication parameters must be set via `replication` item (
 	"replication":{
 		"server_id": 0,
 		"cluster_id": 2,
+		"admissible_replication_tokens":[
+			{
+				"token":"<some_token_1>",
+				"namespaces":["ns1"]
+			},
+			{
+				"token":"<some_token_2>",
+				"namespaces":["ns2", "ns3"]
+			},
+			{
+				"token":"<some_token_3>",
+				"namespaces":["ns4"]
+			}
+		]
 	}
 }
 ```
 
 - `server_id` - Server ID, unique ID of the node (must be set by user)
 - `cluster_id` - Cluster ID, must be same on each node in cluster
+- `admissible_replication_tokens` - Optional object with lists of namespaces and their admissible tokens. In the example above:
+	```json
+	{
+		"token":"<some_token_2>",
+		"namespaces":["ns2", "ns3"]
+	}
+	```
+	means that replication for the `ns2` and `ns3` namespaces will be approved if leader connects to current node using token `<some_token_2>`
+
+	The following syntax is used to specify one admissible token for all namespaces:
+	```json
+	"admissible_replication_tokens":[
+		{
+			"token":"<some_common_token>",
+			"namespaces":["*"]
+		},
+		{
+			"token":"<some_token_1>",
+			"namespaces":["ns1"]
+		}
+	]
+	```
+	This notation means that the token `<some_token_1>` is expected for `ns1` and `<some_common_token>` for the rest.
 
 Then you are able to configure specific async replication via `async_replication` item:
 
@@ -141,6 +178,7 @@ Then you are able to configure specific async replication via `async_replication
 		"log_level":"info",
 		"max_wal_depth_on_force_sync": 1000,
 		"namespaces":[],
+		"self_replication_token": "some_token",
 		"nodes":
 		[
 			{
@@ -172,6 +210,7 @@ Then you are able to configure specific async replication via `async_replication
 - `max_wal_depth_on_force_sync` - Maximum number of WAL records, which will be copied after force-sync
 - `online_updates_delay_msec` - Delay between write operation and replication. Larger values here will leader to higher replication latency and bufferization, but also will provide more effective network batching and CPU untilization
 - `namespaces` - List of namespaces for replication. If empty, all namespaces. All replicated namespaces will become read only for follower. This parameter is used, when node doesn't have specific namespace list
+- `self_replication_token` - Replication token of the current node that it sends to the follower for verification
 - `nodes` - List of follower nodes
 
 Follower settings:

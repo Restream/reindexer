@@ -10,9 +10,9 @@ namespace reindexer {
 class Snapshot {
 public:
 	Snapshot() = default;
-	Snapshot(TagsMatcher tm, lsn_t nsVersion, uint64_t expectedDataHash, uint64_t expectedDataCount, ClusterizationStatus clusterStatus);
+	Snapshot(TagsMatcher tm, lsn_t nsVersion, uint64_t expectedDataHash, uint64_t expectedDataCount, ClusterOperationStatus clusterStatus);
 	Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, uint64_t expectedDataHash, uint64_t expectedDataCount,
-			 ClusterizationStatus clusterStatus, LocalQueryResults&& wal, LocalQueryResults&& raw = LocalQueryResults());
+			 ClusterOperationStatus clusterStatus, LocalQueryResults&& wal, LocalQueryResults&& raw = LocalQueryResults());
 	Snapshot(const Snapshot&) = delete;
 	Snapshot(Snapshot&&) = default;
 	Snapshot& operator=(const Snapshot&) = delete;
@@ -49,7 +49,7 @@ public:
 	bool HasRawData() const noexcept { return rawData_.Size(); }
 	uint64_t ExpectedDataHash() const noexcept { return expectedDataHash_; }
 	uint64_t ExpectedDataCount() const noexcept { return expectedDataCount_; }
-	ClusterizationStatus ClusterizationStat() const noexcept { return clusterizationStatus_; }
+	ClusterOperationStatus ClusterOperationStat() const noexcept { return clusterOperationStatus_; }
 	lsn_t LastLSN() const noexcept { return lastLsn_; }
 	lsn_t NsVersion() const noexcept { return nsVersion_; }
 	std::string Dump();
@@ -89,7 +89,7 @@ private:
 	ItemsContainer walData_;
 	uint64_t expectedDataHash_ = 0;
 	uint64_t expectedDataCount_ = 0;
-	ClusterizationStatus clusterizationStatus_;
+	ClusterOperationStatus clusterOperationStatus_;
 	lsn_t lastLsn_;
 	lsn_t nsVersion_;
 	friend class Iterator;

@@ -76,6 +76,8 @@ type NetCProto struct {
 	isServerChanged    int32
 	onChangeCallback   func()
 	getReplicationStat func(ctx context.Context) (*bindings.ReplicationStat, error)
+	serverReindexerVer string
+	verMtx             sync.RWMutex
 	serverStartTime    int64
 	retryAttempts      bindings.OptionRetryAttempts
 	timeouts           bindings.OptionTimeouts
@@ -351,6 +353,22 @@ func (binding *NetCProto) Init(u []url.URL, eh bindings.EventsHandler, options .
 	return
 }
 
+func (binding *NetCProto) setServerReindexerVer(serverReindexerVer string) {
+	binding.verMtx.Lock()
+	defer binding.verMtx.Unlock()
+	binding.serverReindexerVer = serverReindexerVer
+}
+
+func (binding *NetCProto) DBMSVersion() (string, error) {
+	binding.verMtx.RLock()
+	defer binding.verMtx.RUnlock()
+	if binding.serverReindexerVer != "" {
+		return binding.serverReindexerVer, nil
+	}
+
+	return "", errors.New("login failed, DBMS version is not available")
+}
+
 func (binding *NetCProto) newPool(ctx context.Context, connPoolSize int, connPoolLBAlgorithm bindings.LoadBalancingAlgorithm) error {
 	var wg sync.WaitGroup
 	for _, conn := range binding.pool.sharedConns {
@@ -372,13 +390,18 @@ func (binding *NetCProto) newPool(ctx context.Context, connPoolSize int, connPoo
 		go func(binding *NetCProto, wg *sync.WaitGroup, i int) {
 			defer wg.Done()
 
-			conn, serverStartTS, _ := binding.dsn.connFactory.newConnection(ctx, connParams, binding, nil)
+			conn, serverReindexerVer, serverStartTS, _ := binding.dsn.connFactory.newConnection(ctx, connParams, binding, nil)
 			if serverStartTS > 0 {
 				old := atomic.SwapInt64(&binding.serverStartTime, serverStartTS)
 				if old != 0 && old != serverStartTS {
 					atomic.StoreInt32(&binding.isServerChanged, 1)
 				}
 			}
+
+			if serverReindexerVer != "" {
+				binding.setServerReindexerVer(serverReindexerVer)
+			}
+
 			binding.pool.sharedConns[i] = conn
 		}(binding, &wg, i)
 	}
@@ -406,13 +429,18 @@ func (binding *NetCProto) createConnParams() newConnParams {
 }
 
 func (binding *NetCProto) createEventConn(ctx context.Context, connParams newConnParams, eventsSubOptsJSON []byte) error {
-	conn, serverStartTS, err := binding.dsn.connFactory.newConnection(ctx, connParams, binding, binding.eventsHandler)
+	conn, serverReindexerVer, serverStartTS, err := binding.dsn.connFactory.newConnection(ctx, connParams, binding, binding.eventsHandler)
 	if serverStartTS > 0 {
 		old := atomic.SwapInt64(&binding.serverStartTime, serverStartTS)
 		if old != 0 && old != serverStartTS {
 			atomic.StoreInt32(&binding.isServerChanged, 1)
 		}
 	}
+
+	if serverReindexerVer != "" {
+		binding.setServerReindexerVer(serverReindexerVer)
+	}
+
 	if err != nil {
 		return err
 	}

@@ -201,7 +201,10 @@ VariantArray JoinedSelector::readValuesFromPreResult(const QueryJoinEntry& entry
 }
 
 void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer& iterators, int* maxIterations, unsigned sortId,
-														 const SelectFunction::Ptr& selectFnc, const RdxContext& rdxCtx) {
+														 const FtFunction::Ptr& ftFunc, const RdxContext& rdxCtx) {
+	assertrx_throw(!ftFunc || ftFunc->Empty());
+	(void)ftFunc;
+
 	const auto& preresult = PreResult();
 	if (joinType_ != JoinType::InnerJoin || preSelectCtx_.Mode() != JoinPreSelectMode::Execute ||
 		std::visit(overloaded{[](const SelectIteratorContainer&) noexcept { return true; },
@@ -254,20 +257,18 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 								  [&](const JoinPreResult::Values&) { return readValuesFromPreResult(joinEntry); },
 								  [](const SelectIteratorContainer&) -> VariantArray { throw_as_assert; }},
 					   preresult.payload);
-		auto ctx = selectFnc ? selectFnc->CreateCtx(joinEntry.LeftIdxNo()) : BaseFunctionCtx::Ptr{};
-		assertrx_throw(!ctx || (ctx->Type() != BaseFunctionCtx::CtxType::kFtCtx && ctx->Type() != BaseFunctionCtx::CtxType::kKnnCtx));
 
 		if (leftIndex->Opts().GetCollateMode() == CollateUTF8) {
 			for (auto& key : values) {
 				key.EnsureUTF8();
 			}
 		}
-		Index::SelectOpts opts;
-		opts.maxIterations = iterators.GetMaxIterations();
-		opts.indexesNotOptimized = !leftNs_->SortOrdersBuilt();
-		opts.inTransaction = inTransaction_;
+		Index::SelectContext selectContext;
+		selectContext.opts.maxIterations = iterators.GetMaxIterations();
+		selectContext.opts.indexesNotOptimized = !leftNs_->SortOrdersBuilt();
+		selectContext.opts.inTransaction = inTransaction_;
 
-		auto selectResults = leftIndex->SelectKey(values, CondSet, sortId, opts, ctx, rdxCtx);
+		auto selectResults = leftIndex->SelectKey(values, CondSet, sortId, selectContext, rdxCtx);
 		if (auto* selRes = std::get_if<SelectKeyResultsVector>(&selectResults)) {
 			bool wasAppended = false;
 			for (SelectKeyResult& res : *selRes) {

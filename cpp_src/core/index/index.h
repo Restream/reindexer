@@ -11,7 +11,6 @@
 #include "core/namespace/namespacestat.h"
 #include "core/payload/payloadiface.h"
 #include "core/perfstatcounter.h"
-#include "core/selectfunc/ctx/basefunctionctx.h"
 #include "core/selectkeyresult.h"
 #include "ft_preselect.h"
 #include "indexiterator.h"
@@ -20,12 +19,19 @@ namespace reindexer {
 
 class RdxContext;
 class StringsHolder;
-class SelectFunction;
 struct NamespaceCacheConfigData;
+class FtFunction;
+class RanksHolder;
 
 class Index {
+	struct SelectFuncCtx {
+		SelectFuncCtx(FtFunction& func, RanksHolder& r, int idxNo) noexcept : selectFunc{func}, ranks{r}, indexNo{idxNo} {}
+		FtFunction& selectFunc;
+		RanksHolder& ranks;
+		int indexNo;
+	};
+
 public:
-	enum class CreationLog : bool { Yes, No };
 	struct SelectOpts {
 		SelectOpts()
 			: itemsCountInNamespace(0),
@@ -47,6 +53,10 @@ public:
 		unsigned inTransaction : 1;
 		unsigned rankSortType : 2;
 	};
+	struct SelectContext {
+		SelectOpts opts;
+		std::optional<SelectFuncCtx> selectFuncCtx;
+	};
 	using KeyEntry = reindexer::KeyEntry<IdSet>;
 	using KeyEntryPlain = reindexer::KeyEntry<IdSetPlain>;
 
@@ -59,11 +69,10 @@ public:
 	virtual void Delete(const Variant& key, IdType id, StringsHolder&, bool& clearCache) = 0;
 	virtual void Delete(const VariantArray& keys, IdType id, StringsHolder&, bool& clearCache) = 0;
 
-	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, SelectOpts opts,
-									   const BaseFunctionCtx::Ptr&, const RdxContext&) = 0;
+	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, const SelectContext&,
+									   const RdxContext&) = 0;
 	// NOLINTBEGIN(*-unnecessary-value-param)
-	virtual SelectKeyResults SelectKey(const VariantArray&, CondType, Index::SelectOpts, const BaseFunctionCtx::Ptr&, FtPreselectT&&,
-									   const RdxContext&) {
+	virtual SelectKeyResults SelectKey(const VariantArray&, CondType, const SelectContext&, FtPreselectT&&, const RdxContext&) {
 		assertrx(0);
 		std::abort();
 	}
@@ -99,7 +108,7 @@ public:
 	void UpdatePayloadType(PayloadType&& payloadType) { payloadType_ = std::move(payloadType); }
 
 	static std::unique_ptr<Index> New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields_,
-									  const NamespaceCacheConfigData& cacheCfg, size_t currentNsSize, CreationLog log = CreationLog::No);
+									  const NamespaceCacheConfigData& cacheCfg, size_t currentNsSize, LogCreation = LogCreation_False);
 
 	KeyValueType KeyType() const noexcept { return keyType_; }
 	KeyValueType SelectKeyType() const noexcept { return selectKeyType_; }
