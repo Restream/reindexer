@@ -9,6 +9,7 @@
 #include "core/indexopts.h"
 #include "core/keyvalue/variant.h"
 #include "core/namespace/namespacestat.h"
+#include "core/nsselecter/ranks_holder.h"
 #include "core/payload/payloadiface.h"
 #include "core/perfstatcounter.h"
 #include "core/selectkeyresult.h"
@@ -21,13 +22,12 @@ class RdxContext;
 class StringsHolder;
 struct NamespaceCacheConfigData;
 class FtFunction;
-class RanksHolder;
 
 class Index {
 	struct SelectFuncCtx {
-		SelectFuncCtx(FtFunction& func, RanksHolder& r, int idxNo) noexcept : selectFunc{func}, ranks{r}, indexNo{idxNo} {}
+		SelectFuncCtx(FtFunction& func, RanksHolder::Ptr& r, int idxNo) noexcept : selectFunc{func}, ranks{r}, indexNo{idxNo} {}
 		FtFunction& selectFunc;
-		RanksHolder& ranks;
+		RanksHolder::Ptr& ranks;
 		int indexNo;
 	};
 

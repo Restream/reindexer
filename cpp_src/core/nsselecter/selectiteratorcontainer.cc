@@ -288,11 +288,12 @@ void SelectIteratorContainer::processField(FieldsComparator& fc, const QueryFiel
 
 SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry& qe, bool enableSortIndexOptimize, const NamespaceImpl& ns,
 															unsigned sortId, RankedTypeQuery rankedTypeQuery, RankSortType rankSortType,
-															FtFunction::Ptr& ftFunc, reindexer::IsRanked& isRanked, IsSparse& isIndexSparse,
-															QueryPreprocessor& qPreproc, const RdxContext& rdxCtx) {
+															FtFunction::Ptr& ftFunc, RanksHolder::Ptr& ranks, reindexer::IsRanked& isRanked,
+															IsSparse& isIndexSparse, QueryPreprocessor& qPreproc,
+															const RdxContext& rdxCtx) {
 	auto& index = ns.indexes_[qe.IndexNo()];
 	const bool isFullText = index->IsFulltext();
-	isRanked_ = isRanked = reindexer::IsRanked(isFullText);
+	isRanked = reindexer::IsRanked(isFullText);
 	isIndexSparse = index->Opts().IsSparse();
 
 	Index::SelectContext selectCtx;
@@ -318,7 +319,7 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry& qe
 	selectCtx.opts.indexesNotOptimized = !ctx_->sortingContext.enableSortOrders;
 	selectCtx.opts.inTransaction = ctx_->inTransaction;
 	if (ftFunc) {
-		selectCtx.selectFuncCtx.emplace(*ftFunc, ranks_, qe.IndexNo());
+		selectCtx.selectFuncCtx.emplace(*ftFunc, ranks, qe.IndexNo());
 	}
 
 	if (index->Opts().GetCollateMode() == CollateUTF8 || isFullText) {
@@ -522,10 +523,12 @@ std::vector<SelectIteratorContainer::EqualPositions> SelectIteratorContainer::pr
 	return result;
 }
 
-SelectKeyResult SelectIteratorContainer::processKnnQueryEntry(const KnnQueryEntry& qe, const NamespaceImpl& ns, const RdxContext& rdxCtx) {
+SelectKeyResult SelectIteratorContainer::processKnnQueryEntry(const KnnQueryEntry& qe, const NamespaceImpl& ns, RanksHolder::Ptr& ranks,
+															  const RdxContext& rdxCtx) {
 	const FloatVectorIndex& idx = static_cast<const FloatVectorIndex&>(*ns.indexes_[qe.IndexNo()]);
-	isRanked_ = reindexer::IsRanked_True;
-	KnnCtx knnCtx{ranks_};
+	assertrx_throw(!ranks);
+	ranks = make_intrusive<RanksHolder>();
+	KnnCtx knnCtx{ranks};
 	knnCtx.NeedSort(NeedSort(ctx_->sortingContext.entries.empty()));
 
 	return idx.Select(qe.Value(), qe.Params(), knnCtx, rdxCtx);
@@ -533,16 +536,16 @@ SelectKeyResult SelectIteratorContainer::processKnnQueryEntry(const KnnQueryEntr
 
 void SelectIteratorContainer::PrepareIteratorsForSelectLoop(QueryPreprocessor& qPreproc, unsigned sortId, RankedTypeQuery rankedTypeQuery,
 															RankSortType rankSortType, const NamespaceImpl& ns, FtFunction::Ptr& ftFunc,
-															const RdxContext& rdxCtx) {
+															RanksHolder::Ptr& ranks, const RdxContext& rdxCtx) {
 	const auto containRanked =
-		prepareIteratorsForSelectLoop(qPreproc, 0, qPreproc.Size(), sortId, rankedTypeQuery, rankSortType, ns, ftFunc, rdxCtx);
+		prepareIteratorsForSelectLoop(qPreproc, 0, qPreproc.Size(), sortId, rankedTypeQuery, rankSortType, ns, ftFunc, ranks, rdxCtx);
 	(void)containRanked;
 }
 
 ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor& qPreproc, size_t begin, size_t end, unsigned sortId,
 																	 RankedTypeQuery rankedTypeQuery, RankSortType rankSortType,
 																	 const NamespaceImpl& ns, FtFunction::Ptr& ftFunc,
-																	 const RdxContext& rdxCtx) {
+																	 RanksHolder::Ptr& ranks, const RdxContext& rdxCtx) {
 	const auto& queries = qPreproc.GetQueryEntries();
 	auto equalPositions = prepareEqualPositions(queries, begin, end);
 	bool sortIndexFound = false;
@@ -555,8 +558,8 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 				i, [](OneOf<SubQueryEntry, SubQueryFieldEntry>) -> ContainRanked { throw_as_assert; },
 				[&](const QueryEntriesBracket&) {
 					OpenBracket(op);
-					const ContainRanked contRanked =
-						prepareIteratorsForSelectLoop(qPreproc, i + 1, next, sortId, rankedTypeQuery, rankSortType, ns, ftFunc, rdxCtx);
+					const ContainRanked contRanked = prepareIteratorsForSelectLoop(qPreproc, i + 1, next, sortId, rankedTypeQuery,
+																				   rankSortType, ns, ftFunc, ranks, rdxCtx);
 					if (contRanked && (op != OpAnd || (next < end && queries.GetOperation(next) == OpOr))) {
 						throw Error(errLogic, "OR and NOT operations are not allowed with bracket containing fulltext or knn condition");
 					}
@@ -611,7 +614,7 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 							sortIndexFound = true;
 						}
 						selectResults = processQueryEntry(qe, enableSortIndexOptimize, ns, sortId, rankedTypeQuery, rankSortType, ftFunc,
-														  isRanked, isIndexSparse, qPreproc, rdxCtx);
+														  ranks, isRanked, isIndexSparse, qPreproc, rdxCtx);
 					} else {
 						auto strictMode = ns.config_.strictMode;
 						if (ctx_) {
@@ -655,8 +658,8 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 					if (op != OpAnd || (next < end && queries.GetOperation(next) == OpOr)) {
 						throw Error(errLogic, "OR and NOT operations are not allowed with knn condition");
 					}
-					Append<SelectIterator>(op, processKnnQueryEntry(qe, ns, rdxCtx), false, qe.FieldName(), IteratorFieldKind::Indexed,
-										   ForcedFirst_True);
+					Append<SelectIterator>(op, processKnnQueryEntry(qe, ns, ranks, rdxCtx), false, qe.FieldName(),
+										   IteratorFieldKind::Indexed, ForcedFirst_True);
 					lastAppendedOrClosed()->Value<SelectIterator>().SetUnsorted();
 					return ContainRanked_True;
 				}) ||

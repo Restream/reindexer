@@ -30,6 +30,7 @@ constexpr static auto kCondMap = frozen::make_unordered_map<CondType, std::strin
 	{CondEmpty, "empty"sv},
 	{CondLike, "like"sv},
 	{CondDWithin, "dwithin"sv},
+	{CondKnn, "knn"sv},
 });
 
 constexpr static auto kOpMap = frozen::make_unordered_map<OpType, std::string_view>({{OpOr, "or"sv}, {OpAnd, "and"sv}, {OpNot, "not"sv}});

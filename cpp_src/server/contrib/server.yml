@@ -8,7 +8,7 @@ info:
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  version: 5.2.0
+  version: 5.2.1
 servers:
 - url: /api/v1
 tags:

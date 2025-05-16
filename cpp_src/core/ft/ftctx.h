@@ -44,10 +44,10 @@ enum class [[nodiscard]] FtFuncType : uint8_t {
 };
 
 struct [[nodiscard]] FtCtxData : public intrusive_atomic_rc_base {
-	FtCtxData(FtCtxType t, RanksHolder& r) noexcept : ranks(r), type(t) {}
+	FtCtxData(FtCtxType t, RanksHolder::Ptr r) noexcept : ranks(std::move(r)), type(t) { assertrx_dbg(ranks); }
 	~FtCtxData() override = default;
 	typedef intrusive_ptr<FtCtxData> Ptr;
-	RanksHolder& ranks;
+	RanksHolder::Ptr ranks;
 	std::optional<RHashMap<IdType, size_t>> holders;
 	bool isWordPositions = false;
 	std::string extraWordSymbols;
@@ -57,14 +57,14 @@ struct [[nodiscard]] FtCtxData : public intrusive_atomic_rc_base {
 
 template <typename AreaType>
 struct [[nodiscard]] FtCtxAreaData : public FtCtxData {
-	FtCtxAreaData(FtCtxType t, RanksHolder& r) noexcept : FtCtxData(t, r) {}
+	FtCtxAreaData(FtCtxType t, RanksHolder::Ptr r) noexcept : FtCtxData(t, std::move(r)) {}
 	std::vector<AreasInDocument<AreaType>> area;
 };
 
 class [[nodiscard]] FtCtx : public intrusive_atomic_rc_base {
 public:
 	typedef intrusive_ptr<FtCtx> Ptr;
-	FtCtx(FtCtxType, RanksHolder&);
+	FtCtx(FtCtxType, RanksHolder::Ptr);
 
 	template <typename InputIterator>
 	void Add(InputIterator begin, InputIterator end, RankT);
@@ -78,14 +78,16 @@ public:
 	template <typename InputIterator, typename AreaType>
 	void Add(InputIterator begin, InputIterator end, RankT, const std::vector<bool>& mask, AreasInDocument<AreaType>&& holder);
 
-	[[nodiscard]] RanksHolder& Ranks() & noexcept { return data_->ranks; }
-	[[nodiscard]] const RanksHolder& Ranks() const& noexcept { return data_->ranks; }
+	[[nodiscard]] RanksHolder& Ranks() & noexcept { return *data_->ranks; }
+	[[nodiscard]] const RanksHolder& Ranks() const& noexcept { return *data_->ranks; }
 	auto Ranks() const&& = delete;
+	[[nodiscard]] RanksHolder::Ptr RanksPtr() const noexcept { return data_->ranks; }
 
 	void SetSplitter(intrusive_ptr<const ISplitter> s) noexcept { data_->splitter = std::move(s); }
 	void SetWordPosition(bool v) noexcept { data_->isWordPositions = v; }
 
-	const FtCtxData::Ptr& GetData() const noexcept { return data_; }
+	const FtCtxData::Ptr& GetData() const& noexcept { return data_; }
+	auto GetData() && = delete;
 	void SetData(FtCtxData::Ptr data) noexcept { data_ = std::move(data); }
 
 	FtCtxType Type() const noexcept { return data_->type; }

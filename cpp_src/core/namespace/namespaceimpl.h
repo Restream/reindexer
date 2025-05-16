@@ -276,9 +276,17 @@ public:
 
 		Locker(const cluster::IDataSyncer& syncer, const NamespaceImpl& owner) noexcept : syncer_(syncer), owner_(owner) {}
 
-		RLockT RLock(const RdxContext& ctx) const { return RLockT(mtx_, ctx); }
-		RLockT TryRLock(const RdxContext& ctx) const { return RLockT(mtx_, std::try_to_lock_t{}, ctx); }
+		RLockT RLock(const RdxContext& ctx) const {
+			assertrx_dbg(ctx.GetOriginLSN().isEmpty() || ctx.IsCancelable());
+			return RLockT(mtx_, ctx);
+		}
+		RLockT TryRLock(const RdxContext& ctx) const {
+			assertrx_dbg(ctx.GetOriginLSN().isEmpty() || ctx.IsCancelable());
+			return RLockT(mtx_, std::try_to_lock_t{}, ctx);
+		}
 		WLockT DataWLock(const RdxContext& ctx, bool skipClusterStatusCheck) const {
+			assertrx_dbg(ctx.GetOriginLSN().isEmpty() || ctx.IsCancelable());
+
 			WLockT lck(mtx_, ctx, true);
 			checkInvalidation();
 			const bool requireSync = !ctx.NoWaitSync() && ctx.GetOriginLSN().isEmpty() && !owner_.isSystem();
@@ -310,6 +318,8 @@ public:
 			return lck;
 		}
 		WLockT SimpleWLock(const RdxContext& ctx) const {
+			assertrx_dbg(ctx.GetOriginLSN().isEmpty() || ctx.IsCancelable());
+
 			WLockT lck(mtx_, ctx, false);
 			checkInvalidation();
 			return lck;

@@ -59,6 +59,7 @@ BOOL_ENUM(ConvertNull)
 BOOL_ENUM(Append)
 BOOL_ENUM(IsDBInitCall)
 BOOL_ENUM(LogCreation)
+BOOL_ENUM(ExtraIndexDescription)
 
 #undef BOOL_ENUM
 

@@ -282,7 +282,7 @@ void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeader
 	if (commitRecord.type != WalCommitTransaction) {
 		throw Error(errParams, "Unexpected tx chunk commit record type: {}. LSN: {}", commitRecord.type, records.back().LSN());
 	}
-	auto tx = Transaction(ns_.NewTransaction(RdxContext(ch.Records().front().LSN())));
+	auto tx = Transaction(ns_.NewTransaction(RdxContext{ch.Records().front().LSN(), rdxCtx.GetCancelCtx()}));
 	for (size_t i = 1; i < records.size() - 1; ++i) {
 		auto lsn = records[i].LSN();
 		WALRecord wrec(records[i].Record());

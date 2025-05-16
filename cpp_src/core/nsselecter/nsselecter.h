@@ -99,6 +99,7 @@ private:
 	void holdFloatVectors(LocalQueryResults&, SelectCtxWithJoinPreSelect<JoinPreResultCtx>&, size_t offset, const FieldsFilter&) const;
 	NamespaceImpl* ns_;
 	FtFunction::Ptr ftFunc_;
+	RanksHolder::Ptr ranks_;
 };
 
 }  // namespace reindexer

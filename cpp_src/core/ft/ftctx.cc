@@ -1,19 +1,18 @@
 #include "ftctx.h"
-#include <span>
 
 namespace reindexer {
 
-FtCtx::FtCtx(FtCtxType t, RanksHolder& r) {
+FtCtx::FtCtx(FtCtxType t, RanksHolder::Ptr r) {
 	switch (t) {
 		case FtCtxType::kFtCtx:
-			data_ = make_intrusive<FtCtxData>(t, r);
+			data_ = make_intrusive<FtCtxData>(t, std::move(r));
 			break;
 		case FtCtxType::kFtArea:
-			data_ = make_intrusive<FtCtxAreaData<Area>>(t, r);
+			data_ = make_intrusive<FtCtxAreaData<Area>>(t, std::move(r));
 			data_->holders.emplace();
 			break;
 		case FtCtxType::kFtAreaDebug:
-			data_ = make_intrusive<FtCtxAreaData<AreaDebug>>(t, r);
+			data_ = make_intrusive<FtCtxAreaData<AreaDebug>>(t, std::move(r));
 			data_->holders.emplace();
 			break;
 		case FtCtxType::kNotSet:
@@ -25,7 +24,7 @@ template <typename InputIterator>
 void FtCtx::Add(InputIterator begin, InputIterator end, RankT rank) {
 	auto& data = *data_;
 	for (; begin != end; ++begin) {
-		data.ranks.Add(rank);
+		data.ranks->Add(rank);
 	}
 }
 
@@ -37,7 +36,7 @@ void FtCtx::Add(InputIterator begin, InputIterator end, RankT rank, const std::v
 		if (!mask[*begin]) {
 			continue;
 		}
-		data.ranks.Add(rank);
+		data.ranks->Add(rank);
 	}
 }
 
@@ -50,7 +49,7 @@ void FtCtx::Add(InputIterator begin, InputIterator end, RankT rank, AreasInDocum
 	if (data.holders.has_value()) {
 		auto& holders = data.holders.value();
 		for (; begin != end; ++begin) {
-			data.ranks.Add(rank);
+			data.ranks->Add(rank);
 			holders.emplace(*begin, dataArea->area.size() - 1);
 		}
 	}
@@ -69,7 +68,7 @@ void FtCtx::Add(InputIterator begin, InputIterator end, RankT rank, const std::v
 			if (!mask[*begin]) {
 				continue;
 			}
-			data.ranks.Add(rank);
+			data.ranks->Add(rank);
 			holders.emplace(*begin, dataArea->area.size() - 1);
 		}
 	}

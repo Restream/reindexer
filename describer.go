@@ -60,23 +60,12 @@ func GetCondType(name string) (int, error) {
 	}
 }
 
-// Map from index type to cond name
-var queryNames = map[int]string{
-	EQ:      "EQ",
-	GT:      "GT",
-	LT:      "LT",
-	GE:      "GE",
-	LE:      "LE",
-	SET:     "SET",
-	RANGE:   "RANGE",
-	ANY:     "ANY",
-	EMPTY:   "EMPTY",
-	LIKE:    "LIKE",
-	DWITHIN: "DWITHIN",
-}
-
 type IndexDescription struct {
 	IndexDef
+
+	// Extra index description. Provides some info for user-side DSL-validation logic
+	IsSortable bool     `json:"is_sortable"`
+	Conditions []string `json:"conditions"`
 }
 
 type NamespaceDescription struct {
@@ -553,23 +542,23 @@ type DBAsyncReplicationConfig struct {
 	// Replication role. One of: none, leader, follower
 	Role string `json:"role"`
 	// Replication mode for mixed 'sync cluster + async replication' configs. One of: default, from_sync_leader
-	ReplicationMode string `json:"replication_mode"`
+	ReplicationMode string `json:"replication_mode,omitempty"`
 	// force resync on logic error conditions
-	ForceSyncOnLogicError bool `json:"force_sync_on_logic_error"`
+	ForceSyncOnLogicError bool `json:"force_sync_on_logic_error,omitempty"`
 	// force resync on wrong data hash conditions
-	ForceSyncOnWrongDataHash bool `json:"force_sync_on_wrong_data_hash"`
+	ForceSyncOnWrongDataHash bool `json:"force_sync_on_wrong_data_hash,omitempty"`
 	// Network timeout for online updates (s)
-	UpdatesTimeout int `json:"online_updates_timeout_sec"`
+	UpdatesTimeout int `json:"online_updates_timeout_sec,omitempty"`
 	// Network timeout for wal/force syncs (s)
-	SyncTimeout int `json:"sync_timeout_sec"`
+	SyncTimeout int `json:"sync_timeout_sec,omitempty"`
 	// Number of parallel replication threads
-	SyncThreads int `json:"sync_threads"`
+	SyncThreads int `json:"sync_threads,omitempty"`
 	// Max number of concurrent force/wal syncs per replication thread
-	ConcurrentSyncsPerThread int `json:"syncs_per_thread"`
+	ConcurrentSyncsPerThread int `json:"syncs_per_thread,omitempty"`
 	// Number of coroutines for online-updates batching (per each namespace of each node)
-	BatchingReoutines int `json:"batching_routines_count"`
+	BatchingReoutines int `json:"batching_routines_count,omitempty"`
 	// Enable compression for replication network operations
-	EnableCompression bool `json:"enable_compression"`
+	EnableCompression bool `json:"enable_compression,omitempty"`
 	// Delay between write operation and replication. Larger values here will leader to higher replication latency and bufferization,"
 	// but also will provide more effective network batching and CPU untilization
 	OnlineUpdatesDelayMSec int `json:"online_updates_delay_msec,omitempty"`
@@ -580,7 +569,7 @@ type DBAsyncReplicationConfig struct {
 	// Replication token of the current node that it sends to the follower for verification
 	SelfReplicationToken string `json:"self_replication_token,omitempty"`
 	// Reconnect interval after replication error (ms)
-	RetrySyncInterval int `json:"retry_sync_interval_msec"`
+	RetrySyncInterval int `json:"retry_sync_interval_msec,omitempty"`
 	// List of follower-nodes for async replication
 	Nodes []DBAsyncReplicationNode `json:"nodes"`
 }

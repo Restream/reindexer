@@ -98,7 +98,7 @@ void FtFunction::createFunc(FtFuncStruct&& data) {
 	}
 }
 
-FtCtx::Ptr FtFunction::createFuncForRank(int indexNo, RanksHolder& ranks) {
+FtCtx::Ptr FtFunction::createFuncForRank(int indexNo, const RanksHolder::Ptr& ranks) {
 	const int lastCjsonIdx = currCjsonFieldIdx_;
 	{
 		FtFuncStruct data{ParsedQueryFunction{}};
@@ -121,7 +121,7 @@ FtCtx::Ptr FtFunction::createFuncForRank(int indexNo, RanksHolder& ranks) {
 	}
 }
 
-FtCtx::Ptr FtFunction::CreateCtx(int indexNo, RanksHolder& ranks) {
+FtCtx::Ptr FtFunction::CreateCtx(int indexNo, const RanksHolder::Ptr& ranks) {
 	const auto indexType = nm_.getIndexType(indexNo);
 	assertrx_throw(IsFullText(indexType));
 	if (functions_.empty()) {
@@ -193,7 +193,7 @@ bool FtFunction::ProcessItem(ItemRef& res, PayloadType& pl_type, std::vector<key
 	return changed;
 }
 
-FtCtx::Ptr FtFunction::createCtx(FtFuncStruct& data, FtCtx::Ptr ctx, IndexType index_type, RanksHolder& ranks) {
+FtCtx::Ptr FtFunction::createCtx(FtFuncStruct& data, FtCtx::Ptr ctx, IndexType index_type, const RanksHolder::Ptr& ranks) {
 	if (IsFullText(index_type)) {
 		if (!ctx) {
 			switch (FtFuncType(data.func.index())) {

@@ -46,7 +46,7 @@ struct RaftInfo;
 class ReindexerImpl {
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Reindexer>;
 	using StatsSelectMutex = MarkedMutex<timed_mutex, MutexMark::ReindexerStats>;
-	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg, typename... Args>
+	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::* MemFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const RdxContext& ctx, Arg arg, Args&&... args);
 	template <auto MemFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const RdxContext& ctx, Arg&&, Args&&...);
@@ -211,22 +211,34 @@ private:
 
 		Locker(const cluster::IDataSyncer& clusterManager, ReindexerImpl& owner) noexcept : syncer_(clusterManager), owner_(owner) {}
 
-		RLockT RLock(const RdxContext& ctx) const { return RLockT(mtx_, ctx); }
+		RLockT RLock(const RdxContext& ctx) const {
+			assertrx_dbg(ctx.GetOriginLSN().isEmpty() || ctx.IsCancelable());
+			return RLockT(mtx_, ctx);
+		}
 		WLockT DataWLock(const RdxContext& ctx, std::string_view nsName) const {
+			assertrx_dbg(ctx.GetOriginLSN().isEmpty() || ctx.IsCancelable());
+
 			checkReplTokens(nsName, ctx);
 			WLockT lck(mtx_, ctx, true);
 			awaitSync(lck, ctx);
 			return lck;
 		}
-		WLockT SimpleWLock(const RdxContext& ctx) const { return WLockT(mtx_, ctx, false); }
+		WLockT SimpleWLock(const RdxContext& ctx) const {
+			assertrx_dbg(ctx.GetOriginLSN().isEmpty() || ctx.IsCancelable());
+			return WLockT(mtx_, ctx, false);
+		}
 
 		NsCreationLockerT::Locks CreationLock(std::string_view name, const RdxContext& ctx) {
+			assertrx_dbg(ctx.GetOriginLSN().isEmpty() || ctx.IsCancelable());
+
 			checkReplTokens(name, ctx);
 			auto lck = nsCreationLocker_.Lock(name, ctx);
 			awaitSync(lck, ctx);
 			return lck;
 		}
 		NsCreationLockerT::Locks CreationLock(std::string_view name1, std::string_view name2, const RdxContext& ctx) {
+			assertrx_dbg(ctx.GetOriginLSN().isEmpty() || ctx.IsCancelable());
+
 			checkReplTokens(name1, ctx);
 			auto lck = nsCreationLocker_.Lock(name1, name2, ctx);
 			awaitSync(lck, ctx);

@@ -17,6 +17,8 @@ constexpr static auto kAwaitNsCopyInterval = std::chrono::milliseconds(2000);
 constexpr static auto kCoro32KStackSize = 32 * 1024;
 // Some large value to avoid endless replicator lock in case of some core issues
 constexpr static auto kLocalCallsTimeout = std::chrono::seconds(300);
+// Some really large value (considered 'endless') instead of zero or negative timeouts in config
+constexpr static auto kLargeDefaultTimeoutSec = 1200;
 
 using updates::ItemReplicationRecord;
 using updates::TagsMatcherReplicationRecord;
@@ -34,13 +36,16 @@ using updates::ResetShardingCfgRecord;
 ReplThreadConfig::ReplThreadConfig(const ReplicationConfigData& baseConfig, const AsyncReplConfigData& config) {
 	AppName = config.appName;
 	EnableCompression = config.enableCompression;
-	UpdatesTimeoutSec = config.onlineUpdatesTimeoutSec;
+	UpdatesTimeoutSec = (config.onlineUpdatesTimeoutSec > 0) ? config.onlineUpdatesTimeoutSec : kLargeDefaultTimeoutSec;
 	RetrySyncIntervalMSec = config.retrySyncIntervalMSec;
 	ParallelSyncsPerThreadCount = config.parallelSyncsPerThreadCount;
 	BatchingRoutinesCount = config.batchingRoutinesCount > 0 ? size_t(config.batchingRoutinesCount) : 100;
 	MaxWALDepthOnForceSync = config.maxWALDepthOnForceSync;
 	ForceSyncOnLogicError = config.forceSyncOnLogicError;
 	SyncTimeoutSec = std::max(config.syncTimeoutSec, config.onlineUpdatesTimeoutSec);
+	if (SyncTimeoutSec <= 0) {
+		SyncTimeoutSec = kLargeDefaultTimeoutSec;
+	}
 	ClusterID = baseConfig.clusterID;
 	LeaderReplToken = config.selfReplToken;
 	if (config.onlineUpdatesDelayMSec > 0) {
@@ -55,13 +60,16 @@ ReplThreadConfig::ReplThreadConfig(const ReplicationConfigData& baseConfig, cons
 ReplThreadConfig::ReplThreadConfig(const ReplicationConfigData& baseConfig, const ClusterConfigData& config) {
 	AppName = config.appName;
 	EnableCompression = config.enableCompression;
-	UpdatesTimeoutSec = config.onlineUpdatesTimeoutSec;
+	UpdatesTimeoutSec = (config.onlineUpdatesTimeoutSec > 0) ? config.onlineUpdatesTimeoutSec : kLargeDefaultTimeoutSec;
 	RetrySyncIntervalMSec = config.retrySyncIntervalMSec;
 	ParallelSyncsPerThreadCount = config.parallelSyncsPerThreadCount;
 	ClusterID = baseConfig.clusterID;
 	ForceSyncOnLogicError = true;  // Always true for sync cluster
 	MaxWALDepthOnForceSync = config.maxWALDepthOnForceSync;
 	SyncTimeoutSec = std::max(config.syncTimeoutSec, config.onlineUpdatesTimeoutSec);
+	if (SyncTimeoutSec <= 0) {
+		SyncTimeoutSec = kLargeDefaultTimeoutSec;
+	}
 	BatchingRoutinesCount = config.batchingRoutinesCount > 0 ? size_t(config.batchingRoutinesCount) : 100;
 	OnlineUpdatesDelaySec = 0;
 }

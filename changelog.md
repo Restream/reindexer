@@ -1,3 +1,19 @@
+# Version 5.2.1 (16.05.2025)
+## Core
+- [fix] Fixed [forced sort](readme.md#forced-sort) with `sparse` indexes
+
+## Fulltext
+- [fix] Fixed zero `rank` values in cached fulltext results
+
+## Replication
+- [fix] Added missing timeouts into replication requests/connections
+
+## Reindexer server
+- [fix] Fixed conflict between `OpenSSL's` handshake and connection rebalancing. This previously could lead to connections stucking
+
+## Go connector
+- [fix] Added missing `is_sortable` and `conditions` fields into `IndexDescription`. Information in this fields was actualized accroding to the current indexes behavior
+
 # Version 5.2.0 (29.04.2025)
 ## Core
 - [fea] Added support for `distinct` with multiple fields (i.e. something like `distinct(field1, field2, field3)`)

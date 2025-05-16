@@ -3,6 +3,7 @@
 #include <span>
 #include <string>
 #include <vector>
+#include "core/enums.h"
 #include "core/indexopts.h"
 #include "core/type_consts.h"
 #include "estl/expected.h"
@@ -25,7 +26,7 @@ public:
 	IndexDef(std::string name, std::string indexType, std::string fieldType, IndexOpts opts);
 	IndexDef(std::string name, JsonPaths jsonPaths, IndexType type, IndexOpts opts);
 	bool IsEqual(const IndexDef& other, IndexComparison cmpType) const;
-	void GetJSON(WrSerializer& ser) const;
+	void GetJSON(WrSerializer& ser, ExtraIndexDescription withExtras = ExtraIndexDescription_False) const;
 	[[nodiscard]] ::IndexType IndexType() const { return DetermineIndexType(name_, indexType_, fieldType_); }
 	[[nodiscard]] const std::string& Name() const& noexcept { return name_; }
 	[[nodiscard]] const reindexer::JsonPaths& JsonPaths() const& noexcept { return jsonPaths_; }
@@ -70,6 +71,7 @@ public:
 private:
 	void initFromIndexType(::IndexType);
 	static void validate(::IndexType, size_t jsonPathsCount, const IndexOpts&);
+	[[nodiscard]] bool isSortable() const noexcept;
 
 	std::string name_;
 	reindexer::JsonPaths jsonPaths_;

@@ -12,7 +12,6 @@
 #include "core/nsselecter/selectiterator.h"
 #include "core/query/queryentry.h"
 #include "estl/restricted.h"
-#include "ranks_holder.h"
 
 namespace reindexer {
 
@@ -54,14 +53,12 @@ public:
 
 	void SortByCost(int expectedIterations);
 	bool HasIdsets() const;
-	RankT GetRank(const SelectIterator& it) { return ranks_.Empty() ? RankT{} : ranks_.Get(it.Pos()); }
-	reindexer::IsRanked IsRanked() const noexcept { return isRanked_; }
 	// Check NOT or comparator must not be 1st
 	void CheckFirstQuery();
 	// Let iterators choose most effective algorith
 	void SetExpectMaxIterations(int expectedIterations);
 	void PrepareIteratorsForSelectLoop(QueryPreprocessor&, unsigned sortId, RankedTypeQuery, RankSortType, const NamespaceImpl&,
-									   FtFunction::Ptr&, const RdxContext&);
+									   FtFunction::Ptr&, RanksHolder::Ptr&, const RdxContext&);
 	template <bool reverse, bool hasComparators>
 	bool Process(PayloadValue&, bool* finish, IdType* rowId, IdType, bool match);
 
@@ -101,7 +98,7 @@ public:
 
 private:
 	ContainRanked prepareIteratorsForSelectLoop(QueryPreprocessor&, size_t begin, size_t end, unsigned sortId, RankedTypeQuery,
-												RankSortType, const NamespaceImpl&, FtFunction::Ptr&, const RdxContext&);
+												RankSortType, const NamespaceImpl&, FtFunction::Ptr&, RanksHolder::Ptr&, const RdxContext&);
 	void sortByCost(std::span<unsigned int> indexes, std::span<double> costs, unsigned from, unsigned to, int expectedIterations);
 	double fullCost(std::span<unsigned> indexes, unsigned i, unsigned from, unsigned to, int expectedIterations) const noexcept;
 	double cost(std::span<unsigned> indexes, unsigned cur, int expectedIterations) const noexcept;
@@ -124,9 +121,9 @@ private:
 
 	SelectKeyResults processQueryEntry(const QueryEntry& qe, const NamespaceImpl& ns, StrictMode strictMode);
 	SelectKeyResults processQueryEntry(const QueryEntry& qe, bool enableSortIndexOptimize, const NamespaceImpl& ns, unsigned sortId,
-									   RankedTypeQuery, RankSortType, FtFunction::Ptr& selectFnc, reindexer::IsRanked&, IsSparse&,
-									   QueryPreprocessor& qPreproc, const RdxContext&);
-	SelectKeyResult processKnnQueryEntry(const KnnQueryEntry& qe, const NamespaceImpl& ns, const RdxContext& rdxCtx);
+									   RankedTypeQuery, RankSortType, FtFunction::Ptr& selectFnc, RanksHolder::Ptr&, reindexer::IsRanked&,
+									   IsSparse&, QueryPreprocessor& qPreproc, const RdxContext&);
+	SelectKeyResult processKnnQueryEntry(const KnnQueryEntry&, const NamespaceImpl&, RanksHolder::Ptr&, const RdxContext&);
 	template <bool left>
 	void processField(FieldsComparator&, const QueryField&, const NamespaceImpl&) const;
 	void processJoinEntry(const JoinQueryEntry&, OpType);
@@ -155,8 +152,6 @@ private:
 
 	PayloadType pt_;
 	SelectCtx* ctx_;
-	RanksHolder ranks_;
-	reindexer::IsRanked isRanked_{reindexer::IsRanked_False};
 	int maxIterations_;
 	bool wasZeroIterations_;
 };

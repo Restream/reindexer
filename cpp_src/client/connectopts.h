@@ -2,29 +2,29 @@
 
 #include <cstdint>
 
-namespace reindexer {
-namespace client {
+namespace reindexer::client {
 
 enum ConnectOpt { kConnectOptCreateIfMissing = 1 << 0, kConnectOptCheckClusterID = 1 << 1 };
 
-struct ConnectOpts {
-	bool IsCreateDBIfMissing() const { return options & kConnectOptCreateIfMissing; }
-	int ExpectedClusterID() const { return expectedClusterID; }
-	bool HasExpectedClusterID() const { return options & kConnectOptCheckClusterID; }
+class [[nodiscard]] ConnectOpts {
+public:
+	bool IsCreateDBIfMissing() const noexcept { return options_ & kConnectOptCreateIfMissing; }
+	int ExpectedClusterID() const noexcept { return expectedClusterID_; }
+	bool HasExpectedClusterID() const noexcept { return options_ & kConnectOptCheckClusterID; }
 
-	ConnectOpts& CreateDBIfMissing(bool value = true) {
-		options = value ? options | kConnectOptCreateIfMissing : options & ~(kConnectOptCreateIfMissing);
+	ConnectOpts& CreateDBIfMissing(bool value = true) noexcept {
+		options_ = value ? options_ | kConnectOptCreateIfMissing : options_ & ~(kConnectOptCreateIfMissing);
 		return *this;
 	}
-	ConnectOpts& WithExpectedClusterID(int clusterID) {
-		expectedClusterID = clusterID;
-		options |= kConnectOptCheckClusterID;
+	ConnectOpts& WithExpectedClusterID(int clusterID) noexcept {
+		expectedClusterID_ = clusterID;
+		options_ |= kConnectOptCheckClusterID;
 		return *this;
 	}
 
-	uint16_t options = 0;
-	int expectedClusterID = -1;
+private:
+	uint16_t options_ = 0;
+	int expectedClusterID_ = -1;
 };
 
-}  // namespace client
-}  // namespace reindexer
+}  // namespace reindexer::client

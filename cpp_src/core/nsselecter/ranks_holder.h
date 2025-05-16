@@ -2,13 +2,16 @@
 
 #include <span>
 #include "core/rank_t.h"
+#include "estl/intrusive_ptr.h"
 #include "tools/assertrx.h"
 
 namespace reindexer {
 
-class [[nodiscard]] RanksHolder {
+class [[nodiscard]] RanksHolder : public intrusive_atomic_rc_base {
 public:
-	RankT Get(size_t pos) const noexcept { return pos < ranks_.size() ? ranks_[pos] : 0.0; }
+	using Ptr = intrusive_ptr<RanksHolder>;
+
+	RankT Get(size_t pos) const noexcept { return pos < ranks_.size() ? ranks_[pos] : RankT{}; }
 	void Set(size_t pos, RankT r) noexcept {
 		assertrx_dbg(pos < ranks_.size());
 		ranks_[pos] = r;

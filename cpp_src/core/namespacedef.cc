@@ -32,7 +32,7 @@ void NamespaceDef::FromJSON(const gason::JsonNode& root) {
 	schemaJson = root["schema"].As<std::string>(schemaJson);
 }
 
-void NamespaceDef::GetJSON(WrSerializer& ser) const {
+void NamespaceDef::GetJSON(WrSerializer& ser, ExtraIndexDescription withIndexExtras) const {
 	JsonBuilder json(ser);
 	json.Put("name", name);
 	json.Object("storage").Put("enabled", storage.IsEnabled());
@@ -40,7 +40,7 @@ void NamespaceDef::GetJSON(WrSerializer& ser) const {
 		auto arr = json.Array("indexes");
 		for (auto& idx : indexes) {
 			arr.Raw("");
-			idx.GetJSON(ser);
+			idx.GetJSON(ser, withIndexExtras);
 		}
 	}
 	json.Put("temporary", isTemporary);

@@ -6,8 +6,10 @@
 #include "estl/gift_str.h"
 #include "vendor/gason/gason.h"
 
-namespace reindexer {
-namespace cluster {
+namespace reindexer::cluster {
+
+// Some large value to avoid endless replicator lock in case of some core issues
+constexpr static auto kLocalCallsTimeout = std::chrono::seconds(300);
 
 Error LeaderSyncer::Sync(elist<LeaderSyncQueue::Entry>&& entries, SharedSyncState& sharedSyncState, ReindexerImpl& thisNode,
 						 ReplicationStatsCollector statsCollector) {
@@ -249,7 +251,8 @@ void LeaderSyncThread::syncNamespaceImpl(bool forced, const LeaderSyncQueue::Ent
 
 	RdxContext ctx;
 	ctx.WithNoWaitSync();
-	auto ns = thisNode_.getNamespaceNoThrow(syncEntry.nsName, ctx);
+	const RdxDeadlineContext deadlineCtx(kLocalCallsTimeout);
+	auto ns = thisNode_.getNamespaceNoThrow(syncEntry.nsName, ctx.WithCancelCtx(deadlineCtx));
 	if (!ns || snapshot.HasRawData()) {
 		timeCounter.SetType(SyncTimeCounter::Type::InitialForceSync);
 		// TODO: Allow tmp ns without storage via config
@@ -258,7 +261,7 @@ void LeaderSyncThread::syncNamespaceImpl(bool forced, const LeaderSyncQueue::Ent
 		if (!err.ok()) {
 			throw err;
 		}
-		ns = thisNode_.getNamespaceNoThrow(tmpNsName, ctx);
+		ns = thisNode_.getNamespaceNoThrow(tmpNsName, ctx.WithCancelCtx(deadlineCtx));
 		assert(ns);
 	}
 
@@ -266,9 +269,8 @@ void LeaderSyncThread::syncNamespaceImpl(bool forced, const LeaderSyncQueue::Ent
 		if (terminate_) {
 			return;
 		}
-		ns->ApplySnapshotChunk(ch.Chunk(), true, ctx);
+		ns->ApplySnapshotChunk(ch.Chunk(), true, ctx.WithCancelCtx(deadlineCtx));
 	}
 }
 
-}  // namespace cluster
-}  // namespace reindexer
+}  // namespace reindexer::cluster

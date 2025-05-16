@@ -90,13 +90,13 @@ private:
 	const IRdxCancelContext* parent_;
 };
 
-class RdxContext final {
+class [[nodiscard]] RdxContext final {
 public:
 	using Completion = std::function<void(const Error&)>;
 
 	RdxContext() noexcept : activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr), holdStatus_(HoldT::kEmpty) {}
-	explicit RdxContext(lsn_t originLsn) noexcept
-		: activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr), originLsn_(originLsn), holdStatus_(HoldT::kEmpty) {}
+	explicit RdxContext(lsn_t originLsn, const IRdxCancelContext* cancelCtx) noexcept
+		: activityPtr_(nullptr), cancelCtx_(cancelCtx), cmpl_(nullptr), originLsn_(originLsn), holdStatus_(HoldT::kEmpty) {}
 	RdxContext(lsn_t originLsn, const IRdxCancelContext* cancelCtx, Completion cmpl, int emmiterServerId, int shardId, bool parallel,
 			   key_string replToken) noexcept
 		: activityPtr_(nullptr),

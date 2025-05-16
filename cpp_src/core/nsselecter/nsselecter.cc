@@ -1,14 +1,13 @@
 #include "nsselecter.h"
 #include <sstream>
 
-#include "core/keyvalue/relaxed_variant_hash.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/queryresults/fields_filter.h"
 #include "core/queryresults/joinresults.h"
 #include "core/sorting/sortexpression.h"
 #include "debug/crashqueryreporter.h"
-#include "estl/multihash_map.h"
 #include "estl/restricted.h"
+#include "forcedsorthelpers.h"
 #include "itemcomparator.h"
 #include "qresexplainholder.h"
 #include "querypreprocessor.h"
@@ -228,7 +227,7 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 										   (isRanked && (ctx.isMergeQuery == IsMergeQuery_True || !ctx.query.GetMergeQueries().empty()))
 											   ? RankSortType::RankAndID
 											   : RankSortType::RankOnly,
-										   *ns_, ftFunc_, rdxCtx);
+										   *ns_, ftFunc_, ranks_, rdxCtx);
 
 		explain.AddSelectTime();
 
@@ -643,311 +642,6 @@ It NsSelecter::applyForcedSort(It begin, It end, const ItemComparator& compare, 
 		ctx.sortingContext.entries[0]);
 }
 
-class ForcedSortMap {
-public:
-	using mapped_type = size_t;
-
-private:
-	using MultiMap = MultiHashMap<const Variant, mapped_type, RelaxedHasher<NotComparable::Return>::indexesCount,
-								  RelaxedHasher<NotComparable::Return>, RelaxedComparator<NotComparable::Return>>;
-	struct SingleTypeMap : tsl::hopscotch_sc_map<Variant, mapped_type> {
-		KeyValueType type_;
-	};
-	using DataType = std::variant<MultiMap, SingleTypeMap>;
-	class Iterator : private std::variant<MultiMap::Iterator, SingleTypeMap::const_iterator> {
-		using Base = std::variant<MultiMap::Iterator, SingleTypeMap::const_iterator>;
-
-	public:
-		using Base::Base;
-		const auto* operator->() const {
-			return std::visit(overloaded{[](MultiMap::Iterator it) { return it.operator->(); },
-										 [](SingleTypeMap::const_iterator it) { return it.operator->(); }},
-							  static_cast<const Base&>(*this));
-		}
-		const auto& operator*() const {
-			return std::visit(overloaded{[](MultiMap::Iterator it) -> const auto& { return *it; },
-										 [](SingleTypeMap::const_iterator it) -> const auto& { return *it; }},
-							  static_cast<const Base&>(*this));
-		}
-	};
-
-public:
-	ForcedSortMap(Variant k, mapped_type v, size_t size)
-		: data_{k.Type().Is<KeyValueType::String>() || k.Type().Is<KeyValueType::Uuid>() || k.Type().IsNumeric()
-					? DataType{MultiMap{size}}
-					: DataType{SingleTypeMap{{}, k.Type()}}} {
-		std::visit(overloaded{[&](MultiMap& m) { m.emplace(std::move(k), v); }, [&](SingleTypeMap& m) { m.emplace(std::move(k), v); }},
-				   data_);
-	}
-	std::pair<Iterator, bool> emplace(Variant k, mapped_type v) & {
-		return std::visit(overloaded{[&](MultiMap& m) {
-										 const auto [iter, success] = m.emplace(std::move(k), v);
-										 return std::make_pair(Iterator{iter}, success);
-									 },
-									 [&](SingleTypeMap& m) {
-										 if (!m.type_.IsSame(k.Type())) {
-											 throw Error{errQueryExec, "Items of different types in forced sort list"};
-										 }
-										 const auto [iter, success] = m.emplace(std::move(k), v);
-										 return std::make_pair(Iterator{iter}, success);
-									 }},
-						  data_);
-	}
-	bool contain(const Variant& k) const {
-		return std::visit(overloaded{[&k](const MultiMap& m) { return m.find(k) != m.cend(); },
-									 [&k](const SingleTypeMap& m) {
-										 if (!m.type_.IsSame(k.Type())) {
-											 throw Error{errQueryExec, "Items of different types in forced sort list"};
-										 }
-										 return m.find(k) != m.end();
-									 }},
-						  data_);
-	}
-	mapped_type get(const Variant& k) const {
-		return std::visit(overloaded{[&k](const MultiMap& m) {
-										 const auto it = m.find(k);
-										 assertrx_throw(it != m.cend());
-										 return it->second;
-									 },
-									 [&k](const SingleTypeMap& m) {
-										 if (!m.type_.IsSame(k.Type())) {
-											 throw Error{errQueryExec, "Items of different types in forced sort list"};
-										 }
-										 const auto it = m.find(k);
-										 assertrx_throw(it != m.end());
-										 return it->second;
-									 }},
-						  data_);
-	}
-
-private:
-	DataType data_;
-};
-
-template <typename Map>
-class ForcedMapInserter {
-public:
-	explicit ForcedMapInserter(Map& m) noexcept : map_{m} {}
-	template <typename V>
-	void Insert(V&& value) {
-		if (const auto [iter, success] = map_.emplace(std::forward<V>(value), cost_); success) {
-			++cost_;
-		} else if (iter->second != cost_ - 1) {
-			static constexpr auto errMsg = "Forced sort value '{}' is duplicated. Deduplicated by the first occurrence.";
-			if constexpr (std::is_same_v<V, Variant>) {
-				// NOLINTNEXTLINE (bugprone-use-after-move,-warnings-as-errors)
-				logFmt(LogInfo, errMsg, value.template As<std::string>());
-			} else {
-				// NOLINTNEXTLINE (bugprone-use-after-move,-warnings-as-errors)
-				logFmt(LogInfo, errMsg, Variant{std::forward<V>(value)}.template As<std::string>());
-			}
-		}
-	}
-
-private:
-	Map& map_;
-	typename Map::mapped_type cost_ = 1;
-};
-
-template <bool desc, typename ValueGetter>
-class ForcedPartitionerIndexed {
-public:
-	ForcedPartitionerIndexed(int idx, const ValueGetter& valueGetter, const fast_hash_map<Variant, std::ptrdiff_t>& sortMap) noexcept
-		: valueGetter_{valueGetter}, sortMap_{sortMap}, idx_{idx} {}
-
-	bool operator()(const ItemRef& itemRef) {
-		valueGetter_.Payload(itemRef).Get(idx_, keyRefs_);
-		if constexpr (desc) {
-			return keyRefs_.empty() || (sortMap_.find(keyRefs_[0]) == sortMap_.end());
-		} else {
-			return !keyRefs_.empty() && (sortMap_.find(keyRefs_[0]) != sortMap_.end());
-		}
-	}
-
-	bool operator()(const ItemRefRanked& itemRefRanked) { return operator()(itemRefRanked.NotRanked()); }
-
-private:
-	const ValueGetter& valueGetter_;
-	VariantArray keyRefs_;
-	const fast_hash_map<Variant, std::ptrdiff_t>& sortMap_;
-	const int idx_;
-};
-
-template <bool desc, typename ValueGetter>
-class ForcedPartitionerNotIndexed {
-public:
-	ForcedPartitionerNotIndexed(std::string_view fieldName, TagsMatcher& tagsMatcher, const ValueGetter& valueGetter,
-								const ForcedSortMap& sortMap) noexcept
-		: valueGetter_{valueGetter}, sortMap_{sortMap}, fieldName_{fieldName}, tagsMatcher_{tagsMatcher} {}
-
-	bool operator()(const ItemRef& itemRef) {
-		valueGetter_.Payload(itemRef).GetByJsonPath(fieldName_, tagsMatcher_, keyRefs_, KeyValueType::Undefined{});
-		if constexpr (desc) {
-			return keyRefs_.empty() || !sortMap_.contain(keyRefs_[0]);
-		} else {
-			return !keyRefs_.empty() && sortMap_.contain(keyRefs_[0]);
-		}
-	}
-
-	bool operator()(const ItemRefRanked& itemRefRanked) { return operator()(itemRefRanked.NotRanked()); }
-
-private:
-	const ValueGetter& valueGetter_;
-	VariantArray keyRefs_;
-	const ForcedSortMap& sortMap_;
-	const std::string_view fieldName_;
-	TagsMatcher& tagsMatcher_;
-};
-
-template <bool desc, typename ValueGetter>
-class ForcedPartitionerComposite {
-public:
-	ForcedPartitionerComposite(const ValueGetter& valueGetter, unordered_payload_map<std::ptrdiff_t, false>& sortMap) noexcept
-		: valueGetter_{valueGetter}, sortMap_{sortMap} {}
-
-	bool operator()(const ItemRef& itemRef) {
-		if constexpr (desc) {
-			return (sortMap_.find(valueGetter_.Value(itemRef)) == sortMap_.end());
-		} else {
-			return (sortMap_.find(valueGetter_.Value(itemRef)) != sortMap_.end());
-		}
-	}
-
-	bool operator()(const ItemRefRanked& itemRefRanked) { return operator()(itemRefRanked.NotRanked()); }
-
-private:
-	const ValueGetter& valueGetter_;
-	const unordered_payload_map<std::ptrdiff_t, false>& sortMap_;
-};
-
-template <bool desc, bool multiColumnSort, typename ValueGetter>
-class ForcedComparatorIndexed {
-public:
-	ForcedComparatorIndexed(int idx, const ValueGetter& valueGetter, const ItemComparator& compare,
-							const fast_hash_map<Variant, std::ptrdiff_t>& sortMap) noexcept
-		: valueGetter_{valueGetter}, sortMap_{sortMap}, compare_{compare}, idx_{idx} {}
-
-	bool operator()(const ItemRef& lhs, const ItemRef& rhs) {
-		valueGetter_.Payload(lhs).Get(idx_, lhsItemValue_);
-		assertrx_throw(!lhsItemValue_.empty());
-		const auto lhsIt = sortMap_.find(lhsItemValue_[0]);
-		assertrx_throw(lhsIt != sortMap_.end());
-
-		valueGetter_.Payload(rhs).Get(idx_, rhsItemValue_);
-		assertrx_throw(!rhsItemValue_.empty());
-		const auto rhsIt = sortMap_.find(rhsItemValue_[0]);
-		assertrx_throw(rhsIt != sortMap_.end());
-
-		const auto lhsPos = lhsIt->second;
-		const auto rhsPos = rhsIt->second;
-		if (lhsPos == rhsPos) {
-			if constexpr (multiColumnSort) {
-				return compare_(lhs, rhs);
-			} else {
-				if constexpr (desc) {
-					return lhs.Id() > rhs.Id();
-				} else {
-					return lhs.Id() < rhs.Id();
-				}
-			}
-		} else {
-			if constexpr (desc) {
-				return lhsPos > rhsPos;
-			} else {
-				return lhsPos < rhsPos;
-			}
-		}
-	}
-	bool operator()(const ItemRefRanked& lhs, const ItemRefRanked& rhs) { return operator()(lhs.NotRanked(), rhs.NotRanked()); }
-
-private:
-	const ValueGetter& valueGetter_;
-	VariantArray lhsItemValue_;
-	VariantArray rhsItemValue_;
-	const fast_hash_map<Variant, std::ptrdiff_t>& sortMap_;
-	const ItemComparator& compare_;
-	const int idx_;
-};
-
-template <bool desc, bool multiColumnSort, typename ValueGetter>
-class ForcedComparatorNotIndexed {
-public:
-	ForcedComparatorNotIndexed(std::string_view fieldName, TagsMatcher& tagsMatcher, const ValueGetter& valueGetter,
-							   const ItemComparator& compare, const ForcedSortMap& sortMap) noexcept
-		: valueGetter_{valueGetter}, sortMap_{sortMap}, compare_{compare}, fieldName_{fieldName}, tagsMatcher_{tagsMatcher} {}
-
-	bool operator()(const ItemRef& lhs, const ItemRef& rhs) {
-		valueGetter_.Payload(lhs).GetByJsonPath(fieldName_, tagsMatcher_, lhsItemValue_, KeyValueType::Undefined{});
-		valueGetter_.Payload(rhs).GetByJsonPath(fieldName_, tagsMatcher_, rhsItemValue_, KeyValueType::Undefined{});
-
-		const auto lhsPos = sortMap_.get(lhsItemValue_[0]);
-		const auto rhsPos = sortMap_.get(rhsItemValue_[0]);
-		if (lhsPos == rhsPos) {
-			if constexpr (multiColumnSort) {
-				return compare_(lhs, rhs);
-			} else {
-				if constexpr (desc) {
-					return lhs.Id() > rhs.Id();
-				} else {
-					return lhs.Id() < rhs.Id();
-				}
-			}
-		} else {
-			if constexpr (desc) {
-				return lhsPos > rhsPos;
-			} else {
-				return lhsPos < rhsPos;
-			}
-		}
-	}
-	bool operator()(const ItemRefRanked& lhs, const ItemRefRanked& rhs) { return operator()(lhs.NotRanked(), rhs.NotRanked()); }
-
-private:
-	const ValueGetter& valueGetter_;
-	VariantArray lhsItemValue_;
-	VariantArray rhsItemValue_;
-	const ForcedSortMap& sortMap_;
-	const ItemComparator& compare_;
-	const std::string_view fieldName_;
-	TagsMatcher& tagsMatcher_;
-};
-
-template <bool desc, bool multiColumnSort, typename ValueGetter>
-class ForcedComparatorComposite {
-public:
-	ForcedComparatorComposite(const ValueGetter& valueGetter, const ItemComparator& compare,
-							  const unordered_payload_map<std::ptrdiff_t, false>& sortMap) noexcept
-		: valueGetter_{valueGetter}, sortMap_{sortMap}, compare_{compare} {}
-
-	bool operator()(const ItemRef& lhs, const ItemRef& rhs) {
-		const auto lhsPos = sortMap_.find(valueGetter_.Value(lhs))->second;
-		const auto rhsPos = sortMap_.find(valueGetter_.Value(rhs))->second;
-		if (lhsPos == rhsPos) {
-			if constexpr (multiColumnSort) {
-				return compare_(lhs, rhs);
-			} else {
-				if constexpr (desc) {
-					return lhs.Id() > rhs.Id();
-				} else {
-					return lhs.Id() < rhs.Id();
-				}
-			}
-		} else {
-			if constexpr (desc) {
-				return lhsPos > rhsPos;
-			} else {
-				return lhsPos < rhsPos;
-			}
-		}
-	}
-	bool operator()(const ItemRefRanked& lhs, const ItemRefRanked& rhs) { return operator()(lhs.NotRanked(), rhs.NotRanked()); }
-
-private:
-	const ValueGetter& valueGetter_;
-	const unordered_payload_map<std::ptrdiff_t, false>& sortMap_;
-	const ItemComparator& compare_;
-};
-
 template <bool desc, bool multiColumnSort, typename It, typename ValueGetter>
 It NsSelecter::applyForcedSortImpl(NamespaceImpl& ns, It begin, It end, const ItemComparator& compare,
 								   const std::vector<Variant>& forcedSortOrder, const std::string& fieldName,
@@ -957,53 +651,80 @@ It NsSelecter::applyForcedSortImpl(NamespaceImpl& ns, It begin, It end, const It
 			throw Error(errQueryExec, "This type of sorting cannot be applied to a field of array type.");
 		}
 		const KeyValueType fieldType{ns.indexes_[idx]->KeyType()};
-		if (idx < ns.indexes_.firstCompositePos()) {
+		if (idx < ns.indexes_.firstSparsePos()) {
 			// implementation for regular indexes
 			fast_hash_map<Variant, std::ptrdiff_t> sortMap;
-			ForcedMapInserter inserter{sortMap};
+			force_sort_helpers::ForcedMapInserter inserter{sortMap};
 			for (const auto& value : forcedSortOrder) {
 				inserter.Insert(value.convert(fieldType));
 			}
 			// clang-tidy reports std::get_temporary_buffer as deprecated
 			// NOLINTNEXTLINE (clang-diagnostic-deprecated-declarations)
-			const auto boundary = std::stable_partition(begin, end, ForcedPartitionerIndexed<desc, ValueGetter>{idx, valueGetter, sortMap});
+			const auto boundary = std::stable_partition(
+				begin, end, force_sort_helpers::ForcedPartitionerIndexed<desc, ValueGetter>{idx, valueGetter, sortMap});
 			const It from = desc ? boundary : begin;
 			const It to = desc ? end : boundary;
-			std::sort(from, to, ForcedComparatorIndexed<desc, multiColumnSort, ValueGetter>(idx, valueGetter, compare, sortMap));
+			std::sort(from, to,
+					  force_sort_helpers::ForcedComparatorIndexed<desc, multiColumnSort, ValueGetter>(idx, valueGetter, compare, sortMap));
+			return boundary;
+		} else if (idx < ns.indexes_.firstCompositePos()) {
+			// implementation for sparse indexes
+			fast_hash_map<Variant, std::ptrdiff_t> sortMap;
+			force_sort_helpers::ForcedMapInserter inserter{sortMap};
+			for (const auto& value : forcedSortOrder) {
+				inserter.Insert(value.convert(fieldType));
+			}
+			const auto& idxRef = *ns.indexes_[idx];
+			const auto& tagsPath = idxRef.Fields().getTagsPath(0);
+			const auto kvt = idxRef.KeyType();
+
+			// clang-tidy reports std::get_temporary_buffer as deprecated
+			// NOLINTNEXTLINE (clang-diagnostic-deprecated-declarations)
+			const auto boundary = std::stable_partition(begin, end,
+														force_sort_helpers::ForcedPartitionerIndexedJsonPath<desc, ValueGetter>{
+															tagsPath, kvt, idxRef.Name(), valueGetter, sortMap});
+			const It from = desc ? boundary : begin;
+			const It to = desc ? end : boundary;
+			std::sort(from, to,
+					  force_sort_helpers::ForcedComparatorIndexedJsonPath<desc, multiColumnSort, ValueGetter>(tagsPath, kvt, valueGetter,
+																											  compare, sortMap));
 			return boundary;
 		} else {
 			// implementation for composite indexes
 			const auto& payloadType = ns.payloadType_;
 			const FieldsSet& fields = ns.indexes_[idx]->Fields();
 			unordered_payload_map<std::ptrdiff_t, false> sortMap(0, PayloadType{payloadType}, FieldsSet{fields});
-			ForcedMapInserter inserter{sortMap};
+			force_sort_helpers::ForcedMapInserter inserter{sortMap};
 			for (auto value : forcedSortOrder) {
 				value.convert(fieldType, &payloadType, &fields);
 				inserter.Insert(static_cast<const PayloadValue&>(value));
 			}
 			// clang-tidy reports std::get_temporary_buffer as deprecated
 			// NOLINTNEXTLINE (clang-diagnostic-deprecated-declarations)
-			const auto boundary = std::stable_partition(begin, end, ForcedPartitionerComposite<desc, ValueGetter>{valueGetter, sortMap});
+			const auto boundary =
+				std::stable_partition(begin, end, force_sort_helpers::ForcedPartitionerComposite<desc, ValueGetter>{valueGetter, sortMap});
 			const It from = desc ? boundary : begin;
 			const It to = desc ? end : boundary;
-			std::sort(from, to, ForcedComparatorComposite<desc, multiColumnSort, ValueGetter>{valueGetter, compare, sortMap});
+			std::sort(from, to,
+					  force_sort_helpers::ForcedComparatorComposite<desc, multiColumnSort, ValueGetter>{valueGetter, compare, sortMap});
 			return boundary;
 		}
 	} else {
-		ForcedSortMap sortMap{forcedSortOrder[0], 0, forcedSortOrder.size()};
-		ForcedMapInserter inserter{sortMap};
+		force_sort_helpers::ForcedSortMap sortMap{forcedSortOrder[0], 0, forcedSortOrder.size()};
+		force_sort_helpers::ForcedMapInserter inserter{sortMap};
 		for (size_t i = 1, s = forcedSortOrder.size(); i < s; ++i) {
 			inserter.Insert(forcedSortOrder[i]);
 		}
+		const auto tagsPath = ns.tagsMatcher_.path2tag(fieldName);
 		// clang-tidy reports std::get_temporary_buffer as deprecated
 		// NOLINTNEXTLINE (clang-diagnostic-deprecated-declarations)
 		const auto boundary = std::stable_partition(
-			begin, end, ForcedPartitionerNotIndexed<desc, ValueGetter>{fieldName, ns.tagsMatcher_, valueGetter, sortMap});
+			begin, end, force_sort_helpers::ForcedPartitionerNotIndexed<desc, ValueGetter>{tagsPath, valueGetter, sortMap});
 		const It from = desc ? boundary : begin;
 		const It to = desc ? end : boundary;
 		std::sort(
 			from, to,
-			ForcedComparatorNotIndexed<desc, multiColumnSort, ValueGetter>{fieldName, ns.tagsMatcher_, valueGetter, compare, sortMap});
+			force_sort_helpers::ForcedComparatorNotIndexed<desc, multiColumnSort, ValueGetter>{tagsPath, valueGetter, compare, sortMap});
 		return boundary;
 	}
 }
@@ -1144,10 +865,10 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 				if (auto* values = std::get_if<JoinPreResult::Values>(&sctx.preSelect.Result().payload); values) {
 					values->Reserve(reserve + initCount);
 				} else {
-					resultReserve(result, initCount + reserve, qres.IsRanked());
+					resultReserve(result, initCount + reserve, IsRanked(ranks_));
 				}
 			} else {
-				resultReserve(result, initCount + reserve, qres.IsRanked());
+				resultReserve(result, initCount + reserve, IsRanked(ranks_));
 			}
 		}
 	}
@@ -1200,7 +921,7 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 						   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
 					[&pv, properRowId](auto& comp) { comp.ExcludeDistinctValues(pv, properRowId); }));
 			if constexpr (!kPreprocessingBeforeFT) {
-				const RankT rank = qres.GetRank(firstIterator);
+				const RankT rank = ranks_ ? ranks_->Get(firstIterator.Pos()) : RankT{};
 				if ((ctx.start || (ctx.count == 0)) && sortingOptions.multiColumnByBtreeIndex) {
 					VariantArray recentValues;
 					size_t lastResSize = result.Count();

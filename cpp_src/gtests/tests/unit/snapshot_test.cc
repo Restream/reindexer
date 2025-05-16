@@ -19,6 +19,8 @@ TEST_F(SnapshotTestApi, ForceSyncFromLocalToRemote) {
 		InitNS(localRx, kNsName);
 		FillData(localRx, kNsName, 0);
 
+		constexpr auto kTimeout = std::chrono::seconds(15);
+
 		// Checking full snapshot
 		{
 			Snapshot crsn;
@@ -27,15 +29,17 @@ TEST_F(SnapshotTestApi, ForceSyncFromLocalToRemote) {
 			ASSERT_TRUE(crsn.HasRawData());
 
 			std::string tmpNsName;
-			err = rxClient.WithLSN(lsn_t(0, 0)).CreateTemporaryNamespace(kNsName, tmpNsName, StorageOpts().Enabled(false));
+			err = rxClient.WithLSN(lsn_t(0, 0))
+					  .WithTimeout(kTimeout)
+					  .CreateTemporaryNamespace(kNsName, tmpNsName, StorageOpts().Enabled(false));
 			ASSERT_TRUE(err.ok()) << err.what();
 
 			for (auto& it : crsn) {
 				auto ch = it.Chunk();
-				err = rxClient.WithLSN(lsn_t(0, 0)).ApplySnapshotChunk(tmpNsName, ch);
+				err = rxClient.WithLSN(lsn_t(0, 0)).WithTimeout(kTimeout).ApplySnapshotChunk(tmpNsName, ch);
 				ASSERT_TRUE(err.ok()) << err.what();
 			}
-			err = rxClient.WithLSN(lsn_t(0, 0)).RenameNamespace(tmpNsName, kNsName);
+			err = rxClient.WithLSN(lsn_t(0, 0)).WithTimeout(kTimeout).RenameNamespace(tmpNsName, kNsName);
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
 		CompareData(rxClient, localRx);
@@ -53,7 +57,7 @@ TEST_F(SnapshotTestApi, ForceSyncFromLocalToRemote) {
 				auto ch = it.Chunk();
 				ASSERT_TRUE(ch.IsWAL());
 				ASSERT_FALSE(ch.IsShallow());
-				err = rxClient.WithLSN(lsn_t(0, 0)).ApplySnapshotChunk(kNsName, ch);
+				err = rxClient.WithLSN(lsn_t(0, 0)).WithTimeout(kTimeout).ApplySnapshotChunk(kNsName, ch);
 				ASSERT_TRUE(err.ok()) << err.what();
 			}
 		}
@@ -74,6 +78,8 @@ TEST_F(SnapshotTestApi, ForceSyncFromRemoteToLocal) {
 		InitNS(rxClient, kNsName);
 		FillData(rxClient, kNsName, 0);
 
+		constexpr auto kTimeout = std::chrono::seconds(15);
+
 		// Checking full snapshot
 		{
 			client::Snapshot crsn;
@@ -85,16 +91,18 @@ TEST_F(SnapshotTestApi, ForceSyncFromRemoteToLocal) {
 			ASSERT_EQ(crsn.ClusterOperationStat()->role, reindexer::ClusterOperationStatus::Role::None);
 
 			std::string tmpNsName;
-			err = localRx.WithLSN(lsn_t(0, 0)).CreateTemporaryNamespace(kNsName, tmpNsName, StorageOpts().Enabled(false));
+			err = localRx.WithLSN(lsn_t(0, 0))
+					  .WithTimeout(kTimeout)
+					  .CreateTemporaryNamespace(kNsName, tmpNsName, StorageOpts().Enabled(false));
 			ASSERT_TRUE(err.ok()) << err.what();
 
 			for (auto& it : crsn) {
 				auto& ch = it.Chunk();
-				err = localRx.WithLSN(lsn_t(0, 0)).ApplySnapshotChunk(tmpNsName, ch);
+				err = localRx.WithLSN(lsn_t(0, 0)).WithTimeout(kTimeout).ApplySnapshotChunk(tmpNsName, ch);
 				ASSERT_TRUE(err.ok()) << err.what();
 			}
 
-			err = localRx.WithLSN(lsn_t(0, 0)).RenameNamespace(tmpNsName, kNsName);
+			err = localRx.WithLSN(lsn_t(0, 0)).WithTimeout(kTimeout).RenameNamespace(tmpNsName, kNsName);
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
 		CompareData(rxClient, localRx);
@@ -115,7 +123,7 @@ TEST_F(SnapshotTestApi, ForceSyncFromRemoteToLocal) {
 				auto& ch = it.Chunk();
 				ASSERT_TRUE(ch.IsWAL());
 				ASSERT_FALSE(ch.IsShallow());
-				err = localRx.WithLSN(lsn_t(0, 0)).ApplySnapshotChunk(kNsName, ch);
+				err = localRx.WithLSN(lsn_t(0, 0)).WithTimeout(kTimeout).ApplySnapshotChunk(kNsName, ch);
 				ASSERT_TRUE(err.ok()) << err.what();
 			}
 		}

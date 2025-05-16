@@ -21,6 +21,8 @@ public:
 	void Reset(ContainerT requireSynchronization, size_t ReplThreadsCnt, bool enabled);
 	template <typename ContextT>
 	void AwaitInitialSync(const NamespaceName& name, const ContextT& ctx) const {
+		assertrx_dbg(ctx.GetOriginLSN().isEmpty() || ctx.IsCancelable());
+
 		shared_lock<MtxT> lck(mtx_);
 		assertrx_dbg(!name.empty());
 		while (!isInitialSyncDone(name)) {
@@ -37,6 +39,8 @@ public:
 	}
 	template <typename ContextT>
 	void AwaitInitialSync(const ContextT& ctx) const {
+		assertrx_dbg(ctx.GetOriginLSN().isEmpty() || ctx.IsCancelable());
+
 		shared_lock<MtxT> lck(mtx_);
 		while (!isInitialSyncDone()) {
 			if (terminated_) {
@@ -60,6 +64,8 @@ public:
 	RaftInfo TryTransitRole(RaftInfo expected);
 	template <typename ContextT>
 	RaftInfo AwaitRole(bool allowTransitState, const ContextT& ctx) const {
+		assertrx_dbg(ctx.GetOriginLSN().isEmpty() || ctx.IsCancelable());
+
 		shared_lock<MtxT> lck(mtx_);
 		if (allowTransitState) {
 			cond_.wait(lck, [this] { return !isRunning() || next_ == current_; }, ctx);

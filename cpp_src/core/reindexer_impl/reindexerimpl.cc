@@ -2175,7 +2175,7 @@ ReindexerImpl::FilterNsNamesT ReindexerImpl::detectFilterNsNames(const Query& q)
 					  auto stats = nsPtr->GetDefinition(ctx);
 					  bool notRenamed = iequals(stats.name, nsName);
 					  if (notRenamed) {
-						  stats.GetJSON(ser);
+						  stats.GetJSON(ser, ExtraIndexDescription_True);
 					  }
 					  return notRenamed;
 				  });

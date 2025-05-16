@@ -39,7 +39,7 @@ struct NamespaceDef {
 
 	Error FromJSON(std::span<char> json);
 	void FromJSON(const gason::JsonNode& root);
-	void GetJSON(WrSerializer&) const;
+	void GetJSON(WrSerializer&, ExtraIndexDescription withIndexExtras = ExtraIndexDescription_False) const;
 	bool HasSchema() const noexcept { return !schemaJson.empty() && schemaJson != "{}"; }
 	size_t HeapSize() const noexcept {
 		size_t size = name.size() + indexes.size() * sizeof(IndexDef) + schemaJson.size();

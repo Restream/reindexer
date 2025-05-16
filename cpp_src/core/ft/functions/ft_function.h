@@ -11,7 +11,6 @@ namespace reindexer {
 
 class NamespaceImpl;
 class LocalQueryResults;
-class RanksHolder;
 class ItemRef;
 
 struct FtFuncStruct;
@@ -47,13 +46,13 @@ public:
 	/// Creates context of function for certain index.
 	/// @param indexNo - number of index.
 	/// @return pointer to a function context or null if some error happened.
-	FtCtx::Ptr CreateCtx(int indexNo, RanksHolder&);
+	FtCtx::Ptr CreateCtx(int indexNo, const RanksHolder::Ptr&);
 	[[nodiscard]] bool Empty() const noexcept;
 
 private:
-	FtCtx::Ptr createCtx(FtFuncStruct& data, FtCtx::Ptr ctx, IndexType index_type, RanksHolder&);
+	FtCtx::Ptr createCtx(FtFuncStruct& data, FtCtx::Ptr ctx, IndexType index_type, const RanksHolder::Ptr&);
 	void createFunc(FtFuncStruct&&);
-	FtCtx::Ptr createFuncForRank(int indexNo, RanksHolder&);
+	FtCtx::Ptr createFuncForRank(int indexNo, const RanksHolder::Ptr&);
 
 	/// Containers of functions by index number.
 	RHashMap<int, FtFuncStruct> functions_;

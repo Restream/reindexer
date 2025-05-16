@@ -28,7 +28,7 @@ struct ShardingControlResponseData;
 }  // namespace sharding
 namespace client {
 
-struct ConnectOpts;
+class ConnectOpts;
 class Snapshot;
 
 template <typename MtxT>

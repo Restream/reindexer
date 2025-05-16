@@ -10,11 +10,10 @@
 namespace reindexer {
 
 static FtCtx::Ptr createFtCtx(const Index::SelectContext selectCtx) {
-	if (selectCtx.selectFuncCtx) {
-		return selectCtx.selectFuncCtx->selectFunc.CreateCtx(selectCtx.selectFuncCtx->indexNo, selectCtx.selectFuncCtx->ranks);
-	} else {
-		return nullptr;
-	}
+	assertrx_throw(selectCtx.selectFuncCtx);
+	assertrx_dbg(!selectCtx.selectFuncCtx->ranks);
+	selectCtx.selectFuncCtx->ranks = make_intrusive<RanksHolder>();
+	return selectCtx.selectFuncCtx->selectFunc.CreateCtx(selectCtx.selectFuncCtx->indexNo, selectCtx.selectFuncCtx->ranks);
 }
 
 template <typename T>
@@ -137,7 +136,8 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType cond
 		} else if (ftCtx->Type() == FtCtxType::kFtArea && (!cache_ft.val.ctx || cache_ft.val.ctx->type != FtCtxType::kFtArea)) {
 			needPutCache = true;
 		} else {
-			return resultFromCache(keys, std::move(cache_ft), *ftCtx);
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+			return resultFromCache(keys, std::move(cache_ft), *ftCtx, selectCtx.selectFuncCtx->ranks);
 		}
 	}
 
@@ -146,13 +146,15 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType cond
 }
 
 template <typename T>
-SelectKeyResults IndexText<T>::resultFromCache(const VariantArray& keys, FtIdSetCache::Iterator&& it, FtCtx& ftCtx) {
+SelectKeyResults IndexText<T>::resultFromCache(const VariantArray& keys, FtIdSetCache::Iterator&& it, FtCtx& ftCtx,
+											   RanksHolder::Ptr& ranks) {
 	if rx_unlikely (cfg_->logLevel >= LogInfo) {
 		logFmt(LogInfo, "Get search results for '{}' in '{}' from cache", keys[0].As<std::string>(),
 			   this->payloadType_ ? this->payloadType_->Name() : "");
 	}
 	assertrx(it.val.ctx);
 	ftCtx.SetData(std::move(it.val.ctx));
+	ranks = ftCtx.RanksPtr();
 	return SelectKeyResult{{SingleSelectKeyResult{std::move(it.val.ids)}}};
 }
 

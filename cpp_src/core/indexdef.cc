@@ -10,38 +10,67 @@ namespace {
 
 using namespace std::string_view_literals;
 
-struct IndexInfo {
-	const std::string_view fieldType, indexType;
+static constexpr auto kCondsGeneral = {"SET"sv, "ALLSET"sv, "EQ"sv, "LT"sv, "LE"sv, "GT"sv, "GE"sv, "RANGE"sv};
+static constexpr auto kCondsGeneralArray = {"SET"sv, "ALLSET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv};
+static constexpr auto kCondsGeneralSparse = {"SET"sv, "ALLSET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv, "LT"sv, "LE"sv, "GT"sv, "GE"sv, "RANGE"sv};
+static constexpr auto kCondsText = {"EQ"sv};
+static constexpr auto kCondsBool = {"SET"sv, "ALLSET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv};
+static constexpr auto kCondsGeom = {"DWITHIN"sv};
+static constexpr auto kCondsVector = {"KNN"sv, "ANY"sv, "EMPTY"sv};
+static constexpr std::initializer_list<std::string_view> kCondsDummy = {};
+
+class IndexInfo {
+public:
+	constexpr IndexInfo(std::string_view fieldType, std::string_view indexType, std::initializer_list<std::string_view> conditions) noexcept
+		: fieldType_{fieldType}, indexType_{indexType}, conditions_{conditions} {}
+
+	std::string_view FieldType() const noexcept { return fieldType_; }
+	std::string_view IndexType() const noexcept { return indexType_; }
+	std::span<const std::string_view> Conditions(reindexer::IsArray isArray, reindexer::IsSparse isSparse) const noexcept {
+		if (conditions_.data() == kCondsGeneral.begin()) {	// Compare pointers
+			if (isArray) {
+				return kCondsGeneralArray;
+			}
+			if (isSparse) {
+				return kCondsGeneralSparse;
+			}
+		}
+		return conditions_;
+	}
+
+private:
+	const std::string_view fieldType_, indexType_;
+	const std::span<const std::string_view> conditions_;
 };
 
 constexpr static auto kAvailableIndexes = frozen::make_unordered_map<IndexType, IndexInfo>({
 	// clang-format off
-	{IndexIntHash,          {"int"sv,          "hash"sv}},
-	{IndexInt64Hash,        {"int64"sv,        "hash"sv}},
-	{IndexStrHash,          {"string"sv,       "hash"sv}},
-	{IndexCompositeHash,    {"composite"sv,    "hash"sv}},
-	{IndexIntBTree,         {"int"sv,          "tree"sv}},
-	{IndexInt64BTree,       {"int64"sv,        "tree"sv}},
-	{IndexDoubleBTree,      {"double"sv,       "tree"sv}},
-	{IndexCompositeBTree,   {"composite"sv,    "tree"sv}},
-	{IndexStrBTree,         {"string"sv,       "tree"sv}},
-	{IndexIntStore,         {"int"sv,          "-"sv}},
-	{IndexBool,             {"bool"sv,         "-"sv}},
-	{IndexInt64Store,       {"int64"sv,        "-"sv}},
-	{IndexStrStore,         {"string"sv,       "-"sv}},
-	{IndexDoubleStore,      {"double"sv,       "-"sv}},
-	{IndexTtl,              {"int64"sv,        "ttl"sv}},
-	{IndexCompositeFastFT,  {"composite"sv,    "text"sv}},
-	{IndexCompositeFuzzyFT, {"composite"sv,    "fuzzytext"sv}},
-	{IndexFastFT,           {"string"sv,       "text"sv}},
-	{IndexFuzzyFT,          {"string"sv,       "fuzzytext"sv}},
-	{IndexRTree,            {"point"sv,        "rtree"sv}},
-	{IndexUuidHash,         {"uuid"sv,         "hash"sv}},
-	{IndexUuidStore,        {"uuid"sv,         "-"sv}},
-	{IndexHnsw,             {"float_vector"sv, "hnsw"sv}},
-	{IndexVectorBruteforce, {"float_vector"sv, "vec_bf"sv}},
-	{IndexIvf,              {"float_vector"sv, "ivf"sv}},
-	{IndexDummy,            {""sv,             "hash"sv}},
+	{IndexIntHash,          {"int"sv,          "hash"sv,      kCondsGeneral}},
+	{IndexInt64Hash,        {"int64"sv,        "hash"sv,      kCondsGeneral}},
+	{IndexStrHash,          {"string"sv,       "hash"sv,      kCondsGeneral}},
+	{IndexCompositeHash,    {"composite"sv,    "hash"sv,      kCondsGeneral}},
+	{IndexIntBTree,         {"int"sv,          "tree"sv,      kCondsGeneral}},
+	{IndexInt64BTree,       {"int64"sv,        "tree"sv,      kCondsGeneral}},
+	{IndexDoubleBTree,      {"double"sv,       "tree"sv,      kCondsGeneral}},
+	{IndexCompositeBTree,   {"composite"sv,    "tree"sv,      kCondsGeneral}},
+	{IndexStrBTree,         {"string"sv,       "tree"sv,      kCondsGeneral}},
+	{IndexIntStore,         {"int"sv,          "-"sv,         kCondsGeneral}},
+	{IndexBool,             {"bool"sv,         "-"sv,         kCondsBool}},
+	{IndexInt64Store,       {"int64"sv,        "-"sv,         kCondsGeneral}},
+	{IndexStrStore,         {"string"sv,       "-"sv,         kCondsGeneral}},
+	{IndexDoubleStore,      {"double"sv,       "-"sv,         kCondsGeneral}},
+	{IndexTtl,              {"int64"sv,        "ttl"sv,       kCondsGeneral}},
+	{IndexCompositeFastFT,  {"composite"sv,    "text"sv,      kCondsText}},
+	{IndexCompositeFuzzyFT, {"composite"sv,    "fuzzytext"sv, kCondsText}},
+	{IndexFastFT,           {"string"sv,       "text"sv,      kCondsText}},
+	{IndexFuzzyFT,          {"string"sv,       "fuzzytext"sv, kCondsText}},
+	{IndexRTree,            {"point"sv,        "rtree"sv,     kCondsGeom}},
+	{IndexUuidHash,         {"uuid"sv,         "hash"sv,      kCondsGeneral}},
+	{IndexUuidStore,        {"uuid"sv,         "-"sv,         kCondsGeneral}},
+	{IndexHnsw,             {"float_vector"sv, "hnsw"sv,      kCondsVector}},
+	{IndexVectorBruteforce, {"float_vector"sv, "vec_bf"sv,    kCondsVector}},
+	{IndexIvf,              {"float_vector"sv, "ivf"sv,       kCondsVector}},
+	{IndexDummy,            {""sv,             "hash"sv,      kCondsDummy}},
 	// clang-format on
 });
 
@@ -74,6 +103,40 @@ void IndexDef::validate(::IndexType indexType, size_t jsonPathsCount, const Inde
 	}
 	if (opts.IsFloatVector() && jsonPathsCount != 1) {
 		throw Error(errNotValid, "For float vector index just single json path is allowed");
+	}
+}
+
+bool IndexDef::isSortable() const noexcept {
+	switch (IndexType()) {
+		case IndexStrHash:
+		case IndexStrBTree:
+		case IndexIntBTree:
+		case IndexIntHash:
+		case IndexInt64BTree:
+		case IndexInt64Hash:
+		case IndexDoubleBTree:
+		case IndexCompositeBTree:
+		case IndexCompositeHash:
+		case IndexBool:
+		case IndexIntStore:
+		case IndexInt64Store:
+		case IndexStrStore:
+		case IndexDoubleStore:
+		case IndexTtl:
+		case IndexRTree:
+		case IndexUuidHash:
+		case IndexUuidStore:
+			return !bool(opts_.IsArray());
+		case IndexFastFT:
+		case IndexFuzzyFT:
+		case IndexCompositeFastFT:
+		case IndexCompositeFuzzyFT:
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+		case IndexDummy:
+		default:
+			return false;
 	}
 }
 
@@ -147,7 +210,7 @@ bool IndexDef::IsEqual(const IndexDef& other, IndexComparison cmpType) const {
 		}
 	}
 	for (const auto& it : kAvailableIndexes) {
-		if (fieldType == it.second.fieldType && indexType == it.second.indexType) {
+		if (fieldType == it.second.FieldType() && indexType == it.second.IndexType()) {
 			return it.first;
 		}
 	}
@@ -159,8 +222,8 @@ void IndexDef::Validate() const { validate(IndexType(), jsonPaths_.size(), opts_
 
 void IndexDef::initFromIndexType(::IndexType type) {
 	const auto& it = kAvailableIndexes.at(type);
-	fieldType_ = it.fieldType;
-	indexType_ = it.indexType;
+	fieldType_ = it.FieldType();
+	indexType_ = it.IndexType();
 }
 
 bool isStore(IndexType type) noexcept {
@@ -247,7 +310,7 @@ IndexDef IndexDef::FromJSON(const gason::JsonNode& root) {
 	return {std::move(name), std::move(jsonPaths), std::move(indexType), std::move(fieldType), std::move(opts), expireAfter};
 }
 
-void IndexDef::GetJSON(WrSerializer& ser) const {
+void IndexDef::GetJSON(WrSerializer& ser, ExtraIndexDescription withExtras) const {
 	Validate();
 	JsonBuilder builder(ser);
 
@@ -288,9 +351,22 @@ void IndexDef::GetJSON(WrSerializer& ser) const {
 		builder.Raw("config"sv, opts_.HasConfig() ? opts_.Config() : "{}"sv);
 	}
 
-	auto arrNode = builder.Array("json_paths"sv);
-	for (auto& jsonPath : jsonPaths_) {
-		arrNode.Put(TagName::Empty(), jsonPath);
+	{
+		auto arrNode = builder.Array("json_paths"sv);
+		for (auto& jsonPath : jsonPaths_) {
+			arrNode.Put(TagName::Empty(), jsonPath);
+		}
+	}
+
+	if (withExtras) {
+		builder.Put("is_sortable", isSortable());
+		auto arr = builder.Array("conditions");
+		if (const auto descIt = kAvailableIndexes.find(IndexType()); descIt != kAvailableIndexes.end()) {
+			auto conds = descIt->second.Conditions(opts_.IsArray(), opts_.IsSparse());
+			for (auto& cond : conds) {
+				arr.Put(TagName::Empty(), cond);
+			}
+		}
 	}
 }
 
