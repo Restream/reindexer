@@ -1,5 +1,7 @@
 #include "payloadfieldtype.h"
 #include <sstream>
+#include "core/embedding/embedder.h"
+#include "core/embedding/embedderscache.h"
 #include "core/index/index.h"
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/uuid.h"
@@ -8,20 +10,62 @@
 
 namespace reindexer {
 
-PayloadFieldType::PayloadFieldType(const Index& index, const IndexDef& indexDef) noexcept
-	: type_(index.KeyType()),
-	  name_(indexDef.name_),
-	  jsonPaths_(indexDef.jsonPaths_),
-	  offset_(0),
-	  isArray_(index.Opts().IsArray()),
-	  arrayDim_(indexDef.Type() == IndexType::IndexRTree ? 2 : -1) {}
-
-size_t PayloadFieldType::Sizeof() const noexcept {
-	if (IsArray()) {
-		return sizeof(PayloadFieldValue::Array);
+namespace {
+EmbedderConfig::Strategy convert(FloatVectorIndexOpts::EmbedderOpts::Strategy strategy) noexcept {
+	switch (strategy) {
+		case FloatVectorIndexOpts::EmbedderOpts::Strategy::Always:
+			return EmbedderConfig::Strategy::Always;
+		case FloatVectorIndexOpts::EmbedderOpts::Strategy::EmptyOnly:
+			return EmbedderConfig::Strategy::EmptyOnly;
+		case FloatVectorIndexOpts::EmbedderOpts::Strategy::Strict:
+			return EmbedderConfig::Strategy::Strict;
 	}
-	return ElemSizeof();
+	return {};
 }
+
+std::shared_ptr<Embedder> createEmbedder(std::string_view nsName, std::string_view idxName, int idx,
+										 const FloatVectorIndexOpts::EmbedderOpts& opts,
+										 const std::shared_ptr<EmbeddersCache>& embeddersCache) {
+	EmbedderConfig embedderCfg{CacheTag{opts.cacheTag}, opts.fields, convert(opts.strategy)};
+	PoolConfig poolCfg{opts.pool.connections, opts.endpointUrl, opts.pool.connect_timeout_ms, opts.pool.read_timeout_ms,
+					   opts.pool.write_timeout_ms};
+	const auto embedderName = opts.name.empty() ? std::string{nsName} + "_" + toLower(idxName) : toLower(opts.name);
+	return std::make_shared<reindexer::Embedder>(embedderName, idxName, idx, std::move(embedderCfg), std::move(poolCfg), embeddersCache);
+}
+}  // namespace
+
+PayloadFieldType::PayloadFieldType(std::string_view nsName, int idx, const Index& index, const IndexDef& indexDef,
+								   const std::shared_ptr<EmbeddersCache>& embeddersCache)
+	: type_(index.KeyType()),
+	  name_(indexDef.Name()),
+	  jsonPaths_(indexDef.JsonPaths()),
+	  offset_(0),
+	  arrayDims_(0),
+	  isArray_(index.Opts().IsArray()) {
+	// Float indexed fields are not supported (except for the float_vector for KNN indexes)
+	assertrx_throw(!type_.Is<KeyValueType::Float>());
+	if (index.IsFloatVector()) {
+		arrayDims_ = index.FloatVectorDimension().Value();
+		assertrx(type_.Is<KeyValueType::FloatVector>());
+
+		auto embedding = indexDef.Opts().FloatVector().Embedding();
+		if (embedding.has_value()) {
+			const auto& cfg = embedding.value();
+			if (cfg.upsertEmbedder.has_value()) {
+				embeddersCache->IncludeTag(cfg.upsertEmbedder->cacheTag);
+				embedder_ = createEmbedder(nsName, name_, idx, cfg.upsertEmbedder.value(), embeddersCache);
+			}
+			if (cfg.queryEmbedder.has_value()) {
+				embeddersCache->IncludeTag(cfg.queryEmbedder->cacheTag);
+				queryEmbedder_ = createEmbedder(nsName, name_, idx, cfg.queryEmbedder.value(), embeddersCache);
+			}
+		}
+	} else if (indexDef.IndexType() == IndexType::IndexRTree) {
+		arrayDims_ = 2;
+	}
+}
+
+size_t PayloadFieldType::Sizeof() const noexcept { return IsArray() ? sizeof(PayloadFieldValue::Array) : ElemSizeof(); }
 
 size_t PayloadFieldType::ElemSizeof() const noexcept {
 	return Type().EvaluateOneOf(
@@ -29,21 +73,9 @@ size_t PayloadFieldType::ElemSizeof() const noexcept {
 		[](OneOf<KeyValueType::Int64>) noexcept { return sizeof(int64_t); },
 		[](OneOf<KeyValueType::Uuid>) noexcept { return sizeof(Uuid); }, [](KeyValueType::Double) noexcept { return sizeof(double); },
 		[](KeyValueType::String) noexcept { return sizeof(p_string); },
-		[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) noexcept -> size_t {
-			assertrx(0);
-			abort();
-		});
-}
-
-size_t PayloadFieldType::Alignof() const noexcept {
-	if (IsArray()) {
-		return alignof(PayloadFieldValue::Array);
-	}
-	return Type().EvaluateOneOf(
-		[](KeyValueType::Bool) noexcept { return alignof(bool); }, [](KeyValueType::Int) noexcept { return alignof(int); },
-		[](KeyValueType::Int64) noexcept { return alignof(int64_t); }, [](KeyValueType::Uuid) noexcept { return alignof(Uuid); },
-		[](KeyValueType::Double) noexcept { return alignof(double); }, [](KeyValueType::String) noexcept { return alignof(p_string); },
-		[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) noexcept -> size_t {
+		[](KeyValueType::FloatVector) noexcept { return sizeof(ConstFloatVectorView); },
+		[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Float>) noexcept
+		-> size_t {
 			assertrx(0);
 			abort();
 		});

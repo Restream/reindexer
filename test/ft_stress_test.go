@@ -2,8 +2,8 @@ package reindexer
 
 import (
 	"bufio"
+	"embed"
 	"math/rand"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -19,10 +19,12 @@ type TestItemFTStress struct {
 	Amount   int    `reindex:"amount,tree"`
 }
 
+//go:embed ft/dict.txt
+var ftDict embed.FS
 var dictWords []string
 
 func readDict() ([]string, error) {
-	f, err := os.Open("ft/dict.txt")
+	f, err := ftDict.Open("ft/dict.txt")
 	if err != nil {
 		return nil, err
 	}

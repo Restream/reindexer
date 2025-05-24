@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v4/bindings"
+	"github.com/restream/reindexer/v5/bindings"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/restream/reindexer/v4"
-	"github.com/restream/reindexer/v4/test/helpers"
+	"github.com/restream/reindexer/v5"
+	"github.com/restream/reindexer/v5/test/helpers"
 )
 
 type MultiDSNItem struct {
@@ -55,8 +55,9 @@ func TestReconnectWithStrategy(t *testing.T) {
 
 			require.NoError(t, servers[0].Stop())
 
+			// Await explicit connections drop to avoid connection error on the first call
+			time.Sleep(5 * time.Second)
 			// check change dsn to second or third address
-			time.Sleep(2 * time.Second)
 			err = db.OpenNamespace(multiDSNNS, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
 			require.NoError(t, err)
 			_, err = db.Insert(multiDSNNS, itemExp)

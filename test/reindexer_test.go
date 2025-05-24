@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v4"
-	_ "github.com/restream/reindexer/v4/bindings/builtin"
-	_ "github.com/restream/reindexer/v4/bindings/cproto"
-	// _ "github.com/restream/reindexer/v4/pprof"
+	"github.com/restream/reindexer/v5"
+	_ "github.com/restream/reindexer/v5/bindings/builtin"
+	_ "github.com/restream/reindexer/v5/bindings/cproto"
+	// _ "github.com/restream/reindexer/v5/pprof"
 )
 
 var DB *ReindexerWrapper
@@ -61,7 +61,7 @@ func TestMain(m *testing.M) {
 
 	opts := []interface{}{}
 	if udsn.Scheme == "builtin" {
-		os.RemoveAll("/tmp/reindex_test/")
+		os.RemoveAll(udsn.Path)
 	} else if udsn.Scheme == "cproto" || udsn.Scheme == "cprotos" {
 		opts = []interface{}{reindexer.WithCreateDBIfMissing(), reindexer.WithNetCompression(), reindexer.WithAppName("RxTestInstance")}
 	} else if udsn.Scheme == "ucproto" {
@@ -155,15 +155,16 @@ func (TestLogger) Printf(level int, format string, msg ...interface{}) {
 func randString() string {
 	return adjectives[rand.Int()%len(adjectives)] + "_" + names[rand.Int()%len(names)]
 }
+
 func randLangString() string {
 	return adjectives[rand.Int()%len(adjectives)] + "_" + cyrillic[rand.Int()%len(cyrillic)]
 }
+
 func randSearchString() string {
 	if rand.Int()%2 == 0 {
 		return adjectives[rand.Int()%len(adjectives)]
 	}
 	return names[rand.Int()%len(names)]
-
 }
 
 const charset = "abcdefghijklmnopqrstuvwxyz" +
@@ -186,6 +187,14 @@ func randStringArr(cnt int) []string {
 		arr = append(arr, randString())
 	}
 	return arr
+}
+
+func randVect(dimension int) []float32 {
+	result := make([]float32, dimension)
+	for i := 0; i < dimension; i++ {
+		result[i] = rand.Float32()
+	}
+	return result
 }
 
 func randDevice() string {

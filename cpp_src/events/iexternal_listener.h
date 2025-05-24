@@ -11,7 +11,7 @@ class EventRecord : public updates::UpdateRecord {
 public:
 	EventRecord() = default;
 	explicit EventRecord(const updates::UpdateRecord& rec)
-		: updates::UpdateRecord(rec.Clone<ClonePolicy::WithEmmiter>()), ts_(ClockT::now()) {}
+		: updates::UpdateRecord(rec.Clone<ClonePolicy::WithEmitter>()), ts_(ClockT::now()) {}
 	explicit EventRecord(updates::UpdateRecord&& rec) noexcept : updates::UpdateRecord(std::move(rec)), ts_(ClockT::now()) {}
 
 	ClockT::time_point Timestamp() const noexcept { return ts_; }

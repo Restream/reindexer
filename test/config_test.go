@@ -2,12 +2,13 @@ package reindexer
 
 import (
 	"math/rand"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/restream/reindexer/v4"
+	"github.com/restream/reindexer/v5"
 )
 
 type FtConfCheck struct {
@@ -22,6 +23,19 @@ func init() {
 	tnamespaces[ftCfgNsName] = FtConfCheck{}
 }
 
+func TestDBMSVersion(t *testing.T) {
+	t.Run("checking DBMSVersion returns correct value", func(t *testing.T) {
+
+		version, err := DB.Reindexer.DBMSVersion()
+		assert.NoError(t, err)
+
+		versionPattern := `^v\d+\.\d+\.\d+(\-\d+\-g[0-9a-f]{9,9})?$`
+		re := regexp.MustCompile(versionPattern)
+		match := re.MatchString(version)
+		assert.True(t, match, version)
+	})
+}
+
 func TestSetDefaultQueryDebug(t *testing.T) {
 	t.Run("set debug level to exist ns config", func(t *testing.T) {
 		ns := "ns_with_config"
@@ -32,9 +46,6 @@ func TestSetDefaultQueryDebug(t *testing.T) {
 			Namespace:               ns,
 			LogLevel:                "trace",
 			JoinCacheMode:           "on",
-			Lazyload:                true,
-			UnloadIdleThreshold:     rand.Int(),
-			StartCopyPolicyTxSize:   rand.Int(),
 			CopyPolicyMultiplier:    rand.Int(),
 			TxSizeToAlwaysCopy:      rand.Int(),
 			OptimizationTimeout:     rand.Int(),

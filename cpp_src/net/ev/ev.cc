@@ -1,7 +1,6 @@
 #include "ev.h"
 #include <stdio.h>
 #include <string.h>
-#include <algorithm>
 #include <sstream>
 #include "debug/backtrace.h"
 #include "tools/oscompat.h"
@@ -27,7 +26,6 @@ constexpr bool gEnableBusyLoop = false;
 
 #ifdef HAVE_POSIX_LOOP
 #ifdef HAVE_EVENT_FD
-loop_posix_base::loop_posix_base() {}
 loop_posix_base::~loop_posix_base() {
 	if (async_fd_ >= 0) {
 		close(async_fd_);
@@ -60,7 +58,6 @@ bool loop_posix_base::check_async(int fd) {
 	return false;
 }
 #else	// HAVE_EVENT_FD
-loop_posix_base::loop_posix_base() {}
 loop_posix_base::~loop_posix_base() {
 	if (async_fds_[0] >= 0) {
 		close(async_fds_[0]);
@@ -444,7 +441,12 @@ dynamic_loop::dynamic_loop() : async_sent_(false) {
 
 dynamic_loop::~dynamic_loop() {
 	if (!running_tasks_.empty() || !new_tasks_.empty()) {
-		run();
+		try {
+			run();
+		} catch (std::exception& e) {
+			fprintf(stderr, "reindexer error: unexpected exception in ~dynamic_loop: %s\n", e.what());
+			assertrx_dbg(false);
+		}
 	}
 	if (coro_cb_is_set_) {
 		remove_coro_cb();
@@ -456,7 +458,7 @@ void dynamic_loop::run() {
 		// Loop has coroutines from another thread
 		std::stringstream ss;
 		reindexer::debug::print_backtrace(ss, nullptr, -1);
-		fprintf(stderr, "Backtrace:\n%s\n", ss.str().c_str());
+		fprintf(stderr, "reindexer error: incorrect coroutine in dynamic loop. Backtrace:\n%s\n", ss.str().c_str());
 		assertrx(false);
 	}
 
@@ -511,6 +513,7 @@ void dynamic_loop::run() {
 			}
 			if (pendingSignalsMask) {
 				fprintf(stderr, "Unexpected signals %08X", pendingSignalsMask);
+				assertrx_dbg(false);
 			}
 		}
 		if (ret >= 0 && timers_.size()) {
@@ -545,7 +548,7 @@ void dynamic_loop::set(int fd, io* watcher, int events) {
 	backend_.set(fd, events, oldevents);
 }
 
-void dynamic_loop::stop(int fd) {
+void dynamic_loop::stop(int fd) noexcept {
 	if (fd < 0 || fd >= int(fds_.size())) {
 		return;
 	}
@@ -570,7 +573,7 @@ void dynamic_loop::set(timer* watcher, double t) {
 	timers_.insert(it, watcher);
 }
 
-void dynamic_loop::stop(timer* watcher) {
+void dynamic_loop::stop(timer* watcher) noexcept {
 	auto it = std::find(timers_.begin(), timers_.end(), watcher);
 	if (it != timers_.end()) {
 		timers_.erase(it);
@@ -580,7 +583,7 @@ void dynamic_loop::stop(timer* watcher) {
 void dynamic_loop::set(sig* watcher) {
 	auto it = std::find(sigs_.begin(), sigs_.end(), watcher);
 	if (it != sigs_.end()) {
-		fprintf(stderr, "sig %d already set\n", watcher->signum_);
+		fprintf(stderr, "reindexer warning: sig %d already set\n", watcher->signum_);
 		return;
 	}
 	sigs_.push_back(watcher);
@@ -592,7 +595,7 @@ void dynamic_loop::set(sig* watcher) {
 
 	auto res = sigaction(watcher->signum_, &new_action, &old_action);
 	if (res < 0) {
-		fprintf(stderr, "sigaction error: %d\n", res);
+		fprintf(stderr, "reindexer error: sigaction error: %d\n", res);
 		return;
 	}
 	watcher->old_action_ = old_action;
@@ -601,17 +604,17 @@ void dynamic_loop::set(sig* watcher) {
 #endif
 }
 
-void dynamic_loop::stop(sig* watcher) {
+void dynamic_loop::stop(sig* watcher) noexcept {
 	auto it = std::find(sigs_.begin(), sigs_.end(), watcher);
 	if (it == sigs_.end()) {
-		fprintf(stderr, "sig %d is not set\n", watcher->signum_);
+		fprintf(stderr, "reindexer warning: sig %d is not set\n", watcher->signum_);
 		return;
 	}
 	sigs_.erase(it);
 #ifndef _WIN32
 	auto res = sigaction(watcher->signum_, &(watcher->old_action_), 0);
 	if (res < 0) {
-		fprintf(stderr, "sigaction error: %d\n", res);
+		fprintf(stderr, "reindexer error: sigaction error: %d\n", res);
 		return;
 	}
 #else
@@ -628,7 +631,7 @@ void dynamic_loop::set(async* watcher) {
 	asyncs_.push_back(watcher);
 }
 
-void dynamic_loop::stop(async* watcher) {
+void dynamic_loop::stop(async* watcher) noexcept {
 	auto it = std::find(asyncs_.begin(), asyncs_.end(), watcher);
 	if (it == asyncs_.end()) {
 		return;
@@ -636,7 +639,7 @@ void dynamic_loop::stop(async* watcher) {
 	asyncs_.erase(it);
 }
 
-void dynamic_loop::send(async* watcher) {
+void dynamic_loop::send(async* watcher) noexcept {
 	watcher->sent_ = true;
 	bool was = async_sent_.exchange(true);
 	if (!was) {
@@ -686,7 +689,7 @@ void dynamic_loop::set_coro_cb() {
 	coro_cb_is_set_ = true;
 }
 
-void dynamic_loop::remove_coro_cb() {
+void dynamic_loop::remove_coro_cb() noexcept {
 	[[maybe_unused]] bool res = coroutine::remove_loop_completion_callback();
 	assertrx(res);
 	coro_cb_is_set_ = false;

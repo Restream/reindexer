@@ -8,9 +8,7 @@
 #include <unordered_set>
 #include <vector>
 #include "activity.h"
-#include "activitylog.h"
 #include "estl/mutex.h"
-#include "tools/clock.h"
 
 namespace reindexer {
 

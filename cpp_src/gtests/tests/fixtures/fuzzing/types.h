@@ -23,7 +23,4 @@ enum class IndexType { Store, Hash, Tree, Ttl, FastFT, FuzzyFT, RTree, END = RTr
 std::string_view ToText(IndexType);
 std::ostream& operator<<(std::ostream&, IndexType);
 
-enum class IsArrayT : bool { Yes = true, No = false };
-enum class IsSparseT : bool { Yes = true, No = false };
-
 }  // namespace fuzzing

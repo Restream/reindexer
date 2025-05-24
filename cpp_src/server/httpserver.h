@@ -26,7 +26,7 @@ public:
 	HTTPServer(DBManager& dbMgr, LoggerWrapper& logger, const ServerConfig& serverConfig, Prometheus* prometheusI = nullptr,
 			   IStatsWatcher* statsWatcherI = nullptr);
 
-	bool Start(const std::string& addr, ev::dynamic_loop& loop);
+	void Start(const std::string& addr, ev::dynamic_loop& loop);
 	void Stop() { listener_->Stop(); }
 
 	int NotFoundHandler(http::Context& ctx);
@@ -78,6 +78,7 @@ public:
 	void Logger(http::Context& ctx);
 	void OnResponse(http::Context& ctx);
 	int GetRole(http::Context& ctx);
+	int GetDefaultConfigs(http::Context& ctx);
 
 protected:
 	Error modifyItem(Reindexer& db, std::string& nsName, Item& item, ItemModifyMode mode);

@@ -48,6 +48,7 @@ protected:
 
 	// Generic callback
 	void callback(ev::io& watcher, int revents);
+	void update_cur_events(int nevents) noexcept;
 	void write_cb();
 	ReadResT read_cb();
 	void async_cb(ev::async& watcher);

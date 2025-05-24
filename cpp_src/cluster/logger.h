@@ -11,8 +11,8 @@ namespace cluster {
 static_assert(false, "Macros conflict");
 #endif
 
-#define rtfmt(f, ...) return fmt::sprintf("[cluster:%s] " f, logModuleName(), __VA_ARGS__)
-#define rtstr(f) return fmt::sprintf("[cluster:%s] " f, logModuleName())
+#define rtfmt(f, ...) return fmt::format("[cluster:{}] " f, logModuleName(), __VA_ARGS__)
+#define rtstr(f) return fmt::format("[cluster:{}] " f, logModuleName())
 #define logTrace(f, ...) log_.Trace([&] { rtfmt(f, __VA_ARGS__); })
 #define logInfo(f, ...) log_.Info([&] { rtfmt(f, __VA_ARGS__); })
 #define logWarn(f, ...) log_.Warn([&] { rtfmt(f, __VA_ARGS__); })

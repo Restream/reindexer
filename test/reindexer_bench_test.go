@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v4"
-	"github.com/restream/reindexer/v4/cjson"
+	"github.com/restream/reindexer/v5"
+	"github.com/restream/reindexer/v5/cjson"
 )
 
 type TestItemBench struct {

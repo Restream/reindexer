@@ -2,50 +2,37 @@
 
 #include <vector>
 
-#include "core/cjson/msgpackdecoder.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/keyvalue/variant.h"
 #include "core/payload/payloadiface.h"
 #include "itemimplrawdata.h"
+#include "namespace/float_vectors_indexes.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
 
+class MsgPackDecoder;
 class Namespace;
-class Schema;
+class RdxContext;
 class Recoder;
+class Schema;
 
 class ItemImpl : public ItemImplRawData {
+	friend class Item;
+
 public:
-	ItemImpl() = default;
-
+	ItemImpl();
+	~ItemImpl();
 	// Construct empty item
-	ItemImpl(PayloadType type, const TagsMatcher& tagsMatcher, const FieldsSet& pkFields = {}, std::shared_ptr<const Schema> schema = {})
-		: ItemImplRawData(PayloadValue(type.TotalSize(), nullptr, type.TotalSize() + 0x100)),
-		  payloadType_(std::move(type)),
-		  tagsMatcher_(tagsMatcher),
-		  pkFields_(pkFields),
-		  schema_(std::move(schema)) {
-		tagsMatcher_.clearUpdated();
-	}
-
+	ItemImpl(PayloadType type, const TagsMatcher& tagsMatcher, const FieldsSet& pkFields = {}, std::shared_ptr<const Schema> schema = {});
 	// Construct empty item
 	ItemImpl(PayloadType type, const TagsMatcher& tagsMatcher, const FieldsSet& pkFields, std::shared_ptr<const Schema> schema,
-			 ItemImplRawData&& rawData)
-		: ItemImplRawData(std::move(rawData)),
-		  payloadType_(std::move(type)),
-		  tagsMatcher_(tagsMatcher),
-		  pkFields_(pkFields),
-		  schema_(std::move(schema)) {}
-
-	ItemImpl(PayloadType type, PayloadValue v, const TagsMatcher& tagsMatcher, std::shared_ptr<const Schema> schema = {})
-		: ItemImplRawData(std::move(v)), payloadType_(std::move(type)), tagsMatcher_(tagsMatcher), schema_{std::move(schema)} {
-		tagsMatcher_.clearUpdated();
-	}
+			 ItemImplRawData&& rawData);
+	ItemImpl(PayloadType type, PayloadValue v, const TagsMatcher& tagsMatcher, std::shared_ptr<const Schema> schema = {});
 
 	ItemImpl(const ItemImpl&) = delete;
-	ItemImpl(ItemImpl&&) = default;
-	ItemImpl& operator=(ItemImpl&&) = default;
+	ItemImpl(ItemImpl&&);
+	ItemImpl& operator=(ItemImpl&&);
 	ItemImpl& operator=(const ItemImpl&) = delete;
 
 	void ModifyField(std::string_view jsonPath, const VariantArray& keys, FieldModifyMode mode);
@@ -56,7 +43,7 @@ public:
 	Variant GetField(int field);
 	void GetField(int field, VariantArray&);
 	FieldsSet PkFields() const { return pkFields_; }
-	int NameTag(std::string_view name) const { return tagsMatcher_.name2tag(name); }
+	TagName NameTag(std::string_view name) const { return tagsMatcher_.name2tag(name); }
 	int FieldIndex(std::string_view name) const {
 		int field = IndexValueType::NotSet;
 		payloadType_.FieldByName(name, field);
@@ -99,10 +86,24 @@ public:
 	bool IsUnsafe() const noexcept { return unsafe_; }
 	void Clear();
 	void SetNamespace(std::shared_ptr<Namespace> ns) noexcept { ns_ = std::move(ns); }
-	std::shared_ptr<Namespace> GetNamespace() const noexcept { return ns_; }
+	std::weak_ptr<Namespace> GetNamespace() const noexcept { return ns_; }
 	static void validateModifyArray(const VariantArray& values);
+	void BuildTupleIfEmpty();
+	/**
+	 * @brief Copies vectors' values from indexes into ItemImpl::payloadValue.
+	 * Be default this method creates and stores full vector's data copy.
+	 * If item is marked 'unsafe', then resulting payload value will contain view, pointing into index structures directly
+	 * and any modification of those indexes may break the references.
+	 */
+	void CopyIndexedVectorsValuesFrom(IdType, const FloatVectorsIndexes&);
+
+	void Embed(const RdxContext& ctx);
 
 private:
+	ItemImpl(PayloadType, PayloadValue, const TagsMatcher&, std::shared_ptr<const Schema>, const FieldsFilter&);
+
+	void initTupleFrom(Payload&&, WrSerializer&);
+
 	// Index fields payload data
 	PayloadType payloadType_;
 	PayloadValue realValue_;
@@ -114,8 +115,9 @@ private:
 
 	bool unsafe_ = false;
 	std::string_view cjson_;
-	std::shared_ptr<Namespace> ns_;
+	std::weak_ptr<Namespace> ns_;
 	std::unique_ptr<MsgPackDecoder> msgPackDecoder_;
+	const FieldsFilter* fieldsFilter_{nullptr};
 };
 
 }  // namespace reindexer

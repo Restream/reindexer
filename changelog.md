@@ -1,3 +1,152 @@
+# Version 5.2.1 (16.05.2025)
+## Core
+- [fix] Fixed [forced sort](readme.md#forced-sort) with `sparse` indexes
+
+## Fulltext
+- [fix] Fixed zero `rank` values in cached fulltext results
+
+## Replication
+- [fix] Added missing timeouts into replication requests/connections
+
+## Reindexer server
+- [fix] Fixed conflict between `OpenSSL's` handshake and connection rebalancing. This previously could lead to connections stucking
+
+## Go connector
+- [fix] Added missing `is_sortable` and `conditions` fields into `IndexDescription`. Information in this fields was actualized accroding to the current indexes behavior
+
+# Version 5.2.0 (29.04.2025)
+## Core
+- [fea] Added support for `distinct` with multiple fields (i.e. something like `distinct(field1, field2, field3)`)
+- [fea] Allowed `null`-values inside `IN()`-clause (they automatically will be transformed into `OR IS NULL`)
+- [fea] Made `IS NULL`/`IS NOT NULL` behavior more consistent between `sparse`-indexes and `non-indexed`-fields. Check [readme](readme.md#null-values-filtration) for more details
+- [fea] Added extra validation for `sprase` indexes. Previously incorrect values in those indexes were silently ignored and from now they will produce errors on insertion
+- [fix] Fixed crash in vector index during `index drop` operation
+- [fix] Fixed timings calculations in `#perfstats`/`#queriesperfstats`
+- [ref] Changed `Connect()`-method behavior. Now this call is required before any other database calls. **This may require changes in C++ code, that uses Reindexer**
+
+## Replication
+- [fea] Added optional [replication_token](replication.md#configuration) mechanism for extra validation
+- [fea] Added execution timeouts for all replication's queries
+- [fix] Fixed possible transaction's steps reordering in synchronous cluster proxy
+
+## Reindexer server
+- [fea] Added `GET /api/v1/db/default_configs` method to get default config JSONs
+- [fix] Fixed possible heap-use-after-free during RPC server termination
+- [fix] Fixed segfault in case of incorrect items format
+
+## Go connector
+- [fea] Added `DBMSVersion`-method to get builtin/remote `reindexer` version
+- [fea] Added [events](readme.md#events-subscription) on `forced`/`WAL` synchronization
+- [fea] Added support for multi-fields `distinct`. `AggregationResult` struct was slightly changed. **This requires changes in Go code that uses Distinct: for the single field distinct just take values with 0 index in each slice**
+- [fix] Fixed heap-user-after free in `DB.Close()`-call when `ActivityStats` flag was enabled
+
+## Build
+- [fix] Updated min cmake versions to fix build with lates `cmake`
+
+## Deploy
+- [fea] Added prebuilt package for `fedora:42`
+- [upd] Deprecated `fedora:40` repository
+
+## Face
+- [fea] Added embedding settings for the `float_vector` index types
+- [fea] Disabled the `is_no_column` flag for `sparse`-indexes
+- [fea] Changed the `is_no_column` flag visibility from disappearing to disabling
+- [fix] Fixed the Save button on the Config form after switching to the Schema tab
+
+# Version 5.1.0 (07.04.2025)
+## Core
+- [fea] Added separate `is_no_column` index option, which allows to disable column subindex (previously this option was included into `is_dense`)
+- [fix] Fixed race on concurrent creation of the same namespace by multiple users/replication
+- [fix] Fixed crash in strings comparator for `sparse`-indexes
+- [fix] Fixed timeout handling in `UPDATE`-queries
+- [fix] Disallowed to create `sparse PK` indexes
+
+## Vector indexes
+- [fea] Allow to use empty/null vector values in `UPDATE`-queries with `set`
+- [fea] Added support for `IS NULL`/`IS NOT NULL` conditions with indexed vector fields
+- [fea] Added [autoembedding logic](float_vectors.md#embedding-configuration) with extrenal user's service for single documents insertion/modification, transactions and [SELECT-queries](float_vectors.md#knn-search-with-auto-embedding)
+- [fix] Fixed race in concurrent deleted point reusing in `HNSW` multithread transactions
+- [fix] Fixed vector index rebuild on config update
+
+## Replication
+- [fix] Fixed replicated `WAL` size on the `follower` after `force sync`
+
+## Reindexer server
+- [ref] Removed `autorepair` logic and related flags due to undesirable side effects. LevelDB's repair call could lead to sufficient storage slowdown, so any repair operations should be intentionally called via `reindexer_tool`
+
+## Go connector
+- [fix] Fixed possible `heap-use-after-free` in background results recycling logic afted database closing (in `builtin`/`builtinserver` modes)
+- [fix] Fixed possible `heap-use-after-free` in `UnsubscribeUpdated()`-call during `builtinserver` termination
+
+## Face
+- [fea] Added `sync_state` labels for async and sync replications
+- [fea] Added new NC config fields: `ann_storage_cache_build_timeout_ms` and `tx_vec_insertion_threads`
+- [fea] Added new parameters for the `float_vector` index
+- [fea] Added `is_no_column` field to Indexes
+- [fix] Added info message about exceeding the acceptable MAX_SAFE_INTEGER value
+- [fix] Blocked unnecessary scheme saving
+
+# Version 5.0.1 (13.03.2025)
+## Core
+- [fix] Fixed incorrect aggregations (`min`, `max`, `avg`, `sum`) interaction with [force sort](readme.md#forced-sort)/`hash`-index sort and `LIMIT`
+- [fix] Fixed undefined behaviour in one of the background threads (it was the reason of the stalls on `Windows`-platform)
+- [fix] Fixed OSX build for `python` connector
+
+## Vector indexes
+- [fix] Fixed `cosine` normalization coefficient update in `HNSW` after corresponding vector reuse
+- [fix] Fixed multithread `HNSW` transactions with empty/null vector values
+- [fix] Fixed multithread `HNSW` transactions with multiple updates of the same item
+- [fix] Fixed possible incorrect `DELETE`-queries handling in multithread `HNSW` transactions
+- [fix] Fixed data race in multithread `HNSW` transactions after deleted vector reuse
+
+## Face
+- [fix] Fixed issue on the item list getting with checked `with_vectors` field
+- [fix] Changed disabled selectors background
+- [fix] Changed some column titles on the `Statistics` -> `Memory` -> `NS` (RU version)
+- [fix] Fixed displaying of aggregation fields view
+
+# Version 5.0.0 (04.03.2025)
+## Core
+- [fea] Added `HNSW`, `IVF` and `bruteforce` indexes for [ANN-search](float_vector.md)
+- [fea] Optimized internal memory layout for [key_strings](cpp_src/core/payload/readme.md#key_string) (allows to reduce memory consumation for each indexed string and each unique `-tuple`)
+- [fea] Added separate CJSON tag for float values for more effective memory consumation and JSON serialization (CPP/Go-bindings will use it automatically)
+- [fix] Fixed internal meta flush on namespace close (fixes false positive warning about datahash missmatch on database load)
+- [fix] Fixed incorrect `DISTINCT`, [force sort](readme.md#forced-sort) and `LIMIT` interaction
+- [fix] Fixed incorrect `force sort` and `always_false` virtual query entry interaction
+- [fix] Fixed possible `heap-use-after-free` error in documents with deep nested object-arrays
+- [fix] Fixed `segfault` on attempt to create array value with `precept`
+
+## Replication
+- [fix] Disabled buggy statement-based replication for `DELETE`-queries
+- [fix] Fixed WAL references cleanup for `TRUNCATE`-queries and `DELETE`-queries
+
+## Reindexer server
+- [fea] Added `--version` flag to output version information
+- [fea] Migrated to `openapi 3.0.1` in [REST API decription](cpp_src/server/contrib/server.yml)
+
+## Reindexer tool
+- [fea] Added `--version` flag to output local version information and `\version` command to outpute remote server version information
+- [fix] Fixed `with_shard_id` env behavior
+
+## Go connector
+- [fea] Added support for tags related to `vector indexes` configuration
+- [fix] Fixed nil-values handling in item modification operations (`Insert`, `Delete`, etc.)
+
+## Build
+- [upd] Updated to C++20
+
+## Deploy
+- [fea] Enabled `ENABLE_V3_FOLLOWERS` flag for all prebuilt pakacges (this flag allows to Reindexer v5 to be a `leader` for Reindexer v3 followers). This is temporary functionality
+- [upd] Deprecated deploy for `ubuntu:20.04` packages
+- [upd] Packages were renamed to `reindexer-dev` and `reindexer-server` (without explicit major version)
+
+## Face
+- [fea] Added new Field type: float_vector.
+- [fea] Renamed fulltext_size to indexing_struct_size on the Memstats page
+- [fea] Added the "Vector fields" toggle to get the Vector fields
+- [fix] Fixed the Index configuration filling for non-text and non-vector indexes
+- [fix] Fixed the namespace name position in the page title
+
 # Version 4.20.0 (04.02.2025)
 ## Core
 - [fea] Optimized indexed strings memory layout (each unique indexed string now requires 20-36 bytes less memery, depending on platform)

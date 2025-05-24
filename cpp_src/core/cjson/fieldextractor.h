@@ -1,10 +1,11 @@
 #pragma once
 
-#include "core/payload/fieldsset.h"
-#include "estl/span.h"
+#include <span>
 #include "tagsmatcher.h"
 
 namespace reindexer {
+
+class FieldsFilter;
 
 class FieldsExtractor {
 public:
@@ -16,7 +17,7 @@ public:
 	};
 
 	FieldsExtractor() = default;
-	FieldsExtractor(VariantArray* va, KeyValueType expectedType, int expectedPathDepth, const FieldsSet* filter,
+	FieldsExtractor(VariantArray* va, KeyValueType expectedType, int expectedPathDepth, const FieldsFilter* filter,
 					FieldParams* params = nullptr) noexcept
 		: values_(va), expectedType_(expectedType), expectedPathDepth_(expectedPathDepth), filter_(filter), params_(params) {}
 	FieldsExtractor(FieldsExtractor&& other) = default;
@@ -26,21 +27,28 @@ public:
 
 	void SetTagsMatcher(const TagsMatcher*) noexcept {}
 
-	FieldsExtractor Object(int) noexcept { return FieldsExtractor(values_, expectedType_, expectedPathDepth_ - 1, filter_, params_); }
-	FieldsExtractor Array(int) noexcept {
+	FieldsExtractor Object(TagName) noexcept {
+		if rx_unlikely (expectedPathDepth_ == 0) {
+			values_->MarkObject();
+		}
+		return FieldsExtractor(values_, expectedType_, expectedPathDepth_ - 1, filter_, params_);
+	}
+	FieldsExtractor Array(TagName) noexcept {
 		assertrx_throw(values_);
-		return FieldsExtractor(&values_->MarkArray(), expectedType_, expectedPathDepth_ - 1, filter_, params_);
+		return FieldsExtractor(&values_->MarkArray(), expectedType_, expectedPathDepth_, filter_, params_);
 	}
-	FieldsExtractor Object(std::string_view) noexcept {
+	FieldsExtractor Object(std::string_view = {}) noexcept {
+		if rx_unlikely (expectedPathDepth_ == 0) {
+			values_->MarkObject();
+		}
 		return FieldsExtractor(values_, expectedType_, expectedPathDepth_ - 1, filter_, params_);
 	}
-	FieldsExtractor Object(std::nullptr_t) noexcept { return Object(std::string_view{}); }
 	FieldsExtractor Array(std::string_view) noexcept {
-		return FieldsExtractor(values_, expectedType_, expectedPathDepth_ - 1, filter_, params_);
+		return FieldsExtractor(&values_->MarkArray(), expectedType_, expectedPathDepth_, filter_, params_);
 	}
 
 	template <typename T>
-	void Array(int, span<T> data, int offset) {
+	void Array(TagName, std::span<T> data, int offset) {
 		const IndexedPathNode& pathNode = getArrayPathNode();
 		const PathType ptype = pathNotToType(pathNode);
 		if (ptype == PathType::Other) {
@@ -62,12 +70,12 @@ public:
 			int i = 0;
 			for (const auto& d : data) {
 				if (i++ == pathNode.Index()) {
-					put(0, Variant(d));
+					put(TagName::Empty(), Variant(d));
 				}
 			}
 		} else {
 			for (const auto& d : data) {
-				put(0, Variant(d));
+				put(TagName::Empty(), Variant(d));
 			}
 		}
 		if (expectedPathDepth_ <= 0) {
@@ -76,7 +84,7 @@ public:
 		}
 	}
 
-	void Array(int, Serializer& ser, TagType tagType, int count) {
+	void Array(TagName, Serializer& ser, TagType tagType, int count) {
 		const IndexedPathNode& pathNode = getArrayPathNode();
 		const PathType ptype = pathNotToType(pathNode);
 		if (ptype == PathType::Other) {
@@ -98,12 +106,12 @@ public:
 			for (int i = 0; i < count; ++i) {
 				auto value = ser.GetRawVariant(kvt);
 				if (i == pathNode.Index()) {
-					put(0, std::move(value));
+					put(TagName::Empty(), std::move(value));
 				}
 			}
 		} else {
 			for (int i = 0; i < count; ++i) {
-				put(0, ser.GetRawVariant(kvt));
+				put(TagName::Empty(), ser.GetRawVariant(kvt));
 			}
 		}
 		if (expectedPathDepth_ <= 0) {
@@ -112,7 +120,7 @@ public:
 		}
 	}
 
-	FieldsExtractor& Put(int t, Variant arg, int offset) {
+	FieldsExtractor& Put(TagName t, Variant arg, int offset) {
 		if (expectedPathDepth_ > 0) {
 			return *this;
 		}
@@ -129,11 +137,11 @@ public:
 	}
 
 	template <typename T>
-	FieldsExtractor& Put(int tag, const T& arg, int offset) {
+	FieldsExtractor& Put(TagName tag, const T& arg, int offset) {
 		return Put(tag, Variant{arg}, offset);
 	}
 
-	FieldsExtractor& Null(int) noexcept { return *this; }
+	FieldsExtractor& Null(TagName = TagName::Empty()) noexcept { return *this; }
 	int TargetField() { return params_ ? params_->field : IndexValueType::NotSet; }
 	bool IsHavingOffset() const noexcept { return params_ && (params_->length >= 0 || params_->index >= 0); }
 	void OnScopeEnd(int offset) noexcept {
@@ -144,6 +152,23 @@ public:
 		}
 	}
 
+	template <typename... Args>
+	void Object(int, Args...) = delete;
+	template <typename... Args>
+	void Object(std::nullptr_t, Args...) = delete;
+	template <typename... Args>
+	void Array(int, Args...) = delete;
+	template <typename... Args>
+	void Array(std::nullptr_t, Args...) = delete;
+	template <typename... Args>
+	void Put(std::nullptr_t, Args...) = delete;
+	template <typename... Args>
+	void Put(int, Args...) = delete;
+	template <typename... Args>
+	void Null(std::nullptr_t, Args...) = delete;
+	template <typename... Args>
+	void Null(int, Args...) = delete;
+
 private:
 	enum class PathType { AllItems, WithIndex, Other };
 	PathType pathNotToType(const IndexedPathNode& pathNode) noexcept {
@@ -151,41 +176,27 @@ private:
 			   : (pathNode.Index() == IndexValueType::NotSet) ? PathType::Other
 															  : PathType::WithIndex;
 	}
-	FieldsExtractor& put(int, Variant arg) {
+	FieldsExtractor& put(TagName, Variant arg) {
 		if (expectedPathDepth_ > 0) {
 			return *this;
 		}
 		expectedType_.EvaluateOneOf(
-			[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::String,
-					  KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Uuid>) { arg.convert(expectedType_); },
+			[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
+					  KeyValueType::String, KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Uuid, KeyValueType::FloatVector>) {
+				arg.convert(expectedType_);
+			},
 			[](OneOf<KeyValueType::Undefined, KeyValueType::Composite>) noexcept {});
 		assertrx_throw(values_);
 		values_->emplace_back(std::move(arg));
-		if (expectedPathDepth_ < 0) {
-			values_->MarkObject();
-		}
 		return *this;
 	}
 
-	const IndexedPathNode& getArrayPathNode() const {
-		if (filter_ && filter_->getTagsPathsLength() > 0) {
-			size_t lastItemIndex = filter_->getTagsPathsLength() - 1;
-			if (filter_->isTagsPathIndexed(lastItemIndex)) {
-				const IndexedTagsPath& path = filter_->getIndexedTagsPath(lastItemIndex);
-				assertrx(path.size() > 0);
-				if (path.back().IsArrayNode()) {
-					return path.back();
-				}
-			}
-		}
-		static const IndexedPathNode commonNode{IndexedPathNode::AllItems};
-		return commonNode;
-	}
+	const IndexedPathNode& getArrayPathNode() const;
 
 	VariantArray* values_ = nullptr;
 	KeyValueType expectedType_{KeyValueType::Undefined{}};
 	int expectedPathDepth_ = 0;
-	const FieldsSet* filter_;
+	const FieldsFilter* filter_;
 	FieldParams* params_;
 };
 

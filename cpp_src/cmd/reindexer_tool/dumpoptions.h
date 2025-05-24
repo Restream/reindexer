@@ -1,6 +1,6 @@
 #pragma once
 
-#include "estl/span.h"
+#include <span>
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -16,7 +16,7 @@ struct DumpOptions {
 
 	static Mode ModeFromStr(std::string_view mode);
 	static std::string_view StrFromMode(Mode mode);
-	reindexer::Error FromJSON(reindexer::span<char> json);
+	reindexer::Error FromJSON(std::span<char> json);
 	void GetJSON(reindexer::WrSerializer& ser) const;
 };
 

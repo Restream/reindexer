@@ -41,6 +41,7 @@ struct RPCClientData final : public cproto::ClientData {
 	SemVersion rxVersion;
 	BindingCapabilities caps;
 	cproto::RPCEventsPusher pusher;
+	key_string replToken;
 	bool subscribed;
 
 #ifdef REINDEX_WITH_V3_FOLLOWERS
@@ -54,15 +55,15 @@ public:
 			  IStatsWatcher* statsCollector = nullptr);
 	~RPCServer();
 
-	bool Start(const std::string& addr, ev::dynamic_loop& loop, RPCSocketT sockDomain, std::string_view threadingMode);
+	void Start(const std::string& addr, ev::dynamic_loop& loop, RPCSocketT sockDomain, std::string_view threadingMode);
 	void Stop() {
 		terminate_ = true;
+		if (listener_) {
+			listener_->Stop();
+		}
 		if (qrWatcherThread_.joinable()) {
 			qrWatcherTerminateAsync_.send();
 			qrWatcherThread_.join();
-		}
-		if (listener_) {
-			listener_->Stop();
 		}
 		terminate_ = false;
 	}
@@ -70,7 +71,7 @@ public:
 	Error Ping(cproto::Context& ctx);
 	Error Login(cproto::Context& ctx, p_string login, p_string password, p_string db, std::optional<bool> createDBIfMissing,
 				std::optional<bool> checkClusterID, std::optional<int> expectedClusterID, std::optional<p_string> clientRxVersion,
-				std::optional<p_string> appName, std::optional<int64_t> bindingCaps);
+				std::optional<p_string> appName, std::optional<int64_t> bindingCaps, std::optional<p_string> replToken);
 	Error OpenDatabase(cproto::Context& ctx, p_string db, std::optional<bool> createDBIfMissing);
 	Error CloseDatabase(cproto::Context& ctx);
 	Error DropDatabase(cproto::Context& ctx);
@@ -117,7 +118,7 @@ public:
 	Error CloseResults(cproto::Context& ctx, int reqId, std::optional<int64_t> qrUID, std::optional<bool> doNotReply);
 	Error GetSQLSuggestions(cproto::Context& ctx, p_string query, int pos);
 	Error GetReplState(cproto::Context& ctx, p_string ns);
-	Error SetClusterizationStatus(cproto::Context& ctx, p_string ns, p_string serStatus);
+	Error SetClusterOperationStatus(cproto::Context& ctx, p_string ns, p_string serStatus);
 	Error GetSnapshot(cproto::Context& ctx, p_string ns, p_string optsJson);
 	Error FetchSnapshot(cproto::Context& ctx, int id, int64_t offset);
 	Error ApplySnapshotChunk(cproto::Context& ctx, p_string ns, p_string rec);

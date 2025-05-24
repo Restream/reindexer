@@ -4,10 +4,12 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/ft/ft_fast/frisosplitter.h"
 #include "core/ft/limits.h"
+#include "estl/gift_str.h"
 #include "ft_api.h"
 #include "gtests/tests/tests_data.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
+#include "vendor/gason/gason.h"
 #include "yaml-cpp/yaml.h"
 
 using namespace std::string_view_literals;
@@ -1040,10 +1042,10 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 		auto& lqr = qr.ToLocalQr();
 		auto it = lqr.begin();
 		if (i == 0) {
-			rank = it.GetItemRef().Proc();
+			rank = it.GetItemRefRanked().Rank();
 		}
 		for (const auto end = lqr.end(); it != end; ++it) {
-			EXPECT_EQ(rank, it.GetItemRef().Proc()) << q;
+			EXPECT_EQ(rank, it.GetItemRefRanked().Rank()) << q;
 		}
 	}
 
@@ -1055,7 +1057,7 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 					 false);
 		assert(qr.IsLocal());
 		for (const auto& it : qr.ToLocalQr()) {
-			EXPECT_EQ(rank, it.GetItemRef().Proc()) << q;
+			EXPECT_EQ(rank, it.GetItemRefRanked().Rank()) << q;
 		}
 	}
 
@@ -1067,7 +1069,7 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 					 false);
 		assert(qr.IsLocal());
 		for (const auto& it : qr.ToLocalQr()) {
-			EXPECT_EQ(rank, it.GetItemRef().Proc()) << q;
+			EXPECT_EQ(rank, it.GetItemRefRanked().Rank()) << q;
 		}
 	}
 
@@ -1083,7 +1085,7 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 					 false);
 		assert(qr.IsLocal());
 		for (const auto& it : qr.ToLocalQr()) {
-			EXPECT_EQ(rank, it.GetItemRef().Proc()) << q;
+			EXPECT_EQ(rank, it.GetItemRefRanked().Rank()) << q;
 		}
 	}
 
@@ -1095,11 +1097,11 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 					 false);
 		assert(qr.IsLocal());
 		auto it = qr.ToLocalQr().begin();
-		rank = it.GetItemRef().Proc() / 3;
+		rank = it.GetItemRefRanked().Rank() / 3;
 		++it;
 		for (const auto end = qr.ToLocalQr().end(); it != end; ++it) {
-			EXPECT_LE(it.GetItemRef().Proc(), rank + 1) << q;
-			EXPECT_GE(it.GetItemRef().Proc(), rank - 1) << q;
+			EXPECT_LE(it.GetItemRefRanked().Rank(), rank + 1) << q;
+			EXPECT_GE(it.GetItemRefRanked().Rank(), rank - 1) << q;
 		}
 	}
 
@@ -1111,11 +1113,11 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 					 false);
 		assert(qr.IsLocal());
 		auto it = qr.ToLocalQr().begin();
-		rank = it.GetItemRef().Proc() / 3;
+		rank = it.GetItemRefRanked().Rank() / 3;
 		++it;
 		for (const auto end = qr.ToLocalQr().end(); it != end; ++it) {
-			EXPECT_LE(it.GetItemRef().Proc(), rank + 1) << q;
-			EXPECT_GE(it.GetItemRef().Proc(), rank - 1) << q;
+			EXPECT_LE(it.GetItemRefRanked().Rank(), rank + 1) << q;
+			EXPECT_GE(it.GetItemRefRanked().Rank(), rank - 1) << q;
 		}
 	}
 
@@ -1127,11 +1129,11 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 					 false);
 		assert(qr.IsLocal());
 		auto it = qr.ToLocalQr().begin();
-		rank = it.GetItemRef().Proc() / 2;
+		rank = it.GetItemRefRanked().Rank() / 2;
 		++it;
 		for (const auto end = qr.ToLocalQr().end(); it != end; ++it) {
-			EXPECT_LE(it.GetItemRef().Proc(), rank + 1) << q;
-			EXPECT_GE(it.GetItemRef().Proc(), rank - 1) << q;
+			EXPECT_LE(it.GetItemRefRanked().Rank(), rank + 1) << q;
+			EXPECT_GE(it.GetItemRefRanked().Rank(), rank - 1) << q;
 		}
 	}
 
@@ -1143,14 +1145,14 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 					 false);
 		assert(qr.IsLocal());
 		auto it = qr.ToLocalQr().begin();
-		rank = it.GetItemRef().Proc() / 4;
+		rank = it.GetItemRefRanked().Rank() / 4;
 		++it;
-		EXPECT_LE(it.GetItemRef().Proc(), (rank + 1) * 2) << q;
-		EXPECT_GE(it.GetItemRef().Proc(), (rank - 1) * 2) << q;
+		EXPECT_LE(it.GetItemRefRanked().Rank(), (rank + 1) * 2) << q;
+		EXPECT_GE(it.GetItemRefRanked().Rank(), (rank - 1) * 2) << q;
 		++it;
 		for (const auto end = qr.ToLocalQr().end(); it != end; ++it) {
-			EXPECT_LE(it.GetItemRef().Proc(), rank + 1) << q;
-			EXPECT_GE(it.GetItemRef().Proc(), rank - 1) << q;
+			EXPECT_LE(it.GetItemRefRanked().Rank(), rank + 1) << q;
+			EXPECT_GE(it.GetItemRefRanked().Rank(), rank - 1) << q;
 		}
 	}
 
@@ -1166,11 +1168,11 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 					 false);
 		assert(qr.IsLocal());
 		auto it = qr.ToLocalQr().begin();
-		rank = it.GetItemRef().Proc() / (1.0 + 0.5 + 0.5 * 0.5);
+		rank = it.GetItemRefRanked().Rank() / (1.0 + 0.5 + 0.5 * 0.5);
 		++it;
 		for (const auto end = qr.ToLocalQr().end(); it != end; ++it) {
-			EXPECT_LE(it.GetItemRef().Proc(), rank + 1) << q;
-			EXPECT_GE(it.GetItemRef().Proc(), rank - 1) << q;
+			EXPECT_LE(it.GetItemRefRanked().Rank(), rank + 1) << q;
+			EXPECT_GE(it.GetItemRefRanked().Rank(), rank - 1) << q;
 		}
 	}
 
@@ -1182,16 +1184,16 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 					 true);
 		assert(qr.IsLocal());
 		auto it = qr.ToLocalQr().begin();
-		rank = it.GetItemRef().Proc() / (1.5 + 0.5 * 1.3 + 0.5 * 0.5);
+		rank = it.GetItemRefRanked().Rank() / (1.5 + 0.5 * 1.3 + 0.5 * 0.5);
 		++it;
-		EXPECT_LE(it.GetItemRef().Proc(), (rank + 5) * 1.5) << q;
-		EXPECT_GE(it.GetItemRef().Proc(), (rank - 5) * 1.5) << q;
+		EXPECT_LE(it.GetItemRefRanked().Rank(), (rank + 5) * 1.5) << q;
+		EXPECT_GE(it.GetItemRefRanked().Rank(), (rank - 5) * 1.5) << q;
 		++it;
-		EXPECT_LE(it.GetItemRef().Proc(), (rank + 5) * 1.3) << q;
-		EXPECT_GE(it.GetItemRef().Proc(), (rank - 5) * 1.3) << q;
+		EXPECT_LE(it.GetItemRefRanked().Rank(), (rank + 5) * 1.3) << q;
+		EXPECT_GE(it.GetItemRefRanked().Rank(), (rank - 5) * 1.3) << q;
 		++it;
-		EXPECT_LE(it.GetItemRef().Proc(), rank + 5) << q;
-		EXPECT_GE(it.GetItemRef().Proc(), rank - 5) << q;
+		EXPECT_LE(it.GetItemRefRanked().Rank(), rank + 5) << q;
+		EXPECT_GE(it.GetItemRefRanked().Rank(), rank - 5) << q;
 	}
 }
 
@@ -1325,7 +1327,7 @@ TEST_P(FTGenericApi, SetFtFieldsCfgErrors) {
 	auto err = SetFTConfig(cfg, "nm1", "ft3", {"ft", "ft2"});
 	// Получаем ошибку
 	EXPECT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "Field 'ft' is not included to full text index");
+	EXPECT_STREQ(err.what(), "Field 'ft' is not included to full text index");
 
 	err = rt.reindexer->OpenNamespace("nm3");
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -1335,21 +1337,21 @@ TEST_P(FTGenericApi, SetFtFieldsCfgErrors) {
 	err = SetFTConfig(cfg, "nm3", "ft", {"ft"});
 	// Получаем ошибку
 	EXPECT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "Configuration for single field fulltext index cannot contain field specifications");
+	EXPECT_STREQ(err.what(), "Configuration for single field fulltext index cannot contain field specifications");
 
 	// maxTypos < 0
 	cfg.maxTypos = -1;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	// Error
 	EXPECT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "FtFastConfig: Value of 'max_typos' - -1 is out of bounds: [0,4]");
+	EXPECT_STREQ(err.what(), "FtFastConfig: Value of 'max_typos' - -1 is out of bounds: [0,4]");
 
 	// maxTypos > 4
 	cfg.maxTypos = 5;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	// Error
 	EXPECT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "FtFastConfig: Value of 'max_typos' - 5 is out of bounds: [0,4]");
+	EXPECT_STREQ(err.what(), "FtFastConfig: Value of 'max_typos' - 5 is out of bounds: [0,4]");
 }
 
 TEST_P(FTGenericApi, MergeLimitConstraints) {
@@ -1488,7 +1490,7 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 	cfg.rankingConfig.stemmerPenalty = -1;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_EQ(err.code(), errParseJson);
-	ASSERT_EQ(err.what(), "FtFastConfig: Value of 'stemmer_proc_penalty' - -1 is out of bounds: [0,500]");
+	EXPECT_STREQ(err.what(), "FtFastConfig: Value of 'stemmer_proc_penalty' - -1 is out of bounds: [0,500]");
 
 	cfg = cfgDef;
 	cfg.rankingConfig.synonyms = 500;
@@ -1506,7 +1508,7 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 	cfg.rankingConfig.synonyms = 501;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_EQ(err.code(), errParseJson);
-	ASSERT_EQ(err.what(), "FtFastConfig: Value of 'synonyms_proc' - 501 is out of bounds: [0,500]");
+	EXPECT_STREQ(err.what(), "FtFastConfig: Value of 'synonyms_proc' - 501 is out of bounds: [0,500]");
 
 	cfg = cfgDef;
 	cfg.rankingConfig.translit = 200;
@@ -1586,31 +1588,31 @@ TEST_P(FTGenericApi, InvalidDSLErrors) {
 		reindexer::QueryResults qr;
 		auto err = rt.reindexer->Select(q, qr);
 		EXPECT_EQ(err.code(), errParams) << err.what();
-		EXPECT_EQ(err.what(), kExpectedErrorMessage);
+		EXPECT_EQ(err.whatStr(), kExpectedErrorMessage);
 
 		qr.Clear();
 		q = Query("nm1").Where("ft3", CondEq, "-word1 -word2 -word3");
 		err = rt.reindexer->Select(q, qr);
 		EXPECT_EQ(err.code(), errParams) << err.what();
-		EXPECT_EQ(err.what(), kExpectedErrorMessage);
+		EXPECT_EQ(err.whatStr(), kExpectedErrorMessage);
 
 		qr.Clear();
 		q = Query("nm1").Where("ft3", CondEq, "-\"word1 word2\"");
 		err = rt.reindexer->Select(q, qr);
 		EXPECT_EQ(err.code(), errParams) << err.what();
-		EXPECT_EQ(err.what(), kExpectedErrorMessage);
+		EXPECT_EQ(err.whatStr(), kExpectedErrorMessage);
 
 		qr.Clear();
 		q = Query("nm1").Where("ft3", CondEq, "-'word1 word2'");
 		err = rt.reindexer->Select(q, qr);
 		EXPECT_EQ(err.code(), errParams) << err.what();
-		EXPECT_EQ(err.what(), kExpectedErrorMessage);
+		EXPECT_EQ(err.whatStr(), kExpectedErrorMessage);
 
 		qr.Clear();
 		q = Query("nm1").Where("ft3", CondEq, "-word0 -'word1 word2' -word7");
 		err = rt.reindexer->Select(q, qr);
 		EXPECT_EQ(err.code(), errParams) << err.what();
-		EXPECT_EQ(err.what(), kExpectedErrorMessage);
+		EXPECT_EQ(err.whatStr(), kExpectedErrorMessage);
 
 		// Empty DSL is allowed
 		qr.Clear();
@@ -1649,7 +1651,7 @@ TEST_P(FTGenericApi, JoinsWithFtPreselect) {
 
 	const Query q =
 		Query(kMainNs).Where("ft3", CondEq, "word2").InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, firstId + 1));
-	const auto expectedJoinedJSON = fmt::sprintf(R"json("joined_%s":[%s])json", kJoinedNs, joinedNsItems[firstId]);
+	const auto expectedJoinedJSON = fmt::format(R"json("joined_{}":[{}])json", kJoinedNs, joinedNsItems[firstId]);
 	for (unsigned i = 0; i < kQueryRepetitions; ++i) {
 		QueryResults qr;
 		auto err = rt.reindexer->Select(q, qr);
@@ -2059,6 +2061,38 @@ TEST_P(FTGenericApi, FrisoTextPostprocess) {
 				  "norm_dist:0, proc:100, full_match_boost:0} 大家瀏覽{term_rank:77, term:查, pattern:查, bm25_norm:0.92, "
 				  "term_len_boost:0.85, position_rank:0.9886, norm_dist:0, proc:100, full_match_boost:0} 查閱。");
 	}
+}
+
+TEST_F(FTGenericApi, BetweenFieldsIsNotSupported) {
+	// Fulltext index can not be used as a part of 'between fields' condition
+
+	Init(reindexer::FtFastConfig(2), NS1);
+	rt.AddIndex("nm1", reindexer::IndexDef{"str_idx", {"str_idx"}, "hash", "string", IndexOpts()});
+	rt.UpsertJSON("nm1", R"j({"id":0, "ft1":"ft1_str", "ft2": "ft2_str", "str_idx": "str_idx_value", "non_idx": "non_idx_value"})j");
+
+	auto& rx = *rt.reindexer;
+	reindexer::QueryResults qr;
+	auto err = rx.Select(Query("nm1").WhereBetweenFields("ft2", CondEq, "ft1"), qr);
+	EXPECT_EQ(err.code(), errQueryExec) << err.whatStr();
+	EXPECT_STREQ(err.what(), "Can't use fulltext field 'ft2' in between fields condition");
+	qr.Clear();
+
+	constexpr char kExpctedErrText[] = "Can't use fulltext field 'ft1' in between fields condition";
+	err = rx.Select(Query("nm1").WhereBetweenFields("str_idx", CondEq, "ft1"), qr);
+	EXPECT_EQ(err.code(), errQueryExec) << err.whatStr();
+	EXPECT_STREQ(err.what(), kExpctedErrText);
+	qr.Clear();
+	err = rx.Select(Query("nm1").WhereBetweenFields("ft1", CondEq, "str_idx"), qr);
+	EXPECT_EQ(err.code(), errQueryExec) << err.whatStr();
+	EXPECT_STREQ(err.what(), kExpctedErrText);
+	qr.Clear();
+	err = rx.Select(Query("nm1").WhereBetweenFields("ft1", CondEq, "non_idx"), qr);
+	EXPECT_EQ(err.code(), errQueryExec) << err.whatStr();
+	EXPECT_STREQ(err.what(), kExpctedErrText);
+	qr.Clear();
+	err = rx.Select(Query("nm1").WhereBetweenFields("non_idx", CondEq, "ft1"), qr);
+	EXPECT_EQ(err.code(), errQueryExec) << err.whatStr();
+	EXPECT_STREQ(err.what(), kExpctedErrText);
 }
 
 INSTANTIATE_TEST_SUITE_P(, FTGenericApi,

@@ -1,5 +1,7 @@
 #include "replicationstats.h"
+#include "cluster/consts.h"
 #include "core/cjson/jsonbuilder.h"
+#include "vendor/gason/gason.h"
 
 namespace reindexer {
 namespace cluster {
@@ -130,17 +132,17 @@ void NodeStats::GetJSON(JsonBuilder& builder) const {
 	{
 		auto nsArray = builder.Array("namespaces"sv);
 		for (auto& ns : namespaces) {
-			nsArray.Put(nullptr, ns);
+			nsArray.Put(TagName::Empty(), ns);
 		}
 	}
 }
 
-Error ReplicationStats::FromJSON(span<char> json) {
+Error ReplicationStats::FromJSON(std::span<char> json) {
 	try {
 		gason::JsonParser parser;
 		return FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "RaftInfo: %s", ex.what());
+		return Error(errParseJson, "RaftInfo: {}", ex.what());
 	} catch (const Error& err) {
 		return err;
 	}
@@ -168,7 +170,7 @@ Error ReplicationStats::FromJSON(const gason::JsonNode& root) {
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "RaftInfo: %s", ex.what());
+		return Error(errParseJson, "RaftInfo: {}", ex.what());
 	}
 	return errOK;
 }
@@ -206,6 +208,22 @@ void ReplicationStats::GetJSON(WrSerializer& ser) const {
 	GetJSON(jb);
 }
 
+void SyncStatsCounter::Hit(std::chrono::microseconds time) noexcept {
+	std::lock_guard lck(mtx_);
+	totalTimeUs += time.count();
+	++count;
+	if (maxTimeUs < time.count()) {
+		maxTimeUs = time.count();
+	}
+}
+
+void SyncStatsCounter::Reset() noexcept {
+	std::lock_guard lck(mtx_);
+	count = 0;
+	maxTimeUs = 0;
+	totalTimeUs = 0;
+}
+
 SyncStats SyncStatsCounter::Get() const {
 	SyncStats stats;
 	{
@@ -215,6 +233,16 @@ SyncStats SyncStatsCounter::Get() const {
 		stats.avgTimeUs = totalTimeUs / (count ? count : 1);
 	}
 	return stats;
+}
+
+void NodeStatsCounter::SaveLastError(const Error& err) noexcept {
+	std::lock_guard lck(mtx_);
+	lastError = err;
+}
+
+Error NodeStatsCounter::GetLastError() const {
+	std::lock_guard lck(mtx_);
+	return lastError;
 }
 
 NodeStats NodeStatsCounter::Get() const {
@@ -227,6 +255,59 @@ NodeStats NodeStatsCounter::Get() const {
 	stats.syncState = syncState.load(std::memory_order_relaxed);
 	stats.lastError = GetLastError();
 	return stats;
+}
+
+void ReplicationStatCounter::OnStatusChanged(size_t nodeId, NodeStats::Status status) const noexcept {
+	shared_lock rlck(mtx_);
+	auto found = nodeCounters_.find(nodeId);
+	if (found != nodeCounters_.end()) {
+		found->second->OnStatusChanged(status);
+	}
+}
+
+void ReplicationStatCounter::OnSyncStateChanged(size_t nodeId, NodeStats::SyncState state) noexcept {
+	shared_lock rlck(mtx_);
+	if (nodeId == kLeaderUID && thisNode_.has_value()) {
+		thisNode_->OnSyncStateChanged(state);
+	} else {
+		auto found = nodeCounters_.find(nodeId);
+		if (found != nodeCounters_.end()) {
+			found->second->OnSyncStateChanged(state);
+		}
+	}
+}
+
+void ReplicationStatCounter::OnServerIdChanged(size_t nodeId, int serverId) const noexcept {
+	shared_lock rlck(mtx_);
+	auto found = nodeCounters_.find(nodeId);
+	if (found != nodeCounters_.end()) {
+		found->second->OnServerIdChanged(serverId);
+	}
+}
+
+void ReplicationStatCounter::SaveNodeError(size_t nodeId, const Error& lastError) noexcept {
+	shared_lock rlck(mtx_);
+	auto found = nodeCounters_.find(nodeId);
+	if (found != nodeCounters_.end()) {
+		found->second->SaveLastError(lastError);
+	}
+}
+
+void ReplicationStatCounter::Clear() noexcept {
+	walSyncs_.Reset();
+	forceSyncs_.Reset();
+	initialForceSyncs_.Reset();
+	initialWalSyncs_.Reset();
+
+	std::lock_guard lck(mtx_);
+	nodeCounters_.clear();
+	updatesDrops_.store(0, std::memory_order_relaxed);
+	lastPushedUpdateId_.store(-1, std::memory_order_relaxed);
+	lastErasedUpdateId_.store(-1, std::memory_order_relaxed);
+	lastReplicatedUpdateId_.store(-1, std::memory_order_relaxed);
+	allocatedUpdatesSizeBytes_.store(0, std::memory_order_relaxed);
+	initialSyncTotalTimeUs_.store(0, std::memory_order_relaxed);
+	thisNode_.reset();
 }
 
 ReplicationStats ReplicationStatCounter::Get() const {

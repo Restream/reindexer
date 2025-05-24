@@ -3,14 +3,14 @@ package reindexer
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"net/url"
 	"os"
+	"path"
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v4"
+	"github.com/restream/reindexer/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -84,7 +84,7 @@ type TestItemV6 struct {
 type TestIndexesCompatibilityRegularItem struct {
 	ID       int    `reindex:"id,,pk"`
 	StrField string `reindex:"str_field"`
-	IntField int    `reindexe:"int_field,tree"`
+	IntField int    `reindex:"int_field,tree"`
 }
 
 const testIndexesCompatibilityRegularNs = "indexes_compat_r_d"
@@ -93,7 +93,7 @@ const testIndexesCompatibilityRegularNs = "indexes_compat_r_d"
 type TestIndexesCompatibilityDenseItem struct {
 	ID       int    `reindex:"id,,pk"`
 	StrField string `reindex:"str_field,,dense"`
-	IntField int    `reindexe:"int_field,tree,dense"`
+	IntField int    `reindex:"int_field,tree,dense,is_no_column"`
 }
 
 const testIndexesCompatibilityDenseNs = "indexes_compat_d_r"
@@ -175,11 +175,11 @@ func TestStorageChangeFormat(t *testing.T) {
 		assert.NoError(t, DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), TestItemV5{}))
 
 		iterator := DB.Query(ns).WhereInt("id", reindexer.EQ, 1).DeepReplEqual().Exec(t)
+		defer iterator.Close()
 		assert.NoError(t, iterator.Error())
 		assert.Equal(t, iterator.Count(), 1, "Expecting 1 item, found %d ", iterator.Count())
 		iterator.Next()
 		assert.Error(t, iterator.Error(), "expecting iterator error on wrong type cast, but it's ok")
-		iterator.Close()
 	})
 
 	t.Run("Check that NamespaceMemStat has 0 items after Open namespace", func(t *testing.T) {
@@ -195,7 +195,7 @@ func TestStorageChangeFormat(t *testing.T) {
 		udsn, err := url.Parse(*dsn)
 		assert.NoError(t, err)
 		if udsn.Scheme == "builtin" {
-			ioutil.WriteFile(udsn.Path+"blocked_storage", []byte{}, os.ModePerm)
+			os.WriteFile(path.Join(udsn.Path, "blocked_storage"), []byte{}, os.ModePerm)
 			err = DB.OpenNamespace("blocked_storage", reindexer.DefaultNamespaceOptions(), TestItemV1{})
 			assert.Errorf(t, err, "Expecting storage error, but it's ok (path: %s)", udsn.Path+"blocked_storage")
 		}
@@ -272,6 +272,7 @@ func TestDenseIndexesCompatibility(t *testing.T) {
 	getJSONContent := func(t *testing.T, ns string) []string {
 		var ret []string
 		it := DB.Query(ns).Sort("id", false).MustExec(t)
+		defer it.Close()
 		require.NoError(t, it.Error())
 		for it.Next() {
 			require.NoError(t, it.Error())

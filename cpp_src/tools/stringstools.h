@@ -1,6 +1,5 @@
 #pragma once
 
-#include <time.h>
 #include <cctype>
 #include <cstring>
 #include <optional>
@@ -155,10 +154,16 @@ int64_t stoll(std::string_view sl);
 int double_to_str(double v, char* buf, int capacity);
 int double_to_str_no_trailing(double v, char* buf, int capacity);
 std::string double_to_str(double v);
+int float_to_str(float v, char* buf, int capacity);
+int float_to_str_no_trailing(float v, char* buf, int capacity);
+std::string float_to_str(float v);
+void float_vector_to_str(ConstFloatVectorView view, WrSerializer& ser);
+std::string float_vector_to_str(ConstFloatVectorView view);
 
 [[nodiscard]] bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept;
 [[nodiscard]] bool validateUserNsName(std::string_view name) noexcept;
-RX_ALWAYS_INLINE bool isSystemNamespaceNameFast(std::string_view name) noexcept { return !name.empty() && name[0] == '#'; }
+RX_ALWAYS_INLINE bool isSystemNamespaceNameFast(std::string_view name) noexcept { return !name.empty() && (name[0] == '#'); }
+RX_ALWAYS_INLINE bool isSystemNamespaceNameFastReplication(std::string_view name) noexcept { return !name.empty() && (name[0] == '#' || name[0] == '@' || name[0] == '!'); }
 LogLevel logLevelFromString(std::string_view strLogLevel) noexcept;
 std::string_view logLevelToString(LogLevel level) noexcept;
 StrictMode strictModeFromString(std::string_view strStrictMode);
@@ -206,7 +211,7 @@ bool isBlank(std::string_view token) noexcept;
 bool endsWith(const std::string& source, std::string_view ending) noexcept;
 std::string& ensureEndsWith(std::string& source, std::string_view ending);
 
-Error cursosPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos);
+Error cursorPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos);
 
 std::string randStringAlph(size_t len);
 

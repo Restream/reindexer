@@ -1,10 +1,8 @@
 #include "queryresults.h"
-#include "core/index/index.h"
 #include "core/nsselecter/joinedselector.h"
 #include "core/query/query.h"
 #include "core/sorting/sortexpression.h"
 #include "core/type_consts.h"
-#include "estl/overloaded.h"
 #include "joinresults.h"
 #include "tools/catch_and_return.h"
 
@@ -12,7 +10,9 @@ namespace reindexer {
 
 struct QueryResults::MergedData {
 	MergedData(const std::string& ns, bool _haveRank, bool _needOutputRank)
-		: pt(ns, {PayloadFieldType(KeyValueType::String{}, "-tuple", {}, false)}), haveRank(_haveRank), needOutputRank(_needOutputRank) {}
+		: pt(ns, {PayloadFieldType(KeyValueType::String{}, "-tuple", {}, IsArray_False)}),
+		  haveRank(_haveRank),
+		  needOutputRank(_needOutputRank) {}
 
 	std::string nsName;
 	PayloadType pt;
@@ -82,7 +82,7 @@ void QueryResults::AddQr(LocalQueryResults&& local, int shardID, bool buildMerge
 	if (lastSeenIdx_ > 0) {
 		throw Error(
 			errLogic,
-			"Unable to add new local query results to general query results, because it was already read by someone (last seen idx: %d)",
+			"Unable to add new local query results to general query results, because it was already read by someone (last seen idx: {})",
 			lastSeenIdx_);
 	}
 	if (type_ == Type::None || local.Count() != 0 || local.TotalCount() != 0 || !local.GetAggregationResults().empty()) {
@@ -90,8 +90,7 @@ void QueryResults::AddQr(LocalQueryResults&& local, int shardID, bool buildMerge
 		if (NeedOutputShardId()) {
 			local.SetOutputShardId(shardID);
 		}
-		local_.emplace(std::move(local));
-		local_->shardID = shardID;
+		local_.emplace(std::move(local), shardID);
 		switch (type_) {
 			case Type::None:
 				type_ = Type::Local;
@@ -116,7 +115,7 @@ void QueryResults::AddQr(client::QueryResults&& remote, int shardID, bool buildM
 	if (lastSeenIdx_ > 0) {
 		throw Error(
 			errLogic,
-			"Unable to add new remote query results to general query results, because it was already read by someone (last seen idx: %d)",
+			"Unable to add new remote query results to general query results, because it was already read by someone (last seen idx: {})",
 			lastSeenIdx_);
 	}
 	if (type_ == Type::None || remote.Count() != 0 || remote.TotalCount() != 0 || !remote.GetAggregationResults().empty()) {
@@ -124,8 +123,7 @@ void QueryResults::AddQr(client::QueryResults&& remote, int shardID, bool buildM
 		if (remote_.empty()) {
 			remote_.reserve(16u);
 		}
-		remote_.emplace_back(std::make_unique<QrMetaData<client::QueryResults>>(std::move(remote)));
-		remote_.back()->shardID = shardID;
+		remote_.emplace_back(std::make_unique<QrMetaData<client::QueryResults>>(std::move(remote), shardID));
 		switch (type_) {
 			case Type::None:
 				type_ = Type::SingleRemote;
@@ -160,12 +158,12 @@ void QueryResults::RebuildMergedData() {
 			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			const auto nss = local_->qr.GetNamespaces();
 			if (nss.size() > 1) {
-				throw Error(errLogic, "Local query result has %d namespaces, but distributed query results may have only 1", nss.size());
+				throw Error(errLogic, "Local query result has {} namespaces, but distributed query results may have only 1", nss.size());
 			}
 			mergedData_ = std::make_unique<MergedData>(std::string(nss[0]), local_->qr.haveRank, local_->qr.needOutputRank);
 			const auto& agg = local_->qr.GetAggregationResults();
 			for (const auto& a : agg) {
-				if (a.type == AggAvg || a.type == AggFacet || a.type == AggDistinct || a.type == AggUnknown) {
+				if (a.GetType() == AggAvg || a.GetType() == AggFacet || a.GetType() == AggDistinct || a.GetType() == AggUnknown) {
 					throw Error(errLogic, "Local query result (within distributed results) has unsupported aggregations");
 				}
 			}
@@ -180,7 +178,7 @@ void QueryResults::RebuildMergedData() {
 			const auto& agg = qrp->qr.GetAggregationResults();
 			if (mergedData_) {
 				if (!iequals(mergedData_->pt.Name(), nss[0])) {
-					throw Error(errLogic, "Query results in distributed query have different ns names: '%s' vs '%s'",
+					throw Error(errLogic, "Query results in distributed query have different ns names: '{}' vs '{}'",
 								mergedData_->pt.Name(), nss[0]);
 				}
 				if (mergedData_->haveRank != qrp->qr.HaveRank() || mergedData_->needOutputRank != qrp->qr.NeedOutputRank()) {
@@ -192,7 +190,7 @@ void QueryResults::RebuildMergedData() {
 				for (size_t i = 0, s = agg.size(); i < s; ++i) {
 					auto& mergedAgg = mergedData_->aggregationResults[i];
 					const auto& newAgg = agg[i];
-					if (newAgg.type != mergedAgg.type) {
+					if (newAgg.GetType() != mergedAgg.GetType()) {
 						throw Error(errLogic, "Aggregations are incompatible between query results inside distributed query results");
 					}
 
@@ -203,21 +201,21 @@ void QueryResults::RebuildMergedData() {
 
 					auto value = mergedAgg.GetValue();
 
-					switch (newAgg.type) {
+					switch (newAgg.GetType()) {
 						case AggMin:
 							if (!value || *value > *newValue) {
-								mergedAgg.SetValue(*newValue);
+								mergedAgg.UpdateValue(*newValue);
 							}
 							break;
 						case AggMax:
 							if (!value || *value < *newValue) {
-								mergedAgg.SetValue(*newValue);
+								mergedAgg.UpdateValue(*newValue);
 							}
 							break;
 						case AggSum:
 						case AggCount:
 						case AggCountCached:
-							mergedAgg.SetValue(*newValue + mergedAgg.GetValueOrZero());
+							mergedAgg.UpdateValue(*newValue + mergedAgg.GetValueOrZero());
 							break;
 						case AggUnknown:
 						case AggAvg:
@@ -229,7 +227,7 @@ void QueryResults::RebuildMergedData() {
 			} else {
 				mergedData_ = std::make_unique<MergedData>(std::string(nss[0]), qrp->qr.HaveRank(), qrp->qr.NeedOutputRank());
 				for (const auto& a : agg) {
-					if (a.type == AggAvg || a.type == AggFacet || a.type == AggDistinct || a.type == AggUnknown) {
+					if (a.GetType() == AggAvg || a.GetType() == AggFacet || a.GetType() == AggDistinct || a.GetType() == AggUnknown) {
 						throw Error(errLogic, "Remote query result (within distributed results) has unsupported aggregations");
 					}
 				}
@@ -327,11 +325,11 @@ bool QueryResults::IsCacheEnabled() const noexcept {
 }
 
 bool QueryResults::HaveShardIDs() const noexcept {
-	if (local_ && local_->shardID != ShardingKeyType::ProxyOff) {
+	if (local_ && local_->ShardID() != ShardingKeyType::ProxyOff) {
 		return true;
 	}
 	for (auto& qrp : remote_) {
-		if (qrp->shardID != ShardingKeyType::ProxyOff) {
+		if (qrp->ShardID() != ShardingKeyType::ProxyOff) {
 			return true;
 		}
 	}
@@ -345,24 +343,24 @@ int QueryResults::GetCommonShardID() const {
 		case Type::Local:
 			assertrx_dbg(local_);
 			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-			return local_->shardID;
+			return local_->ShardID();
 		case Type::SingleRemote:
-			return remote_[0]->shardID;
+			return remote_[0]->ShardID();
 		case Type::MultipleRemote:
 		case Type::Mixed:
 			break;
 	}
 	std::optional<int> shardId;
 	if (local_) {
-		shardId = local_->shardID;
+		shardId = local_->ShardID();
 	}
 	for (auto& qrp : remote_) {
 		if (shardId.has_value()) {
-			if (qrp->shardID != *shardId) {
-				throw Error(errLogic, "Distributed query results does not have common shard id (%d vs %d)", qrp->shardID, *shardId);
+			if (qrp->ShardID() != *shardId) {
+				throw Error(errLogic, "Distributed query results does not have common shard id ({} vs {})", qrp->ShardID(), *shardId);
 			}
 		} else {
-			shardId = qrp->shardID;
+			shardId = qrp->ShardID();
 		}
 	}
 	return shardId.has_value() ? *shardId : ShardingKeyType::ProxyOff;
@@ -416,7 +414,7 @@ bool QueryResults::HaveRank() const noexcept {
 		case Type::Mixed:
 			break;
 	}
-	return getMergedData().haveRank;
+	return mergedData_ ? mergedData_->haveRank : false;
 }
 
 bool QueryResults::NeedOutputRank() const noexcept {
@@ -433,7 +431,7 @@ bool QueryResults::NeedOutputRank() const noexcept {
 		case Type::Mixed:
 			break;
 	}
-	return getMergedData().needOutputRank;
+	return mergedData_ ? mergedData_->needOutputRank : false;
 }
 
 bool QueryResults::HaveJoined() const noexcept {
@@ -494,8 +492,11 @@ uint32_t QueryResults::GetJoinedField(int parentNsId) const noexcept {
 	return joinedField;
 }
 
-QueryResults::ItemRefCache::ItemRefCache(IdType id, uint16_t proc, uint16_t nsid, ItemImpl&& i, bool raw)
-	: itemImpl(std::move(i)), ref(id, itemImpl.payloadValue_, proc, nsid, raw) {}
+QueryResults::ItemRefCache::ItemRefCache(IdType id, RankT rank, uint16_t nsid, ItemImpl&& i, bool raw)
+	: itemImpl(std::move(i)), ref{ItemRefRanked{rank, id, itemImpl.payloadValue_, nsid, raw}} {}
+
+QueryResults::ItemRefCache::ItemRefCache(IdType id, uint16_t nsid, ItemImpl&& i, bool raw)
+	: itemImpl(std::move(i)), ref{ItemRef{id, itemImpl.payloadValue_, nsid, raw}} {}
 
 Error QueryResults::Iterator::GetJSON(WrSerializer& wrser, bool withHdrLen) {
 	try {
@@ -521,7 +522,7 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer& wrser, bool withHdrLen) {
 		}
 
 		Error err =
-			std::visit(overloaded{[&](LocalQueryResults::Iterator it) {
+			std::visit(overloaded{[&](LocalQueryResults::ConstIterator it) {
 									  assertrx_dbg(qr_->local_);
 									  // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 									  if (qr_->local_->hasCompatibleTm) {
@@ -552,12 +553,13 @@ Error QueryResults::Iterator::GetMsgPack(WrSerializer& wrser, bool withHdrLen) {
 
 Error QueryResults::Iterator::GetProtobuf(WrSerializer& wrser, bool withHdrLen) {
 	try {
-		return std::visit(overloaded{[&wrser, withHdrLen](LocalQueryResults::Iterator it) { return it.GetProtobuf(wrser, withHdrLen); },
-									 [](const client::QueryResults::Iterator&) {
-										 return Error(errParams, "Protobuf is not supported for distributed and proxied queries");
-										 // return it.GetProtobuf(wrser, withHdrLen);
-									 }},
-						  getVariantIt());
+		return std::visit(
+			overloaded{[&wrser, withHdrLen](LocalQueryResults::ConstIterator it) { return it.GetProtobuf(wrser, withHdrLen); },
+					   [](const client::QueryResults::Iterator&) {
+						   return Error(errParams, "Protobuf is not supported for distributed and proxied queries");
+						   // return it.GetProtobuf(wrser, withHdrLen);
+					   }},
+			getVariantIt());
 	} catch (Error& e) {
 		return e;
 	}
@@ -589,26 +591,26 @@ Item QueryResults::Iterator::GetItem(bool enableHold) {
 			itemImpl.reset(new ItemImpl(remoteQr.GetPayloadType(nsId), remoteQr.GetTagsMatcher(nsId)));
 		}
 
-		Item item = std::visit(overloaded{[&](LocalQueryResults::Iterator& it) {
-											  assertrx_dbg(qr_->local_);
-											  // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-											  auto item = getItem(it, std::move(itemImpl), !qr_->local_->hasCompatibleTm);
-											  item.setID(it.GetItemRef().Id());
-											  item.setLSN(it.GetItemRef().Value().GetLSN());
-											  item.setShardID(qr_->local_->shardID);
-											  return item;
-										  },
-										  [&](client::QueryResults::Iterator& it) {
-											  auto& remoteQr = *qr_->remote_[size_t(qr_->curQrId_)];
-											  auto item =
-												  getItem(it, std::move(itemImpl), !remoteQr.hasCompatibleTm || !remoteQr.qr.IsCJSON());
-											  item.setID(it.GetID());
-											  assertrx(!it.GetLSN().isEmpty());
-											  item.setLSN(it.GetLSN());
-											  item.setShardID(it.GetShardID());
-											  return item;
-										  }},
-							   vit);
+		Item item =
+			std::visit(overloaded{[&](LocalQueryResults::ConstIterator& it) {
+									  assertrx_dbg(qr_->local_);
+									  // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+									  auto item = getItem(it, std::move(itemImpl), it.GetFieldsFilter(), !qr_->local_->hasCompatibleTm);
+									  item.setID(it.GetItemRef().Id());
+									  item.setLSN(it.GetItemRef().Value().GetLSN());
+									  item.setShardID(qr_->local_->ShardID());
+									  return item;
+								  },
+								  [&](client::QueryResults::Iterator& it) {
+									  auto& remoteQr = *qr_->remote_[size_t(qr_->curQrId_)];
+									  auto item = getItem(it, std::move(itemImpl), !remoteQr.hasCompatibleTm || !remoteQr.qr.IsCJSON());
+									  item.setID(it.GetID());
+									  assertrx(!it.GetLSN().isEmpty());
+									  item.setLSN(it.GetLSN());
+									  item.setShardID(it.GetShardID());
+									  return item;
+								  }},
+					   vit);
 		return item;
 	} catch (Error& e) {
 		return Item(e);
@@ -668,11 +670,19 @@ joins::ItemIterator QueryResults::Iterator::GetJoined(std::vector<ItemRefCache>*
 						ItemImpl itemimpl(rqr.qr.GetPayloadType(jField), rqr.qr.GetTagsMatcher(jField));
 						itemimpl.FromCJSON(itemData.data);
 
-						qrJoined.AddItemRef(itemData.id, itemimpl.Value(), itemData.proc, itemData.nsid, true);
+						if (qrJoined.haveRank) {
+							qrJoined.AddItemRef(itemData.rank, itemData.id, itemimpl.Value(), itemData.nsid, true);
+						} else {
+							qrJoined.AddItemRef(itemData.id, itemimpl.Value(), itemData.nsid, true);
+						}
 						if (!storage) {
 							rqr.NsJoinRes()->data.joinedRawData.emplace_back(std::move(itemimpl));
 						} else {
-							storage->emplace_back(itemData.id, 0, itemData.nsid, std::move(itemimpl), true);
+							if (qrJoined.haveRank) {
+								storage->emplace_back(itemData.id, 0.0, itemData.nsid, std::move(itemimpl), true);
+							} else {
+								storage->emplace_back(itemData.id, itemData.nsid, std::move(itemimpl), true);
+							}
 						}
 					}
 					rqr.NsJoinRes()->data.jr.Insert(rit.itemParams_.id, i, std::move(qrJoined));
@@ -694,12 +704,16 @@ joins::ItemIterator QueryResults::Iterator::GetJoined(std::vector<ItemRefCache>*
 template <>
 QueryResults::ItemDataStorage<QueryResults::ItemRefCache>& QueryResults::QrMetaData<client::QueryResults>::ItemRefData(int64_t idx) {
 	ItemImpl itemimpl(qr.GetPayloadType(0), qr.GetTagsMatcher(0));
-	const bool converViaJSON = !hasCompatibleTm || !qr.IsCJSON();
-	Error err = fillItemImpl(it, itemimpl, converViaJSON);
+	const bool convertViaJSON = !hasCompatibleTm || !qr.IsCJSON();
+	Error err = fillItemImpl(it, itemimpl, convertViaJSON);
 	if (!err.ok()) {
 		throw err;
 	}
-	ResetItemRefCache(idx, ItemRefCache(it.GetID(), it.GetRank(), it.GetNSID(), std::move(itemimpl), it.IsRaw()));
+	if (it.IsRanked()) {
+		ResetItemRefCache(idx, ItemRefCache(it.GetID(), it.GetRank(), it.GetNSID(), std::move(itemimpl), it.IsRaw()));
+	} else {
+		ResetItemRefCache(idx, ItemRefCache(it.GetID(), it.GetNSID(), std::move(itemimpl), it.IsRaw()));
+	}
 	return *itemRefData_;
 }
 
@@ -707,12 +721,26 @@ class SortExpressionComparator {
 public:
 	SortExpressionComparator(SortExpression&& se, const NamespaceImpl& ns)
 		: localExpression_{std::move(se)}, proxiedExpression_{localExpression_, ns} {}
-	ComparationResult Compare(const ItemRef& litem, const ItemRef& ritem, const PayloadType& lpt, const PayloadType& rpt, TagsMatcher& ltm,
-							  TagsMatcher& rtm, bool lLocal, bool rLocal) const {
-		const auto lhv = lLocal ? localExpression_.Calculate(litem.Id(), {lpt, litem.Value()}, {}, {}, litem.Proc(), ltm)
-								: proxiedExpression_.Calculate(litem.Id(), {lpt, litem.Value()}, litem.Proc(), ltm);
-		const auto rhv = rLocal ? localExpression_.Calculate(ritem.Id(), {rpt, ritem.Value()}, {}, {}, ritem.Proc(), rtm)
-								: proxiedExpression_.Calculate(ritem.Id(), {rpt, ritem.Value()}, ritem.Proc(), rtm);
+	ComparationResult Compare(const ItemRefVariant& litem, const ItemRefVariant& ritem, const PayloadType& lpt, const PayloadType& rpt,
+							  TagsMatcher& ltm, TagsMatcher& rtm, bool lLocal, bool rLocal, int lShardId, int rShardId) const {
+		assertrx_throw(litem.AsVariant().index() == ritem.AsVariant().index());
+		return std::visit(overloaded{[&](const ItemRef& lref) {
+										 return Compare(lref, ritem.NotRanked(), 0.0, 0.0, lpt, rpt, ltm, rtm, lLocal, rLocal, lShardId,
+														rShardId);
+									 },
+									 [&](const ItemRefRanked& lref) {
+										 return Compare(lref.NotRanked(), ritem.NotRanked(), lref.Rank(), ritem.Rank(), lpt, rpt, ltm, rtm,
+														lLocal, rLocal, lShardId, rShardId);
+									 }},
+						  litem.AsVariant());
+	}
+	ComparationResult Compare(const ItemRef& litem, const ItemRef& ritem, RankT lrank, RankT rrank, const PayloadType& lpt,
+							  const PayloadType& rpt, TagsMatcher& ltm, TagsMatcher& rtm, bool lLocal, bool rLocal, int lShardId,
+							  int rShardId) const {
+		const auto lhv = lLocal ? localExpression_.Calculate(litem.Id(), {lpt, litem.Value()}, {}, {}, lrank, ltm, lShardId)
+								: proxiedExpression_.Calculate(litem.Id(), {lpt, litem.Value()}, lrank, ltm, lShardId);
+		const auto rhv = rLocal ? localExpression_.Calculate(ritem.Id(), {rpt, ritem.Value()}, {}, {}, rrank, rtm, rShardId)
+								: proxiedExpression_.Calculate(ritem.Id(), {rpt, ritem.Value()}, rrank, rtm, rShardId);
 		if (lhv == rhv) {
 			return ComparationResult::Eq;
 		}
@@ -747,8 +775,13 @@ public:
 			forcedValues_.emplace(forcedValues[i], i);
 		}
 	}
+	ComparationResult Compare(const ItemRefVariant& litem, const ItemRefVariant& ritem, const PayloadType& lpt, const PayloadType& rpt,
+							  TagsMatcher& ltm, TagsMatcher& rtm, bool lLocal, bool rLocal, int rShardId, int lShardId) const {
+		return Compare(litem.NotRanked(), ritem.NotRanked(), lpt, rpt, ltm, rtm, lLocal, rLocal, rShardId, lShardId);
+	}
 	ComparationResult Compare(const ItemRef& litem, const ItemRef& ritem, const PayloadType& lpt, const PayloadType& rpt, TagsMatcher& ltm,
-							  TagsMatcher& rtm, bool lLocal, bool rLocal) const {
+							  TagsMatcher& rtm, bool lLocal, bool rLocal, [[maybe_unused]] int rShardId,
+							  [[maybe_unused]] int lShardId) const {
 		ConstPayload lpv{lpt, litem.Value()};
 		ConstPayload rpv{rpt, ritem.Value()};
 		if (!forcedValues_.empty()) {
@@ -802,7 +835,7 @@ class QueryResults::CompositeFieldForceComparator {
 public:
 	CompositeFieldForceComparator(int index, const std::vector<Variant>& forcedSortOrder, const NamespaceImpl& ns) {
 		fields_.reserve(ns.indexes_[index]->Fields().size());
-		const auto& fields = ns.indexes_[index]->Fields();
+		const FieldsSet& fields = ns.indexes_[index]->Fields();
 		size_t jsonPathsIndex = 0;
 		for (size_t j = 0, s = fields.size(); j < s; ++j) {
 			const auto f = fields[j];
@@ -810,7 +843,7 @@ public:
 				fields_.emplace_back(ValuesByField{fields.getJsonPath(jsonPathsIndex++), f, {}});
 			} else {
 				assertrx(f < ns.indexes_.firstCompositePos());
-				fields_.emplace_back(ValuesByField{ns.tagsMatcher_.tag2name(f), f, {}});
+				fields_.emplace_back(ValuesByField{ns.indexes_[f]->Name(), f, {}});
 			}
 		}
 		assertrx(fields_.size() > 1);
@@ -822,8 +855,13 @@ public:
 			}
 		}
 	}
+	ComparationResult Compare(const ItemRefVariant& litem, const ItemRefVariant& ritem, const PayloadType& lpt, const PayloadType& rpt,
+							  TagsMatcher& ltm, TagsMatcher& rtm, bool lLocal, bool rLocal, int rShardId, int lShardId) const {
+		return Compare(litem.NotRanked(), ritem.NotRanked(), lpt, rpt, ltm, rtm, lLocal, rLocal, rShardId, lShardId);
+	}
 	ComparationResult Compare(const ItemRef& litem, const ItemRef& ritem, const PayloadType& lpt, const PayloadType& rpt, TagsMatcher& ltm,
-							  TagsMatcher& rtm, bool lLocal, bool rLocal) const {
+							  TagsMatcher& rtm, bool lLocal, bool rLocal, [[maybe_unused]] int rShardId,
+							  [[maybe_unused]] int lShardId) const {
 		ConstPayload lpv{lpt, litem.Value()};
 		ConstPayload rpv{rpt, ritem.Value()};
 		h_vector<size_t, 4> positions1, positions2;
@@ -977,7 +1015,7 @@ public:
 							comparators_.emplace_back(FieldComparator{fields.getJsonPath(jsonPathsIndex++), f, ns, {}}, se.desc);
 						} else {
 							assertrx(f < ns.indexes_.firstCompositePos());
-							comparators_.emplace_back(FieldComparator{ns.tagsMatcher_.tag2name(f), f, ns, {}}, se.desc);
+							comparators_.emplace_back(FieldComparator{ns.indexes_[f]->Name(), f, ns, {}}, se.desc);
 						}
 					}
 				}
@@ -993,43 +1031,50 @@ public:
 		}
 		TagsMatcher ltm, rtm;
 		PayloadType lpt, rpt;
-		ItemRef liref, riref;
+		ItemRefVariant liref, riref;
 		int lShardId, rShardId;
+		uint32_t lShardIdHash = 0, rShardIdHash = 0;
+
 		if (lhs < 0) {
 			assertrx_dbg(qr_.local_);
 			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			const auto& lqr = *qr_.local_;
-			liref = lqr.it.GetItemRef();
+			liref = lqr.it.GetItemRefVariant();
 			ltm = lqr.qr.getTagsMatcher(0);
 			lpt = lqr.qr.getPayloadType(0);
-			lShardId = lqr.shardID;
+			lShardId = lqr.ShardID();
+			lShardIdHash = lqr.ShardIDHash();
 		} else {
-			assertrx(static_cast<size_t>(lhs) < qr_.remote_.size());
+			assertrx_throw(static_cast<size_t>(lhs) < qr_.remote_.size());
 			auto& rqr = *qr_.remote_[lhs];
 			liref = rqr.ItemRefData(qr_.curQrId_).data.ref;
 			ltm = rqr.qr.GetTagsMatcher(0);
 			lpt = rqr.qr.GetPayloadType(0);
-			lShardId = rqr.shardID;
+			lShardId = rqr.ShardID();
+			lShardIdHash = rqr.ShardIDHash();
 		}
 		if (rhs < 0) {
 			assertrx_dbg(qr_.local_);
 			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			const auto& lqr = *qr_.local_;
-			riref = lqr.it.GetItemRef();
+			riref = lqr.it.GetItemRefVariant();
 			rtm = lqr.qr.getTagsMatcher(0);
 			rpt = lqr.qr.getPayloadType(0);
-			rShardId = lqr.shardID;
+			rShardId = lqr.ShardID();
+			rShardIdHash = lqr.ShardIDHash();
 		} else {
-			assertrx(static_cast<size_t>(rhs) < qr_.remote_.size());
+			assertrx_throw(static_cast<size_t>(rhs) < qr_.remote_.size());
 			auto& rqr = *qr_.remote_[rhs];
 			riref = rqr.ItemRefData(qr_.curQrId_).data.ref;
 			rtm = rqr.qr.GetTagsMatcher(0);
 			rpt = rqr.qr.GetPayloadType(0);
-			rShardId = rqr.shardID;
+			rShardId = rqr.ShardID();
+			rShardIdHash = rqr.ShardIDHash();
 		}
 		for (const auto& comp : comparators_) {
-			const auto res =
-				std::visit([&](const auto& c) { return c.Compare(liref, riref, lpt, rpt, ltm, rtm, lhs < 0, rhs < 0); }, comp.first);
+			const auto res = std::visit(
+				[&](const auto& c) { return c.Compare(liref, riref, lpt, rpt, ltm, rtm, lhs < 0, rhs < 0, lShardIdHash, rShardIdHash); },
+				comp.first);
 			if (res != ComparationResult::Eq) {
 				return comp.second ? res == ComparationResult::Lt : res == ComparationResult::Gt;
 			}
@@ -1038,7 +1083,7 @@ public:
 	}
 
 private:
-	QueryResults& qr_;
+	const QueryResults& qr_;
 	h_vector<std::pair<std::variant<SortExpressionComparator, FieldComparator, CompositeFieldForceComparator>, bool>, 1> comparators_;
 };
 
@@ -1068,7 +1113,7 @@ void QueryResults::beginImpl() const {
 		}
 	}
 }
-
+// if function hash() is used, the records will not be sorted, since the ordering in qr's occurs according to a different seed in hash()
 QueryResults::Iterator& QueryResults::Iterator::operator++() {
 	switch (qr_->type_) {
 		case Type::None:
@@ -1101,7 +1146,7 @@ QueryResults::Iterator& QueryResults::Iterator::operator++() {
 			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			if (qr->local_->it == qr->local_->qr.end()) {
 				// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-				qr->curQrId_ = qr->findFirstQrWithItems(qr->local_->shardID);
+				qr->curQrId_ = qr->findFirstQrWithItems(qr->local_->ShardID());
 			}
 		} else if (size_t(qr->curQrId_) < qr_->remote_.size()) {
 			auto& remoteQrp = *qr->remote_[size_t(qr_->curQrId_)];
@@ -1109,7 +1154,7 @@ QueryResults::Iterator& QueryResults::Iterator::operator++() {
 			++qr->lastSeenIdx_;
 			++idx_;
 			if (remoteQrp.it == remoteQrp.qr.end()) {
-				qr->curQrId_ = qr->findFirstQrWithItems(remoteQrp.shardID);
+				qr->curQrId_ = qr->findFirstQrWithItems(remoteQrp.ShardID());
 			}
 		}
 	} else if (!qr->orderedQrs_->empty()) {
@@ -1145,6 +1190,37 @@ QueryResults::Iterator& QueryResults::Iterator::operator++() {
 }
 
 template <typename QrT>
+QueryResults::QrMetaData<QrT>::QrMetaData(QrT&& _qr, int shardID) : qr{std::move(_qr)}, it{qr.begin()}, shardID_{shardID} {
+	MurmurHash3_x86_32(&shardID_, sizeof(shardID_), 0, &shardIDHash_);
+}
+
+template <typename QrT>
+QueryResults::QrMetaData<QrT>::QrMetaData(QrMetaData&& o) noexcept
+	: qr(std::move(o.qr)),
+	  it(QrT::Iterator::SwitchQueryResultsPtrUnsafe(std::move(o.it), qr)),
+	  hasCompatibleTm(o.hasCompatibleTm),
+	  shardID_(o.shardID_),
+	  shardIDHash_(o.shardIDHash_),
+	  itemRefData_(std::move(o.itemRefData_)),
+	  nsJoinRes_(std::move(o.nsJoinRes_)) {}
+
+template <typename QrT>
+QueryResults::QrMetaData<QrT>& QueryResults::QrMetaData<QrT>::operator=(QrMetaData&& o) noexcept {
+	if (this != &o) {
+		qr = std::move(o.qr);
+		// SwitchQueryResultsPtrUnsafe is not implemented for client query results - iterator contains to many different pointers
+		// and it is unsafe to move it
+		it = QrT::Iterator::SwitchQueryResultsPtrUnsafe(std::move(o.it), qr);
+		hasCompatibleTm = o.hasCompatibleTm;
+		shardID_ = o.shardID_;
+		shardIDHash_ = o.shardIDHash_;
+		itemRefData_ = std::move(o.itemRefData_);
+		nsJoinRes_ = std::move(o.nsJoinRes_);
+	}
+	return *this;
+}
+
+template <typename QrT>
 void QueryResults::QrMetaData<QrT>::ResetItemRefCache(int64_t idx, ItemRefCache&& newD) const {
 	if (itemRefData_) {
 		*itemRefData_ = ItemDataStorage<ItemRefCache>(idx, std::move(newD));
@@ -1163,45 +1239,84 @@ bool QueryResults::QrMetaData<QrT>::CheckIfNsJoinStorageHasSameIdx(int64_t idx) 
 	return nsJoinRes_ && idx == nsJoinRes_->idx;
 }
 
-ItemRef QueryResults::Iterator::GetItemRef(ProxiedRefsStorage* storage) {
+template <bool isRanked>
+auto QueryResults::Iterator::getItemRef(ProxiedRefsStorage* storage) {
 	switch (qr_->type_) {
 		case Type::None:
-			return ItemRef();
+			if constexpr (isRanked) {
+				return ItemRefRanked(0.0);
+			} else {
+				return ItemRef();
+			}
 		case Type::Local:
 			assertrx_dbg(localIt_);
-			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-			return localIt_->GetItemRef();
+			if constexpr (isRanked) {
+				// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+				return localIt_->GetItemRefRanked();
+			} else {
+				// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+				return localIt_->GetItemRef();
+			}
 		case Type::SingleRemote:
 		case Type::MultipleRemote:
 		case Type::Mixed:
 			break;
 	}
-	ItemRef iref = std::visit(
-		overloaded{[](QrMetaData<LocalQueryResults>* qr) noexcept { return qr->it.GetItemRef(); },
-				   [&](QrMetaData<client::QueryResults>* qr) {
-					   if (!qr->CheckIfItemRefStorageHasSameIdx(idx_) || storage) {
-						   auto& remoteQr = *qr_->remote_[size_t(qr_->curQrId_)];
-						   ItemImpl itemimpl(qr_->GetPayloadType(0), qr_->GetTagsMatcher(0));
-						   const bool convertViaJSON = !remoteQr.hasCompatibleTm || !remoteQr.qr.IsCJSON();
-						   Error err = fillItemImpl(qr->it, itemimpl, convertViaJSON);
-						   if (!err.ok()) {
-							   throw err;
-						   }
+	return std::visit(overloaded{[](QrMetaData<LocalQueryResults>* qr) {
+									 if constexpr (isRanked) {
+										 return qr->it.GetItemRefRanked();
+									 } else {
+										 return qr->it.GetItemRef();
+									 }
+								 },
+								 [&](QrMetaData<client::QueryResults>* qr) {
+									 if (!qr->CheckIfItemRefStorageHasSameIdx(idx_) || storage) {
+										 auto& remoteQr = *qr_->remote_[size_t(qr_->curQrId_)];
+										 ItemImpl itemimpl(qr_->GetPayloadType(0), qr_->GetTagsMatcher(0));
+										 const bool convertViaJSON = !remoteQr.hasCompatibleTm || !remoteQr.qr.IsCJSON();
+										 Error err = fillItemImpl(qr->it, itemimpl, convertViaJSON);
+										 if (!err.ok()) {
+											 throw err;
+										 }
 
-						   if (!storage) {
-							   qr->ResetItemRefCache(
-								   idx_, ItemRefCache(qr->it.GetID(), qr->it.GetRank(), qr->it.GetNSID(), std::move(itemimpl), IsRaw()));
-							   return qr->ItemRefData()->data.ref;
-						   } else {
-							   storage->emplace_back(qr->it.GetID(), qr->it.GetRank(), qr->it.GetNSID(), std::move(itemimpl), IsRaw());
-							   return storage->back().ref;
-						   }
-					   }
-					   return qr->ItemRefData()->data.ref;
-				   }},
-		getVariantResult());
-	return iref;
+										 if (!storage) {
+											 if (qr_->HaveRank()) {
+												 qr->ResetItemRefCache(idx_, ItemRefCache(qr->it.GetID(), qr->it.GetRank(),
+																						  qr->it.GetNSID(), std::move(itemimpl), IsRaw()));
+											 } else {
+												 qr->ResetItemRefCache(
+													 idx_, ItemRefCache(qr->it.GetID(), qr->it.GetNSID(), std::move(itemimpl), IsRaw()));
+											 }
+											 if constexpr (isRanked) {
+												 return qr->ItemRefData()->data.ref.Ranked();
+											 } else {
+												 return qr->ItemRefData()->data.ref.NotRanked();
+											 }
+										 } else {
+											 if (qr_->HaveRank()) {
+												 storage->emplace_back(qr->it.GetID(), qr->it.GetRank(), qr->it.GetNSID(),
+																	   std::move(itemimpl), IsRaw());
+											 } else {
+												 storage->emplace_back(qr->it.GetID(), qr->it.GetNSID(), std::move(itemimpl), IsRaw());
+											 }
+											 if constexpr (isRanked) {
+												 return storage->back().ref.Ranked();
+											 } else {
+												 return storage->back().ref.NotRanked();
+											 }
+										 }
+									 }
+									 if constexpr (isRanked) {
+										 return qr->ItemRefData()->data.ref.Ranked();
+									 } else {
+										 return qr->ItemRefData()->data.ref.NotRanked();
+									 }
+								 }},
+					  getVariantResult());
 }
+
+ItemRef QueryResults::Iterator::GetItemRef(std::vector<ItemRefCache>* storage) { return getItemRef<false>(storage); }
+ItemRefRanked QueryResults::Iterator::GetItemRefRanked(std::vector<ItemRefCache>* storage) { return getItemRef<true>(storage); }
 
 const QueryResults::MergedData& QueryResults::getMergedData() const {
 	if (!mergedData_) {
@@ -1232,16 +1347,16 @@ int QueryResults::findFirstQrWithItems(int minShardId) {
 		}
 	} else {
 		int foundPos = remote_.size();
-		int foundShardId = std::numeric_limits<int>().max();
-		if (local_ && local_->qr.Count() && local_->shardID > minShardId) {
+		int foundShardId = std::numeric_limits<int>::max();
+		if (local_ && local_->qr.Count() && local_->ShardID() > minShardId) {
 			foundPos = -1;
-			foundShardId = local_->shardID;
+			foundShardId = local_->ShardID();
 		}
 		for (int i = 0, size = remote_.size(); i < size; ++i) {
 			auto& remote = *remote_[i];
-			if (remote.qr.Count() && remote.shardID < foundShardId && remote.shardID > minShardId) {
+			if (remote.qr.Count() && remote.ShardID() < foundShardId && remote.ShardID() > minShardId) {
 				foundPos = i;
-				foundShardId = remote.shardID;
+				foundShardId = remote.ShardID();
 			}
 		}
 		return foundPos;
@@ -1255,6 +1370,16 @@ Item QueryResults::Iterator::getItem(QrItT& it, std::unique_ptr<ItemImpl>&& item
 		return Item(err);
 	}
 	return Item(itemImpl.release());
+}
+
+template <typename QrItT>
+Item QueryResults::Iterator::getItem(QrItT& it, std::unique_ptr<ItemImpl>&& itemImpl, const FieldsFilter& fieldsFilter,
+									 bool convertViaJSON) {
+	auto err = fillItemImpl(it, *itemImpl, convertViaJSON);
+	if (!err.ok()) {
+		return Item(err);
+	}
+	return Item(itemImpl.release(), fieldsFilter);
 }
 
 template <typename QrItT>
