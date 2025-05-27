@@ -48,6 +48,7 @@ void TransactionSteps::Modify(Query&& query, lsn_t lsn) {
 	steps.emplace_back(std::move(query), lsn);
 }
 
+// NOLINTNEXTLINE(bugprone-exception-escape)
 size_t TransactionSteps::CalculateNewCapacity(size_t currentSize) const noexcept {
 	size_t newCapacity = currentSize;
 	bool haveDeleteQuery = false;

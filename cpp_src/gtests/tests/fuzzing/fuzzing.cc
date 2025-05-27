@@ -118,6 +118,7 @@ TEST_F(Fuzzing, BaseTest) {
 	}
 }
 
+// NOLINTNEXTLINE (bugprone-exception-escape) Get stacktrace is probably better, than generic error-message
 int main(int argc, char** argv) {
 	::testing::InitGoogleTest(&argc, argv);
 

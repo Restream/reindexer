@@ -60,7 +60,7 @@ auto ShardingProxy::isWithSharding(const Query& q, const RdxContext& ctx, int& a
 auto ShardingProxy::isWithSharding(std::string_view nsName, const RdxContext& ctx) const {
 	using ret_type = std::optional<decltype(shardingRouter_.SharedLock(ctx))>;
 
-	if (nsName.size() && (nsName[0] == '#' || nsName[0] == '@')) {
+	if (isSystemNamespaceNameFastReplication(nsName)) {
 		return ret_type{};
 	}
 
@@ -80,7 +80,7 @@ bool ShardingProxy::isWithSharding(const RdxContext& ctx) const noexcept {
 	if (int(ctx.ShardId()) == ShardingKeyType::ProxyOff) {
 		return false;
 	}
-	return ctx.GetOriginLSN().isEmpty() && !ctx.HasEmmiterServer() && impl_.GetShardingConfig() &&
+	return ctx.GetOriginLSN().isEmpty() && !ctx.HasEmitterServer() && impl_.GetShardingConfig() &&
 		   int(ctx.ShardId()) == ShardingKeyType::NotSetShard;
 }
 
@@ -500,7 +500,7 @@ void ShardingProxy::saveShardingCfgCandidateImpl(cluster::ShardingConfig config,
 }
 
 Query ShardingProxy::NamespaceDataChecker::query() const {
-	using NextOp = Query& (Query::*)()&;
+	using NextOp = Query& (Query::*)() &;
 	const bool isDefault = ns_.defaultShard == thisShardId_;
 	auto nextOp = isDefault ? NextOp(&Query::Or) : NextOp(&Query::Not);
 

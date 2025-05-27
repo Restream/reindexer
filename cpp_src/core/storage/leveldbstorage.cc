@@ -55,10 +55,10 @@ void LevelDbStorage::Destroy(const std::string& path) {
 	db_.reset();
 	leveldb::Status status = leveldb::DestroyDB(path.c_str(), options);
 	if (!status.ok()) {
-		fprintf(stderr, "Cannot destroy LevelDB's storage: %s, %s. Trying to remove files by the backup mechanism...\n", path.c_str(),
-				status.ToString().c_str());
+		fprintf(stderr, "reindexer error: unable to remove LevelDB's storage: %s, %s. Trying to remove files using backup mechanism...\n",
+				path.c_str(), status.ToString().c_str());
 		if (fs::RmDirAll(path) != 0) {
-			fprintf(stderr, "Unable to remove LevelDB's storage: %s, %s", path.c_str(), strerror(errno));
+			fprintf(stderr, "reindexer error: unable to remove LevelDB's storage: %s, %s\n", path.c_str(), strerror(errno));
 		}
 	}
 }

@@ -31,7 +31,7 @@ public:
 	void SetName(std::string name) noexcept { name_ = std::move(name); }
 	int NumFields() const noexcept { return fields_.size(); }
 	void Add(PayloadFieldType);
-	bool Drop(std::string_view field);
+	void Drop(std::string_view field);
 	int FieldByName(std::string_view field) const;
 	bool FieldByName(std::string_view name, int& field) const noexcept;
 	bool Contains(std::string_view field) const noexcept { return fieldsByName_.find(field) != fieldsByName_.end(); }
@@ -46,7 +46,7 @@ public:
 	void Dump(std::ostream&, std::string_view step, std::string_view offset) const;
 
 	const h_vector<std::shared_ptr<Embedder>, 1>& Embedders() const& noexcept { return embedders_; }
-	std::string_view CheckAuxiliaryField(std::string_view fieldName) const;
+	std::string_view CheckEmbeddersAuxiliaryField(std::string_view fieldName) const;
 
 	auto Field(int) const&& = delete;
 	auto Name() const&& = delete;

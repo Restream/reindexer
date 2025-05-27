@@ -18,7 +18,6 @@ class UpdatesQueuePair {
 
 public:
 	using HashT = nocase_hash_str;
-	using CompareT = nocase_equal_str;
 	using QueueT = updates::UpdatesQueue<T, ReplicationStatsCollector, Logger>;
 	using UpdatesContainerT = h_vector<T, 2>;
 	constexpr static uint64_t kMaxReplicas = QueueT::kMaxReplicas;
@@ -28,10 +27,10 @@ public:
 		std::shared_ptr<QueueT> async;
 	};
 
-	UpdatesQueuePair(uint64_t maxDataSize);
+	explicit UpdatesQueuePair(uint64_t maxDataSize);
 	Pair GetQueue(const NamespaceName& token) const;
-	std::shared_ptr<QueueT> GetSyncQueue() const;
-	std::shared_ptr<QueueT> GetAsyncQueue() const;
+	std::shared_ptr<QueueT> GetSyncQueue() const noexcept;
+	std::shared_ptr<QueueT> GetAsyncQueue() const noexcept;
 	template <typename ContainerT>
 	void ReinitSyncQueue(ReplicationStatsCollector statsCollector, std::optional<ContainerT>&& allowList, const Logger& l);
 	template <typename ContainerT>

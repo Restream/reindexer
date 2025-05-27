@@ -90,8 +90,7 @@ void QueryResults::AddQr(LocalQueryResults&& local, int shardID, bool buildMerge
 		if (NeedOutputShardId()) {
 			local.SetOutputShardId(shardID);
 		}
-		local_.emplace(std::move(local));
-		local_->shardID = shardID;
+		local_.emplace(std::move(local), shardID);
 		switch (type_) {
 			case Type::None:
 				type_ = Type::Local;
@@ -124,8 +123,7 @@ void QueryResults::AddQr(client::QueryResults&& remote, int shardID, bool buildM
 		if (remote_.empty()) {
 			remote_.reserve(16u);
 		}
-		remote_.emplace_back(std::make_unique<QrMetaData<client::QueryResults>>(std::move(remote)));
-		remote_.back()->shardID = shardID;
+		remote_.emplace_back(std::make_unique<QrMetaData<client::QueryResults>>(std::move(remote), shardID));
 		switch (type_) {
 			case Type::None:
 				type_ = Type::SingleRemote;
@@ -327,11 +325,11 @@ bool QueryResults::IsCacheEnabled() const noexcept {
 }
 
 bool QueryResults::HaveShardIDs() const noexcept {
-	if (local_ && local_->shardID != ShardingKeyType::ProxyOff) {
+	if (local_ && local_->ShardID() != ShardingKeyType::ProxyOff) {
 		return true;
 	}
 	for (auto& qrp : remote_) {
-		if (qrp->shardID != ShardingKeyType::ProxyOff) {
+		if (qrp->ShardID() != ShardingKeyType::ProxyOff) {
 			return true;
 		}
 	}
@@ -345,24 +343,24 @@ int QueryResults::GetCommonShardID() const {
 		case Type::Local:
 			assertrx_dbg(local_);
 			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-			return local_->shardID;
+			return local_->ShardID();
 		case Type::SingleRemote:
-			return remote_[0]->shardID;
+			return remote_[0]->ShardID();
 		case Type::MultipleRemote:
 		case Type::Mixed:
 			break;
 	}
 	std::optional<int> shardId;
 	if (local_) {
-		shardId = local_->shardID;
+		shardId = local_->ShardID();
 	}
 	for (auto& qrp : remote_) {
 		if (shardId.has_value()) {
-			if (qrp->shardID != *shardId) {
-				throw Error(errLogic, "Distributed query results does not have common shard id ({} vs {})", qrp->shardID, *shardId);
+			if (qrp->ShardID() != *shardId) {
+				throw Error(errLogic, "Distributed query results does not have common shard id ({} vs {})", qrp->ShardID(), *shardId);
 			}
 		} else {
-			shardId = qrp->shardID;
+			shardId = qrp->ShardID();
 		}
 	}
 	return shardId.has_value() ? *shardId : ShardingKeyType::ProxyOff;
@@ -416,7 +414,7 @@ bool QueryResults::HaveRank() const noexcept {
 		case Type::Mixed:
 			break;
 	}
-	return getMergedData().haveRank;
+	return mergedData_ ? mergedData_->haveRank : false;
 }
 
 bool QueryResults::NeedOutputRank() const noexcept {
@@ -433,7 +431,7 @@ bool QueryResults::NeedOutputRank() const noexcept {
 		case Type::Mixed:
 			break;
 	}
-	return getMergedData().needOutputRank;
+	return mergedData_ ? mergedData_->needOutputRank : false;
 }
 
 bool QueryResults::HaveJoined() const noexcept {
@@ -600,7 +598,7 @@ Item QueryResults::Iterator::GetItem(bool enableHold) {
 									  auto item = getItem(it, std::move(itemImpl), it.GetFieldsFilter(), !qr_->local_->hasCompatibleTm);
 									  item.setID(it.GetItemRef().Id());
 									  item.setLSN(it.GetItemRef().Value().GetLSN());
-									  item.setShardID(qr_->local_->shardID);
+									  item.setShardID(qr_->local_->ShardID());
 									  return item;
 								  },
 								  [&](client::QueryResults::Iterator& it) {
@@ -724,22 +722,25 @@ public:
 	SortExpressionComparator(SortExpression&& se, const NamespaceImpl& ns)
 		: localExpression_{std::move(se)}, proxiedExpression_{localExpression_, ns} {}
 	ComparationResult Compare(const ItemRefVariant& litem, const ItemRefVariant& ritem, const PayloadType& lpt, const PayloadType& rpt,
-							  TagsMatcher& ltm, TagsMatcher& rtm, bool lLocal, bool rLocal) const {
+							  TagsMatcher& ltm, TagsMatcher& rtm, bool lLocal, bool rLocal, int lShardId, int rShardId) const {
 		assertrx_throw(litem.AsVariant().index() == ritem.AsVariant().index());
-		return std::visit(
-			overloaded{[&](const ItemRef& lref) { return Compare(lref, ritem.NotRanked(), 0.0, 0.0, lpt, rpt, ltm, rtm, lLocal, rLocal); },
-					   [&](const ItemRefRanked& lref) {
-						   return Compare(lref.NotRanked(), ritem.NotRanked(), lref.Rank(), ritem.Rank(), lpt, rpt, ltm, rtm, lLocal,
-										  rLocal);
-					   }},
-			litem.AsVariant());
+		return std::visit(overloaded{[&](const ItemRef& lref) {
+										 return Compare(lref, ritem.NotRanked(), 0.0, 0.0, lpt, rpt, ltm, rtm, lLocal, rLocal, lShardId,
+														rShardId);
+									 },
+									 [&](const ItemRefRanked& lref) {
+										 return Compare(lref.NotRanked(), ritem.NotRanked(), lref.Rank(), ritem.Rank(), lpt, rpt, ltm, rtm,
+														lLocal, rLocal, lShardId, rShardId);
+									 }},
+						  litem.AsVariant());
 	}
 	ComparationResult Compare(const ItemRef& litem, const ItemRef& ritem, RankT lrank, RankT rrank, const PayloadType& lpt,
-							  const PayloadType& rpt, TagsMatcher& ltm, TagsMatcher& rtm, bool lLocal, bool rLocal) const {
-		const auto lhv = lLocal ? localExpression_.Calculate(litem.Id(), {lpt, litem.Value()}, {}, {}, lrank, ltm)
-								: proxiedExpression_.Calculate(litem.Id(), {lpt, litem.Value()}, lrank, ltm);
-		const auto rhv = rLocal ? localExpression_.Calculate(ritem.Id(), {rpt, ritem.Value()}, {}, {}, rrank, rtm)
-								: proxiedExpression_.Calculate(ritem.Id(), {rpt, ritem.Value()}, rrank, rtm);
+							  const PayloadType& rpt, TagsMatcher& ltm, TagsMatcher& rtm, bool lLocal, bool rLocal, int lShardId,
+							  int rShardId) const {
+		const auto lhv = lLocal ? localExpression_.Calculate(litem.Id(), {lpt, litem.Value()}, {}, {}, lrank, ltm, lShardId)
+								: proxiedExpression_.Calculate(litem.Id(), {lpt, litem.Value()}, lrank, ltm, lShardId);
+		const auto rhv = rLocal ? localExpression_.Calculate(ritem.Id(), {rpt, ritem.Value()}, {}, {}, rrank, rtm, rShardId)
+								: proxiedExpression_.Calculate(ritem.Id(), {rpt, ritem.Value()}, rrank, rtm, rShardId);
 		if (lhv == rhv) {
 			return ComparationResult::Eq;
 		}
@@ -775,11 +776,12 @@ public:
 		}
 	}
 	ComparationResult Compare(const ItemRefVariant& litem, const ItemRefVariant& ritem, const PayloadType& lpt, const PayloadType& rpt,
-							  TagsMatcher& ltm, TagsMatcher& rtm, bool lLocal, bool rLocal) const {
-		return Compare(litem.NotRanked(), ritem.NotRanked(), lpt, rpt, ltm, rtm, lLocal, rLocal);
+							  TagsMatcher& ltm, TagsMatcher& rtm, bool lLocal, bool rLocal, int rShardId, int lShardId) const {
+		return Compare(litem.NotRanked(), ritem.NotRanked(), lpt, rpt, ltm, rtm, lLocal, rLocal, rShardId, lShardId);
 	}
 	ComparationResult Compare(const ItemRef& litem, const ItemRef& ritem, const PayloadType& lpt, const PayloadType& rpt, TagsMatcher& ltm,
-							  TagsMatcher& rtm, bool lLocal, bool rLocal) const {
+							  TagsMatcher& rtm, bool lLocal, bool rLocal, [[maybe_unused]] int rShardId,
+							  [[maybe_unused]] int lShardId) const {
 		ConstPayload lpv{lpt, litem.Value()};
 		ConstPayload rpv{rpt, ritem.Value()};
 		if (!forcedValues_.empty()) {
@@ -854,11 +856,12 @@ public:
 		}
 	}
 	ComparationResult Compare(const ItemRefVariant& litem, const ItemRefVariant& ritem, const PayloadType& lpt, const PayloadType& rpt,
-							  TagsMatcher& ltm, TagsMatcher& rtm, bool lLocal, bool rLocal) const {
-		return Compare(litem.NotRanked(), ritem.NotRanked(), lpt, rpt, ltm, rtm, lLocal, rLocal);
+							  TagsMatcher& ltm, TagsMatcher& rtm, bool lLocal, bool rLocal, int rShardId, int lShardId) const {
+		return Compare(litem.NotRanked(), ritem.NotRanked(), lpt, rpt, ltm, rtm, lLocal, rLocal, rShardId, lShardId);
 	}
 	ComparationResult Compare(const ItemRef& litem, const ItemRef& ritem, const PayloadType& lpt, const PayloadType& rpt, TagsMatcher& ltm,
-							  TagsMatcher& rtm, bool lLocal, bool rLocal) const {
+							  TagsMatcher& rtm, bool lLocal, bool rLocal, [[maybe_unused]] int rShardId,
+							  [[maybe_unused]] int lShardId) const {
 		ConstPayload lpv{lpt, litem.Value()};
 		ConstPayload rpv{rpt, ritem.Value()};
 		h_vector<size_t, 4> positions1, positions2;
@@ -1030,6 +1033,8 @@ public:
 		PayloadType lpt, rpt;
 		ItemRefVariant liref, riref;
 		int lShardId, rShardId;
+		uint32_t lShardIdHash = 0, rShardIdHash = 0;
+
 		if (lhs < 0) {
 			assertrx_dbg(qr_.local_);
 			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
@@ -1037,14 +1042,16 @@ public:
 			liref = lqr.it.GetItemRefVariant();
 			ltm = lqr.qr.getTagsMatcher(0);
 			lpt = lqr.qr.getPayloadType(0);
-			lShardId = lqr.shardID;
+			lShardId = lqr.ShardID();
+			lShardIdHash = lqr.ShardIDHash();
 		} else {
-			assertrx(static_cast<size_t>(lhs) < qr_.remote_.size());
+			assertrx_throw(static_cast<size_t>(lhs) < qr_.remote_.size());
 			auto& rqr = *qr_.remote_[lhs];
 			liref = rqr.ItemRefData(qr_.curQrId_).data.ref;
 			ltm = rqr.qr.GetTagsMatcher(0);
 			lpt = rqr.qr.GetPayloadType(0);
-			lShardId = rqr.shardID;
+			lShardId = rqr.ShardID();
+			lShardIdHash = rqr.ShardIDHash();
 		}
 		if (rhs < 0) {
 			assertrx_dbg(qr_.local_);
@@ -1053,18 +1060,21 @@ public:
 			riref = lqr.it.GetItemRefVariant();
 			rtm = lqr.qr.getTagsMatcher(0);
 			rpt = lqr.qr.getPayloadType(0);
-			rShardId = lqr.shardID;
+			rShardId = lqr.ShardID();
+			rShardIdHash = lqr.ShardIDHash();
 		} else {
-			assertrx(static_cast<size_t>(rhs) < qr_.remote_.size());
+			assertrx_throw(static_cast<size_t>(rhs) < qr_.remote_.size());
 			auto& rqr = *qr_.remote_[rhs];
 			riref = rqr.ItemRefData(qr_.curQrId_).data.ref;
 			rtm = rqr.qr.GetTagsMatcher(0);
 			rpt = rqr.qr.GetPayloadType(0);
-			rShardId = rqr.shardID;
+			rShardId = rqr.ShardID();
+			rShardIdHash = rqr.ShardIDHash();
 		}
 		for (const auto& comp : comparators_) {
-			const auto res =
-				std::visit([&](const auto& c) { return c.Compare(liref, riref, lpt, rpt, ltm, rtm, lhs < 0, rhs < 0); }, comp.first);
+			const auto res = std::visit(
+				[&](const auto& c) { return c.Compare(liref, riref, lpt, rpt, ltm, rtm, lhs < 0, rhs < 0, lShardIdHash, rShardIdHash); },
+				comp.first);
 			if (res != ComparationResult::Eq) {
 				return comp.second ? res == ComparationResult::Lt : res == ComparationResult::Gt;
 			}
@@ -1073,7 +1083,7 @@ public:
 	}
 
 private:
-	QueryResults& qr_;
+	const QueryResults& qr_;
 	h_vector<std::pair<std::variant<SortExpressionComparator, FieldComparator, CompositeFieldForceComparator>, bool>, 1> comparators_;
 };
 
@@ -1103,7 +1113,7 @@ void QueryResults::beginImpl() const {
 		}
 	}
 }
-
+// if function hash() is used, the records will not be sorted, since the ordering in qr's occurs according to a different seed in hash()
 QueryResults::Iterator& QueryResults::Iterator::operator++() {
 	switch (qr_->type_) {
 		case Type::None:
@@ -1136,7 +1146,7 @@ QueryResults::Iterator& QueryResults::Iterator::operator++() {
 			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			if (qr->local_->it == qr->local_->qr.end()) {
 				// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-				qr->curQrId_ = qr->findFirstQrWithItems(qr->local_->shardID);
+				qr->curQrId_ = qr->findFirstQrWithItems(qr->local_->ShardID());
 			}
 		} else if (size_t(qr->curQrId_) < qr_->remote_.size()) {
 			auto& remoteQrp = *qr->remote_[size_t(qr_->curQrId_)];
@@ -1144,7 +1154,7 @@ QueryResults::Iterator& QueryResults::Iterator::operator++() {
 			++qr->lastSeenIdx_;
 			++idx_;
 			if (remoteQrp.it == remoteQrp.qr.end()) {
-				qr->curQrId_ = qr->findFirstQrWithItems(remoteQrp.shardID);
+				qr->curQrId_ = qr->findFirstQrWithItems(remoteQrp.ShardID());
 			}
 		}
 	} else if (!qr->orderedQrs_->empty()) {
@@ -1175,6 +1185,37 @@ QueryResults::Iterator& QueryResults::Iterator::operator++() {
 		} else {
 			*this = qr->end();
 		}
+	}
+	return *this;
+}
+
+template <typename QrT>
+QueryResults::QrMetaData<QrT>::QrMetaData(QrT&& _qr, int shardID) : qr{std::move(_qr)}, it{qr.begin()}, shardID_{shardID} {
+	MurmurHash3_x86_32(&shardID_, sizeof(shardID_), 0, &shardIDHash_);
+}
+
+template <typename QrT>
+QueryResults::QrMetaData<QrT>::QrMetaData(QrMetaData&& o) noexcept
+	: qr(std::move(o.qr)),
+	  it(QrT::Iterator::SwitchQueryResultsPtrUnsafe(std::move(o.it), qr)),
+	  hasCompatibleTm(o.hasCompatibleTm),
+	  shardID_(o.shardID_),
+	  shardIDHash_(o.shardIDHash_),
+	  itemRefData_(std::move(o.itemRefData_)),
+	  nsJoinRes_(std::move(o.nsJoinRes_)) {}
+
+template <typename QrT>
+QueryResults::QrMetaData<QrT>& QueryResults::QrMetaData<QrT>::operator=(QrMetaData&& o) noexcept {
+	if (this != &o) {
+		qr = std::move(o.qr);
+		// SwitchQueryResultsPtrUnsafe is not implemented for client query results - iterator contains to many different pointers
+		// and it is unsafe to move it
+		it = QrT::Iterator::SwitchQueryResultsPtrUnsafe(std::move(o.it), qr);
+		hasCompatibleTm = o.hasCompatibleTm;
+		shardID_ = o.shardID_;
+		shardIDHash_ = o.shardIDHash_;
+		itemRefData_ = std::move(o.itemRefData_);
+		nsJoinRes_ = std::move(o.nsJoinRes_);
 	}
 	return *this;
 }
@@ -1221,7 +1262,7 @@ auto QueryResults::Iterator::getItemRef(ProxiedRefsStorage* storage) {
 		case Type::Mixed:
 			break;
 	}
-	return std::visit(overloaded{[](QrMetaData<LocalQueryResults>* qr) noexcept {
+	return std::visit(overloaded{[](QrMetaData<LocalQueryResults>* qr) {
 									 if constexpr (isRanked) {
 										 return qr->it.GetItemRefRanked();
 									 } else {
@@ -1306,16 +1347,16 @@ int QueryResults::findFirstQrWithItems(int minShardId) {
 		}
 	} else {
 		int foundPos = remote_.size();
-		int foundShardId = std::numeric_limits<int>().max();
-		if (local_ && local_->qr.Count() && local_->shardID > minShardId) {
+		int foundShardId = std::numeric_limits<int>::max();
+		if (local_ && local_->qr.Count() && local_->ShardID() > minShardId) {
 			foundPos = -1;
-			foundShardId = local_->shardID;
+			foundShardId = local_->ShardID();
 		}
 		for (int i = 0, size = remote_.size(); i < size; ++i) {
 			auto& remote = *remote_[i];
-			if (remote.qr.Count() && remote.shardID < foundShardId && remote.shardID > minShardId) {
+			if (remote.qr.Count() && remote.ShardID() < foundShardId && remote.ShardID() > minShardId) {
 				foundPos = i;
-				foundShardId = remote.shardID;
+				foundShardId = remote.ShardID();
 			}
 		}
 		return foundPos;

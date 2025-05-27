@@ -60,6 +60,7 @@ BOOL_ENUM(Append)
 BOOL_ENUM(IsDBInitCall)
 BOOL_ENUM(LogCreation)
 BOOL_ENUM(ExtraIndexDescription)
+BOOL_ENUM(NeedCreate)
 
 #undef BOOL_ENUM
 
@@ -72,7 +73,7 @@ enum class [[nodiscard]] ObjType {
 
 enum class [[nodiscard]] VectorMetric { L2, InnerProduct, Cosine };
 enum class [[nodiscard]] RankedTypeQuery { NotSet, No, FullText, KnnL2, KnnIP, KnnCos };
-enum class [[nodiscard]] RankSortType { RankOnly, RankAndID, ExternalExpression };
+enum class [[nodiscard]] RankSortType : unsigned { RankOnly, RankAndID, ExternalExpression };
 enum class [[nodiscard]] RankOrdering { Off, Asc, Desc };
 
 class [[nodiscard]] FloatVectorDimension {

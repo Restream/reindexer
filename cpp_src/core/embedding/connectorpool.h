@@ -10,15 +10,15 @@ namespace reindexer {
 class HttpConnector;
 class RdxContext;
 
-class ConnectorPool final {
+class [[nodiscard]] ConnectorPool final {
 public:
-	class ConnectorProxy final {
+	class [[nodiscard]] ConnectorProxy final {
 	public:
 		ConnectorProxy(const ConnectorProxy&) noexcept = delete;
 		ConnectorProxy& operator=(const ConnectorProxy&) noexcept = delete;
 		ConnectorProxy& operator=(ConnectorProxy&&) noexcept = delete;
 
-		ConnectorProxy(ConnectorProxy&&) noexcept;
+		explicit ConnectorProxy(ConnectorProxy&&) noexcept;
 
 		~ConnectorProxy();
 
@@ -37,7 +37,7 @@ public:
 	ConnectorPool(PoolConfig&& config);
 	~ConnectorPool();
 
-	std::pair<Error, ConnectorProxy> GetConnector(const RdxContext& ctx) noexcept;
+	[[nodiscard]] std::pair<Error, ConnectorProxy> GetConnector(const RdxContext& ctx) noexcept;
 	void ReleaseConnection(const ConnectorProxy& proxy);
 
 private:

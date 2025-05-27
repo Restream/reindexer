@@ -124,7 +124,23 @@ Variant HnswIndexBase<Map>::upsert(ConstFloatVectorView vect, IdType id, bool& c
 		map_->resizeIndex(newSize(map_->getMaxElements()));
 	}
 	clearCache = true;
-	map_->addPoint(vect.Data(), id);
+	map_->addPointNoLock(vect.Data(), id);
+	vect.Strip();
+	return Variant{vect};
+}
+
+template <template <typename> typename Map>
+Variant HnswIndexBase<Map>::upsertConcurrent(ConstFloatVectorView, IdType, bool&) {
+	throw Error(errLogic, "Index (HNSW/bruteforce) {} does not suppor upsertions", Name());
+}
+
+template <>
+Variant HnswIndexBase<hnswlib::HierarchicalNSWMT>::upsertConcurrent(ConstFloatVectorView vect, IdType id, bool& clearCache) {
+	if rx_unlikely(map_->getCurrentElementCount() >= map_->getMaxElements()) {
+		throw Error(errLogic, "Unable to resize '{}' HNSW index during concurrent upsert. Expecting reserve before upsertion", Name());
+	}
+	clearCache = true;
+	map_->addPointConcurrent(vect.Data(), id);
 	vect.Strip();
 	return Variant{vect};
 }
@@ -164,7 +180,7 @@ IndexMemStat HnswIndexBase<hnswlib::BruteforceSearch>::GetMemStat(const RdxConte
 template <template <typename> typename Map>
 IndexMemStat HnswIndexBase<Map>::GetMemStat(const RdxContext& ctx) noexcept {
 	auto stats = FloatVectorIndex::GetMemStat(ctx);
-	const auto uniqKeysCount = map_->getCurrentElementCount() - map_->getDeletedCount();
+	const auto uniqKeysCount = map_->getCurrentElementCount() - map_->getDeletedCountUnsafe();
 	stats.isBuilt = true;  // HNSW is always 'built'
 	stats.uniqKeysCount += uniqKeysCount;
 	stats.dataSize += uniqKeysCount * sizeof(FloatType) * Dimension().Value();
@@ -302,9 +318,9 @@ FloatVectorIndex::StorageCacheWriteResult HnswIndexBase<Map>::WriteIndexCache(Wr
 	};
 
 	try {
-		if (map_->getDeletedCount() > map_->getCurrentElementCount() / 2) {
+		if (map_->getDeletedCountUnsafe() > map_->getCurrentElementCount() / 2) {
 			res.err = Error{errParams, "Too many deleted elements: {}/{}. Do not creating cache (full rebuild is recommended)",
-							map_->getDeletedCount(), map_->getCurrentElementCount()};
+							map_->getDeletedCountUnsafe(), map_->getCurrentElementCount()};
 			return res;
 		}
 		Writer writer(Name(), wser, std::move(getPK), isCompositePK);

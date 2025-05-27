@@ -67,7 +67,7 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 					// If commit happens in ns copy, then the copier have to handle replication
 					auto err = ns_->observers_.SendUpdate(
 						updates::UpdateRecord{updates::URType::CommitTx, ns_->name_, ns_->wal_.LastLSN(), ns_->repl_.nsVersion,
-											  ctx.rdxContext.EmmiterServerId()},
+											  ctx.rdxContext.EmitterServerId()},
 						[&clonerLck, &storageLock, &nsRlck]() {
 							storageLock.unlock();
 							nsRlck.unlock();

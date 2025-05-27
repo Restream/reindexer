@@ -55,15 +55,15 @@ public:
 			  IStatsWatcher* statsCollector = nullptr);
 	~RPCServer();
 
-	bool Start(const std::string& addr, ev::dynamic_loop& loop, RPCSocketT sockDomain, std::string_view threadingMode);
+	void Start(const std::string& addr, ev::dynamic_loop& loop, RPCSocketT sockDomain, std::string_view threadingMode);
 	void Stop() {
 		terminate_ = true;
+		if (listener_) {
+			listener_->Stop();
+		}
 		if (qrWatcherThread_.joinable()) {
 			qrWatcherTerminateAsync_.send();
 			qrWatcherThread_.join();
-		}
-		if (listener_) {
-			listener_->Stop();
 		}
 		terminate_ = false;
 	}

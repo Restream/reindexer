@@ -99,8 +99,9 @@ class Namespace {
 public:
 	using Ptr = shared_ptr<Namespace>;
 
-	Namespace(const std::string& name, std::optional<int32_t> stateToken, cluster::IDataSyncer& clusterManager, UpdatesObservers& observers)
-		: ns_(make_intrusive<NamespaceImpl>(name, std::move(stateToken), clusterManager, observers)) {}
+	Namespace(const std::string& name, std::optional<int32_t> stateToken, cluster::IDataSyncer& clusterManager, UpdatesObservers& observers,
+			  const std::shared_ptr<EmbeddersCache>& embeddersCache)
+		: ns_(make_intrusive<NamespaceImpl>(name, std::move(stateToken), clusterManager, observers, embeddersCache)) {}
 
 	void CommitTransaction(LocalTransaction& tx, LocalQueryResults& result, const NsContext& ctx);
 	NamespaceName GetName(const RdxContext& ctx) const { return nsFuncWrapper<&NamespaceImpl::GetName>(ctx); }

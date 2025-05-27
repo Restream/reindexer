@@ -1,5 +1,4 @@
 #include "index.h"
-#include "float_vector/float_vector_index.h"
 #include "indexordered.h"
 #include "indextext/fastindextext.h"
 #include "indextext/fuzzyindextext.h"
@@ -125,8 +124,8 @@ IndexPerfStat Index::GetIndexPerfStat() {
 }
 
 void Index::ResetIndexPerfStat() {
-	this->selectPerfCounter_.Reset();
-	this->commitPerfCounter_.Reset();
+	selectPerfCounter_.Reset();
+	commitPerfCounter_.Reset();
 }
 
 template <typename S>

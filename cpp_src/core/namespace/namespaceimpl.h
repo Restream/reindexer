@@ -42,6 +42,7 @@ using reindexer::datastorage::StorageType;
 
 class Index;
 class Embedder;
+class EmbeddersCache;
 template <typename>
 struct SelectCtxWithJoinPreSelect;
 struct JoinPreResult;
@@ -362,7 +363,8 @@ public:
 		const NamespaceImpl& owner_;
 	};
 
-	NamespaceImpl(const std::string& _name, std::optional<int32_t> stateToken, const cluster::IDataSyncer&, UpdatesObservers&);
+	NamespaceImpl(const std::string& name, std::optional<int32_t> stateToken, const cluster::IDataSyncer& syncer,
+				  UpdatesObservers& observers, const std::shared_ptr<EmbeddersCache>& embeddersCache);
 	NamespaceImpl& operator=(const NamespaceImpl&) = delete;
 	~NamespaceImpl() override;
 
@@ -514,6 +516,7 @@ private:
 	template <typename PathsT, typename JsonPathsContainerT>
 	void createCompositeFieldsSet(const std::string& idxName, const PathsT& paths, FieldsSet& fields);
 	void verifyCompositeIndex(const IndexDef& indexDef) const;
+	void verifyUpsertEmbedder(std::string_view action, const IndexDef& indexDef) const;
 	void verifyUpsertIndex(std::string_view action, const IndexDef& indexDef) const;
 	void verifyUpdateIndex(const IndexDef& indexDef) const;
 	void verifyUpdateCompositeIndex(const IndexDef& indexDef) const;
@@ -712,5 +715,7 @@ private:
 	std::atomic<bool> dbDestroyed_{false};
 	lsn_t incarnationTag_;	// Determines unique namespace incarnation for the correct go cache invalidation
 	UpdatesObservers& observers_;
+
+	const std::shared_ptr<EmbeddersCache> embeddersCache_;
 };
 }  // namespace reindexer

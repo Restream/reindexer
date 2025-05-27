@@ -265,7 +265,7 @@ public:
 			[&](KeyValueType::Null) noexcept {}, [&](KeyValueType::Uuid) { PutUuid(Uuid{kv}); },
 			[&](KeyValueType::FloatVector) { PutFloatVectorView(ConstFloatVectorView{kv}); },
 			[&](OneOf<KeyValueType::Composite, /*KeyValueType::Tuple,*/ KeyValueType::Undefined>) {
-				fprintf(stderr, "Unknown keyType %s\n", kv.Type().Name().data());
+				fprintf(stderr, "reindexer error: unknown keyType %s\n", kv.Type().Name().data());
 				abort();
 			});
 	}

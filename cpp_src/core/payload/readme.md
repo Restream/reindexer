@@ -4,7 +4,7 @@ Internally reindexer is processing documents in special objects, called `Payload
 
 - untyped tuple of non-indexed fields;
 - fixed-type struct of indexed fields;
-- separate column storage binded to full scan indexes.
+- separate column storage bound to full scan indexes.
 
 # Motivation
 
@@ -13,7 +13,7 @@ The untyped tuple is gives applications capability to store any JSON objects as 
 The fixed-type struct of indexed fields allows application and reindexer maintains consistent indexes and primary keys. Furthermore it helps to achieve best performance for full-scan and join queries - their
 performance are strongly depends on fields access time. 
 
-Also there are optional column's storage is present. They are binded to full-scan indexes, and can speed up full-scan queries.
+Also there are optional column's storage is present. They are bound to full-scan indexes, and can speed up full-scan queries.
 
 # Payload 
 

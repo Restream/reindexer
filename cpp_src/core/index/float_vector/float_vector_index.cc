@@ -1,4 +1,5 @@
 #include "float_vector_index.h"
+#include "core/embedding/embedder.h"
 #include "core/rdxcontext.h"
 #include "tools/assertrx.h"
 #include "tools/logger.h"
@@ -66,19 +67,24 @@ void FloatVectorIndex::Upsert(VariantArray& result, const VariantArray& keys, Id
 Variant FloatVectorIndex::Upsert(const Variant& key, IdType id, bool& clearCache) {
 	const ConstFloatVectorView vect{key};
 	if (vect.IsEmpty()) {
-		std::unique_lock lck(emptyValuesInsertionMtx_, std::defer_lock_t{});
-		if (IsSupportMultithreadTransactions()) {
-			lck.lock();
-		}
-		emptyValues_.Unsorted().Add(id, IdSet::Auto, sortedIdxCount_);	// ignore result
-		memStat_.uniqKeysCount = 1;
-		return Variant{ConstFloatVectorView{}};
+		// Do not lock empty values mutex here
+		return upsertEmptyVectImpl(id);
 	}
-	if (vect.Dimension() != Dimension()) {
-		throw Error{errNotValid, "Attempt to upsert vector of dimension {} in a float vector index of dimension {}",
-					vect.Dimension().Value(), Dimension().Value()};
-	}
+	checkVectorDims(vect);
 	return upsert(vect, id, clearCache);
+}
+
+Variant FloatVectorIndex::UpsertConcurrent(const Variant& key, IdType id, bool& clearCache) {
+	if (!IsSupportMultithreadTransactions()) {
+		throw Error(errLogic, "Index {} does not support concurrent upsertions", Name());
+	}
+	const ConstFloatVectorView vect{key};
+	if (vect.IsEmpty()) {
+		std::unique_lock lck(emptyValuesInsertionMtx_);
+		return upsertEmptyVectImpl(id);
+	}
+	checkVectorDims(vect);
+	return upsertConcurrent(vect, id, clearCache);
 }
 
 SelectKeyResult FloatVectorIndex::Select(ConstFloatVectorView key, const KnnSearchParams& p, KnnCtx& ctx, const RdxContext& rdxCtx) const {
@@ -104,6 +110,36 @@ IndexMemStat FloatVectorIndex::GetMemStat(const RdxContext&) noexcept {
 	return memStat_;
 }
 
+namespace {
+EmbedderCachePerfStat GetEmbedderPerfStat(const std::shared_ptr<Embedder>& embedder, std::string_view tag) {
+	if (embedder && !tag.empty()) {
+		return embedder->GetPerfStat(tag);
+	}
+	return {};
+}
+} // namespace
+
+IndexPerfStat FloatVectorIndex::GetIndexPerfStat() {
+	IndexPerfStat stat(name_, selectPerfCounter_.Get<PerfStat>(), commitPerfCounter_.Get<PerfStat>());
+	if (!opts_.FloatVector().Embedding().has_value()) {
+		return stat;
+	}
+	auto embedding = opts_.FloatVector().Embedding().value();  // NOLINT(bugprone-unchecked-optional-access)
+	if (embedding.upsertEmbedder.has_value() || embedding.queryEmbedder.has_value()) {
+		int fieldNo = 0;
+		if (payloadType_.FieldByName(name_, fieldNo)) {
+			const auto& type = payloadType_.Field(fieldNo);
+			if (embedding.upsertEmbedder.has_value()) {
+				stat.upsertEmbedderCache = GetEmbedderPerfStat(type.Embedder(), embedding.upsertEmbedder.value().cacheTag);
+			}
+			if (embedding.queryEmbedder.has_value()) {
+				stat.queryEmbedderCache = GetEmbedderPerfStat(type.QueryEmbedder(), embedding.queryEmbedder.value().cacheTag);
+			}
+		}
+	}
+	return stat;
+}
+
 FloatVector FloatVectorIndex::GetFloatVector(IdType id) const {
 	// Intentionally don't lock emptyValuesInsertionMtx_ here - only upserts may be multithreaded
 	if (emptyValues_.Unsorted().Find(id)) {
@@ -120,6 +156,21 @@ ConstFloatVectorView FloatVectorIndex::GetFloatVectorView(IdType id) const {
 	}
 
 	return getFloatVectorView(id);
+}
+
+void FloatVectorIndex::checkVectorDims(ConstFloatVectorView vect)
+{
+	if (vect.Dimension() != Dimension()) {
+		throw Error{errNotValid, "Attempt to upsert vector of dimension {} in a float vector index of dimension {}",
+					vect.Dimension().Value(), Dimension().Value()};
+	}
+}
+
+Variant FloatVectorIndex::upsertEmptyVectImpl(IdType id)
+{
+	emptyValues_.Unsorted().Add(id, IdSet::Auto, sortedIdxCount_);	// ignore result
+	memStat_.uniqKeysCount = 1;
+	return Variant{ConstFloatVectorView{}};
 }
 
 void FloatVectorIndex::WriterBase::writePK(IdType id) {

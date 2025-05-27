@@ -14,9 +14,14 @@ using namespace reindexer::net;
 
 CoroQueryResults::~CoroQueryResults() {
 	if (holdsRemoteData()) {
-		i_.conn_->Call({cproto::kCmdCloseResults, i_.requestTimeout_, milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, nullptr,
-						false, i_.sessionTs_},
-					   i_.queryID_.main, i_.queryID_.uid);
+		try {
+			i_.conn_->Call({cproto::kCmdCloseResults, i_.requestTimeout_, milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard,
+							nullptr, false, i_.sessionTs_},
+						   i_.queryID_.main, i_.queryID_.uid);
+		} catch (std::exception& e) {
+			fprintf(stderr, "reindexer error: unexpected exception in ~CoroQueryResults: %s\n", e.what());
+			assertrx_dbg(false);
+		}
 	}
 }
 
@@ -208,12 +213,11 @@ public:
 		return itemimpl_.GetConstPayload();
 	}
 	const TagsMatcher& GetJoinedItemTagsMatcher(size_t rowid) & noexcept override {
-		auto& fieldIt = joinedData_.at(rowid);
-		if (fieldIt.empty()) {
+		if (joinedData_.size() <= rowid || joinedData_[rowid].empty()) {
 			static const TagsMatcher kEmptyTm;
 			return kEmptyTm;
 		}
-		tm_ = qr_.GetTagsMatcher(getJoinedNsID(fieldIt[0].nsid));
+		tm_ = qr_.GetTagsMatcher(getJoinedNsID(joinedData_[rowid][0].nsid));
 		return tm_;
 	}
 	const FieldsFilter& GetJoinedItemFieldsFilter(size_t /*rowid*/) & noexcept override {
@@ -221,12 +225,8 @@ public:
 		return empty;
 	}
 	const std::string& GetJoinedItemNamespace(size_t rowid) & noexcept override {
-		static const std::string empty;
-		if (joinedData_.size() <= rowid) {
-			return empty;
-		}
-		auto& fieldIt = joinedData_.at(rowid);
-		if (fieldIt.empty()) {
+		if (joinedData_.size() <= rowid || joinedData_[rowid].empty()) {
+			static const std::string empty;
 			return empty;
 		}
 		return qr_.GetNsName(getJoinedNsID(rowid));

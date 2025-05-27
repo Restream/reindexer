@@ -59,7 +59,7 @@ class IvfSearchParams : private KnnSearchParamsBase {
 	using Base = KnnSearchParamsBase;
 
 public:
-	explicit IvfSearchParams(size_t k, size_t nprobe = 1);
+	IvfSearchParams(size_t k, size_t nprobe = 1);
 	size_t NProbe() const noexcept { return nprobe_; }
 	void ToDsl(JsonBuilder&) const;
 	void ToSql(WrSerializer&) const;

@@ -44,6 +44,7 @@ static std::string_view cacheMode2str(CacheMode mode) {
 }
 
 Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) {
+	using namespace std::string_view_literals;
 	std::bitset<kConfigTypesTotalCount> typesChanged;
 
 	std::string errLogString;
@@ -51,7 +52,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 		smart_lock<shared_timed_mutex> lk(mtx_, true);
 
 		ProfilingConfigData profilingDataSafe;
-		auto& profilingNode = root["profiling"];
+		const auto& profilingNode = root["profiling"sv];
 		if (!profilingNode.empty()) {
 			profilingDataLoadResult_ = profilingDataSafe.FromJSON(profilingNode);
 
@@ -63,7 +64,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 		}
 
 		fast_hash_map<std::string, NamespaceConfigData, nocase_hash_str, nocase_equal_str, nocase_less_str> namespacesData;
-		auto& namespacesNode = root["namespaces"];
+		const auto& namespacesNode = root["namespaces"sv];
 		if (!namespacesNode.empty()) {
 			std::string namespacesErrLogString;
 			bool nssHaveErrors = false;
@@ -76,7 +77,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 				}
 
 				NamespaceConfigData data;
-				auto err = data.FromJSON(nsNode);
+				const auto err = data.FromJSON(nsNode);
 				if (err.ok()) {
 					namespacesData.emplace(std::move(nsName),
 										   std::move(data));  // NOLINT(performance-move-const-arg)
@@ -87,16 +88,16 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 			}
 
 			if (!nssHaveErrors) {
-				namespacesDataLoadResult_ = errOK;
+				namespacesDataLoadResult_ = ErrorCode::errOK;
 				typesChanged.set(NamespaceDataConf);
 			} else {
-				namespacesDataLoadResult_ = Error(errParseJson, namespacesErrLogString);
+				namespacesDataLoadResult_ = Error(ErrorCode::errParseJson, namespacesErrLogString);
 				ensureEndsWith(errLogString, "\n") += "NamespacesConfig: JSON parsing error: " + namespacesErrLogString;
 			}
 		}
 
 		cluster::AsyncReplConfigData asyncReplConfigDataSafe;
-		auto& asyncReplicationNode = root["async_replication"];
+		const auto& asyncReplicationNode = root["async_replication"sv];
 		if (!asyncReplicationNode.empty()) {
 			asyncReplicationDataLoadResult_ = asyncReplConfigDataSafe.FromJSON(asyncReplicationNode);
 
@@ -108,7 +109,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 		}
 
 		ReplicationConfigData replicationDataSafe;
-		auto& replicationNode = root["replication"];
+		const auto& replicationNode = root["replication"sv];
 		if (!replicationNode.empty()) {
 			if (!autoCorrect) {
 				replicationDataLoadResult_ = replicationDataSafe.FromJSON(replicationNode);
@@ -121,6 +122,31 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 			} else {
 				replicationDataSafe.FromJSONWithCorrection(replicationNode, replicationDataLoadResult_);
 				typesChanged.set(ReplicationConf);
+			}
+		}
+
+		fast_hash_map<std::string, EmbedderConfigData, hash_str, equal_str, less_str> embeddersData;
+		const auto& embeddersNode = root["caches"sv];
+		if (!embeddersNode.empty()) {
+			std::string embeddersErrLogString;
+			bool embeddersHaveErrors = false;
+			for (const auto& cacheNode : embeddersNode) {
+				EmbeddersConfigData data;
+				const auto err = data.FromJSON(cacheNode);
+				if (err.ok()) {
+					embeddersData.emplace(toLower(data.cacheTag), std::move(data.configData)); // NOLINT(performance-move-const-arg)
+				} else {
+					ensureEndsWith(embeddersErrLogString, "\n") += err.whatStr();
+					embeddersHaveErrors = true;
+				}
+			}
+
+			if (!embeddersHaveErrors) {
+				embeddersDataLoadResult_ = ErrorCode::errOK;
+				typesChanged.set(EmbeddersConf);
+			} else {
+				embeddersDataLoadResult_ = Error(ErrorCode::errParseJson, embeddersErrLogString);
+				ensureEndsWith(errLogString, "\n") += "EmbeddersConfig: JSON parsing error: " + embeddersErrLogString;
 			}
 		}
 
@@ -138,6 +164,9 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 			if (typesChanged.test(ReplicationConf)) {
 				replicationData_ = std::move(replicationDataSafe);
 			}
+			if (typesChanged.test(EmbeddersConf)) {
+				embeddersData_ = std::move(embeddersData);
+			}
 		}
 	} catch (const std::exception& ex) {
 		ensureEndsWith(errLogString, "\n") += ex.what();
@@ -145,7 +174,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 
 	Error result;
 	if (!errLogString.empty()) {
-		result = Error(errParseJson, "DBConfigProvider: {}", errLogString);
+		result = {ErrorCode::errParseJson, "DBConfigProvider: {}", errLogString};
 	} else if (typesChanged.size() > 0) {
 		// notifying handlers under shared_lock so none of them go out of scope
 		smart_lock<shared_timed_mutex> lk(mtx_, false);
@@ -181,17 +210,17 @@ Error DBConfigProvider::GetConfigParseErrors() const {
 	using namespace std::string_view_literals;
 	smart_lock<shared_timed_mutex> lk(mtx_, false);
 	if (!profilingDataLoadResult_.ok() || !namespacesDataLoadResult_.ok() || !asyncReplicationDataLoadResult_.ok() ||
-		!replicationDataLoadResult_.ok()) {
-		std::string errLogString;
-		errLogString += profilingDataLoadResult_.whatStr();
+		!replicationDataLoadResult_.ok() || !embeddersDataLoadResult_.ok()) {
+		std::string errLogString(profilingDataLoadResult_.whatStr());
 		ensureEndsWith(errLogString, "\n"sv) += namespacesDataLoadResult_.whatStr();
 		ensureEndsWith(errLogString, "\n"sv) += asyncReplicationDataLoadResult_.whatStr();
 		ensureEndsWith(errLogString, "\n"sv) += replicationDataLoadResult_.whatStr();
+		ensureEndsWith(errLogString, "\n"sv) += embeddersDataLoadResult_.whatStr();
 
-		return Error(errParseJson, "DBConfigProvider: {}", errLogString);
+		return {ErrorCode::errParseJson, "DBConfigProvider: {}", errLogString};
 	}
 
-	return Error();
+	return {};
 }
 
 void DBConfigProvider::setHandler(ConfigType cfgType, std::function<void()> handler) {
@@ -210,6 +239,11 @@ void DBConfigProvider::unsetHandler(int id) {
 	replicationConfigDataHandlers_.erase(id);
 }
 
+const fast_hash_map<std::string, EmbedderConfigData, hash_str, equal_str, less_str>&
+DBConfigProvider::GetEmbeddersConfig() const {
+	shared_lock<shared_timed_mutex> lk(mtx_);
+	return embeddersData_;
+}
 ReplicationConfigData DBConfigProvider::GetReplicationConfig() const {
 	shared_lock<shared_timed_mutex> lk(mtx_);
 	return replicationData_;
@@ -235,14 +269,15 @@ std::string DBConfigProvider::GetAsyncReplicationToken(std::string_view nsName) 
 	} else if (it = tokens.find("*"); it != tokens.end()) {
 		return it->second;
 	}
-	return std::string{};
+	return {};
 }
 
 bool DBConfigProvider::GetNamespaceConfig(std::string_view nsName, NamespaceConfigData& data) const {
+	using namespace std::string_view_literals;
 	shared_lock<shared_timed_mutex> lk(mtx_);
 	auto it = namespacesData_.find(nsName);
 	if (it == namespacesData_.end()) {
-		it = namespacesData_.find(std::string_view("*"));
+		it = namespacesData_.find("*"sv);
 	}
 	if (it == namespacesData_.end()) {
 		data = {};
@@ -253,22 +288,23 @@ bool DBConfigProvider::GetNamespaceConfig(std::string_view nsName, NamespaceConf
 }
 
 Error ProfilingConfigData::FromDefault() noexcept {
+	using namespace std::string_view_literals;
 	try {
 		gason::JsonParser parser;
-		gason::JsonNode configJson = parser.Parse(kDefProfilingConfig);
-		auto& profilingJson = configJson["profiling"];
+		const gason::JsonNode configJson = parser.Parse(kDefProfilingConfig);
+		const auto& profilingJson = configJson["profiling"sv];
 		if (!profilingJson.isObject()) {
-			return Error(ErrorCode::errInvalidDefConfigs, "Incorrect kDefProfilingConfig");
+			return {ErrorCode::errInvalidDefConfigs, "Incorrect kDefProfilingConfig"};
 		}
 
-		Error err = FromJSON(profilingJson);
+		const auto err = FromJSON(profilingJson);
 		if (!err.ok()) {
-			return Error(ErrorCode::errInvalidDefConfigs, "Incorrect kDefProfilingConfig: {}", err.what());
+			return {ErrorCode::errInvalidDefConfigs, "Incorrect kDefProfilingConfig: {}", err.what()};
 		}
 	}
 	CATCH_AND_RETURN
 
-	return ErrorCode::errOK;
+	return {};
 }
 
 Error ProfilingConfigData::FromJSON(const gason::JsonNode& v) {
@@ -281,9 +317,9 @@ Error ProfilingConfigData::FromJSON(const gason::JsonNode& v) {
 	err = tryReadOptionalJsonValue(&errorString, v, "activitystats"sv, activityStats);
 	(void)err;	// ignored; Errors will be handled with errorString
 
-	auto& longQueriesLogging = v["long_queries_logging"sv];
+	const auto& longQueriesLogging = v["long_queries_logging"sv];
 	if (longQueriesLogging.isObject()) {
-		auto& select = longQueriesLogging["select"sv];
+		const auto& select = longQueriesLogging["select"sv];
 		if (select.isObject()) {
 			const auto p = longSelectLoggingParams.load(std::memory_order_relaxed);
 			int32_t thresholdUs = p.thresholdUs;
@@ -294,7 +330,7 @@ Error ProfilingConfigData::FromJSON(const gason::JsonNode& v) {
 			longSelectLoggingParams.store(LongQueriesLoggingParams(thresholdUs, normalized), std::memory_order_relaxed);
 		}
 
-		auto& updateDelete = longQueriesLogging["update_delete"sv];
+		const auto& updateDelete = longQueriesLogging["update_delete"sv];
 		if (updateDelete.isObject()) {
 			const auto p = longUpdDelLoggingParams.load(std::memory_order_relaxed);
 			int32_t thresholdUs = p.thresholdUs;
@@ -305,7 +341,7 @@ Error ProfilingConfigData::FromJSON(const gason::JsonNode& v) {
 			longUpdDelLoggingParams.store(LongQueriesLoggingParams(thresholdUs, normalized), std::memory_order_relaxed);
 		}
 
-		auto& transaction = longQueriesLogging["transaction"sv];
+		const auto& transaction = longQueriesLogging["transaction"sv];
 		if (transaction.isObject()) {
 			const auto p = longTxLoggingParams.load(std::memory_order_relaxed);
 			int32_t thresholdUs = p.thresholdUs;
@@ -396,47 +432,49 @@ static auto getAdmissibleTokens(const gason::JsonNode& node) {
 }
 
 void ProfilingConfigData::GetJSON(JsonBuilder& jb) const {
-	jb.Put("queriesperfstats", queriesPerfStats.load());
-	jb.Put("queries_threshold_us", queriesThresholdUS.load());
-	jb.Put("perfstats", perfStats.load());
-	jb.Put("memstats", memStats.load());
-	jb.Put("activitystats", activityStats.load());
+	using namespace std::string_view_literals;
+	jb.Put("queriesperfstats"sv, queriesPerfStats.load());
+	jb.Put("queries_threshold_us"sv, queriesThresholdUS.load());
+	jb.Put("perfstats"sv, perfStats.load());
+	jb.Put("memstats"sv, memStats.load());
+	jb.Put("activitystats"sv, activityStats.load());
 
 	const auto select_lg_params = longSelectLoggingParams.load(std::memory_order_relaxed);
 	const auto update_delete_lg_params = longUpdDelLoggingParams.load(std::memory_order_relaxed);
 	const auto transaction_lg_params = longTxLoggingParams.load(std::memory_order_relaxed);
-	jb.Object("long_queries_logging")
-		.Object("select")
-		.Put("threshold_us", select_lg_params.thresholdUs)
-		.Put("normalized", bool(select_lg_params.normalized))
+	jb.Object("long_queries_logging"sv)
+		.Object("select"sv)
+		.Put("threshold_us"sv, select_lg_params.thresholdUs)
+		.Put("normalized"sv, bool(select_lg_params.normalized))
 		.End()
-		.Object("update_delete")
-		.Put("threshold_us", update_delete_lg_params.thresholdUs)
-		.Put("normalized", bool(update_delete_lg_params.normalized))
+		.Object("update_delete"sv)
+		.Put("threshold_us"sv, update_delete_lg_params.thresholdUs)
+		.Put("normalized"sv, bool(update_delete_lg_params.normalized))
 		.End()
-		.Object("transaction")
-		.Put("threshold_us", transaction_lg_params.thresholdUs)
-		.Put("avg_step_threshold_us", transaction_lg_params.avgTxStepThresholdUs)
+		.Object("transaction"sv)
+		.Put("threshold_us"sv, transaction_lg_params.thresholdUs)
+		.Put("avg_step_threshold_us"sv, transaction_lg_params.avgTxStepThresholdUs)
 		.End();
 }
 
 Error ReplicationConfigData::FromDefault() noexcept {
+	using namespace std::string_view_literals;
 	try {
 		gason::JsonParser parser;
-		gason::JsonNode configJson = parser.Parse(kDefReplicationConfig);
-		auto& replicationJson = configJson["replication"];
+		const gason::JsonNode configJson = parser.Parse(kDefReplicationConfig);
+		const auto& replicationJson = configJson["replication"sv];
 		if (!replicationJson.isObject()) {
-			return Error(ErrorCode::errInvalidDefConfigs, "Incorrect kDefReplicationConfig");
+			return {ErrorCode::errInvalidDefConfigs, "Incorrect kDefReplicationConfig"};
 		}
 
-		Error err = FromJSON(replicationJson);
+		const auto err = FromJSON(replicationJson);
 		if (!err.ok()) {
-			return Error(ErrorCode::errInvalidDefConfigs, "Incorrect kDefReplicationConfig: {}", err.what());
+			return {ErrorCode::errInvalidDefConfigs, "Incorrect kDefReplicationConfig: {}", err.what()};
 		}
 	}
 	CATCH_AND_RETURN
 
-	return ErrorCode::errOK;
+	return {};
 }
 
 Error ReplicationConfigData::FromYAML(const std::string& yaml) {
@@ -445,15 +483,15 @@ Error ReplicationConfigData::FromYAML(const std::string& yaml) {
 		clusterID = root["cluster_id"].as<int>(clusterID);
 		serverID = root["server_id"].as<int>(serverID);
 		if (auto err = Validate(); !err.ok()) {
-			return Error(errParams, "ReplicationConfigData: YAML parsing error: '{}'", err.whatStr());
+			return {ErrorCode::errParams, "ReplicationConfigData: YAML parsing error: '{}'", err.whatStr()};
 		}
 		admissibleTokens = getAdmissibleTokens(root["admissible_replication_tokens"]);
 	} catch (const YAML::Exception& ex) {
-		return Error(errParseYAML, "ReplicationConfigData: YAML parsing error: '{}'", ex.what());
+		return {ErrorCode::errParseYAML, "ReplicationConfigData: YAML parsing error: '{}'", ex.what()};
 	} catch (const std::exception& err) {
-		return err;
+		return {ErrorCode::errParseYAML, "ReplicationConfigData: YAML parsing error: '{}'", err.what()};
 	}
-	return Error();
+	return {};
 }
 
 Error ReplicationConfigData::FromJSON(std::string_view json) {
@@ -461,9 +499,9 @@ Error ReplicationConfigData::FromJSON(std::string_view json) {
 		gason::JsonParser parser;
 		return FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "ReplicationConfigData: {}\n", ex.what());
+		return {ErrorCode::errParseJson, "ReplicationConfigData: {}\n", ex.what()};
 	} catch (const std::exception& err) {
-		return err;
+		return {ErrorCode::errParseJson, "ReplicationConfigData: {}\n", err.what()};
 	}
 }
 
@@ -480,14 +518,14 @@ Error ReplicationConfigData::FromJSON(const gason::JsonNode& root) {
 	(void)err;	// ignored; Errors will be handled with errorString
 
 	if (errorString.empty()) {
-		if (auto err = Validate()) {
-			return Error(errParseJson, "ReplicationConfigData: JSON parsing error: '{}'", err.whatStr());
+		if (err = Validate(); !err.ok()) {
+			return {ErrorCode::errParseJson, "ReplicationConfigData: JSON parsing error: '{}'", err.whatStr()};
 		}
 	} else {
-		return Error(errParseJson, "ProfilingConfigData: JSON parsing error: '{}'", errorString);
+		return {ErrorCode::errParseJson, "ProfilingConfigData: JSON parsing error: '{}'", errorString};
 	}
 
-	return Error();
+	return {};
 }
 
 void ReplicationConfigData::FromJSONWithCorrection(const gason::JsonNode& root, Error& fixedErrors) {
@@ -516,13 +554,14 @@ void ReplicationConfigData::FromJSONWithCorrection(const gason::JsonNode& root, 
 	}
 
 	if (!errorString.empty()) {
-		fixedErrors = Error(errParseJson, errorString);
+		fixedErrors = Error(ErrorCode::errParseJson, errorString);
 	}
 }
 
 void ReplicationConfigData::GetJSON(JsonBuilder& jb) const {
-	jb.Put("cluster_id", clusterID);
-	jb.Put("server_id", serverID);
+	using namespace std::string_view_literals;
+	jb.Put("cluster_id"sv, clusterID);
+	jb.Put("server_id"sv, serverID);
 
 	fast_hash_map<std::string_view, std::vector<std::string_view>> tokenNss;
 	for (const auto& [nsName, token] : admissibleTokens) {
@@ -560,7 +599,7 @@ void ReplicationConfigData::GetYAML(WrSerializer& ser) const {
 	}
 
 	// clang-format off
-	ser <<	"# Cluser ID - must be same for client and for master\n"
+	ser <<	"# Cluster ID - must be same for client and for master\n"
 			"cluster_id: " + std::to_string(clusterID) + "\n"
 			"\n"
 			"# Server ID - must be unique for all nodes value in range [0, 999]\n"
@@ -574,10 +613,10 @@ void ReplicationConfigData::GetYAML(WrSerializer& ser) const {
 Error ReplicationConfigData::Validate() const {
 	using namespace std::string_view_literals;
 	if (serverID < ReplicationConfigData::kMinServerIDValue || serverID > ReplicationConfigData::kMaxServerIDValue) {
-		return Error(errParams, "Value of '{}' = {} is out of bounds: [{}, {}]", "server_Id"sv, serverID,
-					 ReplicationConfigData::kMinServerIDValue, ReplicationConfigData::kMaxServerIDValue);
+		return {ErrorCode::errParams, "Value of 'server_id' = {} is out of bounds: [{}, {}]", serverID,
+				ReplicationConfigData::kMinServerIDValue, ReplicationConfigData::kMaxServerIDValue};
 	}
-	return Error();
+	return {};
 }
 
 std::ostream& operator<<(std::ostream& os, const ReplicationConfigData& data) {
@@ -589,64 +628,63 @@ Error NamespaceConfigData::FromDefault(std::vector<std::string>& defaultNamespac
 	using namespace std::string_view_literals;
 	try {
 		gason::JsonParser parser;
-		gason::JsonNode configJson = parser.Parse(kDefNamespacesConfig);
+		const gason::JsonNode configJson = parser.Parse(kDefNamespacesConfig);
 		std::string errorString;
-		Error err;
 
-		auto& namespacesNode = configJson["namespaces"];
+		const auto& namespacesNode = configJson["namespaces"sv];
 		if (!namespacesNode.isArray()) {
-			return Error(ErrorCode::errInvalidDefConfigs, "Incorrect kDefNamespacesConfig: no namespaces");
+			return {ErrorCode::errInvalidDefConfigs, "Incorrect kDefNamespacesConfig: no namespaces"};
 		}
 
-		defaultNamespacesNames.clear();
+		defaultNamespacesNames.resize(0);
 		defaultNamespacesNames.reserve(10);
-		defaultNamespacesConfs.clear();
+		defaultNamespacesConfs.resize(0);
 		defaultNamespacesConfs.reserve(10);
 
+		std::string namespaceName;
 		for (const gason::JsonNode& namespaceNode : namespacesNode.value) {
-			std::string_view namespaceName = ""sv;
 			if (!tryReadOptionalJsonValue(&errorString, namespaceNode, "namespace"sv, namespaceName).ok() || namespaceName.empty()) {
-				return Error(ErrorCode::errInvalidDefConfigs, "Incorrect kDefNamespacesConfig: no namespace name");
+				return {ErrorCode::errInvalidDefConfigs, "Incorrect kDefNamespacesConfig: no namespace name"};
 			}
 
 			defaultNamespacesNames.emplace_back(namespaceName);
 			defaultNamespacesConfs.emplace_back();
-			Error err = defaultNamespacesConfs[defaultNamespacesConfs.size() - 1].FromJSON(namespaceNode);
+			const auto err = defaultNamespacesConfs[defaultNamespacesConfs.size() - 1].FromJSON(namespaceNode);
 			if (!err.ok()) {
-				return Error(ErrorCode::errInvalidDefConfigs, "Incorrect kDefNamespacesConfig: {}", err.what());
+				return {ErrorCode::errInvalidDefConfigs, "Incorrect kDefNamespacesConfig: {}", err.what()};
 			}
 		}
 	}
 	CATCH_AND_RETURN
 
-	return ErrorCode::errOK;
+	return {};
 }
 
 Error NamespaceConfigData::GetJSON(const std::vector<std::string>& namespacesNames, const std::vector<NamespaceConfigData>& namespacesConfs,
 								   JsonBuilder& jb) noexcept {
+	using namespace std::string_view_literals;
 	if (namespacesNames.size() != namespacesConfs.size()) {
-		return Error(ErrorCode::errLogic, "Incorrect args for NamespaceConfigData::GetJSON");
+		return {ErrorCode::errLogic, "Incorrect args for NamespaceConfigData::GetJSON"};
 	}
 
-	jb.Put("type", "namespaces");
-	auto arr = jb.Array("namespaces");
+	jb.Put("type"sv, "namespaces"sv);
+	auto arr = jb.Array("namespaces"sv);
 	for (size_t i = 0; i < namespacesConfs.size(); i++) {
 		const std::string& namespaceName = namespacesNames[i];
 		const NamespaceConfigData& namespaceConf = namespacesConfs[i];
 
 		JsonBuilder obj = arr.Object();
-		obj.Put("namespace", namespaceName);
+		obj.Put("namespace"sv, namespaceName);
 		namespaceConf.GetJSON(obj);
 		obj.End();
 	}
 
-	return ErrorCode::errOK;
+	return {};
 }
 
 Error NamespaceConfigData::FromJSON(const gason::JsonNode& v) {
 	using namespace std::string_view_literals;
 	std::string errorString;
-	Error err;
 
 	std::string stringVal(logLevelToString(logLevel));
 	if (tryReadOptionalJsonValue(&errorString, v, "log_level"sv, stringVal).ok()) {
@@ -658,7 +696,7 @@ Error NamespaceConfigData::FromJSON(const gason::JsonNode& v) {
 		strictMode = strictModeFromString(stringVal);
 	}
 
-	std::string_view stringViewVal = "off"sv;
+	auto stringViewVal = "off"sv;
 	if (tryReadOptionalJsonValue(&errorString, v, "join_cache_mode"sv, stringViewVal).ok()) {
 		try {
 			cacheMode = str2cacheMode(stringViewVal);
@@ -667,7 +705,7 @@ Error NamespaceConfigData::FromJSON(const gason::JsonNode& v) {
 		}
 	}
 
-	err = tryReadOptionalJsonValue(&errorString, v, "start_copy_policy_tx_size"sv, startCopyPolicyTxSize);
+	auto err = tryReadOptionalJsonValue(&errorString, v, "start_copy_policy_tx_size"sv, startCopyPolicyTxSize);
 	err = tryReadOptionalJsonValue(&errorString, v, "copy_policy_multiplier"sv, copyPolicyMultiplier);
 	err = tryReadOptionalJsonValue(&errorString, v, "tx_size_to_always_copy"sv, txSizeToAlwaysCopy);
 	err = tryReadOptionalJsonValue(&errorString, v, "tx_vec_insertion_threads"sv, txVecInsertionThreads);
@@ -689,7 +727,7 @@ Error NamespaceConfigData::FromJSON(const gason::JsonNode& v) {
 	err = tryReadOptionalJsonValue(&errorString, v, "ann_storage_cache_build_timeout_ms"sv, annStorageCacheBuildTimeout, 0);
 	(void)err;	// ignored; Errors will be handled with errorString
 
-	auto cacheNode = v["cache"];
+	const auto cacheNode = v["cache"];
 	if (!cacheNode.empty()) {
 		err = tryReadOptionalJsonValue(&errorString, cacheNode, "index_idset_cache_size"sv, cacheConfig.idxIdsetCacheSize, 0);
 		err = tryReadOptionalJsonValue(&errorString, cacheNode, "index_idset_hits_to_cache"sv, cacheConfig.idxIdsetHitsToCache, 0);
@@ -703,48 +741,114 @@ Error NamespaceConfigData::FromJSON(const gason::JsonNode& v) {
 	}
 
 	if (!errorString.empty()) {
-		return Error(errParseJson, "NamespaceConfigData: JSON parsing error: '{}'", errorString);
+		return {ErrorCode::errParseJson, "NamespaceConfigData: JSON parsing error: '{}'", errorString};
 	}
 	return {};
 }
 
 void NamespaceConfigData::GetJSON(JsonBuilder& jb) const {
-	jb.Put("log_level", logLevelToString(logLevel));
-	jb.Put("strict_mode", strictModeToString(strictMode));
-	jb.Put("join_cache_mode", cacheMode2str(cacheMode));
+	using namespace std::string_view_literals;
+	jb.Put("log_level"sv, logLevelToString(logLevel));
+	jb.Put("strict_mode"sv, strictModeToString(strictMode));
+	jb.Put("join_cache_mode"sv, cacheMode2str(cacheMode));
 
-	jb.Put("start_copy_policy_tx_size", startCopyPolicyTxSize);
-	jb.Put("copy_policy_multiplier", copyPolicyMultiplier);
-	jb.Put("tx_size_to_always_copy", txSizeToAlwaysCopy);
-	jb.Put("tx_vec_insertion_threads", txVecInsertionThreads);
-	jb.Put("optimization_timeout_ms", optimizationTimeout);
-	jb.Put("optimization_sort_workers", optimizationSortWorkers);
-	jb.Put("wal_size", walSize);
+	jb.Put("start_copy_policy_tx_size"sv, startCopyPolicyTxSize);
+	jb.Put("copy_policy_multiplier"sv, copyPolicyMultiplier);
+	jb.Put("tx_size_to_always_copy"sv, txSizeToAlwaysCopy);
+	jb.Put("tx_vec_insertion_threads"sv, txVecInsertionThreads);
+	jb.Put("optimization_timeout_ms"sv, optimizationTimeout);
+	jb.Put("optimization_sort_workers"sv, optimizationSortWorkers);
+	jb.Put("wal_size"sv, walSize);
 
-	jb.Put("min_preselect_size", minPreselectSize);
-	jb.Put("max_preselect_size", maxPreselectSize);
-	jb.Put("max_preselect_part", maxPreselectPart);
-	jb.Put("max_iterations_idset_preresult", maxIterationsIdSetPreResult);
-	jb.Put("index_updates_counting_mode", idxUpdatesCountingMode);
-	jb.Put("sync_storage_flush_limit", syncStorageFlushLimit);
-	jb.Put("ann_storage_cache_build_timeout_ms", annStorageCacheBuildTimeout);
+	jb.Put("min_preselect_size"sv, minPreselectSize);
+	jb.Put("max_preselect_size"sv, maxPreselectSize);
+	jb.Put("max_preselect_part"sv, maxPreselectPart);
+	jb.Put("max_iterations_idset_preresult"sv, maxIterationsIdSetPreResult);
+	jb.Put("index_updates_counting_mode"sv, idxUpdatesCountingMode);
+	jb.Put("sync_storage_flush_limit"sv, syncStorageFlushLimit);
+	jb.Put("ann_storage_cache_build_timeout_ms"sv, annStorageCacheBuildTimeout);
 
-	jb.Object("cache")
-		.Put("index_idset_cache_size", cacheConfig.idxIdsetCacheSize)
-		.Put("index_idset_hits_to_cache", cacheConfig.idxIdsetHitsToCache)
-		.Put("ft_index_cache_size", cacheConfig.ftIdxCacheSize)
-		.Put("ft_index_hits_to_cache", cacheConfig.ftIdxHitsToCache)
-		.Put("joins_preselect_cache_size", cacheConfig.joinCacheSize)
-		.Put("joins_preselect_hit_to_cache", cacheConfig.joinHitsToCache)
-		.Put("query_count_cache_size", cacheConfig.queryCountCacheSize)
-		.Put("query_count_hit_to_cache", cacheConfig.queryCountHitsToCache);
+	jb.Object("cache"sv)
+		.Put("index_idset_cache_size"sv, cacheConfig.idxIdsetCacheSize)
+		.Put("index_idset_hits_to_cache"sv, cacheConfig.idxIdsetHitsToCache)
+		.Put("ft_index_cache_size"sv, cacheConfig.ftIdxCacheSize)
+		.Put("ft_index_hits_to_cache"sv, cacheConfig.ftIdxHitsToCache)
+		.Put("joins_preselect_cache_size"sv, cacheConfig.joinCacheSize)
+		.Put("joins_preselect_hit_to_cache"sv, cacheConfig.joinHitsToCache)
+		.Put("query_count_cache_size"sv, cacheConfig.queryCountCacheSize)
+		.Put("query_count_hit_to_cache"sv, cacheConfig.queryCountHitsToCache);
+}
+
+Error EmbeddersConfigData::FromDefault(std::vector<EmbeddersConfigData>& defaultEmbeddersConfs) noexcept {
+	using namespace std::string_view_literals;
+	try {
+		defaultEmbeddersConfs.resize(0);
+
+		gason::JsonParser parser;
+		const gason::JsonNode configJson = parser.Parse(kDefEmbeddersConfig);
+
+		const auto& cachesNode = configJson["caches"sv];
+		if (cachesNode.empty()) {
+			return {}; // NOTE: optional
+		}
+
+		if (!cachesNode.isArray()) {
+			return {ErrorCode::errInvalidDefConfigs, "Incorrect kDefEmbeddersConfig: no caches"};
+		}
+
+		for (const auto& cacheNode : cachesNode) {
+			EmbeddersConfigData data;
+			const auto err = data.FromJSON(cacheNode);
+			if (!err.ok()) {
+				return {ErrorCode::errInvalidDefConfigs, "Incorrect kDefEmbeddersConfig: {}", err.what()};
+			}
+			defaultEmbeddersConfs.emplace_back(data);
+		}
+	}
+	CATCH_AND_RETURN
+
+	return {};
+}
+
+Error EmbeddersConfigData::GetJSON(const std::vector<EmbeddersConfigData>& embeddersConfs, JsonBuilder& jb) noexcept {
+	using namespace std::string_view_literals;
+	jb.Put("type"sv, "embedders");
+	auto arr = jb.Array("caches"sv);
+	for (const auto& cache : embeddersConfs) {
+		JsonBuilder obj = arr.Object();
+		cache.GetJSON(obj);
+		obj.End();
+	}
+
+	return {};
+}
+
+Error EmbeddersConfigData::FromJSON(const gason::JsonNode& root) {
+	using namespace std::string_view_literals;
+	std::string errorString;
+	auto err = tryReadRequiredJsonValue(&errorString, root, "cache_tag"sv, cacheTag);
+	err = tryReadOptionalJsonValue(&errorString, root, "max_cache_items"sv, configData.maxCacheItems, 0);
+	err = tryReadOptionalJsonValue(&errorString, root, "hit_to_cache"sv, configData.hitToCache, 0);
+	(void)err;  // ignored; Errors will be handled with errorString
+	if (!errorString.empty()) {
+		return {ErrorCode::errParseJson, "EmbeddersConfigData: JSON parsing error: '{}'", errorString};
+	}
+	return {};
+}
+
+void EmbeddersConfigData::GetJSON(JsonBuilder& jb) const {
+	using namespace std::string_view_literals;
+	jb.Put("cache_tag"sv, cacheTag);
+	jb.Put("max_cache_items"sv, configData.maxCacheItems);
+	jb.Put("hit_to_cache"sv, configData.hitToCache);
 }
 
 template <class ConfigType, typename... Args>
 Error GetDefaultConfigImpl(std::string_view type, JsonBuilder& builder, Args... args) {
-	builder.Put("type", type);
+	using namespace std::string_view_literals;
+	builder.Put("type"sv, type);
 	ConfigType cfg;
-	Error err = cfg.FromDefault();
+	auto err = cfg.FromDefault();
 	if (!err.ok()) {
 		return err;
 	}
@@ -752,23 +856,36 @@ Error GetDefaultConfigImpl(std::string_view type, JsonBuilder& builder, Args... 
 	cfg.GetJSON(obj, args...);
 
 	builder.End();
-	return err;
+	return {};
 }
 
 Error GetDefaultNamespacesConfigsImpl(JsonBuilder& builder) noexcept {
 	std::vector<std::string> defaultNamespacesNames;
 	std::vector<NamespaceConfigData> defaultNamespacesConfs;
-	Error err = NamespaceConfigData::FromDefault(defaultNamespacesNames, defaultNamespacesConfs);
-	if (!err.ok()) {
-		return err;
+	auto err = NamespaceConfigData::FromDefault(defaultNamespacesNames, defaultNamespacesConfs);
+	if (err.ok()) {
+		err = NamespaceConfigData::GetJSON(defaultNamespacesNames, defaultNamespacesConfs, builder);
 	}
-	err = NamespaceConfigData::GetJSON(defaultNamespacesNames, defaultNamespacesConfs, builder);
 	if (!err.ok()) {
 		return err;
 	}
 	builder.End();
 
-	return err;
+	return {};
+}
+
+Error GetDefaultEmbeddersConfigImpl(JsonBuilder& builder) noexcept {
+	std::vector<EmbeddersConfigData> defaultEmbeddersConfs;
+	auto err = EmbeddersConfigData::FromDefault(defaultEmbeddersConfs);
+	if (err.ok()) {
+		err = EmbeddersConfigData::GetJSON(defaultEmbeddersConfs, builder);
+	}
+	if (!err.ok()) {
+		return err;
+	}
+	builder.End();
+
+	return {};
 }
 
 Error GetDefaultConfigs(std::string_view type, JsonBuilder& builder) noexcept {
@@ -782,11 +899,13 @@ Error GetDefaultConfigs(std::string_view type, JsonBuilder& builder) noexcept {
 			return GetDefaultConfigImpl<ReplicationConfigData>(type, builder);
 		} else if (type == "async_replication"sv) {
 			return GetDefaultConfigImpl<cluster::AsyncReplConfigData>(type, builder, cluster::MaskingDSN::Disabled);
+		} else if (type == "embedders"sv) {
+			return GetDefaultEmbeddersConfigImpl(builder);
 		}
 	}
 	CATCH_AND_RETURN
 
-	return Error{ErrorCode::errNotFound, "Unknown default config type"};
+	return {ErrorCode::errNotFound, "Unknown default config type"};
 }
 
 }  // namespace reindexer

@@ -590,6 +590,8 @@ Fields of the joined namespaces must be written like this: `joined_namespace.fie
 
 `ST_Distance()` means distance between geometry points (see [geometry subsection](#geometry)). The points could be columns in current or joined namespaces or fixed point in format `ST_GeomFromText('point(1 -3)')`
 
+`hash()` or `hash(seed)` means get hash (uint32) from record id. If `seed` is not specified, it is generated randomly. This function is usefull to randomize sroting order.
+
 In SQL query sort expression must be quoted.
 
 ```go
@@ -636,6 +638,9 @@ query = db.Query("actors").
     SortStPointDistance(cities.center, reindexer.Point{1.0, -3.0}, true).
     SortStFieldDistance("location", "cities.center", true)
 ....
+// Random sorting with stable seed:
+query = db.Query("actors").Sort("hash(123123)", true)
+....
 // In SQL query:
 iterator := db.ExecSQL ("SELECT * FROM actors ORDER BY person.name ASC")
 ....
@@ -644,6 +649,8 @@ iterator := db.ExecSQL ("SELECT * FROM actors WHERE description = 'ququ' ORDER B
 iterator := db.ExecSQL ("SELECT * FROM actors ORDER BY 'ST_Distance(location, ST_GeomFromText(\'point(1 -3)\'))' ASC")
 ....
 iterator := db.ExecSQL ("SELECT * FROM actors ORDER BY 'ST_Distance(location, cities.center)' ASC")
+....
+iterator := db.ExecSQL ("SELECT * FROM actors ORDER BY 'hash(123123)'")
 ```
 
 It is also possible to set a custom sort order like this
@@ -1876,3 +1883,4 @@ Landing: https://reindexer.io/
 Packages repo: https://repo.reindexer.io/
 
 More documentation (RU): https://reindexer.io/reindexer-docs/
+

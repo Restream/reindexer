@@ -27,7 +27,7 @@ Error RepairTool::RepairStorage(const std::string& dsn) noexcept {
 		try {
 			storage.reset(reindexer::datastorage::StorageFactory::create(storageType));
 		} catch (std::exception& ex) {
-			return Error(errParams, "Skiping DB at '{}' - ", path, ex.what());
+			return Error(errParams, "Skipping DB at '{}' - ", path, ex.what());
 		}
 		std::vector<reindexer::fs::DirEntry> foundNs;
 		if (reindexer::fs::ReadDir(path, foundNs) < 0) {
@@ -76,7 +76,7 @@ Error RepairTool::repairNamespace(IDataStorage* storage, const std::string& stor
 		DummyClusterManager dummyClusterManager;
 
 		reindexer::UpdatesObservers observers("repair_db", dummyClusterManager, 0);
-		reindexer::NamespaceImpl ns(name, {}, dummyClusterManager, observers);
+		reindexer::NamespaceImpl ns(name, {}, dummyClusterManager, observers, nullptr);
 		StorageOpts storageOpts;
 		reindexer::RdxContext dummyCtx;
 		std::cout << "Loading " << name << std::endl;

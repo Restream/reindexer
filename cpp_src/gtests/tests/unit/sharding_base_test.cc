@@ -3790,6 +3790,49 @@ TEST_F(ShardingApi, OrderBy) {
 	}
 }
 
+TEST_F(ShardingApi, OrderBySortHash) {
+	InitShardingConfig cfg;
+	cfg.rowsInTableOnShard = 1000;
+	cfg.nodesInCluster = 1;
+	cfg.shards = 3;
+	cfg.createAdditionalIndexes = false;
+	Init(std::move(cfg));
+
+	auto getIds = [&](const std::string& sortExpr, std::vector<int>& ids) {
+		Query q{default_namespace};
+		q.Sort(sortExpr, true);
+		client::QueryResults qr;
+		std::shared_ptr<client::Reindexer> rx = svc_[0][0].Get()->api.reindexer;
+		Error err = rx->Select(q, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		for (auto& it : qr) {
+			auto item = it.GetItem();
+			std::string_view json = item.GetJSON();
+			gason::JsonParser parser;
+			auto Node = parser.Parse(json);
+			int id = Node["id"].As<int>();
+			ids.emplace_back(id);
+		}
+	};
+	{
+		const std::string expr("hash()");
+		std::vector<int> ids1;
+		getIds(expr, ids1);
+		std::vector<int> ids2;
+		getIds(expr, ids2);
+		ASSERT_NE(ids1, ids2);
+	}
+	{
+		int seed = std::rand() % 10000;
+		const std::string expr("hash(" + std::to_string(seed) + ")");
+		std::vector<int> ids1;
+		getIds(expr, ids1);
+		std::vector<int> ids2;
+		getIds(expr, ids2);
+		ASSERT_EQ(ids1, ids2);
+	}
+}
+
 TEST_F(ShardingApi, TestCsvQrDistributedQuery) {
 	const std::map<int, std::set<int>> shardDataDistrib{{0, {0, 1}}, {1, {2, 3}}, {2, {4, 5}}, {3, {6, 7}}};
 

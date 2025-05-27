@@ -222,8 +222,8 @@ Error AuthContext::GetDB(UserRole role, Reindexer** ret, Args&&... args) noexcep
 
 	if constexpr (caller == CalledFrom::RPCServer) {
 		if (role > kRoleDataRead) {
-			return [&](lsn_t lsn, int emmiterServerId, int shardId) -> Error {
-				if rx_unlikely ((replicationRole && lsn.isEmpty() && emmiterServerId < 0) || (shardingRole && shardId < 0)) {
+			return [&](lsn_t lsn, int emitterServerId, int shardId) -> Error {
+				if rx_unlikely ((replicationRole && lsn.isEmpty() && emitterServerId < 0) || (shardingRole && shardId < 0)) {
 					return Error(errForbidden, "Forbidden: {} is required to perform modify operation with the role '{}'",
 								 replicationRole ? "a non-empty lsn or emitter server id" : "a non-negative shardId", UserRoleName(role_));
 				}

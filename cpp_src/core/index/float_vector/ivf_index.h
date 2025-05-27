@@ -41,6 +41,7 @@ private:
 
 	SelectKeyResult select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&) const override;
 	Variant upsert(ConstFloatVectorView, IdType id, bool& clearCache) override;
+	[[noreturn]] Variant upsertConcurrent(ConstFloatVectorView, IdType id, bool& clearCache) override;
 
 	FloatVector getFloatVector(IdType) const override;
 	ConstFloatVectorView getFloatVectorView(IdType) const override;

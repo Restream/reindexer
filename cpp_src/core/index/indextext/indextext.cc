@@ -127,7 +127,8 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType cond
 
 	auto mergeStatuses = this->GetFtMergeStatuses(rdxCtx);
 	bool needPutCache = false;
-	IdSetCacheKey ckey{keys, condition, 0};
+	const auto rankSortType = RankSortType(selectCtx.opts.rankSortType);
+	IdSetCacheKey ckey{keys, condition, rankSortType};
 	auto cache_ft = cache_ft_.Get(ckey);
 	FtCtx::Ptr ftCtx = createFtCtx(selectCtx);
 	if (cache_ft.valid) {
@@ -142,7 +143,7 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType cond
 	}
 
 	return doSelectKey(keys, needPutCache ? std::optional{std::move(ckey)} : std::nullopt, std::move(mergeStatuses),
-					   FtUseExternStatuses::No, selectCtx.opts.inTransaction, RankSortType(selectCtx.opts.rankSortType), *ftCtx, rdxCtx);
+					   FtUseExternStatuses::No, selectCtx.opts.inTransaction, rankSortType, *ftCtx, rdxCtx);
 }
 
 template <typename T>

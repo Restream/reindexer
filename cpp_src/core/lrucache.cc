@@ -76,7 +76,7 @@ RX_ALWAYS_INLINE bool LRUCacheImpl<K, V, HashT, EqualT>::eraseLRU() {
 	while (totalCacheSize_ > cacheSizeLimit_) {
 		// just to save us if totalCacheSize_ >0 and lru is empty
 		// someone can make bad key or val with wrong size
-		// TODO: Probably we should remove this logic, since there is no access to sizes outside of the lrucache
+		// TODO: Probably we should remove this logic, since there is no access to sizes outside the lrucache
 		if rx_unlikely (lru_.empty()) {
 			clearAll();
 			logFmt(LogError, "IdSetCache::eraseLRU () Cache restarted because wrong cache size totalCacheSize_={}", totalCacheSize_);
@@ -158,8 +158,8 @@ void LRUCacheImpl<K, V, HashT, EqualT>::Clear(std::function<bool(const Key&)> co
 	}
 }
 
-template class LRUCacheImpl<IdSetCacheKey, IdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
-template class LRUCacheImpl<IdSetCacheKey, FtIdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
+template class LRUCacheImpl<IdSetCacheKey, IdSetCacheVal, IdSetCacheKey::Hash, IdSetCacheKey::Equal>;
+template class LRUCacheImpl<IdSetCacheKey, FtIdSetCacheVal, IdSetCacheKey::Hash, IdSetCacheKey::Equal>;
 template class LRUCacheImpl<QueryCacheKey, QueryCountCacheVal, HashQueryCacheKey, EqQueryCacheKey>;
 template class LRUCacheImpl<JoinCacheKey, JoinCacheVal, hash_join_cache_key, equal_join_cache_key>;
 

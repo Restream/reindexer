@@ -61,14 +61,14 @@ int RmDirAll(const std::string& path) noexcept {
 			} else {
 				if (!DeleteFile(dirPath.c_str())) {
 					FindClose(hFind);
-					fprintf(stderr, "Unable to remove file '%s'\n", dirPath.c_str());
+					fprintf(stderr, "reindexer error: unable to remove file '%s'\n", dirPath.c_str());
 					return -1;
 				}
 			}
 		} while (FindNextFile(hFind, &entry));
 		FindClose(hFind);
 		if (!RemoveDirectory(path.c_str())) {
-			fprintf(stderr, "Unable to remove directory '%s'\n", path.c_str());
+			fprintf(stderr, "reindexer error: unable to remove directory '%s'\n", path.c_str());
 			return -1;
 		}
 	}

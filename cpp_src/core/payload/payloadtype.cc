@@ -80,10 +80,10 @@ void PayloadTypeImpl::Add(PayloadFieldType f) {
 	fields_.push_back(std::move(f));
 }
 
-bool PayloadTypeImpl::Drop(std::string_view name) {
+void PayloadTypeImpl::Drop(std::string_view name) {
 	const auto itField = fieldsByName_.find(name);
 	if (itField == fieldsByName_.end()) {
-		return false;
+		return;
 	}
 	const auto fieldIdx = itField->second;
 	for (auto& f : fieldsByName_) {
@@ -125,7 +125,6 @@ bool PayloadTypeImpl::Drop(std::string_view name) {
 		}
 	}
 	fieldsByName_.erase(itField);
-	return true;
 }
 
 int PayloadTypeImpl::FieldByName(std::string_view field) const {
@@ -223,7 +222,7 @@ const std::string& PayloadType::Name() const& noexcept { return get()->Name(); }
 void PayloadType::SetName(std::string_view name) { clone()->SetName(std::string(name)); }
 int PayloadType::NumFields() const noexcept { return get()->NumFields(); }
 void PayloadType::Add(PayloadFieldType f) { clone()->Add(std::move(f)); }
-bool PayloadType::Drop(std::string_view field) { return clone()->Drop(field); }
+void PayloadType::Drop(std::string_view field) { return clone()->Drop(field); }
 int PayloadType::FieldByName(std::string_view field) const { return get()->FieldByName(field); }
 bool PayloadType::FieldByName(std::string_view name, int& field) const noexcept { return get()->FieldByName(name, field); }
 bool PayloadType::Contains(std::string_view field) const noexcept { return get()->Contains(field); }
@@ -232,7 +231,9 @@ const std::vector<int>& PayloadType::StrFields() const& noexcept { return get()-
 size_t PayloadType::TotalSize() const noexcept { return get()->TotalSize(); }
 std::string PayloadType::ToString() const { return get()->ToString(); }
 const h_vector<std::shared_ptr<Embedder>, 1>& PayloadType::Embedders() const noexcept { return get()->Embedders(); }
-std::string_view PayloadType::CheckAuxiliaryField(std::string_view fieldName) const { return get()->CheckAuxiliaryField(fieldName); }
+std::string_view PayloadType::CheckEmbeddersAuxiliaryField(std::string_view fieldName) const {
+	return get()->CheckEmbeddersAuxiliaryField(fieldName);
+}
 
 void PayloadType::Dump(std::ostream& os, std::string_view step, std::string_view offset) const {
 	std::string newOffset{offset};
@@ -268,7 +269,7 @@ void PayloadTypeImpl::checkNewNameBeforeAdd(const PayloadFieldType& f) const {
 	}
 }
 
-std::string_view PayloadTypeImpl::CheckAuxiliaryField(std::string_view fieldName) const {
+std::string_view PayloadTypeImpl::CheckEmbeddersAuxiliaryField(std::string_view fieldName) const {
 	for (const auto& embedder : embedders_) {
 		if (embedder->IsAuxiliaryField(fieldName)) {
 			return embedder->FieldName();

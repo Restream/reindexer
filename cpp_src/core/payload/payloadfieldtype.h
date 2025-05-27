@@ -15,20 +15,22 @@ namespace reindexer {
 class Index;
 class IndexDef;
 class Embedder;
+class EmbeddersCache;
 
 // Type of field
-class PayloadFieldType {
+class [[nodiscard]] PayloadFieldType {
 public:
-	PayloadFieldType(std::string_view nsName, int idx, const Index& index, const IndexDef& indexDef) noexcept;
+	PayloadFieldType(std::string_view nsName, int idx, const Index& index, const IndexDef& indexDef,
+					 const std::shared_ptr<EmbeddersCache>& embeddersCache);
 	PayloadFieldType(KeyValueType t, std::string n, std::vector<std::string> j, IsArray a,
 					 reindexer::FloatVectorDimension dims = reindexer::FloatVectorDimension()) noexcept
 		: type_(t), name_(std::move(n)), jsonPaths_(std::move(j)), offset_(0), arrayDims_(dims.Value()), isArray_(a) {
 		assertrx(!t.Is<KeyValueType::FloatVector>() || !FloatVectorDimension().IsZero());
 	}
 
-	size_t Sizeof() const noexcept;
-	size_t ElemSizeof() const noexcept;
-	reindexer::IsArray IsArray() const noexcept { return isArray_; }
+	[[nodiscard]] size_t Sizeof() const noexcept;
+	[[nodiscard]] size_t ElemSizeof() const noexcept;
+	[[nodiscard]] reindexer::IsArray IsArray() const noexcept { return isArray_; }
 	[[nodiscard]] uint32_t ArrayDims() const noexcept { return arrayDims_; }
 	[[nodiscard]] reindexer::FloatVectorDimension FloatVectorDimension() const noexcept {
 		assertrx_dbg(arrayDims_ <= std::numeric_limits<reindexer::FloatVectorDimension::value_type>::max());
@@ -37,18 +39,18 @@ public:
 	}
 	void SetArray() noexcept { isArray_ = IsArray_True; }
 	void SetOffset(size_t o) noexcept { offset_ = o; }
-	size_t Offset() const noexcept { return offset_; }
-	KeyValueType Type() const noexcept { return type_; }
-	bool IsFloatVector() const noexcept { return type_.Is<KeyValueType::FloatVector>(); }
-	const std::string& Name() const& noexcept { return name_; }
-	const std::vector<std::string>& JsonPaths() const& noexcept { return jsonPaths_; }
+	[[nodiscard]] size_t Offset() const noexcept { return offset_; }
+	[[nodiscard]] KeyValueType Type() const noexcept { return type_; }
+	[[nodiscard]] bool IsFloatVector() const noexcept { return type_.Is<KeyValueType::FloatVector>(); }
+	[[nodiscard]] const std::string& Name() const& noexcept { return name_; }
+	[[nodiscard]] const std::vector<std::string>& JsonPaths() const& noexcept { return jsonPaths_; }
 	void AddJsonPath(const std::string& jsonPath) { jsonPaths_.push_back(jsonPath); }
-	std::string ToString() const;
-	std::shared_ptr<reindexer::Embedder> Embedder() const { return embedder_; }
-	std::shared_ptr<reindexer::Embedder> QueryEmbedder() const { return queryEmbedder_; }
+	[[nodiscard]] std::string ToString() const;
+	[[nodiscard]] std::shared_ptr<reindexer::Embedder> Embedder() const { return embedder_; }
+	[[nodiscard]] std::shared_ptr<reindexer::Embedder> QueryEmbedder() const { return queryEmbedder_; }
 
-	const std::string& Name() const&& = delete;
-	const std::vector<std::string>& JsonPaths() const&& = delete;
+	[[nodiscard]] auto Name() const&& = delete;
+	[[nodiscard]] auto JsonPaths() const&& = delete;
 
 private:
 	KeyValueType type_;

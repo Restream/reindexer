@@ -29,7 +29,7 @@ IvfSearchParams::IvfSearchParams(size_t k, size_t nprobe) : Base{k}, nprobe_{npr
 BruteForceSearchParams KnnSearchParams::BruteForce() const {
 	return std::visit(overloaded{
 						  [](const BruteForceSearchParams& p) noexcept { return p; },
-						  [](const KnnSearchParamsBase& p) noexcept { return BruteForceSearchParams{p.K()}; },
+						  [](const KnnSearchParamsBase& p) { return BruteForceSearchParams{p.K()}; },
 						  [](const HnswSearchParams&) -> BruteForceSearchParams {
 							  throw Error{errQueryExec, "Expected BruteForceSearchParams but get HnswSearchParams"};
 						  },
@@ -43,7 +43,7 @@ BruteForceSearchParams KnnSearchParams::BruteForce() const {
 HnswSearchParams KnnSearchParams::Hnsw() const {
 	return std::visit(overloaded{
 						  [](const HnswSearchParams& p) noexcept { return p; },
-						  [](const KnnSearchParamsBase& p) noexcept { return HnswSearchParams{p.K()}; },
+						  [](const KnnSearchParamsBase& p) { return HnswSearchParams{p.K()}; },
 						  [](const BruteForceSearchParams&) -> HnswSearchParams {
 							  throw Error{errQueryExec, "Expected HnswSearchParams but get BruteForceSearchParams"};
 						  },
@@ -57,7 +57,7 @@ HnswSearchParams KnnSearchParams::Hnsw() const {
 IvfSearchParams KnnSearchParams::Ivf() const {
 	return std::visit(overloaded{
 						  [](const IvfSearchParams& p) noexcept { return p; },
-						  [](const KnnSearchParamsBase& p) noexcept { return IvfSearchParams{p.K()}; },
+						  [](const KnnSearchParamsBase& p) { return IvfSearchParams{p.K()}; },
 						  [](const BruteForceSearchParams&) -> IvfSearchParams {
 							  throw Error{errQueryExec, "Expected IvfSearchParams but get BruteForceSearchParams"};
 						  },

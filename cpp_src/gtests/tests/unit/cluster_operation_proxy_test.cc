@@ -1,10 +1,11 @@
+#include "cluster_operation_proxy.h"
 #include "client/cororeindexer.h"
 #include "client/queryresults.h"
 #include "cluster/consts.h"
-#include "cluster_operation_proxy.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/system_ns_names.h"
 #include "gtests/tests/gtest_cout.h"
+#include "gtests/tools.h"
 #include "vendor/gason/gason.h"
 
 using namespace reindexer;
@@ -28,7 +29,7 @@ TEST_F(ClusterOperationProxyApi, Transaction) {
 	const size_t kClusterSize = 4;
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn(ExceptionWrapper([&loop, &ports] {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		// waiting cluster synchonization, get leader and foollower id
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
@@ -132,7 +133,7 @@ TEST_F(ClusterOperationProxyApi, RollbackFollowerTransaction) {
 	const size_t kClusterSize = 4;
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn(ExceptionWrapper([&loop, &ports] {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		// waiting cluster synchonization, get leader and foollower id
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
@@ -186,7 +187,7 @@ TEST_F(ClusterOperationProxyApi, ParallelTransaction) {
 	const size_t kClusterSize = 4;
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn(ExceptionWrapper([&loop, &ports] {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		// waiting cluster synchonization, get leader and create foollowers id array
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
@@ -252,7 +253,7 @@ TEST_F(ClusterOperationProxyApi, StressTest) {
 	const size_t kClusterSize = 3;
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn(ExceptionWrapper([&loop, &ports] {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		// waiting cluster synchonization, get leader and create foollowers id array
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
@@ -270,9 +271,9 @@ TEST_F(ClusterOperationProxyApi, StressTest) {
 		std::mutex mtx;
 		std::vector<NsData> namespaces;
 
-		[[maybe_unused]] auto txInsertions = [&]() noexcept {
+		auto txInsertions = exceptionWrapper([&] {
 			net::ev::dynamic_loop thLoop;
-			thLoop.spawn([&]() noexcept {
+			thLoop.spawn(exceptionWrapper([&] {
 				client::CoroReindexer rx;
 				auto err = rx.Connect(dsn, thLoop);
 				ASSERT_TRUE(err.ok()) << err.what();
@@ -301,13 +302,13 @@ TEST_F(ClusterOperationProxyApi, StressTest) {
 					err = rx.CommitTransaction(tx, qr);
 					ASSERT_TRUE(err.ok()) << err.what();
 				}
-			});
+			}));
 			thLoop.run();
-		};
+		});
 
-		[[maybe_unused]] auto singleInsertions = [&]() noexcept {
+		auto singleInsertions = exceptionWrapper([&] {
 			net::ev::dynamic_loop thLoop;
-			thLoop.spawn([&]() noexcept {
+			thLoop.spawn(exceptionWrapper([&] {
 				client::CoroReindexer rx;
 				auto err = rx.Connect(dsn, thLoop);
 				ASSERT_TRUE(err.ok()) << err.what();
@@ -330,9 +331,9 @@ TEST_F(ClusterOperationProxyApi, StressTest) {
 					err = rx.Upsert(nsName, item);
 					ASSERT_TRUE(err.ok()) << err.what();
 				}
-			});
+			}));
 			thLoop.run();
-		};
+		});
 
 		std::vector<std::thread> threads;
 		threads.emplace_back(txInsertions);
@@ -372,7 +373,7 @@ TEST_F(ClusterOperationProxyApi, TransactionStopLeader) {
 	const size_t kClusterSize = 5;
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn(ExceptionWrapper([&loop, &ports] {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		// waiting cluster synchonization, get leader and foollower id
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
@@ -1017,7 +1018,7 @@ TEST_F(ClusterOperationProxyApi, ApiTest) {
 	const size_t kClusterSize = 5;
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn(ExceptionWrapper([&loop, &ports] {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 				   Cluster cluster(loop, 0, kClusterSize, ports);
 				   // waiting cluster synchonization, get leader and foollower id
 				   auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
@@ -1056,7 +1057,7 @@ TEST_F(ClusterOperationProxyApi, DeleteSelect) {
 	net::ev::dynamic_loop loop;
 	const std::string kNsName = "ns1";
 	auto ports = GetDefaults();
-	loop.spawn(ExceptionWrapper([&loop, &kNsName, &ports] {
+	loop.spawn(exceptionWrapper([&loop, &kNsName, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 		ASSERT_NE(leaderId, -1);
@@ -1115,7 +1116,7 @@ TEST_F(ClusterOperationProxyApi, ClusterStatsErrorHandling) {
 	const size_t kClusterSize = 3;
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn(ExceptionWrapper([&loop, &ports] {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		std::vector<Query> queries = {Query(kReplicationStatsNamespace),
 									  Query(kReplicationStatsNamespace)
@@ -1153,7 +1154,7 @@ TEST_F(ClusterOperationProxyApi, ChangeLeaderOfflineNodeAndNotExistNode) {
 	net::ev::dynamic_loop loop;
 	const std::string kNsName = "ns1";
 	auto ports = GetDefaults();
-	loop.spawn(ExceptionWrapper([&loop, &kNsName, &kNotExistServerNode, &ports, this] {
+	loop.spawn(exceptionWrapper([&loop, &kNsName, &kNotExistServerNode, &ports, this] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 		ASSERT_NE(leaderId, -1);
@@ -1194,7 +1195,7 @@ TEST_F(ClusterOperationProxyApi, ChangeLeader) {
 	net::ev::dynamic_loop loop;
 	const std::string kNsName = "ns1";
 	auto ports = GetDefaults();
-	loop.spawn(ExceptionWrapper([&loop, &kNsName, &ports] {
+	loop.spawn(exceptionWrapper([&loop, &kNsName, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 		ASSERT_NE(leaderId, -1);
@@ -1227,7 +1228,7 @@ TEST_F(ClusterOperationProxyApi, Shutdown) {
 	net::ev::dynamic_loop loop;
 	const std::string kNsName = "ns1";
 	auto ports = GetDefaults();
-	loop.spawn(ExceptionWrapper([&loop, &kNsName, &ports] {
+	loop.spawn(exceptionWrapper([&loop, &kNsName, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 		ASSERT_NE(leaderId, -1);
@@ -1274,7 +1275,7 @@ TEST_F(ClusterOperationProxyApi, ChangeLeaderAndWrite) {
 
 	net::ev::dynamic_loop loop;
 
-	loop.spawn(ExceptionWrapper([&loop, &kNsName, this] {
+	loop.spawn(exceptionWrapper([&loop, &kNsName, this] {
 		const auto ports = GetDefaults();
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		std::atomic<bool> done = {false};
@@ -1401,7 +1402,7 @@ TEST_F(ClusterOperationProxyApi, ChangeLeaderAndWriteSimple) {
 	const std::string kNsName = "ns1";
 	net::ev::dynamic_loop loop;
 
-	loop.spawn(ExceptionWrapper([&loop, &kNsName, this] {
+	loop.spawn(exceptionWrapper([&loop, &kNsName, this] {
 		const auto ports = GetDefaults();
 		std::vector<std::thread> threads;
 		Cluster cluster(loop, 0, kClusterSize, ports);
@@ -1460,7 +1461,7 @@ TEST_F(ClusterOperationProxyApi, ChangeLeaderTimeout) {
 	net::ev::dynamic_loop loop;
 	const std::string kNsName = "ns1";
 	auto ports = GetDefaults();
-	loop.spawn(ExceptionWrapper([&loop, &kNsName, &ports, this] {
+	loop.spawn(exceptionWrapper([&loop, &kNsName, &ports, this] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 		ASSERT_NE(leaderId, -1);
@@ -1490,7 +1491,7 @@ TEST_F(ClusterOperationProxyApi, SelectFromStatsTimeout) {
 	// Check error on attempt to reset cluster namespace role
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn(ExceptionWrapper([&loop, &ports] {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		constexpr size_t kClusterSize = 3;
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		cluster.StopServers({0, 1});

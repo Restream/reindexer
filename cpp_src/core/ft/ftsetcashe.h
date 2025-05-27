@@ -17,6 +17,6 @@ struct FtIdSetCacheVal {
 };
 
 using FtIdSetCache =
-	LRUCache<LRUCacheImpl<IdSetCacheKey, FtIdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>, LRUWithAtomicPtr::No>;
+	LRUCache<LRUCacheImpl<IdSetCacheKey, FtIdSetCacheVal, IdSetCacheKey::Hash, IdSetCacheKey::Equal>, LRUWithAtomicPtr::No>;
 
 }  // namespace reindexer

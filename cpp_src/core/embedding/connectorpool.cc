@@ -48,7 +48,7 @@ ConnectorPool::ConnectorPool(PoolConfig&& config) : config_{std::move(config)} {
 	}
 }
 
-ConnectorPool::~ConnectorPool() {}
+ConnectorPool::~ConnectorPool() = default;
 
 std::pair<Error, ConnectorPool::ConnectorProxy> ConnectorPool::GetConnector(const RdxContext& ctx) noexcept {
 	try {
@@ -64,19 +64,20 @@ std::pair<Error, ConnectorPool::ConnectorProxy> ConnectorPool::GetConnector(cons
 		lock.unlock();
 
 		if (CheckConnect(*key, config_)) {
-			return {Error(), ConnectorProxy{this, key}};
+			return std::make_pair(Error(), ConnectorProxy{this, key}); // well done
 		}
 		lock.lock();
 		idle_.insert(busy_.extract(key));
-		return {Error(errNetwork, "Some of the connectors are not available"), ConnectorProxy{}};
 	} catch (Error& err) {
 		if (err.code() == errTimeout || err.code() == errCanceled) {
-			return {Error(err.code(), "Some of the connectors are not available (request was canceled/timed out)"), ConnectorProxy{}};
+			return std::make_pair(Error(err.code(), "Some of the connectors are not available (request was canceled/timed out)"), ConnectorProxy{});
 		}
-		return {std::move(err), ConnectorProxy{}};
+		return std::make_pair(std::move(err), ConnectorProxy{});
 	} catch (...) {
-		return {Error(errNetwork, "Unknown error with connectors or connector pool"), ConnectorProxy{}};
+		return std::make_pair(Error(errNetwork, "Unknown error with connectors or connector pool"), ConnectorProxy{});
 	}
+
+	return std::make_pair(Error(errNetwork, "Some of the connectors are not available"), ConnectorProxy{});
 }
 
 void ConnectorPool::ReleaseConnection(const ConnectorProxy& proxy) {

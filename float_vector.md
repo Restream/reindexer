@@ -6,15 +6,17 @@
   * [HNSW options](#hnsw-options)
   * [IVF options](#ivf-options)
   * [Embedding configuration](#embedding-configuration)
+  * [Embedding cache configuration](#embedding-cache-configuration)
 - [Float vector fields in selection results](#float-vector-fields-in-selection-results)
 - [KNN search](#knn-search)
+- [KNN search with auto-embedding](#knn-search-with-auto-embedding)
 - [Rank](#rank)
 - [Query examples](#query-examples)
 - [Environment variables affecting vector indexes](#environment-variables-affecting-vector-indexes)
 - [Additional action commands](#additional-action-commands)
   * [Rebuilding clusters for IVF index](#rebuilding-clusters-for-ivf-index)
   * [Removing disk cache for ANN indexes](#removing-disk-cache-for-ann-indexes)
-- [KNN search with auto-embedding](#knn-search-with-auto-embedding)
+  * [Removing disk cache for embedders](#removing-disk-cache-for-embedders)
 
 <!-- tocstop -->
 
@@ -28,7 +30,7 @@ Vectors of only the specified dimension can be inserted and searched in the inde
 The initial size `start_size` can optionally be specified for `brute force` и `hnsw` indexes, which helps to avoid reallocation and reindexing.
 The optimal value is equal to the size of the fully filled index.
 A much larger `start_size` value will result in memory overuse, while a much smaller `start_size` value will slow down inserts.
-Minimum and default values ​​are 1000.
+Minimum and default values are 1000.
 
 Automatic embedding of vector indexes is also supported. It is expected that the vector generation service is configured.
 Its URL is needed, and the basic index fields are specified. Contents of the base fields are passed to the service, and the service returns the calculated vector value.
@@ -88,7 +90,7 @@ if err != nil {
 
 ### Embedding configuration
 
-Reindexer is able to perform automatic remote HTTP API calls to recieve embedding for documents' fields or strings in KNN queries conditions. Currently reindexer's core simply sends fields/conditions content to external user's service and expects to recieve embedding results.
+Reindexer is able to perform automatic remote HTTP API calls to receive embedding for documents' fields or strings in KNN queries conditions. Currently, reindexer's core simply sends fields/conditions content to external user's service and expects to receive embedding results.
 
 Embedding service has to implement this [openapi spec](embedders_api.yaml).
 
@@ -126,7 +128,7 @@ To configure automatic embedding you should set `config` field in the target vec
   }
 }
 ```
-- `name` - Embedder name. Optional
+- `name` - Embedder name. Optional. If not set, default generation logic is used, in lower case: <NS_NAME>_<INDEX_NAME>
 - `URL` - Embed service URL. The address of the service where embedding requests will be sent. Required
 - `cache_tag` - Name, used to access the cache. Optional, if not specified, caching is not used
 - `fields` - List of index fields to calculate embedding. Required
@@ -191,6 +193,60 @@ if err != nil {
 }
 ```
 
+### Embedding cache configuration
+
+When do embedding, it makes sense to use result caching, which can improve performance. To do this, you need to configure it.
+Setting up embedding caches is done in two places. Firstly, `cache_tag` parameter that was described above.
+`cache_tag` is part of `config` field in the target vector index description. `cache_tag` it's simple name\identifier,
+used to access the cache. Optional, if not specified, caching is not used. The name may not be unique.
+In this case, different embedders can put the result in the same cache. But keep in mind that this only works well
+if the source data for the embedder does not overlap. Or if the embedders return exactly the same values for the same request.
+Secondly, special item in system `#config` namespace, with type `embedders`. Optional, if not specified, caching is not used for all embedders.
+```json
+{
+  "type":"embedders",
+  "caches":[
+    {
+      "cache_tag":"*",
+      "max_cache_items":1000000,
+      "hit_to_cache":1
+    },
+    {
+      "cache_tag":"the jungle book",
+      "max_cache_items":2025,
+      "hit_to_cache":3
+    }
+  ]
+}
+```
+- `cache_tag` - Name, used to access the cache. Required. The special character `*` can be used, in which case the settings apply to all configured embedders with not empty `cache_tag`.
+Provided there is no specialization. The specialization is determined by the match of the `cache_tag` values in this configuration and for the embedder (like `the jungle book`).
+- `max_cache_items` - Maximum size of the embedding results cache in items. This cache will only be enabled if the `max_cache_items` property is not `off` (value `0`).
+It stores the results of the embedding calculation. Minimum `0`, default `1000000`.
+- `hit_to_cache` - This value determines how many requests required to put results into cache. For example with value of `2`: first request will be executed without caching,
+second request will generate cache entry and put results into the cache and third request will get cached results. `0` and `1` mean - when value added goes straight to the cache.
+Minimum `0`, default `1`.
+- GO
+```go
+nsConfig := make([]reindexer.DBEmbeddersConfig, 1)
+nsConfig[0].CacheTag = "*"
+nsConfig[0].MaxCacheItems = 10000
+nsConfig[0].HitToCache = 0
+item := reindexer.DBConfigItem{
+	Type:      "caches",
+	Embedders: &nsConfig,
+}
+err := DB.Upsert(reindexer.ConfigNamespaceName, item)
+```
+- SQL
+```SQL
+update #config set caches[0] = {"cache_tag":"*", "max_cache_items":10000, "hit_to_cache":0} where type='embedders'
+```
+Or you can update one parameter
+```SQL
+update #config set caches[0].max_cache_items = 4 where type='embedders'
+```
+
 ## Float vector fields in selection results
 By default, float vector fields are excluded from the results of all queries to namespaces containing vector indexes.
 If you need to get float vector fields, you should specify this explicitly in the query.
@@ -241,7 +297,7 @@ Parameters set for `KNN`-query depends on the specific index type. The only requ
 When searching by `hnsw` index, you can additionally specify the `ef` parameter.
 Increasing this parameter allows you to get a higher quality result (recall rate), but at the same time slows down the search.
 See description [here](https://github.com/nmslib/hnswlib/blob/master/ALGO_PARAMS.md#search-parameters).
-Optional, minimum and default values ​​are `k`.
+Optional, minimum and default values are `k`.
 
 When searching by `ivf` index, you can additionally specify the `nprobe` parameter - the number of clusters to be looked at during the search.
 Increasing this parameter allows you to get a higher quality result (recall rate), but at the same time slows down the search.
@@ -282,6 +338,42 @@ if err != nil {
 	panic(err)
 }
 db.Query("test_ns").WhereKnn("vec_ivf", []float32{2.4, 3.5, ...}, ivfSearchParams)
+```
+
+## KNN search with auto-embedding
+
+KNN search with automatic embedding works much like simple KNN search.
+With one exception, it expects a string instead of a vector. It then sends that string to the embedding service, gets back a calculated vector.
+And that vector is then used as the actual value for filtering the database.
+Before this need to configure "query_embedder".
+
+- SQL\
+  All queries are similar to KNN search
+```sql
+SELECT * FROM test_ns WHERE KNN(vec_bf, '<text to embed calculate>', k=100)
+SELECT * FROM test_ns WHERE KNN(vec_hnsw, '<text to embed calculate>', k=100, ef=200)
+SELECT * FROM test_ns WHERE KNN(vec_ivf, '<text to embed calculate>', k=100, nprobe=10)
+```
+- Go
+```go
+knnBaseSearchParams, err := reindexer.NewBaseKnnSearchParam(4291)
+if err != nil {
+    panic(err)
+}
+// brute force
+db.Query("test_ns").WhereKnnString("vec_bf", "<text to embed calculate>", knnBaseSearchParams)
+// hnsw
+hnswSearchParams, err := reindexer.NewIndexHnswSearchParam(100000, knnBaseSearchParams)
+if err != nil {
+    panic(err)
+}
+db.Query("test_ns").WhereKnnString("vec_hnsw", "<text to embed calculate>", hnswSearchParams)
+// ivf
+ivfSearchParams, err := reindexer.NewIndexIvfSearchParam(10, knnBaseSearchParams)
+if err != nil {
+    panic(err)
+}
+db.Query("test_ns").WhereKnnString("vec_ivf", "<text to embed calculate>", ivfSearchParams)
 ```
 
 ## Rank
@@ -433,43 +525,23 @@ The command can be useful for cases where the composition of vectors in the inde
 ```
 
 The command can be useful for cases when you need to force the re-creation of the disk cache for ANN indexes, or disable it completely (using it together with the `RX_DISABLE_ANN_CACHE` environment variable).
-
 - `namespace` - the target namespace (`*` - applies the command to all namespaces);
 - `index` - the target index (`*` - applies the command to all suitable indexes in namespace).
 
+### Removing disk cache for embedders
 
-## KNN search with auto-embedding
-
-KNN search with automatic embedding works much like simple KNN search.
-With one exception, it expects a string instead of a vector. It then sends that string to the embedding service, gets back a calculated vector.
-And that vector is then used as the actual value for filtering the database.
-Before this need to configure "query_embedder".
-
-- SQL\
-  All queries are similar to KNN search
+- JSON
+```json
+{"type":"action","action":{"command":"clear_embedders_cache", "cache_tag":"*"}}
+```
+- SQL
 ```sql
-SELECT * FROM test_ns WHERE KNN(vec_bf, '<text to embed calculate>', k=100)
-SELECT * FROM test_ns WHERE KNN(vec_hnsw, '<text to embed calculate>', k=100, ef=200)
-SELECT * FROM test_ns WHERE KNN(vec_ivf, '<text to embed calculate>', k=100, nprobe=10)
+UPDATE #config set action={ "command": "clear_embedders_cache", "cache_tag": "*" } where type='action'
 ```
 - Go
 ```go
-knnBaseSearchParams, err := reindexer.NewBaseKnnSearchParam(4291)
-if err != nil {
-    panic(err)
-}
-// brute force
-db.Query("test_ns").WhereKnnString("vec_bf", "<text to embed calculate>", knnBaseSearchParams)
-// hnsw
-hnswSearchParams, err := reindexer.NewIndexHnswSearchParam(100000, knnBaseSearchParams)
-if err != nil {
-    panic(err)
-}
-db.Query("test_ns").WhereKnnString("vec_hnsw", "<text to embed calculate>", hnswSearchParams)
-// ivf
-ivfSearchParams, err := reindexer.NewIndexIvfSearchParam(10, knnBaseSearchParams)
-if err != nil {
-    panic(err)
-}
-db.Query("test_ns").WhereKnnString("vec_ivf", "<text to embed calculate>", ivfSearchParams)
+err := DB.Upsert("#config", []byte("{\"type\":\"action\",\"action\":{\"command\":\"clear_embedders_cache\", \"cache_tag\":\"*\"}}"))
 ```
+
+The command can be useful in cases where it is necessary to reset cached content for all or a specific embedder
+- `cache_tag` - the target tag (`*` - applies the command to all matching embedder caches in the namespace).

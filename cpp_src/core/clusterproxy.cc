@@ -359,7 +359,7 @@ Transaction ClusterProxy::NewTransaction(std::string_view nsName, const RdxConte
 	using LocalFT = LocalTransaction (ReindexerImpl::*)(std::string_view, const RdxContext&);
 	auto action = [this](const RdxContext& ctx, LeaderRefT clientToLeader, std::string_view nsName) {
 		try {
-			client::Reindexer l = clientToLeader->WithEmmiterServerId(GetServerID());
+			client::Reindexer l = clientToLeader->WithEmitterServerId(GetServerID());
 			return Transaction(impl_.NewTransaction(nsName, ctx), std::move(l));
 		} catch (const Error& err) {
 			return Transaction(err);
@@ -575,7 +575,7 @@ Error ClusterProxy::shardingControlRequestAction(const RdxContext& ctx, Args&&..
 }
 
 Error ClusterProxy::ShardingControlRequest(const sharding::ShardingControlRequestData& request, sharding::ShardingControlResponseData&,
-										   const RdxContext& ctx) noexcept {
+										   const RdxContext& ctx) {
 	using Type = sharding::ControlCmdType;
 	switch (request.type) {
 		case Type::SaveCandidate: {
@@ -699,7 +699,7 @@ R ClusterProxy::proxyCall(const RdxContext& ctx, std::string_view nsName, const 
 				return r;
 			}
 			if (info.role == cluster::RaftInfo::Role::None) {  // fast way for non-cluster node
-				if (ctx.HasEmmiterServer()) {
+				if (ctx.HasEmitterServer()) {
 					setErrorCode(r, Error(errLogic, "Request was proxied to non-cluster node"));
 					return r;
 				}
@@ -730,7 +730,7 @@ R ClusterProxy::proxyCall(const RdxContext& ctx, std::string_view nsName, const 
 #endif
 				// the only place, where errUpdateReplication may appear
 			} else if (info.role == cluster::RaftInfo::Role::Follower) {
-				if (ctx.HasEmmiterServer()) {
+				if (ctx.HasEmitterServer()) {
 					setErrorCode(r, Error(errAlreadyProxied, "Request was proxied to follower node"));
 					return r;
 				}
@@ -781,7 +781,7 @@ R ClusterProxy::proxyCall(const RdxContext& ctx, std::string_view nsName, const 
 template <typename FnL, FnL fnl, typename... Args>
 Error ClusterProxy::baseFollowerAction(const RdxContext& ctx, LeaderRefT clientToLeader, Args&&... args) {
 	try {
-		client::Reindexer l = clientToLeader->WithEmmiterServerId(sId_);
+		client::Reindexer l = clientToLeader->WithEmitterServerId(sId_);
 		const auto ward = ctx.BeforeClusterProxy();
 		Error err = (l.*fnl)(std::forward<Args>(args)...);
 		return err;
@@ -803,7 +803,7 @@ Error ClusterProxy::itemFollowerAction(const RdxContext& ctx, LeaderRefT clientT
 				return err;
 			}
 			clientItem.SetPrecepts(item.impl_->GetPrecepts());
-			client::Reindexer l = clientToLeader->WithEmmiterServerId(sId_);
+			client::Reindexer l = clientToLeader->WithEmitterServerId(sId_);
 			{
 				const auto ward = ctx.BeforeClusterProxy();
 				err = (l.*fnl)(nsName, clientItem);
@@ -828,7 +828,7 @@ template <ClusterProxy::ProxiedQueryActionFT fnl>
 Error ClusterProxy::resultFollowerAction(const RdxContext& ctx, LeaderRefT clientToLeader, const Query& query, LocalQueryResults& qr) {
 	try {
 		Error err;
-		client::Reindexer l = clientToLeader->WithEmmiterServerId(sId_);
+		client::Reindexer l = clientToLeader->WithEmitterServerId(sId_);
 		client::QueryResults clientResults;
 		{
 			const auto ward = ctx.BeforeClusterProxy();
@@ -862,7 +862,7 @@ Error ClusterProxy::resultItemFollowerAction(const RdxContext& ctx, LeaderRefT c
 			return err;
 		}
 		clientItem.SetPrecepts(item.impl_->GetPrecepts());
-		client::Reindexer l = clientToLeader->WithEmmiterServerId(sId_);
+		client::Reindexer l = clientToLeader->WithEmitterServerId(sId_);
 		client::QueryResults clientResults;
 		{
 			const auto ward = ctx.BeforeClusterProxy();

@@ -72,6 +72,7 @@ public:
 	SelectKeyResults SelectKey(const VariantArray&, CondType, SortType, const SelectContext&, const RdxContext&) override final;
 	void Upsert(VariantArray& result, const VariantArray& keys, IdType, bool& clearCache) override final;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final;
+	Variant UpsertConcurrent(const Variant& key, IdType id, bool& clearCache);
 	SelectKeyResult Select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&, const RdxContext&) const;
 	void Commit() override final;
 	void UpdateSortedIds(const UpdateSortedContext&) noexcept override final {}
@@ -79,6 +80,7 @@ public:
 	bool HoldsStrings() const noexcept override final { return false; }
 	void ReconfigureCache(const NamespaceCacheConfigData&) noexcept override final {}
 	IndexMemStat GetMemStat(const RdxContext&) noexcept override;
+	IndexPerfStat GetIndexPerfStat() override;
 	FloatVector GetFloatVector(IdType) const;
 	ConstFloatVectorView GetFloatVectorView(IdType) const;
 	[[nodiscard]] uint64_t GetHash(IdType rowId) const { return GetFloatVectorView(rowId).Hash(); }
@@ -95,9 +97,13 @@ public:
 private:
 	virtual SelectKeyResult select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&) const = 0;
 	virtual Variant upsert(ConstFloatVectorView, IdType id, bool& clearCache) = 0;
+	virtual Variant upsertConcurrent(ConstFloatVectorView, IdType id, bool& clearCache) = 0;
 
 	virtual FloatVector getFloatVector(IdType) const = 0;
 	virtual ConstFloatVectorView getFloatVectorView(IdType) const = 0;
+
+	void checkVectorDims(ConstFloatVectorView);
+	Variant upsertEmptyVectImpl(IdType);
 
 	IndexMemStat memStat_;
 	Index::KeyEntry emptyValues_;

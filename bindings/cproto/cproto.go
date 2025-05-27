@@ -730,7 +730,7 @@ func (binding *NetCProto) ReopenLogFiles() error {
 func (binding *NetCProto) Status(ctx context.Context) bindings.Status {
 	var totalQueueSize, totalQueueUsage, connUsage int
 	var remoteAddr string
-	conns := binding.getAllConns()
+	conns := binding.getAllRegularConns()
 	activeConns := 0
 	for _, conn := range conns {
 		if conn.hasError() {
@@ -832,10 +832,21 @@ func (binding *NetCProto) Unsubscribe(ctx context.Context) error {
 	}
 }
 
-func (binding *NetCProto) getAllConns() []connection {
+func (binding *NetCProto) getAllRegularConns() []connection {
 	binding.lock.RLock()
 	defer binding.lock.RUnlock()
 	return binding.pool.sharedConns
+}
+
+func (binding *NetCProto) getAllConns() []connection {
+	binding.lock.RLock()
+	defer binding.lock.RUnlock()
+	conns := make([]connection, len(binding.pool.sharedConns))
+	copy(conns, binding.pool.sharedConns)
+	if binding.pool.eventsConn != nil {
+		conns = append(conns, binding.pool.eventsConn)
+	}
+	return conns
 }
 
 func (binding *NetCProto) logMsg(level int, fmt string, msg ...interface{}) {

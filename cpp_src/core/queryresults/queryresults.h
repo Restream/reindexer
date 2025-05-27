@@ -51,34 +51,15 @@ private:
 	template <typename QrT>
 	class QrMetaData {
 	public:
-		QrMetaData(QrT&& _qr = QrT()) : qr(std::move(_qr)), it(qr.begin()) {}
+		QrMetaData(QrT&& _qr, int shardID);
 		QrMetaData(const QrMetaData&) = delete;
-		QrMetaData(QrMetaData&& o) noexcept
-			: qr(std::move(o.qr)),
-			  it(QrT::Iterator::SwitchQueryResultsPtrUnsafe(std::move(o.it), qr)),
-			  hasCompatibleTm(o.hasCompatibleTm),
-			  shardID(o.shardID),
-			  itemRefData_(std::move(o.itemRefData_)),
-			  nsJoinRes_(std::move(o.nsJoinRes_)) {}
+		QrMetaData(QrMetaData&& o) noexcept;
 		QrMetaData& operator=(const QrMetaData&) = delete;
-		QrMetaData& operator=(QrMetaData&& o) noexcept {
-			if (this != &o) {
-				qr = std::move(o.qr);
-				// SwitchQueryResultsPtrUnsafe is not implemented for client query results - iterator contains to many different pointer
-				// and it is unsafe to move it
-				it = QrT::Iterator::SwitchQueryResultsPtrUnsafe(std::move(o.it), qr);
-				hasCompatibleTm = o.hasCompatibleTm;
-				shardID = o.shardID;
-				itemRefData_ = std::move(o.itemRefData_);
-				nsJoinRes_ = std::move(o.nsJoinRes_);
-			}
-			return *this;
-		}
+		QrMetaData& operator=(QrMetaData&& o) noexcept;
 
 		QrT qr;
 		typename QrT::Iterator it;
 		bool hasCompatibleTm = false;
-		int shardID = ShardingKeyType::ProxyOff;
 		void ResetItemRefCache(int64_t idx, ItemRefCache&& newD) const;
 		ItemDataStorage<ItemRefCache>& ItemRefData(int64_t idx);
 		const std::unique_ptr<ItemDataStorage<ItemRefCache>>& ItemRefData() const noexcept { return itemRefData_; }
@@ -86,8 +67,12 @@ private:
 		void ResetJoinStorage(int64_t idx) const;
 		const std::unique_ptr<ItemDataStorage<JoinResStorage>>& NsJoinRes() const noexcept { return nsJoinRes_; }
 		bool CheckIfNsJoinStorageHasSameIdx(int64_t idx) const noexcept;
+		int ShardID() const noexcept { return shardID_; }
+		uint32_t ShardIDHash() const noexcept { return shardIDHash_; }
 
 	private:
+		int shardID_ = ShardingKeyType::ProxyOff;
+		uint32_t shardIDHash_ = 0;
 		mutable std::unique_ptr<ItemDataStorage<ItemRefCache>> itemRefData_;
 		mutable std::unique_ptr<ItemDataStorage<JoinResStorage>> nsJoinRes_;
 	};
@@ -210,7 +195,7 @@ public:
 				if (localTags.size() != 1) {
 					throw Error(errLogic, "Unexpected shards count in the local query results");
 				}
-				localTags[0].shardId = local_->shardID;
+				localTags[0].shardId = local_->ShardID();
 				ret.emplace_back(std::move(localTags[0]));
 				return ret;
 			}
@@ -224,7 +209,7 @@ public:
 					throw Error(errLogic, "Unexpected shards count in the remote query results");
 				}
 				auto& tags = ret.emplace_back(remoteTags[0]);
-				tags.shardId = remote.shardID;
+				tags.shardId = remote.ShardID();
 				return ret;
 			}
 			case Type::Mixed: {
@@ -233,7 +218,7 @@ public:
 					if (localTags.size() != 1) {
 						throw Error(errLogic, "Unexpected shards count in the local query results");
 					}
-					localTags[0].shardId = local_->shardID;
+					localTags[0].shardId = local_->ShardID();
 					ret.emplace_back(std::move(localTags[0]));
 				}
 			}
@@ -248,7 +233,7 @@ public:
 						throw Error(errLogic, "Unexpected shards count in the remote query results");
 					}
 					auto& tags = ret.emplace_back(remoteTags[0]);
-					tags.shardId = r->shardID;
+					tags.shardId = r->ShardID();
 				}
 				return ret;
 		}
@@ -352,7 +337,7 @@ public:
 				case Type::None:
 					return ShardingKeyType::ProxyOff;
 				case Type::Local:
-					return qr_->local_->shardID;
+					return qr_->local_->ShardID();
 				case Type::SingleRemote:
 				case Type::MultipleRemote:
 				case Type::Mixed:
@@ -360,9 +345,9 @@ public:
 			}
 			validateProxiedIterator();
 			if (qr_->curQrId_ < 0) {
-				return qr_->local_->shardID;
+				return qr_->local_->ShardID();
 			}
-			return qr_->remote_[size_t(qr_->curQrId_)]->shardID;
+			return qr_->remote_[size_t(qr_->curQrId_)]->ShardID();
 		}
 		bool IsRaw() const {
 			struct {

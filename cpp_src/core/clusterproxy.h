@@ -70,7 +70,7 @@ public:
 	Error DumpIndex(std::ostream& os, std::string_view nsName, std::string_view index, const RdxContext& ctx);
 	void ShutdownCluster();
 
-	intrusive_ptr<intrusive_atomic_rc_wrapper<const cluster::ShardingConfig>> GetShardingConfig() const noexcept {
+	intrusive_ptr<const intrusive_atomic_rc_wrapper<cluster::ShardingConfig>> GetShardingConfig() const noexcept {
 		return impl_.shardingConfig_.Get();
 	}
 	Namespace::Ptr GetNamespacePtr(std::string_view nsName, const RdxContext& ctx);
@@ -83,7 +83,7 @@ public:
 	void SaveNewShardingConfigFile(const cluster::ShardingConfig& config) const;
 
 	Error ShardingControlRequest(const sharding::ShardingControlRequestData& request, sharding::ShardingControlResponseData& response,
-								 const RdxContext& ctx) noexcept;
+								 const RdxContext& ctx);
 
 	Error SubscribeUpdates(IEventsObserver& observer, EventSubscriberConfig&& cfg);
 	Error UnsubscribeUpdates(IEventsObserver& observer);

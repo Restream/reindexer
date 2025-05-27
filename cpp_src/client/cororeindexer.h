@@ -267,9 +267,9 @@ public:
 	/// Add shard info
 	/// @param id - shard id
 	CoroReindexer WithShardId(int id, bool parallel) const noexcept { return {impl_, ctx_.WithShardId(id, parallel)}; }
-	/// Add emmiter server id
-	/// @param serverId - emmiter server id
-	CoroReindexer WithEmmiterServerId(int serverId) const noexcept { return {impl_, ctx_.WithEmmiterServerId(serverId)}; }
+	/// Add emitter server id
+	/// @param serverId - emitter server id
+	CoroReindexer WithEmitterServerId(int serverId) const noexcept { return {impl_, ctx_.WithEmitterServerId(serverId)}; }
 
 	typedef CoroQueryResults QueryResultsT;
 	typedef Item ItemT;

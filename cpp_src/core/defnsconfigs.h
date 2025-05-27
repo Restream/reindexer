@@ -72,7 +72,7 @@ constexpr std::string_view kDefReplicationConfig = R"json({
 		"type":"replication",
 		"replication":{
 			"cluster_id":1,
-			"server_id":0	
+			"server_id":0
 		}
 	})json";
 
@@ -100,6 +100,17 @@ constexpr std::string_view kDefAsyncReplicationConfig = R"json({
 		}
 	})json";
 
+constexpr std::string_view kDefEmbeddersConfig = R"json({
+		"type":"embedders",
+		"caches":[
+			{
+				"cache_tag":"*",
+				"max_cache_items":1000000,
+				"hit_to_cache":1
+			}
+		]
+	})json";
+
 constexpr std::string_view kDefActionConfig = R"json({
 		"type":"action",
 		"action":{
@@ -108,7 +119,7 @@ constexpr std::string_view kDefActionConfig = R"json({
 	})json";
 
 constexpr std::string_view kDefDBConfig[] = {kDefProfilingConfig, kDefNamespacesConfig, kDefReplicationConfig, kDefAsyncReplicationConfig,
-											 kDefActionConfig};
+											 kDefEmbeddersConfig, kDefActionConfig};
 
 const NamespaceDef kSystemNsDefs[] = {
 	NamespaceDef(kConfigNamespace, StorageOpts().Enabled().CreateIfMissing().DropOnFileFormatError())

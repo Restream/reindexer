@@ -43,14 +43,14 @@ public:
 		bool canBeArray = true, canBeSparse = true;
 		fillChildren(std::get<Node::Children>(ns_.content), rnd, 0, canBeArray, canBeSparse);
 	}
-	size_t FieldsCount(const FieldPath&) const noexcept;
-	bool IsStruct(const FieldPath&) const noexcept;
-	bool IsPoint(const FieldPath&) const noexcept;
-	bool IsTtl(const FieldPath&, const std::vector<Index>&) const noexcept;
-	reindexer::IsArray IsArray(const FieldPath&) const noexcept;
-	FieldType GetFieldType(const FieldPath&) const noexcept;
-	void SetFieldType(const FieldPath&, FieldType) noexcept;
-	std::string GetJsonPath(const FieldPath&) const noexcept;
+	size_t FieldsCount(const FieldPath&) const;
+	bool IsStruct(const FieldPath&) const;
+	bool IsPoint(const FieldPath&) const;
+	bool IsTtl(const FieldPath&, const std::vector<Index>&) const;
+	reindexer::IsArray IsArray(const FieldPath&) const;
+	FieldType GetFieldType(const FieldPath&) const;
+	void SetFieldType(const FieldPath&, FieldType);
+	std::string GetJsonPath(const FieldPath&) const;
 	void AddIndex(const FieldPath&, size_t index, reindexer::IsSparse);
 	void NewItem(reindexer::WrSerializer&, RandomGenerator&, const std::vector<Index>&);
 	void Dump(std::ostream& os, size_t offset) const { ns_.Dump(os, offset); }
@@ -59,8 +59,8 @@ public:
 private:
 	static void addIndex(Node&, size_t index, reindexer::IsSparse);
 	void fillChildren(Node::Children&, RandomGenerator&, unsigned level, bool& canBeArray, bool& canBeSparse);
-	const Node::Children& findLastContainer(const FieldPath&) const noexcept;
-	Node::Children& findLastContainer(const FieldPath&) noexcept;
+	const Node::Children& findLastContainer(const FieldPath&) const;
+	Node::Children& findLastContainer(const FieldPath&);
 	void toJson(reindexer::JsonBuilder&, const Node::Children&, RandomGenerator&, const std::vector<Index>&);
 	void rndValueToJson(reindexer::JsonBuilder&, FieldType, std::string_view name, const std::vector<size_t>& idxNumbers,
 						const std::vector<Index>&, RandomGenerator&);

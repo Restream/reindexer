@@ -58,6 +58,19 @@ struct Rank {
 	constexpr bool operator==(const Rank&) const noexcept { return true; }
 };
 
+class SortHash {
+public:
+	SortHash() noexcept : seed_(std::chrono::system_clock::now().time_since_epoch().count()) {}
+	SortHash(uint32_t s) noexcept : userSeed_(true), seed_(s) {}
+	[[nodiscard]] constexpr bool operator==(const SortHash& other) const noexcept = default;
+	[[nodiscard]] uint32_t Seed() const noexcept { return seed_; }
+	[[nodiscard]] bool IsUserSeed() const noexcept { return userSeed_; }
+
+private:
+	bool userSeed_ = false;
+	uint32_t seed_;
+};
+
 struct DistanceFromPoint {
 	DistanceFromPoint(std::string c, Point p) : column{std::move(c)}, index{IndexValueType::NotSet}, point{p} {}
 	double GetValue(ConstPayload, TagsMatcher&) const;
@@ -194,17 +207,19 @@ private:
 	bool isAbs_ = false;
 };
 
-class SortExpression : public ExpressionTree<SortExpressionOperation, SortExpressionBracket, 2, SortExprFuncs::Value, SortExprFuncs::Index,
-											 SortExprFuncs::JoinedIndex, SortExprFuncs::Rank, SortExprFuncs::DistanceFromPoint,
-											 SortExprFuncs::DistanceJoinedIndexFromPoint, SortExprFuncs::DistanceBetweenIndexes,
-											 SortExprFuncs::DistanceBetweenIndexAndJoinedIndex, SortExprFuncs::DistanceBetweenJoinedIndexes,
-											 SortExprFuncs::DistanceBetweenJoinedIndexesSameNs> {
+class SortExpression
+	: public ExpressionTree<SortExpressionOperation, SortExpressionBracket, 2, SortExprFuncs::Value, SortExprFuncs::Index,
+							SortExprFuncs::JoinedIndex, SortExprFuncs::Rank, SortExprFuncs::SortHash, SortExprFuncs::DistanceFromPoint,
+							SortExprFuncs::DistanceJoinedIndexFromPoint, SortExprFuncs::DistanceBetweenIndexes,
+							SortExprFuncs::DistanceBetweenIndexAndJoinedIndex, SortExprFuncs::DistanceBetweenJoinedIndexes,
+							SortExprFuncs::DistanceBetweenJoinedIndexesSameNs> {
 public:
 	template <typename T>
 	static SortExpression Parse(std::string_view, const std::vector<T>& joinedSelectors);
 	[[nodiscard]] double Calculate(IdType rowId, ConstPayload pv, const joins::NamespaceResults* results,
-								   const std::vector<JoinedSelector>& js, RankT proc, TagsMatcher& tagsMatcher) const {
-		return calculate(cbegin(), cend(), rowId, pv, results, js, proc, tagsMatcher);
+								   const std::vector<JoinedSelector>& js, RankT proc, TagsMatcher& tagsMatcher,
+								   uint32_t shardIdHash) const {
+		return calculate(cbegin(), cend(), rowId, pv, results, js, proc, tagsMatcher, shardIdHash);
 	}
 	[[nodiscard]] bool ByField() const noexcept;
 	[[nodiscard]] bool ByJoinedField() const noexcept;
@@ -230,7 +245,8 @@ private:
 	void parseDistance(std::string_view& expr, const std::vector<T>& joinedSelectors, std::string_view fullExpr, ArithmeticOpType,
 					   bool negative, const SkipSW& skipSpaces);
 	[[nodiscard]] static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload,
-										  const joins::NamespaceResults*, const std::vector<JoinedSelector>&, RankT, TagsMatcher&);
+										  const joins::NamespaceResults*, const std::vector<JoinedSelector>&, RankT, TagsMatcher&,
+										  uint32_t);
 
 	void openBracketBeforeLastAppended();
 	static void dump(const_iterator begin, const_iterator end, WrSerializer&);
@@ -239,20 +255,20 @@ private:
 };
 std::ostream& operator<<(std::ostream&, const SortExpression&);
 
-class ProxiedSortExpression
-	: public ExpressionTree<SortExpressionOperation, SortExpressionBracket, 2, SortExprFuncs::Value, SortExprFuncs::ProxiedField,
-							SortExprFuncs::Rank, SortExprFuncs::ProxiedDistanceFromPoint, SortExprFuncs::ProxiedDistanceBetweenFields> {
+class ProxiedSortExpression : public ExpressionTree<SortExpressionOperation, SortExpressionBracket, 2, SortExprFuncs::Value,
+													SortExprFuncs::ProxiedField, SortExprFuncs::Rank, SortExprFuncs::SortHash,
+													SortExprFuncs::ProxiedDistanceFromPoint, SortExprFuncs::ProxiedDistanceBetweenFields> {
 public:
 	ProxiedSortExpression(const SortExpression& se, const NamespaceImpl& ns) { fill(se.cbegin(), se.cend(), ns); }
-	double Calculate(IdType rowId, ConstPayload pv, RankT rank, TagsMatcher& tagsMatcher) const {
-		return calculate(cbegin(), cend(), rowId, pv, rank, tagsMatcher);
+	double Calculate(IdType rowId, ConstPayload pv, RankT rank, TagsMatcher& tagsMatcher, uint32_t shardIdHash) const {
+		return calculate(cbegin(), cend(), rowId, pv, rank, tagsMatcher, shardIdHash);
 	}
 	std::string Dump() const;
 
 private:
 	void fill(SortExpression::const_iterator begin, SortExpression::const_iterator end, const NamespaceImpl&);
-	static std::string getJsonPath(std::string_view columnName, int idx, const NamespaceImpl&);
-	static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload, RankT, TagsMatcher&);
+	static std::string getJsonPath(std::string_view columnName, int idxNo, const NamespaceImpl&);
+	static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload, RankT, TagsMatcher&, uint32_t);
 	static void dump(const_iterator begin, const_iterator end, WrSerializer&);
 };
 std::ostream& operator<<(std::ostream&, const ProxiedSortExpression&);

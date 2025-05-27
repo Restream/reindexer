@@ -1,6 +1,7 @@
 #include "payloadfieldtype.h"
 #include <sstream>
 #include "core/embedding/embedder.h"
+#include "core/embedding/embedderscache.h"
 #include "core/index/index.h"
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/uuid.h"
@@ -22,26 +23,19 @@ EmbedderConfig::Strategy convert(FloatVectorIndexOpts::EmbedderOpts::Strategy st
 	return {};
 }
 
-std::shared_ptr<Embedder> createEmbedder(std::string_view nsName, std::string_view idxName, int idx, const FloatVectorIndexOpts::EmbedderOpts& opts) {
-	EmbedderConfig embedderCfg{
-		opts.cacheTag,
-		opts.fields,
-		convert(opts.strategy)
-	};
-	PoolConfig poolCfg{
-		opts.pool.connections,
-		opts.endpointUrl,
-		opts.pool.connect_timeout_ms,
-		opts.pool.read_timeout_ms,
-		opts.pool.write_timeout_ms
-	};
-
+std::shared_ptr<Embedder> createEmbedder(std::string_view nsName, std::string_view idxName, int idx,
+										 const FloatVectorIndexOpts::EmbedderOpts& opts,
+										 const std::shared_ptr<EmbeddersCache>& embeddersCache) {
+	EmbedderConfig embedderCfg{CacheTag{opts.cacheTag}, opts.fields, convert(opts.strategy)};
+	PoolConfig poolCfg{opts.pool.connections, opts.endpointUrl, opts.pool.connect_timeout_ms, opts.pool.read_timeout_ms,
+					   opts.pool.write_timeout_ms};
 	const auto embedderName = opts.name.empty() ? std::string{nsName} + "_" + toLower(idxName) : toLower(opts.name);
-	return std::make_shared<reindexer::Embedder>(embedderName, idxName, idx, std::move(embedderCfg), std::move(poolCfg));
+	return std::make_shared<reindexer::Embedder>(embedderName, idxName, idx, std::move(embedderCfg), std::move(poolCfg), embeddersCache);
 }
 }  // namespace
 
-PayloadFieldType::PayloadFieldType(std::string_view nsName, int idx, const Index& index, const IndexDef& indexDef) noexcept
+PayloadFieldType::PayloadFieldType(std::string_view nsName, int idx, const Index& index, const IndexDef& indexDef,
+								   const std::shared_ptr<EmbeddersCache>& embeddersCache)
 	: type_(index.KeyType()),
 	  name_(indexDef.Name()),
 	  jsonPaths_(indexDef.JsonPaths()),
@@ -54,14 +48,16 @@ PayloadFieldType::PayloadFieldType(std::string_view nsName, int idx, const Index
 		arrayDims_ = index.FloatVectorDimension().Value();
 		assertrx(type_.Is<KeyValueType::FloatVector>());
 
-		auto embedding = index.Opts().FloatVector().Embedding();
+		auto embedding = indexDef.Opts().FloatVector().Embedding();
 		if (embedding.has_value()) {
 			const auto& cfg = embedding.value();
 			if (cfg.upsertEmbedder.has_value()) {
-				embedder_ = createEmbedder(nsName, name_, idx, cfg.upsertEmbedder.value());
+				embeddersCache->IncludeTag(cfg.upsertEmbedder->cacheTag);
+				embedder_ = createEmbedder(nsName, name_, idx, cfg.upsertEmbedder.value(), embeddersCache);
 			}
 			if (cfg.queryEmbedder.has_value()) {
-				queryEmbedder_ = createEmbedder(nsName, name_, idx, cfg.queryEmbedder.value());
+				embeddersCache->IncludeTag(cfg.queryEmbedder->cacheTag);
+				queryEmbedder_ = createEmbedder(nsName, name_, idx, cfg.queryEmbedder.value(), embeddersCache);
 			}
 		}
 	} else if (indexDef.IndexType() == IndexType::IndexRTree) {

@@ -1146,6 +1146,51 @@ TEST_F(ReindexerApi, SortByMultipleColumnsWithLimits) {
 	}
 }
 
+TEST_F(ReindexerApi, SortByHash) {
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+
+	for (int i = 0; i < 1000; ++i) {
+		Item item(rt.reindexer->NewItem(default_namespace));
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		item["id"] = i;
+		rt.Upsert(default_namespace, item);
+	}
+
+	auto getIds = [&](const std::string& sortExpr, std::vector<int>& ids) {
+		Query q{default_namespace};
+		q.Sort(sortExpr, true);
+		QueryResults qr;
+		Error err = rt.reindexer->Select(q, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		for (auto& it : qr) {
+			auto item = it.GetItem();
+			int id = item["id"].As<int>();
+			ids.emplace_back(id);
+		}
+	};
+
+	{
+		const std::string expr("hash()");
+		std::vector<int> ids1;
+		getIds(expr, ids1);
+		std::vector<int> ids2;
+		getIds(expr, ids2);
+		ASSERT_NE(ids1, ids2);
+	}
+	{
+		int seed = std::rand() % 10000;
+		const std::string expr("hash(" + std::to_string(seed) + ")");
+		std::vector<int> ids1;
+		getIds(expr, ids1);
+		std::vector<int> ids2;
+		getIds(expr, ids2);
+		ASSERT_EQ(ids1, ids2);
+	}
+}
+
 TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -2655,6 +2700,7 @@ TEST_F(ReindexerApi, DefaultsConfigsTest) {
 	DefaultConfigTest("namespaces", ErrorCode::errOK, reindexer::kDefNamespacesConfig);
 	DefaultConfigTest("replication", ErrorCode::errOK, reindexer::kDefReplicationConfig);
 	DefaultConfigTest("async_replication", ErrorCode::errOK, reindexer::kDefAsyncReplicationConfig);
+	DefaultConfigTest("embedders", ErrorCode::errOK, reindexer::kDefEmbeddersConfig);
 	DefaultConfigTest("incorrect_type", ErrorCode::errNotFound, "");
 }
 

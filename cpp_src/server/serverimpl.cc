@@ -374,7 +374,7 @@ int ServerImpl::run() {
 #ifndef _WIN32
 		const bool withRPCUnix = !config_.RPCUnixAddr.empty() && config_.RPCUnixAddr != "none";
 #else
-		if (config_.RPCUnixAddr != "none") {
+		if (config_.RPCUnixAddr != "none" && !config_.RPCUnixAddr.empty()) {
 			logger_.warn("Unable to startup RPC(Unix) on '{0}' (unix domain socket are not supported on Windows platforms)",
 						 config_.RPCUnixAddr);
 		}
@@ -421,40 +421,50 @@ int ServerImpl::run() {
 
 		if (withHTTP) {
 			httpServer = std::make_unique<HTTPServer>(*dbMgr_, httpLogger, config_, prometheus.get(), statsCollector.get());
-			if (!httpServer->Start(config_.HTTPAddr, loop_)) {
-				logger_.error("Can't listen HTTP on '{}'", config_.HTTPAddr);
+			try {
+				httpServer->Start(config_.HTTPAddr, loop_);
+			} catch (std::exception& e) {
+				logger_.error("Can't listen HTTP on '{}': {}", config_.HTTPAddr, e.what());
 				return EXIT_FAILURE;
 			}
 		}
 
 		if (withHTTPs) {
 			httpsServer = std::make_unique<HTTPServer>(*dbMgr_, httpLogger, config_, prometheus.get(), statsCollector.get());
-			if (!httpsServer->Start(config_.HTTPsAddr, loop_)) {
-				logger_.error("Can't listen HTTPs on '{}'", config_.HTTPsAddr);
+			try {
+				httpsServer->Start(config_.HTTPsAddr, loop_);
+			} catch (std::exception& e) {
+				logger_.error("Can't listen HTTPs on '{}': {}", config_.HTTPsAddr, e.what());
 				return EXIT_FAILURE;
 			}
 		}
 
 		if (withRPC) {
 			rpcServerTCP = std::make_unique<RPCServer>(*dbMgr_, rpcLogger, clientsStats.get(), config_, statsCollector.get());
-			if (!rpcServerTCP->Start(config_.RPCAddr, loop_, RPCSocketT::TCP, config_.RPCThreadingMode)) {
-				logger_.error("Can't listen RPC(TCP) on '{}'", config_.RPCAddr);
+			try {
+				rpcServerTCP->Start(config_.RPCAddr, loop_, RPCSocketT::TCP, config_.RPCThreadingMode);
+			} catch (std::exception& e) {
+				logger_.error("Can't listen RPC(TCP) on '{}': {}", config_.RPCAddr, e.what());
 				return EXIT_FAILURE;
 			}
 		}
 
 		if (withRPCs) {
 			rpcsServerTCP = std::make_unique<RPCServer>(*dbMgr_, rpcLogger, clientsStats.get(), config_, statsCollector.get());
-			if (!rpcsServerTCP->Start(config_.RPCsAddr, loop_, RPCSocketT::TCP, config_.RPCThreadingMode)) {
-				logger_.error("Can't listen RPC-TLS(TCP) on '{}'", config_.RPCsAddr);
+			try {
+				rpcsServerTCP->Start(config_.RPCsAddr, loop_, RPCSocketT::TCP, config_.RPCThreadingMode);
+			} catch (std::exception& e) {
+				logger_.error("Can't listen RPC-TLS(TCP) on '{}': {}", config_.RPCsAddr, e.what());
 				return EXIT_FAILURE;
 			}
 		}
 
 		if (withRPCUnix) {
 			rpcServerUnix = std::make_unique<RPCServer>(*dbMgr_, rpcLogger, clientsStats.get(), config_, statsCollector.get());
-			if (!rpcServerUnix->Start(config_.RPCUnixAddr, loop_, RPCSocketT::Unx, config_.RPCUnixThreadingMode)) {
-				logger_.error("Can't listen RPC(Unix) on '{}'", config_.RPCUnixAddr);
+			try {
+				rpcServerUnix->Start(config_.RPCUnixAddr, loop_, RPCSocketT::Unx, config_.RPCUnixThreadingMode);
+			} catch (std::exception& e) {
+				logger_.error("Can't listen RPC(Unix) on '{}': {}", config_.RPCUnixAddr, e.what());
 				return EXIT_FAILURE;
 			}
 		}

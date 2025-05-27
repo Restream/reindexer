@@ -1,6 +1,7 @@
 #include "cluster/consts.h"
 #include "cluster_operation_api.h"
 #include "gtests/tests/gtest_cout.h"
+#include "gtests/tools.h"
 #include "yaml-cpp/yaml.h"
 
 using namespace reindexer;
@@ -9,7 +10,7 @@ TEST_F(ClusterOperationApi, LeaderElections) {
 	// Check leader election on deffirent conditions
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn([&loop, &ports]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		constexpr size_t kClusterSize = 5;
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		// Await leader and make sure, that it will be elected only once
@@ -53,7 +54,7 @@ TEST_F(ClusterOperationApi, LeaderElections) {
 		loop.sleep(std::chrono::seconds(5));
 		leaderId = cluster.AwaitLeader(kMaxElectionsTime, true);
 		ASSERT_EQ(leaderId, -1);
-	});
+	}));
 
 	loop.run();
 }
@@ -62,7 +63,7 @@ TEST_F(ClusterOperationApi, TransactionTimeout) {
 	// Checking correct timeout processing when creating transaction on cluster without consensus
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn([&loop, &ports]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		constexpr size_t kClusterSize = 3;
 		constexpr size_t kNodesCountToStart = 1;
 		const std::string_view kNsSome = "some";
@@ -83,7 +84,7 @@ TEST_F(ClusterOperationApi, TransactionTimeout) {
 		ASSERT_LE(elapsedSec, thresholdSec);
 
 		TestCout() << "Done" << std::endl;
-	});
+	}));
 
 	loop.run();
 }
@@ -92,7 +93,7 @@ TEST_F(ClusterOperationApi, OnlineUpdates) {
 	// Check basic online replication in cluster
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn([&loop, &ports]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		constexpr size_t kClusterSize = 5;
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		int leaderId = cluster.AwaitLeader(kMaxElectionsTime);
@@ -125,7 +126,7 @@ TEST_F(ClusterOperationApi, OnlineUpdates) {
 			cluster.WaitSync(kNsSome);
 		}
 		TestCout() << "Done" << std::endl;
-	});
+	}));
 
 	loop.run();
 }
@@ -134,7 +135,7 @@ TEST_F(ClusterOperationApi, ForceAndWalSync) {
 	// Check full cluster synchronization via all the available mechanisms
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn([&loop, &ports]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		constexpr size_t kClusterSize = 7;
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		int leaderId = cluster.AwaitLeader(kMaxElectionsTime);
@@ -191,7 +192,7 @@ TEST_F(ClusterOperationApi, ForceAndWalSync) {
 		}
 		TestCout() << "Wait sync 2" << std::endl;
 		cluster.WaitSync(kNsSome);
-	});
+	}));
 
 	loop.run();
 }
@@ -200,7 +201,7 @@ TEST_F(ClusterOperationApi, TruncateForceAndWalSync) {
 	// Check for truncate WAL-replication
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn([&loop, &ports]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		constexpr size_t kClusterSize = 5;
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		int leaderId = cluster.AwaitLeader(kMaxElectionsTime);
@@ -240,7 +241,7 @@ TEST_F(ClusterOperationApi, TruncateForceAndWalSync) {
 		cluster.StartServer(1);
 		TestCout() << "Wait final sync" << std::endl;
 		cluster.WaitSync(kNsSome);
-	});
+	}));
 
 	loop.run();
 }
@@ -407,7 +408,7 @@ TEST_F(ClusterOperationApi, InitialLeaderSync) {
 	// Check if new leader is able to get newest data from other nodes after elections
 	net::ev::dynamic_loop loop;
 	const auto ports = GetDefaults();
-	loop.spawn([&loop, &ports]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		constexpr size_t kClusterSize = 7;
 		const std::vector<size_t> kFirstNodesGroup = {0, 1, 2};	  // Servers to stop after data fill
 		const size_t kTransitionServer = 3;						  // The only server, which will have actual data. It belongs to both groups
@@ -513,7 +514,7 @@ TEST_F(ClusterOperationApi, InitialLeaderSync) {
 			SCOPED_TRACE(fmt::format("Follower's stats: {}", serFollower.Slice()));
 			EXPECT_EQ(nullifyUpdatesStats(stats), nullifyUpdatesStats(followerStats)) << "Server id: " << nodeId;
 		}
-	});
+	}));
 
 	loop.run();
 }
@@ -522,7 +523,7 @@ TEST_F(ClusterOperationApi, InitialLeaderSyncWithConcurrentSnapshots) {
 	// Check if new leader is able to get newest data from other nodes after elections and handle max snapshots limit correctly
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn([&loop, &ports]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		constexpr size_t kClusterSize = 5;
 		const std::vector<size_t> kFirstNodesGroup = {0, 1};   // Servers to stop after data fill
 		const size_t kTransitionServer = 2;					   // The only server, which will have actual data. It belongs to both groups
@@ -580,7 +581,7 @@ TEST_F(ClusterOperationApi, InitialLeaderSyncWithConcurrentSnapshots) {
 			auto state = cluster.GetNode(kClusterSize - 1)->GetState(ns);
 			ASSERT_EQ(state.lsn.Counter(), kDataPortion + 4);
 		}
-	});
+	}));
 
 	loop.run();
 }
@@ -589,7 +590,7 @@ TEST_F(ClusterOperationApi, MultithreadSyncTest) {
 	// Check full cluster synchronization via all the available mechanisms
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn([&loop, &ports]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		constexpr size_t kClusterSize = 5;
 		Cluster cluster(loop, 0, kClusterSize, ports, std::vector<std::string>(), std::chrono::milliseconds(200));
 
@@ -768,7 +769,7 @@ TEST_F(ClusterOperationApi, MultithreadSyncTest) {
 			TestCout() << "Wait sync for " << ns << std::endl;
 			cluster.WaitSync(ns);
 		}
-	});
+	}));
 
 	loop.run();
 }
@@ -778,7 +779,7 @@ TEST_F(ClusterOperationApi, NamespaceOperationsOnlineReplication) {
 	constexpr size_t kClusterSize = 5;
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn([&loop, &ports]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 
 		const std::string kBaseNsName = "ns_name";
@@ -842,7 +843,7 @@ TEST_F(ClusterOperationApi, NamespaceOperationsOnlineReplication) {
 
 		// Make shure, that cluster is synchronized
 		cluster.ValidateNamespaceList(existingNamespaces);
-	});
+	}));
 
 	loop.run();
 }
@@ -851,7 +852,7 @@ TEST_F(ClusterOperationApi, NamespaceVersioning) {
 	// Check if new leader will get the latest namespace version if multiple versions are available
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn([&loop, &ports]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		constexpr size_t kClusterSize = 5;
 		Cluster cluster(loop, 0, kClusterSize, ports);
 
@@ -913,7 +914,7 @@ TEST_F(ClusterOperationApi, NamespaceVersioning) {
 		ASSERT_EQ(latestNsState.nsVersion, state.nsVersion);
 		ASSERT_EQ(latestNsState.dataHash, state.dataHash);
 		ASSERT_EQ(latestNsState.dataCount, state.dataCount);
-	});
+	}));
 
 	loop.run();
 }

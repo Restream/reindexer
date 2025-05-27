@@ -45,10 +45,10 @@ RPCServer::RPCServer(DBManager& dbMgr, LoggerWrapper& logger, IClientsStats* cli
 	  qrWatcher_(serverConfig_.RPCQrIdleTimeout) {}
 
 RPCServer::~RPCServer() {
-	listener_.reset();
 	if (qrWatcherThread_.joinable()) {
 		Stop();
 	}
+	listener_.reset();
 }
 
 Error RPCServer::Ping(cproto::Context&) {
@@ -738,7 +738,7 @@ Reindexer RPCServer::getDB(cproto::Context& ctx, UserRole role) {
 	auto clientData = getClientDataUnsafe(ctx);
 	if (rx_likely(clientData)) {
 		Reindexer* db = nullptr;
-		auto status = clientData->auth.GetDB<AuthContext::CalledFrom::RPCServer>(role, &db, ctx.call->lsn, ctx.call->emmiterServerId,
+		auto status = clientData->auth.GetDB<AuthContext::CalledFrom::RPCServer>(role, &db, ctx.call->lsn, ctx.call->emitterServerId,
 																				 ctx.call->shardId);
 		if rx_unlikely (!status.ok()) {
 			throw status;
@@ -746,10 +746,10 @@ Reindexer RPCServer::getDB(cproto::Context& ctx, UserRole role) {
 
 		if (rx_likely(db != nullptr)) {
 			return db->NeedTraceActivity()
-					   ? db->WithContextParams(ctx.call->execTimeout, ctx.call->lsn, ctx.call->emmiterServerId, ctx.call->shardId,
+					   ? db->WithContextParams(ctx.call->execTimeout, ctx.call->lsn, ctx.call->emitterServerId, ctx.call->shardId,
 											   ctx.call->shardingParallelExecution, clientData->replToken, ctx.clientAddr,
 											   clientData->auth.Login().Str(), clientData->connID)
-					   : db->WithContextParams(ctx.call->execTimeout, ctx.call->lsn, ctx.call->emmiterServerId, ctx.call->shardId,
+					   : db->WithContextParams(ctx.call->execTimeout, ctx.call->lsn, ctx.call->emitterServerId, ctx.call->shardId,
 											   ctx.call->shardingParallelExecution, clientData->replToken);
 		}
 	}
@@ -1380,7 +1380,7 @@ Error RPCServer::SetTagsMatcher(cproto::Context& ctx, p_string ns, int64_t state
 	return getDB(ctx, kRoleDataWrite).SetTagsMatcher(ns, std::move(tm));
 }
 
-bool RPCServer::Start(const std::string& addr, ev::dynamic_loop& loop, RPCSocketT sockDomain, std::string_view threadingMode) {
+void RPCServer::Start(const std::string& addr, ev::dynamic_loop& loop, RPCSocketT sockDomain, std::string_view threadingMode) {
 	dispatcher_.Register(cproto::kCmdPing, this, &RPCServer::Ping);
 	dispatcher_.Register(cproto::kCmdLogin, this, &RPCServer::Login);
 	dispatcher_.Register(cproto::kCmdOpenDatabase, this, &RPCServer::OpenDatabase);
@@ -1470,7 +1470,7 @@ bool RPCServer::Start(const std::string& addr, ev::dynamic_loop& loop, RPCSocket
 		qrWatcher_.Stop();
 	});
 
-	return listener_->Bind(addr, (sockDomain == RPCSocketT::TCP) ? socket_domain::tcp : socket_domain::unx);
+	listener_->Bind(addr, (sockDomain == RPCSocketT::TCP) ? socket_domain::tcp : socket_domain::unx);
 }
 
 }  // namespace reindexer_server

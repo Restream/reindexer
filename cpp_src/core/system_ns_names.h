@@ -13,5 +13,6 @@ constexpr std::string_view kActivityStatsNamespace = "#activitystats";
 constexpr std::string_view kClientsStatsNamespace = "#clientsstats";
 constexpr std::string_view kClusterConfigNamespace = "#clusterconfig";
 constexpr std::string_view kReplicationStatsNamespace = "#replicationstats";
+constexpr std::string_view kEmbeddersPseudoNamespace = "!embedders";
 
 }  // namespace reindexer

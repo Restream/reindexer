@@ -24,13 +24,13 @@ typename UpdatesQueuePair<T>::Pair UpdatesQueuePair<T>::GetQueue(const Namespace
 }
 
 template <typename T>
-std::shared_ptr<typename UpdatesQueuePair<T>::QueueT> UpdatesQueuePair<T>::GetSyncQueue() const {
+std::shared_ptr<typename UpdatesQueuePair<T>::QueueT> UpdatesQueuePair<T>::GetSyncQueue() const noexcept {
 	shared_lock<MtxT> lck(mtx_);
 	return syncQueue_;
 }
 
 template <typename T>
-std::shared_ptr<typename UpdatesQueuePair<T>::QueueT> UpdatesQueuePair<T>::GetAsyncQueue() const {
+std::shared_ptr<typename UpdatesQueuePair<T>::QueueT> UpdatesQueuePair<T>::GetAsyncQueue() const noexcept {
 	shared_lock<MtxT> lck(mtx_);
 	return asyncQueue_;
 }
@@ -70,8 +70,8 @@ typename UpdatesQueuePair<T>::UpdatesContainerT UpdatesQueuePair<T>::copyUpdates
 	UpdatesContainerT copy;
 	copy.reserve(data.size());
 	for (auto& d : data) {
-		// async replication should not see emmiter
-		copy.emplace_back(d.template Clone<T::ClonePolicy::WithoutEmmiter>());
+		// async replication should not see emitter
+		copy.emplace_back(d.template Clone<T::ClonePolicy::WithoutEmitter>());
 	}
 	return copy;
 }

@@ -28,7 +28,7 @@ class RPCServerFake {
 public:
 	RPCServerFake(const RPCServerConfig& conf);
 
-	bool Start(const std::string& addr, ev::dynamic_loop& loop, Error loginError);
+	void Start(const std::string& addr, ev::dynamic_loop& loop, Error loginError);
 	Error Stop();
 
 	Error Ping(cproto::Context& ctx);

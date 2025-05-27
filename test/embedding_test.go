@@ -58,7 +58,22 @@ func newTestEmbedItemIvf(id int, pkgsCount int) interface{} {
 	return result
 }
 
+func setEmbeddersConfig(t *testing.T) {
+	nsConfig := make([]reindexer.DBEmbeddersConfig, 1)
+	nsConfig[0].CacheTag = "*"
+	nsConfig[0].MaxCacheItems = 10
+	nsConfig[0].HitToCache = 0
+	item := reindexer.DBConfigItem{
+		Type:      "caches",
+		Embedders: &nsConfig,
+	}
+	err := DB.Upsert(reindexer.ConfigNamespaceName, item)
+	require.NoError(t, err)
+}
+
 func TestEmbedUpsertKnnIndex(t *testing.T) {
+	setEmbeddersConfig(t)
+
 	connectConfig := &bindings.EmbedderConnectionPoolConfig{
 		Connections:    3,
 		ConnectTimeout: 500,
@@ -68,6 +83,7 @@ func TestEmbedUpsertKnnIndex(t *testing.T) {
 	embedderConfig := &bindings.EmbedderConfig{
 		URL:                  "http://127.0.0.1:8000",
 		Fields:               []string{"name", "value"},
+		CacheTag:             "HNSW",
 		EmbeddingStrategy:    "always",
 		ConnectionPoolConfig: connectConfig,
 	}
@@ -146,6 +162,8 @@ func TestEmbedUpsertKnnIndex(t *testing.T) {
 }
 
 func TestEmbedQueryKnnIndex(t *testing.T) {
+	setEmbeddersConfig(t)
+
 	connectConfig := &bindings.EmbedderConnectionPoolConfig{
 		Connections:    3,
 		ConnectTimeout: 500,
@@ -155,6 +173,7 @@ func TestEmbedQueryKnnIndex(t *testing.T) {
 	embedderConfig := &bindings.EmbedderConfig{
 		URL:                  "http://127.0.0.1:8000",
 		ConnectionPoolConfig: connectConfig,
+		CacheTag:             "IVF",
 	}
 	embeddingConfig := &bindings.EmbeddingConfig{
 		QueryEmbedder: embedderConfig,
@@ -194,10 +213,14 @@ func TestEmbedQueryKnnIndex(t *testing.T) {
 				require.NoError(t, err)
 
 				rand.Seed(time.Now().UnixNano())
-				it := DB.GetBaseQuery(kIvfNsEmbed).WhereKnnString("vec", strconv.Itoa(rand.Int()), ivfSearchParams).Exec()
-				defer it.Close()
-				require.NoError(t, it.Error())
-				require.Greater(t, it.Count(), 0)
+				searchText := strconv.Itoa(rand.Int());
+				// do it twice to touch cache
+				for i := 0; i < 2; i++ {
+					it := DB.GetBaseQuery(kIvfNsEmbed).WhereKnnString("vec", searchText, ivfSearchParams).Exec()
+					defer it.Close()
+					require.NoError(t, it.Error())
+					require.Greater(t, it.Count(), 0)
+				}
 			}
 		}
 	}

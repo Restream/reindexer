@@ -111,11 +111,9 @@ ItemIterator ItemIterator::CreateFrom(const LocalQueryResults::ConstIterator& it
 	return ItemIterator(&(it.qr_->joined_[itemRef.Nsid()]), itemRef.Id());
 }
 
-ItemIterator ItemIterator::CreateEmpty() noexcept {
-	static NamespaceResults empty;
-	static ItemIterator ret(&empty, 0);
-	return ret;
-}
+const static NamespaceResults kEmptyNamespaceResults;
+
+ItemIterator ItemIterator::CreateEmpty() noexcept { return ItemIterator{&kEmptyNamespaceResults, 0}; }
 
 void NamespaceResults::Insert(IdType rowid, uint32_t fieldIdx, LocalQueryResults&& qr) {
 	assertrx_throw(fieldIdx < joinedSelectorsCount_);

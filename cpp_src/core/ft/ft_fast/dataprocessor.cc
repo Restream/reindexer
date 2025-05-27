@@ -409,25 +409,29 @@ void DataProcessor<IdCont>::buildTyposMap(uint32_t startPos, const WordsVector& 
 		std::thread maxTyposTh = runInThread(
 			exwr,
 			[&](size_t mult) noexcept {
-				typos_context tctx[kMaxTyposInWord];
-				auto wordPos = startPos;
-				mult = wordsSize * (10 << (maxTyposInWord - 1)) - mult;
-				typosMax.reserve(multiplier / 2, multiplier * 5);
-				for (auto& word : preprocWords) {
-					const auto wordString = std::get_if<std::string_view>(&word);
-					if (!wordString) {
-						continue;
+				try {
+					typos_context tctx[kMaxTyposInWord];
+					auto wordPos = startPos;
+					mult = wordsSize * (10 << (maxTyposInWord - 1)) - mult;
+					typosMax.reserve(multiplier / 2, multiplier * 5);
+					for (auto& word : preprocWords) {
+						const auto wordString = std::get_if<std::string_view>(&word);
+						if (!wordString) {
+							continue;
+						}
+						const auto wordId = holder_.BuildWordId(wordPos++);
+						mktypos(tctx, *wordString, maxTyposInWord, maxTypoLen,
+								typos_context::CallBack{[wordId, &typosMax, wordString](std::string_view typo, int level,
+																						const typos_context::TyposVec& positions) {
+									if (level <= 1 && typo.size() != wordString->size()) {
+										typosMax.emplace(typo, WordTypo{wordId, positions});
+									}
+								}});
 					}
-					const auto wordId = holder_.BuildWordId(wordPos++);
-					mktypos(tctx, *wordString, maxTyposInWord, maxTypoLen,
-							typos_context::CallBack{[wordId, &typosMax, wordString](std::string_view typo, int level,
-																					const typos_context::TyposVec& positions) {
-								if (level <= 1 && typo.size() != wordString->size()) {
-									typosMax.emplace(typo, WordTypo{wordId, positions});
-								}
-							}});
+					typosMax.shrink_to_fit();
+				} catch (...) {
+					exwr.SetException(std::current_exception());
 				}
-				typosMax.shrink_to_fit();
 			},
 			multiplier);
 

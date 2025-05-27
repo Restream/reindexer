@@ -3,7 +3,7 @@
 #if RX_WITH_BUILTIN_ANN_INDEXES
 
 #include "float_vector_index.h"
-#include "vendor/hnswlib/hnswlib.h"
+#include "hnswlib/hnswlib.h"
 
 namespace reindexer {
 
@@ -35,6 +35,7 @@ private:
 
 	SelectKeyResult select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&) const override;
 	Variant upsert(ConstFloatVectorView, IdType id, bool& clearCache) override;
+	Variant upsertConcurrent(ConstFloatVectorView, IdType id, bool& clearCache) override;
 
 	FloatVector getFloatVector(IdType rowId) const override { return FloatVector{getFloatVectorView(rowId)}; }
 	ConstFloatVectorView getFloatVectorView(IdType) const override;

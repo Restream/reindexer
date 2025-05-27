@@ -11,14 +11,14 @@ struct TestUserDataFactory {
 		std::string password;
 	};
 
-	static reindexer::fast_hash_map<reindexer_server::UserRole, User>& Get(int serverId) noexcept;
+	static reindexer::fast_hash_map<reindexer_server::UserRole, User>& Get(int serverId);
 
 private:
 	friend reindexer::DSN MakeDsn(reindexer_server::UserRole role, int serverId, int port, const std::string& db);
 
-	static std::string user(reindexer_server::UserRole role, int serverId) noexcept;
-	static std::string passwd(reindexer_server::UserRole role, int serverId) noexcept;
-	static std::string dump(reindexer_server::UserRole role, int serverId) noexcept;
+	static std::string user(reindexer_server::UserRole role, int serverId);
+	static std::string passwd(reindexer_server::UserRole role, int serverId);
+	static std::string dump(reindexer_server::UserRole role, int serverId);
 
 	static constexpr auto loginTmplt = "Test_{}_user{}";
 	static constexpr auto passwdTmplt = "TestMaskingPassword{}{}";

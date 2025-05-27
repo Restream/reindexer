@@ -79,6 +79,8 @@ public:
 	Error RollbackShardingConfigCandidate(int64_t sourceId, const InternalRdxContext& ctx) noexcept;
 	Error ApplyNewShardingConfig(int64_t sourceId, const InternalRdxContext& ctx) noexcept;
 
+	Error Version(std::string& version, const InternalRdxContext& ctx);
+
 private:
 	friend class QueryResults;
 	friend class Transaction;
@@ -145,6 +147,7 @@ private:
 		DbCmdResetConfigCandidate,
 		DbCmdRollbackConfigCandidate,
 		DbCmdApplyNewShardingCfg,
+		DbCmdVersion,
 	};
 
 	template <typename T>
@@ -177,7 +180,7 @@ private:
 		Promise() noexcept = default;
 		Promise(ResultType<T>& res) noexcept : res_(&res) {}
 
-		void set_value(T&& v) {
+		void set_value(T&& v) noexcept {
 			if (res_) {
 				std::lock_guard lck(res_->mtx);
 				res_->data = std::move(v);
@@ -310,13 +313,21 @@ private:
 
 	// cmd may be owned by another thread and will be invalidated after this function
 	template <typename F>
-	void execCommand(DatabaseCommandDataBase* cmd, F&& fun) {
+	void execCommand(DatabaseCommandDataBase* cmd, F&& fun) noexcept {
 		auto cd = dynamic_cast<typename CalculateCommandType<decltype(&F::operator())>::type*>(cmd);
 		if (cd) {
 			auto r = std::apply(std::move(fun), cd->arguments);
 			if constexpr (std::is_same_v<decltype(r), Error>) {
 				if (cd->ctx.cmpl()) {
-					cd->ctx.cmpl()(r);
+					try {
+						cd->ctx.cmpl()(r);
+					} catch (std::exception& e) {
+						fprintf(stderr, "reindexer error: unexpected exception in user's completion: %s\n", e.what());
+						assertrx_dbg(false);
+					} catch (...) {
+						fprintf(stderr, "reindexer error: unexpected exception in user's completion\n");
+						assertrx_dbg(false);
+					}
 				} else {
 					cd->ret.set_value(std::move(r));
 				}
@@ -418,18 +429,20 @@ private:
 		std::deque<ThreadData> thData_;
 		std::mutex mtx_;
 	};
-	struct ThreadSafeError {
-		void Set(Error e) {
-			std::lock_guard lck(mtx);
-			err = std::move(e);
+	class ThreadSafeError {
+	public:
+		void Set(Error e) noexcept {
+			std::lock_guard lck(mtx_);
+			err_ = std::move(e);
 		}
-		Error Get() {
-			std::lock_guard lck(mtx);
-			return err;
+		Error Get() noexcept {
+			std::lock_guard lck(mtx_);
+			return err_;
 		}
 
-		std::mutex mtx;
-		Error err;
+	private:
+		std::mutex mtx_;
+		Error err_;
 	};
 
 	CommandsQueue commandsQueue_;
@@ -443,7 +456,7 @@ private:
 	std::atomic<bool> requiresStatusCheck_ = {true};
 
 	void coroInterpreter(Connection<DatabaseCommand>&, ConnectionsPool<DatabaseCommand>&, uint32_t tid) noexcept;
-	Error fetchResultsImpl(int flags, int offset, int limit, CoroQueryResults& qr);
+	void fetchResultsImpl(int flags, int offset, int limit, CoroQueryResults& qr);
 };
 }  // namespace client
 }  // namespace reindexer

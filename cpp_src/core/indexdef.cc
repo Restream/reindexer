@@ -13,7 +13,7 @@ using namespace std::string_view_literals;
 static constexpr auto kCondsGeneral = {"SET"sv, "ALLSET"sv, "EQ"sv, "LT"sv, "LE"sv, "GT"sv, "GE"sv, "RANGE"sv};
 static constexpr auto kCondsGeneralArray = {"SET"sv, "ALLSET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv};
 static constexpr auto kCondsGeneralSparse = {"SET"sv, "ALLSET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv, "LT"sv, "LE"sv, "GT"sv, "GE"sv, "RANGE"sv};
-static constexpr auto kCondsText = {"EQ"sv};
+static constexpr auto kCondsText = {"EQ"sv, "SET"sv};
 static constexpr auto kCondsBool = {"SET"sv, "ALLSET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv};
 static constexpr auto kCondsGeom = {"DWITHIN"sv};
 static constexpr auto kCondsVector = {"KNN"sv, "ANY"sv, "EMPTY"sv};
@@ -107,7 +107,13 @@ void IndexDef::validate(::IndexType indexType, size_t jsonPathsCount, const Inde
 }
 
 bool IndexDef::isSortable() const noexcept {
-	switch (IndexType()) {
+	::IndexType type;
+	try {
+		type = IndexType();
+	} catch (...) {
+		return false;
+	}
+	switch (type) {
 		case IndexStrHash:
 		case IndexStrBTree:
 		case IndexIntBTree:

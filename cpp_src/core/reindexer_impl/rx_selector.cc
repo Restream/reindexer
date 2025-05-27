@@ -135,7 +135,7 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 	std::vector<JoinedSelectors> mergeJoinedSelectors;
 	if (!query.GetMergeQueries().empty()) {
 		mergeJoinedSelectors.reserve(query.GetMergeQueries().size());
-		uint8_t counter = 0;
+		uint16_t counter = 0;
 
 		auto hasUnsupportedAggregations = [](const std::vector<AggregateEntry>& aggVector, AggType& t) -> bool {
 			for (const auto& a : aggVector) {
@@ -181,6 +181,9 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 			auto mns = locks.Get(mQuery.NsName());
 			assertrx_throw(mns);
 			mctx.nsid = ++counter;
+			if rx_unlikely (counter >= std::numeric_limits<uint8_t>::max()) {
+				throw Error(errForbidden, "Too many namespaces requested in query result: {}", counter);
+			}
 			mctx.isMergeQuery = IsMergeQuery_True;
 			mctx.rankedTypeQuery = rankedTypeQuery;
 			mctx.functions = &func;

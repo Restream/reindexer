@@ -253,7 +253,13 @@ AsyncStorage::UpdatesPtrT AsyncStorage::createUpdatesCollection() noexcept {
 void AsyncStorage::recycleUpdatesCollection(AsyncStorage::UpdatesPtrT&& uptr) noexcept {
 	assertrx(uptr.updatesCount == 0);
 	if (storage_ && recycled_.size() < kMaxRecycledChunks) {
-		recycled_.emplace_back(std::move(uptr));
+		try {
+			recycled_.emplace_back(std::move(uptr));
+			// NOLINTBEGIN(bugprone-empty-catch)
+		} catch (...) {
+			assertrx_dbg(false);
+		}
+		// NOLINTEND(bugprone-empty-catch)
 		return;
 	}
 	uptr.reset();

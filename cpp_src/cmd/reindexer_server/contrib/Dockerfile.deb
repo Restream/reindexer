@@ -1,5 +1,7 @@
 FROM debian:stable-slim AS build
 
+ARG RX_VERSION=v5.3.0
+
 RUN apt update -y && apt install -y  libunwind-dev build-essential libsnappy-dev libleveldb-dev openssl \
     make curl unzip git cmake libjemalloc-dev libopenblas-pthread-dev \
     libgrpc++-dev protobuf-compiler-grpc protobuf-compiler libprotobuf-dev
@@ -24,6 +26,7 @@ RUN apt update -y && apt install -y libleveldb1d libunwind8 libopenblas0-pthread
 RUN ln -s /usr/lib/x86_64-linux-gnu/libcrypto.so.3 /usr/lib/x86_64-linux-gnu/libcrypto.so && \
     ln -s /usr/lib/x86_64-linux-gnu/libssl.so.3 /usr/lib/x86_64-linux-gnu/libssl.so
 
+ENV RX_VERSION=${RX_VERSION}
 ENV RX_DATABASE=/db
 ENV RX_CORELOG=stdout
 ENV RX_HTTPLOG=stdout

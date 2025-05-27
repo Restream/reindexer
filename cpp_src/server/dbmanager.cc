@@ -4,6 +4,7 @@
 #include "estl/gift_str.h"
 #include "estl/smart_lock.h"
 #include "gason/gason.h"
+#include "tools/catch_and_return.h"
 #include "tools/crypt.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
@@ -282,12 +283,12 @@ Error DBManager::readUsers() noexcept {
 }
 
 Error DBManager::readUsersYAML() noexcept {
-	std::string content;
-	int res = fs::ReadFile(fs::JoinPath(config_.StoragePath, kUsersYAMLFilename), content);
-	if (res < 0) {
-		return Error(errNotFound, "Can't read '{}' file", kUsersYAMLFilename);
-	}
 	try {
+		std::string content;
+		int res = fs::ReadFile(fs::JoinPath(config_.StoragePath, kUsersYAMLFilename), content);
+		if (res < 0) {
+			return Error(errNotFound, "Can't read '{}' file", kUsersYAMLFilename);
+		}
 		YAML::ScannerOpts opts;
 		opts.disableAnchors = true;
 		YAML::Node root = YAML::Load(content, opts);
@@ -319,10 +320,10 @@ Error DBManager::readUsersYAML() noexcept {
 				logFmt(LogWarning, "Skipping user '{}': no 'roles' node found", urec.login);
 			}
 		}
-	} catch (const YAML::Exception& ex) {
+	} catch (const std::exception& ex) {
 		return Error(errParseYAML, "Users: {}", ex.what());
 	}
-	return errOK;
+	return Error();
 }
 
 Error DBManager::readUsersJSON() noexcept {
@@ -365,39 +366,43 @@ Error DBManager::readUsersJSON() noexcept {
 }
 
 Error DBManager::createDefaultUsersYAML() noexcept {
-	logFmt(LogInfo, "Creating default {} file", kUsersYAMLFilename);
-	int64_t res = fs::WriteFile(
-		fs::JoinPath(config_.StoragePath, kUsersYAMLFilename),
-		"# List of db's users, their's roles and privileges\n\n"
-		"# Anchors and aliases do not work here due to compatibility reasons\n\n"
-		"# Username\n"
-		"reindexer:\n"
-		"  # Hash may be generated via openssl tool - `openssl passwd -<type> -salt MySalt MyPassword`\n"
-		"  # <type> can take one of the following values:\n"
-		"  #    1 - MD5-based password algorithm\n"
-		"  #    5 - SHA256-based password algorithm\n"
-		"  #    6 - SHA512-based password algorithm\n"
-		"  #    For values 5 and 6 of <type> to work correctly, you should have the openssl library dev-package installed in the system\n"
-		"  # If hash doesn't start with '$' sign it will be used as raw password itself\n"
-		"  hash: $1$rdxsalt$VIR.dzIB8pasIdmyVGV0E/\n"
-		"  # User's roles for specific databases, * in place of db name means any database\n"
-		"  # Allowed roles:\n"
-		"  # 1) data_read - user can read data from database\n"
-		"  # 2) data_write - user can write data to database\n"
-		"  # 3) db_admin - user can manage database: kRoleDataWrite + create & delete namespaces, modify indexes\n"
-		"  # 4) replication - same as db_admin but with restrictions on use in various protocols and "
-		"additional context checks for replication. This role should be used for the asynchronous and synchronous (RAFT-cluster) "
-		"replication instead of db_admin/owner\n"
-		"  # 5) sharding - same as db_admin but with restrictions on use in various protocols and additional "
-		"context checks for sharding. This role should be used for the sharding interconnections instead of db_admin/owner\n"
-		"  # 6) owner - user has all privileges on database: kRoleDBAdmin + create & drop database\n"
-		"  roles:\n"
-		"    *: owner\n");
-	if (res < 0) {
-		return Error(errParams, "Unable to write default config file: {}", strerror(errno));
+	try {
+		logFmt(LogInfo, "Creating default {} file", kUsersYAMLFilename);
+		int64_t res = fs::WriteFile(
+			fs::JoinPath(config_.StoragePath, kUsersYAMLFilename),
+			"# List of db's users, their's roles and privileges\n\n"
+			"# Anchors and aliases do not work here due to compatibility reasons\n\n"
+			"# Username\n"
+			"reindexer:\n"
+			"  # Hash may be generated via openssl tool - `openssl passwd -<type> -salt MySalt MyPassword`\n"
+			"  # <type> can take one of the following values:\n"
+			"  #    1 - MD5-based password algorithm\n"
+			"  #    5 - SHA256-based password algorithm\n"
+			"  #    6 - SHA512-based password algorithm\n"
+			"  #    For values 5 and 6 of <type> to work correctly, you should have the openssl library dev-package installed in the "
+			"system\n"
+			"  # If hash doesn't start with '$' sign it will be used as raw password itself\n"
+			"  hash: $1$rdxsalt$VIR.dzIB8pasIdmyVGV0E/\n"
+			"  # User's roles for specific databases, * in place of db name means any database\n"
+			"  # Allowed roles:\n"
+			"  # 1) data_read - user can read data from database\n"
+			"  # 2) data_write - user can write data to database\n"
+			"  # 3) db_admin - user can manage database: kRoleDataWrite + create & delete namespaces, modify indexes\n"
+			"  # 4) replication - same as db_admin but with restrictions on use in various protocols and "
+			"additional context checks for replication. This role should be used for the asynchronous and synchronous (RAFT-cluster) "
+			"replication instead of db_admin/owner\n"
+			"  # 5) sharding - same as db_admin but with restrictions on use in various protocols and additional "
+			"context checks for sharding. This role should be used for the sharding interconnections instead of db_admin/owner\n"
+			"  # 6) owner - user has all privileges on database: kRoleDBAdmin + create & drop database\n"
+			"  roles:\n"
+			"    *: owner\n");
+		if (res < 0) {
+			return Error(errParams, "Unable to write default config file: {}", strerror(errno));
+		}
+		users_.emplace("reindexer", UserRecord{"reindexer", "VIR.dzIB8pasIdmyVGV0E/", "rdxsalt", {{"*", kRoleOwner}}, HashAlgorithm::MD5});
 	}
-	users_.emplace("reindexer", UserRecord{"reindexer", "VIR.dzIB8pasIdmyVGV0E/", "rdxsalt", {{"*", kRoleOwner}}, HashAlgorithm::MD5});
-	return errOK;
+	CATCH_AND_RETURN;
+	return Error();
 }
 
 UserRole DBManager::userRoleFromString(std::string_view strRole) {

@@ -201,10 +201,9 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 		const bool searchByBtreeField = (searchField == kFieldTree1 || searchField == kFieldTree2);
 		for (CondType cond : {CondLt, CondLe, CondGt, CondGe}) {
 			{
-				reindexer::QueryResults qr;
 				const Query query{Query(unbuiltBtreeNs).Explain().Where(searchField, cond, RandInt())};
-				Error err = rt.reindexer->Select(query, qr);
-				ASSERT_TRUE(err.ok()) << err.what();
+				SCOPED_TRACE(query.GetSQL());
+				auto qr = rt.Select(query);
 				const std::string& explain = qr.GetExplainResults();
 				// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
@@ -239,9 +238,8 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 						  .Explain()
 						  .Where(searchField, cond, RandInt())
 						  .Where(additionalSearchField, CondEq, RandInt())}) {
-					reindexer::QueryResults qr;
-					Error err = rt.reindexer->Select(query, qr);
-					ASSERT_TRUE(err.ok()) << err.what();
+					SCOPED_TRACE(query.GetSQL());
+					auto qr = rt.Select(query);
 					const std::string& explain = qr.GetExplainResults();
 					// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
@@ -276,10 +274,9 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 				const bool sortByBtreeField = (sortField == kFieldTree1 || sortField == kFieldTree2);
 				for (bool desc : {true, false}) {
 					{
-						reindexer::QueryResults qr;
 						const Query query{Query(unbuiltBtreeNs).Explain().Where(searchField, cond, RandInt()).Sort(sortField, desc)};
-						Error err = rt.reindexer->Select(query, qr);
-						ASSERT_TRUE(err.ok()) << err.what();
+						SCOPED_TRACE(query.GetSQL());
+						auto qr = rt.Select(query);
 						const std::string& explain = qr.GetExplainResults();
 						// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
@@ -350,11 +347,9 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 													   .Where(searchField, cond, RandInt())
 													   .Where(additionalSearchField, CondEq, RandInt())
 													   .Sort(sortField, desc)}) {
-							reindexer::QueryResults qr;
-							Error err = rt.reindexer->Select(query, qr);
-							ASSERT_TRUE(err.ok()) << err.what();
+							SCOPED_TRACE(query.GetSQL());
+							auto qr = rt.Select(query);
 							const std::string& explain = qr.GetExplainResults();
-							// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
 							const auto cost = GetJsonFieldValues<int64_t>(explain, "cost");
 							ASSERT_EQ(2, cost.size());

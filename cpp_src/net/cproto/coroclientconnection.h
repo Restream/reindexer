@@ -22,7 +22,7 @@ using std::chrono::milliseconds;
 
 class CoroRPCAnswer {
 public:
-	Error Status() const noexcept { return status_; }
+	const Error& Status() const noexcept { return status_; }
 	Args GetArgs(int minArgs = 0) const {
 		cproto::Args ret;
 		if (!data_.empty()) {

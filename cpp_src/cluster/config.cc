@@ -243,7 +243,7 @@ Error ClusterConfigData::FromYAML(const std::string& yaml) {
 				nodes.emplace_back(std::move(conf));
 			}
 		}
-		return Error();
+		return {};
 	} catch (const YAML::Exception& ex) {
 		return Error(errParseYAML, "ClusterConfigData: yaml parsing error: '{}'", ex.what());
 	} catch (const Error& err) {
@@ -267,7 +267,7 @@ Error AsyncReplConfigData::FromDefault() noexcept {
 	}
 	CATCH_AND_RETURN
 
-	return ErrorCode::errOK;
+	return {};
 }
 
 Error AsyncReplConfigData::FromYAML(const std::string& yaml) {
@@ -309,7 +309,7 @@ Error AsyncReplConfigData::FromYAML(const std::string& yaml) {
 				nodes.emplace_back(std::move(conf));
 			}
 		}
-		return Error();
+		return {};
 	} catch (const YAML::Exception& ex) {
 		return Error(errParseYAML, "AsyncReplConfigData: yaml parsing error: '{}'", ex.what());
 	} catch (const Error& err) {
@@ -398,7 +398,7 @@ Error AsyncReplConfigData::FromJSON(const gason::JsonNode& root) {
 	if (!errorString.empty()) {
 		return Error(errParseJson, "AsyncReplConfigData: JSON parsing error: '{}'", errorString);
 	}
-	return Error();
+	return {};
 }
 
 void AsyncReplConfigData::GetJSON(JsonBuilder& jb, MaskingDSN maskingDSN) const {
@@ -495,7 +495,7 @@ void AsyncReplConfigData::GetYAML(WrSerializer& ser) const {
 			"# Increasing this value may help to avoid force-syncs after leader's switch, however it also increases RAM consumption during syncs\n"
 			"max_wal_depth_on_force_sync: " + std::to_string(maxWALDepthOnForceSync) + "\n"
 			"\n"
-			"# Delay between write operation and replication. Larger values here will leader to higher replication latency and bufferization, but also will provide\n"
+			"# Delay between write operation and replication. Larger values here will leader to higher replication latency and buffering, but also will provide\n"
 			"# more effective network batching and CPU utilization\n"
 			"# 0 - disables additional delay\n"
 			"online_updates_delay_msec: " + std::to_string(onlineUpdatesDelayMSec) + "\n"
@@ -594,7 +594,7 @@ Error ShardingConfig::Namespace::FromYAML(const YAML::Node& yaml, const std::map
 			return err;
 		}
 	}
-	return Error();
+	return {};
 }
 
 Error ShardingConfig::Namespace::FromJSON(const gason::JsonNode& root) {
@@ -624,7 +624,7 @@ Error ShardingConfig::Namespace::FromJSON(const gason::JsonNode& root) {
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "ShardingConfig::Namespace: {}", ex.what());
 	}
-	return errOK;
+	return {};
 }
 
 Error ShardingConfig::Key::checkValue(const sharding::Segment<Variant>& val, KeyValueType& valuesType,
@@ -640,7 +640,7 @@ Error ShardingConfig::Key::checkValue(const sharding::Segment<Variant>& val, Key
 					 val.left == val.right ? val.left.As<std::string>()
 										   : fmt::format("[{}, {}]", val.left.As<std::string>(), val.right.As<std::string>()));
 	}
-	return Error();
+	return {};
 }
 
 sharding::Segment<Variant> ShardingConfig::Key::SegmentFromYAML(const YAML::Node& yaml) {
@@ -761,7 +761,7 @@ Error ShardingConfig::Key::FromYAML(const YAML::Node& yaml, const std::map<int, 
 		return Error(errParams, "Unsupported sharding algorithm type: neither values nor range are specified");
 	}
 
-	return errOK;
+	return {};
 }
 
 Error ShardingConfig::Key::FromJSON(const gason::JsonNode& root, KeyValueType& valuesType,
@@ -795,7 +795,7 @@ Error ShardingConfig::Key::FromJSON(const gason::JsonNode& root, KeyValueType& v
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "ShardingConfig::Key: {}", ex.what());
 	}
-	return Error();
+	return {};
 }
 
 void ShardingConfig::Namespace::GetYAML(YAML::Node& yaml) const {

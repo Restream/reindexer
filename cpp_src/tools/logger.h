@@ -3,6 +3,7 @@
 #include <atomic>
 #include <functional>
 #include "fmt/format.h"
+#include "tools/assertrx.h"
 
 typedef std::function<void(int level, char* msg)> LogWriter;
 
@@ -38,10 +39,16 @@ static_assert(false, "Macro conflict");
 
 #ifndef logFmt
 // Using macro to avoid arguments calculation before global log level check
-#define logFmt(__level, __fmt, ...)                                                         \
-	if (reindexer::logger_details::g_LogLevel.load(std::memory_order_relaxed) >= __level) { \
-		auto __str = fmt::format(__fmt, ##__VA_ARGS__);                                     \
-		reindexer::logger_details::logPrintImpl(__level, &__str[0]);                        \
+#define logFmt(__level, __fmt, ...)                                                                                                \
+	if (reindexer::logger_details::g_LogLevel.load(std::memory_order_relaxed) >= __level) {                                        \
+		try {                                                                                                                      \
+			auto __str = fmt::format(__fmt, ##__VA_ARGS__);                                                                        \
+			reindexer::logger_details::logPrintImpl(__level, &__str[0]);                                                           \
+		} catch (std::exception & e) {                                                                                             \
+			fprintf(stderr, "reindexer error: unexpected exception in logFmt(%s:%s:%d): '%s'\n", __FILE__, __FUNCTION__, __LINE__, \
+					e.what());                                                                                                     \
+			assertrx_dbg(false);                                                                                                   \
+		}                                                                                                                          \
 	}
 #endif	// logFmt
 

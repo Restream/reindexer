@@ -16,15 +16,18 @@ type TestDescribeStruct struct {
 	Search    string  `reindex:"search,fuzzytext"`
 	SubStruct TestDescribeSubStruct
 	TestDescribeBuiltinSubStruct
-	Bla string
+	Bla        string
+	OneMoreTtl int64 `reindex:"one_more_ttl,ttl,,expire_after=10"`
 }
 
 type TestDescribeSubStruct struct {
 	Name string `reindex:"name"`
+	Time int    `reindex:"time,ttl,expire_after=100,is_no_column"`
 }
 
 type TestDescribeBuiltinSubStruct struct {
-	Type string `reindex:"type"`
+	Type     string `reindex:"type,,dense,is_no_column"`
+	ExpireAt int64  `reindex:"expire_at,ttl,is_no_column,expire_after=999,dense"`
 }
 
 func init() {
@@ -36,7 +39,7 @@ func TestDescribe(t *testing.T) {
 	testDescribeStruct := TestDescribeStruct{ID: 42}
 	generalConds := []string{"SET", "ALLSET", "EQ", "LT", "LE", "GT", "GE", "RANGE"}
 	arrayConds := []string{"SET", "ALLSET", "EQ", "ANY", "EMPTY"}
-	fulltextConds := []string{"EQ"}
+	fulltextConds := []string{"EQ", "SET"}
 
 	err := DB.Upsert("test_describe", &testDescribeStruct)
 	require.NoError(t, err)
@@ -50,41 +53,82 @@ func TestDescribe(t *testing.T) {
 	desc, ok := result.(*reindexer.NamespaceDescription)
 	require.True(t, ok, "wait %T, got %T", reindexer.NamespaceDescription{}, result)
 	require.Equal(t, "test_describe", desc.Name)
-	require.Equal(t, 7, len(desc.Indexes))
+	require.Equal(t, 10, len(desc.Indexes))
 	require.Equal(t, "id", desc.Indexes[0].Name)
-	require.True(t, desc.Indexes[0].IsPK)
-	require.Equal(t, reflect.Int64.String(), desc.Indexes[0].FieldType)
-	require.True(t, desc.Indexes[0].IsSortable)
-	require.Equal(t, generalConds, desc.Indexes[0].Conditions)
+	idx := desc.Indexes[0]
+	require.True(t, idx.IsPK)
+	require.Equal(t, reflect.Int64.String(), idx.FieldType)
+	require.True(t, idx.IsSortable)
+	require.Equal(t, generalConds, idx.Conditions)
 
-	require.Equal(t, "foo", desc.Indexes[1].Name)
-	require.False(t, desc.Indexes[1].IsPK)
-	require.Equal(t, reflect.String.String(), desc.Indexes[1].FieldType)
-	require.True(t, desc.Indexes[1].IsSortable)
-	require.Equal(t, generalConds, desc.Indexes[1].Conditions)
+	idx = desc.Indexes[1]
+	require.Equal(t, "foo", idx.Name)
+	require.False(t, idx.IsPK)
+	require.Equal(t, reflect.String.String(), idx.FieldType)
+	require.True(t, idx.IsSortable)
+	require.Equal(t, generalConds, idx.Conditions)
 
-	require.Equal(t, "qwe", desc.Indexes[2].Name)
-	require.False(t, desc.Indexes[2].IsPK)
-	require.Equal(t, reflect.String.String(), desc.Indexes[2].FieldType)
-	require.True(t, desc.Indexes[2].IsSortable)
-	require.Equal(t, generalConds, desc.Indexes[2].Conditions)
+	idx = desc.Indexes[2]
+	require.Equal(t, "qwe", idx.Name)
+	require.False(t, idx.IsPK)
+	require.Equal(t, reflect.String.String(), idx.FieldType)
+	require.True(t, idx.IsSortable)
+	require.Equal(t, generalConds, idx.Conditions)
 
-	require.Equal(t, "bar", desc.Indexes[3].Name)
-	require.False(t, desc.Indexes[3].IsPK)
-	require.Equal(t, reflect.Int.String(), desc.Indexes[3].FieldType)
-	require.True(t, desc.Indexes[3].IsArray)
-	require.False(t, desc.Indexes[3].IsSortable)
-	require.Equal(t, arrayConds, desc.Indexes[3].Conditions)
+	idx = desc.Indexes[3]
+	require.Equal(t, "bar", idx.Name)
+	require.False(t, idx.IsPK)
+	require.Equal(t, reflect.Int.String(), idx.FieldType)
+	require.True(t, idx.IsArray)
+	require.False(t, idx.IsSortable)
+	require.Equal(t, arrayConds, idx.Conditions)
 
+	idx = desc.Indexes[4]
 	require.Equal(t, "search", desc.Indexes[4].Name)
-	require.False(t, desc.Indexes[4].IsPK)
-	require.Equal(t, reflect.String.String(), desc.Indexes[4].FieldType)
-	require.False(t, desc.Indexes[4].IsSortable)
-	require.Equal(t, fulltextConds, desc.Indexes[4].Conditions)
+	require.False(t, idx.IsPK)
+	require.Equal(t, reflect.String.String(), idx.FieldType)
+	require.False(t, idx.IsSortable)
+	require.Equal(t, fulltextConds, idx.Conditions)
 
-	require.Equal(t, "name", desc.Indexes[5].Name)
+	idx = desc.Indexes[5]
+	require.Equal(t, "name", idx.Name)
+	require.False(t, idx.IsDense)
+	require.False(t, idx.IsArray)
+	require.False(t, idx.IsSparse)
+	require.False(t, idx.IsNoColumn)
+	require.Equal(t, 0, idx.ExpireAfter)
 
-	require.Equal(t, "type", desc.Indexes[6].Name)
+	idx = desc.Indexes[6]
+	require.Equal(t, "time", idx.Name)
+	require.False(t, idx.IsDense)
+	require.False(t, idx.IsArray)
+	require.False(t, idx.IsSparse)
+	require.True(t, idx.IsNoColumn)
+	require.Equal(t, 100, idx.ExpireAfter)
+
+	idx = desc.Indexes[7]
+	require.Equal(t, "type", idx.Name)
+	require.True(t, idx.IsDense)
+	require.False(t, idx.IsArray)
+	require.False(t, idx.IsSparse)
+	require.True(t, idx.IsNoColumn)
+	require.Equal(t, 0, idx.ExpireAfter)
+
+	idx = desc.Indexes[8]
+	require.Equal(t, "expire_at", idx.Name)
+	require.True(t, idx.IsDense)
+	require.False(t, idx.IsArray)
+	require.False(t, idx.IsSparse)
+	require.True(t, idx.IsNoColumn)
+	require.Equal(t, 999, idx.ExpireAfter)
+
+	idx = desc.Indexes[9]
+	require.Equal(t, "one_more_ttl", idx.Name)
+	require.False(t, idx.IsDense)
+	require.False(t, idx.IsArray)
+	require.False(t, idx.IsSparse)
+	require.False(t, idx.IsNoColumn)
+	require.Equal(t, 10, idx.ExpireAfter)
 
 	results, err = DB.ExecSQL("SELECT * FROM " + reindexer.NamespacesNamespaceName).FetchAll()
 	require.NoError(t, err)

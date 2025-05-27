@@ -31,6 +31,7 @@ class IClientsStats;
 struct ClusterControlRequestData;
 class IUpdatesObserverV3;
 class UpdatesFilters;
+class EmbeddersCache;
 
 namespace cluster {
 struct NodeData;
@@ -151,7 +152,7 @@ public:
 
 private:
 	using FilterNsNamesT = std::optional<h_vector<std::string, 6>>;
-	using ShardinConfigPtr = intrusive_ptr<intrusive_atomic_rc_wrapper<const cluster::ShardingConfig>>;
+	using ShardinConfigPtr = intrusive_ptr<const intrusive_atomic_rc_wrapper<cluster::ShardingConfig>>;
 	using NsCreationLockerT = MutexSet<RdxContext, MutexMark::StorageDirOps, 61>;
 
 	class BackgroundThread {
@@ -287,6 +288,7 @@ private:
 	void createSystemNamespaces();
 	void handleDropANNCacheAction(const gason::JsonNode& action, const RdxContext& ctx);
 	void handleRebuildIVFIndexAction(const gason::JsonNode& action, const RdxContext& ctx);
+	void handleClearEmbeddersCacheAction(const gason::JsonNode& action);
 	void updateToSystemNamespace(std::string_view nsName, Item&, const RdxContext& ctx);
 	void handleConfigAction(const gason::JsonNode& action, const std::vector<std::pair<std::string, Namespace::Ptr>>& namespaces,
 							const RdxContext& ctx);
@@ -294,6 +296,7 @@ private:
 	template <typename ConfigT>
 	void updateConfFile(const ConfigT& newConf, std::string_view filename);
 	void onProfilingConfigLoad();
+	void onEmbeddersConfigLoad();
 	Error initSystemNamespaces();
 	template <const char* type, typename ConfigT>
 	Error tryLoadConfFromFile(const std::string& filename);
@@ -335,7 +338,7 @@ private:
 	[[nodiscard]] Error rollbackShardingConfigCandidate(int64_t sourceId, const RdxContext& ctx) noexcept;
 
 	template <typename PreReplFunc, typename... Args>
-	[[nodiscard]] Error shardingConfigReplAction(const RdxContext& ctx, PreReplFunc func, Args&&... args) noexcept;
+	[[nodiscard]] Error shardingConfigReplAction(const RdxContext& ctx, const PreReplFunc& func, Args&&... args) noexcept;
 
 	template <typename... Args>
 	[[nodiscard]] Error shardingConfigReplAction(const RdxContext& ctx, updates::URType type, Args&&... args) noexcept;
@@ -373,7 +376,7 @@ private:
 
 		void Set(std::optional<cluster::ShardingConfig>&& other) noexcept {
 			std::lock_guard lk(m_);
-			config_.reset(other ? new intrusive_atomic_rc_wrapper<const cluster::ShardingConfig>(std::move(*other)) : nullptr);
+			config_.reset(other ? new intrusive_atomic_rc_wrapper<cluster::ShardingConfig>(std::move(*other)) : nullptr);
 			if (handler_) {
 				handler_(config_);
 			}
@@ -416,6 +419,8 @@ private:
 	const CallbackMap proxyCallbacks_;
 	UpdatesObservers observers_;
 	std::optional<int> replCfgHandlerID_;
+
+	const std::shared_ptr<EmbeddersCache> embeddersCache_;
 
 	friend class cluster::ReplThread<cluster::ClusterThreadParam>;
 	friend class ClusterProxy;

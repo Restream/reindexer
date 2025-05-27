@@ -28,7 +28,7 @@ void NsScheme::NewItem(reindexer::WrSerializer& ser, RandomGenerator& rnd, const
 	toJson(builder, std::get<Node::Children>(ns_.content), rnd, indexes);
 }
 
-bool NsScheme::IsStruct(const FieldPath& path) const noexcept {
+bool NsScheme::IsStruct(const FieldPath& path) const {
 	if (path.empty()) {
 		return true;
 	}
@@ -37,7 +37,7 @@ bool NsScheme::IsStruct(const FieldPath& path) const noexcept {
 	return std::holds_alternative<Node::Children>(ref[path.back()].content);
 }
 
-bool NsScheme::IsPoint(const FieldPath& path) const noexcept {
+bool NsScheme::IsPoint(const FieldPath& path) const {
 	if (path.empty()) {
 		return false;
 	}
@@ -57,7 +57,7 @@ bool NsScheme::isTtl(const std::vector<size_t>& idxNumbers, const std::vector<In
 	return false;
 }
 
-bool NsScheme::IsTtl(const FieldPath& path, const std::vector<Index>& indexes) const noexcept {
+bool NsScheme::IsTtl(const FieldPath& path, const std::vector<Index>& indexes) const {
 	if (path.empty()) {
 		return false;
 	}
@@ -69,7 +69,7 @@ bool NsScheme::IsTtl(const FieldPath& path, const std::vector<Index>& indexes) c
 	return isTtl(std::get<Node::Child>(ref[path.back()].content).indexes, indexes);
 }
 
-size_t NsScheme::FieldsCount(const FieldPath& path) const noexcept {
+size_t NsScheme::FieldsCount(const FieldPath& path) const {
 	if (path.empty()) {
 		return std::get<Node::Children>(ns_.content).size();
 	}
@@ -83,7 +83,7 @@ size_t NsScheme::FieldsCount(const FieldPath& path) const noexcept {
 					  ref[path.back()].content);
 }
 
-reindexer::IsArray NsScheme::IsArray(const FieldPath& path) const noexcept {
+reindexer::IsArray NsScheme::IsArray(const FieldPath& path) const {
 	if (path.empty()) {
 		return ns_.array;
 	}
@@ -102,7 +102,7 @@ reindexer::IsArray NsScheme::IsArray(const FieldPath& path) const noexcept {
 	return (*ptr)[path.back()].array;
 }
 
-FieldType NsScheme::GetFieldType(const FieldPath& path) const noexcept {
+FieldType NsScheme::GetFieldType(const FieldPath& path) const {
 	assertrx(!path.empty());
 	const Node::Children& ref = findLastContainer(path);
 	assertrx(ref.size() > path.back());
@@ -111,7 +111,7 @@ FieldType NsScheme::GetFieldType(const FieldPath& path) const noexcept {
 					  ref[path.back()].content);
 }
 
-void NsScheme::SetFieldType(const FieldPath& path, FieldType ft) noexcept {
+void NsScheme::SetFieldType(const FieldPath& path, FieldType ft) {
 	assertrx(!path.empty());
 	Node::Children& ref = findLastContainer(path);
 	assertrx(ref.size() > path.back());
@@ -119,7 +119,7 @@ void NsScheme::SetFieldType(const FieldPath& path, FieldType ft) noexcept {
 					  ref[path.back()].content);
 }
 
-std::string NsScheme::GetJsonPath(const FieldPath& path) const noexcept {
+std::string NsScheme::GetJsonPath(const FieldPath& path) const {
 	if (path.empty()) {
 		return {};
 	}
@@ -203,7 +203,7 @@ void NsScheme::fillChildren(Node::Children& children, RandomGenerator& rnd, unsi
 	}
 }
 
-const NsScheme::Node::Children& NsScheme::findLastContainer(const FieldPath& path) const noexcept {
+const NsScheme::Node::Children& NsScheme::findLastContainer(const FieldPath& path) const {
 	const Node::Children* ptr = &std::get<Node::Children>(ns_.content);
 	for (size_t i = 0, s = path.size() - 1; i < s; ++i) {
 		assertrx(ptr->size() > path[i]);
@@ -214,7 +214,7 @@ const NsScheme::Node::Children& NsScheme::findLastContainer(const FieldPath& pat
 	return *ptr;
 }
 
-NsScheme::Node::Children& NsScheme::findLastContainer(const FieldPath& path) noexcept {
+NsScheme::Node::Children& NsScheme::findLastContainer(const FieldPath& path) {
 	Node::Children* ptr = &std::get<Node::Children>(ns_.content);
 	for (size_t i = 0, s = path.size() - 1; i < s; ++i) {
 		assertrx(ptr->size() > path[i]);

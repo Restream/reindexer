@@ -123,7 +123,7 @@ private:
 	/// Add "parent" coroutine to coroutines call stack.
 	/// If new "parent" has id == 0, than the stack will be cleared, because main routine is unable to call suspend anyway
 	/// @param id - new "parent's" id
-	void push_to_call_stack(routine_t id);
+	void push_to_call_stack(routine_t id) noexcept;
 	/// Pop top coroutine's id from call stack.
 	/// @returns "Parent's" coroutine id. If stack is empty returns 0
 	routine_t pop_from_call_stack() noexcept;

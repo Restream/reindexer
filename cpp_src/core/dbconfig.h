@@ -23,6 +23,7 @@ enum ConfigType {
 	NamespaceDataConf,
 	AsyncReplicationConf,
 	ReplicationConf,
+	EmbeddersConf,
 	//
 	kConfigTypesTotalCount
 };
@@ -31,7 +32,7 @@ class LongQueriesLoggingParams {
 public:
 	LongQueriesLoggingParams(int32_t t = -1, bool n = false) noexcept : thresholdUs(t), normalized(n ? 1 : 0) {}
 
-	// Do not using int32 + bool here due to MSVC compatibility reasons (alignof should not be less than sizeof in this case to use it in
+	// Don't use int32 + bool here due to MSVC compatibility reasons (alignof should not be less than sizeof in this case to use it in
 	// atomic).
 	int64_t thresholdUs : 32;
 	int64_t normalized : 1;
@@ -41,7 +42,7 @@ class LongTxLoggingParams {
 public:
 	LongTxLoggingParams(int32_t t = -1, int32_t a = -1) noexcept : thresholdUs(t), avgTxStepThresholdUs(a) {}
 
-	// Do not using 2 int32's here due to MSVC compatibility reasons (alignof should not be less than sizeof in this case to use it in
+	// Don't use 2 int32's here due to MSVC compatibility reasons (alignof should not be less than sizeof in this case to use it in
 	// atomic).
 	// Starting from C++14 both of the bit fields will be signed.
 	int64_t thresholdUs : 32;
@@ -153,6 +154,22 @@ struct ReplicationConfigData {
 
 std::ostream& operator<<(std::ostream& os, const ReplicationConfigData& data);
 
+struct EmbedderConfigData {
+	int maxCacheItems = 0;	// Don't touch, disabled by default (=0)
+	int hitToCache = 1;
+	[[nodiscard]] bool operator==(const EmbedderConfigData&) const noexcept = default;
+};
+struct EmbeddersConfigData {
+	std::string cacheTag;
+	EmbedderConfigData configData;
+
+	Error FromJSON(const gason::JsonNode& v);
+	void GetJSON(JsonBuilder& jb) const;
+
+	static Error FromDefault(std::vector<EmbeddersConfigData>& defaultEmbeddersConfs) noexcept;
+	static Error GetJSON(const std::vector<EmbeddersConfigData>& embeddersConfs, JsonBuilder& jb) noexcept;
+};
+
 class DBConfigProvider {
 public:
 	DBConfigProvider() = default;
@@ -183,6 +200,7 @@ public:
 	int setHandler(std::function<void(const ReplicationConfigData&)> handler);
 	void unsetHandler(int id);
 
+	const fast_hash_map<std::string, EmbedderConfigData, hash_str, equal_str, less_str>& GetEmbeddersConfig() const;
 	cluster::AsyncReplConfigData GetAsyncReplicationConfig() const;
 	ReplicationConfigData GetReplicationConfig() const;
 	bool GetNamespaceConfig(std::string_view nsName, NamespaceConfigData& data) const;
@@ -210,7 +228,9 @@ private:
 	Error namespacesDataLoadResult_;
 	Error asyncReplicationDataLoadResult_;
 	Error replicationDataLoadResult_;
+	Error embeddersDataLoadResult_;
 	fast_hash_map<std::string, NamespaceConfigData, nocase_hash_str, nocase_equal_str, nocase_less_str> namespacesData_;
+	fast_hash_map<std::string, EmbedderConfigData, hash_str, equal_str, less_str> embeddersData_;
 	std::array<std::function<void()>, kConfigTypesTotalCount> handlers_;
 	fast_hash_map<int, std::function<void(const ReplicationConfigData&)>> replicationConfigDataHandlers_;
 	int handlersCounter_ = 0;

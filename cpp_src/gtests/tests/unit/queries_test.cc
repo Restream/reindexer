@@ -9,7 +9,6 @@
 #include "server/pprof/gperf_profiler.h"
 #include "tools/jsontools.h"
 
-#if !defined(REINDEX_WITH_TSAN)
 TEST_F(QueriesApi, QueriesStandardTestSet) {
 	try {
 		FillDefaultNamespace(0, 2500, 20);
@@ -120,7 +119,6 @@ TEST_F(QueriesApi, UuidQueries) {
 	ASSERT_TRUE(err.ok()) << err.what();*/
 	CheckUUIDQueries();
 }
-#endif	// !defined(REINDEX_WITH_TSAN)
 
 TEST_F(QueriesApi, IndexCacheInvalidationTest) {
 	std::vector<std::pair<int, int>> data{{0, 10}, {1, 9}, {2, 8}, {3, 7}, {4, 6},	{5, 5},

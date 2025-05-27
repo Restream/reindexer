@@ -23,10 +23,15 @@ Snapshot& Snapshot::operator=(Snapshot&& o) noexcept {
 
 Snapshot::~Snapshot() {
 	if (holdsRemoteData()) {
-		// Just close snapshot on server side
-		i_.conn_->Call({net::cproto::kCmdFetchSnapshot, i_.requestTimeout_, std::chrono::milliseconds(0), lsn_t(), -1,
-						ShardingKeyType::NotSetShard, nullptr, false, i_.sessionTs_},
-					   i_.id_, int64_t(-1));
+		try {
+			// Just close snapshot on server side
+			i_.conn_->Call({net::cproto::kCmdFetchSnapshot, i_.requestTimeout_, std::chrono::milliseconds(0), lsn_t(), -1,
+							ShardingKeyType::NotSetShard, nullptr, false, i_.sessionTs_},
+						   i_.id_, int64_t(-1));
+		} catch (std::exception& e) {
+			fprintf(stderr, "reindexer error: unexpected exception in ~Snapshot: %s\n", e.what());
+			assertrx_dbg(false);
+		}
 	}
 }
 

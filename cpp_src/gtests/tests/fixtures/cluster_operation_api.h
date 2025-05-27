@@ -119,6 +119,4 @@ public:
 		Defaults defaults_;
 		size_t maxUpdatesSize_ = 0;
 	};
-
-	std::function<void()> ExceptionWrapper(std::function<void()>&& func);
 };

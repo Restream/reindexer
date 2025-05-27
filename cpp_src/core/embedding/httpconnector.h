@@ -11,13 +11,8 @@ namespace reindexer {
 
 class ConnectorPool;
 
-class HttpConnector final {
+class [[nodiscard]] HttpConnector final {
 public:
-	struct Response {
-		bool ok{false};
-		std::string content;
-	};
-
 	HttpConnector() = delete;
 	HttpConnector(HttpConnector&&) noexcept = delete;
 	HttpConnector(const HttpConnector&) noexcept = delete;
@@ -25,10 +20,14 @@ public:
 	HttpConnector& operator=(HttpConnector&&) noexcept = delete;
 	~HttpConnector();
 
-	bool Connect(size_t connect_timeout_ms, size_t read_timeout_ms, size_t write_timeout_ms);
-	bool Connected() const;
+	[[nodiscard]] bool Connect(size_t connect_timeout_ms, size_t read_timeout_ms, size_t write_timeout_ms);
+	[[nodiscard]] bool Connected() const;
 	void Disconnect();
 
+	struct [[nodiscard]] Response {
+		bool ok{false};
+		std::string content;
+	};
 	Response Send(const std::string& path, std::string_view json);
 
 private:

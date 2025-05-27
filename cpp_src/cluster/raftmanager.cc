@@ -2,13 +2,14 @@
 #include "cluster/logger.h"
 #include "core/dbconfig.h"
 #include "tools/randomgenerator.h"
+#include "tools/scope_guard.h"
 
 namespace reindexer {
 namespace cluster {
 
 constexpr auto kRaftTimeout = std::chrono::seconds(2);
 
-RaftManager::RaftManager(net::ev::dynamic_loop& loop, ReplicationStatsCollector statsCollector, const Logger& l,
+RaftManager::RaftManager(net::ev::dynamic_loop& loop, const ReplicationStatsCollector& statsCollector, const Logger& l,
 						 std::function<void(uint32_t, bool)> onNodeNetworkStatusChangedCb)
 	: loop_(loop), statsCollector_(statsCollector), onNodeNetworkStatusChangedCb_(std::move(onNodeNetworkStatusChangedCb)), log_(l) {
 	assert(onNodeNetworkStatusChangedCb_);
@@ -34,25 +35,30 @@ void RaftManager::Configure(const ReplicationConfigData& baseConfig, const Clust
 }
 
 void RaftManager::SetDesiredLeaderId(int serverId) {
-	logInfo("{} Set ({}) as a desired leader", serverId_, serverId);
+	logInfo("{}: Set ({}) as a desired leader", serverId_, serverId);
 	nextServerId_.SetNextServerId(serverId);
 	lastLeaderPingTs_ = {ClockT::time_point()};
 }
 
-RaftInfo::Role RaftManager::Elections() {
-	std::vector<coroutine::routine_t> succeedRoutines;
-	succeedRoutines.reserve(nodes_.size());
-	while (!terminate_.load()) {
+int RaftManager::GetDesiredLeaderId() noexcept { return nextServerId_.GetNextServerId(); }
+
+// NOLINTNEXTLINE(bugprone-exception-escape) TODO: noexcept logger fallback
+std::optional<RaftInfo::Role> RaftManager::RunElectionsRound() noexcept {
+	coroutine::wait_group wg;
+	auto wgWaiter = MakeScopeGuard([&wg]() noexcept { wg.wait(); });
+	try {
+		std::vector<coroutine::routine_t> succeedRoutines;
+		succeedRoutines.reserve(nodes_.size());
+
 		const int nextServerId = nextServerId_.GetNextServerId();
 		const bool isDesiredLeader = (nextServerId == serverId_);
 		if (!isDesiredLeader && nextServerId != -1) {
 			endElections(GetTerm(), RaftInfo::Role::Follower);
-			logInfo("Skipping elections (desired leader id is {})", serverId_, nextServerId);
+			logInfo("{}: Skipping elections (desired leader id is {})", serverId_, nextServerId);
 			return RaftInfo::Role::Follower;
 		}
 		int32_t term = beginElectionsTerm(nextServerId);
-		logInfo("Starting new elections term for {}. Term number: {}", serverId_, term);
-		coroutine::wait_group wg;
+		logInfo("{}: Starting new elections term. Term number: {}", serverId_, term);
 		succeedRoutines.resize(0);
 		struct {
 			size_t succeedPhase1 = 1;
@@ -101,9 +107,9 @@ RaftInfo::Role RaftManager::Elections() {
 
 				const bool leaderIsAvailable = !isDesiredLeader && LeaderIsAvailable(ClockT::now());
 				if (leaderIsAvailable || !isConsensus(electionsStat.succeedPhase1)) {
-					logInfo("{}: Skip leaders ping. Elections are outdated. leaderIsAvailable: {}. Successfull responses: {}", serverId_,
+					logInfo("{}: Skip leaders ping. Elections are outdated. leaderIsAvailable: {}. Successful requests: {}", serverId_,
 							leaderIsAvailable ? 1 : 0, electionsStat.succeedPhase1);
-					return;	 // This elections are outdated
+					return;	 // These elections are outdated
 				}
 				err = node.client.LeadersPing(suggestion);
 				if (err.ok()) {
@@ -114,7 +120,7 @@ RaftInfo::Role RaftManager::Elections() {
 			});
 		}
 
-		RaftInfo::Role result = nodes_.size() ? RaftInfo::Role::Follower : RaftInfo::Role::Leader;
+		RaftInfo::Role result = nodes_.empty() ? RaftInfo::Role::Leader : RaftInfo::Role::Follower;
 
 		while (wg.wait_count()) {
 			wg.wait_next();
@@ -122,8 +128,6 @@ RaftInfo::Role RaftManager::Elections() {
 				result = RaftInfo::Role::Leader;
 				if (endElections(term, result)) {
 					logInfo("{}: end elections with role: leader", serverId_);
-					wg.wait();
-
 					return result;
 				}
 			}
@@ -137,15 +141,17 @@ RaftInfo::Role RaftManager::Elections() {
 		} else {
 			logInfo("{}: Failed to end elections with chosen role: {}", serverId_, RaftInfo::RoleToStr(result));
 		}
+	} catch (std::exception& e) {
+		logError("{}: exception during the elections: {}", serverId_, e.what());
 	}
-	return RaftInfo::Role::Follower;
+	return std::nullopt;
 }
 
 bool RaftManager::LeaderIsAvailable(ClockT::time_point now) const noexcept {
 	return hasRecentLeadersPing(now) || (GetRole() == RaftInfo::Role::Leader);
 }
 
-bool RaftManager::FollowersAreAvailable() {
+bool RaftManager::FollowersAreAvailable() const {
 	size_t aliveNodes = 0;
 	for (auto& n : nodes_) {
 		n.isOk && ++aliveNodes;
@@ -243,10 +249,11 @@ void RaftManager::startPingRoutines() {
 	for (size_t nodeId = 0; nodeId < nodes_.size(); ++nodeId) {
 		nodes_[nodeId].isOk = true;
 		nodes_[nodeId].hasNetworkError = false;
+		// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 		loop_.spawn(pingWg_, [this, nodeId]() noexcept {
 			auto& node = nodes_[nodeId];
 			auto err = node.client.Connect(node.dsn, loop_);
-			(void)err;	// Error will be handled duering the further requests
+			(void)err;	// Error will be handled during the further requests
 			auto voteData = voteData_.load();
 			bool isFirstPing = true;
 			while (!terminate_.load() && getRole(voteData) == RaftInfo::Role::Leader) {
@@ -387,7 +394,7 @@ Error RaftManager::DesiredLeaderIdSender::operator()() {
 					errString += "[" + err.whatStr() + "]";
 				}
 			} catch (...) {
-				logInfo("{}: Unable to send desired leader: got unknonw exception", thisServerId_);
+				logInfo("{}: Unable to send desired leader: got unknown exception", thisServerId_);
 			}
 		});
 	}

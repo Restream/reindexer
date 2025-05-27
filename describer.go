@@ -22,7 +22,7 @@ const (
 	ReconnectStrategyNext = ReconnectStrategy("next")
 	// Reconnect to the random node in the list
 	ReconnectStrategyRandom = ReconnectStrategy("random")
-	// Reconnect to the synchnized node (which was the part of the last consensus in synchronous cluster)
+	// Reconnect to the synchronized node (which was the part of the last consensus in synchronous cluster)
 	ReconnectStrategySynchronized = ReconnectStrategy("synchronized")
 	// Always choose cluster's leader
 	ReconnectStrategyPrefferWrite = ReconnectStrategy("preffer_write")
@@ -97,18 +97,20 @@ func CreateInt64FromLSN(v LsnT) int64 {
 	return bindings.CreateInt64FromLSN(v)
 }
 
-// NamespaceMemStat information about reindexer's namespace memory statisctics
+// NamespaceMemStat information about reindexer's namespace memory statistics
 // and located in '#memstats' system namespace
 type NamespaceMemStat struct {
 	// Name of namespace
 	Name string `json:"name"`
+	// Type of namespace ["namespace"|"embedders"]
+	Type string `json:"type"`
 	// Filesystem path to namespace storage
 	StoragePath string `json:"storage_path"`
 	// Status of disk storage (true, if storage is enabled and writable)
 	StorageOK bool `json:"storage_ok"`
-	// Shows if storage is enabled (hovewer it may still be unavailable)
+	// Shows if storage is enabled (however it may still be unavailable)
 	StorageEnabled bool `json:"storage_enabled"`
-	// More detailed info about storage status. May contain 'OK', 'DISABLED', 'NO SPACE LEFT' or last error descrition"
+	// More detailed info about storage status. May contain 'OK', 'DISABLED', 'NO SPACE LEFT' or last error description"
 	StorageStatus string `json:"storage_status"`
 	// Background indexes optimization has been completed
 	OptimizationCompleted bool `json:"optimization_completed"`
@@ -126,11 +128,11 @@ type NamespaceMemStat struct {
 		IndexesSize int64 `json:"indexes_size"`
 		// Total memory consumption of namespace's caches. e.g. idset and join caches
 		CacheSize int64 `json:"cache_size"`
-		// Total memory size, occupated by index optimizer (in bytes)
+		// Total memory size, occupied by index optimizer (in bytes)
 		IndexOptimizerMemory int64 `json:"index_optimizer_memory"`
 	} `json:"total"`
 	// Replication status of namespace
-	Replication struct {
+	Replication *struct {
 		// Last Log Sequence Number (LSN) of applied namespace modification
 		LastLSN LsnT `json:"last_lsn_v2"`
 		// Namespace version counter
@@ -152,23 +154,22 @@ type NamespaceMemStat struct {
 		// Cluster info
 		ClusterizationStatus struct {
 			// Current leader server ID (for RAFT-cluster only)
-			LeadeID int `json:"leader_id"`
+			LeaderID int `json:"leader_id"`
 			// Current role in cluster: cluster_replica, simple_replica or none
 			Role string `json:"role"`
 		} `json:"clusterization_status"`
-	} `json:"replication"`
-
+	} `json:"replication,omitempty"`
 	// Indexes memory statistic
 	Indexes []struct {
-		// Name of index. There are special index with name `-tuple`. It's stores original document's json structure with non indexe fields
+		// Name of index. There are special index with name `-tuple`. It's stores original document's json structure with non-indexed fields
 		Name string `json:"name"`
 		// Count of unique keys values stored in index
 		UniqKeysCount int64 `json:"unique_keys_count"`
-		// Total memory consumption of documents's data, holded by index
+		// Total memory consumption of documents's data, held by index
 		DataSize int64 `json:"data_size"`
-		// Total memory consumption of SORT statement and `GT`, `LT` conditions optimized structures. Applicabe only to `tree` indexes
-		SortOrdresSize int64 `json:"sort_orders_size"`
-		// Total memory consumption of reverse index vectors. For `store` ndexes always 0
+		// Total memory consumption of SORT statement and `GT`, `LT` conditions optimized structures. Applicable only to `tree` indexes
+		SortOrdersSize int64 `json:"sort_orders_size"`
+		// Total memory consumption of reverse index vectors. For `store` indexes always 0
 		IDSetPlainSize int64 `json:"idset_plain_size"`
 		// Total memory consumption of reverse index b-tree structures. For `dense` and `store` indexes always 0
 		IDSetBTreeSize int64 `json:"idset_btree_size"`
@@ -186,11 +187,28 @@ type NamespaceMemStat struct {
 		TrackedUpdatesOverflow int64 `json:"tracked_updates_overflow"`
 		// Shows whether KNN/fulltext indexing structure is fully built. If this field is nil, index does not require any specific build steps
 		IsBuilt *bool `json:"is_built,omitempty"`
-	} `json:"indexes"`
+	} `json:"indexes,omitempty"`
 	// Join cache stats. Stores results of selects to right table by ON condition
-	JoinCache CacheMemStat `json:"join_cache"`
+	JoinCache *CacheMemStat `json:"join_cache,omitempty"`
 	// Query cache stats. Stores results of SELECT COUNT(*) by Where conditions
-	QueryCache CacheMemStat `json:"query_cache"`
+	QueryCache *CacheMemStat `json:"query_cache,omitempty"`
+	// Embedders memory statistic
+	EmbeddingСaches []struct {
+		// Tag of cache from configuration
+		CacheTag string `json:"cache_tag"`
+		// Capacity of cache
+		Capacity int64 `json:"capacity"`
+		// Cache stats
+		Cache CacheMemStat `json:"cache"`
+		// Status of disk storage (true, if storage is enabled and writable)
+		StorageOK bool `json:"storage_ok"`
+		// More detailed info about storage status. May contain 'OK', 'DISABLED', 'FAILED' or last error description"
+		StorageStatus string `json:"storage_status"`
+		// Filesystem path to namespace storage
+		StoragePath string `json:"storage_path"`
+		// Disk space occupied by storage
+		StorageSize int64 `json:"storage_size"`
+	} `json:"embedding_caches,omitempty"`
 }
 
 // PerfStat is information about different reinexer's objects performance statistics
@@ -253,7 +271,19 @@ type LRUCachePerfStat struct {
 	TotalQueries uint64 `json:"total_queries"`
 	// Cache hit rate (CacheHits / TotalQueries)
 	CacheHitRate float64 `json:"cache_hit_rate"`
-	// Determines if cache is currently in use. Usually it has 'false' value for uncommited indexes
+	// Determines if cache is currently in use. Usually it has 'false' value for uncommitted indexes
+	IsActive bool `json:"is_active"`
+}
+
+// EmbedderCachePerfStat is information about specific embedder performance statistics
+type EmbedderCachePerfStat struct {
+	// Tag of cache from configuration
+	CacheTag string `json:"cache_tag"`
+	// Total queries to cache
+	TotalQueries uint64 `json:"total_queries"`
+	// Cache hit rate (CacheHits / TotalQueries)
+	CacheHitRate float64 `json:"cache_hit_rate"`
+	// Determines if cache is currently in use. Usually it has 'false' value for uncommitted indexes
 	IsActive bool `json:"is_active"`
 }
 
@@ -268,6 +298,10 @@ type IndexPerfStat struct {
 	// Performance statistics for LRU IdSets index cache (or fulltext cache for text indexes).
 	// Nil-value means, that index does not use cache at all
 	Cache *LRUCachePerfStat `json:"cache,omitempty"`
+	// Performance statistics for upsert embedder cache
+	UpsertEmbedderCache EmbedderCachePerfStat `json:"upsert_embedder_cache"`
+	// Performance statistics for query embedder cache
+	QueryEmbedderCache EmbedderCachePerfStat `json:"query_embedder_cache"`
 }
 
 // NamespacePerfStat is information about namespace's performance statistics
@@ -352,7 +386,7 @@ type ReplicationStat struct {
 		// Total initial sync time
 		TotalTimeUs int64 `json:"total_time_us"`
 	} `json:"initial_sync"`
-	// Count of online updates, awaiting rpelication
+	// Count of online updates, awaiting replication
 	PendingUpdatesCount int64 `json:"pending_updates_count"`
 	// Total allocated online updates count (including those, which already were replicated, but was not deallocated yet)
 	AllocatedUpdatesCount int64 `json:"allocated_updates_count"`
@@ -372,7 +406,7 @@ type ReplicationStat struct {
 		Role string `json:"role"`
 		// Node's sync state: "none", "syncing", "awaiting_resync", "online_replication", "initial_leader_sync"
 		SyncState string `json:"sync_state"`
-		// Shows synchroniztion state for raft-cluster node (false if node is outdated)
+		// Shows synchronization state for raft-cluster node (false if node is outdated)
 		IsSynchronized bool `json:"is_synchronized"`
 	} `json:"nodes"`
 }
@@ -391,6 +425,7 @@ type DBConfigItem struct {
 	Namespaces       *[]DBNamespacesConfig     `json:"namespaces,omitempty"`
 	Replication      *DBReplicationConfig      `json:"replication,omitempty"`
 	AsyncReplication *DBAsyncReplicationConfig `json:"async_replication,omitempty"`
+	Embedders        *[]DBEmbeddersConfig      `json:"caches,omitempty"`
 }
 
 // Section of long_queries_logging related to logging of SELECT, UPDATE and DELETE queries
@@ -421,13 +456,13 @@ type LongQueryLoggingConfig struct {
 
 // DBProfilingConfig is part of reindexer configuration contains profiling options
 type DBProfilingConfig struct {
-	// Minimum query execution time to be recoreded in #queriesperfstats namespace
+	// Minimum query execution time to be recorded in #queriesperfstats namespace
 	QueriesThresholdUS int `json:"queries_threshold_us"`
 	// Enables tracking memory statistics
 	MemStats bool `json:"memstats"`
-	// Enables tracking overal perofrmance statistics
+	// Enables tracking overall performance statistics
 	PerfStats bool `json:"perfstats"`
-	// Enables recording of queries perofrmance statistics
+	// Enables recording of queries performance statistics
 	QueriesPerfStats bool `json:"queriesperfstats"`
 	// Enables recording of activity statistics into #activitystats namespace
 	ActivityStats bool `json:"activitystats"`
@@ -438,7 +473,7 @@ type DBProfilingConfig struct {
 
 type NamespaceCacheConfig struct {
 	// Max size of the index IdSets cache in bytes (per index)
-	// Each index has it's own independant cache
+	// Each index has it's own independent cache
 	// This cache is used in any selections to store resulting sets of internal document IDs (it does not stores documents' content itself)
 	// Default value is 134217728 (128 MB). Min value is 0
 	IdxIdsetCacheSize uint64 `json:"index_idset_cache_size"`
@@ -449,7 +484,7 @@ type NamespaceCacheConfig struct {
 	// Default value is 2. Min value is 0
 	IdxIdsetHitsToCache uint32 `json:"index_idset_hits_to_cache"`
 	// Max size of the fulltext indexes IdSets cache in bytes (per index)
-	// Each fulltext index has it's own independant cache
+	// Each fulltext index has it's own independent cache
 	// This cache is used in any selections to store resulting sets of internal document IDs, FT ranks and highlighted areas (it does not stores documents' content itself)
 	// Default value is 134217728 (128 MB). Min value is 0
 	FTIdxCacheSize uint64 `json:"ft_index_cache_size"`
@@ -559,12 +594,12 @@ type DBAsyncReplicationConfig struct {
 	BatchingReoutines int `json:"batching_routines_count,omitempty"`
 	// Enable compression for replication network operations
 	EnableCompression bool `json:"enable_compression,omitempty"`
-	// Delay between write operation and replication. Larger values here will leader to higher replication latency and bufferization,"
-	// but also will provide more effective network batching and CPU untilization
+	// Delay between write operation and replication. Larger values here will leader to higher replication latency and buffering,"
+	// but also will provide more effective network batching and CPU utilization
 	OnlineUpdatesDelayMSec int `json:"online_updates_delay_msec,omitempty"`
 	// Replication log level on replicator's startup. Possible values: none, error, warning, info, trace ('info' is default)
 	LogLevel string `json:"log_level,omitempty"`
-	// List of namespaces for replication. If emply, all namespaces. All replicated namespaces will become read only for slave
+	// List of namespaces for replication. If empty, all namespaces. All replicated namespaces will become read only for slave
 	Namespaces []string `json:"namespaces"`
 	// Replication token of the current node that it sends to the follower for verification
 	SelfReplicationToken string `json:"self_replication_token,omitempty"`
@@ -589,6 +624,21 @@ type DBReplicationConfig struct {
 	ClusterID int `json:"cluster_id"`
 	//  Lists of namespaces with their admissible tokens
 	AdmissibleTokens []AdmissibleToken `json:"admissible_replication_tokens,omitempty"`
+}
+
+// DBEmbeddersConfig is part of reindexer configuration contains Embedders cache settings
+type DBEmbeddersConfig struct {
+	// Name, used to access the cache. Optional, if not specified, caching is not used
+	CacheTag string `json:"cache_tag"`
+	// Maximum size of the embedding results cache in items.
+	// This cache will only be enabled if the 'max_cache_items' property is not 'off' (value 0).
+	// It stores the results of the embedding calculation. Minimum 0, default 1000000
+	MaxCacheItems int `json:"max_cache_items"`
+	// This value determines how many requests required to put results into cache.
+	// For example with value of 2: first request will be executed without caching,
+	// second request will generate cache entry and put results into the cache
+	// and third request will get cached results. 0 and 1 mean - when value added goes straight to the cache
+	HitToCache int `json:"hit_to_cache"`
 }
 
 // DescribeNamespaces makes a 'SELECT * FROM #namespaces' query to database.

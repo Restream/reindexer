@@ -295,7 +295,7 @@ ServerConnection::ReadResT ServerConnection::onRead() {
 			rdBuf_.clear();
 		}
 	} catch (std::exception& e) {
-		fprintf(stderr, "Dropping HTTP-connection. Reason: %s\n", e.what());
+		fprintf(stderr, "reindexer error: dropping HTTP-connection. Reason: %s\n", e.what());
 		closeConn_ = true;
 	}
 	return ReadResT::Default;

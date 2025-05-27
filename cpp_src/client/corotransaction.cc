@@ -11,9 +11,14 @@ namespace reindexer::client {
 
 CoroTransaction::~CoroTransaction() {
 	if (!IsFree()) {
-		getConn()->Call({net::cproto::kCmdRollbackTx, i_.requestTimeout_, i_.execTimeout_, lsn_t(), -1, ShardingKeyType::NotSetShard,
-						 nullptr, false, i_.sessionTs_},
-						i_.txId_);
+		try {
+			getConn()->Call({net::cproto::kCmdRollbackTx, i_.requestTimeout_, i_.execTimeout_, lsn_t(), -1, ShardingKeyType::NotSetShard,
+							 nullptr, false, i_.sessionTs_},
+							i_.txId_);
+		} catch (std::exception& e) {
+			fprintf(stderr, "reindexer error: unexpected exception in ~CoroTransaction: %s\n", e.what());
+			assertrx_dbg(false);
+		}
 	}
 }
 
@@ -204,14 +209,14 @@ Item CoroTransaction::NewItem(ClientT* client) {
 template Item CoroTransaction::NewItem<ReindexerImpl>(ReindexerImpl* client);
 
 CoroTransaction::Impl::Impl(RPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout,
-							std::chrono::milliseconds execTimeout, std::shared_ptr<Namespace>&& ns, int emmiterServerId) noexcept
+							std::chrono::milliseconds execTimeout, std::shared_ptr<Namespace>&& ns, int emitterServerId) noexcept
 	: txId_(txId),
 	  rpcClient_(rpcClient),
 	  requestTimeout_(requestTimeout),
 	  execTimeout_(execTimeout),
 	  localTm_(std::make_unique<TagsMatcher>(ns->GetTagsMatcher())),
 	  ns_(std::move(ns)),
-	  emmiterServerId_(emmiterServerId) {
+	  emitterServerId_(emitterServerId) {
 	assert(rpcClient_);
 	assert(ns_);
 	const auto sessinTsOpt = rpcClient_->conn_.LoginTs();

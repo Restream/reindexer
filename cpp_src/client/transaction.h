@@ -13,11 +13,14 @@ class InternalRdxContext;
 
 class Transaction {
 public:
+	using Completion = std::function<void(const Error& err)>;
 	Error Insert(Item&& item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeInsert, lsn); }
 	Error Update(Item&& item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeUpdate, lsn); }
+	Error Upsert(Item&& item, Completion cmpl, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeUpsert, std::move(cmpl), lsn); }
 	Error Upsert(Item&& item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeUpsert, lsn); }
 	Error Delete(Item&& item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeDelete, lsn); }
 	Error Modify(Item&& item, ItemModifyMode mode, lsn_t lsn = lsn_t());
+	Error Modify(Item&& item, ItemModifyMode mode, Completion cmpl, lsn_t lsn = lsn_t());
 	Error PutMeta(std::string_view key, std::string_view value, lsn_t lsn = lsn_t());
 	Error SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn);
 	Error Modify(Query&& query, lsn_t lsn = lsn_t());

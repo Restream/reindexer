@@ -8,7 +8,7 @@ info:
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  version: 5.2.1
+  version: 5.3.0
 servers:
 - url: /api/v1
 tags:
@@ -3421,6 +3421,7 @@ paths:
           - replication
           - async_replication
           - profiling
+          - embedders
       responses:
         "200":
           description: successful operation
@@ -4400,8 +4401,6 @@ components:
           description: Clusters count for construct IFV index. Required for IVF indexes. Allowed for IVF indexes only.
         embedding:
           type: object
-          required:
-            - upsert_embedder
           description: Embedding configuration
           properties:
             upsert_embedder:
@@ -4430,7 +4429,7 @@ components:
                     - 'always'
                     - 'empty_only'
                     - 'strict'
-                  default: 'strict'
+                  default: 'always'
                   description: Embedding application strategy
                 pool:
                   type: object
@@ -5296,6 +5295,9 @@ components:
         name:
           type: string
           description: Name of namespace
+        type:
+          type: string
+          description: Type of namespace. For now it's 'namespace' or 'embedders'
         items_count:
           type: integer
           description: Total count of documents in namespace
@@ -5351,6 +5353,11 @@ components:
           description: Memory consumption of each namespace index
           items:
             $ref: '#/components/schemas/IndexMemStat'
+        embedding_caches:
+          type: array
+          description: Memory consumption of each embedder
+          items:
+            $ref: '#/components/schemas/EmbeddersCacheMemStat'
     IndexMemStat:
       type: object
       properties:
@@ -5400,6 +5407,31 @@ components:
           description: "Shows whether KNN/fulltext indexing structure is fully built.\
             \ If this field is missing, index does not require any specific build\
             \ steps"
+    EmbeddersCacheMemStat:
+      type: object
+      properties:
+        cache_tag:
+          type: string
+          description: Tag of cache from configuration
+        capacity:
+          type: integer
+          description: Capacity of cache
+        cache:
+          $ref: '#/components/schemas/CacheMemStats'
+          description: Embedder cache stats
+        storage_ok:
+          type: boolean
+          description: "Status of disk storage (true, if storage is enabled and writable)"
+        storage_status:
+          type: string
+          description: "More detailed info about storage status. May contain 'OK',\
+            \ 'DISABLED', 'FAILED' or last error description"
+        storage_path:
+          type: string
+          description: Filesystem path to namespace storage
+        storage_size:
+          type: integer
+          description: Disk space occupied by storage
     JoinCacheMemStats:
       description: Join cache stats. Stores results of selects to right table by ON
         condition
@@ -5533,6 +5565,12 @@ components:
                 $ref: '#/components/schemas/SelectPerfStats'
               cache:
                 $ref: '#/components/schemas/LRUCachePerfStats'
+              upsert_embedder_cache:
+                description: Cache of upsert embedder for index
+                $ref: '#/components/schemas/EmbedderCachePerfStat'
+              query_embedder_cache:
+                description: Cache of query embedder for index
+                $ref: '#/components/schemas/EmbedderCachePerfStat'
     CommonPerfStats:
       type: object
       properties:
@@ -5659,6 +5697,26 @@ components:
           description: Determines if cache is currently in use. Usually it has 'false'
             value for uncommitted indexes
       description: Performance statistics for specific LRU-cache instance
+    EmbedderCachePerfStat:
+      type: object
+      properties:
+        cache_tag:
+          type: string
+          description: Name. Identifier for linking settings
+        total_queries:
+          minimum: 0
+          type: integer
+          description: Queries total count
+        cache_hit_rate:
+          maximum: 1
+          minimum: 0
+          type: number
+          description: Cache hit rate (hits / total_queries)
+        is_active:
+          type: boolean
+          description: Determines if cache is currently in use. Usually it has 'false'
+            value for uncommitted indexes
+      description: Performance statistics for specific Embedder LRU-cache instance
     SystemConfigItems:
       type: object
       properties:
@@ -5679,6 +5737,8 @@ components:
           - profiling
           - namespaces
           - replication
+          - async_replication
+          - embedders
           - action
         profiling:
           $ref: '#/components/schemas/ProfilingConfig'
@@ -5690,6 +5750,10 @@ components:
           $ref: '#/components/schemas/ReplicationConfig'
         async_replication:
           $ref: '#/components/schemas/AsyncReplicationConfig'
+        embedders:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmbeddersConfig'
         action:
           $ref: '#/components/schemas/ActionCommand'
       discriminator:
@@ -6094,6 +6158,28 @@ components:
                   \ general list will be used"
                 items:
                   type: string
+    EmbeddersConfig:
+      type: object
+      properties:
+        cache_tag:
+          type: string
+          description: "Name. Identifier for linking settings. Special value '*' is supported (applies to all)"
+        max_cache_items:
+          minimum: 0
+          default: 1000000
+          type: integer
+          description: "Maximum size of the embedding results cache in items.\
+                \ This cache will only be enabled if the 'max_cache_items' property is not 'off' (value 0).\
+                \ It stores the results of the embedding calculation"
+        hit_to_cache:
+          type: integer
+          minimum: 0
+          default: 1
+          description: "Default 'hits to cache' for embedding calculation cache.\
+                \ This value determines how many requests required to put results into cache.\
+                \ For example with value of 2: first request will be executed without caching,\
+                \ second request will generate cache entry and put results into the cache\
+                \ and third request will get cached results. 0 and 1 mean - when value added goes straight to the cache"
     ActionCommand:
       required:
       - command

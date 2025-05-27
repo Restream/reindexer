@@ -81,6 +81,7 @@ void LeaderSyncThread::actualizeShardingConfig() {
 	clCfg.EnableCompression = false;
 	clCfg.RequestDedicatedThread = true;
 	for (const auto& dsn : cfg_.dsns) {
+		// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 		loop_.spawn([&]() noexcept {
 			try {
 				client::CoroReindexer client(clCfg);
@@ -139,6 +140,7 @@ LeaderSyncThread::LeaderSyncThread(const Config& cfg, LeaderSyncQueue& syncQueue
 	  actShardingCfg_(actShardingCfg) {
 	terminateAsync_.set(loop_);
 	terminateAsync_.set([this](net::ev::async&) noexcept { client_.Stop(); });
+	// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 	thread_ = std::thread([this]() noexcept { sync(); });
 }
 

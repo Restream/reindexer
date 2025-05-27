@@ -180,7 +180,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 			try {
 				responceRPC(ctx, Error(errParams, "Invalid cproto magic {:08x}", int(hdr.magic)), Args());
 			} catch (std::exception& err) {
-				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what());
+				fprintf(stderr, "reindexer error: responceRPC unexpected error: %s\n", err.what());
 			}
 			BaseConnT::closeConn_ = true;
 			return BaseConnT::ReadResT::Default;
@@ -193,7 +193,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 					Error(errParams, "Unsupported cproto version {:04x}. This server expects reindexer client v1.9.8+", int(hdr.version)),
 					Args());
 			} catch (std::exception& err) {
-				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what());
+				fprintf(stderr, "reindexer error: responceRPC unexpected error: %s\n", err.what());
 			}
 			BaseConnT::closeConn_ = true;
 			return BaseConnT::ReadResT::Default;
@@ -275,11 +275,11 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 				}
 				if (ctxArgs.size() > 2) {
 					if (!ctxArgs[2].Type().IsSame(KeyValueType::From<int64_t>())) {
-						throw Error(errLogic, "Incorrect variant type for 'emmiterServerId' type='{}'", ctxArgs[2].Type().Name());
+						throw Error(errLogic, "Incorrect variant type for 'emitterServerId' type='{}'", ctxArgs[2].Type().Name());
 					}
-					ctx.call->emmiterServerId = int64_t(ctxArgs[2]);
+					ctx.call->emitterServerId = int64_t(ctxArgs[2]);
 				} else {
-					ctx.call->emmiterServerId = -1;
+					ctx.call->emitterServerId = -1;
 				}
 				if (ctxArgs.size() > 3) {
 					if (!ctxArgs[3].Type().IsSame(KeyValueType::From<int64_t>())) {
@@ -303,7 +303,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 			} else {
 				ctx.call->execTimeout = milliseconds(0);
 				ctx.call->lsn = lsn_t();
-				ctx.call->emmiterServerId = -1;
+				ctx.call->emitterServerId = -1;
 				ctx.call->shardId = -1;
 				ctx.call->shardingParallelExecution = false;
 			}
@@ -365,7 +365,7 @@ static chunk packRPC(chunk chunk, Context& ctx, const Error& status, const Args&
 
 void ServerConnection::responceRPC(Context& ctx, const Error& status, const Args& args) {
 	if rx_unlikely (ctx.respSent) {
-		fprintf(stderr, "Warning - RPC responce already sent\n");
+		fprintf(stderr, "reindexer warning: RPC responce already sent\n");
 		return;
 	}
 
@@ -393,15 +393,15 @@ void ServerConnection::responceRPC(Context& ctx, const Error& status, const Args
 
 void ServerConnection::handleException(Context& ctx, const Error& err) noexcept {
 	// Exception occurs on unrecoverable error. Send responce, and drop connection
-	fprintf(stderr, "Dropping RPC-connection. Reason: %s\n", err.what());
+	fprintf(stderr, "reindexer error: dropping RPC-connection. Reason: %s\n", err.what());
 	try {
 		if (!ctx.respSent) {
 			responceRPC(ctx, err, Args());
 		}
 	} catch (std::exception& e) {
-		fprintf(stderr, "responceRPC unexpected error: %s\n", e.what());
+		fprintf(stderr, "reindexer error: responceRPC unexpected error: %s\n", e.what());
 	} catch (...) {
-		fprintf(stderr, "responceRPC unexpected error (unknow exception)\n");
+		fprintf(stderr, "reindexer error: responceRPC unexpected error (unknow exception)\n");
 	}
 	BaseConnT::closeConn_ = true;
 }

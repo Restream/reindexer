@@ -1,6 +1,5 @@
 #pragma once
 
-#include <time.h>
 #include <cctype>
 #include <cstring>
 #include <optional>
@@ -24,6 +23,7 @@ Variant stringToVariant(std::string_view value);
 
 [[nodiscard]] RX_ALWAYS_INLINE constexpr bool isalpha(char c) noexcept { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
 [[nodiscard]] RX_ALWAYS_INLINE constexpr bool isdigit(char c) noexcept { return (c >= '0' && c <= '9'); }
+[[nodiscard]] RX_ALWAYS_INLINE constexpr bool issign(char c) noexcept { return (c == '+' || c == '-'); }
 [[nodiscard]] RX_ALWAYS_INLINE constexpr char tolower(char c) noexcept { return (c >= 'A' && c <= 'Z') ? c + 'a' - 'A' : c; }
 std::string toLower(std::string_view src);
 inline std::string_view skipSpace(std::string_view str) {
@@ -163,7 +163,10 @@ std::string float_vector_to_str(ConstFloatVectorView view);
 
 [[nodiscard]] bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept;
 [[nodiscard]] bool validateUserNsName(std::string_view name) noexcept;
-RX_ALWAYS_INLINE bool isSystemNamespaceNameFast(std::string_view name) noexcept { return !name.empty() && name[0] == '#'; }
+RX_ALWAYS_INLINE bool isSystemNamespaceNameFast(std::string_view name) noexcept { return !name.empty() && (name[0] == '#'); }
+RX_ALWAYS_INLINE bool isSystemNamespaceNameFastReplication(std::string_view name) noexcept {
+	return !name.empty() && (name[0] == '#' || name[0] == '@' || name[0] == '!');
+}
 LogLevel logLevelFromString(std::string_view strLogLevel) noexcept;
 std::string_view logLevelToString(LogLevel level) noexcept;
 StrictMode strictModeFromString(std::string_view strStrictMode);

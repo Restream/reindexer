@@ -5,6 +5,7 @@
 #include "core/formatters/lsn_fmt.h"
 #include "core/system_ns_names.h"
 #include "estl/gift_str.h"
+#include "gtests/tools.h"
 #include "systemhelpers.h"
 #include "tools/crypt.h"
 #include "tools/fsops.h"
@@ -102,15 +103,20 @@ void AsyncReplicationConfigTest::GetJSON(reindexer::JsonBuilder& jb) const {
 }
 
 ServerControl::Interface::~Interface() {
-	Stop();
-	if (tr) {
-		tr->join();
+	try {
+		Stop();
+		if (tr) {
+			tr->join();
+		}
+		if (reindexerServerPIDWait != -1) {
+			auto err = reindexer::WaitEndProcess(reindexerServerPIDWait);
+			assertf(err.ok(), "WaitEndProcess error: {}", err.what());
+		}
+		stopped_ = true;
+	} catch (const std::exception& err) {
+		fprintf(stderr, "reindexer error: unexpected exception in ~Interface: %s\n", err.what());
+		std::abort();
 	}
-	if (reindexerServerPIDWait != -1) {
-		auto err = reindexer::WaitEndProcess(reindexerServerPIDWait);
-		assertf(err.ok(), "WaitEndProcess error: {}", err.what());
-	}
-	stopped_ = true;
 }
 
 void ServerControl::Interface::Stop() {
@@ -252,7 +258,7 @@ void ServerControl::Interface::WriteShardingConfig(const std::string& configYaml
 	file.flush();
 }
 
-std::string ServerControl::Interface::dumpUserRecYAML() const noexcept {
+std::string ServerControl::Interface::dumpUserRecYAML() const {
 	YAML::Emitter res;
 	res << YAML::BeginMap;
 	for (const auto& [role, rec] : TestUserDataFactory::Get(config_.id)) {

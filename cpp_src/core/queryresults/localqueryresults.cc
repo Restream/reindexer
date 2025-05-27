@@ -65,7 +65,6 @@ struct LocalQueryResults::Context {
 static_assert(LocalQueryResults::kSizeofContext >= sizeof(LocalQueryResults::Context),
 			  "LocalQueryResults::kSizeofContext should >= sizeof(LocalQueryResults::Context)");
 
-LocalQueryResults::LocalQueryResults(std::initializer_list<ItemRef> l) : items_(l) {}
 LocalQueryResults::LocalQueryResults() = default;
 LocalQueryResults::LocalQueryResults(LocalQueryResults&& obj) noexcept = default;
 
@@ -144,7 +143,7 @@ int LocalQueryResults::GetJoinedNsCtxIndex(int nsid) const noexcept {
 class LocalQueryResults::EncoderDatasourceWithJoins final : public IEncoderDatasourceWithJoins {
 public:
 	EncoderDatasourceWithJoins(const joins::ItemIterator& joinedItemIt, const ContextsVector& ctxs,
-							   ConstIterator::NsNamesCache& nsNamesCache, int ctxIdx, size_t nsid, size_t joinedCount) noexcept
+							   ConstIterator::NsNamesCache& nsNamesCache, int ctxIdx, size_t nsid, size_t joinedCount)
 		: joinedItemIt_(joinedItemIt), ctxs_(ctxs), nsNamesCache_(nsNamesCache), ctxId_(ctxIdx), nsid_{nsid} {
 		if (nsNamesCache.size() <= nsid_) {
 			nsNamesCache.resize(nsid_ + 1);
@@ -212,7 +211,11 @@ private:
 
 void LocalQueryResults::encodeJSON(int idx, WrSerializer& ser, ConstIterator::NsNamesCache& nsNamesCache) const {
 	auto& itemRef = items_.GetItemRef(idx);
-	assertrx(ctxs.size() > itemRef.Nsid());
+	if rx_unlikely (ctxs.size() <= itemRef.Nsid()) {
+		assertrx_dbg(ctxs.size() > itemRef.Nsid());	 // This code should be unreachable in normal conditions
+		throw Error(errAssert, "Do not have corresponding context for nsid: {} in LocalQueryResults; {} contextes total", itemRef.Nsid(),
+					ctxs.size());
+	}
 	auto& ctx = ctxs[itemRef.Nsid()];
 
 	if (itemRef.Value().IsFree()) {

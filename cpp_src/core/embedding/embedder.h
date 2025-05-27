@@ -7,15 +7,18 @@
 #include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/variant.h"
 #include "estl/h_vector.h"
+#include "tools/errors.h"
 
 namespace reindexer {
 
-class JsonBuilder;
 class RdxContext;
+class EmbeddersCache;
+struct EmbedderCachePerfStat;
 
-class Embedder final {
+class [[nodiscard]] Embedder final {
 public:
-	Embedder(std::string_view name, std::string_view fieldName, int field, EmbedderConfig&& config, PoolConfig&& poolConfig);
+	Embedder(std::string_view name, std::string_view fieldName, int field, EmbedderConfig&& config, PoolConfig&& poolConfig,
+			 const std::shared_ptr<EmbeddersCache>& cache);
 	~Embedder() noexcept = default;
 
 	Embedder() = delete;
@@ -24,30 +27,31 @@ public:
 	Embedder& operator=(const Embedder&) = delete;
 	Embedder& operator=(Embedder&&) noexcept = delete;
 
-	std::string_view Name() const& noexcept { return name_; }
-	auto Name() const&& noexcept = delete;
-	std::string_view FieldName() const& noexcept { return fieldName_; }
-	auto FieldName() const&& noexcept = delete;
+	[[nodiscard]] std::string_view Name() const& noexcept { return name_; }
+	[[nodiscard]] auto Name() const&& noexcept = delete;
+	[[nodiscard]] std::string_view FieldName() const& noexcept { return fieldName_; }
+	[[nodiscard]] auto FieldName() const&& noexcept = delete;
 
-	int Field() const noexcept { return field_; }
+	[[nodiscard]] int Field() const noexcept { return field_; }
 
-	Error Calculate(const RdxContext& ctx, std::span<const std::vector<VariantArray>> sources, h_vector<ConstFloatVector, 1>& products);
+	void Calculate(const RdxContext& ctx, std::span<const std::vector<VariantArray>> sources, h_vector<ConstFloatVector, 1>& products);
 
-	const h_vector<std::string, 1>& Fields() const& noexcept { return config_.fields; }
-	auto Fields() const&& noexcept = delete;
+	[[nodiscard]] const h_vector<std::string, 1>& Fields() const& noexcept { return config_.fields; }
+	[[nodiscard]] auto Fields() const&& noexcept = delete;
 
-	EmbedderConfig::Strategy Strategy() const noexcept { return config_.strategy; }
+	[[nodiscard]] EmbedderConfig::Strategy Strategy() const noexcept { return config_.strategy; }
+	[[nodiscard]] bool IsAuxiliaryField(std::string_view fieldName) const noexcept;
 
-	bool IsAuxiliaryField(std::string_view fieldName) const noexcept;
+	[[nodiscard]] EmbedderCachePerfStat GetPerfStat(std::string_view tag) const;
 
 private:
-	void getJson(std::span<const std::vector<VariantArray>> sources, JsonBuilder& json) const;
-	std::string getJson(std::span<const std::vector<VariantArray>> sources) const;
+	void checkFields(std::span<const std::vector<VariantArray>> sources) const;
 
 	const std::string name_;
 	const std::string fieldName_;
 	const int field_{0};
-	std::string path_;
+	const std::string serverPath_;
+	const std::shared_ptr<EmbeddersCache> cache_;
 	const EmbedderConfig config_;
 	std::unique_ptr<ConnectorPool> pool_;
 };

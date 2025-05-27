@@ -86,7 +86,7 @@ void QueryPreprocessor::ExcludeFtQuery(const RdxContext& rdxCtx) {
 }
 
 bool QueryPreprocessor::NeedNextEvaluation(unsigned start, unsigned count, bool& matchedAtLeastOnce, QresExplainHolder& qresHolder,
-										   bool needCalcTotal) noexcept {
+										   bool needCalcTotal)  {
 	if (evaluationsCount_++) {
 		return false;
 	}

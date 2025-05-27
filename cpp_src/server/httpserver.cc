@@ -960,7 +960,7 @@ int HTTPServer::NotFoundHandler(http::Context& ctx) {
 	return jsonStatus(ctx, httpStatus);
 }
 
-bool HTTPServer::Start(const std::string& addr, ev::dynamic_loop& loop) {
+void HTTPServer::Start(const std::string& addr, ev::dynamic_loop& loop) {
 	router_.NotFound<HTTPServer, &HTTPServer::NotFoundHandler>(this);
 
 	router_.GET<HTTPServer, &HTTPServer::DocHandler>("/", this);
@@ -1056,7 +1056,7 @@ bool HTTPServer::Start(const std::string& addr, ev::dynamic_loop& loop) {
 	deadlineChecker_.start(std::chrono::duration_cast<std::chrono::seconds>(kTxDeadlineCheckPeriod).count(),
 						   std::chrono::duration_cast<std::chrono::seconds>(kTxDeadlineCheckPeriod).count());
 
-	return listener_->Bind(addr, socket_domain::tcp);
+	listener_->Bind(addr, socket_domain::tcp);
 }
 
 Error HTTPServer::modifyItem(Reindexer& db, std::string& nsName, Item& item, ItemModifyMode mode) {

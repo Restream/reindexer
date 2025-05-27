@@ -33,7 +33,7 @@ public:
 	RoleSwitcher(SharedSyncState&, SynchronizationList&, ReindexerImpl&, const ReplicationStatsCollector&, const Logger&);
 
 	void Run(std::vector<DSN>&& dsns, RoleSwitcher::Config&& cfg);
-	void OnRoleChanged();
+	void OnRoleChanged() noexcept;
 	void SetTerminationFlag(bool val) noexcept;
 
 private:

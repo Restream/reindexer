@@ -116,7 +116,7 @@ public:
 	const FieldsSet& Fields() const&& = delete;
 	const std::string& Name() const& noexcept { return name_; }
 	const std::string& Name() const&& = delete;
-	IndexType Type() const { return type_; }
+	IndexType Type() const noexcept { return type_; }
 	const std::vector<IdType>& SortOrders() const { return sortOrders_; }
 	const IndexOpts& Opts() const { return opts_; }
 	virtual void SetOpts(const IndexOpts& opts) { opts_ = opts; }

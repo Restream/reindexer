@@ -47,6 +47,8 @@ class Reindexer {
 public:
 	/// Completion routine
 	using Completion = std::function<void(const Error& err)>;
+	using ItemType = Item;
+	using TransactionType = Transaction;
 
 	/// Create Reindexer database object
 	/// @param cfg - general database options
@@ -312,7 +314,7 @@ public:
 	Reindexer WithLSN(lsn_t lsn) const { return {impl_, ctx_.WithLSN(lsn)}; }
 	/// Add emitter server id
 	/// @param id - emitter server id
-	Reindexer WithEmmiterServerId(unsigned int id) const { return {impl_, ctx_.WithEmmiterServerId(id)}; }
+	Reindexer WithEmitterServerId(unsigned int id) const { return {impl_, ctx_.WithEmitterServerId(id)}; }
 	/// Add shard id
 	/// @param id - shard id
 	/// @param distributed - 'true' means, that we are executing distributed sharding query part

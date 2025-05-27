@@ -35,7 +35,7 @@ public:
 
 	CsvBuilder(WrSerializer& ser, CsvOrdering& ordering);
 
-	~CsvBuilder();
+	~CsvBuilder() noexcept(false);
 	CsvBuilder& operator=(const CsvBuilder&) = delete;
 	CsvBuilder& operator=(CsvBuilder&&) = delete;
 

@@ -41,9 +41,9 @@ void CoroReindexer::Stop() noexcept {
 		impl_->Stop();
 		// Do not excepting any exceptions here
 	} catch (std::exception& e) {
-		fprintf(stderr, "Unexpceted system error in CoroReindexer::Stop: %s", e.what());
+		fprintf(stderr, "reindexer error: unexpected system error in CoroReindexer::Stop: %s\n", e.what());
 	} catch (...) {
-		fprintf(stderr, "Unexpceted system error in CoroReindexer::Stop: <no description available>");
+		fprintf(stderr, "reindexer error: unexpected system error in CoroReindexer::Stop: <no description available>\n");
 	}
 }
 Error CoroReindexer::AddNamespace(const NamespaceDef& nsDef, const NsReplicationOpts& replOpts) noexcept {

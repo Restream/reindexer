@@ -98,6 +98,8 @@
   * [Indexes](#indexes)
   * [ExplainDef](#explaindef)
   * [AggregationResDef](#aggregationresdef)
+  * [DistincOneItemDef](#distinconeitemdef)
+  * [DistinctMultiItemDef](#distinctmultiitemdef)
   * [QueryColumnDef](#querycolumndef)
   * [StatusResponse](#statusresponse)
   * [ItemsUpdateResponse](#itemsupdateresponse)
@@ -105,6 +107,7 @@
   * [DatabaseMemStats](#databasememstats)
   * [NamespaceMemStats](#namespacememstats)
   * [IndexMemStat](#indexmemstat)
+  * [EmbeddersCacheMemStat](#embedderscachememstat)
   * [JoinCacheMemStats](#joincachememstats)
   * [QueryCacheMemStats](#querycachememstats)
   * [IndexCacheMemStats](#indexcachememstats)
@@ -119,6 +122,7 @@
   * [QueriesPerfStats](#queriesperfstats)
   * [QueryPerfStats](#queryperfstats)
   * [LRUCachePerfStats](#lrucacheperfstats)
+  * [EmbedderCachePerfStat](#embeddercacheperfstat)
   * [SystemConfigItems](#systemconfigitems)
   * [SystemConfigItem](#systemconfigitem)
   * [ProfilingConfig](#profilingconfig)
@@ -129,6 +133,7 @@
   * [NamespacesConfig](#namespacesconfig)
   * [ReplicationConfig](#replicationconfig)
   * [AsyncReplicationConfig](#asyncreplicationconfig)
+  * [EmbeddersConfig](#embeddersconfig)
   * [ActionCommand](#actioncommand)
   * [BeginTransactionResponse](#begintransactionresponse)
   * [UserRoleResponse](#userroleresponse)
@@ -141,7 +146,7 @@
 
 <!-- tocstop -->
 
-> Version 5.2.1
+> Version 5.3.0
 
 ## Overview
 
@@ -252,6 +257,8 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 | Indexes | [Indexes](#indexes) |  |
 | ExplainDef | [ExplainDef](#explaindef) | Explanations of query execution |
 | AggregationResDef | [AggregationResDef](#aggregationresdef) |  |
+| DistincOneItemDef | [DistincOneItemDef](#distinconeitemdef) |  |
+| DistinctMultiItemDef | [DistinctMultiItemDef](#distinctmultiitemdef) | Distinct fields values |
 | QueryColumnDef | [QueryColumnDef](#querycolumndef) | Query columns for table outputs |
 | StatusResponse | [StatusResponse](#statusresponse) |  |
 | ItemsUpdateResponse | [ItemsUpdateResponse](#itemsupdateresponse) |  |
@@ -259,6 +266,7 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 | DatabaseMemStats | [DatabaseMemStats](#databasememstats) |  |
 | NamespaceMemStats | [NamespaceMemStats](#namespacememstats) |  |
 | IndexMemStat | [IndexMemStat](#indexmemstat) |  |
+| EmbeddersCacheMemStat | [EmbeddersCacheMemStat](#embedderscachememstat) |  |
 | JoinCacheMemStats | [JoinCacheMemStats](#joincachememstats) | Join cache stats. Stores results of selects to right table by ON condition |
 | QueryCacheMemStats | [QueryCacheMemStats](#querycachememstats) by Where conditions |
 | IndexCacheMemStats | [IndexCacheMemStats](#indexcachememstats) keys |
@@ -273,6 +281,7 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 | QueriesPerfStats | [QueriesPerfStats](#queriesperfstats) |  |
 | QueryPerfStats | [QueryPerfStats](#queryperfstats) | Performance statistics per each query |
 | LRUCachePerfStats | [LRUCachePerfStats](#lrucacheperfstats) | Performance statistics for specific LRU-cache instance |
+| EmbedderCachePerfStat | [EmbedderCachePerfStat](#embeddercacheperfstat) | Performance statistics for specific Embedder LRU-cache instance |
 | SystemConfigItems | [SystemConfigItems](#systemconfigitems) |  |
 | SystemConfigItem | [SystemConfigItem](#systemconfigitem) |  |
 | ProfilingConfig | [ProfilingConfig](#profilingconfig) |  |
@@ -283,6 +292,7 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 | NamespacesConfig | [NamespacesConfig](#namespacesconfig) |  |
 | ReplicationConfig | [ReplicationConfig](#replicationconfig) |  |
 | AsyncReplicationConfig | [AsyncReplicationConfig](#asyncreplicationconfig) |  |
+| EmbeddersConfig | [EmbeddersConfig](#embeddersconfig) |  |
 | ActionCommand | [ActionCommand](#actioncommand) |  |
 | BeginTransactionResponse | [BeginTransactionResponse](#begintransactionresponse) |  |
 | UserRoleResponse | [UserRoleResponse](#userroleresponse) |  |
@@ -3184,7 +3194,7 @@ sharding?: enum[true, false]
       // Count of elements these fields values
       count: integer
     }[]
-    distincts?: string[]
+    distincts?: DistincOneItemDef | DistinctMultiItemDef[]
   }[]
   equal_position?: string[]
   // Query columns for table outputs
@@ -3836,7 +3846,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
       // Count of elements these fields values
       count: integer
     }[]
-    distincts?: string[]
+    distincts?: DistincOneItemDef | DistinctMultiItemDef[]
   }[]
   equal_position?: string[]
   // Query columns for table outputs
@@ -5601,7 +5611,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
       // Count of elements these fields values
       count: integer
     }[]
-    distincts?: string[]
+    distincts?: DistincOneItemDef | DistinctMultiItemDef[]
   }[]
   equal_position?: string[]
   // Query columns for table outputs
@@ -6454,6 +6464,8 @@ This operation will return detailed information about database memory consumptio
   items: {
     // Name of namespace
     name?: string
+    // Type of namespace. For now it's 'namespace' or 'embedders'
+    type?: string
     // Total count of documents in namespace
     items_count?: integer
     // Size of strings deleted from namespace, but still used in queryResults
@@ -6550,6 +6562,30 @@ This operation will return detailed information about database memory consumptio
       tracked_updates_overflow?: integer
       // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
       is_built?: boolean
+    }[]
+    embedding_caches: {
+      // Tag of cache from configuration
+      cache_tag?: string
+      // Capacity of cache
+      capacity?: integer
+      cache: {
+        // Total memory consumption by this cache
+        total_size?: integer
+        // Count of used elements stored in this cache
+        items_count?: integer
+        // Count of empty elements slots in this cache
+        empty_count?: integer
+        // Number of hits of queries, to store results in cache
+        hit_count_limit?: integer
+      }
+      // Status of disk storage (true, if storage is enabled and writable)
+      storage_ok?: boolean
+      // More detailed info about storage status. May contain 'OK', 'DISABLED', 'FAILED' or last error description
+      storage_status?: string
+      // Filesystem path to namespace storage
+      storage_path?: string
+      // Disk space occupied by storage
+      storage_size?: integer
     }[]
   }[]
 }
@@ -6700,6 +6736,18 @@ This operation will return detailed information about database performance timin
       updates:UpdatePerfStats
       selects:SelectPerfStats
       cache:LRUCachePerfStats
+      // Performance statistics for specific Embedder LRU-cache instance
+      upsert_embedder_cache: {
+        // Name. Identifier for linking settings
+        cache_tag?: string
+        // Queries total count
+        total_queries?: integer
+        // Cache hit rate (hits / total_queries)
+        cache_hit_rate?: number
+        // Determines if cache is currently in use. Usually it has 'false' value for uncommitted indexes
+        is_active?: boolean
+      }
+      query_embedder_cache:EmbedderCachePerfStat
     }[]
   }[]
 }
@@ -6896,7 +6944,7 @@ This operation will return system configs
 ```ts
 {
   items: {
-    type: enum[profiling, namespaces, replication, action] //default: profiling
+    type: enum[profiling, namespaces, replication, async_replication, embedders, action] //default: profiling
     profiling: {
       // Enables tracking activity statistics
       activitystats?: boolean
@@ -7037,6 +7085,14 @@ This operation will return system configs
         namespaces?: string[]
       }[]
     }
+    embedders: {
+      // Name. Identifier for linking settings. Special value '*' is supported (applies to all)
+      cache_tag?: string
+      // Maximum size of the embedding results cache in items. This cache will only be enabled if the 'max_cache_items' property is not 'off' (value 0). It stores the results of the embedding calculation
+      max_cache_items?: integer //default: 1000000
+      // Default 'hits to cache' for embedding calculation cache. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. 0 and 1 mean - when value added goes straight to the cache
+      hit_to_cache?: integer //default: 1
+    }[]
     action: {
       // Command to execute
       command: enum[restart_replication, reset_replication_role]
@@ -7137,7 +7193,7 @@ This operation will update system configuration:
 
 ```ts
 {
-  type: enum[profiling, namespaces, replication, action] //default: profiling
+  type: enum[profiling, namespaces, replication, async_replication, embedders, action] //default: profiling
   profiling: {
     // Enables tracking activity statistics
     activitystats?: boolean
@@ -7278,6 +7334,14 @@ This operation will update system configuration:
       namespaces?: string[]
     }[]
   }
+  embedders: {
+    // Name. Identifier for linking settings. Special value '*' is supported (applies to all)
+    cache_tag?: string
+    // Maximum size of the embedding results cache in items. This cache will only be enabled if the 'max_cache_items' property is not 'off' (value 0). It stores the results of the embedding calculation
+    max_cache_items?: integer //default: 1000000
+    // Default 'hits to cache' for embedding calculation cache. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. 0 and 1 mean - when value added goes straight to the cache
+    hit_to_cache?: integer //default: 1
+  }[]
   action: {
     // Command to execute
     command: enum[restart_replication, reset_replication_role]
@@ -7384,7 +7448,7 @@ This operation will return default system configs.
 #### Parameters(Query)
 
 ```ts
-type: enum[namespaces, replication, async_replication, profiling] //default: namespaces
+type: enum[namespaces, replication, async_replication, profiling, embedders] //default: namespaces
 ```
 
 #### Responses
@@ -7395,7 +7459,7 @@ type: enum[namespaces, replication, async_replication, profiling] //default: nam
 
 ```ts
 {
-  type: enum[profiling, namespaces, replication, action] //default: profiling
+  type: enum[profiling, namespaces, replication, async_replication, embedders, action] //default: profiling
   profiling: {
     // Enables tracking activity statistics
     activitystats?: boolean
@@ -7536,6 +7600,14 @@ type: enum[namespaces, replication, async_replication, profiling] //default: nam
       namespaces?: string[]
     }[]
   }
+  embedders: {
+    // Name. Identifier for linking settings. Special value '*' is supported (applies to all)
+    cache_tag?: string
+    // Maximum size of the embedding results cache in items. This cache will only be enabled if the 'max_cache_items' property is not 'off' (value 0). It stores the results of the embedding calculation
+    max_cache_items?: integer //default: 1000000
+    // Default 'hits to cache' for embedding calculation cache. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. 0 and 1 mean - when value added goes straight to the cache
+    hit_to_cache?: integer //default: 1
+  }[]
   action: {
     // Command to execute
     command: enum[restart_replication, reset_replication_role]
@@ -8562,7 +8634,7 @@ type: enum[namespaces, replication, async_replication, profiling] //default: nam
       cache_tag?: string
       fields?: string[]
       // Embedding application strategy
-      embedding_strategy?: enum[always, empty_only, strict] //default: strict
+      embedding_strategy?: enum[always, empty_only, strict] //default: always
       // Connection pool configuration
       pool: {
         // Number connections to service
@@ -8837,7 +8909,7 @@ type: enum[namespaces, replication, async_replication, profiling] //default: nam
       // Count of elements these fields values
       count: integer
     }[]
-    distincts?: string[]
+    distincts?: DistincOneItemDef | DistinctMultiItemDef[]
   }[]
   equal_position?: string[]
   // Query columns for table outputs
@@ -9178,8 +9250,22 @@ type: enum[namespaces, replication, async_replication, profiling] //default: nam
     // Count of elements these fields values
     count: integer
   }[]
-  distincts?: string[]
+  distincts?: DistincOneItemDef | DistinctMultiItemDef[]
 }
+```
+
+### DistincOneItemDef
+
+```ts
+{
+  "type": "string"
+}
+```
+
+### DistinctMultiItemDef
+
+```ts
+string[]
 ```
 
 ### QueryColumnDef
@@ -9239,6 +9325,8 @@ type: enum[namespaces, replication, async_replication, profiling] //default: nam
   items: {
     // Name of namespace
     name?: string
+    // Type of namespace. For now it's 'namespace' or 'embedders'
+    type?: string
     // Total count of documents in namespace
     items_count?: integer
     // Size of strings deleted from namespace, but still used in queryResults
@@ -9336,6 +9424,30 @@ type: enum[namespaces, replication, async_replication, profiling] //default: nam
       // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
       is_built?: boolean
     }[]
+    embedding_caches: {
+      // Tag of cache from configuration
+      cache_tag?: string
+      // Capacity of cache
+      capacity?: integer
+      cache: {
+        // Total memory consumption by this cache
+        total_size?: integer
+        // Count of used elements stored in this cache
+        items_count?: integer
+        // Count of empty elements slots in this cache
+        empty_count?: integer
+        // Number of hits of queries, to store results in cache
+        hit_count_limit?: integer
+      }
+      // Status of disk storage (true, if storage is enabled and writable)
+      storage_ok?: boolean
+      // More detailed info about storage status. May contain 'OK', 'DISABLED', 'FAILED' or last error description
+      storage_status?: string
+      // Filesystem path to namespace storage
+      storage_path?: string
+      // Disk space occupied by storage
+      storage_size?: integer
+    }[]
   }[]
 }
 ```
@@ -9346,6 +9458,8 @@ type: enum[namespaces, replication, async_replication, profiling] //default: nam
 {
   // Name of namespace
   name?: string
+  // Type of namespace. For now it's 'namespace' or 'embedders'
+  type?: string
   // Total count of documents in namespace
   items_count?: integer
   // Size of strings deleted from namespace, but still used in queryResults
@@ -9443,6 +9557,30 @@ type: enum[namespaces, replication, async_replication, profiling] //default: nam
     // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
     is_built?: boolean
   }[]
+  embedding_caches: {
+    // Tag of cache from configuration
+    cache_tag?: string
+    // Capacity of cache
+    capacity?: integer
+    cache: {
+      // Total memory consumption by this cache
+      total_size?: integer
+      // Count of used elements stored in this cache
+      items_count?: integer
+      // Count of empty elements slots in this cache
+      empty_count?: integer
+      // Number of hits of queries, to store results in cache
+      hit_count_limit?: integer
+    }
+    // Status of disk storage (true, if storage is enabled and writable)
+    storage_ok?: boolean
+    // More detailed info about storage status. May contain 'OK', 'DISABLED', 'FAILED' or last error description
+    storage_status?: string
+    // Filesystem path to namespace storage
+    storage_path?: string
+    // Disk space occupied by storage
+    storage_size?: integer
+  }[]
 }
 ```
 
@@ -9476,6 +9614,35 @@ type: enum[namespaces, replication, async_replication, profiling] //default: nam
   tracked_updates_overflow?: integer
   // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
   is_built?: boolean
+}
+```
+
+### EmbeddersCacheMemStat
+
+```ts
+{
+  // Tag of cache from configuration
+  cache_tag?: string
+  // Capacity of cache
+  capacity?: integer
+  cache: {
+    // Total memory consumption by this cache
+    total_size?: integer
+    // Count of used elements stored in this cache
+    items_count?: integer
+    // Count of empty elements slots in this cache
+    empty_count?: integer
+    // Number of hits of queries, to store results in cache
+    hit_count_limit?: integer
+  }
+  // Status of disk storage (true, if storage is enabled and writable)
+  storage_ok?: boolean
+  // More detailed info about storage status. May contain 'OK', 'DISABLED', 'FAILED' or last error description
+  storage_status?: string
+  // Filesystem path to namespace storage
+  storage_path?: string
+  // Disk space occupied by storage
+  storage_size?: integer
 }
 ```
 
@@ -9636,6 +9803,18 @@ type: enum[namespaces, replication, async_replication, profiling] //default: nam
       updates:UpdatePerfStats
       selects:SelectPerfStats
       cache:LRUCachePerfStats
+      // Performance statistics for specific Embedder LRU-cache instance
+      upsert_embedder_cache: {
+        // Name. Identifier for linking settings
+        cache_tag?: string
+        // Queries total count
+        total_queries?: integer
+        // Cache hit rate (hits / total_queries)
+        cache_hit_rate?: number
+        // Determines if cache is currently in use. Usually it has 'false' value for uncommitted indexes
+        is_active?: boolean
+      }
+      query_embedder_cache:EmbedderCachePerfStat
     }[]
   }[]
 }
@@ -9698,6 +9877,18 @@ type: enum[namespaces, replication, async_replication, profiling] //default: nam
     updates:UpdatePerfStats
     selects:SelectPerfStats
     cache:LRUCachePerfStats
+    // Performance statistics for specific Embedder LRU-cache instance
+    upsert_embedder_cache: {
+      // Name. Identifier for linking settings
+      cache_tag?: string
+      // Queries total count
+      total_queries?: integer
+      // Cache hit rate (hits / total_queries)
+      cache_hit_rate?: number
+      // Determines if cache is currently in use. Usually it has 'false' value for uncommitted indexes
+      is_active?: boolean
+    }
+    query_embedder_cache:EmbedderCachePerfStat
   }[]
 }
 ```
@@ -9845,12 +10036,28 @@ type: enum[namespaces, replication, async_replication, profiling] //default: nam
 }
 ```
 
+### EmbedderCachePerfStat
+
+```ts
+// Performance statistics for specific Embedder LRU-cache instance
+{
+  // Name. Identifier for linking settings
+  cache_tag?: string
+  // Queries total count
+  total_queries?: integer
+  // Cache hit rate (hits / total_queries)
+  cache_hit_rate?: number
+  // Determines if cache is currently in use. Usually it has 'false' value for uncommitted indexes
+  is_active?: boolean
+}
+```
+
 ### SystemConfigItems
 
 ```ts
 {
   items: {
-    type: enum[profiling, namespaces, replication, action] //default: profiling
+    type: enum[profiling, namespaces, replication, async_replication, embedders, action] //default: profiling
     profiling: {
       // Enables tracking activity statistics
       activitystats?: boolean
@@ -9991,6 +10198,14 @@ type: enum[namespaces, replication, async_replication, profiling] //default: nam
         namespaces?: string[]
       }[]
     }
+    embedders: {
+      // Name. Identifier for linking settings. Special value '*' is supported (applies to all)
+      cache_tag?: string
+      // Maximum size of the embedding results cache in items. This cache will only be enabled if the 'max_cache_items' property is not 'off' (value 0). It stores the results of the embedding calculation
+      max_cache_items?: integer //default: 1000000
+      // Default 'hits to cache' for embedding calculation cache. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. 0 and 1 mean - when value added goes straight to the cache
+      hit_to_cache?: integer //default: 1
+    }[]
     action: {
       // Command to execute
       command: enum[restart_replication, reset_replication_role]
@@ -10005,7 +10220,7 @@ type: enum[namespaces, replication, async_replication, profiling] //default: nam
 
 ```ts
 {
-  type: enum[profiling, namespaces, replication, action] //default: profiling
+  type: enum[profiling, namespaces, replication, async_replication, embedders, action] //default: profiling
   profiling: {
     // Enables tracking activity statistics
     activitystats?: boolean
@@ -10146,6 +10361,14 @@ type: enum[namespaces, replication, async_replication, profiling] //default: nam
       namespaces?: string[]
     }[]
   }
+  embedders: {
+    // Name. Identifier for linking settings. Special value '*' is supported (applies to all)
+    cache_tag?: string
+    // Maximum size of the embedding results cache in items. This cache will only be enabled if the 'max_cache_items' property is not 'off' (value 0). It stores the results of the embedding calculation
+    max_cache_items?: integer //default: 1000000
+    // Default 'hits to cache' for embedding calculation cache. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. 0 and 1 mean - when value added goes straight to the cache
+    hit_to_cache?: integer //default: 1
+  }[]
   action: {
     // Command to execute
     command: enum[restart_replication, reset_replication_role]
@@ -10371,6 +10594,19 @@ type: enum[namespaces, replication, async_replication, profiling] //default: nam
     dsn: string
     namespaces?: string[]
   }[]
+}
+```
+
+### EmbeddersConfig
+
+```ts
+{
+  // Name. Identifier for linking settings. Special value '*' is supported (applies to all)
+  cache_tag?: string
+  // Maximum size of the embedding results cache in items. This cache will only be enabled if the 'max_cache_items' property is not 'off' (value 0). It stores the results of the embedding calculation
+  max_cache_items?: integer //default: 1000000
+  // Default 'hits to cache' for embedding calculation cache. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. 0 and 1 mean - when value added goes straight to the cache
+  hit_to_cache?: integer //default: 1
 }
 ```
 

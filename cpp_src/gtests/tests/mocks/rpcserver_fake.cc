@@ -109,7 +109,7 @@ size_t RPCServerFake::OpenedQRCount() {
 	return usedQrIds_.size();
 }
 
-bool RPCServerFake::Start(const std::string& addr, ev::dynamic_loop& loop, Error loginError) {
+void RPCServerFake::Start(const std::string& addr, ev::dynamic_loop& loop, Error loginError) {
 #ifndef _WIN32
 	signal(SIGPIPE, SIG_IGN);
 #endif
@@ -131,7 +131,7 @@ bool RPCServerFake::Start(const std::string& addr, ev::dynamic_loop& loop, Error
 #else	// REINDEX_WITH_V3_FOLLOWERS
 	listener_ = std::make_unique<Listener<ListenerType::Mixed>>(loop, cproto::ServerConnection::NewFactory(dispatcher_, false), nullptr);
 #endif	// REINDEX_WITH_V3_FOLLOWERS
-	return listener_->Bind(addr, socket_domain::tcp);
+	listener_->Bind(addr, socket_domain::tcp);
 }
 
 RPCServerStatus RPCServerFake::Status() const { return state_; }

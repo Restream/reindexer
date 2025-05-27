@@ -42,7 +42,11 @@ CsvBuilder::CsvBuilder(WrSerializer& ser, CsvOrdering& ordering)
 	  ordering_(!ordering.ordering_.empty() ? &ordering.ordering_ : nullptr),
 	  buf_(ordering_ ? &ordering.buf_ : nullptr) {}
 
-CsvBuilder::~CsvBuilder() { End(); }
+CsvBuilder::~CsvBuilder() noexcept(false) {
+	if (std::uncaught_exceptions() == 0) {
+		End();
+	}
+}
 
 std::string_view CsvBuilder::getNameByTag(TagName tagName) { return tagName.IsEmpty() ? std::string_view{} : tm_->tag2name(tagName); }
 

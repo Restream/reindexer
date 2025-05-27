@@ -1,3 +1,41 @@
+# Version 5.3.0 (27.05.2025)
+## Core
+- [fea] Added random sorting via `hash()`/`hash(seed)` functions in [sort expressions](readme.md#sort)
+- [fea] Added support for exponential numbers in SQL parser
+- [fea] Allow to switch index type (from `array` to `scalar` and from `scalar` to `array`) for empty namespaces via `UpdateIndex` interface
+
+## Vector indexes
+- [fea] Added optional built-in [auto-embedding cache](float_vector.md#embedding-cache-configuration) with hybrid (RAM+disk) structure
+- [fea] Optimize single modification requests for `HNSW` indexes with enabled `multithreading` option. Now they have the same performance as `HNSW`-indexes with disabled `multithreading`
+- [fix] Fixed `AVX512` implementation of `L2` distance calculation for some specific dimensions count
+
+## Replication
+- [fix] Fixed possible hanging/timeout in `set_leader_node` config action
+
+## Sharding
+- [fix] Fixed incorrect sorting by expressions in distributed queries
+
+## Reindexer server
+- [fix] Fixed race in connections Listener during server termination
+
+## Reindexer tool
+- [fea] Added multithreading into dump restoration process. This allows to restore dumps with multiple namespaces 2.5-3 times faster if network is good enough
+- [fea] Added optional transactions into dump restoration process (`--txsize` option). This allows to speedup dumps restoration on local hosts a little bit more
+
+## Go connector
+- [fea] Improved parsing for `ttl`-index tags. Now `expire_after=xxx` option may be combined with any other options (like `dense` or `is_no_column`)
+- [fix] Fixed [events stream](readme.md#events-subscription) drop on idle connections
+
+## Build
+- [fea] Added `uninstall` target for `make`
+
+## Face
+- [fea] Added default configs requests from the backend
+- [fea] Added new fields for auto-embedding cache to `Statistics` -> `Memory`
+- [fix] Fixed items view on using query with `like`
+- [fix] Fixed Vector values disappearing issue that appeared on items deleting
+- [fix] Fixed result value view on using query with `distinct`
+
 # Version 5.2.1 (16.05.2025)
 ## Core
 - [fix] Fixed [forced sort](readme.md#forced-sort) with `sparse` indexes

@@ -20,6 +20,7 @@ const int kItemsInBenchDataset = 10'000;
 const int kItemsInBenchDataset = 100'000;
 #endif
 
+// NOLINTNEXTLINE (bugprone-exception-escape) Get stacktrace is probably better, than generic error-message
 int main(int argc, char** argv) {
 	const auto storagePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/ft_bench_test");
 	if (reindexer::fs::RmDirAll(storagePath) < 0 && errno != ENOENT) {

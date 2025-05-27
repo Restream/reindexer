@@ -1,4 +1,5 @@
 #include "queries_api.h"
+#include "gtests/tools.h"
 
 void QueriesApi::CheckMergeQueriesWithLimit() {
 	Query q = Query{default_namespace}.Merge(Query{joinNs}.Limit(1));
@@ -667,985 +668,933 @@ void QueriesApi::CheckDslQueries() {
 void QueriesApi::CheckStandardQueries() {
 	try {
 		using namespace std::string_literals;
-		static const std::vector<std::string> sortIdxs = {
-			"",
-			kFieldNameName,
-			kFieldNameYear,
-			kFieldNameRate,
-			kFieldNameBtreeIdsets,
-			std::string{"-2.5 * "} + kFieldNameRate + " / (" + kFieldNameYear + " + " + kFieldNameId + ')'};
-		static const std::vector<std::string> distincts = {"", kFieldNameYear, kFieldNameRate};
-		static const std::vector<bool> sortOrders = {true, false};
-
-		for ([[maybe_unused]] const bool sortOrder : sortOrders) {
-			for ([[maybe_unused]] const auto& sortIdx : sortIdxs) {
-				for ([[maybe_unused]] const std::string& distinct : distincts) {
-					[[maybe_unused]] const int randomAge = rand() % 50;
-					[[maybe_unused]] const int randomGenre = rand() % 50;
-					[[maybe_unused]] const int randomGenreUpper = rand() % 100;
-					[[maybe_unused]] const int randomGenreLower = rand() % 100;
-
-					ExecuteAndVerify(TestQuery(default_namespace).Distinct(distinct).Sort(sortIdx, sortOrder).Limit(1));
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameGenre, CondEq, randomGenre)
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameGenre, CondEq, std::to_string(randomGenre))
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameName, CondEq, RandString())
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameRate, CondEq, (rand() % 100) / 10.0)
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameRate, CondEq, std::to_string((rand() % 100) / 10.0))
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameGenre, CondGt, randomGenre)
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameName, CondGt, RandString())
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameRate, CondGt, (rand() % 100) / 10.0)
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameGenre, CondLt, randomGenre)
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameGenre, CondLt, std::to_string(randomGenre))
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameName, CondLt, RandString())
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameRate, CondLt, (rand() % 100) / 10.0)
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameRate, CondLt, std::to_string((rand() % 100) / 10.0))
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameBtreeIdsets, CondLt, static_cast<int>(rand() % 10000))
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameBtreeIdsets, CondGt, static_cast<int>(rand() % 10000))
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameBtreeIdsets, CondEq, static_cast<int>(rand() % 10000))
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameGenre, CondRange, {randomGenreLower, randomGenreUpper})
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameName, CondRange, {RandString(), RandString()})
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameName, CondLike, RandLikePattern())
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameRate, CondRange,
-												{static_cast<double>(rand() % 100) / 10, static_cast<double>(rand() % 100) / 10})
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(10, 10000, 50))
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNamePackages, CondAllSet, RandIntVector(2, 10000, 50))
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNamePackages, CondAllSet, 10000 + rand() % 50)
-										 .Sort(sortIdx, sortOrder));
-
-					// check substituteCompositIndexes
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameAge, CondEq, randomAge)
-										 .Where(kFieldNameGenre, CondEq, randomGenre)
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 50))
-										 .Where(kFieldNameGenre, CondEq, randomGenre)
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameAge, CondAllSet, RandIntVector(1, 0, 50))
-										 .Where(kFieldNameGenre, CondEq, randomGenre)
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 50))
-										 .Where(kFieldNameGenre, CondSet, RandIntVector(10, 0, 50))
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 20))
-										 .Where(kFieldNameGenre, CondSet, RandIntVector(10, 0, 50))
-										 .Where(kFieldNameAge, CondSet, RandIntVector(10, 30, 50))
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 20))
-										 .Where(kFieldNameGenre, CondEq, randomGenre)
-										 .Where(kFieldNameAge, CondSet, RandIntVector(10, 30, 50))
-										 .Sort(sortIdx, sortOrder));
-					// end of check substituteCompositIndexes
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNamePackages, CondEmpty, VariantArray{})
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameName, CondRange, {RandString(), RandString()})
-										 .Sort(kFieldNameYear, true)
-										 .Sort(kFieldNameName, false)
-										 .Sort(kFieldNameLocation, true));
-
-					ExecuteAndVerify(Query(default_namespace).Not().Where(kFieldNameYearSparse, CondEq, {Variant{}}));
-
-					ExecuteAndVerify(Query(default_namespace).Where(kFieldNamePackages, CondSet, {Variant{}}));
-
-					ExecuteAndVerify(Query(default_namespace).Where(kFieldNamePackages, CondAllSet, {Variant{}}));
-
-					ExecuteAndVerify(
-						Query(default_namespace)
-							.Where(kFieldNamePackages, CondSet, VariantArray::Create(10000, 10004, 10020, Variant{}, 10010, Variant{})));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameName, CondRange, {RandString(), RandString()})
-										 .Sort(kFieldNameGenre, true)
-										 .Sort(kFieldNameActor, false)
-										 .Sort(kFieldNameRate, true)
-										 .Sort(kFieldNameLocation, false));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameName, CondLike, RandLikePattern())
-										 .Sort(kFieldNameGenre, true)
-										 .Sort(kFieldNameActor, false)
-										 .Sort(kFieldNameRate, true)
-										 .Sort(kFieldNameLocation, false));
-
-					ExecuteAndVerify(Query(default_namespace).Sort(kFieldNameGenre, true, {10, 20, 30}));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNamePackages, CondAny, VariantArray{})
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(
-						TestQuery(default_namespace).Distinct(distinct).Where(kFieldNameIsDeleted, CondEq, 1).Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Sort(sortIdx, sortOrder)
-										 .Where(kFieldNameGenre, CondEq, 5)
-										 .Where(kFieldNameAge, CondEq, 3)
-										 .Where(kFieldNameYear, CondGe, 2010)
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-										 .Debug(LogTrace));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(kFieldNameGenre, CondEq, 5)
-										 .Where(kFieldNameAge, CondEq, 3)
-										 .Where(kFieldNameGenre, CondEq, 5)
-										 .Where(kFieldNameAge, CondEq, 3)
-										 .OpenBracket()
-										 .Where(kFieldNameYear, CondGe, 2010)
-										 .CloseBracket()
-										 .Or()
-										 .Where(kFieldNameYear, CondGe, 2010));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(kFieldNameYear, CondGt, 2002)
-										 .Where(kFieldNameGenre, CondEq, 4)
-										 .Where(kFieldNameAge, CondEq, 3)
-										 .Where(kFieldNameIsDeleted, CondEq, 3)
-										 .Or()
-										 .Where(kFieldNameYear, CondGt, 2001)
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-										 .Debug(LogTrace));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(kFieldNameAge, CondSet, {1, 2, 3, 4})
-										 .Where(kFieldNameId, CondEq, rand() % 5000)
-										 .Where(kFieldNameTemp, CondEq, "")
-										 .Where(kFieldNameIsDeleted, CondEq, 1)
-										 .Or()
-										 .Where(kFieldNameYear, CondGt, 2001)
-										 .Debug(LogTrace));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(kFieldNameGenre, CondSet, {5, 1, 7})
-										 .Where(kFieldNameYear, CondLt, 2010)
-										 .Where(kFieldNameGenre, CondEq, 3)
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-										 .Or()
-										 .Where(kFieldNamePackages, CondEmpty, VariantArray{})
-										 .Debug(LogTrace));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(kFieldNameGenre, CondSet, {5, 1, 7})
-										 .Where(kFieldNameYear, CondLt, 2010)
-										 .Or()
-										 .Where(kFieldNamePackages, CondAny, VariantArray{})
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-										 .Debug(LogTrace));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(kFieldNameGenre, CondEq, 5)
-										 .Or()
-										 .Where(kFieldNameGenre, CondEq, 6)
-										 .Where(kFieldNameYear, CondRange, {2001, 2020})
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50)));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(kFieldNameGenre, CondEq, 5)
-										 .Or()
-										 .Where(kFieldNameGenre, CondEq, 6)
-										 .Not()
-										 .Where(kFieldNameName, CondLike, RandLikePattern())
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50)));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(kFieldNameActor, CondEq, RandString()));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Not()
-										 .Where(kFieldNameGenre, CondEq, 5)
-										 .Where(kFieldNameYear, CondRange, {2001, 2020})
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50)));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(kFieldNameGenre, CondEq, 5)
-										 .Not()
-										 .Where(kFieldNameYear, CondRange, {2001, 2020})
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50)));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Not()
-										 .Where(kFieldNameYear, CondEq, 10));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Sort(kFieldNameNumeric, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(kFieldNameNumeric, CondGt, std::to_string(5)));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Sort(kFieldNameNumeric, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(kFieldNameNumeric, CondLt, std::to_string(600)));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(kFieldNameGenre, CondEq, 5)
-										 .Or()
-										 .OpenBracket()
-										 .Where(kFieldNameGenre, CondLt, 6)
-										 .Where(kFieldNameYear, CondRange, {2001, 2020})
-										 .CloseBracket()
-										 .Not()
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-										 .OpenBracket()
-										 .Where(kFieldNameNumeric, CondLt, std::to_string(600))
-										 .Or()
-										 .OpenBracket()
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-										 .Where(kFieldNameName, CondLike, RandLikePattern())
-										 .CloseBracket()
-										 .Or()
-										 .Where(kFieldNameYear, CondEq, 10)
-										 .CloseBracket());
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(kFieldNameGenre, CondEq, 5)
-										 .Not()
-										 .OpenBracket()
-										 .Where(kFieldNameYear, CondRange, {2001, 2020})
-										 .Or()
-										 .Where(kFieldNameName, CondLike, RandLikePattern())
-										 .CloseBracket()
-										 .Or()
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-										 .OpenBracket()
-										 .Where(kFieldNameNumeric, CondLt, std::to_string(600))
-										 .Not()
-										 .OpenBracket()
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-										 .Where(kFieldNameGenre, CondLt, 6)
-										 .CloseBracket()
-										 .Or()
-										 .Where(kFieldNameYear, CondEq, 10)
-										 .CloseBracket());
-
-					ExecuteAndVerify(
-						TestQuery(default_namespace)
-							.Distinct(distinct)
-							.Sort(sortIdx, sortOrder)
-							.Debug(LogTrace)
-							.Where(kFieldNameNumeric, CondRange, {std::to_string(rand() % 100), std::to_string(rand() % 100 + 500)}));
-
-					ExecuteAndVerify(Query(testSimpleNs).Where(kFieldNameName, CondEq, "SSS"));
-					ExecuteAndVerify(Query(testSimpleNs).Where(kFieldNameYear, CondEq, 2002));
-					ExecuteAndVerify(Query(testSimpleNs).Where(kFieldNameYear, CondEq, 2002).Not().Where(kFieldNameName, CondEq, 2002));
-					ExecuteAndVerify(Query(testSimpleNs).Where(kFieldNameName, CondEq, "SSS").Not().Where(kFieldNameYear, CondEq, 2002));
-					ExecuteAndVerify(Query(testSimpleNs).Where(kFieldNameName, CondEq, "SSS").Not().Where(kFieldNameYear, CondEq, 1989));
-					ExecuteAndVerify(Query(testSimpleNs).Where(kFieldNameYear, CondEq, 2002).Not().Where(kFieldNameName, CondEq, "MMM"));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .ReqTotal()
-										 .Sort(sortIdx, sortOrder)
-										 .WhereComposite(kCompositeFieldAgeGenre, CondLe, {{Variant(27), Variant(10000)}}));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .ReqTotal()
-										 .Sort(kFieldNameAge + " + "s + kFieldNameId, sortOrder)
-										 .Sort(kFieldNameRate + " * "s + kFieldNameGenre, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .ReqTotal()
-										 .Sort(sortIdx, sortOrder)
-										 .WhereComposite(kCompositeFieldAgeGenre, CondEq, {{Variant(rand() % 10), Variant(rand() % 50)}}));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .InnerJoin(kFieldNameYear, kFieldNameYear, CondEq, Query(joinNs))
-										 .Sort(joinNs + '.' + kFieldNameId, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .InnerJoin(kFieldNameYear, kFieldNameYear, CondEq, Query(joinNs))
-										 .Sort(joinNs + '.' + kFieldNameName, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .InnerJoin(kFieldNameYear, kFieldNameYear, CondEq, Query(joinNs))
-										 .Sort(joinNs + '.' + kFieldNameId + " * " + joinNs + '.' + kFieldNameGenre +
-												   (sortIdx.empty() || (sortIdx == kFieldNameName) ? "" : (" + " + sortIdx)),
-											   sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .InnerJoin(kFieldNameYear, kFieldNameYear, CondEq,
-													Query(joinNs)
-														.Where(kFieldNameId, CondSet, RandIntVector(20, 0, 100))
-														.Sort(kFieldNameId + " + "s + kFieldNameYear, sortOrder)));
-
-					ExecuteAndVerify(
-						TestQuery(default_namespace)
-							.Distinct(distinct)
-							.InnerJoin(
-								kFieldNameYear, kFieldNameYear, CondEq,
-								Query(joinNs).Where(kFieldNameYear, CondGe, 1925).Sort(kFieldNameId + " + "s + kFieldNameYear, sortOrder)));
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .InnerJoin(kFieldNameYear, kFieldNameYear, randCond(),
-													Query(joinNs).Where(kFieldNameYear, CondGe, 2000 + rand() % 210)));
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .InnerJoin(kFieldNameYear, kFieldNameYear, randCond(),
-													Query(joinNs).Where(kFieldNameYear, CondLe, 2000 + rand() % 210).Limit(rand() % 10)));
-					ExecuteAndVerify(
-						TestQuery(default_namespace)
-							.Distinct(distinct)
-							.Join(InnerJoin, Query(joinNs).Where(kFieldNameYear, CondGt, 2000 + rand() % 210) /*.Offset(rand() % 10)*/)
-							.On(kFieldNameYear, randCond(), kFieldNameYear));
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameYearSparse, CondEq, std::to_string(2000 + rand() % 60)));
-					ExecuteAndVerify(
-						TestQuery(default_namespace)
-							.Distinct(distinct)
-							.InnerJoin(kFieldNameYear, kFieldNameYear, randCond(),
-									   Query(joinNs).Where(kFieldNameYear, CondLt, 2000 + rand() % 210).Sort(kFieldNameName, sortOrder)));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .InnerJoin(kFieldNameId, kFieldNameId, CondEq,
-													Query(joinNs)
-														.Where(kFieldNameRegion, CondSet,
-															   {Variant{rand() % 10}, Variant{rand() % 10}, Variant{rand() % 10},
-																Variant{rand() % 10}, Variant{rand() % 10}})
-														.Where(kFieldNameYear, CondLt, 2000 + rand() % 210)
-														.Where(kFieldNameAge, CondGe, rand() % 30)
-														.Sort(kFieldNameAge, sortOrder)
-														.Limit(3)));
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .InnerJoin(kFieldNameId, kFieldNameId, CondEq,
-													Query(joinNs)
-														.Where(kFieldNameRegion, CondSet,
-															   {Variant{rand() % 10}, Variant{rand() % 10}, Variant{rand() % 10},
-																Variant{rand() % 10}, Variant{rand() % 10}})
-														.Where(kFieldNameYear, CondLt, 2000 + rand() % 210)
-														.Where(kFieldNameAge, CondGe, rand() % 30)
-														.Sort(kFieldNameYear, sortOrder)
-														.Limit(3)));
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Join(InnerJoin, Query(joinNs).Where(kFieldNameYear, CondGt, 2000 + rand() % 210))
-										 .OpenBracket()
-										 .On(kFieldNameYear, randCond(), kFieldNameYear)
-										 .Or()
-										 .On(kFieldNameName, CondEq, kFieldNameName)
-										 .CloseBracket());
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Join(InnerJoin, Query(joinNs).Where(kFieldNameYear, CondGt, 2000 + rand() % 210))
-										 .OpenBracket()
-										 .On(kFieldNameYear, randCond(), kFieldNameYear)
-										 .Or()
-										 .On(kFieldNameName, CondEq, kFieldNameName)
-										 .On(kFieldNameAge, randCond(), kFieldNameAge)
-										 .Not()
-										 .On(kFieldNameYear, randCond(), kFieldNameYear)
-										 .CloseBracket());
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Join(InnerJoin, Query(joinNs).Where(kFieldNameYear, CondGt, 2000 + rand() % 210))
-										 .OpenBracket()
-										 .On(kFieldNameYearSparse, CondLe, kFieldNameYearSparse)
-										 .Or()
-										 .On(kFieldNameName, CondEq, kFieldNameName)
-										 .Or()
-										 .On(kFieldNameAge, randCond(), kFieldNameAge)
-										 .Not()
-										 .On(kFieldNameYear, randCond(), kFieldNameYear)
-										 .CloseBracket());
-					ExecuteAndVerify(
-						TestQuery(default_namespace)
-							.Distinct(distinct)
-							.Join(InnerJoin, Query(joinNs).Where(kFieldNameYear, CondGt, 2000 + rand() % 210).Limit(rand() % 100))
-							.OpenBracket()
-							.On(kFieldNameYear, randCond(), kFieldNameYear)
-							.Or()
-							.On(kFieldNameName, CondEq, kFieldNameName)
-							.Or()
-							.On(kFieldNameAge, randCond(), kFieldNameAge)
-							.CloseBracket()
-							.Or()
-							.Join(InnerJoin, Query(joinNs).Where(kFieldNameYear, CondLt, 2000 + rand() % 210).Limit(rand() % 100))
-							.OpenBracket()
-							.On(kFieldNameYear, randCond(), kFieldNameYear)
-							.Or()
-							.On(kFieldNameName, CondEq, kFieldNameName)
-							.Or()
-							.On(kFieldNameAge, randCond(), kFieldNameAge)
-							.CloseBracket()
-							.Join(OrInnerJoin, Query(joinNs).Where(kFieldNameYear, CondEq, 2000 + rand() % 210).Limit(rand() % 100))
-							.OpenBracket()
-							.On(kFieldNameYear, randCond(), kFieldNameYear)
-							.Or()
-							.On(kFieldNameName, CondEq, kFieldNameName)
-							.Or()
-							.On(kFieldNameAge, randCond(), kFieldNameAge)
-							.CloseBracket()
-							.Or()
-							.Where(kFieldNameId, CondSet, RandIntVector(20, 0, 100)));
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .WhereBetweenFields(kFieldNameGenre, CondEq, kFieldNameAge)
-										 .Sort(sortIdx, sortOrder));
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .WhereBetweenFields(kFieldNameName, CondLike, kFieldNameActor)
-										 .Sort(sortIdx, sortOrder));
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .WhereBetweenFields(kFieldNamePackages, CondGt, kFieldNameStartTime)
-										 .Sort(sortIdx, sortOrder));
-					ExecuteAndVerify(
-						Query(compositeIndexesNs).WhereBetweenFields(kCompositeFieldPriceTitle, CondEq, kCompositeFieldPagesTitle));
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Not()
-										 .Where(kFieldNameIsDeleted, CondEq, true)
-										 .Or()
-										 .Where(kFieldNameYear, CondGt, 2001)
-										 .Sort(sortIdx, sortOrder));
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameGenre, CondEq, 5)
-										 .Or()
-										 .OpenBracket()
-										 .Where(kFieldNameGenre, CondEq, 4)
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-										 .CloseBracket()
-										 .Not()
-										 .Where(kFieldNameYear, CondRange, {2001, 2010})
-										 .OpenBracket()
-										 .Where(kFieldNameRate, CondRange,
-												{static_cast<double>(rand() % 100) / 10, static_cast<double>(rand() % 100) / 10})
-										 .Or()
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-										 .Not()
-										 .OpenBracket()
-										 .OpenBracket()
-										 .OpenBracket()
-										 .Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 50))
-										 .Or()
-										 .Where(kFieldNameId, CondEq, rand() % 5000)
-										 .Where(kFieldNameTemp, CondEq, "")
-										 .CloseBracket()
-										 .Or()
-										 .OpenBracket()
-										 .Where(kFieldNameTemp, CondEq, "")
-										 .Not()
-										 .Where(kFieldNameIsDeleted, CondEq, true)
-										 .Or()
-										 .Where(kFieldNameYear, CondGt, 2001)
-										 .CloseBracket()
-										 .CloseBracket()
-										 .CloseBracket()
-										 .CloseBracket()
-										 .Sort(sortIdx, sortOrder));
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameGenre, CondEq, 5)
-										 .Or()
-										 .OpenBracket()
-										 .Where(kFieldNameGenre, CondEq, 4)
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-										 .CloseBracket()
-										 .Not()
-										 .Where(kFieldNameYear, CondRange, {2001, 2010})
-										 .OpenBracket()
-										 .Where(kFieldNameRate, CondRange,
-												{static_cast<double>(rand() % 100) / 10, static_cast<double>(rand() % 100) / 10})
-										 .Or()
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-										 .Not()
-										 .OpenBracket()
-										 .OpenBracket()
-										 .OpenBracket()
-										 .Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 50))
-										 .Or()
-										 .Where(kFieldNameId, CondEq, rand() % 5000)
-										 .Where(kFieldNameTemp, CondEq, "")
-										 .CloseBracket()
-										 .Or()
-										 .OpenBracket()
-										 .Where(kFieldNameTemp, CondEq, "")
-										 .Not()
-										 .OpenBracket()
-										 .Where(kFieldNameIsDeleted, CondEq, true)
-										 .CloseBracket()
-										 .Or()
-										 .Where(kFieldNameYear, CondGt, 2001)
-										 .CloseBracket()
-										 .CloseBracket()
-										 .CloseBracket()
-										 .CloseBracket()
-										 .Sort(sortIdx, sortOrder));
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameGenre, CondEq, 5)
-										 .Or()
-										 .OpenBracket()
-										 .Where(kFieldNameGenre, CondEq, 4)
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-										 .CloseBracket()
-										 .Not()
-										 .Where(kFieldNameYear, CondRange, {2001, 2010})
-										 .OpenBracket()
-										 .Where(kFieldNameRate, CondRange,
-												{static_cast<double>(rand() % 100) / 10, static_cast<double>(rand() % 100) / 10})
-										 .Or()
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-										 .Not()
-										 .OpenBracket()
-										 .OpenBracket()
-										 .OpenBracket()
-										 .Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 50))
-										 .Or()
-										 .Where(kFieldNameId, CondEq, rand() % 5000)
-										 .Where(kFieldNameTemp, CondEq, "")
-										 .CloseBracket()
-										 .Or()
-										 .OpenBracket()
-										 .Where(kFieldNameTemp, CondEq, "")
-										 .OpenBracket()
-										 .Not()
-										 .Where(kFieldNameIsDeleted, CondEq, true)
-										 .CloseBracket()
-										 .Or()
-										 .Where(kFieldNameYear, CondGt, 2001)
-										 .CloseBracket()
-										 .CloseBracket()
-										 .CloseBracket()
-										 .CloseBracket()
-										 .Sort(sortIdx, sortOrder));
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameGenre, CondEq, 5)
-										 .Or()
-										 .OpenBracket()
-										 .Where(kFieldNameGenre, CondEq, 4)
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-										 .CloseBracket()
-										 .Not()
-										 .Where(kFieldNameYear, CondRange, {2001, 2010})
-										 .OpenBracket()
-										 .Where(kFieldNameRate, CondRange,
-												{static_cast<double>(rand() % 100) / 10, static_cast<double>(rand() % 100) / 10})
-										 .Or()
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-										 .Not()
-										 .OpenBracket()
-										 .OpenBracket()
-										 .OpenBracket()
-										 .Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 50))
-										 .Or()
-										 .Where(kFieldNameId, CondEq, rand() % 5000)
-										 .Where(kFieldNameTemp, CondEq, "")
-										 .CloseBracket()
-										 .Or()
-										 .OpenBracket()
-										 .Where(kFieldNameTemp, CondEq, "")
-										 .OpenBracket()
-										 .Not()
-										 .Where(kFieldNameIsDeleted, CondEq, true)
-										 .Or()
-										 .Where(kFieldNameYear, CondGt, 2001)
-										 .CloseBracket()
-										 .CloseBracket()
-										 .CloseBracket()
-										 .CloseBracket()
-										 .CloseBracket()
-										 .Sort(sortIdx, sortOrder));
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameGenre, CondEq, 5)
-										 .Or()
-										 .OpenBracket()
-										 .Where(kFieldNameGenre, CondEq, 4)
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-										 .CloseBracket()
-										 .Not()
-										 .Where(kFieldNameYear, CondRange, {2001, 2010})
-										 .OpenBracket()
-										 .Where(kFieldNameRate, CondRange,
-												{static_cast<double>(rand() % 100) / 10, static_cast<double>(rand() % 100) / 10})
-										 .Or()
-										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-										 .Not()
-										 .OpenBracket()
-										 .OpenBracket()
-										 .OpenBracket()
-										 .Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 50))
-										 .Or()
-										 .Where(kFieldNameId, CondEq, rand() % 5000)
-										 .Where(kFieldNameTemp, CondEq, "")
-										 .CloseBracket()
-										 .Or()
-										 .OpenBracket()
-										 .Where(kFieldNameTemp, CondEq, "")
-										 .Not()
-										 .OpenBracket()
-										 .Where(kFieldNameIsDeleted, CondEq, true)
-										 .Or()
-										 .Where(kFieldNameYear, CondGt, 2001)
-										 .CloseBracket()
-										 .CloseBracket()
-										 .CloseBracket()
-										 .CloseBracket()
-										 .CloseBracket()
-										 .Sort(sortIdx, sortOrder));
-					ExecuteAndVerify(
-						TestQuery(default_namespace)
-							.Distinct(distinct)
-							.Join(InnerJoin, Query(joinNs).Where(kFieldNameYear, CondGt, 2000 + rand() % 210).Limit(rand() % 100))
-							.OpenBracket()
-							.Not()
-							.On(kFieldNameYear, randCond(), kFieldNameYear)
-							.Or()
-							.On(kFieldNameName, CondEq, kFieldNameName)
-							.Or()
-							.On(kFieldNameAge, randCond(), kFieldNameAge)
-							.CloseBracket());
-
-					for (CondType cond : {CondEq, CondSet, CondLt, CondLe, CondGt, CondGe, CondRange}) {
-						const auto argsCount = minMaxArgs(cond, 20);
-						if (argsCount.min <= 1 && argsCount.max >= 1) {
-							ExecuteAndVerify(TestQuery(default_namespace)
-												 .Distinct(distinct)
-												 .Where(kFieldNameUuid, cond, randUuid())
-												 .Sort(sortIdx, sortOrder));
-
-							ExecuteAndVerify(TestQuery(default_namespace)
-												 .Distinct(distinct)
-												 .Where(kFieldNameUuid, cond, randStrUuid())
-												 .Sort(sortIdx, sortOrder));
-
-							ExecuteAndVerify(TestQuery(default_namespace)
-												 .Distinct(distinct)
-												 .Where(kFieldNameUuidArr, cond, randUuid())
-												 .Sort(sortIdx, sortOrder));
-
-							ExecuteAndVerify(TestQuery(default_namespace)
-												 .Distinct(distinct)
-												 .Where(kFieldNameUuidArr, cond, randStrUuid())
-
-												 .Sort(sortIdx, sortOrder));
-						}
-
-						ExecuteAndVerify(TestQuery(default_namespace)
-											 .Distinct(distinct)
-											 .Where(kFieldNameUuid, cond, randHeterogeneousUuidArray(argsCount.min, argsCount.max))
-											 .Sort(sortIdx, sortOrder));
-
-						ExecuteAndVerify(TestQuery(default_namespace)
-											 .Distinct(distinct)
-											 .Where(kFieldNameUuidArr, cond, randHeterogeneousUuidArray(argsCount.min, argsCount.max))
-
-											 .Sort(sortIdx, sortOrder));
-
-						std::vector<VariantArray> compositeKeyValues;
-						VariantArray hetUuidArray = randHeterogeneousUuidArray(argsCount.min, argsCount.max);
-						compositeKeyValues.reserve(hetUuidArray.size());
-						std::transform(std::make_move_iterator(hetUuidArray.begin()), std::make_move_iterator(hetUuidArray.end()),
-									   std::back_inserter(compositeKeyValues),
-									   [this](Variant&& uuid) { return VariantArray::Create(std::move(uuid), RandString()); });
-						ExecuteAndVerify(TestQuery(default_namespace)
-											 .Distinct(distinct)
-											 .WhereComposite(kCompositeFieldUuidName, cond, compositeKeyValues)
-											 .Sort(sortIdx, sortOrder));
-					}
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameUuid, CondRange, randHeterogeneousUuidArray(2, 2))
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameUuidArr, CondRange, randHeterogeneousUuidArray(2, 2))
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(
-						TestQuery(default_namespace)
-							.Distinct(distinct)
-							.WhereComposite(kCompositeFieldUuidName, CondRange,
-											{VariantArray::Create(nilUuid(), RandString()), VariantArray::Create(randUuid(), RandString())})
-							.Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(Query(default_namespace).Where(kFieldNameId, CondEq, 10), CondAny, {})
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Not()
-										 .Where(Query(default_namespace), CondEmpty, {})
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameId, CondLt, Query(default_namespace).Aggregate(AggAvg, {kFieldNameId}))
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kFieldNameGenre, CondSet,
-												Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondSet, {10, 20, 30, 40}))
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(
-						TestQuery(default_namespace)
-							.Distinct(distinct)
-							.Where(Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondGt, 10), CondSet, {10, 20, 30, 40})
-							.Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondGt, 10).Offset(1), CondSet,
-												{10, 20, 30, 40})
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(
-						TestQuery(default_namespace)
-							.Distinct(distinct)
-							.Where(Query(joinNs).Where(kFieldNameId, CondGt, 10).Aggregate(AggMax, {kFieldNameGenre}), CondRange, {48, 50})
-							.Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(Query(joinNs).Where(kFieldNameId, CondGt, 10).ReqTotal(), CondGt, {50})
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(
-						TestQuery(default_namespace)
-							.Distinct(distinct)
-							.Sort(sortIdx, sortOrder)
-							.Debug(LogTrace)
-							.Where(kFieldNameGenre, CondEq, 5)
-							.Not()
-							.Where(Query(default_namespace).Where(kFieldNameGenre, CondEq, 5), CondAny, {})
-							.Or()
-							.Where(kFieldNameGenre, CondSet,
-								   Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondSet, {10, 20, 30, 40}))
-							.Not()
-							.OpenBracket()
-							.Where(kFieldNameYear, CondRange, {2001, 2020})
-							.Or()
-							.Where(kFieldNameName, CondLike, RandLikePattern())
-							.Or()
-							.Where(Query(joinNs).Where(kFieldNameYear, CondEq, 2000 + rand() % 210), CondEmpty, {})
-							.CloseBracket()
-							.Or()
-							.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-							.OpenBracket()
-							.Where(kFieldNameNumeric, CondLt, std::to_string(600))
-							.Not()
-							.OpenBracket()
-							.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
-							.Where(kFieldNameGenre, CondLt, 6)
-							.Or()
-							.Where(kFieldNameId, CondLt, Query(default_namespace).Aggregate(AggAvg, {kFieldNameId}))
-							.CloseBracket()
-							.Not()
-							.Where(Query(joinNs).Where(kFieldNameId, CondGt, 10).Aggregate(AggMax, {kFieldNameGenre}), CondRange, {48, 50})
-							.Or()
-							.Where(kFieldNameYear, CondEq, 10)
-							.CloseBracket());
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(kCompositeFieldIdTemp, CondEq,
-												Query(default_namespace).Select({kCompositeFieldIdTemp}).Where(kFieldNameId, CondGt, 10))
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(
-						TestQuery(default_namespace)
-							.Distinct(distinct)
-							.Where(Query(default_namespace).Select({kCompositeFieldUuidName}).Where(kFieldNameId, CondGt, 10), CondRange,
-								   {VariantArray::Create(nilUuid(), RandString()), VariantArray::Create(randUuid(), RandString())})
-							.Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(Query(default_namespace)
-													.Select({kCompositeFieldAgeGenre})
-													.Where(kFieldNameId, CondGt, 10)
-													.Sort(kCompositeFieldAgeGenre, false)
-													.Limit(10),
-												CondLe, {Variant(VariantArray::Create(rand() % 50, rand() % 50))})
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(Query(default_namespace).Where(kFieldNameId, CondGt, 10).ReqTotal(), CondGe, {10})
-										 .Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(TestQuery(default_namespace)
-										 .Distinct(distinct)
-										 .Where(Query(default_namespace).Where(kFieldNameId, CondGt, 10).CachedTotal(), CondGe, {10})
-										 .Sort(sortIdx, sortOrder));
-				}
+
+		[[maybe_unused]] const bool sortOrder = randOneOf(true, false);
+		[[maybe_unused]] const std::string& sortIdx =
+			randOneOf(""s, kFieldNameName, kFieldNameYear, kFieldNameRate, kFieldNameBtreeIdsets,
+					  "-2.5 * "s + kFieldNameRate + " / ("s + kFieldNameYear + " + "s + kFieldNameId + ')');
+		[[maybe_unused]] const std::string& distinct = randOneOf(""s, kFieldNameYear, kFieldNameRate);
+		TEST_COUT << "DISTINCT '" << distinct << "'; ORDER BY '" << sortIdx << "'; DESC " << std::boolalpha << sortOrder << std::endl;
+		[[maybe_unused]] const int randomAge = rand() % 50;
+		[[maybe_unused]] const int randomGenre = rand() % 50;
+		[[maybe_unused]] const int randomGenreUpper = rand() % 100;
+		[[maybe_unused]] const int randomGenreLower = rand() % 100;
+		TEST_COUT << "AGE: " << randomAge << "; GENRE: " << randomGenre << "; GENRE RANGE: [" << randomGenreLower << ", "
+				  << randomGenreUpper << ']' << std::endl;
+
+		ExecuteAndVerify(TestQuery(default_namespace).Distinct(distinct).Sort(sortIdx, sortOrder).Limit(1));
+		ExecuteAndVerify(
+			TestQuery(default_namespace).Distinct(distinct).Where(kFieldNameGenre, CondEq, randomGenre).Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameGenre, CondEq, std::to_string(randomGenre))
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(
+			TestQuery(default_namespace).Distinct(distinct).Where(kFieldNameName, CondEq, RandString()).Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(
+			TestQuery(default_namespace).Distinct(distinct).Where(kFieldNameRate, CondEq, (rand() % 100) / 10.0).Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameRate, CondEq, std::to_string((rand() % 100) / 10.0))
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameGenre, CondGt, randomGenre)
+							 .Sort(sortIdx, sortOrder)
+							 .Debug(LogTrace));
+
+		ExecuteAndVerify(
+			TestQuery(default_namespace).Distinct(distinct).Where(kFieldNameName, CondGt, RandString()).Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(
+			TestQuery(default_namespace).Distinct(distinct).Where(kFieldNameRate, CondGt, (rand() % 100) / 10.0).Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(
+			TestQuery(default_namespace).Distinct(distinct).Where(kFieldNameGenre, CondLt, randomGenre).Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameGenre, CondLt, std::to_string(randomGenre))
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(
+			TestQuery(default_namespace).Distinct(distinct).Where(kFieldNameName, CondLt, RandString()).Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(
+			TestQuery(default_namespace).Distinct(distinct).Where(kFieldNameRate, CondLt, (rand() % 100) / 10.0).Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameRate, CondLt, std::to_string((rand() % 100) / 10.0))
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameBtreeIdsets, CondLt, static_cast<int>(rand() % 10000))
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameBtreeIdsets, CondGt, static_cast<int>(rand() % 10000))
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameBtreeIdsets, CondEq, static_cast<int>(rand() % 10000))
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameGenre, CondRange, {randomGenreLower, randomGenreUpper})
+							 .Sort(sortIdx, sortOrder)
+							 .Debug(LogTrace));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameName, CondRange, {RandString(), RandString()})
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(
+			TestQuery(default_namespace).Distinct(distinct).Where(kFieldNameName, CondLike, RandLikePattern()).Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(
+			TestQuery(default_namespace)
+				.Distinct(distinct)
+				.Where(kFieldNameRate, CondRange, {static_cast<double>(rand() % 100) / 10, static_cast<double>(rand() % 100) / 10})
+				.Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNamePackages, CondSet, RandIntVector(10, 10000, 50))
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNamePackages, CondAllSet, RandIntVector(2, 10000, 50))
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNamePackages, CondAllSet, 10000 + rand() % 50)
+							 .Sort(sortIdx, sortOrder));
+
+		// check substituteCompositeIndexes
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameAge, CondEq, randomAge)
+							 .Where(kFieldNameGenre, CondEq, randomGenre)
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 50))
+							 .Where(kFieldNameGenre, CondEq, randomGenre)
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameAge, CondAllSet, RandIntVector(1, 0, 50))
+							 .Where(kFieldNameGenre, CondEq, randomGenre)
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 50))
+							 .Where(kFieldNameGenre, CondSet, RandIntVector(10, 0, 50))
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 20))
+							 .Where(kFieldNameGenre, CondSet, RandIntVector(10, 0, 50))
+							 .Where(kFieldNameAge, CondSet, RandIntVector(10, 30, 50))
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 20))
+							 .Where(kFieldNameGenre, CondEq, randomGenre)
+							 .Where(kFieldNameAge, CondSet, RandIntVector(10, 30, 50))
+							 .Sort(sortIdx, sortOrder));
+		// end of check substituteCompositeIndexes
+
+		ExecuteAndVerify(
+			TestQuery(default_namespace).Distinct(distinct).Where(kFieldNamePackages, CondEmpty, VariantArray{}).Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameName, CondRange, {RandString(), RandString()})
+							 .Sort(kFieldNameYear, true)
+							 .Sort(kFieldNameName, false)
+							 .Sort(kFieldNameLocation, true));
+
+		ExecuteAndVerify(Query(default_namespace).Not().Where(kFieldNameYearSparse, CondEq, {Variant{}}));
+
+		ExecuteAndVerify(Query(default_namespace).Where(kFieldNamePackages, CondSet, {Variant{}}));
+
+		ExecuteAndVerify(Query(default_namespace).Where(kFieldNamePackages, CondAllSet, {Variant{}}));
+
+		ExecuteAndVerify(Query(default_namespace)
+							 .Where(kFieldNamePackages, CondSet, VariantArray::Create(10000, 10004, 10020, Variant{}, 10010, Variant{})));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameName, CondRange, {RandString(), RandString()})
+							 .Sort(kFieldNameGenre, true)
+							 .Sort(kFieldNameActor, false)
+							 .Sort(kFieldNameRate, true)
+							 .Sort(kFieldNameLocation, false));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameName, CondLike, RandLikePattern())
+							 .Sort(kFieldNameGenre, true)
+							 .Sort(kFieldNameActor, false)
+							 .Sort(kFieldNameRate, true)
+							 .Sort(kFieldNameLocation, false));
+
+		ExecuteAndVerify(Query(default_namespace).Sort(kFieldNameGenre, true, {10, 20, 30}));
+
+		ExecuteAndVerify(
+			TestQuery(default_namespace).Distinct(distinct).Where(kFieldNamePackages, CondAny, VariantArray{}).Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace).Distinct(distinct).Where(kFieldNameIsDeleted, CondEq, 1).Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Sort(sortIdx, sortOrder)
+							 .Where(kFieldNameGenre, CondEq, 5)
+							 .Where(kFieldNameAge, CondEq, 3)
+							 .Where(kFieldNameYear, CondGe, 2010)
+							 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+							 .Debug(LogTrace));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Sort(sortIdx, sortOrder)
+							 .Debug(LogTrace)
+							 .Where(kFieldNameGenre, CondEq, 5)
+							 .Where(kFieldNameAge, CondEq, 3)
+							 .Where(kFieldNameGenre, CondEq, 5)
+							 .Where(kFieldNameAge, CondEq, 3)
+							 .OpenBracket()
+							 .Where(kFieldNameYear, CondGe, 2010)
+							 .CloseBracket()
+							 .Or()
+							 .Where(kFieldNameYear, CondGe, 2010));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Sort(sortIdx, sortOrder)
+							 .Debug(LogTrace)
+							 .Where(kFieldNameYear, CondGt, 2002)
+							 .Where(kFieldNameGenre, CondEq, 4)
+							 .Where(kFieldNameAge, CondEq, 3)
+							 .Where(kFieldNameIsDeleted, CondEq, 3)
+							 .Or()
+							 .Where(kFieldNameYear, CondGt, 2001)
+							 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+							 .Debug(LogTrace));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Sort(sortIdx, sortOrder)
+							 .Debug(LogTrace)
+							 .Where(kFieldNameAge, CondSet, {1, 2, 3, 4})
+							 .Where(kFieldNameId, CondEq, rand() % 5000)
+							 .Where(kFieldNameTemp, CondEq, "")
+							 .Where(kFieldNameIsDeleted, CondEq, 1)
+							 .Or()
+							 .Where(kFieldNameYear, CondGt, 2001)
+							 .Debug(LogTrace));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Sort(sortIdx, sortOrder)
+							 .Debug(LogTrace)
+							 .Where(kFieldNameGenre, CondSet, {5, 1, 7})
+							 .Where(kFieldNameYear, CondLt, 2010)
+							 .Where(kFieldNameGenre, CondEq, 3)
+							 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+							 .Or()
+							 .Where(kFieldNamePackages, CondEmpty, VariantArray{})
+							 .Debug(LogTrace));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Sort(sortIdx, sortOrder)
+							 .Debug(LogTrace)
+							 .Where(kFieldNameGenre, CondSet, {5, 1, 7})
+							 .Where(kFieldNameYear, CondLt, 2010)
+							 .Or()
+							 .Where(kFieldNamePackages, CondAny, VariantArray{})
+							 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+							 .Debug(LogTrace));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Sort(sortIdx, sortOrder)
+							 .Debug(LogTrace)
+							 .Where(kFieldNameGenre, CondEq, 5)
+							 .Or()
+							 .Where(kFieldNameGenre, CondEq, 6)
+							 .Where(kFieldNameYear, CondRange, {2001, 2020})
+							 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50)));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Sort(sortIdx, sortOrder)
+							 .Debug(LogTrace)
+							 .Where(kFieldNameGenre, CondEq, 5)
+							 .Or()
+							 .Where(kFieldNameGenre, CondEq, 6)
+							 .Not()
+							 .Where(kFieldNameName, CondLike, RandLikePattern())
+							 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50)));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Sort(sortIdx, sortOrder)
+							 .Debug(LogTrace)
+							 .Where(kFieldNameActor, CondEq, RandString()));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Sort(sortIdx, sortOrder)
+							 .Debug(LogTrace)
+							 .Not()
+							 .Where(kFieldNameGenre, CondEq, 5)
+							 .Where(kFieldNameYear, CondRange, {2001, 2020})
+							 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50)));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Sort(sortIdx, sortOrder)
+							 .Debug(LogTrace)
+							 .Where(kFieldNameGenre, CondEq, 5)
+							 .Not()
+							 .Where(kFieldNameYear, CondRange, {2001, 2020})
+							 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50)));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Sort(sortIdx, sortOrder)
+							 .Debug(LogTrace)
+							 .Not()
+							 .Where(kFieldNameYear, CondEq, 10));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Sort(kFieldNameNumeric, sortOrder)
+							 .Debug(LogTrace)
+							 .Where(kFieldNameNumeric, CondGt, std::to_string(5)));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Sort(kFieldNameNumeric, sortOrder)
+							 .Debug(LogTrace)
+							 .Where(kFieldNameNumeric, CondLt, std::to_string(600)));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Sort(sortIdx, sortOrder)
+							 .Debug(LogTrace)
+							 .Where(kFieldNameGenre, CondEq, 5)
+							 .Or()
+							 .OpenBracket()
+							 .Where(kFieldNameGenre, CondLt, 6)
+							 .Where(kFieldNameYear, CondRange, {2001, 2020})
+							 .CloseBracket()
+							 .Not()
+							 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+							 .OpenBracket()
+							 .Where(kFieldNameNumeric, CondLt, std::to_string(600))
+							 .Or()
+							 .OpenBracket()
+							 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+							 .Where(kFieldNameName, CondLike, RandLikePattern())
+							 .CloseBracket()
+							 .Or()
+							 .Where(kFieldNameYear, CondEq, 10)
+							 .CloseBracket());
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Sort(sortIdx, sortOrder)
+							 .Debug(LogTrace)
+							 .Where(kFieldNameGenre, CondEq, 5)
+							 .Not()
+							 .OpenBracket()
+							 .Where(kFieldNameYear, CondRange, {2001, 2020})
+							 .Or()
+							 .Where(kFieldNameName, CondLike, RandLikePattern())
+							 .CloseBracket()
+							 .Or()
+							 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+							 .OpenBracket()
+							 .Where(kFieldNameNumeric, CondLt, std::to_string(600))
+							 .Not()
+							 .OpenBracket()
+							 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+							 .Where(kFieldNameGenre, CondLt, 6)
+							 .CloseBracket()
+							 .Or()
+							 .Where(kFieldNameYear, CondEq, 10)
+							 .CloseBracket());
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Sort(sortIdx, sortOrder)
+							 .Debug(LogTrace)
+							 .Where(kFieldNameNumeric, CondRange, {std::to_string(rand() % 100), std::to_string(rand() % 100 + 500)}));
+
+		ExecuteAndVerify(Query(testSimpleNs).Where(kFieldNameName, CondEq, "SSS"));
+		ExecuteAndVerify(Query(testSimpleNs).Where(kFieldNameYear, CondEq, 2002));
+		ExecuteAndVerify(Query(testSimpleNs).Where(kFieldNameYear, CondEq, 2002).Not().Where(kFieldNameName, CondEq, 2002));
+		ExecuteAndVerify(Query(testSimpleNs).Where(kFieldNameName, CondEq, "SSS").Not().Where(kFieldNameYear, CondEq, 2002));
+		ExecuteAndVerify(Query(testSimpleNs).Where(kFieldNameName, CondEq, "SSS").Not().Where(kFieldNameYear, CondEq, 1989));
+		ExecuteAndVerify(Query(testSimpleNs).Where(kFieldNameYear, CondEq, 2002).Not().Where(kFieldNameName, CondEq, "MMM"));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .ReqTotal()
+							 .Sort(sortIdx, sortOrder)
+							 .WhereComposite(kCompositeFieldAgeGenre, CondLe, {{Variant(27), Variant(10000)}}));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .ReqTotal()
+							 .Sort(kFieldNameAge + " + "s + kFieldNameId, sortOrder)
+							 .Sort(kFieldNameRate + " * "s + kFieldNameGenre, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .ReqTotal()
+							 .Sort(sortIdx, sortOrder)
+							 .WhereComposite(kCompositeFieldAgeGenre, CondEq, {{Variant(rand() % 10), Variant(rand() % 50)}}));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .InnerJoin(kFieldNameYear, kFieldNameYear, CondEq, Query(joinNs))
+							 .Sort(joinNs + '.' + kFieldNameId, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .InnerJoin(kFieldNameYear, kFieldNameYear, CondEq, Query(joinNs))
+							 .Sort(joinNs + '.' + kFieldNameName, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .InnerJoin(kFieldNameYear, kFieldNameYear, CondEq, Query(joinNs))
+							 .Sort(joinNs + '.' + kFieldNameId + " * " + joinNs + '.' + kFieldNameGenre +
+									   (sortIdx.empty() || (sortIdx == kFieldNameName) ? "" : (" + " + sortIdx)),
+								   sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .InnerJoin(kFieldNameYear, kFieldNameYear, CondEq,
+										Query(joinNs)
+											.Where(kFieldNameId, CondSet, RandIntVector(20, 0, 100))
+											.Sort(kFieldNameId + " + "s + kFieldNameYear, sortOrder)));
+
+		ExecuteAndVerify(
+			TestQuery(default_namespace)
+				.Distinct(distinct)
+				.InnerJoin(kFieldNameYear, kFieldNameYear, CondEq,
+						   Query(joinNs).Where(kFieldNameYear, CondGe, 1925).Sort(kFieldNameId + " + "s + kFieldNameYear, sortOrder)));
+		ExecuteAndVerify(
+			TestQuery(default_namespace)
+				.Distinct(distinct)
+				.InnerJoin(kFieldNameYear, kFieldNameYear, randCond(), Query(joinNs).Where(kFieldNameYear, CondGe, 2000 + rand() % 210)));
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .InnerJoin(kFieldNameYear, kFieldNameYear, randCond(),
+										Query(joinNs).Where(kFieldNameYear, CondLe, 2000 + rand() % 210).Limit(rand() % 10)));
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Join(InnerJoin, Query(joinNs).Where(kFieldNameYear, CondGt, 2000 + rand() % 210) /*.Offset(rand() % 10)*/)
+							 .On(kFieldNameYear, randCond(), kFieldNameYear));
+		ExecuteAndVerify(
+			TestQuery(default_namespace).Distinct(distinct).Where(kFieldNameYearSparse, CondEq, std::to_string(2000 + rand() % 60)));
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .InnerJoin(kFieldNameYear, kFieldNameYear, randCond(),
+										Query(joinNs).Where(kFieldNameYear, CondLt, 2000 + rand() % 210).Sort(kFieldNameName, sortOrder)));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .InnerJoin(kFieldNameId, kFieldNameId, CondEq,
+										Query(joinNs)
+											.Where(kFieldNameRegion, CondSet,
+												   {Variant{rand() % 10}, Variant{rand() % 10}, Variant{rand() % 10}, Variant{rand() % 10},
+													Variant{rand() % 10}})
+											.Where(kFieldNameYear, CondLt, 2000 + rand() % 210)
+											.Where(kFieldNameAge, CondGe, rand() % 30)
+											.Sort(kFieldNameAge, sortOrder)
+											.Limit(3)));
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .InnerJoin(kFieldNameId, kFieldNameId, CondEq,
+										Query(joinNs)
+											.Where(kFieldNameRegion, CondSet,
+												   {Variant{rand() % 10}, Variant{rand() % 10}, Variant{rand() % 10}, Variant{rand() % 10},
+													Variant{rand() % 10}})
+											.Where(kFieldNameYear, CondLt, 2000 + rand() % 210)
+											.Where(kFieldNameAge, CondGe, rand() % 30)
+											.Sort(kFieldNameYear, sortOrder)
+											.Limit(3)));
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Join(InnerJoin, Query(joinNs).Where(kFieldNameYear, CondGt, 2000 + rand() % 210))
+							 .OpenBracket()
+							 .On(kFieldNameYear, randCond(), kFieldNameYear)
+							 .Or()
+							 .On(kFieldNameName, CondEq, kFieldNameName)
+							 .CloseBracket());
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Join(InnerJoin, Query(joinNs).Where(kFieldNameYear, CondGt, 2000 + rand() % 210))
+							 .OpenBracket()
+							 .On(kFieldNameYear, randCond(), kFieldNameYear)
+							 .Or()
+							 .On(kFieldNameName, CondEq, kFieldNameName)
+							 .On(kFieldNameAge, randCond(), kFieldNameAge)
+							 .Not()
+							 .On(kFieldNameYear, randCond(), kFieldNameYear)
+							 .CloseBracket());
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Join(InnerJoin, Query(joinNs).Where(kFieldNameYear, CondGt, 2000 + rand() % 210))
+							 .OpenBracket()
+							 .On(kFieldNameYearSparse, CondLe, kFieldNameYearSparse)
+							 .Or()
+							 .On(kFieldNameName, CondEq, kFieldNameName)
+							 .Or()
+							 .On(kFieldNameAge, randCond(), kFieldNameAge)
+							 .Not()
+							 .On(kFieldNameYear, randCond(), kFieldNameYear)
+							 .CloseBracket());
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Join(InnerJoin, Query(joinNs).Where(kFieldNameYear, CondGt, 2000 + rand() % 210).Limit(rand() % 100))
+							 .OpenBracket()
+							 .On(kFieldNameYear, randCond(), kFieldNameYear)
+							 .Or()
+							 .On(kFieldNameName, CondEq, kFieldNameName)
+							 .Or()
+							 .On(kFieldNameAge, randCond(), kFieldNameAge)
+							 .CloseBracket()
+							 .Or()
+							 .Join(InnerJoin, Query(joinNs).Where(kFieldNameYear, CondLt, 2000 + rand() % 210).Limit(rand() % 100))
+							 .OpenBracket()
+							 .On(kFieldNameYear, randCond(), kFieldNameYear)
+							 .Or()
+							 .On(kFieldNameName, CondEq, kFieldNameName)
+							 .Or()
+							 .On(kFieldNameAge, randCond(), kFieldNameAge)
+							 .CloseBracket()
+							 .Join(OrInnerJoin, Query(joinNs).Where(kFieldNameYear, CondEq, 2000 + rand() % 210).Limit(rand() % 100))
+							 .OpenBracket()
+							 .On(kFieldNameYear, randCond(), kFieldNameYear)
+							 .Or()
+							 .On(kFieldNameName, CondEq, kFieldNameName)
+							 .Or()
+							 .On(kFieldNameAge, randCond(), kFieldNameAge)
+							 .CloseBracket()
+							 .Or()
+							 .Where(kFieldNameId, CondSet, RandIntVector(20, 0, 100)));
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .WhereBetweenFields(kFieldNameGenre, CondEq, kFieldNameAge)
+							 .Sort(sortIdx, sortOrder));
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .WhereBetweenFields(kFieldNameName, CondLike, kFieldNameActor)
+							 .Sort(sortIdx, sortOrder));
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .WhereBetweenFields(kFieldNamePackages, CondGt, kFieldNameStartTime)
+							 .Sort(sortIdx, sortOrder));
+		ExecuteAndVerify(Query(compositeIndexesNs).WhereBetweenFields(kCompositeFieldPriceTitle, CondEq, kCompositeFieldPagesTitle));
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Not()
+							 .Where(kFieldNameIsDeleted, CondEq, true)
+							 .Or()
+							 .Where(kFieldNameYear, CondGt, 2001)
+							 .Sort(sortIdx, sortOrder));
+		ExecuteAndVerify(
+			TestQuery(default_namespace)
+				.Distinct(distinct)
+				.Where(kFieldNameGenre, CondEq, 5)
+				.Or()
+				.OpenBracket()
+				.Where(kFieldNameGenre, CondEq, 4)
+				.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+				.CloseBracket()
+				.Not()
+				.Where(kFieldNameYear, CondRange, {2001, 2010})
+				.OpenBracket()
+				.Where(kFieldNameRate, CondRange, {static_cast<double>(rand() % 100) / 10, static_cast<double>(rand() % 100) / 10})
+				.Or()
+				.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+				.Not()
+				.OpenBracket()
+				.OpenBracket()
+				.OpenBracket()
+				.Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 50))
+				.Or()
+				.Where(kFieldNameId, CondEq, rand() % 5000)
+				.Where(kFieldNameTemp, CondEq, "")
+				.CloseBracket()
+				.Or()
+				.OpenBracket()
+				.Where(kFieldNameTemp, CondEq, "")
+				.Not()
+				.Where(kFieldNameIsDeleted, CondEq, true)
+				.Or()
+				.Where(kFieldNameYear, CondGt, 2001)
+				.CloseBracket()
+				.CloseBracket()
+				.CloseBracket()
+				.CloseBracket()
+				.Sort(sortIdx, sortOrder));
+		ExecuteAndVerify(
+			TestQuery(default_namespace)
+				.Distinct(distinct)
+				.Where(kFieldNameGenre, CondEq, 5)
+				.Or()
+				.OpenBracket()
+				.Where(kFieldNameGenre, CondEq, 4)
+				.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+				.CloseBracket()
+				.Not()
+				.Where(kFieldNameYear, CondRange, {2001, 2010})
+				.OpenBracket()
+				.Where(kFieldNameRate, CondRange, {static_cast<double>(rand() % 100) / 10, static_cast<double>(rand() % 100) / 10})
+				.Or()
+				.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+				.Not()
+				.OpenBracket()
+				.OpenBracket()
+				.OpenBracket()
+				.Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 50))
+				.Or()
+				.Where(kFieldNameId, CondEq, rand() % 5000)
+				.Where(kFieldNameTemp, CondEq, "")
+				.CloseBracket()
+				.Or()
+				.OpenBracket()
+				.Where(kFieldNameTemp, CondEq, "")
+				.Not()
+				.OpenBracket()
+				.Where(kFieldNameIsDeleted, CondEq, true)
+				.CloseBracket()
+				.Or()
+				.Where(kFieldNameYear, CondGt, 2001)
+				.CloseBracket()
+				.CloseBracket()
+				.CloseBracket()
+				.CloseBracket()
+				.Sort(sortIdx, sortOrder));
+		ExecuteAndVerify(
+			TestQuery(default_namespace)
+				.Distinct(distinct)
+				.Where(kFieldNameGenre, CondEq, 5)
+				.Or()
+				.OpenBracket()
+				.Where(kFieldNameGenre, CondEq, 4)
+				.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+				.CloseBracket()
+				.Not()
+				.Where(kFieldNameYear, CondRange, {2001, 2010})
+				.OpenBracket()
+				.Where(kFieldNameRate, CondRange, {static_cast<double>(rand() % 100) / 10, static_cast<double>(rand() % 100) / 10})
+				.Or()
+				.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+				.Not()
+				.OpenBracket()
+				.OpenBracket()
+				.OpenBracket()
+				.Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 50))
+				.Or()
+				.Where(kFieldNameId, CondEq, rand() % 5000)
+				.Where(kFieldNameTemp, CondEq, "")
+				.CloseBracket()
+				.Or()
+				.OpenBracket()
+				.Where(kFieldNameTemp, CondEq, "")
+				.OpenBracket()
+				.Not()
+				.Where(kFieldNameIsDeleted, CondEq, true)
+				.CloseBracket()
+				.Or()
+				.Where(kFieldNameYear, CondGt, 2001)
+				.CloseBracket()
+				.CloseBracket()
+				.CloseBracket()
+				.CloseBracket()
+				.Sort(sortIdx, sortOrder));
+		ExecuteAndVerify(
+			TestQuery(default_namespace)
+				.Distinct(distinct)
+				.Where(kFieldNameGenre, CondEq, 5)
+				.Or()
+				.OpenBracket()
+				.Where(kFieldNameGenre, CondEq, 4)
+				.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+				.CloseBracket()
+				.Not()
+				.Where(kFieldNameYear, CondRange, {2001, 2010})
+				.OpenBracket()
+				.Where(kFieldNameRate, CondRange, {static_cast<double>(rand() % 100) / 10, static_cast<double>(rand() % 100) / 10})
+				.Or()
+				.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+				.Not()
+				.OpenBracket()
+				.OpenBracket()
+				.OpenBracket()
+				.Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 50))
+				.Or()
+				.Where(kFieldNameId, CondEq, rand() % 5000)
+				.Where(kFieldNameTemp, CondEq, "")
+				.CloseBracket()
+				.Or()
+				.OpenBracket()
+				.Where(kFieldNameTemp, CondEq, "")
+				.OpenBracket()
+				.Not()
+				.Where(kFieldNameIsDeleted, CondEq, true)
+				.Or()
+				.Where(kFieldNameYear, CondGt, 2001)
+				.CloseBracket()
+				.CloseBracket()
+				.CloseBracket()
+				.CloseBracket()
+				.CloseBracket()
+				.Sort(sortIdx, sortOrder));
+		ExecuteAndVerify(
+			TestQuery(default_namespace)
+				.Distinct(distinct)
+				.Where(kFieldNameGenre, CondEq, 5)
+				.Or()
+				.OpenBracket()
+				.Where(kFieldNameGenre, CondEq, 4)
+				.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+				.CloseBracket()
+				.Not()
+				.Where(kFieldNameYear, CondRange, {2001, 2010})
+				.OpenBracket()
+				.Where(kFieldNameRate, CondRange, {static_cast<double>(rand() % 100) / 10, static_cast<double>(rand() % 100) / 10})
+				.Or()
+				.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+				.Not()
+				.OpenBracket()
+				.OpenBracket()
+				.OpenBracket()
+				.Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 50))
+				.Or()
+				.Where(kFieldNameId, CondEq, rand() % 5000)
+				.Where(kFieldNameTemp, CondEq, "")
+				.CloseBracket()
+				.Or()
+				.OpenBracket()
+				.Where(kFieldNameTemp, CondEq, "")
+				.Not()
+				.OpenBracket()
+				.Where(kFieldNameIsDeleted, CondEq, true)
+				.Or()
+				.Where(kFieldNameYear, CondGt, 2001)
+				.CloseBracket()
+				.CloseBracket()
+				.CloseBracket()
+				.CloseBracket()
+				.CloseBracket()
+				.Sort(sortIdx, sortOrder));
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Join(InnerJoin, Query(joinNs).Where(kFieldNameYear, CondGt, 2000 + rand() % 210).Limit(rand() % 100))
+							 .OpenBracket()
+							 .Not()
+							 .On(kFieldNameYear, randCond(), kFieldNameYear)
+							 .Or()
+							 .On(kFieldNameName, CondEq, kFieldNameName)
+							 .Or()
+							 .On(kFieldNameAge, randCond(), kFieldNameAge)
+							 .CloseBracket());
+
+		for (CondType cond : {CondEq, CondSet, CondLt, CondLe, CondGt, CondGe, CondRange}) {
+			const auto argsCount = minMaxArgs(cond, 20);
+			if (argsCount.min <= 1 && argsCount.max >= 1) {
+				ExecuteAndVerify(
+					TestQuery(default_namespace).Distinct(distinct).Where(kFieldNameUuid, cond, randUuid()).Sort(sortIdx, sortOrder));
+
+				ExecuteAndVerify(
+					TestQuery(default_namespace).Distinct(distinct).Where(kFieldNameUuid, cond, randStrUuid()).Sort(sortIdx, sortOrder));
+
+				ExecuteAndVerify(
+					TestQuery(default_namespace).Distinct(distinct).Where(kFieldNameUuidArr, cond, randUuid()).Sort(sortIdx, sortOrder));
+
+				ExecuteAndVerify(TestQuery(default_namespace)
+									 .Distinct(distinct)
+									 .Where(kFieldNameUuidArr, cond, randStrUuid())
+
+									 .Sort(sortIdx, sortOrder));
 			}
+
+			ExecuteAndVerify(TestQuery(default_namespace)
+								 .Distinct(distinct)
+								 .Where(kFieldNameUuid, cond, randHeterogeneousUuidArray(argsCount.min, argsCount.max))
+								 .Sort(sortIdx, sortOrder));
+
+			ExecuteAndVerify(TestQuery(default_namespace)
+								 .Distinct(distinct)
+								 .Where(kFieldNameUuidArr, cond, randHeterogeneousUuidArray(argsCount.min, argsCount.max))
+
+								 .Sort(sortIdx, sortOrder));
+
+			std::vector<VariantArray> compositeKeyValues;
+			VariantArray hetUuidArray = randHeterogeneousUuidArray(argsCount.min, argsCount.max);
+			compositeKeyValues.reserve(hetUuidArray.size());
+			std::transform(std::make_move_iterator(hetUuidArray.begin()), std::make_move_iterator(hetUuidArray.end()),
+						   std::back_inserter(compositeKeyValues),
+						   [this](Variant&& uuid) { return VariantArray::Create(std::move(uuid), RandString()); });
+			ExecuteAndVerify(TestQuery(default_namespace)
+								 .Distinct(distinct)
+								 .WhereComposite(kCompositeFieldUuidName, cond, compositeKeyValues)
+								 .Sort(sortIdx, sortOrder));
 		}
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameUuid, CondRange, randHeterogeneousUuidArray(2, 2))
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameUuidArr, CondRange, randHeterogeneousUuidArray(2, 2))
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(
+			TestQuery(default_namespace)
+				.Distinct(distinct)
+				.WhereComposite(kCompositeFieldUuidName, CondRange,
+								{VariantArray::Create(nilUuid(), RandString()), VariantArray::Create(randUuid(), RandString())})
+				.Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(Query(default_namespace).Where(kFieldNameId, CondEq, 10), CondAny, {})
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(
+			TestQuery(default_namespace).Distinct(distinct).Not().Where(Query(default_namespace), CondEmpty, {}).Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kFieldNameId, CondLt, Query(default_namespace).Aggregate(AggAvg, {kFieldNameId}))
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(
+			TestQuery(default_namespace)
+				.Distinct(distinct)
+				.Where(kFieldNameGenre, CondSet, Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondSet, {10, 20, 30, 40}))
+				.Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondGt, 10), CondSet, {10, 20, 30, 40})
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(
+			TestQuery(default_namespace)
+				.Distinct(distinct)
+				.Where(Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondGt, 10).Offset(1), CondSet, {10, 20, 30, 40})
+				.Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(Query(joinNs).Where(kFieldNameId, CondGt, 10).Aggregate(AggMax, {kFieldNameGenre}), CondRange, {48, 50})
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(Query(joinNs).Where(kFieldNameId, CondGt, 10).ReqTotal(), CondGt, {50})
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(
+			TestQuery(default_namespace)
+				.Distinct(distinct)
+				.Sort(sortIdx, sortOrder)
+				.Debug(LogTrace)
+				.Where(kFieldNameGenre, CondEq, 5)
+				.Not()
+				.Where(Query(default_namespace).Where(kFieldNameGenre, CondEq, 5), CondAny, {})
+				.Or()
+				.Where(kFieldNameGenre, CondSet, Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondSet, {10, 20, 30, 40}))
+				.Not()
+				.OpenBracket()
+				.Where(kFieldNameYear, CondRange, {2001, 2020})
+				.Or()
+				.Where(kFieldNameName, CondLike, RandLikePattern())
+				.Or()
+				.Where(Query(joinNs).Where(kFieldNameYear, CondEq, 2000 + rand() % 210), CondEmpty, {})
+				.CloseBracket()
+				.Or()
+				.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+				.OpenBracket()
+				.Where(kFieldNameNumeric, CondLt, std::to_string(600))
+				.Not()
+				.OpenBracket()
+				.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+				.Where(kFieldNameGenre, CondLt, 6)
+				.Or()
+				.Where(kFieldNameId, CondLt, Query(default_namespace).Aggregate(AggAvg, {kFieldNameId}))
+				.CloseBracket()
+				.Not()
+				.Where(Query(joinNs).Where(kFieldNameId, CondGt, 10).Aggregate(AggMax, {kFieldNameGenre}), CondRange, {48, 50})
+				.Or()
+				.Where(kFieldNameYear, CondEq, 10)
+				.CloseBracket());
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(kCompositeFieldIdTemp, CondEq,
+									Query(default_namespace).Select({kCompositeFieldIdTemp}).Where(kFieldNameId, CondGt, 10))
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(Query(default_namespace).Select({kCompositeFieldUuidName}).Where(kFieldNameId, CondGt, 10), CondRange,
+									{VariantArray::Create(nilUuid(), RandString()), VariantArray::Create(randUuid(), RandString())})
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(Query(default_namespace)
+										.Select({kCompositeFieldAgeGenre})
+										.Where(kFieldNameId, CondGt, 10)
+										.Sort(kCompositeFieldAgeGenre, false)
+										.Limit(10),
+									CondLe, {Variant(VariantArray::Create(rand() % 50, rand() % 50))})
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(Query(default_namespace).Where(kFieldNameId, CondGt, 10).ReqTotal(), CondGe, {10})
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(Query(default_namespace).Where(kFieldNameId, CondGt, 10).CachedTotal(), CondGe, {10})
+							 .Sort(sortIdx, sortOrder));
 	} catch (const reindexer::Error& err) {
 		ASSERT_TRUE(false) << err.what();
 	} catch (const std::exception& err) {

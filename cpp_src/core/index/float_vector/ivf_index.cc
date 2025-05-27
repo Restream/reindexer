@@ -113,6 +113,8 @@ Variant IvfIndex::upsert(ConstFloatVectorView vect, IdType id, bool& clearCache)
 	return Variant{vect};
 }
 
+Variant IvfIndex::upsertConcurrent(ConstFloatVectorView, IdType, bool&) { throw Error(errLogic, "IVF indexes do not support upsertions"); }
+
 void IvfIndex::Delete(const Variant&, IdType id, StringsHolder&, bool&) {
 	if (map_) {
 		const faiss::idx_t faissId = id;

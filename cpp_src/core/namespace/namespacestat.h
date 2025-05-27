@@ -13,7 +13,7 @@ namespace reindexer {
 class WrSerializer;
 
 struct LRUCacheMemStat {
-	void GetJSON(JsonBuilder& builder);
+	void GetJSON(JsonBuilder& builder) const;
 
 	size_t totalSize = 0;
 	size_t itemsCount = 0;
@@ -22,7 +22,7 @@ struct LRUCacheMemStat {
 };
 
 struct IndexMemStat {
-	void GetJSON(JsonBuilder& builder);
+	void GetJSON(JsonBuilder& builder) const;
 	std::string name;
 	size_t uniqKeysCount = 0;
 	size_t dataSize = 0;
@@ -40,6 +40,18 @@ struct IndexMemStat {
 	size_t GetFullIndexStructSize() const noexcept {
 		return idsetPlainSize + idsetBTreeSize + sortOrdersSize + columnSize + trackedUpdatesSize + indexingStructSize;
 	}
+};
+
+struct EmbeddersCacheMemStat {
+	void GetJSON(JsonBuilder& builder) const;
+	std::string tag;
+	size_t capacity = 0;
+	LRUCacheMemStat cache;
+	bool storageOK = false;
+	bool storageEnabled = false;
+	std::string storageStatus;
+	std::string storagePath;
+	uint64_t storageSize = 0;
 };
 
 struct ClusterOperationStatus {
@@ -72,7 +84,7 @@ struct ReplicationState {
 
 	virtual ~ReplicationState() = default;
 
-	virtual void GetJSON(JsonBuilder& builder);
+	virtual void GetJSON(JsonBuilder& builder) const;
 	void FromJSON(std::span<char>);
 
 	// LSN of last change
@@ -104,7 +116,7 @@ struct ReplicationStateV2 {
 	constexpr static int64_t kNoDataCount = -1;
 
 	bool HasDataCount() const noexcept { return dataCount != kNoDataCount; }
-	void GetJSON(JsonBuilder& builder);
+	void GetJSON(JsonBuilder& builder) const;
 	void FromJSON(std::span<char>);
 
 	// LSN of last change
@@ -119,7 +131,7 @@ struct ReplicationStateV2 {
 };
 
 struct ReplicationStat final : public ReplicationState {
-	void GetJSON(JsonBuilder& builder) override;
+	void GetJSON(JsonBuilder& builder) const override;
 
 	size_t walCount = 0;
 	size_t walSize = 0;
@@ -127,9 +139,13 @@ struct ReplicationStat final : public ReplicationState {
 };
 
 struct NamespaceMemStat {
-	void GetJSON(WrSerializer& ser);
+	static constexpr std::string_view kNamespaceStatType{"namespace"};
+	static constexpr std::string_view kEmbeddersStatType{"embedders"};
+
+	void GetJSON(WrSerializer& ser) const;
 
 	NamespaceName name;
+	std::string type;
 	std::string storagePath;
 	bool storageOK = false;
 	bool storageEnabled = false;
@@ -148,12 +164,13 @@ struct NamespaceMemStat {
 	LRUCacheMemStat joinCache;
 	LRUCacheMemStat queryCache;
 	std::vector<IndexMemStat> indexes;
+	std::vector<EmbeddersCacheMemStat> embedders;
 };
 
 struct LRUCachePerfStat {
 	enum class State { DoesNotExist, Active, Inactive };
 
-	void GetJSON(JsonBuilder& builder);
+	void GetJSON(JsonBuilder& builder) const;
 	uint64_t TotalQueries() const noexcept;
 	double HitRate() const noexcept;
 
@@ -163,7 +180,7 @@ struct LRUCachePerfStat {
 };
 
 struct PerfStat {
-	void GetJSON(JsonBuilder& builder);
+	void GetJSON(JsonBuilder& builder) const;
 
 	size_t totalHitCount;
 	size_t totalAvgTimeUs;
@@ -177,7 +194,7 @@ struct PerfStat {
 };
 
 struct TxPerfStat {
-	void GetJSON(JsonBuilder& builder);
+	void GetJSON(JsonBuilder& builder) const;
 	void FromJSON(const gason::JsonNode& node);
 
 	size_t totalCount;
@@ -196,20 +213,28 @@ struct TxPerfStat {
 	size_t maxCopyTimeUs;
 };
 
+struct EmbedderCachePerfStat : LRUCachePerfStat {
+	void GetJSON(JsonBuilder& builder) const;
+
+	std::string tag;
+};
+
 struct IndexPerfStat {
 	IndexPerfStat() = default;
 	IndexPerfStat(const std::string& n, PerfStat&& s, PerfStat&& c) : name(n), selects(std::move(s)), commits(std::move(c)) {}
 
-	void GetJSON(JsonBuilder& builder);
+	void GetJSON(JsonBuilder& builder) const;
 
 	std::string name;
 	PerfStat selects;
 	PerfStat commits;
 	LRUCachePerfStat cache;
+	EmbedderCachePerfStat upsertEmbedderCache;
+	EmbedderCachePerfStat queryEmbedderCache;
 };
 
 struct NamespacePerfStat {
-	void GetJSON(WrSerializer& ser);
+	void GetJSON(WrSerializer& ser) const;
 
 	NamespaceName name;
 	PerfStat updates;

@@ -28,7 +28,7 @@ template <typename... Args>
 RX_ALWAYS_INLINE constexpr std::string_view FormatStringToStringView(RxFormatString<Args...> fmt) {
 	return fmt;
 }
-#else // !defined(_MSC_VER) || _MSC_VER > 1929
+#else	// !defined(_MSC_VER) || _MSC_VER > 1929
 template <typename... Args>
 using RxFormatString = fmt::format_string<Args...>;
 
@@ -36,7 +36,7 @@ template <typename... Args>
 RX_ALWAYS_INLINE constexpr std::string_view FormatStringToStringView(RxFormatString<Args...> fmt) {
 	return std::string_view(fmt.get().data(), fmt.get().size());
 }
-#endif // defined(_MSC_VER) && _MSC_VER <= 1929
+#endif	// defined(_MSC_VER) && _MSC_VER <= 1929
 
 template <typename... Args>
 RX_ALWAYS_INLINE std::string format(RxFormatString<Args...> fmt, Args&&... args) {
@@ -83,28 +83,36 @@ std::string format([[maybe_unused]] RxFormatString<Args...> fmt, [[maybe_unused]
 
 }  // namespace format_details
 
-[[noreturn]] void print_backtrace_and_abort(const char* assertion, const char* file, unsigned line,
-											const std::string& description) noexcept;
+[[noreturn]] void print_backtrace_and_abort(const char* assertion, const char* file, unsigned line, std::string_view description) noexcept;
+[[noreturn]] void print_backtrace_and_abort(const char* assertion, const char* file, unsigned line) noexcept;
 
 #if defined(NDEBUG)
 #define assertf(...) ((void)0)
 #else
 // Using (void)f here to force ';' usage after the macro
-#define assertf(e, f, ...)                                                         \
-	if rx_unlikely (!(e)) {                                                        \
-		auto description = reindexer::format_details::format(f, __VA_ARGS__);      \
-		reindexer::print_backtrace_and_abort(#e, __FILE__, __LINE__, description); \
-	}                                                                              \
+#define assertf(e, f, ...)                                                             \
+	if rx_unlikely (!(e)) {                                                            \
+		try {                                                                          \
+			auto description = reindexer::format_details::format(f, __VA_ARGS__);      \
+			reindexer::print_backtrace_and_abort(#e, __FILE__, __LINE__, description); \
+		} catch (...) {                                                                \
+			reindexer::print_backtrace_and_abort(#e, __FILE__, __LINE__);              \
+		}                                                                              \
+	}                                                                                  \
 	(void)f
 #endif	// NDEBUG
 
 #if defined(RX_WITH_STDLIB_DEBUG)
 // Using (void)f here to force ';' usage after the macro
-#define assertf_dbg(e, f, ...)                                                     \
-	if rx_unlikely (!(e)) {                                                        \
-		auto description = reindexer::format_details::format(f, __VA_ARGS__);      \
-		reindexer::print_backtrace_and_abort(#e, __FILE__, __LINE__, description); \
-	}                                                                              \
+#define assertf_dbg(e, f, ...)                                                         \
+	if rx_unlikely (!(e)) {                                                            \
+		try {                                                                          \
+			auto description = reindexer::format_details::format(f, __VA_ARGS__);      \
+			reindexer::print_backtrace_and_abort(#e, __FILE__, __LINE__, description); \
+		} catch (...) {                                                                \
+			reindexer::print_backtrace_and_abort(#e, __FILE__, __LINE__);              \
+		}                                                                              \
+	}                                                                                  \
 	(void)f
 #else
 #define assertf_dbg(...) ((void)0)

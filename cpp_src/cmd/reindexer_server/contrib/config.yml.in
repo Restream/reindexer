@@ -8,6 +8,8 @@ storage:
 net:
   httpaddr: 0.0.0.0:9088
   rpcaddr: 0.0.0.0:6534
+  # Unix domain socket path for ucproto scheme. Empty string or "none"-value means, that unix-socket RPC-server is disabled
+  urpcaddr: none
   webroot: ${REINDEXER_INSTALL_PREFIX}/share/reindexer/web
   # Enables authorization via login/password (requires users.yml file in db directory)
   security: false

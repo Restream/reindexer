@@ -58,7 +58,7 @@ FloatVectorIndexOpts::EmbedderOpts::Strategy parseStrategy(std::string_view stra
 						   kEmbedderStrategyStrict};
 }
 
-static std::string_view strategyToStr(FloatVectorIndexOpts::EmbedderOpts::Strategy strategy) {
+std::string_view strategyToStr(FloatVectorIndexOpts::EmbedderOpts::Strategy strategy) {
 	switch (strategy) {
 		case FloatVectorIndexOpts::EmbedderOpts::Strategy::Always:
 			return kEmbedderStrategyAlways;

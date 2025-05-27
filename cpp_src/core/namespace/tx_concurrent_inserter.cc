@@ -1,5 +1,5 @@
 #include "tx_concurrent_inserter.h"
-#include "core/index/index.h"
+#include "core/index/float_vector/float_vector_index.h"
 #include "namespaceimpl.h"
 #include "tools/logger.h"
 
@@ -41,24 +41,19 @@ void TransactionConcurrentInserter::threadFn(std::atomic<size_t>& nextId, const 
 			try {
 				assertrx_dbg(field > 0);
 				assertrx_dbg(field < size_t(ns_.indexes_.firstCompositePos()));
-				auto& idx = *ns_.indexes_[field];
+				assertrx_dbg(dynamic_cast<FloatVectorIndex*>(ns_.indexes_[field].get()));
+				auto& idx = *static_cast<FloatVectorIndex*>(ns_.indexes_[field].get());
 				krefs.resize(0);
-				skrefs.resize(0);
-				skrefs.emplace_back(Variant{ConstFloatVectorView{vec->vec}, Variant::noHold});
 				bool needClearCache{false};
 				const IdType id = vec->id;
-				idx.Upsert(krefs, skrefs, id, needClearCache);
+				krefs.emplace_back(idx.UpsertConcurrent(Variant{ConstFloatVectorView{vec->vec}, Variant::noHold}, id, needClearCache));
 				assertrx(ns_.items_.exists(id));
 				Payload pl(pt, ns_.items_[id]);
 				pl.Set(field, krefs);
-			} catch (Error& e) {
+			} catch (std::exception& e) {
 				// TODO: Probably this error handling should be improved. Currently assuming that it's better to crash, than loss data
 				// Possible solution is to set an empty vector view and throw exception, but we do nos support empty vector view currently
 				// (those views will crash on assertion at any call)
-				assertf(false, kThreadErrorFormat, ns_.name_, e.what());
-				logFmt(LogError, kThreadErrorFormat, ns_.name_, e.what());
-				std::terminate();
-			} catch (std::exception& e) {
 				assertf(false, kThreadErrorFormat, ns_.name_, e.what());
 				logFmt(LogError, kThreadErrorFormat, ns_.name_, e.what());
 				std::terminate();

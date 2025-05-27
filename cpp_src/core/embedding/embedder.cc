@@ -1,122 +1,95 @@
 #include "embedder.h"
 
-#include "core/cjson/jsonbuilder.h"
+#include <algorithm>
+#include "core/embedding/embedderscache.h"
 #include "core/embedding/httpconnector.h"
-#include "estl/gift_str.h"
 #include "tools/logger.h"
-#include "vendor/gason/gason.h"
 
 namespace reindexer {
 
 namespace {
-
-using namespace std::string_view_literals;
-
-constexpr std::string_view kDataFieldName("data"sv);
-constexpr std::string_view kResultDataName("products"sv);
 constexpr std::string_view kServerPathFormat("/api/v1/embedder/{}/produce?format=text");
+}  // namespace
 
-h_vector<ConstFloatVector, 1> FromJSON(const gason::JsonNode& root) {
-	h_vector<ConstFloatVector, 1> result;
+Embedder::Embedder(std::string_view name, std::string_view fieldName, int field, EmbedderConfig&& config, PoolConfig&& poolConfig,
+				   const std::shared_ptr<EmbeddersCache>& cache)
+	: name_{name},
+	  fieldName_{fieldName},
+	  field_{field},
+	  serverPath_{fmt::format(kServerPathFormat, name)},
+	  cache_{cache},
+	  config_{std::move(config)} {
+	assertrx_dbg(field > 0);
 
-	constexpr size_t kProductDimension = 1024;
-	std::vector<float> values;
-	values.reserve(kProductDimension);
-	for (auto products : root[kResultDataName]) {
-		values.resize(0);
-		for (auto product : products) {
-			values.push_back(product.As<double>());
-		}
-		result.emplace_back(std::span<float>{values});
-	}
-
-	return result;
+	pool_ = std::make_unique<ConnectorPool>(std::move(poolConfig));
 }
 
-Error FromJSON(std::span<char> json, h_vector<ConstFloatVector, 1>& vector) {
-	try {
-		gason::JsonParser parser;
-		auto root = parser.Parse(json);
-		vector = FromJSON(root);
-	} catch (const gason::Exception& ex) {
-		return {errParseJson, "Embedder parse products: {}", ex.what()};
-	} catch (const Error& err) {
-		return err;
+void Embedder::Calculate(const RdxContext& ctx, std::span<const std::vector<VariantArray>> sources,
+						 h_vector<ConstFloatVector, 1>& products) {
+	assertrx_dbg(!sources.empty());
+
+	products.resize(0);
+
+	checkFields(sources);
+
+	embedding::Adapter srcAdapter(sources);
+	logFmt(LogTrace, "Embedding src: {}", srcAdapter.View());
+
+	if (cache_) {
+		auto product = cache_->Get(config_.tag, srcAdapter);
+		if (product.has_value()) {
+			products.emplace_back(std::move(product.value()));
+			return; // NOTE: stop calculation
+		}
+	}
+
+	auto res = pool_->GetConnector(ctx);
+	if (!res.first.ok()) {
+		throw res.first;
+	}
+
+	auto response = (*res.second).Send(serverPath_, srcAdapter.View());
+	if (!response.ok) {
+		throw Error{errNetwork, "Failed to get embedding for '{}'. Problem with client: {}", fieldName_, response.content};
+	}
+
+	logFmt(LogTrace, "Embedding data: {}", response.content);
+	auto error = embedding::Adapter::VectorFromJSON(response.content, products);
+	if (!error.ok()) {
+		throw error;
+	}
+
+	if (cache_) {
+		cache_->Put(config_.tag, srcAdapter, products);
+	}
+}
+
+bool Embedder::IsAuxiliaryField(std::string_view fieldName) const noexcept {
+	return std::ranges::find(config_.fields, fieldName) != config_.fields.end();
+}
+
+EmbedderCachePerfStat Embedder::GetPerfStat(std::string_view tag) const {
+	if (cache_) {
+		return cache_->GetPerfStat(tag);
 	}
 	return {};
 }
 
-}  // namespace
+void Embedder::checkFields(std::span<const std::vector<VariantArray>> sources) const {
+	if (config_.fields.empty()) {
+		return;
+	}
 
-Embedder::Embedder(std::string_view name, std::string_view fieldName, int field, EmbedderConfig&& config, PoolConfig&& poolConfig)
-	: name_(name), fieldName_(fieldName), field_(field), config_(std::move(config)) {
-	pool_ = std::make_unique<ConnectorPool>(std::move(poolConfig));
-	path_ = fmt::format(kServerPathFormat, name);
-}
-
-Error Embedder::Calculate(const RdxContext& ctx, std::span<const std::vector<VariantArray>> sources,
-						  h_vector<ConstFloatVector, 1>& products) {
-	assertrx_dbg(!sources.empty());
-
-	if (!config_.fields.empty()) {
-		const auto fldSize = config_.fields.size();
-		size_t idx = 0;
-		for (const auto& src : sources) {
-			if (fldSize != src.size()) {
-				return {
-					errLogic,
-					"Failed to get embedding for '{}'. Not all required data was requested. Requesting {}, expecting {}, source {}",
-					fieldName_, src.size(), fldSize, idx};
-			}
-			++idx;
+	const auto fieldsSize = config_.fields.size();
+	for (size_t idx = 0; const auto& src : sources) {
+		if (fieldsSize != src.size()) {
+			throw Error{
+				errLogic,	"Failed to get embedding for '{}'. Not all required data was requested. Requesting {}, expecting {}, source {}",
+				name_,		src.size(),
+				fieldsSize, idx};
 		}
+		++idx;
 	}
-
-	products.clear();
-
-	auto sourcesJson = getJson(sources);
-	logFmt(LogTrace, "'{}' embedding src: {}", name_, sourcesJson);
-
-	auto res = pool_->GetConnector(ctx);
-	if (!res.first.ok()) {
-		return res.first;
-	}
-
-	auto response = (*res.second).Send(path_, sourcesJson);
-	if (response.ok) {
-		logFmt(LogTrace, "'{}' embedding data: {}", name_, response.content);
-		return FromJSON(giftStr(response.content), products);
-	}
-
-	return {errNetwork, "Failed to get embedding for '{}'. Problem with client: {}", fieldName_, response.content};
-}
-
-bool Embedder::IsAuxiliaryField(std::string_view fieldName) const noexcept {
-	auto res = std::find(config_.fields.cbegin(), config_.fields.cend(), fieldName);
-	return res != config_.fields.end();
-}
-
-void Embedder::getJson(std::span<const std::vector<VariantArray>> sources, JsonBuilder& json) const {
-	auto arrNodeDoc = json.Array(kDataFieldName);
-	for (const auto& docSource : sources) {
-		auto arrNodeItem = arrNodeDoc.Array(TagName::Empty());
-		for (const auto& itemSource : docSource) {
-			for (const auto& item : itemSource) {
-				arrNodeItem.Put(TagName::Empty(), item.As<std::string>());
-			}
-		}
-		arrNodeItem.End();
-	}
-	arrNodeDoc.End();
-}
-
-std::string Embedder::getJson(std::span<const std::vector<VariantArray>> sources) const {
-	WrSerializer ser;
-	{
-		JsonBuilder json{ser};
-		getJson(sources, json);
-	}
-	return std::string{ser.Slice()};
 }
 
 }  // namespace reindexer

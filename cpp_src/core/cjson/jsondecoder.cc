@@ -226,7 +226,7 @@ void JsonDecoder::decodeJsonSparse(Payload* pl, CJsonBuilder& builder, const gas
 
 class TagsPathGuard {
 public:
-	TagsPathGuard(TagsPath& tagsPath, TagName tagName) noexcept : tagsPath_(tagsPath) { tagsPath_.emplace_back(tagName); }
+	TagsPathGuard(TagsPath& tagsPath, TagName tagName) : tagsPath_(tagsPath) { tagsPath_.emplace_back(tagName); }
 	~TagsPathGuard() { tagsPath_.pop_back(); }
 
 public:

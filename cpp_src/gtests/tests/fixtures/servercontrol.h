@@ -181,7 +181,7 @@ public:
 		std::atomic_bool& stopped_;
 
 		const ServerControlConfig config_;
-		std::string dumpUserRecYAML() const noexcept;
+		std::string dumpUserRecYAML() const;
 
 		template <typename T>
 		T getConfigByType() const;

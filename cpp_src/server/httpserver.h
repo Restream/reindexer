@@ -26,7 +26,7 @@ public:
 	HTTPServer(DBManager& dbMgr, LoggerWrapper& logger, const ServerConfig& serverConfig, Prometheus* prometheusI = nullptr,
 			   IStatsWatcher* statsWatcherI = nullptr);
 
-	bool Start(const std::string& addr, ev::dynamic_loop& loop);
+	void Start(const std::string& addr, ev::dynamic_loop& loop);
 	void Stop() { listener_->Stop(); }
 
 	int NotFoundHandler(http::Context& ctx);

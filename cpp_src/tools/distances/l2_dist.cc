@@ -38,7 +38,7 @@ static float l2SqrAVX512Residuals16Ext(const float* pVect1, const float* pVect2,
 		return L2SqrSIMD16ExtAVX512(pVect1, pVect2, qty16);
 	}
 	float res = qty16 ? L2SqrSIMD16ExtAVX512(pVect1, pVect2, qty16) : 0.0;
-	return res + L2Sqr(pVect1, pVect2, qty - qty16);
+	return res + L2Sqr(pVect1 + qty16, pVect2 + qty16, qty - qty16);
 }
 
 static float l2SqrSSEResiduals4Ext(const float* pVect1, const float* pVect2, size_t qty) {

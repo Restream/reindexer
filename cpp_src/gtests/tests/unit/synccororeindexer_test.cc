@@ -5,6 +5,7 @@
 #include "coroutine/waitgroup.h"
 #include "gtest/gtest.h"
 #include "gtests/tests/fixtures/servercontrol.h"
+#include "gtests/tools.h"
 #include "net/ev/ev.h"
 #include "tools/fsops.h"
 #include "vendor/gason/gason.h"
@@ -234,7 +235,7 @@ TEST(SyncCoroRx, DISABLED_TestCoroRxNCoroutine) {
 	system_clock_w::time_point t1 = system_clock_w::now();
 
 	reindexer::net::ev::dynamic_loop loop;
-	auto insert = [&loop]() noexcept {
+	auto insert = exceptionWrapper([&loop] {
 		reindexer::client::CoroReindexer rx;
 		auto err = rx.Connect("cproto://127.0.0.1:" + std::to_string(kSyncCoroRxTestDefaultRpcPort) + "/db", loop);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -260,7 +261,7 @@ TEST(SyncCoroRx, DISABLED_TestCoroRxNCoroutine) {
 			loop.spawn(std::bind(insblok, n * k, n));
 		}
 		wg.wait();
-	};
+	});
 
 	loop.spawn(insert);
 	loop.run();
@@ -533,7 +534,7 @@ TEST(SyncCoroRx, TxInvalidation) {
 	const std::string kNsNames = "ns_test";
 	const std::string kItemContent = R"json({"id": 1})json";
 	const std::string kExpectedErrorText1 =
-		"Connection was broken and all corresponding snapshots, queryresults and transaction were invalidated";
+		"Connection was broken and all associated snapshots, queryresults and transaction were invalidated";
 	const std::string kExpectedErrorText2 = "Request for invalid connection (probably this connection was broken and invalidated)";
 
 	ServerControl server;
@@ -615,7 +616,7 @@ TEST(SyncCoroRx, QrInvalidation) {
 	reindexer::fs::RmDirAll(kTestDbPath);
 	const std::string kNsNames = "ns_test";
 	const std::string kExpectedErrorText1 =
-		"Connection was broken and all corresponding snapshots, queryresults and transaction were invalidated";
+		"Connection was broken and all associated snapshots, queryresults and transaction were invalidated";
 	const std::string kExpectedErrorText2 = "Request for invalid connection (probably this connection was broken and invalidated)";
 	const unsigned kDataCount = 500;
 	const unsigned kFetchCnt = 100;

@@ -20,7 +20,7 @@ public:
 
 	QueryPreprocessor(QueryEntries&&, const RVector<Aggregator, 4>&, NamespaceImpl*, const SelectCtx&);
 	const QueryEntries& GetQueryEntries() const noexcept { return *this; }
-	bool LookupQueryIndexes() {
+	[[nodiscard]] bool LookupQueryIndexes() {
 		bool forcedSortOptimization = hasForcedSortOptimizationQueryEntry();
 		const unsigned lookupEnd = container_.size() - size_t(forcedSortOptimization);
 		assertrx_throw(lookupEnd <= uint32_t(std::numeric_limits<uint16_t>::max() - 1));
@@ -35,23 +35,23 @@ public:
 		return false;
 	}
 	RankedTypeQuery GetRankedTypeQuery() const;
-	bool ContainsForcedSortOrder() const noexcept {
+	[[nodiscard]] bool ContainsForcedSortOrder() const noexcept {
 		if (hasForcedSortOptimizationQueryEntry()) {
 			return forcedStage();
 		}
 		return forcedSortOrder_;
 	}
-	bool SubstituteCompositeIndexes() {
+	[[nodiscard]] bool SubstituteCompositeIndexes() {
 		return substituteCompositeIndexes(0, container_.size() - hasForcedSortOptimizationQueryEntry()) != 0;
 	}
 	void InitIndexedQueries() { initIndexedQueries(0, Size()); }
 	void AddDistinctEntries(const RVector<Aggregator, 4>&);
-	bool NeedNextEvaluation(unsigned start, unsigned count, bool& matchedAtLeastOnce, QresExplainHolder& qresHolder,
-							bool needCalcTotal) noexcept;
-	unsigned Start() const noexcept { return start_; }
-	unsigned Count() const noexcept { return count_; }
-	bool MoreThanOneEvaluation() const noexcept { return hasForcedSortOptimizationQueryEntry(); }
-	bool AvailableSelectBySortIndex() const noexcept { return !hasForcedSortOptimizationQueryEntry() || !forcedStage(); }
+	[[nodiscard]] bool NeedNextEvaluation(unsigned start, unsigned count, bool& matchedAtLeastOnce, QresExplainHolder& qresHolder,
+										  bool needCalcTotal);
+	[[nodiscard]] unsigned Start() const noexcept { return start_; }
+	[[nodiscard]] unsigned Count() const noexcept { return count_; }
+	[[nodiscard]] bool MoreThanOneEvaluation() const noexcept { return hasForcedSortOptimizationQueryEntry(); }
+	[[nodiscard]] bool AvailableSelectBySortIndex() const noexcept { return !hasForcedSortOptimizationQueryEntry() || !forcedStage(); }
 	void InjectConditionsFromJoins(JoinedSelectors& js, OnConditionInjections& explainOnInjections, LogLevel, bool inTransaction,
 								   bool enableSortOrders, const RdxContext& rdxCtx);
 	void Reduce();

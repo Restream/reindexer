@@ -11,6 +11,7 @@
 #include "core/system_ns_names.h"
 #include "coroutine/waitgroup.h"
 #include "gtests/tests/gtest_cout.h"
+#include "gtests/tools.h"
 #include "net/ev/ev.h"
 
 using std::chrono::seconds;
@@ -23,7 +24,7 @@ TEST_F(RPCClientTestApi, CoroRequestTimeout) {
 	AddFakeServer(kDefaultRPCServerAddr, conf);
 	StartServer();
 	ev::dynamic_loop loop;
-	loop.spawn([&loop]() noexcept {
+	loop.spawn(exceptionWrapper([&loop] {
 		reindexer::client::ReindexerConfig config;
 		config.NetTimeout = seconds(1);
 		reindexer::client::CoroReindexer rx(config);
@@ -35,7 +36,7 @@ TEST_F(RPCClientTestApi, CoroRequestTimeout) {
 		loop.sleep(std::chrono::seconds(4));
 		err = rx.DropNamespace(kNamespaceName);
 		ASSERT_TRUE(err.ok()) << err.what();
-	});
+	}));
 	loop.run();
 	Error err = StopServer();
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -128,7 +129,7 @@ TEST_F(RPCClientTestApi, CoroRequestCancels) {
 	AddFakeServer();
 	StartServer();
 	ev::dynamic_loop loop;
-	loop.spawn([&loop]() noexcept {
+	loop.spawn(exceptionWrapper([&loop] {
 		reindexer::client::CoroReindexer rx;
 		auto err = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -152,7 +153,7 @@ TEST_F(RPCClientTestApi, CoroRequestCancels) {
 			ctx.Cancel();
 			wg.wait();
 		}
-	});
+	}));
 	loop.run();
 	Error err = StopServer();
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -163,7 +164,7 @@ TEST_F(RPCClientTestApi, CoroSuccessfulRequestWithTimeout) {
 	AddFakeServer();
 	StartServer();
 	ev::dynamic_loop loop;
-	loop.spawn([&loop]() noexcept {
+	loop.spawn(exceptionWrapper([&loop] {
 		reindexer::client::ReindexerConfig config;
 		config.NetTimeout = seconds(6);
 		reindexer::client::CoroReindexer rx(config);
@@ -171,7 +172,7 @@ TEST_F(RPCClientTestApi, CoroSuccessfulRequestWithTimeout) {
 		ASSERT_TRUE(err.ok()) << err.what();
 		err = rx.AddNamespace(reindexer::NamespaceDef("MyNamespace"));
 		ASSERT_TRUE(err.ok()) << err.what();
-	});
+	}));
 	loop.run();
 	Error err = StopServer();
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -182,13 +183,13 @@ TEST_F(RPCClientTestApi, CoroErrorLoginResponse) {
 	AddFakeServer();
 	StartServer(kDefaultRPCServerAddr, errForbidden);
 	ev::dynamic_loop loop;
-	loop.spawn([&loop]() noexcept {
+	loop.spawn(exceptionWrapper([&loop] {
 		reindexer::client::CoroReindexer rx;
 		auto err = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
 		ASSERT_TRUE(err.ok()) << err.what();
 		err = rx.AddNamespace(reindexer::NamespaceDef("MyNamespace"));
 		EXPECT_EQ(err.code(), errForbidden);
-	});
+	}));
 	loop.run();
 	Error err = StopServer();
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -200,7 +201,7 @@ TEST_F(RPCClientTestApi, CoroStatus) {
 	reindexer::fs::RmDirAll(dbPath);
 	AddRealServer(dbPath);
 	ev::dynamic_loop loop;
-	loop.spawn([this, &loop]() noexcept {
+	loop.spawn(exceptionWrapper([this, &loop] {
 		reindexer::client::CoroReindexer rx;
 		reindexer::client::ConnectOpts opts;
 		opts.CreateDBIfMissing();
@@ -216,7 +217,7 @@ TEST_F(RPCClientTestApi, CoroStatus) {
 			err = rx.Status();
 			ASSERT_EQ(err.code(), errNetwork) << err.what();
 		}
-	});
+	}));
 	loop.run();
 }
 
@@ -229,7 +230,7 @@ TEST_F(RPCClientTestApi, CoroUpserts) {
 	StartDefaultRealServer();
 	dynamic_loop loop;
 
-	loop.spawn([&loop]() noexcept {
+	loop.spawn(exceptionWrapper([&loop] {
 		const std::string nsName = "ns1";
 		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 		reindexer::client::ConnectOpts opts;
@@ -322,7 +323,7 @@ TEST_F(RPCClientTestApi, CoroUpserts) {
 			ASSERT_TRUE(it.Status().ok()) << it.Status().what();
 		}
 		rx.Stop();
-	});
+	}));
 
 	loop.run();
 	Error err = StopServer();
@@ -362,7 +363,7 @@ TEST_F(RPCClientTestApi, Reconnect) {
 	StartDefaultRealServer();
 	dynamic_loop loop;
 
-	loop.spawn([this, &loop]() noexcept {
+	loop.spawn(exceptionWrapper([this, &loop] {
 		constexpr auto kDataCount = 2;
 		const std::string kNsName = "ns1";
 		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
@@ -375,7 +376,7 @@ TEST_F(RPCClientTestApi, Reconnect) {
 		FillData(rx, kNsName, 0, kDataCount);
 
 		ReconnectTest(rx, *this, kDataCount, kNsName);
-	});
+	}));
 
 	loop.run();
 }
@@ -388,7 +389,7 @@ TEST_F(RPCClientTestApi, ReconnectSyncCoroRx) {
 	StartDefaultRealServer();
 	dynamic_loop loop;
 
-	loop.spawn([this, &loop]() noexcept {
+	loop.spawn(exceptionWrapper([this, &loop] {
 		constexpr auto kDataCount = 2;
 		const std::string kNsName = "ns1";
 		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
@@ -407,7 +408,7 @@ TEST_F(RPCClientTestApi, ReconnectSyncCoroRx) {
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		ReconnectTest(rx, *this, kDataCount, kNsName);
-	});
+	}));
 
 	loop.run();
 }
@@ -431,7 +432,7 @@ TEST_F(RPCClientTestApi, ServerRestart) {
 	std::thread upsertsTh([&terminate, &ready, &step] {
 		dynamic_loop loop;
 
-		loop.spawn([&loop, &terminate, &ready, &step]() noexcept {
+		loop.spawn(exceptionWrapper([&loop, &terminate, &ready, &step] {
 			const std::string nsName = "ns1";
 			const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 			reindexer::client::ConnectOpts opts;
@@ -495,7 +496,7 @@ TEST_F(RPCClientTestApi, ServerRestart) {
 			wg.wait();
 
 			rx.Stop();
-		});
+		}));
 
 		loop.run();
 	});
@@ -520,14 +521,14 @@ TEST_F(RPCClientTestApi, ServerRestart) {
 }
 
 TEST_F(RPCClientTestApi, TemporaryNamespaceAutoremove) {
-	// Temporary namespace must be automaticly removed after disconnect
+	// Temporary namespace must be automatically removed after disconnect
 	using namespace reindexer::client;
 	using namespace reindexer::net::ev;
 
 	StartDefaultRealServer();
 	dynamic_loop loop;
 
-	loop.spawn([&loop]() noexcept {
+	loop.spawn(exceptionWrapper([&loop] {
 		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 		reindexer::client::ConnectOpts opts;
 		opts.CreateDBIfMissing();
@@ -557,7 +558,7 @@ TEST_F(RPCClientTestApi, TemporaryNamespaceAutoremove) {
 		// Allow server to handle disconnect
 		std::this_thread::sleep_for(std::chrono::seconds(2));
 
-		// Check if namespce was removed
+		// Check if namespace was removed
 		nsList.clear();
 		err = rx.EnumNamespaces(nsList, EnumNamespacesOpts().OnlyNames().HideSystem());
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -569,14 +570,14 @@ TEST_F(RPCClientTestApi, TemporaryNamespaceAutoremove) {
 		}
 
 		rx.Stop();
-	});
+	}));
 
 	loop.run();
 }
 
 TEST_F(RPCClientTestApi, ItemJSONWithDouble) {
 	ev::dynamic_loop loop;
-	loop.spawn([&loop]() noexcept {
+	loop.spawn(exceptionWrapper([&loop] {
 		reindexer::client::CoroReindexer rx;
 		auto err = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -596,7 +597,7 @@ TEST_F(RPCClientTestApi, ItemJSONWithDouble) {
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_EQ(item.GetJSON(), kJSON);
 		}
-	});
+	}));
 	loop.run();
 }
 
@@ -628,7 +629,7 @@ TEST_F(RPCClientTestApi, FirstSelectWithFetch) {
 	StartDefaultRealServer();
 	ev::dynamic_loop loop;
 
-	loop.spawn([this, &loop]() noexcept {
+	loop.spawn(exceptionWrapper([this, &loop] {
 		constexpr auto kDataCount = 15000;
 		const std::string kNsName = "ns1";
 		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
@@ -697,7 +698,7 @@ TEST_F(RPCClientTestApi, FirstSelectWithFetch) {
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_EQ(res.Count(), kTrItemCount);
 		}
-	});
+	}));
 
 	loop.run();
 }
@@ -712,7 +713,7 @@ TEST_F(RPCClientTestApi, FetchingWithJoin) {
 	StartDefaultRealServer();
 	dynamic_loop loop;
 
-	loop.spawn([&loop]() noexcept {
+	loop.spawn(exceptionWrapper([&loop] {
 		const std::string kLeftNsName = "left_ns";
 		const std::string kRightNsName = "right_ns";
 		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
@@ -775,7 +776,7 @@ TEST_F(RPCClientTestApi, FetchingWithJoin) {
 			i++;
 		}
 		rx.Stop();
-	});
+	}));
 
 	loop.run();
 }
@@ -788,7 +789,7 @@ TEST_F(RPCClientTestApi, QRWithMultipleIterationLoops) {
 	StartDefaultRealServer();
 	dynamic_loop loop;
 
-	loop.spawn([&loop, this]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, this] {
 		const std::string kNsName = "QRWithMultipleIterationLoops";
 		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 		client::ConnectOpts opts;
@@ -841,7 +842,7 @@ TEST_F(RPCClientTestApi, QRWithMultipleIterationLoops) {
 			++id;
 		}
 		rx.Stop();
-	});
+	}));
 
 	loop.run();
 }
@@ -857,7 +858,7 @@ TEST_F(RPCClientTestApi, AggregationsFetching) {
 	constexpr unsigned kItemsCount = 100;
 	constexpr unsigned kFetchLimit = kItemsCount / 5;
 
-	loop.spawn([&loop, this, kItemsCount]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, this, kItemsCount] {
 		const std::string nsName = "ns1";
 		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 		client::ConnectOpts opts;
@@ -901,7 +902,7 @@ TEST_F(RPCClientTestApi, AggregationsFetching) {
 		}
 
 		rx.Stop();
-	});
+	}));
 
 	loop.run();
 }
@@ -917,7 +918,7 @@ TEST_F(RPCClientTestApi, AggregationsFetchingWithLazyMode) {
 	constexpr unsigned kItemsCount = 100;
 	constexpr unsigned kFetchLimit = kItemsCount / 5;
 
-	loop.spawn([&loop, this, kItemsCount]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, this, kItemsCount] {
 		const std::string nsName = "ns1";
 		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 		client::ConnectOpts opts;
@@ -932,7 +933,7 @@ TEST_F(RPCClientTestApi, AggregationsFetchingWithLazyMode) {
 		FillData(rx, nsName, 0, kItemsCount);
 
 		{
-			// Aggregation and explain will be available, if first access was perfomed before fetching
+			// Aggregation and explain will be available, if first access was performed before fetching
 			CoroQueryResults qr(0, 0, client::LazyQueryResultsMode{});
 			const auto q = Query(nsName).Distinct("id").ReqTotal().Explain();
 			err = rx.Select(q, qr);
@@ -961,7 +962,7 @@ TEST_F(RPCClientTestApi, AggregationsFetchingWithLazyMode) {
 			}
 		}
 		{
-			// Aggregation and explain will throw exception, if first access was perfomed after fetching
+			// Aggregation and explain will throw exception, if first access was performed after fetching
 			CoroQueryResults qr(0, 0, client::LazyQueryResultsMode{});
 			const auto q = Query(nsName).Distinct("id").ReqTotal().Explain();
 			err = rx.Select(q, qr);
@@ -981,7 +982,7 @@ TEST_F(RPCClientTestApi, AggregationsFetchingWithLazyMode) {
 		}
 
 		rx.Stop();
-	});
+	}));
 
 	loop.run();
 }
@@ -992,7 +993,7 @@ TEST_F(RPCClientTestApi, AggregationsWithStrictModeTest) {
 	StartDefaultRealServer();
 	dynamic_loop loop;
 
-	loop.spawn([&loop]() noexcept {
+	loop.spawn(exceptionWrapper([&loop] {
 		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 		reindexer::client::ConnectOpts opts;
 		opts.CreateDBIfMissing();
@@ -1002,7 +1003,7 @@ TEST_F(RPCClientTestApi, AggregationsWithStrictModeTest) {
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		QueryAggStrictModeTest(rx);
-	});
+	}));
 
 	loop.run();
 }
@@ -1011,7 +1012,7 @@ TEST_F(RPCClientTestApi, SubQuery) {
 	StartDefaultRealServer();
 	reindexer::net::ev::dynamic_loop loop;
 
-	loop.spawn([&loop, this]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, this] {
 		const std::string kLeftNsName = "left_ns";
 		const std::string kRightNsName = "right_ns";
 		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
@@ -1066,7 +1067,7 @@ TEST_F(RPCClientTestApi, SubQuery) {
 			ASSERT_EQ(qr.Count(), limit);
 		}
 		rx.Stop();
-	});
+	}));
 
 	loop.run();
 }
@@ -1075,7 +1076,7 @@ TEST_F(RPCClientTestApi, CoroTransactionInsertWithPrecepts) {
 	StartDefaultRealServer();
 	reindexer::net::ev::dynamic_loop loop;
 
-	loop.spawn([&loop, this]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, this] {
 		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 		reindexer::client::ConnectOpts opts;
 		opts.CreateDBIfMissing();
@@ -1130,7 +1131,7 @@ TEST_F(RPCClientTestApi, CoroTransactionInsertWithPrecepts) {
 		}
 
 		rx.Stop();
-	});
+	}));
 
 	loop.run();
 }
@@ -1139,7 +1140,7 @@ TEST_F(RPCClientTestApi, QuerySelectDWithin) {
 	StartDefaultRealServer();
 	reindexer::net::ev::dynamic_loop loop;
 
-	loop.spawn([&loop, this]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, this] {
 		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 		reindexer::client::ConnectOpts opts;
 		opts.CreateDBIfMissing();
@@ -1202,7 +1203,7 @@ TEST_F(RPCClientTestApi, QuerySelectDWithin) {
 		}
 
 		rx.Stop();
-	});
+	}));
 
 	loop.run();
 }
@@ -1211,7 +1212,7 @@ TEST_F(RPCClientTestApi, QuerySelectFunctions) {
 	StartDefaultRealServer();
 	reindexer::net::ev::dynamic_loop loop;
 
-	loop.spawn([&loop, this]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, this] {
 		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 		reindexer::client::ConnectOpts opts;
 		opts.CreateDBIfMissing();
@@ -1282,7 +1283,7 @@ TEST_F(RPCClientTestApi, QuerySelectFunctions) {
 		}
 
 		rx.Stop();
-	});
+	}));
 
 	loop.run();
 }
@@ -1291,7 +1292,7 @@ TEST_F(RPCClientTestApi, QuerySetObjectUpdate) {
 	StartDefaultRealServer();
 	reindexer::net::ev::dynamic_loop loop;
 
-	loop.spawn([&loop, this]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, this] {
 		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 		reindexer::client::ConnectOpts opts;
 		opts.CreateDBIfMissing();
@@ -1369,7 +1370,7 @@ TEST_F(RPCClientTestApi, QuerySetObjectUpdate) {
 		}
 
 		rx.Stop();
-	});
+	}));
 
 	loop.run();
 }

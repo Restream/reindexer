@@ -44,15 +44,13 @@ public:
 		enum class Strategy : uint8_t { Always, EmptyOnly, Strict } strategy{Strategy::Always};
 		PoolOpts pool{};
 
-		bool operator==(const EmbedderOpts& o) const noexcept = default;
-		bool operator!=(const EmbedderOpts& o) const noexcept = default;
+		[[nodiscard]] bool operator==(const EmbedderOpts& o) const noexcept = default;
 	};
 	struct EmbeddingOpts {
 		std::optional<EmbedderOpts> upsertEmbedder;
 		std::optional<EmbedderOpts> queryEmbedder;
 
-		bool operator==(const EmbeddingOpts& o) const noexcept = default;
-		bool operator!=(const EmbeddingOpts& o) const noexcept = default;
+		[[nodiscard]] bool operator==(const EmbeddingOpts& o) const noexcept = default;
 	};
 
 	FloatVectorIndexOpts() = default;

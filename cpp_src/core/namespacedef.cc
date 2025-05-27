@@ -16,7 +16,7 @@ Error NamespaceDef::FromJSON(std::span<char> json) {
 	} catch (const Error& err) {
 		return err;
 	}
-	return errOK;
+	return {};
 }
 
 void NamespaceDef::FromJSON(const gason::JsonNode& root) {
@@ -62,7 +62,7 @@ Error NsReplicationOpts::FromJSON(std::span<char> json) {
 	} catch (const Error& err) {
 		return err;
 	}
-	return Error();
+	return {};
 }
 
 void NsReplicationOpts::FromJSON(const gason::JsonNode& root) {

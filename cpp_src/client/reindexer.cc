@@ -19,9 +19,11 @@ void Reindexer::Stop() noexcept {
 	try {
 		impl_->Stop();
 	} catch (std::exception& e) {
-		fprintf(stderr, "Unexpected error during reindexer client Stop(): %s", e.what());
+		fprintf(stderr, "reindexer error: unexpected exception during reindexer client Stop(): %s\n", e.what());
+		assertrx_dbg(false);
 	} catch (...) {
-		fprintf(stderr, "Unexpected error during reindexer client Stop(): <unknown>");
+		fprintf(stderr, "reindexer error: unexpected exception during reindexer client Stop(): <unknown>\n");
+		assertrx_dbg(false);
 	}
 }
 Error Reindexer::AddNamespace(const NamespaceDef& nsDef, const NsReplicationOpts& replOpts) noexcept {
@@ -135,6 +137,8 @@ Error Reindexer::RollbackShardingConfigCandidate(int64_t sourceId) noexcept {
 }
 
 Error Reindexer::ApplyNewShardingConfig(int64_t sourceId) noexcept { return impl_->ApplyNewShardingConfig(sourceId, ctx_); }
+
+Error Reindexer::Version(std::string& version) const noexcept { RETURN_RESULT_NOEXCEPT(impl_->Version(version, ctx_)); }
 
 }  // namespace client
 }  // namespace reindexer

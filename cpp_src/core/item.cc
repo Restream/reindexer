@@ -19,7 +19,13 @@ Item& Item::operator=(Item&& other) noexcept {
 		if (impl_) {
 			auto ns = impl_->GetNamespace().lock();
 			if (ns) {
-				ns->ToPool(impl_);
+				try {
+					ns->ToPool(impl_);
+					// NOLINTBEGIN(bugprone-empty-catch)
+				} catch (...) {
+					assertrx_dbg(false);
+				}
+				// NOLINTEND(bugprone-empty-catch)
 				impl_ = nullptr;
 			}
 		}
@@ -151,7 +157,13 @@ Item::~Item() {
 	if (impl_) {
 		auto ns = impl_->GetNamespace().lock();
 		if (ns) {
-			ns->ToPool(impl_);
+			try {
+				ns->ToPool(impl_);
+				// NOLINTBEGIN(bugprone-empty-catch)
+			} catch (...) {
+				assertrx_dbg(false);
+			}
+			// NOLINTEND(bugprone-empty-catch)
 		} else {
 			delete impl_;
 		}

@@ -858,9 +858,9 @@ void reindexer_enable_logger(void (*logWriter)(int, char*)) {
 	try {
 		logInstallWriter(logWriter, LoggerPolicy::WithLocks, int(LogTrace));
 	} catch (std::exception& e) {
-		fprintf(stderr, "Unable to enable logger in Reindexer C-binding: %s", e.what());
+		fprintf(stderr, "reindexer error: unable to enable logger in Reindexer C-binding: %s", e.what());
 	} catch (...) {
-		fprintf(stderr, "Unable to enable logger in Reindexer C-binding: <no description>");
+		fprintf(stderr, "reindexer error: unable to enable logger in Reindexer C-binding: <no description>");
 	}
 }
 
@@ -868,9 +868,9 @@ void reindexer_disable_logger() {
 	try {
 		logInstallWriter(nullptr, LoggerPolicy::WithLocks, int(LogNone));
 	} catch (std::exception& e) {
-		fprintf(stderr, "Unable to disable logger in Reindexer C-binding: %s", e.what());
+		fprintf(stderr, "reindexer error: unable to disable logger in Reindexer C-binding: %s", e.what());
 	} catch (...) {
-		fprintf(stderr, "Unable to disable logger in Reindexer C-binding: <no description>");
+		fprintf(stderr, "reindexer error: unable to disable logger in Reindexer C-binding: <no description>");
 	}
 }
 

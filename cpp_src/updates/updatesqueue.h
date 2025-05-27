@@ -41,7 +41,7 @@ public:
 
 		struct Value {
 			struct Counters {
-				uint64_t replicatedToEmmiter : 1;
+				uint64_t replicatedToEmitter : 1;
 				uint64_t requireResult : 1;
 				uint64_t replicas : 16;
 				uint64_t approves : 16;
@@ -54,7 +54,7 @@ public:
 			const U& Data() const noexcept { return data_; }
 
 		private:
-			UpdatesStatus replicated(uint32_t consensusCnt, uint32_t requiredReplicas, bool isEmmiter, Error&& err) {
+			UpdatesStatus replicated(uint32_t consensusCnt, uint32_t requiredReplicas, bool isEmitter, Error&& err) {
 				auto expected = replication_.load(std::memory_order_acquire);
 				Counters repl;
 				UpdatesStatus status;
@@ -62,32 +62,32 @@ public:
 				do {
 					status = UpdatesStatus();
 					repl = expected;
-					repl.replicatedToEmmiter = repl.replicatedToEmmiter || isEmmiter;
+					repl.replicatedToEmitter = repl.replicatedToEmitter || isEmitter;
 					assertrx_dbg(repl.approves < kMaxApproves);
 					assertrx_dbg(repl.errors < kMaxErrors);
 					assertrx_dbg(repl.replicas < kMaxReplicas);
 					if (err.ok()) {
 						++repl.approves;
 						if (repl.requireResult) {
-							status.requireResult = (repl.approves == consensusCnt && repl.replicatedToEmmiter) ||
-												   (isEmmiter && repl.approves >= consensusCnt) ||
-												   (isEmmiter && repl.errors >= consensusCnt);
+							status.requireResult = (repl.approves == consensusCnt && repl.replicatedToEmitter) ||
+												   (isEmitter && repl.approves >= consensusCnt) ||
+												   (isEmitter && repl.errors >= consensusCnt);
 						}
 					} else {
 						++repl.errors;
 						error = true;
 						if (repl.requireResult) {
-							status.requireResult = (repl.errors == consensusCnt && repl.replicatedToEmmiter) ||
-												   (isEmmiter && repl.errors >= consensusCnt) ||
-												   (isEmmiter && repl.approves >= consensusCnt);
+							status.requireResult = (repl.errors == consensusCnt && repl.replicatedToEmitter) ||
+												   (isEmitter && repl.errors >= consensusCnt) ||
+												   (isEmitter && repl.approves >= consensusCnt);
 						}
 					}
 					if (++repl.replicas == requiredReplicas) {
 						status.requireErasure = true;
-						if (!repl.replicatedToEmmiter) {
+						if (!repl.replicatedToEmitter) {
 							std::this_thread::sleep_for(std::chrono::seconds(2));
 						}
-						assertf(repl.replicatedToEmmiter, "Required replicas: {}", requiredReplicas);
+						assertf(repl.replicatedToEmitter, "Required replicas: {}", requiredReplicas);
 					}
 				} while (!replication_.compare_exchange_strong(expected, repl, std::memory_order_acquire));
 				status.hasEnoughApproves = (repl.approves >= consensusCnt);
@@ -103,7 +103,7 @@ public:
 					status = UpdatesStatus();
 					repl = expected;
 					assertrx_dbg(!repl.requireResult);
-					assertrx_dbg(repl.replicatedToEmmiter);
+					assertrx_dbg(repl.replicatedToEmitter);
 					assertrx_dbg(repl.replicas < kMaxReplicas);
 					if (++repl.replicas == requiredReplicas) {
 						status.requireErasure = true;
@@ -126,12 +126,12 @@ public:
 		QueueEntry(QueueEntry&&) = default;
 
 		ReplicationResult OnUpdateHandled(uint32_t nodeId, uint32_t consensusCnt, uint32_t requiredReplicas, uint16_t offset,
-										  bool isEmmiter, Error err) {
+										  bool isEmitter, Error err) {
 			ReplicationResult res = ReplicationResult::None;
 			if (offset >= count_.load(std::memory_order_acquire)) {
 				throw Error(errParams, "Unexpected offset: {}", offset);
 			}
-			auto status = data_[offset].replicated(consensusCnt, requiredReplicas, isEmmiter, std::move(err));
+			auto status = data_[offset].replicated(consensusCnt, requiredReplicas, isEmitter, std::move(err));
 			stats_.OnUpdateApplied(nodeId, id_ + offset);
 			if (status.requireResult) {
 				owner_.onResult(id_ + offset, std::move(status.result));
@@ -193,14 +193,14 @@ public:
 			totalSizeBytes_ += sizeBytes;
 			data_[count].data_ = std::move(val);
 			if constexpr (skipResultCounting) {
-				data_[count].replication_.store({val.HasEmmiterID() ? 0u : 1u, 0u, 0, 1, 0}, std::memory_order_relaxed);
+				data_[count].replication_.store({val.HasEmitterID() ? 0u : 1u, 0u, 0, 1, 0}, std::memory_order_relaxed);
 				assert(!onRes);
 				(void)onRes;
 				data_[count].onResult_ = nullptr;
 				count_.fetch_add(1, std::memory_order_release);
 				addSentResult();
 			} else {
-				data_[count].replication_.store({val.HasEmmiterID() ? 0u : 1u, 1u, 0, 1, 0}, std::memory_order_relaxed);
+				data_[count].replication_.store({val.HasEmitterID() ? 0u : 1u, 1u, 0, 1, 0}, std::memory_order_relaxed);
 				data_[count].onResult_ = onRes;
 				count_.fetch_add(1, std::memory_order_release);
 			}

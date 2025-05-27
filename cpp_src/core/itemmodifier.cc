@@ -79,7 +79,8 @@ public:
 	RollBack_ModifiedPayload(RollBack_ModifiedPayload&&) noexcept = default;
 	~RollBack_ModifiedPayload() override { RollBack(); }
 
-	void RollBack() {
+	// NOLINTNEXTLINE(bugprone-exception-escape) Termination here is better, than incosistent state of the user's data
+	void RollBack() noexcept {
 		if (IsDisabled()) {
 			return;
 		}
@@ -791,10 +792,7 @@ void ItemModifier::updateEmbedding(IdType itemId, const RdxContext& rdxContext, 
 
 			// ToDo in real life, work with several embedded devices requires asynchrony. Now we have only one, at all
 			h_vector<ConstFloatVector, 1> products;
-			auto err = embedder->Calculate(rdxContext, std::span{&source, 1}, products);
-			if (!err.ok()) {
-				throw err;
-			}
+			embedder->Calculate(rdxContext, std::span{&source, 1}, products);
 
 			VariantArray krs;
 			krs.emplace_back(ConstFloatVectorView{products.front()});

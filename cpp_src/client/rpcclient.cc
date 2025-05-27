@@ -526,6 +526,7 @@ Error RPCClient::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesO
 			auto json = ret.GetArgs(1)[0].As<std::string>();
 			auto root = parser.Parse(giftStr(json));
 
+			defs.resize(0);
 			for (auto& nselem : root["items"]) {
 				NamespaceDef def;
 				def.FromJSON(nselem);
@@ -547,6 +548,7 @@ Error RPCClient::EnumDatabases(std::vector<std::string>& dbList, const InternalR
 			gason::JsonParser parser;
 			auto json = ret.GetArgs(1)[0].As<std::string>();
 			auto root = parser.Parse(giftStr(json));
+			dbList.resize(0);
 			for (auto& elem : root["databases"]) {
 				dbList.emplace_back(elem.As<std::string>());
 			}
@@ -621,7 +623,7 @@ cproto::CommandParams RPCClient::mkCommand(cproto::CmdCode cmd, milliseconds net
 				std::max(netTimeout, ctx->execTimeout()),
 				ctx->execTimeout().count() ? ctx->execTimeout() : netTimeout,
 				ctx->lsn(),
-				ctx->emmiterServerId(),
+				ctx->emitterServerId(),
 				ctx->shardId(),
 				ctx->getCancelCtx(),
 				ctx->IsShardingParallelExecution()};
@@ -638,7 +640,7 @@ CoroTransaction RPCClient::NewTransaction(std::string_view nsName, const Interna
 			try {
 				auto args = ret.GetArgs(1);
 				return CoroTransaction(this, int64_t(args[0]), config_.NetTimeout, ctx.execTimeout(), getNamespace(nsName),
-									   ctx.emmiterServerId());
+									   ctx.emitterServerId());
 			} catch (Error& e) {
 				err = std::move(e);
 			}

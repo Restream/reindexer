@@ -31,9 +31,9 @@ public:
 		++requests_;
 		cmdCh_.push(std::forward<U>(obj));
 	}
-	std::pair<CmdT, bool> PopCmd() { return cmdCh_.pop(); }
+	std::pair<CmdT, bool> PopCmd() noexcept { return cmdCh_.pop(); }
 	bool IsChOpened() const noexcept { return cmdCh_.opened(); }
-	void CloseCh() { cmdCh_.close(); }
+	void CloseCh() noexcept { cmdCh_.close(); }
 	void OnRequestDone() noexcept {
 		assert(requests_);
 		--requests_;

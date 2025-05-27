@@ -123,7 +123,7 @@ public:
 
 	LeaderSyncThread(const Config& cfg, LeaderSyncQueue& syncQueue, SharedSyncState& sharedSyncState, ReindexerImpl& thisNode,
 					 ReplicationStatsCollector statsCollector, const Logger& l, std::once_flag& actShardingCfg);
-	void Terminate() {
+	void Terminate() noexcept {
 		if (!terminate_) {
 			terminate_ = true;
 			terminateAsync_.send();
@@ -169,7 +169,7 @@ public:
 
 	LeaderSyncer(const Config& cfg, const Logger& l) noexcept : syncQueue_(cfg.maxSyncsPerNode), cfg_(cfg), log_(l) {}
 
-	void Terminate() {
+	void Terminate() noexcept {
 		std::lock_guard lck(mtx_);
 		for (auto& th : threads_) {
 			th.Terminate();

@@ -118,7 +118,7 @@ void ProxiedTransaction::Rollback(int serverId, const RdxContext& ctx) {
 	auto err = asyncData_.AwaitAsyncRequests();
 	(void)err;	// ignore; Error does not matter here
 	if (tx_.rx_) {
-		const auto _ctx = client::InternalRdxContext(ctx.GetOriginLSN(), nullptr, shardId_).WithEmmiterServerId(serverId);
+		const auto _ctx = client::InternalRdxContext(ctx.GetOriginLSN(), nullptr, shardId_).WithEmitterServerId(serverId);
 		err = tx_.rx_->RollBackTransaction(tx_, _ctx);
 		(void)err;	// ignore; Error does not matter here
 	}
@@ -138,7 +138,7 @@ Error ProxiedTransaction::Commit(int serverId, QueryResults& result, const RdxCo
 	client::InternalRdxContext c;
 
 	if (shardId_ < 0) {
-		c = client::InternalRdxContext(ctx.GetOriginLSN()).WithEmmiterServerId(serverId);
+		c = client::InternalRdxContext(ctx.GetOriginLSN()).WithEmitterServerId(serverId);
 		clusterProxyLog(LogTrace, "[proxy] Proxying commit to leader. SID: {}", serverId);
 	} else {
 		c = client::InternalRdxContext{}.WithShardId(shardId_, false);

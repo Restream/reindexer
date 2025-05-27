@@ -128,6 +128,8 @@ private:
 	};
 };
 
+static_assert(sizeof(ItemRef) <= 16, "This size is essential from performance perspective");
+
 class ItemRefRanked : private ItemRef {
 public:
 	template <typename... Args>

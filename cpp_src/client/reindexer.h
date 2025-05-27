@@ -22,6 +22,8 @@ class Reindexer {
 public:
 	/// Completion routine
 	using Completion = std::function<void(const Error& err)>;
+	using ItemType = Item;
+	using TransactionType = Transaction;
 
 	/// Create Reindexer database object
 	explicit Reindexer(const ReindexerConfig& = ReindexerConfig(), uint32_t connCount = 0, uint32_t threads = 0);
@@ -229,9 +231,11 @@ public:
 	/// @param timeout - Optional server-side execution timeout for each subquery
 	Reindexer WithTimeout(milliseconds timeout) const noexcept { return {impl_, ctx_.WithTimeout(timeout)}; }
 	Reindexer WithLSN(lsn_t lsn) const noexcept { return {impl_, ctx_.WithLSN(lsn)}; }
-	Reindexer WithEmmiterServerId(int sId) const noexcept { return {impl_, ctx_.WithEmmiterServerId(sId)}; }
+	Reindexer WithEmitterServerId(int sId) const noexcept { return {impl_, ctx_.WithEmitterServerId(sId)}; }
 	Reindexer WithShardId(int id, bool parallel) const noexcept { return {impl_, ctx_.WithShardId(id, parallel)}; }
 	Reindexer WithShardingParallelExecution(bool parallel) const noexcept { return {impl_, ctx_.WithShardingParallelExecution(parallel)}; }
+
+	Error Version(std::string& version) const noexcept;
 
 	typedef QueryResults QueryResultsT;
 	typedef Item ItemT;

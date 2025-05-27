@@ -14,7 +14,7 @@ namespace net {
 
 #ifdef _WIN32
 static int print_not_supported() {
-	fprintf(stderr, "Unix domain sockets are not supported on windows\n");
+	fprintf(stderr, "reindexer error: unix domain sockets are not supported on windows\n");
 	return -1;
 }
 #endif	// _WIN32
@@ -195,7 +195,7 @@ int socket::create(std::string_view addr, struct addrinfo** presults) {
 
 		int ret = ::getaddrinfo(paddr, pport, &hints, &results);
 		if rx_unlikely (ret != 0) {
-			fprintf(stderr, "getaddrinfo failed: %s\n", gai_strerror(ret));
+			fprintf(stderr, "reindexer error: getaddrinfo failed: %s\n", gai_strerror(ret));
 			return -1;
 		}
 		assertrx(results != nullptr);
@@ -379,7 +379,7 @@ int lst_socket::bind(std::string_view addr, socket_domain t) {
 		lock.l_pid = getpid();
 
 		if rx_unlikely (fcntl(lockFd_, F_SETLK, &lock) < 0) {
-			fprintf(stderr, "Unable to get LOCK for %s\n", unLock_.c_str());
+			fprintf(stderr, "reindexer error: unable to get LOCK for %s\n", unLock_.c_str());
 			perror("fcntl(F_SETLK) error");
 			close();
 			return -1;

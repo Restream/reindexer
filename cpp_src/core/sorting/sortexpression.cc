@@ -1,4 +1,5 @@
 #include "sortexpression.h"
+#include <charconv>
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/joinedselector.h"
 #include "core/nsselecter/joinedselectormock.h"
@@ -7,12 +8,13 @@
 #include "estl/restricted.h"
 #include "tools/stringstools.h"
 #include "vendor/double-conversion/double-conversion.h"
+#include "vendor/murmurhash/MurmurHash3.h"
 
 namespace {
 
-RX_NO_INLINE void throwParseError(std::string_view sortExpr, const char* const pos, std::string_view message) {
-	throw reindexer::Error(errParams, "'{}' is not valid sort expression. Parser failed at position {}.{}{}", sortExpr,
-						   pos - sortExpr.data(), message.empty() ? "" : " ", message);
+RX_NO_INLINE void throwParseError(std::string_view sortExpr, int pos, std::string_view message) {
+	throw reindexer::Error(errParams, "'{}' is not valid sort expression. Parser failed at position {}.{}{}", sortExpr, pos,
+						   message.empty() ? "" : " ", message);
 }
 
 inline double distance(reindexer::Point p1, reindexer::Point p2) noexcept {
@@ -262,7 +264,7 @@ static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std:
 		if (joinedSelectorIt != joinedSelectors.cend()) {
 			if (std::find_if(joinedSelectorIt + 1, joinedSelectors.cend(),
 							 [namespaceName](const T& js) { return namespaceName == js.RightNsName(); }) != joinedSelectors.cend()) {
-				throwParseError(fullExpr, pos,
+				throwParseError(fullExpr, pos - fullExpr.data(),
 								"Sorting by namespace which has been joined more than once: '" + std::string(namespaceName) + "'.");
 			}
 			expr.remove_prefix(pos - expr.data());
@@ -276,18 +278,18 @@ static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std:
 	// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 	std::string_view name{expr.data(), static_cast<size_t>(pos - expr.data())};
 	if (name.empty()) {
-		throwParseError(fullExpr, pos, "Expected index or function name.");
+		throwParseError(fullExpr, pos - fullExpr.data(), "Expected index or function name.");
 	}
 
 	if (joinedFieldInQuotes) {	// Namespace in quotes - trim closing quote
 		if (name.back() != '"') {
-			throwParseError(fullExpr, pos, "Closing quote not found");
+			throwParseError(fullExpr, pos - fullExpr.data(), "Closing quote not found");
 		}
 		name.remove_suffix(1);
 	} else if (name[0] == '"') {  // In case without join
 		name.remove_prefix(1);
 		if (name.back() != '"') {
-			throwParseError(fullExpr, pos, "Closing quote not found");
+			throwParseError(fullExpr, pos - fullExpr.data(), "Closing quote not found");
 		}
 		name.remove_suffix(1);
 	}
@@ -305,61 +307,53 @@ static Point parsePoint(std::string_view& expr, std::string_view funcName, std::
 													   StringToDoubleConverter::ALLOW_SPACES_AFTER_SIGN,
 												   0.0, 0.0, nullptr, nullptr};
 	if (funcName != "st_geomfromtext") {
-		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-		throwParseError(fullExpr, expr.data(), "Unsupported function inside ST_Distance() : '" + std::string(funcName) + "'.");
+		throwParseError(fullExpr, expr.data() - fullExpr.data(),
+						"Unsupported function inside ST_Distance() : '" + std::string(funcName) + "'.");
 	}
 	expr.remove_prefix(1);
 	skipSpaces();
 	if (expr.empty() || (expr[0] != '\'' && expr[0] != '"')) {
-		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-		throwParseError(fullExpr, expr.data(), "Expected \" or '.");
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected \" or '.");
 	}
 	const char openQuote = expr[0];
 	expr.remove_prefix(1);
 	skipSpaces();
 	if (!checkIfStartsWith("point"sv, expr)) {
-		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-		throwParseError(fullExpr, expr.data(), "Expected 'point'.");
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected 'point'.");
 	}
 	expr.remove_prefix(5);
 	skipSpaces();
 	if (expr.empty() || expr[0] != '(') {
-		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-		throwParseError(fullExpr, expr.data(), "Expected '('.");
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected '('.");
 	}
 	expr.remove_prefix(1);
 	skipSpaces();
 	int countOfCharsParsedAsDouble = 0;
 	const double x = converter.StringToDouble(expr.data(), expr.size(), &countOfCharsParsedAsDouble);
 	if (countOfCharsParsedAsDouble == 0) {
-		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-		throwParseError(fullExpr, expr.data(), "Expected number.");
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected number.");
 	}
 	expr.remove_prefix(countOfCharsParsedAsDouble);
 	skipSpaces();
 	countOfCharsParsedAsDouble = 0;
 	const double y = converter.StringToDouble(expr.data(), expr.size(), &countOfCharsParsedAsDouble);
 	if (countOfCharsParsedAsDouble == 0) {
-		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-		throwParseError(fullExpr, expr.data(), "Expected number.");
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected number.");
 	}
 	expr.remove_prefix(countOfCharsParsedAsDouble);
 	skipSpaces();
 	if (expr.empty() || expr[0] != ')') {
-		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-		throwParseError(fullExpr, expr.data(), "Expected ')'.");
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ')'.");
 	}
 	expr.remove_prefix(1);
 	skipSpaces();
 	if (expr.empty() || expr[0] != openQuote) {
-		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-		throwParseError(fullExpr, expr.data(), std::string("Expected ") + openQuote + '.');
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), std::string("Expected ") + openQuote + '.');
 	}
 	expr.remove_prefix(1);
 	skipSpaces();
 	if (expr.empty() || expr[0] != ')') {
-		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-		throwParseError(fullExpr, expr.data(), "Expected ')'.");
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ')'.");
 	}
 	expr.remove_prefix(1);
 	return Point{x, y};
@@ -373,8 +367,7 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 	skipSpaces();
 	if (parsedIndexName1.joinedSelectorIt != joinedSelectors.cend()) {
 		if (expr.empty() || expr[0] != ',') {
-			// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-			throwParseError(fullExpr, expr.data(), "Expected ','.");
+			throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ','.");
 		}
 		expr.remove_prefix(1);
 		skipSpaces();
@@ -383,8 +376,7 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 		if (parsedIndexName2.joinedSelectorIt != joinedSelectors.cend()) {
 			if (parsedIndexName1.joinedSelectorIt == parsedIndexName2.joinedSelectorIt) {
 				if (toLower(parsedIndexName1.name) == toLower(parsedIndexName2.name)) {
-					// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-					throwParseError(fullExpr, expr.data(), "Distance between two same indexes");
+					throwParseError(fullExpr, expr.data() - fullExpr.data(), "Distance between two identical indexes");
 				}
 				Append({op, negative},
 					   DistanceBetweenJoinedIndexesSameNs{jNsIdx1, std::move(parsedIndexName1.name), std::move(parsedIndexName2.name)});
@@ -408,16 +400,14 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 		const auto point = parsePoint(expr, toLower(parsedIndexName1.name), fullExpr, skipSpaces);
 		skipSpaces();
 		if (expr.empty() || expr[0] != ',') {
-			// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-			throwParseError(fullExpr, expr.data(), "Expected ','.");
+			throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ','.");
 		}
 		expr.remove_prefix(1);
 		skipSpaces();
 		const auto parsedIndexName2 = parseIndexName(expr, joinedSelectors, fullExpr);
 		skipSpaces();
 		if (!expr.empty() && expr[0] == '(') {
-			// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-			throwParseError(fullExpr, expr.data(), "Allowed only one function inside ST_Geometry");
+			throwParseError(fullExpr, expr.data() - fullExpr.data(), "Allowed only one function inside ST_Geometry");
 		}
 		if (parsedIndexName2.joinedSelectorIt != joinedSelectors.cend()) {
 			Append({op, negative},
@@ -428,8 +418,7 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 		}
 	} else {
 		if (expr.empty() || expr[0] != ',') {
-			// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-			throwParseError(fullExpr, expr.data(), "Expected ','.");
+			throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ','.");
 		}
 		expr.remove_prefix(1);
 		skipSpaces();
@@ -446,8 +435,7 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 				Append({op, negative}, DistanceFromPoint{std::move(parsedIndexName1.name), point});
 			} else {
 				if (toLower(parsedIndexName1.name) == toLower(parsedIndexName2.name)) {
-					// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-					throwParseError(fullExpr, expr.data(), "Distance between two same indexes");
+					throwParseError(fullExpr, expr.data() - fullExpr.data(), "Distance between two identical indexes");
 				}
 				Append({op, negative}, DistanceBetweenIndexes{std::move(parsedIndexName1.name), std::move(parsedIndexName2.name)});
 			}
@@ -488,8 +476,7 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 				expr.remove_prefix(1);
 				skipSpaces();
 				if (expr.empty()) {
-					// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-					throwParseError(fullExpr, expr.data(), "The expression unexpected ends after unary operator.");
+					throwParseError(fullExpr, expr.data() - fullExpr.data(), "The expression unexpected ends after unary operator.");
 				}
 			}
 			if (expr[0] == '(') {
@@ -497,8 +484,7 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 				OpenBracket({op, negative});
 				expr = parse(expr, containIndexOrFunction, fullExpr, joinedSelectors);
 				if (expr.empty() || expr[0] != ')') {
-					// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-					throwParseError(fullExpr, expr.data(), "Expected ')'.");
+					throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ')'.");
 				}
 				expr.remove_prefix(1);
 				CloseBracket();
@@ -534,13 +520,24 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 								CloseBracket();
 							} else if (funcName == "st_distance") {
 								parseDistance(expr, joinedSelectors, fullExpr, op, negative, skipSpaces);
+							} else if (funcName == "hash") {
+								skipSpaces();
+								uint32_t seed = 0;
+								auto [ptr, ec] = std::from_chars(expr.data(), expr.data() + expr.size(), seed);
+								if (ec == std::errc()) {
+									Append({op, negative}, SortExprFuncs::SortHash{seed});
+									expr.remove_prefix(ptr - expr.data());
+								} else if (ec == std::errc::result_out_of_range) {
+									throwParseError(fullExpr, expr.data() - fullExpr.data(), "Number is out of range");
+								} else {
+									Append({op, negative}, SortExprFuncs::SortHash{});
+								}
+								skipSpaces();
 							} else {
-								// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-								throwParseError(fullExpr, expr.data(), "Unsupported function name : '" + funcName + "'.");
+								throwParseError(fullExpr, expr.data() - fullExpr.data(), "Unsupported function name : '" + funcName + "'.");
 							}
 							if (expr.empty() || expr[0] != ')') {
-								// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-								throwParseError(fullExpr, expr.data(), "Expected ')'.");
+								throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ')'.");
 							}
 							expr.remove_prefix(1);
 						} else {
@@ -580,8 +577,7 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 					}
 					break;
 				default:
-					// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-					throwParseError(fullExpr, expr.data(),
+					throwParseError(fullExpr, expr.data() - fullExpr.data(),
 									std::string("Expected ')', '+', '-', '*' of '/', but obtained '") + expr[0] + "'.");
 			}
 			expr.remove_prefix(1);
@@ -590,8 +586,7 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 		skipSpaces();
 	}
 	if (expectValue) {
-		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-		throwParseError(fullExpr, expr.data(), "Expected value.");
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected value.");
 	}
 	if (needCloseBracket) {
 		CloseBracket();
@@ -605,12 +600,10 @@ SortExpression SortExpression::Parse(std::string_view expression, const std::vec
 	bool containIndexOrFunction = false;
 	const auto expr = result.parse(expression, &containIndexOrFunction, expression, joinedSelector);
 	if (!expr.empty()) {
-		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-		throwParseError(expression, expr.data(), "");
+		throwParseError(expression, expr.data() - expression.data(), "");
 	}
 	if (!containIndexOrFunction) {
-		// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
-		throwParseError(expression, expr.data(), "Sort expression does not depend from namespace data");
+		throwParseError(expression, expr.data() - expression.data(), "Sort expression does not depend from namespace data");
 	}
 	return result;
 }
@@ -620,16 +613,23 @@ template SortExpression SortExpression::Parse(std::string_view, const std::vecto
 template SortExpression SortExpression::Parse(std::string_view, const std::vector<JoinedNsNameMock>&);
 template SortExpression SortExpression::Parse(std::string_view, const std::vector<JoinedQuery>&);
 
+static double CalcSortHash(IdType rowId, uint32_t seed, uint32_t shardIdHash) noexcept {
+	uint32_t hash;
+	uint32_t r = uint32_t(rowId) ^ shardIdHash;
+	MurmurHash3_x86_32(&r, sizeof(r), seed, &hash);
+	return double(hash);
+}
+
 double SortExpression::calculate(const_iterator it, const_iterator end, IdType rowId, ConstPayload pv,
 								 const joins::NamespaceResults* joinedResults, const std::vector<JoinedSelector>& js, RankT rank,
-								 TagsMatcher& tagsMatcher) {
+								 TagsMatcher& tagsMatcher, uint32_t shardIdHash) {
 	assertrx_throw(it != end);
 	assertrx_throw(it->operation.op == OpPlus);
 	double result = 0.0;
 	for (; it != end; ++it) {
 		double value = it->Visit(
 			[&] RX_PRE_LMBD_ALWAYS_INLINE(const SortExpressionBracket& b) RX_POST_LMBD_ALWAYS_INLINE {
-				const double res = calculate(it.cbegin(), it.cend(), rowId, pv, joinedResults, js, rank, tagsMatcher);
+				const double res = calculate(it.cbegin(), it.cend(), rowId, pv, joinedResults, js, rank, tagsMatcher, shardIdHash);
 				return (b.IsAbs() && res < 0) ? -res : res;
 			},
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const Value& v) RX_POST_LMBD_ALWAYS_INLINE { return v.value; },
@@ -640,6 +640,8 @@ double SortExpression::calculate(const_iterator it, const_iterator end, IdType r
 				return i.GetValue(rowId, *joinedResults, js);
 			},
 			[rank] RX_PRE_LMBD_ALWAYS_INLINE(const Rank&) RX_POST_LMBD_ALWAYS_INLINE { return double(rank); },
+			[rowId, shardIdHash] RX_PRE_LMBD_ALWAYS_INLINE(const SortExprFuncs::SortHash& sortHash)
+				RX_POST_LMBD_ALWAYS_INLINE { return CalcSortHash(rowId, sortHash.Seed(), shardIdHash); },
 			[&pv, &tagsMatcher] RX_PRE_LMBD_ALWAYS_INLINE(const DistanceFromPoint& i)
 				RX_POST_LMBD_ALWAYS_INLINE { return i.GetValue(pv, tagsMatcher); },
 			[rowId, joinedResults, &js] RX_PRE_LMBD_ALWAYS_INLINE(const DistanceJoinedIndexFromPoint& i) RX_POST_LMBD_ALWAYS_INLINE {
@@ -685,17 +687,18 @@ double SortExpression::calculate(const_iterator it, const_iterator end, IdType r
 }
 
 double ProxiedSortExpression::calculate(const_iterator it, const_iterator end, IdType rowId, ConstPayload pv, RankT rank,
-										TagsMatcher& tagsMatcher) {
+										TagsMatcher& tagsMatcher, uint32_t shardIdHash) {
 	assertrx(it != end);
 	assertrx(it->operation.op == OpPlus);
 	double result = 0.0;
 	for (; it != end; ++it) {
 		double value = it->Visit(
 			[&](const SortExpressionBracket& b) {
-				const double res = calculate(it.cbegin(), it.cend(), rowId, pv, rank, tagsMatcher);
+				const double res = calculate(it.cbegin(), it.cend(), rowId, pv, rank, tagsMatcher, shardIdHash);
 				return (b.IsAbs() && res < 0) ? -res : res;
 			},
 			[](const Value& v) { return v.value; },
+			[rowId, shardIdHash](const SortExprFuncs::SortHash& sh) { return CalcSortHash(rowId, sh.Seed(), shardIdHash); },
 			[&pv, &tagsMatcher](const SortExprFuncs::ProxiedField& f) { return f.GetValue(pv, tagsMatcher); },
 			[rank](const Rank&) -> double { return rank; },
 			[&pv, &tagsMatcher](const ProxiedDistanceFromPoint& f) { return f.GetValue(pv, tagsMatcher); },
@@ -724,11 +727,16 @@ double ProxiedSortExpression::calculate(const_iterator it, const_iterator end, I
 	return result;
 }
 
-std::string ProxiedSortExpression::getJsonPath(std::string_view columnName, int idx, const NamespaceImpl& ns) {
-	if (idx == SetByJsonPath) {
+std::string ProxiedSortExpression::getJsonPath(std::string_view columnName, int idxNo, const NamespaceImpl& ns) {
+	if (idxNo == SetByJsonPath) {
 		return std::string(columnName);
 	} else {
-		return ns.tagsMatcher_.tag2name(TagName(idx));	// FIXME idx is index number, but not tagname #2019
+		assertrx_throw(idxNo >= 0);
+		const auto& payloadType = *ns.payloadType_;
+		assertrx_throw(idxNo < payloadType.NumFields());
+		const auto& jsons = payloadType.Field(idxNo).JsonPaths();
+		assertrx_throw(jsons.size() == 1);
+		return jsons[0];
 	}
 }
 
@@ -743,7 +751,7 @@ void ProxiedSortExpression::fill(SortExpression::const_iterator it, SortExpressi
 			},
 			[&](const Value& v) { Append(it->operation, v); },
 			[&](const SortExprFuncs::Index& i) { Append(it->operation, SortExprFuncs::ProxiedField{getJsonPath(i.column, i.index, ns)}); },
-			[&](const Rank&) { Append(it->operation, Rank{}); },
+			[&](const Rank&) { Append(it->operation, Rank{}); }, [&](const SortExprFuncs::SortHash& sh) { Append(it->operation, sh); },
 			[&](const DistanceFromPoint& i) {
 				Append(it->operation, ProxiedDistanceFromPoint{getJsonPath(i.column, i.index, ns), i.point});
 			},
@@ -756,8 +764,9 @@ void ProxiedSortExpression::fill(SortExpression::const_iterator it, SortExpressi
 
 void SortExpression::PrepareIndexes(const NamespaceImpl& ns) {
 	VisitForEach(
-		Skip<SortExpressionOperation, SortExpressionBracket, SortExprFuncs::Value, JoinedIndex, Rank, DistanceJoinedIndexFromPoint,
-			 DistanceBetweenIndexAndJoinedIndex, DistanceBetweenJoinedIndexes, DistanceBetweenJoinedIndexesSameNs>{},
+		Skip<SortExpressionOperation, SortExpressionBracket, SortExprFuncs::Value, JoinedIndex, Rank, SortExprFuncs::SortHash,
+			 DistanceJoinedIndexFromPoint, DistanceBetweenIndexAndJoinedIndex, DistanceBetweenJoinedIndexes,
+			 DistanceBetweenJoinedIndexesSameNs>{},
 		[&ns](SortExprFuncs::Index& exprIndex) { PrepareSortIndex(exprIndex.column, exprIndex.index, ns); },
 		[&ns](DistanceFromPoint& exprIndex) { PrepareSortIndex(exprIndex.column, exprIndex.index, ns); },
 		[&ns](DistanceBetweenIndexes& exprIndex) {
@@ -824,6 +833,7 @@ void SortExpression::dump(const_iterator begin, const_iterator end, WrSerializer
 			},
 			[&ser](const Value& v) { ser << v.value; }, [&ser](const SortExprFuncs::Index& i) { ser << i.column; },
 			[&ser](const JoinedIndex& i) { ser << "joined " << i.nsIdx << ' ' << i.column; }, [&ser](const Rank&) { ser << "rank()"; },
+			[&ser](const SortExprFuncs::SortHash& sh) { ser << "hash(" << (sh.IsUserSeed() ? std::to_string(sh.Seed()) : "") << ")"; },
 			[&ser](const DistanceFromPoint& i) {
 				ser << "ST_Distance(" << i.column << ", [" << i.point.X() << ", " << i.point.Y() << "])";
 			},
@@ -884,6 +894,7 @@ void ProxiedSortExpression::dump(const_iterator begin, const_iterator end, WrSer
 			},
 			[&ser](const Value& v) { ser << v.value; }, [&ser](const SortExprFuncs::ProxiedField& i) { ser << i.json; },
 			[&ser](const Rank&) { ser << "rank()"; },
+			[&ser](const SortExprFuncs::SortHash& sh) { ser << "hash(" << (sh.IsUserSeed() ? std::to_string(sh.Seed()) : "") << ")"; },
 			[&ser](const ProxiedDistanceFromPoint& i) {
 				ser << "ST_Distance(" << i.json << ", [" << i.point.X() << ", " << i.point.Y() << "])";
 			},

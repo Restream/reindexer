@@ -98,7 +98,7 @@ ReplicationStats AsyncDataReplicator::GetReplicationStats() const {
 }
 
 bool AsyncDataReplicator::NamespaceIsInAsyncConfig(std::string_view nsName) const {
-	if (nsName.size() && (nsName[0] == '#' || nsName[0] == '@')) {
+	if (isSystemNamespaceNameFastReplication(nsName)) {
 		return false;
 	}
 

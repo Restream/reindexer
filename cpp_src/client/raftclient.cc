@@ -31,9 +31,9 @@ void RaftClient::Stop() noexcept {
 		impl_->Stop();
 		// Do not excepting any exceptions here
 	} catch (std::exception& e) {
-		fprintf(stderr, "Unexpceted system error in RaftClient::Stop: %s", e.what());
+		fprintf(stderr, "reindexer error: unexpected exception in RaftClient::Stop: %s\n", e.what());
 	} catch (...) {
-		fprintf(stderr, "Unexpceted system error in RaftClient::Stop: <no description available>");
+		fprintf(stderr, "reindexer error: unexpected exception in RaftClient::Stop: <no description available>\n");
 	}
 }
 

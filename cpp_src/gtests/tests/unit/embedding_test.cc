@@ -4,10 +4,9 @@
 #include "tools/errors.h"
 
 using namespace std::string_view_literals;
-static constexpr std::string_view kFieldNameId = "id"sv;
+static const std::string kFieldNameId{"id"};
 
 TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbedding) try {
-	using namespace std::string_literals;
 	const auto indexDef = reindexer::IndexDef::FromJSON(R"json(
 {
 	"name":"hnsw",
@@ -48,8 +47,7 @@ TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbedding) try {
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, ParseDslIndexDefWithQueryEmbedding) try {
-	using namespace std::string_literals;
+TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingQuery) try {
 	const auto indexDef = reindexer::IndexDef::FromJSON(R"json(
 {
 	"name":"hnsw",
@@ -95,8 +93,7 @@ TEST_F(EmbeddingTest, ParseDslIndexDefWithQueryEmbedding) try {
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, ParseDslIndexDefWithQueryEmbeddingOnly) try {
-	using namespace std::string_literals;
+TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingQueryOnly) try {
 	const auto indexDef = reindexer::IndexDef::FromJSON(R"json(
 {
 	"name":"hnsw",
@@ -135,8 +132,7 @@ TEST_F(EmbeddingTest, ParseDslIndexDefWithQueryEmbeddingOnly) try {
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegative) try {
-	using namespace std::string_literals;
+TEST_F(EmbeddingTest, NegativeParseDslIndexDefWithEmbeddingEmpty) try {
 	const auto indexDef = reindexer::IndexDef::FromJSON(R"json(
 {
 	"name":"hnsw",
@@ -165,8 +161,7 @@ TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegative) try {
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingPool) try {
-	using namespace std::string_literals;
+TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbedderPool) try {
 	const auto indexDef = reindexer::IndexDef::FromJSON(R"json(
 {
 	"name":"hnsw",
@@ -206,8 +201,7 @@ TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingPool) try {
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingPoolFull) try {
-	using namespace std::string_literals;
+TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbedderPoolFull) try {
 	const auto indexDef = reindexer::IndexDef::FromJSON(R"json(
 {
 	"name":"hnsw",
@@ -247,8 +241,7 @@ TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingPoolFull) try {
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativeUrl) try {
-	using namespace std::string_literals;
+TEST_F(EmbeddingTest, NegativeParseDslIndexDefWithEmbedderUrl) try {
 	const auto indexDef = reindexer::IndexDef::FromJSON(R"json(
 {
 	"name":"hnsw",
@@ -281,8 +274,7 @@ TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativeUrl) try {
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativeFields) try {
-	using namespace std::string_literals;
+TEST_F(EmbeddingTest, NegativeParseDslIndexDefWithEmbedderFields) try {
 	const auto indexDef = reindexer::IndexDef::FromJSON(R"json(
 {
 	"name":"hnsw",
@@ -316,8 +308,7 @@ TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativeFields) try {
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativeFieldsEmpty) try {
-	using namespace std::string_literals;
+TEST_F(EmbeddingTest, NegativeParseDslIndexDefWithEmbedderFieldsEmpty) try {
 	const auto indexDef = reindexer::IndexDef::FromJSON(R"json(
 {
 	"name":"hnsw",
@@ -351,8 +342,7 @@ TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativeFieldsEmpty) try {
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativeFieldsDuplicate) try {
-	using namespace std::string_literals;
+TEST_F(EmbeddingTest, NegativeParseDslIndexDefWithEmbedderFieldsDuplicate) try {
 	const auto indexDef = reindexer::IndexDef::FromJSON(R"json(
 {
 	"name":"hnsw",
@@ -387,8 +377,7 @@ TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativeFieldsDuplicate) try 
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativeStrategy) try {
-	using namespace std::string_literals;
+TEST_F(EmbeddingTest, NegativeParseDslIndexDefWithEmbedderStrategy) try {
 	const auto indexDef = reindexer::IndexDef::FromJSON(R"json(
 {
 	"name":"hnsw",
@@ -425,8 +414,7 @@ TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativeStrategy) try {
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativePoolConnections) try {
-	using namespace std::string_literals;
+TEST_F(EmbeddingTest, NegativeParseDslIndexDefWithEmbedderPoolConnections) try {
 	const auto indexDef = reindexer::IndexDef::FromJSON(R"json(
 {
 	"name":"hnsw",
@@ -466,8 +454,7 @@ TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativePoolConnections) try 
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativePoolConnectTM) try {
-	using namespace std::string_literals;
+TEST_F(EmbeddingTest, NegativeParseDslIndexDefWithEmbedderPoolConnectTM) try {
 	const auto indexDef = reindexer::IndexDef::FromJSON(R"json(
 {
 	"name":"hnsw",
@@ -508,8 +495,7 @@ TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativePoolConnectTM) try {
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativePoolReadTM) try {
-	using namespace std::string_literals;
+TEST_F(EmbeddingTest, NegativeParseDslIndexDefWithEmbedderPoolReadTM) try {
 	const auto indexDef = reindexer::IndexDef::FromJSON(R"json(
 {
 	"name":"hnsw",
@@ -550,8 +536,7 @@ TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativePoolReadTM) try {
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativePoolWriteTM) try {
-	using namespace std::string_literals;
+TEST_F(EmbeddingTest, NegativeParseDslIndexDefWithEmbedderPoolWriteTM) try {
 	const auto indexDef = reindexer::IndexDef::FromJSON(R"json(
 {
 	"name":"hnsw",
@@ -592,45 +577,42 @@ TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingNegativePoolWriteTM) try {
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, EmbedderNegativeWrongField) try {
-	constexpr static auto kNsName = "ivf_ns"sv;
-	constexpr static auto kFieldNameIvf = "ivf";
-	constexpr static auto kFieldNameNone = "not_yet"sv;
-	constexpr static size_t kDimension = 32;
-	constexpr static size_t kMaxElements = 1'000;
+TEST_F(EmbeddingTest, NegativeWrongField) try {
+	static const std::string kNsName{"ivf_ns"};
+	static const std::string kFieldNameIvf{"ivf"};
+	static const std::string kFieldNameNone{"not_yet"};
+	static constexpr size_t kDimension = 32;
+	static constexpr size_t kMaxElements = 1'000;
 
 	FloatVectorIndexOpts::EmbedderOpts embedder;
 	embedder.endpointUrl = "http://127.0.0.1:8000";
-	embedder.fields = {std::string(kFieldNameNone)};
+	embedder.fields = {std::string(kFieldNameNone)}; // NOTE: maybe-uninitialized
 
 	FloatVectorIndexOpts::EmbeddingOpts embedding;
 	embedding.upsertEmbedder = embedder;
 
 	rt.OpenNamespace(kNsName);
-	auto err = rt.reindexer->AddIndex(kNsName, {kFieldNameIvf,
-												{kFieldNameIvf},
-												"float_vector",
-												IndexOpts{}.SetFloatVector(IndexIvf, FloatVectorIndexOpts{}
-																						 .SetDimension(kDimension)
-																						 .SetNCentroids(kMaxElements / 50)
-																						 .SetMetric(reindexer::VectorMetric::L2)
-																						 .SetEmbedding(embedding))});
-	ASSERT_EQ(err.what(), "Cannot add index '" + std::string(kFieldNameIvf) + "' in namespace '" + std::string(kNsName) +
-							  "'. Support for embedding only for scalar index fields. Using field '" + std::string(kFieldNameNone) +
-							  "' for embedding is invalid");
+	auto err = rt.reindexer->AddIndex(
+		kNsName, {kFieldNameIvf,
+				  {kFieldNameIvf},
+				  "float_vector",
+				  IndexOpts{}.SetFloatVector(
+					  IndexIvf, FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElements / 50).SetEmbedding(embedding))});
+	ASSERT_EQ(err.what(), "Cannot add field with name '" + kFieldNameIvf + "' to namespace '" + kNsName + "'. Auxiliary field '" +
+							  kFieldNameNone + "' not found");
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, EmbedderNegativeSparceField) try {
-	constexpr static auto kNsName = "ivf_ns"sv;
-	constexpr static auto kFieldNameIvf = "ivf";
-	constexpr static auto kFieldNameSparce = "sparce"sv;
-	constexpr static size_t kDimension = 32;
-	constexpr static size_t kMaxElements = 1'000;
+TEST_F(EmbeddingTest, NegativeSparceField) try {
+	static const std::string kNsName{"ivf_ns"};
+	static const std::string kFieldNameIvf{"ivf"};
+	static const std::string kFieldNameSparce{"sparce"};
+	static constexpr size_t kDimension = 32;
+	static constexpr size_t kMaxElements = 1'000;
 
 	FloatVectorIndexOpts::EmbedderOpts embedder;
 	embedder.endpointUrl = "http://127.0.0.1:8000";
-	embedder.fields = {std::string(kFieldNameSparce)};
+	embedder.fields = {std::string(kFieldNameSparce)}; // NOTE: maybe-uninitialized
 
 	FloatVectorIndexOpts::EmbeddingOpts embedding;
 	embedding.upsertEmbedder = embedder;
@@ -638,31 +620,29 @@ TEST_F(EmbeddingTest, EmbedderNegativeSparceField) try {
 	rt.OpenNamespace(kNsName);
 	rt.DefineNamespaceDataset(kNsName, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
 										IndexDeclaration{kFieldNameSparce, "hash", "string", IndexOpts{}.Sparse(), 0}});
-	auto err = rt.reindexer->AddIndex(kNsName, {kFieldNameIvf,
-												{kFieldNameIvf},
-												"float_vector",
-												IndexOpts{}.SetFloatVector(IndexIvf, FloatVectorIndexOpts{}
-																						 .SetDimension(kDimension)
-																						 .SetNCentroids(kMaxElements / 50)
-																						 .SetMetric(reindexer::VectorMetric::L2)
-																						 .SetEmbedding(embedding))});
-	ASSERT_EQ(err.what(), "Cannot add index '" + std::string(kFieldNameIvf) + "' in namespace '" + std::string(kNsName) +
-							  "'. Support for embedding only for scalar index fields. Using field '" + std::string(kFieldNameSparce) +
+	auto err = rt.reindexer->AddIndex(
+		kNsName, {kFieldNameIvf,
+				  {kFieldNameIvf},
+				  "float_vector",
+				  IndexOpts{}.SetFloatVector(
+					  IndexIvf, FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElements / 50).SetEmbedding(embedding))});
+	ASSERT_EQ(err.what(), "Cannot add index '" + kFieldNameIvf + "' in namespace '" + kNsName +
+							  "'. Support for embedding only for scalar index fields. Using field '" + kFieldNameSparce +
 							  "' is sparse, so embedding is not supported");
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, EmbedderNegativeCompositeField) try {
-	constexpr static auto kNsName = "ivf_ns"sv;
-	constexpr static auto kFieldNameIvf = "ivf";
-	constexpr static auto kFieldNameFirst = "first"sv;
-	constexpr static auto kFieldNameComposite = "composite"sv;
-	constexpr static size_t kDimension = 32;
-	constexpr static size_t kMaxElements = 1'000;
+TEST_F(EmbeddingTest, NegativeCompositeField) try {
+	static const std::string kNsName{"ivf_ns"};
+	static const std::string kFieldNameIvf{"ivf"};
+	static const std::string kFieldNameFirst{"first"};
+	static const std::string kFieldNameComposite{"composite"};
+	static constexpr size_t kDimension = 32;
+	static constexpr size_t kMaxElements = 1'000;
 
 	FloatVectorIndexOpts::EmbedderOpts embedder;
 	embedder.endpointUrl = "http://127.0.0.1:8000";
-	embedder.fields = {std::string(kFieldNameFirst), std::string(kFieldNameComposite)};
+	embedder.fields = {kFieldNameFirst, kFieldNameComposite};
 
 	FloatVectorIndexOpts::EmbeddingOpts embedding;
 	embedding.upsertEmbedder = embedder;
@@ -671,59 +651,56 @@ TEST_F(EmbeddingTest, EmbedderNegativeCompositeField) try {
 	rt.DefineNamespaceDataset(kNsName, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
 										IndexDeclaration{kFieldNameFirst, "hash", "int", IndexOpts(), 0},
 										IndexDeclaration{kFieldNameComposite, "text", "composite", IndexOpts(), 0}});
-	auto err = rt.reindexer->AddIndex(kNsName, {kFieldNameIvf,
-												{kFieldNameIvf},
-												"float_vector",
-												IndexOpts{}.SetFloatVector(IndexIvf, FloatVectorIndexOpts{}
-																						 .SetDimension(kDimension)
-																						 .SetNCentroids(kMaxElements / 50)
-																						 .SetMetric(reindexer::VectorMetric::L2)
-																						 .SetEmbedding(embedding))});
-	ASSERT_EQ(err.what(), "Cannot add index '" + std::string(kFieldNameIvf) + "' in namespace '" + std::string(kNsName) +
-							  "'. Support for embedding only for scalar index fields. Using field '" + std::string(kFieldNameComposite) +
+	auto err = rt.reindexer->AddIndex(
+		kNsName, {kFieldNameIvf,
+				  {kFieldNameIvf},
+				  "float_vector",
+				  IndexOpts{}.SetFloatVector(
+					  IndexIvf, FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElements / 50).SetEmbedding(embedding))});
+	ASSERT_EQ(err.what(), "Cannot add index '" + kFieldNameIvf + "' in namespace '" + kNsName +
+							  "'. Support for embedding only for scalar index fields. Using field '" + kFieldNameComposite +
 							  "' for embedding is invalid");
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, EmbedderNegativeDropIndex) try {
-	constexpr static auto kNsName = "ivf_ns"sv;
-	constexpr static auto kFieldNameIvf = "ivf";
-	constexpr static auto kFieldNameFirst = "first"sv;
-	constexpr static auto kFieldNameSecond = "second"sv;
-	constexpr static size_t kDimension = 32;
-	constexpr static size_t kMaxElements = 1'000;
+TEST_F(EmbeddingTest, NegativeDropIndex) try {
+	static const std::string kNsName{"ivf_ns"};
+	static const std::string kFieldNameIvf{"ivf"};
+	static const std::string kFieldNameFirst{"first"};
+	static const std::string kFieldNameSecond{"second"};
+	static constexpr size_t kDimension = 32;
+	static constexpr size_t kMaxElements = 1'000;
 
 	FloatVectorIndexOpts::EmbedderOpts embedder;
 	embedder.endpointUrl = "http://127.0.0.1:8000";
-	embedder.fields = {std::string(kFieldNameFirst), std::string(kFieldNameSecond)};
+	embedder.fields = {kFieldNameFirst, kFieldNameSecond};
 
 	FloatVectorIndexOpts::EmbeddingOpts embedding;
 	embedding.upsertEmbedder = embedder;
 
 	rt.OpenNamespace(kNsName);
-	rt.DefineNamespaceDataset(kNsName, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
-										IndexDeclaration{kFieldNameFirst, "hash", "string", IndexOpts(), 0},
-										IndexDeclaration{kFieldNameSecond, "hash", "string", IndexOpts(), 0},
-										IndexDeclaration{kFieldNameIvf, "ivf", "float_vector",
-														 IndexOpts{}.SetFloatVector(IndexIvf, FloatVectorIndexOpts{}
-																								  .SetDimension(kDimension)
-																								  .SetNCentroids(kMaxElements / 50)
-																								  .SetMetric(reindexer::VectorMetric::L2)
-																								  .SetEmbedding(embedding)),
-														 0}});
-	auto err = rt.reindexer->DropIndex(kNsName, reindexer::IndexDef{std::string(kFieldNameSecond)});
-	ASSERT_EQ(err.what(), "Cannot remove index '" + std::string(kFieldNameSecond) + "': it's a part of a auto embedding logic in index '" +
-							  std::string(kFieldNameIvf) + "'");
+	rt.DefineNamespaceDataset(
+		kNsName,
+		{IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
+		 IndexDeclaration{kFieldNameFirst, "hash", "string", IndexOpts(), 0},
+		 IndexDeclaration{kFieldNameSecond, "hash", "string", IndexOpts(), 0},
+		 IndexDeclaration{
+			 kFieldNameIvf, "ivf", "float_vector",
+			 IndexOpts{}.SetFloatVector(
+				 IndexIvf, FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElements / 50).SetEmbedding(embedding)),
+			 0}});
+	auto err = rt.reindexer->DropIndex(kNsName, reindexer::IndexDef{kFieldNameSecond});
+	ASSERT_EQ(err.what(),
+			  "Cannot remove index '" + kFieldNameSecond + "': it's a part of a auto embedding logic in index '" + kFieldNameIvf + "'");
 }
 CATCH_AND_ASSERT
 
-TEST_F(EmbeddingTest, SqlQuery) try {
-	using namespace std::string_view_literals;
+TEST_F(EmbeddingTest, SqlQueryWhereKNN) try {
 	using reindexer::Query;
 	using reindexer::KnnSearchParams;
-	const static std::string k1st("Pocomaxa");
-	const static std::string k2nd("Hi, bro!");
-	const static std::string k3rd("man`s word: blood on the asphalt");
+	static const std::string k1st("Pocomaxa");
+	static const std::string k2nd("Hi, bro!");
+	static const std::string k3rd("man`s word: blood on the asphalt");
 	struct {
 		Query query;
 		std::string sql;

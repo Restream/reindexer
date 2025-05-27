@@ -12,7 +12,6 @@
 #include <regex>
 #endif	// REINDEX_WITH_ASAN
 
-#include <unordered_map>
 #include "core/enums.h"
 #include "core/nsselecter/distincthelpers.h"
 #include "core/nsselecter/joinedselectormock.h"
@@ -21,6 +20,7 @@
 #include "core/queryresults/queryresults.h"
 #include "core/reindexer.h"
 #include "core/sorting/sortexpression.h"
+#include "estl/fast_hash_set.h"
 #include "test_helpers.h"
 #include "tools/string_regexp_functions.h"
 
@@ -40,7 +40,7 @@ protected:
 		std::string name;
 		reindexer::KeyValueType type;
 	};
-	using IndexesData = std::unordered_map<std::string, std::vector<FieldData>>;
+	using IndexesData = reindexer::fast_hash_map<std::string, std::vector<FieldData>>;
 
 	void Verify(const reindexer::QueryResults& qr, reindexer::Query&& q, reindexer::Reindexer& rx) {
 		Verify(qr.ToLocalQr(), std::move(q), rx);
@@ -48,11 +48,28 @@ protected:
 
 	struct DistinctData {
 		DistinctData(std::vector<std::string> fn) : values(), fieldNames(std::move(fn)) {}
-		std::unordered_set<reindexer::DistinctHelpers::FieldsValue,
-						   reindexer::DistinctHelpers::DistinctHasher<reindexer::DistinctHelpers::IsCompositeSupported::No>,
-						   reindexer::DistinctHelpers::CompareVariantVector<reindexer::DistinctHelpers::IsCompositeSupported::No>>
+		reindexer::fast_hash_set<reindexer::DistinctHelpers::FieldsValue,
+								 reindexer::DistinctHelpers::DistinctHasher<reindexer::DistinctHelpers::IsCompositeSupported::No>,
+								 reindexer::DistinctHelpers::CompareVariantVector<reindexer::DistinctHelpers::IsCompositeSupported::No>,
+								 reindexer::DistinctHelpers::LessDistinctVector<reindexer::DistinctHelpers::IsCompositeSupported::No>>
 			values;
 		std::vector<std::string> fieldNames;
+	};
+	struct [[nodiscard]] VectorLess {
+		[[nodiscard]] bool operator()(const std::vector<reindexer::VariantArray>& lhs,
+									  const std::vector<reindexer::VariantArray>& rhs) const {
+			for (size_t i = 0, outterS = std::min(lhs.size(), rhs.size()); i < outterS; ++i) {
+				for (size_t j = 0, innerS = std::min(lhs[i].size(), rhs[i].size()); j < innerS; ++j) {
+					if (lhs[i][j] != rhs[i][j]) {
+						return lhs[i][j] < rhs[i][j];
+					}
+				}
+				if (lhs[i].size() != rhs[i].size()) {
+					return lhs[i].size() < rhs[i].size();
+				}
+			}
+			return lhs.size() < rhs.size();
+		}
 	};
 
 	void Verify(const reindexer::LocalQueryResults& qr, reindexer::Query&& q, reindexer::Reindexer& rx) {
@@ -63,7 +80,9 @@ protected:
 		return;
 #else
 		auto query = std::move(q);
-		std::unordered_set<std::vector<reindexer::VariantArray>, PkHash> pks;
+		reindexer::fast_hash_set<std::vector<reindexer::VariantArray>, PkHash, std::equal_to<std::vector<reindexer::VariantArray>>,
+								 VectorLess>
+			pks;
 		std::vector<DistinctData> distincts;
 		distincts.reserve(query.aggregations_.size());
 		for (unsigned int i = 0; i < query.aggregations_.size(); i++) {
@@ -312,7 +331,7 @@ protected:
 	}
 
 private:
-	using InsertedItemsByPk = std::unordered_map<std::vector<reindexer::VariantArray>, reindexer::Item, PkHash>;
+	using InsertedItemsByPk = reindexer::fast_hash_map<std::vector<reindexer::VariantArray>, reindexer::Item, PkHash>;
 
 protected:
 	void saveItem(reindexer::Item&& item, const std::string& ns) {
@@ -356,8 +375,8 @@ protected:
 		ASSERT_TRUE(success) << ns << ' ' << indexName;
 	}
 
-	std::unordered_map<std::string, CollateOpts> indexesCollates;
-	std::unordered_map<std::string, InsertedItemsByPk> insertedItems_;
+	reindexer::fast_hash_map<std::string, CollateOpts> indexesCollates;
+	reindexer::fast_hash_map<std::string, InsertedItemsByPk> insertedItems_;
 
 private:
 	bool checkConditions(const reindexer::Item& item, reindexer::QueryEntries::const_iterator it,
@@ -944,6 +963,7 @@ private:
 					return values[0].As<double>();
 				},
 				[](const reindexer::SortExprFuncs::Rank&) -> double { abort(); },
+				[](const reindexer::SortExprFuncs::SortHash&) -> double { abort(); },
 				[&item](const reindexer::SortExprFuncs::DistanceFromPoint& i) {
 					return distance(static_cast<reindexer::Point>(static_cast<reindexer::VariantArray>(item[i.column])), i.point);
 				},
@@ -1141,6 +1161,6 @@ private:
 		TestCout().Endl().Endl();
 	}
 
-	std::unordered_map<std::string, std::vector<std::string>> ns2pk_;
-	std::unordered_map<std::string, IndexesData> indexesFields_;
+	reindexer::fast_hash_map<std::string, std::vector<std::string>> ns2pk_;
+	reindexer::fast_hash_map<std::string, IndexesData> indexesFields_;
 };

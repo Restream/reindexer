@@ -1,15 +1,18 @@
 #include "namespacestat.h"
 #include "core/cjson/jsonbuilder.h"
+#include "core/embedding/embedderscache.h"
+#include "core/system_ns_names.h"
 #include "gason/gason.h"
 
 namespace reindexer {
 
 using namespace std::string_view_literals;
 
-void NamespaceMemStat::GetJSON(WrSerializer& ser) {
+void NamespaceMemStat::GetJSON(WrSerializer& ser) const {
 	JsonBuilder builder(ser);
 
 	builder.Put("name", name);
+	builder.Put("type", type);
 	builder.Put("items_count", itemsCount);
 
 	if (emptyItemsCount) {
@@ -30,35 +33,47 @@ void NamespaceMemStat::GetJSON(WrSerializer& ser) {
 		.Put("cache_size", Total.cacheSize)
 		.Put("index_optimizer_memory", Total.indexOptimizerMemory);
 
-	{
-		auto obj = builder.Object("replication");
-		replication.GetJSON(obj);
-	}
+	if (type.empty() || type == kNamespaceStatType) {
+		{
+			auto obj = builder.Object("replication");
+			replication.GetJSON(obj);
+		}
 
-	{
-		auto obj = builder.Object("join_cache");
-		joinCache.GetJSON(obj);
-	}
-	{
-		auto obj = builder.Object("query_cache");
-		queryCache.GetJSON(obj);
-	}
+		{
+			auto obj = builder.Object("join_cache");
+			joinCache.GetJSON(obj);
+		}
+		{
+			auto obj = builder.Object("query_cache");
+			queryCache.GetJSON(obj);
+		}
 
-	auto arr = builder.Array("indexes");
-	for (auto& index : indexes) {
-		auto obj = arr.Object();
-		index.GetJSON(obj);
+		{
+			auto arr = builder.Array("indexes");
+			for (const auto& index : indexes) {
+				auto obj = arr.Object();
+				index.GetJSON(obj);
+			}
+		}
+	} else {
+		assertrx_throw(type == kEmbeddersStatType);
+
+		auto arr = builder.Array("embedding_caches");
+		for (const auto& embedder : embedders) {
+			auto obj = arr.Object();
+			embedder.GetJSON(obj);
+		}
 	}
 }
 
-void LRUCacheMemStat::GetJSON(JsonBuilder& builder) {
+void LRUCacheMemStat::GetJSON(JsonBuilder& builder) const {
 	builder.Put("total_size", totalSize);
 	builder.Put("items_count", itemsCount);
 	builder.Put("empty_count", emptyCount);
 	builder.Put("hit_count_limit", hitCountLimit);
 }
 
-void IndexMemStat::GetJSON(JsonBuilder& builder) {
+void IndexMemStat::GetJSON(JsonBuilder& builder) const {
 	if (uniqKeysCount) {
 		builder.Put("uniq_keys_count", uniqKeysCount);
 	}
@@ -104,7 +119,20 @@ void IndexMemStat::GetJSON(JsonBuilder& builder) {
 	builder.Put("name", name);
 }
 
-void PerfStat::GetJSON(JsonBuilder& builder) {
+void EmbeddersCacheMemStat::GetJSON(JsonBuilder& builder) const {
+	builder.Put("cache_tag", tag);
+	builder.Put("capacity", capacity);
+	{
+		auto obj = builder.Object("cache");
+		cache.GetJSON(obj);
+	}
+	builder.Put("storage_ok", storageOK);
+	builder.Put("storage_status", storageStatus);
+	builder.Put("storage_path", storagePath);
+	builder.Put("storage_size", storageSize);
+}
+
+void PerfStat::GetJSON(JsonBuilder& builder) const {
 	builder.Put("total_queries_count", totalHitCount);
 	builder.Put("total_avg_latency_us", totalAvgTimeUs);
 	builder.Put("total_avg_lock_time_us", totalAvgLockTimeUs);
@@ -116,7 +144,7 @@ void PerfStat::GetJSON(JsonBuilder& builder) {
 	builder.Put("max_latency_us", maxTimeUs);
 }
 
-void NamespacePerfStat::GetJSON(WrSerializer& ser) {
+void NamespacePerfStat::GetJSON(WrSerializer& ser) const {
 	JsonBuilder builder(ser);
 
 	builder.Put("name", name);
@@ -143,13 +171,18 @@ void NamespacePerfStat::GetJSON(WrSerializer& ser) {
 
 	auto arr = builder.Array("indexes");
 
-	for (unsigned i = 0; i < indexes.size(); i++) {
+	for (const auto& index : indexes) {
 		auto obj = arr.Object();
-		indexes[i].GetJSON(obj);
+		index.GetJSON(obj);
 	}
 }
 
-void IndexPerfStat::GetJSON(JsonBuilder& builder) {
+void EmbedderCachePerfStat::GetJSON(JsonBuilder& builder) const {
+	builder.Put("cache_tag", tag);
+	LRUCachePerfStat::GetJSON(builder);
+}
+
+void IndexPerfStat::GetJSON(JsonBuilder& builder) const {
 	builder.Put("name", name);
 	{
 		auto obj = builder.Object("selects");
@@ -162,6 +195,15 @@ void IndexPerfStat::GetJSON(JsonBuilder& builder) {
 	if (cache.state != LRUCachePerfStat::State::DoesNotExist) {
 		auto obj = builder.Object("cache");
 		cache.GetJSON(obj);
+	}
+
+	if (!upsertEmbedderCache.tag.empty()) {
+		auto obj = builder.Object("upsert_embedder_cache");
+		upsertEmbedderCache.GetJSON(obj);
+	}
+	if (!queryEmbedderCache.tag.empty()) {
+		auto obj = builder.Object("query_embedder_cache");
+		queryEmbedderCache.GetJSON(obj);
 	}
 }
 
@@ -177,7 +219,7 @@ static bool LoadLsn(lsn_t& to, const gason::JsonNode& node) {
 	return false;
 }
 
-void ReplicationState::GetJSON(JsonBuilder& builder) {
+void ReplicationState::GetJSON(JsonBuilder& builder) const {
 	builder.Put("last_lsn", int64_t(lastLsn));
 	{
 		auto lastLsnObj = builder.Object("last_lsn_v2");
@@ -232,14 +274,14 @@ void ReplicationState::FromJSON(std::span<char> json) {
 	}
 }
 
-void ReplicationStat::GetJSON(JsonBuilder& builder) {
+void ReplicationStat::GetJSON(JsonBuilder& builder) const {
 	ReplicationState::GetJSON(builder);
 	builder.Put("wal_count", walCount);
 	builder.Put("wal_size", walSize);
 	builder.Put("server_id", serverId);
 }
 
-void TxPerfStat::GetJSON(JsonBuilder& builder) {
+void TxPerfStat::GetJSON(JsonBuilder& builder) const {
 	builder.Put("total_count", totalCount);
 	builder.Put("total_copy_count", totalCopyCount);
 	builder.Put("avg_steps_count", avgStepsCount);
@@ -273,7 +315,7 @@ void TxPerfStat::FromJSON(const gason::JsonNode& node) {
 	maxCopyTimeUs = node["max_copy_time_us"].As<size_t>(maxCopyTimeUs);
 }
 
-void LRUCachePerfStat::GetJSON(JsonBuilder& builder) {
+void LRUCachePerfStat::GetJSON(JsonBuilder& builder) const {
 	switch (state) {
 		case State::DoesNotExist:
 			return;
@@ -344,7 +386,7 @@ void ClusterOperationStatus::FromJSON(const gason::JsonNode& root) {
 	role = strToNsClusterOperationRole(root["role"].As<std::string_view>());
 }
 
-void ReplicationStateV2::GetJSON(JsonBuilder& builder) {
+void ReplicationStateV2::GetJSON(JsonBuilder& builder) const {
 	builder.Put("last_lsn", int64_t(lastLsn));
 	builder.Put("data_hash", dataHash);
 	if (HasDataCount()) {

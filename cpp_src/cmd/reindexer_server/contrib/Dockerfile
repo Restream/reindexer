@@ -1,5 +1,7 @@
 FROM alpine:3.21 AS build
 
+ARG RX_VERSION=v5.3.0
+
 RUN cd /tmp && apk update && \
     apk add git curl autoconf automake libtool linux-headers g++ make libunwind-dev grpc-dev protobuf-dev c-ares-dev patch && \
     git clone https://github.com/gperftools/gperftools.git && \
@@ -38,6 +40,7 @@ RUN apk update && apk add libstdc++ libunwind snappy leveldb c-ares libgomp libp
 RUN ln -s /usr/lib/libcrypto.so.3 /usr/lib/libcrypto.so && \
     ln -s /usr/lib/libssl.so.3 /usr/lib/libssl.so
 
+ENV RX_VERSION=${RX_VERSION}
 ENV RX_DATABASE=/db
 ENV RX_CORELOG=stdout
 ENV RX_HTTPLOG=stdout

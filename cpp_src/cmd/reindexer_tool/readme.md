@@ -26,8 +26,8 @@ Options
   -c[COMMAND],  --command=[COMMAND]      Run single command (SQL or internal) and exit
   -o[FILENAME], --output=[FILENAME]      Send query results to file
   -l[INT=1..5], --log=[INT=1..5]         Reindexer logging level
-  -C[INT],      --connections=[INT]      Number of simulateonous connections to db
-  -t[INT],      --threads=[INT]          Number of threads used by db connector (used only for bench)
+  -t[INT],      --threads=[INT]          Number of threads(connections) used by db connector
+  -txs[INT],    --txsize=[INT]           Max transaction size used by db connector(0 - no transactions)
   --createdb                             Creates target database if it is missing
   -a[Application name],
   --appname=[Application name]           Application name which will be used in login info

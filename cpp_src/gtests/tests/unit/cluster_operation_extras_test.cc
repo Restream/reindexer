@@ -2,6 +2,7 @@
 #include "cluster_operation_extras_api.h"
 #include "core/cjson/jsonbuilder.h"
 #include "gtests/tests/gtest_cout.h"
+#include "gtests/tools.h"
 
 using namespace reindexer;
 
@@ -9,7 +10,7 @@ TEST_F(ClusterOperationExtrasApi, SpecifyClusterNamespaceList) {
 	// Check if with specified cluster namespaces list we are able to write into follower's non-cluster namespaces
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn([&loop, &ports]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		constexpr size_t kClusterSize = 5;
 		const std::vector<std::string> kClusterNsNames = {"ns1", "ns2"};
 		const std::string kNonClusterNsName = "ns3";
@@ -91,7 +92,7 @@ TEST_F(ClusterOperationExtrasApi, SpecifyClusterNamespaceList) {
 				ASSERT_EQ(nodeStat.namespaces, kClusterNsNames) << wser.Slice();
 			}
 		}
-	});
+	}));
 
 	loop.run();
 }
@@ -177,7 +178,7 @@ TEST_F(ClusterOperationExtrasApi, SynchronizationStatusOnInitialSyncTest) {
 	// Check, that cluster initializes synchronized nodes list on leader's initial sync
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn([&loop, &ports]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		constexpr size_t kClusterSize = 5;
 		const std::string_view kNsName = "some";
 		constexpr size_t kDataPortion = 100;
@@ -224,7 +225,7 @@ TEST_F(ClusterOperationExtrasApi, SynchronizationStatusOnInitialSyncTest) {
 		cluster.WaitSync(kNsName);
 		terminate = true;
 		statThread.join();
-	});
+	}));
 
 	loop.run();
 }
@@ -233,7 +234,7 @@ TEST_F(ClusterOperationExtrasApi, RestrictUpdates) {
 	// Check, that updates drop doesn't breaks raft cluster
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn([&loop, &ports]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, &ports]() {
 		constexpr size_t kClusterSize = 3;
 		constexpr size_t kInactiveNode = kClusterSize - 1;
 		const std::string_view kNsName = "some";
@@ -295,7 +296,7 @@ TEST_F(ClusterOperationExtrasApi, RestrictUpdates) {
 			// Mark test as skipped, because we didn't got any updates drops
 			GTEST_SKIP();
 		}
-	});
+	}));
 
 	loop.run();
 }
@@ -304,7 +305,7 @@ TEST_F(ClusterOperationExtrasApi, ErrorOnAttemptToResetClusterNsRole) {
 	// Check error on attempt to reset cluster namespace role
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn([&loop, &ports]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		constexpr size_t kClusterSize = 3;
 		const std::string kNsSome = "some";
 		Cluster cluster(loop, 0, kClusterSize, ports);
@@ -325,7 +326,7 @@ TEST_F(ClusterOperationExtrasApi, ErrorOnAttemptToResetClusterNsRole) {
 		replState.GetJSON(jb);
 		ASSERT_EQ(replState.clusterStatus.role, ClusterOperationStatus::Role::ClusterReplica) << ser.Slice();
 		TestCout() << "Done" << std::endl;
-	});
+	}));
 
 	loop.run();
 }
@@ -334,7 +335,7 @@ TEST_F(ClusterOperationExtrasApi, LogLevel) {
 	// Check sync replication log level setup
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
-	loop.spawn([&loop, &ports]() noexcept {
+	loop.spawn(exceptionWrapper([&loop, &ports] {
 		constexpr size_t kClusterSize = 3;
 		const std::string kNsSome = "some";
 		Cluster cluster(loop, 0, kClusterSize, ports);
@@ -395,7 +396,7 @@ TEST_F(ClusterOperationExtrasApi, LogLevel) {
 		cluster.StopServers({0, 1});
 		loop.sleep(std::chrono::seconds(3));
 		cluster.GetNode(2)->SetReplicationLogLevel(LogLevel(LogInfo), "cluster");
-	});
+	}));
 
 	loop.run();
 }

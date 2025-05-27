@@ -14,7 +14,7 @@ void SharedSyncState::MarkSynchronized(NamespaceName name) {
 	}
 }
 
-void SharedSyncState::MarkSynchronized() {
+void SharedSyncState::MarkSynchronized() noexcept {
 	std::unique_lock<MtxT> lck(mtx_);
 	if (current_.role == RaftInfo::Role::Leader) {
 		++initialSyncDoneCnt_;
@@ -23,19 +23,19 @@ void SharedSyncState::MarkSynchronized() {
 	}
 }
 
-void SharedSyncState::Reset(ContainerT requireSynchronization, size_t ReplThreadsCnt, bool enabled) {
+void SharedSyncState::Reset(ContainerT requireSynchronization, size_t replThreadsCnt, bool enabled) noexcept {
 	std::lock_guard<MtxT> lck(mtx_);
 	requireSynchronization_ = std::move(requireSynchronization);
 	synchronized_.clear();
 	enabled_ = enabled;
 	terminated_ = false;
 	initialSyncDoneCnt_ = 0;
-	ReplThreadsCnt_ = ReplThreadsCnt;
+	replThreadsCnt_ = replThreadsCnt;
 	next_ = current_ = RaftInfo();
-	assert(ReplThreadsCnt_);
+	assert(replThreadsCnt_);
 }
 
-RaftInfo SharedSyncState::TryTransitRole(RaftInfo expected) {
+RaftInfo SharedSyncState::TryTransitRole(RaftInfo expected) noexcept {
 	std::unique_lock<MtxT> lck(mtx_);
 	if (expected == next_) {
 		if (current_.role == RaftInfo::Role::Leader && current_.role != next_.role) {
@@ -50,12 +50,12 @@ RaftInfo SharedSyncState::TryTransitRole(RaftInfo expected) {
 	return next_;
 }
 
-void SharedSyncState::SetRole(RaftInfo info) {
+void SharedSyncState::SetRole(RaftInfo info) noexcept {
 	std::lock_guard<MtxT> lck(mtx_);
 	next_ = std::move(info);
 }
 
-void SharedSyncState::SetTerminated() {
+void SharedSyncState::SetTerminated() noexcept {
 	{
 		std::lock_guard<MtxT> lck(mtx_);
 		terminated_ = true;

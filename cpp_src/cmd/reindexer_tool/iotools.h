@@ -34,7 +34,7 @@ private:
 
 class LineParser {
 public:
-	LineParser(const std::string& line) : line_(line), cur_(line.data()) {}
+	LineParser(std::string_view line) : line_(line), cur_(line.data()) {}
 	std::string_view NextToken() {
 		while (*cur_ == ' ' || *cur_ == '\t') {
 			cur_++;
@@ -55,7 +55,7 @@ public:
 	std::string_view CurPtr() { return std::string_view(cur_, line_.size() - (cur_ - line_.data())); }
 
 protected:
-	const std::string& line_;
+	const std::string_view line_;
 	const char* cur_;
 };
 

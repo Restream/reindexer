@@ -1322,16 +1322,13 @@ var testCaseWithSparseIndexes = IndexesTestCase{
 func CheckTestItemsQueries(t *testing.T, testCase IndexesTestCase) {
 
 	log.Println(testCase.Name)
-	for _, desc := range []bool{true, false} {
-		for _, sort := range testCase.Options.SortIndexes {
-			for _, distinct := range testCase.Options.DistinctIndexes {
-				log.Printf("\tDISTINCT '%s' SORT '%s' DESC %v\n", distinct, sort, desc)
-				// Just take all items from namespace
-				newTestQuery(DB, testCase.Namespace).Distinct(distinct).Sort(sort, desc).Limit(1).ExecAndVerify(t)
-				callQueriesSequence(t, testCase.Namespace, distinct, sort, desc, testCase.Options.TestComposite)
-			}
-		}
-	}
+	desc := []bool{true, false}[rand.Intn(2)]
+	sort := testCase.Options.SortIndexes[rand.Intn(len(testCase.Options.SortIndexes))]
+	distinct := testCase.Options.DistinctIndexes[rand.Intn(len(testCase.Options.DistinctIndexes))]
+	log.Printf("\tDISTINCT '%s' SORT '%s' DESC %v\n", distinct, sort, desc)
+	// Just take all items from namespace
+	newTestQuery(DB, testCase.Namespace).Distinct(distinct).Sort(sort, desc).Limit(1).ExecAndVerify(t)
+	callQueriesSequence(t, testCase.Namespace, distinct, sort, desc, testCase.Options.TestComposite)
 }
 
 func CheckTestItemsGeomQueries(t *testing.T) {

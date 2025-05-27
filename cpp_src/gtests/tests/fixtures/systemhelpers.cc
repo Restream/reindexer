@@ -40,7 +40,7 @@ pid_t StartProcess(const std::string& program, const std::vector<std::string>& p
 			}
 		}
 		if (getppid() != ppid_before_fork) {
-			fprintf(stderr, "Parent process is dead\n");
+			fprintf(stderr, "reindexer error: parent process is dead\n");
 			exit(1);
 		}
 		int ret = execv(program.c_str(), &paramsPointers[0]);

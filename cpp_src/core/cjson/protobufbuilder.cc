@@ -180,7 +180,7 @@ void ProtobufBuilder::put(TagName tagName, float val) {
 	bool done = false;
 	if (const auto res = getExpectedFieldType(); res.second) {
 		res.first.EvaluateOneOf(
-			[&](KeyValueType::Double) noexcept {
+			[&](KeyValueType::Double) {
 				put(tagName, double(val));
 				done = true;
 			},

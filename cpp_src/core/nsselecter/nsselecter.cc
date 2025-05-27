@@ -564,7 +564,7 @@ class NsSelecter::MainNsValueGetter<ItemRefVector::Iterator::RankedIt> {
 public:
 	explicit MainNsValueGetter(const NamespaceImpl& ns) noexcept : ns_{ns} {}
 	const PayloadValue& Value(const ItemRef& itemRef) const noexcept { return ns_.items_[itemRef.Id()]; }
-	ConstPayload Payload(const ItemRef& itemRef) const noexcept { return ConstPayload{ns_.payloadType_, Value(itemRef)}; }
+	ConstPayload Payload(const ItemRef& itemRef) const { return ConstPayload{ns_.payloadType_, Value(itemRef)}; }
 
 private:
 	const NamespaceImpl& ns_;
@@ -575,7 +575,7 @@ class NsSelecter::MainNsValueGetter<ItemRefVector::Iterator::NotRankedIt> {
 public:
 	explicit MainNsValueGetter(const NamespaceImpl& ns) noexcept : ns_{ns} {}
 	const PayloadValue& Value(const ItemRef& itemRef) const noexcept { return ns_.items_[itemRef.Id()]; }
-	ConstPayload Payload(const ItemRef& itemRef) const noexcept { return ConstPayload{ns_.payloadType_, Value(itemRef)}; }
+	ConstPayload Payload(const ItemRef& itemRef) const { return ConstPayload{ns_.payloadType_, Value(itemRef)}; }
 
 private:
 	const NamespaceImpl& ns_;
@@ -586,7 +586,7 @@ class NsSelecter::MainNsValueGetter<JoinPreResult::Values::Iterator> {
 public:
 	explicit MainNsValueGetter(const NamespaceImpl& ns) noexcept : ns_{ns} {}
 	const PayloadValue& Value(const ItemRef& itemRef) const noexcept { return itemRef.Value(); }
-	ConstPayload Payload(const ItemRef& itemRef) const noexcept { return ConstPayload{ns_.payloadType_, Value(itemRef)}; }
+	ConstPayload Payload(const ItemRef& itemRef) const { return ConstPayload{ns_.payloadType_, Value(itemRef)}; }
 
 private:
 	const NamespaceImpl& ns_;
@@ -607,7 +607,7 @@ public:
 		}
 		return jfIt[0].Value();
 	}
-	ConstPayload Payload(const ItemRef& itemRef) const noexcept { return ConstPayload{ns_.payloadType_, Value(itemRef)}; }
+	ConstPayload Payload(const ItemRef& itemRef) const { return ConstPayload{ns_.payloadType_, Value(itemRef)}; }
 
 private:
 	const NamespaceImpl& ns_;
@@ -731,7 +731,7 @@ It NsSelecter::applyForcedSortImpl(NamespaceImpl& ns, It begin, It end, const It
 
 class GeneralComparator {
 public:
-	GeneralComparator(const ItemComparator& compare) noexcept : compare_{compare} {}
+	explicit GeneralComparator(const ItemComparator& compare) noexcept : compare_{compare} {}
 
 	bool operator()(const ItemRef& lhs, const ItemRef& rhs) { return compare_(lhs, rhs); }
 	bool operator()(const ItemRefRanked& lhs, const ItemRefRanked& rhs) { return compare_(lhs.NotRanked(), rhs.NotRanked()); }
@@ -926,7 +926,8 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 					VariantArray recentValues;
 					size_t lastResSize = result.Count();
 					getSortIndexValue(sctx.sortingContext, properRowId, recentValues, rank,
-									  sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr, joinedSelectors);
+									  sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr, joinedSelectors,
+									  rdxCtx.ShardId());
 					if (prevValues.empty() && result.Items().Empty()) {
 						prevValues = recentValues;
 					} else {
@@ -959,7 +960,8 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 					--ctx.count;
 					if (!ctx.count && sortingOptions.multiColumn && !multiSortFinished) {
 						getSortIndexValue(sctx.sortingContext, properRowId, prevValues, rank,
-										  sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr, joinedSelectors);
+										  sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr, joinedSelectors,
+										  rdxCtx.ShardId());
 					}
 				}
 				if (!ctx.count && !ctx.calcTotal && multiSortFinished) {
@@ -1036,14 +1038,14 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 }
 
 void NsSelecter::getSortIndexValue(const SortingContext& sortCtx, IdType rowId, VariantArray& value, RankT rank,
-								   const joins::NamespaceResults* joinResults, const JoinedSelectors& js) {
+								   const joins::NamespaceResults* joinResults, const JoinedSelectors& js, int shardId) {
 	std::visit(
 		overloaded{
 			[&](const SortingContext::ExpressionEntry& e) {
 				assertrx_throw(e.expression < sortCtx.expressions.size());
 				ConstPayload pv(ns_->payloadType_, ns_->items_[rowId]);
-				value =
-					VariantArray{Variant{sortCtx.expressions[e.expression].Calculate(rowId, pv, joinResults, js, rank, ns_->tagsMatcher_)}};
+				value = VariantArray{
+					Variant{sortCtx.expressions[e.expression].Calculate(rowId, pv, joinResults, js, rank, ns_->tagsMatcher_, shardId)}};
 			},
 			[&](const SortingContext::JoinedFieldEntry& e) {
 				assertrx_throw(joinResults);
@@ -1091,7 +1093,7 @@ void NsSelecter::calculateSortExpressions(RankT rank, IdType rowId, IdType prope
 	const auto& joinedSelectors = sctx.joinedSelectors ? *sctx.joinedSelectors : emptyJoinedSelectors;
 	const auto joinedResultPtr = sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr;
 	for (size_t i = 0; i < exprs.size(); ++i) {
-		exprResults[i].push_back(exprs[i].Calculate(rowId, pv, joinedResultPtr, joinedSelectors, rank, ns_->tagsMatcher_));
+		exprResults[i].push_back(exprs[i].Calculate(rowId, pv, joinedResultPtr, joinedSelectors, rank, ns_->tagsMatcher_, 0));
 	}
 }
 
@@ -1287,13 +1289,13 @@ void NsSelecter::prepareSortJoinedIndex(size_t nsIdx, std::string_view column, i
 	index = IndexValueType::SetByJsonPath;
 	assertrx_throw(nsIdx < joinedSelectors.size());
 	const auto& js = joinedSelectors[nsIdx];
-	std::visit(overloaded{[&](const JoinPreResult::Values& values) noexcept {
+	std::visit(overloaded{[&](const JoinPreResult::Values& values) {
 							  values.payloadType.FieldByName(column, index);
 							  if (index == IndexValueType::SetByJsonPath) {
 								  skipSortingEntry |= !validateField(strictMode, column, values.nsName, values.tagsMatcher);
 							  }
 						  },
-						  Restricted<IdSet, SelectIteratorContainer>{}([&](const auto&) noexcept {
+						  Restricted<IdSet, SelectIteratorContainer>{}([&](const auto&) {
 							  js.rightNs_->payloadType_.FieldByName(column, index);
 							  if (index == IndexValueType::SetByJsonPath) {
 								  skipSortingEntry |= !validateField(strictMode, column, js.rightNs_->name_, js.rightNs_->tagsMatcher_);
@@ -1391,7 +1393,7 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, I
 				const JoinedSelectors& joinedSelectors;
 			} lCtx{false, strictMode, joinedSelectors};
 			expr.VisitForEach(
-				Skip<SortExpressionOperation, SortExpressionBracket, SortExprFuncs::Value>{},
+				Skip<SortExpressionOperation, SortExpressionBracket, SortExprFuncs::Value, SortExprFuncs::SortHash>{},
 				[this, &lCtx](SortExprFuncs::Index& exprIndex) {
 					prepareSortIndex(*ns_, exprIndex.column, exprIndex.index, lCtx.skipSortingEntry, lCtx.strictMode);
 				},
@@ -1468,7 +1470,7 @@ public:
 		curCost_ = 0;
 	}
 	bool IsInOrSequence() const noexcept { return isInSequence_; }
-	void Add(const SelectKeyResults& results, bool isTargetSortIndex) noexcept {
+	void Add(const SelectKeyResults& results, bool isTargetSortIndex) {
 		if constexpr (countingPolicy == CostCountingPolicy::ExceptTargetSortIdxSeq) {
 			if (!isInSequence_ && isTargetSortIndex) {
 				return;
@@ -1477,7 +1479,7 @@ public:
 		onlyTargetSortIdxInSequence_ = onlyTargetSortIdxInSequence_ && isTargetSortIndex;
 		Add(results);
 	}
-	void Add(const SelectKeyResults& results) noexcept {
+	void Add(const SelectKeyResults& results) {
 		std::visit(
 			overloaded{
 				[this](const SelectKeyResultsVector& selRes) {
@@ -1632,7 +1634,7 @@ size_t NsSelecter::calculateOptimizedCost(size_t costNormal, const QueryEntries&
 					SelectKeyResults results =
 						ns_->indexes_[qe.IndexNo()]->SelectKey(qe.Values(), qe.Condition(), 0, indexSelectContext, rdxCtx);
 					costCalculator.Add(results);
-				} catch (const Error&) {
+				} catch (std::exception&) {
 					costCalculator.MarkInapposite();
 				}
 			});

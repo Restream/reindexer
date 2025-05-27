@@ -60,7 +60,7 @@ void WALRecord::Pack(WrSerializer& ser) const {
 		case WalResetLocalWal:
 			return;
 	}
-	fprintf(stderr, "Unexpected WAL rec type %d\n", int(type));
+	fprintf(stderr, "reindexer error: unexpected WAL rec type %d\n", int(type));
 	std::abort();
 }
 
@@ -210,7 +210,7 @@ WrSerializer& WALRecord::Dump(WrSerializer& ser, const std::function<std::string
 		case WalRawItem:
 			return ser << (" rowId=") << rawItem.id << ": " << cjsonViewer(rawItem.itemCJson);
 	}
-	fprintf(stderr, "Unexpected WAL rec type %d\n", int(type));
+	fprintf(stderr, "reindexer error: unexpected WAL rec type %d\n", int(type));
 	std::abort();
 }
 
@@ -270,7 +270,7 @@ void WALRecord::GetJSON(JsonBuilder& jb, const std::function<std::string(std::st
 			jb.Put("tagsmatcher", data);
 			return;
 	}
-	fprintf(stderr, "Unexpected WAL rec type %d\n", int(type));
+	fprintf(stderr, "reindexer error: unexpected WAL rec type %d\n", int(type));
 	std::abort();
 }
 

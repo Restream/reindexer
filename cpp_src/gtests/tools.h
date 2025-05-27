@@ -1,6 +1,9 @@
+#pragma once
+
 #include <gtest/gtest.h>
 #include <string>
 #include "core/keyvalue/uuid.h"
+#include "estl/forward_like.h"
 #include "tools/stringstools.h"
 #include "vendor/gason/gason.h"
 
@@ -34,7 +37,7 @@ inline reindexer::Uuid randUuid() { return reindexer::Uuid{randStrUuid()}; }
 inline reindexer::Uuid nilUuid() { return reindexer::Uuid{nilUUID}; }
 
 template <typename Fn>
-inline reindexer::VariantArray randUuidArrayImpl(Fn fillFn, size_t min, size_t max) {
+reindexer::VariantArray randUuidArrayImpl(Fn fillFn, size_t min, size_t max) {
 	assert(min <= max);
 	reindexer::VariantArray ret;
 	const size_t count = min == max ? min : min + rand() % (max - min);
@@ -111,18 +114,15 @@ inline reindexer::Point randPoint(long long range) noexcept {
 	return reindexer::Point{randBin<double>(-range, range), randBin<double>(-range, range)};
 }
 
-#define CATCH_AND_ASSERT                  \
-	catch (const reindexer::Error& err) { \
-		ASSERT_TRUE(false) << err.what(); \
-	}                                     \
-	catch (const std::exception& err) {   \
-		ASSERT_TRUE(false) << err.what(); \
-	}                                     \
-	catch (...) {                         \
-		ASSERT_TRUE(false);               \
+#define CATCH_AND_ASSERT                           \
+	catch (const std::exception& err) {            \
+		ASSERT_TRUE(false) << err.what();          \
+	}                                              \
+	catch (...) {                                  \
+		ASSERT_TRUE(false) << "Unknown exception"; \
 	}
 
-inline const gason::JsonNode& findJsonField(const gason::JsonNode& json, std::string_view fieldName) {
+inline const gason::JsonNode &findJsonField(const gason::JsonNode &json, std::string_view fieldName) {
 	using namespace std::string_view_literals;
 	std::vector<std::string_view> fields;
 	reindexer::split(fieldName, "."sv, false, fields);
@@ -136,6 +136,28 @@ inline const gason::JsonNode& findJsonField(const gason::JsonNode& json, std::st
 		}
 	}
 	return (*node)[fields.back()];
+}
+
+template <typename Cont>
+auto&& randOneOf(Cont&& cont) {
+	assertrx(!std::empty(cont));
+	auto it = cont.begin();
+	std::advance(it, rand() % std::size(cont));
+	return reindexer::forward_like<Cont>(*it);
+}
+
+template <typename T1, typename T2, typename... Ts>
+T1 randOneOf(T1 v1, T2 v2, Ts... vs) {
+	return std::move(randOneOf(std::initializer_list<T1>{std::move(v1), std::move(v2), std::move(vs)...}));
+}
+
+inline std::function<void ()> exceptionWrapper(std::function<void ()> &&func) {
+	return [f = std::move(func)] {	// NOLINT(*.NewDeleteLeaks) False positive
+		try {
+			f();
+		}
+		CATCH_AND_ASSERT
+	};
 }
 
 #define ASSERT_JSON_CONTAIN_FIELD(json, fieldName) ASSERT_FALSE(findJsonField(json, fieldName).empty()) << fieldName;

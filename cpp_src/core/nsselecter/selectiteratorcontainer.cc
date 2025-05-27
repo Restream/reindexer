@@ -9,6 +9,7 @@
 #include "core/rdxcontext.h"
 #include "core/type_consts_helpers.h"
 #include "estl/restricted.h"
+#include "estl/stable_sort.h"
 #include "nsselecter.h"
 #include "querypreprocessor.h"
 
@@ -67,42 +68,8 @@ void SelectIteratorContainer::sortByCost(std::span<unsigned> indexes, std::span<
 			costs[indexes[j]] = cst;
 		}
 	}
-	// GCC's std::stable_sort performs allocations even in the simplest scenarios, so handling some of them explicitly
-	switch (to - from) {
-		case 0:
-		case 1:
-			break;
-		case 2: {
-			auto it = indexes.begin() + from;
-			auto& a = *(it++);
-			auto& b = *(it);
-			if (costs[a] > costs[b]) {
-				std::swap(a, b);
-			}
-			break;
-		}
-		case 3: {
-			auto it = indexes.begin() + from;
-			auto& a = *(it++);
-			auto& b = *(it++);
-			auto& c = *(it);
-			if (costs[a] > costs[b]) {
-				std::swap(a, b);
-			}
-			if (costs[b] > costs[c]) {
-				std::swap(b, c);
-			}
-			if (costs[a] > costs[b]) {
-				std::swap(a, b);
-			}
-			break;
-		}
-		default:
-			// clang-tidy reports that std::get_temporary_buffer is deprecated
-			// NOLINTNEXTLINE (clang-diagnostic-deprecated-declarations)
-			std::stable_sort(indexes.begin() + from, indexes.begin() + to,
-							 [&costs](unsigned i1, unsigned i2) { return costs[i1] < costs[i2]; });
-	}
+	reindexer::stable_sort(indexes.begin() + from, indexes.begin() + to,
+						   [&costs](unsigned i1, unsigned i2) noexcept { return costs[i1] < costs[i2]; });
 	moveJoinsToTheBeginningOfORs(indexes, from, to);
 }
 

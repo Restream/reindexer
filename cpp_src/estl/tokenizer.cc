@@ -75,7 +75,7 @@ token tokenizer::next_token(flags flgs) {
 		do {
 			res.text_.push_back(*cur_++);
 			++pos_;
-		} while (cur_ != q_.end() && (isdigit(*cur_) || *cur_ == '.'));
+		} while (cur_ != q_.end() && (isdigit(*cur_) || *cur_ == '.' || *cur_ == 'e' || (*(cur_ - 1) == 'e' && issign(*cur_))));
 	} else if (flgs.has_treat_sign_as_token() && (*cur_ == '-' || *cur_ == '+')) {
 		res.type = TokenSign;
 		res.text_.push_back(*cur_++);
@@ -189,7 +189,7 @@ Variant getVariantFromToken(const token& tok) {
 		return Variant(make_key_string(str.data(), str.length()));
 	}
 
-	if (!isdigit(str[0]) && (str.size() == 1 || (str[0] != '+' && str[0] != '-'))) {
+	if (!isdigit(str[0]) && (str.size() == 1 || !issign(str[0]))) {
 		return Variant(make_key_string(str.data(), str.length()));
 	}
 
@@ -199,16 +199,31 @@ Variant getVariantFromToken(const token& tok) {
 	bool nullDecimalPart = true;
 
 	size_t decPointPos = str.size();
+	size_t ePos = str.size();
 	for (unsigned i = 1; i < str.size(); i++) {
 		if (str[i] == '.') {
-			if (isFloat) {
-				// second point - not a number
+			if (isFloat || ePos < str.size()) {
+				// second or incorrect point - not a number
 				return Variant(make_key_string(str.data(), str.length()));
 			}
 
 			decPointPos = i;
 
 			isFloat = true;
+			continue;
+		}
+
+		if (str[i] == 'e') {
+			if (ePos < str.size()) {
+				// second e not a number
+				return Variant(make_key_string(str.data(), str.length()));
+			}
+
+			ePos = i;
+			continue;
+		}
+
+		if (i == ePos + 1 && issign(str[i])) {
 			continue;
 		}
 
@@ -221,7 +236,15 @@ Variant getVariantFromToken(const token& tok) {
 		}
 	}
 
-	isFloat = !nullDecimalPart || (isFloat && decPointPos > maxSignsInInt);
+	if (ePos + 1 == str.size() || (ePos + 2 == str.size() && !isdigit(str[ePos + 1]))) {
+		return Variant(make_key_string(str.data(), str.length()));
+	}
+
+	if (ePos == 1 && !isdigit((str[0]))) {
+		return Variant(make_key_string(str.data(), str.length()));
+	}
+
+	isFloat = !nullDecimalPart || (isFloat && decPointPos > maxSignsInInt) || ePos < str.size();
 
 	if (!isFloat) {
 		auto intPart = str.substr(0, decPointPos);

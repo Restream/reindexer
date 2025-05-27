@@ -20,20 +20,6 @@ const ClusterOperationApi::Defaults& ClusterOperationApi::GetDefaults() const {
 	return defs;
 }
 
-std::function<void()> ClusterOperationApi::ExceptionWrapper(std::function<void()>&& func) {
-	return [f = std::move(func)] {	// NOLINT(*.NewDeleteLeaks) False positive
-		try {
-			f();
-		} catch (Error& e) {
-			ASSERT_TRUE(false) << e.what();
-		} catch (std::exception& e) {
-			ASSERT_TRUE(false) << e.what();
-		} catch (...) {
-			ASSERT_TRUE(false) << "Unknown exception";
-		}
-	};
-}
-
 void ClusterOperationApi::Cluster::initCluster(size_t count, size_t initialServerId, const YAML::Node& clusterConf) {
 	for (size_t i = 0; i < count; ++i) {
 		YAML::Node replConf;
@@ -49,14 +35,14 @@ void ClusterOperationApi::Cluster::initCluster(size_t count, size_t initialServe
 }
 
 ClusterOperationApi::Cluster::Cluster(dynamic_loop& loop, size_t initialServerId, size_t count, Defaults ports, size_t maxUpdatesSize,
-									const YAML::Node& clusterConf)
+									  const YAML::Node& clusterConf)
 	: loop_(loop), defaults_(std::move(ports)), maxUpdatesSize_(maxUpdatesSize) {
 	initCluster(count, initialServerId, clusterConf);
 }
 
 ClusterOperationApi::Cluster::Cluster(dynamic_loop& loop, size_t initialServerId, size_t count, Defaults ports,
-									const std::vector<std::string>& nsList, std::chrono::milliseconds resyncTimeout, int maxSyncCount,
-									int syncThreadsCount, size_t maxUpdatesSize)
+									  const std::vector<std::string>& nsList, std::chrono::milliseconds resyncTimeout, int maxSyncCount,
+									  int syncThreadsCount, size_t maxUpdatesSize)
 	: loop_(loop), defaults_(std::move(ports)), maxUpdatesSize_(maxUpdatesSize) {
 	// Initializing cluster config as YAML node
 	if (maxSyncCount < 0) {
@@ -263,7 +249,7 @@ int ClusterOperationApi::Cluster::AwaitLeader(std::chrono::seconds timeout, bool
 }
 
 void ClusterOperationApi::Cluster::doWaitSync(std::string_view ns, std::vector<ServerControl>& svc, lsn_t expectedLsn,
-											lsn_t expectedNsVersion, std::chrono::seconds maxSyncTime) {
+											  lsn_t expectedNsVersion, std::chrono::seconds maxSyncTime) {
 	auto now = std::chrono::milliseconds(0);
 	const auto pause = std::chrono::milliseconds(100);
 	size_t syncedCnt = 0;
@@ -280,7 +266,7 @@ void ClusterOperationApi::Cluster::doWaitSync(std::string_view ns, std::vector<S
 }
 
 size_t ClusterOperationApi::Cluster::getSyncCnt(std::string_view ns, std::vector<ServerControl>& svc, lsn_t expectedLsn,
-											  lsn_t expectedNsVersion) {
+												lsn_t expectedNsVersion) {
 	size_t syncedCnt = 0;
 	bool empty = true;
 	ReplicationTestState state;
@@ -311,7 +297,7 @@ size_t ClusterOperationApi::Cluster::getSyncCnt(std::string_view ns, std::vector
 }
 
 void ClusterOperationApi::Cluster::WaitSync(std::string_view ns, lsn_t expectedLsn, lsn_t expectedNsVersion,
-										  std::chrono::seconds maxSyncTime) {
+											std::chrono::seconds maxSyncTime) {
 	doWaitSync(ns, svc_, expectedLsn, expectedNsVersion, maxSyncTime);
 }
 
@@ -452,7 +438,7 @@ void ClusterOperationApi::Cluster::ChangeLeader(int& curLeaderId, int newLeaderI
 }
 
 void ClusterOperationApi::Cluster::AddAsyncNode(size_t nodeId, const ServerControl::Interface::Ptr& node, AsyncReplicationMode replMode,
-											  std::optional<std::vector<std::string>>&& nsList) {
+												std::optional<std::vector<std::string>>&& nsList) {
 	assert(nodeId < svc_.size());
 	auto asyncLeader = svc_[nodeId].Get();
 	asyncLeader->AddFollower(node, std::move(nsList), replMode);
@@ -475,9 +461,9 @@ void ClusterOperationApi::Cluster::AwaitLeaderBecomeAvailable(size_t nodeId, std
 }
 
 YAML::Node ClusterOperationApi::Cluster::CreateClusterConfigStatic(size_t initialServerId, size_t count, const Defaults& ports,
-																 const std::vector<std::string>& nsList,
-																 std::chrono::milliseconds resyncTimeout, int maxSyncCount,
-																 int syncThreadsCount) {
+																   const std::vector<std::string>& nsList,
+																   std::chrono::milliseconds resyncTimeout, int maxSyncCount,
+																   int syncThreadsCount) {
 	std::vector<size_t> nodeIds;
 	nodeIds.reserve(count);
 	for (size_t id = initialServerId; id < initialServerId + count; ++id) {
@@ -488,9 +474,9 @@ YAML::Node ClusterOperationApi::Cluster::CreateClusterConfigStatic(size_t initia
 }
 
 YAML::Node ClusterOperationApi::Cluster::CreateClusterConfigStatic(const std::vector<size_t>& nodeIds, const Defaults& ports,
-																 const std::vector<std::string>& nsList,
-																 std::chrono::milliseconds resyncTimeout, int maxSyncCount,
-																 int syncThreadsCount) {
+																   const std::vector<std::string>& nsList,
+																   std::chrono::milliseconds resyncTimeout, int maxSyncCount,
+																   int syncThreadsCount) {
 	if (maxSyncCount < 0) {
 		maxSyncCount = rand() % 3;
 		TestCout() << "Cluster's max_sync_count was chosen randomly: " << maxSyncCount << std::endl;
@@ -517,7 +503,7 @@ YAML::Node ClusterOperationApi::Cluster::CreateClusterConfigStatic(const std::ve
 }
 
 YAML::Node ClusterOperationApi::Cluster::CreateClusterConfig(size_t initialServerId, size_t count, const std::vector<std::string>& nsList,
-														   std::chrono::milliseconds resyncTimeout, int maxSyncCount,
-														   int syncThreadsCount) {
+															 std::chrono::milliseconds resyncTimeout, int maxSyncCount,
+															 int syncThreadsCount) {
 	return Cluster::CreateClusterConfigStatic(initialServerId, count, defaults_, nsList, resyncTimeout, maxSyncCount, syncThreadsCount);
 }

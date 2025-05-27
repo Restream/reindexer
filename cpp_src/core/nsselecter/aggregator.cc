@@ -188,6 +188,7 @@ struct Aggregator::MultifieldOrderedMap : public btree::btree_map<PayloadValue, 
 	using Base = btree::btree_map<PayloadValue, int, MultifieldComparator>;
 	using Base::Base;
 	MultifieldOrderedMap() = delete;
+	MultifieldOrderedMap(MultifieldOrderedMap&&) noexcept = default;
 };
 
 Aggregator::SinglefieldComparator::SinglefieldComparator(const h_vector<SortingEntry, 1>& sortingEntries)

@@ -532,15 +532,12 @@ void ItemImpl::Embed(const RdxContext& ctx) {
 			source.resize(0);
 			for (const auto& fld : embedder->Fields()) {
 				pl.Get(fld, data);
-				source.push_back(std::move(data));
+				source.emplace_back(std::move(data));
 			}
 
 			// ToDo in real life, work with several embedded devices requires asynchrony. Now we have only one, at all
 			h_vector<ConstFloatVector, 1> products;
-			auto err = embedder->Calculate(ctx, std::span{&source, 1}, products);
-			if (!err.ok()) {
-				throw err;
-			}
+			embedder->Calculate(ctx, std::span{&source, 1}, products);
 			if (products.size() != 1) {
 				throw Error(errLogic, "Unable to set vector values with incorrect embedding result");
 			}

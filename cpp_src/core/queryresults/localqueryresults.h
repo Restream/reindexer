@@ -106,7 +106,6 @@ public:
 
 	LocalQueryResults();
 	LocalQueryResults(const ItemRefVector::ConstIterator& b, const ItemRefVector::ConstIterator& e);
-	LocalQueryResults(std::initializer_list<ItemRef> l);
 	LocalQueryResults(const LocalQueryResults&) = delete;
 	LocalQueryResults(LocalQueryResults&&) noexcept;
 	~LocalQueryResults();

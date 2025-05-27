@@ -223,7 +223,7 @@ void Connection<Mutex>::timeout_cb(ev::periodic& /*watcher*/, int /*time*/) {
 		return;
 	}
 
-	fprintf(stderr, "Dropping RPC-connection on the idle timeout\n");
+	fprintf(stderr, "reindexer: dropping RPC-connection on the idle timeout\n");
 	closeConn();
 }
 template <typename Mutex>

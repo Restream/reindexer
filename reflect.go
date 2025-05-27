@@ -40,11 +40,11 @@ type indexOptions struct {
 	isComposite bool
 }
 
-func parseRxTags(field reflect.StructField) (idxName string, idxType string, expireAfter string, idxSettings []string) {
+func parseRxTags(field reflect.StructField) (idxName string, idxType string, idxSettings []string) {
 	tag, isSet := field.Tag.Lookup("reindex")
 	tagsSlice := strings.SplitN(tag, ",", 3)
 	var idxOpts string
-	idxName, idxType, expireAfter, idxOpts = tagsSlice[0], "", "", ""
+	idxName, idxType, idxOpts = tagsSlice[0], "", ""
 	if isSet && len(idxName) == 0 && !field.Anonymous && field.Name != "_" {
 		idxName = field.Name
 	}
@@ -53,11 +53,7 @@ func parseRxTags(field reflect.StructField) (idxName string, idxType string, exp
 		idxType = tagsSlice[1]
 	}
 	if len(tagsSlice) > 2 {
-		if idxType == "ttl" {
-			expireAfter = strings.SplitN(tagsSlice[2], "=", 2)[1]
-		} else {
-			idxOpts = tagsSlice[2]
-		}
+		idxOpts = tagsSlice[2]
 	}
 	idxSettings = cjson.SplitFieldOptions(idxOpts)
 	return
@@ -74,7 +70,7 @@ func parseIndexes(st reflect.Type, joined *map[string][]int) (indexDefs []bindin
 func parseSchema(st reflect.Type) *bindings.SchemaDef {
 	reflector := &jsonschema.Reflector{}
 	reflector.FieldIsInScheme = func(f reflect.StructField) bool {
-		_, _, _, idxSettings := parseRxTags(f)
+		_, _, idxSettings := parseRxTags(f)
 		if parseByKeyWord(&idxSettings, "joined") || parseByKeyWord(&idxSettings, "composite") {
 			return false
 		}
@@ -88,6 +84,19 @@ func parseSchema(st reflect.Type) *bindings.SchemaDef {
 	}
 	return nil
 
+}
+
+func peekNamedOption(name string, options *[]string) string {
+	for i := 0; i < len(*options); {
+		values := strings.Split((*options)[i], "=")
+		if len(values) == 2 && values[0] == name {
+			*options = append((*options)[:i], (*options)[i+1:]...)
+			return values[1]
+		} else {
+			i++
+		}
+	}
+	return ""
 }
 
 func parseNamedOptions(options *[]string) map[string]string {
@@ -152,13 +161,20 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 		}
 		jsonPath := jsonBasePath + jsonTag
 
-		idxName, idxType, expireAfter, idxSettings := parseRxTags(field)
+		idxName, idxType, idxSettings := parseRxTags(field)
+
 		if idxName == "-" {
 			continue
 		}
 		reindexPath := reindexBasePath + idxName
 
 		opts := parseOpts(&idxSettings)
+
+		expireAfter := ""
+		if idxType == "ttl" {
+			expireAfter = peekNamedOption("expire_after", &idxSettings)
+		}
+
 		if t.Kind() == reflect.Slice || t.Kind() == reflect.Array || subArray {
 			opts.isArray = true
 		}
@@ -276,13 +292,14 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 				return fmt.Errorf("joined index must be a slice of objects/pointers, but it is a scalar value (index name: '%s', field name: '%s', jsonpath: '%s')",
 					reindexPath, field.Name, jsonPath)
 			}
+
 			indexDef := makeIndexDef(reindexPath, []string{jsonPath}, idxType, fieldType, opts, collateMode, sortOrderLetters, parseExpireAfter(expireAfter), nil)
 			if err := indexDefAppend(indexDefs, indexDef, opts.isAppenable); err != nil {
 				return err
 			}
 		}
 		if len(idxSettings) > 0 {
-			return fmt.Errorf("unknown index settings are found: '%v'", idxSettings)
+			return fmt.Errorf("unknown index settings are found: '%v' (len = %d)", idxSettings, len(idxSettings))
 		}
 	}
 
@@ -315,6 +332,8 @@ func parseOpts(idxSettingsBuf *[]string) indexOptions {
 			opts.isJoined = true
 		case "composite":
 			opts.isComposite = true
+		case "":
+			// Skip empty
 		default:
 			newIdxSettingsBuf = append(newIdxSettingsBuf, idxSetting)
 		}
@@ -435,14 +454,6 @@ func getJoinedField(val reflect.Value, joined map[string][]int, name string) (re
 		ret = reflect.Indirect(reflect.Indirect(val).FieldByIndex(idx))
 	}
 	return ret
-}
-
-func makeFieldDef(JSONPath string, fieldType string, isArray bool) bindings.FieldDef {
-	return bindings.FieldDef{
-		JSONPath: JSONPath,
-		Type:     fieldType,
-		IsArray:  isArray,
-	}
 }
 
 func makeIndexDef(index string, jsonPaths []string, indexType, fieldType string, opts indexOptions, collateMode int, sortOrder string, expireAfter int, fv *bindings.FloatVectorIndexOpts) bindings.IndexDef {

@@ -8,6 +8,7 @@
 
 namespace reindexer {
 
+// NOLINTNEXTLINE(bugprone-exception-escape) Exception does not matter here - we are going to crash anyway
 void fail_assertrx(const char* assertion, const char* file, unsigned line, const char* function) noexcept {
 	auto msg = fmt::format("Assertion failed: {} ({}:{}: {})", assertion, file, line, function);
 	std::cerr << msg << "\n";

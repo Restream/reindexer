@@ -14,7 +14,6 @@ namespace cluster {
 class ClusterDataReplicator {
 public:
 	using UpdatesQueueT = UpdatesQueuePair<updates::UpdateRecord>;
-	using UpdatesQueueShardT = UpdatesQueueT::QueueT;
 
 	ClusterDataReplicator(UpdatesQueueT&, SharedSyncState&, ReindexerImpl&);
 
@@ -43,12 +42,13 @@ private:
 	}
 	bool isRunning() const noexcept { return raftThread_.joinable(); }
 	void clusterControlRoutine(int serverId);
+	void handleClusterCommands(int serverId, const RaftInfo& curRaftInfo);
 	DSN getManagementDsn(int id) const;
 	void onRoleChanged(RaftInfo::Role to, int leaderId);
 	void stop();
 
 	ReplicationStatsCollector statsCollector_;
-	enum ClusterCommandId { kNoComand = -1, kCmdSetDesiredLeader = 0 };
+	enum ClusterCommandId { kNoCommand = -1, kCmdSetDesiredLeader = 0 };
 
 	struct ClusterCommand {
 		ClusterCommand() = default;
@@ -59,7 +59,7 @@ private:
 		ClusterCommand(ClusterCommand&) = delete;
 		ClusterCommand& operator=(ClusterCommand& other) = delete;
 
-		ClusterCommandId id = kNoComand;
+		ClusterCommandId id = kNoCommand;
 		int serverId = -1;
 		bool send = false;
 		std::promise<Error> result;
@@ -71,7 +71,7 @@ private:
 			std::lock_guard<std::mutex> lk(lock_);
 			commands_.push(std::move(c));
 		}
-		bool GetCommand(ClusterCommand& c) {
+		[[nodiscard]] bool GetCommand(ClusterCommand& c) noexcept {
 			std::lock_guard<std::mutex> lk(lock_);
 			if (commands_.empty()) {
 				return false;

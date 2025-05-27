@@ -144,11 +144,13 @@ ReplThread<BehaviourParamT>::ReplThread(int serverId, ReindexerImpl& _thisNode, 
 			kCoro32KStackSize);
 	};
 	updatesTimer_.set(loop);
+	// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 	updatesTimer_.set([this, spawnNotifierRoutine](net::ev::timer&, int) noexcept {
 		log_.Trace([this] { rtfmt("{}: new updates notification (on timer)", serverId_); });
 		spawnNotifierRoutine();
 	});
 	updatesAsync_.set(loop);
+	// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 	updatesAsync_.set([this, spawnNotifierRoutine](net::ev::async&) noexcept {
 		hasPendingNotificaions_ = true;
 		if (!terminate_.load(std::memory_order_relaxed)) {
@@ -178,6 +180,7 @@ void ReplThread<BehaviourParamT>::Run(ReplThreadConfig config, const std::vector
 	consensusCnt_ = consensusCnt;
 	requiredReplicas_ = requiredReplicas;
 
+	// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 	loop.spawn([this, &nodesList]() noexcept {
 		nodes.clear();
 		if (config_.ParallelSyncsPerThreadCount > 0) {
@@ -211,6 +214,7 @@ void ReplThread<BehaviourParamT>::Run(ReplThreadConfig config, const std::vector
 			updates_->AddDataNotifier(std::this_thread::get_id(), [this] { updatesAsync_.send(); });
 
 			for (size_t i = 0; i < nodes.size(); ++i) {
+				// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 				loop.spawn(wg, [this, i]() noexcept {
 					// 3) Perform wal-sync/force-sync for each follower
 					nodeReplicationRoutine(nodes[i]);
@@ -311,6 +315,7 @@ void ReplThread<BehaviourParamT>::nodeReplicationRoutine(Node& node) {
 		if (err.ok()) {
 			expectingReconnect = true;
 			if (!node.connObserverId.has_value()) {
+				// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 				auto connObserverId = node.client.AddConnectionStateObserver([this, &node](const Error& err) noexcept {
 					if (!err.ok() && updates_ && !terminate_) {
 						logInfo("{}:{} Connection error: {}", serverId_, node.uid, err.whatStr());
@@ -474,6 +479,7 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 			continue;
 		}
 		logTrace("{}:{} Creating sync routine for {}", serverId_, node.uid, ns.name);
+		// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 		loop.spawn(localWg, [this, &integralError, &node, &ns]() mutable noexcept {
 			// 3.1) Perform wal-sync/force-sync for specified namespace in separated routine
 			ReplicationStateV2 replState;
@@ -509,7 +515,7 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 						if (nsExists && (replState.clusterStatus.role != ClusterOperationStatus::Role::SimpleReplica ||
 										 replState.clusterStatus.leaderId != serverId_)) {
 							logTrace("{}:{} Switching role for '{}' on remote node", serverId_, node.uid, ns.name);
-							err = node.client.WithEmmiterServerId(serverId_).SetClusterOperationStatus(
+							err = node.client.WithEmitterServerId(serverId_).SetClusterOperationStatus(
 								ns.name, ClusterOperationStatus{serverId_, ClusterOperationStatus::Role::SimpleReplica});
 						}
 					}
@@ -565,6 +571,7 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 }
 
 template <typename BehaviourParamT>
+// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 void ReplThread<BehaviourParamT>::updatesNotifier() noexcept {
 	for (auto& node : nodes) {
 		if (node.updateNotifier->opened() && !node.updateNotifier->full()) {
@@ -574,6 +581,7 @@ void ReplThread<BehaviourParamT>::updatesNotifier() noexcept {
 }
 
 template <typename BehaviourParamT>
+// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 void ReplThread<BehaviourParamT>::terminateNotifier() noexcept {
 	logTrace("{}: got termination signal", serverId_);
 	DisconnectNodes();
@@ -584,6 +592,7 @@ void ReplThread<BehaviourParamT>::terminateNotifier() noexcept {
 }
 
 template <typename BehaviourParamT>
+// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 std::tuple<bool, UpdateApplyStatus> ReplThread<BehaviourParamT>::handleNetworkCheckRecord(Node& node, UpdatesQueueT::UpdatePtr& updPtr,
 																						  uint16_t offset, bool currentlyOnline,
 																						  const updates::UpdateRecord& rec) noexcept {
@@ -609,6 +618,7 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 		class TmpNsGuard {
 		public:
 			TmpNsGuard(client::CoroReindexer& client, int serverId, const Logger& log) : client_(client), serverId_(serverId), log_(log) {}
+			// NOLINTNEXTLINE(bugprone-exception-escape) Exceptions in logging are unlikely
 			~TmpNsGuard() {
 				if (tmpNsName.size()) {
 					logWarn("{}: Dropping tmp ns on error: '{}'", serverId_, tmpNsName);
@@ -724,7 +734,7 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 				return err;
 			}
 			if constexpr (std::is_same_v<BehaviourParamT, AsyncThreadParam>) {
-				err = client.WithEmmiterServerId(serverId_).SetClusterOperationStatus(
+				err = client.WithEmitterServerId(serverId_).SetClusterOperationStatus(
 					tmpNsGuard.tmpNsName, ClusterOperationStatus{serverId_, ClusterOperationStatus::Role::SimpleReplica});
 				if (!err.ok()) {
 					return err;
@@ -790,6 +800,7 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 }
 
 template <typename BehaviourParamT>
+// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& node) noexcept {
 	logInfo("{}:{} Start updates handling loop", serverId_, node.uid);
 
@@ -824,7 +835,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 				  ctx.updPtr->ID() + ctx.offset, (res.err.ok() ? "OK" : "ERROR:" + res.err.whatStr()), counters.replicas + 1);
 		});
 		const auto replRes = ctx.updPtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, ctx.offset,
-														 it.EmmiterServerID() == node.serverId, res.err);
+														 it.EmitterServerID() == node.serverId, res.err);
 		if (res.err.ok()) {
 			bhvParam_.OnUpdateSucceed(node.uid, ctx.updPtr->ID() + ctx.offset);
 		}
@@ -900,7 +911,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 						"version: {}, last synced lsn: {}",
 						serverId_, node.uid, nsName, int(it.Type()), updatePtr->ID() + offset, it.ExtLSN().NsVersion(), it.ExtLSN().LSN(),
 						nsData.latestLsn.NsVersion(), nsData.latestLsn.LSN());
-					updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, it.EmmiterServerID() == node.serverId,
+					updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, it.EmitterServerID() == node.serverId,
 											   Error());
 					continue;
 				}
@@ -948,7 +959,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 							 (res.err.ok() ? "OK" : "ERROR:" + res.err.whatStr()), upd.GetCounters().replicas + 1);
 
 					const auto replRes = updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset,
-																	it.EmmiterServerID() == node.serverId, res.err);
+																	it.EmitterServerID() == node.serverId, res.err);
 					if (res.err.ok()) {
 						nsData.UpdateLsnOnRecord(it);
 						bhvParam_.OnUpdateSucceed(node.uid, updatePtr->ID() + offset);
@@ -1045,14 +1056,14 @@ bool ReplThread<BehaviourParamT>::handleUpdatesWithError(Node& node, const Error
 				break;
 			}
 
-			assert(it.EmmiterServerID() != serverId_);
-			const bool isEmmiter = it.EmmiterServerID() == node.serverId;
-			if (isEmmiter) {
+			assert(it.EmitterServerID() != serverId_);
+			const bool isEmitter = it.EmitterServerID() == node.serverId;
+			if (isEmitter) {
 				--node.nextUpdateId;
 				return true;  // Retry sync after receiving update from offline node
 			}
 			const auto replRes = updatePtr->OnUpdateHandled(
-				node.uid, consensusCnt_, requiredReplicas_, offset, isEmmiter,
+				node.uid, consensusCnt_, requiredReplicas_, offset, isEmitter,
 				Error(errUpdateReplication, "Unable to send update to enough amount of replicas. Last error: {}", err.whatStr()));
 
 			if (replRes == updates::ReplicationResult::Error && !hadErrorOnLastUpdate) {
@@ -1064,12 +1075,12 @@ bool ReplThread<BehaviourParamT>::handleUpdatesWithError(Node& node, const Error
 			log_.Trace([&] {
 				const auto counters = upd.GetCounters();
 				rtfmt(
-					"{}:{}:{} Dropping update with error: {}. Type {}, ns version: {}, lsn: {}, emmiter: {}. "
+					"{}:{}:{} Dropping update with error: {}. Type {}, ns version: {}, lsn: {}, emitter: {}. "
 					"Required: "
 					"{}, succeed: "
 					"{}, failed: {}, replicas: {}",
 					serverId_, node.uid, nsName, err.whatStr(), int(it.Type()), it.ExtLSN().NsVersion(), it.ExtLSN().LSN(),
-					(isEmmiter ? node.serverId : it.EmmiterServerID()), consensusCnt_, counters.approves, counters.errors,
+					(isEmitter ? node.serverId : it.EmitterServerID()), consensusCnt_, counters.approves, counters.errors,
 					counters.replicas + 1);
 			});
 		}
@@ -1299,7 +1310,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const updates::Update
 				nsData.isClosed = false;
 				if constexpr (!isClusterReplThread()) {
 					if (err.ok()) {
-						err = client.WithEmmiterServerId(serverId_).SetClusterOperationStatus(
+						err = client.WithEmitterServerId(serverId_).SetClusterOperationStatus(
 							nsName, ClusterOperationStatus{serverId_, ClusterOperationStatus::Role::SimpleReplica});
 					}
 				}

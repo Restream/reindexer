@@ -3,6 +3,7 @@
 
 #include <coroutine/channel.h>
 #include "gtests/tests/gtest_cout.h"
+#include "gtests/tools.h"
 #include "net/ev/ev.h"
 #include "tools/clock.h"
 
@@ -373,24 +374,24 @@ TEST(Coroutines, FIFOChannels) {
 	dynamic_loop loop;
 	channel<int> ch(3), chEnd;
 	constexpr int kValue = -999;
-	auto pushRoutine = [&]() noexcept {
+	auto pushRoutine = exceptionWrapper([&] {
 		launchOrder.emplace_back(current());
 		ch.push(kValue);
 		terminationOrder.emplace_back(current());
 		chEnd.pop();
-	};
+	});
 	constexpr unsigned kPushRountinesBatch = 5;
 	constexpr unsigned kIntermediateReadSize = 2;
 	ASSERT_GT(ch.capacity(), kIntermediateReadSize);  // Particular read is essential test condition
 	ASSERT_LT(ch.capacity(), kPushRountinesBatch);	  // Channel overflow is essential test condition
 
-	loop.spawn([&]() noexcept {
+	loop.spawn(exceptionWrapper([&] {
 		read.reserve(kPushRountinesBatch * 2);
 		for (unsigned i = 0; i < kPushRountinesBatch; ++i) {
 			loop.spawn(pushRoutine);
 		}
 		loop.yield();
-		loop.spawn([&]() noexcept {
+		loop.spawn(exceptionWrapper([&] {
 			EXPECT_EQ(ch.size(), ch.capacity());
 			for (unsigned i = 0; i < kIntermediateReadSize; ++i) {
 				auto res = ch.pop();
@@ -398,7 +399,7 @@ TEST(Coroutines, FIFOChannels) {
 				EXPECT_TRUE(res.second);
 				read.emplace_back(res.first);
 			}
-		});
+		}));
 		loop.yield();
 		for (unsigned i = 0; i < kPushRountinesBatch; ++i) {
 			loop.spawn(pushRoutine);
@@ -413,7 +414,7 @@ TEST(Coroutines, FIFOChannels) {
 			read.emplace_back(res.first);
 		}
 		chEnd.close();
-	});
+	}));
 
 	loop.run();
 

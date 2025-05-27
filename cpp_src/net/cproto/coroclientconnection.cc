@@ -304,6 +304,7 @@ void CoroClientConnection::handleFatalErrorFromReader(const Error& err) noexcept
 	handleFatalErrorImpl(err);
 }
 
+// NOLINTNEXTLINE(bugprone-exception-escape) No good ways to recover
 void CoroClientConnection::handleFatalErrorImpl(const Error& err) noexcept {
 	setLoggedIn(false);
 	for (auto& c : rpcCalls_) {
@@ -318,6 +319,7 @@ void CoroClientConnection::handleFatalErrorImpl(const Error& err) noexcept {
 	errSyncCh_.close();
 }
 
+// NOLINTNEXTLINE(bugprone-exception-escape) No good ways to recover
 void CoroClientConnection::handleFatalErrorFromWriter(const Error& err) noexcept {
 	if (!terminate_) {
 		if (errSyncCh_.opened()) {
@@ -366,7 +368,7 @@ void CoroClientConnection::writerRoutine() {
 				if (c.used && c.rspCh.opened() && !c.rspCh.full()) {
 					c.rspCh.push(
 						Error(errNetwork,
-							  "Connection was broken and all corresponding snapshots, queryresults and transaction were invalidated"));
+							  "Connection was broken and all associated snapshots, queryresults and transaction were invalidated"));
 				}
 				continue;
 			}
@@ -490,8 +492,9 @@ void CoroClientConnection::readerRoutine() {
 		} else if (hdr.cmd != kCmdUpdates) {
 			auto& rpcData = rpcCalls_[hdr.seq % rpcCalls_.size()];
 			if (!rpcData.used || rpcData.seq != hdr.seq) {
-				auto cmdSv = CmdName(hdr.cmd);
-				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%u(%.*s)\n", int(hdr.seq), hdr.cmd, int(cmdSv.size()), cmdSv.data());
+				const auto cmdSv = CmdName(hdr.cmd);
+				fprintf(stderr, "reindexer error: unexpected RPC answer seq=%d cmd=%u(%.*s)\n", int(hdr.seq), hdr.cmd, int(cmdSv.size()),
+						cmdSv.data());
 				sendCloseResults(hdr, ans);
 				continue;
 			}
@@ -502,7 +505,7 @@ void CoroClientConnection::readerRoutine() {
 			}
 			rpcData.rspCh.push(std::move(ans));
 		} else {
-			fprintf(stderr, "Unexpected updates response");
+			fprintf(stderr, "reindexer error: unexpected updates response");
 		}
 	} while (loggedIn_ && !terminate_);
 }
@@ -534,12 +537,15 @@ void CoroClientConnection::sendCloseResults(const CProtoHeader& hdr, const CoroR
 									  hdr.seq, {Arg{args[1].As<int>()}, Arg{reindexer_server::RPCQrWatcher::kDisabled}, Arg{true}});
 				}
 				if (!err.ok()) {
-					fprintf(stderr, "Unable to send 'CloseResults' command: %s\n", err.what());
+					fprintf(stderr, "reindexer error: unable to send 'CloseResults' command: %s\n", err.what());
 				}
 			} else {
+#ifdef RX_WITH_STDLIB_DEBUG
+				// Usually this is timeout handling. We should not print message into stderr in regular build
 				auto cmdSv = CmdName(hdr.cmd);
-				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%u(%.*s); do not have reqId\n", int(hdr.seq), hdr.cmd, int(cmdSv.size()),
-						cmdSv.data());
+				fprintf(stderr, "reindexer error: unexpected RPC answer seq=%d cmd=%u(%.*s); do not have reqId\n", int(hdr.seq), hdr.cmd,
+						int(cmdSv.size()), cmdSv.data());
+#endif	// RX_WITH_STDLIB_DEBUG
 			}
 		} break;
 		default:

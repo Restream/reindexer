@@ -1,5 +1,6 @@
 #include "core/namespace/namespacestat.h"
 #include "core/type_consts.h"
+#include "gtests/tools.h"
 #include "net/cproto/cproto.h"
 #include "net/ev/ev.h"
 #include "snapshot_api.h"
@@ -11,7 +12,7 @@ const std::string SnapshotTestApi::kDefaultRPCServerAddr = std::string("127.0.0.
 TEST_F(SnapshotTestApi, ForceSyncFromLocalToRemote) {
 	// Check if we can apply snapshot from local rx instance to remote rx instance via RPC
 	ev::dynamic_loop loop;
-	loop.spawn([this, &loop]() noexcept {
+	loop.spawn(exceptionWrapper([this, &loop] {
 		reindexer::Reindexer localRx;
 		reindexer::client::CoroReindexer rxClient;
 		Connect(loop, rxClient, localRx);
@@ -63,14 +64,14 @@ TEST_F(SnapshotTestApi, ForceSyncFromLocalToRemote) {
 		}
 		CompareData(rxClient, localRx);
 		CompareWalSnapshots(rxClient, localRx);
-	});
+	}));
 	loop.run();
 }
 
 TEST_F(SnapshotTestApi, ForceSyncFromRemoteToLocal) {
 	// Check if we can apply snapshot from remote rx instance to local rx instance via RPC
 	ev::dynamic_loop loop;
-	loop.spawn([this, &loop]() noexcept {
+	loop.spawn(exceptionWrapper([this, &loop] {
 		reindexer::Reindexer localRx;
 		reindexer::client::CoroReindexer rxClient;
 		Connect(loop, rxClient, localRx);
@@ -129,7 +130,7 @@ TEST_F(SnapshotTestApi, ForceSyncFromRemoteToLocal) {
 		}
 		CompareData(rxClient, localRx);
 		CompareWalSnapshots(rxClient, localRx);
-	});
+	}));
 	loop.run();
 }
 #endif	// REINDEX_WITH_ASAN
@@ -137,7 +138,7 @@ TEST_F(SnapshotTestApi, ForceSyncFromRemoteToLocal) {
 TEST_F(SnapshotTestApi, ConcurrentSnapshotsLimit) {
 	// Check if concurrent snapshots limit is actually works
 	ev::dynamic_loop loop;
-	loop.spawn([this, &loop]() noexcept {
+	loop.spawn(exceptionWrapper([this, &loop] {
 		reindexer::client::CoroReindexer rxClient;
 		Connect(loop, rxClient);
 
@@ -174,14 +175,14 @@ TEST_F(SnapshotTestApi, ConcurrentSnapshotsLimit) {
 			auto err = rxClient.GetSnapshot(kNsName, SnapshotOpts(), crsn);
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
-	});
+	}));
 	loop.run();
 }
 
 TEST_F(SnapshotTestApi, SnapshotInvalidation) {
 	// Check if snapshot will be invalidated after reconnect
 	ev::dynamic_loop loop;
-	loop.spawn([this, &loop]() noexcept {
+	loop.spawn(exceptionWrapper([this, &loop] {
 		reindexer::client::CoroReindexer rxClient;
 		Connect(loop, rxClient);
 
@@ -204,16 +205,16 @@ TEST_F(SnapshotTestApi, SnapshotInvalidation) {
 			EXPECT_TRUE(false) << "Exception was expected";
 		} catch (Error& e) {
 			EXPECT_EQ(e.code(), errNetwork);
-			EXPECT_STREQ(e.what(), "Connection was broken and all corresponding snapshots, queryresults and transaction were invalidated");
+			EXPECT_STREQ(e.what(), "Connection was broken and all associated snapshots, queryresults and transaction were invalidated");
 		}
-	});
+	}));
 	loop.run();
 }
 
 TEST_F(SnapshotTestApi, MaxWALDepth) {
 	// Check if max wal depth option for snapshots is actually works
 	ev::dynamic_loop loop;
-	loop.spawn([this, &loop]() noexcept {
+	loop.spawn(exceptionWrapper([this, &loop] {
 		reindexer::client::CoroReindexer rxClient;
 		Connect(loop, rxClient);
 
@@ -248,14 +249,14 @@ TEST_F(SnapshotTestApi, MaxWALDepth) {
 			ASSERT_EQ(sn1WalItemsCount, sn2WalItemsCount);
 			ASSERT_EQ(sn1WalItemsCount, replState.lastLsn.Counter() + 1 + 1);
 		}
-	});
+	}));
 	loop.run();
 }
 
 TEST_F(SnapshotTestApi, MaxWALDepthWithWALOverflow) {
 	// Check if max wal depth option for snapshots is works, when WAL ring-buffer is overflowed
 	ev::dynamic_loop loop;
-	loop.spawn([this, &loop]() noexcept {
+	loop.spawn(exceptionWrapper([this, &loop] {
 		reindexer::client::CoroReindexer rxClient;
 		Connect(loop, rxClient);
 		constexpr auto kWALSize = 500;
@@ -294,6 +295,6 @@ TEST_F(SnapshotTestApi, MaxWALDepthWithWALOverflow) {
 			ASSERT_EQ(sn1WalItemsCount, sn2WalItemsCount);
 			ASSERT_EQ(sn1WalItemsCount, kWALSize + 1);
 		}
-	});
+	}));
 	loop.run();
 }

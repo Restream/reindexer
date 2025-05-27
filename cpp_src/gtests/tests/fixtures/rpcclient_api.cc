@@ -1,7 +1,6 @@
 #include "rpcclient_api.h"
 #include "core/cjson/jsonbuilder.h"
 #include "tools/fsops.h"
-#include "tools/stringstools.h"
 #include "yaml-cpp/yaml.h"
 
 const std::string RPCClientTestApi::kDefaultRPCServerAddr = "127.0.0.1:" + std::to_string(RPCClientTestApi::kDefaultRPCPort);
@@ -13,9 +12,7 @@ void RPCClientTestApi::TestServer::Start(const std::string& addr, Error errOnLog
 		stop_.set(loop_);
 		stop_.set([&](ev::async& sig) { sig.loop.break_loop(); });
 		stop_.start();
-		bool res = server_->Start(addr, loop_, errOnLogin);
-		assertrx(res);
-		(void)res;
+		server_->Start(addr, loop_, errOnLogin);
 		serverIsReady_ = true;
 		while (!terminate_) {
 			loop_.run();

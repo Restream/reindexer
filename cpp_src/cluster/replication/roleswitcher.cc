@@ -33,6 +33,7 @@ void RoleSwitcher::Run(std::vector<DSN>&& dsns, RoleSwitcher::Config&& cfg) {
 	assert(cfg_.onRoleSwitchDone);
 
 	roleSwitchAsync_.set([this](net::ev::async&) {
+		// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 		loop_.spawn([this]() noexcept {
 			if (terminate_) {
 				terminate();
@@ -43,6 +44,7 @@ void RoleSwitcher::Run(std::vector<DSN>&& dsns, RoleSwitcher::Config&& cfg) {
 	});
 	roleSwitchAsync_.start();
 	roleSwitchAsync_.send();  // Initiate role switch on startup
+	// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 	loop_.spawn([this]() noexcept {
 		while (!terminate_) {
 			await();
@@ -52,7 +54,7 @@ void RoleSwitcher::Run(std::vector<DSN>&& dsns, RoleSwitcher::Config&& cfg) {
 	roleSwitchAsync_.stop();
 }
 
-void RoleSwitcher::OnRoleChanged() {
+void RoleSwitcher::OnRoleChanged() noexcept {
 	std::lock_guard lck(mtx_);
 	if (syncer_) {
 		syncer_->Terminate();
@@ -99,7 +101,7 @@ void RoleSwitcher::handleRoleSwitch() {
 		switch (newState.role) {
 			case RaftInfo::Role::None:
 			case RaftInfo::Role::Leader:
-				status.role = ClusterOperationStatus::Role::None;	 // -V1048
+				status.role = ClusterOperationStatus::Role::None;  // -V1048
 				break;
 			case RaftInfo::Role::Follower:
 				status.role = ClusterOperationStatus::Role::ClusterReplica;
@@ -149,7 +151,7 @@ void RoleSwitcher::switchNamespaces(const RaftInfo& newState, const ContainerT& 
 			switch (newState.role) {
 				case RaftInfo::Role::None:
 				case RaftInfo::Role::Leader:
-					status.role = ClusterOperationStatus::Role::None;	 // -V1048
+					status.role = ClusterOperationStatus::Role::None;  // -V1048
 					break;
 				case RaftInfo::Role::Follower:
 					status.role = ClusterOperationStatus::Role::ClusterReplica;
@@ -172,6 +174,7 @@ void RoleSwitcher::switchNamespaces(const RaftInfo& newState, const ContainerT& 
 void RoleSwitcher::handleInitialSync(RaftInfo::Role newRole) {
 	auto leaderSyncFn = [this](net::ev::timer& timer, int) {
 		assert(leaderResyncWg_.wait_count() == 0);
+		// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 		loop_.spawn(leaderResyncWg_, [this, &timer]() noexcept {
 			try {
 				connectNodes();
@@ -342,6 +345,7 @@ Error RoleSwitcher::getNodesListForNs(const NamespaceName& nsName, elist<LeaderS
 
 	std::vector<std::pair<Error, ReplicationStateV2>> nodesStates(nodes_.size());
 	for (int id = 0; size_t(id) < nodes_.size(); ++id) {
+		// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 		loop_.spawn(lwg, [this, id, &nodesStates]() noexcept {
 			ReplicationStateV2 st;
 			nodesStates[id].first = awaitRoleSwitchForNamespace(nodes_[id].client, NamespaceName(), st);
@@ -350,6 +354,7 @@ Error RoleSwitcher::getNodesListForNs(const NamespaceName& nsName, elist<LeaderS
 	lwg.wait();
 
 	for (int id = 0; size_t(id) < nodes_.size(); ++id) {
+		// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 		loop_.spawn(lwg, [this, id, &nsEntry, &responses, &nodesStates]() noexcept {
 			Error err = nodesStates[id].first;
 			if (err.ok()) {
@@ -411,6 +416,7 @@ NsNamesHashSetT RoleSwitcher::collectNsNames() {
 	coroutine::wait_group lwg;
 	size_t responses = 1;
 	for (size_t nodeId = 0; nodeId < nodes_.size(); ++nodeId) {
+		// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 		loop_.spawn(lwg, [this, nodeId, &set, &responses]() noexcept {
 			auto& node = nodes_[nodeId];
 			auto client = node.client.WithTimeout(kStatusCmdTimeout);

@@ -156,7 +156,7 @@ public:
 			EXPECT_TRUE(err.ok()) << err.what();
 			for (auto& nsDef : nsDefs) {
 				if (nsDef.name.empty() || (nsDef.name[0] != '#')) {
-					// we will perform checks only for well defined system namespaces
+					// we will perform checks only for well-defined system namespaces
 					continue;
 				}
 				reindexer::ReplicationStateV2 replState;

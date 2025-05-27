@@ -8,7 +8,7 @@ std::string TLSPath() noexcept {
 	return path;
 }
 
-reindexer::fast_hash_map<reindexer_server::UserRole, TestUserDataFactory::User>& TestUserDataFactory::Get(int serverId) noexcept {
+reindexer::fast_hash_map<reindexer_server::UserRole, TestUserDataFactory::User>& TestUserDataFactory::Get(int serverId) {
 	using namespace reindexer_server;
 	if (auto it = users_.find(serverId); it != users_.end()) {
 		return it->second;
@@ -26,15 +26,15 @@ reindexer::fast_hash_map<reindexer_server::UserRole, TestUserDataFactory::User>&
 	return it->second;
 }
 
-std::string TestUserDataFactory::user(reindexer_server::UserRole role, int serverId) noexcept {
+std::string TestUserDataFactory::user(reindexer_server::UserRole role, int serverId) {
 	return fmt::format(loginTmplt, reindexer_server::UserRoleName(role), serverId);
 }
 
-std::string TestUserDataFactory::passwd(reindexer_server::UserRole role, int serverId) noexcept {
+std::string TestUserDataFactory::passwd(reindexer_server::UserRole role, int serverId) {
 	return fmt::format(passwdTmplt, int(role), serverId);
 }
 
-std::string TestUserDataFactory::dump(reindexer_server::UserRole role, int serverId) noexcept {
+std::string TestUserDataFactory::dump(reindexer_server::UserRole role, int serverId) {
 	auto& user = Get(serverId)[role];
 	return fmt::format("{}:{}@", user.login, user.password);
 }
