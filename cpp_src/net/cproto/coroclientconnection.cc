@@ -23,8 +23,8 @@ constexpr size_t kWrChannelSize = 30;
 constexpr size_t kCntToSendNow = 30;
 constexpr size_t kMaxSerializedSize = 8 * 1024 * 1024;
 constexpr size_t kDataToSendNow = 8192;
-constexpr BindingCapabilities kClientCaps =
-	BindingCapabilities(kBindingCapabilityQrIdleTimeouts | kBindingCapabilityResultsWithShardIDs | kBindingCapabilityIncarnationTags);
+constexpr BindingCapabilities kClientCaps = BindingCapabilities(kBindingCapabilityQrIdleTimeouts | kBindingCapabilityResultsWithShardIDs |
+																kBindingCapabilityIncarnationTags | kBindingCapabilityComplexRank);
 
 CoroClientConnection::CoroClientConnection()
 	: rpcCalls_(kMaxParallelRPCCalls), wrCh_(kWrChannelSize), seqNums_(kMaxParallelRPCCalls), conn_(kReadBufReserveSize, false) {
@@ -242,7 +242,7 @@ Error CoroClientConnection::login(std::vector<char>& buf) {
 		}
 		if (ret < 0) {
 			// unable to connect
-			return Error(errNetwork, "Connect error: %s", strerror(conn_.socket_last_error()));
+			return Error(errNetwork, "Connect error: {}", strerror(conn_.socket_last_error()));
 		}
 
 		std::string userName = connectData_.uri.username();
@@ -265,7 +265,8 @@ Error CoroClientConnection::login(std::vector<char>& buf) {
 					 Arg{connectData_.opts.expectedClusterID},
 					 Arg{p_string(REINDEX_VERSION)},
 					 Arg{p_string(&connectData_.opts.appName)},
-					 Arg{kClientCaps.caps}};
+					 Arg{kClientCaps.caps},
+					 Arg{connectData_.opts.replToken}};
 		constexpr uint32_t seq = 0;	 // login's seq num is always 0
 		assertrx(buf.size() == 0);
 		appendChunck(
@@ -277,7 +278,7 @@ Error CoroClientConnection::login(std::vector<char>& buf) {
 		if (err != 0) {
 			// TODO: handle reconnects
 			if (err > 0) {
-				return Error(errNetwork, "Connection error: %s", strerror(err));
+				return Error(errNetwork, "Connection error: {}", strerror(err));
 			} else if (err == k_connect_ssl_err) {
 				return Error(errConnectSSL, "SSL handshake/connection error");
 			} else {
@@ -303,6 +304,7 @@ void CoroClientConnection::handleFatalErrorFromReader(const Error& err) noexcept
 	handleFatalErrorImpl(err);
 }
 
+// NOLINTNEXTLINE(bugprone-exception-escape) No good ways to recover
 void CoroClientConnection::handleFatalErrorImpl(const Error& err) noexcept {
 	setLoggedIn(false);
 	for (auto& c : rpcCalls_) {
@@ -313,9 +315,11 @@ void CoroClientConnection::handleFatalErrorImpl(const Error& err) noexcept {
 	if (connectionStateHandler_) {
 		connectionStateHandler_(err);
 	}
+	rxVersion_ = std::nullopt;
 	errSyncCh_.close();
 }
 
+// NOLINTNEXTLINE(bugprone-exception-escape) No good ways to recover
 void CoroClientConnection::handleFatalErrorFromWriter(const Error& err) noexcept {
 	if (!terminate_) {
 		if (errSyncCh_.opened()) {
@@ -364,7 +368,7 @@ void CoroClientConnection::writerRoutine() {
 				if (c.used && c.rspCh.opened() && !c.rspCh.full()) {
 					c.rspCh.push(
 						Error(errNetwork,
-							  "Connection was broken and all corresponding snapshots, queryresults and transaction were invalidated"));
+							  "Connection was broken and all associated snapshots, queryresults and transaction were invalidated"));
 				}
 				continue;
 			}
@@ -393,7 +397,7 @@ void CoroClientConnection::writerRoutine() {
 		auto written = conn_.async_write(buf, err, sendNow);
 		if (err) {
 			// disconnected
-			handleFatalErrorFromWriter(Error(errNetwork, "Write error: %s", err > 0 ? strerror(err) : "Connection closed"));
+			handleFatalErrorFromWriter(Error(errNetwork, "Write error: {}", err > 0 ? strerror(err) : "Connection closed"));
 			buf.clear();
 			continue;
 		}
@@ -414,7 +418,7 @@ void CoroClientConnection::readerRoutine() {
 		auto read = conn_.async_read(buf, sizeof(CProtoHeader), err);
 		if (err) {
 			// disconnected
-			handleFatalErrorFromReader(err > 0 ? Error(errNetwork, "Read error: %s", strerror(err))
+			handleFatalErrorFromReader(err > 0 ? Error(errNetwork, "Read error: {}", strerror(err))
 											   : Error(errNetwork, "Connection closed"));
 			break;
 		}
@@ -424,14 +428,14 @@ void CoroClientConnection::readerRoutine() {
 
 		if (hdr.magic != kCprotoMagic) {
 			// disconnect
-			handleFatalErrorFromReader(Error(errNetwork, "Invalid cproto magic=%08x", hdr.magic));
+			handleFatalErrorFromReader(Error(errNetwork, "Invalid cproto magic={:08x}", hdr.magic));
 			break;
 		}
 
 		if (hdr.version < kCprotoMinCompatVersion) {
 			// disconnect
 			handleFatalErrorFromReader(
-				Error(errParams, "Unsupported cproto version %04x. This client expects reindexer server v1.9.8+", int(hdr.version)));
+				Error(errParams, "Unsupported cproto version {:04x}. This client expects reindexer server v1.9.8+", int(hdr.version)));
 			break;
 		}
 		if (hdr.version < kCprotoMinSnappyVersion) {
@@ -442,7 +446,7 @@ void CoroClientConnection::readerRoutine() {
 		read = conn_.async_read(buf, size_t(hdr.len), err);
 		if (err) {
 			// disconnected
-			handleFatalErrorFromReader(err > 0 ? Error(errNetwork, "Read error: %s", strerror(err))
+			handleFatalErrorFromReader(err > 0 ? Error(errNetwork, "Read error: {}", strerror(err))
 											   : Error(errNetwork, "Connection closed"));
 			break;
 		}
@@ -460,12 +464,12 @@ void CoroClientConnection::readerRoutine() {
 				ser = Serializer(uncompressed);
 			}
 
-			const int errCode = ser.GetVarUint();
+			const int errCode = ser.GetVarUInt();
 			std::string_view errMsg = ser.GetVString();
 			if (errCode != errOK) {
-				ans.status_ = Error(static_cast<ErrorCode>(errCode), std::string{errMsg});
+				ans.status_ = Error(static_cast<ErrorCode>(errCode), errMsg);
 			}
-			ans.data_ = span<const uint8_t>(ser.Buf() + ser.Pos(), ser.Len() - ser.Pos());
+			ans.data_ = std::span<const uint8_t>(ser.Buf() + ser.Pos(), ser.Len() - ser.Pos());
 		} catch (const Error& err) {
 			// disconnect
 			handleFatalErrorFromReader(err);
@@ -474,6 +478,9 @@ void CoroClientConnection::readerRoutine() {
 
 		if (hdr.cmd == kCmdLogin) {
 			if (ans.Status().ok()) {
+				if (!rxVersion_) {
+					rxVersion_ = ans.GetArgs(2)[0].As<std::string>();
+				}
 				setLoggedIn(true);
 				if (connectionStateHandler_) {
 					connectionStateHandler_(Error());
@@ -485,8 +492,9 @@ void CoroClientConnection::readerRoutine() {
 		} else if (hdr.cmd != kCmdUpdates) {
 			auto& rpcData = rpcCalls_[hdr.seq % rpcCalls_.size()];
 			if (!rpcData.used || rpcData.seq != hdr.seq) {
-				auto cmdSv = CmdName(hdr.cmd);
-				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%d(%.*s)\n", int(hdr.seq), hdr.cmd, int(cmdSv.size()), cmdSv.data());
+				const auto cmdSv = CmdName(hdr.cmd);
+				fprintf(stderr, "reindexer error: unexpected RPC answer seq=%d cmd=%u(%.*s)\n", int(hdr.seq), hdr.cmd, int(cmdSv.size()),
+						cmdSv.data());
 				sendCloseResults(hdr, ans);
 				continue;
 			}
@@ -497,7 +505,7 @@ void CoroClientConnection::readerRoutine() {
 			}
 			rpcData.rspCh.push(std::move(ans));
 		} else {
-			fprintf(stderr, "Unexpected updates response");
+			fprintf(stderr, "reindexer error: unexpected updates response");
 		}
 	} while (loggedIn_ && !terminate_);
 }
@@ -529,12 +537,15 @@ void CoroClientConnection::sendCloseResults(const CProtoHeader& hdr, const CoroR
 									  hdr.seq, {Arg{args[1].As<int>()}, Arg{reindexer_server::RPCQrWatcher::kDisabled}, Arg{true}});
 				}
 				if (!err.ok()) {
-					fprintf(stderr, "Unable to send 'CloseResults' command: %s\n", err.what().c_str());
+					fprintf(stderr, "reindexer error: unable to send 'CloseResults' command: %s\n", err.what());
 				}
 			} else {
+#ifdef RX_WITH_STDLIB_DEBUG
+				// Usually this is timeout handling. We should not print message into stderr in regular build
 				auto cmdSv = CmdName(hdr.cmd);
-				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%d(%.*s); do not have reqId\n", int(hdr.seq), hdr.cmd, int(cmdSv.size()),
-						cmdSv.data());
+				fprintf(stderr, "reindexer error: unexpected RPC answer seq=%d cmd=%u(%.*s); do not have reqId\n", int(hdr.seq), hdr.cmd,
+						int(cmdSv.size()), cmdSv.data());
+#endif	// RX_WITH_STDLIB_DEBUG
 			}
 		} break;
 		default:

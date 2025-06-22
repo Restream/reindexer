@@ -1,6 +1,4 @@
-#include <memory.h>
-#include <algorithm>
-
+#include "tools/stringstools.h"
 #include "atoi/atoi.h"
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/uuid.h"
@@ -8,10 +6,9 @@
 #include "fmt/compile.h"
 #include "frozen_str_tools.h"
 #include "itoa/itoa.h"
-#include "stringstools.h"
 #include "tools/assertrx.h"
 #include "tools/randomgenerator.h"
-#include "tools/stringstools.h"
+#include "tools/serializer.h"
 #include "utf8cpp/utf8.h"
 #include "vendor/double-conversion/double-conversion.h"
 #include "vendor/frozen/unordered_map.h"
@@ -91,13 +88,13 @@ std::string toLower(std::string_view src) {
 std::string escapeString(std::string_view str) {
 	std::string dst;
 	dst.reserve(str.length());
-	for (auto it = str.begin(); it != str.end(); it++) {
-		if (*it < 0x20 || unsigned(*it) >= 0x80 || *it == '\\') {
+	for (auto ch : str) {
+		if (ch < 0x20 || unsigned(ch) >= 0x80 || ch == '\\') {
 			char tmpbuf[16];
-			snprintf(tmpbuf, sizeof(tmpbuf), "\\%02X", unsigned(*it) & 0xFF);
+			snprintf(tmpbuf, sizeof(tmpbuf), "\\%02X", unsigned(ch) & 0xFF);
 			dst += tmpbuf;
 		} else {
-			dst.push_back(*it);
+			dst.push_back(ch);
 		}
 	}
 	return dst;
@@ -168,21 +165,26 @@ KeyValueType detectValueType(std::string_view value) {
 
 Variant stringToVariant(std::string_view value) {
 	const auto kvt = detectValueType(value);
-	return kvt.EvaluateOneOf([value](KeyValueType::Int64) { return Variant(int64_t(stoll(value))); },
-							 [value](KeyValueType::Int) { return Variant(int(stoi(value))); },
-							 [value](KeyValueType::Double) {
-								 using double_conversion::StringToDoubleConverter;
-								 static const StringToDoubleConverter converter{StringToDoubleConverter::NO_FLAGS, NAN, NAN, nullptr,
-																				nullptr};
-								 int countOfCharsParsedAsDouble = 0;
-								 return Variant(converter.StringToDouble(value.data(), value.size(), &countOfCharsParsedAsDouble));
-							 },
-							 [value](KeyValueType::String) { return Variant(make_key_string(value.data(), value.length())); },
-							 [value](KeyValueType::Bool) noexcept { return (value.size() == 4) ? Variant(true) : Variant(false); },
-							 [value](KeyValueType::Uuid) { return Variant{Uuid{value}}; },
-							 [](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple>) noexcept {
-								 return Variant();
-							 });
+	return kvt.EvaluateOneOf(
+		[value](KeyValueType::Int64) { return Variant(int64_t(stoll(value))); },
+		[value](KeyValueType::Int) { return Variant(int(stoi(value))); },
+		[value](KeyValueType::Double) {
+			using double_conversion::StringToDoubleConverter;
+			static const StringToDoubleConverter converter{StringToDoubleConverter::NO_FLAGS, NAN, NAN, nullptr, nullptr};
+			int countOfCharsParsedAsDouble = 0;
+			return Variant(converter.StringToDouble(value.data(), value.size(), &countOfCharsParsedAsDouble));
+		},
+		[value](KeyValueType::Float) {
+			using double_conversion::StringToDoubleConverter;
+			static const StringToDoubleConverter converter{StringToDoubleConverter::NO_FLAGS, NAN, NAN, nullptr, nullptr};
+			int countOfCharsParsedAsDouble = 0;
+			return Variant(converter.StringToFloat(value.data(), value.size(), &countOfCharsParsedAsDouble));
+		},
+		[value](KeyValueType::String) { return Variant(make_key_string(value.data(), value.length())); },
+		[value](KeyValueType::Bool) noexcept { return (value.size() == 4) ? Variant(true) : Variant(false); },
+		[value](KeyValueType::Uuid) { return Variant{Uuid{value}}; },
+		[](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
+				 KeyValueType::FloatVector>) noexcept { return Variant(); });
 }
 
 std::wstring& utf8_to_utf16(std::string_view src, std::wstring& dst) {
@@ -226,6 +228,11 @@ std::pair<size_t, size_t> calcUtf8AfterDelims(std::string_view str, size_t limit
 	size_t charCounter = 0;
 	for (ptr = str.data(), strEnd = str.data() + str.size(); limit && ptr < strEnd; limit--) {
 		uint32_t c = utf8::unchecked::next(ptr);
+		if (IsDiacritic(c)) {
+			limit++;
+			continue;
+		}
+
 		charCounter++;
 		for (ptrDelims = delims.data(), delimsEnd = delims.data() + delims.size(); ptrDelims < delimsEnd;) {
 			uint32_t d = utf8::unchecked::next(ptrDelims);
@@ -235,6 +242,16 @@ std::pair<size_t, size_t> calcUtf8AfterDelims(std::string_view str, size_t limit
 			}
 		}
 	}
+
+	// Add all diacritics after last symbol
+	while (ptr < strEnd) {
+		uint32_t c = utf8::unchecked::next(ptr);
+		if (!IsDiacritic(c)) {
+			utf8::unchecked::prior(ptr);
+			break;
+		}
+	}
+
 	return std::make_pair(ptr - str.data(), charCounter);
 }
 
@@ -254,6 +271,10 @@ std::pair<size_t, size_t> calcUtf8BeforeDelims(const char* str, int pos, size_t 
 	int charCounter = 0;
 	for (; limit && ptr > str; limit--) {
 		uint32_t c = utf8::unchecked::prior(ptr);
+		if (IsDiacritic(c)) {
+			limit++;
+			continue;
+		}
 		charCounter++;
 		for (ptrDelim = delims.data(), delimsEnd = delims.data() + delims.size(); ptrDelim < delimsEnd;) {
 			uint32_t d = utf8::unchecked::next(ptrDelim);
@@ -266,7 +287,7 @@ std::pair<size_t, size_t> calcUtf8BeforeDelims(const char* str, int pos, size_t 
 	return std::make_pair(str + pos - ptr, charCounter);
 }
 
-void split(std::string_view str, std::string& buf, std::vector<std::string_view>& words, std::string_view extraWordSymbols) {
+void split(std::string_view str, std::string& buf, std::vector<std::string_view>& words, const SplitOptions& options) {
 	// assuming that the 'ToLower' function and the 'check for replacement' function should not change the character size in bytes
 	buf.resize(str.length());
 	words.resize(0);
@@ -275,15 +296,20 @@ void split(std::string_view str, std::string& buf, std::vector<std::string_view>
 	for (auto it = str.begin(), endIt = str.end(); it != endIt;) {
 		auto ch = utf8::unchecked::next(it);
 
-		while (!IsAlpha(ch) && !IsDigit(ch) && extraWordSymbols.find(ch) == std::string::npos && it != endIt) {
+		while (!IsAlpha(ch) && !IsDigit(ch) && options.extraWordSymbols.find(ch) == std::string::npos && it != endIt) {
 			ch = utf8::unchecked::next(it);
 		}
 
 		const auto begIt = bufIt;
-		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
+		while (IsAlpha(ch) || IsDigit(ch) || options.extraWordSymbols.find(ch) != std::string::npos) {
 			ch = ToLower(ch);
-			check_for_replacement(ch);
-			bufIt = utf8::unchecked::append(ch, bufIt);
+			if (FitsMask(ch, options.removeDiacriticsMask)) {
+				ch = RemoveDiacritic(ch);
+			}
+
+			if (ch != 0) {
+				bufIt = utf8::unchecked::append(ch, bufIt);
+			}
 			if (it != endIt) {
 				ch = utf8::unchecked::next(it);
 			} else {
@@ -545,24 +571,16 @@ int fast_strftime(char* buf, const tm* tm) {
 	if (!name.length()) {
 		return false;
 	}
-	for (auto c : name) {
-		if (!(std::isalnum(c) || c == '_' || c == '-' || c == '#' || (c == '@' && allowSpecialChars))) {
-			return false;
-		}
-	}
-	return true;
+	return std::all_of(name.cbegin(), name.cend(), [allowSpecialChars](auto ch) {
+		return (std::isalnum(ch) || ch == '_' || ch == '-' || ch == '#' || (ch == '@' && allowSpecialChars));
+	});
 }
 
 [[nodiscard]] bool validateUserNsName(std::string_view name) noexcept {
 	if (!name.length()) {
 		return false;
 	}
-	for (auto c : name) {
-		if (!(std::isalnum(c) || c == '_' || c == '-')) {
-			return false;
-		}
-	}
-	return true;
+	return std::all_of(name.cbegin(), name.cend(), [](auto ch) { return (std::isalnum(ch) || ch == '_' || ch == '-'); });
 }
 
 LogLevel logLevelFromString(std::string_view strLogLevel) noexcept {
@@ -604,24 +622,14 @@ bool isPrintable(std::string_view str) noexcept {
 	if (str.length() > 256) {
 		return false;
 	}
-	for (auto c : str) {
-		if (c < 0x20) {
-			return false;
-		}
-	}
-	return true;
+	return std::all_of(str.cbegin(), str.cend(), [](auto ch) { return (ch >= 0x20); });
 }
 
 bool isBlank(std::string_view str) noexcept {
 	if (str.empty()) {
 		return true;
 	}
-	for (auto c : str) {
-		if (!isspace(c)) {
-			return false;
-		}
-	}
-	return true;
+	return std::all_of(str.cbegin(), str.cend(), [](auto ch) { return isspace(ch); });
 }
 
 bool endsWith(const std::string& source, std::string_view ending) noexcept {
@@ -655,7 +663,7 @@ int stoi(std::string_view sl) {
 	bool valid;
 	const int res = jsteemann::atoi<int>(sl.data(), sl.data() + sl.size(), valid);
 	if (!valid) {
-		throw Error(errParams, "Can't convert '%s' to number", sl);
+		throw Error(errParams, "Can't convert '{}' to number", sl);
 	}
 	return res;
 }
@@ -673,12 +681,13 @@ int64_t stoll(std::string_view sl) {
 	bool valid;
 	auto ret = jsteemann::atoi<int64_t>(sl.data(), sl.data() + sl.size(), valid);
 	if (!valid) {
-		throw Error(errParams, "Can't convert '%s' to number", sl);
+		throw Error(errParams, "Can't convert '{}' to number", sl);
 	}
 	return ret;
 }
 
-int double_to_str(double v, char* buf, int capacity) {
+template <typename FPT>
+int fp_to_str_impl(FPT v, char* buf, int capacity) {
 	(void)capacity;
 	auto end = fmt::format_to(buf, FMT_COMPILE("{}"), v);
 	auto p = buf;
@@ -697,19 +706,53 @@ int double_to_str(double v, char* buf, int capacity) {
 	return end - buf;
 }
 
-int double_to_str_no_trailing(double v, char* buf, int capacity) {
+template <typename FPT>
+int fp_to_str_no_trailing_impl(FPT v, char* buf, int capacity) {
 	(void)capacity;
 	auto end = fmt::format_to(buf, FMT_COMPILE("{}"), v);
 	assertrx_dbg(end - buf < capacity);
 	return end - buf;
 }
 
-std::string double_to_str(double v) {
+template <typename FPT>
+std::string fp_to_str_impl(FPT v) {
 	std::string res;
 	res.resize(32);
-	auto len = double_to_str(v, res.data(), res.size());
+	auto len = fp_to_str_impl(v, res.data(), res.size());
 	res.resize(len);
 	return res;
+}
+
+int double_to_str(double v, char* buf, int capacity) { return fp_to_str_impl(v, buf, capacity); }
+int double_to_str_no_trailing(double v, char* buf, int capacity) { return fp_to_str_no_trailing_impl(v, buf, capacity); }
+std::string double_to_str(double v) { return fp_to_str_impl(v); }
+
+int float_to_str(float v, char* buf, int capacity) { return fp_to_str_impl(v, buf, capacity); }
+int float_to_str_no_trailing(float v, char* buf, int capacity) { return fp_to_str_no_trailing_impl(v, buf, capacity); }
+std::string float_to_str(float v) { return fp_to_str_impl(v); }
+
+void float_vector_to_str(ConstFloatVectorView view, WrSerializer& ser) {
+	ser << '[';
+	if (view.IsStripped()) {
+		throw Error(errLogic, "Unable to serialize stripped float_vector");
+	}
+	auto span = view.Span();
+	std::string res;
+	res.resize(32);
+	for (auto it = span.begin(), end = span.end(); it != end; ++it) {
+		auto len = float_to_str(*it, res.data(), res.size());
+		ser << std::string_view(res.data(), len);
+		if (it + 1 != end) {
+			ser << ',';
+		}
+	}
+	ser << ']';
+}
+
+std::string float_vector_to_str(ConstFloatVectorView view) {
+	WrSerializer ser;
+	float_vector_to_str(std::move(view), ser);
+	return std::string(ser.Slice());
 }
 
 std::string randStringAlph(size_t len) {
@@ -756,10 +799,10 @@ Error getBytePosInMultilineString(std::string_view str, const size_t line, const
 		bytePos = it - str.begin() - 1;
 		return Error();
 	}
-	return Error(errNotValid, "Wrong cursor position: line=%d, pos=%d", line, charPos);
+	return Error(errNotValid, "Wrong cursor position: line={}, pos={}", line, charPos);
 }
 
-Error cursosPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos) {
+Error cursorPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos) {
 	try {
 		return getBytePosInMultilineString<true>(str, line, charPos, bytePos);
 	} catch (const utf8::exception&) {

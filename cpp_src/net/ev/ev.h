@@ -46,7 +46,7 @@ public:
 	void send_async();
 
 protected:
-	loop_posix_base();
+	loop_posix_base() = default;
 	~loop_posix_base();
 	bool check_async(int fd);
 
@@ -60,7 +60,7 @@ public:
 	void send_async();
 
 protected:
-	loop_posix_base();
+	loop_posix_base() = default;
 	~loop_posix_base();
 	bool check_async(int fd);
 
@@ -194,18 +194,18 @@ protected:
 	void set(timer* watcher, double t);
 	void set(async* watcher);
 	void set(sig* watcher);
-	void stop(int fd);
-	void stop(timer* watcher);
-	void stop(async* watcher);
-	void stop(sig* watcher);
-	void send(async* watcher);
+	void stop(int fd) noexcept;
+	void stop(timer* watcher) noexcept;
+	void stop(async* watcher) noexcept;
+	void stop(sig* watcher) noexcept;
+	void send(async* watcher) noexcept;
 	bool is_active(const timer* watcher) const noexcept;
 
 	void io_callback(int fd, int events);
 	void async_callback();
 
 	void set_coro_cb();
-	void remove_coro_cb();
+	void remove_coro_cb() noexcept;
 
 	struct fd_handler {
 		int emask_ = 0;

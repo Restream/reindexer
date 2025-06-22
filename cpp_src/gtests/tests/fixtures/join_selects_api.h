@@ -1,12 +1,13 @@
 #pragma once
 
 #include <gmock/gmock.h>
-#include <gtest/gtest.h>
 #include <map>
 #include <sstream>
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
 #include "core/queryresults/joinresults.h"
+#include "core/system_ns_names.h"
+#include "estl/gift_str.h"
 #include "estl/shared_mutex.h"
 #include "gason/gason.h"
 #include "reindexer_api.h"
@@ -27,17 +28,10 @@ protected:
 		err = rt.reindexer->Connect("builtin://" + dbName);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = rt.reindexer->OpenNamespace(authors_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->OpenNamespace(books_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->OpenNamespace(genres_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->OpenNamespace(location_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(authors_namespace);
+		rt.OpenNamespace(books_namespace);
+		rt.OpenNamespace(genres_namespace);
+		rt.OpenNamespace(location_namespace);
 
 		DefineNamespaceDataset(location_namespace, {IndexDeclaration{locationid, "hash", "int", IndexOpts().PK(), 0},
 													IndexDeclaration{code, "hash", "int", IndexOpts(), 0},
@@ -65,7 +59,10 @@ protected:
 		FillAuthorsNamespace(10);
 	}
 
-	void SetUp() override { Init(); }
+	void SetUp() override {
+		ReindexerApi::SetUp();
+		Init();
+	}
 
 	void FillLocationsNamespace() {
 		for (size_t i = 0; i < locations.size(); ++i) {
@@ -161,14 +158,7 @@ protected:
 		json << "{" << addQuotes(bookid) << ":" << ++count << "," << addQuotes(title) << ":" << addQuotes("Crime and Punishment") << ","
 			 << addQuotes(pages) << ":" << 100500 << "," << addQuotes(price) << ":" << 5000 << "," << addQuotes(authorid_fk) << ":"
 			 << DostoevskyAuthorId << "," << addQuotes(genreId_fk) << ":" << 4 << "," << addQuotes(rating) << ":" << 100 << "}";
-		Item bestItem = NewItem(books_namespace);
-		ASSERT_TRUE(bestItem.Status().ok()) << bestItem.Status().what();
-
-		Error err = bestItem.FromJSON(json.str());
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->Upsert(books_namespace, bestItem);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.UpsertJSON(books_namespace, json.str());
 	}
 
 	void FillGenresNamespace() {
@@ -216,7 +206,7 @@ protected:
 				parser.Parse(reindexer::giftStr(wrSer.Slice()));
 			}
 		} catch (const gason::Exception& ex) {
-			return Error(errParseJson, "VerifyResJSON: %s", ex.what());
+			return Error(errParseJson, "VerifyResJSON: {}", ex.what());
 		}
 		return err;
 	}
@@ -306,8 +296,6 @@ protected:
 		auto ns = nsArray.Object();
 		ns.Put("namespace", nsName.c_str());
 		ns.Put("log_level", "none");
-		ns.Put("lazyload", false);
-		ns.Put("unload_idle_threshold", 0);
 		ns.Put("join_cache_mode", "off");
 		ns.Put("start_copy_policy_tx_size", 10000);
 		ns.Put("optimization_timeout_ms", optimizationTimeout);
@@ -315,13 +303,7 @@ protected:
 		nsArray.End();
 		jb.End();
 
-		auto item = rt.NewItem(config_namespace);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
-		auto err = item.FromJSON(ser.Slice());
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		rt.Upsert(config_namespace, item);
+		rt.UpsertJSON(reindexer::kConfigNamespace, ser.Slice());
 	}
 
 	void TurnOnJoinCache(const std::string& nsName) {
@@ -333,21 +315,13 @@ protected:
 		auto ns = nsArray.Object();
 		ns.Put("namespace", nsName.c_str());
 		ns.Put("log_level", "none");
-		ns.Put("lazyload", false);
-		ns.Put("unload_idle_threshold", 0);
 		ns.Put("join_cache_mode", "on");
 		ns.Put("start_copy_policy_tx_size", 10000);
 		ns.End();
 		nsArray.End();
 		jb.End();
 
-		auto item = rt.NewItem(config_namespace);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
-		auto err = item.FromJSON(ser.Slice());
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		rt.Upsert(config_namespace, item);
+		rt.UpsertJSON(reindexer::kConfigNamespace, ser.Slice());
 	}
 
 	void CheckJoinsInComplexWhereCondition(const QueryResults& qr) {
@@ -442,7 +416,7 @@ protected:
 	}
 
 	void SetQueriesCacheHitsCount(unsigned hitsCount) {
-		auto q = reindexer::Query("#config")
+		auto q = reindexer::Query(reindexer::kConfigNamespace)
 					 .Set("namespaces.cache.query_count_hit_to_cache", int64_t(hitsCount))
 					 .Where("type", CondEq, "namespaces");
 		auto updated = Update(q);
@@ -474,7 +448,6 @@ protected:
 	const std::string authors_namespace = "authors_namespace";
 	const std::string genres_namespace = "genres_namespace";
 	const std::string location_namespace = "location_namespace";
-	const std::string config_namespace = "#config";
 
 	struct Genre {
 		int id;
@@ -485,7 +458,7 @@ protected:
 	std::vector<Genre> genres;
 
 	// clang-format off
-	const std::vector<std::string> locations = {
+	const std::vector<std::string_view> locations = {
 		"Москва",
 		"Тамбов",
 		"Казань",

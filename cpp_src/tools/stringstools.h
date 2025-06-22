@@ -1,6 +1,5 @@
 #pragma once
 
-#include <time.h>
 #include <cctype>
 #include <cstring>
 #include <optional>
@@ -24,6 +23,7 @@ Variant stringToVariant(std::string_view value);
 
 [[nodiscard]] RX_ALWAYS_INLINE constexpr bool isalpha(char c) noexcept { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
 [[nodiscard]] RX_ALWAYS_INLINE constexpr bool isdigit(char c) noexcept { return (c >= '0' && c <= '9'); }
+[[nodiscard]] RX_ALWAYS_INLINE constexpr bool issign(char c) noexcept { return (c == '+' || c == '-'); }
 [[nodiscard]] RX_ALWAYS_INLINE constexpr char tolower(char c) noexcept { return (c >= 'A' && c <= 'Z') ? c + 'a' - 'A' : c; }
 std::string toLower(std::string_view src);
 inline std::string_view skipSpace(std::string_view str) {
@@ -57,9 +57,14 @@ Container& split(const typename Container::value_type& str, std::string_view del
 	return tokens;
 }
 
+struct SplitOptions {
+	std::string_view extraWordSymbols;
+	SymbolTypeMask removeDiacriticsMask = 0;
+};
+
 void split(const std::string& utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words);
 void split(std::string_view utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words, std::string_view extraWordSymbols);
-void split(std::string_view str, std::string& buf, std::vector<std::string_view>& words, std::string_view extraWordSymbols);
+void split(std::string_view str, std::string& buf, std::vector<std::string_view>& words, const SplitOptions& options);
 [[nodiscard]] size_t calcUtf8After(std::string_view s, size_t limit) noexcept;
 [[nodiscard]] std::pair<size_t, size_t> calcUtf8AfterDelims(std::string_view str, size_t limit, std::string_view delims) noexcept;
 [[nodiscard]] size_t calcUtf8Before(const char* str, int pos, size_t limit) noexcept;
@@ -134,12 +139,6 @@ size_t utf16_to_utf8_size(const std::wstring& src);
 std::wstring& utf8_to_utf16(std::string_view src, std::wstring& dst);
 std::string& utf16_to_utf8(const std::wstring& src, std::string& dst);
 
-inline void check_for_replacement(wchar_t& ch) noexcept {
-	ch = (ch == 0x451) ? 0x435 : ch;  // 'ё' -> 'е'
-}
-inline void check_for_replacement(uint32_t& ch) noexcept {
-	ch = (ch == 0x451) ? 0x435 : ch;  // 'ё' -> 'е'
-}
 inline bool is_number(std::string_view str) noexcept {
 	uint16_t i = 0;
 	for (; (i < str.length() && IsDigit(str[i])); ++i);
@@ -155,10 +154,18 @@ int64_t stoll(std::string_view sl);
 int double_to_str(double v, char* buf, int capacity);
 int double_to_str_no_trailing(double v, char* buf, int capacity);
 std::string double_to_str(double v);
+int float_to_str(float v, char* buf, int capacity);
+int float_to_str_no_trailing(float v, char* buf, int capacity);
+std::string float_to_str(float v);
+void float_vector_to_str(ConstFloatVectorView view, WrSerializer& ser);
+std::string float_vector_to_str(ConstFloatVectorView view);
 
 [[nodiscard]] bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept;
 [[nodiscard]] bool validateUserNsName(std::string_view name) noexcept;
-RX_ALWAYS_INLINE bool isSystemNamespaceNameFast(std::string_view name) noexcept { return !name.empty() && name[0] == '#'; }
+RX_ALWAYS_INLINE bool isSystemNamespaceNameFast(std::string_view name) noexcept { return !name.empty() && (name[0] == '#'); }
+RX_ALWAYS_INLINE bool isSystemNamespaceNameFastReplication(std::string_view name) noexcept {
+	return !name.empty() && (name[0] == '#' || name[0] == '@' || name[0] == '!');
+}
 LogLevel logLevelFromString(std::string_view strLogLevel) noexcept;
 std::string_view logLevelToString(LogLevel level) noexcept;
 StrictMode strictModeFromString(std::string_view strStrictMode);
@@ -206,7 +213,7 @@ bool isBlank(std::string_view token) noexcept;
 bool endsWith(const std::string& source, std::string_view ending) noexcept;
 std::string& ensureEndsWith(std::string& source, std::string_view ending);
 
-Error cursosPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos);
+Error cursorPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos);
 
 std::string randStringAlph(size_t len);
 

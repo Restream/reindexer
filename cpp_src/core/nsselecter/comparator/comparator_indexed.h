@@ -1,7 +1,5 @@
 #pragma once
 
-#include <unordered_map>
-#include <unordered_set>
 #include <variant>
 
 #include "comparator_indexed_distinct.h"
@@ -117,8 +115,8 @@ struct DataHolder {
 	DataHolder& operator=(const DataHolder& o) = delete;
 
 	CondType cond_;
-	SingleType value_{};   // Either single value or right range boundry
-	SingleType value2_{};  // Left range boundry
+	SingleType value_{};   // Either single value or right range boundary
+	SingleType value2_{};  // Left range boundary
 	SetPtrType setPtr_{};
 	AllSetPtrType allSetPtr_{};
 };
@@ -152,6 +150,7 @@ public:
 			case CondEmpty:
 			case CondLike:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -194,6 +193,7 @@ public:
 			case CondEmpty:
 			case CondLike:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -237,6 +237,7 @@ public:
 			case CondEmpty:
 			case CondLike:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -283,6 +284,7 @@ public:
 			case CondEmpty:
 			case CondLike:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -361,6 +363,7 @@ public:
 				case CondAny:
 				case CondEmpty:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -442,6 +445,7 @@ public:
 				case CondAny:
 				case CondEmpty:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -536,6 +540,7 @@ public:
 				case CondAny:
 				case CondDWithin:
 				case CondLike:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -598,12 +603,10 @@ public:
 						return true;
 					}
 					continue;
-				case CondRange: {
-					const auto v = value;
-					if (this->value_ <= v && v <= this->value2_ && distinct_.Compare(value)) {
+				case CondRange:
+					if (this->value_ <= value && value <= this->value2_ && distinct_.Compare(value)) {
 						return true;
 					}
-				}
 					continue;
 				case CondSet:
 					assertrx_dbg(this->setPtr_);
@@ -628,6 +631,7 @@ public:
 				case CondAny:
 				case CondDWithin:
 				case CondLike:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -685,6 +689,7 @@ public:
 			case CondAny:
 			case CondEmpty:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -730,6 +735,7 @@ public:
 			case CondAny:
 			case CondEmpty:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -775,6 +781,7 @@ public:
 			case CondAny:
 			case CondEmpty:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -823,6 +830,7 @@ public:
 			case CondAny:
 			case CondEmpty:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -906,6 +914,7 @@ public:
 				case CondAny:
 				case CondEmpty:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -993,6 +1002,7 @@ public:
 				case CondAny:
 				case CondEmpty:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -1029,7 +1039,14 @@ public:
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::String{});
 		for (Variant& v : buffer_) {
-			const std::string_view value = static_cast<std::string_view>(v);
+			if rx_unlikely (v.IsNullValue()) {
+				continue;
+			}
+
+			if (!v.Type().Is<KeyValueType::String>()) {
+				v.convert(KeyValueType::String{});
+			}
+			const auto value = static_cast<std::string_view>(v);
 			switch (cond_) {
 				case CondSet:
 					assertrx_dbg(this->setPtr_);
@@ -1086,6 +1103,7 @@ public:
 				case CondEmpty:
 				case CondAny:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -1117,7 +1135,14 @@ public:
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::String{});
 		for (Variant& v : buffer_) {
-			const std::string_view value = static_cast<std::string_view>(v);
+			if rx_unlikely (v.IsNullValue()) {
+				continue;
+			}
+
+			if (!v.Type().Is<KeyValueType::String>()) {
+				v.convert(KeyValueType::String{});
+			}
+			const auto value = static_cast<std::string_view>(v);
 			switch (cond_) {
 				case CondSet:
 					assertrx_dbg(this->setPtr_);
@@ -1176,6 +1201,7 @@ public:
 				case CondEmpty:
 				case CondAny:
 				case CondDWithin:
+				case CondKnn:
 				default:
 					abort();
 			}
@@ -1188,7 +1214,15 @@ public:
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::String{});
 		for (Variant& v : buffer_) {
-			distinct_.ExcludeValues(std::string_view(v));  // key_string{v});
+			if rx_unlikely (v.IsNullValue()) {
+				continue;
+			}
+
+			if (!v.Type().Is<KeyValueType::String>()) {
+				v.convert(KeyValueType::String{});
+			}
+			const auto value = static_cast<std::string_view>(v);
+			distinct_.ExcludeValues(value);
 		}
 	}
 	void ClearDistinctValues() noexcept { distinct_.ClearValues(); }
@@ -1238,6 +1272,7 @@ public:
 			case CondEmpty:
 			case CondDWithin:
 			case CondLike:
+			case CondKnn:
 			default:
 				abort();
 		}
@@ -1487,7 +1522,7 @@ public:
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
 		const p_string* ptr = reinterpret_cast<const p_string*>(item.Ptr() + arr.offset);
-		for (const auto* const end = ptr + arr.len; ptr != end; ++ptr) {
+		for (const p_string* const end = ptr + arr.len; ptr != end; ++ptr) {
 			distinct_.ExcludeValues(std::string_view(*ptr));
 		}
 	}
@@ -1615,12 +1650,15 @@ public:
 	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::Undefined{});
+		if rx_unlikely (buffer_.IsObjectValue()) {
+			return false;
+		}
 		for (Variant& value : buffer_) {
-			if (!value.IsNullValue()) {
-				return false;
+			if (value.IsNullValue()) {
+				return true;
 			}
 		}
-		return true;
+		return buffer_.empty();
 	}
 	[[nodiscard]] std::string ConditionStr() const;
 	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
@@ -1631,6 +1669,21 @@ private:
 	TagsPath tagsPath_;
 	PayloadType payloadType_;
 	VariantArray buffer_;
+};
+
+class ComparatorIndexedFloatVectorAny {
+public:
+	ComparatorIndexedFloatVectorAny(size_t offset) noexcept : offset_{offset} {}
+	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType) noexcept {
+		return !ConstFloatVectorView::FromUint64(*reinterpret_cast<const uint64_t*>(item.Ptr() + offset_)).IsEmpty();
+	}
+	[[nodiscard]] std::string ConditionStr() const;
+	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	void ExcludeDistinctValues(const PayloadValue&, IdType) const noexcept {}
+	void ClearDistinctValues() const noexcept {}
+
+private:
+	size_t offset_{0};
 };
 
 template <typename T>
@@ -1655,7 +1708,7 @@ struct ComparatorIndexedVariantHelper<key_string> {
 
 template <>
 struct ComparatorIndexedVariantHelper<PayloadValue> {
-	using type = std::variant<ComparatorIndexedComposite>;
+	using type = ComparatorIndexedComposite;
 };
 
 template <>
@@ -1663,6 +1716,11 @@ struct ComparatorIndexedVariantHelper<Point> {
 	using type =
 		std::variant<ComparatorIndexedOffsetArrayDWithin, ComparatorIndexedJsonPathDWithin, ComparatorIndexedOffsetArrayAnyDistinct<Point>,
 					 ComparatorIndexedOffsetArrayDWithinDistinct, ComparatorIndexedJsonPathDWithinDistinct>;
+};
+
+template <>
+struct ComparatorIndexedVariantHelper<FloatVector> {
+	using type = ComparatorIndexedFloatVectorAny;
 };
 
 template <typename T>
@@ -1673,7 +1731,7 @@ using ComparatorIndexedVariant = typename ComparatorIndexedVariantHelper<T>::typ
 template <typename T>
 class ComparatorIndexed {
 public:
-	ComparatorIndexed(std::string_view indexName, CondType cond, const VariantArray& values, const void* rawData, bool isArray,
+	ComparatorIndexed(std::string_view indexName, CondType cond, const VariantArray& values, const void* rawData, IsArray isArray,
 					  bool distinct, const PayloadType& payloadType, const FieldsSet& fields,
 					  const CollateOpts& collateOpts = CollateOpts())
 		: impl_{createImpl(cond, values, rawData, distinct, isArray, payloadType, fields, collateOpts)}, indexName_{indexName} {}
@@ -1771,7 +1829,7 @@ public:
 
 private:
 	[[nodiscard]] static comparators::ComparatorIndexedVariant<T> createImpl(CondType cond, const VariantArray&, const void* rawData,
-																			 bool distinct, bool isArray, const PayloadType&,
+																			 bool distinct, IsArray isArray, const PayloadType&,
 																			 const FieldsSet&, const CollateOpts&);
 
 	comparators::ComparatorIndexedVariant<T> impl_;
@@ -1852,10 +1910,22 @@ template <>
 
 template <>
 [[nodiscard]] RX_ALWAYS_INLINE bool ComparatorIndexed<PayloadValue>::Compare(const PayloadValue& item, IdType rowId) {
-	static_assert(std::variant_size_v<comparators::ComparatorIndexedVariant<PayloadValue>> == 1);
-	const bool res = std::get_if<0>(&impl_)->Compare(item, rowId);
+	const bool res = impl_.Compare(item, rowId);
 	matchedCount_ += res;
 	return res;
+}
+
+template <>
+RX_ALWAYS_INLINE void ComparatorIndexed<PayloadValue>::ClearDistinctValues() noexcept {
+	impl_.ClearDistinctValues();
+}
+template <>
+RX_ALWAYS_INLINE void ComparatorIndexed<PayloadValue>::ExcludeDistinctValues(const PayloadValue& item, IdType rowId) {
+	impl_.ExcludeDistinctValues(item, rowId);
+}
+template <>
+[[nodiscard]] RX_ALWAYS_INLINE bool ComparatorIndexed<PayloadValue>::IsDistinct() const noexcept {
+	return impl_.IsDistinct();
 }
 
 template <>
@@ -1888,41 +1958,63 @@ template <>
 	}
 }
 
+template <>
+[[nodiscard]] RX_ALWAYS_INLINE bool ComparatorIndexed<FloatVector>::Compare(const PayloadValue& item, IdType rowId) {
+	const bool res = impl_.Compare(item, rowId);
+	matchedCount_ += res;
+	return res;
+}
+template <>
+RX_ALWAYS_INLINE void ComparatorIndexed<FloatVector>::ClearDistinctValues() noexcept {
+	impl_.ClearDistinctValues();
+}
+template <>
+RX_ALWAYS_INLINE void ComparatorIndexed<FloatVector>::ExcludeDistinctValues(const PayloadValue& item, IdType rowId) {
+	impl_.ExcludeDistinctValues(item, rowId);
+}
+template <>
+[[nodiscard]] RX_ALWAYS_INLINE bool ComparatorIndexed<FloatVector>::IsDistinct() const noexcept {
+	return impl_.IsDistinct();
+}
+
 extern template std::string ComparatorIndexed<int>::ConditionStr() const;
 extern template std::string ComparatorIndexed<int64_t>::ConditionStr() const;
 extern template std::string ComparatorIndexed<bool>::ConditionStr() const;
 extern template std::string ComparatorIndexed<double>::ConditionStr() const;
 extern template std::string ComparatorIndexed<key_string>::ConditionStr() const;
-extern template std::string ComparatorIndexed<PayloadValue>::ConditionStr() const;
 extern template std::string ComparatorIndexed<Point>::ConditionStr() const;
 extern template std::string ComparatorIndexed<Uuid>::ConditionStr() const;
 
 extern template comparators::ComparatorIndexedVariant<int> ComparatorIndexed<int>::createImpl(CondType, const VariantArray&, const void*,
-																							  bool, bool, const PayloadType&,
+																							  bool, IsArray, const PayloadType&,
 																							  const FieldsSet&, const CollateOpts&);
 extern template comparators::ComparatorIndexedVariant<int64_t> ComparatorIndexed<int64_t>::createImpl(CondType, const VariantArray&,
-																									  const void*, bool, bool,
+																									  const void*, bool, IsArray,
 																									  const PayloadType&, const FieldsSet&,
 																									  const CollateOpts&);
 extern template comparators::ComparatorIndexedVariant<double> ComparatorIndexed<double>::createImpl(CondType, const VariantArray&,
-																									const void*, bool, bool,
+																									const void*, bool, IsArray,
 																									const PayloadType&, const FieldsSet&,
 																									const CollateOpts&);
 extern template comparators::ComparatorIndexedVariant<bool> ComparatorIndexed<bool>::createImpl(CondType, const VariantArray&, const void*,
-																								bool, bool, const PayloadType&,
+																								bool, IsArray, const PayloadType&,
 																								const FieldsSet&, const CollateOpts&);
 extern template comparators::ComparatorIndexedVariant<Uuid> ComparatorIndexed<Uuid>::createImpl(CondType, const VariantArray&, const void*,
-																								bool, bool, const PayloadType&,
+																								bool, IsArray, const PayloadType&,
 																								const FieldsSet&, const CollateOpts&);
 template <>
 [[nodiscard]] comparators::ComparatorIndexedVariant<key_string> ComparatorIndexed<key_string>::createImpl(
-	CondType, const VariantArray&, const void*, bool, bool, const PayloadType&, const FieldsSet&, const CollateOpts&);
+	CondType, const VariantArray&, const void*, bool, IsArray, const PayloadType&, const FieldsSet&, const CollateOpts&);
 template <>
 [[nodiscard]] comparators::ComparatorIndexedVariant<Point> ComparatorIndexed<Point>::createImpl(CondType, const VariantArray&, const void*,
-																								bool, bool, const PayloadType&,
+																								bool, IsArray, const PayloadType&,
 																								const FieldsSet&, const CollateOpts&);
 template <>
 [[nodiscard]] comparators::ComparatorIndexedVariant<PayloadValue> ComparatorIndexed<PayloadValue>::createImpl(
-	CondType, const VariantArray&, const void*, bool, bool, const PayloadType&, const FieldsSet&, const CollateOpts&);
+	CondType, const VariantArray&, const void*, bool, IsArray, const PayloadType&, const FieldsSet&, const CollateOpts&);
+
+template <>
+[[nodiscard]] comparators::ComparatorIndexedVariant<FloatVector> ComparatorIndexed<FloatVector>::createImpl(
+	CondType, const VariantArray&, const void*, bool, IsArray, const PayloadType&, const FieldsSet&, const CollateOpts&);
 
 }  // namespace reindexer

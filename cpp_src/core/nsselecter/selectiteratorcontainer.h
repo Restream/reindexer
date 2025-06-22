@@ -1,14 +1,16 @@
 #pragma once
 #include <limits>
+#include "core/enums.h"
 #include "core/expressiontree.h"
+#include "core/ft/functions/ft_function.h"
 #include "core/index/index.h"
 #include "core/nsselecter/comparator/comparator_indexed.h"
 #include "core/nsselecter/comparator/comparator_not_indexed.h"
+#include "core/nsselecter/comparator/comporator_distinct_multi.h"
 #include "core/nsselecter/comparator/equalposition_comparator.h"
 #include "core/nsselecter/comparator/fieldscomparator.h"
 #include "core/nsselecter/selectiterator.h"
-#include "core/selectfunc/ctx/ftctx.h"
-#include "core/selectfunc/selectfunc.h"
+#include "core/query/queryentry.h"
 #include "estl/restricted.h"
 
 namespace reindexer {
@@ -17,6 +19,7 @@ struct SelectCtx;
 class RdxContext;
 class JoinedSelector;
 class QueryPreprocessor;
+class NamespaceImpl;
 
 struct JoinSelectIterator {
 	size_t joinIndex;
@@ -36,11 +39,13 @@ class SelectIteratorContainer
 	: public ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysTrue,
 							ComparatorIndexed<bool>, ComparatorIndexed<int>, ComparatorIndexed<int64_t>, ComparatorIndexed<double>,
 							ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>,
-							ComparatorIndexed<Uuid>, EqualPositionComparator, ComparatorNotIndexed> {
-	using Base = ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysTrue,
-								ComparatorIndexed<bool>, ComparatorIndexed<int>, ComparatorIndexed<int64_t>, ComparatorIndexed<double>,
-								ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>,
-								ComparatorIndexed<Uuid>, EqualPositionComparator, ComparatorNotIndexed>;
+							ComparatorIndexed<Uuid>, ComparatorIndexed<FloatVector>, EqualPositionComparator, ComparatorNotIndexed,
+							ComparatorDistinctMulti> {
+	using Base =
+		ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysTrue,
+					   ComparatorIndexed<bool>, ComparatorIndexed<int>, ComparatorIndexed<int64_t>, ComparatorIndexed<double>,
+					   ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>, ComparatorIndexed<Uuid>,
+					   ComparatorIndexed<FloatVector>, EqualPositionComparator, ComparatorNotIndexed, ComparatorDistinctMulti>;
 
 public:
 	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx* ctx = nullptr)
@@ -50,10 +55,10 @@ public:
 	bool HasIdsets() const;
 	// Check NOT or comparator must not be 1st
 	void CheckFirstQuery();
-	// Let iterators choose most effecive algorith
+	// Let iterators choose most effective algorith
 	void SetExpectMaxIterations(int expectedIterations);
-	void PrepareIteratorsForSelectLoop(QueryPreprocessor&, unsigned sortId, bool isFt, FtSortType ftSortType, const NamespaceImpl&,
-									   SelectFunction::Ptr&, FtCtx::Ptr&, const RdxContext&);
+	void PrepareIteratorsForSelectLoop(QueryPreprocessor&, unsigned sortId, RankedTypeQuery, RankSortType, const NamespaceImpl&,
+									   FtFunction::Ptr&, RanksHolder::Ptr&, const RdxContext&);
 	template <bool reverse, bool hasComparators>
 	bool Process(PayloadValue&, bool* finish, IdType* rowId, IdType, bool match);
 
@@ -72,8 +77,8 @@ public:
 				OneOf<SelectIteratorsBracket, JoinSelectIterator, FieldsComparator, AlwaysFalse, AlwaysTrue, EqualPositionComparator>)
 				RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIterator& sit) RX_POST_LMBD_ALWAYS_INLINE noexcept { return sit.distinct; },
-			Restricted<ComparatorNotIndexed,
-					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
+			Restricted<ComparatorNotIndexed, ComparatorDistinctMulti,
+					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
 				[] RX_PRE_LMBD_ALWAYS_INLINE(const auto& comp) RX_POST_LMBD_ALWAYS_INLINE noexcept { return comp.IsDistinct(); }));
 	}
 	void ExplainJSON(int iters, JsonBuilder& builder, const std::vector<JoinedSelector>* js) const {
@@ -92,15 +97,14 @@ public:
 	}
 
 private:
-	bool prepareIteratorsForSelectLoop(QueryPreprocessor&, size_t begin, size_t end, unsigned sortId, bool isFt, FtSortType ftSortType,
-									   const NamespaceImpl&, SelectFunction::Ptr&, FtCtx::Ptr&, const RdxContext&);
-	void sortByCost(span<unsigned int> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations);
-	double fullCost(span<unsigned> indexes, unsigned i, unsigned from, unsigned to, int expectedIterations) const noexcept;
-	double cost(span<unsigned> indexes, unsigned cur, int expectedIterations) const noexcept;
-	double cost(span<unsigned> indexes, unsigned from, unsigned to, int expectedIterations) const noexcept;
-	void moveJoinsToTheBeginingOfORs(span<unsigned> indexes, unsigned from, unsigned to);
+	ContainRanked prepareIteratorsForSelectLoop(QueryPreprocessor&, size_t begin, size_t end, unsigned sortId, RankedTypeQuery,
+												RankSortType, const NamespaceImpl&, FtFunction::Ptr&, RanksHolder::Ptr&, const RdxContext&);
+	void sortByCost(std::span<unsigned int> indexes, std::span<double> costs, unsigned from, unsigned to, int expectedIterations);
+	double fullCost(std::span<unsigned> indexes, unsigned i, unsigned from, unsigned to, int expectedIterations) const noexcept;
+	double cost(std::span<unsigned> indexes, unsigned cur, int expectedIterations) const noexcept;
+	double cost(std::span<unsigned> indexes, unsigned from, unsigned to, int expectedIterations) const noexcept;
+	void moveJoinsToTheBeginningOfORs(std::span<unsigned> indexes, unsigned from, unsigned to);
 	// Check idset must be 1st
-	static void checkFirstQuery(Container&);
 	template <bool reverse>
 	bool checkIfSatisfyCondition(SelectIterator&, bool* finish, IdType rowId);
 	bool checkIfSatisfyCondition(JoinSelectIterator&, PayloadValue&, IdType properRowId, bool match);
@@ -117,12 +121,13 @@ private:
 
 	SelectKeyResults processQueryEntry(const QueryEntry& qe, const NamespaceImpl& ns, StrictMode strictMode);
 	SelectKeyResults processQueryEntry(const QueryEntry& qe, bool enableSortIndexOptimize, const NamespaceImpl& ns, unsigned sortId,
-									   bool isQueryFt, FtSortType ftSortType, SelectFunction::Ptr& selectFnc, bool& isIndexFt,
-									   bool& isIndexSparse, FtCtx::Ptr&, QueryPreprocessor& qPreproc, const RdxContext&);
+									   RankedTypeQuery, RankSortType, FtFunction::Ptr& selectFnc, RanksHolder::Ptr&, reindexer::IsRanked&,
+									   IsSparse&, QueryPreprocessor& qPreproc, const RdxContext&);
+	SelectKeyResult processKnnQueryEntry(const KnnQueryEntry&, const NamespaceImpl&, RanksHolder::Ptr&, const RdxContext&);
 	template <bool left>
 	void processField(FieldsComparator&, const QueryField&, const NamespaceImpl&) const;
 	void processJoinEntry(const JoinQueryEntry&, OpType);
-	void processQueryEntryResults(SelectKeyResults&&, OpType, const NamespaceImpl&, const QueryEntry&, bool isIndexFt, bool isIndexSparse,
+	void processQueryEntryResults(SelectKeyResults&&, OpType, const NamespaceImpl&, const QueryEntry&, reindexer::IsRanked, IsSparse,
 								  std::optional<OpType> nextOp);
 	using EqualPositions = h_vector<size_t, 4>;
 	void processEqualPositions(const std::vector<EqualPositions>& equalPositions, const NamespaceImpl& ns, const QueryEntries& queries);

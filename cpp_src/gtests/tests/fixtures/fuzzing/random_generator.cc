@@ -2,7 +2,6 @@
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <fstream>
-#include "core/payload/fieldsset.h"
 #include "core/query/query.h"
 #include "index.h"
 #include "ns_scheme.h"
@@ -234,7 +233,7 @@ FieldPath RandomGenerator::RndScalarField(const NsScheme& nsScheme) {
 		const int end = idx + size;
 		while (idx < end) {
 			res.back() = idx % size;
-			if (nsScheme.IsArray(res) == IsArrayT::No && !nsScheme.IsPoint(res)) {
+			if (!nsScheme.IsArray(res) && !nsScheme.IsPoint(res)) {
 				break;
 			}
 			++idx;

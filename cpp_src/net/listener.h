@@ -19,10 +19,9 @@ public:
 	/// Bind listener to specified host:port
 	/// @param addr - tcp host:port for bind or file path for the unix domain socket
 	/// @param type - socket's type: tcp or unix
-	/// @return true - if bind successful, false - on bind error
-	virtual bool Bind(std::string addr, socket_domain type) = 0;
-	/// Stop synchroniusly stops listener
-	virtual void Stop() = 0;
+	virtual void Bind(std::string addr, socket_domain type) = 0;
+	/// Stop synchronously stops listener
+	virtual void Stop() noexcept = 0;
 };
 
 struct ConnPtrEqual {
@@ -49,8 +48,8 @@ enum class ListenerType {
 	/// This mode is more effective for short-term connections, but all the connections will be handled by shared thread pool.
 	Shared,
 	/// In mixed mode only the first listener is able to accept connections.
-	/// When connection is accepted, this listener await the first clint messages to check, if client has requested dedicated thread.
-	/// If dedicated thread was requestedm new connection will be moved to new thread, otherwise
+	/// When connection is accepted, this listener await the first client's message to check, if client has requested dedicated thread.
+	/// If dedicated thread was requested new connection will be moved to new thread, otherwise
 	/// new connection will be moved to one of the shared listeners.
 	/// This mode is optimal for long-term connections and required to break request cycles in synchronous replications, but
 	/// is not effective for short-term connections, because first client's message can not be handled in acceptor thread.
@@ -61,47 +60,49 @@ enum class ListenerType {
 template <ListenerType LT>
 class Listener final : public IListener {
 public:
-	/// Constructs new listner object.
-	/// @param loop - ev::loop of caller's thread, listener's socket will be binded to that loop.
+	/// Constructs new listener object.
+	/// @param loop - ev::loop of caller's thread, listener's socket will be bound to that loop.
 	/// @param connFactory - Connection factory, will create objects with IServerConnection interface implementation.
 	/// @param maxListeners - Maximum number of threads, which listener will utilize. std::thread::hardware_concurrency() by default
 	Listener(ev::dynamic_loop& loop, ConnectionFactory&& connFactory, openssl::SslCtxPtr SslCtx, int maxListeners = 0);
 	~Listener() override;
+	Listener(const Listener&) = delete;
+	Listener(Listener&&) = delete;
 	/// Bind listener to specified host:port
 	/// @param addr - tcp host:port for bind or file path for the unix domain socket
 	/// @param type - socket's type: tcp or unix
-	/// @return true - if bind successful, false - on bind error
-	bool Bind(std::string addr, socket_domain type) override;
-	/// Stop synchroniusly stops listener
-	void Stop() override;
+	void Bind(std::string addr, socket_domain type) override;
+	/// Stop synchronously stops listener
+	void Stop() noexcept override;
 
-protected:
-	void reserve_stack();
+private:
+	void reserve_stack() noexcept;
 	void io_accept(ev::io& watcher, int revents);
 	void timeout_cb(ev::periodic& watcher, int);
 	void async_cb(ev::async& watcher);
 	void rebalance();
 	void rebalance_from_acceptor();
-	// Locks shared_->mtx_. Should not be calles under external lock.
+	// Locks shared_->mtx_. Should not be called under external lock.
 	void rebalance_conn(IServerConnection*, IServerConnection::BalancingType type);
-	void run_dedicated_thread(std::unique_ptr<IServerConnection>&& conn);
-	// May lock shared_->mtx_. Should not be calles under external lock.
+	void run_dedicated_thread(std::unique_ptr<IServerConnection> conn) noexcept;
+	// May lock shared_->mtx_. Should not be called under external lock.
 	void startup_shared_thread();
 
 	struct Shared {
-		struct Worker {
-			Worker(std::unique_ptr<IServerConnection>&& _conn, ev::async& _async) : conn(std::move(_conn)), async(&_async) {}
-			Worker(Worker&& other) noexcept : conn(std::move(other.conn)), async(other.async) {}
-			Worker& operator=(Worker&& other) noexcept {
-				if (&other != this) {
-					conn = std::move(other.conn);
-					async = other.async;
-				}
-				return *this;
-			}
+		class Worker {
+		public:
+			Worker(std::shared_ptr<Shared> shared, std::unique_ptr<IServerConnection> conn);
+			~Worker();
+			Worker(Worker&& other) = delete;
 
-			std::unique_ptr<IServerConnection> conn;
-			ev::async* async;
+			void Run();
+			void SendTerminateAsync() noexcept { async_.send(); }
+
+		private:
+			ev::dynamic_loop loop_;
+			std::unique_ptr<IServerConnection> conn_;
+			ev::async async_;
+			std::shared_ptr<Shared> shared_;
 		};
 
 		Shared(ConnectionFactory&& connFactory, int maxListeners, openssl::SslCtxPtr SslCtx);
@@ -109,8 +110,8 @@ protected:
 		openssl::SslCtxPtr sslCtx_;
 		lst_socket sock_;
 		const int maxListeners_;
-		std::atomic<int> listenersCount_ = {0};
-		std::atomic<int> connCount_ = {0};
+		std::atomic<int> sharedListenersCount_{0};
+		std::atomic<int> connsCountOnSharedListeners_{0};
 		std::vector<Listener*> listeners_;
 		std::mutex mtx_;
 		ConnectionFactory connFactory_;
@@ -118,7 +119,7 @@ protected:
 		std::string addr_;
 		std::vector<std::unique_ptr<IServerConnection>> idle_;
 		steady_clock_w::time_point ts_;
-		std::vector<Worker> dedicatedWorkers_;
+		std::vector<Worker*> dedicatedWorkers_;
 	};
 	class ListeningThreadData {
 	public:
@@ -132,7 +133,6 @@ protected:
 				loop_.run();
 			}
 		}
-		const Listener& GetListener() const noexcept { return listener_; }
 		Shared& GetShared() noexcept { return *shared_; }
 
 	private:
@@ -140,7 +140,7 @@ protected:
 		Listener listener_;
 		std::shared_ptr<Shared> shared_;
 	};
-	// Locks shared_->mtx_. Should not be calles under external lock.
+	// Locks shared_->mtx_. Should not be called under external lock.
 	Listener(ev::dynamic_loop& loop, std::shared_ptr<Shared> shared);
 	static void clone(std::unique_ptr<ListeningThreadData> d) noexcept;
 
@@ -151,24 +151,24 @@ protected:
 	std::shared_ptr<Shared> shared_;
 	std::vector<std::unique_ptr<IServerConnection>> connections_;
 	tsl::sparse_set<std::unique_ptr<IServerConnection>, ConnPtrHash, ConnPtrHash::transparent_key_equal> accepted_;
-	uint64_t id_;
+	uint64_t id_{0};
+	bool isMainListener_{false};
 };
 
 /// Network listener implementation
 class ForkedListener final : public IListener {
 public:
-	/// Constructs new listner object.
-	/// @param loop - ev::loop of caller's thread, listener's socket will be binded to that loop.
+	/// Constructs new listener object.
+	/// @param loop - ev::loop of caller's thread, listener's socket will be bound to that loop.
 	/// @param connFactory - Connection factory, will create objects with IServerConnection interface implementation.
 	ForkedListener(ev::dynamic_loop& loop, ConnectionFactory&& connFactory, openssl::SslCtxPtr SslCtx);
 	~ForkedListener() override;
 	/// Bind listener to specified host:port
 	/// @param addr - tcp host:port for bind or file path for the unix domain socket
 	/// @param type - socket's type: tcp or unix
-	/// @return true - if bind successful, false - on bind error
-	bool Bind(std::string addr, socket_domain type) override;
-	/// Stop synchroniusly stops listener
-	void Stop() override;
+	void Bind(std::string addr, socket_domain type) override;
+	/// Stop synchronously stops listener
+	void Stop() noexcept override;
 
 protected:
 	void io_accept(ev::io& watcher, int revents);

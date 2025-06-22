@@ -6,6 +6,7 @@
 class TtlIndexApi : public ReindexerApi {
 public:
 	void SetUp() override {
+		ReindexerApi::SetUp();
 		Error err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0},
@@ -58,14 +59,15 @@ public:
 	}
 
 	int WaitForVanishing() {
-#if !defined(REINDEXER_WITH_TSAN) && !defined(REINDEX_WITH_ASAN)
+#if !defined(REINDEX_WITH_TSAN) && !defined(REINDEX_WITH_ASAN) && !defined(RX_WITH_STDLIB_DEBUG)
 		constexpr auto kStep = std::chrono::milliseconds(100);
-#else	// defined (REINDEXER_WITH_TSAN) || defined(REINDEX_WITH_ASAN)
+#else	// defined (REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN) || defined(RX_WITH_STDLIB_DEBUG)
 		constexpr auto kStep = std::chrono::milliseconds(500);
-#endif	// defined (REINDEXER_WITH_TSAN) || defined(REINDEX_WITH_ASAN)
+#endif	// defined (REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN) || defined(RX_WITH_STDLIB_DEBUG)
+		constexpr size_t kStepsCount = 20;
 		size_t count = GetItemsCount();
 		if (count > 0) {
-			for (size_t i = 0; i < 10; ++i) {
+			for (size_t i = 0; i < kStepsCount; ++i) {
 				std::this_thread::sleep_for(kStep);
 				count = GetItemsCount();
 				if (count == 0) {

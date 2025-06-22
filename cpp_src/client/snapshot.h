@@ -41,8 +41,8 @@ public:
 	Iterator end() noexcept { return Iterator{this, i_.count_}; }
 	size_t Size() const noexcept { return i_.count_; }
 	bool HasRawData() const noexcept { return i_.rawCount_; }
-	void ClusterizationStat(ClusterizationStatus&& clusterStatus) noexcept { i_.clusterStatus_ = std::move(clusterStatus); }
-	std::optional<ClusterizationStatus> ClusterizationStat() const noexcept { return i_.clusterStatus_; }
+	void ClusterOperationStat(ClusterOperationStatus&& clusterStatus) noexcept { i_.clusterStatus_ = std::move(clusterStatus); }
+	std::optional<ClusterOperationStatus> ClusterOperationStat() const noexcept { return i_.clusterStatus_; }
 
 private:
 	friend class RPCClient;
@@ -69,7 +69,7 @@ private:
 		net::cproto::CoroClientConnection* conn_;
 		std::chrono::milliseconds requestTimeout_;
 		steady_clock_w::time_point sessionTs_;
-		std::optional<ClusterizationStatus> clusterStatus_;
+		std::optional<ClusterOperationStatus> clusterStatus_;
 	};
 
 	Impl i_;

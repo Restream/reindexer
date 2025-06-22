@@ -1,74 +1,112 @@
 #pragma once
 
-#include <assert.h>
 #include <stdlib.h>
-#include <functional>
 #include <memory>
+#include <span>
+#include "core/enums.h"
+#include "core/key_value_type.h"
 #include "estl/h_vector.h"
+#include "tools/assertrx.h"
 
 namespace reindexer {
 
-class TagsPathCache {
+class [[nodiscard]] FieldProperties {
+	struct NotIndexedT {};
+
 public:
-	void set(const int16_t* tagsPath, size_t len, int field) {
-		assertrx(len);
+	static constexpr NotIndexedT kNotIndexed{};
+	explicit FieldProperties(NotIndexedT) noexcept : isIndexed_{false} {}
+	FieldProperties(int indexNumber, size_t arrayDim, reindexer::IsArray isArray, KeyValueType valueType,
+					reindexer::IsSparse isSparse) noexcept
+		: indexNumber_(indexNumber), arrayDim_(arrayDim), valueType_{valueType}, isIndexed_{true}, isArray_{isArray}, isSparse_{isSparse} {}
+
+	[[nodiscard]] bool IsIndexed() const noexcept { return isIndexed_; }
+	[[nodiscard]] bool IsRegularIndex() const noexcept { return isIndexed_ && !isSparse_; }
+	[[nodiscard]] bool IsSparseIndex() const noexcept { return isIndexed_ && isSparse_; }
+	reindexer::IsArray IsArray() const noexcept { return isArray_; }
+	reindexer::IsSparse IsSparse() const noexcept { return isSparse_; }
+	[[nodiscard]] int IndexNumber() const noexcept { return (isIndexed_ && !isSparse_) ? indexNumber_ : -1; }
+	[[nodiscard]] int SparseNumber() const noexcept { return indexNumber_; }
+	KeyValueType ValueType() const noexcept { return valueType_; }
+	[[nodiscard]] uint32_t ArrayDim() const noexcept { return arrayDim_; }
+
+private:
+	int indexNumber_{-1};
+	size_t arrayDim_{0};
+	KeyValueType valueType_{KeyValueType::Undefined{}};
+	bool isIndexed_{false};
+	reindexer::IsArray isArray_{IsArray_False};
+	reindexer::IsSparse isSparse_{IsSparse_False};
+};
+
+class [[nodiscard]] TagsPathCache {
+public:
+	void Set(std::span<const TagName> path, FieldProperties field) {
+		assertrx(!path.empty());
 		auto cache = this;
 		for (;;) {
-			int tag = *tagsPath++;
-			if (int(cache->entries_.size()) <= tag) {
+			const auto tag = path[0].AsNumber();
+			if (cache->entries_.size() <= tag) {
 				cache->entries_.resize(tag + 1);
 			}
-			if (len == 1) {
-				cache->entries_[tag].field_ = field;
+			auto& cacheEntry = cache->entries_[tag];
+			if (path.size() == 1) {
+				cacheEntry.field_ = field;
 				return;
 			}
 
-			if (!cache->entries_[tag].subCache_) {
-				cache->entries_[tag].subCache_ = std::make_shared<TagsPathCache>();
+			if (!cacheEntry.subCache_) {
+				cacheEntry.subCache_ = std::make_shared<TagsPathCache>();
 			}
-			cache = cache->entries_[tag].subCache_.get();
-			len--;
+			cache = cacheEntry.subCache_.get();
+			path = path.subspan(1);
 		}
 	}
-	int lookup(const int16_t* tagsPath, size_t len) const noexcept {
-		assertrx(len);
+	FieldProperties Lookup(std::span<const TagName> path) const noexcept {
+		assertrx(!path.empty());
 		auto cache = this;
 		for (;;) {
-			int tag = *tagsPath++;
-			if (int(cache->entries_.size()) <= tag) {
-				return -1;
+			const auto tag = path[0].AsNumber();
+			if (cache->entries_.size() <= tag) {
+				return FieldProperties{FieldProperties::kNotIndexed};
 			}
-			if (len == 1) {
-				return cache->entries_[tag].field_;
+			const CacheEntry& cacheEntry = cache->entries_[tag];
+			if (path.size() == 1) {
+				return cacheEntry.field_;
 			}
 
-			if (!cache->entries_[tag].subCache_) {
-				return -1;
+			if (!cacheEntry.subCache_) {
+				return FieldProperties{FieldProperties::kNotIndexed};
 			}
-			cache = cache->entries_[tag].subCache_.get();
-			len--;
+			cache = cacheEntry.subCache_.get();
+			path = path.subspan(1);
 		}
 	}
 
-	void walk(int16_t* path, int depth, const std::function<void(int, int)>& visitor) const {
-		int16_t& i = path[depth];
-		for (i = 0; i < int(entries_.size()); i++) {
-			if (entries_[i].field_ > 0) {
-				visitor(depth + 1, entries_[i].field_);
+	void Walk(std::vector<TagName>& path, const std::invocable<const FieldProperties&> auto& visitor) const {
+		const auto depth = path.size();
+		path.emplace_back(TagName::Empty());
+		for (size_t i = 0; i < entries_.size(); ++i) {
+			TagName& tag = path[depth];
+			tag = TagName(i);
+			const CacheEntry& cacheEntry = entries_[i];
+			if (cacheEntry.field_.IsIndexed()) {
+				visitor(cacheEntry.field_);
 			}
-			if (entries_[i].subCache_) {
-				entries_[i].subCache_->walk(path, depth + 1, visitor);
+			if (cacheEntry.subCache_) {
+				cacheEntry.subCache_->Walk(path, visitor);
 			}
 		}
+		path.pop_back();
 	}
 
-	void clear() noexcept { entries_.clear(); }
-	bool empty() const noexcept { return entries_.empty(); }
+	void Clear() noexcept { entries_.clear(); }
+	[[nodiscard]] bool Empty() const noexcept { return entries_.empty(); }
 
-protected:
-	struct CacheEntry {
+private:
+	struct [[nodiscard]] CacheEntry {
 		std::shared_ptr<TagsPathCache> subCache_;
-		int field_ = -1;
+		FieldProperties field_{FieldProperties::kNotIndexed};
 	};
 	h_vector<CacheEntry> entries_;
 };

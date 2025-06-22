@@ -28,69 +28,94 @@ Listener<LT>::Listener(ev::dynamic_loop& loop, std::shared_ptr<Shared> shared)
 	async_.set<Listener, &Listener::async_cb>(this);
 	async_.set(loop);
 	async_.start();
+
 	std::lock_guard lck(shared_->mtx_);
+	if rx_unlikely (int(shared_->listeners_.size()) == shared_->maxListeners_) {
+		// We are going to get this exception few times in case of concurrent listeners creation
+		throw Error(errConflict, "Too many shared listeners");
+	}
+	if rx_unlikely (shared_->terminating_) {
+		throw Error(errConflict, "Listener is terminating");
+	}
+	logFmt(LogTrace, "Listener ({}). Creating new shared thread ({} total)", shared_->addr_, shared_->listeners_.size() + 1);
 	shared_->listeners_.emplace_back(this);
+	shared_->sharedListenersCount_.fetch_add(1, std::memory_order_release);
 }
 
 template <ListenerType LT>
 Listener<LT>::Listener(ev::dynamic_loop& loop, ConnectionFactory&& connFactory, openssl::SslCtxPtr sslCtx, int maxListeners)
-	: Listener(loop, std::make_shared<Shared>(std::move(connFactory), (maxListeners ? maxListeners : (double(hardware_concurrency()) * 1.2)) + 1,
-											  std::move(sslCtx))) {}
+	: Listener(loop,
+			   std::make_shared<Shared>(std::move(connFactory), (maxListeners ? maxListeners : (double(hardware_concurrency()) * 1.2)) + 1,
+										std::move(sslCtx))) {}
 
 template <ListenerType LT>
 Listener<LT>::~Listener() {
 	io_.stop();
+	if (isMainListener_) {
+		Listener<LT>::Stop();
+	}
+
+	std::unique_lock lck(shared_->mtx_);
+	auto it = std::find(shared_->listeners_.begin(), shared_->listeners_.end(), this);
+	assertrx_dbg(it != shared_->listeners_.end());
+	if (it != shared_->listeners_.end()) {	// Just in case of some kind system error
+		shared_->listeners_.erase(it);
+	}
+	lck.unlock();
+
+	// Connections have to be removed before sharedListenersCount_ decrement
+	connections_.clear();
+	accepted_.clear();
+
+	shared_->sharedListenersCount_.fetch_sub(1, std::memory_order_release);
 }
 
 template <ListenerType LT>
-bool Listener<LT>::Bind(std::string addr, socket_domain type) {
+void Listener<LT>::Bind(std::string addr, socket_domain type) {
 	if (shared_->sock_.valid()) {
-		return false;
+		throw Error(errSystem, "Invalid listener socket");
+	}
+
+	// We have single listener at the beginning
+	if (shared_->sharedListenersCount_ != 1) {
+		throw Error(errSystem, "Listener '{}' is already running", addr);
 	}
 
 	shared_->addr_ = std::move(addr);
 
 	if (shared_->sock_.bind(shared_->addr_, type) < 0) {
-		return false;
+		throw Error(errSystem, "Unable to bind socket for '{}': {}", shared_->addr_, strerror(errno));
 	}
 
 	if (shared_->sock_.listen(kListenCount) < 0) {
-		perror("listen error");
-		return false;
+		throw Error(errSystem, "Unable to listen on '{}': {}", shared_->addr_, strerror(errno));
 	}
 
+	std::thread th(&Listener::clone, std::make_unique<ListeningThreadData>(shared_));
+	th.detach();
+	isMainListener_ = true;
 	if constexpr (LT == ListenerType::Mixed) {
-		if (shared_->listeners_.size() == 1) {
-			std::thread th(&Listener::clone, std::make_unique<ListeningThreadData>(shared_));
-			th.detach();
-			// Current listener is the only one, which reads the first messages
-			io_.start(shared_->sock_.fd(), ev::READ);
-			reserve_stack();
-		}
-	} else {
-		if (shared_->listenersCount_ == 1) {
-			shared_->listenersCount_.fetch_add(1, std::memory_order_release);
-			std::thread th(&Listener::clone, std::make_unique<ListeningThreadData>(shared_));
-			th.detach();
-		}
+		// Current listener is the only one, which reads the first messages
+		io_.start(shared_->sock_.fd(), ev::READ);
+		reserve_stack();
 	}
-	return true;
 }
 
-[[nodiscard]] static int try_ssl_accept(socket& client, const openssl::SslCtxPtr& ctx) {
+[[nodiscard]] static int try_ssl_accept(socket& client, const openssl::SslCtxPtr& ctx) noexcept {
 	if (!ctx) {
 		return 0;
 	}
 
 	try {
 		client.ssl = openssl::create_ssl(ctx);
-	} catch (Error& err) {
+	} catch (Error&) {
 		// Error has already been logged in create_ssl already
 		return -1;
 	}
 
 	auto logSslErr = [] {
-		logFmt(LogError, "{}: {}", openssl::ERR_get_error(), openssl::ERR_error_string(openssl::ERR_get_error(), NULL));
+		logFmt(LogError, "{}: {}", static_cast<unsigned long>(openssl::ERR_get_error()),
+			   static_cast<char*>(openssl::ERR_error_string(openssl::ERR_get_error(), NULL)));
 	};
 
 	if (int res = openssl::SSL_set_fd(*client.ssl, client.fd()); res == 0) {
@@ -123,7 +148,7 @@ void Listener<LT>::io_accept(ev::io& /*watcher*/, int revents) {
 	}
 
 	if (shared_->terminating_) {
-		logPrintf(LogWarning, "Can't accept connection. Listener is terminating!");
+		logFmt(LogWarning, "Can't accept connection. Listener is terminating!");
 		return;
 	}
 
@@ -151,10 +176,10 @@ void Listener<LT>::io_accept(ev::io& /*watcher*/, int revents) {
 			const auto balancingType = conn->GetBalancingType();
 			switch (balancingType) {
 				case IServerConnection::BalancingType::None:
-					logPrintf(LogError, "Listener: BalancingType::None. Interpreting as 'shared'");
+					logFmt(LogError, "Listener: BalancingType::None. Interpreting as 'shared'");
 					[[fallthrough]];
 				case IServerConnection::BalancingType::Shared:
-					shared_->connCount_.fetch_add(1, std::memory_order_release);
+					shared_->connsCountOnSharedListeners_.fetch_add(1, std::memory_order_release);
 					startup_shared_thread();
 
 					lck.lock();
@@ -164,10 +189,12 @@ void Listener<LT>::io_accept(ev::io& /*watcher*/, int revents) {
 				case IServerConnection::BalancingType::Dedicated:
 					conn->Detach();
 					run_dedicated_thread(std::move(conn));
-					break;
+					return;
 				case IServerConnection::BalancingType::NotSet: {
 					auto c = conn.get();
+					lck.lock();
 					accepted_.emplace(std::move(conn));
+					lck.unlock();
 					c->SetRebalanceCallback(
 						[this](IServerConnection* c, IServerConnection::BalancingType type) { rebalance_conn(c, type); });
 					break;
@@ -175,7 +202,7 @@ void Listener<LT>::io_accept(ev::io& /*watcher*/, int revents) {
 			}
 			startup_shared_thread();
 		} else {
-			shared_->connCount_.fetch_add(1, std::memory_order_release);
+			shared_->connsCountOnSharedListeners_.fetch_add(1, std::memory_order_release);
 			startup_shared_thread();
 
 			lck.lock();
@@ -190,12 +217,12 @@ template <ListenerType LT>
 void Listener<LT>::timeout_cb(ev::periodic&, int) {
 	const bool enableReuseIdle = !std::getenv("REINDEXER_NOREUSEIDLE");
 
-	std::unique_lock lck(shared_->mtx_);
+	std::lock_guard lck(shared_->mtx_);
 	// Move finished connections to idle connections pool
 	for (unsigned i = 0; i < connections_.size();) {
 		if (connections_[i]->IsFinished()) {
 			connections_[i]->Detach();
-			shared_->connCount_.fetch_sub(1, std::memory_order_release);
+			shared_->connsCountOnSharedListeners_.fetch_sub(1, std::memory_order_release);
 			if (enableReuseIdle) {	// -V547
 				shared_->idle_.emplace_back(std::move(connections_[i]));
 			} else {
@@ -214,14 +241,14 @@ void Listener<LT>::timeout_cb(ev::periodic&, int) {
 
 	// Clear all idle connections, after 300 sec
 	if (shared_->idle_.size() && steady_clock_w::now_coarse() - shared_->ts_ > std::chrono::seconds(300)) {
-		logPrintf(LogInfo, "Cleanup idle connections. %d cleared", shared_->idle_.size());
+		logFmt(LogInfo, "Cleanup idle connections. {} cleared", shared_->idle_.size());
 		shared_->idle_.clear();
 	}
 
 	rebalance();
 	const size_t curConnCount = connections_.size();
 	if (curConnCount != 0) {
-		logPrintf(LogTrace, "Listener(%s) %d stats: %d connections", shared_->addr_, id_, curConnCount);
+		logFmt(LogTrace, "Listener({}) {} stats: {} connections", shared_->addr_, id_, curConnCount);
 	}
 }
 
@@ -244,7 +271,7 @@ void Listener<LT>::rebalance() {
 			}
 
 			if (minIt != shared_->listeners_.end() && minConnCount + 1 < curConnCount) {
-				logPrintf(LogInfo, "Rebalance connection from listener %d to %d", id_, (*minIt)->id_);
+				logFmt(LogInfo, "Rebalance connection from listener {} to {}", id_, (*minIt)->id_);
 				auto conn = std::move(connections_.back());
 				conn->Detach();
 				(*minIt)->connections_.emplace_back(std::move(conn));
@@ -264,7 +291,7 @@ void Listener<LT>::rebalance_from_acceptor() {
 		return;
 	}
 	if (shared_->listeners_.size() < 2) {
-		logPrintf(LogError, "Unable to rebalance connections from acceptor: there are no other listeners");
+		logFmt(LogError, "Unable to rebalance connections from acceptor: there are no other listeners");
 		connections_.clear();
 		return;
 	}
@@ -294,7 +321,7 @@ void Listener<LT>::rebalance_conn(IServerConnection* c, IServerConnection::Balan
 	std::unique_lock lck(shared_->mtx_);
 	auto found = accepted_.find(c);
 	if (found == accepted_.end()) {
-		logPrintf(LogError, "Rebalance was requested for incorrect connection ptr: %08X", uint64_t(c));
+		logFmt(LogError, "Rebalance was requested for incorrect connection ptr: {:#08x}", uint64_t(c));
 		return;
 	}
 	auto fc = std::move(*found);
@@ -305,7 +332,7 @@ void Listener<LT>::rebalance_conn(IServerConnection* c, IServerConnection::Balan
 		run_dedicated_thread(std::move(fc));
 	} else {
 		connections_.emplace_back(std::move(fc));
-		shared_->connCount_.fetch_add(1, std::memory_order_release);
+		shared_->connsCountOnSharedListeners_.fetch_add(1, std::memory_order_release);
 		rebalance_from_acceptor();
 		lck.unlock();
 		startup_shared_thread();
@@ -313,68 +340,51 @@ void Listener<LT>::rebalance_conn(IServerConnection* c, IServerConnection::Balan
 }
 
 template <ListenerType LT>
-void Listener<LT>::run_dedicated_thread(std::unique_ptr<IServerConnection>&& conn) {
-	std::thread th([this, conn = std::move(conn)]() mutable {
-		try {
+void Listener<LT>::run_dedicated_thread(std::unique_ptr<IServerConnection> conn) noexcept {
+	try {
+		auto worker = std::make_unique<typename Shared::Worker>(shared_, std::move(conn));
+		std::thread th([worker = std::move(worker)]() mutable {
+			try {
 #if REINDEX_WITH_GPERFTOOLS
-			if (alloc_ext::TCMallocIsAvailable()) {
-				reindexer_server::pprof::ProfilerRegisterThread();
-			}
-#endif
-			ev::dynamic_loop loop;
-			ev::async async;
-			async.set([](ev::async& a) { a.loop.break_loop(); });
-			async.set(loop);
-			async.start();
-
-			typename Shared::Worker w(std::move(conn), async);
-			auto pc = w.conn.get();
-			std::unique_lock lck(shared_->mtx_);
-			shared_->dedicatedWorkers_.emplace_back(std::move(w));
-			logPrintf(LogTrace, "Listener (%s) dedicated thread started. %d total", shared_->addr_, shared_->dedicatedWorkers_.size());
-			lck.unlock();
-			pc->Attach(loop);
-			pc->HandlePendingData();
-			while (!shared_->terminating_) {
-				if (pc->IsFinished()) {
-					pc->Detach();
-					break;
+				if (alloc_ext::TCMallocIsAvailable()) {
+					reindexer_server::pprof::ProfilerRegisterThread();
 				}
-				loop.run();
+#endif
+				worker->Run();
+			} catch (Error& e) {
+				logFmt(LogError, "Unhandled exception in listener thread: {}", e.what());
+			} catch (std::exception& e) {
+				logFmt(LogError, "Unhandled exception in listener thread: {}", e.what());
+			} catch (...) {
+				logFmt(LogError, "Unhandled exception in listener thread");
 			}
-			lck.lock();
-			const auto it = std::find_if(shared_->dedicatedWorkers_.begin(), shared_->dedicatedWorkers_.end(),
-										 [&pc](const typename Shared::Worker& cw) { return cw.conn.get() == pc; });
-			assertrx(it != shared_->dedicatedWorkers_.end());
-			shared_->dedicatedWorkers_.erase(it);
-			logPrintf(LogTrace, "Listener (%s) dedicated thread finished. %d left", shared_->addr_, shared_->dedicatedWorkers_.size());
-		} catch (Error& e) {
-			logPrintf(LogError, "Unhandled excpetion in listener thread: %s", e.what());
-		} catch (std::exception& e) {
-			logPrintf(LogError, "Unhandled excpetion in listener thread: %s", e.what());
-		} catch (...) {
-			logPrintf(LogError, "Unhandled excpetion in listener thread");
-		}
-	});
-	th.detach();
+		});
+		th.detach();
+	} catch (std::exception& e) {
+		logFmt(LogError, "Unable to created dedicated worker for connection: {}", e.what());
+	}
 }
 
 template <ListenerType LT>
 void Listener<LT>::startup_shared_thread() {
-	int count = shared_->listenersCount_.load(std::memory_order_relaxed);
-	while (count < shared_->maxListeners_ && count <= (shared_->connCount_.load(std::memory_order_acquire) + 1)) {
-		if (shared_->listenersCount_.compare_exchange_weak(count, count + 1, std::memory_order_acq_rel)) {
-			logPrintf(LogTrace, "Listener (%s). Creating new shared thread (%d total)", shared_->addr_, count);
-			std::thread th(&Listener::clone, std::make_unique<ListeningThreadData>(shared_));
-			th.detach();
+	int count = shared_->sharedListenersCount_.load(std::memory_order_relaxed);
+	while (count < shared_->maxListeners_ && count <= (shared_->connsCountOnSharedListeners_.load(std::memory_order_acquire) + 1)) {
+		std::unique_ptr<ListeningThreadData> ldata;
+		try {
+			ldata = std::make_unique<ListeningThreadData>(shared_);
+		} catch (...) {
+			// Listeners capacity was reached or termination was called. It's ok during the initialization procedure
 			break;
 		}
+		std::thread th(&Listener::clone, std::move(ldata));
+		th.detach();
+		break;
 	}
 }
 
 template <ListenerType LT>
 void Listener<LT>::async_cb(ev::async& watcher) {
-	logPrintf(LogInfo, "Listener(%s) %d async received", shared_->addr_, id_);
+	logFmt(LogInfo, "Listener({}) {} async received", shared_->addr_, id_);
 	h_vector<IServerConnection*, 32> conns;
 	{
 		std::lock_guard lck(shared_->mtx_);
@@ -402,17 +412,19 @@ void Listener<LT>::async_cb(ev::async& watcher) {
 }
 
 template <ListenerType LT>
-void Listener<LT>::Stop() {
+void Listener<LT>::Stop() noexcept {
 	std::unique_lock lck(shared_->mtx_);
 	shared_->terminating_ = true;
+
 	for (auto& listener : shared_->listeners_) {
 		listener->async_.send();
 	}
 	for (auto& worker : shared_->dedicatedWorkers_) {
-		worker.async->send();
+		worker->SendTerminateAsync();
 	}
+
 	assertrx(this == shared_->listeners_.front());
-	while (shared_->listeners_.size() > 1 || shared_->dedicatedWorkers_.size()) {
+	while (shared_->sharedListenersCount_ > 1 || !shared_->dedicatedWorkers_.empty()) {
 		lck.unlock();
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		lck.lock();
@@ -421,11 +433,8 @@ void Listener<LT>::Stop() {
 
 template <ListenerType LT>
 void Listener<LT>::clone(std::unique_ptr<ListeningThreadData> d) noexcept {
-	assertrx(d);
-	auto& shared = d->GetShared();
-	const auto& listener = d->GetListener();
-
 	try {
+		assertrx(d);
 #if REINDEX_WITH_GPERFTOOLS
 		if (alloc_ext::TCMallocIsAvailable()) {
 			reindexer_server::pprof::ProfilerRegisterThread();
@@ -433,23 +442,19 @@ void Listener<LT>::clone(std::unique_ptr<ListeningThreadData> d) noexcept {
 #endif
 		d->Loop();
 	} catch (Error& e) {
-		logPrintf(LogError, "Unhandled excpetion in listener thread (%s): %s", shared.addr_, e.what());
+		assertrx(false);
+		logFmt(LogError, "Unhandled exception in listener thread ({}): {}", d->GetShared().addr_, e.what());
 	} catch (std::exception& e) {
-		logPrintf(LogError, "Unhandled excpetion in listener thread (%s): %s", shared.addr_, e.what());
+		assertrx(false);
+		logFmt(LogError, "Unhandled exception in listener thread ({}): {}", d->GetShared().addr_, e.what());
 	} catch (...) {
-		logPrintf(LogError, "Unhandled excpetion in listener thread (%s): <unknown>", shared.addr_);
+		assertrx(false);
+		logFmt(LogError, "Unhandled exception in listener thread ({}): <unknown>", d->GetShared().addr_);
 	}
-
-	std::lock_guard lck(shared.mtx_);
-	auto it = std::find(shared.listeners_.begin(), shared.listeners_.end(), &listener);
-	assertrx(it != shared.listeners_.end());
-	shared.listeners_.erase(it);
-	d.reset();
-	shared.listenersCount_.fetch_sub(1, std::memory_order_release);
 }
 
 template <ListenerType LT>
-void Listener<LT>::reserve_stack() {
+void Listener<LT>::reserve_stack() noexcept {
 	char placeholder[0x8000];
 	for (size_t i = 0; i < sizeof(placeholder); i += 4096) {
 		placeholder[i] = i & 0xFF;
@@ -457,12 +462,53 @@ void Listener<LT>::reserve_stack() {
 }
 
 template <ListenerType LT>
+Listener<LT>::Shared::Worker::Worker(std::shared_ptr<Shared> shared, std::unique_ptr<IServerConnection> conn)
+	: conn_{std::move(conn)}, shared_{std::move(shared)} {
+	assertrx(shared_);
+	assertrx(conn_);
+
+	async_.set([](ev::async& a) noexcept { a.loop.break_loop(); });
+	async_.set(loop_);
+	async_.start();
+
+	std::lock_guard lck(shared_->mtx_);
+	if rx_unlikely (shared_->terminating_) {
+		throw Error(errConflict, "Listener is terminating");
+	}
+	shared_->dedicatedWorkers_.emplace_back(this);
+	logFmt(LogTrace, "Listener ({}) starting new dedicated thread. {} total", shared_->addr_, shared_->dedicatedWorkers_.size());
+}
+
+template <ListenerType LT>
+Listener<LT>::Shared::Worker::~Worker() {
+	conn_->Detach();
+	async_.stop();
+
+	// Connection has to be closed before erasure from dedicatedWorkers_
+	conn_.reset();
+
+	std::lock_guard lck(shared_->mtx_);
+	const auto it = std::ranges::find_if(shared_->dedicatedWorkers_, [this](const Worker* w) noexcept { return w == this; });
+	assertrx(it != shared_->dedicatedWorkers_.end());
+	shared_->dedicatedWorkers_.erase(it);
+	logFmt(LogTrace, "Listener ({}) dedicated thread finished. {} left", shared_->addr_, shared_->dedicatedWorkers_.size());
+}
+
+template <ListenerType LT>
+void Listener<LT>::Shared::Worker::Run() {
+	conn_->Attach(loop_);
+	conn_->HandlePendingData();
+	while (!shared_->terminating_) {
+		if (conn_->IsFinished()) {
+			break;
+		}
+		loop_.run();
+	}
+}
+
+template <ListenerType LT>
 Listener<LT>::Shared::Shared(ConnectionFactory&& connFactory, int maxListeners, openssl::SslCtxPtr SslCtx)
-	: sslCtx_(std::move(SslCtx)),
-	  maxListeners_(maxListeners),
-	  listenersCount_(1),
-	  connFactory_(std::move(connFactory)),
-	  terminating_(false) {}
+	: sslCtx_(std::move(SslCtx)), maxListeners_(maxListeners), connFactory_(std::move(connFactory)), terminating_(false) {}
 
 template <ListenerType LT>
 Listener<LT>::Shared::~Shared() {
@@ -482,32 +528,28 @@ ForkedListener::ForkedListener(ev::dynamic_loop& loop, ConnectionFactory&& connF
 
 ForkedListener::~ForkedListener() {
 	io_.stop();
-	if (!terminating_ || runningThreadsCount_) {
-		ForkedListener::Stop();
-	}
+	ForkedListener::Stop();
 	if rx_unlikely (sock_.close() != 0) {
 		perror("sock_.close() error");
 	}
 }
 
-bool ForkedListener::Bind(std::string addr, socket_domain type) {
+void ForkedListener::Bind(std::string addr, socket_domain type) {
 	if (sock_.valid()) {
-		return false;
+		throw Error(errSystem, "Invalid listener socket");
 	}
 
 	addr_ = std::move(addr);
 
 	if (sock_.bind(addr_, type) < 0) {
-		return false;
+		throw Error(errSystem, "Unable to bind socket for '{}': {}", addr_, strerror(errno));
 	}
 
 	if (sock_.listen(kListenCount) < 0) {
-		perror("listen error");
-		return false;
+		throw Error(errSystem, "Unable to listen on '{}': {}", addr_, strerror(errno));
 	}
 
 	io_.start(sock_.fd(), ev::READ);
-	return true;
 }
 
 void ForkedListener::io_accept(ev::io& /*watcher*/, int revents) {
@@ -526,7 +568,7 @@ void ForkedListener::io_accept(ev::io& /*watcher*/, int revents) {
 	}
 
 	if (terminating_) {
-		logPrintf(LogWarning, "Can't accept connection. Listener is terminating!");
+		logFmt(LogWarning, "Can't accept connection. Listener is terminating!");
 		return;
 	}
 
@@ -556,7 +598,7 @@ void ForkedListener::io_accept(ev::io& /*watcher*/, int revents) {
 			} else {
 				std::unique_lock lck(mtx_);
 				workers_.emplace_back(std::move(w));
-				logPrintf(LogTrace, "Listener (%s) dedicated thread started. %d total", addr_, workers_.size());
+				logFmt(LogTrace, "Listener ({}) dedicated thread started. {} total", addr_, workers_.size());
 				lck.unlock();
 				while (!terminating_) {
 					loop.run();
@@ -569,14 +611,14 @@ void ForkedListener::io_accept(ev::io& /*watcher*/, int revents) {
 				const auto it = std::find_if(workers_.begin(), workers_.end(), [&pc](const Worker& cw) { return cw.conn.get() == pc; });
 				assertrx(it != workers_.end());
 				workers_.erase(it);
-				logPrintf(LogTrace, "Listener (%s) dedicated thread finished. %d left", addr_, workers_.size());
+				logFmt(LogTrace, "Listener ({}) dedicated thread finished. {} left", addr_, workers_.size());
 			}
 		} catch (Error& e) {
-			logPrintf(LogError, "Unhandled excpetion in listener thread: %s", e.what());
+			logFmt(LogError, "Unhandled exception in listener thread: {}", e.what());
 		} catch (std::exception& e) {
-			logPrintf(LogError, "Unhandled excpetion in listener thread: %s", e.what());
+			logFmt(LogError, "Unhandled exception in listener thread: {}", e.what());
 		} catch (...) {
-			logPrintf(LogError, "Unhandled excpetion in listener thread");
+			logFmt(LogError, "Unhandled exception in listener thread");
 		}
 		--runningThreadsCount_;
 	});
@@ -584,11 +626,11 @@ void ForkedListener::io_accept(ev::io& /*watcher*/, int revents) {
 }
 
 void ForkedListener::async_cb(ev::async& watcher) {
-	logPrintf(LogInfo, "Listener(%s) async received", addr_);
+	logFmt(LogInfo, "Listener({}) async received", addr_);
 	watcher.loop.break_loop();
 }
 
-void ForkedListener::Stop() {
+void ForkedListener::Stop() noexcept {
 	terminating_ = true;
 	async_.send();
 	std::unique_lock lck(mtx_);

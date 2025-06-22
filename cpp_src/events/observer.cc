@@ -1,8 +1,12 @@
-#include "events/observer.h"
-#include "core/cjson/jsonbuilder.h"
-#include "core/indexdef.h"
+#include "observer.h"
 #include "events/listener.h"
 #include "tools/logger.h"
+
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+#include <mutex>
+#include "core/cjson/jsonbuilder.h"
+#include "vendor/gason/gason.h"
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 
 using namespace std::string_view_literals;
 
@@ -67,12 +71,12 @@ bool UpdatesFilters::Check(std::string_view ns) const noexcept {
 	return found.value().empty();
 }
 
-Error UpdatesFilters::FromJSON(span<char> json) {
+Error UpdatesFilters::FromJSON(std::span<char> json) {
 	try {
 		gason::JsonParser parser;
 		FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "UpdatesFilter: %s", ex.what());
+		return Error(errParseJson, "UpdatesFilter: {}", ex.what());
 	} catch (const Error& err) {
 		return err;
 	}
@@ -219,7 +223,7 @@ void UpdatesObservers::SendAsyncEventOnly(updates::UpdateRecord&& rec) {
 		events.emplace_back(std::move(rec));
 		auto err = eventsListener_.SendEvents(std::move(events));
 		if rx_unlikely (!err.ok()) {
-			logPrintf(LogError, "Unable to send update to EventsListener: '%s'", err.what());
+			logFmt(LogError, "Unable to send update to EventsListener: '{}'", err.what());
 		}
 	}
 }
@@ -238,7 +242,7 @@ Error UpdatesObservers::SendUpdates(cluster::UpdatesContainer&& recs, std::funct
 	if (eventsListener_.HasListenersFor(recs[0].NsName())) {
 		auto err = eventsListener_.SendEvents(convertUpdatesContainer(recs));
 		if rx_unlikely (!err.ok()) {
-			logPrintf(LogError, "Unable to send update to EventsListener: '%s'", err.what());
+			logFmt(LogError, "Unable to send update to EventsListener: '{}'", err.what());
 		}
 	}
 	return replicator_.Replicate(std::move(recs), std::move(beforeWaitF), ctx);
@@ -247,7 +251,7 @@ Error UpdatesObservers::SendUpdates(cluster::UpdatesContainer&& recs, std::funct
 Error UpdatesObservers::SendAsyncUpdate(updates::UpdateRecord&& rec, const RdxContext& ctx) {
 	cluster::UpdatesContainer recs(1);
 	recs[0] = std::move(rec);
-	return replicator_.ReplicateAsync(std::move(recs), ctx);
+	return SendAsyncUpdates(std::move(recs), ctx);
 }
 
 Error UpdatesObservers::SendAsyncUpdates(cluster::UpdatesContainer&& recs, const RdxContext& ctx) {
@@ -258,7 +262,7 @@ Error UpdatesObservers::SendAsyncUpdates(cluster::UpdatesContainer&& recs, const
 	if (eventsListener_.HasListenersFor(recs[0].NsName())) {
 		auto err = eventsListener_.SendEvents(convertUpdatesContainer(recs));
 		if rx_unlikely (!err.ok()) {
-			logPrintf(LogError, "Unable to send update to EventsListener: '%s'", err.what());
+			logFmt(LogError, "Unable to send update to EventsListener: '{}'", err.what());
 		}
 	}
 	return replicator_.ReplicateAsync(std::move(recs), ctx);

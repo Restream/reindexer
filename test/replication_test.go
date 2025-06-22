@@ -1,16 +1,19 @@
 package reindexer
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"strconv"
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v4"
-	rxConfig "github.com/restream/reindexer/v4/bindings/builtinserver/config"
-	"github.com/restream/reindexer/v4/test/helpers"
+	"github.com/restream/reindexer/v5"
+	rxConfig "github.com/restream/reindexer/v5/bindings/builtinserver/config"
+	"github.com/restream/reindexer/v5/events"
+	"github.com/restream/reindexer/v5/test/helpers"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,17 +24,60 @@ type TestItemStorage struct {
 	Name string `reindex:"name"`
 }
 
+type Data struct {
+	A string `json:"a" reindex:"id,,pk"`
+}
+
+func serverUp(t *testing.T, cfg map[string]string, serverID int, ns []string) *reindexer.Reindexer {
+	opts := make([]interface{}, 0, 2)
+	opts = append(opts, reindexer.WithCreateDBIfMissing())
+	srvCfg := &rxConfig.ServerConfig{
+		Net: rxConfig.NetConf{
+			HTTPAddr:    cfg["http"],
+			RPCAddr:     cfg["rpc"],
+			UnixRPCAddr: cfg["urpc"],
+		},
+	}
+	opts = append(opts, reindexer.WithServerConfig(5*time.Second, srvCfg))
+	rx := reindexer.NewReindex(fmt.Sprintf("builtinserver://%s", cfg["db"]), opts...)
+	for i := range ns {
+		rx.OpenNamespace(ns[i], reindexer.DefaultNamespaceOptions(), Data{})
+	}
+
+	err := rx.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
+		Type:        "replication",
+		Replication: &reindexer.DBReplicationConfig{ServerID: serverID, ClusterID: 2},
+	})
+	require.NoError(t, err)
+
+	return rx
+}
+
 func TestSlaveEmptyStorage(t *testing.T) {
 	// Basic force sync test for builtin replication
 	if len(DB.slaveList) > 0 || len(DB.clusterList) > 0 {
 		t.Skip()
 	}
+	const nsName = "items"
 
+	// Start follower
+	cfgSlave := rxConfig.DefaultServerConfig()
+	cfgSlave.Net.HTTPAddr = "0:29089"
+	cfgSlave.Net.RPCAddr = "0:26535"
+	cfgSlave.Storage.Path = path.Join(helpers.GetTmpDBDir(), "reindex_slave2")
+	os.RemoveAll(cfgSlave.Storage.Path)
+	rxSlave := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgSlave))
+
+	stream := rxSlave.Subscribe(events.DefaultEventsStreamOptions().
+		WithNamespaceOperationEvents())
+	defer stream.Close(context.Background())
+
+	// Start leader
 	const masterServerId = 1
 	cfgMaster := rxConfig.DefaultServerConfig()
 	cfgMaster.Net.HTTPAddr = "0:29088"
 	cfgMaster.Net.RPCAddr = "0:26534"
-	cfgMaster.Storage.Path = "/tmp/reindex_master1"
+	cfgMaster.Storage.Path = path.Join(helpers.GetTmpDBDir(), "reindex_master1")
 	os.RemoveAll(cfgMaster.Storage.Path)
 	rxMaster := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgMaster))
 	{
@@ -60,44 +106,54 @@ nodes:
 		assert.NoError(t, err)
 	}
 
-	cfgSlave := rxConfig.DefaultServerConfig()
-	cfgSlave.Net.HTTPAddr = "0:29089"
-	cfgSlave.Net.RPCAddr = "0:26535"
-	cfgSlave.Storage.Path = "/tmp/reindex_slave2"
-	os.RemoveAll(cfgSlave.Storage.Path)
-	rxSlave := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgSlave))
-
 	nsOption := reindexer.DefaultNamespaceOptions()
 	nsOption.NoStorage()
 
-	err := rxMaster.OpenNamespace("items", nsOption, TestItemStorage{})
+	err := rxMaster.OpenNamespace(nsName, nsOption, TestItemStorage{})
 	assert.NoError(t, err)
-	err = rxSlave.OpenNamespace("items", nsOption, TestItemStorage{})
+	err = rxSlave.OpenNamespace(nsName, nsOption, TestItemStorage{})
 	assert.NoError(t, err)
 	for i := 0; i < 1000; i++ {
 		testItem := TestItemStorage{ID: i, Name: "test_" + strconv.Itoa(i)}
-		err := rxMaster.Upsert("items", &testItem)
+		err := rxMaster.Upsert(nsName, &testItem)
 		if err != nil {
 			panic(err)
 		}
 	}
-	qMaster := rxMaster.Query("items")
+	// Check leader's data
+	qMaster := rxMaster.Query(nsName)
 	itMaster := qMaster.Exec()
 	defer itMaster.Close()
 	testDataMaster, errfm := itMaster.FetchAll()
 	assert.NoError(t, errfm)
 	helpers.WaitForSyncWithMaster(t, rxMaster, rxSlave)
-
-	qSlave := rxSlave.Query("items")
+	// Check follower's data
+	qSlave := rxSlave.Query(nsName)
 	itSlave := qSlave.Exec()
 	defer itSlave.Close()
 	testDataSlave, errfs := itSlave.FetchAll()
 	assert.NoError(t, errfs)
 	assert.Equal(t, testDataSlave, testDataMaster, "Data in tables are not equal\n%s\n%s", testDataSlave, testDataMaster)
-}
+	// Check sync events
+	syncEvents := 0
+for_loop:
+	for {
+		tm := time.NewTicker(3 * time.Second)
+		select {
+		case event, ok := <-stream.Chan():
+			require.NoError(t, stream.Error())
+			require.True(t, ok)
 
-type Data struct {
-	A string `json:"a" reindex:"id,,pk"`
+			if event.Type() == events.EventTypeNamespaceSync {
+				syncEvents += 1
+				require.Equal(t, event.Namespace(), nsName)
+			}
+		case <-tm.C:
+			// No new events for some time
+			break for_loop
+		}
+	}
+	assert.Equal(t, syncEvents, 1)
 }
 
 func TestMasterSlaveSlaveNoStorage(t *testing.T) {
@@ -227,29 +283,4 @@ func TestCycleLeaders(t *testing.T) {
 	cnt, err = rxSrv[1].Insert(recomNamespaces[0], Data{A: "recom_item_1"})
 	require.NoError(t, err)
 	require.Equal(t, 1, cnt)
-}
-
-func serverUp(t *testing.T, cfg map[string]string, serverID int, ns []string) *reindexer.Reindexer {
-	opts := make([]interface{}, 0, 2)
-	opts = append(opts, reindexer.WithCreateDBIfMissing())
-	srvCfg := &rxConfig.ServerConfig{
-		Net: rxConfig.NetConf{
-			HTTPAddr:    cfg["http"],
-			RPCAddr:     cfg["rpc"],
-			UnixRPCAddr: cfg["urpc"],
-		},
-	}
-	opts = append(opts, reindexer.WithServerConfig(5*time.Second, srvCfg))
-	rx := reindexer.NewReindex(fmt.Sprintf("builtinserver://%s", cfg["db"]), opts...)
-	for i := range ns {
-		rx.OpenNamespace(ns[i], reindexer.DefaultNamespaceOptions(), Data{})
-	}
-
-	err := rx.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
-		Type:        "replication",
-		Replication: &reindexer.DBReplicationConfig{ServerID: serverID, ClusterID: 2},
-	})
-	require.NoError(t, err)
-
-	return rx
 }

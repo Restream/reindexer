@@ -25,6 +25,11 @@ ArithmeticOpType operation(char ch) {
 
 struct RankFunction {
 } Rank;
+
+struct SortHashFunction {
+	std::optional<uint32_t> seed;
+};
+
 struct Joined {
 	size_t nsIdx;
 	const char* column;
@@ -81,6 +86,9 @@ static void append(SortExpression& se, char op, char neg, const Joined& join) {
 }
 static void append(SortExpression& se, char op, double value) { se.Append({operation(op), false}, SortExprFuncs::Value{value}); }
 static void append(SortExpression& se, char op, RankFunction) { se.Append({operation(op), false}, SortExprFuncs::Rank{}); }
+static void append(SortExpression& se, char op, const SortHashFunction& h) {
+	se.Append({operation(op), false}, h.seed.has_value() ? SortExprFuncs::SortHash{h.seed.value()} : SortExprFuncs::SortHash{});
+}
 static void append(SortExpression& se, char op, char neg, RankFunction) {
 	assertrx(neg == '-');
 	(void)neg;
@@ -234,6 +242,7 @@ TEST(StringFunctions, SortExpressionParse) {
 		{"-id * -(-value - - + - -25) / -obj.value",
 		 {},
 		 makeExpr('-', "id", '*', '-', Open, '-', "value", '+', 25.0, Close, '/', '-', "obj.value")},
+		{"hash(100)", {}, makeExpr(SortHashFunction{100})},
 		{"id * value - 1.2", {}, makeExpr("id", '*', "value", '-', 1.2)},
 		{"id + value / 1.2", {}, makeExpr("id", '+', Open, "value", '/', 1.2, Close)},
 		{"id + (value + rank()) / 1.2", {}, makeExpr("id", '+', Open, Open, "value", '+', Rank, Close, '/', 1.2, Close)},
@@ -273,6 +282,7 @@ TEST(StringFunctions, SortExpressionParse) {
 		 {"ns", "ns1", "ns2"},
 		 makeExpr(-1.2e-3, '-', "id", '+', Joined{0, "obj.value"}, '-', Open, Distance("point1", "point2"), '*', '-',
 				  Distance(1, "point1", 2, "point2"), Close)},
+
 	};
 	for (const auto& tC : testCases) {
 		if (tC.result == FAIL) {

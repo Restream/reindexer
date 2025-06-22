@@ -1,11 +1,13 @@
 #include "baseseacher.h"
-#include <chrono>
-#include <iostream>
-#include <thread>
 #include "core/ft/ft_fuzzy/advacedpackedvec.h"
 #include "core/ft/ftdsl.h"
 #include "core/rdxcontext.h"
 #include "tools/stringstools.h"
+
+#ifdef FULL_LOG_FT
+#include <iostream>
+#endif
+
 namespace search_engine {
 
 using namespace reindexer;

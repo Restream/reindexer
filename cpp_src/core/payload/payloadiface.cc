@@ -2,9 +2,12 @@
 
 #include "core/cjson/baseencoder.h"
 #include "core/cjson/cjsondecoder.h"
+#include "core/cjson/cjsontools.h"
+#include "core/cjson/jsonbuilder.h"
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/variant.h"
 #include "core/namespace/stringsholder.h"
+#include "core/queryresults/fields_filter.h"
 #include "payloadiface.h"
 #include "payloadvalue.h"
 
@@ -12,47 +15,51 @@ namespace reindexer {
 
 // Get element(s) by field index
 template <typename T>
-void PayloadIface<T>::Get(int field, VariantArray& keys, Variant::hold_t h) const {
+void PayloadIface<T>::Get(int field, VariantArray& keys, Variant::HoldT h) const {
 	get(field, keys, h);
 }
 template <typename T>
 void PayloadIface<T>::Get(int field, VariantArray& keys) const {
-	get(field, keys, Variant::no_hold_t{});
+	get(field, keys, Variant::noHold);
 }
 
 // Get element by field and array index
 template <typename T>
-Variant PayloadIface<T>::Get(int field, int idx, Variant::hold_t h) const {
+Variant PayloadIface<T>::Get(int field, int idx, Variant::HoldT h) const {
 	return get(field, idx, h);
 }
 template <typename T>
 Variant PayloadIface<T>::Get(int field, int idx) const {
-	return get(field, idx, Variant::no_hold_t{});
+	return get(field, idx, Variant::noHold);
 }
 
 // Get element(s) by field name
 template <typename T>
-void PayloadIface<T>::Get(std::string_view field, VariantArray& kvs, Variant::hold_t h) const {
+void PayloadIface<T>::Get(std::string_view field, VariantArray& kvs, Variant::HoldT h) const {
 	get(t_.FieldByName(field), kvs, h);
 }
 template <typename T>
 void PayloadIface<T>::Get(std::string_view field, VariantArray& kvs) const {
-	get(t_.FieldByName(field), kvs, Variant::no_hold_t{});
+	get(t_.FieldByName(field), kvs, Variant::noHold);
 }
 
 template <typename T>
 template <typename HoldT>
 void PayloadIface<T>::get(int field, VariantArray& keys, HoldT h) const {
 	assertrx(field < NumFields());
-	keys.clear<false>();
-	if (t_.Field(field).IsArray()) {
+	keys.Clear();
+	const auto& fieldType = t_.Field(field);
+	if (fieldType.IsArray()) {
 		auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
 		keys.reserve(arr->len);
+		const auto elemSize = fieldType.ElemSizeof();
+		const auto arrPtr = v_->Ptr() + arr->offset;
 
-		for (int i = 0; i < arr->len; i++) {
-			PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
+		for (int i = 0, len = arr->len; i < len; i++) {
+			PayloadFieldValue pv(fieldType, arrPtr + i * elemSize);
 			keys.push_back(pv.Get(h));
 		}
+		keys.MarkArray();
 	} else {
 		keys.push_back(Field(field).Get(h));
 	}
@@ -63,14 +70,15 @@ template <typename HoldT>
 Variant PayloadIface<T>::get(int field, int idx, HoldT h) const {
 	assertrx(field < NumFields());
 
-	if (t_.Field(field).IsArray()) {
+	const auto& fieldType = t_.Field(field);
+	if (fieldType.IsArray()) {
 		auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-		assertf(idx < arr->len, "Field '%s.%s' bound exceed idx %d > len %d", Type().Name(), Type().Field(field).Name(), idx, arr->len);
+		assertf(idx < arr->len, "Field '{}.{}' bound exceed idx {} > len {}", Type().Name(), fieldType.Name(), idx, arr->len);
 
-		PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + idx * t_.Field(field).ElemSizeof());
+		PayloadFieldValue pv(fieldType, v_->Ptr() + arr->offset + idx * fieldType.ElemSizeof());
 		return pv.Get(h);
 	} else {
-		assertf(idx == 0, "Field '%s.%s' is not array, can't get idx %d", Type().Name(), Type().Field(field).Name(), idx);
+		assertf(idx == 0, "Field '{}.{}' is not array, can't get idx {}", Type().Name(), fieldType.Name(), idx);
 		return Field(field).Get(h);
 	}
 }
@@ -84,30 +92,31 @@ void PayloadIface<T>::GetByJsonPath(std::string_view jsonPath, TagsMatcher& tags
 	if (tuple.length() == 0) {
 		int fieldIdx = t_.FieldByJsonPath(jsonPath);
 		if (fieldIdx == -1) {
-			kvs.clear<false>();
+			kvs.Clear();
 			return;
 		}
 		if (t_.Field(fieldIdx).IsArray()) {
-			IndexedTagsPath tagsPath = tagsMatcher.path2indexedtag(jsonPath, false);
+			IndexedTagsPath tagsPath = tagsMatcher.path2indexedtag(jsonPath, CanAddField_False);
 			if (tagsPath.back().IsWithIndex()) {
-				kvs.clear<false>();
+				kvs.Clear();
 				kvs.emplace_back(Get(fieldIdx, tagsPath.back().Index()));
+				kvs.MarkArray();
 				return;
 			}
 		}
 		return Get(fieldIdx, kvs);
 	}
-	GetByJsonPath(tagsMatcher.path2indexedtag(jsonPath, false), kvs, expectedType);
+	GetByJsonPath(tagsMatcher.path2indexedtag(jsonPath, CanAddField_False), kvs, expectedType);
 }
 
 template <typename T>
 template <typename P>
 void PayloadIface<T>::getByJsonPath(const P& path, VariantArray& krefs, KeyValueType expectedType) const {
-	krefs.clear<false>();
+	krefs.Clear();
 	if (path.empty()) {
 		return;
 	}
-	const FieldsSet filter{{path}};
+	const auto filter = FieldsFilter::FromPath(path);
 	ConstPayload pl(t_, *v_);
 	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
 	FieldsExtractor extractor(&krefs, expectedType, path.size(), &filter);
@@ -148,13 +157,13 @@ void PayloadIface<T>::GetByFieldsSet(const FieldsSet& fields, VariantArray& kvs,
 template <typename T>
 Variant PayloadIface<T>::GetComposite(const FieldsSet& fields, const h_vector<KeyValueType, 4>& expectedTypes) const {
 	thread_local VariantArray buffer;
-	buffer.clear<false>();
+	buffer.Clear();
 	assertrx_throw(fields.size() == expectedTypes.size());
 	size_t jsonFieldIdx{0};
 	[[maybe_unused]] const size_t maxJsonFieldIdx{fields.getTagsPathsLength()};
 	VariantArray buf;
 	for (size_t i = 0, s = fields.size(); i < s; ++i) {
-		buf.clear<false>();
+		buf.Clear();
 		if (fields[i] == IndexValueType::SetByJsonPath) {
 			assertrx_throw(jsonFieldIdx < maxJsonFieldIdx);
 			if (fields.isTagsPathIndexed(jsonFieldIdx)) {
@@ -181,7 +190,7 @@ VariantArray PayloadIface<T>::GetIndexedArrayData(const IndexedTagsPath& tagsPat
 		throw Error(errParams, "GetIndexedArrayData(): field must be a valid index number");
 	}
 	VariantArray values;
-	FieldsSet filter({tagsPath});
+	const auto filter = FieldsFilter::FromPath(tagsPath);
 	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
 	offset = -1;
 	size = -1;
@@ -207,21 +216,23 @@ template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type*>
 void PayloadIface<T>::Set(int field, int idx, const Variant& v) {
 	assertrx(idx >= 0);
-	assertrx(t_.Field(field).IsArray());
+	const auto& fieldType = t_.Field(field);
+	assertrx(fieldType.IsArray());
 	const auto* const arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-	const auto elemSize = t_.Field(field).ElemSizeof();
+	const auto elemSize = fieldType.ElemSizeof();
 	assertrx(idx < arr->len);
-	PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + idx * elemSize);
+	PayloadFieldValue pv(fieldType, v_->Ptr() + arr->offset + idx * elemSize);
 	pv.Set(v);
 }
 
 template <>
-int PayloadIface<PayloadValue>::ResizeArray(int field, int count, bool append) {
-	assertrx(t_.Field(field).IsArray());
+int PayloadIface<PayloadValue>::ResizeArray(int field, int count, Append append) {
+	const auto& fieldType = t_.Field(field);
+	assertrx(fieldType.IsArray());
 
 	size_t realSize = RealSize();
 	auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-	auto elemSize = t_.Field(field).ElemSizeof();
+	auto elemSize = fieldType.ElemSizeof();
 
 	size_t grow = elemSize * count;
 	size_t strip = 0;
@@ -245,24 +256,24 @@ int PayloadIface<PayloadValue>::ResizeArray(int field, int count, bool append) {
 	// Move another arrays, after our
 	for (int f = 0; f < NumFields(); f++) {
 		if (f != field && t_.Field(f).IsArray()) {
-			auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(f).p_);
-			if (arr->offset >= insert) {
-				arr->offset += grow - strip;
+			auto* arrPtr = reinterpret_cast<PayloadFieldValue::Array*>(Field(f).p_);
+			if (arrPtr->offset >= insert) {
+				arrPtr->offset += grow - strip;
 			}
 		}
 	}
 	return arr->len - count;
 }
 
-// Calc real size of payload with embeded arrays
+// Calc real size of payload with embedded arrays
 template <typename T>
 size_t PayloadIface<T>::RealSize() const {
 	size_t sz = t_.TotalSize();
-	for (int field = 0; field < NumFields(); field++) {
-		if (t_.Field(field).IsArray()) {
+	for (int field = 0, numFields = NumFields(); field < numFields; field++) {
+		if (const auto& fieldType = t_.Field(field); fieldType.IsArray()) {
 			auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
 			if (arr->offset >= sz) {
-				sz = arr->offset + arr->len * t_.Field(field).ElemSizeof();
+				sz = arr->offset + arr->len * fieldType.ElemSizeof();
 			}
 		}
 	}
@@ -286,10 +297,10 @@ void PayloadIface<T>::SerializeFields(WrSerializer& ser, const FieldsSet& fields
 				GetByJsonPath(tagsPath, varr, KeyValueType::Undefined{});
 			}
 			if (varr.empty()) {
-				throw Error(errParams, "PK serializing error: field [%s] cannot not be empty", fields.getJsonPath(tagPathIdx));
+				throw Error(errParams, "PK serializing error: field [{}] cannot not be empty", fields.getJsonPath(tagPathIdx));
 			}
 			if (varr.size() > 1) {
-				throw Error(errParams, "PK serializing error: field [%s] cannot not be array", fields.getJsonPath(tagPathIdx));
+				throw Error(errParams, "PK serializing error: field [{}] cannot not be array", fields.getJsonPath(tagPathIdx));
 			}
 			ser.PutVariant(varr[0]);
 			++tagPathIdx;
@@ -301,8 +312,17 @@ void PayloadIface<T>::SerializeFields(WrSerializer& ser, const FieldsSet& fields
 }
 
 template <typename T>
-std::string PayloadIface<T>::Dump() const {
+std::string PayloadIface<T>::Dump(const TagsMatcher* tm) const {
+	static constexpr uint32_t kMaxVectPrint = 3;
 	std::string printString;
+	if (tm) {
+		VariantArray fieldValues;
+		Get(0, fieldValues);
+		std::ostringstream out;
+		const std::string cj = fieldValues[0].As<std::string>();
+		DumpCjson(Serializer(cj), out, this, tm);
+		printString = out.str();
+	}
 	for (int i = 0; i < NumFields(); ++i) {
 		VariantArray fieldValues;
 		Get(i, fieldValues);
@@ -315,7 +335,32 @@ std::string PayloadIface<T>::Dump() const {
 		}
 		for (size_t j = 0; j < fieldValues.size(); ++j) {
 			auto& fieldValue = fieldValues[j];
-			auto str = fieldValue.As<std::string>();
+			std::string str;
+			if (fieldValue.Type().Is<KeyValueType::FloatVector>()) {
+				const ConstFloatVectorView vect{fieldValue};
+				if (vect.IsEmpty()) {
+					str = "<empty>";
+				} else {
+					const auto dim = uint32_t(vect.Dimension());
+					if (vect.IsStripped()) {
+						str = std::to_string(dim) + "[<stripped>]";
+					} else {
+						str = std::to_string(dim) + '[';
+						for (uint32_t k = 0; k < std::min(kMaxVectPrint, dim); ++k) {
+							if (k != 0) {
+								str += ", ";
+							}
+							str += std::to_string(vect.Data()[k]);
+						}
+						if (dim < kMaxVectPrint) {
+							str += ", ...";
+						}
+						str += ']';
+					}
+				}
+			} else {
+				str = fieldValue.As<std::string>();
+			}
 			if (i != 0) {
 				printString += str;
 			} else {
@@ -339,16 +384,16 @@ std::string PayloadIface<T>::Dump() const {
 }
 
 template <>
-void PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher& tm, WrSerializer& ser) {
+void PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher& tm, WrSerializer& ser, const FieldsFilter& fieldsFilter) {
 	JsonBuilder b(ser);
-	JsonEncoder e(&tm);
+	JsonEncoder e(&tm, &fieldsFilter);
 	e.Encode(*this, b);
 }
 
 template <>
-std::string PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher& tm) {
+std::string PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher& tm, const FieldsFilter& fieldsFilter) {
 	WrSerializer ser;
-	GetJSON(tm, ser);
+	GetJSON(tm, ser, fieldsFilter);
 	return std::string(ser.Slice());
 }
 
@@ -389,21 +434,23 @@ size_t PayloadIface<T>::GetHash(const FieldsSet& fields) const {
 
 // Get complete hash
 template <typename T>
-uint64_t PayloadIface<T>::GetHash() const noexcept {
+uint64_t PayloadIface<T>::GetHash(const std::function<uint64_t(unsigned int, ConstFloatVectorView)>& getVectorHashF) const noexcept {
 	uint64_t ret = 0;
-
-	for (int field = 0; field < t_.NumFields(); field++) {
+	for (int field = 0, fields = t_.NumFields(); field < fields; ++field) {
 		ret <<= 1;
 		const auto& f = t_.Field(field);
-		if (f.IsArray()) {
-			auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
+		auto fv = Field(field);
+		if (f.Type().IsSame(KeyValueType::FloatVector{})) {
+			ret ^= getVectorHashF(unsigned(field), ConstFloatVectorView(fv.Get()));
+		} else if (f.IsArray()) {
+			auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(fv.p_);
 			ret ^= arr->len;
 			uint8_t* p = v_->Ptr() + arr->offset;
 			for (int i = 0; i < arr->len; i++, p += f.ElemSizeof()) {
 				ret ^= PayloadFieldValue(f, p).Hash();
 			}
 		} else {
-			ret ^= Field(field).Hash();
+			ret ^= fv.Hash();
 		}
 	}
 	return ret;
@@ -613,8 +660,10 @@ void PayloadIface<T>::copyOrMoveStrings(int field, StrHolder& dest, bool copy) {
 		dest.emplace_back(str.getBaseKeyString(), copy);
 	} else {
 		auto arr = reinterpret_cast<PayloadFieldValue::Array*>(v_->Ptr() + f.Offset());
-		for (int i = 0; i < arr->len; i++) {
-			auto str = *reinterpret_cast<const p_string*>(v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
+		const auto arrPtr = v_->Ptr() + arr->offset;
+		const auto elemSize = f.ElemSizeof();
+		for (int i = 0, arrLen = arr->len; i < arrLen; i++) {
+			auto str = *reinterpret_cast<const p_string*>(arrPtr + i * elemSize);
 			dest.emplace_back(str.getBaseKeyString(), copy);
 		}
 	}
@@ -622,7 +671,7 @@ void PayloadIface<T>::copyOrMoveStrings(int field, StrHolder& dest, bool copy) {
 
 template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type*>
-void PayloadIface<T>::setArray(int field, const VariantArray& keys, bool append) {
+void PayloadIface<T>::setArray(int field, const VariantArray& keys, Append append) {
 	if (keys.IsNullValue()) {
 		ResizeArray(field, 0, append);
 		return;
@@ -630,10 +679,12 @@ void PayloadIface<T>::setArray(int field, const VariantArray& keys, bool append)
 
 	int pos = ResizeArray(field, keys.size(), append);
 	const auto* const arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-	const auto elemSize = t_.Field(field).ElemSizeof();
-
+	auto& fieldType = t_.Field(field);
+	const auto elemSize = fieldType.ElemSizeof();
+	auto arrElemPtr = v_->Ptr() + arr->offset + pos * elemSize;
 	for (const Variant& kv : keys) {
-		PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + (pos++) * elemSize);
+		PayloadFieldValue pv(fieldType, arrElemPtr);
+		arrElemPtr += elemSize;
 		pv.Set(kv);
 	}
 }
@@ -668,9 +719,9 @@ template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type*>
 T PayloadIface<T>::CopyTo(PayloadType modifiedType, bool newOrUpdatedFields) {
 	if (newOrUpdatedFields) {
-		return CopyWithNewOrUpdatedFields(modifiedType);
+		return CopyWithNewOrUpdatedFields(std::move(modifiedType));
 	} else {
-		return CopyWithRemovedFields(modifiedType);
+		return CopyWithRemovedFields(std::move(modifiedType));
 	}
 }
 
@@ -678,12 +729,12 @@ template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type*>
 T PayloadIface<T>::CopyWithNewOrUpdatedFields(PayloadType modifiedType) {
 	size_t totalGrow = 0;
-	for (int idx = 1; idx < modifiedType.NumFields(); ++idx) {
-		if (!t_.Contains(modifiedType.Field(idx).Name())) {
-			const PayloadFieldType& fieldType = modifiedType.Field(idx);
-			totalGrow += fieldType.IsArray() ? sizeof(PayloadFieldValue::Array) : fieldType.Sizeof();
+	for (int idx = 1, modNumFields = modifiedType.NumFields(); idx < modNumFields; ++idx) {
+		const auto& modifiedFieldType = modifiedType.Field(idx);
+		if (!t_.Contains(modifiedFieldType.Name())) {
+			totalGrow += modifiedFieldType.IsArray() ? sizeof(PayloadFieldValue::Array) : modifiedFieldType.Sizeof();
 		} else {
-			if (modifiedType.Field(idx).IsArray() && !t_.Field(idx).IsArray()) {
+			if (modifiedFieldType.IsArray() && !t_.Field(idx).IsArray()) {
 				totalGrow += sizeof(PayloadFieldValue::Array) - t_.Field(idx).Sizeof();
 			}
 		}
@@ -691,10 +742,11 @@ T PayloadIface<T>::CopyWithNewOrUpdatedFields(PayloadType modifiedType) {
 
 	T pv(RealSize() + totalGrow);
 	PayloadIface<T> copyValueInterface(modifiedType, pv);
-	for (int idx = 0; idx < t_.NumFields(); ++idx) {
-		VariantArray kr;
+	VariantArray kr;
+	for (int idx = 0, numFields = t_.NumFields(); idx < numFields; ++idx) {
 		Get(idx, kr);
-		copyValueInterface.Set(idx, kr, false);
+		copyValueInterface.Set(idx, kr, Append_False);
+		kr.Clear();
 	}
 
 	return pv;
@@ -705,12 +757,12 @@ template <typename U, typename std::enable_if<!std::is_const<U>::value>::type*>
 T PayloadIface<T>::CopyWithRemovedFields(PayloadType modifiedType) {
 	size_t totalReduce = 0;
 	std::vector<std::string> fieldsLeft;
-	for (int idx = 0; idx < t_.NumFields(); ++idx) {
-		const std::string& fieldname(t_.Field(idx).Name());
-		if (modifiedType.Contains(fieldname)) {
-			fieldsLeft.emplace_back(fieldname);
+	for (int idx = 0, numFields = t_.NumFields(); idx < numFields; ++idx) {
+		const auto& fieldType = t_.Field(idx);
+		const auto& fieldName(fieldType.Name());
+		if (modifiedType.Contains(fieldName)) {
+			fieldsLeft.emplace_back(fieldName);
 		} else {
-			const PayloadFieldType& fieldType = t_.Field(idx);
 			totalReduce += fieldType.IsArray() ? sizeof(PayloadFieldValue::Array) : fieldType.Sizeof();
 		}
 	}
@@ -720,7 +772,7 @@ T PayloadIface<T>::CopyWithRemovedFields(PayloadType modifiedType) {
 	PayloadIface<T> copyValueInterface(modifiedType, pv);
 	for (const auto& fieldname : fieldsLeft) {
 		Get(fieldname, kr);
-		copyValueInterface.Set(fieldname, kr, false);
+		copyValueInterface.Set(fieldname, kr, Append_False);
 	}
 
 	return pv;
@@ -730,8 +782,8 @@ T PayloadIface<T>::CopyWithRemovedFields(PayloadType modifiedType) {
 #pragma warning(disable : 5037)
 #endif
 
-template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(std::string_view, const VariantArray&, bool);
-template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(int, const VariantArray&, bool);
+template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(std::string_view, const VariantArray&, Append);
+template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(int, const VariantArray&, Append);
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(int, int, const Variant&);
 template void PayloadIface<PayloadValue>::SetSingleElement<PayloadValue, static_cast<void*>(0)>(int, const Variant&);
 

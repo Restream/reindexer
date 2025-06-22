@@ -1,6 +1,6 @@
 #pragma once
+#include <span>
 #include <variant>
-#include "estl/span.h"
 #include "tools/errors.h"
 #include "tools/serializer.h"
 
@@ -9,8 +9,6 @@ struct JsonNode;
 }
 
 namespace reindexer {
-
-class JsonBuilder;
 
 struct SetClusterLeaderCommand {
 	int leaderServerId = -1;
@@ -24,7 +22,7 @@ struct ClusterControlRequestData {
 	ClusterControlRequestData() = default;
 	ClusterControlRequestData(SetClusterLeaderCommand&& value) : type(Type::ChangeLeader), data(std::move(value)) {}
 	void GetJSON(WrSerializer& ser) const;
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::span<char> json);
 
 	Type type = Type::Empty;
 	std::variant<SetClusterLeaderCommand> data;

@@ -1,10 +1,11 @@
 #include "fieldsset.h"
+#include <sstream>
 #include "core/cjson/tagsmatcher.h"
 
 namespace reindexer {
 
 [[noreturn]] void IndexesFieldsSet::throwMaxValueError(int f) {
-	throw Error(errLogic, "Can not push_back(%d) to IndexesFieldsSet. Value must be in scope [-1,%d]", f, kMaxIndexes - 1);
+	throw Error(errLogic, "Can not push_back({}) to IndexesFieldsSet. Value must be in scope [-1,{}]", f, kMaxIndexes - 1);
 }
 
 FieldsSet::FieldsSet(const TagsMatcher& tagsMatcher, const h_vector<std::string, 1>& fields) : mask_(0) {
@@ -22,7 +23,7 @@ std::string FieldsSet::ToString(DumpWithMask withMask) const {
 }
 
 void FieldsSet::throwMaxValueError(int f) {
-	throw Error(errLogic, "Can not push_back(%d) to FieldsSet. Value must be in scope [-1,%d]", f, kMaxIndexes - 1);
+	throw Error(errLogic, "Can not push_back({}) to FieldsSet. Value must be in scope [-1,{}]", f, kMaxIndexes - 1);
 }
 
 }  // namespace reindexer

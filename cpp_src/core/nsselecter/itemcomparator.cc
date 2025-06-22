@@ -52,10 +52,10 @@ bool ItemComparator::operator()(const ItemRef& lhs, const ItemRef& rhs) const {
 							   const auto ljfIt = ljIt.at(c.joinedNs);
 							   const auto rjfIt = rjIt.at(c.joinedNs);
 							   if (ljfIt == ljIt.end() || ljfIt.ItemsCount() == 0 || rjfIt == rjIt.end() || rjfIt.ItemsCount() == 0) {
-								   throw Error(errQueryExec, "Not found value joined from ns %s", joinedSelector.RightNsName());
+								   throw Error(errQueryExec, "Not found value joined from ns {}", joinedSelector.RightNsName());
 							   }
 							   if (ljfIt.ItemsCount() > 1 || rjfIt.ItemsCount() > 1) {
-								   throw Error(errQueryExec, "Found more than 1 value joined from ns %s", joinedSelector.RightNsName());
+								   throw Error(errQueryExec, "Found more than 1 value joined from ns {}", joinedSelector.RightNsName());
 							   }
 							   joinedNsRes.fieldsCmpRes =
 								   ConstPayload{joinedSelector.RightNs()->payloadType_, ljfIt[0].Value()}
@@ -160,7 +160,7 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 							   tagsPath = ns.tagsMatcher_.path2tag(e.field);
 						   }
 						   if (jns.fields.contains(tagsPath)) {
-							   throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.data.expression);
+							   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
 						   }
 						   insert.fields(jns, std::move(tagsPath));
 						   insert.joined(e.nsIdx, e.data.desc);
@@ -181,13 +181,13 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 								   const auto f = fields[i];
 								   if (f != IndexValueType::SetByJsonPath) {
 									   if (jns.fields.contains(f)) {
-										   throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.data.expression);
+										   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
 									   }
 									   insert.fields(jns, f);
 								   } else {
 									   TagsPath tagsPath = jns.fields.getTagsPath(jsonPathsIndex++);
 									   if (jns.fields.contains(tagsPath)) {
-										   throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.data.expression);
+										   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
 									   }
 									   insert.fields(jns, std::move(tagsPath));
 								   }
@@ -196,7 +196,7 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 							   }
 						   } else {
 							   if (jns.fields.contains(fieldIdx)) {
-								   throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.field);
+								   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.field);
 							   }
 							   insert.fields(jns, fieldIdx);
 							   insert.joined(e.nsIdx, e.data.desc);
@@ -216,7 +216,7 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 							   tagsPath = ns_.tagsMatcher_.path2tag(e.data.expression);
 						   }
 						   if (fields_.contains(tagsPath)) {
-							   throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.data.expression);
+							   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
 						   }
 						   insert.fields(std::move(tagsPath));
 						   insert.index(e.data.desc);
@@ -231,7 +231,7 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 								   const auto field(fields[i]);
 								   assertrx_dbg(field != SetByJsonPath);
 								   if (fields_.contains(field)) {
-									   throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.data.expression);
+									   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
 								   }
 								   insert.fields(field);
 								   insert.index(e.data.desc);
@@ -239,7 +239,7 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 							   }
 						   } else {
 							   if (fields_.contains(fieldIdx)) {
-								   throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.data.expression);
+								   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
 							   }
 							   insert.fields(fieldIdx);
 							   insert.index(e.data.desc);
@@ -304,15 +304,19 @@ ComparationResult ItemComparator::compareFields(IdType lId, IdType rId, size_t& 
 										  Variant(*(static_cast<const double*>(rawData) + rId)));
 				},
 				[rawData, lId, rId](KeyValueType::String) noexcept {
-					return std::make_pair(Variant(p_string(static_cast<const std::string_view*>(rawData) + lId), Variant::no_hold_t{}),
-										  Variant(p_string(static_cast<const std::string_view*>(rawData) + rId), Variant::no_hold_t{}));
+					return std::make_pair(Variant(p_string(static_cast<const std::string_view*>(rawData) + lId), Variant::noHold),
+										  Variant(p_string(static_cast<const std::string_view*>(rawData) + rId), Variant::noHold));
 				},
 				[rawData, lId, rId](KeyValueType::Uuid) noexcept {
 					return std::make_pair(Variant(*(static_cast<const Uuid*>(rawData) + lId)),
 										  Variant(*(static_cast<const Uuid*>(rawData) + rId)));
 				},
-				[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>)
-					-> std::pair<Variant, Variant> { throw_as_assert; });
+				[](KeyValueType::Float) noexcept -> std::pair<Variant, Variant> {
+					// Indexed fields can not contain float
+					throw_as_assert;
+				},
+				[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
+						 KeyValueType::FloatVector>) -> std::pair<Variant, Variant> { throw_as_assert; });
 			cmpRes = values.first.template Compare<NotComparable::Throw>(values.second, opts ? *opts : CollateOpts());
 		} else {
 			cmpRes = ConstPayload(ns_.payloadType_, ns_.items_[lId])

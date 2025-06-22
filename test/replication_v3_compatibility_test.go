@@ -1,13 +1,14 @@
 package reindexer
 
 import (
+	"path"
 	"strconv"
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v4"
-	"github.com/restream/reindexer/v4/bindings/builtinserver/config"
-	"github.com/restream/reindexer/v4/test/helpers"
+	"github.com/restream/reindexer/v5"
+	"github.com/restream/reindexer/v5/bindings/builtinserver/config"
+	"github.com/restream/reindexer/v5/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -127,6 +128,20 @@ func terminatedNodes(nodes *[]nodeData) {
 	}
 }
 
+func stopNode(t *testing.T, node *nodeData) {
+	require.NotNil(t, node.TerminateNode)
+	node.TerminateNode()
+	node.TerminateNode = nil
+	node.DB = nil
+}
+
+func startNodeAsV4(t *testing.T, node *nodeData, followerDSNs ...string) {
+	node.DB = MakeLeaderNoStorageCleanup(t, node.Cfg, node.ServerID, followerDSNs...)
+	node.TerminateNode = func() {
+		node.DB.Close()
+	}
+}
+
 func TestReplV3CompatibilitySingleV4Node(t *testing.T) {
 	if len(DB.slaveList) > 0 || len(*legacyServerBinary) == 0 {
 		t.Skip()
@@ -141,7 +156,7 @@ func TestReplV3CompatibilitySingleV4Node(t *testing.T) {
 		follower3 (v3)
 	*/
 
-	const baseStoragePath = "/tmp/reindex_test_replv3_comp_single/"
+	baseStoragePath := path.Join(helpers.GetTmpDBDir(), "reindex_test_replv3_comp_single/")
 	const ns = "replv3ns"
 	const dataCount = 1000
 
@@ -253,7 +268,7 @@ func TestReplV3CompatibilityMultipleV4Nodes(t *testing.T) {
 		follower3 (v3)
 	*/
 
-	const baseStoragePath = "/tmp/reindex_test_replv3_comp_multi/"
+	baseStoragePath := path.Join(helpers.GetTmpDBDir(), "reindex_test_replv3_comp_multi/")
 	const ns = "replv3ns"
 	const dataCount = 1000
 
@@ -383,20 +398,6 @@ func TestReplV3CompatibilityMultipleV4Nodes(t *testing.T) {
 	})
 }
 
-func stopNode(t *testing.T, node *nodeData) {
-	require.NotNil(t, node.TerminateNode)
-	node.TerminateNode()
-	node.TerminateNode = nil
-	node.DB = nil
-}
-
-func startNodeAsV4(t *testing.T, node *nodeData, followerDSNs ...string) {
-	node.DB = MakeLeaderNoStorageCleanup(t, node.Cfg, node.ServerID, followerDSNs...)
-	node.TerminateNode = func() {
-		node.DB.Close()
-	}
-}
-
 func TestReplV3CompatibilityChainTransition(t *testing.T) {
 	if len(DB.slaveList) > 0 || len(*legacyServerBinary) == 0 {
 		t.Skip()
@@ -409,7 +410,7 @@ func TestReplV3CompatibilityChainTransition(t *testing.T) {
 		follower2 (v3)       follower2 (v3)       follower2 (v3)       follower2 (v4)
 	*/
 
-	const baseStoragePath = "/tmp/reindex_test_replv3_comp_chain/"
+	baseStoragePath := path.Join(helpers.GetTmpDBDir(), "reindex_test_replv3_comp_chain/")
 	const ns = "replv3ns"
 	const dataCount = 1000
 

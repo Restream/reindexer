@@ -1,13 +1,11 @@
 #pragma once
 
+#include <mutex>
 #include <optional>
 #include "cluster/config.h"
-#include "cluster/consts.h"
-#include "core/perfstatcounter.h"
-#include "core/transaction/transaction.h"
 #include "estl/fast_hash_map.h"
+#include "estl/mutex.h"
 #include "estl/shared_mutex.h"
-#include "tools/stringstools.h"
 
 namespace reindexer {
 namespace cluster {
@@ -15,8 +13,8 @@ namespace cluster {
 struct SyncStats {
 	void FromJSON(const gason::JsonNode&);
 	void GetJSON(JsonBuilder& builder) const;
-	bool operator==(const SyncStats& r) const noexcept { return count == r.count && maxTimeUs == r.maxTimeUs && avgTimeUs == r.avgTimeUs; }
-	bool operator!=(const SyncStats& r) const noexcept { return !(*this == r); }
+	bool operator==(const SyncStats& r) const noexcept = default;
+	bool operator!=(const SyncStats& r) const noexcept = default;
 
 	size_t count;
 	size_t maxTimeUs;
@@ -26,10 +24,8 @@ struct SyncStats {
 struct InitialSyncStats {
 	void FromJSON(const gason::JsonNode&);
 	void GetJSON(JsonBuilder& builder) const;
-	bool operator==(const InitialSyncStats& r) const noexcept {
-		return forceSyncs == r.forceSyncs && walSyncs == r.walSyncs && totalTimeUs == r.totalTimeUs;
-	}
-	bool operator!=(const InitialSyncStats& r) const noexcept { return !(*this == r); }
+	bool operator==(const InitialSyncStats& r) const noexcept = default;
+	bool operator!=(const InitialSyncStats& r) const noexcept = default;
 
 	SyncStats forceSyncs;
 	SyncStats walSyncs;
@@ -42,11 +38,8 @@ struct NodeStats {
 
 	void FromJSON(const gason::JsonNode&);
 	void GetJSON(JsonBuilder& builder) const;
-	bool operator==(const NodeStats& r) const noexcept {
-		return dsn == r.dsn && updatesCount == r.updatesCount && serverId == r.serverId && status == r.status && role == r.role &&
-			   isSynchronized == r.isSynchronized && syncState == r.syncState && namespaces == r.namespaces && lastError == r.lastError;
-	}
-	bool operator!=(const NodeStats& r) const noexcept { return !(*this == r); }
+	bool operator==(const NodeStats& r) const noexcept = default;
+	bool operator!=(const NodeStats& r) const noexcept = default;
 
 	DSN dsn;
 	int64_t updatesCount;
@@ -60,17 +53,12 @@ struct NodeStats {
 };
 
 struct ReplicationStats {
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::span<char> json);
 	Error FromJSON(const gason::JsonNode& root);
 	void GetJSON(JsonBuilder& builder) const;
 	void GetJSON(WrSerializer& ser) const;
-	bool operator==(const ReplicationStats& r) const noexcept {
-		return type == r.type && pendingUpdatesCount == r.pendingUpdatesCount && updateDrops == r.updateDrops &&
-			   allocatedUpdatesCount == r.allocatedUpdatesCount && allocatedUpdatesSizeBytes == r.allocatedUpdatesSizeBytes &&
-			   walSyncs == r.walSyncs && forceSyncs == r.forceSyncs && initialSync == r.initialSync && logLevel == r.logLevel &&
-			   nodeStats == r.nodeStats;
-	}
-	bool operator!=(const ReplicationStats& r) const noexcept { return !(*this == r); }
+	bool operator==(const ReplicationStats& r) const noexcept = default;
+	bool operator!=(const ReplicationStats& r) const noexcept = default;
 
 	std::string type;
 	int64_t updateDrops;
@@ -85,20 +73,8 @@ struct ReplicationStats {
 };
 
 struct SyncStatsCounter {
-	void Hit(std::chrono::microseconds time) noexcept {
-		std::lock_guard lck(mtx_);
-		totalTimeUs += time.count();
-		++count;
-		if (maxTimeUs < time.count()) {
-			maxTimeUs = time.count();
-		}
-	}
-	void Reset() noexcept {
-		std::lock_guard lck(mtx_);
-		count = 0;
-		maxTimeUs = 0;
-		totalTimeUs = 0;
-	}
+	void Hit(std::chrono::microseconds time) noexcept;
+	void Reset() noexcept;
 	SyncStats Get() const;
 
 	size_t count = 0;
@@ -113,20 +89,8 @@ struct NodeStatsCounter {
 	void OnStatusChanged(NodeStats::Status st) noexcept { status.store(st, std::memory_order_relaxed); }
 	void OnSyncStateChanged(NodeStats::SyncState st) noexcept { syncState.store(st, std::memory_order_relaxed); }
 	void OnServerIdChanged(int sId) noexcept { serverId.store(sId, std::memory_order_relaxed); }
-	void SaveLastError(const Error& err) {
-		std::lock_guard lck(mtx_);
-		lastError = err;
-	}
-	Error GetLastError() const {
-		std::lock_guard lck(mtx_);
-		return lastError;
-	}
-	void Reset() noexcept {
-		status.store(NodeStats::Status::None, std::memory_order_relaxed);
-		syncState.store(NodeStats::SyncState::None, std::memory_order_relaxed);
-		lastAppliedUpdateId_.store(-1, std::memory_order_relaxed);
-		SaveLastError(Error());
-	}
+	void SaveLastError(const Error& err) noexcept;
+	Error GetLastError() const;
 	NodeStats Get() const;
 
 	const DSN dsn;
@@ -195,48 +159,11 @@ public:
 		lastErasedUpdateId_.store(updateId, std::memory_order_relaxed);
 		allocatedUpdatesSizeBytes_.fetch_sub(size, std::memory_order_relaxed);
 	}
-	void OnStatusChanged(size_t nodeId, NodeStats::Status status) const noexcept {
-		shared_lock rlck(mtx_);
-		auto found = nodeCounters_.find(nodeId);
-		if (found != nodeCounters_.end()) {
-			found->second->OnStatusChanged(status);
-		}
-	}
-	void OnSyncStateChanged(size_t nodeId, NodeStats::SyncState state) {
-		shared_lock rlck(mtx_);
-		if (nodeId == kLeaderUID && thisNode_.has_value()) {
-			thisNode_->OnSyncStateChanged(state);
-		} else {
-			auto found = nodeCounters_.find(nodeId);
-			if (found != nodeCounters_.end()) {
-				found->second->OnSyncStateChanged(state);
-			}
-		}
-	}
-	void OnServerIdChanged(size_t nodeId, int serverId) const noexcept {
-		shared_lock rlck(mtx_);
-		auto found = nodeCounters_.find(nodeId);
-		if (found != nodeCounters_.end()) {
-			found->second->OnServerIdChanged(serverId);
-		}
-	}
-	void SaveNodeError(size_t nodeId, const Error& lastError) {
-		shared_lock rlck(mtx_);
-		auto found = nodeCounters_.find(nodeId);
-		if (found != nodeCounters_.end()) {
-			found->second->SaveLastError(lastError);
-		}
-	}
-	void Reset() noexcept {
-		walSyncs_.Reset();
-		forceSyncs_.Reset();
-		initialForceSyncs_.Reset();
-		initialWalSyncs_.Reset();
-		std::lock_guard lck(mtx_);
-		for (auto& node : nodeCounters_) {
-			node.second->Reset();
-		}
-	}
+	void OnStatusChanged(size_t nodeId, NodeStats::Status status) const noexcept;
+	void OnSyncStateChanged(size_t nodeId, NodeStats::SyncState state) noexcept;
+	void OnServerIdChanged(size_t nodeId, int serverId) const noexcept;
+	void SaveNodeError(size_t nodeId, const Error& lastError) noexcept;
+	void Clear() noexcept;
 	ReplicationStats Get() const;
 
 private:
