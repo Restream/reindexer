@@ -1,6 +1,7 @@
 #include "geometry.h"
+#include "allocs_tracker.h"
 #include "core/cjson/jsonbuilder.h"
-#include "tools/randompoint.h"
+#include "gtests/tools.h"
 
 namespace {
 
@@ -15,12 +16,12 @@ void Geometry::Insert(State& state) {
 		for (size_t i = 0; i < N; ++i) {
 			auto item = MakeItem(state);
 			if (!item.Status().ok()) {
-				state.SkipWithError(item.Status().what().c_str());
+				state.SkipWithError(item.Status().what());
 			}
 
 			auto err = db_->Insert(nsdef_.name, item);
 			if (!err.ok()) {
-				state.SkipWithError(err.what().c_str());
+				state.SkipWithError(err.what());
 			}
 		}
 	}
@@ -31,11 +32,11 @@ void Geometry::GetDWithin(benchmark::State& state) {
 	benchmark::AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		reindexer::Query q(nsdef_.name);
-		q.DWithin("point", reindexer::randPoint(kRange), kRange / N);
+		q.DWithin("point", randPoint(kRange), kRange / N);
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -50,12 +51,12 @@ void Geometry::Reset(State& state) {
 
 		auto err = db_->DropNamespace(nsdef_.name);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 
 		err = db_->AddNamespace(nsdef_);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -126,12 +127,12 @@ reindexer::Item Geometry::MakeItem(benchmark::State& state) {
 	wrSer_.Reset();
 	reindexer::JsonBuilder bld(wrSer_);
 	bld.Put("id", id_++);
-	const reindexer::Point point = reindexer::randPoint(kRange);
+	const reindexer::Point point = randPoint(kRange);
 	bld.Array("point", {point.X(), point.Y()});
 	bld.End();
 	const auto err = item.FromJSON(wrSer_.Slice());
 	if (!err.ok()) {
-		state.SkipWithError(err.what().c_str());
+		state.SkipWithError(err.what());
 	}
 
 	return item;

@@ -1,7 +1,9 @@
 #include "snapshothandler.h"
+#include "core/ft/functions/ft_function.h"
 #include "core/namespace/namespace.h"
 #include "core/namespace/namespaceimpl.h"
-#include "core/nsselecter/nsselecter.h"
+#include "core/nsselecter/selectctx.h"
+#include "estl/gift_str.h"
 #include "tools/logger.h"
 #include "wal/walselecter.h"
 
@@ -12,12 +14,12 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 	const auto from = opts.from;
 	try {
 		if (!from.IsCompatibleByNsVersion(ExtendedLsn(ns_.repl_.nsVersion, ns_.wal_.LastLSN()))) {
-			throw Error(errOutdatedWAL, "Requested LSN is not compatible by NS version (%d). Current namespace has %d", from.NsVersion(),
+			throw Error(errOutdatedWAL, "Requested LSN is not compatible by NS version ({}). Current namespace has {}", from.NsVersion(),
 						ns_.repl_.nsVersion);
 		}
-		Query q = Query(ns_.name_).Where("#lsn", CondGt, int64_t(from.LSN()));
-		SelectCtx selCtx(q, nullptr);
-		SelectFunctionsHolder func;
+		Query q = Query(ns_.name_).Where("#lsn", CondGt, int64_t(from.LSN())).SelectAllFields();
+		SelectCtx selCtx(q, nullptr, &walQr.GetFloatVectorsHolder());
+		FtFunctionsHolder func;
 		selCtx.functions = &func;
 		selCtx.contextCollectingMode = true;
 		WALSelecter selecter(&ns_, false);
@@ -28,16 +30,15 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 		if (err.code() != errOutdatedWAL) {
 			throw err;
 		}
-		logFmt(LogInfo, "[repl:{}]:{} Creating RAW (force sync) snapshot. Reason: {}", ns_.name_.OriginalName(), ns_.wal_.GetServer(),
-			   err.what());
+		logFmt(LogInfo, "[repl:{}]:{} Creating RAW (force sync) snapshot. Reason: {}", ns_.name_, ns_.wal_.GetServer(), err.what());
 		const auto minLsn = ns_.wal_.LSNByOffset(opts.maxWalDepthOnForceSync);
 		if (minLsn.isEmpty()) {
 			return Snapshot(ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.repl_.dataHash, ns_.itemsCount(), ns_.repl_.clusterStatus);
 		}
 		{
-			Query q = Query(ns_.name_).Where("#lsn", CondGe, int64_t(minLsn));
-			SelectCtx selCtx(q, nullptr);
-			SelectFunctionsHolder func;
+			Query q = Query(ns_.name_).Where("#lsn", CondGe, int64_t(minLsn)).SelectAllFields();
+			SelectCtx selCtx(q, nullptr, &walQr.GetFloatVectorsHolder());
+			FtFunctionsHolder func;
 			selCtx.functions = &func;
 			selCtx.contextCollectingMode = true;
 			WALSelecter selecter(&ns_, true);
@@ -46,9 +47,10 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 
 		LocalQueryResults fullQr;
 		{
-			Query q = Query(ns_.name_).Where("#lsn", CondAny, VariantArray{});
-			SelectCtx selCtx(q, nullptr);
-			SelectFunctionsHolder func;
+			Query q = Query(ns_.name_).Where("#lsn", CondAny, VariantArray{}).SelectAllFields();
+			// Reusing walQr's FloatVectorsHolder here
+			SelectCtx selCtx(q, nullptr, &walQr.GetFloatVectorsHolder());
+			FtFunctionsHolder func;
 			selCtx.functions = &func;
 			selCtx.contextCollectingMode = true;
 			WALSelecter selecter(&ns_, true);
@@ -65,6 +67,7 @@ void SnapshotHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeaderSy
 	ctx.wal = ch.IsWAL();
 	ctx.shallow = ch.IsShallow();
 	ctx.initialLeaderSync = isInitialLeaderSync;
+
 	for (auto& rec : ch.Records()) {
 		applyRecord(rec, ctx, repl);
 	}
@@ -72,19 +75,15 @@ void SnapshotHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeaderSy
 }
 
 void SnapshotHandler::applyRecord(const SnapshotRecord& snRec, const ChunkContext& ctx, h_vector<updates::UpdateRecord, 2>& pendedRepl) {
-	Error err;
 	if (ctx.shallow) {
 		auto unpacked = snRec.Unpack();
-		err = applyShallowRecord(snRec.LSN(), unpacked.type, snRec.Record(), ctx);
+		applyShallowRecord(snRec.LSN(), unpacked.type, snRec.Record(), ctx);
 	} else {
-		err = applyRealRecord(snRec.LSN(), snRec, ctx, pendedRepl);
-	}
-	if (!err.ok()) {
-		throw err;
+		applyRealRecord(snRec.LSN(), snRec, ctx, pendedRepl);
 	}
 }
 
-Error SnapshotHandler::applyShallowRecord(lsn_t lsn, WALRecType type, const PackedWALRecord& prec, const ChunkContext& chCtx) {
+void SnapshotHandler::applyShallowRecord(lsn_t lsn, WALRecType type, const PackedWALRecord& prec, const ChunkContext& chCtx) {
 	switch (type) {
 		case WalEmpty:
 		case WalIndexAdd:
@@ -98,15 +97,15 @@ Error SnapshotHandler::applyShallowRecord(lsn_t lsn, WALRecType type, const Pack
 		case WalSetSchema:
 		case WalUpdateQuery:
 			ns_.wal_.Add(type, prec, lsn);
-			return errOK;
+			return;
 		case WalShallowItem:
 			ns_.wal_.Add(WALRecord(WalItemUpdate, WALRecord(prec).id, chCtx.tx), lsn);
-			return errOK;
+			return;
 		case WalItemUpdate:
 			ns_.wal_.Add(WALRecord(WalEmpty, WALRecord(prec).id, chCtx.tx), lsn);
-			return errOK;
+			return;
 		case WalReplState:
-			return errOK;
+			return;
 		case WalNamespaceAdd:
 		case WalNamespaceDrop:
 		case WalNamespaceRename:
@@ -119,13 +118,15 @@ Error SnapshotHandler::applyShallowRecord(lsn_t lsn, WALRecType type, const Pack
 			break;
 	}
 
-	return Error(errParams, "Unexpected record type for shallow record: %d", type);
+	throw Error(errParams, "Unexpected record type for shallow record: {}", type);
 }
 
-Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, const ChunkContext& chCtx,
-									   h_vector<updates::UpdateRecord, 2>& pendedRepl) {
-	Error err;
-	IndexDef iDef;
+void SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, const ChunkContext& chCtx,
+									  h_vector<updates::UpdateRecord, 2>& pendedRepl) {
+	if (chCtx.wal && !lsn.isEmpty()) {
+		ns_.checkSnapshotLSN(lsn);
+	}
+
 	Item item;
 	NsContext ctx(dummyCtx_);
 	ctx.InSnapshot(lsn, chCtx.wal, false, chCtx.initialLeaderSync);
@@ -134,41 +135,51 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 		// Modify item
 		case WalItemModify: {
 			item = ns_.newItem();
-			err = item.FromCJSON(rec.itemModify.itemCJson, false);
-			auto mode = static_cast<ItemModifyMode>(rec.itemModify.modifyMode);
-			if (err.ok()) {
-				if (mode == ModeDelete) {
-					ns_.deleteItem(item, pendedRepl, ctx);
-				} else {
-					ns_.doModifyItem(item, rec.itemModify.modifyMode, pendedRepl, ctx);
-				}
+			auto err = item.FromCJSON(rec.itemModify.itemCJson, false);
+			if (!err.ok()) {
+				throw err;
+			}
+			const auto mode = static_cast<ItemModifyMode>(rec.itemModify.modifyMode);
+			if (mode == ModeDelete) {
+				ns_.deleteItem(item, pendedRepl, ctx);
+			} else {
+				ns_.doModifyItem(item, rec.itemModify.modifyMode, pendedRepl, ctx);
 			}
 			break;
 		}
 		// Index added
-		case WalIndexAdd:
-			err = iDef.FromJSON(giftStr(rec.data));
-			if (err.ok()) {
-				ns_.doAddIndex(iDef, false, pendedRepl, ctx);
+		case WalIndexAdd: {
+			auto iDef = IndexDef::FromJSON(giftStr(rec.data));
+			if (iDef) {
+				ns_.doAddIndex(*iDef, false, pendedRepl, ctx);
 				ns_.saveIndexesToStorage();
+			} else {
+				throw iDef.error();
 			}
 			break;
+		}
 		// Index dropped
-		case WalIndexDrop:
-			err = iDef.FromJSON(giftStr(rec.data));
-			if (err.ok()) {
-				ns_.doDropIndex(iDef, pendedRepl, ctx);
+		case WalIndexDrop: {
+			auto iDef = IndexDef::FromJSON(giftStr(rec.data));
+			if (iDef) {
+				ns_.doDropIndex(*iDef, pendedRepl, ctx);
 				ns_.saveIndexesToStorage();
+			} else {
+				throw iDef.error();
 			}
 			break;
+		}
 		// Index updated
-		case WalIndexUpdate:
-			err = iDef.FromJSON(giftStr(rec.data));
-			if (err.ok()) {
-				ns_.doUpdateIndex(iDef, pendedRepl, ctx);
+		case WalIndexUpdate: {
+			auto iDef = IndexDef::FromJSON(giftStr(rec.data));
+			if (iDef) {
+				ns_.doUpdateIndex(*iDef, pendedRepl, ctx);
 				ns_.saveIndexesToStorage();
+			} else {
+				throw iDef.error();
 			}
 			break;
+		}
 		// Metadata updated
 		case WalPutMeta:
 			ns_.putMeta(std::string(rec.itemMeta.key), rec.itemMeta.value, pendedRepl, ctx);
@@ -208,10 +219,11 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 		case WalRawItem: {
 			Serializer ser(rec.rawItem.itemCJson.data(), rec.rawItem.itemCJson.size());
 			item = ns_.newItem();
-			err = item.FromCJSON(rec.rawItem.itemCJson, false);
-			if (err.ok()) {
-				ns_.doModifyItem(item, ModeUpsert, pendedRepl, ctx, (chCtx.wal) ? -1 : rec.rawItem.id);
+			auto err = item.FromCJSON(rec.rawItem.itemCJson, false);
+			if (!err.ok()) {
+				throw err;
 			}
+			ns_.doModifyItem(item, ModeUpsert, pendedRepl, ctx, (chCtx.wal) ? -1 : rec.rawItem.id);
 			break;
 		}
 		case WalTagsMatcher: {
@@ -220,10 +232,10 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 			const auto version = ser.GetVarint();
 			const auto stateToken = ser.GetVarint();
 			tm.deserialize(ser, version, stateToken);
-			logPrintf(LogInfo, "[%s]: Changing tm's statetoken on %d: %08X->%08X", ns_.name_, ns_.wal_.GetServer(),
-					  ns_.tagsMatcher_.stateToken(), stateToken);
+			logFmt(LogInfo, "[{}]: Changing tm's statetoken on {}: {:#08x}->{:#08x}", ns_.name_, ns_.wal_.GetServer(),
+				   ns_.tagsMatcher_.stateToken(), stateToken);
 			ns_.tagsMatcher_ = std::move(tm);
-			ns_.tagsMatcher_.UpdatePayloadType(ns_.payloadType_, NeedChangeTmVersion::No);
+			ns_.tagsMatcher_.UpdatePayloadType(ns_.payloadType_, ns_.indexes_.SparseIndexes(), NeedChangeTmVersion::No);
 			ns_.tagsMatcher_.setUpdated();
 			ns_.saveTagsMatcherToStorage(false);
 			break;
@@ -231,7 +243,7 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 		case WalInitTransaction:
 		case WalCommitTransaction:
 			if (chCtx.wal) {
-				err = Error(errLogic, "Unexpected tx WAL record %d\n", int(rec.type));
+				throw Error(errLogic, "Unexpected tx WAL record {}\n", int(rec.type));
 			}
 			break;
 		case WalEmpty:
@@ -247,10 +259,8 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 		case WalItemUpdate:
 		case WalShallowItem:
 		default:
-			err = Error(errLogic, "Unexpected WAL rec type %d\n", int(rec.type));
-			break;
+			throw Error(errLogic, "Unexpected WAL rec type {}\n", int(rec.type));
 	}
-	return err;
 }
 
 void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, const RdxContext& rdxCtx) {
@@ -263,16 +273,17 @@ void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeader
 	}
 	WALRecord initRec(records.front().Record());
 	if (initRec.type != WalInitTransaction) {
-		throw Error(errParams, "Unexpected tx chunk init record type: %d. LSN: %d", initRec.type, records.front().LSN());
+		throw Error(errParams, "Unexpected tx chunk init record type: {}. LSN: {}", initRec.type, records.front().LSN());
 	}
 	if (records.size() == 1) {
 		throw Error(errParams, "Unexpected tx chunk size: 1 (at least 2 required)");
 	}
 	WALRecord commitRecord(records.back().Record());
 	if (commitRecord.type != WalCommitTransaction) {
-		throw Error(errParams, "Unexpected tx chunk commit record type: %d. LSN: %d", commitRecord.type, records.back().LSN());
+		throw Error(errParams, "Unexpected tx chunk commit record type: {}. LSN: {}", commitRecord.type, records.back().LSN());
 	}
-	auto tx = Transaction(ns_.NewTransaction(RdxContext(ch.Records().front().LSN())));
+
+	auto tx = Transaction(ns_.NewTransaction(RdxContext{ch.Records().front().LSN(), rdxCtx.GetCancelCtx()}));
 	for (size_t i = 1; i < records.size() - 1; ++i) {
 		auto lsn = records[i].LSN();
 		WALRecord wrec(records[i].Record());
@@ -333,7 +344,7 @@ void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeader
 			case WalTagsMatcher:
 			case WalResetLocalWal:
 			case WalShallowItem:
-				throw Error(errLogic, "Unexpected tx WAL rec type %d\n", wrec.type);
+				throw Error(errLogic, "Unexpected tx WAL rec type {}\n", wrec.type);
 		}
 	}
 

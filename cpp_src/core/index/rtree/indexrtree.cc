@@ -11,21 +11,20 @@ namespace reindexer {
 template <typename KeyEntryT, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
 		  size_t MinEntries>
 SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::SelectKey(const VariantArray& keys, CondType condition,
-																					SortType sortId, Index::SelectOpts opts,
-																					const BaseFunctionCtx::Ptr& funcCtx,
+																					SortType sortId, const Index::SelectContext& selectCtx,
 																					const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
-	if (opts.forceComparator) {
-		return IndexStore<typename Map::key_type>::SelectKey(keys, condition, sortId, opts, funcCtx, rdxCtx);
+	if (selectCtx.opts.forceComparator) {
+		return IndexStore<typename Map::key_type>::SelectKey(keys, condition, sortId, selectCtx, rdxCtx);
 	}
 
 	SelectKeyResult res;
 
 	if (condition != CondDWithin) {
-		throw Error(errQueryExec, "Only CondDWithin available for RTree index");
+		throw Error(errQueryExec, "Only DWithin condition is available for RTree index");
 	}
 	if (keys.size() != 2) {
-		throw Error(errQueryExec, "CondDWithin expects two arguments");
+		throw Error(errQueryExec, "DWithin condition expects two arguments");
 	}
 	Point point;
 	double distance;
@@ -54,11 +53,11 @@ SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Select
 		unsigned itemsCountInNs_;
 		SelectKeyResult& res_;
 		size_t idsCount_ = 0;
-	} visitor{sortId, opts.distinct, opts.itemsCountInNamespace, res};
+	} visitor{sortId, selectCtx.opts.distinct, selectCtx.opts.itemsCountInNamespace, res};
 	this->idx_map.DWithin(point, distance, visitor);
 	if (visitor.ScanWin()) {
 		// fallback to comparator, due to expensive idset
-		return IndexStore<typename Map::key_type>::SelectKey(keys, condition, sortId, opts, funcCtx, rdxCtx);
+		return IndexStore<typename Map::key_type>::SelectKey(keys, condition, sortId, selectCtx, rdxCtx);
 	}
 	return SelectKeyResults(std::move(res));
 }
@@ -71,7 +70,10 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArra
 		Upsert(Variant{}, id, clearCache);
 		return;
 	}
-	const Point point = static_cast<Point>(keys);
+	if rx_unlikely (keys.size() != 2) {
+		[[maybe_unused]] Point p{keys};
+	}
+	const Point point{keys[0].IsNullValue() ? 0.0 : keys[0].As<double>(), keys[1].IsNullValue() ? 0.0 : keys[1].As<double>()};
 	typename Map::iterator keyIt = this->idx_map.find(point);
 	if (keyIt == this->idx_map.end()) {
 		keyIt = this->idx_map.insert_without_test({point, typename Map::mapped_type()});
@@ -113,7 +115,7 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const Varia
 	delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
-	assertf(this->Opts().IsSparse() || delcnt, "Delete non-existent id from index '%s' id=%d,key=%s (%s)", this->name_, id,
+	assertf(this->Opts().IsSparse() || delcnt, "Delete non-existent id from index '{}' id={},key={} ({})", this->name_, id,
 			Variant(keys).template As<std::string>(this->payloadType_, this->Fields()),
 			Variant(keyIt->first).As<std::string>(this->payloadType_, this->Fields()));
 
@@ -128,9 +130,9 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const Varia
 
 std::unique_ptr<Index> IndexRTree_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 									  const NamespaceCacheConfigData& cacheCfg) {
-	switch (idef.opts_.RTreeType()) {
+	switch (idef.Opts().RTreeType()) {
 		case IndexOpts::Linear:
-			if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
+			if (idef.Opts().IsPK() || idef.Opts().IsDense()) {
 				return std::make_unique<IndexRTree<Index::KeyEntryPlain, LinearSplitter, 32, 4>>(idef, std::move(payloadType),
 																								 std::move(fields), cacheCfg);
 			} else {
@@ -138,14 +140,14 @@ std::unique_ptr<Index> IndexRTree_New(const IndexDef& idef, PayloadType&& payloa
 																							cacheCfg);
 			}
 		case IndexOpts::Quadratic:
-			if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
+			if (idef.Opts().IsPK() || idef.Opts().IsDense()) {
 				return std::make_unique<IndexRTree<Index::KeyEntryPlain, QuadraticSplitter, 32, 4>>(idef, std::move(payloadType),
 																									std::move(fields), cacheCfg);
 			}
 			return std::make_unique<IndexRTree<Index::KeyEntry, QuadraticSplitter, 32, 4>>(idef, std::move(payloadType), std::move(fields),
 																						   cacheCfg);
 		case IndexOpts::Greene:
-			if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
+			if (idef.Opts().IsPK() || idef.Opts().IsDense()) {
 				return std::make_unique<IndexRTree<Index::KeyEntryPlain, GreeneSplitter, 16, 4>>(idef, std::move(payloadType),
 																								 std::move(fields), cacheCfg);
 			} else {
@@ -153,7 +155,7 @@ std::unique_ptr<Index> IndexRTree_New(const IndexDef& idef, PayloadType&& payloa
 																							cacheCfg);
 			}
 		case IndexOpts::RStar:
-			if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
+			if (idef.Opts().IsPK() || idef.Opts().IsDense()) {
 				return std::make_unique<IndexRTree<Index::KeyEntryPlain, RStarSplitter, 32, 4>>(idef, std::move(payloadType),
 																								std::move(fields), cacheCfg);
 			} else {

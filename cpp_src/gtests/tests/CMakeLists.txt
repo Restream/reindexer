@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.18)
 
 project(tests)
 
@@ -8,7 +8,7 @@ list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer ${REINDEXER_L
 
 option(XML_REPORT "Enable XML xUnit report" OFF)
 option(GH_CI_OSX "Option for Github CI on OSX" OFF)
-option(GTEST_SKIP_SHARDING "Skips Sharding-related tests. Option for Github tests with ASAN - free runners run out of memory" OFF)
+option(GTEST_SKIP_ASAN_MEMORY_HEAVY "Skips tests with high memory consumation in ASAN-build (mostly sharding-related tests). Option for Github tests with ASAN - free runners run out of memory" OFF)
 set(GTEST_WORKERS "6" CACHE STRING "Number of workers for gtest_parallel")
 
 include_directories(fixtures mocks)
@@ -17,13 +17,17 @@ include_directories(${REINDEXER_SOURCE_PATH})
 
 set(GENERATED_PROTO_DIR "${PROJECT_BINARY_DIR}")
 if(ENABLE_GRPC)
-    find_package(Protobuf)
+    set(protobuf_MODULE_COMPATIBLE TRUE)
+    find_package(Protobuf CONFIG)
+    if(NOT PROTOBUF_FOUND)
+        find_package(Protobuf)
+    endif()
     if(PROTOBUF_FOUND)
-        INCLUDE_DIRECTORIES(SYSTEM ${PROTOBUF_INCLUDE_DIR})
-        list(APPEND REINDEXER_LIBRARIES ${PROTOBUF_LIBRARIES})
+        include_directories(SYSTEM ${PROTOBUF_INCLUDE_DIR})
+        list(APPEND REINDEXER_LIBRARIES protobuf::libprotobuf)
         file(GLOB PROTOBUF_SOURCE_FILES ${REINDEXER_SOURCE_PATH}/gtests/tests/proto/*.proto)
 
-        SET(PROTOBUF_PROTOC_EXECUTABLE protoc)
+        set(PROTOBUF_PROTOC_EXECUTABLE protoc)
 
         foreach (CUR_PROTO_FILE ${PROTOBUF_SOURCE_FILES})
             get_filename_component(PROTOBUF_INPUT_DIRECTORY "${CUR_PROTO_FILE}" DIRECTORY)
@@ -37,7 +41,7 @@ if(ENABLE_GRPC)
         add_definitions(-DWITH_PROTOBUF=1)
         include_directories(${REINDEXER_BINARY_PATH}/server/grpc ${GENERATED_PROTO_DIR})
     else()
-        message("Protobuf not found")
+        message("tests: Protobuf not found")
     endif()
 endif()
 
@@ -48,6 +52,65 @@ list(REMOVE_ITEM SRCS ${FUZZING_SRCS})
 
 add_executable(${TARGET} ${SRCS})
 add_executable(${FUZZING_TARGET} ${FUZZING_SRCS})
+
+if(ENABLE_PCH)
+  set(PREC_HDRS
+    <vector>
+    <map>
+    <unordered_map>
+    <set>
+    <unordered_set>
+    <deque>
+    <memory>
+    <string>
+    <string_view>
+    <optional>
+    <chrono>
+    <functional>
+    <thread>
+    <chrono>
+    <atomic>
+    <fstream>
+
+    ${REINDEXER_SOURCE_PATH}/estl/h_vector.h
+    ${REINDEXER_SOURCE_PATH}/estl/fast_hash_set.h
+    ${REINDEXER_SOURCE_PATH}/estl/fast_hash_map.h
+    ${REINDEXER_SOURCE_PATH}/estl/intrusive_ptr.h
+    ${REINDEXER_SOURCE_PATH}/estl/mutex.h
+    ${REINDEXER_SOURCE_PATH}/estl/shared_mutex.h
+    ${REINDEXER_SOURCE_PATH}/estl/cow.h
+    ${REINDEXER_SOURCE_PATH}/tools/errors.h
+    ${REINDEXER_SOURCE_PATH}/tools/logger.h
+    ${REINDEXER_SOURCE_PATH}/tools/lsn.h
+    ${REINDEXER_SOURCE_PATH}/tools/serializer.h
+    ${REINDEXER_SOURCE_PATH}/tools/stringstools.h
+    ${REINDEXER_SOURCE_PATH}/tools/fsops.h
+
+    ${REINDEXER_SOURCE_PATH}/core/reindexer.h
+    ${REINDEXER_SOURCE_PATH}/core/query/query.h
+    ${REINDEXER_SOURCE_PATH}/core/queryresults/queryresults.h
+    ${REINDEXER_SOURCE_PATH}/core/item.h
+    ${REINDEXER_SOURCE_PATH}/core/system_ns_names.h
+    ${REINDEXER_SOURCE_PATH}/client/reindexer.h
+    ${REINDEXER_SOURCE_PATH}/client/queryresults.h
+    ${REINDEXER_SOURCE_PATH}/client/item.h
+    ${REINDEXER_SOURCE_PATH}/cluster/config.h
+    ${REINDEXER_SOURCE_PATH}/vendor/gason/gason.h
+    ${REINDEXER_SOURCE_PATH}/vendor/yaml-cpp/yaml.h
+    ${REINDEXER_SOURCE_PATH}/core/cjson/jsonbuilder.h
+
+    gtest_cout.h
+    fixtures/reindexer_api.h
+    fixtures/ft_api.h
+    fixtures/cluster_operation_api.h
+    fixtures/servercontrol.h
+
+    <gtest/gtest.h>
+    <gtest/gtest-param-test.h>
+  )
+
+  target_precompile_headers(${TARGET} PRIVATE ${PREC_HDRS})
+endif()
 
 # Enable export to provide readable stacktraces
 set_property(TARGET ${TARGET} PROPERTY ENABLE_EXPORTS 1)
@@ -69,8 +132,8 @@ if (WITH_ASAN OR WITH_TSAN OR WITH_STDLIB_DEBUG)
     set(GTEST_TIMEOUT 2000)
 endif()
 
-if(GTEST_SKIP_SHARDING)
-    set(GTEST_EXTRA_OPTIONS "--gtest_filter=-Sharding*:SnapshotTestApi.ForceSyncFromRemoteToLocal")
+if(GTEST_SKIP_ASAN_MEMORY_HEAVY)
+    set(GTEST_EXTRA_OPTIONS "--gtest_filter=-Sharding*:ReplicationLoadApi.DynamicRoleSwitch:CascadeReplicationApi.ForceSyncStress")
 endif()
 find_program(GTEST_PARALLEL "gtest-parallel")
 if (GTEST_PARALLEL)

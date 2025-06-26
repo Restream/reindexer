@@ -24,8 +24,8 @@ public:
 		ComparisonResult expectedResult;
 
 		friend std::ostream& operator<<(std::ostream& os, const StringTestCase& c) {
-			os << fmt::sprintf("{ str1: '%s', str2: '%s', expected comparison result: %s }", c.str1, c.str2,
-							   ComparisonResultToString(c.expectedResult));
+			os << fmt::format("{{ str1: '{}', str2: '{}', expected comparison result: {} }}", c.str1, c.str2,
+							  ComparisonResultToString(c.expectedResult));
 			return os;
 		}
 	};
@@ -236,8 +236,20 @@ TEST(ConversionStringToNumber, DetectValueTypeTest) {
 		{"9223372802345370L", StringV},
 		{"92233728070.0145L", StringV},
 
-		{"1.35e10", StringV},
-		{"1.1e-2", StringV},
+		{"1.35e10", DoubleV, 1.35e10},
+		{"1.1e-2", DoubleV, 1.1e-2},
+		{"2.e-2", DoubleV, 2e-2},
+		{"2.e2", DoubleV, 2e2},
+		{"2e-2", DoubleV, 2e-2},
+		{"2e+2", DoubleV, 2e+2},
+		{"2ee2", StringV},
+		{"2e.2", StringV},
+		{"2-2e", StringV},
+		{"2e", StringV},
+		{"2e-", StringV},
+		{"2e+", StringV},
+		{"-e1", StringV},
+
 		{"123.456.7", StringV},
 	};
 

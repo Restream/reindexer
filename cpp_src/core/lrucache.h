@@ -3,7 +3,6 @@
 #include <list>
 #include <mutex>
 #include <unordered_map>
-#include "dbconfig.h"
 #include "estl/atomic_unique_ptr.h"
 #include "namespace/namespacestat.h"
 
@@ -33,13 +32,12 @@ public:
 		bool valid;
 		V val;
 	};
-	// Get cached val. Create new entry in cache if does not exist
+	// Get cached val. Create new entry in cache if it does not exist
 	Iterator Get(const K& k);
 	// Put cached val
 	void Put(const K& k, V&& v);
 	LRUCacheMemStat GetMemStat() const;
 	void Clear();
-	void Clear(std::function<bool(const Key&)> cond);
 
 	template <typename T>
 	void Dump(T& os, std::string_view step, std::string_view offset) const {
@@ -114,9 +112,9 @@ public:
 	LRUCache(Args&&... args) noexcept : ptr_(makePtr(std::forward<Args>(args)...)) {
 		(void)alignment1_;
 		(void)alignment2_;
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(_M_X64) || defined(_M_IX86)
 		static_assert(sizeof(LRUCache) == 128, "Unexpected size. Check alignment");
-#endif	// defined(__x86_64__)
+#endif	// defined(__x86_64__) || defined(_M_X64) || defined(_M_IX86)
 	}
 	virtual ~LRUCache() = default;
 
@@ -201,7 +199,7 @@ private:
 		std::atomic_uint64_t misses;
 	};
 
-	// Cache line alignment to avoid contention betwee atomic cache ptr and cache stats (alignas would be better, but it does not work
+	// Cache line alignment to avoid contention between atomic cache ptr and cache stats (alignas would be better, but it does not work
 	// properly with tcmalloc on CentOS7)
 	uint8_t alignment1_[48];
 	CachePtrT ptr_;

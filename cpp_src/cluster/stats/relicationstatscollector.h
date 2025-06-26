@@ -1,6 +1,7 @@
 #pragma once
 
 #include "replicationstats.h"
+#include "tools/clock.h"
 
 namespace reindexer {
 namespace cluster {
@@ -109,9 +110,9 @@ public:
 			counter_->SaveNodeError(nodeId, err);
 		}
 	}
-	void Reset() {
+	void Clear() {
 		if (counter_) {
-			counter_->Reset();
+			counter_->Clear();
 		}
 	}
 	ReplicationStats Get() const {

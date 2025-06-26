@@ -23,7 +23,7 @@ void IndexStore<key_string>::Delete(const Variant& key, IdType /*id*/, StringsHo
 		return;
 	}
 	auto keyIt = str_map.find(std::string_view(key));
-	// assertf(keyIt != str_map.end(), "Delete non-existent key from index '%s' id=%d", name_, id);
+	// assertf(keyIt != str_map.end(), "Delete non-existent key from index '{}' id={}", name_, id);
 	if (keyIt == str_map.end()) {
 		return;
 	}
@@ -79,7 +79,7 @@ Variant IndexStore<key_string>::Upsert(const Variant& key, IdType id, bool& /*cl
 	} else {
 		val = std::string_view(key);
 	}
-	if (!opts_.IsArray() && !opts_.IsDense() && !opts_.IsSparse() && !IsFulltext()) {
+	if (!IsColumnIndexDisabled() && !IsFulltext()) {
 		idx_data.resize(std::max(id + 1, IdType(idx_data.size())));
 		idx_data[id] = val;
 	}
@@ -94,7 +94,7 @@ Variant IndexStore<PayloadValue>::Upsert(const Variant& key, IdType /*id*/, bool
 
 template <typename T>
 Variant IndexStore<T>::Upsert(const Variant& key, IdType id, bool& /*clearCache*/) {
-	if (!opts_.IsArray() && !opts_.IsDense() && !opts_.IsSparse() && !key.Type().Is<KeyValueType::Null>()) {
+	if (!IsColumnIndexDisabled() && !key.Type().Is<KeyValueType::Null>()) {
 		idx_data.resize(std::max(id + 1, IdType(idx_data.size())));
 		idx_data[id] = static_cast<T>(key);
 	}
@@ -103,6 +103,9 @@ Variant IndexStore<T>::Upsert(const Variant& key, IdType id, bool& /*clearCache*
 
 template <typename T>
 void IndexStore<T>::Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) {
+	if (keys.IsObjectValue()) {
+		return;
+	}
 	if (keys.empty()) {
 		Upsert(Variant{}, id, clearCache);
 	} else {
@@ -120,24 +123,30 @@ void IndexStore<Point>::Upsert(VariantArray& /*result*/, const VariantArray& /*k
 
 template <typename T>
 void IndexStore<T>::Commit() {
-	logPrintf(LogTrace, "IndexStore::Commit (%s) %d uniq strings", name_, str_map.size());
+	logFmt(LogTrace, "IndexStore::Commit ({}) {} uniq strings", name_, str_map.size());
 }
 
 template <typename T>
-SelectKeyResults IndexStore<T>::SelectKey(const VariantArray& keys, CondType condition, SortType /*sortId*/, Index::SelectOpts sopts,
-										  const BaseFunctionCtx::Ptr& /*ctx*/, const RdxContext& rdxCtx) {
+SelectKeyResults IndexStore<T>::SelectKey(const VariantArray& keys, CondType condition, SortType /*sortId*/,
+										  const Index::SelectContext& selectCtx, const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 	if (condition == CondEmpty && !this->opts_.IsArray() && !this->opts_.IsSparse()) {
 		throw Error(errParams, "The 'is NULL' condition is supported only by 'sparse' or 'array' indexes");
 	}
 
-	if (condition == CondAny && !this->opts_.IsArray() && !this->opts_.IsSparse() && !sopts.distinct) {
+	if (condition == CondAny && !this->opts_.IsArray() && !this->opts_.IsSparse() && !selectCtx.opts.distinct) {
 		throw Error(errParams, "The 'NOT NULL' condition is supported only by 'sparse' or 'array' indexes");
 	}
 
-	return ComparatorIndexed<T>{
-		Name(),	  condition,		 keys, idx_data.size() ? idx_data.data() : nullptr, opts_.IsArray(), bool(sopts.distinct), payloadType_,
-		Fields(), opts_.collateOpts_};
+	return ComparatorIndexed<T>{Name(),
+								condition,
+								keys,
+								idx_data.size() ? idx_data.data() : nullptr,
+								opts_.IsArray(),
+								IsDistinct(selectCtx.opts.distinct),
+								payloadType_,
+								Fields(),
+								opts_.collateOpts_};
 }
 
 template <typename T>
@@ -187,7 +196,7 @@ bool IndexStore<T>::shouldHoldValueInStrMap() const noexcept {
 }
 
 std::unique_ptr<Index> IndexStore_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields) {
-	switch (idef.Type()) {
+	switch (idef.IndexType()) {
 		case IndexBool:
 			return std::make_unique<IndexStore<bool>>(idef, std::move(payloadType), std::move(fields));
 		case IndexIntStore:
@@ -216,9 +225,13 @@ std::unique_ptr<Index> IndexStore_New(const IndexDef& idef, PayloadType&& payloa
 		case IndexTtl:
 		case IndexRTree:
 		case IndexUuidHash:
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+		case IndexDummy:
 			break;
 	}
-	std::abort();
+	throw_as_assert;
 }
 
 template class IndexStore<bool>;

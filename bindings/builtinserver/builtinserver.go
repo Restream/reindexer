@@ -12,9 +12,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/bindings/builtin"
-	"github.com/restream/reindexer/v4/bindings/builtinserver/config"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/bindings/builtin"
+	"github.com/restream/reindexer/v5/bindings/builtinserver/config"
 )
 
 var defaultStartupTimeout time.Duration = time.Minute * 3
@@ -285,4 +285,8 @@ func (server *BuiltinServer) Subscribe(ctx context.Context, opts *bindings.Subsc
 
 func (server *BuiltinServer) Unsubscribe(ctx context.Context) error {
 	return server.builtin.Unsubscribe(ctx)
+}
+
+func (server *BuiltinServer) DBMSVersion() (string, error) {
+	return server.builtin.DBMSVersion()
 }

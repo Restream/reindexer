@@ -1,8 +1,8 @@
 #pragma once
-#include "core/ft/usingcontainer.h"
 #include "core/keyvalue/key_string.h"
 #include "core/payload/fieldsset.h"
 #include "core/payload/payloadiface.h"
+#include "tools/rvector.h"
 #include "vendor/utf8cpp/utf8/core.h"
 
 namespace reindexer {

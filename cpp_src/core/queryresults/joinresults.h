@@ -48,12 +48,12 @@ public:
 
 	/// @returns total amount of joined items for
 	/// all the joined fields
-	size_t TotalItems() const noexcept { return items_.size(); }
+	size_t TotalItems() const noexcept { return items_.Size(); }
 
 	/// Clear all internal data
 	void Clear() {
 		offsets_.clear();
-		items_.clear();
+		items_.Clear();
 		joinedSelectorsCount_ = 0;
 	}
 
@@ -89,12 +89,12 @@ public:
 	bool operator!=(const JoinedFieldIterator& other) const { return !operator==(other); }
 
 	const_reference operator[](size_t idx) const noexcept {
-		assertrx(currOffset_ + idx < joinRes_->items_.size());
-		return joinRes_->items_[currOffset_ + idx];
+		assertrx(currOffset_ + idx < joinRes_->items_.Size());
+		return joinRes_->items_.GetItemRef(currOffset_ + idx);
 	}
 	reference operator[](size_t idx) noexcept {
-		assertrx(currOffset_ + idx < joinRes_->items_.size());
-		return const_cast<reference>(joinRes_->items_[currOffset_ + idx]);
+		assertrx(currOffset_ + idx < joinRes_->items_.Size());
+		return const_cast<reference>(joinRes_->items_.GetItemRef(currOffset_ + idx));
 	}
 	JoinedFieldIterator& operator++() noexcept {
 		++order_;
@@ -129,7 +129,7 @@ public:
 	int getJoinedFieldsCount() const noexcept { return joinRes_->GetJoinedSelectorsCount(); }
 	int getJoinedItemsCount() const noexcept;
 
-	static ItemIterator CreateFrom(const LocalQueryResults::Iterator& it) noexcept;
+	static ItemIterator CreateFrom(const LocalQueryResults::ConstIterator& it) noexcept;
 	static ItemIterator CreateEmpty() noexcept;
 
 private:

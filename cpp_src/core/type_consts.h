@@ -12,9 +12,10 @@ typedef enum TagType {
 	TAG_OBJECT = 6,
 	TAG_END = 7,
 	TAG_UUID = 8,
+	TAG_FLOAT = 9,
 } TagType;
 
-static const uint8_t kMaxTagType = TAG_UUID;
+static const uint8_t kMaxTagType = TAG_FLOAT;
 
 typedef enum IndexType {
 	IndexStrHash = 0,
@@ -39,6 +40,10 @@ typedef enum IndexType {
 	IndexRTree = 19,
 	IndexUuidHash = 20,
 	IndexUuidStore = 21,
+	IndexHnsw = 22,
+	IndexVectorBruteforce = 23,
+	IndexIvf = 24,
+	IndexDummy = 25,  // Special index type for IndexDrop calls
 } IndexType;
 
 typedef enum QueryItemType {
@@ -74,6 +79,8 @@ typedef enum QueryItemType {
 	QuerySubQueryCondition = 29,
 	QueryFieldSubQueryCondition = 30,
 	QueryLocal = 31,
+	QueryKnnCondition = 32,
+	QueryKnnConditionExt = 33,
 } QueryItemType;
 
 typedef enum QuerySerializeMode {
@@ -101,6 +108,7 @@ typedef enum CondType {
 	CondEmpty = 9,
 	CondLike = 10,
 	CondDWithin = 11,
+	CondKnn = 12,
 } CondType;
 
 enum ErrorCode {
@@ -146,6 +154,8 @@ enum ErrorCode {
 	errParseYAML = 39,
 	errNamespaceOverwritten = 40,
 	errConnectSSL = 41,
+	errVersion = 42,
+	errInvalidDefConfigs = 43,
 };
 
 enum SchemaType { JsonSchemaType, ProtobufSchemaType };
@@ -171,11 +181,14 @@ enum QueryResultItemType {
 	QueryResultShardingVersion = 3,
 	QueryResultShardId = 4,
 	QueryResultIncarnationTags = 5,
+	QueryResultRankFormat = 6,
 };
 
 enum CacheMode { CacheModeOn = 0, CacheModeAggressive = 1, CacheModeOff = 2 };
 
 enum StrictMode { StrictModeNotSet = 0, StrictModeNone, StrictModeNames, StrictModeIndexes };
+
+enum RankFormat { SingleFloatValue = 0 };  // For the future hybrid queries
 
 typedef int IdType;
 typedef unsigned SortType;
@@ -212,6 +225,7 @@ typedef enum IndexOpt {
 	kIndexOptArray = 1 << 6,
 	kIndexOptDense = 1 << 5,
 	kIndexOptSparse = 1 << 3,
+	kIndexOptNoColumn = 1 << 2,
 } IndexOpt;
 
 typedef enum StotageOpt {
@@ -221,8 +235,8 @@ typedef enum StotageOpt {
 	kStorageOptVerifyChecksums = 1 << 3,
 	kStorageOptFillCache = 1 << 4,
 	kStorageOptSync = 1 << 5,
-	kStorageOptLazyLoad = 1 << 6,
-	kStorageOptAutorepair = 1 << 9,
+	// kStorageOptLazyLoad = 1 << 6, Deprecated
+	// kStorageOptAutorepair = 1 << 9, Deprecated
 } StorageOpt;
 
 enum CollateMode { CollateNone = 0, CollateASCII, CollateUTF8, CollateNumeric, CollateCustom };
@@ -247,8 +261,6 @@ typedef struct StorageOpts {
 	bool IsVerifyChecksums() const noexcept { return options & kStorageOptVerifyChecksums; }
 	bool IsFillCache() const noexcept { return options & kStorageOptFillCache; }
 	bool IsSync() const noexcept { return options & kStorageOptSync; }
-	bool IsLazyLoad() const noexcept { return options & kStorageOptLazyLoad; }
-	bool IsAutorepair() const noexcept { return options & kStorageOptAutorepair; }
 
 	StorageOpts& Enabled(bool value = true) noexcept {
 		options = value ? options | kStorageOptEnabled : options & ~(kStorageOptEnabled);
@@ -280,15 +292,6 @@ typedef struct StorageOpts {
 		return *this;
 	}
 
-	StorageOpts& LazyLoad(bool value = true) noexcept {
-		options = value ? options | kStorageOptLazyLoad : options & ~(kStorageOptLazyLoad);
-		return *this;
-	}
-
-	StorageOpts& Autorepair(bool value = true) noexcept {
-		options = value ? options | kStorageOptAutorepair : options & ~(kStorageOptAutorepair);
-		return *this;
-	}
 #endif
 	uint16_t options;
 	uint16_t noQueryIdleThresholdSec;
@@ -297,7 +300,7 @@ typedef struct StorageOpts {
 typedef enum ConnectOpt {
 	kConnectOptOpenNamespaces = 1,
 	kConnectOptAllowNamespaceErrors = 1 << 1,
-	kConnectOptAutorepair = 1 << 2,
+	// kConnectOptAutorepair = 1 << 2, // Deprecated
 	kConnectOptCheckClusterID = 1 << 3,
 	kConnectOptWarnVersion = 1 << 4,
 	kConnectOptDisableReplication = 1 << 5,
@@ -314,7 +317,6 @@ typedef struct ConnectOpts {
 
 	bool IsOpenNamespaces() const noexcept { return options & kConnectOptOpenNamespaces; }
 	bool IsAllowNamespaceErrors() const noexcept { return options & kConnectOptAllowNamespaceErrors; }
-	bool IsAutorepair() const noexcept { return options & kConnectOptAutorepair; }
 	StorageTypeOpt StorageType() const noexcept {
 		if (storage == static_cast<uint16_t>(kStorageTypeOptRocksDB)) {
 			return kStorageTypeOptRocksDB;
@@ -332,11 +334,6 @@ typedef struct ConnectOpts {
 
 	ConnectOpts& AllowNamespaceErrors(bool value = true) noexcept {
 		options = value ? options | kConnectOptAllowNamespaceErrors : options & ~(kConnectOptAllowNamespaceErrors);
-		return *this;
-	}
-
-	ConnectOpts& Autorepair(bool value = true) noexcept {
-		options = value ? options | kConnectOptAutorepair : options & ~(kConnectOptAutorepair);
 		return *this;
 	}
 
@@ -368,6 +365,7 @@ enum BindingCapability {
 	kBindingCapabilityQrIdleTimeouts = 1,
 	kBindingCapabilityResultsWithShardIDs = 1 << 1,
 	kBindingCapabilityIncarnationTags = 1 << 2,
+	kBindingCapabilityComplexRank = 1 << 3,
 };
 
 typedef struct BindingCapabilities {
@@ -377,6 +375,7 @@ typedef struct BindingCapabilities {
 	bool HasQrIdleTimeouts() const noexcept { return caps & kBindingCapabilityQrIdleTimeouts; }
 	bool HasResultsWithShardIDs() const noexcept { return caps & kBindingCapabilityResultsWithShardIDs; }
 	bool HasIncarnationTags() const noexcept { return caps & kBindingCapabilityIncarnationTags; }
+	bool HasComplexRank() const noexcept { return caps & kBindingCapabilityComplexRank; }
 #endif
 	int64_t caps;
 } BindingCapabilities;
@@ -404,6 +403,8 @@ static const uint32_t kMaxStreamsPerSub = 32;
 static const int kSubscribersConfigFormatVersion = 1;
 static const int kMinSubscribersConfigFormatVersion = 1;
 static const int kEventSerializationFormatVersion = 1;
+
+enum { kMaxIndexes = 256 };	 // 'tuple'-index always occupies 1 slot
 
 // REINDEX_WITH_V3_FOLLOWERS
 enum SubscriptionOpt {

@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/restream/reindexer/v4"
-	_ "github.com/restream/reindexer/v4/bindings/builtin"
+	"github.com/restream/reindexer/v5"
+	_ "github.com/restream/reindexer/v5/bindings/builtin"
 )
 
 func doRankingTest(t *testing.T, indexType string) {
@@ -151,6 +151,7 @@ func elemIsInSlice(elem string, slice []string) bool {
 func TestFTFastRankingTest(t *testing.T) {
 	doRankingTest(t, "text")
 }
+
 func TestFTFuzzyRankingTest(t *testing.T) {
 	doRankingTest(t, "fuzzytext")
 }

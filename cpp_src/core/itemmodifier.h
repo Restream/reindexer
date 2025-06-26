@@ -2,6 +2,7 @@
 
 #include <optional>
 #include "core/keyvalue/p_string.h"
+#include "core/namespace/float_vectors_indexes.h"
 #include "core/payload/payloadiface.h"
 #include "updates/updaterecord.h"
 
@@ -71,8 +72,14 @@ private:
 					 const NsContext&);
 	void modifyIndexValues(IdType itemId, const FieldData& field, VariantArray& values, Payload& pl);
 
-	void deleteItemFromComposite(IdType itemId);
-	void insertItemIntoComposite(IdType itemId);
+	void deleteItemFromComposite(IdType itemId, auto& indexesCacheCleaner);
+	void insertItemIntoComposite(IdType itemId, auto& indexesCacheCleaner);
+
+	void getEmbeddingData(const Payload& pl, const Embedder& embedder, std::vector<VariantArray>& data) const;
+	std::vector<std::pair<int, std::vector<VariantArray>>> getEmbeddersSourceData(const Payload& pl) const;
+	bool skipEmbedder(const Embedder& embedder) const;
+	void updateEmbedding(IdType itemId, const RdxContext& rdxContext, Payload& pl,
+						 const std::vector<std::pair<int, std::vector<VariantArray>>>& embeddersData);
 
 	NamespaceImpl& ns_;
 	const std::vector<UpdateEntry>& updateEntries_;
@@ -91,11 +98,11 @@ private:
 			cjsonChanged_ = false;
 			pkModified_ = false;
 		}
-		void IndexChanged(size_t index, bool isPk) noexcept {
+		void IndexChanged(size_t index, IsPk isPk) noexcept {
 			data_[index] = true;
 			pkModified_ = pkModified_ || isPk;
 		}
-		void IndexAndCJsonChanged(size_t index, bool isPk) noexcept {
+		void IndexAndCJsonChanged(size_t index, IsPk isPk) noexcept {
 			data_[index] = true;
 			cjsonChanged_ = true;
 			pkModified_ = pkModified_ || isPk;
@@ -115,6 +122,7 @@ private:
 
 	IndexRollBack rollBackIndexData_;
 	CompositeFlags affectedComposites_;
+	const FloatVectorsIndexes vectorIndexes_;
 };
 
 }  // namespace reindexer

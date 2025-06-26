@@ -12,7 +12,7 @@ void ClusterControlRequestData::GetJSON(WrSerializer& ser) const {
 		std::visit([&payloadBuilder](const auto& d) { d.GetJSON(payloadBuilder); }, data);
 	}
 }
-Error ClusterControlRequestData::FromJSON(span<char> json) {
+Error ClusterControlRequestData::FromJSON(std::span<char> json) {
 	try {
 		gason::JsonParser parser;
 		auto node = parser.Parse(json);
@@ -25,7 +25,7 @@ Error ClusterControlRequestData::FromJSON(span<char> json) {
 				break;
 			}
 			case Type::Empty:
-				return Error(errParams, "Unknown cluster command request. Command type [%d].", int(commandType));
+				return Error(errParams, "Unknown cluster command request. Command type [{}].", int(commandType));
 		}
 		type = commandType;
 	} catch (Error& e) {

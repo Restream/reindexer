@@ -1,8 +1,8 @@
 #pragma once
 
+#include <span>
 #include "core/type_consts.h"
 #include "estl/fast_hash_set.h"
-#include "estl/span.h"
 #include "events/iexternal_listener.h"
 #include "tools/errors.h"
 
@@ -38,7 +38,7 @@ public:
 	};
 	using StreamsContainerT = std::vector<StreamConfig>;
 
-	[[nodiscard]] Error FromJSON(span<char> json) noexcept;
+	[[nodiscard]] Error FromJSON(std::span<char> json) noexcept;
 	void FromJSON(const gason::JsonNode& root);
 	void GetJSON(WrSerializer& ser) const;
 
