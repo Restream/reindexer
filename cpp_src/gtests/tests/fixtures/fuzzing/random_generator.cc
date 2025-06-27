@@ -346,7 +346,7 @@ size_t RandomGenerator::IndexesCount() {
 			case Zero:
 				return 0;
 			case TooMany:
-				return RndInt(reindexer::kMaxIndexes, 5 + reindexer::kMaxIndexes);
+				return RndInt(kMaxIndexes, 5 + kMaxIndexes);
 			default:
 				assertrx(0);
 		}
@@ -360,7 +360,7 @@ size_t RandomGenerator::IndexesCount() {
 		case Many:
 			return RndInt(21, 63);
 		case TooMany:
-			return RndInt(64, reindexer::kMaxIndexes);
+			return RndInt(64, kMaxIndexes);
 		default:
 			assertrx(false);
 			std::abort();

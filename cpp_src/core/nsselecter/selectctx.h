@@ -39,4 +39,5 @@ struct SelectCtx {
 
 	RX_ALWAYS_INLINE bool isMergeQuerySubQuery() const noexcept { return isMergeQuery == IsMergeQuery_True && parentQuery; }
 };
+
 }  // namespace reindexer

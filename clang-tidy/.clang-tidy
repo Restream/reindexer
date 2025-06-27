@@ -16,6 +16,7 @@ Checks: 'clang-diagnostic-*,
          -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
          -performance-no-int-to-ptr,
          -performance-enum-size,
+         -modernize-use-nodiscard,
          -performance-avoid-endl'
 # clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling - too many unnecessary warning in vendored code
 # performance-no-int-to-ptr - consider how to fix this

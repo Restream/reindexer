@@ -21,51 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	opAND = iota
-	opNOT
-	opOR
-)
-
 type EqualPositions [][]string
-
-var queryNames = map[int]string{
-	reindexer.EQ:      "==",
-	reindexer.GT:      ">",
-	reindexer.LT:      "<",
-	reindexer.GE:      ">=",
-	reindexer.LE:      "<=",
-	reindexer.SET:     "SET",
-	reindexer.RANGE:   "RANGE",
-	reindexer.ANY:     "ANY",
-	reindexer.EMPTY:   "EMPTY",
-	reindexer.LIKE:    "LIKE",
-	reindexer.DWITHIN: "DWITHIN",
-}
-
-const (
-	oneFieldEntry = iota
-	twoFieldsEntry
-	bracket
-	alwaysTrue
-	alwaysFalse
-)
-
-const (
-	aggSum   = reindexer.AggSum
-	aggAvg   = reindexer.AggAvg
-	aggMin   = reindexer.AggMin
-	aggMax   = reindexer.AggMax
-	aggFacet = reindexer.AggFacet
-)
-
-var aggNames = map[int]string{
-	aggSum:   "SUM",
-	aggAvg:   "AVG",
-	aggMin:   "MIN",
-	aggMax:   "MAX",
-	aggFacet: "FACET",
-}
 
 type queryTestEntryContainer struct {
 	op       int
@@ -131,12 +87,115 @@ type testNamespace struct {
 	jsonPaths map[string]string
 }
 
+type txTest struct {
+	tx        *reindexer.Tx
+	namespace string
+	db        *ReindexerWrapper
+	ns        *testNamespace
+}
+
+type sortExprValue struct {
+	contain   int
+	field     [][]int
+	fieldName string
+	value     float64
+}
+
+type sortExprEntry struct {
+	negative  bool
+	operation int
+	isSubExpr bool
+	value     *sortExprValue
+	subExpr   []*sortExprEntry
+}
+
+const (
+	opAND = iota
+	opNOT
+	opOR
+)
+
+const (
+	aggSum   = reindexer.AggSum
+	aggAvg   = reindexer.AggAvg
+	aggMin   = reindexer.AggMin
+	aggMax   = reindexer.AggMax
+	aggFacet = reindexer.AggFacet
+)
+
+const (
+	oneFieldEntry = iota
+	twoFieldsEntry
+	bracket
+	alwaysTrue
+	alwaysFalse
+)
+
+const (
+	containField = iota
+	containValue
+)
+
+const (
+	opPlus = iota
+	opMinus
+	opMult
+	opDiv
+)
+
+var queryNames = map[int]string{
+	reindexer.EQ:      "==",
+	reindexer.GT:      ">",
+	reindexer.LT:      "<",
+	reindexer.GE:      ">=",
+	reindexer.LE:      "<=",
+	reindexer.SET:     "SET",
+	reindexer.RANGE:   "RANGE",
+	reindexer.ANY:     "ANY",
+	reindexer.EMPTY:   "EMPTY",
+	reindexer.LIKE:    "LIKE",
+	reindexer.DWITHIN: "DWITHIN",
+}
+
+var aggNames = map[int]string{
+	aggSum:   "SUM",
+	aggAvg:   "AVG",
+	aggMin:   "MIN",
+	aggMax:   "MAX",
+	aggFacet: "FACET",
+}
+
+var queryTestPool sync.Pool
+
+var testNamespaces = make(map[string]*testNamespace, 100)
+var testNamespacesMtx sync.RWMutex
+
 func (tn *testNamespace) getField(field string) ([][]int, bool) {
 	value, ok := tn.fieldsIdx[strings.ToLower(field)]
 	return value, ok
 }
 
-var queryTestPool sync.Pool
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func printExplainRes(res *reindexer.ExplainResults) {
+	j, err := json.Marshal(res)
+	if err != nil {
+		panic(err)
+	}
+	log.Println(string(j))
+}
 
 // Create new DB query
 func newTestQuery(db *ReindexerWrapper, namespace string, needVerify ...bool) *queryTest {
@@ -175,19 +234,6 @@ func newTestQuery(db *ReindexerWrapper, namespace string, needVerify ...bool) *q
 	return qt
 }
 
-type txTest struct {
-	tx        *reindexer.Tx
-	namespace string
-	db        *ReindexerWrapper
-	ns        *testNamespace
-}
-
-func removeTestNamespce(namespace string) {
-	testNamespacesMtx.Lock()
-	defer testNamespacesMtx.Unlock()
-	delete(testNamespaces, namespace)
-}
-
 func newTestNamespace(namespace string, item interface{}) {
 	testNamespacesMtx.Lock()
 	defer testNamespacesMtx.Unlock()
@@ -213,6 +259,12 @@ func renameTestNamespace(namespace string, dstName string) {
 		return
 	}
 	testNamespaces[strings.ToLower(dstName)] = ns
+	delete(testNamespaces, namespace)
+}
+
+func removeTestNamespace(namespace string) {
+	testNamespacesMtx.Lock()
+	defer testNamespacesMtx.Unlock()
 	delete(testNamespaces, namespace)
 }
 
@@ -493,17 +545,17 @@ func (qt *queryTest) newQueryTestEntry(index string, condition int, keys interfa
 	return qte
 }
 
+func (qt *queryTest) fieldSubQueryToString(index string, condition int, subQuery *queryTest) string {
+	qte := qt.newQueryTestEntry(index, condition, "("+subQuery.toString()+")")
+	return qte.toString()
+}
+
 func (qt *queryTest) where(index string, condition int, keys interface{}) *queryTest {
 	qte := qt.newQueryTestEntry(index, condition, keys)
 	qt.entries.addEntry(qte, qt.nextOp)
 	qt.nextOp = opAND
 
 	return qt
-}
-
-func (qt *queryTest) fieldSubQueryToString(index string, condition int, subQuery *queryTest) string {
-	qte := qt.newQueryTestEntry(index, condition, "("+subQuery.toString()+")")
-	return qte.toString()
 }
 
 func (qt *queryTest) whereFieldQuery(index string, condition int, subQuery *queryTest) *queryTest {
@@ -560,6 +612,11 @@ func (qt *queryTest) WhereUuid(index string, condition int, keys ...string) *que
 
 func (qt *queryTest) WhereKnn(index string, vec []float32, params reindexer.KnnSearchParam) *queryTest {
 	qt.q.WhereKnn(index, vec, params)
+	return qt.where(index, bindings.QueryKnnCondition, nil)
+}
+
+func (qt *queryTest) WhereKnnString(index string, val string, params reindexer.KnnSearchParam) *queryTest {
+	qt.q.WhereKnnString(index, val, params)
 	return qt.where(index, bindings.QueryKnnCondition, nil)
 }
 
@@ -631,6 +688,36 @@ func (qt *queryTest) DWithin(index string, point reindexer.Point, distance float
 	return qt
 }
 
+func (qt *queryTest) WhereInt(index string, condition int, keys ...int) *queryTest {
+	return qt.Where(index, condition, keys)
+}
+
+func (qt *queryTest) WhereInt32(index string, condition int, keys ...int32) *queryTest {
+	return qt.Where(index, condition, keys)
+}
+
+func (qt *queryTest) WhereInt64(index string, condition int, keys ...int64) *queryTest {
+	return qt.Where(index, condition, keys)
+}
+
+func (qt *queryTest) WhereString(index string, condition int, keys ...string) *queryTest {
+	return qt.Where(index, condition, keys)
+}
+
+func (q *queryTest) WhereComposite(index string, condition int, keys ...interface{}) *queryTest {
+	return q.Where(index, condition, keys)
+}
+
+// WhereString - Add where condition to DB query with bool args
+func (q *queryTest) WhereBool(index string, condition int, keys ...bool) *queryTest {
+	return q.Where(index, condition, keys)
+}
+
+// WhereDouble - Add where condition to DB query with float args
+func (q *queryTest) WhereDouble(index string, condition int, keys ...float64) *queryTest {
+	return q.Where(index, condition, keys)
+}
+
 func (qt *queryTestEntryTree) addTree(op int) {
 	if qt.activeChild > 0 {
 		qt.data[qt.activeChild-1].data.(*queryTestEntryTree).addTree(op)
@@ -648,6 +735,13 @@ func (qt *queryTest) OpenBracket() *queryTest {
 	return qt
 }
 
+// CloseBracket - Close bracket for where condition to DB query
+func (qt *queryTest) CloseBracket() *queryTest {
+	qt.q.CloseBracket()
+	qt.entries.exitTree()
+	return qt
+}
+
 func (qt *queryTestEntryTree) exitTree() {
 	if qt.activeChild <= 0 {
 		panic(fmt.Errorf("No open bracket"))
@@ -659,13 +753,6 @@ func (qt *queryTestEntryTree) exitTree() {
 			qt.activeChild = 0
 		}
 	}
-}
-
-// CloseBracket - Close bracket for where condition to DB query
-func (qt *queryTest) CloseBracket() *queryTest {
-	qt.q.CloseBracket()
-	qt.entries.exitTree()
-	return qt
 }
 
 func (qt *queryTest) EqualPosition(fields ...string) *queryTest {
@@ -950,21 +1037,6 @@ func (qt *queryTest) ExecToJsonCtx(ctx context.Context, jsonRoots ...string) *re
 	return qt.q.ExecToJsonCtx(ctx, jsonRoots...)
 }
 
-var testNamespaces = make(map[string]*testNamespace, 100)
-var testNamespacesMtx sync.RWMutex
-
-const (
-	containField = iota
-	containValue
-)
-
-type sortExprValue struct {
-	contain   int
-	field     [][]int
-	fieldName string
-	value     float64
-}
-
 func convertToDouble(v reflect.Value, sortStr string, fieldName string, item interface{}) float64 {
 	switch v.Type().Kind() {
 	case reflect.String:
@@ -1004,25 +1076,6 @@ func (value *sortExprValue) getValue(item interface{}, sortStr string) float64 {
 	return convertToDouble(vals[0], sortStr, value.fieldName, item)
 }
 
-const (
-	opPlus = iota
-	opMinus
-	opMult
-	opDiv
-)
-
-type sortExprEntry struct {
-	negative  bool
-	operation int
-	isSubExpr bool
-	value     *sortExprValue
-	subExpr   []*sortExprEntry
-}
-
-func justIndex(sortExpr []*sortExprEntry) bool {
-	return len(sortExpr) == 1 && !sortExpr[0].isSubExpr && sortExpr[0].value.contain == containField && sortExpr[0].operation == opPlus && !sortExpr[0].negative
-}
-
 func skipSpaces(sortStr string, pos int) int {
 	for pos < len(sortStr) {
 		if r, w := utf8.DecodeRuneInString(sortStr[pos:]); unicode.IsSpace(r) {
@@ -1032,6 +1085,10 @@ func skipSpaces(sortStr string, pos int) int {
 		}
 	}
 	return pos
+}
+
+func justIndex(sortExpr []*sortExprEntry) bool {
+	return len(sortExpr) == 1 && !sortExpr[0].isSubExpr && sortExpr[0].value.contain == containField && sortExpr[0].operation == opPlus && !sortExpr[0].negative
 }
 
 func getSortValueOrIndex(sortStr string, pos int) (string, int) {
@@ -1337,44 +1394,10 @@ func (qt *queryTest) Verify(t *testing.T, items []interface{}, aggResults []rein
 	}
 }
 
-func (qt *queryTest) WhereInt(index string, condition int, keys ...int) *queryTest {
-	return qt.Where(index, condition, keys)
-}
-
-func (qt *queryTest) WhereInt32(index string, condition int, keys ...int32) *queryTest {
-	return qt.Where(index, condition, keys)
-}
-
-func (qt *queryTest) WhereInt64(index string, condition int, keys ...int64) *queryTest {
-	return qt.Where(index, condition, keys)
-}
-
-func (qt *queryTest) WhereString(index string, condition int, keys ...string) *queryTest {
-	return qt.Where(index, condition, keys)
-}
-
-func (q *queryTest) WhereComposite(index string, condition int, keys ...interface{}) *queryTest {
-	return q.Where(index, condition, keys)
-}
-
 // WhereString - Add where condition to DB query with string args
 func (qt *queryTest) Match(index string, keys ...string) *queryTest {
 	qt.q.Match(index, keys...)
 	return qt
-}
-
-// WhereString - Add where condition to DB query with bool args
-func (q *queryTest) WhereBool(index string, condition int, keys ...bool) *queryTest {
-
-	return q.Where(index, condition, keys)
-
-}
-
-// WhereDouble - Add where condition to DB query with float args
-func (q *queryTest) WhereDouble(index string, condition int, keys ...float64) *queryTest {
-
-	return q.Where(index, condition, keys)
-
 }
 
 // Get value of items's reindex field by name
@@ -1392,6 +1415,72 @@ func getValues(item interface{}, fieldIdx [][]int) (ret []reflect.Value) {
 		}
 	}
 	return ret
+}
+
+func (qt *queryTestEntryTree) getEntryByIndexName(index string) *queryTestEntry {
+	for _, d := range qt.data {
+		switch d.dataType {
+		case oneFieldEntry:
+			if entry := d.data.(*queryTestEntry); entry.index == index {
+				return entry
+			}
+		case twoFieldsEntry, alwaysTrue, alwaysFalse:
+			return nil
+		case bracket:
+			t := d.data.(*queryTestEntryTree)
+			if found := t.getEntryByIndexName(index); found != nil {
+				return found
+			}
+		}
+	}
+	return nil
+}
+
+func getPK(ns *testNamespace, val reflect.Value) string {
+
+	buf := &bytes.Buffer{}
+
+	for _, idx := range ns.pkIdx {
+		v := val.FieldByIndex(idx)
+
+		switch v.Kind() {
+		case reflect.Bool:
+			if v.Bool() {
+				buf.WriteByte('1')
+			} else {
+				buf.WriteByte('0')
+			}
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			buf.WriteString(strconv.Itoa(int(v.Int())))
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			buf.WriteString(strconv.Itoa(int(v.Uint())))
+		case reflect.Float64:
+			buf.WriteString(strconv.FormatFloat(v.Float(), 'f', 6, 64))
+		case reflect.Float32:
+			buf.WriteString(strconv.FormatFloat(v.Float(), 'f', 6, 32))
+		case reflect.String:
+			buf.WriteString(v.String())
+		default:
+			panic(fmt.Errorf("invalid pk field type: '%s'", v.Kind().String()))
+		}
+		buf.WriteByte('#')
+	}
+
+	return buf.String()
+}
+
+func getValuesForIndex(qt *queryTest, item interface{}, index string) []reflect.Value {
+	fields, _ := qt.ns.getField(index)
+	return getValues(item, fields)
+}
+
+func getEqualPositionMinArrSize(qt *queryTest, ep []string, item interface{}) int {
+	arrLen := math.MaxUint32
+	for _, index := range ep {
+		vals := getValuesForIndex(qt, item, index)
+		arrLen = min(len(vals), arrLen)
+	}
+	return arrLen
 }
 
 func compareValues(t *testing.T, v1 reflect.Value, v2 reflect.Value) int {
@@ -1535,18 +1624,81 @@ func likeValues(v1 reflect.Value, v2 reflect.Value) bool {
 	return match
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+func (qt *queryTest) CachedTotal(totalNames ...string) *queryTest {
+	qt.q.CachedTotal(totalNames...)
+	return qt
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
+func (qt *queryTest) SetContext(ctx interface{}) *queryTest {
+	qt.q.SetContext(ctx)
+	return qt
+}
+
+func prepareStruct(ns *testNamespace, t reflect.Type, basePath []int, reindexBasePath string) {
+	if reindexBasePath != "" {
+		reindexBasePath += "."
 	}
-	return b
+
+	indexes := make(map[string][]int)
+	ns.jsonPaths = make(map[string]string)
+
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		tags := strings.SplitN(field.Tag.Get("reindex"), ",", 3)
+		jsonPath := strings.Split(field.Tag.Get("json"), ",")[0]
+
+		if len(jsonPath) == 0 && !field.Anonymous {
+			jsonPath = field.Name
+		}
+
+		idxName := tags[0]
+		if idxName == "-" {
+			continue
+		}
+
+		nonIndexField := bool(len(idxName) == 0 && len(jsonPath) > 0)
+
+		reindexPath := reindexBasePath + idxName
+		path := append(basePath, i)
+		indexes[idxName] = path
+		ns.jsonPaths[idxName] = jsonPath
+
+		tk := field.Type.Kind()
+		isPk := len(tags) > 2 && strings.Index(tags[2], "pk") >= 0
+
+		if tk == reflect.Struct {
+			if len(idxName) > 0 && len(tags) > 2 && strings.Index(tags[2], "composite") >= 0 {
+				subIdxs := strings.Split(idxName, "+")
+				ns.fieldsIdx[reindexPath] = make([][]int, len(subIdxs))
+				for j, subIdx := range subIdxs {
+					ns.fieldsIdx[reindexPath][j] = indexes[subIdx]
+					if isPk {
+						ns.pkIdx = append(ns.pkIdx, indexes[subIdx])
+					}
+				}
+			} else {
+				prepareStruct(ns, field.Type, path, reindexPath)
+			}
+			continue
+		}
+		if (tk == reflect.Array || tk == reflect.Slice) && field.Type.Elem().Kind() == reflect.Struct {
+			//todo no panic just make support!
+			//panic(fmt.Errorf("TestQuery does not supported indexed struct arrays (struct=%s, field=%s)\n", t.Name(), field.Name))
+		}
+
+		if isPk {
+			ns.pkIdx = append(ns.pkIdx, path)
+		}
+
+		if (len(idxName)) > 0 || nonIndexField {
+			p := map[bool]string{true: jsonPath, false: reindexPath}
+			if _, ok := ns.getField(p[nonIndexField]); !ok {
+				ns.fieldsIdx[p[nonIndexField]] = make([][]int, 0, 5)
+			}
+			ns.fieldsIdx[p[nonIndexField]] = append(ns.fieldsIdx[p[nonIndexField]], path)
+		}
+
+	}
 }
 
 func checkResult(cmpRes int, cond int) bool {
@@ -1566,47 +1718,12 @@ func checkResult(cmpRes int, cond int) bool {
 	return result
 }
 
-func (qt *queryTestEntryTree) getEntryByIndexName(index string) *queryTestEntry {
-	for _, d := range qt.data {
-		switch d.dataType {
-		case oneFieldEntry:
-			if entry := d.data.(*queryTestEntry); entry.index == index {
-				return entry
-			}
-		case twoFieldsEntry, alwaysTrue, alwaysFalse:
-			return nil
-		case bracket:
-			t := d.data.(*queryTestEntryTree)
-			if found := t.getEntryByIndexName(index); found != nil {
-				return found
-			}
-		}
+func checkResultItem(t *testing.T, it *reindexer.Iterator, item interface{}) {
+	defer it.Close()
+	require.Equal(t, 1, it.Count())
+	for it.Next() {
+		require.EqualValues(t, item, it.Object())
 	}
-	return nil
-}
-
-func (qt *queryTest) CachedTotal(totalNames ...string) *queryTest {
-	qt.q.CachedTotal(totalNames...)
-	return qt
-}
-
-func (qt *queryTest) SetContext(ctx interface{}) *queryTest {
-	qt.q.SetContext(ctx)
-	return qt
-}
-
-func getValuesForIndex(qt *queryTest, item interface{}, index string) []reflect.Value {
-	fields, _ := qt.ns.getField(index)
-	return getValues(item, fields)
-}
-
-func getEqualPositionMinArrSize(qt *queryTest, ep []string, item interface{}) int {
-	arrLen := math.MaxUint32
-	for _, index := range ep {
-		vals := getValuesForIndex(qt, item, index)
-		arrLen = min(len(vals), arrLen)
-	}
-	return arrLen
 }
 
 func checkEqualPosition(t *testing.T, item interface{}, qt *queryTest) bool {
@@ -1911,104 +2028,4 @@ func (qt *queryTestEntryTree) verifyConditions(t *testing.T, ns *testNamespace, 
 		}
 	}
 	return found
-}
-
-func prepareStruct(ns *testNamespace, t reflect.Type, basePath []int, reindexBasePath string) {
-	if reindexBasePath != "" {
-		reindexBasePath += "."
-	}
-
-	indexes := make(map[string][]int)
-	ns.jsonPaths = make(map[string]string)
-
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		tags := strings.SplitN(field.Tag.Get("reindex"), ",", 3)
-		jsonPath := strings.Split(field.Tag.Get("json"), ",")[0]
-
-		if len(jsonPath) == 0 && !field.Anonymous {
-			jsonPath = field.Name
-		}
-
-		idxName := tags[0]
-		if idxName == "-" {
-			continue
-		}
-
-		nonIndexField := bool(len(idxName) == 0 && len(jsonPath) > 0)
-
-		reindexPath := reindexBasePath + idxName
-		path := append(basePath, i)
-		indexes[idxName] = path
-		ns.jsonPaths[idxName] = jsonPath
-
-		tk := field.Type.Kind()
-		isPk := len(tags) > 2 && strings.Index(tags[2], "pk") >= 0
-
-		if tk == reflect.Struct {
-			if len(idxName) > 0 && len(tags) > 2 && strings.Index(tags[2], "composite") >= 0 {
-				subIdxs := strings.Split(idxName, "+")
-				ns.fieldsIdx[reindexPath] = make([][]int, len(subIdxs))
-				for j, subIdx := range subIdxs {
-					ns.fieldsIdx[reindexPath][j] = indexes[subIdx]
-					if isPk {
-						ns.pkIdx = append(ns.pkIdx, indexes[subIdx])
-					}
-				}
-			} else {
-				prepareStruct(ns, field.Type, path, reindexPath)
-			}
-			continue
-		}
-		if (tk == reflect.Array || tk == reflect.Slice) && field.Type.Elem().Kind() == reflect.Struct {
-			//todo no panic just make support!
-			//panic(fmt.Errorf("TestQuery does not supported indexed struct arrays (struct=%s, field=%s)\n", t.Name(), field.Name))
-		}
-
-		if isPk {
-			ns.pkIdx = append(ns.pkIdx, path)
-		}
-
-		if (len(idxName)) > 0 || nonIndexField {
-			p := map[bool]string{true: jsonPath, false: reindexPath}
-			if _, ok := ns.getField(p[nonIndexField]); !ok {
-				ns.fieldsIdx[p[nonIndexField]] = make([][]int, 0, 5)
-			}
-			ns.fieldsIdx[p[nonIndexField]] = append(ns.fieldsIdx[p[nonIndexField]], path)
-		}
-
-	}
-}
-
-func getPK(ns *testNamespace, val reflect.Value) string {
-
-	buf := &bytes.Buffer{}
-
-	for _, idx := range ns.pkIdx {
-		v := val.FieldByIndex(idx)
-
-		switch v.Kind() {
-		case reflect.Bool:
-			if v.Bool() {
-				buf.WriteByte('1')
-			} else {
-				buf.WriteByte('0')
-			}
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			buf.WriteString(strconv.Itoa(int(v.Int())))
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			buf.WriteString(strconv.Itoa(int(v.Uint())))
-		case reflect.Float64:
-			buf.WriteString(strconv.FormatFloat(v.Float(), 'f', 6, 64))
-		case reflect.Float32:
-			buf.WriteString(strconv.FormatFloat(v.Float(), 'f', 6, 32))
-		case reflect.String:
-			buf.WriteString(v.String())
-		default:
-			panic(fmt.Errorf("invalid pk field type: '%s'", v.Kind().String()))
-		}
-		buf.WriteByte('#')
-	}
-
-	return buf.String()
 }

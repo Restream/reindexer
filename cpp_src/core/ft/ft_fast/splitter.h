@@ -54,11 +54,14 @@ public:
 
 class FastTextSplitter final : public ISplitter {
 public:
-	FastTextSplitter(const std::string& extraWordSymbols) : extraWordSymbols_(extraWordSymbols) {}
-	std::shared_ptr<ISplitterTask> CreateTask() const override;
-	std::string_view GetExtraWordsSymbols() const noexcept { return extraWordSymbols_; }
+	FastTextSplitter(const std::string& extraWordSymbols, SymbolTypeMask removeDiacriticsMask)
+		: extraWordSymbols_(extraWordSymbols), removeDiacriticsMask_(removeDiacriticsMask) {}
+	[[nodiscard]] std::shared_ptr<ISplitterTask> CreateTask() const override;
+	[[nodiscard]] std::string_view GetExtraWordsSymbols() const noexcept { return extraWordSymbols_; }
+	[[nodiscard]] SymbolTypeMask GetRemoveDiacriticsMask() const noexcept { return removeDiacriticsMask_; }
 
 private:
 	const std::string extraWordSymbols_;
+	SymbolTypeMask removeDiacriticsMask_ = 0;
 };
 }  // namespace reindexer

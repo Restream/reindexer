@@ -126,6 +126,33 @@ func skipTag(rdser *Serializer, tagType int16) {
 	}
 }
 
+func ctagTypeName(tagType int16) string {
+	switch tagType {
+	case TAG_VARINT:
+		return "int"
+	case TAG_DOUBLE:
+		return "double"
+	case TAG_STRING:
+		return "string"
+	case TAG_BOOL:
+		return "bool"
+	case TAG_NULL:
+		return "null"
+	case TAG_ARRAY:
+		return "array"
+	case TAG_OBJECT:
+		return "object"
+	case TAG_END:
+		return "end"
+	case TAG_UUID:
+		return "uuid"
+	case TAG_FLOAT:
+		return "float"
+	default:
+		panic(fmt.Errorf("unknown ctag type '%d'", tagType))
+	}
+}
+
 func asInt(rdser *Serializer, tagType int16) int64 {
 	switch tagType {
 	case TAG_BOOL:
@@ -745,7 +772,7 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 				tm, _ := time.Parse(time.RFC3339Nano, str)
 				v.Set(reflect.ValueOf(tm))
 			default:
-				panic(fmt.Errorf("can not convert '%s' to 'string'", v.Type().Kind().String()))
+				panic(fmt.Errorf("can not convert 'string' to '%s'", v.Type().Kind().String()))
 			}
 		default:
 			if k == reflect.Slice {
@@ -768,6 +795,8 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 				v.Set(reflect.ValueOf(asIface(rdser, ctagType)))
 			case reflect.Bool:
 				v.SetBool(asInt(rdser, ctagType) != 0)
+			default:
+				panic(fmt.Errorf("can not convert '%s' to '%s'", ctagTypeName(ctagType), v.Type().Kind().String()))
 			}
 		}
 	}

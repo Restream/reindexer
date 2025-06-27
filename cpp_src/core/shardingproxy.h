@@ -103,13 +103,6 @@ public:
 	Error SubscribeUpdates(IEventsObserver& observer, EventSubscriberConfig&& cfg);
 	Error UnsubscribeUpdates(IEventsObserver& observer);
 
-	// REINDEX_WITH_V3_FOLLOWERS
-	Error SubscribeUpdates(IUpdatesObserverV3* observer, const UpdatesFilters& filters, SubscriptionOpts opts) {
-		return impl_.SubscribeUpdates(observer, filters, opts);
-	}
-	Error UnsubscribeUpdates(IUpdatesObserverV3* observer) { return impl_.UnsubscribeUpdates(observer); }
-	// REINDEX_WITH_V3_FOLLOWERS
-
 	RX_ALWAYS_INLINE bool IsConnected() const noexcept { return connected_.load(std::memory_order_relaxed); }
 
 private:

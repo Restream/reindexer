@@ -186,7 +186,7 @@ void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext& ctx) {
 	for (auto& keyIt : this->idx_map) {
 		// assert (keyIt.second.size());
 		for (auto id : keyIt.second.Unsorted()) {
-			if (id >= int(ids2Sorts.size()) || ids2Sorts[id] == SortIdUnexists) {
+			if rx_unlikely (id >= int(ids2Sorts.size()) || ids2Sorts[id] == SortIdUnexists) {
 				logFmt(
 					LogError,
 					"Internal error: Index '{}' is broken. Item with key '{}' contains id={}, which is not present in allIds,totalids={}\n",
@@ -200,10 +200,10 @@ void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext& ctx) {
 		}
 	}
 	// fill non-existent indexes
-	for (auto it = ids2Sorts.begin(); it != ids2Sorts.end(); ++it) {
+	for (auto it = ids2Sorts.begin(), beg = ids2Sorts.begin(), end = ids2Sorts.end(); it != end; ++it) {
 		if (*it == SortIdUnfilled) {
 			*it = idx;
-			this->sortOrders_[idx++] = it - ids2Sorts.begin();
+			this->sortOrders_[idx++] = it - beg;
 		}
 	}
 

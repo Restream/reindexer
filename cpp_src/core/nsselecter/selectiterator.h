@@ -2,10 +2,10 @@
 
 #include "core/enums.h"
 #include "core/selectkeyresult.h"
+#include "estl/concepts.h"
 
 namespace reindexer {
 
-enum class IteratorFieldKind { None, NonIndexed, Indexed };
 /// Allows to iterate over a result of selecting
 /// data for one certain key.
 class SelectIterator : public SelectKeyResult {
@@ -24,12 +24,13 @@ public:
 		UnbuiltSortOrdersIndex,
 	};
 
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
-	SelectIterator(SelectKeyResult&& res, bool dist, Str&& n, IteratorFieldKind fKind, ForcedFirst forcedFirst = ForcedFirst_False) noexcept
+	template <concepts::ConvertibleToString Str>
+	SelectIterator(SelectKeyResult&& res, reindexer::IsDistinct dist, Str&& n, int idxNo,
+				   ForcedFirst forcedFirst = ForcedFirst_False) noexcept
 		: SelectKeyResult(std::move(res)),
 		  distinct(dist),
 		  name(std::forward<Str>(n)),
-		  fieldKind(fKind),
+		  indexNo(idxNo),
 		  forcedFirst_(forcedFirst),
 		  type_(Forward) {}
 
@@ -253,10 +254,11 @@ public:
 
 	std::string_view TypeName() const noexcept;
 	std::string Dump() const;
+	reindexer::IsDistinct IsDistinct() const noexcept { return distinct; }
 
-	bool distinct = false;
+	reindexer::IsDistinct distinct = IsDistinct_False;
 	std::string name;
-	IteratorFieldKind fieldKind = IteratorFieldKind::None;
+	int indexNo = IndexValueType::NotSet;
 
 protected:
 	// Iterates to a next item of result

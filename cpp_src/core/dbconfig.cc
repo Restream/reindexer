@@ -134,7 +134,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 				EmbeddersConfigData data;
 				const auto err = data.FromJSON(cacheNode);
 				if (err.ok()) {
-					embeddersData.emplace(toLower(data.cacheTag), std::move(data.configData)); // NOLINT(performance-move-const-arg)
+					embeddersData.emplace(toLower(data.cacheTag), std::move(data.configData));	// NOLINT(performance-move-const-arg)
 				} else {
 					ensureEndsWith(embeddersErrLogString, "\n") += err.whatStr();
 					embeddersHaveErrors = true;
@@ -239,8 +239,7 @@ void DBConfigProvider::unsetHandler(int id) {
 	replicationConfigDataHandlers_.erase(id);
 }
 
-const fast_hash_map<std::string, EmbedderConfigData, hash_str, equal_str, less_str>&
-DBConfigProvider::GetEmbeddersConfig() const {
+const fast_hash_map<std::string, EmbedderConfigData, hash_str, equal_str, less_str>& DBConfigProvider::GetEmbeddersConfig() const {
 	shared_lock<shared_timed_mutex> lk(mtx_);
 	return embeddersData_;
 }
@@ -789,7 +788,7 @@ Error EmbeddersConfigData::FromDefault(std::vector<EmbeddersConfigData>& default
 
 		const auto& cachesNode = configJson["caches"sv];
 		if (cachesNode.empty()) {
-			return {}; // NOTE: optional
+			return {};	// NOTE: optional
 		}
 
 		if (!cachesNode.isArray()) {
@@ -829,7 +828,7 @@ Error EmbeddersConfigData::FromJSON(const gason::JsonNode& root) {
 	auto err = tryReadRequiredJsonValue(&errorString, root, "cache_tag"sv, cacheTag);
 	err = tryReadOptionalJsonValue(&errorString, root, "max_cache_items"sv, configData.maxCacheItems, 0);
 	err = tryReadOptionalJsonValue(&errorString, root, "hit_to_cache"sv, configData.hitToCache, 0);
-	(void)err;  // ignored; Errors will be handled with errorString
+	(void)err;	// ignored; Errors will be handled with errorString
 	if (!errorString.empty()) {
 		return {ErrorCode::errParseJson, "EmbeddersConfigData: JSON parsing error: '{}'", errorString};
 	}

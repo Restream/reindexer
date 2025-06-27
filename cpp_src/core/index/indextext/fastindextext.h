@@ -47,6 +47,9 @@ private:
 	template <typename MergeType>
 	IdSet::Ptr afterSelect(FtCtx& fctx, MergeType&& mergeData, RankSortType, FtMergeStatuses&& statuses, FtUseExternStatuses);
 
+	template <auto(RanksHolder::*rankGetter)>
+	void sortAfterSelect(IdSet& mergedIds, RanksHolder&, RankSortType);
+
 	template <typename VectorType>
 	IdSet::Ptr applyOptimizationAndSelect(DataHolder<VectorType>* d, FtCtx&, FtDSLQuery&& dsl, bool inTransaction, RankSortType,
 										  FtMergeStatuses&& statuses, FtUseExternStatuses, const RdxContext& rdxCtx);

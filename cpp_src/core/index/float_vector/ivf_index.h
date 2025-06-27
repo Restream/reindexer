@@ -4,7 +4,6 @@
 
 #include "faiss/MetricType.h"
 #include "float_vector_index.h"
-#include "tools/ssize_t.h"
 
 namespace faiss {
 
@@ -14,6 +13,8 @@ struct IndexIVFFlat;
 };	// namespace faiss
 
 namespace reindexer {
+
+class IvfKnnRawResult;
 
 class IvfIndex final : public FloatVectorIndex {
 	using Base = FloatVectorIndex;
@@ -40,6 +41,9 @@ private:
 	IvfIndex(const IvfIndex&);
 
 	SelectKeyResult select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&) const override;
+	IvfKnnRawResult selectRawImpl(ConstFloatVectorView, const KnnSearchParams&) const;
+	KnnRawResult selectRaw(ConstFloatVectorView, const KnnSearchParams&) const override;
+
 	Variant upsert(ConstFloatVectorView, IdType id, bool& clearCache) override;
 	[[noreturn]] Variant upsertConcurrent(ConstFloatVectorView, IdType id, bool& clearCache) override;
 
@@ -48,7 +52,7 @@ private:
 
 	static std::unique_ptr<faiss::IndexFlat> newSpace(size_t dimension, VectorMetric);
 	void clearMap() noexcept;
-	constexpr static ssize_t ivfTrainingSize(size_t nCentroids) noexcept { return nCentroids * 39; }
+	constexpr static size_t ivfTrainingSize(size_t nCentroids) noexcept { return nCentroids * 39; }
 	[[nodiscard]] faiss::MetricType faissMetric() const noexcept;
 	void reconstruct(IdType, FloatVector&) const;
 	static void trainIdx(faiss::IndexIVFFlat& idx, const float* vecs, const float* norms, size_t vecsCount);

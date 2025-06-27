@@ -81,18 +81,24 @@ type ExpectedIndexDef struct {
 	FieldType string
 }
 
+const (
+	testNamespaceOpenNs   = "test_namespace_open"
+	testNoNamespaceOpenNs = "test_no_namespace_open"
+)
+
 func TestOpenNs(t *testing.T) {
 	t.Parallel()
 
-	t.Run("open namespase: check indexes creation", func(t *testing.T) {
+	t.Run("open namespace: check indexes creation", func(t *testing.T) {
 		if len(DB.slaveList) > 0 {
 			t.Skip() // This test contains ns open/close and won't work with our replication testing logic
 		}
 
-		const ns = "test_namespace_open"
+		const ns = testNamespaceOpenNs
 		err := DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), TestOpenNamespace{})
 		defer DB.CloseNamespace(ns)
 		require.NoError(t, err)
+
 		desc, err := DB.DescribeNamespace(ns)
 		require.NoError(t, err)
 		actual := make([]ExpectedIndexDef, 0)
@@ -116,7 +122,7 @@ func TestOpenNs(t *testing.T) {
 	})
 
 	t.Run("no open namespace: check indexes are not created", func(t *testing.T) {
-		const ns = "test_no_namespace_open"
+		const ns = testNoNamespaceOpenNs
 
 		err := DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), FailSimple{})
 		assert.ErrorContains(t, err,

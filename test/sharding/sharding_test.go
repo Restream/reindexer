@@ -20,15 +20,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var dsn = flag.String("dsn", "builtin://", "reindex db dsn")
-
-func TestMain(m *testing.M) {
-	flag.Parse()
-	retCode := m.Run()
-	os.Exit(retCode)
-
-}
-
 type TestItemShardingJoined struct {
 	ID int `reindex:"id,,pk" json:"id"`
 }
@@ -40,6 +31,19 @@ type TestItemSharding struct {
 	Timestamp int64                     `reindex:"timestamp,-"`
 	Joined    []*TestItemShardingJoined `reindex:"joined,,joined"`
 	_         struct{}                  `reindex:"id+location,,composite,pk"`
+}
+
+var dsn = flag.String("dsn", "builtin://", "reindex db dsn")
+
+func CreateTestItemSharding(ID int, Location string) TestItemSharding {
+	return TestItemSharding{ID: ID, Data: "data", Location: Location}
+}
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	retCode := m.Run()
+	os.Exit(retCode)
+
 }
 
 func TestShardingIDs(t *testing.T) {
@@ -139,10 +143,6 @@ func TestShardingIDs(t *testing.T) {
 		check()
 	})
 
-}
-
-func CreateTestItemSharding(ID int, Location string) TestItemSharding {
-	return TestItemSharding{ID: ID, Data: "data", Location: Location}
 }
 
 func TestShardingBuiltin(t *testing.T) {

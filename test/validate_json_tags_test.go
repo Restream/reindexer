@@ -12,9 +12,6 @@ import (
 	"github.com/restream/reindexer/v5/cjson"
 )
 
-var nsName = "validate_json_tags"
-var errMessageFormat = "Struct is invalid. JSON tag '%s' duplicate at field '%s' (type: %s)"
-
 type titleType struct {
 	Name string `json:"name"`
 }
@@ -108,19 +105,17 @@ type RecursiveWrapPtr struct {
 	Recursive []*RecursiveTypePtr
 }
 
+const testValidateJsonTagsNs = "validate_json_tags"
+
 var (
+	errMessageFormat = "Struct is invalid. JSON tag '%s' duplicate at field '%s' (type: %s)"
+
 	rootLevelErrMessage                       = fmt.Sprintf(errMessageFormat, "title", "Desc", "string")
 	internalLevelErrMessage                   = fmt.Sprintf(errMessageFormat, "name", "Title.Surname", "string")
 	deepInternalLevelErrMessage               = fmt.Sprintf(errMessageFormat, "name", "Deep.Fail.Title.Surname", "string")
 	deepInternalLevelWithOmitSymbolErrMessage = fmt.Sprintf(errMessageFormat, "name", "DeepInternalLevelFailType.Deep.Fail.Title.Surname", "string")
 	embeddedInternalLevelErrMessage           = fmt.Sprintf(errMessageFormat, "Price", "EmbeddedFail.Price", "int")
 )
-
-func assertErrorMessage(t *testing.T, actual error, expected error) {
-	if fmt.Sprintf("%v", actual) != fmt.Sprintf("%v", expected) {
-		t.Fatalf("Error actual = %v, and Expected = %v.", actual, expected)
-	}
-}
 
 func TestReturnEncoderValidateError(t *testing.T) {
 	enc := cjson.Validator{}
@@ -138,34 +133,25 @@ func TestReturnEncoderValidateError(t *testing.T) {
 	require.NoError(t, enc.Validate(&RecursiveTypePtr{}))
 }
 
-func OpenNamespaceWrapper(ns string, opts *reindexer.NamespaceOptions, s interface{}) (err error) {
-
-	defer func() {
-		if ierr := recover(); ierr != nil {
-			err = ierr.(error)
-			return
-		}
-	}()
-	return DB.OpenNamespace(ns, opts, s)
-}
-
 func TestReturnRegisterNamespaceError(t *testing.T) {
+	const ns = testValidateJsonTagsNs
+
 	NsOptions := reindexer.DefaultNamespaceOptions()
-	assert.Equal(t, fmt.Errorf(rootLevelErrMessage), OpenNamespaceWrapper(nsName, NsOptions, RootLevelFailType{}))
-	assert.Equal(t, fmt.Errorf(internalLevelErrMessage), OpenNamespaceWrapper(nsName, NsOptions, InternalLevelFailType{}))
-	assert.Equal(t, fmt.Errorf(deepInternalLevelErrMessage), OpenNamespaceWrapper(nsName, NsOptions, DeepInternalLevelFailType{}))
-	require.NoError(t, OpenNamespaceWrapper(nsName, NsOptions, DBItemType{}))
-	DB.CloseNamespace(nsName)
-	require.NoError(t, OpenNamespaceWrapper(nsName, NsOptions, ServiceType{}))
-	DB.CloseNamespace(nsName)
-	require.NoError(t, OpenNamespaceWrapper(nsName, NsOptions, ElementType{}))
-	DB.CloseNamespace(nsName)
-	assert.Equal(t, fmt.Errorf(deepInternalLevelWithOmitSymbolErrMessage), OpenNamespaceWrapper(nsName, NsOptions, DBItemFailType{}))
-	assert.Equal(t, fmt.Errorf(embeddedInternalLevelErrMessage), OpenNamespaceWrapper(nsName, NsOptions, EmbeddedFailType{}))
-	require.NoError(t, OpenNamespaceWrapper(nsName, NsOptions, EmbeddedSuccessType{}))
-	DB.CloseNamespace(nsName)
-	require.NoError(t, OpenNamespaceWrapper(nsName, NsOptions, RecursiveType{}))
-	DB.CloseNamespace(nsName)
-	require.NoError(t, OpenNamespaceWrapper(nsName, NsOptions, &RecursiveTypePtr{}))
-	DB.CloseNamespace(nsName)
+	assert.Equal(t, fmt.Errorf(rootLevelErrMessage), OpenNamespaceWrapper(ns, NsOptions, RootLevelFailType{}))
+	assert.Equal(t, fmt.Errorf(internalLevelErrMessage), OpenNamespaceWrapper(ns, NsOptions, InternalLevelFailType{}))
+	assert.Equal(t, fmt.Errorf(deepInternalLevelErrMessage), OpenNamespaceWrapper(ns, NsOptions, DeepInternalLevelFailType{}))
+	require.NoError(t, OpenNamespaceWrapper(ns, NsOptions, DBItemType{}))
+	DB.CloseNamespace(ns)
+	require.NoError(t, OpenNamespaceWrapper(ns, NsOptions, ServiceType{}))
+	DB.CloseNamespace(ns)
+	require.NoError(t, OpenNamespaceWrapper(ns, NsOptions, ElementType{}))
+	DB.CloseNamespace(ns)
+	assert.Equal(t, fmt.Errorf(deepInternalLevelWithOmitSymbolErrMessage), OpenNamespaceWrapper(ns, NsOptions, DBItemFailType{}))
+	assert.Equal(t, fmt.Errorf(embeddedInternalLevelErrMessage), OpenNamespaceWrapper(ns, NsOptions, EmbeddedFailType{}))
+	require.NoError(t, OpenNamespaceWrapper(ns, NsOptions, EmbeddedSuccessType{}))
+	DB.CloseNamespace(ns)
+	require.NoError(t, OpenNamespaceWrapper(ns, NsOptions, RecursiveType{}))
+	DB.CloseNamespace(ns)
+	require.NoError(t, OpenNamespaceWrapper(ns, NsOptions, &RecursiveTypePtr{}))
+	DB.CloseNamespace(ns)
 }

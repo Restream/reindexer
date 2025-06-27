@@ -34,11 +34,21 @@ type TestSortModeCustomItem struct {
 	InsItem string `reindex:"item_custom,hash,collate_custom=А-ЯA-Z0-9"`
 }
 
-var testSortDataNumeric = "test_sort_data_numeric"
-var testSortDataAscii = "test_sort_data_ascii"
-var testSortDataUtf = "test_sort_data_utf8"
-var testSortDataAsciiHash = "test_sort_data_ascii_hash"
-var testSortDataCustom = "test_sort_data_custom"
+const (
+	testSortDataNumericNs   = "test_sort_data_numeric"
+	testSortDataAsciiNs     = "test_sort_data_ascii"
+	testSortDataUtfNs       = "test_sort_data_utf8"
+	testSortDataAsciiHashNs = "test_sort_data_ascii_hash"
+	testSortDataCustomNs    = "test_sort_data_custom"
+)
+
+func init() {
+	tnamespaces[testSortDataNumericNs] = TestSortModeNumericItem{}
+	tnamespaces[testSortDataAsciiNs] = TestSortModeAsciiItem{}
+	tnamespaces[testSortDataUtfNs] = TestSortModeUtfItem{}
+	tnamespaces[testSortDataAsciiHashNs] = TestSortModeAsciiItemHash{}
+	tnamespaces[testSortDataCustomNs] = TestSortModeCustomItem{}
+}
 
 var testSortModeDataNumeric = []*TestSortModeNumericItem{
 	{1, "-99Apple"},
@@ -132,46 +142,6 @@ var testSortModeDataCustomSorted = []*TestSortModeCustomItem{
 	{17, "3й Петр"},
 }
 
-func init() {
-	tnamespaces[testSortDataNumeric] = TestSortModeNumericItem{}
-	tnamespaces[testSortDataAscii] = TestSortModeAsciiItem{}
-	tnamespaces[testSortDataUtf] = TestSortModeUtfItem{}
-	tnamespaces[testSortDataAsciiHash] = TestSortModeAsciiItemHash{}
-	tnamespaces[testSortDataCustom] = TestSortModeCustomItem{}
-}
-
-func FillTestItemsWithInsensitiveIndex(t *testing.T) {
-	tx := newTestTx(DB, testSortDataNumeric)
-	for _, item := range testSortModeDataNumeric {
-		assert.NoError(t, tx.Insert(item))
-	}
-	assert.Equal(t, tx.MustCommit(), len(testSortModeDataNumeric), "Could not commit testSortModeDataNumeric")
-
-	tx = newTestTx(DB, testSortDataAscii)
-	for _, item := range testSortModeDataAscii {
-		assert.NoError(t, tx.Insert(item))
-	}
-	assert.Equal(t, tx.MustCommit(), len(testSortModeDataAscii), "Could not commit testSortModeDataAscii")
-
-	tx = newTestTx(DB, testSortDataUtf)
-	for _, item := range testSortModeDataUtf {
-		assert.NoError(t, tx.Insert(item))
-	}
-	assert.Equal(t, tx.MustCommit(), len(testSortModeDataUtf), "Could not commit testSortModeDataUtf")
-
-	tx = newTestTx(DB, testSortDataAsciiHash)
-	for _, item := range testSortModeDataAsciiHash {
-		assert.NoError(t, tx.Insert(item))
-	}
-	assert.Equal(t, tx.MustCommit(), len(testSortModeDataAsciiHash), "Could not commit testSortModeDataAsciiHash")
-
-	tx = newTestTx(DB, testSortDataCustom)
-	for _, item := range testSortModeDataCustomSource {
-		assert.NoError(t, tx.Insert(item))
-	}
-	assert.Equal(t, tx.MustCommit(), len(testSortModeDataCustomSource), "Could not commit testSortModeDataCustomSource")
-}
-
 func StrToInt(s string) (v int, hasValue bool) {
 	negative := false
 	if s[0] == '-' {
@@ -200,11 +170,43 @@ func StrToInt(s string) (v int, hasValue bool) {
 	return
 }
 
+func FillTestItemsWithInsensitiveIndex(t *testing.T) {
+	tx := newTestTx(DB, testSortDataNumericNs)
+	for _, item := range testSortModeDataNumeric {
+		assert.NoError(t, tx.Insert(item))
+	}
+	assert.Equal(t, tx.MustCommit(), len(testSortModeDataNumeric), "Could not commit testSortModeDataNumeric")
+
+	tx = newTestTx(DB, testSortDataAsciiNs)
+	for _, item := range testSortModeDataAscii {
+		assert.NoError(t, tx.Insert(item))
+	}
+	assert.Equal(t, tx.MustCommit(), len(testSortModeDataAscii), "Could not commit testSortModeDataAscii")
+
+	tx = newTestTx(DB, testSortDataUtfNs)
+	for _, item := range testSortModeDataUtf {
+		assert.NoError(t, tx.Insert(item))
+	}
+	assert.Equal(t, tx.MustCommit(), len(testSortModeDataUtf), "Could not commit testSortModeDataUtf")
+
+	tx = newTestTx(DB, testSortDataAsciiHashNs)
+	for _, item := range testSortModeDataAsciiHash {
+		assert.NoError(t, tx.Insert(item))
+	}
+	assert.Equal(t, tx.MustCommit(), len(testSortModeDataAsciiHash), "Could not commit testSortModeDataAsciiHash")
+
+	tx = newTestTx(DB, testSortDataCustomNs)
+	for _, item := range testSortModeDataCustomSource {
+		assert.NoError(t, tx.Insert(item))
+	}
+	assert.Equal(t, tx.MustCommit(), len(testSortModeDataCustomSource), "Could not commit testSortModeDataCustomSource")
+}
+
 func TestSortDataIndexMode(t *testing.T) {
 	FillTestItemsWithInsensitiveIndex(t)
 
 	// Numeric
-	results, err := DB.Query(testSortDataNumeric).Sort("item_numeric", false).Exec(t).FetchAll()
+	results, err := DB.Query(testSortDataNumericNs).Sort("item_numeric", false).Exec(t).FetchAll()
 	assert.NoError(t, err)
 
 	// Test: Numeric words are sorted
@@ -220,7 +222,7 @@ func TestSortDataIndexMode(t *testing.T) {
 	}
 
 	// ASCII
-	results, err = DB.Query(testSortDataAscii).Sort("item_ascii", false).Exec(t).FetchAll()
+	results, err = DB.Query(testSortDataAsciiNs).Sort("item_ascii", false).Exec(t).FetchAll()
 	assert.NoError(t, err)
 
 	// Test: ASCII words are sorted
@@ -231,7 +233,7 @@ func TestSortDataIndexMode(t *testing.T) {
 	}
 
 	// UTF8
-	results, err = DB.Query(testSortDataUtf).Sort("item_utf", false).Exec(t).FetchAll()
+	results, err = DB.Query(testSortDataUtfNs).Sort("item_utf", false).Exec(t).FetchAll()
 	assert.NoError(t, err)
 
 	// Test: UTF8 words are sorted
@@ -244,7 +246,7 @@ func TestSortDataIndexMode(t *testing.T) {
 	}
 
 	// Custom
-	results, err = DB.Query(testSortDataCustom).Sort("item_custom", false).Exec(t).FetchAll()
+	results, err = DB.Query(testSortDataCustomNs).Sort("item_custom", false).Exec(t).FetchAll()
 	assert.NoError(t, err)
 
 	// Test: Custom mode words are sorted

@@ -1,5 +1,3 @@
-
-
 <!-- toc -->
 
 - [Creation](#creation)
@@ -16,6 +14,7 @@
 - [Additional action commands](#additional-action-commands)
   * [Rebuilding clusters for IVF index](#rebuilding-clusters-for-ivf-index)
   * [Removing disk cache for ANN indexes](#removing-disk-cache-for-ann-indexes)
+  * [Create embedding for existing documents](#create-embedding-for-existing-documents)
   * [Removing disk cache for embedders](#removing-disk-cache-for-embedders)
 
 <!-- tocstop -->
@@ -36,7 +35,6 @@ Automatic embedding of vector indexes is also supported. It is expected that the
 Its URL is needed, and the basic index fields are specified. Contents of the base fields are passed to the service, and the service returns the calculated vector value.
 
 ### HNSW options
-
 `Hnsw` index is also configured with the following parameters:
 - `m` - https://github.com/nmslib/hnswlib/blob/master/ALGO_PARAMS.md#construction-parameters.
 Optional, range of values is [2, 128], default value is 16.
@@ -47,7 +45,6 @@ The number of insertion threads is specified via `tx_vec_insertion_threads` in n
 Optional, default value is 0.
 
 ### IVF options
-
 For `ivf` index, the number of vectors (called centroids) should be specified, that will be chosen to partition the entire set of vectors into clusters.
 Each vector belongs to the cluster of the centroid closest to itself.
 The higher the `centroids_count`, the fewer vectors each cluster contains, this will speed up the search but will slow down the index building.\
@@ -55,7 +52,6 @@ Required, range of values is [1, 65536].
 It is recommended to take values of the order between $4 * \sqrt{number\: of\: vectors\: in\: the\: index}$ and $16 * \sqrt{number\: of\: vectors\: in\: the\: index}$.
 
 ### Examples
-
 ```go
 // For a vector field, the data type must be array or slice of `float32`.
 type Item struct {
@@ -89,7 +85,6 @@ if err != nil {
 ```
 
 ### Embedding configuration
-
 Reindexer is able to perform automatic remote HTTP API calls to receive embedding for documents' fields or strings in KNN queries conditions. Currently, reindexer's core simply sends fields/conditions content to external user's service and expects to receive embedding results.
 
 Embedding service has to implement this [openapi spec](embedders_api.yaml).
@@ -131,7 +126,7 @@ To configure automatic embedding you should set `config` field in the target vec
 - `name` - Embedder name. Optional. If not set, default generation logic is used, in lower case: <NS_NAME>_<INDEX_NAME>
 - `URL` - Embed service URL. The address of the service where embedding requests will be sent. Required
 - `cache_tag` - Name, used to access the cache. Optional, if not specified, caching is not used
-- `fields` - List of index fields to calculate embedding. Required
+- `fields` - List of index fields to calculate embedding for. Required. Sparse or composite fields are not supported. Don't use fields with precept (may produce incorrect results)
 - `embedding_strategy` - Embedding injection strategy. Optional
   + `always` - Default value, always embed
   + `empty_only` - When the user specified any value for the embedded field (non-empty vector), then automatic embedding is not performed
@@ -154,6 +149,7 @@ Or a batch for several:
 {"data":[["fieldVal00", "field01Val", "field02Val"], ..., ["fieldValN0", "fieldN1Val", "fieldN2Val"]]}
 ```
 
+- Go
 ```go
 embeddingPoolOpts := reindexer.EmbedderConnectionPool{
 	Connections:    20,
@@ -161,12 +157,12 @@ embeddingPoolOpts := reindexer.EmbedderConnectionPool{
 }
 upsertEmbedderOpts := reindexer.UpsertEmbedder{
 	Name:                   "UpsertEmbedder",
-	URL:                    "http://127.0.0.1:7777/embedder",
+	URL:                    "http://127.0.0.1:9088/embedder",
 	Fields:                 []string{"strIdxField1", "strIdxField2"},
 	EmbeddingStrategy:      "empty_only",
 	EmbedderConnectionPool: embeddingPoolOpts,
 }
-queryEmbedderOpts := DefaultQueryEmbedderConfig("http://127.0.0.1:7777/embedder")
+queryEmbedderOpts := DefaultQueryEmbedderConfig("http://127.0.0.1:9088/embedder")
 embeddingOpts := reindexer.Embedding{
 	UpsertEmbedder: upsertEmbedderOpts,
 	QueryEmbedder: queryEmbedderOpts,
@@ -194,7 +190,6 @@ if err != nil {
 ```
 
 ### Embedding cache configuration
-
 When do embedding, it makes sense to use result caching, which can improve performance. To do this, you need to configure it.
 Setting up embedding caches is done in two places. Firstly, `cache_tag` parameter that was described above.
 `cache_tag` is part of `config` field in the target vector index description. `cache_tag` it's simple name\identifier,
@@ -218,6 +213,10 @@ Secondly, special item in system `#config` namespace, with type `embedders`. Opt
     }
   ]
 }
+```
+- SQL
+```sql
+UPDATE #config set caches=[{"cache_tag":"*","max_cache_items":1000000,"hit_to_cache":1},{"cache_tag":"the jungle book","max_cache_items":2025,"hit_to_cache":3}] where type='embedders'
 ```
 - `cache_tag` - Name, used to access the cache. Required. The special character `*` can be used, in which case the settings apply to all configured embedders with not empty `cache_tag`.
 Provided there is no specialization. The specialization is determined by the match of the `cache_tag` values in this configuration and for the embedder (like `the jungle book`).
@@ -294,6 +293,15 @@ It is not possible to use multiple `KNN` filters in a query, and it is impossibl
 
 Parameters set for `KNN`-query depends on the specific index type. The only required parameter for `KNN` is `k` - the maximum number of documents returned from the index for subsequent filtering.
 
+> #### Range search
+> In addition to the parameter `k`, the query results can also be filtered by a `rank`-value using the parameter, wich called `radius`. It's named so because, under the `L2`-metric, it restricts vectors from query result to a sphere of the specified radius.
+>
+> *Note: To avoid confusion, for performance optimization, the ranks of vectors in the query result are actually squared distances to the query vector. Thus, while the parameter is called `radius`, the passed value is interpreted as the squared distance.*
+>
+> - For the `L2`-metric, vectors are discarded if their ranks are greater than the `radius`-parameter value.
+> - For `cosine` and `inner product` metrics, the logic is reversed: vectors with rank-values less than the threshold are discarded. The `radius`-parameter can also take negative values for these metrics.
+> Both parameters (`k` and `radius`) can be specified together, or only one of them may be used.
+
 When searching by `hnsw` index, you can additionally specify the `ef` parameter.
 Increasing this parameter allows you to get a higher quality result (recall rate), but at the same time slows down the search.
 See description [here](https://github.com/nmslib/hnswlib/blob/master/ALGO_PARAMS.md#search-parameters).
@@ -306,21 +314,22 @@ Optional, should be greater than 0, default value is 1.
 - SQL\
 KNN search condition is written as a function `KNN`, which takes the vector field as its first argument, the desired vector as its second argument, and `k`, `ef`, and `nprobe` as named arguments at the end:
 ```sql
-SELECT * FROM test_ns WHERE KNN(vec_bf, [2.4, 3.5, ...], k=100)
-SELECT * FROM test_ns WHERE KNN(vec_hnsw, [2.4, 3.5, ...], k=100, ef=200)
+SELECT * FROM test_ns WHERE KNN(vec_bf, [2.4, 3.5, ...], k=100, radius=1.23)
+SELECT * FROM test_ns WHERE KNN(vec_hnsw, [2.4, 3.5, ...], k=100, radius=-1.23, ef=200)
 SELECT * FROM test_ns WHERE KNN(vec_ivf, [2.4, 3.5, ...], k=100, nprobe=10)
 ```
 - Go\
 The `knn` query parameters are passed in the `reindexer.BaseKnnSearchParam` structure, or in specific structures for each index type: `reindexer.IndexBFSearchParam`, `reindexer.IndexHnswSearchParam` or `reindexer.IndexIvfSearchParam`.
 There are factory methods for constructing them:
 ```go
-func NewBaseKnnSearchParam(k int) (*BaseKnnSearchParam, error)
 func NewIndexBFSearchParam(baseParam *BaseKnnSearchParam) (*IndexBFSearchParam, error)
 func NewIndexHnswSearchParam(ef int, baseParam *BaseKnnSearchParam) (*IndexHnswSearchParam, error)
 func NewIndexIvfSearchParam(nprobe int, baseParam *BaseKnnSearchParam) (*IndexIvfSearchParam, error)
 ```
 ```go
-knnBaseSearchParams, err := reindexer.NewBaseKnnSearchParam(4291)
+knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(4291)
+// knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(4291).SetRadius(31.2)
+// knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetRadius(31.2)
 if err != nil {
 	panic(err)
 }
@@ -341,7 +350,6 @@ db.Query("test_ns").WhereKnn("vec_ivf", []float32{2.4, 3.5, ...}, ivfSearchParam
 ```
 
 ## KNN search with auto-embedding
-
 KNN search with automatic embedding works much like simple KNN search.
 With one exception, it expects a string instead of a vector. It then sends that string to the embedding service, gets back a calculated vector.
 And that vector is then used as the actual value for filtering the database.
@@ -356,7 +364,7 @@ SELECT * FROM test_ns WHERE KNN(vec_ivf, '<text to embed calculate>', k=100, npr
 ```
 - Go
 ```go
-knnBaseSearchParams, err := reindexer.NewBaseKnnSearchParam(4291)
+knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(4291)
 if err != nil {
     panic(err)
 }
@@ -375,6 +383,24 @@ if err != nil {
 }
 db.Query("test_ns").WhereKnnString("vec_ivf", "<text to embed calculate>", ivfSearchParams)
 ```
+-HTTP
+```http request
+curl --location --request POST 'http://127.0.0.1:9088/api/v1/db/vectors_db/query' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+  "namespace": "test_ns",
+  "type": "select",
+  "filters": [
+    {
+      "op": "and",
+      "cond": "knn",
+      "field": "vec_bf",
+      "value": "<text to embed calculate>",
+      "params": {"k": 100}
+    }
+  ],
+}'
+```
 
 ## Rank
 By default, the results of queries with KNN are sorted by `rank`, that is equal to requested metric values.
@@ -386,7 +412,7 @@ When it is necessary to get the `rank`-value of each document in the query resul
 SELECT *, RANK() FROM test_ns WHERE KNN(vec_bf, [2.4, 3.5, ...], k=200)
 ```
 ```go
-knnBaseSearchParams, err := reindexer.NewBaseKnnSearchParam(200)
+knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(200)
 if err != nil {
 	panic(err)
 }
@@ -396,17 +422,15 @@ Result:
 ```json
 {"id": 0, "rank()": 1.245}
 ```
-
 `rank` can also be used to sort by expression. Described in detail [here](readme.md/#sort).
 
 ## Query examples
-
 - Simple `KNN` query on `hnsw` index:
 ```sql
 SELECT * FROM test_ns WHERE KNN(vec_hnsw, [2.4, 3.5, ...], k=100, ef=150)
 ```
 ```go
-knnBaseSearchParams, err := reindexer.NewBaseKnnSearchParam(100)
+knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(100)
 if err != nil {
 	panic(err)
 }
@@ -421,7 +445,7 @@ db.Query("test_ns").WhereKnn("vec_hnsw", []float32{2.4, 3.5, ...}, hnswSearchPar
 SELECT *, RANK() FROM test_ns WHERE KNN(vec_bf, [2.4, 3.5, ...], k=100)
 ```
 ```go
-knnBaseSearchParams, err := reindexer.NewBaseKnnSearchParam(100)
+knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(100)
 if err != nil {
 	panic(err)
 }
@@ -434,7 +458,7 @@ db.Query("test_ns").
 SELECT *, vectors() FROM test_ns WHERE KNN(vec_ivf, [2.4, 3.5, ...], k=200, nprobe=32)
 ```
 ```go
-knnBaseSearchParams, err := reindexer.NewBaseKnnSearchParam(200)
+knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(100)
 if err != nil {
 	panic(err)
 }
@@ -451,7 +475,7 @@ db.Query("test_ns").
 SELECT *, VecBF FROM test_ns WHERE id > 5 AND KNN(vec_ivf, [2.4, 3.5, ...], k=300, nprobe=32)
 ```
 ```go
-knnBaseSearchParams, err := reindexer.NewBaseKnnSearchParam(300)
+knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(300)
 if err != nil {
 	panic(err)
 }
@@ -476,7 +500,7 @@ WHERE
 ORDER BY 'rank() * 10 - id' DESC
 ```
 ```go
-knnBaseSearchParams, err := reindexer.NewBaseKnnSearchParam(10000)
+knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(10000)
 if err != nil {
 	panic(err)
 }
@@ -504,32 +528,49 @@ Allows you to select a set of vector instructions used for distance calculation 
 By default, if it is not set, reindexer uses the "best" available for the CPU it is running on, but occasionally `avx512` may be less effective than `avx2`/`avx` in multithread environment.
 
 ## Additional action commands
-
 These commands can be used by inserting them via upsert into the #config namespace.
 
 ### Rebuilding clusters for IVF index
-
 ```json
 {"type":"action","action":{"command":"rebuild_ivf_index", "namespace":"*", "index":"*", "data_part": 0.5}}
 ```
-
 The command can be useful for cases where the composition of vectors in the index has changed significantly and the current centroids do not provide sufficiently high-quality output.
 - `namespace` - the target namespace (`*` - applies the command to all namespaces);
 - `index` - the target index (`*` - applies the command to all suitable indexes in namespace);
 - `data_part` - the portion of the total data in the index that will be used to build new clusters (range [0.0, 1.0]). The more data is used, the more accurate the resulting clusters will be, but the computation time for the centroids will also be longer.
 
 ### Removing disk cache for ANN indexes
-
 ```json
 {"type":"action","action":{"command":"drop_ann_storage_cache", "namespace":"*", "index":"*"}}
 ```
-
 The command can be useful for cases when you need to force the re-creation of the disk cache for ANN indexes, or disable it completely (using it together with the `RX_DISABLE_ANN_CACHE` environment variable).
 - `namespace` - the target namespace (`*` - applies the command to all namespaces);
 - `index` - the target index (`*` - applies the command to all suitable indexes in namespace).
 
-### Removing disk cache for embedders
+### Create embedding for existing documents
+- JSON
+```json
+{"type":"action","action":{"command":"create_embeddings", "namespace":"*", "batch_size":100}}
+```
+- SQL
+```sql
+UPDATE #config set action={ "command": "create_embeddings", "namespace": "*", "batch_size": 100} where type='action'
+```
+- Go
+```go
+err := DB.Upsert("#config", []byte("{\"type\":\"action\",\"action\":{\"command\":\"create_embeddings\", \"namespace\":\"*\", \"batch_size\":100}}"))
+```
+The command can be useful in cases when you need to add embedded values to existing documents after setting up automatic embedding
+or to update existing values when changing the embedder. The update occurs for all embedders in the namespace.
+You need to be careful and pay close attention to the settings of the strategy for updating embedders.
+The 'strict' strategy does not make sense at this stage. If documents contain embedded values, but there are also documents without filled vectors,
+it makes sense to use the 'empty_only' strategy. If you need to replace all values in a field with configured auto-embed,
+then you should use the 'always' strategy. The strategy is an embedder setting and can be set individually ("config": {
+"embedding": { "upsert_embedder": { "embedding_strategy": ...). This action only locally applied
+- `namespace` - the target namespace (`*` - applies the command to all namespaces);
+- `batch_size` - number, how many documents to update in the namespace at a time (batch size in transaction). Optional parameter.
 
+### Removing disk cache for embedders
 - JSON
 ```json
 {"type":"action","action":{"command":"clear_embedders_cache", "cache_tag":"*"}}
@@ -542,6 +583,5 @@ UPDATE #config set action={ "command": "clear_embedders_cache", "cache_tag": "*"
 ```go
 err := DB.Upsert("#config", []byte("{\"type\":\"action\",\"action\":{\"command\":\"clear_embedders_cache\", \"cache_tag\":\"*\"}}"))
 ```
-
 The command can be useful in cases where it is necessary to reset cached content for all or a specific embedder
 - `cache_tag` - the target tag (`*` - applies the command to all matching embedder caches in the namespace).

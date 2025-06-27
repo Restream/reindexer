@@ -17,6 +17,7 @@ class ItemImpl;
 class Schema;
 class TagsMatcher;
 class FieldsFilter;
+class RdxContext;
 
 /// Item is the interface for data manipulating. It holds and control one database document (record)<br>
 /// *Lifetime*: Item is uses Copy-On-Write semantics, and have independent lifetime and state - e.g., acquired from Reindexer Item will
@@ -228,6 +229,10 @@ public:
 	/// @param itemImpl - item
 	/// @return field's ref
 	static FieldRef FieldRefByName(std::string_view name, ItemImpl& itemImpl) noexcept;
+
+	/// Perform embedding for all fields with automatic embedding configured
+	/// @param ctx - context
+	void Embed(const RdxContext& ctx);
 
 private:
 	explicit Item(ItemImpl* impl) : impl_(impl) {}

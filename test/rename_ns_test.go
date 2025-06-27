@@ -22,6 +22,12 @@ type TestItem2 struct {
 	Name string `reindex:"name"`
 }
 
+const (
+	testRenameNs   = "test_rename_namespace"
+	testRenameNsTo = "test_rename_namespace_to"
+	testExistNs    = "test_exist_namespace"
+)
+
 func GetAllDataFromNamespace(t *testing.T, namespace string) (item []interface{}, err error) {
 	q := DB.Query(namespace).Sort("id", false)
 	it := q.Exec(t)
@@ -34,67 +40,62 @@ func TestRenameNamespace(t *testing.T) {
 		t.Skip()
 	}
 
-	const testRenameNamespace = "test_rename_namespace"
-	const testRenameNamespaceTo = "test_rename_namespace_to"
-	const testExistNamespace = "test_exist_namespace"
-
-	err := DB.OpenNamespace(testRenameNamespace, reindexer.DefaultNamespaceOptions(), TestItem1{})
-	assert.NoError(t, err, "Can't open namespace \"%s\"", testRenameNamespace)
+	err := DB.OpenNamespace(testRenameNs, reindexer.DefaultNamespaceOptions(), TestItem1{})
+	assert.NoError(t, err, "Can't open namespace \"%s\"", testRenameNs)
 
 	for index := 0; index < 10; index++ {
-		err = DB.Upsert(testRenameNamespace, TestItem1{index, 2, "nameTest" + strconv.Itoa(index)})
+		err = DB.Upsert(testRenameNs, TestItem1{index, 2, "nameTest" + strconv.Itoa(index)})
 		assert.NoError(t, err, "Can't Upsert data to namespace")
 	}
-	testRNdata, err := GetAllDataFromNamespace(t, testRenameNamespace)
+	testRNdata, err := GetAllDataFromNamespace(t, testRenameNs)
 	assert.NoError(t, err, "Can't get data from namespace")
 
-	err = DB.OpenNamespace(testExistNamespace, reindexer.DefaultNamespaceOptions(), TestItem2{})
-	assert.NoError(t, err, "Can't open namespace \"%s\"", testExistNamespace)
+	err = DB.OpenNamespace(testExistNs, reindexer.DefaultNamespaceOptions(), TestItem2{})
+	assert.NoError(t, err, "Can't open namespace \"%s\"", testExistNs)
 
 	//ok
-	err = DB.RenameNamespace(testRenameNamespace, testRenameNamespaceTo)
-	assert.NoError(t, err, "Can't rename namespace src = \"%s\" dst = \"%s\"", testRenameNamespace, testRenameNamespaceTo)
-	testRNdataTo, err := GetAllDataFromNamespace(t, testRenameNamespaceTo)
+	err = DB.RenameNamespace(testRenameNs, testRenameNsTo)
+	assert.NoError(t, err, "Can't rename namespace src = \"%s\" dst = \"%s\"", testRenameNs, testRenameNsTo)
+	testRNdataTo, err := GetAllDataFromNamespace(t, testRenameNsTo)
 	assert.NoError(t, err, "Can't get data from namespace")
 	assert.Equal(t, testRNdata, testRNdataTo, "Data in tables not equals\n%s\n%s", testRNdata, testRNdataTo)
 
 	// rename to equal name
-	err = DB.RenameNamespace(testRenameNamespaceTo, testRenameNamespaceTo)
-	assert.NoError(t, err, "Can't rename namespace src = \"%s\" dst = \"%s\"", testRenameNamespaceTo, testRenameNamespaceTo)
-	testRNdataTo, err = GetAllDataFromNamespace(t, testRenameNamespaceTo)
+	err = DB.RenameNamespace(testRenameNsTo, testRenameNsTo)
+	assert.NoError(t, err, "Can't rename namespace src = \"%s\" dst = \"%s\"", testRenameNsTo, testRenameNsTo)
+	testRNdataTo, err = GetAllDataFromNamespace(t, testRenameNsTo)
 	assert.NoError(t, err, "Can't get data from namespace")
 	assert.Equal(t, testRNdata, testRNdataTo, "Data in tables not equals\n%s\n%s", testRNdata, testRNdataTo)
 
 	// rename to empty namespace
-	err = DB.RenameNamespace(testRenameNamespaceTo, "")
-	assert.Error(t, err, "Can't rename namespace src = \"%s\" to empty name", testRenameNamespaceTo)
-	testRNdataTo, err = GetAllDataFromNamespace(t, testRenameNamespaceTo)
+	err = DB.RenameNamespace(testRenameNsTo, "")
+	assert.Error(t, err, "Can't rename namespace src = \"%s\" to empty name", testRenameNsTo)
+	testRNdataTo, err = GetAllDataFromNamespace(t, testRenameNsTo)
 	assert.NoError(t, err, "Can't get data from namespace")
 	assert.Equal(t, testRNdata, testRNdataTo, "Data in tables not equals\n%s\n%s", testRNdata, testRNdataTo)
 
 	// rename to system namespace
-	err = DB.RenameNamespace(testRenameNamespaceTo, "#rename_namespace")
-	assert.Error(t, err, "rename to system namespace err src = \"%s\" dst = \"%s\"", testRenameNamespaceTo, "#rename_namespace")
-	testRNdataTo, err = GetAllDataFromNamespace(t, testRenameNamespaceTo)
+	err = DB.RenameNamespace(testRenameNsTo, "#rename_namespace")
+	assert.Error(t, err, "rename to system namespace err src = \"%s\" dst = \"%s\"", testRenameNsTo, "#rename_namespace")
+	testRNdataTo, err = GetAllDataFromNamespace(t, testRenameNsTo)
 	assert.NoError(t, err, "Can't get data from namespace")
 	assert.Equal(t, testRNdata, testRNdataTo, "Data in tables not equals\n%s\n%s", testRNdata, testRNdataTo)
 
 	// add more data to the renamed namespace
 	for index := 10; index < 15; index++ {
 		item := TestItem1{index, 2, "nameTest" + strconv.Itoa(index)}
-		err = DB.Upsert(testRenameNamespaceTo, item)
+		err = DB.Upsert(testRenameNsTo, item)
 		require.NoError(t, err, "Can't Upsert data to namespace")
 		testRNdata = append(testRNdata, &item)
 	}
-	testRNdataTo, err = GetAllDataFromNamespace(t, testRenameNamespaceTo)
+	testRNdataTo, err = GetAllDataFromNamespace(t, testRenameNsTo)
 	assert.NoError(t, err, "Can't get data from namespace")
 	assert.Equal(t, testRNdata, testRNdataTo, "Data in tables not equals\n%s\n%s", testRNdata, testRNdataTo)
 
 	// rename to existing namespace
-	err = DB.RenameNamespace(testRenameNamespaceTo, testExistNamespace)
-	assert.NoError(t, err, "rename to existing namespace err src = \"%s\" dst = \"%s\"", testRenameNamespaceTo, testExistNamespace)
-	testRNdataTo, err = GetAllDataFromNamespace(t, testExistNamespace)
+	err = DB.RenameNamespace(testRenameNsTo, testExistNs)
+	assert.NoError(t, err, "rename to existing namespace err src = \"%s\" dst = \"%s\"", testRenameNsTo, testExistNs)
+	testRNdataTo, err = GetAllDataFromNamespace(t, testExistNs)
 	assert.NoError(t, err, "Can't get data from namespace")
 	assert.Equal(t, testRNdata, testRNdataTo, "Data in tables not equals\n%s\n%s", testRNdata, testRNdataTo)
-
 }

@@ -19,13 +19,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const (
-	ServerTypeStandalone = "standalone"
-	ServerTypeBuiltin    = "builtin"
-)
-
-var httpCl = http.DefaultClient
-
 type TestServer struct {
 	T        *testing.T
 	RpcPort  string
@@ -35,6 +28,13 @@ type TestServer struct {
 	proc     *exec.Cmd
 	SrvType  string
 }
+
+const (
+	ServerTypeStandalone = "standalone"
+	ServerTypeBuiltin    = "builtin"
+)
+
+var httpCl = http.DefaultClient
 
 func (srv *TestServer) GetDSN() string {
 	return fmt.Sprintf("cproto://127.0.0.1:%s/%s", srv.RpcPort, srv.GetDbName())

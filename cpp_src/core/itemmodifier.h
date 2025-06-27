@@ -72,14 +72,14 @@ private:
 					 const NsContext&);
 	void modifyIndexValues(IdType itemId, const FieldData& field, VariantArray& values, Payload& pl);
 
-	void deleteItemFromComposite(IdType itemId);
-	void insertItemIntoComposite(IdType itemId);
+	void deleteItemFromComposite(IdType itemId, auto& indexesCacheCleaner);
+	void insertItemIntoComposite(IdType itemId, auto& indexesCacheCleaner);
 
-	void getEmbeddingData(const Payload& pl, const std::shared_ptr<Embedder>& embedder, std::vector<VariantArray>& data) const;
-	std::vector<std::vector<VariantArray>> getEmbeddersSourceData(const Payload& pl) const;
-	bool skipEmbedder(const std::shared_ptr<Embedder>& embedder) const;
+	void getEmbeddingData(const Payload& pl, const Embedder& embedder, std::vector<VariantArray>& data) const;
+	std::vector<std::pair<int, std::vector<VariantArray>>> getEmbeddersSourceData(const Payload& pl) const;
+	bool skipEmbedder(const Embedder& embedder) const;
 	void updateEmbedding(IdType itemId, const RdxContext& rdxContext, Payload& pl,
-						 const std::vector<std::vector<VariantArray>>& embeddersData);
+						 const std::vector<std::pair<int, std::vector<VariantArray>>>& embeddersData);
 
 	NamespaceImpl& ns_;
 	const std::vector<UpdateEntry>& updateEntries_;

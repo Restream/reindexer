@@ -125,12 +125,7 @@ void RPCServerFake::Start(const std::string& addr, ev::dynamic_loop& loop, Error
 
 	dispatcher_.Middleware(this, &RPCServerFake::CheckAuth);
 
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	listener_ = std::make_unique<Listener<ListenerType::Mixed>>(
-		loop, cproto::ServerConnection::NewFactory(dispatcher_, false, 1024 * 1024 * 1024), nullptr);
-#else	// REINDEX_WITH_V3_FOLLOWERS
 	listener_ = std::make_unique<Listener<ListenerType::Mixed>>(loop, cproto::ServerConnection::NewFactory(dispatcher_, false), nullptr);
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 	listener_->Bind(addr, socket_domain::tcp);
 }
 

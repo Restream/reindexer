@@ -573,10 +573,10 @@ size_t QueryEntries::InjectConditionsFromOnConditions(size_t position, const h_v
 													  const std::vector<std::unique_ptr<Index>>* indexesFrom) {
 	size_t injectedCount = 0;
 	for (size_t i = 0, s = joinEntries.size(); i < s; ++i) {
-		const QueryJoinEntry& jEntry = joinEntries[i];
 		if (i + 1 < s && joinEntries[i + 1].Operation() == OpOr) {
 			continue;
 		}
+		const QueryJoinEntry& jEntry = joinEntries[i];
 		CondType condition = jEntry.Condition();
 		switch (jEntry.Operation()) {
 			case OpAnd:

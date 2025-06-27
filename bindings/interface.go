@@ -96,6 +96,7 @@ type FloatVectorIndexOpts struct {
 	StartSize          int              `json:"start_size,omitempty"`
 	CentroidsCount     int              `json:"centroids_count,omitempty"`
 	MultithreadingMode int              `json:"multithreading,omitempty"`
+	Radius             float32          `json:"radius,omitempty"`
 	EmbeddingConfig    *EmbeddingConfig `json:"embedding,omitempty"`
 }
 

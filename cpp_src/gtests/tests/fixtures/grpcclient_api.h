@@ -240,7 +240,7 @@ public:
 			} else {
 				std::abort();
 			}
-			ASSERT_NO_THROW(pt.FieldByName(kIdField));
+			ASSERT_NO_THROW([[maybe_unused]] auto fldId = pt.FieldByName(kIdField));
 			ASSERT_TRUE(pt.Field(1).Name() == kIdField) << pt.Field(1).Name();
 			ASSERT_TRUE(pt.Field(1).Type().Is<KeyValueType::Int>()) << KeyValueType{pt.Field(1).Type()}.Name();
 			if (nsid == 0) {
@@ -295,7 +295,7 @@ public:
 			}
 		}
 		if (flags->withrank()) {
-			reindexer::RankT rank = rser.GetFloat();
+			const auto rank = rser.GetFloat();
 			if (print) {
 				std::cout << "; rank: " << rank;
 			}

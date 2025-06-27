@@ -180,18 +180,40 @@ TEST_F(ClusterOperationApi, ForceAndWalSync) {
 		ASSERT_NE(leaderId, -1);
 		TestCout() << "Leader id is " << leaderId << std::endl;
 
+		// Save sync stats
+		auto leader = cluster.GetNode(leaderId);
+		auto stats = leader->GetReplicationStats(cluster::kClusterReplStatsType);
+		const auto forceSyncs = stats.forceSyncs.count;
+		const auto walSyncs = stats.walSyncs.count;
+
 		// Fill data and then start node. Repeat until all nodes in the cluster are alive
 		TestCout() << "Fill data 2" << std::endl;
 		cluster.FillData(leaderId, kNsSome, kDataPortion, kDataPortion);
+		bool indexUpdated = false;
 		for (size_t i = (kClusterSize) / 2 + 1; i < kClusterSize; ++i) {
 			TestCout() << "Starting " << i << std::endl;
 			ASSERT_TRUE(cluster.StartServer(i));
+			if (!indexUpdated) {
+				// Check special case for index update in WAL from issue #2136
+				indexUpdated = true;
+				auto err = leader->api.reindexer->UpdateIndex(
+					kNsSome,
+					reindexer::IndexDef{std::string(kIdField), {std::string(kIdField)}, "hash", "int", IndexOpts().PK().NoIndexColumn()});
+				EXPECT_TRUE(err.ok()) << err.what();
+				TestCout() << "Wait sync 2" << std::endl;
+				cluster.WaitSync(kNsSome);
+			}
 			TestCout() << "Fill more" << std::endl;
 			cluster.FillData(leaderId, kNsSome, (i + 2) * kDataPortion, kDataPortion / 2);
 			cluster.FillDataTx(leaderId, kNsSome, (i + 2) * kDataPortion + kDataPortion / 2, kDataPortion / 2);
 		}
-		TestCout() << "Wait sync 2" << std::endl;
+		TestCout() << "Wait sync 3" << std::endl;
 		cluster.WaitSync(kNsSome);
+
+		// Validate sync stats
+		stats = leader->GetReplicationStats(cluster::kClusterReplStatsType);
+		EXPECT_EQ(forceSyncs, stats.forceSyncs.count);	// No new force syncs
+		EXPECT_LT(walSyncs, stats.walSyncs.count);		// Few new wal syncs
 	}));
 
 	loop.run();

@@ -21,6 +21,7 @@ about reindexer server and HTTP API refer to
   - [Memory Consumption](#memory-consumption)
   - [Full text search](#full-text-search)
   - [Vector indexes (ANN/KNN)](#vector-indexes-annknn)
+  - [Hybrid search](#hybrid-search)
   - [Disk Storage](#disk-storage)
   - [Replication](#replication)
   - [Sharding](#sharding)
@@ -143,6 +144,10 @@ Reindexer has internal full text search engine. Full text search usage documenta
 ### Vector indexes (ANN/KNN)
 
 Reindexer has internal k-nearest neighbors search engine. k-nearest neighbors search usage documentation and examples are [here](float_vector.md)
+
+### Hybrid search
+
+Reindexer has internal hybrid full text and k-nearest neighbors search engine. Its usage documentation and examples are [here](hybrid.md)
 
 ### Disk Storage
 
@@ -1358,13 +1363,13 @@ SELECT FACET(name, price ORDER BY "name" ASC, "count" DESC) FROM items
 
 `Distinct(field1,field2,...)`  works as follows
 1. If a single field is specified (Scalar fields, arrays, and composite indexes are supported)
-A namespace row is considered unique if 
-- The scalar is unique 
+A namespace row is considered unique if
+- The scalar is unique
 - One of the array values is unique
 - Composite value `v1+v2+..` is unique
 All unique values (including all array values) are added to the distinct aggregation result
 2. If multiple fields are specified (Scalar fields and arrays are supported. The fields must be all arrays or scalars)
-A table row is considered unique if 
+A table row is considered unique if
 - Scalar `v1+v2+..` is unique
 - Arrays are padded with empty values up to the same length. It turns out to be a rectangular table. Each row of the `v1[i]+v2[i]+...` table is taken, and it checks whether there is such a value in the list of unique values.
  If at least one of these values is unique, then the string is considered unique.
@@ -1883,4 +1888,3 @@ Landing: https://reindexer.io/
 Packages repo: https://repo.reindexer.io/
 
 More documentation (RU): https://reindexer.io/reindexer-docs/
-

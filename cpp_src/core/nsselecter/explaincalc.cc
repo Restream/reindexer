@@ -23,7 +23,7 @@ void ExplainCalc::LogDump(int logLevel) {
 	if (logLevel >= LogTrace) {
 		if (selectors_) {
 			selectors_->VisitForEach(
-				Skip<JoinSelectIterator, SelectIteratorsBracket>{},
+				[](const KnnRawSelectResult&) { throw_as_assert; }, Skip<JoinSelectIterator, SelectIteratorsBracket>{},
 				[this](const SelectIterator& s) {
 					logFmt(LogInfo, "{}: {} idsets, cost {}, matched {}, {}", s.name, s.size(), s.Cost(iters_), s.GetMatchedCount(),
 						   s.Dump());
@@ -80,17 +80,19 @@ constexpr static inline const char* opName(OpType op, bool first = true) {
 	}
 }
 
-constexpr std::string_view fieldKind(IteratorFieldKind fk) {
+constexpr std::string_view fieldKind(int fk) {
 	using namespace std::string_view_literals;
 	switch (fk) {
-		case IteratorFieldKind::NonIndexed:
+		case IndexValueType::SetByJsonPath:
 			return "non-indexed"sv;
-		case IteratorFieldKind::Indexed:
-			return "indexed"sv;
-		case IteratorFieldKind::None:
+		case IndexValueType::NotSet:
 			return ""sv;
 		default:
-			throw Error(errLogic, "Unexpected field type {}", int(fk));
+			if (fk >= 0) {
+				return "indexed"sv;
+			} else {
+				throw Error(errLogic, "Unexpected field type {}", int(fk));
+			}
 	}
 }
 
@@ -319,76 +321,76 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 		if (it != begin) {
 			name << ' ';
 		}
-		it->Visit(
-			[&](const SelectIteratorsBracket&) {
-				auto jsonSel = builder.Object();
-				auto jsonSelArr = jsonSel.Array("selectors"sv);
-				const std::string brName{explainJSON(it.cbegin(), it.cend(), iters, jsonSelArr, jselectors)};
-				jsonSelArr.End();
-				jsonSel.Put("field"sv, opName(it->operation) + brName);
-				name << opName(it->operation, it == begin) << brName;
-			},
-			[&](const SelectIterator& siter) {
-				auto jsonSel = builder.Object();
-				const bool isScanIterator{std::string_view(siter.name) == "-scan"sv};
-				if (!isScanIterator) {
-					jsonSel.Put("keys"sv, siter.size());
-					jsonSel.Put("cost"sv, siter.Cost(iters));
-				} else {
-					jsonSel.Put("items"sv, siter.GetMaxIterations(iters));
-				}
-				jsonSel.Put("field"sv, opName(it->operation) + siter.name);
-				if (siter.fieldKind != IteratorFieldKind::None) {
-					jsonSel.Put("field_type"sv, fieldKind(siter.fieldKind));
-				}
-				jsonSel.Put("matched"sv, siter.GetMatchedCount());
-				jsonSel.Put("method"sv, isScanIterator ? "scan"sv : "index"sv);
-				jsonSel.Put("type"sv, siter.TypeName());
-				name << opName(it->operation, it == begin) << siter.name;
-			},
-			[&](const JoinSelectIterator& jiter) {
-				assertrx_throw(jiter.joinIndex < jselectors->size());
-				const std::string jName{addToJSON(builder, (*jselectors)[jiter.joinIndex], it->operation)};
-				name << opName(it->operation, it == begin) << jName;
-			},
-			Restricted<FieldsComparator, EqualPositionComparator>{}([&](const auto& c) {
-				auto jsonSel = builder.Object();
-				if constexpr (std::is_same_v<decltype(c), EqualPositionComparator>) {
-					jsonSel.Put("comparators"sv, c.FieldsCount());
-				} else {
-					jsonSel.Put("comparators"sv, 1);
-				}
-				jsonSel.Put("field"sv, opName(it->operation) + c.Name());
-				jsonSel.Put("cost"sv, c.Cost(iters));
-				jsonSel.Put("method"sv, "scan"sv);
-				jsonSel.Put("matched"sv, c.GetMatchedCount());
-				jsonSel.Put("type"sv, std::is_same_v<FieldsComparator, decltype(c)> ? "TwoFieldsComparison"sv : "Comparator"sv);
-				name << opName(it->operation, it == begin) << c.Name();
-			}),
-			Restricted<ComparatorNotIndexed,
-					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
-				[&](const auto& c) {
-					auto jsonSel = builder.Object();
-					jsonSel.Put("comparators"sv, 1);
-					jsonSel.Put("field"sv, opName(it->operation) + std::string{c.Name()});
-					jsonSel.Put("cost"sv, c.Cost(iters));
-					jsonSel.Put("method"sv, "scan"sv);
-					jsonSel.Put("matched"sv, c.GetMatchedCount());
-					jsonSel.Put("type"sv, "Comparator"sv);
-					jsonSel.Put("condition"sv, c.ConditionStr());
-					jsonSel.Put("field_type"sv,
-								fieldKind(std::is_same_v<std::decay_t<decltype(c)>, ComparatorNotIndexed> ? IteratorFieldKind::NonIndexed
-																										  : IteratorFieldKind::Indexed));
-					name << opName(it->operation, it == begin) << c.Name();
-				}),
-			[&](const ComparatorDistinctMulti& c) { name << c.Name(); },
-			[&](const AlwaysTrue&) {
-				auto jsonSkipped = builder.Object();
-				jsonSkipped.Put("type"sv, "Skipped"sv);
-				jsonSkipped.Put("description"sv, "always "s + (it->operation == OpNot ? "false" : "true"));
-				name << opName(it->operation == OpNot ? OpAnd : it->operation, it == begin) << "Always"sv
-					 << (it->operation == OpNot ? "False"sv : "True"sv);
-			});
+		it->Visit([](const KnnRawSelectResult&) { throw_as_assert; },
+				  [&](const SelectIteratorsBracket&) {
+					  auto jsonSel = builder.Object();
+					  auto jsonSelArr = jsonSel.Array("selectors"sv);
+					  const std::string brName{explainJSON(it.cbegin(), it.cend(), iters, jsonSelArr, jselectors)};
+					  jsonSelArr.End();
+					  jsonSel.Put("field"sv, opName(it->operation) + brName);
+					  name << opName(it->operation, it == begin) << brName;
+				  },
+				  [&](const SelectIterator& siter) {
+					  auto jsonSel = builder.Object();
+					  const bool isScanIterator{std::string_view(siter.name) == "-scan"sv};
+					  if (!isScanIterator) {
+						  jsonSel.Put("keys"sv, siter.size());
+						  jsonSel.Put("cost"sv, siter.Cost(iters));
+					  } else {
+						  jsonSel.Put("items"sv, siter.GetMaxIterations(iters));
+					  }
+					  jsonSel.Put("field"sv, opName(it->operation) + siter.name);
+					  if (siter.indexNo != IndexValueType::NotSet) {
+						  jsonSel.Put("field_type"sv, fieldKind(siter.indexNo));
+					  }
+					  jsonSel.Put("matched"sv, siter.GetMatchedCount());
+					  jsonSel.Put("method"sv, isScanIterator ? "scan"sv : "index"sv);
+					  jsonSel.Put("type"sv, siter.TypeName());
+					  name << opName(it->operation, it == begin) << siter.name;
+				  },
+				  [&](const JoinSelectIterator& jiter) {
+					  assertrx_throw(jiter.joinIndex < jselectors->size());
+					  const std::string jName{addToJSON(builder, (*jselectors)[jiter.joinIndex], it->operation)};
+					  name << opName(it->operation, it == begin) << jName;
+				  },
+				  [&](const concepts::OneOf<FieldsComparator, EqualPositionComparator> auto& c) {
+					  auto jsonSel = builder.Object();
+					  if constexpr (std::is_same_v<decltype(c), EqualPositionComparator>) {
+						  jsonSel.Put("comparators"sv, c.FieldsCount());
+					  } else {
+						  jsonSel.Put("comparators"sv, 1);
+					  }
+					  jsonSel.Put("field"sv, opName(it->operation) + c.Name());
+					  jsonSel.Put("cost"sv, c.Cost(iters));
+					  jsonSel.Put("method"sv, "scan"sv);
+					  jsonSel.Put("matched"sv, c.GetMatchedCount());
+					  jsonSel.Put("type"sv, std::is_same_v<FieldsComparator, decltype(c)> ? "TwoFieldsComparison"sv : "Comparator"sv);
+					  name << opName(it->operation, it == begin) << c.Name();
+				  },
+				  Restricted<ComparatorNotIndexed,
+							 Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
+					  [&](const auto& c) {
+						  auto jsonSel = builder.Object();
+						  jsonSel.Put("comparators"sv, 1);
+						  jsonSel.Put("field"sv, opName(it->operation) + std::string{c.Name()});
+						  jsonSel.Put("cost"sv, c.Cost(iters));
+						  jsonSel.Put("method"sv, "scan"sv);
+						  jsonSel.Put("matched"sv, c.GetMatchedCount());
+						  jsonSel.Put("type"sv, "Comparator"sv);
+						  jsonSel.Put("condition"sv, c.ConditionStr());
+						  jsonSel.Put("field_type"sv, fieldKind(std::is_same_v<std::decay_t<decltype(c)>, ComparatorNotIndexed>
+																	? IndexValueType::SetByJsonPath
+																	: 0));
+						  name << opName(it->operation, it == begin) << c.Name();
+					  }),
+				  [&](const ComparatorDistinctMulti& c) { name << c.Name(); },
+				  [&](const AlwaysTrue&) {
+					  auto jsonSkipped = builder.Object();
+					  jsonSkipped.Put("type"sv, "Skipped"sv);
+					  jsonSkipped.Put("description"sv, "always "s + (it->operation == OpNot ? "false" : "true"));
+					  name << opName(it->operation == OpNot ? OpAnd : it->operation, it == begin) << "Always"sv
+						   << (it->operation == OpNot ? "False"sv : "True"sv);
+				  });
 	}
 	name << ')';
 	return name.str();

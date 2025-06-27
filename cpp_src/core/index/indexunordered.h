@@ -33,6 +33,7 @@ public:
 							   const RdxContext&) override;
 	void Commit() override;
 	void UpdateSortedIds(const UpdateSortedContext&) override;
+	bool IsSupportSortedIdsBuild() const noexcept override { return true; }
 	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::make_unique<IndexUnordered<Map>>(*this); }
 	IndexMemStat GetMemStat(const RdxContext&) override;
 	size_t Size() const noexcept override final { return idx_map.size(); }
@@ -42,7 +43,6 @@ public:
 	bool HoldsStrings() const noexcept override;
 	void DestroyCache() override { cache_.ResetImpl(); }
 	void ClearCache() override { cache_.Clear(); }
-	void ClearCache(const std::bitset<kMaxIndexes>& s) override { cache_.ClearSorted(s); }
 	void Dump(std::ostream& os, std::string_view step = "  ", std::string_view offset = "") const override { dump(os, step, offset); }
 	void EnableUpdatesCountingMode(bool val) noexcept override { tracker_.enableCountingMode(val); }
 

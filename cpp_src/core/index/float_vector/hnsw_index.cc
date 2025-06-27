@@ -3,6 +3,7 @@
 #include "hnsw_index.h"
 #include "core/query/knn_search_params.h"
 #include "knn_ctx.h"
+#include "knn_raw_result.h"
 #include "tools/logger.h"
 #include "tools/normalize.h"
 
@@ -136,7 +137,7 @@ Variant HnswIndexBase<Map>::upsertConcurrent(ConstFloatVectorView, IdType, bool&
 
 template <>
 Variant HnswIndexBase<hnswlib::HierarchicalNSWMT>::upsertConcurrent(ConstFloatVectorView vect, IdType id, bool& clearCache) {
-	if rx_unlikely(map_->getCurrentElementCount() >= map_->getMaxElements()) {
+	if rx_unlikely (map_->getCurrentElementCount() >= map_->getMaxElements()) {
 		throw Error(errLogic, "Unable to resize '{}' HNSW index during concurrent upsert. Expecting reserve before upsertion", Name());
 	}
 	clearCache = true;
@@ -189,25 +190,32 @@ IndexMemStat HnswIndexBase<Map>::GetMemStat(const RdxContext& ctx) noexcept {
 	return stats;
 }
 
-template <>
-auto HnswIndexBase<hnswlib::BruteforceSearch>::searchKnn(const float* key, const KnnSearchParams& params) const {
-	return map_->searchKnn(key, std::min(params.BruteForce().K(), map_->getCurrentElementCount()));
-}
-
-template <>
-auto HnswIndexBase<hnswlib::HierarchicalNSWMT>::searchKnn(const float* key, const KnnSearchParams& params) const {
-	const auto hnswParams = params.Hnsw();
-	return map_->searchKnn(key, std::min(hnswParams.K(), map_->getCurrentElementCount()), hnswParams.Ef());
-}
-
-template <>
-auto HnswIndexBase<hnswlib::HierarchicalNSWST>::searchKnn(const float* key, const KnnSearchParams& params) const {
-	const auto hnswParams = params.Hnsw();
-	return map_->searchKnn(key, std::min(hnswParams.K(), map_->getCurrentElementCount()), hnswParams.Ef());
+template <template <typename> typename Map>
+template <typename ParamsT>
+HnswKnnRawResult HnswIndexBase<Map>::search(const float* key, const ParamsT& params) const {
+	std::optional<size_t> k = params.K();
+	std::optional<float> radius = params.Radius() ? params.Radius() : Opts().FloatVector().Radius();
+	size_t ef = 0;
+	if constexpr (std::is_same_v<ParamsT, HnswSearchParams>) {
+		ef = params.Ef();
+	}
+	if (radius) {
+		auto res = map_->searchRange(key, metric_ == VectorMetric::L2 ? *radius : -*radius, ef);
+		if (k) {
+			while (res.size() > std::min(*k, map_->getCurrentElementCount())) {
+				res.pop();
+			}
+		}
+		return res;
+	} else {
+		assertrx_dbg(k && *k != 0);
+		// NOLINTNEXTLINE (bugprone-unchecked-optional-access) K cannot be empty if radius is empty
+		return map_->searchKnn(key, std::min(*k, map_->getCurrentElementCount()), ef);
+	}
 }
 
 template <template <typename> typename Map>
-SelectKeyResult HnswIndexBase<Map>::select(ConstFloatVectorView key, const KnnSearchParams& params, KnnCtx& ctx) const {
+HnswKnnRawResult HnswIndexBase<Map>::selectRawImpl(ConstFloatVectorView key, const KnnSearchParams& params) const {
 	h_vector<float, 2048> normalizedStorage;
 	const float* keyData = key.Data();
 	if (metric_ == VectorMetric::Cosine) {
@@ -216,8 +224,19 @@ SelectKeyResult HnswIndexBase<Map>::select(ConstFloatVectorView key, const KnnSe
 		ann::NormalizeCopyVector(key.Data(), int32_t(dims), normalizedStorage.data());
 		keyData = normalizedStorage.data();
 	}
-	auto knnRes = searchKnn(keyData, params);
-	std::vector<RankT> dists;
+	return std::is_same_v<Map<FloatType>, hnswlib::BruteforceSearch<FloatType>> ? search(keyData, params.BruteForce())
+																				: search(keyData, params.Hnsw());
+}
+
+template <template <typename> typename Map>
+KnnRawResult HnswIndexBase<Map>::selectRaw(ConstFloatVectorView key, const KnnSearchParams& params) const {
+	return {selectRawImpl(key, params), metric_};
+}
+
+template <template <typename> typename Map>
+SelectKeyResult HnswIndexBase<Map>::select(ConstFloatVectorView key, const KnnSearchParams& params, KnnCtx& ctx) const {
+	auto knnRes = selectRawImpl(key, params);
+	h_vector<RankT, 128> dists;
 	base_idset idset;
 	if (!knnRes.empty()) {
 		dists.resize(knnRes.size());
@@ -240,12 +259,12 @@ SelectKeyResult HnswIndexBase<Map>::select(ConstFloatVectorView key, const KnnSe
 			const auto& res = knnRes.top();
 			switch (metric_) {
 				case VectorMetric::L2:
-					dists[i] = res.first;
+					dists[i] = RankT{res.first};
 					break;
 				case VectorMetric::InnerProduct:
 				case VectorMetric::Cosine:
 					// IP and cosine metrics are sorted in reverse order in HNSW and has opposite sign
-					dists[i] = -res.first;
+					dists[i] = RankT{-res.first};
 					break;
 			}
 			idset[i] = res.second;

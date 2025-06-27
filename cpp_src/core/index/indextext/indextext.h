@@ -23,7 +23,8 @@ public:
 
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType, SortType, const Index::SelectContext&, const RdxContext&) override final;
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType, const Index::SelectContext&, FtPreselectT&&, const RdxContext&) override;
-	void UpdateSortedIds(const UpdateSortedContext&) noexcept override {}
+	void UpdateSortedIds(const UpdateSortedContext&) noexcept override { assertrx_dbg(!IsSupportSortedIdsBuild()); }
+	bool IsSupportSortedIdsBuild() const noexcept override { return false; }
 	virtual IdSet::Ptr Select(FtCtx&, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&, FtUseExternStatuses,
 							  const RdxContext&) = 0;
 	void SetOpts(const IndexOpts& opts) override;
@@ -45,7 +46,6 @@ public:
 		Base::ClearCache();
 		cache_ft_.Clear();
 	}
-	void ClearCache(const std::bitset<kMaxIndexes>& s) override { Base::ClearCache(s); }
 	void MarkBuilt() noexcept override { assertrx(0); }
 	bool IsFulltext() const noexcept override final { return true; }
 	void ReconfigureCache(const NamespaceCacheConfigData& cacheCfg) override final;

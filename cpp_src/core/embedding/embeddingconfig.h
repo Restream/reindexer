@@ -11,6 +11,7 @@ struct [[nodiscard]] PoolConfig {
 	size_t connect_timeout_ms{300};
 	size_t read_timeout_ms{5'000};
 	size_t write_timeout_ms{5'000};
+	[[nodiscard]] bool operator==(const PoolConfig& other) const noexcept = default;
 };
 
 class [[nodiscard]] CacheTag final {
@@ -24,14 +25,15 @@ public:
 	CacheTag(const CacheTag& other) noexcept : tag_{other.tag_}, hash_{other.hash_} {}
 	CacheTag(CacheTag&& other) noexcept = default;
 	CacheTag& operator=(const CacheTag&) noexcept = delete;
-	CacheTag& operator=(CacheTag&&) noexcept = delete;
+	CacheTag& operator=(CacheTag&&) noexcept = default;
 
 	[[nodiscard]] const std::string& Tag() const& noexcept { return tag_; }
 	[[nodiscard]] auto Tag() const&& = delete;
 	[[nodiscard]] size_t Hash() const noexcept { return hash_; }
+	[[nodiscard]] bool operator==(const CacheTag& other) const noexcept = default;
 
 private:
-	const std::string tag_;
+	std::string tag_;
 	size_t hash_{0};
 };
 struct CacheTagHash {
@@ -48,6 +50,7 @@ struct [[nodiscard]] EmbedderConfig {
 	CacheTag tag;
 	reindexer::h_vector<std::string, 1> fields;
 	enum class Strategy { Always, EmptyOnly, Strict } strategy{Strategy::Always};
+	[[nodiscard]] bool operator==(const EmbedderConfig& other) const noexcept = default;
 };
 
 }  // namespace reindexer

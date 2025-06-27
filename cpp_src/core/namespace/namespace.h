@@ -56,6 +56,10 @@ class Namespace {
 
 				CounterGuardAIR32 cg(ns->cancelCommitCnt_);
 				if constexpr (std::is_same_v<T, Item>) {
+					if (ctx.GetOriginLSN().isEmpty() && (enumVal == ModeUpdate || enumVal == ModeInsert || enumVal == ModeUpsert)) {
+						v.Embed(nsCtx.rdxContext);
+					}
+
 					auto wlck = ns->dataWLock(nsCtx.rdxContext);
 					cg.Reset();
 					qr.AddNamespace(ns, true);
@@ -243,7 +247,7 @@ public:
 		return nsFuncWrapper<&NamespaceImpl::DumpIndex>(os, index, ctx);
 	}
 
-	std::shared_ptr<reindexer::Embedder> QueryEmbedder(std::string_view fieldName, const RdxContext& ctx) const {
+	std::shared_ptr<const reindexer::Embedder> QueryEmbedder(std::string_view fieldName, const RdxContext& ctx) const {
 		return nsFuncWrapper<&NamespaceImpl::QueryEmbedder>(fieldName, ctx);
 	}
 

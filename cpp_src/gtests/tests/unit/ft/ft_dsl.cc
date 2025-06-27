@@ -17,7 +17,7 @@ protected:
 TEST_P(FTDSLParserApi, MatchSymbolTest) {
 	FTDSLQueryParams params;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-	ftdsl.parse("*search*this*");
+	ftdsl.Parse("*search*this*");
 	EXPECT_TRUE(ftdsl.size() == 2);
 	EXPECT_TRUE(ftdsl[0].opts.suff);
 	EXPECT_TRUE(ftdsl[0].opts.pref);
@@ -30,7 +30,7 @@ TEST_P(FTDSLParserApi, MatchSymbolTest) {
 TEST_P(FTDSLParserApi, MisspellingTest) {
 	FTDSLQueryParams params;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-	ftdsl.parse("black~ -white");
+	ftdsl.Parse("black~ -white");
 	EXPECT_TRUE(ftdsl.size() == 2);
 	EXPECT_TRUE(ftdsl[0].opts.typos);
 	EXPECT_TRUE(ftdsl[0].pattern == L"black");
@@ -43,7 +43,7 @@ TEST_P(FTDSLParserApi, FieldsPartOfRequest) {
 	FTDSLQueryParams params;
 	params.fields = {{"name", 0}, {"title", 1}};
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-	ftdsl.parse("@name^1.5,+title^0.5 rush");
+	ftdsl.Parse("@name^1.5,+title^0.5 rush");
 	EXPECT_EQ(ftdsl.size(), 1);
 	EXPECT_EQ(ftdsl[0].pattern, L"rush");
 	EXPECT_EQ(ftdsl[0].opts.fieldsOpts.size(), 2);
@@ -56,7 +56,7 @@ TEST_P(FTDSLParserApi, FieldsPartOfRequest) {
 TEST_P(FTDSLParserApi, TermRelevancyBoostTest) {
 	FTDSLQueryParams params;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-	ftdsl.parse("+mongodb^0.5 +arangodb^0.25 +reindexer^2.5");
+	ftdsl.Parse("+mongodb^0.5 +arangodb^0.25 +reindexer^2.5");
 	EXPECT_TRUE(ftdsl.size() == 3);
 	EXPECT_TRUE(ftdsl[0].pattern == L"mongodb");
 	EXPECT_TRUE(AreFloatingValuesEqual(ftdsl[0].opts.boost, 0.5f));
@@ -69,58 +69,93 @@ TEST_P(FTDSLParserApi, TermRelevancyBoostTest) {
 TEST_P(FTDSLParserApi, WrongRelevancyTest) {
 	FTDSLQueryParams params;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-	EXPECT_THROW(ftdsl.parse("+wrong +boost^X"), reindexer::Error);
+	EXPECT_THROW(ftdsl.Parse("+wrong +boost^X"), reindexer::Error);
 }
 
 TEST_P(FTDSLParserApi, DistanceTest) {
 	FTDSLQueryParams params;
 
-	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-	ftdsl.parse("'long nose'~3");
-	EXPECT_TRUE(ftdsl.size() == 2);
-	EXPECT_TRUE(ftdsl[0].pattern == L"long");
-	EXPECT_TRUE(ftdsl[1].pattern == L"nose");
-	EXPECT_TRUE(ftdsl[0].opts.distance == INT_MAX);
-	EXPECT_TRUE(ftdsl[1].opts.distance == 3);
+	{
+		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
+		ftdsl.Parse("'long nose'~3");
+		EXPECT_TRUE(ftdsl.size() == 2);
+		EXPECT_TRUE(ftdsl[0].pattern == L"long");
+		EXPECT_TRUE(ftdsl[1].pattern == L"nose");
+		EXPECT_TRUE(ftdsl[0].opts.distance == INT_MAX);
+		EXPECT_TRUE(ftdsl[1].opts.distance == 3);
+	}
+
+	{
+		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
+		ftdsl.Parse("'+long +nose'~3");
+		EXPECT_TRUE(ftdsl.size() == 2);
+		EXPECT_TRUE(ftdsl[0].pattern == L"long");
+		EXPECT_TRUE(ftdsl[1].pattern == L"nose");
+		EXPECT_TRUE(ftdsl[0].opts.distance == INT_MAX);
+		EXPECT_TRUE(ftdsl[1].opts.distance == 3);
+	}
+
+	{
+		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
+		EXPECT_THROW(ftdsl.Parse("'-long nose'~3"), reindexer::Error);
+	}
 }
 
 TEST_P(FTDSLParserApi, WrongDistanceTest) {
 	FTDSLQueryParams params;
 	{
 		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-		EXPECT_THROW(ftdsl.parse("'this is a wrong distance'~X"), reindexer::Error);
+		EXPECT_THROW(ftdsl.Parse("'this is a wrong distance'~X"), reindexer::Error);
 	}
 	{
 		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-		EXPECT_THROW(ftdsl.parse("'long nose'~-1"), reindexer::Error);
+		EXPECT_THROW(ftdsl.Parse("'long nose'~-1"), reindexer::Error);
 	}
 	{
 		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-		EXPECT_THROW(ftdsl.parse("'long nose'~0"), reindexer::Error);
+		EXPECT_THROW(ftdsl.Parse("'long nose'~0"), reindexer::Error);
 	}
 	{
 		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-		EXPECT_THROW(ftdsl.parse("'long nose'~2.89"), reindexer::Error);
+		EXPECT_THROW(ftdsl.Parse("'long nose'~2.89"), reindexer::Error);
 	}
 }
 
-TEST_P(FTDSLParserApi, NoClosingQuoteTest) {
+TEST_P(FTDSLParserApi, QuotesTest) {
 	FTDSLQueryParams params;
-	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-	EXPECT_THROW(ftdsl.parse("\"forgot to close this quote"), reindexer::Error);
+	{
+		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
+		EXPECT_THROW(ftdsl.Parse("\"forgot to close this quote"), reindexer::Error);
+	}
+	{
+		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
+		EXPECT_THROW(ftdsl.Parse("'different quotes\""), reindexer::Error);
+	}
+	{
+		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
+		ftdsl.Parse("'\\\"phrase'");
+		EXPECT_TRUE(ftdsl.size() == 1);
+		EXPECT_TRUE(ftdsl[0].pattern == L"\"phrase");
+	}
+	{
+		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
+		ftdsl.Parse("'\\\'phrase'");
+		EXPECT_TRUE(ftdsl.size() == 1);
+		EXPECT_TRUE(ftdsl[0].pattern == L"'phrase");
+	}
 }
 
 TEST_P(FTDSLParserApi, WrongFieldNameTest) {
 	FTDSLQueryParams params;
 	params.fields = {{"id", 0}, {"fk_id", 1}, {"location", 2}};
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-	EXPECT_THROW(ftdsl.parse("@name,text,desc Thrones"), reindexer::Error);
+	EXPECT_THROW(ftdsl.Parse("@name,text,desc Thrones"), reindexer::Error);
 }
 
 TEST_P(FTDSLParserApi, BinaryOperatorsTest) {
 	FTDSLQueryParams params;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-	ftdsl.parse("+Jack -John +Joe");
+	ftdsl.Parse("+Jack -John +Joe");
 	EXPECT_TRUE(ftdsl.size() == 3);
 	EXPECT_TRUE(ftdsl[0].opts.op == OpAnd);
 	EXPECT_TRUE(ftdsl[0].pattern == L"jack");
@@ -134,7 +169,7 @@ TEST_P(FTDSLParserApi, EscapingCharacterTest) {
 	FTDSLQueryParams params;
 	params.extraWordSymbols = "+-\\";
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-	ftdsl.parse("\\-hell \\+well \\+bell");
+	ftdsl.Parse("\\-hell \\+well \\+bell");
 	EXPECT_TRUE(ftdsl.size() == 3) << ftdsl.size();
 	EXPECT_TRUE(ftdsl[0].opts.op == OpOr);
 	EXPECT_TRUE(ftdsl[0].pattern == L"-hell");
@@ -147,7 +182,7 @@ TEST_P(FTDSLParserApi, EscapingCharacterTest) {
 TEST_P(FTDSLParserApi, ExactMatchTest) {
 	FTDSLQueryParams params;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-	ftdsl.parse("=moskva77");
+	ftdsl.Parse("=moskva77");
 	EXPECT_TRUE(ftdsl.size() == 1);
 	EXPECT_TRUE(ftdsl[0].opts.exact);
 	EXPECT_TRUE(ftdsl[0].pattern == L"moskva77");

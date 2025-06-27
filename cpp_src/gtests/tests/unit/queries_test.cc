@@ -313,7 +313,8 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 			 .LeftJoin("id", "uid", CondEq, Query("second_ns").Not().Where("val", CondEq, 10).Limit(1).Offset(2))
 			 .Where("id", CondSet, Query{"third_ns"}.Select({"id"}).Where("id", CondLt, 999).Limit(5).Offset(7))
 			 .LeftJoin("uid", "id", CondEq, Query("fourth_ns").Where("val", CondAny, VariantArray{}))},
-	};
+		{"SELECT * FROM ns WHERE ft = 'text' ORDER BY 'rank(ft, 10.0)'",
+		 Query{"ns"}.Where("ft", CondEq, "text").Sort("rank(ft, 10.0)", false)}};
 
 	for (const auto& [sql, expected, direction] : cases) {
 		if (std::holds_alternative<Query>(expected)) {
@@ -372,6 +373,36 @@ TEST_F(QueriesApi, DslGenerateParse) {
 }})",
 				   geomNs),
 			   Query{geomNs}.AppendQueryEntry<reindexer::AlwaysTrue>(OpAnd)},
+			  {fmt::format(
+				   R"({{
+   "namespace": "{}",
+   "limit": -1,
+   "offset": 0,
+   "req_total": "disabled",
+   "explain": false,
+   "type": "select",
+   "select_with_rank": false,
+   "select_filter": [],
+   "select_functions": [],
+   "sort": [
+      {{
+         "field": "rank(ft, 2.0) + 5",
+         "desc": false
+      }}
+   ],
+   "filters": [
+      {{
+         "op": "and",
+         "cond": "eq",
+         "field": "ft",
+         "value": "text"
+      }}
+   ],
+   "merge_queries": [],
+   "aggregations": []
+}})",
+				   geomNs),
+			   Query{geomNs}.Where("ft", CondEq, "text").Sort("rank(ft, 2.0) + 5", false)},
 			  {fmt::format(
 				   R"({{
    "namespace": "{}",
@@ -679,28 +710,36 @@ TEST_F(QueriesApi, ForcedSortOffsetTest) {
 		const bool desc = rand() % 2;
 		// Single column sort
 		auto expectedResults = ForcedSortOffsetTestExpectedResults(offset, limit, desc, forcedSortOrder, First);
-		ExecuteAndVerify(Query(forcedSortOffsetNs).Sort(kFieldNameColumnHash, desc, forcedSortOrder).Offset(offset).Limit(limit),
+		ExecuteAndVerify(Query(forcedSortNs).Sort(kFieldNameColumnHash, desc, forcedSortOrder).Offset(offset).Limit(limit),
 						 kFieldNameColumnHash, expectedResults);
 		expectedResults = ForcedSortOffsetTestExpectedResults(offset, limit, desc, forcedSortOrder, Second);
-		ExecuteAndVerify(Query(forcedSortOffsetNs).Sort(kFieldNameColumnTree, desc, forcedSortOrder).Offset(offset).Limit(limit),
+		ExecuteAndVerify(Query(forcedSortNs).Sort(kFieldNameColumnTree, desc, forcedSortOrder).Offset(offset).Limit(limit),
 						 kFieldNameColumnTree, expectedResults);
 		// Multicolumn sort
 		const bool desc2 = rand() % 2;
 		auto expectedResultsMult = ForcedSortOffsetTestExpectedResults(offset, limit, desc, desc2, forcedSortOrder, First);
-		ExecuteAndVerify(Query(forcedSortOffsetNs)
+		ExecuteAndVerify(Query(forcedSortNs)
 							 .Sort(kFieldNameColumnHash, desc, forcedSortOrder)
 							 .Sort(kFieldNameColumnTree, desc2)
 							 .Offset(offset)
 							 .Limit(limit),
 						 kFieldNameColumnHash, expectedResultsMult.first, kFieldNameColumnTree, expectedResultsMult.second);
 		expectedResultsMult = ForcedSortOffsetTestExpectedResults(offset, limit, desc, desc2, forcedSortOrder, Second);
-		ExecuteAndVerify(Query(forcedSortOffsetNs)
+		ExecuteAndVerify(Query(forcedSortNs)
 							 .Sort(kFieldNameColumnTree, desc2, forcedSortOrder)
 							 .Sort(kFieldNameColumnHash, desc)
 							 .Offset(offset)
 							 .Limit(limit),
 						 kFieldNameColumnHash, expectedResultsMult.first, kFieldNameColumnTree, expectedResultsMult.second);
 	}
+}
+
+TEST_F(QueriesApi, ForcedSortByValuesOfWrongTypes) {
+	FillForcedSortNamespace();
+	reindexer::QueryResults qr;
+	auto query = Query(forcedSortNs).Sort(kFieldNameColumnString, true, std::vector{Variant{VariantArray{Variant{1}, Variant{3}}}});
+	const Error err = rt.reindexer->Select(query, qr);
+	ASSERT_FALSE(err.ok()) << query.GetSQL();
 }
 
 TEST_F(QueriesApi, StrictModeTest) {

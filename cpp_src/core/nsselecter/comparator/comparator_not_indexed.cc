@@ -20,7 +20,13 @@ namespace reindexer {
 namespace comparators {
 
 template <CondType Cond>
-ComparatorNotIndexedImplBase<Cond>::ComparatorNotIndexedImplBase(const VariantArray& values) : value_{GetValue<Variant>(Cond, values, 0)} {}
+ComparatorNotIndexedImplBase<Cond>::ComparatorNotIndexedImplBase(const VariantArray& values) : value_(GetValue<Variant>(Cond, values, 0)) {
+	auto t = value_.Type();
+	if (!(t.template Is<KeyValueType::String>() || t.template Is<KeyValueType::Uuid>() || t.IsNumeric())) {
+		throw Error{errQueryExec, "Value type in condition for non indexed field must be string, numeric or uuid. Value type is '{}'",
+					t.Name()};
+	}
+}
 
 ComparatorNotIndexedImplBase<CondRange>::ComparatorNotIndexedImplBase(const VariantArray& values)
 	: value1_{GetValue<Variant>(CondRange, values, 0)}, value2_{GetValue<Variant>(CondRange, values, 1)} {}
@@ -28,7 +34,13 @@ ComparatorNotIndexedImplBase<CondRange>::ComparatorNotIndexedImplBase(const Vari
 ComparatorNotIndexedImplBase<CondSet>::ComparatorNotIndexedImplBase(const VariantArray& values) : values_{values.size()} {
 	for (const Variant& v : values) {
 		assertrx_dbg(!v.IsNullValue());
-		values_.insert(v);
+		auto t = v.Type();
+		if rx_likely (t.Is<KeyValueType::String>() || t.Is<KeyValueType::Uuid>() || t.IsNumeric()) {
+			values_.insert(v);
+		} else {
+			throw Error{errQueryExec, "Value type in CondSet for non indexed field must be string, numeric or uuid. Value type is '{}'",
+						t.Name()};
+		}
 	}
 }
 
@@ -101,7 +113,7 @@ template <CondType Cond>
 
 ComparatorNotIndexed::ImplVariantType ComparatorNotIndexed::createImpl(CondType cond, const VariantArray& values,
 																	   const PayloadType& payloadType, const TagsPath& fieldPath,
-																	   bool distinct) {
+																	   reindexer::IsDistinct distinct) {
 	using namespace comparators;
 	if (distinct) {
 		switch (cond) {

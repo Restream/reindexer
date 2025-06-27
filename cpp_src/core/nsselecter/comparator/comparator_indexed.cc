@@ -604,8 +604,8 @@ template <>
 
 template <typename T>
 [[nodiscard]] comparators::ComparatorIndexedVariant<T> ComparatorIndexed<T>::createImpl(CondType cond, const VariantArray& values,
-																						const void* rawData, bool distinct, IsArray isArray,
-																						const PayloadType& payloadType,
+																						const void* rawData, reindexer::IsDistinct distinct,
+																						IsArray isArray, const PayloadType& payloadType,
 																						const FieldsSet& fields, const CollateOpts&) {
 	using namespace comparators;
 	if (fields.getTagsPathsLength() != 0) {
@@ -777,26 +777,28 @@ template <typename T>
 	throw Error{errQueryExec, "Invalid condition {} with type {}", int(cond), typeToStr<T>()};
 }
 
-template comparators::ComparatorIndexedVariant<int> ComparatorIndexed<int>::createImpl(CondType, const VariantArray&, const void*, bool,
-																					   IsArray, const PayloadType&, const FieldsSet&,
-																					   const CollateOpts&);
+template comparators::ComparatorIndexedVariant<int> ComparatorIndexed<int>::createImpl(CondType, const VariantArray&, const void*,
+																					   reindexer::IsDistinct, IsArray, const PayloadType&,
+																					   const FieldsSet&, const CollateOpts&);
 template comparators::ComparatorIndexedVariant<int64_t> ComparatorIndexed<int64_t>::createImpl(CondType, const VariantArray&, const void*,
-																							   bool, IsArray, const PayloadType&,
-																							   const FieldsSet&, const CollateOpts&);
+																							   reindexer::IsDistinct, IsArray,
+																							   const PayloadType&, const FieldsSet&,
+																							   const CollateOpts&);
 template comparators::ComparatorIndexedVariant<double> ComparatorIndexed<double>::createImpl(CondType, const VariantArray&, const void*,
-																							 bool, IsArray, const PayloadType&,
-																							 const FieldsSet&, const CollateOpts&);
-template comparators::ComparatorIndexedVariant<bool> ComparatorIndexed<bool>::createImpl(CondType, const VariantArray&, const void*, bool,
-																						 IsArray, const PayloadType&, const FieldsSet&,
-																						 const CollateOpts&);
-template comparators::ComparatorIndexedVariant<Uuid> ComparatorIndexed<Uuid>::createImpl(CondType, const VariantArray&, const void*, bool,
-																						 IsArray, const PayloadType&, const FieldsSet&,
-																						 const CollateOpts&);
+																							 reindexer::IsDistinct, IsArray,
+																							 const PayloadType&, const FieldsSet&,
+																							 const CollateOpts&);
+template comparators::ComparatorIndexedVariant<bool> ComparatorIndexed<bool>::createImpl(CondType, const VariantArray&, const void*,
+																						 reindexer::IsDistinct, IsArray, const PayloadType&,
+																						 const FieldsSet&, const CollateOpts&);
+template comparators::ComparatorIndexedVariant<Uuid> ComparatorIndexed<Uuid>::createImpl(CondType, const VariantArray&, const void*,
+																						 reindexer::IsDistinct, IsArray, const PayloadType&,
+																						 const FieldsSet&, const CollateOpts&);
 
 template <>
 [[nodiscard]] comparators::ComparatorIndexedVariant<key_string> ComparatorIndexed<key_string>::createImpl(
-	CondType cond, const VariantArray& values, const void* rawData, bool distinct, IsArray isArray, const PayloadType& payloadType,
-	const FieldsSet& fields, const CollateOpts& collate) {
+	CondType cond, const VariantArray& values, const void* rawData, reindexer::IsDistinct distinct, IsArray isArray,
+	const PayloadType& payloadType, const FieldsSet& fields, const CollateOpts& collate) {
 	using namespace comparators;
 	if (fields.getTagsPathsLength() != 0) {
 		switch (cond) {
@@ -966,8 +968,8 @@ template <>
 
 template <>
 [[nodiscard]] comparators::ComparatorIndexedVariant<PayloadValue> ComparatorIndexed<PayloadValue>::createImpl(
-	CondType cond, const VariantArray& values, const void* /*rawData*/, bool distinct, IsArray isArray, const PayloadType& payloadType,
-	const FieldsSet& fields, const CollateOpts& collate) {
+	CondType cond, const VariantArray& values, const void* /*rawData*/, reindexer::IsDistinct distinct, IsArray isArray,
+	const PayloadType& payloadType, const FieldsSet& fields, const CollateOpts& collate) {
 	using namespace comparators;
 	if (isArray) {
 		throw Error{errQueryExec, "Array composite index"};
@@ -1004,8 +1006,8 @@ template <>
 
 template <>
 [[nodiscard]] comparators::ComparatorIndexedVariant<Point> ComparatorIndexed<Point>::createImpl(
-	CondType cond, const VariantArray& values, const void* /*rawData*/, bool distinct, IsArray isArray, const PayloadType& payloadType,
-	const FieldsSet& fields, const CollateOpts&) {
+	CondType cond, const VariantArray& values, const void* /*rawData*/, reindexer::IsDistinct distinct, IsArray isArray,
+	const PayloadType& payloadType, const FieldsSet& fields, const CollateOpts&) {
 	using namespace comparators;
 	if (fields.getTagsPathsLength() != 0) {
 		switch (cond) {
@@ -1066,7 +1068,7 @@ template <>
 
 template <>
 [[nodiscard]] comparators::ComparatorIndexedVariant<FloatVector> ComparatorIndexed<FloatVector>::createImpl(
-	CondType cond, const VariantArray&, const void*, [[maybe_unused]] bool distinct, [[maybe_unused]] IsArray isArray,
+	CondType cond, const VariantArray&, const void*, [[maybe_unused]] reindexer::IsDistinct distinct, [[maybe_unused]] IsArray isArray,
 	const PayloadType& payloadType, const FieldsSet& fields, const CollateOpts&) {
 	using namespace comparators;
 	switch (cond) {

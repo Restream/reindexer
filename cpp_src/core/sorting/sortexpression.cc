@@ -6,6 +6,7 @@
 #include "core/queryresults/joinresults.h"
 #include "estl/charset.h"
 #include "estl/restricted.h"
+#include "reranker.h"
 #include "tools/stringstools.h"
 #include "vendor/double-conversion/double-conversion.h"
 #include "vendor/murmurhash/MurmurHash3.h"
@@ -45,17 +46,8 @@ reindexer::VariantArray getJsonFieldValues(reindexer::ConstPayload pv, reindexer
 
 namespace reindexer {
 
-using SortExprFuncs::Value;
-using SortExprFuncs::JoinedIndex;
-using SortExprFuncs::Rank;
-using SortExprFuncs::DistanceFromPoint;
-using SortExprFuncs::ProxiedDistanceFromPoint;
-using SortExprFuncs::DistanceJoinedIndexFromPoint;
-using SortExprFuncs::DistanceBetweenIndexes;
-using SortExprFuncs::ProxiedDistanceBetweenFields;
-using SortExprFuncs::DistanceBetweenJoinedIndexes;
-using SortExprFuncs::DistanceBetweenIndexAndJoinedIndex;
-using SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
+using namespace SortExprFuncs;
+using namespace std::string_view_literals;
 
 const PayloadValue& SortExpression::getJoinedValue(IdType rowId, const joins::NamespaceResults& joinResults,
 												   const std::vector<JoinedSelector>& joinedSelectors, size_t nsIdx) {
@@ -213,19 +205,6 @@ double DistanceBetweenJoinedIndexesSameNs::GetValue(IdType rowId, const joins::N
 		pv.Get(index2, values2);
 	}
 	return distance(static_cast<Point>(values1), static_cast<Point>(values2));
-}
-
-void SortExpression::openBracketBeforeLastAppended() {
-	const size_t pos = LastAppendedElement();
-	assertrx_throw(activeBrackets_.empty() || activeBrackets_.back() < pos);
-	for (unsigned i : activeBrackets_) {
-		assertrx_throw(i < container_.size());
-		container_[i].Append();
-	}
-	const ArithmeticOpType op = container_[pos].operation.op;
-	container_[pos].operation.op = OpPlus;
-	activeBrackets_.push_back(pos);
-	container_.insert(container_.begin() + pos, {{op, false}, container_.size() - pos + 1});
 }
 
 template <typename T>
@@ -444,8 +423,41 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 	skipSpaces();
 }
 
+template <typename T, typename SkipSW>
+void SortExpression::parseRank(std::string_view& expr, const std::vector<T>& joinedSelectors, const std::string_view fullExpr,
+							   const ArithmeticOpType op, const bool negative, const SkipSW& skipSpaces) {
+	using namespace double_conversion;
+	static const StringToDoubleConverter converter{StringToDoubleConverter::ALLOW_TRAILING_JUNK |
+													   StringToDoubleConverter::ALLOW_TRAILING_SPACES |
+													   StringToDoubleConverter::ALLOW_SPACES_AFTER_SIGN,
+												   0.0, 0.0, nullptr, nullptr};
+	skipSpaces();
+	if (!expr.empty() && expr[0] != ')') {
+		auto rankIndexName = parseIndexName(expr, joinedSelectors, fullExpr);
+		if (rankIndexName.joinedSelectorIt != joinedSelectors.cend()) {
+			throwParseError(fullExpr, expr.data() - fullExpr.data(), "Rank by joined field '" + rankIndexName.name + '\'');
+		}
+		skipSpaces();
+		double defaultValue = 0.0;
+		if (!expr.empty() && expr[0] == ',') {
+			expr.remove_prefix(1);
+			skipSpaces();
+			int countOfCharsParsedAsDouble = 0;
+			defaultValue = converter.StringToDouble(expr.data(), expr.size(), &countOfCharsParsedAsDouble);
+			if (countOfCharsParsedAsDouble == 0) {
+				throwParseError(fullExpr, expr.data() - fullExpr.data(), "Default value of rank function is expected"sv);
+			}
+			expr.remove_prefix(countOfCharsParsedAsDouble);
+			skipSpaces();
+		}
+		Append<RankNamed>({op, negative}, std::move(rankIndexName.name), defaultValue);
+	} else {
+		Append<Rank>({op, negative});
+	}
+}
+
 template <typename T>
-std::string_view SortExpression::parse(std::string_view expr, bool* containIndexOrFunction, const std::string_view fullExpr,
+std::string_view SortExpression::parse(std::string_view expr, bool* containIndexOrFunction, bool* isRrf, const std::string_view fullExpr,
 									   const std::vector<T>& joinedSelectors) {
 	using namespace double_conversion;
 	static const StringToDoubleConverter converter{StringToDoubleConverter::ALLOW_TRAILING_JUNK |
@@ -453,7 +465,6 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 													   StringToDoubleConverter::ALLOW_SPACES_AFTER_SIGN,
 												   0.0, 0.0, nullptr, nullptr};
 	bool expectValue = true;
-	bool needCloseBracket = false;
 	bool lastOperationPlusOrMinus = false;
 	ArithmeticOpType op = OpPlus;
 	const auto skipSpaces = [&expr]() {
@@ -476,49 +487,86 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 				expr.remove_prefix(1);
 				skipSpaces();
 				if (expr.empty()) {
-					throwParseError(fullExpr, expr.data() - fullExpr.data(), "The expression unexpected ends after unary operator.");
+					throwParseError(fullExpr, expr.data() - fullExpr.data(), "The expression unexpected ends after unary operator."sv);
 				}
 			}
 			if (expr[0] == '(') {
 				expr.remove_prefix(1);
 				OpenBracket({op, negative});
-				expr = parse(expr, containIndexOrFunction, fullExpr, joinedSelectors);
+				expr = parse(expr, containIndexOrFunction, isRrf, fullExpr, joinedSelectors);
 				if (expr.empty() || expr[0] != ')') {
-					throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ')'.");
+					throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ')'."sv);
 				}
 				expr.remove_prefix(1);
 				CloseBracket();
 			} else if (expr[0] == '"') {
-				const auto parsedIndexName = parseIndexName(expr, joinedSelectors, fullExpr);
+				auto parsedIndexName = parseIndexName(expr, joinedSelectors, fullExpr);
 				if (parsedIndexName.joinedSelectorIt == joinedSelectors.cend()) {
 					skipSpaces();
-					Append({op, negative}, SortExprFuncs::Index{std::move(parsedIndexName.name)});
+					Append<SortExprFuncs::Index>({op, negative}, std::move(parsedIndexName.name));
 				} else {
 					auto dist = static_cast<size_t>(parsedIndexName.joinedSelectorIt - joinedSelectors.cbegin());
-					Append({op, negative}, JoinedIndex{dist, std::move(parsedIndexName.name)});
+					Append<JoinedIndex>({op, negative}, dist, std::move(parsedIndexName.name));
 				}
 				*containIndexOrFunction = true;
 			} else {
 				int countOfCharsParsedAsDouble = 0;
 				const double value = converter.StringToDouble(expr.data(), expr.size(), &countOfCharsParsedAsDouble);
 				if (countOfCharsParsedAsDouble != 0) {
-					Append({op, false}, Value{negative ? -value : value});
+					Append<Value>({op, false}, negative ? -value : value);
 					expr.remove_prefix(countOfCharsParsedAsDouble);
 				} else {
-					const auto parsedIndexName = parseIndexName(expr, joinedSelectors, fullExpr);
+					auto parsedIndexName = parseIndexName(expr, joinedSelectors, fullExpr);
 					if (parsedIndexName.joinedSelectorIt == joinedSelectors.cend()) {
 						skipSpaces();
 						if (!expr.empty() && expr[0] == '(') {
 							expr.remove_prefix(1);
 							const auto funcName = toLower(parsedIndexName.name);
-							if (funcName == "rank") {
-								Append({op, negative}, Rank{});
+							if (funcName == "rank"sv) {
+								parseRank(expr, joinedSelectors, fullExpr, op, negative, skipSpaces);
+							} else if (funcName == "rrf"sv) {
+								if (op != OpPlus) {
+									throwParseError(fullExpr, expr.data() - fullExpr.data(),
+													"Reciprocal rank fusion (RRF) could be only with operation '+'"sv);
+								}
+								if (negative) {
+									throwParseError(fullExpr, expr.data() - fullExpr.data(),
+													"Reciprocal rank fusion (RRF) cannot be with negative sign"sv);
+								}
 								skipSpaces();
-							} else if (funcName == "abs") {
+								constexpr static auto rankConstName = "rank_const"sv;
+								if (!expr.empty() && expr[0] != ')') {
+									if (!checkIfStartsWith(rankConstName, expr)) {
+										throwParseError(fullExpr, expr.data() - fullExpr.data(), "'rank_const' is expected"sv);
+									}
+									expr.remove_prefix(rankConstName.size());
+									skipSpaces();
+									if (expr.empty() || expr[0] != '=') {
+										throwParseError(fullExpr, expr.data() - fullExpr.data(), "'=' is expected"sv);
+									}
+									expr.remove_prefix(1);
+									skipSpaces();
+									countOfCharsParsedAsDouble = 0;
+									const double rankConst =
+										converter.StringToDouble(expr.data(), expr.size(), &countOfCharsParsedAsDouble);
+									if (countOfCharsParsedAsDouble == 0) {
+										throwParseError(fullExpr, expr.data() - fullExpr.data(), "Rank constant of RRF is expected"sv);
+									}
+									expr.remove_prefix(countOfCharsParsedAsDouble);
+									if (rankConst < 1.0) {
+										throwParseError(fullExpr, expr.data() - fullExpr.data(), "Rank constant of RRF must be >= 1"sv);
+									}
+									skipSpaces();
+									Append<Rrf>({OpPlus, false}, rankConst);
+								} else {
+									Append<Rrf>({OpPlus, false});
+								}
+								*isRrf = true;
+							} else if (funcName == "abs"sv) {
 								OpenBracket({op, negative}, true);
-								expr = parse(expr, containIndexOrFunction, fullExpr, joinedSelectors);
+								expr = parse(expr, containIndexOrFunction, isRrf, fullExpr, joinedSelectors);
 								CloseBracket();
-							} else if (funcName == "st_distance") {
+							} else if (funcName == "st_distance"sv) {
 								parseDistance(expr, joinedSelectors, fullExpr, op, negative, skipSpaces);
 							} else if (funcName == "hash") {
 								skipSpaces();
@@ -528,7 +576,7 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 									Append({op, negative}, SortExprFuncs::SortHash{seed});
 									expr.remove_prefix(ptr - expr.data());
 								} else if (ec == std::errc::result_out_of_range) {
-									throwParseError(fullExpr, expr.data() - fullExpr.data(), "Number is out of range");
+									throwParseError(fullExpr, expr.data() - fullExpr.data(), "Number is out of range"sv);
 								} else {
 									Append({op, negative}, SortExprFuncs::SortHash{});
 								}
@@ -537,15 +585,16 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 								throwParseError(fullExpr, expr.data() - fullExpr.data(), "Unsupported function name : '" + funcName + "'.");
 							}
 							if (expr.empty() || expr[0] != ')') {
-								throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ')'.");
+								throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ')'."sv);
 							}
 							expr.remove_prefix(1);
 						} else {
-							Append({op, negative}, SortExprFuncs::Index{std::move(parsedIndexName.name)});
+							Append<SortExprFuncs::Index>({op, negative}, std::move(parsedIndexName.name));
 						}
 					} else {
-						Append({op, negative}, JoinedIndex{static_cast<size_t>(parsedIndexName.joinedSelectorIt - joinedSelectors.cbegin()),
-														   std::move(parsedIndexName.name)});
+						Append<JoinedIndex>({op, negative},
+											static_cast<size_t>(parsedIndexName.joinedSelectorIt - joinedSelectors.cbegin()),
+											std::move(parsedIndexName.name));
 					}
 					*containIndexOrFunction = true;
 				}
@@ -554,27 +603,22 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 		} else {
 			switch (expr[0]) {
 				case ')':
-					if (needCloseBracket) {
-						CloseBracket();
-					}
 					return expr;
 				case '+':
+					op = OpPlus;
+					lastOperationPlusOrMinus = true;
+					break;
 				case '-':
-					op = (expr[0] == '+') ? OpPlus : OpMinus;
-					if (needCloseBracket) {
-						CloseBracket();
-						needCloseBracket = false;
-					}
+					op = OpMinus;
 					lastOperationPlusOrMinus = true;
 					break;
 				case '*':
+					op = OpMult;
+					lastOperationPlusOrMinus = false;
+					break;
 				case '/':
-					op = (expr[0] == '*') ? OpMult : OpDiv;
-					if (lastOperationPlusOrMinus) {
-						openBracketBeforeLastAppended();
-						needCloseBracket = true;
-						lastOperationPlusOrMinus = false;
-					}
+					op = OpDiv;
+					lastOperationPlusOrMinus = false;
 					break;
 				default:
 					throwParseError(fullExpr, expr.data() - fullExpr.data(),
@@ -586,10 +630,7 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 		skipSpaces();
 	}
 	if (expectValue) {
-		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected value.");
-	}
-	if (needCloseBracket) {
-		CloseBracket();
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected value."sv);
 	}
 	return expr;
 }
@@ -598,12 +639,17 @@ template <typename T>
 SortExpression SortExpression::Parse(std::string_view expression, const std::vector<T>& joinedSelector) {
 	SortExpression result;
 	bool containIndexOrFunction = false;
-	const auto expr = result.parse(expression, &containIndexOrFunction, expression, joinedSelector);
+	bool isRrf = false;
+	const auto expr = result.parse(expression, &containIndexOrFunction, &isRrf, expression, joinedSelector);
+	result.reduce();
+	if (isRrf && result.Size() != 1) {
+		throwParseError(expression, expr.data() - expression.data(), "Reciprocal rank fusion (RRF) must be single in sort expression"sv);
+	}
 	if (!expr.empty()) {
-		throwParseError(expression, expr.data() - expression.data(), "");
+		throwParseError(expression, expr.data() - expression.data(), ""sv);
 	}
 	if (!containIndexOrFunction) {
-		throwParseError(expression, expr.data() - expression.data(), "Sort expression does not depend from namespace data");
+		throwParseError(expression, expr.data() - expression.data(), "Sort expression does not depend from namespace data"sv);
 	}
 	return result;
 }
@@ -612,6 +658,8 @@ template SortExpression SortExpression::Parse(std::string_view, const std::vecto
 template SortExpression SortExpression::Parse(std::string_view, const std::vector<JoinedSelectorMock>&);
 template SortExpression SortExpression::Parse(std::string_view, const std::vector<JoinedNsNameMock>&);
 template SortExpression SortExpression::Parse(std::string_view, const std::vector<JoinedQuery>&);
+
+[[noreturn]] void throwDivisionByZero() { throw Error(errQueryExec, "Division by zero in sort expression"sv); }
 
 static double CalcSortHash(IdType rowId, uint32_t seed, uint32_t shardIdHash) noexcept {
 	uint32_t hash;
@@ -625,7 +673,8 @@ double SortExpression::calculate(const_iterator it, const_iterator end, IdType r
 								 TagsMatcher& tagsMatcher, uint32_t shardIdHash) {
 	assertrx_throw(it != end);
 	assertrx_throw(it->operation.op == OpPlus);
-	double result = 0.0;
+	double totalResult = 0.0;
+	double multResult = 0.0;
 	for (; it != end; ++it) {
 		double value = it->Visit(
 			[&] RX_PRE_LMBD_ALWAYS_INLINE(const SortExpressionBracket& b) RX_POST_LMBD_ALWAYS_INLINE {
@@ -639,7 +688,10 @@ double SortExpression::calculate(const_iterator it, const_iterator end, IdType r
 				assertrx_throw(joinedResults);
 				return i.GetValue(rowId, *joinedResults, js);
 			},
-			[rank] RX_PRE_LMBD_ALWAYS_INLINE(const Rank&) RX_POST_LMBD_ALWAYS_INLINE { return double(rank); },
+			[rank] RX_PRE_LMBD_ALWAYS_INLINE(const OneOf<Rank, RankNamed>&) RX_POST_LMBD_ALWAYS_INLINE { return double(rank.Value()); },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const Rrf&) RX_POST_LMBD_ALWAYS_INLINE -> double {
+				throw Error(errNotValid, "Reciprocal rank fusion (RRF) is allowed in hybrid queries only");
+			},
 			[rowId, shardIdHash] RX_PRE_LMBD_ALWAYS_INLINE(const SortExprFuncs::SortHash& sortHash)
 				RX_POST_LMBD_ALWAYS_INLINE { return CalcSortHash(rowId, sortHash.Seed(), shardIdHash); },
 			[&pv, &tagsMatcher] RX_PRE_LMBD_ALWAYS_INLINE(const DistanceFromPoint& i)
@@ -667,30 +719,33 @@ double SortExpression::calculate(const_iterator it, const_iterator end, IdType r
 		}
 		switch (it->operation.op) {
 			case OpPlus:
-				result += value;
+				totalResult += multResult;
+				multResult = value;
 				break;
 			case OpMinus:
-				result -= value;
+				totalResult += multResult;
+				multResult = -value;
 				break;
 			case OpMult:
-				result *= value;
+				multResult *= value;
 				break;
 			case OpDiv:
 				if (value == 0.0) {
-					throw Error(errQueryExec, "Division by zero in sort expression");
+					throwDivisionByZero();
 				}
-				result /= value;
+				multResult /= value;
 				break;
 		}
 	}
-	return result;
+	return totalResult + multResult;
 }
 
 double ProxiedSortExpression::calculate(const_iterator it, const_iterator end, IdType rowId, ConstPayload pv, RankT rank,
 										TagsMatcher& tagsMatcher, uint32_t shardIdHash) {
 	assertrx(it != end);
 	assertrx(it->operation.op == OpPlus);
-	double result = 0.0;
+	double totalResult = 0.0;
+	double multResult = 0.0;
 	for (; it != end; ++it) {
 		double value = it->Visit(
 			[&](const SortExpressionBracket& b) {
@@ -700,7 +755,7 @@ double ProxiedSortExpression::calculate(const_iterator it, const_iterator end, I
 			[](const Value& v) { return v.value; },
 			[rowId, shardIdHash](const SortExprFuncs::SortHash& sh) { return CalcSortHash(rowId, sh.Seed(), shardIdHash); },
 			[&pv, &tagsMatcher](const SortExprFuncs::ProxiedField& f) { return f.GetValue(pv, tagsMatcher); },
-			[rank](const Rank&) -> double { return rank; },
+			[rank](const OneOf<Rank, RankNamed>&) { return double(rank.Value()); },
 			[&pv, &tagsMatcher](const ProxiedDistanceFromPoint& f) { return f.GetValue(pv, tagsMatcher); },
 			[&pv, &tagsMatcher](const ProxiedDistanceBetweenFields& f) { return f.GetValue(pv, tagsMatcher); });
 		if (it->operation.negative) {
@@ -708,23 +763,27 @@ double ProxiedSortExpression::calculate(const_iterator it, const_iterator end, I
 		}
 		switch (it->operation.op) {
 			case OpPlus:
-				result += value;
+				totalResult += multResult;
+				multResult = value;
 				break;
 			case OpMinus:
-				result -= value;
+				totalResult += multResult;
+				multResult = -value;
 				break;
 			case OpMult:
-				result *= value;
+				multResult *= value;
 				break;
 			case OpDiv:
 				if (value == 0.0) {
-					throw Error(errQueryExec, "Division by zero in sort expression");
+					throwDivisionByZero();
 				}
-				result /= value;
+				multResult /= value;
 				break;
+			default:
+				throw_as_assert;
 		}
 	}
-	return result;
+	return totalResult + multResult;
 }
 
 std::string ProxiedSortExpression::getJsonPath(std::string_view columnName, int idxNo, const NamespaceImpl& ns) {
@@ -742,46 +801,52 @@ std::string ProxiedSortExpression::getJsonPath(std::string_view columnName, int 
 
 void ProxiedSortExpression::fill(SortExpression::const_iterator it, SortExpression::const_iterator endIt, const NamespaceImpl& ns) {
 	for (; it != endIt; ++it) {
-		it->Visit(
-			[](const auto&) { throw Error{errQueryExec, "JOIN is unsupported in proxied query"}; },
-			[&](const SortExpressionBracket& b) {
-				OpenBracket(it->operation, b.IsAbs());
-				fill(it.cbegin(), it.cend(), ns);
-				CloseBracket();
-			},
-			[&](const Value& v) { Append(it->operation, v); },
-			[&](const SortExprFuncs::Index& i) { Append(it->operation, SortExprFuncs::ProxiedField{getJsonPath(i.column, i.index, ns)}); },
-			[&](const Rank&) { Append(it->operation, Rank{}); }, [&](const SortExprFuncs::SortHash& sh) { Append(it->operation, sh); },
-			[&](const DistanceFromPoint& i) {
-				Append(it->operation, ProxiedDistanceFromPoint{getJsonPath(i.column, i.index, ns), i.point});
-			},
-			[&](const DistanceBetweenIndexes& i) {
-				Append(it->operation,
-					   ProxiedDistanceBetweenFields{getJsonPath(i.column1, i.index1, ns), getJsonPath(i.column2, i.index2, ns)});
-			});
+		it->Visit([](const auto&) { throw Error{errQueryExec, "JOIN is unsupported in proxied query"sv}; },
+				  [&](const SortExpressionBracket& b) {
+					  OpenBracket(it->operation, b.IsAbs());
+					  fill(it.cbegin(), it.cend(), ns);
+					  CloseBracket();
+				  },
+				  [&](const Value& v) { Append(it->operation, v); },
+				  [&](const SortExprFuncs::Index& i) { Append<ProxiedField>(it->operation, getJsonPath(i.column, i.index, ns)); },
+				  [&](const Rank&) { Append<Rank>(it->operation); }, [&](const RankNamed& r) { Append(it->operation, r); },
+				  [&](const SortExprFuncs::SortHash& sh) { Append(it->operation, sh); },
+				  [&](const DistanceFromPoint& i) {
+					  Append<ProxiedDistanceFromPoint>(it->operation, getJsonPath(i.column, i.index, ns), i.point);
+				  },
+				  [&](const DistanceBetweenIndexes& i) {
+					  Append<ProxiedDistanceBetweenFields>(it->operation, getJsonPath(i.column1, i.index1, ns),
+														   getJsonPath(i.column2, i.index2, ns));
+				  });
 	}
 }
 
 void SortExpression::PrepareIndexes(const NamespaceImpl& ns) {
 	VisitForEach(
-		Skip<SortExpressionOperation, SortExpressionBracket, SortExprFuncs::Value, JoinedIndex, Rank, SortExprFuncs::SortHash,
+		Skip<SortExpressionOperation, SortExpressionBracket, SortExprFuncs::Value, JoinedIndex, Rank, Rrf, SortExprFuncs::SortHash,
 			 DistanceJoinedIndexFromPoint, DistanceBetweenIndexAndJoinedIndex, DistanceBetweenJoinedIndexes,
 			 DistanceBetweenJoinedIndexesSameNs>{},
-		[&ns](SortExprFuncs::Index& exprIndex) { PrepareSortIndex(exprIndex.column, exprIndex.index, ns); },
-		[&ns](DistanceFromPoint& exprIndex) { PrepareSortIndex(exprIndex.column, exprIndex.index, ns); },
+		[&ns](SortExprFuncs::Index& exprIndex) { PrepareSortIndex(exprIndex.column, exprIndex.index, ns, IsRanked_False); },
+		[&ns](DistanceFromPoint& exprIndex) { PrepareSortIndex(exprIndex.column, exprIndex.index, ns, IsRanked_False); },
+		[&ns](RankNamed& exprRank) { PrepareSortIndex(exprRank.IndexName(), exprRank.IndexNoRef(), ns, IsRanked_True); },
 		[&ns](DistanceBetweenIndexes& exprIndex) {
-			PrepareSortIndex(exprIndex.column1, exprIndex.index1, ns);
-			PrepareSortIndex(exprIndex.column2, exprIndex.index2, ns);
+			PrepareSortIndex(exprIndex.column1, exprIndex.index1, ns, IsRanked_False);
+			PrepareSortIndex(exprIndex.column2, exprIndex.index2, ns, IsRanked_False);
 		});
 }
 
-void SortExpression::PrepareSortIndex(std::string& column, int& indexNo, const NamespaceImpl& ns) {
-	assertrx(!column.empty());
+void SortExpression::PrepareSortIndex(std::string& column, int& indexNo, const NamespaceImpl& ns, IsRanked isRanked) {
+	assertrx_throw(indexNo == IndexValueType::NotSet);
+	assertrx_throw(!column.empty());
 	indexNo = IndexValueType::SetByJsonPath;
 	// FIXME: Sparse index will not be found if jsonpath does not equal to index name
 	if (ns.getIndexByNameOrJsonPath(column, indexNo)) {
 		const auto& index = *ns.indexes_[indexNo];
-		if (index.IsFloatVector()) {
+		if (isRanked) {
+			if (!index.IsFloatVector() && !IsFullText(index.Type())) {
+				throw Error(errQueryExec, "Ordering by rank allowed by fulltext or float vector index only: '{}'", column);
+			}
+		} else if (index.IsFloatVector()) {
 			throw Error(errQueryExec, "Ordering by float vector index is not allowed: '{}'", column);
 		}
 		if (index.Opts().IsSparse()) {
@@ -795,6 +860,438 @@ void SortExpression::PrepareSortIndex(std::string& column, int& indexNo, const N
 	}
 }
 
+Changed SortExpression::constantsFirstInMultiplications(iterator from, iterator to) {
+	auto multStart = from;
+	auto moveStart = from;
+	Changed changed = Changed_False;
+	for (auto it = from; it != to; ++it) {
+		if (it->IsSubTree()) {
+			changed |= constantsFirstInMultiplications(it.begin(), it.end());
+		}
+		const auto op = it->operation;
+		if (op.op == OpPlus || op.op == OpMinus) {
+			multStart = it;
+			moveStart = it;
+		} else if (it->Is<Value>()) {
+			Value& val = it->Value<Value>();
+			if (op.negative) {
+				val.value = -val.value;
+				it->operation.negative = false;
+				changed = Changed_True;
+			}
+			if (op.op == OpDiv) {
+				if (val.value == 0.0) {
+					throwDivisionByZero();
+				}
+				val.value = 1.0 / val.value;
+				it->operation.op = OpMult;
+				changed = Changed_True;
+			}
+			if (moveStart->Is<Value>()) {
+				moveStart = it;
+			} else {
+				const double value = val.value;
+				for (auto moveEnd = moveStart.PlainIterator(), moveIt = it.PlainIterator(); moveIt != moveEnd; --moveIt) {
+					*moveIt = std::move(*(moveIt - 1));
+				}
+				moveStart->SetValue<Value>(value);
+				if (moveStart == multStart) {
+					auto next = moveStart;
+					++next;
+					moveStart->operation = next->operation;
+					next->operation = {OpMult, false};
+				}
+				++moveStart;
+				changed = Changed_True;
+			}
+		} else if (moveStart->Is<Value>()) {
+			moveStart = it;
+		}
+	}
+	return changed;
+}
+
+bool SortExpression::justMultiplications(size_t begin, size_t end) {
+	for (size_t i = Next(begin); i < end; i = Next(i)) {
+		const auto op = GetOperation(i).op;
+		if (op == OpPlus || op == OpMinus) {
+			return false;
+		}
+	}
+	return true;
+}
+
+bool SortExpression::justMultiplicationsOfConstants(size_t begin, size_t end) {
+	if (!Is<Value>(begin)) {
+		return false;
+	}
+	for (size_t i = Next(begin); i < end; i = Next(i)) {
+		if (!Is<Value>(i)) {
+			return false;
+		}
+		const auto op = GetOperation(i).op;
+		if (op == OpPlus || op == OpMinus) {
+			return false;
+		}
+	}
+	return true;
+}
+
+size_t SortExpression::removeBrackets(size_t begin, size_t end) {
+	if (begin != end) {
+		const auto firstOp = GetOperation(begin).op;
+		if (firstOp != OpPlus && firstOp != OpMinus) {
+			throw Error{errQueryExec, "Multiplication or division at the start of sort expression or after opening bracket"};
+		}
+	}
+	size_t deleted = 0;
+	for (size_t i = begin, next; i < end - deleted; i = next) {
+		next = Next(i);
+		if (!IsSubTree(i)) {
+			continue;
+		}
+		const size_t firstInBracket = i + 1;
+		if (Size(i) < 2) {
+			Erase(i, firstInBracket);
+			++deleted;
+			next = i;
+			continue;
+		}
+		{
+			const auto deletedInBracket = removeBrackets(firstInBracket, next);
+			deleted += deletedInBracket;
+			assertrx_throw(i + deletedInBracket < next);
+			next -= deletedInBracket;
+		}
+		if (auto& bracket = Get<SortExpressionBracket>(i); bracket.IsAbs()) {
+			if (!justMultiplicationsOfConstants(firstInBracket, next)) {
+				continue;
+			}
+			for (size_t j = firstInBracket; j < next; j = Next(j)) {
+				double& value = Get<Value>(j).value;
+				value = std::abs(value);
+				auto op = GetOperation(j);
+				op.negative = false;
+				SetOperation(op, j);
+			}
+			SetOperation({OpPlus, false}, firstInBracket);
+			bracket.SetAbs(false);
+		}
+		const auto curOp = GetOperation(i);
+		const auto nextOp = (next < end - deleted) ? std::optional{GetOperation(next)} : std::nullopt;
+		if (curOp.op == OpMult || curOp.op == OpDiv) {
+			if (!justMultiplications(firstInBracket, next)) {
+				continue;
+			}
+			auto& firstOp = container_[firstInBracket].operation;
+			if (curOp.negative != (firstOp.op == OpMinus)) {
+				firstOp.negative = !firstOp.negative;
+			}
+			firstOp.op = curOp.op;
+			if (curOp.op == OpDiv) {
+				for (size_t j = Next(firstInBracket); j < next; j = Next(j)) {
+					auto& op = container_[j].operation.op;
+					op = op == OpMult ? OpDiv : OpMult;
+				}
+			}
+		} else if (nextOp && (nextOp->op == OpMult || nextOp->op == OpDiv)) {
+			if (!justMultiplications(firstInBracket, next)) {
+				continue;
+			}
+			if (curOp.negative != (curOp.op == OpMinus)) {
+				container_[firstInBracket].operation.negative = !container_[firstInBracket].operation.negative;
+			}
+		} else if (curOp.negative != (curOp.op == OpMinus)) {
+			for (size_t j = firstInBracket; j < next; j = Next(j)) {
+				auto& op = container_[j].operation;
+				if (op.op == OpPlus || op.op == OpMinus) {
+					op.negative = !op.negative;
+				}
+			}
+		}
+		Erase(i, firstInBracket);
+		++deleted;
+		next = i;
+	}
+	return deleted;
+}
+
+Changed SortExpression::reduceNegatives(size_t begin, size_t end) {
+	Changed changed = Changed_False;
+	struct {
+		std::decay_t<decltype(container_[0])>* node{nullptr};
+		bool isConst{false};
+	} multChain;
+	for (size_t i = begin; i < end; i = Next(i)) {
+		if (IsSubTree(i)) {
+			changed |= reduceNegatives(i + 1, Next(i));
+		}
+		auto& op = container_[i].operation;
+		if (op.op == OpPlus || op.op == OpMinus) {
+			multChain.node = &container_[i];
+			multChain.isConst = Is<Value>(i);
+		} else if (!multChain.isConst && Is<Value>(i)) {
+			if (op.negative != multChain.node->operation.negative) {
+				auto& value = Get<Value>(i).value;
+				value = -value;
+				op.negative = multChain.node->operation.negative = false;
+				changed = Changed_True;
+			} else if (op.negative) {
+				op.negative = multChain.node->operation.negative = false;
+				changed = Changed_True;
+			}
+			multChain.node = &container_[i];
+			multChain.isConst = true;
+		}
+		if (Is<Value>(i)) {
+			if (op.negative != (op.op == OpMinus)) {
+				auto& value = Get<Value>(i).value;
+				value = -value;
+			}
+			op.negative = false;
+			if (op.op == OpMinus) {
+				op.op = OpPlus;
+			}
+		}
+		if (op.negative && i != begin) {
+			switch (op.op) {
+				case OpPlus:
+					op.op = OpMinus;
+					break;
+				case OpMinus:
+					op.op = OpPlus;
+					break;
+				case OpMult:
+				case OpDiv:
+					if (multChain.isConst) {
+						auto& value = multChain.node->Value<Value>().value;
+						value = -value;
+					} else {
+						multChain.node->operation.negative = !multChain.node->operation.negative;
+					}
+					break;
+				default:
+					throw_as_assert;
+			}
+			op.negative = false;
+			changed = Changed_True;
+		}
+	}
+	if (auto& op = container_[begin].operation; op.op == OpMinus) {
+		op.op = OpPlus;
+		op.negative = !op.negative;
+		changed = Changed_True;
+	}
+	return changed;
+}
+
+void SortExpression::reduce() {
+	Changed changed = Changed_True;
+	for (size_t i = 0; i < 100 && changed; ++i) {
+		changed = constantsFirstInMultiplications(begin(), end());
+		changed |= multiplyConstants();
+		changed |= sumConstants();
+		changed |= (removeBrackets(0, Size()) != 0);
+		changed |= reduceNegatives(0, Size());
+	}
+}
+
+void SortExpression::ThrowNonReranker() {
+	throw Error(errNotValid, "In hybrid query ordering expression should be in form 'a * rank(index1) + b * rank(index2) + c'");
+}
+
+void SortExpression::initRerankerRank(size_t pos, int& indexNo, double& k, double& defaultValue) const {
+	const auto op_0 = GetOperation(pos);
+	if (op_0.op != OpPlus && op_0.op != OpMinus) {
+		ThrowNonReranker();
+	}
+	if (!Is<Value>(pos)) {
+		ThrowNonReranker();
+	}
+	const auto op_1 = GetOperation(pos + 1);
+	if (op_1.op != OpMult) {
+		ThrowNonReranker();
+	}
+	k = ((op_0 == OpMinus) != (op_0.negative != op_1.negative)) ? -Get<Value>(pos).value : Get<Value>(pos).value;
+	if (!Is<RankNamed>(pos + 1)) {
+		ThrowNonReranker();
+	}
+	const auto& rankNamed = Get<RankNamed>(pos + 1);
+	indexNo = rankNamed.IndexNo();
+	defaultValue = rankNamed.DefaultValue();
+}
+
+void SortExpression::initRerankerRankSingle(size_t pos, int& indexNo, double& k, double& defaultValue) const {
+	assertrx_throw(Is<RankNamed>(pos));
+	const auto op = GetOperation(pos);
+	if (op.op != OpPlus && op.op != OpMinus) {
+		ThrowNonReranker();
+	}
+	k = ((op == OpMinus) == op.negative) ? 1.0 : -1.0;
+	const auto& rankNamed = Get<RankNamed>(pos);
+	indexNo = rankNamed.IndexNo();
+	defaultValue = rankNamed.DefaultValue();
+}
+
+void SortExpression::initRerankerConst(size_t pos, double& c) const {
+	const auto op = GetOperation(pos);
+	if (op.op != OpPlus && op.op != OpMinus) {
+		ThrowNonReranker();
+	}
+	if (!Is<Value>(pos)) {
+		ThrowNonReranker();
+	}
+	c = ((op.op == OpMinus) != op.negative) ? -Get<Value>(pos).value : Get<Value>(pos).value;
+}
+
+Reranker SortExpression::ToReranker(const NamespaceImpl& ns, Desc desc) const {
+	if (Size() == 1 && Is<Rrf>(0)) {
+		return {RerankerRRF{Get<Rrf>(0).RankConst()}, desc};
+	}
+	if (Size() < 2) {
+		ThrowNonReranker();
+	}
+	double k1, k2, c;
+	int idxNo1, idxNo2;
+	double default1, default2;
+	if (Is<RankNamed>(0)) {
+		initRerankerRankSingle(0, idxNo1, k1, default1);
+		if (Is<RankNamed>(1)) {
+			initRerankerRankSingle(1, idxNo2, k2, default2);
+			if (Size() == 2) {
+				c = 0.0;
+			} else {
+				if (Size() != 3) {
+					ThrowNonReranker();
+				}
+				initRerankerConst(2, c);
+			}
+		} else {
+			if (Size() < 3) {
+				ThrowNonReranker();
+			}
+			if (const auto op_2 = GetOperation(2); op_2.op == OpPlus || op_2.op == OpMinus) {
+				initRerankerConst(1, c);
+				if (Is<RankNamed>(2)) {
+					if (Size() != 3) {
+						ThrowNonReranker();
+					}
+					initRerankerRankSingle(2, idxNo2, k2, default2);
+				} else {
+					if (Size() != 4) {
+						ThrowNonReranker();
+					}
+					initRerankerRank(2, idxNo2, k2, default2);
+				}
+			} else {
+				initRerankerRank(1, idxNo2, k2, default2);
+				if (Size() == 3) {
+					c = 0.0;
+				} else {
+					if (Size() != 4) {
+						ThrowNonReranker();
+					}
+					initRerankerConst(3, c);
+				}
+			}
+		}
+	} else if (const auto op_1 = GetOperation(1); op_1.op == OpPlus || op_1.op == OpMinus) {
+		initRerankerConst(0, c);
+		if (Is<RankNamed>(1)) {
+			if (Size() < 3) {
+				ThrowNonReranker();
+			}
+			initRerankerRankSingle(1, idxNo1, k1, default1);
+			if (Is<RankNamed>(2)) {
+				if (Size() != 3) {
+					ThrowNonReranker();
+				}
+				initRerankerRankSingle(2, idxNo2, k2, default2);
+			} else {
+				if (Size() != 4) {
+					ThrowNonReranker();
+				}
+				initRerankerRank(2, idxNo2, k2, default2);
+			}
+		} else {
+			if (Size() < 4) {
+				ThrowNonReranker();
+			}
+			initRerankerRank(1, idxNo1, k1, default1);
+			if (Is<RankNamed>(3)) {
+				if (Size() != 4) {
+					ThrowNonReranker();
+				}
+				initRerankerRankSingle(3, idxNo2, k2, default2);
+			} else {
+				if (Size() != 5) {
+					ThrowNonReranker();
+				}
+				initRerankerRank(3, idxNo2, k2, default2);
+			}
+		}
+	} else {
+		if (Size() < 3) {
+			ThrowNonReranker();
+		}
+		initRerankerRank(0, idxNo1, k1, default1);
+		if (Is<RankNamed>(2)) {
+			initRerankerRankSingle(2, idxNo2, k2, default2);
+			if (Size() == 3) {
+				c = 0.0;
+			} else {
+				if (Size() != 4) {
+					ThrowNonReranker();
+				}
+				initRerankerConst(3, c);
+			}
+		} else {
+			if (Size() < 4) {
+				ThrowNonReranker();
+			}
+			if (const auto op_3 = GetOperation(3); op_3.op == OpPlus || op_3.op == OpMinus) {
+				initRerankerConst(2, c);
+				if (Is<RankNamed>(3)) {
+					if (Size() != 4) {
+						ThrowNonReranker();
+					}
+					initRerankerRankSingle(3, idxNo2, k2, default2);
+				} else {
+					if (Size() != 5) {
+						ThrowNonReranker();
+					}
+					initRerankerRank(3, idxNo2, k2, default2);
+				}
+			} else {
+				initRerankerRank(2, idxNo2, k2, default2);
+				if (Size() == 4) {
+					c = 0.0;
+				} else {
+					if (Size() != 5) {
+						ThrowNonReranker();
+					}
+					initRerankerConst(4, c);
+				}
+			}
+		}
+	}
+	assertrx_throw(size_t(idxNo1) < ns.indexes_.size());
+	assertrx_throw(size_t(idxNo2) < ns.indexes_.size());
+	if (ns.indexes_[idxNo1]->IsFloatVector()) {
+		if (!ns.indexes_[idxNo2]->IsFulltext()) {
+			ThrowNonReranker();
+		}
+		return {RerankerLinear{k1, default1, k2, default2, c}, desc};
+	} else {
+		if (!ns.indexes_[idxNo1]->IsFulltext() || !ns.indexes_[idxNo2]->IsFloatVector()) {
+			ThrowNonReranker();
+		}
+		return {RerankerLinear{k2, default2, k1, default1, c}, desc};
+	}
+}
+
+Reranker Reranker::Default() noexcept { return {RerankerRRF(SortExprFuncs::Rrf::kDefaultRankConst), Desc_True}; }
+
 std::string SortExpression::Dump() const {
 	WrSerializer ser;
 	dump(cbegin(), cend(), ser);
@@ -802,7 +1299,7 @@ std::string SortExpression::Dump() const {
 }
 
 void SortExpression::dump(const_iterator begin, const_iterator end, WrSerializer& ser) {
-	assertrx_throw(begin->operation.op == OpPlus);
+	assertf(begin->operation.op == OpPlus, "{}", int(begin->operation.op));
 	for (const_iterator it = begin; it != end; ++it) {
 		if (it != begin) {
 			ser << ' ';
@@ -823,32 +1320,34 @@ void SortExpression::dump(const_iterator begin, const_iterator end, WrSerializer
 			ser << ' ';
 		}
 		if (it->operation.negative) {
-			ser << "(-";
+			ser << "(-"sv;
 		}
 		it->Visit(
 			[&it, &ser](const SortExpressionBracket& b) {
-				ser << (b.IsAbs() ? "ABS(" : "(");
+				ser << (b.IsAbs() ? "ABS("sv : "("sv);
 				dump(it.cbegin(), it.cend(), ser);
 				ser << ')';
 			},
 			[&ser](const Value& v) { ser << v.value; }, [&ser](const SortExprFuncs::Index& i) { ser << i.column; },
-			[&ser](const JoinedIndex& i) { ser << "joined " << i.nsIdx << ' ' << i.column; }, [&ser](const Rank&) { ser << "rank()"; },
-			[&ser](const SortExprFuncs::SortHash& sh) { ser << "hash(" << (sh.IsUserSeed() ? std::to_string(sh.Seed()) : "") << ")"; },
+			[&ser](const JoinedIndex& i) { ser << "joined "sv << i.nsIdx << ' ' << i.column; }, [&ser](const Rank&) { ser << "rank()"sv; },
+			[&ser](const RankNamed& r) { ser << "rank("sv << r.IndexName() << ", "sv << r.DefaultValue() << ')'; },
+			[&ser](const Rrf& r) { ser << "RRF(rank_const="sv << r.RankConst() << ')'; },
+			[&ser](const SortExprFuncs::SortHash& sh) { ser << "hash("sv << (sh.IsUserSeed() ? std::to_string(sh.Seed()) : ""sv) << ')'; },
 			[&ser](const DistanceFromPoint& i) {
-				ser << "ST_Distance(" << i.column << ", [" << i.point.X() << ", " << i.point.Y() << "])";
+				ser << "ST_Distance("sv << i.column << ", ["sv << i.point.X() << ", "sv << i.point.Y() << "])"sv;
 			},
 			[&ser](const DistanceJoinedIndexFromPoint& i) {
-				ser << "ST_Distance(joined " << i.nsIdx << ' ' << i.column << ", [" << i.point.X() << ", " << i.point.Y() << "])";
+				ser << "ST_Distance(joined "sv << i.nsIdx << ' ' << i.column << ", ["sv << i.point.X() << ", "sv << i.point.Y() << "])"sv;
 			},
-			[&ser](const DistanceBetweenIndexes& i) { ser << "ST_Distance(" << i.column1 << ", " << i.column2 << ')'; },
+			[&ser](const DistanceBetweenIndexes& i) { ser << "ST_Distance("sv << i.column1 << ", "sv << i.column2 << ')'; },
 			[&ser](const DistanceBetweenIndexAndJoinedIndex& i) {
-				ser << "ST_Distance(" << i.column << ", joined " << i.jNsIdx << ' ' << i.jColumn << ')';
+				ser << "ST_Distance("sv << i.column << ", joined "sv << i.jNsIdx << ' ' << i.jColumn << ')';
 			},
 			[&ser](const DistanceBetweenJoinedIndexes& i) {
-				ser << "ST_Distance(joined " << i.nsIdx1 << ' ' << i.column1 << ", joined " << i.nsIdx2 << ' ' << i.column2 << ')';
+				ser << "ST_Distance(joined "sv << i.nsIdx1 << ' ' << i.column1 << ", joined "sv << i.nsIdx2 << ' ' << i.column2 << ')';
 			},
 			[&ser](const DistanceBetweenJoinedIndexesSameNs& i) {
-				ser << "ST_Distance(joined " << i.nsIdx << ' ' << i.column1 << ", joined " << i.nsIdx << ' ' << i.column2 << ')';
+				ser << "ST_Distance(joined "sv << i.nsIdx << ' ' << i.column1 << ", joined "sv << i.nsIdx << ' ' << i.column2 << ')';
 			});
 		if (it->operation.negative) {
 			ser << ')';
@@ -884,21 +1383,21 @@ void ProxiedSortExpression::dump(const_iterator begin, const_iterator end, WrSer
 			ser << ' ';
 		}
 		if (it->operation.negative) {
-			ser << "(-";
+			ser << "(-"sv;
 		}
 		it->Visit(
 			[&it, &ser](const SortExpressionBracket& b) {
-				ser << (b.IsAbs() ? "ABS(" : "(");
+				ser << (b.IsAbs() ? "ABS("sv : "("sv);
 				dump(it.cbegin(), it.cend(), ser);
 				ser << ')';
 			},
 			[&ser](const Value& v) { ser << v.value; }, [&ser](const SortExprFuncs::ProxiedField& i) { ser << i.json; },
-			[&ser](const Rank&) { ser << "rank()"; },
-			[&ser](const SortExprFuncs::SortHash& sh) { ser << "hash(" << (sh.IsUserSeed() ? std::to_string(sh.Seed()) : "") << ")"; },
+			[&ser](const Rank&) { ser << "rank()"sv; }, [&ser](const RankNamed& r) { ser << "rank("sv << r.IndexName() << ')'; },
+			[&ser](const SortExprFuncs::SortHash& sh) { ser << "hash("sv << (sh.IsUserSeed() ? std::to_string(sh.Seed()) : ""sv) << ')'; },
 			[&ser](const ProxiedDistanceFromPoint& i) {
-				ser << "ST_Distance(" << i.json << ", [" << i.point.X() << ", " << i.point.Y() << "])";
+				ser << "ST_Distance("sv << i.json << ", ["sv << i.point.X() << ", "sv << i.point.Y() << "])"sv;
 			},
-			[&ser](const ProxiedDistanceBetweenFields& i) { ser << "ST_Distance(" << i.json2 << ", " << i.json2 << ')'; });
+			[&ser](const ProxiedDistanceBetweenFields& i) { ser << "ST_Distance("sv << i.json2 << ", "sv << i.json2 << ')'; });
 		if (it->operation.negative) {
 			ser << ')';
 		}

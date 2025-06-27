@@ -366,9 +366,8 @@ void CoroClientConnection::writerRoutine() {
 				recycleChunk(std::move(mch.first.data));
 				auto& c = rpcCalls_[mch.first.seq % rpcCalls_.size()];
 				if (c.used && c.rspCh.opened() && !c.rspCh.full()) {
-					c.rspCh.push(
-						Error(errNetwork,
-							  "Connection was broken and all associated snapshots, queryresults and transaction were invalidated"));
+					c.rspCh.push(Error(
+						errNetwork, "Connection was broken and all associated snapshots, queryresults and transaction were invalidated"));
 				}
 				continue;
 			}

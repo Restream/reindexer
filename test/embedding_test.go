@@ -29,13 +29,13 @@ type TestEmbedItemIvf struct {
 }
 
 const (
-	kHNWSNsEmbed = "test_embedding_hnws"
-	kIvfNsEmbed  = "test_embedding_ivf"
+	testHNWSEmbedNs = "test_embedding_hnws"
+	testIvfEmbedNs  = "test_embedding_ivf"
 )
 
 func init() {
-	tnamespaces[kHNWSNsEmbed] = TestEmbedItemHNWS{}
-	tnamespaces[kIvfNsEmbed]  = TestEmbedItemIvf{}
+	tnamespaces[testHNWSEmbedNs] = TestEmbedItemHNWS{}
+	tnamespaces[testIvfEmbedNs] = TestEmbedItemIvf{}
 }
 
 func newTestEmbedItemHNWS(id int) interface{} {
@@ -106,7 +106,7 @@ func TestEmbedUpsertKnnIndex(t *testing.T) {
 		FieldType: "float_vector",
 		Config:    hnswSTOpts,
 	}
-	err := DB.AddIndex(kHNWSNsEmbed, indexDef)
+	err := DB.AddIndex(testHNWSEmbedNs, indexDef)
 	require.NoError(t, err)
 
 	rand.Seed(time.Now().UnixNano())
@@ -122,11 +122,11 @@ func TestEmbedUpsertKnnIndex(t *testing.T) {
 			case <-time.After(time.Millisecond * 1):
 				if rand.Intn(2) > 0 {
 					ctx, cancel := context.WithCancel(context.Background())
-					err := DB.UpsertCtx(ctx, kHNWSNsEmbed, newTestEmbedItemHNWS(rand.Intn(1000000)))
+					err := DB.UpsertCtx(ctx, testHNWSEmbedNs, newTestEmbedItemHNWS(rand.Intn(1000000)))
 					cancel()
 					require.NoError(t, err)
 				} else {
-					tx, err := DB.BeginTx(kHNWSNsEmbed)
+					tx, err := DB.BeginTx(testHNWSEmbedNs)
 					require.NoError(t, err)
 					itemCount := 15
 					for i := 0; i < itemCount; i++ {
@@ -150,12 +150,12 @@ func TestEmbedUpsertKnnIndex(t *testing.T) {
 	close(done)
 	wg.Wait()
 
-	it1 := DB.GetBaseQuery(kHNWSNsEmbed).Where("vec", reindexer.EMPTY, nil).Exec()
+	it1 := newTestQuery(DB, testHNWSEmbedNs).Where("vec", reindexer.EMPTY, nil).Exec(t)
 	defer it1.Close()
 	require.NoError(t, it1.Error())
 	require.Equal(t, it1.Count(), 0)
 
-	it2 := DB.GetBaseQuery(kHNWSNsEmbed).Exec()
+	it2 := newTestQuery(DB, testHNWSEmbedNs).Exec(t)
 	require.NoError(t, it2.Error())
 	defer it2.Close()
 	require.Greater(t, it2.Count(), 0)
@@ -191,12 +191,12 @@ func TestEmbedQueryKnnIndex(t *testing.T) {
 		FieldType: "float_vector",
 		Config:    ivfOpts,
 	}
-	err := DB.AddIndex(kIvfNsEmbed, indexDef)
+	err := DB.AddIndex(testIvfEmbedNs, indexDef)
 	require.NoError(t, err)
 
 	rand.Seed(time.Now().UnixNano())
 
-	FillTestItemsWithFuncParts(kIvfNsEmbed, 0, kTestIVFFloatVectorMaxElements, kTestIVFFloatVectorMaxElements/10, 0, newTestEmbedItemIvf)
+	FillTestItemsWithFuncParts(testIvfEmbedNs, 0, kTestIVFFloatVectorMaxElements, kTestIVFFloatVectorMaxElements/10, 0, newTestEmbedItemIvf)
 
 	done := make(chan bool)
 	wg := sync.WaitGroup{}
@@ -207,16 +207,14 @@ func TestEmbedQueryKnnIndex(t *testing.T) {
 			case <-done:
 				return
 			case <-time.After(time.Millisecond * 1):
-				knnBaseSearchParams, err := reindexer.NewBaseKnnSearchParam(1000)
-				require.NoError(t, err)
-				ivfSearchParams, err := reindexer.NewIndexIvfSearchParam(10, knnBaseSearchParams)
+				ivfSearchParams, err := reindexer.NewIndexIvfSearchParam(10, reindexer.BaseKnnSearchParam{}.SetK(1000))
 				require.NoError(t, err)
 
 				rand.Seed(time.Now().UnixNano())
-				searchText := strconv.Itoa(rand.Int());
+				searchText := strconv.Itoa(rand.Int())
 				// do it twice to touch cache
 				for i := 0; i < 2; i++ {
-					it := DB.GetBaseQuery(kIvfNsEmbed).WhereKnnString("vec", searchText, ivfSearchParams).Exec()
+					it := newTestQuery(DB, testIvfEmbedNs).WhereKnnString("vec", searchText, ivfSearchParams).Exec(t)
 					defer it.Close()
 					require.NoError(t, it.Error())
 					require.Greater(t, it.Count(), 0)

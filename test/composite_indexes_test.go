@@ -1,8 +1,6 @@
 package reindexer
 
 import (
-	"encoding/json"
-	"log"
 	"math/rand"
 	"strconv"
 	"testing"
@@ -53,24 +51,35 @@ type TestItemCompositeUpsert struct {
 	NamedComposite struct{} `reindex:"first+second,,composite"` // The name is assigned for testing. Don't give composite fields names!
 }
 
-const testCompositeIndexesSubstitutionNs = "test_composite_indexes_substitution"
-const testMultipleCompositeSubindexes = "test_composite_indexes_multiple_subindexes"
-const testCompositesLimit = "test_composites_limit"
-const testCompositeUpsert = "test_composites_upsert"
+const (
+	testCompositeIndexesSubstitutionNs = "test_composite_indexes_substitution"
+	testMultipleCompositeSubindexesNs  = "test_composite_indexes_multiple_subindexes"
+	testCompositesLimitNs              = "test_composites_limit"
+	testCompositeUpsertNs              = "test_composites_upsert"
+)
 
 func init() {
 	tnamespaces[testCompositeIndexesSubstitutionNs] = TestCompositeSubstitutionStruct{}
-	tnamespaces[testMultipleCompositeSubindexes] = TestItemMultipleCompositeSubindexes{}
-	tnamespaces[testCompositesLimit] = TestItemCompositesLimit{}
-	tnamespaces[testCompositeUpsert] = TestItemCompositeUpsert{}
+	tnamespaces[testMultipleCompositeSubindexesNs] = TestItemMultipleCompositeSubindexes{}
+	tnamespaces[testCompositesLimitNs] = TestItemCompositesLimit{}
+	tnamespaces[testCompositeUpsertNs] = TestItemCompositeUpsert{}
 }
 
-func printExplainRes(res *reindexer.ExplainResults) {
-	j, err := json.Marshal(res)
-	if err != nil {
-		panic(err)
+func appendRandInts(arr []int, skipValue int, size int) []int {
+	for len(arr) < size {
+		v := rand.Intn(3000)
+		if v == skipValue {
+			continue
+		}
+		arr = append(arr, v)
 	}
-	log.Println(string(j))
+	return arr
+}
+
+func createRandIntArrayWithValue(val int, size int) []int {
+	arr := make([]int, 0, size)
+	arr = append(arr, val)
+	return appendRandInts(arr, val, size)
 }
 
 func TestCompositeIndexesSubstitution(t *testing.T) {
@@ -179,7 +188,7 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		}, "")
 	})
 
-	t.Run("reversed basic substitution with extra idx in the midle", func(t *testing.T) {
+	t.Run("reversed basic substitution with extra idx in the middle", func(t *testing.T) {
 		it := DB.Query(ns).
 			Where("first2", reindexer.EQ, item.First2).
 			Where("id", reindexer.EQ, item.ID).
@@ -990,7 +999,7 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 func TestCompositeIndexesBestSubstitution(t *testing.T) {
 	t.Parallel()
 
-	const ns = testMultipleCompositeSubindexes
+	const ns = testMultipleCompositeSubindexesNs
 	item := TestItemMultipleCompositeSubindexes{
 		ID: rand.Intn(100), First: rand.Intn(1000), Second: rand.Intn(1000), Third: rand.Intn(1000), Fourth: rand.Intn(1000),
 	}
@@ -1052,7 +1061,7 @@ func TestCompositeIndexesBestSubstitution(t *testing.T) {
 		}, "")
 	})
 
-	t.Run("largest composite indexes selection with OR in the midle. Case 1", func(t *testing.T) {
+	t.Run("largest composite indexes selection with OR in the middle. Case 1", func(t *testing.T) {
 		it := DB.Query(ns).
 			Where("first", reindexer.EQ, item.First).
 			Where("fourth", reindexer.EQ, item.Fourth).
@@ -1095,7 +1104,7 @@ func TestCompositeIndexesBestSubstitution(t *testing.T) {
 		}, "")
 	})
 
-	t.Run("largest composite indexes selection with OR in the midle. Case 2", func(t *testing.T) {
+	t.Run("largest composite indexes selection with OR in the middle. Case 2", func(t *testing.T) {
 		it := DB.Query(ns).
 			Where("first", reindexer.EQ, item.First).
 			Where("fourth", reindexer.EQ, item.Fourth).
@@ -1136,7 +1145,7 @@ func TestCompositeIndexesBestSubstitution(t *testing.T) {
 		}, "")
 	})
 
-	t.Run("largest composite indexes selection with OR in the midle. Case 3", func(t *testing.T) {
+	t.Run("largest composite indexes selection with OR in the middle. Case 3", func(t *testing.T) {
 		it := DB.Query(ns).
 			Where("second", reindexer.EQ, item.Second).
 			Where("fourth", reindexer.EQ, item.Fourth).
@@ -1177,7 +1186,7 @@ func TestCompositeIndexesBestSubstitution(t *testing.T) {
 		}, "")
 	})
 
-	t.Run("No composite indexes substitution with OR in the midle", func(t *testing.T) {
+	t.Run("No composite indexes substitution with OR in the middle", func(t *testing.T) {
 		it := DB.Query(ns).
 			Where("fourth", reindexer.EQ, item.Fourth).
 			Where("second", reindexer.EQ, item.Second).
@@ -1231,27 +1240,10 @@ func TestCompositeIndexesBestSubstitution(t *testing.T) {
 	})
 }
 
-func appendRandInts(arr []int, skipValue int, size int) []int {
-	for len(arr) < size {
-		v := rand.Intn(3000)
-		if v == skipValue {
-			continue
-		}
-		arr = append(arr, v)
-	}
-	return arr
-}
-
-func createRandIntArrayWithValue(val int, size int) []int {
-	arr := make([]int, 0, size)
-	arr = append(arr, val)
-	return appendRandInts(arr, val, size)
-}
-
 func TestCompositeSubstitutionLimit(t *testing.T) {
 	t.Parallel()
 
-	const ns = testCompositesLimit
+	const ns = testCompositesLimitNs
 	item := TestItemCompositesLimit{
 		ID: rand.Intn(100), First: rand.Intn(1000), Second: rand.Intn(1000), Third: rand.Intn(1000), Fourth: rand.Intn(1000),
 	}
@@ -1412,7 +1404,7 @@ func TestCompositeSubstitutionLimit(t *testing.T) {
 func TestCompositeUpsert(t *testing.T) {
 	t.Parallel()
 
-	const ns = testCompositeUpsert
+	const ns = testCompositeUpsertNs
 	item := TestItemCompositeUpsert{
 		Id:     rand.Intn(100),
 		First:  rand.Intn(1000),

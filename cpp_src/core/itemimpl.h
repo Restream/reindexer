@@ -31,62 +31,62 @@ public:
 	ItemImpl(PayloadType type, PayloadValue v, const TagsMatcher& tagsMatcher, std::shared_ptr<const Schema> schema = {});
 
 	ItemImpl(const ItemImpl&) = delete;
-	ItemImpl(ItemImpl&&);
-	ItemImpl& operator=(ItemImpl&&);
+	ItemImpl(ItemImpl&&) noexcept;
+	ItemImpl& operator=(ItemImpl&&) noexcept;
 	ItemImpl& operator=(const ItemImpl&) = delete;
 
 	void ModifyField(std::string_view jsonPath, const VariantArray& keys, FieldModifyMode mode);
 	void ModifyField(const IndexedTagsPath& tagsPath, const VariantArray& keys, FieldModifyMode mode);
-	void SetField(int field, const VariantArray& krs);
+	void SetField(int field, const VariantArray& krs, NeedCreate needCopy = NeedCreate_True);
 	void SetField(std::string_view jsonPath, const VariantArray& keys);
 	void DropField(std::string_view jsonPath);
-	Variant GetField(int field);
+	[[nodiscard]] Variant GetField(int field);
 	void GetField(int field, VariantArray&);
-	FieldsSet PkFields() const { return pkFields_; }
-	TagName NameTag(std::string_view name) const { return tagsMatcher_.name2tag(name); }
-	int FieldIndex(std::string_view name) const {
+	[[nodiscard]] FieldsSet PkFields() const { return pkFields_; }
+	[[nodiscard]] TagName NameTag(std::string_view name) const { return tagsMatcher_.name2tag(name); }
+	[[nodiscard]] int FieldIndex(std::string_view name) const {
 		int field = IndexValueType::NotSet;
-		payloadType_.FieldByName(name, field);
-		return field;
+		if (payloadType_.FieldByName(name, field)) {
+			return field;
+		}
+		return IndexValueType::NotSet;
 	}
 
-	VariantArray GetValueByJSONPath(std::string_view jsonPath);
+	[[nodiscard]] VariantArray GetValueByJSONPath(std::string_view jsonPath);
 
-	std::string_view GetJSON();
-	Error FromJSON(std::string_view slice, char** endp = nullptr, bool pkOnly = false);
+	[[nodiscard]] std::string_view GetJSON();
+	[[nodiscard]] Error FromJSON(std::string_view slice, char** endp = nullptr, bool pkOnly = false);
 	void FromCJSON(ItemImpl& other, Recoder*);
 
-	std::string_view GetCJSON(bool withTagsMatcher = false);
+	[[nodiscard]] std::string_view GetCJSON(bool withTagsMatcher = false);
 	std::string_view GetCJSON(WrSerializer& ser, bool withTagsMatcher = false);
-	std::string_view GetCJSONWithTm();
-	std::string_view GetCJSONWithTm(WrSerializer& ser);
 	void FromCJSON(std::string_view slice, bool pkOnly = false, Recoder* = nullptr);
-	Error FromMsgPack(std::string_view sbuf, size_t& offset);
-	Error FromProtobuf(std::string_view sbuf);
-	Error GetMsgPack(WrSerializer& wrser);
-	std::string_view GetMsgPack();
-	Error GetProtobuf(WrSerializer& wrser);
+	[[nodiscard]] Error FromMsgPack(std::string_view sbuf, size_t& offset);
+	[[nodiscard]] Error FromProtobuf(std::string_view sbuf);
+	[[nodiscard]] Error GetMsgPack(WrSerializer& wrser);
+	[[nodiscard]] std::string_view GetMsgPack();
+	[[nodiscard]] Error GetProtobuf(WrSerializer& wrser);
 
-	const PayloadType& Type() const noexcept { return payloadType_; }
-	PayloadValue& Value() noexcept { return payloadValue_; }
-	PayloadValue& RealValue() noexcept { return realValue_; }
-	Payload GetPayload() noexcept { return Payload(payloadType_, payloadValue_); }
-	ConstPayload GetConstPayload() const noexcept { return ConstPayload(payloadType_, payloadValue_); }
-	std::shared_ptr<const Schema> GetSchema() const noexcept { return schema_; }
+	[[nodiscard]] const PayloadType& Type() const& noexcept { return payloadType_; }
+	[[nodiscard]] PayloadValue& Value()& noexcept { return payloadValue_; }
+	[[nodiscard]] PayloadValue& RealValue()& noexcept { return realValue_; }
+	[[nodiscard]] Payload GetPayload() noexcept { return Payload(payloadType_, payloadValue_); }
+	[[nodiscard]] ConstPayload GetConstPayload() const noexcept { return ConstPayload(payloadType_, payloadValue_); }
+	[[nodiscard]] std::shared_ptr<const Schema> GetSchema() const noexcept { return schema_; }
 
-	TagsMatcher& tagsMatcher() noexcept { return tagsMatcher_; }
-	std::shared_ptr<const Schema>& schema() noexcept { return schema_; }
+	[[nodiscard]] TagsMatcher& tagsMatcher() noexcept { return tagsMatcher_; }
+	[[nodiscard]] std::shared_ptr<const Schema>& schema()& noexcept { return schema_; }
 
 	void SetPrecepts(std::vector<std::string>&& precepts) {
 		precepts_ = std::move(precepts);
 		cjson_ = std::string_view();
 	}
-	const std::vector<std::string>& GetPrecepts() const noexcept { return precepts_; }
+	[[nodiscard]] const std::vector<std::string>& GetPrecepts() const& noexcept { return precepts_; }
 	void Unsafe(bool enable) noexcept { unsafe_ = enable; }
-	bool IsUnsafe() const noexcept { return unsafe_; }
+	[[nodiscard]] bool IsUnsafe() const noexcept { return unsafe_; }
 	void Clear();
 	void SetNamespace(std::shared_ptr<Namespace> ns) noexcept { ns_ = std::move(ns); }
-	std::weak_ptr<Namespace> GetNamespace() const noexcept { return ns_; }
+	[[nodiscard]] std::weak_ptr<Namespace> GetNamespace() const noexcept { return ns_; }
 	static void validateModifyArray(const VariantArray& values);
 	void BuildTupleIfEmpty();
 	/**

@@ -33,8 +33,8 @@ public:
 		size_t connect_timeout_ms{300};
 		size_t read_timeout_ms{5'000};
 		size_t write_timeout_ms{5'000};
+
 		bool operator==(const PoolOpts& o) const noexcept = default;
-		bool operator!=(const PoolOpts& o) const noexcept = default;
 	};
 	struct EmbedderOpts {
 		std::string endpointUrl;
@@ -67,6 +67,7 @@ public:
 	size_t M() const noexcept { return M_; }
 	size_t EfConstruction() const noexcept { return efConstruction_; }
 	size_t NCentroids() const noexcept { return nCentroids_; }
+	std::optional<float> Radius() const noexcept { return radius_; }
 	MultithreadingMode Multithreading() const noexcept { return multithreadingMode_; }
 	reindexer::VectorMetric Metric() const noexcept { return metric_; }
 	std::optional<EmbeddingOpts> Embedding() const noexcept { return embedding_; }
@@ -109,12 +110,20 @@ public:
 		embedding_ = embedding;
 		return *this;
 	}
+	FloatVectorIndexOpts&& SetRadius(float radius) && noexcept { return std::move(SetRadius(radius)); }
+	FloatVectorIndexOpts& SetRadius(float radius) & noexcept {
+		radius_ = radius;
+		return *this;
+	}
 	FloatVectorIndexOpts&& SetEmbedding(EmbeddingOpts embedding) && noexcept { return std::move(SetEmbedding(embedding)); }
-	bool operator==(const FloatVectorIndexOpts& o) const noexcept = default;
-	bool operator!=(const FloatVectorIndexOpts& o) const noexcept = default;
+	[[nodiscard]] bool operator==(const FloatVectorIndexOpts& o) const noexcept {
+		// NOTE: without embedding_
+		return dimension_ == o.dimension_ && startSize_ == o.startSize_ && M_ == o.M_ && efConstruction_ == o.efConstruction_ &&
+			   nCentroids_ == o.nCentroids_ && multithreadingMode_ == o.multithreadingMode_ && metric_ == o.metric_;
+	}
 	void Validate(IndexType);
 	static FloatVectorIndexOpts ParseJson(IndexType, std::string_view json);
-	std::string GetJson() const;
+	[[nodiscard]] std::string GetJson() const;
 	void GetJson(reindexer::JsonBuilder&) const;
 
 private:
@@ -126,6 +135,7 @@ private:
 	MultithreadingMode multithreadingMode_{MultithreadingMode::SingleThread};
 	reindexer::VectorMetric metric_{reindexer::VectorMetric::L2};
 	std::optional<EmbeddingOpts> embedding_;
+	std::optional<float> radius_;
 };
 
 /// Cpp version of IndexOpts: includes

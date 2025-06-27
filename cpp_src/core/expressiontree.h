@@ -1,6 +1,7 @@
 #pragma once
 
 #include <variant>
+#include "enums.h"
 #include "estl/h_vector.h"
 #include "estl/overloaded.h"
 #include "tools/errors.h"
@@ -573,6 +574,7 @@ class ExpressionTree {
 
 protected:
 	using Container = h_vector<Node, holdSize>;
+	enum class [[nodiscard]] MergeResult { NotMerged, Merged, Annihilated };
 
 private:
 	template <typename T>
@@ -582,27 +584,6 @@ private:
 	};
 
 public:
-	ExpressionTree() = default;
-	ExpressionTree(ExpressionTree&&) noexcept = default;
-	ExpressionTree& operator=(ExpressionTree&&) noexcept = default;
-	ExpressionTree(const ExpressionTree& other) : activeBrackets_{other.activeBrackets_} {
-		container_.reserve(other.container_.size());
-		for (const Node& n : other.container_) {
-			container_.emplace_back(n.Copy());
-		}
-	}
-	ExpressionTree& operator=(const ExpressionTree& other) {
-		if rx_unlikely (this == &other) {
-			return *this;
-		}
-		container_.clear();
-		container_.reserve(other.container_.size());
-		for (const Node& n : other.container_) {
-			container_.emplace_back(n.Copy());
-		}
-		activeBrackets_ = other.activeBrackets_;
-		return *this;
-	}
 	RX_ALWAYS_INLINE bool operator==(const ExpressionTree& other) const noexcept {
 		if (container_.size() != other.container_.size()) {
 			return false;
@@ -614,7 +595,6 @@ public:
 		}
 		return true;
 	}
-	RX_ALWAYS_INLINE bool operator!=(const ExpressionTree& other) const noexcept { return !operator==(other); }
 
 	/// Insert value at the position
 	template <typename T>
@@ -1060,8 +1040,34 @@ public:
 		}
 		return start;
 	}
+	void Erase(iterator it) {
+		assertrx_dbg(it != end());
+		const auto pos = it.PlainIterator() - begin().PlainIterator();
+		return Erase(pos, pos + 1);
+	}
 
 protected:
+	ExpressionTree() = default;
+	ExpressionTree(ExpressionTree&&) noexcept = default;
+	ExpressionTree& operator=(ExpressionTree&&) noexcept = default;
+	ExpressionTree(const ExpressionTree& other) : activeBrackets_{other.activeBrackets_} {
+		container_.reserve(other.container_.size());
+		for (const Node& n : other.container_) {
+			container_.emplace_back(n.Copy());
+		}
+	}
+	ExpressionTree& operator=(const ExpressionTree& other) {
+		if rx_unlikely (this == &other) {
+			return *this;
+		}
+		container_.clear();
+		container_.reserve(other.container_.size());
+		for (const Node& n : other.container_) {
+			container_.emplace_back(n.Copy());
+		}
+		activeBrackets_ = other.activeBrackets_;
+		return *this;
+	}
 	Container container_;
 	/// stack of opened brackets (beginnings of subtrees)
 	h_vector<unsigned, 2> activeBrackets_;
@@ -1083,6 +1089,9 @@ protected:
 				[this, op](const auto& v) -> void { this->Append(op, v); });
 		}
 	}
+
+	template <typename Merger>
+	size_t mergeEntries(Merger&, uint16_t dst, uint16_t srcBegin, uint16_t srcEnd, Changed&);
 };
 
 }  // namespace reindexer

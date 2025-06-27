@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v5"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -13,35 +12,6 @@ type TestItemWithTtl struct {
 	ID   int    `reindex:"id,,pk" json:"id"`
 	Date int64  `reindex:"date,ttl,,expire_after=1" json:"date"`
 	Data string `reindex:"data" json:"data"`
-}
-
-func init() {
-	tnamespaces["test_items_with_ttl"] = TestItemWithTtl{}
-}
-
-func newTestItemWithTtlObject(id int, date int64) *TestItemWithTtl {
-	return &TestItemWithTtl{
-		ID:   id,
-		Date: date,
-		Data: randString(),
-	}
-}
-
-func TestBasicCheckItemsTtlExpired(t *testing.T) {
-	tx := newTestTx(DB, "test_items_with_ttl")
-	for i := 0; i < 1000; i++ {
-		assert.NoError(t, tx.Upsert(newTestItemWithTtlObject(i, time.Now().Unix())))
-	}
-
-	time.Sleep(3)
-
-	results, err := DB.Query("test_items_with_ttl").Exec(t).FetchAll()
-	if err != nil {
-		panic(err)
-	}
-
-	assert.Equal(t, len(results), 0, "Namespace should be empty!")
-
 }
 
 type ItemExpireTTL struct {
@@ -54,30 +24,58 @@ type ItemExpireTTL2 struct {
 	CreatedAt int64  `json:"created_at" reindex:"created_at,ttl,,expire_after=1"`
 }
 
-func TestExpireTTL(t *testing.T) {
+const (
+	testItemsWithTTLNs = "test_items_with_ttl"
+	testExpireTTLNs1   = "test_expire_ttl1"
+	testExpireTTLNs2   = "test_expire_ttl2"
+)
 
-	const testNamespace = "test_expire_ttl"
+func init() {
+	tnamespaces[testItemsWithTTLNs] = TestItemWithTtl{}
+	tnamespaces[testExpireTTLNs1] = ItemExpireTTL{}
+	tnamespaces[testExpireTTLNs2] = ItemExpireTTL2{}
+}
 
-	err := DB.OpenNamespace(testNamespace, reindexer.DefaultNamespaceOptions(), ItemExpireTTL{})
-	assert.NoError(t, err, "Can't open namespace \"%s\"", testNamespace)
-	for index := 0; index < 10; index++ {
-		err = DB.Upsert(testNamespace, ItemExpireTTL{strconv.Itoa(index), time.Now().Unix()})
-		assert.NoError(t, err, "Can't Upsert data to namespace")
-	}
-	DB.CloseNamespace(testNamespace)
-	err = DB.OpenNamespace(testNamespace, reindexer.DefaultNamespaceOptions(), ItemExpireTTL2{})
-	assert.NoError(t, err)
-
-	countItems := 0
-	for i := 1; i < 20; i++ {
-		time.Sleep(1 * time.Second)
-		q := DB.Query(testNamespace)
-		it := q.Exec(t)
-		defer it.Close()
-		countItems = it.Count()
-		if countItems == 0 {
-			break
+func TestBasicCheckItemsTtlExpired(t *testing.T) {
+	tx := newTestTx(DB, testItemsWithTTLNs)
+	for i := 0; i < 1000; i++ {
+		new_item := TestItemWithTtl{
+			ID:   i,
+			Date: time.Now().Unix(),
+			Data: randString(),
 		}
+		assert.NoError(t, tx.Upsert(new_item))
 	}
-	assert.Equal(t, 0, countItems)
+	time.Sleep(3)
+
+	results, err := DB.Query(testItemsWithTTLNs).Exec(t).FetchAll()
+	if err != nil {
+		panic(err)
+	}
+	assert.Equal(t, len(results), 0, "Namespace should be empty!")
+}
+
+func TestExpireTTL(t *testing.T) {
+	t.Run("Can insert index with expire_after", func(t *testing.T) {
+		for index := 0; index < 10; index++ {
+			err := DB.Upsert(testExpireTTLNs1, ItemExpireTTL{strconv.Itoa(index), time.Now().Unix()})
+			assert.NoError(t, err, "Can't Upsert data to namespace")
+		}
+	})
+
+	t.Run("Items are deleted after expire", func(t *testing.T) {
+		countItems := 0
+		for i := 1; i < 20; i++ {
+			time.Sleep(1 * time.Second)
+			q := DB.Query(testExpireTTLNs2)
+			it := q.Exec(t)
+			defer it.Close()
+			countItems = it.Count()
+			if countItems == 0 {
+				break
+			}
+		}
+		assert.Equal(t, 0, countItems)
+	})
+
 }

@@ -429,6 +429,8 @@ void IndexUnordered<T>::Commit() {
 
 template <typename T>
 void IndexUnordered<T>::UpdateSortedIds(const UpdateSortedContext& ctx) {
+	assertrx_dbg(IsSupportSortedIdsBuild());
+
 	logFmt(LogTrace, "IndexUnordered::UpdateSortedIds ({}) {} uniq keys, {} empty", this->name_, this->idx_map.size(),
 		   this->empty_ids_.Unsorted().size());
 	// For all keys in index

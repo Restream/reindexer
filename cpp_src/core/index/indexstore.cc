@@ -143,7 +143,7 @@ SelectKeyResults IndexStore<T>::SelectKey(const VariantArray& keys, CondType con
 								keys,
 								idx_data.size() ? idx_data.data() : nullptr,
 								opts_.IsArray(),
-								bool(selectCtx.opts.distinct),
+								IsDistinct(selectCtx.opts.distinct),
 								payloadType_,
 								Fields(),
 								opts_.collateOpts_};

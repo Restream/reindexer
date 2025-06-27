@@ -146,6 +146,8 @@ type FtFastConfig struct {
 	// Default value is 20000. Increasing this value may refine ranking
 	// of queries with high frequency words
 	MergeLimit int `json:"merge_limit"`
+	// List of symbol types for keeping diacritic symbols (acc/accent, ara/arabic, heb/hebrew or cyr/cyrillic)
+	KeepDiacritics []string `json:"keep_diacritics"`
 	// List of used stemmers
 	Stemmers []string `json:"stemmers"`
 	// Enable translit variants processing
@@ -216,6 +218,7 @@ func DefaultFtFastConfig() FtFastConfig {
 		MaxRebuildSteps:         50,
 		MaxStepSize:             4000,
 		MergeLimit:              20000,
+		KeepDiacritics:          []string{},
 		Stemmers:                []string{"en", "ru"},
 		EnableTranslit:          true,
 		EnableKbLayout:          true,

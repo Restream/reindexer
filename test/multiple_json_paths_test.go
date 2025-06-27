@@ -71,19 +71,28 @@ type TestItemNestedArrAppendableN2 struct {
 	NFieldArr []int `json:"nfield_arr,omitempty" reindex:"arridx,,appendable"`
 }
 
-const TestSelectWithMultipleJsonPathsNs = "test_select_with_multiple_json_paths"
-const TestSelectArrWithMultipleJsonPathsNs = "test_select_arr_with_multiple_json_paths"
+type aggValuesStruct struct {
+	Min float64 `json:"min"`
+	Max float64 `json:"max"`
+	Sum float64 `json:"sum"`
+	Avg float64 `json:"avg"`
+}
 
-const TestJoinWithMultipleJsonPathsNs = "test_join_with_multiple_json_paths"
-const TestJoinedWithMultipleJsonPathsNs = "test_joined_with_multiple_json_paths"
-const TestJoinArrWithMultipleJsonPathsNs = "test_join_arr_with_multiple_json_paths"
-const TestJoinedArrWithMultipleJsonPathsNs = "test_joined_arr_with_multiple_json_paths"
+const (
+	TestSelectWithMultipleJsonPathsNs    = "test_select_with_multiple_json_paths"
+	TestSelectArrWithMultipleJsonPathsNs = "test_select_arr_with_multiple_json_paths"
 
-const TestAggregWithMultipleJsonPathsNs = "test_aggreg_with_multiple_json_paths"
-const TestAggregArrWithMultipleJsonPathsNs = "test_aggreg_arr_with_multiple_json_paths"
+	TestJoinWithMultipleJsonPathsNs      = "test_join_with_multiple_json_paths"
+	TestJoinedWithMultipleJsonPathsNs    = "test_joined_with_multiple_json_paths"
+	TestJoinArrWithMultipleJsonPathsNs   = "test_join_arr_with_multiple_json_paths"
+	TestJoinedArrWithMultipleJsonPathsNs = "test_joined_arr_with_multiple_json_paths"
 
-const TestNestedWithMultipleJsonPathsNs = "test_nested_with_multiple_json_paths"
-const TestNestedArrWithMultipleJsonPathsNs = "test_nested_arr_with_multiple_json_paths"
+	TestAggregWithMultipleJsonPathsNs    = "test_aggreg_with_multiple_json_paths"
+	TestAggregArrWithMultipleJsonPathsNs = "test_aggreg_arr_with_multiple_json_paths"
+
+	TestNestedWithMultipleJsonPathsNs    = "test_nested_with_multiple_json_paths"
+	TestNestedArrWithMultipleJsonPathsNs = "test_nested_arr_with_multiple_json_paths"
+)
 
 func init() {
 	tnamespaces[TestSelectWithMultipleJsonPathsNs] = TestItemAppendable{}
@@ -101,11 +110,9 @@ func init() {
 	tnamespaces[TestNestedArrWithMultipleJsonPathsNs] = TestItemNestedArrAppendable{}
 }
 
-func checkResultItem(t *testing.T, it *reindexer.Iterator, item interface{}) {
-	defer it.Close()
-	require.Equal(t, 1, it.Count())
-	for it.Next() {
-		require.EqualValues(t, item, it.Object())
+func addValuesFromArrToMap(m map[string]int, arrField []int) {
+	for _, arr := range arrField {
+		m[strconv.Itoa(arr)] += 1
 	}
 }
 
@@ -119,7 +126,6 @@ func TestSelectWithMultipleJsonPaths(t *testing.T) {
 	testItem2 := TestItemAppendable{ID: 2, Field2: 20}
 	testItem3 := TestItemAppendable{ID: 3, Field1: 30}
 	testItem4 := TestItemAppendable{ID: 4, Field2: 30}
-
 	for _, item := range []TestItemAppendable{testItem1, testItem2, testItem3, testItem4} {
 		err := DB.Upsert(ns, item)
 		require.NoError(t, err)
@@ -144,7 +150,6 @@ func TestSelectWithMultipleJsonPaths(t *testing.T) {
 	testArrItem1 := TestArrItemAppendable{ID: 5, ArrField1: []int{50, 51}}
 	testArrItem2 := TestArrItemAppendable{ID: 6, ArrField2: []int{60, 61}}
 	testArrItem3 := TestArrItemAppendable{ID: 7, ArrField1: []int{70, 71}, ArrField2: []int{72, 73}}
-
 	for _, item := range []TestArrItemAppendable{testArrItem1, testArrItem2, testArrItem3} {
 		err := DB.Upsert(ns2, item)
 		require.NoError(t, err)
@@ -269,19 +274,6 @@ func TestJoinWithMultipleJsonPaths(t *testing.T) {
 			require.EqualValues(t, &expectedItems2[i], v.(*TestJoinArrItemAppendable))
 		}
 	})
-}
-
-type aggValuesStruct struct {
-	Min float64 `json:"min"`
-	Max float64 `json:"max"`
-	Sum float64 `json:"sum"`
-	Avg float64 `json:"avg"`
-}
-
-func addValuesFromArrToMap(m map[string]int, arrField []int) {
-	for _, arr := range arrField {
-		m[strconv.Itoa(arr)] += 1
-	}
 }
 
 func TestAggregationsWithMultipleJsonPaths(t *testing.T) {

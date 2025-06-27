@@ -272,8 +272,7 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 		if (auto* selRes = std::get_if<SelectKeyResultsVector>(&selectResults)) {
 			bool wasAppended = false;
 			for (SelectKeyResult& res : *selRes) {
-				SelectIterator selIter{std::move(res), false, std::string(joinEntry.LeftFieldName()),
-									   (joinEntry.LeftIdxNo() < 0 ? IteratorFieldKind::NonIndexed : IteratorFieldKind::Indexed)};
+				SelectIterator selIter{std::move(res), IsDistinct_False, std::string(joinEntry.LeftFieldName()), joinEntry.LeftIdxNo()};
 				const int curIterations = selIter.GetMaxIterations();
 				if (curIterations && curIterations < *maxIterations) {
 					*maxIterations = curIterations;

@@ -114,6 +114,13 @@ inline reindexer::Point randPoint(long long range) noexcept {
 	return reindexer::Point{randBin<double>(-range, range), randBin<double>(-range, range)};
 }
 
+template <size_t Dim>
+void rndFloatVector(std::array<float, Dim>& buf) {
+	for (float& v : buf) {
+		v = randBin<float>(-1'000'000, 1'000'000);
+	}
+}
+
 #define CATCH_AND_ASSERT                           \
 	catch (const std::exception& err) {            \
 		ASSERT_TRUE(false) << err.what();          \
@@ -122,7 +129,7 @@ inline reindexer::Point randPoint(long long range) noexcept {
 		ASSERT_TRUE(false) << "Unknown exception"; \
 	}
 
-inline const gason::JsonNode &findJsonField(const gason::JsonNode &json, std::string_view fieldName) {
+inline const gason::JsonNode& findJsonField(const gason::JsonNode& json, std::string_view fieldName) {
 	using namespace std::string_view_literals;
 	std::vector<std::string_view> fields;
 	reindexer::split(fieldName, "."sv, false, fields);
@@ -151,7 +158,7 @@ T1 randOneOf(T1 v1, T2 v2, Ts... vs) {
 	return std::move(randOneOf(std::initializer_list<T1>{std::move(v1), std::move(v2), std::move(vs)...}));
 }
 
-inline std::function<void ()> exceptionWrapper(std::function<void ()> &&func) {
+inline std::function<void()> exceptionWrapper(std::function<void()>&& func) {
 	return [f = std::move(func)] {	// NOLINT(*.NewDeleteLeaks) False positive
 		try {
 			f();

@@ -127,7 +127,7 @@ public:
 		}
 		return false;
 	}
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ClearDistinctValues() const noexcept {}
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 	using Base::ConditionStr;
@@ -159,7 +159,7 @@ public:
 		}
 		return false;
 	}
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ClearDistinctValues() noexcept { distinct_.ClearValues(); }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer_, KeyValueType::Undefined{});
@@ -196,7 +196,7 @@ public:
 		}
 		return false;
 	}
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ClearDistinctValues() const noexcept {}
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 
@@ -226,7 +226,7 @@ public:
 		}
 		return false;
 	}
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ClearDistinctValues() noexcept { distinct_.ClearValues(); }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer_, KeyValueType::Undefined{});
@@ -265,7 +265,7 @@ public:
 		}
 		return buffer_.empty();
 	}
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ClearDistinctValues() const noexcept {}
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 
@@ -286,7 +286,7 @@ public:
 	ComparatorNotIndexedImpl(ComparatorNotIndexedImpl&&) = default;
 	ComparatorNotIndexedImpl& operator=(ComparatorNotIndexedImpl&&) = default;
 
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	using Base::ClearDistinctValues;
 	using Base::ExcludeDistinctValues;
 	using Base::ConditionStr;
@@ -311,7 +311,7 @@ public:
 		}
 		return DWithin(Point{buffer[0].As<double>(), buffer[1].As<double>()}, point_, distance_);
 	}
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ClearDistinctValues() const noexcept {}
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 
@@ -343,7 +343,7 @@ public:
 		const Point p{buffer[0].As<double>(), buffer[1].As<double>()};
 		return DWithin(p, point_, distance_) && distinct_.Compare(Variant{p});
 	}
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ClearDistinctValues() noexcept { distinct_.ClearValues(); }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		VariantArray buffer;
@@ -384,7 +384,7 @@ public:
 		}
 		return false;
 	}
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ClearDistinctValues() const noexcept {}
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 
@@ -428,7 +428,7 @@ public:
 		}
 		return false;
 	}
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ClearDistinctValues() const noexcept {}
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 
@@ -453,7 +453,7 @@ using ComparatorNotIndexedVariant = std::variant<
 class ComparatorNotIndexed {
 public:
 	ComparatorNotIndexed(std::string_view fieldName, CondType cond, const VariantArray& values, const PayloadType& payloadType,
-						 const TagsPath& fieldPath, bool distinct)
+						 const TagsPath& fieldPath, IsDistinct distinct)
 		: impl_{std::make_unique<comparators::ComparatorNotIndexedVariant>(createImpl(cond, values, payloadType, fieldPath, distinct))},
 		  fieldName_{fieldName} {}
 	ComparatorNotIndexed(ComparatorNotIndexed&&) = default;
@@ -669,14 +669,14 @@ public:
 				abort();
 		}
 	}
-	[[nodiscard]] bool IsDistinct() const noexcept {
+	reindexer::IsDistinct IsDistinct() const noexcept {
 		assertrx_dbg(dynamic_cast<const ImplVariantType*>(impl_.get()));
 		return std::visit([](auto& impl) { return impl.IsDistinct(); }, *static_cast<const ImplVariantType*>(impl_.get()));
 	}
 
 private:
 	using ImplVariantType = comparators::ComparatorNotIndexedVariant;
-	static ImplVariantType createImpl(CondType, const VariantArray& values, const PayloadType&, const TagsPath&, bool distinct);
+	static ImplVariantType createImpl(CondType, const VariantArray& values, const PayloadType&, const TagsPath&, reindexer::IsDistinct);
 	// Using pointer to reduce ExpressionTree Node size
 	std::unique_ptr<ImplVariantType> impl_;
 	int matchedCount_{0};

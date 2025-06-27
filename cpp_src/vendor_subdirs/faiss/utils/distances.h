@@ -519,6 +519,26 @@ void range_search_inner_product(
         RangeSearchResult* result,
         const IDSelector* sel = nullptr);
 
+/** Find the max cosine neighbors for nx queries in a set of ny vectors
+ * indexed by ids.
+ *
+ * @param x       query vectors, size nx * d
+ * @param y       database vectors, size (max(ids) + 1) * d
+ * @param y_norms normalization ceofficitents for database vectors
+ * @param radius  search radius around the x vectors
+ * @param res     result structure
+ */
+void range_search_cosine(
+        const float* x,
+        const float* y,
+        const float* y_norms,
+        size_t d,
+        size_t nx,
+        size_t ny,
+        float radius,
+        RangeSearchResult* res,
+        const IDSelector* sel);
+
 /***************************************************************************
  * PQ tables computations
  ***************************************************************************/

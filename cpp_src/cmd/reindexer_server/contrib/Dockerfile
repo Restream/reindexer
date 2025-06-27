@@ -1,7 +1,5 @@
 FROM alpine:3.21 AS build
 
-ARG RX_VERSION=v5.3.0
-
 RUN cd /tmp && apk update && \
     apk add git curl autoconf automake libtool linux-headers g++ make libunwind-dev grpc-dev protobuf-dev c-ares-dev patch && \
     git clone https://github.com/gperftools/gperftools.git && \
@@ -23,7 +21,7 @@ RUN apk add snappy-dev leveldb-dev libunwind-dev make curl cmake unzip git opens
 RUN mkdir build && \
     cd build && \
     cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo .. -DENABLE_GRPC=On -DGRPC_PACKAGE_PROVIDER="" && \
-    make -j6 reindexer_server reindexer_tool && \
+    make -j20 reindexer_server reindexer_tool && \
     make install -C cpp_src/cmd/reindexer_server && \
     make install -C cpp_src/cmd/reindexer_tool && \
     make install -C cpp_src/server/grpc && \
@@ -32,6 +30,8 @@ RUN mkdir build && \
     /usr/local/lib/libprofiler* /usr/local/lib/libtcmalloc.* /usr/local/share/doc /usr/local/share/man /usr/local/share/perl5 /usr/local/bin/pprof*
 
 FROM alpine:3.21
+
+ARG RX_VERSION=v5.3.0
 
 COPY --from=build /usr/local /usr/local
 COPY --from=build /entrypoint.sh /entrypoint.sh

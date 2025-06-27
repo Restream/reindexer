@@ -3,39 +3,10 @@
 #include "coroclientconnection.h"
 #include "tools/serializer.h"
 
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-#include "tools/logger.h"
-#endif
-
-namespace reindexer {
-namespace net {
-namespace cproto {
+namespace reindexer::net::cproto {
 
 const auto kCProtoTimeoutSec = 300.;
 
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-constexpr auto kUpdatesResendTimeout = 0.1;
-
-ServerConnection::ServerConnection(socket&& s, ev::dynamic_loop& loop, Dispatcher& dispatcher, bool enableStat, size_t maxUpdatesSize,
-								   bool enableCustomBalancing)
-	: net::ConnectionST(std::move(s), loop, enableStat, kConnReadbufSize, kConnWriteBufSize, kCProtoTimeoutSec),
-	  maxUpdatesSize_(maxUpdatesSize),
-	  maxPendingUpdates_(kConnWriteBufSize * 0.8),
-	  dispatcher_(dispatcher),
-	  balancingType_(enableCustomBalancing ? BalancingType::NotSet : BalancingType::None) {
-	assertrx(maxPendingUpdates_ > 0);
-	assertrx(size_t(maxPendingUpdates_) < BaseConnT::wrBuf_.capacity());
-	callback(io_, ev::READ);
-
-	updatesAsync_.set<ServerConnection, &ServerConnection::async_cb>(this);
-	updates_timeout_.set<ServerConnection, &ServerConnection::timeout_cb>(this);
-	updatesAsync_.set(loop);
-	updates_timeout_.set(loop);
-
-	updates_timeout_.start(kUpdatesResendTimeout, kUpdatesResendTimeout);
-	updatesAsync_.start();
-}
-#else	// REINDEX_WITH_V3_FOLLOWERS
 ServerConnection::ServerConnection(socket&& s, ev::dynamic_loop& loop, Dispatcher& dispatcher, bool enableStat, bool enableCustomBalancing)
 	: net::ConnectionST(std::move(s), loop, enableStat, kConnReadbufSize, kConnWriteBufSize, kCProtoTimeoutSec),
 	  maxPendingUpdates_(kConnWriteBufSize * 0.8),
@@ -49,7 +20,6 @@ ServerConnection::ServerConnection(socket&& s, ev::dynamic_loop& loop, Dispatche
 	updatesAsync_.set(loop);
 	updatesAsync_.start();
 }
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 
 ServerConnection::~ServerConnection() { BaseConnT::closeConn(); }
 
@@ -66,59 +36,7 @@ void ServerConnection::Attach(ev::dynamic_loop& loop) {
 		updatesAsync_.set(loop);
 		updatesAsync_.start();
 		io_.set<ServerConnection, &ServerConnection::callback>(this);  // Override io-callback
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-		updates_timeout_.set(loop);
-		updates_timeout_.start(kUpdatesResendTimeout, kUpdatesResendTimeout);
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 	}
-}
-
-void ServerConnection::CallRPC(const IRPCCall& call) {
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	std::lock_guard lck(updatesMtx_);
-	updatesV3_.emplace_back(call);
-	updatesSize_ += call.data_->size();
-
-	if (updatesSize_ > maxUpdatesSize_) {
-		updatesV3_.clear();
-		Args args;
-		IRPCCall curCall = call;
-		CmdCode cmd;
-		std::string_view nsName;
-		curCall.Get(&curCall, cmd, nsName, args);
-
-		WrSerializer ser;
-		ser.PutVString(nsName);
-		IRPCCall callLost = {[](IRPCCall* callLost, CmdCode& cmd, std::string_view& ns, Args& args) {
-								 Serializer s(callLost->data_->data(), callLost->data_->size());
-								 cmd = kCmdUpdates;
-								 args = {Arg(std::string(s.GetVString()))};
-								 ns = std::string_view(args[0]);
-							 },
-							 make_intrusive<intrusive_atomic_rc_wrapper<chunk>>(ser.DetachChunk())};
-		logFmt(LogWarning, "Call updates lost clientAddr = {} updatesSize = {}", clientAddr_, updatesSize_);
-
-		updatesSize_ = callLost.data_->size();
-		updatesV3_.emplace_back(std::move(callLost));
-		updateLostFlag_ = true;
-
-		// No legacy replication stats in this version
-		//		if (ConnectionST::stats_) {
-		//			if (auto stat = ConnectionST::stats_->get_stat(); stat) {
-		//				stat->updates_lost.fetch_add(1, std::memory_order_relaxed);
-		//				stat->pended_updates.store(1, std::memory_order_relaxed);
-		//			}
-		//		}
-	}
-	// No legacy replication stats in this version
-	//	else if (ConnectionST::stats_) {
-	//		if (auto stat = ConnectionST::stats_->get_stat(); stat) {
-	//			stat->pended_updates.store(updates_.size(), std::memory_order_relaxed);
-	//		}
-	//	}
-#else	// REINDEX_WITH_V3_FOLLOWERS
-	(void)call;
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 }
 
 void ServerConnection::SendEvent(chunk&& ch) {
@@ -139,10 +57,6 @@ void ServerConnection::Detach() {
 		BaseConnT::detach();
 		updatesAsync_.stop();
 		updatesAsync_.reset();
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-		updates_timeout_.stop();
-		updates_timeout_.reset();
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 	}
 }
 
@@ -406,110 +320,6 @@ void ServerConnection::handleException(Context& ctx, const Error& err) noexcept 
 	BaseConnT::closeConn_ = true;
 }
 
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-
-void ServerConnection::sendUpdatesV3() {
-	constexpr auto kMaxUpdatesBufSize = 1024 * 1024 * 8;
-	if (BaseConnT::wrBuf_.size() + 10 > BaseConnT::wrBuf_.capacity() || BaseConnT::wrBuf_.data_size() > kMaxUpdatesBufSize / 2) {
-		return;
-	}
-
-	std::vector<IRPCCall> updates;
-	size_t updatesSizeCopy;
-	{
-		std::lock_guard lck(updatesMtx_);
-		updates.swap(updatesV3_);
-		updatesSizeCopy = updatesSize_;
-		updatesSize_ = 0;
-		updateLostFlag_ = false;
-	}
-
-	if (updates.empty()) {
-		return;
-	}
-
-	RPCCall callUpdate{kCmdUpdates, 0, {}, milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, false};
-	cproto::Context ctx{"", &callUpdate, this, {{}, {}}, false};
-	size_t len = 0;
-	Args args;
-	CmdCode cmd;
-	WrSerializer ser(BaseConnT::wrBuf_.get_chunk());
-	size_t cnt = 0;
-	size_t updatesSizeBuffered = 0;
-	for (cnt = 0; cnt < updates.size() && ser.Len() < kMaxUpdatesBufSize; ++cnt) {
-		if (updates[cnt].data_) {
-			updatesSizeBuffered += updates[cnt].data_->size();
-		}
-		[[maybe_unused]] std::string_view ns;
-		updates[cnt].Get(&updates[cnt], cmd, ns, args);
-		packRPC(ser, ctx, Error(), args, enableSnappy_);
-	}
-
-	len = ser.Len();
-	try {
-		BaseConnT::wrBuf_.write(ser.DetachChunk());
-	} catch (...) {
-		RPCCall callLost{kCmdUpdates, 0, {}, milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, false};
-		cproto::Context ctxLost{"", &callLost, this, {{}, {}}, false};
-		{
-			std::lock_guard lck(updatesMtx_);
-			updatesV3_.clear();
-			updatesSize_ = 0;
-			updateLostFlag_ = false;
-
-			logFmt(LogWarning, "Call updates lost clientAddr = {} (wrBuf error)", clientAddr_);
-			wrBuf_.clear();
-			ser.Reset();
-			packRPC(ser, ctxLost, Error(), {Arg(std::string(""))}, enableSnappy_);
-			len = ser.Len();
-			wrBuf_.write(ser.DetachChunk());
-			if (BaseConnT::stats_) {
-				BaseConnT::stats_->update_send_buf_size(wrBuf_.data_size());
-				// No legacy replication stats in this version
-				// BaseConnT::stats_->update_pending_updates(0);
-			}
-		}
-
-		if (dispatcher_.OnResponseRef()) {
-			ctx.stat.sizeStat.respSizeBytes = len;
-			dispatcher_.OnResponseRef()(ctxLost);
-		}
-
-		callback(io_, ev::WRITE);
-		return;
-	}
-
-	if (cnt != updates.size()) {
-		std::lock_guard lck(updatesMtx_);
-		if (!updateLostFlag_) {
-			updatesV3_.insert(updatesV3_.begin(), updates.begin() + cnt, updates.end());
-			updatesSize_ += updatesSizeCopy - updatesSizeBuffered;
-		}
-		// No legacy replication stats in this version
-		// if (BaseConnT::stats_) stats_->update_pending_updates(updates.size());
-	}
-	// No legacy replication stats in this version
-	//	else if (BaseConnT::stats_) {
-	//		if (auto stat = BaseConnT::stats_->get_stat(); stat) {
-	//			std::lock_guard lck(updates_mtx_);
-	//			stat->pended_updates.store(updates_.size(), std::memory_order_relaxed);
-	//		}
-	//	}
-
-	if (BaseConnT::stats_) {
-		BaseConnT::stats_->update_send_buf_size(BaseConnT::wrBuf_.data_size());
-	}
-
-	if (dispatcher_.OnResponseRef()) {
-		ctx.stat.sizeStat.respSizeBytes = len;
-		dispatcher_.OnResponseRef()(ctx);
-	}
-
-	callback(BaseConnT::io_, ev::WRITE);
-}
-
-#endif	// REINDEX_WITH_V3_FOLLOWERS
-
 void ServerConnection::sendUpdates() {
 	assertrx_dbg(maxPendingUpdates_ >= BaseConnT::wrBuf_.size_atomic() + pendingUpdates());
 	std::vector<chunk> updates;
@@ -572,6 +382,4 @@ void ServerConnection::sendUpdates() {
 	callback(BaseConnT::io_, ev::WRITE);
 }
 
-}  // namespace cproto
-}  // namespace net
-}  // namespace reindexer
+}  // namespace reindexer::net::cproto

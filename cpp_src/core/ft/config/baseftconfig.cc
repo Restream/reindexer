@@ -3,6 +3,7 @@
 #include "core/ft/limits.h"
 #include "core/ft/stopwords/stop.h"
 #include "vendor/gason/gason.h"
+#include "vendor/utf8cpp/utf8/unchecked.h"
 
 namespace reindexer {
 
@@ -15,6 +16,30 @@ BaseFTConfig::BaseFTConfig() {
 	}
 }
 
+std::string BaseFTConfig::removeAccentsAndDiacritics(const std::string& str) const {
+	if (!removeDiacriticsMask) {
+		return str;
+	}
+
+	std::string buf;
+	buf.resize(str.length());
+	auto bufBegin = buf.begin();
+	auto bufIt = buf.begin();
+
+	for (auto it = str.begin(), endIt = str.end(); it != endIt;) {
+		uint32_t ch = utf8::unchecked::next(it);
+		if (FitsMask(ch, removeDiacriticsMask)) {
+			ch = RemoveDiacritic(ch);
+		}
+		if (ch != 0) {
+			bufIt = utf8::unchecked::append(ch, bufIt);
+		}
+	}
+
+	buf.resize(std::distance(bufBegin, bufIt));
+	return buf;
+}
+
 void BaseFTConfig::parseBase(const gason::JsonNode& root) {
 	enableTranslit = root["enable_translit"].As<>(enableTranslit);
 	enableNumbersSearch = root["enable_numbers_search"].As<>(enableNumbersSearch);
@@ -23,6 +48,14 @@ void BaseFTConfig::parseBase(const gason::JsonNode& root) {
 	logLevel = root["log_level"].As<>(logLevel, 0, 5);
 	extraWordSymbols = root["extra_word_symbols"].As<>(extraWordSymbols);
 
+	auto& removeDiacriticsNode = root["keep_diacritics"];
+	if (!removeDiacriticsNode.empty()) {
+		for (auto& st : removeDiacriticsNode) {
+			SymbolType symbolType = GetSymbolType(st.As<std::string>());
+			removeDiacriticsMask ^= GetSymbolTypeMask(symbolType);
+		}
+	}
+
 	auto& stopWordsNode = root["stop_words"];
 	if (!stopWordsNode.empty()) {
 		stopWords.clear();
@@ -30,9 +63,9 @@ void BaseFTConfig::parseBase(const gason::JsonNode& root) {
 			std::string word;
 			StopWord::Type type = StopWord::Type::Stop;
 			if (sw.value.getTag() == gason::JsonTag::STRING) {
-				word = sw.As<std::string>();
+				word = removeAccentsAndDiacritics(sw.As<std::string>());
 			} else if (sw.value.getTag() == gason::JsonTag::OBJECT) {
-				word = sw["word"].As<std::string>();
+				word = removeAccentsAndDiacritics(sw["word"].As<std::string>());
 				type = sw["is_morpheme"].As<bool>() ? StopWord::Type::Morpheme : StopWord::Type::Stop;
 			}
 
@@ -58,10 +91,10 @@ void BaseFTConfig::parseBase(const gason::JsonNode& root) {
 	for (auto& se : root["synonyms"]) {
 		Synonym synonym;
 		for (auto& ae : se["alternatives"]) {
-			synonym.alternatives.emplace_back(ae.As<std::string>());
+			synonym.alternatives.emplace_back(removeAccentsAndDiacritics(ae.As<std::string>()));
 		}
 		for (auto& te : se["tokens"]) {
-			synonym.tokens.emplace_back(te.As<std::string>());
+			synonym.tokens.emplace_back(removeAccentsAndDiacritics(te.As<std::string>()));
 		}
 		synonyms.emplace_back(std::move(synonym));
 	}

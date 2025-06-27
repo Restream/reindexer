@@ -1,8 +1,8 @@
 #pragma once
 #include "aggregator.h"
-#include "core/enums.h"
 #include "core/index/index.h"
 #include "joinedselector.h"
+#include "ranks_holder.h"
 #include "selectctx.h"
 #include "sortingcontext.h"
 
@@ -74,10 +74,11 @@ private:
 
 	RVector<Aggregator, 4> getAggregators(const std::vector<AggregateEntry>& aggEntrys, StrictMode strictMode) const;
 	void setLimitAndOffset(ItemRefVector& result, size_t offset, size_t limit);
-	void prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, IsRanked, bool availableSelectBySortIndex) const;
-	static void prepareSortIndex(const NamespaceImpl&, std::string& column, int& index, bool& skipSortingEntry, StrictMode);
+	void prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, RankedTypeQuery, IndexValueType rankedIndexNo,
+							   bool availableSelectBySortIndex) const;
+	static void prepareSortIndex(const NamespaceImpl&, std::string& column, int& index, SkipSortingEntry&, StrictMode, IsRanked);
 	static void prepareSortJoinedIndex(size_t nsIdx, std::string_view column, int& index, const std::vector<JoinedSelector>&,
-									   bool& skipSortingEntry, StrictMode);
+									   SkipSortingEntry&, StrictMode);
 	void getSortIndexValue(const SortingContext& sortCtx, IdType rowId, VariantArray& value, RankT, const joins::NamespaceResults*,
 						   const JoinedSelectors&, int shardId);
 	void processLeftJoins(LocalQueryResults& qr, SelectCtx& sctx, size_t startPos, const RdxContext&);

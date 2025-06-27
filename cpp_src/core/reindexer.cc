@@ -403,16 +403,6 @@ Error Reindexer::ShardingControlRequest(const sharding::ShardingControlRequestDa
 	});
 }
 
-// REINDEX_WITH_V3_FOLLOWERS
-Error Reindexer::SubscribeUpdates(IUpdatesObserverV3* observer, const UpdatesFilters& filters, SubscriptionOpts opts) noexcept {
-	return callWithConnectCheck([&] { return impl_->SubscribeUpdates(observer, filters, opts); });
-}
-Error Reindexer::UnsubscribeUpdates(IUpdatesObserverV3* observer) noexcept {
-	// No connection check required
-	RETURN_RESULT_NOEXCEPT(impl_->UnsubscribeUpdates(observer));
-}
-// REINDEX_WITH_V3_FOLLOWERS
-
 static const Error kUnknowExceptioError(errSystem, "Unknown exception in Reindexer");
 
 template <typename FnT, typename T>

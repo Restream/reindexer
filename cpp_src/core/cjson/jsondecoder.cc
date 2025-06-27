@@ -251,6 +251,10 @@ void JsonDecoder::Decode(std::string_view json, CJsonBuilder& builder, const Tag
 		tagsPath_ = fieldPath;
 		gason::JsonParser jsonParser;
 		gason::JsonNode root = jsonParser.Parse(json);
+		if (!(root.isArray() || root.isObject())) {
+			throw Error(errParseJson, "Json node must be an object or array '{}'", json);
+		}
+
 		decodeJsonObject(root.value, builder, floatVectorsHolder);
 	} catch (gason::Exception& e) {
 		throw Error(errParseJson, "JSONDecoder: {}", e.what());

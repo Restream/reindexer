@@ -174,9 +174,8 @@ int SQLParser::selectParse(tokenizer& parser) {
 							parser.next_token();
 							std::vector<Variant> orders;
 							SortingEntries sortingEntries;
-							parseOrderBy(parser, sortingEntries, orders);
+							parseOrderBy(parser, entry);
 							if (!orders.empty()) {
-								throw Error(errParseSQL, "Forced sort order is not available in aggregation sort");
 							}
 							for (auto s : sortingEntries) {
 								entry.AddSortingEntry(std::move(s));
@@ -262,7 +261,7 @@ int SQLParser::selectParse(tokenizer& parser) {
 			query_.Offset(stoi(tok.text()));
 		} else if (tok.text() == "order"sv) {
 			parser.next_token();
-			parseOrderBy(parser, query_.sortingEntries_, query_.forcedSortOrder_);
+			parseOrderBy(parser, query_);
 			ctx_.updateLinkedNs(query_.NsName());
 		} else if constexpr (nested == Nested::No) {
 			if (tok.text() == "join"sv) {
@@ -370,7 +369,8 @@ Variant token2kv(const token& tok, tokenizer& parser, CompositeAllowed allowComp
 	return getVariantFromToken(tok);
 }
 
-int SQLParser::parseOrderBy(tokenizer& parser, SortingEntries& sortingEntries, std::vector<Variant>& forcedSortOrder_) {
+template <typename Sortable>
+int SQLParser::parseOrderBy(tokenizer& parser, Sortable& sortable) {
 	// Just skip token (BY)
 	peekSqlToken(parser, BySqlToken);
 	parser.next_token();
@@ -380,9 +380,10 @@ int SQLParser::parseOrderBy(tokenizer& parser, SortingEntries& sortingEntries, s
 		if (tok.type != TokenName && tok.type != TokenString) {
 			throw Error(errParseSQL, "Expected name, but found '{}' in query, {}", tok.text(), parser.where());
 		}
-		SortingEntry sortingEntry;
-		sortingEntry.expression = std::string(tok.text());
-		if (sortingEntry.expression.empty()) {
+		std::vector<Variant> forcedSortOrder;
+		std::string sortExpression(tok.text());
+		bool desc = false;
+		if (sortExpression.empty()) {
 			throw Error(errParseSQL, "Order by expression should not be empty, {}", parser.where());
 		}
 		tok = peekSqlToken(parser, SortDirectionSqlToken);
@@ -392,7 +393,7 @@ int SQLParser::parseOrderBy(tokenizer& parser, SortingEntries& sortingEntries, s
 			if (tok.type != TokenName) {
 				throw Error(errParseSQL, "Expected name, but found '{}' in query, {}", tok.text(), parser.where());
 			}
-			sortingEntry.expression = std::string(tok.text());
+			sortExpression = tok.text();
 			tok = parser.next_token(tokenizer::flags::no_flags);
 			for (;;) {
 				tok = parser.next_token();
@@ -403,20 +404,23 @@ int SQLParser::parseOrderBy(tokenizer& parser, SortingEntries& sortingEntries, s
 					throw Error(errParseSQL, "Expected ')' or ',', but found '{}' in query, {}", tok.text(), parser.where());
 				}
 				tok = parser.next_token();
-				if (!sortingEntries.empty()) {
-					throw Error(errParseSQL, "Forced sort order is allowed for the first sorting entry only, '{}', {}", tok.text(),
-								parser.where());
-				}
-				forcedSortOrder_.push_back(token2kv(tok, parser, CompositeAllowed_True, FieldAllowed_False, NullAllowed_False));
+				forcedSortOrder.push_back(token2kv(tok, parser, CompositeAllowed_True, FieldAllowed_False, NullAllowed_False));
 			}
 			tok = parser.peek_token();
 		}
 
 		if (tok.text() == "asc"sv || tok.text() == "desc"sv) {
-			sortingEntry.desc = bool(tok.text() == "desc"sv);
+			desc = tok.text() == "desc"sv;
 			parser.next_token();
 		}
-		sortingEntries.push_back(std::move(sortingEntry));
+		if constexpr (std::is_same_v<Sortable, AggregateEntry>) {
+			if (!forcedSortOrder.empty()) {
+				throw Error(errParseSQL, "Forced sort order is not available in aggregation sort");
+			}
+			sortable.Sort(std::move(sortExpression), desc);
+		} else {
+			sortable.Sort(std::move(sortExpression), desc, std::move(forcedSortOrder));
+		}
 
 		auto nextToken = parser.peek_token();
 		if (nextToken.text() != ","sv) {
@@ -711,7 +715,7 @@ void SQLParser::parseModifyConditions(tokenizer& parser) {
 			query_.Offset(stoi(tok.text()));
 		} else if (tok.text() == "order"sv) {
 			parser.next_token();
-			parseOrderBy(parser, query_.sortingEntries_, query_.forcedSortOrder_);
+			parseOrderBy(parser, query_);
 			ctx_.updateLinkedNs(query_.NsName());
 		} else {
 			break;
@@ -1042,8 +1046,21 @@ Point SQLParser::parseGeomFromText(tokenizer& parser) const {
 	}
 	return Point{x, y};
 }
+template <typename T>
+static auto parseNumber(const auto& begin, const auto& end, T& value) {
+	if constexpr (std::is_floating_point_v<T>) {
+		using namespace double_conversion;
+		static const StringToDoubleConverter converter{StringToDoubleConverter::NO_FLAGS, NAN, NAN, nullptr, nullptr};
+		int countOfCharsParsedAsDouble;
+		value = converter.StringToDouble(begin, end - begin, &countOfCharsParsedAsDouble);
+	} else if constexpr (std::is_integral_v<T>) {
+		return std::from_chars(begin, end, value).ec;
+	}
+	return std::errc{};
+}
 
-void SQLParser::parseSingleKnnParam(tokenizer& parser, std::optional<size_t>& param, std::string_view paramName) {
+template <typename T>
+void SQLParser::parseSingleKnnParam(tokenizer& parser, std::optional<T>& param, std::string_view paramName) {
 	if (param.has_value()) {
 		throw Error(errParseSQL, "Dublicate KNN parameter '{}': {}", paramName, parser.where());
 	}
@@ -1055,10 +1072,10 @@ void SQLParser::parseSingleKnnParam(tokenizer& parser, std::optional<size_t>& pa
 	if (tok.type != TokenNumber) {
 		throw Error(errParseSQL, "Expected number greater than 0, but found {}, {}", tok.text(), parser.where());
 	}
-	size_t paramValue;
-	const auto res = std::from_chars(tok.text().data(), tok.text().data() + tok.text().size(), paramValue);
-	if (res.ec != std::errc{}) {
-		throw Error(errParseSQL, "Expected number greater than 0, but found {}, {}", tok.text(), parser.where());
+	T paramValue;
+	const auto res = parseNumber(tok.text().data(), tok.text().data() + tok.text().size(), paramValue);
+	if (res != std::errc{}) {
+		throw Error(errParseSQL, "Expected float or int greater than 0, but found {}, {}", tok.text(), parser.where());
 	}
 
 	param = paramValue;
@@ -1066,11 +1083,14 @@ void SQLParser::parseSingleKnnParam(tokenizer& parser, std::optional<size_t>& pa
 
 KnnSearchParams SQLParser::parseKnnParams(tokenizer& parser) {
 	std::optional<size_t> k, ef, nprobe;
+	std::optional<float> radius;
 	do {
 		peekSqlToken(parser, KnnParamsToken);
 		auto tok = parser.next_token();
 		if (tok.text() == KnnSearchParams::kKName) {
 			parseSingleKnnParam(parser, k, KnnSearchParams::kKName);
+		} else if (tok.text() == KnnSearchParams::kRadiusName) {
+			parseSingleKnnParam(parser, radius, KnnSearchParams::kRadiusName);
 		} else if (tok.text() == KnnSearchParams::kEfName) {
 			if (nprobe) {
 				throw Error{errParseSQL, "Wrong SQL format: KNN query cannot contain both of '{}' and '{}'", KnnSearchParams::kEfName,
@@ -1093,15 +1113,16 @@ KnnSearchParams SQLParser::parseKnnParams(tokenizer& parser) {
 			throw Error(errParseSQL, "Expected ',' or ')', but found '{}', {}", tok.text(), parser.where());
 		}
 	} while (true);
-	if (!k.has_value()) {
-		throw Error(errParseSQL, "Parameter '{}' in KNN query is mandatory; {}", KnnSearchParams::kKName, parser.where());
+	if (!k && !radius) {
+		throw Error(errParseSQL, "The presence of one of the '{}' or '{}' parameters in KNN query is mandatory; {}",
+					KnnSearchParams::kKName, KnnSearchParams::kRadiusName, parser.where());
 	}
 	if (ef.has_value()) {
-		return KnnSearchParams::Hnsw(*k, *ef);
+		return HnswSearchParams().K(k).Radius(radius).Ef(*ef);
 	} else if (nprobe.has_value()) {
-		return KnnSearchParams::Ivf(*k, *nprobe);
+		return IvfSearchParams().K(k).Radius(radius).NProbe(*nprobe);
 	} else {
-		return KnnSearchParamsBase(*k);
+		return KnnSearchParamsBase().K(k).Radius(radius);
 	}
 }
 

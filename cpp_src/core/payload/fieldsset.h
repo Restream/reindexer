@@ -13,7 +13,6 @@
 namespace reindexer {
 
 class TagsMatcher;
-static constexpr int kMaxIndexes = 256;	 // 'tuple'-index always occupies 1 slot
 
 using base_fields_set = RVector<int16_t, 6>;
 static_assert(std::numeric_limits<base_fields_set::value_type>::max() >= kMaxIndexes,

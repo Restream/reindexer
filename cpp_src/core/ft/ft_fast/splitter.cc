@@ -59,9 +59,14 @@ static std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPo
 ISplitterTask::~ISplitterTask() = default;
 
 const std::vector<std::string_view>& SplitterTaskFast::GetResults() {
-	split(text_, convertedText_, words_, splitter_.GetExtraWordsSymbols());
+	SplitOptions opts;
+	opts.extraWordSymbols = splitter_.GetExtraWordsSymbols();
+	opts.removeDiacriticsMask = splitter_.GetRemoveDiacriticsMask();
+
+	split(text_, convertedText_, words_, opts);
 	return words_;
 }
+
 std::pair<int, int> SplitterTaskFast::Convert(unsigned int wordPosStart, unsigned int wordPosEnd) {
 	if (wordPosStart < lastWordPos_) {
 		lastWordPos_ = 0;

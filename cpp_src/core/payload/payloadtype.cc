@@ -49,33 +49,24 @@ void PayloadTypeImpl::Dump(std::ostream& os, std::string_view step, std::string_
 
 void PayloadTypeImpl::Add(PayloadFieldType f) {
 	checkNewNameBeforeAdd(f);
+	checkEmbedderFields(f);
 	// Unique name -> just add field
 	f.SetOffset(TotalSize());
+	const int fieldNo = int(fields_.size());
 	for (const auto& jp : f.JsonPaths()) {
 		if (!jp.length()) {
 			continue;
 		}
-		auto res = fieldsByJsonPath_.emplace(jp, int(fields_.size()));
-		if (!res.second && res.first->second != int(fields_.size())) {
+		auto res = fieldsByJsonPath_.emplace(jp, fieldNo);
+		if (!res.second && res.first->second != fieldNo) {
 			throw Error(errLogic, "Cannot add field with name '{}' to namespace '{}'. Json path '{}' already used in field '{}'", f.Name(),
 						Name(), jp, Field(res.first->second).Name());
 		}
 		checkNewJsonPathBeforeAdd(f, jp);
 	}
-	fieldsByName_.emplace(f.Name(), int(fields_.size()));
+	fieldsByName_.emplace(f.Name(), fieldNo);
 	if (f.Type().Is<KeyValueType::String>()) {
-		strFields_.push_back(int(fields_.size()));
-	}
-	auto embedder = f.Embedder();
-	if (embedder) {
-		for (const auto& field : embedder->Fields()) {
-			auto itFld = fieldsByName_.find(field);
-			if (itFld == fieldsByName_.end()) {
-				throw Error(errLogic, "Cannot add field with name '{}' to namespace '{}'. Auxiliary field '{}' not found", f.Name(), Name(),
-							field);
-			}
-		}
-		embedders_.push_back(std::move(embedder));
+		strFields_.push_back(fieldNo);
 	}
 	fields_.push_back(std::move(f));
 }
@@ -97,11 +88,6 @@ void PayloadTypeImpl::Drop(std::string_view name) {
 		}
 	}
 	const auto& payloadField = fields_[fieldIdx];
-	if (payloadField.Embedder()) {
-		const auto ret =
-			std::ranges::remove_if(embedders_, [nm = payloadField.Embedder()->Name()](const auto& item) { return item->Name() == nm; });
-		embedders_.erase(ret.begin(), ret.end());
-	}
 	const auto fieldType = payloadField.Type();
 	for (auto it = strFields_.begin(); it != strFields_.end();) {
 		if ((*it == fieldIdx) && (fieldType.Is<KeyValueType::String>())) {
@@ -125,6 +111,18 @@ void PayloadTypeImpl::Drop(std::string_view name) {
 		}
 	}
 	fieldsByName_.erase(itField);
+}
+
+void PayloadTypeImpl::Replace(int field, PayloadFieldType f) {
+	assertrx_throw(field < int(fields_.size()));
+	const auto& fld = fields_[field];
+	if (fld.Name() != f.Name() || !fld.Type().IsSame(f.Type()) || fld.JsonPaths() != f.JsonPaths() || fld.Offset() != f.Offset() ||
+		fld.Sizeof() != f.Sizeof() || fld.ElemSizeof() != f.ElemSizeof() || fld.IsArray() != f.IsArray() || !f.IsFloatVector()) {
+		// replacement is expected only to update settings of embedder, now. All other parameters must be same
+		assertrx_throw(false);
+	}
+	checkEmbedderFields(f);
+	fields_[field] = std::move(f);
 }
 
 int PayloadTypeImpl::FieldByName(std::string_view field) const {
@@ -212,37 +210,6 @@ void PayloadTypeImpl::deserialize(Serializer& ser) {
 	}
 }
 
-PayloadType::PayloadType(const std::string& name, std::initializer_list<PayloadFieldType> fields)
-	: shared_cow_ptr<PayloadTypeImpl>(make_intrusive<intrusive_atomic_rc_wrapper<PayloadTypeImpl>>(name, fields)) {}
-PayloadType::PayloadType(const PayloadTypeImpl& impl)
-	: shared_cow_ptr<PayloadTypeImpl>(make_intrusive<intrusive_atomic_rc_wrapper<PayloadTypeImpl>>(impl)) {}
-PayloadType::~PayloadType() = default;
-const PayloadFieldType& PayloadType::Field(int field) const& noexcept { return get()->Field(field); }
-const std::string& PayloadType::Name() const& noexcept { return get()->Name(); }
-void PayloadType::SetName(std::string_view name) { clone()->SetName(std::string(name)); }
-int PayloadType::NumFields() const noexcept { return get()->NumFields(); }
-void PayloadType::Add(PayloadFieldType f) { clone()->Add(std::move(f)); }
-void PayloadType::Drop(std::string_view field) { return clone()->Drop(field); }
-int PayloadType::FieldByName(std::string_view field) const { return get()->FieldByName(field); }
-bool PayloadType::FieldByName(std::string_view name, int& field) const noexcept { return get()->FieldByName(name, field); }
-bool PayloadType::Contains(std::string_view field) const noexcept { return get()->Contains(field); }
-int PayloadType::FieldByJsonPath(std::string_view jsonPath) const noexcept { return get()->FieldByJsonPath(jsonPath); }
-const std::vector<int>& PayloadType::StrFields() const& noexcept { return get()->StrFields(); }
-size_t PayloadType::TotalSize() const noexcept { return get()->TotalSize(); }
-std::string PayloadType::ToString() const { return get()->ToString(); }
-const h_vector<std::shared_ptr<Embedder>, 1>& PayloadType::Embedders() const noexcept { return get()->Embedders(); }
-std::string_view PayloadType::CheckEmbeddersAuxiliaryField(std::string_view fieldName) const {
-	return get()->CheckEmbeddersAuxiliaryField(fieldName);
-}
-
-void PayloadType::Dump(std::ostream& os, std::string_view step, std::string_view offset) const {
-	std::string newOffset{offset};
-	newOffset += step;
-	os << "{\n" << newOffset << "name: " << Name() << ",\n" << newOffset;
-	get()->Dump(os, step, newOffset);
-	os << '\n' << offset << '}';
-}
-
 void PayloadTypeImpl::checkNewJsonPathBeforeAdd(const PayloadFieldType& f, const std::string& jsonPath) const {
 	const auto pos = jsonPath.find('.');
 	if (pos < jsonPath.length() - 1) {
@@ -270,12 +237,58 @@ void PayloadTypeImpl::checkNewNameBeforeAdd(const PayloadFieldType& f) const {
 }
 
 std::string_view PayloadTypeImpl::CheckEmbeddersAuxiliaryField(std::string_view fieldName) const {
-	for (const auto& embedder : embedders_) {
-		if (embedder->IsAuxiliaryField(fieldName)) {
+	for (const auto& field : fields_) {
+		auto embedder = field.Embedder();
+		if (embedder && embedder->IsAuxiliaryField(fieldName)) {
 			return embedder->FieldName();
 		}
 	}
 	return {};
+}
+
+void PayloadTypeImpl::checkEmbedderFields(const PayloadFieldType& fieldType) {
+	auto embedder = fieldType.Embedder();
+	if (embedder) {
+		for (const auto& field : embedder->Fields()) {
+			auto itFld = fieldsByName_.find(field);
+			if (itFld == fieldsByName_.end()) {
+				throw Error(errLogic,
+							"Incorrect embedding configuration for field with name '{}' to namespace '{}'. Auxiliary field '{}' not found",
+							fieldType.Name(), Name(), field);
+			}
+		}
+	}
+}
+
+PayloadType::PayloadType(const std::string& name, std::initializer_list<PayloadFieldType> fields)
+	: shared_cow_ptr<PayloadTypeImpl>(make_intrusive<intrusive_atomic_rc_wrapper<PayloadTypeImpl>>(name, fields)) {}
+PayloadType::PayloadType(const PayloadTypeImpl& impl)
+	: shared_cow_ptr<PayloadTypeImpl>(make_intrusive<intrusive_atomic_rc_wrapper<PayloadTypeImpl>>(impl)) {}
+PayloadType::~PayloadType() = default;
+const PayloadFieldType& PayloadType::Field(int field) const& noexcept { return get()->Field(field); }
+const std::string& PayloadType::Name() const& noexcept { return get()->Name(); }
+void PayloadType::SetName(std::string_view name) { clone()->SetName(std::string(name)); }
+int PayloadType::NumFields() const noexcept { return get()->NumFields(); }
+void PayloadType::Add(PayloadFieldType f) { clone()->Add(std::move(f)); }
+void PayloadType::Drop(std::string_view field) { return clone()->Drop(field); }
+void PayloadType::Replace(int field, PayloadFieldType f) { clone()->Replace(field, std::move(f)); }
+int PayloadType::FieldByName(std::string_view field) const { return get()->FieldByName(field); }
+bool PayloadType::FieldByName(std::string_view name, int& field) const noexcept { return get()->FieldByName(name, field); }
+bool PayloadType::Contains(std::string_view field) const noexcept { return get()->Contains(field); }
+int PayloadType::FieldByJsonPath(std::string_view jsonPath) const noexcept { return get()->FieldByJsonPath(jsonPath); }
+const std::vector<int>& PayloadType::StrFields() const& noexcept { return get()->StrFields(); }
+size_t PayloadType::TotalSize() const noexcept { return get()->TotalSize(); }
+std::string PayloadType::ToString() const { return get()->ToString(); }
+std::string_view PayloadType::CheckEmbeddersAuxiliaryField(std::string_view fieldName) const {
+	return get()->CheckEmbeddersAuxiliaryField(fieldName);
+}
+
+void PayloadType::Dump(std::ostream& os, std::string_view step, std::string_view offset) const {
+	std::string newOffset{offset};
+	newOffset += step;
+	os << "{\n" << newOffset << "name: " << Name() << ",\n" << newOffset;
+	get()->Dump(os, step, newOffset);
+	os << '\n' << offset << '}';
 }
 
 }  // namespace reindexer

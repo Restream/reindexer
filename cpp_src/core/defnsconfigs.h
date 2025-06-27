@@ -118,8 +118,8 @@ constexpr std::string_view kDefActionConfig = R"json({
 		}
 	})json";
 
-constexpr std::string_view kDefDBConfig[] = {kDefProfilingConfig, kDefNamespacesConfig, kDefReplicationConfig, kDefAsyncReplicationConfig,
-											 kDefEmbeddersConfig, kDefActionConfig};
+constexpr std::string_view kDefDBConfig[] = {kDefProfilingConfig,		 kDefNamespacesConfig, kDefReplicationConfig,
+											 kDefAsyncReplicationConfig, kDefEmbeddersConfig,  kDefActionConfig};
 
 const NamespaceDef kSystemNsDefs[] = {
 	NamespaceDef(kConfigNamespace, StorageOpts().Enabled().CreateIfMissing().DropOnFileFormatError())

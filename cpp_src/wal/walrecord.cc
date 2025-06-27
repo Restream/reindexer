@@ -282,38 +282,4 @@ void MarkedPackedWALRecord::Pack(int16_t _server, const WALRecord& rec) {
 	PackedWALRecord::Pack(rec);
 }
 
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-SharedWALRecord WALRecord::GetShared(int64_t lsn, int64_t upstreamLSN, std::string_view nsName) const {
-	if (!shared_.packed_) {
-		shared_ = SharedWALRecord(lsn, upstreamLSN, nsName, *this);
-	}
-	return shared_;
-}
-SharedWALRecord::SharedWALRecord(int64_t lsn, int64_t originLSN, std::string_view nsName, const WALRecord& rec) {
-	const size_t kCapToSizeRelation = 4;
-	WrSerializer ser;
-	ser.PutVarint(lsn);
-	ser.PutVarint(originLSN);
-	ser.PutVString(nsName);
-	{
-		auto sl = ser.StartSlice();
-		rec.Pack(ser);
-	}
-
-	auto ch = ser.DetachChunk();
-	ch.shrink(kCapToSizeRelation);
-
-	packed_ = make_intrusive<intrusive_atomic_rc_wrapper<chunk>>(std::move(ch));
-}
-
-SharedWALRecord::Unpacked SharedWALRecord::Unpack() {
-	Serializer rdser(packed_->data(), packed_->size());
-	int64_t lsn = rdser.GetVarint();
-	int64_t originLSN = rdser.GetVarint();
-	p_string nsName = rdser.GetPVString();
-	p_string pwal = rdser.GetPSlice();
-	return {lsn, originLSN, nsName, pwal};
-}
-#endif	// REINDEX_WITH_V3_FOLLOWERS
-
 }  // namespace reindexer

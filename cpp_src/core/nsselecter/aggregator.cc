@@ -71,10 +71,10 @@ public:
 
 private:
 	struct CompOpts {
-		CompOpts() : direction{Asc} {}
+		CompOpts() : direction{Direction::Asc} {}
 		CompOpts(const FieldsSet& fs, Direction d) : fields{fs}, direction{d} {}
 		FieldsSet fields;  // if empty - compare by count
-		Direction direction = Asc;
+		Direction direction = Direction::Asc;
 	};
 	h_vector<CompOpts, 2> compOpts_;
 	PayloadType type_;
@@ -90,7 +90,7 @@ public:
 	SinglefieldComparator(const h_vector<SortingEntry, 1>&);
 	bool HaveCompareByCount() const { return haveCompareByCount; }
 	bool operator()(const Variant& lhs, const Variant& rhs) const {
-		return toSigned(lhs.Compare<NotComparable::Throw>(rhs)) * valueCompareDirection_ < 0;
+		return toSigned(lhs.Compare<NotComparable::Throw>(rhs)) * int(valueCompareDirection_) < 0;
 	}
 	bool operator()(const std::pair<Variant, int>& lhs, const std::pair<Variant, int>& rhs) const;
 
@@ -111,7 +111,7 @@ Aggregator::MultifieldComparator::MultifieldComparator(const h_vector<SortingEnt
 	: compOpts_{}, type_{type}, haveCompareByCount{false} {
 	assertrx_throw(type_);
 	if (sortingEntries.empty()) {
-		compOpts_.emplace_back(fields, Asc);
+		compOpts_.emplace_back(fields, Direction::Asc);
 		return;
 	}
 
@@ -122,7 +122,7 @@ Aggregator::MultifieldComparator::MultifieldComparator(const h_vector<SortingEnt
 		for (; j < sortingEntries.size(); ++j) {
 			if (static_cast<int>(i) == sortingEntries[j].field) {
 				insertField(j, fields, i, tagsPathIdx);
-				compOpts_[j].direction = sortingEntries[j].desc ? Desc : Asc;
+				compOpts_[j].direction = sortingEntries[j].desc ? Direction::Desc : Direction::Asc;
 				break;
 			}
 		}
@@ -153,7 +153,7 @@ bool Aggregator::MultifieldComparator::operator()(const PayloadValue& lhs, const
 		if (less == ComparationResult::Eq) {
 			continue;
 		}
-		return toSigned(less) * opt.direction < 0;
+		return toSigned(less) * int(opt.direction) < 0;
 	}
 	return false;
 }
@@ -166,13 +166,13 @@ bool Aggregator::MultifieldComparator::operator()(const std::pair<PayloadValue, 
 			if (lhs.second == rhs.second) {
 				continue;
 			}
-			return opt.direction * (lhs.second - rhs.second) < 0;
+			return int(opt.direction) * (lhs.second - rhs.second) < 0;
 		}
 		const auto less = ConstPayload(type_, lhs.first).Compare<WithString::No, NotComparable::Throw>(rhs.first, opt.fields);
 		if (less == ComparationResult::Eq) {
 			continue;
 		}
-		return toSigned(less) * opt.direction < 0;
+		return toSigned(less) * int(opt.direction) < 0;
 	}
 	return false;
 }
@@ -192,11 +192,11 @@ struct Aggregator::MultifieldOrderedMap : public btree::btree_map<PayloadValue, 
 };
 
 Aggregator::SinglefieldComparator::SinglefieldComparator(const h_vector<SortingEntry, 1>& sortingEntries)
-	: valueCompareDirection_(Asc), haveCompareByCount(false) {
+	: valueCompareDirection_(Direction::Asc), haveCompareByCount(false) {
 	bool haveCompareByValue = false;
 	for (const SortingEntry& sortEntry : sortingEntries) {
 		CompareBy compareBy = ByValue;
-		Direction direc = sortEntry.desc ? Desc : Asc;
+		Direction direc = sortEntry.desc ? Direction::Desc : Direction::Asc;
 		if (sortEntry.field == SortingEntry::Count) {
 			compareBy = ByCount;
 			haveCompareByCount = true;
@@ -220,7 +220,7 @@ bool Aggregator::SinglefieldComparator::operator()(const std::pair<Variant, int>
 			less = lhs.second - rhs.second;
 		}
 		if (less != 0) {
-			return less * opt.direction < 0;
+			return less * int(opt.direction) < 0;
 		}
 	}
 	return false;

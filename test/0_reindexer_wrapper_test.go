@@ -148,7 +148,7 @@ func (dbw *ReindexerWrapper) DropNamespace(namespace string) error {
 		return err
 	}
 
-	removeTestNamespce(namespace)
+	removeTestNamespace(namespace)
 	return err
 }
 
@@ -236,22 +236,6 @@ func (dbw *ReindexerWrapper) execQueryCtx(t *testing.T, ctx context.Context, qt 
 	}
 
 	return qt.q.MustExecCtx(ctx)
-}
-
-func GetNodeForRole(nodeDb *reindexer.Reindexer, role string) (dsn string, serverID int, err error) {
-	serverID = -1
-	nodeStat, err := nodeDb.Query("#replicationstats").Where("type", reindexer.EQ, "cluster").Exec().FetchAll()
-	if err != nil {
-		return
-	}
-	replStat := nodeStat[0].(*reindexer.ReplicationStat)
-	for _, v := range replStat.ReplicationNodeStat {
-		if v.Role == role {
-			return v.DSN, v.ServerID, nil
-		}
-	}
-	err = fmt.Errorf("Can not find node for role [%s]", role)
-	return
 }
 
 func (dbw *ReindexerWrapper) setSlaveConfig(slaveDb *ReindexerWrapper) {

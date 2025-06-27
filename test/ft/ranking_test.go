@@ -151,6 +151,7 @@ func elemIsInSlice(elem string, slice []string) bool {
 func TestFTFastRankingTest(t *testing.T) {
 	doRankingTest(t, "text")
 }
+
 func TestFTFuzzyRankingTest(t *testing.T) {
 	doRankingTest(t, "fuzzytext")
 }

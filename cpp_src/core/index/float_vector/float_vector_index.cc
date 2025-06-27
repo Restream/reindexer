@@ -1,6 +1,7 @@
 #include "float_vector_index.h"
 #include "core/embedding/embedder.h"
 #include "core/rdxcontext.h"
+#include "knn_raw_result.h"
 #include "tools/assertrx.h"
 #include "tools/logger.h"
 
@@ -42,7 +43,7 @@ SelectKeyResults FloatVectorIndex::SelectKey(const VariantArray&, CondType condi
 			return SelectKeyResults(std::move(res));
 		}
 		case CondAny:
-			return ComparatorIndexed<FloatVector>{Name(), condition, {}, nullptr, IsArray_False, false, payloadType_, Fields()};
+			return ComparatorIndexed<FloatVector>{Name(), condition, {}, nullptr, IsArray_False, IsDistinct_False, payloadType_, Fields()};
 		case CondEq:
 		case CondSet:
 		case CondAllSet:
@@ -65,38 +66,40 @@ void FloatVectorIndex::Upsert(VariantArray& result, const VariantArray& keys, Id
 }
 
 Variant FloatVectorIndex::Upsert(const Variant& key, IdType id, bool& clearCache) {
+	using namespace std::string_view_literals;
 	const ConstFloatVectorView vect{key};
 	if (vect.IsEmpty()) {
 		// Do not lock empty values mutex here
 		return upsertEmptyVectImpl(id);
 	}
-	checkVectorDims(vect);
+	checkVectorDims(vect, "upsert"sv);
 	return upsert(vect, id, clearCache);
 }
 
 Variant FloatVectorIndex::UpsertConcurrent(const Variant& key, IdType id, bool& clearCache) {
+	using namespace std::string_view_literals;
 	if (!IsSupportMultithreadTransactions()) {
-		throw Error(errLogic, "Index {} does not support concurrent upsertions", Name());
+		throw Error(errLogic, "Index {} does not support concurrent upsertions"sv, Name());
 	}
 	const ConstFloatVectorView vect{key};
 	if (vect.IsEmpty()) {
 		std::unique_lock lck(emptyValuesInsertionMtx_);
 		return upsertEmptyVectImpl(id);
 	}
-	checkVectorDims(vect);
+	checkVectorDims(vect, "upsert"sv);
 	return upsertConcurrent(vect, id, clearCache);
 }
 
 SelectKeyResult FloatVectorIndex::Select(ConstFloatVectorView key, const KnnSearchParams& p, KnnCtx& ctx, const RdxContext& rdxCtx) const {
+	checkForSelect(key);
 	const auto indexWard(rdxCtx.BeforeIndexWork());
-	if (key.IsEmpty()) {
-		throw Error{errNotValid, "Attempt to search knn by empty float vector"};
-	}
-	if (key.Dimension() != Dimension()) {
-		throw Error{errNotValid, "Attempt to search knn by float vector of dimension {} in float vector index of dimension {}",
-					key.Dimension().Value(), Dimension().Value()};
-	}
 	return select(key, p, ctx);
+}
+
+KnnRawResult FloatVectorIndex::SelectRaw(ConstFloatVectorView key, const KnnSearchParams& p, const RdxContext& rdxCtx) const {
+	checkForSelect(key);
+	const auto indexWard(rdxCtx.BeforeIndexWork());
+	return selectRaw(key, p);
 }
 
 void FloatVectorIndex::Commit() {
@@ -111,13 +114,13 @@ IndexMemStat FloatVectorIndex::GetMemStat(const RdxContext&) noexcept {
 }
 
 namespace {
-EmbedderCachePerfStat GetEmbedderPerfStat(const std::shared_ptr<Embedder>& embedder, std::string_view tag) {
-	if (embedder && !tag.empty()) {
-		return embedder->GetPerfStat(tag);
+EmbedderCachePerfStat GetEmbedderPerfStat(const std::shared_ptr<const Embedder>& embedder, std::string_view tag) {
+	if (!embedder || tag.empty()) {
+		return {};
 	}
-	return {};
+	return embedder->GetPerfStat(tag);
 }
-} // namespace
+}  // namespace
 
 IndexPerfStat FloatVectorIndex::GetIndexPerfStat() {
 	IndexPerfStat stat(name_, selectPerfCounter_.Get<PerfStat>(), commitPerfCounter_.Get<PerfStat>());
@@ -158,16 +161,23 @@ ConstFloatVectorView FloatVectorIndex::GetFloatVectorView(IdType id) const {
 	return getFloatVectorView(id);
 }
 
-void FloatVectorIndex::checkVectorDims(ConstFloatVectorView vect)
-{
+void FloatVectorIndex::checkVectorDims(ConstFloatVectorView vect, std::string_view operation) const {
+	using namespace std::string_view_literals;
 	if (vect.Dimension() != Dimension()) {
-		throw Error{errNotValid, "Attempt to upsert vector of dimension {} in a float vector index of dimension {}",
+		throw Error{errNotValid, "Attempt to {} vector of dimension {} in a float vector index of dimension {}"sv, operation,
 					vect.Dimension().Value(), Dimension().Value()};
 	}
 }
 
-Variant FloatVectorIndex::upsertEmptyVectImpl(IdType id)
-{
+void FloatVectorIndex::checkForSelect(ConstFloatVectorView key) const {
+	using namespace std::string_view_literals;
+	if (key.IsEmpty()) {
+		throw Error{errNotValid, "Attempt to search knn by empty float vector"sv};
+	}
+	checkVectorDims(key, "search"sv);
+}
+
+Variant FloatVectorIndex::upsertEmptyVectImpl(IdType id) {
 	emptyValues_.Unsorted().Add(id, IdSet::Auto, sortedIdxCount_);	// ignore result
 	memStat_.uniqKeysCount = 1;
 	return Variant{ConstFloatVectorView{}};

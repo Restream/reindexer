@@ -5,10 +5,7 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include "core/keyvalue/p_string.h"
-#include "estl/chunk.h"
 #include "estl/h_vector.h"
-#include "estl/intrusive_ptr.h"
 #include "tools/lsn.h"
 
 namespace reindexer {
@@ -42,21 +39,6 @@ inline constexpr int format_as(WALRecType v) noexcept { return int(v); }
 class WrSerializer;
 struct WALRecord;
 
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-struct SharedWALRecord {
-	struct Unpacked {
-		int64_t upstreamLSN;
-		int64_t originLSN;
-		p_string nsName, pwalRec;
-	};
-	SharedWALRecord(intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> packed = nullptr) : packed_(std::move(packed)) {}
-	SharedWALRecord(int64_t upstreamLSN, int64_t originLSN, std::string_view nsName, const WALRecord& rec);
-	Unpacked Unpack();
-
-	intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> packed_;
-};
-#endif	// REINDEX_WITH_V3_FOLLOWERS
-
 struct WALRecord {
 	explicit WALRecord(std::span<const uint8_t>);
 	explicit WALRecord(std::string_view sv);
@@ -70,12 +52,6 @@ struct WALRecord {
 	WrSerializer& Dump(WrSerializer& ser, const std::function<std::string(std::string_view)>& cjsonViewer) const;
 	void GetJSON(JsonBuilder& jb, const std::function<std::string(std::string_view)>& cjsonViewer) const;
 	void Pack(WrSerializer& ser) const;
-
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	SharedWALRecord GetShared(int64_t lsn, int64_t upstreamLSN, std::string_view nsName) const;
-
-	mutable SharedWALRecord shared_;
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 
 	WALRecType type;
 	union {

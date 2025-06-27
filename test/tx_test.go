@@ -25,11 +25,13 @@ type UntaggedTxItem struct {
 	DataString string `json:"data_string"`
 }
 
-const testTxItemNs = "test_tx_item"
-const testTxAsyncItemNs = "test_tx_async_item"
-const testTxAsyncTimeoutItemNs = "test_tx_async_timeout_item"
-const testTxQueryItemNs = "test_tx_queries_item"
-const testTxConcurrentTagsItemNs = "test_tx_concurrent_tags_item"
+const (
+	testTxItemNs               = "test_tx_item"
+	testTxAsyncItemNs          = "test_tx_async_item"
+	testTxAsyncTimeoutItemNs   = "test_tx_async_timeout_item"
+	testTxQueryItemNs          = "test_tx_queries_item"
+	testTxConcurrentTagsItemNs = "test_tx_concurrent_tags_item"
+)
 
 func init() {
 	tnamespaces[testTxItemNs] = TextTxItem{}
@@ -39,7 +41,19 @@ func init() {
 	tnamespaces[testTxConcurrentTagsItemNs] = UntaggedTxItem{}
 }
 
-func FillTextTxItem1Tx(count int, tx *txTest) {
+func newUntaggedItems(itemID int64, count int) []*UntaggedTxItem {
+	items := make([]*UntaggedTxItem, count)
+	for i := range items {
+		items[i] = &UntaggedTxItem{
+			ID:         itemID,
+			Data:       rand.Int63(),
+			DataString: randString(),
+		}
+	}
+	return items
+}
+
+func FillTextTxItemTx(count int, tx *txTest) {
 	for i := 0; i < count; i++ {
 		if err := tx.Upsert(&TextTxItem{
 			ID:   0 + i,
@@ -53,8 +67,55 @@ func FillTextTxItem1Tx(count int, tx *txTest) {
 
 func FillTextTxFullItems(count int) {
 	tx := newTestTx(DB, testTxItemNs)
-	FillTextTxItem1Tx(count, tx)
+	FillTextTxItemTx(count, tx)
 	tx.MustCommit()
+}
+
+func FillTextTxItemAsyncTx(t *testing.T, count int, tx *txTest) {
+	for i := 0; i < count; i++ {
+		tx.InsertAsync(&TextTxItem{
+			ID:   i,
+			Name: strconv.Itoa(i),
+		}, func(err error) {
+			assert.NoError(t, err)
+		})
+	}
+	resCount := tx.MustCommit()
+	assert.Equal(t, resCount, count, "Unexpected items count on commit")
+}
+
+func callTxMethod(t *testing.T, method func(interface{}, bindings.Completion) error) {
+	type OtherItem struct {
+		Id   int64
+		Data int64
+	}
+
+	err := method(OtherItem{
+		Id:   0,
+		Data: 0,
+	}, func(err error) {})
+
+	assert.NotNil(t, err)
+	rerr, ok := err.(bindings.Error)
+	assert.True(t, ok)
+	assert.Equal(t, rerr.Code(), reindexer.ErrCodeParams)
+}
+
+func callTxMethodPrecepts(t *testing.T, method func(interface{}, bindings.Completion, ...string) error) {
+	type OtherItem struct {
+		Id   int64
+		Data int64
+	}
+
+	err := method(OtherItem{
+		Id:   0,
+		Data: 0,
+	}, func(err error) {})
+
+	assert.NotNil(t, err)
+	rerr, ok := err.(bindings.Error)
+	assert.True(t, ok)
+	assert.Equal(t, rerr.Code(), reindexer.ErrCodeParams)
 }
 
 func CheckTYx(t *testing.T, ns string, count int) {
@@ -69,7 +130,6 @@ func CheckTYx(t *testing.T, ns string, count int) {
 		resMap[some.ID] = some.Name
 	}
 	assert.Equal(t, count, len(resMap), "Expect %d results, but got %d", count, len(resMap))
-
 }
 
 func TestTx(t *testing.T) {
@@ -78,30 +138,17 @@ func TestTx(t *testing.T) {
 	CheckTYx(t, testTxItemNs, count)
 }
 
-func FillTextTxItemAsync1Tx(t *testing.T, count int, tx *txTest) {
-	for i := 0; i < count; i++ {
-		tx.InsertAsync(&TextTxItem{
-			ID:   i,
-			Name: strconv.Itoa(i),
-		}, func(err error) {
-			assert.NoError(t, err)
-		})
-	}
-	resCount := tx.MustCommit()
-	assert.Equal(t, resCount, count, "Unexpected items count on commit")
-}
-
 func TestAsyncTx(t *testing.T) {
 	tx := newTestTx(DB, testTxAsyncItemNs)
 	count := 5000
-	FillTextTxItemAsync1Tx(t, count, tx)
+	FillTextTxItemAsyncTx(t, count, tx)
 	CheckTYx(t, testTxAsyncItemNs, count)
 }
 
 func TestTxQueries(t *testing.T) {
 	tx := newTestTx(DB, testTxQueryItemNs)
 	count := 5000
-	FillTextTxItem1Tx(count, tx)
+	FillTextTxItemTx(count, tx)
 	tx.MustCommit()
 	assert.NoError(t, tx.Rollback())
 	CheckTYx(t, testTxQueryItemNs, count)
@@ -122,18 +169,6 @@ func TestTxQueries(t *testing.T) {
 	}
 	some := item.(*TextTxItem)
 	assert.Equal(t, some.Data, "testdata", "expect %s, got %s", "testdata", some.Data)
-}
-
-func newUntaggedItems(itemID int64, count int) []*UntaggedTxItem {
-	items := make([]*UntaggedTxItem, count)
-	for i := range items {
-		items[i] = &UntaggedTxItem{
-			ID:         itemID,
-			Data:       rand.Int63(),
-			DataString: randString(),
-		}
-	}
-	return items
 }
 
 func TestConcurrentTagsTx(t *testing.T) {
@@ -169,7 +204,7 @@ func TestConcurrentTagsTx(t *testing.T) {
 func TestAsyncTxTimeout(t *testing.T) {
 	tx1 := newTestTx(DB, testTxAsyncTimeoutItemNs)
 	count1 := 1000
-	FillTextTxItemAsync1Tx(t, count1, tx1)
+	FillTextTxItemAsyncTx(t, count1, tx1)
 	CheckTYx(t, testTxAsyncTimeoutItemNs, count1)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
@@ -214,45 +249,11 @@ func TestAsyncTxTimeout(t *testing.T) {
 	CheckTYx(t, testTxAsyncTimeoutItemNs, count1)
 }
 
-func callTxMethod(t *testing.T, method func(interface{}, bindings.Completion) error) {
-	type OtherItem struct {
-		Id   int64
-		Data int64
-	}
-
-	err := method(OtherItem{
-		Id:   0,
-		Data: 0,
-	}, func(err error) {})
-
-	assert.NotNil(t, err)
-	rerr, ok := err.(bindings.Error)
-	assert.True(t, ok)
-	assert.Equal(t, rerr.Code(), reindexer.ErrCodeParams)
-}
-
-func callTxMethodP(t *testing.T, method func(interface{}, bindings.Completion, ...string) error) {
-	type OtherItem struct {
-		Id   int64
-		Data int64
-	}
-
-	err := method(OtherItem{
-		Id:   0,
-		Data: 0,
-	}, func(err error) {})
-
-	assert.NotNil(t, err)
-	rerr, ok := err.(bindings.Error)
-	assert.True(t, ok)
-	assert.Equal(t, rerr.Code(), reindexer.ErrCodeParams)
-}
-
 func TestRollbackAsyncOpWithIncorrectItem(t *testing.T) {
 	tx := newTestTx(DB, testTxItemNs)
 
 	callTxMethod(t, tx.UpdateAsync)
-	callTxMethodP(t, tx.UpsertAsync)
+	callTxMethodPrecepts(t, tx.UpsertAsync)
 	callTxMethod(t, tx.InsertAsync)
 	callTxMethod(t, tx.DeleteAsync)
 

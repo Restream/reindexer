@@ -20,7 +20,8 @@ public:
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, const Index::SelectContext&,
 							   const RdxContext&) override;
 	void Commit() override;
-	void UpdateSortedIds(const UpdateSortedContext& /*ctx*/) override {}
+	void UpdateSortedIds(const UpdateSortedContext& /*ctx*/) override { assertrx_dbg(!IsSupportSortedIdsBuild()); }
+	bool IsSupportSortedIdsBuild() const noexcept override { return false; }
 	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::make_unique<IndexStore<T>>(*this); }
 	IndexMemStat GetMemStat(const RdxContext&) override;
 	bool HoldsStrings() const noexcept override { return std::is_same_v<T, key_string> || std::is_same_v<T, key_string_with_hash>; }

@@ -5,6 +5,7 @@
 #pragma once
 
 #include <assert.h>
+#include <queue>
 #include "vendor/hopscotch/hopscotch_sc_map.h"
 
 namespace hnswlib {
@@ -153,6 +154,26 @@ public:
 				}
 			} else {
 				// std::cout << "skipped(1)\n";
+			}
+		}
+		return topResults;
+	}
+
+	std::priority_queue<std::pair<dist_t, labeltype>> searchRange(const void* query_data, float radius, size_t ef,
+																  BaseFilterFunctor* isIdAllowed = nullptr) const {
+		std::priority_queue<std::pair<dist_t, labeltype>> topResults;
+		if (cur_element_count == 0) {
+			return topResults;
+		}
+
+		for (int i = 0; i < cur_element_count; i++) {
+			auto ptr = ptrByIdx(i);
+			dist_t dist = fstdistfunc_(query_data, ptr, i);
+			labeltype label = *((labeltype*)(ptr + data_size_));
+			if ((!isIdAllowed) || (*isIdAllowed)(label)) {
+				if (dist < radius) {
+					topResults.emplace(dist, label);
+				}
 			}
 		}
 		return topResults;

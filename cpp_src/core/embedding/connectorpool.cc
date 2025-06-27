@@ -64,13 +64,14 @@ std::pair<Error, ConnectorPool::ConnectorProxy> ConnectorPool::GetConnector(cons
 		lock.unlock();
 
 		if (CheckConnect(*key, config_)) {
-			return std::make_pair(Error(), ConnectorProxy{this, key}); // well done
+			return std::make_pair(Error(), ConnectorProxy{this, key});
 		}
 		lock.lock();
 		idle_.insert(busy_.extract(key));
 	} catch (Error& err) {
 		if (err.code() == errTimeout || err.code() == errCanceled) {
-			return std::make_pair(Error(err.code(), "Some of the connectors are not available (request was canceled/timed out)"), ConnectorProxy{});
+			return std::make_pair(Error(err.code(), "Some of the connectors are not available (request was canceled/timed out)"),
+								  ConnectorProxy{});
 		}
 		return std::make_pair(std::move(err), ConnectorProxy{});
 	} catch (...) {

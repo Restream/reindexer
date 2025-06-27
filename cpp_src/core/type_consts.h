@@ -404,21 +404,4 @@ static const int kSubscribersConfigFormatVersion = 1;
 static const int kMinSubscribersConfigFormatVersion = 1;
 static const int kEventSerializationFormatVersion = 1;
 
-// REINDEX_WITH_V3_FOLLOWERS
-enum SubscriptionOpt {
-	kSubscriptionOptIncrementSubscription = 1 << 0,
-};
-
-typedef struct SubscriptionOpts {
-#ifdef __cplusplus
-	SubscriptionOpts() : options(0) {}
-
-	bool IsIncrementSubscription() const { return options & kSubscriptionOptIncrementSubscription; }
-	SubscriptionOpts& IncrementSubscription(bool value = true) {
-		options = value ? options | kSubscriptionOptIncrementSubscription : options & ~(kSubscriptionOptIncrementSubscription);
-		return *this;
-	}
-#endif
-	uint16_t options;
-} SubscriptionOpts;
-// REINDEX_WITH_V3_FOLLOWERS
+enum { kMaxIndexes = 256 };	 // 'tuple'-index always occupies 1 slot

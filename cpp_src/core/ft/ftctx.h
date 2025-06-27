@@ -15,6 +15,7 @@ class Snippet;
 class Highlight;
 class SnippetN;
 class DebugRank;
+class RankT;
 
 template <class T, class U>
 intrusive_ptr<T> static_ctx_pointer_cast(const intrusive_ptr<U>& r) noexcept {
@@ -81,7 +82,7 @@ public:
 	[[nodiscard]] RanksHolder& Ranks() & noexcept { return *data_->ranks; }
 	[[nodiscard]] const RanksHolder& Ranks() const& noexcept { return *data_->ranks; }
 	auto Ranks() const&& = delete;
-	[[nodiscard]] RanksHolder::Ptr RanksPtr() const noexcept { return data_->ranks; }
+	RanksHolder::Ptr RanksPtr() const noexcept { return data_->ranks; }
 
 	void SetSplitter(intrusive_ptr<const ISplitter> s) noexcept { data_->splitter = std::move(s); }
 	void SetWordPosition(bool v) noexcept { data_->isWordPositions = v; }

@@ -224,7 +224,7 @@ static void parseSortEntry(const JsonValue& entry, SortingEntries& sortingEntrie
 				if ((v.getTag() != JsonTag::JTRUE) && (v.getTag() != JsonTag::JFALSE)) {
 					throw Error(errParseJson, "Wrong type of field '{}'", name);
 				}
-				sortingEntry.desc = (v.getTag() == JsonTag::JTRUE);
+				sortingEntry.desc = Desc(v.getTag() == JsonTag::JTRUE);
 				break;
 
 			case Sort::Field:
@@ -240,9 +240,7 @@ static void parseSortEntry(const JsonValue& entry, SortingEntries& sortingEntrie
 				break;
 		}
 	}
-	if (!sortingEntry.expression.empty()) {
-		sortingEntries.push_back(std::move(sortingEntry));
-	}
+	sortingEntries.push_back(std::move(sortingEntry));
 }
 
 static void parseSort(const JsonValue& v, SortingEntries& sortingEntries, std::vector<Variant>& forcedSortOrder) {
@@ -254,6 +252,21 @@ static void parseSort(const JsonValue& v, SortingEntries& sortingEntries, std::v
 		parseSortEntry(v, sortingEntries, forcedSortOrder);
 	} else {
 		throw Error(errConflict, "Wrong type of field 'Sort'");
+	}
+}
+
+static void parseSort(const JsonValue& v, Query& query) {
+	SortingEntries sortingEntries;
+	std::vector<Variant> forcedSortOrder;
+	parseSort(v, sortingEntries, forcedSortOrder);
+	for (size_t i = 0, s = sortingEntries.size(); i < s; ++i) {
+		auto& sortingEntry = sortingEntries[i];
+		if (i == 0) {
+			// NOLINTNEXTLINE (bugprone-use-after-move)
+			query.Sort(std::move(sortingEntry.expression), *sortingEntry.desc, std::move(forcedSortOrder));
+		} else {
+			query.Sort(std::move(sortingEntry.expression), *sortingEntry.desc);
+		}
 	}
 }
 
@@ -283,25 +296,35 @@ static KnnSearchParams parseKnnParams(const JsonNode& json) {
 	if (paramsJson.empty()) {
 		throw Error{errParseDSL, "Wrong DSL format: KNN query should contain 'params'"};
 	}
-	size_t k;
-	if (const auto kJson = paramsJson.findCaseInsensitive(KnnSearchParams::kKName); !kJson.empty()) {
+	const auto kJson = paramsJson.findCaseInsensitive(KnnSearchParams::kKName);
+	const auto radiusJson = paramsJson.findCaseInsensitive(KnnSearchParams::kRadiusName);
+	std::optional<size_t> k;
+	std::optional<float> radius;
+	if (!kJson.empty()) {
 		k = kJson.As<size_t>(CheckUnsigned_True, 0, 1);
-	} else {
-		throw Error{errParseDSL, "Wrong DSL format: KNN query should contain 'params.{}'", KnnSearchParams::kKName};
 	}
+	if (!radiusJson.empty()) {
+		radius = radiusJson.As<float>();
+	}
+
+	if (!k && !radius) {
+		throw Error{errParseDSL, "Wrong DSL format: KNN query should contain one of 'params.{}' or 'params.{}'", KnnSearchParams::kKName,
+					KnnSearchParams::kRadiusName};
+	}
+
 	if (const auto efJson = paramsJson.findCaseInsensitive(KnnSearchParams::kEfName); !efJson.empty()) {
 		if (const auto nprobeJson = paramsJson.findCaseInsensitive(KnnSearchParams::kNProbeName); !nprobeJson.empty()) {
 			throw Error{errParseDSL, "Wrong DSL format: KNN query cannot contain both of 'params.{}' and 'params.{}",
 						KnnSearchParams::kEfName, KnnSearchParams::kNProbeName};
 		}
-		return HnswSearchParams{k, efJson.As<size_t>(CheckUnsigned_True, 0, k)};
+		return HnswSearchParams{}.K(k).Radius(radius).Ef(efJson.As<size_t>(CheckUnsigned_True, 1, k ? *k : 1));
 	} else if (const auto nprobeJson = paramsJson.findCaseInsensitive(KnnSearchParams::kNProbeName); !nprobeJson.empty()) {
 		if (nprobeJson.value.isNegative()) {
 			throw Error{errParseDSL, "Wrong DSL format: KNN query parameter 'params.{}' cannot be negative", KnnSearchParams::kNProbeName};
 		}
-		return IvfSearchParams{k, nprobeJson.As<size_t>(CheckUnsigned_True, 0, 1)};
+		return IvfSearchParams{}.K(k).Radius(radius).NProbe(nprobeJson.As<size_t>(CheckUnsigned_True, 0, 1));
 	} else {
-		return KnnSearchParamsBase{k};
+		return KnnSearchParamsBase{}.K(k).Radius(radius);
 	}
 }
 
@@ -463,7 +486,7 @@ static void parseSingleJoinQuery(const JsonValue& join, Query& query, const Json
 				}
 				break;
 			case JoinRoot::Sort:
-				parseSort(value, qjoin.sortingEntries_, qjoin.forcedSortOrder_);
+				parseSort(value, qjoin);
 				break;
 			case JoinRoot::Limit:
 				checkJsonValueType(value, name, JsonTag::NUMBER, JsonTag::DOUBLE);
@@ -668,7 +691,7 @@ void parse(const JsonValue& root, Query& q) {
 				break;
 
 			case Root::Sort:
-				parseSort(v, q.sortingEntries_, q.forcedSortOrder_);
+				parseSort(v, q);
 				break;
 			case Root::Merged:
 				checkJsonValueType(v, name, JsonTag::ARRAY);

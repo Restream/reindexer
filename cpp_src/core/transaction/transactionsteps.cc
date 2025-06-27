@@ -17,7 +17,7 @@ void TransactionSteps::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 	}
 	if (lsn.isEmpty() && (mode == ModeUpdate || mode == ModeInsert || mode == ModeUpsert)) {
 		RdxContext ctx;	 // ToDo need real value - now stub
-		item.impl_->Embed(ctx);
+		item.Embed(ctx);
 	}
 	steps.emplace_back(std::move(item), mode, lsn);
 }

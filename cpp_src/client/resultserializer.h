@@ -30,7 +30,7 @@ public:
 	struct ItemParams {
 		IdType id = -1;
 		uint16_t nsid = 0;
-		RankT rank = 0.0;
+		RankT rank{};
 		lsn_t lsn;
 		std::string_view data;
 		bool raw = false;

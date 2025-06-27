@@ -3,6 +3,7 @@ package reindexer
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/restream/reindexer/v5"
@@ -10,8 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-var allIDs = make([]int, 100)
 
 type TestDSLItem struct {
 	ID int `reindex:"id,,pk"`
@@ -32,41 +31,39 @@ type TestDSLEqualPositionItem struct {
 	ArrayField2 []int `reindex:"array_field_2"`
 }
 
+type TestDSLLikeConditionItem struct {
+	ID        int    `reindex:"id,,pk"`
+	TextField string `reindex:"text_idx"`
+}
+
+const (
+	testDslNs              = "test_namespace_dsl"
+	testDslNs2             = "test_namespace_dsl_2"
+	testDslFtNs            = "test_namespace_dsl_ft"
+	testDslJoinedNs1       = "test_namespace_dsl_joined_1"
+	testDslJoinedNs2       = "test_namespace_dsl_joined_2"
+	testDslJoinedNs3       = "test_namespace_dsl_joined_3"
+	testDslEqualPositionNs = "test_namespace_dsl_equal_position"
+	testDslLikeConditionNs = "test_namespace_dsl_like_conition"
+)
+
 func init() {
-	tnamespaces["test_namespace_dsl"] = TestDSLItem{}
-	tnamespaces["test_namespace_dsl_ft"] = TestDSLFtItem{}
-	tnamespaces["test_namespace_dsl_joined_1"] = TestDSLJoinItem{}
-	tnamespaces["test_namespace_dsl_joined_2"] = TestDSLJoinItem{}
-
-	tnamespaces["test_namespace_dsl_2"] = TestDSLItem{}
-	tnamespaces["test_namespace_dsl_joined_3"] = TestDSLJoinItem{}
-
-	tnamespaces["test_namespace_dsl_equal_position"] = TestDSLEqualPositionItem{}
+	tnamespaces[testDslNs] = TestDSLItem{}
+	tnamespaces[testDslNs2] = TestDSLItem{}
+	tnamespaces[testDslFtNs] = TestDSLFtItem{}
+	tnamespaces[testDslJoinedNs1] = TestDSLJoinItem{}
+	tnamespaces[testDslJoinedNs2] = TestDSLJoinItem{}
+	tnamespaces[testDslJoinedNs3] = TestDSLJoinItem{}
+	tnamespaces[testDslEqualPositionNs] = TestDSLEqualPositionItem{}
+	tnamespaces[testDslLikeConditionNs] = TestDSLLikeConditionItem{}
 }
 
-func newTestDSLItem(id int) interface{} {
-	return &TestDSLItem{
-		ID: id,
-	}
-}
+var allIDs = make([]int, 100)
 
-func newTestDSLFtItem(id int, descr string) interface{} {
-	return &TestDSLFtItem{
-		ID:          id,
-		Description: descr,
-	}
-}
-
-func newTestDSLJoinItem(id int) interface{} {
-	return &TestDSLJoinItem{
-		JID: id,
-	}
-}
-
-func fillTestDSLItems(t *testing.T, ns string, start int, count int) {
+func fillTestDSLItem(t *testing.T, ns string, start int, count int) {
 	tx := newTestTx(DB, ns)
 	for i := 0; i < count; i++ {
-		testItem := newTestDSLItem(start + i)
+		testItem := &TestDSLItem{ID: start + i}
 		if err := tx.Upsert(testItem); err != nil {
 			require.NoError(t, err)
 		}
@@ -79,7 +76,10 @@ func fillTestDSLFtItems(t *testing.T, ns string) {
 	descriptions := []string{"test", "word", "worm", "sword", "www"}
 	tx := newTestTx(DB, ns)
 	for i := 0; i < len(descriptions); i++ {
-		testItem := newTestDSLFtItem(i, descriptions[i])
+		testItem := &TestDSLFtItem{
+			ID:          i,
+			Description: descriptions[i],
+		}
 		if err := tx.Upsert(testItem); err != nil {
 			require.NoError(t, err)
 		}
@@ -90,8 +90,37 @@ func fillTestDSLFtItems(t *testing.T, ns string) {
 func fillTestDSLJoinItems(t *testing.T, ns string, start int, count int) {
 	tx := newTestTx(DB, ns)
 	for i := 0; i < count; i++ {
-		testItem := newTestDSLJoinItem(start + i)
+		testItem := &TestDSLJoinItem{JID: start + i}
 		if err := tx.Upsert(testItem); err != nil {
+			require.NoError(t, err)
+		}
+	}
+	tx.MustCommit()
+}
+
+func fillTestDSLEqualPositionItem(t *testing.T, ns string, start int, count int) {
+	tx := newTestTx(DB, ns)
+	for i := 0; i < count; i++ {
+		if err := tx.Upsert(
+			TestDSLEqualPositionItem{
+				ID:          start + i,
+				ArrayField1: []int{1 - i%2, 1, 2, 3, 100 * (i % 2)},
+				ArrayField2: []int{0 + i%2, -1, -2, -3, 100},
+			}); err != nil {
+			require.NoError(t, err)
+		}
+	}
+	tx.MustCommit()
+}
+
+func fillTestDSLLikeConditionItem(t *testing.T, ns string, start int, count int) {
+	tx := newTestTx(DB, ns)
+	for i := 0; i < count; i++ {
+		if err := tx.Upsert(
+			TestDSLLikeConditionItem{
+				ID:        start + i,
+				TextField: "test" + strconv.Itoa(i),
+			}); err != nil {
 			require.NoError(t, err)
 		}
 	}
@@ -134,6 +163,15 @@ func getTestDSLEqualPositionItemsIDs(items []interface{}) []int {
 	return resultIDs
 }
 
+func getTestDSLLikeCondItemsIDs(items []interface{}) []int {
+	resultIDs := make([]int, len(items))
+	for i, v := range items {
+		item := v.(*TestDSLLikeConditionItem)
+		resultIDs[i] = item.ID
+	}
+	return resultIDs
+}
+
 func execDSLTwice(t *testing.T, testF func(*testing.T, *reindexer.Query), jsonDSL string) {
 	var marshaledJSON []byte
 	{
@@ -161,29 +199,24 @@ func execDSLTwice(t *testing.T, testF func(*testing.T, *reindexer.Query), jsonDS
 	}
 }
 
-func fillTestDSLEqualPositionItem(t *testing.T, ns string, start int, count int) {
-	tx := newTestTx(DB, ns)
-	for i := 0; i < count; i++ {
-		if err := tx.Upsert(
-			TestDSLEqualPositionItem{
-				ID:          start + i,
-				ArrayField1: []int{1 - i%2, 1, 2, 3, 100 * (i % 2)},
-				ArrayField2: []int{0 + i%2, -1, -2, -3, 100},
-			}); err != nil {
-			require.NoError(t, err)
-		}
-	}
-	tx.MustCommit()
+func checkErrorQueryFrom(t *testing.T, jsonDSL string, description string) {
+	var dslQ dsl.DSL
+	err := json.Unmarshal([]byte(jsonDSL), &dslQ)
+	require.NoError(t, err)
+	_, err = DBD.QueryFrom(dslQ)
+	require.EqualError(t, err, description)
 }
+
 
 func TestDSLQueries(t *testing.T) {
 	t.Parallel()
 
-	fillTestDSLItems(t, "test_namespace_dsl", 0, 100)
-	fillTestDSLFtItems(t, "test_namespace_dsl_ft")
-	fillTestDSLJoinItems(t, "test_namespace_dsl_joined_1", 80, 40)
-	fillTestDSLJoinItems(t, "test_namespace_dsl_joined_2", 10, 10)
-	fillTestDSLEqualPositionItem(t, "test_namespace_dsl_equal_position", 0, 10)
+	fillTestDSLItem(t, testDslNs, 0, 100)
+	fillTestDSLFtItems(t, testDslFtNs)
+	fillTestDSLJoinItems(t, testDslJoinedNs1, 80, 40)
+	fillTestDSLJoinItems(t, testDslJoinedNs2, 10, 10)
+	fillTestDSLEqualPositionItem(t, testDslEqualPositionNs, 0, 10)
+	fillTestDSLLikeConditionItem(t, testDslLikeConditionNs, 0, 15)
 
 	t.Run("basic dsl parsing", func(t *testing.T) {
 		const jsonDSL = `
@@ -317,7 +350,7 @@ func TestDSLQueries(t *testing.T) {
 					]
 					}
 				}
-	
+
 			]
 		}
 		`
@@ -855,7 +888,7 @@ func TestDSLQueries(t *testing.T) {
 								"cond": "eq",
 								"value": 83
 							},
-							{   
+							{
 								"op": "Or",
 								"field": "jid",
 								"cond": "eq",
@@ -1865,15 +1898,43 @@ func TestDSLQueries(t *testing.T) {
 			require.Equal(t, expectedIDs, getTestDSLEqualPositionItemsIDs(items))
 		}, jsonDSL)
 	})
+
+	t.Run("dsl with like condition", func(t *testing.T) {
+		const jsonDSL = `
+		{
+			"namespace": "test_namespace_dsl_like_conition",
+			"filters": [
+				{
+					"op": "AND",
+					"field": "text_idx",
+					"cond": "LIKE",
+					"value": "%test1%"
+				}
+			]
+		}
+		`
+
+		execDSLTwice(t, func(t *testing.T, q *reindexer.Query) {
+			it := q.MustExec()
+			require.NoError(t, it.Error())
+			explain, err := it.GetExplainResults()
+			assert.NoError(t, err)
+			assert.Nil(t, explain)
+			expectedIDs := []int{1, 10, 11, 12, 13, 14}
+			items, err := it.FetchAll()
+			require.NoError(t, err)
+			require.Equal(t, expectedIDs, getTestDSLLikeCondItemsIDs(items))
+		}, jsonDSL)
+	})
 }
 
 func TestDSLQueriesParsingErrors(t *testing.T) {
 	t.Parallel()
 
-	fillTestDSLItems(t, "test_namespace_dsl_2", 0, 100)
-	fillTestDSLJoinItems(t, "test_namespace_dsl_joined_3", 10, 10)
+	fillTestDSLItem(t, testDslNs2, 0, 100)
+	fillTestDSLJoinItems(t, testDslJoinedNs3, 10, 10)
 
-	t.Run("dsl unsupported fields will be ignored on unmarshaling with strict mode disabled", func(t *testing.T) {
+	t.Run("dsl unsupported fields will be ignored on unmarshalling with strict mode disabled", func(t *testing.T) {
 		const jsonDSL = `
 		{
 			"namespace": "test_namespace_dsl_2",
@@ -1941,7 +2002,7 @@ func TestDSLQueriesParsingErrors(t *testing.T) {
 		}, jsonDSL)
 	})
 
-	t.Run("dsl unsupported fields will cause an error on unmarshaling with dsl strict mode enabled", func(t *testing.T) {
+	t.Run("dsl unsupported fields will cause an error on unmarshalling with dsl strict mode enabled", func(t *testing.T) {
 		const jsonDSL = `
 		{
 			"namespace": "test_namespace_dsl_2",
@@ -2001,7 +2062,7 @@ func TestDSLQueriesParsingErrors(t *testing.T) {
 		}
 		`
 
-		dsl.EnabeStrictMode()
+		dsl.EnableStrictMode()
 		defer dsl.DisableStrictMode()
 		var dslQ dsl.DSL
 		err := json.Unmarshal([]byte(jsonDSL), &dslQ)
@@ -2023,7 +2084,7 @@ func TestDSLQueriesParsingErrors(t *testing.T) {
 		}
 		`
 
-		dsl.EnabeStrictMode()
+		dsl.EnableStrictMode()
 		defer dsl.DisableStrictMode()
 		dslQ, err := dsl.DecodeJSON([]byte(jsonDSL))
 		require.EqualError(t, err, `json: unknown field "some_unsupported_0"`)
@@ -2041,9 +2102,9 @@ func TestDSLQueriesParsingErrors(t *testing.T) {
 					},
 					"filters": [
 						{
-							"op": "AND", 
-							"field": "id", 
-							"cond": "%s", 
+							"op": "AND",
+							"field": "id",
+							"cond": "%s",
 							"value": %s
 						}
 					]
@@ -2067,9 +2128,9 @@ func TestDSLQueriesParsingErrors(t *testing.T) {
 				},
 				"filters": [
 					{
-						"op": "AND", 
-						"field": "id", 
-						"cond": "%s", 
+						"op": "AND",
+						"field": "id",
+						"cond": "%s",
 						"value": {}
 					}
 				]
@@ -2093,9 +2154,9 @@ func TestDSLQueriesParsingErrors(t *testing.T) {
 					},
 					"filters": [
 						{
-							"op": "AND", 
-							"field": "id", 
-							"cond": "%s", 
+							"op": "AND",
+							"field": "id",
+							"cond": "%s",
 							"value": %s
 						}
 					]
@@ -2119,9 +2180,9 @@ func TestDSLQueriesParsingErrors(t *testing.T) {
 				},
 				"filters": [
 					{
-						"op": "AND", 
-						"field": "id", 
-						"cond": "range", 
+						"op": "AND",
+						"field": "id",
+						"cond": "range",
 						"value": %s
 					}
 				]
@@ -2141,9 +2202,9 @@ func TestDSLQueriesParsingErrors(t *testing.T) {
 				"namespace": "test_namespace_dsl",
 				"filters": [
 					{
-						"op": "AND", 
-						"field": "id", 
-						"cond": "%s", 
+						"op": "AND",
+						"field": "id",
+						"cond": "%s",
 						"value": 1
 					}
 				]
@@ -2168,9 +2229,9 @@ func TestDSLQueriesParsingErrors(t *testing.T) {
 					"namespace": "test_namespace_dsl",
 					"filters": [
 						{
-							"op": "AND", 
-							"field": "id", 
-							"cond": "%s", 
+							"op": "AND",
+							"field": "id",
+							"cond": "%s",
 							"value": [%s]
 						}
 					]
@@ -2201,9 +2262,9 @@ func TestDSLQueriesParsingErrors(t *testing.T) {
 								"namespace": "test_namespace_dsl_joined_2",
 								"filters": [
 									{
-										"op": "AND", 
-										"field": "jid", 
-										"cond": "%s", 
+										"op": "AND",
+										"field": "jid",
+										"cond": "%s",
 										"value": %s
 									}
 								],
@@ -2243,9 +2304,9 @@ func TestDSLQueriesParsingErrors(t *testing.T) {
 							"namespace": "test_namespace_dsl_joined_2",
 							"filters": [
 								{
-									"op": "AND", 
-									"field": "jid", 
-									"cond": "%s", 
+									"op": "AND",
+									"field": "jid",
+									"cond": "%s",
 									"value": {}
 								}
 							],
@@ -2285,9 +2346,9 @@ func TestDSLQueriesParsingErrors(t *testing.T) {
 								"namespace": "test_namespace_dsl_joined_2",
 								"filters": [
 									{
-										"op": "AND", 
-										"field": "jid", 
-										"cond": "%s", 
+										"op": "AND",
+										"field": "jid",
+										"cond": "%s",
 										"value": %s
 									}
 								],
@@ -2327,9 +2388,9 @@ func TestDSLQueriesParsingErrors(t *testing.T) {
 							"namespace": "test_namespace_dsl_joined_2",
 							"filters": [
 								{
-									"op": "AND", 
-									"field": "jid", 
-									"cond": "range", 
+									"op": "AND",
+									"field": "jid",
+									"cond": "range",
 									"value": %s
 								}
 							],
@@ -2365,9 +2426,9 @@ func TestDSLQueriesParsingErrors(t *testing.T) {
 							"namespace": "test_namespace_dsl_joined_2",
 							"filters": [
 								{
-									"op": "AND", 
-									"field": "jid", 
-									"cond": "%s", 
+									"op": "AND",
+									"field": "jid",
+									"cond": "%s",
 									"value": 1
 								}
 							],
@@ -2408,9 +2469,9 @@ func TestDSLQueriesParsingErrors(t *testing.T) {
 								"namespace": "test_namespace_dsl_joined_2",
 								"filters": [
 									{
-										"op": "AND", 
-										"field": "jid", 
-										"cond": "%s", 
+										"op": "AND",
+										"field": "jid",
+										"cond": "%s",
 										"value": [%s]
 									}
 								],
@@ -2564,7 +2625,7 @@ func TestDSLQueriesParsingErrors(t *testing.T) {
 			}
 			`
 
-			dsl.EnabeStrictMode()
+			dsl.EnableStrictMode()
 			defer dsl.DisableStrictMode()
 			var dslQ dsl.DSL
 			err := json.Unmarshal([]byte(fmt.Sprintf(jsonDSL, field[0], field[1])), &dslQ)
@@ -2602,20 +2663,12 @@ func TestDSLQueriesParsingErrors(t *testing.T) {
 		}
 		`
 
-		dsl.EnabeStrictMode()
+		dsl.EnableStrictMode()
 		defer dsl.DisableStrictMode()
 		var dslQ dsl.DSL
 		err := json.Unmarshal([]byte(jsonDSL), &dslQ)
 		require.EqualError(t, err, `json: unknown field "merge_queries"`)
 	})
-}
-
-func checkErrorQueryFrom(t *testing.T, jsonDSL string, description string) {
-	var dslQ dsl.DSL
-	err := json.Unmarshal([]byte(jsonDSL), &dslQ)
-	require.NoError(t, err)
-	_, err = DBD.QueryFrom(dslQ)
-	require.EqualError(t, err, description)
 }
 
 func TestCreateDSLQueriesErrors(t *testing.T) {

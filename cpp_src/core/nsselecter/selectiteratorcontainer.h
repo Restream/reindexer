@@ -1,8 +1,8 @@
 #pragma once
 #include <limits>
-#include "core/enums.h"
 #include "core/expressiontree.h"
 #include "core/ft/functions/ft_function.h"
+#include "core/index/float_vector/knn_raw_result.h"
 #include "core/index/index.h"
 #include "core/nsselecter/comparator/comparator_indexed.h"
 #include "core/nsselecter/comparator/comparator_not_indexed.h"
@@ -20,6 +20,8 @@ class RdxContext;
 class JoinedSelector;
 class QueryPreprocessor;
 class NamespaceImpl;
+class RanksHolder;
+class Reranker;
 
 struct JoinSelectIterator {
 	size_t joinIndex;
@@ -31,8 +33,23 @@ struct SelectIteratorsBracket : private Bracket {
 	using Bracket::Bracket;
 	using Bracket::Size;
 	using Bracket::Append;
+	using Bracket::Erase;
 	void CopyPayloadFrom(const SelectIteratorsBracket& other) noexcept { haveJoins = other.haveJoins; }
 	bool haveJoins = false;
+};
+
+class [[nodiscard]] KnnRawSelectResult {
+public:
+	KnnRawSelectResult(KnnRawResult&& raw, int idxNo) noexcept : rawResult_{std::move(raw)}, indexNo_{idxNo} {}
+	[[nodiscard]] int IndexNo() const noexcept { return indexNo_; }
+	[[nodiscard]] const KnnRawResult& RawResult() const& noexcept { return rawResult_; }
+	[[nodiscard]] KnnRawResult& RawResult() & noexcept { return rawResult_; }
+
+	auto RawResult() const&& = delete;
+
+private:
+	KnnRawResult rawResult_;
+	int indexNo_;
 };
 
 class SelectIteratorContainer
@@ -40,12 +57,20 @@ class SelectIteratorContainer
 							ComparatorIndexed<bool>, ComparatorIndexed<int>, ComparatorIndexed<int64_t>, ComparatorIndexed<double>,
 							ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>,
 							ComparatorIndexed<Uuid>, ComparatorIndexed<FloatVector>, EqualPositionComparator, ComparatorNotIndexed,
-							ComparatorDistinctMulti> {
-	using Base =
-		ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysTrue,
-					   ComparatorIndexed<bool>, ComparatorIndexed<int>, ComparatorIndexed<int64_t>, ComparatorIndexed<double>,
-					   ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>, ComparatorIndexed<Uuid>,
-					   ComparatorIndexed<FloatVector>, EqualPositionComparator, ComparatorNotIndexed, ComparatorDistinctMulti>;
+							ComparatorDistinctMulti, KnnRawSelectResult> {
+	using Base = ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysTrue,
+								ComparatorIndexed<bool>, ComparatorIndexed<int>, ComparatorIndexed<int64_t>, ComparatorIndexed<double>,
+								ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>,
+								ComparatorIndexed<Uuid>, ComparatorIndexed<FloatVector>, EqualPositionComparator, ComparatorNotIndexed,
+								ComparatorDistinctMulti, KnnRawSelectResult>;
+
+public:
+	enum class [[nodiscard]] MergeType : bool;
+
+private:
+	template <MergeType, bool desc, VectorMetric>
+	class [[nodiscard]] MergerRankedImpl;
+	class [[nodiscard]] MergerRanked;
 
 public:
 	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx* ctx = nullptr)
@@ -55,7 +80,7 @@ public:
 	bool HasIdsets() const;
 	// Check NOT or comparator must not be 1st
 	void CheckFirstQuery();
-	// Let iterators choose most effective algorith
+	// Let iterators choose most effective algorithm
 	void SetExpectMaxIterations(int expectedIterations);
 	void PrepareIteratorsForSelectLoop(QueryPreprocessor&, unsigned sortId, RankedTypeQuery, RankSortType, const NamespaceImpl&,
 									   FtFunction::Ptr&, RanksHolder::Ptr&, const RdxContext&);
@@ -70,14 +95,14 @@ public:
 		assertrx_throw(i < container_.size());
 		return container_[i].Is<JoinSelectIterator>();
 	}
-	bool IsDistinct(size_t i) const noexcept {
+	reindexer::IsDistinct IsDistinct(size_t i) const noexcept {
 		return Visit(
 			i,
-			[] RX_PRE_LMBD_ALWAYS_INLINE(
-				OneOf<SelectIteratorsBracket, JoinSelectIterator, FieldsComparator, AlwaysFalse, AlwaysTrue, EqualPositionComparator>)
-				RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIterator& sit) RX_POST_LMBD_ALWAYS_INLINE noexcept { return sit.distinct; },
-			Restricted<ComparatorNotIndexed, ComparatorDistinctMulti,
+			[] RX_PRE_LMBD_ALWAYS_INLINE(OneOf<SelectIteratorsBracket, JoinSelectIterator, FieldsComparator, AlwaysFalse, AlwaysTrue,
+											   EqualPositionComparator, KnnRawSelectResult>)
+				RX_POST_LMBD_ALWAYS_INLINE noexcept { return IsDistinct_False; },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const ComparatorDistinctMulti&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return IsDistinct_True; },
+			Restricted<ComparatorNotIndexed, SelectIterator,
 					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
 				[] RX_PRE_LMBD_ALWAYS_INLINE(const auto& comp) RX_POST_LMBD_ALWAYS_INLINE noexcept { return comp.IsDistinct(); }));
 	}
@@ -95,6 +120,7 @@ public:
 	static bool IsExpectingOrderedResults(const QueryEntry& qe) noexcept {
 		return IsOrderedCondition(qe.Condition()) || (qe.Condition() != CondAny && qe.Values().size() <= 1);
 	}
+	void MergeRanked(RanksHolder::Ptr&, const Reranker&, const NamespaceImpl&);
 
 private:
 	ContainRanked prepareIteratorsForSelectLoop(QueryPreprocessor&, size_t begin, size_t end, unsigned sortId, RankedTypeQuery,
@@ -124,6 +150,7 @@ private:
 									   RankedTypeQuery, RankSortType, FtFunction::Ptr& selectFnc, RanksHolder::Ptr&, reindexer::IsRanked&,
 									   IsSparse&, QueryPreprocessor& qPreproc, const RdxContext&);
 	SelectKeyResult processKnnQueryEntry(const KnnQueryEntry&, const NamespaceImpl&, RanksHolder::Ptr&, const RdxContext&);
+	KnnRawResult processKnnQueryEntryRaw(const KnnQueryEntry&, const NamespaceImpl&, const RdxContext&);
 	template <bool left>
 	void processField(FieldsComparator&, const QueryField&, const NamespaceImpl&) const;
 	void processJoinEntry(const JoinQueryEntry&, OpType);
@@ -132,6 +159,11 @@ private:
 	using EqualPositions = h_vector<size_t, 4>;
 	void processEqualPositions(const std::vector<EqualPositions>& equalPositions, const NamespaceImpl& ns, const QueryEntries& queries);
 	static std::vector<EqualPositions> prepareEqualPositions(const QueryEntries& queries, size_t begin, size_t end);
+	[[nodiscard]] static std::pair<iterator, iterator> findFirstRanked(iterator begin, iterator end, const NamespaceImpl&);
+	[[nodiscard]] static bool isRanked(const_iterator, const NamespaceImpl&);
+	static void throwIfNotFt(const QueryEntries&, size_t i, const NamespaceImpl&);
+	template <bool desc>
+	void mergeRanked(RanksHolder::Ptr&, const Reranker&, const NamespaceImpl&);
 
 	/// @return end() if empty or last opened bracket is empty
 	iterator lastAppendedOrClosed() {

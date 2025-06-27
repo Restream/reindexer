@@ -68,15 +68,63 @@ type TestUuidStructNoTag struct {
 	Uuid string `reindex:"uuid,hash" json:"uuid"`
 }
 
-const TestUuidItemCreateNs = "test_uuid_item_create"
+const (
+	testUuidItemCreateNs = "test_uuid_item_create"
+	// should not be in init()
+	testIntItemWithUuidTagNs       = "test_int_item_with_uuid_tag"
+	testInt64ItemWithUuidTagNs     = "test_int64_item_with_uuid_tag"
+	testFloatItemWithUuidTagNs     = "test_float_item_with_uuid_tag"
+	testDoubleItemWithUuidTagNs    = "test_double_item_with_uuid_tag"
+	testComplexItemWithUuidTagNs   = "test_complex_item_with_uuid_tag"
+	testByteItemWithUuidTagNs      = "test_byte_item_with_uuid_tag"
+	testBoolItemWithUuidTagNs      = "test_bool_item_with_uuid_tag"
+	testUuidCprotoConnectNs        = "test_uuid_cproto_connect"
+	testUuidBuiltinserverConnectNs = "test_uuid_builtinserver_connect"
+)
 
-const TestIntItemWithUuidTagNs = "test_int_item_with_uuid_tag"
-const TestInt64ItemWithUuidTagNs = "test_int64_item_with_uuid_tag"
-const TestFloatItemWithUuidTagNs = "test_float_item_with_uuid_tag"
-const TestDoubleItemWithUuidTagNs = "test_double_item_with_uuid_tag"
-const TestComplexItemWithUuidTagNs = "test_complex_item_with_uuid_tag"
-const TestByteItemWithUuidTagNs = "test_byte_item_with_uuid_tag"
-const TestBoolItemWithUuidTagNs = "test_bool_item_with_uuid_tag"
+func init() {
+	tnamespaces[testUuidItemCreateNs] = TestUuidStruct{}
+}
+
+func configureAndStartServer(httpaddr string, rpcaddr string, path string) *reindexer.Reindexer {
+	cfg := config.DefaultServerConfig()
+	cfg.Net.HTTPAddr = httpaddr
+	cfg.Net.RPCAddr = rpcaddr
+	cfg.Storage.Path = path
+	os.RemoveAll(cfg.Storage.Path)
+	rx := reindexer.NewReindex("builtinserver://uudb", reindexer.WithServerConfig(time.Second*100, cfg))
+	return rx
+}
+
+func upsertUniqueTestUuidStructNoIdx(t *testing.T, rx *reindexer.Reindexer, ns string, ID int, uuids *map[string]bool) *TestUuidStructNoIdx {
+	var item TestUuidStructNoIdx
+	for {
+		uuid := randUuid()
+		if _, ok := (*uuids)[uuid]; !ok {
+			(*uuids)[uuid] = true
+			item = TestUuidStructNoIdx{ID: ID, Uuid: uuid}
+			err := rx.Upsert(ns, item)
+			require.NoError(t, err)
+			break
+		}
+	}
+	return &item
+}
+
+func upsertUniqueTestUuidStructNoTag(t *testing.T, rx *reindexer.Reindexer, ns string, ID int, uuids *map[string]bool) *TestUuidStructNoTag {
+	var item TestUuidStructNoTag
+	for {
+		uuid := randUuid()
+		if _, ok := (*uuids)[uuid]; !ok {
+			(*uuids)[uuid] = true
+			item = TestUuidStructNoTag{ID: ID, Uuid: uuid}
+			err := rx.Upsert(ns, item)
+			require.NoError(t, err)
+			break
+		}
+	}
+	return &item
+}
 
 func checkExplainSelect(t *testing.T, it reindexer.Iterator, item interface{}) {
 	require.NoError(t, it.Error())
@@ -98,24 +146,10 @@ func checkExplainSelect(t *testing.T, it reindexer.Iterator, item interface{}) {
 	}, "")
 }
 
-func configureAndStartServer(httpaddr string, rpcaddr string, path string) *reindexer.Reindexer {
-	cfg := config.DefaultServerConfig()
-	cfg.Net.HTTPAddr = httpaddr
-	cfg.Net.RPCAddr = rpcaddr
-	cfg.Storage.Path = path
-	os.RemoveAll(cfg.Storage.Path)
-	rx := reindexer.NewReindex("builtinserver://uudb", reindexer.WithServerConfig(time.Second*100, cfg))
-	return rx
-}
-
-func init() {
-	tnamespaces[TestUuidItemCreateNs] = TestUuidStruct{}
-}
-
 func TestUuidItemCreate(t *testing.T) {
 	t.Parallel()
 
-	const ns = TestUuidItemCreateNs
+	const ns = testUuidItemCreateNs
 
 	t.Run("add item with valid uuid", func(t *testing.T) {
 		item := TestUuidStruct{
@@ -222,80 +256,50 @@ func TestNotStringItemsWithUuidTag(t *testing.T) {
 
 	t.Run("cant open ns when int field with uuid tag", func(t *testing.T) {
 		errExpr := "UUID index is not applicable with 'int64' field, only with 'string' (index name: 'uuid', field name: 'Uuid', jsonpath: 'uuid')"
-		assert.EqualError(t, DB.OpenNamespace(TestIntItemWithUuidTagNs, nsOpts,
+		assert.EqualError(t, DB.OpenNamespace(testIntItemWithUuidTagNs, nsOpts,
 			TestIntItemWithUuidTagStruct{}), errExpr)
 	})
 
 	t.Run("cant open ns when int64 field with uuid tag", func(t *testing.T) {
 		errExpr := "UUID index is not applicable with 'int64' field, only with 'string' (index name: 'uuid', field name: 'Uuid', jsonpath: 'uuid')"
-		assert.EqualError(t, DB.OpenNamespace(TestInt64ItemWithUuidTagNs, nsOpts,
+		assert.EqualError(t, DB.OpenNamespace(testInt64ItemWithUuidTagNs, nsOpts,
 			TestInt64ItemWithUuidTagStruct{}), errExpr)
 	})
 
 	t.Run("cant open ns when float field with uuid tag", func(t *testing.T) {
 		errExpr := "UUID index is not applicable with 'double' field, only with 'string' (index name: 'uuid', field name: 'Uuid', jsonpath: 'uuid')"
-		assert.EqualError(t, DB.OpenNamespace(TestFloatItemWithUuidTagNs, nsOpts,
+		assert.EqualError(t, DB.OpenNamespace(testFloatItemWithUuidTagNs, nsOpts,
 			TestFloatItemWithUuidTagStruct{}), errExpr)
 	})
 
 	t.Run("cant open ns when double field with uuid tag", func(t *testing.T) {
 		errExpr := "UUID index is not applicable with 'double' field, only with 'string' (index name: 'uuid', field name: 'Uuid', jsonpath: 'uuid')"
-		assert.EqualError(t, DB.OpenNamespace(TestDoubleItemWithUuidTagNs, nsOpts,
+		assert.EqualError(t, DB.OpenNamespace(testDoubleItemWithUuidTagNs, nsOpts,
 			TestDoubleItemWithUuidTagStruct{}), errExpr)
 	})
 
 	t.Run("cant open ns when complex field with uuid tag", func(t *testing.T) {
 		errExpr := "rq: Invalid reflection type of index"
-		assert.EqualError(t, DB.OpenNamespace(TestComplexItemWithUuidTagNs, nsOpts,
+		assert.EqualError(t, DB.OpenNamespace(testComplexItemWithUuidTagNs, nsOpts,
 			TestComplexItemWithUuidTagStruct{}), errExpr)
 	})
 
 	t.Run("cant open ns when byte field with uuid tag", func(t *testing.T) {
 		errExpr := "UUID index is not applicable with 'int' field, only with 'string' (index name: 'uuid', field name: 'Uuid', jsonpath: 'uuid')"
-		assert.EqualError(t, DB.OpenNamespace(TestByteItemWithUuidTagNs, nsOpts,
+		assert.EqualError(t, DB.OpenNamespace(testByteItemWithUuidTagNs, nsOpts,
 			TestByteItemWithUuidTagStruct{}), errExpr)
 	})
 
 	t.Run("cant open ns when bool field with uuid tag", func(t *testing.T) {
 		errExpr := "UUID index is not applicable with 'bool' field, only with 'string' (index name: 'uuid', field name: 'Uuid', jsonpath: 'uuid')"
-		assert.EqualError(t, DB.OpenNamespace(TestBoolItemWithUuidTagNs, nsOpts,
+		assert.EqualError(t, DB.OpenNamespace(testBoolItemWithUuidTagNs, nsOpts,
 			TestBoolItemWithUuidTagStruct{}), errExpr)
 	})
 }
 
-func upsertUniqueTestUuidStructNoIdx(t *testing.T, rx *reindexer.Reindexer, ns string, ID int, uuids *map[string]bool) *TestUuidStructNoIdx {
-	var item TestUuidStructNoIdx
-	for {
-		uuid := randUuid()
-		if _, ok := (*uuids)[uuid]; !ok {
-			(*uuids)[uuid] = true
-			item = TestUuidStructNoIdx{ID: ID, Uuid: uuid}
-			err := rx.Upsert(ns, item)
-			require.NoError(t, err)
-			break
-		}
-	}
-	return &item
-}
-
-func upsertUniqueTestUuidStructNoTag(t *testing.T, rx *reindexer.Reindexer, ns string, ID int, uuids *map[string]bool) *TestUuidStructNoTag {
-	var item TestUuidStructNoTag
-	for {
-		uuid := randUuid()
-		if _, ok := (*uuids)[uuid]; !ok {
-			(*uuids)[uuid] = true
-			item = TestUuidStructNoTag{ID: ID, Uuid: uuid}
-			err := rx.Upsert(ns, item)
-			require.NoError(t, err)
-			break
-		}
-	}
-	return &item
-}
-
 func TestUuidClientCproto(t *testing.T) {
 
-	ns := "test_uuid_cproto_connect"
+	const ns = testUuidCprotoConnectNs
 
 	t.Run("test add uuid index on non-indexed string", func(t *testing.T) {
 		rx1 := configureAndStartServer("0:29188", "0:26634", path.Join(helpers.GetTmpDBDir(), "rx_uuid1"))
@@ -393,7 +397,7 @@ func TestUuidClientCproto(t *testing.T) {
 
 func TestUuidClientBuiltinserver(t *testing.T) {
 
-	ns := "test_uuid_builtinserver_connect"
+	const ns = testUuidBuiltinserverConnectNs
 
 	t.Run("test add uuid index on non-indexed string", func(t *testing.T) {
 		rx1 := configureAndStartServer("0:29188", "0:26634", path.Join(helpers.GetTmpDBDir(), "reindex_uuid11"))

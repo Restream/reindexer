@@ -333,7 +333,7 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 			case QuerySortIndex: {
 				SortingEntry sortingEntry;
 				sortingEntry.expression = std::string(ser.GetVString());
-				sortingEntry.desc = bool(ser.GetVarUInt());
+				sortingEntry.desc = Desc(bool(ser.GetVarUInt()));
 				if (sortingEntry.expression.length()) {
 					sortingEntries_.push_back(std::move(sortingEntry));
 				}
@@ -495,7 +495,7 @@ void Query::Serialize(WrSerializer& ser, uint8_t mode) const {
 			for (const auto& se : agg.Sorting()) {
 				ser.PutVarUint(QueryAggregationSort);
 				ser.PutVString(se.expression);
-				ser.PutVarUint(se.desc);
+				ser.PutVarUint(*se.desc);
 			}
 			if (agg.Limit() != QueryEntry::kDefaultLimit) {
 				ser.PutVarUint(QueryAggregationLimit);
@@ -513,7 +513,7 @@ void Query::Serialize(WrSerializer& ser, uint8_t mode) const {
 			const auto& sortginEntry = sortingEntries_[i];
 			ser.PutVarUint(QuerySortIndex);
 			ser.PutVString(sortginEntry.expression);
-			ser.PutVarUint(sortginEntry.desc);
+			ser.PutVarUint(*sortginEntry.desc);
 			if (i == 0) {
 				int cnt = forcedSortOrder_.size();
 				ser.PutVarUint(cnt);

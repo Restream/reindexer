@@ -7,14 +7,24 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const testNs string = "test_items_force_sort_order"
-
 type TestForceSortOrderItem struct {
 	ID      int      `reindex:"id,,pk"`
 	Year    int      `reindex:"year,tree"`
 	Name    string   `reindex:"name"`
 	Phone   string   `reindex:"phone"`
 	IdPhone struct{} `reindex:"id+phone,,composite"`
+}
+
+type SortOrderValues struct {
+	q      *queryTest
+	limit  int
+	offset int
+}
+
+const testForceSortNs = "test_items_force_sort_order"
+
+func init() {
+	tnamespaces[testForceSortNs] = TestForceSortOrderItem{}
 }
 
 var forceSortOrderData = []*TestForceSortOrderItem{
@@ -26,16 +36,6 @@ var forceSortOrderData = []*TestForceSortOrderItem{
 	{ID: 5, Year: 2005, Name: "item5", Phone: "222222"},
 	{ID: 8, Year: 2004, Name: "item8", Phone: "333333"},
 	{ID: 4, Year: 2002, Name: "item4", Phone: "444444"},
-}
-
-func init() {
-	tnamespaces[testNs] = TestForceSortOrderItem{}
-}
-
-type SortOrderValues struct {
-	q      *queryTest
-	limit  int
-	offset int
 }
 
 func copyWholeTree(query *queryTest, tree *queryTestEntryTree) {
@@ -119,32 +119,33 @@ func execAndVerifyForceSortOrderQuery(t *testing.T, query *queryTest) {
 }
 
 func TestForceSortOrder(t *testing.T) {
-	tx := newTestTx(DB, testNs)
+	const ns = testForceSortNs
+	tx := newTestTx(DB, ns)
 	for _, item := range forceSortOrderData {
 		assert.NoError(t, tx.Insert(item))
 	}
 	assert.Equal(t, tx.MustCommit(), len(forceSortOrderData), "Could not commit forceSortOrderData")
 
-	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id", false, 7, 8, 6, 5))
-	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id", false, 8, 7, 6, 5).Limit(3))
-	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id", false, 8, 7, 6, 5).Limit(3).Offset(2))
-	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id", false, 8, 7, 6, 5).Limit(3).Offset(9))
-	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("year", false, 2007, 2003, 2005, 2002).Where("id", reindexer.GT, 2))
-	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("name", false, "item3", "item5", "item6", "item8"))
-	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("phone", false, "444444", "111111", "333333", "222222"))
-	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id", false, 11, 3, 16, 2, 15, 1))
-	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id", false, 18, 17, 16, 15))
-	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id", false, 18, 17, 16, 15).Sort("year", false))
-	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Where("phone", reindexer.SET, []string{"111111", "222222"}).Sort("id", true, 1, 6, 2, 5).Offset(1).Limit(3))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, ns).Sort("id", false, 7, 8, 6, 5))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, ns).Sort("id", false, 8, 7, 6, 5).Limit(3))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, ns).Sort("id", false, 8, 7, 6, 5).Limit(3).Offset(2))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, ns).Sort("id", false, 8, 7, 6, 5).Limit(3).Offset(9))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, ns).Sort("year", false, 2007, 2003, 2005, 2002).Where("id", reindexer.GT, 2))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, ns).Sort("name", false, "item3", "item5", "item6", "item8"))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, ns).Sort("phone", false, "444444", "111111", "333333", "222222"))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, ns).Sort("id", false, 11, 3, 16, 2, 15, 1))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, ns).Sort("id", false, 18, 17, 16, 15))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, ns).Sort("id", false, 18, 17, 16, 15).Sort("year", false))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, ns).Where("phone", reindexer.SET, []string{"111111", "222222"}).Sort("id", true, 1, 6, 2, 5).Offset(1).Limit(3))
 
-	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id+phone", false,
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, ns).Sort("id+phone", false,
 		[]interface{}{7, "333333"},
 		[]interface{}{4, "444444"},
 		[]interface{}{5, "222222"},
 	))
 
-	it := newTestQuery(DB, testNs).Sort("id", false, 7, 8, 6, 5).Sort("year", false, 2007, 2003, 2005, 2002).Exec(t)
+	it := newTestQuery(DB, ns).Sort("id", false, 7, 8, 6, 5).Sort("year", false, 2007, 2003, 2005, 2002).Exec(t)
 	assert.Error(t, it.Error())
-	it = newTestQuery(DB, testNs).Sort("id", false).Sort("year", false, 2007, 2003, 2005, 2002).Exec(t)
+	it = newTestQuery(DB, ns).Sort("id", false).Sort("year", false, 2007, 2003, 2005, 2002).Exec(t)
 	assert.Error(t, it.Error())
 }

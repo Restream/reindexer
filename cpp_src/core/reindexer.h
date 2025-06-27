@@ -22,10 +22,6 @@ struct ClusterControlRequestData;
 class IEventsObserver;		  // TODO: Make this class accessible to the external user #1714
 class EventSubscriberConfig;  // TODO: Make this class accessible to the external user #1714
 
-// REINDEX_WITH_V3_FOLLOWERS
-class IUpdatesObserverV3;
-class UpdatesFilters;
-
 namespace cluster {
 struct NodeData;
 struct RaftInfo;
@@ -399,21 +395,6 @@ public:
 	/// Cancelation context doesn't affect this call
 	/// @param observer - Observer interface, which will be unsubscribed updates
 	Error UnsubscribeUpdates(IEventsObserver& observer) noexcept;
-
-	/// ***Deprecated*** V3 methods
-	/// REINDEX_WITH_V3_FOLLOWERS
-	/// THIS METHOD IS TEMPORARY AND WILL BE REMOVED
-	/// Subscribe to updates of database
-	/// @param observer - Observer interface, which will receive updates
-	/// @param filters - Subscription filters set
-	/// @param opts - Subscription options (allows to either add new filters or reset them)
-	Error SubscribeUpdates(IUpdatesObserverV3* observer, const UpdatesFilters& filters,
-						   SubscriptionOpts opts = SubscriptionOpts()) noexcept;
-	/// THIS METHOD IS TEMPORARY AND WILL BE REMOVED
-	/// Unsubscribe from updates of database
-	/// Cancellation context doesn't affect this call
-	/// @param observer - Observer interface, which will be unsubscribed updates
-	Error UnsubscribeUpdates(IUpdatesObserverV3* observer) noexcept;
 
 private:
 	Reindexer(ShardingProxy* impl, InternalRdxContext&& ctx) noexcept : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}

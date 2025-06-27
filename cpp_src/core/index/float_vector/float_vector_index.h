@@ -6,6 +6,7 @@ namespace reindexer {
 
 class KnnCtx;
 class KnnSearchParams;
+class KnnRawResult;
 
 class FloatVectorIndex : public Index {
 public:
@@ -74,8 +75,10 @@ public:
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final;
 	Variant UpsertConcurrent(const Variant& key, IdType id, bool& clearCache);
 	SelectKeyResult Select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&, const RdxContext&) const;
+	KnnRawResult SelectRaw(ConstFloatVectorView, const KnnSearchParams&, const RdxContext&) const;
 	void Commit() override final;
-	void UpdateSortedIds(const UpdateSortedContext&) noexcept override final {}
+	void UpdateSortedIds(const UpdateSortedContext&) noexcept override final { assertrx_dbg(!IsSupportSortedIdsBuild()); }
+	bool IsSupportSortedIdsBuild() const noexcept override final { return false; }
 	const void* ColumnData() const noexcept override final { return nullptr; }
 	bool HoldsStrings() const noexcept override final { return false; }
 	void ReconfigureCache(const NamespaceCacheConfigData&) noexcept override final {}
@@ -96,14 +99,17 @@ public:
 
 private:
 	virtual SelectKeyResult select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&) const = 0;
+	virtual KnnRawResult selectRaw(ConstFloatVectorView, const KnnSearchParams&) const = 0;
 	virtual Variant upsert(ConstFloatVectorView, IdType id, bool& clearCache) = 0;
 	virtual Variant upsertConcurrent(ConstFloatVectorView, IdType id, bool& clearCache) = 0;
 
 	virtual FloatVector getFloatVector(IdType) const = 0;
 	virtual ConstFloatVectorView getFloatVectorView(IdType) const = 0;
 
-	void checkVectorDims(ConstFloatVectorView);
 	Variant upsertEmptyVectImpl(IdType);
+
+	void checkForSelect(ConstFloatVectorView) const;
+	void checkVectorDims(ConstFloatVectorView, std::string_view operation) const;
 
 	IndexMemStat memStat_;
 	Index::KeyEntry emptyValues_;

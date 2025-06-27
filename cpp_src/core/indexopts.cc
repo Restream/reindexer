@@ -1,5 +1,14 @@
 #include "indexopts.h"
 #include <ostream>
+#if defined(__GNUC__) && ((__GNUC__ == 12) || (__GNUC__ == 13)) && defined(REINDEX_WITH_ASAN)
+// regex header is broken in GCC 12.0-13.3 with ASAN
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#include <regex>
+#pragma GCC diagnostic pop
+#else  // REINDEX_WITH_ASAN
+#include <regex>
+#endif	// REINDEX_WITH_ASAN
 #include "cjson/jsonbuilder.h"
 #include "core/enums.h"
 #include "tools/errors.h"
@@ -160,6 +169,13 @@ void validateEmbedderOpts(const FloatVectorIndexOpts::EmbedderOpts& opts, std::s
 		throw reindexer::Error{errParams,	   "Configuration '{}:{}' must contain field '{}' and '{}'", kEmbedding, name, kEmbedderURL,
 							   kEmbedderFields};
 	}
+
+	const static std::regex re(R"(^(http[s]?)://[0-9a-z\.-]+(:[1-9][0-9]*)?(/[^\s]*)*$)");
+	if (!std::regex_match(opts.endpointUrl, re)) {
+		throw reindexer::Error{errParams,	   "Configuration '{}:{}' contain field '{}' with unexpected value: '{}'", kEmbedding, name, kEmbedderURL,
+							   opts.endpointUrl};
+	}
+
 	if (opts.pool.connections < 1) {
 		throw reindexer::Error{errParams,	   "Configuration '{}:{}:{}:{}' should not be less than 1",
 							   kEmbedding,	   name,
@@ -345,6 +361,9 @@ FloatVectorIndexOpts FloatVectorIndexOpts::ParseJson(IndexType idxType, std::str
 	if (const auto embedding = root[kEmbedding]; !embedding.empty()) {
 		result.embedding_ = parseEmbeddingConfig(embedding);
 	}
+	if (const auto radius = root["radius"sv]; !radius.empty()) {
+		result.SetRadius(radius.As<float>());
+	}
 
 	result.Validate(idxType);
 	return result;
@@ -401,6 +420,9 @@ void FloatVectorIndexOpts::GetJson(reindexer::JsonBuilder& json) const {
 			getJsonEmbedderConfig(embedding.queryEmbedder.value(), objNode);
 		}
 	}
+	if (radius_) {
+		json.Put("radius"sv, *radius_);
+	}
 }
 
 IndexOpts::IndexOpts(uint8_t flags, CollateMode mode, RTreeIndexType rtreeType)
@@ -414,7 +436,7 @@ bool IndexOpts::IsEqual(const IndexOpts& other, IndexComparison cmpType) const n
 	thisCopy.Dense(*other.IsDense());
 	thisCopy.NoIndexColumn(*other.IsNoIndexColumn());
 
-	// Compare without config and 'IsDense' and 'IsNoIndexColumn' options
+	// compare without config and 'IsDense' and 'IsNoIndexColumn' and 'floatVector_.embedding_' options
 	const bool baseEqual =
 		thisCopy.options == other.options && collateOpts_.mode == other.collateOpts_.mode &&
 		collateOpts_.sortOrderTable.GetSortOrderCharacters() == other.collateOpts_.sortOrderTable.GetSortOrderCharacters() &&
@@ -429,7 +451,9 @@ bool IndexOpts::IsEqual(const IndexOpts& other, IndexComparison cmpType) const n
 			return IsDense() == other.IsDense() && IsNoIndexColumn() == other.IsNoIndexColumn();
 		case IndexComparison::Full:
 		default:
-			return IsDense() == other.IsDense() && IsNoIndexColumn() == other.IsNoIndexColumn() && config_ == other.config_;
+			return IsDense() == other.IsDense() && IsNoIndexColumn() == other.IsNoIndexColumn() && config_ == other.config_ &&
+				   floatVector_.has_value() == other.floatVector_.has_value() &&
+				   (!floatVector_.has_value() || floatVector_.value().Embedding() == other.floatVector_.value().Embedding());
 	}
 }
 

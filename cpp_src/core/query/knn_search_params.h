@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <variant>
 
@@ -10,66 +11,126 @@ class WrSerializer;
 class Serializer;
 class JsonBuilder;
 
-class KnnSearchParamsBase {
+namespace detail {
+template <typename Derived>
+class KnnSearchParamsCRTPBase {
 public:
-	explicit KnnSearchParamsBase(size_t k);
-	size_t K() const noexcept { return k_; }
+	Derived&& Radius(std::optional<float> radius) && noexcept { return std::move(Radius(std::move(radius))); }
+	Derived& Radius(std::optional<float> radius) & noexcept {
+		radius_ = radius;
+		return *static_cast<Derived*>(this);
+	}
+	Derived&& K(std::optional<size_t> k) && noexcept { return std::move(K(std::move(k))); }
+	Derived& K(std::optional<size_t> k) & noexcept {
+		k_ = k;
+		return *static_cast<Derived*>(this);
+	}
+
+	std::optional<size_t> K() const noexcept { return k_; }
+	std::optional<float> Radius() const noexcept { return radius_; }
 	void ToDsl(JsonBuilder&) const;
 	void ToSql(WrSerializer&) const;
 	void Serialize(WrSerializer&) const;
-	static KnnSearchParamsBase Deserialize(Serializer&, size_t version);
+	template <typename Type>
+	void Serialize(WrSerializer&, Type) const;
+	static Derived Deserialize(Serializer&, size_t version);
 	std::string Dump() const;
+	enum class SerializeMask : uint8_t { K = 1 << 0, Radius = K << 1 };
 
 private:
-	size_t k_;
+	std::optional<size_t> k_;
+	std::optional<float> radius_;
 };
+}  // namespace detail
 
-class BruteForceSearchParams : private KnnSearchParamsBase {
-	using Base = KnnSearchParamsBase;
+/** Base struct with parameters for search in some vector index
+ * Usage examples:
+ * KnnSearchParamsBase{}.K(20)
+ * KnnSearchParamsBase{}.Radius(3.f)
+ * KnnSearchParamsBase{}.K(20).Radius(3.f)
+ */
+class KnnSearchParamsBase : public detail::KnnSearchParamsCRTPBase<KnnSearchParamsBase> {};
+
+/** Struct with parameters for search in HNSWBruteForce-index
+ * Usage as for base structure
+ */
+class BruteForceSearchParams : private detail::KnnSearchParamsCRTPBase<BruteForceSearchParams> {
+	using Base = KnnSearchParamsCRTPBase<BruteForceSearchParams>;
+	friend Base;
 
 public:
+	explicit BruteForceSearchParams() = default;
 	using Base::Base;
-	using Base::K;
 	using Base::ToDsl;
 	using Base::ToSql;
+	using Base::K;
+	using Base::Radius;
 	void Serialize(WrSerializer&) const;
 	static BruteForceSearchParams Deserialize(Serializer&, size_t version);
 	std::string Dump() const;
 };
 
-class HnswSearchParams : private KnnSearchParamsBase {
-	using Base = KnnSearchParamsBase;
+/** Struct with parameters for search in HNSW-index
+ * Usage examples:
+ * HnswSearchParams{}.K(20)
+ * HnswSearchParams{}.K(20).Radius(3.f).Ef(2)
+ * HnswSearchParams{}.K(20).Ef(2)
+ * HnswSearchParams{}.Radius(3.f)
+ * HnswSearchParams{}.Radius(3.f).Ef(2)
+ */
+class HnswSearchParams : private detail::KnnSearchParamsCRTPBase<HnswSearchParams> {
+	using Base = KnnSearchParamsCRTPBase<HnswSearchParams>;
+	friend Base;
 
 public:
-	explicit HnswSearchParams(size_t k, size_t ef);
-	explicit HnswSearchParams(size_t k) : HnswSearchParams{k, k} {}
+	using Base::K;
+	using Base::Radius;
+	explicit HnswSearchParams() = default;
 	size_t Ef() const noexcept { return ef_; }
+	HnswSearchParams&& Ef(size_t ef) && noexcept { return std::move(Ef(ef)); }
+	HnswSearchParams& Ef(size_t ef) & noexcept {
+		ef_ = ef;
+		return *this;
+	}
 	void ToDsl(JsonBuilder&) const;
 	void ToSql(WrSerializer&) const;
 	void Serialize(WrSerializer&) const;
 	static HnswSearchParams Deserialize(Serializer&, size_t version);
 	std::string Dump() const;
-	using Base::K;
 
 private:
-	size_t ef_;
+	size_t ef_ = 1;
 };
 
-class IvfSearchParams : private KnnSearchParamsBase {
-	using Base = KnnSearchParamsBase;
+/** Struct with parameters for search in Ivf-index
+ * Usage examples:
+ * IvfSearchParams{}.K(20).Radius(3.f).NProbe(2)
+ * IvfSearchParams{}.K(20).NProbe(2)
+ * IvfSearchParams{}.Radius(3.f)
+ * IvfSearchParams{}.Radius(3.f).NProbe(2)
+ */
+class IvfSearchParams : private detail::KnnSearchParamsCRTPBase<IvfSearchParams> {
+	using Base = KnnSearchParamsCRTPBase<IvfSearchParams>;
+	friend Base;
 
 public:
-	IvfSearchParams(size_t k, size_t nprobe = 1);
+	using Base::K;
+	using Base::Radius;
+	explicit IvfSearchParams() = default;
 	size_t NProbe() const noexcept { return nprobe_; }
+	IvfSearchParams&& NProbe(size_t nprobe) && noexcept { return std::move(NProbe(nprobe)); }
+	IvfSearchParams& NProbe(size_t nprobe) & noexcept {
+		nprobe_ = nprobe;
+		return *this;
+	}
 	void ToDsl(JsonBuilder&) const;
 	void ToSql(WrSerializer&) const;
 	void Serialize(WrSerializer&) const;
 	static IvfSearchParams Deserialize(Serializer&, size_t version);
 	std::string Dump() const;
-	using Base::K;
 
 private:
-	size_t nprobe_;
+	size_t nprobe_ = 1;
 };
 
 class KnnSearchParams : private std::variant<KnnSearchParamsBase, BruteForceSearchParams, HnswSearchParams, IvfSearchParams> {
@@ -84,21 +145,18 @@ public:
 	static constexpr std::string_view kKName = "k";
 	static constexpr std::string_view kEfName = "ef";
 	static constexpr std::string_view kNProbeName = "nprobe";
+	static constexpr std::string_view kRadiusName = "radius";
 
 	KnnSearchParams(const KnnSearchParams&) noexcept = default;
 	KnnSearchParams(KnnSearchParams&&) noexcept = default;
 	KnnSearchParams& operator=(const KnnSearchParams&) noexcept = default;
 	KnnSearchParams& operator=(KnnSearchParams&&) noexcept = default;
 
-	static KnnSearchParams BruteForce(size_t k) { return KnnSearchParams{std::in_place_type<BruteForceSearchParams>, k}; }
-	static KnnSearchParams Hnsw(size_t k) { return KnnSearchParams{std::in_place_type<HnswSearchParams>, k}; }
-	static KnnSearchParams Hnsw(size_t k, size_t ef) { return KnnSearchParams{std::in_place_type<HnswSearchParams>, k, ef}; }
-	static KnnSearchParams Ivf(size_t k) { return KnnSearchParams{std::in_place_type<IvfSearchParams>, k}; }
-	static KnnSearchParams Ivf(size_t k, size_t nprobe) { return KnnSearchParams{std::in_place_type<IvfSearchParams>, k, nprobe}; }
-
 	BruteForceSearchParams BruteForce() const;
 	HnswSearchParams Hnsw() const;
 	IvfSearchParams Ivf() const;
+
+	void Validate() const;
 
 	void ToDsl(JsonBuilder& json) const {
 		return std::visit([&json](const auto& p) { return p.ToDsl(json); }, toVariant());

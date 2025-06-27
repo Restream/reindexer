@@ -14,8 +14,9 @@ class AggregationResult;
 class [[nodiscard]] Aggregator {
 public:
 	struct [[nodiscard]] SortingEntry {
+		SortingEntry(int fld, Desc d) noexcept : field{fld}, desc{d} {}
 		int field;
-		bool desc;
+		Desc desc;
 		enum { Count = -1 };
 	};
 
@@ -56,7 +57,7 @@ public:
 	}
 
 private:
-	enum Direction { Desc = -1, Asc = 1 };
+	enum class Direction { Desc = -1, Asc = 1 };
 	class MultifieldComparator;
 	class SinglefieldComparator;
 	struct MultifieldOrderedMap;

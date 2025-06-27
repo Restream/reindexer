@@ -71,10 +71,24 @@ void IndexFlat::range_search(
     IDSelector* sel = params ? params->sel : nullptr;
 
     switch (metric_type) {
-        case METRIC_INNER_PRODUCT:
-            range_search_inner_product(
-                    x, get_xb(), d, n, ntotal, radius, result, sel);
+        case METRIC_INNER_PRODUCT: {
+            if (is_cosine) {
+                range_search_cosine(
+                        x,
+                        get_xb(),
+                        norm_coefs.data(),
+                        d,
+                        n,
+                        ntotal,
+                        radius,
+                        result,
+                        sel);
+            } else {
+                range_search_inner_product(
+                        x, get_xb(), d, n, ntotal, radius, result, sel);
+            }
             break;
+        }
         case METRIC_L2:
             range_search_L2sqr(x, get_xb(), d, n, ntotal, radius, result, sel);
             break;

@@ -679,7 +679,7 @@ joins::ItemIterator QueryResults::Iterator::GetJoined(std::vector<ItemRefCache>*
 							rqr.NsJoinRes()->data.joinedRawData.emplace_back(std::move(itemimpl));
 						} else {
 							if (qrJoined.haveRank) {
-								storage->emplace_back(itemData.id, 0.0, itemData.nsid, std::move(itemimpl), true);
+								storage->emplace_back(itemData.id, RankT{}, itemData.nsid, std::move(itemimpl), true);
 							} else {
 								storage->emplace_back(itemData.id, itemData.nsid, std::move(itemimpl), true);
 							}
@@ -725,8 +725,8 @@ public:
 							  TagsMatcher& ltm, TagsMatcher& rtm, bool lLocal, bool rLocal, int lShardId, int rShardId) const {
 		assertrx_throw(litem.AsVariant().index() == ritem.AsVariant().index());
 		return std::visit(overloaded{[&](const ItemRef& lref) {
-										 return Compare(lref, ritem.NotRanked(), 0.0, 0.0, lpt, rpt, ltm, rtm, lLocal, rLocal, lShardId,
-														rShardId);
+										 return Compare(lref, ritem.NotRanked(), RankT{}, RankT{}, lpt, rpt, ltm, rtm, lLocal, rLocal,
+														lShardId, rShardId);
 									 },
 									 [&](const ItemRefRanked& lref) {
 										 return Compare(lref.NotRanked(), ritem.NotRanked(), lref.Rank(), ritem.Rank(), lpt, rpt, ltm, rtm,
@@ -980,10 +980,10 @@ private:
 class QueryResults::Comparator {
 public:
 	Comparator(QueryResults& qr, const Query& q, const NamespaceImpl& ns) : qr_{qr} {
-		assertrx(q.sortingEntries_.size() > 0);
-		comparators_.reserve(q.sortingEntries_.size());
-		for (size_t i = 0; i < q.sortingEntries_.size(); ++i) {
-			const auto& se = q.sortingEntries_[i];
+		assertrx(q.GetSortingEntries().size() > 0);
+		comparators_.reserve(q.GetSortingEntries().size());
+		for (size_t i = 0; i < q.GetSortingEntries().size(); ++i) {
+			const auto& se = q.GetSortingEntries()[i];
 			auto expr = SortExpression::Parse<JoinedSelector>(se.expression, {});
 			if (expr.ByField()) {
 				int index = IndexValueType::SetByJsonPath;
@@ -998,14 +998,14 @@ public:
 					field = se.expression;
 				}
 				if (index == IndexValueType::SetByJsonPath || index < ns.indexes_.firstCompositePos()) {
-					if (i == 0 && !q.forcedSortOrder_.empty()) {
-						comparators_.emplace_back(FieldComparator{std::move(field), index, ns, q.forcedSortOrder_}, se.desc);
+					if (i == 0 && !q.ForcedSortOrder().empty()) {
+						comparators_.emplace_back(FieldComparator{std::move(field), index, ns, q.ForcedSortOrder()}, se.desc);
 					} else {
 						comparators_.emplace_back(FieldComparator{std::move(field), index, ns, {}}, se.desc);
 					}
 				} else {
-					if (i == 0 && !q.forcedSortOrder_.empty()) {
-						comparators_.emplace_back(CompositeFieldForceComparator{index, q.forcedSortOrder_, ns}, se.desc);
+					if (i == 0 && !q.ForcedSortOrder().empty()) {
+						comparators_.emplace_back(CompositeFieldForceComparator{index, q.ForcedSortOrder(), ns}, se.desc);
 					}
 					const auto& fields = ns.indexes_[index]->Fields();
 					size_t jsonPathsIndex = 0;
@@ -1089,7 +1089,7 @@ private:
 
 void QueryResults::SetOrdering(const Query& q, const NamespaceImpl& ns, const RdxContext& ctx) {
 	assertrx(!orderedQrs_);
-	if (!q.sortingEntries_.empty()) {
+	if (!q.GetSortingEntries().empty()) {
 		auto lock = ns.rLock(ctx);
 		Comparator comparator{*this, q, ns};
 		lock.unlock();
@@ -1244,7 +1244,7 @@ auto QueryResults::Iterator::getItemRef(ProxiedRefsStorage* storage) {
 	switch (qr_->type_) {
 		case Type::None:
 			if constexpr (isRanked) {
-				return ItemRefRanked(0.0);
+				return ItemRefRanked(RankT{});
 			} else {
 				return ItemRef();
 			}

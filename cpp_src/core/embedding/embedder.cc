@@ -11,35 +11,27 @@ namespace {
 constexpr std::string_view kServerPathFormat("/api/v1/embedder/{}/produce?format=text");
 }  // namespace
 
-Embedder::Embedder(std::string_view name, std::string_view fieldName, int field, EmbedderConfig&& config, PoolConfig&& poolConfig,
+Embedder::Embedder(std::string_view name, std::string_view fieldName, EmbedderConfig&& config, PoolConfig&& poolConfig,
 				   const std::shared_ptr<EmbeddersCache>& cache)
-	: name_{name},
-	  fieldName_{fieldName},
-	  field_{field},
-	  serverPath_{fmt::format(kServerPathFormat, name)},
-	  cache_{cache},
-	  config_{std::move(config)} {
-	assertrx_dbg(field > 0);
-
+	: name_{name}, fieldName_{fieldName}, serverPath_{fmt::format(kServerPathFormat, name)}, cache_{cache}, config_{std::move(config)} {
 	pool_ = std::make_unique<ConnectorPool>(std::move(poolConfig));
 }
 
 void Embedder::Calculate(const RdxContext& ctx, std::span<const std::vector<VariantArray>> sources,
-						 h_vector<ConstFloatVector, 1>& products) {
+						 h_vector<ConstFloatVector, 1>& products) const {
 	assertrx_dbg(!sources.empty());
 
 	products.resize(0);
 
-	checkFields(sources);
-
 	embedding::Adapter srcAdapter(sources);
 	logFmt(LogTrace, "Embedding src: {}", srcAdapter.View());
 
+	checkFields(sources);
 	if (cache_) {
 		auto product = cache_->Get(config_.tag, srcAdapter);
 		if (product.has_value()) {
 			products.emplace_back(std::move(product.value()));
-			return; // NOTE: stop calculation
+			return;	 // NOTE: stop calculation
 		}
 	}
 
@@ -73,6 +65,10 @@ EmbedderCachePerfStat Embedder::GetPerfStat(std::string_view tag) const {
 		return cache_->GetPerfStat(tag);
 	}
 	return {};
+}
+
+bool Embedder::IsEqual(const EmbedderConfig& embedderCfg, const PoolConfig& poolCfg) const noexcept {
+	return (config_ == embedderCfg && pool_->IsEqual(poolCfg));
 }
 
 void Embedder::checkFields(std::span<const std::vector<VariantArray>> sources) const {

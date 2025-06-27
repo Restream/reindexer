@@ -8,27 +8,32 @@ import (
 	"github.com/restream/reindexer/v5"
 )
 
-func init() {
-	tnamespaces["test_namespace_cache_items"] = NamespaceCacheItem{}
-	tnamespaces["test_namespace_no_limit_cache_items"] = NamespaceCacheItem{}
-	tnamespaces["test_namespace_disabled_obj_cache"] = NamespaceCacheItem{}
+type TestItemPk struct {
+	ID int `json:"id" reindex:"id,,pk"`
 }
 
 const CacheSize = 200
 
-type NamespaceCacheItem struct {
-	ID int `json:"id" reindex:"id,,pk"`
+const (
+	testCacheItemsNs        = "test_namespace_cache_items"
+	testNoLimitCacheItemsNs = "test_namespace_no_limit_cache_items"
+	testDisabledObjCacheNs  = "test_namespace_disabled_obj_cache"
+)
+
+func init() {
+	tnamespaces[testCacheItemsNs] = TestItemPk{}
+	tnamespaces[testNoLimitCacheItemsNs] = TestItemPk{}
+	tnamespaces[testDisabledObjCacheNs] = TestItemPk{}
 }
 
-func (item *NamespaceCacheItem) DeepCopy() interface{} {
-	return &NamespaceCacheItem{}
+func (item *TestItemPk) DeepCopy() interface{} {
+	return &TestItemPk{}
 }
 
-func prepareCacheItems(t *testing.T, namespaceName string, opts *reindexer.NamespaceOptions) {
-	ns := namespaceName
-	item := NamespaceCacheItem{}
+func prepareCacheItems(t *testing.T, ns string, opts *reindexer.NamespaceOptions) {
+	item := TestItemPk{}
 	DBD.CloseNamespace(ns)
-	err := DBD.OpenNamespace(ns, opts, NamespaceCacheItem{})
+	err := DBD.OpenNamespace(ns, opts, TestItemPk{})
 	require.NoError(t, err)
 
 	// fill obj cache > max count
@@ -47,7 +52,7 @@ func prepareCacheItems(t *testing.T, namespaceName string, opts *reindexer.Names
 
 func TestNamespaceCacheItemsWithObjCacheSize(t *testing.T) {
 	opts := reindexer.DefaultNamespaceOptions().ObjCacheSize(CacheSize)
-	prepareCacheItems(t, "test_namespace_cache_items", opts)
+	prepareCacheItems(t, testCacheItemsNs, opts)
 	require.Equal(t, int64(CacheSize), DBD.Status().Cache.CurSize)
 	DBD.ResetCaches()
 	require.Equal(t, int64(0), DBD.Status().Cache.CurSize)
@@ -55,7 +60,7 @@ func TestNamespaceCacheItemsWithObjCacheSize(t *testing.T) {
 
 func TestNamespaceCacheItemsWithoutObjCacheSize(t *testing.T) {
 	opts := reindexer.DefaultNamespaceOptions()
-	prepareCacheItems(t, "test_namespace_no_limit_cache_items", opts)
+	prepareCacheItems(t, testNoLimitCacheItemsNs, opts)
 	require.Equal(t, int64(CacheSize+1000), DBD.Status().Cache.CurSize)
 	DBD.ResetCaches()
 	require.Equal(t, int64(0), DBD.Status().Cache.CurSize)
@@ -63,6 +68,6 @@ func TestNamespaceCacheItemsWithoutObjCacheSize(t *testing.T) {
 
 func TestNamespaceCacheItemsWithConfDisableObjCache(t *testing.T) {
 	opts := reindexer.DefaultNamespaceOptions().DisableObjCache()
-	prepareCacheItems(t, "test_namespace_disabled_obj_cache", opts)
+	prepareCacheItems(t, testDisabledObjCacheNs, opts)
 	require.Equal(t, int64(0), DBD.Status().Cache.CurSize)
 }

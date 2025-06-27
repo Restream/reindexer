@@ -500,7 +500,7 @@ void ShardingProxy::saveShardingCfgCandidateImpl(cluster::ShardingConfig config,
 }
 
 Query ShardingProxy::NamespaceDataChecker::query() const {
-	using NextOp = Query& (Query::*)() &;
+	using NextOp = Query& (Query::*)()&;
 	const bool isDefault = ns_.defaultShard == thisShardId_;
 	auto nextOp = isDefault ? NextOp(&Query::Or) : NextOp(&Query::Not);
 
@@ -1622,7 +1622,7 @@ Error ShardingProxy::executeQueryOnShard(LockedRouter& lockedShardingRouter, con
 			}
 			return status;
 		} else if (query.Limit() == QueryEntry::kDefaultLimit && query.Offset() == QueryEntry::kDefaultOffset &&
-				   query.sortingEntries_.empty()) {
+				   query.GetSortingEntries().empty()) {
 			ParallelExecutor exec(actualShardId);
 			return exec.ExecSelect(query, result, connections, ctx, std::forward<LocalFT>(localAction));
 		} else {
@@ -1630,15 +1630,15 @@ Error ShardingProxy::executeQueryOnShard(LockedRouter& lockedShardingRouter, con
 			unsigned offset = query.Offset();
 
 			Query distributedQuery(query);
-			if (!distributedQuery.sortingEntries_.empty()) {
+			if (!distributedQuery.GetSortingEntries().empty()) {
 				const auto ns = impl_.GetNamespacePtr(distributedQuery.NsName(), ctx)->getMainNs();
 				result.SetOrdering(distributedQuery, *ns, ctx);
 			}
-			if (distributedQuery.Limit() != QueryEntry::kDefaultLimit && !distributedQuery.sortingEntries_.empty()) {
+			if (distributedQuery.Limit() != QueryEntry::kDefaultLimit && !distributedQuery.GetSortingEntries().empty()) {
 				distributedQuery.Limit(distributedQuery.Offset() + distributedQuery.Limit());
 			}
 			if (distributedQuery.Offset() != QueryEntry::kDefaultOffset) {
-				if (distributedQuery.sortingEntries_.empty()) {
+				if (distributedQuery.GetSortingEntries().empty()) {
 					distributedQuery.ReqTotal();
 				} else {
 					distributedQuery.Offset(0);
@@ -1661,7 +1661,7 @@ Error ShardingProxy::executeQueryOnShard(LockedRouter& lockedShardingRouter, con
 							: connections[i]->WithShardingParallelExecution(connections.size() > 1).WithContext(ctx.GetCancelCtx());
 					client::QueryResults qrClient(result.Flags(), proxyFetchLimit);
 
-					if (distributedQuery.sortingEntries_.empty()) {
+					if (distributedQuery.GetSortingEntries().empty()) {
 						distributedQuery.Limit(limit);
 						distributedQuery.Offset(offset);
 					}
@@ -1684,7 +1684,7 @@ Error ShardingProxy::executeQueryOnShard(LockedRouter& lockedShardingRouter, con
 					LocalQueryResults lqr;
 					status = localAction(distributedQuery, lqr, shCtx);
 					if (status.ok()) {
-						if (distributedQuery.sortingEntries_.empty()) {
+						if (distributedQuery.GetSortingEntries().empty()) {
 							calculateNewLimitOfsset(lqr.Count(), lqr.TotalCount(), limit, offset);
 						}
 						result.AddQr(std::move(lqr), actualShardId, (i + 1) == connections.size());
@@ -1714,7 +1714,7 @@ Error ShardingProxy::executeQueryOnClient(client::Reindexer& connection, const Q
 	switch (q.Type()) {
 		case QuerySelect: {
 			status = connection.Select(q, qrClient);
-			if (q.sortingEntries_.empty()) {
+			if (q.GetSortingEntries().empty()) {
 				limitOffsetCalc(qrClient.Count(), qrClient.TotalCount());
 			}
 			break;

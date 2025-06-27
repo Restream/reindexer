@@ -7,6 +7,8 @@
 
 namespace reindexer {
 
+class HnswKnnRawResult;
+
 template <template <typename> typename Map>
 class HnswIndexBase final : public FloatVectorIndex {
 	using Base = FloatVectorIndex;
@@ -34,6 +36,8 @@ private:
 	HnswIndexBase(const HnswIndexBase&, size_t newCapacity);
 
 	SelectKeyResult select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&) const override;
+	KnnRawResult selectRaw(ConstFloatVectorView, const KnnSearchParams&) const override;
+	HnswKnnRawResult selectRawImpl(ConstFloatVectorView, const KnnSearchParams&) const;
 	Variant upsert(ConstFloatVectorView, IdType id, bool& clearCache) override;
 	Variant upsertConcurrent(ConstFloatVectorView, IdType id, bool& clearCache) override;
 
@@ -41,7 +45,8 @@ private:
 	ConstFloatVectorView getFloatVectorView(IdType) const override;
 
 	static size_t newSize(size_t currentSize) noexcept;
-	auto searchKnn(const float*, const KnnSearchParams&) const;
+	template <typename ParamsT>
+	HnswKnnRawResult search(const float*, const ParamsT&) const;
 	static std::unique_ptr<hnswlib::SpaceInterface<FloatType>> newSpace(size_t dimension, VectorMetric);
 	void clearMap() noexcept;
 

@@ -16,14 +16,17 @@
 #include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/p_string.h"
 #include "core/rdxcontext.h"
+#include "defnsconfigs.h"
 #include "estl/gift_str.h"
 
 namespace reindexer {
 
-void ItemImpl::SetField(int field, const VariantArray& krs) {
+void ItemImpl::SetField(int field, const VariantArray& krs, NeedCreate needCopy) {
 	validateModifyArray(krs);
 	cjson_ = {};
-	payloadValue_.Clone();
+	if (needCopy) {
+		payloadValue_.Clone();
+	}
 	auto& ptField = payloadType_.Field(field);
 
 	auto setFieldValueSafe = [this, &ptField, field](const VariantArray& newValue) {
@@ -92,8 +95,8 @@ ItemImpl::ItemImpl(PayloadType type, const TagsMatcher& tagsMatcher, const Field
 	tagsMatcher_.clearUpdated();
 }
 
-ItemImpl::ItemImpl(ItemImpl&&) = default;
-ItemImpl& ItemImpl::operator=(ItemImpl&&) = default;
+ItemImpl::ItemImpl(ItemImpl&&) noexcept = default;
+ItemImpl& ItemImpl::operator=(ItemImpl&&) noexcept = default;
 
 ItemImpl::ItemImpl(PayloadType type, const TagsMatcher& tagsMatcher, const FieldsSet& pkFields, std::shared_ptr<const Schema> schema,
 				   ItemImplRawData&& rawData)
@@ -392,7 +395,7 @@ std::string_view ItemImpl::GetCJSON(WrSerializer& ser, bool withTagsMatcher) {
 
 	if (withTagsMatcher) {
 		ser.PutCTag(kCTagEnd);
-		int pos = ser.Len();
+		auto pos = ser.Len();
 		ser.PutUInt32(0);
 		encoder.Encode(pl, builder);
 		uint32_t tmOffset = ser.Len();
@@ -401,27 +404,6 @@ std::string_view ItemImpl::GetCJSON(WrSerializer& ser, bool withTagsMatcher) {
 	} else {
 		encoder.Encode(pl, builder);
 	}
-
-	return ser.Slice();
-}
-
-std::string_view ItemImpl::GetCJSONWithTm() {
-	ser_.Reset();
-	return GetCJSONWithTm(ser_);
-}
-
-std::string_view ItemImpl::GetCJSONWithTm(WrSerializer& ser) {
-	ConstPayload pl(payloadType_, payloadValue_);
-	CJsonBuilder builder(ser, ObjType::TypePlain);
-	CJsonEncoder encoder(&tagsMatcher_, fieldsFilter_);
-
-	ser.PutCTag(kCTagEnd);
-	auto pos = ser.Len();
-	ser.PutUInt32(0);
-	encoder.Encode(pl, builder);
-	uint32_t tmOffset = ser.Len();
-	memcpy(ser.Buf() + pos, &tmOffset, sizeof(tmOffset));
-	tagsMatcher_.serialize(ser);
 
 	return ser.Slice();
 }
@@ -481,26 +463,22 @@ void ItemImpl::CopyIndexedVectorsValuesFrom(IdType id, const FloatVectorsIndexes
 }
 
 namespace {
-bool isFieldEmpty(ItemImpl& item, const std::shared_ptr<Embedder>& embedder) {
-	Variant vecVar = item.GetField(embedder->Field());
-	assertrx_throw(vecVar.Type().Is<KeyValueType::FloatVector>());
-	ConstFloatVectorView vec = ConstFloatVectorView(vecVar);
+bool isFieldEmpty(const Payload& pl, int field) {
+	auto vec = pl.Get(field, 0).As<ConstFloatVectorView>();
 	return vec.IsEmpty();
 }
 
-bool checkEmbedderAllowed(ItemImpl& item, const std::shared_ptr<Embedder>& embedder) {
-	auto strategy = embedder->Strategy();
-
-	switch (strategy) {
+bool checkEmbedderAllowed(const Payload& pl, int field, const Embedder& embedder) {
+	switch (embedder.Strategy()) {
 		case EmbedderConfig::Strategy::Always:
 			return true;
 		case EmbedderConfig::Strategy::EmptyOnly:
-			return isFieldEmpty(item, embedder);
+			return isFieldEmpty(pl, field);
 		case EmbedderConfig::Strategy::Strict:
-			if (!isFieldEmpty(item, embedder)) {
+			if (!isFieldEmpty(pl, field)) {
 				throw Error{errConflict,
 							"Vector field '{}' must not contain a non-empty data if strict strategy for auto-embedding is configured",
-							embedder->FieldName()};
+							embedder.FieldName()};
 			}
 			return true;
 	}
@@ -509,28 +487,32 @@ bool checkEmbedderAllowed(ItemImpl& item, const std::shared_ptr<Embedder>& embed
 }  // namespace
 
 void ItemImpl::Embed(const RdxContext& ctx) {
-	const auto& embedders = payloadType_.Embedders();
-	if (embedders.empty()) {
-		return;	 // not needed, do nothing
-	}
-
-	payloadValue_.Clone();
-	Payload pl(payloadType_, payloadValue_);
-
 	try {
+		payloadValue_.Clone();
+		auto pl = GetPayload();
+
+		const auto unsafe = unsafe_;
+		unsafe_ = false;
+
 		// one document - one input vector of VariantArray
 		std::vector<VariantArray> source;
 
-		VariantArray data;
-		for (const auto& embedder : embedders) {
+		for (int field = 1, numFields = payloadType_.NumFields(); field < numFields; ++field) {
+			auto embedder = payloadType_.Field(field).Embedder();
+			if (!embedder) {
+				continue;  // do nothing
+			}
+
 			ThrowOnCancel(ctx);
 
-			if (!checkEmbedderAllowed(*this, embedder)) {
+			int fieldId = payloadType_.FieldByName(embedder->FieldName());
+			if (!checkEmbedderAllowed(pl, fieldId, *embedder)) {
 				continue;  // skip embedder
 			}
 
 			source.resize(0);
 			for (const auto& fld : embedder->Fields()) {
+				VariantArray data;
 				pl.Get(fld, data);
 				source.emplace_back(std::move(data));
 			}
@@ -542,14 +524,12 @@ void ItemImpl::Embed(const RdxContext& ctx) {
 				throw Error(errLogic, "Unable to set vector values with incorrect embedding result");
 			}
 
-			const ConstFloatVectorView vect{products.front()};
-			floatVectorsHolder_.Add(vect);
-
 			VariantArray krs;
-			krs.emplace_back(floatVectorsHolder_.Back());
+			krs.emplace_back(products.front().View());
 
-			SetField(embedder->Field(), krs);
+			SetField(fieldId, krs, NeedCreate_False);
 		}
+		unsafe_ = unsafe;
 	} catch (Error& err) {
 		if (err.code() == errTimeout || err.code() == errCanceled) {
 			throw Error{err.code(), "Embedding service is unavailable (request was canceled/timed out)"};

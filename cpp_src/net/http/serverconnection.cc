@@ -1,18 +1,18 @@
 
 #include "serverconnection.h"
-#include <ctime>
 #include <unordered_map>
 #include "core/cjson/jsonbuilder.h"
+#include "core/cjson/msgpackbuilder.h"
+#include "core/cjson/protobufbuilder.h"
 #include "itoa/itoa.h"
+#include "server/outputparameters.h"
 #include "time/fast_time.h"
 #include "tools/assertrx.h"
 #include "tools/errors.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 
-namespace reindexer {
-namespace net {
-namespace http {
+namespace reindexer::net::http {
 
 using namespace std::string_view_literals;
 
@@ -53,8 +53,28 @@ void ServerConnection::handleException(Context& ctx, const Error& status) {
 	auto writer = dynamic_cast<ResponseWriter*>(ctx.writer);
 	if (writer && !writer->IsRespSent()) {
 		HttpStatus httpStatus(status);
-		setJsonStatus(ctx, false, httpStatus.code, httpStatus.what);
+		setStatus(ctx, false, httpStatus.code, httpStatus.what);
 	}
+}
+
+void ServerConnection::setMsgpackStatus(Context& ctx, bool success, int responseCode, const std::string& status) {
+	WrSerializer ser;
+	MsgPackBuilder builder(ser, ObjType::TypeObject, 3);
+	builder.Put("success", success);
+	builder.Put("response_code", responseCode);
+	builder.Put("description", status);
+	builder.End();
+	ctx.MSGPACK(responseCode, ser.Slice());
+}
+
+void ServerConnection::setProtobufStatus(Context& ctx, bool success, int responseCode, const std::string& status) {
+	WrSerializer ser;
+	ProtobufBuilder builder(&ser);
+	builder.Put(kProtoErrorResultsFields.at(kParamSuccess), success);
+	builder.Put(kProtoErrorResultsFields.at(kParamResponseCode), responseCode);
+	builder.Put(kProtoErrorResultsFields.at(kParamDescription), status);
+	builder.End();
+	ctx.Protobuf(responseCode, ser.Slice());
 }
 
 void ServerConnection::setJsonStatus(Context& ctx, bool success, int responseCode, const std::string& status) {
@@ -65,6 +85,17 @@ void ServerConnection::setJsonStatus(Context& ctx, bool success, int responseCod
 	builder.Put("description", status);
 	builder.End();
 	ctx.JSON(responseCode, ser.Slice());
+}
+
+void ServerConnection::setStatus(Context& ctx, bool success, int responseCode, const std::string& status) {
+	const std::string_view format = ctx.request->params.Get("format"sv);
+	if (format == "msgpack"sv) {
+		return setMsgpackStatus(ctx, success, responseCode, status);
+	}
+	if (format == "protobuf"sv) {
+		return setProtobufStatus(ctx, success, responseCode, status);
+	}
+	return setJsonStatus(ctx, success, responseCode, status);
 }
 
 void ServerConnection::handleRequest(Request& req) {
@@ -80,7 +111,7 @@ void ServerConnection::handleRequest(Request& req) {
 		router_.handle(ctx);
 	} catch (const HttpStatus& status) {
 		if (!writer.IsRespSent()) {
-			setJsonStatus(ctx, false, status.code, status.what);
+			setStatus(ctx, false, status.code, status.what);
 		}
 	} catch (const Error& status) {
 		handleException(ctx, status);
@@ -91,7 +122,8 @@ void ServerConnection::handleRequest(Request& req) {
 	}
 	router_.log(ctx);
 
-	ctx.writer->Write(std::string_view());
+	auto dummy = ctx.writer->Write(std::string_view());
+	(void)dummy;
 	ctx.stat.sizeStat.respSizeBytes = ctx.writer->Written();
 	if (router_.onResponse_) {
 		router_.onResponse_(ctx);
@@ -109,7 +141,8 @@ void ServerConnection::badRequest(int code, const char* msg) {
 	ctx.stat.allocStat = stat;
 
 	closeConn_ = true;
-	ctx.String(code, msg);
+	auto dummy = ctx.String(code, msg);
+	(void)dummy;
 	ctx.stat.sizeStat.respSizeBytes = ctx.writer->Written();
 	if (router_.onResponse_) {
 		router_.onResponse_(ctx);
@@ -301,14 +334,14 @@ ServerConnection::ReadResT ServerConnection::onRead() {
 	return ReadResT::Default;
 }
 
-bool ServerConnection::ResponseWriter::SetHeader(const Header& hdr) {
+bool ServerConnection::ResponseWriter::SetHeader(const Header& hdr) noexcept {
 	if (respSend_) {
 		return false;
 	}
 	headers_ << hdr.name << ": "sv << hdr.val << kStrEOL;
 	return true;
 }
-bool ServerConnection::ResponseWriter::SetRespCode(int code) {
+bool ServerConnection::ResponseWriter::SetRespCode(int code) noexcept {
 	if (respSend_) {
 		return false;
 	}
@@ -316,7 +349,7 @@ bool ServerConnection::ResponseWriter::SetRespCode(int code) {
 	return true;
 }
 
-bool ServerConnection::ResponseWriter::SetContentLength(size_t length) {
+bool ServerConnection::ResponseWriter::SetContentLength(size_t length) noexcept {
 	if (respSend_) {
 		return false;
 	}
@@ -376,18 +409,13 @@ ssize_t ServerConnection::ResponseWriter::Write(std::string_view data) {
 }
 chunk ServerConnection::ResponseWriter::GetChunk() { return conn_->wrBuf_.get_chunk(); }
 
-bool ServerConnection::ResponseWriter::SetConnectionClose() {
-	conn_->closeConn_ = true;
-	return true;
-}
-
 ssize_t ServerConnection::BodyReader::Read(void* buf, size_t size) {
+	size_t readSize = 0;
 	if (conn_->bodyLeft_ > 0) {
-		size_t readed = conn_->rdBuf_.read(reinterpret_cast<char*>(buf), std::min(ssize_t(size), conn_->bodyLeft_));
-		conn_->bodyLeft_ -= readed;
-		return readed;
+		readSize = conn_->rdBuf_.read(reinterpret_cast<char*>(buf), std::min(ssize_t(size), conn_->bodyLeft_));
+		conn_->bodyLeft_ -= readSize;
 	}
-	return 0;
+	return readSize;
 }
 
 std::string ServerConnection::BodyReader::Read(size_t size) {
@@ -395,14 +423,12 @@ std::string ServerConnection::BodyReader::Read(size_t size) {
 	if (conn_->bodyLeft_ > 0) {
 		size = std::min(ssize_t(size), conn_->bodyLeft_);
 		ret.resize(size);
-		size_t readed = conn_->rdBuf_.read(&ret[0], size);
-		conn_->bodyLeft_ -= readed;
+		size_t readSize = conn_->rdBuf_.read(&ret[0], size);
+		conn_->bodyLeft_ -= readSize;
 	}
 	return ret;
 }
 
 ssize_t ServerConnection::BodyReader::Pending() const { return conn_->bodyLeft_; }
 
-}  // namespace http
-}  // namespace net
-}  // namespace reindexer
+}  // namespace reindexer::net::http

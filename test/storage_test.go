@@ -15,9 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const TestWalNs = "test_wal"
-const TestItemsStorageNs = "test_items_storage"
-
 type SubStruct struct {
 	F5 string `reindex:"f5"`
 	F7 []int  `reindex:"f7"`
@@ -87,8 +84,6 @@ type TestIndexesCompatibilityRegularItem struct {
 	IntField int    `reindex:"int_field,tree"`
 }
 
-const testIndexesCompatibilityRegularNs = "indexes_compat_r_d"
-
 // Item with dense indexes
 type TestIndexesCompatibilityDenseItem struct {
 	ID       int    `reindex:"id,,pk"`
@@ -96,13 +91,40 @@ type TestIndexesCompatibilityDenseItem struct {
 	IntField int    `reindex:"int_field,tree,dense,is_no_column"`
 }
 
-const testIndexesCompatibilityDenseNs = "indexes_compat_d_r"
+const (
+	testWalNs                         = "test_wal"
+	testItemsStorageNs                = "test_items_storage"
+	testIndexesCompatibilityRegularNs = "indexes_compat_r_d"
+	testIndexesCompatibilityDenseNs   = "indexes_compat_d_r"
+)
 
 func init() {
-	tnamespaces[TestItemsStorageNs] = TestItemV1{}
-	tnamespaces[TestWalNs] = TestItem{}
+	tnamespaces[testItemsStorageNs] = TestItemV1{}
+	tnamespaces[testWalNs] = TestItem{}
 	tnamespaces[testIndexesCompatibilityRegularNs] = TestIndexesCompatibilityRegularItem{}
 	tnamespaces[testIndexesCompatibilityDenseNs] = TestIndexesCompatibilityDenseItem{}
+}
+
+func getLastLsnCounter(t *testing.T, ns string) int64 {
+	stat, err := DB.GetNamespaceMemStat(ns)
+	require.NoError(t, err)
+	return stat.Replication.LastLSN.Counter
+}
+
+func newTestIndexesCompatibilityRegularItem(id int) interface{} {
+	return &TestIndexesCompatibilityRegularItem{
+		ID:       1000000 + id,
+		StrField: randString(),
+		IntField: rand.Intn(100000),
+	}
+}
+
+func newTestIndexesCompatibilityDenseItem(id int) interface{} {
+	return &TestIndexesCompatibilityDenseItem{
+		ID:       1000000 + id,
+		StrField: randString(),
+		IntField: rand.Intn(100000),
+	}
 }
 
 func TestStorageChangeFormat(t *testing.T) {
@@ -110,7 +132,7 @@ func TestStorageChangeFormat(t *testing.T) {
 		t.Skip()
 	}
 
-	const ns = TestItemsStorageNs
+	const ns = testItemsStorageNs
 
 	tx := DB.MustBeginTx(ns)
 	tx.Upsert(&TestItemV1{
@@ -202,15 +224,9 @@ func TestStorageChangeFormat(t *testing.T) {
 	})
 }
 
-func getLastLsnCounter(t *testing.T, ns string) int64 {
-	stat, err := DB.GetNamespaceMemStat(ns)
-	require.NoError(t, err)
-	return stat.Replication.LastLSN.Counter
-}
-
 func TestWal(t *testing.T) {
+	const ns = testWalNs
 
-	const ns = TestWalNs
 	t.Run("AddIndex method doesn't create new entries in WAL if index already exists", func(t *testing.T) {
 		lastLsn0 := getLastLsnCounter(t, ns)
 		index := reindexer.IndexDef{
@@ -252,22 +268,6 @@ func TestWal(t *testing.T) {
 	})
 }
 
-func newTestIndexesCompatibilityRegularItem(id int) interface{} {
-	return &TestIndexesCompatibilityRegularItem{
-		ID:       1000000 + id,
-		StrField: randString(),
-		IntField: rand.Intn(100000),
-	}
-}
-
-func newTestIndexesCompatibilityDenseItem(id int) interface{} {
-	return &TestIndexesCompatibilityDenseItem{
-		ID:       1000000 + id,
-		StrField: randString(),
-		IntField: rand.Intn(100000),
-	}
-}
-
 func TestDenseIndexesCompatibility(t *testing.T) {
 	getJSONContent := func(t *testing.T, ns string) []string {
 		var ret []string
@@ -296,9 +296,9 @@ func TestDenseIndexesCompatibility(t *testing.T) {
 		require.NoError(t, err)
 		err = DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), newItemType)
 		require.NoError(t, err)
-		reopennedJSONs := getJSONContent(t, ns)
-		require.Equal(t, initialJSONs, reopennedJSONs)
-		require.Equal(t, len(reopennedJSONs), inserts)
+		reopenedJSONs := getJSONContent(t, ns)
+		require.Equal(t, initialJSONs, reopenedJSONs)
+		require.Equal(t, len(reopenedJSONs), inserts)
 
 		const offset = inserts / 2
 		var newJSONs []string

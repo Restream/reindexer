@@ -104,7 +104,7 @@ public:
 		Verify();
 	}
 	template <concepts::ConvertibleToString Str>
-	QueryEntry(Str&& fieldName, DistinctTag) : QueryField(std::forward<Str>(fieldName)), condition_(CondAny), distinct_(true) {
+	QueryEntry(Str&& fieldName, DistinctTag) : QueryField(std::forward<Str>(fieldName)), condition_(CondAny), distinct_(IsDistinct_True) {
 		adjust();
 		Verify();
 	}
@@ -126,8 +126,8 @@ public:
 	[[nodiscard]] auto UpdatableValues() & noexcept {
 		return VerifyingUpdater<QueryEntry, VariantArray, &QueryEntry::values_, &QueryEntry::verifyNotIgnoringEmptyValues>{*this};
 	}
-	[[nodiscard]] bool Distinct() const noexcept { return distinct_; }
-	void Distinct(bool d) noexcept { distinct_ = d; }
+	[[nodiscard]] IsDistinct Distinct() const noexcept { return distinct_; }
+	void Distinct(IsDistinct d) noexcept { distinct_ = d; }
 	using QueryField::IndexNo;
 	using QueryField::IsFieldIndexed;
 	using QueryField::FieldsHaveBeenSet;
@@ -182,7 +182,7 @@ private:
 	VariantArray values_;
 	CondType condition_{CondAny};
 	size_t injectedFrom_{NotInjected};
-	bool distinct_{false};
+	IsDistinct distinct_{IsDistinct_False};
 	bool needIsNull_{false};
 };
 
@@ -483,7 +483,10 @@ public:
 };
 
 class QueryEntries : public QueryEntriesTree {
+protected:
 	using Base = QueryEntriesTree;
+
+private:
 	explicit QueryEntries(Base&& b) : Base{std::move(b)} {}
 
 public:
@@ -541,7 +544,7 @@ struct SortingEntry {
 	bool operator!=(const SortingEntry& se) const noexcept = default;
 
 	std::string expression;
-	bool desc = false;
+	Desc desc = Desc_False;
 	int index = IndexValueType::NotSet;
 };
 
@@ -559,6 +562,10 @@ public:
 	[[nodiscard]] unsigned Limit() const noexcept { return limit_; }
 	[[nodiscard]] unsigned Offset() const noexcept { return offset_; }
 	void AddSortingEntry(SortingEntry&& sorting);
+	template <concepts::ConvertibleToString Str>
+	void Sort(Str&& sortExpr, bool desc) {
+		AddSortingEntry({std::forward<Str>(sortExpr), desc});
+	}
 	void SetLimit(unsigned l);
 	void SetOffset(unsigned o);
 

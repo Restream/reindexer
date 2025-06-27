@@ -1,6 +1,7 @@
 #include "ft_function.h"
 #include <algorithm>
 #include <cctype>
+#include "core/nsselecter/ranks_holder.h"
 #include "core/payload/fieldsset.h"
 #include "core/query/expression/function_parser.h"
 #include "core/queryresults/localqueryresults.h"

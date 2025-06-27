@@ -26,7 +26,6 @@ option(ENABLE_ROCKSDB "Enable rocksdb storage" ON)
 option(ENABLE_GRPC "Enable GRPC service" OFF)
 option(ENABLE_SSE "Enable SSE instructions" ON)
 option(ENABLE_SERVER_AS_PROCESS_IN_TEST "Run reindexer servers as separate processes in tests" OFF)
-option(ENABLE_V3_FOLLOWERS "Enable compatibility mode with reindexer v3 followers. This is temporary flag and will be removed in further releases" OFF)
 option(ENABLE_PCH "Enable precompiled headers for the build" OFF)
 set(BUILD_ANN_INDEXES "all" CACHE STRING "Enable ANN indexes build: none, builtin, all. 'All' builds both builtin and FAISS-based indexes")
 set_property(CACHE BUILD_ANN_INDEXES PROPERTY STRINGS none builtin all)
@@ -60,7 +59,7 @@ else()
   option(LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "5.3.0")
+set (REINDEXER_VERSION_DEFAULT "5.4.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -129,10 +128,6 @@ set(EXTRA_FLAGS "")
 
 if(WITH_ASAN AND WITH_TSAN)
   message(FATAL_ERROR "You cannot use the ASAN and TSAN options at the same time, CMake will exit.")
-endif()
-
-if(ENABLE_V3_FOLLOWERS)
-  add_definitions(-DREINDEX_WITH_V3_FOLLOWERS)
 endif()
 
 if(WITH_ASAN)

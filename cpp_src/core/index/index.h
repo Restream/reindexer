@@ -51,7 +51,7 @@ public:
 		unsigned unbuiltSortOrders : 1;
 		unsigned indexesNotOptimized : 1;
 		unsigned inTransaction : 1;
-		unsigned rankSortType : 2;
+		unsigned rankSortType : 3;
 	};
 	struct SelectContext {
 		SelectOpts opts;
@@ -82,6 +82,7 @@ public:
 	virtual void MakeSortOrders(UpdateSortedContext&) {}
 
 	virtual void UpdateSortedIds(const UpdateSortedContext& ctx) = 0;
+	virtual bool IsSupportSortedIdsBuild() const noexcept = 0;
 	virtual size_t Size() const noexcept { return 0; }
 	virtual std::unique_ptr<Index> Clone(size_t newCapacity) const = 0;
 	virtual bool IsOrdered() const noexcept { return false; }
@@ -141,7 +142,6 @@ public:
 	virtual bool HoldsStrings() const noexcept = 0;
 	virtual void DestroyCache() {}
 	virtual void ClearCache() {}
-	virtual void ClearCache(const std::bitset<kMaxIndexes>&) {}
 	virtual bool IsBuilt() const noexcept { return isBuilt_; }
 	virtual void MarkBuilt() noexcept { isBuilt_ = true; }
 	virtual void EnableUpdatesCountingMode(bool) noexcept {}

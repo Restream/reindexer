@@ -2,10 +2,8 @@
 
 #include <estl/fast_hash_set.h>
 #include <memory>
-#include <unordered_map>
 #include "config.h"
 #include "core/cbinding/resultserializer.h"
-#include "core/keyvalue/variant.h"
 #include "core/namespace/snapshot/snapshot.h"
 #include "core/reindexer.h"
 #include "dbmanager.h"
@@ -43,10 +41,6 @@ struct RPCClientData final : public cproto::ClientData {
 	cproto::RPCEventsPusher pusher;
 	key_string replToken;
 	bool subscribed;
-
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	cproto::RPCUpdatesPusherV3 pusherV3;
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 };
 
 class RPCServer {

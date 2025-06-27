@@ -13,12 +13,6 @@ protected:
 	void SetUp() override;
 
 	template <size_t Dim>
-	static void rndFloatVector(std::array<float, Dim>& buf) {
-		for (float& v : buf) {
-			v = randBin<float>(-1'000'000, 1'000'000);
-		}
-	}
-	template <size_t Dim>
 	reindexer::FloatVector rndFloatVector();
 	std::pair<reindexer::FloatVector, std::string> rndFloatVectorForSerializers(bool withSpace);
 	size_t deleteSomeItems(std::string_view nsName, int maxElements, std::unordered_set<int>& emptyVectors);

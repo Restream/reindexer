@@ -28,7 +28,7 @@ protected:
 
 	struct JsonResults {
 		std::vector<std::string> items;
-		std::vector<float> ranks;
+		std::vector<reindexer::RankT> ranks;
 	};
 
 	static inline void rndFloatVector(std::vector<float>& buf, size_t dim) {
@@ -114,7 +114,7 @@ protected:
 				auto ref = it.GetItemRefRanked();
 				jsons.ranks.emplace_back(ref.Rank());
 			} else {
-				jsons.ranks.emplace_back(0.0);
+				jsons.ranks.emplace_back();
 			}
 		}
 		return jsons;
@@ -143,13 +143,13 @@ protected:
 			TestCout() << "Expected:" << std::endl;
 			for (size_t i = 0; i < expected.items.size(); ++i) {
 				TestCout() << expected.items[i] << std::endl;
-				TestCout() << "Rank: " << expected.ranks[i] << std::endl;
+				TestCout() << "Rank: " << expected.ranks[i].Value() << std::endl;
 			}
 			TestCout() << std::endl;
 			TestCout() << "Actual:" << std::endl;
 			for (size_t i = 0; i < actual.items.size(); ++i) {
 				TestCout() << actual.items[i] << std::endl;
-				TestCout() << "Rank: " << actual.ranks[i] << std::endl;
+				TestCout() << "Rank: " << actual.ranks[i].Value() << std::endl;
 			}
 			TestCout() << std::endl;
 			ASSERT_TRUE(false);
@@ -207,6 +207,8 @@ protected:
 };
 
 TEST_F(VectorStorageApi, FloatStorageReload) try {
+	using namespace reindexer;
+
 	constexpr static auto kDataCount = 5000;
 	constexpr static auto kHNSWSTDims = 32;
 	constexpr static auto kHNSWMTDims = 40;
@@ -228,15 +230,15 @@ TEST_F(VectorStorageApi, FloatStorageReload) try {
 	};
 
 	// Create indexes
-	std::vector<IndexParams> indexes = {{kHNSWSTIdxName, kHNSWSTDims, KnnSearchParams::Hnsw(20, 40), {}},
-										{kHNSWSTCosineIdxName, kHNSWSTDims, KnnSearchParams::Hnsw(17, 35), {}},
-										{kHNSWMTIdxName, kHNSWMTDims, KnnSearchParams::Hnsw(15, 25), {}},
-										{kIVFIdxName, kIVFDims, KnnSearchParams::Ivf(20, 8), {}},
-										{kIVFUnbuiltIdxName, kIVFUnbuiltDims, KnnSearchParams::Ivf(23, 6), {}},
-										{kIVFCosineIdxName, kIVFDims, KnnSearchParams::Ivf(21, 6), {}},
-										{kIVFCosineUnbuiltIdxName, kIVFUnbuiltDims, KnnSearchParams::Ivf(17, 7), {}},
-										{kBFIdxName, kBFDims, KnnSearchParams::BruteForce(25), {}},
-										{kBFCosineIdxName, kBFDims, KnnSearchParams::BruteForce(22), {}}};
+	std::vector<IndexParams> indexes = {{kHNSWSTIdxName, kHNSWSTDims, HnswSearchParams{}.K(20).Ef(40), {}},
+										{kHNSWSTCosineIdxName, kHNSWSTDims, HnswSearchParams{}.K(17).Ef(35), {}},
+										{kHNSWMTIdxName, kHNSWMTDims, HnswSearchParams{}.K(15).Ef(25), {}},
+										{kIVFIdxName, kIVFDims, IvfSearchParams{}.K(20).NProbe(8), {}},
+										{kIVFUnbuiltIdxName, kIVFUnbuiltDims, IvfSearchParams{}.K(23).NProbe(6), {}},
+										{kIVFCosineIdxName, kIVFDims, IvfSearchParams{}.K(21).NProbe(6), {}},
+										{kIVFCosineUnbuiltIdxName, kIVFUnbuiltDims, IvfSearchParams{}.K(17).NProbe(7), {}},
+										{kBFIdxName, kBFDims, BruteForceSearchParams{}.K(25), {}},
+										{kBFCosineIdxName, kBFDims, BruteForceSearchParams{}.K(22), {}}};
 	rt.DefineNamespaceDataset(
 		kNsName,
 		{

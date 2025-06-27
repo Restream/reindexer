@@ -59,7 +59,10 @@ public:
 	};
 	BaseRankingConfig rankingConfig;
 
+	SymbolTypeMask removeDiacriticsMask = kRemoveAllDiacriticsMask;
+
 protected:
+	[[nodiscard]] std::string removeAccentsAndDiacritics(const std::string& str) const;
 	void parseBase(const gason::JsonNode& root);
 	void getJson(JsonBuilder&) const;
 };

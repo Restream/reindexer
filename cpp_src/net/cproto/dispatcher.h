@@ -1,7 +1,6 @@
 #pragma once
 
 #include "args.h"
-#include "core/keyvalue/p_string.h"
 #include "cproto.h"
 #include "estl/chunk.h"
 #include "net/connectinstatscollector.h"
@@ -42,10 +41,6 @@ struct ClientData {
 };
 
 struct Context;
-struct IRPCCall {
-	void (*Get)(IRPCCall*, CmdCode&, std::string_view& nsName, Args&);
-	intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> data_;
-};
 
 class Writer {
 public:
@@ -53,7 +48,6 @@ public:
 	virtual size_t AvailableEventsSpace() noexcept = 0;
 	virtual void SendEvent(chunk&& ch) = 0;
 	virtual void WriteRPCReturn(Context& ctx, const Args& args, const Error& status) = 0;
-	virtual void CallRPC(const IRPCCall& call) = 0;
 	virtual void SetClientData(std::unique_ptr<ClientData>&& data) noexcept = 0;
 	virtual ClientData* GetClientData() noexcept = 0;
 	virtual std::shared_ptr<reindexer::net::connection_stat> GetConnectionStat() noexcept = 0;

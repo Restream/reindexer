@@ -145,11 +145,6 @@ public:
 	Error SubscribeUpdates(IEventsObserver& observer, EventSubscriberConfig&& cfg);
 	Error UnsubscribeUpdates(IEventsObserver& observer);
 
-	// REINDEX_WITH_V3_FOLLOWERS
-	Error SubscribeUpdates(IUpdatesObserverV3* observer, const UpdatesFilters& filters, SubscriptionOpts opts);
-	Error UnsubscribeUpdates(IUpdatesObserverV3* observer);
-	// REINDEX_WITH_V3_FOLLOWERS
-
 private:
 	using FilterNsNamesT = std::optional<h_vector<std::string, 6>>;
 	using ShardinConfigPtr = intrusive_ptr<const intrusive_atomic_rc_wrapper<cluster::ShardingConfig>>;
@@ -288,6 +283,7 @@ private:
 	void createSystemNamespaces();
 	void handleDropANNCacheAction(const gason::JsonNode& action, const RdxContext& ctx);
 	void handleRebuildIVFIndexAction(const gason::JsonNode& action, const RdxContext& ctx);
+	void handleCreateEmbeddingsAction(const gason::JsonNode& action, const RdxContext& ctx);
 	void handleClearEmbeddersCacheAction(const gason::JsonNode& action);
 	void updateToSystemNamespace(std::string_view nsName, Item&, const RdxContext& ctx);
 	void handleConfigAction(const gason::JsonNode& action, const std::vector<std::pair<std::string, Namespace::Ptr>>& namespaces,
@@ -297,6 +293,7 @@ private:
 	void updateConfFile(const ConfigT& newConf, std::string_view filename);
 	void onProfilingConfigLoad();
 	void onEmbeddersConfigLoad();
+	void createEmbeddings(const Namespace::Ptr& ns, uint32_t batchSize, const RdxContext& ctx);
 	Error initSystemNamespaces();
 	template <const char* type, typename ConfigT>
 	Error tryLoadConfFromFile(const std::string& filename);

@@ -18,17 +18,12 @@ namespace reindexer_server {
 using namespace std::string_view_literals;
 
 const size_t kMaxTxCount = 1024;
-static const reindexer::SemVersion kMinSubscriptionV3RxVersion("3.21.0");
 static const reindexer::SemVersion kMinSubscriptionV4RxVersion("4.15.0");
 
 RPCClientData::~RPCClientData() {
 	Reindexer* db = nullptr;
 	auto err = auth.GetDB<AuthContext::CalledFrom::Core>(kRoleNone, &db);
 	if (subscribed && db && err.ok()) {
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-		err = db->UnsubscribeUpdates(&pusherV3);
-		(void)err;	// ignore
-#endif				// REINDEX_WITH_V3_FOLLOWERS
 		err = db->UnsubscribeUpdates(pusher);
 		(void)err;	// ignore
 	}
@@ -88,21 +83,6 @@ Error RPCServer::Login(cproto::Context& ctx, p_string login, p_string password, 
 	if (replToken) {
 		clientData->replToken = make_key_string(std::move(*replToken));
 	}
-
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	static const reindexer::SemVersion kMinUnknownReplSupportRxVersion("2.6.0");
-	clientData->pusherV3.SetWriter(ctx.writer);
-	clientData->subscribed = false;
-	if (clientData->rxVersion < kMinUnknownReplSupportRxVersion) {
-		clientData->pusherV3.SetFilter([](WALRecord& rec) {
-			if (rec.type == WalCommitTransaction || rec.type == WalInitTransaction || rec.type == WalSetSchema) {
-				return true;
-			}
-			rec.inTransaction = false;
-			return false;
-		});
-	}
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 
 	if (clientsStats_) {
 		reindexer::ClientConnectionStat conn;
@@ -1266,36 +1246,7 @@ Error RPCServer::SubscribeUpdates([[maybe_unused]] cproto::Context& ctx, [[maybe
 		}
 		return err;
 	} else {
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-		if (clientData->rxVersion < kMinSubscriptionV3RxVersion || clientData->rxVersion.Major() != 3) {
-			return Error(errForbidden, "Transition subscription version is available for v3.21.0+");
-		}
-		UpdatesFilters filters;
-		Error ret;
-		if (filterV3Json) {
-			ret = filters.FromJSON(giftStr(*filterV3Json));
-			if (!ret.ok()) {
-				return ret;
-			}
-		}
-		SubscriptionOpts opts;
-		if (options) {
-			opts.options = *options;
-		}
-
-		auto db = getDB(ctx, kRoleDataRead);
-		if (flag) {
-			ret = db.SubscribeUpdates(&clientData->pusherV3, filters, opts);
-		} else {
-			ret = db.UnsubscribeUpdates(&clientData->pusherV3);
-		}
-		if (ret.ok()) {
-			clientData->subscribed = bool(flag);
-		}
-		return ret;
-#else	// REINDEX_WITH_V3_FOLLOWERS
-		return Error(errForbidden, "Updates subscription is no longer supported");
-#endif	// REINDEX_WITH_V3_FOLLOWERS
+		return Error(errForbidden, "Updates subscription from V3 is no longer supported");
 	}
 }
 
@@ -1442,11 +1393,7 @@ void RPCServer::Start(const std::string& addr, ev::dynamic_loop& loop, RPCSocket
 	}
 
 	protocolName_ = (sockDomain == RPCSocketT::TCP) ? kTcpProtocolName : kUnixProtocolName;
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	auto factory = cproto::ServerConnection::NewFactory(dispatcher_, serverConfig_.EnableConnectionsStats, serverConfig_.MaxUpdatesSize);
-#else	// REINDEX_WITH_V3_FOLLOWERS
 	auto factory = cproto::ServerConnection::NewFactory(dispatcher_, serverConfig_.EnableConnectionsStats);
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 	auto sslCtx =
 		serverConfig_.RPCsAddr == addr ? openssl::create_server_context(serverConfig_.SslCertPath, serverConfig_.SslKeyPath) : nullptr;
 	if (threadingMode == ServerConfig::kDedicatedThreading) {

@@ -88,7 +88,7 @@ TEST_F(NsApi, AddTooManyIndexes) {
 
 	size_t notCompositeIndexesCount = 0;
 	size_t compositeIndexesCount = 0;
-	while (notCompositeIndexesCount < reindexer::kMaxIndexes - 1) {
+	while (notCompositeIndexesCount < kMaxIndexes - 1) {
 		if (notCompositeIndexesCount < 2 * kHalfOfStartNotCompositeIndexesCount || rand() % 4 != 0 ||
 			compositeIndexesCount >= kMaxCompositeIndexesCount) {
 			const std::string indexName = "index_" + std::to_string(notCompositeIndexesCount);
@@ -1759,94 +1759,94 @@ TEST_F(NsApi, UpdateHeterogeneousArray) {
 	constexpr std::string_view kEmptyArraysNs = "empty_namespace";
 	constexpr int resCount = 100;
 	CreateEmptyArraysNamespace(kEmptyArraysNs);
-	const Query kBaseQuery;	 // dummy
+	const Query kQueryDummy;
 
-	/*{ // ToDo: issues #1469 #1721
+	{
 		Query query = Query::FromSQL(R"(UPDATE empty_namespace SET non_indexed_array_field = [1, null])");
-		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs,
+		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs,
 						R"("indexed_array_field":[],"non_indexed_array_field":[1,null])", "non_indexed_array_field",
 						{Variant(int64_t(1)), Variant()}, "Checking set heterogeneous non-indexed array with null", resCount);
-	}*/
+	}
 	{
 		Query query = Query::FromSQL(R"(UPDATE empty_namespace SET non_indexed_array_field = [1,-2,3])");
-		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[],"non_indexed_array_field":[1,-2,3])",
+		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs, R"("indexed_array_field":[],"non_indexed_array_field":[1,-2,3])",
 						"non_indexed_array_field", {Variant(int64_t(1)), Variant(int64_t(-2)), Variant(int64_t(3))},
 						"Set homogeneous non-indexed array", resCount);
 
 		Query query2 = Query::FromSQL(R"(UPDATE empty_namespace SET non_indexed_array_field[1] = -505.6782)");
-		validateResults(rt.reindexer, kBaseQuery, query2, kEmptyArraysNs,
+		validateResults(rt.reindexer, kQueryDummy, query2, kEmptyArraysNs,
 						R"("indexed_array_field":[],"non_indexed_array_field":[1,-505.6782,3])", "non_indexed_array_field",
 						{Variant(int64_t(1)), Variant(-505.6782), Variant(int64_t(3))},
 						"Check the possibility of making a homogeneous indexed array heterogeneous", resCount);
 	}
 	{
 		Query query = Query::FromSQL(R"(UPDATE empty_namespace SET non_indexed_array_field = ['hi',true,'bro'])");
-		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs,
+		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs,
 						R"("indexed_array_field":[],"non_indexed_array_field":["hi",true,"bro"])", "non_indexed_array_field",
 						{Variant("hi"), Variant(true), Variant("bro")}, "Checking set heterogeneous non-indexed array", resCount);
 	}
 	{
 		Query query = Query::FromSQL("UPDATE empty_namespace SET non_indexed_array_field[1] = 3");
-		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs,
+		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs,
 						R"("indexed_array_field":[],"non_indexed_array_field":["hi",3,"bro"])", "non_indexed_array_field",
 						{Variant("hi"), Variant(int64_t(3)), Variant("bro")},
 						"Checking overwrite in heterogeneous array one item via scalar value (middle)", resCount);
 	}
 	{
 		Query query = Query::FromSQL("UPDATE empty_namespace SET non_indexed_array_field[2] = 24");
-		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs,
+		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs,
 						R"("indexed_array_field":[],"non_indexed_array_field":["hi",3,24])", "non_indexed_array_field",
 						{Variant("hi"), Variant(int64_t(3)), Variant(int64_t(24))},
 						"Checking overwrite in heterogeneous array one item via scalar value (last)", resCount);
 	}
 	{
 		Query query = Query::FromSQL("UPDATE empty_namespace SET non_indexed_array_field[0] = 81");
-		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[],"non_indexed_array_field":[81,3,24])",
+		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs, R"("indexed_array_field":[],"non_indexed_array_field":[81,3,24])",
 						"non_indexed_array_field", {Variant(int64_t(81)), Variant(int64_t(3)), Variant(int64_t(24))},
 						"Checking overwrite in heterogeneous array one item via scalar value (first)", resCount);
 	}
 	{
 		Query query = Query::FromSQL("UPDATE empty_namespace SET non_indexed_array_field = 183042");
-		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[],"non_indexed_array_field":183042)",
+		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs, R"("indexed_array_field":[],"non_indexed_array_field":183042)",
 						"non_indexed_array_field", {Variant(int64_t(183042))},
 						"Checking overwrite heterogeneous non-indexed array by single scalar value", resCount);
 	}
 	{
 		Query query = Query::FromSQL(R"(UPDATE empty_namespace SET non_indexed_array_field = ['pocomaxa','forever',true])");
-		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs,
+		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs,
 						R"("indexed_array_field":[],"non_indexed_array_field":["pocomaxa","forever",true])", "non_indexed_array_field",
 						{Variant("pocomaxa"), Variant("forever"), Variant(true)},
 						"Checking overwrite non-indexed scalar with heterogeneous array", resCount);
 	}
 	{
 		Query query = Query::FromSQL(R"(UPDATE empty_namespace SET non_indexed_array_field = [3.14,9811,'Boom'])");
-		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs,
+		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs,
 						R"("indexed_array_field":[],"non_indexed_array_field":[3.14,9811,"Boom"])", "non_indexed_array_field",
 						{Variant(3.14), Variant(int64_t(9811)), Variant("Boom")},
 						"Checking overwrite non-indexed array with heterogeneous array", resCount);
 	}
 	{
 		Query query = Query::FromSQL("UPDATE empty_namespace SET non_indexed_array_field = 3.14");
-		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[],"non_indexed_array_field":3.14)",
+		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs, R"("indexed_array_field":[],"non_indexed_array_field":3.14)",
 						"non_indexed_array_field", {Variant(3.14)},
 						"Checking overwrite heterogeneous non-indexed array with scalar value (double)", resCount);
 	}
 
 	{
 		Query query = Query::FromSQL(R"(UPDATE empty_namespace SET indexed_array_field = ['2',3])");
-		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[2,3],"non_indexed_array_field":3.14)",
+		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs, R"("indexed_array_field":[2,3],"non_indexed_array_field":3.14)",
 						"indexed_array_field", {Variant(2), Variant(3)}, "Checking set heterogeneous indexed array with conversion",
 						resCount);
 	}
 	{
 		Query query = Query::FromSQL("UPDATE empty_namespace SET indexed_array_field = 4");
-		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":4,"non_indexed_array_field":3.14)",
+		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs, R"("indexed_array_field":4,"non_indexed_array_field":3.14)",
 						"indexed_array_field", VariantArray{Variant(4)}.MarkArray(),
 						"Checking set heterogeneous indexed array with scalar value (int)", resCount);
 	}
 	{
 		Query query = Query::FromSQL(R"(UPDATE empty_namespace SET indexed_array_field = ['111',222,333])");
-		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs,
+		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs,
 						R"("indexed_array_field":[111,222,333],"non_indexed_array_field":3.14)", "indexed_array_field",
 						{Variant(111), Variant(222), Variant(333)}, "Checking overwrite scalar value field with heterogeneous array",
 						resCount);
@@ -1861,14 +1861,14 @@ TEST_F(NsApi, UpdateHeterogeneousArray) {
 	}
 	{
 		Query query = Query::FromSQL(R"(UPDATE empty_namespace SET indexed_array_field[0] = '777')");
-		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs,
+		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs,
 						R"("indexed_array_field":[777,222,333],"non_indexed_array_field":3.14)", "indexed_array_field",
 						{Variant(777), Variant(222), Variant(333)},
 						"Checking overwrite in heterogeneous indexed array one item via scalar value", resCount);
 	}
 	{
 		Query query = Query::FromSQL(R"(UPDATE empty_namespace SET indexed_array_field = ['333', 33])");
-		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[333,33],"non_indexed_array_field":3.14)",
+		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs, R"("indexed_array_field":[333,33],"non_indexed_array_field":3.14)",
 						"indexed_array_field", {Variant(333), Variant(33)},
 						"Checking overwrite indexed array field with heterogeneous array", resCount);
 	}
@@ -2934,13 +2934,13 @@ static void checkQueryDsl(const Query& src) {
 		EXPECT_EQ(src.Entries(), dst.Entries());
 		EXPECT_EQ(src.aggregations_, dst.aggregations_);
 		EXPECT_EQ(src.NsName(), dst.NsName());
-		EXPECT_EQ(src.sortingEntries_, dst.sortingEntries_);
+		EXPECT_EQ(src.GetSortingEntries(), dst.GetSortingEntries());
 		EXPECT_EQ(src.CalcTotal(), dst.CalcTotal());
 		EXPECT_EQ(src.Offset(), dst.Offset());
 		EXPECT_EQ(src.Limit(), dst.Limit());
 		EXPECT_EQ(src.GetDebugLevel(), dst.GetDebugLevel());
 		EXPECT_EQ(src.GetStrictMode(), dst.GetStrictMode());
-		EXPECT_EQ(src.forcedSortOrder_, dst.forcedSortOrder_);
+		EXPECT_EQ(src.ForcedSortOrder(), dst.ForcedSortOrder());
 		EXPECT_EQ(src.SelectFilters(), dst.SelectFilters());
 		EXPECT_EQ(src.selectFunctions_, dst.selectFunctions_);
 		EXPECT_EQ(src.GetJoinQueries(), dst.GetJoinQueries());

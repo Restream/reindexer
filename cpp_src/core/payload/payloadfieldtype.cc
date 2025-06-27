@@ -23,18 +23,24 @@ EmbedderConfig::Strategy convert(FloatVectorIndexOpts::EmbedderOpts::Strategy st
 	return {};
 }
 
-std::shared_ptr<Embedder> createEmbedder(std::string_view nsName, std::string_view idxName, int idx,
-										 const FloatVectorIndexOpts::EmbedderOpts& opts,
-										 const std::shared_ptr<EmbeddersCache>& embeddersCache) {
+std::shared_ptr<const reindexer::Embedder> createEmbedder(std::string_view nsName, std::string_view idxName, const std::optional<FloatVectorIndexOpts::EmbedderOpts>& cfg,
+				 const std::shared_ptr<EmbeddersCache>& embeddersCache) {
+	if (!cfg.has_value()) {
+		return {};
+	}
+
+	const auto& opts = cfg.value();
 	EmbedderConfig embedderCfg{CacheTag{opts.cacheTag}, opts.fields, convert(opts.strategy)};
 	PoolConfig poolCfg{opts.pool.connections, opts.endpointUrl, opts.pool.connect_timeout_ms, opts.pool.read_timeout_ms,
 					   opts.pool.write_timeout_ms};
 	const auto embedderName = opts.name.empty() ? std::string{nsName} + "_" + toLower(idxName) : toLower(opts.name);
-	return std::make_shared<reindexer::Embedder>(embedderName, idxName, idx, std::move(embedderCfg), std::move(poolCfg), embeddersCache);
+	embeddersCache->IncludeTag(opts.cacheTag);
+	return std::make_shared<const reindexer::Embedder>(embedderName, idxName, std::move(embedderCfg), std::move(poolCfg), embeddersCache);
 }
+
 }  // namespace
 
-PayloadFieldType::PayloadFieldType(std::string_view nsName, int idx, const Index& index, const IndexDef& indexDef,
+PayloadFieldType::PayloadFieldType(std::string_view nsName, const Index& index, const IndexDef& indexDef,
 								   const std::shared_ptr<EmbeddersCache>& embeddersCache)
 	: type_(index.KeyType()),
 	  name_(indexDef.Name()),
@@ -47,19 +53,7 @@ PayloadFieldType::PayloadFieldType(std::string_view nsName, int idx, const Index
 	if (index.IsFloatVector()) {
 		arrayDims_ = index.FloatVectorDimension().Value();
 		assertrx(type_.Is<KeyValueType::FloatVector>());
-
-		auto embedding = indexDef.Opts().FloatVector().Embedding();
-		if (embedding.has_value()) {
-			const auto& cfg = embedding.value();
-			if (cfg.upsertEmbedder.has_value()) {
-				embeddersCache->IncludeTag(cfg.upsertEmbedder->cacheTag);
-				embedder_ = createEmbedder(nsName, name_, idx, cfg.upsertEmbedder.value(), embeddersCache);
-			}
-			if (cfg.queryEmbedder.has_value()) {
-				embeddersCache->IncludeTag(cfg.queryEmbedder->cacheTag);
-				queryEmbedder_ = createEmbedder(nsName, name_, idx, cfg.queryEmbedder.value(), embeddersCache);
-			}
-		}
+		createEmbedders(nsName, indexDef.Opts().FloatVector().Embedding(), embeddersCache);
 	} else if (indexDef.IndexType() == IndexType::IndexRTree) {
 		arrayDims_ = 2;
 	}
@@ -92,6 +86,16 @@ std::string PayloadFieldType::ToString() const {
 	}
 	ss << "] }";
 	return ss.str();
+}
+
+void PayloadFieldType::createEmbedders(std::string_view nsName, const std::optional<FloatVectorIndexOpts::EmbeddingOpts>& embeddingOpts,
+									   const std::shared_ptr<EmbeddersCache>& embeddersCache) {
+	if (!embeddingOpts.has_value()) {
+		return;
+	}
+	const auto& cfg = embeddingOpts.value();
+	embedder_ = createEmbedder(nsName, name_, cfg.upsertEmbedder, embeddersCache);
+	queryEmbedder_ = createEmbedder(nsName, name_, cfg.queryEmbedder, embeddersCache);
 }
 
 }  // namespace reindexer

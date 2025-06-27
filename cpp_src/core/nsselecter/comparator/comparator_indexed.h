@@ -156,7 +156,7 @@ public:
 		}
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 	void ClearDistinctValues() const noexcept {}
 
@@ -199,7 +199,7 @@ public:
 		}
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 	void ClearDistinctValues() const noexcept {}
 
@@ -243,7 +243,7 @@ public:
 		}
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		distinct_.ExcludeValues(*reinterpret_cast<T*>(item.Ptr() + offset_));
 	}
@@ -290,7 +290,7 @@ public:
 		}
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& /*item*/, IdType rowId) { distinct_.ExcludeValues(*(rawData_ + rowId)); }
 	void ClearDistinctValues() noexcept { distinct_.ClearValues(); }
 
@@ -371,7 +371,7 @@ public:
 		return false;
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 	void ClearDistinctValues() const noexcept {}
 
@@ -453,7 +453,7 @@ public:
 		return false;
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
 		const auto* ptr = reinterpret_cast<const T*>(item.Ptr() + arr.offset);
@@ -548,7 +548,7 @@ public:
 		return false;
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 	void ClearDistinctValues() const noexcept {}
 
@@ -639,7 +639,7 @@ public:
 		return false;
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::From<T>());
@@ -695,7 +695,7 @@ public:
 		}
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 	void ClearDistinctValues() const noexcept {}
 
@@ -741,7 +741,7 @@ public:
 		}
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 	void ClearDistinctValues() const noexcept {}
 
@@ -787,7 +787,7 @@ public:
 		}
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		distinct_.ExcludeValues(std::string_view(*reinterpret_cast<const p_string*>(item.Ptr() + offset_)));
 	}
@@ -836,7 +836,7 @@ public:
 		}
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& /*item*/, IdType rowId) { distinct_.ExcludeValues(*(rawData_ + rowId)); }
 	void ClearDistinctValues() noexcept { distinct_.ClearValues(); }
 
@@ -922,7 +922,7 @@ public:
 		return false;
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 	void ClearDistinctValues() const noexcept {}
 
@@ -1010,7 +1010,7 @@ public:
 		return false;
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
 		const p_string* ptr = reinterpret_cast<const p_string*>(item.Ptr() + arr.offset);
@@ -1111,7 +1111,7 @@ public:
 		return false;
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 	void ClearDistinctValues() const noexcept {}
 
@@ -1209,7 +1209,7 @@ public:
 		return false;
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::String{});
@@ -1278,7 +1278,7 @@ public:
 		}
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 	void ClearDistinctValues() const noexcept {}
 
@@ -1303,7 +1303,7 @@ public:
 		return DWithin(Point{ptr[0], ptr[1]}, point_, distance_);
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 	void ClearDistinctValues() const noexcept {}
 
@@ -1326,7 +1326,7 @@ public:
 		return DWithin(p, point_, distance_) && distinct_.Compare(p);
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
 		if rx_unlikely (arr.len != 2) {
@@ -1356,7 +1356,7 @@ public:
 		return DWithin(Point{buffer[0].As<double>(), buffer[1].As<double>()}, point_, distance_);
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 	void ClearDistinctValues() const noexcept {}
 
@@ -1380,7 +1380,7 @@ public:
 		return DWithin(p, point_, distance_) && distinct_.Compare(p);
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		VariantArray buffer;
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer, KeyValueType::Double{});
@@ -1407,7 +1407,7 @@ public:
 		return distinct_.Compare(*reinterpret_cast<T*>(item.Ptr() + offset_));
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		distinct_.ExcludeValues(*reinterpret_cast<T*>(item.Ptr() + offset_));
 	}
@@ -1426,7 +1426,7 @@ public:
 		return distinct_.Compare(*(rawData_ + rowId));
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& /*item*/, IdType rowId) { distinct_.ExcludeValues(*(rawData_ + rowId)); }
 	void ClearDistinctValues() noexcept { distinct_.ClearValues(); }
 
@@ -1443,7 +1443,7 @@ public:
 		return distinct_.Compare(*reinterpret_cast<p_string*>(item.Ptr() + offset_));
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		distinct_.ExcludeValues(std::string_view(*reinterpret_cast<p_string*>(item.Ptr() + offset_)));
 	}
@@ -1462,7 +1462,7 @@ public:
 		return arr.len != 0;
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 	void ClearDistinctValues() const noexcept {}
 
@@ -1485,7 +1485,7 @@ public:
 		return false;
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
 		const auto* ptr = reinterpret_cast<const T*>(item.Ptr() + arr.offset);
@@ -1518,7 +1518,7 @@ public:
 		return false;
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
 		const p_string* ptr = reinterpret_cast<const p_string*>(item.Ptr() + arr.offset);
@@ -1548,7 +1548,7 @@ public:
 		return false;
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 	void ClearDistinctValues() const noexcept {}
 
@@ -1574,7 +1574,7 @@ public:
 		return false;
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::From<T>());
@@ -1608,7 +1608,7 @@ public:
 		return false;
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::String{});
@@ -1635,7 +1635,7 @@ public:
 		return arr.len == 0;
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 	void ClearDistinctValues() const noexcept {}
 
@@ -1661,7 +1661,7 @@ public:
 		return buffer_.empty();
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 	void ClearDistinctValues() const noexcept {}
 
@@ -1678,7 +1678,7 @@ public:
 		return !ConstFloatVectorView::FromUint64(*reinterpret_cast<const uint64_t*>(item.Ptr() + offset_)).IsEmpty();
 	}
 	[[nodiscard]] std::string ConditionStr() const;
-	[[nodiscard]] bool IsDistinct() const noexcept { return false; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType) const noexcept {}
 	void ClearDistinctValues() const noexcept {}
 
@@ -1732,7 +1732,7 @@ template <typename T>
 class ComparatorIndexed {
 public:
 	ComparatorIndexed(std::string_view indexName, CondType cond, const VariantArray& values, const void* rawData, IsArray isArray,
-					  bool distinct, const PayloadType& payloadType, const FieldsSet& fields,
+					  reindexer::IsDistinct distinct, const PayloadType& payloadType, const FieldsSet& fields,
 					  const CollateOpts& collateOpts = CollateOpts())
 		: impl_{createImpl(cond, values, rawData, distinct, isArray, payloadType, fields, collateOpts)}, indexName_{indexName} {}
 
@@ -1823,14 +1823,14 @@ public:
 	void ExcludeDistinctValues(const PayloadValue& item, IdType rowId) {
 		std::visit([&item, rowId](auto& impl) { impl.ExcludeDistinctValues(item, rowId); }, impl_);
 	}
-	[[nodiscard]] bool IsDistinct() const noexcept {
+	reindexer::IsDistinct IsDistinct() const noexcept {
 		return std::visit([](auto& impl) { return impl.IsDistinct(); }, impl_);
 	}
 
 private:
 	[[nodiscard]] static comparators::ComparatorIndexedVariant<T> createImpl(CondType cond, const VariantArray&, const void* rawData,
-																			 bool distinct, IsArray isArray, const PayloadType&,
-																			 const FieldsSet&, const CollateOpts&);
+																			 reindexer::IsDistinct distinct, IsArray isArray,
+																			 const PayloadType&, const FieldsSet&, const CollateOpts&);
 
 	comparators::ComparatorIndexedVariant<T> impl_;
 	std::string_view indexName_;
@@ -1924,7 +1924,7 @@ RX_ALWAYS_INLINE void ComparatorIndexed<PayloadValue>::ExcludeDistinctValues(con
 	impl_.ExcludeDistinctValues(item, rowId);
 }
 template <>
-[[nodiscard]] RX_ALWAYS_INLINE bool ComparatorIndexed<PayloadValue>::IsDistinct() const noexcept {
+[[nodiscard]] RX_ALWAYS_INLINE reindexer::IsDistinct ComparatorIndexed<PayloadValue>::IsDistinct() const noexcept {
 	return impl_.IsDistinct();
 }
 
@@ -1973,7 +1973,7 @@ RX_ALWAYS_INLINE void ComparatorIndexed<FloatVector>::ExcludeDistinctValues(cons
 	impl_.ExcludeDistinctValues(item, rowId);
 }
 template <>
-[[nodiscard]] RX_ALWAYS_INLINE bool ComparatorIndexed<FloatVector>::IsDistinct() const noexcept {
+[[nodiscard]] RX_ALWAYS_INLINE IsDistinct ComparatorIndexed<FloatVector>::IsDistinct() const noexcept {
 	return impl_.IsDistinct();
 }
 
@@ -1986,35 +1986,39 @@ extern template std::string ComparatorIndexed<Point>::ConditionStr() const;
 extern template std::string ComparatorIndexed<Uuid>::ConditionStr() const;
 
 extern template comparators::ComparatorIndexedVariant<int> ComparatorIndexed<int>::createImpl(CondType, const VariantArray&, const void*,
-																							  bool, IsArray, const PayloadType&,
-																							  const FieldsSet&, const CollateOpts&);
+																							  reindexer::IsDistinct, IsArray,
+																							  const PayloadType&, const FieldsSet&,
+																							  const CollateOpts&);
 extern template comparators::ComparatorIndexedVariant<int64_t> ComparatorIndexed<int64_t>::createImpl(CondType, const VariantArray&,
-																									  const void*, bool, IsArray,
-																									  const PayloadType&, const FieldsSet&,
-																									  const CollateOpts&);
+																									  const void*, reindexer::IsDistinct,
+																									  IsArray, const PayloadType&,
+																									  const FieldsSet&, const CollateOpts&);
 extern template comparators::ComparatorIndexedVariant<double> ComparatorIndexed<double>::createImpl(CondType, const VariantArray&,
-																									const void*, bool, IsArray,
-																									const PayloadType&, const FieldsSet&,
-																									const CollateOpts&);
+																									const void*, reindexer::IsDistinct,
+																									IsArray, const PayloadType&,
+																									const FieldsSet&, const CollateOpts&);
 extern template comparators::ComparatorIndexedVariant<bool> ComparatorIndexed<bool>::createImpl(CondType, const VariantArray&, const void*,
-																								bool, IsArray, const PayloadType&,
-																								const FieldsSet&, const CollateOpts&);
+																								reindexer::IsDistinct, IsArray,
+																								const PayloadType&, const FieldsSet&,
+																								const CollateOpts&);
 extern template comparators::ComparatorIndexedVariant<Uuid> ComparatorIndexed<Uuid>::createImpl(CondType, const VariantArray&, const void*,
-																								bool, IsArray, const PayloadType&,
-																								const FieldsSet&, const CollateOpts&);
+																								reindexer::IsDistinct, IsArray,
+																								const PayloadType&, const FieldsSet&,
+																								const CollateOpts&);
 template <>
 [[nodiscard]] comparators::ComparatorIndexedVariant<key_string> ComparatorIndexed<key_string>::createImpl(
-	CondType, const VariantArray&, const void*, bool, IsArray, const PayloadType&, const FieldsSet&, const CollateOpts&);
+	CondType, const VariantArray&, const void*, reindexer::IsDistinct, IsArray, const PayloadType&, const FieldsSet&, const CollateOpts&);
 template <>
 [[nodiscard]] comparators::ComparatorIndexedVariant<Point> ComparatorIndexed<Point>::createImpl(CondType, const VariantArray&, const void*,
-																								bool, IsArray, const PayloadType&,
-																								const FieldsSet&, const CollateOpts&);
+																								reindexer::IsDistinct, IsArray,
+																								const PayloadType&, const FieldsSet&,
+																								const CollateOpts&);
 template <>
 [[nodiscard]] comparators::ComparatorIndexedVariant<PayloadValue> ComparatorIndexed<PayloadValue>::createImpl(
-	CondType, const VariantArray&, const void*, bool, IsArray, const PayloadType&, const FieldsSet&, const CollateOpts&);
+	CondType, const VariantArray&, const void*, reindexer::IsDistinct, IsArray, const PayloadType&, const FieldsSet&, const CollateOpts&);
 
 template <>
 [[nodiscard]] comparators::ComparatorIndexedVariant<FloatVector> ComparatorIndexed<FloatVector>::createImpl(
-	CondType, const VariantArray&, const void*, bool, IsArray, const PayloadType&, const FieldsSet&, const CollateOpts&);
+	CondType, const VariantArray&, const void*, reindexer::IsDistinct, IsArray, const PayloadType&, const FieldsSet&, const CollateOpts&);
 
 }  // namespace reindexer

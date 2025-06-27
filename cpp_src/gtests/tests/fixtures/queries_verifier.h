@@ -95,7 +95,7 @@ protected:
 		QueryWatcher watcher{query};
 
 		reindexer::VariantArray lastSortedColumnValues;
-		lastSortedColumnValues.resize(query.sortingEntries_.size());
+		lastSortedColumnValues.resize(query.GetSortingEntries().size());
 
 		for (size_t i = 0; i < query.Entries().Size(); ++i) {
 			query.Entries().Visit(
@@ -217,11 +217,11 @@ protected:
 			}
 			EXPECT_FALSE(checkDistincts(itemr, query, distincts, reindexer::Invert_False)) << "Distinction check failed";
 
-			std::vector<reindexer::ComparationResult> cmpRes(query.sortingEntries_.size());
+			std::vector<reindexer::ComparationResult> cmpRes(query.GetSortingEntries().size());
 			std::fill(cmpRes.begin(), cmpRes.end(), reindexer::ComparationResult::Lt);
 
-			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
-				const reindexer::SortingEntry& sortingEntry(query.sortingEntries_[j]);
+			for (size_t j = 0; j < query.GetSortingEntries().size(); ++j) {
+				const reindexer::SortingEntry& sortingEntry(query.GetSortingEntries()[j]);
 				const auto sortExpr = reindexer::SortExpression::Parse(sortingEntry.expression, joinedSelectors);
 
 				reindexer::Variant sortedValue;
@@ -248,15 +248,15 @@ protected:
 						}
 					}
 					if (needToVerify) {
-						if (j == 0 && !query.forcedSortOrder_.empty()) {
-							const auto currValIt = std::find(query.forcedSortOrder_.cbegin(), query.forcedSortOrder_.cend(), sortedValue);
+						if (j == 0 && !query.ForcedSortOrder().empty()) {
+							const auto currValIt = std::find(query.ForcedSortOrder().cbegin(), query.ForcedSortOrder().cend(), sortedValue);
 							const auto lastValIt =
-								std::find(query.forcedSortOrder_.cbegin(), query.forcedSortOrder_.cend(), lastSortedColumnValues[0]);
+								std::find(query.ForcedSortOrder().cbegin(), query.ForcedSortOrder().cend(), lastSortedColumnValues[0]);
 							if (lastValIt < currValIt) {
 								cmpRes[0] = reindexer::ComparationResult::Lt;
 							} else if (lastValIt > currValIt) {
 								cmpRes[0] = reindexer::ComparationResult::Gt;
-							} else if (lastValIt == query.forcedSortOrder_.cend()) {
+							} else if (lastValIt == query.ForcedSortOrder().cend()) {
 								cmpRes[0] =
 									lastSortedColumnValues[0].RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return>(
 										sortedValue, collate);
@@ -947,69 +947,69 @@ private:
 
 	static double calculateSortExpression(reindexer::SortExpression::const_iterator begin, reindexer::SortExpression::const_iterator end,
 										  reindexer::Item& item, const reindexer::LocalQueryResults& qr) {
-		double result = 0.0;
+		using namespace reindexer;
+		using namespace SortExprFuncs;
+		double totalResult = 0.0;
+		double multResult = 0.0;
 		assertrx(begin != end);
 		assertrx(begin->operation.op == OpPlus);
 		for (auto it = begin; it != end; ++it) {
 			double value = it->Visit(
-				[&it, &item, &qr](const reindexer::SortExpressionBracket&) {
-					return calculateSortExpression(it.cbegin(), it.cend(), item, qr);
-				},
-				[](const reindexer::SortExprFuncs::Value& v) { return v.value; },
-				[&item](const reindexer::SortExprFuncs::Index& i) { return item[i.column].As<double>(); },
-				[&item, &qr](const reindexer::SortExprFuncs::JoinedIndex& i) {
+				[&it, &item, &qr](const SortExpressionBracket&) { return calculateSortExpression(it.cbegin(), it.cend(), item, qr); },
+				[](const Value& v) { return v.value; }, [&item](const SortExprFuncs::Index& i) { return item[i.column].As<double>(); },
+				[&item, &qr](const JoinedIndex& i) {
 					const auto values = getJoinedField(item.GetID(), qr, i.nsIdx, i.index, i.column);
 					assertrx(values.size() == 1);
 					return values[0].As<double>();
 				},
-				[](const reindexer::SortExprFuncs::Rank&) -> double { abort(); },
-				[](const reindexer::SortExprFuncs::SortHash&) -> double { abort(); },
-				[&item](const reindexer::SortExprFuncs::DistanceFromPoint& i) {
-					return distance(static_cast<reindexer::Point>(static_cast<reindexer::VariantArray>(item[i.column])), i.point);
+				[](const OneOf<Rank, RankNamed, Rrf, SortHash>&) -> double { abort(); },
+				[&item](const DistanceFromPoint& i) {
+					return distance(static_cast<Point>(static_cast<VariantArray>(item[i.column])), i.point);
 				},
-				[&item, &qr](const reindexer::SortExprFuncs::DistanceJoinedIndexFromPoint& i) {
+				[&item, &qr](const DistanceJoinedIndexFromPoint& i) {
 					const auto values = getJoinedField(item.GetID(), qr, i.nsIdx, i.index, i.column);
-					return distance(static_cast<reindexer::Point>(values), i.point);
+					return distance(static_cast<Point>(values), i.point);
 				},
-				[&item](const reindexer::SortExprFuncs::DistanceBetweenIndexes& i) {
-					return distance(static_cast<reindexer::Point>(static_cast<reindexer::VariantArray>(item[i.column1])),
-									static_cast<reindexer::Point>(static_cast<reindexer::VariantArray>(item[i.column2])));
+				[&item](const DistanceBetweenIndexes& i) {
+					return distance(static_cast<Point>(static_cast<VariantArray>(item[i.column1])),
+									static_cast<Point>(static_cast<VariantArray>(item[i.column2])));
 				},
-				[&item, &qr](const reindexer::SortExprFuncs::DistanceBetweenIndexAndJoinedIndex& i) {
+				[&item, &qr](const DistanceBetweenIndexAndJoinedIndex& i) {
 					const auto jValues = getJoinedField(item.GetID(), qr, i.jNsIdx, i.jIndex, i.jColumn);
-					return distance(static_cast<reindexer::Point>(static_cast<reindexer::VariantArray>(item[i.column])),
-									static_cast<reindexer::Point>(jValues));
+					return distance(static_cast<Point>(static_cast<VariantArray>(item[i.column])), static_cast<Point>(jValues));
 				},
-				[&item, &qr](const reindexer::SortExprFuncs::DistanceBetweenJoinedIndexes& i) {
+				[&item, &qr](const DistanceBetweenJoinedIndexes& i) {
 					const auto values1 = getJoinedField(item.GetID(), qr, i.nsIdx1, i.index1, i.column1);
 					const auto values2 = getJoinedField(item.GetID(), qr, i.nsIdx2, i.index2, i.column2);
-					return distance(static_cast<reindexer::Point>(values1), static_cast<reindexer::Point>(values2));
+					return distance(static_cast<Point>(values1), static_cast<Point>(values2));
 				},
-				[&item, &qr](const reindexer::SortExprFuncs::DistanceBetweenJoinedIndexesSameNs& i) {
+				[&item, &qr](const DistanceBetweenJoinedIndexesSameNs& i) {
 					const auto values1 = getJoinedField(item.GetID(), qr, i.nsIdx, i.index1, i.column1);
 					const auto values2 = getJoinedField(item.GetID(), qr, i.nsIdx, i.index2, i.column2);
-					return distance(static_cast<reindexer::Point>(values1), static_cast<reindexer::Point>(values2));
+					return distance(static_cast<Point>(values1), static_cast<Point>(values2));
 				});
 			if (it->operation.negative) {
 				value = -value;
 			}
 			switch (it->operation.op) {
 				case OpPlus:
-					result += value;
+					totalResult += multResult;
+					multResult = value;
 					break;
 				case OpMinus:
-					result -= value;
+					totalResult += multResult;
+					multResult = -value;
 					break;
 				case OpMult:
-					result *= value;
+					multResult *= value;
 					break;
 				case OpDiv:
 					assertrx(value != 0.0);
-					result /= value;
+					multResult /= value;
 					break;
 			}
 		}
-		return result;
+		return totalResult + multResult;
 	}
 
 	static bool containsJoins(reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator end) noexcept {
@@ -1036,8 +1036,7 @@ private:
 		for (auto jq : query.GetJoinQueries()) {
 			jq.Limit(reindexer::QueryEntry::kDefaultLimit);
 			jq.Offset(reindexer::QueryEntry::kDefaultOffset);
-			jq.sortingEntries_.clear();
-			jq.forcedSortOrder_.clear();
+			jq.ClearSorting();
 			result.emplace_back(InnerJoin, std::move(jq));
 		}
 		return result;
@@ -1118,8 +1117,8 @@ private:
 		TestCout() << "Sort order or last items:" << std::endl;
 		reindexer::Item rdummy(qr[0].GetItem(false));
 		TestCout().BoldOn();
-		for (size_t idx = 0; idx < query.sortingEntries_.size(); idx++) {
-			TestCout() << rdummy[query.sortingEntries_[idx].expression].Name() << " ";
+		for (size_t idx = 0; idx < query.GetSortingEntries().size(); idx++) {
+			TestCout() << rdummy[query.GetSortingEntries()[idx].expression].Name() << " ";
 		}
 		TestCout().Endl().Endl();
 		TestCout().BoldOff();
@@ -1133,8 +1132,8 @@ private:
 			if (i == itemIndex) {
 				TestCout().BoldOn();
 			}
-			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
-				TestCout() << item[query.sortingEntries_[j].expression].As<std::string>() << " ";
+			for (size_t j = 0; j < query.GetSortingEntries().size(); ++j) {
+				TestCout() << item[query.GetSortingEntries()[j].expression].As<std::string>() << " ";
 			}
 			if (i == itemIndex) {
 				TestCout().BoldOff();
@@ -1153,8 +1152,8 @@ private:
 		}
 		for (int i = firstItem; i < lastItem; ++i) {
 			reindexer::Item item(qr[i].GetItem(false));
-			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
-				TestCout() << item[query.sortingEntries_[j].expression].As<std::string>() << " ";
+			for (size_t j = 0; j < query.GetSortingEntries().size(); ++j) {
+				TestCout() << item[query.GetSortingEntries()[j].expression].As<std::string>() << " ";
 			}
 			TestCout().Endl();
 		}

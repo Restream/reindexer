@@ -2,7 +2,7 @@ package bindings
 
 const CInt32Max = int(^uint32(0) >> 1)
 
-const ReindexerVersion = "v5.3.0"
+const ReindexerVersion = "v5.4.0"
 
 // public go consts from type_consts.h and reindexer_ctypes.h
 const (
@@ -99,7 +99,7 @@ const (
 	KnnQueryTypeHnsw       = 2
 	KnnQueryTypeIvf        = 3
 
-	KnnQueryParamsVersion = 0
+	KnnQueryParamsVersion = 1
 
 	KnnQueryDataFormatVector = 0
 	KnnQueryDataFormatString = 1

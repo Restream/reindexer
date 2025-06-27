@@ -70,6 +70,9 @@ const (
 	knnQueryTypeIvf        = bindings.KnnQueryTypeIvf
 
 	knnQueryParamsVersion = bindings.KnnQueryParamsVersion
+
+	knnSerializeWithK      = 1
+	knnSerializeWithRadius = 1 << 1
 )
 
 const (
@@ -165,7 +168,8 @@ type KnnSearchParam interface {
 }
 
 type BaseKnnSearchParam struct {
-	K int
+	K      *int
+	Radius *float32
 }
 
 type IndexBFSearchParam struct {
@@ -182,54 +186,74 @@ type IndexIvfSearchParam struct {
 	NProbe int
 }
 
-func NewBaseKnnSearchParam(k int) (*BaseKnnSearchParam, error) {
-	if k < 1 {
-		return nil, fmt.Errorf("KNN limit K should not be less than 1")
+func NewIndexBFSearchParam(baseParam BaseKnnSearchParam) (IndexBFSearchParam, error) {
+	return IndexBFSearchParam{baseParam}, nil
+}
+
+func NewIndexHnswSearchParam(ef int, baseParam BaseKnnSearchParam) (IndexHnswSearchParam, error) {
+	if baseParam.K != nil && ef < *baseParam.K {
+		return IndexHnswSearchParam{}, fmt.Errorf("Ef should not be less than K")
 	}
-	return &BaseKnnSearchParam{k}, nil
+	return IndexHnswSearchParam{baseParam, ef}, nil
 }
 
-func NewIndexBFSearchParam(baseParam *BaseKnnSearchParam) (*IndexBFSearchParam, error) {
-	return &IndexBFSearchParam{*baseParam}, nil
-}
-
-func NewIndexHnswSearchParam(ef int, baseParam *BaseKnnSearchParam) (*IndexHnswSearchParam, error) {
-	if ef < baseParam.K {
-		return nil, fmt.Errorf("Ef should not be less than K")
-	}
-	return &IndexHnswSearchParam{*baseParam, ef}, nil
-}
-
-func NewIndexIvfSearchParam(nprobe int, baseParam *BaseKnnSearchParam) (*IndexIvfSearchParam, error) {
+func NewIndexIvfSearchParam(nprobe int, baseParam BaseKnnSearchParam) (IndexIvfSearchParam, error) {
 	if nprobe < 1 {
-		return nil, fmt.Errorf("Nprobe should not be less than 1")
+		return IndexIvfSearchParam{}, fmt.Errorf("Nprobe should not be less than 1")
 	}
-	return &IndexIvfSearchParam{*baseParam, nprobe}, nil
+	return IndexIvfSearchParam{baseParam, nprobe}, nil
 }
 
-func (p *BaseKnnSearchParam) serialize(ser *cjson.Serializer) {
+func serializeKandRadius(p BaseKnnSearchParam, ser *cjson.Serializer) {
+	var mask uint8
+	if p.K != nil {
+		mask |= knnSerializeWithK
+	}
+	if p.Radius != nil {
+		mask |= knnSerializeWithRadius
+	}
+	ser.PutUInt8(mask)
+	if p.K != nil {
+		ser.PutVarCUInt(*p.K)
+	}
+	if p.Radius != nil {
+		ser.PutFloat32(*p.Radius)
+	}
+}
+
+func (p BaseKnnSearchParam) SetK(k int) BaseKnnSearchParam {
+	p.K = &k
+	return p
+}
+
+func (p BaseKnnSearchParam) SetRadius(radius float32) BaseKnnSearchParam {
+	p.Radius = &radius
+	return p
+}
+
+func (p BaseKnnSearchParam) serialize(ser *cjson.Serializer) {
 	ser.PutVarCUInt(knnQueryTypeBase)
 	ser.PutVarCUInt(knnQueryParamsVersion)
-	ser.PutVarCUInt(p.K)
+	serializeKandRadius(p, ser)
 }
 
-func (p *IndexBFSearchParam) serialize(ser *cjson.Serializer) {
+func (p IndexBFSearchParam) serialize(ser *cjson.Serializer) {
 	ser.PutVarCUInt(knnQueryTypeBruteForce)
 	ser.PutVarCUInt(knnQueryParamsVersion)
-	ser.PutVarCUInt(p.K)
+	serializeKandRadius(p.BaseKnnSearchParam, ser)
 }
 
-func (p *IndexHnswSearchParam) serialize(ser *cjson.Serializer) {
+func (p IndexHnswSearchParam) serialize(ser *cjson.Serializer) {
 	ser.PutVarCUInt(knnQueryTypeHnsw)
 	ser.PutVarCUInt(knnQueryParamsVersion)
-	ser.PutVarCUInt(p.K)
+	serializeKandRadius(p.BaseKnnSearchParam, ser)
 	ser.PutVarCUInt(p.Ef)
 }
 
-func (p *IndexIvfSearchParam) serialize(ser *cjson.Serializer) {
+func (p IndexIvfSearchParam) serialize(ser *cjson.Serializer) {
 	ser.PutVarCUInt(knnQueryTypeIvf)
 	ser.PutVarCUInt(knnQueryParamsVersion)
-	ser.PutVarCUInt(p.K)
+	serializeKandRadius(p.BaseKnnSearchParam, ser)
 	ser.PutVarCUInt(p.NProbe)
 }
 

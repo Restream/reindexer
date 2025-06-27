@@ -12,39 +12,31 @@ import (
 	_ "github.com/restream/reindexer/v5/bindings/cproto"
 )
 
-const (
-	testNsTls = "test_tls_namespace"
-)
+const testTlsNs = "test_tls_namespace"
 
 func init() {
-	tnamespaces[testNsTls] = TlsTestItem{}
-}
-
-type TlsTestItem struct {
-	ID   int    `reindex:"id,,pk" json:"id"`
-	Data string `reindex:"data" json:"data"`
+	tnamespaces[testTlsNs] = testDummyObject{}
 }
 
 func TestBaseTLS(t *testing.T) {
 	db := reindexer.NewReindex("cprotos://127.0.0.1:6535/test" /*reindexer.WithTLSConfig(&tls.Config{})*/)
 	require.NotNil(t, db)
 	require.Nil(t, db.Status().Err)
-
 	defer db.Close()
 
 	checkData := "Some TLS Data"
-	err := db.RegisterNamespace(testNsTls, reindexer.DefaultNamespaceOptions(), TlsTestItem{})
+	err := db.RegisterNamespace(testTlsNs, reindexer.DefaultNamespaceOptions(), testDummyObject{})
 	require.Nil(t, err)
 
-	tx, err := db.BeginTx(testNsTls)
+	tx, err := db.BeginTx(testTlsNs)
 	require.NoError(t, err)
 
 	count := 1000
 
 	for i := 0; i < count; i++ {
-		err = tx.UpsertAsync(&TlsTestItem{
+		err = tx.UpsertAsync(&testDummyObject{
 			ID:   int(i),
-			Data: checkData + strconv.Itoa(i),
+			Name: checkData + strconv.Itoa(i),
 		}, func(err error) {
 			require.NoError(t, err)
 		})
@@ -55,12 +47,12 @@ func TestBaseTLS(t *testing.T) {
 	require.Equal(t, cnt, count)
 	require.NoError(t, err)
 
-	items, err := db.Query(testNsTls).Sort("id", false).Exec().FetchAll()
+	items, err := db.Query(testTlsNs).Sort("id", false).Exec().FetchAll()
 	require.NoError(t, err)
 	require.Equal(t, len(items), count)
 
 	for i, item := range items {
-		require.Equal(t, i, item.(*TlsTestItem).ID)
-		require.Equal(t, checkData+strconv.Itoa(i), item.(*TlsTestItem).Data)
+		require.Equal(t, i, item.(*testDummyObject).ID)
+		require.Equal(t, checkData+strconv.Itoa(i), item.(*testDummyObject).Name)
 	}
 }

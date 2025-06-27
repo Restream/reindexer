@@ -34,11 +34,12 @@ public:
 	};
 
 public:
-	ConnectorPool(PoolConfig&& config);
+	explicit ConnectorPool(PoolConfig&& config);
 	~ConnectorPool();
 
 	[[nodiscard]] std::pair<Error, ConnectorProxy> GetConnector(const RdxContext& ctx) noexcept;
 	void ReleaseConnection(const ConnectorProxy& proxy);
+	[[nodiscard]] bool IsEqual(const PoolConfig& config) const noexcept { return config_ == config; }
 
 private:
 	std::mutex mtx_;

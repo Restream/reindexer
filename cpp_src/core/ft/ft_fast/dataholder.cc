@@ -131,7 +131,7 @@ template <typename IdCont>
 DataHolder<IdCont>::DataHolder(FtFastConfig* c) {
 	cfg_ = c;
 	if (cfg_->splitterType == FtFastConfig::Splitter::Fast) {
-		splitter_ = make_intrusive<FastTextSplitter>(cfg_->extraWordSymbols);
+		splitter_ = make_intrusive<FastTextSplitter>(cfg_->extraWordSymbols, cfg_->removeDiacriticsMask);
 	} else if (cfg_->splitterType == FtFastConfig::Splitter::MMSegCN) {
 		splitter_ = make_intrusive<FrisoTextSplitter>();
 	} else {

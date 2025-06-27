@@ -73,6 +73,11 @@ func (s *Serializer) Append(s2 Serializer) {
 	}
 }
 
+func (s *Serializer) PutUInt8(v uint8) *Serializer {
+	s.writeIntBits(int64(v), unsafe.Sizeof(v))
+	return s
+}
+
 func (s *Serializer) PutUInt16(v uint16) *Serializer {
 	s.writeIntBits(int64(v), unsafe.Sizeof(v))
 	return s

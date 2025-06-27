@@ -103,12 +103,6 @@ class [[nodiscard]] IdSetCache : public IdSetCacheBase {
 public:
 	IdSetCache() = default;
 	IdSetCache(size_t sizeLimit, uint32_t hitCount) : IdSetCacheBase(sizeLimit, hitCount) {}
-	// not for FT cache
-	void ClearSorted(const std::bitset<kMaxIndexes>& s) {
-		if (s.any()) {
-			Clear([&s](const IdSetCacheKey& k) { return s.test(k.Sort()); });
-		}
-	}
 };
 
 }  // namespace reindexer

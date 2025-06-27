@@ -228,6 +228,11 @@ std::pair<size_t, size_t> calcUtf8AfterDelims(std::string_view str, size_t limit
 	size_t charCounter = 0;
 	for (ptr = str.data(), strEnd = str.data() + str.size(); limit && ptr < strEnd; limit--) {
 		uint32_t c = utf8::unchecked::next(ptr);
+		if (IsDiacritic(c)) {
+			limit++;
+			continue;
+		}
+
 		charCounter++;
 		for (ptrDelims = delims.data(), delimsEnd = delims.data() + delims.size(); ptrDelims < delimsEnd;) {
 			uint32_t d = utf8::unchecked::next(ptrDelims);
@@ -237,6 +242,16 @@ std::pair<size_t, size_t> calcUtf8AfterDelims(std::string_view str, size_t limit
 			}
 		}
 	}
+
+	// Add all diacritics after last symbol
+	while (ptr < strEnd) {
+		uint32_t c = utf8::unchecked::next(ptr);
+		if (!IsDiacritic(c)) {
+			utf8::unchecked::prior(ptr);
+			break;
+		}
+	}
+
 	return std::make_pair(ptr - str.data(), charCounter);
 }
 
@@ -256,6 +271,10 @@ std::pair<size_t, size_t> calcUtf8BeforeDelims(const char* str, int pos, size_t 
 	int charCounter = 0;
 	for (; limit && ptr > str; limit--) {
 		uint32_t c = utf8::unchecked::prior(ptr);
+		if (IsDiacritic(c)) {
+			limit++;
+			continue;
+		}
 		charCounter++;
 		for (ptrDelim = delims.data(), delimsEnd = delims.data() + delims.size(); ptrDelim < delimsEnd;) {
 			uint32_t d = utf8::unchecked::next(ptrDelim);
@@ -268,7 +287,7 @@ std::pair<size_t, size_t> calcUtf8BeforeDelims(const char* str, int pos, size_t 
 	return std::make_pair(str + pos - ptr, charCounter);
 }
 
-void split(std::string_view str, std::string& buf, std::vector<std::string_view>& words, std::string_view extraWordSymbols) {
+void split(std::string_view str, std::string& buf, std::vector<std::string_view>& words, const SplitOptions& options) {
 	// assuming that the 'ToLower' function and the 'check for replacement' function should not change the character size in bytes
 	buf.resize(str.length());
 	words.resize(0);
@@ -277,15 +296,20 @@ void split(std::string_view str, std::string& buf, std::vector<std::string_view>
 	for (auto it = str.begin(), endIt = str.end(); it != endIt;) {
 		auto ch = utf8::unchecked::next(it);
 
-		while (!IsAlpha(ch) && !IsDigit(ch) && extraWordSymbols.find(ch) == std::string::npos && it != endIt) {
+		while (!IsAlpha(ch) && !IsDigit(ch) && options.extraWordSymbols.find(ch) == std::string::npos && it != endIt) {
 			ch = utf8::unchecked::next(it);
 		}
 
 		const auto begIt = bufIt;
-		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
+		while (IsAlpha(ch) || IsDigit(ch) || options.extraWordSymbols.find(ch) != std::string::npos) {
 			ch = ToLower(ch);
-			check_for_replacement(ch);
-			bufIt = utf8::unchecked::append(ch, bufIt);
+			if (FitsMask(ch, options.removeDiacriticsMask)) {
+				ch = RemoveDiacritic(ch);
+			}
+
+			if (ch != 0) {
+				bufIt = utf8::unchecked::append(ch, bufIt);
+			}
 			if (it != endIt) {
 				ch = utf8::unchecked::next(it);
 			} else {
@@ -321,7 +345,7 @@ void split(std::string_view utf8Str, std::wstring& utf16str, std::vector<std::ws
 
 template <CaseSensitive sensitivity>
 bool checkIfStartsWith(std::string_view pattern, std::string_view str) noexcept {
-	if (pattern.empty() || str.empty()) {
+	if (pattern.empty()) {
 		return false;
 	}
 	if (pattern.length() > str.length()) {

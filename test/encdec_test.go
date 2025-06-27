@@ -151,12 +151,39 @@ type SlicesConcatenationItem struct {
 	NonIdxIfaceSlice   []interface{} `json:"non_idx_iface_slice"`
 }
 
+type DBItemNew struct {
+	UpdatedAt *time.Time `json:"updated_at" db:"updated_at" reindex:"updated_at"`
+	DeletedAt *time.Time `json:"-" db:"deleted_at"`
+	CreatedAt *time.Time `json:"-" db:"created_at"`
+}
+
+type testItemForCJson struct {
+	ID int64 `json:"id" reindex:"id,,pk"`
+	DBItemNew
+}
+
+const (
+	testItemsEncdecNs                = "test_items_encdec"
+	testArrayEncdecNs                = "test_array_encdec"
+	testSingleElemSliceNs            = "test_single_elem_slice"
+	testSlicesConcatenationNs        = "test_slices_concatenation"
+	testUnsupportedConversionCJsonNs = "test_unsupported_conversion_cjson"
+)
+
+func init() {
+	tnamespaces[testItemsEncdecNs] = TestItemEncDec{}
+	tnamespaces[testArrayEncdecNs] = HeterogeneousArrayItem{}
+	tnamespaces[testSingleElemSliceNs] = SingleElemSliceItem{}
+	tnamespaces[testSlicesConcatenationNs] = SlicesConcatenationItem{}
+	tnamespaces[testUnsupportedConversionCJsonNs] = testItemForCJson{}
+}
+
 func FillHeteregeneousArrayItem() {
 	item := &HeterogeneousArrayItem{
 		ID:        1,
 		Interface: map[string]interface{}{"HeterogeneousArray": []interface{}{"John Doe", 32, 9.1, true, "Jesus Christ", 33, false}},
 	}
-	tx := newTestTx(DB, "test_array_encdec")
+	tx := newTestTx(DB, testArrayEncdecNs)
 	if err := tx.UpsertJSON(item); err != nil {
 		panic(err)
 	}
@@ -164,15 +191,8 @@ func FillHeteregeneousArrayItem() {
 
 }
 
-func init() {
-	tnamespaces["test_items_encdec"] = TestItemEncDec{}
-	tnamespaces["test_array_encdec"] = HeterogeneousArrayItem{}
-	tnamespaces["test_single_elem_slice"] = SingleElemSliceItem{}
-	tnamespaces["test_slices_concatenation"] = SlicesConcatenationItem{}
-}
-
-func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
-	tx := newTestTx(DB, "test_items_encdec")
+func FilltestItemsEncdecNs(start int, count int, pkgsCount int, asJson bool) {
+	tx := newTestTx(DB, testItemsEncdecNs)
 
 	for i := 0; i < count; i++ {
 		startTime := uint64(rand.Int() % 50000)
@@ -296,10 +316,29 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 	tx.MustCommit()
 }
 
+func checkIndexesWithEmptyTags(t *testing.T) {
+	expectedIndexes := map[string]string{
+		"EmptyReindexTagStr1": "-",
+		"EmptyReindexTagStr2": "hash",
+		"TextLabel":           "text",
+		"TextLabel2":          "text",
+	}
+
+	desc, err := DB.DescribeNamespace(testItemsEncdecNs)
+	require.NoError(t, err)
+	for _, index := range desc.Indexes {
+		if typ, ok := expectedIndexes[index.Name]; ok {
+			assert.Equal(t, typ, index.IndexType)
+			delete(expectedIndexes, index.Name)
+		}
+	}
+	assert.Empty(t, expectedIndexes, "Some of the indexes are missing")
+}
+
 func TestHeterogeneusArrayEncDec(t *testing.T) {
 	FillHeteregeneousArrayItem()
 
-	q := newTestQuery(DB, "test_array_encdec")
+	q := newTestQuery(DB, testArrayEncdecNs)
 	it := q.ExecToJson()
 	defer it.Close()
 	require.NoError(t, it.Error())
@@ -311,40 +350,21 @@ func TestHeterogeneusArrayEncDec(t *testing.T) {
 	}
 }
 
-func checkIndexesWithEmptyTags(t *testing.T) {
-	expectedIndexes := map[string]string{
-		"EmptyReindexTagStr1": "-",
-		"EmptyReindexTagStr2": "hash",
-		"TextLabel":           "text",
-		"TextLabel2":          "text",
-	}
-
-	desc, err := DB.DescribeNamespace("test_items_encdec")
-	require.NoError(t, err)
-	for _, index := range desc.Indexes {
-		if typ, ok := expectedIndexes[index.Name]; ok {
-			assert.Equal(t, typ, index.IndexType)
-			delete(expectedIndexes, index.Name)
-		}
-	}
-	assert.Empty(t, expectedIndexes, "Some of the indexes are missing")
-}
-
 func TestEncDec(t *testing.T) {
 	t.Parallel()
 	// Fill items by cjson encoder
-	FillTestItemsEncDec(0, 5000, 20, false)
+	FilltestItemsEncdecNs(0, 5000, 20, false)
 
 	// fill items in json format
-	FillTestItemsEncDec(5000, 10000, 20, true)
+	FilltestItemsEncdecNs(5000, 10000, 20, true)
 
 	checkIndexesWithEmptyTags(t)
 
 	// get and decode all items by cjson decoder
-	newTestQuery(DB, "test_items_encdec").ExecAndVerify(t)
+	newTestQuery(DB, testItemsEncdecNs).ExecAndVerify(t)
 
 	// get and decode all items in json format
-	q := newTestQuery(DB, "test_items_encdec")
+	q := newTestQuery(DB, testItemsEncdecNs)
 	it := q.ExecToJson()
 	defer it.Close()
 	require.NoError(t, it.Error())
@@ -362,7 +382,7 @@ func TestEncDec(t *testing.T) {
 func TestSingleElemToSlice(t *testing.T) {
 	t.Parallel()
 
-	ns := "test_single_elem_slice"
+	const ns = testSingleElemSliceNs
 	item := SingleElemSliceItem{
 		ID:               1,
 		IdxStrSlice:      []string{"str1"},
@@ -393,7 +413,7 @@ func TestSingleElemToSlice(t *testing.T) {
 func TestSlicesConcatenation(t *testing.T) {
 	t.Parallel()
 
-	ns := "test_slices_concatenation"
+	const ns = testSlicesConcatenationNs
 	item := SlicesConcatenationItem{
 		ID:                 1,
 		IdxStrSlice:        []string{"str10", "str11", "str12", "str13"},
@@ -505,5 +525,20 @@ func TestSlicesConcatenation(t *testing.T) {
 		resItem, ok := resItems[0].(*SlicesConcatenationItem)
 		require.True(t, ok)
 		require.Equal(t, *resItem, item)
+	})
+}
+
+func TestUnsupportedConversionCJson(t *testing.T) {
+	t.Parallel()
+
+	t.Run("check unsupported conversion cjson error", func(t *testing.T) {
+		const ns = testUnsupportedConversionCJsonNs
+
+		err := DBD.Upsert(ns, []byte(`{"id":1, "updated_at":12.3}`))
+		require.NoError(t, err)
+		_, err = DBD.Query(ns).
+			Where("id", reindexer.SET, []int64{1}).
+			Exec().FetchAll()
+		require.ErrorContains(t, err, "can not convert 'double' to 'struct'")
 	})
 }

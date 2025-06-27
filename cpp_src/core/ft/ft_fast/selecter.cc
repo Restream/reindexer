@@ -1472,14 +1472,14 @@ MergedType Selector<IdCont>::mergeResults(std::vector<TextSearchResults>&& rawRe
 		}
 	}
 	switch (rankSortType) {
-		case RankSortType::RankOnly: {
+		case RankSortType::RankOnly:
+		case RankSortType::IDAndPositions:
 			boost::sort::pdqsort_branchless(merged.begin(), merged.end(),
 											[](const MergeInfo& lhs, const MergeInfo& rhs) noexcept { return lhs.proc > rhs.proc; });
 			return merged;
-		}
-		case RankSortType::RankAndID: {
+		case RankSortType::RankAndID:
+		case RankSortType::IDOnly:
 			return merged;
-		}
 		case RankSortType::ExternalExpression:
 			throw Error(errLogic, "RankSortType::ExternalExpression not implemented.");
 			break;

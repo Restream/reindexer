@@ -14,12 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func init() {
-	tnamespaces["test_items_for_join"] = TestItem{}
-	tnamespaces["test_join_items"] = TestJoinItem{}
-	tnamespaces["test_joined_field"] = TestItemWithJoinedField{}
-}
-
 type TestJoinItem struct {
 	ID        int      `reindex:"id,,pk"`
 	Name      string   `reindex:"name,tree"`
@@ -36,195 +30,102 @@ type TestItemWithJoinedField struct {
 	JoinedField []*TestJoinItem `reindex:"j,,joined"`
 }
 
-func (item *TestItem) Join(field string, subitems []interface{}, context interface{}) {
-	switch strings.ToLower(field) {
-	case "prices":
-		if item.Prices == nil {
-			item.Prices = make([]*TestJoinItem, 0, len(subitems))
-		}
-		for _, srcItem := range subitems {
-			item.Prices = append(item.Prices, srcItem.(*TestJoinItem))
-		}
-	case "pricesx":
-		if item.Pricesx == nil {
-			item.Pricesx = make([]*TestJoinItem, 0, len(subitems))
-		}
-		for _, srcItem := range subitems {
-			item.Pricesx = append(item.Pricesx, srcItem.(*TestJoinItem))
-		}
-	}
+type explainNs struct {
+	Id                int          `reindex:"id,,pk"`
+	Data              int          `reindex:"data"`
+	InnerJoinedData   []*explainNs `reindex:"inner_joined,,joined"`
+	OrInnerJoinedData []*explainNs `reindex:"or_inner_joined,,joined"`
+	LeftJoinedData    []*explainNs `reindex:"left_joined,,joined"`
 }
 
-func TestJoin(t *testing.T) {
-	FillTestItems("test_items_for_join", 0, 10000, 20)
-	FillTestJoinItems(7000, 500, "test_join_items")
-	for _, left := range []bool{true, false} {
-		for _, inner := range []bool{true, false} {
-			if inner {
-				for _, whereOrJoin := range []bool{true, false} {
-					for _, orInner := range []bool{true, false} {
-						CheckTestItemsJoinQueries(t, left, inner, whereOrJoin, orInner)
-					}
-				}
-			} else {
-				CheckTestItemsJoinQueries(t, left, false, false, false)
-			}
-		}
-	}
-	CheckJoinsAsWhereCondition(t)
-	checkJoinsByUuid(t)
+type expectedExplain struct {
+	Field       string
+	FieldType   string
+	Method      string
+	Description string
+	Keys        int
+	Comparators int
+	Matched     int
+	Preselect   []expectedExplain
+	JoinSelect  []expectedExplain
+	Selectors   []expectedExplain
 }
 
-func FillTestJoinItems(start int, count int, ns string) {
-	tx := newTestTx(DB, ns)
-
-	for i := 0; i < count; i++ {
-		if err := tx.Upsert(&TestJoinItem{
-			ID:        i + start,
-			Name:      "price_" + randString(),
-			Location:  randLocation(),
-			Device:    randDevice(),
-			Amount:    rand.Int() % 10,
-			Price:     rand.Int() % 1000,
-			Uuid:      randUuid(),
-			UuidArray: randUuidArray(rand.Int() % 20),
-		}); err != nil {
-			panic(err)
-		}
-	}
-	tx.MustCommit()
+type expectedExplainConditionInjection struct {
+	InitialCondition   string
+	AggType            string
+	Succeed            bool
+	Reason             string
+	NewCondition       string
+	ValuesCount        int
+	ConditionSelectors []expectedExplain
 }
+
+type expectedExplainJoinOnInjections struct {
+	RightNsName       string
+	JoinOnCondition   string
+	Succeed           bool
+	Reason            string
+	Type              string
+	InjectedCondition string
+	Conditions        []expectedExplainConditionInjection
+}
+
+type expectedExplainSubQuery struct {
+	Namespace string
+	Keys      int
+	Field     string
+	Selectors []expectedExplain
+}
+
+type strictJoinHandlerNs struct {
+	Id         int                    `reindex:"id,,pk"`
+	Data       int                    `reindex:"data"`
+	JoinedData []*strictJoinHandlerNs `reindex:"joined_data,,joined"`
+}
+
+type addCondition func()
 
 type byID []*TestJoinItem
-
-func (s byID) Len() int {
-	return len(s)
-}
-func (s byID) Swap(i, j int) {
-	s[i], s[j] = s[j], s[i]
-}
-func (s byID) Less(i, j int) bool {
-	return s[i].ID < s[j].ID
-}
-
-func checkJoinsByUuid(t *testing.T) {
-	jr, err := DB.Query("test_items_for_join").InnerJoin(DB.Query("test_join_items"), "PRICES").On("uuid", reindexer.LT, "uuid").Limit(100).MustExec(t).FetchAll()
-	require.NoError(t, err)
-	for _, iitem := range jr {
-		item := iitem.(*TestItem)
-		for _, joinedItem := range item.Prices {
-			require.Less(t, item.Uuid, joinedItem.Uuid)
-		}
-	}
-}
-
-func CheckJoinsAsWhereCondition(t *testing.T) {
-	qj1 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "ottstb").Sort("NAME", true)
-	qj2 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "android").Where("AMOUNT", reindexer.GT, 2).Sort("NAME", true).Limit(30)
-	qj3 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "iphone").Sort("NAME", true).Limit(30)
-
-	qjoin := DB.Query("test_items_for_join").Where("GENRE", reindexer.GE, 1).Limit(100).Debug(reindexer.TRACE)
-	qjoin.InnerJoin(qj1, "PRICES").On("PRICE_ID", reindexer.SET, "ID")
-	qjoin.Or().InnerJoin(qj2, "PRICESX").On("LOCATION", reindexer.EQ, "LOCATION").On("PRICE_ID", reindexer.SET, "ID")
-	qjoin.Or().InnerJoin(qj3, "PRICESX").On("LOCATION", reindexer.LT, "LOCATION").Or().On("PRICE_ID", reindexer.SET, "ID")
-
-	rjcheck := make([]interface{}, 0, 100)
-
-	jr, err := DB.Query("test_items_for_join").Where("GENRE", reindexer.GE, 1).MustExec(t).FetchAll()
-	require.NoError(t, err)
-	for _, iitem := range jr {
-		item := iitem.(*TestItem)
-		rj1, err := DB.Query("test_join_items").
-			Where("DEVICE", reindexer.EQ, "ottstb").
-			Where("ID", reindexer.SET, item.PricesIDs).
-			Sort("NAME", true).
-			MustExec(t).FetchAll()
-		require.NoError(t, err)
-
-		found := false
-		if len(rj1) != 0 {
-			item.Prices = make([]*TestJoinItem, 0, len(rj1))
-			for _, rrj := range rj1 {
-				item.Prices = append(item.Prices, rrj.(*TestJoinItem))
-			}
-			found = true
-		}
-
-		rj2, err := DB.Query("test_join_items").
-			Where("DEVICE", reindexer.EQ, "android").
-			Where("AMOUNT", reindexer.GT, 2).
-			Where("ID", reindexer.SET, item.PricesIDs).
-			Where("LOCATION", reindexer.EQ, item.LocationID).
-			Sort("NAME", true).
-			Limit(30).
-			MustExec(t).FetchAll()
-		require.NoError(t, err)
-		if len(rj2) != 0 {
-			item.Pricesx = make([]*TestJoinItem, 0, len(rj2))
-			for _, rrj := range rj2 {
-				item.Pricesx = append(item.Pricesx, rrj.(*TestJoinItem))
-			}
-			found = true
-		}
-
-		rj3, err := DB.Query("test_join_items").
-			Where("DEVICE", reindexer.EQ, "iphone").
-			Where("ID", reindexer.SET, item.PricesIDs).Or().
-			Where("LOCATION", reindexer.GT, item.LocationID).
-			Sort("NAME", true).
-			Limit(30).
-			MustExec(t).FetchAll()
-		require.NoError(t, err)
-		if len(rj3) != 0 {
-			if item.Pricesx == nil {
-				item.Pricesx = make([]*TestJoinItem, 0, len(rj3))
-			}
-			for _, rrj := range rj3 {
-				item.Pricesx = append(item.Pricesx, rrj.(*TestJoinItem))
-			}
-			found = true
-		}
-
-		if found {
-			rjcheck = append(rjcheck, item)
-			if len(rjcheck) == 100 {
-				break
-			}
-		}
-	}
-
-	rjoin, err := qjoin.MustExec(t).FetchAll()
-	require.NoError(t, err)
-	require.Equal(t, len(rjcheck), len(rjoin))
-	for i := 0; i < len(rjcheck); i++ {
-		i1 := rjcheck[i].(*TestItem)
-		i2 := rjoin[i].(*TestItem)
-		sort.Sort(byID(i1.Pricesx))
-		sort.Sort(byID(i2.Pricesx))
-		sort.Sort(byID(i1.Prices))
-		sort.Sort(byID(i2.Prices))
-		assert.Equal(t, i1, i2)
-	}
-}
-
-func appendJoined(item *TestItem, jr1 *reindexer.Iterator, jr2 *reindexer.Iterator) {
-	item.Pricesx = make([]*TestJoinItem, 0)
-	for jr1.Next() {
-		item.Pricesx = append(item.Pricesx, jr1.Object().(*TestJoinItem))
-	}
-	for jr2.Next() {
-		item.Pricesx = append(item.Pricesx, jr2.Object().(*TestJoinItem))
-	}
-	jr1.Close()
-	jr2.Close()
-}
 
 const (
 	ageMin = 1
 	ageMax = 3
 )
 
-type addCondition func()
+const (
+	testItemsForJoinNs = "test_items_for_join"
+	testJoinItemsNs    = "test_join_items"
+	testJoinedFieldNs  = "test_joined_field"
+
+	testExplainMainNs   = "test_explain_main"
+	testExplainJoinedNs = "test_explain_joined"
+
+	// should not be in init()
+	testStrictJoinHandlersMainNs   = "strict_join_handlers_main"
+	testStrictJoinHandlersJoinedNs = "strict_join_handlers_joined"
+)
+
+func init() {
+	tnamespaces[testItemsForJoinNs] = TestItem{}
+	tnamespaces[testJoinItemsNs] = TestJoinItem{}
+	tnamespaces[testJoinedFieldNs] = TestItemWithJoinedField{}
+
+	tnamespaces[testExplainMainNs] = explainNs{}
+	tnamespaces[testExplainJoinedNs] = explainNs{}
+}
+
+func (s byID) Len() int {
+	return len(s)
+}
+
+func (s byID) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+
+func (s byID) Less(i, j int) bool {
+	return s[i].ID < s[j].ID
+}
 
 func shuffle(n int, swap func(i, j int)) {
 	if n < 0 {
@@ -276,12 +177,86 @@ func permutate(q *queryTest, andConditions []addCondition, orConditions []addCon
 	}
 }
 
-func CheckTestItemsJoinQueries(t *testing.T, left, inner, whereOrJoin bool, orInner bool) {
-	qj1 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "ottstb").Sort("NAME", true)
-	qj2 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "android").Where("AMOUNT", reindexer.GT, 2)
-	qj3 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "iphone")
+func initNsForStrictJoinHandlers(t *testing.T, db *reindexer.Reindexer, ns string, count int) {
+	db.DropNamespace(ns)
+	err := db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().NoStorage(), strictJoinHandlerNs{})
+	assert.NoError(t, err)
 
-	qjoin := DB.Query("test_items_for_join").Limit(10).Debug(reindexer.TRACE)
+	tx := db.MustBeginTx(ns)
+	for i := 0; i < count; i++ {
+		err = tx.Upsert(strictJoinHandlerNs{i, i, nil})
+		assert.NoError(t, err)
+	}
+	tx.MustCommit()
+}
+
+func FillTestJoinItems(start int, count int, ns string) {
+	tx := newTestTx(DB, ns)
+
+	for i := 0; i < count; i++ {
+		if err := tx.Upsert(&TestJoinItem{
+			ID:        i + start,
+			Name:      "price_" + randString(),
+			Location:  randLocation(),
+			Device:    randDevice(),
+			Amount:    rand.Int() % 10,
+			Price:     rand.Int() % 1000,
+			Uuid:      randUuid(),
+			UuidArray: randUuidArray(rand.Int() % 20),
+		}); err != nil {
+			panic(err)
+		}
+	}
+	tx.MustCommit()
+}
+
+func fillExplainNs(t *testing.T, ns string, count int) {
+	tx := newTestTx(DB, ns)
+	for i := 0; i < count; i++ {
+		testItem := explainNs{i, i, nil, nil, nil}
+		err := tx.Upsert(testItem)
+		assert.NoError(t, err)
+	}
+	tx.MustCommit()
+}
+
+func (item *TestItem) Join(field string, subitems []interface{}, context interface{}) {
+	switch strings.ToLower(field) {
+	case "prices":
+		if item.Prices == nil {
+			item.Prices = make([]*TestJoinItem, 0, len(subitems))
+		}
+		for _, srcItem := range subitems {
+			item.Prices = append(item.Prices, srcItem.(*TestJoinItem))
+		}
+	case "pricesx":
+		if item.Pricesx == nil {
+			item.Pricesx = make([]*TestJoinItem, 0, len(subitems))
+		}
+		for _, srcItem := range subitems {
+			item.Pricesx = append(item.Pricesx, srcItem.(*TestJoinItem))
+		}
+	}
+}
+
+func appendJoined(item *TestItem, jr1 *reindexer.Iterator, jr2 *reindexer.Iterator) {
+	item.Pricesx = make([]*TestJoinItem, 0)
+	for jr1.Next() {
+		item.Pricesx = append(item.Pricesx, jr1.Object().(*TestJoinItem))
+	}
+	for jr2.Next() {
+		item.Pricesx = append(item.Pricesx, jr2.Object().(*TestJoinItem))
+	}
+	jr1.Close()
+	jr2.Close()
+}
+
+func CheckTestItemsJoinQueries(t *testing.T, left, inner, whereOrJoin bool, orInner bool) {
+	qj1 := DB.Query(testJoinItemsNs).Where("DEVICE", reindexer.EQ, "ottstb").Sort("NAME", true)
+	qj2 := DB.Query(testJoinItemsNs).Where("DEVICE", reindexer.EQ, "android").Where("AMOUNT", reindexer.GT, 2)
+	qj3 := DB.Query(testJoinItemsNs).Where("DEVICE", reindexer.EQ, "iphone")
+
+	qjoin := DB.Query(testItemsForJoinNs).Limit(10).Debug(reindexer.TRACE)
 
 	var andConditions []addCondition
 	var orConditions []addCondition
@@ -329,7 +304,7 @@ func CheckTestItemsJoinQueries(t *testing.T, left, inner, whereOrJoin bool, orIn
 	// }
 
 	// Verify join results with manual join
-	r1, err := DB.Query("test_items_for_join").Where("genre", reindexer.EQ, 10).MustExec(t).FetchAll()
+	r1, err := DB.Query(testItemsForJoinNs).Where("genre", reindexer.EQ, 10).MustExec(t).FetchAll()
 	require.NoError(t, err)
 	rjcheck := make([]interface{}, 0, 1000)
 
@@ -337,7 +312,7 @@ func CheckTestItemsJoinQueries(t *testing.T, left, inner, whereOrJoin bool, orIn
 
 		item := iitem.(*TestItem)
 		if left {
-			rj1, err := DB.Query("test_join_items").
+			rj1, err := DB.Query(testJoinItemsNs).
 				Where("DEVICE", reindexer.EQ, "ottstb").
 				Where("ID", reindexer.SET, item.PricesIDs).
 				Sort("NAME", true).
@@ -352,7 +327,7 @@ func CheckTestItemsJoinQueries(t *testing.T, left, inner, whereOrJoin bool, orIn
 		}
 
 		if inner {
-			rj2 := DB.Query("test_join_items").
+			rj2 := DB.Query(testJoinItemsNs).
 				Where("DEVICE", reindexer.EQ, "android").
 				Where("AMOUNT", reindexer.GT, 2).
 				Where("ID", reindexer.SET, item.PricesIDs).
@@ -361,7 +336,7 @@ func CheckTestItemsJoinQueries(t *testing.T, left, inner, whereOrJoin bool, orIn
 				Limit(30).
 				MustExec(t)
 
-			rj3 := DB.Query("test_join_items").
+			rj3 := DB.Query(testJoinItemsNs).
 				Where("DEVICE", reindexer.EQ, "iphone").
 				Where("ID", reindexer.SET, item.PricesIDs).Or().
 				Where("LOCATION", reindexer.GT, item.LocationID).
@@ -412,105 +387,6 @@ func CheckTestItemsJoinQueries(t *testing.T, left, inner, whereOrJoin bool, orIn
 		sort.Sort(byID(i2.Prices))
 		assert.Equal(t, i1, i2)
 	}
-}
-
-func TestJoinQueryResultsOnIterator(t *testing.T) {
-	qjoin := DB.Query("test_items_for_join").Where("GENRE", reindexer.EQ, 10).Limit(10).Debug(reindexer.TRACE)
-	qj1 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "ottstb").Sort("name", false)
-	qj2 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "android")
-	qjoin.LeftJoin(qj1, "PRICES").On("PRICE_ID", reindexer.SET, "ID").
-		InnerJoin(qj2, "PRICESX").On("LOCATION", reindexer.EQ, "LOCATION").On("PRICE_ID", reindexer.SET, "Id")
-
-	var handlerSubitems []interface{}
-
-	qjoin.JoinHandler("PRICES", func(field string, item interface{}, subitems []interface{}) (isContinue bool) {
-
-		assert.True(t, strings.EqualFold(field, "prices"), "field expected: '%v'; actual: '%v'", "prices", field)
-		assert.NotNil(t, item, "item in handler is nil")
-
-		handlerSubitems = subitems
-		return true
-	})
-
-	iter := qjoin.MustExec(t)
-	defer iter.Close()
-
-	for iter.Next() {
-		item := iter.Object().(*TestItem)
-		joinResultsPrices, err := iter.JoinedObjects("PRICES")
-		assert.NoError(t, err)
-		joinResultsPricesx, err := iter.JoinedObjects("PRICESX")
-		assert.NoError(t, err)
-
-		for i := range item.Prices {
-			assert.EqualValues(t, item.Prices[i], joinResultsPrices[i])
-			assert.EqualValues(t, item.Prices[i], handlerSubitems[i])
-		}
-		for i := range item.Pricesx {
-			assert.EqualValues(t, item.Pricesx[i], joinResultsPricesx[i])
-		}
-	}
-}
-
-type explainNs struct {
-	Id                int          `reindex:"id,,pk"`
-	Data              int          `reindex:"data"`
-	InnerJoinedData   []*explainNs `reindex:"inner_joined,,joined"`
-	OrInnerJoinedData []*explainNs `reindex:"or_inner_joined,,joined"`
-	LeftJoinedData    []*explainNs `reindex:"left_joined,,joined"`
-}
-
-func initNsForExplain(t *testing.T, ns string, count int) {
-	DB.DropNamespace(ns)
-	err := DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), explainNs{})
-	assert.NoError(t, err)
-	tx := newTestTx(DB, ns)
-	for i := 0; i < count; i++ {
-		testItem := explainNs{i, i, nil, nil, nil}
-		err = tx.Upsert(testItem)
-		assert.NoError(t, err)
-	}
-	tx.MustCommit()
-}
-
-type expectedExplain struct {
-	Field       string
-	FieldType   string
-	Method      string
-	Description string
-	Keys        int
-	Comparators int
-	Matched     int
-	Preselect   []expectedExplain
-	JoinSelect  []expectedExplain
-	Selectors   []expectedExplain
-}
-
-type expectedExplainConditionInjection struct {
-	InitialCondition   string
-	AggType            string
-	Succeed            bool
-	Reason             string
-	NewCondition       string
-	ValuesCount        int
-	ConditionSelectors []expectedExplain
-}
-
-type expectedExplainJoinOnInjections struct {
-	RightNsName       string
-	JoinOnCondition   string
-	Succeed           bool
-	Reason            string
-	Type              string
-	InjectedCondition string
-	Conditions        []expectedExplainConditionInjection
-}
-
-type expectedExplainSubQuery struct {
-	Namespace string
-	Keys      int
-	Field     string
-	Selectors []expectedExplain
 }
 
 func checkExplain(t *testing.T, res []reindexer.ExplainSelector, expected []expectedExplain, fieldName string) {
@@ -578,21 +454,174 @@ func checkExplainJoinOnInjections(t *testing.T, res []reindexer.ExplainJoinOnInj
 	}
 }
 
-func checkExplainSubqueries(t *testing.T, res []reindexer.ExplainSubQuery, expected []expectedExplainSubQuery) {
-	require.Equal(t, len(expected), len(res))
-	for i := 0; i < len(expected); i++ {
-		assert.Equal(t, expected[i].Namespace, res[i].Namespace)
-		assert.Equal(t, expected[i].Field, res[i].Field)
-		assert.Equal(t, expected[i].Keys, res[i].Keys)
-		checkExplain(t, res[i].Explain.Selectors, expected[i].Selectors, "")
+func TestJoin(t *testing.T) {
+	FillTestItems(testItemsForJoinNs, 0, 10000, 20)
+	FillTestJoinItems(7000, 500, testJoinItemsNs)
+
+	t.Run("check join queries", func(t *testing.T) {
+		for _, left := range []bool{true, false} {
+			for _, inner := range []bool{true, false} {
+				if inner {
+					for _, whereOrJoin := range []bool{true, false} {
+						for _, orInner := range []bool{true, false} {
+							CheckTestItemsJoinQueries(t, left, inner, whereOrJoin, orInner)
+						}
+					}
+				} else {
+					CheckTestItemsJoinQueries(t, left, false, false, false)
+				}
+			}
+		}
+	})
+
+	t.Run("check join as where condition", func(t *testing.T) {
+		qj1 := DB.Query(testJoinItemsNs).Where("DEVICE", reindexer.EQ, "ottstb").Sort("NAME", true)
+		qj2 := DB.Query(testJoinItemsNs).Where("DEVICE", reindexer.EQ, "android").Where("AMOUNT", reindexer.GT, 2).Sort("NAME", true).Limit(30)
+		qj3 := DB.Query(testJoinItemsNs).Where("DEVICE", reindexer.EQ, "iphone").Sort("NAME", true).Limit(30)
+
+		qjoin := DB.Query(testItemsForJoinNs).Where("GENRE", reindexer.GE, 1).Limit(100).Debug(reindexer.TRACE)
+		qjoin.InnerJoin(qj1, "PRICES").On("PRICE_ID", reindexer.SET, "ID")
+		qjoin.Or().InnerJoin(qj2, "PRICESX").On("LOCATION", reindexer.EQ, "LOCATION").On("PRICE_ID", reindexer.SET, "ID")
+		qjoin.Or().InnerJoin(qj3, "PRICESX").On("LOCATION", reindexer.LT, "LOCATION").Or().On("PRICE_ID", reindexer.SET, "ID")
+
+		rjcheck := make([]interface{}, 0, 100)
+
+		jr, err := DB.Query(testItemsForJoinNs).Where("GENRE", reindexer.GE, 1).MustExec(t).FetchAll()
+		require.NoError(t, err)
+		for _, iitem := range jr {
+			item := iitem.(*TestItem)
+			rj1, err := DB.Query(testJoinItemsNs).
+				Where("DEVICE", reindexer.EQ, "ottstb").
+				Where("ID", reindexer.SET, item.PricesIDs).
+				Sort("NAME", true).
+				MustExec(t).FetchAll()
+			require.NoError(t, err)
+
+			found := false
+			if len(rj1) != 0 {
+				item.Prices = make([]*TestJoinItem, 0, len(rj1))
+				for _, rrj := range rj1 {
+					item.Prices = append(item.Prices, rrj.(*TestJoinItem))
+				}
+				found = true
+			}
+
+			rj2, err := DB.Query(testJoinItemsNs).
+				Where("DEVICE", reindexer.EQ, "android").
+				Where("AMOUNT", reindexer.GT, 2).
+				Where("ID", reindexer.SET, item.PricesIDs).
+				Where("LOCATION", reindexer.EQ, item.LocationID).
+				Sort("NAME", true).
+				Limit(30).
+				MustExec(t).FetchAll()
+			require.NoError(t, err)
+			if len(rj2) != 0 {
+				item.Pricesx = make([]*TestJoinItem, 0, len(rj2))
+				for _, rrj := range rj2 {
+					item.Pricesx = append(item.Pricesx, rrj.(*TestJoinItem))
+				}
+				found = true
+			}
+
+			rj3, err := DB.Query(testJoinItemsNs).
+				Where("DEVICE", reindexer.EQ, "iphone").
+				Where("ID", reindexer.SET, item.PricesIDs).Or().
+				Where("LOCATION", reindexer.GT, item.LocationID).
+				Sort("NAME", true).
+				Limit(30).
+				MustExec(t).FetchAll()
+			require.NoError(t, err)
+			if len(rj3) != 0 {
+				if item.Pricesx == nil {
+					item.Pricesx = make([]*TestJoinItem, 0, len(rj3))
+				}
+				for _, rrj := range rj3 {
+					item.Pricesx = append(item.Pricesx, rrj.(*TestJoinItem))
+				}
+				found = true
+			}
+
+			if found {
+				rjcheck = append(rjcheck, item)
+				if len(rjcheck) == 100 {
+					break
+				}
+			}
+		}
+
+		rjoin, err := qjoin.MustExec(t).FetchAll()
+		require.NoError(t, err)
+		require.Equal(t, len(rjcheck), len(rjoin))
+		for i := 0; i < len(rjcheck); i++ {
+			i1 := rjcheck[i].(*TestItem)
+			i2 := rjoin[i].(*TestItem)
+			sort.Sort(byID(i1.Pricesx))
+			sort.Sort(byID(i2.Pricesx))
+			sort.Sort(byID(i1.Prices))
+			sort.Sort(byID(i2.Prices))
+			assert.Equal(t, i1, i2)
+		}
+	})
+
+	t.Run("check join by uuid", func(t *testing.T) {
+		jr, err := DB.Query(testItemsForJoinNs).
+			InnerJoin(DB.Query(testJoinItemsNs), "PRICES").On("uuid", reindexer.LT, "uuid").
+			Limit(100).MustExec(t).FetchAll()
+		require.NoError(t, err)
+		for _, iitem := range jr {
+			item := iitem.(*TestItem)
+			for _, joinedItem := range item.Prices {
+				require.Less(t, item.Uuid, joinedItem.Uuid)
+			}
+		}
+	})
+}
+
+func TestJoinQueryResultsOnIterator(t *testing.T) {
+	qjoin := DB.Query(testItemsForJoinNs).Where("GENRE", reindexer.EQ, 10).Limit(10).Debug(reindexer.TRACE)
+	qj1 := DB.Query(testJoinItemsNs).Where("DEVICE", reindexer.EQ, "ottstb").Sort("name", false)
+	qj2 := DB.Query(testJoinItemsNs).Where("DEVICE", reindexer.EQ, "android")
+	qjoin.LeftJoin(qj1, "PRICES").On("PRICE_ID", reindexer.SET, "ID").
+		InnerJoin(qj2, "PRICESX").On("LOCATION", reindexer.EQ, "LOCATION").On("PRICE_ID", reindexer.SET, "Id")
+
+	var handlerSubitems []interface{}
+
+	qjoin.JoinHandler("PRICES", func(field string, item interface{}, subitems []interface{}) (isContinue bool) {
+
+		assert.True(t, strings.EqualFold(field, "prices"), "field expected: '%v'; actual: '%v'", "prices", field)
+		assert.NotNil(t, item, "item in handler is nil")
+
+		handlerSubitems = subitems
+		return true
+	})
+
+	iter := qjoin.MustExec(t)
+	defer iter.Close()
+
+	for iter.Next() {
+		item := iter.Object().(*TestItem)
+		joinResultsPrices, err := iter.JoinedObjects("PRICES")
+		assert.NoError(t, err)
+		joinResultsPricesx, err := iter.JoinedObjects("PRICESX")
+		assert.NoError(t, err)
+
+		for i := range item.Prices {
+			assert.EqualValues(t, item.Prices[i], joinResultsPrices[i])
+			assert.EqualValues(t, item.Prices[i], handlerSubitems[i])
+		}
+		for i := range item.Pricesx {
+			assert.EqualValues(t, item.Pricesx[i], joinResultsPricesx[i])
+		}
 	}
 }
 
 func TestExplainJoin(t *testing.T) {
-	nsMain := "test_explain_main"
-	nsJoined := "test_explain_joined"
-	initNsForExplain(t, nsMain, 5)
-	initNsForExplain(t, nsJoined, 20)
+	const (
+		nsMain   = testExplainMainNs
+		nsJoined = testExplainJoinedNs
+	)
+	fillExplainNs(t, nsMain, 5)
+	fillExplainNs(t, nsJoined, 20)
 
 	qjoin1 := DB.Query(nsJoined).Where("data", reindexer.SET, []int{0, 2, 4})
 	qjoin2 := DB.Query(nsJoined).Where("data", reindexer.SET, []int{1, 2, 4})
@@ -751,32 +780,16 @@ func TestExplainJoin(t *testing.T) {
 	})
 }
 
-type strictJoinHandlerNs struct {
-	Id         int                    `reindex:"id,,pk"`
-	Data       int                    `reindex:"data"`
-	JoinedData []*strictJoinHandlerNs `reindex:"joined_data,,joined"`
-}
-
-func initNsForStrictJoinHandlers(t *testing.T, db *reindexer.Reindexer, ns string, count int) {
-	db.DropNamespace(ns)
-	err := db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().NoStorage(), strictJoinHandlerNs{})
-	assert.NoError(t, err)
-	tx := db.MustBeginTx(ns)
-	for i := 0; i < count; i++ {
-		err = tx.Upsert(strictJoinHandlerNs{i, i, nil})
-		assert.NoError(t, err)
-	}
-	tx.MustCommit()
-}
-
 func TestStrictJoinHandlers(t *testing.T) {
 	if len(DB.slaveList) > 0 {
 		t.Skip()
 	}
 	t.Parallel()
 
-	nsMain := "strict_join_handlers_main"
-	nsJoined := "strict_join_handlers_joined"
+	const (
+		nsMain   = testStrictJoinHandlersMainNs
+		nsJoined = testStrictJoinHandlersJoinedNs
+	)
 
 	cfg := config.DefaultServerConfig()
 	cfg.Net.HTTPAddr = "0:17173"
@@ -843,7 +856,7 @@ func TestStrictJoinHandlers(t *testing.T) {
 func TestJoinedFieldUpsert(t *testing.T) {
 	t.Parallel()
 
-	const ns = "test_joined_field"
+	const ns = testJoinedFieldNs
 	item := TestItemWithJoinedField{
 		Id: rand.Intn(100),
 	}

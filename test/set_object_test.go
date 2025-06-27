@@ -10,11 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	namespace = "services"
-	elements  = 100
-)
-
 type MetricsInfo struct {
 	ID      int      `json:"id" reindex:"id,tree"`
 	Name    string   `json:"name" yaml:"name" reindex:"name,,pk" validate:"required"`
@@ -33,19 +28,23 @@ type Info struct {
 	UsedPercent float64 `json:"used_percent"`
 }
 
+const elements = 100
+
+const testSetObjectNs = "test_set_object"
+
 func init() {
-	tnamespaces["test_set_object"] = MetricsInfo{}
+	tnamespaces[testSetObjectNs] = MetricsInfo{}
 }
 
 func GetTupleDataSize(t *testing.T) int64 {
-	stats, err := DB.GetNamespaceMemStat(namespace)
+	stats, err := DB.GetNamespaceMemStat(testSetObjectNs)
 	require.NoError(t, err)
 	require.Equal(t, 3, len(stats.Indexes))
 	return stats.Indexes[0].DataSize
 }
 
 func Update(ctx context.Context, service *MetricsInfo) error {
-	query := DB.WithContext(ctx).Query(namespace).
+	query := DB.WithContext(ctx).Query(testSetObjectNs).
 		WhereString("name", reindexer.EQ, service.Name).
 		Set("name", service.Name)
 
@@ -61,27 +60,7 @@ func Update(ctx context.Context, service *MetricsInfo) error {
 	return err
 }
 
-func TestSetObject(t *testing.T) {
-	err := DB.OpenNamespace(namespace, reindexer.DefaultNamespaceOptions(), MetricsInfo{})
-	require.NoError(t, err)
-
-	for i := 0; i < elements; i++ {
-		require.NoError(t, DB.Upsert(namespace, randomItem(i)))
-	}
-
-	startTupleSize := GetTupleDataSize(t)
-
-	for i := 0; i < 10000; i++ {
-		id := rand.Intn(elements)
-		err = Update(context.Background(), randomItem(id))
-		require.NoError(t, err)
-	}
-
-	finalTupleSize := GetTupleDataSize(t)
-	require.True(t, finalTupleSize <= startTupleSize)
-}
-
-func randomItem(id int) *MetricsInfo {
+func randomItemMetric(id int) *MetricsInfo {
 	return &MetricsInfo{
 		ID:   id,
 		Name: fmt.Sprintf("test_%d", id),
@@ -103,4 +82,21 @@ func randomItem(id int) *MetricsInfo {
 			},
 		},
 	}
+}
+
+func TestSetObject(t *testing.T) {
+	for i := 0; i < elements; i++ {
+		require.NoError(t, DB.Upsert(testSetObjectNs, randomItemMetric(i)))
+	}
+
+	startTupleSize := GetTupleDataSize(t)
+
+	for i := 0; i < 10000; i++ {
+		id := rand.Intn(elements)
+		err := Update(context.Background(), randomItemMetric(id))
+		require.NoError(t, err)
+	}
+
+	finalTupleSize := GetTupleDataSize(t)
+	require.True(t, finalTupleSize <= startTupleSize)
 }

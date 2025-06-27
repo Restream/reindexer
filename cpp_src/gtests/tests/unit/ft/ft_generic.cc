@@ -1029,7 +1029,7 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 	Add("nm3"sv, "word"sv, "test"sv, "test"sv);
 	Add("nm3"sv, "test"sv, "word"sv, "test"sv);
 	Add("nm3"sv, "test"sv, "test"sv, "word"sv);
-	uint16_t rank = 0;
+	auto rank = reindexer::RankT{}.Value();
 	// Do not sum ranks by fields, as it is not asked in request and sum ratio in config is zero
 	const auto queries = CreateAllPermutatedQueries("@", {"ft1", "ft2", "ft3"}, " word", ",");
 	for (size_t i = 0; i < queries.size(); ++i) {
@@ -1042,10 +1042,10 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 		auto& lqr = qr.ToLocalQr();
 		auto it = lqr.begin();
 		if (i == 0) {
-			rank = it.GetItemRefRanked().Rank();
+			rank = it.GetItemRefRanked().Rank().Value();
 		}
 		for (const auto end = lqr.end(); it != end; ++it) {
-			EXPECT_EQ(rank, it.GetItemRefRanked().Rank()) << q;
+			EXPECT_EQ(rank, it.GetItemRefRanked().Rank().Value()) << q;
 		}
 	}
 
@@ -1057,7 +1057,7 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 					 false);
 		assert(qr.IsLocal());
 		for (const auto& it : qr.ToLocalQr()) {
-			EXPECT_EQ(rank, it.GetItemRefRanked().Rank()) << q;
+			EXPECT_EQ(rank, it.GetItemRefRanked().Rank().Value()) << q;
 		}
 	}
 
@@ -1069,7 +1069,7 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 					 false);
 		assert(qr.IsLocal());
 		for (const auto& it : qr.ToLocalQr()) {
-			EXPECT_EQ(rank, it.GetItemRefRanked().Rank()) << q;
+			EXPECT_EQ(rank, it.GetItemRefRanked().Rank().Value()) << q;
 		}
 	}
 
@@ -1085,7 +1085,7 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 					 false);
 		assert(qr.IsLocal());
 		for (const auto& it : qr.ToLocalQr()) {
-			EXPECT_EQ(rank, it.GetItemRefRanked().Rank()) << q;
+			EXPECT_EQ(rank, it.GetItemRefRanked().Rank().Value()) << q;
 		}
 	}
 
@@ -1097,11 +1097,11 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 					 false);
 		assert(qr.IsLocal());
 		auto it = qr.ToLocalQr().begin();
-		rank = it.GetItemRefRanked().Rank() / 3;
+		rank = it.GetItemRefRanked().Rank().Value() / 3;
 		++it;
 		for (const auto end = qr.ToLocalQr().end(); it != end; ++it) {
-			EXPECT_LE(it.GetItemRefRanked().Rank(), rank + 1) << q;
-			EXPECT_GE(it.GetItemRefRanked().Rank(), rank - 1) << q;
+			EXPECT_LE(it.GetItemRefRanked().Rank().Value(), rank + 1) << q;
+			EXPECT_GE(it.GetItemRefRanked().Rank().Value(), rank - 1) << q;
 		}
 	}
 
@@ -1113,11 +1113,11 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 					 false);
 		assert(qr.IsLocal());
 		auto it = qr.ToLocalQr().begin();
-		rank = it.GetItemRefRanked().Rank() / 3;
+		rank = it.GetItemRefRanked().Rank().Value() / 3;
 		++it;
 		for (const auto end = qr.ToLocalQr().end(); it != end; ++it) {
-			EXPECT_LE(it.GetItemRefRanked().Rank(), rank + 1) << q;
-			EXPECT_GE(it.GetItemRefRanked().Rank(), rank - 1) << q;
+			EXPECT_LE(it.GetItemRefRanked().Rank().Value(), rank + 1) << q;
+			EXPECT_GE(it.GetItemRefRanked().Rank().Value(), rank - 1) << q;
 		}
 	}
 
@@ -1129,11 +1129,11 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 					 false);
 		assert(qr.IsLocal());
 		auto it = qr.ToLocalQr().begin();
-		rank = it.GetItemRefRanked().Rank() / 2;
+		rank = it.GetItemRefRanked().Rank().Value() / 2;
 		++it;
 		for (const auto end = qr.ToLocalQr().end(); it != end; ++it) {
-			EXPECT_LE(it.GetItemRefRanked().Rank(), rank + 1) << q;
-			EXPECT_GE(it.GetItemRefRanked().Rank(), rank - 1) << q;
+			EXPECT_LE(it.GetItemRefRanked().Rank().Value(), rank + 1) << q;
+			EXPECT_GE(it.GetItemRefRanked().Rank().Value(), rank - 1) << q;
 		}
 	}
 
@@ -1145,14 +1145,14 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 					 false);
 		assert(qr.IsLocal());
 		auto it = qr.ToLocalQr().begin();
-		rank = it.GetItemRefRanked().Rank() / 4;
+		rank = it.GetItemRefRanked().Rank().Value() / 4;
 		++it;
-		EXPECT_LE(it.GetItemRefRanked().Rank(), (rank + 1) * 2) << q;
-		EXPECT_GE(it.GetItemRefRanked().Rank(), (rank - 1) * 2) << q;
+		EXPECT_LE(it.GetItemRefRanked().Rank().Value(), (rank + 1) * 2) << q;
+		EXPECT_GE(it.GetItemRefRanked().Rank().Value(), (rank - 1) * 2) << q;
 		++it;
 		for (const auto end = qr.ToLocalQr().end(); it != end; ++it) {
-			EXPECT_LE(it.GetItemRefRanked().Rank(), rank + 1) << q;
-			EXPECT_GE(it.GetItemRefRanked().Rank(), rank - 1) << q;
+			EXPECT_LE(it.GetItemRefRanked().Rank().Value(), rank + 1) << q;
+			EXPECT_GE(it.GetItemRefRanked().Rank().Value(), rank - 1) << q;
 		}
 	}
 
@@ -1168,11 +1168,11 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 					 false);
 		assert(qr.IsLocal());
 		auto it = qr.ToLocalQr().begin();
-		rank = it.GetItemRefRanked().Rank() / (1.0 + 0.5 + 0.5 * 0.5);
+		rank = it.GetItemRefRanked().Rank().Value() / (1.0 + 0.5 + 0.5 * 0.5);
 		++it;
 		for (const auto end = qr.ToLocalQr().end(); it != end; ++it) {
-			EXPECT_LE(it.GetItemRefRanked().Rank(), rank + 1) << q;
-			EXPECT_GE(it.GetItemRefRanked().Rank(), rank - 1) << q;
+			EXPECT_LE(it.GetItemRefRanked().Rank().Value(), rank + 1) << q;
+			EXPECT_GE(it.GetItemRefRanked().Rank().Value(), rank - 1) << q;
 		}
 	}
 
@@ -1184,16 +1184,16 @@ TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 					 true);
 		assert(qr.IsLocal());
 		auto it = qr.ToLocalQr().begin();
-		rank = it.GetItemRefRanked().Rank() / (1.5 + 0.5 * 1.3 + 0.5 * 0.5);
+		rank = it.GetItemRefRanked().Rank().Value() / (1.5 + 0.5 * 1.3 + 0.5 * 0.5);
 		++it;
-		EXPECT_LE(it.GetItemRefRanked().Rank(), (rank + 5) * 1.5) << q;
-		EXPECT_GE(it.GetItemRefRanked().Rank(), (rank - 5) * 1.5) << q;
+		EXPECT_LE(it.GetItemRefRanked().Rank().Value(), (rank + 5) * 1.5) << q;
+		EXPECT_GE(it.GetItemRefRanked().Rank().Value(), (rank - 5) * 1.5) << q;
 		++it;
-		EXPECT_LE(it.GetItemRefRanked().Rank(), (rank + 5) * 1.3) << q;
-		EXPECT_GE(it.GetItemRefRanked().Rank(), (rank - 5) * 1.3) << q;
+		EXPECT_LE(it.GetItemRefRanked().Rank().Value(), (rank + 5) * 1.3) << q;
+		EXPECT_GE(it.GetItemRefRanked().Rank().Value(), (rank - 5) * 1.3) << q;
 		++it;
-		EXPECT_LE(it.GetItemRefRanked().Rank(), rank + 5) << q;
-		EXPECT_GE(it.GetItemRefRanked().Rank(), rank - 5) << q;
+		EXPECT_LE(it.GetItemRefRanked().Rank().Value(), rank + 5) << q;
+		EXPECT_GE(it.GetItemRefRanked().Rank().Value(), rank - 5) << q;
 	}
 }
 

@@ -24,6 +24,35 @@ type TestItemStorage struct {
 	Name string `reindex:"name"`
 }
 
+type Data struct {
+	A string `json:"a" reindex:"id,,pk"`
+}
+
+func serverUp(t *testing.T, cfg map[string]string, serverID int, ns []string) *reindexer.Reindexer {
+	opts := make([]interface{}, 0, 2)
+	opts = append(opts, reindexer.WithCreateDBIfMissing())
+	srvCfg := &rxConfig.ServerConfig{
+		Net: rxConfig.NetConf{
+			HTTPAddr:    cfg["http"],
+			RPCAddr:     cfg["rpc"],
+			UnixRPCAddr: cfg["urpc"],
+		},
+	}
+	opts = append(opts, reindexer.WithServerConfig(5*time.Second, srvCfg))
+	rx := reindexer.NewReindex(fmt.Sprintf("builtinserver://%s", cfg["db"]), opts...)
+	for i := range ns {
+		rx.OpenNamespace(ns[i], reindexer.DefaultNamespaceOptions(), Data{})
+	}
+
+	err := rx.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
+		Type:        "replication",
+		Replication: &reindexer.DBReplicationConfig{ServerID: serverID, ClusterID: 2},
+	})
+	require.NoError(t, err)
+
+	return rx
+}
+
 func TestSlaveEmptyStorage(t *testing.T) {
 	// Basic force sync test for builtin replication
 	if len(DB.slaveList) > 0 || len(DB.clusterList) > 0 {
@@ -125,10 +154,6 @@ for_loop:
 		}
 	}
 	assert.Equal(t, syncEvents, 1)
-}
-
-type Data struct {
-	A string `json:"a" reindex:"id,,pk"`
 }
 
 func TestMasterSlaveSlaveNoStorage(t *testing.T) {
@@ -258,29 +283,4 @@ func TestCycleLeaders(t *testing.T) {
 	cnt, err = rxSrv[1].Insert(recomNamespaces[0], Data{A: "recom_item_1"})
 	require.NoError(t, err)
 	require.Equal(t, 1, cnt)
-}
-
-func serverUp(t *testing.T, cfg map[string]string, serverID int, ns []string) *reindexer.Reindexer {
-	opts := make([]interface{}, 0, 2)
-	opts = append(opts, reindexer.WithCreateDBIfMissing())
-	srvCfg := &rxConfig.ServerConfig{
-		Net: rxConfig.NetConf{
-			HTTPAddr:    cfg["http"],
-			RPCAddr:     cfg["rpc"],
-			UnixRPCAddr: cfg["urpc"],
-		},
-	}
-	opts = append(opts, reindexer.WithServerConfig(5*time.Second, srvCfg))
-	rx := reindexer.NewReindex(fmt.Sprintf("builtinserver://%s", cfg["db"]), opts...)
-	for i := range ns {
-		rx.OpenNamespace(ns[i], reindexer.DefaultNamespaceOptions(), Data{})
-	}
-
-	err := rx.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
-		Type:        "replication",
-		Replication: &reindexer.DBReplicationConfig{ServerID: serverID, ClusterID: 2},
-	})
-	require.NoError(t, err)
-
-	return rx
 }

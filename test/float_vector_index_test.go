@@ -23,12 +23,12 @@ type TestItemHnswMT struct {
 
 type TestItemVecBF struct {
 	ID  int                                `reindex:"id,,pk"`
-	Vec [kTestFloatVectorDimension]float32 `reindex:"vec,vec_bf,start_size=100,metric=l2"`
+	Vec [kTestFloatVectorDimension]float32 `reindex:"vec,vec_bf,start_size=100,metric=cosine"`
 }
 
 type TestItemIvf struct {
 	ID  int                                `reindex:"id,,pk"`
-	Vec [kTestFloatVectorDimension]float32 `reindex:"vec,ivf,centroids_count=80,metric=l2"`
+	Vec [kTestFloatVectorDimension]float32 `reindex:"vec,ivf,centroids_count=80,metric=l2,radius=1e38"`
 }
 
 type TestItemMultiIndexVec struct {
@@ -40,31 +40,24 @@ type TestItemMultiIndexVec struct {
 }
 
 const (
-	kHnswNsST        = "test_items_hnsw_st"
-	kHnswNsMT        = "test_items_hnsw_mt"
-	kVecBfNs         = "test_items_vec_bf"
-	kIvfNs           = "test_items_ivf"
-	kMultiIndexVecNs = "test_items_multi_index_vec"
-
 	kMultiIndexVecDimension = kTestFloatVectorDimension / 5
 	kMultiIndexMaxElems     = kTestBFloatVectorMaxElements / 5
 )
 
-func init() {
-	tnamespaces[kHnswNsST] = TestItemHnswST{}
-	tnamespaces[kHnswNsMT] = TestItemHnswMT{}
-	tnamespaces[kVecBfNs] = TestItemVecBF{}
-	tnamespaces[kIvfNs] = TestItemIvf{}
-	tnamespaces[kMultiIndexVecNs] = TestItemMultiIndexVec{}
-}
+const (
+	testHnswNsSTNs      = "test_items_hnsw_st"
+	testHnswNsMTNs      = "test_items_hnsw_mt"
+	testVecBfNs         = "test_items_vec_bf"
+	testIvfNs           = "test_items_ivf"
+	testMultiIndexVecNs = "test_items_multi_index_vec"
+)
 
-func removeSomeItems(t *testing.T, ns string, createItem testItemsCreator, maxElements int) {
-	tx := newTestTx(DB, ns)
-	for i := rand.Int() % (maxElements / 100); i < maxElements; i += rand.Int() % (maxElements / 100) {
-		err := tx.Delete(createItem(i, 0))
-		require.NoError(t, err)
-	}
-	tx.MustCommit()
+func init() {
+	tnamespaces[testHnswNsSTNs] = TestItemHnswST{}
+	tnamespaces[testHnswNsMTNs] = TestItemHnswMT{}
+	tnamespaces[testVecBfNs] = TestItemVecBF{}
+	tnamespaces[testIvfNs] = TestItemIvf{}
+	tnamespaces[testMultiIndexVecNs] = TestItemMultiIndexVec{}
 }
 
 func newTestItemHnswST(id int, pkgsCount int) interface{} {
@@ -154,120 +147,192 @@ func newTestItemIvf(id int, pkgsCount int) interface{} {
 	return result
 }
 
-func TestHnswST(t *testing.T) {
-	const kMaxElements = kTestHNSWFloatVectorMaxElements
-	FillTestItemsWithFuncParts(kHnswNsST, 0, kMaxElements, kMaxElements/10, 0, newTestItemHnswST)
-	removeSomeItems(t, kHnswNsST, newTestItemHnswST, kMaxElements)
-	defer DB.DropIndex(kHnswNsST, "vec") // Deallocate index
-
-	knnBaseSearchParams, err := reindexer.NewBaseKnnSearchParam(500)
-	require.NoError(t, err)
-	hnswSearchParams, err := reindexer.NewIndexHnswSearchParam(1000, knnBaseSearchParams)
-	require.NoError(t, err)
-
-	newTestQuery(DB, kHnswNsST).SelectAllFields().ExecAndVerify(t)
-
-	query := newTestQuery(DB, kHnswNsST).WhereKnn("vec", randVect(kTestFloatVectorDimension), hnswSearchParams).SelectAllFields()
-	it := query.Exec(t)
-	require.NoError(t, it.Error())
-	defer it.Close()
-	for it.Next() {
-		require.NoError(t, it.Error())
-		returnedItem := it.Object().(*TestItemHnswST)
-		pk := getPK(query.ns, reflect.Indirect(reflect.ValueOf(returnedItem)))
-		insertedItem := query.ns.items[pk].(*TestItemHnswST)
-		assert.Equal(t, returnedItem.Vec, insertedItem.Vec)
+func removeSomeItems(t *testing.T, ns string, createItem testItemsCreator, maxElements int) {
+	tx := newTestTx(DB, ns)
+	for i := rand.Int() % (maxElements / 100); i < maxElements; i += rand.Int() % (maxElements / 100) {
+		err := tx.Delete(createItem(i, 0))
+		require.NoError(t, err)
 	}
-	assert.NoError(t, it.Error())
-	log.Println("HNSW_ST", it.Count())
+	tx.MustCommit()
+}
+
+type RadiusProcessingF func(it *reindexer.Iterator, comparator AssertComparatorF)
+type AssertComparatorF func(t assert.TestingT, e1 interface{}, e2 interface{}, msgAndArgs ...interface{}) bool
+
+func testWithRadiusWrapperImpl(t *testing.T, test func(RadiusProcessingF), knnBaseSearchParams *reindexer.BaseKnnSearchParam) {
+	var rBeg, rEnd float32
+	test(
+		func(it *reindexer.Iterator, comparator AssertComparatorF) {
+			if knnBaseSearchParams.Radius == nil {
+				if rBeg == 0 {
+					rBeg = it.Rank()
+				}
+				rEnd = it.Rank()
+			} else {
+				comparator(t, it.Rank(), *knnBaseSearchParams.Radius)
+				knnBaseSearchParams.K = nil
+			}
+		})
+
+	if knnBaseSearchParams.Radius == nil {
+		knnBaseSearchParams.SetRadius((rBeg + rEnd) / 2)
+	}
+}
+
+func testWithRadiusWrapper(t *testing.T, test func(RadiusProcessingF), knnBaseSearchParams *reindexer.BaseKnnSearchParam) {
+	for range []string{"Only K", "K and Radius", "Only Radius"} {
+		testWithRadiusWrapperImpl(t, test, knnBaseSearchParams)
+	}
+}
+
+func TestHnswST(t *testing.T) {
+	const ns = testHnswNsSTNs
+	const kMaxElements = kTestHNSWFloatVectorMaxElements
+
+	FillTestItemsWithFuncParts(ns, 0, kMaxElements, kMaxElements/10, 0, newTestItemHnswST)
+	removeSomeItems(t, ns, newTestItemHnswST, kMaxElements)
+	defer DB.DropIndex(ns, "vec") // Deallocate index
+
+	hnswSearchParams, err := reindexer.NewIndexHnswSearchParam(1000, reindexer.BaseKnnSearchParam{}.SetK(500))
+	require.NoError(t, err)
+
+	newTestQuery(DB, ns).SelectAllFields().ExecAndVerify(t)
+
+	vec := randVect(kTestFloatVectorDimension)
+	test := func(radiusProcessing RadiusProcessingF) {
+		query := newTestQuery(DB, ns).WhereKnn("vec", vec, hnswSearchParams).SelectAllFields()
+		query.q.WithRank()
+		it := query.Exec(t)
+		require.NoError(t, it.Error())
+		defer it.Close()
+		for it.Next() {
+			require.NoError(t, it.Error())
+			returnedItem := it.Object().(*TestItemHnswST)
+			pk := getPK(query.ns, reflect.Indirect(reflect.ValueOf(returnedItem)))
+			insertedItem := query.ns.items[pk].(*TestItemHnswST)
+			assert.Equal(t, returnedItem.Vec, insertedItem.Vec)
+
+			radiusProcessing(it, assert.Greater)
+		}
+		assert.NoError(t, it.Error())
+		log.Println("HNSW_ST", it.Count())
+	}
+
+	testWithRadiusWrapper(t, test, &hnswSearchParams.BaseKnnSearchParam)
 }
 
 func TestHnswMT(t *testing.T) {
+	const ns = testHnswNsMTNs
 	const kMaxElements = kTestHNSWFloatVectorMaxElements
-	FillTestItemsWithFuncParts(kHnswNsMT, 0, kMaxElements, kMaxElements/10, 0, newTestItemHnswMT)
-	removeSomeItems(t, kHnswNsMT, newTestItemHnswMT, kMaxElements)
-	defer DB.DropIndex(kHnswNsMT, "vec") // Deallocate index
 
-	knnBaseSearchParams, err := reindexer.NewBaseKnnSearchParam(500)
+	FillTestItemsWithFuncParts(ns, 0, kMaxElements, kMaxElements/10, 0, newTestItemHnswMT)
+	removeSomeItems(t, ns, newTestItemHnswMT, kMaxElements)
+	defer DB.DropIndex(ns, "vec") // Deallocate index
+
+	hnswSearchParams, err := reindexer.NewIndexHnswSearchParam(1000, reindexer.BaseKnnSearchParam{}.SetK(500))
 	require.NoError(t, err)
-	hnswSearchParams, err := reindexer.NewIndexHnswSearchParam(1000, knnBaseSearchParams)
-	require.NoError(t, err)
 
-	newTestQuery(DB, kHnswNsMT).SelectAllFields().ExecAndVerify(t)
+	newTestQuery(DB, ns).SelectAllFields().ExecAndVerify(t)
 
-	query := newTestQuery(DB, kHnswNsMT).WhereKnn("vec", randVect(kTestFloatVectorDimension), hnswSearchParams).Select("Vec")
-	it := query.Exec(t)
-	require.NoError(t, it.Error())
-	defer it.Close()
-	for it.Next() {
+	vec := randVect(kTestFloatVectorDimension)
+	test := func(radiusProcessing RadiusProcessingF) {
+		query := newTestQuery(DB, ns).WhereKnn("vec", vec, hnswSearchParams).Select("Vec")
+		query.q.WithRank()
+		it := query.Exec(t)
 		require.NoError(t, it.Error())
-		returnedItem := it.Object().(*TestItemHnswMT)
-		pk := getPK(query.ns, reflect.Indirect(reflect.ValueOf(returnedItem)))
-		insertedItem := query.ns.items[pk].(*TestItemHnswMT)
-		assert.Equal(t, returnedItem.Vec, insertedItem.Vec)
+		defer it.Close()
+		for it.Next() {
+			require.NoError(t, it.Error())
+			returnedItem := it.Object().(*TestItemHnswMT)
+			pk := getPK(query.ns, reflect.Indirect(reflect.ValueOf(returnedItem)))
+			insertedItem := query.ns.items[pk].(*TestItemHnswMT)
+			assert.Equal(t, returnedItem.Vec, insertedItem.Vec)
+
+			radiusProcessing(it, assert.Less)
+		}
+		assert.NoError(t, it.Error())
+		log.Println("HNSW_MT", it.Count())
 	}
-	assert.NoError(t, it.Error())
-	log.Println("HNSW_MT", it.Count())
+
+	testWithRadiusWrapper(t, test, &hnswSearchParams.BaseKnnSearchParam)
 }
 
 func TestVecBF(t *testing.T) {
+	const ns = testVecBfNs
 	const kMaxElements = kTestBFloatVectorMaxElements
-	FillTestItemsWithFuncParts(kVecBfNs, 0, kMaxElements, kMaxElements/10, 0, newTestItemVecBF)
-	removeSomeItems(t, kVecBfNs, newTestItemVecBF, kMaxElements)
-	defer DB.DropIndex(kVecBfNs, "vec") // Deallocate index
 
-	knnBaseSearchParams, err := reindexer.NewBaseKnnSearchParam(1000)
+	FillTestItemsWithFuncParts(ns, 0, kMaxElements, kMaxElements/10, 0, newTestItemVecBF)
+	removeSomeItems(t, ns, newTestItemVecBF, kMaxElements)
+	defer DB.DropIndex(ns, "vec") // Deallocate index
+
+	bfSearchParams, err := reindexer.NewIndexBFSearchParam(reindexer.BaseKnnSearchParam{}.SetK(1000))
 	require.NoError(t, err)
-	bfSearchParams, err := reindexer.NewIndexBFSearchParam(knnBaseSearchParams)
-	require.NoError(t, err)
 
-	newTestQuery(DB, kVecBfNs).SelectAllFields().ExecAndVerify(t)
+	newTestQuery(DB, ns).SelectAllFields().ExecAndVerify(t)
 
-	query := newTestQuery(DB, kVecBfNs).WhereKnn("vec", randVect(kTestFloatVectorDimension), bfSearchParams)
-	it := query.Exec(t)
-	require.NoError(t, it.Error())
-	defer it.Close()
-	zero := [kTestFloatVectorDimension]float32{}
-	for it.Next() {
+	vec := randVect(kTestFloatVectorDimension)
+	test := func(radiusProcessing RadiusProcessingF) {
+		query := newTestQuery(DB, ns).WhereKnn("vec", vec, bfSearchParams)
+		query.q.WithRank()
+		it := query.Exec(t)
 		require.NoError(t, it.Error())
-		returnedItem := it.Object().(*TestItemVecBF)
-		assert.Equal(t, returnedItem.Vec, zero)
+		defer it.Close()
+		zero := [kTestFloatVectorDimension]float32{}
+		for it.Next() {
+			require.NoError(t, it.Error())
+			returnedItem := it.Object().(*TestItemVecBF)
+			assert.Equal(t, returnedItem.Vec, zero)
+
+			radiusProcessing(it, assert.Less)
+		}
+		assert.NoError(t, it.Error())
+		log.Println("BF", it.Count())
 	}
-	assert.NoError(t, it.Error())
-	log.Println("BF", it.Count())
+
+	testWithRadiusWrapper(t, test, &bfSearchParams.BaseKnnSearchParam)
 }
 
 func TestIvf(t *testing.T) {
+	const ns = testIvfNs
 	const kMaxElements = kTestIVFFloatVectorMaxElements
-	FillTestItemsWithFuncParts(kIvfNs, 0, kMaxElements, kMaxElements/10, 0, newTestItemIvf)
-	removeSomeItems(t, kIvfNs, newTestItemIvf, kMaxElements)
-	defer DB.DropIndex(kIvfNs, "vec") // Deallocate index
 
-	knnBaseSearchParams, err := reindexer.NewBaseKnnSearchParam(1000)
+	FillTestItemsWithFuncParts(ns, 0, kMaxElements, kMaxElements/10, 0, newTestItemIvf)
+	removeSomeItems(t, ns, newTestItemIvf, kMaxElements)
+	defer DB.DropIndex(ns, "vec") // Deallocate index
+
+	ivfSearchParams, err := reindexer.NewIndexIvfSearchParam(10, reindexer.BaseKnnSearchParam{}.SetK(1000))
 	require.NoError(t, err)
-	ivfSearchParams, err := reindexer.NewIndexIvfSearchParam(10, knnBaseSearchParams)
-	require.NoError(t, err)
 
-	newTestQuery(DB, kIvfNs).SelectAllFields().ExecAndVerify(t)
+	newTestQuery(DB, ns).SelectAllFields().ExecAndVerify(t)
 
-	it := DB.GetBaseQuery(kIvfNs).WhereKnn("vec", randVect(kTestFloatVectorDimension), ivfSearchParams).Exec()
-	require.NoError(t, it.Error())
-	defer it.Close()
-	for it.Next() {
+	vec := randVect(kTestFloatVectorDimension)
+	test := func(radiusProcessing RadiusProcessingF) {
+		it := DB.GetBaseQuery(ns).WhereKnn("vec", vec, ivfSearchParams).WithRank().Exec()
 		require.NoError(t, it.Error())
-		elem := it.Object().(*TestItemIvf)
-		assert.GreaterOrEqual(t, elem.ID, 0)
+		defer it.Close()
+		for it.Next() {
+			require.NoError(t, it.Error())
+			elem := it.Object().(*TestItemIvf)
+			assert.GreaterOrEqual(t, elem.ID, 0)
+
+			radiusProcessing(it, assert.Less)
+		}
+		assert.NoError(t, it.Error())
+		log.Println("IVF", it.Count())
 	}
-	assert.NoError(t, it.Error())
-	log.Println("IVF", it.Count())
+
+	testWithRadiusWrapper(t, test, &ivfSearchParams.BaseKnnSearchParam)
+	testWithRadiusWrapper(t, test, &ivfSearchParams.BaseKnnSearchParam)
 }
 
 func TestAddKnnIndex(t *testing.T) {
+	const ns = testMultiIndexVecNs
 	const kMaxElements = kMultiIndexMaxElems / 5
+
 	currentSize := 0
-	FillTestItemsWithFuncParts(kMultiIndexVecNs, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
+	FillTestItemsWithFuncParts(ns, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
 	currentSize += kMaxElements
-	removeSomeItems(t, kMultiIndexVecNs, newTestItemMultiIndexVec, currentSize)
+	removeSomeItems(t, ns, newTestItemMultiIndexVec, currentSize)
 
 	bfOpts := reindexer.FloatVectorIndexOpts{Metric: "l2", Dimension: kMultiIndexVecDimension, StartSize: kMultiIndexMaxElems}
 	indexDef := reindexer.IndexDef{
@@ -277,13 +342,13 @@ func TestAddKnnIndex(t *testing.T) {
 		FieldType: "float_vector",
 		Config:    bfOpts,
 	}
-	err := DB.AddIndex(kMultiIndexVecNs, indexDef)
+	err := DB.AddIndex(ns, indexDef)
 	require.NoError(t, err)
-	defer DB.DropIndex(kMultiIndexVecNs, "vec1") // Deallocate index
+	defer DB.DropIndex(ns, "vec1") // Deallocate index
 
-	FillTestItemsWithFuncParts(kMultiIndexVecNs, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
+	FillTestItemsWithFuncParts(ns, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
 	currentSize += kMaxElements
-	removeSomeItems(t, kMultiIndexVecNs, newTestItemMultiIndexVec, currentSize)
+	removeSomeItems(t, ns, newTestItemMultiIndexVec, currentSize)
 
 	hnswSTOpts := reindexer.FloatVectorIndexOpts{
 		Metric:             "inner_product",
@@ -300,13 +365,13 @@ func TestAddKnnIndex(t *testing.T) {
 		FieldType: "float_vector",
 		Config:    hnswSTOpts,
 	}
-	err = DB.AddIndex(kMultiIndexVecNs, indexDef)
+	err = DB.AddIndex(ns, indexDef)
 	require.NoError(t, err)
-	defer DB.DropIndex(kMultiIndexVecNs, "vec2") // Deallocate index
+	defer DB.DropIndex(ns, "vec2") // Deallocate index
 
-	FillTestItemsWithFuncParts(kMultiIndexVecNs, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
+	FillTestItemsWithFuncParts(ns, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
 	currentSize += kMaxElements
-	removeSomeItems(t, kMultiIndexVecNs, newTestItemMultiIndexVec, currentSize)
+	removeSomeItems(t, ns, newTestItemMultiIndexVec, currentSize)
 
 	hnswMTOpts := reindexer.FloatVectorIndexOpts{
 		Metric:             "cosine",
@@ -323,13 +388,13 @@ func TestAddKnnIndex(t *testing.T) {
 		FieldType: "float_vector",
 		Config:    hnswMTOpts,
 	}
-	err = DB.AddIndex(kMultiIndexVecNs, indexDef)
+	err = DB.AddIndex(ns, indexDef)
 	require.NoError(t, err)
-	defer DB.DropIndex(kMultiIndexVecNs, "vec3") // Deallocate index
+	defer DB.DropIndex(ns, "vec3") // Deallocate index
 
-	FillTestItemsWithFuncParts(kMultiIndexVecNs, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
+	FillTestItemsWithFuncParts(ns, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
 	currentSize += kMaxElements
-	removeSomeItems(t, kMultiIndexVecNs, newTestItemMultiIndexVec, currentSize)
+	removeSomeItems(t, ns, newTestItemMultiIndexVec, currentSize)
 
 	ivfOpts := reindexer.FloatVectorIndexOpts{
 		Metric:         "l2",
@@ -343,11 +408,11 @@ func TestAddKnnIndex(t *testing.T) {
 		FieldType: "float_vector",
 		Config:    ivfOpts,
 	}
-	err = DB.AddIndex(kMultiIndexVecNs, indexDef)
+	err = DB.AddIndex(ns, indexDef)
 	require.NoError(t, err)
-	defer DB.DropIndex(kMultiIndexVecNs, "vec4") // Deallocate index
+	defer DB.DropIndex(ns, "vec4") // Deallocate index
 
-	FillTestItemsWithFuncParts(kMultiIndexVecNs, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
+	FillTestItemsWithFuncParts(ns, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
 	currentSize += kMaxElements
-	removeSomeItems(t, kMultiIndexVecNs, newTestItemMultiIndexVec, currentSize)
+	removeSomeItems(t, ns, newTestItemMultiIndexVec, currentSize)
 }

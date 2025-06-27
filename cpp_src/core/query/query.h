@@ -283,7 +283,7 @@ public:
 	template <concepts::ConvertibleToString Str>
 	Query& Where(Str&& field, CondType cond, Query&& q) & {
 		if (cond == CondDWithin) {
-			throw Error(errQueryExec, "DWithin between field and subquery");
+			throw Error(errLogic, "DWithin between field and subquery");
 		}
 		q.checkSubQueryWithData();
 		adoptNested(q);
@@ -306,9 +306,10 @@ public:
 
 	template <concepts::ConvertibleToString Str>
 	Query& WhereKNN(Str&& field, ConstFloatVector vec, KnnSearchParams params) & {
-		if (nextOp_ != OpAnd) {
-			throw Error(errLogic, std::string(OpTypeToStr(nextOp_)) + " operation is not allowed with knn condition");
+		if (nextOp_ == OpNot) {
+			throw Error(errLogic, "NOT operation is not allowed with knn condition");
 		}
+		params.Validate();
 		entries_.Append<KnnQueryEntry>(nextOp_, std::forward<Str>(field), std::move(vec), std::move(params));
 		nextOp_ = OpAnd;
 		return *this;
@@ -327,9 +328,10 @@ public:
 	}
 	template <concepts::ConvertibleToString Str1, concepts::ConvertibleToString Str2>
 	Query& WhereKNN(Str1&& field, Str2&& data, KnnSearchParams params) & {
-		if (nextOp_ != OpAnd) {
-			throw Error(errLogic, std::string(OpTypeToStr(nextOp_)) + " operation is not allowed with knn condition");
+		if (nextOp_ == OpNot) {
+			throw Error(errLogic, "NOT operation is not allowed with knn condition");
 		}
+		params.Validate();
 		entries_.Append<KnnQueryEntry>(nextOp_, std::forward<Str1>(field), std::forward<Str2>(data), std::move(params));
 		nextOp_ = OpAnd;
 		return *this;
@@ -665,18 +667,16 @@ public:
 	/// @param desc - is sorting direction descending or ascending.
 	/// @param forcedSortOrder - list of values for forced sort order.
 	/// @return Query object.
-	template <typename Str, typename T, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str, typename T>
 	Query& Sort(Str&& sort, bool desc, std::initializer_list<T> forcedSortOrder) & {
-		if (!sortingEntries_.empty() && !std::empty(forcedSortOrder)) {
-			throw Error(errParams, "Forced sort order is allowed for the first sorting entry only");
-		}
-		sortingEntries_.emplace_back(std::forward<Str>(sort), desc);
+		std::vector<Variant> forcedValues;
+		forcedValues.reserve(forcedSortOrder.size());
 		for (const T& v : forcedSortOrder) {
-			forcedSortOrder_.emplace_back(v);
+			forcedValues.emplace_back(v);
 		}
-		return *this;
+		return Sort<Str>(std::forward<Str>(sort), desc, std::move(forcedValues));
 	}
-	template <typename Str, typename T, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str, typename T>
 	[[nodiscard]] Query&& Sort(Str&& sort, bool desc, std::initializer_list<T> forcedSortOrder) && {
 		return std::move(Sort<Str, T>(std::forward<Str>(sort), desc, std::move(forcedSortOrder)));
 	}
@@ -686,20 +686,34 @@ public:
 	/// @param desc - is sorting direction descending or ascending.
 	/// @param forcedSortOrder - list of values for forced sort order.
 	/// @return Query object.
-	template <typename Str, typename T, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str, typename T>
 	Query& Sort(Str&& sort, bool desc, const T& forcedSortOrder) & {
+		std::vector<Variant> forcedValues;
+		forcedValues.reserve(forcedSortOrder.size());
+		for (const auto& v : forcedSortOrder) {
+			forcedValues.emplace_back(v);
+		}
+		return Sort<Str>(std::forward<Str>(sort), desc, std::move(forcedValues));
+	}
+	template <concepts::ConvertibleToString Str, typename T>
+	[[nodiscard]] Query&& Sort(Str&& sort, bool desc, const T& forcedSortOrder) && {
+		return std::move(Sort<Str, T>(std::forward<Str>(sort), desc, forcedSortOrder));
+	}
+	template <concepts::ConvertibleToString Str>
+	Query& Sort(Str&& sort, bool desc, std::vector<Variant>&& forcedSortOrder) & {
 		if (!sortingEntries_.empty() && !forcedSortOrder.empty()) {
 			throw Error(errParams, "Forced sort order is allowed for the first sorting entry only");
 		}
-		sortingEntries_.emplace_back(std::forward<Str>(sort), desc);
-		for (const auto& v : forcedSortOrder) {
-			forcedSortOrder_.emplace_back(v);
+		SortingEntry entry{std::forward<Str>(sort), desc};
+		if (!entry.expression.empty()) {  // Ignore empty sort expression
+			sortingEntries_.emplace_back(std::move(entry));
+			forcedSortOrder_ = std::move(forcedSortOrder);
 		}
 		return *this;
 	}
-	template <typename Str, typename T, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
-	[[nodiscard]] Query&& Sort(Str&& sort, bool desc, const T& forcedSortOrder) && {
-		return std::move(Sort<Str, T>(std::forward<Str>(sort), desc, forcedSortOrder));
+	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	[[nodiscard]] Query&& Sort(Str&& sort, bool desc, std::vector<Variant>&& forcedSortOrder) && {
+		return std::move(Sort<Str>(std::forward<Str>(sort), desc, std::move(forcedSortOrder)));
 	}
 
 	/// Performs 'distinct' for a indexes or fields.
@@ -927,13 +941,11 @@ public:
 	void CalcTotal(CalcTotalMode calcTotal) noexcept { calcTotal_ = calcTotal; }
 
 	QueryType type_ = QuerySelect;				/// Query type
-	SortingEntries sortingEntries_;				/// Sorting data.
-	std::vector<Variant> forcedSortOrder_;		/// Keys that always go first - before any ordered values.
 	std::vector<std::string> selectFunctions_;	/// List of sql functions
 
 	std::vector<AggregateEntry> aggregations_;
 
-	auto NsName() const&& = delete;
+	[[nodiscard]] auto NsName() const&& = delete;
 	[[nodiscard]] const QueryEntries& Entries() const noexcept { return entries_; }
 	template <typename T>
 	[[nodiscard]] T& GetUpdatableEntry(size_t i) & noexcept {
@@ -979,12 +991,20 @@ public:
 	void ReplaceSubQuery(size_t i, Query&& query);
 	void ReplaceJoinQuery(size_t i, JoinedQuery&& query);
 	void ReplaceMergeQuery(size_t i, JoinedQuery&& query);
+	[[nodiscard]] const std::vector<Variant>& ForcedSortOrder() const& noexcept { return forcedSortOrder_; }
+	[[nodiscard]] const SortingEntries& GetSortingEntries() const& noexcept { return sortingEntries_; }
+	void ClearSorting() noexcept {
+		sortingEntries_.clear();
+		forcedSortOrder_.clear();
+	}
 
-	auto GetSubQuery(size_t) const&& = delete;
-	auto GetSubQueries() const&& = delete;
-	auto GetJoinQueries() const&& = delete;
-	auto GetMergeQueries() const&& = delete;
-	auto SelectFilters() const&& = delete;
+	[[nodiscard]] auto GetSubQuery(size_t) const&& = delete;
+	[[nodiscard]] auto GetSubQueries() const&& = delete;
+	[[nodiscard]] auto GetJoinQueries() const&& = delete;
+	[[nodiscard]] auto GetMergeQueries() const&& = delete;
+	[[nodiscard]] auto SelectFilters() const&& = delete;
+	[[nodiscard]] auto ForcedSortOrder() const&& = delete;
+	[[nodiscard]] auto GetSortingEntries() const&& = delete;
 
 private:
 	class [[nodiscard]] PopBackQEGuard {
@@ -1056,6 +1076,8 @@ private:
 					const std::function<void(Query& q)>& visitor) noexcept(noexcept(visitor(std::declval<Query&>())));
 	void adoptNested(Query& nq) const noexcept { nq.Strict(GetStrictMode()).Explain(NeedExplain()).Debug(GetDebugLevel()); }
 
+	SortingEntries sortingEntries_;				   /// Sorting data.
+	std::vector<Variant> forcedSortOrder_;		   /// Keys that always go first - before any ordered values.
 	std::string namespace_;						   /// Name of the namespace.
 	unsigned start_ = QueryEntry::kDefaultOffset;  /// First row index from result set.
 	unsigned count_ = QueryEntry::kDefaultLimit;   /// Number of rows from result set.
@@ -1080,7 +1102,7 @@ public:
 	JoinedQuery(JoinType jt, Query&& q) : Query(std::move(q)), joinType{jt} {}
 	using Query::Query;
 	[[nodiscard]] bool operator==(const JoinedQuery& obj) const;
-	const std::string& RightNsName() const noexcept { return NsName(); }
+	[[nodiscard]] const std::string& RightNsName() const noexcept { return NsName(); }
 
 	JoinType joinType{JoinType::LeftJoin};	   /// Default join type.
 	h_vector<QueryJoinEntry, 1> joinEntries_;  /// Condition for join. Filled in each subqueries, empty in root query
@@ -1092,12 +1114,18 @@ private:
 
 template <typename Q>
 [[nodiscard]] Q Query::OnHelperTempl<Q>::On(std::string index, CondType cond, std::string joinIndex) && {
+	if (op_ == OpOr && jq_.joinEntries_.empty()) {
+		throw Error{errLogic, "OR operator in first condition in ON"};
+	}
 	jq_.joinEntries_.emplace_back(op_, cond, std::move(index), std::move(joinIndex));
 	return std::forward<Q>(q_);
 }
 
 template <typename Q>
 [[nodiscard]] Query::OnHelperGroup<Q>&& Query::OnHelperGroup<Q>::On(std::string index, CondType cond, std::string joinIndex) && {
+	if (op_ == OpOr && jq_.joinEntries_.empty()) {
+		throw Error{errLogic, "OR operator in first condition in ON"};
+	}
 	jq_.joinEntries_.emplace_back(op_, cond, std::move(index), std::move(joinIndex));
 	op_ = OpAnd;
 	return std::move(*this);

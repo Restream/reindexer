@@ -589,7 +589,7 @@ This also may lead to situation, when new leader recovers some the dropped names
 
 ## Migration from Reindexer's v3.x.x replication config
 
-New asynchronous replication is incompatible with configs from v3.x.x, so you will have to migrate manually.
+Current asynchronous replication implementation is incompatible with configs from v3.x.x, so you will have to migrate manually.
 
 1. Server ID's and cluster ID's doesn't require any changes (they are using the same object "replication" in #config namespace) 
 2. Current scheme works as "push-replication" and legacy scheme was "pull-replication", so you have to move all information about namespaces and DSNs from legacy slaves to current leader (to "async_replication" in #config).

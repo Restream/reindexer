@@ -73,10 +73,8 @@ struct EnumNamespacesOpts {
 	bool IsHideTemporary() const noexcept { return options_ & kEnumNamespacesHideTemporary; }
 	bool MatchFilter(std::string_view nsName, const Namespace& ns, const RdxContext& ctx) const;
 	bool MatchNameFilter(std::string_view nsName) const noexcept {
-		return (filter_.empty() || iequals(filter_, nsName)) &&
-			   (!IsHideSystem() || (!nsName.empty() && nsName[0] != '#')) &&
-			   (!IsHideTemporary() || (!nsName.empty() && nsName[0] != '@')) &&
-			   (!nsName.empty() && nsName[0] != '!');
+		return (filter_.empty() || iequals(filter_, nsName)) && (!IsHideSystem() || (!nsName.empty() && nsName[0] != '#')) &&
+			   (!IsHideTemporary() || (!nsName.empty() && nsName[0] != '@')) && (!nsName.empty() && nsName[0] != '!');
 	}
 
 	// Add not opened namespaces to enumeration

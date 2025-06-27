@@ -57,7 +57,7 @@ void SQLEncoder::DumpSingleJoinQuery(size_t idx, WrSerializer& ser, bool stripAr
 	assertrx(idx < query_.GetJoinQueries().size());
 	const auto& jq = query_.GetJoinQueries()[idx];
 	ser << jq.joinType;
-	if (jq.Entries().Empty() && !jq.HasLimit() && jq.sortingEntries_.empty()) {
+	if (jq.Entries().Empty() && !jq.HasLimit() && jq.GetSortingEntries().empty()) {
 		ser << ' ' << jq.NsName() << " ON ";
 	} else {
 		ser << " (";
@@ -110,20 +110,20 @@ static std::string escapeQuotes(std::string str) {
 }
 
 void SQLEncoder::dumpOrderBy(WrSerializer& ser, bool stripArgs) const {
-	if (query_.sortingEntries_.empty()) {
+	if (query_.GetSortingEntries().empty()) {
 		return;
 	}
 	ser << " ORDER BY ";
-	for (size_t i = 0; i < query_.sortingEntries_.size(); ++i) {
-		const SortingEntry& sortingEntry(query_.sortingEntries_[i]);
-		if (query_.forcedSortOrder_.empty() || i != 0) {
+	for (size_t i = 0; i < query_.GetSortingEntries().size(); ++i) {
+		const SortingEntry& sortingEntry(query_.GetSortingEntries()[i]);
+		if (query_.ForcedSortOrder().empty() || i != 0) {
 			ser << '\'' << escapeQuotes(sortingEntry.expression) << '\'';
 		} else {
 			ser << "FIELD(" << sortingEntry.expression;
 			if (stripArgs) {
 				ser << '?';
 			} else {
-				for (auto& v : query_.forcedSortOrder_) {
+				for (const auto& v : query_.ForcedSortOrder()) {
 					ser << ", ";
 					v.Dump(ser);
 				}
@@ -131,7 +131,7 @@ void SQLEncoder::dumpOrderBy(WrSerializer& ser, bool stripArgs) const {
 			ser << ")";
 		}
 		ser << (sortingEntry.desc ? " DESC" : "");
-		if (i != query_.sortingEntries_.size() - 1) {
+		if (i != query_.GetSortingEntries().size() - 1) {
 			ser << ", ";
 		}
 	}

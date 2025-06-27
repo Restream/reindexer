@@ -57,9 +57,14 @@ Container& split(const typename Container::value_type& str, std::string_view del
 	return tokens;
 }
 
+struct SplitOptions {
+	std::string_view extraWordSymbols;
+	SymbolTypeMask removeDiacriticsMask = 0;
+};
+
 void split(const std::string& utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words);
 void split(std::string_view utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words, std::string_view extraWordSymbols);
-void split(std::string_view str, std::string& buf, std::vector<std::string_view>& words, std::string_view extraWordSymbols);
+void split(std::string_view str, std::string& buf, std::vector<std::string_view>& words, const SplitOptions& options);
 [[nodiscard]] size_t calcUtf8After(std::string_view s, size_t limit) noexcept;
 [[nodiscard]] std::pair<size_t, size_t> calcUtf8AfterDelims(std::string_view str, size_t limit, std::string_view delims) noexcept;
 [[nodiscard]] size_t calcUtf8Before(const char* str, int pos, size_t limit) noexcept;
@@ -134,12 +139,6 @@ size_t utf16_to_utf8_size(const std::wstring& src);
 std::wstring& utf8_to_utf16(std::string_view src, std::wstring& dst);
 std::string& utf16_to_utf8(const std::wstring& src, std::string& dst);
 
-inline void check_for_replacement(wchar_t& ch) noexcept {
-	ch = (ch == 0x451) ? 0x435 : ch;  // 'ё' -> 'е'
-}
-inline void check_for_replacement(uint32_t& ch) noexcept {
-	ch = (ch == 0x451) ? 0x435 : ch;  // 'ё' -> 'е'
-}
 inline bool is_number(std::string_view str) noexcept {
 	uint16_t i = 0;
 	for (; (i < str.length() && IsDigit(str[i])); ++i);
@@ -195,28 +194,28 @@ inline constexpr bool iless(std::string_view lhs, std::string_view rhs) noexcept
 
 enum class CaseSensitive : bool { No, Yes };
 template <CaseSensitive sensitivity>
-bool checkIfStartsWith(std::string_view pattern, std::string_view src) noexcept;
-RX_ALWAYS_INLINE bool checkIfStartsWith(std::string_view pattern, std::string_view src) noexcept {
+[[nodiscard]] bool checkIfStartsWith(std::string_view pattern, std::string_view src) noexcept;
+[[nodiscard]] RX_ALWAYS_INLINE bool checkIfStartsWith(std::string_view pattern, std::string_view src) noexcept {
 	return checkIfStartsWith<CaseSensitive::No>(pattern, src);
 }
-RX_ALWAYS_INLINE bool checkIfStartsWithCS(std::string_view pattern, std::string_view src) noexcept {
+[[nodiscard]] RX_ALWAYS_INLINE bool checkIfStartsWithCS(std::string_view pattern, std::string_view src) noexcept {
 	return checkIfStartsWith<CaseSensitive::Yes>(pattern, src);
 }
 
 template <CaseSensitive sensitivity>
-bool checkIfEndsWith(std::string_view pattern, std::string_view src) noexcept;
+[[nodiscard]] bool checkIfEndsWith(std::string_view pattern, std::string_view src) noexcept;
 RX_ALWAYS_INLINE bool checkIfEndsWith(std::string_view pattern, std::string_view src) noexcept {
 	return checkIfEndsWith<CaseSensitive::No>(pattern, src);
 }
 
-bool isPrintable(std::string_view str) noexcept;
-bool isBlank(std::string_view token) noexcept;
-bool endsWith(const std::string& source, std::string_view ending) noexcept;
-std::string& ensureEndsWith(std::string& source, std::string_view ending);
+[[nodiscard]] bool isPrintable(std::string_view str) noexcept;
+[[nodiscard]] bool isBlank(std::string_view token) noexcept;
+[[nodiscard]] bool endsWith(const std::string& source, std::string_view ending) noexcept;
+[[nodiscard]] std::string& ensureEndsWith(std::string& source, std::string_view ending);
 
 Error cursorPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos);
 
-std::string randStringAlph(size_t len);
+[[nodiscard]] std::string randStringAlph(size_t len);
 
 struct nocase_equal_str {
 	using is_transparent = void;

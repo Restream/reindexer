@@ -109,7 +109,7 @@ public:
 		pos_ += sizeof(ret);
 		return ret;
 	}
-	RX_ALWAYS_INLINE RankT GetRank() { return GetFloat(); }
+	RX_ALWAYS_INLINE RankT GetRank() { return RankT{GetFloat()}; }
 	ConstFloatVectorView GetFloatVectorView() {
 		using Float = ConstFloatVectorView::DataType;
 		unsigned dim = GetVarUInt();
@@ -364,7 +364,7 @@ public:
 		memcpy(&buf_[len_], &v, sizeof(v));
 		len_ += sizeof(v);
 	}
-	RX_ALWAYS_INLINE void PutRank(RankT v) { PutFloat(v); }
+	RX_ALWAYS_INLINE void PutRank(RankT v) { PutFloat(v.Value()); }
 	void PutFloatVectorView(ConstFloatVectorView v) {
 		using Float = ConstFloatVectorView::DataType;
 		static_assert(alignof(Float) <= sizeof(Float));

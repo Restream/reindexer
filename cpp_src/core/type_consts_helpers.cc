@@ -196,6 +196,7 @@ RankOrdering ToRankOrdering(RankedTypeQuery type) {
 		case RankedTypeQuery::FullText:
 		case RankedTypeQuery::KnnIP:
 		case RankedTypeQuery::KnnCos:
+		case RankedTypeQuery::Hybrid:
 			return RankOrdering::Desc;
 		case RankedTypeQuery::KnnL2:
 			return RankOrdering::Asc;

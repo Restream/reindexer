@@ -478,9 +478,6 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 				NamespaceDef def;
 				def.name = nsDef.name;
 				def.storage = nsDef.storage;  // Indexes and schema will be replicate later
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-				observers_.OnWALUpdate(LSNPair(), nsDef.name, WALRecord(WalNamespaceAdd));
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 				auto err = observers_.SendUpdate(
 					{updates::URType::AddNamespace, it.value()->GetName(RdxContext()), version, rdxCtx.EmitterServerId(), std::move(def),
 					 stateToken},
@@ -594,11 +591,6 @@ Error ReindexerImpl::closeNamespace(std::string_view nsName, const RdxContext& c
 		nsCreationLock.UnlockIfOwns();
 
 		if (!isTemporary) {
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-			if (dropStorage) {
-				observers_.OnWALUpdate(LSNPair(), nsName, WALRecord(WalNamespaceDrop));
-			}
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 			err = observers_.SendUpdate(
 				{dropStorage ? updates::URType::DropNamespace : updates::URType::CloseNamespace, ns->GetName(RdxContext()), lsn_t(0, 0),
 				 lsn_t(0, 0), ctx.EmitterServerId()},
@@ -689,11 +681,7 @@ Error ReindexerImpl::openNamespace(std::string_view name, IsDBInitCall isDBInitC
 			(void)inserted;
 			// Unlock, when all storage and namespace map operations are done
 			nsCreationLock.UnlockIfOwns();
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-			if (!nsDef.isTemporary) {
-				observers_.OnWALUpdate(LSNPair(), nsDef.name, WALRecord(WalNamespaceAdd));
-			}
-#endif	// REINDEX_WITH_V3_FOLLOWERS
+
 			auto err = observers_.SendUpdate(
 				{updates::URType::AddNamespace, nsIt.value()->GetName(RdxContext()), version, rdxCtx.EmitterServerId(), std::move(nsDef),
 				 stateToken},
@@ -763,24 +751,6 @@ Error ReindexerImpl::SubscribeUpdates(IEventsObserver& observer, EventSubscriber
 }
 
 Error ReindexerImpl::UnsubscribeUpdates(IEventsObserver& observer) { return observers_.Remove(observer); }
-
-Error ReindexerImpl::SubscribeUpdates([[maybe_unused]] IUpdatesObserverV3* observer, [[maybe_unused]] const UpdatesFilters& filters,
-									  [[maybe_unused]] SubscriptionOpts opts) {
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	observers_.Add(observer, filters, opts);
-	return {};
-#else	// REINDEX_WITH_V3_FOLLOWERS
-	return Error(errForbidden, "Reindexer was built without v3 followers compatibility");
-#endif	// REINDEX_WITH_V3_FOLLOWERS
-}
-
-Error ReindexerImpl::UnsubscribeUpdates([[maybe_unused]] IUpdatesObserverV3* observer) {
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	return observers_.Remove(observer);
-#else	// REINDEX_WITH_V3_FOLLOWERS
-	return Error(errForbidden, "Reindexer was built without v3 followers compatibility");
-#endif	// REINDEX_WITH_V3_FOLLOWERS
-}
 
 Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::string& dstNsName, bool fromReplication, bool skipResync,
 									 const RdxContext& rdxCtx) {
@@ -894,17 +864,6 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 			} else {
 				srcNs->Rename(dstNsName, storagePath_, replicateCb, rdxCtx);
 			}
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-			if (needWalUpdate) {
-				observers_.OnWALUpdate(LSNPair(), srcNsName, WALRecord(WalNamespaceRename, dstNsName));
-			} else if (!skipResync) {
-				WrSerializer ser;
-				auto nsDef = srcNs->GetDefinition(rdxCtx);
-				nsDef.GetJSON(ser);
-				ser.PutBool(true);
-				observers_.OnWALUpdate(LSNPair(), dstNsName, WALRecord(WalForceSync, ser.Slice()));
-			}
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 		} catch (...) {
 			if (auto actualName = srcNs->GetName(RdxContext()); !iequals(actualName, dstNsName)) {
 				// Can not cancel here
@@ -1117,9 +1076,9 @@ LocalTransaction ReindexerImpl::NewTransaction(std::string_view _namespace, cons
 }
 
 Error ReindexerImpl::CommitTransaction(LocalTransaction& tr, LocalQueryResults& result, const RdxContext& rdxCtx) {
-	Error err = errOK;
+	Error err;
 	try {
-		getNamespace(tr.GetNsName(), rdxCtx)->CommitTransaction(tr, result, rdxCtx);
+		getNamespace(tr.GetNsName(), rdxCtx)->CommitTransaction(tr, result, NsContext{rdxCtx});
 	} catch (const Error& e) {
 		err = e;
 	}
@@ -1249,10 +1208,10 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 
 namespace {
 struct EmbeddingData {
-	EmbeddingData(size_t id, const std::shared_ptr<Embedder>& e, const KnnQueryEntry& kqe) : entryId(id), embedder(e), qe(kqe) {}
+	EmbeddingData(size_t id, const std::shared_ptr<const Embedder>& e, const KnnQueryEntry& kqe) : entryId(id), embedder(e), qe(kqe) {}
 
 	size_t entryId{std::numeric_limits<size_t>::max()};
-	std::shared_ptr<Embedder> embedder;
+	std::shared_ptr<const Embedder> embedder;
 	const KnnQueryEntry& qe;
 };
 
@@ -1705,6 +1664,117 @@ void ReindexerImpl::handleRebuildIVFIndexAction(const gason::JsonNode& action, c
 	}
 }
 
+namespace {
+constexpr uint32_t kDefaultEmbeddingBatchSize = 100;
+}  // namespace
+
+void ReindexerImpl::createEmbeddings(const Namespace::Ptr& ns, uint32_t batchSize, const RdxContext& ctx) {
+	bool embeddersDetected = false;
+	auto payloadType = ns->GetPayloadType(ctx);
+	for (int field = 1, numFields = payloadType->NumFields(); field < numFields; field++) {
+		if (payloadType->Field(field).Embedder()) {
+			embeddersDetected = true;
+			break;
+		}
+	}
+	if (!embeddersDetected) {
+		logFmt(LogWarning, "Can't find embedders in namespace '{}'", ns->GetName(ctx));
+		return;
+	}
+
+	const auto realBatchSize = (batchSize == 0) ? kDefaultEmbeddingBatchSize : batchSize;
+	logFmt(LogInfo, "Action 'create_embeddings' start: batch_size - {}", realBatchSize);
+
+	auto nsName = ns->GetName(ctx);
+	const auto query = Query(nsName).SelectAllFields();
+
+	LocalQueryResults result;
+	auto err = Select(query, result, ctx);
+	if (!err.ok()) {
+		throw err;
+	}
+	if (result.Count() == 0) {
+		return;	 // NOTE: nothing to do
+	}
+
+	auto ltx = NewTransaction(nsName, ctx);
+	if (!ltx.Status().ok()) {
+		throw ltx.Status();
+	}
+	Transaction tx(std::move(ltx));
+
+	auto doTransaction = [&](Transaction&& tx, const RdxContext& ctx) {
+		auto ltx = Transaction::Transform(std::move(tx));
+		LocalQueryResults dummy;
+		auto err = CommitTransaction(ltx, dummy, ctx);
+		if (!err.ok()) {
+			throw err;
+		}
+	};
+
+	uint64_t totalItemCounter = 0;
+	uint32_t trItemCounter = 0;
+	reindexer::WrSerializer ser;
+	for (auto it : result) {
+		{
+			auto item = it.GetItem();
+			err = it.GetCJSON(ser, false);
+			if (!err.ok()) {
+				throw err;
+			}
+		}
+
+		{
+			Item trItem = tx.NewItem();
+			err = trItem.FromCJSON(ser.Slice(), false);
+			if (!err.ok()) {
+				throw err;
+			}
+			ser.Reset();
+			err = tx.Update(std::move(trItem));
+			if (!err.ok()) {
+				throw err;
+			}
+			++trItemCounter;
+		}
+
+		if (trItemCounter >= realBatchSize) {
+			doTransaction(std::move(tx), ctx);
+			totalItemCounter += trItemCounter;
+			logFmt(LogTrace, "Action 'create_embeddings' step: pack {}, total {}", trItemCounter, totalItemCounter);
+
+			ltx = NewTransaction(nsName, ctx);
+			if (!ltx.Status().ok()) {
+				throw ltx.Status();
+			}
+			tx = Transaction(std::move(ltx));
+			trItemCounter = 0;
+		}
+	}
+	result.Clear();
+
+	if (trItemCounter > 0) {
+		doTransaction(std::move(tx), ctx);
+		totalItemCounter += trItemCounter;
+		logFmt(LogTrace, "Action 'create_embeddings' final step: pack {}, total {}", trItemCounter, totalItemCounter);
+	}
+
+	logFmt(LogInfo, "Action 'create_embeddings' ended. {} documents processed", totalItemCounter);
+}
+
+void ReindexerImpl::handleCreateEmbeddingsAction(const gason::JsonNode& action, const RdxContext& ctx) {
+	using namespace std::string_view_literals;
+	const auto& nsNode = action["namespace"sv];
+	const auto batchSize = action["batch_size"sv].As<uint32_t>(kDefaultEmbeddingBatchSize);
+	if (nsNode.empty() || nsNode.As<std::string_view>() == kWildcard) {
+		for (auto& ns : getNamespaces(ctx)) {
+			createEmbeddings(ns.second, batchSize, ctx);
+		}
+	} else if (auto ns = getNamespaceNoThrow(nsNode.As<std::string_view>(), ctx); ns) {
+		createEmbeddings(ns, batchSize, ctx);
+	}
+}
+
 void ReindexerImpl::handleClearEmbeddersCacheAction(const gason::JsonNode& action) {
 	using namespace std::string_view_literals;
 	const auto& tagNode = action["cache_tag"sv];
@@ -2021,6 +2091,8 @@ void ReindexerImpl::handleConfigAction(const gason::JsonNode& action, const std:
 			handleDropANNCacheAction(action, ctx);
 		} else if (command == "rebuild_ivf_index"sv) {
 			handleRebuildIVFIndexAction(action, ctx);
+		} else if (command == "create_embeddings"sv) {
+			handleCreateEmbeddingsAction(action, ctx);
 		} else if (command == "clear_embedders_cache"sv) {
 			handleClearEmbeddersCacheAction(action);
 		}
@@ -2134,7 +2206,8 @@ ReindexerImpl::FilterNsNamesT ReindexerImpl::detectFilterNsNames(const Query& q)
 
 	StatsLocker::StatsLockT resultLock;
 
-	auto forEachNS = [&](const Namespace::Ptr& sysNs, bool withSystem,
+	auto forEachNS = [&](
+						 const Namespace::Ptr& sysNs, bool withSystem,
 						 const std::function<bool(std::string_view nsName, const Namespace::Ptr&, WrSerializer&)>& filler,
 						 const std::function<bool(WrSerializer&)>& embedders = [](WrSerializer&) { return false; }) {
 		const auto nsarray = getNamespaces(ctx);
@@ -2194,23 +2267,24 @@ ReindexerImpl::FilterNsNamesT ReindexerImpl::detectFilterNsNames(const Query& q)
 		}
 	} else if (sysNsName == kMemStatsNamespace) {
 		if (configProvider_.MemStatsEnabled()) {
-			forEachNS(getNamespace(kMemStatsNamespace, ctx), false,
-					  [&ctx](std::string_view nsName, const Namespace::Ptr& nsPtr, WrSerializer& ser) {
-						  auto stats = nsPtr->GetMemStat(ctx);
-						  bool notRenamed = iequals(stats.name, nsName);
-						  if (notRenamed) {
-							  stats.GetJSON(ser);
-						  }
-						  return notRenamed;
-					  },
-					  [&](WrSerializer& ser) {
-						  if (embeddersCache_->IsActive()) {
-							  auto stats = embeddersCache_->GetMemStat();
-							  stats.GetJSON(ser);
-							  return true;
-						  }
-						  return false;
-					  });
+			forEachNS(
+				getNamespace(kMemStatsNamespace, ctx), false,
+				[&ctx](std::string_view nsName, const Namespace::Ptr& nsPtr, WrSerializer& ser) {
+					auto stats = nsPtr->GetMemStat(ctx);
+					bool notRenamed = iequals(stats.name, nsName);
+					if (notRenamed) {
+						stats.GetJSON(ser);
+					}
+					return notRenamed;
+				},
+				[&](WrSerializer& ser) {
+					if (embeddersCache_->IsActive()) {
+						auto stats = embeddersCache_->GetMemStat();
+						stats.GetJSON(ser);
+						return true;
+					}
+					return false;
+				});
 		}
 	} else if (sysNsName == kNamespacesNamespace) {
 		forEachNS(getNamespace(kNamespacesNamespace, ctx), true,

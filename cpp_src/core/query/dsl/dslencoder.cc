@@ -54,7 +54,7 @@ static void encodeSorting(const SortingEntries& sortingEntries, JsonBuilder& bui
 	auto arrNode = builder.Array("sort"sv);
 
 	for (const SortingEntry& sortingEntry : sortingEntries) {
-		arrNode.Object().Put("field"sv, sortingEntry.expression).Put("desc"sv, sortingEntry.desc);
+		arrNode.Object().Put("field"sv, sortingEntry.expression).Put("desc"sv, *sortingEntry.desc);
 	}
 }
 
@@ -175,7 +175,7 @@ static void encodeSingleJoinQuery(const JoinedQuery& joinQuery, JsonBuilder& bui
 	node.Put("offset"sv, joinQuery.Offset());
 
 	encodeFilters(joinQuery, node);
-	encodeSorting(joinQuery.sortingEntries_, node);
+	encodeSorting(joinQuery.GetSortingEntries(), node);
 
 	auto arr1 = node.Array("on"sv);
 
@@ -270,7 +270,7 @@ static void toDsl(const Query& query, QueryScope scope, JsonBuilder& builder) {
 			if (scope != QueryScope::Subquery) {
 				encodeSelectFunctions(query, builder);
 			}
-			encodeSorting(query.sortingEntries_, builder);
+			encodeSorting(query.GetSortingEntries(), builder);
 			encodeFilters(query, builder);
 			if (scope != QueryScope::Subquery) {
 				encodeMergedQueries(query, builder);

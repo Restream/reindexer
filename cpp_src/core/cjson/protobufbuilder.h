@@ -63,6 +63,7 @@ public:
 
 	template <typename T>
 	ProtobufBuilder& Put(std::string_view tagName, const T& val, int /*offset*/ = 0) {
+		assertrx_throw(tm_);
 		put(tm_->name2tag(tagName), val);
 		return *this;
 	}

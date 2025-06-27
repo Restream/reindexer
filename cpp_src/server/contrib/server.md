@@ -146,7 +146,7 @@
 
 <!-- tocstop -->
 
-> Version 5.3.0
+> Version 5.4.0
 
 ## Overview
 
@@ -1764,6 +1764,14 @@ with_shard_ids?: enum[true, false]
 
 ```ts
 with_vectors?: enum[true, false]
+```
+
+```ts
+with_columns?: enum[true, false]
+```
+
+```ts
+width?: integer
 ```
 
 #### Responses
@@ -3473,7 +3481,9 @@ This operation updates documents in namespace by DSL query.
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
-      k: integer
+      k?: integer
+      // Raduis for filtering vectors by metric
+      radius?: number
       // Applicable for HNSW index only. The size of the dynamic list for the nearest neighbors used during a query. Ef must be >= K. Default value = K
       ef?: integer
       // Applicable for IVF index only. The number of Voronoi cells to search during a query
@@ -3748,7 +3758,9 @@ format?: enum[json, msgpack, protobuf, csv-file]
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
-      k: integer
+      k?: integer
+      // Raduis for filtering vectors by metric
+      radius?: number
       // Applicable for HNSW index only. The size of the dynamic list for the nearest neighbors used during a query. Ef must be >= K. Default value = K
       ef?: integer
       // Applicable for IVF index only. The number of Voronoi cells to search during a query
@@ -4125,7 +4137,9 @@ This operation removes documents from namespace by DSL query.
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
-      k: integer
+      k?: integer
+      // Raduis for filtering vectors by metric
+      radius?: number
       // Applicable for HNSW index only. The size of the dynamic list for the nearest neighbors used during a query. Ef must be >= K. Default value = K
       ef?: integer
       // Applicable for IVF index only. The number of Voronoi cells to search during a query
@@ -5283,7 +5297,9 @@ tx_id?: string
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
-      k: integer
+      k?: integer
+      // Raduis for filtering vectors by metric
+      radius?: number
       // Applicable for HNSW index only. The size of the dynamic list for the nearest neighbors used during a query. Ef must be >= K. Default value = K
       ef?: integer
       // Applicable for IVF index only. The number of Voronoi cells to search during a query
@@ -8116,7 +8132,9 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
-      k: integer
+      k?: integer
+      // Raduis for filtering vectors by metric
+      radius?: number
       // Applicable for HNSW index only. The size of the dynamic list for the nearest neighbors used during a query. Ef must be >= K. Default value = K
       ef?: integer
       // Applicable for IVF index only. The number of Voronoi cells to search during a query
@@ -8276,7 +8294,9 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
-      k: integer
+      k?: integer
+      // Raduis for filtering vectors by metric
+      radius?: number
       // Applicable for HNSW index only. The size of the dynamic list for the nearest neighbors used during a query. Ef must be >= K. Default value = K
       ef?: integer
       // Applicable for IVF index only. The number of Voronoi cells to search during a query
@@ -8387,7 +8407,9 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
-      k: integer
+      k?: integer
+      // Raduis for filtering vectors by metric
+      radius?: number
       // Applicable for HNSW index only. The size of the dynamic list for the nearest neighbors used during a query. Ef must be >= K. Default value = K
       ef?: integer
       // Applicable for IVF index only. The number of Voronoi cells to search during a query
@@ -8413,7 +8435,9 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 // Parameters for knn search
 {
   // Maximum count of returned vectors in KNN queries
-  k: integer
+  k?: integer
+  // Raduis for filtering vectors by metric
+  radius?: number
   // Applicable for HNSW index only. The size of the dynamic list for the nearest neighbors used during a query. Ef must be >= K. Default value = K
   ef?: integer
   // Applicable for IVF index only. The number of Voronoi cells to search during a query
@@ -8518,7 +8542,9 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
-      k: integer
+      k?: integer
+      // Raduis for filtering vectors by metric
+      radius?: number
       // Applicable for HNSW index only. The size of the dynamic list for the nearest neighbors used during a query. Ef must be >= K. Default value = K
       ef?: integer
       // Applicable for IVF index only. The number of Voronoi cells to search during a query
@@ -8622,6 +8648,8 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   multithreading?: enum[0, 1]
   // Clusters count for construct IFV index. Required for IVF indexes. Allowed for IVF indexes only.
   centroids_count?: integer
+  // Raduis for filtering vectors by metric in queries
+  radius?: number
   // Embedding configuration
   embedding: {
     // Upsert embedding configuration
@@ -8692,6 +8720,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     // If the value is true, the word can be included in search results in queries such as 'word*', 'word~' etc.
     is_morpheme?: boolean
   }[]
+  keep_diacritics?: string[]
   stemmers?: string[]
   // Fulltext synonym definition
   synonyms: {

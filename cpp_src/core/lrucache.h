@@ -38,7 +38,6 @@ public:
 	void Put(const K& k, V&& v);
 	LRUCacheMemStat GetMemStat() const;
 	void Clear();
-	void Clear(std::function<bool(const Key&)> cond);
 
 	template <typename T>
 	void Dump(T& os, std::string_view step, std::string_view offset) const {

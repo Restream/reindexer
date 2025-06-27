@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include "core/enums.h"
+#include "core/indexopts.h"
 #include "core/key_value_type.h"
 
 namespace reindexer {
@@ -20,7 +21,7 @@ class EmbeddersCache;
 // Type of field
 class [[nodiscard]] PayloadFieldType {
 public:
-	PayloadFieldType(std::string_view nsName, int idx, const Index& index, const IndexDef& indexDef,
+	PayloadFieldType(std::string_view nsName, const Index& index, const IndexDef& indexDef,
 					 const std::shared_ptr<EmbeddersCache>& embeddersCache);
 	PayloadFieldType(KeyValueType t, std::string n, std::vector<std::string> j, IsArray a,
 					 reindexer::FloatVectorDimension dims = reindexer::FloatVectorDimension()) noexcept
@@ -46,21 +47,24 @@ public:
 	[[nodiscard]] const std::vector<std::string>& JsonPaths() const& noexcept { return jsonPaths_; }
 	void AddJsonPath(const std::string& jsonPath) { jsonPaths_.push_back(jsonPath); }
 	[[nodiscard]] std::string ToString() const;
-	[[nodiscard]] std::shared_ptr<reindexer::Embedder> Embedder() const { return embedder_; }
-	[[nodiscard]] std::shared_ptr<reindexer::Embedder> QueryEmbedder() const { return queryEmbedder_; }
+	[[nodiscard]] std::shared_ptr<const reindexer::Embedder> Embedder() const { return embedder_; }
+	[[nodiscard]] std::shared_ptr<const reindexer::Embedder> QueryEmbedder() const { return queryEmbedder_; }
 
 	[[nodiscard]] auto Name() const&& = delete;
 	[[nodiscard]] auto JsonPaths() const&& = delete;
 
 private:
+	void createEmbedders(std::string_view nsName, const std::optional<FloatVectorIndexOpts::EmbeddingOpts>& embeddingOpts,
+						 const std::shared_ptr<EmbeddersCache>& embeddersCache);
+
 	KeyValueType type_;
 	std::string name_;
 	std::vector<std::string> jsonPaths_;
 	size_t offset_{0};
 	uint32_t arrayDims_{0};
 	reindexer::IsArray isArray_{IsArray_False};
-	std::shared_ptr<reindexer::Embedder> embedder_;
-	std::shared_ptr<reindexer::Embedder> queryEmbedder_;
+	std::shared_ptr<const reindexer::Embedder> embedder_;
+	std::shared_ptr<const reindexer::Embedder> queryEmbedder_;
 };
 
 }  // namespace reindexer

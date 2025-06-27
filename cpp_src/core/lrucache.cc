@@ -136,28 +136,6 @@ void LRUCacheImpl<K, V, HashT, EqualT>::Clear() {
 	clearAll();
 }
 
-template <typename K, typename V, typename HashT, typename EqualT>
-void LRUCacheImpl<K, V, HashT, EqualT>::Clear(std::function<bool(const Key&)> cond) {
-	std::lock_guard lock(lock_);
-	for (auto it = lru_.begin(); it != lru_.end();) {
-		if (!cond(**it)) {
-			++it;
-			continue;
-		}
-		auto mIt = items_.find(**it);
-		assertrx(mIt != items_.end());
-		const size_t oldSize = sizeof(Entry) + kElemSizeOverhead + mIt->first.Size() + mIt->second.val.Size();
-		if rx_unlikely (oldSize > totalCacheSize_) {
-			clearAll();
-			return;
-		}
-		totalCacheSize_ -= oldSize;
-		items_.erase(mIt);
-		it = lru_.erase(it);
-		++eraseCount_;
-	}
-}
-
 template class LRUCacheImpl<IdSetCacheKey, IdSetCacheVal, IdSetCacheKey::Hash, IdSetCacheKey::Equal>;
 template class LRUCacheImpl<IdSetCacheKey, FtIdSetCacheVal, IdSetCacheKey::Hash, IdSetCacheKey::Equal>;
 template class LRUCacheImpl<QueryCacheKey, QueryCountCacheVal, HashQueryCacheKey, EqQueryCacheKey>;

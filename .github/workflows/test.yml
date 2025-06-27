@@ -22,23 +22,24 @@ jobs:
           cmake --build . --config Release --target swagger
           cpack
 
-  build-windows-2019:
-    runs-on: windows-2019
-    strategy:
-      matrix:
-        compiler: ["Visual Studio 16 2019"]
-      fail-fast: false
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Build Reindexer
-        run: |
-          mkdir build && cd build
-          cmake -G "${{matrix.compiler}}" -DBUILD_ANN_INDEXES=none ..
-          cmake --build . --config Release
-          cmake --build . --config Release --target face
-          cmake --build . --config Release --target swagger
-          cpack
+# TODO: Enable this job. Currently windows-2025 image does not have NSIS
+#  build-windows-2025:
+#    runs-on: windows-2025
+#    strategy:
+#      matrix:
+#        compiler: ["Visual Studio 17 2022"]
+#      fail-fast: false
+#    steps:
+#      - name: Checkout repository
+#        uses: actions/checkout@v4
+#      - name: Build Reindexer
+#        run: |
+#          mkdir build && cd build
+#          cmake -G "${{matrix.compiler}}" -DBUILD_ANN_INDEXES=none ..
+#          cmake --build . --config Release
+#          cmake --build . --config Release --target face
+#          cmake --build . --config Release --target swagger
+#          cpack
 
   build:
     strategy:

@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <atomic>
 #include <memory>
+#include <queue>
 #include <random>
 #include "estl/fast_hash_set.h"
 #include "hnswlib.h"
@@ -518,7 +519,7 @@ public:
 		container1.reserve(ef);
 		container2.reserve(ef);
 		std::priority_queue<pair_t, std::vector<pair_t>, CompareByFirst> top_candidates(CompareByFirst(), std::move(container1));
-		std::priority_queue<pair_t, std::vector<pair_t>, CompareByFirst> candidate_set(CompareByFirst(), std::move(container1));
+		std::priority_queue<pair_t, std::vector<pair_t>, CompareByFirst> candidate_set(CompareByFirst(), std::move(container2));
 
 		dist_t lowerBound;
 		if (bare_bone_search || (!isMarkedDeleted(ep_id) && ((!isIdAllowed) || (*isIdAllowed)(getExternalLabel(ep_id))))) {
@@ -1573,16 +1574,7 @@ public:
 	}
 
 	// Read-only concurrency expected
-	std::priority_queue<std::pair<dist_t, labeltype>> searchKnn(const void* query_data, size_t k, size_t ef = 0,
-																BaseFilterFunctor* isIdAllowed = nullptr) const {
-		std::vector<std::pair<dist_t, labeltype>> container;
-		container.reserve(k);
-		std::priority_queue<std::pair<dist_t, labeltype>> result(std::less<std::pair<dist_t, labeltype>>(), std::move(container));
-
-		if (cur_element_count == 0) {
-			return result;
-		}
-
+	auto getTopCandidates(const void* query_data, size_t ef, BaseFilterFunctor* isIdAllowed) const {
 		tableint currObj = enterpoint_node_;
 		dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), enterpoint_node_);
 
@@ -1613,18 +1605,26 @@ public:
 			}
 		}
 
-		ef = ef ? ef : k * 3 / 2;
-		std::vector<std::pair<dist_t, tableint>> container2;
-		container2.reserve(ef);
-		std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates(
-			CompareByFirst(), std::move(container2));
-		bool bare_bone_search = !num_deleted_ && !isIdAllowed;
-		if (bare_bone_search) {
-			top_candidates = searchBaseLayerST<true>(currObj, query_data, ef, isIdAllowed);
+		if (!num_deleted_ && !isIdAllowed) {
+			return searchBaseLayerST<true>(currObj, query_data, ef, isIdAllowed);
 		} else {
-			top_candidates = searchBaseLayerST<false>(currObj, query_data, ef, isIdAllowed);
+			return searchBaseLayerST<false>(currObj, query_data, ef, isIdAllowed);
+		}
+	}
+
+	// Read-only concurrency expected
+	std::priority_queue<std::pair<dist_t, labeltype>> searchKnn(const void* query_data, size_t k, size_t ef = 0,
+																BaseFilterFunctor* isIdAllowed = nullptr) const {
+		std::vector<std::pair<dist_t, labeltype>> container;
+		container.reserve(k);
+		std::priority_queue<std::pair<dist_t, labeltype>> result(std::less<std::pair<dist_t, labeltype>>(), std::move(container));
+
+		if (cur_element_count == 0) {
+			return result;
 		}
 
+		ef = ef ? ef : k * 3 / 2;
+		auto top_candidates = getTopCandidates(query_data, ef, isIdAllowed);
 		while (top_candidates.size() > k) {
 			top_candidates.pop();
 		}
@@ -1633,6 +1633,62 @@ public:
 			result.push(std::pair<dist_t, labeltype>(rez.first, getExternalLabel(rez.second)));
 			top_candidates.pop();
 		}
+		return result;
+	}
+
+	// Read-only concurrency expected
+	std::priority_queue<std::pair<dist_t, labeltype>> searchRange(const void* query_data, float radius, size_t ef,
+																  BaseFilterFunctor* isIdAllowed = nullptr) const {
+		return getNeighboursWithinRadius(getTopCandidates(query_data, ef, isIdAllowed), query_data, radius, isIdAllowed);
+	}
+
+	auto getNeighboursWithinRadius(
+		std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates,
+		const void* data_point, float radius, BaseFilterFunctor* isIdAllowed = nullptr) const {
+		std::vector<std::pair<dist_t, labeltype>> container;
+		container.reserve(top_candidates.size());
+		std::priority_queue<std::pair<dist_t, labeltype>> result(std::less<std::pair<dist_t, labeltype>>(), std::move(container));
+
+		VisitedList* vl = visited_list_pool_->getFreeVisitedList();
+		vl_type* visited_array = vl->mass;
+		vl_type visited_array_tag = vl->curV;
+
+		std::queue<std::pair<dist_t, tableint>> radius_queue;
+		while (!top_candidates.empty()) {
+			const auto& cand = top_candidates.top();
+			if (cand.first < radius) {
+				radius_queue.emplace(cand);
+				result.emplace(cand.first, cand.second);
+			}
+			visited_array[cand.second] = visited_array_tag;
+			top_candidates.pop();
+		}
+
+		while (!radius_queue.empty()) {
+			auto cur = radius_queue.front();
+			radius_queue.pop();
+
+			tableint current_id = cur.second;
+			int* data = (int*)get_linklist0(current_id);
+			size_t size = getListCount((linklistsizeint*)data);
+
+			for (size_t j = 1; j <= size; j++) {
+				int candidate_id = *(data + j);
+				if (visited_array[candidate_id] != visited_array_tag) {
+					visited_array[candidate_id] = visited_array_tag;
+					if ((!isIdAllowed) || (*isIdAllowed)(getExternalLabel(candidate_id))) {
+						dist_t dist = fstdistfunc_(data_point, getDataByInternalId(candidate_id), candidate_id);
+						if (dist < radius) {
+							radius_queue.emplace(dist, candidate_id);
+							result.emplace(dist, getExternalLabel(candidate_id));
+						}
+					}
+				}
+			}
+		}
+
+		visited_list_pool_->releaseVisitedList(vl);
+
 		return result;
 	}
 

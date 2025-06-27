@@ -26,18 +26,20 @@ type TestItemWithouIndexes struct {
 	Year int    `json:"year"`
 }
 
-const testNumberOfArgumentsInSetAndEqNs = "test_items_set_eq_number"
-const testEmptySetAndEqNs = "test_items_empty_set_eq"
-const testEmptySetAndEqWithoutIdxNs = "test_items_not_indexed"
-const testEmptySetAndEqWithCompositeIdxNs = "test_items_set_eq_composite_idx"
-const testJoinOnSetAndEqNs1 = "test_items_join_into"
-const testJoinOnSetAndEqNs2 = "test_items_joined"
+const (
+	testNumberOfArgumentsInSetAndEqNs   = "test_items_set_eq_number"
+	testEmptySetAndEqNs                 = "test_items_empty_set_eq"
+	testEmptySetAndEqWithoutIdxNs       = "test_items_not_indexed"
+	testEmptySetAndEqWithCompositeIdxNs = "test_items_set_eq_composite_idx"
+	testJoinOnSetAndEqNs1               = "test_items_join_into"
+	testJoinOnSetAndEqNs2               = "test_items_joined"
+)
 
 func init() {
 	tnamespaces[testNumberOfArgumentsInSetAndEqNs] = TestItemSimple{}
 	tnamespaces[testEmptySetAndEqNs] = TestItemSimple{}
 	tnamespaces[testEmptySetAndEqWithoutIdxNs] = TestItemWithouIndexes{}
-	tnamespaces[testEmptySetAndEqWithCompositeIdxNs] = TestItemSimpleCmplxPK{}
+	tnamespaces[testEmptySetAndEqWithCompositeIdxNs] = TestItemCmplxPK{}
 	tnamespaces[testJoinOnSetAndEqNs1] = TestItemJoinInto{}
 	tnamespaces[testJoinOnSetAndEqNs2] = TestItemJoined{}
 }
@@ -200,8 +202,7 @@ func TestEmptySetAndEqWithCompositeIdx(t *testing.T) {
 	t.Parallel()
 
 	const ns = testEmptySetAndEqWithCompositeIdxNs
-	testItem := TestItemSimpleCmplxPK{ID: rand.Int31(), SubID: randString()}
-
+	testItem := TestItemCmplxPK{ID: rand.Int31(), SubID: randString()}
 	err := DB.Upsert(ns, testItem)
 	require.NoError(t, err)
 
@@ -255,27 +256,27 @@ func TestEmptySetAndEqWithCompositeIdx(t *testing.T) {
 func TestJoinOnSetAndEq(t *testing.T) {
 	t.Parallel()
 
-	ns1Name := testJoinOnSetAndEqNs1
-	ns2Name := testJoinOnSetAndEqNs2
+	const (
+		ns1 = testJoinOnSetAndEqNs1
+		ns2 = testJoinOnSetAndEqNs2
+	)
 
 	joinId := rand.Intn(1000)
-	err := DB.Upsert(ns1Name,
-		TestItemJoinInto{ID: joinId})
+	err := DB.Upsert(ns1, TestItemJoinInto{ID: joinId})
 	require.NoError(t, err)
 
-	err = DB.Upsert(ns2Name,
-		TestItemJoined{ID: rand.Intn(1000), Name: randString(), JoinID: joinId})
+	err = DB.Upsert(ns2, TestItemJoined{ID: rand.Intn(1000), Name: randString(), JoinID: joinId})
 	require.NoError(t, err)
 
 	t.Run("join on set and eq are the same", func(t *testing.T) {
-		queryEq := DBD.Query(ns1Name).
-			Join(DBD.Query(ns2Name), "test_item_joined").
+		queryEq := DBD.Query(ns1).
+			Join(DBD.Query(ns2), "test_item_joined").
 			On("id", reindexer.EQ, "join_id")
 		resultEq, err := queryEq.Exec().FetchAll()
 		require.NoError(t, err)
 
-		querySet := DBD.Query(ns1Name).
-			Join(DBD.Query(ns2Name), "test_item_joined").
+		querySet := DBD.Query(ns1).
+			Join(DBD.Query(ns2), "test_item_joined").
 			On("id", reindexer.SET, "join_id")
 		resultSet, err := querySet.Exec().FetchAll()
 		require.NoError(t, err)

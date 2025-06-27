@@ -1,7 +1,5 @@
 FROM debian:stable-slim AS build
 
-ARG RX_VERSION=v5.3.0
-
 RUN apt update -y && apt install -y  libunwind-dev build-essential libsnappy-dev libleveldb-dev openssl \
     make curl unzip git cmake libjemalloc-dev libopenblas-pthread-dev \
     libgrpc++-dev protobuf-compiler-grpc protobuf-compiler libprotobuf-dev
@@ -19,6 +17,9 @@ RUN cd /src && \
     cp /src/cpp_src/cmd/reindexer_server/contrib/entrypoint.sh /entrypoint.sh
 
 FROM debian:stable-slim
+
+ARG RX_VERSION=v5.3.0
+
 COPY --from=build /usr/local /usr/local
 COPY --from=build /entrypoint.sh /entrypoint.sh
 RUN apt update -y && apt install -y libleveldb1d libunwind8 libopenblas0-pthread libjemalloc2 libgrpc++1.51 libgomp1 && rm -rf /var/lib/apt

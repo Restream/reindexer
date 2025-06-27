@@ -23,10 +23,9 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 			ConstPayload(ns.payloadType_, ns.items_[rowId]).Get(idxNo, keys);
 			newIndex->Upsert(resKeys, keys, rowId, needClearCache);
 		}
-		if (index->IsOrdered()) {
-			auto indexesCacheCleaner{ns.GetIndexesCacheCleaner()};
-			indexesCacheCleaner.Add(index->SortId());
-		}
+
+		auto indexesCacheCleaner{ns.GetIndexesCacheCleaner()};
+		indexesCacheCleaner.Add(*index);
 
 		index = std::move(newIndex);
 

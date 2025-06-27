@@ -9,6 +9,7 @@
 #include "gtests/tools.h"
 #include "queries_verifier.h"
 #include "reindexer_api.h"
+#include "tools/serializer.h"
 
 class [[nodiscard]] TestQuery : private reindexer::Query {
 public:
@@ -37,7 +38,7 @@ public:
 		setPkFields(joinNs, {kFieldNameId});
 		setPkFields(compositeIndexesNs, {kFieldNameBookid, kFieldNameBookid2});
 		setPkFields(comparatorsNs, {kFieldNameColumnInt64});
-		setPkFields(forcedSortOffsetNs, {kFieldNameId});
+		setPkFields(forcedSortNs, {kFieldNameId});
 		setPkFields(geomNs, {kFieldNameId});
 		setPkFields(btreeIdxOptNs, {kFieldNameId});
 
@@ -179,13 +180,13 @@ public:
 		addIndexFields(comparatorsNs, kFieldNameColumnFullText, {{kFieldNameColumnFullText, reindexer::KeyValueType::String{}}});
 		addIndexFields(comparatorsNs, kFieldNameColumnStringNumeric, {{kFieldNameColumnStringNumeric, reindexer::KeyValueType::String{}}});
 
-		rt.OpenNamespace(forcedSortOffsetNs);
-		DefineNamespaceDataset(forcedSortOffsetNs, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
-													IndexDeclaration{kFieldNameColumnHash, "hash", "int", IndexOpts(), 0},
-													IndexDeclaration{kFieldNameColumnTree, "tree", "int", IndexOpts(), 0}});
-		addIndexFields(forcedSortOffsetNs, kFieldNameId, {{kFieldNameId, reindexer::KeyValueType::Int{}}});
-		addIndexFields(forcedSortOffsetNs, kFieldNameColumnHash, {{kFieldNameColumnHash, reindexer::KeyValueType::Int{}}});
-		addIndexFields(forcedSortOffsetNs, kFieldNameColumnTree, {{kFieldNameColumnTree, reindexer::KeyValueType::Int{}}});
+		rt.OpenNamespace(forcedSortNs);
+		DefineNamespaceDataset(forcedSortNs, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
+											  IndexDeclaration{kFieldNameColumnHash, "hash", "int", IndexOpts(), 0},
+											  IndexDeclaration{kFieldNameColumnTree, "tree", "int", IndexOpts(), 0}});
+		addIndexFields(forcedSortNs, kFieldNameId, {{kFieldNameId, reindexer::KeyValueType::Int{}}});
+		addIndexFields(forcedSortNs, kFieldNameColumnHash, {{kFieldNameColumnHash, reindexer::KeyValueType::Int{}}});
+		addIndexFields(forcedSortNs, kFieldNameColumnTree, {{kFieldNameColumnTree, reindexer::KeyValueType::Int{}}});
 
 		rt.OpenNamespace(geomNs);
 		DefineNamespaceDataset(
@@ -349,13 +350,20 @@ protected:
 		forcedSortOffsetValues.clear();
 		forcedSortOffsetValues.reserve(forcedSortOffsetNsSize);
 		for (size_t i = 0; i < forcedSortOffsetNsSize; ++i) {
-			Item item = NewItem(forcedSortOffsetNs);
-			item[kFieldNameId] = static_cast<int>(i);
-			forcedSortOffsetValues.emplace_back(rand() % forcedSortOffsetMaxValue, rand() % forcedSortOffsetMaxValue);
-			item[kFieldNameColumnHash] = forcedSortOffsetValues.back().first;
-			item[kFieldNameColumnTree] = forcedSortOffsetValues.back().second;
-			Upsert(forcedSortOffsetNs, item);
-			saveItem(std::move(item), forcedSortOffsetNs);
+			reindexer::WrSerializer ser;
+			{
+				reindexer::JsonBuilder json(ser);
+				json.Put(kFieldNameId, int(i));
+				forcedSortOffsetValues.emplace_back(rand() % forcedSortOffsetMaxValue, rand() % forcedSortOffsetMaxValue);
+				json.Put(kFieldNameColumnHash, forcedSortOffsetValues.back().first);
+				json.Put(kFieldNameColumnTree, forcedSortOffsetValues.back().second);
+				json.Put(kFieldNameColumnString, "columnString");
+			}
+			Item item = NewItem(forcedSortNs);
+			const auto err = item.FromJSON(ser.Slice());
+			ASSERT_TRUE(err.ok()) << err.what();
+			Upsert(forcedSortNs, item);
+			saveItem(std::move(item), forcedSortNs);
 		}
 	}
 
@@ -1243,7 +1251,7 @@ protected:
 	const std::string joinNs = "join_namespace";
 	const std::string compositeIndexesNs = "composite_indexes_namespace";
 	const std::string comparatorsNs = "comparators_namespace";
-	const std::string forcedSortOffsetNs = "forced_sort_offset_namespace";
+	const std::string forcedSortNs = "forced_sort_offset_namespace";
 	const std::string nsWithObject = "namespace_with_object";
 	const std::string geomNs = "geom_namespace";
 	const std::string uuidNs = "uuid_namespace";

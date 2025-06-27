@@ -4,6 +4,7 @@
 #include "core/ft/filters/synonyms.h"
 #include "core/ft/filters/translit.h"
 #include "core/ft/ft_fast/selecter.h"
+#include "core/nsselecter/ranks_holder.h"
 #include "core/rdxcontext.h"
 #include "estl/contexted_locks.h"
 #include "sort/pdqsort.hpp"
@@ -165,6 +166,52 @@ typename MergeType::iterator FastIndexText<T>::unstableRemoveIf(MergeType& md, i
 	}
 }
 
+[[nodiscard]] static bool lessRank(RankT lhs, RankT rhs) noexcept { return lhs < rhs; }
+[[nodiscard]] static bool lessRank(RanksHolder::RankPos lhs, RanksHolder::RankPos rhs) noexcept { return lhs.rank < rhs.rank; }
+
+template <typename T>
+template <auto(RanksHolder::*rankGetter)>
+void FastIndexText<T>::sortAfterSelect(IdSet& mergedIds, RanksHolder& ranks, RankSortType rankSortType) {
+	std::vector<size_t> sortIds;
+	const size_t nItems = mergedIds.size();
+	sortIds.reserve(nItems);
+	for (size_t i = 0; i < nItems; ++i) {
+		sortIds.emplace_back(i);
+	}
+	if (rankSortType == RankSortType::RankAndID) {
+		boost::sort::pdqsort(sortIds.begin(), sortIds.end(), [&ranks, &mergedIds](size_t i1, size_t i2) {
+			const auto p1 = (ranks.*rankGetter)(i1);
+			const auto p2 = (ranks.*rankGetter)(i2);
+			if (lessRank(p2, p1)) {
+				return true;
+			} else if (lessRank(p1, p2)) {
+				return false;
+			} else {
+				return mergedIds[i1] < mergedIds[i2];
+			}
+		});
+	} else {
+		boost::sort::pdqsort(sortIds.begin(), sortIds.end(), [&mergedIds](size_t i1, size_t i2) { return mergedIds[i1] < mergedIds[i2]; });
+	}
+	for (size_t i = 0; i < nItems; i++) {
+		const auto vm = mergedIds[i];
+		const auto vp = (ranks.*rankGetter)(i);
+		size_t j = i;
+		while (true) {
+			size_t k = sortIds[j];
+			sortIds[j] = j;
+			if (k == i) {
+				break;
+			}
+			mergedIds[j] = mergedIds[k];
+			ranks.Set(j, (ranks.*rankGetter)(k));
+			j = k;
+		}
+		mergedIds[j] = vm;
+		ranks.Set(j, vp);
+	}
+}
+
 template <typename T>
 template <typename MergeType>
 IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& ftCtx, MergeType&& mergeData, RankSortType rankSortType, FtMergeStatuses&& statuses,
@@ -182,12 +229,14 @@ IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& ftCtx, MergeType&& mergeData, Ra
 
 	size_t relevantDocs = 0;
 	switch (rankSortType) {
-		case RankSortType::RankAndID: {
-			auto itF = unstableRemoveIf(mergeData, minRelevancy, scalingFactor, relevantDocs, cnt);
+		case RankSortType::RankAndID:
+		case RankSortType::IDOnly: {
+			const auto itF = unstableRemoveIf(mergeData, minRelevancy, scalingFactor, relevantDocs, cnt);
 			mergeData.erase(itF, mergeData.end());
 			break;
 		}
-		case RankSortType::RankOnly: {
+		case RankSortType::IDAndPositions:
+		case RankSortType::RankOnly:
 			for (auto& vid : mergeData) {
 				auto& vdoc = holder.vdocs_[vid.id];
 				vid.proc *= scalingFactor;
@@ -199,10 +248,10 @@ IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& ftCtx, MergeType&& mergeData, Ra
 				++relevantDocs;
 			}
 			break;
-		}
-		case RankSortType::ExternalExpression: {
+		case RankSortType::ExternalExpression:
 			throw Error(errLogic, "RankSortType::ExternalExpression not implemented.");
-		}
+		default:
+			throw_as_assert;
 	}
 
 	mergedIds->reserve(cnt);
@@ -246,8 +295,8 @@ IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& ftCtx, MergeType&& mergeData, Ra
 		std::string str;
 		for (size_t i = 0; i < ranks.Size();) {
 			size_t j = i;
-			for (; j < ranks.Size() && ranks.Get(i) == ranks.Get(j); j++);
-			str += std::to_string(ranks.Get(i)) + '%';
+			for (; j < ranks.Size() && ranks.GetRank(i) == ranks.GetRank(j); j++);
+			str += std::to_string(ranks.GetRank(i).Value()) + '%';
 			if (j - i > 1) {
 				str += '(';
 				str += std::to_string(j - i);
@@ -259,42 +308,20 @@ IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& ftCtx, MergeType&& mergeData, Ra
 		logFmt(LogInfo, "Relevancy({}): {}", ranks.Size(), str);
 	}
 	assertrx_throw(mergedIds->size() == ranks.Size());
-	if (rankSortType == RankSortType::RankAndID) {
-		std::vector<size_t> sortIds;
-		size_t nItems = mergedIds->size();
-		sortIds.reserve(mergedIds->size());
-		for (size_t i = 0; i < nItems; i++) {
-			sortIds.emplace_back(i);
-		}
-		boost::sort::pdqsort(sortIds.begin(), sortIds.end(), [&ranks, mergedIds](size_t i1, size_t i2) {
-			const RankT p1 = ranks.Get(i1);
-			const RankT p2 = ranks.Get(i2);
-			if (p1 > p2) {
-				return true;
-			} else if (p1 < p2) {
-				return false;
-			} else {
-				return (*mergedIds)[i1] < (*mergedIds)[i2];
-			}
-		});
-
-		for (size_t i = 0; i < nItems; i++) {
-			auto vm = (*mergedIds)[i];
-			auto vp = ranks.Get(i);
-			size_t j = i;
-			while (true) {
-				size_t k = sortIds[j];
-				sortIds[j] = j;
-				if (k == i) {
-					break;
-				}
-				(*mergedIds)[j] = (*mergedIds)[k];
-				ranks.Set(j, ranks.Get(k));
-				j = k;
-			}
-			(*mergedIds)[j] = vm;
-			ranks.Set(j, vp);
-		}
+	switch (rankSortType) {
+		case RankSortType::RankAndID:
+		case RankSortType::IDOnly:
+			sortAfterSelect<&RanksHolder::GetRank>(*mergedIds, ranks, rankSortType);
+			break;
+		case RankSortType::IDAndPositions:
+			ranks.InitRRFPositions();
+			sortAfterSelect<&RanksHolder::GetRankPos>(*mergedIds, ranks, rankSortType);
+			break;
+		case RankSortType::RankOnly:
+			break;
+		case RankSortType::ExternalExpression:
+		default:
+			throw_as_assert;
 	}
 	return mergedIds;
 }

@@ -1,11 +1,14 @@
 #pragma once
 
+#include <utility>
+#include "core/keyvalue/geometry.h"
+
 namespace reindexer {
 
 template <typename Entry, typename Node, typename Traits, typename Iterator, size_t MaxEntries>
 class Splitter {
 protected:
-	Splitter(Entry&& appendingEntry, Node& sourceNode, Iterator* it)
+	Splitter(Entry&& appendingEntry, Node& sourceNode, Iterator* it) noexcept
 		: appendingEntry_{std::move(appendingEntry)}, srcNode_{sourceNode}, insertedIt_{it} {
 		assertrx(MaxEntries == srcNode_.data_.size());
 	}
@@ -126,7 +129,7 @@ private:
 
 	template <typename It>
 	static void setIterator(It* it, Node& node) noexcept {
-		*it = It{&node, node.data_.begin() + (node.data_.size() - 1)};
+		*it = It{&node, (node.data_.size() - 1)};
 	}
 	static void setIterator(void*, Node&) noexcept {}
 

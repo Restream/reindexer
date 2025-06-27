@@ -10,7 +10,7 @@ constexpr static size_t kNotComputed{std::numeric_limits<size_t>::max()};
 struct FieldsCompRes {
 	size_t firstDifferentFieldIdx{kNotComputed};
 	reindexer::ComparationResult fieldsCmpRes;
-	[[nodiscard]] reindexer::ComparationResult GetResult(bool desc) noexcept {
+	[[nodiscard]] reindexer::ComparationResult GetResult(reindexer::Desc desc) noexcept {
 		if (firstDifferentFieldIdx == 0) {
 			return desc ? -fieldsCmpRes : fieldsCmpRes;
 		} else {
@@ -77,13 +77,13 @@ bool ItemComparator::operator()(const ItemRef& lhs, const ItemRef& rhs) const {
 	}
 	// If values are equal, then sort by row ID, to give consistent results
 	return std::visit([&](const auto& e) noexcept { return e.data.desc ? lhs.Id() > rhs.Id() : lhs.Id() < rhs.Id(); },
-					  ctx_.sortingContext.entries[0]);
+					  ctx_.sortingContext.entries[0].AsVariant());
 }
 
 class ItemComparator::BackInserter {
 public:
 	explicit BackInserter(ItemComparator& comparator) noexcept : comparator_(comparator) {}
-	void expr(bool desc) { comparator_.comparators_.emplace_back(CompareByExpression{desc}); }
+	void expr(Desc desc) { comparator_.comparators_.emplace_back(CompareByExpression{desc}); }
 	void fields(TagsPath&& tp) { comparator_.fields_.push_back(std::move(tp)); }
 	void fields(Joined& joined, TagsPath&& tp) { joined.fields.push_back(std::move(tp)); }
 	void fields(int fieldIdx) {
@@ -97,8 +97,8 @@ public:
 		}
 	}
 	void fields(Joined& joined, int fieldIdx) { joined.fields.push_back(fieldIdx); }
-	void index(bool desc) { comparator_.comparators_.emplace_back(CompareByField{desc}); }
-	void joined(size_t nsIdx, bool desc) { comparator_.comparators_.emplace_back(CompareByJoinedField{nsIdx, desc}); }
+	void index(Desc desc) { comparator_.comparators_.emplace_back(CompareByField{desc}); }
+	void joined(size_t nsIdx, Desc desc) { comparator_.comparators_.emplace_back(CompareByJoinedField{nsIdx, desc}); }
 	void collateOpts(const CollateOpts* opts) { comparator_.collateOpts_.emplace_back(opts); }
 	void collateOpts(Joined& joined, const CollateOpts* opts) { joined.collateOpts.emplace_back(opts); }
 
@@ -109,7 +109,7 @@ private:
 class ItemComparator::FrontInserter {
 public:
 	FrontInserter(ItemComparator& comparator) noexcept : comparator_(comparator) {}
-	void expr(bool desc) { comparator_.comparators_.emplace(comparator_.comparators_.begin(), CompareByExpression{desc}); }
+	void expr(Desc desc) { comparator_.comparators_.emplace(comparator_.comparators_.begin(), CompareByExpression{desc}); }
 	void fields(TagsPath&& tp) { comparator_.fields_.push_front(std::move(tp)); }
 	void fields(Joined& joined, TagsPath&& tp) { joined.fields.push_front(std::move(tp)); }
 	void fields(int fieldIdx) {
@@ -123,8 +123,8 @@ public:
 		}
 	}
 	void fields(Joined& joined, int fieldIdx) { joined.fields.push_front(fieldIdx); }
-	void index(bool desc) { comparator_.comparators_.emplace(comparator_.comparators_.begin(), CompareByField{desc}); }
-	void joined(size_t nsIdx, bool desc) {
+	void index(Desc desc) { comparator_.comparators_.emplace(comparator_.comparators_.begin(), CompareByField{desc}); }
+	void joined(size_t nsIdx, Desc desc) {
 		comparator_.comparators_.emplace(comparator_.comparators_.begin(), CompareByJoinedField{nsIdx, desc});
 	}
 	void collateOpts(const CollateOpts* opts) { comparator_.collateOpts_.emplace(comparator_.collateOpts_.begin(), opts); }
@@ -247,7 +247,7 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 						   }
 					   }
 				   }},
-		sortingEntry);
+		sortingEntry.AsVariant());
 }
 
 void ItemComparator::BindForForcedSort() {

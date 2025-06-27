@@ -452,7 +452,7 @@ Error ReindexerService::packCJSONItem(WrSerializer& wrser, ItT& it, const Output
 		wrser.PutVarUint(int64_t(itemRef.Value().GetLSN()));
 	}
 	if (opts.withrank()) {
-		wrser.PutRank(it.IsRanked() ? it.GetItemRefRanked().Rank() : 0.0f);
+		wrser.PutRank(it.IsRanked() ? it.GetItemRefRanked().Rank() : RankT{});
 	}
 	return it.GetCJSON(wrser);
 }

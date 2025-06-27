@@ -17,13 +17,6 @@ import (
 	"github.com/restream/reindexer/v5/events"
 )
 
-func init() {
-	tnamespaces["test_items_race"] = TestItem{}
-	tnamespaces["test_join_items_race"] = TestJoinItem{}
-	tnamespaces["test_items_race_tx"] = TestItem{}
-	tnamespaces["test_join_items_race_tx"] = TestJoinItem{}
-}
-
 type TestItemWithExtraFields1 struct {
 	TestItem
 	SomeInt      int
@@ -44,6 +37,20 @@ type TestItemWithExtraFields2Nested2 struct {
 type TestItemWithExtraFields2 struct {
 	TestItem
 	Nested1 TestItemWithExtraFields2Nested2
+}
+
+const (
+	testItemsRaceNs       = "test_items_race"
+	testJoinItemsRaceNs   = "test_join_items_race"
+	testItemsRaceTxNs     = "test_items_race_tx"
+	testJoinItemsRaceTxNs = "test_join_items_race_tx"
+)
+
+func init() {
+	tnamespaces[testItemsRaceNs] = TestItem{}
+	tnamespaces[testJoinItemsRaceNs] = TestJoinItem{}
+	tnamespaces[testItemsRaceTxNs] = TestItem{}
+	tnamespaces[testJoinItemsRaceTxNs] = TestJoinItem{}
 }
 
 func newTestItemWithExtraFields1(id int, pkgsCount int) interface{} {
@@ -102,9 +109,24 @@ func subUnsubRaceRoutine(t *testing.T, subsWg *sync.WaitGroup, subsDone chan (bo
 	}
 }
 
+func setNsCopyConfigs(t *testing.T, namespace string) {
+	nsConfig := make([]reindexer.DBNamespacesConfig, 1)
+	nsConfig[0].StartCopyPolicyTxSize = 10000
+	nsConfig[0].StartCopyPolicyTxSize = 10
+	nsConfig[0].StartCopyPolicyTxSize = 100000
+	nsConfig[0].Namespace = namespace
+	item := reindexer.DBConfigItem{
+		Type:       "namespaces",
+		Namespaces: &nsConfig,
+	}
+	err := DB.Upsert(reindexer.ConfigNamespaceName, item)
+	assert.NoError(t, err)
+}
+
 func TestRaceConditions(t *testing.T) {
 	t.Parallel()
-	FillTestJoinItems(7000, 2000, "test_join_items_race")
+	FillTestJoinItems(7000, 2000, testJoinItemsRaceNs)
+
 	done := make(chan bool)
 	wg := sync.WaitGroup{}
 	writer := func() {
@@ -115,7 +137,7 @@ func TestRaceConditions(t *testing.T) {
 				return
 			case <-time.After(time.Millisecond * 1):
 				ctx, cancel := context.WithCancel(context.Background())
-				DB.UpsertCtx(ctx, "test_items_race", newTestItem(1000+rand.Intn(100), 5))
+				DB.UpsertCtx(ctx, testItemsRaceNs, newTestItem(1000+rand.Intn(100), 5))
 				cancel()
 			}
 		}
@@ -139,7 +161,7 @@ func TestRaceConditions(t *testing.T) {
 				require.NoError(t, err)
 				counter += 1
 				ctx, cancel := context.WithCancel(context.Background())
-				err = DB.UpsertCtx(ctx, "test_items_race", j)
+				err = DB.UpsertCtx(ctx, testItemsRaceNs, j)
 				cancel()
 				if rerr, ok := err.(reindexer.Error); !ok ||
 					(rerr.Code() != reindexer.ErrCodeParams && rerr.Code() != reindexer.ErrCodeNotFound) {
@@ -156,7 +178,7 @@ func TestRaceConditions(t *testing.T) {
 				return
 			default:
 				ctx, cancel := context.WithCancel(context.Background())
-				q := DB.Query("test_items_race").Limit(2)
+				q := DB.Query(testItemsRaceNs).Limit(2)
 
 				if rand.Int()%100 > 50 {
 					q.WhereInt("year", reindexer.GT, 2010)
@@ -168,9 +190,9 @@ func TestRaceConditions(t *testing.T) {
 					q.WhereString("name", reindexer.EQ, randString())
 				}
 				if rand.Int()%100 > 80 {
-					qj1 := DB.Query("test_join_items_race").Where("device", reindexer.EQ, "ottstb").Sort("name", false)
-					qj2 := DB.Query("test_join_items_race").Where("device", reindexer.EQ, "android")
-					qj3 := DB.Query("test_join_items_race").Where("device", reindexer.EQ, "iphone")
+					qj1 := DB.Query(testJoinItemsRaceNs).Where("device", reindexer.EQ, "ottstb").Sort("name", false)
+					qj2 := DB.Query(testJoinItemsRaceNs).Where("device", reindexer.EQ, "android")
+					qj3 := DB.Query(testJoinItemsRaceNs).Where("device", reindexer.EQ, "iphone")
 					q.LeftJoin(qj1, "prices").On("price_id", reindexer.SET, "id")
 					q.LeftJoin(qj2, "pricesx").On("location", reindexer.EQ, "location").On("price_id", reindexer.SET, "id")
 					q.LeftJoin(qj3, "pricesx").On("location", reindexer.LT, "location").Or().On("price_id", reindexer.SET, "id")
@@ -194,9 +216,9 @@ func TestRaceConditions(t *testing.T) {
 				wg.Done()
 				return
 			case <-time.After(time.Millisecond * 10):
-				DB.CloseNamespace("test_items_race")
-				DB.OpenNamespace("test_items_race", reindexer.DefaultNamespaceOptions(), TestItem{})
-				tx, _ := DB.BeginTx("test_join_items_race")
+				DB.CloseNamespace(testItemsRaceNs)
+				DB.OpenNamespace(testItemsRaceNs, reindexer.DefaultNamespaceOptions(), TestItem{})
+				tx, _ := DB.BeginTx(testJoinItemsRaceNs)
 				tx.Upsert(TestJoinItem{ID: 7000})
 				tx.Commit()
 			}
@@ -231,25 +253,12 @@ func TestRaceConditions(t *testing.T) {
 	subsWg.Wait()
 }
 
-func setNsCopyConfigs(t *testing.T, namespace string) {
-	nsConfig := make([]reindexer.DBNamespacesConfig, 1)
-	nsConfig[0].StartCopyPolicyTxSize = 10000
-	nsConfig[0].StartCopyPolicyTxSize = 10
-	nsConfig[0].StartCopyPolicyTxSize = 100000
-	nsConfig[0].Namespace = namespace
-	item := reindexer.DBConfigItem{
-		Type:       "namespaces",
-		Namespaces: &nsConfig,
-	}
-	err := DB.Upsert(reindexer.ConfigNamespaceName, item)
-	assert.NoError(t, err)
-}
-
 func TestRaceConditionsTx(t *testing.T) {
 	t.Parallel()
-	FillTestJoinItems(7000, 2000, "test_join_items_race_tx")
+	FillTestJoinItems(7000, 2000, testJoinItemsRaceTxNs)
 	setNsCopyConfigs(t, "test_items_iter_race_tx")
-	setNsCopyConfigs(t, "test_join_items_race_tx")
+	setNsCopyConfigs(t, testJoinItemsRaceTxNs)
+
 	done := make(chan bool)
 	wg := sync.WaitGroup{}
 	writer := func() {
@@ -260,7 +269,7 @@ func TestRaceConditionsTx(t *testing.T) {
 				return
 			case <-time.After(time.Millisecond * 1):
 				ctx, cancel := context.WithCancel(context.Background())
-				DB.UpsertCtx(ctx, "test_items_race_tx", newTestItem(rand.Intn(20000), 5))
+				DB.UpsertCtx(ctx, testItemsRaceTxNs, newTestItem(rand.Intn(20000), 5))
 				cancel()
 			}
 		}
@@ -273,7 +282,7 @@ func TestRaceConditionsTx(t *testing.T) {
 				return
 			default:
 				ctx, cancel := context.WithCancel(context.Background())
-				q := DB.Query("test_items_race_tx").Limit(2)
+				q := DB.Query(testItemsRaceTxNs).Limit(2)
 
 				if rand.Int()%100 > 50 {
 					q.WhereInt("year", reindexer.GT, 2010)
@@ -285,9 +294,9 @@ func TestRaceConditionsTx(t *testing.T) {
 					q.WhereString("name", reindexer.EQ, randString())
 				}
 				if rand.Int()%100 > 80 {
-					qj1 := DB.Query("test_join_items_race_tx").Where("device", reindexer.EQ, "ottstb").Sort("name", false)
-					qj2 := DB.Query("test_join_items_race_tx").Where("device", reindexer.EQ, "android")
-					qj3 := DB.Query("test_join_items_race_tx").Where("device", reindexer.EQ, "iphone")
+					qj1 := DB.Query(testJoinItemsRaceTxNs).Where("device", reindexer.EQ, "ottstb").Sort("name", false)
+					qj2 := DB.Query(testJoinItemsRaceTxNs).Where("device", reindexer.EQ, "android")
+					qj3 := DB.Query(testJoinItemsRaceTxNs).Where("device", reindexer.EQ, "iphone")
 					q.LeftJoin(qj1, "prices").On("price_id", reindexer.SET, "id")
 					q.LeftJoin(qj2, "pricesx").On("location", reindexer.EQ, "location").On("price_id", reindexer.SET, "id")
 					q.LeftJoin(qj3, "pricesx").On("location", reindexer.LT, "location").Or().On("price_id", reindexer.SET, "id")
@@ -313,7 +322,7 @@ func TestRaceConditionsTx(t *testing.T) {
 				require.Greater(t, txs, 0)
 				return
 			case <-time.After(time.Millisecond * 10):
-				tx, err := DB.BeginTx("test_join_items_race_tx")
+				tx, err := DB.BeginTx(testJoinItemsRaceTxNs)
 				if err == nil {
 					txs += 1
 					bigTx := rand.Intn(2) > 0
@@ -341,7 +350,7 @@ func TestRaceConditionsTx(t *testing.T) {
 				return
 			case <-time.After(time.Millisecond * 10):
 				startID := rand.Intn(20000)
-				_, err := DB.Query("test_join_items_race_tx").Where("id", reindexer.GE, startID).Where("id", reindexer.LE, startID+rand.Intn(1000)).Delete()
+				_, err := DB.Query(testJoinItemsRaceTxNs).Where("id", reindexer.GE, startID).Where("id", reindexer.LE, startID+rand.Intn(1000)).Delete()
 				assert.NoError(t, err)
 			}
 		}

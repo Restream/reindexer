@@ -12,6 +12,70 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type LegacyDBReplicationConfig struct {
+	// ID of the current server
+	ServerID int `yaml:"server_id"`
+	// Replication role. One of  none, slave, master
+	Role string `yaml:"role"`
+	// DSN to master. Only cproto schema is supported
+	MasterDSN string `yaml:"master_dsn",omitempty`
+	// Cluster ID - must be same for client and for master
+	ClusterID int `json:"cluster_id"`
+	// force resync on logic error conditions
+	ForceSyncOnLogicError bool `json:"force_sync_on_logic_error"`
+	// force resync on wrong data hash conditions
+	ForceSyncOnWrongDataHash bool `json:"force_sync_on_wrong_data_hash"`
+	// List of namespaces for replication. If empty, all namespaces. All replicated namespaces will become read only for slave
+	Namespaces []string `json:"namespaces"`
+}
+
+type LegacyDBConfigItem struct {
+	Type        string                          `json:"type"`
+	Profiling   *reindexer.DBProfilingConfig    `json:"profiling,omitempty"`
+	Namespaces  *[]reindexer.DBNamespacesConfig `json:"namespaces,omitempty"`
+	Replication *LegacyDBReplicationConfig      `json:"replication,omitempty"`
+}
+
+type LegacyNamespaceMemStat struct {
+	// Name of namespace
+	Name string `json:"name"`
+	// Replication status of namespace
+	Replication struct {
+		// Last Log Sequence Number (LSN) of applied namespace modification
+		LastLSN reindexer.LsnT `json:"last_lsn_v2"`
+		// If true, then namespace is in slave mode
+		SlaveMode bool `json:"slave_mode"`
+		// True enable replication
+		ReplicatorEnabled bool `json:"replicator_enabled"`
+		// Temporary namespace flag
+		Temporary bool `json:"temporary"`
+		// Number of storage's master <-> slave switches
+		IncarnationCounter int64 `json:"incarnation_counter"`
+		// Hashsum of all records in namespace
+		DataHash uint64 `json:"data_hash"`
+		// Data count
+		DataCount int `json:"data_count"`
+		// Write Ahead Log (WAL) records count
+		WalCount int64 `json:"wal_count"`
+		// Total memory consumption of Write Ahead Log (WAL)
+		WalSize int64 `json:"wal_size"`
+		// Data updated timestamp
+		UpdatedUnixNano int64 `json:"updated_unix_nano"`
+		// Current replication status
+		Status string `json:"status"`
+		// Origin LSN of last replication operation
+		OriginLSN reindexer.LsnT `json:"origin_lsn"`
+		// Last LSN of api operation (not from replication)
+		LastSelfLSN reindexer.LsnT `json:"last_self_lsn"`
+		// Last Log Sequence Number (LSN) of applied namespace modification
+		LastUpstreamLSN reindexer.LsnT `json:"last_upstream_lsn"`
+		// Last replication error code
+		ErrorCode int64 `json:"error_code"`
+		// Last replication error message
+		ErrorMessage string `json:"error_message"`
+	} `json:"replication"`
+}
+
 const syncRetries = 90
 
 func WaitForSyncWithMaster(t *testing.T, master *reindexer.Reindexer, slave *reindexer.Reindexer) {
@@ -131,70 +195,6 @@ func WaitForSyncWithMaster(t *testing.T, master *reindexer.Reindexer, slave *rei
 
 	debug.PrintStack()
 	t.Fatalf("Can't sync slave ns with master: ns \"%s\" masterlsn: %+v , slavelsn %+v", nameBad, masterBadLsn, slaveBadLsn)
-}
-
-type LegacyDBReplicationConfig struct {
-	// ID of the current server
-	ServerID int `yaml:"server_id"`
-	// Replication role. One of  none, slave, master
-	Role string `yaml:"role"`
-	// DSN to master. Only cproto schema is supported
-	MasterDSN string `yaml:"master_dsn",omitempty`
-	// Cluster ID - must be same for client and for master
-	ClusterID int `json:"cluster_id"`
-	// force resync on logic error conditions
-	ForceSyncOnLogicError bool `json:"force_sync_on_logic_error"`
-	// force resync on wrong data hash conditions
-	ForceSyncOnWrongDataHash bool `json:"force_sync_on_wrong_data_hash"`
-	// List of namespaces for replication. If emply, all namespaces. All replicated namespaces will become read only for slave
-	Namespaces []string `json:"namespaces"`
-}
-
-type LegacyDBConfigItem struct {
-	Type        string                          `json:"type"`
-	Profiling   *reindexer.DBProfilingConfig    `json:"profiling,omitempty"`
-	Namespaces  *[]reindexer.DBNamespacesConfig `json:"namespaces,omitempty"`
-	Replication *LegacyDBReplicationConfig      `json:"replication,omitempty"`
-}
-
-type LegacyNamespaceMemStat struct {
-	// Name of namespace
-	Name string `json:"name"`
-	// Replication status of namespace
-	Replication struct {
-		// Last Log Sequence Number (LSN) of applied namespace modification
-		LastLSN reindexer.LsnT `json:"last_lsn_v2"`
-		// If true, then namespace is in slave mode
-		SlaveMode bool `json:"slave_mode"`
-		// True enable replication
-		ReplicatorEnabled bool `json:"replicator_enabled"`
-		// Temporary namespace flag
-		Temporary bool `json:"temporary"`
-		// Number of storage's master <-> slave switches
-		IncarnationCounter int64 `json:"incarnation_counter"`
-		// Hashsum of all records in namespace
-		DataHash uint64 `json:"data_hash"`
-		// Data count
-		DataCount int `json:"data_count"`
-		// Write Ahead Log (WAL) records count
-		WalCount int64 `json:"wal_count"`
-		// Total memory consumption of Write Ahead Log (WAL)
-		WalSize int64 `json:"wal_size"`
-		// Data updated timestamp
-		UpdatedUnixNano int64 `json:"updated_unix_nano"`
-		// Current replication status
-		Status string `json:"status"`
-		// Origin LSN of last replication operation
-		OriginLSN reindexer.LsnT `json:"origin_lsn"`
-		// Last LSN of api operation (not from replication)
-		LastSelfLSN reindexer.LsnT `json:"last_self_lsn"`
-		// Last Log Sequence Number (LSN) of applied namespace modification
-		LastUpstreamLSN reindexer.LsnT `json:"last_upstream_lsn"`
-		// Last replication error code
-		ErrorCode int64 `json:"error_code"`
-		// Last replication error message
-		ErrorMessage string `json:"error_message"`
-	} `json:"replication"`
 }
 
 func getLegacyNamespacesMemStat(db *reindexer.Reindexer) ([]*LegacyNamespaceMemStat, error) {

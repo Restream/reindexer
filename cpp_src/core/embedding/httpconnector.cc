@@ -46,7 +46,7 @@ HttpConnector::Response HttpConnector::Send(const std::string& path, std::string
 		response.content = response.ok ? res->body : res->reason;
 	} else {
 		response.ok = false;
-		response.content = "Unexpected problem with client";
+		response.content = "Unexpected problem with client, error: " + to_string(res.error());
 	}
 	return response;
 }

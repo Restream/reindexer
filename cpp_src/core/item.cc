@@ -219,6 +219,8 @@ Item::FieldRef Item::FieldRefByName(std::string_view name, ItemImpl& impl) noexc
 	}
 }
 
+void Item::Embed(const RdxContext& ctx) { impl_->Embed(ctx); }
+
 TagName Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name); }
 int Item::GetFieldIndex(std::string_view name) const { return impl_->FieldIndex(name); }
 FieldsSet Item::PkFields() const { return impl_->PkFields(); }

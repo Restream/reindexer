@@ -103,7 +103,7 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 		selCtx.subQueriesExplains = std::move(subQueryExplains);
 		if (!query.GetMergeQueries().empty()) {
 			selCtx.isMergeQuery = IsMergeQuery_True;
-			if rx_unlikely (!query.sortingEntries_.empty()) {
+			if rx_unlikely (!query.GetSortingEntries().empty()) {
 				throw Error{errNotValid, "Sorting in merge query is not implemented yet"};	// TODO #1449
 			}
 			for (const auto& a : query.aggregations_) {
@@ -155,7 +155,7 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 			if rx_unlikely (isSystemNamespaceNameFast(mq.NsName())) {
 				throw Error(errParams, "Queries to system namespaces ('{}') are not supported inside MERGE statement", mq.NsName());
 			}
-			if rx_unlikely (!mq.sortingEntries_.empty()) {
+			if rx_unlikely (!mq.GetSortingEntries().empty()) {
 				throw Error(errParams, "Sorting in inner merge query is not allowed");
 			}
 			if rx_unlikely (!mq.aggregations_.empty() || mq.HasCalcTotal()) {
@@ -314,7 +314,7 @@ StoredValuesOptimizationStatus RxSelector::isPreResultValuesModeOptimizationAvai
 								  },
 								  [&status](const KnnQueryEntry&) { status = StoredValuesOptimizationStatus::DisabledByFloatVectorIndex; });
 	if (status == StoredValuesOptimizationStatus::Enabled) {
-		for (const auto& se : mainQ.sortingEntries_) {
+		for (const auto& se : mainQ.GetSortingEntries()) {
 			if (byJoinedField(se.expression, jItemQ.NsName())) {
 				return StoredValuesOptimizationStatus::DisabledByJoinedFieldSort;  // TODO maybe allow #1410
 			}
@@ -485,8 +485,8 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, LocalQueryRes
 		jItemQ.Explain(q.NeedExplain());
 		jItemQ.Debug(jq.GetDebugLevel()).Limit(jq.Limit());
 		jItemQ.Strict(q.GetStrictMode());
-		for (const auto& jse : jq.sortingEntries_) {
-			jItemQ.Sort(jse.expression, jse.desc);
+		for (const auto& jse : jq.GetSortingEntries()) {
+			jItemQ.Sort(jse.expression, *jse.desc);
 		}
 
 		jItemQ.ReserveQueryEntries(jq.joinEntries_.size());

@@ -74,39 +74,44 @@ struct DistanceBetweenJoinedIndexesSameNs;
 
 class NsContext {
 public:
-	NsContext(const RdxContext& rdxCtx) noexcept : rdxContext(rdxCtx) {}
+	explicit NsContext(const RdxContext& rdxCtx) noexcept : rdxContext(rdxCtx) {}
 	NsContext& InTransaction(lsn_t stepLsn, TransactionContext* _txCtx) noexcept {
-		inTransaction = true;
+		inTransaction_ = true;
 		originLsn_ = stepLsn;
 		txCtx = _txCtx;
-		return *this;
-	}
-	NsContext& CopiedNsRequest() noexcept {
-		isCopiedNsRequest = true;
+		if (isInitialLeaderSync) {
+			assertrx_dbg(!originLsn_.isEmpty());
+		} else {
+			assertrx_dbg(originLsn_.isEmpty() == rdxContext.GetOriginLSN().isEmpty());
+		}
 		return *this;
 	}
 	NsContext& InSnapshot(lsn_t stepLsn, bool wal, bool requireResync, bool initialLeaderSync) noexcept {
-		inSnapshot = true;
-		isWal = wal;
+		inSnapshot_ = true;
+		isWal_ = wal;
 		originLsn_ = stepLsn;
 		isRequireResync = requireResync;
 		isInitialLeaderSync = initialLeaderSync;
 		return *this;
 	}
-	lsn_t GetOriginLSN() const noexcept { return (inTransaction || inSnapshot) ? originLsn_ : rdxContext.GetOriginLSN(); }
-	bool IsForceSyncItem() const noexcept { return inSnapshot && !isWal; }
-	bool IsWalSyncItem() const noexcept { return inSnapshot && isWal; }
+	lsn_t GetOriginLSN() const noexcept { return (inTransaction_ || inSnapshot_) ? originLsn_ : rdxContext.GetOriginLSN(); }
+	bool HasEmitterServer() const noexcept { return rdxContext.HasEmitterServer(); }
+	int EmitterServerId() const noexcept { return rdxContext.EmitterServerId(); }
+	bool IsForceSyncItem() const noexcept { return inSnapshot_ && !isWal_; }
+	bool IsWalSyncItem() const noexcept { return inSnapshot_ && isWal_; }
+	bool IsInSnapshot() const noexcept { return inSnapshot_; }
+	bool IsInTransaction() const noexcept { return inTransaction_; }
 
 	const RdxContext& rdxContext;
-	bool inTransaction{false};
-	bool inSnapshot{false};
 	bool isCopiedNsRequest{false};
-	bool isWal{false};
 	bool isRequireResync{false};
 	bool isInitialLeaderSync{false};
 	TransactionContext* txCtx{nullptr};
 
 private:
+	bool inTransaction_{false};
+	bool inSnapshot_{false};
+	bool isWal_{false};
 	lsn_t originLsn_;
 };
 
@@ -136,24 +141,17 @@ class NamespaceImpl final : public intrusive_atomic_rc_base {  // NOLINT(*perfor
 	class RollBack_updateItems;
 	class IndexesCacheCleaner {
 	public:
-		explicit IndexesCacheCleaner(NamespaceImpl& ns) noexcept : ns_{ns} {}
+		explicit IndexesCacheCleaner(const NamespaceImpl& ns) noexcept : ns_{ns} {}
 		IndexesCacheCleaner(const IndexesCacheCleaner&) = delete;
 		IndexesCacheCleaner(IndexesCacheCleaner&&) = delete;
 		IndexesCacheCleaner& operator=(const IndexesCacheCleaner&) = delete;
 		IndexesCacheCleaner& operator=(IndexesCacheCleaner&&) = delete;
-		void Add(SortType s) {
-			if rx_unlikely (s >= sorts_.size()) {
-				throw Error(errLogic, "Index sort type overflow: {}. Limit is {}", s, sorts_.size() - 1);
-			}
-			if (s > 0) {
-				sorts_.set(s);
-			}
-		}
+		void Add(Index& idx) noexcept;
 		~IndexesCacheCleaner();
 
 	private:
 		const NamespaceImpl& ns_;
-		std::bitset<kMaxIndexes> sorts_;
+		bool requiresCleanup_{false};
 	};
 
 	friend class NsSelecter;
@@ -252,7 +250,7 @@ public:
 
 	class Locker {
 	public:
-		class NsWLock {
+		class [[nodiscard]] NsWLock {
 		public:
 			using MutexType = Mutex;
 
@@ -448,7 +446,7 @@ public:
 		return storage_.GetStatusCached().err;
 	}
 	void RebuildFreeItemsStorage(const RdxContext& ctx);
-	std::shared_ptr<reindexer::Embedder> QueryEmbedder(std::string_view fieldName, const RdxContext& ctx) const;
+	std::shared_ptr<const reindexer::Embedder> QueryEmbedder(std::string_view fieldName, const RdxContext& ctx) const;
 
 private:
 	struct SysRecordsVersions {
@@ -493,9 +491,9 @@ private:
 	void markUpdated(IndexOptimization requestedOptimization);
 	void scheduleIndexOptimization(IndexOptimization requestedOptimization) noexcept;
 	Item newItem();
-	void doUpdate(const Query& query, LocalQueryResults& result, UpdatesContainer& pendedRepl, const NsContext&);
-	void doDelete(const Query& query, LocalQueryResults& result, UpdatesContainer& pendedRepl, const NsContext&);
-	void doUpsert(ItemImpl* ritem, IdType id, bool doUpdate, TransactionContext* txCtx);
+	void doUpdate(const Query& query, LocalQueryResults& result, UpdatesContainer& pendedRepl, const NsContext& ctx);
+	void doDelete(const Query& query, LocalQueryResults& result, UpdatesContainer& pendedRepl, const NsContext& ctx);
+	void doUpsert(ItemImpl& item, IdType id, bool doUpdate, TransactionContext* txCtx);
 	void modifyItem(Item& item, ItemModifyMode mode, UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void deleteItem(Item& item, UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void doModifyItem(Item& item, ItemModifyMode mode, UpdatesContainer& pendedRepl, const NsContext& ctx, IdType suggestedId = -1);
@@ -585,7 +583,9 @@ private:
 	void checkClusterRole(const RdxContext& ctx) const { checkClusterRole(ctx.GetOriginLSN()); }
 	void checkClusterRole(lsn_t originLsn) const;
 	void checkClusterStatus(const RdxContext& ctx) const { checkClusterStatus(ctx.GetOriginLSN()); }
-	void checkClusterStatus(lsn_t originLsn) const;
+	void checkClusterStatus(lsn_t lsn) const;
+	void checkClusterStatus(bool isWalSync, const LocalTransaction& tx) const;
+	void checkSnapshotLSN(lsn_t lsn);
 	void replicateTmUpdateIfRequired(UpdatesContainer& pendedRepl, int oldTmVersion, const NsContext& ctx) noexcept;
 
 	bool SortOrdersBuilt() const noexcept { return optimizationState_.load(std::memory_order_acquire) == OptimizationCompleted; }

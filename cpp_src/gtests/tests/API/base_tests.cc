@@ -1057,15 +1057,15 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 
 	PrintQueryResults(default_namespace, qr);
 
-	std::vector<Variant> lastValues(query.sortingEntries_.size());
+	std::vector<Variant> lastValues(query.GetSortingEntries().size());
 	for (auto& it : qr) {
 		Item item = it.GetItem(false);
 
-		std::vector<reindexer::ComparationResult> cmpRes(query.sortingEntries_.size());
+		std::vector<reindexer::ComparationResult> cmpRes(query.GetSortingEntries().size());
 		std::fill(cmpRes.begin(), cmpRes.end(), reindexer::ComparationResult::Lt);
 
-		for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
-			const reindexer::SortingEntry& sortingEntry(query.sortingEntries_[j]);
+		for (size_t j = 0; j < query.GetSortingEntries().size(); ++j) {
+			const reindexer::SortingEntry& sortingEntry(query.GetSortingEntries()[j]);
 			Variant sortedValue = item[sortingEntry.expression];
 			if (!lastValues[j].Type().Is<reindexer::KeyValueType::Null>()) {
 				cmpRes[j] = lastValues[j].Compare<reindexer::NotComparable::Return>(sortedValue);

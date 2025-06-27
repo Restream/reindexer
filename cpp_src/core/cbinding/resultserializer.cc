@@ -117,11 +117,11 @@ void WrResultSerializer::putItemParams(ItT& it, int shardId, QueryResults::Proxi
 	}
 
 	if (opts_.flags & kResultsWithRank) {
-		const RankT rank = it.IsRanked() ? it.GetItemRefRanked().Rank() : 0.0;
+		const RankT rank = it.IsRanked() ? it.GetItemRefRanked().Rank() : RankT{};
 		if (caps.HasComplexRank()) {
 			PutRank(rank);
 		} else {
-			PutVarUint(uint16_t(rank));
+			PutVarUint(uint16_t(rank.Value()));
 		}
 	}
 

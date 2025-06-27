@@ -2,6 +2,7 @@ package reindexer
 
 import (
 	"math/rand"
+	"strings"
 	"sync"
 	"testing"
 
@@ -9,15 +10,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestJoinCache(t *testing.T) {
+const (
+	testItemsForJoinCacheNs = "test_items_for_join_cache"
+	testJoinItemsCacheNs    = "test_join_items_cache"
+)
 
-	FillTestItems("test_items_for_join", 0, 10000, 20)
-	FillTestJoinItems(7000, 500, "test_join_items")
-	RunInMultiThread(t, CheckTestCachedItemsJoinLeftQueries, 20)
-	RunInMultiThread(t, CheckTestCachedItemsJoinInnerQueries, 20)
-	RunInMultiThread(t, CheckTestCachedItemsJoinSortQueries, 8)
-
+func init() {
+	tnamespaces[testItemsForJoinCacheNs] = TestItem{}
+	tnamespaces[testJoinItemsCacheNs] = TestJoinItem{}
 }
+
 func RunInMultiThread(t *testing.T, fn func(*testing.T, *sync.WaitGroup), threadCount int) {
 	var wg sync.WaitGroup
 	wg.Add(threadCount)
@@ -28,12 +30,12 @@ func RunInMultiThread(t *testing.T, fn func(*testing.T, *sync.WaitGroup), thread
 }
 
 func PrepareJoinQueryResult(t *testing.T, sort1 string, sort2 string) []interface{} {
-	qj1 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "ottstb")
+	qj1 := DB.Query(testJoinItemsCacheNs).Where("DEVICE", reindexer.EQ, "ottstb")
 	if sort1 != "" {
 		qj1.Sort(sort1, true)
 	}
 
-	qjoin := DB.Query("TEST_ITEMS_FOR_JOIN").Where("GENRE", reindexer.EQ, 10).Limit(10).Debug(reindexer.TRACE)
+	qjoin := DB.Query(strings.ToUpper(testItemsForJoinCacheNs)).Where("GENRE", reindexer.EQ, 10).Limit(10).Debug(reindexer.TRACE)
 	if sort2 != "" {
 		qjoin.Sort(sort2, true)
 	}
@@ -54,12 +56,12 @@ func CheckTestCachedItemsJoinLeftQueries(t *testing.T, wg *sync.WaitGroup) {
 
 func CheckTestCachedItemsJoinInnerQueries(t *testing.T, wg *sync.WaitGroup) {
 	defer wg.Done()
-	var result_without_cahce []interface{}
+	var result_without_cache []interface{}
 	for i := 0; i < 20; i++ {
-		qj1 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "android").Where("AMOUNT", reindexer.GT, 2)
-		qj2 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "iphone")
+		qj1 := DB.Query(testJoinItemsCacheNs).Where("DEVICE", reindexer.EQ, "android").Where("AMOUNT", reindexer.GT, 2)
+		qj2 := DB.Query(testJoinItemsCacheNs).Where("DEVICE", reindexer.EQ, "iphone")
 
-		qjoin := DB.Query("test_items_for_join").Where("GENRE", reindexer.EQ, 10).Limit(10).Debug(reindexer.TRACE)
+		qjoin := DB.Query(testItemsForJoinCacheNs).Where("GENRE", reindexer.EQ, 10).Limit(10).Debug(reindexer.TRACE)
 		qjoin.InnerJoin(qj1, "PRICESX").On("LOCATION", reindexer.EQ, "location").On("price_id", reindexer.SET, "id")
 		qjoin.Or()
 		qjoin.InnerJoin(qj2, "PRICESX").
@@ -68,9 +70,9 @@ func CheckTestCachedItemsJoinInnerQueries(t *testing.T, wg *sync.WaitGroup) {
 
 		rjoin, _ := qjoin.MustExec(t).FetchAll()
 		if i == 0 {
-			result_without_cahce = append([]interface{}(nil), rjoin...)
+			result_without_cache = append([]interface{}(nil), rjoin...)
 		} else {
-			assert.Equal(t, rjoin, result_without_cahce)
+			assert.Equal(t, rjoin, result_without_cache)
 		}
 	}
 }
@@ -99,4 +101,14 @@ func CheckTestCachedItemsJoinSortQueries(t *testing.T, wg *sync.WaitGroup) {
 			assert.Equal(t, resultSort[op], PrepareJoinQueryResult(t, "", ""))
 		}
 	}
+}
+
+func TestJoinCache(t *testing.T) {
+
+	FillTestItems(testItemsForJoinCacheNs, 0, 10000, 20)
+	FillTestJoinItems(7000, 500, testJoinItemsCacheNs)
+
+	RunInMultiThread(t, CheckTestCachedItemsJoinLeftQueries, 20)
+	RunInMultiThread(t, CheckTestCachedItemsJoinInnerQueries, 20)
+	RunInMultiThread(t, CheckTestCachedItemsJoinSortQueries, 8)
 }

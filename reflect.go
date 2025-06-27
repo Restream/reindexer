@@ -113,13 +113,25 @@ func parseNamedOptions(options *[]string) map[string]string {
 	return result
 }
 
-func getOptionalValue(name string, values map[string]string) (int, error) {
+func getOptionalIntValue(name string, values map[string]string) (int, error) {
 	if v, ok := values[name]; ok {
 		intValue, err := strconv.Atoi(v)
 		if err != nil {
 			return 0, err
 		}
 		return intValue, nil
+	} else {
+		return 0, nil
+	}
+}
+
+func getOptionalFloat32Value(name string, values map[string]string) (float32, error) {
+	if v, ok := values[name]; ok {
+		intValue, err := strconv.ParseFloat(v, 32)
+		if err != nil {
+			return 0, err
+		}
+		return float32(intValue), nil
 	} else {
 		return 0, nil
 	}
@@ -223,23 +235,27 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 					return err
 				}
 			}
-			fvOpts.StartSize, err = getOptionalValue("start_size", namedOpts)
+			fvOpts.Radius, err = getOptionalFloat32Value("radius", namedOpts)
 			if err != nil {
 				return err
 			}
-			fvOpts.M, err = getOptionalValue("m", namedOpts)
+			fvOpts.StartSize, err = getOptionalIntValue("start_size", namedOpts)
 			if err != nil {
 				return err
 			}
-			fvOpts.EfConstruction, err = getOptionalValue("ef_construction", namedOpts)
+			fvOpts.M, err = getOptionalIntValue("m", namedOpts)
 			if err != nil {
 				return err
 			}
-			fvOpts.CentroidsCount, err = getOptionalValue("centroids_count", namedOpts)
+			fvOpts.EfConstruction, err = getOptionalIntValue("ef_construction", namedOpts)
 			if err != nil {
 				return err
 			}
-			fvOpts.MultithreadingMode, err = getOptionalValue("multithreading", namedOpts)
+			fvOpts.CentroidsCount, err = getOptionalIntValue("centroids_count", namedOpts)
+			if err != nil {
+				return err
+			}
+			fvOpts.MultithreadingMode, err = getOptionalIntValue("multithreading", namedOpts)
 			if err != nil {
 				return err
 			}

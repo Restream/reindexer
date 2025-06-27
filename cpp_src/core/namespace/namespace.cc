@@ -46,7 +46,7 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 					*nsl, !lvectorIndexes.empty() ? tx.CalculateNewCapacity(nsl->itemsCount()) : nsl->itemsCount(), storageLock));
 				nsCopyCalc.HitManualy();
 				NsContext nsCtx(ctx);
-				nsCtx.CopiedNsRequest();
+				nsCtx.isCopiedNsRequest = true;
 				nsCopy_->CommitTransaction(tx, result, nsCtx, statCalculator);
 				nsCopy_->optimizeIndexes(nsCtx);
 				nsCopy_->warmupFtIndexes();
@@ -63,11 +63,11 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 				atomicStoreMainNs(nsCopy_.release());
 				wasCopied = true;  // NOLINT(*deadcode.DeadStores)
 				hasCopy_.store(false, std::memory_order_release);
-				if (!nsl->repl_.temporary && !nsCtx.inSnapshot) {
+				if (!nsl->repl_.temporary && !nsCtx.IsInSnapshot()) {
 					// If commit happens in ns copy, then the copier have to handle replication
 					auto err = ns_->observers_.SendUpdate(
 						updates::UpdateRecord{updates::URType::CommitTx, ns_->name_, ns_->wal_.LastLSN(), ns_->repl_.nsVersion,
-											  ctx.rdxContext.EmitterServerId()},
+											  ctx.EmitterServerId()},
 						[&clonerLck, &storageLock, &nsRlck]() {
 							storageLock.unlock();
 							nsRlck.unlock();

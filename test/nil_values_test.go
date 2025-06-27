@@ -7,31 +7,33 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const nilValuesTestNamespace = "test_nil_values_namespace"
+const testNilValuesNs = "test_nil_values_namespace"
 
 func init() {
-	tnamespaces[nilValuesTestNamespace] = TestItemSimple{}
+	tnamespaces[testNilValuesNs] = TestItemSimple{}
 }
 
 func TestNilValuesErrors(t *testing.T) {
+	const ns = testNilValuesNs
+
 	t.Run("Single items", func(t *testing.T) {
-		err := DBD.Upsert(nilValuesTestNamespace, nil)
+		err := DBD.Upsert(ns, nil)
 		require.Error(t, err)
 
-		count, err := DBD.Insert(nilValuesTestNamespace, nil)
-		require.Error(t, err)
-		require.Equal(t, count, 0)
-
-		count, err = DBD.Update(nilValuesTestNamespace, nil)
+		count, err := DBD.Insert(ns, nil)
 		require.Error(t, err)
 		require.Equal(t, count, 0)
 
-		err = DBD.Delete(nilValuesTestNamespace, nil)
+		count, err = DBD.Update(ns, nil)
+		require.Error(t, err)
+		require.Equal(t, count, 0)
+
+		err = DBD.Delete(ns, nil)
 		require.Error(t, err)
 	})
 
 	t.Run("Transaction items", func(t *testing.T) {
-		tx := DBD.MustBeginTx(nilValuesTestNamespace)
+		tx := DBD.MustBeginTx(ns)
 		defer tx.Rollback()
 
 		err := tx.Upsert(nil)

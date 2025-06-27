@@ -1,3 +1,46 @@
+# Version 5.4.0 (27.06.2025)
+## Core
+- [fix] Added ignore empty sorting expression
+- [fix] Fixed invalidation of index cache
+- [fix] Added validation of types of arguments of condition `Set` in query
+- [fix] Added validation of types of arguments of forced sort
+- [fix] Turned off of optimization of forced sort by fulltext index
+- [fix] Fixed parsing of invalid item json
+- [fix] Added validation of operation `OR` in `join` `ON` statement
+
+## Vector indexes
+- [fea] Added [hybrid](hybrid.md) Fulltext and KNN query
+- [fea] Added [`radius`](float_vector.md#knn-search) search-parameter in KNN query
+- [fea] Added [`radius`](float_vector.md#creation) parameter in KNN index
+- [fea] Added [embeddig action](float_vector.md#create-embedding-for-existing-documents)
+- [fea] Added selective rebuild vector index on the index's config update
+
+## Fulltext
+- [fea] Added ignore accent and vocalization marks. Check `keep_diacritics` in the fulltext index config
+- [fix] Fixed seach by phrase with binary operator
+
+## Replication
+- [fea] Removed compatibility with V3-followers
+- [fix] Fixed possible `lsn` breaking during `WAL sync`
+
+## Go connector
+- [fix] Added support for condition `LIKE` in dsl query parser
+- [fix] Added validation of item values types in cjson parser
+
+## Reindexer server
+- [fix] Added parameter `width` in `HTTP` method `GET /db/{database}/namespaces/{name}/items`
+- [fix] Fixed format of result of `HTTP` method `POST /db/{database}/query`
+
+## Face
+- [fea] Added the index name locking during editing
+- [fea] Improved validation of the embedding configuration
+- [fea] Added the `radius` option to the vector index configuration
+- [fix] Fixed the inability to save an item if any of the item fields has a null value
+- [fix] Fixed a validation error that made it impossible to clear the Query embedding configuration
+- [fix] Fixed an error when canceling selected items for deletion
+- [fix] Fixed `max_typos` tooltips
+- [fix] Fixed the error of substituting default values of the profiling config
+
 # Version 5.3.0 (27.05.2025)
 ## Core
 - [fea] Added random sorting via `hash()`/`hash(seed)` functions in [sort expressions](readme.md#sort)
@@ -555,7 +598,7 @@
 - [fix] Fixed the displaying of the empty and fact result at the same time
 - [fix] Fixed the redirect to the Explain page during loading new items on the List and Grid list on the QUERY -> SQL page
 - [fix] Fixed the error appeared on the list resizing on the Query Builder page
-- [fix] Fixed the infinity requests to namespases on the Config page
+- [fix] Fixed the infinity requests to namespaces on the Config page
 - [fix] Fixed boolean values displaying in the Grid view 
 - [fix] Fixed the validator of the tag field
 - [fix] Fixed the error on the Explain page

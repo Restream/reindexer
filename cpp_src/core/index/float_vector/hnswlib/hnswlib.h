@@ -15,13 +15,16 @@
 
 #include <string.h>
 #include <cstddef>
-#include <queue>
 #include <vector>
 
-#include "core/enums.h"
 #include "estl/defines.h"
 #include "tools/cpucheck.h"
 #include "tools/normalize.h"
+
+#if RX_WITH_STDLIB_DEBUG
+#include <mutex>
+#include <set>
+#endif	// RX_WITH_STDLIB_DEBUG
 
 namespace hnswlib {
 typedef uint32_t labeltype;

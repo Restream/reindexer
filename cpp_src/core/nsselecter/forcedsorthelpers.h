@@ -1,11 +1,10 @@
 #pragma once
 
-
-#include "estl/multihash_map.h"
 #include "core/keyvalue/relaxed_variant_hash.h"
-#include "core/queryresults/itemref.h"
-#include "tools/logger.h"
 #include "core/nsselecter/itemcomparator.h"
+#include "core/queryresults/itemref.h"
+#include "estl/multihash_map.h"
+#include "tools/logger.h"
 
 namespace reindexer::force_sort_helpers {
 
@@ -16,78 +15,41 @@ public:
 private:
 	using MultiMap = MultiHashMap<const Variant, mapped_type, RelaxedHasher<NotComparable::Return>::indexesCount,
 								  RelaxedHasher<NotComparable::Return>, RelaxedComparator<NotComparable::Return>>;
-	struct SingleTypeMap : tsl::hopscotch_sc_map<Variant, mapped_type> {
-		KeyValueType type_;
-	};
-	using DataType = std::variant<MultiMap, SingleTypeMap>;
-	class Iterator : private std::variant<MultiMap::Iterator, SingleTypeMap::const_iterator> {
-		using Base = std::variant<MultiMap::Iterator, SingleTypeMap::const_iterator>;
 
-	public:
-		using Base::Base;
-		const auto* operator->() const {
-			return std::visit(overloaded{[](MultiMap::Iterator it) { return it.operator->(); },
-										 [](SingleTypeMap::const_iterator it) { return it.operator->(); }},
-							  static_cast<const Base&>(*this));
-		}
-		const auto& operator*() const {
-			return std::visit(overloaded{[](MultiMap::Iterator it) -> const auto& { return *it; },
-										 [](SingleTypeMap::const_iterator it) -> const auto& { return *it; }},
-							  static_cast<const Base&>(*this));
-		}
-	};
+	using Iterator = MultiMap::Iterator;
 
 public:
-	ForcedSortMap(Variant k, mapped_type v, size_t size)
-		: data_{k.Type().Is<KeyValueType::String>() || k.Type().Is<KeyValueType::Uuid>() || k.Type().IsNumeric()
-					? DataType{MultiMap{size}}
-					: DataType{SingleTypeMap{{}, k.Type()}}} {
-		std::visit(overloaded{[&](MultiMap& m) { m.emplace(std::move(k), v); }, [&](SingleTypeMap& m) { m.emplace(std::move(k), v); }},
-				   data_);
+	ForcedSortMap(Variant k, mapped_type v, size_t size) : data_{size} {
+		throwIfNotSupportedValueType(k);
+		data_.emplace(std::move(k), v);
 	}
-	std::pair<Iterator, bool> emplace(Variant k, mapped_type v) & {
-		return std::visit(overloaded{[&](MultiMap& m) {
-										 const auto [iter, success] = m.emplace(std::move(k), v);
-										 return std::make_pair(Iterator{iter}, success);
-									 },
-									 [&](SingleTypeMap& m) {
-										 if (!m.type_.IsSame(k.Type())) {
-											 throw Error{errQueryExec, "Items of different types in forced sort list"};
-										 }
-										 const auto [iter, success] = m.emplace(std::move(k), v);
-										 return std::make_pair(Iterator{iter}, success);
-									 }},
-						  data_);
+	[[nodiscard]] std::pair<Iterator, bool> emplace(Variant k, mapped_type v) & {
+		throwIfNotSupportedValueType(k);
+		const auto [iter, success] = data_.emplace(std::move(k), v);
+		return std::make_pair(Iterator{iter}, success);
 	}
-	bool contain(const Variant& k) const {
-		return std::visit(overloaded{[&k](const MultiMap& m) { return m.find(k) != m.cend(); },
-									 [&k](const SingleTypeMap& m) {
-										 if (!m.type_.IsSame(k.Type())) {
-											 throw Error{errQueryExec, "Items of different types in forced sort list"};
-										 }
-										 return m.find(k) != m.end();
-									 }},
-						  data_);
+	[[nodiscard]] bool contain(const Variant& k) const {
+		throwIfNotSupportedValueType(k);
+		return data_.find(k) != data_.cend();
 	}
-	mapped_type get(const Variant& k) const {
-		return std::visit(overloaded{[&k](const MultiMap& m) {
-										 const auto it = m.find(k);
-										 assertrx_throw(it != m.cend());
-										 return it->second;
-									 },
-									 [&k](const SingleTypeMap& m) {
-										 if (!m.type_.IsSame(k.Type())) {
-											 throw Error{errQueryExec, "Items of different types in forced sort list"};
-										 }
-										 const auto it = m.find(k);
-										 assertrx_throw(it != m.end());
-										 return it->second;
-									 }},
-						  data_);
+	[[nodiscard]] mapped_type get(const Variant& k) const {
+		throwIfNotSupportedValueType(k);
+		const auto it = data_.find(k);
+		assertrx_throw(it != data_.cend());
+		return it->second;
 	}
 
 private:
-	DataType data_;
+	static void throwIfNotSupportedValueType(const Variant& value) {
+		value.Type().EvaluateOneOf(overloaded{
+			[](OneOf<KeyValueType::Null, KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Float,
+					 KeyValueType::Double, KeyValueType::String, KeyValueType::Uuid>) noexcept {},
+			[&value](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::FloatVector>) {
+				throw Error{errQueryExec, "Unsupported value type for forced sort by non indexed field: '{}'", value.Type().Name()};
+			}});
+	}
+
+	MultiMap data_;
 };
 
 template <typename Map>
@@ -358,4 +320,4 @@ private:
 	const ItemComparator& compare_;
 };
 
-}
+}  // namespace reindexer::force_sort_helpers

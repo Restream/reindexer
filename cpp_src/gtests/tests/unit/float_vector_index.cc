@@ -20,7 +20,7 @@ void FloatVector::SetUp() {
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
-static void checkOrdering(const reindexer::QueryResults& qr, reindexer::VectorMetric metric) {
+static void checkOrdering(const reindexer::QueryResults& qr, reindexer::VectorMetric metric, std::optional<float> radius = std::nullopt) {
 	IdType lastId = 0;
 	reindexer::WrSerializer ser;
 	switch (metric) {
@@ -34,6 +34,9 @@ static void checkOrdering(const reindexer::QueryResults& qr, reindexer::VectorMe
 				if (!(lastRank < curRank) && !(lastRank > curRank)) {
 					EXPECT_LE(lastId, curId);
 				}
+				if (radius) {
+					EXPECT_LT(curRank.Value(), *radius);
+				}
 				lastRank = curRank;
 				lastId = curId;
 
@@ -45,7 +48,7 @@ static void checkOrdering(const reindexer::QueryResults& qr, reindexer::VectorMe
 		} break;
 		case reindexer::VectorMetric::Cosine:
 		case reindexer::VectorMetric::InnerProduct: {
-			reindexer::RankT lastRank(std::numeric_limits<reindexer::RankT>::max());
+			reindexer::RankT lastRank(std::numeric_limits<decltype(reindexer::RankT{}.Value())>::max());
 			for (auto& i : qr) {
 				const auto& item = i.GetItemRefRanked();
 				const auto curRank = item.Rank();
@@ -55,8 +58,11 @@ static void checkOrdering(const reindexer::QueryResults& qr, reindexer::VectorMe
 					EXPECT_LE(lastId, curId);
 				}
 				if (metric == reindexer::VectorMetric::Cosine) {
-					EXPECT_LE(curRank, 1.0);
-					EXPECT_GE(curRank, -1.0);
+					EXPECT_LE(curRank.Value(), 1.0);
+					EXPECT_GE(curRank.Value(), -1.0);
+				}
+				if (radius) {
+					EXPECT_GT(curRank.Value(), *radius);
 				}
 				lastRank = curRank;
 				lastId = curId;
@@ -131,7 +137,7 @@ reindexer::Item FloatVector::newItemDirect(std::string_view nsName, std::string_
 	item[kFieldNameId] = id;
 	if (rand() % 10 != 0) {
 		std::array<float, Dimension> buf;
-		rndFloatVector(buf);
+		::rndFloatVector(buf);
 		item[fieldName] = reindexer::ConstFloatVectorView{buf};
 	} else {
 		if (rand() % 2 == 0) {
@@ -151,7 +157,7 @@ reindexer::Item FloatVector::newItemFromJson(std::string_view nsName, std::strin
 		json.Put(kFieldNameId, id);
 		if (rand() % 10 != 0) {
 			std::array<float, Dimension> buf;
-			rndFloatVector(buf);
+			::rndFloatVector(buf);
 			json.Array(fieldName, std::span<const float>(buf));
 		} else {
 			switch (rand() % 3) {
@@ -186,19 +192,39 @@ void FloatVector::upsertItems(std::string_view nsName, std::string_view fieldNam
 	}
 }
 
+enum class QueryWith : size_t { OnlyK, KandR, OnlyR };
+
 template <size_t Dimension, typename SearchParamGetterT>
 void FloatVector::runMultithreadQueries(size_t threads, size_t queriesPerThread, std::string_view nsName, std::string_view fieldName,
 										const SearchParamGetterT& getKNNParam) {
 	std::vector<std::thread> threadsStorage;
+	std::optional<size_t> k = rand() % 500 + 10;
 	threadsStorage.reserve(threads);
 	for (size_t i = 0; i < threads; ++i) {
 		threadsStorage.emplace_back([&, this] {
 			std::array<float, Dimension> buf;
 			for (size_t j = 0; j < queriesPerThread; ++j) {
-				rndFloatVector(buf);
-				const auto result =
-					rt.Select(reindexer::Query{nsName}.WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, getKNNParam()));
-				checkOrdering(result, GetParam());
+				::rndFloatVector(buf);
+				std::optional<float> radius = std::nullopt;
+				size_t prevQrCount = 0;
+				for (auto queryCase : {QueryWith::OnlyK, QueryWith::KandR, QueryWith::OnlyR}) {
+					auto params = getKNNParam(queryCase == QueryWith::OnlyR ? std::nullopt : k, radius);
+					if constexpr (std::is_same_v<decltype(params), reindexer::HnswSearchParams>) {
+						params.Ef(*k);
+					}
+
+					const auto result =
+						rt.Select(reindexer::Query{nsName}.WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, std::move(params)));
+
+					if (queryCase == QueryWith::OnlyR) {
+						EXPECT_EQ(prevQrCount, result.Count());
+					}
+					checkOrdering(result, GetParam(), radius);
+					if (!radius) {
+						radius = (result.begin() + result.Count() / 2).GetItemRefRanked().Rank().Value();
+					}
+					prevQrCount = result.Count();
+				}
 			}
 		});
 	}
@@ -251,7 +277,9 @@ TEST_P(FloatVector, HnswIndex) try {
 	auto res = rt.UpdateQR(reindexer::Query(kNsName).Set("non_idx", 12345).Where(kFieldNameId, CondEq, 1));
 	ASSERT_EQ(res.Count(), 1);
 	const auto deleted = deleteSomeItems(kNsName, kMaxElements, emptyVectors);
-	runMultithreadQueries<kDimension>(4, 20, kNsName, kFieldNameHnsw, [&] { return reindexer::KnnSearchParams::Hnsw(rand() % 500 + 10); });
+	runMultithreadQueries<kDimension>(4, 20, kNsName, kFieldNameHnsw, [&](std::optional<size_t> k, std::optional<float> radius) {
+		return reindexer::HnswSearchParams{}.K(k).Radius(radius);
+	});
 	checkIndexMemstat(rt, kNsName, kFieldNameHnsw, kDimension, kMaxElements - deleted, emptyVectors);
 }
 CATCH_AND_ASSERT
@@ -294,9 +322,10 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 	auto selectFn = [this, &terminate] {
 		while (!terminate) {
 			std::array<float, kDimension> buf;
-			rndFloatVector(buf);
+			::rndFloatVector(buf);
+			auto k = rand() % 20 + 10;
 			const auto result = rt.Select(reindexer::Query{kNsName}.WhereKNN(kFieldNameHnsw, reindexer::ConstFloatVectorView{buf},
-																			 reindexer::KnnSearchParams::Hnsw(rand() % 20 + 10)));
+																			 reindexer::HnswSearchParams{}.K(k).Ef(k)));
 			checkOrdering(result, reindexer::VectorMetric::Cosine);
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
@@ -420,8 +449,9 @@ TEST_P(FloatVector, VecBruteforceIndex) try {
 	std::unordered_set<int> emptyVectors;
 	upsertItems<kDimension>(kNsName, kFieldNameVec, 0, kMaxElements, emptyVectors);
 	const auto deleted = deleteSomeItems(kNsName, kMaxElements, emptyVectors);
-	runMultithreadQueries<kDimension>(4, 20, kNsName, kFieldNameVec,
-									  [&] { return reindexer::KnnSearchParams::BruteForce(rand() % 500 + 10); });
+	runMultithreadQueries<kDimension>(4, 20, kNsName, kFieldNameVec, [&](std::optional<size_t> k, std::optional<float> radius) {
+		return reindexer::BruteForceSearchParams{}.K(k).Radius(radius);
+	});
 	checkIndexMemstat(rt, kNsName, kFieldNameVec, kDimension, kMaxElements - deleted, emptyVectors);
 }
 CATCH_AND_ASSERT
@@ -453,18 +483,24 @@ TEST_P(FloatVector, IvfIndex) try {
 	std::unordered_set<int> emptyVectors;
 	upsertItems<kDimension>(kNsName, kFieldNameIvf, 0, kMaxElements, emptyVectors);
 	const auto deleted = deleteSomeItems(kNsName, kMaxElements, emptyVectors);
-	rndFloatVector(buf);
+	::rndFloatVector(buf);
 	for (size_t iter = 0; iter < 2; ++iter) {
-		const auto result = rt.Select(reindexer::Query{kNsName}.WhereKNN(kFieldNameIvf, reindexer::ConstFloatVectorView{buf},
-																		 reindexer::KnnSearchParams::Ivf(rand() % kMaxElements + 10, 32)));
-		checkOrdering(result, GetParam());
+		size_t k = rand() % kMaxElements + 10;
+		std::optional<float> radius = std::nullopt;
+		for ([[maybe_unused]] auto _ : {0, 1}) {
+			const auto result = rt.Select(reindexer::Query{kNsName}.WhereKNN(kFieldNameIvf, reindexer::ConstFloatVectorView{buf},
+																			 reindexer::IvfSearchParams{}.K(k).Radius(radius).NProbe(32)));
+			checkOrdering(result, GetParam(), radius);
+			radius = (result.begin() + result.Count() / 2).GetItemRefRanked().Rank().Value();
+		}
 		checkIndexMemstat(rt, kNsName, kFieldNameIvf, kDimension, kMaxElements - deleted, emptyVectors);
 		if (iter == 0) {
 			rebuildCentroids();
 		}
 	}
-	runMultithreadQueries<kDimension>(4, 20, kNsName, kFieldNameIvf,
-									  [&] { return reindexer::KnnSearchParams::Ivf(rand() % 500 + 10, 32); });
+	runMultithreadQueries<kDimension>(4, 20, kNsName, kFieldNameIvf, [&](std::optional<size_t> k, std::optional<float> radius) {
+		return reindexer::IvfSearchParams{}.K(k).Radius(radius).NProbe(32);
+	});
 }
 CATCH_AND_ASSERT
 
@@ -487,7 +523,7 @@ TEST_F(FloatVector, HnswIndexUpdateQuery) try {
 	rt.UpsertJSON(kNsName, R"json({"id":1,"hnsw":null})json");
 	rt.UpsertJSON(kNsName, R"json({"id":2,"hnsw":[]})json");
 	std::array<float, 8> buf;
-	rndFloatVector(buf);
+	::rndFloatVector(buf);
 	const reindexer::ConstFloatVectorView setVec{buf};
 	const auto updateQuery = reindexer::Query(kNsName).Set(kFieldNameHnsw, setVec);
 	SCOPED_TRACE(updateQuery.GetSQL());
@@ -519,7 +555,7 @@ TEST_F(FloatVector, HnswIndexItemSet) try {
 	constexpr std::string_view kJSONs[] = {R"json({"id":0})json", R"json({"id":1,"hnsw":null})json", R"json({"id":2,"hnsw":[]})json"};
 
 	std::array<float, 8> buf;
-	rndFloatVector(buf);
+	::rndFloatVector(buf);
 	const reindexer::ConstFloatVectorView vec{buf};
 
 	for (auto& json : kJSONs) {
@@ -564,7 +600,7 @@ CATCH_AND_ASSERT
 std::pair<reindexer::FloatVector, std::string> FloatVector::rndFloatVectorForSerializers(bool withSpace) {
 	constexpr static size_t kDimension = 2'048;
 	std::array<float, kDimension> buf;
-	rndFloatVector(buf);
+	::rndFloatVector(buf);
 	reindexer::WrSerializer ser;
 	for (auto it = buf.begin(); it != buf.end(); ++it) {
 		if (it != buf.begin()) {
@@ -587,13 +623,13 @@ TEST_F(FloatVector, DslQuery) try {
 		Query query;
 		std::string dsl;
 	} testData[]{
-		{Query("ns"sv).WhereKNN("hnsw"sv, vec.View(), KnnSearchParams::Hnsw(6'101, 100'000)).SelectAllFields(),
+		{Query("ns"sv).WhereKNN("hnsw"sv, vec.View(), reindexer::HnswSearchParams{}.K(6'101).Ef(100'000)).SelectAllFields(),
 		 R"json({"namespace":"ns","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":["*","vectors()"],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"knn","field":"hnsw","value":[)json" +
 			 vecStr + R"json(],"params":{"k":6101,"ef":100000}}],"merge_queries":[],"aggregations":[]})json"},
-		{Query("ns"sv).WhereKNN("bf"sv, vec.View(), KnnSearchParams::BruteForce(8'317)).Select("vectors()"),
+		{Query("ns"sv).WhereKNN("bf"sv, vec.View(), reindexer::BruteForceSearchParams{}.K(8'317).Radius(1.0)).Select("vectors()"),
 		 R"json({"namespace":"ns","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":["vectors()"],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"knn","field":"bf","value":[)json" +
-			 vecStr + R"json(],"params":{"k":8317}}],"merge_queries":[],"aggregations":[]})json"},
-		{Query("ns"sv).WhereKNN("ivf"sv, vec.View(), KnnSearchParams::Ivf(5'125, 5)).Select({"ivf", "vectors()"}),
+			 vecStr + R"json(],"params":{"k":8317,"radius":1.0}}],"merge_queries":[],"aggregations":[]})json"},
+		{Query("ns"sv).WhereKNN("ivf"sv, vec.View(), reindexer::IvfSearchParams{}.K(5'125).NProbe(5)).Select({"ivf", "vectors()"}),
 		 R"json({"namespace":"ns","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":["ivf","vectors()"],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"knn","field":"ivf","value":[)json" +
 			 vecStr + R"json(],"params":{"k":5125,"nprobe":5}}],"merge_queries":[],"aggregations":[]})json"}};
 
@@ -614,11 +650,11 @@ TEST_F(FloatVector, SqlQuery) try {
 	struct {
 		Query query;
 		std::string sql;
-	} testData[]{{Query("ns"sv).WhereKNN("hnsw"sv, vec.View(), KnnSearchParams::Hnsw(4'291, 100'000)).SelectAllFields(),
+	} testData[]{{Query("ns"sv).WhereKNN("hnsw"sv, vec.View(), reindexer::HnswSearchParams{}.K(4'291).Ef(100'000)).SelectAllFields(),
 				  "SELECT *, vectors() FROM ns WHERE KNN(hnsw, [" + vecStr + "], k=4291, ef=100000)"},
-				 {Query("ns"sv).WhereKNN("bf"sv, vec.View(), KnnSearchParams::BruteForce(8'184)).Select("vectors()"),
-				  "SELECT vectors() FROM ns WHERE KNN(bf, [" + vecStr + "], k=8184)"},
-				 {Query("ns"sv).WhereKNN("ivf"sv, vec.View(), KnnSearchParams::Ivf(823, 5)).Select({"hnsw", "vectors()"}),
+				 {Query("ns"sv).WhereKNN("bf"sv, vec.View(), reindexer::BruteForceSearchParams{}.K(8'184).Radius(1.2f)).Select("vectors()"),
+				  "SELECT vectors() FROM ns WHERE KNN(bf, [" + vecStr + "], k=8184, radius=1.2)"},
+				 {Query("ns"sv).WhereKNN("ivf"sv, vec.View(), reindexer::IvfSearchParams{}.K(823).NProbe(5)).Select({"hnsw", "vectors()"}),
 				  "SELECT hnsw, vectors() FROM ns WHERE KNN(ivf, [" + vecStr + "], k=823, nprobe=5)"}};
 	for (const auto& [query, expectedSql] : testData) {
 		const auto generatedSql = query.GetSQL();
@@ -632,7 +668,7 @@ CATCH_AND_ASSERT
 TEST_P(FloatVector, Queries) try {
 	constexpr static auto kNsName = "fv_queries_ns"sv;
 	constexpr static auto kFieldNameBool = "bool"sv;
-	constexpr static auto kFieldNameIvf = "ivf"sv;
+	const static std::string kFieldNameIvf = "ivf";
 #if defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN)
 	constexpr static size_t kDimension = 64;
 	constexpr static size_t kMaxElements = 5'000;
@@ -641,7 +677,7 @@ TEST_P(FloatVector, Queries) try {
 	constexpr static size_t kMaxElements = 10'000;
 #endif
 	std::array<float, kDimension> buf;
-	const auto params = reindexer::KnnSearchParams::Ivf(kMaxElements, 32);
+	const auto params = reindexer::IvfSearchParams{}.K(kMaxElements).NProbe(32);
 
 	rt.OpenNamespace(kNsName);
 	rt.DefineNamespaceDataset(
@@ -673,11 +709,11 @@ TEST_P(FloatVector, Queries) try {
 		item[kFieldNameBool] = bool(rand() % 2);
 		rt.Upsert(kNsName, item);
 	}
-	rndFloatVector(buf);
+	::rndFloatVector(buf);
 	auto result = rt.Select(
 		reindexer::Query{kNsName}.Where(kFieldNameId, CondGt, 5).WhereKNN(kFieldNameIvf, reindexer::ConstFloatVectorView{buf}, params));
 	checkOrdering(result, GetParam());
-	rndFloatVector(buf);
+	::rndFloatVector(buf);
 	result = rt.Select(reindexer::Query{kNsName}
 						   .Where(kFieldNameBool, CondEq, true)
 						   .OpenBracket()
@@ -685,10 +721,14 @@ TEST_P(FloatVector, Queries) try {
 						   .WhereKNN(kFieldNameIvf, reindexer::ConstFloatVectorView{buf}, params)
 						   .CloseBracket());
 	checkOrdering(result, GetParam());
-	rndFloatVector(buf);
+	::rndFloatVector(buf);
 	result =
 		rt.Select(reindexer::Query{kNsName}.WhereKNN(kFieldNameIvf, reindexer::ConstFloatVectorView{buf}, params).Sort("rank()", false));
-	rndFloatVector(buf);
+	::rndFloatVector(buf);
+	result = rt.Select(reindexer::Query{kNsName}
+						   .WhereKNN(kFieldNameIvf, reindexer::ConstFloatVectorView{buf}, params)
+						   .Sort("rank(" + kFieldNameIvf + ')', false));
+	::rndFloatVector(buf);
 	std::map<IdType, reindexer::RankT> ranks;
 	result = rt.Select(reindexer::Query{kNsName}.WhereKNN(kFieldNameIvf, reindexer::ConstFloatVectorView{buf}, params).WithRank());
 	for (auto& i : result) {
@@ -706,13 +746,13 @@ TEST_P(FloatVector, Queries) try {
 		const auto& item = i.GetItemRefRanked();
 		const auto it = ranks.find(item.NotRanked().Id());
 		if (it == ranks.end()) {
-			EXPECT_NE(it, ranks.end()) << item.NotRanked().Id() << ' ' << item.Rank();
+			EXPECT_NE(it, ranks.end()) << item.NotRanked().Id() << ' ' << item.Rank().Value();
 		} else {
 			EXPECT_EQ(it->second, item.Rank()) << item.NotRanked().Id();
 		}
 	}
 
-	rndFloatVector(buf);
+	::rndFloatVector(buf);
 	result = rt.Select(reindexer::Query{kNsName}
 						   .Where(kFieldNameId, CondLt, kMaxElements / 2.0)
 						   .WhereKNN(kFieldNameIvf, reindexer::ConstFloatVectorView{buf}, params)
@@ -784,7 +824,7 @@ template <size_t Dimension>
 reindexer::FloatVector FloatVector::rndFloatVector() {
 	std::array<float, Dimension> buf;
 	if (rand() % 10 != 0) {
-		rndFloatVector(buf);
+		::rndFloatVector(buf);
 		return reindexer::FloatVector{reindexer::ConstFloatVectorView{buf}};
 	} else {
 		return {};
@@ -1111,13 +1151,13 @@ TEST_P(FloatVector, UpdateIndex) try {
 													.SetM(16)
 													.SetEfConstruction(200)
 													.SetMetric(GetParam()))},
-		 reindexer::KnnSearchParams::Hnsw(kK, kK * 2)},
+		 reindexer::HnswSearchParams{}.K(kK).Ef(kK * 2)},
 		{{kFieldNameFloatVector,
 		  {kFieldNameFloatVector},
 		  IndexVectorBruteforce,
 		  IndexOpts{}.SetFloatVector(IndexVectorBruteforce,
 									 FloatVectorIndexOpts{}.SetDimension(kDimension).SetStartSize(kStartSize).SetMetric(GetParam()))},
-		 reindexer::KnnSearchParams::BruteForce(kK)},
+		 reindexer::BruteForceSearchParams{}.K(kK)},
 		{{kFieldNameFloatVector,
 		  {kFieldNameFloatVector},
 		  IndexIvf,
@@ -1125,13 +1165,13 @@ TEST_P(FloatVector, UpdateIndex) try {
 												   .SetDimension(kDimension)
 												   .SetNCentroids(std::max<size_t>(kMaxElementsInStep / 30, 2))
 												   .SetMetric(GetParam()))},
-		 reindexer::KnnSearchParams::Ivf(kK, std::max<size_t>(kK / 200, 2))},
+		 reindexer::IvfSearchParams{}.K(kK).NProbe(std::max<size_t>(kK / 200, 2))},
 		{{kFieldNameFloatVector,
 		  {kFieldNameFloatVector},
 		  IndexIvf,
 		  IndexOpts{}.SetFloatVector(
 			  IndexIvf, FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElementsInStep * 2).SetMetric(GetParam()))},
-		 reindexer::KnnSearchParams::Ivf(kK, std::max<size_t>(kK / 200, 2))},
+		 reindexer::IvfSearchParams{}.K(kK).NProbe(std::max<size_t>(kK / 200, 2))},
 	};
 	const auto rndIndexParams = [&] { return paramsOfIndexes[rand() % (sizeof(paramsOfIndexes) / sizeof(paramsOfIndexes[0]))]; };
 	rt.OpenNamespace(kNsName);
@@ -1154,7 +1194,7 @@ TEST_P(FloatVector, UpdateIndex) try {
 	auto testQueryIndexed = [&](const reindexer::KnnSearchParams& searchParams) {
 		auto result = rt.Select(reindexer::Query{kNsName}.Where(kFieldNameId, CondEq, rand() % currMaxId));
 		std::array<float, kDimension> buf;
-		rndFloatVector(buf);
+		::rndFloatVector(buf);
 		result = rt.Select(reindexer::Query{kNsName}.WhereKNN(kFieldNameFloatVector, reindexer::ConstFloatVectorView{buf}, searchParams));
 	};
 	updateSomeData(HasIndex::No);

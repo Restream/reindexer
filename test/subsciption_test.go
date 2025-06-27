@@ -13,23 +13,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type subscriptionTestItem struct {
+	ID    int    `json:"id" reindex:"id,,pk"`
+	Genre int64  `json:"genre"`
+	Year  int    `json:"year"`
+	Name  string `json:"name"`
+}
+
 const (
-	testNsSub1 = "test_namespace_sub1"
-	testNsSub2 = "test_namespace_sub2"
-	testNsSub3 = "test_namespace_sub3"
+	testSubNs1 = "test_namespace_sub1"
+	testSubNs2 = "test_namespace_sub2"
+	testSubNs3 = "test_namespace_sub3"
+
+	testSubscriptionTypesInitNs = "test_subscription_types_init"
+	testSubscriptionTypesNs     = "test_subscription_types"
 )
 
 func init() {
-	tnamespaces[testNsSub1] = TestItem{}
-	tnamespaces[testNsSub2] = TestItem{}
-	tnamespaces[testNsSub3] = TestItem{}
+	tnamespaces[testSubNs1] = TestItem{}
+	tnamespaces[testSubNs2] = TestItem{}
+	tnamespaces[testSubNs3] = TestItem{}
 }
 
-func createStream(t *testing.T, opts *events.EventsStreamOptions) *events.EventsStream {
-	stream := DBD.Subscribe(opts)
-	require.NotNil(t, stream)
-	require.NoError(t, stream.Error())
-	return stream
+func newSubscriptionTestItemID(id int) *subscriptionTestItem {
+	return &subscriptionTestItem{
+		ID:    id,
+		Year:  rand.Int()%50 + 2000,
+		Genre: int64(rand.Int() % 50),
+		Name:  randString(),
+	}
+}
+
+func newSubscriptionTestItem() *subscriptionTestItem {
+	return newSubscriptionTestItemID(0)
 }
 
 func fillTestSubNamespace(t *testing.T, name string, cnt int) {
@@ -37,6 +53,13 @@ func fillTestSubNamespace(t *testing.T, name string, cnt int) {
 		err := DB.Upsert(name, newTestItem(i, 5))
 		require.NoError(t, err)
 	}
+}
+
+func createStream(t *testing.T, opts *events.EventsStreamOptions) *events.EventsStream {
+	stream := DBD.Subscribe(opts)
+	require.NotNil(t, stream)
+	require.NoError(t, stream.Error())
+	return stream
 }
 
 func readAllEvents(t *testing.T, stream *events.EventsStream) *map[string][]*events.Event {
@@ -54,106 +77,6 @@ func readAllEvents(t *testing.T, stream *events.EventsStream) *map[string][]*eve
 			return &res
 		}
 	}
-}
-
-func validateEventsCount(t *testing.T, expected *map[string]int, actual *map[string][]*events.Event) {
-	assert.Equal(t, len(*expected), len(*actual), "Event maps: Expected: %v, Actual: %v", *expected, *actual)
-	for name, count := range *expected {
-		assert.Equal(t, count, len((*actual)[name]), "Event maps: Expected: %v, Actual: %v", *expected, *actual)
-	}
-}
-
-func TestBasicSubscription(t *testing.T) {
-	streams := make([]*events.EventsStream, 3)
-
-	const (
-		ns1Items = 10
-		ns2Items = 20
-		ns3Items = 15
-	)
-
-	streams[0] = createStream(t, events.DefaultEventsStreamOptions().
-		WithNamespacesList(testNsSub1, testNsSub2).WithLSN().WithServerID().WithShardID())
-	defer streams[0].Close(context.Background())
-	streams[1] = createStream(t, events.DefaultEventsStreamOptions().
-		WithNamespacesList(testNsSub2).WithLSN().WithServerID().WithShardID())
-	defer streams[1].Close(context.Background())
-
-	fillTestSubNamespace(t, testNsSub1, ns1Items)
-	fillTestSubNamespace(t, testNsSub2, ns2Items)
-	fillTestSubNamespace(t, testNsSub3, ns3Items)
-
-	validateEventsCount(t, &map[string]int{testNsSub1: ns1Items, testNsSub2: ns2Items}, readAllEvents(t, streams[0]))
-	validateEventsCount(t, &map[string]int{testNsSub2: ns2Items}, readAllEvents(t, streams[1]))
-
-	err := streams[1].Close(context.Background())
-	assert.NoError(t, err)
-
-	fillTestSubNamespace(t, testNsSub1, ns1Items)
-	validateEventsCount(t, &map[string]int{testNsSub1: ns1Items}, readAllEvents(t, streams[0]))
-
-	streams[2] = createStream(t, events.DefaultEventsStreamOptions().WithDocModifyEvents())
-	defer streams[2].Close(context.Background())
-	fillTestSubNamespace(t, testNsSub1, ns1Items*2)
-	fillTestSubNamespace(t, testNsSub2, ns2Items*2)
-	fillTestSubNamespace(t, testNsSub3, ns3Items*2)
-	validateEventsCount(t, &map[string]int{testNsSub1: ns1Items * 2, testNsSub2: ns2Items * 2}, readAllEvents(t, streams[0]))
-	validateEventsCount(t, &map[string]int{testNsSub1: ns1Items * 2, testNsSub2: ns2Items * 2, testNsSub3: ns3Items * 2}, readAllEvents(t, streams[2]))
-}
-
-func TestSubscriptionMaxStreams(t *testing.T) {
-	const MaxSubs = 32
-	streams := make([]*events.EventsStream, 0, MaxSubs)
-	for i := 0; i < MaxSubs; i++ {
-		stream := DBD.Subscribe(events.DefaultEventsStreamOptions())
-		require.NoError(t, stream.Error(), i)
-		select {
-		case _, ok := <-stream.Chan():
-			require.True(t, ok, "Expecting openned channel")
-		default:
-		}
-		require.NotNil(t, stream.Chan())
-		defer stream.Close(context.Background())
-		streams = append(streams, stream)
-	}
-	stream := DBD.Subscribe(events.DefaultEventsStreamOptions())
-	require.Error(t, stream.Error())
-	select {
-	case _, ok := <-stream.Chan():
-		require.False(t, ok, "Expecting closed channel")
-	default:
-	}
-
-	err := streams[0].Close(context.Background())
-	require.NoError(t, err)
-	stream = DBD.Subscribe(events.DefaultEventsStreamOptions())
-	require.NoError(t, stream.Error())
-	select {
-	case _, ok := <-stream.Chan():
-		require.True(t, ok, "Expecting openned channel")
-	default:
-	}
-	defer stream.Close(context.Background())
-}
-
-type subscriptionTestItem struct {
-	ID    int    `json:"id" reindex:"id,,pk"`
-	Genre int64  `json:"genre"`
-	Year  int    `json:"year"`
-	Name  string `json:"name"`
-}
-
-func newSubscriptionTestItemID(id int) *subscriptionTestItem {
-	return &subscriptionTestItem{
-		ID:    id,
-		Year:  rand.Int()%50 + 2000,
-		Genre: int64(rand.Int() % 50),
-		Name:  randString(),
-	}
-}
-
-func newSubscriptionTestItem() *subscriptionTestItem {
-	return newSubscriptionTestItemID(0)
 }
 
 func runMainOperationsSet(t *testing.T, ns string) {
@@ -265,6 +188,13 @@ func runFullOperationsSetNoRename(t *testing.T, ns string) {
 	runMainOperationsSet(t, ns)
 }
 
+func validateEventsCount(t *testing.T, expected *map[string]int, actual *map[string][]*events.Event) {
+	assert.Equal(t, len(*expected), len(*actual), "Event maps: Expected: %v, Actual: %v", *expected, *actual)
+	for name, count := range *expected {
+		assert.Equal(t, count, len((*actual)[name]), "Event maps: Expected: %v, Actual: %v", *expected, *actual)
+	}
+}
+
 func validateEventsLSNNotEmpty(t *testing.T, events []*events.Event) {
 	require.Greater(t, len(events), 0)
 	for i, e := range events {
@@ -340,7 +270,7 @@ func validateEventsSequence(t *testing.T, name string, expected []events.EventTy
 	}
 }
 
-func testSubscriptionEventTypesInit(t *testing.T, nsInitial string, nsRenamed string) (finalNs string, expectedMap map[string][]events.EventType, runOperationsSet func()) {
+func initTestSubscriptionEventTypes(t *testing.T, nsInitial string, nsRenamed string) (finalNs string, expectedMap map[string][]events.EventType, runOperationsSet func()) {
 	expectedMap = map[string][]events.EventType{
 		"all": {
 			events.EventTypeAddNamespace, events.EventTypeIndexAdd, events.EventTypeSetTagsMatcher, events.EventTypeSetSchema,
@@ -452,12 +382,85 @@ func testSubscriptionEventTypesInit(t *testing.T, nsInitial string, nsRenamed st
 	return
 }
 
+func TestBasicSubscription(t *testing.T) {
+	streams := make([]*events.EventsStream, 3)
+
+	const (
+		ns1Items = 10
+		ns2Items = 20
+		ns3Items = 15
+	)
+
+	streams[0] = createStream(t, events.DefaultEventsStreamOptions().
+		WithNamespacesList(testSubNs1, testSubNs2).WithLSN().WithServerID().WithShardID())
+	defer streams[0].Close(context.Background())
+	streams[1] = createStream(t, events.DefaultEventsStreamOptions().
+		WithNamespacesList(testSubNs2).WithLSN().WithServerID().WithShardID())
+	defer streams[1].Close(context.Background())
+
+	fillTestSubNamespace(t, testSubNs1, ns1Items)
+	fillTestSubNamespace(t, testSubNs2, ns2Items)
+	fillTestSubNamespace(t, testSubNs3, ns3Items)
+
+	validateEventsCount(t, &map[string]int{testSubNs1: ns1Items, testSubNs2: ns2Items}, readAllEvents(t, streams[0]))
+	validateEventsCount(t, &map[string]int{testSubNs2: ns2Items}, readAllEvents(t, streams[1]))
+
+	err := streams[1].Close(context.Background())
+	assert.NoError(t, err)
+
+	fillTestSubNamespace(t, testSubNs1, ns1Items)
+	validateEventsCount(t, &map[string]int{testSubNs1: ns1Items}, readAllEvents(t, streams[0]))
+
+	streams[2] = createStream(t, events.DefaultEventsStreamOptions().WithDocModifyEvents())
+	defer streams[2].Close(context.Background())
+	fillTestSubNamespace(t, testSubNs1, ns1Items*2)
+	fillTestSubNamespace(t, testSubNs2, ns2Items*2)
+	fillTestSubNamespace(t, testSubNs3, ns3Items*2)
+	validateEventsCount(t, &map[string]int{testSubNs1: ns1Items * 2, testSubNs2: ns2Items * 2}, readAllEvents(t, streams[0]))
+	validateEventsCount(t, &map[string]int{testSubNs1: ns1Items * 2, testSubNs2: ns2Items * 2, testSubNs3: ns3Items * 2}, readAllEvents(t, streams[2]))
+}
+
+func TestSubscriptionMaxStreams(t *testing.T) {
+	const MaxSubs = 32
+	streams := make([]*events.EventsStream, 0, MaxSubs)
+	for i := 0; i < MaxSubs; i++ {
+		stream := DBD.Subscribe(events.DefaultEventsStreamOptions())
+		require.NoError(t, stream.Error(), i)
+		select {
+		case _, ok := <-stream.Chan():
+			require.True(t, ok, "Expecting opened channel")
+		default:
+		}
+		require.NotNil(t, stream.Chan())
+		defer stream.Close(context.Background())
+		streams = append(streams, stream)
+	}
+	stream := DBD.Subscribe(events.DefaultEventsStreamOptions())
+	require.Error(t, stream.Error())
+	select {
+	case _, ok := <-stream.Chan():
+		require.False(t, ok, "Expecting closed channel")
+	default:
+	}
+
+	err := streams[0].Close(context.Background())
+	require.NoError(t, err)
+	stream = DBD.Subscribe(events.DefaultEventsStreamOptions())
+	require.NoError(t, stream.Error())
+	select {
+	case _, ok := <-stream.Chan():
+		require.True(t, ok, "Expecting opened channel")
+	default:
+	}
+	defer stream.Close(context.Background())
+}
+
 func TestSubscriptionEventTypes(t *testing.T) {
 	// This test may contain 'rename' operation and v4 replication does not support it.
 	// The version of this test for the pipelines with replication will skip case for the 'rename' event.
-	initialNs := "test_subscription_types_init"
-	ns := "test_subscription_types"
-	ns, expectedMap, runOperationsSet := testSubscriptionEventTypesInit(t, initialNs, ns)
+	initialNs := testSubscriptionTypesInitNs
+	ns := testSubscriptionTypesNs
+	ns, expectedMap, runOperationsSet := initTestSubscriptionEventTypes(t, initialNs, ns)
 
 	t.Run("all operations", func(t *testing.T) {
 		name := "all"

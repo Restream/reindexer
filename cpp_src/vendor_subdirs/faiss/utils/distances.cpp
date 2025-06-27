@@ -747,6 +747,12 @@ void range_search_inner_product(const float* x, const float* y, size_t d, size_t
 	dispatch_range_ResultHandler(res, radius, METRIC_INNER_PRODUCT, sel, r, x, y, d, nx, ny);
 }
 
+void range_search_cosine(const float* x, const float* y, const float* y_norms, size_t d, size_t nx, size_t ny, float radius, RangeSearchResult* res,
+								const IDSelector* sel) {
+	Run_search_cosine r;
+	dispatch_range_ResultHandler(res, radius, METRIC_INNER_PRODUCT, sel, r, x, y, y_norms, d, nx, ny);
+}
+
 /***************************************************************************
  * compute a subset of  distances
  ***************************************************************************/

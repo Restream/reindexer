@@ -17,12 +17,18 @@ type TestItemHuge struct {
 	Data []int
 }
 
+const (
+	testItemsHugeNs = "test_items_huge"
+	// shouldn't be in init()
+	testItemsWideNs = "test_items_wide"
+)
+
 func init() {
-	tnamespaces["test_items_huge"] = TestItemHuge{}
+	tnamespaces[testItemsHugeNs] = TestItemHuge{}
 }
 
 func FillTestItemHuge(start int, count int) {
-	tx := newTestTx(DB, "test_items_huge")
+	tx := newTestTx(DB, testItemsHugeNs)
 
 	for i := 0; i < count; i++ {
 		dataCount := i * 1024 * 16
@@ -38,15 +44,15 @@ func FillTestItemHuge(start int, count int) {
 	tx.MustCommit()
 }
 
-func TestItemsHuge(t *testing.T) {
-	t.Parallel()
-
-	// Fill items by cjson encoder
-	FillTestItemHuge(0, 50)
-
-	// get and decode all items by cjson decoder
-	newTestQuery(DB, "test_items_huge").ExecAndVerify(t)
-
+func FillTestItemWide(ns string, typ reflect.Type, start int, count int) {
+	tx := newTestTx(DB, ns)
+	for i := 0; i < count; i++ {
+		item := MakeTestItemWide(typ, i+start)
+		if err := tx.Upsert(item); err != nil {
+			panic(err)
+		}
+	}
+	tx.MustCommit()
 }
 
 func MakeTestItemWide(typ reflect.Type, ID int) interface{} {
@@ -56,17 +62,6 @@ func MakeTestItemWide(typ reflect.Type, ID int) interface{} {
 		item.Field(j).SetString(typ.Field(j).Name + "_value")
 	}
 	return item.Interface()
-}
-
-func FillTestItemWide(nsName string, typ reflect.Type, start int, count int) {
-	tx := newTestTx(DB, nsName)
-	for i := 0; i < count; i++ {
-		item := MakeTestItemWide(typ, i+start)
-		if err := tx.Upsert(item); err != nil {
-			panic(err)
-		}
-	}
-	tx.MustCommit()
 }
 
 func buildWideItemsExpectedExplain(initialIndexes int) []expectedExplain {
@@ -79,7 +74,7 @@ func buildWideItemsExpectedExplain(initialIndexes int) []expectedExplain {
 			Matched:   1,
 		},
 	}
-	// Part of the expected explain set manually and may be changed. Result depends on the inrernal core's substitutions ordering
+	// Part of the expected explain set manually and may be changed. Result depends on the internal core's substitutions ordering
 	resExplain = append(resExplain, expectedExplain{
 		Field:       "field_6",
 		FieldType:   "indexed",
@@ -149,12 +144,19 @@ func buildWideItemsExpectedExplain(initialIndexes int) []expectedExplain {
 	return resExplain
 }
 
+func TestItemsHuge(t *testing.T) {
+	t.Parallel()
+
+	// Fill items by cjson encoder
+	FillTestItemHuge(0, 50)
+	// get and decode all items by cjson decoder
+	newTestQuery(DB, testItemsHugeNs).ExecAndVerify(t)
+}
+
 func TestItemWide(t *testing.T) {
 	// Check basic select with a lot of indexes in item and in query
-	const nsName = "test_items_wide"
+	const ns = testItemsWideNs
 	const maxIndexes = cjson.MaxIndexes - 1
-
-	DB.DropNamespace(nsName)
 
 	fields := make([]reflect.StructField, 0, maxIndexes)
 	fields = append(fields, reflect.StructField{
@@ -179,13 +181,13 @@ func TestItemWide(t *testing.T) {
 	}
 	typ := reflect.StructOf(fields)
 
-	DB.OpenNamespace(nsName, reindexer.DefaultNamespaceOptions(), reflect.New(typ).Elem().Interface())
-	FillTestItemWide(nsName, typ, 0, 100)
+	DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), reflect.New(typ).Elem().Interface())
+	FillTestItemWide(ns, typ, 0, 100)
 
 	t.Run("simple select with 'maxIndexes' condition for each index (maxIndexes conditions in total)", func(t *testing.T) {
 		const targetItemID = 58
 		targetItem := MakeTestItemWide(typ, targetItemID)
-		q := DB.Query(nsName).Where("id", reindexer.EQ, targetItemID)
+		q := DB.Query(ns).Where("id", reindexer.EQ, targetItemID)
 		for i := 1; i < maxIndexes; i++ {
 			q.Where("field_"+strconv.Itoa(i-1), reindexer.EQ, reflect.ValueOf(targetItem).Field(i).String())
 		}
@@ -209,13 +211,13 @@ func TestItemWide(t *testing.T) {
 				IndexType: indexType,
 				FieldType: "composite",
 			}
-			err := DB.AddIndex(nsName, indexDef)
+			err := DB.AddIndex(ns, indexDef)
 			require.NoError(t, err)
 		}
-		FillTestItemWide(nsName, typ, 100, 100)
+		FillTestItemWide(ns, typ, 100, 100)
 
 		targetItem := MakeTestItemWide(typ, targetItemID)
-		q := DB.Query(nsName).Where("id", reindexer.EQ, targetItemID).Debug(5).Explain()
+		q := DB.Query(ns).Where("id", reindexer.EQ, targetItemID).Debug(5).Explain()
 		for i := 1; i < maxIndexes; i++ {
 			q.Where("field_"+strconv.Itoa(i-1), reindexer.EQ, reflect.ValueOf(targetItem).Field(i).String())
 		}

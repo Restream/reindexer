@@ -8,7 +8,7 @@ info:
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  version: 5.3.0
+  version: 5.4.0
 servers:
 - url: /api/v1
 tags:
@@ -909,6 +909,19 @@ paths:
           enum:
           - "true"
           - "false"
+      - name: with_columns
+        in: query
+        description: Return columns names and widths for table format output
+        schema:
+          type: string
+          enum:
+          - "true"
+          - "false"
+      - name: width
+        in: query
+        description: Total width in rows of view for table format output
+        schema:
+          type: integer
       responses:
         "200":
           description: successful operation
@@ -4166,13 +4179,15 @@ components:
       description: "If contains 'filters' then cannot contain 'cond', 'field' and\
         \ 'value'. If not contains 'filters' then 'field' and 'cond' are required."
     KnnSearchParamsDef:
-      required:
-      - k
       type: object
       properties:
         k:
           type: integer
           description: Maximum count of returned vectors in KNN queries
+        radius:
+          type: number
+          description: Raduis for filtering vectors by metric
+          format: float
         ef:
           type: integer
           description: Applicable for HNSW index only. The size of the dynamic list
@@ -4183,6 +4198,9 @@ components:
           type: integer
           description: Applicable for IVF index only. The number of Voronoi cells
             to search during a query
+      anyOf:
+        - required: [k]
+        - required: [radius]
       description: Parameters for knn search
     SortDef:
       required:
@@ -4399,6 +4417,10 @@ components:
           minimum: 1
           maximum: 65536
           description: Clusters count for construct IFV index. Required for IVF indexes. Allowed for IVF indexes only.
+        radius:
+          type: number
+          description: Raduis for filtering vectors by metric in queries
+          format: float
         embedding:
           type: object
           description: Embedding configuration
@@ -4534,6 +4556,11 @@ components:
             ignored when building indexes
           items:
             $ref: '#/components/schemas/FtStopWordObject'
+        keep_diacritics:
+          type: array
+          description: List of symbol types to keep diacritics (e.g. acc/accent, ara/arabic, heb/hebrew, cyr/cyrillic)
+          items:
+            type: string
         stemmers:
           type: array
           description: List of stemmers to use

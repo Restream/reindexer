@@ -88,12 +88,6 @@ public:
 	Error SubscribeUpdates(IEventsObserver& observer, EventSubscriberConfig&& cfg);
 	Error UnsubscribeUpdates(IEventsObserver& observer);
 
-	// REINDEX_WITH_V3_FOLLOWERS
-	Error SubscribeUpdates(IUpdatesObserverV3* observer, const UpdatesFilters& filters, SubscriptionOpts opts) {
-		return impl_.SubscribeUpdates(observer, filters, opts);
-	}
-	Error UnsubscribeUpdates(IUpdatesObserverV3* observer) { return impl_.UnsubscribeUpdates(observer); }
-	// REINDEX_WITH_V3_FOLLOWERS
 	int GetServerID() const noexcept { return sId_.load(std::memory_order_acquire); }
 
 private:

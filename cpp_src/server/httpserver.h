@@ -21,7 +21,7 @@ struct HTTPClientData final : public http::ClientData {
 	AuthContext auth;
 };
 
-class HTTPServer {
+class [[nodiscard]] HTTPServer final {
 public:
 	HTTPServer(DBManager& dbMgr, LoggerWrapper& logger, const ServerConfig& serverConfig, Prometheus* prometheusI = nullptr,
 			   IStatsWatcher* statsWatcherI = nullptr);
@@ -29,97 +29,105 @@ public:
 	void Start(const std::string& addr, ev::dynamic_loop& loop);
 	void Stop() { listener_->Stop(); }
 
-	int NotFoundHandler(http::Context& ctx);
-	int DocHandler(http::Context& ctx);
-	int Check(http::Context& ctx);
-	int PostQuery(http::Context& ctx);
-	int DeleteQuery(http::Context& ctx);
-	int UpdateQuery(http::Context& ctx);
-	int GetSQLQuery(http::Context& ctx);
-	int PostSQLQuery(http::Context& ctx);
-	int GetSQLSuggest(http::Context& ctx);
-	int GetDatabases(http::Context& ctx);
-	int PostDatabase(http::Context& ctx);
-	int DeleteDatabase(http::Context& ctx);
-	int GetNamespaces(http::Context& ctx);
-	int GetNamespace(http::Context& ctx);
-	int PostNamespace(http::Context& ctx);
-	int DeleteNamespace(http::Context& ctx);
-	int TruncateNamespace(http::Context& ctx);
-	int RenameNamespace(http::Context& ctx);
-	int GetItems(http::Context& ctx);
-	int PostItems(http::Context& ctx);
-	int PatchItems(http::Context& ctx);
-	int PutItems(http::Context& ctx);
-	int DeleteItems(http::Context& ctx);
-	int GetIndexes(http::Context& ctx);
-	int PostIndex(http::Context& ctx);
-	int PutIndex(http::Context& ctx);
-	int PutSchema(http::Context& ctx);
-	int GetSchema(http::Context& ctx);
-	int GetProtobufSchema(http::Context& ctx);
-	int GetMetaList(http::Context& ctx);
-	int GetMetaByKey(http::Context& ctx);
-	int PutMetaByKey(http::Context& ctx);
-	int DeleteMetaByKey(http::Context& ctx);
-	int DeleteIndex(http::Context& ctx);
-	int CheckAuth(http::Context& ctx);
-	int BeginTx(http::Context& ctx);
-	int CommitTx(http::Context& ctx);
-	int RollbackTx(http::Context& ctx);
-	int PostItemsTx(http::Context& ctx);
-	int PutItemsTx(http::Context& ctx);
-	int PatchItemsTx(http::Context& ctx);
-	int DeleteItemsTx(http::Context& ctx);
-	int GetSQLQueryTx(http::Context& ctx);
-	int DeleteQueryTx(http::Context& ctx);
-	int PostMemReset(http::Context& ctx);
-	int GetMemInfo(http::Context& ctx);
+	[[nodiscard]] int NotFoundHandler(http::Context& ctx);
+	[[nodiscard]] int DocHandler(http::Context& ctx);
+	[[nodiscard]] int Check(http::Context& ctx);
+	[[nodiscard]] int PostQuery(http::Context& ctx);
+	[[nodiscard]] int DeleteQuery(http::Context& ctx);
+	[[nodiscard]] int UpdateQuery(http::Context& ctx);
+	[[nodiscard]] int GetSQLQuery(http::Context& ctx);
+	[[nodiscard]] int PostSQLQuery(http::Context& ctx);
+	[[nodiscard]] int GetSQLSuggest(http::Context& ctx);
+	[[nodiscard]] int GetDatabases(http::Context& ctx);
+	[[nodiscard]] int PostDatabase(http::Context& ctx);
+	[[nodiscard]] int DeleteDatabase(http::Context& ctx);
+	[[nodiscard]] int GetNamespaces(http::Context& ctx);
+	[[nodiscard]] int GetNamespace(http::Context& ctx);
+	[[nodiscard]] int PostNamespace(http::Context& ctx);
+	[[nodiscard]] int DeleteNamespace(http::Context& ctx);
+	[[nodiscard]] int TruncateNamespace(http::Context& ctx);
+	[[nodiscard]] int RenameNamespace(http::Context& ctx);
+	[[nodiscard]] int GetItems(http::Context& ctx);
+	[[nodiscard]] int PostItems(http::Context& ctx);
+	[[nodiscard]] int PatchItems(http::Context& ctx);
+	[[nodiscard]] int PutItems(http::Context& ctx);
+	[[nodiscard]] int DeleteItems(http::Context& ctx);
+	[[nodiscard]] int GetIndexes(http::Context& ctx);
+	[[nodiscard]] int PostIndex(http::Context& ctx);
+	[[nodiscard]] int PutIndex(http::Context& ctx);
+	[[nodiscard]] int PutSchema(http::Context& ctx);
+	[[nodiscard]] int GetSchema(http::Context& ctx);
+	[[nodiscard]] int GetProtobufSchema(http::Context& ctx);
+	[[nodiscard]] int GetMetaList(http::Context& ctx);
+	[[nodiscard]] int GetMetaByKey(http::Context& ctx);
+	[[nodiscard]] int PutMetaByKey(http::Context& ctx);
+	[[nodiscard]] int DeleteMetaByKey(http::Context& ctx);
+	[[nodiscard]] int DeleteIndex(http::Context& ctx);
+	[[nodiscard]] int CheckAuth(http::Context& ctx);
+	[[nodiscard]] int BeginTx(http::Context& ctx);
+	[[nodiscard]] int CommitTx(http::Context& ctx);
+	[[nodiscard]] int RollbackTx(http::Context& ctx);
+	[[nodiscard]] int PostItemsTx(http::Context& ctx);
+	[[nodiscard]] int PutItemsTx(http::Context& ctx);
+	[[nodiscard]] int PatchItemsTx(http::Context& ctx);
+	[[nodiscard]] int DeleteItemsTx(http::Context& ctx);
+	[[nodiscard]] int GetSQLQueryTx(http::Context& ctx);
+	[[nodiscard]] int DeleteQueryTx(http::Context& ctx);
+	[[nodiscard]] int PostMemReset(http::Context& ctx);
+	[[nodiscard]] int GetMemInfo(http::Context& ctx);
 	void Logger(http::Context& ctx);
 	void OnResponse(http::Context& ctx);
-	int GetRole(http::Context& ctx);
-	int GetDefaultConfigs(http::Context& ctx);
+	[[nodiscard]] int GetRole(http::Context& ctx);
+	[[nodiscard]] int GetDefaultConfigs(http::Context& ctx);
 
-protected:
-	Error modifyItem(Reindexer& db, std::string& nsName, Item& item, ItemModifyMode mode);
-	Error modifyItem(Reindexer& db, std::string& nsName, Item& item, QueryResults&, ItemModifyMode mode);
-	int modifyItems(http::Context& ctx, ItemModifyMode mode);
-	int modifyItemsTx(http::Context& ctx, ItemModifyMode mode);
-	int modifyItemsProtobuf(http::Context& ctx, std::string& nsName, std::vector<std::string>&& precepts, ItemModifyMode mode);
-	int modifyItemsMsgPack(http::Context& ctx, std::string& nsName, std::vector<std::string>&& precepts, ItemModifyMode mode);
-	int modifyItemsJSON(http::Context& ctx, std::string& nsName, std::vector<std::string>&& precepts, ItemModifyMode mode);
-	int modifyItemsTxMsgPack(http::Context& ctx, Transaction& tx, std::vector<std::string>&& precepts, ItemModifyMode mode);
-	int modifyItemsTxJSON(http::Context& ctx, Transaction& tx, std::vector<std::string>&& precepts, ItemModifyMode mode);
-	int queryResults(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults = false, unsigned limit = kDefaultLimit,
-					 unsigned offset = kDefaultOffset);
-	int queryResultsMsgPack(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
+private:
+	[[nodiscard]] Error modifyItem(Reindexer& db, std::string_view nsName, Item& item, ItemModifyMode mode);
+	[[nodiscard]] Error modifyItem(Reindexer& db, std::string_view nsName, Item& item, QueryResults&, ItemModifyMode mode);
+	[[nodiscard]] int modifyItems(http::Context& ctx, ItemModifyMode mode);
+	[[nodiscard]] int modifyItemsTx(http::Context& ctx, ItemModifyMode mode);
+	[[nodiscard]] int modifyItemsProtobuf(http::Context& ctx, std::string_view nsName, std::vector<std::string>&& precepts,
+										  ItemModifyMode mode);
+	[[nodiscard]] int modifyItemsMsgPack(http::Context& ctx, std::string_view nsName, std::vector<std::string>&& precepts,
+										 ItemModifyMode mode);
+	[[nodiscard]] int modifyItemsJSON(http::Context& ctx, std::string_view nsName, std::vector<std::string>&& precepts,
+									  ItemModifyMode mode);
+	[[nodiscard]] int modifyItemsTxMsgPack(http::Context& ctx, Transaction& tx, std::vector<std::string>&& precepts, ItemModifyMode mode);
+	[[nodiscard]] int modifyItemsTxJSON(http::Context& ctx, Transaction& tx, std::vector<std::string>&& precepts, ItemModifyMode mode);
+	[[nodiscard]] int queryResults(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults = false,
+								   unsigned limit = kDefaultLimit, unsigned offset = kDefaultOffset);
+	[[nodiscard]] int queryResultsMsgPack(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
 							bool withColumns, int width = 0);
-	int queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
+	[[nodiscard]] int queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
 							 bool withColumns, int width = 0);
-	int queryResultsJSON(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
+	[[nodiscard]] int queryResultsJSON(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
 						 bool withColumns, int width = 0);
-	int queryResultsCSV(http::Context& ctx, reindexer::QueryResults& res, unsigned limit, unsigned offset);
+	[[nodiscard]] int queryResultsCSV(http::Context& ctx, reindexer::QueryResults& res, unsigned limit, unsigned offset);
 	template <typename Builder>
 	void queryResultParams(Builder& builder, reindexer::QueryResults& res, std::vector<std::string>&& jsonData, bool isQueryResults,
 						   unsigned limit, bool withColumns, int width);
-	int status(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
-	int jsonStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
-	int msgpackStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
-	int protobufStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
-	unsigned prepareLimit(std::string_view limitParam, int limitDefault = kDefaultLimit);
-	unsigned prepareOffset(std::string_view offsetParam, int offsetDefault = kDefaultOffset);
-	int modifyQueryTxImpl(http::Context& ctx, const std::string& dbName, std::string_view txId, Query& q);
+	[[nodiscard]] int statusOK(http::Context& ctx, chunk&& chunk);
+	[[nodiscard]] int status(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
+	[[nodiscard]] int jsonStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
+	[[nodiscard]] int msgpackStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
+	[[nodiscard]] int protobufStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
+	[[nodiscard]] unsigned prepareLimit(std::string_view limitParam, int limitDefault = kDefaultLimit);
+	[[nodiscard]] unsigned prepareOffset(std::string_view offsetParam, int offsetDefault = kDefaultOffset);
+	[[nodiscard]] int modifyQueryTxImpl(http::Context& ctx, const std::string& dbName, std::string_view txId, Query& q);
 
 	template <UserRole role>
-	Reindexer getDB(http::Context& ctx, std::string* dbNameOut = nullptr);
-	std::string getNameFromJson(std::string_view json);
-	constexpr static std::string_view statsSourceName() { return std::string_view{"http"}; }
+	[[nodiscard]] Reindexer getDB(http::Context& ctx, std::string* dbNameOut = nullptr);
+	[[nodiscard]] std::string getNameFromJson(std::string_view json);
+	[[nodiscard]] constexpr static std::string_view statsSourceName() { return std::string_view{"http"}; }
 
-	std::shared_ptr<Transaction> getTx(const std::string& dbName, std::string_view txId);
-	std::string addTx(std::string dbName, Transaction&& tx);
+	[[nodiscard]] std::shared_ptr<Transaction> getTx(const std::string& dbName, std::string_view txId);
+	[[nodiscard]] std::string addTx(std::string dbName, Transaction&& tx);
 	void removeTx(const std::string& dbName, std::string_view txId);
 	void removeExpiredTx();
 	void deadlineTimerCb(ev::periodic&, int) { removeExpiredTx(); }
+
+	[[nodiscard]] Error execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults& res, http::Context& ctx);
+	[[nodiscard]] bool isParameterSetOn(std::string_view val) const noexcept;
+	[[nodiscard]] int getAuth(http::Context& ctx, AuthContext& auth, const std::string& dbName) const;
 
 	DBManager& dbMgr_;
 	Pprof pprof_;
@@ -145,16 +153,11 @@ protected:
 	std::mutex txMtx_;
 	ev::timer deadlineChecker_;
 
-	static const int kDefaultLimit = INT_MAX;
-	static const int kDefaultOffset = 0;
+	constexpr static int kDefaultLimit = std::numeric_limits<int>::max();
+	constexpr static int kDefaultOffset = 0;
 
 	constexpr static int32_t kMaxConcurrentCsvDownloads = 2;
 	std::atomic<int32_t> currentCsvDownloads_ = {0};
-
-private:
-	Error execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults& res, http::Context& ctx);
-	bool isParameterSetOn(std::string_view val) const noexcept;
-	int getAuth(http::Context& ctx, AuthContext& auth, const std::string& dbName) const;
 };
 
 }  // namespace reindexer_server

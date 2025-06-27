@@ -30,21 +30,23 @@ type TestDescribeBuiltinSubStruct struct {
 	ExpireAt int64  `reindex:"expire_at,ttl,is_no_column,expire_after=999,dense"`
 }
 
+const testDescribeNS = "test_describe"
+
 func init() {
-	tnamespaces["test_describe"] = TestDescribeStruct{}
+	tnamespaces[testDescribeNS] = TestDescribeStruct{}
 
 }
 
 func TestDescribe(t *testing.T) {
-	testDescribeStruct := TestDescribeStruct{ID: 42}
 	generalConds := []string{"SET", "ALLSET", "EQ", "LT", "LE", "GT", "GE", "RANGE"}
 	arrayConds := []string{"SET", "ALLSET", "EQ", "ANY", "EMPTY"}
 	fulltextConds := []string{"EQ", "SET"}
 
-	err := DB.Upsert("test_describe", &testDescribeStruct)
+	testDescribeStruct := TestDescribeStruct{ID: 42}
+	err := DB.Upsert(testDescribeNS, &testDescribeStruct)
 	require.NoError(t, err)
 
-	results, err := DB.ExecSQL("SELECT * FROM " + reindexer.NamespacesNamespaceName + " WHERE name='test_describe'").FetchAll()
+	results, err := DB.ExecSQL("SELECT * FROM " + reindexer.NamespacesNamespaceName + " WHERE name='" + testDescribeNS + "'").FetchAll()
 	require.NoError(t, err)
 	require.Equal(t, 1, len(results))
 
@@ -52,7 +54,7 @@ func TestDescribe(t *testing.T) {
 
 	desc, ok := result.(*reindexer.NamespaceDescription)
 	require.True(t, ok, "wait %T, got %T", reindexer.NamespaceDescription{}, result)
-	require.Equal(t, "test_describe", desc.Name)
+	require.Equal(t, testDescribeNS, desc.Name)
 	require.Equal(t, 10, len(desc.Indexes))
 	require.Equal(t, "id", desc.Indexes[0].Name)
 	idx := desc.Indexes[0]

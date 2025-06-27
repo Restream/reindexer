@@ -527,8 +527,7 @@ void NamespaceImpl::tryWriteItemIntoStorage(const FieldsSet& pkFields, ItemImpl&
 			pk << kRxStorageItemPrefix;
 			pl.SerializeFields(pk, pkFields);
 			data.PutUInt64(uint64_t(pl.Value()->GetLSN()));
-			item.GetCJSON(data);
-			storage_.Write(pk.Slice(), data.Slice());
+			storage_.Write(pk.Slice(), item.GetCJSON(data));
 			storage_.TryForceFlush();
 		}
 	} catch (Error& err) {
@@ -645,8 +644,8 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 		newItem.GetPayload().Get(0, skrefsUps);
 		krefs.resize(0);
 		tuple.Upsert(krefs, skrefsUps, rowId, needClearCache);
-		if (needClearCache && tuple.IsOrdered()) {
-			indexesCacheCleaner.Add(tuple.SortId());
+		if (needClearCache) {
+			indexesCacheCleaner.Add(tuple);
 		}
 
 		// update index
@@ -657,8 +656,8 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 			oldValue.Get(changedField, skrefsDel, Variant::hold);
 			needClearCache = false;
 			index.Delete(skrefsDel, rowId, *strHolder_, needClearCache);
-			if (needClearCache && index.IsOrdered()) {
-				indexesCacheCleaner.Add(index.SortId());
+			if (needClearCache) {
+				indexesCacheCleaner.Add(index);
 			}
 		} else {
 			static_assert(fieldChangeType == FieldChangeType::Add);
@@ -667,8 +666,8 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 			krefs.resize(0);
 			needClearCache = false;
 			index.Upsert(krefs, skrefsUps, rowId, needClearCache);
-			if (needClearCache && index.IsOrdered()) {
-				indexesCacheCleaner.Add(index.SortId());
+			if (needClearCache) {
+				indexesCacheCleaner.Add(index);
 			}
 			newValue.Set(changedField, krefs);
 
@@ -684,8 +683,8 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 			needClearCache = false;
 			auto& fieldIndex = *indexes_[fieldIdx];
 			fieldIndex.Upsert(Variant(plNew), rowId, needClearCache);
-			if (needClearCache && fieldIndex.IsOrdered()) {
-				indexesCacheCleaner.Add(fieldIndex.SortId());
+			if (needClearCache) {
+				indexesCacheCleaner.Add(fieldIndex);
 			}
 		}
 
@@ -723,12 +722,13 @@ void NamespaceImpl::addToWAL(const IndexDef& indexDef, WALRecType type, const Ns
 
 void NamespaceImpl::addToWAL(std::string_view json, WALRecType type, const NsContext& ctx) { processWalRecord(WALRecord(type, json), ctx); }
 
-void NamespaceImpl::AddIndex(const IndexDef& indexDef, const RdxContext& ctx) {
+void NamespaceImpl::AddIndex(const IndexDef& indexDef, const RdxContext& rdxCtx) {
 	indexDef.Validate();
 
 	UpdatesContainer pendedRepl;
+	const NsContext ctx{rdxCtx};
 
-	auto wlck = dataWLock(ctx, true);
+	auto wlck = dataWLock(rdxCtx, true);
 
 	verifyUpsertIndex("add", indexDef);
 	bool checkIdxEqualityNow = ctx.GetOriginLSN().isEmpty();
@@ -748,7 +748,7 @@ void NamespaceImpl::AddIndex(const IndexDef& indexDef, const RdxContext& ctx) {
 		}
 	}
 
-	checkClusterStatus(ctx);
+	checkClusterStatus(ctx.rdxContext);
 
 	doAddIndex(indexDef, checkIdxEqualityNow, pendedRepl, ctx);
 	saveIndexesToStorage();
@@ -760,11 +760,13 @@ void NamespaceImpl::DumpIndex(std::ostream& os, std::string_view index, const Rd
 	dumpIndex(os, index);
 }
 
-void NamespaceImpl::UpdateIndex(const IndexDef& indexDef, const RdxContext& ctx) {
+void NamespaceImpl::UpdateIndex(const IndexDef& indexDef, const RdxContext& rdxCtx) {
 	indexDef.Validate();
 
 	UpdatesContainer pendedRepl;
-	auto wlck = dataWLock(ctx);
+	const NsContext ctx{rdxCtx};
+
+	auto wlck = dataWLock(rdxCtx);
 
 	if (doUpdateIndex(indexDef, pendedRepl, ctx)) {
 		saveIndexesToStorage();
@@ -772,20 +774,23 @@ void NamespaceImpl::UpdateIndex(const IndexDef& indexDef, const RdxContext& ctx)
 	}
 }
 
-void NamespaceImpl::DropIndex(const IndexDef& indexDef, const RdxContext& ctx) {
+void NamespaceImpl::DropIndex(const IndexDef& indexDef, const RdxContext& rdxCtx) {
 	indexDef.Validate();
 
 	UpdatesContainer pendedRepl;
-	auto wlck = dataWLock(ctx);
+	const NsContext ctx{rdxCtx};
+
+	auto wlck = dataWLock(rdxCtx);
 	doDropIndex(indexDef, pendedRepl, ctx);
 	saveIndexesToStorage();
 	replicate(std::move(pendedRepl), std::move(wlck), false, nullptr, ctx);
 }
 
-void NamespaceImpl::SetSchema(std::string_view schema, const RdxContext& ctx) {
+void NamespaceImpl::SetSchema(std::string_view schema, const RdxContext& rdxCtx) {
 	UpdatesContainer pendedRepl;
+	const NsContext ctx{rdxCtx};
 
-	auto wlck = dataWLock(ctx, true);
+	auto wlck = dataWLock(rdxCtx, true);
 
 	if (ctx.GetOriginLSN().isEmpty()) {
 		if (schema_ && schema_->GetJSON() == Schema::AppendProtobufNumber(schema, schema_->GetProtobufNsNumber())) {
@@ -805,7 +810,7 @@ void NamespaceImpl::SetSchema(std::string_view schema, const RdxContext& ctx) {
 		}
 	}
 
-	checkClusterStatus(ctx);
+	checkClusterStatus(ctx.rdxContext);
 	setSchema(schema, pendedRepl, ctx);
 	saveSchemaToStorage();
 	replicate(std::move(pendedRepl), std::move(wlck), false, nullptr, ctx);
@@ -1062,10 +1067,10 @@ void NamespaceImpl::dropIndex(const IndexDef& index, bool disableTmVersionInc) {
 }
 
 void NamespaceImpl::doDropIndex(const IndexDef& index, UpdatesContainer& pendedRepl, const NsContext& ctx) {
-	dropIndex(index, ctx.inSnapshot);
+	dropIndex(index, ctx.IsInSnapshot());
 
 	addToWAL(index, WalIndexDrop, ctx);
-	pendedRepl.emplace_back(updates::URType::IndexDrop, name_, wal_.LastLSN(), repl_.nsVersion, ctx.rdxContext.EmitterServerId(), index);
+	pendedRepl.emplace_back(updates::URType::IndexDrop, name_, wal_.LastLSN(), repl_.nsVersion, ctx.EmitterServerId(), index);
 }
 
 static void verifyConvertType(KeyValueType from, KeyValueType to, const PayloadType& payloadType, const FieldsSet& fields) {
@@ -1167,7 +1172,8 @@ void NamespaceImpl::verifyUpsertEmbedder(std::string_view action, const IndexDef
 	int idx = 0;
 	for (const auto& field : embedding.value().upsertEmbedder.value().fields) {
 		if (!tryGetIndexByName(field, idx)) {
-			throw Error(errLogic, "Cannot add field with name '{}' to namespace '{}'. Auxiliary field '{}' not found", indexDef.Name(), name_, field);
+			throw Error(errLogic, "Cannot add field with name '{}' to namespace '{}'. Auxiliary field '{}' not found", indexDef.Name(),
+						name_, field);
 		}
 		if (idx >= indexes_.firstCompositePos()) {
 			throw Error(errParams,
@@ -1266,12 +1272,12 @@ void NamespaceImpl::verifyUpdateIndex(const IndexDef& indexDef) const {
 			verifyConvertSparseType(oldIndex->KeyType(), newSparseIndex->KeyType());
 		}
 	} else {
-		FieldsSet changedFields{idxNameIt->second};
 		PayloadType newPlType = payloadType_;
 		newPlType.Drop(indexDef.Name());
-		newPlType.Add(PayloadFieldType(name_.ToLower(), idxNameIt->second, *newIndex, indexDef, embeddersCache_));
+		newPlType.Add(PayloadFieldType(name_.ToLower(), *newIndex, indexDef, embeddersCache_));
 
 		if (itemsCount() > 0) {
+			FieldsSet changedFields{idxNameIt->second};
 			verifyConvertType(oldIndex->KeyType(), newIndex->KeyType(), newPlType, changedFields);
 		}
 	}
@@ -1517,7 +1523,7 @@ void NamespaceImpl::addIndex(const IndexDef& indexDef, bool disableTmVersionInc,
 		PayloadType oldPlType = payloadType_;
 		const auto sparseIndexes = indexes_.SparseIndexes();
 		auto newIndex = Index::New(indexDef, PayloadType(), FieldsSet(), config_.cacheConfig, itemsCount(), LogCreation_True);
-		payloadType_.Add(PayloadFieldType(name_.ToLower(), idxNo, *newIndex, indexDef, embeddersCache_));
+		payloadType_.Add(PayloadFieldType(name_.ToLower(), *newIndex, indexDef, embeddersCache_));
 
 		rollbacker.SetOldPayloadType(std::move(oldPlType));
 		tagsMatcher_.UpdatePayloadType(payloadType_, sparseIndexes,
@@ -1543,18 +1549,18 @@ void NamespaceImpl::fillSparseIndex(Index& index, std::string_view jsonPath) {
 		krefs.resize(0);
 		bool needClearCache{false};
 		index.Upsert(krefs, skrefs, int(rowId), needClearCache);
-		if (needClearCache && index.IsOrdered()) {
-			indexesCacheCleaner.Add(index.SortId());
+		if (needClearCache) {
+			indexesCacheCleaner.Add(index);
 		}
 	}
 	scheduleIndexOptimization(IndexOptimization::Partial);
 }
 
 void NamespaceImpl::doAddIndex(const IndexDef& indexDef, bool skipEqualityCheck, UpdatesContainer& pendedRepl, const NsContext& ctx) {
-	addIndex(indexDef, ctx.inSnapshot, skipEqualityCheck);
+	addIndex(indexDef, ctx.IsInSnapshot(), skipEqualityCheck);
 
 	addToWAL(indexDef, WalIndexAdd, ctx);
-	pendedRepl.emplace_back(updates::URType::IndexAdd, name_, wal_.LastLSN(), repl_.nsVersion, ctx.rdxContext.EmitterServerId(), indexDef);
+	pendedRepl.emplace_back(updates::URType::IndexAdd, name_, wal_.LastLSN(), repl_.nsVersion, ctx.EmitterServerId(), indexDef);
 }
 
 bool NamespaceImpl::updateIndex(const IndexDef& indexDef, bool disableTmVersionInc) {
@@ -1565,12 +1571,24 @@ bool NamespaceImpl::updateIndex(const IndexDef& indexDef, bool disableTmVersionI
 	if (indexDef.IsEqual(foundIndex, IndexComparison::SkipConfig)) {
 		// Index has not been changed
 		if (!indexDef.IsEqual(foundIndex, IndexComparison::Full)) {
-			if (!foundIndex.Opts().IsFloatVector()) {
+			if (foundIndex.Opts().IsFloatVector()) {
+				// Only embedding changed
+				if (indexDef.Opts().FloatVector().Embedding() != foundIndex.Opts().FloatVector().Embedding()) {
+					verifyUpsertEmbedder("update", indexDef);
+					const auto idx = getIndexByName(indexName);
+					auto& index = *indexes_[idx].get();
+					PayloadFieldType f(name_.ToLower(), index, indexDef, embeddersCache_);
+					f.SetOffset(payloadType_.Field(idx).Offset());
+					payloadType_.Replace(idx, std::move(f));
+					index.SetOpts(indexDef.Opts());
+					return true;
+				}
+			} else {
 				// Only index config changed
 				// Just call SetOpts for any index type except vector indexes
-				auto idxPtr = indexes_[getIndexByName(indexName)].get();
-				idxPtr->SetOpts(indexDef.Opts());
-				idxPtr->ClearCache();
+				auto& index = *indexes_[getIndexByName(indexName)].get();
+				index.SetOpts(indexDef.Opts());
+				index.ClearCache();
 				clearNamespaceCaches();
 				return true;
 			}
@@ -1588,10 +1606,9 @@ bool NamespaceImpl::updateIndex(const IndexDef& indexDef, bool disableTmVersionI
 }
 
 bool NamespaceImpl::doUpdateIndex(const IndexDef& indexDef, UpdatesContainer& pendedRepl, const NsContext& ctx) {
-	if (updateIndex(indexDef, ctx.inSnapshot) || !ctx.GetOriginLSN().isEmpty()) {
-		addToWAL(indexDef, WalIndexUpdate, ctx.rdxContext);
-		pendedRepl.emplace_back(updates::URType::IndexUpdate, name_, wal_.LastLSN(), repl_.nsVersion, ctx.rdxContext.EmitterServerId(),
-								indexDef);
+	if (updateIndex(indexDef, ctx.IsInSnapshot()) || !ctx.GetOriginLSN().isEmpty()) {
+		addToWAL(indexDef, WalIndexUpdate, ctx);
+		pendedRepl.emplace_back(updates::URType::IndexUpdate, name_, wal_.LastLSN(), repl_.nsVersion, ctx.EmitterServerId(), indexDef);
 		return true;
 	}
 	return false;
@@ -1628,8 +1645,8 @@ void NamespaceImpl::addCompositeIndex(const IndexDef& indexDef) {
 		if (!items_[rowId].IsFree()) {
 			bool needClearCache{false};
 			indexes_[idxPos]->Upsert(Variant(items_[rowId]), rowId, needClearCache);
-			if (needClearCache && indexes_[idxPos]->IsOrdered()) {
-				indexesCacheCleaner.Add(indexes_[idxPos]->SortId());
+			if (needClearCache) {
+				indexesCacheCleaner.Add(*indexes_[idxPos]);
 			}
 		}
 	}
@@ -1788,8 +1805,8 @@ void NamespaceImpl::doDelete(IdType id, TransactionContext* txCtx) {
 
 		bool needClearCache{false};
 		indexes_[field]->Delete(Variant(items_[id]), id, *strHolder_, needClearCache);
-		if (needClearCache && indexes_[field]->IsOrdered()) {
-			indexesCacheCleaner.Add(indexes_[field]->SortId());
+		if (needClearCache) {
+			indexesCacheCleaner.Add(*indexes_[field]);
 		}
 	}
 
@@ -1821,8 +1838,8 @@ void NamespaceImpl::doDelete(IdType id, TransactionContext* txCtx) {
 			// Delete value from index
 			bool needClearCache{false};
 			index.Delete(skrefs, id, *strHolder_, needClearCache);
-			if (needClearCache && index.IsOrdered()) {
-				indexesCacheCleaner.Add(index.SortId());
+			if (needClearCache) {
+				indexesCacheCleaner.Add(index);
 			}
 		}
 	} while (++field != borderIdx);
@@ -1883,42 +1900,37 @@ void NamespaceImpl::doTruncate(UpdatesContainer& pendedRepl, const NsContext& ct
 	const auto lsn = wal_.Add(wrec, ctx.GetOriginLSN());
 	markUpdated(IndexOptimization::Full);
 
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	if (!repl_.temporary && !ctx.inSnapshot) {
-		observers_.OnWALUpdate(LSNPair(lsn, lsn), name_, wrec);
-	}
-#endif	// REINDEX_WITH_V3_FOLLOWERS
-
-	pendedRepl.emplace_back(updates::URType::Truncate, name_, lsn, repl_.nsVersion, ctx.rdxContext.EmitterServerId());
+	pendedRepl.emplace_back(updates::URType::Truncate, name_, lsn, repl_.nsVersion, ctx.EmitterServerId());
 }
 
-void NamespaceImpl::ModifyItem(Item& item, ItemModifyMode mode, const RdxContext& ctx) {
+void NamespaceImpl::ModifyItem(Item& item, ItemModifyMode mode, const RdxContext& rdxCtx) {
 	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
-	const NsContext nsCtx(ctx);
+	const NsContext ctx(rdxCtx);
 	UpdatesContainer pendedRepl;
 
 	if (ctx.GetOriginLSN().isEmpty() && (mode == ModeUpdate || mode == ModeInsert || mode == ModeUpsert)) {
-		item.impl_->Embed(ctx);
+		item.Embed(rdxCtx);
 	}
 
 	CounterGuardAIR32 cg(cancelCommitCnt_);
-	auto wlck = dataWLock(ctx);
+	auto wlck = dataWLock(rdxCtx);
 	cg.Reset();
 	calc.LockHit();
 	if (mode == ModeDelete && rx_unlikely(item.PkFields() != pkFields())) {
 		throw Error(errNotValid, "Item has outdated PK metadata (probably PK has been change during the Delete-call)");
 	}
-	modifyItem(item, mode, pendedRepl, nsCtx);
+	modifyItem(item, mode, pendedRepl, ctx);
 
 	replicate(std::move(pendedRepl), std::move(wlck), true, nullptr, ctx);
 }
 
-void NamespaceImpl::Truncate(const RdxContext& ctx) {
+void NamespaceImpl::Truncate(const RdxContext& rdxCtx) {
 	UpdatesContainer pendedRepl;
+	const NsContext ctx(rdxCtx);
 	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
 
 	CounterGuardAIR32 cg(cancelCommitCnt_);
-	auto wlck = dataWLock(ctx);
+	auto wlck = dataWLock(rdxCtx);
 	cg.Reset();
 
 	calc.LockHit();
@@ -1927,18 +1939,19 @@ void NamespaceImpl::Truncate(const RdxContext& ctx) {
 	replicate(std::move(pendedRepl), std::move(wlck), true, nullptr, ctx);
 }
 
-void NamespaceImpl::Refill(std::vector<Item>& items, const RdxContext& ctx) {
+void NamespaceImpl::Refill(std::vector<Item>& items, const RdxContext& rdxCtx) {
 	UpdatesContainer pendedRepl;
+	const NsContext ctx(rdxCtx);
+
 	CounterGuardAIR32 cg(cancelCommitCnt_);
-	auto wlck = dataWLock(ctx);
+	auto wlck = dataWLock(rdxCtx);
 	cg.Reset();
 
-	assertrx(isSystem());  // TODO: Refill currently will not be replicated, so it's available for system ns only
+	assertrx_throw(isSystem());	 // TODO: Refill currently will not be replicated, so it's available for system ns only
 
 	doTruncate(pendedRepl, ctx);
-	NsContext nsCtx(ctx);
 	for (Item& i : items) {
-		doModifyItem(i, ModeUpsert, pendedRepl, nsCtx);
+		doModifyItem(i, ModeUpsert, pendedRepl, ctx);
 	}
 	tryForceFlush(std::move(wlck));
 }
@@ -1987,7 +2000,9 @@ void NamespaceImpl::CommitTransaction(LocalTransaction& tx, LocalQueryResults& r
 	}
 
 	checkClusterRole(ctx.rdxContext);  // Check request source. Throw exception if false
-	if (!ctx.IsWalSyncItem()) {
+	if (ctx.IsWalSyncItem()) {
+		checkSnapshotLSN(tx.GetLSN());
+	} else {
 		checkClusterStatus(tx.GetLSN());  // Check tx itself. Throw exception if false
 	}
 
@@ -2019,13 +2034,8 @@ void NamespaceImpl::CommitTransaction(LocalTransaction& tx, LocalQueryResults& r
 		{
 			WALRecord initWrec(WalInitTransaction, 0, true);
 			auto lsn = wal_.Add(initWrec, tx.GetLSN());
-			if (!ctx.inSnapshot) {
-				replicateAsync({updates::URType::BeginTx, name_, lsn, repl_.nsVersion, ctx.rdxContext.EmitterServerId()}, ctx.rdxContext);
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-				if (!repl_.temporary) {
-					observers_.OnWALUpdate(LSNPair(lsn, lsn), name_, initWrec);
-				}
-#endif	// REINDEX_WITH_V3_FOLLOWERS
+			if (!ctx.IsInSnapshot()) {
+				replicateAsync({updates::URType::BeginTx, name_, lsn, repl_.nsVersion, ctx.EmitterServerId()}, ctx.rdxContext);
 			}
 		}
 
@@ -2057,7 +2067,7 @@ void NamespaceImpl::CommitTransaction(LocalTransaction& tx, LocalQueryResults& r
 					break;
 				}
 				case TransactionStep::Type::Nop:
-					assertrx(ctx.inSnapshot);
+					assertrx(ctx.IsInSnapshot());
 					wal_.Add(WALRecord(WalEmpty), step.lsn_);
 					break;
 				case TransactionStep::Type::PutMeta: {
@@ -2075,22 +2085,22 @@ void NamespaceImpl::CommitTransaction(LocalTransaction& tx, LocalQueryResults& r
 					std::abort();
 			}
 
-			if (!ctx.inSnapshot) {
+			if (!ctx.IsInSnapshot()) {
 				replicateAsync(std::move(pendedRepl), ctx.rdxContext);
 			}
 		}
 
 		processWalRecord(WALRecord(WalCommitTransaction, 0, true), ctx);
 		logFmt(LogTrace, "[repl:{}]:{} CommitTransaction end", name_, wal_.GetServer());
-		if (!ctx.inSnapshot && !ctx.isCopiedNsRequest) {
+		if (!ctx.IsInSnapshot() && !ctx.isCopiedNsRequest) {
 			// If commit happens in ns copy, then the copier have to handle replication
 			UpdatesContainer pendedRepl;
-			pendedRepl.emplace_back(updates::URType::CommitTx, name_, wal_.LastLSN(), repl_.nsVersion, ctx.rdxContext.EmitterServerId());
+			pendedRepl.emplace_back(updates::URType::CommitTx, name_, wal_.LastLSN(), repl_.nsVersion, ctx.EmitterServerId());
 			replicate(std::move(pendedRepl), std::move(wlck), true, queryStatCalculator, ctx);
 			return;
-		} else if (ctx.inSnapshot && ctx.isRequireResync) {
+		} else if (ctx.IsInSnapshot() && ctx.isRequireResync) {
 			replicateAsync({ctx.isInitialLeaderSync ? updates::URType::ResyncNamespaceLeaderInit : updates::URType::ResyncNamespaceGeneric,
-							name_, lsn_t(0, 0), lsn_t(0, 0), ctx.rdxContext.EmitterServerId()},
+							name_, lsn_t(0, 0), lsn_t(0, 0), ctx.EmitterServerId()},
 						   ctx.rdxContext);
 		}
 	}
@@ -2099,15 +2109,15 @@ void NamespaceImpl::CommitTransaction(LocalTransaction& tx, LocalQueryResults& r
 	}
 }
 
-void NamespaceImpl::doUpsert(ItemImpl* ritem, IdType id, bool doUpdate, TransactionContext* txCtx) {
-	// Upsert fields to indexes
+void NamespaceImpl::doUpsert(ItemImpl& item, IdType id, bool doUpdate, TransactionContext* txCtx) {
+	// upsert fields to indexes
 	assertrx(items_.exists(id));
 	auto& plData = items_[id];
 
-	// Inplace payload
+	// inplace payload
 	Payload pl(payloadType_, plData);
 
-	Payload plNew = ritem->GetPayload();
+	Payload plNew = item.GetPayload();
 	auto indexesCacheCleaner{GetIndexesCacheCleaner()};
 	Variant oldData;
 	h_vector<bool, 32> needUpdateCompIndexes;
@@ -2153,7 +2163,7 @@ void NamespaceImpl::doUpsert(ItemImpl* ritem, IdType id, bool doUpdate, Transact
 		}
 	}
 
-	plData.SetLSN(ritem->Value().GetLSN());
+	plData.SetLSN(item.Value().GetLSN());
 
 	// Upserting fields to dense and sparse indexes:
 	// we start with 1st index (not index 0) because
@@ -2216,8 +2226,8 @@ void NamespaceImpl::doUpsert(ItemImpl* ritem, IdType id, bool doUpdate, Transact
 				// No txCtx modification required here
 				bool needClearCache{false};
 				index.Delete(krefs, id, *strHolder_, needClearCache);
-				if (needClearCache && index.IsOrdered()) {
-					indexesCacheCleaner.Add(index.SortId());
+				if (needClearCache) {
+					indexesCacheCleaner.Add(index);
 				}
 			}
 		}
@@ -2236,8 +2246,8 @@ void NamespaceImpl::doUpsert(ItemImpl* ritem, IdType id, bool doUpdate, Transact
 			krefs.resize(0);
 			bool needClearCache{false};
 			index.Upsert(krefs, skrefs, id, needClearCache);
-			if (needClearCache && index.IsOrdered()) {
-				indexesCacheCleaner.Add(index.SortId());
+			if (needClearCache) {
+				indexesCacheCleaner.Add(index);
 			}
 
 			if (!isIndexSparse) {
@@ -2260,13 +2270,13 @@ void NamespaceImpl::doUpsert(ItemImpl* ritem, IdType id, bool doUpdate, Transact
 			indexes_[field2]->Delete(oldData, id, *strHolder_, needClearCache);
 		}
 		indexes_[field2]->Upsert(Variant{plData}, id, needClearCache);
-		if (needClearCache && indexes_[field2]->IsOrdered()) {
-			indexesCacheCleaner.Add(indexes_[field2]->SortId());
+		if (needClearCache) {
+			indexesCacheCleaner.Add(*indexes_[field2]);
 		}
 	}
 	repl_.dataHash ^= calculateItemHash(id);
 	itemsDataSize_ += plData.GetCapacity() + sizeof(PayloadValue::dataHeader);
-	ritem->RealValue() = plData;
+	item.RealValue() = plData;
 }
 
 void NamespaceImpl::updateTagsMatcherFromItem(ItemImpl* ritem, const NsContext& ctx) {
@@ -2314,7 +2324,7 @@ void NamespaceImpl::deleteItem(Item& item, UpdatesContainer& pendedRepl, const N
 	const auto oldTmV = tagsMatcher_.version();
 	updateTagsMatcherFromItem(ritem, ctx);
 
-	auto itItem = findByPK(ritem, ctx.inTransaction, ctx.rdxContext);
+	auto itItem = findByPK(ritem, ctx.IsInTransaction(), ctx.rdxContext);
 	IdType id = itItem.first;
 
 	item.setID(-1);
@@ -2322,8 +2332,7 @@ void NamespaceImpl::deleteItem(Item& item, UpdatesContainer& pendedRepl, const N
 		item.setID(id);
 
 		WrSerializer cjson;
-		ritem->GetCJSON(cjson, false);
-		WALRecord wrec{WalItemModify, cjson.Slice(), ritem->tagsMatcher().version(), ModeDelete, ctx.inTransaction};
+		WALRecord wrec{WalItemModify, ritem->GetCJSON(cjson, false), ritem->tagsMatcher().version(), ModeDelete, ctx.IsInTransaction()};
 
 		if (itItem.second) {
 			ritem->RealValue() = items_[id];
@@ -2348,8 +2357,8 @@ void NamespaceImpl::deleteItem(Item& item, UpdatesContainer& pendedRepl, const N
 
 		lsn_t itemLsn(item.GetLSN());
 		processWalRecord(std::move(wrec), ctx, itemLsn, &item);
-		pendedRepl.emplace_back(ctx.inTransaction ? updates::URType::ItemDeleteTx : updates::URType::ItemDelete, name_, wal_.LastLSN(),
-								repl_.nsVersion, ctx.rdxContext.EmitterServerId(), std::move(cjson));
+		pendedRepl.emplace_back(ctx.IsInTransaction() ? updates::URType::ItemDeleteTx : updates::URType::ItemDelete, name_, wal_.LastLSN(),
+								repl_.nsVersion, ctx.EmitterServerId(), std::move(cjson));
 	}
 }
 
@@ -2362,7 +2371,7 @@ void NamespaceImpl::doModifyItem(Item& item, ItemModifyMode mode, UpdatesContain
 	updateTagsMatcherFromItem(itemImpl, ctx);
 	auto newPl = itemImpl->GetPayload();
 
-	auto realItem = findByPK(itemImpl, ctx.inTransaction, ctx.rdxContext);
+	auto realItem = findByPK(itemImpl, ctx.IsInTransaction(), ctx.rdxContext);
 	const bool exists = realItem.second;
 
 	if ((exists && mode == ModeInsert) || (!exists && mode == ModeUpdate)) {
@@ -2400,17 +2409,17 @@ void NamespaceImpl::doModifyItem(Item& item, ItemModifyMode mode, UpdatesContain
 	if (ctx.IsForceSyncItem()) {
 		lsn = ctx.GetOriginLSN();
 	} else {
-		lsn = wal_.Add(WALRecord(WalItemUpdate, id, ctx.inTransaction), ctx.GetOriginLSN(), exists ? items_[id].GetLSN() : lsn_t());
+		lsn = wal_.Add(WALRecord(WalItemUpdate, id, ctx.IsInTransaction()), ctx.GetOriginLSN(), exists ? items_[id].GetLSN() : lsn_t());
 	}
 	assertrx(!lsn.isEmpty());
 
 	item.setLSN(lsn);
 	item.setID(id);
 
-	doUpsert(itemImpl, id, exists, ctx.txCtx);
+	doUpsert(*itemImpl, id, exists, ctx.txCtx);
 
 	WrSerializer cjson;
-	item.impl_->GetCJSON(cjson, false);
+	itemImpl->GetCJSON(cjson, false);
 
 	saveTagsMatcherToStorage(true);
 	if (storage_.IsValid()) {
@@ -2424,29 +2433,22 @@ void NamespaceImpl::doModifyItem(Item& item, ItemModifyMode mode, UpdatesContain
 
 	markUpdated(exists ? IndexOptimization::Partial : IndexOptimization::Full);
 
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	if (!repl_.temporary && !ctx.inSnapshot) {
-		observers_.OnWALUpdate(LSNPair(lsn, lsn), name_,
-							   WALRecord(WalItemModify, cjson.Slice(), tagsMatcher_.version(), mode, ctx.inTransaction));
-	}
-#endif	// REINDEX_WITH_V3_FOLLOWERS
-
 	auto type = updates::URType::None;
 	switch (mode) {
 		case ModeUpdate:
-			type = ctx.inTransaction ? updates::URType::ItemUpdateTx : updates::URType::ItemUpdate;
+			type = ctx.IsInTransaction() ? updates::URType::ItemUpdateTx : updates::URType::ItemUpdate;
 			break;
 		case ModeInsert:
-			type = ctx.inTransaction ? updates::URType::ItemInsertTx : updates::URType::ItemInsert;
+			type = ctx.IsInTransaction() ? updates::URType::ItemInsertTx : updates::URType::ItemInsert;
 			break;
 		case ModeUpsert:
-			type = ctx.inTransaction ? updates::URType::ItemUpsertTx : updates::URType::ItemUpsert;
+			type = ctx.IsInTransaction() ? updates::URType::ItemUpsertTx : updates::URType::ItemUpsert;
 			break;
 		case ModeDelete:
-			type = ctx.inTransaction ? updates::URType::ItemDeleteTx : updates::URType::ItemDelete;
+			type = ctx.IsInTransaction() ? updates::URType::ItemDeleteTx : updates::URType::ItemDelete;
 			break;
 	}
-	pendedRepl.emplace_back(type, name_, lsn, repl_.nsVersion, ctx.rdxContext.EmitterServerId(), std::move(cjson));
+	pendedRepl.emplace_back(type, name_, lsn, repl_.nsVersion, ctx.EmitterServerId(), std::move(cjson));
 }
 
 PayloadType NamespaceImpl::GetPayloadType(const RdxContext& ctx) const {
@@ -2599,7 +2601,7 @@ void NamespaceImpl::optimizeIndexes(const NsContext& ctx) {
 	if (maxIndexWorkers && !cancelCommitCnt_.load(std::memory_order_relaxed)) {
 		optimizationState_.store(OptimizationCompleted, std::memory_order_release);
 		for (auto& idxIt : indexes_) {
-			if (!idxIt->IsFulltext()) {
+			if (idxIt->IsSupportSortedIdsBuild()) {
 				idxIt->MarkBuilt();
 			}
 		}
@@ -2654,7 +2656,7 @@ void NamespaceImpl::doUpdate(const Query& query, LocalQueryResults& result, Upda
 	selCtx.functions = &func;
 	selCtx.contextCollectingMode = true;
 	selCtx.requiresCrashTracking = true;
-	selCtx.inTransaction = ctx.inTransaction;
+	selCtx.inTransaction = ctx.IsInTransaction();
 	selCtx.selectBeforeUpdate = true;
 	selecter(result, selCtx, ctx.rdxContext);
 
@@ -2675,11 +2677,11 @@ void NamespaceImpl::doUpdate(const Query& query, LocalQueryResults& result, Upda
 		}
 	}
 
-	if (!ctx.rdxContext.GetOriginLSN().isEmpty() && withExpressions) {
+	if (!ctx.GetOriginLSN().isEmpty() && withExpressions) {
 		throw Error(errLogic, "Can't apply update query with expression to follower's ns '{}'", name_);
 	}
 
-	if (!ctx.inTransaction) {
+	if (!ctx.IsInTransaction()) {
 		ThrowOnCancel(ctx.rdxContext);
 	}
 
@@ -2721,7 +2723,7 @@ void NamespaceImpl::doUpdate(const Query& query, LocalQueryResults& result, Upda
 	//	if (statementReplication) {
 	//		WrSerializer ser;
 	//		const_cast<Query &>(query).type_ = QueryUpdate;
-	//		WALRecord wrec(WalUpdateQuery, query.GetSQL(ser, QueryUpdate).Slice(), ctx.inTransaction);
+	//		WALRecord wrec(WalUpdateQuery, query.GetSQL(ser, QueryUpdate).Slice(), ctx.IsInTransaction());
 	//		lsn = wal_.Add(wrec, ctx.GetOriginLSN());
 	//		if (!ctx.rdxContext.fromReplication_) repl_.lastSelfLSN = lsn;
 	//		for (ItemRef &item : result.Items()) {
@@ -2755,7 +2757,7 @@ void NamespaceImpl::replicateItem(IdType itemId, const NsContext& ctx, bool stat
 			if (ctx.IsForceSyncItem()) {
 				lsn = ctx.GetOriginLSN();
 			} else {
-				lsn = wal_.Add(WALRecord(WalItemUpdate, itemId, ctx.inTransaction), lsn_t(), items_[itemId].GetLSN());
+				lsn = wal_.Add(WALRecord(WalItemUpdate, itemId, ctx.IsInTransaction()), lsn_t(), items_[itemId].GetLSN());
 			}
 			assertrx(!lsn.isEmpty());
 
@@ -2765,13 +2767,7 @@ void NamespaceImpl::replicateItem(IdType itemId, const NsContext& ctx, bool stat
 			item.CopyIndexedVectorsValuesFrom(itemId, vectorIndexes);
 			WrSerializer cjson;
 			item.GetCJSON(cjson, false);
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-			if (!repl_.temporary && !ctx.inSnapshot) {
-				observers_.OnWALUpdate(LSNPair(lsn, lsn), name_,
-									   WALRecord(WalItemModify, cjson.Slice(), tagsMatcher_.version(), ModeUpdate, ctx.inTransaction));
-			}
-#endif	// REINDEX_WITH_V3_FOLLOWERS
-			pendedRepl.emplace_back(mode, name_, lsn, repl_.nsVersion, ctx.rdxContext.EmitterServerId(), std::move(cjson));
+			pendedRepl.emplace_back(mode, name_, lsn, repl_.nsVersion, ctx.EmitterServerId(), std::move(cjson));
 		};
 
 		if (modifyData.has_value()) {
@@ -2780,13 +2776,13 @@ void NamespaceImpl::replicateItem(IdType itemId, const NsContext& ctx, bool stat
 			itemSave.CopyIndexedVectorsValuesFrom(itemId, vectorIndexes);
 			WrSerializer cjson;
 			itemSave.GetCJSON(cjson, false);
-			processWalRecord(WALRecord(WalItemModify, cjson.Slice(), tagsMatcher_.version(), ModeDelete, ctx.inTransaction), ctx.rdxContext,
+			processWalRecord(WALRecord(WalItemModify, cjson.Slice(), tagsMatcher_.version(), ModeDelete, ctx.IsInTransaction()), ctx,
 							 modifyData->lsn);
-			pendedRepl.emplace_back(ctx.inTransaction ? updates::URType::ItemDeleteTx : updates::URType::ItemDelete, name_, wal_.LastLSN(),
-									repl_.nsVersion, ctx.rdxContext.EmitterServerId(), std::move(cjson));
-			sendWalUpdate(ctx.inTransaction ? updates::URType::ItemInsertTx : updates::URType::ItemInsert);
+			pendedRepl.emplace_back(ctx.IsInTransaction() ? updates::URType::ItemDeleteTx : updates::URType::ItemDelete, name_,
+									wal_.LastLSN(), repl_.nsVersion, ctx.EmitterServerId(), std::move(cjson));
+			sendWalUpdate(ctx.IsInTransaction() ? updates::URType::ItemInsertTx : updates::URType::ItemInsert);
 		} else {
-			sendWalUpdate(ctx.inTransaction ? updates::URType::ItemUpdateTx : updates::URType::ItemUpdate);
+			sendWalUpdate(ctx.IsInTransaction() ? updates::URType::ItemUpdateTx : updates::URType::ItemUpdate);
 		}
 	}
 
@@ -2811,8 +2807,7 @@ void NamespaceImpl::replicateItem(IdType itemId, const NsContext& ctx, bool stat
 		ItemImpl item(payloadType_, pv, tagsMatcher_);
 		item.Unsafe(true);
 		item.CopyIndexedVectorsValuesFrom(itemId, vectorIndexes);
-		item.GetCJSON(data);
-		storage_.Write(pk.Slice(), data.Slice());
+		storage_.Write(pk.Slice(), item.GetCJSON(data));
 	}
 }
 
@@ -2821,7 +2816,7 @@ void NamespaceImpl::doDelete(const Query& q, LocalQueryResults& result, UpdatesC
 	SelectCtxWithJoinPreSelect selCtx(q, nullptr, &result.GetFloatVectorsHolder());
 	selCtx.contextCollectingMode = true;
 	selCtx.requiresCrashTracking = true;
-	selCtx.inTransaction = ctx.inTransaction;
+	selCtx.inTransaction = ctx.IsInTransaction();
 	selCtx.selectBeforeUpdate = true;
 	FtFunctionsHolder func;
 	selCtx.functions = &func;
@@ -2839,19 +2834,19 @@ void NamespaceImpl::doDelete(const Query& q, LocalQueryResults& result, UpdatesC
 	// if (ctx.IsWalSyncItem() || (!q.HasLimit() && !q.HasOffset() && result.Count() >= kWALStatementItemsThreshold)) {
 	// 	WrSerializer ser;
 	// 	const_cast<Query&>(q).type_ = QueryDelete;
-	// 	processWalRecord(WALRecord(WalUpdateQuery, q.GetSQL(ser, QueryDelete).Slice(), ctx.inTransaction), ctx);
-	// 	pendedRepl.emplace_back(ctx.inTransaction ? updates::URType::DeleteQueryTx : updates::URType::DeleteQuery, name_, wal_.LastLSN(),
-	// 							repl_.nsVersion, ctx.rdxContext.EmitterServerId(), std::string(ser.Slice()));
-	// } else {
+	// 	processWalRecord(WALRecord(WalUpdateQuery, q.GetSQL(ser, QueryDelete).Slice(), ctx.IsInTransaction()), ctx);
+	// 	pendedRepl.emplace_back(ctx.IsInTransaction() ? updates::URType::DeleteQueryTx : updates::URType::DeleteQuery, name_,
+	// wal_.LastLSN(), 							repl_.nsVersion, ctx.EmitterServerId(), std::string(ser.Slice())); } else {
 	replicateTmUpdateIfRequired(pendedRepl, oldTmV, ctx);
 	for (auto& it : result) {
 		WrSerializer cjson;
 		auto err = it.GetCJSON(cjson, false);
 		assertf(err.ok(), "Unable to get CJSON after Delete-query: '{}'", err.what());
 		(void)err;	// There are no good ways to handle this error
-		processWalRecord(WALRecord(WalItemModify, cjson.Slice(), tagsMatcher_.version(), ModeDelete, ctx.inTransaction), ctx, it.GetLSN());
-		pendedRepl.emplace_back(ctx.inTransaction ? updates::URType::ItemDeleteTx : updates::URType::ItemDelete, name_, wal_.LastLSN(),
-								repl_.nsVersion, ctx.rdxContext.EmitterServerId(), std::move(cjson));
+		processWalRecord(WALRecord(WalItemModify, cjson.Slice(), tagsMatcher_.version(), ModeDelete, ctx.IsInTransaction()), ctx,
+						 it.GetLSN());
+		pendedRepl.emplace_back(ctx.IsInTransaction() ? updates::URType::ItemDeleteTx : updates::URType::ItemDelete, name_, wal_.LastLSN(),
+								repl_.nsVersion, ctx.EmitterServerId(), std::move(cjson));
 	}
 	// }
 	if (q.GetDebugLevel() >= LogInfo) {
@@ -2889,23 +2884,27 @@ void NamespaceImpl::checkClusterStatus(lsn_t originLsn) const {
 	}
 }
 
+void NamespaceImpl::checkSnapshotLSN(lsn_t /*lsn*/) {
+	// FIXME: Some of the cluster tests may flack. Disbaled until bugfix
+
+	// Just in case of some unexcpected scenarious
+	// const static bool kDisableSnapshotCheck = std::getenv("REINDEXER_NO_SNAPSHOT_CHECK");
+	// if rx_unlikely (!kDisableSnapshotCheck && wal_.LastLSN().Counter() > lsn.Counter()) {
+	// 	// Do not expect to get this error in tests scenarious
+	// 	assertrx_dbg(false);
+	// 	throw Error(errParams,
+	// 				"Target namespace has unexpected LSN counter: {}. First LSN in snapshot chunk is {}. Snapshot's data are incompatible",
+	// 				wal_.LastLSN(), lsn);
+	// }
+}
+
 // NOLINTNEXTLINE(bugprone-exception-escape) Termination here is better, than incosistent state of the user's data
 void NamespaceImpl::replicateTmUpdateIfRequired(UpdatesContainer& pendedRepl, int oldTmVersion, const NsContext& ctx) noexcept {
 	if (oldTmVersion != tagsMatcher_.version()) {
 		assertrx(ctx.GetOriginLSN().isEmpty());
-		const auto lsn = wal_.Add(WALRecord(WalEmpty, 0, ctx.inTransaction), lsn_t());
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-		if (!repl_.temporary && !ctx.inSnapshot) {
-			WrSerializer ser;
-			ser.PutVarint(tagsMatcher_.version());
-			ser.PutVarint(tagsMatcher_.stateToken());
-			tagsMatcher_.serialize(ser);
-			WALRecord tmRec(WalTagsMatcher, ser.Slice(), ctx.inTransaction);
-			observers_.OnWALUpdate(LSNPair(lsn, lsn), name_, tmRec);
-		}
-#endif	// REINDEX_WITH_V3_FOLLOWERS
-		pendedRepl.emplace_back(ctx.inTransaction ? updates::URType::SetTagsMatcherTx : updates::URType::SetTagsMatcher, name_, lsn,
-								repl_.nsVersion, ctx.rdxContext.EmitterServerId(), tagsMatcher_);
+		const auto lsn = wal_.Add(WALRecord(WalEmpty, 0, ctx.IsInTransaction()), lsn_t());
+		pendedRepl.emplace_back(ctx.IsInTransaction() ? updates::URType::SetTagsMatcherTx : updates::URType::SetTagsMatcher, name_, lsn,
+								repl_.nsVersion, ctx.EmitterServerId(), tagsMatcher_);
 	}
 }
 
@@ -3407,16 +3406,6 @@ void NamespaceImpl::ApplySnapshotChunk(const SnapshotChunk& ch, bool isInitialLe
 
 	handler.ApplyChunk(ch, isInitialLeaderSync, pendedRepl);
 	if (ch.IsLastChunk()) {
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-		// Actually we are not supposing to use this mechanism
-		if (!repl_.temporary) {
-			WrSerializer ser;
-			auto nsDef = getDefinition();
-			nsDef.GetJSON(ser);
-			ser.PutBool(true);
-			observers_.OnWALUpdate(LSNPair(), name_, WALRecord(WalWALSync, ser.Slice()));
-		}
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 		replicateAsync({isInitialLeaderSync ? updates::URType::ResyncNamespaceLeaderInit : updates::URType::ResyncNamespaceGeneric, name_,
 						lsn_t(0, 0), lsn_t(0, 0), ctx.EmitterServerId()},
 					   ctx);
@@ -3429,9 +3418,11 @@ void NamespaceImpl::GetSnapshot(Snapshot& snapshot, const SnapshotOpts& opts, co
 	snapshot = handler.CreateSnapshot(opts);
 }
 
-void NamespaceImpl::SetTagsMatcher(TagsMatcher&& tm, const RdxContext& ctx) {
+void NamespaceImpl::SetTagsMatcher(TagsMatcher&& tm, const RdxContext& rdxCtx) {
 	UpdatesContainer pendedRepl;
-	auto wlck = dataWLock(ctx);
+	const NsContext ctx{rdxCtx};
+
+	auto wlck = dataWLock(rdxCtx);
 	setTagsMatcher(std::move(tm), pendedRepl, ctx);
 	replicate(std::move(pendedRepl), std::move(wlck), true, nullptr, ctx);
 }
@@ -3561,7 +3552,7 @@ void NamespaceImpl::removeExpiredItems(RdxActivityContext* ctx) {
 			logFmt(LogInfo, "[{}] {} items were removed: TTL({}) has expired", name_, qr.Count(), index->Name());
 		}
 	}
-	replicate(std::move(pendedRepl), std::move(wlck), true, nullptr, RdxContext(ctx));
+	replicate(std::move(pendedRepl), std::move(wlck), true, nullptr, nsCtx);
 }
 
 void NamespaceImpl::removeExpiredStrings(RdxActivityContext* ctx) {
@@ -3585,7 +3576,7 @@ void NamespaceImpl::setSchema(std::string_view schema, UpdatesContainer& pendedR
 	// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 	std::string_view schemaPrint(schema.data(), std::min(schema.size(), kMaxSchemaCharsToPrint));
 	std::string_view source = "user"sv;
-	if (ctx.inSnapshot) {
+	if (ctx.IsInSnapshot()) {
 		source = "snapshot"sv;
 	} else if (!ctx.GetOriginLSN().isEmpty()) {
 		source = "replication"sv;
@@ -3612,8 +3603,7 @@ void NamespaceImpl::setSchema(std::string_view schema, UpdatesContainer& pendedR
 
 	replicateTmUpdateIfRequired(pendedRepl, oldTmV, ctx);
 	addToWAL(schema, WalSetSchema, ctx);
-	pendedRepl.emplace_back(updates::URType::SetSchema, name_, wal_.LastLSN(), repl_.nsVersion, ctx.rdxContext.EmitterServerId(),
-							std::string(schema));
+	pendedRepl.emplace_back(updates::URType::SetSchema, name_, wal_.LastLSN(), repl_.nsVersion, ctx.EmitterServerId(), std::string(schema));
 }
 
 void NamespaceImpl::setTagsMatcher(TagsMatcher&& tm, UpdatesContainer& pendedRepl, const NsContext& ctx) {
@@ -3631,18 +3621,9 @@ void NamespaceImpl::setTagsMatcher(TagsMatcher&& tm, UpdatesContainer& pendedRep
 	tagsMatcher_.UpdatePayloadType(payloadType_, indexes_.SparseIndexes(), NeedChangeTmVersion::No);
 	tagsMatcher_.setUpdated();
 
-	const auto lsn = wal_.Add(WALRecord(WalEmpty, 0, ctx.inTransaction), ctx.GetOriginLSN());
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	if (!repl_.temporary && !ctx.inSnapshot) {
-		WrSerializer ser;
-		ser.PutVarint(tagsMatcher_.version());
-		ser.PutVarint(tagsMatcher_.stateToken());
-		tagsMatcher_.serialize(ser);
-		observers_.OnWALUpdate(LSNPair(lsn, lsn), name_, WALRecord(WalTagsMatcher, ser.Slice(), ctx.inTransaction));
-	}
-#endif	// REINDEX_WITH_V3_FOLLOWERS
-	pendedRepl.emplace_back(ctx.inTransaction ? updates::URType::SetTagsMatcherTx : updates::URType::SetTagsMatcher, name_, lsn,
-							repl_.nsVersion, ctx.rdxContext.EmitterServerId(), std::move(tm));
+	const auto lsn = wal_.Add(WALRecord(WalEmpty, 0, ctx.IsInTransaction()), ctx.GetOriginLSN());
+	pendedRepl.emplace_back(ctx.IsInTransaction() ? updates::URType::SetTagsMatcherTx : updates::URType::SetTagsMatcher, name_, lsn,
+							repl_.nsVersion, ctx.EmitterServerId(), std::move(tm));
 
 	saveTagsMatcherToStorage(true);
 }
@@ -3815,9 +3796,11 @@ std::string NamespaceImpl::getMeta(const std::string& key) const {
 }
 
 // Put metadata to storage by key
-void NamespaceImpl::PutMeta(const std::string& key, std::string_view data, const RdxContext& ctx) {
+void NamespaceImpl::PutMeta(const std::string& key, std::string_view data, const RdxContext& rdxCtx) {
 	UpdatesContainer pendedRepl;
-	auto wlck = dataWLock(ctx);
+	const NsContext ctx{rdxCtx};
+
+	auto wlck = dataWLock(rdxCtx);
 
 	putMeta(key, data, pendedRepl, ctx);
 	replicate(std::move(pendedRepl), std::move(wlck), false, nullptr, ctx);
@@ -3832,9 +3815,9 @@ void NamespaceImpl::putMeta(const std::string& key, std::string_view data, Updat
 
 	storage_.WriteSync(StorageOpts().FillCache(), kStorageMetaPrefix + key, data);
 
-	processWalRecord(WALRecord(WalPutMeta, key, data, ctx.inTransaction), ctx);
-	pendedRepl.emplace_back(ctx.inTransaction ? updates::URType::PutMetaTx : updates::URType::PutMeta, name_, wal_.LastLSN(),
-							repl_.nsVersion, ctx.rdxContext.EmitterServerId(), key, std::string(data));
+	processWalRecord(WALRecord(WalPutMeta, key, data, ctx.IsInTransaction()), ctx);
+	pendedRepl.emplace_back(ctx.IsInTransaction() ? updates::URType::PutMetaTx : updates::URType::PutMeta, name_, wal_.LastLSN(),
+							repl_.nsVersion, ctx.EmitterServerId(), key, std::string(data));
 }
 
 std::vector<std::string> NamespaceImpl::EnumMeta(const RdxContext& ctx) {
@@ -3849,9 +3832,11 @@ std::vector<std::string> NamespaceImpl::enumMeta() const {
 }
 
 // Delete metadata from storage by key
-void NamespaceImpl::DeleteMeta(const std::string& key, const RdxContext& ctx) {
+void NamespaceImpl::DeleteMeta(const std::string& key, const RdxContext& rdxCtx) {
 	UpdatesContainer pendedRepl;
-	auto wlck = dataWLock(ctx);
+	const NsContext ctx{rdxCtx};
+
+	auto wlck = dataWLock(rdxCtx);
 
 	deleteMeta(key, pendedRepl, ctx);
 	replicate(std::move(pendedRepl), std::move(wlck), false, nullptr, ctx);
@@ -3861,7 +3846,7 @@ void NamespaceImpl::deleteMeta(const std::string& key, UpdatesContainer& pendedR
 	if (key.empty()) {
 		throw Error(errParams, "Empty key is not supported");
 	}
-	if (ctx.inTransaction) {
+	if (ctx.IsInTransaction()) {
 		throw Error(errParams, "DeleteMeta command not supported in transaction mode");
 	}
 
@@ -3869,9 +3854,8 @@ void NamespaceImpl::deleteMeta(const std::string& key, UpdatesContainer& pendedR
 
 	storage_.RemoveSync(StorageOpts().FillCache(), kStorageMetaPrefix + key);
 
-	processWalRecord(WALRecord(WalDeleteMeta, key, ctx.inTransaction), ctx);
-	pendedRepl.emplace_back(updates::URType::DeleteMeta, name_, wal_.LastLSN(), repl_.nsVersion, ctx.rdxContext.EmitterServerId(), key,
-							std::string());
+	processWalRecord(WALRecord(WalDeleteMeta, key, ctx.IsInTransaction()), ctx);
+	pendedRepl.emplace_back(updates::URType::DeleteMeta, name_, wal_.LastLSN(), repl_.nsVersion, ctx.EmitterServerId(), key, std::string());
 }
 
 void NamespaceImpl::warmupFtIndexes() {
@@ -4060,11 +4044,6 @@ void NamespaceImpl::processWalRecord(WALRecord&& wrec, const NsContext& ctx, lsn
 			item->impl_->Value().SetLSN(lsn);
 		}
 	}
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	if (!repl_.temporary && !ctx.inSnapshot) {
-		observers_.OnWALUpdate(LSNPair(lsn, lsn), name_, wrec);
-	}
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 }
 
 void NamespaceImpl::replicateAsync(updates::UpdateRecord&& rec, const RdxContext& ctx) {
@@ -4124,7 +4103,7 @@ std::set<std::string> NamespaceImpl::GetFTIndexes(const RdxContext& ctx) const {
 	return ret;
 }
 
-std::shared_ptr<reindexer::Embedder> NamespaceImpl::QueryEmbedder(std::string_view fieldName, const RdxContext& ctx) const {
+std::shared_ptr<const reindexer::Embedder> NamespaceImpl::QueryEmbedder(std::string_view fieldName, const RdxContext& ctx) const {
 	auto rlck = rLock(ctx);
 
 	int idxNo = NotSet;
@@ -4133,15 +4112,25 @@ std::shared_ptr<reindexer::Embedder> NamespaceImpl::QueryEmbedder(std::string_vi
 	}
 	const auto& type = payloadType_.Field(idxNo);
 	const auto& embedder = type.QueryEmbedder();
-	if (!embedder) {
-		throw Error(errNotValid, "Trying to find knn by string. No Embedder configured for index '{}'", fieldName);
+	if (embedder) {
+		return embedder;
 	}
-	return embedder;
+
+	throw Error(errNotValid, "Trying to find knn by string. No Embedder configured for index '{}'", fieldName);
+}
+
+void NamespaceImpl::IndexesCacheCleaner::Add(Index& idx) noexcept {
+	// Each ordered index may affect SortOrders of the other indexes
+	requiresCleanup_ = requiresCleanup_ || idx.IsOrdered();
 }
 
 NamespaceImpl::IndexesCacheCleaner::~IndexesCacheCleaner() {
-	for (auto& idx : ns_.indexes_) {
-		idx->ClearCache(sorts_);
+	if (requiresCleanup_) {
+		for (auto& idx : ns_.indexes_) {
+			if (idx->IsSupportSortedIdsBuild()) {
+				idx->ClearCache();
+			}
+		}
 	}
 }
 

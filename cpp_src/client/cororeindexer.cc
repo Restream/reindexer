@@ -31,7 +31,7 @@ CoroReindexer& CoroReindexer::operator=(CoroReindexer&& rdx) noexcept {
 }
 
 Error CoroReindexer::Connect(const std::string& dsn, net::ev::dynamic_loop& loop, const ConnectOpts& opts) noexcept {
-	return Connect(DSN(dsn), loop, opts);
+	RETURN_RESULT_NOEXCEPT(Connect(DSN(dsn), loop, opts));
 }
 Error CoroReindexer::Connect(const DSN& dsn, net::ev::dynamic_loop& loop, const ConnectOpts& opts) noexcept {
 	RETURN_RESULT_NOEXCEPT(impl_->Connect(dsn, loop, opts));
@@ -39,7 +39,7 @@ Error CoroReindexer::Connect(const DSN& dsn, net::ev::dynamic_loop& loop, const 
 void CoroReindexer::Stop() noexcept {
 	try {
 		impl_->Stop();
-		// Do not excepting any exceptions here
+		// Do not except any exceptions here
 	} catch (std::exception& e) {
 		fprintf(stderr, "reindexer error: unexpected system error in CoroReindexer::Stop: %s\n", e.what());
 	} catch (...) {
@@ -161,7 +161,7 @@ Expected<int64_t> CoroReindexer::AddConnectionStateObserver(CoroReindexer::Conne
 	} catch (std::exception& e) {
 		return Unexpected(std::move(e));
 	} catch (...) {
-		return Unexpected(Error(errSystem, "Unknonw exception type in reindexer client"));
+		return Unexpected(Error(errSystem, "Unknown exception type in reindexer client"));
 	}
 }
 Error CoroReindexer::RemoveConnectionStateObserver(int64_t id) noexcept {

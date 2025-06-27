@@ -148,13 +148,4 @@ private:
 	lsn_t lsn_;
 };
 
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-struct LSNPair {
-	LSNPair() = default;
-	LSNPair(lsn_t upstreamLSN, lsn_t originLSN) noexcept : upstreamLSN_(upstreamLSN), originLSN_(originLSN) {}
-	lsn_t upstreamLSN_;
-	lsn_t originLSN_;
-};
-#endif	// REINDEX_WITH_V3_FOLLOWERS
-
 }  // namespace reindexer

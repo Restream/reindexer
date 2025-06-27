@@ -1,13 +1,10 @@
 #include "router.h"
 
-#include <cstdarg>
 #include <unordered_map>
 #include "estl/chunk.h"
 #include "tools/fsops.h"
 
-namespace reindexer {
-namespace net {
-namespace http {
+namespace reindexer::net::http {
 
 using namespace std::string_view_literals;
 
@@ -60,7 +57,7 @@ HttpStatusCode HttpStatus::errCodeToHttpStatus(int errCode) {
 	}
 }
 
-int Context::JSON(int code, std::string_view slice) {
+int Context::JSON(int code, std::string_view slice) const {
 	writer->SetContentLength(slice.size());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/json; charset=utf-8"sv});
@@ -68,7 +65,7 @@ int Context::JSON(int code, std::string_view slice) {
 	return 0;
 }
 
-int Context::JSON(int code, chunk&& chunk) {
+int Context::JSON(int code, chunk&& chunk) const {
 	writer->SetContentLength(chunk.len());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/json; charset=utf-8"sv});
@@ -76,7 +73,7 @@ int Context::JSON(int code, chunk&& chunk) {
 	return 0;
 }
 
-int Context::CSV(int code, chunk&& chunk) {
+int Context::CSV(int code, chunk&& chunk) const {
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/csv; charset=utf-8"sv});
 	if (auto filename = request->headers.Get("Save-CSV-To"sv); !filename.empty()) {
@@ -86,7 +83,7 @@ int Context::CSV(int code, chunk&& chunk) {
 	return 0;
 }
 
-int Context::MSGPACK(int code, chunk&& chunk) {
+int Context::MSGPACK(int code, chunk&& chunk) const {
 	writer->SetContentLength(chunk.len());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/x-msgpack; charset=utf-8"sv});
@@ -94,7 +91,14 @@ int Context::MSGPACK(int code, chunk&& chunk) {
 	return 0;
 }
 
-int Context::Protobuf(int code, chunk&& chunk) {
+void Context::MSGPACK(int code, std::string_view slice) const {
+	writer->SetContentLength(slice.size());
+	writer->SetRespCode(code);
+	writer->SetHeader(http::Header{"Content-Type"sv, "application/x-msgpack; charset=utf-8"sv});
+	writer->Write(slice);
+}
+
+int Context::Protobuf(int code, chunk&& chunk) const {
 	writer->SetContentLength(chunk.len());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/protobuf; charset=utf-8"sv});
@@ -102,7 +106,14 @@ int Context::Protobuf(int code, chunk&& chunk) {
 	return 0;
 }
 
-int Context::String(int code, std::string_view slice) {
+void Context::Protobuf(int code, std::string_view slice) const {
+	writer->SetContentLength(slice.size());
+	writer->SetRespCode(code);
+	writer->SetHeader(http::Header{"Content-Type"sv, "application/protobuf; charset=utf-8"sv});
+	writer->Write(slice);
+}
+
+int Context::String(int code, std::string_view slice) const {
 	writer->SetContentLength(slice.size());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "text/plain; charset=utf-8"sv});
@@ -110,7 +121,7 @@ int Context::String(int code, std::string_view slice) {
 	return 0;
 }
 
-int Context::String(int code, chunk&& chunk) {
+int Context::String(int code, chunk&& chunk) const {
 	writer->SetContentLength(chunk.len());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "text/plain; charset=utf-8"sv});
@@ -118,7 +129,7 @@ int Context::String(int code, chunk&& chunk) {
 	return 0;
 }
 
-int Context::Redirect(std::string_view url) {
+int Context::Redirect(std::string_view url) const {
 	writer->SetHeader(http::Header{"Location"sv, url});
 	return String(http::StatusMovedPermanently, "");
 }
@@ -154,10 +165,9 @@ static std::string_view lookupContentType(std::string_view path) {
 	return "application/octet-stream"sv;
 }
 
-int Context::File(int code, std::string_view path, std::string_view data, bool isGzip, bool withCache) {
+int Context::File(int code, std::string_view path, std::string_view data, bool isGzip, bool withCache) const {
 	std::string content;
-
-	if (data.length() == 0) {
+	if (data.empty()) {
 		if (fs::ReadFile(isGzip ? std::string(path).append(kGzSuffix) : std::string(path), content) < 0) {
 			return String(http::StatusNotFound, "File not found");
 		}
@@ -238,6 +248,4 @@ int Router::handle(Context& ctx) {
 											 : ctx.String(StatusNotFound, "Not found"sv);
 	return res;
 }
-}  // namespace http
-}  // namespace net
-}  // namespace reindexer
+}  // namespace reindexer::net::http
