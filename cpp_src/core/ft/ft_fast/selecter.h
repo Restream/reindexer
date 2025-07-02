@@ -1,7 +1,9 @@
 #pragma once
+#include "core/enums.h"
+#include "core/ft/areaholder.h"
 #include "core/ft/ftdsl.h"
 #include "core/ft/idrelset.h"
-#include "core/selectfunc/ctx/ftctx.h"
+#include "core/index/ft_preselect.h"
 #include "dataholder.h"
 
 namespace reindexer {
@@ -63,8 +65,7 @@ public:
 	};
 
 	template <FtUseExternStatuses useExternSt, typename MergeType>
-	MergeType Process(FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses::Statuses&& mergeStatuses,
-					  const RdxContext&);
+	MergeType Process(FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext&);
 
 private:
 	struct TextSearchResult {
@@ -187,7 +188,7 @@ private:
 
 	private:
 		template <typename... Args>
-		void logTraceF(int level, const char* fmt, Args&&... args);
+		void logTraceF(int level, fmt::format_string<Args...> fmt, Args&&... args);
 		bool isWordFitMaxTyposDist(const WordTypo& found, const typos_context::TyposVec& current);
 		bool isWordFitMaxLettPerm(const std::string_view foundWord, const WordTypo& found, const std::wstring& currentWord,
 								  const typos_context::TyposVec& current);
@@ -206,7 +207,7 @@ private:
 
 	template <typename Bm25Type, typename MergedOffsetT, typename MergeType>
 	MergeType mergeResults(std::vector<TextSearchResults>&& rawResults, size_t totalORVids, const std::vector<size_t>& synonymsBounds,
-						   bool inTransaction, FtSortType ftSortType, FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext&);
+						   bool inTransaction, RankSortType, FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext&);
 
 	template <typename Bm25Type, typename MergedOffsetT, typename MergeType>
 	void mergeIteration(TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses, MergeType& merged,
@@ -290,8 +291,7 @@ private:
 
 	template <typename MergedOffsetT, typename MergeType>
 	MergeType mergeResultsBmType(std::vector<TextSearchResults>&& results, size_t totalORVids, const std::vector<size_t>& synonymsBounds,
-								 bool inTransaction, FtSortType ftSortType, FtMergeStatuses::Statuses&& mergeStatuses,
-								 const RdxContext& rdxCtx);
+								 bool inTransaction, RankSortType, FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext& rdxCtx);
 
 	void debugMergeStep(const char* msg, int vid, float normBm25, float normDist, int finalRank, int prevRank);
 	template <FtUseExternStatuses>

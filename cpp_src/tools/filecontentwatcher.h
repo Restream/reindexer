@@ -61,11 +61,11 @@ public:
 		std::lock_guard<std::mutex> lck(mtx_);
 		res = fs::WriteFile(tmpPath, content);
 		if (res < 0 || static_cast<size_t>(res) != content.size()) {
-			return Error(errParams, "Unable to write tmp file [%s]. Reason: %s", tmpPath, strerror(errno));
+			return Error(errParams, "Unable to write tmp file [{}]. Reason: {}", tmpPath, strerror(errno));
 		}
 		res = fs::Rename(tmpPath, filepath_);
 		if (res < 0) {
-			return Error(errParams, "Unable to rename tmp file from [%s] to [%s]. Reason: %s", tmpPath, filepath_, strerror(errno));
+			return Error(errParams, "Unable to rename tmp file from [{}] to [{}]. Reason: {}", tmpPath, filepath_, strerror(errno));
 		}
 		expectedContent_ = std::move(content);
 		auto stat = fs::StatTime(filepath_);

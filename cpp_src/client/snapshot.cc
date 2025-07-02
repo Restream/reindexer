@@ -23,10 +23,15 @@ Snapshot& Snapshot::operator=(Snapshot&& o) noexcept {
 
 Snapshot::~Snapshot() {
 	if (holdsRemoteData()) {
-		// Just close snapshot on server side
-		i_.conn_->Call({net::cproto::kCmdFetchSnapshot, i_.requestTimeout_, std::chrono::milliseconds(0), lsn_t(), -1,
-						ShardingKeyType::NotSetShard, nullptr, false, i_.sessionTs_},
-					   i_.id_, int64_t(-1));
+		try {
+			// Just close snapshot on server side
+			i_.conn_->Call({net::cproto::kCmdFetchSnapshot, i_.requestTimeout_, std::chrono::milliseconds(0), lsn_t(), -1,
+							ShardingKeyType::NotSetShard, nullptr, false, i_.sessionTs_},
+						   i_.id_, int64_t(-1));
+		} catch (std::exception& e) {
+			fprintf(stderr, "reindexer error: unexpected exception in ~Snapshot: %s\n", e.what());
+			assertrx_dbg(false);
+		}
 	}
 }
 
@@ -34,10 +39,10 @@ Snapshot::Snapshot(net::cproto::CoroClientConnection* conn, int id, int64_t coun
 				   std::chrono::milliseconds timeout)
 	: i_(conn, id, count, rawCount, nsVersion, timeout) {
 	if (id < 0) {
-		throw Error(errLogic, "Unexpectd snapshot id: %d", id);
+		throw Error(errLogic, "Unexpectd snapshot id: {}", id);
 	}
 	if (count < 0) {
-		throw Error(errLogic, "Unexpectd snapshot size: %d", count);
+		throw Error(errLogic, "Unexpectd snapshot size: {}", count);
 	}
 
 	if (i_.count_ > 0) {

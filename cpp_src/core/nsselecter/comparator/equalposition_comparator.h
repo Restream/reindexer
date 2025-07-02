@@ -45,6 +45,7 @@ private:
 		EqualPositionComparatorTypeImpl<bool> cmpBool;
 		EqualPositionComparatorTypeImpl<int> cmpInt;
 		EqualPositionComparatorTypeImpl<int64_t> cmpInt64;
+		EqualPositionComparatorTypeImpl<float> cmpFloat;
 		EqualPositionComparatorTypeImpl<double> cmpDouble;
 		EqualPositionComparatorTypeImpl<key_string> cmpString;
 		EqualPositionComparatorTypeImpl<Uuid> cmpUuid;

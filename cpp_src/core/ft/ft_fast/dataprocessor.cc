@@ -3,9 +3,7 @@
 #include "core/ft/numtotext.h"
 #include "core/ft/typos.h"
 
-#include "frisosplitter.h"
 #include "tools/clock.h"
-#include "tools/hardware_concurrency.h"
 #include "tools/logger.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
@@ -56,18 +54,17 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 	exwr.RethrowException();
 	const auto tm6 = system_clock_w::now();
 
-	logPrintf(
-		LogInfo,
-		"FastIndexText[%d] built with [%d uniq words, %d typos (%d + %d), %dKB text size, %dKB suffixarray size, %dKB idrelsets size]",
-		holder_.steps.size(), words_um.size(), holder_.GetTyposHalf().size() + holder_.GetTyposMax().size(), holder_.GetTyposHalf().size(),
-		holder_.GetTyposMax().size(), szCnt / 1024, suffixes.heap_size() / 1024, idsetcnt / 1024);
+	logFmt(LogInfo,
+		   "FastIndexText[{}] built with [{} uniq words, {} typos ({} + {}), {}KB text size, {}KB suffixarray size, {}KB idrelsets size]",
+		   holder_.steps.size(), words_um.size(), holder_.GetTyposHalf().size() + holder_.GetTyposMax().size(),
+		   holder_.GetTyposHalf().size(), holder_.GetTyposMax().size(), szCnt / 1024, suffixes.heap_size() / 1024, idsetcnt / 1024);
 
-	logPrintf(LogInfo,
-			  "DataProcessor::Process elapsed %d ms total [ build words %d ms | suffixes preproc %d ms | build typos %d ms | build "
-			  "suffixarry %d ms | sort idrelsets %d ms]",
-			  duration_cast<milliseconds>(tm6 - tm0).count(), duration_cast<milliseconds>(tm1 - tm0).count(),
-			  duration_cast<milliseconds>(tm2 - tm1).count(), duration_cast<milliseconds>(tm5 - tm2).count(),
-			  duration_cast<milliseconds>(tm3 - tm2).count(), duration_cast<milliseconds>(tm4 - tm2).count());
+	logFmt(LogInfo,
+		   "DataProcessor::Process elapsed {} ms total [ build words {} ms | suffixes preproc {} ms | build typos {} ms | build "
+		   "suffixarry {} ms | sort idrelsets {} ms]",
+		   duration_cast<milliseconds>(tm6 - tm0).count(), duration_cast<milliseconds>(tm1 - tm0).count(),
+		   duration_cast<milliseconds>(tm2 - tm1).count(), duration_cast<milliseconds>(tm5 - tm2).count(),
+		   duration_cast<milliseconds>(tm3 - tm2).count(), duration_cast<milliseconds>(tm4 - tm2).count());
 }
 
 template <typename IdCont>
@@ -121,8 +118,12 @@ size_t DataProcessor<IdCont>::commitIdRelSets(const WordsVector& preprocWords, w
 			idsetcnt += sizeof(*wIt);
 		}
 
-		word->vids.insert(word->vids.end(), std::make_move_iterator(keyIt->second.vids_.begin()),
-						  std::make_move_iterator(keyIt->second.vids_.end()));
+		if constexpr (std::is_same_v<IdCont, PackedIdRelVec>) {
+			word->vids.insert(word->vids.end(), keyIt->second.vids_.begin(), keyIt->second.vids_.end());
+		} else {
+			word->vids.insert(word->vids.end(), std::make_move_iterator(keyIt->second.vids_.begin()),
+							  std::make_move_iterator(keyIt->second.vids_.end()));
+		}
 		keyIt->second.vids_ = IdRelSet();
 		word->vids.shrink_to_fit();
 		idsetcnt += word->vids.heap_size();
@@ -208,7 +209,7 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 	auto printDistribution = [&] {
 		std::cerr << "Distribution:\n";
 		for (uint32_t i = 0; i < maxIndexWorkers; ++i) {
-			std::cerr << fmt::sprintf("%d: { from: %d; to: %d }", i, ctxs[i].from, ctxs[i].to) << std::endl;
+			std::cerr << fmt::format("{}: {{ from: {}; to: {} }}", i, ctxs[i].from, ctxs[i].to) << std::endl;
 		}
 	};
 	for (uint32_t i = 0; i < maxIndexWorkers; ++i) {
@@ -345,7 +346,7 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 				out << w.first << "(" << w.second.vids_.size() << ") ";
 			}
 		}
-		logPrintf(LogInfo, "Total documents: %d. Potential stop words (with corresponding docs count): %s", vdocs.size(), out.Slice());
+		logFmt(LogInfo, "Total documents: {}. Potential stop words (with corresponding docs count): {}", vdocs.size(), out.Slice());
 	}
 
 	return szCnt;
@@ -408,25 +409,29 @@ void DataProcessor<IdCont>::buildTyposMap(uint32_t startPos, const WordsVector& 
 		std::thread maxTyposTh = runInThread(
 			exwr,
 			[&](size_t mult) noexcept {
-				typos_context tctx[kMaxTyposInWord];
-				auto wordPos = startPos;
-				mult = wordsSize * (10 << (maxTyposInWord - 1)) - mult;
-				typosMax.reserve(multiplier / 2, multiplier * 5);
-				for (auto& word : preprocWords) {
-					const auto wordString = std::get_if<std::string_view>(&word);
-					if (!wordString) {
-						continue;
+				try {
+					typos_context tctx[kMaxTyposInWord];
+					auto wordPos = startPos;
+					mult = wordsSize * (10 << (maxTyposInWord - 1)) - mult;
+					typosMax.reserve(multiplier / 2, multiplier * 5);
+					for (auto& word : preprocWords) {
+						const auto wordString = std::get_if<std::string_view>(&word);
+						if (!wordString) {
+							continue;
+						}
+						const auto wordId = holder_.BuildWordId(wordPos++);
+						mktypos(tctx, *wordString, maxTyposInWord, maxTypoLen,
+								typos_context::CallBack{[wordId, &typosMax, wordString](std::string_view typo, int level,
+																						const typos_context::TyposVec& positions) {
+									if (level <= 1 && typo.size() != wordString->size()) {
+										typosMax.emplace(typo, WordTypo{wordId, positions});
+									}
+								}});
 					}
-					const auto wordId = holder_.BuildWordId(wordPos++);
-					mktypos(tctx, *wordString, maxTyposInWord, maxTypoLen,
-							typos_context::CallBack{[wordId, &typosMax, wordString](std::string_view typo, int level,
-																					const typos_context::TyposVec& positions) {
-								if (level <= 1 && typo.size() != wordString->size()) {
-									typosMax.emplace(typo, WordTypo{wordId, positions});
-								}
-							}});
+					typosMax.shrink_to_fit();
+				} catch (...) {
+					exwr.SetException(std::current_exception());
 				}
-				typosMax.shrink_to_fit();
 			},
 			multiplier);
 

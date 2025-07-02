@@ -32,7 +32,7 @@ private:
 	void checkForTokenSuggestions(SqlParsingCtx::SuggestionData& data);
 
 	/// Tries to find token value among accepted tokens.
-	[[nodiscard]] bool findInPossibleTokens(int type, const std::string& v);
+	[[nodiscard]] bool findInPossibleTokens(SqlTokenType type, const std::string& v);
 	/// Tries to find token value among indexes.
 	[[nodiscard]] bool findInPossibleFields(const std::string& tok);
 	/// Tries to find among possible namespaces.

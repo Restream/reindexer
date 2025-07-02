@@ -81,7 +81,7 @@ TEST_F(JoinSelectsApi, SelectFunctionsDSLTest) {
 
 TEST_F(JoinSelectsApi, CompositeValuesDSLTest) {
 	std::string pagesBookidIndex = pages + std::string("+") + bookid;
-	Query query{Query(books_namespace).WhereComposite(pagesBookidIndex.c_str(), CondGe, {{Variant(500), Variant(10)}})};
+	Query query{Query(books_namespace).WhereComposite(pagesBookidIndex, CondGe, {{Variant(500), Variant(10)}})};
 	checkQueryDslParse(query);
 }
 

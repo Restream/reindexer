@@ -2,7 +2,7 @@
 
 #include <unordered_set>
 #include <vector>
-#include "core/keyvalue/variant.h"
+#include "core/query/knn_search_params.h"
 #include "estl/tokenizer.h"
 #include "sqltokentype.h"
 
@@ -94,7 +94,8 @@ protected:
 	void parseWhereCondition(tokenizer&, T&& firstArg, OpType);
 
 	/// Parse order by
-	int parseOrderBy(tokenizer& parser, SortingEntries& sortingEntries, std::vector<Variant>& forcedSortOrder);
+	template <typename Sortable>
+	int parseOrderBy(tokenizer& parser, Sortable&);
 
 	/// Parse join entries
 	void parseJoin(JoinType type, tokenizer& tok);
@@ -107,6 +108,10 @@ protected:
 
 	Point parseGeomFromText(tokenizer& parser) const;
 	void parseDWithin(tokenizer& parser, OpType nextOp);
+	void parseKnn(tokenizer& parser, OpType nextOp);
+	KnnSearchParams parseKnnParams(tokenizer&);
+	template <typename T>
+	void parseSingleKnnParam(tokenizer&, std::optional<T>& param, std::string_view paramName);
 
 	/// Parse update field entries
 	UpdateEntry parseUpdateField(tokenizer& parser);

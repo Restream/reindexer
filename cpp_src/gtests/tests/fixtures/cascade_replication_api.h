@@ -58,6 +58,9 @@ public:
 	Cluster CreateConfiguration(std::vector<FollowerConfig> clusterConfig, int basePort, int baseServerId, const std::string& dbPathMaster,
 								const AsyncReplicationConfigTest::NsSet& nsList);
 
+	void UpdateReplTokensByConfiguration(CascadeReplicationApi::Cluster& cluster, const std::vector<int>& clusterConfig);
+	static void UpdateReplicationConfigs(const ServerPtr& sc, const std::string& selfToken, const std::string& admissibleLeaderToken);
+
 	void ApplyConfig(const ServerPtr& sc, std::string_view json);
 	void CheckTxCopyEventsCount(const ServerPtr& sc, int expectedCount);
 

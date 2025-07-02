@@ -7,11 +7,12 @@
 namespace reindexer {
 bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDef& to) {
 	if (RelaxedEqual(from, to)) {
-		logFmt(LogInfo, "[{}]:{} Start fast update index '{}'", ns.name_, ns.wal_.GetServer(), from.name_);
+		logFmt(LogInfo, "[{}]:{} Start fast update index '{}'", ns.name_, ns.wal_.GetServer(), from.Name());
 
-		const auto idxNo = ns.indexesNames_.find(from.name_)->second;
+		const auto idxNo = ns.indexesNames_.find(from.Name())->second;
 		auto& index = ns.indexes_[idxNo];
-		auto newIndex = Index::New(to, PayloadType(index->GetPayloadType()), FieldsSet{index->Fields()}, ns.config_.cacheConfig);
+		auto newIndex =
+			Index::New(to, PayloadType(index->GetPayloadType()), FieldsSet{index->Fields()}, ns.config_.cacheConfig, ns.itemsCount());
 		VariantArray keys, resKeys;
 		for (size_t rowId = 0; rowId < ns.items_.size(); ++rowId) {
 			if (ns.items_[rowId].IsFree()) {
@@ -22,32 +23,34 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 			ConstPayload(ns.payloadType_, ns.items_[rowId]).Get(idxNo, keys);
 			newIndex->Upsert(resKeys, keys, rowId, needClearCache);
 		}
-		if (index->IsOrdered()) {
-			auto indexesCacheCleaner{ns.GetIndexesCacheCleaner()};
-			indexesCacheCleaner.Add(index->SortId());
-		}
+
+		auto indexesCacheCleaner{ns.GetIndexesCacheCleaner()};
+		indexesCacheCleaner.Add(*index);
 
 		index = std::move(newIndex);
 
 		ns.updateSortedIdxCount();
 		ns.markUpdated(IndexOptimization::Full);
 
-		logFmt(LogInfo, "[{}]:{} Index '{}' successfully updated using a fast strategy", ns.name_, ns.wal_.GetServer(), from.name_);
+		logFmt(LogInfo, "[{}]:{} Index '{}' successfully updated using a fast strategy", ns.name_, ns.wal_.GetServer(), from.Name());
 
 		return true;
 	}
 	return false;
 }
 
-bool IndexFastUpdate::RelaxedEqual(const IndexDef& from, const IndexDef& to) noexcept {
-	if (!isLegalTypeTransform(from.Type(), to.Type())) {
+bool IndexFastUpdate::RelaxedEqual(const IndexDef& from, const IndexDef& to) {
+	if (!isLegalTypeTransform(from.IndexType(), to.IndexType())) {
 		return false;
 	}
 	auto comparisonIndex = from;
-	comparisonIndex.indexType_ = to.indexType_;
-	comparisonIndex.opts_.Dense(to.opts_.IsDense());
-	comparisonIndex.opts_.SetCollateMode(to.opts_.GetCollateMode());
-	comparisonIndex.opts_.SetCollateSortOrder(to.opts_.GetCollateSortOrder());
+	comparisonIndex.SetIndexTypeStr(to.IndexTypeStr());
+	auto opts = comparisonIndex.Opts();
+	opts.Dense(*to.Opts().IsDense());
+	opts.NoIndexColumn(*to.Opts().IsNoIndexColumn());
+	opts.SetCollateMode(to.Opts().GetCollateMode());
+	opts.SetCollateSortOrder(to.Opts().GetCollateSortOrder());
+	comparisonIndex.SetOpts(std::move(opts));
 	return comparisonIndex.IsEqual(to, IndexComparison::Full);
 }
 

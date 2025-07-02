@@ -1,11 +1,9 @@
 #include "basemerger.h"
-#include <iostream>
 #include <memory>
 #include <vector>
 #include "core/ft/ft_fuzzy/merger/dataset.h"
 #include "core/rdxcontext.h"
 #include "estl/fast_hash_map.h"
-#include "math.h"
 #include "sort/pdqsort.hpp"
 
 namespace search_engine {
@@ -64,27 +62,27 @@ void MergedData::Add(const IDCtx& ctx) {
 		}
 	}
 
-	proc_ = max_dist * double(ctx.proc);
+	rank_ = max_dist * double(ctx.proc);
 	if (!first_) {
-		proc_ += prev_.proc;
+		rank_ += prev_.proc;
 	}
-	if (proc_ > *ctx.max_proc) {
-		*ctx.max_proc = proc_;
+	if (rank_ > *ctx.max_proc) {
+		*ctx.max_proc = rank_;
 	}
 	count_++;
-	prev_ = ResultMerger{ctx.pos, 0, ctx.data->at(curent).pos(), proc_};
+	prev_ = ResultMerger{ctx.pos, 0, ctx.data->at(curent).pos(), rank_};
 
 	first_ = false;
 }
 
 BaseMerger::BaseMerger(int max_id, int min_id) : max_id_(max_id), min_id_(min_id) {}
 
-SearchResult BaseMerger::Merge(MergeCtx& ctx, bool inTransaction, const reindexer::RdxContext& rdxCtx) {
-	SearchResult res;
-	res.data_ = std::make_shared<std::vector<MergedData>>();
-	res.max_proc_ = 0;
+SearchResult BaseMerger::Merge(MergeCtx& ctx, bool inTransaction, const reindexer::RdxContext& rdxCtx) const {
+	SearchResult result;
+	result.data_ = std::make_shared<std::vector<MergedData>>();
+	result.max_proc_ = 0;
 	if (min_id_ > max_id_) {
-		return res;
+		return result;
 	}
 	DataSet<MergedData> data_set(min_id_, max_id_);
 	double max_proc = 0;
@@ -99,10 +97,10 @@ SearchResult BaseMerger::Merge(MergeCtx& ctx, bool inTransaction, const reindexe
 		}
 	}
 	boost::sort::pdqsort(data_set.data_->begin(), data_set.data_->end(), [](const MergedData& lhs, const MergedData& rhs) noexcept {
-		if (lhs.proc_ == rhs.proc_) {
+		if (lhs.rank_ == rhs.rank_) {
 			return lhs.id_ < rhs.id_;
 		}
-		return lhs.proc_ > rhs.proc_;
+		return lhs.rank_ > rhs.rank_;
 	});
 
 	return SearchResult{data_set.data_, max_proc};

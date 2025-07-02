@@ -4,7 +4,6 @@
 #include "client/reindexer.h"
 #include "core/namespace/namespacestat.h"
 #include "core/reindexer.h"
-#include "tools/stringstools.h"
 
 struct IndexDeclaration {
 	std::string_view indexName;
@@ -23,7 +22,7 @@ struct ReplicationTestState {
 	std::optional<int> tmVersion;
 	std::optional<int> tmStatetoken;
 	uint64_t updateUnixNano = 0;
-	reindexer::ClusterizationStatus::Role role = reindexer::ClusterizationStatus::Role::None;
+	reindexer::ClusterOperationStatus::Role role = reindexer::ClusterOperationStatus::Role::None;
 };
 
 template <typename DB>
@@ -35,37 +34,11 @@ public:
 	ReindexerTestApi();
 	ReindexerTestApi(const typename DB::ConfigT& cfg);
 
-	template <typename FieldsT>
-	static void DefineNamespaceDataset(DB& rx, std::string_view ns, const FieldsT& fields) {
-		auto err = reindexer::Error();
-		for (const auto& field : fields) {
-			if (field.indexType != "composite") {
-				err = rx.AddIndex(ns, {std::string{field.indexName},
-									   {std::string{field.indexName}},
-									   std::string{field.fieldType},
-									   std::string{field.indexType},
-									   field.indexOpts});
-			} else {
-				std::string indexName{field.indexName};
-				std::string idxContents{field.indexName};
-				auto eqPos = indexName.find_first_of('=');
-				if (eqPos != std::string::npos) {
-					idxContents = indexName.substr(0, eqPos);
-					indexName = indexName.substr(eqPos + 1);
-				}
-				reindexer::JsonPaths jsonPaths;
-				jsonPaths = reindexer::split(idxContents, "+", true, jsonPaths);
-
-				err = rx.AddIndex(ns, {indexName, jsonPaths, std::string{field.fieldType}, std::string{field.indexType}, field.indexOpts,
-									   field.expireAfter});
-			}
-			ASSERT_TRUE(err.ok()) << err.what();
-		}
-	}
-	void DefineNamespaceDataset(std::string_view ns, std::initializer_list<const IndexDeclaration> fields) {
+	static void DefineNamespaceDataset(DB& rx, std::string_view ns, std::span<const IndexDeclaration> fields);
+	void DefineNamespaceDataset(std::string_view ns, std::span<const IndexDeclaration> fields) {
 		DefineNamespaceDataset(*reindexer, ns, fields);
 	}
-	void DefineNamespaceDataset(std::string_view ns, const std::vector<IndexDeclaration>& fields) {
+	void DefineNamespaceDataset(std::string_view ns, std::initializer_list<const IndexDeclaration> fields) {
 		DefineNamespaceDataset(*reindexer, ns, fields);
 	}
 
@@ -75,6 +48,9 @@ public:
 	void UpdateIndex(std::string_view ns, const reindexer::IndexDef& idef);
 	void DropIndex(std::string_view ns, std::string_view name);
 	void Upsert(std::string_view ns, ItemType& item);
+	void Upsert(std::string_view ns, ItemType& item, QueryResultsType&);
+	void Update(std::string_view ns, ItemType& item);
+	void Update(std::string_view ns, ItemType& item, QueryResultsType&);
 	void UpsertJSON(std::string_view ns, std::string_view json);
 	void Update(const reindexer::Query& q, QueryResultsType& qr);
 	size_t Update(const reindexer::Query& q);
@@ -82,6 +58,7 @@ public:
 	void Select(const reindexer::Query& q, QueryResultsType& qr);
 	QueryResultsType Select(const reindexer::Query& q);
 	void Delete(std::string_view ns, ItemType& item);
+	void Delete(std::string_view ns, ItemType& item, QueryResultsType&);
 	size_t Delete(const reindexer::Query& q);
 	void Delete(const reindexer::Query& q, QueryResultsType& qr);
 	ReplicationTestState GetReplicationState(std::string_view ns);
@@ -91,15 +68,17 @@ public:
 	std::string RandLikePattern();
 	std::string RuRandString();
 	std::vector<int> RandIntVector(size_t size, int start, int range);
-	void SetVerbose(bool v) noexcept { verbose = v; }
+	void SetVerbose(bool v) noexcept { verbose_ = v; }
+	static void EnablePerfStats(DB& rx);
+
 	std::shared_ptr<DB> reindexer;
 
 	static std::vector<std::string> GetSerializedQrItems(reindexer::QueryResults& qr);
 
 private:
-	const std::string letters = "abcdefghijklmnopqrstuvwxyz";
-	const std::wstring ru_letters = L"абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
-	bool verbose = false;
+	constexpr static std::string_view kLetters = "abcdefghijklmnopqrstuvwxyz";
+	constexpr static std::wstring_view kRuLetters = L"абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
+	bool verbose_ = false;
 };
 
 extern template class ReindexerTestApi<reindexer::Reindexer>;

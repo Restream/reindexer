@@ -2,7 +2,9 @@
 
 #include <optional>
 #include "core/keyvalue/p_string.h"
+#include "core/namespace/float_vectors_indexes.h"
 #include "core/payload/payloadiface.h"
+#include "keyvalue/float_vectors_holder.h"
 #include "updates/updaterecord.h"
 
 namespace reindexer {
@@ -71,8 +73,14 @@ private:
 					 const NsContext&);
 	void modifyIndexValues(IdType itemId, const FieldData& field, VariantArray& values, Payload& pl);
 
-	void deleteItemFromComposite(IdType itemId);
-	void insertItemIntoComposite(IdType itemId);
+	void deleteItemFromComposite(IdType itemId, auto& indexesCacheCleaner);
+	void insertItemIntoComposite(IdType itemId, auto& indexesCacheCleaner);
+
+	void getEmbeddingData(const Payload& pl, const Embedder& embedder, std::vector<VariantArray>& data) const;
+	std::vector<std::pair<int, std::vector<VariantArray>>> getEmbeddersSourceData(const Payload& pl) const;
+	bool skipEmbedder(const Embedder& embedder) const;
+	void updateEmbedding(IdType itemId, const RdxContext& rdxContext, Payload& pl,
+						 const std::vector<std::pair<int, std::vector<VariantArray>>>& embeddersData);
 
 	NamespaceImpl& ns_;
 	const std::vector<UpdateEntry>& updateEntries_;
@@ -84,18 +92,12 @@ private:
 	class IndexRollBack {
 	public:
 		IndexRollBack(int indexCount) { data_.resize(indexCount); }
-		void Reset(PayloadValue& pv) {
-			pvSave_ = pv;
-			pvSave_.Clone();
-			std::fill(data_.begin(), data_.end(), false);
-			cjsonChanged_ = false;
-			pkModified_ = false;
-		}
-		void IndexChanged(size_t index, bool isPk) noexcept {
+		void Reset(IdType itemId, const PayloadType &pt, const PayloadValue& pv, FloatVectorsIndexes&& fvIndexes);
+		void IndexChanged(size_t index, IsPk isPk) noexcept {
 			data_[index] = true;
 			pkModified_ = pkModified_ || isPk;
 		}
-		void IndexAndCJsonChanged(size_t index, bool isPk) noexcept {
+		void IndexAndCJsonChanged(size_t index, IsPk isPk) noexcept {
 			data_[index] = true;
 			cjsonChanged_ = true;
 			pkModified_ = pkModified_ || isPk;
@@ -109,12 +111,14 @@ private:
 	private:
 		std::vector<bool> data_;
 		PayloadValue pvSave_;
+		FloatVectorsHolderVector floatVectorsHolder_;
 		bool cjsonChanged_ = false;
 		bool pkModified_ = false;
 	};
 
 	IndexRollBack rollBackIndexData_;
 	CompositeFlags affectedComposites_;
+	const FloatVectorsIndexes vectorIndexes_;
 };
 
 }  // namespace reindexer

@@ -4,7 +4,7 @@
 package builtin
 
 // #cgo pkg-config: libreindexer
-// #cgo CXXFLAGS: -std=c++17 -g -O2 -Wall -Wpedantic -Wextra
+// #cgo CXXFLAGS: -std=c++20 -g -O2 -Wall -Wpedantic -Wextra
 // #cgo CFLAGS: -std=c99 -g -O2 -Wall -Wpedantic -Wno-unused-variable
 // #cgo LDFLAGS:  -g
 import "C"
