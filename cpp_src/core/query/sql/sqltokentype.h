@@ -42,12 +42,13 @@ enum SqlTokenType {
 	UpdateOptionsSqlToken,
 	EqualPositionSqlToken,
 	JoinTypesSqlToken,
-	ST_DWithinSqlToken,
+	WhereFunction,
 	ST_GeomFromTextSqlToken,
 	GeomFieldSqlToken,
 	StartAfterLocal,
 	StartAfterLocalExplain,
 	WhereFieldOrSubquerySqlToken,
 	WhereFieldValueOrSubquerySqlToken,
+	KnnParamsToken,
 };
 }

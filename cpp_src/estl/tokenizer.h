@@ -1,8 +1,8 @@
 #pragma once
 
 #include <string>
-#include "core/ft/usingcontainer.h"
 #include "core/keyvalue/variant.h"
+#include "tools/rvector.h"
 
 namespace reindexer {
 
@@ -81,9 +81,7 @@ private:
 	size_t pos_ = 0;
 };
 
-enum class CompositeAllowed : bool { No = false, Yes = true };
-enum class FieldAllowed : bool { No = false, Yes = true };
-Variant token2kv(const token& currTok, tokenizer& parser, CompositeAllowed allowComposite, FieldAllowed allowField);
+Variant token2kv(const token&, tokenizer&, CompositeAllowed, FieldAllowed, NullAllowed);
 Variant getVariantFromToken(const token& tok);
 
 }  // namespace reindexer

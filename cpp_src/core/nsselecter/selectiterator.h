@@ -1,10 +1,11 @@
 #pragma once
 
+#include "core/enums.h"
 #include "core/selectkeyresult.h"
+#include "estl/concepts.h"
 
 namespace reindexer {
 
-enum class IteratorFieldKind { None, NonIndexed, Indexed };
 /// Allows to iterate over a result of selecting
 /// data for one certain key.
 class SelectIterator : public SelectKeyResult {
@@ -23,11 +24,13 @@ public:
 		UnbuiltSortOrdersIndex,
 	};
 
-	SelectIterator(SelectKeyResult&& res, bool dist, std::string&& n, IteratorFieldKind fKind, bool forcedFirst = false) noexcept
+	template <concepts::ConvertibleToString Str>
+	SelectIterator(SelectKeyResult&& res, reindexer::IsDistinct dist, Str&& n, int idxNo,
+				   ForcedFirst forcedFirst = ForcedFirst_False) noexcept
 		: SelectKeyResult(std::move(res)),
 		  distinct(dist),
-		  name(std::move(n)),
-		  fieldKind(fKind),
+		  name(std::forward<Str>(n)),
+		  indexNo(idxNo),
 		  forcedFirst_(forcedFirst),
 		  type_(Forward) {}
 
@@ -157,11 +160,29 @@ public:
 	/// Current rowId index since the beginning
 	/// of current SingleKeyValue object.
 	int Pos() const noexcept {
-		assertrx_throw(!lastIt_->useBtree_ && (type_ != UnbuiltSortOrdersIndex));
-		return lastIt_->it_ - lastIt_->begin_ - 1;
+		switch (type_) {
+			case SingleIdset:
+			case SingleIdSetWithDeferedSort: {
+				const auto& it = *begin();
+				assertrx_throw(!it.useBtree_);
+				return it.it_ - it.begin_;
+			}
+			case Forward:
+			case Reverse:
+			case SingleRange:
+			case RevSingleRange:
+			case RevSingleIdset:
+			case RevSingleIdSetWithDeferedSort:
+			case OnlyComparator:
+			case Unsorted:
+			case UnbuiltSortOrdersIndex:
+			default:
+				assertrx_throw(!lastIt_->useBtree_ && (type_ != UnbuiltSortOrdersIndex));
+				return lastIt_->it_ - lastIt_->begin_ - 1;
+		}
 	}
 
-	/// @return amonut of matched items
+	/// @return number of matching items
 	int GetMatchedCount() const noexcept { return matchedCount_; }
 
 	/// Excludes last set of ids from each result
@@ -200,7 +221,7 @@ public:
 			return -1;
 		}
 		if (forcedFirst_) {
-			return -GetMaxIterations();
+			return -static_cast<double>(GetMaxIterations());
 		}
 		double result{0.0};
 		const auto sz = size();
@@ -233,10 +254,11 @@ public:
 
 	std::string_view TypeName() const noexcept;
 	std::string Dump() const;
+	reindexer::IsDistinct IsDistinct() const noexcept { return distinct; }
 
-	bool distinct = false;
+	reindexer::IsDistinct distinct = IsDistinct_False;
 	std::string name;
-	IteratorFieldKind fieldKind = IteratorFieldKind::None;
+	int indexNo = IndexValueType::NotSet;
 
 protected:
 	// Iterates to a next item of result
@@ -410,12 +432,13 @@ protected:
 		return true;
 	}
 
-	/// Performs ID sets merge and sort in case, when this sort was defered earlier and still effective with current maxIterations value
+	/// Performs ID sets merge and sort in case, when this sort was deferred earlier and still effective with current maxIterations value
 	bool applyDeferedSort(int maxIterations) {
 		if (deferedExplicitSort && maxIterations > 0 && !distinct) {
 			const auto idsCount = GetMaxIterations();
 			if (IsGenericSortRecommended(size(), idsCount, size_t(maxIterations))) {
-				MergeIdsets(SelectKeyResult::MergeOptions{.genericSort = true, .shrinkResult = false}, idsCount);
+				[[maybe_unused]] auto merged =
+					MergeIdsets(SelectKeyResult::MergeOptions{.genericSort = true, .shrinkResult = false}, idsCount);
 				return true;
 			}
 		}
@@ -424,7 +447,7 @@ protected:
 
 	bool isUnsorted = false;
 	bool isReverse_ = false;
-	bool forcedFirst_ = false;
+	ForcedFirst forcedFirst_ = ForcedFirst_False;
 	bool isNotOperation_ = false;
 	int type_ = 0;
 	iterator lastIt_ = nullptr;

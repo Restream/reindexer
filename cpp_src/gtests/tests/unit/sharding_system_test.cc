@@ -1,4 +1,8 @@
+#include "core/cjson/jsonbuilder.h"
+#include "gtests/tests/gtest_cout.h"
 #include "sharding_system_api.h"
+
+using namespace reindexer;
 
 TEST_F(ShardingSystemApi, Reconnect) {
 	Init();

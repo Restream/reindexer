@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <climits>
 #include <memory>
-#include "span.h"
+#include <span>
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -101,7 +101,7 @@ public:
 	}
 
 	size_t erase(size_t s_erase) noexcept {
-		assertf(s_erase <= size(), "s_erase=%d, size()=%d, tail=%d,head=%d,full=%d", int(s_erase), int(size()), int(tail_), int(head_),
+		assertf(s_erase <= size(), "s_erase={}, size()={}, tail={},head={},full={}", int(s_erase), int(size()), int(tail_), int(head_),
 				int(full_));
 
 		tail_ = (tail_ + s_erase) % buf_size_;
@@ -124,14 +124,14 @@ public:
 
 	size_t capacity() const noexcept { return buf_size_; }
 
-	span<T> tail(size_t s_ins = INT_MAX) noexcept {
+	std::span<T> tail(size_t s_ins = INT_MAX) noexcept {
 		size_t cnt = ((tail_ > head_ || full_) ? buf_size_ : head_) - tail_;
-		return span<T>(&buf_[tail_], (cnt > s_ins) ? s_ins : cnt);
+		return std::span<T>(&buf_[tail_], (cnt > s_ins) ? s_ins : cnt);
 	}
 
-	span<T> head(size_t s_ins = INT_MAX) noexcept {
+	std::span<T> head(size_t s_ins = INT_MAX) noexcept {
 		size_t cnt = ((head_ >= tail_ && !full_) ? buf_size_ : tail_) - head_;
-		return span<T>(&buf_[head_], (cnt > s_ins) ? s_ins : cnt);
+		return std::span<T>(&buf_[head_], (cnt > s_ins) ? s_ins : cnt);
 	}
 
 	size_t advance_head(size_t cnt) noexcept {

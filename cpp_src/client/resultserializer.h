@@ -3,6 +3,7 @@
 #include <optional>
 #include "core/namespace/incarnationtags.h"
 #include "core/queryresults/aggregationresult.h"
+#include "core/rank_t.h"
 #include "tools/lsn.h"
 #include "tools/serializer.h"
 
@@ -27,9 +28,9 @@ public:
 	};
 
 	struct ItemParams {
-		int id = -1;
-		int16_t nsid = 0;
-		int16_t proc = 0;
+		IdType id = -1;
+		uint16_t nsid = 0;
+		RankT rank{};
 		lsn_t lsn;
 		std::string_view data;
 		bool raw = false;
@@ -61,7 +62,7 @@ public:
 
 	bool ContainsPayloads() const {
 		Serializer ser(Buf(), Len());
-		return ser.GetVarUint() & kResultsWithPayloadTypes;
+		return ser.GetVarUInt() & kResultsWithPayloadTypes;
 	}
 	void GetRawQueryParams(QueryParams& ret, const std::function<void(int nsId)>& updatePayloadFunc, Options options,
 						   ParsingData& parsingData);

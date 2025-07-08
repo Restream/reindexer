@@ -1,6 +1,6 @@
 #pragma once
 
-#include <stdlib.h>
+#include <cstdlib>
 #include <mutex>
 #include <vector>
 #include "estl/mutex.h"
@@ -12,50 +12,44 @@ template <typename Mutex>
 class PerfStatCounter {
 public:
 	PerfStatCounter();
-	void Hit(std::chrono::microseconds time);
-	void LockHit(std::chrono::microseconds time);
-	std::chrono::microseconds MaxTime() const { return maxTime; }
-	void Reset();
+	void Hit(std::chrono::microseconds time) noexcept;
+	void LockHit(std::chrono::microseconds time) noexcept;
+	std::chrono::microseconds MaxTime() const noexcept { return maxTime_; }
+	void Reset() noexcept;
 	template <class T>
-	T Get() {
+	T Get() noexcept {
 		std::lock_guard<Mutex> lck(mtx_);
 		lap();
-		return T{totalHitCount,
-				 size_t(totalTime.count() / (totalHitCount ? totalHitCount : 1)),
-				 size_t(totalLockTime.count() / (totalHitCount ? totalHitCount : 1)),
-				 avgHitCount,
-				 size_t(avgTime.count() / (avgHitCount ? avgHitCount : 1)),
-				 size_t(avgLockTime.count() / (avgHitCount ? avgHitCount : 1)),
-				 stddev,
-				 size_t(minTime == defaultMinTime() ? 0 : minTime.count()),
-				 size_t(maxTime.count())};
+		return T{.totalHitCount = totalHitCount_,
+				 .totalAvgTimeUs = size_t(totalTime_.count() / (totalHitCount_ ? totalHitCount_ : 1)),
+				 .totalAvgLockTimeUs = size_t(totalLockTime_.count() / (totalHitCount_ ? totalHitCount_ : 1)),
+				 .lastSecHitCount = lastSecHitCount_,
+				 .lastSecAvgTimeUs = size_t(lastSecTotalTime_.count() / (lastSecHitCount_ ? lastSecHitCount_ : 1)),
+				 .lastSecAvgLockTimeUs = size_t(lastSecTotalLockTime_.count() / (lastSecHitCount_ ? lastSecHitCount_ : 1)),
+				 .stddev = stddev_,
+				 .minTimeUs = size_t(minTime_ == std::chrono::microseconds::max() ? 0 : minTime_.count()),
+				 .maxTimeUs = size_t(maxTime_.count())};
 	}
 
-protected:
-	static std::chrono::microseconds defaultMinTime() {
-		static constexpr std::chrono::microseconds defaultValue{std::numeric_limits<size_t>::max() / 2};
-		return defaultValue;
-	}
+private:
+	void lap() noexcept;
 
-	void lap();
-	void doCalculations();
-
-	size_t totalHitCount = 0;
-	std::chrono::microseconds totalTime = std::chrono::microseconds(0);
-	std::chrono::microseconds totalLockTime = std::chrono::microseconds(0);
-	size_t avgHitCount = 0;
-	std::chrono::microseconds avgTime = std::chrono::microseconds(0);
-	std::chrono::microseconds avgLockTime = std::chrono::microseconds(0);
-	size_t calcHitCount = 0;
-	std::chrono::microseconds calcTime = std::chrono::microseconds(0);
-	std::chrono::microseconds calcLockTime = std::chrono::microseconds(0);
-	system_clock_w::time_point calcStartTime;
-	double stddev = 0.0;
-	std::chrono::microseconds minTime = defaultMinTime();
-	std::chrono::microseconds maxTime = std::chrono::microseconds(std::numeric_limits<size_t>::min());
-	std::vector<size_t> lastValuesUs;
-	size_t posInValuesUs = 0;
-	Mutex mtx_;
+	size_t totalHitCount_ = 0;
+	std::chrono::microseconds totalTime_ = std::chrono::microseconds(0);
+	std::chrono::microseconds totalLockTime_ = std::chrono::microseconds(0);
+	size_t lastSecHitCount_ = 0;
+	std::chrono::microseconds lastSecTotalTime_ = std::chrono::microseconds(0);
+	std::chrono::microseconds lastSecTotalLockTime_ = std::chrono::microseconds(0);
+	size_t calcHitCount_ = 0;
+	std::chrono::microseconds calcTime_ = std::chrono::microseconds(0);
+	std::chrono::microseconds calcLockTime_ = std::chrono::microseconds(0);
+	system_clock_w::time_point calcStartTime_ = system_clock_w::now_coarse();
+	double stddev_ = 0.0;
+	std::chrono::microseconds minTime_ = std::chrono::microseconds::max();
+	std::chrono::microseconds maxTime_ = std::chrono::microseconds(0);
+	std::vector<size_t> lastValuesUs_;
+	size_t posInValuesUs_ = 0;
+	mutable Mutex mtx_;
 };
 
 using PerfStatCounterMT = PerfStatCounter<std::mutex>;
@@ -66,28 +60,30 @@ class PerfStatCalculator {
 public:
 	PerfStatCalculator(PerfStatCounter<Mutex>& counter, bool enable) noexcept : counter_(&counter), enable_(enable) {
 		if (enable_) {
-			tmStart = system_clock_w::now();
+			tmStart_ = system_clock_w::now();
 		}
 	}
 	~PerfStatCalculator() {
 		if (enable_) {
-			counter_->Hit(std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - tmStart));
+			counter_->Hit(std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - tmStart_));
 		}
 	}
-	void SetCounter(PerfStatCounter<Mutex>& counter) { counter_ = &counter; }
-	void LockHit() {
+	void SetCounter(PerfStatCounter<Mutex>& counter) noexcept { counter_ = &counter; }
+	void Disable() noexcept { enable_ = false; }
+	void LockHit() noexcept {
 		if (enable_) {
-			counter_->LockHit(std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - tmStart));
+			counter_->LockHit(std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - tmStart_));
 		}
 	}
-	void HitManualy() {
+	void HitManualy() noexcept {
 		if (enable_) {
 			enable_ = false;
-			counter_->Hit(std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - tmStart));
+			counter_->Hit(std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - tmStart_));
 		}
 	}
 
-	system_clock_w::time_point tmStart;
+private:
+	system_clock_w::time_point tmStart_;
 	PerfStatCounter<Mutex>* counter_;
 	bool enable_;
 };
@@ -104,7 +100,7 @@ public:
 		size_t hitsCount = 0;
 	};
 
-	void Count(IntT quantity) {
+	void Count(IntT quantity) noexcept {
 		std::unique_lock<Mutex> lck(mtx_);
 		stats_.avg = (stats_.avg * stats_.hitsCount + quantity) / (stats_.hitsCount + 1);
 		if (stats_.hitsCount++) {
@@ -117,11 +113,11 @@ public:
 			stats_.maxValue = stats_.minValue = quantity;
 		}
 	}
-	Stats Get() const {
+	Stats Get() const noexcept {
 		std::unique_lock<Mutex> lck(mtx_);
 		return stats_;
 	}
-	void Reset() {
+	void Reset() noexcept {
 		std::unique_lock<Mutex> lck(mtx_);
 		stats_ = Stats();
 	}

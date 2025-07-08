@@ -3,6 +3,7 @@
 #include "cjsonbuilder.h"
 #include "cjsontools.h"
 #include "core/keyvalue/p_string.h"
+#include "core/queryresults/fields_filter.h"
 #include "csvbuilder.h"
 #include "jsonbuilder.h"
 #include "msgpackbuilder.h"
@@ -13,7 +14,8 @@
 namespace reindexer {
 
 template <typename Builder>
-BaseEncoder<Builder>::BaseEncoder(const TagsMatcher* tagsMatcher, const FieldsSet* filter) : tagsMatcher_(tagsMatcher), filter_(filter) {}
+BaseEncoder<Builder>::BaseEncoder(const TagsMatcher* tagsMatcher, const FieldsFilter* filter)
+	: tagsMatcher_(tagsMatcher), filter_(filter) {}
 
 template <typename Builder>
 void BaseEncoder<Builder>::Encode(std::string_view tuple, Builder& builder, const h_vector<IAdditionalDatasource<Builder>*, 2>& dss) {
@@ -25,7 +27,7 @@ void BaseEncoder<Builder>::Encode(std::string_view tuple, Builder& builder, cons
 
 	[[maybe_unused]] const ctag begTag = rdser.GetCTag();
 	assertrx(begTag.Type() == TAG_OBJECT);
-	Builder objNode = builder.Object(nullptr);
+	Builder objNode = builder.Object();
 	while (encode(nullptr, rdser, objNode, true));
 	for (auto ds : dss) {
 		if (ds) {
@@ -54,7 +56,7 @@ void BaseEncoder<Builder>::Encode(ConstPayload& pl, Builder& builder, const h_ve
 	}
 	[[maybe_unused]] const ctag begTag = rdser.GetCTag();
 	assertrx(begTag.Type() == TAG_OBJECT);
-	Builder objNode = builder.Object(nullptr);
+	Builder objNode = builder.Object();
 	while (encode(&pl, rdser, objNode, true));
 	for (auto ds : dss) {
 		if (ds) {
@@ -133,7 +135,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 		if constexpr (kWithFieldExtractor) {
 			if (visible && filter_ && indexedTagsPath_.size() && indexedTagsPath_.back().IsWithIndex()) {
 				const auto field = builder.TargetField();
-				if (field >= 0 && !builder.IsHavingOffset() && filter_->match(indexedTagsPath_)) {
+				if (field >= 0 && !builder.IsHavingOffset() && filter_->Match(indexedTagsPath_)) {
 					builder.OnScopeEnd(fieldsoutcnt_[field]);
 				}
 			}
@@ -141,38 +143,59 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 		return false;
 	}
 
-	const int tagName = tag.Name();
+	const TagName tagName = tag.Name();
 	PathScopeT pathScope(curTagsPath_, tagName);
-	TagsPathScope<IndexedTagsPathInternalT> indexedPathScope(indexedTagsPath_, visible ? tagName : 0);
-	if (visible && filter_ && tagName) {
-		visible = filter_->match(indexedTagsPath_);
-	}
-
+	TagsPathScope<IndexedTagsPathInternalT> indexedPathScope(indexedTagsPath_, visible ? tagName : TagName::Empty());
 	const int tagField = tag.Field();
-	const TagType tagType = tag.Type();
 
-	// get field from indexed field
 	if (tagField >= 0) {
 		if (!pl) {
-			throw Error(errParams, "Trying to encode index field %d without payload", tagField);
-		}
-		const auto& f = pl->Type().Field(tagField);
-		if (!f.IsArray() && objectScalarIndexes_.test(tagField)) {
-			throw Error(errParams, "Non-array field '%s' [%d] from '%s' can only be encoded once.", f.Name(), tagField, pl->Type().Name());
+			throw Error(errParams, "Trying to encode index field {} without payload", tagField);
 		}
 		assertrx(tagField < pl->NumFields());
+	}
+
+	if (visible && filter_ && !tagName.IsEmpty()) {
+		if (tagField >= 0 && pl->Field(tagField).t_.IsFloatVector()) {
+			visible = filter_->ContainsVector(tagField);
+		} else {
+			visible = filter_->Match(indexedTagsPath_);
+		}
+	}
+
+	const TagType tagType = tag.Type();
+	// get field from indexed field
+	if (tagField >= 0) {
+		const auto& f = pl->Type().Field(tagField);
+		if (!f.IsArray() && objectScalarIndexes_.test(tagField)) {
+			throw Error(errParams, "Non-array field '{}' [{}] from '{}' can only be encoded once.", f.Name(), tagField, pl->Type().Name());
+		}
 		int& cnt = fieldsoutcnt_[tagField];
 		switch (tagType) {
 			case TAG_ARRAY: {
-				const auto count = rdser.GetVarUint();
+				auto count = rdser.GetVarUInt();
 				if (visible) {
-					pl->Type().Field(tagField).Type().EvaluateOneOf(
+					f.Type().EvaluateOneOf(
 						[&](KeyValueType::Bool) { builder.Array(tagName, pl->GetArray<bool>(tagField).subspan(cnt, count), cnt); },
 						[&](KeyValueType::Int) { builder.Array(tagName, pl->GetArray<int>(tagField).subspan(cnt, count), cnt); },
 						[&](KeyValueType::Int64) { builder.Array(tagName, pl->GetArray<int64_t>(tagField).subspan(cnt, count), cnt); },
 						[&](KeyValueType::Double) { builder.Array(tagName, pl->GetArray<double>(tagField).subspan(cnt, count), cnt); },
 						[&](KeyValueType::String) { builder.Array(tagName, pl->GetArray<p_string>(tagField).subspan(cnt, count), cnt); },
 						[&](KeyValueType::Uuid) { builder.Array(tagName, pl->GetArray<Uuid>(tagField).subspan(cnt, count), cnt); },
+						[&](KeyValueType::FloatVector) {
+							objectScalarIndexes_.set(tagField);	 // Currently float vector is always single-value scalar
+							auto view = ConstFloatVectorView(pl->Get(tagField, 0));
+							if rx_unlikely (view.IsStripped()) {
+								throw Error(errLogic, "Attempt to serialize stripped vector");
+							}
+							assertrx_dbg(unsigned(view.Dimension()) == count);
+							builder.Array(tagName, view.Span(), 0);	 // Offset is always zero
+						},
+						[&](KeyValueType::Float) {
+							// Indexed field can not contain float array now
+							assertrx(false);
+							abort();
+						},
 						[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite>) noexcept {
 							assertrx(false);
 							abort();
@@ -194,6 +217,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 			case TAG_END:
 			case TAG_OBJECT:
 			case TAG_UUID:
+			case TAG_FLOAT:
 				objectScalarIndexes_.set(tagField);
 				if (visible) {
 					builder.Put(tagName, pl->Get(tagField, cnt), cnt);
@@ -210,9 +234,8 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 				if (atagType == TAG_OBJECT) {
 					if (visible) {
 						auto arrNode = builder.Array(tagName);
-						auto& lastIdxTag = indexedTagsPath_.back();
 						for (size_t i = 0; i < atagCount; ++i) {
-							lastIdxTag.SetIndex(i);
+							indexedTagsPath_.back().SetIndex(i);
 							encode(pl, rdser, arrNode, true);
 						}
 					} else {
@@ -247,7 +270,8 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 			case TAG_STRING:
 			case TAG_NULL:
 			case TAG_END:
-			case TAG_UUID: {
+			case TAG_UUID:
+			case TAG_FLOAT: {
 				const KeyValueType kvt{tagType};
 				if (visible) {
 					Variant value = rdser.GetRawVariant(kvt);
@@ -269,9 +293,9 @@ bool BaseEncoder<Builder>::collectTagsSizes(ConstPayload& pl, Serializer& rdser)
 		tagsLengths_.push_back(EndObject);
 		return false;
 	}
-	const int tagName = tag.Name();
+	const TagName tagName = tag.Name();
 
-	if (tagName && filter_) {
+	if (!tagName.IsEmpty() && filter_) {
 		curTagsPath_.push_back(tagName);
 	}
 
@@ -284,8 +308,18 @@ bool BaseEncoder<Builder>::collectTagsSizes(ConstPayload& pl, Serializer& rdser)
 		assertrx(tagField < pl.NumFields());
 		switch (tagType) {
 			case TAG_ARRAY: {
-				const auto count = rdser.GetVarUint();
-				tagsLengths_.back() = count;
+				const auto count = rdser.GetVarUInt();
+				const bool isFloatVector = pl.Field(tagField).t_.IsFloatVector();
+				if (!isFloatVector || !filter_ || filter_->ContainsVector(tagField)) {
+#ifdef RX_WITH_STDLIB_DEBUG
+					if (isFloatVector) {
+						assertrx_dbg(count == ConstFloatVectorView(pl.Get(tagField, 0)).Dimension().Value());
+					}
+#endif
+					tagsLengths_.back() = count;
+				} else {
+					tagsLengths_.pop_back();
+				}
 				break;
 			}
 			case TAG_VARINT:
@@ -296,6 +330,7 @@ bool BaseEncoder<Builder>::collectTagsSizes(ConstPayload& pl, Serializer& rdser)
 			case TAG_OBJECT:
 			case TAG_END:
 			case TAG_UUID:
+			case TAG_FLOAT:
 				break;
 		}
 	} else {
@@ -330,12 +365,12 @@ bool BaseEncoder<Builder>::collectTagsSizes(ConstPayload& pl, Serializer& rdser)
 			case TAG_STRING:
 			case TAG_NULL:
 			case TAG_END:
-			case TAG_UUID: {
+			case TAG_UUID:
+			case TAG_FLOAT:
 				rdser.SkipRawVariant(KeyValueType{tagType});
-			}
 		}
 	}
-	if (tagName && filter_) {
+	if (!tagName.IsEmpty() && filter_) {
 		curTagsPath_.pop_back();
 	}
 

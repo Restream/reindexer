@@ -2,29 +2,42 @@ package reindexer
 
 import (
 	"math/rand"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/restream/reindexer/v4"
+	"github.com/restream/reindexer/v5"
 )
 
-type FtConfCheck struct {
-	ID int `reindex:"id,,pk"`
-}
-
 const (
-	ftCfgNsName = "ft_cfg_check"
+	testFtCfgNs = "ft_cfg_check"
+	// does not need to be used in init()
+	testConfigNs      = "ns_with_config"
+	testEmptyConfigNs = "ns_without_config"
 )
 
 func init() {
-	tnamespaces[ftCfgNsName] = FtConfCheck{}
+	tnamespaces[testFtCfgNs] = TestItemPk{}
+}
+
+func TestDBMSVersion(t *testing.T) {
+	t.Run("checking DBMSVersion returns correct value", func(t *testing.T) {
+
+		version, err := DB.Reindexer.DBMSVersion()
+		assert.NoError(t, err)
+
+		versionPattern := `^v\d+\.\d+\.\d+(\-\d+\-g[0-9a-f]{9,9})?$`
+		re := regexp.MustCompile(versionPattern)
+		match := re.MatchString(version)
+		assert.True(t, match, version)
+	})
 }
 
 func TestSetDefaultQueryDebug(t *testing.T) {
 	t.Run("set debug level to exist ns config", func(t *testing.T) {
-		ns := "ns_with_config"
+		const ns = testConfigNs
 
 		item, err := DB.Reindexer.Query(reindexer.ConfigNamespaceName).WhereString("type", reindexer.EQ, "namespaces").Exec().FetchOne()
 		require.NoError(t, err)
@@ -32,9 +45,6 @@ func TestSetDefaultQueryDebug(t *testing.T) {
 			Namespace:               ns,
 			LogLevel:                "trace",
 			JoinCacheMode:           "on",
-			Lazyload:                true,
-			UnloadIdleThreshold:     rand.Int(),
-			StartCopyPolicyTxSize:   rand.Int(),
 			CopyPolicyMultiplier:    rand.Int(),
 			TxSizeToAlwaysCopy:      rand.Int(),
 			OptimizationTimeout:     rand.Int(),
@@ -51,6 +61,7 @@ func TestSetDefaultQueryDebug(t *testing.T) {
 
 		found := false
 		item, err = DB.Reindexer.Query(reindexer.ConfigNamespaceName).WhereString("type", reindexer.EQ, "namespaces").Exec().FetchOne()
+		require.NoError(t, err)
 		dbCfg = item.(*reindexer.DBConfigItem)
 		for _, nsCfg := range *dbCfg.Namespaces {
 			if nsCfg.Namespace == ns {
@@ -67,9 +78,10 @@ func TestSetDefaultQueryDebug(t *testing.T) {
 	})
 
 	t.Run("copy config from * if config not exist", func(t *testing.T) {
-		ns := "ns_without_config"
+		const ns = testEmptyConfigNs
 
 		item, err := DB.Reindexer.Query(reindexer.ConfigNamespaceName).WhereString("type", reindexer.EQ, "namespaces").Exec().FetchOne()
+		require.NoError(t, err)
 		dbCfg := item.(*reindexer.DBConfigItem)
 
 		var defaultCfg reindexer.DBNamespacesConfig
@@ -85,6 +97,7 @@ func TestSetDefaultQueryDebug(t *testing.T) {
 
 		found := false
 		item, err = DB.Reindexer.Query(reindexer.ConfigNamespaceName).WhereString("type", reindexer.EQ, "namespaces").Exec().FetchOne()
+		require.NoError(t, err)
 		dbCfg = item.(*reindexer.DBConfigItem)
 		for _, nsCfg := range *dbCfg.Namespaces {
 			if nsCfg.Namespace == ns {
@@ -106,7 +119,7 @@ func TestFtConfigCompatibility(t *testing.T) {
 	config := reindexer.DefaultFtFastConfig()
 
 	addFtIndex := func(indexName string) reindexer.IndexDescription {
-		err := DB.AddIndex(ftCfgNsName, reindexer.IndexDef{
+		err := DB.AddIndex(testFtCfgNs, reindexer.IndexDef{
 			Name:      indexName,
 			JSONPaths: []string{indexName},
 			Config:    config,
@@ -115,7 +128,7 @@ func TestFtConfigCompatibility(t *testing.T) {
 		})
 		assert.NoError(t, err)
 
-		item, err := DBD.Query(reindexer.NamespacesNamespaceName).Where("name", reindexer.EQ, ftCfgNsName).Exec().FetchOne()
+		item, err := DBD.Query(reindexer.NamespacesNamespaceName).Where("name", reindexer.EQ, testFtCfgNs).Exec().FetchOne()
 		assert.NoError(t, err)
 
 		indexes := item.(*reindexer.NamespaceDescription).Indexes
@@ -138,6 +151,18 @@ func TestFtConfigCompatibility(t *testing.T) {
 				assert.Equal(t, word.IsMorpheme, cfgStopWords[idx].(map[string]interface{})["is_morpheme"])
 			}
 		}
+	}
+
+	checkBm25FtConfig := func(index reindexer.IndexDescription, expectedBm25k1 float64,
+		expectedBm25b float64, expectedBm25Type string) {
+		conf := index.Config.(map[string]interface{})
+		rankFunConf := conf["bm25_config"].(map[string]interface{})
+		cfgBm25k1 := rankFunConf["bm25_k1"]
+		cfgBm25b := rankFunConf["bm25_b"]
+		cfgBm25Type := rankFunConf["bm25_type"]
+		assert.Equal(t, expectedBm25k1, cfgBm25k1)
+		assert.Equal(t, expectedBm25b, cfgBm25b)
+		assert.Equal(t, expectedBm25Type, cfgBm25Type)
 	}
 
 	t.Run("check string stop_words config with index create", func(t *testing.T) {
@@ -185,18 +210,6 @@ func TestFtConfigCompatibility(t *testing.T) {
 		index := addFtIndex("idxStopWordsMix")
 		checkStopWordsFtConfig(index)
 	})
-
-	checkBm25FtConfig := func(index reindexer.IndexDescription, expectedBm25k1 float64,
-		expectedBm25b float64, expectedBm25Type string) {
-		conf := index.Config.(map[string]interface{})
-		rankFunConf := conf["bm25_config"].(map[string]interface{})
-		cfgBm25k1 := rankFunConf["bm25_k1"]
-		cfgBm25b := rankFunConf["bm25_b"]
-		cfgBm25Type := rankFunConf["bm25_type"]
-		assert.Equal(t, expectedBm25k1, cfgBm25k1)
-		assert.Equal(t, expectedBm25b, cfgBm25b)
-		assert.Equal(t, expectedBm25Type, cfgBm25Type)
-	}
 
 	t.Run("check bm25_k1, bm25_b, bm25_type configs with index create", func(t *testing.T) {
 		expectedBm25k1 := 1.53

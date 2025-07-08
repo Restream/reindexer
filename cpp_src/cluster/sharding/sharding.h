@@ -42,27 +42,11 @@ private:
 class Connections : public std::vector<std::shared_ptr<client::Reindexer>> {
 public:
 	using base = std::vector<std::shared_ptr<client::Reindexer>>;
-	Connections() : base() {}
-	Connections(Connections&& obj) noexcept
-		: base(static_cast<base&&>(obj)),
-		  actualIndex(std::move(obj.actualIndex)),
-		  reconnectTs(obj.reconnectTs),
-		  status(std::move(obj.status)),
-		  shutdown(obj.shutdown) {}
+	Connections() = default;
+	Connections(Connections&& obj) noexcept;
+	Connections(const Connections& obj) noexcept;
 
-	Connections(const Connections& obj) noexcept
-		: base(obj), actualIndex(obj.actualIndex), reconnectTs(obj.reconnectTs), status(obj.status), shutdown(obj.shutdown) {}
-
-	void Shutdown() {
-		std::lock_guard lck(m);
-		if (!shutdown) {
-			for (auto& conn : *this) {
-				conn->Stop();
-			}
-			shutdown = true;
-			status = Error(errTerminated, "Sharding proxy is already shut down");
-		}
-	}
+	void Shutdown();
 	shared_timed_mutex m;
 	std::optional<size_t> actualIndex;
 	steady_clock_w::time_point reconnectTs;

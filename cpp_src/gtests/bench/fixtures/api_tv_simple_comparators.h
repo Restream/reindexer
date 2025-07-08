@@ -58,6 +58,14 @@ private:
 	void Query4CondRangeTotal(State& state);
 	void Query4CondRangeCachedTotal(State& state);
 
+	void QueryDistinctOneField(State& state);
+	void QueryDistinctTwoField(State& state);
+	void QueryDistinctTwoFieldArray(State& state);
+
+	void QueryDistinctOneFieldLimit(State& state);
+	void QueryDistinctTwoFieldLimit(State& state);
+	void QueryDistinctTwoFieldArrayLimit(State& state);
+
 	std::vector<std::string> countries_;
 	std::vector<std::string> locations_;
 	std::vector<int> start_times_;

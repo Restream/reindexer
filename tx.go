@@ -2,14 +2,15 @@ package reindexer
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
 	otelattr "go.opentelemetry.io/otel/attribute"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/cjson"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/cjson"
 )
 
 const maxAsyncRequests = 500
@@ -441,17 +442,23 @@ func (tx *Tx) finalize() {
 }
 
 func (tx *Tx) modifyInternal(item interface{}, json []byte, mode int, precepts ...string) (err error) {
+	if item == nil && json == nil {
+		return fmt.Errorf("rq: nil value in transaction item modify call for '%s' namespace", tx.namespace)
+	}
+
 	for tryCount := 0; tryCount < 2; tryCount++ {
-		ser := cjson.NewPoolSerializer()
-		defer ser.Close()
-		format := 0
-		stateToken := 0
+		err := func() error {
+			ser := cjson.NewPoolSerializer()
+			defer ser.Close()
+			format := 0
+			stateToken := 0
 
-		if format, stateToken, err = packItem(tx.ns, item, json, ser); err != nil {
-			return err
-		}
+			if format, stateToken, err = packItem(tx.ns, item, json, ser); err != nil {
+				return err
+			}
 
-		err := tx.db.binding.ModifyItemTx(&tx.ctx, format, ser.Bytes(), mode, precepts, stateToken)
+			return tx.db.binding.ModifyItemTx(&tx.ctx, format, ser.Bytes(), mode, precepts, stateToken)
+		}()
 
 		if err != nil {
 			rerr, ok := err.(bindings.Error)
@@ -527,6 +534,12 @@ func (tx *Tx) modifyInternalAsync(item interface{}, json []byte, mode int, cmpl 
 		} else {
 			tx.cmplCh <- modifyInfo{err: nil, cmpl: cmpl}
 		}
+	}
+
+	if item == nil && json == nil {
+		err := fmt.Errorf("rq: nil value in transaction item modify async call for '%s' namespace", tx.namespace)
+		internalCmpl(nil, err)
+		return err
 	}
 
 	ser := cjson.NewPoolSerializer()

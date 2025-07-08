@@ -4,13 +4,14 @@
 namespace reindexer {
 
 class NamespaceImpl;
-struct IndexDef;
+class IndexDef;
 
 struct IndexFastUpdate {
 	static bool Try(NamespaceImpl& ns, const IndexDef& from, const IndexDef& to);
-	static bool RelaxedEqual(const IndexDef& from, const IndexDef& to) noexcept;
+	static bool RelaxedEqual(const IndexDef& from, const IndexDef& to);
 
 private:
+	static bool needRecreateIndex(auto indexDiff) noexcept;
 	static bool isLegalTypeTransform(IndexType from, IndexType to) noexcept;
 	static const std::vector<fast_hash_set<IndexType>> kTransforms;
 };

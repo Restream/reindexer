@@ -1,10 +1,10 @@
 #pragma once
 
+#include <span>
 #include <type_traits>
 #include "core/cjson/tagsmatcher.h"
 #include "core/indexopts.h"
 #include "core/keyvalue/variant.h"
-#include "estl/span.h"
 #include "fieldsset.h"
 #include "payloadfieldvalue.h"
 #include "payloadtype.h"
@@ -12,9 +12,9 @@
 
 namespace reindexer {
 
-class TagsMatcher;
 class WrSerializer;
 class StringsHolder;
+class FieldsFilter;
 
 template <typename T>
 class PayloadIface {
@@ -27,19 +27,19 @@ public:
 
 	void Reset() noexcept { memset(v_->Ptr(), 0, t_.TotalSize()); }
 	// Get element(s) by field index
-	void Get(int field, VariantArray&, Variant::hold_t) const;
+	void Get(int field, VariantArray&, Variant::HoldT) const;
 	void Get(int field, VariantArray&) const;
 	// Get element by field and array index
-	[[nodiscard]] Variant Get(int field, int idx, Variant::hold_t) const;
+	[[nodiscard]] Variant Get(int field, int idx, Variant::HoldT) const;
 	[[nodiscard]] Variant Get(int field, int idx) const;
 
 	// Get array as span of typed elements
 	template <typename Elem>
-	span<const Elem> GetArray(int field) const& {
+	std::span<const Elem> GetArray(int field) const& {
 		assertrx(field < Type().NumFields());
 		assertrx(Type().Field(field).IsArray());
 		auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-		return span<const Elem>(reinterpret_cast<const Elem*>(v_->Ptr() + arr->offset), arr->len);
+		return std::span<const Elem>(reinterpret_cast<const Elem*>(v_->Ptr() + arr->offset), arr->len);
 	}
 	// Get array len
 	int GetArrayLen(int field) const {
@@ -48,23 +48,43 @@ public:
 		auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
 		return arr->len;
 	}
+	// Get array or scalar as span of typed elements
+	template <typename Elem>
+	std::span<const Elem> GetSpan(int field) const& {
+		assertrx(field < Type().NumFields());
+		if (Type().Field(field).IsArray()) {
+			auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
+			return std::span<const Elem>(reinterpret_cast<const Elem*>(v_->Ptr() + arr->offset), arr->len);
+		} else {
+			return std::span<const Elem>(reinterpret_cast<const Elem*>(Field(field).p_), 1);
+		}
+	}
+	template <typename>
+	auto GetSpan(int) const&& = delete;
 
 	// Resize array (grow)
 	// return index of 1-st position
 	// template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
-	int ResizeArray(int field, int grow, bool append);
+	int ResizeArray(int field, int grow, Append);
 
 	// Set element or array by field index
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
-	void Set(int field, const VariantArray& keys, bool append = false) {
-		if (!t_.Field(field).IsArray() && keys.size() >= 1) {
-			Field(field).Set(keys[0]);
-		} else {
+	void Set(int field, const VariantArray& keys, Append append = Append_False) {
+		if (t_.Field(field).IsArray()) {
 			setArray(field, keys, append);
+		} else {
+			if (keys.empty() && t_.Field(field).Type().template Is<KeyValueType::FloatVector>()) {
+				Field(field).Set(Variant{ConstFloatVectorView{}});
+			} else {
+				if (keys.size() != 1) {
+					throw Error(errLogic, "Set array of {} size to not array field '{}'", keys.size(), t_.Field(field).Name());
+				}
+				Field(field).Set(keys[0]);
+			}
 		}
 	}
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
-	void Set(int field, const Variant& key, bool append = false) {
+	void Set(int field, const Variant& key, Append append = Append_False) {
 		if (t_.Field(field).IsArray()) {
 			Set(field, VariantArray{key}, append);
 			return;
@@ -72,7 +92,7 @@ public:
 		Field(field).Set(key);
 	}
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
-	void Set(int field, Variant&& key, bool append = false) {
+	void Set(int field, Variant&& key, Append append = Append_False) {
 		if (t_.Field(field).IsArray()) {
 			Set(field, VariantArray{std::move(key)}, append);
 			return;
@@ -86,15 +106,15 @@ public:
 
 	// Set element or array by index path
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
-	void Set(std::string_view field, const VariantArray& keys, bool append = false) {
+	void Set(std::string_view field, const VariantArray& keys, Append append = Append_False) {
 		return Set(t_.FieldByName(field), keys, append);
 	}
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
-	void Set(std::string_view field, const Variant& key, bool append = false) {
+	void Set(std::string_view field, const Variant& key, Append append = Append_False) {
 		return Set(t_.FieldByName(field), key, append);
 	}
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
-	void Set(std::string_view field, Variant&& key, bool append = false) {
+	void Set(std::string_view field, Variant&& key, Append append = Append_False) {
 		return Set(t_.FieldByName(field), std::move(key), append);
 	}
 
@@ -108,7 +128,7 @@ public:
 	T CopyTo(PayloadType t, bool newFields = true);
 
 	// Get element(s) by field name
-	void Get(std::string_view field, VariantArray&, Variant::hold_t) const;
+	void Get(std::string_view field, VariantArray&, Variant::HoldT) const;
 	void Get(std::string_view field, VariantArray&) const;
 
 	// Get element(s) by json path
@@ -138,7 +158,7 @@ public:
 	// Compare is EQ by field mask
 	bool IsEQ(const T& other, const FieldsSet& fields) const;
 	// Get hash of all document
-	uint64_t GetHash() const noexcept;
+	uint64_t GetHash(const std::function<uint64_t(unsigned int, ConstFloatVectorView)>& getVectorHashF) const noexcept;
 
 	// Compare single field (indexed or non-indexed)
 	template <WithString, NotComparable>
@@ -168,10 +188,10 @@ public:
 	void CopyStrings(h_vector<key_string, 16>& dest);
 
 	// Item values' string for printing
-	std::string Dump() const;
+	std::string Dump(const TagsMatcher*) const;
 	// Item as JSON
-	std::string GetJSON(const TagsMatcher& tm);
-	void GetJSON(const TagsMatcher& tm, WrSerializer& ser);
+	std::string GetJSON(const TagsMatcher& tm, const FieldsFilter&);
+	void GetJSON(const TagsMatcher& tm, WrSerializer& ser, const FieldsFilter&);
 
 private:
 	enum class HoldPolicy : bool { Hold, NoHold };
@@ -185,7 +205,7 @@ private:
 	template <typename P>
 	void getByJsonPath(const P& path, VariantArray&, KeyValueType expectedType) const;
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
-	void setArray(int field, const VariantArray& keys, bool append);
+	void setArray(int field, const VariantArray& keys, Append);
 	template <typename HoldT>
 	void get(int field, VariantArray&, HoldT h) const;
 	template <typename HoldT>
@@ -200,21 +220,21 @@ private:
 };
 
 template <>
-int PayloadIface<PayloadValue>::ResizeArray(int, int, bool);
+int PayloadIface<PayloadValue>::ResizeArray(int, int, Append);
 template <>
-int PayloadIface<const PayloadValue>::ResizeArray(int, int, bool) = delete;
+int PayloadIface<const PayloadValue>::ResizeArray(int, int, Append) = delete;
 
 template <>
-void PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher&, WrSerializer&);
+void PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher&, WrSerializer&, const FieldsFilter&);
 template <>
-std::string PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher&);
+std::string PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher&, const FieldsFilter&);
 template <>
-void PayloadIface<PayloadValue>::GetJSON(const TagsMatcher&, WrSerializer&) = delete;
+void PayloadIface<PayloadValue>::GetJSON(const TagsMatcher&, WrSerializer&, const FieldsFilter&) = delete;
 template <>
-std::string PayloadIface<PayloadValue>::GetJSON(const TagsMatcher&) = delete;
+std::string PayloadIface<PayloadValue>::GetJSON(const TagsMatcher&, const FieldsFilter&) = delete;
 
-extern template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(std::string_view, const VariantArray&, bool);
-extern template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(int, const VariantArray&, bool);
+extern template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(std::string_view, const VariantArray&, Append);
+extern template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(int, const VariantArray&, Append);
 extern template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(int, int, const Variant&);
 extern template void PayloadIface<PayloadValue>::SetSingleElement<PayloadValue, static_cast<void*>(0)>(int, const Variant&);
 

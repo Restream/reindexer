@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/restream/reindexer/v4/bindings"
+	"github.com/restream/reindexer/v5/bindings"
 	"github.com/golang/snappy"
 )
 

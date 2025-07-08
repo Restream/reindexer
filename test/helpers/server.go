@@ -6,24 +6,18 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v4"
-	_ "github.com/restream/reindexer/v4/bindings/builtinserver"
-	"github.com/restream/reindexer/v4/bindings/builtinserver/config"
+	"github.com/restream/reindexer/v5"
+	_ "github.com/restream/reindexer/v5/bindings/builtinserver"
+	"github.com/restream/reindexer/v5/bindings/builtinserver/config"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
-
-const (
-	ServerTypeStandalone = "standalone"
-	ServerTypeBuiltin    = "builtin"
-)
-
-var httpCl = http.DefaultClient
 
 type TestServer struct {
 	T        *testing.T
@@ -34,6 +28,13 @@ type TestServer struct {
 	proc     *exec.Cmd
 	SrvType  string
 }
+
+const (
+	ServerTypeStandalone = "standalone"
+	ServerTypeBuiltin    = "builtin"
+)
+
+var httpCl = http.DefaultClient
 
 func (srv *TestServer) GetDSN() string {
 	return fmt.Sprintf("cproto://127.0.0.1:%s/%s", srv.RpcPort, srv.GetDbName())
@@ -52,19 +53,20 @@ func (srv *TestServer) GetDbName() string {
 }
 
 func (srv *TestServer) GetFullStoragePath() string {
-	return fmt.Sprintf("/tmp/reindex_%s/%s_%s", srv.RpcPort, srv.DbName, srv.RpcPort)
+	dbSubPath := fmt.Sprintf("reindex_%s/%s_%s", srv.RpcPort, srv.DbName, srv.RpcPort)
+	return path.Join(GetTmpDBDir(), dbSubPath)
 }
 
 func (srv *TestServer) Run() error {
 	cfg := config.DefaultServerConfig()
 	cfg.Net.RPCAddr = "127.0.0.1:" + srv.RpcPort
 	cfg.Net.HTTPAddr = "127.0.0.1:" + srv.HttpPort
-	cfg.Storage.Path = "/tmp/reindex_" + srv.RpcPort
+	cfg.Storage.Path = path.Join(GetTmpDBDir(), "reindex_"+srv.RpcPort)
 	cfg.Logger.LogLevel = "error"
-	cfg.Logger.ServerLog = "/tmp/reindex_" + srv.RpcPort + "/server.log"
-	cfg.Logger.HTTPLog = "/tmp/reindex_" + srv.RpcPort + "/http.log"
-	cfg.Logger.RPCLog = "/tmp/reindex_" + srv.RpcPort + "/rpc.log"
-	cfg.Logger.CoreLog = "/tmp/reindex_" + srv.RpcPort + "/core.log"
+	cfg.Logger.ServerLog = path.Join(GetTmpDBDir(), "reindex_"+srv.RpcPort+"/server.log")
+	cfg.Logger.HTTPLog = path.Join(GetTmpDBDir(), "reindex_"+srv.RpcPort+"/http.log")
+	cfg.Logger.RPCLog = path.Join(GetTmpDBDir(), "reindex_"+srv.RpcPort+"/rpc.log")
+	cfg.Logger.CoreLog = path.Join(GetTmpDBDir(), "reindex_"+srv.RpcPort+"/core.log")
 	cfg.Metrics.ClientsStats = true
 
 	switch srv.SrvType {
@@ -74,7 +76,7 @@ func (srv *TestServer) Run() error {
 			require.NoError(srv.T, err)
 		}
 
-		f, err := os.Create("/tmp/reindex_cluster_" + srv.RpcPort + ".conf")
+		f, err := os.Create(path.Join(GetTmpDBDir(), "reindex_cluster_"+srv.RpcPort+".conf"))
 		if err != nil {
 			require.NoError(srv.T, err)
 		}
@@ -84,16 +86,16 @@ func (srv *TestServer) Run() error {
 			require.NoError(srv.T, err)
 		}
 
-		args := []string{"--config=/tmp/reindex_cluster_" + srv.RpcPort + ".conf"}
+		cfgPath := path.Join(GetTmpDBDir(), "reindex_cluster_"+srv.RpcPort+".conf")
+		args := []string{"--config=" + cfgPath}
 		cmd := exec.Command("../build/cpp_src/cmd/reindexer_server/reindexer_server", args...)
 		if err := cmd.Start(); err != nil {
 			require.NoError(srv.T, err)
 		}
 		srv.proc = cmd
 	case ServerTypeBuiltin:
-		db := reindexer.NewReindex(fmt.Sprintf("builtinserver://%s", srv.GetDbName()), reindexer.WithServerConfig(100*time.Second, cfg))
+		db, err := reindexer.NewReindex(fmt.Sprintf("builtinserver://%s", srv.GetDbName()), reindexer.WithServerConfig(100*time.Second, cfg))
 		srv.db = db
-		err := srv.db.Status().Err
 		if srv.T != nil {
 			require.NoError(srv.T, err)
 		} else if err != nil {
@@ -132,7 +134,7 @@ func (srv *TestServer) Run() error {
 }
 
 func (srv *TestServer) Clean() error {
-	return os.RemoveAll("/tmp/reindex_" + srv.RpcPort)
+	return os.RemoveAll(path.Join(GetTmpDBDir(), "reindex_"+srv.RpcPort))
 }
 
 func (srv *TestServer) DB() *reindexer.Reindexer {
@@ -185,17 +187,17 @@ func CreateCluster(t *testing.T, servers []*TestServer, nsName string, nsItem in
 		wg.Add(1)
 		go func(srv *TestServer, i int, wg *sync.WaitGroup) {
 			require.NoError(t, srv.Run())
-			dbTmp := reindexer.NewReindex(srv.GetDSN(), reindexer.WithCreateDBIfMissing())
+			dbTmp, err := reindexer.NewReindex(srv.GetDSN(), reindexer.WithCreateDBIfMissing())
+			require.NoError(t, err)
 			defer dbTmp.Close()
-			require.NotNil(t, dbTmp)
 			dbTmp.OpenNamespace(nsName, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), nsItem)
 
 			replicationConf := ReplicationConf{
 				ServerID:  i + 1,
 				ClusterID: 2,
 			}
-			require.NoError(t, replicationConf.ToFile("/tmp/reindex_"+srv.RpcPort+"/"+srv.DbName+"_"+srv.RpcPort, "replication.conf"))
-			require.NoError(t, clusterConf.ToFile("/tmp/reindex_"+srv.RpcPort+"/"+srv.DbName+"_"+srv.RpcPort, "cluster.conf"))
+			require.NoError(t, replicationConf.ToFile(path.Join(GetTmpDBDir(), "reindex_"+srv.RpcPort+"/"+srv.DbName+"_"+srv.RpcPort), "replication.conf"))
+			require.NoError(t, clusterConf.ToFile(path.Join(GetTmpDBDir(), "reindex_"+srv.RpcPort+"/"+srv.DbName+"_"+srv.RpcPort), "cluster.conf"))
 
 			require.NoError(t, srv.Stop())
 			require.NoError(t, srv.Run())
@@ -208,23 +210,21 @@ func CreateCluster(t *testing.T, servers []*TestServer, nsName string, nsItem in
 
 func CreateReplication(t *testing.T, master *TestServer, slaves []*TestServer, nsName string, nsItem interface{}) {
 	require.NoError(t, master.Run())
-	masterDb := reindexer.NewReindex(master.GetDSN(), reindexer.WithCreateDBIfMissing())
+	masterDb, err := reindexer.NewReindex(master.GetDSN(), reindexer.WithCreateDBIfMissing())
+	require.NoError(t, err)
 	defer masterDb.Close()
-	require.NotNil(t, masterDb)
-	require.NoError(t, masterDb.Status().Err)
 
-	err := masterDb.OpenNamespace(nsName, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), nsItem)
+	err = masterDb.OpenNamespace(nsName, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), nsItem)
 	require.NoError(t, err)
 
 	var slaveDbs []*reindexer.Reindexer
 	var nodes []reindexer.DBAsyncReplicationNode
 	for i := range slaves {
 		require.NoError(t, slaves[i].Run())
-		db := reindexer.NewReindex(slaves[i].GetDSN(), reindexer.WithCreateDBIfMissing())
+		db, err := reindexer.NewReindex(slaves[i].GetDSN(), reindexer.WithCreateDBIfMissing())
+		require.NoError(t, err)
 		defer db.Close()
-		require.NotNil(t, db)
-		require.NoError(t, db.Status().Err)
-		err := db.OpenNamespace(nsName, reindexer.DefaultNamespaceOptions(), nsItem)
+		err = db.OpenNamespace(nsName, reindexer.DefaultNamespaceOptions(), nsItem)
 		require.NoError(t, err)
 		slaveDbs = append(slaveDbs, db)
 
@@ -244,7 +244,7 @@ func ConfigureReplication(t *testing.T, rx *reindexer.Reindexer, role string, ns
 			Namespaces:        ns,
 			Nodes:             nodes,
 			RetrySyncInterval: 100,
-			LogLevel:          "info",
+			LogLevel:          "trace",
 		},
 	})
 	require.NoError(t, err)

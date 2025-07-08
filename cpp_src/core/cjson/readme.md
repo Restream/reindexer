@@ -1,6 +1,4 @@
 
-
-
 `CJSON` (Compact JSON) is binary internal reindexer format for transparently representing JSON data.
 Each field of CJSON is encoded to `ctag` - varuint, which encodes type and name of field, and `data` binary representation of field data in format dependent of type.
 
@@ -21,7 +19,7 @@ Each field of CJSON is encoded to `ctag` - varuint, which encodes type and name 
 | Name       | Value | Description                                      |
 |------------|-------|--------------------------------------------------|
 | TAG_VARINT | 0     | Data is number in varint format                  |
-| TAG_DOUBLE | 1     | Data is number in double format                  |
+| TAG_DOUBLE | 1     | Data is number in double format (64 bits)        |
 | TAG_STRING | 2     | Data is string with varint length                |
 | TAG_BOOL   | 3     | Data is bool                                     |
 | TAG_NULL   | 4     | Null                                             |
@@ -29,6 +27,7 @@ Each field of CJSON is encoded to `ctag` - varuint, which encodes type and name 
 | TAG_OBJECT | 6     | Data is object                                   |
 | TAG_END    | 7     | End of object                                    |
 | TAG_UUID   | 8     | Data in UUID format. High bit stored in TypeTag1 |
+| TAG_FLOAT  | 9     | Data is number in float format (32 bits)         |
 
 
 ## Arrays

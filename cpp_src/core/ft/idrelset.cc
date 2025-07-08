@@ -97,14 +97,7 @@ int IdRelType::MergeWithDist(const IdRelType& newWordPos, unsigned int dist, Pos
 			continue;
 		}
 
-		auto leftItNext = leftIt + 1;
-		uint32_t leftNextPos = std::numeric_limits<uint32_t>::max();
-		if (leftItNext != leftEnd) {
-			leftNextPos = leftItNext->pos();
-		}
-
-		while (rightIt != rightEnd && rightIt->field() == leftIt->field() && uint32_t(rightIt->pos()) < leftNextPos &&
-			   rightIt->fpos - leftIt->fpos <= dist) {
+		while (rightIt != rightEnd && rightIt->field() == leftIt->field() && rightIt->fpos - leftIt->fpos <= dist) {
 			minDist = std::min(rightIt->fpos - leftIt->fpos, minDist);
 			if constexpr (std::is_same_v<PosTypeT, IdRelType>) {
 				res.Add(*rightIt);

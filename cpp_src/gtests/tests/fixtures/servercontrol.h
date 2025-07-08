@@ -2,15 +2,11 @@
 
 #include "auth_tools.h"
 
-#include "client/reindexer.h"
 #include "cluster/stats/replicationstats.h"
-#include "core/cjson/jsonbuilder.h"
-#include "core/namespace/namespacestat.h"
+#include "core/namespace/namespacenamemap.h"
 #include "estl/shared_mutex.h"
 #include "reindexertestapi.h"
-#include "server/dbmanager.h"
 #include "server/server.h"
-#include "tools/fsops.h"
 
 #ifdef REINDEXER_WITH_SC_AS_PROCESS
 const bool kTestServersInSeparateProcesses = true;
@@ -22,86 +18,27 @@ struct AsyncReplicationConfigTest {
 	using NsSet = std::unordered_set<std::string, reindexer::nocase_hash_str, reindexer::nocase_equal_str>;
 
 	struct Node {
-		Node(reindexer::DSN _dsn, std::optional<NsSet> _nsList = std::optional<NsSet>())
-			: dsn(std::move(_dsn)), nsList(std::move(_nsList)) {}
+		Node(reindexer::DSN _dsn, std::optional<NsSet> _nsList = std::optional<NsSet>());
 		bool operator==(const Node& node) const noexcept { return dsn == node.dsn && nsList == node.nsList; }
 		bool operator!=(const Node& node) const noexcept { return !(*this == node); }
 
-		void GetJSON(reindexer::JsonBuilder& jb) const {
-			jb.Put("dsn", dsn);
-			auto arrNode = jb.Array("namespaces");
-			if (nsList) {
-				for (const auto& ns : *nsList) {
-					arrNode.Put(nullptr, ns);
-				}
-			}
-		}
+		void GetJSON(reindexer::JsonBuilder& jb) const;
 
 		reindexer::DSN dsn;
 		std::optional<NsSet> nsList;
 	};
 
 	AsyncReplicationConfigTest(std::string _role, std::vector<Node> _followers = std::vector<Node>(), std::string _appName = std::string(),
-							   std::string _mode = std::string())
-		: role(std::move(_role)),
-		  mode(std::move(_mode)),
-		  nodes(std::move(_followers)),
-		  forceSyncOnLogicError(false),
-		  forceSyncOnWrongDataHash(true),
-		  appName(std::move(_appName)),
-		  serverId(0) {}
+							   std::string _mode = std::string());
 	AsyncReplicationConfigTest(std::string _role, std::vector<Node> _followers, bool _forceSyncOnLogicError, bool _forceSyncOnWrongDataHash,
 							   int _serverId = 0, std::string _appName = std::string(), NsSet _namespaces = NsSet(),
-							   std::string _mode = std::string(), int _onlineUpdatesDelayMSec = 100)
-		: role(std::move(_role)),
-		  mode(std::move(_mode)),
-		  nodes(std::move(_followers)),
-		  forceSyncOnLogicError(_forceSyncOnLogicError),
-		  forceSyncOnWrongDataHash(_forceSyncOnWrongDataHash),
-		  appName(std::move(_appName)),
-		  namespaces(std::move(_namespaces)),
-		  serverId(_serverId),
-		  onlineUpdatesDelayMSec(_onlineUpdatesDelayMSec) {}
+							   std::string _mode = std::string(), int _onlineUpdatesDelayMSec = 100);
 
-	bool operator==(const AsyncReplicationConfigTest& config) const {
-		return role == config.role && mode == config.mode && nodes == config.nodes &&
-			   forceSyncOnLogicError == config.forceSyncOnLogicError && forceSyncOnWrongDataHash == config.forceSyncOnWrongDataHash &&
-			   appName == config.appName && namespaces == config.namespaces && serverId == config.serverId &&
-			   syncThreads == config.syncThreads && concurrentSyncsPerThread == config.concurrentSyncsPerThread &&
-			   onlineUpdatesDelayMSec == config.onlineUpdatesDelayMSec;
-	}
+	bool operator==(const AsyncReplicationConfigTest& config) const;
 	bool operator!=(const AsyncReplicationConfigTest& config) const { return !(this->operator==(config)); }
 
-	std::string GetJSON() const {
-		reindexer::WrSerializer wser;
-		reindexer::JsonBuilder jb(wser);
-		GetJSON(jb);
-		return std::string(wser.Slice());
-	}
-	void GetJSON(reindexer::JsonBuilder& jb) const {
-		jb.Put("app_name", appName);
-		jb.Put("server_id", serverId);
-		jb.Put("role", role);
-		jb.Put("mode", mode);
-		jb.Put("force_sync_on_logic_error", forceSyncOnLogicError);
-		jb.Put("force_sync_on_wrong_data_hash", forceSyncOnWrongDataHash);
-		jb.Put("sync_threads", syncThreads);
-		jb.Put("syncs_per_thread", concurrentSyncsPerThread);
-		jb.Put("online_updates_delay_msec", onlineUpdatesDelayMSec);
-		{
-			auto arrNode = jb.Array("namespaces");
-			for (const auto& ns : namespaces) {
-				arrNode.Put(nullptr, ns);
-			}
-		}
-		{
-			auto arrNode = jb.Array("nodes");
-			for (const auto& node : nodes) {
-				auto obj = arrNode.Object();
-				node.GetJSON(obj);
-			}
-		}
-	}
+	std::string GetJSON() const;
+	void GetJSON(reindexer::JsonBuilder& jb) const;
 
 	std::string role;
 	std::string mode;
@@ -114,15 +51,8 @@ struct AsyncReplicationConfigTest {
 	NsSet namespaces;
 	int serverId;
 	int onlineUpdatesDelayMSec = 100;
-
-	friend std::ostream& operator<<(std::ostream& os, const AsyncReplicationConfigTest& cfg) {
-		reindexer::WrSerializer ser;
-		{
-			reindexer::JsonBuilder jb(ser);
-			cfg.GetJSON(jb);
-		}
-		return os << ser.Slice();
-	}
+	std::string selfReplicationToken;
+	reindexer::NsNamesHashMapT<std::string> admissibleTokens;
 };
 
 using BaseApi = ReindexerTestApi<reindexer::client::Reindexer>;
@@ -153,20 +83,12 @@ struct ServerControlConfig {
 
 class ServerControl {
 public:
-	const std::string kConfigNs = "#config";
-	const std::string kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex_repl_test");
 	const unsigned short kDefaultHttpPort = 5555;
 
 	const size_t kMaxServerStartTimeSec = 20;
 	enum class ConfigType { File, Namespace };
 
-	static std::string getTestLogPath() {
-		const char* testSetName = ::testing::UnitTest::GetInstance()->current_test_info()->test_case_name();
-		const char* testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
-		std::string name;
-		name = name + "logs/" + testSetName + "/" + testName + "/";
-		return name;
-	}
+	static std::string getTestLogPath();
 
 	ServerControl(ServerControl&& rhs) noexcept;
 	ServerControl& operator=(ServerControl&&) noexcept;
@@ -191,7 +113,7 @@ public:
 		void MakeFollower();
 
 		void SetReplicationConfig(const AsyncReplicationConfigTest& config);
-		void AddFollower(const reindexer::DSN& dsn,
+		void AddFollower(const ServerControl::Interface::Ptr& follower,
 						 std::optional<std::vector<std::string>>&& nsList = std::optional<std::vector<std::string>>(),
 						 reindexer::cluster::AsyncReplicationMode replMode = reindexer::cluster::AsyncReplicationMode::Default);
 		// check with master or slave that sync complete
@@ -230,19 +152,14 @@ public:
 		unsigned short RpcPort() const noexcept { return config_.rpcPort; }
 		unsigned short HttpPort() const noexcept { return config_.httpPort; }
 		std::string DbName() const noexcept { return config_.dbName; }
-		std::string GetReplicationConfigFilePath() const {
-			return reindexer::fs::JoinPath(reindexer::fs::JoinPath(config_.storagePath, config_.dbName), kReplicationConfigFilename);
-		}
-		std::string GetAsyncReplicationConfigFilePath() const {
-			return reindexer::fs::JoinPath(reindexer::fs::JoinPath(config_.storagePath, config_.dbName), kAsyncReplicationConfigFilename);
-		}
-		std::string GetClusterConfigFilePath() const {
-			return reindexer::fs::JoinPath(reindexer::fs::JoinPath(config_.storagePath, config_.dbName), kClusterConfigFilename);
-		}
-		std::string GetShardingConfigFilePath() const {
-			return reindexer::fs::JoinPath(reindexer::fs::JoinPath(config_.storagePath, config_.dbName), kClusterShardingFilename);
-		}
-		std::string GetUsersYAMLFilePath() const { return reindexer::fs::JoinPath(config_.storagePath, kUsersYAMLFilename); }
+		std::string GetReplicationConfigFilePath() const;
+		std::string GetAsyncReplicationConfigFilePath() const;
+		std::string GetClusterConfigFilePath() const;
+		std::string GetShardingConfigFilePath() const;
+		std::string GetUsersYAMLFilePath() const;
+
+		template <typename T>
+		void UpdateConfigReplTokens(const T&);
 
 		reindexer_server::Server srv;
 #ifndef _WIN32
@@ -255,7 +172,7 @@ public:
 		template <typename ValueT>
 		void setNamespaceConfigItem(std::string_view nsName, std::string_view paramName, ValueT&& value);
 		template <typename ValueT>
-		void upsertConfigItemFromObject(std::string_view type, const ValueT& object);
+		void upsertConfigItemFromObject(const ValueT& object);
 
 		std::vector<std::string> getCLIParamArray(bool enableStats, size_t maxUpdatesSize);
 		std::string getLogName(const std::string& log, bool core = false);
@@ -264,17 +181,21 @@ public:
 		std::atomic_bool& stopped_;
 
 		const ServerControlConfig config_;
-		std::string dumpUserRecYAML() const noexcept;
+		std::string dumpUserRecYAML() const;
+
+		template <typename T>
+		T getConfigByType() const;
+		Error mergeAdmissibleTokens(reindexer::NsNamesHashMapT<std::string>&) const;
+		Error checkSelfToken(const std::string&) const;
 
 	public:
 		const reindexer::DSN kRPCDsn;
-		const std::string kAsyncReplicationConfigFilename = "async_replication.conf";
-		const std::string kStorageTypeFilename = ".reindexer.storage";
-		const std::string kReplicationConfigFilename = "replication.conf";
-		const std::string kClusterConfigFilename = "cluster.conf";
-		const std::string kClusterShardingFilename = "sharding.conf";
-		const std::string kConfigNs = "#config";
-		const std::string kUsersYAMLFilename = "users.yml";
+		constexpr static std::string_view kAsyncReplicationConfigFilename = "async_replication.conf";
+		constexpr static std::string_view kStorageTypeFilename = ".reindexer.storage";
+		constexpr static std::string_view kReplicationConfigFilename = "replication.conf";
+		constexpr static std::string_view kClusterConfigFilename = "cluster.conf";
+		constexpr static std::string_view kClusterShardingFilename = "sharding.conf";
+		constexpr static std::string_view kUsersYAMLFilename = "users.yml";
 	};
 	// Get server - wait means wait until server starts if no server
 	Interface::Ptr Get(bool wait = true);
@@ -296,3 +217,6 @@ private:
 	std::shared_ptr<Interface> interface;
 	std::atomic_bool* stopped_;
 };
+
+extern template void ServerControl::Interface::UpdateConfigReplTokens(const std::string&);
+extern template void ServerControl::Interface::UpdateConfigReplTokens(const reindexer::NsNamesHashMapT<std::string>&);

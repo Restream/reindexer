@@ -5,6 +5,7 @@
 #include "client/queryresults.h"
 #include "core/itemimplrawdata.h"
 #include "core/namespace/incarnationtags.h"
+#include "fields_filter.h"
 #include "localqueryresults.h"
 
 namespace reindexer_server {
@@ -35,12 +36,13 @@ public:
 	enum class Type { None, Local, SingleRemote, MultipleRemote, Mixed };
 	struct ItemRefCache {
 		ItemRefCache() = default;
-		ItemRefCache(IdType id, uint16_t proc, uint16_t nsid, ItemImpl&& i, bool raw);
+		ItemRefCache(IdType id, RankT, uint16_t nsid, ItemImpl&& i, bool raw);
+		ItemRefCache(IdType id, uint16_t nsid, ItemImpl&& i, bool raw);
 		void Clear() noexcept {}
 
 		ItemImplRawData itemImpl;
 		WrSerializer wser;
-		ItemRef ref;
+		ItemRefVariant ref;
 	};
 
 	struct JoinResStorage;
@@ -49,34 +51,15 @@ private:
 	template <typename QrT>
 	class QrMetaData {
 	public:
-		QrMetaData(QrT&& _qr = QrT()) : qr(std::move(_qr)), it(qr.begin()) {}
+		QrMetaData(QrT&& _qr, int shardID);
 		QrMetaData(const QrMetaData&) = delete;
-		QrMetaData(QrMetaData&& o) noexcept
-			: qr(std::move(o.qr)),
-			  it(QrT::Iterator::SwitchQueryResultsPtrUnsafe(std::move(o.it), qr)),
-			  hasCompatibleTm(o.hasCompatibleTm),
-			  shardID(o.shardID),
-			  itemRefData_(std::move(o.itemRefData_)),
-			  nsJoinRes_(std::move(o.nsJoinRes_)) {}
+		QrMetaData(QrMetaData&& o) noexcept;
 		QrMetaData& operator=(const QrMetaData&) = delete;
-		QrMetaData& operator=(QrMetaData&& o) noexcept {
-			if (this != &o) {
-				qr = std::move(o.qr);
-				// SwitchQueryResultsPtrUnsafe is not implemented for client query results - iterator contains to many different pointer
-				// and it is unsafe to move it
-				it = QrT::Iterator::SwitchQueryResultsPtrUnsafe(std::move(o.it), qr);
-				hasCompatibleTm = o.hasCompatibleTm;
-				shardID = o.shardID;
-				itemRefData_ = std::move(o.itemRefData_);
-				nsJoinRes_ = std::move(o.nsJoinRes_);
-			}
-			return *this;
-		}
+		QrMetaData& operator=(QrMetaData&& o) noexcept;
 
 		QrT qr;
 		typename QrT::Iterator it;
 		bool hasCompatibleTm = false;
-		int shardID = ShardingKeyType::ProxyOff;
 		void ResetItemRefCache(int64_t idx, ItemRefCache&& newD) const;
 		ItemDataStorage<ItemRefCache>& ItemRefData(int64_t idx);
 		const std::unique_ptr<ItemDataStorage<ItemRefCache>>& ItemRefData() const noexcept { return itemRefData_; }
@@ -84,8 +67,12 @@ private:
 		void ResetJoinStorage(int64_t idx) const;
 		const std::unique_ptr<ItemDataStorage<JoinResStorage>>& NsJoinRes() const noexcept { return nsJoinRes_; }
 		bool CheckIfNsJoinStorageHasSameIdx(int64_t idx) const noexcept;
+		int ShardID() const noexcept { return shardID_; }
+		uint32_t ShardIDHash() const noexcept { return shardIDHash_; }
 
 	private:
+		int shardID_ = ShardingKeyType::ProxyOff;
+		uint32_t shardIDHash_ = 0;
 		mutable std::unique_ptr<ItemDataStorage<ItemRefCache>> itemRefData_;
 		mutable std::unique_ptr<ItemDataStorage<JoinResStorage>> nsJoinRes_;
 	};
@@ -208,7 +195,7 @@ public:
 				if (localTags.size() != 1) {
 					throw Error(errLogic, "Unexpected shards count in the local query results");
 				}
-				localTags[0].shardId = local_->shardID;
+				localTags[0].shardId = local_->ShardID();
 				ret.emplace_back(std::move(localTags[0]));
 				return ret;
 			}
@@ -222,7 +209,7 @@ public:
 					throw Error(errLogic, "Unexpected shards count in the remote query results");
 				}
 				auto& tags = ret.emplace_back(remoteTags[0]);
-				tags.shardId = remote.shardID;
+				tags.shardId = remote.ShardID();
 				return ret;
 			}
 			case Type::Mixed: {
@@ -231,7 +218,7 @@ public:
 					if (localTags.size() != 1) {
 						throw Error(errLogic, "Unexpected shards count in the local query results");
 					}
-					localTags[0].shardId = local_->shardID;
+					localTags[0].shardId = local_->ShardID();
 					ret.emplace_back(std::move(localTags[0]));
 				}
 			}
@@ -246,7 +233,7 @@ public:
 						throw Error(errLogic, "Unexpected shards count in the remote query results");
 					}
 					auto& tags = ret.emplace_back(remoteTags[0]);
-					tags.shardId = r->shardID;
+					tags.shardId = r->ShardID();
 				}
 				return ret;
 		}
@@ -266,11 +253,11 @@ public:
 	PayloadType GetPayloadType(int nsid) const noexcept;
 	TagsMatcher GetTagsMatcher(int nsid) const noexcept;
 	// For local qr only
-	const FieldsSet& GetFieldsFilter(int nsid) const noexcept {
+	const FieldsFilter& GetFieldsFilter(int nsid) const noexcept {
 		if (type_ == Type::Local) {
 			return local_->qr.getFieldsFilter(nsid);
 		}
-		static const FieldsSet kEmpty;
+		static const FieldsFilter kEmpty;
 		return kEmpty;
 	}
 	std::shared_ptr<const Schema> GetSchema(int nsid) const noexcept {
@@ -316,7 +303,7 @@ public:
 	class Iterator {
 	public:
 		Iterator() = default;
-		Iterator(const QueryResults* qr, int64_t idx, std::optional<LocalQueryResults::Iterator> localIt)
+		Iterator(const QueryResults* qr, int64_t idx, std::optional<LocalQueryResults::ConstIterator> localIt)
 			: qr_(qr), idx_(idx), localIt_(std::move(localIt)) {}
 
 		Error GetJSON(WrSerializer& wrser, bool withHdrLen = true);
@@ -329,16 +316,18 @@ public:
 		Item GetItem(bool enableHold = true);
 		joins::ItemIterator GetJoined(std::vector<ItemRefCache>* storage = nullptr);
 		ItemRef GetItemRef(std::vector<ItemRefCache>* storage = nullptr);
+		ItemRefRanked GetItemRefRanked(std::vector<ItemRefCache>* storage = nullptr);
+		bool IsRanked() const noexcept { return qr_->HaveRank(); }
 		int GetNsID() const {
 			struct {
-				int operator()(LocalQueryResults::Iterator&& it) const noexcept { return it.GetItemRef().Nsid(); }
+				int operator()(LocalQueryResults::ConstIterator&& it) const noexcept { return it.GetItemRef().Nsid(); }
 				int operator()(client::QueryResults::Iterator&& it) const { return it.GetNSID(); }
 			} constexpr static nsIdGetter;
 			return std::visit(nsIdGetter, getVariantIt());
 		}
 		lsn_t GetLSN() const {
 			struct {
-				lsn_t operator()(LocalQueryResults::Iterator&& it) const noexcept { return it.GetLSN(); }
+				lsn_t operator()(LocalQueryResults::ConstIterator&& it) const noexcept { return it.GetLSN(); }
 				lsn_t operator()(client::QueryResults::Iterator&& it) const { return it.GetLSN(); }
 			} constexpr static lsnGetter;
 			return std::visit(lsnGetter, getVariantIt());
@@ -348,7 +337,7 @@ public:
 				case Type::None:
 					return ShardingKeyType::ProxyOff;
 				case Type::Local:
-					return qr_->local_->shardID;
+					return qr_->local_->ShardID();
 				case Type::SingleRemote:
 				case Type::MultipleRemote:
 				case Type::Mixed:
@@ -356,20 +345,20 @@ public:
 			}
 			validateProxiedIterator();
 			if (qr_->curQrId_ < 0) {
-				return qr_->local_->shardID;
+				return qr_->local_->ShardID();
 			}
-			return qr_->remote_[size_t(qr_->curQrId_)]->shardID;
+			return qr_->remote_[size_t(qr_->curQrId_)]->ShardID();
 		}
 		bool IsRaw() const {
 			struct {
-				bool operator()(LocalQueryResults::Iterator&& it) const noexcept { return it.IsRaw(); }
+				bool operator()(LocalQueryResults::ConstIterator&& it) const noexcept { return it.IsRaw(); }
 				bool operator()(client::QueryResults::Iterator&& it) const { return it.IsRaw(); }
 			} constexpr static rawTester;
 			return std::visit(rawTester, getVariantIt());
 		}
 		std::string_view GetRaw() const {
 			struct {
-				std::string_view operator()(LocalQueryResults::Iterator&& it) const noexcept { return it.GetRaw(); }
+				std::string_view operator()(LocalQueryResults::ConstIterator&& it) const noexcept { return it.GetRaw(); }
 				std::string_view operator()(client::QueryResults::Iterator&& it) const { return it.GetRaw(); }
 			} constexpr static rawGetter;
 			return std::visit(rawGetter, getVariantIt());
@@ -444,6 +433,9 @@ public:
 		int64_t idx_;
 
 	private:
+		template <bool isRanked>
+		auto getItemRef(std::vector<ItemRefCache>* storage);
+
 		std::variant<QrMetaData<LocalQueryResults>*, QrMetaData<client::QueryResults>*> getVariantResult() const {
 			switch (qr_->type_) {
 				case Type::None:
@@ -467,7 +459,7 @@ public:
 			throw Error(errNotValid, "Iterator is not valid");
 		}
 
-		std::variant<LocalQueryResults::Iterator, client::QueryResults::Iterator> getVariantIt() const {
+		std::variant<LocalQueryResults::ConstIterator, client::QueryResults::Iterator> getVariantIt() const {
 			switch (qr_->type_) {
 				case Type::None:
 					throw Error(errLogic, "QueryResults are empty");
@@ -492,6 +484,8 @@ public:
 		template <typename QrItT>
 		Item getItem(QrItT&, std::unique_ptr<ItemImpl>&& itemImpl, bool convertViaJSON);
 		template <typename QrItT>
+		Item getItem(QrItT&, std::unique_ptr<ItemImpl>&& itemImpl, const FieldsFilter&, bool convertViaJSON);
+		template <typename QrItT>
 		Error getCJSONviaJSON(WrSerializer& wrser, bool withHdrLen, QrItT&);
 		void validateProxiedIterator() const {
 			if (qr_->lastSeenIdx_ != idx_) {
@@ -500,7 +494,7 @@ public:
 		}
 
 		// Iterator for Qr with Type::Local. It may be used to iterate in any direction independantly from main query results
-		std::optional<LocalQueryResults::Iterator> localIt_;
+		std::optional<LocalQueryResults::ConstIterator> localIt_;
 	};
 	using ProxiedRefsStorage = std::vector<ItemRefCache>;
 
