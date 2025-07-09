@@ -9,18 +9,31 @@
 #include "estl/defines.h"
 #include "estl/fast_hash_traits.h"
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4200)
+#endif
+
 namespace reindexer {
 
+#pragma pack(push, 1)
 class key_string_impl {
 public:
-	using size_type = int32_t;
+	using size_type = uint32_t;
 
 	key_string_impl(const key_string_impl&) = delete;
 	key_string_impl(key_string_impl&&) = delete;
 	key_string_impl& operator=(const key_string_impl&) = delete;
 	key_string_impl& operator=(key_string_impl&&) = delete;
 
-	static ptrdiff_t export_hdr_offset() noexcept { return 0; }
+	static ptrdiff_t export_hdr_offset() noexcept {
+		const static key_string_impl sample(std::string_view{});
+		// NOLINTBEGIN (*PointerSub)
+		const static ptrdiff_t offset =
+			ptrdiff_t(reinterpret_cast<const char*>(&sample.export_hdr_) - reinterpret_cast<const char*>(&sample));
+		// NOLINTEND (*PointerSub)
+		return offset;
+	}
 	const char* data() const noexcept { return data_; }
 	size_t size() const noexcept { return export_hdr_.len; }
 	operator std::string_view() const noexcept { return std::string_view(data_, export_hdr_.len); }
@@ -28,11 +41,11 @@ public:
 	// Unsafe ref counter methods for direct payload access
 	static void addref_unsafe(const key_string_impl* x) noexcept {
 		if (x) {
-			x->export_hdr_.refcounter.fetch_add(1, std::memory_order_relaxed);
+			x->refcounter_.fetch_add(1, std::memory_order_relaxed);
 		}
 	}
 	static void release_unsafe(const key_string_impl* x) noexcept {
-		if ((x && x->export_hdr_.refcounter.fetch_sub(1, std::memory_order_acq_rel) == 1)) {
+		if ((x && x->refcounter_.fetch_sub(1, std::memory_order_acq_rel) == 1)) {
 			x->~key_string_impl();
 			operator delete(const_cast<key_string_impl*>(x));
 		}
@@ -41,21 +54,20 @@ public:
 private:
 	friend class key_string;
 	// Only key_string should be able to construct key_string_impl
-	explicit key_string_impl(std::string_view str) noexcept {
-		std::memcpy(data_, str.data(), str.size());
-		export_hdr_.cstr = data_;
+	explicit key_string_impl(std::string_view str) noexcept : refcounter_{0} {
 		export_hdr_.len = str.size();
-		export_hdr_.refcounter.store(0, std::memory_order_relaxed);
+		std::memcpy(data_, str.data(), str.size());
 	}
 
+	mutable std::atomic<int32_t> refcounter_;
 	struct export_hdr {
-		const void* cstr;
 		size_type len;
-		mutable std::atomic<int32_t> refcounter;
 	} export_hdr_;
 	char data_[];
 };
+#pragma pack(pop)
 
+static_assert(sizeof(key_string_impl) == 8, "Impl class must be a header of fixed size before string data");
 static_assert(sizeof(std::atomic<int32_t>) == sizeof(int8_t[4]),
 			  "refcounter in cbinding (struct reindexer_string) is reserved via int8_t array. Sizes must be same");
 
@@ -88,7 +100,6 @@ public:
 		swap(rhs);
 		return *this;
 	}
-	// NOLINTNEXTLINE(bugprone-unhandled-self-assignment)
 	key_string& operator=(const key_string& rhs) noexcept {
 		key_string copy(rhs);
 		swap(copy);
@@ -153,3 +164,7 @@ public:
 };
 
 }  // namespace std
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif

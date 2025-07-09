@@ -36,7 +36,7 @@ ShardingKeys::ShardIndexWithValues ShardingKeys::GetIndex(std::string_view nsNam
 	if (itNsData != keys_.end()) {
 		return ShardIndexWithValues{itNsData->second.indexName, &itNsData->second.keysToShard};
 	}
-	throw Error(errLogic, "Can not find index for sharded ns [%s]", nsName);
+	throw Error(errLogic, "Can not find index for sharded ns [{}]", nsName);
 }
 
 int ShardingKeys::GetDefaultHost(std::string_view nsName) const {
@@ -44,7 +44,7 @@ int ShardingKeys::GetDefaultHost(std::string_view nsName) const {
 	if (itNsData != keys_.end()) {
 		return itNsData->second.defaultShard;
 	}
-	throw Error(errLogic, "Can not find defaultShard for sharded ns [%s]", nsName);
+	throw Error(errLogic, "Can not find defaultShard for sharded ns [{}]", nsName);
 }
 
 bool ShardingKeys::IsShardIndex(std::string_view ns, std::string_view index) const {
@@ -59,7 +59,7 @@ int ShardingKeys::GetShardId(std::string_view ns, std::string_view index, const 
 	isShardKey = false;
 	auto itNsData = keys_.find(ns);
 	if (itNsData == keys_.end()) {
-		throw Error(errLogic, "Namespace [%s] not found in sharding config", ns);
+		throw Error(errLogic, "Namespace [{}] not found in sharding config", ns);
 	}
 	if (itNsData->second.indexName != index) {
 		return ShardingKeyType::ProxyOff;
@@ -75,7 +75,7 @@ int ShardingKeys::GetShardId(std::string_view ns, std::string_view index, const 
 int ShardingKeys::GetShardId(std::string_view ns, const Variant& v) const {
 	auto itNsData = keys_.find(ns);
 	if (itNsData == keys_.end()) {
-		throw Error(errLogic, "Namespace [%s] not found in sharding config", ns);
+		throw Error(errLogic, "Namespace [{}] not found in sharding config", ns);
 	}
 	return itNsData->second.GetShardId(v);
 }
@@ -91,7 +91,7 @@ fast_hash_set<int> ShardingKeys::getShardsIds(const NsData& nsData) const {
 ShardIDsContainer ShardingKeys::GetShardsIds(std::string_view ns) const {
 	auto itNsData = keys_.find(ns);
 	if (itNsData == keys_.end()) {
-		throw Error(errLogic, "Namespace [%s] not found in sharding config", ns);
+		throw Error(errLogic, "Namespace [{}] not found in sharding config", ns);
 	}
 	ShardIDsContainer ids;
 

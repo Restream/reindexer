@@ -1,5 +1,7 @@
 #include "payloadtype.h"
+#include <algorithm>
 #include <sstream>
+#include "core/embedding/embedder.h"
 #include "core/keyvalue/key_string.h"
 #include "payloadtypeimpl.h"
 #include "tools/serializer.h"
@@ -18,7 +20,7 @@ std::string PayloadTypeImpl::ToString() const {
 	for (auto& f : fields_) {
 		ret << f.Type().Name() << (f.IsArray() ? "[]" : "") << " '" << f.Name() << '\'' << " json:\"";
 		for (auto& jp : f.JsonPaths()) {
-			ret << jp << ";";
+			ret << jp << ';';
 		}
 		ret << "\"\n";
 	}
@@ -29,10 +31,8 @@ void PayloadTypeImpl::Dump(std::ostream& os, std::string_view step, std::string_
 	std::string newOffset{offset};
 	newOffset += step;
 	os << '{';
-	for (auto& f : fields_) {
-		os << '\n'
-		   << newOffset << f.Type().Name() << (f.IsArray() ? "[]" : "") << " '" << f.Name() << "'"
-		   << " json:\"";
+	for (const auto& f : fields_) {
+		os << '\n' << newOffset << f.Type().Name() << (f.IsArray() ? "[]" : "") << " '" << f.Name() << '\'' << " json:\"";
 		for (size_t i = 0, s = f.JsonPaths().size(); i < s; ++i) {
 			if (i != 0) {
 				os << ';';
@@ -48,41 +48,34 @@ void PayloadTypeImpl::Dump(std::ostream& os, std::string_view step, std::string_
 }
 
 void PayloadTypeImpl::Add(PayloadFieldType f) {
-	auto it = fieldsByName_.find(f.Name());
-	if (it != fieldsByName_.end()) {
-		// Non unique name -> check type, and upgrade to array if types are the same
-		auto& oldf = fields_[it->second];
-		throw Error(errLogic, "Cannot add field with name '%s' and type '%s' to namespace '%s'. It already exists with type '%s'", f.Name(),
-					f.Type().Name(), Name(), oldf.Type().Name());
-	} else {
-		// Unique name -> just add field
-		f.SetOffset(TotalSize());
-		for (auto& jp : f.JsonPaths()) {
-			if (!jp.length()) {
-				continue;
-			}
-			auto res = fieldsByJsonPath_.emplace(jp, int(fields_.size()));
-			if (!res.second && res.first->second != int(fields_.size())) {
-				throw Error(errLogic, "Cannot add field with name '%s' to namespace '%s'. Json path '%s' already used in field '%s'",
-							f.Name(), Name(), jp, Field(res.first->second).Name());
-			}
-
-			checkNewJsonPathBeforeAdd(f, jp);
+	checkNewNameBeforeAdd(f);
+	checkEmbedderFields(f);
+	// Unique name -> just add field
+	f.SetOffset(TotalSize());
+	const int fieldNo = int(fields_.size());
+	for (const auto& jp : f.JsonPaths()) {
+		if (!jp.length()) {
+			continue;
 		}
-		fieldsByName_.emplace(f.Name(), int(fields_.size()));
-		if (f.Type().Is<KeyValueType::String>()) {
-			strFields_.push_back(int(fields_.size()));
+		auto res = fieldsByJsonPath_.emplace(jp, fieldNo);
+		if (!res.second && res.first->second != fieldNo) {
+			throw Error(errLogic, "Cannot add field with name '{}' to namespace '{}'. Json path '{}' already used in field '{}'", f.Name(),
+						Name(), jp, Field(res.first->second).Name());
 		}
-		fields_.push_back(std::move(f));
+		checkNewJsonPathBeforeAdd(f, jp);
 	}
+	fieldsByName_.emplace(f.Name(), fieldNo);
+	if (f.Type().Is<KeyValueType::String>()) {
+		strFields_.push_back(fieldNo);
+	}
+	fields_.push_back(std::move(f));
 }
 
-bool PayloadTypeImpl::Drop(std::string_view field) {
-	auto itField = fieldsByName_.find(field);
+void PayloadTypeImpl::Drop(std::string_view name) {
+	const auto itField = fieldsByName_.find(name);
 	if (itField == fieldsByName_.end()) {
-		return false;
+		return;
 	}
-
 	const auto fieldIdx = itField->second;
 	for (auto& f : fieldsByName_) {
 		if (f.second > fieldIdx) {
@@ -94,8 +87,8 @@ bool PayloadTypeImpl::Drop(std::string_view field) {
 			--f.second;
 		}
 	}
-
-	const auto fieldType = fields_[fieldIdx].Type();
+	const auto& payloadField = fields_[fieldIdx];
+	const auto fieldType = payloadField.Type();
 	for (auto it = strFields_.begin(); it != strFields_.end();) {
 		if ((*it == fieldIdx) && (fieldType.Is<KeyValueType::String>())) {
 			it = strFields_.erase(it);
@@ -105,11 +98,9 @@ bool PayloadTypeImpl::Drop(std::string_view field) {
 		}
 		++it;
 	}
-
-	for (auto& jp : fields_[fieldIdx].JsonPaths()) {
+	for (const auto& jp : payloadField.JsonPaths()) {
 		fieldsByJsonPath_.erase(jp);
 	}
-
 	fields_.erase(fields_.begin() + fieldIdx);
 	for (size_t idx = static_cast<size_t>(fieldIdx); idx < fields_.size(); ++idx) {
 		if (idx == 0) {
@@ -119,16 +110,25 @@ bool PayloadTypeImpl::Drop(std::string_view field) {
 			fields_[idx].SetOffset(plTypePrev.Offset() + plTypePrev.Sizeof());
 		}
 	}
+	fieldsByName_.erase(itField);
+}
 
-	fieldsByName_.erase(field);
-
-	return true;
+void PayloadTypeImpl::Replace(int field, PayloadFieldType f) {
+	assertrx_throw(field < int(fields_.size()));
+	const auto& fld = fields_[field];
+	if (fld.Name() != f.Name() || !fld.Type().IsSame(f.Type()) || fld.JsonPaths() != f.JsonPaths() || fld.Offset() != f.Offset() ||
+		fld.Sizeof() != f.Sizeof() || fld.ElemSizeof() != f.ElemSizeof() || fld.IsArray() != f.IsArray() || !f.IsFloatVector()) {
+		// replacement is expected only to update settings of embedder, now. All other parameters must be same
+		assertrx_throw(false);
+	}
+	checkEmbedderFields(f);
+	fields_[field] = std::move(f);
 }
 
 int PayloadTypeImpl::FieldByName(std::string_view field) const {
 	auto it = fieldsByName_.find(field);
 	if (it == fieldsByName_.end()) {
-		throw Error(errLogic, "Field '%s' not found in namespace '%s'", field, Name());
+		throw Error(errLogic, "Field '{}' not found in namespace '{}'", field, Name());
 	}
 	return it->second;
 }
@@ -154,13 +154,17 @@ void PayloadTypeImpl::serialize(WrSerializer& ser) const {
 	ser.PutVarUint(key_string_impl::export_hdr_offset());
 	ser.PutVarUint(NumFields());
 	for (int i = 0; i < NumFields(); i++) {
-		ser.PutKeyValueType(Field(i).Type());
-		ser.PutVString(Field(i).Name());
-		ser.PutVarUint(Field(i).Offset());
-		ser.PutVarUint(Field(i).ElemSizeof());
-		ser.PutVarUint(Field(i).IsArray());
-		ser.PutVarUint(Field(i).JsonPaths().size());
-		for (auto& jp : Field(i).JsonPaths()) {
+		const auto& field = Field(i);
+		ser.PutKeyValueType(field.Type());
+		if (field.Type().Is<KeyValueType::FloatVector>()) {
+			ser.PutVarUint(field.FloatVectorDimension().Value());
+		}
+		ser.PutVString(field.Name());
+		ser.PutVarUint(field.Offset());
+		ser.PutVarUint(field.ElemSizeof());
+		ser.PutVarUint(*field.IsArray());
+		ser.PutVarUint(field.JsonPaths().size());
+		for (auto& jp : field.JsonPaths()) {
 			ser.PutVString(jp);
 		}
 	}
@@ -172,31 +176,87 @@ void PayloadTypeImpl::deserialize(Serializer& ser) {
 	fieldsByJsonPath_.clear();
 	strFields_.clear();
 
-	ser.GetVarUint();
+	ser.GetVarUInt();
 
-	uint64_t count = ser.GetVarUint();
+	const uint64_t count = ser.GetVarUInt();
+	fields_.reserve(count);
 
 	for (uint64_t i = 0; i < count; i++) {
 		const auto t = ser.GetKeyValueType();
+		const FloatVectorDimension floatVectorDimension =
+			t.Is<KeyValueType::FloatVector>() ? FloatVectorDimension(ser.GetVarUInt()) : FloatVectorDimension{};
 		std::string name(ser.GetVString());
 		std::vector<std::string> jsonPaths;
-		uint64_t offset = ser.GetVarUint();
-		[[maybe_unused]] const uint64_t elemSizeof = ser.GetVarUint();
-		bool isArray = ser.GetVarUint();
-		uint64_t jsonPathsCount = ser.GetVarUint();
+		const uint64_t offset = ser.GetVarUInt();
+		[[maybe_unused]] const uint64_t elemSizeof = ser.GetVarUInt();
+		const auto isArray = IsArray(ser.GetVarUInt());
+		uint64_t jsonPathsCount = ser.GetVarUInt();
+		jsonPaths.reserve(jsonPathsCount);
 
 		while (jsonPathsCount--) {
 			jsonPaths.emplace_back(ser.GetVString());
 		}
 
-		PayloadFieldType ft(t, name, std::move(jsonPaths), isArray);
-
+		PayloadFieldType ft(t, std::move(name), std::move(jsonPaths), isArray, floatVectorDimension);
 		ft.SetOffset(offset);
-		fieldsByName_.emplace(std::move(name), fields_.size());
+		fieldsByName_.emplace(ft.Name(), fields_.size());
 		if (t.Is<KeyValueType::String>()) {
 			strFields_.push_back(fields_.size());
 		}
-		fields_.push_back(ft);
+		for (const auto& jp : ft.JsonPaths()) {
+			fieldsByJsonPath_.emplace(jp, fields_.size());
+		}
+		fields_.push_back(std::move(ft));
+	}
+}
+
+void PayloadTypeImpl::checkNewJsonPathBeforeAdd(const PayloadFieldType& f, const std::string& jsonPath) const {
+	const auto pos = jsonPath.find('.');
+	if (pos < jsonPath.length() - 1) {
+		for (const auto& fld : fields_) {
+			for (const auto& jpfld : fld.JsonPaths()) {
+				// new field total overwrites existing one
+				if ((jsonPath.rfind(jpfld, 0) == 0) && (jsonPath[jpfld.length()] == '.')) {
+					throw Error(errLogic,
+								"Cannot add field with name '{}' (jsonpath '{}') and type '{}' to namespace '{}'."
+								" Already exists json path '{}' with type '{}' in field '{}'. Rewriting is impossible",
+								f.Name(), jsonPath, f.Type().Name(), Name(), jpfld, fld.Type().Name(), fld.Name());
+				}
+			}
+		}
+	}
+}
+
+void PayloadTypeImpl::checkNewNameBeforeAdd(const PayloadFieldType& f) const {
+	if (const auto it = fieldsByName_.find(f.Name()); it != fieldsByName_.end()) {
+		// Non unique name -> check type, and upgrade to array if types are the same
+		const auto& oldf = fields_[it->second];
+		throw Error(errLogic, "Cannot add field with name '{}' and type '{}' to namespace '{}'. It already exists with type '{}'", f.Name(),
+					f.Type().Name(), Name(), oldf.Type().Name());
+	}
+}
+
+std::string_view PayloadTypeImpl::CheckEmbeddersAuxiliaryField(std::string_view fieldName) const {
+	for (const auto& field : fields_) {
+		auto embedder = field.Embedder();
+		if (embedder && embedder->IsAuxiliaryField(fieldName)) {
+			return embedder->FieldName();
+		}
+	}
+	return {};
+}
+
+void PayloadTypeImpl::checkEmbedderFields(const PayloadFieldType& fieldType) {
+	auto embedder = fieldType.Embedder();
+	if (embedder) {
+		for (const auto& field : embedder->Fields()) {
+			auto itFld = fieldsByName_.find(field);
+			if (itFld == fieldsByName_.end()) {
+				throw Error(errLogic,
+							"Incorrect embedding configuration for field with name '{}' to namespace '{}'. Auxiliary field '{}' not found",
+							fieldType.Name(), Name(), field);
+			}
+		}
 	}
 }
 
@@ -205,19 +265,23 @@ PayloadType::PayloadType(const std::string& name, std::initializer_list<PayloadF
 PayloadType::PayloadType(const PayloadTypeImpl& impl)
 	: shared_cow_ptr<PayloadTypeImpl>(make_intrusive<intrusive_atomic_rc_wrapper<PayloadTypeImpl>>(impl)) {}
 PayloadType::~PayloadType() = default;
-const PayloadFieldType& PayloadType::Field(int field) const { return get()->Field(field); }
-const std::string& PayloadType::Name() const { return get()->Name(); }
-void PayloadType::SetName(std::string_view name) { clone()->SetName(name); }
+const PayloadFieldType& PayloadType::Field(int field) const& noexcept { return get()->Field(field); }
+const std::string& PayloadType::Name() const& noexcept { return get()->Name(); }
+void PayloadType::SetName(std::string_view name) { clone()->SetName(std::string(name)); }
 int PayloadType::NumFields() const noexcept { return get()->NumFields(); }
 void PayloadType::Add(PayloadFieldType f) { clone()->Add(std::move(f)); }
-bool PayloadType::Drop(std::string_view field) { return clone()->Drop(field); }
+void PayloadType::Drop(std::string_view field) { return clone()->Drop(field); }
+void PayloadType::Replace(int field, PayloadFieldType f) { clone()->Replace(field, std::move(f)); }
 int PayloadType::FieldByName(std::string_view field) const { return get()->FieldByName(field); }
-bool PayloadType::FieldByName(std::string_view name, int& field) const { return get()->FieldByName(name, field); }
-bool PayloadType::Contains(std::string_view field) const { return get()->Contains(field); }
-int PayloadType::FieldByJsonPath(std::string_view jsonPath) const { return get()->FieldByJsonPath(jsonPath); }
-const std::vector<int>& PayloadType::StrFields() const { return get()->StrFields(); }
-size_t PayloadType::TotalSize() const { return get()->TotalSize(); }
+bool PayloadType::FieldByName(std::string_view name, int& field) const noexcept { return get()->FieldByName(name, field); }
+bool PayloadType::Contains(std::string_view field) const noexcept { return get()->Contains(field); }
+int PayloadType::FieldByJsonPath(std::string_view jsonPath) const noexcept { return get()->FieldByJsonPath(jsonPath); }
+const std::vector<int>& PayloadType::StrFields() const& noexcept { return get()->StrFields(); }
+size_t PayloadType::TotalSize() const noexcept { return get()->TotalSize(); }
 std::string PayloadType::ToString() const { return get()->ToString(); }
+std::string_view PayloadType::CheckEmbeddersAuxiliaryField(std::string_view fieldName) const {
+	return get()->CheckEmbeddersAuxiliaryField(fieldName);
+}
 
 void PayloadType::Dump(std::ostream& os, std::string_view step, std::string_view offset) const {
 	std::string newOffset{offset};
@@ -225,23 +289,6 @@ void PayloadType::Dump(std::ostream& os, std::string_view step, std::string_view
 	os << "{\n" << newOffset << "name: " << Name() << ",\n" << newOffset;
 	get()->Dump(os, step, newOffset);
 	os << '\n' << offset << '}';
-}
-
-void PayloadTypeImpl::checkNewJsonPathBeforeAdd(const PayloadFieldType& f, const std::string& jsonPath) const {
-	const auto pos = jsonPath.find('.');
-	if (pos < jsonPath.length() - 1) {
-		for (auto& fld : fields_) {
-			for (auto& jpfld : fld.JsonPaths()) {
-				// new field total overwrites existing one
-				if ((jsonPath.rfind(jpfld, 0) == 0) && (jsonPath[jpfld.length()] == '.')) {
-					throw Error(errLogic,
-								"Cannot add field with name '%s' (jsonpath '%s') and type '%s' to namespace '%s'."
-								" Already exists json path '%s' with type '%s' in field '%s'. Rewriting is impossible",
-								f.Name(), jsonPath, f.Type().Name(), Name(), jpfld, fld.Type().Name(), fld.Name());
-				}
-			}
-		}
-	}
 }
 
 }  // namespace reindexer

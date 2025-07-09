@@ -1,10 +1,11 @@
 #pragma once
 
 #include <cstdlib>
+#include <span>
 #include <string>
 #include <string_view>
 #include "estl/chunk.h"
-#include "estl/span.h"
+#include "estl/defines.h"
 #include "tools/ssize_t.h"
 #include "tools/tls.h"
 
@@ -40,9 +41,9 @@ public:
 	}
 
 	[[nodiscard]] int connect(std::string_view addr, socket_domain t);
-	ssize_t recv(span<char> buf);
-	ssize_t send(const span<char> buf);
-	ssize_t send(span<chunk> chunks);
+	ssize_t recv(std::span<char> buf);
+	ssize_t send(const std::span<char> buf);
+	ssize_t send(std::span<chunk> chunks);
 	int setLinger0();
 	int close();
 	std::string addr() const;
@@ -66,7 +67,7 @@ private:
 	int create(std::string_view addr, struct addrinfo** pres);
 	void domain(socket_domain t) noexcept { type_ = t; }
 
-	ssize_t ssl_send(span<chunk> chunks);
+	ssize_t ssl_send(std::span<chunk> chunks);
 
 	int fd_ = -1;
 	socket_domain type_ = socket_domain::tcp;

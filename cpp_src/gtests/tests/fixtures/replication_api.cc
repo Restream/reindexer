@@ -1,6 +1,7 @@
 ﻿#include "replication_api.h"
+#include "tools/fsops.h"
 
-const std::string ReplicationApi::kConfigNs = "#config";
+ReplicationApi::ReplicationApi() : kStoragePath(reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex_repl_test/")) {}
 
 bool ReplicationApi::StopServer(size_t id) {
 	std::lock_guard<std::mutex> lock(m_);

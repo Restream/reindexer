@@ -1,12 +1,30 @@
 #include "clusterreplthread.h"
 #include "core/reindexer_impl/reindexerimpl.h"
+#include "sharedsyncstate.h"
 
-namespace reindexer {
-namespace cluster {
+namespace reindexer::cluster {
+
+ClusterThreadParam::ClusterThreadParam(const NsNamesHashSetT* namespaces, coroutine::channel<bool>& ch, SharedSyncState& st,
+									   SynchronizationList& syncList, std::function<void()> cb)
+	: namespaces_(namespaces),
+	  leadershipAwaitCh_(ch),
+	  sharedSyncState_(st),
+	  requestElectionsRestartCb_(std::move(cb)),
+	  syncList_(syncList) {
+	assert(namespaces_);
+}
+
+void ClusterThreadParam::OnNewNsAppearance(const NamespaceName& ns) { sharedSyncState_.MarkSynchronized(ns); }
+
+void ClusterThreadParam::OnUpdateReplicationFailure() {
+	if (sharedSyncState_.GetRolesPair().second.role == RaftInfo::Role::Leader) {
+		requestElectionsRestartCb_();
+	}
+}
 
 ClusterReplThread::ClusterReplThread(int serverId, ReindexerImpl& thisNode, const NsNamesHashSetT* namespaces,
 									 std::shared_ptr<updates::UpdatesQueue<updates::UpdateRecord, ReplicationStatsCollector, Logger>> q,
-									 SharedSyncState<>& syncState, SynchronizationList& syncList,
+									 SharedSyncState& syncState, SynchronizationList& syncList,
 									 std::function<void()> requestElectionsRestartCb, ReplicationStatsCollector statsCollector,
 									 const Logger& l)
 	: base_(serverId, thisNode, std::move(q),
@@ -69,5 +87,4 @@ void ClusterReplThread::AwaitTermination() {
 
 void ClusterReplThread::OnRoleSwitch() { roleSwitchAsync_.send(); }
 
-}  // namespace cluster
-}  // namespace reindexer
+}  // namespace reindexer::cluster

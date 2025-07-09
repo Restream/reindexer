@@ -1,4 +1,9 @@
+#include "core/cjson/jsonbuilder.h"
+#include "gtests/tests/gtest_cout.h"
 #include "sharding_extras_api.h"
+#include "vendor/gason/gason.h"
+
+using namespace reindexer;
 
 #ifndef REINDEX_WITH_TSAN
 
@@ -79,7 +84,7 @@ TEST_F(ShardingExtrasApi, SelectFTSeveralShards) {
 	Query q = Query(default_namespace).Where(kFieldFTData, CondEq, RandString());
 	Error err = rx.Select(q, qr1);
 	ASSERT_FALSE(err.ok());
-	ASSERT_EQ(err.what(), "Full text query by several sharding hosts");
+	ASSERT_STREQ(err.what(), "Full text or float vector query by several sharding hosts");
 
 	client::QueryResults qr2;
 	q.Where(kFieldLocation, CondEq, "key1");
@@ -113,7 +118,7 @@ TEST_F(ShardingExtrasApi, LocalQuery) {
 			localQuery = Query::FromSQL("local update " + default_namespace);
 		} catch (const Error& err) {
 			failed = true;
-			EXPECT_EQ(err.what(), "Syntax error at or near 'update', line: 1 column: 6 27; only SELECT query could be LOCAL");
+			ASSERT_STREQ(err.what(), "Syntax error at or near 'update', line: 1 column: 6 27; only SELECT query could be LOCAL");
 		}
 		EXPECT_TRUE(failed);
 		localQuery = Query{default_namespace};
@@ -121,7 +126,7 @@ TEST_F(ShardingExtrasApi, LocalQuery) {
 		client::QueryResults localQr;
 		const auto err = getNode(0)->api.reindexer->Update(localQuery, localQr);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Only SELECT query could be LOCAL");
+		ASSERT_STREQ(err.what(), "Only SELECT query could be LOCAL");
 	}
 }
 
@@ -202,7 +207,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 				}
 			} else {
 				ASSERT_FALSE(err.ok()) << err.what() << "; i = " << i << "; location = " << key;
-				ASSERT_EQ(err.what(), "Namespace 'local_namespace' does not exist") << "i = " << i << "; location = " << key;
+				ASSERT_STREQ(err.what(), "Namespace 'local_namespace' does not exist") << "i = " << i << "; location = " << key;
 			}
 		}
 	}
@@ -232,7 +237,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 				}
 			} else {
 				ASSERT_FALSE(err.ok()) << err.what() << "; i = " << i << "; location = " << key;
-				ASSERT_EQ(err.what(), "Namespace 'local_namespace' does not exist") << "i = " << i << "; location = " << key;
+				ASSERT_STREQ(err.what(), "Namespace 'local_namespace' does not exist") << "i = " << i << "; location = " << key;
 			}
 		}
 	}
@@ -245,7 +250,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 			err = rx.Select(q, qr);
 			if (!local) {
 				ASSERT_EQ(err.code(), errLogic) << err.what() << "; i = " << i;
-				ASSERT_EQ(err.what(), "Query to all shard can't contain JOIN, MERGE or SUBQUERY") << "; i = " << i;
+				ASSERT_STREQ(err.what(), "Query to all shard can't contain JOIN, MERGE or SUBQUERY") << "; i = " << i;
 			} else if (getSCIdxs(i).first == kShardWithLocalNs) {
 				ASSERT_TRUE(err.ok()) << err.what() << "; i = " << i;
 				ASSERT_EQ(qr.Count(), kExpectedJoinResults2.size()) << "; i = " << i;
@@ -262,7 +267,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 				}
 			} else {
 				ASSERT_FALSE(err.ok()) << err.what() << "; i = " << i;
-				ASSERT_EQ(err.what(), "Namespace 'local_namespace' does not exist") << "i = " << i;
+				ASSERT_STREQ(err.what(), "Namespace 'local_namespace' does not exist") << "i = " << i;
 			}
 		}
 	}
@@ -285,7 +290,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 					ASSERT_EQ(qr.Count(), 0) << "; i = " << i << "; location = " << key;
 				} else {
 					ASSERT_FALSE(err.ok()) << err.what() << "; i = " << i << "; location = " << key;
-					ASSERT_EQ(err.what(), "Namespace 'local_namespace' does not exist") << "i = " << i << "; location = " << key;
+					ASSERT_STREQ(err.what(), "Namespace 'local_namespace' does not exist") << "i = " << i << "; location = " << key;
 				}
 			}
 			{
@@ -301,7 +306,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 					ASSERT_EQ(qr.Count(), 0) << "; i = " << i << "; location = " << key;
 				} else {
 					ASSERT_FALSE(err.ok()) << err.what() << "; i = " << i << "; location = " << key;
-					ASSERT_EQ(err.what(), "Namespace 'local_namespace' does not exist") << "i = " << i << "; location = " << key;
+					ASSERT_STREQ(err.what(), "Namespace 'local_namespace' does not exist") << "i = " << i << "; location = " << key;
 				}
 			}
 		}
@@ -315,7 +320,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 			err = rx.Select(q, qr);
 			if (!local) {
 				ASSERT_EQ(err.code(), errLogic) << err.what() << "; i = " << i;
-				ASSERT_EQ(err.what(), "Query to all shard can't contain JOIN, MERGE or SUBQUERY") << "; i = " << i;
+				ASSERT_STREQ(err.what(), "Query to all shard can't contain JOIN, MERGE or SUBQUERY") << "; i = " << i;
 			} else if (getSCIdxs(i).first == kShardWithLocalNs) {
 				ASSERT_TRUE(err.ok()) << err.what() << "; i = " << i;
 				ASSERT_EQ(qr.Count(), kExpectedJoinResults2.size()) << "; i = " << i;
@@ -332,7 +337,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 				}
 			} else {
 				ASSERT_FALSE(err.ok()) << err.what() << "; i = " << i;
-				ASSERT_EQ(err.what(), "Namespace 'local_namespace' does not exist") << "i = " << i;
+				ASSERT_STREQ(err.what(), "Namespace 'local_namespace' does not exist") << "i = " << i;
 			}
 		}
 	}
@@ -499,8 +504,8 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 			lsnsByShard.resize(kShards);
 			for (unsigned int l = 0; l < kShardCount; l++) {
 				client::QueryResults qr(flags);
-				err = rxSel.Select(
-					Query::FromSQL(fmt::sprintf("select * from %s where %s = 'key%d'", default_namespace, kFieldLocation, l)), qr);
+				err = rxSel.Select(Query::FromSQL(fmt::format("select * from {} where {} = 'key{}'", default_namespace, kFieldLocation, l)),
+								   qr);
 				ASSERT_TRUE(err.ok()) << err.what() << "; " << l;
 				for (auto& i : qr) {
 					auto item = i.GetItem();
@@ -525,8 +530,8 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 			auto& rxUpdate = *svc_[k][0].Get()->api.reindexer;
 			for (int l = 0; l < 3; l++) {
 				client::QueryResults qr(flags);
-				err = rxUpdate.Update(Query::FromSQL(fmt::sprintf("update %s set %s='datanew' where %s='key%d'", default_namespace,
-																  kFieldData, kFieldLocation, l)),
+				err = rxUpdate.Update(Query::FromSQL(fmt::format("update {} set {}='datanew' where {}='key{}'", default_namespace,
+																 kFieldData, kFieldLocation, l)),
 									  qr);
 				ASSERT_TRUE(err.ok()) << err.what();
 				for (auto& i : qr) {
@@ -555,7 +560,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 			for (unsigned int l = 0; l < kShardCount; l++) {
 				client::QueryResults qr(flags);
 				err = rxDelete.Delete(
-					Query::FromSQL(fmt::sprintf("Delete from %s where %s = 'key%d'", default_namespace, kFieldLocation, l)), qr);
+					Query::FromSQL(fmt::format("Delete from {} where {} = 'key{}'", default_namespace, kFieldLocation, l)), qr);
 				ASSERT_TRUE(err.ok()) << err.what();
 				ASSERT_EQ(qr.Count(), kMaxCountOnShard);
 				for (auto& i : qr) {
@@ -743,7 +748,7 @@ TEST_F(ShardingExtrasApi, NoShardingIndex) {
 	ASSERT_EQ(nss.size(), 1);
 	ASSERT_EQ(nss[0].name, default_namespace);
 	ASSERT_EQ(nss[0].indexes.size(), 1);
-	ASSERT_EQ(nss[0].indexes[0].name_, kFieldId);
+	ASSERT_EQ(nss[0].indexes[0].Name(), kFieldId);
 
 	// Check data with proxied queries
 	for (size_t i = 0; i < NodesCount(); ++i) {

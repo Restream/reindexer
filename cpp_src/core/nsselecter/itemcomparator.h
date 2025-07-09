@@ -31,14 +31,14 @@ private:
 	class BackInserter;
 	class FrontInserter;
 	struct CompareByField {
-		bool desc;
+		Desc desc;
 	};
 	struct CompareByJoinedField {
 		size_t joinedNs;
-		bool desc;
+		Desc desc;
 	};
 	struct CompareByExpression {
-		bool desc;
+		Desc desc;
 	};
 	struct Joined {
 		const JoinedSelector* joinedSelector{nullptr};

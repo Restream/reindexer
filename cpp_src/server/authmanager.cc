@@ -58,7 +58,7 @@ std::string_view AuthManager::Token::generate(const std::string& passwd, unsigne
 }
 
 bool AuthManager::Token::check(std::string_view token) const noexcept {
-	return token == token_ && std::chrono::system_clock::now() - lastUpd_ < std::chrono::hours(1);
+	return token == token_ && reindexer::system_clock_w::now() - lastUpd_ < std::chrono::hours(1);
 }
 
 void AuthManager::Token::refresh(std::string_view token) {
@@ -70,7 +70,7 @@ void AuthManager::Token::refresh(std::string_view token) {
 		throw Error(errParams, "Incorrect auth-token for refresh");
 	}
 
-	lastUpd_ = std::chrono::system_clock::now();
+	lastUpd_ = reindexer::system_clock_w::now();
 }
 
 }  // namespace reindexer_server

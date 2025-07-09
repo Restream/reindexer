@@ -28,13 +28,13 @@ public:
 
 	void Hit(const QuerySQL& sql, std::chrono::microseconds time) { hit<&PerfStatCounterST::Hit>(sql, time); }
 	void LockHit(const QuerySQL& sql, std::chrono::microseconds time) { hit<&PerfStatCounterST::LockHit>(sql, time); }
-	const std::vector<QueryPerfStat> Data();
+	std::vector<QueryPerfStat> Data();
 	void Reset() {
 		std::unique_lock<std::mutex> lck(mtx_);
 		stat_.clear();
 	}
 
-protected:
+private:
 	struct Stat : public PerfStatCounterST {
 		Stat(std::string_view q) : longestQuery(q) {}
 		std::string longestQuery;
@@ -43,7 +43,7 @@ protected:
 	template <void (PerfStatCounterST::*hitFunc)(std::chrono::microseconds)>
 	void hit(const QuerySQL&, std::chrono::microseconds);
 
-	std::mutex mtx_;
+	mutable std::mutex mtx_;
 	fast_hash_map<std::string, Stat, hash_str, equal_str, less_str> stat_;
 };
 extern template void QueriesStatTracer::hit<&PerfStatCounterST::Hit>(const QuerySQL&, std::chrono::microseconds);

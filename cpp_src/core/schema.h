@@ -23,15 +23,15 @@ std::string_view kvTypeToJsonSchemaType(KeyValueType type);
 class FieldProps {
 public:
 	FieldProps() = default;
-	FieldProps(KeyValueType _type, bool _isArray = false, bool _isRequired = false, bool _allowAdditionalProps = false,
-			   const std::string& _xGoType = {})
+	FieldProps(KeyValueType _type, IsArray _isArray = IsArray_False, IsRequired _isRequired = IsRequired_False,
+			   AllowAdditionalProps _allowAdditionalProps = AllowAdditionalProps_False, const std::string& _xGoType = {})
 		: type(kvTypeToJsonSchemaType(_type)),
 		  xGoType(_xGoType),
 		  isArray(_isArray),
 		  isRequired(_isRequired),
 		  allowAdditionalProps(_allowAdditionalProps) {}
-	FieldProps(std::string _type, bool _isArray = false, bool _isRequired = false, bool _allowAdditionalProps = false,
-			   const std::string& _xGoType = {})
+	FieldProps(std::string _type, IsArray _isArray = IsArray_False, IsRequired _isRequired = IsRequired_False,
+			   AllowAdditionalProps _allowAdditionalProps = AllowAdditionalProps_False, const std::string& _xGoType = {})
 		: type(std::move(_type)),
 		  xGoType(_xGoType),
 		  isArray(_isArray),
@@ -138,7 +138,7 @@ public:
 	const PrefixTree::PrefixTreeNode* GetRoot() const noexcept { return &paths_.root_; }
 	static std::string AppendProtobufNumber(std::string_view json, int protobufNsNumber);
 
-	std::vector<int> MakeCsvTagOrdering(const TagsMatcher& tm) const;
+	std::vector<TagName> MakeCsvTagOrdering(const TagsMatcher& tm) const;
 	bool IsEmpty() const noexcept;
 
 private:

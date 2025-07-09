@@ -1,4 +1,5 @@
 #include <gtest/gtest-param-test.h>
+#include "core/system_ns_names.h"
 #include "ft_api.h"
 #include "tools/fsops.h"
 
@@ -31,7 +32,7 @@ TEST_P(FTStressApi, BasicStress) {
 	std::thread statsThread([&] {
 		while (!terminate) {
 			reindexer::QueryResults qr;
-			const auto err = rt.reindexer->Select(reindexer::Query("#memstats"), qr);
+			const auto err = rt.reindexer->Select(reindexer::Query(reindexer::kMemStatsNamespace), qr);
 			ASSERT_TRUE(err.ok()) << err.what();
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
@@ -92,7 +93,7 @@ TEST_P(FTStressApi, ConcurrencyCheck) {
 				lck.unlock();
 				while (!terminate) {
 					reindexer::QueryResults qr;
-					const auto err = rt.reindexer->Select(reindexer::Query("#memstats"), qr);
+					const auto err = rt.reindexer->Select(reindexer::Query(reindexer::kMemStatsNamespace), qr);
 					ASSERT_TRUE(err.ok()) << err.what();
 				}
 			});
@@ -156,13 +157,13 @@ TEST_P(FTStressApi, LargeMergeLimit) {
 		}
 	}
 	{
-		auto qr = SimpleSelect(fmt::sprintf("%s* %s*", kBase1, kBase2));
+		auto qr = SimpleSelect(fmt::format("{}* {}*", kBase1, kBase2));
 		ASSERT_EQ(qr.Count(), ftCfg.mergeLimit);
 	}
 	ftCfg.mergeLimit = 60'000;
 	SetFTConfig(ftCfg);
 	{
-		auto qr = SimpleSelect(fmt::sprintf("%s* %s*", kBase1, kBase2));
+		auto qr = SimpleSelect(fmt::format("{}* {}*", kBase1, kBase2));
 		ASSERT_EQ(qr.Count(), ftCfg.mergeLimit);
 	}
 }

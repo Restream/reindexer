@@ -65,9 +65,9 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 	for (size_t i = 0; i < idxCount; ++i) {
 		const bool uniqueName = rndGen_.UniqueName();
 		if (rndGen_.CompositeIndex(scalarIndexes.size())) {
-			bool array = false;
+			reindexer::IsArray isArray = reindexer::IsArray_False;
 			bool containsUuid = false;
-			std::string name;
+			std::string indexName;
 			Index::Children children;
 			const auto fields = rndGen_.RndFieldsForCompositeIndex(scalarIndexes);
 			children.reserve(fields.size());
@@ -76,7 +76,7 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 				if (f < indexes_.size()) {
 					const auto& idx = indexes_[f];
 					fieldData = std::get<Index::Child>(idx.Content());
-					array |= idx.IsArray();
+					isArray |= idx.IsArray();
 				} else {
 					fieldData.fieldPath = rndGen_.RndScalarField(scheme_);
 					if (scheme_.IsStruct(fieldData.fieldPath)) {
@@ -86,10 +86,10 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 					}
 				}
 				if (!uniqueName) {
-					if (!name.empty()) {
-						name += '+';
+					if (!indexName.empty()) {
+						indexName += '+';
 					}
-					name += scheme_.GetJsonPath(fieldData.fieldPath);
+					indexName += scheme_.GetJsonPath(fieldData.fieldPath);
 				}
 				containsUuid |= fieldData.type == FieldType::Uuid;
 				children.emplace_back(std::move(fieldData));
@@ -97,13 +97,13 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 			const auto indexType =
 				containsUuid ? rndGen_.RndIndexType({FieldType::Struct, FieldType::Uuid}) : rndGen_.RndIndexType({FieldType::Struct});
 			if (uniqueName) {
-				name = rndGen_.IndexName(usedIndexNames);
-			} else if (!usedIndexNames.insert(name).second) {
-				name = rndGen_.IndexName(usedIndexNames);
-				usedIndexNames.insert(name);
+				indexName = rndGen_.IndexName(usedIndexNames);
+			} else if (!usedIndexNames.insert(indexName).second) {
+				indexName = rndGen_.IndexName(usedIndexNames);
+				usedIndexNames.insert(indexName);
 			}
 
-			indexes_.emplace_back(std::move(name), indexType, rndGen_.RndArrayField(array ? IsArrayT::Yes : IsArrayT::No), IsSparseT::No,
+			indexes_.emplace_back(std::move(indexName), indexType, rndGen_.RndArrayField(isArray), reindexer::IsSparse_False,
 								  std::move(children));
 		} else {
 			FieldPath fldPath;
@@ -121,8 +121,8 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 				}
 				const auto fldType = rndGen_.RndFieldType();
 				indexes_.emplace_back(rndGen_.IndexName(usedIndexNames), rndGen_.RndIndexType({fldType}),
-									  rndGen_.RndBool(0.5) ? IsArrayT::Yes : IsArrayT::No,
-									  rndGen_.RndBool(0.5) ? IsSparseT::Yes : IsSparseT::No, Index::Child{fldType, std::move(fldPath)});
+									  reindexer::IsArray(rndGen_.RndBool(0.5)), reindexer::IsSparse(rndGen_.RndBool(0.5)),
+									  Index::Child{fldType, std::move(fldPath)});
 			} else {
 				const auto fldType = scheme_.GetFieldType(fldPath);
 				const auto isArray = scheme_.IsArray(fldPath);
@@ -140,7 +140,7 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 									  rndGen_.RndSparseIndex(fldType), Index::Child{fldType, std::move(fldPath)});
 			}
 			if (const auto& idx = indexes_.back();
-				!idx.IsArray() && idx.IsSparse() == IsSparseT::No &&
+				!idx.IsArray() && !idx.IsSparse() &&
 				std::get<Index::Child>(idx.Content()).type != FieldType::Point) {  // TODO remove point check after #1352
 				scalarIndexes.push_back(indexes_.size() - 1);
 			}
@@ -153,7 +153,7 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 	std::vector<size_t> ii;
 	for (size_t i = 0, s = indexes_.size(); i < s; ++i) {
 		const auto& idx = indexes_[i];
-		if (!idx.IsArray() && idx.IsSparse() == IsSparseT::No && availablePkIndexType(idx.Type()) &&
+		if (!idx.IsArray() && !idx.IsSparse() && availablePkIndexType(idx.Type()) &&
 			(std::holds_alternative<Index::Children>(idx.Content()) || availablePkFieldType(std::get<Index::Child>(idx.Content()).type))) {
 			ii.push_back(i);
 		}
@@ -161,17 +161,17 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 	if (ii.empty()) {
 		auto path = scheme_.AddRndPkField(rndGen_);
 		const auto fldType = scheme_.GetFieldType(path);
-		std::string name;
+		std::string indexName;
 		if (rndGen_.UniqueName()) {
-			name = rndGen_.IndexName(usedIndexNames);
+			indexName = rndGen_.IndexName(usedIndexNames);
 		} else {
-			name = scheme_.GetJsonPath(path);
-			if (!usedIndexNames.insert(name).second) {
-				name = rndGen_.IndexName(usedIndexNames);
-				usedIndexNames.insert(name);
+			indexName = scheme_.GetJsonPath(path);
+			if (!usedIndexNames.insert(indexName).second) {
+				indexName = rndGen_.IndexName(usedIndexNames);
+				usedIndexNames.insert(indexName);
 			}
 		}
-		indexes_.emplace_back(std::move(name), rndGen_.RndPkIndexType({fldType}), IsArrayT::No, IsSparseT::No,
+		indexes_.emplace_back(std::move(indexName), rndGen_.RndPkIndexType({fldType}), reindexer::IsArray_False, reindexer::IsSparse_False,
 							  Index::Child{fldType, std::move(path)});
 		indexes_.back().SetPk();
 	} else {

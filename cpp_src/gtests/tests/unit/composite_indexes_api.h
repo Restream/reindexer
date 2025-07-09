@@ -8,6 +8,7 @@ public:
 
 public:
 	void SetUp() override {
+		ReindexerApi::SetUp();
 		Error err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
@@ -39,12 +40,8 @@ public:
 	}
 
 	Error tryAddCompositeIndex(std::initializer_list<std::string> indexes, CompositeIndexType type, const IndexOpts& opts) {
-		reindexer::IndexDef indexDeclr;
-		indexDeclr.name_ = getCompositeIndexName(indexes);
-		indexDeclr.indexType_ = indexTypeToName(type);
-		indexDeclr.fieldType_ = "composite";
-		indexDeclr.opts_ = opts;
-		indexDeclr.jsonPaths_ = reindexer::JsonPaths(indexes);
+		reindexer::IndexDef indexDeclr{getCompositeIndexName(indexes), reindexer::JsonPaths(indexes), indexTypeToName(type), "composite",
+									   opts};
 		return rt.reindexer->AddIndex(default_namespace, indexDeclr);
 	}
 
@@ -54,8 +51,7 @@ public:
 	}
 
 	void dropIndex(const std::string& name) {
-		reindexer::IndexDef idef(name);
-		Error err = rt.reindexer->DropIndex(default_namespace, idef);
+		Error err = rt.reindexer->DropIndex(default_namespace, reindexer::IndexDef{name});
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 

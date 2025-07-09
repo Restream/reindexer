@@ -3,6 +3,9 @@
 #include <functional>
 #include <initializer_list>
 #include "core/keyvalue/geometry.h"
+#include "core/type_consts_helpers.h"
+#include "estl/concepts.h"
+#include "fields_names_filter.h"
 #include "queryentry.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
@@ -28,17 +31,17 @@ public:
 	/// @param start - number of the first row to get from selected set. Analog to sql OFFSET Offset.
 	/// @param count - number of rows to get from result set. Analog to sql LIMIT RowsCount.
 	/// @param calcTotal - calculation mode.
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	explicit Query(Str&& nsName, unsigned start = QueryEntry::kDefaultOffset, unsigned count = QueryEntry::kDefaultLimit,
 				   CalcTotalMode calcTotal = ModeNoTotal)
 		: namespace_(std::forward<Str>(nsName)), start_(start), count_(count), calcTotal_(calcTotal) {}
 
 	Query() = default;
-	virtual ~Query() = default;
+	virtual ~Query();
 
-	Query(Query&& other) noexcept = default;
+	Query(Query&& other) noexcept;
 	Query& operator=(Query&& other) noexcept = default;
-	Query(const Query& other) = default;
+	Query(const Query& other);
 	Query& operator=(const Query& other) = delete;
 
 	/// Allows to compare 2 Query objects.
@@ -69,7 +72,7 @@ public:
 	/// @return Query in SQL format
 	[[nodiscard]] std::string GetSQL(QueryType realType) const;
 
-	/// Parses JSON dsl set. Throws Error-exption on errors
+	/// Parses JSON dsl set. Throws Error-exception on errors
 	/// @param dsl - dsl set.
 	/// @return Result query
 	static Query FromJSON(std::string_view dsl);
@@ -156,13 +159,13 @@ public:
 	/// @param cond - type of condition.
 	/// @param l - vector of index values to be compared with.
 	/// @return Query object ready to be executed.
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	Query& Where(Str&& field, CondType cond, VariantArray l) & {
 		entries_.Append<QueryEntry>(nextOp_, std::forward<Str>(field), cond, std::move(l));
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	[[nodiscard]] Query&& Where(Str&& field, CondType cond, VariantArray l) && {
 		return std::move(Where(std::forward<Str>(field), cond, std::move(l)));
 	}
@@ -178,7 +181,7 @@ public:
 	/// in case of CondRange) belongs to "bookid" and l[0][1] (and l[1][1] in case of CondRange)
 	/// belongs to "price" indexes.
 	/// @return Query object ready to be executed.
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	Query& WhereComposite(Str&& idx, CondType cond, std::initializer_list<VariantArray> l) & {
 		VariantArray values;
 		values.reserve(l.size());
@@ -189,11 +192,11 @@ public:
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	[[nodiscard]] Query&& WhereComposite(Str&& idx, CondType cond, std::initializer_list<VariantArray> l) && {
 		return std::move(WhereComposite(std::forward<Str>(idx), cond, std::move(l)));
 	}
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	Query& WhereComposite(Str&& idx, CondType cond, const std::vector<VariantArray>& v) & {
 		VariantArray values;
 		values.reserve(v.size());
@@ -204,28 +207,28 @@ public:
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	[[nodiscard]] Query&& WhereComposite(Str&& idx, CondType cond, const std::vector<VariantArray>& v) && {
 		return std::move(WhereComposite(std::forward<Str>(idx), cond, v));
 	}
-	template <typename Str1, typename Str2>
+	template <concepts::ConvertibleToString Str1, concepts::ConvertibleToString Str2>
 	Query& WhereBetweenFields(Str1&& firstIdx, CondType cond, Str2&& secondIdx) & {
 		entries_.Append<BetweenFieldsQueryEntry>(nextOp_, std::forward<Str1>(firstIdx), cond, std::forward<Str2>(secondIdx));
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	template <typename Str1, typename Str2>
+	template <concepts::ConvertibleToString Str1, concepts::ConvertibleToString Str2>
 	[[nodiscard]] Query&& WhereBetweenFields(Str1&& firstIdx, CondType cond, Str2&& secondIdx) && {
 		return std::move(WhereBetweenFields(std::forward<Str1>(firstIdx), cond, std::forward<Str2>(secondIdx)));
 	}
 
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	Query& DWithin(Str&& field, Point p, double distance) & {
 		entries_.Append<QueryEntry>(nextOp_, std::forward<Str>(field), CondDWithin, VariantArray::Create(p, distance));
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	[[nodiscard]] Query&& DWithin(Str&& field, Point p, double distance) && {
 		return std::move(DWithin(std::forward<Str>(field), p, distance));
 	}
@@ -237,11 +240,11 @@ public:
 			q.Limit(0);
 		} else {
 			q.checkSubQueryWithData();
-			if (!q.selectFilter_.empty() && !q.HasLimit() && !q.HasOffset()) {
+			if (!q.selectFilter_.Fields().empty() && !q.HasLimit() && !q.HasOffset()) {
 				// Converts main query condition to subquery condition
 				q.sortingEntries_.clear();
-				q.Where(q.selectFilter_[0], cond, std::move(values));
-				q.selectFilter_.clear();
+				q.Where(std::move(q.selectFilter_.Fields()[0]), cond, std::move(values));
+				q.selectFilter_.Clear();
 				return Where(std::move(q), CondAny, {});
 			} else if (q.HasCalcTotal() || (!q.aggregations_.empty() &&
 											(q.aggregations_[0].Type() == AggCount || q.aggregations_[0].Type() == AggCountCached))) {
@@ -277,10 +280,10 @@ public:
 		return std::move(Where(std::move(q), cond, VariantArray{Variant{std::forward<Input>(val)}}));
 	}
 
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	Query& Where(Str&& field, CondType cond, Query&& q) & {
 		if (cond == CondDWithin) {
-			throw Error(errQueryExec, "DWithin between field and subquery");
+			throw Error(errLogic, "DWithin between field and subquery");
 		}
 		q.checkSubQueryWithData();
 		adoptNested(q);
@@ -296,9 +299,46 @@ public:
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str>
 	[[nodiscard]] Query&& Where(Str&& field, CondType cond, Query&& q) && {
 		return std::move(Where(std::forward<Str>(field), cond, std::move(q)));
+	}
+
+	template <concepts::ConvertibleToString Str>
+	Query& WhereKNN(Str&& field, ConstFloatVector vec, KnnSearchParams params) & {
+		if (nextOp_ == OpNot) {
+			throw Error(errLogic, "NOT operation is not allowed with knn condition");
+		}
+		params.Validate();
+		entries_.Append<KnnQueryEntry>(nextOp_, std::forward<Str>(field), std::move(vec), std::move(params));
+		nextOp_ = OpAnd;
+		return *this;
+	}
+	template <concepts::ConvertibleToString Str>
+	[[nodiscard]] Query&& WhereKNN(Str&& field, ConstFloatVector vec, KnnSearchParams params) && {
+		return std::move(WhereKNN(std::forward<Str>(field), std::move(vec), std::move(params)));
+	}
+	template <concepts::ConvertibleToString Str>
+	Query& WhereKNN(Str&& field, ConstFloatVectorView vec, KnnSearchParams params) & {
+		return WhereKNN(std::forward<Str>(field), ConstFloatVector{vec.Span()}, std::move(params));
+	}
+	template <concepts::ConvertibleToString Str>
+	[[nodiscard]] Query&& WhereKNN(Str&& field, ConstFloatVectorView vec, KnnSearchParams params) && {
+		return std::move(WhereKNN(std::forward<Str>(field), ConstFloatVector{vec.Span()}, std::move(params)));
+	}
+	template <concepts::ConvertibleToString Str1, concepts::ConvertibleToString Str2>
+	Query& WhereKNN(Str1&& field, Str2&& data, KnnSearchParams params) & {
+		if (nextOp_ == OpNot) {
+			throw Error(errLogic, "NOT operation is not allowed with knn condition");
+		}
+		params.Validate();
+		entries_.Append<KnnQueryEntry>(nextOp_, std::forward<Str1>(field), std::forward<Str2>(data), std::move(params));
+		nextOp_ = OpAnd;
+		return *this;
+	}
+	template <concepts::ConvertibleToString Str1, concepts::ConvertibleToString Str2>
+	[[nodiscard]] Query&& WhereKNN(Str1&& field, Str2&& data, KnnSearchParams params) && {
+		return std::move(WhereKNN(std::forward<Str1>(field), std::forward<Str2>(data), std::move(params)));
 	}
 
 	/// Sets a new value for a field.
@@ -627,18 +667,16 @@ public:
 	/// @param desc - is sorting direction descending or ascending.
 	/// @param forcedSortOrder - list of values for forced sort order.
 	/// @return Query object.
-	template <typename Str, typename T, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str, typename T>
 	Query& Sort(Str&& sort, bool desc, std::initializer_list<T> forcedSortOrder) & {
-		if (!sortingEntries_.empty() && !std::empty(forcedSortOrder)) {
-			throw Error(errParams, "Forced sort order is allowed for the first sorting entry only");
-		}
-		sortingEntries_.emplace_back(std::forward<Str>(sort), desc);
+		std::vector<Variant> forcedValues;
+		forcedValues.reserve(forcedSortOrder.size());
 		for (const T& v : forcedSortOrder) {
-			forcedSortOrder_.emplace_back(v);
+			forcedValues.emplace_back(v);
 		}
-		return *this;
+		return Sort<Str>(std::forward<Str>(sort), desc, std::move(forcedValues));
 	}
-	template <typename Str, typename T, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str, typename T>
 	[[nodiscard]] Query&& Sort(Str&& sort, bool desc, std::initializer_list<T> forcedSortOrder) && {
 		return std::move(Sort<Str, T>(std::forward<Str>(sort), desc, std::move(forcedSortOrder)));
 	}
@@ -648,34 +686,54 @@ public:
 	/// @param desc - is sorting direction descending or ascending.
 	/// @param forcedSortOrder - list of values for forced sort order.
 	/// @return Query object.
-	template <typename Str, typename T, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str, typename T>
 	Query& Sort(Str&& sort, bool desc, const T& forcedSortOrder) & {
-		if (!sortingEntries_.empty() && !forcedSortOrder.empty()) {
-			throw Error(errParams, "Forced sort order is allowed for the first sorting entry only");
-		}
-		sortingEntries_.emplace_back(std::forward<Str>(sort), desc);
+		std::vector<Variant> forcedValues;
+		forcedValues.reserve(forcedSortOrder.size());
 		for (const auto& v : forcedSortOrder) {
-			forcedSortOrder_.emplace_back(v);
+			forcedValues.emplace_back(v);
 		}
-		return *this;
+		return Sort<Str>(std::forward<Str>(sort), desc, std::move(forcedValues));
 	}
-	template <typename Str, typename T, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str, typename T>
 	[[nodiscard]] Query&& Sort(Str&& sort, bool desc, const T& forcedSortOrder) && {
 		return std::move(Sort<Str, T>(std::forward<Str>(sort), desc, forcedSortOrder));
 	}
-
-	/// Performs distinct for a certain index.
-	/// @param indexName - name of index for distinct operation.
-	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
-	Query& Distinct(Str&& indexName) & {
-		if (!strEmpty(indexName)) {
-			aggregations_.emplace_back(AggDistinct, h_vector<std::string, 1>{std::forward<Str>(indexName)});
+	template <concepts::ConvertibleToString Str>
+	Query& Sort(Str&& sort, bool desc, std::vector<Variant>&& forcedSortOrder) & {
+		if (!sortingEntries_.empty() && !forcedSortOrder.empty()) {
+			throw Error(errParams, "Forced sort order is allowed for the first sorting entry only");
+		}
+		SortingEntry entry{std::forward<Str>(sort), desc};
+		if (!entry.expression.empty()) {  // Ignore empty sort expression
+			sortingEntries_.emplace_back(std::move(entry));
+			forcedSortOrder_ = std::move(forcedSortOrder);
 		}
 		return *this;
 	}
 	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
-	[[nodiscard]] Query&& Distinct(Str&& indexName) && {
-		return std::move(Distinct(std::forward<Str>(indexName)));
+	[[nodiscard]] Query&& Sort(Str&& sort, bool desc, std::vector<Variant>&& forcedSortOrder) && {
+		return std::move(Sort<Str>(std::forward<Str>(sort), desc, std::move(forcedSortOrder)));
+	}
+
+	/// Performs 'distinct' for a indexes or fields.
+	/// @param names - names of indexes or fields for distinct operation.
+	template <concepts::ConvertibleToString... Str>
+	Query& Distinct(Str&&... names) & {
+		static_assert(sizeof...(names) > 0);
+		if ((strEmpty(names) || ...)) {
+			throw Error(errParams, "Distincts name empty");
+		}
+		h_vector<std::string, 1> v;
+		v.reserve(sizeof...(names));
+		(v.emplace_back(std::forward<Str>(names)), ...);
+		aggregations_.emplace_back(AggDistinct, std::move(v));
+		return *this;
+	}
+
+	template <concepts::ConvertibleToString... Str>
+	[[nodiscard]] Query&& Distinct(Str&&... names) && {
+		return std::move(Distinct(std::forward<Str>(names)...));
 	}
 
 	/// Sets list of columns in this namespace to be finally selected.
@@ -692,22 +750,36 @@ public:
 		return std::move(Select<std::initializer_list<Str>>(std::move(l)));
 	}
 
-	template <typename StrCont>
+	template <typename StrCont, std::enable_if_t<!std::is_constructible_v<std::string, StrCont>>* = nullptr>
 	Query& Select(StrCont&& l) & {
-		using namespace std::string_view_literals;
 		if (!CanAddSelectFilter()) {
 			throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 		}
-		selectFilter_.insert(selectFilter_.begin(), l.begin(), l.end());
-		selectFilter_.erase(
-			std::remove_if(selectFilter_.begin(), selectFilter_.end(), [](const auto& s) { return s == "*"sv || s.empty(); }),
-			selectFilter_.end());
+		selectFilter_.Add(l.begin(), l.end());
 		return *this;
 	}
-	template <typename StrCont>
+	template <typename StrCont, std::enable_if_t<!std::is_constructible_v<std::string, StrCont>>* = nullptr>
 	[[nodiscard]] Query&& Select(StrCont&& l) && {
 		return std::move(Select(std::forward<StrCont>(l)));
 	}
+	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	Query& Select(Str&& f) & {
+		if (!CanAddSelectFilter()) {
+			throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
+		}
+		selectFilter_.Add(std::forward<Str>(f));
+		return *this;
+	}
+	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	[[nodiscard]] Query&& Select(Str&& f) && {
+		return std::move(Select(std::forward<Str>(f)));
+	}
+	Query& SelectAllFields() & {
+		selectFilter_.SetAllRegularFields();
+		selectFilter_.SetAllVectorFields();
+		return *this;
+	}
+	[[nodiscard]] Query&& SelectAllFields() && { return std::move(SelectAllFields()); }
 
 	/// Adds an aggregate function for certain column.
 	/// Analog to sql aggregate functions (min, max, avg, etc).
@@ -834,7 +906,7 @@ public:
 
 	/// Can we add aggregation functions
 	/// or new select fields to a current query?
-	[[nodiscard]] bool CanAddAggregation(AggType type) const noexcept { return type == AggDistinct || (selectFilter_.empty()); }
+	[[nodiscard]] bool CanAddAggregation(AggType type) const noexcept { return type == AggDistinct || (selectFilter_.Fields().empty()); }
 	[[nodiscard]] bool CanAddSelectFilter() const noexcept {
 		return aggregations_.empty() || (aggregations_.size() == 1 && aggregations_.front().Type() == AggDistinct);
 	}
@@ -869,13 +941,11 @@ public:
 	void CalcTotal(CalcTotalMode calcTotal) noexcept { calcTotal_ = calcTotal; }
 
 	QueryType type_ = QuerySelect;				/// Query type
-	SortingEntries sortingEntries_;				/// Sorting data.
-	std::vector<Variant> forcedSortOrder_;		/// Keys that always go first - before any ordered values.
 	std::vector<std::string> selectFunctions_;	/// List of sql functions
 
 	std::vector<AggregateEntry> aggregations_;
 
-	auto NsName() const&& = delete;
+	[[nodiscard]] auto NsName() const&& = delete;
 	[[nodiscard]] const QueryEntries& Entries() const noexcept { return entries_; }
 	template <typename T>
 	[[nodiscard]] T& GetUpdatableEntry(size_t i) & noexcept {
@@ -904,10 +974,10 @@ public:
 	}
 	void SetLastOperation(OpType op) & { entries_.SetLastOperation(op); }
 	[[nodiscard]] const Query& GetSubQuery(size_t i) const& noexcept { return subQueries_.at(i); }
-	[[nodiscard]] const auto& GetSubQueries() const& noexcept { return subQueries_; }
-	[[nodiscard]] const auto& GetJoinQueries() const& noexcept { return joinQueries_; }
-	[[nodiscard]] const auto& GetMergeQueries() const& noexcept { return mergeQueries_; }
-	[[nodiscard]] const auto& SelectFilters() const& noexcept { return selectFilter_; }
+	[[nodiscard]] const std::vector<Query>& GetSubQueries() const& noexcept { return subQueries_; }
+	[[nodiscard]] const std::vector<JoinedQuery>& GetJoinQueries() const& noexcept { return joinQueries_; }
+	[[nodiscard]] const std::vector<JoinedQuery>& GetMergeQueries() const& noexcept { return mergeQueries_; }
+	[[nodiscard]] const FieldsNamesFilter& SelectFilters() const& noexcept { return selectFilter_; }
 	void AddJoinQuery(JoinedQuery&&);
 	void VerifyForUpdate() const;
 	template <InjectionDirection injectionDirection>
@@ -918,11 +988,23 @@ public:
 																			 indexesFrom);
 	}
 
-	auto GetSubQuery(size_t) const&& = delete;
-	auto GetSubQueries() const&& = delete;
-	auto GetJoinQueries() const&& = delete;
-	auto GetMergeQueries() const&& = delete;
-	auto SelectFilters() const&& = delete;
+	void ReplaceSubQuery(size_t i, Query&& query);
+	void ReplaceJoinQuery(size_t i, JoinedQuery&& query);
+	void ReplaceMergeQuery(size_t i, JoinedQuery&& query);
+	[[nodiscard]] const std::vector<Variant>& ForcedSortOrder() const& noexcept { return forcedSortOrder_; }
+	[[nodiscard]] const SortingEntries& GetSortingEntries() const& noexcept { return sortingEntries_; }
+	void ClearSorting() noexcept {
+		sortingEntries_.clear();
+		forcedSortOrder_.clear();
+	}
+
+	[[nodiscard]] auto GetSubQuery(size_t) const&& = delete;
+	[[nodiscard]] auto GetSubQueries() const&& = delete;
+	[[nodiscard]] auto GetJoinQueries() const&& = delete;
+	[[nodiscard]] auto GetMergeQueries() const&& = delete;
+	[[nodiscard]] auto SelectFilters() const&& = delete;
+	[[nodiscard]] auto ForcedSortOrder() const&& = delete;
+	[[nodiscard]] auto GetSortingEntries() const&& = delete;
 
 private:
 	class [[nodiscard]] PopBackQEGuard {
@@ -994,6 +1076,8 @@ private:
 					const std::function<void(Query& q)>& visitor) noexcept(noexcept(visitor(std::declval<Query&>())));
 	void adoptNested(Query& nq) const noexcept { nq.Strict(GetStrictMode()).Explain(NeedExplain()).Debug(GetDebugLevel()); }
 
+	SortingEntries sortingEntries_;				   /// Sorting data.
+	std::vector<Variant> forcedSortOrder_;		   /// Keys that always go first - before any ordered values.
 	std::string namespace_;						   /// Name of the namespace.
 	unsigned start_ = QueryEntry::kDefaultOffset;  /// First row index from result set.
 	unsigned count_ = QueryEntry::kDefaultLimit;   /// Number of rows from result set.
@@ -1003,8 +1087,8 @@ private:
 	std::vector<JoinedQuery> joinQueries_;	 /// List of queries for join.
 	std::vector<JoinedQuery> mergeQueries_;	 /// List of merge queries.
 	std::vector<Query> subQueries_;
-	h_vector<std::string, 1> selectFilter_;	 /// List of columns in a final result set.
-	bool local_ = false;					 /// Local query if true
+	FieldsNamesFilter selectFilter_;  /// List of columns in final result set.
+	bool local_ = false;			  /// Local query if true
 	bool withRank_ = false;
 	StrictMode strictMode_ = StrictModeNotSet;	/// Strict mode.
 	int debugLevel_ = 0;						/// Debug level.
@@ -1018,7 +1102,7 @@ public:
 	JoinedQuery(JoinType jt, Query&& q) : Query(std::move(q)), joinType{jt} {}
 	using Query::Query;
 	[[nodiscard]] bool operator==(const JoinedQuery& obj) const;
-	const std::string& RightNsName() const noexcept { return NsName(); }
+	[[nodiscard]] const std::string& RightNsName() const noexcept { return NsName(); }
 
 	JoinType joinType{JoinType::LeftJoin};	   /// Default join type.
 	h_vector<QueryJoinEntry, 1> joinEntries_;  /// Condition for join. Filled in each subqueries, empty in root query
@@ -1030,12 +1114,18 @@ private:
 
 template <typename Q>
 [[nodiscard]] Q Query::OnHelperTempl<Q>::On(std::string index, CondType cond, std::string joinIndex) && {
+	if (op_ == OpOr && jq_.joinEntries_.empty()) {
+		throw Error{errLogic, "OR operator in first condition in ON"};
+	}
 	jq_.joinEntries_.emplace_back(op_, cond, std::move(index), std::move(joinIndex));
 	return std::forward<Q>(q_);
 }
 
 template <typename Q>
 [[nodiscard]] Query::OnHelperGroup<Q>&& Query::OnHelperGroup<Q>::On(std::string index, CondType cond, std::string joinIndex) && {
+	if (op_ == OpOr && jq_.joinEntries_.empty()) {
+		throw Error{errLogic, "OR operator in first condition in ON"};
+	}
 	jq_.joinEntries_.emplace_back(op_, cond, std::move(index), std::move(joinIndex));
 	op_ = OpAnd;
 	return std::move(*this);

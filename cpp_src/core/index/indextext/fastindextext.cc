@@ -3,8 +3,9 @@
 #include "core/ft/filters/kblayout.h"
 #include "core/ft/filters/synonyms.h"
 #include "core/ft/filters/translit.h"
-#include "core/ft/ft_fast/frisosplitter.h"
-#include "core/ft/ft_fast/splitter.h"
+#include "core/ft/ft_fast/selecter.h"
+#include "core/nsselecter/ranks_holder.h"
+#include "core/rdxcontext.h"
 #include "estl/contexted_locks.h"
 #include "sort/pdqsort.hpp"
 #include "tools/clock.h"
@@ -69,7 +70,8 @@ Variant FastIndexText<T>::Upsert(const Variant& key, IdType id, bool& clearCache
 }
 
 template <typename T>
-void FastIndexText<T>::Delete(const Variant& key, IdType id, StringsHolder& strHolder, bool& clearCache) {
+void FastIndexText<T>::Delete(const Variant& key, IdType id, [[maybe_unused]] MustExist mustExist, StringsHolder& strHolder,
+							  bool& clearCache) {
 	if rx_unlikely (key.Type().Is<KeyValueType::Null>()) {
 		this->empty_ids_.Unsorted().Erase(id);	// ignore result
 		this->isBuilt_ = false;
@@ -86,8 +88,8 @@ void FastIndexText<T>::Delete(const Variant& key, IdType id, StringsHolder& strH
 	int delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
-	assertf(this->opts_.IsArray() || this->Opts().IsSparse() || delcnt, "Delete non-existent id from index '%s' id=%d,key=%s", this->name_,
-			id, key.As<std::string>());
+	assertf(this->opts_.IsArray() || this->Opts().IsSparse() || delcnt || !mustExist,
+			"Delete non-existent id from index '{}' id={}, key={}", this->name_, id, key.As<std::string>());
 
 	if (keyIt->second.Unsorted().IsEmpty()) {
 		this->tracker_.markDeleted(keyIt);
@@ -114,8 +116,9 @@ IndexMemStat FastIndexText<T>::GetMemStat(const RdxContext& ctx) {
 	auto ret = IndexUnordered<T>::GetMemStat(ctx);
 
 	contexted_shared_lock lck(this->mtx_, ctx);
-	ret.fulltextSize = this->holder_->GetMemStat();
+	ret.indexingStructSize = this->holder_->GetMemStat();
 	ret.idsetCache = this->cache_ft_.GetMemStat();
+	ret.isBuilt = this->isBuilt_;
 	return ret;
 }
 template <typename T>
@@ -164,9 +167,55 @@ typename MergeType::iterator FastIndexText<T>::unstableRemoveIf(MergeType& md, i
 	}
 }
 
+[[nodiscard]] static bool lessRank(RankT lhs, RankT rhs) noexcept { return lhs < rhs; }
+[[nodiscard]] static bool lessRank(RanksHolder::RankPos lhs, RanksHolder::RankPos rhs) noexcept { return lhs.rank < rhs.rank; }
+
+template <typename T>
+template <auto(RanksHolder::*rankGetter)>
+void FastIndexText<T>::sortAfterSelect(IdSet& mergedIds, RanksHolder& ranks, RankSortType rankSortType) {
+	std::vector<size_t> sortIds;
+	const size_t nItems = mergedIds.size();
+	sortIds.reserve(nItems);
+	for (size_t i = 0; i < nItems; ++i) {
+		sortIds.emplace_back(i);
+	}
+	if (rankSortType == RankSortType::RankAndID) {
+		boost::sort::pdqsort(sortIds.begin(), sortIds.end(), [&ranks, &mergedIds](size_t i1, size_t i2) {
+			const auto p1 = (ranks.*rankGetter)(i1);
+			const auto p2 = (ranks.*rankGetter)(i2);
+			if (lessRank(p2, p1)) {
+				return true;
+			} else if (lessRank(p1, p2)) {
+				return false;
+			} else {
+				return mergedIds[i1] < mergedIds[i2];
+			}
+		});
+	} else {
+		boost::sort::pdqsort(sortIds.begin(), sortIds.end(), [&mergedIds](size_t i1, size_t i2) { return mergedIds[i1] < mergedIds[i2]; });
+	}
+	for (size_t i = 0; i < nItems; i++) {
+		const auto vm = mergedIds[i];
+		const auto vp = (ranks.*rankGetter)(i);
+		size_t j = i;
+		while (true) {
+			size_t k = sortIds[j];
+			sortIds[j] = j;
+			if (k == i) {
+				break;
+			}
+			mergedIds[j] = mergedIds[k];
+			ranks.Set(j, (ranks.*rankGetter)(k));
+			j = k;
+		}
+		mergedIds[j] = vm;
+		ranks.Set(j, vp);
+	}
+}
+
 template <typename T>
 template <typename MergeType>
-IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& fctx, MergeType&& mergeData, FtSortType ftSortType, FtMergeStatuses&& statuses,
+IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& ftCtx, MergeType&& mergeData, RankSortType rankSortType, FtMergeStatuses&& statuses,
 										 FtUseExternStatuses useExternSt) {
 	// convert vids(uniq documents id) to ids (real ids)
 	IdSet::Ptr mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
@@ -180,13 +229,15 @@ IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& fctx, MergeType&& mergeData, FtS
 	const int minRelevancy = getConfig()->minRelevancy * 100 * scalingFactor;
 
 	size_t relevantDocs = 0;
-	switch (ftSortType) {
-		case FtSortType::RankAndID: {
-			auto itF = unstableRemoveIf(mergeData, minRelevancy, scalingFactor, relevantDocs, cnt);
+	switch (rankSortType) {
+		case RankSortType::RankAndID:
+		case RankSortType::IDOnly: {
+			const auto itF = unstableRemoveIf(mergeData, minRelevancy, scalingFactor, relevantDocs, cnt);
 			mergeData.erase(itF, mergeData.end());
 			break;
 		}
-		case FtSortType::RankOnly: {
+		case RankSortType::IDAndPositions:
+		case RankSortType::RankOnly:
 			for (auto& vid : mergeData) {
 				auto& vdoc = holder.vdocs_[vid.id];
 				vid.proc *= scalingFactor;
@@ -198,40 +249,40 @@ IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& fctx, MergeType&& mergeData, FtS
 				++relevantDocs;
 			}
 			break;
-		}
-		case FtSortType::ExternalExpression: {
-			throw Error(errLogic, "FtSortType::ExternalExpression not implemented.");
-		}
+		case RankSortType::ExternalExpression:
+			throw Error(errLogic, "RankSortType::ExternalExpression not implemented.");
+		default:
+			throw_as_assert;
 	}
 
 	mergedIds->reserve(cnt);
 	if constexpr (std::is_same_v<MergeDataBase, MergeType>) {
 		if (useExternSt == FtUseExternStatuses::No) {
 			appendMergedIds(mergeData, relevantDocs,
-							[&fctx, &mergedIds](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfo& vid) {
-								fctx.Add(ebegin, eend, vid.proc);
+							[&ftCtx, &mergedIds](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfo& vid) {
+								ftCtx.Add(ebegin, eend, RankT(vid.proc));
 								mergedIds->Append(ebegin, eend, IdSet::Unordered);
 							});
 		} else {
 			appendMergedIds(mergeData, relevantDocs,
-							[&fctx, &mergedIds, &statuses](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfo& vid) {
-								fctx.Add(ebegin, eend, vid.proc, statuses.rowIds);
+							[&ftCtx, &mergedIds, &statuses](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfo& vid) {
+								ftCtx.Add(ebegin, eend, RankT(vid.proc), statuses.rowIds);
 								mergedIds->Append(ebegin, eend, statuses.rowIds, IdSet::Unordered);
 							});
 		}
 	} else if constexpr (std::is_same_v<MergeData<Area>, MergeType> || std::is_same_v<MergeData<AreaDebug>, MergeType>) {
 		if (useExternSt == FtUseExternStatuses::No) {
 			appendMergedIds(mergeData, relevantDocs,
-							[&fctx, &mergedIds, &mergeData](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfo& vid) {
-								fctx.Add(ebegin, eend, vid.proc, std::move(mergeData.vectorAreas[vid.areaIndex]));
+							[&ftCtx, &mergedIds, &mergeData](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfo& vid) {
+								ftCtx.Add(ebegin, eend, RankT(vid.proc), std::move(mergeData.vectorAreas[vid.areaIndex]));
 								mergedIds->Append(ebegin, eend, IdSet::Unordered);
 							});
 
 		} else {
 			appendMergedIds(
 				mergeData, relevantDocs,
-				[&fctx, &mergedIds, &statuses, &mergeData](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfo& vid) {
-					fctx.Add(ebegin, eend, vid.proc, statuses.rowIds, std::move(mergeData.vectorAreas[vid.areaIndex]));
+				[&ftCtx, &mergedIds, &statuses, &mergeData](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfo& vid) {
+					ftCtx.Add(ebegin, eend, RankT(vid.proc), statuses.rowIds, std::move(mergeData.vectorAreas[vid.areaIndex]));
 					mergedIds->Append(ebegin, eend, statuses.rowIds, IdSet::Unordered);
 				});
 		}
@@ -239,92 +290,69 @@ IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& fctx, MergeType&& mergeData, FtS
 		static_assert(!sizeof(MergeType), "incorrect MergeType");
 	}
 
+	auto& ranks = ftCtx.Ranks();
 	if rx_unlikely (getConfig()->logLevel >= LogInfo) {
-		logPrintf(LogInfo, "Total merge out: %d ids", mergedIds->size());
+		logFmt(LogInfo, "Total merge out: {} ids", mergedIds->size());
 		std::string str;
-		for (size_t i = 0; i < fctx.Size();) {
+		for (size_t i = 0; i < ranks.Size();) {
 			size_t j = i;
-			for (; j < fctx.Size() && fctx.Proc(i) == fctx.Proc(j); j++);
-			str += std::to_string(fctx.Proc(i)) + "%";
+			for (; j < ranks.Size() && ranks.GetRank(i) == ranks.GetRank(j); j++);
+			str += std::to_string(ranks.GetRank(i).Value()) + '%';
 			if (j - i > 1) {
-				str += "(";
+				str += '(';
 				str += std::to_string(j - i);
-				str += ")";
+				str += ')';
 			}
-			str += " ";
+			str += ' ';
 			i = j;
 		}
-		logPrintf(LogInfo, "Relevancy(%d): %s", fctx.Size(), str);
+		logFmt(LogInfo, "Relevancy({}): {}", ranks.Size(), str);
 	}
-	assertrx_throw(mergedIds->size() == fctx.Size());
-	if (ftSortType == FtSortType::RankAndID) {
-		std::vector<size_t> sortIds;
-		size_t nItems = mergedIds->size();
-		sortIds.reserve(mergedIds->size());
-		for (size_t i = 0; i < nItems; i++) {
-			sortIds.emplace_back(i);
-		}
-		std::vector<int16_t>& proc = fctx.GetData()->proc;
-		boost::sort::pdqsort(sortIds.begin(), sortIds.end(), [&proc, mergedIds](size_t i1, size_t i2) {
-			int p1 = proc[i1];
-			int p2 = proc[i2];
-			if (p1 > p2) {
-				return true;
-			} else if (p1 < p2) {
-				return false;
-			} else {
-				return (*mergedIds)[i1] < (*mergedIds)[i2];
-			}
-		});
-
-		for (size_t i = 0; i < nItems; i++) {
-			auto vm = (*mergedIds)[i];
-			auto vp = proc[i];
-			size_t j = i;
-			while (true) {
-				size_t k = sortIds[j];
-				sortIds[j] = j;
-				if (k == i) {
-					break;
-				}
-				(*mergedIds)[j] = (*mergedIds)[k];
-				proc[j] = proc[k];
-				j = k;
-			}
-			(*mergedIds)[j] = vm;
-			proc[j] = vp;
-		}
+	assertrx_throw(mergedIds->size() == ranks.Size());
+	switch (rankSortType) {
+		case RankSortType::RankAndID:
+		case RankSortType::IDOnly:
+			sortAfterSelect<&RanksHolder::GetRank>(*mergedIds, ranks, rankSortType);
+			break;
+		case RankSortType::IDAndPositions:
+			ranks.InitRRFPositions();
+			sortAfterSelect<&RanksHolder::GetRankPos>(*mergedIds, ranks, rankSortType);
+			break;
+		case RankSortType::RankOnly:
+			break;
+		case RankSortType::ExternalExpression:
+		default:
+			throw_as_assert;
 	}
 	return mergedIds;
 }
 
 template <typename T>
 template <typename VectorType, FtUseExternStatuses useExternalStatuses>
-IdSet::Ptr FastIndexText<T>::applyCtxTypeAndSelect(DataHolder<VectorType>* d, const BaseFunctionCtx::Ptr& bctx, FtDSLQuery&& dsl,
-												   bool inTransaction, FtSortType ftSortType, FtMergeStatuses&& statuses,
-												   FtUseExternStatuses useExternSt, const RdxContext& rdxCtx) {
+IdSet::Ptr FastIndexText<T>::applyCtxTypeAndSelect(DataHolder<VectorType>* d, FtCtx& ftCtx, FtDSLQuery&& dsl, bool inTransaction,
+												   RankSortType rankSortType, FtMergeStatuses&& statuses, FtUseExternStatuses useExternSt,
+												   const RdxContext& rdxCtx) {
 	Selector<VectorType> selector{*d, this->Fields().size(), holder_->cfg_->maxAreasInDoc};
-	intrusive_ptr<FtCtx> fctx = static_ctx_pointer_cast<FtCtx>(bctx);
-	assertrx_throw(fctx);
-	fctx->SetWordPosition(true);
-	fctx->SetSplitter(this->holder_->GetSplitter());
+	ftCtx.SetWordPosition(true);
+	ftCtx.SetSplitter(this->holder_->GetSplitter());
 
-	switch (bctx->type) {
-		case BaseFunctionCtx::CtxType::kFtCtx: {
+	switch (ftCtx.Type()) {
+		case FtCtxType::kFtCtx: {
 			MergeDataBase mergeData = selector.template Process<useExternalStatuses, MergeDataBase>(
-				std::move(dsl), inTransaction, ftSortType, std::move(statuses.statuses), rdxCtx);
-			return afterSelect(*fctx.get(), std::move(mergeData), ftSortType, std::move(statuses), useExternSt);
+				std::move(dsl), inTransaction, rankSortType, std::move(statuses.statuses), rdxCtx);
+			return afterSelect(ftCtx, std::move(mergeData), rankSortType, std::move(statuses), useExternSt);
 		}
-		case BaseFunctionCtx::CtxType::kFtArea: {
+		case FtCtxType::kFtArea: {
 			MergeData<Area> mergeData = selector.template Process<useExternalStatuses, MergeData<Area>>(
-				std::move(dsl), inTransaction, ftSortType, std::move(statuses.statuses), rdxCtx);
-			return afterSelect(*fctx.get(), std::move(mergeData), ftSortType, std::move(statuses), useExternSt);
+				std::move(dsl), inTransaction, rankSortType, std::move(statuses.statuses), rdxCtx);
+			return afterSelect(ftCtx, std::move(mergeData), rankSortType, std::move(statuses), useExternSt);
 		}
-		case BaseFunctionCtx::CtxType::kFtAreaDebug: {
+		case FtCtxType::kFtAreaDebug: {
 			MergeData<AreaDebug> mergeData = selector.template Process<useExternalStatuses, MergeData<AreaDebug>>(
-				std::move(dsl), inTransaction, ftSortType, std::move(statuses.statuses), rdxCtx);
-			return afterSelect(*fctx.get(), std::move(mergeData), ftSortType, std::move(statuses), useExternSt);
+				std::move(dsl), inTransaction, rankSortType, std::move(statuses.statuses), rdxCtx);
+			return afterSelect(ftCtx, std::move(mergeData), rankSortType, std::move(statuses), useExternSt);
 		}
+		case FtCtxType::kNotSet:
 		default:
 			throw_assert(false);
 	}
@@ -332,34 +360,32 @@ IdSet::Ptr FastIndexText<T>::applyCtxTypeAndSelect(DataHolder<VectorType>* d, co
 
 template <typename T>
 template <typename VectorType>
-IdSet::Ptr FastIndexText<T>::applyOptimizationAndSelect(DataHolder<VectorType>* d, BaseFunctionCtx::Ptr bctx, FtDSLQuery&& dsl,
-														bool inTransaction, FtSortType ftSortType, FtMergeStatuses&& statuses,
+IdSet::Ptr FastIndexText<T>::applyOptimizationAndSelect(DataHolder<VectorType>* d, FtCtx& ftCtx, FtDSLQuery&& dsl, bool inTransaction,
+														RankSortType rankSortType, FtMergeStatuses&& statuses,
 														FtUseExternStatuses useExternSt, const RdxContext& rdxCtx) {
 	if (useExternSt == FtUseExternStatuses::Yes) {
-		return applyCtxTypeAndSelect<VectorType, FtUseExternStatuses::Yes>(d, std::move(bctx), std::move(dsl), inTransaction, ftSortType,
+		return applyCtxTypeAndSelect<VectorType, FtUseExternStatuses::Yes>(d, ftCtx, std::move(dsl), inTransaction, rankSortType,
 																		   std::move(statuses), useExternSt, rdxCtx);
 	} else {
-		return applyCtxTypeAndSelect<VectorType, FtUseExternStatuses::No>(d, std::move(bctx), std::move(dsl), inTransaction, ftSortType,
+		return applyCtxTypeAndSelect<VectorType, FtUseExternStatuses::No>(d, ftCtx, std::move(dsl), inTransaction, rankSortType,
 																		  std::move(statuses), useExternSt, rdxCtx);
 	}
 }
 
 template <typename T>
-IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr bctx, FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType,
+IdSet::Ptr FastIndexText<T>::Select(FtCtx& ftCtx, FtDSLQuery&& dsl, bool inTransaction, RankSortType rankSortType,
 									FtMergeStatuses&& statuses, FtUseExternStatuses useExternSt, const RdxContext& rdxCtx) {
 	switch (holder_->cfg_->optimization) {
 		case FtFastConfig::Optimization::Memory: {
 			DataHolder<PackedIdRelVec>* d = dynamic_cast<DataHolder<PackedIdRelVec>*>(holder_.get());
 			assertrx_throw(d);
-
-			return applyOptimizationAndSelect<PackedIdRelVec>(d, bctx, std::move(dsl), inTransaction, ftSortType, std::move(statuses),
+			return applyOptimizationAndSelect<PackedIdRelVec>(d, ftCtx, std::move(dsl), inTransaction, rankSortType, std::move(statuses),
 															  useExternSt, rdxCtx);
 		}
 		case FtFastConfig::Optimization::CPU: {
 			DataHolder<IdRelVec>* d = dynamic_cast<DataHolder<IdRelVec>*>(holder_.get());
 			assertrx_throw(d);
-
-			return applyOptimizationAndSelect<IdRelVec>(d, bctx, std::move(dsl), inTransaction, ftSortType, std::move(statuses),
+			return applyOptimizationAndSelect<IdRelVec>(d, ftCtx, std::move(dsl), inTransaction, rankSortType, std::move(statuses),
 														useExternSt, rdxCtx);
 		}
 		default:
@@ -381,7 +407,7 @@ void FastIndexText<T>::commitFulltextImpl() {
 		}
 		auto tm1 = system_clock_w::now();
 
-		this->holder_->Process(this->Fields().size(), !this->opts_.IsDense());
+		this->holder_->Process(this->Fields().size(), *!this->opts_.IsDense());
 		if (this->holder_->NeedClear(this->tracker_.isCompleteUpdated())) {
 			this->tracker_.clear();
 		}
@@ -400,20 +426,20 @@ void FastIndexText<T>::commitFulltextImpl() {
 		}
 		if rx_unlikely (getConfig()->logLevel >= LogInfo) {
 			auto tm2 = system_clock_w::now();
-			logPrintf(LogInfo, "FastIndexText::Commit elapsed %d ms total [ build vdocs %d ms,  process data %d ms ]",
-					  duration_cast<milliseconds>(tm2 - tm0).count(), duration_cast<milliseconds>(tm1 - tm0).count(),
-					  duration_cast<milliseconds>(tm2 - tm1).count());
+			logFmt(LogInfo, "FastIndexText::Commit elapsed {} ms total [ build vdocs {} ms,  process data {} ms ]",
+				   duration_cast<milliseconds>(tm2 - tm0).count(), duration_cast<milliseconds>(tm1 - tm0).count(),
+				   duration_cast<milliseconds>(tm2 - tm1).count());
 		}
 	} catch (Error& e) {
-		logPrintf(LogError, "FastIndexText::Commit exception: '%s'. Index will be rebuilt on the next query", e.what());
+		logFmt(LogError, "FastIndexText::Commit exception: '{}'. Index will be rebuilt on the next query", e.what());
 		this->holder_->steps.clear();
 		throw;
 	} catch (std::exception& e) {
-		logPrintf(LogError, "FastIndexText::Commit exception: '%s'. Index will be rebuilt on the next query", e.what());
+		logFmt(LogError, "FastIndexText::Commit exception: '{}'. Index will be rebuilt on the next query", e.what());
 		this->holder_->steps.clear();
 		throw;
 	} catch (...) {
-		logPrintf(LogError, "FastIndexText::Commit exception: <unknown error>. Index will be rebuilt on the next query");
+		logFmt(LogError, "FastIndexText::Commit exception: <unknown error>. Index will be rebuilt on the next query");
 		this->holder_->steps.clear();
 		throw;
 	}
@@ -491,7 +517,7 @@ void FastIndexText<T>::initConfig(const FtFastConfig* cfg) {
 		this->cfg_.reset(new FtFastConfig(*cfg));
 	} else {
 		this->cfg_.reset(new FtFastConfig(this->ftFields_.size()));
-		this->cfg_->parse(this->opts_.config, this->ftFields_);
+		this->cfg_->parse(this->opts_.Config(), this->ftFields_);
 	}
 	initHolder(*getConfig());  // -V522
 	this->holder_->synonyms_->SetConfig(this->cfg_.get());
@@ -512,7 +538,7 @@ void FastIndexText<T>::SetOpts(const IndexOpts& opts) {
 		oldCfg.enableNumbersSearch != newCfg.enableNumbersSearch || oldCfg.extraWordSymbols != newCfg.extraWordSymbols ||
 		oldCfg.synonyms != newCfg.synonyms || oldCfg.maxTypos != newCfg.maxTypos || oldCfg.optimization != newCfg.optimization ||
 		oldCfg.splitterType != newCfg.splitterType) {
-		logPrintf(LogInfo, "FulltextIndex config changed, it will be rebuilt on next search");
+		logFmt(LogInfo, "FulltextIndex config changed, it will be rebuilt on next search");
 		this->isBuilt_ = false;
 		if (oldCfg.optimization != newCfg.optimization || oldCfg.splitterType != newCfg.splitterType ||
 			oldCfg.extraWordSymbols != newCfg.extraWordSymbols) {
@@ -526,7 +552,7 @@ void FastIndexText<T>::SetOpts(const IndexOpts& opts) {
 			idx.second.SetVDocID(FtKeyEntryData::ndoc);
 		}
 	} else {
-		logPrintf(LogInfo, "FulltextIndex config changed, cache cleared");
+		logFmt(LogInfo, "FulltextIndex config changed, cache cleared");
 		this->cache_ft_.Clear();
 	}
 	this->holder_->synonyms_->SetConfig(&newCfg);
@@ -541,7 +567,7 @@ reindexer::FtPreselectT FastIndexText<T>::FtPreselect(const RdxContext& rdxCtx) 
 
 std::unique_ptr<Index> FastIndexText_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 										 const NamespaceCacheConfigData& cacheCfg) {
-	switch (idef.Type()) {
+	switch (idef.IndexType()) {
 		case IndexFastFT:
 			return std::make_unique<FastIndexText<unordered_str_map<FtKeyEntry>>>(idef, std::move(payloadType), std::move(fields),
 																				  cacheCfg);
@@ -568,9 +594,13 @@ std::unique_ptr<Index> FastIndexText_New(const IndexDef& idef, PayloadType&& pay
 		case IndexRTree:
 		case IndexUuidHash:
 		case IndexUuidStore:
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+		case IndexDummy:
 			break;
 	}
-	std::abort();
+	throw_as_assert;
 }
 
 }  // namespace reindexer

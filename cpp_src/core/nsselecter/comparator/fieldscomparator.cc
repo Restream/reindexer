@@ -33,26 +33,18 @@ public:
 		: ptr_{ptr}, len_{l}, sizeof_{size_of}, type_{t} {}
 	size_t size() const noexcept { return len_; }
 	reindexer::Variant operator[](size_t i) const {
+		using namespace reindexer;
 		assertrx_dbg(i < len_);
 		return type_.EvaluateOneOf(
-			[&](reindexer::KeyValueType::Int64) noexcept {
-				return reindexer::Variant{*reinterpret_cast<const int64_t*>(ptr_ + sizeof_ * i)};
-			},
-			[&](reindexer::KeyValueType::Double) noexcept {
-				return reindexer::Variant{*reinterpret_cast<const double*>(ptr_ + sizeof_ * i)};
-			},
-			[&](reindexer::KeyValueType::String) noexcept {
-				return reindexer::Variant{*reinterpret_cast<const reindexer::p_string*>(ptr_ + sizeof_ * i)};
-			},
-			[&](reindexer::KeyValueType::Bool) noexcept { return reindexer::Variant{*reinterpret_cast<const bool*>(ptr_ + sizeof_ * i)}; },
-			[&](reindexer::KeyValueType::Int) noexcept { return reindexer::Variant{*reinterpret_cast<const int*>(ptr_ + sizeof_ * i)}; },
-			[&](reindexer::KeyValueType::Uuid) noexcept {
-				return reindexer::Variant{*reinterpret_cast<const reindexer::Uuid*>(ptr_ + sizeof_ * i)};
-			},
-			[&](reindexer::OneOf<reindexer::KeyValueType::Null, reindexer::KeyValueType::Tuple, reindexer::KeyValueType::Composite,
-								 reindexer::KeyValueType::Undefined>) -> reindexer::Variant {
-				throw reindexer::Error{errQueryExec, "Field type %s is not supported for two field comparing", type_.Name()};
-			});
+			[&](KeyValueType::Int64) noexcept { return Variant{*reinterpret_cast<const int64_t*>(ptr_ + sizeof_ * i)}; },
+			[&](KeyValueType::Double) noexcept { return Variant{*reinterpret_cast<const double*>(ptr_ + sizeof_ * i)}; },
+			[&](KeyValueType::Float) noexcept { return Variant{*reinterpret_cast<const float*>(ptr_ + sizeof_ * i)}; },
+			[&](KeyValueType::String) noexcept { return Variant{*reinterpret_cast<const p_string*>(ptr_ + sizeof_ * i)}; },
+			[&](KeyValueType::Bool) noexcept { return Variant{*reinterpret_cast<const bool*>(ptr_ + sizeof_ * i)}; },
+			[&](KeyValueType::Int) noexcept { return Variant{*reinterpret_cast<const int*>(ptr_ + sizeof_ * i)}; },
+			[&](KeyValueType::Uuid) noexcept { return Variant{*reinterpret_cast<const Uuid*>(ptr_ + sizeof_ * i)}; },
+			[&](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>)
+				-> Variant { throw Error{errQueryExec, "Field type {} is not supported for two field comparing", type_.Name()}; });
 	}
 	ConstIterator begin() const noexcept { return {*this, 0}; }
 	ConstIterator end() const noexcept { return {*this, len_}; }
@@ -84,7 +76,8 @@ FieldsComparator::FieldsComparator(std::string_view lField, CondType cond, std::
 		case CondAny:
 		case CondEmpty:
 		case CondDWithin:
-			throw Error{errQueryExec, "Condition %s is not supported for two field comparing", CondTypeToStr(condition_)};
+		case CondKnn:
+			throw Error{errQueryExec, "Condition {} is not supported for two field comparing", CondTypeToStr(condition_)};
 	}
 	ctx_.resize(1);
 	std::stringstream nameStream;
@@ -160,7 +153,6 @@ bool FieldsComparator::compare(const LArr& lhs, const RArr& rhs) const {
 		case CondSet:
 		case CondEmpty:
 		case CondDWithin:
-		default:
 			for (const Variant& lv : lhs) {
 				if (lv.Type().Is<KeyValueType::Null>()) {
 					continue;
@@ -205,15 +197,19 @@ bool FieldsComparator::compare(const LArr& lhs, const RArr& rhs) const {
 						case CondAny:
 						case CondEmpty:
 						case CondDWithin:
-							throw Error{errQueryExec, "Condition %s is not supported for two field comparing", CondTypeToStr(condition_)};
+							throw Error{errQueryExec, "Condition {} is not supported for two field comparing", CondTypeToStr(condition_)};
 						case CondRange:
 						case CondAllSet:
 						case CondLike:
+						case CondKnn:
 							abort();
 					}
 				}
 			}
 			return false;
+		case CondKnn:
+		default:
+			throw_as_assert;
 	}
 }
 
@@ -267,15 +263,17 @@ void FieldsComparator::validateTypes(KeyValueType lType, KeyValueType rType) con
 		return;
 	}
 	lType.EvaluateOneOf(
-		[&](KeyValueType::String) { throw Error{errQueryExec, "Cannot compare a string field with a non-string one: %s", name_}; },
-		[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) {
-			if (!rType.Is<KeyValueType::Int>() && !rType.Is<KeyValueType::Int64>() && !rType.Is<KeyValueType::Double>()) {
-				throw Error{errQueryExec, "Cannot compare a numeric field with a non-numeric one: %s", name_};
+		[&](KeyValueType::String) { throw Error{errQueryExec, "Cannot compare a string field with a non-string one: {}", name_}; },
+		[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) {
+			if (!rType.Is<KeyValueType::Int>() && !rType.Is<KeyValueType::Int64>() && !rType.Is<KeyValueType::Double>() &&
+				!rType.Is<KeyValueType::Float>()) {
+				throw Error{errQueryExec, "Cannot compare a numeric field with a non-numeric one: {}", name_};
 			}
 		},
-		[&](KeyValueType::Bool) { throw Error{errQueryExec, "Cannot compare a boolean field with a non-boolean one: %s", name_}; },
-		[&](OneOf<KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Uuid>) {
-			throw Error{errQueryExec, "Field of type %s cannot be compared with another field: %s", lType.Name(), name_};
+		[&](KeyValueType::Bool) { throw Error{errQueryExec, "Cannot compare a boolean field with a non-boolean one: {}", name_}; },
+		[&](OneOf<KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Uuid,
+				  KeyValueType::FloatVector>) {
+			throw Error{errQueryExec, "Field of type {} cannot be compared with another field: {}", lType.Name(), name_};
 		});
 }
 

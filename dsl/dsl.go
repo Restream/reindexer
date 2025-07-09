@@ -24,16 +24,19 @@ however some of the fields are not implemented or may have a little bit differen
 - if 'value' is 'null' and 'cond' is not 'any'/'empty', then this filter will be skipped
 
 Usage:
-rxDB := reindexer.NewReindex(...)
+rxDB, err := reindexer.NewReindex(...)
+if err != nil {
+	panic(err)
+}
 jsonDSL := "{...}" // Contains JSON string, corresponding the DSL's format
 var dslQ dsl.DSL
-err := json.Unmarshal([]byte(jsonDSL), &dslQ)
+err = json.Unmarshal([]byte(jsonDSL), &dslQ)
 // OR: dslQ, err := dsl.DecodeJSON([]byte(jsonDSL))
 // DecodeJSON allows to use dsl's strict mode for the main json object (json.Unmarshal performs strict checks for the internal objects only)
 q, err := rxDB.QueryFrom(dslQ)
 
 
-Use dsl.EnabeStrictMode and dsl.DisableStrictMode to control dsl parsing strict mode. If strict mode is enabled, any unknow field in the JSON DSL will cause unmarshling error.
+Use dsl.EnableStrictMode and dsl.DisableStrictMode to control dsl parsing strict mode. If strict mode is enabled, any unknow field in the JSON DSL will cause unmarshling error.
 Strict mode is disabled by default.
 */
 
@@ -155,7 +158,7 @@ type value struct {
 	data string
 }
 
-func EnabeStrictMode() {
+func EnableStrictMode() {
 	atomic.StoreInt32(&dslStrictMode, 1)
 }
 func DisableStrictMode() {
@@ -345,7 +348,7 @@ func (f *Filter) parseValue(data string) error {
 	lcond := strings.ToLower(f.Cond)
 
 	switch lcond {
-	case "gt", "lt", "ge", "le", "eq":
+	case "gt", "lt", "ge", "le", "eq", "like":
 		if len(data) == 0 || data == `""` || data == "null" {
 			f.Value = nil
 			break

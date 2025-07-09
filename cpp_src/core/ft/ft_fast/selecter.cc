@@ -72,14 +72,14 @@ void Selector<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, RV
 			if (term.opts.op == OpNot && term.opts.suff) {
 				// More strict match for negative (excluding) suffix terms
 				if rx_unlikely (holder_.cfg_->logLevel >= LogTrace) {
-					logPrintf(LogInfo, "Skipping stemming for '%s%s%s'", term.opts.suff ? "*" : "", tmpstr, term.opts.pref ? "*" : "");
+					logFmt(LogInfo, "Skipping stemming for '{}{}{}'", term.opts.suff ? "*" : "", tmpstr, term.opts.pref ? "*" : "");
 				}
 				continue;
 			}
 			for (auto& lang : langs) {
 				auto stemIt = holder_.stemmers_.find(lang);
 				if (stemIt == holder_.stemmers_.end()) {
-					throw Error(errParams, "Stemmer for language %s is not available", lang);
+					throw Error(errParams, "Stemmer for language {} is not available", lang);
 				}
 				stemstr.clear();
 				stemIt->second.stem(tmpstr, stemstr);
@@ -87,8 +87,8 @@ void Selector<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, RV
 					const auto charsCount = getUTF8StringCharactersCount(stemstr);
 					if (charsCount <= kMaxStemSkipLen) {
 						if rx_unlikely (holder_.cfg_->logLevel >= LogTrace) {
-							logPrintf(LogInfo, "Skipping too short stemmer's term '%s%s*'",
-									  term.opts.suff && &v != &variantsUtf16[0] ? "*" : "", stemstr);
+							logFmt(LogInfo, "Skipping too short stemmer's term '{}{}*'",
+								   term.opts.suff && &v != &variantsUtf16[0] ? "*" : "", stemstr);
 						}
 						continue;
 					}
@@ -120,8 +120,8 @@ void Selector<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, RV
 // RX_NO_INLINE just for build test purpose. Do not expect any effect here
 template <typename IdCont>
 template <FtUseExternStatuses useExternSt, typename MergeType>
-MergeType Selector<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses::Statuses&& mergeStatuses,
-									const RdxContext& rdxCtx) {
+MergeType Selector<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, RankSortType rankSortType,
+									FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext& rdxCtx) {
 	FtSelectContext ctx;
 	ctx.rawResults.reserve(dsl.size());
 	// STEP 2: Search dsl terms for each variant
@@ -185,7 +185,7 @@ MergeType Selector<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, FtSort
 					}
 					wrSer << variant.pattern;
 				}
-				logPrintf(LogInfo, "Multiword synonyms variants: [%s]", wrSer.Slice());
+				logFmt(LogInfo, "Multiword synonyms variants: [{}]", wrSer.Slice());
 			}
 			auto v = ctx.GetWordsMapPtr(synDsl.dsl[i].opts);
 			synCtx.rawResults.emplace_back(std::move(synDsl.dsl[i]), v);
@@ -213,10 +213,10 @@ MergeType Selector<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, FtSort
 
 	const auto maxMergedSize = std::min(size_t(holder_.cfg_->mergeLimit), ctx.totalORVids);
 	if (maxMergedSize < 0xFFFF) {
-		return mergeResultsBmType<uint16_t, MergeType>(std::move(results), ctx.totalORVids, synonymsBounds, inTransaction, ftSortType,
+		return mergeResultsBmType<uint16_t, MergeType>(std::move(results), ctx.totalORVids, synonymsBounds, inTransaction, rankSortType,
 													   std::move(mergeStatuses), rdxCtx);
 	} else if (maxMergedSize < 0xFFFFFFFF) {
-		return mergeResultsBmType<uint32_t, MergeType>(std::move(results), ctx.totalORVids, synonymsBounds, inTransaction, ftSortType,
+		return mergeResultsBmType<uint32_t, MergeType>(std::move(results), ctx.totalORVids, synonymsBounds, inTransaction, rankSortType,
 													   std::move(mergeStatuses), rdxCtx);
 	} else {
 		assertrx_throw(false);
@@ -227,18 +227,18 @@ MergeType Selector<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, FtSort
 template <typename IdCont>
 template <typename MergedOffsetT, typename MergeType>
 MergeType Selector<IdCont>::mergeResultsBmType(std::vector<TextSearchResults>&& results, size_t totalORVids,
-											   const std::vector<size_t>& synonymsBounds, bool inTransaction, FtSortType ftSortType,
+											   const std::vector<size_t>& synonymsBounds, bool inTransaction, RankSortType rankSortType,
 											   FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext& rdxCtx) {
 	switch (holder_.cfg_->bm25Config.bm25Type) {
 		case FtFastConfig::Bm25Config::Bm25Type::rx:
 			return mergeResults<Bm25Rx, MergedOffsetT, MergeType>(std::move(results), totalORVids, synonymsBounds, inTransaction,
-																  ftSortType, std::move(mergeStatuses), rdxCtx);
+																  rankSortType, std::move(mergeStatuses), rdxCtx);
 		case FtFastConfig::Bm25Config::Bm25Type::classic:
 			return mergeResults<Bm25Classic, MergedOffsetT, MergeType>(std::move(results), totalORVids, synonymsBounds, inTransaction,
-																	   ftSortType, std::move(mergeStatuses), rdxCtx);
+																	   rankSortType, std::move(mergeStatuses), rdxCtx);
 		case FtFastConfig::Bm25Config::Bm25Type::wordCount:
 			return mergeResults<TermCount, MergedOffsetT, MergeType>(std::move(results), totalORVids, synonymsBounds, inTransaction,
-																	 ftSortType, std::move(mergeStatuses), rdxCtx);
+																	 rankSortType, std::move(mergeStatuses), rdxCtx);
 	}
 	assertrx_throw(false);
 	return MergeType();
@@ -270,8 +270,8 @@ void Selector<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 		}
 		if (vidsLimit <= vids) {
 			if rx_unlikely (holder_.cfg_->logLevel >= LogInfo) {
-				logPrintf(LogInfo, "Terminating suffix loop on limit (%d). Current variant is '%s%s%s'", initialLimit,
-						  variant.opts.suff ? "*" : "", variant.pattern, variant.opts.pref ? "*" : "");
+				logFmt(LogInfo, "Terminating suffix loop on limit ({}). Current variant is '{}{}{}'", initialLimit,
+					   variant.opts.suff ? "*" : "", variant.pattern, variant.opts.pref ? "*" : "");
 			}
 			break;
 		}
@@ -322,8 +322,8 @@ void Selector<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 			}
 			(*res.foundWords)[glbwordId] = std::make_pair(curRawResultIdx, res.size() - 1);
 			if rx_unlikely (holder_.cfg_->logLevel >= LogTrace) {
-				logPrintf(LogInfo, " matched %s '%s' of word '%s' (variant '%s'), %d vids, %d%%", suffixLen ? "suffix" : "prefix",
-						  keyIt->first, word, variant.pattern, holder_.GetWordById(glbwordId).vids.size(), proc);
+				logFmt(LogInfo, " matched {} '{}' of word '{}' (variant '{}'), {} vids, {}%", suffixLen ? "suffix" : "prefix", keyIt->first,
+					   word, variant.pattern, holder_.GetWordById(glbwordId).vids.size(), proc);
 			}
 			++matched;
 			vids += vidsSize;
@@ -337,10 +337,10 @@ void Selector<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 	if rx_unlikely (holder_.cfg_->logLevel >= LogInfo) {
 		std::string limitString;
 		if (vidsLimit <= vids) {
-			limitString = fmt::sprintf(". Lookup terminated by VIDs limit(%d)", initialLimit);
+			limitString = fmt::format(". Lookup terminated by VIDs limit({})", initialLimit);
 		}
-		logPrintf(LogInfo, "Lookup variant '%s' (%d%%), matched %d suffixes, with %d vids, skipped %d, excluded %d%s", tmpstr, variant.proc,
-				  matched, vids, skipped, excludedCnt, limitString);
+		logFmt(LogInfo, "Lookup variant '{}' ({}%), matched {} suffixes, with {} vids, skipped {}, excluded {}{}", tmpstr, variant.proc,
+			   matched, vids, skipped, excludedCnt, limitString);
 	}
 }
 
@@ -386,8 +386,8 @@ void Selector<IdCont>::processLowRelVariants(FtSelectContext& ctx, const FtMerge
 			if (variant.GetLenCached() != lastVariantLen) {
 				if (unsigned(targetORLimit) <= ctx.totalORVids) {
 					if rx_unlikely (holder_.cfg_->logLevel >= LogTrace) {
-						logPrintf(LogInfo, "Terminating on target OR limit. Current variant is '%s%s%s'", variant.opts.suff ? "*" : "",
-								  variant.pattern, variant.opts.pref ? "*" : "");
+						logFmt(LogInfo, "Terminating on target OR limit. Current variant is '{}{}{}'", variant.opts.suff ? "*" : "",
+							   variant.pattern, variant.opts.pref ? "*" : "");
 					}
 					break;
 				}
@@ -397,8 +397,8 @@ void Selector<IdCont>::processLowRelVariants(FtSelectContext& ctx, const FtMerge
 			(void)lastVariantLen;
 		}
 		if rx_unlikely (holder_.cfg_->logLevel >= LogTrace) {
-			logPrintf(LogInfo, "Handling '%s%s%s' as variant with low relevancy", variant.opts.suff ? "*" : "", variant.pattern,
-					  variant.opts.pref ? "*" : "");
+			logFmt(LogInfo, "Handling '{}{}{}' as variant with low relevancy", variant.opts.suff ? "*" : "", variant.pattern,
+				   variant.opts.pref ? "*" : "");
 		}
 		switch (variant.opts.op) {
 			case OpOr: {
@@ -435,8 +435,8 @@ RX_ALWAYS_INLINE void Selector<IdCont>::debugMergeStep(const char* msg, int vid,
 		return;
 	}
 
-	logPrintf(LogInfo, "%s - '%s' (vid %d), bm25 %f, dist %f, rank %d (prev rank %d)", msg, holder_.vdocs_[vid].keyDoc, vid, normBm25,
-			  normDist, finalRank, prevRank);
+	logFmt(LogInfo, "{} - '{}' (vid {}), bm25 {}, dist {}, rank {} (prev rank {})", msg, holder_.vdocs_[vid].keyDoc, vid, normBm25,
+		   normDist, finalRank, prevRank);
 #else
 	(void)msg;
 	(void)vid;
@@ -594,7 +594,7 @@ void Selector<IdCont>::subMergeLoop(MergeType& subMerged, std::vector<PosType>& 
 				AreasInDocument<typename MergeType::AT> area = createAreaFromSubMerge<typename MergeType::AT>(subPos);
 				int32_t areaIndex = merged[mergedIndex].areaIndex;
 				if (areaIndex != -1 && areaIndex >= int(merged.vectorAreas.size())) {
-					throw Error(errLogic, "FT merge: Incorrect area index %d (areas vector size is %d)", areaIndex,
+					throw Error(errLogic, "FT merge: Incorrect area index {} (areas vector size is {})", areaIndex,
 								merged.vectorAreas.size());
 				}
 				copyAreas(area, merged.vectorAreas[areaIndex], subMergeInfo.proc);
@@ -800,7 +800,7 @@ void Selector<IdCont>::mergeIteration(TextSearchResults& rawRes, index_t rawResI
 				continue;
 			}
 			if rx_unlikely (holder_.cfg_->logLevel >= LogTrace) {
-				logPrintf(LogInfo, "Pattern %s, idf %f, termLenBoost %f", r.pattern, bm25.GetIDF(), rawRes.term.opts.termLenBoost);
+				logFmt(LogInfo, "Pattern {}, idf {}, termLenBoost {}", r.pattern, bm25.GetIDF(), rawRes.term.opts.termLenBoost);
 			}
 
 			if (simple) {  // one term
@@ -946,7 +946,7 @@ void Selector<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 			}
 
 			if rx_unlikely (holder_.cfg_->logLevel >= LogTrace) {
-				logPrintf(LogInfo, "Pattern %s, idf %f, termLenBoost %f", r.pattern, bm25.GetIDF(), rawRes.term.opts.termLenBoost);
+				logFmt(LogInfo, "Pattern {}, idf {}, termLenBoost {}", r.pattern, bm25.GetIDF(), rawRes.term.opts.termLenBoost);
 			}
 
 			// match of 2-rd, and next terms
@@ -1139,14 +1139,14 @@ size_t Selector<IdCont>::TyposHandler::Process(std::vector<TextSearchResults>& r
 						auto wordIdSfx = holder.GetSuffixWordId(wordTypo.word, step);
 						if (positions.size() > wordTypo.positions.size() &&
 							(positions.size() - wordTypo.positions.size()) > int(maxExtraLetts_)) {
-							logTraceF(LogInfo, " skipping typo '%s' of word '%s': to many extra letters (%d)", typoIt->first,
+							logTraceF(LogInfo, " skipping typo '{}' of word '{}': to many extra letters ({})", typoIt->first,
 									  step.suffixes_.word_at(wordIdSfx), positions.size() - wordTypo.positions.size());
 							++skipped;
 							continue;
 						}
 						if (wordTypo.positions.size() > positions.size() &&
 							(wordTypo.positions.size() - positions.size()) > int(maxMissingLetts_)) {
-							logTraceF(LogInfo, " skipping typo '%s' of word '%s': to many missing letters (%d)", typoIt->first,
+							logTraceF(LogInfo, " skipping typo '{}' of word '{}': to many missing letters ({})", typoIt->first,
 									  step.suffixes_.word_at(wordIdSfx), wordTypo.positions.size() - positions.size());
 							++skipped;
 							continue;
@@ -1155,7 +1155,7 @@ size_t Selector<IdCont>::TyposHandler::Process(std::vector<TextSearchResults>& r
 							const bool needMaxLettPermCheck = useMaxTypoDist_ && (!useMaxLettPermDist_ || maxLettPermDist_ > maxTypoDist_);
 							if (!needMaxLettPermCheck ||
 								!isWordFitMaxLettPerm(step.suffixes_.word_at(wordIdSfx), wordTypo, term.pattern, positions)) {
-								logTraceF(LogInfo, " skipping typo '%s' of word '%s' due to max_typos_distance settings", typoIt->first,
+								logTraceF(LogInfo, " skipping typo '{}' of word '{}' due to max_typos_distance settings", typoIt->first,
 										  step.suffixes_.word_at(wordIdSfx));
 								++skipped;
 								continue;
@@ -1175,7 +1175,7 @@ size_t Selector<IdCont>::TyposHandler::Process(std::vector<TextSearchResults>& r
 							res.idsCnt_ += hword.vids.size();
 							res.foundWords->emplace(wordTypo.word, std::make_pair(curRawResultIdx, res.size() - 1));
 
-							logTraceF(LogInfo, " matched typo '%s' of word '%s', %d ids, %d%%", typoIt->first,
+							logTraceF(LogInfo, " matched typo '{}' of word '{}', {} ids, {}%", typoIt->first,
 									  step.suffixes_.word_at(wordIdSfx), hword.vids.size(), proc);
 							++matched;
 							vids += hword.vids.size();
@@ -1190,7 +1190,7 @@ size_t Selector<IdCont>::TyposHandler::Process(std::vector<TextSearchResults>& r
 				}
 			});
 		if rx_unlikely (holder.cfg_->logLevel >= LogInfo) {
-			logPrintf(LogInfo, "Lookup typos, matched %d typos, with %d vids, skipped %d", matched, vids, skipped);
+			logFmt(LogInfo, "Lookup typos, matched {} typos, with {} vids, skipped {}", matched, vids, skipped);
 		}
 	}
 	return totalVids;
@@ -1200,9 +1200,9 @@ RX_ALWAYS_INLINE unsigned uabs(int a) { return unsigned(std::abs(a)); }
 
 template <typename IdCont>
 template <typename... Args>
-void Selector<IdCont>::TyposHandler::logTraceF(int level, const char* fmt, Args&&... args) {
+void Selector<IdCont>::TyposHandler::logTraceF(int level, fmt::format_string<Args...> fmt, Args&&... args) {
 	if rx_unlikely (logLevel_ >= LogTrace) {
-		logPrintf(level, fmt, std::forward<Args>(args)...);
+		logFmt(level, fmt::runtime(fmt), std::forward<Args>(args)...);
 	}
 }
 
@@ -1255,7 +1255,7 @@ bool Selector<IdCont>::TyposHandler::isWordFitMaxTyposDist(const WordTypo& found
 				   ((uabs(curP0 - foundP1) <= maxTypoDist_) && (uabs(curP1 - foundP0) <= maxTypoDist_));
 		}
 		default:
-			throw Error(errLogic, "Unexpected typos count: %u", current.size());
+			throw Error(errLogic, "Unexpected typos count: {}", current.size());
 	}
 }
 
@@ -1357,14 +1357,14 @@ bool Selector<IdCont>::TyposHandler::isWordFitMaxLettPerm(const std::string_view
 			return permutationOn10 && switchOn01;
 		}
 		default:
-			throw Error(errLogic, "Unexpected typos count: %u", current.size());
+			throw Error(errLogic, "Unexpected typos count: {}", current.size());
 	}
 }
 
 template <typename IdCont>
 template <typename Bm25T, typename MergedOffsetT, typename MergedType>
 MergedType Selector<IdCont>::mergeResults(std::vector<TextSearchResults>&& rawResults, size_t maxMergedSize,
-										  const std::vector<size_t>& synonymsBounds, bool inTransaction, FtSortType ftSortType,
+										  const std::vector<size_t>& synonymsBounds, bool inTransaction, RankSortType rankSortType,
 										  FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext& rdxCtx) {
 	const auto& vdocs = holder_.vdocs_;
 
@@ -1458,7 +1458,7 @@ MergedType Selector<IdCont>::mergeResults(std::vector<TextSearchResults>&& rawRe
 		}
 	}
 	if rx_unlikely (holder_.cfg_->logLevel >= LogInfo) {
-		logPrintf(LogInfo, "Complex merge (%d patterns): out %d vids", rawResults.size(), merged.size());
+		logFmt(LogInfo, "Complex merge ({} patterns): out {} vids", rawResults.size(), merged.size());
 	}
 
 	// Update full match rank
@@ -1471,17 +1471,17 @@ MergedType Selector<IdCont>::mergeResults(std::vector<TextSearchResults>&& rawRe
 			merged.maxRank = m.proc;
 		}
 	}
-	switch (ftSortType) {
-		case FtSortType::RankOnly: {
+	switch (rankSortType) {
+		case RankSortType::RankOnly:
+		case RankSortType::IDAndPositions:
 			boost::sort::pdqsort_branchless(merged.begin(), merged.end(),
 											[](const MergeInfo& lhs, const MergeInfo& rhs) noexcept { return lhs.proc > rhs.proc; });
 			return merged;
-		}
-		case FtSortType::RankAndID: {
+		case RankSortType::RankAndID:
+		case RankSortType::IDOnly:
 			return merged;
-		}
-		case FtSortType::ExternalExpression:
-			throw Error(errLogic, "FtSortType::ExternalExpression not implemented.");
+		case RankSortType::ExternalExpression:
+			throw Error(errLogic, "RankSortType::ExternalExpression not implemented.");
 			break;
 	}
 	return merged;
@@ -1520,41 +1520,41 @@ void Selector<IdCont>::printVariants(const FtSelectContext& ctx, const TextSearc
 					wrSer << "), ";
 				});
 	}
-	logPrintf(LogInfo, "Variants: [%s]", wrSer.Slice());
+	logFmt(LogInfo, "Variants: [{}]", wrSer.Slice());
 }
 
 template class Selector<PackedIdRelVec>;
-template MergeDataBase Selector<PackedIdRelVec>::Process<FtUseExternStatuses::No, MergeDataBase>(FtDSLQuery&&, bool, FtSortType,
+template MergeDataBase Selector<PackedIdRelVec>::Process<FtUseExternStatuses::No, MergeDataBase>(FtDSLQuery&&, bool, RankSortType,
 																								 FtMergeStatuses::Statuses&&,
 																								 const RdxContext&);
-template MergeData<Area> Selector<PackedIdRelVec>::Process<FtUseExternStatuses::No, MergeData<Area>>(FtDSLQuery&&, bool, FtSortType,
+template MergeData<Area> Selector<PackedIdRelVec>::Process<FtUseExternStatuses::No, MergeData<Area>>(FtDSLQuery&&, bool, RankSortType,
 																									 FtMergeStatuses::Statuses&&,
 																									 const RdxContext&);
 template MergeData<AreaDebug> Selector<PackedIdRelVec>::Process<FtUseExternStatuses::No, MergeData<AreaDebug>>(FtDSLQuery&&, bool,
-																											   FtSortType,
+																											   RankSortType,
 																											   FtMergeStatuses::Statuses&&,
 																											   const RdxContext&);
 
-template MergeDataBase Selector<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType,
+template MergeDataBase Selector<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, RankSortType,
 																				   FtMergeStatuses::Statuses&&, const RdxContext&);
-template MergeData<Area> Selector<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType,
+template MergeData<Area> Selector<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, RankSortType,
 																					 FtMergeStatuses::Statuses&&, const RdxContext&);
-template MergeData<AreaDebug> Selector<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType,
+template MergeData<AreaDebug> Selector<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, RankSortType,
 																						  FtMergeStatuses::Statuses&&, const RdxContext&);
 
 template class Selector<IdRelVec>;
-template MergeDataBase Selector<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
+template MergeDataBase Selector<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, RankSortType, FtMergeStatuses::Statuses&&,
 																			const RdxContext&);
-template MergeData<Area> Selector<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
+template MergeData<Area> Selector<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, RankSortType, FtMergeStatuses::Statuses&&,
 																			  const RdxContext&);
-template MergeData<AreaDebug> Selector<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, FtSortType,
+template MergeData<AreaDebug> Selector<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, RankSortType,
 																				   FtMergeStatuses::Statuses&&, const RdxContext&);
 
-template MergeDataBase Selector<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
+template MergeDataBase Selector<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, RankSortType, FtMergeStatuses::Statuses&&,
 																			 const RdxContext&);
-template MergeData<Area> Selector<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType, FtMergeStatuses::Statuses&&,
-																			   const RdxContext&);
-template MergeData<AreaDebug> Selector<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtSortType,
+template MergeData<Area> Selector<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, RankSortType,
+																			   FtMergeStatuses::Statuses&&, const RdxContext&);
+template MergeData<AreaDebug> Selector<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, RankSortType,
 																					FtMergeStatuses::Statuses&&, const RdxContext&);
 
 }  // namespace reindexer

@@ -2,6 +2,7 @@
 
 #include "core/item.h"
 #include "core/itemimpl.h"
+#include "core/query/query.h"
 #include "transaction.h"
 
 namespace reindexer {
@@ -55,24 +56,38 @@ public:
 
 class TransactionSteps {
 public:
-	void Insert(Item&& item, lsn_t lsn) { steps.emplace_back(std::move(item), ModeInsert, lsn); }
-	void Update(Item&& item, lsn_t lsn) { steps.emplace_back(std::move(item), ModeUpdate, lsn); }
-	void Upsert(Item&& item, lsn_t lsn) { steps.emplace_back(std::move(item), ModeUpsert, lsn); }
-	void Delete(Item&& item, lsn_t lsn) { steps.emplace_back(std::move(item), ModeDelete, lsn); }
-	void Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
-		hasDeleteItemSteps_ = hasDeleteItemSteps_ || (mode == ModeDelete);
-		steps.emplace_back(std::move(item), mode, lsn);
+	void Insert(Item&& item, lsn_t lsn) {
+		++expectedInsertionsCount_;
+		steps.emplace_back(std::move(item), ModeInsert, lsn);
 	}
-	void Modify(Query&& query, lsn_t lsn) { steps.emplace_back(std::move(query), lsn); }
+	void Update(Item&& item, lsn_t lsn) { steps.emplace_back(std::move(item), ModeUpdate, lsn); }
+	void Upsert(Item&& item, lsn_t lsn) {
+		++expectedInsertionsCount_;
+		steps.emplace_back(std::move(item), ModeUpsert, lsn);
+	}
+	void Delete(Item&& item, lsn_t lsn) {
+		++deletionsCount_;
+		steps.emplace_back(std::move(item), ModeDelete, lsn);
+	}
+	void Modify(Item&& item, ItemModifyMode mode, lsn_t lsn);
+	void Modify(Query&& query, lsn_t lsn);
 	void Nop(lsn_t lsn) { steps.emplace_back(lsn); }
 	void PutMeta(std::string_view key, std::string_view value, lsn_t lsn) { steps.emplace_back(key, value, lsn); }
 	void SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) { steps.emplace_back(std::move(tm), lsn); }
-	bool HasDeleteItemSteps() const noexcept { return hasDeleteItemSteps_; }
+	[[nodiscard]] size_t CalculateNewCapacity(size_t currentSize) const noexcept;
+	[[nodiscard]] bool HasDeleteItemSteps() const noexcept { return deletionsCount_ > 0; }
+	[[nodiscard]] unsigned DeletionsCount() const noexcept { return deletionsCount_; }
+	[[nodiscard]] unsigned ExpectedInsertionsCount() const noexcept { return expectedInsertionsCount_; }
+	[[nodiscard]] unsigned UpdateQueriesCount() const noexcept { return updateQueriesCount_; }
+	[[nodiscard]] unsigned DeleteQueriesCount() const noexcept { return deleteQueriesCount_; }
 
 	std::vector<TransactionStep> steps;
 
 private:
-	bool hasDeleteItemSteps_ = false;
+	unsigned updateQueriesCount_{0};
+	unsigned deletionsCount_{0};
+	unsigned deleteQueriesCount_{0};
+	unsigned expectedInsertionsCount_{0};
 };
 
 }  // namespace reindexer

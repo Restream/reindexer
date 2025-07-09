@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include "estl/h_vector.h"
 #include "tools/lsn.h"
 

@@ -3,16 +3,14 @@
 #include <string_view>
 #include <vector>
 #include "core/ft/stopwords/types.h"
-#include "core/ft/usingcontainer.h"
 #include "estl/fast_hash_map.h"
+#include "tools/rhashmap.h"
 
 namespace gason {
 struct JsonNode;
 }
 
 namespace reindexer {
-
-class JsonBuilder;
 
 class BaseFTConfig {
 public:
@@ -42,9 +40,9 @@ public:
 		static constexpr int kMinProcAfterPenalty = 1;
 		// Relevancy of full word match
 		int fullMatch = 100;
-		// Mininum relevancy of prefix word match.
+		// Minimum relevancy of prefix word match.
 		int prefixMin = 50;
-		// Mininum relevancy of suffix word match.
+		// Minimum relevancy of suffix word match.
 		int suffixMin = 10;
 		// Base relevancy of typo match
 		int typo = 85;
@@ -61,7 +59,10 @@ public:
 	};
 	BaseRankingConfig rankingConfig;
 
+	SymbolTypeMask removeDiacriticsMask = kRemoveAllDiacriticsMask;
+
 protected:
+	[[nodiscard]] std::string removeAccentsAndDiacritics(const std::string& str) const;
 	void parseBase(const gason::JsonNode& root);
 	void getJson(JsonBuilder&) const;
 };

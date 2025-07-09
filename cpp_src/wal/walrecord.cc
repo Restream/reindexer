@@ -1,6 +1,6 @@
 
 #include "walrecord.h"
-#include "core/cjson/baseencoder.h"
+#include "core/cjson/jsonbuilder.h"
 #include "tools/logger.h"
 #include "tools/serializer.h"
 
@@ -60,17 +60,17 @@ void WALRecord::Pack(WrSerializer& ser) const {
 		case WalResetLocalWal:
 			return;
 	}
-	fprintf(stderr, "Unexpected WAL rec type %d\n", int(type));
+	fprintf(stderr, "reindexer error: unexpected WAL rec type %d\n", int(type));
 	std::abort();
 }
 
-WALRecord::WALRecord(span<const uint8_t> packed) {
+WALRecord::WALRecord(std::span<const uint8_t> packed) {
 	if (!packed.size()) {
 		type = WalEmpty;
 		return;
 	}
 	Serializer ser(packed.data(), packed.size());
-	const unsigned unpackedType = ser.GetVarUint();
+	const unsigned unpackedType = ser.GetVarUInt();
 	if (unpackedType & kTxBit) {
 		inTransaction = true;
 		type = static_cast<WALRecType>(unpackedType ^ kTxBit);
@@ -104,8 +104,8 @@ WALRecord::WALRecord(span<const uint8_t> packed) {
 			return;
 		case WalItemModify:
 			itemModify.itemCJson = ser.GetVString();
-			itemModify.modifyMode = ItemModifyMode(ser.GetVarUint());
-			itemModify.tmVersion = ser.GetVarUint();
+			itemModify.modifyMode = ItemModifyMode(ser.GetVarUInt());
+			itemModify.tmVersion = ser.GetVarUInt();
 			return;
 		case WalRawItem:
 			rawItem.id = ser.GetUInt32();
@@ -119,7 +119,7 @@ WALRecord::WALRecord(span<const uint8_t> packed) {
 		case WalResetLocalWal:
 			return;
 	}
-	logPrintf(LogError, "Unexpected WAL rec type %d\n", int(type));
+	logFmt(LogError, "Unexpected WAL rec type {}\n", int(type));
 }
 
 static std::string_view wrecType2Str(WALRecType t) {
@@ -210,7 +210,7 @@ WrSerializer& WALRecord::Dump(WrSerializer& ser, const std::function<std::string
 		case WalRawItem:
 			return ser << (" rowId=") << rawItem.id << ": " << cjsonViewer(rawItem.itemCJson);
 	}
-	fprintf(stderr, "Unexpected WAL rec type %d\n", int(type));
+	fprintf(stderr, "reindexer error: unexpected WAL rec type %d\n", int(type));
 	std::abort();
 }
 
@@ -270,49 +270,16 @@ void WALRecord::GetJSON(JsonBuilder& jb, const std::function<std::string(std::st
 			jb.Put("tagsmatcher", data);
 			return;
 	}
-	fprintf(stderr, "Unexpected WAL rec type %d\n", int(type));
+	fprintf(stderr, "reindexer error: unexpected WAL rec type %d\n", int(type));
 	std::abort();
 }
 
-WALRecord::WALRecord(std::string_view data) : WALRecord(span<const uint8_t>(reinterpret_cast<const uint8_t*>(data.data()), data.size())) {}
+WALRecord::WALRecord(std::string_view data)
+	: WALRecord(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(data.data()), data.size())) {}
 
 void MarkedPackedWALRecord::Pack(int16_t _server, const WALRecord& rec) {
 	server = _server;
 	PackedWALRecord::Pack(rec);
 }
-
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-SharedWALRecord WALRecord::GetShared(int64_t lsn, int64_t upstreamLSN, std::string_view nsName) const {
-	if (!shared_.packed_) {
-		shared_ = SharedWALRecord(lsn, upstreamLSN, nsName, *this);
-	}
-	return shared_;
-}
-SharedWALRecord::SharedWALRecord(int64_t lsn, int64_t originLSN, std::string_view nsName, const WALRecord& rec) {
-	const size_t kCapToSizeRelation = 4;
-	WrSerializer ser;
-	ser.PutVarint(lsn);
-	ser.PutVarint(originLSN);
-	ser.PutVString(nsName);
-	{
-		auto sl = ser.StartSlice();
-		rec.Pack(ser);
-	}
-
-	auto ch = ser.DetachChunk();
-	ch.shrink(kCapToSizeRelation);
-
-	packed_ = make_intrusive<intrusive_atomic_rc_wrapper<chunk>>(std::move(ch));
-}
-
-SharedWALRecord::Unpacked SharedWALRecord::Unpack() {
-	Serializer rdser(packed_->data(), packed_->size());
-	int64_t lsn = rdser.GetVarint();
-	int64_t originLSN = rdser.GetVarint();
-	p_string nsName = rdser.GetPVString();
-	p_string pwal = rdser.GetPSlice();
-	return {lsn, originLSN, nsName, pwal};
-}
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 
 }  // namespace reindexer

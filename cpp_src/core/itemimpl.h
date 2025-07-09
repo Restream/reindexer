@@ -2,107 +2,108 @@
 
 #include <vector>
 
-#include "core/cjson/msgpackdecoder.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/keyvalue/variant.h"
 #include "core/payload/payloadiface.h"
 #include "itemimplrawdata.h"
+#include "namespace/float_vectors_indexes.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
 
+class MsgPackDecoder;
 class Namespace;
-class Schema;
+class RdxContext;
 class Recoder;
+class Schema;
 
 class ItemImpl : public ItemImplRawData {
+	friend class Item;
+
 public:
-	ItemImpl() = default;
-
+	ItemImpl();
+	~ItemImpl();
 	// Construct empty item
-	ItemImpl(PayloadType type, const TagsMatcher& tagsMatcher, const FieldsSet& pkFields = {}, std::shared_ptr<const Schema> schema = {})
-		: ItemImplRawData(PayloadValue(type.TotalSize(), nullptr, type.TotalSize() + 0x100)),
-		  payloadType_(std::move(type)),
-		  tagsMatcher_(tagsMatcher),
-		  pkFields_(pkFields),
-		  schema_(std::move(schema)) {
-		tagsMatcher_.clearUpdated();
-	}
-
+	ItemImpl(PayloadType type, const TagsMatcher& tagsMatcher, const FieldsSet& pkFields = {}, std::shared_ptr<const Schema> schema = {});
 	// Construct empty item
 	ItemImpl(PayloadType type, const TagsMatcher& tagsMatcher, const FieldsSet& pkFields, std::shared_ptr<const Schema> schema,
-			 ItemImplRawData&& rawData)
-		: ItemImplRawData(std::move(rawData)),
-		  payloadType_(std::move(type)),
-		  tagsMatcher_(tagsMatcher),
-		  pkFields_(pkFields),
-		  schema_(std::move(schema)) {}
-
-	ItemImpl(PayloadType type, PayloadValue v, const TagsMatcher& tagsMatcher, std::shared_ptr<const Schema> schema = {})
-		: ItemImplRawData(std::move(v)), payloadType_(std::move(type)), tagsMatcher_(tagsMatcher), schema_{std::move(schema)} {
-		tagsMatcher_.clearUpdated();
-	}
+			 ItemImplRawData&& rawData);
+	ItemImpl(PayloadType type, PayloadValue v, const TagsMatcher& tagsMatcher, std::shared_ptr<const Schema> schema = {});
 
 	ItemImpl(const ItemImpl&) = delete;
-	ItemImpl(ItemImpl&&) = default;
-	ItemImpl& operator=(ItemImpl&&) = default;
+	ItemImpl(ItemImpl&&) noexcept;
+	ItemImpl& operator=(ItemImpl&&) noexcept;
 	ItemImpl& operator=(const ItemImpl&) = delete;
 
 	void ModifyField(std::string_view jsonPath, const VariantArray& keys, FieldModifyMode mode);
 	void ModifyField(const IndexedTagsPath& tagsPath, const VariantArray& keys, FieldModifyMode mode);
-	void SetField(int field, const VariantArray& krs);
+	void SetField(int field, const VariantArray& krs, NeedCreate needCopy = NeedCreate_True);
 	void SetField(std::string_view jsonPath, const VariantArray& keys);
 	void DropField(std::string_view jsonPath);
-	Variant GetField(int field);
+	[[nodiscard]] Variant GetField(int field);
 	void GetField(int field, VariantArray&);
-	FieldsSet PkFields() const { return pkFields_; }
-	int NameTag(std::string_view name) const { return tagsMatcher_.name2tag(name); }
-	int FieldIndex(std::string_view name) const {
+	[[nodiscard]] FieldsSet PkFields() const { return pkFields_; }
+	[[nodiscard]] TagName NameTag(std::string_view name) const { return tagsMatcher_.name2tag(name); }
+	[[nodiscard]] int FieldIndex(std::string_view name) const {
 		int field = IndexValueType::NotSet;
-		payloadType_.FieldByName(name, field);
-		return field;
+		if (payloadType_.FieldByName(name, field)) {
+			return field;
+		}
+		return IndexValueType::NotSet;
 	}
 
-	VariantArray GetValueByJSONPath(std::string_view jsonPath);
+	[[nodiscard]] VariantArray GetValueByJSONPath(std::string_view jsonPath);
 
-	std::string_view GetJSON();
-	Error FromJSON(std::string_view slice, char** endp = nullptr, bool pkOnly = false);
+	[[nodiscard]] std::string_view GetJSON();
+	[[nodiscard]] Error FromJSON(std::string_view slice, char** endp = nullptr, bool pkOnly = false);
 	void FromCJSON(ItemImpl& other, Recoder*);
 
-	std::string_view GetCJSON(bool withTagsMatcher = false);
+	[[nodiscard]] std::string_view GetCJSON(bool withTagsMatcher = false);
 	std::string_view GetCJSON(WrSerializer& ser, bool withTagsMatcher = false);
-	std::string_view GetCJSONWithTm();
-	std::string_view GetCJSONWithTm(WrSerializer& ser);
 	void FromCJSON(std::string_view slice, bool pkOnly = false, Recoder* = nullptr);
-	Error FromMsgPack(std::string_view sbuf, size_t& offset);
-	Error FromProtobuf(std::string_view sbuf);
-	Error GetMsgPack(WrSerializer& wrser);
-	std::string_view GetMsgPack();
-	Error GetProtobuf(WrSerializer& wrser);
+	[[nodiscard]] Error FromMsgPack(std::string_view sbuf, size_t& offset);
+	[[nodiscard]] Error FromProtobuf(std::string_view sbuf);
+	[[nodiscard]] Error GetMsgPack(WrSerializer& wrser);
+	[[nodiscard]] std::string_view GetMsgPack();
+	[[nodiscard]] Error GetProtobuf(WrSerializer& wrser);
 
-	const PayloadType& Type() const noexcept { return payloadType_; }
-	PayloadValue& Value() noexcept { return payloadValue_; }
-	PayloadValue& RealValue() noexcept { return realValue_; }
-	Payload GetPayload() noexcept { return Payload(payloadType_, payloadValue_); }
-	ConstPayload GetConstPayload() const noexcept { return ConstPayload(payloadType_, payloadValue_); }
-	std::shared_ptr<const Schema> GetSchema() const noexcept { return schema_; }
+	[[nodiscard]] const PayloadType& Type() const& noexcept { return payloadType_; }
+	[[nodiscard]] PayloadValue& Value()& noexcept { return payloadValue_; }
+	[[nodiscard]] PayloadValue& RealValue()& noexcept { return realValue_; }
+	[[nodiscard]] Payload GetPayload() noexcept { return Payload(payloadType_, payloadValue_); }
+	[[nodiscard]] ConstPayload GetConstPayload() const noexcept { return ConstPayload(payloadType_, payloadValue_); }
+	[[nodiscard]] std::shared_ptr<const Schema> GetSchema() const noexcept { return schema_; }
 
-	TagsMatcher& tagsMatcher() noexcept { return tagsMatcher_; }
-	std::shared_ptr<const Schema>& schema() noexcept { return schema_; }
+	[[nodiscard]] TagsMatcher& tagsMatcher() noexcept { return tagsMatcher_; }
+	[[nodiscard]] std::shared_ptr<const Schema>& schema()& noexcept { return schema_; }
 
 	void SetPrecepts(std::vector<std::string>&& precepts) {
 		precepts_ = std::move(precepts);
 		cjson_ = std::string_view();
 	}
-	const std::vector<std::string>& GetPrecepts() const noexcept { return precepts_; }
+	[[nodiscard]] const std::vector<std::string>& GetPrecepts() const& noexcept { return precepts_; }
 	void Unsafe(bool enable) noexcept { unsafe_ = enable; }
-	bool IsUnsafe() const noexcept { return unsafe_; }
+	[[nodiscard]] bool IsUnsafe() const noexcept { return unsafe_; }
 	void Clear();
 	void SetNamespace(std::shared_ptr<Namespace> ns) noexcept { ns_ = std::move(ns); }
-	std::shared_ptr<Namespace> GetNamespace() const noexcept { return ns_; }
+	[[nodiscard]] std::weak_ptr<Namespace> GetNamespace() const noexcept { return ns_; }
 	static void validateModifyArray(const VariantArray& values);
+	void BuildTupleIfEmpty();
+	/**
+	 * @brief Copies vectors' values from indexes into ItemImpl::payloadValue.
+	 * Be default this method creates and stores full vector's data copy.
+	 * If item is marked 'unsafe', then resulting payload value will contain view, pointing into index structures directly
+	 * and any modification of those indexes may break the references.
+	 */
+	void CopyIndexedVectorsValuesFrom(IdType, const FloatVectorsIndexes&);
+
+	void Embed(const RdxContext& ctx);
 
 private:
+	ItemImpl(PayloadType, PayloadValue, const TagsMatcher&, std::shared_ptr<const Schema>, const FieldsFilter&);
+
+	void initTupleFrom(Payload&&, WrSerializer&);
+
 	// Index fields payload data
 	PayloadType payloadType_;
 	PayloadValue realValue_;
@@ -114,8 +115,9 @@ private:
 
 	bool unsafe_ = false;
 	std::string_view cjson_;
-	std::shared_ptr<Namespace> ns_;
+	std::weak_ptr<Namespace> ns_;
 	std::unique_ptr<MsgPackDecoder> msgPackDecoder_;
+	const FieldsFilter* fieldsFilter_{nullptr};
 };
 
 }  // namespace reindexer

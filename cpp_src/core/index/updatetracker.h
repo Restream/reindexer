@@ -54,8 +54,8 @@ public:
 	}
 	UpdateTracker& operator=(const UpdateTracker<T>& other) = delete;
 
-	void markUpdated(T& idx_map, typename T::iterator& k, bool skipCommited = true) {
-		if (skipCommited && k->second.Unsorted().IsCommited()) {
+	void markUpdated(T& idx_map, typename T::iterator& k, bool skipCommitted = true) {
+		if (skipCommitted && k->second.Unsorted().IsCommitted()) {
 			return;
 		}
 		if (simpleCounting_) {
