@@ -1,4 +1,3 @@
-
 #include "core/item.h"
 #include "core/itemimpl.h"
 #include "core/keyvalue/p_string.h"
@@ -7,12 +6,26 @@
 
 namespace reindexer {
 
+Item::Item(ItemImpl* impl, const FieldsFilter& fieldsFilter) : Item{impl} {
+	if (impl_) {
+		impl_->fieldsFilter_ = &fieldsFilter;
+	}
+}
+Item::Item(PayloadType pt, PayloadValue pv, const TagsMatcher& tm, std::shared_ptr<const Schema> schema, const FieldsFilter& fieldsFilter)
+	: Item(new ItemImpl(std::move(pt), std::move(pv), tm, std::move(schema), fieldsFilter)) {}
+
 Item& Item::operator=(Item&& other) noexcept {
 	if (&other != this) {
 		if (impl_) {
-			auto ns = impl_->GetNamespace();
+			auto ns = impl_->GetNamespace().lock();
 			if (ns) {
-				ns->ToPool(impl_);
+				try {
+					ns->ToPool(impl_);
+					// NOLINTBEGIN(bugprone-empty-catch)
+				} catch (...) {
+					assertrx_dbg(false);
+				}
+				// NOLINTEND(bugprone-empty-catch)
 				impl_ = nullptr;
 			}
 		}
@@ -38,12 +51,13 @@ template <>
 Point Item::FieldRef::As<Point>() const {
 	auto va = (operator VariantArray());
 	if (va.size() != 2) {
-		throw Error(errParams, "Unable to convert field with %d scalar values to 2D Point", va.size());
+		throw Error(errParams, "Unable to convert field with {} scalar values to 2D Point", va.size());
 	}
 	return Point(va[0].As<double>(), va[1].As<double>());
 }
 
 Item::FieldRef::operator Variant() const {
+	throwIfNotSet();
 	VariantArray kr;
 	if (field_ >= 0) {
 		itemImpl_->GetPayload().Get(field_, kr);
@@ -58,6 +72,7 @@ Item::FieldRef::operator Variant() const {
 }
 
 Item::FieldRef::operator VariantArray() const {
+	throwIfNotSet();
 	if (field_ >= 0) {
 		VariantArray kr;
 		itemImpl_->GetPayload().Get(field_, kr);
@@ -89,7 +104,7 @@ Item::FieldRef& Item::FieldRef::operator=(const VariantArray& krs) {
 }
 
 template <typename T>
-Item::FieldRef& Item::FieldRef::operator=(span<const T> arr) {
+Item::FieldRef& Item::FieldRef::operator=(std::span<const T> arr) {
 	constexpr static bool kIsStr = std::is_same_v<T, std::string> || std::is_same_v<T, key_string> || std::is_same_v<T, p_string> ||
 								   std::is_same_v<T, std::string_view> || std::is_same_v<T, const char*>;
 	if (field_ < 0) {
@@ -102,7 +117,7 @@ Item::FieldRef& Item::FieldRef::operator=(span<const T> arr) {
 	}
 
 	auto pl(itemImpl_->GetPayload());
-	int pos = pl.ResizeArray(field_, arr.size(), false);
+	int pos = pl.ResizeArray(field_, arr.size(), Append_False);
 
 	if constexpr (kIsStr) {
 		if (itemImpl_->IsUnsafe() || itemImpl_->Type()->Field(field_).Type().Is<KeyValueType::Uuid>()) {
@@ -121,7 +136,7 @@ Item::FieldRef& Item::FieldRef::operator=(span<const T> arr) {
 				} else {
 					itemImpl_->holder_->emplace_back(make_key_string(elem));
 				}
-				pl.Set(field_, pos++, Variant(p_string{itemImpl_->holder_->back()}, Variant::no_hold_t{}));
+				pl.Set(field_, pos++, Variant(p_string{itemImpl_->holder_->back()}, Variant::noHold));
 			}
 		}
 	} else {
@@ -132,11 +147,23 @@ Item::FieldRef& Item::FieldRef::operator=(span<const T> arr) {
 	return *this;
 }
 
+void Item::FieldRef::throwIfNotSet() const {
+	if (notSet_) {
+		throw Error{errParams, "Field {} is not set", Name()};
+	}
+}
+
 Item::~Item() {
 	if (impl_) {
-		auto ns = impl_->GetNamespace();
+		auto ns = impl_->GetNamespace().lock();
 		if (ns) {
-			ns->ToPool(impl_);
+			try {
+				ns->ToPool(impl_);
+				// NOLINTBEGIN(bugprone-empty-catch)
+			} catch (...) {
+				assertrx_dbg(false);
+			}
+			// NOLINTEND(bugprone-empty-catch)
 		} else {
 			delete impl_;
 		}
@@ -174,17 +201,27 @@ int Item::NumFields() const { return impl_->Type().NumFields(); }
 
 Item::FieldRef Item::operator[](int field) const {
 	if (rx_unlikely(field < 0 || field >= impl_->Type().NumFields())) {
-		throw Error(errLogic, "Item::operator[] requires indexed field. Values range: [0; %d]", impl_->Type().NumFields());
+		throw Error(errLogic, "Item::operator[] requires indexed field. Values range: [0; {}]", impl_->Type().NumFields());
 	}
-	return FieldRef(field, impl_);
+	const bool notSet = impl_->Type().Field(field).Type().Is<KeyValueType::FloatVector>() && impl_->fieldsFilter_ &&
+						!impl_->fieldsFilter_->ContainsVector(field);
+	return FieldRef(field, impl_, notSet);
 }
 
 Item::FieldRef Item::FieldRefByName(std::string_view name, ItemImpl& impl) noexcept {
 	int field = 0;
-	return (impl.Type().FieldByName(name, field)) ? FieldRef(field, &impl) : FieldRef(name, &impl);
+	if (impl.Type().FieldByName(name, field)) {
+		const bool notSet = impl.Type().Field(field).Type().Is<KeyValueType::FloatVector>() && impl.fieldsFilter_ &&
+							!impl.fieldsFilter_->ContainsVector(field);
+		return FieldRef(field, &impl, notSet);
+	} else {
+		return FieldRef(name, &impl, false);
+	}
 }
 
-int Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name); }
+void Item::Embed(const RdxContext& ctx) { impl_->Embed(ctx); }
+
+TagName Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name); }
 int Item::GetFieldIndex(std::string_view name) const { return impl_->FieldIndex(name); }
 FieldsSet Item::PkFields() const { return impl_->PkFields(); }
 void Item::SetPrecepts(std::vector<std::string> precepts) & { impl_->SetPrecepts(std::move(precepts)); }
@@ -198,11 +235,12 @@ Item& Item::Unsafe(bool enable) & noexcept {
 
 lsn_t Item::GetLSN() { return impl_->RealValue().IsFree() ? impl_->Value().GetLSN() : impl_->RealValue().GetLSN(); }
 void Item::setLSN(lsn_t lsn) { impl_->RealValue().IsFree() ? impl_->Value().SetLSN(lsn) : impl_->RealValue().SetLSN(lsn); }
+void Item::setFieldsFilter(const FieldsFilter& fieldsFilter) noexcept { impl_->fieldsFilter_ = &fieldsFilter; }
 
-template Item::FieldRef& Item::FieldRef::operator=(span<const int> arr);
-template Item::FieldRef& Item::FieldRef::operator=(span<const int64_t> arr);
-template Item::FieldRef& Item::FieldRef::operator=(span<const std::string> arr);
-template Item::FieldRef& Item::FieldRef::operator=(span<const double>);
-template Item::FieldRef& Item::FieldRef::operator=(span<const Uuid>);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const int> arr);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const int64_t> arr);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const std::string> arr);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const double>);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const Uuid>);
 
 }  // namespace reindexer

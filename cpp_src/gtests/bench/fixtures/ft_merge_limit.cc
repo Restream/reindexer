@@ -1,4 +1,5 @@
 #include "ft_merge_limit.h"
+#include "allocs_tracker.h"
 
 static uint8_t printFlags = benchmark::AllocsTracker::kPrintAllocs | benchmark::AllocsTracker::kPrintHold;
 
@@ -11,10 +12,10 @@ FullTextMergeLimit::FullTextMergeLimit(Reindexer* db, const std::string& name, s
 	static IndexOpts ftIndexOpts;
 	ftCfg.optimization = reindexer::FtFastConfig::Optimization::Memory;
 	ftCfg.stopWords = {};
-	ftCfg.extraWordSymbols = "1234567890";
+	ftCfg.splitOptions.SetSymbols("1234567890", "");
 	ftCfg.mergeLimit = 0x1FFFFFF;
 	ftCfg.maxTypos = 0;
-	ftIndexOpts.config = ftCfg.GetJSON({});
+	ftIndexOpts.SetConfig(IndexFastFT, ftCfg.GetJSON({}));
 	nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK()).AddIndex(kFastIndexTextName_, "text", "string", ftIndexOpts);
 }
 
@@ -88,7 +89,7 @@ void FullTextMergeLimit::Insert(State& state) {
 		for (int h = 0; h < id_seq_->Count(); h++) {
 			auto item = db_->NewItem(nsdef_.name);
 			if (!item.Status().ok()) {
-				state.SkipWithError(item.Status().what().c_str());
+				state.SkipWithError(item.Status().what());
 				continue;
 			}
 			item.Unsafe(true);
@@ -106,7 +107,7 @@ void FullTextMergeLimit::Insert(State& state) {
 			item[kFastIndexTextName_] = phrase;
 			auto err = db_->Upsert(nsdef_.name, item);
 			if (!err.ok()) {
-				state.SkipWithError(err.what().c_str());
+				state.SkipWithError(err.what());
 			}
 		}
 	}
@@ -122,7 +123,7 @@ void FullTextMergeLimit::BuildFastTextIndex(benchmark::State& state) {
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -137,7 +138,7 @@ void FullTextMergeLimit::FastTextIndexSelect(benchmark::State& state, const std:
 		auto err = db_->Select(q, qres);
 		state.SetLabel("select " + std::to_string(qres.Count()) + " documents");
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }

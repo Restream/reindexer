@@ -1,5 +1,6 @@
 #include "reindexertestapi.h"
 #include "core/cjson/tagsmatcher.h"
+#include "core/system_ns_names.h"
 #include "gtests/tests/gtest_cout.h"
 #include "utf8cpp/utf8/checked.h"
 #include "vendor/gason/gason.h"
@@ -7,10 +8,50 @@
 static constexpr auto kBasicTimeout = std::chrono::seconds(200);
 
 template <typename DB>
-ReindexerTestApi<DB>::ReindexerTestApi() : reindexer(std::make_shared<DB>()) {}
+ReindexerTestApi<DB>::ReindexerTestApi() : reindexer(std::make_shared<DB>()) {
+	if constexpr (std::is_same_v<DB, reindexer::Reindexer>) {
+		auto err = reindexer->Connect("builtin://");
+		EXPECT_TRUE(err.ok()) << err.what();
+		assertrx(err.ok());
+	}
+}
 
 template <typename DB>
-ReindexerTestApi<DB>::ReindexerTestApi(const typename DB::ConfigT& cfg) : reindexer(std::make_shared<DB>(cfg)) {}
+ReindexerTestApi<DB>::ReindexerTestApi(const typename DB::ConfigT& cfg) : reindexer(std::make_shared<DB>(cfg)) {
+	if constexpr (std::is_same_v<DB, reindexer::Reindexer>) {
+		auto err = reindexer->Connect("builtin://");
+		EXPECT_TRUE(err.ok()) << err.what();
+		assertrx(err.ok());
+	}
+}
+
+template <typename DB>
+void ReindexerTestApi<DB>::DefineNamespaceDataset(DB& rx, std::string_view ns, std::span<const IndexDeclaration> fields) {
+	auto err = reindexer::Error();
+	for (const auto& field : fields) {
+		if (field.indexType != "composite") {
+			err = rx.AddIndex(ns, {std::string{field.indexName},
+								   {std::string{field.indexName}},
+								   std::string{field.fieldType},
+								   std::string{field.indexType},
+								   field.indexOpts});
+		} else {
+			std::string indexName{field.indexName};
+			std::string idxContents{field.indexName};
+			auto eqPos = indexName.find_first_of('=');
+			if (eqPos != std::string::npos) {
+				idxContents = indexName.substr(0, eqPos);
+				indexName = indexName.substr(eqPos + 1);
+			}
+			reindexer::JsonPaths jsonPaths;
+			jsonPaths = reindexer::split(idxContents, "+", true, jsonPaths);
+
+			err = rx.AddIndex(
+				ns, {indexName, jsonPaths, std::string{field.fieldType}, std::string{field.indexType}, field.indexOpts, field.expireAfter});
+		}
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+}
 
 template <typename DB>
 typename ReindexerTestApi<DB>::ItemType ReindexerTestApi<DB>::NewItem(std::string_view ns) {
@@ -55,6 +96,27 @@ template <typename DB>
 void ReindexerTestApi<DB>::Upsert(std::string_view ns, ItemType& item) {
 	assertrx(!!item);
 	auto err = reindexer->WithTimeout(kBasicTimeout).Upsert(ns, item);
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+
+template <typename DB>
+void ReindexerTestApi<DB>::Upsert(std::string_view ns, ItemType& item, QueryResultsType& qr) {
+	assertrx(!!item);
+	auto err = reindexer->WithTimeout(kBasicTimeout).Upsert(ns, item, qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+
+template <typename DB>
+void ReindexerTestApi<DB>::Update(std::string_view ns, ItemType& item) {
+	assertrx(!!item);
+	auto err = reindexer->WithTimeout(kBasicTimeout).Update(ns, item);
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+
+template <typename DB>
+void ReindexerTestApi<DB>::Update(std::string_view ns, ItemType& item, QueryResultsType& qr) {
+	assertrx(!!item);
+	auto err = reindexer->WithTimeout(kBasicTimeout).Update(ns, item, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
@@ -109,6 +171,13 @@ void ReindexerTestApi<DB>::Delete(std::string_view ns, ItemType& item) {
 }
 
 template <typename DB>
+void ReindexerTestApi<DB>::Delete(std::string_view ns, ItemType& item, QueryResultsType& qr) {
+	assertrx(!!item);
+	auto err = reindexer->WithTimeout(kBasicTimeout).Delete(ns, item, qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+
+template <typename DB>
 size_t ReindexerTestApi<DB>::Delete(const reindexer::Query& q) {
 	QueryResultsType qr;
 	auto err = reindexer->WithTimeout(kBasicTimeout).Delete(q, qr);
@@ -127,7 +196,7 @@ ReplicationTestState ReindexerTestApi<DB>::GetReplicationState(std::string_view 
 	using namespace reindexer;
 	ReplicationTestState state;
 	{
-		Query qr = Query("#memstats").Where("name", CondEq, ns);
+		Query qr = Query(reindexer::kMemStatsNamespace).Where("name", CondEq, ns);
 		QueryResultsType res;
 		auto err = reindexer->WithTimeout(kBasicTimeout).Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -144,18 +213,21 @@ ReplicationTestState ReindexerTestApi<DB>::GetReplicationState(std::string_view 
 			state.nsVersion.FromJSON(root["replication"]["ns_version"]);
 			state.updateUnixNano = root["replication"]["updated_unix_nano"].As<uint64_t>();
 			try {
-				reindexer::ClusterizationStatus clStatus;
+				reindexer::ClusterOperationStatus clStatus;
 				clStatus.FromJSON(root["replication"]["clusterization_status"]);
 				state.role = clStatus.role;
 			} catch (...) {
 				EXPECT_TRUE(false) << "Unable to parse cluster status: " << ser.Slice();
 			}
 
-			/*		TestCout() << "\n"
-						  << std::hex << "lsn = " << int64_t(state.lsn) << std::dec << " dataCount = " << state.dataCount
-						  << " dataHash = " << state.dataHash << " [" << ser.c_str() << "]\n"
-						  << std::endl;
-			*/
+#if 0
+			std::ostringstream os;
+			os << "\n"
+			   << "lsn = " << int64_t(state.lsn) << std::dec << " dataCount = " << state.dataCount << " dataHash = " << state.dataHash
+			   << " [" << ser.Slice() << "]\n"
+			   << std::endl;
+			TestCout() << os.str();
+#endif
 		}
 	}
 	{
@@ -186,7 +258,7 @@ reindexer::Error ReindexerTestApi<DB>::DumpIndex(std::ostream& os, std::string_v
 template <typename DB>
 void ReindexerTestApi<DB>::PrintQueryResults(const std::string& ns, const QueryResultsType& res) {
 	if constexpr (std::is_same_v<DB, reindexer::Reindexer>) {
-		if (!verbose) {
+		if (!verbose_) {
 			return;
 		}
 		{
@@ -224,8 +296,8 @@ std::string ReindexerTestApi<DB>::RandString(unsigned int minLen, unsigned int m
 	uint8_t len = maxRandLen ? (rand() % maxRandLen + minLen) : minLen;
 	res.resize(len);
 	for (int i = 0; i < len; ++i) {
-		int f = rand() % letters.size();
-		res[i] = letters[f];
+		int f = rand() % kLetters.size();
+		res[i] = kLetters[f];
 	}
 	return res;
 }
@@ -244,8 +316,8 @@ std::string ReindexerTestApi<DB>::RandLikePattern() {
 			if (rand() % 3 == 0) {
 				res += '_';
 			} else {
-				int f = rand() % letters.size();
-				res += letters[f];
+				int f = rand() % kLetters.size();
+				res += kLetters[f];
 			}
 			++i;
 		}
@@ -260,8 +332,8 @@ std::string ReindexerTestApi<DB>::RuRandString() {
 	res.resize(len * 3);
 	auto it = res.begin();
 	for (int i = 0; i < len; ++i) {
-		int f = rand() % ru_letters.size();
-		it = utf8::append(ru_letters[f], it);
+		int f = rand() % kRuLetters.size();
+		it = utf8::append(kRuLetters[f], it);
 	}
 	res.erase(it, res.end());
 	return res;
@@ -275,6 +347,17 @@ std::vector<int> ReindexerTestApi<DB>::RandIntVector(size_t size, int start, int
 		vec.push_back(start + rand() % range);
 	}
 	return vec;
+}
+
+template <typename DB>
+void ReindexerTestApi<DB>::EnablePerfStats(DB& rx) {
+	auto item = rx.NewItem(reindexer::kConfigNamespace);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	auto err = item.FromJSON(
+		R"json({"type":"profiling","profiling":{"queriesperfstats":true,"queries_threshold_us":100,"perfstats":true,"memstats":true,"activitystats":true}})json");
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rx.Upsert(reindexer::kConfigNamespace, item);
+	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 template <typename DB>

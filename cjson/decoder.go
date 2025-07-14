@@ -9,7 +9,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/restream/reindexer/v4/bindings"
+	"github.com/restream/reindexer/v5/bindings"
 )
 
 var (
@@ -119,8 +119,37 @@ func skipTag(rdser *Serializer, tagType int16) {
 		rdser.GetVString()
 	case TAG_UUID:
 		rdser.GetUuid()
+	case TAG_FLOAT:
+		rdser.GetFloat32()
 	default:
 		panic(fmt.Errorf("can not skip tagType '%s'", tagTypeName(tagType)))
+	}
+}
+
+func ctagTypeName(tagType int16) string {
+	switch tagType {
+	case TAG_VARINT:
+		return "int"
+	case TAG_DOUBLE:
+		return "double"
+	case TAG_STRING:
+		return "string"
+	case TAG_BOOL:
+		return "bool"
+	case TAG_NULL:
+		return "null"
+	case TAG_ARRAY:
+		return "array"
+	case TAG_OBJECT:
+		return "object"
+	case TAG_END:
+		return "end"
+	case TAG_UUID:
+		return "uuid"
+	case TAG_FLOAT:
+		return "float"
+	default:
+		panic(fmt.Errorf("unknown ctag type '%d'", tagType))
 	}
 }
 
@@ -132,6 +161,8 @@ func asInt(rdser *Serializer, tagType int16) int64 {
 		return rdser.GetVarInt()
 	case TAG_DOUBLE:
 		return int64(rdser.GetDouble())
+	case TAG_FLOAT:
+		return int64(rdser.GetFloat32())
 	default:
 		panic(fmt.Errorf("can not convert tagType '%s' to 'int'", tagTypeName(tagType)))
 	}
@@ -143,6 +174,8 @@ func asFloat(rdser *Serializer, tagType int16) float64 {
 		return float64(rdser.GetVarInt())
 	case TAG_DOUBLE:
 		return rdser.GetDouble()
+	case TAG_FLOAT:
+		return float64(rdser.GetFloat32())
 	default:
 		panic(fmt.Errorf("can not convert tagType '%s' to 'float'", tagTypeName(tagType)))
 	}
@@ -181,6 +214,8 @@ func asIface(rdser *Serializer, tagType int16) interface{} {
 		return nil
 	case TAG_UUID:
 		return rdser.GetUuid()
+	case TAG_FLOAT:
+		return rdser.GetFloat32()
 	default:
 		panic(fmt.Errorf("can not convert tagType '%s' to 'interface'", tagTypeName(tagType)))
 	}
@@ -297,6 +332,8 @@ func mkValue(ctagType int16) (v reflect.Value) {
 		v = reflect.New(reflect.TypeOf(make(map[string]interface{}))).Elem()
 	case TAG_ARRAY:
 		v = reflect.New(ifaceSliceType).Elem()
+	case TAG_FLOAT:
+		v = reflect.New(reflect.TypeOf(float32(0.0))).Elem()
 	default:
 		panic(fmt.Errorf("invalid ctagType=%d", ctagType))
 	}
@@ -662,17 +699,23 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 	if ctagField >= 0 {
 		// get data from payload object
 		cnt := &fieldsoutcnt[ctagField]
+		field := int(ctagField)
 		switch ctagType {
 		case TAG_ARRAY:
 			count := int(rdser.GetVarUInt())
 			if k == reflect.Slice || k == reflect.Array || count != 0 { // Allows empty slice for any scalar type (using default value)
-				pl.getArray(int(ctagField), *cnt, count, v)
-				*cnt += count
+				if pl.t.Fields[field].Type == bindings.ValueFloatVector {
+					pl.getValue(field, *cnt, v)
+					(*cnt)++
+				} else {
+					pl.getArray(field, *cnt, count, v)
+					*cnt += count
+				}
 			} else {
 				initialV.Set(reflect.Zero(initialV.Type())) // Set nil to scalar pointers, intialized with empty arrays
 			}
 		default:
-			pl.getValue(int(ctagField), *cnt, v)
+			pl.getValue(field, *cnt, v)
 			(*cnt)++
 		}
 	} else {
@@ -729,7 +772,7 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 				tm, _ := time.Parse(time.RFC3339Nano, str)
 				v.Set(reflect.ValueOf(tm))
 			default:
-				panic(fmt.Errorf("can not convert '%s' to 'string'", v.Type().Kind().String()))
+				panic(fmt.Errorf("can not convert 'string' to '%s'", v.Type().Kind().String()))
 			}
 		default:
 			if k == reflect.Slice {
@@ -752,6 +795,8 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 				v.Set(reflect.ValueOf(asIface(rdser, ctagType)))
 			case reflect.Bool:
 				v.SetBool(asInt(rdser, ctagType) != 0)
+			default:
+				panic(fmt.Errorf("can not convert '%s' to '%s'", ctagTypeName(ctagType), v.Type().Kind().String()))
 			}
 		}
 	}
@@ -771,7 +816,7 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 		case reflect.String:
 			mv.SetMapIndex(reflect.ValueOf(name), v)
 		default:
-			panic(fmt.Errorf("unsuported map key type '%s'", mv.Type().Key().Kind().String()))
+			panic(fmt.Errorf("unsupported map key type '%s'", mv.Type().Key().Kind().String()))
 		}
 	}
 

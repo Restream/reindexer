@@ -8,7 +8,7 @@ RdxContext::RdxContext(RdxContext&& other) noexcept
 	  cancelCtx_(other.cancelCtx_),
 	  cmpl_(std::move(other.cmpl_)),
 	  originLsn_(other.originLsn_),
-	  emmiterServerId_(other.emmiterServerId_),
+	  emitterServerId_(other.emitterServerId_),
 	  shardId_(other.shardId_),
 	  holdStatus_(other.holdStatus_),
 	  shardingParallelExecution_{other.shardingParallelExecution_},
@@ -118,8 +118,10 @@ RdxActivityContext::Ward RdxContext::BeforeSimpleState(Activity::State st) const
 
 RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, ActivityContainer& activityContainer) const {
 	if (activityTracer_.empty() || query.empty()) {
-		return {
-			LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_, shardId_, shardingParallelExecution_};
+		return {LSN(),	   (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr),
+				cmpl_,	   emitterServerId_,
+				shardId_,  shardingParallelExecution_,
+				replToken_};
 	} else {
 		return {LSN(),
 				activityTracer_,
@@ -129,22 +131,25 @@ RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, Activity
 				connectionId_,
 				(deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr),
 				cmpl_,
-				emmiterServerId_,
+				emitterServerId_,
 				shardId_,
-				shardingParallelExecution_};
+				shardingParallelExecution_,
+				replToken_};
 	}
 }
 
 RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, ActivityContainer& activityContainer,
 												QueryResults& qresults) const {
 	if (activityTracer_.empty() || query.empty()) {
-		return {
-			LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_, shardId_, shardingParallelExecution_};
+		return {LSN(),	   (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr),
+				cmpl_,	   emitterServerId_,
+				shardId_,  shardingParallelExecution_,
+				replToken_};
 	}
 	assertrx(!qresults.activityCtx_);
 	qresults.activityCtx_.emplace(activityTracer_, user_, query, activityContainer, connectionId_, true);
 	return RdxContext{
-		&*(qresults.activityCtx_), LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_, shardId_,
+		&*(qresults.activityCtx_), LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emitterServerId_, shardId_,
 		shardingParallelExecution_};
 }
 

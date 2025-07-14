@@ -1,12 +1,15 @@
 #include <gtest/gtest.h>
-#include "core/reindexer.h"
-
 #include "core/cjson/jsonbuilder.h"
+#include "core/reindexer.h"
+#include "estl/gift_str.h"
+#include "vendor/gason/gason.h"
 
 TEST(JSONParsingTest, EmptyDocument) {
 	reindexer::Reindexer rx;
 	constexpr std::string_view kNsName("json_empty_doc_test");
-	auto err = rx.OpenNamespace(kNsName);
+	auto err = rx.Connect("builtin://");
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rx.OpenNamespace(kNsName);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	reindexer::Item item(rx.NewItem(kNsName));
@@ -53,7 +56,7 @@ TEST(JSONParsingTest, Strings) {
 		std::fill(strs[1].begin(), strs[1].end(), 'b');
 
 		std::string d("{\"id\":1,\"str0\":\"" + strs[0] + "\",\"str1\":\"" + strs[1] + "\",\"val\":999}");
-		reindexer::span<char> data(d);
+		std::span<char> data(d);
 		try {
 			gason::JsonParser parser;
 			auto root = parser.Parse(data, nullptr);
@@ -77,7 +80,7 @@ TEST(JSONParsingTest, LargeAllocations) {
 	jb.Put("mode", "mode");
 	auto arr = jb.Array("array");
 	for (int64_t i = 0; i < kArrElemsCnt; ++i) {
-		arr.Put(nullptr, reindexer::Variant{i});
+		arr.Put(reindexer::TagName::Empty(), reindexer::Variant{i});
 	}
 	arr.End();
 	jb.End();
@@ -88,6 +91,6 @@ TEST(JSONParsingTest, LargeAllocations) {
 	ASSERT_EQ(std::string_view(root["mode"].key), "mode");
 	for (auto el : root["array"]) {
 		ASSERT_EQ(std::string_view(el.key), std::string_view());
-		ASSERT_EQ(el.value.getTag(), gason::JSON_NUMBER);
+		ASSERT_EQ(el.value.getTag(), gason::JsonTag::NUMBER);
 	}
 }

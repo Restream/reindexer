@@ -54,7 +54,7 @@ Error NetworkMonitor::AwaitShards(const RdxContext& ctx) noexcept {
 			}
 		} while (!err.ok() && err.code() == errTimeout && !terminated_);
 		if (terminated_) {
-			return Error(errTerminated, "Sharding proxy was shutdowned");
+			return Error(errTerminated, "Sharding proxy has been shutdown");
 		}
 	} catch (Error& err) {
 		if (err.code() == errTimeout || err.code() == errCanceled) {
@@ -62,7 +62,7 @@ Error NetworkMonitor::AwaitShards(const RdxContext& ctx) noexcept {
 		}
 		return err;
 	} catch (...) {
-		return Error(errLogic, "Unknow error in sharding network monitor");
+		return Error(errLogic, "Unknown error in sharding network monitor");
 	}
 	return err;
 }

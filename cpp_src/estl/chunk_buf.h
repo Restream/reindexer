@@ -3,10 +3,10 @@
 #include <algorithm>
 #include <cstdlib>
 #include <mutex>
+#include <span>
 #include <string_view>
 #include <vector>
 #include "chunk.h"
-#include "span.h"
 #include "tools/assertrx.h"
 #include "tools/errors.h"
 
@@ -21,7 +21,7 @@ public:
 			std::lock_guard lck(mtx_);
 			const auto new_head = (head_ + 1) % ring_.size();
 			if (new_head == tail_) {
-				throw Error(errLogic, "Chain buffer overflow (max size is %d)", ring_.size());
+				throw Error(errLogic, "Chain buffer overflow (max size is {})", ring_.size());
 			}
 			data_size_ += ch.size();
 			ring_[head_] = std::move(ch);
@@ -35,10 +35,10 @@ public:
 		chunk.append(sv);
 		write(std::move(chunk));
 	}
-	span<chunk> tail() noexcept {
+	std::span<chunk> tail() noexcept {
 		std::lock_guard lck(mtx_);
 		size_t cnt = ((tail_ > head_) ? ring_.size() : head_) - tail_;
-		return span<chunk>(ring_.data() + tail_, cnt);
+		return std::span<chunk>(ring_.data() + tail_, cnt);
 	}
 	void erase(size_t nread) {
 		std::lock_guard lck(mtx_);

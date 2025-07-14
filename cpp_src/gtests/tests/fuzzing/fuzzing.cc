@@ -115,11 +115,10 @@ TEST_F(Fuzzing, BaseTest) {
 		}
 	} catch (const std::exception& err) {
 		FAIL() << err.what();
-	} catch (const reindexer::Error& err) {
-		FAIL() << err.what();
 	}
 }
 
+// NOLINTNEXTLINE (bugprone-exception-escape) Get stacktrace is probably better, than generic error-message
 int main(int argc, char** argv) {
 	::testing::InitGoogleTest(&argc, argv);
 

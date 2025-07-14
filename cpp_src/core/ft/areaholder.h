@@ -1,11 +1,7 @@
 #pragma once
-#include <algorithm>
-#include <iostream>
-#include <set>
-#include <vector>
-#include "estl/h_vector.h"
+
 #include "sort/pdqsort.hpp"
-#include "usingcontainer.h"
+#include "tools/rvector.h"
 
 namespace reindexer {
 
@@ -108,7 +104,7 @@ public:
 	void Reserve(int size) { areas_.reserve(size); }
 	void ReserveField(int size) { areas_.resize(size); }
 	void Commit() {
-		commited_ = true;
+		committed_ = true;
 		for (auto& area : areas_) {
 			area.Commit();
 		}
@@ -123,7 +119,7 @@ public:
 	}
 
 	[[nodiscard]] AreasInField<AreaType>* GetAreas(int field) {
-		if (!commited_) {
+		if (!committed_) {
 			Commit();
 		}
 		return (areas_.size() <= size_t(field)) ? nullptr : &areas_[field];
@@ -131,7 +127,7 @@ public:
 	[[nodiscard]] AreasInField<AreaType>* GetAreasRaw(int field) noexcept {
 		return (areas_.size() <= size_t(field)) ? nullptr : &areas_[field];
 	}
-	[[nodiscard]] bool IsCommited() const noexcept { return commited_; }
+	[[nodiscard]] bool IsCommitted() const noexcept { return committed_; }
 	[[nodiscard]] size_t GetAreasCount() const noexcept {
 		size_t size = 0;
 		for (const auto& aVec : areas_) {
@@ -140,7 +136,7 @@ public:
 		return size;
 	}
 	[[nodiscard]] bool InsertArea(AreaType&& area, int field, int32_t rank, int maxAreasInDoc) {
-		commited_ = false;
+		committed_ = false;
 		if (areas_.size() <= size_t(field)) {
 			areas_.resize(field + 1);
 		}
@@ -149,7 +145,7 @@ public:
 	}
 
 private:
-	bool commited_ = false;
+	bool committed_ = false;
 	RVector<AreasInField<AreaType>, 3> areas_;
 	int32_t maxTermRank_ = 0;
 };

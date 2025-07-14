@@ -1,6 +1,6 @@
 #pragma once
 
-#include "estl/span.h"
+#include <span>
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -14,7 +14,7 @@ struct ShardedMeta {
 	int shardId;
 	std::string data;
 
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::span<char> json);
 	void GetJSON(WrSerializer& ser) const;
 };
 

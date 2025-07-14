@@ -24,8 +24,8 @@ private:
 	};
 
 	void applyRecord(const SnapshotRecord& rec, const ChunkContext& ctx, h_vector<updates::UpdateRecord, 2>& repl);
-	Error applyShallowRecord(lsn_t lsn, WALRecType type, const PackedWALRecord& wrec, const ChunkContext& chCtx);
-	Error applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, const ChunkContext& chCtx, h_vector<updates::UpdateRecord, 2>& repl);
+	void applyShallowRecord(lsn_t lsn, WALRecType type, const PackedWALRecord& wrec, const ChunkContext& chCtx);
+	void applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, const ChunkContext& chCtx, h_vector<updates::UpdateRecord, 2>& repl);
 
 	NamespaceImpl& ns_;
 	RdxContext dummyCtx_;

@@ -5,18 +5,26 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"runtime"
 	"strconv"
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v4"
-	"github.com/restream/reindexer/v4/bindings/builtinserver/config"
-	"github.com/restream/reindexer/v4/test/helpers"
+	"github.com/restream/reindexer/v5"
+	"github.com/restream/reindexer/v5/bindings/builtinserver/config"
+	"github.com/restream/reindexer/v5/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
+
+type startupConfig struct {
+	removeStorage bool
+	serverID      int
+	isLeader      bool
+	masterDSN     string
+}
 
 func MakeLeader(t *testing.T, serverConfig *config.ServerConfig, serverID int, followerDSNs ...string) *reindexer.Reindexer {
 	return MakeNode(t, serverConfig, &startupConfig{removeStorage: true, serverID: serverID, isLeader: true}, followerDSNs...)
@@ -87,105 +95,9 @@ namespaces: []`
 		_, err = f.Write([]byte(config))
 		require.NoError(t, err)
 	}
-	return reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, serverConfig))
-}
-
-func FillData(t *testing.T, rx *reindexer.Reindexer, count int) {
-	for i := 0; i < count; i++ {
-		testItem := TestItemStorage{ID: i, Name: "test_" + strconv.Itoa(i)}
-		err := rx.Upsert("items", &testItem)
-		assert.NoError(t, err)
-	}
-}
-
-func GetData(t *testing.T, rx *reindexer.Reindexer) []interface{} {
-	it := rx.Query("items").Exec()
-	defer it.Close()
-	data, errfs := it.FetchAll()
-	assert.NoError(t, errfs)
-	return data
-}
-
-func GetDataFromNodes(t *testing.T, rxLeader *reindexer.Reindexer, rxFollower *reindexer.Reindexer, useLegacySync bool) []interface{} {
-	dataLeader := GetData(t, rxLeader)
-	if useLegacySync {
-		helpers.WaitForSyncWithMasterV3V3(t, rxLeader, rxFollower)
-	} else {
-		helpers.WaitForSyncWithMaster(t, rxLeader, rxFollower)
-	}
-	dataFollower := GetData(t, rxFollower)
-	assert.Equal(t, dataLeader, dataFollower, "Data in tables does not equal\n%s\n%s", dataLeader, dataFollower)
-	return dataLeader
-}
-
-func GetDataFromNodesNoSync(t *testing.T, rxLeader *reindexer.Reindexer, rxFollower *reindexer.Reindexer) []interface{} {
-	dataLeader := GetData(t, rxLeader)
-	dataFollower := GetData(t, rxFollower)
-	assert.Equal(t, dataLeader, dataFollower, "Data in tables does not equal\n%s\n%s", dataLeader, dataFollower)
-	return dataLeader
-}
-
-func AwaitServerStartup(t *testing.T, dsn string) (*reindexer.Reindexer, error) {
-	var err error
-	for i := 0; i < 10; i++ {
-		rx := reindexer.NewReindex(dsn)
-		status := rx.Status()
-		if status.Err == nil {
-			return rx, nil
-		}
-		err = status.Err
-		time.Sleep(time.Second * 1)
-	}
-	return nil, err
-}
-
-func StartupServerFromBinary(t *testing.T, serverConfig *config.ServerConfig, cprotoDSN string) (*reindexer.Reindexer, func()) {
-	cmd := exec.Command(*legacyServerBinary, "--db", serverConfig.Storage.Path, "-r", serverConfig.Net.RPCAddr, "-p", serverConfig.Net.HTTPAddr)
-	var stdBuffer bytes.Buffer
-	mw := io.MultiWriter(os.Stdout, &stdBuffer)
-	cmd.Stdout = mw
-	cmd.Stderr = mw
-	err := cmd.Start()
+	rx, err := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, serverConfig))
 	require.NoError(t, err)
-	rx, err := AwaitServerStartup(t, cprotoDSN)
-	terminateF := func() {
-		cmd.Process.Signal(os.Interrupt)
-		st, err := cmd.Process.Wait()
-		require.NoError(t, err)
-		require.Equal(t, st.ExitCode(), 0)
-	}
-	if err != nil {
-		terminateF()
-		require.NoError(t, err, "Server log: %s", stdBuffer.String())
-	}
-	err = rx.CloseNamespace("#memstats")
-	require.NoError(t, err)
-	err = rx.RegisterNamespace("#memstats", reindexer.DefaultNamespaceOptions(), helpers.LegacyNamespaceMemStat{})
-	require.NoError(t, err)
-	err = rx.CloseNamespace("#config")
-	require.NoError(t, err)
-	err = rx.RegisterNamespace("#config", reindexer.DefaultNamespaceOptions(), helpers.LegacyDBConfigItem{})
-	require.NoError(t, err)
-	return rx, terminateF
-}
-
-func MakeLegacyLeader(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, serverID int) (*reindexer.Reindexer, func()) {
-	return MakeLegacyNode(t, cprotoDSN, serverConfig, &startupConfig{removeStorage: true, serverID: serverID, isLeader: true, masterDSN: ""})
-}
-
-func MakeLegacyFollower(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, serverID int, masterDSN string) (*reindexer.Reindexer, func()) {
-	return MakeLegacyNode(t, cprotoDSN, serverConfig, &startupConfig{removeStorage: true, serverID: serverID, isLeader: false, masterDSN: masterDSN})
-}
-
-func MakeLegacyFollowerNoStorageCleanup(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, serverID int, masterDSN string) (*reindexer.Reindexer, func()) {
-	return MakeLegacyNode(t, cprotoDSN, serverConfig, &startupConfig{removeStorage: false, serverID: serverID, isLeader: false, masterDSN: masterDSN})
-}
-
-type startupConfig struct {
-	removeStorage bool
-	serverID      int
-	isLeader      bool
-	masterDSN     string
+	return rx
 }
 
 func MakeLegacyNode(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, startupCfg *startupConfig) (*reindexer.Reindexer, func()) {
@@ -228,12 +140,101 @@ func MakeLegacyNode(t *testing.T, cprotoDSN string, serverConfig *config.ServerC
 	return StartupServerFromBinary(t, serverConfig, cprotoDSN)
 }
 
+func MakeLegacyLeader(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, serverID int) (*reindexer.Reindexer, func()) {
+	return MakeLegacyNode(t, cprotoDSN, serverConfig, &startupConfig{removeStorage: true, serverID: serverID, isLeader: true, masterDSN: ""})
+}
+
+func MakeLegacyFollower(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, serverID int, masterDSN string) (*reindexer.Reindexer, func()) {
+	return MakeLegacyNode(t, cprotoDSN, serverConfig, &startupConfig{removeStorage: true, serverID: serverID, isLeader: false, masterDSN: masterDSN})
+}
+
+func MakeLegacyFollowerNoStorageCleanup(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, serverID int, masterDSN string) (*reindexer.Reindexer, func()) {
+	return MakeLegacyNode(t, cprotoDSN, serverConfig, &startupConfig{removeStorage: false, serverID: serverID, isLeader: false, masterDSN: masterDSN})
+}
+
+func FillData(t *testing.T, rx *reindexer.Reindexer, count int) {
+	for i := 0; i < count; i++ {
+		testItem := TestItemStorage{ID: i, Name: "test_" + strconv.Itoa(i)}
+		err := rx.Upsert("items", &testItem)
+		assert.NoError(t, err)
+	}
+}
+
+func GetData(t *testing.T, rx *reindexer.Reindexer) []interface{} {
+	it := rx.Query("items").Exec()
+	defer it.Close()
+	data, errfs := it.FetchAll()
+	assert.NoError(t, errfs)
+	return data
+}
+
+func GetDataFromNodes(t *testing.T, rxLeader *reindexer.Reindexer, rxFollower *reindexer.Reindexer, useLegacySync bool) []interface{} {
+	dataLeader := GetData(t, rxLeader)
+	if useLegacySync {
+		helpers.WaitForSyncWithMasterV3V3(t, rxLeader, rxFollower)
+	} else {
+		helpers.WaitForSyncWithMaster(t, rxLeader, rxFollower)
+	}
+	dataFollower := GetData(t, rxFollower)
+	assert.Equal(t, dataLeader, dataFollower, "Data in tables does not equal\n%s\n%s", dataLeader, dataFollower)
+	return dataLeader
+}
+
+func GetDataFromNodesNoSync(t *testing.T, rxLeader *reindexer.Reindexer, rxFollower *reindexer.Reindexer) []interface{} {
+	dataLeader := GetData(t, rxLeader)
+	dataFollower := GetData(t, rxFollower)
+	assert.Equal(t, dataLeader, dataFollower, "Data in tables does not equal\n%s\n%s", dataLeader, dataFollower)
+	return dataLeader
+}
+
+func StartupServerFromBinary(t *testing.T, serverConfig *config.ServerConfig, cprotoDSN string) (*reindexer.Reindexer, func()) {
+	cmd := exec.Command(*legacyServerBinary, "--db", serverConfig.Storage.Path, "-r", serverConfig.Net.RPCAddr, "-p", serverConfig.Net.HTTPAddr)
+	var stdBuffer bytes.Buffer
+	mw := io.MultiWriter(os.Stdout, &stdBuffer)
+	cmd.Stdout = mw
+	cmd.Stderr = mw
+	err := cmd.Start()
+	require.NoError(t, err)
+	rx, err := AwaitServerStartup(t, cprotoDSN)
+	terminateF := func() {
+		cmd.Process.Signal(os.Interrupt)
+		st, err := cmd.Process.Wait()
+		require.NoError(t, err)
+		require.Equal(t, st.ExitCode(), 0)
+	}
+	if err != nil {
+		terminateF()
+		require.NoError(t, err, "Server log: %s", stdBuffer.String())
+	}
+	err = rx.CloseNamespace("#memstats")
+	require.NoError(t, err)
+	err = rx.RegisterNamespace("#memstats", reindexer.DefaultNamespaceOptions(), helpers.LegacyNamespaceMemStat{})
+	require.NoError(t, err)
+	err = rx.CloseNamespace("#config")
+	require.NoError(t, err)
+	err = rx.RegisterNamespace("#config", reindexer.DefaultNamespaceOptions(), helpers.LegacyDBConfigItem{})
+	require.NoError(t, err)
+	return rx, terminateF
+}
+
+func AwaitServerStartup(t *testing.T, dsn string) (*reindexer.Reindexer, error) {
+	var err error
+	for i := 0; i < 20; i++ {
+		rx, err := reindexer.NewReindex(dsn)
+		if err == nil {
+			return rx, nil
+		}
+		time.Sleep(time.Second * 1)
+	}
+	return nil, err
+}
+
 func TestStorageCompatibility(t *testing.T) {
 	if len(DB.slaveList) > 0 || len(*legacyServerBinary) == 0 || runtime.GOOS == "windows" {
 		t.Skip()
 	}
 
-	const baseStoragePath = "/tmp/reindex_test_storage_compatibility/"
+	baseStoragePath := path.Join(helpers.GetTmpDBDir(), "reindex_test_storage_compatibility/")
 	const dataCount = 100
 	const followerServerId = 2
 	cfgFollower := config.DefaultServerConfig()
@@ -307,13 +308,13 @@ func TestStorageCompatibility(t *testing.T) {
 		}
 
 		readDataFromCurrentServer := func() []interface{} {
-			rxFollower := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgFollower))
-			require.NoError(t, rxFollower.Status().Err)
+			rxFollower, err := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgFollower))
+			require.NoError(t, err)
 			defer rxFollower.Close()
-			rxLeader := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgLeader))
-			require.NoError(t, rxLeader.Status().Err)
+			rxLeader, err := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgLeader))
+			require.NoError(t, err)
 			defer rxLeader.Close()
-			err := rxLeader.RegisterNamespace("items", reindexer.DefaultNamespaceOptions(), TestItemStorage{})
+			err = rxLeader.RegisterNamespace("items", reindexer.DefaultNamespaceOptions(), TestItemStorage{})
 			require.NoError(t, err)
 			err = rxFollower.RegisterNamespace("items", reindexer.DefaultNamespaceOptions(), TestItemStorage{})
 			require.NoError(t, err)

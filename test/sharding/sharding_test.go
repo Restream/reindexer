@@ -13,21 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v4"
-	_ "github.com/restream/reindexer/v4/bindings/cproto"
-	"github.com/restream/reindexer/v4/test/helpers"
+	"github.com/restream/reindexer/v5"
+	_ "github.com/restream/reindexer/v5/bindings/cproto"
+	"github.com/restream/reindexer/v5/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-var dsn = flag.String("dsn", "builtin://", "reindex db dsn")
-
-func TestMain(m *testing.M) {
-	flag.Parse()
-	retCode := m.Run()
-	os.Exit(retCode)
-
-}
 
 type TestItemShardingJoined struct {
 	ID int `reindex:"id,,pk" json:"id"`
@@ -42,14 +33,28 @@ type TestItemSharding struct {
 	_         struct{}                  `reindex:"id+location,,composite,pk"`
 }
 
+var dsn = flag.String("dsn", "builtin://", "reindex db dsn")
+
+func CreateTestItemSharding(ID int, Location string) TestItemSharding {
+	return TestItemSharding{ID: ID, Data: "data", Location: Location}
+}
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	retCode := m.Run()
+	os.Exit(retCode)
+
+}
+
 func TestShardingIDs(t *testing.T) {
 
-	rx := reindexer.NewReindex(*dsn, reindexer.WithCreateDBIfMissing())
+	rx, err := reindexer.NewReindex(*dsn, reindexer.WithCreateDBIfMissing())
+	require.NoError(t, err)
 	defer rx.Close()
 
 	const testNamespace = "ns"
 
-	err := rx.OpenNamespace(testNamespace, reindexer.DefaultNamespaceOptions(), TestItemSharding{})
+	err = rx.OpenNamespace(testNamespace, reindexer.DefaultNamespaceOptions(), TestItemSharding{})
 	assert.NoError(t, err, "Can't open namespace \"%s\" what=", testNamespace, err)
 
 	index := 0
@@ -139,10 +144,6 @@ func TestShardingIDs(t *testing.T) {
 		check()
 	})
 
-}
-
-func CreateTestItemSharding(ID int, Location string) TestItemSharding {
-	return TestItemSharding{ID: ID, Data: "data", Location: Location}
 }
 
 func TestShardingBuiltin(t *testing.T) {

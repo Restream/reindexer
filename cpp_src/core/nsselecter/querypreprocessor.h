@@ -1,6 +1,7 @@
 #pragma once
 
 #include "aggregator.h"
+#include "core/enums.h"
 #include "core/index/ft_preselect.h"
 #include "core/query/queryentry.h"
 #include "estl/h_vector.h"
@@ -14,63 +15,72 @@ template <typename>
 struct SelectCtxWithJoinPreSelect;
 
 class QueryPreprocessor : private QueryEntries {
-public:
-	enum class ValuesType : bool { Scalar, Composite };
+	class Merger;
+	struct [[nodiscard]] Ranked {
+		RankedTypeQuery rankedTypeQuery;
+		IndexValueType rankedIndexNo;
+	};
 
-	QueryPreprocessor(QueryEntries&&, NamespaceImpl*, const SelectCtx&);
-	const QueryEntries& GetQueryEntries() const noexcept { return *this; }
-	bool LookupQueryIndexes() {
-		const unsigned lookupEnd = queryEntryAddedByForcedSortOptimization_ ? container_.size() - 1 : container_.size();
+public:
+	enum class [[nodiscard]] ValuesType : bool { Scalar, Composite };
+
+	QueryPreprocessor(QueryEntries&&, const RVector<Aggregator, 4>&, NamespaceImpl*, const SelectCtx&);
+	const QueryEntries& GetQueryEntries() const& noexcept { return *this; }
+	auto GetQueryEntries() const&& = delete;
+	Changed LookupQueryIndexes() {
+		bool forcedSortOptimization = hasForcedSortOptimizationQueryEntry();
+		const unsigned lookupEnd = container_.size() - size_t(forcedSortOptimization);
 		assertrx_throw(lookupEnd <= uint32_t(std::numeric_limits<uint16_t>::max() - 1));
-		const size_t merged = lookupQueryIndexes(0, 0, lookupEnd);
-		if (queryEntryAddedByForcedSortOptimization_) {
+		const auto [merged, changed] = lookupQueryIndexes(lookupEnd);
+		if (forcedSortOptimization) {
 			container_[container_.size() - merged - 1] = std::move(container_.back());
 		}
 		if (merged != 0) {
 			container_.resize(container_.size() - merged);
-			return true;
+			return Changed_True;
 		}
-		return false;
+		return changed;
 	}
-	bool ContainsFullTextIndexes() const;
-	bool ContainsForcedSortOrder() const noexcept {
-		if (queryEntryAddedByForcedSortOptimization_) {
+	Ranked GetRankedTypeQuery() const;
+	[[nodiscard]] bool ContainsForcedSortOrder() const noexcept {
+		if (hasForcedSortOptimizationQueryEntry()) {
 			return forcedStage();
 		}
 		return forcedSortOrder_;
 	}
-	void CheckUniqueFtQuery() const;
-	bool SubstituteCompositeIndexes() {
-		return substituteCompositeIndexes(0, container_.size() - queryEntryAddedByForcedSortOptimization_) != 0;
+	Changed SubstituteCompositeIndexes() {
+		return Changed{substituteCompositeIndexes(0, container_.size() - hasForcedSortOptimizationQueryEntry()) != 0};
 	}
 	void InitIndexedQueries() { initIndexedQueries(0, Size()); }
-	void AddDistinctEntries(const h_vector<Aggregator, 4>&);
-	bool NeedNextEvaluation(unsigned start, unsigned count, bool& matchedAtLeastOnce, QresExplainHolder& qresHolder) noexcept;
-	unsigned Start() const noexcept { return start_; }
-	unsigned Count() const noexcept { return count_; }
-	bool MoreThanOneEvaluation() const noexcept { return queryEntryAddedByForcedSortOptimization_; }
-	bool AvailableSelectBySortIndex() const noexcept { return !queryEntryAddedByForcedSortOptimization_ || !forcedStage(); }
+	void AddDistinctEntries(const RVector<Aggregator, 4>&);
+	[[nodiscard]] bool NeedNextEvaluation(unsigned start, unsigned count, bool& matchedAtLeastOnce, QresExplainHolder& qresHolder,
+										  bool needCalcTotal);
+	[[nodiscard]] unsigned Start() const noexcept { return start_; }
+	[[nodiscard]] unsigned Count() const noexcept { return count_; }
+	[[nodiscard]] bool MoreThanOneEvaluation() const noexcept { return hasForcedSortOptimizationQueryEntry(); }
+	[[nodiscard]] bool AvailableSelectBySortIndex() const noexcept { return !hasForcedSortOptimizationQueryEntry() || !forcedStage(); }
 	void InjectConditionsFromJoins(JoinedSelectors& js, OnConditionInjections& explainOnInjections, LogLevel, bool inTransaction,
 								   bool enableSortOrders, const RdxContext& rdxCtx);
-	void Reduce(bool isFt);
+	void Reduce();
 	using QueryEntries::Size;
 	using QueryEntries::Dump;
 	using QueryEntries::ToDsl;
 	template <typename JoinPreResultCtx>
-	[[nodiscard]] SortingEntries GetSortingEntries(const SelectCtxWithJoinPreSelect<JoinPreResultCtx>&) const {
+	[[nodiscard]] SortingEntries GetSortingEntries(const SelectCtxWithJoinPreSelect<JoinPreResultCtx>&,
+												   RankedTypeQuery rankedTypeQuery) const {
 		if (ftEntry_) {
 			return {};
 		}
 		// DO NOT use deducted sort order in the following cases:
-		// - query contains explicity specified sort order
-		// - query contains FullText query.
+		// - query contains explicit specified sort order
+		// - query contains ranked query.
 		const bool disableOptimizedSortOrder =
-			!query_.sortingEntries_.empty() || ContainsFullTextIndexes() || !std::is_same_v<JoinPreResultCtx, void>;
+			!query_.GetSortingEntries().empty() || rankedTypeQuery != RankedTypeQuery::No || !std::is_same_v<JoinPreResultCtx, void>;
 		// Queries with ordered indexes may have different selection plan depending on filters' values.
 		// This may lead to items reordering when SingleRange becomes main selection method.
-		// By default all the results are ordereb by internal IDs, but with SingleRange results will be ordered by values first.
+		// By default, all the results are ordered by internal IDs, but with SingleRange results will be ordered by values first.
 		// So we're trying to order results by values in any case, even if there are no SingleRange in selection plan.
-		return disableOptimizedSortOrder ? query_.sortingEntries_ : detectOptimalSortOrder();
+		return disableOptimizedSortOrder ? query_.GetSortingEntries() : detectOptimalSortOrder();
 	}
 
 	bool IsFtExcluded() const noexcept { return ftEntry_.has_value(); }
@@ -85,10 +95,10 @@ public:
 	}
 	bool IsFtPreselected() const noexcept { return ftPreselect_ && !ftEntry_; }
 	static void SetQueryField(QueryField&, const NamespaceImpl&);
+	static void VerifyOnStatementField(const QueryField&, const NamespaceImpl&);
 
 private:
 	enum class NeedSwitch : bool { Yes = true, No = false };
-	enum class [[nodiscard]] MergeResult { NotMerged, Merged, Annihilated };
 	enum class MergeOrdered : bool { Yes = true, No = false };
 	struct FoundIndexInfo {
 		enum class ConditionType { Incompatible = 0, Compatible = 1 };
@@ -104,42 +114,42 @@ private:
 	static void setQueryIndex(QueryField&, int idxNo, const NamespaceImpl&);
 	[[nodiscard]] SortingEntries detectOptimalSortOrder() const;
 	[[nodiscard]] bool forcedStage() const noexcept { return evaluationsCount_ == (desc_ ? 1 : 0); }
-	[[nodiscard]] size_t lookupQueryIndexes(uint16_t dst, uint16_t srcBegin, uint16_t srcEnd);
+	[[nodiscard]] std::pair<size_t, Changed> lookupQueryIndexes(uint16_t srcEnd);
 	[[nodiscard]] size_t substituteCompositeIndexes(size_t from, size_t to);
 	template <QueryPreprocessor::ValuesType vt, typename... CmpArgs>
 	MergeResult mergeQueryEntries(size_t lhs, size_t rhs, MergeOrdered, const CmpArgs&...);
 	template <ValuesType, typename... CmpArgs>
-	MergeResult mergeQueryEntriesSetSet(QueryEntry& lqe, QueryEntry& rqe, bool distinct, size_t position, const CmpArgs&...);
+	MergeResult mergeQueryEntriesSetSet(QueryEntry& lqe, QueryEntry& rqe, IsDistinct, size_t position, const CmpArgs&...);
 	template <ValuesType, typename... CmpArgs>
-	MergeResult mergeQueryEntriesAllSetSet(NeedSwitch, QueryEntry& lqe, QueryEntry& rqe, bool distinct, size_t position, const CmpArgs&...);
+	MergeResult mergeQueryEntriesAllSetSet(NeedSwitch, QueryEntry& lqe, QueryEntry& rqe, IsDistinct, size_t position, const CmpArgs&...);
 	template <ValuesType, typename... CmpArgs>
-	MergeResult mergeQueryEntriesAllSetAllSet(QueryEntry& lqe, QueryEntry& rqe, bool distinct, size_t position, const CmpArgs&...);
-	MergeResult mergeQueryEntriesAny(NeedSwitch, QueryEntry& lqe, QueryEntry& rqe, bool distinct, size_t position);
+	MergeResult mergeQueryEntriesAllSetAllSet(QueryEntry& lqe, QueryEntry& rqe, IsDistinct, size_t position, const CmpArgs&...);
+	MergeResult mergeQueryEntriesAny(NeedSwitch, QueryEntry& lqe, QueryEntry& rqe, IsDistinct, size_t position);
 	template <ValuesType, typename F>
-	MergeResult mergeQueryEntriesSetNotSet(NeedSwitch, QueryEntry& lqe, QueryEntry& rqe, F filter, bool distinct, size_t position,
+	MergeResult mergeQueryEntriesSetNotSet(NeedSwitch, QueryEntry& lqe, QueryEntry& rqe, F filter, IsDistinct, size_t position,
 										   MergeOrdered);
 	template <ValuesType, typename F, typename... CmpArgs>
-	MergeResult mergeQueryEntriesAllSetNotSet(NeedSwitch, QueryEntry& lqe, QueryEntry& rqe, F filter, bool distinct, size_t position,
+	MergeResult mergeQueryEntriesAllSetNotSet(NeedSwitch, QueryEntry& lqe, QueryEntry& rqe, F filter, IsDistinct, size_t position,
 											  const CmpArgs&...);
-	MergeResult mergeQueryEntriesDWithin(QueryEntry& lqe, QueryEntry& rqe, bool distinct, size_t position);
+	MergeResult mergeQueryEntriesDWithin(QueryEntry& lqe, QueryEntry& rqe, IsDistinct, size_t position);
 	template <ValuesType, typename... CmpArgs>
-	MergeResult mergeQueryEntriesLt(QueryEntry& lqe, QueryEntry& rqe, bool distinct, const CmpArgs&...);
+	MergeResult mergeQueryEntriesLt(QueryEntry& lqe, QueryEntry& rqe, IsDistinct, const CmpArgs&...);
 	template <ValuesType, typename... CmpArgs>
-	MergeResult mergeQueryEntriesGt(QueryEntry& lqe, QueryEntry& rqe, bool distinct, const CmpArgs&...);
+	MergeResult mergeQueryEntriesGt(QueryEntry& lqe, QueryEntry& rqe, IsDistinct, const CmpArgs&...);
 	template <ValuesType, typename... CmpArgs>
 	MergeResult mergeQueryEntriesLtGt(QueryEntry& lqe, QueryEntry& rqe, size_t position, const CmpArgs&...);
 	template <ValuesType, typename... CmpArgs>
-	MergeResult mergeQueryEntriesLeGe(NeedSwitch, QueryEntry& lqe, QueryEntry& rqe, bool distinct, size_t position, const CmpArgs&...);
+	MergeResult mergeQueryEntriesLeGe(NeedSwitch, QueryEntry& lqe, QueryEntry& rqe, IsDistinct, size_t position, const CmpArgs&...);
 	template <ValuesType, typename... CmpArgs>
-	MergeResult mergeQueryEntriesRangeLt(NeedSwitch, QueryEntry& range, QueryEntry& ge, bool distinct, size_t position, const CmpArgs&...);
+	MergeResult mergeQueryEntriesRangeLt(NeedSwitch, QueryEntry& range, QueryEntry& ge, IsDistinct, size_t position, const CmpArgs&...);
 	template <ValuesType, typename... CmpArgs>
-	MergeResult mergeQueryEntriesRangeLe(NeedSwitch, QueryEntry& range, QueryEntry& ge, bool distinct, size_t position, const CmpArgs&...);
+	MergeResult mergeQueryEntriesRangeLe(NeedSwitch, QueryEntry& range, QueryEntry& ge, IsDistinct, size_t position, const CmpArgs&...);
 	template <ValuesType, typename... CmpArgs>
-	MergeResult mergeQueryEntriesRangeGt(NeedSwitch, QueryEntry& range, QueryEntry& ge, bool distinct, size_t position, const CmpArgs&...);
+	MergeResult mergeQueryEntriesRangeGt(NeedSwitch, QueryEntry& range, QueryEntry& ge, IsDistinct, size_t position, const CmpArgs&...);
 	template <ValuesType, typename... CmpArgs>
-	MergeResult mergeQueryEntriesRangeGe(NeedSwitch, QueryEntry& range, QueryEntry& ge, bool distinct, size_t position, const CmpArgs&...);
+	MergeResult mergeQueryEntriesRangeGe(NeedSwitch, QueryEntry& range, QueryEntry& ge, IsDistinct, size_t position, const CmpArgs&...);
 	template <ValuesType, typename... CmpArgs>
-	MergeResult mergeQueryEntriesRange(QueryEntry& range, QueryEntry& ge, bool distinct, size_t position, const CmpArgs&...);
+	MergeResult mergeQueryEntriesRange(QueryEntry& range, QueryEntry& ge, IsDistinct, size_t position, const CmpArgs&...);
 	[[nodiscard]] const std::vector<int>* getCompositeIndex(int field) const noexcept;
 	void initIndexedQueries(size_t begin, size_t end);
 	[[nodiscard]] const Index* findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end) const;
@@ -157,25 +167,28 @@ private:
 	[[nodiscard]] std::pair<CondType, VariantArray> queryValuesFromOnCondition(CondType condition, const QueryJoinEntry&,
 																			   const JoinedSelector&, const CollateOpts&);
 	void checkStrictMode(const QueryField&) const;
-	[[nodiscard]] int calculateMaxIterations(const size_t from, const size_t to, int maxMaxIters, span<int>& maxIterations,
+	void checkAllowedCondition(const QueryField&, CondType) const;
+	[[nodiscard]] int calculateMaxIterations(const size_t from, const size_t to, int maxMaxIters, std::span<int>& maxIterations,
 											 bool inTransaction, bool enableSortOrders, const RdxContext&) const;
-	[[nodiscard]] bool removeBrackets();
+	[[nodiscard]] Changed removeBrackets();
 	[[nodiscard]] size_t removeBrackets(size_t begin, size_t end);
 	[[nodiscard]] bool canRemoveBracket(size_t i) const;
-	[[nodiscard]] bool removeAlwaysFalse();
-	[[nodiscard]] std::pair<size_t, bool> removeAlwaysFalse(size_t begin, size_t end);
-	[[nodiscard]] bool removeAlwaysTrue();
-	[[nodiscard]] std::pair<size_t, bool> removeAlwaysTrue(size_t begin, size_t end);
+	[[nodiscard]] Changed removeAlwaysFalse();
+	[[nodiscard]] std::pair<size_t, Changed> removeAlwaysFalse(size_t begin, size_t end);
+	[[nodiscard]] Changed removeAlwaysTrue();
+	[[nodiscard]] std::pair<size_t, Changed> removeAlwaysTrue(size_t begin, size_t end);
 	[[nodiscard]] bool containsJoin(size_t) noexcept;
 
 	template <typename JS>
 	void briefDump(size_t from, size_t to, const std::vector<JS>& joinedSelectors, WrSerializer& ser) const;
 
+	bool hasForcedSortOptimizationQueryEntry() const noexcept { return Size() && container_.back().Is<ForcedSortOptimizationQueryEntry>(); }
+	void addDistinctEntries(const h_vector<Aggregator, 4>&);
+
 	NamespaceImpl& ns_;
 	const Query& query_;
 	StrictMode strictMode_;
-	bool queryEntryAddedByForcedSortOptimization_ = false;
-	bool desc_ = false;
+	Desc desc_ = Desc_False;
 	bool forcedSortOrder_ = false;
 	bool reqMatchedOnce_ = false;
 	size_t evaluationsCount_ = 0;
@@ -184,6 +197,7 @@ private:
 	std::optional<QueryEntry> ftEntry_;
 	std::optional<FtPreselectT> ftPreselect_;
 	const bool isMergeQuery_ = false;
+	FloatVectorsHolderMap* floatVectorsHolder_;
 };
 
 }  // namespace reindexer
