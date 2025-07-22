@@ -2,7 +2,6 @@
 
 #include "core/ft/config/ftfastconfig.h"
 #include "core/queryresults/queryresults.h"
-#include "core/reindexer.h"
 #include "reindexertestapi.h"
 
 class FTApi : public ::testing::TestWithParam<reindexer::FtFastConfig::Optimization> {
@@ -51,52 +50,7 @@ public:
 					  std::vector<std::tuple<std::string, std::string, std::string>> expectedResults, bool withOrder);
 
 	template <typename ResType>
-	void CheckResults(const std::string& query, const reindexer::QueryResults& qr, std::vector<ResType>& expectedResults, bool withOrder) {
-		constexpr bool kTreeFields = std::tuple_size<ResType>{} == 3;
-		EXPECT_EQ(qr.Count(), expectedResults.size()) << "Query: " << query;
-		for (auto itRes : qr) {
-			const auto item = itRes.GetItem(false);
-			const auto it = std::find_if(expectedResults.begin(), expectedResults.end(), [&item](const ResType& p) {
-				if constexpr (kTreeFields) {
-					return std::get<0>(p) == item["ft1"].As<std::string>() && std::get<1>(p) == item["ft2"].As<std::string>() &&
-						   std::get<2>(p) == item["ft3"].As<std::string>();
-				}
-				return std::get<0>(p) == item["ft1"].As<std::string>() && std::get<1>(p) == item["ft2"].As<std::string>();
-			});
-			if (it == expectedResults.end()) {
-				if constexpr (kTreeFields) {
-					ADD_FAILURE() << "Found not expected: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>()
-								  << "\" \"" << item["ft3"].As<std::string>() << "\"\nQuery: " << query;
-				} else {
-					ADD_FAILURE() << "Found not expected: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>()
-								  << "\"\nQuery: " << query;
-				}
-			} else {
-				if (withOrder) {
-					if constexpr (kTreeFields) {
-						EXPECT_EQ(it, expectedResults.begin())
-							<< "Found not in order: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>()
-							<< "\" \"" << item["ft3"].As<std::string>() << "\"\nQuery: " << query;
-					} else {
-						EXPECT_EQ(it, expectedResults.begin()) << "Found not in order: \"" << item["ft1"].As<std::string>() << "\" \""
-															   << item["ft2"].As<std::string>() << "\"\nQuery: " << query;
-					}
-				}
-				expectedResults.erase(it);
-			}
-		}
-		for (const auto& expected : expectedResults) {
-			if constexpr (kTreeFields) {
-				ADD_FAILURE() << "Not found: \"" << std::get<0>(expected) << "\" \"" << std::get<1>(expected) << "\" \""
-							  << std::get<2>(expected) << "\"\nQuery: " << query;
-			} else {
-				ADD_FAILURE() << "Not found: \"" << std::get<0>(expected) << "\" \"" << std::get<1>(expected) << "\"\nQuery: " << query;
-			}
-		}
-		if (!expectedResults.empty()) {
-			ADD_FAILURE() << "Query: " << query;
-		}
-	}
+	void CheckResults(const std::string& query, const reindexer::QueryResults& qr, std::vector<ResType>& expectedResults, bool withOrder);
 	void CheckResultsByField(const reindexer::QueryResults& res, const std::set<std::string>& expected, std::string_view fieldName,
 							 std::string_view description);
 
@@ -112,7 +66,6 @@ protected:
 	struct FTDSLQueryParams {
 		reindexer::RHashMap<std::string, int> fields;
 		reindexer::StopWordsSetT stopWords;
-		std::string extraWordSymbols = "-/+";
 	};
 	int counter_ = 0;
 	ReindexerTestApi<reindexer::Reindexer> rt;

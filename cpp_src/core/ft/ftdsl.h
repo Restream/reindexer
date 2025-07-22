@@ -1,12 +1,9 @@
 #pragma once
 
-#include <climits>
-#include <functional>
-#include <vector>
-#include "core/type_consts.h"
-#include "estl/h_vector.h"
 #include "stopwords/types.h"
-#include "usingcontainer.h"
+#include "tools/rhashmap.h"
+#include "tools/rvector.h"
+#include "tools/stringstools.h"
 
 namespace reindexer {
 
@@ -38,32 +35,47 @@ struct FtDSLEntry {
 	FtDslOpts opts;
 };
 
+#if !defined(__clang__) && !defined(_MSC_VER)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 struct FtDSLVariant {
 	FtDSLVariant() = default;
-	FtDSLVariant(std::wstring p, int pr) noexcept : pattern{std::move(p)}, proc{pr} {}
+	FtDSLVariant(FtDSLVariant&&) = default;
+	FtDSLVariant(std::wstring p, int pr, PrefAndStemmersForbidden psForbidden) noexcept
+		: pattern{std::move(p)}, proc{pr}, prefAndStemmersForbidden(psForbidden) {}
+
+	reindexer::FtDSLVariant& operator=(FtDSLVariant&& rhs) = default;
 
 	std::wstring pattern;
 	int proc = 0;
+	PrefAndStemmersForbidden prefAndStemmersForbidden = PrefAndStemmersForbidden_False;
 };
+#if !defined(__clang__) && !defined(_MSC_VER)
+#pragma GCC diagnostic pop
+#endif
 
 struct StopWord;
 
 class FtDSLQuery : public RVector<FtDSLEntry> {
 public:
-	FtDSLQuery(const RHashMap<std::string, int>& fields, const StopWordsSetT& stopWords, const std::string& extraWordSymbols) noexcept
-		: fields_(fields), stopWords_(stopWords), extraWordSymbols_(extraWordSymbols) {}
-	void parse(std::wstring& utf16str);
-	void parse(std::string_view q);
-	FtDSLQuery CopyCtx() const noexcept { return {fields_, stopWords_, extraWordSymbols_}; }
+	FtDSLQuery(const RHashMap<std::string, int>& fields, const StopWordsSetT& stopWords, const SplitOptions& splitOptions) noexcept
+		: fields_(fields), stopWords_(stopWords), splitOptions_(splitOptions) {}
 
-protected:
-	void parseFields(std::wstring& utf16str, std::wstring::iterator& it, h_vector<FtDslFieldOpts, 8>& fieldsOpts);
+	FtDSLQuery CopyCtx() const noexcept { return {fields_, stopWords_, splitOptions_}; }
+	void Parse(std::string_view q);
+
+private:
+	void parseImpl(wchar_t* str);
+	void closeGroup(wchar_t*& str, int groupTermCounter, int groupCounter);
+	void parseFieldOpts(wchar_t*& str, FtDslFieldOpts& defFieldOpts, h_vector<FtDslFieldOpts, 8>& fieldsOpts);
+	void parseFieldsOpts(wchar_t*& str, h_vector<FtDslFieldOpts, 8>& fieldsOpts);
 
 	std::function<int(const std::string&)> resolver_;
 
 	const RHashMap<std::string, int>& fields_;
 	const StopWordsSetT& stopWords_;
-	const std::string& extraWordSymbols_;
+	const SplitOptions& splitOptions_;
 };
 
 }  // namespace reindexer

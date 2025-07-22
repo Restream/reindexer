@@ -10,10 +10,6 @@ namespace reindexer {
 class EqualPositionComparator {
 public:
 	EqualPositionComparator(const PayloadType& payloadType) : payloadType_{payloadType}, name_{"EqualPositions"} {}
-	EqualPositionComparator(const EqualPositionComparator&) = default;
-	EqualPositionComparator(EqualPositionComparator&&) = default;
-	EqualPositionComparator& operator=(const EqualPositionComparator&) = delete;
-	EqualPositionComparator& operator=(EqualPositionComparator&&) = default;
 
 	void BindField(const std::string& name, int field, const VariantArray&, CondType, const CollateOpts&);
 	void BindField(const std::string& name, const FieldsPath&, const VariantArray&, CondType);
@@ -45,6 +41,7 @@ private:
 		EqualPositionComparatorTypeImpl<bool> cmpBool;
 		EqualPositionComparatorTypeImpl<int> cmpInt;
 		EqualPositionComparatorTypeImpl<int64_t> cmpInt64;
+		EqualPositionComparatorTypeImpl<float> cmpFloat;
 		EqualPositionComparatorTypeImpl<double> cmpDouble;
 		EqualPositionComparatorTypeImpl<key_string> cmpString;
 		EqualPositionComparatorTypeImpl<Uuid> cmpUuid;

@@ -7,7 +7,7 @@
 namespace reindexer {
 
 template <typename T>
-class intrusive_ptr {
+class [[nodiscard]] intrusive_ptr {
 private:
 	typedef intrusive_ptr this_type;
 
@@ -52,6 +52,7 @@ public:
 	void reset() noexcept { this_type().swap(*this); }
 	void reset(T* rhs) noexcept { this_type(rhs).swap(*this); }
 	bool unique() const noexcept { return intrusive_ptr_is_unique(px); }
+	int ref_count() const noexcept { return intrusive_ptr_ref_count(px); }
 
 	T* get() const noexcept { return px; }
 	T& operator*() const noexcept {
@@ -63,7 +64,7 @@ public:
 		return px;
 	}
 
-	typedef T* this_type::* unspecified_bool_type;
+	typedef T* this_type::*unspecified_bool_type;
 
 	operator unspecified_bool_type() const noexcept { return px == 0 ? 0 : &this_type::px; }
 	void swap(intrusive_ptr& rhs) noexcept { std::swap(px, rhs.px); }
@@ -156,6 +157,12 @@ inline bool intrusive_ptr_is_unique(const intrusive_atomic_rc_wrapper<T>* x) noe
 }
 
 template <typename T>
+inline int intrusive_ptr_ref_count(const intrusive_atomic_rc_wrapper<T>* x) noexcept {
+	// std::memory_order_acquire - is essential for COW constructions based on intrusive_ptr
+	return x ? x->refcount.load(std::memory_order_acquire) : 0;
+}
+
+template <typename T>
 class intrusive_atomic_rc_wrapper : public T {
 public:
 	template <typename... Args>
@@ -168,6 +175,7 @@ private:
 	friend void intrusive_ptr_add_ref<>(const intrusive_atomic_rc_wrapper<T>* x) noexcept;
 	friend void intrusive_ptr_release<>(const intrusive_atomic_rc_wrapper<T>* x) noexcept;
 	friend bool intrusive_ptr_is_unique<>(const intrusive_atomic_rc_wrapper<T>* x) noexcept;
+	friend int intrusive_ptr_ref_count<>(const intrusive_atomic_rc_wrapper<T>* x) noexcept;
 };
 
 template <typename T>
@@ -193,6 +201,11 @@ inline bool intrusive_ptr_is_unique(intrusive_rc_wrapper<T>* x) noexcept {
 }
 
 template <typename T>
+inline int intrusive_ptr_ref_count(intrusive_rc_wrapper<T>* x) noexcept {
+	return x ? x->refcount : 0;
+}
+
+template <typename T>
 class intrusive_rc_wrapper : public T {
 public:
 	template <typename... Args>
@@ -205,6 +218,7 @@ private:
 	friend void intrusive_ptr_add_ref<>(intrusive_rc_wrapper<T>* x) noexcept;
 	friend void intrusive_ptr_release<>(intrusive_rc_wrapper<T>* x) noexcept;
 	friend bool intrusive_ptr_is_unique<>(intrusive_rc_wrapper<T>* x) noexcept;
+	friend int intrusive_ptr_ref_count<>(intrusive_rc_wrapper<T>* x) noexcept;
 };
 
 class intrusive_atomic_rc_base {
@@ -218,6 +232,7 @@ private:
 	friend void intrusive_ptr_add_ref(const intrusive_atomic_rc_base* x) noexcept;
 	friend void intrusive_ptr_release(const intrusive_atomic_rc_base* x) noexcept;
 	friend bool intrusive_ptr_is_unique(const intrusive_atomic_rc_base* x) noexcept;
+	friend int intrusive_ptr_ref_count(const intrusive_atomic_rc_base* x) noexcept;
 };
 
 inline void intrusive_ptr_add_ref(const intrusive_atomic_rc_base* x) noexcept {
@@ -237,6 +252,11 @@ inline bool intrusive_ptr_is_unique(const intrusive_atomic_rc_base* x) noexcept 
 	return !x || (x->refcount.load(std::memory_order_acquire) == 1);
 }
 
+inline int intrusive_ptr_ref_count(const intrusive_atomic_rc_base* x) noexcept {
+	// std::memory_order_acquire - is essential for COW constructions based on intrusive_ptr
+	return x ? x->refcount.load(std::memory_order_acquire) : 0;
+}
+
 class intrusive_rc_base {
 public:
 	intrusive_rc_base& operator=(const intrusive_rc_base&) = delete;
@@ -248,6 +268,7 @@ private:
 	friend void intrusive_ptr_add_ref(intrusive_rc_base* x) noexcept;
 	friend void intrusive_ptr_release(intrusive_rc_base* x) noexcept;
 	friend bool intrusive_ptr_is_unique(const intrusive_rc_base* x) noexcept;
+	friend int intrusive_ptr_ref_count(const intrusive_rc_base* x) noexcept;
 };
 
 inline void intrusive_ptr_add_ref(intrusive_rc_base* x) noexcept {
@@ -263,6 +284,8 @@ inline void intrusive_ptr_release(intrusive_rc_base* x) noexcept {
 }
 
 inline bool intrusive_ptr_is_unique(const intrusive_rc_base* x) noexcept { return !x || (x->refcount == 1); }
+
+inline int intrusive_ptr_ref_count(const intrusive_rc_base* x) noexcept { return x ? x->refcount : 0; }
 
 template <typename T, typename... Args>
 intrusive_ptr<T> make_intrusive(Args&&... args) {

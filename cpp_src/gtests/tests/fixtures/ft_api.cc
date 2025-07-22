@@ -2,10 +2,10 @@
 
 void FTApi::Init(const reindexer::FtFastConfig& ftCfg, unsigned nses, const std::string& storage) {
 	rt.reindexer = std::make_shared<reindexer::Reindexer>();
-	if (!storage.empty()) {
-		auto err = rt.reindexer->Connect("builtin://" + storage);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
+
+	auto err = rt.reindexer->Connect("builtin://" + storage);
+	ASSERT_TRUE(err.ok()) << err.what();
+
 	if (nses & NS1) {
 		const reindexer::Error err = rt.reindexer->OpenNamespace("nm1");
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -64,8 +64,10 @@ reindexer::Error FTApi::SetFTConfig(const reindexer::FtFastConfig& ftCfg, std::s
 		return err;
 	}
 	const auto it = std::find_if(nses[0].indexes.begin(), nses[0].indexes.end(),
-								 [&index](const reindexer::IndexDef& idef) { return idef.name_ == index; });
-	it->opts_.SetConfig(ftCfg.GetJSON(fieldsMap));
+								 [&index](const reindexer::IndexDef& idef) { return idef.Name() == index; });
+	auto opts = it->Opts();
+	opts.SetConfig(IndexFastFT, ftCfg.GetJSON(fieldsMap));
+	it->SetOpts(std::move(opts));
 
 	return rt.reindexer->UpdateIndex(ns, *it);
 }
@@ -254,4 +256,53 @@ std::vector<std::tuple<std::string, std::string>>& FTApi::DelHighlightSign(std::
 		v2.erase(std::remove(v2.begin(), v2.end(), '!'), v2.end());
 	}
 	return in;
+}
+
+template <typename ResType>
+void FTApi::CheckResults(const std::string& query, const reindexer::QueryResults& qr, std::vector<ResType>& expectedResults,
+						 bool withOrder) {
+	constexpr bool kTreeFields = std::tuple_size<ResType>{} == 3;
+	EXPECT_EQ(qr.Count(), expectedResults.size()) << "Query: " << query;
+	for (auto itRes : qr) {
+		const auto item = itRes.GetItem(false);
+		const auto it = std::find_if(expectedResults.begin(), expectedResults.end(), [&item](const ResType& p) {
+			if constexpr (kTreeFields) {
+				return std::get<0>(p) == item["ft1"].As<std::string>() && std::get<1>(p) == item["ft2"].As<std::string>() &&
+					   std::get<2>(p) == item["ft3"].As<std::string>();
+			}
+			return std::get<0>(p) == item["ft1"].As<std::string>() && std::get<1>(p) == item["ft2"].As<std::string>();
+		});
+		if (it == expectedResults.end()) {
+			if constexpr (kTreeFields) {
+				ADD_FAILURE() << "Found not expected: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>()
+							  << "\" \"" << item["ft3"].As<std::string>() << "\"\nQuery: " << query;
+			} else {
+				ADD_FAILURE() << "Found not expected: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>()
+							  << "\"\nQuery: " << query;
+			}
+		} else {
+			if (withOrder) {
+				if constexpr (kTreeFields) {
+					EXPECT_EQ(it, expectedResults.begin())
+						<< "Found not in order: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>() << "\" \""
+						<< item["ft3"].As<std::string>() << "\"\nQuery: " << query;
+				} else {
+					EXPECT_EQ(it, expectedResults.begin()) << "Found not in order: \"" << item["ft1"].As<std::string>() << "\" \""
+														   << item["ft2"].As<std::string>() << "\"\nQuery: " << query;
+				}
+			}
+			expectedResults.erase(it);
+		}
+	}
+	for (const auto& expected : expectedResults) {
+		if constexpr (kTreeFields) {
+			ADD_FAILURE() << "Not found: \"" << std::get<0>(expected) << "\" \"" << std::get<1>(expected) << "\" \""
+						  << std::get<2>(expected) << "\"\nQuery: " << query;
+		} else {
+			ADD_FAILURE() << "Not found: \"" << std::get<0>(expected) << "\" \"" << std::get<1>(expected) << "\"\nQuery: " << query;
+		}
+	}
+	if (!expectedResults.empty()) {
+		ADD_FAILURE() << "Query: " << query;
+	}
 }

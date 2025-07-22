@@ -21,12 +21,13 @@ public:
 		assertrx_throw(allSetValuesS_.empty());
 
 		for (Variant key : values) {
-			key.Type().EvaluateOneOf([](OneOf<KeyValueType::String, KeyValueType::Uuid>) {},
-									 [&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
-											   KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null>) {
-										 key.convert(type());
-										 addValue(cond, static_cast<T>(key));
-									 });
+			key.Type().EvaluateOneOf(
+				[](OneOf<KeyValueType::String, KeyValueType::Uuid, KeyValueType::FloatVector>) {},
+				[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
+						  KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null>) {
+					key.convert(type());
+					addValue(cond, static_cast<T>(key));
+				});
 		}
 	}
 
@@ -66,6 +67,7 @@ public:
 			case CondLike:
 				return false;
 			case CondDWithin:
+			case CondKnn:
 				break;
 		}
 		std::abort();
@@ -87,6 +89,8 @@ private:
 			return KeyValueType::Int64{};
 		} else if constexpr (std::is_same_v<T, double>) {
 			return KeyValueType::Double{};
+		} else if constexpr (std::is_same_v<T, float>) {
+			return KeyValueType::Float{};
 		} else if constexpr (std::is_same_v<T, Uuid>) {
 			return KeyValueType::Uuid{};
 		} else {
@@ -114,16 +118,16 @@ public:
 		assertrx_throw(allSetValuesS_.empty());
 
 		for (const Variant& key : values) {
-			key.Type().EvaluateOneOf(
-				overloaded{[&](KeyValueType::Uuid) { addValue(cond, key.As<Uuid>()); },
-						   [&](KeyValueType::String) {
-							   const auto uuid{Uuid::TryParse(key.As<p_string>())};
-							   if (uuid) {
-								   addValue(cond, *uuid);
-							   }
-						   },
-						   [](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Bool,
-									KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Tuple>) {}});
+			key.Type().EvaluateOneOf(overloaded{[&](KeyValueType::Uuid) { addValue(cond, key.As<Uuid>()); },
+												[&](KeyValueType::String) {
+													const auto uuid{Uuid::TryParse(key.As<p_string>())};
+													if (uuid) {
+														addValue(cond, *uuid);
+													}
+												},
+												[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
+														 KeyValueType::Bool, KeyValueType::Composite, KeyValueType::Undefined,
+														 KeyValueType::Null, KeyValueType::Tuple, KeyValueType::FloatVector>) {}});
 		}
 	}
 
@@ -163,6 +167,7 @@ public:
 			case CondLike:
 				return false;
 			case CondDWithin:
+			case CondKnn:
 				break;
 		}
 		std::abort();
@@ -187,10 +192,6 @@ template <>
 class EqualPositionComparatorTypeImpl<key_string> {
 public:
 	EqualPositionComparatorTypeImpl(const CollateOpts& collate) : valuesS_(collate), collate_{collate} {}
-	EqualPositionComparatorTypeImpl(const EqualPositionComparatorTypeImpl&) = default;
-	EqualPositionComparatorTypeImpl& operator=(const EqualPositionComparatorTypeImpl&) = default;
-	EqualPositionComparatorTypeImpl(EqualPositionComparatorTypeImpl&&) = default;
-	EqualPositionComparatorTypeImpl& operator=(EqualPositionComparatorTypeImpl&&) = default;
 
 	void SetValues(CondType cond, const VariantArray& values) {
 		assertrx_throw(valuesS_.empty());
@@ -236,6 +237,7 @@ public:
 				return matchLikePattern(std::string_view(lhs), rhs);
 			}
 			case CondDWithin:
+			case CondKnn:
 				break;
 		}
 		std::abort();

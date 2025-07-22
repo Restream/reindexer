@@ -17,7 +17,7 @@ struct ReindexerWrapper {
 	ReindexerWrapper(Reindexer&& rx) : rx(std::move(rx)), builtinUpdatesObs(kBuiltinUpdatesBufSize) {}
 	~ReindexerWrapper() {
 		if (auto err = rx.UnsubscribeUpdates(builtinUpdatesObs); !err.ok()) {
-			logPrintf(LogError, "Database destruction error (updates subscription): %s", err.what());
+			logFmt(LogError, "Database destruction error (updates subscription): {}", err.what());
 		}
 	}
 

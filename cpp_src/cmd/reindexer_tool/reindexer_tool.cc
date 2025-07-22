@@ -1,7 +1,6 @@
 #include <csignal>
-#include <limits>
 #include "args/args.hpp"
-#include "client/cororeindexer.h"
+#include "client/reindexer.h"
 #include "commandsprocessor.h"
 #include "core/reindexer.h"
 #include "debug/backtrace.h"
@@ -14,7 +13,8 @@ namespace reindexer_tool {
 
 using args::Options;
 
-static int llevel;
+constexpr int kSingleThreadCoroCount = 200;
+static int llevel = 0;
 
 static void InstallLogLevel(const std::vector<std::string>& args) {
 	try {
@@ -40,19 +40,26 @@ static void InstallLogLevel(const std::vector<std::string>& args) {
 
 }  // namespace reindexer_tool
 
+// NOLINTNEXTLINE (bugprone-exception-escape) Get stacktrace is probably better, than generic error-message
 int main(int argc, char* argv[]) {
 	using namespace reindexer_tool;
 	reindexer::debug::backtrace_init();
 
 	try {
 		reindexer::CheckRequiredSSESupport();
-	} catch (Error& err) {
+	} catch (std::exception& err) {
 		std::cerr << err.what();
 		return EXIT_FAILURE;
 	}
 
+	struct Version : std::runtime_error {
+		using std::runtime_error::runtime_error;
+	};
+
 	args::ArgumentParser parser("Reindexer client tool");
 	args::HelpFlag help(parser, "help", "show this message", {'h', "help"});
+	args::ActionFlag version(parser, "", "Reindexer tool version", {'v', "version"},
+							 []() { throw Version(fmt::format("Reindexer tool version: {}", REINDEX_VERSION)); });
 
 	args::Group progOptions("options");
 #ifdef _WIN32
@@ -71,12 +78,17 @@ int main(int argc, char* argv[]) {
 										 Options::Single | Options::Global);
 	args::ValueFlag<std::string> outFileName(progOptions, "FILENAME", "Send query results to file", {'o', "output"}, "",
 											 Options::Single | Options::Global);
+
 	args::ValueFlag<std::string> dumpMode(progOptions, "DUMP_MODE",
 										  "Dump mode for sharded databases: 'full_node' (default), 'sharded_only', 'local_only'",
 										  {"dump-mode"}, "", Options::Single | Options::Global);
 
 	args::ValueFlag<unsigned> connThreads(progOptions, "INT=1..65535", "Number of threads(connections) used by db connector",
-										  {'t', "threads"}, 1, Options::Single | Options::Global);
+										  {'t', "threads"}, 4, Options::Single | Options::Global);
+
+	args::ValueFlag<unsigned> maxTransactionSize(progOptions, "INT=1..100000",
+												 "Max transaction size used by db connector(0 - no transactions)", {"txs", "txsize"}, 0,
+												 Options::Single | Options::Global);
 
 	args::Flag createDBF(progOptions, "", "Creates target database if it is missing", {"createdb"});
 
@@ -90,6 +102,13 @@ int main(int argc, char* argv[]) {
 	args::ValueFlag<std::string> appName(progOptions, "Application name", "Application name that will be used in login info",
 										 {'a', "appname"}, "reindexer_tool", Options::Single | Options::Global);
 
+	args::ValueFlagList<std::string> selectedNamespaces(progOptions, "Namespaces selected",
+														"List of namespaces for which commands from file will be executed. Selecting all "
+														"namespaces if list is empty. Commands for non-selected namespaces will be skipped."
+														"\nExample: \"reindexer_tool -n collections -n karaoke_genres\""
+														"\nwill execute commands only for collections and karaoke_genres namespaces",
+														{'n', "namespaces"}, {});
+
 	args::GlobalOptions globals(parser, progOptions);
 
 	try {
@@ -101,14 +120,17 @@ int main(int argc, char* argv[]) {
 		std::cerr << "ERROR: " << e.what() << std::endl;
 		std::cout << parser.Help() << std::endl;
 		return 1;
+	} catch (Version& v) {
+		std::cout << v.what() << std::endl;
+		return 0;
 	} catch (reindexer::Error& re) {
 		std::cerr << "ERROR: " << re.what() << std::endl;
 		return 1;
 	}
 
 	std::string dsn = args::get(dbDsn);
-	bool ok = false;
 	Error err;
+	Error runError;
 #ifndef _WIN32
 	signal(SIGPIPE, SIG_IGN);
 #endif
@@ -162,17 +184,24 @@ int main(int argc, char* argv[]) {
 		reindexer::client::ReindexerConfig config;
 		config.EnableCompression = true;
 		config.AppName = args::get(appName);
-		CommandsProcessor<reindexer::client::CoroReindexer> commandsProcessor(args::get(outFileName), args::get(fileName),
-																			  args::get(connThreads), config);
+		config.SyncRxCoroCount = kSingleThreadCoroCount;
+
+		const unsigned int numThreads = args::get(connThreads);
+		const unsigned int numConnects = numThreads;
+		const unsigned int transactionSize = args::get(maxTransactionSize);
+		CommandsProcessor<reindexer::client::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName),
+																		  args::get(selectedNamespaces), args::get(connThreads),
+																		  transactionSize, config, numConnects, numThreads);
 		err = commandsProcessor.Connect(dsn, reindexer::client::ConnectOpts().CreateDBIfMissing(createDBF && args::get(createDBF)));
 		if (err.ok()) {
-			ok = commandsProcessor.Run(args::get(command), args::get(dumpMode));
+			runError = commandsProcessor.Run(args::get(command), args::get(dumpMode));
 		}
 	} else if (checkIfStartsWithCS("builtin://"sv, dsn)) {
-		CommandsProcessor<reindexer::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName), args::get(connThreads));
+		CommandsProcessor<reindexer::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName),
+																  args::get(selectedNamespaces), args::get(connThreads), 0);
 		err = commandsProcessor.Connect(dsn, ConnectOpts().DisableReplication());
 		if (err.ok()) {
-			ok = commandsProcessor.Run(args::get(command), args::get(dumpMode));
+			runError = commandsProcessor.Run(args::get(command), args::get(dumpMode));
 		}
 	} else {
 #ifdef _WIN32
@@ -185,5 +214,5 @@ int main(int argc, char* argv[]) {
 		std::cerr << "ERROR: " << err.what() << std::endl;
 	}
 
-	return ok ? 0 : 2;
+	return runError.ok() ? 0 : 2;
 }

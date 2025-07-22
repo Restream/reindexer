@@ -17,7 +17,7 @@ public:
 		assertrx_dbg(queue_.capacity() - queue_.size() >= 1);
 		queue_.write(user.Serialize(streamsMask, opts, rec));
 	}
-	[[nodiscard]] span<chunk> TryReadUpdates() noexcept { return queue_.tail(); }
+	[[nodiscard]] std::span<chunk> TryReadUpdates() noexcept { return queue_.tail(); }
 	void EraseUpdates(size_t count) noexcept { queue_.erase_chunks(count); }
 
 private:

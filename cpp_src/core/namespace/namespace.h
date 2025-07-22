@@ -2,14 +2,16 @@
 
 #include <thread>
 #include <type_traits>
-#include "bgnamespacedeleter.h"
 #include "core/queryresults/queryresults.h"
 #include "core/querystat.h"
 #include "core/transaction/txstats.h"
+#include "estl/timed_mutex.h"
 #include "namespaceimpl.h"
 #include "tools/flagguard.h"
 
 namespace reindexer {
+
+class Embedder;
 
 class Namespace {
 	template <auto fn, typename... Args>
@@ -54,12 +56,24 @@ class Namespace {
 
 				CounterGuardAIR32 cg(ns->cancelCommitCnt_);
 				if constexpr (std::is_same_v<T, Item>) {
+					if (ctx.GetOriginLSN().isEmpty() && (enumVal == ModeUpdate || enumVal == ModeInsert || enumVal == ModeUpsert)) {
+						v.Embed(nsCtx.rdxContext);
+					}
+
 					auto wlck = ns->dataWLock(nsCtx.rdxContext);
 					cg.Reset();
 					qr.AddNamespace(ns, true);
+					if (ns->haveFloatVectorsIndexes()) {
+						qr.addNSContext(ns->payloadType_, ns->tagsMatcher_, FieldsFilter::AllFields(), ns->schema_, ns->incarnationTag_);
+					}
 					added = true;
 					(*ns.*fn)(v, enumVal, pendedRepl, nsCtx);
-					qr.AddItem(v, true, false);
+					qr.AddItemNoHold(v, ns->incarnationTag_, true);
+					if constexpr (enumVal != ModeDelete) {
+						if (ns->haveFloatVectorsIndexes()) {
+							qr.GetFloatVectorsHolder().Add(*ns, qr.begin() + (qr.Count() - 1), qr.end(), FieldsFilter::AllFields());
+						}
+					}
 					ns->replicate(std::move(pendedRepl), std::move(wlck), true, nullptr, nsCtx);
 				} else {
 					auto params = longUpdDelLoggingParams_.load(std::memory_order_relaxed);
@@ -89,9 +103,9 @@ class Namespace {
 public:
 	using Ptr = shared_ptr<Namespace>;
 
-	Namespace(const std::string& name, std::optional<int32_t> stateToken, cluster::IDataSyncer& clusterizator,
-			  BackgroundNamespaceDeleter& bgDeleter, UpdatesObservers& observers)
-		: ns_(make_intrusive<NamespaceImpl>(name, std::move(stateToken), clusterizator, observers)), bgDeleter_(bgDeleter) {}
+	Namespace(const std::string& name, std::optional<int32_t> stateToken, cluster::IDataSyncer& clusterManager, UpdatesObservers& observers,
+			  const std::shared_ptr<EmbeddersCache>& embeddersCache)
+		: ns_(make_intrusive<NamespaceImpl>(name, std::move(stateToken), clusterManager, observers, embeddersCache)) {}
 
 	void CommitTransaction(LocalTransaction& tx, LocalQueryResults& result, const NsContext& ctx);
 	NamespaceName GetName(const RdxContext& ctx) const { return nsFuncWrapper<&NamespaceImpl::GetName>(ctx); }
@@ -161,6 +175,12 @@ public:
 		}
 		nsFuncWrapper<&NamespaceImpl::StorageFlushingRoutine>();
 	}
+	void ANNCachingRoutine() {
+		if (hasCopy_.load(std::memory_order_acquire)) {
+			return;
+		}
+		nsFuncWrapper<&NamespaceImpl::ANNCachingRoutine>();
+	}
 	void CloseStorage(const RdxContext& ctx) { nsFuncWrapper<&NamespaceImpl::CloseStorage>(ctx); }
 	LocalTransaction NewTransaction(const RdxContext& ctx) { return nsFuncWrapper<&NamespaceImpl::NewTransaction>(ctx); }
 
@@ -171,10 +191,7 @@ public:
 		nsFuncWrapper<&NamespaceImpl::PutMeta>(key, data, ctx);
 	}
 	void DeleteMeta(const std::string& key, const RdxContext& ctx) { nsFuncWrapper<&NamespaceImpl::DeleteMeta>(key, ctx); }
-	int getIndexByName(std::string_view index) const { return nsFuncWrapper<&NamespaceImpl::getIndexByName>(index); }
-	bool getIndexByName(std::string_view name, int& index) const { return nsFuncWrapper<&NamespaceImpl::tryGetIndexByName>(name, index); }
-	void FillResult(LocalQueryResults& result, const IdSet& ids) const { nsFuncWrapper<&NamespaceImpl::FillResult>(result, ids); }
-	void EnablePerfCounters(bool enable = true) { nsFuncWrapper<&NamespaceImpl::EnablePerfCounters>(enable); }
+	PayloadType GetPayloadType(const RdxContext& ctx) const { return nsFuncWrapper<&NamespaceImpl::GetPayloadType>(ctx); }
 	ReplicationState GetReplState(const RdxContext& ctx) const { return nsFuncWrapper<&NamespaceImpl::GetReplState>(ctx); }
 	ReplicationStateV2 GetReplStateV2(const RdxContext& ctx) const { return nsFuncWrapper<&NamespaceImpl::GetReplStateV2>(ctx); }
 	void Rename(const Namespace::Ptr& dst, const std::string& storagePath, const std::function<void(std::function<void()>)>& replicateCb,
@@ -182,14 +199,14 @@ public:
 		if (this == dst.get() || dst == nullptr) {
 			return;
 		}
-		doRename(dst, std::string(), storagePath, replicateCb, ctx);
+		doRename(dst, std::string_view(), storagePath, replicateCb, ctx);
 	}
-	void Rename(const std::string& newName, const std::string& storagePath, std::function<void(std::function<void()>)> replicateCb,
+	void Rename(const std::string& newName, const std::string& storagePath, const std::function<void(std::function<void()>)>& replicateCb,
 				const RdxContext& ctx) {
 		if (newName.empty()) {
 			return;
 		}
-		doRename(nullptr, newName, storagePath, std::move(replicateCb), ctx);
+		doRename(nullptr, newName, storagePath, replicateCb, ctx);
 	}
 	void OnConfigUpdated(DBConfigProvider& configProvider, const RdxContext& ctx) {
 		NamespaceConfigData configData;
@@ -206,10 +223,9 @@ public:
 		longUpdDelLoggingParams_.store(configProvider.GetUpdDelLoggingParams(), std::memory_order_relaxed);
 		nsFuncWrapper<&NamespaceImpl::OnConfigUpdated>(configProvider, ctx);
 	}
-	StorageOpts GetStorageOpts(const RdxContext& ctx) { return nsFuncWrapper<&NamespaceImpl::GetStorageOpts>(ctx); }
 	void Refill(std::vector<Item>& items, const RdxContext& ctx) { nsFuncWrapper<&NamespaceImpl::Refill>(items, ctx); }
-	Error SetClusterizationStatus(ClusterizationStatus&& status, const RdxContext& ctx) {
-		return nsFuncWrapper<&NamespaceImpl::SetClusterizationStatus>(std::move(status), ctx);
+	Error SetClusterOperationStatus(ClusterOperationStatus&& status, const RdxContext& ctx) {
+		return nsFuncWrapper<&NamespaceImpl::SetClusterOperationStatus>(std::move(status), ctx);
 	}
 	void GetSnapshot(Snapshot& snapshot, const SnapshotOpts& opts, const RdxContext& ctx) {
 		return nsFuncWrapper<&NamespaceImpl::GetSnapshot>(snapshot, opts, ctx);
@@ -218,6 +234,12 @@ public:
 	void SetTagsMatcher(TagsMatcher&& tm, const RdxContext& ctx) {
 		return nsFuncWrapper<&NamespaceImpl::SetTagsMatcher>(std::move(tm), ctx);
 	}
+	void DropANNStorageCache(std::string_view index, const RdxContext& ctx) {
+		return nsFuncWrapper<&NamespaceImpl::DropANNStorageCache>(index, ctx);
+	}
+	void RebuildIVFIndex(std::string_view index, float dataPart, const RdxContext& ctx) {
+		return nsFuncWrapper<&NamespaceImpl::RebuildIVFIndex>(index, dataPart, ctx);
+	}
 
 	std::set<std::string> GetFTIndexes(const RdxContext& ctx) const { return nsFuncWrapper<&NamespaceImpl::GetFTIndexes>(ctx); }
 
@@ -225,11 +247,13 @@ public:
 		return nsFuncWrapper<&NamespaceImpl::DumpIndex>(os, index, ctx);
 	}
 
+	std::shared_ptr<const reindexer::QueryEmbedder> QueryEmbedder(std::string_view fieldName, const RdxContext& ctx) const {
+		return nsFuncWrapper<&NamespaceImpl::QueryEmbedder>(fieldName, ctx);
+	}
+
 protected:
 	friend class ReindexerImpl;
-	friend class LocalQueryResults;
 	friend class ShardingProxy;
-	void updateSelectTime() const { nsFuncWrapper<&NamespaceImpl::updateSelectTime>(); }
 	NamespaceImpl::Ptr getMainNs() const { return atomicLoadMainNs(); }
 	NamespaceImpl::Ptr awaitMainNs(const RdxContext& ctx) const {
 		if (hasCopy_.load(std::memory_order_acquire)) {
@@ -239,8 +263,6 @@ protected:
 		}
 		return atomicLoadMainNs();
 	}
-
-	PayloadType getPayloadType(const RdxContext& ctx) const { return nsFuncWrapper<&NamespaceImpl::getPayloadType>(ctx); }
 
 private:
 	bool needNamespaceCopy(const NamespaceImpl::Ptr& ns, const LocalTransaction& tx) const noexcept;
@@ -258,7 +280,7 @@ private:
 
 	NamespaceImpl::Ptr ns_;
 	std::unique_ptr<NamespaceImpl> nsCopy_;
-	using Mutex = MarkedMutex<std::timed_mutex, MutexMark::CloneNs>;
+	using Mutex = MarkedMutex<timed_mutex, MutexMark::CloneNs>;
 	mutable Mutex clonerMtx_;
 	mutable spinlock nsPtrSpinlock_;
 	std::atomic<bool> hasCopy_ = {false};
@@ -270,7 +292,6 @@ private:
 	PerfStatCounterMT copyStatsCounter_;
 	std::atomic<LongTxLoggingParams> longTxLoggingParams_;
 	std::atomic<LongQueriesLoggingParams> longUpdDelLoggingParams_;
-	BackgroundNamespaceDeleter& bgDeleter_;
 };
 
 }  // namespace reindexer

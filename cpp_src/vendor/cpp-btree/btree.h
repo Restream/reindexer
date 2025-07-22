@@ -874,6 +874,9 @@ public:
 	// Copy constructor.
 	btree(const self_type &x);
 
+	// Move constructor.
+	btree(self_type &&x) noexcept = default;
+
 	// Destructor.
 	~btree() { clear(); }
 

@@ -3,15 +3,15 @@ package reindexer
 import (
 	"fmt"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/cjson"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/cjson"
 )
 
 type rawResultItemParams struct {
 	id      int
 	version LsnT
 	nsid    int
-	proc    int
+	rank    float32
 	shardid int
 	cptr    uintptr
 	data    []byte
@@ -29,11 +29,13 @@ type rawResultQueryParams struct {
 	nsIncarnationTags     nsTagsMap
 	shardingConfigVersion int64
 	shardId               int
+	rankFormat            *uint64
 }
 
 type resultSerializer struct {
 	cjson.Serializer
-	flags int
+	flags      int
+	rankFormat *uint64
 }
 
 type updatePayloadTypeFunc func(nsid int)
@@ -54,8 +56,13 @@ func (s *resultSerializer) readRawtItemParams(shardId int) (v rawResultItemParam
 		v.nsid = int(s.GetVarUInt())
 	}
 
-	if (s.flags & bindings.ResultsWithPercents) != 0 {
-		v.proc = int(s.GetVarUInt())
+	if (s.flags & bindings.ResultsWithRank) != 0 {
+		if s.rankFormat != nil {
+			v.rank = s.GetFloat32()
+		} else {
+			v.rank = float32(s.GetVarUInt())
+		}
+
 	}
 
 	if (s.flags & bindings.ResultsWithShardId) != 0 {
@@ -99,6 +106,7 @@ func (s *resultSerializer) readRawQueryParamsKeepExtras(v *rawResultQueryParams,
 	}
 	s.readExtraResults(v)
 	s.flags = v.flags
+	s.rankFormat = v.rankFormat
 }
 
 func (s *resultSerializer) readRawQueryParams(updatePayloadType ...updatePayloadTypeFunc) (v rawResultQueryParams) {
@@ -144,6 +152,12 @@ func (s *resultSerializer) readExtraResults(v *rawResultQueryParams) {
 					v.nsIncarnationTags[shardID] = sl
 				}
 			}
+		case bindings.QueryResultRankFormat:
+			format := s.GetVarUInt()
+			if format != bindings.RankFormatSingleFloat {
+				panic(fmt.Sprintf("unexpected rank format value: %d - only supported format is 0 (single float rank)", format))
+			}
+			v.rankFormat = &format
 		}
 	}
 }

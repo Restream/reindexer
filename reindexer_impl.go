@@ -17,10 +17,10 @@ import (
 	otelattr "go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/cjson"
-	"github.com/restream/reindexer/v4/dsl"
-	"github.com/restream/reindexer/v4/events"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/cjson"
+	"github.com/restream/reindexer/v5/dsl"
+	"github.com/restream/reindexer/v5/events"
 )
 
 type reindexerNamespace struct {
@@ -189,7 +189,7 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 		case bindings.OptionOpenTelemetry:
 			if v.EnableTracing {
 				rx.otelTracer = otel.Tracer(
-					"reindexer/v4",
+					"reindexer/v5",
 					oteltrace.WithInstrumentationVersion(bindings.ReindexerVersion),
 				)
 				rx.otelCommonTraceAttrs = []otelattr.KeyValue{
@@ -254,7 +254,10 @@ func (db *reindexerImpl) getAsyncReplicationStat(ctx context.Context) (*bindings
 
 	for _, dsn := range dsns {
 		dsn := fmt.Sprintf("%s://%s%s", dsn.Scheme, dsn.Host, dsn.Path)
-		db := NewReindex(dsn)
+		db, err := NewReindex(dsn)
+		if err != nil {
+			continue
+		}
 		defer db.Close()
 		resp, err := db.Query("#config").
 			WhereString("type", EQ, bindings.ReplicationTypeAsync).
@@ -1329,7 +1332,7 @@ func (db *reindexerImpl) addAggregationsDSL(q *Query, aggs []dsl.Aggregation) er
 		case dsl.AggMax:
 			q.AggregateMax(agg.Fields[0])
 		case dsl.AggDistinct:
-			q.Distinct(agg.Fields[0])
+			q.Distinct(agg.Fields...)
 		case dsl.AggCount:
 			if len(agg.Fields) == 1 && (agg.Fields[0] == "" || agg.Fields[0] == "*") {
 				q.ReqTotal()
@@ -1449,4 +1452,8 @@ func (db *reindexerImpl) getStats() bindings.Stats {
 // ResetStats Reset local thread reindexer usage stats
 // Deprecated: no longer used.
 func (db *reindexerImpl) resetStats() {
+}
+
+func (db *reindexerImpl) dbmsVersion() (string, error) {
+	return db.binding.DBMSVersion()
 }

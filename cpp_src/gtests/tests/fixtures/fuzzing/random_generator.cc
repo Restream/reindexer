@@ -2,7 +2,6 @@
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <fstream>
-#include "core/payload/fieldsset.h"
 #include "core/query/query.h"
 #include "index.h"
 #include "ns_scheme.h"
@@ -234,7 +233,7 @@ FieldPath RandomGenerator::RndScalarField(const NsScheme& nsScheme) {
 		const int end = idx + size;
 		while (idx < end) {
 			res.back() = idx % size;
-			if (nsScheme.IsArray(res) == IsArrayT::No && !nsScheme.IsPoint(res)) {
+			if (!nsScheme.IsArray(res) && !nsScheme.IsPoint(res)) {
 				break;
 			}
 			++idx;
@@ -347,7 +346,7 @@ size_t RandomGenerator::IndexesCount() {
 			case Zero:
 				return 0;
 			case TooMany:
-				return RndInt(reindexer::kMaxIndexes, 5 + reindexer::kMaxIndexes);
+				return RndInt(kMaxIndexes, 5 + kMaxIndexes);
 			default:
 				assertrx(0);
 		}
@@ -361,7 +360,7 @@ size_t RandomGenerator::IndexesCount() {
 		case Many:
 			return RndInt(21, 63);
 		case TooMany:
-			return RndInt(64, reindexer::kMaxIndexes);
+			return RndInt(64, kMaxIndexes);
 		default:
 			assertrx(false);
 			std::abort();

@@ -15,7 +15,7 @@ namespace updates {
 
 enum class ReplicationResult { None, Approved, Error };
 
-#define uq_rtfmt(f, ...) return fmt::sprintf("[updates:%s] " f, logModuleName(), __VA_ARGS__)
+#define uq_rtfmt(f, ...) return fmt::format("[updates:{}] " f, logModuleName(), __VA_ARGS__)
 
 template <typename T, typename StatsCollectorT, typename LoggerT>
 class UpdatesQueue {
@@ -41,7 +41,7 @@ public:
 
 		struct Value {
 			struct Counters {
-				uint64_t replicatedToEmmiter : 1;
+				uint64_t replicatedToEmitter : 1;
 				uint64_t requireResult : 1;
 				uint64_t replicas : 16;
 				uint64_t approves : 16;
@@ -54,7 +54,7 @@ public:
 			const U& Data() const noexcept { return data_; }
 
 		private:
-			UpdatesStatus replicated(uint32_t consensusCnt, uint32_t requiredReplicas, bool isEmmiter, Error&& err) {
+			UpdatesStatus replicated(uint32_t consensusCnt, uint32_t requiredReplicas, bool isEmitter, Error&& err) {
 				auto expected = replication_.load(std::memory_order_acquire);
 				Counters repl;
 				UpdatesStatus status;
@@ -62,32 +62,32 @@ public:
 				do {
 					status = UpdatesStatus();
 					repl = expected;
-					repl.replicatedToEmmiter = repl.replicatedToEmmiter || isEmmiter;
+					repl.replicatedToEmitter = repl.replicatedToEmitter || isEmitter;
 					assertrx_dbg(repl.approves < kMaxApproves);
 					assertrx_dbg(repl.errors < kMaxErrors);
 					assertrx_dbg(repl.replicas < kMaxReplicas);
 					if (err.ok()) {
 						++repl.approves;
 						if (repl.requireResult) {
-							status.requireResult = (repl.approves == consensusCnt && repl.replicatedToEmmiter) ||
-												   (isEmmiter && repl.approves >= consensusCnt) ||
-												   (isEmmiter && repl.errors >= consensusCnt);
+							status.requireResult = (repl.approves == consensusCnt && repl.replicatedToEmitter) ||
+												   (isEmitter && repl.approves >= consensusCnt) ||
+												   (isEmitter && repl.errors >= consensusCnt);
 						}
 					} else {
 						++repl.errors;
 						error = true;
 						if (repl.requireResult) {
-							status.requireResult = (repl.errors == consensusCnt && repl.replicatedToEmmiter) ||
-												   (isEmmiter && repl.errors >= consensusCnt) ||
-												   (isEmmiter && repl.approves >= consensusCnt);
+							status.requireResult = (repl.errors == consensusCnt && repl.replicatedToEmitter) ||
+												   (isEmitter && repl.errors >= consensusCnt) ||
+												   (isEmitter && repl.approves >= consensusCnt);
 						}
 					}
 					if (++repl.replicas == requiredReplicas) {
 						status.requireErasure = true;
-						if (!repl.replicatedToEmmiter) {
+						if (!repl.replicatedToEmitter) {
 							std::this_thread::sleep_for(std::chrono::seconds(2));
 						}
-						assertf(repl.replicatedToEmmiter, "Required replicas: %d", requiredReplicas);
+						assertf(repl.replicatedToEmitter, "Required replicas: {}", requiredReplicas);
 					}
 				} while (!replication_.compare_exchange_strong(expected, repl, std::memory_order_acquire));
 				status.hasEnoughApproves = (repl.approves >= consensusCnt);
@@ -103,7 +103,7 @@ public:
 					status = UpdatesStatus();
 					repl = expected;
 					assertrx_dbg(!repl.requireResult);
-					assertrx_dbg(repl.replicatedToEmmiter);
+					assertrx_dbg(repl.replicatedToEmitter);
 					assertrx_dbg(repl.replicas < kMaxReplicas);
 					if (++repl.replicas == requiredReplicas) {
 						status.requireErasure = true;
@@ -126,12 +126,12 @@ public:
 		QueueEntry(QueueEntry&&) = default;
 
 		ReplicationResult OnUpdateHandled(uint32_t nodeId, uint32_t consensusCnt, uint32_t requiredReplicas, uint16_t offset,
-										  bool isEmmiter, Error err) {
+										  bool isEmitter, Error err) {
 			ReplicationResult res = ReplicationResult::None;
 			if (offset >= count_.load(std::memory_order_acquire)) {
-				throw Error(errParams, "Unexpected offset: %d", offset);
+				throw Error(errParams, "Unexpected offset: {}", offset);
 			}
-			auto status = data_[offset].replicated(consensusCnt, requiredReplicas, isEmmiter, std::move(err));
+			auto status = data_[offset].replicated(consensusCnt, requiredReplicas, isEmitter, std::move(err));
 			stats_.OnUpdateApplied(nodeId, id_ + offset);
 			if (status.requireResult) {
 				owner_.onResult(id_ + offset, std::move(status.result));
@@ -150,7 +150,7 @@ public:
 		}
 		void OnUpdateHandledSimple(uint32_t nodeId, uint32_t requiredReplicas, uint16_t offset) {
 			if (offset >= count_.load(std::memory_order_acquire)) {
-				throw Error(errParams, "Unexpected offset: %d", offset);
+				throw Error(errParams, "Unexpected offset: {}", offset);
 			}
 			auto status = data_[offset].handledNoResult(requiredReplicas);
 			stats_.OnUpdateApplied(nodeId, id_ + offset);
@@ -164,7 +164,7 @@ public:
 		}
 		const Value& GetUpdate(uint16_t offset) const {
 			if (offset >= count_.load(std::memory_order_acquire)) {
-				throw Error(errParams, "Unexpected offset: %d", offset);
+				throw Error(errParams, "Unexpected offset: {}", offset);
 			}
 			return data_[offset];
 		}
@@ -193,14 +193,14 @@ public:
 			totalSizeBytes_ += sizeBytes;
 			data_[count].data_ = std::move(val);
 			if constexpr (skipResultCounting) {
-				data_[count].replication_.store({val.HasEmmiterID() ? 0u : 1u, 0u, 0, 1, 0}, std::memory_order_relaxed);
+				data_[count].replication_.store({val.HasEmitterID() ? 0u : 1u, 0u, 0, 1, 0}, std::memory_order_relaxed);
 				assert(!onRes);
 				(void)onRes;
 				data_[count].onResult_ = nullptr;
 				count_.fetch_add(1, std::memory_order_release);
 				addSentResult();
 			} else {
-				data_[count].replication_.store({val.HasEmmiterID() ? 0u : 1u, 1u, 0, 1, 0}, std::memory_order_relaxed);
+				data_[count].replication_.store({val.HasEmitterID() ? 0u : 1u, 1u, 0, 1, 0}, std::memory_order_relaxed);
 				data_[count].onResult_ = onRes;
 				count_.fetch_add(1, std::memory_order_release);
 			}
@@ -322,7 +322,7 @@ public:
 			return std::make_pair(invalidationErr_, false);
 		}
 		try {
-			logTraceW([&] { uq_rtfmt("Push new sync updates (%d) for %s", localData.dataSize, data[0].NsName()); });
+			logTraceW([&] { uq_rtfmt("Push new sync updates ({}) for {}", localData.dataSize, data[0].NsName()); });
 
 			entriesRange = addDataToQueue(std::move(data), &onResult, dropped);
 
@@ -360,7 +360,7 @@ public:
 				return std::make_pair(invalidationErr_, false);
 			}
 
-			logTraceW([&] { uq_rtfmt("Push new async updates (%d) for %s", data.size(), data[0].NsName()); });
+			logTraceW([&] { uq_rtfmt("Push new async updates ({}) for {}", data.size(), data[0].NsName()); });
 
 			addDataToQueue<skipResultCounting>(std::move(data), dropped);
 		}
@@ -463,9 +463,9 @@ private:
 		updPtr->addSentResult();
 		logTraceW([&] {
 			if (entry.onResult_) {
-				uq_rtfmt("Sending result for update with ID %d", id);
+				uq_rtfmt("Sending result for update with ID {}", id);
 			} else {
-				uq_rtfmt("Trying to send result for update with ID %d, but it doesn't have result handler", id);
+				uq_rtfmt("Trying to send result for update with ID {}, but it doesn't have result handler", id);
 			}
 		});
 		onResult(entry, std::move(err));
@@ -525,7 +525,7 @@ private:
 
 			if (lastChunckId >= 0) {
 				const auto updateId = lastChunckId + kBatchSize - 1;
-				logWarnW([&] { uq_rtfmt("Dropping updates: %d-%d. %d bytes", dropped.front()->ID(), updateId, droppedUpdatesSize); });
+				logWarnW([&] { uq_rtfmt("Dropping updates: {}-{}. {} bytes", dropped.front()->ID(), updateId, droppedUpdatesSize); });
 				updatedDropRecord_ =
 					make_intrusive<intrusive_atomic_rc_wrapper<UpdateT>>(updateId, *this, typename UpdateT::DroppedUpdatesT{});
 				stats_.OnUpdatesDrop(updateId, droppedUpdatesSize);

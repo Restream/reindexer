@@ -13,10 +13,6 @@ namespace reindexer {
 class FieldsComparator {
 public:
 	FieldsComparator(std::string_view lField, CondType cond, std::string_view rField, PayloadType plType);
-	FieldsComparator(const FieldsComparator&) = default;
-	FieldsComparator(FieldsComparator&&) = default;
-	FieldsComparator& operator=(const FieldsComparator&) = delete;
-	FieldsComparator& operator=(FieldsComparator&&) = default;
 
 	bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		if (ctx_.size() == 1) {
@@ -60,7 +56,7 @@ public:
 		assertrx_throw(leftFieldSet_);
 		setField(fields, ctx_[0].rCtx_);
 	}
-	void SetLeftField(const FieldsSet& fset, KeyValueType type, bool isArray, const CollateOpts& cOpts) {
+	void SetLeftField(const FieldsSet& fset, KeyValueType type, IsArray isArray, const CollateOpts& cOpts) {
 		assertrx_throw(!leftFieldSet_);
 		collateOpts_ = &cOpts;
 		if (type.Is<KeyValueType::Composite>()) {
@@ -72,14 +68,14 @@ public:
 		}
 		leftFieldSet_ = true;
 	}
-	void SetRightField(const FieldsSet& fset, KeyValueType type, bool isArray) {
+	void SetRightField(const FieldsSet& fset, KeyValueType type, IsArray isArray) {
 		assertrx_throw(leftFieldSet_);
 		if ((ctx_.size() > 1) != type.Is<KeyValueType::Composite>()) {
-			throw Error{errQueryExec, "A composite index cannot be compared with a non-composite one: %s", name_};
+			throw Error{errQueryExec, "A composite index cannot be compared with a non-composite one: {}", name_};
 		}
 		if (type.Is<KeyValueType::Composite>()) {
 			if (ctx_.size() != fset.size()) {
-				throw Error{errQueryExec, "Comparing composite indexes should be the same size: %s", name_};
+				throw Error{errQueryExec, "Comparing composite indexes should be the same size: {}", name_};
 			}
 			setCompositeField<false>(fset);
 		} else {
@@ -93,7 +89,7 @@ private:
 	struct FieldContext {
 		FieldsSet fields_;
 		KeyValueType type_ = KeyValueType::Undefined{};
-		bool isArray_ = false;
+		IsArray isArray_ = IsArray_False;
 		unsigned offset_ = 0;
 		unsigned sizeof_ = 0;
 	};
@@ -108,7 +104,7 @@ private:
 		assertrx_dbg(fields[0] == IndexValueType::SetByJsonPath);
 		setField(fields.getTagsPath(0), fctx);
 	}
-	void setField(FieldContext& fctx, FieldsSet fset, KeyValueType type, bool isArray) {
+	void setField(FieldContext& fctx, FieldsSet fset, KeyValueType type, IsArray isArray) {
 		fctx.fields_ = std::move(fset);
 		fctx.type_ = type;
 		fctx.isArray_ = isArray;
@@ -146,14 +142,14 @@ private:
 			return true;
 		}
 		return lType.EvaluateOneOf(
-			[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) noexcept {
+			[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) noexcept {
 				return rType.EvaluateOneOf(
-					[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) noexcept { return true; },
+					[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) noexcept { return true; },
 					[](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite,
-							 KeyValueType::Tuple, KeyValueType::Uuid>) noexcept { return false; });
+							 KeyValueType::Tuple, KeyValueType::Uuid, KeyValueType::FloatVector>) noexcept { return false; });
 			},
 			[](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite,
-					 KeyValueType::Tuple, KeyValueType::Uuid>) noexcept { return false; });
+					 KeyValueType::Tuple, KeyValueType::Uuid, KeyValueType::FloatVector>) noexcept { return false; });
 	}
 
 	std::string name_;

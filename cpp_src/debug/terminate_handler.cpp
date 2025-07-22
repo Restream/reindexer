@@ -1,11 +1,11 @@
 #include "terminate_handler.h"
+#include <iostream>
 #include <sstream>
 
 #ifndef _WIN32
 #include <cxxabi.h>
 #endif
 #include "debug/backtrace.h"
-#include "tools/errors.h"
 
 namespace reindexer {
 namespace debug {
@@ -26,8 +26,6 @@ static void terminate_handler() {
 			std::rethrow_exception(exptr);
 		} catch (std::exception& ex) {
 			sout << ": " << ex.what();
-		} catch (Error& err) {
-			sout << ": " << err.what();
 		} catch (...) {
 			sout << ": <unknown exception>";
 		}

@@ -27,7 +27,7 @@ type FtTyposDetailedConfig struct {
 	// Values range: [-1,100]
 	// Default: 0
 	MaxTypoDistance int `json:"max_typo_distance"`
-	// Maximum distance between same symbols in initial and target words to perform substitution (to handle cases, when two symbolws were switched with each other)
+	// Maximum distance between same symbols in initial and target words to perform substitution (to handle cases, when two symbols were switched with each other)
 	// Values range: [-1,100]
 	// Default: 1
 	MaxSymbolPermutationDistance int `json:"max_symbol_permutation_distance"`
@@ -46,11 +46,11 @@ type FtBaseRanking struct {
 	// Values range: [0,500]
 	// Default: 100
 	FullMatch int `json:"full_match_proc"`
-	// Mininum relevancy of prefix word match.
+	// Minimum relevancy of prefix word match.
 	// Values range: [0,500]
 	// Default: 50
 	PrefixMin int `json:"prefix_min_proc"`
-	// Mininum relevancy of suffix word match.
+	// Minimum relevancy of suffix word match.
 	// Values range: [0,500]
 	// Default: 10
 	SuffixMin int `json:"suffix_min_proc"`
@@ -78,6 +78,10 @@ type FtBaseRanking struct {
 	// Values range: [0,500]
 	// Default: 95
 	Synonyms int `json:"synonyms_proc"`
+	// Relevancy of the delimited word part match
+	// Values range: [0,500]
+	// Default: 80
+	Delimited int `json:"delimited_proc"`
 }
 
 type StopWord struct {
@@ -94,7 +98,7 @@ type Bm25ConfigType struct {
 	Bm25Type string `json:"bm25_type"`
 }
 
-// FtFastConfig configurarion of FullText search index
+// FtFastConfig configuration of FullText search index
 type FtFastConfig struct {
 	// boost of bm25 ranking. default value 1.
 	Bm25Boost float64 `json:"bm25_boost"`
@@ -102,7 +106,7 @@ type FtFastConfig struct {
 	// 0: bm25 will not change final rank.
 	// 1: bm25 will affect to final rank in 0 - 100% range
 	Bm25Weight float64 `json:"bm25_weight"`
-	// boost of search query term distance in found document. default vaule 1
+	// boost of search query term distance in found document. default value 1
 	DistanceBoost float64 `json:"distance_boost"`
 	// weight of search query terms distance in found document in final rank.
 	// 0: distance will not change final rank.
@@ -132,7 +136,7 @@ type FtFastConfig struct {
 	// N: words with N possible typos will match
 	// Values range: [0,4]
 	// Default: 2
-	// It is not recommended to set more than 2 possible typo: It will serously increase RAM usage, and decrease search speed
+	// It is not recommended to set more than 2 possible typo: It will seriously increase RAM usage, and decrease search speed
 	MaxTypos int `json:"max_typos"`
 	// Maximum word length for building and matching variants with typos. Default value is 15
 	MaxTypoLen int `json:"max_typo_len"`
@@ -146,6 +150,8 @@ type FtFastConfig struct {
 	// Default value is 20000. Increasing this value may refine ranking
 	// of queries with high frequency words
 	MergeLimit int `json:"merge_limit"`
+	// List of symbol types for keeping diacritic symbols (acc/accent, ara/arabic, heb/hebrew or cyr/cyrillic)
+	KeepDiacritics []string `json:"keep_diacritics"`
 	// List of used stemmers
 	Stemmers []string `json:"stemmers"`
 	// Enable translit variants processing
@@ -167,11 +173,15 @@ type FtFastConfig struct {
 	LogLevel int `json:"log_level"`
 	// Enable search by numbers as words and backwards
 	EnableNumbersSearch bool `json:"enable_numbers_search"`
-	// *DEPREEACTED* - all of the fulltex indexes will perform commit/warmup after copying transatcion
+	// *DEPRECATED* - all of the fulltex indexes will perform commit/warmup after copying transaction
 	// Enable auto index warmup after atomic namespace copy on transaction
 	EnableWarmupOnNsCopy bool `json:"enable_warmup_on_ns_copy"`
-	// Extra symbols, which will be threated as parts of word to addition to letters and digits
+	// Extra symbols, which will be treated as parts of word to addition to letters and digits
 	ExtraWordSymbols string `json:"extra_word_symbols"`
+	// Symbols, which will be treated as word part delimiters
+	WordPartDelimiters string `json:"word_part_delimiters"`
+	// Min word part size to indexate and search
+	MinWordPartSize int `json:"min_word_part_size"`
 	// Ratio of summation of ranks of match one term in several fields
 	SumRanksByFieldsRatio float64 `json:"sum_ranks_by_fields_ratio"`
 	// Max number of highlighted areas for each field in each document (for snippet() and highlight()). '-1' means unlimited
@@ -216,17 +226,20 @@ func DefaultFtFastConfig() FtFastConfig {
 		MaxRebuildSteps:         50,
 		MaxStepSize:             4000,
 		MergeLimit:              20000,
+		KeepDiacritics:          []string{},
 		Stemmers:                []string{"en", "ru"},
 		EnableTranslit:          true,
 		EnableKbLayout:          true,
 		LogLevel:                0,
-		ExtraWordSymbols:        "/-+",
+		ExtraWordSymbols:        "-/+_`'",
+		WordPartDelimiters:      "-/+_`'",
+		MinWordPartSize:         3,
 		SumRanksByFieldsRatio:   0.0,
 		MaxAreasInDoc:           5,
 		MaxTotalAreasToCache:    -1,
 		Optimization:            "Memory",
 		EnablePreselectBeforeFt: false,
-		FtBaseRankingConfig:     &FtBaseRanking{FullMatch: 100, PrefixMin: 50, SuffixMin: 10, Typo: 85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit: 90, Synonyms: 95},
+		FtBaseRankingConfig:     &FtBaseRanking{FullMatch: 100, PrefixMin: 50, SuffixMin: 10, Typo: 85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit: 90, Synonyms: 95, Delimited: 80},
 		Bm25Config:              &Bm25ConfigType{Bm25k1: 2.0, Bm25b: 0.75, Bm25Type: "rx_bm25"},
 	}
 }
