@@ -2,6 +2,7 @@
 
 #include "core/index/string_map.h"
 #include "core/keyvalue/key_string.h"
+#include "core/type_consts_helpers.h"
 #include "vendor/hopscotch/hopscotch_sc_map.h"
 #include "vendor/hopscotch/hopscotch_sc_set.h"
 
@@ -74,20 +75,14 @@ template <typename T>
 	}
 }
 
-inline static void throwOnNull(const Variant& v, CondType cond) {
-	if (v.IsNullValue()) {
-		throw Error{errParams, "Can not use 'null'-value directly with '%s' condition in comparator", CondTypeToStr(cond)};
-	}
-}
-
 template <typename T>
 [[nodiscard]] T GetValue(CondType cond, const VariantArray& values, size_t i) {
 	if (values.size() <= i) {
-		throw Error{errQueryExec, "Too many arguments for condition %s", CondTypeToStr(cond)};
+		throw Error{errQueryExec, "Too many arguments for condition {}", CondTypeToStr(cond)};
 	}
 	const auto& val = values[i];
-	throwOnNull(val, cond);
-	return GetValue<T>(values[i]);
+	assertrx_throw(!val.IsNullValue());
+	return GetValue<T>(val);
 }
 
 }  // namespace comparators

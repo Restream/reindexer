@@ -1,11 +1,11 @@
 #pragma once
 
 #include <chrono>
-#include <condition_variable>
 #include "estl/contexted_cond_var.h"
 #include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
-#include "estl/shared_mutex.h"
+#include "estl/recursive_mutex.h"
+#include "estl/unique_lock.h"
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -25,12 +25,12 @@ public:
 
 private:
 	void sendStatusRequests();
-	Error awaitStatuses(std::unique_lock<std::recursive_mutex>& lck, const RdxContext& ctx);
+	Error awaitStatuses(unique_lock<recursive_mutex>& lck, const RdxContext& ctx);
 	bool areStatusesReady() const noexcept;
 
 	bool inProgress_ = false;
 	bool terminated_ = false;
-	std::recursive_mutex mtx_;
+	recursive_mutex mtx_;
 	contexted_cond_var cv_;
 	fast_hash_set<int> succeed_;
 	size_t executed_ = 0;

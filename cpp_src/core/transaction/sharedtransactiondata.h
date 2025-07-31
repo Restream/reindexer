@@ -18,6 +18,7 @@ public:
 		  lsn(_lsn),
 		  startTime(_startTime),
 		  payloadType_(pt),
+		  sparseIndexes_(tm.SparseIndexes()),
 		  tagsMatcher_(tm),
 		  pkFields_(pf),
 		  schema_(std::move(schema)) {}
@@ -35,6 +36,7 @@ public:
 
 private:
 	PayloadType payloadType_;
+	std::vector<SparseIndexData> sparseIndexes_;
 	TagsMatcher tagsMatcher_;
 	FieldsSet pkFields_;
 	std::shared_ptr<const Schema> schema_;

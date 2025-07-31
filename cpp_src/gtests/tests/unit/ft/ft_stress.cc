@@ -1,4 +1,10 @@
 #include <gtest/gtest-param-test.h>
+#include <thread>
+#include "core/system_ns_names.h"
+#include "estl/condition_variable.h"
+#include "estl/lock_guard.h"
+#include "estl/mutex.h"
+#include "estl/unique_lock.h"
 #include "ft_api.h"
 #include "tools/fsops.h"
 
@@ -31,7 +37,7 @@ TEST_P(FTStressApi, BasicStress) {
 	std::thread statsThread([&] {
 		while (!terminate) {
 			reindexer::QueryResults qr;
-			const auto err = rt.reindexer->Select(reindexer::Query("#memstats"), qr);
+			const auto err = rt.reindexer->Select(reindexer::Query(reindexer::kMemStatsNamespace), qr);
 			ASSERT_TRUE(err.ok()) << err.what();
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
@@ -75,8 +81,8 @@ TEST_P(FTStressApi, ConcurrencyCheck) {
 	rt.reindexer.reset();
 	Init(GetDefaultConfig(), NS1, kStorage);  // Restart rx to drop all the caches
 
-	std::condition_variable cv;
-	std::mutex mtx;
+	reindexer::condition_variable cv;
+	reindexer::mutex mtx;
 	bool ready = false;
 	std::vector<std::thread> threads;
 	std::atomic<unsigned> runningThreads = {0};
@@ -86,19 +92,19 @@ TEST_P(FTStressApi, ConcurrencyCheck) {
 	for (unsigned i = 0; i < kTotalThreads; ++i) {
 		if (i == 0) {
 			statsThread = std::thread([&] {
-				std::unique_lock lck(mtx);
+				reindexer::unique_lock lck(mtx);
 				++runningThreads;
 				cv.wait(lck, [&] { return ready; });
 				lck.unlock();
 				while (!terminate) {
 					reindexer::QueryResults qr;
-					const auto err = rt.reindexer->Select(reindexer::Query("#memstats"), qr);
+					const auto err = rt.reindexer->Select(reindexer::Query(reindexer::kMemStatsNamespace), qr);
 					ASSERT_TRUE(err.ok()) << err.what();
 				}
 			});
 		} else {
 			threads.emplace_back(std::thread([&] {
-				std::unique_lock lck(mtx);
+				reindexer::unique_lock lck(mtx);
 				++runningThreads;
 				cv.wait(lck, [&] { return ready; });
 				lck.unlock();
@@ -110,7 +116,7 @@ TEST_P(FTStressApi, ConcurrencyCheck) {
 		std::this_thread::sleep_for(std::chrono::microseconds(100));
 	}
 	{
-		std::lock_guard lck(mtx);
+		reindexer::lock_guard lck(mtx);
 		ready = true;
 		cv.notify_all();
 	}
@@ -156,13 +162,13 @@ TEST_P(FTStressApi, LargeMergeLimit) {
 		}
 	}
 	{
-		auto qr = SimpleSelect(fmt::sprintf("%s* %s*", kBase1, kBase2));
+		auto qr = SimpleSelect(fmt::format("{}* {}*", kBase1, kBase2));
 		ASSERT_EQ(qr.Count(), ftCfg.mergeLimit);
 	}
 	ftCfg.mergeLimit = 60'000;
 	SetFTConfig(ftCfg);
 	{
-		auto qr = SimpleSelect(fmt::sprintf("%s* %s*", kBase1, kBase2));
+		auto qr = SimpleSelect(fmt::format("{}* {}*", kBase1, kBase2));
 		ASSERT_EQ(qr.Count(), ftCfg.mergeLimit);
 	}
 }

@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "errors.h"
+#include "estl/concepts.h"
 
 namespace reindexer {
 namespace fs {
@@ -46,8 +47,14 @@ Error TryCreateDirectory(const std::string& dir);
 Error ChangeUser(const char* userName);
 Error ChownDir(const std::string& path, const std::string& user);
 
-inline std::string JoinPath(std::string_view base, const std::string_view name) {
-	return std::string(base).append((!base.empty() && base.back() != '/') ? "/" : "").append(name);
+inline std::string JoinPath(std::string base, concepts::ConvertibleToString auto&& name) {
+	return base.append((!base.empty() && base.back() != '/') ? "/" : "").append(name);
 }
+
+template <concepts::ConvertibleToString... Str>
+inline std::string JoinPath(std::string base, concepts::ConvertibleToString auto&& name, Str&&... names) {
+	return JoinPath(JoinPath(base, name), names...);
+}
+
 }  // namespace fs
 }  // namespace reindexer

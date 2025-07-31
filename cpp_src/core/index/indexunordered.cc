@@ -1,4 +1,5 @@
 #include "indexunordered.h"
+#include "core/dbconfig.h"
 #include "core/index/indextext/ftkeyentry.h"
 #include "core/index/payload_map.h"
 #include "core/index/string_map.h"
@@ -30,7 +31,7 @@ template <>
 IndexUnordered<str_map<Index::KeyEntryPlain>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 															  const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
-	  idx_map(idef.opts_.collateOpts_),
+	  idx_map(idef.Opts().collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
@@ -38,7 +39,7 @@ template <>
 IndexUnordered<str_map<Index::KeyEntry>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 														 const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
-	  idx_map(idef.opts_.collateOpts_),
+	  idx_map(idef.Opts().collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
@@ -46,7 +47,7 @@ template <>
 IndexUnordered<unordered_str_map<Index::KeyEntry>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 																   const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
-	  idx_map(idef.opts_.collateOpts_),
+	  idx_map(idef.Opts().collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
@@ -54,7 +55,7 @@ template <>
 IndexUnordered<unordered_str_map<Index::KeyEntryPlain>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 																		const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
-	  idx_map(idef.opts_.collateOpts_),
+	  idx_map(idef.Opts().collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
@@ -62,7 +63,7 @@ template <>
 IndexUnordered<unordered_str_map<FtKeyEntry>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 															  const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
-	  idx_map(idef.opts_.collateOpts_),
+	  idx_map(idef.Opts().collateOpts_),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
@@ -174,7 +175,8 @@ void IndexUnordered<T>::delMemStat(typename T::iterator it) {
 template <typename T>
 Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCache) {
 	// reset cache
-	if (key.Type().Is<KeyValueType::Null>()) {	// TODO maybe error or default value if the index is not sparse
+	if (key.IsNullValue()) {
+		assertrx_dbg(this->Opts().IsSparse() || this->Opts().IsArray());
 		if (this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_)) {
 			cache_.ResetImpl();
 			clearCache = true;
@@ -189,6 +191,12 @@ Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCach
 		keyIt = this->idx_map.insert({static_cast<key_type>(key), typename T::mapped_type()}).first;
 	} else {
 		delMemStat(keyIt);
+		if (this->opts_.IsPK()) {
+			WrSerializer wrser;
+			wrser << "Can't insert item in PK index, duplicate key - ";
+			key.Dump(wrser, CheckIsStringPrintable::No);
+			throw Error(errLogic, wrser.Slice());
+		}
 	}
 
 	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_)) {
@@ -204,8 +212,8 @@ Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCach
 }
 
 template <typename T>
-void IndexUnordered<T>::Delete(const Variant& key, IdType id, StringsHolder& strHolder, bool& clearCache) {
-	if (key.Type().Is<KeyValueType::Null>()) {
+void IndexUnordered<T>::Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder& strHolder, bool& clearCache) {
+	if (key.IsNullValue()) {
 		this->empty_ids_.Unsorted().Erase(id);	// ignore result
 		this->isBuilt_ = false;
 		cache_.ResetImpl();
@@ -222,8 +230,9 @@ void IndexUnordered<T>::Delete(const Variant& key, IdType id, StringsHolder& str
 		cache_.ResetImpl();
 		clearCache = true;
 	}
-	assertf(delcnt || this->opts_.IsArray() || this->Opts().IsSparse(), "Delete non-existing id from index '%s' id=%d,key=%s (%s)",
-			this->name_, id, key.As<std::string>(this->payloadType_, this->Fields()),
+	assertf(!mustExist || delcnt || this->opts_.IsArray() || this->Opts().IsSparse(),
+			"Delete non-existing id from index '{}' id={}, key={} ({})", this->name_, id,
+			key.As<std::string>(this->payloadType_, this->Fields()),
 			Variant(keyIt->first).As<std::string>(this->payloadType_, this->Fields()));
 	if (keyIt == idx_map.end()) {
 		return;
@@ -245,7 +254,7 @@ void IndexUnordered<T>::Delete(const Variant& key, IdType id, StringsHolder& str
 	}
 
 	if (!this->IsFulltext()) {
-		IndexStore<StoreIndexKeyType<T>>::Delete(key, id, strHolder, clearCache);
+		IndexStore<StoreIndexKeyType<T>>::Delete(key, id, mustExist, strHolder, clearCache);
 	}
 }
 
@@ -283,11 +292,11 @@ bool IndexUnordered<T>::tryIdsetCache(const VariantArray& keys, CondType conditi
 }
 
 template <typename T>
-SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType condition, SortType sortId, Index::SelectOpts opts,
-											  const BaseFunctionCtx::Ptr& funcCtx, const RdxContext& rdxCtx) {
+SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType condition, SortType sortId,
+											  const Index::SelectContext& selectCtx, const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
-	if (opts.forceComparator) {
-		return Base::SelectKey(keys, condition, sortId, opts, funcCtx, rdxCtx);
+	if (selectCtx.opts.forceComparator) {
+		return Base::SelectKey(keys, condition, sortId, selectCtx, rdxCtx);
 	}
 
 	SelectKeyResult res;
@@ -302,22 +311,15 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 		// Get set of keys or single key
 		case CondEq:
 		case CondSet: {
-			for (const auto& key : keys) {
-				if (key.IsNullValue()) {
-					throw Error(errParams,
-								"Can not use 'null'-value with operators '=' and 'IN()' (index: '%s'). Use 'IS NULL'/'IS NOT NULL' instead",
-								this->Name());
-				}
-			}
+			assertrx_throw(std::none_of(keys.cbegin(), keys.cend(), [](const auto& key) noexcept { return key.IsNullValue(); }));
 
 			struct {
 				T* i_map;
 				const VariantArray& keys;
-				std::string_view indexName;
 				SortType sortId;
 				Index::SelectOpts opts;
-				bool isSparse;
-			} ctx = {&this->idx_map, keys, this->Name(), sortId, opts, this->opts_.IsSparse()};
+				IsSparse isSparse;
+			} ctx = {&this->idx_map, keys, sortId, selectCtx.opts, this->opts_.IsSparse()};
 			bool selectorWasSkipped = false;
 			// should return true, if fallback to comparator required
 			auto selector = [&ctx, &selectorWasSkipped](SelectKeyResult& res, size_t& idsCount) -> bool {
@@ -352,25 +354,23 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 
 			bool scanWin = false;
 			// Get from cache
-			if (!opts.distinct && !opts.disableIdSetCache && keys.size() > 1) {
+			if (!selectCtx.opts.distinct && !selectCtx.opts.disableIdSetCache && keys.size() > 1) {
 				scanWin = tryIdsetCache(keys, condition, sortId, std::move(selector), res);
 			} else {
 				size_t idsCount;
 				scanWin = selector(res, idsCount);
 			}
 
-			if ((scanWin || selectorWasSkipped) && !opts.distinct) {
+			if ((scanWin || selectorWasSkipped) && !selectCtx.opts.distinct) {
 				// fallback to comparator, due to expensive idset
-				return Base::SelectKey(keys, condition, sortId, opts, funcCtx, rdxCtx);
+				return Base::SelectKey(keys, condition, sortId, selectCtx, rdxCtx);
 			}
 		} break;
 		case CondAllSet: {
 			// Get set of key, where all request keys are present
 			SelectKeyResults rslts;
 			for (const auto& key : keys) {
-				if (key.IsNullValue()) {
-					throw Error(errParams, "Can not use 'null'-value with operator 'allset' (index: '%s')", this->Name());
-				}
+				assertrx_dbg(!key.IsNullValue());
 				SelectKeyResult res1;
 				auto keyIt = this->idx_map.find(static_cast<ref_type>(key.convert(this->KeyType())));
 				if (keyIt == this->idx_map.end()) {
@@ -385,7 +385,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 		}
 
 		case CondAny:
-			if (opts.distinct && this->idx_map.size() < kMaxIdsForDistinct) {  // TODO change to more clever condition
+			if (selectCtx.opts.distinct && this->idx_map.size() < kMaxIdsForDistinct) {	 // TODO change to more clever condition
 				// Get set of any keys
 				res.reserve(this->idx_map.size());
 				for (auto& keyIt : this->idx_map) {
@@ -399,9 +399,10 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 		case CondGt:
 		case CondLt:
 		case CondLike:
-			return Base::SelectKey(keys, condition, sortId, opts, funcCtx, rdxCtx);
+			return Base::SelectKey(keys, condition, sortId, selectCtx, rdxCtx);
 		case CondDWithin:
-			throw Error(errQueryExec, "DWithin query on index '%s'", this->name_);
+		case CondKnn:
+			throw Error(errQueryExec, "{} query on index '{}'", CondTypeToStrShort(condition), this->name_);
 	}
 
 	return SelectKeyResults(std::move(res));
@@ -419,8 +420,8 @@ void IndexUnordered<T>::Commit() {
 		return;
 	}
 
-	logPrintf(LogTrace, "IndexUnordered::Commit (%s) %d uniq keys, %d empty, %s", this->name_, this->idx_map.size(),
-			  this->empty_ids_.Unsorted().size(), tracker_.isCompleteUpdated() ? "complete" : "partial");
+	logFmt(LogTrace, "IndexUnordered::Commit ({}) {} uniq keys, {} empty, {}", this->name_, this->idx_map.size(),
+		   this->empty_ids_.Unsorted().size(), tracker_.isCompleteUpdated() ? "complete" : "partial");
 
 	if (tracker_.isCompleteUpdated()) {
 		for (auto& keyIt : this->idx_map) {
@@ -435,8 +436,10 @@ void IndexUnordered<T>::Commit() {
 
 template <typename T>
 void IndexUnordered<T>::UpdateSortedIds(const UpdateSortedContext& ctx) {
-	logPrintf(LogTrace, "IndexUnordered::UpdateSortedIds (%s) %d uniq keys, %d empty", this->name_, this->idx_map.size(),
-			  this->empty_ids_.Unsorted().size());
+	assertrx_dbg(IsSupportSortedIdsBuild());
+
+	logFmt(LogTrace, "IndexUnordered::UpdateSortedIds ({}) {} uniq keys, {} empty", this->name_, this->idx_map.size(),
+		   this->empty_ids_.Unsorted().size());
 	// For all keys in index
 	for (auto& keyIt : this->idx_map) {
 		keyIt.second.UpdateSortedIds(ctx);
@@ -530,7 +533,7 @@ void IndexUnordered<T>::ReconfigureCache(const NamespaceCacheConfigData& cacheCf
 template <typename KeyEntryT>
 static std::unique_ptr<Index> IndexUnordered_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 												 const NamespaceCacheConfigData& cacheCfg) {
-	switch (idef.Type()) {
+	switch (idef.IndexType()) {
 		case IndexIntHash:
 			return std::make_unique<IndexUnordered<unordered_number_map<int, KeyEntryT>>>(idef, std::move(payloadType), std::move(fields),
 																						  cacheCfg);
@@ -561,15 +564,19 @@ static std::unique_ptr<Index> IndexUnordered_New(const IndexDef& idef, PayloadTy
 		case IndexRTree:
 		case IndexUuidHash:
 		case IndexUuidStore:
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+		case IndexDummy:
 			break;
 	}
-	std::abort();
+	throw_as_assert;
 }
 
 // NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 std::unique_ptr<Index> IndexUnordered_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 										  const NamespaceCacheConfigData& cacheCfg) {
-	return (idef.opts_.IsPK() || idef.opts_.IsDense())
+	return (idef.Opts().IsPK() || idef.Opts().IsDense())
 			   ? IndexUnordered_New<Index::KeyEntryPlain>(idef, std::move(payloadType), std::move(fields), cacheCfg)
 			   : IndexUnordered_New<Index::KeyEntry>(idef, std::move(payloadType), std::move(fields), cacheCfg);
 }

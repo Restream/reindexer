@@ -1,13 +1,14 @@
 #pragma once
 
+#include "core/enums.h"
 #include "core/selectkeyresult.h"
+#include "estl/concepts.h"
 
 namespace reindexer {
 
-enum class IteratorFieldKind { None, NonIndexed, Indexed };
 /// Allows to iterate over a result of selecting
 /// data for one certain key.
-class SelectIterator : public SelectKeyResult {
+class [[nodiscard]] SelectIterator : public SelectKeyResult {
 public:
 	enum {
 		Forward,
@@ -23,11 +24,13 @@ public:
 		UnbuiltSortOrdersIndex,
 	};
 
-	SelectIterator(SelectKeyResult&& res, bool dist, std::string&& n, IteratorFieldKind fKind, bool forcedFirst = false) noexcept
+	template <concepts::ConvertibleToString Str>
+	SelectIterator(SelectKeyResult&& res, reindexer::IsDistinct dist, Str&& n, int idxNo,
+				   ForcedFirst forcedFirst = ForcedFirst_False) noexcept
 		: SelectKeyResult(std::move(res)),
 		  distinct(dist),
-		  name(std::move(n)),
-		  fieldKind(fKind),
+		  name(std::forward<Str>(n)),
+		  indexNo(idxNo),
 		  forcedFirst_(forcedFirst),
 		  type_(Forward) {}
 
@@ -40,7 +43,7 @@ public:
 
 		isReverse_ = reverse;
 		const auto begIt = begin();
-		lastIt_ = begIt;
+		lastPos_ = 0;
 
 		for (auto it = begIt, endIt = end(); it != endIt; ++it) {
 			if (it->isRange_) {
@@ -90,7 +93,7 @@ public:
 		} else if (sz == 1 && begIt->indexForwardIter_) {
 			type_ = UnbuiltSortOrdersIndex;
 			begIt->indexForwardIter_->Start(reverse);
-		} else if (isUnsorted) {
+		} else if (isUnsorted_) {
 			type_ = Unsorted;
 		} else if (sz == 1) {
 			if (!isReverse_) {
@@ -147,7 +150,7 @@ public:
 	}
 
 	/// Sets Unsorted iteration mode
-	RX_ALWAYS_INLINE void SetUnsorted() noexcept { isUnsorted = true; }
+	RX_ALWAYS_INLINE void SetUnsorted() noexcept { isUnsorted_ = true; }
 
 	/// Current rowId
 	RX_ALWAYS_INLINE IdType Val() const noexcept {
@@ -157,11 +160,29 @@ public:
 	/// Current rowId index since the beginning
 	/// of current SingleKeyValue object.
 	int Pos() const noexcept {
-		assertrx_throw(!lastIt_->useBtree_ && (type_ != UnbuiltSortOrdersIndex));
-		return lastIt_->it_ - lastIt_->begin_ - 1;
+		switch (type_) {
+			case SingleIdset:
+			case SingleIdSetWithDeferedSort: {
+				const auto& it = *begin();
+				assertrx_throw(!it.useBtree_);
+				return it.it_ - it.begin_;
+			}
+			case Forward:
+			case Reverse:
+			case SingleRange:
+			case RevSingleRange:
+			case RevSingleIdset:
+			case RevSingleIdSetWithDeferedSort:
+			case OnlyComparator:
+			case Unsorted:
+			case UnbuiltSortOrdersIndex:
+			default:
+				assertrx_throw(!operator[](lastPos_).useBtree_ && (type_ != UnbuiltSortOrdersIndex));
+				return operator[](lastPos_).it_ - operator[](lastPos_).begin_ - 1;
+		}
 	}
 
-	/// @return amonut of matched items
+	/// @return number of matching items
 	int GetMatchedCount() const noexcept { return matchedCount_; }
 
 	/// Excludes last set of ids from each result
@@ -172,14 +193,14 @@ public:
 			if (fwdIter->Value() == rowId) {
 				fwdIter->ExcludeLastSet();
 			}
-		} else if (!End() && lastIt_ != end() && lastVal_ == rowId) {
-			assertrx_throw(!lastIt_->isRange_);
-			if (lastIt_->useBtree_) {
-				lastIt_->itset_ = lastIt_->setend_;
-				lastIt_->ritset_ = lastIt_->setrend_;
+		} else if (!End() && lastPos_ != size() && lastVal_ == rowId) {
+			assertrx_throw(!operator[](lastPos_).isRange_);
+			if (operator[](lastPos_).useBtree_) {
+				operator[](lastPos_).itset_ = operator[](lastPos_).setend_;
+				operator[](lastPos_).ritset_ = operator[](lastPos_).setrend_;
 			} else {
-				lastIt_->it_ = lastIt_->end_;
-				lastIt_->rit_ = lastIt_->rend_;
+				operator[](lastPos_).it_ = operator[](lastPos_).end_;
+				operator[](lastPos_).rit_ = operator[](lastPos_).rend_;
 			}
 		}
 	}
@@ -200,7 +221,7 @@ public:
 			return -1;
 		}
 		if (forcedFirst_) {
-			return -GetMaxIterations();
+			return -static_cast<double>(GetMaxIterations());
 		}
 		double result{0.0};
 		const auto sz = size();
@@ -233,10 +254,11 @@ public:
 
 	std::string_view TypeName() const noexcept;
 	std::string Dump() const;
+	reindexer::IsDistinct IsDistinct() const noexcept { return distinct; }
 
-	bool distinct = false;
+	reindexer::IsDistinct distinct = IsDistinct_False;
 	std::string name;
-	IteratorFieldKind fieldKind = IteratorFieldKind::None;
+	int indexNo = IndexValueType::NotSet;
 
 protected:
 	// Iterates to a next item of result
@@ -254,7 +276,7 @@ protected:
 					it->itset_ = it->set_->upper_bound(lastVal_);
 					if (it->itset_ != it->setend_ && *it->itset_ < minVal) {
 						minVal = *it->itset_;
-						lastIt_ = it;
+						lastPos_ = it - begin();
 					}
 				}
 			} else {
@@ -263,7 +285,7 @@ protected:
 
 					if (it->rIt_ != it->rEnd_ && it->rIt_ < minVal) {
 						minVal = it->rIt_;
-						lastIt_ = it;
+						lastPos_ = it - begin();
 					}
 
 				} else if (!it->isRange_ && it->it_ != it->end_) {
@@ -271,7 +293,7 @@ protected:
 					}
 					if (it->it_ != it->end_ && *it->it_ < minVal) {
 						minVal = *it->it_;
-						lastIt_ = it;
+						lastPos_ = it - begin();
 					}
 				}
 			}
@@ -291,21 +313,21 @@ protected:
 				}
 				if (it->ritset_ != it->setrend_ && *it->ritset_ > maxVal) {
 					maxVal = *it->ritset_;
-					lastIt_ = it;
+					lastPos_ = it - begin();
 				}
 			} else if (it->isRange_ && it->rrIt_ != it->rrEnd_) {
 				it->rrIt_ = std::max(it->rrEnd_, std::min(it->rrIt_, lastVal_ - 1));
 
 				if (it->rrIt_ != it->rrEnd_ && it->rrIt_ > maxVal) {
 					maxVal = it->rrIt_;
-					lastIt_ = it;
+					lastPos_ = it - begin();
 				}
 			} else if (!it->isRange_ && !it->useBtree_ && it->rit_ != it->rend_) {
 				for (; it->rit_ != it->rend_ && *it->rit_ >= lastVal_; ++it->rit_) {
 				}
 				if (it->rit_ != it->rend_ && *it->rit_ > maxVal) {
 					maxVal = *it->rit_;
-					lastIt_ = it;
+					lastPos_ = it - begin();
 				}
 			}
 		}
@@ -391,45 +413,44 @@ protected:
 	bool nextUnbuiltSortOrders() noexcept { return begin()->indexForwardIter_->Next(); }
 	// Unsorted next implementation
 	bool nextUnsorted() noexcept {
-		const auto endIt = end();
-		if (lastIt_ == endIt) {
+		if (lastPos_ == size()) {
 			return false;
 		}
-		if (lastIt_->it_ == lastIt_->end_) {
-			++lastIt_;
-			while (lastIt_ != endIt) {
-				if (lastIt_->it_ != lastIt_->end_) {
-					lastVal_ = *(lastIt_->it_++);
+		if (operator[](lastPos_).it_ == operator[](lastPos_).end_) {
+			++lastPos_;
+			while (lastPos_ < size()) {
+				if (operator[](lastPos_).it_ != operator[](lastPos_).end_) {
+					lastVal_ = *(operator[](lastPos_).it_++);
 					return true;
 				}
-				++lastIt_;
+				++lastPos_;
 			}
 			return false;
 		}
-		lastVal_ = *(lastIt_->it_++);
+		lastVal_ = *(operator[](lastPos_).it_++);
 		return true;
 	}
 
-	/// Performs ID sets merge and sort in case, when this sort was defered earlier and still effective with current maxIterations value
+	/// Performs ID sets merge and sort in case, when this sort was deferred earlier and still effective with current maxIterations value
 	bool applyDeferedSort(int maxIterations) {
 		if (deferedExplicitSort && maxIterations > 0 && !distinct) {
 			const auto idsCount = GetMaxIterations();
 			if (IsGenericSortRecommended(size(), idsCount, size_t(maxIterations))) {
-				MergeIdsets(SelectKeyResult::MergeOptions{.genericSort = true, .shrinkResult = false}, idsCount);
+				[[maybe_unused]] auto merged =
+					MergeIdsets(SelectKeyResult::MergeOptions{.genericSort = true, .shrinkResult = false}, idsCount);
 				return true;
 			}
 		}
 		return false;
 	}
 
-	bool isUnsorted = false;
+	bool isUnsorted_ = false;
 	bool isReverse_ = false;
-	bool forcedFirst_ = false;
+	ForcedFirst forcedFirst_ = ForcedFirst_False;
 	bool isNotOperation_ = false;
 	int type_ = 0;
-	iterator lastIt_ = nullptr;
+	size_t lastPos_ = 0;
 	IdType lastVal_ = INT_MIN;
-	IdType end_ = 0;
 	int matchedCount_ = 0;
 };
 

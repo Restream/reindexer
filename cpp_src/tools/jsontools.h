@@ -3,7 +3,7 @@
 #include <string>
 #include <string_view>
 
-#include "estl/span.h"
+#include <span>
 #include "gason/gason.h"
 #include "tools/stringstools.h"
 
@@ -14,7 +14,8 @@ class WrSerializer;
 constexpr int kJsonShiftWidth = 4;
 
 void jsonValueToString(gason::JsonValue o, WrSerializer& ser, int shift = kJsonShiftWidth, int indent = 0, bool escapeStrings = true);
-void prettyPrintJSON(span<char> json, WrSerializer& ser, int shift = kJsonShiftWidth);
+void prettyPrintJSON(std::span<char> json, WrSerializer& ser, int shift = kJsonShiftWidth);
+void prettyPrintJSON(std::string_view json, WrSerializer& ser, int shift = kJsonShiftWidth);
 
 std::string stringifyJson(const gason::JsonNode& elem, bool escapeStrings = true);
 
@@ -42,10 +43,10 @@ Error tryReadJsonValue(std::string* errLog, const gason::JsonNode& parent, std::
 		try {
 			value = parent[valueName].As<JsonT>(value, std::forward<Args>(args)...);
 		} catch (const gason::Exception& ex) {
-			result = Error(errParseJson, "%s", ex.what());
+			result = Error(errParseJson, "{}", ex.what());
 		}
 	} else if constexpr (required) {
-		result = Error(errParseJson, "Required paramenter '%s' is not found.\n", valueName);
+		result = Error(errParseJson, "Required paramenter '{}' is not found.\n", valueName);
 	}
 
 	if (errLog && !result.ok()) {

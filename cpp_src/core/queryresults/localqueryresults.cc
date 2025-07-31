@@ -2,14 +2,17 @@
 #include "additionaldatasource.h"
 #include "cluster/sharding/sharding.h"
 #include "core/cbinding/resultserializer.h"
+#include "core/cjson/cjsonbuilder.h"
 #include "core/cjson/csvbuilder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/protobufbuilder.h"
 #include "core/itemimpl.h"
 #include "core/namespace/namespace.h"
+#include "estl/gift_str.h"
 #include "joinresults.h"
 #include "server/outputparameters.h"
 #include "tools/catch_and_return.h"
+#include "vendor/gason/gason.h"
 
 namespace reindexer {
 
@@ -19,7 +22,7 @@ void LocalQueryResults::AddNamespace(NamespaceImplPtr ns, [[maybe_unused]] bool 
 	auto strHolder = ns->strHolder();
 	const auto it = std::find_if(nsData_.cbegin(), nsData_.cend(), [nsPtr](const NsDataHolder& nsData) { return nsData.ns == nsPtr; });
 	if (it != nsData_.cend()) {
-		assertrx(it->strHolder.get() == strHolder.get());
+		assertrx(it->StrHolderPtr() == strHolder.get());
 		return;
 	}
 	nsData_.emplace_back(std::move(ns), std::move(strHolder));
@@ -30,7 +33,7 @@ void LocalQueryResults::AddNamespace(NamespaceImpl* ns, [[maybe_unused]] bool no
 	auto strHolder = ns->strHolder();
 	const auto it = std::find_if(nsData_.cbegin(), nsData_.cend(), [ns](const NsDataHolder& nsData) { return nsData.ns == ns; });
 	if (it != nsData_.cend()) {
-		assertrx(it->strHolder.get() == strHolder.get());
+		assertrx(it->StrHolderPtr() == strHolder.get());
 		return;
 	}
 	nsData_.emplace_back(ns, std::move(strHolder));
@@ -44,29 +47,30 @@ void LocalQueryResults::RemoveNamespace(const NamespaceImpl* ns) {
 
 struct LocalQueryResults::Context {
 	Context() = default;
-	Context(PayloadType type, TagsMatcher tagsMatcher, const FieldsSet& fieldsFilter, std::shared_ptr<const Schema> schema,
+	Context(PayloadType type, TagsMatcher tagsMatcher, FieldsFilter fieldsFilter, std::shared_ptr<const Schema> schema,
 			lsn_t nsIncarnationTag)
 		: type_(std::move(type)),
 		  tagsMatcher_(std::move(tagsMatcher)),
-		  fieldsFilter_(fieldsFilter),
+		  fieldsFilter_(std::move(fieldsFilter)),
 		  schema_(std::move(schema)),
 		  nsIncarnationTag_(nsIncarnationTag) {}
 
 	PayloadType type_;
 	TagsMatcher tagsMatcher_;
-	FieldsSet fieldsFilter_;
+	FieldsFilter fieldsFilter_;
 	std::shared_ptr<const Schema> schema_;
 	lsn_t nsIncarnationTag_;
 };
 
+#ifndef REINDEX_DEBUG_CONTAINERS
 static_assert(LocalQueryResults::kSizeofContext >= sizeof(LocalQueryResults::Context),
 			  "LocalQueryResults::kSizeofContext should >= sizeof(LocalQueryResults::Context)");
+#endif	// REINDEX_DEBUG_CONTAINERS
 
-LocalQueryResults::LocalQueryResults(std::initializer_list<ItemRef> l) : items_(l) {}
 LocalQueryResults::LocalQueryResults() = default;
 LocalQueryResults::LocalQueryResults(LocalQueryResults&& obj) noexcept = default;
 
-LocalQueryResults::LocalQueryResults(const ItemRefVector::const_iterator& begin, const ItemRefVector::const_iterator& end)
+LocalQueryResults::LocalQueryResults(const ItemRefVector::ConstIterator& begin, const ItemRefVector::ConstIterator& end)
 	: items_(begin, end) {}
 
 LocalQueryResults& LocalQueryResults::operator=(LocalQueryResults&& obj) noexcept = default;
@@ -82,15 +86,15 @@ void LocalQueryResults::SaveRawData(ItemImplRawData&& rawData) { rawDataHolder_.
 
 std::string LocalQueryResults::Dump() const {
 	std::string buf;
-	for (size_t i = 0; i < items_.size(); ++i) {
-		if (&items_[i] != &*items_.begin()) {
+	for (size_t i = 0; i < items_.Size(); ++i) {
+		if (i != 0) {
 			buf += ",";
 		}
-		buf += std::to_string(items_[i].Id());
+		buf += std::to_string(items_.GetItemRef(i).Id());
 		if (joined_.empty()) {
 			continue;
 		}
-		Iterator itemIt{this, int(i), Error(), {}};
+		ConstIterator itemIt{*this, i};
 		auto joinIt = itemIt.GetJoined();
 		if (joinIt.getJoinedItemsCount() > 0) {
 			buf += "[";
@@ -140,8 +144,8 @@ int LocalQueryResults::GetJoinedNsCtxIndex(int nsid) const noexcept {
 
 class LocalQueryResults::EncoderDatasourceWithJoins final : public IEncoderDatasourceWithJoins {
 public:
-	EncoderDatasourceWithJoins(const joins::ItemIterator& joinedItemIt, const ContextsVector& ctxs, Iterator::NsNamesCache& nsNamesCache,
-							   int ctxIdx, size_t nsid, size_t joinedCount) noexcept
+	EncoderDatasourceWithJoins(const joins::ItemIterator& joinedItemIt, const ContextsVector& ctxs,
+							   ConstIterator::NsNamesCache& nsNamesCache, int ctxIdx, size_t nsid, size_t joinedCount)
 		: joinedItemIt_(joinedItemIt), ctxs_(ctxs), nsNamesCache_(nsNamesCache), ctxId_(ctxIdx), nsid_{nsid} {
 		if (nsNamesCache.size() <= nsid_) {
 			nsNamesCache.resize(nsid_ + 1);
@@ -185,27 +189,35 @@ public:
 		const Context& ctx = ctxs_[ctxId_ + rowid];
 		return ConstPayload(ctx.type_, itemRef.Value());
 	}
-	const TagsMatcher& GetJoinedItemTagsMatcher(size_t rowid) noexcept override {
+	const TagsMatcher& GetJoinedItemTagsMatcher(size_t rowid) & noexcept override {
 		const Context& ctx = ctxs_[ctxId_ + rowid];
 		return ctx.tagsMatcher_;
 	}
-	const FieldsSet& GetJoinedItemFieldsFilter(size_t rowid) noexcept override {
+	const FieldsFilter& GetJoinedItemFieldsFilter(size_t rowid) & noexcept override {
 		const Context& ctx = ctxs_[ctxId_ + rowid];
 		return ctx.fieldsFilter_;
 	}
-	const std::string& GetJoinedItemNamespace(size_t rowid) noexcept override { return nsNamesCache_[nsid_][rowid]; }
+	const std::string& GetJoinedItemNamespace(size_t rowid) & noexcept override { return nsNamesCache_[nsid_][rowid]; }
+
+	auto GetJoinedItemNamespace(size_t) && = delete;
+	auto GetJoinedItemTagsMatcher(size_t) && = delete;
+	auto GetJoinedItemFieldsFilter(size_t) && = delete;
 
 private:
 	const joins::ItemIterator& joinedItemIt_;
 	const ContextsVector& ctxs_;
-	const Iterator::NsNamesCache& nsNamesCache_;
+	const ConstIterator::NsNamesCache& nsNamesCache_;
 	const int ctxId_;
 	const size_t nsid_;
 };
 
-void LocalQueryResults::encodeJSON(int idx, WrSerializer& ser, Iterator::NsNamesCache& nsNamesCache) const {
-	auto& itemRef = items_[idx];
-	assertrx(ctxs.size() > itemRef.Nsid());
+void LocalQueryResults::encodeJSON(int idx, WrSerializer& ser, ConstIterator::NsNamesCache& nsNamesCache) const {
+	auto& itemRef = items_.GetItemRef(idx);
+	if rx_unlikely (ctxs.size() <= itemRef.Nsid()) {
+		assertrx_dbg(ctxs.size() > itemRef.Nsid());	 // This code should be unreachable in normal conditions
+		throw Error(errAssert, "Do not have corresponding context for nsid: {} in LocalQueryResults; {} contextes total", itemRef.Nsid(),
+					ctxs.size());
+	}
 	auto& ctx = ctxs[itemRef.Nsid()];
 
 	if (itemRef.Value().IsFree()) {
@@ -221,7 +233,8 @@ void LocalQueryResults::encodeJSON(int idx, WrSerializer& ser, Iterator::NsNames
 			EncoderDatasourceWithJoins joinsDs(itemIt, ctxs, nsNamesCache, GetJoinedNsCtxIndex(itemRef.Nsid()), itemRef.Nsid(),
 											   joined_[itemRef.Nsid()].GetJoinedSelectorsCount());
 			h_vector<IAdditionalDatasource<JsonBuilder>*, 2> dss;
-			AdditionalDatasource ds = needOutputRank ? AdditionalDatasource(itemRef.Proc(), &joinsDs) : AdditionalDatasource(&joinsDs);
+			AdditionalDatasource ds =
+				needOutputRank ? AdditionalDatasource(items_.GetItemRefRanked(idx).Rank(), &joinsDs) : AdditionalDatasource(&joinsDs);
 			dss.push_back(&ds);
 			AdditionalDatasourceShardId dsShardId(outputShardId);
 			if (outputShardId >= 0) {
@@ -235,9 +248,10 @@ void LocalQueryResults::encodeJSON(int idx, WrSerializer& ser, Iterator::NsNames
 
 	h_vector<IAdditionalDatasource<JsonBuilder>*, 2> dss;
 
-	AdditionalDatasource ds(itemRef.Proc(), nullptr);
+	std::optional<AdditionalDatasource> ds;
 	if (needOutputRank) {
-		dss.push_back(&ds);
+		ds = AdditionalDatasource{items_.GetItemRefRanked(idx).Rank(), nullptr};
+		dss.push_back(&*ds);
 	}
 	AdditionalDatasourceShardId dsShardId(outputShardId);
 	if (outputShardId >= 0) {
@@ -247,12 +261,16 @@ void LocalQueryResults::encodeJSON(int idx, WrSerializer& ser, Iterator::NsNames
 	encoder.Encode(pl, builder, dss);
 }
 
-joins::ItemIterator LocalQueryResults::Iterator::GetJoined() { return reindexer::joins::ItemIterator::CreateFrom(*this); }
+template <typename QR>
+joins::ItemIterator LocalQueryResults::IteratorImpl<QR>::GetJoined() {
+	return reindexer::joins::ItemIterator::CreateFrom(*this);
+}
 
-Error LocalQueryResults::Iterator::GetMsgPack(WrSerializer& wrser, bool withHdrLen) {
-	auto& itemRef = qr_->items_[idx_];
+template <typename QR>
+Error LocalQueryResults::IteratorImpl<QR>::GetMsgPack(WrSerializer& wrser, bool withHdrLen) {
+	auto& itemRef = qr_->items_.GetItemRef(idx_);
 	assertrx(qr_->ctxs.size() > itemRef.Nsid());
-	auto& ctx = qr_->ctxs[itemRef.Nsid()];
+	const auto& ctx = qr_->ctxs[itemRef.Nsid()];
 
 	if (itemRef.Value().IsFree()) {
 		return Error(errNotFound, "Item not found");
@@ -260,7 +278,7 @@ Error LocalQueryResults::Iterator::GetMsgPack(WrSerializer& wrser, bool withHdrL
 
 	int startTag = 0;
 	ConstPayload pl(ctx.type_, itemRef.Value());
-	MsgPackEncoder msgpackEncoder(&ctx.tagsMatcher_);
+	MsgPackEncoder msgpackEncoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
 	const TagsLengths& tagsLengths = msgpackEncoder.GetTagsMeasures(pl);
 	MsgPackBuilder msgpackBuilder(wrser, &tagsLengths, &startTag, ObjType::TypePlain, const_cast<TagsMatcher*>(&ctx.tagsMatcher_));
 	if (withHdrLen) {
@@ -272,10 +290,11 @@ Error LocalQueryResults::Iterator::GetMsgPack(WrSerializer& wrser, bool withHdrL
 	return errOK;
 }
 
-Error LocalQueryResults::Iterator::GetProtobuf(WrSerializer& wrser, bool withHdrLen) {
-	auto& itemRef = qr_->items_[idx_];
+template <typename QR>
+Error LocalQueryResults::IteratorImpl<QR>::GetProtobuf(WrSerializer& wrser, bool withHdrLen) {
+	auto& itemRef = qr_->items_.GetItemRef(idx_);
 	assertrx(qr_->ctxs.size() > itemRef.Nsid());
-	auto& ctx = qr_->ctxs[itemRef.Nsid()];
+	const auto& ctx = qr_->ctxs[itemRef.Nsid()];
 	if (!ctx.schema_) {
 		return Error(errParams, "The schema was not found for Protobuf builder");
 	}
@@ -285,11 +304,11 @@ Error LocalQueryResults::Iterator::GetProtobuf(WrSerializer& wrser, bool withHdr
 	}
 
 	ConstPayload pl(ctx.type_, itemRef.Value());
-	ProtobufEncoder encoder(&ctx.tagsMatcher_);
+	ProtobufEncoder encoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
 	ProtobufBuilder builder(&wrser, ObjType::TypePlain, ctx.schema_.get(), const_cast<TagsMatcher*>(&ctx.tagsMatcher_));
 
 	auto item = builder.Object(kProtoQueryResultsFields.at(kParamItems));
-	auto ItemImpl = item.Object(ctx.schema_->GetProtobufNsNumber() + 1);
+	auto ItemImpl = item.Object(TagName(ctx.schema_->GetProtobufNsNumber() + 1));
 
 	if (withHdrLen) {
 		auto slicePosSaver = wrser.StartSlice();
@@ -301,7 +320,8 @@ Error LocalQueryResults::Iterator::GetProtobuf(WrSerializer& wrser, bool withHdr
 	return {};
 }
 
-Error LocalQueryResults::Iterator::GetJSON(WrSerializer& ser, bool withHdrLen) {
+template <typename QR>
+Error LocalQueryResults::IteratorImpl<QR>::GetJSON(WrSerializer& ser, bool withHdrLen) {
 	try {
 		if (withHdrLen) {
 			auto slicePosSaver = ser.StartSlice();
@@ -317,22 +337,32 @@ Error LocalQueryResults::Iterator::GetJSON(WrSerializer& ser, bool withHdrLen) {
 }
 
 CsvOrdering LocalQueryResults::MakeCSVTagOrdering(unsigned limit, unsigned offset) const {
-	if (!ctxs[0].fieldsFilter_.empty()) {
-		std::vector<int> ordering;
-		ordering.reserve(ctxs[0].fieldsFilter_.size());
-		for (const auto& tag : ctxs[0].fieldsFilter_) {
-			ordering.emplace_back(tag);
+	const auto& fieldsFilter = ctxs[0].fieldsFilter_;
+	const auto* regularFieldsFilter = fieldsFilter.TryRegularFields();
+	const auto* vectorFieldsFilter = fieldsFilter.TryVectorFields();
+	if (regularFieldsFilter && vectorFieldsFilter) {
+		std::vector<TagName> ordering;
+		ordering.reserve(regularFieldsFilter->size() + vectorFieldsFilter->size());
+		for (const auto& tag : *regularFieldsFilter) {
+			if (tag > 0) {
+				ordering.emplace_back(tag);
+			}
+		}
+		for (const auto& tag : *vectorFieldsFilter) {
+			if (tag > 0) {
+				ordering.emplace_back(tag);
+			}
 		}
 		return ordering;
 	}
 
-	std::vector<int> ordering;
+	std::vector<TagName> ordering;
 	ordering.reserve(128);
-	fast_hash_set<int> fieldsTmIds;
+	fast_hash_set<TagName, TagName::Hash> fieldsTmIds;
 	WrSerializer ser;
 	const auto& tm = getTagsMatcher(0);
 	Iterator::NsNamesCache nsNamesCache;
-	for (size_t i = offset; i < items_.size() && i < offset + limit; ++i) {
+	for (size_t i = offset; i < items_.Size() && i < offset + limit; ++i) {
 		ser.Reset();
 		encodeJSON(i, ser, nsNamesCache);
 
@@ -341,7 +371,7 @@ CsvOrdering LocalQueryResults::MakeCSVTagOrdering(unsigned limit, unsigned offse
 
 		for (const auto& child : jsonNode) {
 			auto [it, inserted] = fieldsTmIds.insert(tm.name2tag(child.key));
-			if (inserted && *it > 0) {
+			if (inserted && !it->IsEmpty()) {
 				ordering.emplace_back(*it);
 			}
 		}
@@ -349,9 +379,10 @@ CsvOrdering LocalQueryResults::MakeCSVTagOrdering(unsigned limit, unsigned offse
 	return ordering;
 }
 
-[[nodiscard]] Error LocalQueryResults::Iterator::GetCSV(WrSerializer& ser, CsvOrdering& ordering) noexcept {
+template <typename QR>
+Error LocalQueryResults::IteratorImpl<QR>::GetCSV(WrSerializer& ser, CsvOrdering& ordering) noexcept {
 	try {
-		auto& itemRef = qr_->items_[idx_];
+		auto& itemRef = qr_->items_.GetItemRef(idx_);
 		assertrx(qr_->ctxs.size() > itemRef.Nsid());
 		auto& ctx = qr_->ctxs[itemRef.Nsid()];
 
@@ -382,11 +413,13 @@ CsvOrdering LocalQueryResults::MakeCSVTagOrdering(unsigned limit, unsigned offse
 	return errOK;
 }
 
-Error LocalQueryResults::Iterator::GetCJSON(WrSerializer& ser, bool withHdrLen) {
+template <typename QR>
+Error LocalQueryResults::IteratorImpl<QR>::GetCJSON(WrSerializer& ser, bool withHdrLen) {
 	try {
-		auto& itemRef = qr_->items_[idx_];
-		assertrx(qr_->ctxs.size() > itemRef.Nsid());
-		auto& ctx = qr_->ctxs[itemRef.Nsid()];
+		auto& itemRef = qr_->items_.GetItemRef(idx_);
+		const auto nsid = itemRef.Nsid();
+		assertrx(qr_->ctxs.size() > nsid);
+		const auto& ctx = qr_->ctxs[nsid];
 
 		if (itemRef.Value().IsFree()) {
 			return Error(errNotFound, "Item not found");
@@ -409,17 +442,18 @@ Error LocalQueryResults::Iterator::GetCJSON(WrSerializer& ser, bool withHdrLen) 
 	return errOK;
 }
 
-Item LocalQueryResults::Iterator::GetItem(bool enableHold) {
-	auto& itemRef = qr_->items_[idx_];
+template <typename QR>
+Item LocalQueryResults::IteratorImpl<QR>::GetItem(bool enableHold) {
+	auto& itemRef = qr_->items_.GetItemRef(idx_);
 
 	assertrx(qr_->ctxs.size() > itemRef.Nsid());
-	auto& ctx = qr_->ctxs[itemRef.Nsid()];
+	const auto& ctx = qr_->ctxs[itemRef.Nsid()];
 
 	if (itemRef.Value().IsFree()) {
 		return Item(Error(errNotFound, "Item not found"));
 	}
 
-	auto item = Item(new ItemImpl(ctx.type_, itemRef.Value(), ctx.tagsMatcher_, ctx.schema_));
+	auto item = Item(ctx.type_, itemRef.Value(), ctx.tagsMatcher_, ctx.schema_, qr_->getFieldsFilter(itemRef.Nsid()));
 	item.impl_->payloadValue_.Clone();
 	if (enableHold) {
 		if (!item.impl_->holder_) {
@@ -432,25 +466,15 @@ Item LocalQueryResults::Iterator::GetItem(bool enableHold) {
 	return item;
 }
 
-void LocalQueryResults::AddItem(Item& item, bool withData, bool enableHold) {
-	auto ritem = item.impl_;
+void LocalQueryResults::AddItemNoHold(Item& item, lsn_t nsIncarnationTag, bool withData) {
 	if (item.GetID() != -1) {
-		auto ns = ritem->GetNamespace();
+		auto ritem = item.impl_;
 		if (ctxs.empty()) {
-			ctxs.emplace_back(ritem->Type(), ritem->tagsMatcher(), FieldsSet(), ritem->GetSchema(),
-							  ns ? ns->ns_->incarnationTag_ : lsn_t());
+			ctxs.emplace_back(ritem->Type(), ritem->tagsMatcher(), FieldsFilter(), ritem->GetSchema(), nsIncarnationTag);
 		}
 		if (withData) {
 			auto& value = ritem->RealValue().IsFree() ? ritem->Value() : ritem->RealValue();
 			AddItemRef(item.GetID(), value);
-			if (enableHold) {
-				if (auto ns{ritem->GetNamespace()}; ns) {
-					ConstPayload{ns->ns_->payloadType_, value}.CopyStrings(stringsHolder_);
-				} else {
-					assertrx(ctxs.size() == 1);
-					ConstPayload{ctxs.back().type_, value}.CopyStrings(stringsHolder_);
-				}
-			}
 		} else {
 			AddItemRef(item.GetID(), PayloadValue());
 		}
@@ -461,7 +485,10 @@ const TagsMatcher& LocalQueryResults::getTagsMatcher(int nsid) const noexcept { 
 
 const PayloadType& LocalQueryResults::getPayloadType(int nsid) const noexcept { return ctxs[nsid].type_; }
 
-const FieldsSet& LocalQueryResults::getFieldsFilter(int nsid) const noexcept { return ctxs[nsid].fieldsFilter_; }
+const FieldsFilter& LocalQueryResults::getFieldsFilter(int nsid) const noexcept {
+	assertrx(size_t(nsid) < ctxs.size());
+	return ctxs[nsid].fieldsFilter_;
+}
 
 TagsMatcher& LocalQueryResults::getTagsMatcher(int nsid) noexcept { return ctxs[nsid].tagsMatcher_; }
 
@@ -474,9 +501,11 @@ int LocalQueryResults::getNsNumber(int nsid) const noexcept {
 	return ctxs[nsid].schema_->GetProtobufNsNumber();
 }
 
-void LocalQueryResults::addNSContext(const PayloadType& type, const TagsMatcher& tagsMatcher, const FieldsSet& filter,
+int LocalQueryResults::getMergedNSCount() const noexcept { return ctxs.size(); }
+
+void LocalQueryResults::addNSContext(const PayloadType& type, const TagsMatcher& tagsMatcher, const FieldsFilter& filter,
 									 std::shared_ptr<const Schema> schema, lsn_t nsIncarnationTag) {
-	nonCacheableData = nonCacheableData || filter.getTagsPathsLength();
+	nonCacheableData = nonCacheableData || filter.HasTagsPaths();
 
 	ctxs.emplace_back(type, tagsMatcher, filter, std::move(schema), std::move(nsIncarnationTag));
 }
@@ -487,9 +516,12 @@ void LocalQueryResults::addNSContext(const QueryResults& baseQr, size_t nsid, ls
 }
 
 LocalQueryResults::NsDataHolder::NsDataHolder(LocalQueryResults::NamespaceImplPtr&& _ns, StringsHolderPtr&& strHldr) noexcept
-	: nsPtr_{std::move(_ns)}, ns(nsPtr_.get()), strHolder{std::move(strHldr)} {}
+	: ns(_ns.get()), nsPtr_{std::move(_ns)}, strHolder_{std::move(strHldr)} {}
 
 LocalQueryResults::NsDataHolder::NsDataHolder(NamespaceImpl* _ns, StringsHolderPtr&& strHldr) noexcept
-	: ns(_ns), strHolder(std::move(strHldr)) {}
+	: ns(_ns), strHolder_(std::move(strHldr)) {}
+
+template class LocalQueryResults::IteratorImpl<const LocalQueryResults>;
+template class LocalQueryResults::IteratorImpl<LocalQueryResults>;
 
 }  // namespace reindexer

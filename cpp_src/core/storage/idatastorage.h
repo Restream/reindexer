@@ -125,6 +125,11 @@ public:
 	/// Clears collection.
 	virtual void Clear() = 0;
 
+	/// Set batch id
+	virtual void Id(uint64_t) noexcept = 0;
+	/// Get batch id
+	virtual uint64_t Id() const noexcept = 0;
+
 	using Ptr = shared_ptr<UpdatesCollection>;
 };
 

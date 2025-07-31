@@ -13,8 +13,8 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/cjson"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/cjson"
 )
 
 // Strict modes for queries
@@ -59,6 +59,25 @@ const (
 	queryAlwaysTrueCondition    = bindings.QueryAlwaysTrueCondition
 	querySubQueryCondition      = bindings.QuerySubQueryCondition
 	queryFieldSubQueryCondition = bindings.QueryFieldSubQueryCondition
+	queryKnnCondition           = bindings.QueryKnnCondition
+	queryKnnConditionExt        = bindings.QueryKnnConditionExt
+)
+
+const (
+	knnQueryTypeBase       = bindings.KnnQueryTypeBase
+	knnQueryTypeBruteForce = bindings.KnnQueryTypeBruteForce
+	knnQueryTypeHnsw       = bindings.KnnQueryTypeHnsw
+	knnQueryTypeIvf        = bindings.KnnQueryTypeIvf
+
+	knnQueryParamsVersion = bindings.KnnQueryParamsVersion
+
+	knnSerializeWithK      = 1
+	knnSerializeWithRadius = 1 << 1
+)
+
+const (
+	knnQueryDataFormatVector = bindings.KnnQueryDataFormatVector
+	knnQueryDataFormatString = bindings.KnnQueryDataFormatString
 )
 
 // Constants for calc total
@@ -84,15 +103,16 @@ const (
 )
 
 const (
-	cInt32Max      = bindings.CInt32Max
-	valueInt       = bindings.ValueInt
-	valueBool      = bindings.ValueBool
-	valueInt64     = bindings.ValueInt64
-	valueDouble    = bindings.ValueDouble
-	valueString    = bindings.ValueString
-	valueComposite = bindings.ValueComposite
-	valueTuple     = bindings.ValueTuple
-	valueUuid      = bindings.ValueUuid
+	cInt32Max        = bindings.CInt32Max
+	valueInt         = bindings.ValueInt
+	valueBool        = bindings.ValueBool
+	valueInt64       = bindings.ValueInt64
+	valueDouble      = bindings.ValueDouble
+	valueString      = bindings.ValueString
+	valueComposite   = bindings.ValueComposite
+	valueTuple       = bindings.ValueTuple
+	valueUuid        = bindings.ValueUuid
+	valueFloatVector = bindings.ValueFloatVector
 )
 
 const (
@@ -112,35 +132,129 @@ func (*noCopy) Unlock() {}
 
 // Query to DB object
 type Query struct {
-	noCopy          noCopy
-	Namespace       string
-	db              *reindexerImpl
-	nextOp          int
-	ser             cjson.Serializer
-	root            *Query
-	joinQueries     []*Query
-	mergedQueries   []*Query
-	joinToFields    []string
-	joinHandlers    []JoinHandler
-	context         interface{}
-	joinType        int
-	closed          bool
-	initBuf         [256]byte
-	nsArray         []nsArrayEntry
-	ptVersions      []int32
-	iterator        Iterator
-	jsonIterator    JSONIterator
-	items           []interface{}
-	json            []byte
-	jsonOffsets     []int
-	totalName       string
-	executed        bool
-	fetchCount      int
-	queriesCount    int
-	openedBrackets  []int
-	tx              *Tx
-	traceNew        []byte
-	traceClose      []byte
+	noCopy         noCopy
+	Namespace      string
+	db             *reindexerImpl
+	nextOp         int
+	ser            cjson.Serializer
+	root           *Query
+	joinQueries    []*Query
+	mergedQueries  []*Query
+	joinToFields   []string
+	joinHandlers   []JoinHandler
+	context        interface{}
+	joinType       int
+	closed         bool
+	initBuf        [256]byte
+	nsArray        []nsArrayEntry
+	ptVersions     []int32
+	iterator       Iterator
+	jsonIterator   JSONIterator
+	items          []interface{}
+	json           []byte
+	jsonOffsets    []int
+	totalName      string
+	executed       bool
+	fetchCount     int
+	queriesCount   int
+	openedBrackets []int
+	tx             *Tx
+	traceNew       []byte
+	traceClose     []byte
+}
+
+type KnnSearchParam interface {
+	serialize(*cjson.Serializer)
+}
+
+type BaseKnnSearchParam struct {
+	K      *int
+	Radius *float32
+}
+
+type IndexBFSearchParam struct {
+	BaseKnnSearchParam
+}
+
+type IndexHnswSearchParam struct {
+	BaseKnnSearchParam
+	Ef int
+}
+
+type IndexIvfSearchParam struct {
+	BaseKnnSearchParam
+	NProbe int
+}
+
+func NewIndexBFSearchParam(baseParam BaseKnnSearchParam) (IndexBFSearchParam, error) {
+	return IndexBFSearchParam{baseParam}, nil
+}
+
+func NewIndexHnswSearchParam(ef int, baseParam BaseKnnSearchParam) (IndexHnswSearchParam, error) {
+	if baseParam.K != nil && ef < *baseParam.K {
+		return IndexHnswSearchParam{}, fmt.Errorf("Ef should not be less than K")
+	}
+	return IndexHnswSearchParam{baseParam, ef}, nil
+}
+
+func NewIndexIvfSearchParam(nprobe int, baseParam BaseKnnSearchParam) (IndexIvfSearchParam, error) {
+	if nprobe < 1 {
+		return IndexIvfSearchParam{}, fmt.Errorf("Nprobe should not be less than 1")
+	}
+	return IndexIvfSearchParam{baseParam, nprobe}, nil
+}
+
+func serializeKandRadius(p BaseKnnSearchParam, ser *cjson.Serializer) {
+	var mask uint8
+	if p.K != nil {
+		mask |= knnSerializeWithK
+	}
+	if p.Radius != nil {
+		mask |= knnSerializeWithRadius
+	}
+	ser.PutUInt8(mask)
+	if p.K != nil {
+		ser.PutVarCUInt(*p.K)
+	}
+	if p.Radius != nil {
+		ser.PutFloat32(*p.Radius)
+	}
+}
+
+func (p BaseKnnSearchParam) SetK(k int) BaseKnnSearchParam {
+	p.K = &k
+	return p
+}
+
+func (p BaseKnnSearchParam) SetRadius(radius float32) BaseKnnSearchParam {
+	p.Radius = &radius
+	return p
+}
+
+func (p BaseKnnSearchParam) serialize(ser *cjson.Serializer) {
+	ser.PutVarCUInt(knnQueryTypeBase)
+	ser.PutVarCUInt(knnQueryParamsVersion)
+	serializeKandRadius(p, ser)
+}
+
+func (p IndexBFSearchParam) serialize(ser *cjson.Serializer) {
+	ser.PutVarCUInt(knnQueryTypeBruteForce)
+	ser.PutVarCUInt(knnQueryParamsVersion)
+	serializeKandRadius(p.BaseKnnSearchParam, ser)
+}
+
+func (p IndexHnswSearchParam) serialize(ser *cjson.Serializer) {
+	ser.PutVarCUInt(knnQueryTypeHnsw)
+	ser.PutVarCUInt(knnQueryParamsVersion)
+	serializeKandRadius(p.BaseKnnSearchParam, ser)
+	ser.PutVarCUInt(p.Ef)
+}
+
+func (p IndexIvfSearchParam) serialize(ser *cjson.Serializer) {
+	ser.PutVarCUInt(knnQueryTypeIvf)
+	ser.PutVarCUInt(knnQueryParamsVersion)
+	serializeKandRadius(p.BaseKnnSearchParam, ser)
+	ser.PutVarCUInt(p.NProbe)
 }
 
 var queryPool sync.Pool
@@ -493,6 +607,27 @@ func (q *Query) WhereUuid(index string, condition int, keys ...string) *Query {
 	return q
 }
 
+// WhereKnn - Add where condition to DB query with float-point vector args.
+// 'index' MUST be declared as "float_vector" index in this case
+func (q *Query) WhereKnn(index string, vec []float32, params KnnSearchParam) *Query {
+	q.ser.PutVarCUInt(queryKnnCondition).PutVString(index).PutVarCUInt(q.nextOp).PutFloatVector(vec)
+	params.serialize(&q.ser)
+	q.nextOp = opAND
+	q.queriesCount++
+	return q
+}
+
+// WhereKnnString - Add where condition to DB query with auto-embedded float-point vector args calculated from 'val'.
+// Before this need to configure "query_embedder".
+// 'index' MUST be declared as "float_vector" index in this case
+func (q *Query) WhereKnnString(index string, val string, params KnnSearchParam) *Query {
+	q.ser.PutVarCUInt(queryKnnConditionExt).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(knnQueryDataFormatString).PutVString(val)
+	params.serialize(&q.ser)
+	q.nextOp = opAND
+	q.queriesCount++
+	return q
+}
+
 // WhereComposite - Add where condition to DB query with interface args for composite indexes
 func (q *Query) WhereComposite(index string, condition int, keys ...interface{}) *Query {
 	return q.Where(index, condition, keys)
@@ -666,8 +801,12 @@ func (q *Query) Not() *Query {
 }
 
 // Distinct - Return only items with uniq value of field
-func (q *Query) Distinct(distinctIndex string) *Query {
-	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggDistinct).PutVarCUInt(1).PutVString(distinctIndex)
+func (q *Query) Distinct(distinctFields ...string) *Query {
+	l := len(distinctFields)
+	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggDistinct).PutVarCUInt(l)
+	for i := 0; i < l; i++ {
+		q.ser.PutVString(distinctFields[i])
+	}
 	return q
 }
 
@@ -681,10 +820,14 @@ func (q *Query) reqTotal(accurateMode int, totalNames ...string) *Query {
 }
 
 // ReqTotal Request total items calculation
-func (q *Query) ReqTotal(totalNames ...string) *Query { return q.reqTotal(modeAccurateTotal, totalNames...) }
+func (q *Query) ReqTotal(totalNames ...string) *Query {
+	return q.reqTotal(modeAccurateTotal, totalNames...)
+}
 
 // CachedTotal Request cached total items calculation
-func (q *Query) CachedTotal(totalNames ...string) *Query { return q.reqTotal(modeCachedTotal, totalNames...) }
+func (q *Query) CachedTotal(totalNames ...string) *Query {
+	return q.reqTotal(modeCachedTotal, totalNames...)
+}
 
 func (q *Query) setValue(qmode int, value int) *Query {
 	if value > cInt32Max {
@@ -712,8 +855,8 @@ func (q *Query) Explain() *Query {
 	return q
 }
 
-// Output fulltext rank
-// Allowed only with fulltext query
+// Output fulltex or KNN rank
+// Allowed only with fulltext or KNN queries
 func (q *Query) WithRank() *Query {
 	q.ser.PutVarCUInt(queryWithRank)
 	return q
@@ -828,8 +971,8 @@ func (q *Query) Delete() (int, error) {
 // DeleteCtx will execute query, and delete items, matches query
 // On success return number of deleted elements
 func (q *Query) DeleteCtx(ctx context.Context) (int, error) {
-	if q.root != nil || len(q.joinQueries) != 0 {
-		return 0, errors.New("Delete does not support joined queries")
+	if q.root != nil {
+		q = q.root
 	}
 
 	if q.closed {
@@ -979,8 +1122,8 @@ func (q *Query) Update() *Iterator {
 // UpdateCtx will execute query, and update fields in items, which matches query
 // On success return number of update elements
 func (q *Query) UpdateCtx(ctx context.Context) *Iterator {
-	if q.root != nil || len(q.joinQueries) != 0 {
-		return errIterator(errors.New("Update does not support joined queries"))
+	if q.root != nil {
+		q = q.root
 	}
 	if q.closed {
 		q.panicTrace("Update call on already closed query. You should create new Query")
@@ -1175,6 +1318,10 @@ func (q *Query) addFields(itemType int, fields ...string) *Query {
 // If there are no `fields` in this list that meet these conditions, then the filter works as "*".
 func (q *Query) Select(fields ...string) *Query {
 	return q.addFields(querySelectFilter, fields...)
+}
+
+func (q *Query) SelectAllFields() *Query {
+	return q.addFields(querySelectFilter, "*", "vectors()")
 }
 
 // FetchCount sets the number of items that will be fetched by one operation

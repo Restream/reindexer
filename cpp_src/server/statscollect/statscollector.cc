@@ -1,5 +1,9 @@
 #include "statscollector.h"
+#include "core/system_ns_names.h"
 #include "dbmanager.h"
+#include "estl/lock_guard.h"
+#include "estl/mutex.h"
+#include "estl/unique_lock.h"
 #include "prometheus.h"
 #include "tools/alloc_ext/je_malloc_extension.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
@@ -8,7 +12,7 @@
 namespace reindexer_server {
 
 void StatsCollector::Start() {
-	std::lock_guard lck(threadMtx_);
+	reindexer::lock_guard lck(threadMtx_);
 	if (statsCollectingThread_.joinable()) {
 		throw reindexer::Error(errLogic, "Stats collectiong thread is already running");
 	}
@@ -18,7 +22,7 @@ void StatsCollector::Start() {
 	}
 }
 
-void StatsCollector::Restart(std::unique_lock<std::mutex>&& lck) noexcept {
+void StatsCollector::Restart(reindexer::unique_lock<reindexer::mutex>&& lck) noexcept {
 	try {
 #ifdef RX_WITH_STDLIB_DEBUG
 		assertrx(lck.mutex() == &threadMtx_);
@@ -56,7 +60,7 @@ void StatsCollector::Restart(std::unique_lock<std::mutex>&& lck) noexcept {
 }
 
 void StatsCollector::Stop() {
-	std::lock_guard lck(threadMtx_);
+	reindexer::lock_guard lck(threadMtx_);
 	if (statsCollectingThread_.joinable()) {
 		terminate_.store(true, std::memory_order_release);
 		statsCollectingThread_.join();
@@ -65,7 +69,7 @@ void StatsCollector::Stop() {
 }
 
 StatsWatcherSuspend StatsCollector::SuspendStatsThread() {
-	std::unique_lock lck(threadMtx_);
+	reindexer::unique_lock lck(threadMtx_);
 	if (statsCollectingThread_.joinable()) {
 		logger_.info("Suspending stats collector...");
 		terminate_.store(true, std::memory_order_release);
@@ -78,28 +82,28 @@ StatsWatcherSuspend StatsCollector::SuspendStatsThread() {
 
 void StatsCollector::OnInputTraffic(const std::string& db, std::string_view source, std::string_view protocol, size_t bytes) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
-		std::lock_guard lck(countersMtx_);
+		reindexer::lock_guard lck(countersMtx_);
 		getCounters(db, source, protocol).inputTraffic += bytes;
 	}
 }
 
 void StatsCollector::OnOutputTraffic(const std::string& db, std::string_view source, std::string_view protocol, size_t bytes) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
-		std::lock_guard lck(countersMtx_);
+		reindexer::lock_guard lck(countersMtx_);
 		getCounters(db, source, protocol).outputTraffic += bytes;
 	}
 }
 
 void StatsCollector::OnClientConnected(const std::string& db, std::string_view source, std::string_view protocol) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
-		std::lock_guard lck(countersMtx_);
+		reindexer::lock_guard lck(countersMtx_);
 		++(getCounters(db, source, protocol).clients);
 	}
 }
 
 void StatsCollector::OnClientDisconnected(const std::string& db, std::string_view source, std::string_view protocol) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
-		std::lock_guard lck(countersMtx_);
+		reindexer::lock_guard lck(countersMtx_);
 		auto& counters = getCounters(db, source, protocol);
 		if (counters.clients) {
 			--counters.clients;
@@ -152,9 +156,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 			collectedDBs.emplace(dbName, std::move(nsDefs));
 		}
 
-		constexpr static auto kPerfstatsNs = "#perfstats"sv;
-		constexpr static auto kMemstatsNs = "#memstats"sv;
-		static const auto kPerfstatsQuery = Query(std::string(kPerfstatsNs));
+		static const auto kPerfstatsQuery = Query(kPerfStatsNamespace);
 		QueryResults qr;
 		status = db->Select(kPerfstatsQuery, qr);
 		if (status.ok()) {
@@ -175,7 +177,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 		}
 
 		qr.Clear();
-		static const auto kMemstatsQuery = Query(std::string(kMemstatsNs));
+		static const auto kMemstatsQuery = Query(kMemStatsNamespace);
 		status = db->Select(kMemstatsQuery, qr);
 		if (status.ok()) {
 			for (auto it = qr.begin(); it != qr.end(); ++it) {
@@ -210,7 +212,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 #endif	// REINDEX_WITH_JEMALLOC
 
 	{
-		std::lock_guard lck(countersMtx_);
+		reindexer::lock_guard lck(countersMtx_);
 		for (const auto& dbCounters : counters_) {
 			for (const auto& counter : dbCounters.counters) {
 				if (std::string_view(dbCounters.source) == "rpc"sv) {

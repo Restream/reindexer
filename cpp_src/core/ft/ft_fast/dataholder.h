@@ -1,17 +1,14 @@
 #pragma once
 #include <memory>
 #include <unordered_map>
-#include "core/ft/areaholder.h"
 #include "core/ft/config/ftfastconfig.h"
 #include "core/ft/filters/itokenfilter.h"
-#include "core/ft/ft_fast/frisosplitter.h"
+#include "core/ft/filters/synonyms.h"
 #include "core/ft/ft_fast/splitter.h"
 #include "core/ft/idrelset.h"
 #include "core/ft/limits.h"
 #include "core/ft/stemmer.h"
 #include "core/ft/typos.h"
-#include "core/ft/usingcontainer.h"
-#include "core/index/ft_preselect.h"
 #include "core/index/indextext/ftkeyentry.h"
 #include "estl/flat_str_map.h"
 #include "estl/suffix_map.h"
@@ -28,8 +25,8 @@ struct VDocEntry {
 #endif
 
 	const FtKeyEntryData* keyEntry{nullptr};
-	RVector<float, 3> wordsCount;
-	RVector<float, 3> mostFreqWordCount;
+	h_vector<float, 3> wordsCount;
+	h_vector<float, 3> mostFreqWordCount;
 };
 
 // documents for the word
@@ -176,7 +173,9 @@ public:	 // TODO: #1688 Fix private class data isolation here
 	// translit generator for russian and english (returns word + weight)
 	ITokenFilter::Ptr translit_;
 	ITokenFilter::Ptr kbLayout_;
-	ITokenFilter::Ptr synonyms_;
+	ITokenFilter::Ptr compositeWordsSplitter_;
+
+	Synonyms::Ptr synonyms_;
 
 	std::vector<CommitStep> steps;
 	// array of unique documents
@@ -186,7 +185,7 @@ public:	 // TODO: #1688 Fix private class data isolation here
 	std::vector<double> avgWordsCount_;
 	// Virtual documents, merged. Addressable by VDocIdType
 	// Temp data for build
-	std::vector<RVector<std::pair<std::string_view, uint32_t>, 8>> vdocsTexts;
+	std::vector<h_vector<std::pair<std::string_view, uint32_t>, 8>> vdocsTexts;
 	std::vector<std::unique_ptr<std::string>> bufStrs_;
 	size_t vdocsOffset_{0};
 	size_t szCnt{0};

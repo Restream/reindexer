@@ -1,8 +1,10 @@
-#include <mutex>
-
 #include "dbmanager.h"
+#include "estl/gift_str.h"
+#include "estl/shared_lock.h"
 #include "estl/smart_lock.h"
+#include "estl/unique_lock.h"
 #include "gason/gason.h"
+#include "tools/catch_and_return.h"
 #include "tools/crypt.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
@@ -19,7 +21,7 @@ static const std::string kUsersJSONFilename = "users.json";
 DBManager::DBManager(const ServerConfig& config, IClientsStats* clientsStats)
 	: config_(config), storageType_(datastorage::StorageType::LevelDB), clientsStats_(clientsStats) {}
 
-Error DBManager::Init() {
+Error DBManager::Init() RX_NO_THREAD_SAFETY_ANALYSIS {
 	if (config_.EnableSecurity) {
 		auto status = readUsers();
 		if (!status.ok()) {
@@ -31,7 +33,7 @@ Error DBManager::Init() {
 
 	std::vector<fs::DirEntry> foundDb;
 	if (!config_.StoragePath.empty() && fs::ReadDir(config_.StoragePath, foundDb) < 0) {
-		return Error(errParams, "Can't read reindexer dir %s", config_.StoragePath);
+		return Error(errParams, "Can't read reindexer dir {}", config_.StoragePath);
 	}
 
 	try {
@@ -42,12 +44,11 @@ Error DBManager::Init() {
 
 	for (auto& de : foundDb) {
 		if (de.isDir && validateObjectName(de.name, false)) {
-			auto status = loadOrCreateDatabase(de.name, config_.StartWithErrors, config_.Autorepair);
+			auto status = loadOrCreateDatabase(de.name, config_.StartWithErrors);
 			if (!status.ok()) {
-				logPrintf(LogError, "Failed to open database '%s' - %s", de.name, status.what());
+				logFmt(LogError, "Failed to open database '{}' - {}", de.name, status.what());
 				if (status.code() == errNotValid) {
-					logPrintf(LogError, "Try to run:\t`reindexer_tool --dsn \"builtin://%s\" --repair`  to restore data",
-							  config_.StoragePath);
+					logFmt(LogError, "Try to run:\t`reindexer_tool --dsn \"builtin://{}\" --repair`  to restore data", config_.StoragePath);
 					return status;
 				}
 			}
@@ -70,7 +71,30 @@ Error DBManager::OpenDatabase(const std::string& dbName, AuthContext& auth, bool
 		return Error();
 	};
 
-	smart_lock<Mutex> lck(mtx_, dummyCtx);
+	{
+		smart_lock<Mutex> lck(mtx_, dummyCtx, NonUnique);
+		auto it = dbs_.find(dbName);
+		if (it != dbs_.end()) {
+			status = dbConnect(it->second.get());
+			if (!status.ok()) {
+				return status;
+			}
+			auth.db_ = it->second.get();
+			return Error();
+		}
+	}
+
+	if (!canCreate) {
+		return Error(errNotFound, "Database '{}' not found", dbName);
+	}
+	if (auth.role_ < kRoleOwner) {
+		return Error(errForbidden, "Forbidden to create database '{}'", dbName);
+	}
+	if (!validateObjectName(dbName, false)) {
+		return Error(errParams, "Database name '{}' contains invalid character. Only alphas, digits,'_','-', are allowed", dbName);
+	}
+
+	smart_lock<Mutex> lck(mtx_, dummyCtx, Unique);
 	auto it = dbs_.find(dbName);
 	if (it != dbs_.end()) {
 		status = dbConnect(it->second.get());
@@ -80,30 +104,8 @@ Error DBManager::OpenDatabase(const std::string& dbName, AuthContext& auth, bool
 		auth.db_ = it->second.get();
 		return Error();
 	}
-	lck.unlock();
 
-	if (!canCreate) {
-		return Error(errNotFound, "Database '%s' not found", dbName);
-	}
-	if (auth.role_ < kRoleOwner) {
-		return Error(errForbidden, "Forbidden to create database '%s'", dbName);
-	}
-	if (!validateObjectName(dbName, false)) {
-		return Error(errParams, "Database name '%s' contains invalid character. Only alphas, digits,'_','-', are allowed", dbName);
-	}
-
-	lck = smart_lock<Mutex>(mtx_, dummyCtx, true);
-	it = dbs_.find(dbName);
-	if (it != dbs_.end()) {
-		status = dbConnect(it->second.get());
-		if (!status.ok()) {
-			return status;
-		}
-		auth.db_ = it->second.get();
-		return Error();
-	}
-
-	status = loadOrCreateDatabase(dbName, true, true, auth);
+	status = loadOrCreateDatabase(dbName, true, auth);
 	if (!status.ok()) {
 		return status;
 	}
@@ -114,14 +116,14 @@ Error DBManager::OpenDatabase(const std::string& dbName, AuthContext& auth, bool
 	return Error();
 }
 
-Error DBManager::loadOrCreateDatabase(const std::string& dbName, bool allowDBErrors, bool withAutorepair, const AuthContext& auth) {
+Error DBManager::loadOrCreateDatabase(const std::string& dbName, bool allowDBErrors, const AuthContext& auth) {
 	if (clustersShutDown_) {
 		return Error(errTerminated, "DBManager is already preparing for shutdown");
 	}
 
 	std::string storagePath = !config_.StoragePath.empty() ? fs::JoinPath(config_.StoragePath, dbName) : "";
 
-	logPrintf(LogInfo, "Loading database %s", dbName);
+	logFmt(LogInfo, "Loading database {}", dbName);
 	auto db = std::make_unique<reindexer::Reindexer>(
 		reindexer::ReindexerConfig().WithClientStats(clientsStats_).WithUpdatesSize(config_.MaxUpdatesSize).WithDBName(dbName));
 	StorageTypeOpt storageType = kStorageTypeOptLevelDB;
@@ -133,7 +135,7 @@ Error DBManager::loadOrCreateDatabase(const std::string& dbName, bool allowDBErr
 			storageType = kStorageTypeOptRocksDB;
 			break;
 	}
-	auto opts = ConnectOpts().AllowNamespaceErrors(allowDBErrors).WithStorageType(storageType).Autorepair(withAutorepair);
+	auto opts = ConnectOpts().AllowNamespaceErrors(allowDBErrors).WithStorageType(storageType);
 	if (auth.checkClusterID_) {
 		opts = opts.WithExpectedClusterID(auth.expectedClusterID_);
 	}
@@ -155,10 +157,10 @@ Error DBManager::DropDatabase(AuthContext& auth) {
 	}
 	const std::string& dbName = auth.dbName_;
 
-	std::unique_lock<shared_timed_mutex> lck(mtx_);
+	reindexer::unique_lock lck(mtx_);
 	auto it = dbs_.find(dbName);
 	if (it == dbs_.end()) {
-		return Error(errParams, "Database %s not found", dbName);
+		return Error(errParams, "Database {} not found", dbName);
 	}
 	dbs_.erase(it);
 	fs::RmDirAll(fs::JoinPath(config_.StoragePath, dbName));
@@ -170,7 +172,7 @@ Error DBManager::DropDatabase(AuthContext& auth) {
 std::vector<std::string> DBManager::EnumDatabases() {
 	std::vector<std::string> dbs;
 
-	shared_lock<shared_timed_mutex> lck(mtx_);
+	reindexer::shared_lock lck(mtx_);
 	dbs.reserve(dbs_.size());
 	for (const auto& it : dbs_) {
 		dbs.emplace_back(it.first);
@@ -179,10 +181,13 @@ std::vector<std::string> DBManager::EnumDatabases() {
 }
 
 void DBManager::ShutdownClusters() {
-	std::unique_lock lck(mtx_);
+	reindexer::unique_lock lck(mtx_);
 	if (!clustersShutDown_) {
 		for (auto& db : dbs_) {
-			db.second->ShutdownCluster();
+			auto err = db.second->ShutdownCluster();
+			if (!err.ok()) {
+				logFmt(LogError, "Error on cluster shutdown: %s", err.whatStr());
+			}
 		}
 		clustersShutDown_ = true;
 	}
@@ -229,7 +234,7 @@ Error DBManager::Login(const std::string& dbName, AuthContext& auth) {
 									 hash, dummySalt, dummyAlg);
 
 				if (!err.ok()) {
-					return Error(errForbidden, "Unauthorized: %s", err.what());
+					return Error(errForbidden, "Unauthorized: {}", err.what());
 				}
 			}
 
@@ -279,12 +284,12 @@ Error DBManager::readUsers() noexcept {
 }
 
 Error DBManager::readUsersYAML() noexcept {
-	std::string content;
-	int res = fs::ReadFile(fs::JoinPath(config_.StoragePath, kUsersYAMLFilename), content);
-	if (res < 0) {
-		return Error(errNotFound, "Can't read '%s' file", kUsersYAMLFilename);
-	}
 	try {
+		std::string content;
+		int res = fs::ReadFile(fs::JoinPath(config_.StoragePath, kUsersYAMLFilename), content);
+		if (res < 0) {
+			return Error(errNotFound, "Can't read '{}' file", kUsersYAMLFilename);
+		}
 		YAML::ScannerOpts opts;
 		opts.disableAnchors = true;
 		YAML::Node root = YAML::Load(content, opts);
@@ -294,7 +299,7 @@ Error DBManager::readUsersYAML() noexcept {
 			auto userNode = user.second;
 			auto err = ParseCryptString(userNode["hash"].as<std::string>(), urec.hash, urec.salt, urec.algorithm);
 			if (!err.ok()) {
-				logPrintf(LogWarning, "Hash parsing error for user '%s': %s", urec.login, err.what());
+				logFmt(LogWarning, "Hash parsing error for user '{}': {}", urec.login, err.what());
 				continue;
 			}
 			auto userRoles = userNode["roles"];
@@ -304,29 +309,29 @@ Error DBManager::readUsersYAML() noexcept {
 					try {
 						urec.roles.emplace(db, userRoleFromString(role.second.as<std::string>()));
 					} catch (const Error& err) {
-						logPrintf(LogWarning, "Skipping user '%s' for db '%s': ", urec.login, db, err.what());
+						logFmt(LogWarning, "Skipping user '{}' for db '{}': ", urec.login, db, err.what());
 					}
 				}
 				if (urec.roles.empty()) {
-					logPrintf(LogWarning, "User '%s' doesn't have valid roles", urec.login);
+					logFmt(LogWarning, "User '{}' doesn't have valid roles", urec.login);
 				} else {
 					users_.emplace(urec.login, urec);
 				}
 			} else {
-				logPrintf(LogWarning, "Skipping user '%s': no 'roles' node found", urec.login);
+				logFmt(LogWarning, "Skipping user '{}': no 'roles' node found", urec.login);
 			}
 		}
-	} catch (const YAML::Exception& ex) {
-		return Error(errParseYAML, "Users: %s", ex.what());
+	} catch (const std::exception& ex) {
+		return Error(errParseYAML, "Users: {}", ex.what());
 	}
-	return errOK;
+	return Error();
 }
 
 Error DBManager::readUsersJSON() noexcept {
 	std::string content;
 	int res = fs::ReadFile(fs::JoinPath(config_.StoragePath, kUsersJSONFilename), content);
 	if (res < 0) {
-		return Error(errNotFound, "Can't read '%s' file", kUsersJSONFilename);
+		return Error(errNotFound, "Can't read '{}' file", kUsersJSONFilename);
 	}
 
 	try {
@@ -337,7 +342,7 @@ Error DBManager::readUsersJSON() noexcept {
 			urec.login = std::string(userNode.key);
 			auto err = ParseCryptString(userNode["hash"].As<std::string>(), urec.hash, urec.salt, urec.algorithm);
 			if (!err.ok()) {
-				logPrintf(LogWarning, "Hash parsing error for user '%s': %s", urec.login, err.what());
+				logFmt(LogWarning, "Hash parsing error for user '{}': {}", urec.login, err.what());
 				continue;
 			}
 			for (auto& roleNode : userNode["roles"]) {
@@ -346,55 +351,59 @@ Error DBManager::readUsersJSON() noexcept {
 					UserRole role = userRoleFromString(roleNode.As<std::string_view>());
 					urec.roles.emplace(db, role);
 				} catch (const Error& err) {
-					logPrintf(LogWarning, "Skipping user '%s' for db '%s': ", urec.login, db, err.what());
+					logFmt(LogWarning, "Skipping user '{}' for db '{}': ", urec.login, db, err.what());
 				}
 			}
 			if (urec.roles.empty()) {
-				logPrintf(LogWarning, "User '%s' doesn't have valid roles", urec.login);
+				logFmt(LogWarning, "User '{}' doesn't have valid roles", urec.login);
 			} else {
 				users_.emplace(urec.login, urec);
 			}
 		}
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "Users: %s", ex.what());
+		return Error(errParseJson, "Users: {}", ex.what());
 	}
 	return errOK;
 }
 
 Error DBManager::createDefaultUsersYAML() noexcept {
-	logPrintf(LogInfo, "Creating default %s file", kUsersYAMLFilename);
-	int64_t res = fs::WriteFile(
-		fs::JoinPath(config_.StoragePath, kUsersYAMLFilename),
-		"# List of db's users, their's roles and privileges\n\n"
-		"# Anchors and aliases do not work here due to compatibility reasons\n\n"
-		"# Username\n"
-		"reindexer:\n"
-		"  # Hash may be generated via openssl tool - `openssl passwd -<type> -salt MySalt MyPassword`\n"
-		"  # <type> can take one of the following values:\n"
-		"  #    1 - MD5-based password algorithm\n"
-		"  #    5 - SHA256-based password algorithm\n"
-		"  #    6 - SHA512-based password algorithm\n"
-		"  #    For values 5 and 6 of <type> to work correctly, you should have the openssl library dev-package installed in the system\n"
-		"  # If hash doesn't start with '$' sign it will be used as raw password itself\n"
-		"  hash: $1$rdxsalt$VIR.dzIB8pasIdmyVGV0E/\n"
-		"  # User's roles for specific databases, * in place of db name means any database\n"
-		"  # Allowed roles:\n"
-		"  # 1) data_read - user can read data from database\n"
-		"  # 2) data_write - user can write data to database\n"
-		"  # 3) db_admin - user can manage database: kRoleDataWrite + create & delete namespaces, modify indexes\n"
-		"  # 4) replication - same as db_admin but with restrictions on use in various protocols and "
-		"additional context checks for replication. This role should be used for the asynchronous and synchronous (RAFT-cluster) "
-		"replication instead of db_admin/owner\n"
-		"  # 5) sharding - same as db_admin but with restrictions on use in various protocols and additional "
-		"context checks for sharding. This role should be used for the sharding interconnections instead of db_admin/owner\n"
-		"  # 6) owner - user has all privileges on database: kRoleDBAdmin + create & drop database\n"
-		"  roles:\n"
-		"    *: owner\n");
-	if (res < 0) {
-		return Error(errParams, "Unable to write default config file: %s", strerror(errno));
+	try {
+		logFmt(LogInfo, "Creating default {} file", kUsersYAMLFilename);
+		int64_t res = fs::WriteFile(
+			fs::JoinPath(config_.StoragePath, kUsersYAMLFilename),
+			"# List of db's users, their's roles and privileges\n\n"
+			"# Anchors and aliases do not work here due to compatibility reasons\n\n"
+			"# Username\n"
+			"reindexer:\n"
+			"  # Hash may be generated via openssl tool - `openssl passwd -<type> -salt MySalt MyPassword`\n"
+			"  # <type> can take one of the following values:\n"
+			"  #    1 - MD5-based password algorithm\n"
+			"  #    5 - SHA256-based password algorithm\n"
+			"  #    6 - SHA512-based password algorithm\n"
+			"  #    For values 5 and 6 of <type> to work correctly, you should have the openssl library dev-package installed in the "
+			"system\n"
+			"  # If hash doesn't start with '$' sign it will be used as raw password itself\n"
+			"  hash: $1$rdxsalt$VIR.dzIB8pasIdmyVGV0E/\n"
+			"  # User's roles for specific databases, * in place of db name means any database\n"
+			"  # Allowed roles:\n"
+			"  # 1) data_read - user can read data from database\n"
+			"  # 2) data_write - user can write data to database\n"
+			"  # 3) db_admin - user can manage database: kRoleDataWrite + create & delete namespaces, modify indexes\n"
+			"  # 4) replication - same as db_admin but with restrictions on use in various protocols and "
+			"additional context checks for replication. This role should be used for the asynchronous and synchronous (RAFT-cluster) "
+			"replication instead of db_admin/owner\n"
+			"  # 5) sharding - same as db_admin but with restrictions on use in various protocols and additional "
+			"context checks for sharding. This role should be used for the sharding interconnections instead of db_admin/owner\n"
+			"  # 6) owner - user has all privileges on database: kRoleDBAdmin + create & drop database\n"
+			"  roles:\n"
+			"    *: owner\n");
+		if (res < 0) {
+			return Error(errParams, "Unable to write default config file: {}", strerror(errno));
+		}
+		users_.emplace("reindexer", UserRecord{"reindexer", "VIR.dzIB8pasIdmyVGV0E/", "rdxsalt", {{"*", kRoleOwner}}, HashAlgorithm::MD5});
 	}
-	users_.emplace("reindexer", UserRecord{"reindexer", "VIR.dzIB8pasIdmyVGV0E/", "rdxsalt", {{"*", kRoleOwner}}, HashAlgorithm::MD5});
-	return errOK;
+	CATCH_AND_RETURN;
+	return Error();
 }
 
 UserRole DBManager::userRoleFromString(std::string_view strRole) {
@@ -411,13 +420,13 @@ UserRole DBManager::userRoleFromString(std::string_view strRole) {
 	} else if (strRole == "owner"sv) {
 		return kRoleOwner;
 	}
-	throw Error(errParams, "Role \'%s\' is invalid", strRole);
+	throw Error(errParams, "Role \'{}\' is invalid", strRole);
 }
 
 std::string_view UserRoleName(UserRole role) noexcept {
 	switch (role) {
 		case kUnauthorized:
-			return "unauthoried"sv;
+			return "unauthorized"sv;
 		case kRoleNone:
 			return "none"sv;
 		case kRoleDataRead:

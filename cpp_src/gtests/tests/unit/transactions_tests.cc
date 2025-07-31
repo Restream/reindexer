@@ -1,4 +1,8 @@
-#include <condition_variable>
+#include <thread>
+#include "core/system_ns_names.h"
+#include "estl/condition_variable.h"
+#include "estl/mutex.h"
+#include "estl/unique_lock.h"
 #include "tools/fsops.h"
 #include "transaction_api.h"
 
@@ -19,6 +23,8 @@ TEST_F(TransactionApi, ConcurrencyTest) {
 	Error err = rx->Connect(kDsn);
 	ASSERT_TRUE(err.ok()) << err.what();
 
+	rt.EnablePerfStats(*rx);
+
 	OpenNamespace(*rx);
 
 	std::array<DataRange, 5> ranges = {{{0, 1000, "initial"},
@@ -27,10 +33,12 @@ TEST_F(TransactionApi, ConcurrencyTest) {
 										{55000, 130000, "third_writer"},
 										{130000, 190000, "fourth_writer"}}};
 
-	std::condition_variable cond;
-	std::mutex mtx;
+	reindexer::condition_variable cond;
+	reindexer::mutex mtx;
+	std::atomic<unsigned> totalTxs{0};
 
 	AddDataToNsTx(*rx, ranges[0].from, ranges[0].till, ranges[0].data);
+	++totalTxs;
 	std::vector<std::thread> readThreads;
 	std::vector<std::thread> writeThreads;
 	std::atomic<bool> stop{false};
@@ -50,17 +58,19 @@ TEST_F(TransactionApi, ConcurrencyTest) {
 
 	writeThreads.emplace_back(std::thread(
 		[&](int id) {
-			std::unique_lock<std::mutex> lck(mtx);
+			reindexer::unique_lock lck(mtx);
 			cond.wait(lck);
 			lck.unlock();
 			size_t from = ranges[id].from;
 			for (size_t i = 0; i < 3; ++i) {
 				size_t portion = GetPortion(from, bigPortion, ranges[id].till);
 				AddDataToNsTx(*rx, from, bigPortion, ranges[id].data);
+				++totalTxs;
 				from += portion;
 				std::this_thread::yield();
 				portion = GetPortion(from, mediumPortion, ranges[id].till);
 				AddDataToNsTx(*rx, from, mediumPortion, ranges[id].data);
+				++totalTxs;
 				from += portion;
 				std::this_thread::yield();
 			}
@@ -68,7 +78,7 @@ TEST_F(TransactionApi, ConcurrencyTest) {
 		1));
 	writeThreads.emplace_back(std::thread(
 		[&](int id) {
-			std::unique_lock<std::mutex> lck(mtx);
+			reindexer::unique_lock lck(mtx);
 			cond.wait(lck);
 			lck.unlock();
 			size_t from = ranges[id].from;
@@ -77,19 +87,21 @@ TEST_F(TransactionApi, ConcurrencyTest) {
 			for (size_t pos = from; pos < till; pos += portion) {
 				portion = GetPortion(from, smallPortion, till);
 				AddDataToNsTx(*rx, pos, smallPortion, ranges[id].data);
+				++totalTxs;
 				std::this_thread::yield();
 			}
 		},
 		2));
 	writeThreads.emplace_back(std::thread(
 		[&](int id) {
-			std::unique_lock<std::mutex> lck(mtx);
+			reindexer::unique_lock lck(mtx);
 			cond.wait(lck);
 			lck.unlock();
 			size_t from = ranges[id].from;
 			for (size_t i = 0; i < 5; ++i) {
 				size_t portion = GetPortion(from, bigPortion, ranges[id].till);
 				AddDataToNsTx(*rx, from, portion, ranges[id].data);
+				++totalTxs;
 				from += portion;
 				std::this_thread::yield();
 			}
@@ -97,13 +109,14 @@ TEST_F(TransactionApi, ConcurrencyTest) {
 		3));
 	writeThreads.emplace_back(std::thread(
 		[&](int id) {
-			std::unique_lock<std::mutex> lck(mtx);
+			reindexer::unique_lock lck(mtx);
 			cond.wait(lck);
 			lck.unlock();
 			size_t from = ranges[id].from;
 			for (size_t i = 0; i < 2; ++i) {
 				size_t portion = GetPortion(from, hugePortion, ranges[id].till);
 				AddDataToNsTx(*rx, from, portion, ranges[id].data);
+				++totalTxs;
 				from += portion;
 				std::this_thread::yield();
 			}
@@ -140,8 +153,32 @@ TEST_F(TransactionApi, ConcurrencyTest) {
 			ASSERT_TRUE(idIsCorrect);
 		}
 	};
+	auto ValidateStats = [&] {
+		// Basic sanity check
+		auto stats = GetTxPerfStats(*rx, default_namespace);
+		EXPECT_EQ(stats.totalCount, totalTxs.load());
+		EXPECT_GT(stats.totalCopyCount, 0);
+		EXPECT_LT(stats.totalCopyCount, stats.totalCount);
+		EXPECT_EQ(stats.minStepsCount, smallPortion);
+		EXPECT_EQ(stats.maxStepsCount, hugePortion);
+		EXPECT_GT(stats.avgStepsCount, stats.minStepsCount);
+		EXPECT_LT(stats.avgStepsCount, stats.maxStepsCount);
+
+		EXPECT_GT(stats.minPrepareTimeUs, 0);
+		EXPECT_GT(stats.avgPrepareTimeUs, stats.minPrepareTimeUs);
+		EXPECT_GT(stats.maxPrepareTimeUs, stats.avgPrepareTimeUs);
+
+		EXPECT_GT(stats.minCommitTimeUs, 0);
+		EXPECT_GT(stats.avgCommitTimeUs, stats.minCommitTimeUs);
+		EXPECT_GT(stats.maxCommitTimeUs, stats.avgCommitTimeUs);
+
+		EXPECT_GT(stats.minCopyTimeUs, 0);
+		EXPECT_GT(stats.avgCopyTimeUs, stats.minCopyTimeUs);
+		EXPECT_GT(stats.maxCopyTimeUs, stats.avgCopyTimeUs);
+	};
 
 	ValidateData();
+	ValidateStats();
 
 	// Check data after storage reload
 	rx = std::make_unique<Reindexer>();
@@ -161,7 +198,7 @@ TEST_F(TransactionApi, IndexesOptimizeTest) {
 	AddDataToNsTx(*rt.reindexer, 0, 15000, "data");
 	// Fetch optimization state
 	qr.Clear();
-	err = rt.reindexer->Select(Query("#memstats").Where("name", CondEq, default_namespace), qr);
+	err = rt.reindexer->Select(Query(reindexer::kMemStatsNamespace).Where("name", CondEq, default_namespace), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(1, qr.Count());
 

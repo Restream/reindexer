@@ -54,7 +54,7 @@ private:
 	void initProxiedTxIfRequired();
 	void updateTagsMatcherIfNecessary(Item& item);
 
-	mutable std::mutex mtx_;
+	mutable mutex mtx_;
 	std::unique_ptr<SharedTransactionData> data_;
 	sharding::LocatorServiceAdapter shardingRouter_;
 	std::variant<Empty, TxStepsPtr, ProxiedTxPtr, RxClientT> tx_;

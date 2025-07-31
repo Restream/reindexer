@@ -1,9 +1,5 @@
 #include "selectiterator.h"
 
-#include <algorithm>
-#include <cmath>
-#include "core/index/indexiterator.h"
-
 namespace reindexer {
 
 std::string_view SelectIterator::TypeName() const noexcept {

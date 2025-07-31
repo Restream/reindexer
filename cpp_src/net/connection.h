@@ -1,13 +1,12 @@
 #pragma once
 
 #include <string.h>
-#include <mutex>
 #include "connectinstatscollector.h"
 #include "estl/cbuf.h"
 #include "estl/chunk_buf.h"
+#include "estl/dummy_mutex.h"
 #include "estl/mutex.h"
 #include "net/socket.h"
-#include "tools/ssize_t.h"
 
 namespace reindexer {
 namespace net {
@@ -48,6 +47,7 @@ protected:
 
 	// Generic callback
 	void callback(ev::io& watcher, int revents);
+	void update_cur_events(int nevents) noexcept;
 	void write_cb();
 	ReadResT read_cb();
 	void async_cb(ev::async& watcher);
@@ -87,8 +87,8 @@ private:
 	const int kIdleCheckPeriod_;
 };
 
-using ConnectionST = Connection<reindexer::dummy_mutex>;
-using ConnectionMT = Connection<std::mutex>;
+using ConnectionST = Connection<reindexer::DummyMutex>;
+using ConnectionMT = Connection<mutex>;
 
 }  // namespace net
 }  // namespace reindexer

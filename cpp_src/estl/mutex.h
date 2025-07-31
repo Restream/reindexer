@@ -1,139 +1,47 @@
 #pragma once
 
-#include <atomic>
-#include <string_view>
-#include <thread>
-#include "tools/assertrx.h"
-#include "tools/errors.h"
+#include <mutex>
+#include "estl/thread_annotation_attributes.h"
 
 namespace reindexer {
 
-class dummy_mutex {
+#ifdef RX_THREAD_SAFETY_ANALYSIS_ENABLE
+
+template <typename>
+class lock_guard;
+template <typename>
+class unique_lock;
+template <typename>
+class shared_lock;
+template <typename, typename>
+class contexted_unique_lock;
+template <typename, typename>
+class contexted_shared_lock;
+template <typename...>
+class scoped_lock;
+
+class [[nodiscard]] RX_CAPABILITY("mutex") mutex : private std::mutex {
+	using Base = std::mutex;
+
+	friend shared_lock<mutex>;
+	friend lock_guard<mutex>;
+	friend unique_lock<mutex>;
+	template <typename, typename>
+	friend class contexted_unique_lock;
+	template <typename, typename>
+	friend class contexted_shared_lock;
+	template <typename...>
+	friend class scoped_lock;
+
 public:
-	void lock() const noexcept {}
-	void lock_shared() const noexcept {}
-	void unlock() const noexcept {}
-	void unlock_shared() const noexcept {}
+	const mutex& operator!() const& noexcept { return *this; }
+	auto operator!() const&& = delete;
 };
 
-enum class MutexMark : unsigned { DbManager = 0u, IndexText, Namespace, Reindexer, ReindexerStats, CloneNs, AsyncStorage };
-inline std::string_view DescribeMutexMark(MutexMark mark) {
-	using namespace std::string_view_literals;
-	switch (mark) {
-		case MutexMark::DbManager:
-			return "Database Manager"sv;
-		case MutexMark::IndexText:
-			return "Fulltext Index"sv;
-		case MutexMark::Namespace:
-			return "Namespace"sv;
-		case MutexMark::Reindexer:
-			return "Database"sv;
-		case MutexMark::ReindexerStats:
-			return "Reindexer Stats"sv;
-		case MutexMark::CloneNs:
-			return "Clone namespace"sv;
-		case MutexMark::AsyncStorage:
-			return "Async storage copy"sv;
-	}
-	throw Error(errLogic, "Unknown mutex type");
-}
+#else  // RX_THREAD_SAFETY_ANALYSIS_ENABLE
 
-template <typename Mutex, MutexMark m>
-class MarkedMutex : public Mutex {
-public:
-	constexpr static MutexMark mark = m;
-};
+using std::mutex;
 
-class spinlock {
-public:
-	spinlock() { _M_lock.clear(); }
-	spinlock(const spinlock&) = delete;
-	~spinlock() = default;
+#endif	// RX_THREAD_SAFETY_ANALYSIS_ENABLE
 
-	void lock() noexcept {
-		for (unsigned int i = 1; !try_lock(); ++i) {
-			if ((i & 0xff) == 0) {
-				std::this_thread::yield();
-			}
-		}
-	}
-	bool try_lock() noexcept { return !_M_lock.test_and_set(std::memory_order_acq_rel); }
-	void unlock() noexcept { _M_lock.clear(std::memory_order_release); }
-
-private:
-	std::atomic_flag _M_lock;
-};
-
-class read_write_spinlock {
-public:
-	read_write_spinlock() = default;
-	~read_write_spinlock() = default;
-	read_write_spinlock(const read_write_spinlock&) = delete;
-
-	void lock_shared() noexcept {
-		for (;;) {
-			int32_t currLock = lock_.load(std::memory_order_acquire);
-			while ((currLock & 0x80000000) != 0) {
-				std::this_thread::yield();
-				currLock = lock_.load(std::memory_order_acquire);
-			}
-
-			int32_t oldLock = (currLock & 0x7fffffff);
-			int32_t newLock = oldLock + 1;
-
-			if (lock_.compare_exchange_strong(oldLock, newLock, std::memory_order_acq_rel)) {
-				return;
-			}
-		}
-	}
-
-	void unlock_shared() noexcept { --lock_; }
-
-	void lock() noexcept {
-		for (;;) {
-			int32_t oldLock = (lock_.load(std::memory_order_acquire) & 0x7fffffff);
-			int32_t newLock = (oldLock | 0x80000000);
-			if (lock_.compare_exchange_strong(oldLock, newLock, std::memory_order_acq_rel)) {
-				while ((lock_.load(std::memory_order_acquire) & 0x7fffffff) != 0) {
-					std::this_thread::yield();
-				}
-				return;
-			}
-		}
-	}
-
-	void unlock() noexcept { lock_ = 0; }
-
-private:
-	std::atomic<int32_t> lock_ = {0};
-};
-
-class read_write_recursive_spinlock : public read_write_spinlock {
-public:
-	read_write_recursive_spinlock() = default;
-	~read_write_recursive_spinlock() = default;
-	read_write_recursive_spinlock(const read_write_recursive_spinlock&) = delete;
-
-	void lock() noexcept {
-		std::thread::id currThreadID = threadID_.load(std::memory_order_acquire);
-		if (currThreadID != std::this_thread::get_id()) {
-			read_write_spinlock::lock();
-			assertrx(recursiveDepth_ == 0);
-			threadID_.store(currThreadID, std::memory_order_release);
-		}
-		recursiveDepth_++;
-	}
-
-	void unlock() noexcept {
-		assertrx(recursiveDepth_ > 0);
-		if (--recursiveDepth_ == 0) {
-			threadID_ = std::thread::id{};
-			read_write_spinlock::unlock();
-		}
-	}
-
-private:
-	std::atomic<std::thread::id> threadID_{std::thread::id{}};
-	int32_t recursiveDepth_{0};
-};
 }  // namespace reindexer

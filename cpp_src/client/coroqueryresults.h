@@ -5,13 +5,18 @@
 #include "client/item.h"
 #include "client/resultserializer.h"
 #include "core/namespace/incarnationtags.h"
+#include "core/rank_t.h"
 #include "tools/clock.h"
 #include "tools/lsn.h"
 
 namespace reindexer {
 
 class Query;
+
+namespace builders {
 struct CsvOrdering;
+}  // namespace builders
+using builders::CsvOrdering;
 
 namespace net {
 namespace cproto {
@@ -68,7 +73,8 @@ public:
 		int GetNSID();
 		int GetID();
 		int GetShardID();
-		int16_t GetRank();
+		RankT GetRank();
+		bool IsRanked() noexcept;
 		bool IsRaw();
 		std::string_view GetRaw();
 		const JoinedData& GetJoined();

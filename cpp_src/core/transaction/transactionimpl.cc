@@ -1,5 +1,4 @@
 #include "transactionimpl.h"
-#include "cluster/sharding/sharding.h"
 #include "core/reindexer_impl/reindexerimpl.h"
 
 namespace reindexer {
@@ -7,7 +6,7 @@ namespace reindexer {
 const static Error kTxImplIsNotValid = Error(errNotValid, "Transaction is not initialized");
 
 Error TransactionImpl::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 
 	if (!status_.ok()) {
 		return status_;
@@ -19,24 +18,25 @@ Error TransactionImpl::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 
 	try {
 		lazyInit(item);
+
+		data_->UpdateTagsMatcherIfNecessary(*item.impl_);
+		if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
+			status_ = (*proxiedTx)->Modify(std::move(item), mode, lsn);
+			return status_;
+		} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
+			(*localTx)->Modify(std::move(item), mode, lsn);
+			return {};
+		}
 	} catch (Error& err) {
 		status_ = err;
 		return err;
 	}
 
-	data_->UpdateTagsMatcherIfNecessary(*item.impl_);
-	if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
-		status_ = (*proxiedTx)->Modify(std::move(item), mode, lsn);
-		return status_;
-	} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
-		(*localTx)->Modify(std::move(item), mode, lsn);
-		return Error();
-	}
 	return kTxImplIsNotValid;
 }
 
 Error TransactionImpl::Modify(Query&& query, lsn_t lsn) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 
 	if (!status_.ok()) {
 		return status_;
@@ -53,13 +53,13 @@ Error TransactionImpl::Modify(Query&& query, lsn_t lsn) {
 		return status_;
 	} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
 		(*localTx)->Modify(std::move(query), lsn);
-		return Error();
+		return {};
 	}
 	return kTxImplIsNotValid;
 }
 
 Error TransactionImpl::Nop(lsn_t lsn) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (!status_.ok()) {
 		return status_;
 	}
@@ -73,7 +73,7 @@ Error TransactionImpl::Nop(lsn_t lsn) {
 		return status_;
 	} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
 		(*localTx)->Nop(lsn);
-		return Error();
+		return {};
 	}
 	return kTxImplIsNotValid;
 }
@@ -83,7 +83,7 @@ Error TransactionImpl::PutMeta(std::string_view key, std::string_view value, lsn
 		throw Error(errLogic, "Empty meta key is not allowed in tx");
 	}
 
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (!status_.ok()) {
 		return status_;
 	}
@@ -97,7 +97,7 @@ Error TransactionImpl::PutMeta(std::string_view key, std::string_view value, lsn
 		return status_;
 	} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
 		(*localTx)->PutMeta(key, value, lsn);
-		return Error();
+		return {};
 	}
 	return kTxImplIsNotValid;
 }
@@ -107,7 +107,7 @@ Error TransactionImpl::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) {
 		return Error(errLogic, "Unable to set tx tagsmatcher without lsn");
 	}
 
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (!status_.ok()) {
 		return status_;
 	}
@@ -130,13 +130,13 @@ Error TransactionImpl::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) {
 		return status_;
 	} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
 		(*localTx)->SetTagsMatcher(std::move(tm), lsn);
-		return Error();
+		return {};
 	}
 	return kTxImplIsNotValid;
 }
 
 Item TransactionImpl::NewItem() {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	assertrx(data_);
 	Item item(new ItemImpl(data_->GetPayloadType(), data_->GetTagsMatcher(), data_->GetPKFileds(), data_->GetSchema()));
 	item.impl_->tagsMatcher().clearUpdated();
@@ -144,29 +144,29 @@ Item TransactionImpl::NewItem() {
 }
 
 Error TransactionImpl::Status() const noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	return status_;
 }
 
 int TransactionImpl::GetShardID() const noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	return shardId_;
 }
 
 bool TransactionImpl::IsTagsUpdated() const noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	assertrx(data_);
 	return data_->IsTagsUpdated();
 }
 
 void TransactionImpl::SetShardingRouter(sharding::LocatorServiceAdapter shardingRouter) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	assertrx(!shardingRouter_);
 	shardingRouter_ = std::move(shardingRouter);
 }
 
 Error TransactionImpl::Rollback(int serverId, const RdxContext& ctx) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
 		const auto ward = ctx.BeforeClusterProxy();
 		(*proxiedTx)->Rollback(serverId, ctx);
@@ -177,18 +177,18 @@ Error TransactionImpl::Rollback(int serverId, const RdxContext& ctx) {
 	tx_ = Empty{};
 	shardId_ = ShardingKeyType::NotSetShard;
 	status_ = Error(errNotValid, "Transaction was rolled back");
-	return Error();
+	return {};
 }
 
 Error TransactionImpl::Commit(int serverId, bool expectSharding, ReindexerImpl& rx, QueryResults& result, const RdxContext& ctx) {
-	const static Error kErrCommited(errNotValid, "Tx is already commited");
+	const static Error kErrCommitted(errNotValid, "Tx is already committed");
 
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (!status_.ok()) {
 		return status_;
 	}
 	if (expectSharding && shardId_ == ShardingKeyType::NotSetShard) {
-		return Error(errLogic, "Error commiting transaction with sharding: shard ID is not set");
+		return Error(errLogic, "Error committing transaction with sharding: shard ID is not set");
 	}
 
 	if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
@@ -197,7 +197,7 @@ Error TransactionImpl::Commit(int serverId, bool expectSharding, ReindexerImpl& 
 		if (res.ok() && shardingRouter_) {
 			result.SetShardingConfigVersion(shardingRouter_.SourceId());
 		}
-		status_ = kErrCommited;
+		status_ = kErrCommitted;
 		return res;
 	} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
 		try {
@@ -207,7 +207,7 @@ Error TransactionImpl::Commit(int serverId, bool expectSharding, ReindexerImpl& 
 			} else {
 				result.AddQr(LocalQueryResults(), shardingRouter_ ? shardingRouter_.ActualShardId() : ShardingKeyType::ProxyOff);
 			}
-			status_ = kErrCommited;
+			status_ = kErrCommitted;
 			LocalTransaction ltx(std::move(data_), std::move(*localTx), Error());
 			tx_ = Empty{};
 			auto res = rx.CommitTransaction(ltx, result.ToLocalQr(false), ctx);
@@ -218,13 +218,13 @@ Error TransactionImpl::Commit(int serverId, bool expectSharding, ReindexerImpl& 
 		}
 	} else if (std::holds_alternative<RxClientT>(tx_)) {
 		// Empty proxied transaction. Just skipping commit
-		return Error();
+		return {};
 	}
 	return kTxImplIsNotValid;
 }
 
 LocalTransaction TransactionImpl::Transform(TransactionImpl& tx) {
-	std::lock_guard lck(tx.mtx_);
+	lock_guard lck(tx.mtx_);
 	if (auto* localTx = std::get_if<TxStepsPtr>(&tx.tx_); localTx && *localTx) {
 		LocalTransaction l(std::move(tx.data_), std::move(*localTx), std::move(tx.status_));
 		tx.status_ = Error(errNotValid, "Transformed into local tx");
@@ -240,7 +240,7 @@ LocalTransaction TransactionImpl::Transform(TransactionImpl& tx) {
 void TransactionImpl::updateShardIdIfNecessary(int shardId, const Variant& curShardKey) {
 	if ((shardId_ != ShardingKeyType::NotSetShard) && (shardId != shardId_)) {
 		throw Error(errLogic,
-					"Transaction query to a different shard: %d (%d is expected); First tx shard key - %s, current tx shard key - %s",
+					"Transaction query to a different shard: {} ({} is expected); First tx shard key - {}, current tx shard key - {}",
 					shardId, shardId_, firstShardKey_.Dump(), curShardKey.Dump());
 	}
 	if (shardId_ == ShardingKeyType::NotSetShard) {
@@ -274,7 +274,7 @@ void TransactionImpl::lazyInit(const Query& q) {
 			firstShardKey_ = shardKey;
 		}
 		if (ids.size() != 1) {
-			Error status(errLogic, "Transaction query must correspond to exactly one shard (%d corresponding shards found)", ids.size());
+			Error status(errLogic, "Transaction query must correspond to exactly one shard ({} corresponding shards found)", ids.size());
 			status_ = status;
 			throw status;
 		}

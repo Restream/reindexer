@@ -33,6 +33,14 @@ public:
 	void push(U&& obj) {
 		assertrx(current());  // For now channels should not be used from main routine dew to current resume/suspend logic
 		bool await = false;
+
+#ifdef RX_WITH_STDLIB_DEBUG
+		if (!full() && !closed_) {
+			// Extra ordering check
+			assertrx_dbg(writers_.empty());
+		}
+#endif	// RX_WITH_STDLIB_DEBUG
+
 		while (full() || closed_) {
 			if (closed_) {
 				if (await) {
@@ -63,7 +71,8 @@ public:
 	/// If channel is full and there are writers awaiting space in this channel, current coroutine will call resume() and switch to those
 	/// writers.
 	/// @return Pair of value and flag. Flag shows if it's actual value from channel (true) or default constructed one (false)
-	std::pair<T, bool> pop() {
+	/// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Change waiters_container to intrusive list (allows to avoid allocations)
+	std::pair<T, bool> pop() noexcept {
 		assertrx(current());  // For now channels should not be used from main routine dew to current resume/suspend logic
 		bool await = false;
 		while (empty() && !closed_) {
@@ -86,7 +95,7 @@ public:
 
 	/// Close channel.
 	/// All reades and writers will be resumed immediately
-	void close() {
+	void close() noexcept {
 		closed_ = true;
 		while (readers_.size()) {
 			resume(readers_.front());
@@ -119,10 +128,10 @@ private:
 
 	std::pair<T, bool> pop_impl() {
 		if (data_size_) {
-			auto obj = std::move(buf_[r_ptr_]);
+			size_t r_cur = r_ptr_;
 			r_ptr_ = (r_ptr_ + 1) % buf_.size();
 			--data_size_;
-			return std::make_pair(std::move(obj), true);
+			return std::make_pair(std::move(buf_[r_cur]), true);
 		}
 		return std::make_pair(T(), false);
 	}
@@ -133,7 +142,7 @@ private:
 		++data_size_;
 		assertrx(data_size_ <= buf_.size());
 	}
-	static void remove_waiter(waiters_container& waiters) { waiters.erase(std::find(waiters.begin(), waiters.end(), current())); }
+	static void remove_waiter(waiters_container& waiters) noexcept { waiters.erase(std::find(waiters.begin(), waiters.end(), current())); }
 
 	h_vector<T, 2> buf_;
 	size_t r_ptr_ = 0;

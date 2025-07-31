@@ -1,6 +1,5 @@
 ﻿#pragma once
 
-#include <mutex>
 #include "estl/shared_mutex.h"
 #include "servercontrol.h"
 
@@ -16,10 +15,10 @@ const auto kMaxForceSyncCmdTime = std::chrono::seconds(10);
 
 class ReplicationApi : public ::testing::Test {
 public:
-	static const std::string kConfigNs;
+	ReplicationApi();
 
-	void SetUp();
-	void TearDown();
+	void SetUp() override;
+	void TearDown() override;
 
 	// stop is sync
 	bool StopServer(size_t id);
@@ -48,7 +47,7 @@ public:
 	reindexer::shared_timed_mutex restartMutex_;
 
 private:
-	const std::string kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex_repl_test/");
+	const std::string kStoragePath;
 	std::vector<ServerControl> svc_;
-	mutable std::mutex m_;
+	mutable reindexer::mutex m_;
 };

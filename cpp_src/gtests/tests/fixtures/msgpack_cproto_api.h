@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/cjson/jsonbuilder.h"
-#include "core/cjson/objtype.h"
+#include "core/enums.h"
 #include "core/indexopts.h"
 #include "core/type_consts.h"
 #include "reindexer_api.h"

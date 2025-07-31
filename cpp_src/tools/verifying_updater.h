@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-template <typename BT, typename FT, FT BT::*field, void (BT::*Verify)() const>
+template <typename BT, typename FT, FT BT::* field>
 class VerifyingUpdater {
 	using BaseType = BT;
 	using FieldType = FT;
@@ -18,7 +18,7 @@ public:
 	}
 	~VerifyingUpdater() noexcept(false) {
 		if (touched_ && std::uncaught_exceptions() == 0) {
-			(base_.*Verify)();
+			base_.Verify();
 		}
 	}
 

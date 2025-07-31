@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <deque>
 #include <future>
@@ -9,8 +9,12 @@
 #include "client/rpcformat.h"
 #include "client/transaction.h"
 #include "core/shardedmeta.h"
+#include "estl/condition_variable.h"
 #include "estl/fast_hash_map.h"
+#include "estl/lock_guard.h"
+#include "estl/mutex.h"
 #include "estl/recycle_list.h"
+#include "estl/unique_lock.h"
 #include "net/ev/ev.h"
 
 namespace reindexer {
@@ -60,7 +64,7 @@ public:
 	Error Delete(const Query& query, QueryResults& result, const InternalRdxContext& ctx);
 	Error Select(std::string_view query, QueryResults& result, const InternalRdxContext& ctx);
 	Error Select(const Query& query, QueryResults& result, const InternalRdxContext& ctx);
-	Item NewItem(std::string_view nsName, const InternalRdxContext& ctx);
+	Item NewItem(std::string_view nsName, const InternalRdxContext& ctx) noexcept;
 	Error GetMeta(std::string_view nsName, const std::string& key, std::string& data, const InternalRdxContext& ctx);
 	Error GetMeta(std::string_view nsName, const std::string& key, std::vector<ShardedMeta>& data, const InternalRdxContext& ctx);
 	Error PutMeta(std::string_view nsName, const std::string& key, std::string_view data, const InternalRdxContext& ctx);
@@ -68,7 +72,7 @@ public:
 	Error DeleteMeta(std::string_view nsName, const std::string& key, const InternalRdxContext& ctx);
 	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions);
 	Error Status(bool forceCheck, const InternalRdxContext& ctx);
-	CoroTransaction NewTransaction(std::string_view nsName, const InternalRdxContext& ctx);
+	CoroTransaction NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) noexcept;
 	Error CommitTransaction(Transaction& tr, QueryResults& results, const InternalRdxContext& ctx);
 	Error RollBackTransaction(Transaction& tr, const InternalRdxContext& ctx);
 	Error GetReplState(std::string_view nsName, ReplicationStateV2& state, const InternalRdxContext& ctx);
@@ -78,6 +82,8 @@ public:
 	Error ResetShardingConfigCandidate(int64_t sourceId, const InternalRdxContext& ctx) noexcept;
 	Error RollbackShardingConfigCandidate(int64_t sourceId, const InternalRdxContext& ctx) noexcept;
 	Error ApplyNewShardingConfig(int64_t sourceId, const InternalRdxContext& ctx) noexcept;
+
+	Error Version(std::string& version, const InternalRdxContext& ctx);
 
 private:
 	friend class QueryResults;
@@ -145,14 +151,15 @@ private:
 		DbCmdResetConfigCandidate,
 		DbCmdRollbackConfigCandidate,
 		DbCmdApplyNewShardingCfg,
+		DbCmdVersion,
 	};
 
 	template <typename T>
 	struct ResultType {
-		T data;
-		bool ready = false;
-		std::mutex mtx;
-		std::condition_variable cv;
+		T data RX_GUARDED_BY(mtx);
+		bool ready RX_GUARDED_BY(mtx) = false;
+		mutex mtx;
+		condition_variable cv;
 	};
 
 	template <typename T>
@@ -162,8 +169,8 @@ private:
 
 		void wait() {
 			if (res_) {
-				std::unique_lock lck(res_->mtx);
-				res_->cv.wait(lck, [this]() noexcept { return res_->ready; });
+				unique_lock lck(res_->mtx);
+				res_->cv.wait(lck, [this]() RX_REQUIRES(res_->mtx) noexcept { return res_->ready; });
 			}
 		}
 
@@ -177,9 +184,9 @@ private:
 		Promise() noexcept = default;
 		Promise(ResultType<T>& res) noexcept : res_(&res) {}
 
-		void set_value(T&& v) {
+		void set_value(T&& v) noexcept {
 			if (res_) {
-				std::lock_guard lck(res_->mtx);
+				lock_guard lck(res_->mtx);
 				res_->data = std::move(v);
 				res_->ready = true;
 				res_->cv.notify_one();
@@ -213,10 +220,10 @@ private:
 
 	class DatabaseCommand {
 	public:
-		DatabaseCommand(DatabaseCommandDataBase* cmd = nullptr) : cmd_(cmd) {}
+		DatabaseCommand(DatabaseCommandDataBase* cmd = nullptr) noexcept : cmd_(cmd) {}
 		template <typename DatabaseCommandDataT>
 		DatabaseCommand(DatabaseCommandDataT&& cmd) : owns_(true), cmd_(new DatabaseCommandData(std::forward<DatabaseCommandDataT>(cmd))) {}
-		DatabaseCommand(DatabaseCommand&& r) noexcept : owns_(r.owns_), cmd_(r.cmd_) { r.owns_ = false; }
+		DatabaseCommand(DatabaseCommand&& r) noexcept : connIdx(r.connIdx), owns_(r.owns_), cmd_(r.cmd_) { r.owns_ = false; }
 		DatabaseCommand(const DatabaseCommand& r) = delete;
 		DatabaseCommand& operator=(DatabaseCommand&& r) {
 			if (this != &r) {
@@ -224,6 +231,7 @@ private:
 					delete cmd_;
 				}
 				owns_ = r.owns_;
+				connIdx = r.connIdx;
 				cmd_ = r.cmd_;
 				r.owns_ = false;
 			}
@@ -238,9 +246,11 @@ private:
 
 		DatabaseCommandDataBase* Data() noexcept { return cmd_; }
 
+		int32_t connIdx = -1;
+
 	private:
 		bool owns_ = false;
-		DatabaseCommandDataBase* cmd_;
+		DatabaseCommandDataBase* cmd_ = nullptr;
 	};
 
 	template <typename R, typename... Args>
@@ -268,14 +278,14 @@ private:
 			}
 			if (err.ok()) {
 				future.wait();
-				return std::move(res.data);
+				return RX_GET_WITHOUT_MUTEX_ANALYSIS { return std::move(res.data); }();
 			}
 			if constexpr (withClient) {
 				if (err.code() == errParams) {
 					return R(Error(errNetwork, "Request for invalid connection (probably this connection was broken and invalidated)"));
 				}
 			}
-			return R(Error(errTerminated, "Client is not connected: %s", err.what()));
+			return R(Error(errTerminated, "Client is not connected: {}", err.what()));
 		}
 		if constexpr (std::is_same_v<R, Error>) {
 			DatabaseCommandData<R, Args...> cmd(c, ctx, std::forward<Args>(args)...);
@@ -287,7 +297,7 @@ private:
 				err = commandsQueue_.Push(DatabaseCommand(std::move(cmd)));
 			}
 			if (!err.ok()) {
-				return R(Error(errTerminated, "Client is not connected: %s", err.what()));
+				return R(Error(errTerminated, "Client is not connected: {}", err.what()));
 			}
 			return R();
 		}
@@ -307,13 +317,21 @@ private:
 
 	// cmd may be owned by another thread and will be invalidated after this function
 	template <typename F>
-	void execCommand(DatabaseCommandDataBase* cmd, F&& fun) {
+	void execCommand(DatabaseCommandDataBase* cmd, F&& fun) noexcept {
 		auto cd = dynamic_cast<typename CalculateCommandType<decltype(&F::operator())>::type*>(cmd);
 		if (cd) {
 			auto r = std::apply(std::move(fun), cd->arguments);
 			if constexpr (std::is_same_v<decltype(r), Error>) {
 				if (cd->ctx.cmpl()) {
-					cd->ctx.cmpl()(r);
+					try {
+						cd->ctx.cmpl()(r);
+					} catch (std::exception& e) {
+						fprintf(stderr, "reindexer error: unexpected exception in user's completion: %s\n", e.what());
+						assertrx_dbg(false);
+					} catch (...) {
+						fprintf(stderr, "reindexer error: unexpected exception in user's completion\n");
+						assertrx_dbg(false);
+					}
 				} else {
 					cd->ret.set_value(std::move(r));
 				}
@@ -338,10 +356,10 @@ private:
 	};
 	class CommandsQueue {
 	public:
-		Error Push(DatabaseCommand&& cmd) {
+		Error Push(DatabaseCommand&& cmd) RX_REQUIRES(!mtx_) {
 			uint32_t minReq = std::numeric_limits<uint32_t>::max();
 			ThreadData* targetTh = nullptr;
-			std::unique_lock<std::mutex> lck(mtx_);
+			unique_lock lck(mtx_);
 			if (!isValid_) {
 				return Error(errNotValid, "Reindexer command queue is invalidated");
 			}
@@ -357,6 +375,7 @@ private:
 			}
 			const bool notify = !targetTh->isReading;
 			targetTh->isReading = true;
+			cmd.connIdx = -1;
 			sharedQueue_.emplace_back(std::move(cmd));
 			lck.unlock();
 
@@ -365,8 +384,8 @@ private:
 			}
 			return Error();
 		}
-		Error Push(const void* conn, DatabaseCommand&& cmd) {
-			std::unique_lock<std::mutex> lck(mtx_);
+		Error Push(const void* conn, DatabaseCommand&& cmd) RX_REQUIRES(!mtx_) {
+			unique_lock lck(mtx_);
 			if (!isValid_) {
 				return Error(errNotValid, "Reindexer command queue is invalidated");
 			}
@@ -374,7 +393,9 @@ private:
 			if (found == thByConns_.end()) {
 				return Error(errParams, "Request for incorrect connection");
 			}
-			auto& th = *found->second;
+			auto connMeta = found->second;
+			cmd.connIdx = connMeta.connIdx;
+			auto& th = *connMeta.threadData;
 			const bool notify = !th.isReading && (th.personalQueue.empty());
 			th.isReading = true;
 			th.personalQueue.emplace_back(std::move(cmd));
@@ -385,13 +406,13 @@ private:
 			}
 			return Error();
 		}
-		void Get(uint32_t tid, h_vector<DatabaseCommand, 16>& cmds);
-		void OnCmdDone(uint32_t tid);
-		void Invalidate(uint32_t tid, h_vector<DatabaseCommand, 16>& cmds);
-		void Init(std::deque<WorkerThread>& threads);
-		void SetValid();
-		void ClearConnectionsMapping();
-		void RegisterConn(uint32_t tid, const void* conn);
+		void Get(uint32_t tid, h_vector<DatabaseCommand, 16>& cmds) RX_REQUIRES(!mtx_);
+		void OnCmdDone(uint32_t tid) RX_REQUIRES(!mtx_);
+		void Invalidate(uint32_t tid, h_vector<DatabaseCommand, 16>& cmds) RX_REQUIRES(!mtx_);
+		void Init(std::deque<WorkerThread>& threads) RX_REQUIRES(!mtx_);
+		void SetValid() RX_REQUIRES(!mtx_);
+		void ClearConnectionsMapping() RX_REQUIRES(!mtx_);
+		void RegisterConn(uint32_t tid, const void* conn, uint32_t connIdx) RX_REQUIRES(!mtx_);
 
 	private:
 		struct ThreadData {
@@ -401,39 +422,46 @@ private:
 			net::ev::async& commandAsync;
 			bool isReading = false;
 		};
+		struct ConnMeta {
+			ThreadData* threadData = nullptr;
+			uint32_t connIdx = std::numeric_limits<uint32_t>::max();
+		};
 
-		bool isValid_ = false;
-		RecyclingList<DatabaseCommand, 64> sharedQueue_;
-		fast_hash_map<const void*, ThreadData*> thByConns_;
-		std::deque<ThreadData> thData_;
-		std::mutex mtx_;
+		bool isValid_ RX_GUARDED_BY(mtx_) = false;
+		RecyclingList<DatabaseCommand, 64> sharedQueue_ RX_GUARDED_BY(mtx_);
+		fast_hash_map<const void*, ConnMeta> thByConns_ RX_GUARDED_BY(mtx_);
+		std::deque<ThreadData> thData_ RX_GUARDED_BY(mtx_);
+		mutex mtx_;
 	};
-	struct ThreadSafeError {
-		void Set(Error e) {
-			std::lock_guard lck(mtx);
-			err = std::move(e);
+
+	class [[nodiscard]] ThreadSafeError {
+	public:
+		void Set(Error e) noexcept RX_REQUIRES(!mtx_) {
+			lock_guard lck(mtx_);
+			err_ = std::move(e);
 		}
-		Error Get() {
-			std::lock_guard lck(mtx);
-			return err;
+		Error Get() noexcept RX_REQUIRES(!mtx_) {
+			lock_guard lck(mtx_);
+			return err_;
 		}
 
-		std::mutex mtx;
-		Error err;
+	private:
+		mutex mtx_;
+		Error err_ RX_GUARDED_BY(mtx_);
 	};
 
 	CommandsQueue commandsQueue_;
-	std::mutex workersMtx_;
+	mutex workersMtx_;
 	const ReindexerConfig conf_;
 	std::deque<WorkerThread> workers_;
 	std::atomic<uint32_t> runningWorkers_ = {0};
-	std::mutex errorMtx_;
 	ThreadSafeError lastError_;
 	INamespaces::PtrT sharedNamespaces_;
 	std::atomic<bool> requiresStatusCheck_ = {true};
 
 	void coroInterpreter(Connection<DatabaseCommand>&, ConnectionsPool<DatabaseCommand>&, uint32_t tid) noexcept;
-	Error fetchResultsImpl(int flags, int offset, int limit, CoroQueryResults& qr);
+	void fetchResultsImpl(int flags, int offset, int limit, CoroQueryResults& qr);
 };
+
 }  // namespace client
 }  // namespace reindexer

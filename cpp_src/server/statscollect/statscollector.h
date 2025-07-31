@@ -1,11 +1,12 @@
 #pragma once
 
 #include <atomic>
-#include <mutex>
 #include <thread>
 #include <unordered_map>
 #include "core/namespacedef.h"
 #include "estl/fast_hash_map.h"
+#include "estl/mutex.h"
+#include "estl/unique_lock.h"
 #include "istatswatcher.h"
 #include "loggerwrapper.h"
 #include "tools/stringstools.h"
@@ -26,7 +27,7 @@ public:
 		  logger_(std::move(logger)) {}
 	~StatsCollector() override { Stop(); }
 	void Start();
-	void Restart(std::unique_lock<std::mutex>&& lck) noexcept override;
+	void Restart(reindexer::unique_lock<reindexer::mutex>&& lck) noexcept override;
 	void Stop();
 
 	[[nodiscard]] StatsWatcherSuspend SuspendStatsThread() override;
@@ -64,8 +65,8 @@ private:
 	std::atomic<bool> enabled_;
 	std::chrono::milliseconds collectPeriod_;
 	Counters counters_;
-	std::mutex countersMtx_;
-	std::mutex threadMtx_;
+	reindexer::mutex countersMtx_;
+	reindexer::mutex threadMtx_;
 	LoggerWrapper logger_;
 };
 

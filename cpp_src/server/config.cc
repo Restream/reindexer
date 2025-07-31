@@ -2,6 +2,7 @@
 
 #include "args/args.hpp"
 #include "core/storage/storagefactory.h"
+#include "reindexer_version.h"
 #include "tools/fsops.h"
 #include "yaml-cpp/yaml.h"
 
@@ -43,7 +44,6 @@ void ServerConfig::Reset() {
 	EnablePrometheus = false;
 	PrometheusCollectPeriod = std::chrono::milliseconds(1000);
 	DebugAllocs = false;
-	Autorepair = false;
 	EnableConnectionsStats = true;
 	TxIdleTimeout = std::chrono::seconds(600);
 	RPCQrIdleTimeout = std::chrono::seconds(600);
@@ -51,7 +51,7 @@ void ServerConfig::Reset() {
 	httpWriteTimeout_ = kDefaultHttpWriteTimeout;
 	MaxUpdatesSize = 1024 * 1024 * 1024;
 	EnableGRPC = false;
-	MaxHttpReqSize = 2 * 1024 * 1024;
+	MaxHttpReqSize = 8 * 1024 * 1024;
 	AllocatorCacheLimit = -1;
 	AllocatorCachePart = -1;
 }
@@ -62,7 +62,7 @@ reindexer::Error ServerConfig::ParseYaml(const std::string& yaml) {
 		YAML::Node root = YAML::Load(yaml);
 		err = fromYaml(root);
 	} catch (const YAML::Exception& ex) {
-		err = Error(errParseYAML, "Error with config string. Reason: '%s'", ex.what());
+		err = Error(errParseYAML, "Error with config string. Reason: '{}'", ex.what());
 	}
 	return err;
 }
@@ -73,7 +73,7 @@ Error ServerConfig::ParseFile(const std::string& filePath) {
 		YAML::Node root = YAML::LoadFile(filePath);
 		err = fromYaml(root);
 	} catch (const YAML::Exception& ex) {
-		err = Error(errParseYAML, "Error with config file '%s'. Reason: %s", filePath, ex.what());
+		err = Error(errParseYAML, "Error with config file '{}'. Reason: {}", filePath, ex.what());
 	}
 	return err;
 }
@@ -87,6 +87,8 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 
 	args::ArgumentParser parser("reindexer server");
 	args::HelpFlag help(parser, "help", "Show this message", {'h', "help"});
+	args::ActionFlag version(parser, "", "Reindexer version", {'v', "version"},
+							 []() { throw Error(errLogic, fmt::format("Reindexer version: {}", REINDEX_VERSION)); });
 	args::Flag securityF(parser, "", "Enable per-user security", {"security"});
 	args::ValueFlag<std::string> configF(parser, "CONFIG", "Path to reindexer config file", {'c', "config"}, args::Options::Single);
 	args::Flag startWithErrorsF(parser, "", "Allow to start reindexer with DB's load erros", {"startwitherrors"});
@@ -103,7 +105,7 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	}
 	args::ValueFlag<std::string> storageEngineF(dbGroup, "NAME", "'reindexer' storage engine (" + availabledStorages + ")", {'e', "engine"},
 												StorageEngine, args::Options::Single);
-	args::Flag autorepairF(dbGroup, "", "Enable autorepair for storages after unexpected shutdowns", {"autorepair"});
+	args::Flag autorepairF(dbGroup, "", "Deprecated. Does nothing", {"autorepair"});
 	args::Flag disableNamespaceLeakF(dbGroup, "", "Disable namespaces leak on database destruction (may slow down server's termination)",
 									 {"disable-ns-leak"});
 
@@ -133,7 +135,7 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 													   {"urpc-threading"}, RPCUnixThreadingMode, args::Options::Single);
 #endif	// _WIN32
 	args::ValueFlag<size_t> MaxHttpReqSizeF(
-		netGroup, "", "Max HTTP request size in bytes. Default value is 2 MB. 0 is 'unlimited', hovewer, stream mode is not supported",
+		netGroup, "", "Max HTTP request size in bytes. Default value is 8 MB. 0 is 'unlimited', hovewer, stream mode is not supported",
 		{"max-http-req"}, MaxHttpReqSize, args::Options::Single);
 #if defined(WITH_GRPC)
 	args::ValueFlag<std::string> grpcAddrF(netGroup, "GPORT", "GRPC listen host:port", {'g', "grpcaddr"}, RPCAddr, args::Options::Single);
@@ -205,8 +207,10 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 		parser.ParseCLI(argc, argv);
 	} catch (const args::Help&) {
 		return Error(errLogic, parser.Help());
+	} catch (const Error& v) {
+		return v;
 	} catch (const args::Error& e) {
-		return Error(errParams, "%s\n%s", e.what(), parser.Help());
+		return Error(errParams, "{}\n{}", e.what(), parser.Help());
 	}
 
 	if (configF) {
@@ -231,9 +235,6 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	}
 	if (startWithErrorsF) {
 		StartWithErrors = args::get(startWithErrorsF);
-	}
-	if (autorepairF) {
-		Autorepair = args::get(autorepairF);
 	}
 	if (disableNamespaceLeakF) {
 		AllowNamespaceLeak = !args::get(disableNamespaceLeakF);
@@ -377,7 +378,6 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node& root) {
 		StoragePath = root["storage"]["path"].as<std::string>(StoragePath);
 		StorageEngine = root["storage"]["engine"].as<std::string>(StorageEngine);
 		StartWithErrors = root["storage"]["startwitherrors"].as<bool>(StartWithErrors);
-		Autorepair = root["storage"]["autorepair"].as<bool>(Autorepair);
 		LogLevel = root["logger"]["loglevel"].as<std::string>(LogLevel);
 		ServerLog = root["logger"]["serverlog"].as<std::string>(ServerLog);
 		CoreLog = root["logger"]["corelog"].as<std::string>(CoreLog);
@@ -418,7 +418,7 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node& root) {
 		DebugAllocs = root["debug"]["allocs"].as<bool>(DebugAllocs);
 		DebugPprof = root["debug"]["pprof"].as<bool>(DebugPprof);
 	} catch (const YAML::Exception& ex) {
-		return Error(errParseYAML, "Unable to parse YML server config: %s", ex.what());
+		return Error(errParseYAML, "Unable to parse YML server config: {}", ex.what());
 	}
 	return {};
 }

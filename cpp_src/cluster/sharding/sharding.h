@@ -3,7 +3,9 @@
 #include <memory>
 #include "client/reindexer.h"
 #include "cluster/config.h"
+#include "estl/condition_variable.h"
 #include "estl/fast_hash_map.h"
+#include "estl/mutex.h"
 #include "estl/shared_mutex.h"
 #include "networkmonitor.h"
 #include "shardingkeys.h"
@@ -42,27 +44,11 @@ private:
 class Connections : public std::vector<std::shared_ptr<client::Reindexer>> {
 public:
 	using base = std::vector<std::shared_ptr<client::Reindexer>>;
-	Connections() : base() {}
-	Connections(Connections&& obj) noexcept
-		: base(static_cast<base&&>(obj)),
-		  actualIndex(std::move(obj.actualIndex)),
-		  reconnectTs(obj.reconnectTs),
-		  status(std::move(obj.status)),
-		  shutdown(obj.shutdown) {}
+	Connections() = default;
+	Connections(Connections&& obj) noexcept;
+	Connections(const Connections& obj) noexcept;
 
-	Connections(const Connections& obj) noexcept
-		: base(obj), actualIndex(obj.actualIndex), reconnectTs(obj.reconnectTs), status(obj.status), shutdown(obj.shutdown) {}
-
-	void Shutdown() {
-		std::lock_guard lck(m);
-		if (!shutdown) {
-			for (auto& conn : *this) {
-				conn->Stop();
-			}
-			shutdown = true;
-			status = Error(errTerminated, "Sharding proxy is already shut down");
-		}
-	}
+	void Shutdown();
 	shared_timed_mutex m;
 	std::optional<size_t> actualIndex;
 	steady_clock_w::time_point reconnectTs;
@@ -105,8 +91,8 @@ private:
 		size_t completed = 0;
 		int onlineIdx = -1;
 		std::vector<bool> statuses;
-		std::mutex mtx;
-		std::condition_variable cv;
+		mutex mtx;
+		condition_variable cv;
 	};
 
 	std::shared_ptr<client::Reindexer> doReconnect(int shardID, Error& reconnectStatus);
@@ -135,9 +121,9 @@ public:
 	std::pair<ShardIDsContainer, Variant> GetShardIdKeyPair(const Query& q) const { return routingStrategy_.GetHostsIdsKeyPair(q); }
 	std::shared_ptr<client::Reindexer> GetShardConnection(std::string_view ns, int shardId, Error& status);
 
-	ConnectionsPtr GetShardsConnections(std::string_view ns, int shardId, Error& status);
-	ConnectionsPtr GetShardsConnectionsWithId(const Query& q, Error& status);
-	ConnectionsPtr GetShardsConnections(Error& status) { return GetShardsConnections("", -1, status); }
+	ConnectionsPtr GetShardsConnections(std::string_view ns, int shardId, Error& status) RX_REQUIRES(!m_);
+	ConnectionsPtr GetShardsConnectionsWithId(const Query& q, Error& status) RX_REQUIRES(!m_);
+	ConnectionsPtr GetShardsConnections(Error& status) RX_REQUIRES(!m_) { return GetShardsConnections("", -1, status); }
 	ConnectionsPtr GetAllShardsConnections(Error& status);
 	ShardConnection GetShardConnectionWithId(std::string_view ns, const Item& item, Error& status) {
 		int shardId = routingStrategy_.GetHostIdKeyPair(ns, item).first;

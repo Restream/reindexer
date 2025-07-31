@@ -28,7 +28,7 @@ class RPCServerFake {
 public:
 	RPCServerFake(const RPCServerConfig& conf);
 
-	bool Start(const std::string& addr, ev::dynamic_loop& loop, Error loginError);
+	void Start(const std::string& addr, ev::dynamic_loop& loop, Error loginError);
 	Error Stop();
 
 	Error Ping(cproto::Context& ctx);
@@ -52,7 +52,7 @@ protected:
 	std::string dsn_;
 	std::atomic<RPCServerStatus> state_;
 	Error loginError_;
-	std::mutex qrMutex_;
+	reindexer::mutex qrMutex_;
 	std::set<int> usedQrIds_;
 	std::set<int> unusedQrIds_;
 	std::atomic_size_t closeQRRequestsCounter_{0};

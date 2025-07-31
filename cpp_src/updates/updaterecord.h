@@ -168,28 +168,28 @@ enum class URType : int {
 
 struct UpdateRecord {
 	enum class ClonePolicy : bool {
-		WithoutEmmiter = 0,
-		WithEmmiter = 1,
+		WithoutEmitter = 0,
+		WithEmitter = 1,
 	};
-	using ImplT = intrusive_atomic_rc_wrapper<
-		const std::variant<ItemReplicationRecord, IndexReplicationRecord, MetaReplicationRecord, QueryReplicationRecord,
-						   SchemaReplicationRecord, AddNamespaceReplicationRecord, RenameNamespaceReplicationRecord, NodeNetworkCheckRecord,
-						   TagsMatcherReplicationRecord, SaveNewShardingCfgRecord, ApplyNewShardingCfgRecord, ResetShardingCfgRecord>>;
+	using ImplT = const intrusive_atomic_rc_wrapper<
+		std::variant<ItemReplicationRecord, IndexReplicationRecord, MetaReplicationRecord, QueryReplicationRecord, SchemaReplicationRecord,
+					 AddNamespaceReplicationRecord, RenameNamespaceReplicationRecord, NodeNetworkCheckRecord, TagsMatcherReplicationRecord,
+					 SaveNewShardingCfgRecord, ApplyNewShardingCfgRecord, ResetShardingCfgRecord>>;
 	struct UpdatesDropT {};
 
 	UpdateRecord() = default;
 	UpdateRecord(UpdatesDropT) noexcept : type_(URType::ResyncOnUpdatesDrop) {}
 	UpdateRecord(URType _type, uint32_t _nodeUid, bool online);
-	UpdateRecord(URType _type, NamespaceName _nsName, int _emmiterServerId);
-	UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emmiterServerId);
-	UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emmiterServerId, std::string _data);
-	UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emmiterServerId, WrSerializer&& _data);
-	UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emmiterServerId, const TagsMatcher& _tm);
-	UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emmiterServerId, IndexDef _idef);
-	UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _nsVersion, int _emmiterServerId, NamespaceDef _def, int64_t _stateToken);
-	UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emmiterServerId, std::string _k, std::string _v);
-	UpdateRecord(URType _type, int _emmiterServerId, std::string _data, int64_t sourceId);
-	UpdateRecord(URType _type, int _emmiterServerId, int64_t sourceId);
+	UpdateRecord(URType _type, NamespaceName _nsName, int _emitterServerId);
+	UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emitterServerId);
+	UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emitterServerId, std::string _data);
+	UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emitterServerId, WrSerializer&& _data);
+	UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emitterServerId, const TagsMatcher& _tm);
+	UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emitterServerId, IndexDef _idef);
+	UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _nsVersion, int _emitterServerId, NamespaceDef _def, int64_t _stateToken);
+	UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emitterServerId, std::string _k, std::string _v);
+	UpdateRecord(URType _type, int _emitterServerId, std::string _data, int64_t sourceId);
+	UpdateRecord(URType _type, int _emitterServerId, int64_t sourceId);
 	UpdateRecord(const UpdateRecord&) = delete;
 	UpdateRecord(UpdateRecord&&) = default;
 	UpdateRecord& operator=(const UpdateRecord&) = delete;
@@ -267,8 +267,8 @@ struct UpdateRecord {
 	}
 	bool IsNetworkCheckRecord() const noexcept { return type_ == URType::NodeNetworkCheck; }
 	size_t DataSize() const noexcept;
-	bool HasEmmiterID() const noexcept { return emmiterServerId_ != -1; }
-	int EmmiterServerID() const noexcept { return emmiterServerId_; }
+	bool HasEmitterID() const noexcept { return emitterServerId_ != -1; }
+	int EmitterServerID() const noexcept { return emitterServerId_; }
 	template <ClonePolicy policy>
 	UpdateRecord Clone() const noexcept {
 		// Explicit copy instead of builtin operators
@@ -277,21 +277,24 @@ struct UpdateRecord {
 		rec.nsName_ = nsName_;
 		rec.extLsn_ = extLsn_;
 		rec.data_ = data_;
-		if constexpr (policy == ClonePolicy::WithEmmiter) {
-			rec.emmiterServerId_ = emmiterServerId_;
+		if constexpr (policy == ClonePolicy::WithEmitter) {
+			rec.emitterServerId_ = emitterServerId_;
 		} else {
-			rec.emmiterServerId_ = -1;
+			rec.emitterServerId_ = -1;
 		}
 		return rec;
 	}
 
 private:
 	URType type_ = URType::None;
-	int emmiterServerId_ = -1;
+	int emitterServerId_ = -1;
 	NamespaceName nsName_;
 	ExtendedLsn extLsn_;
 	intrusive_ptr<ImplT> data_;
 };
 
 }  // namespace updates
+
+using UpdatesContainer = h_vector<updates::UpdateRecord, 2>;
+
 }  // namespace reindexer

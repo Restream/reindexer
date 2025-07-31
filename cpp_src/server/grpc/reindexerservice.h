@@ -5,6 +5,7 @@
 
 #include <unordered_map>
 #include "core/transaction/transaction.h"
+#include "estl/mutex.h"
 #include "net/ev/ev.h"
 #include "tools/serializer.h"
 
@@ -92,7 +93,7 @@ private:
 	Error getTx(uint64_t id, TxData& txData);
 
 	reindexer_server::DBManager& dbMgr_;
-	std::mutex m_;
+	mutex m_;
 	std::unordered_map<uint64_t, TxData> transactions_;
 	uint64_t txID_ = {0};
 	const std::chrono::seconds txIdleTimeout_;

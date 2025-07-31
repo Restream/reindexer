@@ -1,8 +1,6 @@
 #pragma once
 
 #include <stdio.h>
-#include <memory>
-
 #include "estl/intrusive_ptr.h"
 
 namespace reindexer {

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "core/index/index.h"
-#include "core/index/string_map.h"
 
 namespace reindexer {
 
@@ -16,13 +15,14 @@ public:
 
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override;
 	void Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) override;
-	void Delete(const Variant& key, IdType id, StringsHolder&, bool& clearCache) override;
-	void Delete(const VariantArray& keys, IdType id, StringsHolder&, bool& clearCache) override;
-	SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, Index::SelectOpts res_type,
-							   const BaseFunctionCtx::Ptr& ctx, const RdxContext&) override;
+	void Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
+	void Delete(const VariantArray& keys, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
+	SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, const Index::SelectContext&,
+							   const RdxContext&) override;
 	void Commit() override;
-	void UpdateSortedIds(const UpdateSortedContext& /*ctx*/) override {}
-	std::unique_ptr<Index> Clone() const override { return std::make_unique<IndexStore<T>>(*this); }
+	void UpdateSortedIds(const UpdateSortedContext& /*ctx*/) override { assertrx_dbg(!IsSupportSortedIdsBuild()); }
+	bool IsSupportSortedIdsBuild() const noexcept override { return false; }
+	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::make_unique<IndexStore<T>>(*this); }
 	IndexMemStat GetMemStat(const RdxContext&) override;
 	bool HoldsStrings() const noexcept override { return std::is_same_v<T, key_string> || std::is_same_v<T, key_string_with_hash>; }
 	void Dump(std::ostream& os, std::string_view step = "  ", std::string_view offset = "") const override { dump(os, step, offset); }
@@ -32,6 +32,8 @@ public:
 	virtual void ReconfigureCache(const NamespaceCacheConfigData&) override {}
 	const void* ColumnData() const noexcept override final { return idx_data.size() ? idx_data.data() : nullptr; }
 
+	bool IsColumnIndexDisabled() const noexcept { return opts_.IsArray() || opts_.IsSparse() || opts_.IsNoIndexColumn(); }
+
 	template <typename, typename = void>
 	struct HasAddTask : std::false_type {};
 	template <typename H>
@@ -40,7 +42,8 @@ public:
 protected:
 	unordered_str_map<int> str_map;
 
-	using IdxDataT = std::conditional_t<std::is_same_v<T, key_string>, std::string_view, T>;
+	using IdxDataT =
+		std::conditional_t<std::is_same_v<T, bool>, unsigned char, std::conditional_t<std::is_same_v<T, key_string>, std::string_view, T>>;
 	h_vector<IdxDataT> idx_data;
 
 	IndexMemStat memStat_;

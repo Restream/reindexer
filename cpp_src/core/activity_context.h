@@ -1,16 +1,14 @@
 #pragma once
 
 #include <atomic>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_set>
 #include <vector>
 #include "activity.h"
-#include "activitylog.h"
+#include "estl/marked_mutex.h"
 #include "estl/mutex.h"
-#include "tools/clock.h"
 
 namespace reindexer {
 
@@ -33,7 +31,7 @@ private:
 	ActivityContainerLog log_;
 #endif
 private:
-	std::mutex mtx_;
+	mutex mtx_;
 	std::unordered_set<const RdxActivityContext*> cont_;
 };
 

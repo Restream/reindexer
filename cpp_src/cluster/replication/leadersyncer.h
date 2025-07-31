@@ -1,11 +1,11 @@
 #pragma once
 
 #include <deque>
-#include <list>
 #include "client/cororeindexer.h"
 #include "cluster/stats/relicationstatscollector.h"
-#include "cluster/stats/synchronizationlist.h"
 #include "core/namespace/namespacestat.h"
+#include "estl/elist.h"
+#include "estl/mutex.h"
 #include "net/ev/ev.h"
 #include "sharedsyncstate.h"
 #include "tools/lsn.h"
@@ -46,17 +46,17 @@ public:
 
 	LeaderSyncQueue(size_t maxSyncsPerNode) : maxSyncsPerNode_(maxSyncsPerNode) {}
 
-	void Refill(std::list<Entry>&& entries) {
-		std::lock_guard lck(mtx_);
+	void Refill(elist<Entry>&& entries) {
+		lock_guard lck(mtx_);
 		entries_ = std::move(entries);
 		currentSyncsPerNode_.clear();
 	}
 	size_t Size() {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		return entries_.size();
 	}
 	void SyncDone(uint32_t nodeId) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		auto found = currentSyncsPerNode_.find(nodeId);
 		assert(found != currentSyncsPerNode_.end());
 		assert(found->second != 0);
@@ -65,7 +65,7 @@ public:
 		}
 	}
 	bool TryToGetEntry(int32_t preferredNodeId, Entry& out, uint32_t& outIdx) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		if (preferredNodeId >= 0) {
 			const auto found = currentSyncsPerNode_.find(uint32_t(preferredNodeId));
 			if (found == currentSyncsPerNode_.end() || found->second >= int(maxSyncsPerNode_)) {
@@ -106,8 +106,8 @@ public:
 
 private:
 	const size_t maxSyncsPerNode_;
-	std::mutex mtx_;
-	std::list<Entry> entries_;
+	mutex mtx_;
+	elist<Entry> entries_;
 	std::map<uint32_t, int> currentSyncsPerNode_;
 };
 
@@ -122,21 +122,9 @@ public:
 		std::chrono::milliseconds netTimeout;
 	};
 
-	LeaderSyncThread(const Config& cfg, LeaderSyncQueue& syncQueue, SharedSyncState<>& sharedSyncState, ReindexerImpl& thisNode,
-					 ReplicationStatsCollector statsCollector, const Logger& l, std::once_flag& actShardingCfg)
-		: cfg_(cfg),
-		  syncQueue_(syncQueue),
-		  sharedSyncState_(sharedSyncState),
-		  thisNode_(thisNode),
-		  statsCollector_(statsCollector),
-		  client_(client::ReindexerConfig{10000, 0, cfg_.netTimeout, cfg_.enableCompression, true, "cluster_leader_syncer"}),
-		  log_(l),
-		  actShardingCfg_(actShardingCfg) {
-		terminateAsync_.set(loop_);
-		terminateAsync_.set([this](net::ev::async&) { client_.Stop(); });
-		thread_ = std::thread([this]() noexcept { sync(); });
-	}
-	void Terminate() {
+	LeaderSyncThread(const Config& cfg, LeaderSyncQueue& syncQueue, SharedSyncState& sharedSyncState, ReindexerImpl& thisNode,
+					 ReplicationStatsCollector statsCollector, const Logger& l, std::once_flag& actShardingCfg);
+	void Terminate() noexcept {
 		if (!terminate_) {
 			terminate_ = true;
 			terminateAsync_.send();
@@ -156,7 +144,7 @@ private:
 	LeaderSyncQueue& syncQueue_;
 	Error lastError_;
 	std::atomic<bool> terminate_ = false;
-	SharedSyncState<>& sharedSyncState_;
+	SharedSyncState& sharedSyncState_;
 	ReindexerImpl& thisNode_;
 	ReplicationStatsCollector statsCollector_;
 	client::CoroReindexer client_;
@@ -182,13 +170,13 @@ public:
 
 	LeaderSyncer(const Config& cfg, const Logger& l) noexcept : syncQueue_(cfg.maxSyncsPerNode), cfg_(cfg), log_(l) {}
 
-	void Terminate() {
-		std::lock_guard lck(mtx_);
+	void Terminate() noexcept {
+		lock_guard lck(mtx_);
 		for (auto& th : threads_) {
 			th.Terminate();
 		}
 	}
-	Error Sync(std::list<LeaderSyncQueue::Entry>&& entries, SharedSyncState<>& sharedSyncState, ReindexerImpl& thisNode,
+	Error Sync(elist<LeaderSyncQueue::Entry>&& entries, SharedSyncState& sharedSyncState, ReindexerImpl& thisNode,
 			   ReplicationStatsCollector statsCollector);
 
 private:
@@ -196,7 +184,7 @@ private:
 
 	LeaderSyncQueue syncQueue_;
 	const Config cfg_;
-	std::mutex mtx_;
+	mutex mtx_;
 	std::deque<LeaderSyncThread> threads_;
 	const Logger& log_;
 };

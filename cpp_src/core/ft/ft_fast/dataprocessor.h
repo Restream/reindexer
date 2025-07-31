@@ -1,9 +1,11 @@
 #pragma once
+
 #include <memory>
 #include <string_view>
 #include <thread>
 #include <variant>
 #include "dataholder.h"
+#include "estl/mutex.h"
 
 namespace reindexer {
 
@@ -43,13 +45,13 @@ private:
 	class ExceptionPtrWrapper {
 	public:
 		void SetException(std::exception_ptr&& ptr) noexcept {
-			std::lock_guard lck(mtx_);
+			lock_guard lck(mtx_);
 			if (!ex_) {
 				ex_ = std::move(ptr);
 			}
 		}
 		void RethrowException() {
-			std::lock_guard lck(mtx_);
+			lock_guard lck(mtx_);
 			if (ex_) {
 				auto ptr = std::move(ex_);
 				ex_ = nullptr;
@@ -57,13 +59,13 @@ private:
 			}
 		}
 		bool HasException() const noexcept {
-			std::lock_guard lck(mtx_);
+			lock_guard lck(mtx_);
 			return bool(ex_);
 		}
 
 	private:
 		std::exception_ptr ex_ = nullptr;
-		mutable std::mutex mtx_;
+		mutable mutex mtx_;
 	};
 
 	class ThreadsContainer {

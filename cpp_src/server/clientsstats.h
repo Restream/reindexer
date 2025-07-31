@@ -1,8 +1,8 @@
 #pragma once
 
-#include <memory>
 #include <unordered_map>
 #include "core/iclientsstats.h"
+#include "estl/mutex.h"
 
 namespace reindexer_server {
 
@@ -13,7 +13,7 @@ public:
 	void DeleteConnection(int64_t connectionId) override final;
 
 private:
-	std::mutex mtx_;
+	reindexer::mutex mtx_;
 	std::unordered_map<int64_t, reindexer::ClientConnectionStat> connections_;
 };
 

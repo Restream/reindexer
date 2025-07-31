@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/defnsconfigs.h"
 #include "core/formatters/namespacesname_fmt.h"
+#include "core/system_ns_names.h"
 #include "core/type_consts.h"
 #include "estl/shared_mutex.h"
 #include "events/subscriber_config.h"
@@ -20,11 +20,11 @@ public:
 	EventsListener(const std::string& dbName, size_t maxUpdatesQueueSize);
 	~EventsListener() override;
 
-	[[nodiscard]] Error SendEvents(EventsContainer&& recs) override final {
+	[[nodiscard]] Error SendEvents(EventsContainer&& recs) override final RX_REQUIRES(!mtx_) {
 		shared_lock lck(mtx_);
 		return updatesQueue_.template PushAsync<true>(std::move(recs)).first;
 	}
-	[[nodiscard]] bool HasListenersFor(const NamespaceName& ns) const noexcept override final {
+	[[nodiscard]] bool HasListenersFor(const NamespaceName& ns) const noexcept override final RX_REQUIRES(!mtx_) {
 		if (subsCount_.load(std::memory_order_acquire) == 0) {
 			return false;
 		}
@@ -33,7 +33,7 @@ public:
 		if (subs_.size() == 0 || !commonFilter_.nss.has_value()) {
 			return false;
 		}
-		if (std::string_view(ns) == kConfigNamespace) {
+		if (iequals(ns, kConfigNamespace)) {
 			if (!commonFilter_.withConfigNamespace) {
 				return false;
 			}
@@ -75,7 +75,7 @@ private:
 	void stop();
 	void rebuildCommonFilter();
 	void eventsLoop() noexcept;
-	void handleUpdates();
+	void handleUpdates() RX_REQUIRES(!mtx_);
 	void eraseUpdatesOnUnsubscribe(uint32_t uid, uint64_t from, uint64_t to, uint32_t replicas);
 	uint32_t buildStreamsMask(const ObserverInfo& observer, const EventRecord& rec) noexcept;
 
@@ -89,7 +89,7 @@ private:
 	std::atomic<int32_t> subsCount_ = {0};
 	SubscribersMapT subs_;
 	mutable shared_timed_mutex mtx_;
-	mutable std::mutex subUnsubMtx_;
+	mutable mutex subUnsubMtx_;
 	DBNamespaces commonFilter_;
 	const std::string dbName_;
 	std::atomic<int> serverID_ = {-1};

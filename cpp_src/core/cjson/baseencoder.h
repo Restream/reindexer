@@ -1,20 +1,27 @@
 #pragma once
 
-#include "cjsonbuilder.h"
 #include "core/payload/payloadiface.h"
 #include "fieldextractor.h"
-#include "jsonbuilder.h"
 #include "tagslengths.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
 
 class TagsMatcher;
-class MsgPackBuilder;
-class ProtobufBuilder;
-class CsvBuilder;
+class FieldsFilter;
 
-class IEncoderDatasourceWithJoins {
+namespace builders {
+class CsvBuilder;
+class ProtobufBuilder;
+class CJsonBuilder;
+class MsgPackBuilder;
+}  // namespace builders
+using builders::CsvBuilder;
+using builders::ProtobufBuilder;
+using builders::CJsonBuilder;
+using builders::MsgPackBuilder;
+
+class [[nodiscard]] IEncoderDatasourceWithJoins {
 public:
 	IEncoderDatasourceWithJoins() = default;
 	virtual ~IEncoderDatasourceWithJoins() = default;
@@ -22,9 +29,13 @@ public:
 	virtual size_t GetJoinedRowsCount() const noexcept = 0;
 	virtual size_t GetJoinedRowItemsCount(size_t rowId) const = 0;
 	virtual ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) = 0;
-	virtual const std::string& GetJoinedItemNamespace(size_t rowid) noexcept = 0;
-	virtual const TagsMatcher& GetJoinedItemTagsMatcher(size_t rowid) noexcept = 0;
-	virtual const FieldsSet& GetJoinedItemFieldsFilter(size_t rowid) noexcept = 0;
+	virtual const std::string& GetJoinedItemNamespace(size_t rowid) & noexcept = 0;
+	virtual const TagsMatcher& GetJoinedItemTagsMatcher(size_t rowid) & noexcept = 0;
+	virtual const FieldsFilter& GetJoinedItemFieldsFilter(size_t rowid) & noexcept = 0;
+
+	auto GetJoinedItemNamespace(size_t) && = delete;
+	auto GetJoinedItemTagsMatcher(size_t) && = delete;
+	auto GetJoinedItemFieldsFilter(size_t) && = delete;
 };
 
 template <typename Builder>
@@ -37,7 +48,7 @@ public:
 template <typename Builder>
 class BaseEncoder {
 public:
-	explicit BaseEncoder(const TagsMatcher* tagsMatcher, const FieldsSet* filter = nullptr);
+	explicit BaseEncoder(const TagsMatcher* tagsMatcher, const FieldsFilter* filter);
 	void Encode(ConstPayload& pl, Builder& builder,
 				const h_vector<IAdditionalDatasource<Builder>*, 2>& dss = h_vector<IAdditionalDatasource<Builder>*, 2>());
 	void Encode(std::string_view tuple, Builder& wrSer,
@@ -45,13 +56,13 @@ public:
 
 	const TagsLengths& GetTagsMeasures(ConstPayload& pl, IEncoderDatasourceWithJoins* ds = nullptr);
 
-protected:
+private:
 	using IndexedTagsPathInternalT = IndexedTagsPathImpl<16>;
 	constexpr static bool kWithTagsPathTracking = std::is_same_v<ProtobufBuilder, Builder>;
 	constexpr static bool kWithFieldExtractor = std::is_same_v<FieldsExtractor, Builder>;
 
 	struct DummyTagsPathScope {
-		DummyTagsPathScope(TagsPath& /*tagsPath*/, int16_t /*tagName*/) noexcept {}
+		DummyTagsPathScope(TagsPath&, TagName) noexcept {}
 	};
 	using PathScopeT = std::conditional_t<kWithTagsPathTracking, TagsPathScope<TagsPath>, DummyTagsPathScope>;
 
@@ -64,7 +75,7 @@ protected:
 
 	const TagsMatcher* tagsMatcher_{nullptr};
 	std::array<int, kMaxIndexes> fieldsoutcnt_;
-	const FieldsSet* filter_{nullptr};
+	const FieldsFilter* filter_{nullptr};
 	WrSerializer tmpPlTuple_;
 	TagsPath curTagsPath_;
 	IndexedTagsPathInternalT indexedTagsPath_;

@@ -4,6 +4,7 @@
 #include <bitset>
 #include <variant>
 #include "core/cjson/tagspath.h"
+#include "core/enums.h"
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
 #include "estl/overloaded.h"
@@ -12,7 +13,6 @@
 namespace reindexer {
 
 class TagsMatcher;
-static constexpr int kMaxIndexes = 256;	 // 'tuple'-index always occupies 1 slot
 
 using base_fields_set = h_vector<int16_t, 6>;
 static_assert(std::numeric_limits<base_fields_set::value_type>::max() >= kMaxIndexes,
@@ -226,8 +226,6 @@ public:
 	}
 	bool operator!=(const FieldsSet& f) const noexcept { return !(*this == f); }
 
-	enum class DumpWithMask { No, Yes };
-
 	template <typename T>
 	void Dump(T& os, DumpWithMask withMask) const {
 		const DumpFieldsPath fieldsPathDumper{os};
@@ -239,7 +237,7 @@ public:
 			os << *it;
 		}
 		os << "], ";
-		if (withMask == DumpWithMask::Yes) {
+		if (withMask == DumpWithMask_True) {
 			os << "mask: " << mask_ << ", ";
 		}
 		os << "tagsPaths: [";
@@ -296,7 +294,7 @@ private:
 				if (it != b) {
 					os_ << ", ";
 				}
-				os_ << *it;
+				os_ << it->AsNumber();
 			}
 			os_ << ']';
 		}

@@ -3,7 +3,7 @@
 #ifdef _MSC_VER
 #define REINDEX_USE_STD_SHARED_MUTEX 1
 #elif __cplusplus >= 201402
-// refuse to use std::shared_timed_mutex - it's much slower, than pthread_rwlock implementaion
+// refuse to use std::shared_timed_mutex - it's much slower, than pthread_rwlock implementaion on systems without VDSO
 // disable
 #define REINDEX_USE_STD_SHARED_MUTEX 0
 #else
@@ -17,20 +17,92 @@
 #endif	// __APPLE__
 
 #include <chrono>
+#include "thread_annotation_attributes.h"
 
-#if REINDEX_USE_STD_SHARED_MUTEX
+#if 1 || REINDEX_USE_STD_SHARED_MUTEX
+
 #include <shared_mutex>
+
+#ifdef RX_THREAD_SAFETY_ANALYSIS_ENABLE
+
+namespace reindexer {
+
+template <typename>
+class lock_guard;
+template <typename>
+class unique_lock;
+template <typename>
+class shared_lock;
+template <typename>
+class smart_lock;
+template <typename, typename>
+class contexted_unique_lock;
+template <typename, typename>
+class contexted_shared_lock;
+template <typename...>
+class scoped_lock;
+
+class [[nodiscard]] RX_CAPABILITY("mutex") shared_mutex : private std::shared_mutex {
+	using Base = std::shared_mutex;
+
+	friend shared_lock<shared_mutex>;
+	friend lock_guard<shared_mutex>;
+	friend unique_lock<shared_mutex>;
+	template <typename>
+	friend class smart_lock;
+	template <typename, typename>
+	friend class contexted_unique_lock;
+	template <typename, typename>
+	friend class contexted_shared_lock;
+	template <typename...>
+	friend class scoped_lock;
+
+public:
+	const shared_mutex& operator!() const& noexcept { return *this; }
+	auto operator!() const&& = delete;
+};
+
+class [[nodiscard]] RX_CAPABILITY("mutex") shared_timed_mutex : private std::shared_timed_mutex {
+	using Base = std::shared_timed_mutex;
+
+	friend shared_lock<shared_timed_mutex>;
+	friend lock_guard<shared_timed_mutex>;
+	friend unique_lock<shared_timed_mutex>;
+	template <typename>
+	friend class smart_lock;
+	template <typename, typename>
+	friend class contexted_unique_lock;
+	template <typename, typename>
+	friend class contexted_shared_lock;
+
+public:
+	const shared_timed_mutex& operator!() const& noexcept { return *this; }
+	auto operator!() const&& = delete;
+};
+
+}  // namespace reindexer
+
+#else  // RX_THREAD_SAFETY_ANALYSIS_ENABLE
+
+namespace reindexer {
+
+using std::shared_mutex;
 using std::shared_timed_mutex;
-using std::shared_lock;
+
+}  // namespace reindexer
+
+#endif	// RX_THREAD_SAFETY_ANALYSIS_ENABLE
+
 #else
 #include <errno.h>
 #include <pthread.h>
+#include <mutex>
 #include "tools/assertrx.h"
 #include "tools/clock.h"
 
 namespace reindexer {
 
-class __shared_mutex_pthread {
+class [[nodiscard]] RX_CAPABILITY("mutex") __shared_mutex_pthread {
 #ifdef PTHREAD_RWLOCK_INITIALIZER
 	pthread_rwlock_t _M_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 
@@ -61,7 +133,7 @@ public:
 		(void)__ret;
 	}
 
-	bool try_lock() noexcept {
+	[[nodiscard]] bool try_lock() noexcept {
 		int __ret = pthread_rwlock_trywrlock(&_M_rwlock);
 		if (__ret == EBUSY) {
 			return false;
@@ -84,7 +156,7 @@ public:
 		assertrx(__ret == 0);
 	}
 
-	bool try_lock_shared() noexcept {
+	[[nodiscard]] bool try_lock_shared() noexcept {
 		int __ret = pthread_rwlock_tryrdlock(&_M_rwlock);
 		if (__ret == EBUSY || __ret == EAGAIN) {
 			return false;
@@ -95,19 +167,20 @@ public:
 
 	void unlock_shared() noexcept { unlock(); }
 
-	void* native_handle() noexcept { return &_M_rwlock; }
+	[[nodiscard]] void* native_handle() noexcept { return &_M_rwlock; }
 };
 
 template <typename _Mutex>
-class shared_lock {
+class [[nodiscard]] RX_SCOPED_CAPABILITY shared_lock {
 public:
 	typedef _Mutex mutex_type;
 
 	shared_lock() noexcept : _M_pm(nullptr), _M_owns(false) {}
 
-	explicit shared_lock(mutex_type& __m) noexcept : _M_pm(&__m), _M_owns(true) { __m.lock_shared(); }
+	explicit shared_lock(mutex_type& __m) noexcept RX_ACQUIRE_SHARED(__m) : _M_pm(&__m), _M_owns(true) { __m.lock_shared(); }
+	explicit shared_lock(mutex_type& __m, std::defer_lock_t) noexcept RX_REQUIRES(__m) : _M_pm(&__m), _M_owns(false) {}
 
-	~shared_lock() {
+	~shared_lock() RX_RELEASE() {
 		if (_M_owns) {
 			_M_pm->unlock_shared();
 		}
@@ -123,18 +196,18 @@ public:
 		return *this;
 	}
 
-	void lock() noexcept {
+	void lock() noexcept RX_ACQUIRE_SHARED() {
 		_M_lockable();
 		_M_pm->lock_shared();
 		_M_owns = true;
 	}
 
-	bool try_lock() noexcept {
+	[[nodiscard]] bool try_lock() noexcept RX_TRY_ACQUIRE_SHARED(true) {
 		_M_lockable();
 		return _M_owns = _M_pm->try_lock_shared();
 	}
 
-	void unlock() noexcept {
+	void unlock() noexcept RX_RELEASE() {
 		assertrx(_M_owns);
 		_M_pm->unlock_shared();
 		_M_owns = false;
@@ -145,16 +218,16 @@ public:
 		std::swap(_M_owns, __u._M_owns);
 	}
 
-	mutex_type* release() noexcept {
+	[[nodiscard]] mutex_type* release() noexcept {
 		_M_owns = false;
 		auto ret = _M_pm;
 		_M_pm = nullptr;
 		return ret;
 	}
 
-	bool owns_lock() const noexcept { return _M_owns; }
-	explicit operator bool() const noexcept { return _M_owns; }
-	mutex_type* mutex() const noexcept { return _M_pm; }
+	[[nodiscard]] bool owns_lock() const noexcept { return _M_owns; }
+	[[nodiscard]] explicit operator bool() const noexcept { return _M_owns; }
+	[[nodiscard]] mutex_type* mutex() const noexcept { return _M_pm; }
 
 private:
 	void _M_lockable() const noexcept {
@@ -172,15 +245,15 @@ void swap(shared_lock<_Mutex>& __x, shared_lock<_Mutex>& __y) noexcept {
 	__x.swap(__y);
 }
 
-class shared_timed_mutex : public __shared_mutex_pthread {
+class [[nodiscard]] RX_CAPABILITY("mutex") shared_timed_mutex : private __shared_mutex_pthread {
 public:
 	template <class Rep, class Period>
-	bool try_lock_for(const std::chrono::duration<Rep, Period>& duration) {
+	[[nodiscard]] bool try_lock_for(const std::chrono::duration<Rep, Period>& duration) {
 		return try_lock_until(__clock::now_coarse() + duration);
 	}
 
 	template <class Rep, class Period>
-	bool try_lock_until(const std::chrono::time_point<Rep, Period>& absTime) {
+	[[nodiscard]] bool try_lock_until(const std::chrono::time_point<Rep, Period>& absTime) {
 		int __ret;
 #if PTHREAD_TIMED_LOCK_AVAILABLE
 		auto __sec = std::chrono::time_point_cast<std::chrono::seconds>(absTime);
@@ -202,12 +275,12 @@ public:
 	}
 
 	template <class Rep, class Period>
-	bool try_lock_shared_for(const std::chrono::duration<Rep, Period>& duration) {
+	[[nodiscard]] bool try_lock_shared_for(const std::chrono::duration<Rep, Period>& duration) {
 		return try_lock_shared_until(__clock::now_coarse() + duration);
 	}
 
 	template <class Clock, class Duration>
-	bool try_lock_shared_until(const std::chrono::time_point<Clock, Duration>& absTime) {
+	[[nodiscard]] bool try_lock_shared_until(const std::chrono::time_point<Clock, Duration>& absTime) {
 		int __ret;
 #if PTHREAD_TIMED_LOCK_AVAILABLE
 		auto __sec = std::chrono::time_point_cast<std::chrono::seconds>(absTime);
@@ -227,10 +300,13 @@ public:
 		assertrx(__ret == 0);
 		return true;
 	}
+	[[nodiscard]] const shared_timed_mutex& operator!() const& { return *this; }
+	auto operator!() const&& = delete;
 
 private:
 	using __clock = system_clock_w;
 };
+
 }  // namespace reindexer
 
 #endif

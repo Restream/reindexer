@@ -10,8 +10,8 @@ namespace reindexer {
 class Index;
 struct SortingEntry;
 
-struct SortingContext {
-	struct RawDataParams {
+struct [[nodiscard]] SortingContext {
+	struct [[nodiscard]] RawDataParams {
 		RawDataParams() = default;
 		RawDataParams(const void* p, const PayloadType& pt, int field) noexcept
 			: ptr(p), type(ptr ? pt.Field(field).Type() : KeyValueType::Undefined{}) {}
@@ -20,13 +20,13 @@ struct SortingContext {
 		KeyValueType type = KeyValueType::Undefined{};
 	};
 
-	struct FieldEntry {
+	struct [[nodiscard]] FieldEntry {
 		const SortingEntry& data;
 		Index* index = nullptr;
 		RawDataParams rawData = {};
 		const CollateOpts* opts = nullptr;
 	};
-	struct JoinedFieldEntry {
+	struct [[nodiscard]] JoinedFieldEntry {
 		JoinedFieldEntry(const SortingEntry& d, unsigned nsI, std::string&& f, int i)
 			: data(d), nsIdx(nsI), index(i), field(std::move(f)) {}
 		JoinedFieldEntry(const JoinedFieldEntry&) = delete;
@@ -38,11 +38,17 @@ struct SortingContext {
 		int index;	// = IndexValueType::NotSet;
 		std::string field;
 	};
-	struct ExpressionEntry {
+	struct [[nodiscard]] ExpressionEntry {
 		const SortingEntry& data;
 		size_t expression;
 	};
-	using Entry = std::variant<FieldEntry, JoinedFieldEntry, ExpressionEntry>;
+	struct [[nodiscard]] Entry : public std::variant<FieldEntry, JoinedFieldEntry, ExpressionEntry> {
+		using Base = std::variant<FieldEntry, JoinedFieldEntry, ExpressionEntry>;
+		using Base::Base;
+		reindexer::Desc Desc() const;
+		[[nodiscard]] const Base& AsVariant() const& noexcept { return *this; }
+		auto AsVariant() const&& = delete;
+	};
 
 	[[nodiscard]] int sortId() const noexcept {
 		if (!enableSortOrders) {
@@ -101,6 +107,8 @@ struct SortingContext {
 			}
 		}
 	}
+
+	Reranker ToReranker(const NamespaceImpl&) const;
 
 	bool enableSortOrders = false;
 	h_vector<Entry, 1> entries;

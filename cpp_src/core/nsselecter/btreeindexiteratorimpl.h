@@ -84,7 +84,7 @@ public:
 
 	template <typename TIdSet>
 	void detectCurrentIdsetType(const TIdSet& idset) noexcept {
-		if (std::is_same<TIdSet, IdSet>() && !idset.IsCommited()) {
+		if (std::is_same<TIdSet, IdSet>() && !idset.IsCommitted()) {
 			currentIdsetType_ = IdsetType::Btree;
 		} else {
 			currentIdsetType_ = IdsetType::Plain;
@@ -202,10 +202,17 @@ public:
 	}
 
 private:
+#ifdef REINDEX_DEBUG_CONTAINERS
+	IdSetPlain::const_iterator it_;
+	base_idsetset::const_iterator itset_;
+
+#else  // !REINDEX_DEBUG_CONTAINERS
 	union {
 		IdSetPlain::const_iterator it_;
 		base_idsetset::const_iterator itset_;
 	};
+
+#endif	// !REINDEX_DEBUG_CONTAINERS
 
 	typename Base::ForwardIterator idxMapItBegin_;
 	typename Base::ForwardIterator idxMapItEnd_;
@@ -273,11 +280,16 @@ public:
 	}
 
 private:
+#ifdef REINDEX_DEBUG_CONTAINERS
+	IdSetPlain::const_reverse_iterator rit_;
+	base_idsetset::const_reverse_iterator ritset_;
+#else
 	union {
 		IdSetPlain::const_reverse_iterator rit_;
 		base_idsetset::const_reverse_iterator ritset_;
 	};
 
+#endif
 	typename Base::ReverseIterator idxMapRitBegin_;
 	typename Base::ReverseIterator idxMapRitEnd_;
 	typename Base::ReverseIterator idxMapRit_;

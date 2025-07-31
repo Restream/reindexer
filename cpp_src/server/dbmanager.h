@@ -4,7 +4,7 @@
 #include "authmanager.h"
 #include "core/reindexer.h"
 #include "core/storage/storagetype.h"
-#include "estl/mutex.h"
+#include "estl/marked_mutex.h"
 #include "estl/shared_mutex.h"
 #include "server/config.h"
 #include "tools/crypt.h"
@@ -51,7 +51,7 @@ class DBManager;
 class AuthContext;
 static AuthContext MakeSystemAuthContext();
 
-/// Context of user authentification
+/// Context of user authentication
 class AuthContext {
 	friend DBManager;
 	friend AuthContext MakeSystemAuthContext();
@@ -71,13 +71,13 @@ public:
 		std::string login_;
 	};
 
-	/// Constuct empty context
+	/// Construct empty context
 	AuthContext() = default;
 	/// Construct context with user credentials
 	/// @param login - User's login
 	/// @param password - User's password
 	AuthContext(const std::string& login, const std::string& password) : login_(login), password_(password) {}
-	/// Set expected leader's replication clusted ID
+	/// Set expected leader's replication cluster ID
 	/// @param clusterID - Expected cluster ID value
 	void SetExpectedClusterID(int clusterID) noexcept {
 		checkClusterID_ = true;
@@ -86,41 +86,12 @@ public:
 
 	enum class CalledFrom { Core, RPCServer, HTTPServer, GRPC };
 
-	/// Check if reqired role meets role from context, and get pointer to Reindexer DB object
+	/// Check if required role meets role from context, and get pointer to Reindexer DB object
 	/// @param role - Requested role one of UserRole enum
 	/// @param ret - Pointer to returned database pointer
 	/// @return Error - error object
 	template <CalledFrom caller, typename... Args>
-	Error GetDB(UserRole role, Reindexer** ret, Args&&... args) noexcept {
-		if (role > role_) {
-			return Error(errForbidden, "Forbidden: need role %s of db '%s' user '%s' have role=%s", UserRoleName(role), dbName_, login_,
-						 UserRoleName(role_));
-		}
-
-		const bool shardingRole = role_ == UserRole::kRoleSharding;
-		const bool replicationRole = role_ == UserRole::kRoleReplication;
-
-		if constexpr (caller == CalledFrom::RPCServer) {
-			if (role > kRoleDataRead) {
-				return [&](lsn_t lsn, int emmiterServerId, int shardId) -> Error {
-					if rx_unlikely ((replicationRole && lsn.isEmpty() && emmiterServerId < 0) || (shardingRole && shardId < 0)) {
-						return Error(errForbidden, "Forbidden: %s is required to perform modify operation with the role '%s'",
-									 replicationRole ? "a non-empty lsn or emmiter server id" : "a non-negative shardId",
-									 UserRoleName(role_));
-					}
-					*ret = db_;
-					return {};
-				}(std::forward<Args>(args)...);
-			}
-		} else {
-			if rx_unlikely (shardingRole || replicationRole) {
-				return Error(errForbidden, "Forbidden: incorrect role%s: '%s'",
-							 caller == CalledFrom::HTTPServer ? " in the HTTP protocol" : "", UserRoleName(role_));
-			}
-		}
-		*ret = db_;
-		return {};
-	}
+	Error GetDB(UserRole role, Reindexer** ret, Args&&... args) noexcept;
 	/// Reset Reindexer DB object pointer in context
 	void ResetDB() noexcept {
 		db_ = nullptr;
@@ -166,8 +137,7 @@ public:
 	/// Read all found databases to RAM
 	/// Read user's database
 	/// @param storageEngine - underlying storage engine ("leveldb"/"rocksdb")
-	/// @param allowDBErrors - true: Ignore errors during existing DBs load; false: Return error if error occures during DBs load
-	/// @param withAutorepair - true: Enable storage autorepair feature for this DB; false: Disable storage autorepair feature for this DB
+	/// @param allowDBErrors - true: Ignore errors during existing DBs load; false: Return error if error occurs during DBs load
 	/// @return Error - error object
 	Error Init();
 	/// Authenticate user, and grant roles to database with specified dbName
@@ -175,24 +145,24 @@ public:
 	/// @param auth - AuthContext with user credentials
 	/// @return Error - error object
 	Error Login(const std::string& dbName, AuthContext& auth);
-	/// Open database and authentificate user
+	/// Open database and authenticate user
 	/// @param dbName - database name, Can't be empty
 	/// @param auth - AuthContext filled with user credentials or already authorized AuthContext
 	/// @param canCreate - true: Create database, if not exists; false: return error, if database not exists
 	/// @return Error - error object
-	Error OpenDatabase(const std::string& dbName, AuthContext& auth, bool canCreate);
+	Error OpenDatabase(const std::string& dbName, AuthContext& auth, bool canCreate) RX_REQUIRES(!mtx_);
 	/// Drop database from disk storage and memory. Reindexer DB object will be destroyed
-	/// @param auth - Authorized AuthContext, with valid Reindexer DB object and reasonale role
+	/// @param auth - Authorized AuthContext, with valid Reindexer DB object and reasonable role
 	/// @return Error - error object
-	Error DropDatabase(AuthContext& auth);
+	Error DropDatabase(AuthContext& auth) RX_REQUIRES(!mtx_);
 	/// Check if security disabled
 	/// @return bool - true: security checks are disabled; false: security checks are enabled
 	bool IsNoSecurity() { return !config_.EnableSecurity; }
 	/// Enum list of available databases
 	/// @return names of available databases
-	std::vector<std::string> EnumDatabases();
+	std::vector<std::string> EnumDatabases() RX_REQUIRES(!mtx_);
 
-	void ShutdownClusters();
+	void ShutdownClusters() RX_REQUIRES(!mtx_);
 
 private:
 	friend class AuthManager;
@@ -202,9 +172,9 @@ private:
 	Error readUsersJSON() noexcept;
 	Error createDefaultUsersYAML() noexcept;
 	static UserRole userRoleFromString(std::string_view strRole);
-	Error loadOrCreateDatabase(const std::string& name, bool allowDBErrors, bool withAutorepair, const AuthContext& auth = AuthContext());
+	Error loadOrCreateDatabase(const std::string& name, bool allowDBErrors, const AuthContext& auth = AuthContext()) RX_REQUIRES(mtx_);
 
-	std::unordered_map<std::string, std::unique_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_;
+	std::unordered_map<std::string, std::unique_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_ RX_GUARDED_BY(mtx_);
 	std::unordered_map<std::string, UserRecord> users_;
 	const ServerConfig& config_;
 	Mutex mtx_;
@@ -227,7 +197,7 @@ std::enable_if_t<std::is_same_v<UserLoginT, AuthContext::UserLogin>, Cout>& oper
 }  // namespace reindexer_server
 
 template <>
-struct fmt::printf_formatter<reindexer_server::AuthContext::UserLogin> {
+struct fmt::formatter<reindexer_server::AuthContext::UserLogin> {
 	template <typename ContextT>
 	constexpr auto parse(ContextT& ctx) {
 		return ctx.begin();
@@ -238,5 +208,37 @@ struct fmt::printf_formatter<reindexer_server::AuthContext::UserLogin> {
 	}
 };
 
-template <>
-struct fmt::formatter<reindexer_server::AuthContext::UserLogin> : public fmt::printf_formatter<reindexer_server::AuthContext::UserLogin> {};
+namespace reindexer_server {
+
+template <AuthContext::CalledFrom caller, typename... Args>
+Error AuthContext::GetDB(UserRole role, Reindexer** ret, Args&&... args) noexcept {
+	if (role > role_) {
+		return Error(errForbidden, "Forbidden: need role {} of db '{}' user '{}' have role={}", UserRoleName(role), dbName_, login_,
+					 UserRoleName(role_));
+	}
+
+	const bool shardingRole = role_ == UserRole::kRoleSharding;
+	const bool replicationRole = role_ == UserRole::kRoleReplication;
+
+	if constexpr (caller == CalledFrom::RPCServer) {
+		if (role > kRoleDataRead) {
+			return [&](lsn_t lsn, int emitterServerId, int shardId) -> Error {
+				if rx_unlikely ((replicationRole && lsn.isEmpty() && emitterServerId < 0) || (shardingRole && shardId < 0)) {
+					return Error(errForbidden, "Forbidden: {} is required to perform modify operation with the role '{}'",
+								 replicationRole ? "a non-empty lsn or emitter server id" : "a non-negative shardId", UserRoleName(role_));
+				}
+				*ret = db_;
+				return {};
+			}(std::forward<Args>(args)...);
+		}
+	} else {
+		if rx_unlikely (shardingRole || replicationRole) {
+			return Error(errForbidden, "Forbidden: incorrect role{}: '{}'", caller == CalledFrom::HTTPServer ? " in the HTTP protocol" : "",
+						 UserRoleName(role_));
+		}
+	}
+	*ret = db_;
+	return {};
+}
+
+}  // namespace reindexer_server

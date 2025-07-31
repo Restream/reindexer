@@ -4,10 +4,11 @@
 
 namespace reindexer {
 
-class KbLayout : public ITokenFilter {
+class KbLayout final : public ITokenFilter {
 public:
 	KbLayout();
-	virtual void GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& result, int proc) override final;
+	void GetVariants(const std::wstring& data, ITokenFilter::ResultsStorage& result, int proc,
+					 fast_hash_map<std::wstring, size_t>& patternsUsed) override final;
 
 private:
 	void PrepareRuLayout();
@@ -15,13 +16,10 @@ private:
 
 	void setEnLayout(wchar_t sym, wchar_t data);
 
-	static const int ruLettersStartUTF16 = 1072;
-	static const int allSymbolStartUTF16 = 39;
-
-	static const int ruAlfavitSize = 32;
+	static const int ruAlphabetSize = 32;
 	static const int engAndAllSymbols = 87;
 
-	wchar_t ru_layout_[ruAlfavitSize];
+	wchar_t ru_layout_[ruAlphabetSize];
 	wchar_t all_symbol_[engAndAllSymbols];
 };
 

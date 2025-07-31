@@ -1,9 +1,10 @@
 #pragma once
 
-#include <condition_variable>
 #include "client/transaction.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/payload/payloadtype.h"
+#include "estl/condition_variable.h"
+#include "estl/mutex.h"
 
 namespace reindexer {
 
@@ -27,7 +28,7 @@ public:
 private:
 	class AsyncData {
 	public:
-		AsyncData(std::mutex& mtx) noexcept : mtx_(mtx) {}
+		AsyncData(mutex& mtx) noexcept : mtx_(mtx) {}
 		void AddNewAsyncRequest();
 		void OnAsyncRequestDone(const Error& e) noexcept;
 		Error AwaitAsyncRequests() noexcept;
@@ -37,8 +38,8 @@ private:
 		}
 
 	private:
-		std::mutex& mtx_;
-		std::condition_variable cv_;
+		mutex& mtx_;
+		condition_variable cv_;
 		Error err_;
 		unsigned asyncRequests_ = 0;
 	};
@@ -50,7 +51,7 @@ private:
 
 	client::Transaction tx_;
 	int shardId_ = ShardingKeyType::NotSetShard;
-	std::mutex mtx_;
+	mutex mtx_;
 	AsyncData asyncData_;
 	ItemCache itemCache_;
 };

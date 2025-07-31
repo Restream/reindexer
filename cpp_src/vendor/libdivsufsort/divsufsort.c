@@ -24,6 +24,11 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#ifndef _MSC_VER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
+
 #include "divsufsort_private.h"
 #ifdef _OPENMP
 # include <omp.h>
@@ -289,10 +294,10 @@ construct_BWT(const sauchar_t *T, saidx_t *SA,
         } else if(s != 0) {
           assert(j);
           *j = ~s;
-#ifndef NDEBUG
-        } else {
-          assert(T[s] == c1);
-#endif
+// #ifndef NDEBUG
+//         } else {
+//           assert(T[s] == c1);
+// #endif
         }
       }
     }
@@ -398,3 +403,7 @@ const char *
 divsufsort_version(void) {
   return PROJECT_VERSION_FULL;
 }
+
+#ifndef _MSC_VER
+#pragma GCC diagnostic pop
+#endif

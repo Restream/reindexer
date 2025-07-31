@@ -13,6 +13,7 @@ public:
 
 	explicit NamespaceNameImpl(std::string_view name) {
 		size_t i = 0;
+		data_.reserve(2 * name.size());
 		data_.resize(name.size());
 		for (auto it = data_.begin(), itEnd = data_.end(); it != itEnd; ++it, ++i) {
 			(*it) = tolower(name[i]);
@@ -28,18 +29,17 @@ public:
 
 	size_t Hash() const noexcept { return hash_; }
 	bool Empty() const noexcept { return data_.empty(); }
-	size_t Size() const noexcept { return data_.size(); }
-	std::string_view OriginalName() const noexcept {
+	std::string_view ToLower() const noexcept { return std::string_view(data_.data(), data_.size() - originalNameStart_); }
+	operator std::string_view() const noexcept {
 		return std::string_view(data_.data() + originalNameStart_, data_.size() - originalNameStart_);
 	}
-	operator std::string_view() const noexcept { return std::string_view(data_.data(), data_.size() - originalNameStart_); }
 
 private:
-	using VecT = h_vector<char, 44>;
+	using VecT = h_vector<char, 48>;
 
 	size_t hash_;
 	VecT::size_type originalNameStart_;
-	h_vector<char, 48> data_;
+	VecT data_;
 };
 }  // namespace namespace_name_impl
 
@@ -52,18 +52,14 @@ public:
 
 	size_t hash() const noexcept { return impl_ ? impl_->Hash() : 0; }
 	bool empty() const noexcept { return !impl_ || impl_->Empty(); }
-	size_t size() const noexcept { return impl_ ? impl_->Size() : 0; }
-
-	std::string_view OriginalName() const noexcept { return impl_ ? impl_->OriginalName() : std::string_view(); }
 	operator std::string_view() const noexcept { return impl_ ? std::string_view(*impl_) : std::string_view(); }
+	std::string_view ToLower() const noexcept { return impl_ ? impl_->ToLower() : std::string_view(); }
 
 private:
 	intrusive_ptr<ValueT> impl_;
 };
 
-inline bool operator==(const NamespaceName& lhs, const NamespaceName& rhs) noexcept {
-	return std::string_view(lhs) == std::string_view(rhs);
-}
+inline bool operator==(const NamespaceName& lhs, const NamespaceName& rhs) noexcept { return lhs.ToLower() == rhs.ToLower(); }
 
 struct NamespaceNameEqual {
 	using is_transparent = void;
@@ -77,9 +73,7 @@ struct NamespaceNameEqual {
 struct NamespaceNameLess {
 	using is_transparent = void;
 
-	bool operator()(const NamespaceName& lhs, const NamespaceName& rhs) const noexcept {
-		return std::string_view(lhs) < std::string_view(rhs);
-	}
+	bool operator()(const NamespaceName& lhs, const NamespaceName& rhs) const noexcept { return lhs.ToLower() < rhs.ToLower(); }
 	bool operator()(std::string_view lhs, std::string_view rhs) const noexcept { return iless(lhs, rhs); }
 	bool operator()(const NamespaceName& lhs, std::string_view rhs) const noexcept { return iless(lhs, rhs); }
 	bool operator()(std::string_view lhs, const NamespaceName& rhs) const noexcept { return iless(lhs, rhs); }

@@ -1,21 +1,22 @@
 #pragma once
 
 #include <optional>
-#include <unordered_set>
 #include "core/index/payload_map.h"
 #include "core/query/queryentry.h"
-#include "estl/one_of.h"
+#include "distincthelpers.h"
+#include "estl/fast_hash_set.h"
 #include "vendor/cpp-btree/btree_map.h"
 
 namespace reindexer {
 
-struct AggregationResult;
+class AggregationResult;
 
-class Aggregator {
+class [[nodiscard]] Aggregator {
 public:
-	struct SortingEntry {
+	struct [[nodiscard]] SortingEntry {
+		SortingEntry(int fld, Desc d) noexcept : field{fld}, desc{d} {}
 		int field;
-		bool desc;
+		Desc desc;
 		enum { Count = -1 };
 	};
 
@@ -26,19 +27,37 @@ public:
 	~Aggregator();
 
 	void Aggregate(const PayloadValue& lhs);
-	AggregationResult GetResult() const;
+	AggregationResult MoveResult() &&;
 
 	Aggregator(const Aggregator&) = delete;
 	Aggregator& operator=(const Aggregator&) = delete;
 	Aggregator& operator=(Aggregator&&) = delete;
 
-	AggType Type() const noexcept { return aggType_; }
-	const h_vector<std::string, 1>& Names() const noexcept { return names_; }
+	[[nodiscard]] AggType Type() const noexcept { return aggType_; }
+	[[nodiscard]] const h_vector<std::string, 1>& Names() const& noexcept {
+		assertrx_throw(isValid_);
+		return names_;
+	}
+	auto Names() const&& = delete;
 
-	bool DistinctChanged() noexcept { return distinctChecker_(); }
+	[[nodiscard]] bool DistinctChanged() noexcept {
+		assertrx_throw(isValid_);
+		return distinctChecker_();
+	}
+	[[nodiscard]] const FieldsSet& GetFieldSet() const& noexcept {
+		assertrx_throw(isValid_);
+		return fields_;
+	}
+	auto GetFieldSet() const&& = delete;
+
+	void ResetDistinctSet() {
+		assertrx_throw(isValid_);
+		assertrx_throw(this->Type() == AggType::AggDistinct);
+		distincts_->clear();
+	}
 
 private:
-	enum Direction { Desc = -1, Asc = 1 };
+	enum class Direction { Desc = -1, Asc = 1 };
 	class MultifieldComparator;
 	class SinglefieldComparator;
 	struct MultifieldOrderedMap;
@@ -60,44 +79,12 @@ private:
 
 	std::unique_ptr<Facets> facets_;
 
-	class RelaxVariantCompare {
-	public:
-		RelaxVariantCompare(const PayloadType& type, const FieldsSet& fields) : type_(type), fields_(fields) {}
-		bool operator()(const Variant& v1, const Variant& v2) const {
-			if (!v1.Type().IsSame(v2.Type())) {
-				return false;
-			}
-			return v1.Type().EvaluateOneOf(
-				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int,
-						  KeyValueType::Uuid>) { return v1.Compare<NotComparable::Return>(v2) == ComparationResult::Eq; },
-				[&](KeyValueType::Composite) {
-					return ConstPayload(type_, static_cast<const PayloadValue&>(v1)).IsEQ(static_cast<const PayloadValue&>(v2), fields_);
-				},
-				[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined>) -> bool { throw_as_assert; });
-		}
-
-	private:
-		PayloadType type_;
-		FieldsSet fields_;
-	};
-	struct DistinctHasher {
-		DistinctHasher(const PayloadType& type, const FieldsSet& fields) : type_(type), fields_(fields) {}
-		size_t operator()(const Variant& v) const {
-			return v.Type().EvaluateOneOf(
-				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int,
-						  KeyValueType::Uuid>) noexcept { return v.Hash(); },
-				[&](KeyValueType::Composite) { return ConstPayload(type_, static_cast<const PayloadValue&>(v)).GetHash(fields_); },
-				[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined>) -> size_t { throw_as_assert; });
-		}
-
-	private:
-		PayloadType type_;
-		FieldsSet fields_;
-	};
+	std::vector<DistinctHelpers::DataType> distinctDataVector_;
+	bool isValid_ = true;
 
 	class DistinctChangeChecker {
 	public:
-		DistinctChangeChecker(const Aggregator& aggregator) noexcept : aggregator_(aggregator) {}
+		explicit DistinctChangeChecker(const Aggregator& aggregator) noexcept : aggregator_(aggregator) {}
 		[[nodiscard]] bool operator()() noexcept {
 			assertrx_dbg(aggregator_.Type() == AggType::AggDistinct);
 			assertrx_dbg(aggregator_.distincts_);
@@ -111,9 +98,31 @@ private:
 		size_t lastCheckSize_ = 0;
 	} distinctChecker_;
 
-	typedef std::unordered_set<Variant, DistinctHasher, RelaxVariantCompare> HashSetVariantRelax;
+	void getData(const PayloadValue& item, std::vector<DistinctHelpers::DataType>& data, size_t& maxIndex) {
+		data.resize(0);
+		data.reserve(fields_.size());
+		ConstPayload pv{payloadType_, item};
+		maxIndex = 0;
+		size_t tagPathIndx = 0;
+		for (size_t i = 0; i < fields_.size(); i++) {
+			VariantArray b;
+			if (fields_[i] == IndexValueType::SetByJsonPath) {
+				const TagsPath& tagsPath = fields_.getTagsPath(tagPathIndx);
+				tagPathIndx++;
+				pv.GetByJsonPath(tagsPath, b, KeyValueType::Undefined{});
+			} else {
+				pv.Get(fields_[i], b);
+			}
+			maxIndex = std::max(maxIndex, size_t(b.size()));
+			data.emplace_back(std::move(b), IsArray(b.IsArrayValue()));
+		}
+	}
+	using HashSetVariantRelax =
+		fast_hash_set<DistinctHelpers::FieldsValue, DistinctHelpers::DistinctHasher<DistinctHelpers::IsCompositeSupported::Yes>,
+					  DistinctHelpers::CompareVariantVector<DistinctHelpers::IsCompositeSupported::Yes>,
+					  DistinctHelpers::LessDistinctVector<DistinctHelpers::IsCompositeSupported::Yes>>;
 	std::unique_ptr<HashSetVariantRelax> distincts_;
-	bool compositeIndexFields_;
+	const bool compositeIndexFields_;
 };
 
 }  // namespace reindexer

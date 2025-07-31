@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "base_fixture.h"
@@ -9,7 +8,7 @@
 class ApiTvSimpleComparators : private BaseFixture {
 public:
 	virtual ~ApiTvSimpleComparators() {}
-	ApiTvSimpleComparators(Reindexer* db, const std::string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+	ApiTvSimpleComparators(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 			.AddIndex("genre", "-", "int64", IndexOpts())
 			.AddIndex("year", "-", "int", IndexOpts())
@@ -57,6 +56,14 @@ private:
 	void Query4CondRange(State& state);
 	void Query4CondRangeTotal(State& state);
 	void Query4CondRangeCachedTotal(State& state);
+
+	void QueryDistinctOneField(State& state);
+	void QueryDistinctTwoField(State& state);
+	void QueryDistinctTwoFieldArray(State& state);
+
+	void QueryDistinctOneFieldLimit(State& state);
+	void QueryDistinctTwoFieldLimit(State& state);
+	void QueryDistinctTwoFieldArrayLimit(State& state);
 
 	std::vector<std::string> countries_;
 	std::vector<std::string> locations_;

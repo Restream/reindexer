@@ -1,7 +1,9 @@
 #pragma once
+#include "core/enums.h"
+#include "core/ft/areaholder.h"
 #include "core/ft/ftdsl.h"
 #include "core/ft/idrelset.h"
-#include "core/selectfunc/ctx/ftctx.h"
+#include "core/index/ft_preselect.h"
 #include "dataholder.h"
 
 namespace reindexer {
@@ -53,18 +55,17 @@ public:
 	template <typename PosT>
 	struct MergedIdRelGroupArea : public MergedIdRel {
 		using TypeTParam = PosT;
-		MergedIdRelGroupArea(IdRelType&& c, int r, int q, RVector<std::pair<PosT, int>, 4>&& p)
+		MergedIdRelGroupArea(IdRelType&& c, int r, int q, h_vector<std::pair<PosT, int>, 4>&& p)
 			: MergedIdRel(std::move(c), r, q), posTmp(std::move(p)) {}
 		MergedIdRelGroupArea(MergedIdRelGroupArea&&) noexcept = default;
 
-		RVector<std::pair<PosT, int>, 4>
+		h_vector<std::pair<PosT, int>, 4>
 			posTmp;	 // For group only. Collect all positions for subpatterns and the index in the vector with which we merged
-		RVector<RVector<std::pair<PosT, int>, 4>, 2> wordPosForChain;
+		h_vector<h_vector<std::pair<PosT, int>, 4>, 2> wordPosForChain;
 	};
 
 	template <FtUseExternStatuses useExternSt, typename MergeType>
-	MergeType Process(FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses::Statuses&& mergeStatuses,
-					  const RdxContext&);
+	MergeType Process(FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext&);
 
 private:
 	struct TextSearchResult {
@@ -109,7 +110,7 @@ private:
 	};
 
 	// text search results for a single token (word) in a search query
-	class TextSearchResults : public RVector<TextSearchResult, 8> {
+	class TextSearchResults : public h_vector<TextSearchResult, 8> {
 	public:
 		TextSearchResults(FtDSLEntry&& t, FoundWordsType* fwPtr) : term(std::move(t)), foundWords(fwPtr) { assertrx(foundWords); }
 		void SwitchToInternalWordsMap() noexcept {
@@ -151,7 +152,7 @@ private:
 		std::vector<FtVariantEntry> variants;
 		// Variants with low relevancy. For example, short terms, received from stemmers.
 		// Those variants will be handled separately from main variants array (and some of them will probably be excluded)
-		RVector<FtBoundVariantEntry, 4> lowRelVariants;
+		h_vector<FtBoundVariantEntry, 4> lowRelVariants;
 
 		// Found words map, shared between all the terms
 		// The main purpose is to detect unique words and also reuse already allocated map buckets
@@ -161,6 +162,7 @@ private:
 		// It will be cleared for each variant, so it's separated from OR/NOT words map
 		std::unique_ptr<FoundWordsType> foundWordsSharedAND;
 		std::vector<TextSearchResults> rawResults;
+		std::vector<std::wstring> variantsForTypos;
 		size_t totalORVids = 0;
 	};
 
@@ -183,13 +185,14 @@ private:
 				useMaxLettPermDist_ = maxLettPermDist.second;
 			}
 		}
-		size_t Process(std::vector<TextSearchResults>&, const DataHolder<IdCont>&, const FtDSLEntry&);
+		size_t Process(std::vector<TextSearchResults>&, const DataHolder<IdCont>&, const std::wstring& pattern,
+					   const std::vector<std::wstring>& variantsForTypos);
 
 	private:
 		template <typename... Args>
-		void logTraceF(int level, const char* fmt, Args&&... args);
+		void logTraceF(int level, fmt::format_string<Args...> fmt, Args&&... args);
 		bool isWordFitMaxTyposDist(const WordTypo& found, const typos_context::TyposVec& current);
-		bool isWordFitMaxLettPerm(const std::string_view foundWord, const WordTypo& found, const std::wstring& currentWord,
+		bool isWordFitMaxLettPerm(const std::string_view foundWord, const WordTypo& found, const std::wstring_view currentWord,
 								  const typos_context::TyposVec& current);
 
 		const int maxTyposInWord_;
@@ -206,7 +209,7 @@ private:
 
 	template <typename Bm25Type, typename MergedOffsetT, typename MergeType>
 	MergeType mergeResults(std::vector<TextSearchResults>&& rawResults, size_t totalORVids, const std::vector<size_t>& synonymsBounds,
-						   bool inTransaction, FtSortType ftSortType, FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext&);
+						   bool inTransaction, RankSortType, FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext&);
 
 	template <typename Bm25Type, typename MergedOffsetT, typename MergeType>
 	void mergeIteration(TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses, MergeType& merged,
@@ -290,16 +293,20 @@ private:
 
 	template <typename MergedOffsetT, typename MergeType>
 	MergeType mergeResultsBmType(std::vector<TextSearchResults>&& results, size_t totalORVids, const std::vector<size_t>& synonymsBounds,
-								 bool inTransaction, FtSortType ftSortType, FtMergeStatuses::Statuses&& mergeStatuses,
-								 const RdxContext& rdxCtx);
+								 bool inTransaction, RankSortType, FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext& rdxCtx);
 
 	void debugMergeStep(const char* msg, int vid, float normBm25, float normDist, int finalRank, int prevRank);
 	template <FtUseExternStatuses>
 	void processVariants(FtSelectContext&, const FtMergeStatuses::Statuses& mergeStatuses);
 	template <FtUseExternStatuses>
 	void processLowRelVariants(FtSelectContext&, const FtMergeStatuses::Statuses& mergeStatuses);
-	void prepareVariants(std::vector<FtVariantEntry>&, RVector<FtBoundVariantEntry, 4>* lowRelVariants, size_t termIdx,
-						 const std::vector<std::string>& langs, const FtDSLQuery&, std::vector<SynonymsDsl>*);
+
+	void applyStemmers(const std::string& pattern, int proc, const std::vector<std::string>& langs, const FtDslOpts& termOpts,
+					   bool keepSuffForStemmedVars, std::vector<FtVariantEntry>& variants, h_vector<FtBoundVariantEntry, 4>* lowRelVariants,
+					   std::string& buffer);
+	void prepareVariants(std::vector<FtVariantEntry>&, h_vector<FtBoundVariantEntry, 4>* lowRelVariants, size_t termIdx,
+						 const std::vector<std::string>& langs, FtDSLQuery&, std::vector<SynonymsDsl>*,
+						 std::vector<std::wstring>* variantsForTypos);
 	template <FtUseExternStatuses>
 	void processStepVariants(FtSelectContext& ctx, typename DataHolder<IdCont>::CommitStep& step, const FtVariantEntry& variant,
 							 unsigned curRawResultIdx, const FtMergeStatuses::Statuses& mergeStatuses, int vidsLimit);

@@ -2,7 +2,7 @@
 
 #include <optional>
 #include "core/dbconfig.h"
-#include "estl/mutex.h"
+#include "estl/marked_mutex.h"
 #include "tools/clock.h"
 
 namespace reindexer {
@@ -17,7 +17,7 @@ template <typename T>
 struct ActionWrapper {};
 
 // to store durations for different MutexMark types and methods calls in one array
-enum class DurationStorageIdx : unsigned {
+enum class [[nodiscard]] DurationStorageIdx : unsigned {
 	DbManager = 0u,
 	IndexText,
 	Namespace,
@@ -26,10 +26,12 @@ enum class DurationStorageIdx : unsigned {
 	CloneNs,
 	AsyncStorage,
 	DataFlush,
-	StorageSize
+	StorageDirOps,
+
+	StorageSize	 // This must be the last element
 };
 
-constexpr DurationStorageIdx DurationStorageIdxCast(MutexMark mark) {
+consteval DurationStorageIdx DurationStorageIdxCast(MutexMark mark) noexcept {
 	switch (mark) {
 		case MutexMark::DbManager:
 			return DurationStorageIdx::DbManager;
@@ -45,6 +47,8 @@ constexpr DurationStorageIdx DurationStorageIdxCast(MutexMark mark) {
 			return DurationStorageIdx::CloneNs;
 		case MutexMark::AsyncStorage:
 			return DurationStorageIdx::AsyncStorage;
+		case MutexMark::StorageDirOps:
+			return DurationStorageIdx::StorageDirOps;
 	}
 }
 

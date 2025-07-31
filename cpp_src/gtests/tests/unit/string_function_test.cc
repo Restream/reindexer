@@ -26,7 +26,7 @@ static std::string randString() {
 	result.reserve(len + 1);
 	while (result.size() < len) {
 		const size_t f = rand() % symbols.size();
-		result += reindexer::utf16_to_utf8({symbols[f]});
+		result += reindexer::utf16_to_utf8(std::wstring_view(&symbols[f], 1));
 	}
 	return result;
 }
@@ -45,7 +45,7 @@ static std::string randLikePattern() {
 				result += '_';
 			} else {
 				const size_t f = rand() % symbols.size();
-				result += reindexer::utf16_to_utf8({symbols[f]});
+				result += reindexer::utf16_to_utf8(std::wstring_view(&symbols[f], 1));
 			}
 		}
 	}
@@ -117,7 +117,6 @@ TEST(StringFunctions, IsLikeSqlPattern) {
 
 // test to check
 // 1. equality of character length in bytes for uppercase and lowercase letters
-// 2. character length equality after the substitution function 'check_for_replacement'
 
 TEST(StringFunctions, ToLowerUTF8ByteLen) {
 	for (wchar_t a = 0; a < UINT16_MAX; ++a) {
@@ -129,20 +128,6 @@ TEST(StringFunctions, ToLowerUTF8ByteLen) {
 			return symUtf8.size();
 		};
 		ASSERT_EQ(utf8ByteSize(a), utf8ByteSize(reindexer::ToLower(a)));
-		{
-			wchar_t replaceChar = a;
-			reindexer::check_for_replacement(replaceChar);
-			if (replaceChar != a) {
-				ASSERT_EQ(utf8ByteSize(a), utf8ByteSize(replaceChar));
-			}
-		}
-		{
-			uint32_t replaceChar = a;
-			reindexer::check_for_replacement(replaceChar);
-			if (replaceChar != uint32_t(a)) {
-				ASSERT_EQ(utf8ByteSize(a), utf8ByteSize(replaceChar));
-			}
-		}
 	}
 }
 
